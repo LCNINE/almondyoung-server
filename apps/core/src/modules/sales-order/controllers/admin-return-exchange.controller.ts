@@ -1,15 +1,4 @@
-import {
-  BadRequestException,
-  Body,
-  Controller,
-  Get,
-  Headers,
-  HttpCode,
-  Param,
-  Post,
-  Query,
-  UseGuards,
-} from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Headers, HttpCode, Param, Post, Query } from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiQuery, ApiTags } from '@nestjs/swagger';
 import {
   IsArray,
@@ -23,8 +12,7 @@ import {
   Matches,
 } from 'class-validator';
 import { Type } from 'class-transformer';
-import { RequireScopes, ScopeGuard, User, RequirePermission, PiiResponse } from '@app/authorization';
-import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
+import { User, RequirePermission, PiiResponse } from '@app/authorization';
 import { StoreReturnExchangeService } from '../services/store-return-exchange.service';
 import { StoreSalesOrdersService } from '../services/store-sales-orders.service';
 import { StoreCreateReturnRequestDto } from '../dto/store-return-request.dto';
@@ -167,8 +155,6 @@ export class AdminReturnExchangeController {
   })
   @RequirePermission('fulfillment.warehouse.operate')
   @Post('sales-orders/:id/return-requests')
-  @UseGuards(ScopeGuard)
-  @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   @ApiOperation({ summary: '배송 완료 attempt를 지정한 관리자 대리 반품 요청 생성' })
   @ApiParam({ name: 'id', description: '판매 주문 ID' })
   createReturnRequest(
@@ -181,8 +167,6 @@ export class AdminReturnExchangeController {
 
   @RequirePermission('fulfillment.shipment.read')
   @Get('sales-orders/:id/return-eligibility')
-  @UseGuards(ScopeGuard)
-  @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   @ApiOperation({ summary: '배송 완료 attempt별 반품 가능 수량 조회 (관리자)' })
   @ApiParam({ name: 'id', description: '판매 주문 ID' })
   getReturnEligibility(@Param('id') id: string) {
@@ -191,8 +175,6 @@ export class AdminReturnExchangeController {
 
   @RequirePermission('fulfillment.shipment.read')
   @Get('sales-orders/by-channel-order/:channelOrderId/return-eligibility')
-  @UseGuards(ScopeGuard)
-  @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   @ApiOperation({ summary: '채널 주문의 배송 완료 attempt별 반품 가능 수량 조회 (관리자)' })
   @ApiParam({ name: 'channelOrderId', description: '채널 주문 ID' })
   getReturnEligibilityByChannelOrder(@Param('channelOrderId') channelOrderId: string) {

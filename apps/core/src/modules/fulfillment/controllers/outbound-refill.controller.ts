@@ -1,7 +1,6 @@
-import { Controller, Get, ParseUUIDPipe, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, ParseUUIDPipe, Query } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import { RequireScopes, ScopeGuard, RequirePermission } from '@app/authorization';
-import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
+import { RequirePermission } from '@app/authorization';
 import { RefillPendingBox, RefillPendingReader } from '../reader/refill-pending.reader';
 
 /**
@@ -10,13 +9,11 @@ import { RefillPendingBox, RefillPendingReader } from '../reader/refill-pending.
  */
 @ApiTags('Outbound refills')
 @Controller('outbound-refills')
-@UseGuards(ScopeGuard)
 export class OutboundRefillController {
   constructor(private readonly refills: RefillPendingReader) {}
 
   @RequirePermission('fulfillment.shipment.read')
   @Get('pending')
-  @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   @ApiOperation({ summary: '결품을 다른 위치에서 채웠고 그 몫을 아직 안 집은 박스 (창고별)' })
   pending(@Query('warehouseId', new ParseUUIDPipe()) warehouseId: string): Promise<RefillPendingBox[]> {
     return this.refills.pending(warehouseId);

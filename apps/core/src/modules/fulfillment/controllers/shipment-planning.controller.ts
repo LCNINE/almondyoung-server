@@ -1,5 +1,5 @@
-import { Body, Controller, Get, Headers, Param, Patch, Post, UnauthorizedException, UseGuards } from '@nestjs/common';
-import { RequireScopes, ScopeGuard, User, RequirePermission, PiiResponse, PiiWrite, OPEN_WITH_RECIPIENT } from '@app/authorization';
+import { Body, Controller, Get, Headers, Param, Patch, Post, UnauthorizedException } from '@nestjs/common';
+import { User, RequirePermission, PiiResponse, PiiWrite, OPEN_WITH_RECIPIENT } from '@app/authorization';
 import { ApiOkResponse } from '@nestjs/swagger';
 import {
   PlanShipmentDto,
@@ -11,7 +11,6 @@ import {
   SplitUnreservedShipmentDto,
 } from '../dto/shipment-planning.dto';
 import { ShipmentPlanningService } from '../services/shipment-planning.service';
-import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
 
 type AuthenticatedUser = {
   id?: string;
@@ -21,7 +20,6 @@ type AuthenticatedUser = {
 };
 
 @Controller('shipments')
-@UseGuards(ScopeGuard)
 export class ShipmentPlanningController {
   constructor(private readonly planning: ShipmentPlanningService) {}
 
@@ -50,7 +48,6 @@ export class ShipmentPlanningController {
   })
   @RequirePermission('fulfillment.warehouse.operate')
   @Post(':id/splits')
-  @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   split(
     @Param('id') shipmentId: string,
     @Body() dto: SplitShipmentDto,
@@ -85,7 +82,6 @@ export class ShipmentPlanningController {
   })
   @RequirePermission('fulfillment.warehouse.operate')
   @Post(':id/split-unreserved')
-  @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   splitUnreserved(
     @Param('id') shipmentId: string,
     @Body() dto: SplitUnreservedShipmentDto,
@@ -121,7 +117,6 @@ export class ShipmentPlanningController {
   @PiiWrite({ fields: ['recipientSnapshot', 'entrancePassword'], rawWith: OPEN_WITH_RECIPIENT })
   @RequirePermission('fulfillment.shipment.override_recipient')
   @Patch(':id/recipient')
-  @RequireScopes(FULFILLMENT_SCOPE.SHIPMENT_OVERRIDE_RECIPIENT)
   reviseRecipient(
     @Param('id') shipmentId: string,
     @Body() dto: ReviseShipmentRecipientDto,
@@ -156,7 +151,6 @@ export class ShipmentPlanningController {
   })
   @RequirePermission('fulfillment.warehouse.operate')
   @Post(':id/plan')
-  @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   plan(
     @Param('id') shipmentId: string,
     @Body() dto: PlanShipmentDto,
@@ -194,7 +188,6 @@ export class ShipmentPlanningController {
   })
   @RequirePermission('fulfillment.shipment.read')
   @Get(':id')
-  @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   @ApiOkResponse({ type: ShipmentDetailResponseDto })
   detail(@Param('id') shipmentId: string): Promise<ShipmentDetailResponseDto> {
     return this.planning.getShipmentDetail(shipmentId);
@@ -208,7 +201,6 @@ export class ShipmentPlanningController {
 }
 
 @Controller('fulfillment-operations')
-@UseGuards(ScopeGuard)
 export class FulfillmentOperationController {
   constructor(private readonly planning: ShipmentPlanningService) {}
 
@@ -225,7 +217,6 @@ export class FulfillmentOperationController {
   })
   @RequirePermission('fulfillment.shipment.read')
   @Get(':operationId')
-  @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   @ApiOkResponse({ type: FulfillmentOperationResponseDto })
   get(@Param('operationId') operationId: string): Promise<FulfillmentOperationResponseDto> {
     return this.planning.getOperation(operationId);

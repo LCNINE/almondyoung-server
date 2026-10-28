@@ -25,7 +25,6 @@ import { InventoryCommandService } from '../../inventory/core/services/inventory
 import { LocationService } from '../../inventory/core/services/location.service';
 import { UnifiedReservationService } from '../../inventory/shared/services/unified-reservation.service';
 import { BarcodeService } from '../../inventory/shared/services/barcode.service';
-import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
 import {
   assertOutboundV2Checkpoint,
   expectExactOutboxTopology,
@@ -93,16 +92,6 @@ describeIfDb('Outbound V2 release scenarios', () => {
     const commands = new FulfillmentCommandService(dbService);
     const invariant = new FulfillmentInvariantService();
     const audit = new AuditService(dbService);
-    const scopes = {
-      getScopesByRoles: () =>
-        Promise.resolve(
-          new Set([
-            FULFILLMENT_SCOPE.SHIPMENT_REOPEN,
-            FULFILLMENT_SCOPE.SHIPMENT_CONSOLIDATE,
-            FULFILLMENT_SCOPE.SHIPMENT_OVERRIDE_RECIPIENT,
-          ]),
-        ),
-    } as never;
     const workflow = new FulfillmentWorkflowGate(new ConfigService({ FULFILLMENT_WORKFLOW_MODE: 'v2' }));
     planning = new ShipmentPlanningService(
       dbService,
@@ -110,7 +99,6 @@ describeIfDb('Outbound V2 release scenarios', () => {
       wired.shipmentReservations,
       invariant,
       audit,
-      scopes,
       workflow,
       assembleBoxWithdrawal(dbService),
       createCheckpointsForTesting(),
@@ -121,7 +109,6 @@ describeIfDb('Outbound V2 release scenarios', () => {
       wired.shipmentReservations,
       invariant,
       audit,
-      scopes,
       workflow,
       createCheckpointsForTesting(),
     );
@@ -345,16 +332,6 @@ describeIfDb('Outbound V2 release scenarios', () => {
     const commands = new FulfillmentCommandService(dbService);
     const invariant = new FulfillmentInvariantService();
     const audit = new AuditService(dbService);
-    const authorization = {
-      getScopesByRoles: () =>
-        Promise.resolve(
-          new Set([
-            FULFILLMENT_SCOPE.SHIPMENT_REOPEN,
-            FULFILLMENT_SCOPE.SHIPMENT_CONSOLIDATE,
-            FULFILLMENT_SCOPE.SHIPMENT_OVERRIDE_RECIPIENT,
-          ]),
-        ),
-    } as never;
     const logistics = wireLogistics(dbService, 'v2');
     const localPlanning = new ShipmentPlanningService(
       dbService,
@@ -362,7 +339,6 @@ describeIfDb('Outbound V2 release scenarios', () => {
       logistics.shipmentReservations,
       invariant,
       audit,
-      authorization,
       workflow,
       assembleBoxWithdrawal(dbService),
       createCheckpointsForTesting(),
@@ -373,7 +349,6 @@ describeIfDb('Outbound V2 release scenarios', () => {
       logistics.shipmentReservations,
       invariant,
       audit,
-      authorization,
       workflow,
       createCheckpointsForTesting(),
     );

@@ -3,13 +3,11 @@ import { BillingResult, RecurringBillingService } from '../services/billing/recu
 import { PaymentClientService } from '../services/billing/payment-client.service';
 import { SubscriptionExceptionFilter } from '../shared/filters/subscription-exception.filter';
 import { UseFilters } from '@nestjs/common';
-import { MembershipAdminAuth } from '../shared/decorators/admin-auth.decorator';
 import { RequirePermission } from '@app/authorization';
 /**
  * 정기결제 관리 컨트롤러 (관리자 전용)
  */
 @Controller('admin/billing')
-@MembershipAdminAuth()
 @UseFilters(SubscriptionExceptionFilter)
 export class BillingController {
   constructor(

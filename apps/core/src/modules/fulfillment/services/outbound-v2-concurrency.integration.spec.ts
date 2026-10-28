@@ -1,4 +1,4 @@
-import { createCheckpointsForTesting } from '@app/authorization';
+import { createCheckpointsForTesting, FIRST_GRANT_ROLE_PERMISSIONS } from '@app/authorization';
 import { outbox_events } from '@app/events';
 import { assembleLabels } from '../waybill/__support__/label-fixtures';
 import { outboxPublisherFor } from '../outbox/__support__/outbox-publisher.factory';
@@ -39,7 +39,6 @@ import { WaybillManager } from '../waybill/waybill.manager';
 import { WaybillReader } from '../waybill/waybill.reader';
 import { WaybillRepository } from '../waybill/waybill.repository';
 import { WaybillService } from '../waybill/waybill.service';
-import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
 import { BoxAllocationManager } from './box-allocation.manager';
 import { assembleBoxWithdrawal } from './__support__/box-withdrawal-wiring';
 
@@ -253,7 +252,6 @@ describeIfDb('Outbound V2 concurrency release gate (PostgreSQL integration)', ()
       logistics.shipmentReservations,
       new FulfillmentInvariantService(),
       new AuditService(dbService),
-      { getScopesByRoles: () => Promise.resolve(new Set(['master'])) } as never,
       new FulfillmentWorkflowGate(new ConfigService({ FULFILLMENT_WORKFLOW_MODE: 'v2' })),
       assembleBoxWithdrawal(dbService),
       createCheckpointsForTesting(),
@@ -436,9 +434,6 @@ describeIfDb('Outbound V2 concurrency release gate (PostgreSQL integration)', ()
     return new ShipmentRecallService(
       dbService,
       new FulfillmentCommandService(dbService),
-      {
-        getScopesByRoles: () => Promise.resolve(new Set(grantRecallScope ? [FULFILLMENT_SCOPE.DISPATCH_RECALL] : [])),
-      } as never,
       waybills,
       inventory,
       reservations,
@@ -446,7 +441,10 @@ describeIfDb('Outbound V2 concurrency release gate (PostgreSQL integration)', ()
       outboxPublisherFor(FULFILLMENT_V2_STREAM, dbService),
       new AuditService(dbService),
       new FulfillmentWorkflowGate(new ConfigService({ FULFILLMENT_WORKFLOW_MODE: 'v2' })),
-      createCheckpointsForTesting(),
+      createCheckpointsForTesting({
+        ...FIRST_GRANT_ROLE_PERMISSIONS,
+        recall_operator: grantRecallScope ? ['fulfillment.dispatch.recall'] : [],
+      }),
       new FulfillmentInvariantService(),
     );
   }

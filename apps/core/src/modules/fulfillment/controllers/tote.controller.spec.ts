@@ -1,7 +1,7 @@
+import { REQUIRED_PERMISSIONS_KEY } from '@app/authorization';
 import { BadRequestException, UnauthorizedException } from '@nestjs/common';
 import { createGlobalValidationPipe } from '../../../platform/http/validation-pipe';
 import { validateSync } from 'class-validator';
-import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
 import { AssignToteDto, RegisterToteDto, ReleaseToteDto, ToteHandoffDto, ToteScanDto } from '../dto/tote.dto';
 import { ToteController } from './tote.controller';
 
@@ -111,17 +111,17 @@ describe('ToteController pick-to-tote contract', () => {
     expect(picking.registerTote).not.toHaveBeenCalled();
   });
 
-  it('requires warehouse operate scope on every command', () => {
+  it('requires the warehouse operate permission on every command', () => {
     const metadata = (methodName: 'register' | 'assign' | 'scan' | 'handoff' | 'release') => {
       const method = Object.getOwnPropertyDescriptor(ToteController.prototype, methodName)?.value as object;
-      return Reflect.getMetadata('required_scopes', method) as string[] | undefined;
+      return Reflect.getMetadata(REQUIRED_PERMISSIONS_KEY, method) as string[] | undefined;
     };
 
-    expect(metadata('register')).toEqual([FULFILLMENT_SCOPE.WAREHOUSE_OPERATE]);
-    expect(metadata('assign')).toEqual([FULFILLMENT_SCOPE.WAREHOUSE_OPERATE]);
-    expect(metadata('scan')).toEqual([FULFILLMENT_SCOPE.WAREHOUSE_OPERATE]);
-    expect(metadata('handoff')).toEqual([FULFILLMENT_SCOPE.WAREHOUSE_OPERATE]);
-    expect(metadata('release')).toEqual([FULFILLMENT_SCOPE.WAREHOUSE_OPERATE]);
+    expect(metadata('register')).toEqual(['fulfillment.warehouse.operate']);
+    expect(metadata('assign')).toEqual(['fulfillment.warehouse.operate']);
+    expect(metadata('scan')).toEqual(['fulfillment.warehouse.operate']);
+    expect(metadata('handoff')).toEqual(['fulfillment.warehouse.operate']);
+    expect(metadata('release')).toEqual(['fulfillment.warehouse.operate']);
   });
 
   it('strictly validates physical barcodes, custody identities, quantities, versions and reasons', () => {

@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import type { Permission } from '@app/authorization';
 import type { SkillContext } from '../../skills/types';
 import type { IncomingTurn } from '../lib/multipart';
 import { AssistantRunnerService, type RunEvent } from './assistant-runner.service';
@@ -15,8 +16,8 @@ export type TurnInput = {
   turn: IncomingTurn;
   coreHeaders: SkillContext['coreHeaders'];
   signal: AbortSignal;
-  /** 가드가 통과시킨 스코프. 모델이 부를 수 있는 도구를 이것으로 가른다. */
-  grantedScopes: readonly string[];
+  /** 라우트가 판정한 권한. 모델이 부를 수 있는 도구를 이것으로 가른다. */
+  grantedPermissions: readonly Permission[];
 };
 
 /**
@@ -36,7 +37,7 @@ export class AssistantChatService {
   ) {}
 
   async *runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
-    const { userId, sessionId, turn, coreHeaders, signal, grantedScopes } = input;
+    const { userId, sessionId, turn, coreHeaders, signal, grantedPermissions } = input;
 
     // 소유 확인이 먼저다 — 남의 세션 id 로 락을 잡게 두면 그 대화를 막을 수 있다.
     const session = await this.reader.requireOwnedSession(userId, sessionId);
@@ -55,7 +56,7 @@ export class AssistantChatService {
         attachments: turn.attachments,
         coreHeaders,
         signal,
-        grantedScopes,
+        grantedPermissions,
         sessionId,
       })) {
         if (event.type !== 'settled') {

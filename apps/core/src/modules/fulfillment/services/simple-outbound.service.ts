@@ -6,7 +6,8 @@ import {
   Injectable,
 } from '@nestjs/common';
 import { DbService, InjectTypedDb } from '@app/db';
-import { isForceDispatchDecision, type ForceDispatchDecision } from '../../../platform/auth/force-dispatch-authorization';
+import { type PermissionDecision } from '@app/authorization';
+import { isForceDispatchDecision } from '../../../platform/auth/force-dispatch-authorization';
 import { and, asc, eq, inArray, ne, sql } from 'drizzle-orm';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import { OutboundBatchOrchestrator } from './outbound-batch-orchestrator.service';
@@ -188,7 +189,7 @@ export class SimpleOutboundService {
       note?: string;
       actor: SimpleOutboundActor;
       idempotencyKey: string;
-      authorization: ForceDispatchDecision | undefined;
+      authorization: PermissionDecision | undefined;
     },
     tx?: DbTx,
   ): Promise<PreparedOutboundResult<SimpleOutboundState>> {
@@ -245,7 +246,7 @@ export class SimpleOutboundService {
       note?: string;
       actor: SimpleOutboundActor;
       idempotencyKey: OutboundCommandKey;
-      authorization: ForceDispatchDecision | undefined;
+      authorization: PermissionDecision | undefined;
     },
     trx: DbTx,
   ) {

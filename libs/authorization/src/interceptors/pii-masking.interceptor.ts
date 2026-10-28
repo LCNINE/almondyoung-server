@@ -7,7 +7,6 @@ import {
   Injectable,
   Logger,
   NestInterceptor,
-  Optional,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { createHash, randomUUID } from 'node:crypto';
@@ -24,7 +23,6 @@ import {
 } from '../decorators/pii-response.decorator';
 import type { OwnerService } from '../permissions/permission.types';
 import { PII_ACCESS_SUBJECT_CAP, PiiAccessRecorder, type PiiAccessAction } from '../services/pii-access-recorder';
-import { PermissionAuthority } from '../services/permission-authority';
 import { PermissionCache } from '../services/permission-cache';
 import { methodOf, rawResponseOf, rolesOf } from '../services/request-identity';
 import { staffClientOf } from '../services/staff-client';
@@ -102,8 +100,6 @@ export class PiiMaskingInterceptor implements NestInterceptor {
     @Inject(PermissionCache) private readonly cache: Pick<PermissionCache, 'permissionsFor'>,
     @Inject(PiiAccessRecorder) private readonly recorder: PiiAccessRecorder,
     @Inject(PII_MASKING_OPTIONS) private readonly options: PiiMaskingOptions,
-    /** 권한 사본이 없을 때 쓰기를 막을지 — 새 판정이 결정하는 서비스만 막는다(라우트 판정과 같은 규칙). */
-    @Optional() @Inject(PermissionAuthority) private readonly authority?: Pick<PermissionAuthority, 'enforced'>,
   ) {}
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
@@ -134,10 +130,8 @@ export class PiiMaskingInterceptor implements NestInterceptor {
     const facts = factsOf(request);
     const rawWith = spec.rawWith ?? DEFAULT_PII_RAW_WITH;
     const permissions = facts.roles === undefined ? new Set<string>() : this.cache.permissionsFor(facts.roles);
-    if (permissions === null) {
-      if (this.authority?.enforced !== true) return;
-      throw new ServiceUnavailableException('Permission data is not loaded yet');
-    }
+    // 권한 사본이 없으면 판정할 수 없다 — 라우트 판정과 같이 503.
+    if (permissions === null) throw new ServiceUnavailableException('Permission data is not loaded yet');
     if (rawWith.some((permission) => permissions.has(permission))) return;
     throw new ForbiddenException({ message: 'Permission required', requiredPermissions: rawWith });
   }

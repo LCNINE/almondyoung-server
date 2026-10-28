@@ -443,7 +443,7 @@ describeIfDb('Subscription Cancellation Integration Tests', () => {
           15000, // plan.price(9900)보다 큼
         ),
         // 정책 산정액·관리자 재량 한도(월 정가)를 넘는 환불은 별도 권한이 필요하다.
-      ).rejects.toThrow('초과 환불에는 별도 권한');
+      ).rejects.toThrow('초과 환불에는 별도 권한(membership.billing.refund_override)');
     });
   });
 

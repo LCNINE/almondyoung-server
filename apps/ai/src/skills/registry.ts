@@ -1,3 +1,4 @@
+import type { Permission } from '@app/authorization';
 import type { Skill, SkillContext, ToolDefinition } from './types';
 import { productUploadSkill } from './product-upload/skill';
 import { interactionSkill } from './interaction/skill';
@@ -14,11 +15,11 @@ export const SKILLS: Skill[] = [productUploadSkill, productCatalogSkill, interac
  *
  * 인증만으로는 부족하다 — 어드민이냐 고객이냐에 따라 모델 앞에 놓이는 도구가 달라야 한다.
  * 가드는 "들어올 수 있는가" 만 보고, 여기서 "무엇을 부를 수 있는가" 를 가른다.
- * 스코프를 하나도 못 받은 요청에는 빈 목록을 준다 — 모델은 도구 없이 말만 한다.
+ * 권한을 하나도 못 받은 요청에는 빈 목록을 준다 — 모델은 도구 없이 말만 한다.
  */
-export function skillsFor(grantedScopes: readonly string[]): Skill[] {
-  const granted = new Set(grantedScopes);
-  return SKILLS.filter((skill) => skill.scopes.some((scope) => granted.has(scope)));
+export function skillsFor(grantedPermissions: readonly Permission[]): Skill[] {
+  const granted = new Set<Permission>(grantedPermissions);
+  return SKILLS.filter((skill) => skill.permissions.some((permission) => granted.has(permission)));
 }
 
 const BASE_INSTRUCTIONS = `당신은 아몬드영 어드민의 업무 어시스턴트다. 관리자가 어드민 화면에서 하던 일을 대신 처리한다.
@@ -112,8 +113,8 @@ ask_choice 는 사용자가 할 일을 말했는데 어느 갈래인지 갈릴 �
 
 사용자가 "목록 다시 보여줘" 라고 직접 요청했을 때만 다시 조회한다.`;
 
-export function buildSystemPrompt(grantedScopes: readonly string[]): string {
-  const skillDocs = skillsFor(grantedScopes)
+export function buildSystemPrompt(grantedPermissions: readonly Permission[]): string {
+  const skillDocs = skillsFor(grantedPermissions)
     .map((s) => `## 스킬: ${s.label} (${s.name})\n\n${s.instructions}`)
     .join('\n\n---\n\n');
 
@@ -126,8 +127,8 @@ export function buildSystemPrompt(grantedScopes: readonly string[]): string {
  * 파괴적 도구에는 `confirmed` 인자를 자동으로 붙인다. 스킬이 도구마다 적어 두면
  * 하나 빠뜨렸을 때 그 도구만 조용히 무방비가 된다.
  */
-export function buildToolDefinitions(grantedScopes: readonly string[]): ToolDefinition[] {
-  return skillsFor(grantedScopes).flatMap((skill) =>
+export function buildToolDefinitions(grantedPermissions: readonly Permission[]): ToolDefinition[] {
+  return skillsFor(grantedPermissions).flatMap((skill) =>
     skill.tools.map((tool) => {
       if (!tool.destructive) return tool.definition;
       return {
@@ -153,11 +154,11 @@ export async function runTool(
   name: string,
   input: unknown,
   ctx: SkillContext,
-  grantedScopes: readonly string[],
+  grantedPermissions: readonly Permission[],
 ): Promise<unknown> {
   // 도구 목록에서 이미 걸렀지만 여기서 한 번 더 본다 — 모델이 예전 대화에 남은
   // 도구 이름을 그대로 불러올 수 있고, 그 경로로는 목록 필터가 막지 못한다.
-  for (const skill of skillsFor(grantedScopes)) {
+  for (const skill of skillsFor(grantedPermissions)) {
     const tool = skill.tools.find((t) => t.definition.name === name);
     if (!tool) continue;
 

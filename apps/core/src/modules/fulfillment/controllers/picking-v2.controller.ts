@@ -1,7 +1,6 @@
-import { BadRequestException, Body, Controller, Headers, Post, UnauthorizedException, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Headers, Post, UnauthorizedException } from '@nestjs/common';
 import { ApiCreatedResponse, ApiHeader, ApiTags } from '@nestjs/swagger';
-import { RequireScopes, ScopeGuard, User, RequirePermission } from '@app/authorization';
-import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
+import { User, RequirePermission } from '@app/authorization';
 import {
   AggregateBulkCartScanDto,
   AggregateCartHandoffDto,
@@ -23,13 +22,11 @@ type AuthenticatedUser = {
 
 @ApiTags('Picking V2')
 @Controller('picking/v2/aggregate-then-sort')
-@UseGuards(ScopeGuard)
 export class PickingV2Controller {
   constructor(private readonly picking: PickingProcessService) {}
 
   @RequirePermission('fulfillment.warehouse.operate')
   @Post('bulk-cart-scans')
-  @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   @ApiHeader({ name: 'Idempotency-Key', required: true })
   @ApiCreatedResponse({ description: 'Source custody moved into the selected bulk cart' })
   bulkCartScan(
@@ -48,7 +45,6 @@ export class PickingV2Controller {
 
   @RequirePermission('fulfillment.warehouse.operate')
   @Post('sort-scans')
-  @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   @ApiHeader({ name: 'Idempotency-Key', required: true })
   @ApiCreatedResponse({ description: 'Bulk-cart custody assigned to the requested shipment line destination' })
   sortScan(
@@ -67,7 +63,6 @@ export class PickingV2Controller {
 
   @RequirePermission('fulfillment.warehouse.operate')
   @Post('cart-handoffs')
-  @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   @ApiHeader({ name: 'Idempotency-Key', required: true })
   @ApiCreatedResponse({ description: 'Pooled cart custody handed to the target worker through session events' })
   cartHandoff(
@@ -84,7 +79,6 @@ export class PickingV2Controller {
 
   @RequirePermission('fulfillment.warehouse.operate')
   @Post('cart-surplus-returns')
-  @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   @ApiHeader({ name: 'Idempotency-Key', required: true })
   @ApiCreatedResponse({ description: 'Cart surplus of leaving boxes moved into a return bin' })
   cartSurplusReturn(
@@ -108,13 +102,11 @@ export class PickingV2Controller {
 
 @ApiTags('Picking V2')
 @Controller('picking/v2')
-@UseGuards(ScopeGuard)
 export class PickingCommandV2Controller {
   constructor(private readonly picking: PickingProcessService) {}
 
   @RequirePermission('fulfillment.warehouse.operate')
   @Post('starts')
-  @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   @ApiHeader({ name: 'Idempotency-Key', required: true })
   start(
     @Body() dto: StartPickingV2Dto,
@@ -130,7 +122,6 @@ export class PickingCommandV2Controller {
 
   @RequirePermission('fulfillment.warehouse.operate')
   @Post('scans')
-  @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   @ApiHeader({ name: 'Idempotency-Key', required: true })
   scan(
     @Body() dto: ScanPickingV2Dto,
@@ -148,7 +139,6 @@ export class PickingCommandV2Controller {
 
   @RequirePermission('fulfillment.warehouse.operate')
   @Post('handoffs')
-  @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   @ApiHeader({ name: 'Idempotency-Key', required: true })
   handoff(
     @Body() dto: HandoffPickingV2Dto,
@@ -164,7 +154,6 @@ export class PickingCommandV2Controller {
 
   @RequirePermission('fulfillment.warehouse.operate')
   @Post('completions')
-  @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   @ApiHeader({ name: 'Idempotency-Key', required: true })
   complete(
     @Body() dto: CompletePickingV2Dto,

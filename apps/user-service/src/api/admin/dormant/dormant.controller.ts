@@ -1,4 +1,4 @@
-import { RequireScopes, RequirePermission } from '@app/authorization';
+import { RequirePermission } from '@app/authorization';
 import { Controller, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { DormantService } from './dormant.service';
@@ -13,7 +13,6 @@ export class DormantController {
   @ApiResponse({ status: 200, description: '휴면 계정 처리 성공' })
   @RequirePermission('customer.dormant.execute')
   @Post('process')
-  @RequireScopes('master')
   async processDormantAccounts() {
     return await this.dormantService.processDormantAccountsManually();
   }

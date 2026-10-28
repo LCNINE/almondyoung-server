@@ -40,7 +40,7 @@ const clampInt = (value: string | undefined, fallback: number, max: number) => {
   return Number.isFinite(parsed) && parsed >= 0 ? Math.min(parsed, max) : fallback;
 };
 
-/** «채널과 어긋남» (#1016 45번 스펙 §8). 인가는 전역 `JwtAuthGuard`·`AdminRealmGuard` — 격리 컨트롤러와 같다. */
+/** «채널과 어긋남» (#1016 45번 스펙 §8). 인가는 전역 `JwtAuthGuard`·`PermissionGuard` — 격리 컨트롤러와 같다. */
 @ApiTags('adapter-order-reconcile-findings')
 @UseFilters(GlobalExceptionFilter)
 @Controller('adapter/order-reconcile-findings')

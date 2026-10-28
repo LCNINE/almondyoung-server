@@ -1,4 +1,4 @@
-import { RequireScopes, RequirePermission } from '@app/authorization';
+import { RequirePermission } from '@app/authorization';
 import { Controller, Get, Param } from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiResponse } from '@nestjs/swagger';
 import { ShopResponseDto } from 'apps/user-service/src/commons/dto/shop.dto';
@@ -10,7 +10,6 @@ export class ShopController {
 
   @RequirePermission('customer.profile.read')
   @Get('/:userId')
-  @RequireScopes('master', 'admin:users:read')
   @ApiOperation({
     summary: '사용자 상점 정보 조회',
     description: '사용자의 상점 정보를 조회합니다.',

@@ -1,9 +1,9 @@
 import { SKILLS, buildToolDefinitions, runTool } from '../registry';
+import type { Permission } from '@app/authorization';
 import type { SkillContext } from '../types';
-import { AI_SCOPE } from '../../platform/auth/ai-scopes';
 
 /** 이 스펙은 어드민 도구의 확인 게이트를 본다. */
-const ADMIN = [AI_SCOPE.ASSISTANT];
+const ADMIN: readonly Permission[] = ['ai.assistant.use'];
 
 /**
  * 되돌리기 어려운 작업은 코드가 막는다.

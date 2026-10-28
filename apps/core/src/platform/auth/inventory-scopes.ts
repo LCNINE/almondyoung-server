@@ -42,7 +42,7 @@ const ALL_INVENTORY_SCOPE_KEYS = INVENTORY_SCOPES.map((scope) => scope.key);
  * `logistics_worker` 가 `OPERATE` 만 받는 이유: 현장 PDA(warehouse-app)의 적치·입고확정·
  * 실사 카운트·이동·조회는 작업자 행위지만, 재고 수량을 직접 고치는 `ADJUST` 와
  * 마스터데이터를 바꾸는 `MANAGE` 는 아니다. 그 결과 PDA 의 재고조정 화면과 실사 차이 반영은
- * `logistics_manager` 를 요구하게 된다 — 오늘도 AdminRealmGuard 가 막고 있으므로 회귀는 아니다.
+ * `logistics_manager` 를 요구하게 된다.
  */
 export const INVENTORY_ROLE_MAPPINGS: RoleScopeMappingDefinition[] = [
   { roleName: 'admin', scopeKeys: ALL_INVENTORY_SCOPE_KEYS },

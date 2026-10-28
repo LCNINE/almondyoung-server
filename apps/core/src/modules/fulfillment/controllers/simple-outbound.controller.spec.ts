@@ -1,11 +1,10 @@
 import { BadRequestException, UnauthorizedException } from '@nestjs/common';
 import {
-  getScopeAuthorizationDecision,
-  REQUIRED_SCOPES_KEY,
-  ScopeGuard,
+  getPermissionDecision,
+  recordPermissionDecisions,
+  REQUIRED_PERMISSIONS_KEY,
   createCheckpointsForTesting,
 } from '@app/authorization';
-import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
 import { SimpleOutboundController } from './simple-outbound.controller';
 
 describe('SimpleOutboundController', () => {
@@ -27,22 +26,10 @@ describe('SimpleOutboundController', () => {
     };
   }
 
-  // Mirrors shipment.controller.spec.ts's requestAuthorizedByMappedRole: runs the real ScopeGuard so
-  // the request carries a genuine ScopeAuthorizationDecision, rather than fabricating one by hand.
-  async function requestAuthorizedForForce(granted: string = FULFILLMENT_SCOPE.DISPATCH_FORCE): Promise<object> {
-    const request = { user: { roles: ['warehouse_dispatcher'] } };
-    const guard = new ScopeGuard(
-      {
-        getAllAndOverride: () => [FULFILLMENT_SCOPE.DISPATCH_FORCE, FULFILLMENT_SCOPE.DISPATCH_STATION_FORCE],
-      } as never,
-      { getScopesByRoles: jest.fn().mockResolvedValue(new Set([granted])) } as never,
-    );
-    const context = {
-      getHandler: () => SimpleOutboundController.prototype.force,
-      getClass: () => SimpleOutboundController,
-      switchToHttp: () => ({ getRequest: () => request }),
-    };
-    await expect(guard.canActivate(context as never)).resolves.toBe(true);
+  // 라우트 가드(PermissionGuard)가 그 요청이 받은 권한에 대해 남기는 낙인과 같은 것을 남긴다.
+  function requestAuthorizedForForce(granted: string = 'fulfillment.dispatch.force'): object {
+    const request = {};
+    recordPermissionDecisions(request, [granted]);
     return request;
   }
 
@@ -85,8 +72,8 @@ describe('SimpleOutboundController', () => {
 
   it('강제완료는 authorization decision 을 재구현 없이 원본 그대로 서비스에 전달한다', async () => {
     const { service, controller } = build();
-    const request = await requestAuthorizedForForce();
-    const decision = getScopeAuthorizationDecision(request, FULFILLMENT_SCOPE.DISPATCH_FORCE);
+    const request = requestAuthorizedForForce();
+    const decision = getPermissionDecision(request, 'fulfillment.dispatch.force');
 
     await controller.force(
       's-1',
@@ -102,7 +89,7 @@ describe('SimpleOutboundController', () => {
         reason: 'verified physically',
         actor: { id: 'u-1', roles: ['warehouse_dispatcher'] },
         idempotencyKey: 'key-1',
-        authorization: expect.objectContaining({ scope: FULFILLMENT_SCOPE.DISPATCH_FORCE, granted: true }),
+        authorization: expect.objectContaining({ permission: 'fulfillment.dispatch.force', granted: true }),
       }),
     );
     // Exact identity, not just shape — proves the controller forwards the request's own decision
@@ -110,16 +97,16 @@ describe('SimpleOutboundController', () => {
     expect(service.forceComplete.mock.calls[0][1].authorization).toBe(decision);
   });
 
-  it('강제완료 라우트는 관리자 또는 스테이션 강제출고 스코프를 요구한다', () => {
-    expect(Reflect.getMetadata(REQUIRED_SCOPES_KEY, SimpleOutboundController.prototype.force)).toEqual([
-      FULFILLMENT_SCOPE.DISPATCH_FORCE,
-      FULFILLMENT_SCOPE.DISPATCH_STATION_FORCE,
+  it('강제완료 라우트는 관리자 또는 스테이션 강제출고 권한을 요구한다', () => {
+    expect(Reflect.getMetadata(REQUIRED_PERMISSIONS_KEY, SimpleOutboundController.prototype.force)).toEqual([
+      'fulfillment.dispatch.force',
+      'fulfillment.dispatch.station_force',
     ]);
   });
 
   it('스테이션 작업자의 강제완료는 station 판정을 그대로 서비스에 넘긴다', async () => {
     const { service, controller } = build();
-    const request = await requestAuthorizedForForce(FULFILLMENT_SCOPE.DISPATCH_STATION_FORCE);
+    const request = requestAuthorizedForForce('fulfillment.dispatch.station_force');
 
     await controller.force(
       's-1',
@@ -130,7 +117,7 @@ describe('SimpleOutboundController', () => {
     );
 
     expect(service.forceComplete.mock.calls[0][1].authorization).toBe(
-      getScopeAuthorizationDecision(request, FULFILLMENT_SCOPE.DISPATCH_STATION_FORCE),
+      getPermissionDecision(request, 'fulfillment.dispatch.station_force'),
     );
   });
 });

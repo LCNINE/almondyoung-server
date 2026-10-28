@@ -1,4 +1,4 @@
-import { PermissionCheckpoints, ScopeGuard, type JwtPayload } from '@app/authorization';
+import { PermissionCheckpoints, type JwtPayload } from '@app/authorization';
 import { ConflictError, ForbiddenError, NotFoundError } from '@app/shared';
 import { DbService, InjectDb } from '@app/db';
 import { Injectable, Logger } from '@nestjs/common';
@@ -20,7 +20,6 @@ export class AuthService {
   constructor(
     @InjectDb() private readonly dbService: DbService<UserServiceSchema>,
     private readonly usersService: UsersService,
-    private readonly scopeGuard: ScopeGuard,
     private readonly checkpoints: PermissionCheckpoints,
     private readonly roleAssignments: RoleAssignmentManager,
   ) {}
@@ -75,7 +74,7 @@ export class AuthService {
   /**
    * 관리자가 다른 계정의 비밀번호를 정한다.
    *
-   * 직원 계정(고객 역할 밖의 역할을 가진 계정)은 계정 생성과 같은 권한(`master` 스코프)이 있어야 바꿀 수 있다 —
+   * 직원 계정(고객 역할 밖의 역할을 가진 계정)은 계정 생성과 같은 권한(`iam.admin_user.write`)이 있어야 바꿀 수 있다 —
    * 회원 정보 수정 권한만으로는 고객 계정까지다.
    */
   async changePassword(changePasswordDto: ChangePasswordDto, actor: Pick<JwtPayload, 'roles'>) {
@@ -89,12 +88,7 @@ export class AuthService {
     const targetRoles = await this.usersService.getUserRoleNames(user.id);
     const isStaffAccount = targetRoles.some((role) => !CUSTOMER_ROLE_NAMES.includes(role));
     if (isStaffAccount) {
-      const legacy = (await this.scopeGuard.getGrantedScopes(actor, ['master'])).length > 0;
-      if (
-        !this.checkpoints.compare('iam.staff_password_reset', legacy, { roles: actor.roles ?? [] }, [
-          'iam.admin_user.write',
-        ])
-      ) {
+      if (!this.checkpoints.check('iam.staff_password_reset', { roles: actor.roles ?? [] }, ['iam.admin_user.write'])) {
         throw new ForbiddenError('직원 계정의 비밀번호는 계정 생성 권한이 있어야 바꿀 수 있습니다.');
       }
     }

@@ -4,7 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { and, eq, inArray } from 'drizzle-orm';
 import * as postgres from 'postgres';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
-import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
+import { FULFILLMENT_PERMISSION } from '../../../platform/auth/fulfillment-permissions';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import { AuditService } from '../../inventory/shared/services/audit.service';
 import {
@@ -54,7 +54,6 @@ describeIfDb('V2 explicit shipment consolidation (DB integration)', () => {
       wired.shipmentReservations,
       new FulfillmentInvariantService(),
       new AuditService(dbService),
-      { getScopesByRoles: () => Promise.resolve(new Set([FULFILLMENT_SCOPE.SHIPMENT_REOPEN])) } as never,
       new FulfillmentWorkflowGate(new ConfigService({ FULFILLMENT_WORKFLOW_MODE: 'v2' })),
       assembleBoxWithdrawal(dbService),
       createCheckpointsForTesting(),
@@ -626,15 +625,12 @@ describeIfDb('V2 explicit shipment consolidation (DB integration)', () => {
         wired.shipmentReservations,
         new FulfillmentInvariantService(),
         new AuditService(dbService),
-        {
-          getScopesByRoles: () => Promise.resolve(new Set([FULFILLMENT_SCOPE.SHIPMENT_CONSOLIDATE])),
-        } as never,
         new FulfillmentWorkflowGate(new ConfigService({ FULFILLMENT_WORKFLOW_MODE: 'v2' })),
-        createCheckpointsForTesting(),
+        createCheckpointsForTesting({ limited: ['fulfillment.shipment.consolidate'] }),
       );
       await expect(
         withoutOverride.consolidate(dto, `override-denied-${randomUUID()}`, { ...actor, roles: ['limited'] }, tx),
-      ).rejects.toThrow(`Missing required scope: ${FULFILLMENT_SCOPE.SHIPMENT_OVERRIDE_RECIPIENT}`);
+      ).rejects.toThrow(`Missing required scope: ${FULFILLMENT_PERMISSION.SHIPMENT_OVERRIDE_RECIPIENT}`);
 
       const authorized = await consolidation.consolidate(dto, `override-allowed-${randomUUID()}`, actor, tx);
       const [target] = await tx
@@ -749,16 +745,6 @@ describeIfDb('V2 explicit shipment consolidation (DB integration)', () => {
       wired.shipmentReservations,
       new FulfillmentInvariantService(),
       { logUserActionRequired: () => Promise.reject(new Error('required audit unavailable')) } as never,
-      {
-        getScopesByRoles: () =>
-          Promise.resolve(
-            new Set([
-              FULFILLMENT_SCOPE.SHIPMENT_CONSOLIDATE,
-              FULFILLMENT_SCOPE.SHIPMENT_OVERRIDE_RECIPIENT,
-              FULFILLMENT_SCOPE.SHIPMENT_REOPEN,
-            ]),
-          ),
-      } as never,
       new FulfillmentWorkflowGate(new ConfigService({ FULFILLMENT_WORKFLOW_MODE: 'v2' })),
       createCheckpointsForTesting(),
     );
@@ -811,16 +797,6 @@ describeIfDb('V2 explicit shipment consolidation (DB integration)', () => {
         logistics.shipmentReservations,
         new FulfillmentInvariantService(),
         new AuditService(serviceDb),
-        {
-          getScopesByRoles: () =>
-            Promise.resolve(
-              new Set([
-                FULFILLMENT_SCOPE.SHIPMENT_CONSOLIDATE,
-                FULFILLMENT_SCOPE.SHIPMENT_OVERRIDE_RECIPIENT,
-                FULFILLMENT_SCOPE.SHIPMENT_REOPEN,
-              ]),
-            ),
-        } as never,
         new FulfillmentWorkflowGate(new ConfigService({ FULFILLMENT_WORKFLOW_MODE: 'v2' })),
         createCheckpointsForTesting(),
       );

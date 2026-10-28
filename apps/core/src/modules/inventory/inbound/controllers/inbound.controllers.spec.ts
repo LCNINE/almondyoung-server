@@ -3,7 +3,6 @@ import { randomUUID } from 'crypto';
 import { BadRequestException, INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import * as request from 'supertest';
-import { ScopeGuard } from '@app/authorization';
 import { createGlobalValidationPipe } from '../../../../platform/http/validation-pipe';
 import { InboundController } from './inbound.controllers';
 import { InboundService } from '../services/inbound.service';
@@ -213,10 +212,7 @@ describe('GET /inbound/receipts — 조회 조건 검증', () => {
         { provide: InboundPutawayReader, useValue: {} },
         { provide: InboundReceiptStateReader, useValue: {} },
       ],
-    })
-      .overrideGuard(ScopeGuard)
-      .useValue({ canActivate: () => true })
-      .compile();
+    }).compile();
     app = module.createNestApplication();
     app.useGlobalPipes(createGlobalValidationPipe());
     await app.init();

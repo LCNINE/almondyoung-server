@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { MembershipBenefitUsage } from './benefit/benefit-usage';
 import { differenceInCalendarDays } from 'date-fns';
 import { BadRequestError, ConflictError, ForbiddenError, NotFoundError } from '@app/shared';
+import type { Permission } from '@app/authorization';
 import { SubscriptionContractReader } from './subscription/subscription-contract.reader';
 import {
   SubscriptionCancellationManager,
@@ -16,7 +17,6 @@ import { InvoiceBillingManager } from './billing/invoice-billing.manager';
 import { PauseReader } from './pause/pause.reader';
 import { PauseManager } from './pause/pause.manager';
 import { CancellationContext, CancellationContextReader } from './subscription/cancellation-context.reader';
-import { MEMBERSHIP_SCOPE } from '../shared/auth/membership-scopes';
 import {
   CancellationMode,
   CancellationOption,
@@ -28,6 +28,9 @@ type RefundReceiveAccount = { bank: string; accountNumber: string; holderName: s
 
 /** 완료된 환불을 고객 화면에 남겨두는 기간. 지나면 확인할 이유가 없다. */
 const REFUND_STATUS_VISIBLE_DAYS = 30;
+
+/** 정책 산정액을 넘는 환불에 필요한 권한. */
+const REFUND_OVERRIDE_PERMISSION: Permission = 'membership.billing.refund_override';
 
 export type {
   ImmediateCancellationResult,
@@ -729,7 +732,7 @@ export class SubscriptionCancellationService {
       throw new ForbiddenError(
         `환불 한도(${ceiling.toLocaleString()}원 — 정책 산정액 ${policyAmount.toLocaleString()}원, ` +
           `관리자 재량 한도 ${discretionLimit.toLocaleString()}원)를 초과하는 환불입니다. ` +
-          `초과 환불에는 별도 권한(${MEMBERSHIP_SCOPE.BILLING_REFUND_OVERRIDE})이 필요합니다.`,
+          `초과 환불에는 별도 권한(${REFUND_OVERRIDE_PERMISSION})이 필요합니다.`,
       );
     }
   }

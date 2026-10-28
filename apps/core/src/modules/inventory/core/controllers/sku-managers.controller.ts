@@ -1,7 +1,6 @@
-import { Controller, Get, Post, Put, Delete, Param, Body, HttpCode, HttpStatus, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Param, Body, HttpCode, HttpStatus } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
-import { RequireScopes, ScopeGuard, RequirePermission } from '@app/authorization';
-import { INVENTORY_SCOPE } from '../../../../platform/auth/inventory-scopes';
+import { RequirePermission } from '@app/authorization';
 import { SkuManagersService } from '../services/sku-managers.service';
 import { CreateSkuManagersDto } from '../dto/sku-managers/create-sku-managers.dto';
 import { UpdateSkuManagersDto } from '../dto/sku-managers/update-sku-managers.dto';
@@ -9,13 +8,11 @@ import { SkuManagersResponseDto } from '../dto/sku-managers/sku-managers-respons
 
 @ApiTags('SKU Managers')
 @Controller('inventory/skus')
-@UseGuards(ScopeGuard)
 export class SkuManagersController {
   constructor(private readonly skuManagersService: SkuManagersService) {}
 
   @RequirePermission('inventory.master.write')
   @Post('managers')
-  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({
     summary: 'SKU 담당자 할당 (Assign managers to SKU)',
     description: 'Create or update manager assignments for a SKU',
@@ -34,7 +31,6 @@ export class SkuManagersController {
 
   @RequirePermission('inventory.stock.read')
   @Get(':skuId/managers')
-  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({
     summary: 'SKU 담당자 조회 (Get managers for SKU)',
     description: 'Get manager assignments for a specific SKU',
@@ -53,7 +49,6 @@ export class SkuManagersController {
 
   @RequirePermission('inventory.master.write')
   @Put(':skuId/managers')
-  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({
     summary: 'SKU 담당자 수정 (Update managers for SKU)',
     description: 'Update manager assignments for a SKU (partial update supported)',
@@ -77,7 +72,6 @@ export class SkuManagersController {
   @RequirePermission('inventory.master.write')
   @Delete(':skuId/managers')
   @HttpCode(HttpStatus.OK)
-  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({
     summary: 'SKU 담당자 제거 (Remove all managers from SKU)',
     description: 'Remove all manager assignments from a SKU',
@@ -103,7 +97,6 @@ export class SkuManagersController {
   @RequirePermission('inventory.master.write')
   @Delete(':skuId/managers/:role')
   @HttpCode(HttpStatus.OK)
-  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({
     summary: '특정 담당자 역할 제거 (Remove specific manager role)',
     description: 'Remove a specific manager role (designer, purchaseManager, or registrationManager)',
@@ -130,7 +123,6 @@ export class SkuManagersController {
 
   @RequirePermission('inventory.stock.read')
   @Get('managers/all')
-  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({
     summary: '전체 담당자 할당 조회 (Get all manager assignments)',
     description: 'Get all SKU manager assignments',
@@ -148,13 +140,11 @@ export class SkuManagersController {
 
 @ApiTags('Manager SKU Assignments')
 @Controller('inventory/managers')
-@UseGuards(ScopeGuard)
 export class ManagerSkusController {
   constructor(private readonly skuManagersService: SkuManagersService) {}
 
   @RequirePermission('inventory.stock.read')
   @Get(':managerId/skus')
-  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({
     summary: '담당자별 SKU 목록 조회 (Get SKUs by manager)',
     description: 'Get all SKUs managed by a specific manager (any role)',

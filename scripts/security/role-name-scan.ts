@@ -29,7 +29,7 @@ export function countRoleLiterals(source: string, fileName?: string): number {
 }
 
 /**
- * `checkpoints.compare(...)`·`checkpoints.compareDecision(...)` 가운데 첫 인자(판정 지점 이름)가 문자열 리터럴이
+ * `checkpoints.check(...)`·`checkpoints.checkRoute(...)` 가운데 첫 인자(판정 지점 이름)가 문자열 리터럴이
  * 아닌 호출의 줄 번호(1부터). 판정 지점 이름은 지표 라벨이라 값의 수가 코드로 정해져야 한다.
  */
 export function nonLiteralCheckpointCalls(source: string, fileName?: string): number[] {
@@ -39,7 +39,7 @@ export function nonLiteralCheckpointCalls(source: string, fileName?: string): nu
     if (
       ts.isCallExpression(node) &&
       ts.isPropertyAccessExpression(node.expression) &&
-      (node.expression.name.text === 'compare' || node.expression.name.text === 'compareDecision') &&
+      (node.expression.name.text === 'check' || node.expression.name.text === 'checkRoute') &&
       /(^|\.)checkpoints$/.test(node.expression.expression.getText(file))
     ) {
       const first = node.arguments[0];

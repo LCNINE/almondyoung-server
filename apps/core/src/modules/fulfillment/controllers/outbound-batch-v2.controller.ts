@@ -10,11 +10,9 @@ import {
   Post,
   Query,
   UnauthorizedException,
-  UseGuards,
 } from '@nestjs/common';
 import { ApiCreatedResponse, ApiOkResponse } from '@nestjs/swagger';
-import { RequireScopes, ScopeGuard, User, RequirePermission } from '@app/authorization';
-import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
+import { User, RequirePermission } from '@app/authorization';
 import {
   ClaimBatchWorkItemDto,
   CreateOutboundBatchV2Dto,
@@ -34,13 +32,11 @@ import { OutboundBatchOrchestrator } from '../services/outbound-batch-orchestrat
 type AuthenticatedUser = { id?: string; userId?: string; sub?: string; roles?: string[] };
 
 @Controller()
-@UseGuards(ScopeGuard)
 export class OutboundBatchV2Controller {
   constructor(private readonly batches: OutboundBatchOrchestrator) {}
 
   @RequirePermission('fulfillment.warehouse.operate')
   @Post('outbound-batches/v2')
-  @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   @ApiCreatedResponse({ type: CreateOutboundBatchV2ResponseDto })
   create(
     @Body() dto: CreateOutboundBatchV2Dto,
@@ -52,7 +48,6 @@ export class OutboundBatchV2Controller {
 
   @RequirePermission('fulfillment.shipment.read')
   @Get('outbound-batches/v2')
-  @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   @ApiOkResponse({ type: [OutboundBatchV2ListItemDto] })
   list(@Query('warehouseId') warehouseId?: string, @Query('status') status?: string) {
     if (status && !['created', 'picking', 'completed', 'canceled'].includes(status)) {
@@ -63,7 +58,6 @@ export class OutboundBatchV2Controller {
 
   @RequirePermission('fulfillment.warehouse.operate')
   @Post('outbound-batches/:batchId/shipments/:shipmentId')
-  @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   @ApiCreatedResponse({ type: OutboundBatchCommandResponseDto })
   addShipment(
     @Param('batchId') batchId: string,
@@ -76,7 +70,6 @@ export class OutboundBatchV2Controller {
 
   @RequirePermission('fulfillment.warehouse.operate')
   @Delete('outbound-batches/:batchId/shipments/:shipmentId')
-  @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   @ApiOkResponse({ type: OutboundBatchCommandResponseDto })
   excludeShipment(
     @Param('batchId') batchId: string,
@@ -90,7 +83,6 @@ export class OutboundBatchV2Controller {
 
   @RequirePermission('fulfillment.warehouse.operate')
   @Post('batch-work-items/:workItemId/picker-claims')
-  @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   @ApiCreatedResponse({ type: OutboundBatchCommandResponseDto })
   claimPicker(
     @Param('workItemId') workItemId: string,
@@ -103,7 +95,6 @@ export class OutboundBatchV2Controller {
 
   @RequirePermission('fulfillment.warehouse.operate')
   @Post('batch-work-items/:workItemId/packer-claims')
-  @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   @ApiCreatedResponse({ type: OutboundBatchCommandResponseDto })
   claimPacker(
     @Param('workItemId') workItemId: string,
@@ -116,7 +107,6 @@ export class OutboundBatchV2Controller {
 
   @RequirePermission('fulfillment.warehouse.operate')
   @Post('batch-work-items/:workItemId/handoffs')
-  @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   @ApiCreatedResponse({ type: OutboundBatchCommandResponseDto })
   handoff(
     @Param('workItemId') workItemId: string,
@@ -136,7 +126,6 @@ export class OutboundBatchV2Controller {
 
   @RequirePermission('fulfillment.shipment.read')
   @Get('outbound-batches/:batchId/eligible-shipments')
-  @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   @ApiOkResponse({ type: [EligibleShipmentResponseDto] })
   eligibleShipments(@Param('batchId') batchId: string) {
     return this.batches.getEligibleShipments(batchId);
@@ -144,7 +133,6 @@ export class OutboundBatchV2Controller {
 
   @RequirePermission('fulfillment.shipment.read')
   @Get('outbound-batches/:batchId/join-candidates')
-  @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   @ApiOkResponse({ type: [JoinCandidateResponseDto] })
   findJoinCandidates(@Param('batchId') batchId: string, @Query('code') code: string | undefined) {
     if (!code?.trim()) throw new BadRequestException('code is required');
@@ -153,7 +141,6 @@ export class OutboundBatchV2Controller {
 
   @RequirePermission('fulfillment.shipment.read')
   @Get('outbound-batches/:batchId/work-items')
-  @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   @ApiOkResponse({ type: [OutboundBatchWorkItemResponseDto] })
   workItems(@Param('batchId') batchId: string) {
     return this.batches.getWorkItems(batchId);
@@ -161,7 +148,6 @@ export class OutboundBatchV2Controller {
 
   @RequirePermission('fulfillment.shipment.read')
   @Get('outbound-batches/:batchId/v2')
-  @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   @ApiOkResponse({ type: OutboundBatchV2DetailDto })
   detail(@Param('batchId') batchId: string) {
     return this.batches.getBatch(batchId);

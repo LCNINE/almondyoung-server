@@ -2,12 +2,7 @@ import { randomUUID } from 'crypto';
 import { Request } from 'express';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
-import {
-  AuthorizationService,
-  createCheckpointsForTesting,
-  PermissionCheckpoints,
-  ScopeGuard,
-} from '@app/authorization';
+import { enforcedPermissionProvidersForTesting } from '@app/authorization';
 import { GlobalExceptionFilter } from '@app/shared/filters/http-exception.filter';
 import * as postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
@@ -74,6 +69,18 @@ describeIfDb('warehouse demo native runner → Core HTTP → PostgreSQL', () => 
     const { dbService, command, location, eventStore, idempotency, guard } = wiring;
     const catalogReader = new SkuCatalogReader(dbService);
     const catalog = new SkuCatalogService(catalogReader, new SkuCatalogManager(dbService, catalogReader));
+    // 강제출고 권한을 도중에 거둘 수 있게 getter 로 둔다
+    const byRole = {
+      get worker(): readonly string[] {
+        return [
+          'inventory.stock.read',
+          'inventory.stock.operate',
+          'fulfillment.warehouse.operate',
+          'fulfillment.shipment.read',
+          ...(forceAllowed ? ['fulfillment.dispatch.force'] : []),
+        ];
+      },
+    };
     const module = await Test.createTestingModule({
       controllers: [
         WarehouseWorkContextController,
@@ -83,27 +90,10 @@ describeIfDb('warehouse demo native runner → Core HTTP → PostgreSQL', () => 
         PickingCommandV2Controller,
       ],
       providers: [
-        { provide: PermissionCheckpoints, useValue: createCheckpointsForTesting() },
-        ScopeGuard,
+        // 라이브 enforce 와 같은 인가 — 권한 라우트는 새 판정이 정한다.
+        ...enforcedPermissionProvidersForTesting(byRole),
         { provide: LocationOutboundService, useValue: outbound.location },
         { provide: PickingProcessService, useValue: outbound.picking },
-        {
-          provide: AuthorizationService,
-          useValue: {
-            getScopesByRoles: (roles: string[]) =>
-              Promise.resolve(
-                new Set(
-                  roles.includes('worker')
-                    ? [
-                        'inventory.operate',
-                        'fulfillment.warehouse.operate',
-                        ...(forceAllowed ? ['fulfillment.dispatch.force'] : []),
-                      ]
-                    : [],
-                ),
-              ),
-          },
-        },
         {
           provide: InboundService,
           useValue: new InboundService(
@@ -120,7 +110,7 @@ describeIfDb('warehouse demo native runner → Core HTTP → PostgreSQL', () => 
       ],
     }).compile();
     app = module.createNestApplication();
-    // Synthetic local identity; the real ScopeGuard still authorizes every route.
+    // Synthetic local identity; the real PermissionGuard still authorizes every route.
     app.use((req: Request & { user?: { userId: string; roles: string[] } }, _res: unknown, next: () => void) => {
       if (req.headers.authorization === 'Bearer local-worker') req.user = { userId: actorId, roles: ['worker'] };
       next();

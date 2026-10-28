@@ -1,12 +1,20 @@
-import { GUARDS_METADATA } from '@nestjs/common/constants';
+import { REQUIRED_PERMISSIONS_KEY } from '@app/authorization';
+import { PATH_METADATA } from '@nestjs/common/constants';
 import { CsCaseCommentsController } from './cs-case-comments.controller';
 import { CsCaseLabelsController } from './cs-case-labels.controller';
 import { CsCasesController } from './cs-cases.controller';
 import { CsLabelsController } from './cs-labels.controller';
 
-function expectRoleGuarded(controller: object) {
-  const guards = Reflect.getMetadata(GUARDS_METADATA, controller) as unknown[] | undefined;
-  expect(guards?.length).toBeGreaterThan(0);
+function expectPermissionOnEveryRoute(controller: { prototype: object }) {
+  const routes = Object.getOwnPropertyNames(controller.prototype)
+    .filter((name) => name !== 'constructor')
+    .map((name): unknown => Object.getOwnPropertyDescriptor(controller.prototype, name)?.value)
+    .filter((handler): handler is object => typeof handler === 'function')
+    .filter((handler) => Reflect.getMetadata(PATH_METADATA, handler) !== undefined);
+  expect(routes.length).toBeGreaterThan(0);
+  for (const handler of routes) {
+    expect(Reflect.getMetadata(REQUIRED_PERMISSIONS_KEY, handler)).toEqual([expect.stringMatching(/^cs\./)]);
+  }
 }
 
 describe('CsCasesController', () => {
@@ -40,10 +48,10 @@ describe('CsCasesController', () => {
     expect(service.assign).toHaveBeenCalledWith('case-1', 'agent-2', 'u-3');
   });
 
-  it('protects all customer-service controllers with role guards', () => {
-    expectRoleGuarded(CsCasesController);
-    expectRoleGuarded(CsCaseCommentsController);
-    expectRoleGuarded(CsCaseLabelsController);
-    expectRoleGuarded(CsLabelsController);
+  it('protects every customer-service route with a permission', () => {
+    expectPermissionOnEveryRoute(CsCasesController);
+    expectPermissionOnEveryRoute(CsCaseCommentsController);
+    expectPermissionOnEveryRoute(CsCaseLabelsController);
+    expectPermissionOnEveryRoute(CsLabelsController);
   });
 });

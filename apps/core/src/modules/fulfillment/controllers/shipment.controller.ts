@@ -8,18 +8,10 @@ import {
   Post,
   Req,
   UnauthorizedException,
-  UseGuards,
 } from '@nestjs/common';
-import { adminForceDispatchDecisionFrom, type ForceDispatchDecision } from '../../../platform/auth/force-dispatch-authorization';
+import { adminForceDispatchDecisionFrom } from '../../../platform/auth/force-dispatch-authorization';
 import { ApiCreatedResponse, ApiHeader, ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
-import {
-  RequireScopes,
-  ScopeGuard,
-  User,
-  RequirePermission,
-  PermissionCheckpoints,
-} from '@app/authorization';
-import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
+import { User, RequirePermission, PermissionCheckpoints, type PermissionDecision } from '@app/authorization';
 import {
   ForceShipmentDispatchDto,
   ShipmentDispatchActor,
@@ -40,7 +32,7 @@ interface ShipmentDispatchCommandAdapter {
     input: ForceShipmentDispatchDto & {
       actor: ShipmentDispatchActor;
       idempotencyKey: string;
-      authorization: ForceDispatchDecision | undefined;
+      authorization: PermissionDecision | undefined;
     },
   ): Promise<unknown>;
 }
@@ -61,8 +53,6 @@ export class ShipmentController {
 
   @RequirePermission('fulfillment.warehouse.operate')
   @Post(':id/inspection-scans')
-  @UseGuards(ScopeGuard)
-  @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   @ApiHeader({ name: 'Idempotency-Key', required: true })
   @ApiCreatedResponse({ description: 'Shipment inspection progress or the atomically-created dispatch attempt' })
   @ApiOperation({ summary: 'V2 shipment inspection scan' })
@@ -83,8 +73,6 @@ export class ShipmentController {
 
   @RequirePermission('fulfillment.dispatch.force')
   @Post(':id/force-dispatch')
-  @UseGuards(ScopeGuard)
-  @RequireScopes(FULFILLMENT_SCOPE.DISPATCH_FORCE)
   @ApiHeader({ name: 'Idempotency-Key', required: true })
   @ApiCreatedResponse({ description: 'Forced shipment dispatch attempt' })
   @ApiOperation({ summary: 'Force a V2 shipment dispatch with durable reason evidence' })
@@ -97,11 +85,9 @@ export class ShipmentController {
     @Req() request?: unknown,
   ) {
     this.workflowGate.assertV2MutationAllowed('shipment.dispatch.force');
-    const authorization = adminForceDispatchDecisionFrom(request, this.checkpoints.enforced);
-    const legacy = adminForceDispatchDecisionFrom(request, false) !== undefined;
-    this.checkpoints.compareDecision('fulfillment.force_dispatch_decision', legacy, request, [
-      'fulfillment.dispatch.force',
-    ]);
+    const authorization = adminForceDispatchDecisionFrom(request);
+    // 판정 지점 집계만 남긴다 — 결과는 위 낙인을 받은 서비스가 정한다.
+    this.checkpoints.checkRoute('fulfillment.force_dispatch_decision', request, ['fulfillment.dispatch.force']);
     return this.shipmentDispatch.forceDispatch(id, {
       ...dto,
       actor: this.actor(user),

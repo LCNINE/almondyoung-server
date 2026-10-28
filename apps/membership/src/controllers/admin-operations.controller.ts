@@ -19,8 +19,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiBody } from '@nestjs/swagger';
 import { ApplicationException } from '@app/shared';
-import { AuthorizationService, PermissionCheckpoints, RequireScopes, RequirePermission, PiiResponse } from '@app/authorization';
-import { MEMBERSHIP_SCOPE } from '../shared/auth/membership-scopes';
+import { PermissionCheckpoints, RequirePermission, PiiResponse } from '@app/authorization';
 import { IdempotentAdminOp } from '../shared/idempotency/idempotent-admin-op.decorator';
 import { AdminOperationsService } from '../services/admin-operations.service';
 import { AdminMembersReader, AdminMemberStatusFilter } from '../services/admin/admin-members.reader';
@@ -51,7 +50,6 @@ import {
   AdminSubscribeUserRequestDto,
 } from '../shared/dto/request.dto';
 import { JwtAuthGuard, User } from '@app/authorization';
-import { MembershipAdminAuth } from '../shared/decorators/admin-auth.decorator';
 import { SubscriptionService } from '../services/subscription.service';
 import { ArrearsManager } from '../services/arrears/arrears.manager';
 import { ArrearsReader } from '../services/arrears/arrears.reader';
@@ -71,7 +69,6 @@ function monthsBefore(month: string, n: number): string {
  */
 @ApiTags('admin')
 @Controller('admin')
-@MembershipAdminAuth()
 @UseFilters(SubscriptionExceptionFilter)
 export class AdminOperationsController {
   private readonly logger = new Logger(AdminOperationsController.name);
@@ -82,7 +79,6 @@ export class AdminOperationsController {
     private readonly cancellationService: SubscriptionCancellationService,
     private readonly contractEventManager: ContractEventManager,
     private readonly adminMembersReader: AdminMembersReader,
-    private readonly authorizationService: AuthorizationService,
     private readonly arrearsReader: ArrearsReader,
     private readonly arrearsManager: ArrearsManager,
     private readonly checkpoints: PermissionCheckpoints,
@@ -628,7 +624,6 @@ export class AdminOperationsController {
   })
   @UseGuards(JwtAuthGuard)
   // 해지·환불 자체는 CS 일상 업무라 admin 에게 열어 두고, 정책 초과 환불만 아래에서 별도 검사한다.
-  @RequireScopes(MEMBERSHIP_SCOPE.BILLING_REFUND)
   @IdempotentAdminOp('force-cancel')
   async forceCancelSubscription(
     @User('userId') userId: string,
@@ -643,18 +638,10 @@ export class AdminOperationsController {
         `강제 구독 취소 요청 - contractId: ${contractId}, adminId: ${adminId}, refundType: ${dto.refundType}`,
       );
 
-      // 정책 산정액 초과 환불 권한. master 는 ScopeGuard 와 동일하게 항상 통과한다.
-      const legacyOverride = await this.checkpoints.legacyVerdict(
-        async () =>
-          (roles ?? []).includes('master') ||
-          (await this.authorizationService.hasScope({ roles: roles ?? [] }, MEMBERSHIP_SCOPE.BILLING_REFUND_OVERRIDE)),
-      );
-      const canOverridePolicyAmount = this.checkpoints.compare(
-        'membership.refund_override',
-        legacyOverride,
-        { roles: roles ?? [] },
-        ['membership.billing.refund_override'],
-      );
+      // 정책 산정액 초과 환불 권한.
+      const canOverridePolicyAmount = this.checkpoints.check('membership.refund_override', { roles: roles ?? [] }, [
+        'membership.billing.refund_override',
+      ]);
 
       const result = await this.cancellationService.forceCancelSubscription(
         contractId,
@@ -695,7 +682,6 @@ export class AdminOperationsController {
   })
   @ApiParam({ name: 'contractId', description: '구독 계약 ID', type: 'string' })
   @UseGuards(JwtAuthGuard)
-  @RequireScopes(MEMBERSHIP_SCOPE.BILLING_REFUND)
   @IdempotentAdminOp('schedule-cancel')
   async scheduleCancellation(
     @User('userId') adminId: string,
@@ -732,7 +718,6 @@ export class AdminOperationsController {
   })
   @ApiParam({ name: 'contractId', description: '구독 계약 ID', type: 'string' })
   @UseGuards(JwtAuthGuard)
-  @RequireScopes(MEMBERSHIP_SCOPE.BILLING_REFUND)
   @IdempotentAdminOp('refund-manual-complete')
   async completeManualRefund(
     @User('userId') adminId: string,
@@ -1346,7 +1331,6 @@ export class AdminOperationsController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '미수 면제' })
   @ApiParam({ name: 'arrearsId', description: '미수 원장 ID' })
-  @RequireScopes(MEMBERSHIP_SCOPE.BILLING_REFUND)
   @IdempotentAdminOp('arrears-waive')
   async waiveArrears(
     @User('userId') adminId: string,
@@ -1375,7 +1359,6 @@ export class AdminOperationsController {
   @Patch('arrears/:arrearsId/amount')
   @ApiOperation({ summary: '미수 금액 조정' })
   @ApiParam({ name: 'arrearsId', description: '미수 원장 ID' })
-  @RequireScopes(MEMBERSHIP_SCOPE.BILLING_REFUND)
   @IdempotentAdminOp('arrears-adjust')
   async adjustArrearsAmount(
     @User('userId') adminId: string,

@@ -4,14 +4,9 @@ import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
 import { inRollbackTx, makeDb, seedPickableShipment, receiveStock, wireLogistics } from './__support__';
 import { assembleOutbound, ambientDbService, startBatchFor } from './__support__/simple-outbound-wiring';
 
-import { SCOPE_AUTHORIZATION_DECISION_BRAND } from '@app/authorization';
-import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
+import { grantedPermissionDecision } from './__support__/force-dispatch-decision';
 import { isPreparationBlocked } from './outbound-preparation-result';
-const authorization = {
-  scope: FULFILLMENT_SCOPE.DISPATCH_FORCE,
-  granted: true as const,
-  [SCOPE_AUTHORIZATION_DECISION_BRAND]: true as const,
-};
+const authorization = grantedPermissionDecision('fulfillment.dispatch.force');
 const DATABASE_URL = process.env.DATABASE_URL;
 if (process.env.REQUIRE_WAREHOUSE_DEMO_DB === '1' && !DATABASE_URL) throw new Error('DATABASE_URL is required');
 const describeDb = DATABASE_URL ? describe : describe.skip;

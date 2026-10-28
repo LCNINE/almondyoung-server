@@ -1,7 +1,6 @@
-import { Controller, Get, Param, ParseUUIDPipe, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Param, ParseUUIDPipe, Query } from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
-import { RequirePermission, RequireScopes, ScopeGuard } from '@app/authorization';
-import { INVENTORY_SCOPE } from '../../../platform/auth/inventory-scopes';
+import { RequirePermission } from '@app/authorization';
 import { CustomerReturnService } from './customer-return.service';
 import { ListReceivingCustomerReturnsQueryDto } from './dto/list-receiving-customer-returns.dto';
 
@@ -17,8 +16,6 @@ export class CustomerReturnReceivingController {
 
   @RequirePermission('inventory.stock.operate')
   @Get()
-  @UseGuards(ScopeGuard)
-  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({
     summary: '창고 반품 도착 대기 목록 — 그 창고가 배송완료한 도착 전 반품과 그 창고에서 받기 시작한 반품',
   })
@@ -28,8 +25,6 @@ export class CustomerReturnReceivingController {
 
   @RequirePermission('inventory.stock.operate')
   @Get(':id')
-  @UseGuards(ScopeGuard)
-  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '반품 기록 조회(창고) — 줄·SKU 항목별 기대·도착·검수 수량과 바코드' })
   @ApiParam({ name: 'id', description: '반품 기록 id(customer_returns.id)' })
   findOne(@Param('id', ParseUUIDPipe) id: string) {

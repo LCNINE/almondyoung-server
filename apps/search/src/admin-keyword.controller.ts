@@ -1,5 +1,5 @@
 import { BadRequestException, Body, Controller, Get, Param, Patch, Query, UseGuards } from '@nestjs/common';
-import { AdminRealmGuard, JwtAuthGuard, RequirePermission, PermissionGuard } from '@app/authorization';
+import { JwtAuthGuard, RequirePermission, PermissionGuard } from '@app/authorization';
 import { AdminKeywordStatisticsQueryDto, AdminKeywordStatisticsResponseDto } from './dto/admin-keyword-statistics.dto';
 import {
   AdminKeywordDetailQueryDto,
@@ -15,12 +15,11 @@ import { SearchKeywordService } from './search-keyword.service';
 /**
  * 관리자 검색 키워드 통계. admin-web 프록시를 통해서만 호출된다.
  *
- * JwtAuthGuard 뒤에 AdminRealmGuard — 모든 서비스가 AUTH_SECRET 을 공유하므로
- * 인증만으로는 고객 토큰도 통과한다. staff role(admin/master)을 강제한다
- * (notification/channel-adapter 와 같은 짝). AUTH_SECRET 또는 OIDC_ISSUER_URL
+ * JwtAuthGuard 뒤에 PermissionGuard — 모든 서비스가 AUTH_SECRET 을 공유하므로
+ * 인증만으로는 고객 토큰도 통과한다. 라우트의 권한 키로 판정한다. AUTH_SECRET 또는 OIDC_ISSUER_URL
  * env 가 있어야 부팅된다 (AuthorizationModule 의 AUTH_CONFIG 팩토리).
  */
-@UseGuards(JwtAuthGuard, PermissionGuard, AdminRealmGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 @Controller('search/admin/keywords')
 export class AdminKeywordController {
   constructor(

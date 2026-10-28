@@ -1,7 +1,7 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Patch, Put, Res } from '@nestjs/common';
 import { ApiBearerAuth, ApiBody, ApiOperation, ApiParam, ApiProduces, ApiResponse, ApiTags } from '@nestjs/swagger';
 import type { FastifyReply } from 'fastify';
-import { RequireScopes, User, RequirePermission } from '@app/authorization';
+import { User, RequirePermission } from '@app/authorization';
 import { ALMOND_TEMPLATE_THUMBNAIL_HEADERS } from '../constants/almond-template.constants';
 import {
   AdminAlmondTemplateDetailResponseDto,
@@ -24,7 +24,6 @@ export class AdminAlmondTemplatesController {
 
   @RequirePermission('marketing.almond_template.read')
   @Get()
-  @RequireScopes('admin:template:write')
   @ApiOperation({ summary: '아몬드템플릿 전체 목록 (draft 포함)' })
   @ApiResponse({ status: 200, type: [AdminAlmondTemplateSummaryResponseDto] })
   list(): Promise<AdminAlmondTemplateSummaryResponseDto[]> {
@@ -33,7 +32,6 @@ export class AdminAlmondTemplatesController {
 
   @RequirePermission('marketing.almond_template.read')
   @Get(':id')
-  @RequireScopes('admin:template:write')
   @ApiOperation({ summary: '아몬드템플릿 상세 (상태 무관)' })
   @ApiResponse({ status: 200, type: AdminAlmondTemplateDetailResponseDto })
   get(@Param('id', ParseUUIDPipe) id: string): Promise<AdminAlmondTemplateDetailResponseDto> {
@@ -42,7 +40,6 @@ export class AdminAlmondTemplatesController {
 
   @RequirePermission('marketing.almond_template.read')
   @Get(':id/thumbnail.svg')
-  @RequireScopes('admin:template:write')
   @ApiParam({ name: 'id', format: 'uuid' })
   @ApiOperation({ summary: '아몬드템플릿 썸네일 SVG (상태 무관)' })
   @ApiProduces('image/svg+xml')
@@ -59,7 +56,6 @@ export class AdminAlmondTemplatesController {
 
   @RequirePermission('marketing.almond_template.write')
   @Put()
-  @RequireScopes('admin:template:write')
   @ApiOperation({
     summary: '아몬드템플릿 저장',
     description:
@@ -79,7 +75,6 @@ export class AdminAlmondTemplatesController {
 
   @RequirePermission('marketing.almond_template.write')
   @Patch(':id/status')
-  @RequireScopes('admin:template:write')
   @ApiOperation({ summary: '아몬드템플릿 게시 상태 변경 (draft ↔ published)' })
   @ApiBody({ type: UpdateAlmondTemplateStatusDto })
   @ApiResponse({ status: 200, type: AdminAlmondTemplateSummaryResponseDto })
@@ -94,7 +89,6 @@ export class AdminAlmondTemplatesController {
   @RequirePermission('marketing.almond_template.write')
   @Delete(':id')
   @HttpCode(204)
-  @RequireScopes('admin:template:write')
   @ApiOperation({ summary: '아몬드템플릿 삭제' })
   @ApiResponse({ status: 204 })
   async remove(@Param('id', ParseUUIDPipe) id: string, @User('userId') userId: string): Promise<void> {

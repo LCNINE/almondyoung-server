@@ -15,8 +15,7 @@ describe('inventory authorization contract', () => {
     expect(INVENTORY_SCOPES.every((scope) => scope.description.length > 0)).toBe(true);
   });
 
-  // admin-web 의 inventory 화면 15개가 전부 requireRole={['admin','master']} 다.
-  // admin 이 네 스코프를 다 갖지 않으면 화면에는 들어가고 저장에서 403 을 받는다.
+  // 라우트 판정은 권한 키가 한다. 이 매핑은 부팅 때 스코프 표를 채우는 데만 쓰이고, 표의 행을 바꾸지 않도록 고정한다.
   it('grants every inventory scope to admin', () => {
     expect(sorted('admin')).toEqual([
       'inventory.adjust',

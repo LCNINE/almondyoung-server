@@ -106,7 +106,6 @@ describeIfDb('입점사 상자 발송 되돌리기 (K3 PR5, PostgreSQL integrati
     return new ShipmentRecallService(
       pinned,
       new FulfillmentCommandService(pinned),
-      {} as never,
       waybills,
       {} as never, // inventory — 입점사 갈래는 부르지 않는다
       {

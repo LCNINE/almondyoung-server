@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Post, Put, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiBody, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { RequireScopes, User, RequirePermission, PiiResponse } from '@app/authorization';
+import { User, RequirePermission, PiiResponse } from '@app/authorization';
 import {
   AdminShopListingDetailResponseDto,
   AdminShopListingDto,
@@ -20,7 +20,6 @@ export class AdminShopListingsController {
   @PiiResponse({ fields: { '[].contactPhone': 'phone' }, subjects: [{ path: '[].id', type: 'shop_listing' }] })
   @RequirePermission('cs.review.read')
   @Get()
-  @RequireScopes('admin:ugc:read')
   @ApiOperation({ summary: '매물 목록 (관리자)', description: 'status=pending 이면 제출 오래된 순' })
   @ApiResponse({ status: 200, type: [AdminShopListingResponseDto] })
   list(@Query() query: AdminShopListingListQueryDto): Promise<AdminShopListingResponseDto[]> {
@@ -30,7 +29,6 @@ export class AdminShopListingsController {
   @PiiResponse({ fields: { contactPhone: 'phone' }, subjects: [{ param: 'id', type: 'shop_listing' }], reveal: true })
   @RequirePermission('cs.review.read')
   @Get(':id')
-  @RequireScopes('admin:ugc:read')
   @ApiOperation({ summary: '매물 상세 + 판정 이력 (관리자)' })
   @ApiResponse({ status: 200, type: AdminShopListingDetailResponseDto })
   get(@Param('id', ParseUUIDPipe) id: string): Promise<AdminShopListingDetailResponseDto> {
@@ -39,7 +37,6 @@ export class AdminShopListingsController {
 
   @RequirePermission('marketing.shop_listing.write')
   @Post()
-  @RequireScopes('admin:ugc:modify')
   @ApiOperation({ summary: '매물 등록 (관리자) — 바로 게시' })
   @ApiBody({ type: AdminShopListingDto })
   @ApiResponse({ status: 201, type: AdminShopListingResponseDto })
@@ -49,7 +46,6 @@ export class AdminShopListingsController {
 
   @RequirePermission('marketing.shop_listing.write')
   @Put(':id')
-  @RequireScopes('admin:ugc:modify')
   @ApiOperation({ summary: '매물 수정 (관리자) — 상태 유지' })
   @ApiBody({ type: AdminShopListingDto })
   @ApiResponse({ status: 200, type: AdminShopListingResponseDto })
@@ -63,7 +59,6 @@ export class AdminShopListingsController {
 
   @RequirePermission('marketing.shop_listing.write')
   @Post(':id/approve')
-  @RequireScopes('admin:ugc:modify')
   @ApiOperation({ summary: '승인', description: 'expectedSubmittedAt 이 지금 글과 다르면 409 — 그사이 회원이 고쳤다' })
   @ApiBody({ type: ModerateShopListingDto, required: false })
   @ApiResponse({ status: 201, type: AdminShopListingResponseDto })
@@ -77,7 +72,6 @@ export class AdminShopListingsController {
 
   @RequirePermission('marketing.shop_listing.write')
   @Post(':id/reject')
-  @RequireScopes('admin:ugc:modify')
   @ApiOperation({ summary: '거절 (사유 필수)' })
   @ApiBody({ type: RejectShopListingDto })
   @ApiResponse({ status: 201, type: AdminShopListingResponseDto })
@@ -91,7 +85,6 @@ export class AdminShopListingsController {
 
   @RequirePermission('marketing.shop_listing.write')
   @Post(':id/hide')
-  @RequireScopes('admin:ugc:modify')
   @ApiOperation({ summary: '숨김' })
   @ApiResponse({ status: 201, type: AdminShopListingResponseDto })
   hide(@Param('id', ParseUUIDPipe) id: string, @User('userId') adminId: string): Promise<AdminShopListingResponseDto> {
@@ -100,7 +93,6 @@ export class AdminShopListingsController {
 
   @RequirePermission('marketing.shop_listing.write')
   @Post(':id/unhide')
-  @RequireScopes('admin:ugc:modify')
   @ApiOperation({ summary: '숨김 해제' })
   @ApiResponse({ status: 201, type: AdminShopListingResponseDto })
   unhide(@Param('id', ParseUUIDPipe) id: string, @User('userId') adminId: string): Promise<AdminShopListingResponseDto> {
@@ -109,7 +101,6 @@ export class AdminShopListingsController {
 
   @RequirePermission('marketing.shop_listing.write')
   @Post(':id/close')
-  @RequireScopes('admin:ugc:modify')
   @ApiOperation({ summary: '거래완료로 표시 (관리자)' })
   @ApiResponse({ status: 201, type: AdminShopListingResponseDto })
   close(@Param('id', ParseUUIDPipe) id: string, @User('userId') adminId: string): Promise<AdminShopListingResponseDto> {
@@ -118,7 +109,6 @@ export class AdminShopListingsController {
 
   @RequirePermission('marketing.shop_listing.write')
   @Post(':id/reopen')
-  @RequireScopes('admin:ugc:modify')
   @ApiOperation({ summary: '거래완료 해제 (관리자)' })
   @ApiResponse({ status: 201, type: AdminShopListingResponseDto })
   reopen(@Param('id', ParseUUIDPipe) id: string, @User('userId') adminId: string): Promise<AdminShopListingResponseDto> {
@@ -128,7 +118,6 @@ export class AdminShopListingsController {
   @RequirePermission('marketing.shop_listing.write')
   @Delete(':id')
   @HttpCode(204)
-  @RequireScopes('admin:ugc:modify')
   @ApiOperation({ summary: '매물 삭제 (관리자)' })
   async remove(@Param('id', ParseUUIDPipe) id: string, @User('userId') adminId: string): Promise<void> {
     await this.service.deleteByAdmin(id, adminId);

@@ -4,9 +4,9 @@ import { RoleAssignmentController } from './role-assignment.controller';
 const handlers = ['rolesOf', 'replaceAll', 'replaceStaff', 'members', 'addMembers', 'removeMember'] as const;
 
 describe('RoleAssignmentController', () => {
-  it.each(handlers)('%s keeps the legacy system-role marker until the decision switch', (name) => {
+  it.each(handlers)('%s is decided by its permission key alone', (name) => {
     const fn = RoleAssignmentController.prototype[name];
-    expect(Reflect.getMetadata(REQUIRED_SCOPES_KEY, fn)).toEqual(['master']);
+    expect(Reflect.getMetadata(REQUIRED_SCOPES_KEY, fn)).toBeUndefined();
     expect(Reflect.getMetadata(REQUIRED_PERMISSIONS_KEY, fn)).toHaveLength(1);
   });
 });

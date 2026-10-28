@@ -1,11 +1,11 @@
 import { isPreparationBlocked } from './outbound-preparation-result';
 import { randomUUID } from 'crypto';
 import { and, eq, inArray } from 'drizzle-orm';
-import { SCOPE_AUTHORIZATION_DECISION_BRAND, ScopeAuthorizationDecision } from '@app/authorization';
 import { wmsTables } from '../../inventory/schema/inventory.schema';
-import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
+import { FULFILLMENT_PERMISSION } from '../../../platform/auth/fulfillment-permissions';
 import { inRollbackTx, makeDb, seedPickableShipment, seedShipmentForExistingStock } from './__support__';
 import { addSecondSimpleOutboundLine } from './__support__/simple-outbound-fixtures';
+import { grantedPermissionDecision } from './__support__/force-dispatch-decision';
 import { assembleOutbound, assembleSimpleOutbound, startBatchFor } from './__support__/simple-outbound-wiring';
 
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -789,17 +789,9 @@ describeIfDb('SimpleOutboundService.forceComplete', () => {
     await sql.end({ timeout: 5 });
   });
 
-  const authorization: ScopeAuthorizationDecision = {
-    scope: FULFILLMENT_SCOPE.DISPATCH_FORCE,
-    granted: true,
-    [SCOPE_AUTHORIZATION_DECISION_BRAND]: true,
-  };
+  const authorization = grantedPermissionDecision(FULFILLMENT_PERMISSION.DISPATCH_FORCE);
 
-  const stationAuthorization: ScopeAuthorizationDecision = {
-    scope: FULFILLMENT_SCOPE.DISPATCH_STATION_FORCE,
-    granted: true,
-    [SCOPE_AUTHORIZATION_DECISION_BRAND]: true,
-  };
+  const stationAuthorization = grantedPermissionDecision(FULFILLMENT_PERMISSION.DISPATCH_STATION_FORCE);
 
   it('스테이션 강제출고 판정으로도 남은 수량을 채워 출고한다', async () => {
     await inRollbackTx(db, async (tx) => {
@@ -834,7 +826,11 @@ describeIfDb('SimpleOutboundService.forceComplete', () => {
         )
         .limit(1);
       expect(auditRow?.metadata).toMatchObject({
-        authorization: { scope: FULFILLMENT_SCOPE.DISPATCH_STATION_FORCE, granted: true },
+        authorization: {
+          scope: FULFILLMENT_PERMISSION.DISPATCH_STATION_FORCE,
+          granted: true,
+          source: 'permission_guard',
+        },
       });
     });
   });

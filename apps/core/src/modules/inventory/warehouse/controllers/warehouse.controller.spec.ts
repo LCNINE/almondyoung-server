@@ -1,6 +1,5 @@
-import { REQUIRED_SCOPES_KEY, ScopeGuard } from '@app/authorization';
+import { REQUIRED_PERMISSIONS_KEY } from '@app/authorization';
 import { GUARDS_METADATA } from '@nestjs/common/constants';
-import { INVENTORY_SCOPE } from '../../../../platform/auth/inventory-scopes';
 import { WarehouseController } from './warehouse.controller';
 
 describe('WarehouseController authorization contract', () => {
@@ -15,28 +14,18 @@ describe('WarehouseController authorization contract', () => {
   const WRITE_HANDLERS = ['create', 'update', 'remove'];
   const READ_HANDLERS = ['findAll', 'findOne', 'getStockSummary'];
 
-  it.each(WRITE_HANDLERS)('closes %s behind the warehouse management scope', (name) => {
-    const handler = handlerFor(name);
-    expect(handler).toBeDefined();
-    expect(Reflect.getMetadata(REQUIRED_SCOPES_KEY, handler)).toEqual([INVENTORY_SCOPE.WAREHOUSE_MANAGE]);
+  it.each(WRITE_HANDLERS)('closes %s behind the warehouse write permission', (name) => {
+    expect(Reflect.getMetadata(REQUIRED_PERMISSIONS_KEY, handlerFor(name))).toEqual(['inventory.warehouse.write']);
   });
 
-  // RequireScopes 는 메타데이터일 뿐이라 ScopeGuard 가 없으면 아무것도 막지 못한다.
-  // 데코레이터 하나만 붙이고 끝내는 회귀를 이 어서션이 잡는다. #551 에서 가드가 클래스
-  // 레벨로 올라갔다 — inventory 컨트롤러 18개가 모두 같은 형태다.
-  it('binds ScopeGuard at the controller level so every scoped handler is enforced', () => {
-    expect(Reflect.getMetadata(GUARDS_METADATA, WarehouseController)).toEqual([ScopeGuard]);
+  // warehouse-app 이 GET /inventory/warehouses 로 창고를 고르므로 읽기는 재고 조회 권한이면 된다.
+  it.each(READ_HANDLERS)('opens %s to the stock read permission so the field PDA can read it', (name) => {
+    expect(Reflect.getMetadata(REQUIRED_PERMISSIONS_KEY, handlerFor(name))).toEqual(['inventory.stock.read']);
   });
 
-  // #546 은 읽기를 무표시로 뒀지만, 그건 열려 있던 게 아니라 AdminRealmGuard 가
-  // admin/master 로 막고 있던 것이다. warehouse-app 이 GET /inventory/warehouses 로 창고를
-  // 고르므로 #551 에서 읽기에 OPERATE 를 준다 — logistics_worker 가 통과하게 만드는 게 목적이다.
-  it.each(READ_HANDLERS)('opens %s to inventory.operate so the field PDA can read it', (name) => {
-    expect(Reflect.getMetadata(REQUIRED_SCOPES_KEY, handlerFor(name))).toEqual([INVENTORY_SCOPE.OPERATE]);
-  });
-
-  it('does not put a class-level scope requirement on the controller', () => {
-    expect(Reflect.getMetadata(REQUIRED_SCOPES_KEY, WarehouseController)).toBeUndefined();
+  it('carries no legacy guard or class-level requirement on the controller', () => {
+    expect(Reflect.getMetadata(GUARDS_METADATA, WarehouseController)).toBeUndefined();
+    expect(Reflect.getMetadata(REQUIRED_PERMISSIONS_KEY, WarehouseController)).toBeUndefined();
   });
 
   it('still delegates to the service through the mapper', async () => {

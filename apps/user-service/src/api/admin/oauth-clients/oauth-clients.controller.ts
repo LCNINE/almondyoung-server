@@ -1,4 +1,4 @@
-import { RequireScopes, RequirePermission } from '@app/authorization';
+import { RequirePermission } from '@app/authorization';
 import { Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import {
@@ -19,7 +19,6 @@ export class OAuthClientsController {
   @ApiResponse({ status: 200, type: [OAuthClientResponseDto] })
   @RequirePermission('system.oauth_client.write')
   @Get()
-  @RequireScopes('master')
   list(): Promise<OAuthClientResponseDto[]> {
     return this.service.listClients();
   }
@@ -28,7 +27,6 @@ export class OAuthClientsController {
   @ApiResponse({ status: 200, type: OAuthClientResponseDto })
   @RequirePermission('system.oauth_client.write')
   @Get(':clientId')
-  @RequireScopes('master')
   get(@Param('clientId') clientId: string): Promise<OAuthClientResponseDto> {
     return this.service.getClient(clientId);
   }
@@ -37,7 +35,6 @@ export class OAuthClientsController {
   @ApiResponse({ status: 201, type: OAuthClientWithSecretResponseDto })
   @RequirePermission('system.oauth_client.write')
   @Post()
-  @RequireScopes('master')
   create(@Body() dto: CreateOAuthClientDto): Promise<OAuthClientWithSecretResponseDto> {
     return this.service.createClient(dto);
   }
@@ -46,7 +43,6 @@ export class OAuthClientsController {
   @ApiResponse({ status: 200, type: OAuthClientResponseDto })
   @RequirePermission('system.oauth_client.write')
   @Patch(':clientId')
-  @RequireScopes('master')
   update(
     @Param('clientId') clientId: string,
     @Body() dto: UpdateOAuthClientDto,
@@ -58,7 +54,6 @@ export class OAuthClientsController {
   @ApiResponse({ status: 200, type: OAuthClientWithSecretResponseDto })
   @RequirePermission('system.oauth_client.write')
   @Post(':clientId/rotate-secret')
-  @RequireScopes('master')
   rotateSecret(@Param('clientId') clientId: string): Promise<OAuthClientWithSecretResponseDto> {
     return this.service.rotateSecret(clientId);
   }
@@ -67,7 +62,6 @@ export class OAuthClientsController {
   @ApiResponse({ status: 200, type: OAuthClientResponseDto })
   @RequirePermission('system.oauth_client.write')
   @Post(':clientId/clear-previous-secret')
-  @RequireScopes('master')
   clearPreviousSecret(@Param('clientId') clientId: string): Promise<OAuthClientResponseDto> {
     return this.service.clearPreviousSecret(clientId);
   }
@@ -76,7 +70,6 @@ export class OAuthClientsController {
   @ApiResponse({ status: 200, type: OAuthClientResponseDto })
   @RequirePermission('system.oauth_client.write')
   @Delete(':clientId')
-  @RequireScopes('master')
   deactivate(@Param('clientId') clientId: string): Promise<OAuthClientResponseDto> {
     return this.service.deactivateClient(clientId);
   }

@@ -1,6 +1,6 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { RolesGuard, User, RequirePermission } from '@app/authorization';
+import { User, RequirePermission } from '@app/authorization';
 import { UnauthorizedError } from '@app/shared';
 import { ArchiveService } from './archive.service';
 import type { ArchiveSpace } from './schema/archive.schema';
@@ -21,7 +21,6 @@ type AuthenticatedUser = { id?: string; userId?: string; sub?: string } | undefi
 
 @ApiTags('Archive')
 @ApiBearerAuth()
-@UseGuards(RolesGuard('master', 'admin'))
 @Controller('archive')
 export class ArchiveController {
   constructor(private readonly service: ArchiveService) {}

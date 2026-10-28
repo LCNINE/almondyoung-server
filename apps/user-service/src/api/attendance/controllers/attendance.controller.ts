@@ -1,4 +1,4 @@
-import { type JwtPayload, MasterRoleGuard, PermissionCheckpoints, RequirePermission } from '@app/authorization';
+import { type JwtPayload, PermissionCheckpoints, RequirePermission } from '@app/authorization';
 import { CurrentUser } from '@app/shared/decorators/current-user.decorator';
 import {
   Body,
@@ -36,7 +36,6 @@ import {
   UpdateWorksiteDto,
   WorksiteDto,
 } from '../dto/attendance.dto';
-import { legacyAttendanceManager } from '../attendance-authz';
 
 @Controller('attendance')
 @UseGuards(ActiveAttendanceStaffGuard)
@@ -73,12 +72,9 @@ export class AttendanceController {
       leave: leaves.find((item) => item.userId === user.id) ?? null,
       settings,
       worksites: sites.map((site) => ({ ...site, latitude: Number(site.latitude), longitude: Number(site.longitude) })),
-      isMaster: this.checkpoints.compare(
-        'attendance.manager_view',
-        legacyAttendanceManager(user.roles),
-        { roles: user.roles ?? [] },
-        ['attendance.staff.read'],
-      ),
+      isMaster: this.checkpoints.check('attendance.manager_view', { roles: user.roles ?? [] }, [
+        'attendance.staff.read',
+      ]),
     };
   }
 
@@ -97,12 +93,7 @@ export class AttendanceController {
     if (
       userId &&
       userId !== user.id &&
-      !this.checkpoints.compare(
-        'attendance.staff_records',
-        legacyAttendanceManager(user.roles),
-        { roles: user.roles ?? [] },
-        ['attendance.staff.read'],
-      )
+      !this.checkpoints.check('attendance.staff_records', { roles: user.roles ?? [] }, ['attendance.staff.read'])
     ) {
       throw new ForbiddenException('다른 직원의 상세 기록은 마스터만 조회할 수 있어요.');
     }
@@ -181,12 +172,7 @@ export class AttendanceController {
       .select()
       .from(attendanceWorksites)
       .where(
-        this.checkpoints.compare(
-          'attendance.worksite_inactive',
-          legacyAttendanceManager(user.roles),
-          { roles: user.roles ?? [] },
-          ['attendance.staff.read'],
-        )
+        this.checkpoints.check('attendance.worksite_inactive', { roles: user.roles ?? [] }, ['attendance.staff.read'])
           ? undefined
           : eq(attendanceWorksites.active, true),
       );
@@ -199,7 +185,6 @@ export class AttendanceController {
   }
 
   @Post('worksites')
-  @UseGuards(MasterRoleGuard)
   @RequirePermission('attendance.worksite.write')
   async createSite(@CurrentUser() user: JwtPayload, @Body() dto: WorksiteDto) {
     if (dto.accuracyMeters >= dto.radiusMeters || !dto.name.trim()) {
@@ -221,7 +206,6 @@ export class AttendanceController {
   }
 
   @Put('worksites/:id')
-  @UseGuards(MasterRoleGuard)
   @RequirePermission('attendance.worksite.write')
   async updateSite(
     @CurrentUser() user: JwtPayload,

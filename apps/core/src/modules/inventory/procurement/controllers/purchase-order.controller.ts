@@ -12,11 +12,9 @@ import {
   HttpCode,
   Headers,
   HttpStatus,
-  UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery, ApiParam } from '@nestjs/swagger';
-import { RequireScopes, ScopeGuard, User, RequirePermission } from '@app/authorization';
-import { INVENTORY_SCOPE } from '../../../../platform/auth/inventory-scopes';
+import { User, RequirePermission } from '@app/authorization';
 import { PurchaseOrderService } from '../services/purchase-order.service';
 import { PurchaseOrderCartService } from '../services/purchase-order-cart.service';
 import {
@@ -50,7 +48,6 @@ interface JwtPayload {
 
 @ApiTags('Purchase Orders')
 @Controller('purchase-orders')
-@UseGuards(ScopeGuard)
 export class PurchaseOrderController {
   constructor(
     private readonly purchaseOrderService: PurchaseOrderService,
@@ -61,7 +58,6 @@ export class PurchaseOrderController {
 
   @RequirePermission('inventory.master.write')
   @Post()
-  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '발주 생성' })
   @ApiResponse({
     status: 201,
@@ -75,7 +71,6 @@ export class PurchaseOrderController {
 
   @RequirePermission('inventory.master.write')
   @Post('from-cart')
-  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '장바구니에서 발주 생성' })
   @ApiResponse({
     status: 201,
@@ -92,7 +87,6 @@ export class PurchaseOrderController {
 
   @RequirePermission('inventory.master.read')
   @Get()
-  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '발주 목록 조회' })
   @ApiQuery({ name: 'status', enum: PurchaseOrderStatus, required: false })
   @ApiQuery({ name: 'type', enum: PurchaseOrderType, required: false })
@@ -123,7 +117,6 @@ export class PurchaseOrderController {
 
   @RequirePermission('inventory.master.write')
   @Post('cart')
-  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '발주대기리스트에 아이템 추가' })
   @ApiResponse({
     status: 201,
@@ -136,7 +129,6 @@ export class PurchaseOrderController {
 
   @RequirePermission('inventory.master.read')
   @Get('cart')
-  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '발주대기리스트 조회' })
   @ApiQuery({ name: 'type', enum: PurchaseOrderType, required: false })
   @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
@@ -149,7 +141,6 @@ export class PurchaseOrderController {
 
   @RequirePermission('inventory.master.write')
   @Put('cart/:itemId')
-  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '발주대기리스트 아이템 수정' })
   @ApiResponse({
     status: 200,
@@ -166,7 +157,6 @@ export class PurchaseOrderController {
 
   @RequirePermission('inventory.master.write')
   @Delete('cart/:itemId')
-  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '발주대기리스트에서 아이템 제거' })
   @ApiResponse({
     status: 204,
@@ -180,7 +170,6 @@ export class PurchaseOrderController {
 
   @RequirePermission('inventory.master.write')
   @Delete('cart')
-  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '발주대기리스트 비우기' })
   @ApiQuery({ name: 'type', enum: PurchaseOrderType, required: false })
   @ApiResponse({
@@ -197,7 +186,6 @@ export class PurchaseOrderController {
 
   @RequirePermission('inventory.master.read')
   @Get(':id')
-  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '발주 상세 조회' })
   @ApiResponse({
     status: 200,
@@ -215,7 +203,6 @@ export class PurchaseOrderController {
 
   @RequirePermission('inventory.master.write')
   @Put(':id/lines')
-  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '발주 라인 수정 (created/confirmed 상태)' })
   @ApiResponse({
     status: 200,
@@ -235,7 +222,6 @@ export class PurchaseOrderController {
 
   @RequirePermission('inventory.master.write')
   @Post(':poId/lines/:skuId/order')
-  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '발주 라인 실행 (실제로 발주함)' })
   @ApiParam({ name: 'poId', description: '발주 ID' })
   @ApiParam({ name: 'skuId', description: 'SKU ID — 라인 주소' })
@@ -254,7 +240,6 @@ export class PurchaseOrderController {
 
   @RequirePermission('inventory.master.write')
   @Post(':poId/lines/:skuId/unavailable')
-  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '발주 라인 종결 (끝내 발주 못 함)' })
   @ApiParam({ name: 'poId', description: '발주 ID' })
   @ApiParam({ name: 'skuId', description: 'SKU ID — 라인 주소' })
@@ -273,7 +258,6 @@ export class PurchaseOrderController {
 
   @RequirePermission('inventory.stock.operate')
   @Post(':poId/receipts')
-  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '발주 수령 — 한 회차에 여러 SKU. 멱등키 필수' })
   @ApiResponse({ status: 201, type: PurchaseOrderReceiptResponseDto })
   @ApiResponse({ status: 409, description: '취소된 발주 · 주문 전/불가/전량 입고/잔량 포기 품목 · 남은 수량 초과' })
@@ -288,7 +272,6 @@ export class PurchaseOrderController {
 
   @RequirePermission('inventory.stock.operate')
   @Post('receipt-lines/:receiptLineId/cancel')
-  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '발주 수령 취소 — 당일·전량·적치/회송 전' })
   @ApiResponse({ status: 200, type: PurchaseOrderReceiptCancelResponseDto })
   @HttpCode(HttpStatus.OK)
@@ -308,7 +291,6 @@ export class PurchaseOrderController {
 
   @RequirePermission('inventory.master.write')
   @Post(':poId/lines/:skuId/short-close')
-  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '잔량 포기 — 남은 수량이 있는 실발주 라인' })
   @ApiResponse({ status: 200, type: PurchaseOrderResponseDto })
   @HttpCode(HttpStatus.OK)
@@ -323,7 +305,6 @@ export class PurchaseOrderController {
 
   @RequirePermission('inventory.master.write')
   @Patch(':poId/lines/:skuId/expected-arrival')
-  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '라인 도착예정일 수정 — YYYY-MM-DD 또는 null' })
   @ApiResponse({ status: 200, type: PurchaseOrderResponseDto })
   async updateLineExpectedArrival(
@@ -336,7 +317,6 @@ export class PurchaseOrderController {
 
   @RequirePermission('inventory.master.write')
   @Post(':id/cancel')
-  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '발주 취소 (입고 전에만)' })
   @ApiParam({ name: 'id', description: '발주 ID' })
   @ApiResponse({ status: 200, description: '발주가 취소됨', type: PurchaseOrderResponseDto })

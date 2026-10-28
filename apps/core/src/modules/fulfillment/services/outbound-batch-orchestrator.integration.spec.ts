@@ -7,7 +7,6 @@ import * as postgres from 'postgres';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import { AuditService } from '../../inventory/shared/services/audit.service';
-import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
 import {
   makeDb,
   makeDbService,
@@ -104,7 +103,6 @@ describeIfDb('OutboundBatchOrchestrator (DB integration)', () => {
       logistics.shipmentReservations,
       invariant,
       audit,
-      { getScopesByRoles: () => Promise.resolve(new Set([FULFILLMENT_SCOPE.SHIPMENT_REOPEN])) } as never,
       workflowGate,
       assembleBoxWithdrawal(dbService),
       createCheckpointsForTesting(),

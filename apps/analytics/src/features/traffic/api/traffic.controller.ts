@@ -1,6 +1,6 @@
 import { BadRequestException, Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { AdminRealmGuard, JwtAuthGuard, RequirePermission, PermissionGuard } from '@app/authorization';
+import { JwtAuthGuard, RequirePermission, PermissionGuard } from '@app/authorization';
 import { Type } from 'class-transformer';
 import { IsInt, IsOptional, Max, Min } from 'class-validator';
 import { ApiPropertyOptional } from '@nestjs/swagger';
@@ -21,12 +21,12 @@ class RealtimeQueryDto {
 /**
  * 관리자 유입 통계 (GA4 Data API 조회 전용). admin-web 프록시를 통해서만 호출된다.
  *
- * JwtAuthGuard 뒤에 AdminRealmGuard — 모든 서비스가 AUTH_SECRET 을 공유하므로
- * 인증만으로는 고객 토큰도 통과한다. staff role(admin/master)을 강제한다.
+ * JwtAuthGuard 뒤에 PermissionGuard — 모든 서비스가 AUTH_SECRET 을 공유하므로
+ * 인증만으로는 고객 토큰도 통과한다. 라우트의 권한 키로 판정한다.
  */
 @ApiTags('Statistics')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, PermissionGuard, AdminRealmGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 @Controller('statistics')
 export class TrafficController {
   constructor(

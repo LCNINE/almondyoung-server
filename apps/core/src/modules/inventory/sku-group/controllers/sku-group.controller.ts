@@ -1,9 +1,8 @@
-import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Post, Put, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Post, Put, Query } from '@nestjs/common';
 import { Type } from 'class-transformer';
 import { IsInt, IsOptional, Min } from 'class-validator';
 import { ApiOperation, ApiParam, ApiProperty, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { RequireScopes, ScopeGuard, RequirePermission } from '@app/authorization';
-import { INVENTORY_SCOPE } from '../../../../platform/auth/inventory-scopes';
+import { RequirePermission } from '@app/authorization';
 import { SkuGroupService } from '../services/sku-group.service';
 import { CreateSkuGroupDto, UpdateSkuGroupDto } from '../dto/create-sku-group.dto';
 import { AddSkuToGroupDto, BulkAddSkusToGroupDto } from '../dto/manage-group-members.dto';
@@ -27,13 +26,11 @@ class UngroupedQueryDto {
 
 @ApiTags('SKU Groups')
 @Controller('inventory/sku-groups')
-@UseGuards(ScopeGuard)
 export class SkuGroupController {
   constructor(private readonly skuGroupService: SkuGroupService) {}
 
   @RequirePermission('inventory.master.write')
   @Post()
-  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: 'SKU 그룹 생성 (Create SKU group)' })
   @ApiResponse({
     status: 201,
@@ -48,7 +45,6 @@ export class SkuGroupController {
 
   @RequirePermission('inventory.stock.read')
   @Get()
-  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '모든 SKU 그룹 조회 (List all SKU groups)' })
   @ApiResponse({ status: 200, description: 'SKU 그룹 목록', type: [SkuGroupResponseDto] })
   @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
@@ -58,7 +54,6 @@ export class SkuGroupController {
 
   @RequirePermission('inventory.stock.read')
   @Get('ungrouped')
-  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '그룹에 속하지 않은 SKU 조회 (Get ungrouped SKUs)' })
   @ApiResponse({ status: 200, description: '그룹 미지정 SKU 목록' })
   @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
@@ -68,7 +63,6 @@ export class SkuGroupController {
 
   @RequirePermission('inventory.stock.read')
   @Get(':id')
-  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: 'SKU 그룹 상세 조회' })
   @ApiParam({ name: 'id', description: 'Group ID' })
   @ApiResponse({ status: 200, description: '그룹 상세 정보', type: SkuGroupResponseDto })
@@ -80,7 +74,6 @@ export class SkuGroupController {
 
   @RequirePermission('inventory.master.write')
   @Put(':id')
-  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: 'SKU 그룹 수정' })
   @ApiParam({ name: 'id', description: 'Group ID' })
   @ApiResponse({ status: 200, description: '그룹이 수정되었습니다.', type: SkuGroupResponseDto })
@@ -93,7 +86,6 @@ export class SkuGroupController {
   @RequirePermission('inventory.master.write')
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: 'SKU 그룹 삭제' })
   @ApiParam({ name: 'id', description: 'Group ID' })
   @ApiResponse({ status: 204, description: '그룹이 삭제되었습니다. 멤버 SKU들은 그룹에서 해제됩니다.' })
@@ -105,7 +97,6 @@ export class SkuGroupController {
 
   @RequirePermission('inventory.stock.read')
   @Get(':id/members')
-  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '그룹의 모든 SKU 조회' })
   @ApiParam({ name: 'id', description: 'Group ID' })
   @ApiResponse({ status: 200, description: '그룹 멤버 목록', type: SkuGroupMembersResponseDto })
@@ -117,7 +108,6 @@ export class SkuGroupController {
 
   @RequirePermission('inventory.master.write')
   @Post(':id/members')
-  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: 'SKU를 그룹에 추가' })
   @ApiParam({ name: 'id', description: 'Group ID' })
   @ApiResponse({ status: 200, description: 'SKU가 그룹에 추가되었습니다.' })
@@ -129,7 +119,6 @@ export class SkuGroupController {
 
   @RequirePermission('inventory.master.write')
   @Post(':id/members/bulk')
-  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: '여러 SKU를 그룹에 일괄 추가' })
   @ApiParam({ name: 'id', description: 'Group ID' })
   @ApiResponse({ status: 200, description: '일괄 추가가 완료되었습니다.', type: BulkAddSkusResponseDto })
@@ -141,7 +130,6 @@ export class SkuGroupController {
   @RequirePermission('inventory.master.write')
   @Delete('members/:skuId')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: 'SKU를 그룹에서 제거' })
   @ApiParam({ name: 'skuId', description: 'SKU ID to remove from group' })
   @ApiResponse({ status: 204, description: 'SKU가 그룹에서 제거되었습니다.' })

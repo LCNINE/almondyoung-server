@@ -11,7 +11,7 @@ export const channelAdapterEnvSchema = z
     DEMO_CONSOLE_ENABLED: z.enum(['true', 'false']).optional(),
     EXTERNAL_INTEGRATIONS_MODE: z.enum(['real', 'mock']).optional(),
 
-    // 전역 JwtAuthGuard/AdminRealmGuard 용 (dual-mode). 둘 중 하나는 필수인데, 그 강제는
+    // 전역 JwtAuthGuard 용 (dual-mode). 둘 중 하나는 필수인데, 그 강제는
     // AuthorizationModule 의 AUTH_CONFIG 팩토리가 이미 한다 — 검증을 두 곳에 두지 않는다.
     AUTH_SECRET: z.string().min(1).optional(),
     OIDC_ISSUER_URL: z.string().url().optional(),

@@ -49,7 +49,6 @@ export class UsersController {
   // 이메일 하나로 loginId·실명이 나오므로 공개하면 익명 열거가 된다.
   // 유일한 호출자는 어드민 "주문 수동입력 > 고객 검색"이고, 같은 화면의 /admin/users/:id 와 동일 스코프.
   // 사전 중복확인이 필요한 가입 폼은 boolean 만 주는 email-available 을 쓴다.
-  @RequireScopes('master', 'admin:users:read')
   @HttpCode(HttpStatus.OK)
   async findUserByEmail(@Query('email') email: string) {
     return this.usersService.findUserByEmail(email);

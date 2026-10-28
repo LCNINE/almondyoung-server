@@ -1,19 +1,6 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Put,
-  Delete,
-  Param,
-  Body,
-  Query,
-  HttpCode,
-  HttpStatus,
-  UseGuards,
-} from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Param, Body, Query, HttpCode, HttpStatus } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery, ApiParam } from '@nestjs/swagger';
-import { RequireScopes, ScopeGuard, RequirePermission } from '@app/authorization';
-import { INVENTORY_SCOPE } from '../../../../platform/auth/inventory-scopes';
+import { RequirePermission } from '@app/authorization';
 import { SuppliersService } from '../services/suppliers.service';
 import {
   CreateSupplierDto,
@@ -26,13 +13,11 @@ import {
 
 @ApiTags('Suppliers')
 @Controller('suppliers')
-@UseGuards(ScopeGuard)
 export class SuppliersController {
   constructor(private readonly suppliersService: SuppliersService) {}
 
   @RequirePermission('inventory.master.read')
   @Get()
-  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: 'Get suppliers list or filter options' })
   @ApiQuery({
     name: 'type',
@@ -64,7 +49,6 @@ export class SuppliersController {
 
   @RequirePermission('inventory.master.read')
   @Get(':id')
-  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: 'Get supplier by ID' })
   @ApiParam({ name: 'id', description: 'Supplier ID' })
   @ApiResponse({
@@ -83,7 +67,6 @@ export class SuppliersController {
 
   @RequirePermission('inventory.master.write')
   @Post()
-  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: 'Create new supplier' })
   @ApiResponse({
     status: 201,
@@ -101,7 +84,6 @@ export class SuppliersController {
 
   @RequirePermission('inventory.master.write')
   @Put(':id')
-  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: 'Update supplier' })
   @ApiParam({ name: 'id', description: 'Supplier ID' })
   @ApiResponse({
@@ -124,7 +106,6 @@ export class SuppliersController {
 
   @RequirePermission('inventory.master.write')
   @Delete(':id')
-  @RequireScopes(INVENTORY_SCOPE.MANAGE)
   @ApiOperation({ summary: 'Delete supplier' })
   @ApiParam({ name: 'id', description: 'Supplier ID' })
   @ApiResponse({

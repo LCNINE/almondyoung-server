@@ -46,7 +46,7 @@ export class MatchingLinkInputDto {
   skuId?: string;
 
   @ApiProperty({
-    description: '새로 만들 재고상품 정의. skuId 와 배타. inventory.manage 권한이 필요하다.',
+    description: '새로 만들 재고상품 정의. skuId 와 배타. inventory.master.write 권한이 필요하다.',
     type: CreateSkuDto,
     required: false,
   })

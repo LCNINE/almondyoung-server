@@ -1,4 +1,4 @@
-import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
+import { REQUIRED_PERMISSIONS_KEY } from '@app/authorization';
 import { WaybillLabelController } from './waybill-label.controller';
 
 describe('WaybillLabelController', () => {
@@ -17,14 +17,14 @@ describe('WaybillLabelController', () => {
     await controller.confirmPrint('s1', { fingerprint: 'f' }, { userId: 'u1' });
     expect(svc.confirmPrint).toHaveBeenCalledWith('s1', 'f', { id: 'u1' });
     expect(() => controller.confirmPrint('s1', { fingerprint: 'f' }, {})).toThrow('Authenticated actor');
-    expect(Reflect.getMetadata('required_scopes', WaybillLabelController.prototype.confirmPrint)).toEqual([
-      FULFILLMENT_SCOPE.WAREHOUSE_OPERATE,
+    expect(Reflect.getMetadata(REQUIRED_PERMISSIONS_KEY, WaybillLabelController.prototype.confirmPrint)).toEqual([
+      'fulfillment.warehouse.operate',
     ]);
   });
 
-  it('창고 작업 스코프를 요구한다', () => {
-    expect(Reflect.getMetadata('required_scopes', WaybillLabelController.prototype.label)).toEqual([
-      FULFILLMENT_SCOPE.WAREHOUSE_OPERATE,
+  it('출고 조회 권한을 요구한다', () => {
+    expect(Reflect.getMetadata(REQUIRED_PERMISSIONS_KEY, WaybillLabelController.prototype.label)).toEqual([
+      'fulfillment.shipment.read',
     ]);
   });
 });

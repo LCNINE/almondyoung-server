@@ -7,13 +7,10 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { DbService, InjectTypedDb } from '@app/db';
-import {
-  isAdminForceDispatchDecision,
-  type ForceDispatchDecision,
-} from '../../../platform/auth/force-dispatch-authorization';
+import { type PermissionDecision } from '@app/authorization';
+import { isAdminForceDispatchDecision } from '../../../platform/auth/force-dispatch-authorization';
 import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
-import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
 import { PreparedOutboundResult, isPreparationBlocked } from './outbound-preparation-result';
 import { isBatchStarted } from './outbound-preparation.locks';
 import { FulfillmentCommandService } from './fulfillment-command.service';
@@ -197,7 +194,7 @@ export class LocationOutboundService {
     input: LocationOutboundConfirmInput,
     actor: LocationOutboundActor,
     idempotencyKey: string,
-    authorization: ForceDispatchDecision | undefined,
+    authorization: PermissionDecision | undefined,
     tx?: DbTx,
   ): Promise<PreparedOutboundResult<LocationOutboundState>> {
     // Recheck authorization even for a completed command replay.

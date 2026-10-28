@@ -15,8 +15,6 @@ import * as postgres from 'postgres';
 import { drizzle, PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { DbService } from '@app/db';
-import { SCOPE_AUTHORIZATION_DECISION_BRAND } from '@app/authorization';
-import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
 import { BatchControlledStockGuard } from '../../inventory/core/services/batch-controlled-stock.guard';
 import { InventoryCommandService } from '../../inventory/core/services/inventory-command.service';
 import { LocationService } from '../../inventory/core/services/location.service';
@@ -27,6 +25,7 @@ import { AuditService } from '../../inventory/shared/services/audit.service';
 import { BarcodeService } from '../../inventory/shared/services/barcode.service';
 import { UnifiedReservationService } from '../../inventory/shared/services/unified-reservation.service';
 import { inRollbackTx, makeDb, makeDbService } from './__support__';
+import { grantedPermissionDecision } from './__support__/force-dispatch-decision';
 import { BatchInventorySessionService } from './batch-inventory-session.service';
 import { FulfillmentCommandService } from './fulfillment-command.service';
 import { FulfillmentInvariantService } from './fulfillment-invariant.service';
@@ -1286,11 +1285,7 @@ describeIfDb('ShipmentDispatchService (PostgreSQL integration)', () => {
         note: 'approved by warehouse lead',
         actor: { id: fixture.actorId, roles: ['logistics_manager'] },
         idempotencyKey: `dispatch-force-${randomUUID()}`,
-        authorization: {
-          scope: FULFILLMENT_SCOPE.DISPATCH_FORCE,
-          granted: true,
-          [SCOPE_AUTHORIZATION_DECISION_BRAND]: true,
-        },
+        authorization: grantedPermissionDecision('fulfillment.dispatch.force'),
       });
       const [audit] = await tx
         .select()
@@ -1310,6 +1305,7 @@ describeIfDb('ShipmentDispatchService (PostgreSQL integration)', () => {
         csCaseId: 'CS-1234',
         note: 'approved by warehouse lead',
         forcedQuantities: [{ shipmentLineId: fixture.line.id, quantity: 1 }],
+        authorization: { scope: 'fulfillment.dispatch.force', granted: true, source: 'permission_guard' },
       });
     });
   });

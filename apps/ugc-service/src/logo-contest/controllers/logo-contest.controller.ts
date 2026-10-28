@@ -13,7 +13,7 @@ import {
   Query,
 } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { Public, RequireScopes, User, RequirePermission, StoreRoute } from '@app/authorization';
+import { Public, User, RequirePermission, StoreRoute } from '@app/authorization';
 import { ApiOkResponsePaginated } from '@app/shared/decorators/api-paginated-response.decorator';
 import { PaginatedResponseDto } from '@app/shared/dto';
 import { LOGO_CONTEST_TOP_LIMIT } from '../constants/logo-contest.constants';
@@ -57,7 +57,6 @@ export class LogoContestController {
 
   @RequirePermission('cs.review.read')
   @Get('admin/entries')
-  @RequireScopes('admin:ugc:read')
   @ApiOperation({ summary: '[관리자] 출품작 목록 (상태·검색·정렬)' })
   @ApiOkResponsePaginated(AdminLogoContestEntryResponseDto)
   async listForAdmin(
@@ -69,7 +68,6 @@ export class LogoContestController {
 
   @RequirePermission('cs.review.moderate')
   @Patch('admin/entries/:id/status')
-  @RequireScopes('admin:ugc:modify')
   @ApiOperation({ summary: '[관리자] 출품작 숨김/공개. 숨기면 그 작품의 표가 지워진다' })
   @ApiResponse({ status: HttpStatus.OK, type: AdminLogoContestEntryResponseDto })
   async updateStatus(
@@ -81,7 +79,6 @@ export class LogoContestController {
 
   @RequirePermission('cs.review.moderate')
   @Post('admin/entries/:id/winner')
-  @RequireScopes('admin:ugc:modify')
   @ApiOperation({ summary: '[관리자] 대상 지정. 기존 대상은 해제된다' })
   @ApiResponse({ status: HttpStatus.OK, type: AdminLogoContestEntryResponseDto })
   @HttpCode(HttpStatus.OK)

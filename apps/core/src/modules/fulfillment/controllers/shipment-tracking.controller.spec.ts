@@ -1,12 +1,12 @@
+import { REQUIRED_PERMISSIONS_KEY } from '@app/authorization';
 /* eslint-disable @typescript-eslint/unbound-method */
 import { ROUTE_ARGS_METADATA } from '@nestjs/common/constants';
-import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
 import { ShipmentTrackingController } from './shipment-tracking.controller';
 
 describe('ShipmentTrackingController authorization contract', () => {
-  it('requires the isolated tracking-ingest scope', () => {
-    expect(Reflect.getMetadata('required_scopes', ShipmentTrackingController.prototype.record)).toEqual([
-      FULFILLMENT_SCOPE.TRACKING_INGEST,
+  it('requires the isolated tracking-ingest permission', () => {
+    expect(Reflect.getMetadata(REQUIRED_PERMISSIONS_KEY, ShipmentTrackingController.prototype.record)).toEqual([
+      'fulfillment.tracking.ingest',
     ]);
   });
 

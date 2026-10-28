@@ -332,10 +332,6 @@ export function setup(infra: SharedInfra) {
   // 활성화는 이 값을 'true' 로 바꾸는 것으로 일원화한다(현재 미개통).
   const invoiceBillingEnabled = 'true';
 
-  // 관리자 권한 판정 주체 스위치(ADR-0048 §37). 'true' 면 권한 라우트를 새 권한 판정이 결정하고 옛 인가 가드는 물러난다.
-  // 되돌릴 때는 이 값만 'false' 로 바꿔 배포한다. user-service 는 auth 배포에 같은 이름으로 따로 둔다.
-  const authzEnforce = 'true';
-
   // 자동 리뷰 자격 발급 잡(apps/medusa/src/jobs/auto-review-eligibility.ts)의 유일한 스위치.
   // 'true' 가 아니면 잡은 후보를 세고 로그만 남긴다 — 처음 켜는 순간 창 안의 주문이 한꺼번에
   // 자격을 받으므로, 운영자가 «꺼진 채로 한 번 돌려 건수를 본 뒤» 켜라는 설계다.
@@ -370,7 +366,6 @@ export function setup(infra: SharedInfra) {
 
   // 앱별 env (프리픽스 부여). 태스크에는 담당 앱 것만 병합해 넘긴다.
   const analyticsEnv = withPrefix('ANALYTICS', {
-    AUTHZ_ENFORCE: authzEnforce,
     DATABASE_URL: dbUrl('analytics'),
     ...kafkaEnv('analytics', 'analytics-group'),
     AUTH_SECRET: authSecret.value,
@@ -384,10 +379,9 @@ export function setup(infra: SharedInfra) {
     USER_SERVICE_INTERNAL_KEY: idpUserServiceInternalKey,
   });
   const channelAdapterEnv = withPrefix('CHANNEL_ADAPTER', {
-    AUTHZ_ENFORCE: authzEnforce,
     DATABASE_URL: dbUrl('channel_adapter'),
     ...kafkaEnv('channel-adapter', 'channel-adapter-group'),
-    // 전역 JwtAuthGuard/AdminRealmGuard 용 (위 notification 과 같은 이유).
+    // 전역 JwtAuthGuard 용 (위 notification 과 같은 이유).
     AUTH_SECRET: authSecret.value,
     OIDC_ISSUER_URL: idpUserServiceUrl,
     CHANNEL_ADAPTER_INTERNAL_KEY: channelAdapterInternalKey.value,
@@ -421,7 +415,6 @@ export function setup(infra: SharedInfra) {
     CATEGORY_ANCESTOR_MEMO_MAX_ENTRIES: '5000',
   });
   const membershipEnv = withPrefix('MEMBERSHIP', {
-    AUTHZ_ENFORCE: authzEnforce,
     DATABASE_URL: dbUrl('membership'),
     ...kafkaEnv('membership', 'membership-group'),
     WALLET_API_KEY: walletApiKey.value,
@@ -439,10 +432,9 @@ export function setup(infra: SharedInfra) {
     USER_SERVICE_INTERNAL_KEY: idpUserServiceInternalKey,
   });
   const notificationEnv = withPrefix('NOTIFICATION', {
-    AUTHZ_ENFORCE: authzEnforce,
     DATABASE_URL: dbUrl('notification'),
     ...kafkaEnv('notification', 'notification-group'),
-    // 전역 JwtAuthGuard/AdminRealmGuard 용. 둘 중 하나라도 없으면 부팅이 실패한다
+    // 전역 JwtAuthGuard 용. 둘 중 하나라도 없으면 부팅이 실패한다
     // (AuthorizationModule 의 AUTH_CONFIG 팩토리). 이 서비스는 그 전까지 인증이 아예 없었다.
     AUTH_SECRET: authSecret.value,
     OIDC_ISSUER_URL: idpUserServiceUrl,
@@ -504,7 +496,6 @@ export function setup(infra: SharedInfra) {
     : { OPENSEARCH_NODE: 'https://opensearch-development.up.railway.app' };
 
   const ugcEnv = withPrefix('UGC', {
-    AUTHZ_ENFORCE: authzEnforce,
     DATABASE_URL: dbUrl('ugc'),
     ...kafkaEnv('ugc-service', 'ugc-service-group'),
     AUTH_SECRET: authSecret.value,
@@ -518,7 +509,6 @@ export function setup(infra: SharedInfra) {
     USER_SERVICE_INTERNAL_KEY: idpUserServiceInternalKey,
   });
   const searchEnv = withPrefix('SEARCH', {
-    AUTHZ_ENFORCE: authzEnforce,
     ...searchBackendEnv,
     SEARCH_PRODUCTS_INDEX: 'search_products_v2',
     // 키워드 운영 상태(담당·메모) 테이블 — search 논리 DB (bootstrap 이 생성, migrate 가 적용)
@@ -605,7 +595,6 @@ export function setup(infra: SharedInfra) {
       },
     },
     environment: {
-      AUTHZ_ENFORCE: authzEnforce,
       ...kafkaEnv('ai', 'ai-consumer'),
       DATABASE_URL: dbUrl('ai'),
       AUTH_SECRET: authSecret.value,
@@ -647,7 +636,6 @@ export function setup(infra: SharedInfra) {
       },
     },
     environment: {
-      AUTHZ_ENFORCE: authzEnforce,
       DATABASE_URL: dbUrl('core'),
       ...kafkaEnv('core', 'core-group'),
       // 출고 워크플로 스위치. 값은 `maintenance | v2` 뿐이고 **기본값이 없다** — 미설정이면 어느
@@ -724,7 +712,6 @@ export function setup(infra: SharedInfra) {
       },
     },
     environment: {
-      AUTHZ_ENFORCE: authzEnforce,
       DATABASE_URL: dbUrl('wallet'),
       ...kafkaEnv('wallet', 'wallet-group'),
       AUTH_SECRET: authSecret.value,
@@ -769,7 +756,6 @@ export function setup(infra: SharedInfra) {
     priority: 190,
     link: [db],
     environment: {
-      AUTHZ_ENFORCE: authzEnforce,
       DATABASE_URL: dbUrl('file_service'),
       ...kafkaEnv('file-service', 'file-service-group'),
       AUTH_SECRET: authSecret.value,

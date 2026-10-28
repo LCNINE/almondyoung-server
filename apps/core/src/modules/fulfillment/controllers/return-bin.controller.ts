@@ -9,11 +9,9 @@ import {
   Post,
   Query,
   UnauthorizedException,
-  UseGuards,
 } from '@nestjs/common';
 import { ApiCreatedResponse, ApiHeader, ApiOkResponse, ApiTags } from '@nestjs/swagger';
-import { RequireScopes, ScopeGuard, User, RequirePermission } from '@app/authorization';
-import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
+import { User, RequirePermission } from '@app/authorization';
 import {
   RegisterReturnBinDto,
   ReturnBinContentsDto,
@@ -34,7 +32,6 @@ type AuthenticatedUser = { id?: string; userId?: string; sub?: string; roles?: s
  */
 @ApiTags('Return bins')
 @Controller()
-@UseGuards(ScopeGuard)
 export class ReturnBinController {
   constructor(
     private readonly returnBins: ReturnBinService,
@@ -43,7 +40,6 @@ export class ReturnBinController {
 
   @RequirePermission('fulfillment.warehouse.operate')
   @Post('return-bins')
-  @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   @ApiCreatedResponse({ type: ReturnBinDto })
   register(@Body() dto: RegisterReturnBinDto, @User() user: AuthenticatedUser): Promise<ReturnBinDto> {
     return this.returnBins.register(dto, this.actor(user));
@@ -51,7 +47,6 @@ export class ReturnBinController {
 
   @RequirePermission('fulfillment.shipment.read')
   @Get('return-bins/:barcode')
-  @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   @ApiOkResponse({ type: ReturnBinContentsDto })
   lookup(
     @Param('barcode') barcode: string,
@@ -63,7 +58,6 @@ export class ReturnBinController {
 
   @RequirePermission('fulfillment.warehouse.operate')
   @Post('shipments/:shipmentId/return-bin-removals')
-  @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   @ApiHeader({ name: 'Idempotency-Key', required: true })
   @ApiCreatedResponse({ type: ReturnBinRemovalResponseDto })
   removeFromBox(
@@ -78,7 +72,6 @@ export class ReturnBinController {
 
   @RequirePermission('fulfillment.warehouse.operate')
   @Post('return-bins/:barcode/putaways')
-  @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   @ApiHeader({ name: 'Idempotency-Key', required: true })
   @ApiCreatedResponse({ type: ReturnBinPutawayResponseDto })
   putaway(

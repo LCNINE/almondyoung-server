@@ -8,11 +8,9 @@ import {
   Param,
   Post,
   UnauthorizedException,
-  UseGuards,
 } from '@nestjs/common';
 import { ApiCreatedResponse, ApiOkResponse } from '@nestjs/swagger';
-import { RequireScopes, ScopeGuard, User, RequirePermission } from '@app/authorization';
-import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
+import { User, RequirePermission } from '@app/authorization';
 import { WaybillService } from './waybill.service';
 import {
   AbandonWaybillDto,
@@ -28,14 +26,12 @@ import {
 type AuthenticatedUser = { id?: string; userId?: string; sub?: string; roles?: string[] };
 
 @Controller()
-@UseGuards(ScopeGuard)
 export class WaybillController {
   constructor(private readonly waybills: WaybillService) {}
 
   @RequirePermission('fulfillment.warehouse.operate')
   @Post('shipments/:shipmentId/waybills')
   @HttpCode(HttpStatus.CREATED)
-  @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   @ApiCreatedResponse({ type: WaybillResponseDto })
   issue(
     @Param('shipmentId') shipmentId: string,
@@ -54,7 +50,6 @@ export class WaybillController {
   @RequirePermission('fulfillment.warehouse.operate')
   @Post('shipments/:shipmentId/waybills/manual')
   @HttpCode(HttpStatus.CREATED)
-  @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   @ApiCreatedResponse({ type: WaybillResponseDto })
   manual(
     @Param('shipmentId') shipmentId: string,
@@ -68,7 +63,6 @@ export class WaybillController {
   @RequirePermission('fulfillment.warehouse.operate')
   @Post('waybills:batch')
   @HttpCode(HttpStatus.OK)
-  @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   @ApiOkResponse({ type: BatchResultItemDto, isArray: true })
   batch(
     @Body() dto: IssueBatchWaybillDto,
@@ -81,7 +75,6 @@ export class WaybillController {
   @RequirePermission('fulfillment.shipment.reopen')
   @Post('waybills/:waybillId/void')
   @HttpCode(HttpStatus.OK)
-  @RequireScopes(FULFILLMENT_SCOPE.SHIPMENT_REOPEN)
   @ApiOkResponse({ type: WaybillResponseDto })
   void(
     @Param('waybillId') waybillId: string,
@@ -97,7 +90,6 @@ export class WaybillController {
   @RequirePermission('fulfillment.warehouse.operate')
   @Post('waybills/:waybillId/abandon')
   @HttpCode(HttpStatus.OK)
-  @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   @ApiOkResponse({ type: WaybillResponseDto })
   abandon(
     @Param('waybillId') waybillId: string,
@@ -111,7 +103,6 @@ export class WaybillController {
   @RequirePermission('fulfillment.warehouse.operate')
   @Post('shipments/:shipmentId/waybills/reissue')
   @HttpCode(HttpStatus.CREATED)
-  @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   @ApiCreatedResponse({ type: WaybillResponseDto })
   reissue(
     @Param('shipmentId') shipmentId: string,
@@ -129,7 +120,6 @@ export class WaybillController {
 
   @RequirePermission('fulfillment.shipment.read')
   @Get('shipments/:shipmentId/waybill')
-  @RequireScopes(FULFILLMENT_SCOPE.WAREHOUSE_OPERATE)
   @ApiOkResponse({ type: WaybillResponseDto })
   active(@Param('shipmentId') shipmentId: string) {
     return this.waybills.getActiveWaybill(shipmentId);

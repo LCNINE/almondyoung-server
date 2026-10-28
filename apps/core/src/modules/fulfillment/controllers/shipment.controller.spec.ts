@@ -2,15 +2,13 @@ import { BadRequestException, UnauthorizedException } from '@nestjs/common';
 import { createGlobalValidationPipe } from '../../../platform/http/validation-pipe';
 import { PATH_METADATA } from '@nestjs/common/constants';
 import {
-  REQUIRED_SCOPES_KEY,
-  ScopeGuard,
+  REQUIRED_PERMISSIONS_KEY,
   createCheckpointsForTesting,
   PermissionCheckpoints,
   recordPermissionDecisions,
 } from '@app/authorization';
 import { Test } from '@nestjs/testing';
 import { validateSync } from 'class-validator';
-import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
 import { ForceShipmentDispatchDto, ShipmentInspectionScanDto } from '../dto/shipment-dispatch.dto';
 import { FulfillmentWorkflowGate } from '../services/fulfillment-workflow-gate.service';
 import { ShipmentDispatchService } from '../services/shipment-dispatch.service';
@@ -35,18 +33,10 @@ describe('ShipmentController V2 dispatch commands', () => {
     return descriptor.value as object;
   }
 
-  async function requestAuthorizedByMappedRole(role = 'new_database_mapped_dispatcher') {
-    const request = { user: { roles: [role] } };
-    const guard = new ScopeGuard(
-      { getAllAndOverride: () => [FULFILLMENT_SCOPE.DISPATCH_FORCE] } as never,
-      { getScopesByRoles: jest.fn().mockResolvedValue(new Set([FULFILLMENT_SCOPE.DISPATCH_FORCE])) } as never,
-    );
-    const context = {
-      getHandler: () => controllerMethod('forceDispatch'),
-      getClass: () => ShipmentController,
-      switchToHttp: () => ({ getRequest: () => request }),
-    };
-    await expect(guard.canActivate(context as never)).resolves.toBe(true);
+  // 라우트 가드(PermissionGuard)가 그 요청이 받은 권한에 대해 남기는 낙인과 같은 것을 남긴다.
+  function requestAuthorizedForForce(): object {
+    const request = {};
+    recordPermissionDecisions(request, ['fulfillment.dispatch.force']);
     return request;
   }
 
@@ -59,7 +49,7 @@ describe('ShipmentController V2 dispatch commands', () => {
   it('passes only the JWT actor and visible-ASCII idempotency key to commands', async () => {
     const { controller, workflowGate, inspectionScan, forceDispatch } = fixture();
     const user = { userId: 'jwt-actor', id: 'ignored', roles: ['logistics_manager'] };
-    const authorizedRequest = await requestAuthorizedByMappedRole('logistics_manager');
+    const authorizedRequest = requestAuthorizedForForce();
 
     await controller.inspectionScan('shipment-1', { barcode: 'SKU-001', quantity: 2 }, 'inspection-key', user);
     await controller.forceDispatch(
@@ -87,16 +77,16 @@ describe('ShipmentController V2 dispatch commands', () => {
         actor: { id: 'jwt-actor', roles: ['logistics_manager'] },
         idempotencyKey: 'force-key',
         authorization: expect.objectContaining({
-          scope: FULFILLMENT_SCOPE.DISPATCH_FORCE,
+          permission: 'fulfillment.dispatch.force',
           granted: true,
         }) as unknown,
       }),
     );
   });
 
-  it('accepts a newly DB-mapped role without hard-coded role names and passes the guard decision', async () => {
+  it('accepts a newly mapped role without hard-coded role names and passes the guard decision', async () => {
     const { controller, forceDispatch } = fixture();
-    const request = await requestAuthorizedByMappedRole();
+    const request = requestAuthorizedForForce();
 
     await controller.forceDispatch(
       'shipment-1',
@@ -110,7 +100,7 @@ describe('ShipmentController V2 dispatch commands', () => {
       'shipment-1',
       expect.objectContaining({
         authorization: expect.objectContaining({
-          scope: FULFILLMENT_SCOPE.DISPATCH_FORCE,
+          permission: 'fulfillment.dispatch.force',
           granted: true,
         }) as unknown,
       }),
@@ -122,31 +112,26 @@ describe('ShipmentController V2 dispatch commands', () => {
       { provide: FulfillmentWorkflowGate, useValue: { assertV2MutationAllowed: jest.fn() } },
       { provide: PermissionCheckpoints, useValue: createCheckpointsForTesting() },
     ];
-    const guard = { canActivate: jest.fn().mockReturnValue(true) };
     const missingDispatchBuilder = Test.createTestingModule({
       controllers: [ShipmentController],
       providers: baseProviders,
-    })
-      .overrideGuard(ScopeGuard)
-      .useValue(guard);
+    });
     await expect(missingDispatchBuilder.compile()).rejects.toThrow(/ShipmentDispatchService/);
 
     const moduleBuilder = Test.createTestingModule({
       controllers: [ShipmentController],
       providers: [...baseProviders, { provide: ShipmentDispatchService, useValue: {} }],
-    })
-      .overrideGuard(ScopeGuard)
-      .useValue(guard);
+    });
     const moduleRef = await moduleBuilder.compile();
     expect(moduleRef.get(ShipmentController)).toBeInstanceOf(ShipmentController);
   });
 
   it('requires warehouse operate for inspection and dispatch force for override', () => {
     const metadata = (name: 'inspectionScan' | 'forceDispatch') =>
-      Reflect.getMetadata('required_scopes', controllerMethod(name)) as string[] | undefined;
+      Reflect.getMetadata(REQUIRED_PERMISSIONS_KEY, controllerMethod(name)) as string[] | undefined;
 
-    expect(metadata('inspectionScan')).toEqual([FULFILLMENT_SCOPE.WAREHOUSE_OPERATE]);
-    expect(metadata('forceDispatch')).toEqual([FULFILLMENT_SCOPE.DISPATCH_FORCE]);
+    expect(metadata('inspectionScan')).toEqual(['fulfillment.warehouse.operate']);
+    expect(metadata('forceDispatch')).toEqual(['fulfillment.dispatch.force']);
   });
 
   it('requires an authenticated actor and a bounded visible-ASCII idempotency key', () => {
@@ -199,7 +184,7 @@ describe('ShipmentController V2 dispatch commands', () => {
         reason: 'manual verification',
         operatorId: 'forged',
         actor: { id: 'forged' },
-        authorization: { scope: FULFILLMENT_SCOPE.DISPATCH_FORCE, granted: true },
+        authorization: { permission: 'fulfillment.dispatch.force', granted: true },
       },
       { type: 'body', metatype: ForceShipmentDispatchDto },
     )) as ForceShipmentDispatchDto & Record<string, unknown>;
@@ -211,9 +196,9 @@ describe('ShipmentController V2 dispatch commands', () => {
     expect(force.authorization).toBeUndefined();
   });
 
-  it('관리자 강제 발송 라우트는 dispatch.force 만 요구한다(스테이션 스코프로 열리지 않는다)', () => {
-    expect(Reflect.getMetadata(REQUIRED_SCOPES_KEY, ShipmentController.prototype.forceDispatch)).toEqual([
-      FULFILLMENT_SCOPE.DISPATCH_FORCE,
+  it('관리자 강제 발송 라우트는 dispatch.force 만 요구한다(스테이션 권한으로 열리지 않는다)', () => {
+    expect(Reflect.getMetadata(REQUIRED_PERMISSIONS_KEY, ShipmentController.prototype.forceDispatch)).toEqual([
+      'fulfillment.dispatch.force',
     ]);
   });
 });
@@ -221,32 +206,30 @@ describe('ShipmentController V2 dispatch commands', () => {
 describe('ShipmentController force-dispatch decision source', () => {
   const dto = { reason: 'verified damaged scan gun', csCaseId: '11111111-1111-4111-8111-111111111111', note: 'case' };
   const user = { userId: 'jwt-actor', sub: 'jwt-actor', roles: ['admin'] };
-  const run = async (enforce: boolean, request: object) => {
+  const run = async (request: object) => {
     const forceDispatch = jest.fn().mockResolvedValue({ shipmentId: 'shipment-1', dispatchAttemptId: 'attempt-1' });
     const controller = new ShipmentController(
       { assertV2MutationAllowed: jest.fn() } as never,
       { inspectionScan: jest.fn(), forceDispatch },
-      createCheckpointsForTesting({ admin: ['fulfillment.dispatch.force'] }, { enforce }),
+      createCheckpointsForTesting({ admin: ['fulfillment.dispatch.force'] }),
     );
     await controller.forceDispatch('shipment-1', dto, 'force-key', user, request);
     return forceDispatch.mock.calls[0][1].authorization;
   };
 
-  it('ignores the permission stamp while the switch is off', async () => {
+  it('passes the permission stamp', async () => {
     const request = {};
     recordPermissionDecisions(request, ['fulfillment.dispatch.force']);
-    expect(await run(false, request)).toBeUndefined();
+    expect(await run(request)).toMatchObject({ permission: 'fulfillment.dispatch.force', granted: true });
   });
 
-  it('passes the permission stamp once enforced', async () => {
-    const request = {};
-    recordPermissionDecisions(request, ['fulfillment.dispatch.force']);
-    expect(await run(true, request)).toMatchObject({ permission: 'fulfillment.dispatch.force', granted: true });
-  });
-
-  it('keeps a station stamp out of the admin route once enforced', async () => {
+  it('keeps a station stamp out of the admin route', async () => {
     const request = {};
     recordPermissionDecisions(request, ['fulfillment.dispatch.station_force']);
-    expect(await run(true, request)).toBeUndefined();
+    expect(await run(request)).toBeUndefined();
+  });
+
+  it('passes no decision for a request without a permission stamp', async () => {
+    expect(await run({ user })).toBeUndefined();
   });
 });

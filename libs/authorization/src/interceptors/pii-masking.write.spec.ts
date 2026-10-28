@@ -4,8 +4,6 @@ import { ExecutionContextHost } from '@nestjs/core/helpers/execution-context-hos
 import { lastValueFrom, of } from 'rxjs';
 import { OPEN_WITH_RECIPIENT, PiiWrite } from '../decorators/pii-response.decorator';
 import { PiiAccessRecord, PiiAccessRecorder } from '../services/pii-access-recorder';
-import { PermissionAuthority } from '../services/permission-authority';
-import { RouteRequirementResolver } from '../services/route-requirement.resolver';
 import { PiiMaskingInterceptor } from './pii-masking.interceptor';
 
 class Probe {
@@ -25,23 +23,13 @@ class NoRecorder extends PiiAccessRecorder {
   async record(_entry: PiiAccessRecord): Promise<void> {}
 }
 
-const authority = (enforce: boolean) =>
-  new PermissionAuthority(new RouteRequirementResolver(new Reflector()), {
-    service: 'core',
-    enforce,
-    refreshIntervalMs: 30_000,
-    retryBaseMs: 1_000,
-    summaryIntervalMs: 300_000,
-  });
-
-const run = async (handler: keyof Probe, body: unknown, permissions: readonly string[] | null, enforce = true) => {
+const run = async (handler: keyof Probe, body: unknown, permissions: readonly string[] | null) => {
   const cache = { permissionsFor: () => (permissions === null ? null : new Set(permissions)) };
   const interceptor = new PiiMaskingInterceptor(
     new Reflector(),
     cache,
     new NoRecorder(),
     { service: 'core', revealRequired: false, envelope: 'none' },
-    authority(enforce),
   );
   const request = { body, user: { userId: 'u1', sub: 'u1', roles: ['someone'] }, headers: {} };
   const context = new ExecutionContextHost([request, {}], Probe, Probe.prototype[handler]);
@@ -92,19 +80,13 @@ describe('PiiMaskingInterceptor write fields', () => {
     expect(handled).toBe(1);
   });
 
-  it('cannot judge without a permission snapshot once enforced and says so', async () => {
+  it('cannot judge without a permission snapshot and says so', async () => {
     await expect(run('updateProfile', { username: '홍길동' }, null)).rejects.toBeInstanceOf(ServiceUnavailableException);
   });
 
-  it('lets a write through while the snapshot is missing in shadow mode', async () => {
-    const { handled } = await run('updateProfile', { username: '홍길동' }, null, false);
+  it('does not judge a body without personal fields while the snapshot is missing', async () => {
+    const { handled } = await run('updateProfile', { nickname: 'n' }, null);
     expect(handled).toBe(1);
-  });
-
-  it('still refuses a writer without the permission in shadow mode', async () => {
-    await expect(run('updateProfile', { username: '홍*동' }, ['customer.profile.write'], false)).rejects.toBeInstanceOf(
-      ForbiddenException,
-    );
   });
 
   it('leaves undeclared routes alone', async () => {

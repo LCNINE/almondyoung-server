@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiProperty, ApiPropertyOptional, ApiTags } from '@nestjs/swagger';
-import { AdminRealmGuard, JwtAuthGuard, RequirePermission, PermissionGuard } from '@app/authorization';
+import { JwtAuthGuard, RequirePermission, PermissionGuard } from '@app/authorization';
 import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
@@ -119,7 +119,7 @@ export class CreateRevenueGoalDto {
  */
 @ApiTags('Statistics')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard, PermissionGuard, AdminRealmGuard)
+@UseGuards(JwtAuthGuard, PermissionGuard)
 @Controller('statistics')
 export class RevenueGoalController {
   constructor(

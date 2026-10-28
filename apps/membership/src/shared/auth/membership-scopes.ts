@@ -3,7 +3,7 @@ import type { RoleScopeMappingDefinition, ScopeDefinition } from '@app/authoriza
 /**
  * 멤버십 운영 스코프.
  *
- * 이전에는 모든 관리자 액션이 `RolesGuard('admin','master')` 하나로만 막혀 있어, 어떤 admin 이든
+ * 이전에는 모든 관리자 액션이 admin·master 역할 가드 하나로만 막혀 있어, 어떤 admin 이든
  * 금액 제한 없이 환불할 수 있었다. 다만 위험의 실체는 "환불 자체"가 아니라 **정책 산정액보다 많이
  * 환불하는 것**이다(해지·환불은 CS 의 일상 업무다). 그래서 일상 권한은 admin 에게 그대로 두고,
  * 정책 초과 환불만 별도 스코프로 분리한다.

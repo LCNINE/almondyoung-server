@@ -1,5 +1,5 @@
 import { Test } from '@nestjs/testing';
-import { ScopeGuard, AuthorizationService } from '@app/authorization';
+import { enforcedPermissionProvidersForTesting } from '@app/authorization';
 import * as request from 'supertest';
 import { Server } from 'http';
 import { Request } from 'express';
@@ -121,7 +121,7 @@ describeIfDb('InboundReceiptStateReader (PostgreSQL)', () => {
       });
     });
   });
-  it('HTTP enforces OPERATE, UUIDs and the actual warehouse, and returns canceled PO lines', async () => {
+  it('HTTP enforces the read permission, UUIDs and the actual warehouse, and returns canceled PO lines', async () => {
     await inRollbackTx(db, async (tx) => {
       const f = await seed(tx);
       await tx
@@ -131,14 +131,8 @@ describeIfDb('InboundReceiptStateReader (PostgreSQL)', () => {
       const module = await Test.createTestingModule({
         controllers: [InboundController],
         providers: [
-          ScopeGuard,
-          {
-            provide: AuthorizationService,
-            useValue: {
-              getScopesByRoles: (roles: string[]) =>
-                Promise.resolve(new Set(roles.includes('operator') ? ['inventory.operate'] : [])),
-            },
-          },
+          // 라이브 enforce 와 같은 인가 — operator 만 재고 조회 권한을 갖는다.
+          ...enforcedPermissionProvidersForTesting({ operator: ['inventory.stock.read'], viewer: [] }),
           { provide: InboundService, useValue: makeInboundService(db) },
           { provide: InboundPutawayReader, useValue: makeInboundPutawayReader(db) },
           {
@@ -159,7 +153,7 @@ describeIfDb('InboundReceiptStateReader (PostgreSQL)', () => {
       try {
         const http = app.getHttpServer() as Server;
         const path = `/inbound/lines/${f.line.id}/state`;
-        await request(http).get(path).query({ warehouseId: f.warehouse.id }).expect(403);
+        await request(http).get(path).query({ warehouseId: f.warehouse.id }).expect(401);
         await request(http).get(path).set('x-test-role', 'viewer').query({ warehouseId: f.warehouse.id }).expect(403);
         await request(http).get(path).set('x-test-role', 'operator').query({ warehouseId: randomUUID() }).expect(403);
         await request(http).get(path).set('x-test-role', 'operator').expect(400);

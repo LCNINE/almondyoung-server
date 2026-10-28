@@ -5,7 +5,6 @@ import { LoggerModule } from 'nestjs-pino';
 import { DbModule } from '@app/db';
 import { CronOnceModule } from '@app/cron-once';
 import {
-  AdminRealmGuard,
   AuthorizationModule,
   AuthzObserverGuard,
   AuthzShadowInterceptor,
@@ -84,11 +83,8 @@ import { PrintOrderAdminModule } from './modules/print-order/print-order-admin.m
     // 그림자 판정 관찰 — 반드시 맨 앞(뒤 가드가 거부한 요청도 봐야 한다). 결과에 관여하지 않는다.
     { provide: APP_GUARD, useClass: AuthzObserverGuard },
     { provide: APP_GUARD, useClass: JwtAuthGuard },
-    // JwtAuthGuard 다음에 등록해야 request.user 가 채워진 뒤 역할을 본다 (APP_GUARD 는 등록 순).
-    // 표시가 없는 라우트를 직원 전용으로 막는다 — @Public/@OptionalAuth/@StoreRoute/@RequireScopes
-    // 중 하나가 붙은 라우트는 각자의 정책에 위임한다. 상세는 AdminRealmGuard 주석 참조.
-    { provide: APP_GUARD, useClass: AdminRealmGuard },
-    // 권한 강제 — AUTHZ_ENFORCE=true 일 때만 일한다(기본 꺼짐). 기존 가드 뒤에 둔다.
+    // 권한 판정 — 라우트 인가를 결정한다(설정으로 끌 수 없다). JwtAuthGuard 다음에 등록해야
+    // request.user 가 채워진 뒤 역할을 본다(APP_GUARD 는 등록 순). 분류 표식이 없는 라우트는 거부한다.
     { provide: APP_GUARD, useClass: PermissionGuard },
     { provide: APP_INTERCEPTOR, useClass: AuthzShadowInterceptor },
     // 개인정보 표시 제한 — 다른 응답 인터셉터보다 바깥에서 최종 본문을 본다.

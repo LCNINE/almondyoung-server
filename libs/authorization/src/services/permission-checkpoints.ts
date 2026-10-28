@@ -8,32 +8,19 @@ import { PERMISSION_RUNTIME_OPTIONS, PermissionRuntimeOptions } from './permissi
 import { AuthzSubject, isSystemPrincipal } from './system-principal';
 
 export type CheckpointName = `${string}.${string}`;
-export type CheckpointOutcome = 'match' | 'would_deny' | 'would_allow' | 'unavailable';
+export type CheckpointOutcome = 'match' | 'unavailable';
 
-interface WindowEntry {
-  readonly checkpoint: CheckpointName;
-  readonly subject: string | readonly string[];
-  readonly outcome: CheckpointOutcome;
-  count: number;
-}
-
-/** 창 하나에서 기억할 불일치 종류 상한. 넘치면 건수만 센다. */
-const MAX_WINDOW_KEYS = 200;
 const ALLOW: Verdict = { allowed: true };
+/** 요약 로그의 모양은 관측 도구가 파싱하므로 wouldDeny·wouldAllow·overflow 는 0 으로, mismatches 는 빈 배열로 남긴다. */
 const emptyTotals = () => ({ evaluated: 0, match: 0, wouldDeny: 0, wouldAllow: 0, unavailable: 0, overflow: 0 });
 
 /**
- * 핸들러 «안»의 판정(역할 이름·옛 스코프·옛 판정 낙인)을 권한 판정과 나란히 계산해 비교한다.
- *
- * 그림자 모드에선 결과를 바꾸지 않는다 — `compare`·`compareDecision` 은 옛 판정을 그대로 돌려준다(대조군/후보 실험).
- * `AUTHZ_ENFORCE=true` 면 새 판정을 돌려준다(판정 불가는 거부). 비교 기록은 두 모드 모두 남긴다.
- * 호출하는 쪽은 옛 판정을 끝까지 계산하고 그 값을 넘긴다 — 옛 판정이 조회 실패로 던지면 여기까지 오지 않고,
- * 그건 인가 판정이 아니므로 비교하지 않는다. 요청 경로에서 하는 일은 메모리 조회뿐이다.
+ * 핸들러 «안»의 판정을 권한으로 정한다. 주체의 권한(`check`) 또는 라우트가 남긴 판정 낙인(`checkRoute`)만 보고,
+ * 판정 불가(사본 없음)는 거부한다. 요청 경로에서 하는 일은 메모리 조회뿐이다.
  */
 @Injectable()
 export class PermissionCheckpoints implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(PermissionCheckpoints.name);
-  private window = new Map<string, WindowEntry>();
   private totals = emptyTotals();
   private windowStartedAt = Date.now();
   private timer: NodeJS.Timeout | undefined;
@@ -53,49 +40,25 @@ export class PermissionCheckpoints implements OnModuleInit, OnModuleDestroy {
     if (this.timer) clearInterval(this.timer);
   }
 
-  /** 주체의 권한으로 새 판정을 계산해 옛 판정과 비교한다. 그림자에선 옛 판정, 강제에선 새 판정을 반환한다. */
-  compare(
-    point: CheckpointName,
-    legacy: boolean,
-    subject: AuthzSubject | undefined,
-    anyOf: readonly Permission[],
-  ): boolean {
+  /** 주체의 권한만으로 정한다. 시스템 주체는 사본 없이도 허용한다. */
+  check(point: CheckpointName, subject: AuthzSubject | undefined, anyOf: readonly Permission[]): boolean {
     const verdict: Verdict = isSystemPrincipal(subject)
       ? ALLOW
       : this.decider.decide({ kind: 'permission', anyOf }, subject?.roles);
-    this.record(point, legacy, verdict, this.subjectLabel(subject), anyOf);
-    return this.decide(legacy, verdict);
+    this.tally(point, verdict);
+    return verdict.allowed;
   }
 
-  /** 라우트가 이 요청에 남긴 권한 판정 낙인으로 새 판정을 계산해 비교한다. 그림자에선 옛 판정, 강제에선 새 판정을 반환한다. */
-  compareDecision(point: CheckpointName, legacy: boolean, request: unknown, anyOf: readonly Permission[]): boolean {
+  /** 라우트가 이 요청에 남긴 권한 판정 낙인만으로 정한다. 사본이 준비되지 않았으면 거부한다. */
+  checkRoute(point: CheckpointName, request: unknown, anyOf: readonly Permission[]): boolean {
     const verdict: Verdict =
       this.cache.status().state !== 'ready'
         ? { allowed: false, reason: 'unavailable' }
         : anyOf.some((permission) => getPermissionDecision(request, permission) !== undefined)
           ? ALLOW
           : { allowed: false, reason: 'missing_permission' };
-    this.record(point, legacy, verdict, 'route-decision', anyOf);
-    return this.decide(legacy, verdict);
-  }
-
-  /**
-   * 옛 판정 계산(옛 스코프 표 조회 등). 그림자 모드에선 조회 실패를 지금처럼 던진다. 새 판정이 결정하는 모드에선
-   * «옛 거부»로 넘긴다 — 결과는 새 판정이 정하므로 옛 표 조회 실패가 그 판정을 막지 않게.
-   */
-  async legacyVerdict(compute: () => boolean | Promise<boolean>): Promise<boolean> {
-    try {
-      return await compute();
-    } catch (error) {
-      if (!this.options.enforce) throw error;
-      this.logger.warn(`legacy authorization lookup failed while the permission decides: ${String(error)}`);
-      return false;
-    }
-  }
-
-  /** 판정 지점의 결과를 새 판정이 정하는가. */
-  get enforced(): boolean {
-    return this.options.enforce;
+    this.tally(point, verdict);
+    return verdict.allowed;
   }
 
   flush(now = Date.now()): void {
@@ -104,79 +67,26 @@ export class PermissionCheckpoints implements OnModuleInit, OnModuleDestroy {
         JSON.stringify({
           event: 'authz_checkpoint_summary',
           service: this.options.service,
-          mode: this.mode(),
+          mode: 'enforce',
           windowSeconds: Math.round((now - this.windowStartedAt) / 1_000),
           ...this.totals,
-          mismatches: [...this.window.values()],
+          mismatches: [],
         }),
       );
     }
-    this.window = new Map();
     this.totals = emptyTotals();
     this.windowStartedAt = now;
   }
 
-  private decide(legacy: boolean, verdict: Verdict): boolean {
-    return this.options.enforce ? verdict.allowed : legacy;
+  /** 판정 불가가 아니면 모두 `match` 로 센다(지표·요약 모양 유지). */
+  private tally(point: CheckpointName, verdict: Verdict): void {
+    this.count(point, !verdict.allowed && verdict.reason === 'unavailable' ? 'unavailable' : 'match');
   }
 
-  private mode(): 'shadow' | 'enforce' {
-    return this.options.enforce ? 'enforce' : 'shadow';
-  }
-
-  private subjectLabel(subject: AuthzSubject | undefined): string | readonly string[] {
-    if (subject === undefined) return 'anonymous';
-    if (isSystemPrincipal(subject)) return `system:${subject.name}`;
-    return [...new Set(subject.roles)].sort();
-  }
-
-  private record(
-    point: CheckpointName,
-    legacy: boolean,
-    verdict: Verdict,
-    subject: string | readonly string[],
-    anyOf: readonly Permission[],
-  ): void {
-    const outcome: CheckpointOutcome =
-      !verdict.allowed && verdict.reason === 'unavailable'
-        ? 'unavailable'
-        : verdict.allowed === legacy
-          ? 'match'
-          : legacy
-            ? 'would_deny'
-            : 'would_allow';
-
+  private count(point: CheckpointName, outcome: CheckpointOutcome): void {
     checkpointEvaluationsTotal.inc({ service: this.options.service, checkpoint: point, outcome });
     this.totals.evaluated += 1;
     if (outcome === 'match') this.totals.match += 1;
-    else if (outcome === 'would_deny') this.totals.wouldDeny += 1;
-    else if (outcome === 'would_allow') this.totals.wouldAllow += 1;
     else this.totals.unavailable += 1;
-    if (outcome !== 'would_deny' && outcome !== 'would_allow') return;
-
-    const key = JSON.stringify([point, subject, outcome]);
-    const seen = this.window.get(key);
-    if (seen) {
-      seen.count += 1;
-      return;
-    }
-    if (this.window.size >= MAX_WINDOW_KEYS) {
-      this.totals.overflow += 1;
-      return;
-    }
-    this.window.set(key, { checkpoint: point, subject, outcome, count: 1 });
-    this.logger.warn(
-      JSON.stringify({
-        event: 'authz_checkpoint_mismatch',
-        service: this.options.service,
-        mode: this.mode(),
-        checkpoint: point,
-        subject,
-        legacy: legacy ? 'allow' : 'deny',
-        next: verdict.allowed ? 'allow' : 'deny',
-        reason: verdict.allowed ? null : verdict.reason,
-        required: anyOf,
-      }),
-    );
   }
 }

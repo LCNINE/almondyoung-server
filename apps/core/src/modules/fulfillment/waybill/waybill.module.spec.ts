@@ -14,13 +14,12 @@ import { HanjinCarrierGateway } from './carrier/hanjin/hanjin-carrier.gateway';
 //
 // Task 14: DATABASE_URL 이 있으면(describeIfDb) 실제로 .compile() 해 WaybillModule 전체 provider 그래프
 // (WaybillService → WaybillManager/WaybillReader/WaybillRepository/WaybillIssueMachine → FulfillmentCommandModule
-// → FulfillmentCommandService, 그리고 WaybillController 의 ScopeGuard → AuthorizationModule)가 무순환·전량
+// → FulfillmentCommandService)가 무순환·전량
 // 해결되는지 검증한다. AppModule(apps/core/src/app.module.ts)과 동일한 순서로 ConfigModule → DbModule →
 // AuthorizationModule 을 배선해야 한다:
 //   - DbModule 없이는 FulfillmentCommandService 의 DbService 의존성이 미해결.
-//   - AuthorizationModule(@Global) 없이는 WaybillController 의 `@UseGuards(ScopeGuard)` 가 요구하는
-//     AuthorizationService 가 미해결(이 isolated TestingModule 에는 AppModule 이 어디서도 전역 등록해주지
-//     않으므로 직접 등록해야 한다).
+//   - AuthorizationModule(@Global) 은 AppModule 과 같은 전역 인증 배선이다(이 isolated TestingModule 에는
+//     AppModule 이 어디서도 전역 등록해주지 않으므로 직접 등록한다).
 // AuthorizationModule.forRoot 의 AUTH_CONFIG 팩토리는 AUTH_SECRET(HS256) 또는 OIDC_ISSUER_URL 이 없으면
 // 즉시 throw 하므로, 로컬/CI 에 시크릿이 없을 때를 대비해 더미 AUTH_SECRET 을 주입한다 — 이 스모크는 provider
 // 그래프 해결만 검증하며 JWT 검증 로직 자체는 행사하지 않는다.

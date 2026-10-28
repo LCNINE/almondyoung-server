@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger, OnApplicationBootstrap, OnModuleDestroy } from '@nestjs/common';
+import { Inject, Injectable, Logger, OnApplicationBootstrap, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { PERMISSION_RUNTIME_OPTIONS, PermissionRuntimeOptions } from './permission-runtime.options';
 import { RolePermissionSnapshot, RolePermissionSource } from './role-permission-source';
 
@@ -23,7 +23,7 @@ const MAX_ROLE_SETS = 1_000;
  * 크론이 아니다: 사본은 프로세스마다 있어야 하므로 모든 인스턴스가 각자 돈다.
  */
 @Injectable()
-export class PermissionCache implements OnApplicationBootstrap, OnModuleDestroy {
+export class PermissionCache implements OnModuleInit, OnApplicationBootstrap, OnModuleDestroy {
   private readonly logger = new Logger(PermissionCache.name);
   private current: { version: string; byRole: ReadonlyMap<string, ReadonlySet<string>> } | null = null;
   private checkedAt: number | null = null;
@@ -37,6 +37,11 @@ export class PermissionCache implements OnApplicationBootstrap, OnModuleDestroy 
     private readonly source: RolePermissionSource,
     @Inject(PERMISSION_RUNTIME_OPTIONS) private readonly options: PermissionRuntimeOptions,
   ) {}
+
+  /** 운영 도구가 이 줄을 찾는다(형식 고정). 판정은 항상 새 권한 판정이 한다. */
+  onModuleInit(): void {
+    this.logger.log(`authz mode: enforce (${this.options.service})`);
+  }
 
   onApplicationBootstrap(): void {
     if (!this.source.isConfigured()) {

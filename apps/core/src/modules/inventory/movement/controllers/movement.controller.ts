@@ -1,8 +1,7 @@
 import { WarehouseActor, warehouseOperationContext } from '../../core/services/warehouse-operation-contract';
-import { Controller, Post, Body, Get, Param, Query, Headers, UseGuards } from '@nestjs/common';
+import { Controller, Post, Body, Get, Param, Query, Headers } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiQuery } from '@nestjs/swagger';
-import { RequireScopes, ScopeGuard, User, RequirePermission } from '@app/authorization';
-import { INVENTORY_SCOPE } from '../../../../platform/auth/inventory-scopes';
+import { User, RequirePermission } from '@app/authorization';
 import { MovementService } from '../services/movement.service';
 import { MoveBatchDto } from '../dto/move-batch.dto';
 import { MovementJobWithLinesDto, MovementHistoryResponseDto } from '../dto/movement-response.dto';
@@ -10,13 +9,11 @@ import { MovementJobMapper, MovementWorkLogMapper } from '../mappers/movement.ma
 
 @ApiTags('Movement')
 @Controller('movement')
-@UseGuards(ScopeGuard)
 export class MovementController {
   constructor(private readonly movementService: MovementService) {}
 
   @RequirePermission('inventory.stock.operate')
   @Post('move')
-  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '동일 창고 내 즉시 이동(배치)' })
   @ApiResponse({
     status: 200,
@@ -36,7 +33,6 @@ export class MovementController {
 
   @RequirePermission('inventory.stock.read')
   @Get('jobs/:jobId')
-  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '이동 작업 상세 조회' })
   @ApiResponse({
     status: 200,
@@ -51,7 +47,6 @@ export class MovementController {
 
   @RequirePermission('inventory.stock.read')
   @Get('history')
-  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '이동 작업 히스토리 조회' })
   @ApiQuery({ name: 'skuId', required: false })
   @ApiQuery({ name: 'warehouseId', required: false })

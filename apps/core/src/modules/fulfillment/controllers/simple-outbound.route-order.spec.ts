@@ -3,7 +3,7 @@ import * as path from 'path';
 import * as ts from 'typescript';
 import { Test } from '@nestjs/testing';
 import * as request from 'supertest';
-import { ScopeGuard, PermissionCheckpoints, createCheckpointsForTesting } from '@app/authorization';
+import { PermissionCheckpoints, createCheckpointsForTesting } from '@app/authorization';
 import { SimpleOutboundController } from './simple-outbound.controller';
 import { ShipmentPlanningController } from './shipment-planning.controller';
 import { SimpleOutboundService } from '../services/simple-outbound.service';
@@ -138,10 +138,7 @@ describe('shipments route ordering (by-waybill vs :id)', () => {
         { provide: ShipmentWaybillReader, useValue: { byTrackingNo } },
         { provide: ShipmentPlanningService, useValue: { getShipmentDetail } },
       ],
-    })
-      .overrideGuard(ScopeGuard)
-      .useValue({ canActivate: () => true })
-      .compile();
+    }).compile();
 
     const app = moduleRef.createNestApplication();
     await app.init();

@@ -1,21 +1,19 @@
 /* eslint-disable @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-misused-promises */
 import { ForbiddenException } from '@nestjs/common';
-import { SCOPE_AUTHORIZATION_DECISION_BRAND } from '@app/authorization';
-import { FULFILLMENT_SCOPE } from '../../../platform/auth/fulfillment-scopes';
+import { getPermissionDecision, recordPermissionDecisions } from '@app/authorization';
+import { FULFILLMENT_PERMISSION } from '../../../platform/auth/fulfillment-permissions';
 import { ShipmentDispatchService } from './shipment-dispatch.service';
 import { emitShipmentDispatched, enqueueCustomerShipmentNotices } from './dispatch-effects';
 
-const FORCE_AUTHORIZATION = Object.freeze({
-  scope: FULFILLMENT_SCOPE.DISPATCH_FORCE,
-  granted: true as const,
-  [SCOPE_AUTHORIZATION_DECISION_BRAND]: true as const,
-});
+/** 라우트의 PermissionGuard 가 남기는 낙인 — 위조 불가라 실제 기록 함수로 만든다. */
+function permissionDecision(permission: string) {
+  const request = {};
+  recordPermissionDecisions(request, [permission]);
+  return getPermissionDecision(request, permission);
+}
 
-const STATION_FORCE_AUTHORIZATION = Object.freeze({
-  scope: FULFILLMENT_SCOPE.DISPATCH_STATION_FORCE,
-  granted: true as const,
-  [SCOPE_AUTHORIZATION_DECISION_BRAND]: true as const,
-});
+const FORCE_AUTHORIZATION = permissionDecision(FULFILLMENT_PERMISSION.DISPATCH_FORCE);
+const STATION_FORCE_AUTHORIZATION = permissionDecision(FULFILLMENT_PERMISSION.DISPATCH_STATION_FORCE);
 
 const IDS = {
   shipment: '00000000-0000-4000-8000-000000000001',
@@ -306,7 +304,7 @@ describe('ShipmentDispatchService', () => {
     );
   });
 
-  it('rejects a direct force call without the ScopeGuard decision even for a familiar raw role', async () => {
+  it('rejects a direct force call without the permission decision even for a familiar raw role', async () => {
     const { service, commands } = makeService();
     await expect(
       service.forceDispatch(IDS.shipment, {
@@ -319,18 +317,27 @@ describe('ShipmentDispatchService', () => {
     expect(commands.execute).not.toHaveBeenCalled();
   });
 
-  it('rejects a decision for an unrelated scope', async () => {
+  it('rejects a decision for an unrelated permission', async () => {
     const { service, commands } = makeService();
     await expect(
       service.forceDispatch(IDS.shipment, {
-        reason: 'wrong scope',
+        reason: 'wrong permission',
         actor: { id: IDS.actor, roles: ['logistics_worker'] },
-        idempotencyKey: 'force-wrong-scope',
-        authorization: Object.freeze({
-          scope: FULFILLMENT_SCOPE.WAREHOUSE_OPERATE,
-          granted: true as const,
-          [SCOPE_AUTHORIZATION_DECISION_BRAND]: true as const,
-        }),
+        idempotencyKey: 'force-wrong-permission',
+        authorization: permissionDecision(FULFILLMENT_PERMISSION.WAREHOUSE_OPERATE),
+      }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(commands.execute).not.toHaveBeenCalled();
+  });
+
+  it('rejects a look-alike decision the permission guard did not issue', async () => {
+    const { service, commands } = makeService();
+    await expect(
+      service.forceDispatch(IDS.shipment, {
+        reason: 'forged decision',
+        actor: { id: IDS.actor, roles: ['logistics_manager'] },
+        idempotencyKey: 'force-forged',
+        authorization: Object.freeze({ permission: FULFILLMENT_PERMISSION.DISPATCH_FORCE, granted: true }),
       }),
     ).rejects.toBeInstanceOf(ForbiddenException);
     expect(commands.execute).not.toHaveBeenCalled();
@@ -481,8 +488,7 @@ describe('ShipmentDispatchService', () => {
       csCaseId: 'CASE-1',
       note: 'shift lead present',
       commandRequestId: 'command-1',
-      authorizationScope: FULFILLMENT_SCOPE.DISPATCH_FORCE,
-      authorizationSource: 'scope_guard',
+      authorizationScope: FULFILLMENT_PERMISSION.DISPATCH_FORCE,
       beforeLineManifest: [
         {
           shipmentLineId: IDS.line,
@@ -535,9 +541,9 @@ describe('ShipmentDispatchService', () => {
       expect.objectContaining({
         commandRequestId: 'command-1',
         authorization: {
-          scope: FULFILLMENT_SCOPE.DISPATCH_FORCE,
+          scope: FULFILLMENT_PERMISSION.DISPATCH_FORCE,
           granted: true,
-          source: 'scope_guard',
+          source: 'permission_guard',
         },
         shipmentId: IDS.shipment,
         fulfillmentOrderIds: [IDS.fo],

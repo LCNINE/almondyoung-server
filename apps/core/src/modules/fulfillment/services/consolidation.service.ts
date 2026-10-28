@@ -6,11 +6,10 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { AuthorizationService, PermissionCheckpoints } from '@app/authorization';
+import { PermissionCheckpoints } from '@app/authorization';
 import { DbService, InjectTypedDb } from '@app/db';
 import { and, asc, eq, gt, inArray, ne, notInArray } from 'drizzle-orm';
-import { legacyHasFulfillmentScope } from '../../../platform/auth/fulfillment-authz';
-import { FULFILLMENT_SCOPE, FulfillmentScope } from '../../../platform/auth/fulfillment-scopes';
+import { FULFILLMENT_PERMISSION, FulfillmentPermission } from '../../../platform/auth/fulfillment-permissions';
 import { authzSubjectOf } from '../../../platform/auth/system-actor';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import { AuditService } from '../../inventory/shared/services/audit.service';
@@ -188,7 +187,6 @@ export class ConsolidationService {
     private readonly reservations: ShipmentReservationService,
     private readonly invariant: FulfillmentInvariantService,
     private readonly audit: AuditService,
-    private readonly authorization: AuthorizationService,
     private readonly workflowGate: FulfillmentWorkflowGate,
     private readonly checkpoints: PermissionCheckpoints,
   ) {}
@@ -276,7 +274,7 @@ export class ConsolidationService {
   ): Promise<ConsolidationResponse> {
     this.workflowGate.assertV2MutationAllowed('shipment.consolidate');
     this.assertReason(dto.reason);
-    await this.requireScope(actor, FULFILLMENT_SCOPE.SHIPMENT_CONSOLIDATE);
+    this.requirePermission(actor, FULFILLMENT_PERMISSION.SHIPMENT_CONSOLIDATE);
     const sources = [...dto.sources].sort((left, right) => left.shipmentId.localeCompare(right.shipmentId));
     if (sources.length < 2) throw new BadRequestException('At least two source shipments are required');
     if (new Set(sources.map((source) => source.shipmentId)).size !== sources.length) {
@@ -320,7 +318,7 @@ export class ConsolidationService {
             aggregate.lines.some((line) => !this.sameRecipient(line.orderRecipientSnapshot, recipientSnapshot)),
         );
         if (overridesRecipient) {
-          await this.requireScope(actor, FULFILLMENT_SCOPE.SHIPMENT_OVERRIDE_RECIPIENT);
+          this.requirePermission(actor, FULFILLMENT_PERMISSION.SHIPMENT_OVERRIDE_RECIPIENT);
         }
 
         const before = aggregates.map((aggregate) => this.snapshot(aggregate));
@@ -341,10 +339,10 @@ export class ConsolidationService {
 
         const blockerRows = await this.collectBlockers(aggregates, trx);
         if (aggregates.some((aggregate) => aggregate.shipment.status !== 'draft')) {
-          await this.requireScope(actor, FULFILLMENT_SCOPE.SHIPMENT_REOPEN);
+          this.requirePermission(actor, FULFILLMENT_PERMISSION.SHIPMENT_REOPEN);
         }
         if (blockerRows.length > 0) {
-          await this.requireScope(actor, FULFILLMENT_SCOPE.SHIPMENT_REOPEN);
+          this.requirePermission(actor, FULFILLMENT_PERMISSION.SHIPMENT_REOPEN);
           return this.deferConsolidation(
             operation,
             aggregates,
@@ -1145,12 +1143,9 @@ export class ConsolidationService {
     }
   }
 
-  private async requireScope(actor: ConsolidationActor, scope: FulfillmentScope): Promise<void> {
-    const legacy = await this.checkpoints.legacyVerdict(() =>
-      legacyHasFulfillmentScope(this.authorization, actor.roles, scope),
-    );
-    if (!this.checkpoints.compare('fulfillment.consolidation_scope', legacy, authzSubjectOf(actor), [scope])) {
-      throw new ForbiddenException(`Missing required scope: ${scope}`);
+  private requirePermission(actor: ConsolidationActor, permission: FulfillmentPermission): void {
+    if (!this.checkpoints.check('fulfillment.consolidation_scope', authzSubjectOf(actor), [permission])) {
+      throw new ForbiddenException(`Missing required scope: ${permission}`);
     }
   }
 

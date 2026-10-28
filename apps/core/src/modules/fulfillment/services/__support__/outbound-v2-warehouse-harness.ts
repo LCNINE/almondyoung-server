@@ -208,10 +208,8 @@ export function makeServices(db: Database, tx: DbTx) {
     new FulfillmentProgressService(),
     invariant,
   );
-  const authorization = { getScopesByRoles: jest.fn().mockResolvedValue(new Set(['master'])) };
   const shortPick = new ShipmentShortPickService(
     commands,
-    authorization as never,
     audit,
     workflow,
     boxes,

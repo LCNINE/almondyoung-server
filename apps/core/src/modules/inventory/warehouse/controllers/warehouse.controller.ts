@@ -1,7 +1,6 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { RequireScopes, ScopeGuard, RequirePermission } from '@app/authorization';
-import { INVENTORY_SCOPE } from '../../../../platform/auth/inventory-scopes';
+import { RequirePermission } from '@app/authorization';
 import { CreateWarehouseDto } from '../dto/create-warehouse.dto';
 import { UpdateWarehouseDto } from '../dto/update-warehouse.dto';
 import { WarehouseDto } from '../dto/warehouse.dto';
@@ -10,13 +9,11 @@ import { WarehouseService } from '../services/warehouse.service';
 
 @ApiTags('Inventory')
 @Controller('inventory/warehouses')
-@UseGuards(ScopeGuard)
 export class WarehouseController {
   constructor(private readonly warehouseService: WarehouseService) {}
 
   @RequirePermission('inventory.warehouse.write')
   @Post()
-  @RequireScopes(INVENTORY_SCOPE.WAREHOUSE_MANAGE)
   @ApiOperation({ summary: '새 창고 생성' })
   @ApiResponse({ status: 201, description: '창고가 생성되었습니다.', type: WarehouseDto })
   @ApiResponse({ status: 403, description: '창고 관리 권한이 없습니다.' })
@@ -27,7 +24,6 @@ export class WarehouseController {
 
   @RequirePermission('inventory.stock.read')
   @Get()
-  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '모든 창고 목록 조회' })
   @ApiResponse({ status: 200, description: '창고 목록을 반환합니다.' })
   @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
@@ -38,7 +34,6 @@ export class WarehouseController {
 
   @RequirePermission('inventory.stock.read')
   @Get(':id')
-  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '특정 창고 조회' })
   @ApiResponse({ status: 200, description: '창고 정보를 반환합니다.' })
   @ApiResponse({ status: 404, description: '창고를 찾을 수 없습니다.' })
@@ -49,7 +44,6 @@ export class WarehouseController {
 
   @RequirePermission('inventory.stock.read')
   @Get(':id/summary')
-  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '창고별 재고 요약 조회' })
   @ApiResponse({ status: 200, description: '창고별 재고 요약을 반환합니다.' })
   @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
@@ -59,7 +53,6 @@ export class WarehouseController {
 
   @RequirePermission('inventory.warehouse.write')
   @Patch(':id')
-  @RequireScopes(INVENTORY_SCOPE.WAREHOUSE_MANAGE)
   @ApiOperation({ summary: '창고 정보 수정' })
   @ApiResponse({ status: 200, description: '창고 정보가 수정되었습니다.', type: WarehouseDto })
   @ApiResponse({ status: 403, description: '창고 관리 권한이 없습니다.' })
@@ -74,7 +67,6 @@ export class WarehouseController {
 
   @RequirePermission('inventory.warehouse.write')
   @Delete(':id')
-  @RequireScopes(INVENTORY_SCOPE.WAREHOUSE_MANAGE)
   @ApiOperation({ summary: '창고 삭제' })
   @ApiResponse({ status: 200, description: '창고가 삭제되었습니다.' })
   @ApiResponse({ status: 403, description: '창고 관리 권한이 없습니다.' })

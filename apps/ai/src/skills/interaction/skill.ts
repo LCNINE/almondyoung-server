@@ -1,4 +1,3 @@
-import { AI_SCOPE } from '../../platform/auth/ai-scopes';
 import type { Skill, SkillTool } from '../types';
 import { toolError } from '../types';
 
@@ -76,7 +75,7 @@ const askChoice: SkillTool = {
 
 export const interactionSkill: Skill = {
   name: 'interaction',
-  scopes: [AI_SCOPE.ASSISTANT, AI_SCOPE.STOREFRONT],
+  permissions: ['ai.assistant.use'],
   label: '되묻기',
   instructions: `## 되물을 때는 고를 것을 준다
 

@@ -1,18 +1,6 @@
-import {
-  Body,
-  Controller,
-  Get,
-  HttpCode,
-  HttpStatus,
-  Param,
-  ParseUUIDPipe,
-  Post,
-  Query,
-  UseGuards,
-} from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { PiiResponse, RequirePermission, RequireScopes, ScopeGuard, User } from '@app/authorization';
-import { INVENTORY_SCOPE } from '../../../platform/auth/inventory-scopes';
+import { PiiResponse, RequirePermission, User } from '@app/authorization';
 import {
   WarehouseActor,
   authenticatedWarehouseActor,
@@ -58,8 +46,6 @@ export class CustomerReturnsController {
 
   @RequirePermission('inventory.stock.operate')
   @Post(':id/arrivals')
-  @UseGuards(ScopeGuard)
-  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '반품 도착 — 받은 수량을 원장 RETURNED 로. 소포마다 멱등키 필수' })
   @ApiResponse({ status: 200, description: '도착 반영 뒤의 반품 기록' })
   @ApiResponse({
@@ -84,8 +70,6 @@ export class CustomerReturnsController {
 
   @RequirePermission('inventory.stock.operate')
   @Post(':id/inspection')
-  @UseGuards(ScopeGuard)
-  @RequireScopes(INVENTORY_SCOPE.OPERATE)
   @ApiOperation({ summary: '반품 검수 — 양품·불량·보류. 보류가 없으면 채널에 수령·환불 정산을 요청한다' })
   @ApiResponse({ status: 200, description: '검수 반영 뒤의 반품 기록' })
   @ApiResponse({ status: 400, description: '아직 도착하지 않은 수량 · 항목 누락·중복 · 합이 도착 수량과 다름' })

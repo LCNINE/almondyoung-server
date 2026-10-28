@@ -8,7 +8,7 @@ import {
 import { InjectTypedDb, DbService } from '@app/db';
 import type { SalesOrderCancellationOrigin } from '../direct-ship-cancel-notice/direct-ship-cancel-notice.types';
 import { recordSupplierCancelNotices } from '../direct-ship-cancel-notice/record-supplier-cancel-notices';
-import { AuthorizationService, PermissionCheckpoints } from '@app/authorization';
+import { PermissionCheckpoints } from '@app/authorization';
 import type { ShippingAddress } from '@packages/event-contracts/streams';
 import { and, asc, eq, inArray, or, sql } from 'drizzle-orm';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
@@ -26,8 +26,7 @@ import {
   SplitShipmentDto,
   SplitUnreservedShipmentDto,
 } from '../dto/shipment-planning.dto';
-import { legacyHasFulfillmentScope } from '../../../platform/auth/fulfillment-authz';
-import { FULFILLMENT_SCOPE, FulfillmentScope } from '../../../platform/auth/fulfillment-scopes';
+import { FULFILLMENT_PERMISSION, FulfillmentPermission } from '../../../platform/auth/fulfillment-permissions';
 import { authzSubjectOf } from '../../../platform/auth/system-actor';
 import { BoxWithdrawalService, WorkItemRow } from './box-withdrawal.service';
 import {
@@ -175,7 +174,6 @@ export class ShipmentPlanningService {
     private readonly reservations: ShipmentReservationService,
     private readonly invariant: FulfillmentInvariantService,
     private readonly audit: AuditService,
-    private readonly authorization: AuthorizationService,
     private readonly workflowGate: FulfillmentWorkflowGate,
     private readonly withdrawals: BoxWithdrawalService,
     private readonly checkpoints: PermissionCheckpoints,
@@ -408,7 +406,7 @@ export class ShipmentPlanningService {
             // 정정은 주문의 배송지를 건드리지 않으므로 이 판정에 들어가지 않는다.
             const orderRecipients = revision.snapshotChanged ? await this.loadOrderRecipientSnapshots(locked, tx) : [];
             const overridesOrder = orderRecipients.some((recipient) => !sameJson(recipient, dto.recipientSnapshot));
-            if (overridesOrder) await this.requireScope(actor, FULFILLMENT_SCOPE.SHIPMENT_OVERRIDE_RECIPIENT);
+            if (overridesOrder) this.requirePermission(actor, FULFILLMENT_PERMISSION.SHIPMENT_OVERRIDE_RECIPIENT);
 
             const before = this.snapshot(locked);
             const operation = await this.createOperation(
@@ -699,7 +697,7 @@ export class ShipmentPlanningService {
             : null;
 
         if (withdrawal) {
-          await this.requireScope(actor, FULFILLMENT_SCOPE.SHIPMENT_REOPEN);
+          this.requirePermission(actor, FULFILLMENT_PERMISSION.SHIPMENT_REOPEN);
           await this.recordPendingIntent(tx, operation.id, aggregate, dto, requestedLines, before);
           const outcome = await this.withdrawals.begin(
             {
@@ -741,7 +739,7 @@ export class ShipmentPlanningService {
         const settleable = readiness.kind === 'ready' && ['draft', 'planned'].includes(aggregate.shipment.status);
 
         if (!settleable) {
-          await this.requireScope(actor, FULFILLMENT_SCOPE.SHIPMENT_REOPEN);
+          this.requirePermission(actor, FULFILLMENT_PERMISSION.SHIPMENT_REOPEN);
           await this.markActiveWorkItemWaitingForCancellation(shipmentId, operation.id, tx);
           await transitionShipments(tx, {
             shipmentIds: [shipmentId],
@@ -769,7 +767,7 @@ export class ShipmentPlanningService {
 
         // 손질(배치 빼기·송장 무효화·planned→draft)은 상자를 다시 여는 일이라 대기 갈래와 같은 권한을 요구한다.
         // 손질 없는 draft 즉시 취소는 권한을 묻지 않는다.
-        if (readiness.steps.length) await this.requireScope(actor, FULFILLMENT_SCOPE.SHIPMENT_REOPEN);
+        if (readiness.steps.length) this.requirePermission(actor, FULFILLMENT_PERMISSION.SHIPMENT_REOPEN);
 
         await this.settleForCancellation(
           shipmentId,
@@ -1936,12 +1934,9 @@ export class ShipmentPlanningService {
     }
   }
 
-  private async requireScope(actor: ShipmentPlanningActor, scope: FulfillmentScope): Promise<void> {
-    const legacy = await this.checkpoints.legacyVerdict(() =>
-      legacyHasFulfillmentScope(this.authorization, actor.roles, scope),
-    );
-    if (!this.checkpoints.compare('fulfillment.planning_scope', legacy, authzSubjectOf(actor), [scope])) {
-      throw new ForbiddenException(`Missing required scope: ${scope}`);
+  private requirePermission(actor: ShipmentPlanningActor, permission: FulfillmentPermission): void {
+    if (!this.checkpoints.check('fulfillment.planning_scope', authzSubjectOf(actor), [permission])) {
+      throw new ForbiddenException(`Missing required scope: ${permission}`);
     }
   }
 
