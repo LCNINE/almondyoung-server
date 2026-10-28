@@ -2,7 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { and, eq, inArray, isNull, lt, lte, or, sql, type SQL } from 'drizzle-orm';
 import { DbService } from '@app/db';
 import { InjectTypedDb } from '@app/db/decorators';
-import { BadRequestError } from '@app/shared';
+import { BadRequestError, ConflictError, UpstreamUnavailableError } from '@app/shared';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import { CarrierGatewayRegistry } from '../../fulfillment/waybill/carrier/carrier-gateway.registry';
 import {
@@ -80,7 +80,7 @@ export class CustomerReturnPickupManager {
         if (row.status === 'pending') {
           if (await this.sendReservation(gateway, row, now)) result.sent += 1;
         } else if (row.status === 'cancel_pending') {
-          if (await this.sendCancellation(gateway, row, now)) result.cancelled += 1;
+          if ((await this.sendCancellation(gateway, row, now)) === 'cancelled') result.cancelled += 1;
         }
       } catch (error) {
         // 결과 기록(DB)이 실패했다. 리스는 만료되면 다시 잡힌다 — 다음 행은 계속 보낸다
@@ -91,6 +91,87 @@ export class CustomerReturnPickupManager {
       }
     }
     return result;
+  }
+
+  /**
+   * 반품 취소 전 회수 놓아주기 (N6). Medusa 가 반품을 취소하기 전에 동기로 부른다 — 한진 예약을 먼저 없애야
+   * 취소된 반품의 소포가 기록 없이 창고로 오지 않는다. released = 한진에 회수가 없다(취소해도 된다),
+   * picked_up = 기사가 이미 집하했다(취소 거절). 판정할 수 없으면 409(누가 보내는 중)·502(한진 취소 실패) —
+   * Medusa 는 둘 다 «판정 불가»로 읽고 반품을 그대로 둔다.
+   */
+  async release(channelReturnId: string, now: Date): Promise<{ result: 'released' | 'picked_up' }> {
+    const target = await this.dbService.run((trx) => this.findReleaseTarget(trx, channelReturnId));
+    if (target.kind !== 'pickup') return { result: target.kind };
+    const pickup = target.pickup;
+
+    if (pickup.leaseUntil && pickup.leaseUntil >= now) {
+      throw new ConflictError(`pickup_busy: pickup ${pickup.id} is being sent; retry after lease`);
+    }
+    if (pickup.status === 'pending' && pickup.attempts === 0) {
+      // 한진에 한 번도 안 보냈다 — 잡지 않고(attempts 를 올리지 않고) 바로 void. 그 사이 워커가 잡았으면 빗나간다
+      if (await this.dbService.run((trx) => this.voidUnsent(trx, pickup.id, now))) return { result: 'released' };
+      throw new ConflictError(`pickup_busy: pickup ${pickup.id} was claimed while releasing`);
+    }
+
+    const gateway = this.registry.get('HANJIN');
+    if (!gateway?.isPickupConfigured?.() || !canPickup(gateway)) {
+      throw new UpstreamUnavailableError(
+        `pickup_cancel_unavailable: pickup ${pickup.id} sent but carrier not configured`,
+      );
+    }
+    const claimed = await this.dbService.run((trx) => this.claim(trx, pickup.id, now));
+    if (!claimed?.leaseUntil) {
+      throw new ConflictError(`pickup_busy: pickup ${pickup.id} changed while releasing`);
+    }
+    const outcome = await this.sendCancellation(gateway, { ...claimed, leaseUntil: claimed.leaseUntil }, now);
+    if (outcome === 'failed') {
+      throw new UpstreamUnavailableError(`pickup_cancel_unavailable: pickup ${pickup.id} cancel not confirmed`);
+    }
+    return { result: outcome === 'cancelled' ? 'released' : 'picked_up' };
+  }
+
+  /**
+   * 놓아주기 대상. 기록이 없으면(요청 관측 지연) 회수도 없다 → released.
+   * 반품이 이미 도착·검수 쪽으로 갔으면 소포는 기사 손을 떠났다 → 한진을 묻지 않고 picked_up.
+   */
+  private async findReleaseTarget(
+    trx: DbTx,
+    channelReturnId: string,
+  ): Promise<{ kind: 'released' | 'picked_up' } | { kind: 'pickup'; pickup: PickupRow }> {
+    const r = wmsTables.customerReturns;
+    const [record] = await trx
+      .select({ id: r.id, status: r.status })
+      .from(r)
+      .where(eq(r.channelReturnId, channelReturnId))
+      .limit(1);
+    if (!record) return { kind: 'released' };
+    if (record.status !== 'expected' && record.status !== 'cancelled') return { kind: 'picked_up' };
+
+    const t = wmsTables.customerReturnPickups;
+    const [pickup] = await trx
+      .select()
+      .from(t)
+      .where(and(eq(t.customerReturnId, record.id), inArray(t.status, [...ACTIVE_PICKUP_STATUSES])))
+      .limit(1);
+    return pickup ? { kind: 'pickup', pickup } : { kind: 'released' };
+  }
+
+  /** 한 번도 안 보낸 pending 을 void 로 — 취소 정리(tidyActivePickup)와 같은 조건. 바꿨으면 true */
+  private async voidUnsent(trx: DbTx, pickupId: string, now: Date): Promise<boolean> {
+    const t = wmsTables.customerReturnPickups;
+    const voided = await trx
+      .update(t)
+      .set({ status: 'void', leaseUntil: null, updatedAt: now })
+      .where(
+        and(
+          eq(t.id, pickupId),
+          eq(t.status, 'pending'),
+          eq(t.attempts, 0),
+          or(isNull(t.leaseUntil), lt(t.leaseUntil, now)),
+        ),
+      )
+      .returning({ id: t.id });
+    return voided.length > 0;
   }
 
   /**
@@ -245,46 +326,63 @@ export class CustomerReturnPickupManager {
     await this.settle(row, { nextAttemptAt: nextPickupAttemptAt(now, row.attempts), lastError: detail }, now, 'retry');
   }
 
-  /** 취소를 보낸다. 한진에서 회수가 사라졌으면 true */
-  private async sendCancellation(gateway: PickupGateway, row: Claimed, now: Date): Promise<boolean> {
+  /**
+   * 취소를 보낸다 — 워커(cancel_pending)와 놓아주기(어느 활성 상태든)가 같이 쓴다.
+   * cancelled = 한진에서 회수가 사라졌다(그 사이 다른 쪽이 행을 바꿔 결과를 못 적었어도 한진 쪽 사실은 같다),
+   * picked_up = 기사가 이미 집하했다, failed = 모르거나 거절 — 상태 그대로 리스만 풀린다.
+   */
+  private async sendCancellation(
+    gateway: PickupGateway,
+    row: Claimed,
+    now: Date,
+  ): Promise<'cancelled' | 'picked_up' | 'failed'> {
     let outcome: PickupCancelOutcome;
     try {
       outcome = await gateway.cancelPickup(row.custOrdNo);
     } catch (error) {
       await this.cancellationFailed(row, failureDetail(error), now);
-      return false;
+      return 'failed';
     }
     switch (outcome.kind) {
       case 'cancelled':
       case 'already_cancelled':
       case 'not_found':
-        return this.settle(
+        await this.settle(
           row,
           { status: 'cancelled', cancelledAt: now, nextAttemptAt: null, lastError: null },
           now,
           outcome.kind,
         );
+        return 'cancelled';
       case 'picked_up':
-        // 기사가 이미 집하했다 — 취소된 반품의 소포가 창고로 온다. 사람이 받아 처리해야 한다
-        this.logger.error(
-          `[ReturnPickup] pickup ${row.id} (${row.custOrdNo}) of cancelled return ${row.customerReturnId} ` +
-            `was already picked up; the parcel will arrive: ${outcome.reason}`,
-        );
+        if (row.status === 'cancel_pending') {
+          // 반품은 이미 취소됐는데 기사가 집하했다 — 취소된 반품의 소포가 창고로 온다. 사람이 받아 처리해야 한다
+          this.logger.error(
+            `[ReturnPickup] pickup ${row.id} (${row.custOrdNo}) of cancelled return ${row.customerReturnId} ` +
+              `was already picked up; the parcel will arrive: ${outcome.reason}`,
+          );
+        } else {
+          // 놓아주기 — 반품 취소가 거절되고 반품은 그대로 진행된다
+          this.logger.warn(
+            `[ReturnPickup] pickup ${row.id} (${row.custOrdNo}) already picked up; return cancel refused: ${outcome.reason}`,
+          );
+        }
         await this.settle(
           row,
           { status: 'reserved', pickedUpAt: now, nextAttemptAt: null, lastError: `picked_up: ${outcome.reason}` },
           now,
           outcome.kind,
         );
-        return false;
+        return 'picked_up';
       case 'rejected':
         await this.cancellationFailed(row, `${outcome.code}: ${outcome.reason}`, now);
-        return false;
+        return 'failed';
     }
   }
 
   /**
-   * 취소가 안 됐다. 한진에 예약이 남아 있을 수 있으니 끝난 상태로 보내지 않고 cancel_pending 에서 계속 다시 묻는다.
+   * 취소가 안 됐다. 한진에 예약이 남아 있을 수 있으니 끝난 상태로 보내지 않는다 — cancel_pending 이면 워커가 계속
+   * 다시 묻고, 놓아주기가 잡은 다른 활성 상태는 그대로 둔다(반품 취소가 502 로 거절돼 반품이 그대로다).
    * 상한을 넘으면 사람이 보도록 error 로그만 더한다.
    */
   private async cancellationFailed(row: Claimed, detail: string, now: Date): Promise<void> {

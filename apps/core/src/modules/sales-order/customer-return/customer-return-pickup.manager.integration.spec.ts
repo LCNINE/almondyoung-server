@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto';
 import { eq } from 'drizzle-orm';
 import { Logger } from '@nestjs/common';
 import type { DbService } from '@app/db';
+import { ConflictError, UpstreamUnavailableError } from '@app/shared';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import { inRollbackTx, makeDb } from '../../fulfillment/services/__support__';
 import { seedWorld } from '../../fulfillment/order-progress/__support__/order-progress.fixtures';
@@ -552,6 +553,222 @@ describeIfDb('CustomerReturnPickupManager — 반품 회수 워커 (K8 PR9)', ()
         expect(gateway.reserveCalls).toHaveLength(1);
         const statuses = [(await rowOf(tx, a.pickupId)).status, (await rowOf(tx, b.pickupId)).status].sort();
         expect(statuses).toEqual(['pending', 'reserved']);
+      }));
+  });
+
+  describe('release — 반품 취소 전 회수 놓아주기 (N6)', () => {
+    const channelReturnIdOf = async (tx: DbTx, customerReturnId: string) => {
+      const [row] = await tx
+        .select({ channelReturnId: wmsTables.customerReturns.channelReturnId })
+        .from(wmsTables.customerReturns)
+        .where(eq(wmsTables.customerReturns.id, customerReturnId));
+      return row.channelReturnId;
+    };
+
+    /** 한 번 보낸 활성 행 — 리스 없음 */
+    async function seedSent(
+      tx: DbTx,
+      status: 'reserved' | 'cancel_pending' | 'pending',
+      returnStatus: 'expected' | 'cancelled' = 'expected',
+    ) {
+      const seeded = await seedPickup(tx);
+      await setRow(tx, seeded.pickupId, {
+        status,
+        attempts: 1,
+        waybillNo: status === 'pending' ? null : `5600${randomUUID().replace(/-/g, '').slice(0, 8)}`,
+        reservedAt: status === 'pending' ? null : new Date('2026-10-27T00:00:00Z'),
+      });
+      if (returnStatus !== 'expected') {
+        await tx
+          .update(wmsTables.customerReturns)
+          .set({ status: returnStatus, cancelledAt: now })
+          .where(eq(wmsTables.customerReturns.id, seeded.customerReturnId));
+      }
+      return { ...seeded, channelReturnId: await channelReturnIdOf(tx, seeded.customerReturnId) };
+    }
+
+    it('기록 없음(관측 지연) → released, 한진 안 부름', () =>
+      inRollbackTx(db, async (tx) => {
+        const { gateway, manager } = wire(tx);
+        expect(await manager.release(`ret-${randomUUID()}`, now)).toEqual({ result: 'released' });
+        expect(gateway.cancelCalls).toHaveLength(0);
+      }));
+
+    it.each(['arrived', 'inspected'] as const)('반품이 %s(도착 뒤) → picked_up, 한진 안 부름', (status) =>
+      inRollbackTx(db, async (tx) => {
+        const { gateway, manager } = wire(tx);
+        const { pickupId, channelReturnId, customerReturnId } = await seedSent(tx, 'reserved');
+        await tx
+          .update(wmsTables.customerReturns)
+          .set({ status })
+          .where(eq(wmsTables.customerReturns.id, customerReturnId));
+        const before = await rowOf(tx, pickupId);
+
+        expect(await manager.release(channelReturnId, now)).toEqual({ result: 'picked_up' });
+        expect(gateway.cancelCalls).toHaveLength(0);
+        expect(await rowOf(tx, pickupId)).toEqual(before);
+      }),
+    );
+
+    it.each(['failed', 'void', 'cancelled'] as const)('활성 회수 없음(%s 뿐) → released, 한진 안 부름', (status) =>
+      inRollbackTx(db, async (tx) => {
+        const { gateway, manager } = wire(tx);
+        const { pickupId, channelReturnId } = await seedSent(tx, 'reserved');
+        await setRow(tx, pickupId, { status });
+
+        expect(await manager.release(channelReturnId, now)).toEqual({ result: 'released' });
+        expect(gateway.cancelCalls).toHaveLength(0);
+        expect(await rowOf(tx, pickupId)).toMatchObject({ status });
+      }),
+    );
+
+    it('워커가 리스를 잡은 상태 → 409 pickup_busy, 행 그대로, 한진 안 부름', () =>
+      inRollbackTx(db, async (tx) => {
+        const { gateway, manager } = wire(tx);
+        const seeded = await seedPickup(tx);
+        const channelReturnId = await channelReturnIdOf(tx, seeded.customerReturnId);
+        // 워커가 예약을 보내는 중 — claimDue 가 attempts 를 올리고 리스를 잡았다
+        await manager.claimDue(tx, seeded.pickupId, now);
+        const before = await rowOf(tx, seeded.pickupId);
+        expect(before).toMatchObject({ status: 'pending', attempts: 1 });
+
+        const err = await manager.release(channelReturnId, new Date(now.getTime() + 1000)).catch((e: unknown) => e);
+        expect(err).toBeInstanceOf(ConflictError);
+        expect((err as Error).message).toMatch(/^pickup_busy: /);
+        expect(gateway.cancelCalls).toHaveLength(0);
+        expect(await rowOf(tx, seeded.pickupId)).toEqual(before);
+      }));
+
+    it('보낸 적 있는 행도 리스가 살아 있으면 409 — attempts 그대로', () =>
+      inRollbackTx(db, async (tx) => {
+        const { gateway, manager } = wire(tx);
+        const { pickupId, channelReturnId } = await seedSent(tx, 'reserved');
+        const lease = new Date(now.getTime() + MINUTE);
+        await setRow(tx, pickupId, { leaseUntil: lease });
+
+        await expect(manager.release(channelReturnId, now)).rejects.toBeInstanceOf(ConflictError);
+        expect(gateway.cancelCalls).toHaveLength(0);
+        expect(await rowOf(tx, pickupId)).toMatchObject({ status: 'reserved', attempts: 1, leaseUntil: lease });
+      }));
+
+    it('pending ∧ attempts 0 → void, released, 한진 안 부르고 attempts 그대로', () =>
+      inRollbackTx(db, async (tx) => {
+        const { gateway, manager } = wire(tx);
+        const seeded = await seedPickup(tx);
+        const channelReturnId = await channelReturnIdOf(tx, seeded.customerReturnId);
+
+        expect(await manager.release(channelReturnId, now)).toEqual({ result: 'released' });
+        expect(gateway.cancelCalls).toHaveLength(0);
+        expect(await rowOf(tx, seeded.pickupId)).toMatchObject({ status: 'void', attempts: 0, leaseUntil: null });
+      }));
+
+    it('pending ∧ attempts 0 은 게이트웨이가 미설정이어도 void, released', () =>
+      inRollbackTx(db, async (tx) => {
+        const { gateway, manager } = wire(tx);
+        gateway.configured = false;
+        const seeded = await seedPickup(tx);
+        const channelReturnId = await channelReturnIdOf(tx, seeded.customerReturnId);
+
+        expect(await manager.release(channelReturnId, now)).toEqual({ result: 'released' });
+        expect(await rowOf(tx, seeded.pickupId)).toMatchObject({ status: 'void' });
+      }));
+
+    it('pending ∧ attempts 0 의 리스가 만료됐으면 void', () =>
+      inRollbackTx(db, async (tx) => {
+        const { manager } = wire(tx);
+        const seeded = await seedPickup(tx);
+        await setRow(tx, seeded.pickupId, { leaseUntil: new Date(now.getTime() - 1) });
+        const channelReturnId = await channelReturnIdOf(tx, seeded.customerReturnId);
+
+        expect(await manager.release(channelReturnId, now)).toEqual({ result: 'released' });
+        expect(await rowOf(tx, seeded.pickupId)).toMatchObject({ status: 'void', leaseUntil: null });
+      }));
+
+    describe.each([
+      ['reserved', 'expected'],
+      ['cancel_pending', 'cancelled'],
+      ['pending', 'expected'],
+    ] as const)('보낸 적 있는 %s (반품 %s)', (status, returnStatus) => {
+      it.each<PickupCancelOutcome>([{ kind: 'cancelled' }, { kind: 'already_cancelled' }, { kind: 'not_found' }])(
+        '한진 %o → 행 cancelled, released',
+        (outcome) =>
+          inRollbackTx(db, async (tx) => {
+            const { gateway, manager } = wire(tx);
+            gateway.cancelScript = () => Promise.resolve(outcome);
+            const { pickupId, custOrdNo, channelReturnId } = await seedSent(tx, status, returnStatus);
+
+            expect(await manager.release(channelReturnId, now)).toEqual({ result: 'released' });
+            expect(gateway.cancelCalls).toEqual([custOrdNo]);
+            const row = await rowOf(tx, pickupId);
+            expect(row).toMatchObject({ status: 'cancelled', attempts: 2, leaseUntil: null, nextAttemptAt: null });
+            expect(row.cancelledAt?.getTime()).toBe(now.getTime());
+          }),
+      );
+
+      it('한진 picked_up → picked_up_at, reserved, 리스 풀림, picked_up — 다시 부르면 한진에 다시 묻고 같은 답', () =>
+        inRollbackTx(db, async (tx) => {
+          const { gateway, manager } = wire(tx);
+          gateway.cancelScript = () => Promise.resolve({ kind: 'picked_up', reason: '운송장출력 상태' });
+          const { pickupId, custOrdNo, channelReturnId } = await seedSent(tx, status, returnStatus);
+
+          expect(await manager.release(channelReturnId, now)).toEqual({ result: 'picked_up' });
+          let row = await rowOf(tx, pickupId);
+          expect(row).toMatchObject({ status: 'reserved', leaseUntil: null, nextAttemptAt: null });
+          expect(row.pickedUpAt?.getTime()).toBe(now.getTime());
+
+          const later = new Date(now.getTime() + MINUTE);
+          expect(await manager.release(channelReturnId, later)).toEqual({ result: 'picked_up' });
+          expect(gateway.cancelCalls).toEqual([custOrdNo, custOrdNo]);
+          row = await rowOf(tx, pickupId);
+          expect(row).toMatchObject({ status: 'reserved', leaseUntil: null });
+          expect(row.pickedUpAt?.getTime()).toBe(later.getTime());
+        }));
+
+      it.each<[string, CancelScript]>([
+        ['거절(rejected)', () => Promise.resolve({ kind: 'rejected', code: 'ERROR-99', reason: '알 수 없음' })],
+        [
+          '던짐(unknown_outcome)',
+          () =>
+            Promise.reject(
+              new CarrierError('Hanjin request did not produce a definitive response', 'unknown_outcome', {
+                carrier: 'hanjin',
+                code: 'transport_error',
+              }),
+            ),
+        ],
+        ['던짐(내부 오류)', () => Promise.reject(new TypeError('boom'))],
+      ])('한진 %s → 리스 풀고 상태 그대로, 502 pickup_cancel_unavailable', (_label, script) =>
+        inRollbackTx(db, async (tx) => {
+          const { gateway, manager } = wire(tx);
+          gateway.cancelScript = script;
+          const { pickupId, channelReturnId } = await seedSent(tx, status, returnStatus);
+
+          const err = await manager.release(channelReturnId, now).catch((e: unknown) => e);
+          expect(err).toBeInstanceOf(UpstreamUnavailableError);
+          expect((err as Error).message).toMatch(/^pickup_cancel_unavailable: /);
+          expect(gateway.cancelCalls).toHaveLength(1);
+          expect(await rowOf(tx, pickupId)).toMatchObject({ status, attempts: 2, leaseUntil: null });
+        }),
+      );
+
+      it('게이트웨이 미설정 → 502, 행 그대로(잡지 않는다)', () =>
+        inRollbackTx(db, async (tx) => {
+          const { gateway, manager } = wire(tx);
+          gateway.configured = false;
+          const { pickupId, channelReturnId } = await seedSent(tx, status, returnStatus);
+          const before = await rowOf(tx, pickupId);
+
+          await expect(manager.release(channelReturnId, now)).rejects.toBeInstanceOf(UpstreamUnavailableError);
+          expect(gateway.cancelCalls).toHaveLength(0);
+          expect(await rowOf(tx, pickupId)).toEqual(before);
+        }));
+    });
+
+    it('한진 게이트웨이가 아예 없으면 보낸 적 있는 활성은 502', () =>
+      inRollbackTx(db, async (tx) => {
+        const manager = new CustomerReturnPickupManager(scopedDbService(tx), new CarrierGatewayRegistry([]), config);
+        const { channelReturnId } = await seedSent(tx, 'reserved');
+        await expect(manager.release(channelReturnId, now)).rejects.toBeInstanceOf(UpstreamUnavailableError);
       }));
   });
 
