@@ -1,8 +1,11 @@
 import { randomUUID } from 'crypto';
 import { deriveCustOrdNo } from '../../fulfillment/waybill/cust-ord-no';
 import { WAYBILL } from '../../fulfillment/waybill/waybill.constants';
+import type { wmsTables } from '../../inventory/schema/inventory.schema';
 
 export type CustomerReturnPickupStatus = 'pending' | 'reserved' | 'failed' | 'void' | 'cancel_pending' | 'cancelled';
+
+export type PickupRow = typeof wmsTables.customerReturnPickups.$inferSelect;
 
 /** 한 반품에 동시에 하나만 있을 수 있는 상태 — `uq_customer_return_pickups_active` 부분 인덱스와 같다. */
 export const ACTIVE_PICKUP_STATUSES = [
