@@ -48,8 +48,15 @@ jobs:
         run: corepack enable
       - name: Test Windows demo configuration and input boundaries
         run: npx vitest run src/app/demo-config.test.ts src/core/hardware/scan
+      # 자동 업데이트는 버전이 올라가야 새 버전으로 본다 — 실행 번호를 패치 자리에 쓴다
+      - name: Stamp version
+        shell: pwsh
+        run: '"{""version"": ""0.1.${{ github.run_number }}""}" | Out-File -Encoding ascii src-tauri/tauri.version.conf.json'
       - name: Build ${{ inputs.stage || 'demo' }} installer
-        run: corepack yarn tauri:build:${{ inputs.stage || 'demo' }} --bundles nsis
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: corepack yarn tauri:build:${{ inputs.stage || 'demo' }} --bundles nsis --config src-tauri/tauri.version.conf.json
       - name: Record installer checksums
         shell: pwsh
         run: |

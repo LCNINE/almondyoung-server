@@ -37,5 +37,16 @@
     "android": {
       "debugApplicationIdSuffix": ".debug"
     }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDI3MjZDMzNBRDkzQjk1Q0YKUldUUGxUdlpPc01tSjhjT2FRdVRkQzdSWGhnY3A0N2FGMW5YcW85Qnd1L0R4R0FQV2Z6RFZqVnAK",
+      "endpoints": [
+        "https://almondyoung-public.s3.ap-northeast-2.amazonaws.com/warehouse-app/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }

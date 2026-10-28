@@ -11,6 +11,8 @@
     "deep-link:default",
     "opener:default",
     "stronghold:default",
+    "updater:default",
+    "process:allow-restart",
     {
       "identifier": "http:default",
       "allow": [

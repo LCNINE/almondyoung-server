@@ -19,6 +19,7 @@ import {
   discoverEndpoints,
 } from './core/auth/login';
 import { createAppRouter } from './app/router';
+import { UpdatePrompt } from './app/UpdatePrompt';
 
 const store = createStrongholdTokenStore();
 const manager = createTokenManager({
@@ -44,6 +45,7 @@ createRoot(document.getElementById('root')!).render(
               <WarehouseProvider>
                 <Bootstrap session={session}>
                   <RouterProvider router={router} />
+                  <UpdatePrompt />
                 </Bootstrap>
               </WarehouseProvider>
             </ScanProvider>

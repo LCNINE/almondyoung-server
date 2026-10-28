@@ -1,6 +1,11 @@
 {
   "productName": "LCNINE Logistics",
   "bundle": {
-    "icon": ["icons/icon.png", "icons/icon.ico", "icons/icon.icns"]
+    "icon": [
+      "icons/icon.png",
+      "icons/icon.ico",
+      "icons/icon.icns"
+    ],
+    "createUpdaterArtifacts": true
   }
 }

@@ -31,6 +31,10 @@ tauri-plugin-stronghold = "2"
 rust-argon2 = "2"
 tokio = { version = "1", features = ["time", "sync"] }
 
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
+
 # RAW spooler pass-through for USB-attached Zebra printers (printing/win_spooler.rs).
 # Version pinned to what tauri itself pulls in on Windows, so the two share one build.
 [target.'cfg(windows)'.dependencies]
