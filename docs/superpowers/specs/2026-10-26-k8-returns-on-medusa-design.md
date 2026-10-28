@@ -478,6 +478,13 @@ core 의 «검수 끝» 명령(새 명령 타입, `channel-orders.commands.v1`) 
 - 배포는 contract, `deploy → migrate`. 그 배치에 expand 마이그가 섞이지 않게(`deploy:preflight`).
 - 가드의 «스키마 파일 제외»를 지운다.
 
+**PR 10b 에서 확정한 결과.** 옛 표·enum 을 스키마에서 지우고 DROP 마이그 하나(`apps/core/drizzle/20261028134615_drop-legacy-claim-tables.sql`)로 라이브에서도 없앤다. contract, `deploy → migrate`.
+- (B1) 지운 것은 정확히 표 일곱(`returns`·`return_items`·`return_requests`·`return_request_items`·`return_refund_attempts`·`exchange_requests`·`exchange_request_items`)·enum 여섯(`return_status`·`return_request_status`·`exchange_request_status`·`return_reason_code`·`exchange_reason_code`·`return_refund_attempt_status`)과 그 relations(`returnsRelations`, `salesOrders`·`shipments` relations 의 `returns: many(returns)`)다. `PiiSubjectType` 옛 두 값·이벤트 계약은 남는다(PR 10 N8·N10).
+- (B2·B3) 가드 `line-quantity-read.guard.spec.ts` 의 옛 청구 두 테스트는 스키마 파일까지 훑는다 — `filesMatchingIn` 이 스키마를 전역으로 빼고 있어 PR 10 의 «스키마 제외 필터»만 지우면 가드가 스키마를 못 봤다. 표·enum 정의 꼴(`pgTable('returns'`·`pgEnum('return_status'` …)도 잡는다.
+- (B4) drizzle 생성본은 DROP TABLE 일곱 → DROP TYPE 여섯으로 순서 수정이 필요 없었다(스크래치 DB 롤백 실행·빈 DB 부트스트랩 통과). 첫 줄 `SET LOCAL lock_timeout = '10s'` — 지울 표가 `sales_orders`·`shipments` 등을 FK 로 가리켜 그 표의 잠금도 잡기 때문이다.
+- (B5) 라이브에만 있을 수 있는 의존(바깥 FK·뷰·enum 칸·함수)과 행 수는 읽기 전용 `scripts/ops/k8-pr10b-contract-preflight.js` 로 머지 전·migrate 직전에 본다.
+- 🔴 이 마이그 뒤엔 Core 를 PR 10 이전으로 롤백하지 않는다(옛 K6 SQL 이 모든 라인 수량 읽기에서 없는 표를 읽는다). PR 10 이후로는 괜찮다.
+
 ## 6. 빌더에게 맡기는 것
 
 - 새 테이블·라우트·명령·이벤트·워크플로 이름.
@@ -515,7 +522,7 @@ core 의 «검수 끝» 명령(새 명령 타입, `channel-orders.commands.v1`) 
 | 8 | 스토어프론트 신청 화면(#933·#934) | storefront · medusa(store 읽기 라우트 하나) | 마이그 없음, 결과는 4.8 의 «PR 8 에서 확정한 결과» |
 | 9 | 한진 회수 접수(R)·취소 | core · medusa · admin-web | DEV 스모크 선행(4.7). 마이그 하나(`migrate → deploy`), 결과는 4.7 의 «PR 9 에서 확정한 결과» |
 | 10 | 옛 core 반품·교환·inventory 반품 코드 걷기(표는 남김) | core · admin-web · storefront | 마이그 없음, 결과는 §5 의 «PR 10 에서 확정한 결과» |
-| 10b | 옛 반품·교환·inventory 반품 표·enum DROP | core | contract, `deploy → migrate`, PR 10 라이브 뒤 |
+| 10b | 옛 반품·교환·inventory 반품 표·enum DROP | core | contract, `deploy → migrate`, PR 10 라이브 뒤. 결과는 §5 의 «PR 10b 에서 확정한 결과» |
 | 11 | 교환·클레임 재출고 | medusa · channel-adapter · core | 착수 때 설계(4.9) |
 
 개통(고객에게 반품 버튼을 여는 것)은 **core 출고 개통 뒤**(D9, 4.0)이고 PR 6·7·8 이 라이브인 뒤다. 한진 회수(9) 전에는 CS 가 회수를

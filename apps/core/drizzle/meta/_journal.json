@@ -981,6 +981,13 @@
       "when": 1793161552219,
       "tag": "20261028042552_add-customer-return-pickups",
       "breakpoints": true
+    },
+    {
+      "idx": 140,
+      "version": "7",
+      "when": 1793195175037,
+      "tag": "20261028134615_drop-legacy-claim-tables",
+      "breakpoints": true
     }
   ]
 }

@@ -43,6 +43,14 @@ function filesMatchingIn(roots: string[], predicate: (source: string) => boolean
     .sort();
 }
 
+/** 스키마 파일까지 훑는다 — 지운 표·enum 의 정의가 되살아나는 것도 잡아야 할 때. */
+function filesMatchingWithSchema(predicate: (source: string) => boolean): string[] {
+  return walk(SRC)
+    .filter((path) => predicate(readFileSync(path, 'utf8')))
+    .map((path) => relative(ROOT, path))
+    .sort();
+}
+
 describe('취소 수량 읽는 문', () => {
   it('only the line-quantity kernel and the recorder read cancellation lines', () => {
     expect(filesMatching((source) => /salesOrderCancellationLines/.test(source))).toEqual([RECORDER, FRAGMENTS]);
@@ -103,27 +111,24 @@ describe('취소 수량 읽는 문', () => {
 });
 
 /**
- * 옛 판매주문 반품·교환 표(`return_requests`·`exchange_requests` 계열)는 K8 PR 10 이 코드에서 걷었고 PR 10b 가 DROP 한다.
- * 스키마 정의만 그때까지 남는다 — 그 밖의 운영 파일이 이 이름을 다시 쓰면 빨갛다(PR 10b 뒤엔 없는 표를 읽는다).
+ * 옛 판매주문 반품·교환 표(`return_requests`·`exchange_requests` 계열)는 K8 PR 10 이 코드에서 걷었고 PR 10b 가 DROP 했다.
+ * 스키마 포함 어디서든 이 이름이나 그 enum 정의가 다시 나오면 빨갛다(라이브엔 그 표가 없다).
  */
 const LEGACY_CLAIM_IDENTIFIERS =
-  /\b(returnRequests|returnRequestItems|exchangeRequests|exchangeRequestItems|returnRefundAttempts|returnExchangeTables|returnExchangeSchema|StoreReturnExchangeService|ACTIVE_RETURN_STATUSES|ACTIVE_EXCHANGE_STATUSES|CONSUMED_RETURN_STATUSES|exchange_active|exchangeActive|return_requests|return_request_items|exchange_requests|exchange_request_items|return_refund_attempts)\b/;
-const INVENTORY_SCHEMA = 'apps/core/src/modules/inventory/schema/inventory.schema.ts';
+  /\b(returnRequests|returnRequestItems|exchangeRequests|exchangeRequestItems|returnRefundAttempts|returnExchangeTables|returnExchangeSchema|StoreReturnExchangeService|ACTIVE_RETURN_STATUSES|ACTIVE_EXCHANGE_STATUSES|CONSUMED_RETURN_STATUSES|exchange_active|exchangeActive|return_requests|return_request_items|exchange_requests|exchange_request_items|return_refund_attempts)\b|pgEnum\(\s*'(return_request_status|exchange_request_status|return_reason_code|exchange_reason_code|return_refund_attempt_status)'/;
 
 describe('청구(반품) 수량 읽는 문', () => {
   const salesOrder = 'apps/core/src/modules/sales-order/';
 
   it('retired legacy claims stay gone', () => {
-    expect(
-      filesMatching((source) => LEGACY_CLAIM_IDENTIFIERS.test(source)).filter((path) => path !== INVENTORY_SCHEMA),
-    ).toEqual([]);
+    expect(filesMatchingWithSchema((source) => LEGACY_CLAIM_IDENTIFIERS.test(source))).toEqual([]);
   });
 
   it('inventory 옛 반품은 다시 오지 않는다', () => {
-    // inventory ReturnService·/inventory/returns 는 K8 PR 10 이 걷었다. 표 정의(`returns`·`return_items`)는 PR 10b 가 DROP 과 함께 지운다
+    // inventory ReturnService·/inventory/returns 는 K8 PR 10 이 걷었고 표(`returns`·`return_items`)·enum `return_status` 는 PR 10b 가 DROP 했다
     const pattern =
-      /\breturnStatusValues\b|\bprocessReturn\b|from '\.\.?\/services\/return\.service'|@Controller\('inventory\/returns'\)|\bwmsTables\.returns\b|\bwmsTables\.returnItems\b|\breturnItems\b/;
-    expect(filesMatching((source) => pattern.test(source)).filter((path) => path !== INVENTORY_SCHEMA)).toEqual([]);
+      /\breturnStatusValues\b|\bprocessReturn\b|from '\.\.?\/services\/return\.service'|@Controller\('inventory\/returns'\)|\bwmsTables\.returns\b|\bwmsTables\.returnItems\b|\breturnItems\b|pgTable\(\s*'(returns|return_items)'|pgEnum\(\s*'return_status'/;
+    expect(filesMatchingWithSchema((source) => pattern.test(source))).toEqual([]);
   });
 
   it('only the kernel reads customer return lines for quantities', () => {
