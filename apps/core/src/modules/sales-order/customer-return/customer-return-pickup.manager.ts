@@ -1,5 +1,5 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
-import { and, eq, inArray, isNull, lt, lte, or, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, lt, lte, or, sql, type SQL } from 'drizzle-orm';
 import { DbService } from '@app/db';
 import { InjectTypedDb } from '@app/db/decorators';
 import { BadRequestError } from '@app/shared';
@@ -21,6 +21,8 @@ import { ACTIVE_PICKUP_STATUSES, type PickupRow } from './customer-return-pickup
 export const PICKUP_ATTEMPTS_CAP = 12;
 export const PICKUP_LEASE_MS = 120_000;
 const DISPATCH_BATCH = 20;
+/** 워커가 보내는 상태 — pending 은 예약, cancel_pending 은 취소 */
+const DUE_STATUSES = ['pending', 'cancel_pending'] as const;
 const BACKOFF_CAP_MINUTES = 60;
 
 /** 다음 시도 시각 = now + min(2^(attempts−1), 60)분. attempts 는 방금 실패한 시도까지 센 값 */
@@ -72,16 +74,13 @@ export class CustomerReturnPickupManager {
     const dueIds = await this.dbService.run((trx) => this.findDue(trx, now, limit));
     for (const id of dueIds) {
       try {
-        const claimed = await this.dbService.run((trx) => this.claim(trx, id, now));
-        if (!claimed?.leaseUntil) continue; // 그 사이 다른 쪽이 잡았거나 끝냈다
+        const claimed = await this.dbService.run((trx) => this.claimDue(trx, id, now));
+        if (!claimed?.leaseUntil) continue; // 그 사이 다른 쪽이 잡았거나 다시 미뤘거나 끝냈다
         const row: Claimed = { ...claimed, leaseUntil: claimed.leaseUntil };
         if (row.status === 'pending') {
           if (await this.sendReservation(gateway, row, now)) result.sent += 1;
         } else if (row.status === 'cancel_pending') {
           if (await this.sendCancellation(gateway, row, now)) result.cancelled += 1;
-        } else {
-          // reserved 는 워커가 보낼 것이 없다 — 잡은 리스만 돌려놓는다
-          await this.settle(row, {}, now, 'unclaimed');
         }
       } catch (error) {
         // 결과 기록(DB)이 실패했다. 리스는 만료되면 다시 잡힌다 — 다음 행은 계속 보낸다
@@ -95,11 +94,31 @@ export class CustomerReturnPickupManager {
   }
 
   /**
-   * 한 행을 리스로 잡는다. 못 잡으면 null. 상태는 바꾸지 않는다.
+   * 활성 행(pending·reserved·cancel_pending) 하나를 기한과 무관하게 리스로 잡는다 — 놓아주기(release)용.
+   * 못 잡으면 null. 상태는 바꾸지 않는다.
    * 잡는 것 = 한진에 보내려는 것이라 attempts 를 여기서 올린다 — 보내다 죽은 워커도 attempts ≥ 1 을 남겨,
    * 취소 정리(«pending ∧ attempts 0 ∧ 리스 없음»이면 void)가 한진에 있을지 모르는 예약을 지나치지 않게 한다.
    */
   async claim(trx: DbTx, pickupId: string, now: Date): Promise<PickupRow | null> {
+    const t = wmsTables.customerReturnPickups;
+    return this.claimWhere(trx, pickupId, now, inArray(t.status, [...ACTIVE_PICKUP_STATUSES]));
+  }
+
+  /**
+   * 워커용 잡기 — 보낼 차례인 행만 잡는다(pending·cancel_pending ∧ 기한 됨). 목록을 읽은 뒤 다른 워커가 이미
+   * 보내고 다음 시도를 미뤘거나 reserved 로 끝낸 행을 다시 잡지 않는다. 그 밖은 `claim` 과 같다.
+   */
+  async claimDue(trx: DbTx, pickupId: string, now: Date): Promise<PickupRow | null> {
+    const t = wmsTables.customerReturnPickups;
+    return this.claimWhere(
+      trx,
+      pickupId,
+      now,
+      and(inArray(t.status, [...DUE_STATUSES]), or(isNull(t.nextAttemptAt), lte(t.nextAttemptAt, now))),
+    );
+  }
+
+  private async claimWhere(trx: DbTx, pickupId: string, now: Date, scope: SQL | undefined): Promise<PickupRow | null> {
     const t = wmsTables.customerReturnPickups;
     const [row] = await trx
       .update(t)
@@ -108,13 +127,7 @@ export class CustomerReturnPickupManager {
         attempts: sql`${t.attempts} + 1`,
         updatedAt: now,
       })
-      .where(
-        and(
-          eq(t.id, pickupId),
-          inArray(t.status, [...ACTIVE_PICKUP_STATUSES]),
-          or(isNull(t.leaseUntil), lt(t.leaseUntil, now)),
-        ),
-      )
+      .where(and(eq(t.id, pickupId), scope, or(isNull(t.leaseUntil), lt(t.leaseUntil, now))))
       .returning();
     return row ?? null;
   }
@@ -126,7 +139,7 @@ export class CustomerReturnPickupManager {
       .from(t)
       .where(
         and(
-          inArray(t.status, ['pending', 'cancel_pending']),
+          inArray(t.status, [...DUE_STATUSES]),
           or(isNull(t.nextAttemptAt), lte(t.nextAttemptAt, now)),
           or(isNull(t.leaseUntil), lt(t.leaseUntil, now)),
         ),
@@ -168,7 +181,7 @@ export class CustomerReturnPickupManager {
       await this.fail(row, `${outcome.code}: ${outcome.reason}`, now);
       return false;
     }
-    return this.settle(
+    const written = await this.settle(
       row,
       {
         status: 'reserved',
@@ -181,6 +194,36 @@ export class CustomerReturnPickupManager {
       now,
       outcome.kind,
     );
+    if (!written) await this.keepWaybillForCancel(row, outcome.waybillNo, originalWaybillNo, now);
+    return written;
+  }
+
+  /**
+   * 보내는 사이 취소 정리가 행을 cancel_pending 으로 돌렸다. 한진엔 예약이 생겼으니 번호만은 남긴다 —
+   * 그래야 취소가 picked_up 으로 끝나 reserved 로 돌아가도 창고가 회수 운송장으로 반품을 연다.
+   * 상태는 그대로 두고 리스만 푼다 → 다음 틱이 취소한다.
+   */
+  private async keepWaybillForCancel(
+    row: Claimed,
+    waybillNo: string,
+    originalWaybillNo: string | null,
+    now: Date,
+  ): Promise<void> {
+    const t = wmsTables.customerReturnPickups;
+    const kept = await this.dbService.run((trx) =>
+      trx
+        .update(t)
+        .set({ waybillNo, originalWaybillNo, reservedAt: now, leaseUntil: null, updatedAt: now })
+        .where(
+          and(eq(t.id, row.id), eq(t.leaseUntil, row.leaseUntil), eq(t.status, 'cancel_pending'), isNull(t.waybillNo)),
+        )
+        .returning({ id: t.id }),
+    );
+    if (kept.length > 0) {
+      this.logger.warn(
+        `[ReturnPickup] pickup ${row.id} (${row.custOrdNo}) reserved after cancel; waybill kept for cancel`,
+      );
+    }
   }
 
   /**

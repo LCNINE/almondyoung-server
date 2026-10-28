@@ -215,6 +215,26 @@ describeIfDb('CustomerReturnPickupManager — 반품 회수 워커 (K8 PR9)', ()
         const { pickupId } = await seedPickup(tx);
         await setRow(tx, pickupId, { status: 'failed' });
         expect(await manager.claim(tx, pickupId, now)).toBeNull();
+        expect(await manager.claimDue(tx, pickupId, now)).toBeNull();
+      }));
+
+    it('claimDue 는 기한 전 pending·reserved 를 id 로 불러도 잡지 않고, claim 은 잡는다', () =>
+      inRollbackTx(db, async (tx) => {
+        const { manager } = wire(tx);
+        const later = await seedPickup(tx, { originalWaybillNo: 'WB-A' });
+        await setRow(tx, later.pickupId, { attempts: 1, nextAttemptAt: new Date(now.getTime() + MINUTE) });
+        const reserved = await seedPickup(tx, { originalWaybillNo: 'WB-B' });
+        await setRow(tx, reserved.pickupId, { status: 'reserved', attempts: 1, waybillNo: '560000999999' });
+
+        expect(await manager.claimDue(tx, later.pickupId, now)).toBeNull();
+        expect(await manager.claimDue(tx, reserved.pickupId, now)).toBeNull();
+        expect(await rowOf(tx, later.pickupId)).toMatchObject({ attempts: 1, leaseUntil: null });
+
+        expect(await manager.claimDue(tx, later.pickupId, new Date(now.getTime() + MINUTE))).toMatchObject({
+          status: 'pending',
+          attempts: 2,
+        });
+        expect(await manager.claim(tx, reserved.pickupId, now)).toMatchObject({ status: 'reserved', attempts: 2 });
       }));
   });
 
@@ -369,21 +389,51 @@ describeIfDb('CustomerReturnPickupManager — 반품 회수 워커 (K8 PR9)', ()
         expect(row.lastError).not.toContain(PII.phone);
       }));
 
-    it('보내는 사이 행이 바뀌면(취소 정리·놓아주기) 결과를 덮어쓰지 않는다', () =>
+    it('보내는 사이 다른 쪽이 행을 가져가 끝냈으면(상태·리스가 바뀜) 아무것도 덮어쓰지 않는다', () =>
       inRollbackTx(db, async (tx) => {
         const { gateway, manager } = wire(tx);
         const { pickupId } = await seedPickup(tx);
+        const otherLease = new Date(now.getTime() + 10 * MINUTE);
         gateway.reserveScript = async () => {
-          await setRow(tx, pickupId, { status: 'cancel_pending', nextAttemptAt: null });
+          await setRow(tx, pickupId, { status: 'cancelled', leaseUntil: otherLease });
           return { kind: 'reserved', waybillNo: '560000175571' };
         };
 
         expect(await manager.dispatchDue(now)).toEqual({ sent: 0, cancelled: 0 });
         const row = await rowOf(tx, pickupId);
-        expect(row).toMatchObject({ status: 'cancel_pending', waybillNo: null });
-        // 리스는 남는다 — 만료 뒤 워커가 cancel_pending 으로 다시 잡는다
-        expect(row.leaseUntil?.getTime()).toBe(now.getTime() + PICKUP_LEASE_MS);
+        expect(row).toMatchObject({ status: 'cancelled', waybillNo: null, reservedAt: null, leaseUntil: otherLease });
       }));
+
+    it.each<'reserved' | 'already_reserved'>(['reserved', 'already_reserved'])(
+      '보내는 사이 취소 정리가 cancel_pending 으로 돌리면(%s) 번호는 남기고 리스를 풀어 다음 틱이 취소한다',
+      (kind) =>
+        inRollbackTx(db, async (tx) => {
+          const { gateway, manager } = wire(tx);
+          const { pickupId, custOrdNo } = await seedPickup(tx);
+          gateway.reserveScript = async () => {
+            await setRow(tx, pickupId, { status: 'cancel_pending', nextAttemptAt: null });
+            return { kind, waybillNo: '560000175571' };
+          };
+
+          expect(await manager.dispatchDue(now)).toEqual({ sent: 0, cancelled: 0 });
+          let row = await rowOf(tx, pickupId);
+          expect(row).toMatchObject({
+            status: 'cancel_pending',
+            waybillNo: '560000175571',
+            originalWaybillNo: 'WB-ORIG-1',
+            leaseUntil: null,
+          });
+          expect(row.reservedAt?.getTime()).toBe(now.getTime());
+
+          // 다음 틱: 취소 — 이미 집하됐으면 reserved 로 돌아가도 번호가 있다
+          gateway.cancelScript = () => Promise.resolve({ kind: 'picked_up', reason: '운송장출력 상태' });
+          await manager.dispatchDue(now);
+          expect(gateway.cancelCalls).toEqual([custOrdNo]);
+          row = await rowOf(tx, pickupId);
+          expect(row).toMatchObject({ status: 'reserved', waybillNo: '560000175571', leaseUntil: null });
+          expect(row.pickedUpAt?.getTime()).toBe(now.getTime());
+        }),
+    );
   });
 
   describe('취소(cancel_pending)', () => {
