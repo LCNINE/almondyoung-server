@@ -62,6 +62,44 @@ function uniqueStrings(values: readonly string[]): string[] {
   return [...new Set(values)].sort();
 }
 
+type FoLabels = { displayOrderNo: string | null; salesChannel: string | null; warehouseName: string | null };
+
+/** 화면이 내부 id 대신 고객이 아는 주문번호와 창고 이름을 보이게 한다 */
+async function withFoLabels<T extends { salesOrderId: string | null; warehouseId: string | null }>(
+  db: DbTx | DbService<typeof wmsSchema>['db'],
+  rows: T[],
+): Promise<(T & FoLabels)[]> {
+  const salesOrderIds = uniqueStrings(rows.flatMap((row) => (row.salesOrderId ? [row.salesOrderId] : [])));
+  const warehouseIds = uniqueStrings(rows.flatMap((row) => (row.warehouseId ? [row.warehouseId] : [])));
+  const orders = salesOrderIds.length
+    ? await db
+        .select({
+          id: wmsTables.salesOrders.id,
+          displayOrderNo: wmsTables.salesOrders.displayOrderNo,
+          salesChannel: wmsTables.salesOrders.salesChannel,
+        })
+        .from(wmsTables.salesOrders)
+        .where(inArray(wmsTables.salesOrders.id, salesOrderIds))
+    : [];
+  const warehouses = warehouseIds.length
+    ? await db
+        .select({ id: wmsTables.warehouses.id, name: wmsTables.warehouses.name })
+        .from(wmsTables.warehouses)
+        .where(inArray(wmsTables.warehouses.id, warehouseIds))
+    : [];
+  const orderById = new Map(orders.map((order) => [order.id, order]));
+  const warehouseNameById = new Map(warehouses.map((warehouse) => [warehouse.id, warehouse.name]));
+  return rows.map((row) => {
+    const order = row.salesOrderId ? orderById.get(row.salesOrderId) : undefined;
+    return {
+      ...row,
+      displayOrderNo: order?.displayOrderNo ?? null,
+      salesChannel: order?.salesChannel ?? null,
+      warehouseName: row.warehouseId ? (warehouseNameById.get(row.warehouseId) ?? null) : null,
+    };
+  });
+}
+
 @Injectable()
 export class FulfillmentsService {
   private readonly logger = new Logger(FulfillmentsService.name);
@@ -586,8 +624,9 @@ export class FulfillmentsService {
       itemsWithSku.map((item) => item.salesOrderLineId).filter((lineId): lineId is string => lineId !== null),
     );
     const lineViews = await selectLineCompositionViews(db, salesOrderLineIds);
+    const [labeled] = await withFoLabels(db, [fulfillmentOrder]);
     return {
-      ...fulfillmentOrder,
+      ...labeled,
       progress,
       shipments: shipmentList,
       items: itemsWithSku,
@@ -636,6 +675,6 @@ export class FulfillmentsService {
       .orderBy(desc(wmsTables.fulfillmentOrders.createdAt));
 
     // V1 의 FO-소유 invoice 조인(issuedForFO)은 Task 25 에서 제거됐다 — V2 invoice 는 shipment 소유다.
-    return { data: fulfillmentOrders, total };
+    return { data: await withFoLabels(db, fulfillmentOrders), total };
   }
 }

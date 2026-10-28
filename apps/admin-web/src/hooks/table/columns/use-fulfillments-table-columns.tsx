@@ -25,7 +25,12 @@ export const useFulfillmentsTableColumns = () => {
     () => [
       columnHelper.accessor('id', {
         header: '주문번호',
-        cell: ({ getValue }) => <IdCell value={getValue()} />,
+        cell: ({ row }) =>
+          row.original.displayOrderNo ? (
+            <span>#{row.original.displayOrderNo}</span>
+          ) : (
+            <IdCell value={row.original.id} />
+          ),
       }),
       columnHelper.accessor('status', {
         header: '상태',
@@ -33,7 +38,8 @@ export const useFulfillmentsTableColumns = () => {
       }),
       columnHelper.accessor('warehouseId', {
         header: '창고',
-        cell: ({ getValue }) => <IdCell value={getValue()} />,
+        cell: ({ row }) =>
+          row.original.warehouseName ?? <IdCell value={row.original.warehouseId} />,
       }),
       columnHelper.accessor('fulfillmentMode', {
         header: '모드',

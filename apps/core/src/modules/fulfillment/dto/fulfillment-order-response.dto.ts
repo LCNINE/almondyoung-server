@@ -161,6 +161,15 @@ export class FulfillmentOrderResponseDto {
   @ApiProperty({ nullable: true })
   warehouseId: string | null;
 
+  @ApiProperty({ nullable: true, description: '고객이 아는 주문번호(판매주문 display_order_no)' })
+  displayOrderNo: string | null;
+
+  @ApiProperty({ nullable: true, description: '판매 채널(medusa/naver/coupang/3pl)' })
+  salesChannel: string | null;
+
+  @ApiProperty({ nullable: true })
+  warehouseName: string | null;
+
   @ApiProperty({ nullable: true })
   ownerId: string | null;
 
@@ -300,6 +309,15 @@ export class FulfillmentOrderV2ResponseDto {
 
   @ApiProperty({ nullable: true })
   warehouseId: string | null;
+
+  @ApiProperty({ nullable: true, description: '고객이 아는 주문번호(판매주문 display_order_no)' })
+  displayOrderNo: string | null;
+
+  @ApiProperty({ nullable: true, description: '판매 채널(medusa/naver/coupang/3pl)' })
+  salesChannel: string | null;
+
+  @ApiProperty({ nullable: true })
+  warehouseName: string | null;
 
   @ApiProperty()
   status: string;

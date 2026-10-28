@@ -83,13 +83,27 @@ export function FulfillmentDetail({ id }: { id: string }) {
         </div>
 
         <InfoRow label="주문번호">
+          {data.displayOrderNo ? (
+            <span>
+              #{data.displayOrderNo}
+              {data.salesChannel && (
+                <span className="ml-2 text-xs text-gray-500">{data.salesChannel}</span>
+              )}
+            </span>
+          ) : (
+            '-'
+          )}
+        </InfoRow>
+        <InfoRow label="출고주문 ID">
           <span className="font-mono text-xs">{data.id}</span>
         </InfoRow>
         <InfoRow label="상태">
           <FoStatusBadge status={fo.status} />
         </InfoRow>
         <InfoRow label="창고">
-          <span className="font-mono text-xs">{fo.warehouseId ?? '-'}</span>
+          {fo.warehouseName ?? (
+            <span className="font-mono text-xs">{fo.warehouseId ?? '-'}</span>
+          )}
         </InfoRow>
         <InfoRow label="모드">
           {fo.fulfillmentMode ? MODE_LABEL[fo.fulfillmentMode] : '-'}

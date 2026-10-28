@@ -56,6 +56,10 @@ export interface FulfillmentOrder {
   id: string;
   salesOrderId: string | null;
   warehouseId: string | null;
+  /** 옛 core 응답엔 없다 */
+  displayOrderNo?: string | null;
+  salesChannel?: string | null;
+  warehouseName?: string | null;
   ownerId: string | null;
   status: FulfillmentOrderStatus;
   batchId: string | null;
