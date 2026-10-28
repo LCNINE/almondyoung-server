@@ -1,6 +1,7 @@
 import CheckoutHeader from "@/app/[countryCode]/(checkout)/checkout/checkout-header"
 import { getIntent } from "@/lib/api/wallet"
 import { getOrder } from "@/lib/api/medusa/orders"
+import { retrieveCustomer } from "@/lib/api/medusa/customer"
 import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
 import Link from "next/link"
 import { getTranslations } from "next-intl/server"
@@ -75,13 +76,21 @@ export default async function CheckoutSuccessPage({
     },
   })
 
-  const rawOrder = await getOrderOrNull(orderId)
+  const [rawOrder, customer] = await Promise.all([
+    getOrderOrNull(orderId),
+    retrieveCustomer(),
+  ])
 
-  // 소유권 검증: intent의 이메일과 order의 이메일이 일치하는지 확인
+  // 소유권 검증: /store/orders/:id 는 주인을 가리지 않으므로 여기서 막는다.
+  // intent 의 customerEmail 은 결제 세션 생성 때 고객 인증이 안 붙으면 비어 있어서 로그인 고객 일치를 먼저 본다
   const intentEmail = intent?.metadata?.["customerEmail"]
   const orderEmail = rawOrder?.email
+  const isCustomerMatch = Boolean(
+    rawOrder?.customer_id && customer?.id === rawOrder.customer_id
+  )
   const isOwnerMatch =
-    rawOrder && intentEmail && orderEmail && intentEmail === orderEmail
+    isCustomerMatch ||
+    Boolean(rawOrder && intentEmail && orderEmail && intentEmail === orderEmail)
 
   // 소유권이 일치하지 않으면 order 정보를 표시하지 않음 (보안)
   const order = isOwnerMatch ? rawOrder : null
@@ -94,7 +103,8 @@ export default async function CheckoutSuccessPage({
       customer_id: rawOrder?.customer_id ?? null,
       has_intent_email: Boolean(intentEmail),
       has_order_email: Boolean(orderEmail),
-      is_owner_match: Boolean(isOwnerMatch),
+      is_customer_match: isCustomerMatch,
+      is_owner_match: isOwnerMatch,
       has_shipping_name: Boolean(
         rawOrder?.shipping_address?.first_name ||
           rawOrder?.shipping_address?.last_name
@@ -147,7 +157,6 @@ async function OrderSummaryCard({
 }) {
   const t = await getTranslations("checkout.success")
   const tCart = await getTranslations("cart")
-  // todo: 소유권 불일치 문제 해결되면 지울것
   // order가 없으면 (소유권 불일치 등) 간단한 안내 카드 표시,
   if (!order) {
     return (
