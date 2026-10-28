@@ -152,7 +152,7 @@ Medusa 정산: 수령(양품/불량) + 택배비 + 환불 ◀──(channel-orde
      - (N1) Medusa 는 출고를 모른다 — `fulfilled_quantity` 가 0 이라 코어 검증(`quantity ≤ fulfilled − return_requested`)이 막는다.
        반품 요청 직전 **반품이 잡는 수량만큼만** `registerFulfillment` 로 올리고, 반품 취소 때 되돌린다. 배송완료 전부를 올리면 주문 수정이 그 아래로 수량을 못 줄인다.
        출고 기록으로 Medusa 가 배송 사실을 알게 하는 길은 #1148.
-2. **반품 취소** — 도착 전에만. `cancelReturn` + (회수 예약이 있으면) core 가 한진 예약을 취소한다.
+2. **반품 취소** — 도착 전에만. `cancelReturn` + (회수 예약이 있으면) core 가 한진 예약을 취소한다. 한진 취소는 Medusa 취소 «전»에 동기로 끝낸다(4.7 N6).
 3. **반품 정산** — core 의 «검수 끝» 명령만 부른다(4.4).
 
 **반품용 배송 옵션과 provider.**
@@ -421,6 +421,18 @@ core 의 «검수 끝» 명령(새 명령 타입, `channel-orders.commands.v1`) 
 - (N8) 사유·거절 코드 표는 Medusa 가 정본이다. `return-reasons.ts` 의 고객 사유 다섯은 `RETURN_REASONS` 의 `customerSelectable` 행과 같은 집합, 이름 키는 여섯 전부(`other` 포함), 거절 문구 키는 `ReturnRejectReason` 전부를 덮는다. 루트 jest `scripts/storefront/medusa-return-parity.spec.ts` 가 소스 텍스트로 대조한다. 모르는 거절 코드는 일반 문구.
 - (N9) 스토어프론트가 Medusa 고객 라우트를 부를 때는 `getAuthHeaders()`(`_medusa_jwt`)를 헤더로 넘기고 `withAuth: false` 로 부른다. `withAuth: true` 가 붙이는 bearer 는 user-service 토큰이라 Medusa 가 401 로 거절한다 — 뒤 PR(9·11)도 이 방식으로 부른다.
 
+**PR 9 에서 확정한 결과.** 한진 회수 접수(R)·취소다. 마이그 하나(expand, `migrate → deploy`). 위 «스모크로 먼저 확인할 것 셋»은 2026-10-28 DEV 스모크로 답이 났고, 한진 쪽 사실은 `docs/hanjin-api-integration-reference.md` §4.2·§4.3 의 «실측 (2026-10-28)» 에 있다.
+- (N1) 지불조건은 설정 `HANJIN_RETURN_PAY_TYPE`, 기본 `CT`(착지신용 — 받는 우리가 월 정산). DEV 에서 R 은 `CD` 만 `ERROR-14` 였고 `PP`·`CC`·`CT` 는 `OK` 다(출고 S 와 반대). 🔴 우리 실계약에서 R + `CT` 가 열려 있는지는 모른다 — 개통 전 LIVE 키로 `scripts/smoke/hanjin-return-pickup-smoke.ts` 를 돌린다. 거절되면 `failed` 로 남고 CS 가 손으로 접수한다.
+- (N2) `custOrdNo` = `'AR'` + 회수 행 id 의 base32 26자(28자). 출고 `'AY'` 와 이름공간이 갈린다. 취소한 번호는 한진이 다시 안 받는다.
+- (N3) 회수지(송하인) = 반품 줄을 실은 배송완료 상자 중 가장 늦은 것의 `recipient_snapshot`, 원운송장 = 그 상자의 `used` 운송장(한진은 검증하지 않아 있으면 싣는다). 받는 곳은 `HANJIN_SENDER_*` 하나다(알려진 잔여).
+- (N4) 예약 HTTP 는 트랜잭션 밖, 워커와 동기 취소는 `lease_until`(2분) CAS 로 한 행을 한 번에 하나만 잡는다. 회수 운송장번호는 `insert-order` 응답의 `wblNo` 로 바로 온다.
+- (N5) 일시 실패는 같은 행·같은 번호로 다시 보낸다(`ERROR-03` + `wblNo` 가 번호를 되찾는다). 백오프 `min(2^(attempts−1), 60)` 분, 12번이면 `failed`(`attempts_exhausted:`). 정해진 거절은 즉시 `failed`. 워커는 보내기 «전» claim 에서 `attempts` 를 올리므로 «pending ∧ attempts 0» 은 한 번도 안 보냈다는 뜻이고, 취소 중인 반품에 예약이 늦게 닿으면 운송장번호는 적되 행은 `cancel_pending` 으로 둔다.
+- (N6) 반품 취소는 Medusa 가 core «회수 놓아주기»를 동기로 묻고, 한진 취소가 끝난 뒤에만 반품을 취소한다. 안 보낸 `pending` 은 한진 없이 `void`, 리스가 살아 있으면 409, 예약이 있을 수 있는 `failed`(`attempts ≥ 1`, `no_pickup_address:` 아님)는 한진에 먼저 취소를 묻는다. `ERROR-04` 면 `return_picked_up` 으로 거절하고 반품은 그대로다. 옛 core(404)면 Medusa 가 그대로 취소한다. 그 반대 실패(회수만 취소되고 Medusa 취소 실패)는 «회수 미접수» 로 CS 가 다시 접수한다.
+- (N7) 관측된 `ChannelReturnCancelled` 도 활성 회수를 정리한다 — 안 보낸 `pending` → `void`, 보낸 적 있으면 `cancel_pending`(워커가 취소).
+- (N9) CS 문은 [회수 다시 접수] 하나(`order.claim.write`). 반품이 `expected` 이고 활성 행이 없고, `failed` 행의 리스가 살아 있지 않을 때만(아니면 409). 마지막 행이 `failed` 면 사유와 무관하게 «같은 행»을 `pending` 으로 되살리고(같은 번호), 새 행은 `cancelled`·`void`·없음일 때만이다. DEV 실측: 한진은 거절한 번호를 다시 받고(`ERROR-14` 뒤 `OK`), 등록 뒤 중복은 `ERROR-03` + `wblNo` 다. CS 시트에 회수 운송장과 버튼이 있다.
+- (N10) CS 목록 `q`·창고 목록 `q`·`barcode` 가 그 반품의 어느 회수 행이든 `waybill_no` 정확 일치로 찾는다 — 스테이션은 앱 변경 없이 회수 운송장 스캔으로 반품을 연다.
+- (알려진 잔여) 회수 추적 없음(N8) — 집하는 `release` 가 `ERROR-04` 를 볼 때만 안다. 운송장번호를 못 배운 행이 `picked_up` 이 되면 `reserved` 에 `waybill_no` 가 없어 스캔 키가 없다. 놓아주기와 관측된 취소 사이(≤5분)에 «회수 미접수» 가 잠깐 거짓으로 뜬다. 라이브 계약에서 R + `CT` 와 `cancel-order` 의 `ERROR-04` 는 미검증이다.
+
 ### 4.9 교환·클레임 (뒤 PR — 문만 적는다)
 
 - Medusa `OrderExchange` 는 «돌려받기(Return) + 새 품목 + 차액(`difference_due`)», `OrderClaim` 은 하자·오배송용(`refund`/`replace`)이다.
@@ -483,7 +495,7 @@ core 의 «검수 끝» 명령(새 명령 타입, `channel-orders.commands.v1`) 
 | 7 | core 읽기·목록 + admin-web CS 화면 다시 짓기 | core · admin-web | 결과는 4.8 의 «PR 7 에서 확정한 결과» |
 | 7b | 창고 반품 도착·검수 화면 + 검수자 id | warehouse-app · core | 스테이션(F7), 도착 대기 목록 + 검색. 마이그 하나(`migrate → deploy`), core 먼저 → 앱 릴리스. 결과는 4.8 의 «PR 7b 에서 확정한 결과» |
 | 8 | 스토어프론트 신청 화면(#933·#934) | storefront · medusa(store 읽기 라우트 하나) | 마이그 없음, 결과는 4.8 의 «PR 8 에서 확정한 결과» |
-| 9 | 한진 회수 접수(R)·취소 | core | DEV 스모크 선행(4.7) |
+| 9 | 한진 회수 접수(R)·취소 | core · medusa · admin-web | DEV 스모크 선행(4.7). 마이그 하나(`migrate → deploy`), 결과는 4.7 의 «PR 9 에서 확정한 결과» |
 | 10 | 옛 core 반품·교환·inventory 반품 코드와 테이블 걷기 | core · admin-web · storefront | contract, `deploy → migrate` |
 | 11 | 교환·클레임 재출고 | medusa · channel-adapter · core | 착수 때 설계(4.9) |
 
