@@ -981,7 +981,13 @@ describe('Medusa order collection (source + translator)', () => {
     };
     const provider = makeProvider({
       listOrders: jest.fn().mockResolvedValue([
-        { ...base, id: 'order_c', status: 'canceled', payment_status: 'refunded', canceled_at: '2026-05-26T01:15:00.000Z' },
+        {
+          ...base,
+          id: 'order_c',
+          status: 'canceled',
+          payment_status: 'refunded',
+          canceled_at: '2026-05-26T01:15:00.000Z',
+        },
         { ...base, id: 'order_l', status: 'pending', payment_status: 'captured' },
       ]),
     } as any);
@@ -1048,14 +1054,30 @@ describe('Medusa order collection (source + translator)', () => {
 
     it('metadata.partialCancels 를 requestId 순으로 modification·changes 에 싣는다', async () => {
       const provider = makeProvider({
-        listOrders: jest.fn().mockResolvedValue([
-          order({ partialCancels: { 'req-b': { ...record, stage: 'refunded' }, 'req-a': record } }),
-        ]),
+        listOrders: jest
+          .fn()
+          .mockResolvedValue([
+            order({ partialCancels: { 'req-b': { ...record, stage: 'refunded' }, 'req-a': record } }),
+          ]),
       });
       const [item] = (await provider.fetchOrders(null)).orders;
       const expected = [
-        { requestId: 'req-a', stage: 'edited', refundAmount: 27500, shippingCharge: 0, shippingRefund: 3000, shippingNotAdjusted: false },
-        { requestId: 'req-b', stage: 'refunded', refundAmount: 27500, shippingCharge: 0, shippingRefund: 3000, shippingNotAdjusted: false },
+        {
+          requestId: 'req-a',
+          stage: 'edited',
+          refundAmount: 27500,
+          shippingCharge: 0,
+          shippingRefund: 3000,
+          shippingNotAdjusted: false,
+        },
+        {
+          requestId: 'req-b',
+          stage: 'refunded',
+          refundAmount: 27500,
+          shippingCharge: 0,
+          shippingRefund: 3000,
+          shippingNotAdjusted: false,
+        },
       ];
       expect(item.modification.cancelRequests).toEqual(expected);
       expect(item.changes.cancelRequests).toEqual(expected);
@@ -1063,9 +1085,16 @@ describe('Medusa order collection (source + translator)', () => {
 
     it('상계액이 있으면 싣고, 0 이면 키가 없다(#1016 37번)', async () => {
       const provider = makeProvider({
-        listOrders: jest.fn().mockResolvedValue([
-          order({ partialCancels: { 'req-a': { ...record, externalRefundApplied: 10000 }, 'req-b': { ...record, externalRefundApplied: 0 } } }),
-        ]),
+        listOrders: jest
+          .fn()
+          .mockResolvedValue([
+            order({
+              partialCancels: {
+                'req-a': { ...record, externalRefundApplied: 10000 },
+                'req-b': { ...record, externalRefundApplied: 0 },
+              },
+            }),
+          ]),
       });
       const [item] = (await provider.fetchOrders(null)).orders;
       expect(item.changes.cancelRequests?.[0]).toMatchObject({ requestId: 'req-a', externalRefundApplied: 10000 });
@@ -1093,6 +1122,52 @@ describe('Medusa order collection (source + translator)', () => {
       });
       const [item] = (await provider.fetchOrders(null)).orders;
       expect('cancelRequests' in item.changes).toBe(false);
+    });
+  });
+  describe('교환 대체 줄 (K8 PR11)', () => {
+    const baseOrder = (extraItems: unknown[]) => ({
+      id: 'order_ex_1',
+      payment_status: 'captured',
+      customer_id: 'cus_1',
+      currency_code: 'KRW',
+      total: 10000,
+      subtotal: 10000,
+      created_at: '2026-10-27T01:00:00.000Z',
+      updated_at: '2026-10-27T01:05:00.000Z',
+      items: [
+        {
+          id: 'item_1',
+          title: 'Product',
+          quantity: 1,
+          unit_price: 10000,
+          variant_id: 'variant_1',
+          variant: {
+            metadata: { pimVariantId: 'pim_variant_1' },
+            product: { metadata: { pimMasterId: 'master_1', pimVersionId: 'version_1' } },
+          },
+        },
+        ...extraItems,
+      ],
+      shipping_address: { first_name: 'Jane', phone: '010-0000-0000', postal_code: '12345', address_1: 'Seoul' },
+    });
+    const replacement = {
+      id: 'item_x',
+      title: 'Product',
+      quantity: 1,
+      unit_price: 0,
+      metadata: { almondExchange: { requestId: 'cr_1', sourceItemId: 'item_1', variantId: 'variant_1' } },
+    };
+
+    it('대체 줄은 스냅샷 줄에 없고, 대체 줄 추가 전후 changes 가 같다', async () => {
+      const before = await makeProvider({
+        listOrders: jest.fn().mockResolvedValue([baseOrder([])]),
+      } as any).fetchOrders(null);
+      const after = await makeProvider({
+        listOrders: jest.fn().mockResolvedValue([baseOrder([replacement])]),
+      } as any).fetchOrders(null);
+      expect(after.failures).toHaveLength(0);
+      expect(after.orders[0].createPayload.items.map((i) => i.orderItemId)).toEqual(['item_1']);
+      expect(after.orders[0].changes).toEqual(before.orders[0].changes);
     });
   });
 });
