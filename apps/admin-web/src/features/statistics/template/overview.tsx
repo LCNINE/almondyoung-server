@@ -32,7 +32,6 @@ import {
   useRefundRequests,
 } from '@/lib/services/wallet/queries';
 import { useOrderStats } from '@/lib/services/orders/queries';
-import { useExchangeRequests } from '@/lib/services/return-exchange/queries';
 import { useCustomerReturns } from '@/lib/services/customer-returns';
 import { useQuestions } from '@/lib/services/qna/queries';
 import { toLocalDateString } from '@/lib/utils/date';
@@ -173,7 +172,6 @@ export default function OverviewStatisticsTemplate() {
   const bankTransfers = usePendingBankTransfers(1, 1);
   const refundRequests = useRefundRequests(1, 1);
   const returnRequests = useCustomerReturns({ bucket: 'open', limit: 1 });
-  const exchangeRequests = useExchangeRequests({ status: 'requested', page: 1, limit: 1 });
   const unansweredQna = useQuestions({ status: 'active', page: 1, limit: 1 });
   const unansweredReviews = useReviews({ hasComment: 'false', status: 'active', page: 1, limit: 1 });
 
@@ -185,7 +183,6 @@ export default function OverviewStatisticsTemplate() {
     { id: 'bank-transfers', label: '입금 대기', count: bankTransfers.data?.total, href: '/payments/bank-transfers', isLoading: bankTransfers.isLoading, isError: bankTransfers.isError },
     { id: 'refund-requests', label: '환불 요청', count: refundRequests.data?.total, href: '/payments/refund-requests', isLoading: refundRequests.isLoading, isError: refundRequests.isError },
     { id: 'return-requests', label: '반품 접수', count: returnRequests.data?.total, href: '/cs/return-exchange', isLoading: returnRequests.isLoading, isError: returnRequests.isError },
-    { id: 'exchange-requests', label: '교환 접수', count: exchangeRequests.data?.total, href: '/cs/return-exchange', isLoading: exchangeRequests.isLoading, isError: exchangeRequests.isError },
     { id: 'unanswered-qna', label: '미답변 문의', count: unansweredQna.data?.total, href: '/cs/qna', isLoading: unansweredQna.isLoading, isError: unansweredQna.isError },
     { id: 'unanswered-reviews', label: '미답변 리뷰', count: unansweredReviews.data?.total, href: '/cs/reviews', isLoading: unansweredReviews.isLoading, isError: unansweredReviews.isError },
   ] as const;

@@ -1,19 +1,14 @@
 import { randomUUID } from 'crypto';
 import { eq } from 'drizzle-orm';
-import {
-  DbTx,
-  returnExchangeTables,
-  returnRequestStatusEnum,
-  wmsTables,
-} from '../../../inventory/schema/inventory.schema';
+import { DbTx, wmsTables } from '../../../inventory/schema/inventory.schema';
 import { seedBox, seedOrder, World } from '../../../fulfillment/order-progress/__support__/order-progress.fixtures';
 import type { CustomerReturnStatus } from '../../customer-return/customer-return.types';
 import { seedDispatchedParcel } from './shipment-facts.fixtures';
 
 /**
- * 청구 사실 픽스처 (K6 PR3a) — 배송완료 소포가 있는 라인과 그 소포를 적은 반품·교환 요청.
+ * 청구 사실 픽스처 (K6 PR3a) — 배송완료 소포가 있는 라인과 그 라인의 반품 예정 기록(K8 PR5·PR10).
  * 출고·배송은 `seedDispatchedParcel` 로 만든다(상자 status 만 바꾼 데이터는 수량 문이 출고로 보지 않는다, P5).
- * 청구 행은 서비스를 거치지 않고 직접 넣는다 — 수량 문이 읽는 칸(상태·항목 수량·소포 칸)만 채운다.
+ * 반품 예정 기록은 매니저를 거치지 않고 직접 넣는다 — 수량 문이 읽는 칸만 채운다.
  */
 
 export type DeliveredLine = {
@@ -129,40 +124,6 @@ export async function seedDeliveredLine(
   }
 
   return { salesOrderId: order.salesOrderId, lineId: order.lineId, foItemIdBySku, parcels };
-}
-
-/** 반품·교환 요청 하나와 그 항목들. 두 상태 enum 은 같은 값이다. */
-export async function seedClaim(
-  tx: DbTx,
-  args: {
-    kind: 'return' | 'exchange';
-    salesOrderId: string;
-    status: (typeof returnRequestStatusEnum.enumValues)[number];
-    items: Array<{
-      salesOrderLineId: string;
-      shipmentLineId: string | null;
-      dispatchAttemptId: string | null;
-      quantity: number;
-    }>;
-  },
-): Promise<{ requestId: string }> {
-  const t = returnExchangeTables;
-  if (args.kind === 'return') {
-    const [request] = await tx
-      .insert(t.returnRequests)
-      .values({ salesOrderId: args.salesOrderId, status: args.status, reasonCode: 'defective' })
-      .returning();
-    await tx.insert(t.returnRequestItems).values(args.items.map((item) => ({ returnRequestId: request.id, ...item })));
-    return { requestId: request.id };
-  }
-  const [request] = await tx
-    .insert(t.exchangeRequests)
-    .values({ salesOrderId: args.salesOrderId, status: args.status, reasonCode: 'defective' })
-    .returning();
-  await tx
-    .insert(t.exchangeRequestItems)
-    .values(args.items.map((item) => ({ exchangeRequestId: request.id, ...item })));
-  return { requestId: request.id };
 }
 
 /**

@@ -11,7 +11,7 @@ import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
 import { WithHeaderLayout } from "@components/layout"
 import { unstable_rethrow } from "next/navigation"
 import { getTranslations } from "next-intl/server"
-import { ExchangeClient } from "../../../../../domains/order/exchange/exchange-client"
+import { ExchangeUnavailable } from "../../../../../domains/order/exchange/exchange-unavailable"
 import { ReturnRequestClient } from "../../../../../domains/order/return-request/return-request-client"
 import {
   buildReturnFormLines,
@@ -44,7 +44,7 @@ export default async function ExchangePage({ searchParams }: ExchangePageProps) 
     >
       <MypageLayout>
         {type === "exchange" ? (
-          <ExchangeClient orderId={orderId} />
+          <ExchangeUnavailable orderId={orderId} />
         ) : (
           await renderReturn(orderId, itemId)
         )}

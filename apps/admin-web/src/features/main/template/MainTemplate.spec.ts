@@ -20,10 +20,6 @@ jest.mock('@/lib/services/wallet', () => ({
   usePendingBankTransfers: mockQueue(),
   useRefundRequests: mockQueue(),
 }));
-jest.mock('@/lib/services/return-exchange/queries', () => ({
-  ...jest.requireActual('@/lib/services/return-exchange/queries'),
-  useExchangeRequests: mockQueue(),
-}));
 jest.mock('@/lib/services/customer-returns', () => ({
   ...jest.requireActual('@/lib/services/customer-returns'),
   useCustomerReturns: mockQueue(),
@@ -40,7 +36,6 @@ const QUEUE_HOOKS: ReadonlyArray<readonly [string, string]> = [
   ['@/lib/services/wallet', 'usePendingBankTransfers'],
   ['@/lib/services/wallet', 'useRefundRequests'],
   ['@/lib/services/customer-returns', 'useCustomerReturns'],
-  ['@/lib/services/return-exchange/queries', 'useExchangeRequests'],
   ['@/lib/services/qna', 'useQuestions'],
   ['@/lib/services/review', 'useReviews'],
   ['@/lib/services/business-licenses', 'useBusinessLicenses'],
@@ -107,8 +102,8 @@ describe('admin home queues the viewer cannot read', () => {
 
   it('shows «가림» with the missing permission for every queue a statistics-only role cannot read', () => {
     const html = render(['analytics.report.read']);
-    // 주문 통계 칩 3 · 교환 2 · 반품 2 · 입금 · 환불 · 문의 · 리뷰 · 사업자
-    expect(html.match(/>가림</g)).toHaveLength(12);
+    // 주문 통계 칩 3 · 반품 2 · 입금 · 환불 · 문의 · 리뷰 · 사업자 (교환 칩은 K8 PR 10 에서 걷었다)
+    expect(html.match(/>가림</g)).toHaveLength(10);
     for (const key of QUEUE_PERMISSIONS) expect(html).toContain(`${permissionLabel(key)} 권한이 있어야 보입니다`);
   });
 
@@ -127,14 +122,13 @@ describe('admin home queues the viewer cannot read', () => {
     ['payment.payment.read', 'usePendingBankTransfers'],
     ['payment.refund.read', 'useRefundRequests'],
     ['order.claim.read', 'useCustomerReturns'],
-    ['order.claim.read', 'useExchangeRequests'],
     ['cs.inquiry.read', 'useQuestions'],
     ['cs.review.read', 'useReviews'],
     ['customer.profile.read', 'useBusinessLicenses'],
   ])('opens only the queue %s unlocks (%s)', (permission, hook) => {
     render(['analytics.report.read', permission]);
     for (const call of queueOptions()) {
-      const opened = call.hook === hook || (permission === 'order.claim.read' && /Return|Exchange/.test(call.hook));
+      const opened = call.hook === hook || (permission === 'order.claim.read' && /Return/.test(call.hook));
       expect(call).toEqual({ hook: call.hook, options: { enabled: opened } });
     }
   });

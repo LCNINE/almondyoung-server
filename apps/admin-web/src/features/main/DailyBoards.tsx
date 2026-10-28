@@ -286,7 +286,6 @@ const ORDER_COLUMNS = [
   { key: 'delivered', label: '배송완료' },
   { key: 'externalShipped', label: '외부 출고' },
   { key: 'cancelled', label: '취소' },
-  { key: 'exchange', label: '교환' },
   { key: 'return', label: '반품' },
   { key: 'total', label: '주문합계' },
 ] as const;
@@ -417,7 +416,7 @@ export function CsBoard() {
     !gate.enabled || query.isError || !query.data
       ? null
       : new Map(query.data.series.map((point) => [point.bucket, point.count]));
-  const claimMap = (key: 'return' | 'exchange') =>
+  const claimMap = (key: 'return') =>
     !claimGate.enabled || claims.isError || !claims.data
       ? null
       : new Map(claims.data.series.map((point) => [point.bucket, point[key]]));
@@ -442,16 +441,9 @@ export function CsBoard() {
     {
       key: 'returns',
       label: '반품 신청',
-      href: (from, to) => `/cs/return-exchange?createdAt=${createdAtParam(from, to)}`,
+      // 반품 목록(K8 PR 7)은 날짜 조건이 없다 — 날짜 링크 대신 목록으로 보낸다(K8 PR 10 N7)
+      href: () => '/cs/return-exchange',
       counts: claimMap('return'),
-      isLoading: claimGate.pending || claims.isLoading,
-      hiddenReason: claimGate.hiddenReason,
-    },
-    {
-      key: 'exchanges',
-      label: '교환 신청',
-      href: (from, to) => `/cs/return-exchange?tab=exchanges&createdAt=${createdAtParam(from, to)}`,
-      counts: claimMap('exchange'),
       isLoading: claimGate.pending || claims.isLoading,
       hiddenReason: claimGate.hiddenReason,
     },

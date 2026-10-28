@@ -11,7 +11,7 @@ const logger = new Logger('SalesOrderReturned');
 
 /**
  * 반품 완료를 알리는 `SalesOrderReturned` 를 아웃박스에 싣는다(소비자: ugc 리뷰 적립 회수).
- * 옛 반품 표의 완료(`StoreReturnExchangeService`)와 반품 기록의 정산 완료(K8 PR6)가 이 함수 하나를 쓴다.
+ * 반품 기록의 정산 완료(K8 PR6)가 부른다(옛 반품 표의 완료 경로는 K8 PR 10 에서 걷었다).
  *
  * `lines` 는 이 반품이 닿은 주문 라인 — 라인마다 한 번. 멱등키가 `so-returned:<returnRequestId>` 라
  * 몇 번을 불러도 한 번만 나간다. **반품을 완료 상태로 바꾼 쓰기와 같은 트랜잭션에서 부른다** —

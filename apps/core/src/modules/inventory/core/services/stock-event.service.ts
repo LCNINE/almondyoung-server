@@ -2,7 +2,7 @@ import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
 import { wmsTables, wmsSchema, DbTx } from '../../schema/inventory.schema';
 import { DbService } from '@app/db';
-import { eq, and } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { CreateStockEntryBySkuIdDto } from '../../inbound/dto/create-stock-entry-by-skuid.dto';
 import { StockEventStore } from '../repositories/stock-event.store';
 import { InventoryCommandService } from '../services/inventory-command.service';
@@ -134,69 +134,6 @@ export class StockEventService {
       this.logger.log(`Damage processed: event ${event.eventId}`);
 
       return event;
-    }, tx);
-  }
-
-  /**
-   * 재고 반품 처리
-   *
-   * 반품된 상품을 지정된 위치(또는 기본 반품 위치)에 입고합니다.
-   */
-  async processReturn(
-    skuId: string,
-    warehouseId: string,
-    quantity: number,
-    orderId: string,
-    locationId?: string,
-    reason?: string,
-    tx?: DbTx,
-  ) {
-    this.logger.log(`Processing return: ${quantity} units of SKU ${skuId} for order ${orderId}`);
-
-    return this.dbService.run(async (executor) => {
-      if (quantity <= 0) {
-        throw new BadRequestException('Quantity must be positive');
-      }
-
-      // 반품 위치가 지정되지 않은 경우 기본 반품 위치 조회
-      let targetLocationId = locationId;
-
-      if (!targetLocationId) {
-        // return_default 시스템 위치 조회
-        const returnLocation = await executor.query.locations.findFirst({
-          where: and(
-            eq(wmsTables.locations.warehouseId, warehouseId),
-            eq(wmsTables.locations.systemRole, 'return_default'),
-          ),
-        });
-
-        if (!returnLocation) {
-          throw new BadRequestException(
-            `No return location found for warehouse ${warehouseId}. Please specify locationId.`,
-          );
-        }
-
-        targetLocationId = returnLocation.id;
-      }
-
-      // RECEIVE 이벤트로 반품 입고
-      const event = await this.commandService.receive(
-        {
-          skuId,
-          toWarehouseId: warehouseId,
-          toLocationId: targetLocationId,
-          quantity,
-          reason: `RETURN: Order ${orderId}${reason ? ` - ${reason}` : ''}`,
-        },
-        executor,
-      );
-
-      this.logger.log(`Return processed: event ${event.eventId}`);
-
-      return {
-        eventId: event.eventId,
-        locationId: targetLocationId,
-      };
     }, tx);
   }
 }

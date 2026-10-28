@@ -856,6 +856,12 @@
       "started": "다운로드를 시작합니다",
       "failed": "다운로드에 실패했습니다",
       "exerciseFailed": "사용 처리에 실패했습니다"
+    },
+    "exchangeUnavailable": {
+      "title": "교환 신청은 고객센터에서 받고 있어요",
+      "body": "주문번호와 바꾸고 싶은 상품을 알려 주시면 도와드릴게요.",
+      "inquiry": "1:1 문의하기",
+      "orderDetail": "주문 상세"
     }
   },
   "membership": {

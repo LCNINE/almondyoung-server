@@ -738,20 +738,56 @@ describeIfDb('order-progress 판정 (PostgreSQL integration)', () => {
     );
   });
 
-  it('배송완료 뒤 열린 반품 → return_exchange/return:requested', async () => {
+  it('배송완료 뒤 열린 반품 예정 → return_exchange/return:expected, 시각은 접수 시각', async () => {
     const at = new Date('2026-10-05T00:00:00.000Z');
     const r = await one(async (tx, w) => {
       const o = await f.seedOrder(tx);
       const fo = await f.seedFo(tx, w, o, { status: 'completed' });
       await f.seedBox(tx, w, [fo.foItemId], { status: 'delivered' });
-      await f.seedReturn(tx, o.salesOrderId, 'requested', at);
+      await f.seedReturn(tx, o.salesOrderId, 'expected', at);
       return o.salesOrderId;
     });
     expect(r).toMatchObject({
       stage: 'return_exchange',
-      state: 'return:requested',
+      state: 'return:expected',
       estimatedEnteredAt: at.toISOString(),
     });
+  });
+
+  it('나눠 보낸 주문의 남은 상자가 아직 진행 중이면 반품이 그 상자 단계를 덮지 않는다 (K8 PR 10 최종 리뷰)', async () => {
+    // 첫 상자는 배송완료·반품 접수, 둘째 상자는 계획 단계 — 정체 보드는 막힌 상자를, 리컨실러는 그 상자를 계속 본다
+    const r = await one(async (tx, w) => {
+      const o = await f.seedOrder(tx);
+      const fo = await f.seedFo(tx, w, o, { status: 'ready' });
+      await f.seedBox(tx, w, [fo.foItemId], { status: 'delivered' });
+      const draft = await f.seedBox(tx, w, [fo.foItemId], { status: 'draft' });
+      await f.seedFullReservations(tx, w, { foId: fo.foId, foItemIds: [fo.foItemId], box: draft });
+      await f.seedReturn(tx, o.salesOrderId, 'expected');
+      return o.salesOrderId;
+    });
+    expect(r).toMatchObject({ stage: 'plan' });
+  });
+
+  it.each(['held', 'refund_pending'] as const)('보류·환불 실패도 열린 반품이다 → return:%s', async (status) => {
+    const r = await one(async (tx, w) => {
+      const o = await f.seedOrder(tx);
+      const fo = await f.seedFo(tx, w, o, { status: 'completed' });
+      await f.seedBox(tx, w, [fo.foItemId], { status: 'delivered' });
+      await f.seedReturn(tx, o.salesOrderId, status);
+      return o.salesOrderId;
+    });
+    expect(r).toMatchObject({ stage: 'return_exchange', state: `return:${status}` });
+  });
+
+  it.each(['settled', 'cancelled'] as const)('%s 반품만 있으면 반품 단계가 아니다', async (status) => {
+    const r = await one(async (tx, w) => {
+      const o = await f.seedOrder(tx);
+      const fo = await f.seedFo(tx, w, o, { status: 'completed' });
+      await f.seedBox(tx, w, [fo.foItemId], { status: 'delivered' });
+      await f.seedReturn(tx, o.salesOrderId, status);
+      return o.salesOrderId;
+    });
+    expect(r.stage).not.toBe('return_exchange');
   });
 
   it('FO 는 있는데 세는 상자가 없음 → unclassified/no_units', async () => {

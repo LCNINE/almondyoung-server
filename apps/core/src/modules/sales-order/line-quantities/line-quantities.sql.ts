@@ -100,7 +100,7 @@ export function deliveredParcelsSql(salesOrderScope: SQL): SQL {
 /**
  * 판매 라인 × SKU(구성품) 층의 출고·배송·청구 사실 (K6 PR2b, 청구는 PR3a). 행 = (sales_order_id uuid,
  * sales_order_line_id uuid, sku_id uuid, qty_per_unit int|null, required, shipped, forwarded, delivered, partner_completed,
- * outstanding, return_active, return_consumed, exchange_active, claimable — 전부 int).
+ * outstanding, return_active, return_consumed, claimable — 전부 int).
  * `salesOrderScope` 는 판매주문 id 한 열을 내는 SELECT.
  *
  * 키 = 범위 주문의 (판매 라인, SKU) 중 FOI 가 있거나 굳은 구성(`sales_order_line_compositions`)에 있는 것.
@@ -126,10 +126,9 @@ export function deliveredParcelsSql(salesOrderScope: SQL): SQL {
  * 청구 사실(K6 PR3a) — `claimTotalsBySkuSql` 을 (라인, SKU) 로 붙인다. 없으면 0:
  *   (postgres 는 넓은 범위 소비자(진행 단계 SQL·관리자 카드)가 청구 칸을 안 고를 때만 청구 조인을 잘라낸다 — 넓은 범위에서
  *    청구 칸을 고르면 행마다 청구 집계 스캔과 취소 서브플랜 값을 치른다.)
- *   return_active     = 진행 중 반품 항목 수량
- *   return_consumed   = 완료 반품 항목 수량
- *   exchange_active   = 진행 중 교환 항목 수량
- *   claimable         = delivered − return_consumed − return_active − exchange_active
+ *   return_active     = 진행 중 반품 예정 수량(SKU 단위)
+ *   return_consumed   = 정산 끝난 반품 수량 — 돌아온 물건
+ *   claimable         = delivered − return_consumed − return_active
  *                       − 출고 뒤 취소(판매 단위) × qty_per_unit. 출고 뒤 취소로 돈을 돌려준 수량은 다시 청구할 수 없다(C9).
  *                       구성 밖 SKU(qty_per_unit null)는 0 — 출고 뒤 취소를 SKU 로 환산할 수 없다(N4).
  *                       GREATEST 로 덮지 않는다 — 회수가 배송완료를 되돌리면 음수가 그대로 보여야 한다.
@@ -154,12 +153,10 @@ export function lineSkuQuantitiesSql(salesOrderScope: SQL): SQL {
            coalesce(item_fact.outstanding, 0)::int as outstanding,
            coalesce(claim.return_active, 0)::int as return_active,
            coalesce(claim.return_consumed, 0)::int as return_consumed,
-           coalesce(claim.exchange_active, 0)::int as exchange_active,
            (case when composition.qty_per_unit is null then 0
                  else coalesce(item_fact.delivered, 0)
                       - coalesce(claim.return_consumed, 0)
                       - coalesce(claim.return_active, 0)
-                      - coalesce(claim.exchange_active, 0)
                       - ${lineCanceledQuantitySql(sql`sku_key.sales_order_line_id`, 'after_shipment')} * composition.qty_per_unit
             end)::int as claimable
       from (

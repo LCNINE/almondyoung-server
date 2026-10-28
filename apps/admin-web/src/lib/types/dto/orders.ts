@@ -414,7 +414,7 @@ export interface DailyOrderStatusDto {
     /** 외부(셀메이트 등)에서 출고·배송완료 처리된 주문 — 준비중·배송중·배송완료에는 세지 않는다 */
     externalShipped: number;
     cancelled: number;
-    exchange: number;
+    /** 그날(KST) 접수된 반품 예정 기록 수(K8 PR 10) */
     return: number;
     total: number;
   }>;

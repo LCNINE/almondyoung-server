@@ -856,6 +856,12 @@
       "started": "Download started",
       "failed": "Download failed",
       "exerciseFailed": "Failed to mark the license as used"
+    },
+    "exchangeUnavailable": {
+      "title": "Exchanges are handled by our customer center",
+      "body": "Tell us your order number and the item you'd like to exchange, and we'll help you.",
+      "inquiry": "Contact us",
+      "orderDetail": "Order details"
     }
   },
   "membership": {

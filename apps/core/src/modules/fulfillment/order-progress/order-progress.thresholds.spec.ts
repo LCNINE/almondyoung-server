@@ -1,10 +1,9 @@
 import { sql } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import {
-  exchangeRequestStatusEnum,
+  customerReturnStatusEnum,
   fulfillmentOrderCreationBacklogStatusEnum,
   outboundBatchWorkItemStatusEnum,
-  returnRequestStatusEnum,
   shipmentStatusEnum,
   waybillStatusEnum,
 } from '../../inventory/schema/inventory.schema';
@@ -105,10 +104,10 @@ describe('ORDER_PROGRESS_STATES', () => {
     waybill: waybillStatusEnum.enumValues,
     pick: outboundBatchWorkItemStatusEnum.enumValues,
     track: shipmentStatusEnum.enumValues,
-    return_exchange: [
-      ...returnRequestStatusEnum.enumValues.map((v) => `return:${v}`),
-      ...exchangeRequestStatusEnum.enumValues.map((v) => `exchange:${v}`),
-    ],
+    // 열린 반품 예정 기록만(K8 PR 10) — 정산·취소는 판정 SQL 이 거른다
+    return_exchange: customerReturnStatusEnum.enumValues
+      .filter((v) => v !== 'settled' && v !== 'cancelled')
+      .map((v) => `return:${v}`),
   };
 
   it.each([...ORDER_PROGRESS_STAGES])('%s 의 세부 상태는 판정 SQL 이 실제로 낼 수 있는 값이다', (stage) => {

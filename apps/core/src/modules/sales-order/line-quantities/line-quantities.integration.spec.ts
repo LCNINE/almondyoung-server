@@ -87,7 +87,6 @@ function skuQuantities(
     outstanding,
     returnActive: 0,
     returnConsumed: 0,
-    exchangeActive: 0,
     claimable: qtyPerUnit === null ? 0 : delivered,
   };
 }
@@ -105,7 +104,6 @@ type SkuRow = {
   outstanding: number;
   return_active: number;
   return_consumed: number;
-  exchange_active: number;
   claimable: number;
 };
 
@@ -130,7 +128,6 @@ async function readSkusDirectly(tx: DbTx, salesOrderId: string): Promise<Map<str
         outstanding: row.outstanding,
         returnActive: row.return_active,
         returnConsumed: row.return_consumed,
-        exchangeActive: row.exchange_active,
         claimable: row.claimable,
       },
     ]);

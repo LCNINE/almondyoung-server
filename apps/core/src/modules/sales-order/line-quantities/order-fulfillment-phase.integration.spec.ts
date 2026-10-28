@@ -20,7 +20,7 @@ import { CancellationRefundManager } from '../cancellation-refund/cancellation-r
 import { OrderCancellation } from '../order-cancellation/order-cancellation';
 import { OrderCancellationReader } from '../order-cancellation/order-cancellation.reader';
 import { PrintOrderReader } from '../../print-order/services/print-order.reader';
-import { seedClaim, seedComponentSku, seedDeliveredLine } from './__support__/claim-facts.fixtures';
+import { insertCustomerReturn, seedComponentSku, seedDeliveredLine } from './__support__/claim-facts.fixtures';
 import { recallParcel, seedDispatchedParcel, seedSupplierShare } from './__support__/shipment-facts.fixtures';
 import { type OrderShipmentPhase, orderFulfillmentPhaseSql } from './order-fulfillment-phase.sql';
 import { readOrderFulfillmentPhases } from './order-fulfillment-phase.reader';
@@ -680,12 +680,12 @@ describeIfDb('orderFulfillmentPhaseSql — 진행 단계 사다리 한 벌 (K6 P
     });
   });
 
-  describe('고객 actions 의 반품·교환 버튼 (K6 PR3a, C8)', () => {
+  describe('고객 actions 의 반품 버튼 (K6 PR3a, C8 · K8 PR 10 — 교환은 PR 11 까지 닫힌다)', () => {
     function storeService(tx: DbTx): StoreSalesOrdersService {
       return storeServiceFor(tx);
     }
 
-    it('delivered parcel opens return and exchange', async () => {
+    it('delivered parcel opens return, not exchange', async () => {
       await inRollbackTx(db, async (tx) => {
         const w = await f.seedWorld(tx);
         const customerId = randomUUID();
@@ -697,7 +697,8 @@ describeIfDb('orderFulfillmentPhaseSql — 진행 단계 사다리 한 벌 (K6 P
           customerId,
         });
         const actions = await storeService(tx).getActions(line.salesOrderId, customerId);
-        expect(actions.availableActions).toEqual(expect.arrayContaining(['return', 'exchange']));
+        expect(actions.availableActions).toContain('return');
+        expect(actions.availableActions).not.toContain('exchange');
       });
     });
 
@@ -726,18 +727,10 @@ describeIfDb('orderFulfillmentPhaseSql — 진행 단계 사다리 한 벌 (K6 P
           parcels: [{ qtyBySku: { [sku]: 1 } }],
           customerId,
         });
-        await seedClaim(tx, {
-          kind: 'return',
+        await insertCustomerReturn(tx, {
           salesOrderId: line.salesOrderId,
-          status: 'completed',
-          items: [
-            {
-              salesOrderLineId: line.lineId,
-              shipmentLineId: line.parcels[0].shipmentLineIdBySku.get(sku) ?? null,
-              dispatchAttemptId: line.parcels[0].dispatchAttemptId,
-              quantity: 1,
-            },
-          ],
+          status: 'settled',
+          lines: [{ salesOrderLineId: line.lineId, quantity: 1 }],
         });
         const actions = await storeService(tx).getActions(line.salesOrderId, customerId);
         expect(actions.availableActions).not.toContain('return');
@@ -756,18 +749,10 @@ describeIfDb('orderFulfillmentPhaseSql — 진행 단계 사다리 한 벌 (K6 P
           parcels: [{ qtyBySku: { [sku]: 1 } }],
           customerId,
         });
-        await seedClaim(tx, {
-          kind: 'return',
+        await insertCustomerReturn(tx, {
           salesOrderId: line.salesOrderId,
-          status: 'requested',
-          items: [
-            {
-              salesOrderLineId: line.lineId,
-              shipmentLineId: line.parcels[0].shipmentLineIdBySku.get(sku) ?? null,
-              dispatchAttemptId: line.parcels[0].dispatchAttemptId,
-              quantity: 1,
-            },
-          ],
+          status: 'expected',
+          lines: [{ salesOrderLineId: line.lineId, quantity: 1 }],
         });
         const actions = await storeService(tx).getActions(line.salesOrderId, customerId);
         expect(actions.claimStatus).toBe('return_requested');
@@ -789,7 +774,7 @@ describeIfDb('orderFulfillmentPhaseSql — 진행 단계 사다리 한 벌 (K6 P
         });
         await seedPrint(tx, { salesOrderId: line.salesOrderId, lineId: line.lineId }, 'submitted');
         const actions = await storeService(tx).getActions(line.salesOrderId, customerId);
-        expect(actions.availableActions).toEqual(expect.arrayContaining(['return', 'exchange']));
+        expect(actions.availableActions).toContain('return');
       });
     });
   });

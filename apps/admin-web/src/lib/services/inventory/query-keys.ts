@@ -13,7 +13,6 @@ import type {
   InboundReceiptsQuery,
   InboundWorkLogsQuery,
   InboundStatusQuery,
-  ReturnFiltersDto,
   MovementHistoryQuery,
 } from '../../types/dto/inventory';
 
@@ -158,11 +157,6 @@ export const inventoryQueryKeys = {
   replenishmentRouteRules: () => ['replenishment-rules', 'routes'] as const,
   replenishmentSkuOverrides: (q: string) =>
     ['replenishment-rules', 'skus', q] as const,
-
-  // 회수(Returns) 관련
-  returns: (filters?: ReturnFiltersDto) =>
-    ['inventory', 'returns', filters] as const,
-  return: (id: string) => ['inventory', 'returns', id] as const,
 
   // 즉시 이동(Movement) 관련
   movementJob: (jobId: string) =>
