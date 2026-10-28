@@ -193,6 +193,47 @@ medusaIntegrationTestRunner({
       expect((await returnsOf(orderId)).map((r) => r.status)).toEqual(['requested']);
     });
 
+    it('GET /store/orders/:id/returns — 본인 반품 하나 → stage requested·can_cancel true·품목 수량 1, 반품 취소 뒤 → canceled·can_cancel false', async () => {
+      const { orderId, itemId, me } = await ownedOrder(2);
+      const mine = await api.post(`/store/orders/${orderId}/returns`, body(itemId), me.headers);
+      expect(mine.status).toBe(200);
+
+      const before = await api.get(`/store/orders/${orderId}/returns`, me.headers);
+      expect(before.status).toBe(200);
+      expect(before.data.returns).toEqual([
+        {
+          return_id: mine.data.return_id,
+          stage: 'requested',
+          requested_at: expect.any(String),
+          reason: 'change_of_mind',
+          fee_bearer: 'customer',
+          items: [{ item_id: itemId, quantity: 1 }],
+          can_cancel: true,
+        },
+      ]);
+
+      const cancel = await api.post(`/store/orders/${orderId}/returns/${mine.data.return_id}/cancel`, {}, me.headers);
+      expect(cancel.status).toBe(200);
+      const after = await api.get(`/store/orders/${orderId}/returns`, me.headers);
+      expect(after.data.returns).toMatchObject([{ return_id: mine.data.return_id, stage: 'canceled', can_cancel: false }]);
+    });
+
+    it('GET returns — 남의 주문 404, 로그인 없음 401', async () => {
+      const { orderId, itemId, me } = await ownedOrder(1);
+      await api.post(`/store/orders/${orderId}/returns`, body(itemId), me.headers);
+      const stranger = await customerHeaders(getContainer(), c);
+      expect((await fail(api.get(`/store/orders/${orderId}/returns`, stranger.headers))).status).toBe(404);
+      expect((await fail(api.get(`/store/orders/${orderId}/returns`, { headers: c.storeHeaders.headers }))).status).toBe(401);
+    });
+
+    it('GET returns — admin 이 other + fee_bearer seller 로 접수한 반품도 고객 목록에 reason other·fee_bearer seller', async () => {
+      const { orderId, itemId, me } = await ownedOrder(1);
+      const made = await api.post(`/admin/orders/${orderId}/returns`, body(itemId, { reason: 'other', fee_bearer: 'seller' }), c.adminHeaders);
+      expect(made.status).toBe(200);
+      const res = await api.get(`/store/orders/${orderId}/returns`, me.headers);
+      expect(res.data.returns).toMatchObject([{ return_id: made.data.return_id, reason: 'other', fee_bearer: 'seller', can_cancel: true }]);
+    });
+
     it('PR 2 차단과 안 겹친다: POST /store/returns 는 여전히 400 default_return_route_blocked', async () => {
       const res = await fail(api.post('/store/returns', {}, { headers: c.storeHeaders.headers }));
       expect(res.status).toBe(400);

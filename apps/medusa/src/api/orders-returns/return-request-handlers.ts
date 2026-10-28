@@ -2,7 +2,9 @@ import type { AuthenticatedMedusaRequest, MedusaResponse } from '@medusajs/frame
 
 import { cancelOrderReturn } from '../../workflows/orders/returns/cancel-order-return';
 import { fetchCoreReturnEligibility } from '../../workflows/orders/returns/core-return-eligibility';
+import { describeStoreReturns } from '../../workflows/orders/returns/describe-store-returns';
 import { loadReturnOrder } from '../../workflows/orders/returns/load-return-order';
+import { loadStoreReturns } from '../../workflows/orders/returns/load-store-returns';
 import { describeOrderReturnable } from '../../workflows/orders/returns/plan-return-request';
 import {
   requestOrderReturn,
@@ -83,6 +85,30 @@ export async function handleReturnCancel(
         : { requestedBy: 'operator' as const, actorId }),
     });
     res.status(200).json({ return_id: result.returnId, status: result.status });
+  } catch (error) {
+    if (!sendReturnError(res, error)) throw error;
+  }
+}
+
+/** 고객 본인 주문의 반품 목록(K8 PR8 N2). 본인 주문이 아니면 404 — 존재 여부를 흘리지 않는다. */
+export async function handleStoreReturnList(req: AuthenticatedMedusaRequest, res: MedusaResponse) {
+  try {
+    const actorId = req.auth_context?.actor_id;
+    const order = await loadStoreReturns(req.scope, req.params.id);
+    if (!order || !actorId || order.customerId !== actorId) {
+      throw new ReturnOrderNotFound(`주문을 찾을 수 없습니다: ${req.params.id}`);
+    }
+    res.status(200).json({
+      returns: describeStoreReturns(order.returns).map((r) => ({
+        return_id: r.returnId,
+        stage: r.stage,
+        requested_at: r.requestedAt,
+        reason: r.reason,
+        fee_bearer: r.feeBearer,
+        items: r.items.map((i) => ({ item_id: i.itemId, quantity: i.quantity })),
+        can_cancel: r.canCancel,
+      })),
+    });
   } catch (error) {
     if (!sendReturnError(res, error)) throw error;
   }

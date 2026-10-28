@@ -55,6 +55,8 @@ import { DepositAccountInfo } from "./deposit-account-info"
 import type { BankTransferDepositAccount } from "@/lib/api/wallet"
 import type { DigitalAssetOwnership } from "@lib/types/ui/library.ui"
 import { OrderDigitalDownloads } from "./order-digital-downloads"
+import { OrderReturnsSection } from "./order-returns-section"
+import type { CustomerReturn } from "@lib/types/ui/returns"
 
 const formatAmount = (value?: number | null) =>
   `${(value ?? 0).toLocaleString()}원`
@@ -67,6 +69,7 @@ export const OrderDetailsMobile = ({
   depositAccount,
   refundRequestStatus,
   digitalOwnerships = [],
+  returns = null,
 }: {
   order: HttpTypes.StoreOrder | null
   countryCode: string
@@ -76,10 +79,12 @@ export const OrderDetailsMobile = ({
   depositAccount?: BankTransferDepositAccount | null
   refundRequestStatus?: string
   digitalOwnerships?: DigitalAssetOwnership[]
+  returns?: CustomerReturn[] | null
 }) => {
   const tLabels = useTranslations("mypage.order.labels")
   const tStatus = useTranslations("mypage.order.status")
   const tActions = useTranslations("mypage.order.actions")
+  const tReturns = useTranslations("mypage.order.returns")
   const { showCancelFailure, cancelFailureAlert } = useCancelFailureAlert()
   const { askPrintPartialCancel, printPartialCancelDialog } =
     usePrintPartialCancelDialog(() => runCancel(true))
@@ -481,6 +486,14 @@ export const OrderDetailsMobile = ({
                         - {item.variant.title}
                       </p>
                     )}
+                    {canReturn && (
+                      <LocalizedClientLink
+                        href={`/mypage/exchange?orderId=${encodeURIComponent(order.id)}&type=return&itemId=${encodeURIComponent(item.id)}`}
+                        className="mt-2 inline-block text-xs text-gray-600 underline"
+                      >
+                        {tReturns("requestItem")}
+                      </LocalizedClientLink>
+                    )}
                   </div>
                   {/* 디지털 라인: 이 주문의 ownership 이 잡히면 아래 다운로드 블록이 대신 처리한다. */}
                   {isDigitalItem(item) ? (
@@ -501,6 +514,20 @@ export const OrderDetailsMobile = ({
             })}
             <OrderDigitalDownloads ownerships={digitalOwnerships} />
           </div>
+
+          {returns && returns.length > 0 && (
+            <div className="border-border-muted border-t p-4">
+              <OrderReturnsSection
+                orderId={order.id}
+                returns={returns}
+                items={(order.items ?? []).map((i) => ({
+                  id: i.id,
+                  title: i.title,
+                  variantTitle: i.variant?.title ?? null,
+                }))}
+              />
+            </div>
+          )}
 
           <div className="border-border-muted mt-2 flex flex-wrap gap-2 border-t p-4">
             {blockedNotice && (

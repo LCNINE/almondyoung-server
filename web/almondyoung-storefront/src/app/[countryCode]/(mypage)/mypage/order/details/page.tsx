@@ -3,6 +3,7 @@ import MypageLayout from "@/app/[countryCode]/(mypage)/_components/mypage-layout
 import { OrderDetailsDesktop } from "domains/order/details/components/order-details-desktop"
 import { OrderDetailsMobile } from "domains/order/details/components/order-details-mobile"
 import { getOrder } from "@/lib/api/medusa/orders"
+import { getOrderReturns } from "@/lib/api/medusa/returns"
 import { getOrderActionsByMedusaId } from "@/lib/api/orders/store-orders"
 import { getCashReceipts, getBankTransferDepositAccount, getActiveRefundRequest } from "@/lib/api/wallet"
 import { getOwnerships } from "@/lib/api/library/library-api"
@@ -19,11 +20,13 @@ export default async function OrderDetailsPage({
   const { countryCode } = await params
   const { orderId } = await searchParams
 
-  const [order, coreActions] = await Promise.all([
+  // 반품 목록은 부가 정보다 — 실패는 null(칸이 안 뜸), 인증 실패만 getOrderReturns 가 던져 error.tsx 로 간다
+  const [order, coreActions, returns] = await Promise.all([
     orderId ? getOrder(orderId) : Promise.resolve(null),
     orderId
       ? getOrderActionsByMedusaId(orderId).catch(() => null)
       : Promise.resolve(null),
+    orderId ? getOrderReturns(orderId) : Promise.resolve(null),
   ])
 
   // 결제 세션 data.intentId(wallet) 로 발급된 현금영수증 조회. 없으면 빈 배열.
@@ -67,6 +70,7 @@ export default async function OrderDetailsPage({
             depositAccount={depositAccount}
             refundRequestStatus={refundRequest?.status}
             digitalOwnerships={digitalOwnerships}
+            returns={returns}
           />
         </MypageLayout>
       </div>
@@ -82,6 +86,7 @@ export default async function OrderDetailsPage({
           depositAccount={depositAccount}
           refundRequestStatus={refundRequest?.status}
           digitalOwnerships={digitalOwnerships}
+          returns={returns}
         />
       </div>
     </WithHeaderLayout>
