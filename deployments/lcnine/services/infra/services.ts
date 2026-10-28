@@ -686,6 +686,8 @@ export function setup(infra: SharedInfra) {
       HANJIN_SENDER_DTL_ADDR: hanjinSenderDtlAddr.value,
       HANJIN_SENDER_TEL: hanjinSenderTel.value,
       HANJIN_LABEL_TYPE: 'FS',
+      // 송장 템플릿은 발지신용(월 정산)만 그린다 — 선불·착불은 운임 금액 칸이 필요해 라벨 생성이 실패한다
+      HANJIN_PAY_TYPE: 'CD',
       UGC_SERVICE_URL: url('ugc'),
       UGC_INTERNAL_KEY: ugcInternalKey.value,
       // 켜기 전엔 print_orders 행만 쌓이고 와우프레스로 보내지 않는다. 첫 품목 검증 뒤 'true'.
