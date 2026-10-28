@@ -239,5 +239,19 @@ medusaIntegrationTestRunner({
       expect(res.status).toBe(400);
       expect(res.data.code).toBe('default_return_route_blocked');
     });
+    it('kind exchange (admin, defective) → 200 kind exchange / store 에서 change_of_mind 교환 → 400 exchange_requires_seller_fault / kind swap → 400', async () => {
+      const { orderId, itemId, me } = await ownedOrder(2);
+      const adminRes = await api.post(`/admin/orders/${orderId}/returns`, body(itemId, { kind: 'exchange', reason: 'defective' }), c.adminHeaders);
+      expect(adminRes.status).toBe(200);
+      expect(adminRes.data).toMatchObject({ kind: 'exchange', fee_bearer: 'seller' });
+
+      const rejected = await fail(api.post(`/store/orders/${orderId}/returns`, body(itemId, { kind: 'exchange' }), me.headers));
+      expect(rejected.status).toBe(400);
+      expect(rejected.data).toMatchObject({ reason: 'exchange_requires_seller_fault' });
+
+      const swap = await fail(api.post(`/store/orders/${orderId}/returns`, body(itemId, { kind: 'swap' }), me.headers));
+      expect(swap.status).toBe(400);
+      expect(await returnsOf(orderId)).toHaveLength(1);
+    });
   },
 });

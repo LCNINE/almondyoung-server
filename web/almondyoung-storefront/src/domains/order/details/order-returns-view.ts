@@ -31,6 +31,7 @@ const CANCEL_REJECT_KEYS: Record<string, string> = {
   return_already_received: "cancelReject.returnArrived",
   return_prepaid: "cancelReject.returnPrepaid",
   return_picked_up: "cancelReject.returnPickedUp",
+  exchange_released: "cancelReject.exchangeReleased",
   not_our_return: "cancelReject.notOurReturn",
 }
 

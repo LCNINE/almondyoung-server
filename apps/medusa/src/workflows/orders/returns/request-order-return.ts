@@ -1,4 +1,3 @@
-import { createHash } from 'crypto';
 import type { MedusaContainer } from '@medusajs/framework/types';
 import { ContainerRegistrationKeys, Modules, ReturnStatus } from '@medusajs/framework/utils';
 import {
@@ -14,8 +13,9 @@ import { describeError } from '../../../utils/describe-error';
 import { orderCancelLockKey } from '../settlement/order-payments';
 import { lowerUnheldTopUp, remainingTopUp, topUpTag } from './return-top-up-ledger';
 import { fetchCoreReturnEligibility } from './core-return-eligibility';
-import { loadReturnOrder, RETURN_REQUEST_METADATA_KEY, type ReturnRequestRecord } from './load-return-order';
+import { isExchangeRecord, loadReturnOrder, RETURN_REQUEST_METADATA_KEY, type ReturnRequestRecord } from './load-return-order';
 import { planReturnRequest, ReturnRequestRejected, type ReturnRequestedBy } from './plan-return-request';
+import { hashReturnRequest, type ReturnRequestKind } from './return-request-hash';
 import { readReturnFeeBearer, RETURN_REASON_CUSTOMER_SELECTABLE_KEY } from './return-reasons';
 
 export type RequestOrderReturnInput = {
@@ -25,6 +25,8 @@ export type RequestOrderReturnInput = {
   items: Array<{ itemId: string; quantity: number }>;
   /** 반품 사유 value(RETURN_REASONS). 반품 하나에 사유 하나(N6) */
   reasonValue: string;
+  /** 접수 종류(N1) — 기본 return. exchange 는 판매자 잘못 사유만 받는다(N2) */
+  kind?: ReturnRequestKind;
   note?: string;
   requestedBy: ReturnRequestedBy;
   /** requestedBy 가 customer 면 필수 — 주문 주인이 아니면 «없는 주문»으로 닫는다 */
@@ -43,6 +45,7 @@ export type RequestOrderReturnResult = {
   items: Array<{ itemId: string; quantity: number }>;
   feeBearer: 'customer' | 'seller';
   windowOverridden: boolean;
+  kind: ReturnRequestKind;
 };
 
 /** 주문이 없거나 남의 것이다. 호출자는 404 로 닫는다 — 존재 여부를 흘리지 않게 두 경우를 가르지 않는다(N7). */
@@ -81,7 +84,7 @@ async function run(container: MedusaContainer, input: RequestOrderReturnInput): 
 
   // 멱등은 판정 «전»에 본다 — 같은 요청을 다시 판정하면 이미 만든 반품이 그 수량을 잡고 있어 quantity_exceeds_returnable 로 거절된다
   const items = normalizeItems(input.items);
-  const requestHash = hashReturnRequest(items, input.reasonValue, input.operatorFeeBearer);
+  const requestHash = hashReturnRequest(items, input.reasonValue, input.operatorFeeBearer, input.kind);
   const mine = order.returns.filter((r) => r.record?.requestId === input.requestId);
   const settled = mine.find((r) => r.status !== ReturnStatus.OPEN);
   if (settled?.record) {
@@ -116,6 +119,7 @@ async function run(container: MedusaContainer, input: RequestOrderReturnInput): 
       customerSelectable: reasonRow.metadata?.[RETURN_REASON_CUSTOMER_SELECTABLE_KEY] === true,
     },
     operatorFeeBearer: input.operatorFeeBearer,
+    kind: input.kind,
     windowOverrideReason: input.windowOverrideReason,
     now: input.now ?? new Date(),
   });
@@ -134,6 +138,7 @@ async function run(container: MedusaContainer, input: RequestOrderReturnInput): 
       ? { reason: (input.windowOverrideReason ?? '').trim(), actorId: input.actorId ?? null }
       : null,
     fulfillmentTopUp: plan.fulfillmentTopUp,
+    ...(input.kind === 'exchange' ? { kind: 'exchange' as const } : {}),
   };
 
   // N1 — 코어 RETURN_ITEM 은 quantity ≤ fulfilled − return_requested 를 요구하는데 Medusa 는 출고를 몰라 fulfilled 가 0 이다.
@@ -293,16 +298,6 @@ async function returnTarget(container: MedusaContainer): Promise<{ optionId: str
 const normalizeItems = (items: Array<{ itemId: string; quantity: number }>) =>
   items.map((i) => ({ itemId: i.itemId, quantity: i.quantity })).sort((a, b) => a.itemId.localeCompare(b.itemId));
 
-/** 같은 요청인지 — 품목(정렬)·사유·CS 가 고른 부담 주체. 메모·기한 넘김 사유는 넣지 않는다(재시도 때 문구만 달라도 같은 요청이다). */
-function hashReturnRequest(
-  items: Array<{ itemId: string; quantity: number }>,
-  reasonValue: string,
-  operatorFeeBearer: 'customer' | 'seller' | undefined,
-): string {
-  const body = { items, reasonValue, operatorFeeBearer: operatorFeeBearer ?? null };
-  return createHash('sha256').update(JSON.stringify(body)).digest('hex');
-}
-
 const toResult = (
   returnId: string,
   status: string,
@@ -316,4 +311,5 @@ const toResult = (
   items,
   feeBearer: record.feeBearer,
   windowOverridden: record.windowOverride !== null,
+  kind: isExchangeRecord(record) ? 'exchange' : 'return',
 });
