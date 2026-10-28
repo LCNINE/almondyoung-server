@@ -202,7 +202,8 @@ export type ReturnRejectReason =
   | 'return_already_received'
   | 'not_our_return'
   | 'return_arrived'
-  | 'return_prepaid';
+  | 'return_prepaid'
+  | 'return_picked_up';
 
 export interface OrderReturnable {
   items: Array<{ item_id: string; returnable_quantity: number; window_ends_at: string | null }>;

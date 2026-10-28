@@ -9,6 +9,7 @@ import {
 import { toNumber } from '../partial-cancel/amount';
 import { listOrderRefunds, orderCancelLockKey } from '../settlement/order-payments';
 import { fetchCoreReturnEligibility } from './core-return-eligibility';
+import { releaseCoreReturnPickup } from './core-return-pickup';
 import { loadReturnOrder, RETURN_REQUEST_METADATA_KEY, type ReturnRequestRecord } from './load-return-order';
 import { ReturnRequestRejected, type ReturnRequestedBy } from './plan-return-request';
 import { ReturnOrderNotFound } from './request-order-return';
@@ -90,6 +91,11 @@ async function run(container: MedusaContainer, input: CancelOrderReturnInput): P
   const coreStatus = eligibility.customerReturns.find((r) => r.channelReturnId === ret.id)?.status;
   if (coreStatus !== undefined && coreStatus !== 'expected' && coreStatus !== 'cancelled') {
     throw new ReturnRequestRejected('return_arrived', '창고에 도착한 반품은 취소할 수 없습니다');
+  }
+  // 한진 회수 예약을 core 가 먼저 취소한다 — 기사가 이미 가져갔으면 취소를 거절한다. core 가 취소한 뒤 아래가 실패해도
+  // 회수만 없어진 쪽(CS 가 다시 접수)이 소포가 기록 없이 오는 쪽보다 낫다(N6). 주문 변경을 건드리기 «전»이다.
+  if ((await releaseCoreReturnPickup(ret.id)) === 'picked_up') {
+    throw new ReturnRequestRejected('return_picked_up', '택배 기사님이 이미 회수한 반품은 취소할 수 없습니다');
   }
 
   for (const f of query.fulfillments.filter((x) => !x.canceledAt)) {

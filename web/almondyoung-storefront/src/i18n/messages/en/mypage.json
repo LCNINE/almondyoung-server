@@ -685,6 +685,7 @@
         "notOurReturn": "This return can't be handled here. Please contact customer service.",
         "returnArrived": "The items for this return have already reached our warehouse.",
         "returnPrepaid": "A refund has already started for this return.",
+        "returnPickedUp": "The courier has already picked up this return, so it can't be canceled.",
         "generic": "We couldn't submit your return. Please contact customer service."
       }
     },
@@ -706,6 +707,7 @@
       "cancelReject": {
         "returnArrived": "The items have already reached our warehouse, so this can't be canceled.",
         "returnPrepaid": "A refund has already started, so this can't be canceled.",
+        "returnPickedUp": "The courier has already picked it up, so this can't be canceled. You'll be refunded after we inspect it on arrival.",
         "notOurReturn": "This return can't be canceled here. Please contact customer service."
       }
     },

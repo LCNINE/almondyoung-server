@@ -102,6 +102,7 @@ export const RETURN_REJECT_MESSAGES: Record<ReturnRejectReason, string> = {
   not_our_return: '이 주문의 반품이 아닙니다',
   return_arrived: '이미 도착한 반품이라 취소할 수 없습니다',
   return_prepaid: '선환불이 나간 반품이라 취소할 수 없습니다',
+  return_picked_up: '한진 기사가 이미 회수한 반품이라 취소할 수 없습니다',
 };
 
 const CORE_UNAVAILABLE = '주문 확인이 잠시 안 됩니다. 잠시 뒤 다시 시도하세요';

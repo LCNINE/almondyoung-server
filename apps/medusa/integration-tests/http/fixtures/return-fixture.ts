@@ -20,6 +20,10 @@ export class FakeCore {
   private eligibility = new Map<string, EligibilityLine[]>();
   private customerReturns = new Map<string, Array<{ channelReturnId: string; status: string }>>();
   private failStatus: number | null = null;
+  /** `customer-return-pickup/release` 호출 기록(K8 PR9). 정하지 않은 반품은 404(옛 core) — 기존 스펙은 그대로 취소된다. */
+  releaseCalls: Array<{ channelReturnId: string; authorization: string | undefined }> = [];
+  private pickupRelease = new Map<string, 'released' | 'picked_up'>();
+  private releaseFailStatus: number | null = null;
 
   constructor(private readonly port = CORE_PORT) {}
 
@@ -32,6 +36,20 @@ export class FakeCore {
         const externalOrderId = String(parsed.externalOrderId ?? '');
         if (req.method === 'POST' && req.url === '/internal/sales-orders/return-eligibility') {
           this.calls.push({ externalOrderId, authorization: req.headers.authorization });
+        }
+        if (req.method === 'POST' && req.url === '/internal/sales-orders/customer-return-pickup/release') {
+          const channelReturnId = String(parsed.channelReturnId ?? '');
+          this.releaseCalls.push({ channelReturnId, authorization: req.headers.authorization });
+          const result = this.pickupRelease.get(channelReturnId);
+          const out =
+            this.releaseFailStatus !== null
+              ? { status: this.releaseFailStatus, payload: { message: 'injected' } }
+              : result
+                ? { status: 200, payload: { result } }
+                : { status: 404, payload: { message: 'no route' } };
+          res.writeHead(out.status, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify(out.payload));
+          return;
         }
         const { status, payload } = this.route(req.method ?? 'GET', req.url ?? '/', externalOrderId);
         res.writeHead(status, { 'Content-Type': 'application/json' });
@@ -48,6 +66,17 @@ export class FakeCore {
     this.eligibility.clear();
     this.customerReturns.clear();
     this.failStatus = null;
+    this.releaseCalls = [];
+    this.pickupRelease.clear();
+    this.releaseFailStatus = null;
+  }
+  /** 그 반품의 회수 놓아주기 결과. 안 정하면 404 다. */
+  setPickupRelease(returnId: string, result: 'released' | 'picked_up') {
+    this.pickupRelease.set(returnId, result);
+  }
+  /** 숫자면 회수 놓아주기를 그 상태로 거절한다(모든 반품). null 이면 정상으로 돌아온다. */
+  failPickupReleaseWith(status: number | null) {
+    this.releaseFailStatus = status;
   }
   setEligibility(orderId: string, lines: EligibilityLine[]) {
     this.eligibility.set(orderId, lines);
