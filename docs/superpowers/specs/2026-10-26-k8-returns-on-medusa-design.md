@@ -435,11 +435,46 @@ core 의 «검수 끝» 명령(새 명령 타입, `channel-orders.commands.v1`) 
 
 ### 4.9 교환·클레임 (뒤 PR — 문만 적는다)
 
+> **PR 11 에서 이 절을 설계했다 — 아래 «PR 11 설계»가 정본이다.** 바로 아래 세 줄은 착수 전 메모다(`OrderExchange` 를 쓰지 않기로 했다).
+
 - Medusa `OrderExchange` 는 «돌려받기(Return) + 새 품목 + 차액(`difference_due`)», `OrderClaim` 은 하자·오배송용(`refund`/`replace`)이다.
   돌려받는 쪽은 이 설계의 반품 길을 그대로 탄다.
 - 새 품목 출고: Medusa 가 확정한 교환·클레임의 새 품목을 channel-adapter 가 관측해 core 가 FO 를 만든다. 지금 그 경로가 없다 —
   `OrderModified` 스냅샷 줄은 수량·취소만 싣는다. 이 PR 을 시작할 때 설계한다.
 - `confirmExchangeRequest` 는 Medusa 재고 예약(`reserveInventoryStep`)을 한다 — core 가 재고 정본이라 영향은 그때 확인한다.
+
+**PR 11 설계 (2026-10-29).** 계획 `docs/superpowers/plans/2026-10-29-k8-pr11-exchange-reshipment.md`.
+
+결정(대화, 2026-10-29):
+
+| # | 결정 |
+| --- | --- |
+| X1 | **1차 교환은 «판매자 잘못 사유 + 같은 품목 재발송»만.** 부담 주체가 `seller` 인 사유(하자·설명과 다름·오배송·배송 중 파손, CS 의 기타는 `seller` 를 고를 때만)여야 한다. 차액·택배비 0원 — 돈이 움직이지 않는다. 단순 변심·옵션 변경은 «반품 후 재주문»(예외는 CS 가 시스템 밖에서). |
+| X2 | **새 물건은 검수 뒤 나간다.** 검수가 끝나면(양품·불량 무관) 같은 트랜잭션에서 교환 상자가 열린다. 검수에 «보류»가 있으면 CS 가 [교환품 보내기]를 눌러야 열린다. 급하면 CS 가 도착 전에 같은 문으로 먼저 보낸다(«선발송»). |
+| X3 | **Medusa 교환 객체(`OrderExchange`)를 쓰지 않는다.** 교환은 «교환 표지가 붙은 반품»으로 접수하고, 정산(수령) 때 같은 잠금 안에서 «주문 수정»으로 새 품목 줄을 넣어 차액을 0 으로 되돌린다. 사용자: «찜찜하지만 1로». |
+
+X3 의 근거 — 2026-10-29 실측(Medusa 2.13.4, `OrderExchange` 로 같은 품목 1개 교환, 배송 방법 없이):
+- 확정 직후 주문 차액(summary·`loadOrderView` 둘 다)이 **+품목 값**이 되고 수령해야 0 으로 돌아온다(새 품목 `ITEM_ADD` 는 확정 때, 돌려받는 몫은 수령 때 잡힌다). 그 며칠 동안 같은 주문의 부분취소·다른 반품 정산·선환불은 환불 여유(`room = −차액`)가 0 으로 읽혀 덜 환불한다 — 막아야 했다.
+- 할인 주문(3개에 5,000 할인)은 새 품목을 정가로 넣으면 NOT_PAID 결제 컬렉션 1,666.67 이 생기고 수령 뒤에도 그만큼 남는다.
+- 지금 반품 정산(`owed = 수령 전 차액 − 수령 후 차액`)을 그대로 태우면 품목 값을 환불한다.
+- 배송 방법을 안 붙이면 Medusa 재고 예약은 생기지 않았고, 수령 전 교환 취소는 깨끗이 원상복구됐다.
+- 교환의 반품 쪽에 반품 배송 방법을 붙이면 확정이 주문 «전체» 품목으로 반품 fulfillment 를 만든다(`confirm-exchange-request.js:303-308`, 반품 확정은 반품 품목만).
+
+모양(설계자 판단 — 계획의 판정 N1~N19 가 이를 값까지 구체화한다):
+- (E1) **접수는 지금 반품 라우트에 `kind: 'exchange'`** 를 더한다(store·admin 둘 다). 기록 `almondReturn.kind`, 해시에 든다. 판정은 `planReturnRequest` 그대로 + 부담 주체가 `seller` 가 아니면 `exchange_requires_seller_fault`. 반품 배송 방법·출고 수량 올림(N1)·취소는 반품과 같다.
+- (E2) **정산은 반품 정산 워크플로의 교환 갈래**다. 수령(지금 그대로) → 택배비 0(부담 주체 `seller`) → 환불 대신 **주문 수정으로 대체 품목 줄**을 넣는다. 줄은 variant 없는 사용자 정의 줄(제목 = 원래 품목 제목, `metadata.almondExchange = { requestId, sourceItemId, variantId }`)이고 단가 = (그 품목의 단가 × 수량 − 그 수량 몫의 할인) ÷ 수량(원 단위로 자르지 않는다 — 차액이 정확히 0 으로 돌아오게). variant 를 붙이지 않는 이유: 주문 수정의 품목 추가는 Medusa 재고를 검사하고(`confirmVariantInventoryWorkflow`) 확정이 예약을 만든다 — core 가 이미 잡은·보낸 물건이라 Medusa 재고가 0 이면 수령 뒤에 막혀 반품이 `received` 에 갇히고, 남은 예약은 유령 예약이 된다. 단계는 `received → exchanged`(새 단계, `refunded` 의 자리). 보류 차감·외부 환불 상계·미도착 닫기·선환불은 교환에 없다(수령 «전» 거절 `exchange_settle_unsupported`, 선환불은 `return_prepay_rejected` 의 `exchange_unsupported`).
+- (E3) 대체 품목 줄은 **배송비 판정에서 빠진다**(`shippingPlanLines`) — 물건 값이 아니라 «돌려받은 몫의 대체»라 무료배송 기준·그룹 요금에 섞이면 안 된다.
+- (E4) **channel-adapter 의 주문 스냅샷은 대체 품목 줄을 싣지 않는다**(`metadata.almondExchange`). core 의 교환 줄은 교환 사실로만 생기고 지워진다 — 스냅샷에 실으면 core 변경 판정이 `add_product`(반영 대기)로 남긴다.
+- (E5) 사실: `ChannelReturnRequested.kind?`(없으면 반품), `ChannelReturnSettled.exchangeItems?`(`[{ sourceItemId, itemId, quantity }]`, 교환 정산일 때만, `refundAmount` 0). 둘 다 선택 칸이라 옛 소비자는 버리고 지나간다(스키마가 strict 가 아니다).
+- (E6) **core 반품 예정 기록 `customer_returns.kind`**(`return`·`exchange`). 교환 접수 사실이 오면 같은 트랜잭션에서 **같은 판매주문에 교환 줄**(`sales_order_lines.exchange_return_line_id` → 원래 반품 줄)을 만든다 — 원래 줄의 굳은 구성을 복사, 단가·합계 0(돈은 Medusa 것 — core 줄 합계에 값을 넣으면 매출 통계가 두 번 센다), `channel_order_item_id` 는 정산 사실이 올 때 채운다.
+- (E7) **교환 상자 열기는 한 함수**(`CustomerExchangeReleaser.release`)다 — 기존 FO 에 FOI 를 더하고(판매주문:FO 는 0..1), 창고 draft 상자 하나를 열고(받는 사람 = 회수지와 같은 주소), 예약을 `reservePartial` 로 건다. 부족하면 draft 로 남아 지금의 예약 재시도·나눠 보내기가 이어받는다. 부르는 곳 셋: 검수(보류 없음), CS [교환품 보내기](보류 뒤·선발송). `customer_returns.exchange_released_at/by` 가 멱등을 진다.
+- (E8) 교환 취소는 반품 취소 그대로 — 도착 전, 그리고 **교환 상자가 열리기 전**에만(자격 응답 `customerReturns[].exchangeReleased`, Medusa 거절 `exchange_released`). core 는 취소 사실에서 열리지 않은 교환 줄을 지운다(구성은 cascade).
+- (E9) core 변경 판정(`diffChannelSnapshot`)은 교환 줄을 양쪽에서 뺀다. 출고 후 취소 등 판매주문 취소 계획도 교환 줄을 대상으로 삼지 않는다(Medusa 는 정산 전까지 그 줄을 모른다).
+- (E10) 고객 이벤트: 교환은 `SalesOrderClaimProgressed` 의 `requested`·`collected` 를 `kind: 'exchange'` 로 낸다. `completed` 와 `SalesOrderReturned` 는 내지 않는다 — 고객은 물건을 계속 갖고(ugc 리뷰 적립 회수가 돌면 안 된다), 교환품 출고는 상자 출고 알림이 이미 알린다.
+- (E11) CS 의 반품 문 중 보류 정산·선환불·미도착 닫기는 교환을 거절한다. 교환의 보류는 [교환품 보내기]가 연다(`order.claim.write` — 돈 문이 아니다).
+- (E12) 화면(스토어프론트 교환 폼, CS 교환 표시·버튼, core 고객 actions 의 `exchange` 다시 켜기, 진행 판정 라벨)은 **PR 11b**.
+
+알려진 대가: Medusa 대시보드에는 «교환»이 아니라 «반품 + 새 품목 줄»로 보인다. 대체 품목 줄에는 variant 가 없어 Medusa 에서 상품으로 이어지지 않는다(상품은 `metadata.almondExchange.variantId`). 선발송한 교환은 core 가 Medusa 품목 id 없이 먼저 내보내고, 정산 사실이 온 뒤에 id 를 잇는다 — 그 전에는 교환품의 재반품이 Medusa 쪽에서 열리지 않는다.
 
 ## 5. 걷어낼 것 (D8)
 
@@ -523,7 +558,8 @@ core 의 «검수 끝» 명령(새 명령 타입, `channel-orders.commands.v1`) 
 | 9 | 한진 회수 접수(R)·취소 | core · medusa · admin-web | DEV 스모크 선행(4.7). 마이그 하나(`migrate → deploy`), 결과는 4.7 의 «PR 9 에서 확정한 결과» |
 | 10 | 옛 core 반품·교환·inventory 반품 코드 걷기(표는 남김) | core · admin-web · storefront | 마이그 없음, 결과는 §5 의 «PR 10 에서 확정한 결과» |
 | 10b | 옛 반품·교환·inventory 반품 표·enum DROP | core | contract, `deploy → migrate`, PR 10 라이브 뒤. 결과는 §5 의 «PR 10b 에서 확정한 결과» |
-| 11 | 교환·클레임 재출고 | medusa · channel-adapter · core | 착수 때 설계(4.9) |
+| 11 | 교환(판매자 잘못 · 같은 품목 재발송) 커널 — 접수·정산·교환 상자 | medusa · channel-adapter · core · event-contracts | 설계는 4.9 «PR 11 설계». 마이그 하나(`migrate → deploy`), 한 배포 |
+| 11b | 교환 화면 — 스토어프론트 교환 폼, CS 교환 표시·[교환품 보내기], 고객 actions `exchange` | storefront · admin-web · core | PR 11 라이브 뒤 |
 
 개통(고객에게 반품 버튼을 여는 것)은 **core 출고 개통 뒤**(D9, 4.0)이고 PR 6·7·8 이 라이브인 뒤다. 한진 회수(9) 전에는 CS 가 회수를
 손으로 접수한다. PR 6b 가 보류 정산·선환불 모드(4.4 «CS 의 두 문»)와 미도착 닫기를 연다.
