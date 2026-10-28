@@ -237,6 +237,27 @@ medusaIntegrationTestRunner({
       expect(manual.data.refund).toEqual({ mode: 'manual', amount: 54000 });
     });
 
+    it('교환 반품 선환불 → 400 return_prepay_rejected(reason exchange_unsupported), 환불 0, 기록 없음', async () => {
+      const { orderId, itemOf } = await deliveredOrder([{ variant: 'A', quantity: 2 }]);
+      const { returnId } = await requestOrderReturn(getContainer(), {
+        requestId: rid('exr'),
+        orderId,
+        items: [{ itemId: itemOf('A'), quantity: 1 }],
+        reasonValue: 'defective',
+        requestedBy: 'operator',
+        kind: 'exchange',
+      });
+
+      const res = await prepay(orderId, returnId, { requestId: rid('prepay'), memo: '교환 선환불 시도' });
+
+      expect(res.status).toBe(400);
+      expect(res.data).toEqual(expect.objectContaining({ code: 'return_prepay_rejected', reason: 'exchange_unsupported' }));
+      expect(wallet.refundCalls()).toHaveLength(0);
+      const row = await returnRow(returnId);
+      expect(row.status).toBe('requested');
+      expect(readReturnPrepayRecord(row.metadata)).toBeNull();
+    });
+
     it('정산 끝난 반품에 선환불 → 400 return_already_settled, 환불은 정산 1번뿐', async () => {
       const { orderId, returnId, itemOf } = await requestedReturn();
       expect((await settle(orderId, returnId, { requestId: rid('settle'), items: [{ item_id: itemOf('A'), received: 2, dismissed: 0 }] })).status).toBe(200);

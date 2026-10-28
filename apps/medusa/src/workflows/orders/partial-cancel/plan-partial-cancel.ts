@@ -2,6 +2,10 @@ import { cancelledAdjustmentShare, prorateAdjustments, type OrderAdjustment } fr
 
 export type OrderLine = {
   id: string;
+  /** 줄 제목 — 교환 대체 품목 줄(K8 PR11 N4)이 원래 품목 제목을 그대로 쓴다 */
+  title: string;
+  /** variant 없는 사용자 정의 줄(교환 대체 품목 줄 등)은 null */
+  variantId: string | null;
   quantity: number;
   unitPrice: number;
   productId: string | null;
@@ -16,6 +20,11 @@ export type OrderLine = {
    * 빼지 않는다 — 배송비 판정은 남는 수량으로 해야 하므로 따로 든다. 주문 수정의 수량 계산에는 쓰지 않는다.
    */
   returnedQuantity: number;
+  /**
+   * 교환 정산이 넣은 대체 품목 줄(metadata.almondExchange, K8 PR11 N8). 돌려받은 몫의 대체라 물건 값이 아니다 —
+   * 배송비 판정(shippingPlanLines)이 뺀다. 상품이 없어 배송 프로필도 없으므로, 빼지 않으면 그룹이 맞지 않는다고 읽힌다.
+   */
+  exchangeReplacement: boolean;
   adjustments: OrderAdjustment[];
 };
 export type CancelRequestItem = { itemId: string; quantity: number };

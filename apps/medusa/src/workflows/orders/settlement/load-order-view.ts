@@ -53,6 +53,8 @@ export async function loadOrderView(container: MedusaContainer, orderId: string)
     metadata: (o.metadata as Record<string, unknown> | null) ?? null,
     lines: (o.items ?? []).map((i) => ({
       id: i.id,
+      title: i.title,
+      variantId: i.variant_id ?? null,
       quantity: toNumber(i.quantity),
       unitPrice: toNumber(i.unit_price),
       productId: i.product_id ?? null,
@@ -60,6 +62,7 @@ export async function loadOrderView(container: MedusaContainer, orderId: string)
       // items.detail 을 이미 싣는다. 못 읽으면 0 — 하한 검사를 건너뛰고 Medusa 자신의 검증에 맡긴다
       fulfilledQuantity: readFulfilledQuantity(i.detail),
       returnedQuantity: readReturnedQuantity(i.detail),
+      exchangeReplacement: isExchangeReplacementMetadata(i.metadata),
       adjustments: (i.adjustments ?? []).map((a) => ({
         amount: toNumber(a.amount),
         code: a.code ?? null,
@@ -108,6 +111,14 @@ export function toShippingMethodView(m: {
     isReturnExchangeOrClaimShipping: !!(m.detail?.return_id || m.detail?.exchange_id || m.detail?.claim_id),
     hasAdjustments: (m.adjustments ?? []).some((a) => !!a && toNumber(a.amount) !== 0),
   };
+}
+
+/** 교환 정산이 넣은 대체 품목 줄의 표지(K8 PR11 N4) — metadata.almondExchange 가 객체면 대체 줄이다. */
+export const EXCHANGE_LINE_METADATA_KEY = 'almondExchange';
+
+export function isExchangeReplacementMetadata(metadata: Record<string, unknown> | null | undefined): boolean {
+  const v = metadata?.[EXCHANGE_LINE_METADATA_KEY];
+  return !!v && typeof v === 'object' && !Array.isArray(v);
 }
 
 function readFulfilledQuantity(detail: { fulfilled_quantity?: unknown } | null | undefined): number {

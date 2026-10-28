@@ -25,7 +25,8 @@ import type { RefundMode } from '../settlement/refund-mode';
 import { reconcileOrderWalletRefunds } from '../settlement/wallet-refund-ledger';
 import { applyReturnOffsets } from './apply-return-offsets';
 import { chargeShippingOption } from './charge-shipping-option';
-import { readReturnRequestRecord } from './load-return-order';
+import { addExchangeReplacements, planExchangeReplacements } from './exchange-replacements';
+import { isExchangeRecord, readReturnRequestRecord } from './load-return-order';
 import { planReturnFees, type ReturnSettlementDeduction } from './plan-return-fees';
 import { ReturnOrderNotFound } from './request-order-return';
 import { prepaidTotal } from './return-prepay-record';
@@ -36,6 +37,7 @@ import {
   loadReturnSettlementRecords,
   readReturnSettlementRecord,
   RETURN_SETTLEMENT_METADATA_KEY,
+  type ReturnExchangeItem,
   type ReturnSettlementRecord,
 } from './return-settlement-record';
 
@@ -70,7 +72,9 @@ export type SettleOrderReturnResult = {
   /** CS 가 적은 외부 환불에서 덜 낸 몫 */
   externalRefundApplied: number;
   refund: { mode: RefundMode; amount: number };
-  stage: 'refunded';
+  /** exchanged = 교환 정산(K8 PR11) — 환불 0, 대체 품목 줄을 exchangeItems 에 싣는다 */
+  stage: 'refunded' | 'exchanged';
+  exchangeItems?: ReturnExchangeItem[];
 };
 
 export type ReturnSettleRejectReason =
@@ -83,7 +87,8 @@ export type ReturnSettleRejectReason =
   | 'external_refund_absent'
   | 'return_already_received'
   | 'prepaid_closes_missing'
-  | 'no_charge_shipping_option';
+  | 'no_charge_shipping_option'
+  | 'exchange_settle_unsupported';
 
 /**
  * 정해진 거절 — 다시 불러도 같다. 라우트가 400 code=return_settle_rejected + reason 으로 낸다. 반품·주문은 그대로다.
@@ -163,6 +168,8 @@ async function run(container: MedusaContainer, input: SettleOrderReturnInput): P
   const request = readReturnRequestRecord(ret.metadata);
   if (!request) throw new ReturnSettleRejected('not_our_return', '이 반품은 정산할 수 없습니다');
   if (ret.status === ReturnStatus.CANCELED) throw new ReturnSettleRejected('return_canceled', '취소된 반품입니다');
+  const exchange = isExchangeRecord(request);
+  if (exchange) assertExchangeSettlable(input);
   const requestHash = hashReturnSettlement(input.requestId, input.items, {
     holdDeductionAmount: input.holdDeduction?.amount,
     alreadyRefundedAmount: input.alreadyRefundedAmount,
@@ -172,11 +179,12 @@ async function run(container: MedusaContainer, input: SettleOrderReturnInput): P
   if (existing && existing.requestHash !== requestHash) {
     throw new ReturnSettleRejected('request_id_conflict', `이 반품에 다른 정산 요청이 이미 있습니다: ${input.requestId}`);
   }
-  if (existing?.stage === 'refunded') return toResult(input, existing);
+  if (existing?.stage === 'refunded' || existing?.stage === 'exchanged') return toResult(input, existing);
   const mode = input.refundMode ?? 'auto';
 
   const received = existing ?? (await receive(container, input, ret, request.feeBearer, requestHash));
   const charged = received.stage === 'received' ? await charge(container, input, received) : received;
+  if (exchange) return exchangeAfterReceive(container, input, ret.id, charged);
 
   try {
     // 수령은 확정됐다 — 여기부터의 실패는 refund_pending(재시도) 또는 영구 거절 표지(400)다.
@@ -361,7 +369,51 @@ async function charge(container: MedusaContainer, input: SettleOrderReturnInput,
   return charged;
 }
 
+/**
+ * ③' 교환(K8 PR11 N3·N4·N5) — 환불 대신 주문 수정으로 variant 없는 대체 품목 줄을 넣어 수령이 만든 «돌려줄 차액»을 0 으로
+ * 되돌린다 → 기록 exchanged(refundAmount 0). 청구 단계는 부담 주체 seller 라 0 이다. 대체 줄 넣기는 태그로 멱등이고,
+ * 확정 뒤 차액이 0 이 아니면 일반 Error(500, 재시도) — 기록은 charged 로 남아 다시 부르면 이 단계부터 잇는다.
+ */
+async function exchangeAfterReceive(
+  container: MedusaContainer,
+  input: SettleOrderReturnInput,
+  returnId: string,
+  charged: ReturnSettlementRecord,
+): Promise<SettleOrderReturnResult> {
+  const order = await loadOrder(container, input.orderId);
+  // 원래 품목 줄로 계획한다 — 끊긴 뒤 이어 가면 이미 넣은 대체 줄이 있을 수 있지만 계획은 원래 품목 id 로만 줄을 찾는다
+  const replacements = planExchangeReplacements(order.lines, charged.items);
+  const exchangeItems = await addExchangeReplacements(container, {
+    orderId: input.orderId,
+    requestId: input.requestId,
+    replacements,
+    actorId: input.actorId,
+  });
+  const done: ReturnSettlementRecord = {
+    ...charged,
+    stage: 'exchanged',
+    refundAmount: 0,
+    exchangedAt: new Date().toISOString(),
+    exchangeItems,
+  };
+  await writeRecord(container, returnId, done);
+  return toResult(input, done);
+}
+
 // ── 판정 ──────────────────────────────────────────────────────────────────────
+
+/**
+ * 교환 정산은 돈이 움직이지 않는다(설계 E2) — 보류 차감·외부 환불 상계·미도착 닫기는 교환에 없다. 수령 «전»에 거절해
+ * 반품이 requested 로 남는다(N3). 보류 차감은 금액이 0 보다 클 때만 차감이다.
+ */
+function assertExchangeSettlable(input: SettleOrderReturnInput): void {
+  if ((input.holdDeduction?.amount ?? 0) > 0 || input.alreadyRefundedAmount !== undefined || input.closesMissing === true) {
+    throw new ReturnSettleRejected(
+      'exchange_settle_unsupported',
+      '교환은 보류 차감·이미 환불한 금액·미도착 닫기 없이 정산합니다 — 그 처리가 필요하면 반품으로 접수하세요',
+    );
+  }
+}
 
 /**
  * 품목 집합이 반품 품목과 같고, 줄마다 수령 + 폐기 = 반품 품목 수량(PR 6). 미도착을 닫았으면(N8) 반품 품목의 부분집합이고
@@ -426,7 +478,8 @@ function assertOffsetPremises(
   if (p.prepaid + p.externalRefund <= 0) return;
   const unfinished =
     Object.values(readPartialCancelRecords(order.metadata)).some((r) => r.stage !== 'refunded') ||
-    returnRecords.some((r) => r.stage !== 'refunded');
+    // 교환(exchanged)도 끝난 정산이다 — 돌려줄 차액을 남기지 않는다
+    returnRecords.some((r) => r.stage !== 'refunded' && r.stage !== 'exchanged');
   if (unfinished) {
     throw new Error('환불이 끝나지 않은 부분취소·반품 정산이 있는 주문입니다 — 상계를 셀 수 없어 그 환불이 끝난 뒤 다시 시도하세요');
   }
@@ -506,5 +559,5 @@ const toResult = (input: SettleOrderReturnInput, r: ReturnSettlementRecord): Set
   externalRefundApplied: r.externalRefundApplied ?? 0,
   // 기록의 refundMode 는 문자열로 읽힌다 — 우리가 쓴 값은 auto·manual 뿐이다
   refund: { mode: r.refundMode === 'manual' ? 'manual' : 'auto', amount: r.refundAmount },
-  stage: 'refunded',
+  ...(r.stage === 'exchanged' ? { stage: 'exchanged' as const, exchangeItems: r.exchangeItems ?? [] } : { stage: 'refunded' as const }),
 });
