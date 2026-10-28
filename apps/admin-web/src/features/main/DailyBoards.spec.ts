@@ -21,7 +21,7 @@ describe('CS board columns the viewer cannot read', () => {
     client.setQueryData(['review', 'daily', range], series(100));
     client.setQueryData(['business-licenses', 'daily', range], series(0));
     const zero = { pending: 0, preparing: 0, shipping: 0, delivered: 0, externalShipped: 0, cancelled: 0, total: 0 };
-    client.setQueryData(['orders', 'stats', 'daily', range], { series: [{ bucket: range.to, ...zero, return: 0, exchange: 0 }] });
+    client.setQueryData(['orders', 'stats', 'daily', range], { series: [{ bucket: range.to, ...zero, return: 0 }] });
     try {
       return renderToStaticMarkup(createElement(QueryClientProvider, { client }, createElement(CsBoard)));
     } finally {
@@ -40,5 +40,13 @@ describe('CS board columns the viewer cannot read', () => {
   it('shows the same count to a viewer who reads reviews', () => {
     const html = render(['analytics.report.read', 'cs.inquiry.read', 'cs.review.read', 'order.order.read', 'customer.profile.read']);
     expect(html).toMatch(/>100</);
+  });
+
+  it('반품 열은 날짜 조건 없이 새 반품 목록으로 가고, 교환 열은 없다 (K8 PR 10)', () => {
+    const html = render(['analytics.report.read', 'cs.inquiry.read', 'cs.review.read', 'order.order.read', 'customer.profile.read']);
+    expect(html).toContain('반품 신청');
+    expect(html).not.toContain('교환');
+    expect(html).toContain('href="/cs/return-exchange"');
+    expect(html).not.toContain('/cs/return-exchange?');
   });
 });

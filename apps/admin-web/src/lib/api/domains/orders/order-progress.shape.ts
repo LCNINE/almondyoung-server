@@ -6,6 +6,7 @@
 import { formatDwell } from '../../../utils/format-dwell';
 import { toSettlementView } from './cancel-request.shape';
 import type { SettlementView } from './cancel-request.shape';
+import { RETURN_STATUS_LABELS } from '@/features/cs/return-exchange/customer-return-labels';
 
 // cancel-request.shape 와 순환하지 않게 formatDwell 은 utils 로 뺐다. 기존 호출부를 위해 다시 내보낸다.
 export { formatDwell };
@@ -247,20 +248,12 @@ const STATE_LABELS: Record<string, string> = {
   no_units: '상자 없음',
   fo_missing: 'FO 없음',
 };
-const REQUEST_STATUS: Record<string, string> = {
-  requested: '요청',
-  approved: '승인',
-  collection_pending: '회수 대기',
-  collected: '회수 완료',
-  inspected: '검수 완료',
-  refund_pending: '환불 대기',
-};
 
 export function stateLabel(state: string | null): string {
   if (!state) return '';
-  const rx = /^(return|exchange):(.+)$/.exec(state);
-  if (rx)
-    return `${rx[1] === 'return' ? '반품' : '교환'} ${REQUEST_STATUS[rx[2]] ?? rx[2]}`;
+  // 반품 단계의 세부 상태는 반품 예정 기록의 상태다(K8 PR 10). 교환은 PR 11 이 다시 더한다
+  const rx = /^return:(.+)$/.exec(state);
+  if (rx) return `반품 ${RETURN_STATUS_LABELS[rx[1] as keyof typeof RETURN_STATUS_LABELS] ?? rx[1]}`;
   return STATE_LABELS[state] ?? state;
 }
 
