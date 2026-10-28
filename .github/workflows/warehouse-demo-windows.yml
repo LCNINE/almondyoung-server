@@ -2,6 +2,11 @@ name: Warehouse Demo Windows
 
 on:
   workflow_dispatch:
+    inputs:
+      stage:
+        type: choice
+        options: [demo, live]
+        default: demo
   push:
     branches: ['codex/**']
     paths:
@@ -43,8 +48,8 @@ jobs:
         run: corepack enable
       - name: Test Windows demo configuration and input boundaries
         run: npx vitest run src/app/demo-config.test.ts src/core/hardware/scan
-      - name: Build demo installer
-        run: corepack yarn tauri:build:demo --bundles nsis
+      - name: Build ${{ inputs.stage || 'demo' }} installer
+        run: corepack yarn tauri:build:${{ inputs.stage || 'demo' }} --bundles nsis
       - name: Record installer checksums
         shell: pwsh
         run: |
@@ -54,7 +59,7 @@ jobs:
           }
       - uses: actions/upload-artifact@v4
         with:
-          name: warehouse-demo-windows-${{ github.sha }}
+          name: warehouse-${{ inputs.stage || 'demo' }}-windows-${{ github.sha }}
           path: native/warehouse-app/src-tauri/target/release/bundle/nsis/*
           if-no-files-found: error
           retention-days: 30
