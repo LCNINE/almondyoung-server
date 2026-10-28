@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
+import { CircleHelp } from 'lucide-react';
 import Link from 'next/link';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
@@ -8,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { usePermissionCheck } from '@/hooks/use-permission';
 import {
   Sheet,
@@ -205,18 +207,25 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
 
             <Separator />
             <section className="space-y-3">
-              <div>
+              <div className="flex items-center gap-1">
                 <h3 className="font-medium">Work item queue</h3>
-                <p className="text-xs text-muted-foreground">
-                  claim/handoff 결과는 서버 스냅샷이 갱신된 뒤 표시됩니다.
-                  Picker handoff는 session custody가 필요한 피킹
-                  작업대에서만 실행하며, 여기서는 packer handoff만 제공합니다.
-                </p>
+                <HelpTip label="Work item queue 안내">
+                  <p>배치에 넣은 상자별 작업 목록이에요.</p>
+                  <p>작업자가 앱에서 송장을 찍으면 그 상자를 맡아요(claim).</p>
+                  <p>결과는 서버가 갱신한 뒤에 보여요.</p>
+                </HelpTip>
               </div>
               {(canHandoff || canExclude) && (
                 <div className="grid gap-2 md:grid-cols-2">
                   <div className="space-y-1">
-                    <Label>handoff 대상 작업자</Label>
+                    <div className="flex items-center gap-1">
+                      <Label>handoff 대상 작업자</Label>
+                      <HelpTip label="handoff 안내">
+                        <p>맡은 상자를 다른 작업자에게 넘기는 거예요.</p>
+                        <p>근무 교대처럼 하던 사람이 끝까지 못 할 때 써요.</p>
+                        <p>여기서는 포장 담당만 넘길 수 있어요. 피킹 담당은 창고 앱에서 넘겨요.</p>
+                      </HelpTip>
+                    </div>
                     <Input
                       value={targetWorkerId}
                       onChange={(event) =>
@@ -444,5 +453,25 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
         )}
       </SheetContent>
     </Sheet>
+  );
+}
+
+/** 누르면 열리고(폰) 마우스를 올려도 열린다(PC) */
+function HelpTip({ label, children }: { label: string; children: ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger
+        aria-label={label}
+        className="text-muted-foreground hover:text-foreground"
+        onMouseEnter={() => setOpen(true)}
+        onMouseLeave={() => setOpen(false)}
+      >
+        <CircleHelp className="size-4" />
+      </PopoverTrigger>
+      <PopoverContent side="top" className="w-72 space-y-1 text-sm leading-relaxed">
+        {children}
+      </PopoverContent>
+    </Popover>
   );
 }
