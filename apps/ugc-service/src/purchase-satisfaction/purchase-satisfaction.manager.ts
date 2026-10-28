@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
-import { BadRequestError } from '@app/shared';
+import { BadRequestError, NotFoundError } from '@app/shared';
 import { eq } from 'drizzle-orm';
 import { purchaseSatisfactions, type UgcServiceSchema, type UgcTx } from '../db/schema';
 import type { UpsertPurchaseSatisfactionDto } from './dto/upsert-purchase-satisfaction.dto';
@@ -61,6 +61,18 @@ export class PurchaseSatisfactionManager {
         .where(eq(purchaseSatisfactions.id, existing.id))
         .returning();
       return updated;
+    }, tx);
+  }
+
+  async setChecked(id: string, checked: boolean, adminId: string, tx?: UgcTx): Promise<PurchaseSatisfactionRow> {
+    return this.db.run(async (trx) => {
+      const [row] = await trx
+        .update(purchaseSatisfactions)
+        .set(checked ? { checkedAt: new Date(), checkedBy: adminId } : { checkedAt: null, checkedBy: null })
+        .where(eq(purchaseSatisfactions.id, id))
+        .returning();
+      if (!row) throw new NotFoundError(`Purchase satisfaction not found: ${id}`);
+      return row;
     }, tx);
   }
 }

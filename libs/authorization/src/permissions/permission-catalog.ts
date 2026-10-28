@@ -315,6 +315,15 @@ export const PERMISSION_CATALOG = [
     owners: ['ugc-service'],
     grant: ADMIN,
   }),
+  permission('cs.satisfaction.read', '구매 만족도 조회', '결제 완료 화면에서 받은 구매 만족도를 본다', {
+    owners: ['ugc-service'],
+    grant: ADMIN_INTERN,
+  }),
+  permission('cs.satisfaction.manage', '구매 만족도 확인', '구매 만족도 응답을 확인 처리한다', {
+    owners: ['ugc-service'],
+    grant: ADMIN,
+    requires: ['cs.satisfaction.read'],
+  }),
   permission('cs.reward_policy.write', '리뷰 보상 정책', '리뷰 보상 규칙을 바꾼다', {
     owners: ['ugc-service'],
     grant: ADMIN,
