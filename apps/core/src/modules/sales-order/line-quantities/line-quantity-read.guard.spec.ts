@@ -87,8 +87,8 @@ describe('취소 수량 읽는 문', () => {
     // 비테스트 운영 파일만 센다(walk 가 스펙·__support__ 를 뺀다). 픽스처는 현실 데이터를 흉내 내려 추적 행을 써야 한다.
     // - store-sales-orders.service.ts: 배송조회 화면의 추적 이벤트 목록이다(수량이 아니다).
     // - line-quantities.sql.ts: `deliveredParcelsSql` 이 «배송완료 소포»의 단 하나의 정의다(SKU 층 `delivered` 와 소포 단위 청구 자격이 함께 쓴다).
-    // 반품 자격(store-return-exchange.service.ts)은 K6 PR3a 가 소포 단위 청구 자격(`parcel-claim-eligibility`)으로 옮겼다 —
-    // 그 SQL 은 `deliveredParcelsSql` 을 불러 쓰므로 추적 테이블 이름을 직접 쓰지 않는다.
+    // 반품 자격은 소포 단위 청구 자격(`parcel-claim-eligibility`)이 낸다 — 그 SQL 은 `deliveredParcelsSql` 을 불러 쓰므로
+    // 추적 테이블 이름을 직접 쓰지 않는다.
     const salesOrder = 'apps/core/src/modules/sales-order/';
     const files = filesMatching((source) => /shipment_tracking|shipmentTracking/.test(source)).filter((path) =>
       path.startsWith(salesOrder),
@@ -112,10 +112,7 @@ describe('청구(반품·교환) 수량 읽는 문', () => {
       (path) => path.startsWith(salesOrder),
     );
     expect(files).toEqual(
-      [
-        `${salesOrder}line-quantities/claim-quantities.sql.ts`,
-        `${salesOrder}services/store-return-exchange.service.ts`,
-      ].sort(),
+      [`${salesOrder}line-quantities/claim-quantities.sql.ts`].sort(),
     );
     expect(filesMatching((source) => /\breturnRequestItems\b|\bexchangeRequestItems\b/.test(source)).sort()).toEqual(
       files,

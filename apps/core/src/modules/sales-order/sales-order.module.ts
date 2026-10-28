@@ -13,15 +13,13 @@ import { WaybillModule } from '../fulfillment/waybill/waybill.module';
 import { SalesOrdersController } from './controllers/sales-orders.controller';
 import { SalesOrderAmendmentsController } from './controllers/sales-order-amendments.controller';
 import { StoreSalesOrdersController } from './controllers/store-sales-orders.controller';
-import { StoreSalesOrderReturnExchangeController } from './controllers/store-return-exchange.controller';
-import { AdminReturnExchangeController } from './controllers/admin-return-exchange.controller';
+import { AdminSalesOrderCancellationController } from './controllers/admin-sales-order-cancellation.controller';
 import { OrderEventsConsumer } from './consumers/order-events.consumer';
 import { EntrancePasswordCleaner } from './services/entrance-password-cleaner';
 import { SalesOrdersService } from './services/sales-orders.service';
 import { SalesOrderAmendmentsService } from './services/sales-order-amendments.service';
 import { SalesOrderQueryService } from './services/sales-order-query.service';
 import { StoreSalesOrdersService } from './services/store-sales-orders.service';
-import { StoreReturnExchangeService } from './services/store-return-exchange.service';
 import { WalletRefundClient } from './services/wallet-refund.client';
 import { CancellationRefundManager } from './cancellation-refund/cancellation-refund.manager';
 import { ChannelOrderChangeReader } from './channel-order-change/channel-order-change.reader';
@@ -106,8 +104,7 @@ import { SalesOrderLookupService } from './internal/sales-order-lookup.service';
     SalesOrdersController,
     SalesOrderAmendmentsController,
     StoreSalesOrdersController,
-    StoreSalesOrderReturnExchangeController,
-    AdminReturnExchangeController,
+    AdminSalesOrderCancellationController,
     // 반품 기록 조회·도착·검수(K8 PR6)
     CustomerReturnsController,
     CustomerReturnReceivingController,
@@ -120,7 +117,6 @@ import { SalesOrderLookupService } from './internal/sales-order-lookup.service';
     SalesOrderAmendmentsService,
     SalesOrderQueryService,
     StoreSalesOrdersService,
-    StoreReturnExchangeService,
     WalletRefundClient,
     // 취소의 환불 기록·실행 — Wallet 을 부르는 취소 쪽 파일은 이것 하나(K7 PR4)
     CancellationRefundManager,
