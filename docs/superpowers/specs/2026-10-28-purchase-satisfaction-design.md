@@ -72,7 +72,9 @@ Medusa 가 주문 고객을 확인한 뒤 내부 키(`UgcInternalAuth`)로 ugc �
 
 ## 저장 (ugc-service)
 
-ugc-service 는 리뷰 등 고객 작성 콘텐츠를 이미 들고 있어 여기에 둔다. 새 모듈 `purchase-satisfaction`(Controller → Service → Manager/Reader → Repository).
+ugc-service 는 리뷰 등 고객 작성 콘텐츠를 이미 들고 있어 여기에 둔다. 새 모듈 `purchase-satisfaction`.
+
+ugc 관례대로 Controller → Service → Manager / Reader 이고, Repository 계층 없이 Manager / Reader 가 `@InjectDb()` 로 DB 를 쓴다.
 
 테이블 `purchase_satisfactions` (`apps/ugc-service/src/db/schema.ts`, 새 마이그레이션 `add-purchase-satisfactions`, additive 라 1 PR)
 
@@ -85,9 +87,9 @@ ugc-service 는 리뷰 등 고객 작성 콘텐츠를 이미 들고 있어 여�
 | `rating` | smallint not null | CHECK 1~5 |
 | `reasons` | varchar(32)[] not null default `{}` | 위 코드. 값 검증은 TS 유니온 + DTO |
 | `memo` | varchar(300) | |
-| `checked_at` | timestamptz | 어드민 확인 시각 |
+| `checked_at` | timestamp | 어드민 확인 시각 |
 | `checked_by` | uuid | 확인한 관리자 |
-| `created_at` / `updated_at` | timestamptz | |
+| `created_at` / `updated_at` | timestamp | ugc 다른 테이블과 같이 timezone 없음 |
 
 - UNIQUE `(order_id)` — 주문당 1건 upsert. 주문 주인 확인은 Medusa 가 끝내고 오므로 주문 하나에 응답 하나다.
 - 인덱스 `(created_at)`, `(rating, checked_at)`.
