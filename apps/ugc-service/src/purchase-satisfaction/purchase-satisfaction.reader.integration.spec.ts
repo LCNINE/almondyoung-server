@@ -43,6 +43,8 @@ describeIfDb('PurchaseSatisfactionReader (integration)', () => {
           rating,
           reasons: rating === 2 ? ['PAYMENT_ERROR'] : [],
           memo: rating === 2 ? '결제가 안 됐어요' : null,
+          checkedAt: rating === 5 ? at(DAY) : null,
+          checkedBy: rating === 5 ? admin : null,
           createdAt: at(DAY),
           updatedAt: at(DAY),
         })
@@ -73,7 +75,7 @@ describeIfDb('PurchaseSatisfactionReader (integration)', () => {
     expect((await reader.list({ ...all, score: 'high' })).total).toBe(2);
     expect((await reader.list({ ...all, hasMemo: true })).total).toBe(1);
     expect((await reader.list({ ...all, reason: 'PAYMENT_ERROR' })).total).toBe(1);
-    expect((await reader.list({ ...all, unchecked: true })).total).toBe(5);
+    expect((await reader.list({ ...all, unchecked: true })).total).toBe(4);
   });
 
   it('기간 구간은 KST 날짜 기준이다', async () => {
@@ -111,7 +113,10 @@ describeIfDb('PurchaseSatisfactionReader (integration)', () => {
       hasMemo: true,
       unchecked: true,
     } as const;
-    expect(await reader.summarize(filtered)).toEqual(await reader.summarize({ from: DAY, to: DAY }));
+    const base = await reader.summarize({ from: DAY, to: DAY });
+    expect(await reader.summarize(filtered)).toEqual(base);
+    expect(await reader.summarize({ from: DAY, to: DAY, unchecked: true } as const)).toEqual(base);
+    expect(base.count).toBe(5);
   });
 
   it('요약 사유 집계는 3점 이하 응답만 센다', async () => {
