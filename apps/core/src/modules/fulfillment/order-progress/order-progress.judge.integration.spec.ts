@@ -754,6 +754,20 @@ describeIfDb('order-progress 판정 (PostgreSQL integration)', () => {
     });
   });
 
+  it('나눠 보낸 주문의 남은 상자가 아직 진행 중이면 반품이 그 상자 단계를 덮지 않는다 (K8 PR 10 최종 리뷰)', async () => {
+    // 첫 상자는 배송완료·반품 접수, 둘째 상자는 계획 단계 — 정체 보드는 막힌 상자를, 리컨실러는 그 상자를 계속 본다
+    const r = await one(async (tx, w) => {
+      const o = await f.seedOrder(tx);
+      const fo = await f.seedFo(tx, w, o, { status: 'ready' });
+      await f.seedBox(tx, w, [fo.foItemId], { status: 'delivered' });
+      const draft = await f.seedBox(tx, w, [fo.foItemId], { status: 'draft' });
+      await f.seedFullReservations(tx, w, { foId: fo.foId, foItemIds: [fo.foItemId], box: draft });
+      await f.seedReturn(tx, o.salesOrderId, 'expected');
+      return o.salesOrderId;
+    });
+    expect(r).toMatchObject({ stage: 'plan' });
+  });
+
   it.each(['held', 'refund_pending'] as const)('보류·환불 실패도 열린 반품이다 → return:%s', async (status) => {
     const r = await one(async (tx, w) => {
       const o = await f.seedOrder(tx);

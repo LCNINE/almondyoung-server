@@ -466,7 +466,7 @@ core 의 «검수 끝» 명령(새 명령 타입, `channel-orders.commands.v1`) 
 - (N3) 취소·환불 라우트 넷(`POST admin/sales-orders/:id/cancel·retry-refund·manual-refund-complete·refund-waive`)은 `AdminSalesOrderCancellationController` 로 경로·권한·DTO 그대로 옮겼다.
 - (N4) K6 청구 커널은 반품 예정 기록 한 갈래다. `exchange_active`·`LineSkuQuantities.exchangeActive`·소포 `claimed_qty` 를 지웠다 — 소포 자격 `claimable = least(delivered_qty, sku_claimable)`(새 반품은 소포를 몰라 소포 합은 늘 0 이었다).
 - (N5) 고객 actions: `return` 은 청구 가능한 배송완료 소포가 있으면(진행 중 반품이 있어도) 낸다. `claimStatus` 는 진행 중 반품 예정 기록이 있으면 `return_requested`. core 유니온에서 `exchange`·`exchange_requested` 를 뺐다(스토어프론트 ⊇ core).
-- (N6) 주문 진행 판정 단계 키 `return_exchange` 는 그대로, 세부 상태는 `return:<customer_return_status>` 다섯(expected·arrived·inspected·held·refund_pending), 시각 `requested_at`, 갱신 후보 `customer_returns.updated_at`. admin-web 라벨은 `RETURN_STATUS_LABELS`.
+- (N6) 주문 진행 판정 단계 키 `return_exchange` 는 그대로, 세부 상태는 `return:<customer_return_status>` 다섯(expected·arrived·inspected·held·refund_pending), 시각 `requested_at`, 갱신 후보 `customer_returns.updated_at`. admin-web 라벨은 `RETURN_STATUS_LABELS`. 🔴 열린 반품은 상자 일이 다 끝난 주문(대표 상자 단계가 없거나 `done`)에서만 이긴다 — 옛 표는 라이브 0행이라 안 돌던 우선순위가 새 기록으로 살아나, 나눠 보낸 주문의 막힌 상자를 «반품 도착 대기»로 덮고 리컨실러 상자 규칙에서 빼던 것을 최종 리뷰가 잡았다.
 - (N7) 일별 반품 수 = 그날(KST) `requested_at` 인 반품 예정 기록 수(취소 포함). 대시보드 반품 링크는 날짜 없이 `/cs/return-exchange`.
 - (N8) `PiiSubjectType` 의 `return_request`·`exchange_request` 와 접속기록 라벨은 남겼다(보존 중인 접속기록의 대상 종류).
 - (N10) 이벤트 계약은 그대로(`SalesOrderClaimProgressed.kind` 의 `exchange` 포함) — 발행자만 사라졌다.

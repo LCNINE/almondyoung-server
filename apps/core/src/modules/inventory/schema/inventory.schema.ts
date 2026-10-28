@@ -2432,6 +2432,7 @@ export const salesVariantPolicies = pgTable('sales_variant_policies', {
 /*───────────────────────────
  * RETURNS
  *──────────────────────────*/
+// K8 PR 10b 가 DROP 과 함께 지운다 — 코드에서 참조 금지(line-quantity-read.guard.spec.ts «inventory 옛 반품은 다시 오지 않는다»)
 export const returns = pgTable(
   'returns',
   {
@@ -5347,6 +5348,7 @@ export type InventorySchema = typeof wmsSchema;
 /*───────────────────────────
  * RETURN / EXCHANGE REQUEST
  *──────────────────────────*/
+// K8 PR 10b 가 DROP 과 함께 지운다 — 코드에서 참조 금지(line-quantity-read.guard.spec.ts LEGACY_CLAIM_IDENTIFIERS)
 
 export const returnRequestStatusEnum = pgEnum('return_request_status', [
   'requested',

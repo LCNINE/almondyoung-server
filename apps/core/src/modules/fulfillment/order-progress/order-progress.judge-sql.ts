@@ -211,7 +211,9 @@ function judgeCtes(scope: SQL, now: SQL): SQL {
                WHEN so.status IN ('cancelled', 'timeout')
                  AND (ob.sales_order_id IS NOT NULL OR orr.sales_order_id IS NOT NULL) THEN 'cancel_open'
                WHEN so.status IN ('cancelled', 'timeout') THEN 'cancelled'
-               WHEN rx.sales_order_id IS NOT NULL THEN 'return_exchange'
+               -- 열린 반품은 상자 일이 다 끝난 주문에서만 이긴다(K8 PR 10) — 나눠 보낸 주문의 남은 상자가 진행 중이면 그 단계가
+               -- 보이고, 리컨실러의 상자 규칙 제외(D16)도 그 상자를 빼지 않는다
+               WHEN rx.sales_order_id IS NOT NULL AND (rep.stage IS NULL OR rep.stage = 'done') THEN 'return_exchange'
                WHEN bl.status = 'not_required' THEN 'not_required'
                WHEN hf.sales_order_id IS NULL AND bl.sales_order_id IS NULL THEN 'accept'
                WHEN hf.sales_order_id IS NULL AND bl.status <> 'completed' THEN 'fo'
