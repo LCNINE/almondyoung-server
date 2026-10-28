@@ -9,6 +9,7 @@ import { loadWithdrawalRemovals, WithdrawalRemoval } from '../services/withdrawa
 import { WAYBILL_TERMINAL_STATUSES } from '../waybill/waybill.constants';
 import { maskName, readDeliveryNote, readRecipientName } from './recipient-snapshot';
 import { warehouseIdOf } from '../shipment/shipment-owner';
+import { labelLocationCode } from '../waybill/label/label-items';
 
 // 보충 대기·배치 오케스트레이터·스펙이 이 경로로 가져다 쓴다 — 정본을 옮긴 뒤에도 그대로 둔다
 export { maskName, readDeliveryNote, readRecipientName } from './recipient-snapshot';
@@ -265,10 +266,14 @@ export class ShipmentWaybillReader {
         shipmentLineId: wmsTables.pickingSourceAllocations.shipmentLineId,
         sourceLocationId: wmsTables.pickingSourceAllocations.sourceLocationId,
         locationCode: wmsTables.locations.code,
+        systemRole: wmsTables.locations.systemRole,
+        shelfCode: wmsTables.skuShelfPositions.positionCode,
         qty: wmsTables.pickingSourceAllocations.qty,
       })
       .from(wmsTables.pickingSourceAllocations)
       .innerJoin(wmsTables.locations, eq(wmsTables.locations.id, wmsTables.pickingSourceAllocations.sourceLocationId))
+      .innerJoin(wmsTables.shipmentLines, eq(wmsTables.shipmentLines.id, wmsTables.pickingSourceAllocations.shipmentLineId))
+      .leftJoin(wmsTables.skuShelfPositions, eq(wmsTables.skuShelfPositions.skuId, wmsTables.shipmentLines.skuId))
       .where(eq(wmsTables.pickingSourceAllocations.workItemId, workItemId))
       .orderBy(
         asc(sql`${wmsTables.locations.code} collate "C"`),
@@ -280,7 +285,7 @@ export class ShipmentWaybillReader {
       const list = byLine.get(row.shipmentLineId) ?? [];
       list.push({
         sourceLocationId: row.sourceLocationId,
-        locationCode: row.locationCode,
+        locationCode: labelLocationCode(row),
         qty: row.qty,
         pickedQty: attributed.get(`${row.shipmentLineId}|${row.sourceLocationId}`) ?? 0,
       });
