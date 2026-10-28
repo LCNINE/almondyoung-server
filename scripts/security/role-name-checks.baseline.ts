@@ -41,24 +41,13 @@ export const ROLE_LITERAL_BASELINE: Readonly<Record<string, { count: number; kin
   'apps/admin-web/src/lib/types/dto/products.ts': { count: 2, kind: 'data-value' },
   'apps/admin-web/src/lib/types/dto/review.ts': { count: 1, kind: 'data-value' },
   'apps/ai/src/platform/auth/ai-scopes.ts': { count: 2, kind: 'role-mapping' },
-  'apps/core/src/modules/catalog/operations/bulk-session/services/form-export-file.client.ts': {
-    count: 1,
-    kind: 'system-identity',
-  },
-  'apps/core/src/modules/library/clients/file-service.client.ts': { count: 1, kind: 'system-identity' },
   'apps/core/src/modules/sales-order/channel-cancel-request/channel-cancel-request.manager.ts': {
     count: 1,
     kind: 'data-value',
   },
-  'apps/core/src/modules/sales-order/channel-order-change/channel-order-change.manager.ts': {
-    count: 1,
-    kind: 'system-identity',
-  },
   'apps/core/src/modules/sales-order/controllers/admin-return-exchange.controller.ts': { count: 1, kind: 'data-value' },
-  'apps/core/src/modules/sales-order/cancellation-refund/cancellation-refund.manager.ts': {
-    count: 6,
-    kind: 'system-identity',
-  },
+  // 환불 행위자 «종류» 표기(actor: 'customer' | 'admin' | 'system') — 판정이 아니다
+  'apps/core/src/modules/sales-order/cancellation-refund/cancellation-refund.manager.ts': { count: 6, kind: 'data-value' },
   // 반품 수령(collected) 이벤트 계약의 requestedBy 값('admin') — 판정이 아니다(K8 PR6)
   'apps/core/src/modules/sales-order/customer-return/customer-return-receiving.manager.ts': { count: 1, kind: 'data-value' },
   // 반품 완료 이벤트 계약의 requestedBy 값('admin') — 판정이 아니다(K8 PR6)
@@ -68,7 +57,6 @@ export const ROLE_LITERAL_BASELINE: Readonly<Record<string, { count: number; kin
   'apps/core/src/modules/sales-order/dto/cancel-sales-order.dto.ts': { count: 1, kind: 'data-value' },
   // 취소 기록의 cancelledBy 값('admin') — 판정이 아니다(K7 PR4 가 관리자 문에서 옮겨 왔다)
   'apps/core/src/modules/sales-order/order-cancellation/order-cancellation.ts': { count: 1, kind: 'data-value' },
-  'apps/core/src/modules/sales-order/services/sales-orders.service.ts': { count: 1, kind: 'system-identity' },
   'apps/core/src/modules/sales-order/services/store-return-exchange.service.ts': { count: 2, kind: 'data-value' },
   'apps/core/src/platform/auth/fulfillment-scopes.ts': { count: 2, kind: 'role-mapping' },
   'apps/core/src/platform/auth/inventory-scopes.ts': { count: 3, kind: 'role-mapping' },
@@ -79,7 +67,6 @@ export const ROLE_LITERAL_BASELINE: Readonly<Record<string, { count: number; kin
   'apps/notification/src/dispatcher/handlers/order-event.consumer.ts': { count: 1, kind: 'data-value' },
   'apps/notification/src/provider/dto/update-provider.dto.ts': { count: 1, kind: 'data-value' },
   'apps/notification/src/template/dto/create-template.dto.ts': { count: 1, kind: 'data-value' },
-  'apps/ugc-service/src/almond-template/clients/service-token.ts': { count: 1, kind: 'system-identity' },
   'apps/ugc-service/src/review-permissions/review-permission.service.ts': { count: 2, kind: 'data-value' },
   'apps/ugc-service/src/review-permissions/types.ts': { count: 1, kind: 'data-value' },
   'apps/ugc-service/src/reviews/dto/admin-review-response.dto.ts': { count: 2, kind: 'data-value' },

@@ -5,7 +5,7 @@ import { and, eq, notInArray } from 'drizzle-orm';
 import type { OrderModifiedPayload, ShippingAddress } from '@packages/event-contracts/streams';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
 import { ShipmentPlanningService } from '../../fulfillment/services/shipment-planning.service';
-import { FULFILLMENT_SYSTEM_ACTOR_ID } from '../services/sales-orders.service';
+import { FULFILLMENT_SYSTEM_ACTOR } from '../../../platform/auth/system-actor';
 import { SalesOrderAmendmentsService } from '../services/sales-order-amendments.service';
 import { ChannelOrderChangeReader, FINISHED_FULFILLMENT_STATUSES } from './channel-order-change.reader';
 import { ChannelCancelSettler } from '../channel-cancel-request/channel-cancel-settler';
@@ -22,8 +22,6 @@ import {
   RecordedChannelDelta,
   ShippingAddressChangeDelta,
 } from './channel-order-change.types';
-
-const CHANNEL_ACTOR = { id: FULFILLMENT_SYSTEM_ACTOR_ID, roles: ['master'] };
 
 /**
  * 셀메이트 과도기에 `scripts/sellmate/mark-shipped-from-csv.ts` 가 직접 찍는 출고 표시(#1016 15번 행).
@@ -153,7 +151,7 @@ export class ChannelOrderChangeManager {
             order.id,
             delta.after,
             `channel-order-change:${amendmentId}:${shipmentId}`,
-            CHANNEL_ACTOR,
+            FULFILLMENT_SYSTEM_ACTOR,
             sp,
           );
         } catch (error) {

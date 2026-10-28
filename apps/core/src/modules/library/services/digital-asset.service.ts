@@ -30,10 +30,11 @@ export class DigitalAssetService {
   async createAsset(
     dto: CreateDigitalAssetDto,
     operatorId: string | undefined,
+    requesterId: string,
     tx?: LibraryTx,
   ): Promise<DigitalAssetResponseDto> {
     if (dto.initialFileId) {
-      await this._assertFileReferenceUsable(dto.initialFileId);
+      await this._assertFileReferenceUsable(dto.initialFileId, requesterId);
     }
 
     return this.dbService.run(async (trx) => {
@@ -139,9 +140,10 @@ export class DigitalAssetService {
     assetId: string,
     dto: CreateFileVersionDto,
     operatorId: string | undefined,
+    requesterId: string,
     tx?: LibraryTx,
   ): Promise<DigitalAssetFileVersionDto> {
-    await this._assertFileReferenceUsable(dto.fileId);
+    await this._assertFileReferenceUsable(dto.fileId, requesterId);
 
     return this.dbService.run(async (trx) => {
       await this._assertAssetExists(assetId, trx);
@@ -279,12 +281,13 @@ export class DigitalAssetService {
     }
   }
 
-  private async _assertFileReferenceUsable(fileId: string): Promise<void> {
+  /** file-service 에는 요청한 관리자 대신 묻는다(`requesterId` = 토큰의 사용자). */
+  private async _assertFileReferenceUsable(fileId: string, requesterId: string): Promise<void> {
     if (!this.fileServiceClient) return;
 
     let metadata: Awaited<ReturnType<FileServiceClient['fetchMetadata']>>;
     try {
-      metadata = await this.fileServiceClient.fetchMetadata(fileId);
+      metadata = await this.fileServiceClient.fetchMetadata(fileId, requesterId);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.logger.warn(`file-service metadata validation failed for ${fileId}: ${message}`);

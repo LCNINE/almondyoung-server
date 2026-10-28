@@ -1,7 +1,7 @@
 import { checkpointEvaluations, createCheckpointsForTesting, PermissionCheckpoints } from '@app/authorization';
 import { register } from 'prom-client';
 import { FULFILLMENT_PERMISSION } from '../../../platform/auth/fulfillment-permissions';
-import { FULFILLMENT_SYSTEM_ACTOR_ID } from '../../../platform/auth/system-actor';
+import { FULFILLMENT_SYSTEM_ACTOR, FULFILLMENT_SYSTEM_ACTOR_ID } from '../../../platform/auth/system-actor';
 import { createGlobalValidationPipe } from '../../../platform/http/validation-pipe';
 import { ReviseShipmentRecipientDto, SplitShipmentDto } from '../dto/shipment-planning.dto';
 import { ShipmentPlanningController } from '../controllers/shipment-planning.controller';
@@ -33,13 +33,20 @@ describe('ShipmentPlanningService reopen check', () => {
   it('treats the fulfillment system actor as a system principal even without a permission snapshot', async () => {
     const { service } = planningHarness(createCheckpointsForTesting(null));
     expect(() =>
-      service['requirePermission'](
-        { id: FULFILLMENT_SYSTEM_ACTOR_ID, roles: ['master'] },
-        FULFILLMENT_PERMISSION.SHIPMENT_REOPEN,
-      ),
+      service['requirePermission'](FULFILLMENT_SYSTEM_ACTOR, FULFILLMENT_PERMISSION.SHIPMENT_REOPEN),
     ).not.toThrow();
     expect(await checkpointEvaluations('fulfillment.planning_scope', 'match')).toBe(1);
     expect(await checkpointEvaluations('fulfillment.planning_scope', 'unavailable')).toBe(0);
+  });
+
+  it('judges a person carrying the system actor id by roles, not as the system', () => {
+    const { service } = planningHarness(createCheckpointsForTesting({ admin: [] }));
+    expect(() =>
+      service['requirePermission'](
+        { id: FULFILLMENT_SYSTEM_ACTOR_ID, roles: [] },
+        FULFILLMENT_PERMISSION.SHIPMENT_REOPEN,
+      ),
+    ).toThrow(`Missing required scope: ${FULFILLMENT_PERMISSION.SHIPMENT_REOPEN}`);
   });
 
   it('denies a person without the permission', async () => {

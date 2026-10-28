@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { sign as jwtSign } from 'jsonwebtoken';
+import { signFileServiceDelegation } from '../../../../../platform/auth/file-service-delegation';
 
 export const BULK_FORM_CONTEXT_ID = 'product-bulk-form';
 const MAX_ERROR_BODY_CHARS = 200;
@@ -43,26 +44,17 @@ export class FormExportFileClient {
 
   constructor(private readonly config: ConfigService) {}
 
-  /**
-   * 위임 토큰 서명. `userId` 클레임이 file-service 의 `validatePayload` 에서
-   * `sub` 파생 userId 를 덮는다(authentication.service.ts:23-29 — `...payload` 가
-   * 마지막에 펼쳐진다). 그 덮어쓴 값이 곧 file-service 가 보는 요청자 신원이다.
-   */
-  private sign(userId: string, scopes: string[]): string {
+  private secret(): string {
     const secret = this.config.get<string>('AUTH_SECRET');
     if (!secret) throw new Error('AUTH_SECRET 이 없어 file-service 토큰을 발급할 수 없습니다');
-    return jwtSign({ sub: 'core-bulk-session', userId, scopes }, secret, {
-      algorithm: 'HS256',
-      expiresIn: '5m',
-    });
+    return secret;
   }
 
   /**
-   * **워크북(xlsx) 전용** 위임 토큰. `scopes:['master']` 를 실어 file-service 의
-   * 소유권 검사를 단락시킨다(`file-access.ts:62` 가 `user.scopes?.includes('master')`
-   * 에서 바로 true 를 낸다).
+   * **워크북(xlsx) 전용** 토큰 — 요청자 대신 core 가 부른다(`sub`=요청자, `act.sub`=core). file-service 는 이 표기를
+   * 시스템 주체로 보고 소유권 검사를 건너뛴다. `sub` 가 곧 file-service 의 userId 라 업로드 소유자는 요청자다.
    *
-   * 이미지 경로(`ownerToken`)와 달리 여기서 master 가 **필요한** 이유는, 워크북은
+   * 이미지 경로(`ownerToken`)와 달리 소유권 검사를 건너뛰어야 하는 이유는, 워크북은
    * 파일을 만든 사람과 그걸 쓰는 사람이 정상적으로 다르기 때문이다:
    * - 양식을 만든 사람과 그 양식으로 업로드하는 사람이 다른 것이 정상 업무다
    *   (`bulk-session.manager.ts` 의 `assertExportUsable` 독스트링).
@@ -72,26 +64,28 @@ export class FormExportFileClient {
    * 그 대신 워크북 경로가 다루는 fileId 는 **전부 core 가 스스로 만들어 DB 에 적어
    * 둔 것**이다 — 외부에서 임의 fileId 를 주입할 통로가 없다.
    */
-  private masterToken(userId: string): string {
-    return this.sign(userId, ['master']);
+  private workbookToken(userId: string): string {
+    return signFileServiceDelegation(this.secret(), userId, '5m');
   }
 
   /**
-   * **이미지 전용** 위임 토큰. master 스코프를 **일부러 뺀다**.
+   * **이미지 전용** 토큰. core 위임 표기를 **일부러 싣지 않는다** — 요청자 본인으로만 부른다.
    *
    * 이미지 경로의 fileId 는 작업자가 `POST /product-bulk-sessions/:id/images/resolve`
-   * 로 **통보한 값**이라 core 가 신뢰할 수 없다. master 를 실으면 file-service 의
-   * 소유권 검사가 단락돼(`file-access.ts:62`) core 가 남의 파일을 지우는 도구가 된다
-   * — 공개 상품 상세 응답이 `fileId` 를 그대로 싣기 때문에 피해자 fileId 는 아무나
-   * 수집할 수 있다.
+   * 로 **통보한 값**이라 core 가 신뢰할 수 없다. 위임 표기를 실으면 file-service 의
+   * 소유권 검사를 건너뛰므로, 통보된 fileId 에는 소유권 검사를 남겨 둔다.
    *
-   * master 를 빼면 `file-access.ts:55` 의 `file.uploadedBy === user.userId` 분기가
+   * 그래서 file-service 의 `file.uploadedBy === user.userId` 분기가
    * 실제로 강제된다. 정상 파일은 작업자 본인이 admin-web 프록시(`/api/proxy/file/...`,
    * 자기 accessToken 을 그대로 전달)로 올린 것이라 `uploadedBy` 가 일치해 통과하고,
    * 남의 파일은 403 으로 막힌다. 403 은 호출부가 항목 실패/best-effort 로 흡수한다.
    */
   private ownerToken(userId: string): string {
-    return this.sign(userId, []);
+    // `userId` 클레임이 file-service 의 validatePayload 에서 `sub` 파생 userId 를 덮는다 — 그 값이 소유자 판정에 쓰인다.
+    return jwtSign({ sub: 'core-bulk-session', userId, scopes: [] }, this.secret(), {
+      algorithm: 'HS256',
+      expiresIn: '5m',
+    });
   }
 
   private get baseUrl(): string {
@@ -112,7 +106,7 @@ export class FormExportFileClient {
     // 포함해 알아서 붙인다. 손으로 붙이면 boundary 가 빠져 서버가 파싱에 실패한다.
     const res = await fetch(`${this.baseUrl}/files/upload`, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${this.masterToken(input.userId)}` },
+      headers: { Authorization: `Bearer ${this.workbookToken(input.userId)}` },
       body: form,
     });
 
@@ -140,7 +134,7 @@ export class FormExportFileClient {
    */
   async getDownloadUrl(fileId: string, userId: string): Promise<string> {
     const res = await fetch(`${this.baseUrl}/files/${fileId}/download?download=true`, {
-      headers: { Authorization: `Bearer ${this.masterToken(userId)}` },
+      headers: { Authorization: `Bearer ${this.workbookToken(userId)}` },
     });
     if (!res.ok) throw new Error(await this.describeFailure('다운로드 URL 발급', res));
     const json: unknown = await res.json();
@@ -155,7 +149,7 @@ export class FormExportFileClient {
    * **404 는 예외가 아니라 `null`** 이다 — "그런 파일 없음"은 배치 항목 하나의 정상적인
    * 실패 사유이고, 예외로 만들면 오타 한 건이 나머지 49건을 통째로 죽인다.
    *
-   * **master 없는 `ownerToken` 을 쓴다** — 통보된 fileId 는 신뢰할 수 없는 입력이라
+   * **위임 표기 없는 `ownerToken` 을 쓴다** — 통보된 fileId 는 신뢰할 수 없는 입력이라
    * file-service 의 소유권 검사를 살려 둔다. 남의 비공개 파일이면 403 이 오고, 그건
    * `!res.ok` 분기에서 예외가 되어 호출부(BulkImageManager ②)의 try/catch 가 그
    * 항목만 실패로 흡수한다. (상품 이미지 컨텍스트는 `allowPublic` 이라 공개 파일은
@@ -205,25 +199,24 @@ export class FormExportFileClient {
    * 만료된 잡을 정리할 때 xlsx 도 함께 지운다(catalog.schema.ts:1016, product_form_exports.expiresAt
    * 주석). file-service 에 고아 파일 정리 잡이 없어(스펙 §2.7) 여기서 안 지우면 S3 에 영구
    * 잔존한다 — product-import-file.client.ts:softDelete 와 동일 패턴(DELETE /files/:fileId,
-   * master scope 토큰, 404 는 이미 지워졌다는 뜻이라 성공과 동등 취급 — 정리는 멱등해야 한다).
+   * core 위임 토큰, 404 는 이미 지워졌다는 뜻이라 성공과 동등 취급 — 정리는 멱등해야 한다).
    * 이건 soft delete 다 — file-service 는 행만 지우고 S3 바이트는 그대로 남는다(스펙 §5.2
    * 기지 결함 목록). 그건 이 클라이언트가 해결할 문제가 아니다.
    */
   async softDelete(fileId: string, userId: string): Promise<void> {
-    return this.sendDelete(fileId, this.masterToken(userId));
+    return this.sendDelete(fileId, this.workbookToken(userId));
   }
 
   /**
    * **이미지 전용 삭제.** `softDelete` 와 라우트·재시도 규약은 같고 **토큰만 다르다** —
-   * 이쪽은 master 없는 `ownerToken` 을 써서 file-service 가 `file.uploadedBy` 를 실제로
-   * 강제하게 한다(`file-access.ts:47-49` → `isMasterOrOwner`).
+   * 이쪽은 위임 표기 없는 `ownerToken` 을 써서 file-service 가 `file.uploadedBy` 를 실제로
+   * 강제하게 한다.
    *
    * 왜 둘을 나누는가: 지우려는 fileId 의 **출처가 다르다**.
    * - 워크북(`softDelete`): core 가 스스로 업로드하고 DB 에 적어 둔 fileId. 게다가 만료
-   *   정리는 잡 소유자와 다른 맥락에서 돌아 owner 검사를 통과할 수 없다 → master 필요.
-   * - 이미지(여기): 작업자가 `images/resolve` 로 **통보한** fileId. master 를 실으면
-   *   "공격자가 정한 임의 fileId 를 core 가 master 권한으로 지운다"가 되어, 공개
-   *   상품 상세에서 수집한 남의 `fileId` 로 살아있는 상품 이미지를 지울 수 있다.
+   *   정리는 잡 소유자와 다른 맥락에서 돌아 owner 검사를 통과할 수 없다 → 위임 토큰 필요.
+   * - 이미지(여기): 작업자가 `images/resolve` 로 **통보한** fileId. 통보된 값으로는
+   *   본인이 올린 파일만 지운다.
    *
    * 남의 파일이면 403 이 나서 이 메서드가 던진다. 호출부(② 교체 정리·스윕)는 정리
    * 실패를 best-effort 로 흡수하므로 요청은 실패하지 않는다.

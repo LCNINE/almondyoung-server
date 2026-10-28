@@ -102,8 +102,8 @@ export class OwnershipController {
     // 받아 반환하면 브라우저가 S3 에서 직접 받는다 (대용량 파일 Lambda 6MB 응답한도 502 회피).
     // 반환 filename 은 실제 S3 다운로드 파일명(file-service originalName)과 일치시킨다.
     const [meta, url] = await Promise.all([
-      this.fileServiceClient.fetchMetadata(fileId).catch(() => null),
-      this.fileServiceClient.getDownloadUrl(fileId),
+      this.fileServiceClient.fetchMetadata(fileId, customerId).catch(() => null),
+      this.fileServiceClient.getDownloadUrl(fileId, customerId),
     ]);
     const filename = meta?.originalName ?? meta?.fileName ?? assetName;
     return { url, filename };

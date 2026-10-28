@@ -1,3 +1,7 @@
+import { DbService } from '@app/db';
+import { ConfigService } from '@nestjs/config';
+import { Test } from '@nestjs/testing';
+import { FileServiceClient } from '../clients/file-service.client';
 import { DigitalAssetService } from './digital-asset.service';
 import { digitalAssets } from '../schema/library.schema';
 
@@ -132,5 +136,20 @@ describe('DigitalAssetService.rollbackToFileVersion', () => {
     expect(updates[0].set.currentFileVersionId).toBe('v-1');
     expect(updates[0].set.updatedBy).toBe('op-1');
     expect(updates[0].set.updatedAt).toBeInstanceOf(Date);
+  });
+});
+
+describe('DigitalAssetService file reference check', () => {
+  it('asks file-service about the attached file on behalf of the requesting admin', async () => {
+    const files = new FileServiceClient(new ConfigService({}));
+    const fetchMetadata = jest.spyOn(files, 'fetchMetadata').mockRejectedValue(new Error('unreachable'));
+    const module = await Test.createTestingModule({
+      providers: [DigitalAssetService, { provide: DbService, useValue: {} }, { provide: FileServiceClient, useValue: files }],
+    }).compile();
+
+    await expect(
+      module.get(DigitalAssetService).addFileVersion('asset-1', { fileId: 'f1' }, undefined, 'admin-1'),
+    ).rejects.toThrow('file-service file not found or not readable: f1');
+    expect(fetchMetadata).toHaveBeenCalledWith('f1', 'admin-1');
   });
 });
