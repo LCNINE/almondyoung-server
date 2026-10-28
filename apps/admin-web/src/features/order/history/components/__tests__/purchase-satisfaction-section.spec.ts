@@ -46,7 +46,11 @@ describe('PurchaseSatisfactionSection', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     mockUseCan.mockReturnValue({ status: 'ready', allowed: true });
-    mockUseByOrder.mockReturnValue({ data: item });
+    mockUseByOrder.mockReturnValue({
+      data: item,
+      isPending: false,
+      isError: false,
+    });
   });
 
   it('응답이 있으면 사유 라벨과 메모를 보여 준다', () => {
@@ -58,7 +62,11 @@ describe('PurchaseSatisfactionSection', () => {
   });
 
   it('응답이 없으면 안내 문구를 보여 준다', () => {
-    mockUseByOrder.mockReturnValue({ data: null });
+    mockUseByOrder.mockReturnValue({
+      data: null,
+      isPending: false,
+      isError: false,
+    });
     expect(render()).toContain('아직 응답이 없어요');
   });
 
@@ -66,5 +74,41 @@ describe('PurchaseSatisfactionSection', () => {
     mockUseCan.mockReturnValue({ status: 'ready', allowed: false });
     expect(render()).toBe('');
     expect(mockUseByOrder).not.toHaveBeenCalled();
+  });
+
+  it('미확인 응답에는 확인 전, 확인된 응답에는 확인함 배지를 보여 준다', () => {
+    expect(render()).toContain('확인 전');
+    mockUseByOrder.mockReturnValue({
+      data: { ...item, checkedAt: '2026-10-28T02:00:00.000Z' },
+      isPending: false,
+      isError: false,
+    });
+    const html = render();
+    expect(html).toContain('확인함');
+    expect(html).not.toContain('확인 전');
+  });
+
+  it('조회 중에는 로딩 문구를, 실패하면 오류 문구를 보이고 미응답 문구는 숨긴다', () => {
+    mockUseByOrder.mockReturnValue({
+      data: undefined,
+      isPending: true,
+      isError: false,
+    });
+    let html = render();
+    expect(html).toContain('불러오는 중이에요');
+    expect(html).not.toContain('아직 응답이 없어요');
+    mockUseByOrder.mockReturnValue({
+      data: undefined,
+      isPending: false,
+      isError: true,
+    });
+    html = render();
+    expect(html).toContain('만족도를 불러오지 못했어요');
+    expect(html).not.toContain('아직 응답이 없어요');
+  });
+
+  it('본문을 주문 id 로 key 처리해 주문이 바뀌면 확인 처리 상태가 새로 시작된다', () => {
+    const element = PurchaseSatisfactionSection({ medusaOrderId: 'order_9' });
+    expect(element?.key).toBe('order_9');
   });
 });

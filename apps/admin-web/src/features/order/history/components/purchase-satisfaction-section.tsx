@@ -20,20 +20,32 @@ export function PurchaseSatisfactionSection({
 }) {
   const can = useCan(['cs.satisfaction.read']);
   if (can.status !== 'ready' || !can.allowed) return null;
-  return <SatisfactionBody medusaOrderId={medusaOrderId} />;
+  return <SatisfactionBody key={medusaOrderId} medusaOrderId={medusaOrderId} />;
 }
 
 function SatisfactionBody({ medusaOrderId }: { medusaOrderId: string }) {
-  const { data: item } = usePurchaseSatisfactionByOrder(medusaOrderId);
+  const {
+    data: item,
+    isPending,
+    isError,
+  } = usePurchaseSatisfactionByOrder(medusaOrderId);
   const setChecked = useSetPurchaseSatisfactionChecked();
 
   return (
     <section aria-label="구매 만족도" className="space-y-2">
       <div className="flex items-center gap-2">
         <h4 className="font-medium">구매 만족도</h4>
-        {item?.checkedAt && <Badge variant="secondary">확인함</Badge>}
+        {item && item.rating <= 3 && (
+          <Badge variant={item.checkedAt ? 'secondary' : 'outline'}>
+            {item.checkedAt ? '확인함' : '확인 전'}
+          </Badge>
+        )}
       </div>
-      {item ? (
+      {isPending ? (
+        <p className="text-gray-500">불러오는 중이에요.</p>
+      ) : isError ? (
+        <p className="text-sm text-destructive">만족도를 불러오지 못했어요.</p>
+      ) : item ? (
         <>
           <div className="flex items-center gap-2">
             <Stars rating={item.rating} withLabel />
