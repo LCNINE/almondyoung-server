@@ -409,6 +409,17 @@ core 의 «검수 끝» 명령(새 명령 타입, `channel-orders.commands.v1`) 
 - (명령 시트) «반품» 절은 키당 바코드 한 장(F10 «도착 확정 · 검수 확정», Esc «목록»). 탭 절의 F7(반품)과 출고 검수 절의 F7(수량)이 함께 있어, 검수 중에 탭 F7 바코드를 찍으면 수량이 열린다(N1 의 그림자).
 - (N11) dev 시드 반품 시나리오 셋(`DEV-RETURN-0001…3`, `docs/local-dev.md`).
 
+**PR 8 에서 확정한 결과.** 스토어프론트 반품 신청 폼과 주문 상세 «반품» 칸이다. 마이그 없음, Medusa 에는 store 읽기 라우트 하나.
+- (N1) 수거지는 주문 배송지로 고정한다(10-28 결정). 폼에 주소 칸이 없고 배송지 한 줄 + «다른 곳에서 회수해야 하면 고객센터로». Medusa 요청에 주소 칸을 더하지 않는다. 한진 회수(PR 9)가 주문 배송지를 송하인으로 읽고, 그 전엔 CS 가 손으로 접수한다.
+- (N2) 반품 상태는 주문 상세 «반품» 칸에서 본다. `GET /store/orders/:id/returns`(POST 와 같은 라우트 파일, 기존 고객 인증 미들웨어 매처가 덮는다) → `{ returns: [{ return_id, stage, requested_at, reason, fee_bearer, items, can_cancel }] }`, 늦은 요청 순, 우리 기록이 있는 반품만(`open` 제외). 단계 넷 `requested`·`processing`·`refunded`·`canceled` 이고 `can_cancel` 은 `requested` + Medusa `requested` 일 때만 — core 를 묻지 않아 창고 도착은 취소 POST 의 `return_arrived` 거절로 안다.
+- (N3) 금액은 보이지 않고 사유를 고르면 택배비 규칙 한 줄만 보인다(고객 부담: 환불금에서 차감·무료배송 기준 아래면 처음 배송비도 / 판매자 부담: 저희가 낸다). 금액은 정산 때 Medusa 가 센다.
+- (N4) 폼 줄은 Medusa 주문 품목에 `returnable` 을 붙인다(없으면 0). `blocked` 는 `nothing_left`(수량 0)·`window_closed`(기한 지남, 수량이 있어도). 막힌 줄은 못 고르고 이유 한 줄. 스테퍼 1~`returnable`. 고를 줄이 없으면 빈 상태. URL `itemId` 가 고를 수 있는 줄이면 수량 1 로 미리 고른다.
+- (N5) `request_id` 는 폼을 열 때 한 번 만든다. 200 `requested` = 완료, 200 `canceled`(같은 id 재생인데 그 사이 취소) = `canceled_replay` 로 완료가 아니고 새 id. 400 `return_rejected`·502 `core_unavailable`·404 는 만들기 전의 확정 답이라 새 id 로 폼을 푼다. 그 밖(네트워크·5xx·코드 없는 400)은 `unknown` — 본문을 잠그고 같은 id·같은 본문으로 «다시 보내기». 401 은 던져 `error.tsx` 토큰 복구.
+- (N6) `request_id_conflict` 는 끝 상태다 — «이미 접수된 신청이에요» + 주문 상세 링크, 다시 보내기·새 id 없음(새 id 는 두 번째 반품).
+- (N7) 교환은 그대로다. `exchange-client.tsx` 는 교환 전용으로 옛 core 교환 API 를 계속 부른다(PR 11). `/mypage/exchange` 는 `type=exchange` 일 때만 교환 폼을 열고, `type` 이 없거나 모르는 값이면 반품 폼을 연다(옛 기본 유지). 반품 폼 페이지는 주문·`returnable` 이 null(404)이면 «신청할 수 없는 주문이에요», `returnable` 읽기의 다른 실패는 재시도 상태, 인증 오류는 던진다.
+- (N7a) 주문 상세 칸의 취소 거절은 신청 거절 문구가 아니라 취소 전용 문구(`mypage.order.returns.cancelReject.*`)를 쓴다.
+- (N8) 사유·거절 코드 표는 Medusa 가 정본이다. `return-reasons.ts` 의 고객 사유 다섯은 `RETURN_REASONS` 의 `customerSelectable` 행과 같은 집합, 이름 키는 여섯 전부(`other` 포함), 거절 문구 키는 `ReturnRejectReason` 전부를 덮는다. 루트 jest `scripts/storefront/medusa-return-parity.spec.ts` 가 소스 텍스트로 대조한다. 모르는 거절 코드는 일반 문구.
+
 ### 4.9 교환·클레임 (뒤 PR — 문만 적는다)
 
 - Medusa `OrderExchange` 는 «돌려받기(Return) + 새 품목 + 차액(`difference_due`)», `OrderClaim` 은 하자·오배송용(`refund`/`replace`)이다.
@@ -470,7 +481,7 @@ core 의 «검수 끝» 명령(새 명령 타입, `channel-orders.commands.v1`) 
 | 6b | CS 문 셋: 환불 보류 정산·선환불·미도착 닫기, 영구 거절 정산의 다시 시도·계좌 송금 | core · medusa · channel-adapter | 6 이 라이브인 뒤. 결과는 4.3·4.4 의 «PR 6b 에서 확정한 결과» |
 | 7 | core 읽기·목록 + admin-web CS 화면 다시 짓기 | core · admin-web | 결과는 4.8 의 «PR 7 에서 확정한 결과» |
 | 7b | 창고 반품 도착·검수 화면 + 검수자 id | warehouse-app · core | 스테이션(F7), 도착 대기 목록 + 검색. 마이그 하나(`migrate → deploy`), core 먼저 → 앱 릴리스. 결과는 4.8 의 «PR 7b 에서 확정한 결과» |
-| 8 | 스토어프론트 신청 화면(#933·#934) | storefront | |
+| 8 | 스토어프론트 신청 화면(#933·#934) | storefront · medusa(store 읽기 라우트 하나) | 마이그 없음, 결과는 4.8 의 «PR 8 에서 확정한 결과» |
 | 9 | 한진 회수 접수(R)·취소 | core | DEV 스모크 선행(4.7) |
 | 10 | 옛 core 반품·교환·inventory 반품 코드와 테이블 걷기 | core · admin-web · storefront | contract, `deploy → migrate` |
 | 11 | 교환·클레임 재출고 | medusa · channel-adapter · core | 착수 때 설계(4.9) |
