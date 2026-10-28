@@ -52,7 +52,8 @@
   "detail": {
     "back": "Back to list",
     "author": "Entrant",
-    "submittedAt": "Submitted"
+    "submittedAt": "Submitted",
+    "description": "About the work"
   },
   "vote": {
     "action": "Recommend",

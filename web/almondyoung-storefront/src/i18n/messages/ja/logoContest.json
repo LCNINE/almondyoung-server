@@ -52,7 +52,8 @@
   "detail": {
     "back": "一覧に戻る",
     "author": "応募者",
-    "submittedAt": "応募日"
+    "submittedAt": "応募日",
+    "description": "作品について"
   },
   "vote": {
     "action": "推薦する",
