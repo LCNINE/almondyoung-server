@@ -119,6 +119,13 @@ describe('청구(반품) 수량 읽는 문', () => {
     ).toEqual([]);
   });
 
+  it('inventory 옛 반품은 다시 오지 않는다', () => {
+    // inventory ReturnService·/inventory/returns 는 K8 PR 10 이 걷었다. 표 정의(`returns`·`return_items`)는 PR 10b 가 DROP 과 함께 지운다
+    const pattern =
+      /\breturnStatusValues\b|\bprocessReturn\b|from '\.\.?\/services\/return\.service'|@Controller\('inventory\/returns'\)|\bwmsTables\.returns\b|\bwmsTables\.returnItems\b|\breturnItems\b/;
+    expect(filesMatching((source) => pattern.test(source)).filter((path) => path !== INVENTORY_SCHEMA)).toEqual([]);
+  });
+
   it('only the kernel reads customer return lines for quantities', () => {
     // 반품 예정 줄의 수량을 청구로 세는 표현은 커널 SQL 조각의 raw SQL 별칭뿐이다(K8 PR5·PR10)
     expect(

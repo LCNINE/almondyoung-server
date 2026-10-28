@@ -1,5 +1,4 @@
 import {
-  returnStatusEnum,
   sourceTypeEnum,
   eventStatusEnum,
   stockStateEnum,
@@ -39,9 +38,6 @@ import {
   demandGradeEnum,
   replenishmentOverrideModeEnum,
 } from './inventory.schema';
-
-export const returnStatusValues = returnStatusEnum.enumValues;
-export type ReturnStatusEnum = (typeof returnStatusValues)[number];
 
 export const sourceTypeValues = sourceTypeEnum.enumValues;
 export type SourceTypeEnum = (typeof sourceTypeValues)[number];
