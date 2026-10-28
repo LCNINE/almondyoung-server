@@ -45,7 +45,7 @@ const setup = (existing: PurchaseSatisfactionRow | undefined) => {
     insert: () => ({
       values: (v: Record<string, unknown>) => {
         inserted.push(v);
-        return { returning: async () => [v] };
+        return { onConflictDoNothing: () => ({ returning: async () => (existing ? [] : [v]) }) };
       },
     }),
     update: () => ({
@@ -101,6 +101,15 @@ describe('PurchaseSatisfactionManager.upsert', () => {
     await manager.upsert(ORDER, dto({ rating: 2, reasons: ['PAYMENT_ERROR', 'OTHER'], memo: ' 메모 ' }));
     expect(updated[0]).not.toHaveProperty('checkedAt');
     expect(updated[0]).not.toHaveProperty('checkedBy');
+  });
+
+  it('동시에 먼저 저장되어 insert 가 충돌하면 기존 행을 잠가 갱신한다', async () => {
+    const { manager, inserted, updated } = setup(
+      existingRow({ rating: 2, reasons: ['OTHER'], checkedAt: new Date(), checkedBy: ADMIN }),
+    );
+    await manager.upsert(ORDER, dto({ rating: 1, reasons: ['OTHER'] }));
+    expect(inserted).toHaveLength(1);
+    expect(updated[0]).toMatchObject({ rating: 1, checkedAt: null, checkedBy: null });
   });
 
   it('기존 행이 없으면 새로 만든다', async () => {

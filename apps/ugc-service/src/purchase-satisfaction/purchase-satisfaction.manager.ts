@@ -23,27 +23,26 @@ export class PurchaseSatisfactionManager {
         throw new BadRequestError('Reasons and memo are only accepted for ratings of 3 or below');
       }
 
+      const [created] = await trx
+        .insert(purchaseSatisfactions)
+        .values({
+          orderId,
+          orderDisplayId: dto.orderDisplayId,
+          userId: dto.userId,
+          rating: dto.rating,
+          reasons,
+          memo,
+        })
+        .onConflictDoNothing({ target: purchaseSatisfactions.orderId })
+        .returning();
+      if (created) return created;
+
       const [existing] = await trx
         .select()
         .from(purchaseSatisfactions)
         .where(eq(purchaseSatisfactions.orderId, orderId))
         .limit(1)
         .for('update');
-
-      if (!existing) {
-        const [created] = await trx
-          .insert(purchaseSatisfactions)
-          .values({
-            orderId,
-            orderDisplayId: dto.orderDisplayId,
-            userId: dto.userId,
-            rating: dto.rating,
-            reasons,
-            memo,
-          })
-          .returning();
-        return created;
-      }
 
       const changed =
         existing.rating !== dto.rating || existing.memo !== memo || !sameReasons(existing.reasons, reasons);
