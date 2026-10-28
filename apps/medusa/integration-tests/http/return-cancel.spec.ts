@@ -263,6 +263,33 @@ medusaIntegrationTestRunner({
       ]);
     });
 
+    it('교환 반품 + core 가 exchangeReleased true → 400 exchange_released, 놓아주기 0, 반품 그대로', async () => {
+      const o = await ownedOrder(2);
+      const req = await requestAsCustomer({ ...o, customerId: o.me.customerId });
+      core.setCustomerReturns(o.orderId, [
+        { channelReturnId: req.returnId, status: 'expected', kind: 'exchange', exchangeReleased: true },
+      ]);
+
+      const res = await fail(api.post(cancelUrl(o.orderId, req.returnId), {}, o.me.headers));
+      expect(res.status).toBe(400);
+      expect(res.data).toMatchObject({ code: 'return_rejected', reason: 'exchange_released' });
+      expect(core.releaseCalls).toHaveLength(0);
+      expect((await returnOf(req.returnId)).status).not.toBe('canceled');
+      expect(await detailOf(o.orderId, o.itemId)).toMatchObject({ fulfilled: 1, returnRequested: 1 });
+      expect(await revertChanges(o.orderId)).toHaveLength(0);
+    });
+
+    it('교환 반품이라도 core 가 exchangeReleased false 면 지금처럼 취소된다', async () => {
+      const o = await ownedOrder(2);
+      const req = await requestAsCustomer({ ...o, customerId: o.me.customerId });
+      core.setCustomerReturns(o.orderId, [
+        { channelReturnId: req.returnId, status: 'expected', kind: 'exchange', exchangeReleased: false },
+      ]);
+      const res = await api.post(cancelUrl(o.orderId, req.returnId), {}, o.me.headers);
+      expect(res.status).toBe(200);
+      expect((await returnOf(req.returnId)).status).toBe('canceled');
+    });
+
     it('도착 거절(return_arrived)이면 놓아주기를 부르지 않는다', async () => {
       const o = await ownedOrder(2);
       const req = await requestAsCustomer({ ...o, customerId: o.me.customerId });

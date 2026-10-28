@@ -18,7 +18,7 @@ export class FakeCore {
   server?: Server;
   calls: Array<{ externalOrderId: string; authorization: string | undefined }> = [];
   private eligibility = new Map<string, EligibilityLine[]>();
-  private customerReturns = new Map<string, Array<{ channelReturnId: string; status: string }>>();
+  private customerReturns = new Map<string, Array<{ channelReturnId: string; status: string; kind?: 'return' | 'exchange'; exchangeReleased?: boolean }>>();
   private failStatus: number | null = null;
   /** `customer-return-pickup/release` 호출 기록(K8 PR9). 정하지 않은 반품은 404(옛 core) — 기존 스펙은 그대로 취소된다. */
   releaseCalls: Array<{ channelReturnId: string; authorization: string | undefined }> = [];
@@ -82,7 +82,7 @@ export class FakeCore {
     this.eligibility.set(orderId, lines);
   }
   /** 그 주문의 core 반품 예정 기록(자격 응답의 `customerReturns`). 안 정하면 빈 배열이다. */
-  setCustomerReturns(orderId: string, rows: Array<{ channelReturnId: string; status: string }>) {
+  setCustomerReturns(orderId: string, rows: Array<{ channelReturnId: string; status: string; kind?: 'return' | 'exchange'; exchangeReleased?: boolean }>) {
     this.customerReturns.set(orderId, rows);
   }
   /** 숫자면 그 상태로 거절한다(모든 주문). null 이면 정상으로 돌아온다. */
