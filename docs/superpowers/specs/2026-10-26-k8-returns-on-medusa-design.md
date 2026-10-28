@@ -239,7 +239,6 @@ requested = `expected` 관측, collected = `arrived`, completed = `settled`. `Sa
   두고, 취소 요청 검사 세 곳(상자 전 부분취소·상자 후 재계획·요청 때 판정)만 `remaining − returnHeld` 를 상한으로 쓴다. 전체취소 몫과
   «남는 것 없음» 판정은 주문 − 취소로 센다.
 - (N8) 고객 이벤트는 이 PR 에서 `SalesOrderClaimProgressed` 의 `requested` 하나다(`expected` 기록을 만든 트랜잭션에서). `collected`·`completed`·
-- (N9) 스토어프론트가 Medusa 고객 라우트를 부를 때는 `getAuthHeaders()`(`_medusa_jwt`)를 헤더로 넘기고 `withAuth: false` 로 호출한다 — `withAuth: true` 의 bearer 는 user-service 토큰이라 Medusa 가 401 로 거절한다(PR 9·11 이 따라 하지 말 것).
   `SalesOrderReturned` 는 그 전이를 만드는 PR 6 이 낸다. 반품 취소에는 고객 이벤트 단계가 없다.
 - channel-adapter 의 Medusa 주문 조회 `ORDER_FIELDS` 는 `returns.items.*` 로 반품 품목을 읽는다 — `returns.items.quantity` 를 이름으로 적으면
   Medusa 가 응답에서 그 칸을 뺀다(`apps/medusa/integration-tests/http/return-observation-fields.spec.ts` 가 실측으로 못 박는다).
@@ -420,6 +419,7 @@ core 의 «검수 끝» 명령(새 명령 타입, `channel-orders.commands.v1`) 
 - (N7) 교환은 그대로다. `exchange-client.tsx` 는 교환 전용으로 옛 core 교환 API 를 계속 부른다(PR 11). `/mypage/exchange` 는 `type=exchange` 일 때만 교환 폼을 열고, `type` 이 없거나 모르는 값이면 반품 폼을 연다(옛 기본 유지). 반품 폼 페이지는 주문·`returnable` 이 null(404)이면 «신청할 수 없는 주문이에요», `returnable` 읽기의 다른 실패는 재시도 상태, 인증 오류는 던진다.
 - (N7a) 주문 상세 칸의 취소 거절은 신청 거절 문구가 아니라 취소 전용 문구(`mypage.order.returns.cancelReject.*`)를 쓴다.
 - (N8) 사유·거절 코드 표는 Medusa 가 정본이다. `return-reasons.ts` 의 고객 사유 다섯은 `RETURN_REASONS` 의 `customerSelectable` 행과 같은 집합, 이름 키는 여섯 전부(`other` 포함), 거절 문구 키는 `ReturnRejectReason` 전부를 덮는다. 루트 jest `scripts/storefront/medusa-return-parity.spec.ts` 가 소스 텍스트로 대조한다. 모르는 거절 코드는 일반 문구.
+- (N9) 스토어프론트가 Medusa 고객 라우트를 부를 때는 `getAuthHeaders()`(`_medusa_jwt`)를 헤더로 넘기고 `withAuth: false` 로 부른다. `withAuth: true` 가 붙이는 bearer 는 user-service 토큰이라 Medusa 가 401 로 거절한다 — 뒤 PR(9·11)도 이 방식으로 부른다.
 
 ### 4.9 교환·클레임 (뒤 PR — 문만 적는다)
 
