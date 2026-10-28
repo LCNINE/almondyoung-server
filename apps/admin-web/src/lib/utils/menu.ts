@@ -200,6 +200,11 @@ const allMenus: MainMenu[] = [
             path: '/order/fulfillments',
           },
           {
+            id: 'outbound-batches',
+            title: '출고 배치',
+            path: '/order/outbound-batches',
+          },
+          {
             id: 'regional-invoice',
             title: '(자체배송) 지역별 출고',
             path: '/order/regional-invoice',
@@ -223,11 +228,6 @@ const allMenus: MainMenu[] = [
             id: 'inspection-dispatch',
             title: '검수발송',
             path: '/order/inspection',
-          },
-          {
-            id: 'outbound-batches',
-            title: '출고 배치',
-            path: '/order/outbound-batches',
           },
           {
             id: 'direct-ship',

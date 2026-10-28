@@ -542,7 +542,7 @@ export class OutboundBatchOrchestrator {
         )
         .orderBy(asc(wmsTables.shipments.createdAt));
 
-      const result: EligibleShipmentResponseDto[] = [];
+      const result: Omit<EligibleShipmentResponseDto, 'displayOrderNo' | 'itemSummary'>[] = [];
       for (const candidate of candidates) {
         try {
           const aggregate = await this.loadEligibilityAggregate(candidate.id, trx);
@@ -573,7 +573,7 @@ export class OutboundBatchOrchestrator {
           throw error;
         }
       }
-      return result;
+      return withShipmentLabels(trx, result);
     }, tx);
   }
 
@@ -1619,4 +1619,40 @@ export class OutboundBatchOrchestrator {
     // 전부 'CONFLICT' 로 받는다 (simple-outbound.service.ts:655 와 동일 형태).
     return new ConflictException({ code, error: code, message });
   }
+}
+
+/** 화면이 상자 id 대신 주문번호와 상품 요약을 보이게 한다 */
+async function withShipmentLabels<T extends { shipmentId: string }>(
+  trx: DbTx,
+  rows: T[],
+): Promise<(T & { displayOrderNo: string | null; itemSummary: string })[]> {
+  if (rows.length === 0) return [];
+  const lines = await trx
+    .select({
+      shipmentId: wmsTables.shipmentLines.shipmentId,
+      displayOrderNo: wmsTables.salesOrders.displayOrderNo,
+      skuName: wmsTables.skus.name,
+    })
+    .from(wmsTables.shipmentLines)
+    .innerJoin(
+      wmsTables.fulfillmentOrderItems,
+      eq(wmsTables.fulfillmentOrderItems.id, wmsTables.shipmentLines.fulfillmentOrderItemId),
+    )
+    .innerJoin(
+      wmsTables.fulfillmentOrders,
+      eq(wmsTables.fulfillmentOrders.id, wmsTables.fulfillmentOrderItems.fulfillmentOrderId),
+    )
+    .leftJoin(wmsTables.salesOrders, eq(wmsTables.salesOrders.id, wmsTables.fulfillmentOrders.salesOrderId))
+    .innerJoin(wmsTables.skus, eq(wmsTables.skus.id, wmsTables.shipmentLines.skuId))
+    .where(inArray(wmsTables.shipmentLines.shipmentId, rows.map((row) => row.shipmentId)))
+    .orderBy(asc(wmsTables.shipmentLines.createdAt));
+  return rows.map((row) => {
+    const own = lines.filter((line) => line.shipmentId === row.shipmentId);
+    const names = own.map((line) => line.skuName);
+    return {
+      ...row,
+      displayOrderNo: own.find((line) => line.displayOrderNo)?.displayOrderNo ?? null,
+      itemSummary: names.length > 1 ? `${names[0]} 외 ${names.length - 1}건` : (names[0] ?? ''),
+    };
+  });
 }

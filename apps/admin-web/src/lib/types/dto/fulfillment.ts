@@ -1060,6 +1060,9 @@ export interface EligibleShipmentV2 {
   totalQty: number;
   waybillId: string;
   trackingNo: string;
+  /** 옛 core 응답엔 없다 */
+  displayOrderNo?: string | null;
+  itemSummary?: string;
 }
 
 export interface PickingStrategyCapabilities {

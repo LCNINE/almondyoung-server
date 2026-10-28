@@ -87,16 +87,16 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
   if (!open) return null;
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent className="w-[900px] overflow-auto sm:max-w-[900px]">
+      <SheetContent className="w-full overflow-auto sm:max-w-[900px]">
         <SheetHeader>
           <SheetTitle>V2 배치 상세</SheetTitle>
         </SheetHeader>
         {isLoading || !batch ? (
-          <p className="mt-4 text-sm text-muted-foreground">
+          <p className="px-4 text-sm text-muted-foreground">
             서버 스냅샷을 불러오는 중…
           </p>
         ) : (
-          <div className="mt-4 flex flex-col gap-5">
+          <div className="flex flex-col gap-6 px-4 pb-6">
             <div className="grid grid-cols-2 gap-3 rounded-lg border p-4 text-sm md:grid-cols-4">
               <div>
                 <p className="text-muted-foreground">배치</p>
@@ -137,18 +137,18 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
 
             <Separator />
             <section className="space-y-3">
-              <h3 className="font-medium">Eligible shipment</h3>
+              <h3 className="font-medium">추가할 수 있는 상자</h3>
               {eligible.length === 0 ? (
                 <p className="text-sm text-muted-foreground">
-                  추가할 수 있는 shipment가 없습니다.
+                  추가할 수 있는 상자가 없습니다. 출고주문에서 계획 확정과 운송장 발급을 마친 상자만 나와요.
                 </p>
               ) : (
                 <div className="max-h-48 overflow-auto rounded border">
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Shipment</TableHead>
-                        <TableHead>Waybill</TableHead>
+                        <TableHead>주문 · 상품</TableHead>
+                        <TableHead>운송장</TableHead>
                         <TableHead className="text-right">수량</TableHead>
                         {canAdd && <TableHead />}
                       </TableRow>
@@ -158,14 +158,14 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
                         <TableRow key={item.shipmentId}>
                           <TableCell>
                             <Link
-                              className="font-mono text-xs hover:underline"
+                              className="font-medium hover:underline"
                               href={`/order/fulfillments?shipmentId=${item.shipmentId}`}
+                              title={`상자 ${item.shipmentId} · manifest v${item.manifestVersion} / reservation v${item.reservationVersion}`}
                             >
-                              {item.shipmentId}
+                              {item.displayOrderNo ? `#${item.displayOrderNo}` : '주문번호 없음'}
                             </Link>
-                            <p className="text-[10px] text-muted-foreground">
-                              manifest v{item.manifestVersion} / reservation v
-                              {item.reservationVersion}
+                            <p className="text-xs text-muted-foreground">
+                              {item.itemSummary}
                             </p>
                           </TableCell>
                           <TableCell className="font-mono text-xs">

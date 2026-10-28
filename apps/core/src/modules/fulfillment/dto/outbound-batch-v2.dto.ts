@@ -125,6 +125,10 @@ export class EligibleShipmentResponseDto {
   totalQty: number;
   waybillId: string;
   trackingNo: string;
+  @ApiPropertyOptional({ type: String, nullable: true, description: '고객이 아는 주문번호' })
+  displayOrderNo: string | null;
+  @ApiProperty({ description: '첫 상품명 외 N건' })
+  itemSummary: string;
 }
 
 export class BatchPickingAllocationDto {
