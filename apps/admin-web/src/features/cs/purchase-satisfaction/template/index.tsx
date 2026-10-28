@@ -155,7 +155,20 @@ export default function PurchaseSatisfactionTemplate() {
                     onClick={() => setSelectedId(row.id)}
                   >
                     <TableCell className="whitespace-nowrap">{formatKstTime(row.updatedAt)}</TableCell>
-                    <TableCell>#{row.orderDisplayId}</TableCell>
+                    <TableCell>
+                      <button
+                        type="button"
+                        aria-pressed={row.id === selectedId}
+                        aria-label={`주문 #${row.orderDisplayId} 응답 상세 열기`}
+                        className="rounded underline-offset-2 hover:underline focus-visible:outline focus-visible:outline-2"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedId(row.id);
+                        }}
+                      >
+                        #{row.orderDisplayId}
+                      </button>
+                    </TableCell>
                     <TableCell>
                       <Stars rating={row.rating} />
                     </TableCell>
