@@ -8,9 +8,10 @@ describe('출금 실패 알림 — 표기', () => {
     expect(formatKstMonthDay('2026-09-03')).toBe('9월 3일');
   });
 
-  it('청구 주기는 해를 넘길 때만 연도를 붙이고, 모르면 「이번 주기」', () => {
-    expect(formatBillingPeriod('2026-09-01', '2026-09-30')).toBe('9월 1일~9월 30일');
-    expect(formatBillingPeriod('2026-12-15', '2027-01-14')).toBe('12월 15일~2027년 1월 14일');
+  it('청구 주기는 「월/일~월/일」로 14자 안에 들고, 모르면 「이번 주기」', () => {
+    expect(formatBillingPeriod('2026-09-01', '2026-09-30')).toBe('9/1~9/30');
+    expect(formatBillingPeriod('2026-10-15', '2026-11-14')).toBe('10/15~11/14');
+    expect(formatBillingPeriod('2026-12-15', '2027-01-14')).toBe('12/15~1/14');
     expect(formatBillingPeriod(undefined, '2026-09-30')).toBe('이번 주기');
   });
 
@@ -77,7 +78,7 @@ describe('MembershipEventConsumer — 출금 실패·미납 해지 알림톡', (
     expect(dto.eventKey).toBe('MEMBERSHIP_BILLING_ATTEMPT_FAILED');
     expect(dto.variables).toEqual({
       name: '홍길동',
-      period: '9월 1일~9월 30일',
+      period: '9/1~9/30',
       amount: '4,990원',
       attempt: 1,
       reason: '잔액 부족',
@@ -98,6 +99,19 @@ describe('MembershipEventConsumer — 출금 실패·미납 해지 알림톡', (
     const dto = dispatcher.send.mock.calls[0][0];
     expect(dto.metadata).toEqual({ smsFallback: true, requestDate: '2026-09-30 08:00' });
     expect(dto.sendAt).toBe('2026-09-29T23:00:00.000Z');
+  });
+
+  it('카카오 변수 14자 제한: 긴 은행 사유는 줄임표로 자르고 어떤 값도 14자를 넘지 않는다', async () => {
+    const { consumer, dispatcher } = makeConsumer();
+    await consumer.onBillingAttemptFailed({} as never, {
+      ...failed,
+      periodStart: '2026-10-15',
+      periodEnd: '2026-11-14',
+      reasonText: '출금계좌 잔액이 부족하여 출금이 불가합니다',
+    });
+    const { variables } = dispatcher.send.mock.calls[0][0];
+    expect(variables.reason).toBe('출금계좌 잔액이 부족하여…');
+    for (const value of Object.values(variables)) expect([...String(value)].length).toBeLessThanOrEqual(14);
   });
 
   it('은행 사유가 없으면 일반 문구로 채운다', async () => {
@@ -123,7 +137,7 @@ describe('MembershipEventConsumer — 출금 실패·미납 해지 알림톡', (
 
     const dto = dispatcher.send.mock.calls[0][0];
     expect(dto.eventKey).toBe('MEMBERSHIP_TERMINATED_WITH_ARREARS');
-    expect(dto.variables).toEqual({ name: '홍길동', period: '9월 1일~9월 30일', arrearsAmount: '4,990원' });
+    expect(dto.variables).toEqual({ name: '홍길동', period: '9/1~9/30', arrearsAmount: '4,990원' });
     expect(dto.idempotencyKey).toBe('membership:terminated-notice:c1');
   });
 
@@ -163,7 +177,7 @@ describe('MembershipEventConsumer — 출금 실패·미납 해지 알림톡', (
 
     const dto = dispatcher.send.mock.calls[0][0];
     expect(dto.eventKey).toBe('MEMBERSHIP_MANDATE_REJECTED_WITH_ARREARS');
-    expect(dto.variables).toEqual({ name: '홍길동', period: '9월 1일~9월 30일', arrearsAmount: '4,990원' });
+    expect(dto.variables).toEqual({ name: '홍길동', period: '9/1~9/30', arrearsAmount: '4,990원' });
     expect(dto.idempotencyKey).toBe('membership:terminated-notice:c1');
   });
 

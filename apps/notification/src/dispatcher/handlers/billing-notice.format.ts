@@ -15,13 +15,27 @@ export function formatKstMonthDay(value: string): string {
   return `${month}월 ${day}일`;
 }
 
-/** 청구 주기 표기. 해를 넘기면 끝 날짜에 연도를 붙인다. 모르면 '이번 주기'. */
+/**
+ * 카카오가 이 발신 프로필의 템플릿 변수 값을 14자로 막는다 — 넘으면 NHN 이 접수부터 거절하고 대체 문자도 안 나간다
+ * ("Blacklist can't use more than 14 characters in template value.").
+ */
+export const KAKAO_VARIABLE_MAX = 14;
+
+/** 변수 값을 14자 안으로. 넘치는 문자열은 끝을 줄임표로 자른다. 숫자는 그대로 둔다. */
+export function fitKakaoVariable(value: string | number): string | number {
+  if (typeof value !== 'string') return value;
+  const chars = [...value];
+  return chars.length > KAKAO_VARIABLE_MAX ? `${chars.slice(0, KAKAO_VARIABLE_MAX - 1).join('')}…` : value;
+}
+
+/** 청구 주기 표기 '9/1~9/30'. 변수 14자 제한에 들게 연도는 붙이지 않는다. 모르면 '이번 주기'. */
 export function formatBillingPeriod(periodStart?: string, periodEnd?: string): string {
   if (!periodStart || !periodEnd) return '이번 주기';
-  const startYear = Number(periodStart.slice(0, 4));
-  const endYear = Number(periodEnd.slice(0, 4));
-  const end = formatKstMonthDay(periodEnd);
-  return `${formatKstMonthDay(periodStart)}~${endYear !== startYear ? `${endYear}년 ` : ''}${end}`;
+  const slash = (value: string) => {
+    const { month, day } = kstParts(value);
+    return `${month}/${day}`;
+  };
+  return `${slash(periodStart)}~${slash(periodEnd)}`;
 }
 
 /**

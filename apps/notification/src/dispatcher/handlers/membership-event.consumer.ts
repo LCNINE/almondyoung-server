@@ -10,7 +10,13 @@ import { Channel, NotificationCategory, NotificationPriority } from '../../share
 import { eventNoticeKey } from './event-notice-key';
 import { SendNotificationDto } from '../dto/send-notification.dto';
 import { formatAmount, formatDate } from '../../shared/utils/template-helpers';
-import { formatBillingPeriod, formatKstMonthDay, nextSendableAt, nhnRequestDateIfQuiet } from './billing-notice.format';
+import {
+  fitKakaoVariable,
+  formatBillingPeriod,
+  formatKstMonthDay,
+  nextSendableAt,
+  nhnRequestDateIfQuiet,
+} from './billing-notice.format';
 import { MEMBERSHIP_STREAM } from '@packages/event-contracts/streams/membership.stream';
 import { EventPayloadOf, EnvelopeOf } from '@packages/event-contracts/types';
 import { billingFailedNoticeKey, terminatedNoticeKey } from './membership-notice-keys';
@@ -247,7 +253,8 @@ export class MembershipEventConsumer {
       payload: { name: input.payload.userName, phoneNumber: input.payload.phoneNumber },
       correlationId: input.correlationId,
       priority: mapping.priority as NotificationPriority,
-      variables: input.variables,
+      // 은행 사유·이름처럼 길이를 우리가 못 정하는 값도 있어 마지막에 한 번 더 맞춘다.
+      variables: Object.fromEntries(Object.entries(input.variables).map(([key, value]) => [key, fitKakaoVariable(value)])),
       // 직접 발송 경로는 sendAt 을 보지 않는다 — 밤 시간 이연은 NHN 예약 발송(requestDate)에 맡긴다.
       metadata: { smsFallback: true, ...(requestDate && { requestDate }) },
       sendAt: sendAt.toISOString(),
