@@ -105,6 +105,9 @@ jobs:
       DB_USERNAME: postgres
       DB_PASSWORD: postgres
       REDIS_URL: redis://localhost:6379
+      # 기본 힙(약 4GB)에서 HTTP 통합 스펙이 끝나기 전에 heap out of memory 로 죽는다.
+      # 러너 16GB 에 postgres·redis 가 같이 떠 있으므로 6GB 에서 멈춘다
+      NODE_OPTIONS: --max-old-space-size=6144
 
     steps:
       - uses: actions/checkout@v4
