@@ -6,6 +6,8 @@ import type { PaginationQuery, UUID } from '../../../types/dto/common';
 import type { VariantDto, VariantPriceDto } from '../../../types/dto/products';
 import { client } from '../../client';
 
+const VARIANT_BATCH_SIZE = 100;
+
 function buildQueryString(query: Record<string, unknown>): string {
   const params = new URLSearchParams();
   Object.entries(query).forEach(([key, value]) => {
@@ -79,9 +81,18 @@ export const variantsClient = {
 
   getBatch: async (ids: string[]): Promise<BatchVariantInfo[]> => {
     if (!ids.length) return [];
-    const response = await client.get(
-      `${ALMONDYOUNG_API_BASE_URL}/variants/batch?ids=${ids.join(',')}`
+    // ids 가 수백 개면 주소가 길어 414 로 통째로 거절된다 — 나눠서 부른다
+    const chunks: string[][] = [];
+    for (let i = 0; i < ids.length; i += VARIANT_BATCH_SIZE) {
+      chunks.push(ids.slice(i, i + VARIANT_BATCH_SIZE));
+    }
+    const responses = await Promise.all(
+      chunks.map((chunk) =>
+        client.get<BatchVariantInfo[]>(
+          `${ALMONDYOUNG_API_BASE_URL}/variants/batch?ids=${chunk.join(',')}`
+        )
+      )
     );
-    return response.data;
+    return responses.flatMap((r) => r.data);
   },
 };
