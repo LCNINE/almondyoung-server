@@ -381,7 +381,7 @@ export async function seedShipmentForExistingStock(
       status: 'processing',
     })
     .returning();
-  // assertRecipientComplete 는 recipientName/phone/postalCode/roadAddress/detailAddress 다섯 필드를 요구한다.
+  // assertRecipientComplete 는 REQUIRED_RECIPIENT_FIELDS 네 필드를 요구한다.
   const recipientSnapshot = {
     recipientName: 'Simple Test',
     phone: '010-3333-4444',

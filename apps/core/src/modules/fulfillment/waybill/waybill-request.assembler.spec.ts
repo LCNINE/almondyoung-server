@@ -38,6 +38,9 @@ describe('parseRecipient', () => {
   it('throws RECIPIENT_INCOMPLETE when a required field is blank', () => {
     expect(() => parseRecipient({ ...snapshot, postalCode: '  ' })).toThrow(/WAYBILL_RECIPIENT_INCOMPLETE/);
   });
+  it('accepts a blank detailAddress as an empty string', () => {
+    expect(parseRecipient({ ...snapshot, detailAddress: undefined }).detailAddress).toBe('');
+  });
   it('throws when snapshot is null', () => {
     expect(() => parseRecipient(null)).toThrow(/WAYBILL_RECIPIENT_INCOMPLETE/);
   });

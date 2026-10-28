@@ -111,7 +111,11 @@ describe('allocation layer — layer 1 pure functions', () => {
       expect(() => assertRecipientComplete(complete)).not.toThrow();
     });
 
-    it.each(['recipientName', 'phone', 'postalCode', 'roadAddress', 'detailAddress'])(
+    it('accepts a blank detailAddress — 단독주택처럼 상세주소가 없는 주소가 있다', () => {
+      expect(() => assertRecipientComplete({ ...complete, detailAddress: '' })).not.toThrow();
+    });
+
+    it.each(['recipientName', 'phone', 'postalCode', 'roadAddress'])(
       'names %s when it is blank',
       (field) => {
         expect(() => assertRecipientComplete({ ...complete, [field]: '  ' })).toThrow(
@@ -126,7 +130,7 @@ describe('allocation layer — layer 1 pure functions', () => {
     );
 
     it('treats a missing snapshot as every field missing', () => {
-      expect(() => assertRecipientComplete(null)).toThrow(/recipientName,phone,postalCode,roadAddress,detailAddress/);
+      expect(() => assertRecipientComplete(null)).toThrow(/recipientName,phone,postalCode,roadAddress$/);
     });
   });
 

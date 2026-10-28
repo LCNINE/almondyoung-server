@@ -46,6 +46,7 @@ import { PermissionCheckpoints } from '@app/authorization';
 import { legacyFulfillmentSupervisor } from '../../../platform/auth/fulfillment-authz';
 import { authzSubjectOf } from '../../../platform/auth/system-actor';
 import { warehouseIdOf } from '../shipment/shipment-owner';
+import { REQUIRED_RECIPIENT_FIELDS } from '../waybill/waybill-request.assembler';
 
 const TERMINAL_FOR_BATCH_STATUSES = ['completed', 'excluded'] as const;
 const LEASE_MS = 15 * 60_000;
@@ -1537,7 +1538,7 @@ export class OutboundBatchOrchestrator {
 
   private assertRecipientComplete(value: unknown): void {
     const recipient = (value ?? {}) as Record<string, unknown>;
-    const missing = ['recipientName', 'phone', 'postalCode', 'roadAddress', 'detailAddress'].filter(
+    const missing = REQUIRED_RECIPIENT_FIELDS.filter(
       (key) => typeof recipient[key] !== 'string' || !recipient[key].trim(),
     );
     if (missing.length) {

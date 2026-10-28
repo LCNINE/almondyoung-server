@@ -15,6 +15,9 @@ import { IntervalPacer } from '../interval-pacer';
 import { HanjinConfig, isHanjinConfigured } from './hanjin.config';
 import type { HanjinApiClient } from './hanjin-api.client';
 
+// 한진은 빈 상세주소를 ERROR-01 로 거절하고 글자가 있으면 받는다(2026-10-28 개발 서버 실측). 기사가 빠뜨린 게 아니라 없는 주소임을 알게 문구로 둔다
+export const RECIPIENT_DETAIL_FALLBACK = '상세주소 없음';
+
 const LABEL_FIELDS = [
   's_tml_nam',
   's_tml_cod',
@@ -200,7 +203,7 @@ export class HanjinCarrierGateway extends CarrierGateway {
       sndrTelNo: req.sender.tel ?? '',
       rcvrZip: req.recipient.zip,
       rcvrBaseAddr: req.recipient.baseAddress,
-      rcvrDtlAddr: req.recipient.detailAddress,
+      rcvrDtlAddr: req.recipient.detailAddress.trim() || RECIPIENT_DETAIL_FALLBACK,
       rcvrNm: req.recipient.name,
       // §4.2 19번 rcvrTelNo 는 필수, 20번 rcvrMobileNo 는 선택이다. 커머스 주문은 연락처가 휴대폰
       // 하나뿐이므로 tel 이 비면 mobile 로 폴백한다 — 비워 보내면 ERROR-01 로 전건 거절된다.

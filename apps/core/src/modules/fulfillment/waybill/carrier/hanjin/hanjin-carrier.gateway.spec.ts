@@ -1,5 +1,5 @@
 import { Logger } from '@nestjs/common';
-import { HanjinCarrierGateway } from './hanjin-carrier.gateway';
+import { HanjinCarrierGateway, RECIPIENT_DETAIL_FALLBACK } from './hanjin-carrier.gateway';
 import type { WaybillRequest } from '../carrier-gateway.interface';
 import type { HanjinConfig } from './hanjin.config';
 import { assembleWaybillRequest } from '../../waybill-request.assembler';
@@ -176,6 +176,17 @@ describe('HanjinCarrierGateway.register', () => {
       'order',
       '/parcel-delivery/v1/order/insert-order',
       expect.objectContaining({ rcvrTelNo: '02-2', rcvrMobileNo: '010-2' }),
+    );
+  });
+
+  it('수하인 상세주소가 비면 대체 문구로 보낸다 (한진은 빈 rcvrDtlAddr 를 ERROR-01 로 거절)', async () => {
+    const post = jest.fn().mockResolvedValue({ resultCode: 'OK', resultMessage: 'SUCCESS' });
+    const g = new HanjinCarrierGateway(config, { post } as any, today);
+    await g.register('531647410114', { ...req, recipient: { ...req.recipient, detailAddress: '  ' } });
+    expect(post).toHaveBeenCalledWith(
+      'order',
+      '/parcel-delivery/v1/order/insert-order',
+      expect.objectContaining({ rcvrDtlAddr: RECIPIENT_DETAIL_FALLBACK }),
     );
   });
 

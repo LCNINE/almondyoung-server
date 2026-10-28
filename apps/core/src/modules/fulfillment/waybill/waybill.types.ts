@@ -3,7 +3,7 @@ import type { AllocatedLabelRow } from './label/label-items';
 
 export type WaybillRow = Waybill;
 
-// recipientSnapshot(AddressDto) 의 안전한 부분집합. 발급 시점 assertRecipientComplete 로 5필드 보장.
+// recipientSnapshot(AddressDto) 의 안전한 부분집합. 발급 시점 parseRecipient 가 REQUIRED_RECIPIENT_FIELDS 를 보장하고, 상세주소는 빈 문자열일 수 있다.
 export interface WaybillRecipient {
   recipientName: string;
   phone: string;

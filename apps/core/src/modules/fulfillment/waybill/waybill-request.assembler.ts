@@ -5,11 +5,12 @@ import { deriveCustOrdNo } from './cust-ord-no';
 import { WAYBILL } from './waybill.constants';
 import type { ManifestLineLite, WaybillRecipient } from './waybill.types';
 
-const REQUIRED = ['recipientName', 'phone', 'postalCode', 'roadAddress', 'detailAddress'] as const;
+// 상세주소는 없는 주소(단독주택 등)가 있어 받지 않는다. 한진은 빈 상세주소를 거절하므로 보낼 때 대체값을 넣는다(hanjin-carrier.gateway).
+export const REQUIRED_RECIPIENT_FIELDS = ['recipientName', 'phone', 'postalCode', 'roadAddress'] as const;
 
 export function parseRecipient(snapshot: unknown): WaybillRecipient {
   const r = (snapshot ?? {}) as Record<string, unknown>;
-  const missing = REQUIRED.filter((k) => typeof r[k] !== 'string' || !r[k].trim());
+  const missing = REQUIRED_RECIPIENT_FIELDS.filter((k) => typeof r[k] !== 'string' || !r[k].trim());
   if (missing.length) {
     throw new BadRequestError(`${WAYBILL.ERROR.RECIPIENT_INCOMPLETE}: missing ${missing.join(',')}`);
   }
@@ -19,7 +20,7 @@ export function parseRecipient(snapshot: unknown): WaybillRecipient {
     phone: r.phone as string,
     postalCode: r.postalCode as string,
     roadAddress: r.roadAddress as string,
-    detailAddress: r.detailAddress as string,
+    detailAddress: typeof r.detailAddress === 'string' ? r.detailAddress : '',
     deliveryNote: note,
   };
 }

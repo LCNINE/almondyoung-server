@@ -5,6 +5,7 @@ import { STRATEGY_BY_PICKING_METHOD } from '../picking-method.contract';
 import { PickingStrategyName } from '../picking-strategy.interface';
 import { conflict, shipmentWithdrawn } from './allocation.errors';
 import { ShipmentAllocation, ShipmentCustodyBalance, WorkItemRow, uniqueSorted } from './allocation.types';
+import { REQUIRED_RECIPIENT_FIELDS } from '../../waybill/waybill-request.assembler';
 
 /**
  * Layer 1 — no collaborators. Every function here takes an open `trx` plus plain values, so a fake
@@ -170,7 +171,7 @@ export async function loadPositiveShipmentCustody(
 
 export function assertRecipientComplete(value: unknown): void {
   const recipient = (value ?? {}) as Record<string, unknown>;
-  const missing = ['recipientName', 'phone', 'postalCode', 'roadAddress', 'detailAddress'].filter(
+  const missing = REQUIRED_RECIPIENT_FIELDS.filter(
     (key) => typeof recipient[key] !== 'string' || !recipient[key].trim(),
   );
   if (missing.length) {

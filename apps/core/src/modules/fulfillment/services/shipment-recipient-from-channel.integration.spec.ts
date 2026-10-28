@@ -118,7 +118,7 @@ describeIfDb('reviseRecipientFromChannel (DB integration, rollback-only)', () =>
       ).resolves.toEqual({ changed: true });
       expect(
         await codeOf(
-          planning.reviseRecipientFromChannel(box.shipmentId, box.salesOrderId, { ...NEXT, detailAddress: '' }, `k-${randomUUID()}`, actor, tx),
+          planning.reviseRecipientFromChannel(box.shipmentId, box.salesOrderId, { ...NEXT, phone: '' }, `k-${randomUUID()}`, actor, tx),
         ),
       ).toBe('SHIPMENT_RECIPIENT_INCOMPLETE');
     });

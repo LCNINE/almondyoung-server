@@ -68,6 +68,7 @@ import {
 } from './shipment-aggregate';
 import { shrinkDraftLines } from './draft-line-shrink';
 import { shipmentOwnerOf, warehouseIdOf } from '../shipment/shipment-owner';
+import { REQUIRED_RECIPIENT_FIELDS } from '../waybill/waybill-request.assembler';
 
 const TRUSTED_CHANNELS = new Set(['medusa', 'naver', 'coupang']);
 
@@ -1888,7 +1889,7 @@ export class ShipmentPlanningService {
 
   private assertRecipientComplete(value: unknown): void {
     const recipient = (value ?? {}) as Record<string, unknown>;
-    const missing = ['recipientName', 'phone', 'postalCode', 'roadAddress', 'detailAddress'].filter(
+    const missing = REQUIRED_RECIPIENT_FIELDS.filter(
       (key) => typeof recipient[key] !== 'string' || !recipient[key].trim(),
     );
     if (missing.length) {
