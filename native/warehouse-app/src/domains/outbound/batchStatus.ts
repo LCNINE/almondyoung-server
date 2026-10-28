@@ -9,6 +9,7 @@ export function useBatchWorkItems(batchId: string | null) {
   return useQuery({
     queryKey: ['batch-work-items', batchId],
     enabled: batchId !== null,
+    refetchInterval: 10_000,
     queryFn: () => fetchBatchWorkItems(api, batchId ?? ''),
   });
 }

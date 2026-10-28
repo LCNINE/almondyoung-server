@@ -41,6 +41,8 @@ export function useOutboundBatches(
   return useQuery({
     queryKey: ['outbound-batches', warehouseId, status],
     enabled: warehouseId !== null,
+    // 어드민에서 넣은 배치·상자가 새로고침 없이 뜨게 — 창고 PC 는 앱을 띄워 둔 채로 쓴다
+    refetchInterval: 10_000,
     queryFn: () => {
       const qs = new URLSearchParams({
         warehouseId: warehouseId ?? '',
