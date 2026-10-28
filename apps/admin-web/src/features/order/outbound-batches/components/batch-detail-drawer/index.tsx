@@ -466,6 +466,11 @@ function HelpTip({ label, children }: { label: string; children: ReactNode }) {
         className="text-muted-foreground hover:text-foreground"
         onMouseEnter={() => setOpen(true)}
         onMouseLeave={() => setOpen(false)}
+        // 올려서 이미 열린 걸 클릭이 다시 닫지 않게 — 닫기는 바깥을 누르면 된다
+        onClick={(event) => {
+          event.preventDefault();
+          setOpen(true);
+        }}
       >
         <CircleHelp className="size-4" />
       </PopoverTrigger>
