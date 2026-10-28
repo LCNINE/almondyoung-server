@@ -61,10 +61,7 @@ export class PurchaseSatisfactionReader {
     }, tx);
   }
 
-  async summarize(
-    query: Pick<AdminPurchaseSatisfactionQueryDto, 'from' | 'to'>,
-    tx?: UgcTx,
-  ): Promise<PurchaseSatisfactionSummaryDto> {
+  async summarize(query: AdminPurchaseSatisfactionQueryDto, tx?: UgcTx): Promise<PurchaseSatisfactionSummaryDto> {
     const where = this.periodWhere(query);
     const rating = purchaseSatisfactions.rating;
     return this.db.run(async (trx) => {
