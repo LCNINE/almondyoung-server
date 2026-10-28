@@ -81,6 +81,7 @@ export function createSatisfactionFlow({ orderId, initial, save, track }: Deps) 
     },
 
     toggleReason(code: string) {
+      if (state.saving) return
       set({
         reasons: state.reasons.includes(code)
           ? state.reasons.filter((c) => c !== code)
@@ -89,15 +90,17 @@ export function createSatisfactionFlow({ orderId, initial, save, track }: Deps) 
     },
 
     setMemo(memo: string) {
+      if (state.saving) return
       set({ memo: memo.slice(0, MEMO_MAX) })
     },
 
     async submitDetail() {
       if (state.saving || !this.canSubmit()) return
       const memo = state.memo.trim()
+      const reasons = state.reasons
       const input: PurchaseSatisfactionInput = {
         rating: state.rating,
-        reasons: state.reasons,
+        reasons,
         ...(memo ? { memo } : {}),
       }
       set({ saving: true, failed: false })
@@ -108,7 +111,7 @@ export function createSatisfactionFlow({ orderId, initial, save, track }: Deps) 
         return
       }
       track("purchase_satisfaction_detail", {
-        reasons_count: state.reasons.length,
+        reasons_count: reasons.length,
       })
       set({ step: "thanks", saving: false })
     },

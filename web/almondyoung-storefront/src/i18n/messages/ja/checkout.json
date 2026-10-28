@@ -356,7 +356,8 @@
       "thanksTitle": "貴重なご意見ありがとうございます",
       "thanksLow": "いただいた内容をもとに改善いたします",
       "thanksHigh": "次回も満足いただけるお買い物をご用意します",
-      "changeRating": "評価を変更"
+      "changeRating": "評価を変更",
+      "saveDetailFailed": "保存できませんでした。もう一度送信してください"
     },
     "downloadBtn": "デジタル商品をダウンロード"
   },

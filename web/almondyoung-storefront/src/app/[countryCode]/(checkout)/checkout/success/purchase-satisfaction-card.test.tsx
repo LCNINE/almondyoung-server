@@ -40,7 +40,10 @@ describe("PurchaseSatisfactionView", () => {
     const h = html({})
     expect(h).toContain("구매 과정은 어땠나요?")
     expect(h).toContain("상품 후기는 받아보신 뒤에 남길 수 있어요")
-    expect(h.match(/aria-label="\d점"/g)).toHaveLength(5)
+    expect(h.match(/role="radio"/g)).toHaveLength(5)
+    expect(h).toContain('aria-label="3점 보통이에요"')
+    expect(h).toContain('aria-checked="false"')
+    expect(h).toContain("min-h-12 min-w-12")
   })
 
   it("세부 단계: 질문과 칩 7개, 칩이 없으면 보내기 disabled", () => {
@@ -68,6 +71,17 @@ describe("PurchaseSatisfactionView", () => {
   it("저장 실패 문구와 저장 중 문구", () => {
     expect(html({ failed: true })).toContain("저장하지 못했어요. 별을 다시 눌러 주세요")
     expect(html({ saving: true, rating: 3 })).toContain("저장하고 있어요")
+  })
+
+  it("세부 저장 실패는 세부용 문구를 보인다", () => {
+    const h = html({ step: "detail", rating: 2, failed: true })
+    expect(h).toContain("저장하지 못했어요. 다시 보내 주세요")
+    expect(h).not.toContain("별을 다시 눌러")
+  })
+
+  it("선택된 별만 aria-checked true", () => {
+    const h = html({ rating: 4 })
+    expect(h.match(/aria-checked="true"/g)).toHaveLength(1)
   })
 
   it("주황 텍스트 클래스를 쓰지 않는다", () => {

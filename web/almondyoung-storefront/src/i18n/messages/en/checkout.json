@@ -356,7 +356,8 @@
       "thanksTitle": "Thank you for your feedback",
       "thanksLow": "We will use what you shared to improve",
       "thanksHigh": "We will keep working to make your next purchase a good one",
-      "changeRating": "Change rating"
+      "changeRating": "Change rating",
+      "saveDetailFailed": "Couldn't save. Please send again"
     },
     "downloadBtn": "Download digital items"
   },

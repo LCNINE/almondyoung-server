@@ -105,7 +105,7 @@ describe("구매 만족도 흐름", () => {
     flow.toggleReason("OTHER")
     save.mockRejectedValueOnce(new Error("x"))
     await flow.submitDetail()
-    expect(flow.getState()).toMatchObject({ step: "detail", failed: true, saving: false })
+    expect(flow.getState()).toMatchObject({ step: "detail", rating: 2, failed: true, saving: false })
     expect(track).toHaveBeenCalledTimes(1)
   })
 
@@ -122,5 +122,18 @@ describe("구매 만족도 흐름", () => {
     const { flow } = setup({ rating: 5, reasons: [], memo: null })
     flow.changeRating()
     expect(flow.getState().step).toBe("rate")
+  })
+
+  it("보내는 중에는 칩·메모 변경을 무시하고 GA4 는 보낸 사유 수를 쓴다", async () => {
+    const { flow, track } = setup()
+    await flow.selectRating(2)
+    flow.toggleReason("OTHER")
+    const p = flow.submitDetail()
+    flow.toggleReason("PAYMENT_ERROR")
+    flow.setMemo("늦은 메모")
+    expect(flow.getState().reasons).toEqual(["OTHER"])
+    expect(flow.getState().memo).toBe("")
+    await p
+    expect(track).toHaveBeenLastCalledWith("purchase_satisfaction_detail", { reasons_count: 1 })
   })
 })

@@ -67,7 +67,14 @@ export function PurchaseSatisfactionView({
               </h2>
               <p className="text-sm text-[#4b5563]">{t("subtitle")}</p>
             </div>
-            <Rating rating={rating} onChange={onSelectRating} size={48} />
+            <Rating
+              rating={rating}
+              onChange={onSelectRating}
+              size={44}
+              getStarLabel={(n) =>
+                `${n}점 ${t(`scores.${String(n) as "1" | "2" | "3" | "4" | "5"}`)}`
+              }
+            />
             <p className="min-h-5 text-sm text-[#374151]" aria-live="polite">
               {saving
                 ? t("saving")
@@ -97,6 +104,7 @@ export function PurchaseSatisfactionView({
                     type="button"
                     data-reason={code}
                     aria-pressed={selected}
+                    disabled={saving}
                     onClick={() => onToggleReason(code)}
                     className={`min-h-11 rounded-full border px-4 text-sm ${
                       selected
@@ -114,6 +122,7 @@ export function PurchaseSatisfactionView({
               <textarea
                 value={memo}
                 maxLength={MEMO_MAX}
+                disabled={saving}
                 placeholder={t("memoPlaceholder")}
                 onChange={(e) => onMemo(e.target.value)}
                 className="min-h-24 rounded-[5px] border border-[#d9d9d9] p-3 text-sm"
@@ -124,7 +133,7 @@ export function PurchaseSatisfactionView({
             </label>
             {failed && (
               <p className="text-sm text-[#b91c1c]" role="alert">
-                {t("saveFailed")}
+                {t("saveDetailFailed")}
               </p>
             )}
             <div className="flex justify-end gap-2">

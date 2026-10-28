@@ -356,7 +356,8 @@
       "thanksTitle": "소중한 의견 감사합니다",
       "thanksLow": "남겨 주신 내용을 바탕으로 개선하겠습니다",
       "thanksHigh": "다음에도 만족스러운 쇼핑을 준비하겠습니다",
-      "changeRating": "별점 바꾸기"
+      "changeRating": "별점 바꾸기",
+      "saveDetailFailed": "저장하지 못했어요. 다시 보내 주세요"
     },
     "downloadBtn": "디지털 상품 다운로드"
   },
