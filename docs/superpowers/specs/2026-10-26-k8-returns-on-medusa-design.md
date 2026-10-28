@@ -391,7 +391,7 @@ core 의 «검수 끝» 명령(새 명령 타입, `channel-orders.commands.v1`) 
 - (N5) 확인 필요 다섯: 보류 판단 · 정산 실패 · 선환불 실패 · 부분 도착 · 환불 기한 지남. 선환불 뒤 미도착(Q1)은 누를 문이 없어 넣지 않는다.
 - (N7) 보류 차감 빼고 다시 시도 — `retry` 의 `dropHoldDeduction`. 실패 코드가 `no_charge_shipping_option` 일 때만 받는다.
 - (N8) 접수는 주문 목록 자사몰 행의 [반품 접수] 에서 연다. `request_id` 는 대화상자를 열 때 한 번 만든다.
-- (N10) 교환 탭은 그대로다. 옛 반품 표·훅·돈 계산은 지웠고, 옛 core 반품 라우트와 `/inventory/returns` 는 PR 10 이 걷는다.
+- (N10) 교환 탭은 그대로였다. 옛 반품 표·훅·돈 계산은 지웠고, 옛 core 반품 라우트와 `/inventory/returns` 는 PR 10 이 걷는다. (PR 10 교정: 교환 탭도 PR 10 이 걷었다 — §5 «PR 10 에서 확정한 결과» N1.)
 - (N11) 대시보드·통계의 «반품» 칸은 새 목록(진행 중 total, 확인 필요 attentionCount)으로 바꿨다. 일별 반품 수는 옛 표를 세므로 PR 10 에서 다시 잇는다.
 - (창고 화면) warehouse-app 스테이션(F7)에 둔다. 소포는 한진 회수(PR 9) 전까지 «도착 대기 목록 + 검색»으로 찾는다. 이 작업과 검수자 id 칸이 **PR 7b** 다.
 
@@ -416,7 +416,7 @@ core 의 «검수 끝» 명령(새 명령 타입, `channel-orders.commands.v1`) 
 - (N4) 폼 줄은 Medusa 주문 품목에 `returnable` 을 붙인다(없으면 0). `blocked` 는 `nothing_left`(수량 0)·`window_closed`(기한 지남, 수량이 있어도). 막힌 줄은 못 고르고 이유 한 줄. 스테퍼 1~`returnable`. 고를 줄이 없으면 빈 상태. URL `itemId` 가 고를 수 있는 줄이면 수량 1 로 미리 고른다.
 - (N5) `request_id` 는 폼을 열 때 한 번 만든다. 200 `requested` = 완료, 200 `canceled`(같은 id 재생인데 그 사이 취소) = `canceled_replay` 로 완료가 아니고 새 id. 400 `return_rejected`·502 `core_unavailable`·404 는 만들기 전의 확정 답이라 새 id 로 폼을 푼다. 그 밖(네트워크·5xx·코드 없는 400)은 `unknown` — 본문을 잠그고 같은 id·같은 본문으로 «다시 보내기». 401 은 던져 `error.tsx` 토큰 복구.
 - (N6) `request_id_conflict` 는 끝 상태다 — «이미 접수된 신청이에요» + 주문 상세 링크, 다시 보내기·새 id 없음(새 id 는 두 번째 반품).
-- (N7) 교환은 그대로다. `exchange-client.tsx` 는 교환 전용으로 옛 core 교환 API 를 계속 부른다(PR 11). `/mypage/exchange` 는 `type=exchange` 일 때만 교환 폼을 열고, `type` 이 없거나 모르는 값이면 반품 폼을 연다(옛 기본 유지). 반품 폼 페이지는 주문·`returnable` 이 null(404)이면 «신청할 수 없는 주문이에요», `returnable` 읽기의 다른 실패는 재시도 상태, 인증 오류는 던진다.
+- (N7) 교환은 그대로였다(PR 10 교정: PR 10 이 옛 core 교환을 걷고 `type=exchange` 는 «고객센터로» 안내가 됐다 — §5 «PR 10 에서 확정한 결과»). `exchange-client.tsx` 는 교환 전용으로 옛 core 교환 API 를 계속 불렀다. `/mypage/exchange` 는 `type=exchange` 일 때만 교환 폼을 열고, `type` 이 없거나 모르는 값이면 반품 폼을 연다(옛 기본 유지). 반품 폼 페이지는 주문·`returnable` 이 null(404)이면 «신청할 수 없는 주문이에요», `returnable` 읽기의 다른 실패는 재시도 상태, 인증 오류는 던진다.
 - (N7a) 주문 상세 칸의 취소 거절은 신청 거절 문구가 아니라 취소 전용 문구(`mypage.order.returns.cancelReject.*`)를 쓴다.
 - (N8) 사유·거절 코드 표는 Medusa 가 정본이다. `return-reasons.ts` 의 고객 사유 다섯은 `RETURN_REASONS` 의 `customerSelectable` 행과 같은 집합, 이름 키는 여섯 전부(`other` 포함), 거절 문구 키는 `ReturnRejectReason` 전부를 덮는다. 루트 jest `scripts/storefront/medusa-return-parity.spec.ts` 가 소스 텍스트로 대조한다. 모르는 거절 코드는 일반 문구.
 - (N9) 스토어프론트가 Medusa 고객 라우트를 부를 때는 `getAuthHeaders()`(`_medusa_jwt`)를 헤더로 넘기고 `withAuth: false` 로 부른다. `withAuth: true` 가 붙이는 bearer 는 user-service 토큰이라 Medusa 가 401 로 거절한다 — 뒤 PR(9·11)도 이 방식으로 부른다.
@@ -460,6 +460,24 @@ core 의 «검수 끝» 명령(새 명령 타입, `channel-orders.commands.v1`) 
 - **범위 밖(이름이 비슷할 뿐)**: return_bins·warehouse-app `/returns/putaway`(피킹 되돌림), 입고 «회송»(공급사), 채널 클레임 API,
   출고 후 취소의 `postShipmentHandoff type 'return'`(개념이 겹치므로 정리 여부는 빌더가 검토).
 
+**PR 10 에서 확정한 결과.** 옛 core 반품·교환·inventory 반품을 읽고 쓰는 코드·라우트·화면을 걷고, 그 표를 읽던 곳을 반품 예정 기록(`customer_returns`)으로 다시 이었다. 마이그 없음 — 표·enum 정의는 스키마에 남고 DROP 은 PR 10b 다.
+- (N1) **교환도 걷었다**(사용자 결정 10-28). 옛 교환은 완료해도 새 물건이 안 나갔고 라이브 0행이었다. PR 11 전까지 core 는 `exchange` 액션을 내지 않고(스토어프론트 교환 버튼이 안 보인다), `/mypage/exchange?type=exchange` 는 «교환 신청은 고객센터에서» 안내, admin-web 교환 탭·대시보드 교환 칩·일별 교환 칸은 없다.
+- (N2) 코드와 DROP 을 나눴다 — CLAUDE.md «Column drop → 2 PR, 사이에 deploy». PR 10 은 마이그가 없어 롤백할 수 있다. 🔴 PR 10b 뒤엔 PR 10 이전 Core 로 롤백하지 않는다(옛 K6 SQL 이 모든 라인 수량 읽기에서 없는 표를 읽는다).
+- (N3) 취소·환불 라우트 넷(`POST admin/sales-orders/:id/cancel·retry-refund·manual-refund-complete·refund-waive`)은 `AdminSalesOrderCancellationController` 로 경로·권한·DTO 그대로 옮겼다.
+- (N4) K6 청구 커널은 반품 예정 기록 한 갈래다. `exchange_active`·`LineSkuQuantities.exchangeActive`·소포 `claimed_qty` 를 지웠다 — 소포 자격 `claimable = least(delivered_qty, sku_claimable)`(새 반품은 소포를 몰라 소포 합은 늘 0 이었다).
+- (N5) 고객 actions: `return` 은 청구 가능한 배송완료 소포가 있으면(진행 중 반품이 있어도) 낸다. `claimStatus` 는 진행 중 반품 예정 기록이 있으면 `return_requested`. core 유니온에서 `exchange`·`exchange_requested` 를 뺐다(스토어프론트 ⊇ core).
+- (N6) 주문 진행 판정 단계 키 `return_exchange` 는 그대로, 세부 상태는 `return:<customer_return_status>` 다섯(expected·arrived·inspected·held·refund_pending), 시각 `requested_at`, 갱신 후보 `customer_returns.updated_at`. admin-web 라벨은 `RETURN_STATUS_LABELS`.
+- (N7) 일별 반품 수 = 그날(KST) `requested_at` 인 반품 예정 기록 수(취소 포함). 대시보드 반품 링크는 날짜 없이 `/cs/return-exchange`.
+- (N8) `PiiSubjectType` 의 `return_request`·`exchange_request` 와 접속기록 라벨은 남겼다(보존 중인 접속기록의 대상 종류).
+- (N10) 이벤트 계약은 그대로(`SalesOrderClaimProgressed.kind` 의 `exchange` 포함) — 발행자만 사라졌다.
+- (가드) `line-quantity-read.guard.spec.ts` 의 `LEGACY_CLAIM_IDENTIFIERS` 와 «inventory 옛 반품은 다시 오지 않는다» — 스키마 파일 밖에서 옛 이름이 다시 나오면 빨갛다.
+
+**PR 10b 로 넘기는 것** (PR 10 이 라이브가 된 뒤 따로 계획):
+- `inventory.schema.ts` 에서 삭제: `returnRequests`·`returnRequestItems`·`returnRefundAttempts`·`exchangeRequests`·`exchangeRequestItems`·`returnExchangeTables`·`returnExchangeSchema`·관련 타입, enum `return_request_status`·`exchange_request_status`·`return_reason_code`·`exchange_reason_code`·`return_refund_attempt_status`, 표 `returns`·`return_items`(`wmsTables` 목록 포함)·enum `return_status`.
+- `npm run db:generate:core -- --name drop-legacy-claim-tables` → scratch DB 에서 먼저 돌린다(drizzle 이 지운 FK 를 또 지워 실패한 전례).
+- 배포는 contract, `deploy → migrate`. 그 배치에 expand 마이그가 섞이지 않게(`deploy:preflight`).
+- 가드의 «스키마 파일 제외»를 지운다.
+
 ## 6. 빌더에게 맡기는 것
 
 - 새 테이블·라우트·명령·이벤트·워크플로 이름.
@@ -496,7 +514,8 @@ core 의 «검수 끝» 명령(새 명령 타입, `channel-orders.commands.v1`) 
 | 7b | 창고 반품 도착·검수 화면 + 검수자 id | warehouse-app · core | 스테이션(F7), 도착 대기 목록 + 검색. 마이그 하나(`migrate → deploy`), core 먼저 → 앱 릴리스. 결과는 4.8 의 «PR 7b 에서 확정한 결과» |
 | 8 | 스토어프론트 신청 화면(#933·#934) | storefront · medusa(store 읽기 라우트 하나) | 마이그 없음, 결과는 4.8 의 «PR 8 에서 확정한 결과» |
 | 9 | 한진 회수 접수(R)·취소 | core · medusa · admin-web | DEV 스모크 선행(4.7). 마이그 하나(`migrate → deploy`), 결과는 4.7 의 «PR 9 에서 확정한 결과» |
-| 10 | 옛 core 반품·교환·inventory 반품 코드와 테이블 걷기 | core · admin-web · storefront | contract, `deploy → migrate` |
+| 10 | 옛 core 반품·교환·inventory 반품 코드 걷기(표는 남김) | core · admin-web · storefront | 마이그 없음, 결과는 §5 의 «PR 10 에서 확정한 결과» |
+| 10b | 옛 반품·교환·inventory 반품 표·enum DROP | core | contract, `deploy → migrate`, PR 10 라이브 뒤 |
 | 11 | 교환·클레임 재출고 | medusa · channel-adapter · core | 착수 때 설계(4.9) |
 
 개통(고객에게 반품 버튼을 여는 것)은 **core 출고 개통 뒤**(D9, 4.0)이고 PR 6·7·8 이 라이브인 뒤다. 한진 회수(9) 전에는 CS 가 회수를

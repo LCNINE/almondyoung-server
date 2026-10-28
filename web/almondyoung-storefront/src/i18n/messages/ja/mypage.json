@@ -856,6 +856,12 @@
       "started": "ダウンロードを開始します",
       "failed": "ダウンロードに失敗しました",
       "exerciseFailed": "使用処理に失敗しました"
+    },
+    "exchangeUnavailable": {
+      "title": "交換のお申し込みはカスタマーセンターで承っています",
+      "body": "注文番号と交換したい商品をお知らせいただければ、対応いたします。",
+      "inquiry": "1:1お問い合わせ",
+      "orderDetail": "注文詳細"
     }
   },
   "membership": {
