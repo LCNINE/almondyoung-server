@@ -502,11 +502,11 @@ export class BusinessLicensesService {
         throw new NotFoundException('사업자 등록 정보를 찾을 수 없습니다.');
       }
 
-      // 해당 사용자의 사업자 등록 정보가 맞는지 체크
-      await this.validateOwnership(existingBusiness, userId);
+      if (existingBusiness.id !== businessId) {
+        throw new NotFoundException('사업자 등록 정보를 찾을 수 없습니다.');
+      }
 
-      // 사업자 등록 정보 업데이트
-      await this.updateApprovedLicense(businessId, data);
+      await this.updateApprovedLicense(businessId, userId, data);
 
       return;
     } catch (error) {
@@ -559,7 +559,11 @@ export class BusinessLicensesService {
     }
   }
 
-  private async updateApprovedLicense(businessLicenseId: string, data: UpdateBusinessLicenseDto): Promise<void> {
+  private async updateApprovedLicense(
+    businessLicenseId: string,
+    userId: string,
+    data: UpdateBusinessLicenseDto,
+  ): Promise<void> {
     // 파일 첨부 경로는 관리자 심사 대상(under_review). 직접 입력 경로는 생성과 동일하게
     // 서버가 국세청 진위확인을 다시 돌려 판정한다 — 수정으로 검증을 우회할 수 없어야 한다.
     if (data.fileUrl) {
@@ -572,7 +576,7 @@ export class BusinessLicensesService {
           fileUrl: data.fileUrl,
           metadata: null,
         })
-        .where(eq(businessLicenses.id, businessLicenseId));
+        .where(and(eq(businessLicenses.id, businessLicenseId), eq(businessLicenses.userId, userId)));
       return;
     }
 
@@ -590,6 +594,6 @@ export class BusinessLicensesService {
         fileUrl: null,
         metadata: { ntsValidate: verification },
       })
-      .where(eq(businessLicenses.id, businessLicenseId));
+      .where(and(eq(businessLicenses.id, businessLicenseId), eq(businessLicenses.userId, userId)));
   }
 }
