@@ -21,6 +21,7 @@ import { UgcServiceController } from './ugc-service.controller';
 import { UgcServiceService } from './ugc-service.service';
 import { ReviewsModule } from './reviews/reviews.module';
 import { QnaModule } from './qna/qna.module';
+import { PurchaseSatisfactionModule } from './purchase-satisfaction/purchase-satisfaction.module';
 import { ShopListingsModule } from './shop-listings/shop-listings.module';
 import { LogoContestModule } from './logo-contest/logo-contest.module';
 import { AlmondTemplateModule } from './almond-template/almond-template.module';
@@ -53,6 +54,7 @@ const combinedSchema = { ...ugcServiceSchema, ...authorizationSchema };
     ReviewsModule,
     QnaModule,
     ShopListingsModule,
+    PurchaseSatisfactionModule,
     LogoContestModule,
     AlmondTemplateModule,
   ],

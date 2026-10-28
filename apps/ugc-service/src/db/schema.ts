@@ -14,6 +14,8 @@ import {
   uniqueIndex,
   index,
   primaryKey,
+  smallint,
+  check,
   type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
@@ -37,6 +39,7 @@ import {
   SHOP_LISTING_MODERATION_DECISIONS,
   SHOP_LISTING_STATUSES,
 } from '../shop-listings/shop-listing.constants';
+import type { PurchaseSatisfactionReason } from '../purchase-satisfaction/types';
 import { ALMOND_TEMPLATE_STATUSES } from '../almond-template/constants/almond-template.constants';
 
 const timestampColumns = {
@@ -701,6 +704,34 @@ export const almondFonts = pgTable(
   ],
 );
 
+export const purchaseSatisfactions = pgTable(
+  'purchase_satisfactions',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => uuidv7()),
+    orderId: varchar('order_id', { length: 255 }).notNull(),
+    orderDisplayId: integer('order_display_id').notNull(),
+    userId: uuid('user_id').notNull(),
+    rating: smallint('rating').notNull(),
+    reasons: varchar('reasons', { length: 32 })
+      .array()
+      .$type<PurchaseSatisfactionReason[]>()
+      .notNull()
+      .default(sql`'{}'::varchar[]`),
+    memo: varchar('memo', { length: 300 }),
+    checkedAt: timestamp('checked_at'),
+    checkedBy: uuid('checked_by'),
+    ...timestampColumns,
+  },
+  (t) => [
+    check('ck_purchase_satisfactions_rating', sql`${t.rating} BETWEEN 1 AND 5`),
+    uniqueIndex('purchase_satisfactions_order_id_unique').on(t.orderId),
+    index('purchase_satisfactions_updated_at').on(t.updatedAt),
+    index('purchase_satisfactions_rating_checked').on(t.rating, t.checkedAt),
+  ],
+);
+
 export const ugcServiceSchema = {
   reviews,
   reviewMedia,
@@ -725,6 +756,7 @@ export const ugcServiceSchema = {
   almondDesigns,
   almondSavedDesigns,
   almondFonts,
+  purchaseSatisfactions,
 } as const;
 
 export type UgcServiceSchema = typeof ugcServiceSchema;
