@@ -9,6 +9,7 @@ import { LibraryModule } from '../library/library.module';
 import { FulfillmentOrderCreationBacklogModule } from '../fulfillment/backlog/fulfillment-order-creation-backlog.module';
 import { UnboxedDemandModule } from '../fulfillment/unboxed-demand/unboxed-demand.module';
 import { WaybillModule } from '../fulfillment/waybill/waybill.module';
+import { ExchangeShipmentModule } from '../fulfillment/exchange-shipment/exchange-shipment.module';
 
 import { SalesOrdersController } from './controllers/sales-orders.controller';
 import { SalesOrderAmendmentsController } from './controllers/sales-order-amendments.controller';
@@ -36,6 +37,7 @@ import { CustomerReturnReader } from './customer-return/customer-return.reader';
 import { CustomerReturnReceivingManager } from './customer-return/customer-return-receiving.manager';
 import { CustomerReturnSettlementManager } from './customer-return/customer-return-settlement.manager';
 import { CustomerReturnCsManager } from './customer-return/customer-return-cs.manager';
+import { CustomerExchangeReleaser } from './customer-return/customer-exchange.releaser';
 import { CustomerReturnSettlementRetryCron } from './customer-return/customer-return-settlement-retry.cron';
 import { CustomerReturnPickupManager } from './customer-return/customer-return-pickup.manager';
 import { CustomerReturnPickupCron } from './customer-return/customer-return-pickup.cron';
@@ -99,6 +101,9 @@ import { SalesOrderLookupService } from './internal/sales-order-lookup.service';
 
     // 반품 회수 워커의 한진 게이트웨이·설정(K8 PR9). WaybillModule 은 FulfillmentCommandModule 만 물어 순환이 없다
     WaybillModule,
+
+    // 교환 상자 열기의 출고 쪽 쓰기(K8 PR11). 소형 모듈이라 FulfillmentModule ↔ SalesOrderModule 순환이 없다
+    ExchangeShipmentModule,
   ],
   controllers: [
     SalesOrdersController,
@@ -141,6 +146,8 @@ import { SalesOrderLookupService } from './internal/sales-order-lookup.service';
     CustomerReturnReceivingManager,
     CustomerReturnSettlementManager,
     CustomerReturnCsManager,
+    // 교환 상자 열기 — 검수·CS 문이 부른다(K8 PR11)
+    CustomerExchangeReleaser,
     CustomerReturnSettlementRetryCron,
     // 반품 회수 한진 예약·취소 워커(K8 PR9)
     CustomerReturnPickupManager,

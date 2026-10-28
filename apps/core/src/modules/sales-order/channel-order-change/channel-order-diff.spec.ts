@@ -9,8 +9,8 @@ function order(over: Partial<EffectiveSalesOrder> = {}): EffectiveSalesOrder {
     status: 'pending',
     shippingAddress: ADDRESS,
     lines: [
-      { id: 'sol-1', channelOrderItemId: 'ci-1', channelProductId: 'cp-1', effectiveQuantity: 2, unitPrice: 1000 },
-      { id: 'sol-2', channelOrderItemId: 'ci-2', channelProductId: 'cp-2', effectiveQuantity: 1, unitPrice: 500 },
+      { id: 'sol-1', exchangeReturnLineId: null, channelOrderItemId: 'ci-1', channelProductId: 'cp-1', effectiveQuantity: 2, unitPrice: 1000 },
+      { id: 'sol-2', exchangeReturnLineId: null, channelOrderItemId: 'ci-2', channelProductId: 'cp-2', effectiveQuantity: 1, unitPrice: 500 },
     ],
     ...over,
   };
@@ -105,7 +105,7 @@ describe('diffChannelSnapshot', () => {
 
   it('채널 라인 id 가 없는 라인은 짝을 못 지은 라인으로 남긴다', () => {
     const deltas = diffChannelSnapshot(
-      order({ lines: [{ id: 'sol-x', channelOrderItemId: null, channelProductId: null, effectiveQuantity: 1, unitPrice: 1 }] }),
+      order({ lines: [{ id: 'sol-x', exchangeReturnLineId: null, channelOrderItemId: null, channelProductId: null, effectiveQuantity: 1, unitPrice: 1 }] }),
       snapshot({ lines: [{ channelOrderItemId: null, channelProductId: null, quantity: 1, unitPrice: 1, cancelled: false }] }),
     );
     expect(deltas).toEqual([
@@ -116,7 +116,7 @@ describe('diffChannelSnapshot', () => {
 
   it('core effectiveQuantity 0 이지만 채널이 수량 1 → 수량 정정만, isDecrease 거짓', () => {
     const deltas = diffChannelSnapshot(
-      order({ lines: [{ id: 'sol-1', channelOrderItemId: 'ci-1', channelProductId: 'cp-1', effectiveQuantity: 0, unitPrice: 1000 }] }),
+      order({ lines: [{ id: 'sol-1', exchangeReturnLineId: null, channelOrderItemId: 'ci-1', channelProductId: 'cp-1', effectiveQuantity: 0, unitPrice: 1000 }] }),
       snapshot({ lines: [{ channelOrderItemId: 'ci-1', channelProductId: 'cp-1', quantity: 1, unitPrice: 1000, cancelled: false }] }),
     );
     expect(deltas).toEqual([
@@ -127,7 +127,7 @@ describe('diffChannelSnapshot', () => {
 
   it('snapshot 수량 0 + 다른 단가/상품 → 수량 정정만, 교체/금액 정정 없음', () => {
     const deltas = diffChannelSnapshot(
-      order({ lines: [{ id: 'sol-1', channelOrderItemId: 'ci-1', channelProductId: 'cp-1', effectiveQuantity: 1, unitPrice: 1000 }] }),
+      order({ lines: [{ id: 'sol-1', exchangeReturnLineId: null, channelOrderItemId: 'ci-1', channelProductId: 'cp-1', effectiveQuantity: 1, unitPrice: 1000 }] }),
       snapshot({ lines: [{ channelOrderItemId: 'ci-1', channelProductId: 'cp-9', quantity: 0, unitPrice: 900, cancelled: false }] }),
     );
     expect(deltas).toEqual([
@@ -138,14 +138,14 @@ describe('diffChannelSnapshot', () => {
   it('core null-id 라인 effectiveQuantity 0 → unmatched_line 미생성; snapshot null-id 수량 0 → 미생성', () => {
     // core null-id effectiveQuantity 0 doesn't emit unmatched_line
     const deltas1 = diffChannelSnapshot(
-      order({ lines: [{ id: 'sol-x', channelOrderItemId: null, channelProductId: null, effectiveQuantity: 0, unitPrice: 1 }] }),
+      order({ lines: [{ id: 'sol-x', exchangeReturnLineId: null, channelOrderItemId: null, channelProductId: null, effectiveQuantity: 0, unitPrice: 1 }] }),
       snapshot({ lines: [{ channelOrderItemId: null, channelProductId: null, quantity: 0, unitPrice: 1, cancelled: false }] }),
     );
     expect(deltas1).toEqual([]);
 
     // snapshot null-id quantity 0 doesn't emit unmatched_line
     const deltas2 = diffChannelSnapshot(
-      order({ lines: [{ id: 'sol-1', channelOrderItemId: 'ci-1', channelProductId: 'cp-1', effectiveQuantity: 1, unitPrice: 1 }] }),
+      order({ lines: [{ id: 'sol-1', exchangeReturnLineId: null, channelOrderItemId: 'ci-1', channelProductId: 'cp-1', effectiveQuantity: 1, unitPrice: 1 }] }),
       snapshot({ lines: [{ channelOrderItemId: null, channelProductId: null, quantity: 0, unitPrice: 1, cancelled: false }] }),
     );
     expect(deltas2).toEqual([
@@ -166,6 +166,40 @@ describe('diffChannelSnapshot', () => {
       }),
     );
     expect(deltas).toEqual([]);
+  });
+  describe('교환 줄 (K8 PR11 N18)', () => {
+    // 교환 줄 = 같은 주문의 0원 줄. 정산 전엔 채널 품목 id 가 없고, 정산 뒤엔 Medusa 대체 품목 줄 id 가 이어진다
+    const exchangeLine = (channelOrderItemId: string | null) => ({
+      id: 'sol-x1',
+      exchangeReturnLineId: 'crl-1',
+      channelOrderItemId,
+      channelProductId: 'cp-1',
+      effectiveQuantity: 1,
+      unitPrice: 0,
+    });
+
+    it('교환 줄이 있는 판매주문 + 대체 줄 없는 스냅샷 → 델타 0', () => {
+      const o = order({ lines: [...order().lines, exchangeLine(null)] });
+      expect(diffChannelSnapshot(o, snapshot())).toEqual([]);
+    });
+
+    it('교환 줄의 id 가 이어진 뒤 스냅샷에 그 품목이 있어도(없어도) → 델타 0', () => {
+      const o = order({ lines: [...order().lines, exchangeLine('ci-repl')] });
+      const withReplacement = snapshot({
+        lines: [
+          ...snapshot().lines,
+          { channelOrderItemId: 'ci-repl', channelProductId: null, quantity: 1, unitPrice: 833, cancelled: false },
+        ],
+      });
+      expect(diffChannelSnapshot(o, withReplacement)).toEqual([]);
+      expect(diffChannelSnapshot(o, snapshot())).toEqual([]);
+    });
+
+    it('남는 수량 판정도 교환 줄을 세지 않는다 — 채널 줄을 다 지우면 전 라인 제거', () => {
+      const o = order({ lines: [...order().lines, exchangeLine('ci-repl')] });
+      const deltas = diffChannelSnapshot(o, snapshot({ lines: [] }));
+      expect(removesAllLines(o, deltas)).toBe(true);
+    });
   });
 });
 
@@ -192,7 +226,7 @@ describe('isDecrease / removesAllLines', () => {
   });
 
   it('order 라인이 모두 effectiveQuantity 0 → 거짓 — 원래 없었던 주문', () => {
-    const o = order({ lines: [{ id: 'sol-1', channelOrderItemId: 'ci-1', channelProductId: 'cp-1', effectiveQuantity: 0, unitPrice: 1000 }] });
+    const o = order({ lines: [{ id: 'sol-1', exchangeReturnLineId: null, channelOrderItemId: 'ci-1', channelProductId: 'cp-1', effectiveQuantity: 0, unitPrice: 1000 }] });
     const deltas = diffChannelSnapshot(o, snapshot({ lines: [] }));
     expect(removesAllLines(o, deltas)).toBe(false);
   });

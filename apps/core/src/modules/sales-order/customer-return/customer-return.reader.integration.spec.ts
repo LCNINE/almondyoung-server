@@ -10,6 +10,8 @@ import { CustomerReturnReader } from './customer-return.reader';
 import { ListCustomerReturnsQueryDto } from './dto/list-customer-returns.dto';
 import { ListReceivingCustomerReturnsQueryDto } from './dto/list-receiving-customer-returns.dto';
 import { CustomerReturnReceivingManager } from './customer-return-receiving.manager';
+import { CustomerExchangeReleaser } from './customer-exchange.releaser';
+import { ExchangeShipmentOpener } from '../../fulfillment/exchange-shipment/exchange-shipment-opener';
 import { newPickupRow } from './customer-return-pickup.types';
 
 /**
@@ -24,7 +26,7 @@ describeIfDb('CustomerReturnReader — 상세 뷰 (K8 PR7)', () => {
   jest.setTimeout(120_000);
   const { sql: client, db } = makeDb(DATABASE_URL as string);
   const dbService = makeDbService(db);
-  const { command, location } = wireLogistics(dbService);
+  const { command, location, shipmentReservations } = wireLogistics(dbService);
   afterAll(async () => {
     await client.end();
   });
@@ -41,6 +43,7 @@ describeIfDb('CustomerReturnReader — 상세 뷰 (K8 PR7)', () => {
       command,
       publisher as never,
       publisher as never,
+      new CustomerExchangeReleaser(new ExchangeShipmentOpener(shipmentReservations)),
     );
     return { reader, intake, receiving };
   }

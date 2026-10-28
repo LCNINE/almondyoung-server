@@ -12,6 +12,7 @@ import { deliveredParcelsSql } from '../line-quantities/line-quantities.sql';
 import { transitionCustomerReturn } from './customer-return-transition';
 import { enqueueSettleChannelReturn, loadSettleLines, toSettleItems } from './customer-return-settle-command';
 import { CustomerReturnReader, CustomerReturnView } from './customer-return.reader';
+import { CustomerExchangeReleaser } from './customer-exchange.releaser';
 import type { CustomerReturn, CustomerReturnSettlement, CustomerReturnStatus } from './customer-return.types';
 
 export type RecordCustomerReturnArrivalInput = {
@@ -58,6 +59,7 @@ export class CustomerReturnReceivingManager {
     private readonly coreOrders: PublisherFor<typeof CORE_ORDER_STREAM>,
     @InjectPublisher(CHANNEL_ORDERS_COMMAND_STREAM)
     private readonly commands: PublisherFor<typeof CHANNEL_ORDERS_COMMAND_STREAM>,
+    private readonly exchanges: CustomerExchangeReleaser,
   ) {}
 
   async recordArrival(input: RecordCustomerReturnArrivalInput, tx?: DbTx): Promise<CustomerReturnView> {
@@ -299,6 +301,9 @@ export class CustomerReturnReceivingManager {
         command: settlement.command,
         issue: 1,
       });
+      // 교환이면 같은 트랜잭션에서 교환 상자를 연다(K8 PR11 N14 ①). 반품이면 아무것도 하지 않는다.
+      // 재고가 모자라면 덜 잡힌 draft 로 남고 검수는 커밋된다 — 예약 부족은 던지지 않는다
+      await this.exchanges.release(trx, { customerReturnId: record.id, actorId: input.actorId });
       return this.reader.findById(record.id, trx);
     }, tx);
   }

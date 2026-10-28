@@ -107,6 +107,8 @@ export class CustomerReturnSettlementManager {
       const record = await this.lockByChannelReturnId(trx, fact.returnId, fact.requestId);
       if (record.status === 'settled') return { changed: false };
 
+      // 교환은 환불 대신 Medusa 대체 품목 줄로 닫혔다 — 그 줄 id 를 교환 줄에 잇는다(N16). 쓰기 전에 맞춰 본다
+      const exchangeLinks = record.kind === 'exchange' ? await this.matchExchangeItems(trx, record, fact) : null;
       const settledAt = new Date(fact.settledAt);
       const outcome: CustomerReturnSettlementOutcome = {
         refundAmount: fact.refundAmount,
@@ -138,6 +140,17 @@ export class CustomerReturnSettlementManager {
         throw new ConflictError(
           `Cannot settle customer return ${record.id} (channel ${fact.returnId}): status is ${record.status}`,
         );
+      }
+
+      if (exchangeLinks) {
+        for (const link of exchangeLinks) {
+          await trx
+            .update(wmsTables.salesOrderLines)
+            .set({ channelOrderItemId: link.itemId, updatedAt: settledAt })
+            .where(eq(wmsTables.salesOrderLines.id, link.exchangeLineId));
+        }
+        // 고객은 물건을 계속 갖는다 — completed·SalesOrderReturned 를 내지 않는다(E10). 교환품 출고는 상자 출고 알림이 알린다
+        return { changed: true };
       }
 
       await enqueueSalesOrderClaimProgress(this.coreOrders, trx, {
@@ -526,6 +539,49 @@ export class CustomerReturnSettlementManager {
    * 채널 반품 id 로 기록을 잠그고, 사실의 requestId(= 정산·선환불 명령이 실은 customerReturnId)가 그 기록인지 본다.
    * 다르면 다른 기록의 정산 결과다 — 아무것도 쓰기 전에 ConflictError(DLQ) 로 사람에게 넘긴다.
    */
+  /**
+   * 교환 정산 사실의 `exchangeItems` 를 교환 줄에 맞춘다(N16) — `sourceItemId` = 반품 줄의 채널 품목 id, 그 반품 줄의 교환 줄이
+   * 대체 품목 `itemId` 를 받는다. 칸이 없거나, 모르는 원래 품목이거나, 교환 줄이 하나라도 남으면 어긋난 사실이다(DLQ — 사람).
+   */
+  private async matchExchangeItems(
+    trx: DbTx,
+    record: CustomerReturn,
+    fact: ChannelReturnSettledPayload,
+  ): Promise<Array<{ exchangeLineId: string; itemId: string }>> {
+    const items = fact.exchangeItems ?? [];
+    if (items.length === 0) {
+      throw new ConflictError(`Settled customer exchange ${record.id} (channel ${fact.returnId}) has no exchangeItems`);
+    }
+    const rows = await trx
+      .select({
+        sourceItemId: wmsTables.customerReturnLines.channelOrderItemId,
+        exchangeLineId: wmsTables.salesOrderLines.id,
+      })
+      .from(wmsTables.customerReturnLines)
+      .innerJoin(
+        wmsTables.salesOrderLines,
+        eq(wmsTables.salesOrderLines.exchangeReturnLineId, wmsTables.customerReturnLines.id),
+      )
+      .where(eq(wmsTables.customerReturnLines.customerReturnId, record.id));
+    const exchangeLineBySource = new Map(rows.map((row) => [row.sourceItemId, row.exchangeLineId]));
+    const links = items.map((item) => {
+      const exchangeLineId = exchangeLineBySource.get(item.sourceItemId);
+      if (!exchangeLineId) {
+        throw new ConflictError(
+          `Settled customer exchange ${record.id} names unknown source item ${item.sourceItemId}`,
+        );
+      }
+      return { exchangeLineId, itemId: item.itemId };
+    });
+    const linked = new Set(links.map((link) => link.exchangeLineId));
+    if (linked.size !== links.length || linked.size !== rows.length) {
+      throw new ConflictError(
+        `Settled customer exchange ${record.id} replaced ${linked.size}/${rows.length} exchange lines`,
+      );
+    }
+    return links;
+  }
+
   private async lockByChannelReturnId(trx: DbTx, channelReturnId: string, requestId: string): Promise<CustomerReturn> {
     const [record] = await trx
       .select()
