@@ -21,6 +21,7 @@ import {
   type ReturnSettlementRecord,
 } from '../../src/workflows/orders/returns/return-settlement-record';
 import { requestOrderReturn } from '../../src/workflows/orders/returns/request-order-return';
+import { writeReturnMetadata } from '../../src/workflows/orders/returns/settle-order-return';
 import { partialCancelOrder } from '../../src/workflows/orders/partial-cancel/partial-cancel-order';
 import { loadOrderView } from '../../src/workflows/orders/settlement/load-order-view';
 import { cancelOpenOrderEdit } from '../../src/workflows/orders/settlement/order-edit-charge';
@@ -1191,6 +1192,85 @@ medusaIntegrationTestRunner({
         expect(readReturnSettlementRecord(row.metadata)).toBeNull();
         expect(await changesTagged(orderId, `return-receive:${requestId}`)).toEqual([]);
         expect(await replacementLines(orderId)).toHaveLength(0);
+      });
+
+      it('대체 줄 주문 수정은 확정됐는데 기록이 charged 로 남음 → 재시도가 있는 줄을 읽고 더 넣지 않는다, 같은 exchangeItems', async () => {
+        const { orderId, returnId, itemId } = await exchangeRequested([{ variant: 'A', quantity: 1 }], { variant: 'A', quantity: 1 });
+        const requestId = rid('exs');
+        const body = { requestId, items: [{ item_id: itemId, received: 1, dismissed: 0 }] };
+        const first = await settle(orderId, returnId, body);
+        expect(first.status).toBe(200);
+        // 확정과 기록 쓰기 사이에서 끊긴 자리 — 기록을 charged 로 되돌린다(대체 줄 주문 수정은 확정된 채)
+        const done = readReturnSettlementRecord((await returnRow(returnId)).metadata)!;
+        const { exchangedAt: _at, exchangeItems: _items, ...rest } = done;
+        await writeReturnMetadata(getContainer(), returnId, 'almondReturnSettlement', { ...rest, stage: 'charged', refundAmount: done.owed });
+        expect(readReturnSettlementRecord((await returnRow(returnId)).metadata)?.stage).toBe('charged');
+
+        const again = await settle(orderId, returnId, body);
+
+        expect(again.status).toBe(200);
+        expect(again.data.stage).toBe('exchanged');
+        expect(again.data.exchangeItems).toEqual(first.data.exchangeItems);
+        expect(await replacementLines(orderId)).toHaveLength(1);
+        expect(await changesTagged(orderId, `return-exchange:${requestId}`)).toHaveLength(1);
+        expect(readReturnSettlementRecord((await returnRow(returnId)).metadata)).toEqual(
+          expect.objectContaining({ stage: 'exchanged', refundAmount: 0, exchangeItems: first.data.exchangeItems }),
+        );
+        expect(Math.abs(await pending(orderId))).toBeLessThan(0.01);
+        expect(wallet.refundCalls()).toHaveLength(0);
+      });
+
+      it('부담 주체가 seller 가 아닌 교환 기록 → 400 exchange_settle_unsupported, 수령 전에 멈춘다', async () => {
+        const { orderId, returnId, itemId } = await exchangeRequested([{ variant: 'A', quantity: 1 }], { variant: 'A', quantity: 1 });
+        const row = await returnRow(returnId);
+        await writeReturnMetadata(getContainer(), returnId, 'almondReturn', { ...row.metadata.almondReturn, feeBearer: 'customer' });
+
+        const res = await settle(orderId, returnId, { requestId: rid('exs'), items: [{ item_id: itemId, received: 1, dismissed: 0 }] });
+
+        expect(res.status).toBe(400);
+        expect(res.data).toEqual(expect.objectContaining({ code: 'return_settle_rejected', reason: 'exchange_settle_unsupported' }));
+        expect((await returnRow(returnId)).status).toBe('requested');
+        expect(await replacementLines(orderId)).toHaveLength(0);
+      });
+
+      it('교환한 수량은 고객이 갖고 있다 — A·B·E(70,000 무료) 에서 A 교환 뒤 E 부분취소는 무료배송 깨짐을 받지 않는다', async () => {
+        const { orderId, returnId, itemId, itemOf } = await exchangeRequested(
+          [{ variant: 'A', quantity: 1 }, { variant: 'B', quantity: 1 }, { variant: 'E', quantity: 1 }],
+          { variant: 'A', quantity: 1 },
+        );
+        expect((await settle(orderId, returnId, { requestId: rid('exs'), items: [{ item_id: itemId, received: 1, dismissed: 0 }] })).status).toBe(200);
+
+        const res = await api
+          .post(
+            `/admin/orders/${orderId}/partial-cancel`,
+            { requestId: rid('pc'), items: [{ item_id: itemOf('E'), quantity: 1 }], reasonCode: 'CUSTOMER_REQUEST', requestedBy: 'operator' },
+            c.adminHeaders,
+          )
+          .catch((e: any) => e.response);
+
+        // 남는 B 30,000 + 교환품 A 30,000 = 60,000 — 무료 그대로. A 를 «돌아온» 것으로 세면 3,000 깨짐이 빠진다
+        expect(res.status).toBe(200);
+        expect(res.data).toEqual(expect.objectContaining({ refundAmount: 10000, shippingDelta: 0, shippingNotAdjusted: false }));
+        expect(wallet.refunds.map((r) => r.amount)).toEqual([10000]);
+        expect(Math.abs(await pending(orderId))).toBeLessThan(0.01);
+      });
+
+      it('교환한 수량은 고객이 갖고 있다 — A 교환 뒤 E 변심 반품의 택배비에 무료배송 깨짐이 없다', async () => {
+        const { orderId, returnId, itemId, itemOf } = await exchangeRequested(
+          [{ variant: 'A', quantity: 1 }, { variant: 'B', quantity: 1 }, { variant: 'E', quantity: 1 }],
+          { variant: 'A', quantity: 1 },
+        );
+        expect((await settle(orderId, returnId, { requestId: rid('exs'), items: [{ item_id: itemId, received: 1, dismissed: 0 }] })).status).toBe(200);
+        const eReturnId = await requestReturn(orderId, itemOf('E'), 1);
+
+        const res = await settle(orderId, eReturnId, { requestId: rid('settle'), items: [{ item_id: itemOf('E'), received: 1, dismissed: 0 }] });
+
+        // 남는 B + 교환품 A = 60,000 — 반품비 3,000 만
+        expect(res.status).toBe(200);
+        expect(res.data).toEqual(
+          expect.objectContaining({ refundAmount: 7000, deduction: { returnShipping: 3000, freeShippingBreak: 0, roundTrip: 0 }, stage: 'refunded' }),
+        );
+        expect(await balance(orderId)).toBe(0);
       });
 
       it('교환 정산 뒤 다른 품목 부분취소 → 배송비 판정이 대체 줄을 세지 않는다', async () => {

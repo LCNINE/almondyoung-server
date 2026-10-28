@@ -7,7 +7,7 @@ const cond: ShippingPolicySnapshot = { policy: { type: 'conditional_free', baseF
 const flat: ShippingPolicySnapshot = { policy: { type: 'flat', baseFee: 3000 }, shippingGroupCode: 'f', shippingProfileId: 'sp' };
 const line = (id: string, quantity: number, returnedQuantity: number): OrderLine => ({
   id, title: id, variantId: `variant_${id}`, quantity, unitPrice: id === 'c' || id === 'e' ? 10000 : 30000, productId: `p_${id}`, requiresShipping: true,
-  fulfilledQuantity: 0, returnedQuantity, exchangeReplacement: false, adjustments: [],
+  fulfilledQuantity: 0, returnedQuantity, exchangeReplacement: false, exchangedQuantity: 0, adjustments: [],
 });
 const profiles = new Map([['p_a', 'sp'], ['p_b', 'sp'], ['p_c', 'sp'], ['p_e', 'sp']]);
 const method: ShippingMethodView = { id: 'm', shippingOptionId: 'so', amount: 0, snapshot: cond, isSettlementCharge: false, isReturnExchangeOrClaimShipping: false, hasAdjustments: false };
@@ -36,6 +36,14 @@ describe('shippingPlanLines', () => {
     expect(shippingRefundFloorLines([...lines, replacement], new Map(), profiles).map((v) => v.itemId)).toEqual(['a', 'b', 'c']);
     const plan = planShipping({ methods: [method], lines: view, postalCode: '04524', priorGroupFees: { sp: 3000 }, chargeCap: 1_000_000 });
     expect(plan).toMatchObject({ adjustable: true });
+  });
+
+  it('교환한 수량은 돌아왔어도 남는 수량으로 센다 — 바닥 줄은 그대로(돌아온 수량을 원래 안 뺀다)', () => {
+    const exchanged = [{ ...line('a', 2, 2), exchangedQuantity: 1 }, line('b', 1, 0)];
+    expect(shippingPlanLines(exchanged, new Map(), profiles).map((v) => v.newQty)).toEqual([1, 1]);
+    expect(shippingRefundFloorLines(exchanged, new Map(), profiles).map((v) => v.newQty)).toEqual([2, 1]);
+    // 교환이 돌아온 수량보다 많게 읽혀도 취소 뒤 수량을 넘지 않는다
+    expect(shippingPlanLines([{ ...line('a', 1, 0), exchangedQuantity: 1 }], new Map(), profiles)[0].newQty).toBe(1);
   });
 
   it('0 아래로 내려가지 않는다', () => {

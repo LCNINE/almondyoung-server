@@ -169,7 +169,7 @@ async function run(container: MedusaContainer, input: SettleOrderReturnInput): P
   if (!request) throw new ReturnSettleRejected('not_our_return', '이 반품은 정산할 수 없습니다');
   if (ret.status === ReturnStatus.CANCELED) throw new ReturnSettleRejected('return_canceled', '취소된 반품입니다');
   const exchange = isExchangeRecord(request);
-  if (exchange) assertExchangeSettlable(input);
+  if (exchange) assertExchangeSettlable(input, request.feeBearer);
   const requestHash = hashReturnSettlement(input.requestId, input.items, {
     holdDeductionAmount: input.holdDeduction?.amount,
     alreadyRefundedAmount: input.alreadyRefundedAmount,
@@ -406,7 +406,11 @@ async function exchangeAfterReceive(
  * 교환 정산은 돈이 움직이지 않는다(설계 E2) — 보류 차감·외부 환불 상계·미도착 닫기는 교환에 없다. 수령 «전»에 거절해
  * 반품이 requested 로 남는다(N3). 보류 차감은 금액이 0 보다 클 때만 차감이다.
  */
-function assertExchangeSettlable(input: SettleOrderReturnInput): void {
+function assertExchangeSettlable(input: SettleOrderReturnInput, feeBearer: 'customer' | 'seller'): void {
+  // 접수가 seller 만 받는다(N2) — 다른 길로 생긴 기록이면 택배비가 매겨져 차액이 0 으로 돌아오지 않는다(방어)
+  if (feeBearer !== 'seller') {
+    throw new ReturnSettleRejected('exchange_settle_unsupported', '판매자 잘못 사유가 아닌 교환 기록은 정산할 수 없습니다');
+  }
   if ((input.holdDeduction?.amount ?? 0) > 0 || input.alreadyRefundedAmount !== undefined || input.closesMissing === true) {
     throw new ReturnSettleRejected(
       'exchange_settle_unsupported',

@@ -25,6 +25,11 @@ export type OrderLine = {
    * 배송비 판정(shippingPlanLines)이 뺀다. 상품이 없어 배송 프로필도 없으므로, 빼지 않으면 그룹이 맞지 않는다고 읽힌다.
    */
   exchangeReplacement: boolean;
+  /**
+   * 이 줄을 대신하는 교환 대체 품목 줄의 수량 합(metadata.almondExchange.sourceItemId = 이 줄). 돌아온 수량(returnedQuantity)에
+   * 들어 있지만 고객이 대체품으로 계속 갖고 있다 — 배송비 판정은 이만큼을 «남는» 수량으로 되돌린다(K8 PR11 N8 보정).
+   */
+  exchangedQuantity: number;
   adjustments: OrderAdjustment[];
 };
 export type CancelRequestItem = { itemId: string; quantity: number };
