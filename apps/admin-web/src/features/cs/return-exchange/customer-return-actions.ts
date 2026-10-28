@@ -92,12 +92,14 @@ export function availableCustomerReturnActions(
       actions.push({ kind: 'manualPrepayment' });
   }
 
-  // 회수(한진) 예약이 없거나 실패·취소된 반품만 다시 접수한다. 나머지(활성 행·단계)는 서버가 409 로 가른다.
+  // 회수(한진) 예약이 없거나 실패·취소·무효인 반품만 다시 접수한다. void 는 회수만 놓아주고 반품 취소가 실패했을 때
+  // 생긴다(R8). 나머지(활성 행·단계)는 서버가 409 로 가른다.
   if (
     status === 'expected' &&
     (!view.pickup ||
       view.pickup.status === 'failed' ||
-      view.pickup.status === 'cancelled')
+      view.pickup.status === 'cancelled' ||
+      view.pickup.status === 'void')
   ) {
     actions.push({ kind: 'retryPickup' });
   }

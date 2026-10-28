@@ -29,7 +29,7 @@ describe('customerReturnAttention', () => {
   const early = new Date('2026-10-27T00:00:00Z');
   const late = new Date('2026-11-05T00:00:00Z');
 
-  it.each(['failed', 'cancelled'] as const)('expected + 회수 %s 는 pickup_failed, 맨 처음', (pickupStatus) => {
+  it.each(['failed', 'cancelled', 'void'] as const)('expected + 회수 %s 는 pickup_failed, 맨 처음', (pickupStatus) => {
     expect(customerReturnAttention({ ...base, status: 'expected', arrivedAt: null, pickupStatus }, early)).toEqual([
       'pickup_failed',
     ]);
@@ -40,7 +40,7 @@ describe('customerReturnAttention', () => {
       ),
     ).toEqual(['pickup_failed', 'settlement_failed']);
   });
-  it.each(['pending', 'reserved', 'cancel_pending', 'void', null] as const)(
+  it.each(['pending', 'reserved', 'cancel_pending', null] as const)(
     'expected + 회수 %s 는 pickup_failed 가 아니다',
     (pickupStatus) => {
       expect(customerReturnAttention({ ...base, status: 'expected', arrivedAt: null, pickupStatus }, early)).toEqual(

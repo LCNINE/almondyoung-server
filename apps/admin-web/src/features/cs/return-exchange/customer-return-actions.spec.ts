@@ -416,8 +416,11 @@ describe('retryPickup', () => {
   it('expected + cancelled 면 보인다', () => {
     expect(has(view('expected', { arrived: 0, pickup: pickup('cancelled') }))).toBe(true);
   });
-  it('expected + 활성 회수(reserved·pending·cancel_pending·void)면 안 보인다', () => {
-    for (const s of ['reserved', 'pending', 'cancel_pending', 'void'] as const)
+  it('expected + void 면 보인다 — 회수만 놓아주고 반품 취소가 실패한 경우(R8)', () => {
+    expect(has(view('expected', { arrived: 0, pickup: pickup('void') }))).toBe(true);
+  });
+  it('expected + 활성 회수(reserved·pending·cancel_pending)면 안 보인다', () => {
+    for (const s of ['reserved', 'pending', 'cancel_pending'] as const)
       expect(has(view('expected', { arrived: 0, pickup: pickup(s) }))).toBe(false);
   });
   it('arrived + failed 면 안 보인다', () => {

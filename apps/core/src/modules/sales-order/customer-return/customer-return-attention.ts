@@ -45,8 +45,12 @@ export type CustomerReturnAttentionInput = {
 /** «확인 필요» 판정 — 순서 고정(N5). 정상 상태는 빈 배열이다. */
 export function customerReturnAttention(input: CustomerReturnAttentionInput, now: Date): CustomerReturnAttention[] {
   const out: CustomerReturnAttention[] = [];
-  // 회수가 실패했거나 취소된 채 반품이 아직 안 왔다 — CS 가 다시 접수해야 소포가 온다
-  if (input.status === 'expected' && (input.pickupStatus === 'failed' || input.pickupStatus === 'cancelled')) {
+  // 회수가 실패·취소·무효인 채 반품이 아직 안 왔다 — CS 가 다시 접수해야 소포가 온다.
+  // expected + void 는 회수만 놓아주고 반품 취소가 실패했을 때 생긴다(N6 역방향, R8)
+  if (
+    input.status === 'expected' &&
+    (input.pickupStatus === 'failed' || input.pickupStatus === 'cancelled' || input.pickupStatus === 'void')
+  ) {
     out.push('pickup_failed');
   }
   if (input.status === 'held') out.push('held');
