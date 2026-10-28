@@ -125,4 +125,12 @@ describe('hanjin.config — 반품 회수(R) 지불조건 (K8 PR9)', () => {
   it('기본값이면 missingHanjinPickupConfig 는 비어 있다', () => {
     expect(missingHanjinPickupConfig(configWith())).toEqual([]);
   });
+  it("앞뒤 공백을 걷고 대문자로 맞춘다 — ' ct ' 는 CT, 허용", () => {
+    const c = configWith({ HANJIN_RETURN_PAY_TYPE: ' ct ' });
+    expect(c.returnPayType).toBe('CT');
+    expect(missingHanjinPickupConfig(c)).toEqual([]);
+  });
+  it('공백뿐이면 기본 CT', () => {
+    expect(configWith({ HANJIN_RETURN_PAY_TYPE: '  ' }).returnPayType).toBe('CT');
+  });
 });

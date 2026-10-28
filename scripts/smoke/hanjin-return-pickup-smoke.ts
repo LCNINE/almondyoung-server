@@ -36,7 +36,13 @@ async function main(): Promise<void> {
   const custOrdNo = `K8R${Date.now().toString(36).toUpperCase()}`;
   const req: PickupRequest = {
     custOrdNo,
-    sender: { name: '테스트고객', zip: '03154', baseAddress: '서울 종로구 세종대로 209', detailAddress: '101호', mobile: '010-0000-0000' },
+    sender: {
+      name: '테스트고객',
+      zip: '03154',
+      baseAddress: '서울 종로구 세종대로 209',
+      detailAddress: '101호',
+      mobile: '010-0000-0000',
+    },
     recipient: {
       name: config.sender.name,
       zip: config.sender.zip,
@@ -50,16 +56,19 @@ async function main(): Promise<void> {
     payType: config.returnPayType,
   };
 
-  let reserved = false;
   try {
-    const first = await gateway.reservePickup(req);
-    console.log('reserve        :', first);
-    reserved = first.kind === 'reserved' || first.kind === 'already_reserved';
+    console.log('reserve        :', await gateway.reservePickup(req));
     console.log('reserve again  :', await gateway.reservePickup(req));
   } finally {
-    if (reserved) {
-      console.log('cancel         :', await gateway.cancelPickup(custOrdNo));
-      console.log('cancel again   :', await gateway.cancelPickup(custOrdNo));
+    // 예약 응답을 잃었어도(타임아웃·전송 오류) 한진엔 예약이 있을 수 있다 — 결과와 무관하게 항상 취소를 묻는다.
+    // LIVE 키로 돌리면 남은 예약에 실제 기사가 온다. not_found 는 «예약 없음»이라 그대로 끝
+    try {
+      const cancelled = await gateway.cancelPickup(custOrdNo);
+      console.log('cancel         :', cancelled);
+      if (cancelled.kind !== 'not_found') console.log('cancel again   :', await gateway.cancelPickup(custOrdNo));
+    } catch (e) {
+      console.error(`cancel failed — 한진에 ${custOrdNo} 예약이 남았을 수 있다. 손으로 취소할 것:`, e);
+      process.exitCode = 1;
     }
   }
 }

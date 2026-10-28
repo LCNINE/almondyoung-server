@@ -29,8 +29,11 @@ export type CancelOrderReturnInput = {
 
 export type CancelOrderReturnResult = { returnId: string; status: 'canceled' };
 
-/** 반품 요청과 같은 잠금·같은 만료 — 한 주문에 열린 주문 변경은 하나뿐이다. */
-const ORDER_LOCK_TIMEOUT_SECONDS = 60;
+/**
+ * 정산·선환불·채널 취소와 같은 만료 — 잠금 안에서 core 의 회수 놓아주기(한진 취소 HTTP)를 동기로 기다린 뒤
+ * 주문 변경까지 하므로 반품 요청(60초)보다 넉넉히 잡는다. 한 주문에 열린 주문 변경은 하나뿐이다.
+ */
+const ORDER_LOCK_TIMEOUT_SECONDS = 120;
 
 /**
  * 도착 전 반품 취소(K8 PR3). 순서가 곧 정확성이다 — 코어 cancelReturnWorkflow 는 반품 fulfillment 가 전부 취소돼 있어야 하고(① 먼저),

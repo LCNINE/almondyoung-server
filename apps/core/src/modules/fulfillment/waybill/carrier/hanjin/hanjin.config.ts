@@ -45,7 +45,8 @@ export function loadHanjinConfig(env: NodeJS.ProcessEnv = process.env): HanjinCo
     },
     boxType: env.HANJIN_BOX_TYPE ?? 'A',
     payType: env.HANJIN_PAY_TYPE ?? 'PP',
-    returnPayType: env.HANJIN_RETURN_PAY_TYPE ?? 'CT',
+    // 라벨 형처럼 앞뒤 공백·소문자를 맞춘다 — ' ct ' 가 허용 집합 검사에 걸려 회수 전체가 꺼지지 않게
+    returnPayType: env.HANJIN_RETURN_PAY_TYPE?.trim().toUpperCase() || 'CT',
     labelType: env.HANJIN_LABEL_TYPE?.trim().toUpperCase() || 'NS',
   };
 }
