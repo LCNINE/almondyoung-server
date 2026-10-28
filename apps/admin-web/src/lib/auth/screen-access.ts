@@ -117,6 +117,7 @@ export const SCREEN_ACCESS: Readonly<Record<string, ScreenAccess>> = {
   '/cs': any('cs.inquiry.read'),
   '/cs/return-exchange': any('order.claim.read'),
   '/cs/reviews': any('cs.review.read'),
+  '/cs/purchase-satisfaction': any('cs.satisfaction.read'),
   '/cs/reviews/new': any('cs.review.moderate'),
   '/cs/qna': any('cs.inquiry.read'),
   '/cs/business-licenses': any('customer.profile.read'),

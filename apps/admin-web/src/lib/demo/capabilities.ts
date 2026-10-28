@@ -5,6 +5,7 @@ const DISABLED_PREFIXES = [
   '/membership',
   '/account/sales-channel/medusa-customers',
   '/cs/reviews',
+  '/cs/purchase-satisfaction',
   '/cs/qna',
   '/statistics/keywords',
   '/statistics/traffic',

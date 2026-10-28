@@ -476,6 +476,11 @@ const allMenus: MainMenu[] = [
         path: '/cs/reviews',
       },
       {
+        id: 'purchase-satisfaction',
+        title: '구매 만족도',
+        path: '/cs/purchase-satisfaction',
+      },
+      {
         id: 'review-reward-policy',
         title: '리뷰 보상 정책',
         path: '/cs/reviews/rewards',
