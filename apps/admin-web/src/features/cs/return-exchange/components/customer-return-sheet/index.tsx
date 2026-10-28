@@ -13,6 +13,7 @@ import {
   useCustomerReturn,
   useRequestCustomerReturnPrepay,
   useRestartCustomerReturn,
+  useRetryCustomerReturnPickup,
   useSettleHeldCustomerReturn,
 } from '@/lib/services/customer-returns';
 import type { CustomerReturnView } from '@/lib/types/dto/customer-returns';
@@ -20,6 +21,7 @@ import { availableCustomerReturnActions, type CustomerReturnAction } from '../..
 import {
   RETURN_ACTION_LABELS,
   RETURN_FEE_BEARER_LABELS,
+  RETURN_PICKUP_STATUS_LABELS,
   RETURN_REASON_LABELS,
   RETURN_STATUS_LABELS,
 } from '../../customer-return-labels';
@@ -42,6 +44,8 @@ function Gated({ kind, children }: { kind: CustomerReturnAction['kind']; childre
     case 'retryPrepayment':
     case 'manualPrepayment':
       return <Can run={useRestartCustomerReturn}>{children}</Can>;
+    case 'retryPickup':
+      return <Can run={useRetryCustomerReturnPickup}>{children}</Can>;
   }
 }
 
@@ -105,7 +109,7 @@ function Body({
   onAction: (a: CustomerReturnAction) => void;
 }) {
   const actions = availableCustomerReturnActions(view);
-  const { settlement, settlementOutcome, prepayment, csResolution } = view;
+  const { settlement, settlementOutcome, prepayment, csResolution, pickup } = view;
   const failure =
     settlement && (settlement.state === 'refused' || settlement.state === 'stalled')
       ? settlement.lastFailure
@@ -138,6 +142,16 @@ function Body({
         )}
         {view.windowOverrideReason && <div>기한 넘김 사유: {view.windowOverrideReason}</div>}
       </section>
+
+      {pickup && (
+        <div>
+          회수 {pickup.waybillNo ?? '—'} · {RETURN_PICKUP_STATUS_LABELS[pickup.status]}
+          {pickup.pickedUpAt && ' · 기사 회수'}
+          {pickup.status === 'failed' && pickup.lastError && (
+            <span className="text-red-600"> · {pickup.lastError}</span>
+          )}
+        </div>
+      )}
 
       <section>
         <Table>

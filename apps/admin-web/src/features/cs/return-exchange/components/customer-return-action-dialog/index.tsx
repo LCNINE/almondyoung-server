@@ -14,6 +14,7 @@ import {
   useCloseCustomerReturnMissing,
   useRequestCustomerReturnPrepay,
   useRestartCustomerReturn,
+  useRetryCustomerReturnPickup,
   useReturnSettlementPreview,
   useSettleHeldCustomerReturn,
 } from '@/lib/services/customer-returns';
@@ -46,6 +47,7 @@ export function CustomerReturnActionDialog({ view, action, onClose }: Props) {
   const settleHeld = useSettleHeldCustomerReturn();
   const prepay = useRequestCustomerReturnPrepay();
   const restart = useRestartCustomerReturn();
+  const retryPickup = useRetryCustomerReturnPickup();
 
   // 미리보기는 금액을 정하는 두 대화상자가 열려 있을 때만 부른다
   const preview = useReturnSettlementPreview(orderId, returnId, { enabled: kind === 'settleHeld' || kind === 'prepay' });
@@ -87,7 +89,7 @@ export function CustomerReturnActionDialog({ view, action, onClose }: Props) {
     }
   })();
 
-  const mutations = [cancel, closeMissing, settleHeld, prepay, restart];
+  const mutations = [cancel, closeMissing, settleHeld, prepay, restart, retryPickup];
   const pending = mutations.some((m) => m.isPending);
 
   const done = (message: string) => ({
@@ -114,6 +116,8 @@ export function CustomerReturnActionDialog({ view, action, onClose }: Props) {
           { id: view.id, body: { amount: prepayAmount, refundMode, memo: memoValue } },
           done('선환불을 요청했습니다.')
         );
+      case 'retryPickup':
+        return retryPickup.mutate({ id: view.id }, done('회수를 다시 접수했습니다.'));
       default: {
         const [target, how] = RESTART_TARGET[kind];
         return restart.mutate({ id: view.id, target, kind: how, body: restartBody() }, done('다시 요청했습니다.'));
@@ -190,6 +194,8 @@ export function CustomerReturnActionDialog({ view, action, onClose }: Props) {
               보류 차감을 빼고 정산합니다
             </label>
           )}
+
+          {kind === 'retryPickup' && <p>한진에 회수를 다시 접수합니다.</p>}
 
           {(kind === 'manualSettlement' || kind === 'manualPrepayment') && <p>계좌로 직접 송금하는 건으로 바꿉니다.</p>}
           {(kind === 'retryPrepayment' || (kind === 'retrySettlement' && !action.needs)) && <p>같은 조건으로 다시 요청합니다.</p>}

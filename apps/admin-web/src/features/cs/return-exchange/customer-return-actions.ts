@@ -9,7 +9,8 @@ export type CustomerReturnAction = {
     | 'retrySettlement'
     | 'manualSettlement'
     | 'retryPrepayment'
-    | 'manualPrepayment';
+    | 'manualPrepayment'
+    | 'retryPickup';
   /** 다시 시도 대화상자가 받아야 하는 칸 */
   needs?: 'alreadyRefundedAmount' | 'dropHoldDeduction';
 };
@@ -89,6 +90,16 @@ export function availableCustomerReturnActions(
     actions.push({ kind: 'retryPrepayment' });
     if (prepayment.refundMode !== 'manual')
       actions.push({ kind: 'manualPrepayment' });
+  }
+
+  // 회수(한진) 예약이 없거나 실패·취소된 반품만 다시 접수한다. 나머지(활성 행·단계)는 서버가 409 로 가른다.
+  if (
+    status === 'expected' &&
+    (!view.pickup ||
+      view.pickup.status === 'failed' ||
+      view.pickup.status === 'cancelled')
+  ) {
+    actions.push({ kind: 'retryPickup' });
   }
 
   return actions;

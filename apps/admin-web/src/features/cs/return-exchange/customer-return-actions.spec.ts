@@ -1,4 +1,6 @@
 import type {
+  CustomerReturnPickup,
+  CustomerReturnPickupStatus,
   CustomerReturnPrepayment,
   CustomerReturnSettlement,
   CustomerReturnStatus,
@@ -78,6 +80,7 @@ function view(
     settlementOutcome: null,
     prepayment: null,
     csResolution: null,
+    pickup: null,
     lines: [
       {
         id: 'l1',
@@ -387,5 +390,37 @@ describe('availableCustomerReturnActions', () => {
       'retryPrepayment',
       'manualPrepayment',
     ]);
+  });
+});
+
+describe('retryPickup', () => {
+  const pickup = (status: CustomerReturnPickupStatus): CustomerReturnPickup => ({
+    status,
+    waybillNo: null,
+    originalWaybillNo: null,
+    lastError: null,
+    attempts: 1,
+    reservedAt: null,
+    pickedUpAt: null,
+    cancelledAt: null,
+    createdAt: '2026-10-01T00:00:00Z',
+  });
+  const has = (v: CustomerReturnView) => kinds(v).includes('retryPickup');
+
+  it('expected + failed 면 보인다', () => {
+    expect(has(view('expected', { arrived: 0, pickup: pickup('failed') }))).toBe(true);
+  });
+  it('expected + 회수 행 없음이면 보인다', () => {
+    expect(has(view('expected', { arrived: 0, pickup: null }))).toBe(true);
+  });
+  it('expected + cancelled 면 보인다', () => {
+    expect(has(view('expected', { arrived: 0, pickup: pickup('cancelled') }))).toBe(true);
+  });
+  it('expected + 활성 회수(reserved·pending·cancel_pending·void)면 안 보인다', () => {
+    for (const s of ['reserved', 'pending', 'cancel_pending', 'void'] as const)
+      expect(has(view('expected', { arrived: 0, pickup: pickup(s) }))).toBe(false);
+  });
+  it('arrived + failed 면 안 보인다', () => {
+    expect(has(view('arrived', { pickup: pickup('failed') }))).toBe(false);
   });
 });
