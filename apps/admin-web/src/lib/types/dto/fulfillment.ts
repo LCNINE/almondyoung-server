@@ -1047,6 +1047,9 @@ export interface OutboundBatchWorkItemV2 {
   waitingOperationId: string | null;
   pickerClaim: BatchClaimState;
   packerClaim: BatchClaimState;
+  /** 옛 core 응답엔 없다 */
+  displayOrderNo?: string | null;
+  itemSummary?: string;
 }
 
 export interface EligibleShipmentV2 {

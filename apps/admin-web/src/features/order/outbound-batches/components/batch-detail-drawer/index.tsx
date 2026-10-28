@@ -246,20 +246,36 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Shipment / item</TableHead>
+                      <TableHead>주문 · 상품</TableHead>
                       <TableHead>상태</TableHead>
-                      <TableHead>Picker</TableHead>
-                      <TableHead>Packer</TableHead>
-                      {canWorkItemAction && <TableHead>작업</TableHead>}
+                      <TableHead>피킹 담당</TableHead>
+                      <TableHead>포장 담당</TableHead>
+                      {canWorkItemAction && (
+                        <TableHead>
+                          <span className="flex items-center gap-1">
+                            작업
+                            <HelpTip label="작업 버튼 안내">
+                              <p>보통은 창고 앱에서 송장을 찍으면 담당이 자동으로 정해져요.</p>
+                              <p>맡기 버튼은 앱을 못 쓸 때만 눌러요.</p>
+                              <p>배치에서 빼기는 상자를 잘못 넣었을 때 써요.</p>
+                            </HelpTip>
+                          </span>
+                        </TableHead>
+                      )}
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {batch.workItems.map((item) => (
                       <TableRow key={item.id}>
                         <TableCell>
-                          <p className="font-mono text-xs">{item.shipmentId}</p>
-                          <p className="font-mono text-[10px] text-muted-foreground">
-                            {item.id} · lease v{item.leaseVersion}
+                          <p
+                            className="font-medium"
+                            title={`상자 ${item.shipmentId} · 작업 ${item.id} · lease v${item.leaseVersion}`}
+                          >
+                            {item.displayOrderNo ? `#${item.displayOrderNo}` : '주문번호 없음'}
+                          </p>
+                          <p className="text-xs text-muted-foreground">
+                            {item.itemSummary}
                           </p>
                         </TableCell>
                         <TableCell>
@@ -269,8 +285,8 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
                             }
                           >
                             {item.recoveryReason
-                              ? 'recovery_required'
-                              : item.status}
+                              ? '복구 필요'
+                              : (WORK_ITEM_STATUS_LABEL[item.status] ?? item.status)}
                           </Badge>
                           {item.exclusionReason && (
                             <p className="text-xs text-destructive">
@@ -278,15 +294,11 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
                             </p>
                           )}
                         </TableCell>
-                        <TableCell className="text-xs">
-                          {item.pickerClaim.state}
-                          <br />
-                          {item.pickerClaim.workerId || '—'}
+                        <TableCell className="text-xs" title={item.pickerClaim.workerId ?? undefined}>
+                          {CLAIM_STATE_LABEL[item.pickerClaim.state] ?? item.pickerClaim.state}
                         </TableCell>
-                        <TableCell className="text-xs">
-                          {item.packerClaim.state}
-                          <br />
-                          {item.packerClaim.workerId || '—'}
+                        <TableCell className="text-xs" title={item.packerClaim.workerId ?? undefined}>
+                          {CLAIM_STATE_LABEL[item.packerClaim.state] ?? item.packerClaim.state}
                         </TableCell>
                         {canWorkItemAction && (
                           <TableCell>
@@ -313,7 +325,7 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
                                   )
                                 }
                               >
-                                Picker claim
+                                내가 피킹 맡기
                               </Button>
                               )}
                               {canClaimPacker && (
@@ -338,7 +350,7 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
                                   )
                                 }
                               >
-                                Packer claim
+                                내가 포장 맡기
                               </Button>
                               )}
                               {canHandoff && (
@@ -369,7 +381,7 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
                                   )
                                 }
                               >
-                                Packer handoff
+                                포장 넘기기
                               </Button>
                               )}
                               {canExclude && (
@@ -393,7 +405,7 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
                                   )
                                 }
                               >
-                                제외
+                                배치에서 빼기
                               </Button>
                               )}
                             </div>
@@ -480,3 +492,21 @@ function HelpTip({ label, children }: { label: string; children: ReactNode }) {
     </Popover>
   );
 }
+
+const WORK_ITEM_STATUS_LABEL: Record<string, string> = {
+  queued: '대기',
+  picking: '피킹 중',
+  ready_to_pack: '포장 대기',
+  packing: '검수 중',
+  completed: '완료',
+  short_pick_recovery: '결품 처리 중',
+  excluded: '빠짐',
+  withdrawing: '빠지는 중',
+};
+
+const CLAIM_STATE_LABEL: Record<string, string> = {
+  unclaimed: '아직 없음',
+  active: '맡음',
+  expired: '시간 지남',
+  released: '놓음',
+};

@@ -713,7 +713,7 @@ export class OutboundBatchOrchestrator {
         .from(wmsTables.outboundBatchWorkItems)
         .where(eq(wmsTables.outboundBatchWorkItems.batchId, batchId))
         .orderBy(asc(wmsTables.outboundBatchWorkItems.createdAt), asc(wmsTables.outboundBatchWorkItems.id));
-      return rows.map((row) => this.workItemResponse(row));
+      return withShipmentLabels(trx, rows.map((row) => this.workItemResponse(row)));
     }, tx);
   }
 
@@ -828,7 +828,7 @@ export class OutboundBatchOrchestrator {
         scheduledPickingAt: batch.scheduledPickingAt ?? undefined,
         startedAt: batch.startedAt ?? undefined,
         completedAt: batch.completedAt ?? undefined,
-        workItems: workItems.map((row) => this.workItemResponse(row)),
+        workItems: await withShipmentLabels(trx, workItems.map((row) => this.workItemResponse(row))),
         warehouse: {
           ...warehouse,
           supportedPickingStrategies: warehouse.supportedPickingStrategies ?? [],

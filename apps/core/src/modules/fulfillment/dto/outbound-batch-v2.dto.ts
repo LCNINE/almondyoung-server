@@ -99,6 +99,10 @@ export class OutboundBatchWorkItemResponseDto {
   exitTo: 'draft' | 'canceled' | null;
   pickerClaim: BatchClaimStateDto;
   packerClaim: BatchClaimStateDto;
+  @ApiPropertyOptional({ type: String, nullable: true, description: '고객이 아는 주문번호. 조회 응답에만 싣는다' })
+  displayOrderNo?: string | null;
+  @ApiPropertyOptional({ description: '첫 상품명 외 N건. 조회 응답에만 싣는다' })
+  itemSummary?: string;
 }
 
 export class OutboundBatchCommandResponseDto {
