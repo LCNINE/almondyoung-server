@@ -445,6 +445,18 @@ describe('reservePickup / cancelPickup (K8 PR9)', () => {
     expect(post.mock.calls[0][2].payTypCd).toBe('PP');
   });
 
+  it.each([[''], ['  ']])('송하인(고객) 상세주소가 %j 이면 «상세주소 없음» 으로 보낸다', async (detailAddress) => {
+    const post = typedPost({ resultCode: 'OK', wblNo: '1' });
+    await gw(post).reservePickup({ ...pickupReq, sender: { ...pickupReq.sender, detailAddress } });
+    expect(post.mock.calls[0][2].sndrDtlAddr).toBe(RECIPIENT_DETAIL_FALLBACK);
+  });
+
+  it('송하인 상세주소가 있으면 그대로 보낸다', async () => {
+    const post = typedPost({ resultCode: 'OK', wblNo: '1' });
+    await gw(post).reservePickup(pickupReq);
+    expect(post.mock.calls[0][2].sndrDtlAddr).toBe('101호');
+  });
+
   it('원운송장이 없으면 wblNo 는 빈 문자열', async () => {
     const post = typedPost({ resultCode: 'OK', wblNo: '1' });
     await gw(post).reservePickup({ ...pickupReq, originalWaybillNo: undefined });

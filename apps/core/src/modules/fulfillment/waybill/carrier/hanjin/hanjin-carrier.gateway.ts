@@ -245,7 +245,7 @@ export class HanjinCarrierGateway extends CarrierGateway {
       pickupAskDt: this.kstDate(this.now()),
       sndrZip: req.sender.zip,
       sndrBaseAddr: req.sender.baseAddress,
-      sndrDtlAddr: req.sender.detailAddress,
+      sndrDtlAddr: req.sender.detailAddress.trim() || RECIPIENT_DETAIL_FALLBACK,
       sndrNm: req.sender.name,
       // 고객은 휴대폰 하나뿐이다. 필수인 sndrTelNo 에도 같은 값을 싣는다(rcvrTelNo 폴백과 같은 이유).
       sndrTelNo: req.sender.mobile,
