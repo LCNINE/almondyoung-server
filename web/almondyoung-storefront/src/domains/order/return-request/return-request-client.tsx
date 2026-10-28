@@ -10,6 +10,7 @@ import type { ReturnRequestOutcome } from "@/lib/api/medusa/return-outcome"
 import type { ReturnRequestInput } from "@/lib/types/ui/returns"
 import { cn } from "@/lib/utils"
 import { DATE_FORMATS, formatDate } from "@/lib/utils/format-date"
+import { useRouter } from "next/navigation"
 import { useTranslations } from "next-intl"
 import { useState, useTransition } from "react"
 import { toast } from "sonner"
@@ -36,6 +37,7 @@ const newId = () => crypto.randomUUID()
 
 export function ReturnRequestClient({ orderId, lines, preselectItemId, pickupAddress }: ReturnRequestClientProps) {
   const t = useTranslations("mypage.order.returnRequest")
+  const router = useRouter()
   const [isPending, startTransition] = useTransition()
   const [selection, setSelection] = useState(() => initialSelection(lines, preselectItemId))
   const [reason, setReason] = useState("")
@@ -87,7 +89,11 @@ export function ReturnRequestClient({ orderId, lines, preselectItemId, pickupAdd
     }
     setSubmit((prev) => nextSubmitState(prev, sent, outcome, newId))
     if (outcome.kind === "rejected") {
-      if (outcome.reason !== "request_id_conflict") toast.error(text(rejectMessageKey(outcome.reason)))
+      if (outcome.reason !== "request_id_conflict") {
+        toast.error(text(rejectMessageKey(outcome.reason)))
+        // 반품 가능 수량이 바뀌었을 수 있다 — 서버 값으로 다시 그린다.
+        router.refresh()
+      }
     } else if (outcome.kind === "canceled_replay") {
       toast.error(t("canceledReplay"))
     } else if (outcome.kind === "unknown") {

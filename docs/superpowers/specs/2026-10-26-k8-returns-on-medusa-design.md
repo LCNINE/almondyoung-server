@@ -239,6 +239,7 @@ requested = `expected` 관측, collected = `arrived`, completed = `settled`. `Sa
   두고, 취소 요청 검사 세 곳(상자 전 부분취소·상자 후 재계획·요청 때 판정)만 `remaining − returnHeld` 를 상한으로 쓴다. 전체취소 몫과
   «남는 것 없음» 판정은 주문 − 취소로 센다.
 - (N8) 고객 이벤트는 이 PR 에서 `SalesOrderClaimProgressed` 의 `requested` 하나다(`expected` 기록을 만든 트랜잭션에서). `collected`·`completed`·
+- (N9) 스토어프론트가 Medusa 고객 라우트를 부를 때는 `getAuthHeaders()`(`_medusa_jwt`)를 헤더로 넘기고 `withAuth: false` 로 호출한다 — `withAuth: true` 의 bearer 는 user-service 토큰이라 Medusa 가 401 로 거절한다(PR 9·11 이 따라 하지 말 것).
   `SalesOrderReturned` 는 그 전이를 만드는 PR 6 이 낸다. 반품 취소에는 고객 이벤트 단계가 없다.
 - channel-adapter 의 Medusa 주문 조회 `ORDER_FIELDS` 는 `returns.items.*` 로 반품 품목을 읽는다 — `returns.items.quantity` 를 이름으로 적으면
   Medusa 가 응답에서 그 칸을 뺀다(`apps/medusa/integration-tests/http/return-observation-fields.spec.ts` 가 실측으로 못 박는다).

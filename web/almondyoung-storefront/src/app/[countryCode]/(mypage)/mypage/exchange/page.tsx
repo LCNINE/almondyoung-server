@@ -9,6 +9,7 @@ import { getSEOTags } from "@/lib/seo"
 import { buildAddressLine } from "@/lib/utils/address-line"
 import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
 import { WithHeaderLayout } from "@components/layout"
+import { unstable_rethrow } from "next/navigation"
 import { getTranslations } from "next-intl/server"
 import { ExchangeClient } from "../../../../../domains/order/exchange/exchange-client"
 import { ReturnRequestClient } from "../../../../../domains/order/return-request/return-request-client"
@@ -76,6 +77,8 @@ async function renderReturn(orderId: string | undefined, itemId: string | undefi
   try {
     loaded = await loadReturnData(orderId)
   } catch (error) {
+    // getOrder 의 리다이렉트(NEXT_REDIRECT) 등 Next 제어 흐름은 삼키지 않는다.
+    unstable_rethrow(error)
     // 인증 실패는 error.tsx 의 토큰 복구로 보낸다. 그 밖의 실패만 재시도 화면.
     if (error instanceof ApiAuthError) throw error
     return notice(t("retryTitle"))
