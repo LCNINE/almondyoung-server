@@ -77,7 +77,7 @@ describe('assemblePickupRequest', () => {
   });
 
   it('스냅샷에 우편번호가 없으면 RECIPIENT_INCOMPLETE', () => {
-    const { postalCode: _omit, ...broken } = snapshot;
+    const broken = Object.fromEntries(Object.entries(snapshot).filter(([key]) => key !== 'postalCode'));
     expect(() => assemblePickupRequest(source({ snapshot: broken }), config, 'AR1')).toThrow(BadRequestError);
     expect(() => assemblePickupRequest(source({ snapshot: broken }), config, 'AR1')).toThrow(/RECIPIENT_INCOMPLETE/);
   });

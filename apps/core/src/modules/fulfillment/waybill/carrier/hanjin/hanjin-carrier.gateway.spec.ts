@@ -396,7 +396,13 @@ describe('reservePickup / cancelPickup (K8 PR9)', () => {
   const pickupReq: PickupRequest = {
     custOrdNo: 'AR0000000000000000000000AA',
     originalWaybillNo: '100000000001',
-    sender: { name: '고객', zip: '03154', baseAddress: '서울 종로구 세종대로 209', detailAddress: '101호', mobile: '010-1111-2222' },
+    sender: {
+      name: '고객',
+      zip: '03154',
+      baseAddress: '서울 종로구 세종대로 209',
+      detailAddress: '101호',
+      mobile: '010-1111-2222',
+    },
     recipient: { name: '창고', zip: '08588', baseAddress: '금천구', detailAddress: '지점', tel: '02-1' },
     items: [{ name: '의류', quantity: 2 }],
     commodityName: '의류',
@@ -405,9 +411,12 @@ describe('reservePickup / cancelPickup (K8 PR9)', () => {
   };
   const gw = (post: jest.Mock) =>
     new HanjinCarrierGateway(pickupConfig, { post } as any, () => new Date('2026-10-28T15:30:00Z'));
+  /** 보낸 본문을 읽는 테스트용 — 호출 인자(host, path, body)에 타입을 붙여 any 를 꺼내지 않는다 */
+  const typedPost = (res: unknown) =>
+    jest.fn<Promise<unknown>, [string, string, Record<string, unknown>]>().mockResolvedValue(res);
 
   it('insert-order 에 R 본문을 보낸다 — 고객이 송하인, 창고가 수하인', async () => {
-    const post = jest.fn().mockResolvedValue({ resultCode: 'OK', wblNo: '560000175571' });
+    const post = typedPost({ resultCode: 'OK', wblNo: '560000175571' });
     const res = await gw(post).reservePickup(pickupReq);
     expect(res).toEqual({ kind: 'reserved', waybillNo: '560000175571' });
     const [host, path, body] = post.mock.calls[0];
@@ -431,13 +440,13 @@ describe('reservePickup / cancelPickup (K8 PR9)', () => {
   });
 
   it('payTypCd 는 요청의 payType 을 따른다', async () => {
-    const post = jest.fn().mockResolvedValue({ resultCode: 'OK', wblNo: '1' });
+    const post = typedPost({ resultCode: 'OK', wblNo: '1' });
     await gw(post).reservePickup({ ...pickupReq, payType: 'PP' });
     expect(post.mock.calls[0][2].payTypCd).toBe('PP');
   });
 
   it('원운송장이 없으면 wblNo 는 빈 문자열', async () => {
-    const post = jest.fn().mockResolvedValue({ resultCode: 'OK', wblNo: '1' });
+    const post = typedPost({ resultCode: 'OK', wblNo: '1' });
     await gw(post).reservePickup({ ...pickupReq, originalWaybillNo: undefined });
     expect(post.mock.calls[0][2].wblNo).toBe('');
   });
@@ -479,7 +488,11 @@ describe('reservePickup / cancelPickup (K8 PR9)', () => {
       ['OK', { resultCode: 'OK', wblNo: '1' }, { kind: 'cancelled' }],
       ['ERROR-05', { resultCode: 'ERROR-05' }, { kind: 'already_cancelled' }],
       ['ERROR-03', { resultCode: 'ERROR-03' }, { kind: 'not_found' }],
-      ['ERROR-04', { resultCode: 'ERROR-04', resultMessage: '운송장출력' }, { kind: 'picked_up', reason: '운송장출력' }],
+      [
+        'ERROR-04',
+        { resultCode: 'ERROR-04', resultMessage: '운송장출력' },
+        { kind: 'picked_up', reason: '운송장출력' },
+      ],
       ['ERROR-99', { resultCode: 'ERROR-99', resultMessage: 'x' }, { kind: 'rejected', code: 'ERROR-99', reason: 'x' }],
     ];
     it.each(cases)('%s', async (_n, res, expected) => {

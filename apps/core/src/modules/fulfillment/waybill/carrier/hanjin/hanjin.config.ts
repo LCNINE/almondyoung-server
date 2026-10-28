@@ -83,10 +83,7 @@ export function missingHanjinConfig(c: HanjinConfig): string[] {
 
 /** 회수 예약까지 쓸 수 있는지. 출고 게이트(`missingHanjinConfig`)에는 영향을 주지 않는다. */
 export function missingHanjinPickupConfig(c: HanjinConfig): string[] {
-  return [
-    ...missingHanjinConfig(c),
-    ...(RETURN_PAY_TYPE_CODES.has(c.returnPayType) ? [] : ['HANJIN_RETURN_PAY_TYPE']),
-  ];
+  return [...missingHanjinConfig(c), ...(RETURN_PAY_TYPE_CODES.has(c.returnPayType) ? [] : ['HANJIN_RETURN_PAY_TYPE'])];
 }
 
 export function isHanjinConfigured(c: HanjinConfig): boolean {

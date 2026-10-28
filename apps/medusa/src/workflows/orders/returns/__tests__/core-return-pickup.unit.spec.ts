@@ -2,12 +2,12 @@ import { CoreEligibilityUnavailable } from '../core-return-eligibility';
 import { releaseCoreReturnPickup } from '../core-return-pickup';
 
 function respond(status: number, body: unknown) {
-  return { ok: status >= 200 && status < 300, status, json: async () => body } as unknown as Response;
+  return { ok: status >= 200 && status < 300, status, json: () => Promise.resolve(body) } as unknown as Response;
 }
 
 describe('releaseCoreReturnPickup', () => {
   const realFetch = global.fetch;
-  const fetchMock = jest.fn();
+  const fetchMock = jest.fn<Promise<Response>, [string, RequestInit]>();
 
   beforeEach(() => {
     fetchMock.mockReset();
@@ -27,8 +27,9 @@ describe('releaseCoreReturnPickup', () => {
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe('http://core.test/internal/sales-orders/customer-return-pickup/release');
     expect(init.method).toBe('POST');
-    expect(JSON.parse(init.body)).toEqual({ channelReturnId: 'ret_1' });
-    expect(init.headers.Authorization).toBe('Bearer k');
+    expect(typeof init.body).toBe('string');
+    expect(JSON.parse(typeof init.body === 'string' ? init.body : '')).toEqual({ channelReturnId: 'ret_1' });
+    expect(new Headers(init.headers).get('Authorization')).toBe('Bearer k');
 
     fetchMock.mockResolvedValueOnce(respond(200, { result: 'picked_up' }));
     expect(await releaseCoreReturnPickup('ret_1')).toBe('picked_up');
