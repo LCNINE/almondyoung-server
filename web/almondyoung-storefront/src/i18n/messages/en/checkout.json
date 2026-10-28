@@ -327,7 +327,36 @@
       "address": "Shipping address"
     },
     "review": {
-      "ratingTitle": "How was your shopping experience?"
+      "title": "How was your checkout experience?",
+      "subtitle": "You can review products after you receive them",
+      "scores": {
+        "1": "Poor",
+        "2": "Not great",
+        "3": "Okay",
+        "4": "Good",
+        "5": "Excellent"
+      },
+      "saving": "Saving",
+      "saveFailed": "Couldn't save. Please tap a star again",
+      "reasonTitle": "What was disappointing?",
+      "reasonHint": "You can select more than one",
+      "reasons": {
+        "ADDRESS_INPUT": "Entering my address was hard",
+        "COUPON_DISCOUNT": "Applying coupons or discounts was hard",
+        "CASH_RECEIPT": "Requesting a cash receipt was hard",
+        "PAYMENT_METHOD": "The payment methods were inconvenient",
+        "PAYMENT_ERROR": "An error occurred during payment",
+        "PRODUCT_SEARCH": "It was hard to find the product I wanted",
+        "OTHER": "Other"
+      },
+      "memoLabel": "Anything else? (optional)",
+      "memoPlaceholder": "e.g. The payment method I wanted was missing",
+      "skip": "Not now",
+      "submit": "Send",
+      "thanksTitle": "Thank you for your feedback",
+      "thanksLow": "We will use what you shared to improve",
+      "thanksHigh": "We will keep working to make your next purchase a good one",
+      "changeRating": "Change rating"
     },
     "downloadBtn": "Download digital items"
   },

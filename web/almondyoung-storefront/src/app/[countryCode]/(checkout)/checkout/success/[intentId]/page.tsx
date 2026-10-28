@@ -5,7 +5,9 @@ import { retrieveCustomer } from "@/lib/api/medusa/customer"
 import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
 import Link from "next/link"
 import { getTranslations } from "next-intl/server"
-import { ChevronDownIcon, ReviewPromptCard } from "../_components"
+import { ChevronDownIcon } from "../_components"
+import { PurchaseSatisfactionCard } from "../purchase-satisfaction-card"
+import { getPurchaseSatisfaction } from "@/lib/api/medusa/purchase-satisfaction"
 import { PurchaseTracker } from "./purchase-tracker"
 import { HttpTypes } from "@medusajs/types"
 import { buildAddressLine } from "@/lib/utils/address-line"
@@ -38,6 +40,18 @@ async function getIntentOrNull(intentId: string) {
     logger.warn("storefront.checkout_success.intent_lookup_failed", {
       error: err,
       attributes: { intent_id: intentId },
+    })
+    return null
+  }
+}
+
+async function getSatisfactionOrNull(orderId: string) {
+  try {
+    return await getPurchaseSatisfaction(orderId)
+  } catch (err) {
+    logger.warn("storefront.checkout_success.satisfaction_lookup_failed", {
+      error: err,
+      attributes: { order_id: orderId },
     })
     return null
   }
@@ -94,6 +108,10 @@ export default async function CheckoutSuccessPage({
 
   // 소유권이 일치하지 않으면 order 정보를 표시하지 않음 (보안)
   const order = isOwnerMatch ? rawOrder : null
+  const satisfactionOrderId = order && isCustomerMatch ? order.id : null
+  const satisfaction = satisfactionOrderId
+    ? await getSatisfactionOrNull(satisfactionOrderId)
+    : null
 
   logger.info("storefront.checkout_success.order_resolved", {
     attributes: {
@@ -142,8 +160,12 @@ export default async function CheckoutSuccessPage({
       {/* 주문 요약 카드 */}
       <OrderSummaryCard order={order} countryCode={countryCode} />
 
-      {/* 리뷰 유도 카드 */}
-      <ReviewPromptCard />
+      {satisfactionOrderId && (
+        <PurchaseSatisfactionCard
+          orderId={satisfactionOrderId}
+          initial={satisfaction}
+        />
+      )}
     </main>
   )
 }
