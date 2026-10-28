@@ -1,3 +1,4 @@
+import type { CustomerReturnPickupStatus } from './customer-return-pickup.types';
 import type { CustomerReturnPrepayment, CustomerReturnSettlement, CustomerReturnStatus } from './customer-return.types';
 
 const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
@@ -22,6 +23,7 @@ export function refundDueAt(arrivedAt: Date): Date {
 }
 
 export type CustomerReturnAttention =
+  | 'pickup_failed'
   | 'held'
   | 'settlement_failed'
   | 'prepayment_failed'
@@ -36,11 +38,17 @@ export type CustomerReturnAttentionInput = {
   expectedQty: number;
   arrivedQty: number;
   missingQty: number;
+  /** 마지막 회수 행의 상태 — 행이 없으면 null (K8 PR9) */
+  pickupStatus: CustomerReturnPickupStatus | null;
 };
 
 /** «확인 필요» 판정 — 순서 고정(N5). 정상 상태는 빈 배열이다. */
 export function customerReturnAttention(input: CustomerReturnAttentionInput, now: Date): CustomerReturnAttention[] {
   const out: CustomerReturnAttention[] = [];
+  // 회수가 실패했거나 취소된 채 반품이 아직 안 왔다 — CS 가 다시 접수해야 소포가 온다
+  if (input.status === 'expected' && (input.pickupStatus === 'failed' || input.pickupStatus === 'cancelled')) {
+    out.push('pickup_failed');
+  }
   if (input.status === 'held') out.push('held');
   if (input.settlementState === 'refused' || input.settlementState === 'stalled') out.push('settlement_failed');
   if (input.prepaymentState === 'refused' || input.prepaymentState === 'stalled') out.push('prepayment_failed');

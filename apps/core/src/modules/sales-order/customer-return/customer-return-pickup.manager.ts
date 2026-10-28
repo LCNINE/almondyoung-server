@@ -2,7 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { and, desc, eq, inArray, isNull, lt, lte, or, sql, type SQL } from 'drizzle-orm';
 import { DbService } from '@app/db';
 import { InjectTypedDb } from '@app/db/decorators';
-import { BadRequestError, ConflictError, UpstreamUnavailableError } from '@app/shared';
+import { BadRequestError, ConflictError, NotFoundError, UpstreamUnavailableError } from '@app/shared';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import { CarrierGatewayRegistry } from '../../fulfillment/waybill/carrier/carrier-gateway.registry';
 import {
@@ -16,7 +16,7 @@ import type { HanjinConfig } from '../../fulfillment/waybill/carrier/hanjin/hanj
 import { HANJIN_CONFIG } from '../../fulfillment/waybill/waybill.tokens';
 import { readPickupSource } from './customer-return-pickup-source.reader';
 import { assemblePickupRequest } from './customer-return-pickup-request';
-import { ACTIVE_PICKUP_STATUSES, type PickupRow } from './customer-return-pickup.types';
+import { ACTIVE_PICKUP_STATUSES, newPickupRow, type PickupRow } from './customer-return-pickup.types';
 
 export const PICKUP_ATTEMPTS_CAP = 12;
 export const PICKUP_LEASE_MS = 120_000;
@@ -91,6 +91,67 @@ export class CustomerReturnPickupManager {
       }
     }
     return result;
+  }
+
+  /**
+   * CS [회수 다시 접수] (N9, 규칙 R3). 반품이 expected 이고 활성 회수가 없을 때만.
+   * 마지막 행이 failed 면 «같은 행»을 pending 으로 되살린다 — 사유(last_error)와 무관하게. 한진은 거절했던 custOrdNo 도
+   * 다시 받고, 앞선 전송이 실제로 접수됐다면 ERROR-03 + wblNo 가 번호를 되찾아 주므로 택배가 둘 생기지 않는다.
+   * 새 행(새 번호)은 마지막 행이 cancelled·void 이거나 행이 없을 때뿐이다 — 취소한 번호는 못 쓴다.
+   * failed 행의 리스가 살아 있으면 놓아주기가 한진에 취소를 보내는 중일 수 있어 건드리지 않는다(409).
+   * 반품 행을 잠가 같은 반품의 동시 접수를 줄 세운다 — 활성 부분 유니크 위반(500)이 아니라 409 가 된다.
+   */
+  async retry(customerReturnId: string, actorId: string, tx?: DbTx): Promise<void> {
+    return this.dbService.run(async (trx) => {
+      const now = new Date();
+      const r = wmsTables.customerReturns;
+      const [record] = await trx
+        .select({ id: r.id, status: r.status })
+        .from(r)
+        .where(eq(r.id, customerReturnId))
+        .for('update')
+        .limit(1);
+      if (!record) throw new NotFoundError(`Customer return not found: ${customerReturnId}`);
+      if (record.status !== 'expected') {
+        throw new ConflictError(`Cannot re-request pickup: return is ${record.status}, not expected`);
+      }
+
+      const t = wmsTables.customerReturnPickups;
+      const [active] = await trx
+        .select({ id: t.id })
+        .from(t)
+        .where(and(eq(t.customerReturnId, customerReturnId), inArray(t.status, [...ACTIVE_PICKUP_STATUSES])))
+        .limit(1);
+      if (active) {
+        throw new ConflictError(`Cannot re-request pickup: return ${customerReturnId} already has an active pickup`);
+      }
+
+      const [latest] = await trx
+        .select()
+        .from(t)
+        .where(eq(t.customerReturnId, customerReturnId))
+        .orderBy(desc(t.createdAt), desc(t.id))
+        .limit(1);
+      if (latest?.status === 'failed') {
+        const revived = await trx
+          .update(t)
+          .set({
+            status: 'pending',
+            attempts: 0,
+            lastError: null,
+            nextAttemptAt: null,
+            leaseUntil: null,
+            updatedAt: now,
+          })
+          .where(and(eq(t.id, latest.id), eq(t.status, 'failed'), or(isNull(t.leaseUntil), lt(t.leaseUntil, now))))
+          .returning({ id: t.id });
+        if (revived.length === 0) {
+          throw new ConflictError(`pickup_busy: pickup ${latest.id} is being released; retry after lease`);
+        }
+        return;
+      }
+      await trx.insert(t).values(newPickupRow(customerReturnId, actorId));
+    }, tx);
   }
 
   /**

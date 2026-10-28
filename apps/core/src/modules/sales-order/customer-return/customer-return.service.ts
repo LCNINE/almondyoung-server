@@ -50,6 +50,12 @@ export class CustomerReturnService {
     return this.pickups.release(channelReturnId, new Date());
   }
 
+  /** CS [회수 다시 접수] (K8 PR9 N9) — 접수한 뒤의 반품 기록을 돌려준다 */
+  async retryPickup(customerReturnId: string, actorId: string, tx?: DbTx) {
+    await this.pickups.retry(customerReturnId, actorId, tx);
+    return this.reader.findById(customerReturnId, tx);
+  }
+
   findById(id: string, tx?: DbTx) {
     return this.reader.findById(id, tx);
   }

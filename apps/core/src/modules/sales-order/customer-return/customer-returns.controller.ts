@@ -108,6 +108,17 @@ export class CustomerReturnsController {
     });
   }
 
+  @RequirePermission('order.claim.write')
+  @Post(':id/pickup/retry')
+  @ApiOperation({ summary: '반품 회수 다시 접수 — 실패·취소된 한진 회수를 다시 접수한다 (K8 PR9)' })
+  @ApiResponse({ status: 200, description: '접수한 뒤의 반품 기록(pickup 에 마지막 회수 행)' })
+  @ApiResponse({ status: 404, description: '반품 기록 없음' })
+  @ApiResponse({ status: 409, description: '반품이 expected 가 아님 · 활성 회수가 이미 있음 · 놓아주기가 진행 중' })
+  @HttpCode(HttpStatus.OK)
+  retryPickup(@Param('id', ParseUUIDPipe) id: string, @User() user?: WarehouseActor) {
+    return this.service.retryPickup(id, authenticatedWarehouseActor(user));
+  }
+
   @RequirePermission('payment.refund.execute')
   @Post(':id/held-settlement')
   @ApiOperation({ summary: '보류 정산 — 보류 차감을 정해 채널에 수령·환불 정산을 요청한다. 0 이면 차감 없이' })

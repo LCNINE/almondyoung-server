@@ -2,7 +2,7 @@ import { randomUUID } from 'crypto';
 import { eq } from 'drizzle-orm';
 import { Logger } from '@nestjs/common';
 import type { DbService } from '@app/db';
-import { ConflictError, UpstreamUnavailableError } from '@app/shared';
+import { ConflictError, NotFoundError, UpstreamUnavailableError } from '@app/shared';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import { inRollbackTx, makeDb } from '../../fulfillment/services/__support__';
 import { seedWorld } from '../../fulfillment/order-progress/__support__/order-progress.fixtures';
@@ -856,6 +856,117 @@ describeIfDb('CustomerReturnPickupManager — 반품 회수 워커 (K8 PR9)', ()
         const manager = new CustomerReturnPickupManager(scopedDbService(tx), new CarrierGatewayRegistry([]), config);
         const { channelReturnId } = await seedSent(tx, 'reserved');
         await expect(manager.release(channelReturnId, now)).rejects.toBeInstanceOf(UpstreamUnavailableError);
+      }));
+  });
+
+  describe('retry — CS 다시 접수 (R3)', () => {
+    const rowsOf = (tx: DbTx, customerReturnId: string) =>
+      tx
+        .select()
+        .from(wmsTables.customerReturnPickups)
+        .where(eq(wmsTables.customerReturnPickups.customerReturnId, customerReturnId));
+
+    it.each(['attempts_exhausted: unknown_outcome: http_502', 'ERROR-14: 지불조건 오류'])(
+      'failed(%s) 는 같은 행을 pending 으로 되살린다 — 같은 custOrdNo, 새 행 없음',
+      (lastError) =>
+        inRollbackTx(db, async (tx) => {
+          const { manager } = wire(tx);
+          const { pickupId, custOrdNo, customerReturnId } = await seedPickup(tx);
+          await setRow(tx, pickupId, {
+            status: 'failed',
+            attempts: 12,
+            lastError,
+            nextAttemptAt: new Date(Date.now() + 99 * MINUTE),
+            leaseUntil: new Date(Date.now() - MINUTE),
+          });
+          await manager.retry(customerReturnId, 'cs-1', tx);
+          const rows = await rowsOf(tx, customerReturnId);
+          expect(rows).toHaveLength(1);
+          expect(rows[0]).toMatchObject({
+            id: pickupId,
+            custOrdNo,
+            status: 'pending',
+            attempts: 0,
+            lastError: null,
+            nextAttemptAt: null,
+            leaseUntil: null,
+          });
+        }),
+    );
+
+    it.each(['cancelled', 'void'] as const)('마지막 행이 %s 면 새 행(새 번호)을 만든다', (status) =>
+      inRollbackTx(db, async (tx) => {
+        const { manager } = wire(tx);
+        const { pickupId, custOrdNo, customerReturnId } = await seedPickup(tx);
+        await setRow(tx, pickupId, { status });
+        await manager.retry(customerReturnId, 'cs-1', tx);
+        const rows = await rowsOf(tx, customerReturnId);
+        expect(rows).toHaveLength(2);
+        const fresh = rows.find((r) => r.id !== pickupId);
+        expect(fresh).toMatchObject({ status: 'pending', attempts: 0, createdBy: 'cs-1' });
+        expect(fresh?.custOrdNo).not.toBe(custOrdNo);
+        expect(rows.find((r) => r.id === pickupId)?.status).toBe(status);
+      }),
+    );
+
+    it('행이 없으면 새 행을 만든다', () =>
+      inRollbackTx(db, async (tx) => {
+        const { manager } = wire(tx);
+        const { pickupId, customerReturnId } = await seedPickup(tx);
+        await tx.delete(wmsTables.customerReturnPickups).where(eq(wmsTables.customerReturnPickups.id, pickupId));
+        await manager.retry(customerReturnId, 'cs-1', tx);
+        const rows = await rowsOf(tx, customerReturnId);
+        expect(rows).toHaveLength(1);
+        expect(rows[0]).toMatchObject({ status: 'pending', createdBy: 'cs-1' });
+      }));
+
+    it.each(['pending', 'reserved', 'cancel_pending'] as const)('활성(%s) 행이 있으면 409', (status) =>
+      inRollbackTx(db, async (tx) => {
+        const { manager } = wire(tx);
+        const { pickupId, customerReturnId } = await seedPickup(tx);
+        await setRow(tx, pickupId, { status });
+        await expect(manager.retry(customerReturnId, 'cs-1', tx)).rejects.toBeInstanceOf(ConflictError);
+        expect(await rowsOf(tx, customerReturnId)).toHaveLength(1);
+      }),
+    );
+
+    it('반품이 expected 가 아니면 409', () =>
+      inRollbackTx(db, async (tx) => {
+        const { manager } = wire(tx);
+        const { pickupId, customerReturnId } = await seedPickup(tx);
+        await setRow(tx, pickupId, { status: 'failed' });
+        await tx
+          .update(wmsTables.customerReturns)
+          .set({ status: 'arrived' })
+          .where(eq(wmsTables.customerReturns.id, customerReturnId));
+        await expect(manager.retry(customerReturnId, 'cs-1', tx)).rejects.toBeInstanceOf(ConflictError);
+        expect((await rowOf(tx, pickupId)).status).toBe('failed');
+      }));
+
+    it('failed 행의 리스가 살아 있으면(놓아주기가 한진에 취소 중일 수 있다) 409', () =>
+      inRollbackTx(db, async (tx) => {
+        const { manager } = wire(tx);
+        const { pickupId, customerReturnId } = await seedPickup(tx);
+        await setRow(tx, pickupId, { status: 'failed', leaseUntil: new Date(Date.now() + MINUTE) });
+        await expect(manager.retry(customerReturnId, 'cs-1', tx)).rejects.toBeInstanceOf(ConflictError);
+        expect((await rowOf(tx, pickupId)).status).toBe('failed');
+      }));
+
+    it('없는 반품은 404', () =>
+      inRollbackTx(db, async (tx) => {
+        const { manager } = wire(tx);
+        await expect(manager.retry(randomUUID(), 'cs-1', tx)).rejects.toBeInstanceOf(NotFoundError);
+      }));
+
+    it('같은 반품에 두 번 연달아 → 두 번째 409, 활성 행 하나', () =>
+      inRollbackTx(db, async (tx) => {
+        const { manager } = wire(tx);
+        const { pickupId, customerReturnId } = await seedPickup(tx);
+        await setRow(tx, pickupId, { status: 'cancelled' });
+        await manager.retry(customerReturnId, 'cs-1', tx);
+        await expect(manager.retry(customerReturnId, 'cs-2', tx)).rejects.toBeInstanceOf(ConflictError);
+        const rows = await rowsOf(tx, customerReturnId);
+        expect(rows.filter((r) => ['pending', 'reserved', 'cancel_pending'].includes(r.status))).toHaveLength(1);
       }));
   });
 

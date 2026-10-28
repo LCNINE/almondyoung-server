@@ -9,6 +9,7 @@ import { CustomerReturnReader } from './customer-return.reader';
 import { ListCustomerReturnsQueryDto } from './dto/list-customer-returns.dto';
 import { ListReceivingCustomerReturnsQueryDto } from './dto/list-receiving-customer-returns.dto';
 import { CustomerReturnReceivingManager } from './customer-return-receiving.manager';
+import { newPickupRow } from './customer-return-pickup.types';
 
 /**
  * 반품 상세 뷰 — 주문번호·품목명·SKU 이름·환불 기한 (K8 PR7 Task 2). rollback 전용 트랜잭션.
@@ -616,6 +617,140 @@ describeIfDb('CustomerReturnReader — 상세 뷰 (K8 PR7)', () => {
         const all = await wired.reader.listForReceiving(receivingQuery(w.warehouseId), tx);
         expect(all.items.map((i) => i.id).sort()).toEqual(seeded.map((s) => s.customerReturnId).sort());
         expect(page.items).toEqual(all.items.slice(0, 2));
+      });
+    });
+  });
+
+  describe('회수 (K8 PR9)', () => {
+    const NOW = new Date('2026-10-28T03:00:00Z');
+    const query = (over: Partial<ListCustomerReturnsQueryDto> = {}): ListCustomerReturnsQueryDto =>
+      Object.assign(new ListCustomerReturnsQueryDto(), over);
+    const receivingQuery = (
+      warehouseId: string,
+      over: Partial<ListReceivingCustomerReturnsQueryDto> = {},
+    ): ListReceivingCustomerReturnsQueryDto =>
+      Object.assign(new ListReceivingCustomerReturnsQueryDto(), { warehouseId }, over);
+
+    async function addPickup(
+      tx: DbTx,
+      customerReturnId: string,
+      set: Partial<typeof wmsTables.customerReturnPickups.$inferInsert>,
+    ) {
+      const row = newPickupRow(customerReturnId, null);
+      await tx.insert(wmsTables.customerReturnPickups).values({ ...row, ...set });
+      return row;
+    }
+    /** 접수가 자동으로 만든 pending 행을 치운다 — 행 이력을 스펙이 정한다 */
+    const clearPickups = (tx: DbTx, ...ids: string[]) =>
+      Promise.all(
+        ids.map((id) =>
+          tx.delete(wmsTables.customerReturnPickups).where(eq(wmsTables.customerReturnPickups.customerReturnId, id)),
+        ),
+      );
+    const wb = () => `5600${Math.floor(Math.random() * 1e8)}`.slice(0, 12);
+
+    it('상세는 마지막 회수 행(cancelled 뒤 reserved)을 싣고, 목록은 pickupWaybillNo 를 싣는다. 행이 없으면 null', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const wired = wire();
+        const w = await seedWorld(tx);
+        const withRows = await seed(tx, w, wired);
+        const none = await seed(tx, w, wired);
+        const waybillNo = wb();
+        await clearPickups(tx, withRows.customerReturnId, none.customerReturnId);
+        await addPickup(tx, withRows.customerReturnId, {
+          status: 'cancelled',
+          waybillNo: wb(),
+          cancelledAt: new Date('2026-10-27T02:00:00Z'),
+          createdAt: new Date('2026-10-27T01:00:00Z'),
+        });
+        await addPickup(tx, withRows.customerReturnId, {
+          status: 'reserved',
+          waybillNo,
+          originalWaybillNo: 'WB-ORIG',
+          attempts: 2,
+          lastError: null,
+          reservedAt: new Date('2026-10-27T04:00:00Z'),
+          createdAt: new Date('2026-10-27T03:00:00Z'),
+        });
+
+        const view = await wired.reader.findById(withRows.customerReturnId, tx);
+        expect(view.pickup).toEqual({
+          status: 'reserved',
+          waybillNo,
+          originalWaybillNo: 'WB-ORIG',
+          lastError: null,
+          attempts: 2,
+          reservedAt: '2026-10-27T04:00:00.000Z',
+          pickedUpAt: null,
+          cancelledAt: null,
+          createdAt: '2026-10-27T03:00:00.000Z',
+        });
+        expect((await wired.reader.findById(none.customerReturnId, tx)).pickup).toBeNull();
+
+        const page = await wired.reader.list(query({ limit: 100 }), NOW, tx);
+        const by = new Map(page.items.map((i) => [i.id, i]));
+        expect(by.get(withRows.customerReturnId)?.pickupWaybillNo).toBe(waybillNo);
+        expect(by.get(none.customerReturnId)?.pickupWaybillNo).toBeNull();
+      });
+    });
+
+    it('expected + 마지막 회수 failed 는 pickup_failed, 도착한 반품은 아니다', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const wired = wire();
+        const w = await seedWorld(tx);
+        const a = await seed(tx, w, wired);
+        const b = await seed(tx, w, wired);
+        await clearPickups(tx, a.customerReturnId, b.customerReturnId);
+        await addPickup(tx, a.customerReturnId, { status: 'failed', lastError: 'ERROR-14: x', attempts: 1 });
+        await addPickup(tx, b.customerReturnId, { status: 'failed', lastError: 'ERROR-14: x', attempts: 1 });
+        await b.arrive([{ skuId: w.skuId, quantity: 1 }]);
+        const page = await wired.reader.list(query({ limit: 100 }), NOW, tx);
+        const by = new Map(page.items.map((i) => [i.id, i]));
+        expect(by.get(a.customerReturnId)?.attention).toEqual(['pickup_failed']);
+        expect(by.get(b.customerReturnId)?.attention).not.toContain('pickup_failed');
+      });
+    });
+
+    it('CS 목록 q 와 창고 목록 q·barcode 가 회수 운송장번호 정확 일치로 찾는다 — 끝난 행도, 끝난 반품은 창고에 안 보인다', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const wired = wire();
+        const w = await seedWorld(tx);
+        const a = await seed(tx, w, wired);
+        const b = await seed(tx, w, wired);
+        const closed = await seed(tx, w, wired);
+        const wa = wb();
+        const oldWa = wb();
+        const wc = wb();
+        await clearPickups(tx, a.customerReturnId, b.customerReturnId, closed.customerReturnId);
+        await addPickup(tx, a.customerReturnId, { status: 'reserved', waybillNo: wa });
+        await addPickup(tx, b.customerReturnId, {
+          status: 'cancelled',
+          waybillNo: oldWa,
+          cancelledAt: new Date(),
+          createdAt: new Date('2026-10-27T01:00:00Z'),
+        });
+        await addPickup(tx, b.customerReturnId, { status: 'pending', createdAt: new Date('2026-10-27T02:00:00Z') });
+        await addPickup(tx, closed.customerReturnId, { status: 'reserved', waybillNo: wc });
+        await tx
+          .update(wmsTables.customerReturns)
+          .set({ status: 'settled', settledAt: new Date('2026-10-26T00:00:00Z') })
+          .where(eq(wmsTables.customerReturns.id, closed.customerReturnId));
+
+        const cs = async (q: string, bucket: 'open' | 'closed' = 'open') =>
+          (await wired.reader.list(query({ q, bucket, limit: 100 }), NOW, tx)).items.map((i) => i.id);
+        expect(await cs(wa)).toEqual([a.customerReturnId]);
+        expect(await cs(oldWa)).toEqual([b.customerReturnId]);
+        expect(await cs(wa.slice(0, -1))).toEqual([]);
+        expect(await cs(wc, 'closed')).toEqual([closed.customerReturnId]);
+        expect(await cs(wc)).toEqual([]);
+
+        const rcv = async (over: Partial<ListReceivingCustomerReturnsQueryDto>) =>
+          (await wired.reader.listForReceiving(receivingQuery(w.warehouseId, over), tx)).items.map((i) => i.id);
+        expect(await rcv({ q: wa })).toEqual([a.customerReturnId]);
+        expect(await rcv({ barcode: wa })).toEqual([a.customerReturnId]);
+        expect(await rcv({ barcode: oldWa })).toEqual([b.customerReturnId]);
+        expect(await rcv({ barcode: wc })).toEqual([]);
+        expect(await rcv({ q: wc })).toEqual([]);
       });
     });
   });

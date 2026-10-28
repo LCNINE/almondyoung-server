@@ -9,6 +9,7 @@ import type { ListCustomerReturnsQueryDto } from './dto/list-customer-returns.dt
 import type { ListReceivingCustomerReturnsQueryDto } from './dto/list-receiving-customer-returns.dto';
 import { maskName } from '../../fulfillment/reader/recipient-snapshot';
 import { deliveredParcelsSql } from '../line-quantities/line-quantities.sql';
+import type { CustomerReturnPickupStatus } from './customer-return-pickup.types';
 import type {
   CustomerReturnCsResolution,
   CustomerReturnPrepayment,
@@ -16,6 +17,19 @@ import type {
   CustomerReturnSettlementOutcome,
   CustomerReturnStatus,
 } from './customer-return.types';
+
+/** 반품의 마지막 회수 행 (K8 PR9) — 시각은 ISO 문자열. 한진 응답 본문은 싣지 않는다(`lastError` 는 코드 요약뿐). */
+export type CustomerReturnPickupView = {
+  status: CustomerReturnPickupStatus;
+  waybillNo: string | null;
+  originalWaybillNo: string | null;
+  lastError: string | null;
+  attempts: number;
+  reservedAt: string | null;
+  pickedUpAt: string | null;
+  cancelledAt: string | null;
+  createdAt: string;
+};
 
 /** 반품 기록 한 건의 관리자·창고 화면 모양 (K8 PR6). 고객 개인정보는 싣지 않는다. */
 export type CustomerReturnView = {
@@ -43,6 +57,8 @@ export type CustomerReturnView = {
   settlementOutcome: CustomerReturnSettlementOutcome | null;
   /** 선환불 진행과 결과(K8 PR6b) */
   prepayment: CustomerReturnPrepayment | null;
+  /** 마지막 회수 행 — 한 번도 접수된 적 없으면 null (K8 PR9) */
+  pickup: CustomerReturnPickupView | null;
   /** CS 결정 — 미도착 닫기·보류 차감(K8 PR6b) */
   csResolution: CustomerReturnCsResolution | null;
   lines: Array<{
@@ -92,6 +108,8 @@ export type CustomerReturnListItem = {
   /** 첫 줄 품목명, 줄이 더 있으면 «외 N건» */
   productSummary: string;
   refundAmount: number | null;
+  /** 마지막 회수 행의 회수 운송장번호 (K8 PR9) */
+  pickupWaybillNo: string | null;
   attention: CustomerReturnAttention[];
 };
 
@@ -134,6 +152,20 @@ const RECEIVING_STAGE_ORDER: Record<CustomerReturnReceivingStage, number> = { re
 const OPEN_WARN_THRESHOLD = 500;
 const CLOSED_STATUSES: CustomerReturnStatus[] = ['settled', 'cancelled'];
 
+function pickupView(row: typeof wmsTables.customerReturnPickups.$inferSelect): CustomerReturnPickupView {
+  return {
+    status: row.status,
+    waybillNo: row.waybillNo,
+    originalWaybillNo: row.originalWaybillNo,
+    lastError: row.lastError,
+    attempts: row.attempts,
+    reservedAt: row.reservedAt?.toISOString() ?? null,
+    pickedUpAt: row.pickedUpAt?.toISOString() ?? null,
+    cancelledAt: row.cancelledAt?.toISOString() ?? null,
+    createdAt: row.createdAt.toISOString(),
+  };
+}
+
 @Injectable()
 export class CustomerReturnReader {
   private readonly logger = new Logger(CustomerReturnReader.name);
@@ -169,7 +201,7 @@ export class CustomerReturnReader {
       const attentionCount = openItems.filter((item) => item.attention.length > 0).length;
 
       if (query.bucket === 'closed') {
-        const search = this.searchCondition(query.q);
+        const search = this.searchCondition(trx, query.q);
         const where = and(inArray(r.status, CLOSED_STATUSES), search);
         const [{ total }] = await trx
           .select({ total: count() })
@@ -185,8 +217,11 @@ export class CustomerReturnReader {
       }
 
       const needle = query.q?.trim();
+      // 회수 운송장은 끝난 행(취소된 앞 접수)의 번호도 찾는다 — 마지막 행만으로는 못 찾는다
+      const byWaybill = needle ? await this.returnIdsByPickupWaybill(trx, needle) : new Set<string>();
       const matches = (item: CustomerReturnListItem) =>
         !needle ||
+        byWaybill.has(item.id) ||
         item.orderNo === needle ||
         item.channelOrderId === needle ||
         (item.customerName ?? '').toLowerCase().includes(needle.toLowerCase());
@@ -205,14 +240,30 @@ export class CustomerReturnReader {
     }, tx);
   }
 
-  /** q: 주문번호·채널 주문 id 정확 일치, 고객명 부분 일치(LIKE 메타문자는 문자 그대로) */
-  private searchCondition(q?: string): SQL | undefined {
+  /** 그 회수 운송장번호(정확 일치)를 가진 회수 행이 있는 반품 — 상관 없는 서브쿼리다 */
+  private pickupWaybillMatch(trx: DbTx, waybillNo: string): SQL {
+    const t = wmsTables.customerReturnPickups;
+    return inArray(
+      wmsTables.customerReturns.id,
+      trx.select({ id: t.customerReturnId }).from(t).where(eq(t.waybillNo, waybillNo)),
+    );
+  }
+
+  private async returnIdsByPickupWaybill(trx: DbTx, waybillNo: string): Promise<Set<string>> {
+    const t = wmsTables.customerReturnPickups;
+    const rows = await trx.select({ id: t.customerReturnId }).from(t).where(eq(t.waybillNo, waybillNo));
+    return new Set(rows.map((row) => row.id));
+  }
+
+  /** q: 주문번호·채널 주문 id·회수 운송장번호 정확 일치, 고객명 부분 일치(LIKE 메타문자는 문자 그대로) */
+  private searchCondition(trx: DbTx, q?: string): SQL | undefined {
     const needle = q?.trim();
     if (!needle) return undefined;
     const escaped = needle.replace(/[\\%_]/g, (ch) => `\\${ch}`);
     return or(
       eq(wmsTables.salesOrders.displayOrderNo, needle),
       eq(wmsTables.salesOrders.channelOrderId, needle),
+      this.pickupWaybillMatch(trx, needle),
       ilike(wmsTables.salesOrders.customerName, `%${escaped}%`),
     );
   }
@@ -231,20 +282,24 @@ export class CustomerReturnReader {
       const so = wmsTables.salesOrders;
       const warehouseId = query.warehouseId;
 
-      // barcode: 그 바코드(정확 일치)를 가진 SKU 의 항목이 있는 반품 — 상관 없는 서브쿼리라 진행 중 후보 안에서만 거른다
+      // barcode: 그 바코드(정확 일치)를 가진 SKU 의 항목이 있는 반품, 또는 그 회수 운송장번호의 반품 — 상관 없는 서브쿼리라 진행 중 후보 안에서만 거른다
       const barcode = query.barcode?.trim();
       const l = wmsTables.customerReturnLines;
       const i = wmsTables.customerReturnItems;
       const b = wmsTables.skuBarcodes;
+      // 회수 운송장번호도 같은 칸으로 찾는다 — 창고 스테이션이 회수 운송장 스캔으로 반품을 연다(K8 PR9 N10)
       const withBarcode = barcode
-        ? inArray(
-            r.id,
-            trx
-              .select({ customerReturnId: l.customerReturnId })
-              .from(i)
-              .innerJoin(l, eq(l.id, i.customerReturnLineId))
-              .innerJoin(b, eq(b.skuId, i.skuId))
-              .where(eq(b.barcode, barcode)),
+        ? or(
+            inArray(
+              r.id,
+              trx
+                .select({ customerReturnId: l.customerReturnId })
+                .from(i)
+                .innerJoin(l, eq(l.id, i.customerReturnLineId))
+                .innerJoin(b, eq(b.skuId, i.skuId))
+                .where(eq(b.barcode, barcode)),
+            ),
+            this.pickupWaybillMatch(trx, barcode),
           )
         : undefined;
 
@@ -264,7 +319,7 @@ export class CustomerReturnReader {
         .where(
           and(
             or(and(eq(r.status, 'arrived'), eq(r.warehouseId, warehouseId)), eq(r.status, 'expected')),
-            this.searchCondition(query.q),
+            this.searchCondition(trx, query.q),
             withBarcode,
           ),
         );
@@ -404,6 +459,26 @@ export class CustomerReturnReader {
     );
   }
 
+  /**
+   * 반품들의 마지막 회수 행(`created_at desc, id desc`) — 반품 id 묶음으로 따로 읽는다(상관 서브쿼리 금지, `itemsOf` 주석).
+   * 반품당 회수 행은 접수·다시 접수 횟수뿐이라 전부 읽어 TS 로 첫 행만 고른다.
+   */
+  private async latestPickups(
+    trx: DbTx,
+    ids: string[],
+  ): Promise<Map<string, typeof wmsTables.customerReturnPickups.$inferSelect>> {
+    const latest = new Map<string, typeof wmsTables.customerReturnPickups.$inferSelect>();
+    if (ids.length === 0) return latest;
+    const t = wmsTables.customerReturnPickups;
+    const rows = await trx
+      .select()
+      .from(t)
+      .where(inArray(t.customerReturnId, ids))
+      .orderBy(desc(t.createdAt), desc(t.id));
+    for (const row of rows) if (!latest.has(row.customerReturnId)) latest.set(row.customerReturnId, row);
+    return latest;
+  }
+
   /** 목록 행들에 줄 요약·수량 합·확인 필요를 붙인다. 합은 반품 id 로 group by 해 따로 읽는다. */
   private async decorate(
     trx: DbTx,
@@ -420,9 +495,14 @@ export class CustomerReturnReader {
       trx,
       rows.map((row) => row.record.id),
     );
+    const pickups = await this.latestPickups(
+      trx,
+      rows.map((row) => row.record.id),
+    );
 
     return rows.map(({ record, channelOrderId, displayOrderNo, customerName }) => {
       const summary = summaries.get(record.id);
+      const pickup = pickups.get(record.id);
       return {
         id: record.id,
         salesOrderId: record.salesOrderId,
@@ -441,6 +521,7 @@ export class CustomerReturnReader {
         quantity: summary?.quantity ?? 0,
         productSummary: summary?.productSummary ?? '',
         refundAmount: record.settlementOutcome?.refundAmount ?? null,
+        pickupWaybillNo: pickup?.waybillNo ?? null,
         attention: customerReturnAttention(
           {
             status: record.status,
@@ -450,6 +531,7 @@ export class CustomerReturnReader {
             expectedQty: summary?.expectedQty ?? 0,
             arrivedQty: summary?.arrivedQty ?? 0,
             missingQty: summary?.missingQty ?? 0,
+            pickupStatus: pickup?.status ?? null,
           },
           now,
         ),
@@ -490,6 +572,8 @@ export class CustomerReturnReader {
         lines.map((line) => line.id),
       );
 
+      const pickup = (await this.latestPickups(trx, [id])).get(id);
+
       return {
         id: record.id,
         salesOrderId: record.salesOrderId,
@@ -515,6 +599,7 @@ export class CustomerReturnReader {
         settlement: record.settlement ?? null,
         settlementOutcome: record.settlementOutcome ?? null,
         prepayment: record.prepayment ?? null,
+        pickup: pickup ? pickupView(pickup) : null,
         csResolution: record.csResolution ?? null,
         lines: lines.map((line) => ({
           id: line.id,
