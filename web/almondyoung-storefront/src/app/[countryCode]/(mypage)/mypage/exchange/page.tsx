@@ -2,6 +2,7 @@ import MypageLayout from "@/app/[countryCode]/(mypage)/_components/mypage-layout
 import { CustomButton } from "@/components/shared/custom-buttons"
 import LocalizedClientLink from "@/components/shared/localized-client-link"
 import { PageTitle } from "@/components/shared/page-title"
+import { ApiAuthError } from "@lib/api/api-error"
 import { getOrder } from "@/lib/api/medusa/orders"
 import { getReturnable } from "@/lib/api/medusa/returns"
 import { getSEOTags } from "@/lib/seo"
@@ -41,10 +42,10 @@ export default async function ExchangePage({ searchParams }: ExchangePageProps) 
       }}
     >
       <MypageLayout>
-        {type === "return" ? (
-          await renderReturn(orderId, itemId)
-        ) : (
+        {type === "exchange" ? (
           <ExchangeClient orderId={orderId} />
+        ) : (
+          await renderReturn(orderId, itemId)
         )}
       </MypageLayout>
     </WithHeaderLayout>
@@ -74,7 +75,9 @@ async function renderReturn(orderId: string | undefined, itemId: string | undefi
   let loaded: Awaited<ReturnType<typeof loadReturnData>>
   try {
     loaded = await loadReturnData(orderId)
-  } catch {
+  } catch (error) {
+    // 인증 실패는 error.tsx 의 토큰 복구로 보낸다. 그 밖의 실패만 재시도 화면.
+    if (error instanceof ApiAuthError) throw error
     return notice(t("retryTitle"))
   }
   if (!loaded) return notice(t("unavailableTitle"))
