@@ -5,6 +5,7 @@ import { FileRepository } from '../shared/repositories/file.repository';
 import { ARCHIVE_PAGE_ATTACHMENT_CONTEXT_ID, DIGITAL_ASSET_FILE_CONTEXT_ID } from '../database/default-file-contexts';
 import { Upload } from '../shared/types/file.types';
 import { JwtPayload } from '../shared/types/jwt-payload.interface';
+import { delegationOf, FileDelegate } from './service-delegation';
 
 export interface DeleteResult {
   success: boolean;
@@ -23,8 +24,11 @@ const STAFF_CONTEXT_PERMISSIONS: ReadonlyMap<string, Permission> = new Map<strin
   [ARCHIVE_PAGE_ATTACHMENT_CONTEXT_ID, 'archive.page.read'],
 ]);
 
-/** core 의 서비스 위임 토큰(역할 없이 위임 스코프만). 사람 주체가 아니다. */
-const CORE_FILE_DELEGATION = systemPrincipal('core.file-delegation');
+/** 서비스 위임 토큰의 주체. 사람 주체가 아니다. */
+const FILE_DELEGATION: Readonly<Record<FileDelegate, AuthzSubject>> = {
+  core: systemPrincipal('core.file-delegation'),
+  'ugc-service': systemPrincipal('ugc-service.file-delegation'),
+};
 
 @Injectable()
 export class FileAccess {
@@ -77,10 +81,10 @@ export class FileAccess {
     return { success: true, message: 'File deleted successfully' };
   }
 
-  /** 판정 지점에 넘길 주체. core 위임 토큰(역할 없음 + 위임 스코프)은 시스템 주체다. */
+  /** 판정 지점에 넘길 주체. 허용된 서비스의 위임 토큰은 시스템 주체다. */
   private subjectOf(user: JwtPayload): AuthzSubject {
-    const roles = user.roles ?? [];
-    return roles.length === 0 && user.scopes?.includes('master') ? CORE_FILE_DELEGATION : { roles };
+    const delegation = delegationOf(user);
+    return delegation ? FILE_DELEGATION[delegation.delegate] : { roles: user.roles ?? [] };
   }
 
   private isOwnerOrFileManager(file: Upload, user: JwtPayload): boolean {

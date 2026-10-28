@@ -72,7 +72,7 @@ export const ROLE_LITERAL_BASELINE: Readonly<Record<string, { count: number; kin
   'apps/core/src/modules/sales-order/services/store-return-exchange.service.ts': { count: 2, kind: 'data-value' },
   'apps/core/src/platform/auth/fulfillment-scopes.ts': { count: 2, kind: 'role-mapping' },
   'apps/core/src/platform/auth/inventory-scopes.ts': { count: 3, kind: 'role-mapping' },
-  'apps/file-service/src/access/file-access.ts': { count: 1, kind: 'system-identity' },
+  'apps/file-service/src/access/service-delegation.ts': { count: 1, kind: 'system-identity' },
   'apps/membership/src/config/swagger.config.ts': { count: 1, kind: 'data-value' },
   'apps/membership/src/controllers/admin-operations.controller.ts': { count: 2, kind: 'data-value' },
   'apps/membership/src/shared/auth/membership-scopes.ts': { count: 2, kind: 'role-mapping' },

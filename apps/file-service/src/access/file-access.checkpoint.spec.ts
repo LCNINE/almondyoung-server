@@ -72,6 +72,26 @@ describe('FileAccess permission checkpoints', () => {
     await expect(files.loadReadable('f-1', user('core-library-service', [], ['master']))).resolves.toBe(file);
   });
 
+  it('sees a standard delegation token from core or ugc as a system principal', async () => {
+    const files = await access(null);
+    const onBehalf: JwtPayload = { userId: 'u1', email: '', roles: [], act: { sub: 'core' }, aud: 'file-service' };
+    const serviceOnly: JwtPayload = {
+      userId: 'svc',
+      email: '',
+      roles: [],
+      client_id: 'ugc-service',
+      aud: 'file-service',
+    };
+    await expect(files.loadReadable('f-1', onBehalf)).resolves.toBe(file);
+    await expect(files.delete('f-1', serviceOnly)).resolves.toMatchObject({ success: true });
+  });
+
+  it('does not treat a delegation token addressed to another service as a system principal', async () => {
+    const files = await access(null);
+    const elsewhere: JwtPayload = { userId: 'u1', email: '', roles: [], act: { sub: 'core' }, aud: 'core' };
+    await expect(files.loadReadable('f-1', elsewhere)).rejects.toBeInstanceOf(ForbiddenError);
+  });
+
   it('denies non-owners before the permission copy arrives', async () => {
     const files = await access(null);
     await expect(files.loadReadable('f-1', user('m', ['master']))).rejects.toBeInstanceOf(ForbiddenError);

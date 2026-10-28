@@ -23,6 +23,7 @@ import { UploadModule } from './upload/upload.module';
 import { InternalFilesModule } from './internal/internal-files.module';
 import { LifecycleModule } from './lifecycle/lifecycle.module';
 import { DownloadModule } from './download/download.module';
+import { LegacyDelegationInterceptor } from './access/legacy-delegation.interceptor';
 
 @Module({
   imports: [
@@ -62,6 +63,8 @@ import { DownloadModule } from './download/download.module';
     // 권한 판정 — 라우트 인가를 결정한다(설정으로 끌 수 없다). 인증 가드 뒤에 둔다.
     { provide: APP_GUARD, useClass: PermissionGuard },
     { provide: APP_INTERCEPTOR, useClass: AuthzShadowInterceptor },
+    // 옛 표기 위임 토큰 사용을 센다 — 옛 표기를 거절하기 전에 0건을 확인하는 근거.
+    { provide: APP_INTERCEPTOR, useClass: LegacyDelegationInterceptor },
   ],
 })
 export class FileServiceModule {}
