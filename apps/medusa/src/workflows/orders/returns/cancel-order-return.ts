@@ -91,14 +91,24 @@ async function run(container: MedusaContainer, input: CancelOrderReturnInput): P
   // 창고에 도착한 반품은 core 가 입고·검수의 주인이다 — 취소하면 core 가 ChannelReturnCancelled 를 Conflict 로 DLQ 에 보낸다(N11).
   // core 에 기록이 없으면(관측 지연 ≤ 5분) 도착도 있을 수 없다. 주문 변경을 건드리기 «전»에 묻는다.
   const eligibility = await fetchCoreReturnEligibility(order.id);
-  const coreStatus = eligibility.customerReturns.find((r) => r.channelReturnId === ret.id)?.status;
+  const coreRow = eligibility.customerReturns.find((r) => r.channelReturnId === ret.id);
+  const coreStatus = coreRow?.status;
   if (coreStatus !== undefined && coreStatus !== 'expected' && coreStatus !== 'cancelled') {
     throw new ReturnRequestRejected('return_arrived', '창고에 도착한 반품은 취소할 수 없습니다');
   }
+  // 교환 대체 상자를 core 가 이미 열었으면 취소하지 않는다(K8 PR11 N7) — 회수 놓아주기·Medusa 변경 «전»에 닫는다.
+  if (coreRow?.exchangeReleased === true) {
+    throw new ReturnRequestRejected('exchange_released', '교환 상품을 이미 준비한 교환은 취소할 수 없습니다');
+  }
   // 한진 회수 예약을 core 가 먼저 취소한다 — 기사가 이미 가져갔으면 취소를 거절한다. core 가 취소한 뒤 아래가 실패해도
   // 회수만 없어진 쪽(CS 가 다시 접수)이 소포가 기록 없이 오는 쪽보다 낫다(N6). 주문 변경을 건드리기 «전»이다.
-  if ((await releaseCoreReturnPickup(ret.id)) === 'picked_up') {
+  const released = await releaseCoreReturnPickup(ret.id);
+  if (released === 'picked_up') {
     throw new ReturnRequestRejected('return_picked_up', '택배 기사님이 이미 회수한 반품은 취소할 수 없습니다');
+  }
+  // 위 자격 조회와 이 호출 사이에 CS 가 교환품을 먼저 보냈다 — core 는 회수를 놓지 않고 거절한다(같은 기록 잠금 안에서 본다)
+  if (released === 'exchange_released') {
+    throw new ReturnRequestRejected('exchange_released', '교환 상품을 이미 준비한 교환은 취소할 수 없습니다');
   }
 
   for (const f of query.fulfillments.filter((x) => !x.canceledAt)) {

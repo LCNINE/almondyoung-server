@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto';
-import { eq } from 'drizzle-orm';
+import { and, eq, isNotNull } from 'drizzle-orm';
 import { BadRequestError, ConflictError, NotFoundError } from '@app/shared';
 import type {
   ChannelReturnCancelledPayload,
@@ -8,7 +8,11 @@ import type {
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
 import { inRollbackTx, makeDb } from '../../fulfillment/services/__support__';
 import { seedHolder, seedSku } from '../../fulfillment/services/__support__/logistics-fixtures';
-import { seedOrder } from '../../fulfillment/order-progress/__support__/order-progress.fixtures';
+import { seedOrder, seedWorld } from '../../fulfillment/order-progress/__support__/order-progress.fixtures';
+import { LineCompositionManager } from '../../product-matching/line-composition/line-composition.manager';
+import { findCompositionInvariantViolations } from '../../product-matching/line-composition/__support__/composition-invariant';
+import { seedDeliveredLine } from '../line-quantities/__support__/claim-facts.fixtures';
+import { readLineQuantities } from '../line-quantities/line-quantities.reader';
 import { CustomerReturnManager } from './customer-return.manager';
 import { newPickupRow } from './customer-return-pickup.types';
 
@@ -19,7 +23,11 @@ const describeIfDb = DATABASE_URL ? describe : describe.skip;
 function makeManager(tx: DbTx) {
   const publisher = { enqueue: jest.fn().mockResolvedValue(undefined) };
   const dbService = { run: <T>(fn: (trx: DbTx) => Promise<T>, outer?: DbTx) => fn(outer ?? tx) };
-  const manager = new CustomerReturnManager(dbService as never, publisher as never);
+  const manager = new CustomerReturnManager(
+    dbService as never,
+    publisher as never,
+    new LineCompositionManager(dbService as never),
+  );
   const events = () =>
     (
       publisher.enqueue.mock.calls as Array<
@@ -54,6 +62,11 @@ describeIfDb('CustomerReturnManager — 채널 반품 사실 기록 (K8 PR5)', (
     await tx
       .insert(wmsTables.salesOrderLineCompositions)
       .values({ salesOrderLineId: order.lineId, skuId: sku.skuId, qtyPerUnit: 1 });
+    // 구성 행이 있으면 출처도 있다(#1063 §4.3) — 실제 FO 생성이 굳힌 모양
+    await tx
+      .update(wmsTables.salesOrderLines)
+      .set({ compositionSource: 'matching', compositionSetAt: new Date() })
+      .where(eq(wmsTables.salesOrderLines.id, order.lineId));
     return { ...order, channelOrderItemId, channelOrderId: so.channelOrderId, skuId: sku.skuId, holderId };
   }
 
@@ -357,6 +370,247 @@ describeIfDb('CustomerReturnManager — 채널 반품 사실 기록 (K8 PR5)', (
       const [record] = await returnsOf(tx, s.salesOrderId);
       expect(record.status).toBe('arrived');
       expect(record.cancelledAt).toBeNull();
+    });
+  });
+
+  describe('교환 (K8 PR11)', () => {
+    const exchangeLinesOf = (tx: DbTx, salesOrderId: string) =>
+      tx
+        .select()
+        .from(wmsTables.salesOrderLines)
+        .where(
+          and(
+            eq(wmsTables.salesOrderLines.salesOrderId, salesOrderId),
+            isNotNull(wmsTables.salesOrderLines.exchangeReturnLineId),
+          ),
+        );
+    const compositionOf = async (tx: DbTx, salesOrderLineId: string) =>
+      (
+        await tx
+          .select({
+            skuId: wmsTables.salesOrderLineCompositions.skuId,
+            qtyPerUnit: wmsTables.salesOrderLineCompositions.qtyPerUnit,
+          })
+          .from(wmsTables.salesOrderLineCompositions)
+          .where(eq(wmsTables.salesOrderLineCompositions.salesOrderLineId, salesOrderLineId))
+      ).sort((a, b) => a.skuId.localeCompare(b.skuId));
+
+    it('교환 접수 사실 → kind exchange, 같은 판매주문에 교환 줄 1개(수량 = 반품 줄, 0원, 채널 줄 없음), 구성 = 원래 줄, 진행 kind exchange', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const s = await seed(tx, 3);
+        await tx
+          .update(wmsTables.salesOrderLines)
+          .set({ fulfillmentKind: 'physical', requiresShipping: true, channelProductId: 'prod_1' })
+          .where(eq(wmsTables.salesOrderLines.id, s.lineId));
+        const { manager, events } = makeManager(tx);
+        const fact = requested(s, {
+          kind: 'exchange',
+          items: [{ channelOrderItemId: s.channelOrderItemId, quantity: 2 }],
+        });
+
+        const result = await manager.recordRequested(fact, tx);
+
+        const [record] = await returnsOf(tx, s.salesOrderId);
+        expect(record).toMatchObject({ id: result.customerReturnId, kind: 'exchange', exchangeReleasedAt: null });
+        const [returnLine] = await linesOf(tx, record.id);
+        const [source] = await tx
+          .select()
+          .from(wmsTables.salesOrderLines)
+          .where(eq(wmsTables.salesOrderLines.id, s.lineId));
+        const exchangeLines = await exchangeLinesOf(tx, s.salesOrderId);
+        expect(exchangeLines).toHaveLength(1);
+        expect(exchangeLines[0]).toMatchObject({
+          salesOrderId: s.salesOrderId,
+          variantId: source.variantId,
+          productName: source.productName,
+          fulfillmentKind: 'physical',
+          requiresShipping: true,
+          channelProductId: 'prod_1',
+          quantity: 2,
+          unitPrice: 0,
+          totalPrice: 0,
+          channelOrderItemId: null,
+          exchangeReturnLineId: returnLine.id,
+          compositionSource: 'matching',
+        });
+        expect(exchangeLines[0].id).not.toBe(s.lineId);
+        expect(await compositionOf(tx, exchangeLines[0].id)).toEqual(await compositionOf(tx, s.lineId));
+        expect(await findCompositionInvariantViolations(tx)).toEqual([]);
+        const [event, ...rest] = events();
+        expect(rest).toHaveLength(0);
+        expect(event.idempotencyKey).toBe(`so-claim:exchange:${record.id}:requested`);
+        expect(event.payload).toMatchObject({ kind: 'exchange', stage: 'requested', requestId: record.id });
+      });
+    });
+
+    it('원래 줄이 세트(구성 2 SKU) → 교환 줄 구성 2행, qty_per_unit 같음', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const s = await seed(tx);
+        const b = (await seedSku(tx, s.holderId)).skuId;
+        await tx
+          .update(wmsTables.salesOrderLineCompositions)
+          .set({ qtyPerUnit: 2 })
+          .where(eq(wmsTables.salesOrderLineCompositions.salesOrderLineId, s.lineId));
+        await tx
+          .insert(wmsTables.salesOrderLineCompositions)
+          .values({ salesOrderLineId: s.lineId, skuId: b, qtyPerUnit: 1 });
+        const { manager } = makeManager(tx);
+
+        await manager.recordRequested(requested(s, { kind: 'exchange' }), tx);
+
+        const [exchangeLine] = await exchangeLinesOf(tx, s.salesOrderId);
+        const copied = await compositionOf(tx, exchangeLine.id);
+        expect(copied).toHaveLength(2);
+        expect(copied).toEqual(
+          [
+            { skuId: s.skuId, qtyPerUnit: 2 },
+            { skuId: b, qtyPerUnit: 1 },
+          ].sort((x, y) => x.skuId.localeCompare(y.skuId)),
+        );
+      });
+    });
+
+    it('운영자가 지정한 구성은 출처·지정자까지 복사한다', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const s = await seed(tx);
+        const actorId = randomUUID();
+        await tx
+          .update(wmsTables.salesOrderLines)
+          .set({ compositionSource: 'operator', compositionSetBy: actorId })
+          .where(eq(wmsTables.salesOrderLines.id, s.lineId));
+        const { manager } = makeManager(tx);
+
+        await manager.recordRequested(requested(s, { kind: 'exchange' }), tx);
+
+        const [exchangeLine] = await exchangeLinesOf(tx, s.salesOrderId);
+        expect(exchangeLine).toMatchObject({ compositionSource: 'operator', compositionSetBy: actorId });
+        expect(exchangeLine.compositionSetAt).toBeInstanceOf(Date);
+      });
+    });
+
+    it('kind 없는 사실 → kind return, 교환 줄 0', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const s = await seed(tx);
+        const { manager, events } = makeManager(tx);
+
+        await manager.recordRequested(requested(s), tx);
+
+        const [record] = await returnsOf(tx, s.salesOrderId);
+        expect(record.kind).toBe('return');
+        expect(await exchangeLinesOf(tx, s.salesOrderId)).toHaveLength(0);
+        expect(events()[0].payload).toMatchObject({ kind: 'return' });
+      });
+    });
+
+    it('같은 교환 사실 재전달 → 교환 줄 그대로 1개, 이벤트 1', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const s = await seed(tx);
+        const { manager, events } = makeManager(tx);
+        const fact = requested(s, { kind: 'exchange' });
+
+        const first = await manager.recordRequested(fact, tx);
+        const second = await manager.recordRequested(fact, tx);
+
+        expect(second).toEqual({ customerReturnId: first.customerReturnId, created: false });
+        expect(await exchangeLinesOf(tx, s.salesOrderId)).toHaveLength(1);
+        expect(events()).toHaveLength(1);
+      });
+    });
+
+    it('원래 줄이 굳지 않았으면(출처 없음) 교환 접수 → BadRequestError, 아무것도 안 씀', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const s = await seed(tx);
+        await tx
+          .update(wmsTables.salesOrderLines)
+          .set({ compositionSource: null, compositionSetAt: null })
+          .where(eq(wmsTables.salesOrderLines.id, s.lineId));
+        const { manager, events } = makeManager(tx);
+
+        await expect(manager.recordRequested(requested(s, { kind: 'exchange' }), tx)).rejects.toBeInstanceOf(
+          BadRequestError,
+        );
+
+        expect(await returnsOf(tx, s.salesOrderId)).toHaveLength(0);
+        expect(await exchangeLinesOf(tx, s.salesOrderId)).toHaveLength(0);
+        expect(events()).toHaveLength(0);
+      });
+    });
+
+    it('교환 취소 사실(열기 전) → cancelled, 교환 줄 0, 그 구성 0', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const s = await seed(tx);
+        const { manager } = makeManager(tx);
+        const fact = requested(s, { kind: 'exchange' });
+        await manager.recordRequested(fact, tx);
+        const [exchangeLine] = await exchangeLinesOf(tx, s.salesOrderId);
+
+        const result = await manager.recordCancelled(cancelled(s, fact.returnId), tx);
+
+        expect(result.changed).toBe(true);
+        const [record] = await returnsOf(tx, s.salesOrderId);
+        expect(record.status).toBe('cancelled');
+        expect(await exchangeLinesOf(tx, s.salesOrderId)).toHaveLength(0);
+        expect(await compositionOf(tx, exchangeLine.id)).toEqual([]);
+        // 원래 줄은 그대로다
+        expect(await compositionOf(tx, s.lineId)).toEqual([{ skuId: s.skuId, qtyPerUnit: 1 }]);
+        expect(await findCompositionInvariantViolations(tx)).toEqual([]);
+      });
+    });
+
+    it('교환 취소 사실(교환 상자 열림) → ConflictError, 상태·교환 줄 그대로', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const s = await seed(tx);
+        const { manager } = makeManager(tx);
+        const fact = requested(s, { kind: 'exchange' });
+        const { customerReturnId } = await manager.recordRequested(fact, tx);
+        await tx
+          .update(wmsTables.customerReturns)
+          .set({ exchangeReleasedAt: new Date(), exchangeReleasedBy: randomUUID() })
+          .where(eq(wmsTables.customerReturns.id, customerReturnId));
+
+        await expect(manager.recordCancelled(cancelled(s, fact.returnId), tx)).rejects.toBeInstanceOf(ConflictError);
+
+        const [record] = await returnsOf(tx, s.salesOrderId);
+        expect(record.status).toBe('expected');
+        expect(record.cancelledAt).toBeNull();
+        expect(await exchangeLinesOf(tx, s.salesOrderId)).toHaveLength(1);
+      });
+    });
+
+    it('K6: 교환 접수 뒤 원래 줄 claimable 이 반품과 같이 준다, 교환 줄은 청구에 안 든다', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const w = await seedWorld(tx);
+        const line = await seedDeliveredLine(tx, w, {
+          quantity: 3,
+          composition: [{ skuId: w.skuId, qtyPerUnit: 1 }],
+          parcels: [{ qtyBySku: { [w.skuId]: 3 } }],
+          customerId: randomUUID(),
+        });
+        const channelOrderItemId = `item_${randomUUID().slice(0, 8)}`;
+        await tx
+          .update(wmsTables.salesOrderLines)
+          .set({ channelOrderItemId })
+          .where(eq(wmsTables.salesOrderLines.id, line.lineId));
+        const [so] = await tx
+          .select({ channelOrderId: wmsTables.salesOrders.channelOrderId })
+          .from(wmsTables.salesOrders)
+          .where(eq(wmsTables.salesOrders.id, line.salesOrderId));
+        const { manager } = makeManager(tx);
+        const s = { channelOrderId: so.channelOrderId, channelOrderItemId };
+
+        await manager.recordRequested(requested(s, { kind: 'exchange' }), tx);
+        await manager.recordRequested(requested(s), tx);
+
+        const quantities = await readLineQuantities(tx, line.salesOrderId);
+        const original = quantities.get(line.lineId);
+        expect(original?.skus).toEqual([
+          expect.objectContaining({ skuId: w.skuId, delivered: 3, returnActive: 2, claimable: 1 }),
+        ]);
+        const [exchangeLine] = await exchangeLinesOf(tx, line.salesOrderId);
+        expect(quantities.get(exchangeLine.id)?.skus).toEqual([
+          expect.objectContaining({ skuId: w.skuId, delivered: 0, returnActive: 0, claimable: 0 }),
+        ]);
+      });
     });
   });
 

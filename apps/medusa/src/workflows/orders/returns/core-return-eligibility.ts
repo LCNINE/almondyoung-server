@@ -2,7 +2,14 @@ export type CoreReturnEligibility = {
   found: boolean;
   lines: Array<{ channelOrderItemId: string; deliveredUnits: number; lastDeliveredAt: Date | null }>;
   /** 그 주문의 core 반품 예정 기록. 옛 core(칸 없음)면 [] — 그러면 «도착 없음»으로 읽는다(K8 PR6 N11). */
-  customerReturns: Array<{ channelReturnId: string; status: string }>;
+  customerReturns: Array<{
+    channelReturnId: string;
+    status: string;
+    /** 교환 접수인지(K8 PR11). 옛 core(칸 없음)면 'return'. */
+    kind: 'return' | 'exchange';
+    /** 교환 대체 상자를 core 가 이미 열었는지. 열었으면 Medusa 는 취소하지 않는다(N7). 옛 core 면 false. */
+    exchangeReleased: boolean;
+  }>;
 };
 
 /** core 가 답을 못 줬다(설정 누락·네트워크·비정상 응답). 호출자는 «반품 불가»가 아니라 «지금은 판정 불가»로 다룬다. */
@@ -62,7 +69,11 @@ function parse(body: unknown): CoreReturnEligibility {
       const row = (raw ?? {}) as Record<string, unknown>;
       if (typeof row.channelReturnId !== 'string') throw bad('customerReturns.channelReturnId');
       if (typeof row.status !== 'string') throw bad('customerReturns.status');
-      return { channelReturnId: row.channelReturnId, status: row.status };
+      const kind = row.kind ?? 'return';
+      if (kind !== 'return' && kind !== 'exchange') throw bad('customerReturns.kind');
+      const exchangeReleased = row.exchangeReleased ?? false;
+      if (typeof exchangeReleased !== 'boolean') throw bad('customerReturns.exchangeReleased');
+      return { channelReturnId: row.channelReturnId, status: row.status, kind, exchangeReleased };
     }),
     lines: lines.map((raw: unknown) => {
       const line = (raw ?? {}) as Record<string, unknown>;

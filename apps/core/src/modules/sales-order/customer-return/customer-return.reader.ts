@@ -12,6 +12,7 @@ import { deliveredParcelsSql } from '../line-quantities/line-quantities.sql';
 import type { CustomerReturnPickupStatus } from './customer-return-pickup.types';
 import type {
   CustomerReturnCsResolution,
+  CustomerReturnKind,
   CustomerReturnPrepayment,
   CustomerReturnSettlement,
   CustomerReturnSettlementOutcome,
@@ -39,6 +40,10 @@ export type CustomerReturnView = {
   order: { orderNo: string; channelOrderId: string; salesChannel: string };
   channelReturnId: string;
   status: CustomerReturnStatus;
+  /** 반품인지 교환인지 (K8 PR11) */
+  kind: CustomerReturnKind;
+  /** 교환 상자를 연 시각 — 열기 전·반품이면 null (K8 PR11) */
+  exchangeReleasedAt: string | null;
   reason: string;
   feeBearer: string;
   requestedBy: string;
@@ -584,6 +589,8 @@ export class CustomerReturnReader {
         },
         channelReturnId: record.channelReturnId,
         status: record.status,
+        kind: record.kind,
+        exchangeReleasedAt: record.exchangeReleasedAt?.toISOString() ?? null,
         reason: record.reason,
         feeBearer: record.feeBearer,
         requestedBy: record.requestedBy,

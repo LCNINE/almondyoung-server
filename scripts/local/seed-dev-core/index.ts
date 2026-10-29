@@ -16,6 +16,7 @@ import { PurchaseOrderHeaderDeriver } from '../../../apps/core/src/modules/inven
 import { PurchaseOrderReader } from '../../../apps/core/src/modules/inventory/procurement/services/purchase-order.reader';
 import { PurchaseOrderReceivingManager } from '../../../apps/core/src/modules/inventory/procurement/services/purchase-order-receiving.manager';
 import { CustomerReturnManager } from '../../../apps/core/src/modules/sales-order/customer-return/customer-return.manager';
+import { LineCompositionManager } from '../../../apps/core/src/modules/product-matching/line-composition/line-composition.manager';
 import { outboxPublisherFor } from '../../../apps/core/src/modules/fulfillment/outbox/__support__/outbox-publisher.factory';
 import { CORE_ORDER_STREAM } from '@packages/event-contracts/streams';
 import { DEFAULT_SEED_URL, recreateDatabase, resolveSeedUrl, runCoreMigrations } from './database';
@@ -125,7 +126,11 @@ async function main(): Promise<void> {
     );
     void inboundService;
     // 반품 예정 기록은 실제 Manager 가 만든다. 발행자는 outbox 에 적재만 한다 — 시드가 Kafka 를 부르지 않는다.
-    const returnIntake = new CustomerReturnManager(dbService, outboxPublisherFor(CORE_ORDER_STREAM, dbService));
+    const returnIntake = new CustomerReturnManager(
+      dbService,
+      outboxPublisherFor(CORE_ORDER_STREAM, dbService),
+      new LineCompositionManager(dbService),
+    );
 
     const planning = buildShipmentPlanning(dbService, wired);
 

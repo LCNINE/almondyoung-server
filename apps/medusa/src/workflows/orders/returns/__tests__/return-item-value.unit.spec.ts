@@ -3,12 +3,16 @@ import { returnItemValue } from '../return-item-value';
 
 const line = (id: string, unitPrice: number, quantity: number, adjustments: number[] = []): OrderView['lines'][number] => ({
   id,
+  title: id,
+  variantId: `variant_${id}`,
   quantity,
   unitPrice,
   productId: `p_${id}`,
   requiresShipping: true,
   fulfilledQuantity: quantity,
   returnedQuantity: 0,
+  exchangeReplacement: false,
+  exchangedQuantity: 0,
   adjustments: adjustments.map((amount) => ({ amount })),
 });
 

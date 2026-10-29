@@ -163,3 +163,31 @@ describe('describeOrderReturnable', () => {
     expect(await describeOrderReturnable('pending', [item()], async () => core())).toEqual(describeReturnable([item()], core()));
   });
 });
+
+describe('planReturnRequest — 교환 (K8 PR11 N2)', () => {
+  const exchange = { ...base, kind: 'exchange' as const, requestedBy: 'operator' as const };
+
+  it('교환 + change_of_mind → exchange_requires_seller_fault', () => {
+    expect(reasonOf(() => planReturnRequest({ ...exchange, reason: changeOfMind }))).toBe('exchange_requires_seller_fault');
+  });
+
+  it('교환 + other + operatorFeeBearer customer → exchange_requires_seller_fault', () => {
+    expect(
+      reasonOf(() => planReturnRequest({ ...exchange, reason: other, operatorFeeBearer: 'customer' })),
+    ).toBe('exchange_requires_seller_fault');
+  });
+
+  it('교환 + other + operatorFeeBearer seller → 통과', () => {
+    const r = planReturnRequest({ ...exchange, reason: other, operatorFeeBearer: 'seller' });
+    expect(r.feeBearer).toBe('seller');
+  });
+
+  it('교환 + defective → 통과', () => {
+    expect(planReturnRequest({ ...exchange, reason: defective }).feeBearer).toBe('seller');
+  });
+
+  it('kind 가 없거나 return 이면 change_of_mind 도 그대로 통과(반품 동작 불변)', () => {
+    expect(planReturnRequest(base).feeBearer).toBe('customer');
+    expect(planReturnRequest({ ...base, kind: 'return' }).feeBearer).toBe('customer');
+  });
+});

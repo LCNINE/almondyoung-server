@@ -15,7 +15,7 @@ import { parseInput } from './parse-input';
  * 본문 `{ requestId, amount?, refundMode?, memo }`. 응답 계약은 정산 라우트와 같은 모양이고 channel-adapter 가 읽는다:
  * 200 결과 · 404 not_found(없는 반품이거나 다른 주문의 반품) ·
  * 400 code=return_prepay_rejected + reason(not_our_return·return_canceled·return_already_settled·request_id_conflict·
- *   prepay_exceeds_item_value·external_refund_unresolved·pending_refund_outstanding) = 정해진 거절, 돈은 안 움직였다 ·
+ *   prepay_exceeds_item_value·external_refund_unresolved·pending_refund_outstanding·exchange_unsupported) = 정해진 거절, 돈은 안 움직였다 ·
  * 400 code=wallet_refund_refused:<code> = wallet 이 환불을 영구 거절(같은 requestId 로 refundMode manual 로 다시) ·
  * 502 type=refund_pending = 환불이 남음(같은 requestId 로 재시도) ·
  * 그 밖은 그대로 던져 500(일시). 본문이 틀리면 Medusa 의 400 type=invalid_data 다 — 최종 거절은 code 로 가린다.

@@ -2,7 +2,11 @@ import { eq } from 'drizzle-orm';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
 import { seedOrder, seedWorld } from '../../fulfillment/order-progress/__support__/order-progress.fixtures';
 import { inRollbackTx, makeDb } from '../../fulfillment/services/__support__';
-import { insertCustomerReturn, seedComponentSku, seedDeliveredLine } from '../line-quantities/__support__/claim-facts.fixtures';
+import {
+  insertCustomerReturn,
+  seedComponentSku,
+  seedDeliveredLine,
+} from '../line-quantities/__support__/claim-facts.fixtures';
 import { recallParcel, seedSupplierShare } from '../line-quantities/__support__/shipment-facts.fixtures';
 import { readParcelClaimEligibility } from '../line-quantities/parcel-claim-eligibility.reader';
 import { readReturnEligibility } from './return-eligibility.reader';
@@ -144,7 +148,11 @@ describeIfDb('readReturnEligibility', () => {
 
   it('없는 주문 → { found: false, lines: [], customerReturns: [] }', async () => {
     await inRollbackTx(db, async (tx) => {
-      expect(await readReturnEligibility(tx, 'order_does_not_exist')).toEqual({ found: false, lines: [], customerReturns: [] });
+      expect(await readReturnEligibility(tx, 'order_does_not_exist')).toEqual({
+        found: false,
+        lines: [],
+        customerReturns: [],
+      });
     });
   });
 
@@ -183,12 +191,55 @@ describeIfDb('readReturnEligibility', () => {
         )[0].c;
       expect(result.customerReturns).toHaveLength(2);
       // 읽기는 requestedAt, id 순 — 접수 시각이 이른 expected 가 먼저다
-      expect(result.customerReturns).toEqual(
-        [
-          { channelReturnId: await idOf(expected.customerReturnId), status: 'expected' },
-          { channelReturnId: await idOf(arrived.customerReturnId), status: 'arrived' },
-        ],
-      );
+      expect(result.customerReturns).toEqual([
+        {
+          channelReturnId: await idOf(expected.customerReturnId),
+          status: 'expected',
+          kind: 'return',
+          exchangeReleased: false,
+        },
+        {
+          channelReturnId: await idOf(arrived.customerReturnId),
+          status: 'arrived',
+          kind: 'return',
+          exchangeReleased: false,
+        },
+      ]);
+    });
+  });
+  it('교환 반품 → kind exchange·exchangeReleased false, 교환 상자가 열린 뒤 true (N17)', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = await seedWorld(tx);
+      const line = await seedDeliveredLine(tx, w, {
+        quantity: 1,
+        composition: [{ skuId: w.skuId, qtyPerUnit: 1 }],
+        parcels: [{ qtyBySku: { [w.skuId]: 1 } }],
+      });
+      await asMedusa(tx, line);
+      const { customerReturnId } = await insertCustomerReturn(tx, {
+        salesOrderId: line.salesOrderId,
+        status: 'expected',
+        lines: [{ salesOrderLineId: line.lineId, quantity: 1 }],
+      });
+      await tx
+        .update(wmsTables.customerReturns)
+        .set({ kind: 'exchange' })
+        .where(eq(wmsTables.customerReturns.id, customerReturnId));
+
+      const before = await readReturnEligibility(tx, ORDER_ID);
+      expect(before.customerReturns).toEqual([
+        expect.objectContaining({ status: 'expected', kind: 'exchange', exchangeReleased: false }),
+      ]);
+
+      await tx
+        .update(wmsTables.customerReturns)
+        .set({ exchangeReleasedAt: new Date(), exchangeReleasedBy: '00000000-0000-0000-0000-000000000001' })
+        .where(eq(wmsTables.customerReturns.id, customerReturnId));
+
+      const after = await readReturnEligibility(tx, ORDER_ID);
+      expect(after.customerReturns).toEqual([
+        expect.objectContaining({ status: 'expected', kind: 'exchange', exchangeReleased: true }),
+      ]);
     });
   });
 });

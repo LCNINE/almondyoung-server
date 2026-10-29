@@ -10,12 +10,15 @@ import { transitionCustomerReturn } from './customer-return-transition';
 import { enqueuePrepayChannelReturn } from './customer-return-prepay-command';
 import { enqueueSettleChannelReturn, loadSettleLines, toSettleItems } from './customer-return-settle-command';
 import { CustomerReturnReader, CustomerReturnView } from './customer-return.reader';
+import { CustomerExchangeReleaser } from './customer-exchange.releaser';
 import type {
   CustomerReturn,
   CustomerReturnCsResolution,
   CustomerReturnPrepayment,
   CustomerReturnSettlement,
 } from './customer-return.types';
+
+export type ReleaseCustomerExchangeInput = { customerReturnId: string; actorId: string };
 
 export type CloseCustomerReturnMissingInput = { customerReturnId: string; memo: string; actorId: string };
 
@@ -61,7 +64,59 @@ export class CustomerReturnCsManager {
     private readonly reader: CustomerReturnReader,
     @InjectPublisher(CHANNEL_ORDERS_COMMAND_STREAM)
     private readonly commands: PublisherFor<typeof CHANNEL_ORDERS_COMMAND_STREAM>,
+    private readonly exchanges: CustomerExchangeReleaser,
   ) {}
+
+  /**
+   * 교환품 보내기(K8 PR11 N14 ②) — 보류(`held`)면 `held → inspected` 로 옮겨 정산 명령(명령 칸 `{}`)을 내고 교환 상자를 연다.
+   * 수령 전(`expected`·`arrived`)이면 상자만 연다(«선발송») — 정산은 검수가 낸다. 그 밖의 상태는 409.
+   * 이미 열린 교환의 재요청은 그대로 돌려준다 — 단 선발송 뒤 검수가 보류로 멈춘 교환(held)은 정산을 연다. 반품(kind return)은 400.
+   */
+  async releaseExchange(input: ReleaseCustomerExchangeInput, tx?: DbTx): Promise<CustomerReturnView> {
+    return this.dbService.run(async (trx) => {
+      const record = await this.lockReturn(trx, input.customerReturnId);
+      if (record.kind !== 'exchange') throw new BadRequestError('반품은 교환품을 보내지 않습니다');
+      // 열린 교환의 재요청은 그대로 — 단 보류(held)는 아니다: 선발송한 교환도 검수에 보류가 있으면 held 에 멈추고
+      // 정산을 여는 문은 이것뿐이다(보류 정산은 교환을 거절한다). held 면 정산을 열고, 상자는 releaser 가 다시 열지 않는다
+      if (record.exchangeReleasedAt && record.status !== 'held') return this.reader.findById(record.id, trx);
+
+      if (record.status === 'held') {
+        const now = new Date();
+        // 교환은 보류 차감·미도착 닫기가 없다(N15) — 명령 칸은 빈 값이다
+        const command: NonNullable<CustomerReturnSettlement['command']> = {};
+        const settlement: CustomerReturnSettlement = {
+          state: 'in_progress',
+          refundMode: 'auto',
+          startedAt: now.toISOString(),
+          lastIssuedAt: now.toISOString(),
+          attempts: 1,
+          issues: 1,
+          lastFailure: null,
+          command,
+        };
+        const moved = await transitionCustomerReturn(trx, {
+          id: record.id,
+          from: ['held'],
+          to: 'inspected',
+          set: { settlement },
+        });
+        if (!moved) throw new ConflictError(`Customer exchange ${record.id} changed while releasing`);
+        await enqueueSettleChannelReturn(this.commands, trx, {
+          customerReturnId: record.id,
+          salesOrderId: record.salesOrderId,
+          channelReturnId: record.channelReturnId,
+          items: toSettleItems(await loadSettleLines(trx, record.id)),
+          refundMode: settlement.refundMode,
+          command,
+          issue: 1,
+        });
+      } else if (record.status !== 'expected' && record.status !== 'arrived') {
+        throw new ConflictError(`Customer exchange ${record.id} cannot be released: status is ${record.status}`);
+      }
+      await this.exchanges.release(trx, { customerReturnId: record.id, actorId: input.actorId });
+      return this.reader.findById(record.id, trx);
+    }, tx);
+  }
 
   /**
    * 미도착 닫기(N8) — 줄마다 온전히 도착한 벌만 남기고 나머지를 `missing_qty` 로 닫는다. 상태는 `arrived` 그대로,
@@ -70,6 +125,7 @@ export class CustomerReturnCsManager {
   async closeMissing(input: CloseCustomerReturnMissingInput, tx?: DbTx): Promise<CustomerReturnView> {
     return this.dbService.run(async (trx) => {
       const record = await this.lockReturn(trx, input.customerReturnId);
+      this.assertNotExchange(record, '미도착으로 닫지 않습니다 — 반품 취소로 닫으세요');
       if (record.csResolution?.missing) return this.reader.findById(record.id, trx);
       if (record.status === 'expected') {
         throw new ConflictError('도착한 것이 없습니다 — 반품 취소로 닫으세요');
@@ -113,6 +169,7 @@ export class CustomerReturnCsManager {
   async settleHeld(input: SettleHeldCustomerReturnInput, tx?: DbTx): Promise<CustomerReturnView> {
     return this.dbService.run(async (trx) => {
       const record = await this.lockReturn(trx, input.customerReturnId);
+      this.assertNotExchange(record, '보류 정산이 없습니다 — [교환품 보내기]로 여세요');
       const prior = record.csResolution?.hold;
       if (prior) {
         if (prior.deduction === input.deduction && prior.memo === input.memo) {
@@ -180,6 +237,7 @@ export class CustomerReturnCsManager {
   async requestPrepay(input: RequestCustomerReturnPrepayInput, tx?: DbTx): Promise<CustomerReturnView> {
     return this.dbService.run(async (trx) => {
       const record = await this.lockReturn(trx, input.customerReturnId);
+      this.assertNotExchange(record, '먼저 환불하지 않습니다 — 돈이 움직이지 않습니다');
       const prior = record.prepayment;
       const sameRequest = !!prior && prior.requestedAmount === input.amount && prior.memo === input.memo;
       if (prior && sameRequest && prior.refundMode === input.refundMode) {
@@ -245,6 +303,11 @@ export class CustomerReturnCsManager {
       .for('update');
     if (!record) throw new NotFoundError(`Customer return not found: ${id}`);
     return record;
+  }
+
+  /** 돈 문(보류 정산·선환불)과 미도착 닫기는 교환을 받지 않는다(K8 PR11 N15) */
+  private assertNotExchange(record: CustomerReturn, why: string): void {
+    if (record.kind === 'exchange') throw new BadRequestError(`교환은 ${why}`);
   }
 
   private assertMemo(memo: string): void {

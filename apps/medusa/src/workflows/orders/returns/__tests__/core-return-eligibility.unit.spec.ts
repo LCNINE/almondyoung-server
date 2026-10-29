@@ -41,10 +41,32 @@ describe('fetchCoreReturnEligibility', () => {
       respond(200, { ...okBody, customerReturns: [{ channelReturnId: 'ret_1', status: 'arrived' }] }),
     );
     expect((await fetchCoreReturnEligibility('o')).customerReturns).toEqual([
-      { channelReturnId: 'ret_1', status: 'arrived' },
+      { channelReturnId: 'ret_1', status: 'arrived', kind: 'return', exchangeReleased: false },
     ]);
     fetchMock.mockResolvedValue(respond(200, okBody));
     expect((await fetchCoreReturnEligibility('o')).customerReturns).toEqual([]);
+  });
+
+  it('kind·exchangeReleased 를 싣고, 없는 옛 응답은 return·false', async () => {
+    fetchMock.mockResolvedValue(
+      respond(200, {
+        ...okBody,
+        customerReturns: [{ channelReturnId: 'ret_x', status: 'expected', kind: 'exchange', exchangeReleased: true }],
+      }),
+    );
+    expect((await fetchCoreReturnEligibility('o')).customerReturns).toEqual([
+      { channelReturnId: 'ret_x', status: 'expected', kind: 'exchange', exchangeReleased: true },
+    ]);
+  });
+
+  it.each([
+    ["exchangeReleased 'yes'", { exchangeReleased: 'yes' }],
+    ['알 수 없는 kind', { kind: 'swap' }],
+  ])('%s → CoreEligibilityUnavailable', async (_n, extra) => {
+    fetchMock.mockResolvedValue(
+      respond(200, { ...okBody, customerReturns: [{ channelReturnId: 'r', status: 'expected', ...extra }] }),
+    );
+    await expect(fetchCoreReturnEligibility('o')).rejects.toBeInstanceOf(CoreEligibilityUnavailable);
   });
 
   it('customerReturns 모양이 틀리면 CoreEligibilityUnavailable', async () => {

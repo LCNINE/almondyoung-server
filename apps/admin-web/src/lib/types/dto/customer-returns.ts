@@ -227,7 +227,9 @@ export type ReturnRejectReason =
   | 'not_our_return'
   | 'return_arrived'
   | 'return_prepaid'
-  | 'return_picked_up';
+  | 'return_picked_up'
+  | 'exchange_requires_seller_fault'
+  | 'exchange_released';
 
 export interface OrderReturnable {
   items: Array<{ item_id: string; returnable_quantity: number; window_ends_at: string | null }>;

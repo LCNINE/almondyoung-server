@@ -1,6 +1,7 @@
 import {
   CHANNEL_CANCEL_REFUND_MODES,
   CUSTOMER_RETURN_REASONS,
+  type CustomerReturnKind,
   type ChannelCancelRefundMode,
   type ChannelReturnPrepaidPayload,
   type ChannelReturnSettledPayload,
@@ -9,13 +10,17 @@ import {
 import type { MedusaOrder, MedusaReturn } from '../../adapters/medusa/medusa.client';
 import type { LifecycleObservation } from './channel-order-source.interface';
 
-export type SkippedReturn = { returnId: string; reason: 'unconfirmed' | 'no_record' | 'no_items' | 'no_settlement_record' | 'no_prepay_record' };
+export type SkippedReturn = {
+  returnId: string;
+  reason: 'unconfirmed' | 'no_record' | 'no_items' | 'no_settlement_record' | 'no_prepay_record';
+};
 
 interface AlmondReturnRecord {
   requestId: string;
   reason: CustomerReturnReason;
   feeBearer: 'customer' | 'seller';
   requestedBy: 'customer' | 'operator';
+  kind?: CustomerReturnKind;
   windowOverrideReason?: string;
 }
 
@@ -35,11 +40,13 @@ function isReason(value: unknown): value is CustomerReturnReason {
 function readRecord(metadata: MedusaReturn['metadata']): AlmondReturnRecord | null {
   const raw = metadata?.almondReturn;
   if (!isRecord(raw)) return null;
-  const { requestId, reasonValue, feeBearer, requestedBy, windowOverride } = raw;
+  const { requestId, reasonValue, feeBearer, requestedBy, windowOverride, kind } = raw;
   if (typeof requestId !== 'string' || requestId === '') return null;
   if (!isReason(reasonValue)) return null;
   if (feeBearer !== 'customer' && feeBearer !== 'seller') return null;
   if (requestedBy !== 'customer' && requestedBy !== 'operator') return null;
+  // 교환만 kind 를 적는다(반품은 칸이 없다) — 모르는 값은 우리 접수 경로가 아니다
+  if (kind !== undefined && kind !== 'exchange') return null;
   const overrideReason =
     isRecord(windowOverride) && typeof windowOverride.reason === 'string' ? windowOverride.reason : undefined;
   return {
@@ -47,6 +54,7 @@ function readRecord(metadata: MedusaReturn['metadata']): AlmondReturnRecord | nu
     reason: reasonValue,
     feeBearer,
     requestedBy,
+    ...(kind === 'exchange' ? { kind } : {}),
     ...(overrideReason ? { windowOverrideReason: overrideReason } : {}),
   };
 }
@@ -61,7 +69,7 @@ function isRefundMode(value: unknown): value is ChannelCancelRefundMode {
 }
 
 /**
- * `return.metadata.almondReturnSettlement` 중 환불까지 끝난(`stage === 'refunded'`) 기록을 읽는다. 모양은 Medusa 쪽
+ * `return.metadata.almondReturnSettlement` 중 환불까지 끝난(`stage === 'refunded'`) 또는 교환이 끝난(`'exchanged'`, K8 PR11) 기록을 읽는다. 모양은 Medusa 쪽
  * `return-settlement-record.ts` 가 정한다 — 필요한 칸만 직접 검증한다. 아직 끝나지 않았으면 undefined, 끝났다는데
  * 모양이 어긋나면 null (돈을 지어내지 않는다).
  */
@@ -69,8 +77,11 @@ function readSettlement(metadata: MedusaReturn['metadata']): SettlementRecord | 
   const raw = metadata?.almondReturnSettlement;
   if (raw === undefined || raw === null) return undefined;
   if (!isRecord(raw)) return null;
-  if (raw.stage !== 'refunded') return undefined;
-  const { requestId, items, deduction, feeNotAdjusted, refundAmount, refundedAt, refundMode } = raw;
+  if (raw.stage !== 'refunded' && raw.stage !== 'exchanged') return undefined;
+  const isExchange = raw.stage === 'exchanged';
+  const { requestId, items, deduction, feeNotAdjusted, refundAmount, exchangedAt, exchangeItems } = raw;
+  const refundedAt = isExchange ? exchangedAt : raw.refundedAt;
+  const refundMode = isExchange ? 'auto' : raw.refundMode;
   if (typeof requestId !== 'string' || requestId === '') return null;
   if (!Array.isArray(items) || items.length === 0) return null;
   const lines: SettlementRecord['items'] = [];
@@ -92,6 +103,18 @@ function readSettlement(metadata: MedusaReturn['metadata']): SettlementRecord | 
   if (typeof feeNotAdjusted !== 'boolean' || !isNonNegativeInt(refundAmount)) return null;
   if (typeof refundedAt !== 'string' || Number.isNaN(Date.parse(refundedAt))) return null;
   if (!isRefundMode(refundMode)) return null;
+  const exchangeLines: NonNullable<SettlementRecord['exchangeItems']> = [];
+  if (isExchange) {
+    if (refundAmount !== 0 || !Array.isArray(exchangeItems) || exchangeItems.length === 0) return null;
+    for (const line of exchangeItems) {
+      if (!isRecord(line)) return null;
+      const { sourceItemId, itemId, quantity } = line;
+      if (typeof sourceItemId !== 'string' || sourceItemId === '') return null;
+      if (typeof itemId !== 'string' || itemId === '') return null;
+      if (typeof quantity !== 'number' || !Number.isInteger(quantity) || quantity < 1) return null;
+      exchangeLines.push({ sourceItemId, itemId, quantity });
+    }
+  }
   return {
     requestId,
     refundAmount,
@@ -100,6 +123,7 @@ function readSettlement(metadata: MedusaReturn['metadata']): SettlementRecord | 
     refundMode,
     settledAt: new Date(refundedAt).toISOString(),
     items: lines,
+    ...(isExchange ? { exchangeItems: exchangeLines } : {}),
     ...(prepaidApplied !== undefined ? { prepaidAmount: prepaidApplied } : {}),
     ...(externalRefundApplied !== undefined ? { externalRefundApplied } : {}),
   };
@@ -173,6 +197,7 @@ export function medusaReturnObservations(order: MedusaOrder): {
         returnId,
         requestId: record.requestId,
         reason: record.reason,
+        ...(record.kind ? { kind: record.kind } : {}),
         feeBearer: record.feeBearer,
         requestedBy: record.requestedBy,
         ...(record.windowOverrideReason ? { windowOverrideReason: record.windowOverrideReason } : {}),

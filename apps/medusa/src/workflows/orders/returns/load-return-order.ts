@@ -20,7 +20,11 @@ export type ReturnRequestRecord = {
   fulfillmentTopUp: Array<{ itemId: string; quantity: number }>;
   /** 반품 취소가 위 수량을 되돌렸다 — 끊긴 취소를 다시 부를 때 두 번 되돌리지 않게 */
   fulfillmentTopUpReverted?: boolean;
+  /** 교환 접수(K8 PR11 N1) — 반품이면 칸이 없다(옛 기록 모양 그대로) */
+  kind?: 'exchange';
 };
+
+export const isExchangeRecord = (record: ReturnRequestRecord): boolean => record.kind === 'exchange';
 
 export type ReturnOrder = {
   id: string;
@@ -50,6 +54,8 @@ export function readReturnRequestRecord(metadata: unknown): ReturnRequestRecord 
   });
   // 되돌릴 수량을 하나라도 못 읽으면 기록 전체를 믿지 않는다 — 반만 되돌리는 것보다 «우리 기록 아님»으로 멈추는 편이 낫다
   if (fulfillmentTopUp.length !== r.fulfillmentTopUp.length) return null;
+  // 모르는 kind 는 기록 전체를 믿지 않는다 — 교환을 반품으로 잘못 정산하는 것보다 «우리 기록 아님»으로 멈추는 편이 낫다
+  if (r.kind !== undefined && r.kind !== 'exchange') return null;
   const override = r.windowOverride as { reason?: unknown; actorId?: unknown } | null | undefined;
   const windowOverride =
     override && typeof override === 'object' && typeof override.reason === 'string'
@@ -65,6 +71,7 @@ export function readReturnRequestRecord(metadata: unknown): ReturnRequestRecord 
     windowOverride,
     fulfillmentTopUp,
     ...(r.fulfillmentTopUpReverted === true ? { fulfillmentTopUpReverted: true } : {}),
+    ...(r.kind === 'exchange' ? { kind: 'exchange' as const } : {}),
   };
 }
 

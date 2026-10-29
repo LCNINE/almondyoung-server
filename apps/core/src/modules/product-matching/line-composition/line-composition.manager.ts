@@ -103,6 +103,47 @@ export class LineCompositionManager {
     }, tx);
   }
 
+  /**
+   * 교환 줄(K8 PR11 N12)에 원래 줄의 굳은 구성을 그대로 옮긴다 — 행과 출처·지정자를 복사하고, 굳힌 시각은 지금이다.
+   * 원래 줄이 안 굳었으면(출처 NULL·행 0) 던진다 — 호출자가 접수 전에 이미 거절했어야 한다.
+   * 대상 줄은 갓 만든 미굳힘 줄이어야 한다 — 이미 굳었으면 결함이다.
+   */
+  async copyFrozen(input: { sourceLineId: string; targetLineId: string }, tx?: DbTx): Promise<void> {
+    await this.dbService.run(async (trx) => {
+      const lines = wmsTables.salesOrderLines;
+      const [source] = await trx
+        .select({ compositionSource: lines.compositionSource, compositionSetBy: lines.compositionSetBy })
+        .from(lines)
+        .where(eq(lines.id, input.sourceLineId))
+        .limit(1);
+      const items = await trx
+        .select({
+          skuId: wmsTables.salesOrderLineCompositions.skuId,
+          qtyPerUnit: wmsTables.salesOrderLineCompositions.qtyPerUnit,
+        })
+        .from(wmsTables.salesOrderLineCompositions)
+        .where(eq(wmsTables.salesOrderLineCompositions.salesOrderLineId, input.sourceLineId));
+      if (!source?.compositionSource || items.length === 0) {
+        throw new Error(`Line ${input.sourceLineId} is not frozen or missing`);
+      }
+      const now = new Date();
+      const claimed = await trx
+        .update(lines)
+        .set({
+          compositionSource: source.compositionSource,
+          compositionSetAt: now,
+          compositionSetBy: source.compositionSetBy,
+          updatedAt: now,
+        })
+        .where(and(eq(lines.id, input.targetLineId), isNull(lines.compositionSource)))
+        .returning({ id: lines.id });
+      if (claimed.length === 0) throw new Error(`Line ${input.targetLineId} is already frozen or missing`);
+      await trx
+        .insert(wmsTables.salesOrderLineCompositions)
+        .values(items.map((item) => ({ salesOrderLineId: input.targetLineId, ...item })));
+    }, tx);
+  }
+
   private assertItems(salesOrderLineId: string, items: readonly CompositionItem[]): void {
     const problem = compositionItemsProblem(items);
     if (problem) throw new Error(`Refusing composition for line ${salesOrderLineId}: ${problem}`);

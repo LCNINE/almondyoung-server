@@ -33,6 +33,10 @@ describe('releaseCoreReturnPickup', () => {
 
     fetchMock.mockResolvedValueOnce(respond(200, { result: 'picked_up' }));
     expect(await releaseCoreReturnPickup('ret_1')).toBe('picked_up');
+
+    // K8 PR11 — 교환 대체 상자가 이미 열렸다
+    fetchMock.mockResolvedValueOnce(respond(200, { result: 'exchange_released' }));
+    expect(await releaseCoreReturnPickup('ret_1')).toBe('exchange_released');
   });
 
   it('404(옛 core — 라우트 없음)는 released 로 읽는다', async () => {

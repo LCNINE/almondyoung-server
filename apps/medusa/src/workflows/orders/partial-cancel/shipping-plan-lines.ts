@@ -2,7 +2,8 @@ import type { OrderLine } from './plan-partial-cancel';
 import type { ShippingLineView } from './plan-shipping';
 
 /**
- * 부분취소의 배송비 판정 입력. 남는 수량 = 취소 뒤 수량 − 이미 돌아온 수량(수령·폐기).
+ * 부분취소·반품 택배비의 배송비 판정 입력. 남는 수량 = 취소 뒤 수량 − (이미 돌아온 수량 − 교환한 수량). 교환 대체 품목 줄은
+ * 빼고 그 수량을 원래 줄에 남는 것으로 되돌린다(N8 — 대체 줄은 상품·배송 프로필이 없어 그대로 두면 그룹이 안 맞는다).
  * Medusa items.quantity 는 반품이 수령돼도 줄지 않으므로, 빼지 않으면 돌아간 물건이 그룹 소계에 남아
  * 반품 정산이 받은 «무료배송 깨짐»을 부분취소가 되돌려 준다. 주문 수정의 수량 계산은 건드리지 않는다.
  */
@@ -11,7 +12,8 @@ export function shippingPlanLines(
   newQty: ReadonlyMap<string, number>,
   profiles: ReadonlyMap<string, string>,
 ): ShippingLineView[] {
-  return toViews(lines, newQty, profiles, (l) => l.returnedQuantity);
+  // 교환한 수량은 돌아왔지만 고객이 대체품으로 갖고 있다 — 남는 수량으로 센다(대체 줄 자체는 toViews 가 뺀다)
+  return toViews(lines, newQty, profiles, (l) => Math.max(0, l.returnedQuantity - l.exchangedQuantity));
 }
 
 /**
@@ -33,7 +35,8 @@ function toViews(
   profiles: ReadonlyMap<string, string>,
   returned: (l: OrderLine) => number,
 ): ShippingLineView[] {
-  return lines.map((l) => ({
+  // 교환 대체 품목 줄은 물건 값이 아니라 돌려받은 몫의 대체다(K8 PR11 N8) — 무료배송 기준·그룹 요금에 섞지 않는다
+  return lines.filter((l) => !l.exchangeReplacement).map((l) => ({
     itemId: l.id,
     productShippingProfileId: l.productId ? (profiles.get(l.productId) ?? null) : null,
     unitPrice: l.unitPrice,

@@ -22,6 +22,7 @@ import { CustomerReturnPickupManager } from './customer-return-pickup.manager';
 import {
   CloseCustomerReturnMissingInput,
   CustomerReturnCsManager,
+  ReleaseCustomerExchangeInput,
   RequestCustomerReturnPrepayInput,
   SettleHeldCustomerReturnInput,
 } from './customer-return-cs.manager';
@@ -86,6 +87,11 @@ export class CustomerReturnService {
 
   requestPrepay(input: RequestCustomerReturnPrepayInput, tx?: DbTx) {
     return this.cs.requestPrepay(input, tx);
+  }
+
+  /** CS [교환품 보내기] (K8 PR11 N14 ②) */
+  releaseExchange(input: ReleaseCustomerExchangeInput, tx?: DbTx) {
+    return this.cs.releaseExchange(input, tx);
   }
 
   recordSettled(fact: ChannelReturnSettledPayload, tx?: DbTx) {

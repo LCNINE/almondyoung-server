@@ -21,6 +21,7 @@ const toBody = (r: RequestOrderReturnResult) => ({
   items: r.items.map((i) => ({ item_id: i.itemId, quantity: i.quantity })),
   fee_bearer: r.feeBearer,
   window_overridden: r.windowOverridden,
+  kind: r.kind,
 });
 
 /** store·admin POST 가 공유한다 — 다른 건 호출 주체뿐이다. 고객 소유 확인은 requestOrderReturn 안에서 한다. */

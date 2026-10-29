@@ -23,6 +23,11 @@ export async function seedDispatchedParcel(
     shipmentId: string;
     lines: Array<{ shipmentLineId: string; foItemId: string; qty: number }>;
     delivered?: boolean;
+    /**
+     * 출고 원장(SHIP 이벤트)까지 남긴다 — 실제 발송처럼 소스마다 이벤트 하나를 저널에 잇는다. 같은 FO 에 예약·불변식 검사를
+     * 부르는 스펙(교환 상자 열기 등)만 켠다. 원장 재고는 줄이지 않는다(이벤트 행만).
+     */
+    ledger?: boolean;
   },
 ): Promise<{ dispatchAttemptId: string }> {
   const [location] = await tx
@@ -54,14 +59,42 @@ export async function seedDispatchedParcel(
     stockJournalId: journalId,
     dispatchedAt,
   });
-  await tx.insert(wmsTables.dispatchAttemptSources).values(
-    parcel.lines.map((line) => ({
-      dispatchAttemptId,
-      shipmentLineId: line.shipmentLineId,
-      sourceLocationId: location.id,
-      qty: line.qty,
-    })),
-  );
+  const sources = await tx
+    .insert(wmsTables.dispatchAttemptSources)
+    .values(
+      parcel.lines.map((line) => ({
+        dispatchAttemptId,
+        shipmentLineId: line.shipmentLineId,
+        sourceLocationId: location.id,
+        qty: line.qty,
+      })),
+    )
+    .returning();
+  if (parcel.ledger) {
+    for (const source of sources) {
+      const [line] = await tx
+        .select({ skuId: wmsTables.shipmentLines.skuId })
+        .from(wmsTables.shipmentLines)
+        .where(eq(wmsTables.shipmentLines.id, source.shipmentLineId));
+      const [event] = await tx
+        .insert(wmsTables.stockEvents)
+        .values({
+          journalId,
+          skuId: line.skuId,
+          fromWarehouseId: w.warehouseId,
+          fromLocationId: location.id,
+          fromState: 'ON_HAND',
+          transitionType: 'SHIP',
+          quantity: source.qty,
+          occurredAt: dispatchedAt,
+        })
+        .returning({ id: wmsTables.stockEvents.id });
+      await tx
+        .update(wmsTables.dispatchAttemptSources)
+        .set({ stockEventId: event.id })
+        .where(eq(wmsTables.dispatchAttemptSources.id, source.id));
+    }
+  }
   // incrementFulfillmentItems 의 모양 — 발송이 FOI shipped_qty 를 올린다
   for (const line of parcel.lines) {
     await tx

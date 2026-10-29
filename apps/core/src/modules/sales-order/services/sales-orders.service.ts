@@ -7,6 +7,7 @@ import {
   Optional,
 } from '@nestjs/common';
 import { DbService } from '@app/db';
+import { BadRequestError } from '@app/shared';
 import { InjectTypedDb } from '@app/db/decorators';
 import { wmsTables, wmsSchema, DbTx } from '../../inventory/schema/inventory.schema';
 import {
@@ -249,6 +250,24 @@ function toCancelReason(reasonCode: string | null | undefined): OrderCancelledPa
 }
 
 export const PRINT_PAYMENT_UNCONFIRMED_ERROR = 'payment not confirmed — verify payment, then retry';
+
+/**
+ * 교환 줄(K8 PR11)은 취소로 줄이지 않는다(N18) — 교환 사실로만 생기고 지워진다. Medusa 는 정산 전까지 그 줄을 모르고,
+ * 정산 뒤엔 대체 품목 줄의 반품이 갈 길이다.
+ */
+function isExchangeLine(line: { exchangeReturnLineId: string | null }): boolean {
+  // 칸을 고르지 않은 행이면(undefined) «교환 아님»으로 새지 않고 결함으로 멈춘다 — 타입이 막고, 런타임도 막는다
+  if (line.exchangeReturnLineId === undefined) {
+    throw new Error('sales order line was read without exchange_return_line_id');
+  }
+  return line.exchangeReturnLineId !== null;
+}
+
+function assertNotExchangeLine(line: { id: string; exchangeReturnLineId: string | null }): void {
+  if (isExchangeLine(line)) {
+    throw new BadRequestError(`교환 줄은 취소할 수 없습니다 (line ${line.id})`);
+  }
+}
 
 @Injectable()
 export class SalesOrdersService {
@@ -1472,6 +1491,7 @@ export class SalesOrdersService {
           `Sales order line ${request.salesOrderLineId} does not belong to ${salesOrderId}`,
         );
       }
+      assertNotExchangeLine(line);
       const cancelableQuantity = cancelableOf(priorCancellationContext, line.id);
       if (request.quantity > cancelableQuantity) {
         throw new BadRequestException(cancelQuantityExceedsMessage(request.quantity, cancelableQuantity));
@@ -1682,8 +1702,10 @@ export class SalesOrdersService {
     );
     const lineQuantities = await readLineQuantities(tx, salesOrderId);
     const prior = await this.loadPriorCancellationContext(salesOrderId, tx, lineQuantities);
+    // 교환 줄은 취소 대상이 아니다(K8 PR11 N18) — 열리기 전엔 FOI 도 없다
+    const channelSalesLines = salesOrderLines.filter((line) => !isExchangeLine(line));
     const requestedSalesLines = isFullCancel
-      ? salesOrderLines.flatMap((line) => {
+      ? channelSalesLines.flatMap((line) => {
           // 갈래는 FOI 유무로 정한다 — FOI 가 있으면 SKU 층이 반드시 비어 있지 않다. 구성만 있고 FOI 가 없는 물리 줄을
           // SKU 층(0 들)로 판정하면 0 단위로 조용히 빠져 전체 취소가 그 줄의 남은 수량을 놓친다
           if (!fulfillmentItems.some((item) => item.salesOrderLineId === line.id)) {
@@ -1711,6 +1733,7 @@ export class SalesOrdersService {
         throw new BadRequestException(
           `Sales order line ${request.salesOrderLineId} does not belong to ${salesOrderId}`,
         );
+      assertNotExchangeLine(line);
       // 전체취소에도 돈다 — 물리 줄은 outstanding ≤ cancelable 이라 안전하고, 인쇄(외주) 줄은 배송완료 0 이라 반품이 잡지 못한다
       const cancelable = cancelableOf(prior, line.id);
       if (request.quantity > cancelable) {
@@ -2095,6 +2118,8 @@ export class SalesOrdersService {
       // 뒤에 두면 남은 수량 0 거절이 먼저 나서 문구가 바뀐다.
       if (fullCancellation) throw new BadRequestException(CANCEL_MSG_FULL_CANCELLATION_EXISTS);
       const requested = salesOrderLines
+        // 교환 줄은 취소 대상이 아니다(K8 PR11 N18)
+        .filter((line) => !isExchangeLine(line))
         .map((line) => ({ salesOrderLineId: line.id, quantity: remainingOf(prior, line.id) }))
         .filter((line) => line.quantity > 0);
       if (requested.length === 0) {
@@ -2127,6 +2152,7 @@ export class SalesOrdersService {
           `Sales order line ${request.salesOrderLineId} does not belong to ${salesOrderId}`,
         );
       }
+      assertNotExchangeLine(line);
       const cancelable = cancelableOf(prior, line.id);
       if (request.quantity > cancelable) {
         throw new BadRequestException(cancelQuantityExceedsMessage(request.quantity, cancelable));

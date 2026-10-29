@@ -11,10 +11,17 @@ import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
 import { inRollbackTx, makeDb, makeDbService, wireLogistics } from '../../fulfillment/services/__support__';
 import { seedWorld, World } from '../../fulfillment/order-progress/__support__/order-progress.fixtures';
 import { seedDeliveredLine } from '../line-quantities/__support__/claim-facts.fixtures';
+import { seedDispatchedParcel } from '../line-quantities/__support__/shipment-facts.fixtures';
+import { readReturnEligibility } from '../internal/return-eligibility.reader';
+import { readOrderFulfillmentPhases } from '../line-quantities/order-fulfillment-phase.reader';
+import { exchangeBoxOf } from './__support__/exchange-box';
+import { LineCompositionManager } from '../../product-matching/line-composition/line-composition.manager';
 import { CustomerReturnManager } from './customer-return.manager';
 import { CustomerReturnReader } from './customer-return.reader';
 import { CustomerReturnReceivingManager } from './customer-return-receiving.manager';
 import { CustomerReturnCsManager } from './customer-return-cs.manager';
+import { CustomerExchangeReleaser } from './customer-exchange.releaser';
+import { ExchangeShipmentOpener } from '../../fulfillment/exchange-shipment/exchange-shipment-opener';
 import {
   CUSTOMER_RETURN_SETTLEMENT_MAX_ISSUES,
   CUSTOMER_RETURN_SETTLEMENT_RETRY_MS,
@@ -43,7 +50,7 @@ describeIfDb('CustomerReturnSettlementManager — 반품 정산 결과·재발�
   jest.setTimeout(120_000);
   const { sql: client, db } = makeDb(DATABASE_URL as string);
   const dbService = makeDbService(db);
-  const { command, location } = wireLogistics(dbService);
+  const { command, location, shipmentReservations } = wireLogistics(dbService);
   afterAll(async () => {
     await client.end();
   });
@@ -52,13 +59,19 @@ describeIfDb('CustomerReturnSettlementManager — 반품 정산 결과·재발�
     const coreOrders = recorder();
     const commands = recorder();
     const reader = new CustomerReturnReader(dbService);
-    const intake = new CustomerReturnManager(dbService, coreOrders.publisher as never);
+    const releaser = new CustomerExchangeReleaser(new ExchangeShipmentOpener(shipmentReservations));
+    const intake = new CustomerReturnManager(
+      dbService,
+      coreOrders.publisher as never,
+      new LineCompositionManager(dbService),
+    );
     const receiving = new CustomerReturnReceivingManager(
       dbService,
       reader,
       command,
       coreOrders.publisher as never,
       commands.publisher as never,
+      releaser,
     );
     const settlement = new CustomerReturnSettlementManager(
       dbService,
@@ -66,21 +79,26 @@ describeIfDb('CustomerReturnSettlementManager — 반품 정산 결과·재발�
       coreOrders.publisher as never,
       commands.publisher as never,
     );
-    const cs = new CustomerReturnCsManager(dbService, reader, commands.publisher as never);
+    const cs = new CustomerReturnCsManager(dbService, reader, commands.publisher as never, releaser);
     const eventsOf = (type: string) => coreOrders.calls().filter((e) => e.eventType === type);
     return { intake, receiving, settlement, cs, eventsOf, commands: commands.calls };
   }
 
   type Wired = ReturnType<typeof wire>;
 
+  const INSPECTOR = randomUUID();
+
   /** 배송완료 단품 2개 → 2개 반품(`expected`). `arrive`·`inspect` 로 이어 간다 */
-  async function seedExpected(tx: DbTx, w: World, wired: Wired) {
+  async function seedExpected(tx: DbTx, w: World, wired: Wired, opts: { kind?: 'return' | 'exchange' } = {}) {
+    const exchange = opts.kind === 'exchange';
     await location.ensureSystemLocations(w.warehouseId, tx);
     const line = await seedDeliveredLine(tx, w, {
       quantity: 2,
       composition: [{ skuId: w.skuId, qtyPerUnit: 1 }],
       parcels: [{ qtyBySku: { [w.skuId]: 2 } }],
       customerId: randomUUID(),
+      // 교환 상자 열기는 같은 FO 의 불변식을 검사한다 — 원래 소포의 출고 원장까지 남긴다
+      ledger: exchange,
     });
     const channelOrderItemId = `item_${randomUUID().slice(0, 8)}`;
     await tx
@@ -99,11 +117,13 @@ describeIfDb('CustomerReturnSettlementManager — 반품 정산 결과·재발�
         externalOrderId: so.channelOrderId,
         returnId: channelReturnId,
         requestId: `req_${randomUUID().slice(0, 8)}`,
-        reason: 'change_of_mind',
-        feeBearer: 'customer',
+        // 교환은 판매자 잘못 사유만 받는다(N2)
+        reason: exchange ? 'defective' : 'change_of_mind',
+        feeBearer: exchange ? 'seller' : 'customer',
         requestedBy: 'customer',
         requestedAt: '2026-10-27T01:00:00.000Z',
         items: [{ channelOrderItemId, quantity: 2 }],
+        ...(exchange ? { kind: 'exchange' as const } : {}),
       },
       tx,
     );
@@ -131,7 +151,8 @@ describeIfDb('CustomerReturnSettlementManager — 반품 정산 결과·재발�
         {
           customerReturnId,
           items: [{ customerReturnItemId: item.id, accepted: 2, rejected: 0, held: 0 }],
-          actorId: 'admin-1',
+          // 교환 상자를 연 사람은 uuid 칸이다
+          actorId: exchange ? INSPECTOR : 'admin-1',
         },
         tx,
       );
@@ -148,8 +169,8 @@ describeIfDb('CustomerReturnSettlementManager — 반품 정산 결과·재발�
   }
 
   /** 배송완료 단품 2개 → 2개 반품 → 전부 도착 → 양품 2 검수(`inspected`, 명령 issue 1) */
-  async function seedInspected(tx: DbTx, w: World, wired: Wired) {
-    const s = await seedExpected(tx, w, wired);
+  async function seedInspected(tx: DbTx, w: World, wired: Wired, opts: { kind?: 'return' | 'exchange' } = {}) {
+    const s = await seedExpected(tx, w, wired, opts);
     await s.arrive();
     await s.inspect();
     return s;
@@ -1455,6 +1476,129 @@ describeIfDb('CustomerReturnSettlementManager — 반품 정산 결과·재발�
           `customer-return-settle:${s.customerReturnId}:issue:4`,
         );
         expect((await recordOf(tx, s.customerReturnId)).settlement).toMatchObject({ attempts: 4, issues: 4 });
+      });
+    });
+  });
+  describe('교환 정산 사실 (K8 PR11 N16·E10)', () => {
+    const exchangeFact = (s: Seeded, itemId: string) =>
+      settledFact(s, {
+        refundAmount: 0,
+        deduction: { returnShipping: 0, freeShippingBreak: 0, roundTrip: 0 },
+        exchangeItems: [{ sourceItemId: s.channelOrderItemId, itemId, quantity: 2 }],
+      });
+
+    it('교환 settled + exchangeItems → settled, 교환 줄 channel_order_item_id = itemId, completed 0·SalesOrderReturned 0', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const w = await seedWorld(tx);
+        const wired = wire();
+        const s = await seedInspected(tx, w, wired, { kind: 'exchange' });
+        const replacementItemId = `item_${randomUUID().slice(0, 8)}`;
+
+        expect(await wired.settlement.recordSettled(exchangeFact(s, replacementItemId), tx)).toEqual({
+          changed: true,
+        });
+
+        const record = await recordOf(tx, s.customerReturnId);
+        expect(record.status).toBe('settled');
+        const { lines } = await exchangeBoxOf(tx, s.salesOrderId);
+        expect(lines).toEqual([expect.objectContaining({ channelOrderItemId: replacementItemId, quantity: 2 })]);
+        // 원래 줄은 그대로
+        const [original] = await tx
+          .select({ channelOrderItemId: wmsTables.salesOrderLines.channelOrderItemId })
+          .from(wmsTables.salesOrderLines)
+          .where(eq(wmsTables.salesOrderLines.id, s.lineId));
+        expect(original.channelOrderItemId).toBe(s.channelOrderItemId);
+        expect(wired.eventsOf('SalesOrderClaimProgressed').filter((e) => e.payload.stage === 'completed')).toHaveLength(
+          0,
+        );
+        expect(wired.eventsOf('SalesOrderReturned')).toHaveLength(0);
+        // 같은 사실 두 번 → 그대로
+        expect(await wired.settlement.recordSettled(exchangeFact(s, replacementItemId), tx)).toEqual({
+          changed: false,
+        });
+      });
+    });
+
+    it('반품 기록에 exchangeItems 가 실린 settled → ConflictError, 반품으로 닫지 않고 SalesOrderReturned 도 없다', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const w = await seedWorld(tx);
+        const wired = wire();
+        const s = await seedInspected(tx, w, wired);
+
+        await expect(
+          wired.settlement.recordSettled(exchangeFact(s, `item_${randomUUID().slice(0, 8)}`), tx),
+        ).rejects.toBeInstanceOf(ConflictError);
+
+        expect((await recordOf(tx, s.customerReturnId)).status).toBe('inspected');
+        expect(wired.eventsOf('SalesOrderReturned')).toHaveLength(0);
+        expect(wired.eventsOf('SalesOrderClaimProgressed').filter((e) => e.payload.stage === 'completed')).toHaveLength(
+          0,
+        );
+      });
+    });
+
+    it('교환 settled 인데 exchangeItems 가 없거나 원래 줄·수량과 맞지 않으면 → ConflictError, 아무것도 쓰지 않는다', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const w = await seedWorld(tx);
+        const wired = wire();
+        const s = await seedInspected(tx, w, wired, { kind: 'exchange' });
+
+        await expect(wired.settlement.recordSettled(settledFact(s, { refundAmount: 0 }), tx)).rejects.toBeInstanceOf(
+          ConflictError,
+        );
+        await expect(
+          wired.settlement.recordSettled(
+            settledFact(s, {
+              refundAmount: 0,
+              exchangeItems: [{ sourceItemId: 'item_other', itemId: 'item_new', quantity: 2 }],
+            }),
+            tx,
+          ),
+        ).rejects.toBeInstanceOf(ConflictError);
+        // 대체 수량이 교환 줄 수량(2)과 다르다
+        await expect(
+          wired.settlement.recordSettled(
+            settledFact(s, {
+              refundAmount: 0,
+              exchangeItems: [{ sourceItemId: s.channelOrderItemId, itemId: 'item_new', quantity: 1 }],
+            }),
+            tx,
+          ),
+        ).rejects.toBeInstanceOf(ConflictError);
+        expect((await recordOf(tx, s.customerReturnId)).status).toBe('inspected');
+        expect((await exchangeBoxOf(tx, s.salesOrderId)).lines[0].channelOrderItemId).toBeNull();
+      });
+    });
+
+    it('끝까지 — 교환 상자 출고·배송완료 → 판매주문 delivered, 자격 API 의 교환 줄 deliveredUnits = 수량 (Review Focus 5)', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const w = await seedWorld(tx);
+        const wired = wire();
+        const s = await seedInspected(tx, w, wired, { kind: 'exchange' });
+        const box = await exchangeBoxOf(tx, s.salesOrderId);
+        expect(box.shipments).toHaveLength(1);
+        expect((await readOrderFulfillmentPhases(tx, [s.salesOrderId])).get(s.salesOrderId)?.adminPhase).not.toBe(
+          'delivered',
+        );
+
+        await seedDispatchedParcel(tx, w, {
+          shipmentId: box.shipments[0].id,
+          lines: box.shipmentLines.map((line) => ({
+            shipmentLineId: line.id,
+            foItemId: line.fulfillmentOrderItemId,
+            qty: line.qty,
+          })),
+          delivered: true,
+        });
+        const replacementItemId = `item_${randomUUID().slice(0, 8)}`;
+        await wired.settlement.recordSettled(exchangeFact(s, replacementItemId), tx);
+
+        const phase = (await readOrderFulfillmentPhases(tx, [s.salesOrderId])).get(s.salesOrderId);
+        expect(phase).toMatchObject({ adminPhase: 'delivered', storePhase: 'delivered' });
+        const eligibility = await readReturnEligibility(tx, s.channelOrderId);
+        expect(eligibility.lines.find((line) => line.channelOrderItemId === replacementItemId)).toMatchObject({
+          deliveredUnits: 2,
+        });
       });
     });
   });
