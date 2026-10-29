@@ -20,8 +20,10 @@ import { ProductMatchingService } from '../../product-matching/services/product-
 import { MatchingLinkResolver } from '../../product-matching/services/matching-link-resolver';
 import { ProductModel3dProjection } from '../../catalog/core/products/services/product-model3d-projection';
 
+const describeWithPostgres = process.env.REQUIRE_SKU_3D_MODELS_DB === '1' ? describe : describe.skip;
+
 // 전용 컨테이너에 최소 연결 테이블과 실제 additive migration을 적용해 로컬 데이터와 격리한다.
-describe('SKU 3D models PostgreSQL integration', () => {
+describeWithPostgres('SKU 3D models PostgreSQL integration', () => {
   jest.setTimeout(120_000);
 
   let container: StartedPostgreSqlContainer;

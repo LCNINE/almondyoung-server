@@ -144,8 +144,8 @@ ORDER BY sku_id, version DESC;
 회귀 테스트:
 
 ```sh
-# 루트, Jest 직렬 실행
-corepack yarn jest --runInBand \
+# 루트, Jest 직렬 실행. PostgreSQL 통합 사례는 Docker가 실행 중이어야 한다.
+REQUIRE_SKU_3D_MODELS_DB=1 corepack yarn jest --runInBand \
   apps/core/src/modules/inventory/sku-3d-models \
   apps/core/src/modules/catalog/core/products/loaders/product-model3d.loader.spec.ts \
   apps/core/src/modules/catalog/core/products/assemblers/projection-snapshot.assembler.spec.ts \

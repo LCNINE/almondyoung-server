@@ -53,3 +53,10 @@ Use the existing next-intl product detail messages for viewer text.
 - Ruling: cover all matching link mutation paths, including automatic and legacy matching.
   The same stale model failure otherwise remains reachable through those APIs.
 - Focused root verification: 17 suites, 276 tests passed, including 26 PostgreSQL cases.
+- Merged current `develop` and reconciled migration journal order and the combined snapshot.
+  Drizzle generation reported no schema changes, and the merged full TypeScript gate passed.
+- Rejected the lane-order finding after tracing the existing lifecycle supersession check.
+  It checks newer pending, processing, published, and failed events before invoking product sync.
+  Existing inbox worker and consumer verification passed 33 tests.
+- Reproduced the default suite's Docker dependency with Docker stopped.
+  PostgreSQL model integration now requires `REQUIRE_SKU_3D_MODELS_DB=1`.
