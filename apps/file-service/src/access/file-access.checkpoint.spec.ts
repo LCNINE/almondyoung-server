@@ -67,9 +67,11 @@ describe('FileAccess permission checkpoints', () => {
     await expect(files.delete('f-1', user('k', ['file_keeper']))).resolves.toMatchObject({ success: true });
   });
 
-  it('sees a core delegation token as a system principal, even before the permission copy arrives', async () => {
+  it('no longer treats the retired master-scope token as a system principal', async () => {
     const files = await access(null);
-    await expect(files.loadReadable('f-1', user('core-library-service', [], ['master']))).resolves.toBe(file);
+    await expect(files.loadReadable('f-1', user('core-library-service', [], ['master']))).rejects.toBeInstanceOf(
+      ForbiddenError,
+    );
   });
 
   it('sees a standard delegation token from core or ugc as a system principal', async () => {

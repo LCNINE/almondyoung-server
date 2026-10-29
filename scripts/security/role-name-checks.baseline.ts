@@ -13,8 +13,6 @@ export type RoleLiteralKind =
   | 'role-mapping'
   /** 시스템 역할 규칙(최소 1명·편집 불가) — 역할 이름을 아는 유일한 판정 자리. */
   | 'system-role-rule'
-  /** 시스템 행위자·서비스 위임 토큰의 옛 표기. 판정 지점은 시스템 주체로 본다. */
-  | 'system-identity'
   /** 역할 이름과 우연히 같은 데이터 값·경로·문서 예시. 판정이 아니다. */
   | 'data-value';
 
@@ -57,7 +55,6 @@ export const ROLE_LITERAL_BASELINE: Readonly<Record<string, { count: number; kin
   'apps/core/src/modules/sales-order/dto/cancel-sales-order.dto.ts': { count: 1, kind: 'data-value' },
   // 취소 기록의 cancelledBy 값('admin') — 판정이 아니다(K7 PR4 가 관리자 문에서 옮겨 왔다)
   'apps/core/src/modules/sales-order/order-cancellation/order-cancellation.ts': { count: 1, kind: 'data-value' },
-  'apps/file-service/src/access/service-delegation.ts': { count: 1, kind: 'system-identity' },
   'apps/membership/src/config/swagger.config.ts': { count: 1, kind: 'data-value' },
   'apps/membership/src/controllers/admin-operations.controller.ts': { count: 2, kind: 'data-value' },
   'apps/notification/src/dispatcher/handlers/order-event.consumer.ts': { count: 1, kind: 'data-value' },

@@ -84,7 +84,7 @@ export class FileAccess {
   /** 판정 지점에 넘길 주체. 허용된 서비스의 위임 토큰은 시스템 주체다. */
   private subjectOf(user: JwtPayload): AuthzSubject {
     const delegation = delegationOf(user);
-    return delegation ? FILE_DELEGATION[delegation.delegate] : { roles: user.roles ?? [] };
+    return delegation ? FILE_DELEGATION[delegation] : { roles: user.roles ?? [] };
   }
 
   private isOwnerOrFileManager(file: Upload, user: JwtPayload): boolean {

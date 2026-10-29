@@ -14,8 +14,21 @@ describe('FileAccess', () => {
   const otherUser: JwtPayload = { userId: 'other-1', email: 'oo@x', roles: [] };
   const masterUser: JwtPayload = { userId: 'master-1', email: 'm@x', roles: ['master'] };
   const adminUser: JwtPayload = { userId: 'admin-1', email: 'a@x', roles: ['admin'] };
-  // Service-to-service 위임 토큰 (예: core 의 FileServiceClient): roles 없이 scopes 만.
-  const serviceTokenUser: JwtPayload = { userId: 'core-library-service', email: '', roles: [], scopes: ['master'] };
+  // Service-to-service 위임 토큰 (core 가 사람 대신 부른다): roles 없이 act·aud.
+  const serviceTokenUser: JwtPayload = {
+    userId: 'u-1',
+    email: '',
+    roles: [],
+    act: { sub: 'core' },
+    aud: 'file-service',
+  };
+  // 옛 표기(roles 없이 scopes:['master'])는 더 이상 위임으로 보지 않는다.
+  const retiredServiceTokenUser: JwtPayload = {
+    userId: 'core-library-service',
+    email: '',
+    roles: [],
+    scopes: ['master'],
+  };
 
   const baseFile = {
     id: 'file-1',
@@ -92,9 +105,14 @@ describe('FileAccess', () => {
       await expect(fileAccess.loadReadable('file-1', masterUser)).resolves.toMatchObject({ id: 'file-1' });
     });
 
-    it('returns private file to service token (scopes-only, no roles)', async () => {
+    it('returns private file to a delegation token', async () => {
       repo.findById.mockResolvedValue(baseFile);
       await expect(fileAccess.loadReadable('file-1', serviceTokenUser)).resolves.toMatchObject({ id: 'file-1' });
+    });
+
+    it('refuses a private file to the retired master-scope token', async () => {
+      repo.findById.mockResolvedValue(baseFile);
+      await expect(fileAccess.loadReadable('file-1', retiredServiceTokenUser)).rejects.toBeInstanceOf(ForbiddenError);
     });
 
     it('throws ForbiddenError when private file requested by non-owner non-master', async () => {
@@ -169,7 +187,13 @@ describe('FileAccess', () => {
       expect(repo.softDelete).toHaveBeenCalledWith('file-1');
     });
 
-    it('soft-deletes when called via service token (scopes-only)', async () => {
+    it('refuses deletion to the retired master-scope token', async () => {
+      repo.findById.mockResolvedValue(baseFile);
+      await expect(fileAccess.delete('file-1', retiredServiceTokenUser)).rejects.toBeInstanceOf(ForbiddenError);
+      expect(repo.softDelete.mock.calls).toHaveLength(0);
+    });
+
+    it('soft-deletes when called via a delegation token', async () => {
       repo.findById.mockResolvedValue(baseFile);
       await expect(fileAccess.delete('file-1', serviceTokenUser)).resolves.toMatchObject({ success: true });
       expect(repo.softDelete).toHaveBeenCalledWith('file-1');
