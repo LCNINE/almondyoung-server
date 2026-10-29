@@ -77,6 +77,7 @@ describe('describeStoreReturns', () => {
       items: [{ itemId: 'i1', quantity: 2 }],
       canCancel: true,
       kind: 'return',
+      refund: null,
     });
   });
   it.each(['received', 'partially_received'])('%s → processing, canCancel false', (status) => {
@@ -148,5 +149,43 @@ describe('describeStoreReturns — 교환 (K8 PR11b N5)', () => {
       src({ status: 'canceled', extra: { almondReturn: exchangeRequest, almondReturnSettlement: exchangedSettlement() } }),
     ]);
     expect(r).toMatchObject({ stage: 'canceled', kind: 'exchange', canCancel: false });
+  });
+
+  it('정산 기록이 있으면 환불 요약 — total = 상품값 + 배송비 환급 − 차감(선환불 몫 포함)', () => {
+    const refunded = {
+      ...settlement('refunded'),
+      deduction: { returnShipping: 3000, freeShippingBreak: 3000, roundTrip: 0, hold: 1000 },
+      shippingRefund: 2500,
+      refundAmount: 10500,
+      prepaidApplied: 15000,
+      refundedAt: '2026-10-28T00:00:00.000Z',
+    };
+    const [r] = describeStoreReturns([src({ status: 'received', extra: { almondReturnSettlement: refunded } })]);
+    expect(r.refund).toEqual({
+      itemTotal: 30000,
+      shippingRefund: 2500,
+      fees: 7000,
+      total: 25500,
+      receivedAt: '2026-10-27T00:00:00.000Z',
+      refundedAt: '2026-10-28T00:00:00.000Z',
+    });
+    expect(r.refund!.total).toBe(refunded.refundAmount + refunded.prepaidApplied);
+  });
+  it('선환불만 있으면 선환불 금액이 환불 요약이다', () => {
+    const [r] = describeStoreReturns([src({ extra: { almondReturnPrepay: prepay('refunded') } })]);
+    expect(r.refund).toEqual({
+      itemTotal: 60000,
+      shippingRefund: 0,
+      fees: 6000,
+      total: 54000,
+      receivedAt: null,
+      refundedAt: '2026-10-27T01:00:00.000Z',
+    });
+  });
+  it('교환은 환불 요약이 없다', () => {
+    const [r] = describeStoreReturns([
+      src({ status: 'received', extra: { almondReturn: request({ kind: 'exchange' }), almondReturnSettlement: exchangedSettlement() } }),
+    ]);
+    expect(r.refund).toBeNull();
   });
 });
