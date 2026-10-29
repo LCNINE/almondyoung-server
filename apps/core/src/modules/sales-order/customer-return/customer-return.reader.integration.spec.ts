@@ -302,6 +302,32 @@ describeIfDb('CustomerReturnReader — 상세 뷰 (K8 PR7)', () => {
       });
     });
 
+    it('교환 (K8 PR11b N8·N9) — 목록 행 kind, 기한 지난 미열림 교환은 attention 에 exchange_overdue 로 든다', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const wired = wire();
+        // 10-20(화) 도착 → 기한 10-23(금) — NOW(10-28) 는 지났다. inspected 라 일부 도착 판정은 없다
+        const arrivedAt = new Date('2026-10-20T03:00:00Z');
+        const overdue = await seedReturn(tx, wired, { kind: 'exchange', status: 'inspected', arrivedAt });
+        const released = await seedReturn(tx, wired, {
+          kind: 'exchange',
+          status: 'inspected',
+          arrivedAt,
+          exchangeReleasedAt: new Date('2026-10-21T03:00:00Z'),
+        });
+        const plain = await seedReturn(tx, wired, { status: 'inspected', arrivedAt });
+        const mine = [overdue, released, plain].map((r) => r.customerReturnId);
+
+        const open = await wired.reader.list(query({ limit: 100 }), NOW, tx);
+        const byId = new Map(open.items.map((item) => [item.id, item]));
+        expect(byId.get(overdue.customerReturnId)).toMatchObject({ kind: 'exchange', attention: ['exchange_overdue'] });
+        expect(byId.get(released.customerReturnId)).toMatchObject({ kind: 'exchange', attention: [] });
+        expect(byId.get(plain.customerReturnId)).toMatchObject({ kind: 'return', attention: ['refund_overdue'] });
+
+        const att = await wired.reader.list(query({ bucket: 'attention', limit: 100 }), NOW, tx);
+        expect(idsOf(att, mine).sort()).toEqual([overdue.customerReturnId, plain.customerReturnId].sort());
+      });
+    });
+
     it('closed 는 끝난 순 최신부터, limit·offset 이 자른다', async () => {
       await inRollbackTx(db, async (tx) => {
         const wired = wire();

@@ -100,6 +100,8 @@ export type CustomerReturnListItem = {
   channelOrderId: string;
   customerName: string | null;
   status: CustomerReturnStatus;
+  /** 반품인지 교환인지 (K8 PR11b N9) */
+  kind: CustomerReturnKind;
   reason: string;
   feeBearer: string;
   requestedBy: string;
@@ -515,6 +517,7 @@ export class CustomerReturnReader {
         channelOrderId,
         customerName,
         status: record.status,
+        kind: record.kind,
         reason: record.reason,
         feeBearer: record.feeBearer,
         requestedBy: record.requestedBy,
@@ -537,6 +540,8 @@ export class CustomerReturnReader {
             arrivedQty: summary?.arrivedQty ?? 0,
             missingQty: summary?.missingQty ?? 0,
             pickupStatus: pickup?.status ?? null,
+            kind: record.kind,
+            exchangeReleasedAt: record.exchangeReleasedAt,
           },
           now,
         ),

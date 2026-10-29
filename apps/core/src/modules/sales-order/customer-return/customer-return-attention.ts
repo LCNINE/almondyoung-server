@@ -1,5 +1,10 @@
 import type { CustomerReturnPickupStatus } from './customer-return-pickup.types';
-import type { CustomerReturnPrepayment, CustomerReturnSettlement, CustomerReturnStatus } from './customer-return.types';
+import type {
+  CustomerReturnKind,
+  CustomerReturnPrepayment,
+  CustomerReturnSettlement,
+  CustomerReturnStatus,
+} from './customer-return.types';
 
 const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
 const REFUND_BUSINESS_DAYS = 3;
@@ -28,7 +33,9 @@ export type CustomerReturnAttention =
   | 'settlement_failed'
   | 'prepayment_failed'
   | 'partial_arrival'
-  | 'refund_overdue';
+  | 'refund_overdue'
+  // 교환(K8 PR11b N8) — 기한이 지났는데 교환품을 아직 안 보냈다. 교환에는 환불이 없어 refund_overdue 대신 낸다
+  | 'exchange_overdue';
 
 export type CustomerReturnAttentionInput = {
   status: CustomerReturnStatus;
@@ -40,6 +47,9 @@ export type CustomerReturnAttentionInput = {
   missingQty: number;
   /** 마지막 회수 행의 상태 — 행이 없으면 null (K8 PR9) */
   pickupStatus: CustomerReturnPickupStatus | null;
+  kind: CustomerReturnKind;
+  /** 교환 상자를 연 시각 — 열기 전·반품이면 null (K8 PR11) */
+  exchangeReleasedAt: Date | null;
 };
 
 /** «확인 필요» 판정 — 순서 고정(N5). 정상 상태는 빈 배열이다. */
@@ -60,10 +70,15 @@ export function customerReturnAttention(input: CustomerReturnAttentionInput, now
   if (input.status === 'arrived' && input.arrivedQty < input.expectedQty && input.missingQty === 0) {
     out.push('partial_arrival');
   }
+  const overdue = input.arrivedAt !== null && now.getTime() > refundDueAt(input.arrivedAt).getTime();
+  if (input.kind === 'exchange') {
+    // 교환은 보낼 돈이 없다 — 기한(같은 3평일) 안에 교환품을 보냈는지(교환 상자 열림)를 본다. 끝난 교환은 따지지 않는다
+    const done = input.status === 'settled' || input.status === 'cancelled' || input.exchangeReleasedAt !== null;
+    if (overdue && !done) out.push('exchange_overdue');
+    return out;
+  }
   // 환불이 나간 반품(정산 완료·선환불 done)과 취소는 기한을 따지지 않는다
   const refunded = input.status === 'settled' || input.status === 'cancelled' || input.prepaymentState === 'done';
-  if (input.arrivedAt && !refunded && now.getTime() > refundDueAt(input.arrivedAt).getTime()) {
-    out.push('refund_overdue');
-  }
+  if (overdue && !refunded) out.push('refund_overdue');
   return out;
 }

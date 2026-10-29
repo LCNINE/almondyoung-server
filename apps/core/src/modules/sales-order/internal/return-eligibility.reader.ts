@@ -18,7 +18,11 @@ export async function readReturnEligibility(trx: DbTx, externalOrderId: string):
   if (!order) return { found: false, lines: [], customerReturns: [] };
 
   const lineRows = await trx
-    .select({ id: wmsTables.salesOrderLines.id, channelOrderItemId: wmsTables.salesOrderLines.channelOrderItemId })
+    .select({
+      id: wmsTables.salesOrderLines.id,
+      channelOrderItemId: wmsTables.salesOrderLines.channelOrderItemId,
+      almondDesignId: wmsTables.salesOrderLines.almondDesignId,
+    })
     .from(wmsTables.salesOrderLines)
     .where(eq(wmsTables.salesOrderLines.salesOrderId, order.id))
     .orderBy(asc(wmsTables.salesOrderLines.id));
@@ -26,7 +30,9 @@ export async function readReturnEligibility(trx: DbTx, externalOrderId: string):
   const parcels = await readParcelClaimEligibility(trx, order.id);
   const lines = lineRows.flatMap((row) => {
     const lineQuantities = quantities.get(row.id);
-    return lineQuantities ? [{ channelOrderItemId: row.channelOrderItemId, quantities: lineQuantities }] : [];
+    return lineQuantities
+      ? [{ channelOrderItemId: row.channelOrderItemId, almondDesignId: row.almondDesignId, quantities: lineQuantities }]
+      : [];
   });
   const returnRows = await trx
     .select({
