@@ -10,7 +10,11 @@ class Probe {
 }
 
 const context = (type: 'http' | 'rpc' = 'http'): ExecutionContextHost => {
-  const host = new ExecutionContextHost([{ user: { roles: ['intern'] } }, {}], Probe, Probe.prototype.handle);
+  const host = new ExecutionContextHost(
+    [{ method: 'PUT', user: { roles: ['intern'] } }, {}],
+    Probe,
+    Probe.prototype.handle,
+  );
   host.setType(type);
   return host;
 };
@@ -22,7 +26,13 @@ const permissionRoute: Pick<RouteRequirementResolver, 'resolve'> = {
 const guardWith = (verdict: Verdict, granted: readonly string[] | null = ['order.order.write']) => {
   const decide = jest.fn(() => verdict);
   const grantedAmong = jest.fn((): readonly string[] | null => granted);
-  return { guard: new PermissionGuard(permissionRoute, { decide, grantedAmong }), decide, grantedAmong };
+  const record = jest.fn();
+  return {
+    guard: new PermissionGuard(permissionRoute, { decide, grantedAmong }, { record }),
+    decide,
+    grantedAmong,
+    record,
+  };
 };
 
 const thrownBy = (run: () => unknown): unknown => {
@@ -35,6 +45,36 @@ const thrownBy = (run: () => unknown): unknown => {
 };
 
 describe('PermissionGuard', () => {
+  it('records an allowed permission route', () => {
+    const { guard, record } = guardWith({ allowed: true });
+    guard.canActivate(context());
+    expect(record).toHaveBeenCalledWith('route', 'PUT /orders', { allowed: true }, ['order.order.write'], ['intern']);
+  });
+
+  it('records a missing permission before refusing with 403', () => {
+    const { guard, record } = guardWith({ allowed: false, reason: 'missing_permission' }, null);
+    expect(() => guard.canActivate(context())).toThrow(ForbiddenException);
+    expect(record).toHaveBeenCalledWith(
+      'route',
+      'PUT /orders',
+      { allowed: false, reason: 'missing_permission' },
+      ['order.order.write'],
+      ['intern'],
+    );
+  });
+
+  it('records an unavailable snapshot before refusing with 503', () => {
+    const { guard, record } = guardWith({ allowed: false, reason: 'unavailable' }, null);
+    expect(() => guard.canActivate(context())).toThrow(ServiceUnavailableException);
+    expect(record).toHaveBeenCalledWith(
+      'route',
+      'PUT /orders',
+      { allowed: false, reason: 'unavailable' },
+      ['order.order.write'],
+      ['intern'],
+    );
+  });
+
   it('refuses a caller without the permission and names it in the 403 body', () => {
     const error = thrownBy(() =>
       guardWith({ allowed: false, reason: 'missing_permission' }, null).guard.canActivate(context()),
@@ -79,8 +119,10 @@ describe('PermissionGuard', () => {
       decide: jest.fn((): Verdict => ({ allowed: true })),
       grantedAmong: jest.fn(),
     };
-    expect(new PermissionGuard(resolver, decider).canActivate(context())).toBe(true);
+    const record = jest.fn();
+    expect(new PermissionGuard(resolver, decider, { record }).canActivate(context())).toBe(true);
     expect(decider.grantedAmong).not.toHaveBeenCalled();
+    expect(record).not.toHaveBeenCalled();
   });
 
   it('ignores non-http contexts', () => {

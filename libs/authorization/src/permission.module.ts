@@ -1,10 +1,8 @@
 import { DynamicModule, Global, Module, ModuleMetadata, Type } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import { AuthzObserverGuard } from './guards/authz-observer.guard';
 import { PermissionGuard } from './guards/permission.guard';
-import { AuthzShadowInterceptor } from './interceptors/authz-shadow.interceptor';
 import type { OwnerService } from './permissions/permission.types';
-import { AuthzShadowRecorder } from './services/authz-shadow.recorder';
+import { AuthzDecisionLog } from './services/authz-decision.log';
 import { HttpRolePermissionSource } from './services/http-role-permission.source';
 import { PermissionCache } from './services/permission-cache';
 import { PermissionCheckpoints } from './services/permission-checkpoints';
@@ -32,15 +30,13 @@ const EXPORTED = [
   PermissionCache,
   PermissionDecider,
   RouteRequirementResolver,
-  AuthzShadowRecorder,
-  AuthzObserverGuard,
-  AuthzShadowInterceptor,
+  AuthzDecisionLog,
   PermissionGuard,
   PermissionCheckpoints,
 ];
 
 /**
- * 권한 판정 런타임. 가드·인터셉터의 «등록 순서»는 이 모듈이 정하지 않는다 — APP_GUARD 는 앱 루트
+ * 권한 판정 런타임. 가드의 «등록 순서»는 이 모듈이 정하지 않는다 — APP_GUARD 는 앱 루트
  * 모듈의 providers 순서대로 돌므로 각 앱이 직접 적는다(`scripts/security/permission-wiring.spec.ts`).
  */
 @Global()

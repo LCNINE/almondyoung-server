@@ -2,6 +2,7 @@ import { Provider } from '@nestjs/common';
 import { APP_GUARD, Reflector } from '@nestjs/core';
 import { register } from 'prom-client';
 import { PermissionGuard } from '../guards/permission.guard';
+import { AuthzDecisionLog } from '../services/authz-decision.log';
 import { PermissionCache } from '../services/permission-cache';
 import { PermissionCheckpoints } from '../services/permission-checkpoints';
 import { PermissionDecider } from '../services/permission-decider';
@@ -18,7 +19,7 @@ export function createCheckpointsForTesting(
   byRole: Readonly<Record<string, readonly string[]>> | null = FIRST_GRANT_ROLE_PERMISSIONS,
 ): PermissionCheckpoints {
   const cache = cacheFor(byRole);
-  return new PermissionCheckpoints(new PermissionDecider(cache), cache, runtimeOptions());
+  return new PermissionCheckpoints(new PermissionDecider(cache), cache, new AuthzDecisionLog(cache, runtimeOptions()));
 }
 
 /**
@@ -30,9 +31,11 @@ export function enforcedPermissionProvidersForTesting(
   byRole: Readonly<Record<string, readonly string[]>> = FIRST_GRANT_ROLE_PERMISSIONS,
 ): Provider[] {
   const resolver = new RouteRequirementResolver(new Reflector());
+  const cache = cacheFor(byRole);
+  const log = new AuthzDecisionLog(cache, runtimeOptions());
   return [
     { provide: PermissionCheckpoints, useValue: createCheckpointsForTesting(byRole) },
-    { provide: APP_GUARD, useValue: new PermissionGuard(resolver, new PermissionDecider(cacheFor(byRole))) },
+    { provide: APP_GUARD, useValue: new PermissionGuard(resolver, new PermissionDecider(cache), log) },
   ];
 }
 
@@ -55,8 +58,15 @@ function runtimeOptions(): PermissionRuntimeOptions {
   return { service: 'core', refreshIntervalMs: 30_000, retryBaseMs: 1_000, summaryIntervalMs: 300_000 };
 }
 
-/** 판정 지점 비교 횟수(스펙 단언용). 스펙마다 `register.resetMetrics()` 를 먼저 부른다. */
-export async function checkpointEvaluations(checkpoint: string, outcome: string): Promise<number> {
-  const metric = await register.getSingleMetric('authz_checkpoint_evaluations_total')?.get();
-  return metric?.values.find((v) => v.labels.checkpoint === checkpoint && v.labels.outcome === outcome)?.value ?? 0;
+/** 판정 지점의 판정 횟수(`allow`·`deny`·`unavailable`, 스펙 단언용). 스펙마다 `register.resetMetrics()` 를 먼저 부른다. */
+export async function checkpointEvaluations(
+  checkpoint: string,
+  outcome: 'allow' | 'deny' | 'unavailable',
+): Promise<number> {
+  const metric = await register.getSingleMetric('authz_decisions_total')?.get();
+  return (
+    metric?.values.find(
+      (v) => v.labels.kind === 'checkpoint' && v.labels.checkpoint === checkpoint && v.labels.outcome === outcome,
+    )?.value ?? 0
+  );
 }

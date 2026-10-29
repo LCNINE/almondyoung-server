@@ -619,7 +619,8 @@ describe('PickToTotePickingStrategy', () => {
         {},
       ),
     ).resolves.toBeUndefined();
-    expect(await checkpointEvaluations('fulfillment.work_supervise', 'match')).toBe(0);
+    expect(await checkpointEvaluations('fulfillment.work_supervise', 'allow')).toBe(0);
+    expect(await checkpointEvaluations('fulfillment.work_supervise', 'deny')).toBe(0);
 
     const completed = workItem({ status: 'completed', leaseExpiresAt: null, leaseVersion: 4 });
     planSpy('loadWorkItem', completed);
@@ -635,8 +636,8 @@ describe('PickToTotePickingStrategy', () => {
         {},
       ),
     ).resolves.toBeUndefined();
-    expect(await checkpointEvaluations('fulfillment.work_supervise', 'match')).toBe(2);
-    expect(await checkpointEvaluations('fulfillment.work_supervise', 'would_deny')).toBe(0);
+    expect(await checkpointEvaluations('fulfillment.work_supervise', 'deny')).toBe(1);
+    expect(await checkpointEvaluations('fulfillment.work_supervise', 'allow')).toBe(1);
   });
 
   it('hands an empty tote across shipments while preserving old assignment and required audit', async () => {

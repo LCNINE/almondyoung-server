@@ -351,7 +351,7 @@ Medusa 를 새로 부르면 `medusa-permissions.ts` 에 경로를 더한다(`med
 
 고객 개인정보(이름·연락처·이메일·주소·계좌)를 응답하는 새 관리자 라우트는 `@PiiResponse` 로 가릴 경로와 대상 식별자 경로를
 선언하고 `scripts/security/pii-routes.ts` 에 한 줄 더한다(없으면 `pii-routes.spec.ts` 가 빨갛다). 선언을 처음 다는 앱은 루트 모듈의
-`AuthzShadowInterceptor` 바로 다음에 `...piiMaskingProviders(...)` 를 펼친다(`permission-wiring.spec.ts`). 원문이 나간 응답마다
+다른 전역 인터셉터보다 앞에 `...piiMaskingProviders(...)` 를 펼친다(`permission-wiring.spec.ts`). 원문이 나간 응답마다
 접속기록이 남고 기록을 못 남기면 가린 값이 나간다 — 규칙은 ADR-0048 §29~36.
 
 역할·권한·부여를 바꾸는 코드는 user-service `iam` 의 Manager 를 거친다 — 권한 상승 방지·시스템 역할·자기 자신·마지막

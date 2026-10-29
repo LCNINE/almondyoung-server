@@ -4,8 +4,7 @@ import { join } from 'node:path';
 import * as ts from 'typescript';
 
 /**
- * 권한 판정 가드의 «등록 순서»가 규칙대로인지(APP_GUARD 는 루트 모듈 providers 순서대로 돈다).
- * 관찰 가드가 맨 앞이 아니면 뒤 가드가 거부한 요청을 그림자 판정이 못 본다.
+ * 권한 판정 가드·가림 인터셉터의 «등록 순서»가 규칙대로인지(APP_GUARD·APP_INTERCEPTOR 는 루트 모듈 providers 순서대로 돈다).
  */
 const ROOT = join(__dirname, '..', '..');
 const ROOT_MODULES: Record<string, string> = {
@@ -50,14 +49,11 @@ describe('권한 판정 배선', () => {
       const list = enhancers(file);
       const guards = list.filter((e) => e.token === 'APP_GUARD').map((e) => e.useClass);
 
-      it('관찰 가드가 전역 가드 맨 앞이다', () => {
-        expect(guards[0]).toBe('AuthzObserverGuard');
-      });
-
-      // 맨 앞이어야 한다 — 앞선 인터셉터가 next.handle() 없이 응답을 돌려주면(재사용 응답 등) 통과 표시를 못 한다.
-      it('그림자 인터셉터가 전역 인터셉터 맨 앞이다', () => {
-        const interceptors = list.filter((e) => e.token === 'APP_INTERCEPTOR').map((e) => e.useClass);
-        expect(interceptors[0]).toBe('AuthzShadowInterceptor');
+      // 판정 기록은 권한 가드가 판정한 자리에서 남긴다 — 옛 비교 관찰 장치를 다시 걸지 않는다.
+      it('옛 그림자 관찰 장치를 걸지 않는다', () => {
+        expect(list.map((e) => e.useClass)).not.toEqual(
+          expect.arrayContaining([expect.stringMatching(/^AuthzObserverGuard$|^AuthzShadowInterceptor$/)]),
+        );
       });
 
       if (CONTROLLER_LEVEL_AUTH.has(app)) {
@@ -93,22 +89,28 @@ describe('권한 판정 배선', () => {
     expect(offenders).toEqual([]);
   });
 
-  /** providers 배열에서 그림자 인터셉터 «바로 다음» 원소가 `...piiMaskingProviders(` 펼침인지. */
-  function piiMaskingFollowsShadow(file: string): boolean {
+  /**
+   * providers 배열에서 `...piiMaskingProviders(` 펼침이 다른 전역 인터셉터보다 앞인지 — 응답 처리에선 앞에 둔 것이 바깥이라,
+   * 감싸기·멱등 재생 같은 응답 인터셉터가 만든 최종 본문을 가린다.
+   */
+  function piiMaskingIsOutermost(file: string): boolean {
     const src = ts.createSourceFile(file, readFileSync(join(ROOT, file), 'utf8'), ts.ScriptTarget.Latest, true);
-    let found = false;
+    let outermost = false;
     const visit = (node: ts.Node): void => {
       if (ts.isArrayLiteralExpression(node)) {
-        node.elements.forEach((element, index) => {
-          if (!element.getText().includes('useClass: AuthzShadowInterceptor')) return;
-          const next = node.elements[index + 1];
-          if (next && ts.isSpreadElement(next) && next.expression.getText().startsWith('piiMaskingProviders(')) found = true;
-        });
+        const elements = [...node.elements];
+        const pii = elements.findIndex(
+          (e) => ts.isSpreadElement(e) && e.expression.getText().startsWith('piiMaskingProviders('),
+        );
+        if (pii >= 0) {
+          const firstInterceptor = elements.findIndex((e) => /provide:\s*APP_INTERCEPTOR\b/.test(e.getText()));
+          outermost = firstInterceptor === -1 || pii < firstInterceptor;
+        }
       }
       node.forEachChild(visit);
     };
     src.forEachChild(visit);
-    return found;
+    return outermost;
   }
 
   const appsDeclaringPii = (): string[] => {
@@ -121,10 +123,10 @@ describe('권한 판정 배선', () => {
     return [...new Set(apps)].sort();
   };
 
-  it('개인정보 응답을 선언한 앱은 가림 인터셉터를 그림자 인터셉터 바로 다음에 둔다', () => {
+  it('개인정보 응답을 선언한 앱은 가림 인터셉터를 전역 인터셉터 맨 앞에 둔다', () => {
     const declaring = appsDeclaringPii();
     expect(declaring.length).toBeGreaterThan(0);
-    const missing = declaring.filter((app) => !ROOT_MODULES[app] || !piiMaskingFollowsShadow(ROOT_MODULES[app]));
+    const missing = declaring.filter((app) => !ROOT_MODULES[app] || !piiMaskingIsOutermost(ROOT_MODULES[app]));
     expect(missing).toEqual([]);
   });
 });

@@ -6,7 +6,7 @@ export const PERMISSION_RUNTIME_OPTIONS = Symbol('PERMISSION_RUNTIME_OPTIONS');
 export const DEFAULT_REFRESH_INTERVAL_MS = 30_000;
 /** 사본이 없을 때 첫 재시도 간격. 1s·2s·4s… 로 늘어 주기 값에서 멈춘다. */
 export const DEFAULT_RETRY_BASE_MS = 1_000;
-/** 그림자 판정 요약 로그 간격. */
+/** 판정 요약 로그 간격. */
 export const DEFAULT_SUMMARY_INTERVAL_MS = 300_000;
 
 export interface PermissionRuntimeOptions {

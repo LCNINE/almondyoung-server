@@ -1,12 +1,10 @@
 import { ForbiddenException, Injectable, Logger } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
-import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
+import { APP_GUARD } from '@nestjs/core';
 import { ExecutionContextHost } from '@nestjs/core/helpers/execution-context-host';
 import { RequirePermission } from './decorators/require-permission.decorator';
 import { Test } from '@nestjs/testing';
-import { AuthzObserverGuard } from './guards/authz-observer.guard';
 import { PermissionGuard } from './guards/permission.guard';
-import { AuthzShadowInterceptor } from './interceptors/authz-shadow.interceptor';
 import { PermissionModule } from './permission.module';
 import { PermissionCache } from './services/permission-cache';
 import { PermissionCheckpoints } from './services/permission-checkpoints';
@@ -57,17 +55,15 @@ describe('PermissionModule', () => {
     expect(module.get(PermissionCache).status().state).toBe('disabled');
   });
 
-  // 앱은 가드·인터셉터를 자기 루트 모듈의 APP_GUARD/APP_INTERCEPTOR 로 건다 — 의존성은 그 모듈 문맥에서 풀린다.
-  it('lets an app register the guards and the interceptor globally', async () => {
+  // 앱은 권한 가드를 자기 루트 모듈의 APP_GUARD 로 건다 — 의존성(판정 기록 포함)은 그 모듈 문맥에서 풀린다.
+  it('lets an app register the permission guard globally', async () => {
     const module = await Test.createTestingModule({
       imports: [
         ConfigModule.forRoot({ ignoreEnvFile: true, ignoreEnvVars: true, load: [() => ({})] }),
         PermissionModule.forRoot({ service: 'core', source: StubSource }),
       ],
       providers: [
-        { provide: APP_GUARD, useClass: AuthzObserverGuard },
         { provide: APP_GUARD, useClass: PermissionGuard },
-        { provide: APP_INTERCEPTOR, useClass: AuthzShadowInterceptor },
       ],
     }).compile();
     const app = module.createNestApplication();
