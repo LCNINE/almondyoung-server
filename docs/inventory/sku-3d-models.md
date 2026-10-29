@@ -157,6 +157,11 @@ corepack yarn test src/domains/products/product-details/components/model3d-viewe
 # 저장소 루트로 돌아온 뒤 별도 실행, 로컬 PostgreSQL/Redis가 필요하다.
 cd ../..
 cd apps/medusa
-TEST_TYPE=integration:http NODE_OPTIONS=--experimental-vm-modules \
+DB_HOST=localhost DB_PORT=5432 DB_USERNAME=postgres DB_PASSWORD=postgres \
+  REDIS_URL=redis://localhost:6379 \
+  TEST_TYPE=integration:http NODE_OPTIONS=--experimental-vm-modules \
   corepack yarn jest --runInBand integration-tests/http/product-model3d.spec.ts
 ```
+
+Medusa 통합 테스트의 로컬 DB 호스트는 `localhost`를 쓴다.
+현재 설치된 test-utils는 호스트 문자열에 `localhost`가 없으면 SSL을 강제하므로, SSL 없는 로컬 컨테이너에 `127.0.0.1`을 쓰면 연결에 실패한다.
