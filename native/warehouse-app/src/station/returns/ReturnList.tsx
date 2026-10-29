@@ -4,6 +4,7 @@ import { cn } from '../../core/design/cn';
 import { isCommandCode } from '../../core/hardware/scan/commandPrefix';
 import { useHumanKeys, useScanEmit, useScanner } from '../../core/hardware/scan/useScanner';
 import { useReceivingReturns } from '../../domains/customer-returns/api';
+import { RETURN_REASON_LABELS, SELLER_BORNE_REASONS } from '../../domains/customer-returns/reasons';
 import type { ReceivingItem } from '../../domains/customer-returns/types';
 import { useStationActions } from '../ActionRegistry';
 import type { StationAction } from '../actions';
@@ -197,12 +198,15 @@ function ReturnRow({ item, selected, onOpen }: { item: ReceivingItem; selected: 
         onMouseDown={(e) => e.preventDefault()}
         onClick={onOpen}
         className={cn(
-          'grid h-14 w-full grid-cols-[180px_120px_minmax(0,1fr)_96px_96px] items-center px-4 text-left text-base',
+          'grid h-14 w-full grid-cols-[180px_120px_140px_minmax(0,1fr)_96px_96px] items-center px-4 text-left text-base',
           selected && 'bg-[#E3ECFC]'
         )}
       >
         <span className="font-mono font-semibold">{item.orderNo}</span>
         <span>{item.customerMasked}</span>
+        <span className={cn(SELLER_BORNE_REASONS.has(item.reason) && 'font-semibold')}>
+          {RETURN_REASON_LABELS.get(item.reason) ?? item.reason}
+        </span>
         <span className="truncate">{item.productSummary}</span>
         <span className="text-right font-mono">
           {item.stage === 'awaiting' ? item.expectedQty : `${item.arrivedQty}/${item.expectedQty}`}

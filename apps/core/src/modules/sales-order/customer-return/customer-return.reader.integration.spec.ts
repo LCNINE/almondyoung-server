@@ -473,6 +473,7 @@ describeIfDb('CustomerReturnReader — 상세 뷰 (K8 PR7)', () => {
             id: mine.customerReturnId,
             orderNo: '7100',
             customerMasked: '홍길*',
+            reason: 'defective',
             productSummary: line.productName,
             expectedQty: 2,
             arrivedQty: 0,

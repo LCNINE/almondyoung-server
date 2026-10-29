@@ -26,6 +26,7 @@ type VariantFixture = {
 
 type AssemblerFixtures = {
   version?: Record<string, unknown>;
+  model3dFileId?: string;
   categories?: CategoryFixture[];
   variants?: VariantFixture[];
   images?: Array<Record<string, unknown>>;
@@ -126,6 +127,7 @@ function makeAssembler(fixtures: AssemblerFixtures = {}) {
   };
   const tagReadLoader = { getTags: jest.fn().mockResolvedValue(tags) };
   const priceCacheService = { getCachedPriceSetsByVersion: jest.fn().mockResolvedValue(prices) };
+  const model3dLoader = { getFileId: jest.fn().mockResolvedValue(fixtures.model3dFileId) };
 
   return {
     assembler: new ProjectionSnapshotAssembler(
@@ -133,12 +135,36 @@ function makeAssembler(fixtures: AssemblerFixtures = {}) {
       optionReadLoader as any,
       tagReadLoader as any,
       priceCacheService as any,
+      model3dLoader as any,
     ),
     optionReadLoader,
   };
 }
 
 describe('ProjectionSnapshotAssembler', () => {
+  it('includes representative GLB without changing the existing thumbnail', async () => {
+    const { assembler } = makeAssembler({
+      model3dFileId: 'file-glb',
+      images: [{ fileId: 'file-photo', isPrimary: true, sortOrder: 0 }],
+    });
+
+    const { snapshot } = await assembler.assembleActiveVersionSnapshot('master-1', 'version-1', {} as any);
+
+    expect(snapshot.model3dFileId).toBe('file-glb');
+    expect(snapshot.thumbnail).toBe('file-photo');
+    expect(
+      PRODUCT_STREAM.events.ProductMasterActiveVersionChanged.schema!.parse({
+        masterId: 'master-1',
+        versionId: 'version-1',
+        previousActiveVersionId: null,
+        name: snapshot.name,
+        changeReason: 'published',
+        changedAt: new Date().toISOString(),
+        snapshot,
+      }).snapshot?.model3dFileId,
+    ).toBe('file-glb');
+  });
+
   it('fails when the version is not DB-visible active', async () => {
     const { assembler } = makeAssembler({ version: { status: 'draft' } });
 

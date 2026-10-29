@@ -35,12 +35,6 @@ export const USER_SERVICE_REFERENCE_ROLES = [
   },
 ];
 
-export const USER_SERVICE_REFERENCE_ROLE_SCOPE_MAP: Record<string, string[]> = {
-  master: ['master'],
-  membership: ['user:read', 'user:modify'],
-  user: ['user:read', 'user:modify'],
-};
-
 export interface OAuthClientSeed {
   clientId: string;
   clientType: 'confidential' | 'public';
@@ -74,7 +68,7 @@ export async function seedUserService(
 
   try {
     // Step 1: Insert public.roles (admin, membership, user)
-    logger.step(1, 6, 'Inserting public roles');
+    logger.step(1, 4, 'Inserting public roles');
 
     const roles = USER_SERVICE_REFERENCE_ROLES;
 
@@ -88,55 +82,8 @@ export async function seedUserService(
 
     logger.success(`Inserted ${roles.length} public roles`);
 
-    // Step 2: Upsert auth.scopes
-    logger.step(2, 6, 'Upserting auth.scopes');
-
-    const scopes = [
-      { key: 'master', description: '마스터 권한', microservice_name: 'user-service' },
-      { key: 'user:read', description: '사용자 - 사용자 정보 조회', microservice_name: 'user-service' },
-      { key: 'user:modify', description: '사용자 - 사용자 정보 생성, 수정', microservice_name: 'user-service' },
-      { key: 'user:delete', description: '사용자 - 사용자 정보 삭제', microservice_name: 'user-service' },
-      { key: 'admin:access', description: '관리자 페이지 접근 권한 (베이스라인)', microservice_name: 'user-service' },
-      { key: 'admin:users:*', description: '관리자 - 사용자 전체 권한', microservice_name: 'user-service' },
-      { key: 'admin:users:read', description: '관리자 - 회원 조회', microservice_name: 'user-service' },
-      { key: 'admin:users:modify', description: '관리자 - 회원 수정', microservice_name: 'user-service' },
-      { key: 'admin:users:archive', description: '관리자 - 회원 보관', microservice_name: 'user-service' },
-      { key: 'admin:users:purge', description: '관리자 - 회원 완전삭제', microservice_name: 'user-service' },
-      { key: 'admin:settings:*', description: '관리자 - 설정 전체 권한', microservice_name: 'user-service' },
-      { key: 'admin:logs:read', description: '관리자 - 로그 조회', microservice_name: 'user-service' },
-    ];
-
-    for (const scope of scopes) {
-      await db.execute(sql`
-        INSERT INTO auth.scopes (key, description, microservice_name)
-        VALUES (${scope.key}, ${scope.description}, ${scope.microservice_name})
-        ON CONFLICT (key) DO NOTHING
-      `);
-    }
-
-    logger.success(`Upserted ${scopes.length} auth scopes`);
-
-    // Step 3: Upsert auth.role_scope_mapping (role_name 직접 사용)
-    logger.step(3, 6, 'Upserting auth.role_scope_mapping');
-
-    const roleScopeMap: Record<string, string[]> = {
-      ...USER_SERVICE_REFERENCE_ROLE_SCOPE_MAP,
-      admin: scopes.map((scope) => scope.key).filter((scopeKey) => scopeKey !== 'master'),
-    };
-    for (const [roleName, scopeKeys] of Object.entries(roleScopeMap)) {
-      for (const scopeKey of scopeKeys) {
-        await db.execute(sql`
-          INSERT INTO auth.role_scope_mapping (role_name, scope_id)
-          SELECT ${roleName}, id FROM auth.scopes WHERE key = ${scopeKey}
-          ON CONFLICT (role_name, scope_id) DO NOTHING
-        `);
-      }
-    }
-
-    logger.success('Upserted auth.role_scope_mapping');
-
-    // Step 4: Create Admin User
-    logger.step(4, 6, 'Creating admin user');
+    // Step 2: Create Admin User
+    logger.step(2, 4, 'Creating admin user');
 
     const hashedPassword = await bcrypt.hash(adminPassword, 10);
 
@@ -168,8 +115,8 @@ export async function seedUserService(
 
     logger.success('Inserted admin user');
 
-    // Step 5: Assign master and admin roles to admin user
-    logger.step(5, 6, 'Assigning master and admin roles to admin user');
+    // Step 3: Assign master and admin roles to admin user
+    logger.step(3, 4, 'Assigning master and admin roles to admin user');
 
     await db.execute(sql`
       INSERT INTO user_roles (user_id, role_id)
@@ -185,8 +132,8 @@ export async function seedUserService(
 
     logger.success('Assigned admin role to admin user');
 
-    // Step 6: Assign 'user' role to all existing users without any role
-    logger.step(6, 6, 'Assigning user role to existing users without roles');
+    // Step 4: Assign 'user' role to all existing users without any role
+    logger.step(4, 4, 'Assigning user role to existing users without roles');
 
     await db.execute(sql`
       INSERT INTO user_roles (user_id, role_id)
@@ -202,9 +149,9 @@ export async function seedUserService(
 
     logger.success('Assigned user role to existing users without roles');
 
-    // Step 7: Upsert OAuth clients
+    // Step 5: Upsert OAuth clients
     if (options.oauthClients && options.oauthClients.length > 0) {
-      logger.step(7, 7, 'Upserting OAuth clients');
+      logger.step(5, 5, 'Upserting OAuth clients');
 
       const clientsWithHashes = await Promise.all(
         options.oauthClients.map(async (seed) => {

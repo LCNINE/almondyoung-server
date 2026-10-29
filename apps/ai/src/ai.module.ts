@@ -1,6 +1,5 @@
 import {
   AuthorizationModule,
-  authorizationSchema,
   AuthzObserverGuard,
   AuthzShadowInterceptor,
   JwtAuthGuard,
@@ -21,10 +20,7 @@ import { AiController } from './ai.controller';
 import { AssistantModule } from './assistant/assistant.module';
 import { FilesModule } from './files/files.module';
 import { aiSchema } from './db/schema';
-import { AI_ROLE_MAPPINGS, AI_SCOPES } from './platform/auth/ai-scopes';
 import { ProductDescriptionModule } from './product-description/product-description.module';
-
-const combinedSchema = { ...aiSchema, ...authorizationSchema };
 
 @Module({
   imports: [
@@ -33,13 +29,7 @@ const combinedSchema = { ...aiSchema, ...authorizationSchema };
       isGlobal: true,
       envFilePath: ['.env', 'apps/ai/.env'],
     }),
-    // 이 앱엔 전역 ScopeGuard 도 `@RequireScopes` 라우트도 없다 — 인가는 PermissionModule 이
-    // 맡는다. 스코프·역할 매핑 시드는 옛 스코프 테이블을 정리하기 전까지만 남겨 둔 것이다
-    AuthorizationModule.forRoot({
-      microserviceName: 'ai',
-      scopes: AI_SCOPES,
-      roleMappings: AI_ROLE_MAPPINGS,
-    }),
+    AuthorizationModule.forAuthOnly(),
     PermissionModule.forRoot({ service: 'ai' }),
     // 이 둘이 빠지면 @CronOnce 는 조용히 안 돈다.
     SCHEDULE_ROOT,
@@ -48,7 +38,7 @@ const combinedSchema = { ...aiSchema, ...authorizationSchema };
       config: {
         connectionString: process.env.DATABASE_URL ?? '',
       },
-      schema: combinedSchema,
+      schema: aiSchema,
     }),
     // 소비 전용(`publishes` 없음). 브로커 없는 로컬에서 부팅이 죽지 않게 조건부다 —
     // main.ts 의 startConsumer 와 짝이다.

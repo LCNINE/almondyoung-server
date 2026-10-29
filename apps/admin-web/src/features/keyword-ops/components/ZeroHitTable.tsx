@@ -5,7 +5,7 @@ import { useUpsertKeywordIssue } from '@/lib/services/search';
 import { BlockedReason } from '@/components/auth/blocked-reason';
 import { useCan, usePermissionCheck } from '@/hooks/use-permission';
 import { permissionLabel } from '@/lib/auth/permission-labels';
-import { useAdminUsers } from '@/lib/services/users/queries';
+import { STAFF_CANDIDATE_LIMIT, useAdminUsers } from '@/lib/services/users/queries';
 import type { KeywordIssueStatus, ZeroHitKeywordRow } from '@/lib/api/domains/search';
 import { KEYWORD_ISSUE_STATUSES } from '@/lib/api/domains/search';
 import { STATUS_LABELS } from '../labels';
@@ -15,12 +15,46 @@ export interface AssigneeOption {
   value: string;
   name: string;
   label: string;
+  /** holder: 키워드 쓰기 권한자 · other: 그 밖의 직원. 없으면(지금 담당자 보충) 권한자 쪽에 둔다 */
+  group?: 'holder' | 'other';
 }
 
 export interface AssigneeChoices {
   options: AssigneeOption[];
   /** 후보를 읽을 권한이 없어 담당자를 바꿀 수 없는 이유. 지금 담당자는 그대로 보인다 */
   blockedReason: string | null;
+}
+
+export const OTHER_STAFF_LABEL = '다른 직원';
+
+/** 권한자를 앞에, 나머지를 뒤에(각 묶음 안 순서는 서버 순서 그대로). */
+export function groupHoldersFirst(options: AssigneeOption[]): AssigneeOption[] {
+  return [...options.filter((o) => o.group !== 'other'), ...options.filter((o) => o.group === 'other')];
+}
+
+/** 담당자 <select> 안쪽 — 권한자는 위에, 나머지는 «다른 직원» 묶음으로. */
+export function AssigneeOptionItems({ options, text = 'label' }: { options: AssigneeOption[]; text?: 'label' | 'name' }) {
+  const others = options.filter((o) => o.group === 'other');
+  return (
+    <>
+      {options
+        .filter((o) => o.group !== 'other')
+        .map((option) => (
+          <option key={option.value} value={option.value}>
+            {option[text]}
+          </option>
+        ))}
+      {others.length > 0 ? (
+        <optgroup label={OTHER_STAFF_LABEL}>
+          {others.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option[text]}
+            </option>
+          ))}
+        </optgroup>
+      ) : null}
+    </>
+  );
 }
 
 /**
@@ -30,16 +64,19 @@ export interface AssigneeChoices {
 export function useAssigneeOptions(): AssigneeChoices {
   const canReadAccounts = useCan(['customer.profile.read']);
   const allowed = canReadAccounts.status === 'ready' && canReadAccounts.allowed;
-  const { data } = useAdminUsers({ roleName: 'admin,master', limit: 100 }, { enabled: allowed });
+  const { data } = useAdminUsers({ audience: 'staff', holding: 'analytics.keyword.write', limit: STAFF_CANDIDATE_LIMIT }, { enabled: allowed });
   // 권한이 없으면 캐시에 남은 계정 목록도 쓰지 않는다
   const users = allowed ? data?.data : undefined;
   const options = useMemo(
     () =>
-      (users ?? []).map((user) => ({
-        value: user.id,
-        name: user.username,
-        label: `${user.username} (${user.loginId})`,
-      })),
+      groupHoldersFirst(
+        (users ?? []).map((user): AssigneeOption => ({
+          value: user.id,
+          name: user.username,
+          label: `${user.username} (${user.loginId})`,
+          group: user.holdsPermission ? 'holder' : 'other',
+        })),
+      ),
     [users],
   );
   const blockedReason =
@@ -210,11 +247,7 @@ function ZeroHitRow({
               className="min-w-28 rounded border border-gray-200 bg-white px-1.5 py-1 text-[11px] disabled:opacity-40 aria-disabled:opacity-40"
             >
               <option value="">미지정</option>
-              {options.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
+              <AssigneeOptionItems options={options} />
             </select>
           )}
         </BlockedReason>

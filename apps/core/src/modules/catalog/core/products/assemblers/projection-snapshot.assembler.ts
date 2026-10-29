@@ -5,6 +5,7 @@ import { DbTransaction, OptionGroupReadModel, VariantOptionValueReadModel } from
 import { OptionReadLoader } from '../loaders/option-read.loader';
 import { ProductVersionReadLoader } from '../loaders/product-version-read.loader';
 import { TagReadLoader } from '../loaders/tag-read.loader';
+import { ProductModel3dLoader } from '../loaders/product-model3d.loader';
 
 export type ProjectionSnapshotAssembly = {
   snapshot: ProductSnapshot;
@@ -23,6 +24,7 @@ export class ProjectionSnapshotAssembler {
     private readonly optionReadLoader: OptionReadLoader,
     private readonly tagReadLoader: TagReadLoader,
     private readonly priceCacheService: VariantPriceCacheService,
+    private readonly model3dLoader: ProductModel3dLoader,
   ) {}
 
   async assembleActiveVersionSnapshot(
@@ -42,15 +44,17 @@ export class ProjectionSnapshotAssembler {
       throw new BadRequestException(`Cannot assemble projection snapshot for non-active version ${versionId}`);
     }
 
-    const [categories, variants, images, tags, purchaseConstraint, cachedPrices, optionGroups] = await Promise.all([
-      this.versionReadLoader.getCategories(tx, masterId, versionId),
-      this.versionReadLoader.getVariants(tx, masterId, versionId),
-      this.versionReadLoader.getImages(tx, versionId),
-      this.tagReadLoader.getTags(tx, masterId, versionId),
-      this.versionReadLoader.getPurchaseConstraint(tx, masterId, versionId),
-      this.priceCacheService.getCachedPriceSetsByVersion(versionId, tx),
-      this.optionReadLoader.getOptionGroups(tx, masterId, versionId, locale),
-    ]);
+    const [categories, variants, images, tags, purchaseConstraint, cachedPrices, optionGroups, model3dFileId] =
+      await Promise.all([
+        this.versionReadLoader.getCategories(tx, masterId, versionId),
+        this.versionReadLoader.getVariants(tx, masterId, versionId),
+        this.versionReadLoader.getImages(tx, versionId),
+        this.tagReadLoader.getTags(tx, masterId, versionId),
+        this.versionReadLoader.getPurchaseConstraint(tx, masterId, versionId),
+        this.priceCacheService.getCachedPriceSetsByVersion(versionId, tx),
+        this.optionReadLoader.getOptionGroups(tx, masterId, versionId, locale),
+        this.model3dLoader.getFileId(tx, masterId, versionId),
+      ]);
 
     const primaryCategories = categories.filter((category) => category.isPrimary);
     if (primaryCategories.length > 1) {
@@ -77,6 +81,7 @@ export class ProjectionSnapshotAssembler {
       description: version.description ?? undefined,
       descriptionHtml: version.descriptionHtml ?? undefined,
       thumbnail: primaryImage?.fileId,
+      model3dFileId,
       images: images.map((image) => ({
         fileId: image.fileId,
         url: image.fileId,

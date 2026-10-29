@@ -13,6 +13,7 @@ import { HttpTypes } from "@medusajs/types"
 import { notFound } from "next/navigation"
 import { getTranslations } from "next-intl/server"
 import { Suspense } from "react"
+import { ProductModel3dViewer } from "../components/model3d-viewer"
 import { ImageGallery } from "../components/image-gallery"
 import { ProductBreadcrumb } from "../components/breadcrumb"
 import ProductActions from "../components/product-actions"
@@ -63,6 +64,10 @@ export async function ProductTemplate({
           {/* 메인 콘텐츠 */}
           <main className="w-full min-w-0 flex-1 pb-24 xl:pb-0">
             <ImageGallery product={product} />
+            <ProductModel3dViewer
+              fileId={product.metadata?.model3dFileId}
+              productName={product.title ?? "상품"}
+            />
 
             {/* 모바일 상품 정보 */}
             <div className="xl:hidden">

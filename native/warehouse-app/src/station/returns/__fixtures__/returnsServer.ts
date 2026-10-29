@@ -36,6 +36,9 @@ export interface FakeReturn {
   customerName: string;
   channelOrderId?: string;
   status: FakeReturnStatus;
+  reason?: string;
+  feeBearer?: string;
+  note?: string | null;
   /** 그 판매주문을 배송완료한 창고들 — `expected` 반품이 보이는 창고이자 받을 수 있는 창고(N3·N5) */
   deliveredBy?: string[];
   /** 받는 창고 — 첫 도착이 정한다 */
@@ -155,6 +158,9 @@ export function createReturnsServer(init: { returns: FakeReturn[] }) {
     return {
       id: r.id,
       status: r.status,
+      reason: r.reason ?? 'change_of_mind',
+      feeBearer: r.feeBearer ?? 'customer',
+      note: r.note ?? null,
       order: { orderNo: r.orderNo },
       warehouseId: r.warehouseId,
       csResolution: r.missingClosed ? { missing: { at: '2026-10-27T00:00:00.000Z' } } : null,
@@ -178,6 +184,7 @@ export function createReturnsServer(init: { returns: FakeReturn[] }) {
       id: r.id,
       orderNo: r.orderNo,
       customerMasked: maskName(r.customerName),
+      reason: r.reason ?? 'change_of_mind',
       productSummary: r.lines.length > 1 ? `${first} 외 ${r.lines.length - 1}건` : first,
       expectedQty,
       arrivedQty,

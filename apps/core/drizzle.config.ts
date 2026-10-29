@@ -15,13 +15,12 @@ export default defineConfig({
     './libs/events/src/tracking/tracking.schema.ts',
     './libs/events/src/dead-letter/dead-letter.schema.ts',
     './libs/cron-once/src/cron-runs.schema.ts',
-    './libs/authorization/src/database/auth.schema.ts',
   ],
   out: './apps/core/drizzle',
   dialect: 'postgresql',
   dbCredentials: {
     url: process.env.DATABASE_URL || '',
   },
-  schemaFilter: ['public', 'event', 'auth'],
+  schemaFilter: ['public', 'event'],
   migrations: { prefix: 'supabase' },
 });

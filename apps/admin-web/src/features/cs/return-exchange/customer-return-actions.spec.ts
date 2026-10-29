@@ -72,6 +72,7 @@ function view(
     kind: 'return',
     exchangeReleasedAt: null,
     reason: 'defective',
+    note: null,
     feeBearer: 'seller',
     requestedBy: 'u',
     warehouseId: null,
@@ -400,7 +401,9 @@ describe('availableCustomerReturnActions', () => {
 });
 
 describe('retryPickup', () => {
-  const pickup = (status: CustomerReturnPickupStatus): CustomerReturnPickup => ({
+  const pickup = (
+    status: CustomerReturnPickupStatus
+  ): CustomerReturnPickup => ({
     status,
     waybillNo: null,
     originalWaybillNo: null,
@@ -414,20 +417,28 @@ describe('retryPickup', () => {
   const has = (v: CustomerReturnView) => kinds(v).includes('retryPickup');
 
   it('expected + failed 면 보인다', () => {
-    expect(has(view('expected', { arrived: 0, pickup: pickup('failed') }))).toBe(true);
+    expect(
+      has(view('expected', { arrived: 0, pickup: pickup('failed') }))
+    ).toBe(true);
   });
   it('expected + 회수 행 없음이면 보인다', () => {
     expect(has(view('expected', { arrived: 0, pickup: null }))).toBe(true);
   });
   it('expected + cancelled 면 보인다', () => {
-    expect(has(view('expected', { arrived: 0, pickup: pickup('cancelled') }))).toBe(true);
+    expect(
+      has(view('expected', { arrived: 0, pickup: pickup('cancelled') }))
+    ).toBe(true);
   });
   it('expected + void 면 보인다 — 회수만 놓아주고 반품 취소가 실패한 경우(R8)', () => {
-    expect(has(view('expected', { arrived: 0, pickup: pickup('void') }))).toBe(true);
+    expect(has(view('expected', { arrived: 0, pickup: pickup('void') }))).toBe(
+      true
+    );
   });
   it('expected + 활성 회수(reserved·pending·cancel_pending)면 안 보인다', () => {
     for (const s of ['reserved', 'pending', 'cancel_pending'] as const)
-      expect(has(view('expected', { arrived: 0, pickup: pickup(s) }))).toBe(false);
+      expect(has(view('expected', { arrived: 0, pickup: pickup(s) }))).toBe(
+        false
+      );
   });
   it('arrived + failed 면 안 보인다', () => {
     expect(has(view('arrived', { pickup: pickup('failed') }))).toBe(false);

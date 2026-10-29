@@ -1,3 +1,4 @@
+import { createModel3dProjectionStub } from './__fixtures__/model3d-projection.stub';
 import { randomUUID } from 'crypto';
 import { eq, inArray, sql } from 'drizzle-orm';
 import * as postgres from 'postgres';
@@ -169,6 +170,7 @@ describeIfDb('입고와 재입고 정책 저장의 PostgreSQL 잠금 순서', ()
       policyWiring.sellable,
       {} as never,
       {} as never,
+      createModel3dProjectionStub(),
     );
     const matchingPolicy = new ProductMatchingService(
       policyWiring.dbService as never,
@@ -176,6 +178,7 @@ describeIfDb('입고와 재입고 정책 저장의 PostgreSQL 잠금 순서', ()
       {} as never,
       {} as never,
       {} as never,
+      createModel3dProjectionStub(),
     );
 
     await receiptWiring.sellable.recalculateAndPublishForVariant(fixture.variant.id);

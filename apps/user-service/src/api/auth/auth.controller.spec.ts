@@ -1,4 +1,4 @@
-import { REQUIRED_SCOPES_KEY } from '@app/authorization';
+import { IS_STORE_ROUTE_KEY, REQUIRED_PERMISSIONS_KEY } from '@app/authorization';
 import { ConfigService } from '@nestjs/config';
 import { Test, TestingModule } from '@nestjs/testing';
 import { FastifyReply, FastifyRequest } from 'fastify';
@@ -116,10 +116,11 @@ describe('AuthController', () => {
 });
 
 // 본인 계정 동작(비밀번호 변경·PIN 재설정용 비밀번호 확인)은 로그인한 누구나 해야 한다.
-// 옛 역할 스코프(user:modify 등)를 요구하면 새 권한 체계로 만든 역할만 가진 직원 계정
-// (예: logistics_worker)이 임시 비밀번호를 못 바꾼다. 둘 다 서버가 현재 비밀번호를 확인한다.
+// 직원 권한을 요구하면 권한이 없는 역할만 가진 직원 계정이 임시 비밀번호를 못 바꾼다.
+// 둘 다 서버가 현재 비밀번호를 확인한다.
 describe('AuthController 본인 계정 라우트', () => {
-  it.each(['changePassword', 'verifyPasswordForPinReset'] as const)('%s 는 역할 스코프를 요구하지 않는다', (method) => {
-    expect(Reflect.getMetadata(REQUIRED_SCOPES_KEY, AuthController.prototype[method])).toBeUndefined();
+  it.each(['changePassword', 'verifyPasswordForPinReset'] as const)('%s 는 직원 권한을 요구하지 않는다', (method) => {
+    expect(Reflect.getMetadata(IS_STORE_ROUTE_KEY, AuthController.prototype[method])).toBe(true);
+    expect(Reflect.getMetadata(REQUIRED_PERMISSIONS_KEY, AuthController.prototype[method])).toBeUndefined();
   });
 });

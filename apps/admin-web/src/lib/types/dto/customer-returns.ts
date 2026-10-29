@@ -71,7 +71,13 @@ export interface CustomerReturnSettlement {
   startedAt: string;
   lastIssuedAt: string;
   attempts: number;
-  lastFailure: { code: string; message: string; retryable: boolean; received: boolean; at: string } | null;
+  lastFailure: {
+    code: string;
+    message: string;
+    retryable: boolean;
+    received: boolean;
+    at: string;
+  } | null;
   issues?: number;
   command?: {
     holdDeduction?: { amount: number; memo: string };
@@ -84,6 +90,7 @@ export interface CustomerReturnSettlement {
 
 export interface CustomerReturnSettlementOutcome {
   refundAmount: number;
+  shippingRefund?: number;
   deduction: ReturnSettlementDeduction;
   feeNotAdjusted: boolean;
   refundMode: 'auto' | 'manual';
@@ -102,15 +109,30 @@ export interface CustomerReturnPrepayment {
   lastIssuedAt: string;
   attempts: number;
   issues: number;
-  lastFailure: { code: string; message: string; retryable: boolean; at: string } | null;
-  outcome: { amount: number; refundMode: 'auto' | 'manual'; prepaidAt: string } | null;
+  lastFailure: {
+    code: string;
+    message: string;
+    retryable: boolean;
+    at: string;
+  } | null;
+  outcome: {
+    amount: number;
+    refundMode: 'auto' | 'manual';
+    prepaidAt: string;
+  } | null;
   restartedAt?: string;
   restartedBy?: string;
 }
 
 export interface CustomerReturnCsResolution {
   missing?: { memo: string; by: string; at: string };
-  hold?: { deduction: number; memo: string; by: string; at: string; dropped?: { by: string; at: string } };
+  hold?: {
+    deduction: number;
+    memo: string;
+    by: string;
+    at: string;
+    dropped?: { by: string; at: string };
+  };
 }
 
 export interface CustomerReturnViewItem {
@@ -146,6 +168,7 @@ export interface CustomerReturnView {
   /** 교환 상자를 연 시각 — 열기 전·반품이면 null */
   exchangeReleasedAt: string | null;
   reason: string;
+  note: string | null;
   feeBearer: string;
   requestedBy: string;
   warehouseId: string | null;

@@ -583,6 +583,7 @@ export interface PimProductSnapshot {
   description?: string;
   descriptionHtml?: string;
   thumbnail?: string;
+  model3dFileId?: string;
   images?: Array<{
     fileId: string;
     url: string;
@@ -755,6 +756,7 @@ export interface MedusaProductPayload {
     requiresShipping: boolean;
     /** 배송비 그룹 코드. 상품상세 배송 안내와 장바구니 진행바가 읽는다. */
     shippingGroupCode: string;
+    model3dFileId: string;
     syncedAt: string;
   };
 

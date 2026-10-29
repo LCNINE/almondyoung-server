@@ -2,7 +2,7 @@ import { DbService } from '@app/db';
 import { BadRequestError, NotFoundError } from '@app/shared';
 import { Test } from '@nestjs/testing';
 import { IamAuditCreator } from '../audit/iam-audit.creator';
-import { IamEscalationError, IamLastMasterError, IamSelfChangeError } from '../iam.errors';
+import { IamEscalationError, IamLastMasterError, IamSelfChangeError, IamStaffCannotLeaveError } from '../iam.errors';
 import { MyPermissionsReader } from '../my-permissions.reader';
 import { RolePermissionsReader } from '../role-permissions.reader';
 import { RoleRepository } from '../roles/role.repository';
@@ -41,6 +41,7 @@ describe('RoleAssignmentManager', () => {
     updateExpiry: jest.fn(),
     countPermanentHolders: jest.fn(),
     activeRoleNamesOf: jest.fn(),
+    hasLiveStaffRole: jest.fn(),
   };
   const audit = { record: jest.fn() };
   const myPermissions = { forRoles: jest.fn() };
@@ -313,6 +314,25 @@ describe('RoleAssignmentManager', () => {
     held({ role: 'membership' });
     await expect(manager.assertCanLeave('u-target')).resolves.toBeUndefined();
     expect(roles.lockRole).not.toHaveBeenCalled();
+  });
+
+  describe('assertNotStaff', () => {
+    it('rejects a withdrawal while a staff role is live', async () => {
+      roles.hasLiveStaffRole.mockResolvedValue(true);
+      await expect(manager.assertNotStaff('u-target', tx as never)).rejects.toBeInstanceOf(IamStaffCannotLeaveError);
+      expect(roles.hasLiveStaffRole).toHaveBeenCalledWith('u-target', tx);
+    });
+
+    it('lets a former staff member withdraw once the role has ended', async () => {
+      roles.hasLiveStaffRole.mockResolvedValue(false);
+      await expect(manager.assertNotStaff('u-target')).resolves.toBeUndefined();
+    });
+
+    it('lets a customer withdraw', async () => {
+      roles.hasLiveStaffRole.mockResolvedValue(false);
+      held({ role: 'membership' });
+      await expect(manager.assertNotStaff('u-target')).resolves.toBeUndefined();
+    });
   });
 });
 

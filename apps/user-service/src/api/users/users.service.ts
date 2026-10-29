@@ -12,7 +12,6 @@ import { USER_STREAM } from '@packages/event-contracts/streams';
 import { type UserServiceSchema } from 'apps/user-service/database/drizzle/schema';
 import { and, count, eq, gt, inArray, isNotNull, isNull, ne, or, sql } from 'drizzle-orm';
 import * as schema from '../../../database/drizzle/schema';
-import { roleScopeMapping as authRoleScopeMapping, scopes as authScopes } from '@app/authorization';
 import { AddressDto } from '../../commons/dto/address.dto';
 import { DbTransaction } from '../../commons/types';
 import { isValidUUID } from '../../commons/utils/is-valid-uuid';
@@ -20,7 +19,8 @@ import { NICKNAME_RULE_MESSAGE, isValidNickname } from '../../commons/utils/nick
 import { phoneNumberDigitVariants } from '../../commons/utils/phone-number';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UserDetailsResponseDto } from './dto/user-details.response.dto';
-import { UserRoleScopesResponseDto, UserRolesResponse } from './dto/user-role-scopes.response.dto';
+import { UserRolesResponse } from './dto/user-role-scopes.response.dto';
+import { UserRolesReader } from './user-roles.reader';
 
 @Injectable()
 export class UsersService {
@@ -30,6 +30,7 @@ export class UsersService {
     @InjectDb() private readonly dbService: DbService<UserServiceSchema>,
     @InjectPublisher(USER_STREAM)
     private readonly eventPublisher: PublisherFor<typeof USER_STREAM>,
+    private readonly userRolesReader: UserRolesReader,
   ) {}
   private getClient(tx?: DbTransaction) {
     return tx ?? this.dbService.db;
@@ -75,30 +76,6 @@ export class UsersService {
       }
 
       throw new InternalServerErrorException(error.message ?? '사용자 정보 조회 중 오류가 발생했습니다.');
-    }
-  }
-
-  // 사용자의 역할과 스코프 정보를 가져오는 메서드
-  private async getUserRolesAndScopes(userId: string): Promise<UserRoleScopesResponseDto[]> {
-    try {
-      return await this.dbService.db
-        .select({
-          role: {
-            id: schema.roles.roleId,
-            name: schema.roles.name,
-          },
-          scopes: {
-            scope_name: authScopes.key,
-            description: sql<string>`COALESCE(${authScopes.description}, '')`,
-          },
-        })
-        .from(schema.userRoleAssignments)
-        .where(and(eq(schema.userRoleAssignments.userId, userId), isNull(schema.userRoleAssignments.expiresAt)))
-        .innerJoin(schema.roles, eq(schema.userRoleAssignments.roleId, schema.roles.roleId))
-        .innerJoin(authRoleScopeMapping, eq(authRoleScopeMapping.roleName, schema.roles.name))
-        .innerJoin(authScopes, eq(authRoleScopeMapping.scopeId, authScopes.id));
-    } catch (error) {
-      throw new InternalServerErrorException('사용자 권한 정보 조회 중 오류가 발생했습니다.');
     }
   }
 
@@ -449,12 +426,8 @@ export class UsersService {
   async getUserRoles(userId: string): Promise<UserRolesResponse> {
     try {
       const user = await this.getUserBaseInfo(userId);
-      const roles = await this.getUserRolesAndScopes(userId);
-
-      return {
-        userId: user.id,
-        roles,
-      };
+      const roles = await this.userRolesReader.findLiveRoles(userId);
+      return { userId: user.id, roles };
     } catch (error) {
       if (error instanceof NotFoundException) {
         throw error;

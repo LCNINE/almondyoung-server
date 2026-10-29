@@ -1,3 +1,4 @@
+import { createModel3dProjectionStub } from '../../../product-matching/services/__fixtures__/model3d-projection.stub';
 import * as postgres from 'postgres';
 import { drizzle, PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { DbService } from '@app/db';
@@ -104,7 +105,13 @@ export function wireLogistics(
   const skuCatalogManager = new SkuCatalogManager(dbService, skuCatalogReader);
   const skuCatalogService = new SkuCatalogService(skuCatalogReader, skuCatalogManager);
   const linkResolver = new MatchingLinkResolver(skuCatalogService);
-  const productSkuMapping = new ProductSkuMappingService(dbService as never, sellable, backlog, linkResolver);
+  const productSkuMapping = new ProductSkuMappingService(
+    dbService as never,
+    sellable,
+    backlog,
+    linkResolver,
+    createModel3dProjectionStub(),
+  );
   const lineCompositions = new LineCompositionReader(dbService, productSkuMapping);
   const lineCompositionManager = new LineCompositionManager(dbService);
   const progress = new FulfillmentProgressService();

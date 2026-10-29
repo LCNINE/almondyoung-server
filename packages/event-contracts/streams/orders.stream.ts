@@ -242,6 +242,7 @@ export interface ChannelReturnRequestedPayload {
   /** Medusa 반품 기록의 멱등 키 */
   requestId: string;
   reason: CustomerReturnReason;
+  note?: string;
   feeBearer: 'customer' | 'seller';
   requestedBy: 'customer' | 'operator';
   windowOverrideReason?: string;
@@ -435,6 +436,7 @@ const ChannelReturnRequestedSchema = z.object({
   returnId: z.string().min(1),
   requestId: z.string().min(1),
   reason: z.enum(CUSTOMER_RETURN_REASONS),
+  note: z.string().optional(),
   feeBearer: z.enum(['customer', 'seller']),
   requestedBy: z.enum(['customer', 'operator']),
   windowOverrideReason: z.string().optional(),
@@ -712,6 +714,8 @@ export interface ChannelReturnSettledPayload {
   returnId: string;
   requestId: string;
   refundAmount: number;
+  /** 판매자 부담 전량 반품의 기존 배송비 환불액 */
+  shippingRefund?: number;
   deduction: ReturnSettlementDeduction;
   feeNotAdjusted: boolean;
   refundMode: ChannelCancelRefundMode;
@@ -787,6 +791,7 @@ const ChannelReturnSettledSchema = z.object({
   returnId: z.string().min(1),
   requestId: z.string().min(1),
   refundAmount: z.number().int().nonnegative(),
+  shippingRefund: z.number().int().nonnegative().optional(),
   deduction: ReturnSettlementDeductionSchema,
   feeNotAdjusted: z.boolean(),
   refundMode: z.enum(CHANNEL_CANCEL_REFUND_MODES),

@@ -21,6 +21,27 @@ const submitSearch = (value: string) => {
 };
 
 describe('도착 대기 목록', () => {
+  it.each([
+    ['change_of_mind', '단순 변심', false],
+    ['defective', '상품 하자', true],
+    ['not_as_described', '상품 설명과 다름', true],
+    ['wrong_item', '오배송', true],
+    ['damaged_in_shipping', '배송 중 파손', true],
+    ['other', '기타', false],
+    ['unknown_reason', 'unknown_reason', false],
+  ])(
+    '사유 %s를 표시하고 판매자 부담 사유만 강조한다',
+    async (reason, label, seller) => {
+      setupReturns({ returns: [{ ...AWAITING, reason }] });
+      await listed();
+
+      const reasonCell = within(row(AWAITING.orderNo)).getByText(label);
+
+      expect(reasonCell.classList.contains('font-semibold')).toBe(seller);
+      expect(reasonCell.previousElementSibling).toHaveTextContent('김민*');
+    }
+  );
+
   it('검수 대기·덜 옴이 위로, 고객명은 가린 값, 도착 대기에는 단계 글자가 없다 — 이 창고 것만', async () => {
     const { server } = setupReturns();
     expect(await listed()).toEqual(['O-1003', 'O-1002', 'O-1001']);

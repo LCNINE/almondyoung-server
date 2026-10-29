@@ -15,6 +15,7 @@ import {
 import { DbTransaction } from '../../../catalog.types';
 import { ProductCategoriesService } from '../../../core/categories/categories.service';
 import { ProductVersionsService } from '../../../core/products/services/product-versions.service';
+import { lockProductMasters } from '../../../core/products/services/product-master-lock';
 import { classifyPublishError } from './bulk-publish.errors';
 import { FormExportFileClient } from './form-export-file.client';
 import { FormExportSnapshotReader, flattenCategoryTree } from './form-export.snapshot.reader';
@@ -977,6 +978,10 @@ export class BulkSessionJobManager {
         let versionId: string;
 
         if (draftVersionId) {
+          const initial = await this.versions.getVersionById(draftVersionId, trx);
+          // draft의 bulkSessionId UPDATE보다 먼저 잠가 단건 공개와 master→version 순서를 맞춘다.
+          await lockProductMasters(trx, [initial.masterId]);
+
           const version = await this.versions.getVersionById(draftVersionId, trx);
           versionId = draftVersionId;
 

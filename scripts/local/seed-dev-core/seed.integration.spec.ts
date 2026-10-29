@@ -46,62 +46,10 @@ describeIfSeedDb('dev_core 시드', () => {
     await client?.end();
   });
 
-  it('scope 와 role→scope 매핑이 채워진다', async () => {
-    // 정확히 14개를 어서션한다 — apps/core/src/platform/auth/merged-scopes.ts 의 ALL_SCOPES 에서
-    // 부팅 시 시딩되는 개수다(import 하지 않음: ALL_SCOPES 에서 스코프 하나가 빠지는 회귀는
-    // `> 0` 로는 못 잡는다). ALL_SCOPES = INVENTORY_SCOPES(4) + FULFILLMENT_SCOPES(10 — 스테이션 UI
-    // PR A 가 shipment.short_pick·dispatch.station_force 를 더했다).
-    const scopeCountRows = await db.execute<{ n: number }>(sql`SELECT count(*)::int AS n FROM auth.scopes`);
-    expect(scopeCountRows[0].n).toBe(14);
-
-    const roleScopeRows = await db.execute<{ role_name: string; scope_key: string }>(sql`
-      SELECT rsm.role_name, s.key AS scope_key
-      FROM auth.role_scope_mapping rsm
-      JOIN auth.scopes s ON s.id = rsm.scope_id
-      ORDER BY rsm.role_name, s.key
-    `);
-
-    const scopeKeysByRole = new Map<string, string[]>();
-    for (const row of roleScopeRows) {
-      const scopeKeys = scopeKeysByRole.get(row.role_name) ?? [];
-      scopeKeys.push(row.scope_key);
-      scopeKeysByRole.set(row.role_name, scopeKeys);
-    }
-
-    // 기대값은 apps/core/src/platform/auth/merged-scopes.ts 의 ALL_ROLE_MAPPINGS 를
-    // import 하지 않고 여기 직접 적는다 — 검증 대상 상수를 그대로 가져와 비교하면 그 상수 자체가
-    // 잘못됐을 때도 테스트가 통과해버려 회귀를 잡지 못한다.
-    // admin 은 inventory 전량을 받고 fulfillment 는 하나도 받지 않는다 — FULFILLMENT_ROLE_MAPPINGS
-    // 에 admin 항목이 아예 없기 때문이다. 이게 뒤집히면 어드민이 강제출고까지 얻게 된다.
-    expect(scopeKeysByRole.get('admin')).toEqual([
-      'inventory.adjust',
-      'inventory.manage',
-      'inventory.operate',
-      'inventory.warehouse.manage',
-    ]);
-    // logistics_worker 가 inventory 에서 operate 하나만 받는 건 의도다. 현장 PDA 의 조회·입고확정·
-    // 적치는 작업자 행위; 스테이션 UI 의 결품 보고·강제출고도 새로이 작업자 스코프다.
-    expect(scopeKeysByRole.get('logistics_worker')).toEqual([
-      'fulfillment.dispatch.station_force',
-      'fulfillment.shipment.short_pick',
-      'fulfillment.warehouse.operate',
-      'inventory.operate',
-    ]);
-    expect(scopeKeysByRole.get('logistics_manager')).toEqual([
-      'fulfillment.dispatch.force',
-      'fulfillment.dispatch.recall',
-      'fulfillment.dispatch.station_force',
-      'fulfillment.reservation.transfer',
-      'fulfillment.shipment.consolidate',
-      'fulfillment.shipment.override_recipient',
-      'fulfillment.shipment.reopen',
-      'fulfillment.shipment.short_pick',
-      'fulfillment.warehouse.operate',
-      'inventory.adjust',
-      'inventory.manage',
-      'inventory.operate',
-      'inventory.warehouse.manage',
-    ]);
+  // 권한은 user-service 의 iam 표가 원본이다. 옛 auth 스키마는 마이그레이션이 지웠다.
+  it('옛 auth 스키마가 없다', async () => {
+    const rows = await db.execute<{ n: number }>(sql`SELECT count(*)::int AS n FROM pg_namespace WHERE nspname = 'auth'`);
+    expect(rows[0].n).toBe(0);
   });
 
   it('마스터 데이터가 결정론적으로 들어간다', async () => {

@@ -30,6 +30,7 @@ import { ProductVersionReadLoader } from '../../../core/products/loaders/product
 import { OptionReadLoader } from '../../../core/products/loaders/option-read.loader';
 import { TagReadLoader } from '../../../core/products/loaders/tag-read.loader';
 import { ProjectionSnapshotAssembler } from '../../../core/products/assemblers/projection-snapshot.assembler';
+import { ProductModel3dLoader } from '../../../core/products/loaders/product-model3d.loader';
 import { PricingService } from '../../../core/pricing/pricing.service';
 import { PricingValidatorService } from '../../../core/pricing/pricing-validator.service';
 import { PricingCalculatorService } from '../../../core/pricing/pricing-calculator.service';
@@ -97,7 +98,13 @@ describeIfDb('FormExportSnapshotReader (실 Postgres)', () => {
     // ProductCategoriesService.getCategoryTree()(이 스위트가 실제로 부르는 유일한 메서드)는
     // productReadAssembler/projectionSnapshotAssembler/outboxPublisher 중 어느 것도 건드리지
     // 않는다 — 그래도 생성자 그래프를 채우려면 실 인스턴스가 필요하다(any/as 스텁 대신).
-    const snapshotAssembler = new ProjectionSnapshotAssembler(versionLoader, optionLoader, tagLoader, priceCache);
+    const snapshotAssembler = new ProjectionSnapshotAssembler(
+      versionLoader,
+      optionLoader,
+      tagLoader,
+      priceCache,
+      new ProductModel3dLoader(),
+    );
     // OutboxPublisher 는 스키마 제네릭을 받지 않는(기본값 Record<string, never>) DbService 를
     // 받는다 — 우리 dbService 의 실제 동작(db/run)엔 무관하고 순수 타입 불일치라 캐스팅한다.
     // 카테고리 서비스는 이제 아웃박스가 아니라 publisher 를 받는다 (ADR-0029 §5) —

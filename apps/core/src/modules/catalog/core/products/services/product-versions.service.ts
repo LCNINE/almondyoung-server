@@ -53,6 +53,7 @@ import { keywordMatch } from '../../../common/keyword-match';
 import { v7 as uuidv7 } from 'uuid';
 import { deleteEntitiesIfUnmapped } from '../../version-isolation/delete-if-unmapped';
 import { AuditChanges, diffFields, recordProductAudit } from './product-audit-log';
+import { lockProductMasters } from './product-master-lock';
 
 /**
  * publish 를 유발한 작업의 성격. 임포트 워커와 단건 UI 가 같은 `publishVersion` 을
@@ -279,6 +280,10 @@ export class ProductVersionsService {
     options?: PublishVersionOptions,
   ): Promise<void> {
     return this.db.run(async (tx) => {
+      const initial = await this.getVersionById(versionId, tx);
+      await lockProductMasters(tx, [initial.masterId]);
+
+      // 잠금을 기다리는 동안 다른 요청이 이 버전을 공개했을 수 있으므로 상태를 다시 읽는다.
       const version = await this.getVersionById(versionId, tx);
 
       // 일괄 세션이 소유한 draft 는 세션이 일괄로 발행한다 — 여기서 한 건씩 나가면 세션의
@@ -938,6 +943,8 @@ export class ProductVersionsService {
     tx?: DbTransaction,
   ): Promise<void> {
     return this.db.run(async (tx) => {
+      await lockProductMasters(tx, [masterId]);
+
       const activeVersion = await this.getActiveVersion(masterId, tx);
       await this._recordExposureChange(activeVersion, activeVersion, { hideMembershipPriceForNonMembers }, userId, tx);
 
@@ -968,6 +975,8 @@ export class ProductVersionsService {
     tx?: DbTransaction,
   ): Promise<void> {
     return this.db.run(async (tx) => {
+      await lockProductMasters(tx, [masterId]);
+
       const activeVersion = await this.getActiveVersion(masterId, tx);
       await this._recordExposureChange(activeVersion, activeVersion, { isVisibleToMembersOnly }, userId, tx);
 
@@ -996,6 +1005,8 @@ export class ProductVersionsService {
     tx?: DbTransaction,
   ): Promise<void> {
     return this.db.run(async (tx) => {
+      await lockProductMasters(tx, [masterId]);
+
       const activeVersion = await this.getActiveVersion(masterId, tx);
       const current = await this.purchaseConstraints.getForVersion(masterId, activeVersion.id, tx);
       await this._recordExposureChange(
@@ -1024,6 +1035,8 @@ export class ProductVersionsService {
    */
   async updateOverseas(masterId: string, isOverseas: boolean, userId: string, tx?: DbTransaction): Promise<void> {
     return this.db.run(async (tx) => {
+      await lockProductMasters(tx, [masterId]);
+
       const activeVersion = await this.getActiveVersion(masterId, tx);
       await this._recordExposureChange(activeVersion, activeVersion, { isOverseas }, userId, tx);
 
@@ -1055,6 +1068,8 @@ export class ProductVersionsService {
     tx?: DbTransaction,
   ): Promise<void> {
     return this.db.run(async (tx) => {
+      await lockProductMasters(tx, [masterId]);
+
       const activeVersion = await this.getActiveVersion(masterId, tx);
 
       const set: Partial<typeof productMasterVersions.$inferInsert> = { updatedAt: new Date() };
@@ -1107,6 +1122,8 @@ export class ProductVersionsService {
    */
   async unpublishMaster(masterId: string, userId: string, tx?: DbTransaction): Promise<void> {
     return this.db.run(async (tx) => {
+      await lockProductMasters(tx, [masterId]);
+
       const activeVersion = await this.getActiveVersion(masterId, tx);
 
       // active를 inactive로 전환

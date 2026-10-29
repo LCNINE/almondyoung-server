@@ -82,10 +82,7 @@ import { CronOnceModule } from '@app/cron-once';
       // 현황: `npm run audit:consume-validation -- analytics`
       policy: { validateOnConsume: true },
     }),
-    AuthorizationModule.forRoot({
-      microserviceName: 'analytics',
-      scopes: [],
-    }),
+    AuthorizationModule.forAuthOnly(),
     PermissionModule.forRoot({ service: 'analytics' }),
   ],
   controllers: [

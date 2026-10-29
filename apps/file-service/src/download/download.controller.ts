@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Head,
+  Header,
   Param,
   Query,
   ParseUUIDPipe,
@@ -97,7 +98,9 @@ export class DownloadController {
     return this.downloadService.getMetadata(fileId, user);
   }
 
+  // 공개 파일은 브라우저 fetch도 302를 따라갈 수 있어야 GLB 로더에서 읽을 수 있다.
   @Get('public/:fileId')
+  @Header('Access-Control-Allow-Origin', '*')
   @Public()
   @ApiOperation({
     summary: 'Serve public file directly by ID',
@@ -121,6 +124,7 @@ export class DownloadController {
   }
 
   @Head('public/:fileId')
+  @Header('Access-Control-Allow-Origin', '*')
   @Public()
   @ApiOperation({ summary: 'Check if public file exists' })
   @ApiParam({ name: 'fileId', description: 'File UUID' })

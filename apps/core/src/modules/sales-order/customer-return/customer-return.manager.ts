@@ -72,6 +72,7 @@ export class CustomerReturnManager {
           channelReturnId: fact.returnId,
           channelRequestId: fact.requestId,
           reason: fact.reason,
+          note: fact.note ?? null,
           feeBearer: fact.feeBearer,
           requestedBy: fact.requestedBy,
           windowOverrideReason: fact.windowOverrideReason ?? null,

@@ -36,6 +36,13 @@
       "when": 1789612857799,
       "tag": "20260917024057_add-uploaded-file-stuck-at",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1793244086419,
+      "tag": "20261029032126_drop-legacy-scope-tables",
+      "breakpoints": true
     }
   ]
 }

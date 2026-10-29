@@ -1,4 +1,4 @@
-import { RequireScopes, JwtPayload, StoreRoute, RequirePermission, PiiResponse } from '@app/authorization';
+import { JwtPayload, StoreRoute, RequirePermission, PiiResponse } from '@app/authorization';
 import { Body, Controller, Get, NotFoundException, Param, Patch, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { ConsentsService } from './consents.service';
@@ -24,7 +24,6 @@ export class ConsentsController {
   })
   @StoreRoute()
   @Get()
-  @RequireScopes('user:read')
   async getMyConsent(@CurrentUser() user: JwtPayload): Promise<UserConsent | null> {
     return await this.consentsService.getMyConsent(user.id);
   }
@@ -36,7 +35,6 @@ export class ConsentsController {
   })
   @StoreRoute()
   @Post()
-  @RequireScopes('user:modify')
   async createConsent(@CurrentUser() user: JwtPayload, @Body() createConsentDto: CreateConsentDto): Promise<void> {
     return this.consentsService.createConsent(user.id, createConsentDto);
   }
@@ -46,7 +44,6 @@ export class ConsentsController {
   @ApiResponse({ status: 404, description: '동의 정보가 없음' })
   @StoreRoute()
   @Patch('marketing')
-  @RequireScopes('user:modify')
   async updateMyMarketingConsent(
     @CurrentUser() user: JwtPayload,
     @Body() dto: UpdateMarketingConsentDto,

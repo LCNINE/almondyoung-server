@@ -36,6 +36,16 @@ describe('library FileServiceClient', () => {
     expect(token).not.toHaveProperty('scopes');
   });
 
+  it('preserves explicit public access for approved GLB validation and fails closed when omitted', async () => {
+    const response = respondWith({ isPublic: true, mimeType: 'model/gltf-binary', contextId: 'sku-3d-model' });
+
+    await expect(client().fetchMetadata('glb', 'admin-1')).resolves.toMatchObject({ isPublic: true });
+
+    response.mockResolvedValueOnce(new Response(JSON.stringify({})));
+
+    await expect(client().fetchMetadata('legacy', 'admin-1')).resolves.toMatchObject({ isPublic: false });
+  });
+
   it('reads metadata on behalf of the requester', async () => {
     const fetchMock = respondWith({ fileName: 'a.zip', status: 'active', contextId: 'digital-asset-file' });
 

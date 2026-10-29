@@ -1,3 +1,4 @@
+import { createModel3dProjectionStub } from './__fixtures__/model3d-projection.stub';
 import { BadRequestError } from '@app/shared';
 import { ProductMatchingService } from './product-matching.service';
 import { ResolveMatchingDto } from '../dto/resolve-matching.dto';
@@ -45,6 +46,7 @@ function makeService(options: { transactionTxs?: Array<ReturnType<typeof makeTx>
     fulfillmentBacklog as never,
     auditService as never,
     linkResolver as never,
+    createModel3dProjectionStub(),
   );
 
   return {

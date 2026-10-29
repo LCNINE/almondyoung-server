@@ -1,7 +1,6 @@
 import { pgTable, uuid, varchar, text, bigint, boolean, timestamp, index, jsonb } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
 import { v7 as uuidv7 } from 'uuid';
-import { authorizationSchema } from '@app/authorization';
 
 export const fileContexts = pgTable('file_contexts', {
   id: varchar('id', { length: 50 }).primaryKey(),
@@ -77,8 +76,6 @@ export const uploadsRelations = relations(uploads, ({ one }) => ({
 export const fileServiceSchema = {
   fileContexts,
   uploads,
-  // Auth Schema (from @app/authorization)
-  ...authorizationSchema,
 } as const;
 
 export type FileServiceSchema = typeof fileServiceSchema;

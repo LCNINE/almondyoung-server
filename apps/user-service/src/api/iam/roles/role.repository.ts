@@ -9,6 +9,7 @@ import {
   type UserServiceSchema,
   type UserServiceTx,
 } from 'apps/user-service/database/drizzle/schema';
+import { liveStaffAssignment } from '../iam.constants';
 import { and, count, eq, gt, inArray, isNull, ne, or, sql } from 'drizzle-orm';
 
 export type RoleRow = typeof roles.$inferSelect;
@@ -50,6 +51,17 @@ export class RoleRepository {
       .select()
       .from(roles)
       .where(inArray(roles.roleId, [...roleIds]));
+  }
+
+  /** 지금 유효한 직원 역할을 하나라도 가졌는가. */
+  async hasLiveStaffRole(userId: string, tx: UserServiceTx): Promise<boolean> {
+    const [row] = await tx
+      .select({ roleId: userRoleAssignments.roleId })
+      .from(userRoleAssignments)
+      .innerJoin(roles, eq(roles.roleId, userRoleAssignments.roleId))
+      .where(and(eq(userRoleAssignments.userId, userId), liveStaffAssignment()))
+      .limit(1);
+    return row !== undefined;
   }
 
   async findRoleByName(name: string, tx: UserServiceTx): Promise<RoleRow | null> {

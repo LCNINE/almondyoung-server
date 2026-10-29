@@ -145,6 +145,9 @@ function Body({
           {' · '}배송비 부담 {RETURN_FEE_BEARER_LABELS[view.feeBearer as 'customer' | 'seller'] ?? view.feeBearer}
           {' · '}요청 {view.requestedBy === 'customer' ? '고객' : 'CS'} ({formatKstDateTime(view.requestedAt)})
         </div>
+        {view.note && (
+          <div className="whitespace-pre-wrap break-words">고객 메모: {view.note}</div>
+        )}
         {view.arrivedAt && (
           <div>
             도착 {formatKstDate(view.arrivedAt)} · {view.kind === 'exchange' ? '교환' : '환불'} 기한{' '}
@@ -188,6 +191,9 @@ function Body({
           {settlementOutcome && (
             <div className="space-y-0.5">
               <div className="font-medium">{settlementHeadline(view.kind, formatWon(settlementOutcome.refundAmount))}</div>
+              {settlementOutcome.shippingRefund != null && settlementOutcome.shippingRefund > 0 && (
+                <div className="text-muted-foreground">배송비 환불 +{formatWon(settlementOutcome.shippingRefund)}</div>
+              )}
               {DEDUCTION_LABELS.map(([key, label]) => {
                 const amount = settlementOutcome.deduction[key];
                 return amount ? (

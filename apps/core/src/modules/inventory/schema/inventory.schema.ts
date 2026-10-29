@@ -24,7 +24,6 @@ import {
   foreignKey,
   AnyPgColumn,
 } from 'drizzle-orm/pg-core';
-import { authorizationSchema } from '@app/authorization';
 import { printOrders } from '../../print-order/schema/print-order.schema';
 // 타입만 가져온다(런타임 import 없음) — jsonb 칸의 모양은 반품 타입 파일이 정본이다
 import type {
@@ -795,6 +794,32 @@ export const skuReferencePhotos = pgTable(
   },
   (t) => ({
     idxSkuSort: index('idx_sku_reference_photos_sku_sort').on(t.skuId, t.sortOrder),
+  }),
+);
+
+export type Sku3dModelStatus = 'approved' | 'needs_revision' | 'needs_more_photos' | 'failed';
+
+export const sku3dModels = pgTable(
+  'sku_3d_models',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    skuId: uuid('sku_id')
+      .notNull()
+      .references(() => skus.id, { onDelete: 'cascade' }),
+    version: integer('version').notNull(),
+    glbFileId: uuid('glb_file_id'),
+    status: varchar('status', { length: 32 }).$type<Sku3dModelStatus>().notNull(),
+    notes: jsonb('notes').$type<Record<string, unknown>>().notNull().default({}),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    uniqueVersion: uniqueIndex('uq_sku_3d_models_sku_version').on(t.skuId, t.version),
+    validVersion: check('ck_sku_3d_models_version', sql`${t.version} > 0`),
+    validStatus: check(
+      'ck_sku_3d_models_status',
+      sql`${t.status} IN ('approved', 'needs_revision', 'needs_more_photos', 'failed')`,
+    ),
+    approvedFile: check('ck_sku_3d_models_approved_file', sql`${t.status} <> 'approved' OR ${t.glbFileId} IS NOT NULL`),
   }),
 );
 
@@ -1601,6 +1626,7 @@ export const customerReturns = pgTable(
     exchangeReleasedAt: timestamp('exchange_released_at', { withTimezone: true }),
     exchangeReleasedBy: uuid('exchange_released_by'),
     reason: customerReturnReasonEnum('reason').notNull(),
+    note: text('note'),
     feeBearer: varchar('fee_bearer', { length: 16 }).notNull(),
     requestedBy: varchar('requested_by', { length: 16 }).notNull(),
     windowOverrideReason: text('window_override_reason'),
@@ -3945,6 +3971,7 @@ export const wmsTables = {
   skuBarcodes,
   skuShelfPositions,
   skuReferencePhotos,
+  sku3dModels,
   skuFieldCaptures,
   skuFieldCaptureEvents,
   skuImages,
@@ -5005,7 +5032,6 @@ export const wmsSchema = {
   ...wmsTables,
   ...wmsViews,
   ...wmsRelations,
-  ...authorizationSchema,
 } as const;
 
 export type DbTx = TxFor<typeof wmsSchema>;

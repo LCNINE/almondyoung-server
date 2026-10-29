@@ -6,7 +6,6 @@ import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { DbModule } from '@app/db';
 import {
   AuthorizationModule,
-  authorizationSchema,
   AuthzObserverGuard,
   AuthzShadowInterceptor,
   JwtAuthGuard,
@@ -33,16 +32,13 @@ import { LegacyDelegationInterceptor } from './access/legacy-delegation.intercep
       validate: validateFileServiceEnv,
       envFilePath: ['.env', 'apps/file-service/.env'], // root .env 먼저 읽기
     }),
-    AuthorizationModule.forRoot({
-      microserviceName: 'file-service',
-      scopes: [],
-    }),
+    AuthorizationModule.forAuthOnly(),
     PermissionModule.forRoot({ service: 'file-service' }),
     DbModule.forRoot({
       config: {
         connectionString: process.env.DATABASE_URL ?? '',
       },
-      schema: { ...fileServiceSchema, ...authorizationSchema },
+      schema: fileServiceSchema,
     }),
     SharedModule,
     StorageModule,

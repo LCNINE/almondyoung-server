@@ -995,6 +995,27 @@
       "when": 1793227023408,
       "tag": "20261028223703_add-customer-exchange",
       "breakpoints": true
+    },
+    {
+      "idx": 142,
+      "version": "7",
+      "when": 1793235419382,
+      "tag": "20261029005659_add-sku-3d-models",
+      "breakpoints": true
+    },
+    {
+      "idx": 143,
+      "version": "7",
+      "when": 1793237839494,
+      "tag": "20261029013719_add-customer-return-note",
+      "breakpoints": true
+    },
+    {
+      "idx": 144,
+      "version": "7",
+      "when": 1793244078264,
+      "tag": "20261029032118_drop-legacy-scope-tables",
+      "breakpoints": true
     }
   ]
 }

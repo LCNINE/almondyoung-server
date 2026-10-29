@@ -134,6 +134,13 @@
       "when": 1792485415628,
       "tag": "20261020083655_seed-minimum-wage-2026",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1793244089049,
+      "tag": "20261029032129_drop-legacy-scope-tables",
+      "breakpoints": true
     }
   ]
 }

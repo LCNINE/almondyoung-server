@@ -119,6 +119,7 @@ export class CustomerReturnSettlementManager {
       const settledAt = new Date(fact.settledAt);
       const outcome: CustomerReturnSettlementOutcome = {
         refundAmount: fact.refundAmount,
+        ...(fact.shippingRefund !== undefined ? { shippingRefund: fact.shippingRefund } : {}),
         deduction: fact.deduction,
         feeNotAdjusted: fact.feeNotAdjusted,
         refundMode: fact.refundMode,

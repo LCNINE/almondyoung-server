@@ -20,12 +20,9 @@ import { HanjinCarrierGateway } from './carrier/hanjin/hanjin-carrier.gateway';
 //   - DbModule 없이는 FulfillmentCommandService 의 DbService 의존성이 미해결.
 //   - AuthorizationModule(@Global) 은 AppModule 과 같은 전역 인증 배선이다(이 isolated TestingModule 에는
 //     AppModule 이 어디서도 전역 등록해주지 않으므로 직접 등록한다).
-// AuthorizationModule.forRoot 의 AUTH_CONFIG 팩토리는 AUTH_SECRET(HS256) 또는 OIDC_ISSUER_URL 이 없으면
+// AuthorizationModule.forAuthOnly 의 AUTH_CONFIG 팩토리는 AUTH_SECRET(HS256) 또는 OIDC_ISSUER_URL 이 없으면
 // 즉시 throw 하므로, 로컬/CI 에 시크릿이 없을 때를 대비해 더미 AUTH_SECRET 을 주입한다 — 이 스모크는 provider
 // 그래프 해결만 검증하며 JWT 검증 로직 자체는 행사하지 않는다.
-// `.compile()`은 onModuleInit 등 라이프사이클 훅을 실행하지 않는다(@nestjs/testing 은 constructor DI만
-// 수행) — 따라서 ScopeBootstrapService.onModuleInit(scopes/role_scope_mapping 테이블에 대한 실제 DB write)
-// 은 이 테스트에서 트리거되지 않고, `core` DB 에 그 테이블들이 없어도 안전하다(실측 확인됨).
 const describeIfDb = process.env.DATABASE_URL ? describe : describe.skip;
 
 describeIfDb('WaybillModule DI', () => {
@@ -39,8 +36,6 @@ describeIfDb('WaybillModule DI', () => {
     const { DbModule } = await import('@app/db');
     const { AuthorizationModule } = await import('@app/authorization');
     const { mergedSchema } = await import('../../../platform/database/merged-schema');
-    const { ALL_SCOPES } = await import('../../../platform/auth/merged-scopes');
-    const { FULFILLMENT_ROLE_MAPPINGS } = await import('../../../platform/auth/fulfillment-scopes');
     const { WaybillModule } = await import('./waybill.module');
     const { WaybillService } = await import('./waybill.service');
 
@@ -57,11 +52,7 @@ describeIfDb('WaybillModule DI', () => {
           }),
           schema: mergedSchema,
         }),
-        AuthorizationModule.forRoot({
-          microserviceName: 'almondyoung',
-          scopes: ALL_SCOPES,
-          roleMappings: FULFILLMENT_ROLE_MAPPINGS,
-        }),
+        AuthorizationModule.forAuthOnly(),
         WaybillModule,
       ],
     }).compile();
@@ -78,8 +69,6 @@ describeIfDb('WaybillModule DI', () => {
     const { DbModule } = await import('@app/db');
     const { AuthorizationModule } = await import('@app/authorization');
     const { mergedSchema } = await import('../../../platform/database/merged-schema');
-    const { ALL_SCOPES } = await import('../../../platform/auth/merged-scopes');
-    const { FULFILLMENT_ROLE_MAPPINGS } = await import('../../../platform/auth/fulfillment-scopes');
     const { WaybillModule } = await import('./waybill.module');
     const { HANJIN_CONFIG } = await import('./waybill.tokens');
 
@@ -103,11 +92,7 @@ describeIfDb('WaybillModule DI', () => {
           }),
           schema: mergedSchema,
         }),
-        AuthorizationModule.forRoot({
-          microserviceName: 'almondyoung',
-          scopes: ALL_SCOPES,
-          roleMappings: FULFILLMENT_ROLE_MAPPINGS,
-        }),
+        AuthorizationModule.forAuthOnly(),
         ConsumerModule,
       ],
     }).compile();

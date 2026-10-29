@@ -31,4 +31,31 @@ describe('역할 이름 검사기', () => {
     const source = "export const A = () => <p>Don't {role === 'admin' ? 1 : 0}</p>;";
     expect(countRoleLiterals(source, 'screen.tsx')).toBe(1);
   });
+
+  it('쉼표로 합친 역할 문자열은 조각마다 센다', () => {
+    expect(countRoleLiterals("const roleName = 'admin,master';")).toBe(2);
+    expect(countRoleLiterals("const roleName = 'admin, intern, other';")).toBe(2);
+    expect(countRoleLiterals("const label = 'a,b';")).toBe(0);
+  });
+
+  it('고객 역할 이름은 역할 이름 자리에서만 센다 — 채팅 role 같은 다른 뜻은 세지 않는다', () => {
+    const slots = [
+      "if (roles.includes('user')) {}",
+      "const hit = roleName === 'membership';",
+      "where(eq(schema.roles.name, 'user'));",
+      "const CUSTOMER_ROLE_NAMES = ['user', 'membership'];",
+      "find({ roleName: 'user' });",
+      "this.findByRoleName('user');",
+    ];
+    expect(slots.map((s) => countRoleLiterals(s))).toEqual([1, 1, 1, 2, 1, 1]);
+    expect(countRoleLiterals("const roleNames = 'user,membership';")).toBe(2);
+    expect(countRoleLiterals("const label = 'user,membership';")).toBe(0);
+    const others = [
+      "const m = { role: 'user' };",
+      "if (message.role === 'user') {}",
+      "const t = { type: 'user' };",
+      "key('membership')",
+    ];
+    expect(others.map((s) => countRoleLiterals(s))).toEqual([0, 0, 0, 0]);
+  });
 });

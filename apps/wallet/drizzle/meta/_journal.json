@@ -141,6 +141,13 @@
       "when": 1792200212907,
       "tag": "20261017012332_add-refund-kind",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1793244080993,
+      "tag": "20261029032120_drop-legacy-scope-tables",
+      "breakpoints": true
     }
   ]
 }
