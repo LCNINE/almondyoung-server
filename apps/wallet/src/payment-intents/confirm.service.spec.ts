@@ -83,6 +83,7 @@ function makeContext(
 
   const chargesService = {
     findActiveByIntentAndOperation: jest.fn().mockResolvedValue(null),
+    hasVirtualAccountLeftOpen: jest.fn().mockResolvedValue(false),
     create: jest.fn().mockResolvedValue({ id: 'charge-ext' }),
     findSucceededPointsAuthorizeByIntent: jest.fn().mockResolvedValue(stalePointsCharge),
     updateStatus: jest.fn().mockResolvedValue(undefined),
@@ -233,6 +234,29 @@ describe('ConfirmService', () => {
       expect.objectContaining({ chargeId: 'charge-points', intentId: 'intent-1', amount: 8130 }),
     );
     expect(chargesService.updateStatus).toHaveBeenCalledWith('charge-points', 'CANCELED', {});
+  });
+
+  it('refuses another attempt while a widget virtual account of this intent is still open', async () => {
+    const { service, chargesService } = makeContext({ stalePointsCharge: null });
+    chargesService.findActiveByIntentAndOperation.mockResolvedValue({ id: 'charge-va' });
+    chargesService.hasVirtualAccountLeftOpen.mockResolvedValue(true);
+
+    await expect(
+      service.confirm('intent-1', { paymentMethodId: 'pm-toss', pointsToApply: 0 }, 'corr-1'),
+    ).rejects.toMatchObject({ response: { error: 'VIRTUAL_ACCOUNT_CLEANUP_PENDING' } });
+    expect(chargesService.updateStatus).not.toHaveBeenCalledWith('charge-va', 'CANCELED', {}, expect.anything());
+  });
+
+  it('refuses another attempt while the previous Toss confirmation result is unknown', async () => {
+    const { service, chargesService } = makeContext({ stalePointsCharge: null });
+    chargesService.findActiveByIntentAndOperation.mockResolvedValue({
+      id: 'charge-toss',
+      responsePayload: { confirmAttempt: { paymentKey: 'pk' } },
+    });
+
+    await expect(
+      service.confirm('intent-1', { paymentMethodId: 'pm-toss', pointsToApply: 0 }, 'corr-1'),
+    ).rejects.toMatchObject({ response: { error: 'PAYMENT_CONFIRMATION_PENDING' } });
   });
 
   it('stamps a short action-expiry deadline when entering REQUIRES_ACTION', async () => {

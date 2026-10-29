@@ -295,7 +295,12 @@ export class PaymentIntentsService {
     const correlationId = `confirm:${intentId}:${Date.now()}`;
     return this.confirmService.confirm(
       intentId,
-      { paymentMethodId: dto.paymentMethodId, pointsToApply: dto.pointsToApply, cashReceipt: dto.cashReceipt },
+      {
+        paymentMethodId: dto.paymentMethodId,
+        pointsToApply: dto.pointsToApply,
+        cashReceipt: dto.cashReceipt,
+        tossCheckoutMode: dto.tossCheckoutMode,
+      },
       correlationId,
     );
   }
@@ -303,7 +308,15 @@ export class PaymentIntentsService {
   async tossApprove(intentId: string, dto: TossApproveDto): Promise<void> {
     await this.findByIdOrThrow(intentId);
     const correlationId = `toss-approve:${intentId}:${Date.now()}`;
-    await this.tossApproveService.approve(intentId, dto.paymentKey, dto.orderId, dto.amount, correlationId);
+    await this.tossApproveService.approve(
+      intentId,
+      dto.paymentKey,
+      dto.orderId,
+      dto.amount,
+      correlationId,
+      dto.paymentType,
+      dto.method,
+    );
   }
 
   /**

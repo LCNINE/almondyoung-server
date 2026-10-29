@@ -4,6 +4,7 @@ import { ChargesService } from '../charges/charges.service';
 import { TossApproveService } from '../payment-intents/toss-approve.service';
 import { BillingMethodService } from '../billing/billing-method.service';
 import { TossApiClient } from '../providers/toss/toss-api.client';
+import { usesTossWidget } from '../providers/toss/toss-widget-mode';
 import { TossWebhookRepository } from './toss-webhook.repository';
 import { TossWebhookBodyDto } from './dto';
 
@@ -108,7 +109,7 @@ export class TossWebhookService {
 
     // 3. 토스 재조회 — dedup 삽입 *앞*에서 한다. 일시적 실패(5xx)로 throw 해도 dedup 행이
     //    남지 않아야 토스 재전송이 다시 처리될 수 있다(dedup 이 재시도를 영구 차단하는 사고 방지).
-    const query = await this.tossApi.getPaymentByOrderId(orderId);
+    const query = await this.tossApi.getPaymentByOrderId(orderId, usesTossWidget(charge.responsePayload));
     if (!query.ok) {
       // 5xx/429 는 일시적 → throw(500) → 토스 재전송. 4xx(미존재 등)는 재시도 무의미 → 기록만.
       if (query.statusCode >= 500 || query.statusCode === 429) {
@@ -203,7 +204,7 @@ export class TossWebhookService {
       }
       // 본문이 아닌 토스가 돌려준 실제 paymentKey 로 확정한다(가짜 키가 charge 에 박혀
       // 이후 취소/환불이 깨지는 것도 함께 방지).
-      await this.tossApproveService.finalizeApproval(charge, authPaymentKey, correlationId);
+      await this.tossApproveService.finalizeApproval(charge, authPaymentKey, correlationId, query.data.virtualAccount);
       await this.repository.updateStatus(receiptId, 'PROCESSED', { processedAt: new Date() });
     } else if (['ABORTED', 'EXPIRED', 'CANCELED'].includes(authStatus)) {
       if (charge.status !== 'REQUIRES_ACTION') {

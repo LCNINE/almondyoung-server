@@ -34,7 +34,7 @@ describe('GET /v1/payment-intents/:id/refunds', () => {
         .fn()
         .mockResolvedValue([refund('rf-1', 'FAILED', 'AUTO'), refund('rf-2', 'PENDING', 'MANUAL')]),
     };
-    const controller = new PaymentIntentsController(intents as never, refunds as never);
+    const controller = new PaymentIntentsController(intents as never, refunds as never, {} as never);
 
     const result = await controller.listRefunds('in-1');
 
@@ -49,7 +49,7 @@ describe('GET /v1/payment-intents/:id/refunds', () => {
     const notFound = new NotFoundException({ error: 'INTENT_NOT_FOUND', message: 'Payment intent not found: x' });
     const intents = { findByIdOrThrow: jest.fn().mockRejectedValue(notFound) };
     const refunds = { listByIntent: jest.fn() };
-    const controller = new PaymentIntentsController(intents as never, refunds as never);
+    const controller = new PaymentIntentsController(intents as never, refunds as never, {} as never);
 
     await expect(controller.listRefunds('x')).rejects.toBe(notFound);
     expect(refunds.listByIntent).not.toHaveBeenCalled();

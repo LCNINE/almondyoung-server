@@ -183,16 +183,40 @@ export class ConfirmPaymentIntentDto {
   @Min(0)
   pointsToApply?: number;
 
-  @ApiPropertyOptional({ description: '현금영수증 신청 정보 (무통장입금 시). 입금확인 완료 시 자동 발급.', type: CashReceiptRequestDto })
+  @ApiPropertyOptional({
+    description: '현금영수증 신청 정보 (무통장입금 시). 입금확인 완료 시 자동 발급.',
+    type: CashReceiptRequestDto,
+  })
   @IsOptional()
   @ValidateNested()
   @Type(() => CashReceiptRequestDto)
   cashReceipt?: CashReceiptRequestDto;
+
+  @ApiPropertyOptional({
+    enum: ['WIDGET', 'LEGACY'],
+    description: '토스 결제창 방식. 위젯 키가 있어도 결제창이 기존 방식(LEGACY)을 열면 승인도 기존 키로 해야 한다.',
+  })
+  @IsOptional()
+  @IsEnum(['WIDGET', 'LEGACY'])
+  tossCheckoutMode?: 'WIDGET' | 'LEGACY';
 }
 
 // ─── Toss Approve ─────────────────────────────────────────────────────────────
 
 export class TossApproveDto {
+  @ApiPropertyOptional({ enum: ['NORMAL', 'BRANDPAY'] })
+  @IsOptional()
+  @IsEnum(['NORMAL', 'BRANDPAY'])
+  paymentType?: 'NORMAL' | 'BRANDPAY';
+
+  @ApiPropertyOptional({
+    enum: ['VIRTUAL_ACCOUNT'],
+    description: '결제위젯에서 고른 결제수단. 가상계좌면 지연 승인 없이 바로 승인해 입금대기로 보낸다.',
+  })
+  @IsOptional()
+  @IsEnum(['VIRTUAL_ACCOUNT'])
+  method?: 'VIRTUAL_ACCOUNT';
+
   @ApiProperty()
   @IsString()
   @IsNotEmpty()

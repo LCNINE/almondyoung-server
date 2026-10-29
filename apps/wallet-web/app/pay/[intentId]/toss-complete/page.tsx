@@ -10,7 +10,14 @@ export const dynamic = 'force-dynamic';
 
 interface Props {
   params: Promise<{ intentId: string }>;
-  searchParams: Promise<{ paymentKey?: string; orderId?: string; amount?: string; region?: string }>;
+  searchParams: Promise<{
+    paymentKey?: string;
+    orderId?: string;
+    amount?: string;
+    region?: string;
+    paymentType?: string;
+    method?: string;
+  }>;
 }
 
 function buildPayPath(intentId: string, region?: string, extra?: Record<string, string>) {
@@ -27,7 +34,7 @@ const logger = createWebLogger({
 
 export default async function TossCompletePage({ params, searchParams }: Props) {
   const { intentId } = await params;
-  const { paymentKey, orderId, amount, region } = await searchParams;
+  const { paymentKey, orderId, amount, region, paymentType, method } = await searchParams;
 
   logger.info('wallet.toss_complete.received', {
     attributes: {
@@ -52,15 +59,28 @@ export default async function TossCompletePage({ params, searchParams }: Props) 
   }
 
   try {
-    const result = await approveToss(intentId, paymentKey, orderId, Number(amount));
+    const result = await approveToss(
+      intentId,
+      paymentKey,
+      orderId,
+      Number(amount),
+      paymentType === 'BRANDPAY' ? 'BRANDPAY' : 'NORMAL',
+      method === 'VIRTUAL_ACCOUNT' ? 'VIRTUAL_ACCOUNT' : undefined,
+    );
     logger.info('wallet.toss_complete.approved', {
       attributes: {
         intent_id: intentId,
         order_id: orderId,
         has_return_url: Boolean(result.returnUrl),
         billing_mode: result.metadata?.billingMode ?? null,
+        status: result.status,
       },
     });
+
+    // 가상계좌는 계좌만 발급됐다. 결제완료가 아니라 기존 입금 안내 화면(AWAITING_DEPOSIT 재진입)으로 보낸다.
+    if (result.status === 'AWAITING_DEPOSIT') {
+      redirect(buildPayPath(intentId, region));
+    }
 
     if (result.returnUrl) {
       const successUrl = buildReturnUrl(result.returnUrl, {
