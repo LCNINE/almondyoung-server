@@ -7,7 +7,7 @@ import { CustomerReturnsTable } from '../components/customer-returns-table';
 import type { CustomerReturnBucket } from '@/lib/types/dto/customer-returns';
 
 /**
- * 반품 관리 — 새 반품 기록(K8 PR 7) 목록. 옛 교환 탭은 K8 PR 10 에서 걷었다(교환은 PR 11 이 Medusa 교환으로 다시 연다).
+ * 반품·교환 관리 — 새 반품 기록(K8 PR 7) 목록. 교환도 같은 기록이다(K8 PR11b — 종류 칸으로 가른다).
  * 옛 링크의 `tab`·`status`·`createdAt` 은 읽지 않는다 — 반품 목록으로 열린다.
  */
 export default function ReturnExchangeTemplate() {
@@ -32,7 +32,7 @@ export default function ReturnExchangeTemplate() {
 
   return (
     <Container>
-      <Header title="반품 관리" />
+      <Header title="반품·교환 관리" />
       <div className="space-y-3">
         <CustomerReturnsTable
           bucket={bucket}

@@ -1,5 +1,6 @@
 import type {
   CustomerReturnAttention,
+  CustomerReturnKind,
   CustomerReturnPickupStatus,
   CustomerReturnReason,
   CustomerReturnStatus,
@@ -14,6 +15,30 @@ export const RETURN_STATUS_LABELS: Record<CustomerReturnStatus, string> = {
   settled: '환불 완료',
   cancelled: '취소',
 };
+
+export const RETURN_KIND_LABELS: Record<CustomerReturnKind, string> = {
+  return: '반품',
+  exchange: '교환',
+};
+
+/** 교환에는 환불이 없다 — 정산은 교환품 출고·택배비 조정이다. 목록·시트엔 종류 칸이 따로 있어 «교환»을 붙이지 않는다 */
+export const EXCHANGE_STATUS_LABELS: Record<CustomerReturnStatus, string> = {
+  expected: '도착 대기',
+  arrived: '도착',
+  inspected: '정산 중',
+  held: '보류',
+  refund_pending: '정산 실패',
+  settled: '완료',
+  cancelled: '취소',
+};
+
+export function isCustomerReturnStatus(value: string): value is CustomerReturnStatus {
+  return Object.hasOwn(RETURN_STATUS_LABELS, value);
+}
+
+export function statusLabel(kind: CustomerReturnKind, status: CustomerReturnStatus): string {
+  return (kind === 'exchange' ? EXCHANGE_STATUS_LABELS : RETURN_STATUS_LABELS)[status];
+}
 
 /** Medusa 사유 표(apps/medusa/src/workflows/orders/returns/return-reasons.ts RETURN_REASONS)와 이름이 같다. */
 export const RETURN_REASON_LABELS: Record<CustomerReturnReason, string> = {
@@ -54,6 +79,7 @@ export const RETURN_ATTENTION_LABELS: Record<CustomerReturnAttention, string> =
     partial_arrival: '덜 도착',
     refund_overdue: '환불 기한 지남',
     pickup_failed: '회수 미접수',
+    exchange_overdue: '교환 기한 지남',
   };
 
 export const RETURN_PICKUP_STATUS_LABELS: Record<
@@ -79,4 +105,6 @@ export const RETURN_ACTION_LABELS = {
   retryPrepayment: '선환불 다시 시도',
   manualPrepayment: '선환불 계좌 송금',
   retryPickup: '회수 다시 접수',
+  /** 열린 보류 교환은 «교환 정산 열기» — `releaseExchangeLabel` 이 고른다 */
+  releaseExchange: '교환품 보내기',
 } as const;

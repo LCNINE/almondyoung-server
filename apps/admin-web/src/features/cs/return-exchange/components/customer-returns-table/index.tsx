@@ -7,7 +7,12 @@ import { Input } from '@/components/ui/input';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { useCustomerReturns } from '@/lib/services/customer-returns';
 import type { CustomerReturnBucket } from '@/lib/types/dto/customer-returns';
-import { RETURN_ATTENTION_LABELS, RETURN_REASON_LABELS, RETURN_STATUS_LABELS } from '../../customer-return-labels';
+import {
+  RETURN_ATTENTION_LABELS,
+  RETURN_KIND_LABELS,
+  RETURN_REASON_LABELS,
+  statusLabel,
+} from '../../customer-return-labels';
 import { formatKstDate } from '../format';
 import { CustomerReturnSheet } from '../customer-return-sheet';
 
@@ -83,37 +88,39 @@ export function CustomerReturnsTable({ bucket, q, onBucketChange, onSearch }: Pr
       </div>
 
       {isError ? (
-        <p className="text-sm text-red-600">반품 목록을 불러오지 못했습니다.</p>
+        <p className="text-sm text-red-600">반품·교환 목록을 불러오지 못했습니다.</p>
       ) : (
         <Table>
           <TableHeader>
             <TableRow>
               <TableHead>주문번호</TableHead>
+              <TableHead>종류</TableHead>
               <TableHead>고객</TableHead>
               <TableHead>품목</TableHead>
               <TableHead>사유</TableHead>
               <TableHead>상태</TableHead>
               <TableHead>요청일</TableHead>
-              <TableHead>환불 기한</TableHead>
+              <TableHead>처리 기한</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {isLoading ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center text-muted-foreground">
+                <TableCell colSpan={8} className="text-center text-muted-foreground">
                   불러오는 중
                 </TableCell>
               </TableRow>
             ) : items.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="text-center text-muted-foreground">
-                  반품이 없습니다.
+                <TableCell colSpan={8} className="text-center text-muted-foreground">
+                  반품·교환이 없습니다.
                 </TableCell>
               </TableRow>
             ) : (
               items.map((r) => (
                 <TableRow key={r.id} className="cursor-pointer" onClick={() => setSelected({ id: r.id, customerName: r.customerName })}>
                   <TableCell>{r.orderNo}</TableCell>
+                  <TableCell>{RETURN_KIND_LABELS[r.kind]}</TableCell>
                   <TableCell>{r.customerName ?? '-'}</TableCell>
                   <TableCell>
                     {r.productSummary} · {r.quantity}개
@@ -121,7 +128,7 @@ export function CustomerReturnsTable({ bucket, q, onBucketChange, onSearch }: Pr
                   <TableCell>{RETURN_REASON_LABELS[r.reason as keyof typeof RETURN_REASON_LABELS] ?? r.reason}</TableCell>
                   <TableCell>
                     <div className="flex flex-wrap items-center gap-1">
-                      <span>{RETURN_STATUS_LABELS[r.status]}</span>
+                      <span>{statusLabel(r.kind, r.status)}</span>
                       {r.attention.map((a) => (
                         <Badge key={a} variant="destructive">
                           {RETURN_ATTENTION_LABELS[a]}
@@ -130,7 +137,13 @@ export function CustomerReturnsTable({ bucket, q, onBucketChange, onSearch }: Pr
                     </div>
                   </TableCell>
                   <TableCell>{formatKstDate(r.requestedAt)}</TableCell>
-                  <TableCell className={r.attention.includes('refund_overdue') ? 'font-medium text-red-600' : undefined}>
+                  <TableCell
+                    className={
+                      r.attention.includes('refund_overdue') || r.attention.includes('exchange_overdue')
+                        ? 'font-medium text-red-600'
+                        : undefined
+                    }
+                  >
                     {r.arrivedAt ? formatKstDate(r.refundDueAt) : '-'}
                   </TableCell>
                 </TableRow>

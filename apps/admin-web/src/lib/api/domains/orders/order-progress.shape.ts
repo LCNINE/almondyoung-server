@@ -6,7 +6,11 @@
 import { formatDwell } from '../../../utils/format-dwell';
 import { toSettlementView } from './cancel-request.shape';
 import type { SettlementView } from './cancel-request.shape';
-import { RETURN_STATUS_LABELS } from '@/features/cs/return-exchange/customer-return-labels';
+import {
+  isCustomerReturnStatus,
+  RETURN_KIND_LABELS,
+  statusLabel,
+} from '@/features/cs/return-exchange/customer-return-labels';
 
 // cancel-request.shape 와 순환하지 않게 formatDwell 은 utils 로 뺐다. 기존 호출부를 위해 다시 내보낸다.
 export { formatDwell };
@@ -251,9 +255,13 @@ const STATE_LABELS: Record<string, string> = {
 
 export function stateLabel(state: string | null): string {
   if (!state) return '';
-  // 반품 단계의 세부 상태는 반품 예정 기록의 상태다(K8 PR 10). 교환은 PR 11 이 다시 더한다
-  const rx = /^return:(.+)$/.exec(state);
-  if (rx) return `반품 ${RETURN_STATUS_LABELS[rx[1] as keyof typeof RETURN_STATUS_LABELS] ?? rx[1]}`;
+  // 반품·교환 단계의 세부 상태는 `<종류>:<반품 기록 상태>` 다(K8 PR 10, PR11b N9). 모르는 상태는 그대로 보인다
+  const rx = /^(return|exchange):(.+)$/.exec(state);
+  if (rx) {
+    const kind = rx[1] === 'exchange' ? 'exchange' : 'return';
+    const status = rx[2];
+    return `${RETURN_KIND_LABELS[kind]} ${isCustomerReturnStatus(status) ? statusLabel(kind, status) : status}`;
+  }
   return STATE_LABELS[state] ?? state;
 }
 

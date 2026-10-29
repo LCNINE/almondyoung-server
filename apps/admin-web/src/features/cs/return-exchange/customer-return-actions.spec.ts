@@ -6,7 +6,11 @@ import type {
   CustomerReturnStatus,
   CustomerReturnView,
 } from '@/lib/types/dto/customer-returns';
-import { availableCustomerReturnActions } from './customer-return-actions';
+import {
+  availableCustomerReturnActions,
+  releaseExchangeLabel,
+  releaseExchangeSuccessMessage,
+} from './customer-return-actions';
 
 const settlement = (
   o: Partial<CustomerReturnSettlement> = {}
@@ -65,6 +69,8 @@ function view(
     order: { orderNo: 'N1', channelOrderId: 'c1', salesChannel: 'medusa' },
     channelReturnId: 'cr1',
     status,
+    kind: 'return',
+    exchangeReleasedAt: null,
     reason: 'defective',
     feeBearer: 'seller',
     requestedBy: 'u',
@@ -425,5 +431,100 @@ describe('retryPickup', () => {
   });
   it('arrived + failed 면 안 보인다', () => {
     expect(has(view('arrived', { pickup: pickup('failed') }))).toBe(false);
+  });
+});
+
+describe('교환 (K8 PR11b N13)', () => {
+  const RELEASED = '2026-10-02T00:00:00Z';
+  const ex = (
+    status: CustomerReturnStatus,
+    o: Parameters<typeof view>[1] = {}
+  ): CustomerReturnView => view(status, { kind: 'exchange', ...o });
+
+  it('expected·열림 없음 → cancel·releaseExchange(교환품 보내기)·retryPickup, prepay 없음', () => {
+    const v = ex('expected', { arrived: 0 });
+    expect(kinds(v)).toEqual(['cancel', 'releaseExchange', 'retryPickup']);
+    expect(releaseExchangeLabel(v)).toBe('교환품 보내기');
+  });
+
+  it('expected·열림 있음 → cancel 없음·releaseExchange 없음', () => {
+    const v = ex('expected', { arrived: 0, exchangeReleasedAt: RELEASED });
+    expect(kinds(v)).not.toContain('cancel');
+    expect(kinds(v)).not.toContain('releaseExchange');
+    expect(kinds(v)).not.toContain('prepay');
+  });
+
+  it('arrived·열림 없음 → releaseExchange 가 있고 선환불은 없다', () => {
+    const v = ex('arrived');
+    expect(kinds(v)).toEqual(['releaseExchange']);
+  });
+
+  it('arrived·덜 도착 → closeMissing 없음', () => {
+    const v = ex('arrived', { arrived: 1, expected: 2 });
+    expect(kinds(v)).not.toContain('closeMissing');
+    expect(kinds(v)).toContain('releaseExchange');
+  });
+
+  it('held·열림 없음 → releaseExchange(교환품 보내기), settleHeld 없음', () => {
+    const v = ex('held');
+    expect(kinds(v)).toEqual(['releaseExchange']);
+    expect(releaseExchangeLabel(v)).toBe('교환품 보내기');
+  });
+
+  it('held·열림 있음 → releaseExchange(교환 정산 열기) 만 — 도착 전 취소·보류 정산 없음', () => {
+    const v = ex('held', { exchangeReleasedAt: RELEASED });
+    expect(kinds(v)).toEqual(['releaseExchange']);
+    expect(releaseExchangeLabel(v)).toBe('교환 정산 열기');
+  });
+
+  it('refund_pending + 외부 환불 거절 → retrySettlement needs 없음, manualSettlement 없음', () => {
+    const v = ex('refund_pending', {
+      exchangeReleasedAt: RELEASED,
+      settlement: settlement({
+        lastFailure: failure('return_settle_rejected:external_refund_unresolved'),
+      }),
+    });
+    expect(kinds(v)).toEqual(['retrySettlement']);
+    expect(find(v, 'retrySettlement')?.needs).toBeUndefined();
+  });
+
+  it('refund_pending + 배송 방법 없는 거절도 needs 없음', () => {
+    const v = ex('refund_pending', {
+      settlement: settlement({
+        lastFailure: failure('return_settle_rejected:no_charge_shipping_option'),
+      }),
+    });
+    expect(find(v, 'retrySettlement')?.needs).toBeUndefined();
+    expect(kinds(v)).not.toContain('manualSettlement');
+  });
+
+  it('선환불 기록이 있어도 선환불 다시 시도·계좌 송금은 없다', () => {
+    const v = ex('arrived', {
+      prepayment: prepayment({ lastFailure: pfail('wallet_refund_refused:x') }),
+    });
+    expect(kinds(v)).not.toContain('retryPrepayment');
+    expect(kinds(v)).not.toContain('manualPrepayment');
+    expect(kinds(v)).not.toContain('prepay');
+  });
+
+  it('inspected·settled → releaseExchange 없음', () => {
+    expect(kinds(ex('inspected', { exchangeReleasedAt: RELEASED }))).not.toContain('releaseExchange');
+    expect(kinds(ex('inspected'))).not.toContain('releaseExchange');
+    expect(kinds(ex('settled', { exchangeReleasedAt: RELEASED }))).toEqual([]);
+    expect(kinds(ex('cancelled'))).toEqual([]);
+  });
+
+  it('반품 → releaseExchange 없음', () => {
+    for (const s of ['expected', 'arrived', 'held', 'inspected'] as const)
+      expect(kinds(view(s, { arrived: s === 'expected' ? 0 : 2 }))).not.toContain('releaseExchange');
+  });
+
+  it('성공 문구 — 열기 전이면 출고 지시, 열린 보류면 정산 열기', () => {
+    expect(releaseExchangeSuccessMessage(ex('arrived'))).toBe(
+      '교환품 출고를 지시했습니다 — 상자는 출고 화면에 나타납니다'
+    );
+    expect(releaseExchangeSuccessMessage(ex('held', { exchangeReleasedAt: RELEASED }))).toBe(
+      '교환 정산을 열었습니다'
+    );
   });
 });

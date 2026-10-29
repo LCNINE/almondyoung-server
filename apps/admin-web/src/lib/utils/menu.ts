@@ -462,7 +462,7 @@ const allMenus: MainMenu[] = [
       },
       {
         id: 'return-exchange',
-        title: '반품 관리',
+        title: '반품·교환 관리',
         path: '/cs/return-exchange',
       },
       {

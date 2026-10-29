@@ -106,7 +106,7 @@ export const getBreadcrumbItems = (pathname: string): BreadcrumbItem[] => {
     if (pathname.includes('/management')) {
       items.push({ label: 'CS 목록' });
     } else if (pathname.includes('/return-exchange')) {
-      items.push({ label: '반품 관리' });
+      items.push({ label: '반품·교환 관리' });
     }
   }
   // 자사몰/상품 관련 페이지들

@@ -1,6 +1,7 @@
 import { parseServerError, record } from '@/lib/api/server-error';
 import { RETURN_REASON_OPTIONS } from './customer-return-labels';
 import type {
+  CustomerReturnKind,
   CustomerReturnReason,
   OrderReturnable,
   RequestOrderReturnBody,
@@ -8,6 +9,8 @@ import type {
 } from '@/lib/types/dto/customer-returns';
 
 export type ReturnRequestForm = {
+  /** 반품·교환 (K8 PR11b N14) */
+  kind: CustomerReturnKind;
   /** order item id → 반품 수량 (0 이면 고르지 않은 줄) */
   quantities: Record<string, number>;
   reason: string;
@@ -26,6 +29,23 @@ export function isCustomerReturnReason(value: string): value is CustomerReturnRe
 
 export function isReturnRejectReason(value: unknown): value is ReturnRejectReason {
   return typeof value === 'string' && Object.hasOwn(RETURN_REJECT_MESSAGES, value);
+}
+
+/**
+ * 교환은 판매자 잘못 사유만 받는다 — Medusa `exchange_requires_seller_fault` 와 같은 판정. 고객 잘못 사유는 단순 변심
+ * 하나이고, 기타는 부담 주체를 판매자로 고정해 보낸다.
+ */
+export function reasonOptionsFor(kind: CustomerReturnKind): typeof RETURN_REASON_OPTIONS {
+  return kind === 'exchange' ? RETURN_REASON_OPTIONS.filter((o) => o.value !== 'change_of_mind') : RETURN_REASON_OPTIONS;
+}
+
+/** 종류를 바꾼다 — 교환으로 바꾸면 고를 수 없는 사유와 교환 못 하는 줄의 수량을 비운다 */
+export function withKind(form: ReturnRequestForm, kind: CustomerReturnKind, returnable: OrderReturnable): ReturnRequestForm {
+  if (kind === 'return') return { ...form, kind };
+  const blocked = new Set(returnable.items.filter((i) => !i.exchangeable).map((i) => i.item_id));
+  const quantities = Object.fromEntries(Object.entries(form.quantities).filter(([id]) => !blocked.has(id)));
+  const reason = reasonOptionsFor(kind).some((o) => o.value === form.reason) ? form.reason : '';
+  return { ...form, kind, quantities, reason };
 }
 
 const chosenQty = (form: ReturnRequestForm, itemId: string) => form.quantities[itemId] ?? 0;
@@ -56,12 +76,19 @@ export function buildReturnRequestBody(
     if (quantity > line.returnable_quantity) {
       return { ok: false, error: `반품 가능 수량(${line.returnable_quantity})을 넘었습니다` };
     }
+    if (form.kind === 'exchange' && !line.exchangeable) {
+      return { ok: false, error: RETURN_REJECT_MESSAGES.exchange_item_unsupported };
+    }
     items.push({ item_id: itemId, quantity });
   }
   if (items.length === 0) return { ok: false, error: '반품할 품목의 수량을 입력하세요' };
 
   const reason = form.reason.trim();
   if (!reason || !isCustomerReturnReason(reason)) return { ok: false, error: '반품 사유를 고르세요' };
+  const exchange = form.kind === 'exchange';
+  if (exchange && !reasonOptionsFor('exchange').some((o) => o.value === reason)) {
+    return { ok: false, error: '교환은 판매자 잘못 사유만 접수할 수 있습니다' };
+  }
 
   const body: RequestOrderReturnBody = {
     request_id: requestId,
@@ -72,7 +99,9 @@ export function buildReturnRequestBody(
   const note = form.note.trim();
   if (note) body.note = note;
 
-  if (reason === 'other') {
+  if (reason === 'other' && exchange) {
+    body.fee_bearer = 'seller';
+  } else if (reason === 'other') {
     if (!form.feeBearer) return { ok: false, error: '기타 사유는 배송비 부담 주체를 고르세요' };
     body.fee_bearer = form.feeBearer;
   }
@@ -82,6 +111,8 @@ export function buildReturnRequestBody(
     if (!override) return { ok: false, error: '반품 기한이 지난 품목은 기한을 넘기는 사유가 필요합니다' };
     body.window_override_reason = override;
   }
+
+  if (exchange) body.kind = 'exchange';
 
   return { ok: true, body };
 }

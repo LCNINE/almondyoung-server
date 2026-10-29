@@ -12,6 +12,7 @@ import { parseServerError } from '@/lib/api/server-error';
 import {
   useCancelCustomerReturn,
   useCloseCustomerReturnMissing,
+  useReleaseCustomerExchange,
   useRequestCustomerReturnPrepay,
   useRestartCustomerReturn,
   useRetryCustomerReturnPickup,
@@ -19,7 +20,11 @@ import {
   useSettleHeldCustomerReturn,
 } from '@/lib/services/customer-returns';
 import type { CustomerReturnView, RestartCustomerReturnBody } from '@/lib/types/dto/customer-returns';
-import type { CustomerReturnAction } from '../../customer-return-actions';
+import {
+  releaseExchangeLabel,
+  releaseExchangeSuccessMessage,
+  type CustomerReturnAction,
+} from '../../customer-return-actions';
 import { parseNonNegativeAmount, parsePrepayAmount, requiredMemo } from '../../customer-return-action-input';
 import { RETURN_ACTION_LABELS } from '../../customer-return-labels';
 import { formatWon } from '../format';
@@ -48,6 +53,8 @@ export function CustomerReturnActionDialog({ view, action, onClose }: Props) {
   const prepay = useRequestCustomerReturnPrepay();
   const restart = useRestartCustomerReturn();
   const retryPickup = useRetryCustomerReturnPickup();
+  const releaseExchange = useReleaseCustomerExchange();
+  const title = kind === 'releaseExchange' ? releaseExchangeLabel(view) : RETURN_ACTION_LABELS[kind];
 
   // 미리보기는 금액을 정하는 두 대화상자가 열려 있을 때만 부른다
   const preview = useReturnSettlementPreview(orderId, returnId, { enabled: kind === 'settleHeld' || kind === 'prepay' });
@@ -89,7 +96,7 @@ export function CustomerReturnActionDialog({ view, action, onClose }: Props) {
     }
   })();
 
-  const mutations = [cancel, closeMissing, settleHeld, prepay, restart, retryPickup];
+  const mutations = [cancel, closeMissing, settleHeld, prepay, restart, retryPickup, releaseExchange];
   const pending = mutations.some((m) => m.isPending);
 
   const done = (message: string) => ({
@@ -118,6 +125,9 @@ export function CustomerReturnActionDialog({ view, action, onClose }: Props) {
         );
       case 'retryPickup':
         return retryPickup.mutate({ id: view.id }, done('회수를 다시 접수했습니다.'));
+      case 'releaseExchange':
+        // 409(이미 정산·취소됨)·400 은 서버 문구 그대로
+        return releaseExchange.mutate({ id: view.id }, done(releaseExchangeSuccessMessage(view)));
       default: {
         const [target, how] = RESTART_TARGET[kind];
         return restart.mutate({ id: view.id, target, kind: how, body: restartBody() }, done('다시 요청했습니다.'));
@@ -129,7 +139,7 @@ export function CustomerReturnActionDialog({ view, action, onClose }: Props) {
     <Dialog open onOpenChange={(open) => !open && !pending && onClose()}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>{RETURN_ACTION_LABELS[kind]}</DialogTitle>
+          <DialogTitle>{title}</DialogTitle>
           <DialogDescription>{view.order.orderNo}</DialogDescription>
         </DialogHeader>
 
@@ -197,6 +207,8 @@ export function CustomerReturnActionDialog({ view, action, onClose }: Props) {
 
           {kind === 'retryPickup' && <p>한진에 회수를 다시 접수합니다.</p>}
 
+          {kind === 'releaseExchange' && <ReleaseExchangeNote view={view} />}
+
           {(kind === 'manualSettlement' || kind === 'manualPrepayment') && <p>계좌로 직접 송금하는 건으로 바꿉니다.</p>}
           {(kind === 'retryPrepayment' || (kind === 'retrySettlement' && !action.needs)) && <p>같은 조건으로 다시 요청합니다.</p>}
         </div>
@@ -206,11 +218,27 @@ export function CustomerReturnActionDialog({ view, action, onClose }: Props) {
             닫기
           </Button>
           <Button disabled={!ready || pending} onClick={submit}>
-            {RETURN_ACTION_LABELS[kind]}
+            {title}
           </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+/** 교환품 보내기는 되돌릴 수 없다 — 시트에서 한 번, 여기서 한 번 눌러야 나간다 */
+function ReleaseExchangeNote({ view }: { view: CustomerReturnView }) {
+  if (view.exchangeReleasedAt) {
+    return <p>교환품은 이미 출고를 지시했습니다. 보류된 검수를 정산합니다.</p>;
+  }
+  return (
+    <div className="space-y-1">
+      <p>교환품 상자를 엽니다. 상자는 출고 화면에 나타나고, 연 뒤에는 이 교환을 취소할 수 없습니다.</p>
+      {(view.status === 'expected' || view.status === 'arrived') && (
+        <p className="text-muted-foreground">아직 검수 전입니다 — 돌아올 상품을 받기 전에 먼저 보냅니다.</p>
+      )}
+      {view.status === 'held' && <p className="text-muted-foreground">보류된 검수를 정산하고 교환품을 보냅니다.</p>}
+    </div>
   );
 }
 
