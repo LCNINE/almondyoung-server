@@ -6,8 +6,6 @@ import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { DbModule } from '@app/db';
 import {
   AuthorizationModule,
-  AuthzObserverGuard,
-  AuthzShadowInterceptor,
   JwtAuthGuard,
   PermissionGuard,
   PermissionModule,
@@ -50,15 +48,12 @@ import { LegacyDelegationInterceptor } from './access/legacy-delegation.intercep
   controllers: [FileServiceController],
   providers: [
     FileServiceService,
-    // 그림자 판정 관찰 — 반드시 맨 앞(뒤 가드가 거부한 요청도 봐야 한다). 결과에 관여하지 않는다.
-    { provide: APP_GUARD, useClass: AuthzObserverGuard },
     {
       provide: APP_GUARD,
       useClass: JwtAuthGuard,
     },
     // 권한 판정 — 라우트 인가를 결정한다(설정으로 끌 수 없다). 인증 가드 뒤에 둔다.
     { provide: APP_GUARD, useClass: PermissionGuard },
-    { provide: APP_INTERCEPTOR, useClass: AuthzShadowInterceptor },
     // 옛 표기 위임 토큰 사용을 센다 — 옛 표기를 거절하기 전에 0건을 확인하는 근거.
     { provide: APP_INTERCEPTOR, useClass: LegacyDelegationInterceptor },
   ],

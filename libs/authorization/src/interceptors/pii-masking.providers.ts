@@ -12,7 +12,7 @@ export interface PiiMaskingSetup {
 }
 
 /**
- * 앱 루트 모듈의 providers 에 `AuthzShadowInterceptor` 바로 다음에 펼친다 — 다른 응답 인터셉터(감싸기·멱등 재생)보다
+ * 앱 루트 모듈의 providers 에서 다른 전역 인터셉터보다 앞에 펼친다 — 다른 응답 인터셉터(감싸기·멱등 재생)보다
  * 바깥에서 최종 본문을 보게(`scripts/security/permission-wiring.spec.ts`).
  */
 export function piiMaskingProviders(setup: PiiMaskingSetup): Provider[] {

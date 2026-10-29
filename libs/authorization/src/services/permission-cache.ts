@@ -1,5 +1,6 @@
 import { Inject, Injectable, Logger, OnApplicationBootstrap, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { PERMISSION_RUNTIME_OPTIONS, PermissionRuntimeOptions } from './permission-runtime.options';
+import { reportSnapshotStatus } from './permission-snapshot.metrics';
 import { RolePermissionSnapshot, RolePermissionSource } from './role-permission-source';
 
 export interface PermissionCacheStatus {
@@ -41,6 +42,7 @@ export class PermissionCache implements OnModuleInit, OnApplicationBootstrap, On
   /** 운영 도구가 이 줄을 찾는다(형식 고정). 판정은 항상 새 권한 판정이 한다. */
   onModuleInit(): void {
     this.logger.log(`authz mode: enforce (${this.options.service})`);
+    reportSnapshotStatus(this.options.service, () => this.status());
   }
 
   onApplicationBootstrap(): void {

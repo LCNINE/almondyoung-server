@@ -67,7 +67,7 @@ describe('ShipmentShortPickService', () => {
     );
     await service.report('s', dto, 'k', { id: 'a', roles: ['logistics_worker'] });
     expect(commands.execute).toHaveBeenCalledTimes(1);
-    expect(await checkpointEvaluations('fulfillment.short_pick_report', 'match')).toBe(1);
+    expect(await checkpointEvaluations('fulfillment.short_pick_report', 'allow')).toBe(1);
   });
 
   it('재개방 권한(reopen)만 있어도 명령을 실행한다', async () => {

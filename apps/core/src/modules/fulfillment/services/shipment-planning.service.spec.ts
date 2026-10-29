@@ -35,7 +35,7 @@ describe('ShipmentPlanningService reopen check', () => {
     expect(() =>
       service['requirePermission'](FULFILLMENT_SYSTEM_ACTOR, FULFILLMENT_PERMISSION.SHIPMENT_REOPEN),
     ).not.toThrow();
-    expect(await checkpointEvaluations('fulfillment.planning_scope', 'match')).toBe(1);
+    expect(await checkpointEvaluations('fulfillment.planning_scope', 'allow')).toBe(1);
     expect(await checkpointEvaluations('fulfillment.planning_scope', 'unavailable')).toBe(0);
   });
 
@@ -54,7 +54,7 @@ describe('ShipmentPlanningService reopen check', () => {
     expect(() =>
       service['requirePermission']({ id: 'u-1', roles: ['admin'] }, FULFILLMENT_PERMISSION.SHIPMENT_REOPEN),
     ).toThrow(`Missing required scope: ${FULFILLMENT_PERMISSION.SHIPMENT_REOPEN}`);
-    expect(await checkpointEvaluations('fulfillment.planning_scope', 'match')).toBe(1);
+    expect(await checkpointEvaluations('fulfillment.planning_scope', 'deny')).toBe(1);
   });
 
   it('allows a person holding the permission', async () => {
@@ -64,7 +64,7 @@ describe('ShipmentPlanningService reopen check', () => {
     expect(() =>
       service['requirePermission']({ id: 'u-2', roles: ['logistics_manager'] }, FULFILLMENT_PERMISSION.SHIPMENT_REOPEN),
     ).not.toThrow();
-    expect(await checkpointEvaluations('fulfillment.planning_scope', 'match')).toBe(1);
+    expect(await checkpointEvaluations('fulfillment.planning_scope', 'allow')).toBe(1);
   });
 });
 

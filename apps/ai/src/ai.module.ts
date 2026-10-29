@@ -1,7 +1,5 @@
 import {
   AuthorizationModule,
-  AuthzObserverGuard,
-  AuthzShadowInterceptor,
   JwtAuthGuard,
   PermissionGuard,
   PermissionModule,
@@ -14,7 +12,7 @@ import { SCHEDULE_ROOT } from '@app/shared/schedule/schedule-root';
 import { Module } from '@nestjs/common';
 import { AttendanceAiModule } from './attendance/attendance.module';
 import { ConfigModule } from '@nestjs/config';
-import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
+import { APP_GUARD } from '@nestjs/core';
 import { LoggerModule } from 'nestjs-pino';
 import { AiController } from './ai.controller';
 import { AssistantModule } from './assistant/assistant.module';
@@ -58,15 +56,12 @@ import { ProductDescriptionModule } from './product-description/product-descript
   ],
   controllers: [AiController],
   providers: [
-    // 그림자 판정 관찰 — 반드시 맨 앞(뒤 가드가 거부한 요청도 봐야 한다). 결과에 관여하지 않는다.
-    { provide: APP_GUARD, useClass: AuthzObserverGuard },
     {
       provide: APP_GUARD,
       useClass: JwtAuthGuard,
     },
     // 권한 판정 — 라우트 인가를 결정한다(설정으로 끌 수 없다). 인증 가드 뒤에 둔다.
     { provide: APP_GUARD, useClass: PermissionGuard },
-    { provide: APP_INTERCEPTOR, useClass: AuthzShadowInterceptor },
   ],
 })
 export class AiModule {}

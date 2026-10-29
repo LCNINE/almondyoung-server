@@ -47,8 +47,7 @@ describe('ShipmentRecallService command validation', () => {
       ),
     ).rejects.toThrow('Missing required permission: fulfillment.dispatch.recall');
     expect(commands.execute).not.toHaveBeenCalled();
-    expect(await checkpointEvaluations('fulfillment.dispatch_recall', 'match')).toBe(1);
-    expect(await checkpointEvaluations('fulfillment.dispatch_recall', 'would_deny')).toBe(0);
+    expect(await checkpointEvaluations('fulfillment.dispatch_recall', 'deny')).toBe(1);
   });
 
   it('denies the worker of the first-grant table, who does not hold the recall permission', async () => {

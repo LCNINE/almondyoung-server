@@ -136,7 +136,7 @@ describe('ConsolidationService command boundary', () => {
       service.consolidate({ sources: [source], recipientSourceShipmentId: first, reason: 'one' }, 'key', actor),
     ).rejects.toThrow('At least two source shipments are required');
     expect(execute).not.toHaveBeenCalled();
-    expect(await checkpointEvaluations('fulfillment.consolidation_scope', 'match')).toBe(1);
+    expect(await checkpointEvaluations('fulfillment.consolidation_scope', 'allow')).toBe(1);
   });
 
   it('denies consolidation without the permission before claiming the command', async () => {
@@ -147,7 +147,7 @@ describe('ConsolidationService command boundary', () => {
       service.consolidate({ sources: [source], recipientSourceShipmentId: first, reason: 'one' }, 'key', actor),
     ).rejects.toThrow('Missing required scope: fulfillment.shipment.consolidate');
     expect(execute).not.toHaveBeenCalled();
-    expect(await checkpointEvaluations('fulfillment.consolidation_scope', 'match')).toBe(1);
+    expect(await checkpointEvaluations('fulfillment.consolidation_scope', 'deny')).toBe(1);
   });
 
   it('rejects duplicate sources and ambiguous recipient selection before claiming the command', async () => {

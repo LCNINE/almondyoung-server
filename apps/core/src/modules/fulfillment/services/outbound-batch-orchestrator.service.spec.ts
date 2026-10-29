@@ -137,7 +137,7 @@ describe('OutboundBatchOrchestrator policy', () => {
       ),
     ).rejects.toBeInstanceOf(ForbiddenException);
     expect(commands.execute).not.toHaveBeenCalled();
-    expect(await checkpointEvaluations('fulfillment.work_supervise', 'match')).toBe(1);
+    expect(await checkpointEvaluations('fulfillment.work_supervise', 'deny')).toBe(1);
   });
 
   it('lets a total_picking batch reach the command layer now that warehouse capability gates it instead', async () => {

@@ -2,8 +2,7 @@ import { Module } from '@nestjs/common';
 import { LoggerModule } from 'nestjs-pino';
 import { loggerConfig } from '@app/shared/observability/logger.config';
 import { ConfigModule } from '@nestjs/config';
-import { AuthorizationModule, AuthzObserverGuard, AuthzShadowInterceptor, PermissionModule } from '@app/authorization';
-import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
+import { AuthorizationModule, PermissionModule } from '@app/authorization';
 import { DbModule } from '@app/db';
 import { EventsModule, createKafkaConfigFromEnv } from '@app/events';
 import { AdminKeywordController } from './admin-keyword.controller';
@@ -80,9 +79,6 @@ import { SearchKeywordService } from './search-keyword.service';
     HealthController,
   ],
   providers: [
-    // 그림자 판정 관찰. 인증이 컨트롤러 단위라 강제 가드(PermissionGuard)는 컨트롤러의 JwtAuthGuard 바로 뒤에 건다.
-    { provide: APP_GUARD, useClass: AuthzObserverGuard },
-    { provide: APP_INTERCEPTOR, useClass: AuthzShadowInterceptor },
     SearchService,
     OpenSearchService,
     EmbeddingService,

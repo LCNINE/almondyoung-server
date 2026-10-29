@@ -1,3 +1,4 @@
+import { register } from 'prom-client';
 import { PermissionCache } from './permission-cache';
 import { PermissionRuntimeOptions } from './permission-runtime.options';
 import { RolePermissionSnapshot, RolePermissionSource, SnapshotFetch } from './role-permission-source';
@@ -169,5 +170,16 @@ describe('PermissionCache', () => {
     source.next.push(snapshot('v1', { admin: [] }));
     await cache.refresh();
     expect(cache.status(1_045_000).ageMs).toBe(45_000);
+  });
+
+  it('reports the snapshot age gauge once loaded, and leaves it empty while cold', async () => {
+    cache.onModuleInit();
+    const ageSeries = async () =>
+      (await register.getSingleMetric('authz_permission_snapshot_age_seconds')?.get())?.values ?? [];
+    expect(await ageSeries()).toEqual([]);
+
+    source.next.push(snapshot('v1', { admin: ['a.b.read'] }));
+    await cache.refresh();
+    expect(await ageSeries()).toEqual([expect.objectContaining({ labels: { service: 'core' } })]);
   });
 });
