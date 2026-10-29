@@ -17,6 +17,7 @@ export function useReceivingReturns(
       filter.barcode,
     ],
     enabled: warehouseId !== '',
+    refetchInterval: 30_000,
     queryFn: () => {
       const qs = new URLSearchParams({ warehouseId });
       if (filter.q) qs.set('q', filter.q);
