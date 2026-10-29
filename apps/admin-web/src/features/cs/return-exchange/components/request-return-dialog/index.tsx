@@ -105,7 +105,10 @@ export function RequestReturnDialog({ orderId, onClose }: Props) {
           <p className="text-sm text-red-600">{returnRejectMessage(returnableQ.error)}</p>
         ) : lines.length === 0 ? (
           <>
-            <p className="text-sm">반품할 수 있는 수량이 없습니다</p>
+            <div className="space-y-1">
+              <p className="text-sm font-medium">배송완료된 상품만 반품 접수할 수 있어요</p>
+              <p className="text-sm text-muted-foreground">배송 중이거나 이미 반품 접수한 상품은 보이지 않아요.</p>
+            </div>
             <DialogFooter>
               <Button variant="outline" onClick={onClose}>
                 닫기
@@ -128,6 +131,9 @@ export function RequestReturnDialog({ orderId, onClose }: Props) {
                 ))}
               </RadioGroup>
 
+              <p className="text-sm text-muted-foreground">
+                이 주문에서 돌려받을 상품의 수량을 넣어 주세요. 0인 상품은 그대로 둬요.
+              </p>
               <div className="space-y-2">
                 {lines.map((l) => (
                   <div key={l.item_id} className="flex items-center gap-2 text-sm">

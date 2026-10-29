@@ -959,7 +959,7 @@ export default function OrderTable() {
                   {r.channel === 'medusa' && r.isFirstOfOrder && r.orderStatus !== 'cancelled' && (
                     <Can run={useRequestCustomerReturn}>
                       <DropdownMenuItem onSelect={() => setReturnOrderId(r.channelOrderId)}>
-                        반품·교환 접수
+                        주문 반품·교환 접수
                       </DropdownMenuItem>
                     </Can>
                   )}
