@@ -97,7 +97,8 @@ function readSettlement(metadata: MedusaReturn['metadata']): SettlementRecord | 
   }
   // K8 PR6b 의 새 칸 — 없으면 칸을 생략하고(옛 기록), 있는데 모양이 어긋나면 돈을 지어내지 않는다
   if (hold !== undefined && !isNonNegativeInt(hold)) return null;
-  const { prepaidApplied, externalRefundApplied } = raw;
+  const { prepaidApplied, externalRefundApplied, shippingRefund } = raw;
+  if (shippingRefund !== undefined && !isNonNegativeInt(shippingRefund)) return null;
   if (prepaidApplied !== undefined && !isNonNegativeInt(prepaidApplied)) return null;
   if (externalRefundApplied !== undefined && !isNonNegativeInt(externalRefundApplied)) return null;
   if (typeof feeNotAdjusted !== 'boolean' || !isNonNegativeInt(refundAmount)) return null;
@@ -118,6 +119,7 @@ function readSettlement(metadata: MedusaReturn['metadata']): SettlementRecord | 
   return {
     requestId,
     refundAmount,
+    ...(shippingRefund !== undefined ? { shippingRefund } : {}),
     deduction: { returnShipping, freeShippingBreak, roundTrip, ...(hold !== undefined ? { hold } : {}) },
     feeNotAdjusted,
     refundMode,

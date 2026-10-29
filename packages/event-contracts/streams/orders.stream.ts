@@ -712,6 +712,8 @@ export interface ChannelReturnSettledPayload {
   returnId: string;
   requestId: string;
   refundAmount: number;
+  /** 판매자 부담 전량 반품의 기존 배송비 환불액 */
+  shippingRefund?: number;
   deduction: ReturnSettlementDeduction;
   feeNotAdjusted: boolean;
   refundMode: ChannelCancelRefundMode;
@@ -787,6 +789,7 @@ const ChannelReturnSettledSchema = z.object({
   returnId: z.string().min(1),
   requestId: z.string().min(1),
   refundAmount: z.number().int().nonnegative(),
+  shippingRefund: z.number().int().nonnegative().optional(),
   deduction: ReturnSettlementDeductionSchema,
   feeNotAdjusted: z.boolean(),
   refundMode: z.enum(CHANNEL_CANCEL_REFUND_MODES),

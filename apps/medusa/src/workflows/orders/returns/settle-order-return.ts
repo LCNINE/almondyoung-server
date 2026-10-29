@@ -319,7 +319,9 @@ async function receive(
     owed,
     deduction: offsets.deduction,
     feeNotAdjusted: plan.feeNotAdjusted,
-    refundAmount: offsets.refundAmount,
+    // 배송비 환불은 품목 상계와 별개다. 차액 초과분의 크레딧 라인은 환불 워크플로가 붙인다.
+    refundAmount: offsets.refundAmount + plan.shippingRefund,
+    ...(plan.shippingRefund > 0 ? { shippingRefund: plan.shippingRefund } : {}),
     // 보류 차감은 그룹 요금이 아니다(N2) — 택배비 계획의 그룹 요금만 남긴다
     groupFees: plan.groupFees,
     orderVersion: after.version,

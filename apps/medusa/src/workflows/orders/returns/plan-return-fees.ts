@@ -20,7 +20,9 @@ export type ReturnFeePlan = {
   feeNotAdjusted: boolean;
   deduction: ReturnSettlementDeduction;
   total: number;
-  /** 깨짐·왕복이 올린 그룹의 «이 반품 뒤 그룹 요금». 반품 택배비는 그룹 요금이 아니므로 들어가지 않는다 */
+  /** 판매자 부담 전량 반품의 기존 배송비 환불액 */
+  shippingRefund: number;
+  /** 이 반품 뒤 바뀐 그룹 요금. 배송비를 환불한 그룹은 0, 반품 택배비는 제외 */
   groupFees: Record<string, number>;
 };
 
@@ -28,12 +30,13 @@ const none = (feeNotAdjusted: boolean): ReturnFeePlan => ({
   feeNotAdjusted,
   deduction: { returnShipping: 0, freeShippingBreak: 0, roundTrip: 0 },
   total: 0,
+  shippingRefund: 0,
   groupFees: {},
 });
 
 /**
  * 반품 택배비 차감을 계산한다(N13). 고객 부담일 때만 세 몫 — 반품 택배비·무료배송 깨짐·왕복.
- * 줄어드는 배송비는 돌려주지 않는다(물건은 이미 배송됐다). 합은 chargeCap 을 넘지 않는다(반품비 → 깨짐 → 왕복 순).
+ * 판매자 부담은 이번에 전량 반품한 그룹의 기존 배송비를 돌려준다. 고객 부담 차감은 chargeCap 안에서 반품비 → 깨짐 → 왕복 순.
  * lines[].newQty = 남는 수량, returnedNow = 이번 반품 수량.
  */
 export function planReturnFees(input: {
@@ -44,9 +47,7 @@ export function planReturnFees(input: {
   priorGroupFees: PriorGroupFees;
   chargeCap: number;
 }): ReturnFeePlan {
-  if (input.feeBearer === 'seller') return none(false);
-
-  // 그룹·스냅샷 판정은 부분취소와 같은 계산에 맡긴다. 상한 없이 돌려 «올라감»만 읽는다.
+  // 그룹·스냅샷 판정은 부분취소와 같은 계산에 맡긴다.
   const shipping = planShipping({
     methods: input.methods,
     lines: input.lines,
@@ -54,7 +55,28 @@ export function planReturnFees(input: {
     priorGroupFees: input.priorGroupFees,
     chargeCap: Number.MAX_SAFE_INTEGER,
   });
-  if (!shipping.adjustable) return none(true);
+  if (!shipping.adjustable) {
+    if (input.feeBearer === 'customer') return none(true);
+    // 판매자 부담은 돌려줄 배송비가 생길 때만 CS 몫이다. 그룹을 못 맞췄으니 주문 전체가 돌아왔는지로 본다
+    const shipLines = input.lines.filter((l) => l.requiresShipping);
+    return none(shipLines.some((l) => l.returnedNow > 0) && shipLines.every((l) => l.newQty === 0));
+  }
+
+  if (input.feeBearer === 'seller') {
+    const refundedGroups = shipping.groups.filter((group) => {
+      const lines = input.lines.filter(
+        (line) => line.requiresShipping && line.productShippingProfileId === group.shippingProfileId,
+      );
+
+      return lines.some((line) => line.returnedNow > 0) && lines.every((line) => line.newQty === 0);
+    });
+
+    return {
+      ...none(false),
+      shippingRefund: refundedGroups.reduce((sum, group) => sum + group.currentFee, 0),
+      groupFees: Object.fromEntries(refundedGroups.map((group) => [group.shippingProfileId, 0])),
+    };
+  }
 
   const snapshots = new Map(
     input.methods.flatMap((m) => (m.snapshot ? [[m.snapshot.shippingProfileId, m.snapshot] as const] : [])),
@@ -97,6 +119,7 @@ export function planReturnFees(input: {
     feeNotAdjusted: false,
     deduction,
     total: deduction.returnShipping + deduction.freeShippingBreak + deduction.roundTrip,
+    shippingRefund: 0,
     groupFees: Object.fromEntries(
       withAll.filter((g) => shares.has(g.profileId)).map((g) => [g.profileId, g.currentFee + (shares.get(g.profileId) ?? 0)]),
     ),

@@ -79,6 +79,7 @@ export interface CustomerReturnSettlement {
 
 export interface CustomerReturnSettlementOutcome {
   refundAmount: number;
+  shippingRefund?: number;
   deduction: ReturnSettlementDeduction;
   feeNotAdjusted: boolean;
   refundMode: 'auto' | 'manual';

@@ -24,6 +24,26 @@ const valid = (): ReturnSettlementRecord => ({
 const meta = (r: unknown) => ({ [RETURN_SETTLEMENT_METADATA_KEY]: r });
 
 describe('readReturnSettlementRecord', () => {
+  it.each([0, 2500])('배송비 환불 %i가 JSON 왕복 뒤에도 남는다', (shippingRefund) => {
+    const record = { ...valid(), shippingRefund };
+
+    expect(readReturnSettlementRecord(JSON.parse(JSON.stringify(meta(record))))).toEqual(record);
+    expect(() => assertReadableSettlementRecord(record)).not.toThrow();
+  });
+
+  it.each(['2500', null, Number.NaN, Number.POSITIVE_INFINITY, -1])(
+    '잘못된 배송비 환불 %p를 거절한다',
+    (shippingRefund) => {
+      expect(readReturnSettlementRecord(meta({ ...valid(), shippingRefund }))).toBeNull();
+    },
+  );
+
+  it('소수 배송비 환불은 쓰기 전에 거절한다', () => {
+    const record = { ...valid(), shippingRefund: 0.5 };
+
+    expect(() => assertReadableSettlementRecord(record)).toThrow('정수');
+  });
+
   it('정상 기록을 읽는다', () => {
     expect(readReturnSettlementRecord(meta(valid()))).toEqual(valid());
   });
@@ -53,7 +73,15 @@ describe('readReturnSettlementRecord', () => {
     const pr6 = { ...valid(), stage: 'refunded', refundedAt: '2026-10-28T00:00:00.000Z', refundMode: 'auto' };
     const read = readReturnSettlementRecord(JSON.parse(JSON.stringify(meta(pr6))));
     expect(read).toEqual(pr6);
-    for (const k of ['hold', 'prepaidApplied', 'externalRefundApplied', 'closesMissing', 'offsetCreditLine']) expect(read).not.toHaveProperty(k);
+    for (const k of [
+      'shippingRefund',
+      'hold',
+      'prepaidApplied',
+      'externalRefundApplied',
+      'closesMissing',
+      'offsetCreditLine',
+    ])
+      expect(read).not.toHaveProperty(k);
     expect(read?.deduction).not.toHaveProperty('hold');
   });
   it('PR 6b 칸(보류 차감·상계·미도착 닫기)이 왕복한다', () => {
@@ -153,12 +181,18 @@ describe('assertReadableSettlementRecord', () => {
   it('환불액·차감이 소수면 던진다 — 정산 관측이 정수만 읽는다', () => {
     expect(() => assertReadableSettlementRecord({ ...valid(), refundAmount: 100.5 })).toThrow('정수');
     expect(() =>
-      assertReadableSettlementRecord({ ...valid(), deduction: { returnShipping: 1.5, freeShippingBreak: 0, roundTrip: 0 } }),
+      assertReadableSettlementRecord({
+        ...valid(),
+        deduction: { returnShipping: 1.5, freeShippingBreak: 0, roundTrip: 0 },
+      }),
     ).toThrow('정수');
   });
   it('보류 차감·상계 적용액이 소수면 던진다 — 정산 관측이 정수만 읽는다', () => {
     expect(() =>
-      assertReadableSettlementRecord({ ...valid(), deduction: { returnShipping: 0, freeShippingBreak: 0, roundTrip: 0, hold: 0.5 } }),
+      assertReadableSettlementRecord({
+        ...valid(),
+        deduction: { returnShipping: 0, freeShippingBreak: 0, roundTrip: 0, hold: 0.5 },
+      }),
     ).toThrow('정수');
     expect(() => assertReadableSettlementRecord({ ...valid(), prepaidApplied: 0.5 })).toThrow('정수');
     expect(() => assertReadableSettlementRecord({ ...valid(), externalRefundApplied: 0.5 })).toThrow('정수');

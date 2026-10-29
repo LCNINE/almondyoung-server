@@ -276,6 +276,20 @@ describe('ChannelReturnSettled / ChannelReturnSettlementFailed (K8 PR6)', () => 
     expect(() => failed.parse(failedPayload)).not.toThrow();
   });
 
+  it.each([0, 2500])('배송비 환불 %i를 보존한다', (shippingRefund) => {
+    const payload = { ...settledPayload, shippingRefund };
+
+    expect(settled.parse(payload)).toEqual(payload);
+  });
+
+  it.each([-1, 0.5, '2500', null])('잘못된 배송비 환불 %p를 거부한다', (shippingRefund) => {
+    expect(settled.safeParse({ ...settledPayload, shippingRefund }).success).toBe(false);
+  });
+
+  it('배송비 환불이 없는 이전 계약을 그대로 읽는다', () => {
+    expect(settled.parse(settledPayload)).not.toHaveProperty('shippingRefund');
+  });
+
   it('정산 사실의 음수 환불액·정수 아닌 공제·채널 누락은 거부한다', () => {
     expect(() => settled.parse({ ...settledPayload, refundAmount: -1 })).toThrow();
     expect(() =>

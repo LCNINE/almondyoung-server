@@ -24,8 +24,10 @@ export type ReturnSettlementRecord = {
   owed: number;
   deduction: ReturnSettlementDeduction;
   feeNotAdjusted: boolean;
-  /** owed − 상계 적용액(prepaidApplied·externalRefundApplied) − deduction 합 */
+  /** owed − 상계 적용액(prepaidApplied·externalRefundApplied) − deduction 합 + shippingRefund */
   refundAmount: number;
+  /** 판매자 부담 전량 반품의 기존 배송비 환불액 */
+  shippingRefund?: number;
   /** 이 정산 뒤 그룹 요금 — 부분취소 기록과 주문 버전 순으로 겹친다 */
   groupFees: Record<string, number>;
   /** 수령 확정 뒤 주문 버전 */
@@ -91,6 +93,7 @@ export function readReturnSettlementRecord(metadata: unknown): ReturnSettlementR
     if (!isObj(h) || !isNum(h.requested) || typeof h.memo !== 'string') return null;
     hold = { requested: h.requested, memo: h.memo };
   }
+  if (r.shippingRefund !== undefined && (!isNum(r.shippingRefund) || r.shippingRefund < 0)) return null;
   if (r.prepaidApplied !== undefined && !isNum(r.prepaidApplied)) return null;
   if (r.externalRefundApplied !== undefined && !isNum(r.externalRefundApplied)) return null;
   if (r.closesMissing !== undefined && typeof r.closesMissing !== 'boolean') return null;
@@ -112,6 +115,7 @@ export function readReturnSettlementRecord(metadata: unknown): ReturnSettlementR
     deduction,
     feeNotAdjusted: r.feeNotAdjusted,
     refundAmount: r.refundAmount,
+    ...(r.shippingRefund !== undefined ? { shippingRefund: r.shippingRefund } : {}),
     groupFees,
     orderVersion: r.orderVersion,
     receivedAt: r.receivedAt,
@@ -200,8 +204,18 @@ export function assertReadableSettlementRecord(record: ReturnSettlementRecord): 
   }
   // 환불액·차감·상계 적용액은 반올림한 원이다 — channel-adapter 의 정산 관측이 정수만 받으므로 소수를 쓰면 관측이 영영 막힌다
   const { returnShipping, freeShippingBreak, roundTrip, hold = 0 } = record.deduction;
-  const { prepaidApplied = 0, externalRefundApplied = 0, offsetCreditLine = 0 } = record;
-  const amounts = [record.refundAmount, returnShipping, freeShippingBreak, roundTrip, hold, prepaidApplied, externalRefundApplied, offsetCreditLine];
+  const { prepaidApplied = 0, externalRefundApplied = 0, offsetCreditLine = 0, shippingRefund = 0 } = record;
+  const amounts = [
+    record.refundAmount,
+    returnShipping,
+    freeShippingBreak,
+    roundTrip,
+    hold,
+    prepaidApplied,
+    externalRefundApplied,
+    offsetCreditLine,
+    shippingRefund,
+  ];
   if (!amounts.every(Number.isInteger)) {
     throw new Error(`반품 정산 기록의 환불액·차감이 정수 원이 아닙니다: ${JSON.stringify(record)}`);
   }
@@ -210,7 +224,10 @@ export function assertReadableSettlementRecord(record: ReturnSettlementRecord): 
 type GraphOrderReturns = { returns?: Array<{ metadata?: Record<string, unknown> | null } | null> | null };
 
 /** 이 주문 반품들의 정산 기록 중 읽히는 것. */
-export async function loadReturnSettlementRecords(container: MedusaContainer, orderId: string): Promise<ReturnSettlementRecord[]> {
+export async function loadReturnSettlementRecords(
+  container: MedusaContainer,
+  orderId: string,
+): Promise<ReturnSettlementRecord[]> {
   const query = container.resolve(ContainerRegistrationKeys.QUERY);
   const { data } = await query.graph({
     entity: 'order',
