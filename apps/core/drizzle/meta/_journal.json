@@ -1009,6 +1009,13 @@
       "when": 1793237839494,
       "tag": "20261029013719_add-customer-return-note",
       "breakpoints": true
+    },
+    {
+      "idx": 144,
+      "version": "7",
+      "when": 1793244078264,
+      "tag": "20261029032118_drop-legacy-scope-tables",
+      "breakpoints": true
     }
   ]
 }

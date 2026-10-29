@@ -71,6 +71,13 @@
       "when": 1790834361805,
       "tag": "20261001055921_add-revenue-goals",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1793244085162,
+      "tag": "20261029032125_drop-legacy-scope-tables",
+      "breakpoints": true
     }
   ]
 }
