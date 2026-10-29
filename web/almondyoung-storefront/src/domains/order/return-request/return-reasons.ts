@@ -54,6 +54,7 @@ export function reasonLabelKey(value: string): string {
   return has(RETURN_REASON_LABEL_KEYS, value) ? RETURN_REASON_LABEL_KEYS[value] : "reason.unknown"
 }
 
-export function rejectMessageKey(reason: string): string {
-  return has(RETURN_REJECT_MESSAGE_KEYS, reason) ? RETURN_REJECT_MESSAGE_KEYS[reason] : "reject.generic"
+export function rejectMessageKey(reason: string, mode: "return" | "exchange" = "return"): string {
+  if (has(RETURN_REJECT_MESSAGE_KEYS, reason)) return RETURN_REJECT_MESSAGE_KEYS[reason]
+  return mode === "exchange" ? "exchange.rejectGeneric" : "reject.generic"
 }

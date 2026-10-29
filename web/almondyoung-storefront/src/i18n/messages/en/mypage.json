@@ -701,7 +701,9 @@
         "submit": "Request exchange",
         "selectItem": "Select the items to exchange",
         "selectReason": "Select a reason for the exchange",
-        "done": "Your exchange request is received — once we check the returned items, we'll send you the same items again."
+        "done": "Your exchange request is received — once we check the returned items, we'll send you the same items again.",
+        "nothingLeft": "No quantity left to exchange",
+        "rejectGeneric": "We couldn't submit your exchange. Please contact customer service."
       }
     },
     "returns": {
@@ -736,7 +738,9 @@
         "returnPrepaid": "A refund has already started, so this can't be canceled.",
         "returnPickedUp": "The courier has already picked it up, so this can't be canceled. You'll be refunded after we inspect it on arrival.",
         "exchangeReleased": "The replacement has already been sent, so this can't be canceled.",
-        "notOurReturn": "This return can't be canceled here. Please contact customer service."
+        "notOurReturn": "This return can't be canceled here. Please contact customer service.",
+        "exchangePickedUp": "The courier has already picked it up, so this can't be canceled. We'll send the same item again after inspecting it on arrival.",
+        "exchangeNotOurs": "This exchange can't be canceled here. Please contact customer service."
       }
     },
     "exchange": {

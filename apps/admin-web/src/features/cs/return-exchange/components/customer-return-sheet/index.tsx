@@ -26,7 +26,8 @@ import {
 import {
   RETURN_ACTION_LABELS,
   RETURN_FEE_BEARER_LABELS,
-  RETURN_KIND_LABELS,
+  kindLabel,
+  settlementHeadline,
   RETURN_PICKUP_STATUS_LABELS,
   RETURN_REASON_LABELS,
   statusLabel,
@@ -87,7 +88,7 @@ export function CustomerReturnSheet({ id, customerName, onClose }: Props) {
     <Sheet open={!!id} onOpenChange={(open) => !open && onClose()}>
       <SheetContent className="w-full overflow-y-auto sm:max-w-xl">
         <SheetHeader>
-          <SheetTitle>{view ? `${RETURN_KIND_LABELS[view.kind]} 상세` : '반품·교환 상세'}</SheetTitle>
+          <SheetTitle>{view ? `${kindLabel(view.kind)} 상세` : '반품·교환 상세'}</SheetTitle>
           <SheetDescription className="sr-only">반품·교환 기록과 CS 처리</SheetDescription>
         </SheetHeader>
         <div className="space-y-5 px-4 pb-6 text-sm">
@@ -135,7 +136,7 @@ function Body({
           >
             {view.order.orderNo}
           </Link>
-          <Badge variant="outline">{RETURN_KIND_LABELS[view.kind]}</Badge>
+          <Badge variant="outline">{kindLabel(view.kind)}</Badge>
           <Badge variant="secondary">{statusLabel(view.kind, view.status)}</Badge>
         </div>
         {customerName && <div>{customerName}</div>}
@@ -186,7 +187,7 @@ function Body({
         <section className="space-y-1">
           {settlementOutcome && (
             <div className="space-y-0.5">
-              <div className="font-medium">환불 {formatWon(settlementOutcome.refundAmount)}</div>
+              <div className="font-medium">{settlementHeadline(view.kind, formatWon(settlementOutcome.refundAmount))}</div>
               {DEDUCTION_LABELS.map(([key, label]) => {
                 const amount = settlementOutcome.deduction[key];
                 return amount ? (

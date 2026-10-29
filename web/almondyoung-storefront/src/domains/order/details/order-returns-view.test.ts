@@ -59,4 +59,13 @@ describe("order-returns-view", () => {
     expect(cancelRejectKey("exchange_released")).toBe("cancelReject.exchangeReleased")
     expect(cancelRejectKey("whatever")).toBe("cancelFailed")
   })
+
+  it("교환 취소 거절 문구 — 환불·반품 말투 대신 교환 문구", () => {
+    expect(cancelRejectKey("return_picked_up", "exchange")).toBe("cancelReject.exchangePickedUp")
+    expect(cancelRejectKey("not_our_return", "exchange")).toBe("cancelReject.exchangeNotOurs")
+    expect(cancelRejectKey("return_picked_up", "return")).toBe("cancelReject.returnPickedUp")
+    expect(cancelRejectKey("return_picked_up")).toBe("cancelReject.returnPickedUp")
+    expect(cancelRejectKey("exchange_released", "exchange")).toBe("cancelReject.exchangeReleased")
+    expect(cancelRejectKey("whatever", "exchange")).toBe("cancelFailed")
+  })
 })

@@ -21,6 +21,16 @@ export const RETURN_KIND_LABELS: Record<CustomerReturnKind, string> = {
   exchange: '교환',
 };
 
+/** 옛 core 는 kind 를 안 준다 — 없거나 모르는 값은 반품으로 본다. */
+export function kindLabel(kind: string | undefined): string {
+  return kind === 'exchange' ? RETURN_KIND_LABELS.exchange : RETURN_KIND_LABELS.return;
+}
+
+/** 정산 줄 머리말. 교환은 돈이 오가지 않으므로 «환불 0원» 대신 완료로 적는다. */
+export function settlementHeadline(kind: string | undefined, refundAmountText: string): string {
+  return kind === 'exchange' ? '교환 완료(돈 이동 없음)' : `환불 ${refundAmountText}`;
+}
+
 /** 교환에는 환불이 없다 — 정산은 교환품 출고·택배비 조정이다. 목록·시트엔 종류 칸이 따로 있어 «교환»을 붙이지 않는다 */
 export const EXCHANGE_STATUS_LABELS: Record<CustomerReturnStatus, string> = {
   expected: '도착 대기',

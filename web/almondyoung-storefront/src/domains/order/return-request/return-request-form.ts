@@ -102,6 +102,7 @@ export type ReturnFormCopyKey =
   | "selectItem"
   | "selectReason"
   | "done"
+  | "nothingLeft"
 
 /** 문구 키(네임스페이스 `mypage.order.returnRequest` 기준). */
 export function copyKey(mode: ReturnFormMode, key: ReturnFormCopyKey): string {

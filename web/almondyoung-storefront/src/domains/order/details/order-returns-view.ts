@@ -49,8 +49,17 @@ const CANCEL_REJECT_KEYS: Record<string, string> = {
   not_our_return: "cancelReject.notOurReturn",
 }
 
+/** 교환 취소는 환불·반품 말투가 맞지 않는 거절만 따로 둔다. */
+const EXCHANGE_CANCEL_REJECT_KEYS: Record<string, string> = {
+  return_picked_up: "cancelReject.exchangePickedUp",
+  not_our_return: "cancelReject.exchangeNotOurs",
+}
+
 /** 반품 취소 거절 문구 키. 공용 `reject.*` 의 일반 문구는 «신청 실패»라 취소에는 맞지 않아 별도 키를 쓴다. */
-export function cancelRejectKey(reason: string): string {
+export function cancelRejectKey(reason: string, kind: CustomerReturn["kind"] = "return"): string {
+  if (kind === "exchange" && Object.prototype.hasOwnProperty.call(EXCHANGE_CANCEL_REJECT_KEYS, reason)) {
+    return EXCHANGE_CANCEL_REJECT_KEYS[reason]
+  }
   return Object.prototype.hasOwnProperty.call(CANCEL_REJECT_KEYS, reason)
     ? CANCEL_REJECT_KEYS[reason]
     : "cancelFailed"

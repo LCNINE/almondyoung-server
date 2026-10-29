@@ -131,6 +131,8 @@ describe("return-request-form", () => {
       expect(copyKey("exchange", "done")).toBe("exchange.done")
       expect(copyKey("return", "title")).toBe("title")
       expect(copyKey("return", "empty")).toBe("empty")
+      expect(copyKey("exchange", "nothingLeft")).toBe("exchange.nothingLeft")
+      expect(copyKey("return", "nothingLeft")).toBe("nothingLeft")
     })
   })
 
@@ -176,5 +178,18 @@ describe("return-request-form", () => {
 
   it("requested → 상태 그대로(화면이 완료로 넘어간다)", () => {
     expect(nextSubmitState(fresh, sent, { kind: "requested", returnId: "r" }, newId)).toEqual(fresh)
+  })
+})
+
+import { rejectMessageKey } from "./return-reasons"
+
+describe("rejectMessageKey 모드", () => {
+  it("모르는 이유: 반품은 reject.generic, 교환은 교환 문구", () => {
+    expect(rejectMessageKey("whatever")).toBe("reject.generic")
+    expect(rejectMessageKey("whatever", "return")).toBe("reject.generic")
+    expect(rejectMessageKey("whatever", "exchange")).toBe("exchange.rejectGeneric")
+  })
+  it("아는 이유는 모드와 무관", () => {
+    expect(rejectMessageKey("window_closed", "exchange")).toBe("reject.windowClosed")
   })
 })

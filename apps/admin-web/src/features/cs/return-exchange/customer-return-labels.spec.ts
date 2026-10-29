@@ -16,6 +16,8 @@ import {
   RETURN_REASON_OPTIONS,
   RETURN_STATUS_LABELS,
   statusLabel,
+  kindLabel,
+  settlementHeadline,
 } from './customer-return-labels';
 
 // CI 는 admin-web tsc 를 안 돈다 — 이 단언이 유니온과 맵의 드리프트를 막는 유일한 방어선이다.
@@ -117,5 +119,17 @@ describe('customer-return-labels', () => {
       '배송 중 파손',
       '기타',
     ]);
+  });
+  it('kindLabel: 종류가 없거나 모르면 반품', () => {
+    expect(kindLabel('exchange')).toBe('교환');
+    expect(kindLabel('return')).toBe('반품');
+    expect(kindLabel(undefined)).toBe('반품');
+    expect(kindLabel('whatever')).toBe('반품');
+    expect(kindLabel('toString')).toBe('반품');
+  });
+  it('settlementHeadline: 교환은 돈 이동 없음, 반품은 환불 금액', () => {
+    expect(settlementHeadline('exchange', '0원')).toBe('교환 완료(돈 이동 없음)');
+    expect(settlementHeadline('return', '12,000원')).toBe('환불 12,000원');
+    expect(settlementHeadline(undefined, '5원')).toBe('환불 5원');
   });
 });

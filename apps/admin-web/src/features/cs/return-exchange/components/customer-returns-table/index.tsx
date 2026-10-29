@@ -9,7 +9,7 @@ import { useCustomerReturns } from '@/lib/services/customer-returns';
 import type { CustomerReturnBucket } from '@/lib/types/dto/customer-returns';
 import {
   RETURN_ATTENTION_LABELS,
-  RETURN_KIND_LABELS,
+  kindLabel,
   RETURN_REASON_LABELS,
   statusLabel,
 } from '../../customer-return-labels';
@@ -120,7 +120,7 @@ export function CustomerReturnsTable({ bucket, q, onBucketChange, onSearch }: Pr
               items.map((r) => (
                 <TableRow key={r.id} className="cursor-pointer" onClick={() => setSelected({ id: r.id, customerName: r.customerName })}>
                   <TableCell>{r.orderNo}</TableCell>
-                  <TableCell>{RETURN_KIND_LABELS[r.kind]}</TableCell>
+                  <TableCell>{kindLabel(r.kind)}</TableCell>
                   <TableCell>{r.customerName ?? '-'}</TableCell>
                   <TableCell>
                     {r.productSummary} · {r.quantity}개

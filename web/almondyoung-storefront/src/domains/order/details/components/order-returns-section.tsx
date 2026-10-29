@@ -45,7 +45,7 @@ export function OrderReturnsSection({ orderId, returns, items }: OrderReturnsSec
           return
         }
         if (outcome.kind === "rejected") {
-          toast.error(text(cancelRejectKey(outcome.reason)))
+          toast.error(text(cancelRejectKey(outcome.reason, ret.kind)))
           router.refresh()
           return
         }

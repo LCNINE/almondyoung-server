@@ -96,7 +96,7 @@ export function ReturnRequestClient({ orderId, lines, preselectItemId, pickupAdd
     setSubmit((prev) => nextSubmitState(prev, sent, outcome, newId))
     if (outcome.kind === "rejected") {
       if (outcome.reason !== "request_id_conflict") {
-        toast.error(text(rejectMessageKey(outcome.reason)))
+        toast.error(text(rejectMessageKey(outcome.reason, mode)))
         // 반품 가능 수량이 바뀌었을 수 있다 — 서버 값으로 다시 그린다.
         router.refresh()
       }
@@ -183,7 +183,7 @@ export function ReturnRequestClient({ orderId, lines, preselectItemId, pickupAdd
                         {t("orderedQuantity", { count: line.orderedQuantity })}
                       </p>
                       <p className="mt-1 text-xs text-muted-foreground">
-                        {line.blocked === "nothing_left" && t("nothingLeft")}
+                        {line.blocked === "nothing_left" && copy("nothingLeft")}
                         {line.blocked === "not_exchangeable" && t("exchange.notExchangeable")}
                         {line.blocked === "window_closed" &&
                           t("windowClosed", { date: formatDate(line.windowEndsAt, DATE_FORMATS.KO_DOT) })}

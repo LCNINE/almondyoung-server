@@ -507,6 +507,10 @@ describe('교환 (K8 PR11b N13)', () => {
     expect(kinds(v)).not.toContain('prepay');
   });
 
+  it('arrived 이고 이미 보냈으면 버튼이 하나도 없다', () => {
+    expect(kinds(ex('arrived', { exchangeReleasedAt: RELEASED }))).toEqual([]);
+  });
+
   it('inspected·settled → releaseExchange 없음', () => {
     expect(kinds(ex('inspected', { exchangeReleasedAt: RELEASED }))).not.toContain('releaseExchange');
     expect(kinds(ex('inspected'))).not.toContain('releaseExchange');
