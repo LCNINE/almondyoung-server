@@ -29,6 +29,29 @@ export interface StoreReturnListItemDto {
   fee_bearer: "customer" | "seller"
   items: { item_id: string; quantity: number }[]
   can_cancel: boolean
+  /** 칸이 없던 옛 Medusa 는 null 로 읽는다. */
+  refund?: StoreReturnRefundDto | null
+}
+
+export interface StoreReturnRefundDto {
+  item_total: number
+  shipping_refund: number
+  fees: number
+  total: number
+  received_at: string | null
+  refunded_at: string | null
+}
+
+/** core GET /store/orders/by-channel-order/:orderId/returns/:returnId/progress */
+export interface StoreReturnProgressDto {
+  carrier: string | null
+  carrierName: string | null
+  waybillNo: string | null
+  pickupStatus: "none" | "requested" | "picked_up" | "cancelled"
+  pickedUpAt: string | null
+  arrivedAt: string | null
+  inspectedAt: string | null
+  settledAt: string | null
 }
 
 export interface StoreReturnListResponseDto {

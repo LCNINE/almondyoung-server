@@ -563,7 +563,19 @@
       "recent6m": "최근 6개월",
       "showMoreItems": "상품 {count}개 더보기",
       "totalPaid": "총 결제금액",
-      "itemQuantity": "{count}개"
+      "itemQuantity": "{count}개",
+      "itemReturn": {
+        "returning": "반품 진행 중",
+        "returned": "반품완료",
+        "exchanging": "교환 진행 중",
+        "exchanged": "교환완료",
+        "quantity": "{count}개",
+        "waitingPickup": "회수를 기다려요",
+        "inspecting": "검수했어요 · 환불 중이에요",
+        "refundedOn": "{date} 환불",
+        "viewReturnDetail": "반품 상세 보기",
+        "viewExchangeDetail": "교환 상세 보기"
+      }
     },
     "filter": {
       "label": "필터",
@@ -888,6 +900,74 @@
       "started": "다운로드를 시작합니다",
       "failed": "다운로드에 실패했습니다",
       "exerciseFailed": "사용 처리에 실패했습니다"
+    },
+    "returnDetail": {
+      "title": "취소/반품/교환/환불내역 상세",
+      "orderedOn": "주문일 {date}",
+      "orderNumber": "주문번호 {number}",
+      "stepsLabel": "진행 단계",
+      "step": {
+        "requested": "접수",
+        "pickedUp": "회수",
+        "inspected": "검수",
+        "refunded": "환불 완료",
+        "exchanged": "교환품 발송"
+      },
+      "canceled": "취소했어요",
+      "table": {
+        "product": "상품",
+        "amount": "금액",
+        "status": "진행 상태"
+      },
+      "unknownItem": "상품 정보를 찾지 못했어요",
+      "quantity": "{count}개",
+      "info": {
+        "title": "상세정보",
+        "requestedAt": "반품 접수일",
+        "exchangeRequestedAt": "교환 접수일",
+        "returnNumber": "반품 번호",
+        "exchangeNumber": "교환 번호",
+        "completedAt": "반품 완료일",
+        "exchangedAt": "교환 완료일"
+      },
+      "pickup": {
+        "title": "상품 회수 정보",
+        "status": "회수 상태",
+        "state": {
+          "none": "회수 접수를 준비하고 있어요",
+          "requested": "회수를 접수했어요 · 기사님이 방문해요",
+          "pickedUp": "회수했어요",
+          "cancelled": "회수를 취소했어요"
+        },
+        "unavailable": "회수 정보를 확인하고 있어요",
+        "carrier": "택배사",
+        "waybill": "송장번호",
+        "name": "회수인",
+        "phone": "연락처",
+        "address": "회수지"
+      },
+      "reason": {
+        "title": "반품 사유",
+        "reason": "사유",
+        "feeBearer": "택배비 부담",
+        "bearer": {
+          "customer": "고객 부담",
+          "seller": "판매자 부담"
+        }
+      },
+      "refund": {
+        "title": "환불 안내",
+        "itemTotal": "상품금액",
+        "shippingRefund": "배송비 환급",
+        "fees": "반품비",
+        "done": "환불 완료",
+        "planned": "환불 예정",
+        "notYet": "상품이 창고에 도착해 검수를 마치면 환불 금액이 정해져요.",
+        "notice": "카드 결제는 카드사에 취소를 요청한 뒤 평일 기준 3~7일 걸려요. 포인트는 바로 돌아가요."
+      },
+      "toOrder": "주문 상세",
+      "toList": "주문 목록",
+      "notFound": "반품 내역을 찾을 수 없어요."
     }
   },
   "membership": {

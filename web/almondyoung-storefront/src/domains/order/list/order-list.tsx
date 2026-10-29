@@ -21,6 +21,9 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { getOrderPointsUsed } from "@/lib/utils/price-utils"
+import { DATE_FORMATS, formatDate as formatDateText } from "@/lib/utils/format-date"
+import type { CustomerReturn } from "@/lib/types/ui/returns"
+import { itemReturnStatus, originalLineTotal, type ItemReturnStatus } from "./item-return-status"
 import { useTranslations } from "next-intl"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { useEffect, useMemo, useState, useTransition } from "react"
@@ -107,6 +110,8 @@ interface OrderListProps {
   actionsMap: Record<string, StoreOrderActionsResponse>
   refundMap: Record<string, string>
   reviewHrefs: Record<string, string>
+  /** Medusa 주문 id → 반품 목록 */
+  returnsMap: Record<string, CustomerReturn[]>
   hasError?: boolean
   /** 마이페이지 홈 안에 끼워 넣어 쓸 때 true — 페이지 전용 여백/최소높이 제거 */
   embedded?: boolean
@@ -138,6 +143,22 @@ interface MapperContext {
   tStatus: (key: string) => string
   tList: (key: string, values?: Record<string, string | number>) => string
   reviewHrefs: Record<string, string>
+  returnsMap: Record<string, CustomerReturn[]>
+}
+
+function returnStatusText(
+  status: ItemReturnStatus,
+  lineQuantity: number,
+  tList: MapperContext["tList"]
+): { label: string; hint?: string } {
+  const hints: string[] = []
+  if (status.quantity < lineQuantity) hints.push(tList("itemReturn.quantity", { count: status.quantity }))
+  if (status.key === "returning" || status.key === "exchanging") {
+    hints.push(tList(status.stage === "processing" ? "itemReturn.inspecting" : "itemReturn.waitingPickup"))
+  } else if (status.key === "returned" && status.refundedAt) {
+    hints.push(tList("itemReturn.refundedOn", { date: formatDateText(status.refundedAt, DATE_FORMATS.KO_DOT) }))
+  }
+  return { label: tList(`itemReturn.${status.key}`), hint: hints.length > 0 ? hints.join(" · ") : undefined }
 }
 
 const mapStoreOrderToOrderItem = (
@@ -162,12 +183,16 @@ const mapStoreOrderToOrderItem = (
   const pointsUsed = getOrderPointsUsed(order.metadata)
   const displayPrice = orderTotal - pointsUsed
 
+  const orderReturns = ctx.returnsMap[order.id] ?? []
   const items: OrderSummaryItem[] = (order.items ?? []).map((item) => {
     const handle = item.product_handle || item.variant?.product?.handle
-    const lineTotal =
-      typeof item.total === "number"
+    const returnStatus = itemReturnStatus(item.id, orderReturns)
+    const lineTotal = returnStatus
+      ? originalLineTotal(item)
+      : typeof item.total === "number"
         ? item.total
         : (item.unit_price ?? 0) * (item.quantity ?? 0)
+    const returnText = returnStatus ? returnStatusText(returnStatus, item.quantity ?? 0, ctx.tList) : null
     return {
       id: item.id,
       title:
@@ -187,6 +212,18 @@ const mapStoreOrderToOrderItem = (
       variantId: item.variant_id ?? undefined,
       isDigital: isDigitalItem(item),
       reviewHref: ctx.reviewHrefs[item.id],
+      ...(returnStatus && returnText
+        ? {
+            statusLabel: returnText.label,
+            statusHint: returnText.hint,
+            returnHref: `/mypage/order/returns/${returnStatus.returnId}?orderId=${order.id}`,
+            returnLinkLabel: ctx.tList(
+              returnStatus.key === "exchanging" || returnStatus.key === "exchanged"
+                ? "itemReturn.viewExchangeDetail"
+                : "itemReturn.viewReturnDetail"
+            ),
+          }
+        : {}),
     }
   })
 
@@ -223,6 +260,7 @@ export function OrderList({
   actionsMap,
   refundMap,
   reviewHrefs,
+  returnsMap,
   hasError = false,
   embedded = false,
 }: OrderListProps) {
@@ -237,9 +275,9 @@ export function OrderList({
   const orders = useMemo(
     () =>
       rawOrders.map((o) =>
-        mapStoreOrderToOrderItem(o, { tStatus, tList, reviewHrefs })
+        mapStoreOrderToOrderItem(o, { tStatus, tList, reviewHrefs, returnsMap })
       ),
-    [rawOrders, tStatus, tList, reviewHrefs]
+    [rawOrders, tStatus, tList, reviewHrefs, returnsMap]
   )
 
   // 결제 완료 화면에서 넘어온 직후에만(무통장 전파 지연) 짧게 자동 재조회한다.

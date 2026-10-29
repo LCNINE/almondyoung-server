@@ -21,6 +21,29 @@ export interface CustomerReturn {
   feeBearer: "customer" | "seller"
   items: { itemId: string; quantity: number }[]
   canCancel: boolean
+  /** 교환이거나 아직 정산 전이면 null */
+  refund: CustomerReturnRefund | null
+}
+
+export interface CustomerReturnRefund {
+  itemTotal: number
+  shippingRefund: number
+  /** 반품 택배비 등 환불액에서 뺀 합 */
+  fees: number
+  total: number
+  receivedAt: string | null
+  refundedAt: string | null
+}
+
+export interface CustomerReturnProgress {
+  carrier: string | null
+  carrierName: string | null
+  waybillNo: string | null
+  pickupStatus: "none" | "requested" | "picked_up" | "cancelled"
+  pickedUpAt: string | null
+  arrivedAt: string | null
+  inspectedAt: string | null
+  settledAt: string | null
 }
 
 export interface ReturnRequestInput {

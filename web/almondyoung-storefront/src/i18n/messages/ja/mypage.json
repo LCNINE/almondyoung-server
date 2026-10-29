@@ -563,7 +563,19 @@
       "recent6m": "直近6か月",
       "showMoreItems": "商品をあと{count}件表示",
       "totalPaid": "お支払い合計",
-      "itemQuantity": "{count}個"
+      "itemQuantity": "{count}個",
+      "itemReturn": {
+        "returning": "返品手続き中",
+        "returned": "返品完了",
+        "exchanging": "交換手続き中",
+        "exchanged": "交換完了",
+        "quantity": "{count}点",
+        "waitingPickup": "回収待ち",
+        "inspecting": "検品済み · 返金中",
+        "refundedOn": "{date} 返金",
+        "viewReturnDetail": "返品の詳細",
+        "viewExchangeDetail": "交換の詳細"
+      }
     },
     "filter": {
       "label": "フィルター",
@@ -888,6 +900,74 @@
       "started": "ダウンロードを開始します",
       "failed": "ダウンロードに失敗しました",
       "exerciseFailed": "使用処理に失敗しました"
+    },
+    "returnDetail": {
+      "title": "キャンセル・返品・交換・返金の詳細",
+      "orderedOn": "注文日 {date}",
+      "orderNumber": "注文番号 {number}",
+      "stepsLabel": "進行状況",
+      "step": {
+        "requested": "受付",
+        "pickedUp": "回収",
+        "inspected": "検品",
+        "refunded": "返金完了",
+        "exchanged": "交換品発送"
+      },
+      "canceled": "キャンセルしました",
+      "table": {
+        "product": "商品",
+        "amount": "金額",
+        "status": "状況"
+      },
+      "unknownItem": "商品情報が見つかりません",
+      "quantity": "{count}点",
+      "info": {
+        "title": "詳細情報",
+        "requestedAt": "返品受付日",
+        "exchangeRequestedAt": "交換受付日",
+        "returnNumber": "返品番号",
+        "exchangeNumber": "交換番号",
+        "completedAt": "返品完了日",
+        "exchangedAt": "交換完了日"
+      },
+      "pickup": {
+        "title": "商品回収情報",
+        "status": "回収状況",
+        "state": {
+          "none": "回収の準備中です",
+          "requested": "回収を受け付けました · 配達員が伺います",
+          "pickedUp": "回収しました",
+          "cancelled": "回収をキャンセルしました"
+        },
+        "unavailable": "回収情報を確認しています",
+        "carrier": "配送業者",
+        "waybill": "伝票番号",
+        "name": "回収者",
+        "phone": "連絡先",
+        "address": "回収先"
+      },
+      "reason": {
+        "title": "返品理由",
+        "reason": "理由",
+        "feeBearer": "送料負担",
+        "bearer": {
+          "customer": "お客様負担",
+          "seller": "販売者負担"
+        }
+      },
+      "refund": {
+        "title": "返金案内",
+        "itemTotal": "商品金額",
+        "shippingRefund": "送料返金",
+        "fees": "返品手数料",
+        "done": "返金完了",
+        "planned": "返金予定",
+        "notYet": "商品が倉庫に届き検品が終わると返金額が決まります。",
+        "notice": "カード決済はカード会社への取消依頼後、平日3〜7日かかります。ポイントはすぐに戻ります。"
+      },
+      "toOrder": "注文詳細",
+      "toList": "注文一覧",
+      "notFound": "返品履歴が見つかりません。"
     }
   },
   "membership": {

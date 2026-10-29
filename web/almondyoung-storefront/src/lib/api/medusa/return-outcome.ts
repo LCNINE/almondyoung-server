@@ -98,5 +98,15 @@ export function toCustomerReturns(
     feeBearer: r.fee_bearer,
     items: r.items.map((i) => ({ itemId: i.item_id, quantity: i.quantity })),
     canCancel: r.can_cancel,
+    refund: r.refund
+      ? {
+          itemTotal: r.refund.item_total,
+          shippingRefund: r.refund.shipping_refund,
+          fees: r.refund.fees,
+          total: r.refund.total,
+          receivedAt: r.refund.received_at,
+          refundedAt: r.refund.refunded_at,
+        }
+      : null,
   }))
 }
