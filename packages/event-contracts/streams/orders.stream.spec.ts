@@ -1,4 +1,9 @@
-import { CUSTOMER_RETURN_REASONS, ORDER_STREAM, type OrderCreatedPayload } from './orders.stream';
+import {
+  CUSTOMER_RETURN_KINDS,
+  CUSTOMER_RETURN_REASONS,
+  ORDER_STREAM,
+  type OrderCreatedPayload,
+} from './orders.stream';
 
 const BASE_ITEM = {
   skuId: 'sku-1',
@@ -358,5 +363,69 @@ describe('반품 선환불 사실·정산 사실의 새 칸 (K8 PR6b)', () => {
     expect(() => prepayFailed.parse(noRetryable)).toThrow();
     const { failureCode: _f, ...noCode } = prepayFailedPayload;
     expect(() => prepayFailed.parse(noCode)).toThrow();
+  });
+});
+
+describe('channel-return 교환 칸 (K8 PR11)', () => {
+  const requested = ORDER_STREAM.events.ChannelReturnRequested.schema!;
+  const settled = ORDER_STREAM.events.ChannelReturnSettled.schema!;
+  const requestedPayload = {
+    orderId: 'wms-order-1',
+    salesChannel: 'medusa',
+    externalOrderId: 'order_01',
+    returnId: 'ret_01',
+    requestId: 'req-1',
+    reason: 'defective',
+    feeBearer: 'seller',
+    requestedBy: 'customer',
+    requestedAt: '2026-10-27T01:00:00.000Z',
+    items: [{ channelOrderItemId: 'item_01', quantity: 1 }],
+  };
+  const settledPayload = {
+    orderId: 'wms-order-1',
+    salesChannel: 'medusa',
+    externalOrderId: 'order_01',
+    returnId: 'ret_01',
+    requestId: 'req-1',
+    refundAmount: 0,
+    deduction: { returnShipping: 0, freeShippingBreak: 0, roundTrip: 0 },
+    feeNotAdjusted: false,
+    refundMode: 'auto',
+    settledAt: '2026-10-27T03:00:00.000Z',
+    items: [{ channelOrderItemId: 'item_01', received: 1, dismissed: 0 }],
+  };
+
+  it("kind 'exchange' 를 받는다", () => {
+    expect(requested.parse({ ...requestedPayload, kind: 'exchange' })).toMatchObject({ kind: 'exchange' });
+    expect(requested.parse({ ...requestedPayload, kind: 'return' })).toMatchObject({ kind: 'return' });
+  });
+
+  it("kind 'swap' 은 거절한다", () => {
+    expect(() => requested.parse({ ...requestedPayload, kind: 'swap' })).toThrow();
+  });
+
+  it('kind 없는 옛 payload 는 그대로 통과한다', () => {
+    expect(() => requested.parse(requestedPayload)).not.toThrow();
+  });
+
+  it('CUSTOMER_RETURN_KINDS 는 return·exchange 다', () => {
+    expect([...CUSTOMER_RETURN_KINDS]).toEqual(['return', 'exchange']);
+  });
+
+  it('exchangeItems 를 받는다', () => {
+    const exchangeItems = [{ sourceItemId: 'item_01', itemId: 'item_new', quantity: 1 }];
+    expect(settled.parse({ ...settledPayload, exchangeItems })).toMatchObject({ exchangeItems });
+  });
+
+  it.each([
+    ['빈 배열', []],
+    ['수량 0', [{ sourceItemId: 'a', itemId: 'b', quantity: 0 }]],
+    ['빈 itemId', [{ sourceItemId: 'a', itemId: '', quantity: 1 }]],
+  ])('exchangeItems %s 는 거절한다', (_n, exchangeItems) => {
+    expect(() => settled.parse({ ...settledPayload, exchangeItems })).toThrow();
+  });
+
+  it('exchangeItems 없는 옛 settled 는 통과한다', () => {
+    expect(() => settled.parse(settledPayload)).not.toThrow();
   });
 });

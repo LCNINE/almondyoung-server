@@ -28,14 +28,22 @@ export async function readReturnEligibility(trx: DbTx, externalOrderId: string):
     const lineQuantities = quantities.get(row.id);
     return lineQuantities ? [{ channelOrderItemId: row.channelOrderItemId, quantities: lineQuantities }] : [];
   });
-  const customerReturns = await trx
+  const returnRows = await trx
     .select({
       channelReturnId: wmsTables.customerReturns.channelReturnId,
       status: wmsTables.customerReturns.status,
+      kind: wmsTables.customerReturns.kind,
+      exchangeReleasedAt: wmsTables.customerReturns.exchangeReleasedAt,
     })
     .from(wmsTables.customerReturns)
     .where(eq(wmsTables.customerReturns.salesOrderId, order.id))
     .orderBy(asc(wmsTables.customerReturns.requestedAt), asc(wmsTables.customerReturns.id));
+  const customerReturns = returnRows.map((row) => ({
+    channelReturnId: row.channelReturnId,
+    status: row.status,
+    kind: row.kind,
+    exchangeReleased: row.exchangeReleasedAt !== null,
+  }));
   return { found: true, lines: toReturnEligibilityLines(lines, parcels), customerReturns };
 }
 

@@ -40,6 +40,8 @@ export async function seedDeliveredLine(
     composition: Array<{ skuId: string; qtyPerUnit: number }>;
     parcels: Array<{ qtyBySku: Record<string, number>; delivered?: boolean }>;
     customerId?: string;
+    /** 소포의 출고 원장(SHIP 이벤트)까지 남긴다 — `seedDispatchedParcel` 의 `ledger` */
+    ledger?: boolean;
   },
 ): Promise<DeliveredLine> {
   const order = await seedOrder(tx, { quantity: args.quantity });
@@ -119,6 +121,7 @@ export async function seedDeliveredLine(
         qty: content.qty,
       })),
       delivered: parcel.delivered ?? true,
+      ledger: args.ledger,
     });
     parcels.push({ shipmentId: box.shipmentId, dispatchAttemptId, shipmentLineIdBySku });
   }
@@ -162,4 +165,46 @@ export async function insertCustomerReturn(
     })),
   );
   return { customerReturnId: customerReturn.id };
+}
+
+/**
+ * 교환(K8 PR11) 하나 — `kind 'exchange'` 반품 예정 기록(줄 하나)과 같은 판매주문의 0원 교환 줄(접수가 만드는 모양:
+ * 원래 줄의 variant·상품명·채널 상품, 채널 품목 id 없음). 교환 상자는 열지 않는다(FOI 없음). 구성은 복사하지 않는다.
+ */
+export async function insertExchange(
+  tx: DbTx,
+  args: { salesOrderId: string; sourceLineId: string; quantity: number; status?: CustomerReturnStatus },
+): Promise<{ customerReturnId: string; customerReturnLineId: string; exchangeLineId: string }> {
+  const { customerReturnId } = await insertCustomerReturn(tx, {
+    salesOrderId: args.salesOrderId,
+    status: args.status ?? 'expected',
+    lines: [{ salesOrderLineId: args.sourceLineId, quantity: args.quantity }],
+  });
+  await tx
+    .update(wmsTables.customerReturns)
+    .set({ kind: 'exchange' })
+    .where(eq(wmsTables.customerReturns.id, customerReturnId));
+  const [returnLine] = await tx
+    .select({ id: wmsTables.customerReturnLines.id })
+    .from(wmsTables.customerReturnLines)
+    .where(eq(wmsTables.customerReturnLines.customerReturnId, customerReturnId));
+  const [source] = await tx
+    .select()
+    .from(wmsTables.salesOrderLines)
+    .where(eq(wmsTables.salesOrderLines.id, args.sourceLineId));
+  const [line] = await tx
+    .insert(wmsTables.salesOrderLines)
+    .values({
+      salesOrderId: args.salesOrderId,
+      variantId: source.variantId,
+      productName: source.productName,
+      channelProductId: source.channelProductId,
+      quantity: args.quantity,
+      unitPrice: 0,
+      totalPrice: 0,
+      channelOrderItemId: null,
+      exchangeReturnLineId: returnLine.id,
+    })
+    .returning({ id: wmsTables.salesOrderLines.id });
+  return { customerReturnId, customerReturnLineId: returnLine.id, exchangeLineId: line.id };
 }

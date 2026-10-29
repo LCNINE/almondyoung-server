@@ -32,6 +32,8 @@ export function parseReturnRequestBody(body: unknown, scope: 'store' | 'admin'):
   if (typeof b.reason !== 'string' || b.reason.trim() === '') throw invalid('reason 이 필요합니다');
   if (b.note !== undefined && typeof b.note !== 'string') throw invalid('note 는 문자열이어야 합니다');
 
+  if (b.kind !== undefined && b.kind !== 'return' && b.kind !== 'exchange') throw invalid("kind 는 'return' 또는 'exchange' 여야 합니다");
+
   const adminOnly = { feeBearer: b.fee_bearer, windowOverrideReason: b.window_override_reason };
   if (scope === 'store') {
     if (adminOnly.feeBearer !== undefined || adminOnly.windowOverrideReason !== undefined) {
@@ -50,6 +52,7 @@ export function parseReturnRequestBody(body: unknown, scope: 'store' | 'admin'):
     requestId: b.request_id.trim(),
     items,
     reasonValue: b.reason.trim(),
+    ...(b.kind === 'exchange' ? { kind: 'exchange' as const } : {}),
     ...(typeof b.note === 'string' ? { note: b.note } : {}),
     ...(adminOnly.feeBearer !== undefined ? { operatorFeeBearer: adminOnly.feeBearer as 'customer' | 'seller' } : {}),
     ...(typeof adminOnly.windowOverrideReason === 'string' ? { windowOverrideReason: adminOnly.windowOverrideReason } : {}),

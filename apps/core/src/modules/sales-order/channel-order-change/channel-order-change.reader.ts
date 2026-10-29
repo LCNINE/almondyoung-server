@@ -39,6 +39,7 @@ export class ChannelOrderChangeReader {
     const lines = await tx
       .select({
         id: wmsTables.salesOrderLines.id,
+        exchangeReturnLineId: wmsTables.salesOrderLines.exchangeReturnLineId,
         channelOrderItemId: wmsTables.salesOrderLines.channelOrderItemId,
         channelProductId: wmsTables.salesOrderLines.channelProductId,
         quantity: wmsTables.salesOrderLines.quantity,
@@ -54,6 +55,7 @@ export class ChannelOrderChangeReader {
       shippingAddress: toShippingAddress(order.shippingAddress),
       lines: lines.map((line) => ({
         id: line.id,
+        exchangeReturnLineId: line.exchangeReturnLineId,
         channelOrderItemId: line.channelOrderItemId,
         channelProductId: line.channelProductId,
         effectiveQuantity: Math.max(0, lineQuantities.get(line.id)?.remaining ?? 0),

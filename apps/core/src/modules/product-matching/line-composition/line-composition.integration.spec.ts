@@ -246,4 +246,92 @@ describeIfDb('LineCompositionReader / LineCompositionManager (PostgreSQL integra
       ).rejects.toThrow(/not matching-frozen/);
     });
   });
+  describe('copyFrozen (K8 PR11 교환 줄)', () => {
+    const rowsOf = async (tx: DbTx, salesOrderLineId: string) =>
+      (
+        await tx
+          .select({
+            skuId: wmsTables.salesOrderLineCompositions.skuId,
+            qtyPerUnit: wmsTables.salesOrderLineCompositions.qtyPerUnit,
+          })
+          .from(wmsTables.salesOrderLineCompositions)
+          .where(eq(wmsTables.salesOrderLineCompositions.salesOrderLineId, salesOrderLineId))
+      ).sort((x, y) => x.skuId.localeCompare(y.skuId));
+    const lineOf = async (tx: DbTx, id: string) =>
+      (await tx.select().from(wmsTables.salesOrderLines).where(eq(wmsTables.salesOrderLines.id, id)))[0];
+
+    it('원래 줄의 굳은 구성 행과 출처·지정자를 대상 줄에 복사한다', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const w = wire();
+        const sku = await twoSkus(tx);
+        const actorId = randomUUID();
+        const { lineIds } = await seedSalesOrder(tx, {
+          lines: [
+            { variantId: randomUUID(), quantity: 2 },
+            { variantId: randomUUID(), quantity: 1 },
+          ],
+        });
+        await w.lineCompositionManager.assignByOperator(
+          lineIds[0],
+          [
+            { skuId: sku.a, qtyPerUnit: 2 },
+            { skuId: sku.b, qtyPerUnit: 1 },
+          ],
+          actorId,
+          tx,
+        );
+
+        await w.lineCompositionManager.copyFrozen({ sourceLineId: lineIds[0], targetLineId: lineIds[1] }, tx);
+
+        expect(await rowsOf(tx, lineIds[1])).toEqual(await rowsOf(tx, lineIds[0]));
+        expect(await rowsOf(tx, lineIds[1])).toHaveLength(2);
+        const target = await lineOf(tx, lineIds[1]);
+        expect(target).toMatchObject({ compositionSource: 'operator', compositionSetBy: actorId });
+        expect(target.compositionSetAt).toBeInstanceOf(Date);
+        expect(await findCompositionInvariantViolations(tx)).toEqual([]);
+      });
+    });
+
+    it('원래 줄이 안 굳었으면 던지고 대상 줄은 그대로다', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const w = wire();
+        const { lineIds } = await seedSalesOrder(tx, {
+          lines: [
+            { variantId: randomUUID(), quantity: 1 },
+            { variantId: randomUUID(), quantity: 1 },
+          ],
+        });
+
+        await expect(
+          w.lineCompositionManager.copyFrozen({ sourceLineId: lineIds[0], targetLineId: lineIds[1] }, tx),
+        ).rejects.toThrow(/not frozen/);
+        expect((await lineOf(tx, lineIds[1])).compositionSource).toBeNull();
+        expect(await rowsOf(tx, lineIds[1])).toEqual([]);
+      });
+    });
+
+    it('대상 줄이 이미 굳었으면 던진다', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const w = wire();
+        const sku = await twoSkus(tx);
+        const { lineIds } = await seedSalesOrder(tx, {
+          lines: [
+            { variantId: randomUUID(), quantity: 1 },
+            { variantId: randomUUID(), quantity: 1 },
+          ],
+        });
+        await w.lineCompositionManager.freezeFromMatching(
+          [
+            { salesOrderLineId: lineIds[0], items: [{ skuId: sku.a, qtyPerUnit: 1 }] },
+            { salesOrderLineId: lineIds[1], items: [{ skuId: sku.b, qtyPerUnit: 1 }] },
+          ],
+          tx,
+        );
+
+        await expect(
+          w.lineCompositionManager.copyFrozen({ sourceLineId: lineIds[0], targetLineId: lineIds[1] }, tx),
+        ).rejects.toThrow(/already frozen/);
+      });
+    });
+  });
 });

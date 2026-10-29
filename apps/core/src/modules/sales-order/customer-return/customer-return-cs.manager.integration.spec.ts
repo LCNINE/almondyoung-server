@@ -6,11 +6,15 @@ import { StockStateEnum } from '../../inventory/schema/enum-values';
 import { inRollbackTx, makeDb, makeDbService, wireLogistics } from '../../fulfillment/services/__support__';
 import { seedWorld, World } from '../../fulfillment/order-progress/__support__/order-progress.fixtures';
 import { seedComponentSku, seedDeliveredLine } from '../line-quantities/__support__/claim-facts.fixtures';
+import { LineCompositionManager } from '../../product-matching/line-composition/line-composition.manager';
 import { CustomerReturnManager } from './customer-return.manager';
 import { CustomerReturnReader } from './customer-return.reader';
 import { CustomerReturnReceivingManager } from './customer-return-receiving.manager';
 import { CustomerReturnCsManager } from './customer-return-cs.manager';
 import { CustomerReturnSettlementManager } from './customer-return-settlement.manager';
+import { CustomerExchangeReleaser } from './customer-exchange.releaser';
+import { ExchangeShipmentOpener } from '../../fulfillment/exchange-shipment/exchange-shipment-opener';
+import { exchangeBoxOf } from './__support__/exchange-box';
 import { readLineQuantities } from '../line-quantities/line-quantities.reader';
 
 /**
@@ -35,7 +39,7 @@ describeIfDb('CustomerReturnCsManager — 미도착 닫기·보류 정산·선�
   jest.setTimeout(120_000);
   const { sql: client, db } = makeDb(DATABASE_URL as string);
   const dbService = makeDbService(db);
-  const { command, location } = wireLogistics(dbService);
+  const { command, location, shipmentReservations } = wireLogistics(dbService);
   afterAll(async () => {
     await client.end();
   });
@@ -44,15 +48,21 @@ describeIfDb('CustomerReturnCsManager — 미도착 닫기·보류 정산·선�
     const coreOrders = recorder();
     const commands = recorder();
     const reader = new CustomerReturnReader(dbService);
-    const intake = new CustomerReturnManager(dbService, coreOrders.publisher as never);
+    const releaser = new CustomerExchangeReleaser(new ExchangeShipmentOpener(shipmentReservations));
+    const intake = new CustomerReturnManager(
+      dbService,
+      coreOrders.publisher as never,
+      new LineCompositionManager(dbService),
+    );
     const receiving = new CustomerReturnReceivingManager(
       dbService,
       reader,
       command,
       coreOrders.publisher as never,
       commands.publisher as never,
+      releaser,
     );
-    const cs = new CustomerReturnCsManager(dbService, reader, commands.publisher as never);
+    const cs = new CustomerReturnCsManager(dbService, reader, commands.publisher as never, releaser);
     const settlement = new CustomerReturnSettlementManager(
       dbService,
       reader,
@@ -71,7 +81,11 @@ describeIfDb('CustomerReturnCsManager — 미도착 닫기·보류 정산·선�
     tx: DbTx,
     w: World,
     wired: Wired,
-    opts: { quantity?: number; composition?: Array<{ skuId: string; qtyPerUnit: number }> } = {},
+    opts: {
+      quantity?: number;
+      composition?: Array<{ skuId: string; qtyPerUnit: number }>;
+      kind?: 'return' | 'exchange';
+    } = {},
   ) {
     const quantity = opts.quantity ?? 2;
     const composition = opts.composition ?? [{ skuId: w.skuId, qtyPerUnit: 1 }];
@@ -81,6 +95,8 @@ describeIfDb('CustomerReturnCsManager — 미도착 닫기·보류 정산·선�
       composition,
       parcels: [{ qtyBySku: Object.fromEntries(composition.map((c) => [c.skuId, c.qtyPerUnit * quantity])) }],
       customerId: randomUUID(),
+      // 교환 상자 열기는 같은 FO 의 불변식을 검사한다 — 원래 소포의 출고 원장까지 남긴다
+      ledger: opts.kind === 'exchange',
     });
     const channelOrderItemId = `item_${randomUUID().slice(0, 8)}`;
     await tx
@@ -104,6 +120,7 @@ describeIfDb('CustomerReturnCsManager — 미도착 닫기·보류 정산·선�
         requestedBy: 'customer',
         requestedAt: '2026-10-27T01:00:00.000Z',
         items: [{ channelOrderItemId, quantity }],
+        ...(opts.kind ? { kind: opts.kind } : {}),
       },
       tx,
     );
@@ -132,7 +149,10 @@ describeIfDb('CustomerReturnCsManager — 미도착 닫기·보류 정산·선�
         },
         tx,
       );
-    const inspect = (items: Array<{ skuId: string; accepted: number; rejected?: number; held?: number }>) =>
+    const inspect = (
+      items: Array<{ skuId: string; accepted: number; rejected?: number; held?: number }>,
+      by: string = actorId,
+    ) =>
       wired.receiving.recordInspection(
         {
           customerReturnId,
@@ -142,7 +162,7 @@ describeIfDb('CustomerReturnCsManager — 미도착 닫기·보류 정산·선�
             rejected: i.rejected ?? 0,
             held: i.held ?? 0,
           })),
-          actorId,
+          actorId: by,
         },
         tx,
       );
@@ -739,6 +759,165 @@ describeIfDb('CustomerReturnCsManager — 미도착 닫기·보류 정산·선�
       await expect(
         cs.requestPrepay({ customerReturnId: id, amount: null, refundMode: 'auto', memo: 'm', actorId }, tx),
       ).rejects.toBeInstanceOf(NotFoundError);
+    });
+  });
+  describe('교환품 보내기 (K8 PR11 N14 ②·N15)', () => {
+    // 교환 상자를 연 사람은 uuid 칸이다
+    const csActor = randomUUID();
+
+    it('held 교환 → inspected + 정산 명령(command {}) + 교환 상자', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const w = await seedWorld(tx);
+        const wired = wire();
+        const s = await seed(tx, w, wired, { kind: 'exchange' });
+        await s.arrive([{ skuId: w.skuId, quantity: 2 }]);
+        const held = await s.inspect([{ skuId: w.skuId, accepted: 1, held: 1 }], csActor);
+        expect(held.status).toBe('held');
+        expect((await exchangeBoxOf(tx, s.salesOrderId)).shipments).toHaveLength(0);
+
+        const view = await wired.cs.releaseExchange({ customerReturnId: s.customerReturnId, actorId: csActor }, tx);
+
+        expect(view.status).toBe('inspected');
+        expect(typeof view.exchangeReleasedAt).toBe('string');
+        expect(view.settlement).toMatchObject({ state: 'in_progress', refundMode: 'auto', issues: 1, command: {} });
+        const sent = wired.commandsOf('SettleChannelReturn');
+        expect(sent).toHaveLength(1);
+        expect(sent[0].idempotencyKey).toBe(`customer-return-settle:${s.customerReturnId}:issue:1`);
+        const box = await exchangeBoxOf(tx, s.salesOrderId);
+        expect(box.shipments).toEqual([expect.objectContaining({ status: 'draft' })]);
+        expect((await recordOf(tx, s.customerReturnId)).exchangeReleasedBy).toBe(csActor);
+      });
+    });
+
+    it('expected 교환(선발송) → 상태 그대로 + 교환 상자, 정산 명령 0', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const w = await seedWorld(tx);
+        const wired = wire();
+        const s = await seed(tx, w, wired, { kind: 'exchange' });
+
+        const view = await wired.cs.releaseExchange({ customerReturnId: s.customerReturnId, actorId: csActor }, tx);
+
+        expect(view.status).toBe('expected');
+        expect(typeof view.exchangeReleasedAt).toBe('string');
+        expect(wired.commandsOf('SettleChannelReturn')).toHaveLength(0);
+        expect((await exchangeBoxOf(tx, s.salesOrderId)).shipments).toHaveLength(1);
+
+        // 선발송한 교환의 검수는 상자를 다시 열지 않는다
+        await s.arrive([{ skuId: w.skuId, quantity: 2 }]);
+        const inspected = await s.inspect([{ skuId: w.skuId, accepted: 2 }], csActor);
+        expect(inspected.status).toBe('inspected');
+        expect((await exchangeBoxOf(tx, s.salesOrderId)).shipments).toHaveLength(1);
+      });
+    });
+
+    it('선발송 뒤 검수가 보류로 멈춘 교환 → 문이 정산을 연다(inspected + 정산 명령 1), 상자는 그대로 1', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const w = await seedWorld(tx);
+        const wired = wire();
+        const s = await seed(tx, w, wired, { kind: 'exchange' });
+        await wired.cs.releaseExchange({ customerReturnId: s.customerReturnId, actorId: csActor }, tx);
+        await s.arrive([{ skuId: w.skuId, quantity: 2 }]);
+        const held = await s.inspect([{ skuId: w.skuId, accepted: 1, held: 1 }], csActor);
+        expect(held.status).toBe('held');
+        expect(wired.commandsOf('SettleChannelReturn')).toHaveLength(0);
+
+        const view = await wired.cs.releaseExchange({ customerReturnId: s.customerReturnId, actorId: csActor }, tx);
+
+        expect(view.status).toBe('inspected');
+        expect(view.settlement).toMatchObject({ state: 'in_progress', issues: 1, command: {} });
+        expect(wired.commandsOf('SettleChannelReturn')).toHaveLength(1);
+        expect((await exchangeBoxOf(tx, s.salesOrderId)).shipments).toHaveLength(1);
+        // 그 뒤 재요청은 그대로
+        const again = await wired.cs.releaseExchange({ customerReturnId: s.customerReturnId, actorId: csActor }, tx);
+        expect(again).toEqual(view);
+        expect(wired.commandsOf('SettleChannelReturn')).toHaveLength(1);
+      });
+    });
+
+    it('arrived 교환(선발송) → 상태 그대로 + 교환 상자', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const w = await seedWorld(tx);
+        const wired = wire();
+        const s = await seed(tx, w, wired, { kind: 'exchange' });
+        await s.arrive([{ skuId: w.skuId, quantity: 1 }]);
+
+        const view = await wired.cs.releaseExchange({ customerReturnId: s.customerReturnId, actorId: csActor }, tx);
+
+        expect(view.status).toBe('arrived');
+        expect((await exchangeBoxOf(tx, s.salesOrderId)).shipments).toHaveLength(1);
+      });
+    });
+
+    it('이미 열림 → 같은 view, 상자·명령 그대로', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const w = await seedWorld(tx);
+        const wired = wire();
+        const s = await seed(tx, w, wired, { kind: 'exchange' });
+        await s.arrive([{ skuId: w.skuId, quantity: 2 }]);
+        await s.inspect([{ skuId: w.skuId, accepted: 1, held: 1 }], csActor);
+
+        const first = await wired.cs.releaseExchange({ customerReturnId: s.customerReturnId, actorId: csActor }, tx);
+        const again = await wired.cs.releaseExchange({ customerReturnId: s.customerReturnId, actorId: csActor }, tx);
+
+        expect(again).toEqual(first);
+        expect(wired.commandsOf('SettleChannelReturn')).toHaveLength(1);
+        expect((await exchangeBoxOf(tx, s.salesOrderId)).shipments).toHaveLength(1);
+      });
+    });
+
+    it('열리지 않은 settled 교환 → 409', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const w = await seedWorld(tx);
+        const wired = wire();
+        const s = await seed(tx, w, wired, { kind: 'exchange' });
+        // 정상 길에선 정산 전에 열린다 — 상태 칸만 옮겨 «그 밖» 상태를 만든다
+        await tx
+          .update(wmsTables.customerReturns)
+          .set({ status: 'settled', settledAt: new Date() })
+          .where(eq(wmsTables.customerReturns.id, s.customerReturnId));
+
+        await expect(
+          wired.cs.releaseExchange({ customerReturnId: s.customerReturnId, actorId: csActor }, tx),
+        ).rejects.toBeInstanceOf(ConflictError);
+        expect((await exchangeBoxOf(tx, s.salesOrderId)).shipments).toHaveLength(0);
+      });
+    });
+
+    it('반품(kind return) → 400', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const w = await seedWorld(tx);
+        const wired = wire();
+        const s = await seed(tx, w, wired);
+
+        await expect(
+          wired.cs.releaseExchange({ customerReturnId: s.customerReturnId, actorId: csActor }, tx),
+        ).rejects.toBeInstanceOf(BadRequestError);
+      });
+    });
+
+    it('교환에 보류 정산·선환불·미도착 닫기 → 400 (N15)', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const w = await seedWorld(tx);
+        const wired = wire();
+        const s = await seed(tx, w, wired, { kind: 'exchange' });
+        await expect(
+          wired.cs.requestPrepay(
+            { customerReturnId: s.customerReturnId, amount: null, refundMode: 'auto', memo: '메모', actorId },
+            tx,
+          ),
+        ).rejects.toBeInstanceOf(BadRequestError);
+        await s.arrive([{ skuId: w.skuId, quantity: 1 }]);
+        await expect(
+          wired.cs.closeMissing({ customerReturnId: s.customerReturnId, memo: '1개만', actorId }, tx),
+        ).rejects.toBeInstanceOf(BadRequestError);
+        await s.arrive([{ skuId: w.skuId, quantity: 1 }]);
+        await s.inspect([{ skuId: w.skuId, accepted: 1, held: 1 }], csActor);
+        await expect(
+          wired.cs.settleHeld({ customerReturnId: s.customerReturnId, deduction: 0, memo: '메모', actorId }, tx),
+        ).rejects.toBeInstanceOf(BadRequestError);
+        expect(wired.commandsOf('SettleChannelReturn')).toHaveLength(0);
+        expect(wired.commandsOf('PrepayChannelReturn')).toHaveLength(0);
+      });
     });
   });
 });

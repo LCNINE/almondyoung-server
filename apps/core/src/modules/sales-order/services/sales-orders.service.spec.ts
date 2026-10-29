@@ -843,7 +843,7 @@ describe('SalesOrdersService.cancel partial pre-shipment lifecycle', () => {
       fulfillmentOrders?: Array<Record<string, any>>;
       fulfillmentOrderItems?: Array<Record<string, any>>;
       fulfillmentOrderCreationBacklogs?: Array<Record<string, any>>;
-      lineOverrides?: { almondDesignId?: string };
+      lineOverrides?: { almondDesignId?: string; exchangeReturnLineId?: string | null };
       afterBoxingHistory?: boolean;
     } = {},
   ) {
@@ -867,6 +867,8 @@ describe('SalesOrdersService.cancel partial pre-shipment lifecycle', () => {
           quantity: 3,
           unitPrice: 5000,
           totalPrice: 15000,
+          // 실제 행은 언제나 이 칸을 갖는다 — 교환 줄 판정은 칸이 없으면 멈춘다(K8 PR11)
+          exchangeReturnLineId: null,
           ...options.lineOverrides,
         },
       ] as Array<Record<string, any>>,
@@ -1034,6 +1036,22 @@ describe('SalesOrdersService.cancel partial pre-shipment lifecycle', () => {
 
     return { service, state, tx, outbox, unboxedDemand };
   }
+
+  it('교환 줄 칸(exchangeReturnLineId)을 고르지 않은 줄이면 «교환 아님»으로 새지 않고 멈춘다 (K8 PR11)', async () => {
+    const { service, state, unboxedDemand } = makeService({ lineOverrides: { exchangeReturnLineId: undefined } });
+    const originalLines = state.salesOrderLines.map((line) => ({ ...line }));
+
+    await expect(
+      service.cancel(salesOrderId, {
+        lines: [{ salesOrderLineId, quantity: 1 }],
+        reasonCode: 'CUSTOMER_REQUEST',
+        cancelledBy: 'admin-1',
+        occurredAt: '2026-05-30T01:00:00.000Z',
+      }),
+    ).rejects.toThrow('sales order line was read without exchange_return_line_id');
+    expect(state.salesOrderLines).toEqual(originalLines);
+    expect(unboxedDemand.reduce).not.toHaveBeenCalled();
+  });
 
   it('records a line-scoped cancellation, reduces ready fulfillment demand through the unboxed command, and links refund', async () => {
     const { service, state, tx, outbox, unboxedDemand } = makeService();

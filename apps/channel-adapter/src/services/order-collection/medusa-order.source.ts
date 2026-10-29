@@ -59,9 +59,7 @@ export class MedusaOrderSource implements ReplayableChannelOrderSource {
     }
 
     const sourceUpdatedAt = this.getSourceUpdatedAt(order);
-    const entrancePassword = readEntrancePassword(
-      order.metadata as Record<string, unknown> | null | undefined,
-    );
+    const entrancePassword = readEntrancePassword(order.metadata as Record<string, unknown> | null | undefined);
     const cancelRequests = this.readCancelRequests(order);
 
     return {
@@ -72,7 +70,10 @@ export class MedusaOrderSource implements ReplayableChannelOrderSource {
       customerId: this.resolveCustomerId(order),
       ...(order.email ? { email: order.email } : {}),
       ...(this.resolveWalletIntentId(order) ? { walletIntentId: this.resolveWalletIntentId(order)! } : {}),
-      lines: (order.items ?? []).map((item) => this.buildLine(item)),
+      // 교환 대체 줄(K8 PR11 N9)은 채널 주문의 줄이 아니다 — 식별·해시 입력 어디에도 들이지 않는다
+      lines: (order.items ?? [])
+        .filter((item) => !this.isExchangeReplacement(item))
+        .map((item) => this.buildLine(item)),
       amounts: {
         total: order.total ?? 0,
         subtotal: order.subtotal ?? 0,
@@ -114,6 +115,11 @@ export class MedusaOrderSource implements ReplayableChannelOrderSource {
       return 'accepted';
     }
     return 'pending';
+  }
+
+  private isExchangeReplacement(item: MedusaLineItem): boolean {
+    const marker = item.metadata?.almondExchange;
+    return typeof marker === 'object' && marker !== null && !Array.isArray(marker);
   }
 
   private buildLine(item: MedusaLineItem): ChannelOrderLineSnapshot {

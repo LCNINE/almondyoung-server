@@ -21,6 +21,7 @@ import { outboxPublisherFor } from '../../fulfillment/outbox/__support__/outbox-
 import { SalesOrdersService } from '../services/sales-orders.service';
 import { readLineQuantities } from '../line-quantities/line-quantities.reader';
 import { seedCancellableOrder, wireCancellation } from '../cancellation-record/__support__/cancellation-scenarios';
+import { insertExchange } from '../line-quantities/__support__/claim-facts.fixtures';
 import { SalesOrderAmendmentsService } from '../services/sales-order-amendments.service';
 import { ChannelOrderChangeReader } from './channel-order-change.reader';
 import { ChannelOrderChangeManager } from './channel-order-change.manager';
@@ -781,6 +782,58 @@ describeIfDb('채널 변경 반영 (DB integration, rollback-only)', () => {
       const byId = new Map(effective?.lines.map((line) => [line.id, line.effectiveQuantity]));
       expect(byId.get(o.lineId)).toBe(0);
       expect(byId.get(digital.id)).toBe(0);
+    });
+  });
+  describe('교환 줄 (K8 PR11 N18)', () => {
+    async function seedExchangeLine(tx: DbTx, seed: Awaited<ReturnType<typeof seedOrder>>) {
+      const { exchangeLineId, customerReturnLineId } = await insertExchange(tx, {
+        salesOrderId: seed.salesOrderId,
+        sourceLineId: seed.lineIds[0],
+        quantity: 1,
+      });
+      return { id: exchangeLineId, exchangeReturnLineId: customerReturnLineId };
+    }
+
+    it('교환 줄이 생긴 뒤의 폴링(대체 줄 없는 스냅샷) → 변경 0건, 교환 줄 수량 그대로 (Review Focus 3)', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const w = wire(tx);
+        const seed = await seedOrder(tx, w, { withFo: true });
+        const exchange = await seedExchangeLine(tx, seed);
+
+        const effective = await new ChannelOrderChangeReader().lockEffectiveOrder(seed.salesOrderId, tx);
+        expect(effective?.lines.find((line) => line.id === exchange.id)?.exchangeReturnLineId).toBe(
+          exchange.exchangeReturnLineId,
+        );
+        await w.manager.handle(seed.salesOrderId, payload(seed, {}), `m-${randomUUID()}`, tx);
+
+        expect(await amendmentsOf(tx, seed.salesOrderId)).toHaveLength(0);
+        const quantities = await readLineQuantities(tx, seed.salesOrderId);
+        expect(quantities.get(exchange.id)?.remaining).toBe(1);
+      });
+    });
+
+    it('교환 줄에 대체 품목 id 가 이어진 뒤 스냅샷에 그 품목이 있어도 → 변경 0건', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const w = wire(tx);
+        const seed = await seedOrder(tx, w, { withFo: true });
+        const exchange = await seedExchangeLine(tx, seed);
+        await tx
+          .update(wmsTables.salesOrderLines)
+          .set({ channelOrderItemId: 'ci-replacement' })
+          .where(eq(wmsTables.salesOrderLines.id, exchange.id));
+        const modified = payload(seed, {});
+        modified.snapshot.lines.push({
+          channelOrderItemId: 'ci-replacement',
+          channelProductId: null,
+          quantity: 1,
+          unitPrice: 1000,
+          cancelled: false,
+        });
+
+        await w.manager.handle(seed.salesOrderId, modified, `m-${randomUUID()}`, tx);
+
+        expect(await amendmentsOf(tx, seed.salesOrderId)).toHaveLength(0);
+      });
     });
   });
 });

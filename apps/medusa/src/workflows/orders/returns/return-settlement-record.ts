@@ -7,7 +7,11 @@ import type { ReturnSettlementDeduction } from './plan-return-fees';
 /** 반품 행 metadata 의 정산 진행 기록 키. 요청 기록(almondReturn)과 다르다 — 요청 기록 읽기가 그대로 남는다. */
 export const RETURN_SETTLEMENT_METADATA_KEY = 'almondReturnSettlement';
 
-export type ReturnSettlementStage = 'received' | 'charged' | 'refunded';
+/** exchanged = 교환 정산의 끝(K8 PR11 N3) — refunded 의 자리. 환불 대신 대체 품목 줄을 넣었다 */
+export type ReturnSettlementStage = 'received' | 'charged' | 'refunded' | 'exchanged';
+
+/** 교환 대체 품목 줄 하나 — 원래 품목(sourceItemId)을 대신하는 새 주문 품목(itemId). channel-adapter 가 core 에 잇는다 */
+export type ReturnExchangeItem = { sourceItemId: string; itemId: string; quantity: number };
 
 export type ReturnSettlementRecord = {
   /** 정산 요청 키(core customer_returns.id) — 정산 관측이 core 에 돌려준다 */
@@ -45,9 +49,14 @@ export type ReturnSettlementRecord = {
    * 이어 가는 청구 단계가 이 값으로 넣는다(reference 'return-offset'). 없으면 0
    */
   offsetCreditLine?: number;
+  // ── PR 11 칸 — 교환 정산(stage exchanged)일 때만 둘 다 있다. refundAmount 는 0 ──
+  /** 대체 품목 줄 주문 수정을 확정하고 차액 0 을 확인한 때 */
+  exchangedAt?: string;
+  exchangeItems?: ReturnExchangeItem[];
 };
 
-const isStage = (v: unknown): v is ReturnSettlementStage => v === 'received' || v === 'charged' || v === 'refunded';
+const isStage = (v: unknown): v is ReturnSettlementStage =>
+  v === 'received' || v === 'charged' || v === 'refunded' || v === 'exchanged';
 const isNum = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v);
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
 
@@ -86,6 +95,14 @@ export function readReturnSettlementRecord(metadata: unknown): ReturnSettlementR
   if (r.externalRefundApplied !== undefined && !isNum(r.externalRefundApplied)) return null;
   if (r.closesMissing !== undefined && typeof r.closesMissing !== 'boolean') return null;
   if (r.offsetCreditLine !== undefined && !isNum(r.offsetCreditLine)) return null;
+  if (r.exchangedAt !== undefined && typeof r.exchangedAt !== 'string') return null;
+  let exchangeItems: ReturnExchangeItem[] | undefined;
+  if (r.exchangeItems !== undefined) {
+    exchangeItems = readExchangeItems(r.exchangeItems) ?? undefined;
+    if (!exchangeItems) return null;
+  }
+  // 교환 단계는 두 칸이 다 있어야 한다 — channel-adapter 가 대체 품목 id 를 core 에 잇는다
+  if (r.stage === 'exchanged' && (r.exchangedAt === undefined || !exchangeItems)) return null;
   return {
     requestId: r.requestId,
     requestHash: r.requestHash,
@@ -106,7 +123,21 @@ export function readReturnSettlementRecord(metadata: unknown): ReturnSettlementR
     ...(r.externalRefundApplied !== undefined ? { externalRefundApplied: r.externalRefundApplied } : {}),
     ...(r.closesMissing !== undefined ? { closesMissing: r.closesMissing } : {}),
     ...(r.offsetCreditLine !== undefined ? { offsetCreditLine: r.offsetCreditLine } : {}),
+    ...(r.exchangedAt !== undefined ? { exchangedAt: r.exchangedAt } : {}),
+    ...(exchangeItems !== undefined ? { exchangeItems } : {}),
   };
+}
+
+/** 교환 대체 품목 줄 목록 — 1개 이상, 수량은 양의 정수(계약 ChannelReturnSettled.exchangeItems 와 같다). 어긋나면 null */
+function readExchangeItems(v: unknown): ReturnExchangeItem[] | null {
+  if (!Array.isArray(v) || v.length === 0) return null;
+  const out: ReturnExchangeItem[] = [];
+  for (const i of v) {
+    if (!isObj(i) || typeof i.sourceItemId !== 'string' || typeof i.itemId !== 'string') return null;
+    if (!isNum(i.quantity) || !Number.isInteger(i.quantity) || i.quantity <= 0) return null;
+    out.push({ sourceItemId: i.sourceItemId, itemId: i.itemId, quantity: i.quantity });
+  }
+  return out;
 }
 
 /** 차감 세 몫(+ PR 6b 의 보류 차감, 선택). 하나라도 어긋나면 null. 선환불 기록의 택배비 예상도 이것으로 읽는다. */

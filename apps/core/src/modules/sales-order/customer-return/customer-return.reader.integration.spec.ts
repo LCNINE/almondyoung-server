@@ -4,11 +4,14 @@ import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
 import { inRollbackTx, makeDb, makeDbService, wireLogistics } from '../../fulfillment/services/__support__';
 import { seedWorld, World } from '../../fulfillment/order-progress/__support__/order-progress.fixtures';
 import { seedComponentSku, seedDeliveredLine } from '../line-quantities/__support__/claim-facts.fixtures';
+import { LineCompositionManager } from '../../product-matching/line-composition/line-composition.manager';
 import { CustomerReturnManager } from './customer-return.manager';
 import { CustomerReturnReader } from './customer-return.reader';
 import { ListCustomerReturnsQueryDto } from './dto/list-customer-returns.dto';
 import { ListReceivingCustomerReturnsQueryDto } from './dto/list-receiving-customer-returns.dto';
 import { CustomerReturnReceivingManager } from './customer-return-receiving.manager';
+import { CustomerExchangeReleaser } from './customer-exchange.releaser';
+import { ExchangeShipmentOpener } from '../../fulfillment/exchange-shipment/exchange-shipment-opener';
 import { newPickupRow } from './customer-return-pickup.types';
 
 /**
@@ -23,7 +26,7 @@ describeIfDb('CustomerReturnReader — 상세 뷰 (K8 PR7)', () => {
   jest.setTimeout(120_000);
   const { sql: client, db } = makeDb(DATABASE_URL as string);
   const dbService = makeDbService(db);
-  const { command, location } = wireLogistics(dbService);
+  const { command, location, shipmentReservations } = wireLogistics(dbService);
   afterAll(async () => {
     await client.end();
   });
@@ -33,13 +36,14 @@ describeIfDb('CustomerReturnReader — 상세 뷰 (K8 PR7)', () => {
   function wire() {
     const publisher = { enqueue: jest.fn().mockResolvedValue(undefined) };
     const reader = new CustomerReturnReader(dbService);
-    const intake = new CustomerReturnManager(dbService, publisher as never);
+    const intake = new CustomerReturnManager(dbService, publisher as never, new LineCompositionManager(dbService));
     const receiving = new CustomerReturnReceivingManager(
       dbService,
       reader,
       command,
       publisher as never,
       publisher as never,
+      new CustomerExchangeReleaser(new ExchangeShipmentOpener(shipmentReservations)),
     );
     return { reader, intake, receiving };
   }

@@ -1533,6 +1533,12 @@ export const salesOrderLines = pgTable(
     // TODO(outbound-v2-contract Task 25): trusted post-cutover channel orders require channelOrderItemId.
     channelOrderItemId: varchar('channel_order_item_id', { length: 255 }),
     channelProductId: varchar('channel_product_id', { length: 255 }),
+    /** 교환 대체 줄이면 그 교환의 반품 줄(K8 PR11). 일반 줄은 null. 반품 줄마다 대체 줄은 하나뿐이다 */
+    // customer_return_lines 가 이 표를 다시 가리킨다 — 반환 타입을 적지 않으면 두 표의 추론이 서로를 기다리다
+    // 검사 순서에 따라 any 로 무너진다(로컬 0, CI 에서만 TS2339). 같은 표의 다른 순환 참조와 같은 꼴
+    exchangeReturnLineId: uuid('exchange_return_line_id').references((): AnyPgColumn => customerReturnLines.id, {
+      onDelete: 'restrict',
+    }),
 
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
@@ -1545,6 +1551,9 @@ export const salesOrderLines = pgTable(
     uqSalesOrderChannelItem: uniqueIndex('uq_sales_order_lines_order_channel_item')
       .on(t.salesOrderId, t.channelOrderItemId)
       .where(sql`${t.channelOrderItemId} IS NOT NULL`),
+    uqExchangeReturnLine: uniqueIndex('uq_sales_order_lines_exchange_return_line')
+      .on(t.exchangeReturnLineId)
+      .where(sql`${t.exchangeReturnLineId} IS NOT NULL`),
     compositionSourceCheck: check(
       'sales_order_lines_composition_source_check',
       sql`${t.compositionSource} IN ('matching', 'operator')`,
@@ -1586,6 +1595,9 @@ export const customerReturnStatusEnum = pgEnum('customer_return_status', [
   'cancelled',
 ]);
 
+/** 반품인지 교환인지(K8 PR11). 교환은 회수 뒤 환불 대신 대체 품목을 다시 보낸다 */
+export const customerReturnKindEnum = pgEnum('customer_return_kind', ['return', 'exchange']);
+
 /** 값은 packages/event-contracts 의 CUSTOMER_RETURN_REASONS 와 같아야 한다(스펙이 지킨다). */
 export const customerReturnReasonEnum = pgEnum('customer_return_reason', [
   'change_of_mind',
@@ -1610,6 +1622,10 @@ export const customerReturns = pgTable(
     channelReturnId: varchar('channel_return_id', { length: 255 }).notNull(),
     channelRequestId: varchar('channel_request_id', { length: 255 }).notNull(),
     status: customerReturnStatusEnum('status').notNull().default('expected'),
+    kind: customerReturnKindEnum('kind').notNull().default('return'),
+    /** 교환 상자를 연 시각·사람(K8 PR11) — 열기 전엔 null. 열린 교환은 취소하지 않는다 */
+    exchangeReleasedAt: timestamp('exchange_released_at', { withTimezone: true }),
+    exchangeReleasedBy: uuid('exchange_released_by'),
     reason: customerReturnReasonEnum('reason').notNull(),
     feeBearer: varchar('fee_bearer', { length: 16 }).notNull(),
     requestedBy: varchar('requested_by', { length: 16 }).notNull(),

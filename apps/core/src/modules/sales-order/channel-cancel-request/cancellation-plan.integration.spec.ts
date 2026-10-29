@@ -1,4 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
+import { BadRequestError } from '@app/shared';
 import { randomUUID } from 'crypto';
 import { eq } from 'drizzle-orm';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
@@ -7,7 +8,7 @@ import { ambientDbService, assembleOutbound } from '../../fulfillment/services/_
 import { outboxPublisherFor } from '../../fulfillment/outbox/__support__/outbox-publisher.factory';
 import { CORE_ORDER_STREAM, FULFILLMENT_STREAM } from '@packages/event-contracts/streams';
 import { SalesOrdersService } from '../services/sales-orders.service';
-import { insertCustomerReturn } from '../line-quantities/__support__/claim-facts.fixtures';
+import { insertCustomerReturn, insertExchange } from '../line-quantities/__support__/claim-facts.fixtures';
 import { markLineShipped, seedChannelOrder } from './__support__/cancel-request.fixtures';
 
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -270,6 +271,52 @@ describeIfDb('SalesOrdersService.planCancellation (DB integration, rollback-only
       expect(plan.lines).toHaveLength(2);
       expect(plan.hasShippedQuantity).toBe(false);
       expect(plan.leavesNothing).toBe(true);
+    });
+  });
+  describe('교환 줄 (K8 PR11 N18)', () => {
+    it('상자 후 전체 — 계획에 교환 줄이 없다(열리지 않은 교환 줄은 FOI 가 없어도 거절하지 않는다)', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const w = wireSalesOrders(tx);
+        const seed = await seedChannelOrder(tx, w, { withFo: true });
+        // 줄 수량 2 중 1 이 나가 배송완료됐고 그 1 을 교환 중이다
+        await markLineShipped(tx, seed.lineIds[0], 1);
+        await insertExchange(tx, { salesOrderId: seed.salesOrderId, sourceLineId: seed.lineIds[0], quantity: 1 });
+
+        const plan = await w.salesOrders.planCancellation(seed.salesOrderId, undefined, tx);
+
+        expect(plan.lines).toEqual([
+          { salesOrderLineId: seed.lineIds[0], quantity: 1 },
+          { salesOrderLineId: seed.lineIds[1], quantity: 1 },
+        ]);
+      });
+    });
+
+    it('상자 전 전체 — 계획에 교환 줄이 없다', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const w = wireSalesOrders(tx);
+        const seed = await seedChannelOrder(tx, w, { withFo: false });
+        await insertExchange(tx, { salesOrderId: seed.salesOrderId, sourceLineId: seed.lineIds[0], quantity: 1 });
+
+        const plan = await w.salesOrders.planCancellation(seed.salesOrderId, undefined, tx);
+
+        expect(plan.lines.map((line) => line.salesOrderLineId).sort()).toEqual([...seed.lineIds].sort());
+      });
+    });
+
+    it.each([true, false])('교환 줄을 지목한 줄 취소 → BadRequestError (withFo=%s)', async (withFo) => {
+      await inRollbackTx(db, async (tx) => {
+        const w = wireSalesOrders(tx);
+        const seed = await seedChannelOrder(tx, w, { withFo });
+        const { exchangeLineId } = await insertExchange(tx, {
+          salesOrderId: seed.salesOrderId,
+          sourceLineId: seed.lineIds[0],
+          quantity: 1,
+        });
+
+        await expect(
+          w.salesOrders.planCancellation(seed.salesOrderId, [{ salesOrderLineId: exchangeLineId, quantity: 1 }], tx),
+        ).rejects.toBeInstanceOf(BadRequestError);
+      });
     });
   });
 });

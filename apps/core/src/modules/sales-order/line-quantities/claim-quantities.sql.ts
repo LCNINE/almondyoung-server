@@ -5,7 +5,8 @@ import { CUSTOMER_RETURN_ACTIVE_STATUSES, CUSTOMER_RETURN_CONSUMED_STATUSES } fr
 /**
  * 청구(반품) 수량의 단 하나의 정의 (K6 PR3a). 청구 기록을 수량으로 읽는 커널 파일은 이것 하나다.
  * 반품 예정 기록(`customer_returns`·`customer_return_lines`, K8 PR5)이 청구의 유일한 원천이다 — 옛 반품·교환 표는
- * K8 PR 10 이 걷었다. 교환은 PR 11(Medusa 교환)이 다시 더한다.
+ * K8 PR 10 이 걷었다. 교환(K8 PR11)도 같은 `customer_returns` 행(`kind 'exchange'`)이라 이미 여기서 센다 — 원래 줄의
+ * claimable 이 반품과 같이 준다. 교환 줄(`exchange_return_line_id`)은 청구 줄이 가리키지 않으니 청구 수량이 없다.
  * 상태 목록은 `claim-statuses.ts` 에서 파라미터로 넣는다 — SQL 에 상태 문자열을 다시 쓰지 않는다.
  * 모든 테이블에 별칭을 붙이고 칼럼을 별칭으로 한정한다(2a 교훈). 합계는 `::int`.
  */

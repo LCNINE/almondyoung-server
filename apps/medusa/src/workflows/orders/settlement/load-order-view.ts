@@ -40,6 +40,7 @@ export async function loadOrderView(container: MedusaContainer, orderId: string)
     },
   );
   if (!o) return null;
+  const exchanged = exchangedQuantities(o.items ?? []);
   // order 모듈의 DTO 는 summary 를 단일 객체로 적지만 실제로는 버전별 배열이 올 수 있어 모양을 넓혀 받는다.
   const rawSummary = (o as unknown as { summary?: SummaryRow | SummaryRow[] | null }).summary;
   const summary = Array.isArray(rawSummary) ? (rawSummary.find((s) => s.version === o.version) ?? rawSummary[0]) : rawSummary;
@@ -53,6 +54,8 @@ export async function loadOrderView(container: MedusaContainer, orderId: string)
     metadata: (o.metadata as Record<string, unknown> | null) ?? null,
     lines: (o.items ?? []).map((i) => ({
       id: i.id,
+      title: i.title,
+      variantId: i.variant_id ?? null,
       quantity: toNumber(i.quantity),
       unitPrice: toNumber(i.unit_price),
       productId: i.product_id ?? null,
@@ -60,6 +63,8 @@ export async function loadOrderView(container: MedusaContainer, orderId: string)
       // items.detail 을 이미 싣는다. 못 읽으면 0 — 하한 검사를 건너뛰고 Medusa 자신의 검증에 맡긴다
       fulfilledQuantity: readFulfilledQuantity(i.detail),
       returnedQuantity: readReturnedQuantity(i.detail),
+      exchangeReplacement: isExchangeReplacementMetadata(i.metadata),
+      exchangedQuantity: exchanged.get(i.id) ?? 0,
       adjustments: (i.adjustments ?? []).map((a) => ({
         amount: toNumber(a.amount),
         code: a.code ?? null,
@@ -108,6 +113,28 @@ export function toShippingMethodView(m: {
     isReturnExchangeOrClaimShipping: !!(m.detail?.return_id || m.detail?.exchange_id || m.detail?.claim_id),
     hasAdjustments: (m.adjustments ?? []).some((a) => !!a && toNumber(a.amount) !== 0),
   };
+}
+
+/** 교환 정산이 넣은 대체 품목 줄의 표지(K8 PR11 N4) — metadata.almondExchange 가 객체면 대체 줄이다. */
+export const EXCHANGE_LINE_METADATA_KEY = 'almondExchange';
+
+export function isExchangeReplacementMetadata(metadata: Record<string, unknown> | null | undefined): boolean {
+  const v = metadata?.[EXCHANGE_LINE_METADATA_KEY];
+  return !!v && typeof v === 'object' && !Array.isArray(v);
+}
+
+/** 원래 품목 id → 그 품목을 대신하는 교환 대체 품목 줄의 수량 합. 수량을 못 읽는 줄은 0 — 판정이 «돌아온» 쪽으로 기운다 */
+function exchangedQuantities(items: Array<{ quantity: unknown; metadata?: Record<string, unknown> | null }>): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const i of items) {
+    const mark: unknown = i.metadata?.[EXCHANGE_LINE_METADATA_KEY];
+    if (!mark || typeof mark !== 'object' || Array.isArray(mark)) continue;
+    const source = 'sourceItemId' in mark ? mark.sourceItemId : undefined;
+    const q = toNumber(i.quantity);
+    if (typeof source !== 'string' || !Number.isFinite(q) || q <= 0) continue;
+    out.set(source, (out.get(source) ?? 0) + q);
+  }
+  return out;
 }
 
 function readFulfilledQuantity(detail: { fulfilled_quantity?: unknown } | null | undefined): number {
