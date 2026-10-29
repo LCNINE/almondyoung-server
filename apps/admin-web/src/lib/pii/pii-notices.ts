@@ -1,7 +1,9 @@
 /**
- * 백엔드가 개인정보를 가렸다고 알린 응답(`X-Pii-*` 헤더)을 화면 위 안내로 모은다. 가린 값이 «없음»이나
- * 진짜 값처럼 보이지 않게, 화면마다 필드를 손대지 않고 셸 한 곳에서 이유를 보인다.
+ * 백엔드가 개인정보를 가렸다고 알린 응답(`X-Pii-*` 헤더) 해석과 [보기] 상태. 화면 위 안내는 응답이 아니라
+ * 권한·화면·가림 모드로 정한다(`pii-screens.ts`) — 캐시로 다시 그린 화면엔 응답이 없기 때문이다.
  */
+
+import type { RevealPhase } from './pii-screens';
 
 export type PiiMaskReason = 'no-permission' | 'reveal-required' | 'unavailable' | 'record-failed';
 
@@ -11,10 +13,6 @@ export interface PiiMeta {
   readonly redactedPaths: readonly string[];
   /** 기본 가림 모드에서 권한자에게만 온다 — [보기] 로 같은 요청을 다시 보내면 원문이 온다. */
   readonly revealable: boolean;
-}
-
-export interface PiiNotice extends PiiMeta {
-  readonly url: string;
 }
 
 const REASONS: readonly PiiMaskReason[] = ['no-permission', 'reveal-required', 'unavailable', 'record-failed'];
@@ -37,48 +35,56 @@ export function parsePiiHeaders(get: (name: string) => string | undefined | null
   };
 }
 
-const notices = new Map<string, PiiNotice>();
-const listeners = new Set<() => void>();
-let snapshot: readonly PiiNotice[] = [];
-const revealQueue = new Set<string>();
+let revealPath: string | null = null;
+let revealPhase: Exclude<RevealPhase, 'idle'> = 'pending';
+const revealListeners = new Set<() => void>();
 
-function publish(): void {
-  snapshot = [...notices.values()];
-  for (const listener of listeners) listener();
+function emitReveal(): void {
+  for (const listener of revealListeners) listener();
 }
 
-/** 응답마다 부른다. 가리지 않은 응답(null)이 오면 그 주소의 안내를 지운다. */
-export function reportPiiResponse(url: string, meta: PiiMeta | null): void {
-  if (meta === null) {
-    if (notices.delete(url)) publish();
-    return;
-  }
-  notices.set(url, { url, ...meta });
-  publish();
+/** [보기] — 이 화면(실제 pathname)에 머무는 동안 모든 요청에 `X-Pii-Reveal` 을 붙인다. 원문 재조회가 끝나기 전은 `pending`. */
+export function startReveal(pathname: string): void {
+  revealPath = pathname;
+  revealPhase = 'pending';
+  emitReveal();
 }
 
-export function clearPiiNotices(): void {
-  notices.clear();
-  revealQueue.clear();
-  publish();
+/** 원문 재조회가 성공했을 때. 그 사이 화면을 떠났거나 다른 화면에서 다시 눌렀으면 바꾸지 않는다. */
+export function markRevealShown(pathname: string): void {
+  if (revealPath !== pathname || revealPhase !== 'pending') return;
+  revealPhase = 'shown';
+  emitReveal();
 }
 
-export function piiNotices(): readonly PiiNotice[] {
-  return snapshot;
+/** 켜져 있었으면 true. */
+export function endReveal(): boolean {
+  if (revealPath === null) return false;
+  revealPath = null;
+  emitReveal();
+  return true;
 }
 
-export function subscribePiiNotices(listener: () => void): () => void {
-  listeners.add(listener);
-  return () => listeners.delete(listener);
+export function isRevealing(pathname: string): boolean {
+  return revealPath !== null && revealPath === pathname;
 }
 
-/** [보기] — 다음 요청 한 번에만 `X-Pii-Reveal` 을 붙인다. */
-export function markReveal(urls: readonly string[]): void {
-  for (const url of urls) revealQueue.add(url);
+export function revealPhaseOf(pathname: string): RevealPhase {
+  return isRevealing(pathname) ? revealPhase : 'idle';
 }
 
-export function consumeReveal(url: string): boolean {
-  return revealQueue.delete(url);
+/** 요청마다 부른다. 재시도 요청이 들고 온 옛 헤더도 꺼진 상태면 지운다. */
+export function applyRevealHeader(
+  headers: { set(name: string, value: string): unknown; delete(name: string): unknown },
+  pathname: string,
+): void {
+  if (isRevealing(pathname)) headers.set('x-pii-reveal', '1');
+  else headers.delete('x-pii-reveal');
+}
+
+export function subscribeReveal(listener: () => void): () => void {
+  revealListeners.add(listener);
+  return () => revealListeners.delete(listener);
 }
 
 const REASON_TEXT: Readonly<Record<PiiMaskReason, string>> = {
@@ -88,10 +94,9 @@ const REASON_TEXT: Readonly<Record<PiiMaskReason, string>> = {
   'record-failed': '열람 기록을 남기지 못해 가렸습니다(잠시 뒤 다시 시도).',
 };
 
-const PRIORITY: readonly PiiMaskReason[] = ['unavailable', 'record-failed', 'reveal-required', 'no-permission'];
-
-export function piiBannerText(current: readonly PiiNotice[]): string | null {
-  if (current.length === 0) return null;
-  const reason = PRIORITY.find((candidate) => current.some((notice) => notice.reason === candidate)) ?? 'no-permission';
-  return `이 화면의 개인정보 일부가 가려져 있습니다 — ${REASON_TEXT[reason]}`;
+/** 일시 장애로 가려진 GET 응답은 데이터가 아니라 오류로 다룬다 — 쓰기는 이미 처리된 뒤라 오류로 바꾸면 중복 처리된다. */
+export function transientPiiError(meta: PiiMeta | null, method: string | undefined): string | null {
+  if (meta?.reason !== 'unavailable' && meta?.reason !== 'record-failed') return null;
+  if ((method ?? 'get').toLowerCase() !== 'get') return null;
+  return REASON_TEXT[meta.reason];
 }

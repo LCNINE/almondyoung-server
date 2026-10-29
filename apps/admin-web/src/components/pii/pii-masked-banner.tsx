@@ -3,40 +3,46 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { usePathname } from 'next/navigation';
 import { useEffect, useSyncExternalStore } from 'react';
-import {
-  clearPiiNotices,
-  markReveal,
-  piiBannerText,
-  piiNotices,
-  subscribePiiNotices,
-} from '@/lib/pii/pii-notices';
+import { usePiiRevealRequired } from '@/components/pii/pii-mode-context';
+import { revealPhaseOf, subscribeReveal } from '@/lib/pii/pii-notices';
+import { leaveRevealedScreen, revealScreen } from '@/lib/pii/pii-reveal-cleanup';
+import { piiNoticeStatus, resolvePiiScreen, standingPiiNotice, type RevealPhase } from '@/lib/pii/pii-screens';
+import { useMyPermissions } from '@/lib/services/users';
 
-const EMPTY: ReturnType<typeof piiNotices> = [];
+const NONE: ReadonlySet<string> = new Set();
+const idleOnServer = (): RevealPhase => 'idle';
 
-/** 이 화면의 응답에서 개인정보가 가려졌으면 이유를 알리고, 기본 가림 모드의 권한자에게는 [보기]를 준다. */
+/** 이 화면이 개인정보를 보이는 화면이면 보는 사람의 권한과 가림 모드에 따라 상시 안내를 띄운다. */
 export function PiiMaskedBanner() {
   const pathname = usePathname();
   const queryClient = useQueryClient();
-  const notices = useSyncExternalStore(subscribePiiNotices, piiNotices, () => EMPTY);
+  const permissionsQuery = useMyPermissions();
+  const revealRequired = usePiiRevealRequired();
+  const reveal = useSyncExternalStore(
+    subscribeReveal,
+    () => revealPhaseOf(pathname),
+    idleOnServer,
+  );
 
-  useEffect(() => {
-    clearPiiNotices();
-  }, [pathname]);
+  // 경로가 바뀌거나 셸 밖 화면으로 나가 언마운트될 때 — 둘 다 cleanup 이 돈다.
+  useEffect(() => () => leaveRevealedScreen(queryClient), [pathname, queryClient]);
 
-  const text = piiBannerText(notices);
-  if (!text) return null;
-  const revealable = notices.filter((notice) => notice.revealable).map((notice) => notice.url);
+  const notice = standingPiiNotice({
+    status: piiNoticeStatus(permissionsQuery),
+    held: permissionsQuery.data?.permissions ?? NONE,
+    screen: resolvePiiScreen(pathname),
+    revealRequired,
+    reveal,
+  });
+  if (!notice) return null;
   return (
     <div role="status" className="flex items-center justify-between gap-3 bg-slate-100 px-5 py-2 text-sm text-slate-800">
-      <span>{text}</span>
-      {revealable.length > 0 && (
+      <span>{notice.text}</span>
+      {notice.showReveal && (
         <button
           type="button"
           className="shrink-0 whitespace-nowrap font-semibold underline"
-          onClick={() => {
-            markReveal(revealable);
-            void queryClient.invalidateQueries();
-          }}
+          onClick={() => void revealScreen(queryClient, pathname)}
         >
           보기
         </button>

@@ -33,6 +33,11 @@ const RULES: readonly RuleEntry[] = [
   { method: 'DELETE', pattern: 'admin/promotions/:id/customers', subjectType: 'medusa_customer', revealable: false },
 ];
 
+/** 조회 경로와 [보기] 가능 여부 — 화면 안내 게이트가 «개인정보를 부르는 화면»을 찾을 때 쓴다. */
+export const MEDUSA_PII_GET_PATTERNS: readonly Pick<MedusaPiiRule, 'pattern' | 'revealable'>[] = RULES.filter(
+  (r) => r.method === 'GET',
+).map((r) => ({ pattern: r.pattern, revealable: r.revealable }));
+
 /** 개인정보 키와 종류. `metadata` 는 옛 공동현관 비밀번호 등 모양이 정해지지 않은 값이 있어 통째로 가린다. */
 const PII_KEYS: Readonly<Record<string, MaskableKind | 'redact'>> = {
   email: 'email',

@@ -1,6 +1,7 @@
 import { PERMISSION_CATALOG } from '@permission-catalog';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
+import { LAYOUT_GUARDED } from './layout-guarded';
 import { canAccess, resolveScreenAccess } from './screen-access';
 
 /**
@@ -25,13 +26,6 @@ const routeOf = (file: string) =>
     .filter((seg) => seg && !/^\(.*\)$/.test(seg))
     .join('/');
 
-/** 하위 페이지가 클라이언트 컴포넌트라 레이아웃이 가드하는 경로. */
-const LAYOUT_GUARDED: Record<string, string> = {
-  '/mobile': 'mobile/layout.tsx',
-  '/customer-window/[id]': 'customer-window/[id]/layout.tsx',
-  '/attendance': 'attendance/layout.tsx',
-  '/company/attendance': '(admin)/company/attendance/layout.tsx',
-};
 /** redirect() 만 하는 페이지 — 도착 화면이 판정한다. */
 const REDIRECT_ONLY = new Set(['/mall/marketing/campaigns', '/statistics']);
 

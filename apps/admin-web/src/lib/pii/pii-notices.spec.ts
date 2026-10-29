@@ -1,12 +1,11 @@
+import { AxiosHeaders } from 'axios';
 import {
-  clearPiiNotices,
-  consumeReveal,
-  markReveal,
+  applyRevealHeader,
+  endReveal,
+  isRevealing,
   parsePiiHeaders,
-  piiBannerText,
-  piiNotices,
-  reportPiiResponse,
-  subscribePiiNotices,
+  startReveal,
+  subscribeReveal,
 } from './pii-notices';
 
 const headers = (values: Record<string, string>) => (name: string) => values[name];
@@ -26,44 +25,58 @@ describe('parsePiiHeaders', () => {
   });
 });
 
-describe('pii notices', () => {
-  beforeEach(() => clearPiiNotices());
+describe('reveal state', () => {
+  beforeEach(() => {
+    endReveal();
+  });
+  afterEach(() => {
+    endReveal();
+  });
 
-  it('keeps one notice per request url and tells subscribers', () => {
+  it('is on for the revealed screen only', () => {
+    startReveal('/order/history/123');
+    expect(isRevealing('/order/history/123')).toBe(true);
+    expect(isRevealing('/order/history/456')).toBe(false);
+    expect(isRevealing('/order/history')).toBe(false);
+  });
+
+  it('stays on across repeated checks and reports whether it was on when ended', () => {
+    startReveal('/a');
+    expect(isRevealing('/a')).toBe(true);
+    expect(isRevealing('/a')).toBe(true);
+    expect(endReveal()).toBe(true);
+    expect(endReveal()).toBe(false);
+    expect(isRevealing('/a')).toBe(false);
+  });
+
+  it('tells subscribers once per start and per end', () => {
     const listener = jest.fn();
-    const unsubscribe = subscribePiiNotices(listener);
-    reportPiiResponse('/api/proxy/core/sales-orders/1', { maskedKinds: ['name'], reason: 'no-permission', redactedPaths: [], revealable: false });
-    reportPiiResponse('/api/proxy/core/sales-orders/1', { maskedKinds: ['name'], reason: 'no-permission', redactedPaths: [], revealable: false });
-    expect(piiNotices()).toHaveLength(1);
-    expect(listener).toHaveBeenCalled();
+    const unsubscribe = subscribeReveal(listener);
+    startReveal('/a');
+    expect(listener).toHaveBeenCalledTimes(1);
+    endReveal();
+    expect(listener).toHaveBeenCalledTimes(2);
+    endReveal();
+    expect(listener).toHaveBeenCalledTimes(2);
     unsubscribe();
+    startReveal('/a');
+    expect(listener).toHaveBeenCalledTimes(2);
   });
 
-  it('forgets a url once it answers unmasked', () => {
-    reportPiiResponse('/a', { maskedKinds: ['name'], reason: 'reveal-required', redactedPaths: [], revealable: true });
-    reportPiiResponse('/a', null);
-    expect(piiNotices()).toEqual([]);
-  });
+  it('sets the header while revealing and strips a stale one afterwards', () => {
+    startReveal('/a');
+    const on = new AxiosHeaders();
+    applyRevealHeader(on, '/a');
+    expect(on.get('x-pii-reveal')).toBe('1');
 
-  it('adds the reveal header to the next request of a marked url only once', () => {
-    markReveal(['/a']);
-    expect(consumeReveal('/a')).toBe(true);
-    expect(consumeReveal('/a')).toBe(false);
-    expect(consumeReveal('/b')).toBe(false);
-  });
-});
+    const retried = new AxiosHeaders({ 'x-pii-reveal': '1' });
+    endReveal();
+    applyRevealHeader(retried, '/a');
+    expect(retried.has('x-pii-reveal')).toBe(false);
 
-describe('piiBannerText', () => {
-  it('says why values are hidden without blurring them into empty values', () => {
-    expect(piiBannerText([{ url: '/a', maskedKinds: ['name'], reason: 'no-permission', redactedPaths: [], revealable: false }])).toBe(
-      '이 화면의 개인정보 일부가 가려져 있습니다 — 개인정보 보기 권한이 없습니다.',
-    );
-    expect(piiBannerText([{ url: '/a', maskedKinds: ['name'], reason: 'unavailable', redactedPaths: [], revealable: false }])).toBe(
-      '이 화면의 개인정보 일부가 가려져 있습니다 — 권한을 확인하지 못했습니다(잠시 뒤 다시 시도).',
-    );
-    expect(piiBannerText([{ url: '/a', maskedKinds: ['name'], reason: 'reveal-required', redactedPaths: [], revealable: true }])).toBe(
-      '이 화면의 개인정보 일부가 가려져 있습니다 — [보기]를 누르면 원문이 열리고 열람 기록이 남습니다.',
-    );
-    expect(piiBannerText([])).toBeNull();
+    startReveal('/a');
+    const moved = new AxiosHeaders({ 'x-pii-reveal': '1' });
+    applyRevealHeader(moved, '/b');
+    expect(moved.has('x-pii-reveal')).toBe(false);
   });
 });
