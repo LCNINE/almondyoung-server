@@ -1,3 +1,10 @@
+jest.mock('../../catalog/core/products/services/product-audit-log', () => ({
+  recordProductAudit: async () => undefined,
+}));
+
+import { NotFoundException } from '@nestjs/common';
+import { sql } from 'drizzle-orm';
+import { ProductVersionsService } from '../../catalog/core/products/services/product-versions.service';
 import { readFileSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 import { PostgreSqlContainer, StartedPostgreSqlContainer } from '@testcontainers/postgresql';
@@ -15,6 +22,8 @@ describe('SKU 3D models PostgreSQL integration', () => {
   let client: postgres.Sql;
   let manager: Sku3dModelsManager;
   let failPublication: boolean;
+  let lifecycle: ProductVersionsService;
+  let afterAssembly: (() => Promise<void>) | undefined;
   const loader = new ProductModel3dLoader();
   const actorId = randomUUID();
   let masterId: string;
@@ -28,13 +37,13 @@ describe('SKU 3D models PostgreSQL integration', () => {
 
     await client.unsafe(`
       CREATE TABLE skus (id uuid PRIMARY KEY, is_deleted boolean NOT NULL DEFAULT false);
-      CREATE TABLE product_masters (id uuid PRIMARY KEY);
-      CREATE TABLE product_master_versions (id uuid PRIMARY KEY, master_id uuid, status text, deleted_at timestamp);
+      CREATE TABLE product_masters (id uuid PRIMARY KEY, deleted_at timestamp);
+      CREATE TABLE product_master_versions (id uuid PRIMARY KEY, master_id uuid, status text, deleted_at timestamp, updated_at timestamp, draft_owner_id uuid);
       CREATE TABLE product_variants (id uuid PRIMARY KEY, display_order integer, status text);
       CREATE TABLE product_master_variants (master_id uuid, version_id uuid, variant_id uuid);
       CREATE TABLE product_matchings (id uuid PRIMARY KEY, variant_id uuid);
       CREATE TABLE product_variant_sku_links (product_matching_id uuid, sku_id uuid);
-      CREATE TABLE test_projection_events (sequence serial, file_id text, origin text);
+      CREATE TABLE test_projection_events (sequence serial, file_id text, origin text, reason text, version_id uuid);
     `);
     await client.unsafe(readFileSync('apps/core/drizzle/20261029005659_add-sku-3d-models.sql', 'utf8'));
 
@@ -49,18 +58,21 @@ describe('SKU 3D models PostgreSQL integration', () => {
       }),
     };
     const assembler = {
-      assembleActiveVersionSnapshot: async (master: string, version: string, tx: any) => ({
-        snapshot: { name: 'Product', model3dFileId: await loader.getFileId(tx, master, version) },
-        categoryIds: [],
-        primaryCategoryId: null,
-      }),
+      assembleActiveVersionSnapshot: async (master: string, version: string, tx: any) => {
+        const snapshot = { name: 'Product', model3dFileId: await loader.getFileId(tx, master, version) };
+        const pause = afterAssembly;
+        afterAssembly = undefined;
+        await pause?.();
+
+        return { snapshot, categoryIds: [], primaryCategoryId: null };
+      },
     };
     const publisher = {
       enqueue: async (event: any, tx: any) => {
-        const { sql } = await import('drizzle-orm');
         await tx.execute(sql`
-          INSERT INTO test_projection_events (file_id, origin)
-          VALUES (${event.payload.snapshot.model3dFileId ?? null}, ${event.payload.origin ?? null})
+          INSERT INTO test_projection_events (file_id, origin, reason, version_id)
+          VALUES (${event.payload.snapshot?.model3dFileId ?? null}, ${event.payload.origin ?? null},
+            ${event.payload.changeReason}, ${event.payload.versionId})
         `);
 
         if (failPublication) {
@@ -69,6 +81,47 @@ describe('SKU 3D models PostgreSQL integration', () => {
       },
     };
     manager = new Sku3dModelsManager(dbService as any, files as any, loader, assembler as any, publisher as any);
+    lifecycle = new ProductVersionsService(
+      dbService as any,
+      publisher as any,
+      { validateCalculatedPrices: async () => undefined } as any,
+      {} as any,
+      assembler as any,
+      { cachePricesForVersion: async () => undefined } as any,
+      {} as any,
+      { recalculateAndPublishForVariants: async () => undefined } as any,
+      {} as any,
+    );
+    const readVersion = async (tx: any, condition: ReturnType<typeof sql>) => {
+      const [version] = await tx.execute(sql`
+        SELECT id, master_id AS "masterId", status FROM product_master_versions WHERE ${condition}
+      `);
+
+      if (!version) {
+        throw new NotFoundException('No active version');
+      }
+
+      return { ...version, name: 'Product', version: 1, productCode: 'existing-code', fulfillmentKind: 'physical' };
+    };
+    jest.spyOn(lifecycle, 'getVersionById').mockImplementation((id, tx) => readVersion(tx, sql`id = ${id}`));
+    jest
+      .spyOn(lifecycle, 'getActiveVersion')
+      .mockImplementation((id, tx) => readVersion(tx, sql`master_id = ${id} AND status = 'active'`));
+
+    for (const method of [
+      '_validateVariantCodeUniqueness',
+      'validateProductCodeUniqueness',
+      '_reconcileMatchingsAfterPublish',
+      '_reconcileAssetLinksAfterPublish',
+      '_reconcileChannelListingsAfterPublish',
+      '_validateDigitalAssetLinks',
+      '_publishVariantChangeEvents',
+    ]) {
+      jest.spyOn(lifecycle as any, method).mockResolvedValue(undefined);
+    }
+
+    jest.spyOn(lifecycle as any, '_diffAgainstPreviousActive').mockResolvedValue({});
+    jest.spyOn(lifecycle, 'getVersionVariants').mockResolvedValue([]);
   });
 
   afterAll(async () => {
@@ -78,6 +131,7 @@ describe('SKU 3D models PostgreSQL integration', () => {
 
   beforeEach(async () => {
     failPublication = false;
+    afterAssembly = undefined;
     await client.unsafe(`
       TRUNCATE sku_3d_models, skus, product_masters, product_master_versions, product_variants,
         product_master_variants, product_matchings, product_variant_sku_links, test_projection_events CASCADE;
@@ -86,8 +140,8 @@ describe('SKU 3D models PostgreSQL integration', () => {
     versionId = randomUUID();
     firstSkuId = randomUUID();
     secondSkuId = randomUUID();
-    await client`INSERT INTO product_masters VALUES (${masterId})`;
-    await client`INSERT INTO product_master_versions VALUES (${versionId}, ${masterId}, 'active', null)`;
+    await client`INSERT INTO product_masters (id) VALUES (${masterId})`;
+    await client`INSERT INTO product_master_versions (id, master_id, status) VALUES (${versionId}, ${masterId}, 'active')`;
 
     for (const [order, skuId] of [firstSkuId, secondSkuId].entries()) {
       const variantId = randomUUID();
@@ -180,5 +234,125 @@ describe('SKU 3D models PostgreSQL integration', () => {
 
     const events = await client`SELECT origin FROM test_projection_events`;
     expect(events).toEqual([{ origin: 'bulk_import' }]);
+  });
+  function pauseAfterSnapshot() {
+    let entered!: () => void;
+    let release!: () => void;
+    const ready = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const paused = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    afterAssembly = async () => {
+      entered();
+      await paused;
+    };
+
+    return { ready, release };
+  }
+
+  async function waitUntilBlockedOrFinished(operation: Promise<unknown>) {
+    let finished = false;
+    operation.then(
+      () => {
+        finished = true;
+      },
+      () => {
+        finished = true;
+      },
+    );
+
+    for (let attempt = 0; attempt < 200; attempt += 1) {
+      const [locks] = await client`
+        SELECT count(*)::int AS count FROM pg_stat_activity
+        WHERE pid <> pg_backend_pid() AND wait_event_type = 'Lock' AND query LIKE '%product_masters%'
+      `;
+
+      if (finished || locks.count > 0) {
+        return;
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+
+    throw new Error('Concurrent lifecycle operation neither blocked nor completed');
+  }
+
+  it('cannot re-expose a product when unpublish overlaps an assembled model refresh', async () => {
+    const row = await manager.register(firstSkuId, { status: 'needs_revision', glbFileId: randomUUID() }, actorId);
+    const pause = pauseAfterSnapshot();
+    const review = manager.review(row.id, { status: 'approved' }, actorId);
+    await pause.ready;
+
+    const unpublish = lifecycle.unpublishMaster(masterId, actorId);
+
+    try {
+      await waitUntilBlockedOrFinished(unpublish);
+    } finally {
+      pause.release();
+    }
+
+    await Promise.all([review, unpublish]);
+
+    const events = await client`SELECT reason FROM test_projection_events ORDER BY sequence`;
+    expect(events.at(-1)?.reason).toBe('unpublished');
+    const [version] = await client`SELECT status FROM product_master_versions WHERE id = ${versionId}`;
+    expect(version.status).toBe('inactive');
+  });
+
+  it('refreshes a concurrent first publication after the pending model approval commits', async () => {
+    await client`UPDATE product_master_versions SET status = 'draft' WHERE id = ${versionId}`;
+    const file = randomUUID();
+    const row = await manager.register(firstSkuId, { status: 'needs_revision', glbFileId: file }, actorId);
+    const pause = pauseAfterSnapshot();
+    const publish = lifecycle.publishVersion(versionId, actorId);
+    await pause.ready;
+
+    const review = manager.review(row.id, { status: 'approved' }, actorId);
+
+    try {
+      await waitUntilBlockedOrFinished(review);
+    } finally {
+      pause.release();
+    }
+
+    await Promise.all([publish, review]);
+
+    const events = await client`SELECT file_id, version_id FROM test_projection_events ORDER BY sequence`;
+    expect(events.at(-1)).toMatchObject({ file_id: file, version_id: versionId });
+  });
+  it('rechecks the active target after waiting for a replacement publication', async () => {
+    const replacementId = randomUUID();
+    await client`INSERT INTO product_master_versions (id, master_id, status)
+      VALUES (${replacementId}, ${masterId}, 'draft')`;
+    await client`INSERT INTO product_master_variants (master_id, version_id, variant_id)
+      SELECT master_id, ${replacementId}, variant_id FROM product_master_variants WHERE version_id = ${versionId}`;
+    const file = randomUUID();
+    const row = await manager.register(firstSkuId, { status: 'needs_revision', glbFileId: file }, actorId);
+    const pause = pauseAfterSnapshot();
+    const publish = lifecycle.publishVersion(replacementId, actorId);
+    await pause.ready;
+
+    const review = manager.review(row.id, { status: 'approved' }, actorId);
+
+    try {
+      await waitUntilBlockedOrFinished(review);
+    } finally {
+      pause.release();
+    }
+
+    await Promise.all([publish, review]);
+
+    const events = await client`SELECT file_id, version_id FROM test_projection_events ORDER BY sequence`;
+    expect(events.at(-1)).toMatchObject({ file_id: file, version_id: replacementId });
+  });
+
+  it('does not refresh a soft-deleted master even when its version stays active', async () => {
+    await client`UPDATE product_masters SET deleted_at = now() WHERE id = ${masterId}`;
+
+    await manager.register(firstSkuId, { status: 'approved', glbFileId: randomUUID() }, actorId);
+
+    expect(await client`SELECT * FROM test_projection_events`).toHaveLength(0);
   });
 });

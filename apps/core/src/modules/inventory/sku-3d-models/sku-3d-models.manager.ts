@@ -8,6 +8,7 @@ import { productMasters, productMasterVariants, productMasterVersions } from '..
 import { DbTransaction } from '../../catalog/catalog.types';
 import { ProjectionSnapshotAssembler } from '../../catalog/core/products/assemblers/projection-snapshot.assembler';
 import { ProductModel3dLoader } from '../../catalog/core/products/loaders/product-model3d.loader';
+import { lockProductMasters } from '../../catalog/core/products/services/product-master-lock';
 import {
   DbTx,
   productMatchings,
@@ -158,33 +159,35 @@ export class Sku3dModelsManager {
   }
 
   private async lockTargets(tx: DbTx, skuIds: string[]): Promise<Target[]> {
-    const targets = await tx
+    // 첫 공개 중인 상품도 기다리도록 활성 여부와 무관하게 연결된 모든 상품을 먼저 찾는다.
+    const masters = await tx
+      .selectDistinct({ masterId: productMasterVariants.masterId })
+      .from(productVariantSkuLinks)
+      .innerJoin(productMatchings, eq(productMatchings.id, productVariantSkuLinks.productMatchingId))
+      .innerJoin(productMasterVariants, eq(productMasterVariants.variantId, productMatchings.variantId))
+      .where(inArray(productVariantSkuLinks.skuId, skuIds));
+
+    await lockProductMasters(
+      tx,
+      masters.map((master) => master.masterId),
+    );
+
+    // 잠금 대기 사이 공개·판매중단된 버전이 있을 수 있으므로 현재 대상을 다시 읽는다.
+    return tx
       .selectDistinct({ masterId: productMasterVariants.masterId, versionId: productMasterVariants.versionId })
       .from(productVariantSkuLinks)
       .innerJoin(productMatchings, eq(productMatchings.id, productVariantSkuLinks.productMatchingId))
       .innerJoin(productMasterVariants, eq(productMasterVariants.variantId, productMatchings.variantId))
       .innerJoin(productMasterVersions, eq(productMasterVersions.id, productMasterVariants.versionId))
+      .innerJoin(productMasters, eq(productMasters.id, productMasterVariants.masterId))
       .where(
         and(
           inArray(productVariantSkuLinks.skuId, skuIds),
           eq(productMasterVersions.status, 'active'),
           isNull(productMasterVersions.deletedAt),
+          isNull(productMasters.deletedAt),
         ),
       );
-
-    if (targets.length === 0) {
-      return [];
-    }
-
-    const masterIds = [...new Set(targets.map((target) => target.masterId))].sort();
-    await tx
-      .select({ id: productMasters.id })
-      .from(productMasters)
-      .where(inArray(productMasters.id, masterIds))
-      .orderBy(asc(productMasters.id))
-      .for('update');
-
-    return targets;
   }
 
   private async selections(tx: DbTx, targets: Target[]) {

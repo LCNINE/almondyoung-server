@@ -1,3 +1,5 @@
+jest.mock('./product-master-lock', () => ({ lockProductMasters: jest.fn().mockResolvedValue(undefined) }));
+
 jest.mock(
   '@packages/event-contracts',
   () => ({
@@ -12,6 +14,7 @@ jest.mock('./product-audit-log', () => ({
 
 import { ProductVersionsService } from './product-versions.service';
 import { recordProductAudit } from './product-audit-log';
+import { lockProductMasters } from './product-master-lock';
 import {
   planChannelListingReconciliation,
   type VariantOptionCombo,
@@ -78,6 +81,22 @@ describe('ProductVersionsService Medusa projection outbox events', () => {
       purchaseConstraints,
     };
   }
+
+  it('rechecks the target version after the shared master lock before lifecycle writes', async () => {
+    const { service } = makeService();
+    const version = { id: 'version', masterId: 'master', status: 'draft' };
+    const read = jest
+      .spyOn(service, 'getVersionById')
+      .mockResolvedValueOnce(version as any)
+      .mockResolvedValueOnce({ ...version, status: 'active' } as any);
+    const tx = { update: jest.fn() } as any;
+
+    await expect(service.publishVersion('version', 'user', tx)).rejects.toThrow('Only draft or inactive');
+
+    expect(lockProductMasters).toHaveBeenCalledWith(tx, ['master']);
+    expect(read).toHaveBeenCalledTimes(2);
+    expect(tx.update).not.toHaveBeenCalled();
+  });
 
   it('enqueues ProductMasterActiveVersionChanged through the transactional outbox using the provided tx', async () => {
     const { service, productPublisher, projectionSnapshotAssembler } = makeService();
@@ -448,10 +467,9 @@ describe('ProductVersionsService Medusa projection outbox events', () => {
     };
 
     (service as any).getActiveVersion = jest.fn().mockResolvedValue(previousActiveVersion);
-    (service as any).getVersionById = jest
-      .fn()
-      .mockResolvedValueOnce(draftVersion)
-      .mockResolvedValueOnce(inactiveVersion);
+    (service as any).getVersionById = jest.fn(async (id: string) =>
+      id === draftVersion.id ? draftVersion : inactiveVersion,
+    );
 
     await service.publishVersion('version-draft', 'user-1', tx as any);
     await service.publishVersion('version-inactive', 'user-1', tx as any);

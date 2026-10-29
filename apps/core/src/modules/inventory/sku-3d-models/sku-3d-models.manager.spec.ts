@@ -79,7 +79,7 @@ function fixture(options: { before?: string; after?: string; metadata?: object; 
   const targets = [{ masterId: 'master', versionId: 'version' }];
 
   function reviewReads() {
-    reads.push([existing], [{ id: 'sku', isDeleted: false }], targets, [{ id: 'master' }], [existing]);
+    reads.push([existing], [{ id: 'sku', isDeleted: false }], targets, [{ id: 'master' }], targets, [existing]);
   }
 
   return {
