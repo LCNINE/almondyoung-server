@@ -46,18 +46,10 @@ describeIfSeedDb('dev_core 시드', () => {
     await client?.end();
   });
 
-  // 권한은 user-service 의 iam 표가 원본이다. 시드는 옛 스코프 표를 채우지 않는다(표 자체는 마이그레이션이 만든다).
-  it('옛 스코프 표는 비어 있다', async () => {
-    // 표가 이미 지워졌으면(없으면) 통과 — 표 존재에 기대지 않는다.
-    const present = await db.execute<{ scopes: string | null; mappings: string | null }>(sql`
-      SELECT to_regclass('auth.scopes')::text AS scopes, to_regclass('auth.role_scope_mapping')::text AS mappings
-    `);
-    const counts: number[] = [];
-    if (present[0].scopes) counts.push((await db.execute<{ n: number }>(sql`SELECT count(*)::int AS n FROM auth.scopes`))[0].n);
-    if (present[0].mappings) {
-      counts.push((await db.execute<{ n: number }>(sql`SELECT count(*)::int AS n FROM auth.role_scope_mapping`))[0].n);
-    }
-    expect(counts.every((n) => n === 0)).toBe(true);
+  // 권한은 user-service 의 iam 표가 원본이다. 옛 auth 스키마는 마이그레이션이 지웠다.
+  it('옛 auth 스키마가 없다', async () => {
+    const rows = await db.execute<{ n: number }>(sql`SELECT count(*)::int AS n FROM pg_namespace WHERE nspname = 'auth'`);
+    expect(rows[0].n).toBe(0);
   });
 
   it('마스터 데이터가 결정론적으로 들어간다', async () => {

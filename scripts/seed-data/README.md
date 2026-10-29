@@ -115,14 +115,11 @@ ts-node index.ts
 ### User Service
 
 - **2 Roles**: admin, membership
-- **12 Scopes**: master, user:*, admin:* (based on `packages/auth-constants/scopes.ts`)
 - **1 Admin User**:
   - Login ID: `admin`
   - Email: `admin@almondyoung.com`
   - Password: From `ADMIN_INITIAL_PASSWORD` env var
-- **Role-Scope Mappings**:
-  - admin role: All 12 scopes
-  - membership role: user:read, user:modify only
+- **Permissions**: role↔permission grants come from the permission catalog on boot (not from this seed)
 
 ### Membership
 

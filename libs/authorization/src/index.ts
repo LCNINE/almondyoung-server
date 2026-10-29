@@ -9,7 +9,6 @@ export * from './decorators/user.decorator';
 export * from './decorators/optional-auth.decorator';
 export * from './decorators/internal-only.decorator';
 export * from './guards/optional-auth.guard';
-export * from './database/auth.schema';
 export * from './database/auth.types';
 export * from './constants';
 export * from './permissions';
