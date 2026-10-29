@@ -105,6 +105,18 @@ describe('planReturnFees', () => {
     expect(plan).toEqual({ feeNotAdjusted: false, deduction: zero, total: 0, shippingRefund: 0, groupFees: {} });
   });
 
+  it('조정 불가여도 판매자 반품이 비운 그룹이 있으면 다른 그룹이 남아도 CS 에 넘긴다', () => {
+    const plan = planReturnFees({
+      ...base,
+      feeBearer: 'seller',
+      methods: [{ ...m('f', flat, 2500), hasAdjustments: true }],
+      lines: [l('a', 'sp_flat', 4990, 0, 1), l('b', 'sp_other', 4990, 1, 0)],
+    });
+
+    expect(plan.feeNotAdjusted).toBe(true);
+    expect(plan.shippingRefund).toBe(0);
+  });
+
   it('두 그룹 중 이번에 전량 반품한 그룹만 환불한다', () => {
     const plan = planReturnFees({
       ...base,

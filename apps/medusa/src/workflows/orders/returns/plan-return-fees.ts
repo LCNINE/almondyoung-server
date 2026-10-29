@@ -57,9 +57,13 @@ export function planReturnFees(input: {
   });
   if (!shipping.adjustable) {
     if (input.feeBearer === 'customer') return none(true);
-    // 판매자 부담은 돌려줄 배송비가 생길 때만 CS 몫이다. 그룹을 못 맞췄으니 주문 전체가 돌아왔는지로 본다
-    const shipLines = input.lines.filter((l) => l.requiresShipping);
-    return none(shipLines.some((l) => l.returnedNow > 0) && shipLines.every((l) => l.newQty === 0));
+    // 판매자 부담은 돌려줄 배송비가 생길 때만 CS 몫이다 — 상품의 배송 프로필로 묶어 이번에 비운 묶음이 있는지 본다
+    const profiles = new Set(input.lines.filter((l) => l.requiresShipping).map((l) => l.productShippingProfileId));
+    const emptied = [...profiles].some((profileId) => {
+      const lines = input.lines.filter((l) => l.requiresShipping && l.productShippingProfileId === profileId);
+      return lines.some((l) => l.returnedNow > 0) && lines.every((l) => l.newQty === 0);
+    });
+    return none(emptied);
   }
 
   if (input.feeBearer === 'seller') {
