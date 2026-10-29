@@ -1,6 +1,9 @@
+import { PERMISSION_CATALOG, type Permission } from '@app/authorization';
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { IsEnum, IsIn, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
+
+const PERMISSION_KEYS: readonly string[] = PERMISSION_CATALOG.map((definition) => definition.key);
 
 export class GetUsersQueryDto {
   @ApiPropertyOptional({
@@ -41,6 +44,13 @@ export class GetUsersQueryDto {
   @IsOptional()
   @IsIn(['staff'])
   audience?: 'staff';
+
+  @ApiPropertyOptional({
+    description: '권한 키. 지정하면 각 행에 그 권한을 지금 가진 역할이 있는지(holdsPermission)를 담는다',
+  })
+  @IsOptional()
+  @IsIn(PERMISSION_KEYS)
+  holding?: Permission;
 
   @ApiPropertyOptional({
     description: '정렬 필드',

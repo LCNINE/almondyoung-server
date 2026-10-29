@@ -1,4 +1,4 @@
-import { JwtPayload, RequireScopes, StoreRoute } from '@app/authorization';
+import { JwtPayload, StoreRoute } from '@app/authorization';
 import { CurrentUser } from '@app/shared/decorators/current-user.decorator';
 import {
   BadRequestException,
@@ -61,7 +61,6 @@ export class AccountLinkingController {
   @StoreRoute()
   @Get('link/kakao')
   @UseGuards(AuthGuard('jwt'))
-  @RequireScopes('user:modify')
   async startKakaoLink(
     @CurrentUser() user: JwtPayload,
     @Query() query: StartLinkingDto,
@@ -116,7 +115,6 @@ export class AccountLinkingController {
   @StoreRoute()
   @Get('link/naver')
   @UseGuards(AuthGuard('jwt'))
-  @RequireScopes('user:modify')
   async startNaverLink(
     @CurrentUser() user: JwtPayload,
     @Query() query: StartLinkingDto,
@@ -175,7 +173,6 @@ export class AccountLinkingController {
   @StoreRoute()
   @Get('identities')
   @UseGuards(AuthGuard('jwt'))
-  @RequireScopes('user:read')
   async getLinkedIdentities(@CurrentUser() user: JwtPayload): Promise<LinkedIdentitiesResponseDto> {
     try {
       return await this.accountLinkingService.getLinkedIdentities(user.id);
@@ -200,7 +197,6 @@ export class AccountLinkingController {
   @StoreRoute()
   @Delete('identities/:provider')
   @UseGuards(AuthGuard('jwt'))
-  @RequireScopes('user:modify')
   async unlinkIdentity(
     @CurrentUser() user: JwtPayload,
     @Param('provider') provider: string,

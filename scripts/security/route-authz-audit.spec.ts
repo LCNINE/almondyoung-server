@@ -28,7 +28,6 @@ interface AuditRow {
   file: string;
   line: number;
   isPublic: boolean;
-  inertScope: boolean;
   authz: string | null;
   classifications: string[];
 }
@@ -53,16 +52,6 @@ describe('라우트 인가 감사', () => {
     expect(offenders).toEqual([]);
   });
 
-  // `@RequireScopes` 는 메타데이터일 뿐이라 `ScopeGuard` 가 안 붙으면 아무것도 막지 못한다.
-  // 감사 도구의 [A] 항목과 같은 검사 — 전 앱 기준으로 0 이어야 한다.
-  it('스코프 메타데이터가 무력화된 라우트가 없다', () => {
-    const inert = runAudit()
-      .filter((r) => r.inertScope)
-      .map((r) => `${r.app} ${r.verb} ${r.route} (${r.file}:${r.line})`);
-
-    expect(inert).toEqual([]);
-  });
-
   // core 는 옛 인가 가드 없이 전역 PermissionGuard 하나가 결정한다 — 분류 없는 라우트는 403 이고,
   // 남은 가드(내부 키)는 열린 라우트 위에만 있다.
   it('core 의 모든 라우트가 분류돼 있고 옛 가드는 열린 라우트 위에만 남는다', () => {
@@ -78,17 +67,13 @@ describe('라우트 인가 감사', () => {
     expect(guardedPermission).toEqual([]);
   });
 
-  // user-service 의 전역 ScopeGuard 는 고객 셀프서비스(@StoreRoute) 라우트의 스코프만 지킨다 — 권한 라우트는
-  // 전역 PermissionGuard 가 결정하고, 남은 가드(내부 키)는 열린 라우트 위에만 있다.
-  it('user-service 의 옛 표식·가드는 권한 라우트가 아닌 곳에만 남는다', () => {
-    const rows = runAudit('user-service');
-    const scoped = rows.filter((r) => r.authz === 'scopes');
-    const guardedPermission = rows
+  // user-service 도 권한 라우트는 전역 PermissionGuard 가 결정하고, 고객 셀프서비스(@StoreRoute)는 인증만
+  // 요구한다. 남은 가드(내부 키)는 열린 라우트 위에만 있다.
+  it('user-service 의 옛 가드는 권한 라우트가 아닌 곳에만 남는다', () => {
+    const guardedPermission = runAudit('user-service')
       .filter((r) => r.classifications.includes('permission') && r.authz !== null)
       .map((r) => `${r.verb} ${r.route} ${r.authz} (${r.file}:${r.line})`);
 
-    expect(scoped.filter((r) => !r.classifications.includes('store')).map((r) => `${r.verb} ${r.route}`)).toEqual([]);
-    expect(scoped).toHaveLength(20);
     expect(guardedPermission).toEqual([]);
   });
 
@@ -113,11 +98,9 @@ describe('라우트 인가 감사', () => {
       .filter((r) => r.classifications.includes('permission') && r.authz !== null)
       .filter((r) => !(r.app === 'wallet' && r.authz === 'WalletAdminAuth'))
       .map((r) => `${r.app} ${r.verb} ${r.route} ${r.authz} (${r.file}:${r.line})`);
-    const scoped = rows.filter((r) => r.authz === 'scopes').map((r) => `${r.app} ${r.verb} ${r.route}`);
 
     expect(unclassified).toEqual([]);
     expect(guardedPermission).toEqual([]);
-    expect(scoped).toEqual([]);
   });
 });
 
@@ -127,7 +110,7 @@ describe('라우트 인가 감사', () => {
  * `/events/trace/*` 무인증 노출 3건을 5개 앱에서 놓친 이유가 이것이다 (#705).
  *
  * 근본 원인은 **공용 라이브러리가 인증 정책을 정하고 있는 것** 자체다. 앱마다 전역 가드가 달라
- * (PermissionGuard 미분류 차단 / ScopeGuard 무표시통과 / WalletAuthGuard API키요구) lib 이 고른
+ * (PermissionGuard 미분류 차단 / JwtAuthGuard 인증만 / WalletAuthGuard API키요구) lib 이 고른
  * 표기 하나가 세 갈래를 동시에 만족시킬 수 없다. 그래서 규칙은 "libs 에 컨트롤러를 두지 않는다"다.
  *
  * 예외를 허용해야 한다면 `LIBS_CONTROLLERS_ALLOWED` 에 **이유와 함께** 추가한다. 그 추가 자체가

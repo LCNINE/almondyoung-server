@@ -15,7 +15,6 @@ import {
   serial,
 } from 'drizzle-orm/pg-core';
 import { relations, sql } from 'drizzle-orm';
-import { authorizationSchema } from '@app/authorization';
 
 // ... 나머지 테이블에 대한 relations도 유사하게 정의할 수 있습니다.
 export const subscriptionStatusEnum = pgEnum('subscription_status', [
@@ -776,9 +775,6 @@ export const membershipSchema = {
   billingEventsRelations,
   membershipCycleBenefitsRelations,
   membershipDiscountEventsRelations,
-
-  // Auth Schema (from @app/authorization)
-  ...authorizationSchema,
 } as const;
 
 export type MembershipSchema = typeof membershipSchema;

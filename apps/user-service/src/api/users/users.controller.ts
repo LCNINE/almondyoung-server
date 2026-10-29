@@ -1,4 +1,4 @@
-import { RequireScopes, JwtPayload, RequirePermission, StoreRoute, PiiResponse } from '@app/authorization';
+import { JwtPayload, RequirePermission, StoreRoute, PiiResponse } from '@app/authorization';
 import {
   BadRequestException,
   Body,
@@ -128,7 +128,7 @@ export class UsersController {
     return { available };
   }
 
-  @ApiOperation({ summary: '사용자 권한 정보 조회' })
+  @ApiOperation({ summary: '사용자 권한 정보 조회', deprecated: true })
   @ApiResponse({
     status: 200,
     description: '사용자 권한 정보 조회 성공',
@@ -137,7 +137,6 @@ export class UsersController {
   @StoreRoute()
   @Get('roles')
   @HttpCode(HttpStatus.OK)
-  @RequireScopes('user:read', 'master', 'admin:users:read')
   async getUserRoles(@CurrentUser() user: JwtPayload) {
     return this.usersService.getUserRoles(user.id);
   }
@@ -172,7 +171,6 @@ export class UsersController {
   @ApiResponse({ status: 200, description: '프로필 수정 성공' })
   @StoreRoute()
   @Patch('me')
-  @RequireScopes('user:modify', 'master')
   @HttpCode(HttpStatus.OK)
   async updateMyProfile(@CurrentUser() user: JwtPayload, @Body() updateUserDto: UpdateUserDto) {
     await this.usersService.updateMyProfile(user.id, updateUserDto);

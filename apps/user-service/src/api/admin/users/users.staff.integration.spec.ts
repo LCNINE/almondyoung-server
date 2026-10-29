@@ -44,7 +44,7 @@ describeIfDb('admin user list — staff filter against a real database', () => {
 
   beforeAll(async () => {
     dbService = new DbService({ connectionString: DATABASE_URL ?? '' }, userServiceSchema);
-    service = new UsersService(dbService);
+    service = new UsersService(dbService, { rolesHolding: () => [] } as never);
     await cleanup();
     await makeUser('a', 'intern', null);
     await makeUser('b', 'admin', new Date(Date.now() + DAY));

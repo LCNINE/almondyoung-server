@@ -3,15 +3,11 @@ import { join } from 'path';
 import {
   UserServiceSeedStep,
   USER_SERVICE_REFERENCE_ROLES as ORCHESTRATED_ROLES,
-  USER_SERVICE_REFERENCE_ROLE_SCOPE_MAP as ORCHESTRATED_ROLE_SCOPE_MAP,
   STOREFRONT_APP_CLIENT_SEED as ORCHESTRATED_APP_CLIENT,
   STOREFRONT_APP_LOGIN_REDIRECT as ORCHESTRATED_APP_LOGIN_REDIRECT,
   STOREFRONT_APP_WEBVIEW_REDIRECT as ORCHESTRATED_APP_WEBVIEW_REDIRECT,
 } from './user-service.seed-step';
-import {
-  USER_SERVICE_REFERENCE_ROLES as LEGACY_ROLES,
-  USER_SERVICE_REFERENCE_ROLE_SCOPE_MAP as LEGACY_ROLE_SCOPE_MAP,
-} from '../../seed-data/seeders/03-user-service.seeder';
+import { USER_SERVICE_REFERENCE_ROLES as LEGACY_ROLES } from '../../seed-data/seeders/03-user-service.seeder';
 import {
   STOREFRONT_APP_CLIENT_SEED as LEGACY_APP_CLIENT,
   STOREFRONT_APP_LOGIN_REDIRECT as LEGACY_APP_LOGIN_REDIRECT,
@@ -35,12 +31,8 @@ describe('storefront app OAuth client seed', () => {
   // 앱과 시드가 어긋나면 로그인이 invalid redirect_uri 로 죽는다. 커스텀 스킴은
   // exact match 만 허용되므로 오타 한 글자도 통과하지 못한다.
   it('matches the redirect URIs hardcoded in the app source', () => {
-    expect(ORCHESTRATED_APP_LOGIN_REDIRECT).toBe(
-      readAppConstant('auth/pkce-login.ts', 'APP_LOGIN_REDIRECT'),
-    );
-    expect(ORCHESTRATED_APP_WEBVIEW_REDIRECT).toBe(
-      readAppConstant('login/callback.ts', 'WEBVIEW_LOGIN_REDIRECT'),
-    );
+    expect(ORCHESTRATED_APP_LOGIN_REDIRECT).toBe(readAppConstant('auth/pkce-login.ts', 'APP_LOGIN_REDIRECT'));
+    expect(ORCHESTRATED_APP_WEBVIEW_REDIRECT).toBe(readAppConstant('login/callback.ts', 'WEBVIEW_LOGIN_REDIRECT'));
   });
 
   it('keeps both idempotent reference seed paths in sync', () => {
@@ -127,13 +119,6 @@ describe('user-service logistics reference roles', () => {
     expect(ORCHESTRATED_UUIDS.ROLE_LOGISTICS_MANAGER).toBe(LEGACY_UUIDS.ROLE_LOGISTICS_MANAGER);
     expect(new Set(ORCHESTRATED_ROLES.map((role) => role.roleId)).size).toBe(ORCHESTRATED_ROLES.length);
     expect(new Set(LEGACY_ROLES.map((role) => role.roleId)).size).toBe(LEGACY_ROLES.length);
-  });
-
-  it('does not seed role-scope or user assignments for logistics roles', () => {
-    expect(ORCHESTRATED_ROLE_SCOPE_MAP).not.toHaveProperty('logistics_worker');
-    expect(ORCHESTRATED_ROLE_SCOPE_MAP).not.toHaveProperty('logistics_manager');
-    expect(LEGACY_ROLE_SCOPE_MAP).not.toHaveProperty('logistics_worker');
-    expect(LEGACY_ROLE_SCOPE_MAP).not.toHaveProperty('logistics_manager');
   });
 
   it('runs the reference seed path twice with conflict-safe role inserts and no logistics user assignment', async () => {
@@ -230,7 +215,7 @@ describe('user-service role seed check', () => {
       table === 'roles' && column === 'name' ? new Set(values) : new Set<string>(),
     );
     const client = Object.assign(jest.fn().mockResolvedValue([]), {
-      unsafe: jest.fn().mockResolvedValue([{ count: 0 }]),
+      unsafe: jest.fn().mockResolvedValue([]),
     });
     Object.assign(step as object, {
       client,
@@ -249,5 +234,55 @@ describe('user-service role seed check', () => {
       'name',
     );
     expect(JSON.stringify(result)).not.toMatch(/intern/);
+  });
+});
+
+describe('user-service seed step touches no legacy scope tables', () => {
+  const LEGACY = /auth\.scopes|auth\.role_scope_mapping|role_scope_mapping/i;
+  const logger = { step: jest.fn(), success: jest.fn(), warn: jest.fn(), error: jest.fn() };
+
+  it('apply() sends no statement that mentions them', async () => {
+    const execute = jest.fn().mockResolvedValue(undefined);
+    const step: UserServiceSeedStep = Object.create(UserServiceSeedStep.prototype);
+    Object.assign(step, { db: { execute }, logger, adminPassword: 'seed-test-password', oauthClients: [] });
+    await step.apply();
+
+    const dialect = new PgDialect();
+    const statements = execute.mock.calls.map(([query]) => dialect.sqlToQuery(query).sql);
+    expect(statements.length).toBeGreaterThan(0);
+    expect(statements.filter((text) => LEGACY.test(text))).toEqual([]);
+  });
+
+  it('check() reads no statement that mentions them', async () => {
+    const step: UserServiceSeedStep = Object.create(UserServiceSeedStep.prototype);
+    const texts: string[] = [];
+    const client = Object.assign(
+      jest.fn(async (strings: TemplateStringsArray) => {
+        texts.push(strings.join('?'));
+        return [];
+      }),
+      {
+        unsafe: jest.fn(async (text: string) => {
+          texts.push(text);
+          return [];
+        }),
+      },
+    );
+    const findExistingIds = jest.fn(async () => new Set<string>());
+    const findExistingKeys = jest.fn(async () => new Set<string>());
+    Object.assign(step, {
+      client,
+      findExistingIds,
+      findExistingKeys,
+      logger,
+      adminPassword: 'x',
+      oauthClients: [],
+    });
+
+    const result = await step.check();
+
+    expect(texts.filter((text) => LEGACY.test(text))).toEqual([]);
+    expect(findExistingKeys).not.toHaveBeenCalled();
+    expect(JSON.stringify(result)).not.toMatch(LEGACY);
   });
 });

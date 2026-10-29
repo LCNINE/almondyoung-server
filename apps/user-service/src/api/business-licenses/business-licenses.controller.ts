@@ -1,4 +1,4 @@
-import { RequireScopes, JwtPayload, StoreRoute } from '@app/authorization';
+import { JwtPayload, StoreRoute } from '@app/authorization';
 import { CurrentUser } from '@app/shared/decorators/current-user.decorator';
 import { Body, Controller, Delete, Get, Param, Patch, Post, Put } from '@nestjs/common';
 import { ApiBearerAuth, ApiBody, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
@@ -28,7 +28,6 @@ export class BusinessLicensesController {
   @ApiResponse({ status: 400, description: '잘못된 요청' })
   @ApiResponse({ status: 401, description: '인증되지 않은 사용자' })
   @ApiResponse({ status: 409, description: '이미 해당 사용자에 대한 사업자 등록 정보가 존재합니다.' })
-  @RequireScopes('user:modify')
   async createBusinessLicense(@Body() data: CreateBusinessLicenseDto, @CurrentUser() user: JwtPayload) {
     return this.businessLicensesService.createBusinessLicense(user.id, data);
   }
@@ -76,7 +75,6 @@ export class BusinessLicensesController {
   @ApiResponse({ status: 403, description: '권한 없음' })
   @StoreRoute()
   @Post('fetch')
-  @RequireScopes('user:read')
   async fetchBusinessLicense(@Body() fetchBusinessLicenseDto: FetchBusinessLicenseDto) {
     return this.businessLicensesService.fetchBusinessLicense(fetchBusinessLicenseDto);
   }
@@ -98,7 +96,6 @@ export class BusinessLicensesController {
   @ApiResponse({ status: 404, description: '사업자 등록 정보를 찾을 수 없음' })
   @StoreRoute()
   @Put(':businessId')
-  @RequireScopes('user:modify')
   async updateBusinessLicenseByBusinessId(
     @Param('businessId') businessId: string,
     @Body() data: UpdateBusinessLicenseDto,
@@ -118,7 +115,6 @@ export class BusinessLicensesController {
   @ApiResponse({ status: 404, description: '사업자 등록 정보를 찾을 수 없음' })
   @StoreRoute()
   @Delete(':id')
-  @RequireScopes('user:delete')
   async removeBusinessLicense(@Param('id') businessLicenseId: string, @CurrentUser() user: JwtPayload) {
     return this.businessLicensesService.removeBusinessLicense(businessLicenseId, user.id);
   }

@@ -90,7 +90,6 @@ import { AdminIdempotencyInterceptor } from './shared/idempotency/admin-idempote
 import { AuthorizationModule } from '@app/authorization';
 import { OutboxPiiAccessRecorder } from '@app/authorization/recorders/outbox-pii-access.recorder';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
-import { MEMBERSHIP_ROLE_MAPPINGS, MEMBERSHIP_SCOPES } from './shared/auth/membership-scopes';
 import {
   AuthzObserverGuard,
   AuthzShadowInterceptor,
@@ -110,12 +109,7 @@ import { EventTraceController } from './controllers/event-trace.controller';
       validate: validateMembershipEnv,
       envFilePath: ['.env', 'apps/membership/.env'],
     }),
-    AuthorizationModule.forRoot({
-      microserviceName: 'membership',
-      // 부팅 시 auth.scopes / auth.role_scope_mapping 을 이 선언에 맞춰 정합화한다.
-      scopes: MEMBERSHIP_SCOPES,
-      roleMappings: MEMBERSHIP_ROLE_MAPPINGS,
-    }),
+    AuthorizationModule.forAuthOnly(),
     PermissionModule.forRoot({ service: 'membership' }),
     HttpModule,
     SCHEDULE_ROOT,

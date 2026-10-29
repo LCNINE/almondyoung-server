@@ -57,3 +57,13 @@ export class IamLastMasterError extends ConflictError {
     return 'IAM_LAST_MASTER';
   }
 }
+
+export class IamStaffCannotLeaveError extends ConflictError {
+  constructor() {
+    super('직원 계정은 탈퇴할 수 없습니다. 관리자에게 역할 회수를 요청해 주세요.');
+  }
+
+  getErrorCode(): string {
+    return 'IAM_STAFF_CANNOT_LEAVE';
+  }
+}

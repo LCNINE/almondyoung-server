@@ -1,3 +1,6 @@
+import { roles, userRoleAssignments } from 'apps/user-service/database/drizzle/schema';
+import { gt, isNull, notInArray, sql, type SQL } from 'drizzle-orm';
+
 /**
  * 역할 «이름»을 코드가 아는 유일한 곳.
  *
@@ -8,3 +11,10 @@ export const SYSTEM_ROLE_NAME = 'master';
 
 /** 고객 역할. 관리자 권한 배포·관리 화면 대상이 아니다. */
 export const CUSTOMER_ROLE_NAMES: readonly string[] = ['user', 'membership'];
+
+/**
+ * 지금 유효한 직원 역할 부여 — 고객 역할이 아니고 기간이 없거나 끝나지 않은 것. `roles` 와 `user_role_assignments`
+ * 를 조인한 질의의 where 에 쓴다. «직원인가» 는 토큰이 아니라 DB 의 지금 부여로 판정한다.
+ */
+export const liveStaffAssignment = (): SQL =>
+  sql`${notInArray(roles.name, [...CUSTOMER_ROLE_NAMES])} and (${isNull(userRoleAssignments.expiresAt)} or ${gt(userRoleAssignments.expiresAt, new Date())})`;

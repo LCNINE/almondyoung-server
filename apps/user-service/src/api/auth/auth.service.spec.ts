@@ -1,5 +1,5 @@
 import { RoleAssignmentManager } from '../iam/assignments/role-assignment.manager';
-import { IamLastMasterError } from '../iam/iam.errors';
+import { IamLastMasterError, IamStaffCannotLeaveError } from '../iam/iam.errors';
 import { DbService } from '@app/db';
 import { ConflictException, InternalServerErrorException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -93,7 +93,7 @@ describe('AuthService - signUp', () => {
         { provide: 'STREAM_PUBLISHER_users.events.v1', useValue: { publishEvent: jest.fn() } },
         { provide: ConsentsService, useValue: {} },
         { provide: TokensService, useValue: {} },
-        { provide: RoleAssignmentManager, useValue: { assertCanLeave: jest.fn() } },
+        { provide: RoleAssignmentManager, useValue: { assertCanLeave: jest.fn(), assertNotStaff: jest.fn() } },
         {
           provide: Cafe24LinkService,
           useValue: {
@@ -234,11 +234,12 @@ describe('AuthService - 탈퇴 익명화', () => {
   let deletes: unknown[];
   let publishEvent: jest.Mock;
   let tx: object;
-  const leaving = { assertCanLeave: jest.fn() };
+  const leaving = { assertCanLeave: jest.fn(), assertNotStaff: jest.fn() };
 
   beforeEach(async () => {
     jest.clearAllMocks();
     leaving.assertCanLeave.mockResolvedValue(undefined);
+    leaving.assertNotStaff.mockResolvedValue(undefined);
     updates = [];
     deletes = [];
     publishEvent = jest.fn();
@@ -352,6 +353,16 @@ describe('AuthService - 탈퇴 익명화', () => {
   it('checks the last system role holder inside the withdrawal transaction', async () => {
     await service.softDeleteUser(USER_ID);
     expect(leaving.assertCanLeave).toHaveBeenCalledWith(USER_ID, tx);
+  });
+
+  it('does not anonymize a staff account', async () => {
+    leaving.assertNotStaff.mockRejectedValue(new IamStaffCannotLeaveError());
+    await expect(service.softDeleteUser(USER_ID)).rejects.toBeInstanceOf(IamStaffCannotLeaveError);
+    expect(leaving.assertNotStaff).toHaveBeenCalledWith(USER_ID, tx);
+    expect(leaving.assertCanLeave).not.toHaveBeenCalled();
+    expect(updates).toHaveLength(0);
+    expect(deletes).toHaveLength(0);
+    expect(publishEvent).not.toHaveBeenCalled();
   });
 });
 

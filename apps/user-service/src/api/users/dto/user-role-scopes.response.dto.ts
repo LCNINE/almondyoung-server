@@ -8,26 +8,15 @@ class RoleDto {
   name: string;
 }
 
-class ScopeDto {
-  @ApiProperty()
-  scope_name: string;
-
-  @ApiProperty()
-  description: string;
-}
-
-export class UserRoleScopesResponseDto {
+export class UserRoleResponseDto {
   @ApiProperty({ type: RoleDto, nullable: true })
   role: RoleDto | null;
-
-  @ApiProperty({ type: ScopeDto, nullable: true })
-  scopes: ScopeDto | null;
 }
 
 export class UserRolesResponse {
   @ApiProperty()
   userId: string;
 
-  @ApiProperty({ type: [UserRoleScopesResponseDto] })
-  roles: UserRoleScopesResponseDto[];
+  @ApiProperty({ type: [UserRoleResponseDto] })
+  roles: UserRoleResponseDto[];
 }

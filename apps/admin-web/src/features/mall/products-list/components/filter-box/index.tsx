@@ -15,7 +15,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils/ui';
 import { useCategoryTree } from '@/lib/services/products/queries';
-import { useAdminUsers } from '@/lib/services/users/queries';
+import { STAFF_CANDIDATE_LIMIT, useAdminUsers } from '@/lib/services/users/queries';
 import { useCan } from '@/hooks/use-permission';
 import { useSuppliers } from '@/lib/services/inventory/queries';
 import { flattenCategoryTree } from '@/features/mall/products-detail/components/general/basic-information-model';
@@ -35,6 +35,7 @@ import {
   UNASSIGNED_SUPPLIER,
   type Classification,
 } from './products-list-filter-model';
+import { buildRegistrantOptions } from './registrant-options';
 import { buildSearchParams } from './products-list-search-params';
 
 const ALL = 'all';
@@ -89,7 +90,7 @@ export function ProductsListFilterBox() {
   const canReadAccounts = useCan(['customer.profile.read']);
   const canListRegistrants = canReadAccounts.status === 'ready' && canReadAccounts.allowed;
   const { data: registrants } = useAdminUsers(
-    { roleName: 'admin,master', limit: 100 },
+    { audience: 'staff', holding: 'catalog.product.write', limit: STAFF_CANDIDATE_LIMIT },
     { enabled: canListRegistrants }
   );
   // 권한이 없으면 캐시에 남은 계정 목록도 쓰지 않는다
@@ -111,13 +112,7 @@ export function ProductsListFilterBox() {
   );
 
   const registrantOptions = useMemo(
-    () => [
-      { value: ALL, label: '전체 등록자' },
-      ...(adminUsers?.data ?? []).map((user) => ({
-        value: user.id,
-        label: `${user.loginId} (${user.username})`,
-      })),
-    ],
+    () => buildRegistrantOptions(adminUsers?.data, { value: ALL, label: '전체 등록자' }),
     [adminUsers?.data]
   );
   const categoryOptions = useMemo(

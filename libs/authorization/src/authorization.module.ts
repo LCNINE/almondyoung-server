@@ -1,13 +1,10 @@
 import { Module, DynamicModule, Global, Provider } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { PassportModule } from '@nestjs/passport';
-import { AuthorizationService } from './services/authorization.service';
 import { AuthenticationService } from './services/authentication.service';
-import { ScopeBootstrapService, AuthorizationModuleOptions } from './services/scope-bootstrap.service';
-import { ScopeGuard } from './guards/scope.guard';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { JwtAccessStrategy } from './strategies/jwt-access.strategy';
-import { AUTHORIZATION_OPTIONS, AUTH_CONFIG } from './constants';
+import { AUTH_CONFIG } from './constants';
 
 const authConfigProvider: Provider = {
   provide: AUTH_CONFIG,
@@ -48,44 +45,7 @@ const authConfigProvider: Provider = {
 @Global()
 @Module({})
 export class AuthorizationModule {
-  /**
-   * Register module with JWT authentication and authorization
-   * @param options - Authorization module options
-   */
-  static forRoot(options: AuthorizationModuleOptions): DynamicModule {
-    return {
-      module: AuthorizationModule,
-      imports: [ConfigModule, PassportModule.register({ defaultStrategy: 'jwt' })],
-      providers: [
-        {
-          provide: AUTHORIZATION_OPTIONS,
-          useValue: options,
-        },
-        authConfigProvider,
-        AuthenticationService,
-        AuthorizationService,
-        ScopeBootstrapService,
-        ScopeGuard,
-        JwtAccessStrategy,
-        JwtAuthGuard,
-      ],
-      exports: [
-        AuthenticationService,
-        AuthorizationService,
-        ScopeGuard,
-        JwtAuthGuard,
-        JwtAccessStrategy,
-        PassportModule,
-        AUTHORIZATION_OPTIONS,
-      ],
-    };
-  }
-
-  /**
-   * JWT 인증만 등록한다 — DB 가 없는 앱용 (search 등).
-   * forRoot 와 달리 DbService 를 요구하는 AuthorizationService/ScopeBootstrapService/
-   * ScopeGuard 를 제외하므로 스코프 검사(@RequireScopes)는 쓸 수 없다.
-   */
+  /** JWT 인증을 등록한다. 라우트 권한은 PermissionModule 의 PermissionGuard 가 판정한다. */
   static forAuthOnly(): DynamicModule {
     return {
       module: AuthorizationModule,

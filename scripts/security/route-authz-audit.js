@@ -25,7 +25,6 @@ const REPO = process.env.ROUTE_AUDIT_ROOT ?? path.resolve(__dirname, '..', '..')
  * 앱마다 인가 관용구가 다르다. 이 맵이 틀리면 결과가 통째로 위양성이 된다 —
  * 실제로 초기 감사에서 이 맵 없이 돌려 user-service 60건 / ugc 13건을 "무력화"로 오보했다.
  *
- *   globalScope : ScopeGuard 가 APP_GUARD 로 전역 등록됨 → @RequireScopes 만으로 강제된다.
  *   adminRealm  : AdminRealmGuard 가 전역 → 표시 없는 라우트는 admin/master 필요 (기본 차단).
  *   permissionDeny : 옛 인가 가드 없이 PermissionGuard 가 전역으로 결정한다 → 분류 표식이 없는 라우트는 403
  *                    (기본 차단). 권한 분류 라우트는 직원 전용이고, 고객이 닿는 것은 @StoreRoute 와
@@ -34,12 +33,11 @@ const REPO = process.env.ROUTE_AUDIT_ROOT ?? path.resolve(__dirname, '..', '..')
  *   defaultDeny : 표시가 없어도 가드가 막는가 (wallet 은 API key 로 fallback).
  */
 const APPS = {
-  core: { globalScope: false, adminRealm: false, permissionDeny: true, defaultDeny: true, authz: [] },
-  notification: { globalScope: false, adminRealm: false, permissionDeny: true, defaultDeny: true, authz: [] },
-  'channel-adapter': { globalScope: false, adminRealm: false, permissionDeny: true, defaultDeny: true, authz: [] },
-  'user-service': { globalScope: true, adminRealm: false, defaultDeny: false, authz: [] },
+  core: { adminRealm: false, permissionDeny: true, defaultDeny: true, authz: [] },
+  notification: { adminRealm: false, permissionDeny: true, defaultDeny: true, authz: [] },
+  'channel-adapter': { adminRealm: false, permissionDeny: true, defaultDeny: true, authz: [] },
+  'user-service': { adminRealm: false, defaultDeny: false, authz: [] },
   membership: {
-    globalScope: false,
     adminRealm: false,
     permissionDeny: true,
     defaultDeny: true,
@@ -47,9 +45,8 @@ const APPS = {
     // 안에서 Public() 을 부르는 앱 데코레이터 — 분류상 «공개»다.
     publicDecorators: ['MembershipInternalAuth'],
   },
-  'file-service': { globalScope: false, adminRealm: false, defaultDeny: false, authz: [] },
+  'file-service': { adminRealm: false, defaultDeny: false, authz: [] },
   'ugc-service': {
-    globalScope: false,
     adminRealm: false,
     permissionDeny: true,
     defaultDeny: true,
@@ -57,11 +54,11 @@ const APPS = {
     publicDecorators: ['UgcInternalAuth'],
   },
   // WalletAuthGuard 의 마지막 분기가 requireApiKeyAuth 라 표시 없는 라우트도 API key 를 요구한다.
-  wallet: { globalScope: false, adminRealm: false, defaultDeny: true, authz: ['WalletAdminAuth', 'WalletJwtAuth'] },
+  wallet: { adminRealm: false, defaultDeny: true, authz: ['WalletAdminAuth', 'WalletJwtAuth'] },
   // globalAuth=false: JwtAuthGuard 가 전역이 아니다(컨트롤러 단위). 그래서 @Public 표식에 런타임 효과가 없다.
-  search: { globalScope: false, adminRealm: false, defaultDeny: false, authz: [], globalAuth: false },
-  analytics: { globalScope: false, adminRealm: false, defaultDeny: false, authz: [], globalAuth: false },
-  ai: { globalScope: false, adminRealm: false, permissionDeny: true, defaultDeny: true, authz: [] },
+  search: { adminRealm: false, defaultDeny: false, authz: [], globalAuth: false },
+  analytics: { adminRealm: false, defaultDeny: false, authz: [], globalAuth: false },
+  ai: { adminRealm: false, permissionDeny: true, defaultDeny: true, authz: [] },
 };
 
 const HTTP = new Set(['Get', 'Post', 'Put', 'Patch', 'Delete', 'All', 'Head', 'Options']);
@@ -143,8 +140,6 @@ function scanApp(app, cfg) {
             const verb = md.find((d) => HTTP.has(d.name));
             if (!verb) continue;
             const all = [...cd, ...md];
-            const scoped = has(all, 'RequireScopes');
-            const scopeEnforced = cfg.globalScope || usesGuard(all, /\bScopeGuard\b/);
             rows.push({
               app,
               file,
@@ -154,9 +149,6 @@ function scanApp(app, cfg) {
               route: '/' + [base, verb.args[0]?.replace(/['"`]/g, '') ?? ''].filter(Boolean).join('/'),
               isPublic: isPublicMarked(all),
               storeRoute: has(all, 'StoreRoute'),
-              // @RequireScopes 가 있는데 ScopeGuard 가 없으면 메타데이터가 무력하다.
-              // AdminRealmGuard 는 이걸 "정책 명시됨" 으로 보고 위임하므로 두 가드를 다 통과한다.
-              inertScope: scoped && !scopeEnforced,
               classifications: classificationsOf(all, cfg),
               permissions: all
                 .filter((d) => PERMISSION_DECORATORS.has(d.name))
@@ -165,11 +157,9 @@ function scanApp(app, cfg) {
               // `@InternalOnly()` 의 가드는 `applyDecorators` 안에 있어 컨트롤러 파일의 AST 에는
               // `UseGuards` 가 보이지 않는다. 이름으로 직접 인정하지 않으면 "인가 표시 없음" 으로
               // 오분류된다.
-              authz: scoped
-                ? 'scopes'
-                : has(all, 'InternalOnly')
-                  ? 'internal-key'
-                  : (cfg.authz.find((a) => has(all, a)) ?? (usesGuard(all, GUARD_RE) ? 'guard' : null)),
+              authz: has(all, 'InternalOnly')
+                ? 'internal-key'
+                : (cfg.authz.find((a) => has(all, a)) ?? (usesGuard(all, GUARD_RE) ? 'guard' : null)),
             });
           }
         }
@@ -185,7 +175,7 @@ function scanApp(app, cfg) {
  * `libs/` 안의 `@Controller` 인벤토리.
  *
  * 왜 앱과 따로 세는가 — 라이브러리 컨트롤러는 **앱 컨텍스트가 없다.** 어느 앱에 실리느냐에 따라
- * 전역 가드가 AdminRealmGuard(기본차단)일 수도, ScopeGuard(무표시 통과)일 수도, WalletAuthGuard
+ * 전역 가드가 PermissionGuard(기본차단)일 수도, JwtAuthGuard(인증만)일 수도, WalletAuthGuard
  * (API 키 요구)일 수도 있다. 그래서 앱 규칙(`APPS` 맵)으로 점수를 매기면 전부 거짓말이 된다.
  * 여기서는 판정하지 않고 **존재를 보고**만 한다 — 규칙은 "libs 에 컨트롤러를 두지 않는다"이고,
  * 그 강제는 `route-authz-audit.spec.ts` 의 allowlist 가 한다.
@@ -297,8 +287,6 @@ const print = (title, list) => {
   }
 };
 
-const inertTotal = all.filter((r) => r.inertScope).length;
-
 // `--json` 은 stdout 을 통째로 JSON 으로 쓴다. 사람이 읽는 출력이 한 줄이라도 섞이면 파싱이 깨진다.
 // 또 여기서 `process.exit()` 를 부르면 안 된다 — stdout 이 파이프일 때 큰 JSON 이 flush 되기 전에
 // 프로세스가 죽어 출력이 잘린다(전 앱 883 라우트에서 실제로 잘렸다). node 가 알아서 끝내게 둔다.
@@ -314,8 +302,6 @@ if (asJson) {
   printReport();
 }
 
-if (inertTotal > 0) process.exitCode = 1;
-
 function printReport() {
   for (const app of selected) {
     const rows = all.filter((r) => r.app === app);
@@ -324,12 +310,7 @@ function printReport() {
 
     console.log(
       `\n########## ${app} — 라우트 ${rows.length} ` +
-        `(ScopeGuard전역=${cfg.globalScope} AdminRealm=${cfg.adminRealm} 권한기본거부=${cfg.permissionDeny === true} 기본차단=${cfg.defaultDeny}) ##########`,
-    );
-
-    print(
-      'A: @RequireScopes 무력화 — ScopeGuard 미바인딩 (0 이어야 함)',
-      rows.filter((r) => r.inertScope),
+        `(AdminRealm=${cfg.adminRealm} 권한기본거부=${cfg.permissionDeny === true} 기본차단=${cfg.defaultDeny}) ##########`,
     );
 
     print(
@@ -344,8 +325,5 @@ function printReport() {
     );
   }
 
-  console.log(`\n총 라우트 ${all.length} / [A] 무력화 ${inertTotal}`);
-  if (inertTotal > 0) {
-    console.log('⚠ [A] 가 0 이 아니다 — 스코프도 역할도 검사하지 않는 라우트가 있다는 뜻이다.');
-  }
+  console.log(`\n총 라우트 ${all.length}`);
 }

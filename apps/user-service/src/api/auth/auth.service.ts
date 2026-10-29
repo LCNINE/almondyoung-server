@@ -71,7 +71,8 @@ export class AuthService {
     private readonly eventPublisher: PublisherFor<typeof USER_STREAM>,
     private readonly consentsService: ConsentsService,
     private readonly tokensService: TokensService,
-    @Inject(RoleAssignmentManager) private readonly roleAssignments: Pick<RoleAssignmentManager, 'assertCanLeave'>,
+    @Inject(RoleAssignmentManager)
+    private readonly roleAssignments: Pick<RoleAssignmentManager, 'assertCanLeave' | 'assertNotStaff'>,
     @Optional() private readonly cafe24LinkService?: Cafe24LinkService,
   ) {}
 
@@ -1040,6 +1041,9 @@ export class AuthService {
    */
   async softDeleteUser(userId: string, tx?: UserServiceTx): Promise<void> {
     return this.dbService.run(async (tx) => {
+      // 직원 계정은 역할이 회수되기 전에는 떠날 수 없다 — 토큰 폐기·익명화·이벤트보다 먼저 막는다.
+      await this.roleAssignments.assertNotStaff(userId, tx);
+
       // 기간 없이 시스템 역할을 가진 마지막 관리자는 떠날 수 없다 — 역할 관리를 고칠 사람이 없어진다. 같은 트랜잭션에서
       // 그 역할 행을 잠그고 세므로 동시 탈퇴·회수가 차례로 판정된다.
       await this.roleAssignments.assertCanLeave(userId, tx);
