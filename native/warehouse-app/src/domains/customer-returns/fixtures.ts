@@ -24,6 +24,9 @@ export function view(
   return {
     id: 'r1',
     status: 'expected',
+    reason: 'change_of_mind',
+    feeBearer: 'customer',
+    note: null,
     order: { orderNo: 'O-1' },
     warehouseId: 'w-1',
     csResolution: null,

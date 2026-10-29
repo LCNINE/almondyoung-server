@@ -46,3 +46,42 @@ describe('CustomerReturnReader.findById', () => {
     expect(await reader.findById('cr_1')).toMatchObject({ id: 'cr_1', note });
   });
 });
+
+describe('CustomerReturnReader.listForReceiving', () => {
+  it('저장된 사유를 수령 목록에 싣는다', async () => {
+    const query = {
+      from: jest.fn().mockReturnThis(),
+      innerJoin: jest.fn().mockReturnThis(),
+      where: jest.fn().mockReturnThis(),
+      orderBy: jest.fn().mockResolvedValue([]),
+      groupBy: jest.fn().mockResolvedValue([]),
+    };
+    const candidates = {
+      ...query,
+      where: jest.fn().mockResolvedValue([
+        {
+          id: 'cr_1',
+          salesOrderId: 'so_1',
+          status: 'arrived',
+          reason: 'wrong_item',
+          requestedAt: new Date('2026-10-29T00:00:00.000Z'),
+          csResolution: null,
+          channelOrderId: 'order_1',
+          displayOrderNo: null,
+          customerName: '홍길동',
+        },
+      ]),
+    };
+    const trx = { select: jest.fn().mockReturnValue(query).mockReturnValueOnce(candidates) };
+    const db = { run: (fn: (tx: DbTx) => Promise<unknown>) => fn(trx as never) };
+    const reader = new CustomerReturnReader(db as never);
+
+    const page = await reader.listForReceiving({ warehouseId: 'w_1', limit: 100 });
+
+    expect(trx.select).toHaveBeenNthCalledWith(
+      1,
+      expect.objectContaining({ reason: wmsTables.customerReturns.reason }),
+    );
+    expect(page.items).toEqual([expect.objectContaining({ id: 'cr_1', reason: 'wrong_item' })]);
+  });
+});
