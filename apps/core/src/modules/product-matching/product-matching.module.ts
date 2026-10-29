@@ -1,4 +1,5 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
+import { ProductsModule } from '../catalog/core/products/products.module';
 import { SkuCatalogModule } from '../inventory/sku-catalog/sku-catalog.module';
 import { ProductSellableQuantityModule } from '../inventory/product-sellable-quantity/product-sellable-quantity.module';
 import { FulfillmentOrderCreationBacklogModule } from '../fulfillment/backlog/fulfillment-order-creation-backlog.module';
@@ -13,6 +14,7 @@ import { LineCompositionManager } from './line-composition/line-composition.mana
 
 @Module({
   imports: [
+    forwardRef(() => ProductsModule),
     SkuCatalogModule, // SkuCatalogService 의존
     ProductSellableQuantityModule,
     FulfillmentOrderCreationBacklogModule,

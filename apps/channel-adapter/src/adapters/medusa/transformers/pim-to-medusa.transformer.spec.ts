@@ -130,6 +130,29 @@ describe('PimToMedusaTransformer', () => {
       expect(result.description).toBeUndefined();
     });
 
+    it('projects the selected SKU model without changing the thumbnail', () => {
+      const result = transformPimToMedusa({ ...mockSnapshot, model3dFileId: 'model-file-id' });
+
+      expect(result.metadata.model3dFileId).toBe('model-file-id');
+      expect(result.thumbnail).toBe(mockSnapshot.thumbnail);
+    });
+
+    it('sends an empty model ID so Medusa removes a previously approved model', () => {
+      const result = transformPimToMedusa(mockSnapshot);
+
+      expect(result.metadata).toHaveProperty('model3dFileId', '');
+    });
+
+    it('does not allow productInfo to resurrect a revoked 3D model', () => {
+      const productInfo = { manufacturer: 'Manufacturer', model3dFileId: 'stale-file-id' };
+      const result = transformPimToMedusa({
+        ...mockSnapshot,
+        productInfo,
+      });
+
+      expect(result.metadata.model3dFileId).toBe('');
+    });
+
     it('projects purchase constraints into separate Medusa product metadata', () => {
       const result = transformPimToMedusa({
         ...mockSnapshot,

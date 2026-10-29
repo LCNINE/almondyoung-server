@@ -18,6 +18,7 @@ import { SkuCatalogModule } from './sku-catalog/sku-catalog.module';
 import { ProductSellableQuantityModule } from './product-sellable-quantity/product-sellable-quantity.module';
 import { WarehouseTransferModule } from './warehouse-transfer/warehouse-transfer.module';
 import { ReplenishmentModule } from './replenishment/replenishment.module';
+import { Sku3dModelsModule } from './sku-3d-models/sku-3d-models.module';
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { ReplenishmentModule } from './replenishment/replenishment.module';
     WarehouseModule,
     DeliveryProfileModule,
     SkuFieldCaptureModule,
+    Sku3dModelsModule,
     SkuGroupModule,
     StockProjectionModule,
     StockValuationModule,

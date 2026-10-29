@@ -37,6 +37,12 @@ export function setup(infra: DemoSharedInfra) {
     access: 'public',
     versioning: true,
     transform: {
+      cors: (args) => {
+        // 공개 GET/HEAD만 모든 origin에 열고, 관리자 업로드와 비공개 버킷 정책은 유지한다.
+        args.corsRules = $util
+          .output(args.corsRules)
+          .apply((rules) => [...rules, { allowedOrigins: ['*'], allowedMethods: ['GET', 'HEAD'] }]);
+      },
       bucket: (args) => {
         args.objectOwnership = 'BucketOwnerPreferred';
       },

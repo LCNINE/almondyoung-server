@@ -114,6 +114,7 @@ export interface ProductSnapshot {
   description?: string;
   descriptionHtml?: string;
   thumbnail?: string;
+  model3dFileId?: string;
   images?: Array<{
     fileId: string;
     url: string;
@@ -382,6 +383,7 @@ const ProductSnapshotSchema = z.object({
   description: z.string().optional(),
   descriptionHtml: z.string().optional(),
   thumbnail: z.string().optional(),
+  model3dFileId: z.string().optional(),
   images: z.array(ProductSnapshotImageSchema).optional(),
   seoTitle: z.string().optional(),
   seoDescription: z.string().optional(),

@@ -34,6 +34,7 @@ import {
   CategoryTemplateConfig,
 } from '../../schema/catalog.schema';
 import { ProjectionSnapshotAssembler } from '../products/assemblers/projection-snapshot.assembler';
+import { lockProductMasters } from '../products/services/product-master-lock';
 import { eq, isNull, like, inArray, and, or, sql, asc } from 'drizzle-orm';
 import { RowList } from 'postgres';
 import { InjectPublisher, type PublisherFor } from '@app/events';
@@ -249,6 +250,17 @@ export class ProductCategoriesService {
       if (childCategories.length > 0) {
         throw new BadRequestError(`Cannot delete category with child categories. Move or delete children first.`);
       }
+
+      const linkedMasters = await txn
+        .select({ masterId: pimSchema.productMasterCategories.masterId })
+        .from(pimSchema.productMasterCategories)
+        .where(eq(pimSchema.productMasterCategories.categoryId, categoryId));
+
+      // 관계를 지우기 전에 공개·검수와 같은 상품 잠금을 잡고 현재 연결을 다시 읽는다.
+      await lockProductMasters(
+        txn,
+        linkedMasters.map((relation) => relation.masterId),
+      );
 
       const productRelations = await txn
         .select()
@@ -597,7 +609,18 @@ export class ProductCategoriesService {
         throw new NotFoundError(`Category not found: ${categoryId}`);
       }
 
-      // 2. Version ID를 Master ID + Version 번호로 변환
+      // 첫 공개·버전 교체를 기다릴 수 있도록 상태와 무관하게 상품을 찾고 먼저 잠근다.
+      const requestedVersions = await txn
+        .select({ masterId: pimSchema.productMasterVersions.masterId })
+        .from(pimSchema.productMasterVersions)
+        .where(inArray(pimSchema.productMasterVersions.id, versionIds));
+
+      await lockProductMasters(
+        txn,
+        requestedVersions.map((version) => version.masterId),
+      );
+
+      // 잠금 대기 사이 판매중단·삭제된 버전은 현재 상태로 다시 검증한다.
       const productVersions = await txn
         .select({
           versionId: pimSchema.productMasterVersions.id,
@@ -605,9 +628,11 @@ export class ProductCategoriesService {
           version: pimSchema.productMasterVersions.version,
         })
         .from(pimSchema.productMasterVersions)
+        .innerJoin(pimSchema.productMasters, eq(pimSchema.productMasters.id, pimSchema.productMasterVersions.masterId))
         .where(
           and(
             inArray(pimSchema.productMasterVersions.id, versionIds),
+            isNull(pimSchema.productMasters.deletedAt),
             eq(pimSchema.productMasterVersions.status, 'active'),
             isNull(pimSchema.productMasterVersions.deletedAt),
           ),
@@ -674,7 +699,18 @@ export class ProductCategoriesService {
         throw new NotFoundError(`Category not found: ${categoryId}`);
       }
 
-      // 2. Version ID를 Master ID + Version 번호로 변환
+      // 첫 공개·버전 교체를 기다릴 수 있도록 상태와 무관하게 상품을 찾고 먼저 잠근다.
+      const requestedVersions = await txn
+        .select({ masterId: pimSchema.productMasterVersions.masterId })
+        .from(pimSchema.productMasterVersions)
+        .where(inArray(pimSchema.productMasterVersions.id, versionIds));
+
+      await lockProductMasters(
+        txn,
+        requestedVersions.map((version) => version.masterId),
+      );
+
+      // 잠금 대기 사이 판매중단·삭제된 버전은 현재 상태로 다시 검증한다.
       const productVersions = await txn
         .select({
           versionId: pimSchema.productMasterVersions.id,
@@ -682,9 +718,11 @@ export class ProductCategoriesService {
           version: pimSchema.productMasterVersions.version,
         })
         .from(pimSchema.productMasterVersions)
+        .innerJoin(pimSchema.productMasters, eq(pimSchema.productMasters.id, pimSchema.productMasterVersions.masterId))
         .where(
           and(
             inArray(pimSchema.productMasterVersions.id, versionIds),
+            isNull(pimSchema.productMasters.deletedAt),
             eq(pimSchema.productMasterVersions.status, 'active'),
             isNull(pimSchema.productMasterVersions.deletedAt),
           ),
@@ -1042,9 +1080,11 @@ export class ProductCategoriesService {
         pimSchema.productMasterVersions,
         eq(pimSchema.productMasterVersions.id, pimSchema.productMasterCategories.versionId),
       )
+      .innerJoin(pimSchema.productMasters, eq(pimSchema.productMasters.id, pimSchema.productMasterVersions.masterId))
       .where(
         and(
           eq(pimSchema.productMasterCategories.categoryId, categoryId),
+          isNull(pimSchema.productMasters.deletedAt),
           eq(pimSchema.productMasterVersions.status, 'active'),
           isNull(pimSchema.productMasterVersions.deletedAt),
         ),

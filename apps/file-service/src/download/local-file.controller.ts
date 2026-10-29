@@ -1,4 +1,4 @@
-import { Controller, Get, Logger, NotFoundException, Param, Query, Res } from '@nestjs/common';
+import { Controller, Get, Header, Logger, NotFoundException, Param, Query, Res } from '@nestjs/common';
 import { ApiExcludeController } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
 import { Public } from '@app/authorization';
@@ -19,6 +19,7 @@ const CONTENT_TYPES: Record<string, string> = {
   '.svg': 'image/svg+xml',
   '.avif': 'image/avif',
   '.pdf': 'application/pdf',
+  '.glb': 'model/gltf-binary',
   '.csv': 'text/csv',
   '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
 };
@@ -51,7 +52,9 @@ export class LocalFileController {
     this.enabled = config.get<string>('STORAGE_PROVIDER', 'S3') === 'LOCAL';
   }
 
+  // 로컬 스토리지도 S3 공개 파일처럼 다른 origin의 GLB fetch를 허용한다.
   @Get('*key')
+  @Header('Access-Control-Allow-Origin', '*')
   @Public()
   async serve(
     @Param('key') key: string | string[],

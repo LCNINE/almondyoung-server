@@ -20,6 +20,9 @@ export type FileContextSeedRow = {
   is_active: boolean;
 };
 
+export const SKU_3D_MODEL_CONTEXT_ID = 'sku-3d-model';
+export const SKU_3D_MODEL_MAX_SIZE_BYTES = 20 * 1024 * 1024;
+
 export const DIGITAL_ASSET_FILE_CONTEXT_ID = 'digital-asset-file';
 export const DIGITAL_ASSET_FILE_MAX_SIZE_BYTES = 10 * 1024 * 1024 * 1024;
 
@@ -73,6 +76,17 @@ export function fileContextMatchesSeed(row: FileContextSeedRow | undefined, seed
 }
 
 export const FILE_CONTEXTS: FileContextSeed[] = [
+  {
+    id: SKU_3D_MODEL_CONTEXT_ID,
+    name: 'SKU 3D Model',
+    description: 'SKU 실물 3D 모델(GLB), 검수 후 상품 상세에서 사용',
+    allowPublic: true,
+    allowPrivate: false,
+    allowedMimeTypes: ['model/gltf-binary'],
+    maxFileSize: SKU_3D_MODEL_MAX_SIZE_BYTES,
+    pathPrefix: 'inventory/sku-3d-models',
+    isActive: true,
+  },
   {
     id: 'attendance-request-image',
     name: 'Attendance request evidence',

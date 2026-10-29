@@ -1,3 +1,4 @@
+import { createModel3dProjectionStub } from './__fixtures__/model3d-projection.stub';
 import { randomUUID } from 'crypto';
 import { eq } from 'drizzle-orm';
 import * as postgres from 'postgres';
@@ -77,12 +78,14 @@ describeIfDb('재입고 일정 회귀 (PostgreSQL integration)', () => {
         {} as never,
         {} as never,
         {} as never,
+        createModel3dProjectionStub(),
       );
       const mappings = new ProductSkuMappingService(
         wiring.dbService as never,
         wiring.sellable,
         { wakeBacklogsWaitingForVariant: () => Promise.resolve(0) } as never,
         { resolve: (links: Array<{ skuId: string; quantity: number }>) => Promise.resolve(links) } as never,
+        createModel3dProjectionStub(),
       );
       const result = await matching.getMatchings({}, tx);
       const row = result.data.find((item) => item.variantId === fixture.variant.id)!;

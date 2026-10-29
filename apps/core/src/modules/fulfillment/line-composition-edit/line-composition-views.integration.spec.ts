@@ -1,3 +1,4 @@
+import { createModel3dProjectionStub } from '../../product-matching/services/__fixtures__/model3d-projection.stub';
 // 이 스펙은 FO 생성·드래프트 박스 배선(fulfillment)이 필요해서 product-matching 이 아니라 여기에 둔다.
 import { randomUUID } from 'crypto';
 import { eq, inArray } from 'drizzle-orm';
@@ -107,7 +108,14 @@ describeIfDb('라인 구성 표시 읽기 (#1063 스펙 §8.1)', () => {
         .update(wmsTables.salesOrderLines)
         .set({ productName: marker })
         .where(eq(wmsTables.salesOrderLines.id, fx.lineIds[0]));
-      const service = new ProductMatchingService(w.dbService, {} as never, {} as never, {} as never, {} as never);
+      const service = new ProductMatchingService(
+        w.dbService,
+        {} as never,
+        {} as never,
+        {} as never,
+        {} as never,
+        createModel3dProjectionStub(),
+      );
 
       const page = await service.getOrderLines({ keyword: marker, keywordType: 'productName' }, tx);
 

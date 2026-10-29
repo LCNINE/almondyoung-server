@@ -1,3 +1,5 @@
+import { ProductModel3dProjection } from '../../catalog/core/products/services/product-model3d-projection';
+import { DbTransaction } from '../../catalog/catalog.types';
 import { lockProductVariants } from '../../inventory/product-sellable-quantity/services/product-variant-lock';
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
@@ -67,10 +69,25 @@ export class ProductMatchingService {
     private readonly fulfillmentBacklog: FulfillmentOrderCreationBacklogService,
     private readonly auditService: AuditService,
     private readonly linkResolver: MatchingLinkResolver,
+    private readonly modelProjection: ProductModel3dProjection,
   ) {
     this.strategies = new Map();
     this.strategies.set('void', new VoidMatchingStrategy(dbService));
     this.strategies.set('variant', new VariantMatchingStrategy(dbService));
+  }
+
+  private async captureModelProjection(trx: DbTx, variantIds: string[], skuIds: string[] = []) {
+    const tx = trx as unknown as DbTransaction;
+    const ids = [...new Set(skuIds)].sort();
+
+    if (ids.length > 0) {
+      await this.modelProjection.lockSkus(tx, ids);
+    }
+
+    const targets = await this.modelProjection.lockVariantTargets(tx, variantIds);
+    const before = await this.modelProjection.capture(tx, targets);
+
+    return { tx, targets, before };
   }
 
   private hasAvailabilityOverride(policy: StockPolicyDto | undefined): boolean {
@@ -358,6 +375,12 @@ export class ProductMatchingService {
   ): Promise<{ created: number; skipped: number }> {
     this.logger.log(`Handling automatic matching for master ID: ${payload.masterId}`);
     return this.dbService.run(async (trx) => {
+      const modelState = await this.captureModelProjection(
+        trx,
+        payload.variants.map((variant) => variant.id),
+        payload.variants.flatMap((variant) => variant.components.map((component) => component.skuId)),
+      );
+
       await lockProductVariants(
         trx,
         payload.variants.map((variant) => variant.id),
@@ -521,6 +544,8 @@ export class ProductMatchingService {
           skipped++;
         }
       }
+
+      await this.modelProjection.refresh(modelState.tx, modelState.targets, modelState.before);
 
       this.logger.log(`Automatic matching request completed: ${created} created, ${skipped} skipped`);
       return { created, skipped };
@@ -911,6 +936,13 @@ export class ProductMatchingService {
       return this.resolveMatchingAsVoid(matchingId, productMatching.variantId, stockPolicy, tx);
     } else if (hasSkuMappings) {
       return this.dbService.run(async (trx) => {
+        const modelSkuIds = hasLinks
+          ? links!.flatMap((link) => (link.skuId ? [link.skuId] : []))
+          : skuMappings?.length
+            ? skuMappings.map((mapping) => mapping.skuId)
+            : (skuIds ?? []);
+        const modelState = await this.captureModelProjection(trx, [productMatching.variantId], modelSkuIds);
+
         await lockProductVariants(trx, [productMatching.variantId]);
 
         let mappings: SkuQuantityMapping[];
@@ -971,6 +1003,8 @@ export class ProductMatchingService {
         });
         await this.productSellableQuantity.recalculateAndPublishForVariant(productMatching.variantId, trx);
         await this.fulfillmentBacklog.wakeBacklogsWaitingForVariant(productMatching.variantId, trx);
+        await this.modelProjection.refresh(modelState.tx, modelState.targets, modelState.before);
+
         return updatedMatching;
       }, tx);
     } else {
@@ -985,6 +1019,8 @@ export class ProductMatchingService {
     };
 
     return this.dbService.run(async (trx) => {
+      const modelState = await this.captureModelProjection(trx, [variantId]);
+
       await lockProductVariants(trx, [variantId]);
 
       const [updatedMatching] = await trx
@@ -1007,6 +1043,7 @@ export class ProductMatchingService {
         requireAvailabilityOverride: true,
       });
       await this.productSellableQuantity.recalculateAndPublishForVariant(variantId, trx);
+      await this.modelProjection.refresh(modelState.tx, modelState.targets, modelState.before);
       await this.fulfillmentBacklog.wakeBacklogsWaitingForVariant(variantId, trx);
       return updatedMatching;
     }, tx);
@@ -1032,6 +1069,8 @@ export class ProductMatchingService {
       if (productMatching.status !== 'ignored') {
         throw new BadRequestException(`Product matching ${matchingId} is not a legacy ignored matching.`);
       }
+
+      const modelState = await this.captureModelProjection(trx, [productMatching.variantId]);
 
       await lockProductVariants(trx, [productMatching.variantId]);
 
@@ -1125,6 +1164,7 @@ export class ProductMatchingService {
       );
 
       await this.productSellableQuantity.recalculateAndPublishForVariant(productMatching.variantId, trx);
+      await this.modelProjection.refresh(modelState.tx, modelState.targets, modelState.before);
       if (dto.target === 'void') {
         await this.fulfillmentBacklog.wakeBacklogsWaitingForVariant(productMatching.variantId, trx);
       }
@@ -1174,6 +1214,8 @@ export class ProductMatchingService {
 
     if (productMatching.status === 'matched' && productMatching.strategy) {
       await this.dbService.run(async (trx) => {
+        const modelState = await this.captureModelProjection(trx, [variantId]);
+
         await lockProductVariants(trx, [variantId]);
 
         if (!productMatching.strategy) {
@@ -1187,16 +1229,20 @@ export class ProductMatchingService {
         await strategy.delete(context, trx);
         await trx.delete(wmsTables.productMatchings).where(eq(wmsTables.productMatchings.id, productMatching.id));
         await this.productSellableQuantity.recalculateAndPublishForVariant(variantId, trx);
+        await this.modelProjection.refresh(modelState.tx, modelState.targets, modelState.before);
         this.logger.log(
           `Deleted product matching and links for variantId: ${variantId} using ${productMatching.strategy} strategy`,
         );
       }, tx);
     } else {
       await this.dbService.run(async (trx) => {
+        const modelState = await this.captureModelProjection(trx, [variantId]);
+
         await lockProductVariants(trx, [variantId]);
 
         await trx.delete(wmsTables.productMatchings).where(eq(wmsTables.productMatchings.id, productMatching.id));
         await this.productSellableQuantity.recalculateAndPublishForVariant(variantId, trx);
+        await this.modelProjection.refresh(modelState.tx, modelState.targets, modelState.before);
       }, tx);
       this.logger.log(`Deleted ${productMatching.status} product matching for variantId: ${variantId}`);
     }
@@ -1230,6 +1276,8 @@ export class ProductMatchingService {
     }
 
     await this.dbService.run(async (trx) => {
+      const modelState = await this.captureModelProjection(trx, [productMatching.variantId]);
+
       await lockProductVariants(trx, [productMatching.variantId]);
 
       if (productMatching.strategy) {
@@ -1247,6 +1295,7 @@ export class ProductMatchingService {
         .where(eq(wmsTables.productMatchings.id, matchingId));
 
       await this.productSellableQuantity.recalculateAndPublishForVariant(productMatching.variantId, trx);
+      await this.modelProjection.refresh(modelState.tx, modelState.targets, modelState.before);
 
       this.logger.log(`Changed matching strategy for ${matchingId} from ${productMatching.strategy} to ${newStrategy}`);
     }, tx);

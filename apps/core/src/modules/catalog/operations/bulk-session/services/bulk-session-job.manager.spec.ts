@@ -19,6 +19,7 @@ import {
   productBulkItems,
   productBulkImages,
   productMasterVersions,
+  productMasters,
 } from '../../../schema/catalog.schema';
 import { BulkSessionJobManager, MAX_CONSECUTIVE_BULK_FAILURES, imageResolverFrom } from './bulk-session-job.manager';
 import type { DraftInput } from './bulk-draft.applier';
@@ -241,6 +242,7 @@ function makeHarness(opts: HarnessOpts = {}) {
     if (table === productBulkItems) return 'items';
     if (table === productBulkImages) return 'images';
     if (table === productMasterVersions) return 'masterVersions';
+    if (table === productMasters) return 'masters';
     return 'other';
   };
 
@@ -251,6 +253,7 @@ function makeHarness(opts: HarnessOpts = {}) {
     }
     if (table === productBulkItems) return opts.bulkItems ?? [];
     if (table === productBulkImages) return opts.bulkImages ?? [];
+    if (table === productMasters) return [{ id: 'master-1' }];
     return opts.exportItems ?? [];
   };
 
@@ -1585,6 +1588,17 @@ describe('BulkSessionJobManager.runPublishSlice', () => {
     while (ops[beginIndex].kind !== 'begin') beginIndex -= 1;
     // 잠금이 publishVersion 뒤로 밀리면 취소 레이스의 창이 그대로 남는다.
     expect(ops[beginIndex + 1]).toEqual({ kind: 'select', table: 'sessions', forUpdate: true });
+  });
+
+  it('상품 잠금을 draft UPDATE보다 먼저 잡아 단건 공개와 잠금 순서를 맞춘다', async () => {
+    const { manager, ops } = makeHarness({ bulkItems: [publishItemRow({ draftVersionId: 'V-draft' })] });
+
+    await manager.runPublishSlice(PUBLISHING);
+
+    const masterLock = ops.findIndex((op) => op.kind === 'select' && op.table === 'masters' && op.forUpdate);
+    const draftWrite = ops.findIndex((op) => op.kind === 'update' && op.table === 'masterVersions');
+    expect(masterLock).toBeGreaterThan(0);
+    expect(draftWrite).toBeGreaterThan(masterLock);
   });
 
   // 관문 ①의 실효성: renewLease 는 취소를 못 보게, 잠근 세션 행은 취소를 보게 둔다 —
