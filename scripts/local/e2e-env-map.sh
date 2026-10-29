@@ -34,6 +34,14 @@ E2E_ENV_ROWS=(
   "ai|apps/ai/.env|.env.ai.local.example|3070|extra|nest|ai|no|어드민 AI 어시스턴트·상품설명 초안"
 )
 
+# 테넌트 목록·전환 모드의 로컬 정본 (@app/tenancy). kind=nest 인 앱은 전부 이 두 값을 받는다 —
+# 없거나 틀리면 그 앱은 «뜨지 않는다»(기본값이 없다). 템플릿의 두 줄도 이 값과 같아야 하고,
+# libs/tenancy/src/guards/local-e2e-tenancy.spec.ts 가 이 값을 실제 파서에 통과시키고 템플릿과 대조한다.
+# 로컬 테넌트 1 의 core DB 는 dev_core 다(apps/core/.env 가 그걸 본다). 버킷은 로컬이 STORAGE_PROVIDER=LOCAL 이라
+# 쓰이지 않지만, 라이브와 같은 모양(공개 = 비공개 = 한 버킷)으로 둔다.
+E2E_TENANT_LIST='[{"id":"1","slug":"almondyoung","coreDb":"dev_core","publicBucket":"almondyoung-demo","privateBucket":"almondyoung-demo"}]'
+E2E_TENANT_GATE_MODE='warn'
+
 # 행을 필드로 쪼개 콜백에 넘긴다. 사용: e2e_env_each required my_fn   (tier 생략 시 전부)
 e2e_env_each() {
   local want="${1:-}" fn="$2" row name dest tmpl port tier kind target needs desc
@@ -52,6 +60,14 @@ e2e_env_value() {
   local file="$1" key="$2"
   [ -f "$file" ] || return 0
   grep -m1 "^${key}=" "$file" 2>/dev/null | cut -d= -f2- | tr -d '"'"'"' ' || true
+}
+
+# e2e_env_value 와 달리 따옴표·공백을 벗기지 않는다(JSON 값을 그대로 읽는다). 바깥 작은따옴표 한 겹만 벗긴다.
+e2e_env_raw_value() {
+  local file="$1" key="$2" v
+  [ -f "$file" ] || return 0
+  v=$(grep -m1 "^${key}=" "$file" 2>/dev/null | cut -d= -f2-) || true
+  v="${v#\'}"; printf '%s' "${v%\'}"
 }
 
 # 🔴 kafka 없이 부팅하면 channel-adapter·wallet·membership 이 «죽는다» —

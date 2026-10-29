@@ -208,6 +208,11 @@ sed -i 's/^PORT=3010/PORT=3003/' apps/channel-adapter/.env
 `PORT=3003`·`PIM_API_URL`, admin-web·auth-web 의 `127.0.0.1` 값들, admin-web `WALLET_SERVICE_URL`,
 그리고 **없던 두 개** — `.env.wallet-web.local.example` · `.env.channel-adapter.local.example`.
 
+**테넌트 목록·전환 모드**(`TENANT_LIST`·`TENANT_GATE_MODE`, `@app/tenancy`)는 직접 넣지 않는다. 정본은
+`scripts/local/e2e-env-map.sh` 의 `E2E_TENANT_LIST`·`E2E_TENANT_GATE_MODE` 이고, bootstrap 이 Nest 앱 `.env` 에
+빠진 줄만 더한다(이미 있는 값은 덮지 않는다). **기본값이 없어서** 두 줄이 없거나 틀리면 그 앱은 기동을 거부한다 —
+`logs/<앱>.log` 첫 에러가 `TenancyConfigError` 다. preflight §11 이 앱 사이에 값이 갈렸는지 본다.
+
 아래는 그럼에도 **직접 판단해 넣어야 하는** 것들이다.
 
 | 파일 | 넣을 것 | 없으면 |

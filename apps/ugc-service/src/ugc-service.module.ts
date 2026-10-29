@@ -23,6 +23,7 @@ import { ShopListingsModule } from './shop-listings/shop-listings.module';
 import { LogoContestModule } from './logo-contest/logo-contest.module';
 import { AlmondTemplateModule } from './almond-template/almond-template.module';
 import { ugcServiceSchema } from './db/schema';
+import { TenancyModule } from '@app/tenancy';
 
 @Module({
   imports: [
@@ -31,6 +32,8 @@ import { ugcServiceSchema } from './db/schema';
       isGlobal: true,
       envFilePath: ['.env', 'apps/ugc-service/.env'],
     }),
+    // 테넌트 목록·전환 모드. 틀리면 여기서 기동 거부 (@app/tenancy).
+    TenancyModule,
     AuthorizationModule.forAuthOnly(),
     PermissionModule.forRoot({ service: 'ugc-service' }),
     DbModule.forRoot({

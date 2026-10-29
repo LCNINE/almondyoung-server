@@ -197,5 +197,29 @@ CA=$(e2e_env_value apps/channel-adapter/.env PORT)
 FS=$(e2e_env_value apps/file-service/.env PORT)
 [ -n "$CA" ] && [ "$CA" = "$FS" ] && bad "channel-adapter 와 file-service 가 둘 다 PORT=$CA — 하나만 뜬다" || ok "channel-adapter(${CA:-?}) ≠ file-service(${FS:-?})"
 
+echo "── 11. 테넌트 목록·전환 모드 (@app/tenancy — kind=nest 앱 전부)"
+# 🔴 없으면 그 앱은 기동을 거부한다(기본값이 없다). 앱마다 다르면 한 앱은 테넌트로 받는 이벤트를
+# 다른 앱은 «목록에 없는 테넌트»로 DLQ 에 보낸다 — 화면으로는 원인이 안 보인다.
+TENANCY_FIRST="" TENANCY_SPLIT=0 TENANCY_DIFFERS_FROM_CANON=0
+check_tenancy() {
+  local name="$1" dest="$2" kind="$6" list mode
+  [ "$kind" = "nest" ] || return 0
+  e2e_env_present "$dest" || return 0
+  list=$(e2e_env_raw_value "$dest" TENANT_LIST); mode=$(e2e_env_raw_value "$dest" TENANT_GATE_MODE)
+  if [ -z "$list" ] || [ -z "$mode" ]; then
+    bad "$name — TENANT_LIST·TENANT_GATE_MODE 가 없다 → 기동 거부. npm run bootstrap:e2e:local"; return
+  fi
+  if [ -z "$TENANCY_FIRST" ]; then TENANCY_FIRST="$list|$mode"
+  elif [ "$list|$mode" != "$TENANCY_FIRST" ]; then TENANCY_SPLIT=1; fi
+  [ "$list" = "$E2E_TENANT_LIST" ] && [ "$mode" = "$E2E_TENANT_GATE_MODE" ] || TENANCY_DIFFERS_FROM_CANON=1
+}
+e2e_env_each "" check_tenancy
+if [ "$TENANCY_SPLIT" = "1" ]; then
+  bad "앱마다 TENANT_LIST·TENANT_GATE_MODE 가 다르다 → 다른 줄을 지우고 npm run bootstrap:e2e:local"
+elif [ -n "$TENANCY_FIRST" ]; then
+  [ "$TENANCY_DIFFERS_FROM_CANON" = "1" ] && warn "앱끼리는 같지만 정본(e2e-env-map.sh)과 다르다 — 손으로 바꾼 값인지 확인" \
+    || ok "정본과 같다 (모드 $E2E_TENANT_GATE_MODE)"
+fi
+
 echo
 [ "$FAIL" -eq 0 ] && echo "✅ 사전 점검 통과" || { echo "❌ 위 ✗ 를 먼저 해결할 것"; exit 1; }

@@ -33,6 +33,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `@app/auth-core` — JWT auth core
 - `@app/roles` — Role definitions
 - `@app/shared` — Common utilities
+- `@app/tenancy` — 테넌트 목록(`TENANT_LIST`)·전환 모드(`TENANT_GATE_MODE`)·앱 설정 T(`SERVED_TENANT_ID`)를 읽고 검증한다. 기본값·기본 테넌트가 없어 틀리면 기동 거부. Kafka 소비 앱 + file-service 의 루트 모듈이 `TenancyModule` 을 import 한다(`libs/tenancy/src/guards/tenancy-wiring.spec.ts`). 값의 SoT 는 lcnine-auth 의 `TenantList` 시크릿·`tenantGateMode` 한 줄이고 services 앱은 SSM 으로 받는다
 
 ## Development Commands
 

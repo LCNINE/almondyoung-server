@@ -59,6 +59,18 @@ export function setup(infra: SharedInfra) {
     withDecryption: true,
   }).value;
 
+  // 테넌트 목록·전환 모드(@app/tenancy). SoT 는 auth 앱의 TenantList 시크릿과 tenantGateMode 한 줄이다 —
+  // 여기서 따로 세팅하지 않는다. core·file-service·Kafka 소비 앱이 전부 받는다(빠지면 그 앱은 뜨지 않는다).
+  const tenancyEnv = {
+    TENANT_LIST: aws.ssm.getParameterOutput({
+      name: `/lcnine-auth/${$app.stage}/tenant-list`,
+      withDecryption: true,
+    }).value,
+    TENANT_GATE_MODE: aws.ssm.getParameterOutput({
+      name: `/lcnine-auth/${$app.stage}/tenant-gate-mode`,
+    }).value,
+  };
+
   // storefront가 미인증 보호경로 redirect 대상으로 쓰는 auth-web origin.
   const idpAuthWebUrl = aws.ssm.getParameterOutput({
     name: `/lcnine-auth/${$app.stage}/auth-web-url`,
@@ -367,6 +379,7 @@ export function setup(infra: SharedInfra) {
   // 앱별 env (프리픽스 부여). 태스크에는 담당 앱 것만 병합해 넘긴다.
   const analyticsEnv = withPrefix('ANALYTICS', {
     DATABASE_URL: dbUrl('analytics'),
+    ...tenancyEnv,
     ...kafkaEnv('analytics', 'analytics-group'),
     AUTH_SECRET: authSecret.value,
     OIDC_ISSUER_URL: idpUserServiceUrl,
@@ -380,6 +393,7 @@ export function setup(infra: SharedInfra) {
   });
   const channelAdapterEnv = withPrefix('CHANNEL_ADAPTER', {
     DATABASE_URL: dbUrl('channel_adapter'),
+    ...tenancyEnv,
     ...kafkaEnv('channel-adapter', 'channel-adapter-group'),
     // 전역 JwtAuthGuard 용 (위 notification 과 같은 이유).
     AUTH_SECRET: authSecret.value,
@@ -416,6 +430,7 @@ export function setup(infra: SharedInfra) {
   });
   const membershipEnv = withPrefix('MEMBERSHIP', {
     DATABASE_URL: dbUrl('membership'),
+    ...tenancyEnv,
     ...kafkaEnv('membership', 'membership-group'),
     WALLET_API_KEY: walletApiKey.value,
     WALLET_API_URL: url('wallet'),
@@ -433,6 +448,7 @@ export function setup(infra: SharedInfra) {
   });
   const notificationEnv = withPrefix('NOTIFICATION', {
     DATABASE_URL: dbUrl('notification'),
+    ...tenancyEnv,
     ...kafkaEnv('notification', 'notification-group'),
     // 전역 JwtAuthGuard 용. 둘 중 하나라도 없으면 부팅이 실패한다
     // (AuthorizationModule 의 AUTH_CONFIG 팩토리). 이 서비스는 그 전까지 인증이 아예 없었다.
@@ -497,6 +513,7 @@ export function setup(infra: SharedInfra) {
 
   const ugcEnv = withPrefix('UGC', {
     DATABASE_URL: dbUrl('ugc'),
+    ...tenancyEnv,
     ...kafkaEnv('ugc-service', 'ugc-service-group'),
     AUTH_SECRET: authSecret.value,
     JWT_ISSUER: 'almondyoung-auth',
@@ -513,6 +530,7 @@ export function setup(infra: SharedInfra) {
     SEARCH_PRODUCTS_INDEX: 'search_products_v2',
     // 키워드 운영 상태(담당·메모) 테이블 — search 논리 DB (bootstrap 이 생성, migrate 가 적용)
     DATABASE_URL: dbUrl('search'),
+    ...tenancyEnv,
     ...kafkaEnv('search', 'search-indexer-group'),
     // 관리자 키워드 통계 라우트의 JwtAuthGuard 용. 둘 중 하나라도 없으면 부팅이 실패한다
     // (AuthorizationModule 의 AUTH_CONFIG 팩토리). 이 서비스는 그 전까지 인증이 아예 없었다.
@@ -597,6 +615,7 @@ export function setup(infra: SharedInfra) {
     environment: {
       ...kafkaEnv('ai', 'ai-consumer'),
       DATABASE_URL: dbUrl('ai'),
+      ...tenancyEnv,
       AUTH_SECRET: authSecret.value,
       JWT_ISSUER: 'almondyoung-auth',
       // admin-web 이 넘겨 준 RS256 토큰을 검증한다.
@@ -637,6 +656,7 @@ export function setup(infra: SharedInfra) {
     },
     environment: {
       DATABASE_URL: dbUrl('core'),
+      ...tenancyEnv,
       ...kafkaEnv('core', 'core-group'),
       // 출고 워크플로 스위치. 값은 `maintenance | v2` 뿐이고 **기본값이 없다** — 미설정이면 어느
       // 환경이든 startup 실패다 (apps/core/src/config/env.validation.ts). `legacy` 는 V1 출고 경로와
@@ -715,6 +735,7 @@ export function setup(infra: SharedInfra) {
     },
     environment: {
       DATABASE_URL: dbUrl('wallet'),
+      ...tenancyEnv,
       ...kafkaEnv('wallet', 'wallet-group'),
       AUTH_SECRET: authSecret.value,
       USER_JWT_SECRET: authSecret.value,
@@ -759,6 +780,7 @@ export function setup(infra: SharedInfra) {
     link: [db],
     environment: {
       DATABASE_URL: dbUrl('file_service'),
+      ...tenancyEnv,
       ...kafkaEnv('file-service', 'file-service-group'),
       AUTH_SECRET: authSecret.value,
       // OIDC: storefront/admin-web 의 RS256 토큰 검증용.

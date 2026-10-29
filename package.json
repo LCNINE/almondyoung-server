@@ -375,6 +375,7 @@
       "^@app/db(|/.*)$": "<rootDir>/libs/db/src/$1",
       "^@app/events(|/.*)$": "<rootDir>/libs/events/src/$1",
       "^@app/shared(|/.*)$": "<rootDir>/libs/shared/src/$1",
+      "^@app/tenancy(|/.*)$": "<rootDir>/libs/tenancy/src/$1",
       "^@packages/domain-types(|/.*)$": "<rootDir>/packages/domain-types$1",
       "^marked$": "<rootDir>/node_modules/marked/lib/marked.umd.js",
       "^@packages/email-layout(|/.*)$": "<rootDir>/packages/email-layout$1",

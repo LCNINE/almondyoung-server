@@ -46,6 +46,7 @@ import { GrowthTrafficQuery } from './features/growth/read-model/growth-traffic.
 import { GrowthSummaryQuery } from './features/growth/read-model/growth-summary.query';
 import { SCHEDULE_ROOT } from '@app/shared/schedule/schedule-root';
 import { CronOnceModule } from '@app/cron-once';
+import { TenancyModule } from '@app/tenancy';
 
 @Module({
   imports: [
@@ -57,6 +58,8 @@ import { CronOnceModule } from '@app/cron-once';
       isGlobal: true,
       envFilePath: ['.env', 'apps/analytics/.env'],
     }),
+    // 테넌트 목록·전환 모드. 틀리면 여기서 기동 거부 (@app/tenancy).
+    TenancyModule,
     DbModule.forRoot({
       config: {
         connectionString: process.env.DATABASE_URL ?? '',

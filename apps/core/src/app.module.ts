@@ -33,6 +33,7 @@ import { ArchiveModule } from './modules/archive/archive.module';
 import { DemoModule } from './modules/demo/demo.module';
 import { PrintOrderModule } from './modules/print-order/print-order.module';
 import { PrintOrderAdminModule } from './modules/print-order/print-order-admin.module';
+import { TenancyModule } from '@app/tenancy';
 
 @Module({
   imports: [
@@ -41,6 +42,8 @@ import { PrintOrderAdminModule } from './modules/print-order/print-order-admin.m
       validate: validateAlmondyoungEnv,
       envFilePath: ['.env', 'apps/core/.env'],
     }),
+    // 테넌트 목록·전환 모드. 틀리면 여기서 기동 거부 (@app/tenancy).
+    TenancyModule,
     LoggerModule.forRoot(loggerConfig),
     // 크론 «주기당 한 번» 선점 (ADR-0036). SCHEDULE_ROOT 는 inventory.module 등이 이미 import 한다.
     CronOnceModule,

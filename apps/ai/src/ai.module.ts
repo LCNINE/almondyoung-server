@@ -19,6 +19,7 @@ import { AssistantModule } from './assistant/assistant.module';
 import { FilesModule } from './files/files.module';
 import { aiSchema } from './db/schema';
 import { ProductDescriptionModule } from './product-description/product-description.module';
+import { TenancyModule } from '@app/tenancy';
 
 @Module({
   imports: [
@@ -27,6 +28,8 @@ import { ProductDescriptionModule } from './product-description/product-descript
       isGlobal: true,
       envFilePath: ['.env', 'apps/ai/.env'],
     }),
+    // 테넌트 목록·전환 모드. 틀리면 여기서 기동 거부 (@app/tenancy).
+    TenancyModule,
     AuthorizationModule.forAuthOnly(),
     PermissionModule.forRoot({ service: 'ai' }),
     // 이 둘이 빠지면 @CronOnce 는 조용히 안 돈다.

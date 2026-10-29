@@ -137,6 +137,7 @@ import { DEMO_RUN_REPOSITORY, DemoRunService } from './demo/demo-run.service';
 import { DemoRunRepository } from './demo/demo-run.repository';
 import { DemoDispatchOutcomeReader } from './demo/demo-dispatch-outcome.reader';
 import { DemoCatalogClient } from './demo/demo-catalog.client';
+import { TenancyModule } from '@app/tenancy';
 
 const IS_SAFE_DEMO_MODE = isSafeDemoMode(process.env);
 
@@ -172,6 +173,8 @@ const NO_KAFKA_PUBLISHER_STREAMS: StreamConfig[] = [
       isGlobal: true,
       validate: validateChannelAdapterEnv,
     }),
+    // 테넌트 목록·전환 모드. 틀리면 여기서 기동 거부 (@app/tenancy).
+    TenancyModule,
     SCHEDULE_ROOT, // ← Cron 활성화
     CronOnceModule,
     HttpModule,

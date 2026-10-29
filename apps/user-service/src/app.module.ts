@@ -49,6 +49,7 @@ import { HealthController } from './health.controller';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { ServeStaticModule } from '@nestjs/serve-static';
 import { EventTraceController } from './api/events/event-trace.controller';
+import { TenancyModule } from '@app/tenancy';
 
 // ─── Optional modules (enabled only when env vars are present) ───
 const optionalModules: any[] = [];
@@ -88,6 +89,8 @@ const staticRoot = existsSync(join(__dirname, 'static')) ? join(__dirname, 'stat
         process.env.NODE_ENV === 'development' ? '.env.dev' : '.env',
       ),
     }),
+    // 테넌트 목록·전환 모드. 틀리면 여기서 기동 거부 (@app/tenancy).
+    TenancyModule,
     DbModule.forRoot({
       config: {
         connectionString: process.env.DATABASE_URL || 'postgres://postgres:postgres@localhost:5432/postgres',
