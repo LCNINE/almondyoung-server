@@ -212,6 +212,7 @@ medusaIntegrationTestRunner({
           items: [{ item_id: itemId, quantity: 1 }],
           can_cancel: true,
           kind: 'return',
+          refund: null,
         },
       ]);
 
