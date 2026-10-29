@@ -1627,12 +1627,12 @@ describeIfDb('CustomerReturnSettlementManager — 반품 정산 결과·재발�
         const { s, settlement } = await seedRefusedExchange(tx, wired);
         const sentBefore = settleCommandsOf(wired, s.customerReturnId).length;
 
-        await expect(
-          wired.settlement.restart(
-            { customerReturnId: s.customerReturnId, target: 'settlement', actorId: 'cs-1', ...extra },
-            tx,
-          ),
-        ).rejects.toBeInstanceOf(BadRequestError);
+        const refused = wired.settlement
+          .restart({ customerReturnId: s.customerReturnId, target: 'settlement', actorId: 'cs-1', ...extra }, tx)
+          .catch((error: unknown) => error);
+        // 교환 가드가 먼저 막는다 — 다른 가드(실패 코드)의 400 이 아니다
+        await expect(refused).resolves.toBeInstanceOf(BadRequestError);
+        await expect(refused).resolves.toMatchObject({ message: expect.stringMatching(/^교환은/) });
 
         expect((await recordOf(tx, s.customerReturnId)).settlement).toEqual(settlement);
         expect(settleCommandsOf(wired, s.customerReturnId)).toHaveLength(sentBefore);
