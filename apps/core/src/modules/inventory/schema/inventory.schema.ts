@@ -1508,7 +1508,9 @@ export const salesOrderLines = pgTable(
     channelOrderItemId: varchar('channel_order_item_id', { length: 255 }),
     channelProductId: varchar('channel_product_id', { length: 255 }),
     /** 교환 대체 줄이면 그 교환의 반품 줄(K8 PR11). 일반 줄은 null. 반품 줄마다 대체 줄은 하나뿐이다 */
-    exchangeReturnLineId: uuid('exchange_return_line_id').references(() => customerReturnLines.id, {
+    // customer_return_lines 가 이 표를 다시 가리킨다 — 반환 타입을 적지 않으면 두 표의 추론이 서로를 기다리다
+    // 검사 순서에 따라 any 로 무너진다(로컬 0, CI 에서만 TS2339). 같은 표의 다른 순환 참조와 같은 꼴
+    exchangeReturnLineId: uuid('exchange_return_line_id').references((): AnyPgColumn => customerReturnLines.id, {
       onDelete: 'restrict',
     }),
 
