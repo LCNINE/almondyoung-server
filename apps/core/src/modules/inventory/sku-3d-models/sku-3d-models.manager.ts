@@ -1,20 +1,16 @@
 import { Injectable } from '@nestjs/common';
 import { DbService, InjectTypedDb } from '@app/db';
-import { InjectPublisher, PublisherFor } from '@app/events';
 import { BadRequestError, NotFoundError } from '@app/shared';
-import { PRODUCT_STREAM } from '@packages/event-contracts';
-import { and, asc, desc, eq, inArray, isNull, max } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, max } from 'drizzle-orm';
 import { productMasters, productMasterVariants, productMasterVersions } from '../../catalog/schema/catalog.schema';
 import { DbTransaction } from '../../catalog/catalog.types';
-import { ProjectionSnapshotAssembler } from '../../catalog/core/products/assemblers/projection-snapshot.assembler';
-import { ProductModel3dLoader } from '../../catalog/core/products/loaders/product-model3d.loader';
+import { ProductModel3dProjection } from '../../catalog/core/products/services/product-model3d-projection';
 import { lockProductMasters } from '../../catalog/core/products/services/product-master-lock';
 import {
   DbTx,
   productMatchings,
   productVariantSkuLinks,
   sku3dModels,
-  skus,
   Sku3dModelStatus,
   wmsSchema,
 } from '../schema/inventory.schema';
@@ -36,9 +32,7 @@ export class Sku3dModelsManager {
   constructor(
     @InjectTypedDb<typeof wmsSchema>() private readonly db: DbService<typeof wmsSchema>,
     private readonly files: FileServiceClient,
-    private readonly modelLoader: ProductModel3dLoader,
-    private readonly assembler: ProjectionSnapshotAssembler,
-    @InjectPublisher(PRODUCT_STREAM) private readonly publisher: PublisherFor<typeof PRODUCT_STREAM>,
+    private readonly modelProjection: ProductModel3dProjection,
   ) {}
 
   async list(skuId: string) {
@@ -48,7 +42,7 @@ export class Sku3dModelsManager {
   async register(skuId: string, input: RegisterModelInput, actorId: string) {
     return this.db.run(async (tx) => {
       // 같은 SKU의 재생성·검수를 줄 세워 MAX(version) + 1이 중복되지 않게 한다.
-      await this.lockSkus(tx, [skuId]);
+      await this.modelProjection.lockSkus(this.catalogTx(tx), [skuId]);
 
       const [latest] = await tx
         .select({ version: max(sku3dModels.version) })
@@ -58,7 +52,7 @@ export class Sku3dModelsManager {
       await this.validateFile(input.status, input.glbFileId, actorId);
 
       const targets = input.status === 'approved' ? await this.lockTargets(tx, [skuId]) : [];
-      const before = await this.selections(tx, targets);
+      const before = await this.modelProjection.capture(this.catalogTx(tx), targets);
       const [model] = await tx
         .insert(sku3dModels)
         .values({
@@ -70,7 +64,7 @@ export class Sku3dModelsManager {
         })
         .returning();
 
-      await this.refreshChangedProducts(tx, targets, before);
+      await this.modelProjection.refresh(this.catalogTx(tx), targets, before);
 
       return model;
     });
@@ -101,11 +95,11 @@ export class Sku3dModelsManager {
       }
 
       const skuIds = [...new Set(initial.map((model) => model.skuId))].sort();
-      await this.lockSkus(tx, skuIds);
+      await this.modelProjection.lockSkus(this.catalogTx(tx), skuIds);
 
       // 서로 다른 SKU를 동시에 검수해도 같은 상품의 대표 모델 비교는 순서대로 진행한다.
       const targets = await this.lockTargets(tx, skuIds);
-      const before = await this.selections(tx, targets);
+      const before = await this.modelProjection.capture(this.catalogTx(tx), targets);
       const models = await tx.select().from(sku3dModels).where(inArray(sku3dModels.id, uniqueIds));
 
       for (const model of models) {
@@ -118,7 +112,7 @@ export class Sku3dModelsManager {
         .where(inArray(sku3dModels.id, uniqueIds))
         .returning();
 
-      await this.refreshChangedProducts(tx, targets, before, bulk);
+      await this.modelProjection.refresh(this.catalogTx(tx), targets, before, bulk);
 
       return updated;
     });
@@ -142,20 +136,6 @@ export class Sku3dModelsManager {
       file.mimeType !== 'model/gltf-binary'
     ) {
       throw new BadRequestError('Approval requires a completed public sku-3d-model GLB');
-    }
-  }
-
-  private async lockSkus(tx: DbTx, ids: string[]) {
-    const rows = await tx
-      .select({ id: skus.id, isDeleted: skus.isDeleted })
-      .from(skus)
-      .where(inArray(skus.id, ids))
-      .orderBy(asc(skus.id))
-      // SKU ID는 바꾸지 않으므로 공개 작업의 FK KEY SHARE와 충돌할 필요가 없다.
-      .for('no key update');
-
-    if (rows.length !== ids.length || rows.some((sku) => sku.isDeleted)) {
-      throw new NotFoundError('SKU not found');
     }
   }
 
@@ -189,59 +169,6 @@ export class Sku3dModelsManager {
           isNull(productMasters.deletedAt),
         ),
       );
-  }
-
-  private async selections(tx: DbTx, targets: Target[]) {
-    const selections = new Map<string, string | undefined>();
-
-    for (const target of targets) {
-      selections.set(
-        target.masterId,
-        await this.modelLoader.getFileId(this.catalogTx(tx), target.masterId, target.versionId),
-      );
-    }
-
-    return selections;
-  }
-
-  private async refreshChangedProducts(
-    tx: DbTx,
-    targets: Target[],
-    before: Map<string, string | undefined>,
-    bulk = false,
-  ) {
-    for (const { masterId, versionId } of targets) {
-      const after = await this.modelLoader.getFileId(this.catalogTx(tx), masterId, versionId);
-
-      // 비대표 SKU의 승인·메모 변경은 고객에게 보일 파일이 같으므로 재발행하지 않는다.
-      if (before.get(masterId) === after) {
-        continue;
-      }
-
-      const assembly = await this.assembler.assembleActiveVersionSnapshot(masterId, versionId, this.catalogTx(tx));
-
-      // 조립·outbox 실패를 전파해 검수 상태만 저장되고 고객 반영이 누락되는 일을 막는다.
-      await this.publisher.enqueue(
-        {
-          eventType: 'ProductMasterActiveVersionChanged',
-          aggregateId: masterId,
-          payload: {
-            masterId,
-            versionId,
-            previousActiveVersionId: null,
-            name: assembly.snapshot.name,
-            categoryIds: assembly.categoryIds,
-            primaryCategoryId: assembly.primaryCategoryId,
-            changeReason: 'published',
-            changedAt: new Date().toISOString(),
-            snapshot: assembly.snapshot,
-            // 일괄 검수는 단건 상품 수정을 막지 않도록 소비자의 대량 처리 레인으로 보낸다.
-            ...(bulk ? { origin: 'bulk_import' as const } : {}),
-          },
-        },
-        tx,
-      );
-    }
   }
 
   private catalogTx(tx: DbTx): DbTransaction {

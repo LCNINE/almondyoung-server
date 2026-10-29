@@ -1,4 +1,5 @@
 import { Sku3dModelsManager } from './sku-3d-models.manager';
+import { ProductModel3dProjection } from '../../catalog/core/products/services/product-model3d-projection';
 
 /** Queue the DB boundary; application selection, validation, and publication remain real. */
 function fixture(options: { before?: string; after?: string; metadata?: object; publishError?: boolean } = {}) {
@@ -74,7 +75,7 @@ function fixture(options: { before?: string; after?: string; metadata?: object; 
   const publisher: any = {
     enqueue: options.publishError ? jest.fn().mockRejectedValue(new Error('outbox failed')) : jest.fn(),
   };
-  const manager = new Sku3dModelsManager(db, files, loader, assembler, publisher);
+  const manager = new Sku3dModelsManager(db, files, new ProductModel3dProjection(loader, assembler, publisher));
   const existing = { id: 'model', skuId: 'sku', version: 1, glbFileId: 'file', status: 'needs_revision' };
   const targets = [{ masterId: 'master', versionId: 'version' }];
 

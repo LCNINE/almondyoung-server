@@ -15,6 +15,10 @@ import { drizzle } from 'drizzle-orm/postgres-js';
 import { ProductModel3dLoader } from '../../catalog/core/products/loaders/product-model3d.loader';
 import { wmsSchema } from '../schema/inventory.schema';
 import { Sku3dModelsManager } from './sku-3d-models.manager';
+import { ProductSkuMappingService } from '../../product-matching/services/product-sku-mapping.service';
+import { ProductMatchingService } from '../../product-matching/services/product-matching.service';
+import { MatchingLinkResolver } from '../../product-matching/services/matching-link-resolver';
+import { ProductModel3dProjection } from '../../catalog/core/products/services/product-model3d-projection';
 
 // 전용 컨테이너에 최소 연결 테이블과 실제 additive migration을 적용해 로컬 데이터와 격리한다.
 describe('SKU 3D models PostgreSQL integration', () => {
@@ -23,6 +27,8 @@ describe('SKU 3D models PostgreSQL integration', () => {
   let container: StartedPostgreSqlContainer;
   let client: postgres.Sql;
   let manager: Sku3dModelsManager;
+  let mappings: ProductSkuMappingService;
+  let matchingService: ProductMatchingService;
   let failPublication: boolean;
   let lifecycle: ProductVersionsService;
   let categories: ProductCategoriesService;
@@ -42,13 +48,28 @@ describe('SKU 3D models PostgreSQL integration', () => {
     client = postgres(container.getConnectionUri(), { max: 8 });
 
     await client.unsafe(`
-      CREATE TABLE skus (id uuid PRIMARY KEY, is_deleted boolean NOT NULL DEFAULT false);
+      CREATE TABLE skus (id uuid PRIMARY KEY, is_deleted boolean NOT NULL DEFAULT false, name text, code text);
       CREATE TABLE product_masters (id uuid PRIMARY KEY, deleted_at timestamp);
       CREATE TABLE product_master_versions (id uuid PRIMARY KEY, master_id uuid, status text, deleted_at timestamp, updated_at timestamp, draft_owner_id uuid, version integer DEFAULT 1);
       CREATE TABLE product_variants (id uuid PRIMARY KEY, display_order integer, status text);
       CREATE TABLE product_master_variants (master_id uuid, version_id uuid, variant_id uuid);
-      CREATE TABLE product_matchings (id uuid PRIMARY KEY, variant_id uuid);
-      CREATE TABLE product_variant_sku_links (product_matching_id uuid, sku_id uuid);
+      CREATE TABLE product_matchings (
+        id uuid PRIMARY KEY DEFAULT gen_random_uuid(), variant_id uuid UNIQUE, master_id uuid, sku_group_id uuid,
+        status text DEFAULT 'matched', priority text DEFAULT 'normal', strategy text DEFAULT 'variant',
+        is_resolved boolean DEFAULT true, pre_stock_sellable boolean DEFAULT true,
+        always_sellable_zero_stock boolean DEFAULT false, created_at timestamptz DEFAULT now(),
+        updated_at timestamptz DEFAULT now()
+      );
+      CREATE TABLE product_variant_sku_links (
+        product_matching_id uuid, sku_id uuid, quantity integer DEFAULT 1, created_at timestamptz DEFAULT now()
+      );
+      CREATE TABLE sales_variant_policies (
+        variant_id uuid PRIMARY KEY, inventory_management boolean DEFAULT false,
+        pre_stock_sellable boolean DEFAULT false, always_sellable_zero_stock boolean DEFAULT false,
+        availability_override varchar(32), coming_soon_date date, restock_date date,
+        restock_approximate boolean DEFAULT false, effective_from timestamptz, effective_to timestamptz,
+        updated_by uuid, updated_at timestamptz DEFAULT now()
+      );
       CREATE TABLE test_projection_events (sequence serial, file_id text, origin text, reason text, version_id uuid, category_ids jsonb);
     `);
     await client.unsafe(readFileSync('apps/core/drizzle/20261029005659_add-sku-3d-models.sql', 'utf8'));
@@ -136,7 +157,23 @@ describe('SKU 3D models PostgreSQL integration', () => {
         }
       },
     };
-    manager = new Sku3dModelsManager(dbService as any, files as any, loader, assembler as any, publisher as any);
+    const modelProjection = new ProductModel3dProjection(loader, assembler as any, publisher as any);
+    manager = new Sku3dModelsManager(dbService as any, files as any, modelProjection);
+    mappings = new ProductSkuMappingService(
+      dbService as any,
+      { recalculateAndPublishForVariant: async () => undefined } as any,
+      { wakeBacklogsWaitingForVariant: async () => undefined } as any,
+      new MatchingLinkResolver({} as any),
+      modelProjection,
+    );
+    matchingService = new ProductMatchingService(
+      dbService as any,
+      { recalculateAndPublishForVariant: async () => undefined } as any,
+      { wakeBacklogsWaitingForVariant: async () => undefined } as any,
+      { log: async () => undefined } as any,
+      new MatchingLinkResolver({} as any),
+      modelProjection,
+    );
     lifecycle = new ProductVersionsService(
       dbService as any,
       publisher as any,
@@ -203,7 +240,7 @@ describe('SKU 3D models PostgreSQL integration', () => {
     await client.unsafe(`
       TRUNCATE sku_3d_models, skus, product_masters, product_master_versions, product_variants,
         product_master_variants, product_matchings, product_variant_sku_links, test_projection_events,
-        product_categories, product_master_categories CASCADE;
+        product_categories, product_master_categories, sales_variant_policies CASCADE;
     `);
     masterId = randomUUID();
     versionId = randomUUID();
@@ -221,17 +258,126 @@ describe('SKU 3D models PostgreSQL integration', () => {
     for (const [order, skuId] of [firstSkuId, secondSkuId].entries()) {
       const variantId = randomUUID();
       const matchingId = randomUUID();
-      await client`INSERT INTO skus VALUES (${skuId}, false)`;
+      await client`INSERT INTO skus (id, is_deleted) VALUES (${skuId}, false)`;
       await client`INSERT INTO product_variants VALUES (${variantId}, ${order}, 'active')`;
       await client`INSERT INTO product_master_variants VALUES (${masterId}, ${versionId}, ${variantId})`;
-      await client`INSERT INTO product_matchings VALUES (${matchingId}, ${variantId})`;
-      await client`INSERT INTO product_variant_sku_links VALUES (${matchingId}, ${skuId})`;
+      await client`INSERT INTO product_matchings (id, variant_id) VALUES (${matchingId}, ${variantId})`;
+      await client`INSERT INTO product_variant_sku_links (product_matching_id, sku_id) VALUES (${matchingId}, ${skuId})`;
     }
   });
 
   async function selection(version = versionId) {
     return loader.getFileId(drizzle(client) as any, masterId, version);
   }
+
+  async function firstVariantId() {
+    const [variant] = await client`SELECT id FROM product_variants ORDER BY display_order LIMIT 1`;
+
+    return variant.id as string;
+  }
+
+  it('replaces a disconnected model when a live variant is remapped', async () => {
+    const firstFile = randomUUID();
+    const secondFile = randomUUID();
+    await manager.register(firstSkuId, { status: 'approved', glbFileId: firstFile }, actorId);
+    await manager.register(secondSkuId, { status: 'approved', glbFileId: secondFile }, actorId);
+    await client`TRUNCATE test_projection_events`;
+
+    await mappings.upsert(await firstVariantId(), { links: [{ skuId: secondSkuId, quantity: 1 }] });
+
+    expect(await selection()).toBe(secondFile);
+    expect(await client`SELECT file_id FROM test_projection_events`).toEqual([{ file_id: secondFile }]);
+  });
+
+  it('removes a disconnected model when the last approved SKU link is cleared', async () => {
+    await manager.register(firstSkuId, { status: 'approved', glbFileId: randomUUID() }, actorId);
+    await client`TRUNCATE test_projection_events`;
+
+    await mappings.upsert(await firstVariantId(), { links: [], policy: {} });
+
+    expect(await selection()).toBeUndefined();
+    expect(await client`SELECT file_id FROM test_projection_events`).toEqual([{ file_id: null }]);
+  });
+
+  it('rolls back SKU remapping when the model outbox fails', async () => {
+    const firstFile = randomUUID();
+    await manager.register(firstSkuId, { status: 'approved', glbFileId: firstFile }, actorId);
+    await client`TRUNCATE test_projection_events`;
+    failPublication = true;
+
+    await expect(
+      mappings.upsert(await firstVariantId(), { links: [{ skuId: secondSkuId, quantity: 1 }] }),
+    ).rejects.toThrow('outbox failed');
+
+    expect(await selection()).toBe(firstFile);
+    expect(await client`SELECT file_id FROM test_projection_events`).toHaveLength(0);
+  });
+
+  it('serializes model approval with remapping to a previously unlinked SKU', async () => {
+    const newSkuId = randomUUID();
+    const fileId = randomUUID();
+    await client`INSERT INTO skus (id) VALUES (${newSkuId})`;
+    const model = await manager.register(newSkuId, { status: 'needs_revision', glbFileId: fileId }, actorId);
+    await manager.register(firstSkuId, { status: 'approved', glbFileId: randomUUID() }, actorId);
+    const pause = pauseAfterSnapshot();
+    const remap = mappings.upsert(await firstVariantId(), { links: [{ skuId: newSkuId, quantity: 1 }] });
+    await pause.ready;
+
+    const approval = manager.review(model.id, { status: 'approved' }, actorId);
+
+    try {
+      // The remap holds the new SKU lock before its uncommitted link becomes visible.
+      await waitUntilBlockedOrFinished(approval, '%skus%');
+    } finally {
+      pause.release();
+    }
+
+    await Promise.all([remap, approval]);
+
+    const events = await client`SELECT file_id FROM test_projection_events ORDER BY sequence`;
+    expect(await selection()).toBe(fileId);
+    expect(events.at(-1)?.file_id).toBe(fileId);
+  });
+
+  it('publishes an approved model when a pending matching gains its first SKU', async () => {
+    await client`DELETE FROM product_variant_sku_links WHERE sku_id = ${firstSkuId}`;
+    const fileId = randomUUID();
+    await manager.register(firstSkuId, { status: 'approved', glbFileId: fileId }, actorId);
+    const [matching] = await client`
+      UPDATE product_matchings SET status = 'pending', is_resolved = false
+      WHERE variant_id = ${await firstVariantId()} RETURNING id
+    `;
+
+    await matchingService.resolveMatchingPending(matching.id, {
+      skuIds: [firstSkuId],
+      stockPolicy: { availabilityOverride: null },
+    });
+
+    expect(await client`SELECT file_id FROM test_projection_events`).toEqual([{ file_id: fileId }]);
+  });
+
+  it('clears the model when a matching changes to the void strategy', async () => {
+    await manager.register(firstSkuId, { status: 'approved', glbFileId: randomUUID() }, actorId);
+    await client`TRUNCATE test_projection_events`;
+    const [matching] = await client`SELECT id FROM product_matchings WHERE variant_id = ${await firstVariantId()}`;
+
+    await matchingService.changeMatchingStrategy(matching.id, 'void');
+
+    expect(await client`SELECT file_id FROM test_projection_events`).toEqual([{ file_id: null }]);
+  });
+
+  it('clears the model when automatic matching disables inventory management', async () => {
+    await manager.register(firstSkuId, { status: 'approved', glbFileId: randomUUID() }, actorId);
+    await client`TRUNCATE test_projection_events`;
+
+    await matchingService.handleAutomaticMatchingRequest({
+      masterId,
+      name: 'Product',
+      variants: [{ id: await firstVariantId(), name: 'Option', inventoryManagement: false, components: [] }],
+    });
+
+    expect(await client`SELECT file_id FROM test_projection_events`).toEqual([{ file_id: null }]);
+  });
 
   it('selects newest approved model of the first variant and falls back on revocation', async () => {
     const oldFile = randomUUID();
@@ -327,7 +473,7 @@ describe('SKU 3D models PostgreSQL integration', () => {
     return { ready, release };
   }
 
-  async function waitUntilBlockedOrFinished(operation: Promise<unknown>) {
+  async function waitUntilBlockedOrFinished(operation: Promise<unknown>, queryPattern = '%product_masters%') {
     let finished = false;
     operation.then(
       () => {
@@ -341,7 +487,7 @@ describe('SKU 3D models PostgreSQL integration', () => {
     for (let attempt = 0; attempt < 200; attempt += 1) {
       const [locks] = await client`
         SELECT count(*)::int AS count FROM pg_stat_activity
-        WHERE pid <> pg_backend_pid() AND wait_event_type = 'Lock' AND query LIKE '%product_masters%'
+        WHERE pid <> pg_backend_pid() AND wait_event_type = 'Lock' AND query LIKE ${queryPattern}
       `;
 
       if (finished || locks.count > 0) {

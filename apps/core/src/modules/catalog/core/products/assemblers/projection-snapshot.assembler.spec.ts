@@ -153,7 +153,7 @@ describe('ProjectionSnapshotAssembler', () => {
     expect(snapshot.model3dFileId).toBe('file-glb');
     expect(snapshot.thumbnail).toBe('file-photo');
     expect(
-      PRODUCT_STREAM.events.ProductMasterActiveVersionChanged.schema.parse({
+      PRODUCT_STREAM.events.ProductMasterActiveVersionChanged.schema!.parse({
         masterId: 'master-1',
         versionId: 'version-1',
         previousActiveVersionId: null,

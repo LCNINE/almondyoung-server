@@ -1,3 +1,4 @@
+import { createModel3dProjectionStub } from './__fixtures__/model3d-projection.stub';
 import { BadRequestException, NotFoundException } from '@nestjs/common';
 import { productVariants } from '../../catalog/schema/catalog.schema';
 import { wmsTables } from '../../inventory/schema/inventory.schema';
@@ -60,6 +61,7 @@ function createService(
     productSellableQuantity,
     fulfillmentBacklog ?? { wakeBacklogsWaitingForVariant: jest.fn() },
     linkResolver,
+    createModel3dProjectionStub(),
   );
 }
 
@@ -80,6 +82,7 @@ describe('ProductSkuMappingService', () => {
       productSellableQuantity as any,
       fulfillmentBacklog as any,
       makeLinkResolver() as any,
+      createModel3dProjectionStub(),
     );
 
     await expect(service.upsert('variant-1', { links: [] } as any)).rejects.toBeInstanceOf(BadRequestException);
@@ -146,6 +149,7 @@ describe('ProductSkuMappingService', () => {
       productSellableQuantity as any,
       fulfillmentBacklog as any,
       makeLinkResolver() as any,
+      createModel3dProjectionStub(),
     );
 
     await expect(
@@ -258,6 +262,7 @@ describe('ProductSkuMappingService', () => {
       productSellableQuantity as any,
       fulfillmentBacklog as any,
       makeLinkResolver() as any,
+      createModel3dProjectionStub(),
     );
 
     const result = await service.upsert(variantId, {
@@ -376,6 +381,7 @@ describe('ProductSkuMappingService', () => {
       productSellableQuantity as any,
       fulfillmentBacklog as any,
       makeLinkResolver() as any,
+      createModel3dProjectionStub(),
     );
 
     await service.upsert(variantId, {
@@ -494,6 +500,7 @@ describe('ProductSkuMappingService', () => {
       productSellableQuantity as any,
       fulfillmentBacklog as any,
       makeLinkResolver() as any,
+      createModel3dProjectionStub(),
     );
 
     const result = await service.upsert(variantId, {
@@ -636,6 +643,7 @@ describe('ProductSkuMappingService', () => {
       productSellableQuantity as any,
       fulfillmentBacklog as any,
       linkResolver as any,
+      createModel3dProjectionStub(),
     );
 
     await service.upsert(variantId, {

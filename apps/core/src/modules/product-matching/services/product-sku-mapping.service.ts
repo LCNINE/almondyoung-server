@@ -10,6 +10,8 @@ import { ProductSellableQuantityResult } from '../../inventory/product-sellable-
 import { FulfillmentOrderCreationBacklogService } from '../../fulfillment/backlog/fulfillment-order-creation-backlog.service';
 import { MatchingLinkResolver } from './matching-link-resolver';
 import { productVariants } from '../../catalog/schema/catalog.schema';
+import { DbTransaction } from '../../catalog/catalog.types';
+import { ProductModel3dProjection } from '../../catalog/core/products/services/product-model3d-projection';
 import {
   UpdateVariantStockPolicyDto,
   VariantMatchingBatchItemDto,
@@ -34,6 +36,7 @@ export class ProductSkuMappingService {
     private readonly productSellableQuantity: ProductSellableQuantityService,
     private readonly fulfillmentBacklog: FulfillmentOrderCreationBacklogService,
     private readonly linkResolver: MatchingLinkResolver,
+    private readonly modelProjection: ProductModel3dProjection,
   ) {}
 
   private hasAvailabilityOverride(policy: StockPolicyPatch): boolean {
@@ -319,6 +322,16 @@ export class ProductSkuMappingService {
           throw new BadRequestException('variant strategy requires at least one SKU link');
         }
 
+        const catalogTx = trx as unknown as DbTransaction;
+        const linkedSkuIds = [...new Set((dto.links ?? []).flatMap((link) => (link.skuId ? [link.skuId] : [])))].sort();
+
+        if (linkedSkuIds.length > 0) {
+          await this.modelProjection.lockSkus(catalogTx, linkedSkuIds);
+        }
+
+        const modelTargets = await this.modelProjection.lockVariantTargets(catalogTx, [variantId]);
+        const previousModels = await this.modelProjection.capture(catalogTx, modelTargets);
+
         await lockProductVariants(trx, [variantId]);
 
         const existing = await trx.query.productMatchings.findFirst({
@@ -363,6 +376,8 @@ export class ProductSkuMappingService {
           );
 
           await this.productSellableQuantity.recalculateAndPublishForVariant(variantId, trx);
+          await this.modelProjection.refresh(catalogTx, modelTargets, previousModels);
+
           return this.getByVariant(variantId, trx);
         }
 
@@ -390,6 +405,8 @@ export class ProductSkuMappingService {
             );
           }
           await this.productSellableQuantity.recalculateAndPublishForVariant(variantId, trx);
+          await this.modelProjection.refresh(catalogTx, modelTargets, previousModels);
+
           return this.getByVariant(variantId, trx);
         }
 
@@ -448,6 +465,8 @@ export class ProductSkuMappingService {
 
         await this.productSellableQuantity.recalculateAndPublishForVariant(variantId, trx);
         await this.fulfillmentBacklog.wakeBacklogsWaitingForVariant(variantId, trx);
+
+        await this.modelProjection.refresh(catalogTx, modelTargets, previousModels);
 
         return this.getByVariant(variantId, trx);
       },
