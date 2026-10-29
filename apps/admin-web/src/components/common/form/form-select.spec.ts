@@ -4,8 +4,8 @@ import { FormSelect } from './form-select';
 
 // radix 는 닫힌 목록의 항목을 서버 렌더에서 그리지 않는다 — 구조만 보도록 얇은 태그로 바꾼다
 jest.mock('@/components/ui/select', () => {
-  const tag = (name: string) => ({ children }: { children?: ReactNode }) =>
-    require('react').createElement(name, null, children);
+  const { createElement: h } = jest.requireActual<typeof import('react')>('react');
+  const tag = (name: string) => ({ children }: { children?: ReactNode }) => h(name, null, children);
   return {
     Select: tag('select-root'),
     SelectTrigger: tag('trigger'),
@@ -14,7 +14,7 @@ jest.mock('@/components/ui/select', () => {
     SelectGroup: tag('group'),
     SelectLabel: tag('label'),
     SelectItem: ({ value, children }: { value: string; children?: ReactNode }) =>
-      require('react').createElement('item', { value }, children),
+      h('item', { value }, children),
   };
 });
 
