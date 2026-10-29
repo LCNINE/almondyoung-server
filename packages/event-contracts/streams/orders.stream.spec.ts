@@ -209,6 +209,18 @@ describe('ChannelReturnRequested / ChannelReturnCancelled', () => {
     expect(() => cancelled.parse(cancelledPayload)).not.toThrow();
   });
 
+  it.each(['포장이 찢어졌어요', '가'.repeat(10000)])('메모를 길이 제한 없이 보존한다', (note) => {
+    expect(requested.parse({ ...requestedPayload, note })).toEqual({ ...requestedPayload, note });
+  });
+
+  it('메모 없는 옛 payload 는 메모 없이 통과한다', () => {
+    expect(requested.parse(requestedPayload)).toEqual(requestedPayload);
+  });
+
+  it.each([null, 42, {}])('문자열이 아닌 메모 %p는 거절한다', (note) => {
+    expect(requested.safeParse({ ...requestedPayload, note }).success).toBe(false);
+  });
+
   it('사유 어휘가 Medusa RETURN_REASONS 와 같다', () => {
     expect([...CUSTOMER_RETURN_REASONS]).toEqual([
       'change_of_mind',

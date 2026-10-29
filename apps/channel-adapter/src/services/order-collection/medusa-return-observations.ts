@@ -18,6 +18,7 @@ export type SkippedReturn = {
 interface AlmondReturnRecord {
   requestId: string;
   reason: CustomerReturnReason;
+  note?: string;
   feeBearer: 'customer' | 'seller';
   requestedBy: 'customer' | 'operator';
   kind?: CustomerReturnKind;
@@ -35,12 +36,12 @@ function isReason(value: unknown): value is CustomerReturnReason {
 /**
  * `return.metadata.almondReturn` 을 읽는다. 모양은 Medusa 쪽 `load-return-order.ts` 가 정한다 —
  * channel-adapter 는 Medusa 코드를 import 하지 않으므로 필요한 칸만 직접 검증한다.
- * 하나라도 빠졌거나 어긋나면 null (이 반품은 우리 접수 경로를 거치지 않았다).
+ * 필수 칸이 빠졌거나 어긋나면 null (우리 접수 경로를 거치지 않은 반품).
  */
 function readRecord(metadata: MedusaReturn['metadata']): AlmondReturnRecord | null {
   const raw = metadata?.almondReturn;
   if (!isRecord(raw)) return null;
-  const { requestId, reasonValue, feeBearer, requestedBy, windowOverride, kind } = raw;
+  const { requestId, reasonValue, feeBearer, requestedBy, windowOverride, kind, note } = raw;
   if (typeof requestId !== 'string' || requestId === '') return null;
   if (!isReason(reasonValue)) return null;
   if (feeBearer !== 'customer' && feeBearer !== 'seller') return null;
@@ -52,6 +53,7 @@ function readRecord(metadata: MedusaReturn['metadata']): AlmondReturnRecord | nu
   return {
     requestId,
     reason: reasonValue,
+    ...(typeof note === 'string' && note.trim() ? { note: note.trim() } : {}),
     feeBearer,
     requestedBy,
     ...(kind === 'exchange' ? { kind } : {}),
@@ -200,6 +202,7 @@ export function medusaReturnObservations(order: MedusaOrder): {
         requestId: record.requestId,
         reason: record.reason,
         ...(record.kind ? { kind: record.kind } : {}),
+        ...(record.note ? { note: record.note } : {}),
         feeBearer: record.feeBearer,
         requestedBy: record.requestedBy,
         ...(record.windowOverrideReason ? { windowOverrideReason: record.windowOverrideReason } : {}),

@@ -242,6 +242,7 @@ export interface ChannelReturnRequestedPayload {
   /** Medusa 반품 기록의 멱등 키 */
   requestId: string;
   reason: CustomerReturnReason;
+  note?: string;
   feeBearer: 'customer' | 'seller';
   requestedBy: 'customer' | 'operator';
   windowOverrideReason?: string;
@@ -435,6 +436,7 @@ const ChannelReturnRequestedSchema = z.object({
   returnId: z.string().min(1),
   requestId: z.string().min(1),
   reason: z.enum(CUSTOMER_RETURN_REASONS),
+  note: z.string().optional(),
   feeBearer: z.enum(['customer', 'seller']),
   requestedBy: z.enum(['customer', 'operator']),
   windowOverrideReason: z.string().optional(),

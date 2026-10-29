@@ -27,10 +27,28 @@ const order = (returns?: MedusaReturn[]): MedusaOrder =>
   ({ id: 'order_1', updated_at: '2026-10-27T02:00:00.000Z', ...(returns ? { returns } : {}) }) as MedusaOrder;
 
 describe('medusaReturnObservations', () => {
+  it('메모를 다듬어 requested 관측에 싣는다', () => {
+    const { observations, skipped } = medusaReturnObservations(
+      order([ret({ metadata: record({ note: '  포장이 찢어졌어요\n ' }) })]),
+    );
+
+    expect(skipped).toEqual([]);
+    expect(observations[0]).toMatchObject({ payload: { note: '포장이 찢어졌어요' } });
+  });
+
+  it.each([undefined, null, '', ' \n ', 42, {}])('메모 %p는 생략하고 반품은 관측한다', (note) => {
+    const { observations, skipped } = medusaReturnObservations(order([ret({ metadata: record({ note }) })]));
+
+    expect(skipped).toEqual([]);
+    expect(observations).toHaveLength(1);
+    expect(observations[0].payload).not.toHaveProperty('note');
+  });
+
   it('확정된 반품 하나 → requested 관측 하나', () => {
     const { observations, skipped } = medusaReturnObservations(order([ret()]));
     expect(skipped).toEqual([]);
     expect(observations).toHaveLength(1);
+    expect(observations[0].payload).not.toHaveProperty('note');
     expect(observations[0]).toMatchObject({
       eventType: 'ChannelReturnRequested',
       eventKey: 'return:ret_1:requested',

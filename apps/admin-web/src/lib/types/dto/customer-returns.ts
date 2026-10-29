@@ -66,7 +66,13 @@ export interface CustomerReturnSettlement {
   startedAt: string;
   lastIssuedAt: string;
   attempts: number;
-  lastFailure: { code: string; message: string; retryable: boolean; received: boolean; at: string } | null;
+  lastFailure: {
+    code: string;
+    message: string;
+    retryable: boolean;
+    received: boolean;
+    at: string;
+  } | null;
   issues?: number;
   command?: {
     holdDeduction?: { amount: number; memo: string };
@@ -98,15 +104,30 @@ export interface CustomerReturnPrepayment {
   lastIssuedAt: string;
   attempts: number;
   issues: number;
-  lastFailure: { code: string; message: string; retryable: boolean; at: string } | null;
-  outcome: { amount: number; refundMode: 'auto' | 'manual'; prepaidAt: string } | null;
+  lastFailure: {
+    code: string;
+    message: string;
+    retryable: boolean;
+    at: string;
+  } | null;
+  outcome: {
+    amount: number;
+    refundMode: 'auto' | 'manual';
+    prepaidAt: string;
+  } | null;
   restartedAt?: string;
   restartedBy?: string;
 }
 
 export interface CustomerReturnCsResolution {
   missing?: { memo: string; by: string; at: string };
-  hold?: { deduction: number; memo: string; by: string; at: string; dropped?: { by: string; at: string } };
+  hold?: {
+    deduction: number;
+    memo: string;
+    by: string;
+    at: string;
+    dropped?: { by: string; at: string };
+  };
 }
 
 export interface CustomerReturnViewItem {
@@ -139,6 +160,7 @@ export interface CustomerReturnView {
   channelReturnId: string;
   status: CustomerReturnStatus;
   reason: string;
+  note: string | null;
   feeBearer: string;
   requestedBy: string;
   warehouseId: string | null;
@@ -233,7 +255,11 @@ export type ReturnRejectReason =
   | 'exchange_released';
 
 export interface OrderReturnable {
-  items: Array<{ item_id: string; returnable_quantity: number; window_ends_at: string | null }>;
+  items: Array<{
+    item_id: string;
+    returnable_quantity: number;
+    window_ends_at: string | null;
+  }>;
 }
 
 export interface RequestOrderReturnBody {
