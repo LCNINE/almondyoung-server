@@ -5,22 +5,39 @@ const none = { pickupStatus: "none" as const, arrivedAt: null, inspectedAt: null
 
 describe("returnSteps", () => {
   it("접수만 됐으면 첫 단계만 끝", () => {
-    expect(returnSteps({ kind: "return", stage: "requested" }, none).map((s) => s.done)).toEqual([true, false, false, false])
+    expect(returnSteps({ kind: "return", stage: "requested", refund: null }, none).map((s) => s.done)).toEqual([true, false, false, false])
   })
 
   it("기사님이 가져가면 회수까지", () => {
-    const steps = returnSteps({ kind: "return", stage: "requested" }, { ...none, pickupStatus: "picked_up" })
+    const steps = returnSteps({ kind: "return", stage: "requested", refund: null }, { ...none, pickupStatus: "picked_up" })
     expect(steps.map((s) => s.done)).toEqual([true, true, false, false])
   })
 
   it("Medusa processing 이면 core 진행을 못 읽어도 검수까지", () => {
-    expect(returnSteps({ kind: "return", stage: "processing" }, null).map((s) => s.done)).toEqual([true, true, true, false])
+    expect(returnSteps({ kind: "return", stage: "processing", refund: null }, null).map((s) => s.done)).toEqual([true, true, true, false])
   })
 
   it("환불이 끝나면 전부, 교환은 마지막 단계가 exchanged", () => {
-    expect(returnSteps({ kind: "return", stage: "refunded" }, null).every((s) => s.done)).toBe(true)
-    const ex = returnSteps({ kind: "exchange", stage: "exchanged" }, null)
+    expect(returnSteps({ kind: "return", stage: "refunded", refund: null }, null).every((s) => s.done)).toBe(true)
+    const ex = returnSteps({ kind: "exchange", stage: "exchanged", refund: null }, null)
     expect(ex.at(-1)).toEqual({ key: "exchanged", done: true })
+  })
+})
+
+describe("returnSteps — 선환불", () => {
+  const prepaid = { kind: "prepaid" as const, itemTotal: 60000, shippingRefund: 0, fees: 0, total: 10000, receivedAt: null, refundedAt: "2026-10-27T00:00:00.000Z" }
+
+  it("선환불만 끝났으면 환불 단계만 끝 — 회수·검수는 아직", () => {
+    const steps = returnSteps({ kind: "return", stage: "refunded", refund: prepaid }, { ...none, pickupStatus: "requested" })
+    expect(steps.map((s) => s.done)).toEqual([true, false, false, true])
+  })
+
+  it("선환불 뒤 창고가 받았으면 회수·검수도 끝", () => {
+    const steps = returnSteps(
+      { kind: "return", stage: "refunded", refund: prepaid },
+      { ...none, arrivedAt: "2026-10-28T00:00:00.000Z", inspectedAt: "2026-10-28T01:00:00.000Z" }
+    )
+    expect(steps.every((s) => s.done)).toBe(true)
   })
 })
 

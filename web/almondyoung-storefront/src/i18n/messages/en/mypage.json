@@ -911,7 +911,7 @@
         "pickedUp": "Picked up",
         "inspected": "Inspected",
         "refunded": "Refunded",
-        "exchanged": "Replacement sent"
+        "exchanged": "Exchange processed"
       },
       "canceled": "Canceled",
       "table": {
@@ -963,7 +963,9 @@
         "done": "Refunded",
         "planned": "Refund amount",
         "notYet": "The refund amount is set once the item arrives and is inspected.",
-        "notice": "Card refunds take 3-7 business days after the cancellation request. Points are returned right away."
+        "notice": "Card refunds take 3-7 business days after the cancellation request. Points are returned right away.",
+        "prepaid": "Refunded in advance",
+        "prepaidRest": "The rest of the refund is set once the item arrives and is inspected."
       },
       "toOrder": "Order details",
       "toList": "Orders",

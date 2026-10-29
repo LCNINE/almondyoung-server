@@ -100,6 +100,7 @@ export function toCustomerReturns(
     canCancel: r.can_cancel,
     refund: r.refund
       ? {
+          kind: r.refund.kind === "prepaid" ? "prepaid" : "settled",
           itemTotal: r.refund.item_total,
           shippingRefund: r.refund.shipping_refund,
           fees: r.refund.fees,

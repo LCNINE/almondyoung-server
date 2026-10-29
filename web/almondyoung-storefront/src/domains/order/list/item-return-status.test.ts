@@ -29,7 +29,7 @@ describe("itemReturnStatus", () => {
   })
 
   it("환불이 끝났으면 returned 와 환불한 때", () => {
-    const refund = { itemTotal: 1, shippingRefund: 0, fees: 0, total: 1, receivedAt: null, refundedAt: "2026-10-22T00:00:00.000Z" }
+    const refund = { kind: "settled" as const, itemTotal: 1, shippingRefund: 0, fees: 0, total: 1, receivedAt: null, refundedAt: "2026-10-22T00:00:00.000Z" }
     expect(itemReturnStatus("i1", [ret({ stage: "refunded", refund })])).toMatchObject({
       key: "returned",
       refundedAt: "2026-10-22T00:00:00.000Z",
@@ -52,6 +52,19 @@ describe("itemReturnStatus", () => {
     expect(out).toMatchObject({ key: "returned", quantity: 2, returnId: "b" })
   })
 
+  it("선환불만 하고 물건이 아직 안 왔으면 진행 중", () => {
+    const refund = { kind: "prepaid" as const, itemTotal: 1, shippingRefund: 0, fees: 0, total: 1, receivedAt: null, refundedAt: "2026-10-22T00:00:00.000Z" }
+    expect(itemReturnStatus("i1", [ret({ stage: "refunded", refund })])).toMatchObject({ key: "returning", refundedAt: null })
+  })
+
+  it("한 줄에 끝난 반품과 교환이 섞이면 최근 것과 같은 종류 수량만 센다", () => {
+    const out = itemReturnStatus("i1", [
+      ret({ returnId: "ex", kind: "exchange", stage: "exchanged" }),
+      ret({ returnId: "rt", kind: "return", stage: "refunded" }),
+    ])
+    expect(out).toMatchObject({ key: "exchanged", quantity: 1, returnId: "ex" })
+  })
+
   it("교환은 exchanging·exchanged", () => {
     expect(itemReturnStatus("i1", [ret({ kind: "exchange" })])?.key).toBe("exchanging")
     expect(itemReturnStatus("i1", [ret({ kind: "exchange", stage: "exchanged" })])?.key).toBe("exchanged")
@@ -61,6 +74,12 @@ describe("itemReturnStatus", () => {
 describe("originalLineTotal", () => {
   it("단가 × 수량에서 줄 할인을 뺀다 — 반품으로 줄어든 item.total 과 무관하다", () => {
     expect(originalLineTotal({ unit_price: 14800, quantity: 2, adjustments: [{ amount: 1800 }] })).toBe(27800)
+  })
+
+  it("세금 별도 가격이면 세율을 얹는다 — Medusa 줄 합계와 같은 값", () => {
+    expect(
+      originalLineTotal({ unit_price: 10000, quantity: 1, is_tax_inclusive: false, adjustments: [], tax_lines: [{ rate: 10 }] })
+    ).toBe(11000)
   })
 
   it("할인이 없으면 단가 × 수량", () => {

@@ -3,15 +3,18 @@ import type { CustomerReturn, CustomerReturnProgress } from "@/lib/types/ui/retu
 export type ReturnStepKey = "requested" | "pickedUp" | "inspected" | "refunded" | "exchanged"
 
 /**
- * 반품 상세의 진행 단계. Medusa 단계만으로도 앞 단계가 끝났음을 알 수 있다 —
- * processing 은 창고가 받아 검수까지 마친 뒤다(정산이 검수 때 열린다). core 진행은 회수·도착을 더 일찍 알려 준다.
+ * 반품 상세의 진행 단계. 회수·검수는 물건이 실제로 왔다는 근거로만 끝낸다 —
+ * processing 은 창고가 받아 검수까지 마친 뒤다(정산이 검수 때 열린다). 선환불만 끝난 반품은 마지막 단계(환불)만 끝났고
+ * 회수·검수는 core 진행·받은 때로 따로 본다.
  */
 export function returnSteps(
-  ret: Pick<CustomerReturn, "kind" | "stage">,
+  ret: Pick<CustomerReturn, "kind" | "stage" | "refund">,
   progress: Pick<CustomerReturnProgress, "pickupStatus" | "arrivedAt" | "inspectedAt"> | null
 ): { key: ReturnStepKey; done: boolean }[] {
   const finished = ret.stage === "refunded" || ret.stage === "exchanged"
-  const inspected = finished || ret.stage === "processing" || Boolean(progress?.inspectedAt)
+  const settled = ret.stage === "exchanged" || (ret.stage === "refunded" && ret.refund?.kind !== "prepaid")
+  const inspected =
+    settled || ret.stage === "processing" || Boolean(progress?.inspectedAt) || Boolean(ret.refund?.receivedAt)
   const pickedUp = inspected || progress?.pickupStatus === "picked_up" || Boolean(progress?.arrivedAt)
   return [
     { key: "requested", done: true },

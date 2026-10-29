@@ -34,6 +34,8 @@ export interface StoreReturnListItemDto {
 }
 
 export interface StoreReturnRefundDto {
+  /** 칸이 없던 옛 Medusa 는 settled 로 읽는다. */
+  kind?: "settled" | "prepaid"
   item_total: number
   shipping_refund: number
   fees: number

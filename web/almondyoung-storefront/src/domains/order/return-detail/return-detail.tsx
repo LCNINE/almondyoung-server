@@ -174,7 +174,21 @@ export default async function ReturnDetail({ order, ret, progress }: ReturnDetai
       {!exchange && !canceled && (
         <>
           <SectionTitle>{t("refund.title")}</SectionTitle>
-          {ret.refund ? (
+          {ret.refund?.kind === "prepaid" ? (
+            <div className="border-t border-foreground pt-4">
+              <dl className="flex flex-col gap-2.5 text-sm">
+                <div className="flex justify-between">
+                  <dt className="text-muted-foreground">{t("refund.itemTotal")}</dt>
+                  <dd>{won(ret.refund.itemTotal)}</dd>
+                </div>
+                <div className="flex justify-between font-bold text-foreground">
+                  <dt>{t("refund.prepaid")}</dt>
+                  <dd>{won(ret.refund.total)}</dd>
+                </div>
+              </dl>
+              <p className="mt-3 text-sm text-muted-foreground">{t("refund.prepaidRest")}</p>
+            </div>
+          ) : ret.refund ? (
             <div className="grid gap-4 border-t border-foreground pt-4 md:grid-cols-2">
               <dl className="flex flex-col gap-2.5 text-sm">
                 <div className="flex justify-between">

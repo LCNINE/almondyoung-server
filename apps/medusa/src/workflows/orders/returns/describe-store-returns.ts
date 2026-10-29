@@ -18,10 +18,12 @@ export type StoreReturnSource = {
 };
 
 /**
- * 고객이 보는 환불 요약. 정산 기록이 있으면 그 값, 선환불만 있으면 선환불 값이다. 교환·둘 다 없음이면 null.
- * total = itemTotal + shippingRefund − fees — 선환불·외부 환불로 먼저 나간 몫도 포함한 고객이 받는 합이다.
+ * 고객이 보는 환불 요약. 교환·정산 전(선환불도 없음)이면 null.
+ * settled — 정산 기록. total = itemTotal + shippingRefund − fees, 선환불·외부 환불로 먼저 나간 몫도 포함한 고객이 받는 합이다.
+ * prepaid — 물건이 오기 전에 먼저 낸 환불뿐이다. total 은 먼저 낸 금액이고 나머지는 정산 때 정해진다(fees 는 0, 지어내지 않는다).
  */
 export type StoreReturnRefund = {
+  kind: 'settled' | 'prepaid';
   itemTotal: number;
   shippingRefund: number;
   fees: number;
@@ -65,6 +67,7 @@ function refundOf(r: StoreReturnSource): StoreReturnRefund | null {
     const fees = d.returnShipping + d.freeShippingBreak + d.roundTrip + (d.hold ?? 0);
     const shippingRefund = settlement.shippingRefund ?? 0;
     return {
+      kind: 'settled',
       itemTotal: settlement.owed,
       shippingRefund,
       fees,
@@ -76,9 +79,10 @@ function refundOf(r: StoreReturnSource): StoreReturnRefund | null {
   const prepay = readReturnPrepayRecord(r.metadata);
   if (!prepay) return null;
   return {
+    kind: 'prepaid',
     itemTotal: prepay.itemValue,
     shippingRefund: 0,
-    fees: prepay.itemValue - prepay.amount,
+    fees: 0,
     total: prepay.amount,
     receivedAt: null,
     refundedAt: prepay.refundedAt ?? null,

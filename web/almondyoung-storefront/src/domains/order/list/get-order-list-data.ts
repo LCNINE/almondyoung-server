@@ -30,7 +30,7 @@ export interface OrderListPageData {
   actionsMap: Record<string, StoreOrderActionsResponse>
   refundMap: Record<string, string>
   reviewHrefs: Record<string, string>
-  /** Medusa 주문 id → 반품 목록. 출고 전·취소 주문과 조회 실패는 빠진다 */
+  /** Medusa 주문 id → 반품 목록. 취소 주문과 반품 없음·조회 실패는 빠진다 */
   returnsMap: Record<string, CustomerReturn[]>
   hasError: boolean
 }
@@ -96,10 +96,9 @@ export async function getOrderListPageData(params: {
     return bts === "confirmed" && intentId ? [{ id: o.id, intentId }] : []
   })
 
-  // 반품은 출고된 주문에만 생긴다 — 한 페이지가 ORDER_PAGE_SIZE 개라 많아야 그만큼 부른다
-  const returnTargets = orders.filter(
-    (o) => o.status !== "canceled" && o.fulfillment_status !== "not_fulfilled"
-  )
+  // 출고 상태로 거르지 않는다 — core 가 출고한 주문은 Medusa 에 fulfillment 가 없어 not_fulfilled 로 남는다.
+  // 한 페이지가 ORDER_PAGE_SIZE 개라 많아야 그만큼 부른다
+  const returnTargets = orders.filter((o) => o.status !== "canceled")
 
   const [actionsList, refundEntries, eligibilities, returnEntries] = await Promise.all([
     getOrderActionsBatchByMedusaId(orders.map((o) => o.id)).catch(() => []),

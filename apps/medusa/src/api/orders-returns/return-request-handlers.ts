@@ -111,6 +111,7 @@ export async function handleStoreReturnList(req: AuthenticatedMedusaRequest, res
         can_cancel: r.canCancel,
         kind: r.kind,
         refund: r.refund && {
+          kind: r.refund.kind,
           item_total: r.refund.itemTotal,
           shipping_refund: r.refund.shippingRefund,
           fees: r.refund.fees,

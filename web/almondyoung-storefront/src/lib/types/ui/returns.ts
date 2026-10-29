@@ -26,6 +26,8 @@ export interface CustomerReturn {
 }
 
 export interface CustomerReturnRefund {
+  /** prepaid = 물건이 오기 전에 먼저 낸 환불뿐 — total 은 먼저 낸 금액이고 나머지는 검수 뒤 정해진다 */
+  kind: "settled" | "prepaid"
   itemTotal: number
   shippingRefund: number
   /** 반품 택배비 등 환불액에서 뺀 합 */

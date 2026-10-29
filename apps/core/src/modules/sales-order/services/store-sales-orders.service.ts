@@ -779,7 +779,9 @@ export class StoreSalesOrdersService {
     channelReturnId: string,
     customerId: string,
   ): Promise<StoreReturnProgressResponseDto> {
-    const so = await this.findSoOrThrow({ channelOrderId, salesChannel: 'medusa' }, customerId);
+    // 남의 주문도 없는 주문과 같은 404 — 반품이 있는지 흘리지 않는다
+    const so = await this.findSoOrThrow({ channelOrderId, salesChannel: 'medusa' });
+    if (so.customerId !== customerId) throw new NotFoundException('반품을 찾을 수 없습니다.');
     const cr = inventoryTables.customerReturns;
     const record = await this.db.db
       .select({ id: cr.id, arrivedAt: cr.arrivedAt, inspectedAt: cr.inspectedAt, settledAt: cr.settledAt })
