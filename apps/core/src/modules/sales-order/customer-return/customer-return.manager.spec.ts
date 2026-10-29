@@ -30,7 +30,7 @@ describe('CustomerReturnManager.recordRequested', () => {
     const trx = { select: jest.fn(() => query), insert: jest.fn(() => write) };
     // DB 경계만 대역으로 바꾼다.
     const db = { run: (fn: (tx: DbTx) => Promise<unknown>) => fn(trx as never) };
-    const manager = new CustomerReturnManager(db as never, {} as never);
+    const manager = new CustomerReturnManager(db as never, {} as never, {} as never);
     const fact: ChannelReturnRequestedPayload = {
       orderId: 'order_1',
       salesChannel: 'medusa',

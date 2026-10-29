@@ -284,7 +284,7 @@ async function receive(
   // 택배비 계획은 수령 «뒤»에 돈다 — 상한(chargeCap)은 돌려줄 차액에서 선환불·외부 상계를 뺀 것(N3: 상계가 택배비보다 먼저다).
   // 남는 수량 = 줄 수량 − 돌아온 수량(이번 반품이 이미 들어 있다). 미도착을 닫았으면 input.items 가 실제로 정산한 품목이다
   const returnedNow = new Map(input.items.map((i) => [i.itemId, i.received + i.dismissed]));
-  const plan = planReturnFees({
+  const planned = planReturnFees({
     feeBearer,
     methods: after.shippingMethods,
     lines: shippingPlanLines(after.lines, new Map(), profiles).map((l) => ({ ...l, returnedNow: returnedNow.get(l.itemId) ?? 0 })),
@@ -292,6 +292,8 @@ async function receive(
     priorGroupFees: priorGroupFeesFor(Object.values(readPartialCancelRecords(after.metadata)), otherReturns),
     chargeCap: Math.max(0, owed - prepaid - externalRefund),
   });
+  // 교환은 대체품이 같은 배송으로 나간다 — 처음 낸 배송비를 돌려주지도, 그룹 요금을 0 으로 남기지도 않는다
+  const plan = exchange ? { ...planned, feeNotAdjusted: false, shippingRefund: 0, groupFees: {} } : planned;
   const offsets = applyReturnOffsets({
     owed,
     // Medusa 는 음수 크레딧 라인이 |수령 뒤 차액| 을 넘으면 거절한다(부분취소의 room 과 같다)

@@ -27,8 +27,12 @@ jest.mock('../../settlement/order-edit-charge', () => ({
   addSettlementCharge: jest.fn(),
 }));
 jest.mock('../../settlement/offset-credit-line', () => ({ offsetCreditLine: jest.fn() }));
+jest.mock('../exchange-replacements', () => ({
+  planExchangeReplacements: jest.fn(() => []),
+  addExchangeReplacements: jest.fn(async () => [{ sourceItemId: 'item_1', itemId: 'item_x1', quantity: 1 }]),
+}));
 
-function setup(prepaid = 0, externalRefund = 0) {
+function setup(prepaid = 0, externalRefund = 0, kind?: 'exchange') {
   const ret = {
     id: 'ret_1',
     order_id: 'order_1',
@@ -42,6 +46,7 @@ function setup(prepaid = 0, externalRefund = 0) {
         reasonValue: 'defective',
         feeBearer: 'seller',
         fulfillmentTopUp: [],
+        ...(kind ? { kind } : {}),
       },
     } as Record<string, unknown>,
   };
@@ -70,6 +75,10 @@ function setup(prepaid = 0, externalRefund = 0) {
       {
         id: 'item_1',
         productId: 'prod_1',
+        title: '테스트 상품',
+        variantId: 'variant_1',
+        exchangeReplacement: false,
+        exchangedQuantity: 0,
         quantity: 1,
         unitPrice: 4990,
         returnedQuantity: 0,
@@ -160,6 +169,17 @@ describe('판매자 전량 반품 정산', () => {
       refundAmount,
       externalRefundApplied: externalRefund,
     });
+  });
+
+  it('교환은 전량이 돌아와도 배송비를 돌려주지 않고 그룹 요금을 남기지 않는다', async () => {
+    const { container, input, records } = setup(0, 0, 'exchange');
+
+    const result = await settleOrderReturn(container, input);
+
+    expect(result.refundAmount).toBe(0);
+    expect(refundOrderPayments).not.toHaveBeenCalled();
+    expect(records.at(-1)).toMatchObject({ stage: 'exchanged', feeNotAdjusted: false, groupFees: {} });
+    expect(records.at(-1)).not.toHaveProperty('shippingRefund');
   });
 
   it('환불 재시도는 저장한 배송비 환불을 쓰고 완료 뒤에는 다시 환불하지 않는다', async () => {

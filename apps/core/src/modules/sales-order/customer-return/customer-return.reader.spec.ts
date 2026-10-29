@@ -10,6 +10,7 @@ describe('CustomerReturnReader.findById', () => {
       channelReturnId: 'ret_1',
       channelRequestId: 'req_1',
       status: 'expected',
+      kind: 'return',
       reason: 'defective',
       note,
       feeBearer: 'seller',
@@ -26,6 +27,8 @@ describe('CustomerReturnReader.findById', () => {
       settlementOutcome: null,
       prepayment: null,
       csResolution: null,
+      exchangeReleasedAt: null,
+      exchangeReleasedBy: null,
       createdAt: new Date('2026-10-29T00:00:00.000Z'),
       updatedAt: new Date('2026-10-29T00:00:00.000Z'),
     };
