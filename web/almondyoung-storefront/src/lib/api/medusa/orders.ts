@@ -133,8 +133,9 @@ export async function getOrder(
       {
         // +payment_collections.payment_sessions: 세션 data.intentId(wallet 결제 intent)로
         // 현금영수증(GET /v1/cash-receipts?intentId=)을 조회하기 위함.
+        // +customer_id: 소유권 검증용. store 상세 기본 필드에 없어 빠지면 주인도 남으로 판정된다
         fields:
-          "+metadata,+items.requires_shipping,+items.product_type,+payment_collections.payment_sessions.data",
+          "+customer_id,+metadata,+items.requires_shipping,+items.product_type,+payment_collections.payment_sessions.data",
       },
       headers
     )
