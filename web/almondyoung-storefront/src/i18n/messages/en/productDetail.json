@@ -227,5 +227,16 @@
     "body3": "Please be sure to double-check text typos, photos, and size before paying.",
     "body4": "(For a printing defect, contact customer service with photos within 5 days of receiving it. Once confirmed, we will reprint it.)",
     "agree": "I have read the above and agree that print items cannot be canceled or returned for a change of mind after payment"
+  },
+  "model3d": {
+    "open": "View in 3D",
+    "title": "{name} in 3D",
+    "representativeOption": "Based on a representative option. Colors and patterns may differ from your selected option.",
+    "instructions": "Drag to rotate. Use the mouse wheel or pinch with two fingers to zoom.",
+    "closeAria": "Close 3D view",
+    "close": "Close",
+    "modelAlt": "3D model of {name}",
+    "loading": "Loading the 3D model…",
+    "error": "The 3D model could not be loaded. Close the viewer and try again."
   }
 }

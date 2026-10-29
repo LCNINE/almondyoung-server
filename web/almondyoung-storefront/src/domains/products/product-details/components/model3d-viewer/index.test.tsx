@@ -1,7 +1,11 @@
 // @vitest-environment jsdom
 import { act } from "react"
 import { createRoot, type Root } from "react-dom/client"
+import { NextIntlClientProvider } from "next-intl"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import ko from "@/i18n/messages/ko/productDetail.json"
+import en from "@/i18n/messages/en/productDetail.json"
+import ja from "@/i18n/messages/ja/productDetail.json"
 import { ProductModel3dViewer } from "./index"
 
 const { mountViewer, disposeViewer } = vi.hoisted(() => ({
@@ -31,10 +35,15 @@ afterEach(async () => {
   container.remove()
 })
 
-async function render(fileId: unknown) {
+async function render(fileId: unknown, locale: "ko" | "en" | "ja" = "ko") {
   await act(async () => {
     root.render(
-      <ProductModel3dViewer fileId={fileId} productName="테스트 상품" />
+      <NextIntlClientProvider
+        locale={locale}
+        messages={{ productDetail: { ko, en, ja }[locale] }}
+      >
+        <ProductModel3dViewer fileId={fileId} productName="테스트 상품" />
+      </NextIntlClientProvider>
     )
   })
 }
@@ -47,6 +56,24 @@ async function open() {
 }
 
 describe("ProductModel3dViewer", () => {
+  it.each([
+    ["en", "View in 3D", "Based on a representative option"],
+    ["ja", "3Dで見る", "代表オプションを表示しています"],
+  ] as const)(
+    "uses the %s locale for the viewer and option warning",
+    async (locale, label, warning) => {
+      await render("model-file", locale)
+
+      expect(container.querySelector("button")?.textContent).toContain(label)
+
+      await open()
+
+      expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
+        warning
+      )
+    }
+  )
+
   it.each([undefined, null, "", "  ", 12, {}])(
     "hides the button for an absent or invalid model: %s",
     async (id) => {

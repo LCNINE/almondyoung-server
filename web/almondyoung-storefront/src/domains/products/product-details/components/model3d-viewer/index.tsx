@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react"
 import { Box } from "lucide-react"
+import { useTranslations } from "next-intl"
 import {
   Dialog,
   DialogClose,
@@ -36,6 +37,7 @@ function Model3dDialog({
   fileId: string
   productName: string
 }) {
+  const t = useTranslations("productDetail.model3d")
   const [open, setOpen] = useState(false)
 
   return (
@@ -46,29 +48,25 @@ function Model3dDialog({
           className="mb-8 inline-flex min-h-11 items-center gap-2 rounded-md border px-4 py-2 text-sm font-medium"
         >
           <Box className="size-4" aria-hidden="true" />
-          3D로 보기
+          {t("open")}
         </button>
       </DialogTrigger>
 
       {open && (
         <DialogContent className="sm:max-w-3xl" showCloseButton={false}>
-          <DialogTitle>{productName} 3D 보기</DialogTitle>
-          <DialogDescription>
-            대표 옵션 기준입니다. 선택한 옵션과 색상이나 무늬가 다를 수 있어요.
-          </DialogDescription>
+          <DialogTitle>{t("title", { name: productName })}</DialogTitle>
+          <DialogDescription>{t("representativeOption")}</DialogDescription>
 
           <Model3dContent fileId={fileId} productName={productName} />
 
-          <p className="text-muted-foreground text-sm">
-            드래그하여 돌려 보고, 마우스 휠이나 두 손가락으로 확대해 보세요.
-          </p>
+          <p className="text-muted-foreground text-sm">{t("instructions")}</p>
           <DialogClose asChild>
             <button
               type="button"
-              aria-label="3D 보기 닫기"
+              aria-label={t("closeAria")}
               className="min-h-11 rounded-md border px-4 py-2 text-sm"
             >
-              닫기
+              {t("close")}
             </button>
           </DialogClose>
         </DialogContent>
@@ -84,6 +82,7 @@ function Model3dContent({
   fileId: string
   productName: string
 }) {
+  const t = useTranslations("productDetail.model3d")
   const container = useRef<HTMLDivElement>(null)
   const [loaded, setLoaded] = useState(false)
   const [failed, setFailed] = useState(false)
@@ -106,7 +105,7 @@ function Model3dContent({
 
         return mountViewer(container.current, {
           src: getThumbnailUrl(fileId),
-          alt: `${productName} 3D 모델`,
+          alt: t("modelAlt", { name: productName }),
           onLoad: () => {
             window.clearTimeout(timeout)
             setLoaded(true)
@@ -132,7 +131,7 @@ function Model3dContent({
       window.clearTimeout(timeout)
       dispose?.()
     }
-  }, [fileId, productName, failed])
+  }, [fileId, productName, failed, t])
 
   return (
     <div className="relative aspect-square max-h-[60vh] w-full">
@@ -142,7 +141,7 @@ function Model3dContent({
           role="status"
           className="absolute inset-0 flex items-center justify-center"
         >
-          3D 모델을 불러오고 있어요…
+          {t("loading")}
         </p>
       )}
       {failed && (
@@ -150,7 +149,7 @@ function Model3dContent({
           role="alert"
           className="absolute inset-0 flex items-center justify-center text-center"
         >
-          3D 모델을 불러오지 못했어요. 닫은 뒤 다시 시도해 주세요.
+          {t("error")}
         </p>
       )}
     </div>
