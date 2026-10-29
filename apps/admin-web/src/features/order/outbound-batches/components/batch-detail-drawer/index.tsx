@@ -27,6 +27,7 @@ import {
 } from '@/components/ui/table';
 import {
   getServerDenyMessage,
+  parseServerError,
   useAddShipmentToBatch,
   useClaimBatchPacker,
   useClaimBatchPicker,
@@ -62,7 +63,7 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
   const claimPacker = useClaimBatchPacker();
   const handoff = useHandoffBatchWorkItem();
   const [targetWorkerId, setTargetWorkerId] = useState('');
-  const [reason, setReason] = useState('shift_handoff');
+  const [reason, setReason] = useState(REASON_SUGGESTIONS[0]);
   const retry = useWarehouseCommandRetry();
   const canAdd = canRun(useAddShipmentToBatch);
   const canClaimPicker = canRun(useClaimBatchPicker);
@@ -82,7 +83,14 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
       toast.success('명령을 접수했습니다. 서버 상태를 다시 확인합니다.');
       await refetch();
     } catch (error) {
-      toast.error(getServerDenyMessage(error));
+      const { code, status } = parseServerError(error);
+      toast.error(
+        status === 404
+          ? '이미 끝났거나 배치에서 빠진 상자예요. 목록을 다시 불러왔어요.'
+          : ((code && COMMAND_ERROR_MESSAGE[code]) ??
+              getServerDenyMessage(error))
+      );
+      await refetch();
     }
   };
 
@@ -208,8 +216,8 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
             <Separator />
             <section className="space-y-3">
               <div className="flex items-center gap-1">
-                <h3 className="font-medium">Work item queue</h3>
-                <HelpTip label="Work item queue 안내">
+                <h3 className="font-medium">상자별 작업 목록</h3>
+                <HelpTip label="상자별 작업 목록 안내">
                   <p>배치에 넣은 상자별 작업 목록이에요.</p>
                   <p>작업자가 앱에서 송장을 찍으면 그 상자를 맡아요(claim).</p>
                   <p>결과는 서버가 갱신한 뒤에 보여요.</p>
@@ -219,8 +227,8 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
                 <div className="grid gap-2 md:grid-cols-2">
                   <div className="space-y-1">
                     <div className="flex items-center gap-1">
-                      <Label>handoff 대상 작업자</Label>
-                      <HelpTip label="handoff 안내">
+                      <Label>넘겨받을 작업자 ID</Label>
+                      <HelpTip label="포장 넘기기 안내">
                         <p>맡은 상자를 다른 작업자에게 넘기는 거예요.</p>
                         <p>근무 교대처럼 하던 사람이 끝까지 못 할 때 써요.</p>
                         <p>여기서는 포장 담당만 넘길 수 있어요. 피킹 담당은 창고 앱에서 넘겨요.</p>
@@ -236,9 +244,15 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
                   <div className="space-y-1">
                     <Label>사유</Label>
                     <Input
+                      list="batch-work-item-reasons"
                       value={reason}
                       onChange={(event) => setReason(event.target.value)}
                     />
+                    <datalist id="batch-work-item-reasons">
+                      {REASON_SUGGESTIONS.map((suggestion) => (
+                        <option key={suggestion} value={suggestion} />
+                      ))}
+                    </datalist>
                   </div>
                 </div>
               )}
@@ -303,7 +317,14 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
                         {canWorkItemAction && (
                           <TableCell>
                             <div className="flex min-w-52 flex-wrap gap-1">
-                              {canClaimPicker && (
+                              {!hasWorkItemAction(item.status) && (
+                                <span className="text-xs text-muted-foreground">
+                                  {item.status === 'completed'
+                                    ? '끝난 상자라 할 작업이 없어요'
+                                    : '지금은 할 수 있는 작업이 없어요'}
+                                </span>
+                              )}
+                              {canClaimPicker && PICKER_CLAIMABLE.includes(item.status) && (
                               <Button
                                 size="sm"
                                 variant="outline"
@@ -328,7 +349,7 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
                                 내가 피킹 맡기
                               </Button>
                               )}
-                              {canClaimPacker && (
+                              {canClaimPacker && PACKER_CLAIMABLE.includes(item.status) && (
                               <Button
                                 size="sm"
                                 variant="outline"
@@ -353,7 +374,7 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
                                 내가 포장 맡기
                               </Button>
                               )}
-                              {canHandoff && (
+                              {canHandoff && item.status === 'packing' && (
                               <Button
                                 size="sm"
                                 variant="ghost"
@@ -384,7 +405,7 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
                                 포장 넘기기
                               </Button>
                               )}
-                              {canExclude && (
+                              {canExclude && EXCLUDABLE.includes(item.status) && (
                               <Button
                                 size="sm"
                                 variant="destructive"
@@ -395,7 +416,7 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
                                       batchId,
                                       shipmentId: item.shipmentId,
                                       reason:
-                                        reason.trim() || 'operator_excluded',
+                                        reason.trim() || '잘못 넣은 상자',
                                     },
                                     (payload, idempotencyKey) =>
                                       excludeShipment.mutateAsync({
@@ -502,6 +523,24 @@ const WORK_ITEM_STATUS_LABEL: Record<string, string> = {
   short_pick_recovery: '결품 처리 중',
   excluded: '빠짐',
   withdrawing: '빠지는 중',
+};
+
+// 서버 판정(core outbound-batch-orchestrator 의 assertClaimable·handoff, WITHDRAWABLE_WORK_ITEM_STATUSES)과 같은 범위
+const PICKER_CLAIMABLE = ['queued', 'picking'];
+const PACKER_CLAIMABLE = ['ready_to_pack', 'packing'];
+const EXCLUDABLE = ['queued', 'picking', 'ready_to_pack', 'packing'];
+
+function hasWorkItemAction(status: string): boolean {
+  return [...PICKER_CLAIMABLE, ...PACKER_CLAIMABLE].includes(status);
+}
+
+const REASON_SUGGESTIONS = ['근무 교대', '작업자 부재', '잘못 넣은 상자'];
+
+const COMMAND_ERROR_MESSAGE: Record<string, string> = {
+  WORK_ITEM_NOT_CLAIMABLE: '지금 단계에서는 맡을 수 없는 상자예요. 목록을 다시 불러왔어요.',
+  WORK_ITEM_HANDOFF_REQUIRED: '다른 작업자가 맡고 있어요. 그 작업자에게 넘겨받아 주세요.',
+  WORK_ITEM_CLAIM_NOT_ACTIVE: '포장 중인 담당자가 없어서 넘길 수 없어요.',
+  WORK_ITEM_STALE_LEASE_VERSION: '그사이 상자 상태가 바뀌었어요. 목록을 다시 불러왔어요.',
 };
 
 const CLAIM_STATE_LABEL: Record<string, string> = {

@@ -47,7 +47,7 @@ export function V2PickingWorkspace() {
   const [cartId, setCartId] = useState('');
   const [toteBarcode, setToteBarcode] = useState('');
   const [targetWorkerId, setTargetWorkerId] = useState('');
-  const [reason, setReason] = useState('shift_handoff');
+  const [reason, setReason] = useState('근무 교대');
   const retry = useWarehouseCommandRetry();
   const [shortPickOpen, setShortPickOpen] = useState(false);
   // 이 작업대의 피킹 명령 전부 — 모두 같은 창고 작업 권한이라 한 번에 판정한다
@@ -270,7 +270,7 @@ export function V2PickingWorkspace() {
                       />
                     </div>
                     <div className="space-y-1">
-                      <Label>대상 작업자</Label>
+                      <Label>넘겨받을 작업자 ID</Label>
                       <Input
                         value={targetWorkerId}
                         onChange={(event) =>
@@ -280,7 +280,7 @@ export function V2PickingWorkspace() {
                     </div>
                   </div>
                   <div className="space-y-1">
-                    <Label>handoff/release 사유</Label>
+                    <Label>넘기기·놓기 사유</Label>
                     <Input
                       value={reason}
                       onChange={(event) => setReason(event.target.value)}
