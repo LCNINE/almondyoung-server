@@ -23,7 +23,6 @@ export class AuthenticationService {
     return {
       userId: payload.sub,
       roles: payload.roles || [],
-      scopes: payload.scopes || [],
       email: payload.email,
       ...payload,
     };

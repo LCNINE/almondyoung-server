@@ -2,14 +2,9 @@ import { Module } from '@nestjs/common';
 import { LoggerModule } from 'nestjs-pino';
 import { loggerConfig } from '@app/shared/observability/logger.config';
 import { ConfigModule } from '@nestjs/config';
-import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
+import { APP_GUARD } from '@nestjs/core';
 import { DbModule } from '@app/db';
-import {
-  AuthorizationModule,
-  JwtAuthGuard,
-  PermissionGuard,
-  PermissionModule,
-} from '@app/authorization';
+import { AuthorizationModule, JwtAuthGuard, PermissionGuard, PermissionModule } from '@app/authorization';
 import { FileServiceController } from './file-service.controller';
 import { FileServiceService } from './file-service.service';
 import { validateFileServiceEnv } from './config/env.validation';
@@ -20,7 +15,6 @@ import { UploadModule } from './upload/upload.module';
 import { InternalFilesModule } from './internal/internal-files.module';
 import { LifecycleModule } from './lifecycle/lifecycle.module';
 import { DownloadModule } from './download/download.module';
-import { LegacyDelegationInterceptor } from './access/legacy-delegation.interceptor';
 
 @Module({
   imports: [
@@ -54,8 +48,6 @@ import { LegacyDelegationInterceptor } from './access/legacy-delegation.intercep
     },
     // 권한 판정 — 라우트 인가를 결정한다(설정으로 끌 수 없다). 인증 가드 뒤에 둔다.
     { provide: APP_GUARD, useClass: PermissionGuard },
-    // 옛 표기 위임 토큰 사용을 센다 — 옛 표기를 거절하기 전에 0건을 확인하는 근거.
-    { provide: APP_INTERCEPTOR, useClass: LegacyDelegationInterceptor },
   ],
 })
 export class FileServiceModule {}
