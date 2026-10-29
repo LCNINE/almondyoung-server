@@ -284,7 +284,7 @@ async function receive(
   // 택배비 계획은 수령 «뒤»에 돈다 — 상한(chargeCap)은 돌려줄 차액에서 선환불·외부 상계를 뺀 것(N3: 상계가 택배비보다 먼저다).
   // 남는 수량 = 줄 수량 − 돌아온 수량(이번 반품이 이미 들어 있다). 미도착을 닫았으면 input.items 가 실제로 정산한 품목이다
   const returnedNow = new Map(input.items.map((i) => [i.itemId, i.received + i.dismissed]));
-  const plan = planReturnFees({
+  const planned = planReturnFees({
     feeBearer,
     methods: after.shippingMethods,
     lines: shippingPlanLines(after.lines, new Map(), profiles).map((l) => ({ ...l, returnedNow: returnedNow.get(l.itemId) ?? 0 })),
@@ -292,6 +292,8 @@ async function receive(
     priorGroupFees: priorGroupFeesFor(Object.values(readPartialCancelRecords(after.metadata)), otherReturns),
     chargeCap: Math.max(0, owed - prepaid - externalRefund),
   });
+  // 교환은 대체품이 같은 배송으로 나간다 — 처음 낸 배송비를 돌려주지도, 그룹 요금을 0 으로 남기지도 않는다
+  const plan = exchange ? { ...planned, feeNotAdjusted: false, shippingRefund: 0, groupFees: {} } : planned;
   const offsets = applyReturnOffsets({
     owed,
     // Medusa 는 음수 크레딧 라인이 |수령 뒤 차액| 을 넘으면 거절한다(부분취소의 room 과 같다)
@@ -305,6 +307,9 @@ async function receive(
   // 상계 라인은 원 단위로 내린다 — 수령 전 차액에 원 미만(할인 안분 잔여)이 섞이면 식이 소수를 낸다. room 이 라인을 묶은 경우
   // (원 미만 반올림 몫)도 그 차이는 원 미만의 음수 차액으로 남는다. 부분취소는 그 몫을 환불이 떠안지만 여기서는 상계 적용액
   // (externalRefundApplied)을 줄이지 않는다 — 그 값은 다음 판정의 «품목에 연결 안 된 외부 환불»에서만 빠지고, 원 미만은 잡음이다
+  // 품목에 상계하고 남은 외부 환불은 배송비 몫이다 — 그만큼은 이미 돌려줬으니 새로 내지 않고 상계로 기록한다.
+  // 크레딧 라인은 그 외부 환불이 이미 붙였다
+  const shippingCovered = Math.min(plan.shippingRefund, Math.max(0, externalRefund - offsets.externalRefundApplied));
   const offsetLine = Math.floor(offsets.offsetCreditLine);
   const chargeTotal = deductionTotal(offsets.deduction);
   const chargeShippingOptionId = chargeTotal > 0 ? chargeOptionId : null;
@@ -319,7 +324,9 @@ async function receive(
     owed,
     deduction: offsets.deduction,
     feeNotAdjusted: plan.feeNotAdjusted,
-    refundAmount: offsets.refundAmount,
+    // 배송비 환불은 품목 상계와 별개다. 차액 초과분의 크레딧 라인은 환불 워크플로가 붙인다.
+    refundAmount: offsets.refundAmount + plan.shippingRefund - shippingCovered,
+    ...(plan.shippingRefund > 0 ? { shippingRefund: plan.shippingRefund } : {}),
     // 보류 차감은 그룹 요금이 아니다(N2) — 택배비 계획의 그룹 요금만 남긴다
     groupFees: plan.groupFees,
     orderVersion: after.version,
@@ -327,7 +334,7 @@ async function receive(
     chargeShippingOptionId,
     ...(input.holdDeduction ? { hold: { requested: input.holdDeduction.amount, memo: input.holdDeduction.memo } } : {}),
     prepaidApplied: offsets.prepaidApplied,
-    externalRefundApplied: offsets.externalRefundApplied,
+    externalRefundApplied: offsets.externalRefundApplied + shippingCovered,
     ...(closesMissing ? { closesMissing: true } : {}),
     ...(offsetLine > 0 ? { offsetCreditLine: offsetLine } : {}),
   };

@@ -27,10 +27,28 @@ const order = (returns?: MedusaReturn[]): MedusaOrder =>
   ({ id: 'order_1', updated_at: '2026-10-27T02:00:00.000Z', ...(returns ? { returns } : {}) }) as MedusaOrder;
 
 describe('medusaReturnObservations', () => {
+  it('메모를 다듬어 requested 관측에 싣는다', () => {
+    const { observations, skipped } = medusaReturnObservations(
+      order([ret({ metadata: record({ note: '  포장이 찢어졌어요\n ' }) })]),
+    );
+
+    expect(skipped).toEqual([]);
+    expect(observations[0]).toMatchObject({ payload: { note: '포장이 찢어졌어요' } });
+  });
+
+  it.each([undefined, null, '', ' \n ', 42, {}])('메모 %p는 생략하고 반품은 관측한다', (note) => {
+    const { observations, skipped } = medusaReturnObservations(order([ret({ metadata: record({ note }) })]));
+
+    expect(skipped).toEqual([]);
+    expect(observations).toHaveLength(1);
+    expect(observations[0].payload).not.toHaveProperty('note');
+  });
+
   it('확정된 반품 하나 → requested 관측 하나', () => {
     const { observations, skipped } = medusaReturnObservations(order([ret()]));
     expect(skipped).toEqual([]);
     expect(observations).toHaveLength(1);
+    expect(observations[0].payload).not.toHaveProperty('note');
     expect(observations[0]).toMatchObject({
       eventType: 'ChannelReturnRequested',
       eventKey: 'return:ret_1:requested',
@@ -290,8 +308,22 @@ describe('medusaReturnObservations', () => {
       });
     });
 
+    it.each([0, 2500])('배송비 환불 %i를 관측에 싣는다', (shippingRefund) => {
+      expect(settledOf(settlement({ shippingRefund }))?.payload).toMatchObject({ shippingRefund });
+    });
+
+    it.each([-1, 0.5, '2500', null, Number.NaN])('잘못된 배송비 환불 %p는 정산 관측을 막는다', (shippingRefund) => {
+      const result = medusaReturnObservations(
+        order([ret({ status: 'received', metadata: settlement({ shippingRefund }) })]),
+      );
+
+      expect(result.skipped).toEqual([{ returnId: 'ret_1', reason: 'no_settlement_record' }]);
+      expect(result.observations.some((o) => o.eventType === 'ChannelReturnSettled')).toBe(false);
+    });
+
     it('새 칸이 없는 옛 기록 → 칸을 생략한다', () => {
       const settled = settledOf(settlement());
+      expect(settled?.payload).not.toHaveProperty('shippingRefund');
       expect(settled?.payload).not.toHaveProperty('prepaidAmount');
       expect(settled?.payload).not.toHaveProperty('externalRefundApplied');
       expect((settled?.payload as { deduction: object }).deduction).not.toHaveProperty('hold');

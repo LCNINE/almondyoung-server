@@ -9,6 +9,9 @@ import { createReturnsServer, type FakeReturn } from './returnsServer';
 
 /** 도착 대기 — 아직 아무것도 안 왔다. 요청이 가장 이르다(단계가 시간보다 먼저 정렬되는지 본다) */
 export const AWAITING: FakeReturn = {
+  reason: 'change_of_mind',
+  feeBearer: 'customer',
+  note: null,
   id: 'cr-1',
   orderNo: 'O-1001',
   customerName: '김민영',
@@ -21,6 +24,9 @@ export const AWAITING: FakeReturn = {
 
 /** 덜 옴 — 두 줄 중 하나만 일부 왔다 */
 export const PARTIAL: FakeReturn = {
+  reason: 'wrong_item',
+  feeBearer: 'seller',
+  note: '주문한 상품과 달라요',
   id: 'cr-2',
   orderNo: 'O-1002',
   customerName: '이서진',
@@ -38,6 +44,9 @@ export const PARTIAL: FakeReturn = {
 
 /** 검수 대기 — 다 왔다 */
 export const READY: FakeReturn = {
+  reason: 'defective',
+  feeBearer: 'seller',
+  note: '포장이 찢어졌어요',
   id: 'cr-3',
   orderNo: 'O-1003',
   customerName: '박지훈',

@@ -18,7 +18,7 @@ import {
 /**
  * 고객 반품 기록(K8 PR6) — 조회와 창고의 도착·검수, CS 의 미도착 닫기·보류 정산·선환불과
  * 정산·선환불의 다시 시도·계좌 송금(PR6b), 교환품 보내기(PR11).
- * 고객 개인정보는 목록의 고객명뿐이고 `@PiiResponse` 가 가린다. 상세·쓰기 응답엔 없다(수량·상태·CS 메모뿐).
+ * 목록의 고객명은 `@PiiResponse` 가 가린다. 상세·쓰기 응답의 자유문구 메모는 별도 마스킹이 없다.
  */
 @ApiTags('Admin - Customer Returns')
 @Controller('admin/customer-returns')

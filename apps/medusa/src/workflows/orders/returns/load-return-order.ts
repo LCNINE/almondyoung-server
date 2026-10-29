@@ -12,6 +12,7 @@ export type ReturnRequestRecord = {
   requestHash: string;
   requestedBy: ReturnRequestedBy;
   reasonValue: string;
+  note?: string;
   /** 반품 택배비 부담 주체 — 요청 때 확정한다(사유 표의 값, 기타면 CS 가 고른 값). 금액은 정산(PR 6)이 매긴다 */
   feeBearer: 'customer' | 'seller';
   /** CS 가 고객 기한을 넘겼을 때만 있다(D5) */
@@ -67,6 +68,7 @@ export function readReturnRequestRecord(metadata: unknown): ReturnRequestRecord 
     requestHash: r.requestHash,
     requestedBy: r.requestedBy as ReturnRequestedBy,
     reasonValue: r.reasonValue,
+    ...(typeof r.note === 'string' && r.note.trim() ? { note: r.note.trim() } : {}),
     feeBearer: r.feeBearer as 'customer' | 'seller',
     windowOverride,
     fulfillmentTopUp,

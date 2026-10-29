@@ -1600,6 +1600,7 @@ export const customerReturns = pgTable(
     exchangeReleasedAt: timestamp('exchange_released_at', { withTimezone: true }),
     exchangeReleasedBy: uuid('exchange_released_by'),
     reason: customerReturnReasonEnum('reason').notNull(),
+    note: text('note'),
     feeBearer: varchar('fee_bearer', { length: 16 }).notNull(),
     requestedBy: varchar('requested_by', { length: 16 }).notNull(),
     windowOverrideReason: text('window_override_reason'),

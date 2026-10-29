@@ -16,6 +16,7 @@ import { useDigitCommands, useStationActions } from '../ActionRegistry';
 import type { StationAction } from '../actions';
 import { useFeedback } from '../feedback/FeedbackProvider';
 import { BigPanel, WorkGrid, type BigPanelContent } from '../outbound/panels';
+import { ReturnReasonBand } from './ReturnReasonBand';
 import { RETURNS_ACTIONS } from './returnsActions';
 import type { ReturnsNotice } from './returnsTypes';
 
@@ -218,6 +219,7 @@ export function ParcelWork({
           <>
             <div className={cn(CARD, 'flex shrink-0 flex-col gap-2.5 p-[18px]')}>
               <h2 className="font-mono text-[30px] font-semibold">{view.order.orderNo}</h2>
+              <ReturnReasonBand view={view} />
               {prior ? <p className="text-base font-semibold text-[#7A4B00]">이미 받은 소포가 있어요</p> : null}
             </div>
             {big ? <BigPanel content={big} /> : <CountPanel total={total} />}
