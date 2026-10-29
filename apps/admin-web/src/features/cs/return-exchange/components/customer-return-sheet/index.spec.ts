@@ -30,6 +30,8 @@ const view: CustomerReturnView = {
   order: { orderNo: 'N1', channelOrderId: 'c1', salesChannel: 'medusa' },
   channelReturnId: 'cr1',
   status: 'settled',
+  kind: 'return',
+  exchangeReleasedAt: null,
   reason: 'defective',
   note: '포장이 찢어졌어요\n확인 부탁드려요',
   feeBearer: 'seller',

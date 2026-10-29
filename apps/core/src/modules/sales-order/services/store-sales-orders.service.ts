@@ -37,6 +37,7 @@ import {
 } from '../line-quantities/order-fulfillment-phase.reader';
 import { CUSTOMER_RETURN_ACTIVE_STATUSES } from '../line-quantities/claim-statuses';
 import { readParcelClaimEligibility } from '../line-quantities/parcel-claim-eligibility.reader';
+import { hasExchangeableParcel } from '../internal/return-eligibility';
 import { selfCancelBlock, SelfCancelBlock } from './self-cancel-block';
 import { CARRIER_CODE_ALIASES, CARRIER_NAME_BY_CODE } from '../../fulfillment/waybill/carrier/carrier-names';
 
@@ -556,8 +557,9 @@ export class StoreSalesOrdersService {
       availableActions.push('receipt');
       // claimStatus 는 진행 중 반품 예정 기록이 있는지만 말한다(K8 PR 10 N5). 반품 버튼은 그것과 무관하게 청구 가능한
       // 배송완료 소포(claimable > 0)가 있으면 낸다 — Medusa 는 한 주문에 반품 여럿을 받고(K8 PR 3), 진행 중 반품이 잡은
-      // 수량은 이미 claimable 에서 빠져 있다(K6 SKU 몫). 교환은 PR 11(Medusa 교환)이 열 때까지 내지 않는다.
-      const [activeReturn, claimableParcels] = await Promise.all([
+      // 수량은 이미 claimable 에서 빠져 있다(K6 SKU 몫). 교환은 그 소포 중 인쇄 줄이 아닌 것이 있을 때만 낸다(K8 PR11b N4) —
+      // 인쇄 상품은 같은 것을 다시 만들어 보낼 수 없다. 기준은 자격 API 의 `exchangeable` 과 같다(`almond_design_id`).
+      const [activeReturn, claimableParcels, printLines] = await Promise.all([
         this.db.db
           .select({ id: inventoryTables.customerReturns.id })
           .from(inventoryTables.customerReturns)
@@ -570,9 +572,21 @@ export class StoreSalesOrdersService {
           .limit(1)
           .then((r) => r[0]),
         readParcelClaimEligibility(this.db.db, so.id),
+        this.db.db
+          .select({ id: inventoryTables.salesOrderLines.id })
+          .from(inventoryTables.salesOrderLines)
+          .where(
+            and(
+              eq(inventoryTables.salesOrderLines.salesOrderId, so.id),
+              isNotNull(inventoryTables.salesOrderLines.almondDesignId),
+            ),
+          ),
       ]);
       if (activeReturn) claimStatus = 'return_requested';
       if (claimableParcels.some((parcel) => parcel.claimable > 0)) availableActions.push('return');
+      if (hasExchangeableParcel(claimableParcels, new Set(printLines.map((line) => line.id)))) {
+        availableActions.push('exchange');
+      }
     } else if (cancelUnavailableReason) {
       availableActions.push('receipt');
     } else {

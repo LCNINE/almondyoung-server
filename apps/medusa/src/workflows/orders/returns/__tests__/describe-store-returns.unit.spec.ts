@@ -24,6 +24,12 @@ const settlement = (stage: string) => ({
   receivedAt: '2026-10-27T00:00:00.000Z',
   chargeShippingOptionId: 'so_1',
 });
+const exchangedSettlement = () => ({
+  ...settlement('exchanged'),
+  refundAmount: 0,
+  exchangedAt: '2026-10-28T00:00:00.000Z',
+  exchangeItems: [{ sourceItemId: 'i1', itemId: 'i9', quantity: 1 }],
+});
 const prepay = (stage: string) => ({
   requestId: 'cr_1',
   requestHash: 'h',
@@ -70,6 +76,7 @@ describe('describeStoreReturns', () => {
       feeBearer: 'seller',
       items: [{ itemId: 'i1', quantity: 2 }],
       canCancel: true,
+      kind: 'return',
     });
   });
   it.each(['received', 'partially_received'])('%s → processing, canCancel false', (status) => {
@@ -112,5 +119,34 @@ describe('describeStoreReturns', () => {
       src({ extra: { almondReturn: request({ requestedBy: 'operator', reasonValue: 'other', feeBearer: 'seller' }) } }),
     ]);
     expect(r).toMatchObject({ reason: 'other', feeBearer: 'seller' });
+  });
+});
+
+describe('describeStoreReturns — 교환 (K8 PR11b N5)', () => {
+  const exchangeRequest = request({ reasonValue: 'defective', feeBearer: 'seller', kind: 'exchange' });
+
+  it('정산 기록 stage exchanged → stage exchanged, kind exchange, canCancel false', () => {
+    const [r] = describeStoreReturns([
+      src({ status: 'received', extra: { almondReturn: exchangeRequest, almondReturnSettlement: exchangedSettlement() } }),
+    ]);
+    expect(r).toMatchObject({ stage: 'exchanged', kind: 'exchange', canCancel: false });
+  });
+  it('요청 기록에 kind 가 없으면 kind return', () => {
+    const [r] = describeStoreReturns([src()]);
+    expect(r.kind).toBe('return');
+  });
+  it('교환 수령(received)·정산 기록 없음 → processing', () => {
+    const [r] = describeStoreReturns([src({ status: 'received', extra: { almondReturn: exchangeRequest } })]);
+    expect(r).toMatchObject({ stage: 'processing', kind: 'exchange', canCancel: false });
+  });
+  it('접수만 된 교환 → requested, canCancel true(core 열림은 취소 POST 가 exchange_released 로 거절한다)', () => {
+    const [r] = describeStoreReturns([src({ extra: { almondReturn: exchangeRequest } })]);
+    expect(r).toMatchObject({ stage: 'requested', kind: 'exchange', canCancel: true });
+  });
+  it('취소된 교환 → canceled', () => {
+    const [r] = describeStoreReturns([
+      src({ status: 'canceled', extra: { almondReturn: exchangeRequest, almondReturnSettlement: exchangedSettlement() } }),
+    ]);
+    expect(r).toMatchObject({ stage: 'canceled', kind: 'exchange', canCancel: false });
   });
 });

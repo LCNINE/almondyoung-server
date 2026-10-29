@@ -39,6 +39,8 @@ export function toReturnRequestBody(
     })),
     reason: input.reason,
     ...(note ? { note } : {}),
+    // 반품 본문에는 kind 칸 자체를 싣지 않는다 — 있던 반품 요청의 해시가 바뀌지 않게.
+    ...(input.kind === "exchange" ? { kind: "exchange" as const } : {}),
   }
 }
 
@@ -80,6 +82,7 @@ export function toReturnableLines(
     itemId: i.item_id,
     returnableQuantity: i.returnable_quantity,
     windowEndsAt: i.window_ends_at,
+    exchangeable: i.exchangeable === true,
   }))
 }
 
@@ -88,6 +91,7 @@ export function toCustomerReturns(
 ): CustomerReturn[] {
   return dto.returns.map((r) => ({
     returnId: r.return_id,
+    kind: r.kind === "exchange" ? "exchange" : "return",
     stage: r.stage,
     requestedAt: r.requested_at,
     reason: r.reason,

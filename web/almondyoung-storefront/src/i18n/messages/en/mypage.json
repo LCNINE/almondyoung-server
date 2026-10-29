@@ -688,17 +688,38 @@
         "returnPickedUp": "The courier has already picked up this return, so it can't be canceled.",
         "exchangeRequiresSellerFault": "Exchanges can only be requested for product problems (defects, wrong item, damage, etc.).",
         "exchangeReleased": "The replacement has already been sent, so this can't be canceled.",
+        "exchangeItemUnsupported": "Printed items can't be exchanged — please request a return instead.",
         "generic": "We couldn't submit your return. Please contact customer service."
+      },
+      "exchange": {
+        "title": "Request an exchange",
+        "empty": "There are no items you can exchange right now",
+        "linesTitle": "Items to exchange",
+        "reasonTitle": "Reason for exchange",
+        "fee": "We cover the exchange shipping fee.",
+        "notExchangeable": "This item can't be exchanged (please request a return for printed items)",
+        "submit": "Request exchange",
+        "selectItem": "Select the items to exchange",
+        "selectReason": "Select a reason for the exchange",
+        "done": "Your exchange request is received — once we check the returned items, we'll send you the same items again.",
+        "nothingLeft": "No quantity left to exchange",
+        "rejectGeneric": "We couldn't submit your exchange. Please contact customer service."
       }
     },
     "returns": {
-      "title": "Returns",
+      "title": "Returns & exchanges",
+      "kind": {
+        "return": "Return",
+        "exchange": "Exchange"
+      },
       "quantity": "{count} pcs",
       "reasonLabel": "Reason",
       "requestItem": "Request return",
       "cancel": "Cancel return",
       "cancelConfirm": "Press once more to cancel",
       "cancelDone": "Your return has been canceled.",
+      "exchangeCancel": "Cancel exchange",
+      "exchangeCancelDone": "Your exchange has been canceled.",
       "cancelFailed": "Please try again in a moment.",
       "stage": {
         "requested": "Received · waiting for pickup",
@@ -706,12 +727,20 @@
         "refunded": "Refunded",
         "canceled": "Canceled"
       },
+      "exchangeStage": {
+        "requested": "Exchange received",
+        "processing": "Checking the returned items",
+        "exchanged": "Sending your replacement",
+        "canceled": "Exchange canceled"
+      },
       "cancelReject": {
         "returnArrived": "The items have already reached our warehouse, so this can't be canceled.",
         "returnPrepaid": "A refund has already started, so this can't be canceled.",
         "returnPickedUp": "The courier has already picked it up, so this can't be canceled. You'll be refunded after we inspect it on arrival.",
         "exchangeReleased": "The replacement has already been sent, so this can't be canceled.",
-        "notOurReturn": "This return can't be canceled here. Please contact customer service."
+        "notOurReturn": "This return can't be canceled here. Please contact customer service.",
+        "exchangePickedUp": "The courier has already picked it up, so this can't be canceled. We'll send the same item again after inspecting it on arrival.",
+        "exchangeNotOurs": "This exchange can't be canceled here. Please contact customer service."
       }
     },
     "exchange": {
@@ -859,12 +888,6 @@
       "started": "Download started",
       "failed": "Download failed",
       "exerciseFailed": "Failed to mark the license as used"
-    },
-    "exchangeUnavailable": {
-      "title": "Exchanges are handled by our customer center",
-      "body": "Tell us your order number and the item you'd like to exchange, and we'll help you.",
-      "inquiry": "Contact us",
-      "orderDetail": "Order details"
     }
   },
   "membership": {

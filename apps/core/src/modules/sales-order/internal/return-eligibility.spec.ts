@@ -1,6 +1,6 @@
 import type { LineQuantities, LineSkuQuantities } from '../line-quantities/line-quantities.reader';
 import type { ParcelClaimEligibility } from '../line-quantities/parcel-claim-eligibility.reader';
-import { toReturnEligibilityLines } from './return-eligibility';
+import { hasExchangeableParcel, toReturnEligibilityLines } from './return-eligibility';
 
 function line(
   lineId: string,
@@ -51,10 +51,23 @@ describe('toReturnEligibilityLines', () => {
   it('단품 3개 중 2개 배송완료 → deliveredUnits 2, 마지막 배송완료 시각', () => {
     expect(
       toReturnEligibilityLines(
-        [{ channelOrderItemId: 'ordli_1', quantities: line('L1', [{ sku: 'S1', qtyPerUnit: 1, delivered: 2 }]) }],
+        [
+          {
+            channelOrderItemId: 'ordli_1',
+            almondDesignId: null,
+            quantities: line('L1', [{ sku: 'S1', qtyPerUnit: 1, delivered: 2 }]),
+          },
+        ],
         [parcel('L1', '2026-10-20T01:00:00.000Z'), parcel('L1', '2026-10-22T05:00:00.000Z')],
       ),
-    ).toEqual([{ channelOrderItemId: 'ordli_1', deliveredUnits: 2, lastDeliveredAt: '2026-10-22T05:00:00.000Z' }]);
+    ).toEqual([
+      {
+        channelOrderItemId: 'ordli_1',
+        deliveredUnits: 2,
+        lastDeliveredAt: '2026-10-22T05:00:00.000Z',
+        exchangeable: true,
+      },
+    ]);
   });
 
   it('세트(구성품 둘, 1개당 1·2) 중 한 구성품만 배송완료 → 0', () => {
@@ -62,6 +75,7 @@ describe('toReturnEligibilityLines', () => {
       [
         {
           channelOrderItemId: 'ordli_1',
+          almondDesignId: null,
           quantities: line('L1', [
             { sku: 'S1', qtyPerUnit: 1, delivered: 1 },
             { sku: 'S2', qtyPerUnit: 2, delivered: 0 },
@@ -75,7 +89,13 @@ describe('toReturnEligibilityLines', () => {
 
   it('구성이 안 굳은 줄(qtyPerUnit null) → 0', () => {
     const [result] = toReturnEligibilityLines(
-      [{ channelOrderItemId: 'ordli_1', quantities: line('L1', [{ sku: 'S1', qtyPerUnit: null, delivered: 3 }]) }],
+      [
+        {
+          channelOrderItemId: 'ordli_1',
+          almondDesignId: null,
+          quantities: line('L1', [{ sku: 'S1', qtyPerUnit: null, delivered: 3 }]),
+        },
+      ],
       [],
     );
     expect(result.deliveredUnits).toBe(0);
@@ -85,8 +105,16 @@ describe('toReturnEligibilityLines', () => {
     expect(
       toReturnEligibilityLines(
         [
-          { channelOrderItemId: null, quantities: line('L1', [{ sku: 'S1', qtyPerUnit: 1, delivered: 1 }]) },
-          { channelOrderItemId: 'ordli_2', quantities: line('L2', [{ sku: 'S1', qtyPerUnit: 1, delivered: 1 }]) },
+          {
+            channelOrderItemId: null,
+            almondDesignId: null,
+            quantities: line('L1', [{ sku: 'S1', qtyPerUnit: 1, delivered: 1 }]),
+          },
+          {
+            channelOrderItemId: 'ordli_2',
+            almondDesignId: null,
+            quantities: line('L2', [{ sku: 'S1', qtyPerUnit: 1, delivered: 1 }]),
+          },
         ],
         [],
       ).map((l) => l.channelOrderItemId),
@@ -95,9 +123,81 @@ describe('toReturnEligibilityLines', () => {
 
   it('소포가 없는 줄은 lastDeliveredAt null', () => {
     const [result] = toReturnEligibilityLines(
-      [{ channelOrderItemId: 'ordli_1', quantities: line('L1', [{ sku: 'S1', qtyPerUnit: 1, delivered: 0 }]) }],
+      [
+        {
+          channelOrderItemId: 'ordli_1',
+          almondDesignId: null,
+          quantities: line('L1', [{ sku: 'S1', qtyPerUnit: 1, delivered: 0 }]),
+        },
+      ],
       [parcel('L2', '2026-10-20T01:00:00.000Z')],
     );
-    expect(result).toEqual({ channelOrderItemId: 'ordli_1', deliveredUnits: 0, lastDeliveredAt: null });
+    expect(result).toEqual({
+      channelOrderItemId: 'ordli_1',
+      deliveredUnits: 0,
+      lastDeliveredAt: null,
+      exchangeable: true,
+    });
+  });
+
+  it('almondDesignId 가 있는 줄(인쇄) → exchangeable false, deliveredUnits 는 그대로', () => {
+    const [result] = toReturnEligibilityLines(
+      [
+        {
+          channelOrderItemId: 'ordli_1',
+          almondDesignId: 'design-1',
+          quantities: line('L1', [{ sku: 'S1', qtyPerUnit: 1, delivered: 2 }]),
+        },
+      ],
+      [parcel('L1', '2026-10-20T01:00:00.000Z')],
+    );
+    expect(result).toEqual({
+      channelOrderItemId: 'ordli_1',
+      deliveredUnits: 2,
+      lastDeliveredAt: '2026-10-20T01:00:00.000Z',
+      exchangeable: false,
+    });
+  });
+
+  it('almondDesignId 가 없는 줄 → exchangeable true', () => {
+    const [result] = toReturnEligibilityLines(
+      [
+        {
+          channelOrderItemId: 'ordli_1',
+          almondDesignId: null,
+          quantities: line('L1', [{ sku: 'S1', qtyPerUnit: 1, delivered: 1 }]),
+        },
+      ],
+      [],
+    );
+    expect(result.exchangeable).toBe(true);
+  });
+});
+
+describe('hasExchangeableParcel', () => {
+  const printLines: ReadonlySet<string> = new Set(['P1']);
+
+  it('일반 줄 소포 claimable 1 → true', () => {
+    expect(hasExchangeableParcel([{ salesOrderLineId: 'L1', claimable: 1 }], printLines)).toBe(true);
+  });
+
+  it('인쇄 줄 소포만 claimable → false', () => {
+    expect(hasExchangeableParcel([{ salesOrderLineId: 'P1', claimable: 1 }], printLines)).toBe(false);
+  });
+
+  it('일반 줄 소포 claimable 0 + 인쇄 줄 claimable 1 → false', () => {
+    expect(
+      hasExchangeableParcel(
+        [
+          { salesOrderLineId: 'L1', claimable: 0 },
+          { salesOrderLineId: 'P1', claimable: 1 },
+        ],
+        printLines,
+      ),
+    ).toBe(false);
+  });
+
+  it('빈 배열 → false', () => {
+    expect(hasExchangeableParcel([], printLines)).toBe(false);
   });
 });

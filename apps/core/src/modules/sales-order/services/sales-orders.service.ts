@@ -1061,7 +1061,7 @@ export class SalesOrdersService {
           JOIN ph ON ph.sales_order_id = ranged.id
          GROUP BY ranged.day
       `),
-      // 반품 = 그날 접수된 반품 예정 기록(K8 PR 10, 취소 포함 — «접수된 수»). 교환은 PR 11 까지 없다
+      // 반품 = 그날 접수된 반품 예정 기록(K8 PR 10, 취소 포함 — «접수된 수»). 교환(K8 PR11)도 같은 표의 행이라 함께 센다
       db.execute(sql`
         SELECT ((cr.requested_at AT TIME ZONE 'Asia/Seoul')::date)::text AS day, count(*)::int AS count
           FROM customer_returns cr

@@ -141,8 +141,15 @@ describe('order-progress shape', () => {
       expect(stateLabel(`return:${status}`)).toBe(`반품 ${RETURN_STATUS_LABELS[status]}`);
     }
     expect(stateLabel('return:zzz')).toBe('반품 zzz');
-    // 교환은 PR 11 까지 없다 — 옛 접두어는 모르는 값처럼 그대로 보인다
-    expect(stateLabel('exchange:requested')).toBe('exchange:requested');
+    expect(stateLabel('return:held')).toBe('반품 환불 보류');
+  });
+
+  it('교환 단계 세부 상태는 교환 상태 이름이다 (K8 PR11b)', () => {
+    expect(stateLabel('exchange:expected')).toBe('교환 도착 대기');
+    expect(stateLabel('exchange:held')).toBe('교환 보류');
+    expect(stateLabel('exchange:refund_pending')).toBe('교환 정산 실패');
+    expect(stateLabel('exchange:zzz')).toBe('교환 zzz');
+    expect(stateLabel('exchange:toString')).toBe('교환 toString');
   });
 
   it('세부 상태 한국어 이름, 모르는 값은 그대로', () => {

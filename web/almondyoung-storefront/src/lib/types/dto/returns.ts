@@ -4,6 +4,8 @@ export interface StoreReturnableItemDto {
   item_id: string
   returnable_quantity: number
   window_ends_at: string | null
+  /** 같은 품목으로 교환할 수 있는가(인쇄 줄은 false). 칸이 없던 옛 Medusa 는 false 로 읽는다. */
+  exchangeable?: boolean
 }
 
 export interface StoreReturnableResponseDto {
@@ -14,10 +16,13 @@ export type StoreReturnStageDto =
   | "requested"
   | "processing"
   | "refunded"
+  | "exchanged"
   | "canceled"
 
 export interface StoreReturnListItemDto {
   return_id: string
+  /** 칸이 없던 옛 Medusa 는 반품으로 읽는다. */
+  kind?: "return" | "exchange"
   stage: StoreReturnStageDto
   requested_at: string
   reason: string
@@ -35,6 +40,8 @@ export interface StoreReturnRequestDto {
   items: { item_id: string; quantity: number }[]
   reason: string
   note?: string
+  /** 교환일 때만 싣는다 — 반품 본문에 칸이 없어야 옛 요청 해시가 그대로다. */
+  kind?: "exchange"
 }
 
 export interface StoreReturnRequestResponseDto {

@@ -497,6 +497,20 @@ X3 의 근거 — 2026-10-29 실측(Medusa 2.13.4, `OrderExchange` 로 같은 �
 - (최종 리뷰 M2·M4) 반품 기록에 `exchangeItems` 가 실린 정산 사실은 `ConflictError`(DLQ) — 반품으로 닫지 않는다. Medusa 정산은 교환에서 `external_refund_unresolved` 검사를 건너뛴다(돈이 안 움직이고 교환은 `alreadyRefundedAmount` 를 받지 않아 나갈 길이 없었다). 알려진 잔여(M5, 미룸): 그런 주문은 대체 줄 확정 뒤 «절대» 차액 검사(N5)가 외부 환불을 남은 차액으로 봐 500(일시)으로 멈춘다 — stalled 뒤 사람이 본다.
 - 🔴 배포: `migrate → deploy`, core·channel-adapter·Medusa 한 배치. 배포 중 CS 교환 접수 금지(롤링 중 옛 core 가 `kind` 를 버리면 교환이 반품으로 기록된다). **교환 반품이 열려 있는 동안 Medusa 를 PR 11 이전으로 롤백하지 않는다** — 옛 정산이 품목 값을 환불한다. **core·channel-adapter 도 교환 줄(또는 열린 교환)이 있는 동안 PR 11 이전으로 롤백하지 않는다** — 옛 core 의 변경 판정이 0원 교환 줄을 0 으로 정정해 재발송을 취소하고, 옛 취소 계획이 교환 줄을 다시 잡으며, 옛 channel-adapter 는 대체 줄을 스냅샷에 실어 반영 대기 변경을 만든다. channel-adapter 를 core 보다 늦게 올리면 그 사이 나간 교환 상자의 배송완료 사실이 channel-adapter 에서 재시도로 남는다(새 판으로 바뀌면 끝난다).
 
+**PR 11b 에서 확정한 결과.** 교환 화면이다 — 스토어프론트 교환 폼, admin-web CS 교환 표시·[교환품 보내기], core 고객 actions `exchange`, 그리고 인쇄 상품 교환 막기(PR 11 잔여 ②·④). 판정 번호는 계획 `docs/superpowers/plans/2026-10-29-k8-pr11b-exchange-screens.md` 의 N 번호다. 마이그·이벤트 계약·새 라우트 없음.
+- (N1·N2) 인쇄 판정의 정본은 core 다 — 자격 줄 `exchangeable` = 그 판매주문 줄의 `almond_design_id IS NULL`. 반품 가능 수량은 그대로라 인쇄 상품 «반품»은 된다. Medusa 파서는 칸이 없으면 false(옛 core = 교환만 막고 반품은 통과), 불리언이 아니면 `CoreEligibilityUnavailable`.
+- (N3) Medusa `planReturnRequest` 는 교환에서 고른 품목의 core 줄이 `exchangeable: false` 면 `exchange_item_unsupported`(품목별 `item_not_in_order` 바로 뒤, 수량·기한보다 먼저). **core 줄이 아예 없으면 이 판정을 건너뛰어 `not_delivered` 가 이긴다** — 아직 안 간 품목에 «인쇄 상품» 문구를 붙이지 않는다. `returnable` 응답 품목에 `exchangeable`(core 줄 없음·취소 주문이면 false). 새 거절 코드는 스토어프론트·admin-web 문구와 같은 커밋.
+- (N4) 고객 actions: 배송완료 분기에서 남은 수량이 있는 소포 중 인쇄 줄이 아닌 것이 하나라도 있으면 `return` 바로 뒤에 `exchange`. 인쇄 줄만 있는 주문엔 버튼이 없다.
+- (N5·N6) Medusa 고객 반품 목록에 `kind`, 단계 `exchanged`(순서 canceled → refunded → exchanged → processing → requested). 정산 미리보기(`assertPrepayableReturn`)도 교환을 `return_prepay_rejected`/`exchange_unsupported` 로 거절한다.
+- (N7) core 정산 다시 시도는 교환의 계좌 송금·이미 환불한 금액·보류 차감 빼기를 `BadRequestError('교환은 …')` 로 거절한다. 일반 다시 시도는 받는다.
+- (N8·N9) 확인 필요: 교환은 `refund_overdue` 대신 `exchange_overdue`(도착 ∧ 안 열림 ∧ 안 끝남 ∧ 같은 3평일 기한 지남). 목록 행 `kind`. 진행 판정 상태는 `'<kind>:<status>'`. **`ORDER_PROGRESS_STATES.return_exchange` 어휘에도 `exchange:expected|arrived|inspected|held|refund_pending` 을 더했다** — 계획의 «상태 목록 두 벌은 건드리지 않는다»는 판정 SQL 의 `NOT IN` 목록 얘기였고, 어휘를 짧게 두면 판정이 내는 값을 타입이 거짓으로 적는다(어휘 가드 스펙은 `kind × 열린 status` 로 만든다).
+- (N10~N12) 스토어프론트 `/mypage/exchange?type=exchange` 는 반품 폼과 한 컴포넌트(`mode`)다. 사유는 부담 주체 `seller` 넷, 택배비 줄 고정 문구, 줄 막힘 `nothing_left` → `not_exchangeable` → `window_closed`, 본문 `kind: 'exchange'`(반품 본문엔 칸 없음 — 해시 그대로). `ExchangeUnavailable` 은 지웠다. 제목·줄·사유 머리·제출·완료·취소 문구도 교환판을 더했고, 주문 상세 칸 이름은 «반품·교환», 항목마다 종류 표지와 `exchangeStage.<stage>` 문구.
+- (N13) admin-web: 교환이면 돈 문(미도착 닫기·보류 정산·선환불·그 다시 시도·계좌 송금 둘)을 내지 않고 정산 다시 시도는 `needs` 없이만. 열린 교환은 취소가 없다. [교환품 보내기]는 안 열림 ∧ `expected`·`arrived`·`held`, 열림 ∧ `held` 는 «교환 정산 열기». **열린 교환이 `expected` 여도 «회수 다시 접수»는 남긴다** — 고객은 여전히 물건을 돌려보내야 하고 core 회수 재시도는 교환을 거절하지 않는다.
+- (N14) 주문 목록 [반품 접수]는 «반품·교환 접수» 대화상자 — 교환이면 단순 변심을 빼고 기타는 `seller` 고정, 교환 불가 줄은 «교환 불가(인쇄 상품)»로 막는다.
+- (N16 확장) 메뉴·페이지 제목·대시보드 칩 외에 빠른 실행 «반품·교환», 통계 개요 «반품·교환 접수», 주문내역 드롭다운 «반품·교환 접수», 목록 기한 칸 «처리 기한»도 바꿨다. 주문 상태 칸 «반품»·wallet 환불 종류·창고 종류·PII 라벨은 다른 개념이라 그대로.
+- 알려진 잔여: ① 롤링 중 Medusa 가 옛 core(`exchangeable` 없음)를 만나면 **모든** 교환이 «인쇄 상품은 교환할 수 없어요»로 거절된다(반품은 영향 없음) — core 를 Medusa 보다 먼저 올리는 쪽이 낫다. 같은 창에 admin-web 이 옛 core 를 읽으면 시트 제목이 «undefined 상세»다. ② 교환 화면에 반품 문구가 남았다 — 스토어프론트 `nothingLeft` «반품할 수 있는 수량이 없어요»·일반 거절·`cancelReject.notOurReturn`, admin-web 교환 접수의 검증·빈 상태 문구. ③ CS 시트의 정산 결과 줄이 교환에도 «환불 0원»이라 적는다. ④ 스토어프론트 `order.exchange.*` 번역 키는 지운 카드만 쓰던 것이라 죽은 키다.
+- 배포: 마이그·이벤트 계약 변경 없음. core·Medusa·admin-web·스토어프론트 한 `sst deploy`. 어느 쪽이 먼저 떠도 교환이 «덜» 열릴 뿐이다(옛 core → Medusa 가 교환 거절, 옛 Medusa → 폼의 전 줄 막힘) — 서비스는 한 `sst deploy` 로 같이 나가므로 순서를 고를 수 없다. 롤링 중간 창은 해롭지 않다 — 고객은 제출에 닿지 못하고(core 고객 actions 가 `exchange` 를 아직 안 내고 returnable 이 false 를 준다), CS 접수는 PR 11 의 규칙으로 배포 중에 이미 금지돼 있다. 틀린 «인쇄 상품» 문구를 볼 수 있는 쪽은 CS 뿐이다. 또 `order.exchange.*` 번역 키는 일부러 남겼다(죽은 키, 나중에 지운다). 🔴 **PR 11 과 같은 배치이거나 그 뒤** — PR 11 의 «배포 중 CS 교환 접수 금지»와 롤백 금지 셋을 승계한다. core 출고 개통 전에는 휴면이다(배송완료 0 이라 `exchange` 액션이 안 나오고 폼은 전 줄 0, D9).
+
 ## 5. 걷어낼 것 (D8)
 
 - **판매주문 쪽**: `store-return-exchange.service.ts`, 두 컨트롤러, 반품 전용 헬퍼(`return-refund-cap.ts`, `return-refund-classification.ts`,
@@ -580,7 +594,7 @@ X3 의 근거 — 2026-10-29 실측(Medusa 2.13.4, `OrderExchange` 로 같은 �
 | 10 | 옛 core 반품·교환·inventory 반품 코드 걷기(표는 남김) | core · admin-web · storefront | 마이그 없음, 결과는 §5 의 «PR 10 에서 확정한 결과» |
 | 10b | 옛 반품·교환·inventory 반품 표·enum DROP | core | contract, `deploy → migrate`, PR 10 라이브 뒤. 결과는 §5 의 «PR 10b 에서 확정한 결과» |
 | 11 | 교환(판매자 잘못 · 같은 품목 재발송) 커널 — 접수·정산·교환 상자 | medusa · channel-adapter · core · event-contracts | 설계는 4.9 «PR 11 설계». 마이그 하나(`migrate → deploy`), 한 배포 |
-| 11b | 교환 화면 — 스토어프론트 교환 폼, CS 교환 표시·[교환품 보내기], 고객 actions `exchange` | storefront · admin-web · core | PR 11 라이브 뒤 |
+| 11b | 교환 화면 — 스토어프론트 교환 폼, CS 교환 표시·[교환품 보내기], 고객 actions `exchange`, 인쇄 상품 교환 막기 | storefront · admin-web · core · medusa | PR 11 과 같은 배치 또는 그 뒤. 마이그 없음, 결과는 4.9 의 «PR 11b 에서 확정한 결과» |
 
 개통(고객에게 반품 버튼을 여는 것)은 **core 출고 개통 뒤**(D9, 4.0)이고 PR 6·7·8 이 라이브인 뒤다. 한진 회수(9) 전에는 CS 가 회수를
 손으로 접수한다. PR 6b 가 보류 정산·선환불 모드(4.4 «CS 의 두 문»)와 미도착 닫기를 연다.

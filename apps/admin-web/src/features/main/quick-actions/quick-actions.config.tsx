@@ -46,7 +46,7 @@ export const QUICK_ACTION_POOL: QuickActionItem[] = [
   { id: 'payments', label: '결제 내역', icon: CreditCard, path: '/payments' },
   { id: 'payments-refunds', label: '환불 내역', icon: Receipt, path: '/payments/refunds' },
   { id: 'cs-reviews', label: '리뷰 관리', icon: Star, path: '/cs/reviews' },
-  { id: 'cs-return-exchange', label: '반품', icon: RefreshCcw, path: '/cs/return-exchange' },
+  { id: 'cs-return-exchange', label: '반품·교환', icon: RefreshCcw, path: '/cs/return-exchange' },
   { id: 'mall-notices', label: '공지사항', icon: Megaphone, path: '/mall/notices' },
 ];
 

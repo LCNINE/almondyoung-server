@@ -2,6 +2,9 @@ import type { ReturnRequestOutcome } from "@/lib/api/medusa/return-outcome"
 import type { ReturnRequestInput, ReturnableLine } from "@/lib/types/ui/returns"
 import { CUSTOMER_RETURN_REASONS } from "./return-reasons"
 
+/** 한 폼이 반품과 교환을 함께 그린다(N10). */
+export type ReturnFormMode = "return" | "exchange"
+
 export type ReturnFormLine = {
   itemId: string
   title: string
@@ -10,22 +13,30 @@ export type ReturnFormLine = {
   orderedQuantity: number
   returnable: number
   windowEndsAt: string | null
-  blocked: "none" | "nothing_left" | "window_closed"
+  /** 같은 품목으로 교환할 수 있는가(인쇄 줄은 false) — 교환 모드에서만 막는다. */
+  exchangeable: boolean
+  blocked: "none" | "nothing_left" | "not_exchangeable" | "window_closed"
 }
 
-/** 주문 품목에 returnable 을 붙인다. returnable 에 없는 품목은 0(nothing_left), 기한이 지났으면 수량이 있어도 window_closed. */
+/**
+ * 주문 품목에 returnable 을 붙인다. returnable 에 없는 품목은 0(nothing_left), 기한이 지났으면 수량이 있어도 window_closed.
+ * 교환 모드는 그 사이에 not_exchangeable 을 둔다 — 순서 nothing_left → not_exchangeable → window_closed.
+ */
 export function buildReturnFormLines(
   items: Array<{ id: string; title: string; variantTitle: string | null; thumbnail: string | null; quantity: number }>,
   returnable: ReturnableLine[],
   now: Date,
+  mode: ReturnFormMode,
 ): ReturnFormLine[] {
   const byItem = new Map(returnable.map((r) => [r.itemId, r]))
   return items.map((item) => {
     const r = byItem.get(item.id)
     const left = r?.returnableQuantity ?? 0
     const windowEndsAt = r?.windowEndsAt ?? null
+    const exchangeable = r?.exchangeable ?? false
     let blocked: ReturnFormLine["blocked"] = "none"
     if (left <= 0) blocked = "nothing_left"
+    else if (mode === "exchange" && !exchangeable) blocked = "not_exchangeable"
     else if (windowEndsAt !== null && new Date(windowEndsAt).getTime() < now.getTime()) blocked = "window_closed"
     return {
       itemId: item.id,
@@ -35,6 +46,7 @@ export function buildReturnFormLines(
       orderedQuantity: item.quantity,
       returnable: Math.max(left, 0),
       windowEndsAt,
+      exchangeable,
       blocked,
     }
   })
@@ -69,9 +81,32 @@ export function validateReturnForm(sel: ReturnSelection, reason: string): "selec
   return null
 }
 
-/** 사유가 정한 택배비 부담 주체. 고객이 고를 수 없는 사유·빈 값은 null. */
-export function feeNotice(reason: string): "customer" | "seller" | null {
+/** 고를 수 있는 사유 칩. 교환은 판매자 잘못일 때만 되므로 부담 주체 seller 인 사유만. */
+export function reasonsFor(mode: ReturnFormMode): typeof CUSTOMER_RETURN_REASONS {
+  return mode === "exchange" ? CUSTOMER_RETURN_REASONS.filter((r) => r.feeBearer === "seller") : CUSTOMER_RETURN_REASONS
+}
+
+/** 사유가 정한 택배비 부담 주체. 고객이 고를 수 없는 사유·빈 값은 null. 교환은 언제나 seller. */
+export function feeNotice(reason: string, mode: ReturnFormMode): "customer" | "seller" | null {
+  if (mode === "exchange") return "seller"
   return CUSTOMER_RETURN_REASONS.find((r) => r.value === reason)?.feeBearer ?? null
+}
+
+/** 모드마다 문구가 갈리는 키. 교환은 `exchange.<key>`. */
+export type ReturnFormCopyKey =
+  | "title"
+  | "empty"
+  | "linesTitle"
+  | "reasonTitle"
+  | "submit"
+  | "selectItem"
+  | "selectReason"
+  | "done"
+  | "nothingLeft"
+
+/** 문구 키(네임스페이스 `mypage.order.returnRequest` 기준). */
+export function copyKey(mode: ReturnFormMode, key: ReturnFormCopyKey): string {
+  return mode === "exchange" ? `exchange.${key}` : key
 }
 
 export type SubmitState = { requestId: string; locked: ReturnRequestInput | null; conflict: boolean }

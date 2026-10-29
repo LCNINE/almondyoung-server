@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { eq } from 'drizzle-orm';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
 import { seedOrder, seedWorld } from '../../fulfillment/order-progress/__support__/order-progress.fixtures';
@@ -55,7 +56,7 @@ describeIfDb('readReturnEligibility', () => {
       expect(parcels).toHaveLength(2);
       expect(await readReturnEligibility(tx, ORDER_ID)).toEqual({
         found: true,
-        lines: [{ channelOrderItemId: ITEM_ID, deliveredUnits: 2, lastDeliveredAt: max }],
+        lines: [{ channelOrderItemId: ITEM_ID, deliveredUnits: 2, lastDeliveredAt: max, exchangeable: true }],
         customerReturns: [],
       });
     });
@@ -92,7 +93,7 @@ describeIfDb('readReturnEligibility', () => {
 
       expect(await readReturnEligibility(tx, ORDER_ID)).toEqual({
         found: true,
-        lines: [{ channelOrderItemId: ITEM_ID, deliveredUnits: 0, lastDeliveredAt: null }],
+        lines: [{ channelOrderItemId: ITEM_ID, deliveredUnits: 0, lastDeliveredAt: null, exchangeable: true }],
         customerReturns: [],
       });
     });
@@ -114,7 +115,7 @@ describeIfDb('readReturnEligibility', () => {
 
       expect(await readReturnEligibility(tx, ORDER_ID)).toEqual({
         found: true,
-        lines: [{ channelOrderItemId: ITEM_ID, deliveredUnits: 0, lastDeliveredAt: null }],
+        lines: [{ channelOrderItemId: ITEM_ID, deliveredUnits: 0, lastDeliveredAt: null, exchangeable: true }],
         customerReturns: [],
       });
     });
@@ -128,7 +129,41 @@ describeIfDb('readReturnEligibility', () => {
       await seedSupplierShare(tx, w, line, { stage: 'shipped', qty: 1 });
 
       const result = await readReturnEligibility(tx, ORDER_ID);
-      expect(result.lines).toEqual([{ channelOrderItemId: ITEM_ID, deliveredUnits: 0, lastDeliveredAt: null }]);
+      expect(result.lines).toEqual([
+        { channelOrderItemId: ITEM_ID, deliveredUnits: 0, lastDeliveredAt: null, exchangeable: true },
+      ]);
+    });
+  });
+
+  it('인쇄 줄 + 일반 줄 주문 → 줄마다 exchangeable [false, true], 인쇄 줄의 deliveredUnits 는 그대로 (K8 PR11b N1)', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = await seedWorld(tx);
+      const normal = await seedDeliveredLine(tx, w, {
+        quantity: 1,
+        composition: [{ skuId: w.skuId, qtyPerUnit: 1 }],
+        parcels: [{ qtyBySku: { [w.skuId]: 1 } }],
+      });
+      await asMedusa(tx, normal);
+      // 같은 주문의 인쇄 줄 — 인쇄는 외주라 소포가 없다
+      const [source] = await tx
+        .select({ variantId: wmsTables.salesOrderLines.variantId })
+        .from(wmsTables.salesOrderLines)
+        .where(eq(wmsTables.salesOrderLines.id, normal.lineId));
+      await tx.insert(wmsTables.salesOrderLines).values({
+        salesOrderId: normal.salesOrderId,
+        variantId: source.variantId,
+        productName: '인쇄 상품',
+        quantity: 1,
+        unitPrice: 1000,
+        channelOrderItemId: 'ordli_0_print',
+        almondDesignId: randomUUID(),
+      });
+
+      const result = await readReturnEligibility(tx, ORDER_ID);
+      const lines = [...result.lines].sort((a, b) => a.channelOrderItemId.localeCompare(b.channelOrderItemId));
+      expect(lines.map((line) => line.channelOrderItemId)).toEqual(['ordli_0_print', ITEM_ID]);
+      expect(lines.map((line) => line.exchangeable)).toEqual([false, true]);
+      expect(lines[1].deliveredUnits).toBe(1);
     });
   });
 

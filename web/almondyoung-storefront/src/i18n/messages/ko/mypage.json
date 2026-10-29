@@ -688,17 +688,38 @@
         "returnPickedUp": "택배 기사님이 이미 가져간 반품이라 취소할 수 없어요",
         "exchangeRequiresSellerFault": "교환은 상품 문제(하자·오배송·파손 등)일 때만 신청할 수 있어요",
         "exchangeReleased": "교환품이 이미 출발해 취소할 수 없어요",
+        "exchangeItemUnsupported": "인쇄 상품은 교환할 수 없어요 — 반품으로 신청해 주세요",
         "generic": "반품을 신청하지 못했어요. 고객센터로 문의해 주세요."
+      },
+      "exchange": {
+        "title": "교환 신청",
+        "empty": "지금 교환할 수 있는 상품이 없어요",
+        "linesTitle": "교환할 상품",
+        "reasonTitle": "교환 사유",
+        "fee": "교환 택배비는 저희가 부담해요",
+        "notExchangeable": "교환할 수 없는 상품이에요(인쇄 상품은 반품으로 신청해 주세요)",
+        "submit": "교환 신청하기",
+        "selectItem": "교환할 상품을 골라 주세요",
+        "selectReason": "교환 사유를 골라 주세요",
+        "done": "교환 신청이 접수됐어요 — 회수한 상품을 확인한 뒤 같은 상품을 다시 보내 드려요",
+        "nothingLeft": "교환할 수 있는 수량이 없어요",
+        "rejectGeneric": "교환을 신청하지 못했어요. 고객센터로 문의해 주세요."
       }
     },
     "returns": {
-      "title": "반품",
+      "title": "반품·교환",
+      "kind": {
+        "return": "반품",
+        "exchange": "교환"
+      },
       "quantity": "{count}개",
       "reasonLabel": "사유",
       "requestItem": "반품 신청",
       "cancel": "반품 취소",
       "cancelConfirm": "한 번 더 누르면 취소돼요",
       "cancelDone": "반품을 취소했어요.",
+      "exchangeCancel": "교환 취소",
+      "exchangeCancelDone": "교환을 취소했어요.",
       "cancelFailed": "잠시 뒤 다시 시도해 주세요.",
       "stage": {
         "requested": "접수됐어요 · 회수를 기다려요",
@@ -706,12 +727,20 @@
         "refunded": "환불했어요",
         "canceled": "취소했어요"
       },
+      "exchangeStage": {
+        "requested": "교환 접수됐어요",
+        "processing": "회수한 상품을 확인하고 있어요",
+        "exchanged": "교환품을 보내 드려요",
+        "canceled": "교환을 취소했어요"
+      },
       "cancelReject": {
         "returnArrived": "이미 창고에 도착해 취소할 수 없어요.",
         "returnPrepaid": "이미 환불이 시작돼 취소할 수 없어요.",
         "returnPickedUp": "이미 택배 기사님이 가져가서 취소할 수 없어요. 도착하면 검수 뒤 환불돼요",
         "exchangeReleased": "교환품이 이미 출발해 취소할 수 없어요",
-        "notOurReturn": "이 화면에서 취소할 수 없는 반품이에요. 고객센터로 문의해 주세요."
+        "notOurReturn": "이 화면에서 취소할 수 없는 반품이에요. 고객센터로 문의해 주세요.",
+        "exchangePickedUp": "이미 상품을 회수했어요 — 도착하면 검수 뒤 같은 상품을 다시 보내 드려요",
+        "exchangeNotOurs": "이 교환은 여기서 취소할 수 없어요. 고객센터로 문의해 주세요."
       }
     },
     "exchange": {
@@ -859,12 +888,6 @@
       "started": "다운로드를 시작합니다",
       "failed": "다운로드에 실패했습니다",
       "exerciseFailed": "사용 처리에 실패했습니다"
-    },
-    "exchangeUnavailable": {
-      "title": "교환 신청은 고객센터에서 받고 있어요",
-      "body": "주문번호와 바꾸고 싶은 상품을 알려 주시면 도와드릴게요.",
-      "inquiry": "1:1 문의하기",
-      "orderDetail": "주문 상세"
     }
   },
   "membership": {

@@ -282,6 +282,15 @@ export class CustomerReturnSettlementManager {
         .where(eq(wmsTables.customerReturns.id, input.customerReturnId))
         .for('update');
       if (!record) throw new NotFoundError(`Customer return not found: ${input.customerReturnId}`);
+      // 교환에는 보낼 돈이 없다(K8 PR11b N7) — 계좌 송금·이미 환불한 금액·보류 차감 빼기는 환불의 출구라 받지 않는다.
+      // 일반 다시 시도는 받는다: 대체 줄이 일시 실패해 refund_pending 에 멈춘 교환을 다시 보낼 길이다
+      if (record.kind === 'exchange') {
+        if (input.kind === 'manual') throw new BadRequestError('교환은 계좌 송금으로 다시 보낼 수 없습니다');
+        if (input.alreadyRefundedAmount !== undefined) {
+          throw new BadRequestError('교환은 이미 환불한 금액을 적을 수 없습니다');
+        }
+        if (input.dropHoldDeduction !== undefined) throw new BadRequestError('교환은 보류 차감을 뺄 수 없습니다');
+      }
       if (input.alreadyRefundedAmount !== undefined) {
         if (input.target !== 'settlement' || input.kind !== 'retry') {
           throw new BadRequestError('이미 환불한 금액은 정산 다시 시도에만 적을 수 있습니다');

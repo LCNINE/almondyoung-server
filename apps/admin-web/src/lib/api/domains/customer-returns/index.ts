@@ -74,6 +74,15 @@ export const customerReturnApi = {
     return res.data;
   },
 
+  /**
+   * 교환품 보내기(K8 PR11) — 교환 상자를 연다. 보류면 정산도 열고, 수령 전이면 먼저 보낸다(선발송). 이미 열렸으면 그대로.
+   * 반품이면 400, 보류·수령 전이 아니면 409 — 서버 문구를 그대로 토스트한다
+   */
+  releaseExchange: async (id: string): Promise<CustomerReturnView> => {
+    const res = await client.post(`${CORE}/${encodeURIComponent(id)}/exchange-release`);
+    return res.data;
+  },
+
   // ---- Medusa ----
   returnable: async (orderId: string): Promise<OrderReturnable> => {
     const res = await client.get<OrderReturnable>(

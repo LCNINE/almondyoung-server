@@ -182,7 +182,7 @@ export default function OverviewStatisticsTemplate() {
     { id: 'waiting-matching', label: '매칭 대기', count: orderStats.data?.waitingMatching, href: '/order/matching', isLoading: orderStats.isLoading, isError: orderStats.isError },
     { id: 'bank-transfers', label: '입금 대기', count: bankTransfers.data?.total, href: '/payments/bank-transfers', isLoading: bankTransfers.isLoading, isError: bankTransfers.isError },
     { id: 'refund-requests', label: '환불 요청', count: refundRequests.data?.total, href: '/payments/refund-requests', isLoading: refundRequests.isLoading, isError: refundRequests.isError },
-    { id: 'return-requests', label: '반품 접수', count: returnRequests.data?.total, href: '/cs/return-exchange', isLoading: returnRequests.isLoading, isError: returnRequests.isError },
+    { id: 'return-requests', label: '반품·교환 접수', count: returnRequests.data?.total, href: '/cs/return-exchange', isLoading: returnRequests.isLoading, isError: returnRequests.isError },
     { id: 'unanswered-qna', label: '미답변 문의', count: unansweredQna.data?.total, href: '/cs/qna', isLoading: unansweredQna.isLoading, isError: unansweredQna.isError },
     { id: 'unanswered-reviews', label: '미답변 리뷰', count: unansweredReviews.data?.total, href: '/cs/reviews', isLoading: unansweredReviews.isLoading, isError: unansweredReviews.isError },
   ] as const;

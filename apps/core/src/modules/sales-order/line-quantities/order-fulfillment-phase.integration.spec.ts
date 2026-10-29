@@ -680,12 +680,12 @@ describeIfDb('orderFulfillmentPhaseSql — 진행 단계 사다리 한 벌 (K6 P
     });
   });
 
-  describe('고객 actions 의 반품 버튼 (K6 PR3a, C8 · K8 PR 10 — 교환은 PR 11 까지 닫힌다)', () => {
+  describe('고객 actions 의 반품·교환 버튼 (K6 PR3a, C8 · K8 PR11b N4 — 교환은 인쇄 줄이 아닌 소포만)', () => {
     function storeService(tx: DbTx): StoreSalesOrdersService {
       return storeServiceFor(tx);
     }
 
-    it('delivered parcel opens return, not exchange', async () => {
+    it('delivered parcel opens return and exchange', async () => {
       await inRollbackTx(db, async (tx) => {
         const w = await f.seedWorld(tx);
         const customerId = randomUUID();
@@ -696,6 +696,27 @@ describeIfDb('orderFulfillmentPhaseSql — 진행 단계 사다리 한 벌 (K6 P
           parcels: [{ qtyBySku: { [sku]: 1 } }],
           customerId,
         });
+        const actions = await storeService(tx).getActions(line.salesOrderId, customerId);
+        expect(actions.availableActions).toContain('return');
+        expect(actions.availableActions).toContain('exchange');
+      });
+    });
+
+    it('delivered parcel on a print line opens return only', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const w = await f.seedWorld(tx);
+        const customerId = randomUUID();
+        const sku = await seedComponentSku(tx, w);
+        const line = await seedDeliveredLine(tx, w, {
+          quantity: 1,
+          composition: [{ skuId: sku, qtyPerUnit: 1 }],
+          parcels: [{ qtyBySku: { [sku]: 1 } }],
+          customerId,
+        });
+        await tx
+          .update(wmsTables.salesOrderLines)
+          .set({ almondDesignId: randomUUID() })
+          .where(eq(wmsTables.salesOrderLines.id, line.lineId));
         const actions = await storeService(tx).getActions(line.salesOrderId, customerId);
         expect(actions.availableActions).toContain('return');
         expect(actions.availableActions).not.toContain('exchange');

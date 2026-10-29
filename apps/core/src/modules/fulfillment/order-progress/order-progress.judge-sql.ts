@@ -171,8 +171,9 @@ function judgeCtes(scope: SQL, now: SQL): SQL {
        GROUP BY c.sales_order_id
     ),
     rx AS (
-      -- 열린 반품 예정 기록(K8 PR 10) — 가장 먼저 접수된 것. 옛 반품·교환 요청 표는 걷었다
-      SELECT DISTINCT ON (cr.sales_order_id) cr.sales_order_id, 'return:' || cr.status::text AS state, cr.requested_at AS created_at
+      -- 열린 반품 예정 기록(K8 PR 10) — 가장 먼저 접수된 것. 옛 반품·교환 요청 표는 걷었다.
+      -- 상태는 '<종류>:<상태>'(return:held · exchange:held, K8 PR11b N9) — 단계 키는 return_exchange 그대로
+      SELECT DISTINCT ON (cr.sales_order_id) cr.sales_order_id, cr.kind::text || ':' || cr.status::text AS state, cr.requested_at AS created_at
         FROM customer_returns cr JOIN so ON so.id = cr.sales_order_id
        WHERE cr.status NOT IN ('settled', 'cancelled')
        ORDER BY cr.sales_order_id, cr.requested_at ASC
