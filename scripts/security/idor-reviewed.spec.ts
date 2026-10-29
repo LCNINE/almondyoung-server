@@ -193,6 +193,12 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
     predicate: 'if (customerId !== undefined && so.customerId !== customerId)',
     note: "getTrackingByChannelOrder -> findSoOrThrow({channelOrderId, salesChannel:'medusa'}, customerId).",
   },
+  'core GET /store/orders/by-channel-order/:channelOrderId/returns/:channelReturnId/progress': {
+    verdict: 'SAFE',
+    evidence: 'apps/core/src/modules/sales-order/services/store-sales-orders.service.ts:784',
+    predicate: "if (so.customerId !== customerId) throw new NotFoundException('반품을 찾을 수 없습니다.');",
+    note: "getReturnProgressByChannelOrder: 주문을 channelOrderId 로 찾고 so.customerId 가 토큰의 userId 와 다르면 404(존재 여부를 흘리지 않는다). 반품은 그 주문의 salesOrderId 와 channelReturnId 둘 다로 좁힌다(같은 파일 789행) — 남의 주문 반품 id 를 넣어도 내 주문 아래에서만 찾는다.",
+  },
   'core GET /store/orders/by-wallet-intent/:walletIntentId/digital-exercised': {
     verdict: 'SAFE',
     evidence: 'apps/core/src/modules/sales-order/services/store-sales-orders.service.ts:117',
@@ -1696,15 +1702,15 @@ const keyOf = (r: AuditRow): string => `${r.app} ${r.verb} ${r.route}`;
 describe('IDOR 검사 대상 집합', () => {
   it('감사 스크립트가 idorTarget 을 내보낸다', () => {
     const targets = runAudit().filter((r) => r.idorTarget);
-    expect(targets).toHaveLength(275);
+    expect(targets).toHaveLength(276);
   });
 
   // search 와 analytics 가 둘 다 `GET /health` 이고, user-service 와 file-service 가 둘 다
   // `POST /files/upload` 다. `<VERB> <route>` 로 키를 만들면 그만큼 뭉개지고 스냅샷이 조용히 잃는다.
   it('키에 app 이 들어가야 충돌하지 않는다', () => {
     const targets = runAudit().filter((r) => r.idorTarget);
-    expect(new Set(targets.map(keyOf)).size).toBe(275);
-    expect(new Set(targets.map((r) => `${r.verb} ${r.route}`)).size).toBe(273);
+    expect(new Set(targets.map(keyOf)).size).toBe(276);
+    expect(new Set(targets.map((r) => `${r.verb} ${r.route}`)).size).toBe(274);
   });
 
   it('감사 스크립트의 대상 집합과 명단이 정확히 일치한다', () => {
