@@ -29,7 +29,7 @@ Use the existing next-intl product detail messages for viewer text.
       Call it before/after mapping replacement or clearing, with product locks acquired first.
       Add PostgreSQL cases for model replacement, clearing, rollback, and concurrent review.
       Verify manager, mapping, and integration tests serially.
-- [ ] Repeat the internal Codex whole-PR review until there are no actionable findings.
+- [x] Repeat the internal Codex whole-PR review until there are no actionable findings.
       Verify types, focused tests, formatting, and PR checks before delivery.
 
 ## Review focus
@@ -60,3 +60,6 @@ Use the existing next-intl product detail messages for viewer text.
   Existing inbox worker and consumer verification passed 33 tests.
 - Reproduced the default suite's Docker dependency with Docker stopped.
   PostgreSQL model integration now requires `REQUIRE_SKU_3D_MODELS_DB=1`.
+- Verified the opt-in with Docker stopped (26 skipped) and enabled (26 passed).
+- Final internal whole-PR review reported no remaining actionable correctness regressions.
+  The PR is mergeable, and GitHub verification is rerunning on the published fixes.
