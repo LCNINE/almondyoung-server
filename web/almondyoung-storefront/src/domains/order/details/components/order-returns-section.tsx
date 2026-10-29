@@ -9,7 +9,7 @@ import { useRouter } from "next/navigation"
 import { useState, useTransition } from "react"
 import { toast } from "sonner"
 import { reasonLabelKey } from "../../return-request/return-reasons"
-import { cancelRejectKey, returnItemRows, returnStageKey } from "../order-returns-view"
+import { cancelRejectKey, returnItemRows, returnKindKey, returnStageKey } from "../order-returns-view"
 
 interface OrderReturnsSectionProps {
   orderId: string
@@ -29,7 +29,8 @@ export function OrderReturnsSection({ orderId, returns, items }: OrderReturnsSec
   const text = (key: string, values?: Record<string, string | number>) =>
     t(key as Parameters<typeof t>[0], values as never)
 
-  const onCancel = (returnId: string) => {
+  const onCancel = (ret: CustomerReturn) => {
+    const { returnId } = ret
     if (armedId !== returnId) {
       setArmedId(returnId)
       return
@@ -39,7 +40,7 @@ export function OrderReturnsSection({ orderId, returns, items }: OrderReturnsSec
         const outcome = await cancelReturn(orderId, returnId)
         setArmedId(null)
         if (outcome.kind === "canceled") {
-          toast.success(t("cancelDone"))
+          toast.success(ret.kind === "exchange" ? t("exchangeCancelDone") : t("cancelDone"))
           router.refresh()
           return
         }
@@ -68,7 +69,12 @@ export function OrderReturnsSection({ orderId, returns, items }: OrderReturnsSec
         return (
           <div key={ret.returnId} className="border-border space-y-2 rounded-lg border p-4">
             <div className="flex items-center justify-between gap-2">
-              <p className="text-sm font-medium text-black">{text(returnStageKey(ret.stage))}</p>
+              <p className="flex items-center gap-2 text-sm font-medium text-black">
+                <span className="rounded bg-secondary px-1.5 py-0.5 text-xs text-foreground">
+                  {text(returnKindKey(ret.kind))}
+                </span>
+                {text(returnStageKey(ret.stage, ret.kind))}
+              </p>
               <p className="text-xs text-gray-500">{formatDate(ret.requestedAt, DATE_FORMATS.KO_DOT)}</p>
             </div>
             <ul className="space-y-1">
@@ -90,11 +96,11 @@ export function OrderReturnsSection({ orderId, returns, items }: OrderReturnsSec
                   variant="outline"
                   color="secondary"
                   size="sm"
-                  onClick={() => onCancel(ret.returnId)}
+                  onClick={() => onCancel(ret)}
                   isLoading={isPending && armed}
                   disabled={isPending}
                 >
-                  {t("cancel")}
+                  {ret.kind === "exchange" ? t("exchangeCancel") : t("cancel")}
                 </CustomButton>
                 {armed && !isPending && <p className="text-xs text-gray-500">{t("cancelConfirm")}</p>}
               </div>

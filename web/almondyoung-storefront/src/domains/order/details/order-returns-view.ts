@@ -1,8 +1,22 @@
 import type { CustomerReturn, CustomerReturnStage } from "@/lib/types/ui/returns"
 
-/** 키는 네임스페이스 `mypage.order.returns` 기준 상대 경로다. */
-export function returnStageKey(stage: CustomerReturnStage): string {
+/** 교환 문구가 있는 단계. 교환에 refunded 가 오면(차액 환불 등) 반품 문구로 둔다. */
+const EXCHANGE_STAGES: ReadonlySet<CustomerReturnStage> = new Set<CustomerReturnStage>([
+  "requested",
+  "processing",
+  "exchanged",
+  "canceled",
+])
+
+/** 키는 네임스페이스 `mypage.order.returns` 기준 상대 경로다. `exchanged` 는 종류와 무관하게 교환 문구. */
+export function returnStageKey(stage: CustomerReturnStage, kind: CustomerReturn["kind"]): string {
+  if (stage === "exchanged" || (kind === "exchange" && EXCHANGE_STAGES.has(stage))) return `exchangeStage.${stage}`
   return `stage.${stage}`
+}
+
+/** 항목 종류 표지(«반품»/«교환») 키. */
+export function returnKindKey(kind: CustomerReturn["kind"]): string {
+  return `kind.${kind}`
 }
 
 export interface OrderReturnItemRow {

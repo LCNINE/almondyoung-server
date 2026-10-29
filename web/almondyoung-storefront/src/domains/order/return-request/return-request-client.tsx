@@ -14,15 +14,18 @@ import { useRouter } from "next/navigation"
 import { useTranslations } from "next-intl"
 import { useState, useTransition } from "react"
 import { toast } from "sonner"
-import { CUSTOMER_RETURN_REASONS, rejectMessageKey, reasonLabelKey } from "./return-reasons"
+import { rejectMessageKey, reasonLabelKey } from "./return-reasons"
 import {
+  copyKey,
   feeNotice,
   initialSelection,
   nextSubmitState,
+  reasonsFor,
   setLineQuantity,
   toggleLine,
   validateReturnForm,
   type ReturnFormLine,
+  type ReturnFormMode,
   type SubmitState,
 } from "./return-request-form"
 
@@ -31,11 +34,13 @@ interface ReturnRequestClientProps {
   lines: ReturnFormLine[]
   preselectItemId?: string
   pickupAddress: string | null
+  /** 반품 폼과 교환 폼은 한 컴포넌트다(N10) — 제목·사유 칩·택배비 줄·완료 문구·본문 kind 가 갈린다. */
+  mode: ReturnFormMode
 }
 
 const newId = () => crypto.randomUUID()
 
-export function ReturnRequestClient({ orderId, lines, preselectItemId, pickupAddress }: ReturnRequestClientProps) {
+export function ReturnRequestClient({ orderId, lines, preselectItemId, pickupAddress, mode }: ReturnRequestClientProps) {
   const t = useTranslations("mypage.order.returnRequest")
   const router = useRouter()
   const [isPending, startTransition] = useTransition()
@@ -51,7 +56,8 @@ export function ReturnRequestClient({ orderId, lines, preselectItemId, pickupAdd
   const selectable = lines.some((l) => l.blocked === "none")
   const frozen = submit.locked !== null || submit.conflict
   const disabled = frozen || isPending
-  const notice = feeNotice(reason)
+  const notice = feeNotice(reason, mode)
+  const copy = (key: Parameters<typeof copyKey>[1]) => text(copyKey(mode, key))
 
   const backLink = (label: string, primary = false) => (
     <LocalizedClientLink href={detailsHref}>
@@ -65,7 +71,7 @@ export function ReturnRequestClient({ orderId, lines, preselectItemId, pickupAdd
     return (
       <div className="bg-white px-4 py-8 md:min-h-screen md:px-6">
         <div className="flex flex-col items-center gap-6 py-10 text-center">
-          <p className="text-base font-medium text-foreground">{t("done")}</p>
+          <p className="text-base font-medium text-foreground">{copy("done")}</p>
           {backLink(t("viewOrder"), true)}
         </div>
       </div>
@@ -75,8 +81,8 @@ export function ReturnRequestClient({ orderId, lines, preselectItemId, pickupAdd
   if (!selectable) {
     return (
       <div className="bg-white px-4 py-8 md:min-h-screen md:px-6">
-        <PageTitle>{t("title")}</PageTitle>
-        <p className="mt-6 font-medium text-foreground">{t("empty")}</p>
+        <PageTitle>{copy("title")}</PageTitle>
+        <p className="mt-6 font-medium text-foreground">{copy("empty")}</p>
         <div className="mt-6">{backLink(t("backToOrder"))}</div>
       </div>
     )
@@ -108,7 +114,7 @@ export function ReturnRequestClient({ orderId, lines, preselectItemId, pickupAdd
     if (!input) {
       const invalid = validateReturnForm(selection, reason)
       if (invalid) {
-        toast.error(invalid === "select_item" ? t("selectItem") : t("selectReason"))
+        toast.error(invalid === "select_item" ? copy("selectItem") : copy("selectReason"))
         return
       }
       input = {
@@ -116,6 +122,8 @@ export function ReturnRequestClient({ orderId, lines, preselectItemId, pickupAdd
         items: Object.entries(selection).map(([itemId, quantity]) => ({ itemId, quantity })),
         reason,
         note: note.trim() || undefined,
+        // 반품은 kind 를 싣지 않는다 — 본문(해시)이 PR 11 전과 같게.
+        ...(mode === "exchange" ? { kind: "exchange" as const } : {}),
       }
     }
     const sent = input
@@ -134,11 +142,11 @@ export function ReturnRequestClient({ orderId, lines, preselectItemId, pickupAdd
 
   return (
     <div className="bg-white px-4 py-4 md:min-h-screen md:px-6">
-      <PageTitle>{t("title")}</PageTitle>
+      <PageTitle>{copy("title")}</PageTitle>
 
       <fieldset disabled={disabled} className="m-0 mt-4 min-w-0 space-y-8 border-0 p-0">
         <section>
-          <h2 className="mb-3 text-sm font-bold text-foreground">{t("linesTitle")}</h2>
+          <h2 className="mb-3 text-sm font-bold text-foreground">{copy("linesTitle")}</h2>
           <ul className="space-y-3">
             {lines.map((line) => {
               const open = line.blocked === "none"
@@ -176,6 +184,7 @@ export function ReturnRequestClient({ orderId, lines, preselectItemId, pickupAdd
                       </p>
                       <p className="mt-1 text-xs text-muted-foreground">
                         {line.blocked === "nothing_left" && t("nothingLeft")}
+                        {line.blocked === "not_exchangeable" && t("exchange.notExchangeable")}
                         {line.blocked === "window_closed" &&
                           t("windowClosed", { date: formatDate(line.windowEndsAt, DATE_FORMATS.KO_DOT) })}
                         {open &&
@@ -201,9 +210,9 @@ export function ReturnRequestClient({ orderId, lines, preselectItemId, pickupAdd
         </section>
 
         <section>
-          <h2 className="mb-3 text-sm font-bold text-foreground">{t("reasonTitle")}</h2>
+          <h2 className="mb-3 text-sm font-bold text-foreground">{copy("reasonTitle")}</h2>
           <div className="flex flex-wrap gap-2">
-            {CUSTOMER_RETURN_REASONS.map((r) => (
+            {reasonsFor(mode).map((r) => (
               <button
                 key={r.value}
                 type="button"
@@ -221,7 +230,7 @@ export function ReturnRequestClient({ orderId, lines, preselectItemId, pickupAdd
           </div>
           {notice && (
             <p className="mt-3 text-xs text-muted-foreground">
-              {notice === "customer" ? t("feeCustomer") : t("feeSeller")}
+              {mode === "exchange" ? t("exchange.fee") : notice === "customer" ? t("feeCustomer") : t("feeSeller")}
             </p>
           )}
           <label className="mb-1 mt-4 block text-xs text-muted-foreground" htmlFor="return-note">
@@ -264,7 +273,7 @@ export function ReturnRequestClient({ orderId, lines, preselectItemId, pickupAdd
             disabled={isPending}
             onClick={handleSubmit}
           >
-            {isPending ? t("submitting") : submit.locked ? t("resubmit") : t("submit")}
+            {isPending ? t("submitting") : submit.locked ? t("resubmit") : copy("submit")}
           </CustomButton>
         </div>
       )}

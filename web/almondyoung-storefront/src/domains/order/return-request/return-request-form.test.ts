@@ -2,9 +2,11 @@ import { describe, expect, it } from "vitest"
 import type { ReturnRequestInput } from "@/lib/types/ui/returns"
 import {
   buildReturnFormLines,
+  copyKey,
   feeNotice,
   initialSelection,
   nextSubmitState,
+  reasonsFor,
   setLineQuantity,
   toggleLine,
   validateReturnForm,
@@ -18,10 +20,10 @@ const items = [
   { id: "c", title: "C", variantTitle: null, thumbnail: null, quantity: 1 },
 ]
 const returnable = [
-  { itemId: "a", returnableQuantity: 3, windowEndsAt: "2026-11-05T00:00:00Z" },
-  { itemId: "b", returnableQuantity: 2, windowEndsAt: "2026-10-01T00:00:00Z" },
+  { itemId: "a", returnableQuantity: 3, windowEndsAt: "2026-11-05T00:00:00Z", exchangeable: true },
+  { itemId: "b", returnableQuantity: 2, windowEndsAt: "2026-10-01T00:00:00Z", exchangeable: true },
 ]
-const lines = () => buildReturnFormLines(items, returnable, NOW)
+const lines = () => buildReturnFormLines(items, returnable, NOW, "return")
 
 describe("return-request-form", () => {
   it("returnable 에 없는 품목은 nothing_left, 기한 지난 줄은 수량이 있어도 window_closed", () => {
@@ -56,10 +58,80 @@ describe("return-request-form", () => {
   })
 
   it("feeNotice: change_of_mind → customer, defective → seller, 빈 값 → null", () => {
-    expect(feeNotice("change_of_mind")).toBe("customer")
-    expect(feeNotice("defective")).toBe("seller")
-    expect(feeNotice("")).toBeNull()
-    expect(feeNotice("other")).toBeNull()
+    expect(feeNotice("change_of_mind", "return")).toBe("customer")
+    expect(feeNotice("defective", "return")).toBe("seller")
+    expect(feeNotice("", "return")).toBeNull()
+    expect(feeNotice("other", "return")).toBeNull()
+  })
+
+  describe("교환 모드", () => {
+    // p: 인쇄 줄(교환 불가, 반품은 된다), q: 인쇄 줄인데 남은 수량 0, r: 인쇄 줄인데 기한도 지남
+    const exItems = [
+      ...items,
+      { id: "p", title: "P", variantTitle: null, thumbnail: null, quantity: 1 },
+      { id: "q", title: "Q", variantTitle: null, thumbnail: null, quantity: 1 },
+      { id: "r", title: "R", variantTitle: null, thumbnail: null, quantity: 1 },
+    ]
+    const exReturnable = [
+      ...returnable,
+      { itemId: "p", returnableQuantity: 1, windowEndsAt: "2026-11-05T00:00:00Z", exchangeable: false },
+      { itemId: "q", returnableQuantity: 0, windowEndsAt: "2026-11-05T00:00:00Z", exchangeable: false },
+      { itemId: "r", returnableQuantity: 1, windowEndsAt: "2026-10-01T00:00:00Z", exchangeable: false },
+    ]
+    const byId = (mode: "return" | "exchange") =>
+      Object.fromEntries(buildReturnFormLines(exItems, exReturnable, NOW, mode).map((l) => [l.itemId, l]))
+
+    it("exchangeable false 줄 → not_exchangeable, 남은 수량 0 이면 nothing_left 가 먼저, 기한보다 not_exchangeable 이 먼저", () => {
+      const lines = byId("exchange")
+      expect(lines.p).toMatchObject({ blocked: "not_exchangeable", exchangeable: false, returnable: 1 })
+      expect(lines.q).toMatchObject({ blocked: "nothing_left" })
+      expect(lines.r).toMatchObject({ blocked: "not_exchangeable" })
+      expect(lines.a).toMatchObject({ blocked: "none", exchangeable: true })
+      expect(lines.b).toMatchObject({ blocked: "window_closed" })
+      expect(lines.c).toMatchObject({ blocked: "nothing_left", exchangeable: false })
+    })
+
+    it("반품 모드에서는 exchangeable false 여도 막지 않는다", () => {
+      const lines = byId("return")
+      expect(lines.p).toMatchObject({ blocked: "none", exchangeable: false })
+      expect(lines.r).toMatchObject({ blocked: "window_closed" })
+    })
+
+    it("막힌 줄 itemId 는 미리 고르지 않고 토글도 안 된다", () => {
+      const lines = buildReturnFormLines(exItems, exReturnable, NOW, "exchange")
+      expect(initialSelection(lines, "p")).toEqual({})
+      const p = lines.find((l) => l.itemId === "p")!
+      expect(toggleLine({}, p)).toEqual({})
+    })
+
+    it("reasonsFor: 교환은 판매자 부담 넷, 반품은 고객 사유 다섯", () => {
+      expect(reasonsFor("exchange").map((r) => r.value)).toEqual([
+        "defective",
+        "not_as_described",
+        "wrong_item",
+        "damaged_in_shipping",
+      ])
+      expect(reasonsFor("return").map((r) => r.value)).toEqual([
+        "change_of_mind",
+        "defective",
+        "not_as_described",
+        "wrong_item",
+        "damaged_in_shipping",
+      ])
+    })
+
+    it("feeNotice: 교환은 어느 사유든(빈 값 포함) seller", () => {
+      for (const reason of ["change_of_mind", "defective", "other", ""]) {
+        expect(feeNotice(reason, "exchange")).toBe("seller")
+      }
+    })
+
+    it("copyKey: 교환은 exchange.<key>, 반품은 그대로", () => {
+      expect(copyKey("exchange", "title")).toBe("exchange.title")
+      expect(copyKey("exchange", "done")).toBe("exchange.done")
+      expect(copyKey("return", "title")).toBe("title")
+      expect(copyKey("return", "empty")).toBe("empty")
+    })
   })
 
   const sent: ReturnRequestInput = { requestId: "id1", items: [{ itemId: "a", quantity: 1 }], reason: "defective" }
@@ -71,6 +143,13 @@ describe("return-request-form", () => {
     expect(s1).toEqual({ requestId: "id1", locked: sent, conflict: false })
     const s2 = nextSubmitState(s1, s1.locked as ReturnRequestInput, { kind: "unknown" }, newId)
     expect(s2).toEqual(s1)
+  })
+
+  it("교환 unknown 뒤 잠긴 본문에 kind 'exchange' 가 남는다", () => {
+    const exSent: ReturnRequestInput = { ...sent, kind: "exchange" }
+    const s1 = nextSubmitState(fresh, exSent, { kind: "unknown" }, newId)
+    expect(s1.locked?.kind).toBe("exchange")
+    expect(s1.requestId).toBe("id1")
   })
 
   it("rejected·unavailable·not_found·canceled_replay → 새 id, 잠금 풀림", () => {

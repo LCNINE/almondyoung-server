@@ -65,3 +65,29 @@ describe("Medusa 반품 라우트 인증", () => {
     expect(fetchMock).not.toHaveBeenCalled()
   })
 })
+
+describe("Medusa 반품 신청 본문", () => {
+  const sentBody = () =>
+    JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body))
+
+  it("교환 신청은 본문에 kind 'exchange' 를 싣는다", async () => {
+    jar.set("_medusa_jwt", "medusa-token")
+    await requestReturn("o", {
+      requestId: "r",
+      items: [{ itemId: "i", quantity: 1 }],
+      reason: "defective",
+      kind: "exchange",
+    })
+    expect(sentBody()).toMatchObject({ request_id: "r", kind: "exchange" })
+  })
+
+  it("반품 신청 본문에는 kind 키가 없다", async () => {
+    jar.set("_medusa_jwt", "medusa-token")
+    await requestReturn("o", {
+      requestId: "r",
+      items: [{ itemId: "i", quantity: 1 }],
+      reason: "defective",
+    })
+    expect("kind" in sentBody()).toBe(false)
+  })
+})
