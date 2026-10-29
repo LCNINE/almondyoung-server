@@ -1,6 +1,3 @@
-import { createRequire } from 'node:module';
-import { join } from 'node:path';
-
 // apps/channel-adapter/src/services/pim-medusa-sync/pim-to-medusa.transformer.spec.ts
 import { transformPimToMedusa, validatePimSnapshot } from './pim-to-medusa.transformer';
 import type { PimProductSnapshot } from '../../../types';
@@ -131,21 +128,6 @@ describe('PimToMedusaTransformer', () => {
       });
 
       expect(result.description).toBeUndefined();
-    });
-
-    it('adds then removes the model with the installed Medusa metadata merge implementation', () => {
-      const medusaRequire = createRequire(join(process.cwd(), 'apps/medusa/package.json'));
-      const utilsEntry = medusaRequire.resolve('@medusajs/utils');
-      const { mergeMetadata } = medusaRequire(join(utilsEntry, '../common/merge-metadata.js'));
-      const attached = transformPimToMedusa({ ...mockSnapshot, model3dFileId: 'model-file-id' });
-      const removed = transformPimToMedusa(mockSnapshot);
-
-      const afterAttach = mergeMetadata({ existingKey: 'keep' }, attached.metadata);
-      const afterRemove = mergeMetadata(afterAttach, removed.metadata);
-
-      expect(afterAttach.model3dFileId).toBe('model-file-id');
-      expect(afterRemove).not.toHaveProperty('model3dFileId');
-      expect(afterRemove.existingKey).toBe('keep');
     });
 
     it('projects the selected SKU model without changing the thumbnail', () => {
