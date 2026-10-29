@@ -289,4 +289,6 @@
 - 배포 뒤 확인: ① `select count(*) from sales_order_lines where exchange_return_line_id is not null` 0 ② `POST /admin/customer-returns/<없는 id>/exchange-release` 키 없이 401 ③ 아무 라이브 주문 다음 폴링 뒤 core 반영 대기 변경 증가 0.
 - 화면은 PR 11b — 그 전엔 교환을 CS 가 Medusa admin 라우트(`kind: 'exchange'`)로만 접수할 수 있고, 보류·선발송 버튼이 없다(라우트는 있다).
 - 🔴 **교환 반품이 열려 있는 동안 Medusa 를 PR 11 이전으로 롤백하지 않는다** — 옛 정산이 교환을 반품으로 읽어 품목 값을 환불한다.
+- 🔴 **core·channel-adapter 도 교환 줄(또는 열린 교환)이 있는 동안 PR 11 이전으로 롤백하지 않는다** — 옛 core 의 변경 판정이 0원 교환 줄을 0 으로 정정해 재발송을 취소하고, 옛 취소 계획이 교환 줄을 다시 잡으며, 옛 channel-adapter 는 대체 줄을 스냅샷에 실어 반영 대기 변경을 만든다.
+- channel-adapter 는 core 와 같은 배치(늦으면 그 사이 나간 교환 상자 — 채널 주문 없는 발송 — 의 배송완료 사실이 channel-adapter 에서 «No dispatch operation exists» 재시도로 남는다. 새 판이 뜨면 끝낸다).
 - 인쇄(디자인) 상품 교환은 이 PR 범위 밖 — 교환 줄이 `almond_design_id` 를 복사하지 않는다. PR 11b 자격에서 막고, 그 전엔 CS 가 인쇄 상품 교환을 받지 않는다.
