@@ -143,6 +143,27 @@ export const useShipmentConsolidationCandidates = (
 
 export const useConsolidationCandidatesV2 = useShipmentConsolidationCandidates;
 
+export const useConsolidationOptions = (
+  shipmentId: string,
+  enabled: boolean
+) => {
+  return useQuery({
+    queryKey: orderQueryKeys.consolidationOptions(shipmentId),
+    queryFn: () => orders.consolidation.getOptions(shipmentId),
+    enabled: enabled && !!shipmentId,
+  });
+};
+
+export const useConsolidationProgress = (shipmentId: string) => {
+  return useQuery({
+    queryKey: orderQueryKeys.consolidationProgress(shipmentId),
+    queryFn: () => orders.consolidation.getProgress(shipmentId),
+    enabled: !!shipmentId,
+    refetchInterval: (query) =>
+      query.state.data?.status === 'pending' ? 15_000 : false,
+  });
+};
+
 export const useConsolidationLive = (warehouseId: string) => {
   return useQuery({
     queryKey: orderQueryKeys.consolidationLive(warehouseId),

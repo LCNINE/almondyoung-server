@@ -15,6 +15,7 @@ import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.sch
 import { AuditService } from '../../inventory/shared/services/audit.service';
 import { ConsolidationActor, ConsolidationSourceDto, CreateConsolidationDto } from '../dto/consolidation.dto';
 import { WAYBILL_TERMINAL_STATUSES } from '../waybill/waybill.constants';
+import { canonicalConsolidationRecipient, consolidationCustomerKey } from './consolidation-options';
 import { selectEntrancePasswordForMerge } from './entrance-password.selection';
 import { FulfillmentCommandService } from './fulfillment-command.service';
 import { FulfillmentInvariantService } from './fulfillment-invariant.service';
@@ -133,30 +134,7 @@ function uniqueSorted(values: readonly string[]): string[] {
   return [...new Set(values)].sort();
 }
 
-function normalizedText(value: unknown): string {
-  return typeof value === 'string' ? value.trim().replace(/\s+/g, ' ').toLocaleLowerCase('ko-KR') : '';
-}
-
-function normalizedPhone(value: unknown): string {
-  return typeof value === 'string' ? value.replace(/\D/g, '') : '';
-}
-
-export function canonicalConsolidationRecipient(value: unknown): Record<string, unknown> | null {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-  const input = value as Record<string, unknown>;
-  const result: Record<string, unknown> = {
-    recipientName: normalizedText(input.recipientName),
-    phone: normalizedPhone(input.phone),
-    postalCode: normalizedText(input.postalCode),
-    roadAddress: normalizedText(input.roadAddress),
-    detailAddress: normalizedText(input.detailAddress),
-  };
-  if (typeof input.deliveryNote === 'string' && input.deliveryNote.trim()) {
-    result.deliveryNote = input.deliveryNote.trim().replace(/\s+/g, ' ');
-  }
-  if (Object.entries(result).some(([key, entry]) => key !== 'deliveryNote' && !entry)) return null;
-  return result;
-}
+export { canonicalConsolidationRecipient };
 
 export function consolidationCompatibilityKey(input: {
   warehouseId: string;
@@ -989,31 +967,7 @@ export class ConsolidationService {
   }
 
   private customerKey(aggregate: ShipmentAggregate): string | null {
-    const orders = new Map<
-      string,
-      { customerId: string | null; customerName: string | null; customerPhone: string | null }
-    >();
-    for (const line of aggregate.lines) {
-      if (!line.salesOrderId) return null;
-      orders.set(line.salesOrderId, {
-        customerId: line.customerId,
-        customerName: line.customerName,
-        customerPhone: line.customerPhone,
-      });
-    }
-    const rows = [...orders.values()];
-    const customerIds = uniqueSorted(rows.flatMap((row) => (row.customerId ? [row.customerId] : [])));
-    if (customerIds.length > 0) {
-      return customerIds.length === 1 && rows.every((row) => row.customerId === customerIds[0])
-        ? `id:${customerIds[0]}`
-        : null;
-    }
-    const identities = uniqueSorted(
-      rows.map((row) => `${normalizedText(row.customerName)}:${normalizedPhone(row.customerPhone)}`),
-    );
-    return identities.length === 1 && !identities[0].startsWith(':') && !identities[0].endsWith(':')
-      ? `contact:${identities[0]}`
-      : null;
+    return consolidationCustomerKey(aggregate.lines);
   }
 
   private async collectBlockers(

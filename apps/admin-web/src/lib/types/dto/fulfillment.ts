@@ -921,6 +921,56 @@ export interface ShipmentConsolidationResponse {
   }>;
 }
 
+export type ConsolidationOptionReason =
+  | 'ok'
+  | 'memo_differs'
+  | 'address_differs'
+  | 'incomplete_recipient'
+  | 'unknown_customer';
+
+export interface ConsolidationOptionShipment {
+  shipmentId: string;
+  status: string;
+  salesOrderNos: string[];
+  itemSummary: string;
+  totalQty: number;
+  recipientSnapshot: Record<string, unknown>;
+  batchId: string | null;
+  waybillTrackingNo: string | null;
+  manifestVersion: number;
+  reservationVersion: number;
+  createdAt: string;
+}
+
+export interface ConsolidationOption extends ConsolidationOptionShipment {
+  reason: ConsolidationOptionReason;
+  selectable: boolean;
+}
+
+export interface ConsolidationOptionsResponse {
+  source: ConsolidationOptionShipment;
+  options: ConsolidationOption[];
+}
+
+export interface ConsolidationProgressSource {
+  shipmentId: string;
+  trackingNo: string | null;
+  batchId: string | null;
+  workItemStatus: string | null;
+  waybillId: string | null;
+  waybillStatus: string | null;
+  blockers: string[];
+  gaveUpAt: string | null;
+  nextCheckAt: string | null;
+}
+
+export interface ConsolidationProgressResponse {
+  operationId: string;
+  status: 'pending' | 'completed' | 'failed' | 'recovery_required';
+  targetShipmentId: string | null;
+  sources: ConsolidationProgressSource[];
+}
+
 export type ShipmentRecallReason =
   | 'carrier_handoff_failed'
   | 'dispatch_mistake'

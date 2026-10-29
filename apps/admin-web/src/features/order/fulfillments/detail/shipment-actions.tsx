@@ -34,6 +34,7 @@ import {
   createIdempotentCommand,
   getServerDenyMessage,
   isRecoverableOperation,
+  useCreateShipmentConsolidation,
   useFulfillmentOperation,
   usePlanShipment,
   useRecallShipment,
@@ -50,6 +51,8 @@ import {
   RECIPIENT_FIELDS,
   type RecipientForm,
 } from './recipient-revision';
+import { ConsolidationSheet } from './consolidation-sheet';
+import { showsConsolidationButton } from './consolidation-sheet-model';
 import {
   recallConfirmText,
   shipmentActionsFor,
@@ -106,7 +109,8 @@ export function ShipmentActions({
 }: {
   shipment: ShipmentAdminDetail;
 }) {
-  const { canRun } = usePermissionCheck();
+  const { can, canRun } = usePermissionCheck();
+  const [consolidating, setConsolidating] = useState(false);
   const split = useSplitShipment();
   const reviseRecipient = useReviseShipmentRecipient();
   const plan = usePlanShipment();
@@ -159,6 +163,10 @@ export function ShipmentActions({
       shipment.status,
       shipment.dispatchAttempts.map((attempt) => attempt.status)
     );
+  const canConsolidate = showsConsolidationButton(shipment, {
+    canConsolidate: canRun(useCreateShipmentConsolidation),
+    canReopen: can(['fulfillment.shipment.reopen']),
+  });
 
   const registerResult = (
     result: {
@@ -358,6 +366,15 @@ export function ShipmentActions({
             계획 확정
           </Button>
         )}
+        {canConsolidate && (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setConsolidating(true)}
+          >
+            합포장
+          </Button>
+        )}
         {canRecall && (
           <Button
             size="sm"
@@ -391,6 +408,14 @@ export function ShipmentActions({
             </Button>
           </AlertDescription>
         </Alert>
+      )}
+
+      {canConsolidate && (
+        <ConsolidationSheet
+          shipmentId={shipment.id}
+          open={consolidating}
+          onOpenChange={setConsolidating}
+        />
       )}
 
       <Dialog open={!!action} onOpenChange={(open) => !open && setAction(null)}>

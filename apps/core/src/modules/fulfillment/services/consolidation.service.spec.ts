@@ -1,4 +1,5 @@
 import { NotFoundException } from '@nestjs/common';
+import { Test } from '@nestjs/testing';
 import { createGlobalValidationPipe } from '../../../platform/http/validation-pipe';
 import { GUARDS_METADATA } from '@nestjs/common/constants';
 import {
@@ -9,7 +10,13 @@ import {
 } from '@app/authorization';
 import { register } from 'prom-client';
 import { ConsolidationController } from '../controllers/consolidation.controller';
-import { CreateConsolidationDto } from '../dto/consolidation.dto';
+import {
+  ConsolidationOptionsResponseDto,
+  ConsolidationProgressResponseDto,
+  CreateConsolidationDto,
+} from '../dto/consolidation.dto';
+import { ConsolidationOptionsService } from './consolidation-options.service';
+import { ConsolidationProgressService } from './consolidation-progress.service';
 import { canonicalFulfillmentRequestHash } from './fulfillment-command.service';
 import {
   canonicalConsolidationRecipient,
@@ -24,6 +31,23 @@ const recipient = {
   roadAddress: ' Seoul  Road 1 ',
   detailAddress: ' Unit  2 ',
 };
+
+// 컨트롤러가 받는 협력자를 부분 스텁으로 바꿔 끼운다. 쓰지 않는 협력자는 빈 객체로 둔다
+async function controllerWith(stubs: {
+  consolidation?: Partial<ConsolidationService>;
+  options?: Partial<ConsolidationOptionsService>;
+  progress?: Partial<ConsolidationProgressService>;
+}): Promise<ConsolidationController> {
+  const moduleRef = await Test.createTestingModule({
+    controllers: [ConsolidationController],
+    providers: [
+      { provide: ConsolidationService, useValue: stubs.consolidation ?? {} },
+      { provide: ConsolidationOptionsService, useValue: stubs.options ?? {} },
+      { provide: ConsolidationProgressService, useValue: stubs.progress ?? {} },
+    ],
+  }).compile();
+  return moduleRef.get(ConsolidationController);
+}
 
 function harness(dbService: unknown = {}, checkpoints: PermissionCheckpoints = createCheckpointsForTesting()) {
   const execute = jest.fn((input: { canonicalRequest: unknown }) => Promise.resolve(input.canonicalRequest));
@@ -175,9 +199,51 @@ describe('ConsolidationService command boundary', () => {
     expect(execute).not.toHaveBeenCalled();
   });
 
+  it('routes consolidation options through the service layer', async () => {
+    const response: ConsolidationOptionsResponseDto = {
+      source: {
+        shipmentId: first,
+        status: 'planned',
+        salesOrderNos: [],
+        itemSummary: '',
+        totalQty: 0,
+        recipientSnapshot: {},
+        batchId: null,
+        waybillTrackingNo: null,
+        manifestVersion: 1,
+        reservationVersion: 1,
+        createdAt: new Date(0),
+      },
+      options: [],
+    };
+    const options: Pick<ConsolidationOptionsService, 'findOptions'> = {
+      findOptions: jest.fn().mockResolvedValue(response),
+    };
+    const controller = await controllerWith({ options });
+
+    await expect(controller.findOptions(first)).resolves.toBe(response);
+    expect(options.findOptions).toHaveBeenCalledWith(first);
+  });
+
+  it('routes consolidation progress through the service layer', async () => {
+    const response: ConsolidationProgressResponseDto = {
+      operationId: 'op',
+      status: 'pending',
+      targetShipmentId: null,
+      sources: [],
+    };
+    const progress: Pick<ConsolidationProgressService, 'findForShipment'> = {
+      findForShipment: jest.fn().mockResolvedValue(response),
+    };
+    const controller = await controllerWith({ progress });
+
+    await expect(controller.findProgress(first)).resolves.toBe(response);
+    expect(progress.findForShipment).toHaveBeenCalledWith(first);
+  });
+
   it('takes the actor from JWT and strips a forged body operator', async () => {
-    const consolidation = { consolidate: jest.fn().mockResolvedValue({}) };
-    const controller = new ConsolidationController(consolidation as never);
+    const consolidation: Pick<ConsolidationService, 'consolidate'> = { consolidate: jest.fn().mockResolvedValue({}) };
+    const controller = await controllerWith({ consolidation });
     const pipe = createGlobalValidationPipe();
     const dto = (await pipe.transform(
       {
