@@ -943,6 +943,8 @@ export class ProductVersionsService {
     tx?: DbTransaction,
   ): Promise<void> {
     return this.db.run(async (tx) => {
+      await lockProductMasters(tx, [masterId]);
+
       const activeVersion = await this.getActiveVersion(masterId, tx);
       await this._recordExposureChange(activeVersion, activeVersion, { hideMembershipPriceForNonMembers }, userId, tx);
 
@@ -973,6 +975,8 @@ export class ProductVersionsService {
     tx?: DbTransaction,
   ): Promise<void> {
     return this.db.run(async (tx) => {
+      await lockProductMasters(tx, [masterId]);
+
       const activeVersion = await this.getActiveVersion(masterId, tx);
       await this._recordExposureChange(activeVersion, activeVersion, { isVisibleToMembersOnly }, userId, tx);
 

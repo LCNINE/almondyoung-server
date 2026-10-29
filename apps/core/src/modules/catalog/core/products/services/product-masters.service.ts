@@ -55,6 +55,7 @@ import { VariantPriceCacheService } from '../../pricing/variant-price-cache.serv
 import { v7 as uuidv7 } from 'uuid';
 import { deleteEntitiesIfUnmapped } from '../../version-isolation/delete-if-unmapped';
 import { diffFields, recordProductAudit } from './product-audit-log';
+import { lockProductMasters } from './product-master-lock';
 import { ProductVersionDto } from '../dto/entities/master-version.entity';
 import { MasterProductWithPrimaryVersionDto } from '../dto/products/product-response.dto';
 import { ProductMasterVersionEntity } from '../../../schema/catalog.schema.types';
@@ -1200,7 +1201,15 @@ export class ProductMastersService {
    */
   async deleteVersion(id: string, userId: string, tx?: DbTransaction): Promise<ProductMasterVersion> {
     const deleted = await this.db.run(async (tx) => {
-      // Check if product exists and is not already deleted
+      const initial = await this.getVersionById(id, { includeDeleted: true }, tx);
+
+      if (!initial) {
+        throw new NotFoundException(`Product with ID ${id} not found`);
+      }
+
+      await lockProductMasters(tx, [initial.masterId]);
+
+      // 대기 중 공개 상태가 바뀔 수 있으므로 삭제 검사와 이벤트 판단을 잠금 안에서 다시 한다.
       const product = await this.getVersionById(id, { includeDeleted: true }, tx);
       if (!product) {
         throw new NotFoundException(`Product with ID ${id} not found`);

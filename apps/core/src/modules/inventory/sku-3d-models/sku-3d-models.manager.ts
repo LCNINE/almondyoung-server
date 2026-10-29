@@ -151,7 +151,8 @@ export class Sku3dModelsManager {
       .from(skus)
       .where(inArray(skus.id, ids))
       .orderBy(asc(skus.id))
-      .for('update');
+      // SKU ID는 바꾸지 않으므로 공개 작업의 FK KEY SHARE와 충돌할 필요가 없다.
+      .for('no key update');
 
     if (rows.length !== ids.length || rows.some((sku) => sku.isDeleted)) {
       throw new NotFoundError('SKU not found');

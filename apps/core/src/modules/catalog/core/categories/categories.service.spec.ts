@@ -1,5 +1,6 @@
 import { PRODUCT_STREAM } from '@packages/event-contracts/streams/product.stream';
 import { ProductCategoriesService } from './categories.service';
+import { productMasterVersions, productMasterCategories, productMasters } from '../../schema/catalog.schema';
 
 describe('ProductCategoriesService Medusa projection outbox events', () => {
   function makeCategory(overrides: Record<string, any> = {}) {
@@ -89,13 +90,35 @@ describe('ProductCategoriesService 상품-카테고리 변경 시 프로젝션 �
       conditions.push(condition);
       return Promise.resolve(queue.shift() ?? []);
     };
-    const whereable = () => ({ where: take });
+    const chain = (read: (condition?: unknown) => Promise<unknown[]>) => {
+      const query: any = {
+        where: (condition: unknown) => {
+          const result = read(condition) as any;
+          result.orderBy = () => result;
+          result.for = () => result;
+          return result;
+        },
+        innerJoin: () => query,
+      };
+      return query;
+    };
     const tx = {
-      select: jest.fn(() => ({
-        from: () => ({
-          where: take,
-          innerJoin: () => whereable(),
-        }),
+      select: jest.fn((fields?: Record<string, unknown>) => ({
+        from: (table: unknown) => {
+          if (table === productMasters) {
+            return chain(async () => [{ id: 'm1' }]);
+          }
+
+          if (
+            fields?.masterId &&
+            !fields.versionId &&
+            (table === productMasterVersions || table === productMasterCategories)
+          ) {
+            return chain(async () => queue[0] ?? []);
+          }
+
+          return chain(take);
+        },
       })),
       insert: jest.fn(() => ({ values: jest.fn().mockResolvedValue(undefined) })),
       delete: jest.fn(() => ({ where: jest.fn().mockResolvedValue(undefined) })),
