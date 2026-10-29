@@ -55,8 +55,19 @@ export const ORDER_PROGRESS_STATES = {
   cancel_request: ['settle_in_progress', 'settle_delayed', 'settle_refused'],
   // 취소된 주문의 열린 상자·예약. 열린 상자의 recovery_code 가 그대로 나올 수도 있다
   cancel: ['CANCEL_REPLAN_PENDING', 'open_shipment', 'open_reservation'],
-  // 열린(정산·취소 아닌) 반품 예정 기록(K8 PR 10). 단계 키는 옛 이름 그대로 — 교환은 PR 11 이 다시 더한다
-  return_exchange: ['return:expected', 'return:arrived', 'return:inspected', 'return:held', 'return:refund_pending'],
+  // 열린(정산·취소 아닌) 반품 예정 기록(K8 PR 10). 세부 상태는 '<종류>:<상태>'(K8 PR11b N9) — 단계 키는 옛 이름 그대로
+  return_exchange: [
+    'return:expected',
+    'return:arrived',
+    'return:inspected',
+    'return:held',
+    'return:refund_pending',
+    'exchange:expected',
+    'exchange:arrived',
+    'exchange:inspected',
+    'exchange:held',
+    'exchange:refund_pending',
+  ],
   unclassified: ['no_units', 'fo_missing'],
 } as const satisfies Record<OrderProgressStage, readonly string[]>;
 export type OrderProgressStateOf<S extends OrderProgressStage> = (typeof ORDER_PROGRESS_STATES)[S][number];

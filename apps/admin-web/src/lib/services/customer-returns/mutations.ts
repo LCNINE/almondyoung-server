@@ -91,3 +91,13 @@ export const useRetryCustomerReturnPickup = () => {
   });
 };
 useRetryCustomerReturnPickup.permission = ['order.claim.write'] as const satisfies PermissionRequirement;
+
+/** core — 교환품 보내기(교환 상자 열기·보류면 정산 열기). 돈은 움직이지 않는다 */
+export const useReleaseCustomerExchange = () => {
+  const invalidate = useInvalidateAll();
+  return useMutation({
+    mutationFn: ({ id }: { id: string }) => customerReturnApi.releaseExchange(id),
+    onSuccess: invalidate,
+  });
+};
+useReleaseCustomerExchange.permission = ['order.claim.write'] as const satisfies PermissionRequirement;

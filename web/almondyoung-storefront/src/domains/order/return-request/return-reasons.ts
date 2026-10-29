@@ -45,6 +45,7 @@ export const RETURN_REJECT_MESSAGE_KEYS: Record<string, string> = {
   return_picked_up: "reject.returnPickedUp",
   exchange_requires_seller_fault: "reject.exchangeRequiresSellerFault",
   exchange_released: "reject.exchangeReleased",
+  exchange_item_unsupported: "reject.exchangeItemUnsupported",
 }
 
 const has = (table: Record<string, string>, key: string) => Object.prototype.hasOwnProperty.call(table, key)
@@ -53,6 +54,7 @@ export function reasonLabelKey(value: string): string {
   return has(RETURN_REASON_LABEL_KEYS, value) ? RETURN_REASON_LABEL_KEYS[value] : "reason.unknown"
 }
 
-export function rejectMessageKey(reason: string): string {
-  return has(RETURN_REJECT_MESSAGE_KEYS, reason) ? RETURN_REJECT_MESSAGE_KEYS[reason] : "reject.generic"
+export function rejectMessageKey(reason: string, mode: "return" | "exchange" = "return"): string {
+  if (has(RETURN_REJECT_MESSAGE_KEYS, reason)) return RETURN_REJECT_MESSAGE_KEYS[reason]
+  return mode === "exchange" ? "exchange.rejectGeneric" : "reject.generic"
 }

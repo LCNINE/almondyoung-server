@@ -688,17 +688,38 @@
         "returnPickedUp": "すでに配送業者が回収した返品のため、キャンセルできません。",
         "exchangeRequiresSellerFault": "交換は商品に問題(不良・誤配送・破損など)がある場合のみ申請できます。",
         "exchangeReleased": "交換品がすでに出荷されているため、キャンセルできません。",
+        "exchangeItemUnsupported": "印刷商品は交換できません。返品でお申し込みください。",
         "generic": "返品を申請できませんでした。カスタマーセンターへお問い合わせください。"
+      },
+      "exchange": {
+        "title": "交換を申請",
+        "empty": "いま交換できる商品はありません",
+        "linesTitle": "交換する商品",
+        "reasonTitle": "交換理由",
+        "fee": "交換の送料は当社が負担します。",
+        "notExchangeable": "交換できない商品です(印刷商品は返品でお申し込みください)",
+        "submit": "交換を申請する",
+        "selectItem": "交換する商品を選んでください",
+        "selectReason": "交換理由を選んでください",
+        "done": "交換の申請を受け付けました。回収した商品を確認したうえで、同じ商品をもう一度お送りします。",
+        "nothingLeft": "交換できる数量がありません",
+        "rejectGeneric": "交換を申請できませんでした。カスタマーセンターへお問い合わせください。"
       }
     },
     "returns": {
-      "title": "返品",
+      "title": "返品・交換",
+      "kind": {
+        "return": "返品",
+        "exchange": "交換"
+      },
       "quantity": "{count}点",
       "reasonLabel": "理由",
       "requestItem": "返品を申請",
       "cancel": "返品をキャンセル",
       "cancelConfirm": "もう一度押すとキャンセルされます",
       "cancelDone": "返品をキャンセルしました。",
+      "exchangeCancel": "交換をキャンセル",
+      "exchangeCancelDone": "交換をキャンセルしました。",
       "cancelFailed": "しばらくしてからもう一度お試しください。",
       "stage": {
         "requested": "受付済み · 回収をお待ちください",
@@ -706,12 +727,20 @@
         "refunded": "返金しました",
         "canceled": "キャンセルしました"
       },
+      "exchangeStage": {
+        "requested": "交換を受け付けました",
+        "processing": "回収した商品を確認しています",
+        "exchanged": "交換品をお送りします",
+        "canceled": "交換をキャンセルしました"
+      },
       "cancelReject": {
         "returnArrived": "すでに倉庫に到着しているため、キャンセルできません。",
         "returnPrepaid": "すでに返金が始まっているため、キャンセルできません。",
         "returnPickedUp": "すでに配送業者が回収したため、キャンセルできません。到着後、検品が済み次第返金されます。",
         "exchangeReleased": "交換品がすでに出荷されているため、キャンセルできません。",
-        "notOurReturn": "この画面ではキャンセルできない返品です。カスタマーセンターへお問い合わせください。"
+        "notOurReturn": "この画面ではキャンセルできない返品です。カスタマーセンターへお問い合わせください。",
+        "exchangePickedUp": "すでに配送業者が回収したため、キャンセルできません。到着後、検品が済み次第、同じ商品を再度お送りします。",
+        "exchangeNotOurs": "この交換はこちらではキャンセルできません。カスタマーセンターへお問い合わせください。"
       }
     },
     "exchange": {
@@ -859,12 +888,6 @@
       "started": "ダウンロードを開始します",
       "failed": "ダウンロードに失敗しました",
       "exerciseFailed": "使用処理に失敗しました"
-    },
-    "exchangeUnavailable": {
-      "title": "交換のお申し込みはカスタマーセンターで承っています",
-      "body": "注文番号と交換したい商品をお知らせいただければ、対応いたします。",
-      "inquiry": "1:1お問い合わせ",
-      "orderDetail": "注文詳細"
     }
   },
   "membership": {

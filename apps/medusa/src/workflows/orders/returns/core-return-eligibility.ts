@@ -1,6 +1,12 @@
 export type CoreReturnEligibility = {
   found: boolean;
-  lines: Array<{ channelOrderItemId: string; deliveredUnits: number; lastDeliveredAt: Date | null }>;
+  lines: Array<{
+    channelOrderItemId: string;
+    deliveredUnits: number;
+    lastDeliveredAt: Date | null;
+    /** 교환할 수 있는 줄인지(K8 PR11b N2) — 인쇄(디자인) 줄은 false. 옛 core(칸 없음)면 false: 교환만 막고 반품은 그대로다 */
+    exchangeable: boolean;
+  }>;
   /** 그 주문의 core 반품 예정 기록. 옛 core(칸 없음)면 [] — 그러면 «도착 없음»으로 읽는다(K8 PR6 N11). */
   customerReturns: Array<{
     channelReturnId: string;
@@ -80,12 +86,15 @@ function parse(body: unknown): CoreReturnEligibility {
       const { channelOrderItemId, deliveredUnits, lastDeliveredAt } = line;
       if (typeof channelOrderItemId !== 'string') throw bad('channelOrderItemId');
       if (typeof deliveredUnits !== 'number' || !Number.isFinite(deliveredUnits)) throw bad('deliveredUnits');
+      // 모르면 교환 안 됨 — 인쇄 상품을 같은 품목으로 다시 보내는 것보다 «반품으로 접수하세요»가 낫다
+      const exchangeable = line.exchangeable ?? false;
+      if (typeof exchangeable !== 'boolean') throw bad('exchangeable');
       if (lastDeliveredAt === null || lastDeliveredAt === undefined) {
-        return { channelOrderItemId, deliveredUnits, lastDeliveredAt: null };
+        return { channelOrderItemId, deliveredUnits, lastDeliveredAt: null, exchangeable };
       }
       const at = typeof lastDeliveredAt === 'string' ? new Date(lastDeliveredAt) : null;
       if (!at || Number.isNaN(at.getTime())) throw bad('lastDeliveredAt');
-      return { channelOrderItemId, deliveredUnits, lastDeliveredAt: at };
+      return { channelOrderItemId, deliveredUnits, lastDeliveredAt: at, exchangeable };
     }),
   };
 }

@@ -1602,4 +1602,57 @@ describeIfDb('CustomerReturnSettlementManager — 반품 정산 결과·재발�
       });
     });
   });
+
+  describe('교환 정산 다시 시도 (K8 PR11b N7) — 교환에는 보낼 돈이 없다', () => {
+    /** 교환 검수(명령 issue 1) → 채널이 받고 거절(refund_pending·refused) */
+    async function seedRefusedExchange(tx: DbTx, wired: Wired) {
+      const w = await seedWorld(tx);
+      const s = await seedInspected(tx, w, wired, { kind: 'exchange' });
+      await wired.settlement.recordSettlementFailed(
+        failedFact(s, { received: true, retryable: false, failureCode: 'exchange_failed', message: 'no' }),
+        tx,
+      );
+      const record = await recordOf(tx, s.customerReturnId);
+      expect(record).toMatchObject({ status: 'refund_pending', settlement: { state: 'refused' } });
+      return { s, settlement: record.settlement };
+    }
+
+    it.each([
+      ['계좌 송금(manual)', { kind: 'manual' as const }],
+      ['이미 환불한 금액', { kind: 'retry' as const, alreadyRefundedAmount: 1000 }],
+      ['보류 차감 빼기', { kind: 'retry' as const, dropHoldDeduction: true as const }],
+    ])('교환 refund_pending + %s → 400, 정산 칸·명령 그대로', async (_label, extra) => {
+      await inRollbackTx(db, async (tx) => {
+        const wired = wire();
+        const { s, settlement } = await seedRefusedExchange(tx, wired);
+        const sentBefore = settleCommandsOf(wired, s.customerReturnId).length;
+
+        const refused = wired.settlement
+          .restart({ customerReturnId: s.customerReturnId, target: 'settlement', actorId: 'cs-1', ...extra }, tx)
+          .catch((error: unknown) => error);
+        // 교환 가드가 먼저 막는다 — 다른 가드(실패 코드)의 400 이 아니다
+        await expect(refused).resolves.toBeInstanceOf(BadRequestError);
+        await expect(refused).resolves.toMatchObject({ message: expect.stringMatching(/^교환은/) });
+
+        expect((await recordOf(tx, s.customerReturnId)).settlement).toEqual(settlement);
+        expect(settleCommandsOf(wired, s.customerReturnId)).toHaveLength(sentBefore);
+      });
+    });
+
+    it('교환 refund_pending + 다시 시도 → in_progress, 명령 하나 더', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const wired = wire();
+        const { s } = await seedRefusedExchange(tx, wired);
+        const sentBefore = settleCommandsOf(wired, s.customerReturnId).length;
+
+        const view = await wired.settlement.restart(
+          { customerReturnId: s.customerReturnId, target: 'settlement', kind: 'retry', actorId: 'cs-1' },
+          tx,
+        );
+
+        expect(view.settlement).toMatchObject({ state: 'in_progress', refundMode: 'auto', attempts: 1 });
+        expect(settleCommandsOf(wired, s.customerReturnId)).toHaveLength(sentBefore + 1);
+      });
+    });
+  });
 });

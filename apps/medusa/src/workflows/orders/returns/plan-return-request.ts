@@ -22,7 +22,8 @@ export type ReturnRejectReason =
   | 'return_prepaid'
   | 'return_picked_up'
   | 'exchange_requires_seller_fault'
-  | 'exchange_released';
+  | 'exchange_released'
+  | 'exchange_item_unsupported';
 
 /** 정해진 거절 — 호출자는 이걸 400 계열로 닫는다(500 이면 channel-adapter 류가 재시도를 되풀이한다). */
 export class ReturnRequestRejected extends Error {
@@ -44,7 +45,13 @@ export type ReturnableOrderItem = {
   returnDismissed: number;
 };
 
-export type ReturnableLine = { itemId: string; returnableQuantity: number; windowEndsAt: Date | null };
+export type ReturnableLine = {
+  itemId: string;
+  returnableQuantity: number;
+  windowEndsAt: Date | null;
+  /** 교환을 고를 수 있는 줄인지(K8 PR11b N3) — core 줄을 그대로 옮긴다. core 줄이 없거나 취소 주문이면 false */
+  exchangeable: boolean;
+};
 
 const held = (i: ReturnableOrderItem) => i.returnRequested + i.returnReceived + i.returnDismissed;
 
@@ -55,11 +62,12 @@ const held = (i: ReturnableOrderItem) => i.returnRequested + i.returnReceived + 
 export function describeReturnable(items: ReturnableOrderItem[], core: CoreReturnEligibility): ReturnableLine[] {
   return items.map((item) => {
     const line = core.lines.find((l) => l.channelOrderItemId === item.id);
-    if (!line) return { itemId: item.id, returnableQuantity: 0, windowEndsAt: null };
+    if (!line) return { itemId: item.id, returnableQuantity: 0, windowEndsAt: null, exchangeable: false };
     return {
       itemId: item.id,
       returnableQuantity: Math.max(0, Math.min(line.deliveredUnits, item.quantity) - held(item)),
       windowEndsAt: line.lastDeliveredAt ? returnWindowEndsAt(line.lastDeliveredAt) : null,
+      exchangeable: line.exchangeable,
     };
   });
 }
@@ -76,7 +84,8 @@ export async function describeOrderReturnable(
   items: ReturnableOrderItem[],
   loadCore: () => Promise<CoreReturnEligibility>,
 ): Promise<ReturnableLine[]> {
-  if (isOrderCanceled(orderStatus)) return items.map((i) => ({ itemId: i.id, returnableQuantity: 0, windowEndsAt: null }));
+  if (isOrderCanceled(orderStatus))
+    return items.map((i) => ({ itemId: i.id, returnableQuantity: 0, windowEndsAt: null, exchangeable: false }));
   return describeReturnable(items, await loadCore());
 }
 
@@ -102,7 +111,7 @@ export type ReturnRequestPlan = {
 };
 
 /**
- * 반품 요청 판정 — 주문 상태 → 사유 → 품목·수량 → 기한 순. 부수효과 없음.
+ * 반품 요청 판정 — 주문 상태 → 사유 → 품목(교환이면 교환 가능 줄인지)·수량 → 기한 순. 부수효과 없음.
  * CS 도 수량 상한은 넘지 못한다(§4.0). 넘길 수 있는 건 기한뿐이고, 그러려면 사유가 필수다(D5).
  * fulfillmentTopUp(N1): Medusa 는 출고를 몰라 fulfilled_quantity 가 0 이라 코어 검증(quantity ≤ fulfilled − requested)이 막는다.
  * 그래서 반품이 잡는 수량만큼만 올린다 — 전부 올리면 주문 수정이 그 아래로 수량을 못 줄인다.
@@ -121,7 +130,13 @@ export function planReturnRequest(input: PlanReturnRequestInput): ReturnRequestP
     const item = input.items.find((i) => i.id === req.itemId);
     const line = lines.find((l) => l.itemId === req.itemId);
     if (!item || !line) throw new ReturnRequestRejected('item_not_in_order', `주문에 없는 품목입니다: ${req.itemId}`);
-    const deliveredUnits = input.core.lines.find((l) => l.channelOrderItemId === req.itemId)?.deliveredUnits ?? 0;
+    const coreLine = input.core.lines.find((l) => l.channelOrderItemId === req.itemId);
+    // 인쇄(디자인) 상품은 같은 것을 다시 찍어 보낼 수 없다(K8 PR11b N3) — 수량·기한보다 먼저, «반품으로 접수하세요»가 답이라서.
+    // core 줄이 없으면 여기서 판정하지 않는다 — 배송완료 전 품목을 «인쇄 상품»이라 말하지 않게 not_delivered 로 넘긴다
+    if (input.kind === 'exchange' && coreLine && !coreLine.exchangeable) {
+      throw new ReturnRequestRejected('exchange_item_unsupported', `교환할 수 없는 품목입니다(인쇄 상품): ${req.itemId}`);
+    }
+    const deliveredUnits = coreLine?.deliveredUnits ?? 0;
     if (line.returnableQuantity === 0 && deliveredUnits === 0) {
       throw new ReturnRequestRejected('not_delivered', `배송완료되지 않은 품목입니다: ${req.itemId}`);
     }

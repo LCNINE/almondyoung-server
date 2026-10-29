@@ -754,6 +754,22 @@ describeIfDb('order-progress 판정 (PostgreSQL integration)', () => {
     });
   });
 
+  it('배송완료 뒤 열린 교환 → return_exchange/exchange:expected (K8 PR11b N9)', async () => {
+    const at = new Date('2026-10-05T00:00:00.000Z');
+    const r = await one(async (tx, w) => {
+      const o = await f.seedOrder(tx);
+      const fo = await f.seedFo(tx, w, o, { status: 'completed' });
+      await f.seedBox(tx, w, [fo.foItemId], { status: 'delivered' });
+      await f.seedReturn(tx, o.salesOrderId, 'expected', at, 'exchange');
+      return o.salesOrderId;
+    });
+    expect(r).toMatchObject({
+      stage: 'return_exchange',
+      state: 'exchange:expected',
+      estimatedEnteredAt: at.toISOString(),
+    });
+  });
+
   it('나눠 보낸 주문의 남은 상자가 아직 진행 중이면 반품이 그 상자 단계를 덮지 않는다 (K8 PR 10 최종 리뷰)', async () => {
     // 첫 상자는 배송완료·반품 접수, 둘째 상자는 계획 단계 — 정체 보드는 막힌 상자를, 리컨실러는 그 상자를 계속 본다
     const r = await one(async (tx, w) => {

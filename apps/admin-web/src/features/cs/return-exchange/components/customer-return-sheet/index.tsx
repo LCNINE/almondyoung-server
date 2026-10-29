@@ -11,19 +11,26 @@ import {
   useCancelCustomerReturn,
   useCloseCustomerReturnMissing,
   useCustomerReturn,
+  useReleaseCustomerExchange,
   useRequestCustomerReturnPrepay,
   useRestartCustomerReturn,
   useRetryCustomerReturnPickup,
   useSettleHeldCustomerReturn,
 } from '@/lib/services/customer-returns';
 import type { CustomerReturnView } from '@/lib/types/dto/customer-returns';
-import { availableCustomerReturnActions, type CustomerReturnAction } from '../../customer-return-actions';
+import {
+  availableCustomerReturnActions,
+  releaseExchangeLabel,
+  type CustomerReturnAction,
+} from '../../customer-return-actions';
 import {
   RETURN_ACTION_LABELS,
   RETURN_FEE_BEARER_LABELS,
+  kindLabel,
+  settlementHeadline,
   RETURN_PICKUP_STATUS_LABELS,
   RETURN_REASON_LABELS,
-  RETURN_STATUS_LABELS,
+  statusLabel,
 } from '../../customer-return-labels';
 import { formatKstDate, formatKstDateTime, formatWon } from '../format';
 import { CustomerReturnActionDialog } from '../customer-return-action-dialog';
@@ -46,6 +53,8 @@ function Gated({ kind, children }: { kind: CustomerReturnAction['kind']; childre
       return <Can run={useRestartCustomerReturn}>{children}</Can>;
     case 'retryPickup':
       return <Can run={useRetryCustomerReturnPickup}>{children}</Can>;
+    case 'releaseExchange':
+      return <Can run={useReleaseCustomerExchange}>{children}</Can>;
   }
 }
 
@@ -79,12 +88,12 @@ export function CustomerReturnSheet({ id, customerName, onClose }: Props) {
     <Sheet open={!!id} onOpenChange={(open) => !open && onClose()}>
       <SheetContent className="w-full overflow-y-auto sm:max-w-xl">
         <SheetHeader>
-          <SheetTitle>반품 상세</SheetTitle>
-          <SheetDescription className="sr-only">반품 기록과 CS 처리</SheetDescription>
+          <SheetTitle>{view ? `${kindLabel(view.kind)} 상세` : '반품·교환 상세'}</SheetTitle>
+          <SheetDescription className="sr-only">반품·교환 기록과 CS 처리</SheetDescription>
         </SheetHeader>
         <div className="space-y-5 px-4 pb-6 text-sm">
           {isLoading && <p className="text-muted-foreground">불러오는 중</p>}
-          {isError && <p className="text-red-600">반품을 불러오지 못했습니다.</p>}
+          {isError && <p className="text-red-600">반품·교환을 불러오지 못했습니다.</p>}
           {view && <Body view={view} customerName={customerName} onAction={setAction} />}
         </div>
         {view && action && (
@@ -127,7 +136,8 @@ function Body({
           >
             {view.order.orderNo}
           </Link>
-          <Badge variant="secondary">{RETURN_STATUS_LABELS[view.status]}</Badge>
+          <Badge variant="outline">{kindLabel(view.kind)}</Badge>
+          <Badge variant="secondary">{statusLabel(view.kind, view.status)}</Badge>
         </div>
         {customerName && <div>{customerName}</div>}
         <div>
@@ -140,9 +150,11 @@ function Body({
         )}
         {view.arrivedAt && (
           <div>
-            도착 {formatKstDate(view.arrivedAt)} · 환불 기한 {formatKstDate(view.refundDueAt)}
+            도착 {formatKstDate(view.arrivedAt)} · {view.kind === 'exchange' ? '교환' : '환불'} 기한{' '}
+            {formatKstDate(view.refundDueAt)}
           </div>
         )}
+        {view.exchangeReleasedAt && <div>교환품 출고 지시 {formatKstDateTime(view.exchangeReleasedAt)}</div>}
         {view.windowOverrideReason && <div>기한 넘김 사유: {view.windowOverrideReason}</div>}
       </section>
 
@@ -178,7 +190,7 @@ function Body({
         <section className="space-y-1">
           {settlementOutcome && (
             <div className="space-y-0.5">
-              <div className="font-medium">환불 {formatWon(settlementOutcome.refundAmount)}</div>
+              <div className="font-medium">{settlementHeadline(view.kind, formatWon(settlementOutcome.refundAmount))}</div>
               {settlementOutcome.shippingRefund != null && settlementOutcome.shippingRefund > 0 && (
                 <div className="text-muted-foreground">배송비 환불 +{formatWon(settlementOutcome.shippingRefund)}</div>
               )}
@@ -217,7 +229,7 @@ function Body({
           {actions.map((a) => (
             <Gated key={a.kind} kind={a.kind}>
               <Button size="sm" variant="outline" onClick={() => onAction(a)}>
-                {RETURN_ACTION_LABELS[a.kind]}
+                {a.kind === 'releaseExchange' ? releaseExchangeLabel(view) : RETURN_ACTION_LABELS[a.kind]}
               </Button>
             </Gated>
           ))}

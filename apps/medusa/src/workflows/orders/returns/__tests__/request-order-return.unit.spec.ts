@@ -39,7 +39,7 @@ function setup() {
   jest.mocked(remainingTopUp).mockResolvedValue([]);
   jest.mocked(fetchCoreReturnEligibility).mockResolvedValue({
     found: true,
-    lines: [{ channelOrderItemId: 'item_1', deliveredUnits: 1, lastDeliveredAt: new Date('2026-10-28T00:00:00Z') }],
+    lines: [{ channelOrderItemId: 'item_1', deliveredUnits: 1, lastDeliveredAt: new Date('2026-10-28T00:00:00Z'), exchangeable: true }],
     customerReturns: [],
   });
 

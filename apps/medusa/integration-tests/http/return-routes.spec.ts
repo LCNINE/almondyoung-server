@@ -156,7 +156,9 @@ medusaIntegrationTestRunner({
       const { orderId, itemId, me } = await ownedOrder(2);
       const before = await api.get(`/store/orders/${orderId}/returnable`, me.headers);
       expect(before.status).toBe(200);
-      expect(before.data.items).toEqual([{ item_id: itemId, returnable_quantity: 2, window_ends_at: expect.any(String) }]);
+      expect(before.data.items).toEqual([
+        { item_id: itemId, returnable_quantity: 2, window_ends_at: expect.any(String), exchangeable: true },
+      ]);
       expect(Date.parse(before.data.items[0].window_ends_at)).toBeGreaterThan(Date.now());
 
       await api.post(`/store/orders/${orderId}/returns`, body(itemId), me.headers);
@@ -171,9 +173,9 @@ medusaIntegrationTestRunner({
 
       const res = await api.get(`/store/orders/${orderId}/returnable`, me.headers);
       expect(res.status).toBe(200);
-      expect(res.data.items).toEqual([{ item_id: itemId, returnable_quantity: 0, window_ends_at: null }]);
+      expect(res.data.items).toEqual([{ item_id: itemId, returnable_quantity: 0, window_ends_at: null, exchangeable: false }]);
       const admin = await api.get(`/admin/orders/${orderId}/returnable`, c.adminHeaders);
-      expect(admin.data.items).toEqual([{ item_id: itemId, returnable_quantity: 0, window_ends_at: null }]);
+      expect(admin.data.items).toEqual([{ item_id: itemId, returnable_quantity: 0, window_ends_at: null, exchangeable: false }]);
 
       const post = await fail(api.post(`/store/orders/${orderId}/returns`, body(itemId), me.headers));
       expect(post.status).toBe(400);
@@ -209,6 +211,7 @@ medusaIntegrationTestRunner({
           fee_bearer: 'customer',
           items: [{ item_id: itemId, quantity: 1 }],
           can_cancel: true,
+          kind: 'return',
         },
       ]);
 
@@ -252,6 +255,48 @@ medusaIntegrationTestRunner({
       const swap = await fail(api.post(`/store/orders/${orderId}/returns`, body(itemId, { kind: 'swap' }), me.headers));
       expect(swap.status).toBe(400);
       expect(await returnsOf(orderId)).toHaveLength(1);
+    });
+
+    it('GET returnable — 품목에 exchangeable: core 줄 false 면 false, store·admin 같다 (K8 PR11b N3)', async () => {
+      const { orderId, itemId, me } = await ownedOrder(2);
+      core.setEligibility(orderId, [{ channelOrderItemId: itemId, deliveredUnits: 2, lastDeliveredAt: daysAgo(1), exchangeable: false }]);
+      const store = await api.get(`/store/orders/${orderId}/returnable`, me.headers);
+      expect(store.data.items).toEqual([
+        { item_id: itemId, returnable_quantity: 2, window_ends_at: expect.any(String), exchangeable: false },
+      ]);
+      const admin = await api.get(`/admin/orders/${orderId}/returnable`, c.adminHeaders);
+      expect(admin.data.items[0]).toMatchObject({ item_id: itemId, exchangeable: false });
+
+      const rejected = await fail(
+        api.post(`/admin/orders/${orderId}/returns`, body(itemId, { kind: 'exchange', reason: 'defective' }), c.adminHeaders),
+      );
+      expect(rejected.status).toBe(400);
+      expect(rejected.data).toMatchObject({ code: 'return_rejected', reason: 'exchange_item_unsupported' });
+      expect(await returnsOf(orderId)).toHaveLength(0);
+    });
+
+    it('교환 정산 뒤 고객 목록 → kind exchange·stage exchanged·can_cancel false (K8 PR11b N5)', async () => {
+      const { orderId, itemId, me } = await ownedOrder(1);
+      const made = await api.post(`/admin/orders/${orderId}/returns`, body(itemId, { kind: 'exchange', reason: 'defective' }), c.adminHeaders);
+      expect(made.status).toBe(200);
+
+      const requested = await api.get(`/store/orders/${orderId}/returns`, me.headers);
+      expect(requested.data.returns).toMatchObject([{ return_id: made.data.return_id, kind: 'exchange', stage: 'requested', can_cancel: true }]);
+
+      const settled = await fail(
+        api.post(
+          `/admin/orders/${orderId}/returns/${made.data.return_id}/settle`,
+          { requestId: `exs-${Math.random().toString(36).slice(2)}`, items: [{ item_id: itemId, received: 1, dismissed: 0 }] },
+          c.adminHeaders,
+        ),
+      );
+      expect(settled.status).toBe(200);
+      expect(settled.data.stage).toBe('exchanged');
+
+      const after = await api.get(`/store/orders/${orderId}/returns`, me.headers);
+      expect(after.data.returns).toEqual([
+        expect.objectContaining({ return_id: made.data.return_id, kind: 'exchange', stage: 'exchanged', can_cancel: false }),
+      ]);
     });
   },
 });

@@ -14,6 +14,9 @@ export type CustomerReturnStatus =
   | 'settled'
   | 'cancelled';
 
+/** 반품인지 교환인지 (K8 PR11) — core customer-return.types.ts CustomerReturnKind */
+export type CustomerReturnKind = 'return' | 'exchange';
+
 export type CustomerReturnReason =
   | 'change_of_mind'
   | 'defective'
@@ -28,7 +31,9 @@ export type CustomerReturnAttention =
   | 'prepayment_failed'
   | 'partial_arrival'
   | 'refund_overdue'
-  | 'pickup_failed';
+  | 'pickup_failed'
+  /** 교환 — 기한이 지났는데 교환품을 아직 안 보냈다(교환에는 refund_overdue 를 내지 않는다) */
+  | 'exchange_overdue';
 
 export type CustomerReturnPickupStatus =
   | 'pending'
@@ -159,6 +164,9 @@ export interface CustomerReturnView {
   order: { orderNo: string; channelOrderId: string; salesChannel: string };
   channelReturnId: string;
   status: CustomerReturnStatus;
+  kind: CustomerReturnKind;
+  /** 교환 상자를 연 시각 — 열기 전·반품이면 null */
+  exchangeReleasedAt: string | null;
   reason: string;
   note: string | null;
   feeBearer: string;
@@ -187,6 +195,7 @@ export interface CustomerReturnListItem {
   /** 개인정보 — 서버가 가린 값이 올 수 있다 */
   customerName: string | null;
   status: CustomerReturnStatus;
+  kind: CustomerReturnKind;
   reason: string;
   feeBearer: string;
   requestedBy: string;
@@ -252,13 +261,16 @@ export type ReturnRejectReason =
   | 'return_prepaid'
   | 'return_picked_up'
   | 'exchange_requires_seller_fault'
-  | 'exchange_released';
+  | 'exchange_released'
+  | 'exchange_item_unsupported';
 
 export interface OrderReturnable {
   items: Array<{
     item_id: string;
     returnable_quantity: number;
     window_ends_at: string | null;
+    /** 교환할 수 있는 줄인가(인쇄 상품이면 false) — 반품 수량과는 무관하다 */
+    exchangeable: boolean;
   }>;
 }
 
@@ -270,6 +282,8 @@ export interface RequestOrderReturnBody {
   /** 사유 other 에만 쓰인다 */
   fee_bearer?: 'customer' | 'seller';
   window_override_reason?: string;
+  /** 교환이면 'exchange' — 반품이면 칸을 싣지 않는다 */
+  kind?: 'exchange';
 }
 
 export interface RequestOrderReturnResult {
@@ -279,6 +293,7 @@ export interface RequestOrderReturnResult {
   items: Array<{ item_id: string; quantity: number }>;
   fee_bearer: string;
   window_overridden: boolean;
+  kind: CustomerReturnKind;
 }
 
 export interface CancelOrderReturnResult {

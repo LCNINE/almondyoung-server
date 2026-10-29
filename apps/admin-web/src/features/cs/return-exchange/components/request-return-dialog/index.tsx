@@ -11,13 +11,18 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Textarea } from '@/components/ui/textarea';
 import { useOrderReturnable, useRequestCustomerReturn } from '@/lib/services/customer-returns';
 import { useMedusaOrderById } from '@/lib/services/medusa-customers/queries';
-import { RETURN_FEE_BEARER_LABELS, RETURN_REASON_OPTIONS } from '../../customer-return-labels';
+import type { CustomerReturnKind } from '@/lib/types/dto/customer-returns';
+import { RETURN_FEE_BEARER_LABELS, RETURN_KIND_LABELS } from '../../customer-return-labels';
 import {
   buildReturnRequestBody,
+  reasonOptionsFor,
   returnRejectMessage,
   windowOverrideNeeded,
+  withKind,
   type ReturnRequestForm,
 } from '../../return-request-form';
+
+const KINDS: CustomerReturnKind[] = ['return', 'exchange'];
 
 interface Props {
   /** Medusa 주문 id (주문 목록 행의 channelOrderId) */
@@ -30,6 +35,7 @@ export function RequestReturnDialog({ orderId, onClose }: Props) {
   // N8: 같은 제출을 다시 눌러도 같은 반품이 되게 열 때 한 번만 만든다
   const [requestId] = useState(() => crypto.randomUUID());
   const [form, setForm] = useState<ReturnRequestForm>({
+    kind: 'return',
     quantities: {},
     reason: '',
     note: '',
@@ -44,6 +50,7 @@ export function RequestReturnDialog({ orderId, onClose }: Props) {
 
   const returnable = returnableQ.data;
   const lines = (returnable?.items ?? []).filter((i) => i.returnable_quantity > 0);
+  const exchange = form.kind === 'exchange';
   const nameOf = (itemId: string) => {
     const it = orderQ.data?.order?.items?.find((x) => x.id === itemId);
     if (!it) return itemId;
@@ -58,6 +65,12 @@ export function RequestReturnDialog({ orderId, onClose }: Props) {
     setForm((f) => ({ ...f, ...p }));
   };
 
+  const changeKind = (kind: CustomerReturnKind) => {
+    if (!returnable) return;
+    setError(null);
+    setForm((f) => withKind(f, kind, returnable));
+  };
+
   const submit = () => {
     if (!returnable) return;
     const built = buildReturnRequestBody(form, returnable, requestId, new Date());
@@ -69,7 +82,9 @@ export function RequestReturnDialog({ orderId, onClose }: Props) {
       { orderId, body: built.body },
       {
         onSuccess: () => {
-          toast.success('반품을 접수했습니다 — 반품 목록에는 5분 안에 나타납니다');
+          toast.success(
+            `${RETURN_KIND_LABELS[form.kind]}을 접수했습니다 — 반품·교환 목록에는 5분 안에 나타납니다`
+          );
           onClose();
         },
         onError: (e) => setError(returnRejectMessage(e)),
@@ -81,7 +96,7 @@ export function RequestReturnDialog({ orderId, onClose }: Props) {
     <Dialog open onOpenChange={(o) => !o && !request.isPending && onClose()}>
       <DialogContent className="max-w-lg">
         <DialogHeader>
-          <DialogTitle>반품 접수</DialogTitle>
+          <DialogTitle>반품·교환 접수</DialogTitle>
         </DialogHeader>
 
         {loading ? (
@@ -90,7 +105,10 @@ export function RequestReturnDialog({ orderId, onClose }: Props) {
           <p className="text-sm text-red-600">{returnRejectMessage(returnableQ.error)}</p>
         ) : lines.length === 0 ? (
           <>
-            <p className="text-sm">반품할 수 있는 수량이 없습니다</p>
+            <div className="space-y-1">
+              <p className="text-sm font-medium">배송완료된 상품만 반품 접수할 수 있어요</p>
+              <p className="text-sm text-muted-foreground">배송 중이거나 이미 반품 접수한 상품은 보이지 않아요.</p>
+            </div>
             <DialogFooter>
               <Button variant="outline" onClick={onClose}>
                 닫기
@@ -99,18 +117,35 @@ export function RequestReturnDialog({ orderId, onClose }: Props) {
           </>
         ) : (
           <>
-            <div className="space-y-3">
+            <div className="min-w-0 space-y-3">
+              <RadioGroup
+                className="flex gap-4"
+                value={form.kind}
+                onValueChange={(v) => changeKind(v === 'exchange' ? 'exchange' : 'return')}
+              >
+                {KINDS.map((k) => (
+                  <label key={k} className="flex items-center gap-1 text-sm">
+                    <RadioGroupItem value={k} />
+                    {RETURN_KIND_LABELS[k]}
+                  </label>
+                ))}
+              </RadioGroup>
+
+              <p className="text-sm text-muted-foreground">
+                이 주문에서 돌려받을 상품의 수량을 넣어 주세요. 0인 상품은 그대로 둬요.
+              </p>
               <div className="space-y-2">
                 {lines.map((l) => (
                   <div key={l.item_id} className="flex items-center gap-2 text-sm">
-                    <span className="flex-1 min-w-0 truncate">{nameOf(l.item_id)}</span>
+                    <span className="flex-1 min-w-0 break-words">{nameOf(l.item_id)}</span>
                     <span className="text-xs text-muted-foreground whitespace-nowrap">
-                      가능 {l.returnable_quantity}
+                      {exchange && !l.exchangeable ? '교환 불가(인쇄 상품)' : `가능 ${l.returnable_quantity}`}
                     </span>
                     <Input
                       type="number"
                       min={0}
                       max={l.returnable_quantity}
+                      disabled={exchange && !l.exchangeable}
                       className="w-20 h-8"
                       value={form.quantities[l.item_id] ?? 0}
                       onChange={(e) =>
@@ -130,7 +165,7 @@ export function RequestReturnDialog({ orderId, onClose }: Props) {
                     <SelectValue placeholder="사유 선택" />
                   </SelectTrigger>
                   <SelectContent>
-                    {RETURN_REASON_OPTIONS.map((o) => (
+                    {reasonOptionsFor(form.kind).map((o) => (
                       <SelectItem key={o.value} value={o.value}>
                         {o.label}
                       </SelectItem>
@@ -139,7 +174,11 @@ export function RequestReturnDialog({ orderId, onClose }: Props) {
                 </Select>
               </div>
 
-              {form.reason === 'other' && (
+              {form.reason === 'other' && exchange && (
+                <p className="text-sm text-muted-foreground">교환 배송비는 판매자가 부담합니다</p>
+              )}
+
+              {form.reason === 'other' && !exchange && (
                 <div className="space-y-1">
                   <Label>배송비 부담</Label>
                   <RadioGroup

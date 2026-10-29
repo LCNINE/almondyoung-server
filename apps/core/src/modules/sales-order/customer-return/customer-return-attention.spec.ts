@@ -25,6 +25,8 @@ describe('customerReturnAttention', () => {
     arrivedQty: 1,
     missingQty: 0,
     pickupStatus: null,
+    kind: 'return',
+    exchangeReleasedAt: null,
   };
   const early = new Date('2026-10-27T00:00:00Z');
   const late = new Date('2026-11-05T00:00:00Z');
@@ -84,5 +86,36 @@ describe('customerReturnAttention', () => {
   });
   it('도착 없음은 기한 판정 없음', () => {
     expect(customerReturnAttention({ ...base, status: 'expected', arrivedAt: null }, late)).toEqual([]);
+  });
+
+  describe('교환 (K8 PR11b N8)', () => {
+    // 2026-10-26(월) 도착 → 4평일 뒤 = 2026-10-30(금). 기한(3평일)은 10-29 23:59:59.999 KST
+    const fourBusinessDaysLater = new Date('2026-10-30T03:00:00Z');
+    const exchange: CustomerReturnAttentionInput = { ...base, kind: 'exchange' };
+
+    it('교환 도착 4평일 뒤·열림 없음 → exchange_overdue 만, refund_overdue 없음', () => {
+      expect(customerReturnAttention(exchange, fourBusinessDaysLater)).toEqual(['exchange_overdue']);
+    });
+    it('교환 열림 있음 → []', () => {
+      expect(
+        customerReturnAttention({ ...exchange, exchangeReleasedAt: new Date('2026-10-27T00:00:00Z') }, late),
+      ).toEqual([]);
+    });
+    it('반품은 지금처럼 refund_overdue', () => {
+      expect(customerReturnAttention(base, fourBusinessDaysLater)).toEqual(['refund_overdue']);
+    });
+    it('교환 held → held 다음 exchange_overdue', () => {
+      expect(customerReturnAttention({ ...exchange, status: 'held' }, fourBusinessDaysLater)).toEqual([
+        'held',
+        'exchange_overdue',
+      ]);
+    });
+    it('끝난 교환(settled·cancelled)은 기한을 따지지 않는다', () => {
+      expect(customerReturnAttention({ ...exchange, status: 'settled' }, late)).toEqual([]);
+      expect(customerReturnAttention({ ...exchange, status: 'cancelled' }, late)).toEqual([]);
+    });
+    it('교환 기한 그 밀리초까지는 정상', () => {
+      expect(customerReturnAttention(exchange, due)).toEqual([]);
+    });
   });
 });

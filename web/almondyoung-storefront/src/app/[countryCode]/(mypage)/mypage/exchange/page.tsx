@@ -11,11 +11,12 @@ import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
 import { WithHeaderLayout } from "@components/layout"
 import { unstable_rethrow } from "next/navigation"
 import { getTranslations } from "next-intl/server"
-import { ExchangeUnavailable } from "../../../../../domains/order/exchange/exchange-unavailable"
 import { ReturnRequestClient } from "../../../../../domains/order/return-request/return-request-client"
 import {
   buildReturnFormLines,
+  copyKey,
   type ReturnFormLine,
+  type ReturnFormMode,
 } from "../../../../../domains/order/return-request/return-request-form"
 
 export async function generateMetadata() {
@@ -43,23 +44,21 @@ export default async function ExchangePage({ searchParams }: ExchangePageProps) 
       }}
     >
       <MypageLayout>
-        {type === "exchange" ? (
-          <ExchangeUnavailable orderId={orderId} />
-        ) : (
-          await renderReturn(orderId, itemId)
-        )}
+        {await renderRequest(orderId, itemId, type === "exchange" ? "exchange" : "return")}
       </MypageLayout>
     </WithHeaderLayout>
   )
 }
 
-async function renderReturn(orderId: string | undefined, itemId: string | undefined) {
+/** 반품·교환 신청(N10) — 같은 데이터, 같은 폼. 모드는 제목·사유·택배비 줄·막힘·본문 kind 만 바꾼다. */
+async function renderRequest(orderId: string | undefined, itemId: string | undefined, mode: ReturnFormMode) {
   const t = await getTranslations("mypage.order.returnRequest")
+  const pageTitle = t(copyKey(mode, "title") as Parameters<typeof t>[0])
   const backHref = orderId ? `/mypage/order/details?orderId=${orderId}` : "/mypage/order/list"
-  const notice = (title: string) => (
+  const notice = (message: string) => (
     <div className="bg-white px-4 py-8 md:min-h-screen md:px-6">
-      <PageTitle>{t("title")}</PageTitle>
-      <p className="mt-6 font-medium text-foreground">{title}</p>
+      <PageTitle>{pageTitle}</PageTitle>
+      <p className="mt-6 font-medium text-foreground">{message}</p>
       <div className="mt-6">
         <LocalizedClientLink href={backHref}>
           <CustomButton variant="outline" color="secondary" size="md">
@@ -75,7 +74,7 @@ async function renderReturn(orderId: string | undefined, itemId: string | undefi
   // 없는 주문과 남의 주문을 가르지 않는다 — 둘 다 같은 화면. 그 밖의 실패는 재시도 화면.
   let loaded: Awaited<ReturnType<typeof loadReturnData>>
   try {
-    loaded = await loadReturnData(orderId)
+    loaded = await loadReturnData(orderId, mode)
   } catch (error) {
     // getOrder 의 리다이렉트(NEXT_REDIRECT) 등 Next 제어 흐름은 삼키지 않는다.
     unstable_rethrow(error)
@@ -91,12 +90,14 @@ async function renderReturn(orderId: string | undefined, itemId: string | undefi
       lines={loaded.lines}
       preselectItemId={itemId}
       pickupAddress={loaded.pickupAddress}
+      mode={mode}
     />
   )
 }
 
 async function loadReturnData(
-  orderId: string
+  orderId: string,
+  mode: ReturnFormMode
 ): Promise<{ lines: ReturnFormLine[]; pickupAddress: string | null } | null> {
   const [order, returnable] = await Promise.all([getOrder(orderId), getReturnable(orderId)])
   if (!order || !returnable) return null
@@ -109,7 +110,8 @@ async function loadReturnData(
       quantity: item.quantity,
     })),
     returnable,
-    new Date()
+    new Date(),
+    mode
   )
   const address = order.shipping_address ? buildAddressLine(order.shipping_address) : ""
   return { lines, pickupAddress: address || null }

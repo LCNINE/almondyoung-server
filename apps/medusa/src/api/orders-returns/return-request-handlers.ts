@@ -63,6 +63,7 @@ export async function handleReturnable(req: AuthenticatedMedusaRequest, res: Med
         item_id: l.itemId,
         returnable_quantity: l.returnableQuantity,
         window_ends_at: l.windowEndsAt ? l.windowEndsAt.toISOString() : null,
+        exchangeable: l.exchangeable,
       })),
     });
   } catch (error) {
@@ -108,6 +109,7 @@ export async function handleStoreReturnList(req: AuthenticatedMedusaRequest, res
         fee_bearer: r.feeBearer,
         items: r.items.map((i) => ({ item_id: i.itemId, quantity: i.quantity })),
         can_cancel: r.canCancel,
+        kind: r.kind,
       })),
     });
   } catch (error) {

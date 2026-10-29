@@ -154,7 +154,7 @@ export default function MainTemplate() {
     {
       id: 'return-requests',
       tone: 'claim',
-      label: '반품',
+      label: '반품·교환',
       count: customerReturns.data?.total,
       second: {
         label: '확인 필요',

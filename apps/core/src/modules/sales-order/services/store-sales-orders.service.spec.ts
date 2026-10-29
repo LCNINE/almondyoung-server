@@ -30,10 +30,10 @@ const readPhases = jest.mocked(readOrderFulfillmentPhases);
 jest.mock('../line-quantities/parcel-claim-eligibility.reader');
 const readClaimEligibility = jest.mocked(readParcelClaimEligibility);
 
-function mockClaimable(claimable: number) {
-  readClaimEligibility.mockResolvedValue([
-    { claimable } as Awaited<ReturnType<typeof readParcelClaimEligibility>>[number],
-  ]);
+function mockClaimable(parcels: Array<{ salesOrderLineId: string; claimable: number }>) {
+  readClaimEligibility.mockResolvedValue(
+    parcels.map((parcel) => parcel as Awaited<ReturnType<typeof readParcelClaimEligibility>>[number]),
+  );
 }
 
 function mockPhase(over: Partial<OrderFulfillmentPhase> = {}) {
@@ -131,14 +131,25 @@ function makeContext(
     printCancel?: jest.Mock;
     /** 사다리가 낸 이 주문의 단계. 기본은 준비중·나간 것 없음 */
     phase?: Partial<OrderFulfillmentPhase>;
-    /** 청구 가능한 소포 수량. 기본은 사다리 단계가 delivered 면 1, 아니면 0 */
+    /** 청구 가능한 소포 수량(일반 줄 소포 하나). 기본은 사다리 단계가 delivered 면 1, 아니면 0 */
     claimable?: number;
+    /** 소포별 청구 가능 수량 — 주면 `claimable` 대신 쓴다(인쇄 줄 소포를 섞을 때) */
+    claimableParcels?: Array<{ salesOrderLineId: string; claimable: number }>;
+    /** 그 판매주문의 인쇄 줄(almond_design_id 있음) id — 조회 mock 은 조건을 보지 않고 이 값을 낸다 */
+    printLineIds?: string[];
     /** 진행 중 반품 예정 기록(customer_returns)이 있는가 — 조회 mock 은 상태 필터를 보지 않고 이 값을 낸다 */
     activeCustomerReturn?: boolean;
   } = {},
 ) {
   mockPhase(options.phase);
-  mockClaimable(options.claimable ?? (options.phase?.storePhase === 'delivered' ? 1 : 0));
+  mockClaimable(
+    options.claimableParcels ?? [
+      {
+        salesOrderLineId: 'normal-line',
+        claimable: options.claimable ?? (options.phase?.storePhase === 'delivered' ? 1 : 0),
+      },
+    ],
+  );
   const so = options.so ?? makeSo();
   let currentSo = so;
   const printCancel = options.printCancel ?? jest.fn().mockResolvedValue(PRINT_RESULT);
@@ -215,7 +226,9 @@ function makeContext(
                   ),
                 ),
               }),
-              then: jest.fn((fn: (r: unknown[]) => unknown) => fn(fos)),
+              then: jest.fn((fn: (r: unknown[]) => unknown) =>
+                fn(tableName === 'sales_order_lines' ? (options.printLineIds ?? []).map((id) => ({ id })) : fos),
+              ),
               orderBy: jest.fn().mockReturnValue({
                 then: jest.fn((fn: (r: unknown[]) => unknown) => fn(options.refundLinks ?? [])),
                 limit: jest.fn().mockReturnValue({
@@ -995,7 +1008,7 @@ describe('StoreSalesOrdersService', () => {
       expect(result.claimStatus).toBe('none');
     });
 
-    it('SO status=delivered이면 return 가능, exchange 는 없다 (K8 PR 10 — 교환은 PR 11 까지 닫힌다)', async () => {
+    it('SO status=delivered이면 return·exchange 가능 (K8 PR11b N4)', async () => {
       const { service } = makeContext({
         so: makeSo({ status: 'delivered' }),
         fos: [{ status: 'completed' }],
@@ -1006,9 +1019,61 @@ describe('StoreSalesOrdersService', () => {
       });
       const result = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
       expect(result.availableActions).toContain('return');
-      expect(result.availableActions).not.toContain('exchange');
+      expect(result.availableActions).toContain('exchange');
       expect(result.availableActions).toContain('track');
       expect(result.availableActions).not.toContain('cancel');
+    });
+
+    describe('교환 버튼 (K8 PR11b N4) — 인쇄 줄이 아닌 청구 가능한 소포가 있어야 낸다', () => {
+      const deliveredOrder = {
+        so: makeSo({ status: 'delivered' }),
+        fos: [{ status: 'completed' }],
+        activeShipmentStatuses: ['delivered'],
+        phase: { adminPhase: 'external_shipped', storePhase: 'delivered', anyShipped: true },
+      } satisfies Parameters<typeof makeContext>[0];
+
+      it('배송완료 + 일반 줄 claimable → return·exchange', async () => {
+        const { service } = makeContext({
+          ...deliveredOrder,
+          claimableParcels: [
+            { salesOrderLineId: 'print-line', claimable: 1 },
+            { salesOrderLineId: 'normal-line', claimable: 1 },
+          ],
+          printLineIds: ['print-line'],
+        });
+        const result = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
+        expect(result.availableActions).toEqual(expect.arrayContaining(['return', 'exchange']));
+        // 교환은 반품 판정 바로 뒤
+        expect(result.availableActions.indexOf('exchange')).toBe(result.availableActions.indexOf('return') + 1);
+      });
+
+      it('배송완료 + 인쇄 줄만 claimable → return 만', async () => {
+        const { service } = makeContext({
+          ...deliveredOrder,
+          claimableParcels: [
+            { salesOrderLineId: 'print-line', claimable: 1 },
+            { salesOrderLineId: 'normal-line', claimable: 0 },
+          ],
+          printLineIds: ['print-line'],
+        });
+        const result = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
+        expect(result.availableActions).toContain('return');
+        expect(result.availableActions).not.toContain('exchange');
+      });
+
+      it('claimable 0 → 둘 다 없음', async () => {
+        const { service } = makeContext({ ...deliveredOrder, claimable: 0 });
+        const result = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
+        expect(result.availableActions).not.toContain('return');
+        expect(result.availableActions).not.toContain('exchange');
+      });
+
+      it('배송 전 → exchange 없음', async () => {
+        const { service } = makeContext({ fos: [], phase: { storePhase: 'preparing' }, claimable: 1 });
+        const result = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
+        expect(result.availableActions).toContain('cancel');
+        expect(result.availableActions).not.toContain('exchange');
+      });
     });
 
     it('진행 중 반품 예정 기록이 있으면 claimStatus return_requested, 남은 소포가 있으면 return 도 낸다', async () => {
@@ -1231,7 +1296,7 @@ describe('StoreSalesOrdersService', () => {
         expect(r.availableActions).not.toContain('cancel');
         expect(r.cancelUnavailableReason).toBe('already_shipped');
       });
-      it('FO completed + 상자 전량 delivered → 반품 노출(교환은 PR 11 까지 없다)', async () => {
+      it('FO completed + 상자 전량 delivered → 반품·교환 노출 (K8 PR11b N4)', async () => {
         // 사다리: 'both parcels delivered'
         const { service } = makeContext({
           fos: [{ status: 'completed' }],
@@ -1240,7 +1305,7 @@ describe('StoreSalesOrdersService', () => {
         });
         const r = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
         expect(r.availableActions).toContain('return');
-        expect(r.availableActions).not.toContain('exchange');
+        expect(r.availableActions).toContain('exchange');
       });
       it('부분 배송 + 잔여 상자 recovery_required → already_shipped (마스킹 방지)', async () => {
         // 사다리: 'delivered parcel and a recovery box'
