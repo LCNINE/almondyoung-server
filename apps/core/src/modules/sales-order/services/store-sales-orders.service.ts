@@ -19,7 +19,7 @@ import { PrintOrderReader } from '../../print-order/services/print-order.reader'
 import { isLivePrint } from '../../print-order/services/print-order-board.rules';
 import { PrintNeedsPartialCancelError } from '../../print-order/services/print-order-cancellation.manager';
 import { type PrintOrderRow } from '../../print-order/schema/print-order.schema';
-import { StoreOrderTrackingResponseDto, StoreShipmentDto } from '../dto/store-order-tracking.dto';
+import { StoreOrderTrackingResponseDto, StoreReturnProgressResponseDto, StoreShipmentDto } from '../dto/store-order-tracking.dto';
 import { channelRefundStatus, manualTransferOf, needsTransferCheck } from './channel-refund-status';
 import { WalletRefundClient } from './wallet-refund.client';
 import { CancellationRefundManager } from '../cancellation-refund/cancellation-refund.manager';
@@ -771,6 +771,51 @@ export class StoreSalesOrdersService {
     });
   }
 
+  // ── Return progress ───────────────────────────────────────────────────────
+
+  /** 고객 반품 상세의 회수·창고 진행. 반품은 Medusa 반품 ID(channel_return_id)로 찾고, 남의 주문이면 404 다. */
+  async getReturnProgressByChannelOrder(
+    channelOrderId: string,
+    channelReturnId: string,
+    customerId: string,
+  ): Promise<StoreReturnProgressResponseDto> {
+    const so = await this.findSoOrThrow({ channelOrderId, salesChannel: 'medusa' }, customerId);
+    const cr = inventoryTables.customerReturns;
+    const record = await this.db.db
+      .select({ id: cr.id, arrivedAt: cr.arrivedAt, inspectedAt: cr.inspectedAt, settledAt: cr.settledAt })
+      .from(cr)
+      .where(and(eq(cr.salesOrderId, so.id), eq(cr.channelReturnId, channelReturnId)))
+      .limit(1)
+      .then((r) => r[0]);
+    if (!record) throw new NotFoundException('반품을 찾을 수 없습니다.');
+
+    // 다시 접수하면 새 행이 생긴다 — 가장 최근 행이 지금 회수다
+    const p = inventoryTables.customerReturnPickups;
+    const pickup = await this.db.db
+      .select({
+        carrier: p.carrier,
+        waybillNo: p.waybillNo,
+        status: p.status,
+        pickedUpAt: p.pickedUpAt,
+      })
+      .from(p)
+      .where(eq(p.customerReturnId, record.id))
+      .orderBy(desc(p.createdAt))
+      .limit(1)
+      .then((r) => r[0]);
+
+    return {
+      carrier: pickup?.carrier ?? null,
+      carrierName: pickup ? (CARRIER_NAMES[pickup.carrier] ?? pickup.carrier) : null,
+      waybillNo: pickup?.waybillNo ?? null,
+      pickupStatus: pickupStatusOf(pickup),
+      pickedUpAt: pickup?.pickedUpAt ?? null,
+      arrivedAt: record.arrivedAt,
+      inspectedAt: record.inspectedAt,
+      settledAt: record.settledAt,
+    };
+  }
+
   // ── Tracking ──────────────────────────────────────────────────────────────
 
   async getTrackingByChannelOrder(channelOrderId: string, customerId: string): Promise<StoreOrderTrackingResponseDto> {
@@ -1216,4 +1261,15 @@ function buildPrintShipments(rows: PrintOrderRow[]): StoreShipmentDto[] {
       dispatchAttempts: [],
     };
   });
+}
+
+/** 회수 행 상태를 고객이 읽을 네 갈래로 접는다. 접수 실패(failed)·무효(void)는 다시 접수할 일이라 아직 없는 것으로 본다. */
+function pickupStatusOf(
+  pickup: { status: string; pickedUpAt: Date | null } | undefined,
+): StoreReturnProgressResponseDto['pickupStatus'] {
+  if (!pickup) return 'none';
+  if (pickup.pickedUpAt) return 'picked_up';
+  if (pickup.status === 'reserved' || pickup.status === 'cancel_pending') return 'requested';
+  if (pickup.status === 'cancelled') return 'cancelled';
+  return 'none';
 }

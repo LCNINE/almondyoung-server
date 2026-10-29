@@ -133,3 +133,32 @@ export class StoreOrderTrackingResponseDto {
   @ApiProperty({ description: '출고 정보 목록', type: [StoreShipmentDto] })
   shipments: StoreShipmentDto[];
 }
+
+export class StoreReturnProgressResponseDto {
+  @ApiPropertyOptional({ description: '회수 택배사 (carrier enum)', example: 'HANJIN' })
+  carrier: string | null;
+
+  @ApiPropertyOptional({ description: '회수 택배사 표시 이름', example: '한진택배' })
+  carrierName: string | null;
+
+  @ApiPropertyOptional({ description: '회수 송장번호' })
+  waybillNo: string | null;
+
+  @ApiProperty({
+    description: '회수 상태 — none: 회수 접수 전·없음, requested: 회수 접수됨, picked_up: 기사님이 가져감, cancelled: 회수 취소',
+    enum: ['none', 'requested', 'picked_up', 'cancelled'],
+  })
+  pickupStatus: 'none' | 'requested' | 'picked_up' | 'cancelled';
+
+  @ApiPropertyOptional({ description: '회수해 간 시각' })
+  pickedUpAt: Date | null;
+
+  @ApiPropertyOptional({ description: '창고 도착 시각' })
+  arrivedAt: Date | null;
+
+  @ApiPropertyOptional({ description: '검수 시각' })
+  inspectedAt: Date | null;
+
+  @ApiPropertyOptional({ description: '정산(환불) 시각' })
+  settledAt: Date | null;
+}

@@ -6,7 +6,7 @@ import {
   StoreCancelOrderDto,
   StoreOrderActionsResponseDto,
 } from '../dto/store-order-actions.dto';
-import { StoreOrderTrackingResponseDto } from '../dto/store-order-tracking.dto';
+import { StoreOrderTrackingResponseDto, StoreReturnProgressResponseDto } from '../dto/store-order-tracking.dto';
 import { StoreSalesOrdersService } from '../services/store-sales-orders.service';
 
 interface AuthenticatedCustomer {
@@ -130,6 +130,21 @@ export class StoreSalesOrdersController {
     @User() customer: AuthenticatedCustomer,
   ): Promise<StoreOrderTrackingResponseDto> {
     return this.service.getTrackingByChannelOrder(channelOrderId, customer.userId);
+  }
+
+  @Get('by-channel-order/:channelOrderId/returns/:channelReturnId/progress')
+  @ApiOperation({
+    summary: '반품 회수·창고 진행 (Medusa 주문·반품 ID 기반)',
+    description: '회수 택배사·송장번호·회수 상태와 창고 도착·검수·정산 시각을 반환합니다.',
+  })
+  @ApiParam({ name: 'channelOrderId', description: 'Medusa 주문 ID' })
+  @ApiParam({ name: 'channelReturnId', description: 'Medusa 반품 ID' })
+  getReturnProgressByChannelOrder(
+    @Param('channelOrderId') channelOrderId: string,
+    @Param('channelReturnId') channelReturnId: string,
+    @User() customer: AuthenticatedCustomer,
+  ): Promise<StoreReturnProgressResponseDto> {
+    return this.service.getReturnProgressByChannelOrder(channelOrderId, channelReturnId, customer.userId);
   }
 
   @Get(':id/tracking')
