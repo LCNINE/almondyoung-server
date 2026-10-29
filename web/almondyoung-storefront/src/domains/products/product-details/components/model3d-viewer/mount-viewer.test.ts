@@ -22,7 +22,12 @@ describe("mountViewer", () => {
     const container = document.createElement("div")
 
     await expect(
-      mountViewer(container, { src: "model.glb", alt: "상품", onLoad: vi.fn(), onError: vi.fn() })
+      mountViewer(container, {
+        src: "model.glb",
+        alt: "상품",
+        onLoad: vi.fn(),
+        onError: vi.fn(),
+      })
     ).rejects.toThrow("WebGL")
     expect(container.children).toHaveLength(0)
   })
@@ -35,7 +40,12 @@ describe("mountViewer", () => {
     const container = document.createElement("div")
     const onLoad = vi.fn()
     const onError = vi.fn()
-    const dispose = await mountViewer(container, { src: "model.glb", alt: "상품", onLoad, onError })
+    const dispose = await mountViewer(container, {
+      src: "model.glb",
+      alt: "상품",
+      onLoad,
+      onError,
+    })
     const viewer = container.querySelector("model-viewer")!
 
     expect(viewer.hasAttribute("camera-controls")).toBe(true)
