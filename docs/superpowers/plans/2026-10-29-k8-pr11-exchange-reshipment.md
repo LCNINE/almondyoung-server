@@ -288,3 +288,5 @@
 - 배포 중 CS 교환 접수 금지(롤링 중 옛 core 가 `kind` 를 버리면 교환이 반품으로 기록된다 — 고객 자격은 개통 전 0).
 - 배포 뒤 확인: ① `select count(*) from sales_order_lines where exchange_return_line_id is not null` 0 ② `POST /admin/customer-returns/<없는 id>/exchange-release` 키 없이 401 ③ 아무 라이브 주문 다음 폴링 뒤 core 반영 대기 변경 증가 0.
 - 화면은 PR 11b — 그 전엔 교환을 CS 가 Medusa admin 라우트(`kind: 'exchange'`)로만 접수할 수 있고, 보류·선발송 버튼이 없다(라우트는 있다).
+- 🔴 **교환 반품이 열려 있는 동안 Medusa 를 PR 11 이전으로 롤백하지 않는다** — 옛 정산이 교환을 반품으로 읽어 품목 값을 환불한다.
+- 인쇄(디자인) 상품 교환은 이 PR 범위 밖 — 교환 줄이 `almond_design_id` 를 복사하지 않는다. PR 11b 자격에서 막고, 그 전엔 CS 가 인쇄 상품 교환을 받지 않는다.

@@ -476,6 +476,19 @@ X3 의 근거 — 2026-10-29 실측(Medusa 2.13.4, `OrderExchange` 로 같은 �
 
 알려진 대가: Medusa 대시보드에는 «교환»이 아니라 «반품 + 새 품목 줄»로 보인다. 대체 품목 줄에는 variant 가 없어 Medusa 에서 상품으로 이어지지 않는다(상품은 `metadata.almondExchange.variantId`). 선발송한 교환은 core 가 Medusa 품목 id 없이 먼저 내보내고, 정산 사실이 온 뒤에 id 를 잇는다 — 그 전에는 교환품의 재반품이 Medusa 쪽에서 열리지 않는다.
 
+**PR 11 에서 확정한 결과.** 판정 번호는 계획 `docs/superpowers/plans/2026-10-29-k8-pr11-exchange-reshipment.md` 의 N 번호다. 마이그 하나(expand), `migrate → deploy`.
+- (N4) 대체 줄 단가는 반올림하는 `cancelledAdjustmentShare` 가 아니라 **정확한 몫**(할인 합 × q ÷ 수량)으로 뺀다 — 설계의 «자르지 않는다»를 값으로 못 박았다. 실측(Task 1): 3개에 5,000 할인에서 1개를 교환하면 단가 30000−5000/3 이고 차액은 0.01 미만.
+- (N5) 정산 재시도는 멱등이다: 태그 `return-exchange:<requestId>` 로 이미 확정된 주문 수정을 찾아 그 줄을 `exchangeItems` 로 읽고 다시 넣지 않는다. 교환 기록의 부담 주체가 `seller` 가 아니면 수령 **전에** `exchange_settle_unsupported` 로 거절한다(수령 뒤 500 이 아니라 400).
+- (N8 확장) `shippingPlanLines` 는 대체 줄만 빼는 게 아니다. 교환으로 돌아온 수량은 배송비 판정에서 «아직 고객에게 있는 것»으로 본다 — 대체 줄 수량을 원래 줄의 남은 수량에 **되돌려 셈**하고(`exchangedQuantity`), 대체 줄 자체는 뺀다. 안 그러면 교환 뒤 부분취소가 무료배송 기준 이탈로 3,000 을 더 걷고, 단순 변심 반품이 기준 이탈 차감을 잘못 읽는다(RED 실측: shippingDelta 3000 / refund 4000).
+- (E5·channel-adapter) 교환 정산은 Medusa 주문 total 을 +V 올린다. 그래서 교환마다 `OrderModified` 가 한 번 나간다. 무해하다 — core 판정은 주소·줄만 보고 대체 줄은 스냅샷에서 빠져 있다(테스트가 «total 만 다르다»를 고정). 알 수 없는 `kind` 는 `no_record`, 빈 `exchangeItems`·`refundAmount != 0` 은 `no_settlement_record`.
+- (E7·N13) 교환 상자 열기는 두 겹이다: sales-order `CustomerExchangeReleaser`(기록 잠금·멱등·교환 줄 읽기·주소·`exchange_released_*`)와 fulfillment `ExchangeShipmentOpener`(FO 잠금, FOI 추가, draft 상자, 예약). `order-cancellation.guard` 가 판매주문의 출고 테이블 직접 쓰기·예약 서비스 참조를 허용 목록 «줄이기만»으로 막아 갈랐다. 부족하면 draft 로 남고 예약 재시도·나눠 보내기가 이어받는다. 드롭십 SKU·창고 없는 FO 는 `BadRequestError`(자격이 드롭십을 0 으로 막으므로 결함 신호).
+- 잠금 순서: `customer_returns` → 판매주문 → FO → (상자 만든 뒤) 출고 그래프(`lockShipmentGraphForDispatch`) → 재고 키(정렬) → `reservePartial`. 예약 커널의 순서와 같다. `recordCancelled` 도 기록을 잠가 열기와 짝을 이룬다(열린 뒤 취소 사실은 `ConflictError` → DLQ).
+- (N14) CS 문 `POST admin/customer-returns/:id/exchange-release`(`order.claim.write`) 상태표: `expected`·`arrived` → 열기만(상태 유지, 정산 명령 없음 — 이후 검수가 다시 열지 않는다) · `held` → `held → inspected` + 정산 명령 1 + 열기 · 열린 뒤 `held` 로 멈춘 교환(선발송)도 **정산을 연다**(열기는 건너뜀, 상자는 그대로 1) · 이미 열린 `inspected` 이상은 지금 보기 그대로(재전송) · 그 밖의 상태·열리지 않은 settled 는 409 · `kind return` 은 400.
+- (N16) 정산 사실의 대조: `exchangeItems` 가 없거나 비었거나, 모르는 `sourceItemId`·중복·교환 줄을 다 덮지 못하거나, **수량**이 교환 줄과 다르면 쓰기 전에 `ConflictError`(DLQ). 맞으면 각 교환 줄에 `channel_order_item_id` 를 잇고 `completed`·`SalesOrderReturned` 는 내지 않는다(E10).
+- 결함 수정: 열리지 않은 교환 줄(FOI 없음)이 있는 주문의 상자 전체취소가 `Boxed fulfillment item is missing` 으로 409 였다 — 취소 계획이 교환 줄을 빼도록 고쳤다. 교환 줄을 지목한 줄 취소는 400.
+- 알려진 잔여: ① 덜 도착한 교환은 문이 없다(미도착 닫기를 교환은 거절, 취소는 `expected` 에서만) — CS 가 시스템 밖에서 처리. ② 인쇄(디자인) 상품 교환은 범위 밖 — 교환 줄이 `almond_design_id` 를 복사하지 않아 인쇄 없이 나간다. PR 11b 자격에서 막고, 그 전엔 CS 가 받지 않는다. ③ 출고 시도 기록이 없는 옛 FO 에서 열기가 예약 불변식에 막힐 수 있다(개통 뒤 주문은 해당 없음). ④ 정산 미리보기·스토어 반품 칸은 교환을 모른다(PR 11b). ⑤ 운영자의 «기존 상자에도 적용»은 열리지 않은 교환 줄의 구성을 다시 쓸 수 있다(미출고 재발송이라 따라가는 게 맞다).
+- 🔴 배포: `migrate → deploy`, core·channel-adapter·Medusa 한 배치. 배포 중 CS 교환 접수 금지(롤링 중 옛 core 가 `kind` 를 버리면 교환이 반품으로 기록된다). **교환 반품이 열려 있는 동안 Medusa 를 PR 11 이전으로 롤백하지 않는다** — 옛 정산이 품목 값을 환불한다.
+
 ## 5. 걷어낼 것 (D8)
 
 - **판매주문 쪽**: `store-return-exchange.service.ts`, 두 컨트롤러, 반품 전용 헬퍼(`return-refund-cap.ts`, `return-refund-classification.ts`,
