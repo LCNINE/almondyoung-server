@@ -209,6 +209,18 @@ describe('ChannelReturnRequested / ChannelReturnCancelled', () => {
     expect(() => cancelled.parse(cancelledPayload)).not.toThrow();
   });
 
+  it.each(['포장이 찢어졌어요', '가'.repeat(10000)])('메모를 길이 제한 없이 보존한다', (note) => {
+    expect(requested.parse({ ...requestedPayload, note })).toEqual({ ...requestedPayload, note });
+  });
+
+  it('메모 없는 옛 payload 는 메모 없이 통과한다', () => {
+    expect(requested.parse(requestedPayload)).toEqual(requestedPayload);
+  });
+
+  it.each([null, 42, {}])('문자열이 아닌 메모 %p는 거절한다', (note) => {
+    expect(requested.safeParse({ ...requestedPayload, note }).success).toBe(false);
+  });
+
   it('사유 어휘가 Medusa RETURN_REASONS 와 같다', () => {
     expect([...CUSTOMER_RETURN_REASONS]).toEqual([
       'change_of_mind',
@@ -274,6 +286,20 @@ describe('ChannelReturnSettled / ChannelReturnSettlementFailed (K8 PR6)', () => 
   it('정상 payload 를 통과시킨다', () => {
     expect(() => settled.parse(settledPayload)).not.toThrow();
     expect(() => failed.parse(failedPayload)).not.toThrow();
+  });
+
+  it.each([0, 2500])('배송비 환불 %i를 보존한다', (shippingRefund) => {
+    const payload = { ...settledPayload, shippingRefund };
+
+    expect(settled.parse(payload)).toEqual(payload);
+  });
+
+  it.each([-1, 0.5, '2500', null])('잘못된 배송비 환불 %p를 거부한다', (shippingRefund) => {
+    expect(settled.safeParse({ ...settledPayload, shippingRefund }).success).toBe(false);
+  });
+
+  it('배송비 환불이 없는 이전 계약을 그대로 읽는다', () => {
+    expect(settled.parse(settledPayload)).not.toHaveProperty('shippingRefund');
   });
 
   it('정산 사실의 음수 환불액·정수 아닌 공제·채널 누락은 거부한다', () => {

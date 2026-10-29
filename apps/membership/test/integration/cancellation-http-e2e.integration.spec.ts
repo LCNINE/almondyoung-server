@@ -13,7 +13,6 @@ import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify
 import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
 import { ZodValidationPipe } from 'nestjs-zod';
-import { sql } from 'drizzle-orm';
 import { sign } from 'jsonwebtoken';
 import { addDays, format, subDays } from 'date-fns';
 import { eq } from 'drizzle-orm';
@@ -22,7 +21,6 @@ import { AuthorizationModule, enforcedPermissionProvidersForTesting, JwtAuthGuar
 import { GlobalExceptionFilter } from '@app/shared/filters/http-exception.filter';
 import * as schema from '../../src/shared/schemas/entities/schema';
 import { membershipSchema } from '../../src/shared/schemas/entities/schema';
-import { MEMBERSHIP_ROLE_MAPPINGS, MEMBERSHIP_SCOPES } from '../../src/shared/auth/membership-scopes';
 import { SubscriptionController } from '../../src/controllers/subscription.controller';
 import { AdminOperationsController } from '../../src/controllers/admin-operations.controller';
 import { SubscriptionCancellationService } from '../../src/services/subscription-cancellation.service';
@@ -98,12 +96,7 @@ describeE2E('멤버십 해지·환불 HTTP E2E', () => {
         ConfigModule.forRoot({ isGlobal: true, ignoreEnvFile: true }),
         // DATABASE_URL 은 위 describeIfDb 가이드에서 이미 확인된다 — 타입만 좁힌다.
         DbModule.forRoot({ config: { connectionString: process.env.DATABASE_URL ?? '' }, schema: membershipSchema }),
-        // 앱과 동일한 스코프 선언 — 부팅 시 auth.scopes / auth.role_scope_mapping 이 정합화된다.
-        AuthorizationModule.forRoot({
-          microserviceName: 'membership',
-          scopes: MEMBERSHIP_SCOPES,
-          roleMappings: MEMBERSHIP_ROLE_MAPPINGS,
-        }),
+        AuthorizationModule.forAuthOnly(),
       ],
       controllers: [SubscriptionController, AdminOperationsController],
       providers: [
@@ -324,30 +317,7 @@ describeE2E('멤버십 해지·환불 HTTP E2E', () => {
     });
   });
 
-  describe('스코프 인가 (환불 금액 상한)', () => {
-    it('부트스트랩이 스코프와 역할 매핑을 실제로 넣는다', async () => {
-      const scopeRows = await db.db.execute<{ key: string }>(sql`SELECT key FROM auth.scopes ORDER BY key`);
-      const keys = [...scopeRows].map((r) => r.key);
-      expect(keys).toEqual(expect.arrayContaining(['membership.billing.refund', 'membership.billing.refund_override']));
-
-      const mappings = await db.db.execute<{ role_name: string; key: string }>(
-        sql`SELECT m.role_name, s.key
-              FROM auth.role_scope_mapping m
-              JOIN auth.scopes s ON s.id = m.scope_id
-             ORDER BY m.role_name, s.key`,
-      );
-      const pairs = [...mappings].map((r) => `${r.role_name}:${r.key}`);
-      // admin 은 일상 환불만, master 는 초과 환불까지
-      expect(pairs).toEqual(
-        expect.arrayContaining([
-          'admin:membership.billing.refund',
-          'master:membership.billing.refund',
-          'master:membership.billing.refund_override',
-        ]),
-      );
-      expect(pairs).not.toContain('admin:membership.billing.refund_override');
-    });
-
+  describe('권한 인가 (환불 금액 상한)', () => {
     it('admin 은 정책 한도 이내 환불을 실행할 수 있다', async () => {
       const { contract } = await givenSubscription({ plan: 'annual', daysSincePeriodStart: 75 });
 

@@ -161,7 +161,6 @@ describeIfDb('일괄 세션 drafting 레인 (실 Postgres + 실 Nest DI)', () =>
     const { DbModule, DbService } = await import('@app/db');
     const { AuthorizationModule } = await import('@app/authorization');
     const { mergedSchema } = await import('../../../../../platform/database/merged-schema');
-    const { ALL_SCOPES, ALL_ROLE_MAPPINGS } = await import('../../../../../platform/auth/merged-scopes');
     const { CatalogModule } = await import('../../../catalog.module');
     const { ProductMastersService } = await import('../../../core/products/services/product-masters.service');
     const { ProductVersionsService } = await import('../../../core/products/services/product-versions.service');
@@ -183,11 +182,7 @@ describeIfDb('일괄 세션 drafting 레인 (실 Postgres + 실 Nest DI)', () =>
           }),
           schema: mergedSchema,
         }),
-        AuthorizationModule.forRoot({
-          microserviceName: 'almondyoung',
-          scopes: ALL_SCOPES,
-          roleMappings: ALL_ROLE_MAPPINGS,
-        }),
+        AuthorizationModule.forAuthOnly(),
         CatalogModule,
       ],
     }).compile();

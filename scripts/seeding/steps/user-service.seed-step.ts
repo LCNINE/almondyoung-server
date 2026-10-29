@@ -118,31 +118,6 @@ export const USER_SERVICE_REFERENCE_ROLES = [
 
 const ROLES = USER_SERVICE_REFERENCE_ROLES;
 
-const SCOPES = [
-  { key: 'master', description: '마스터 권한', microservice_name: 'user-service' },
-  { key: 'user:read', description: '사용자 - 사용자 정보 조회', microservice_name: 'user-service' },
-  { key: 'user:modify', description: '사용자 - 사용자 정보 생성, 수정', microservice_name: 'user-service' },
-  { key: 'user:delete', description: '사용자 - 사용자 정보 삭제', microservice_name: 'user-service' },
-  { key: 'admin:access', description: '관리자 페이지 접근 권한 (베이스라인)', microservice_name: 'user-service' },
-  { key: 'admin:users:*', description: '관리자 - 사용자 전체 권한', microservice_name: 'user-service' },
-  { key: 'admin:users:read', description: '관리자 - 회원 조회', microservice_name: 'user-service' },
-  { key: 'admin:users:modify', description: '관리자 - 회원 수정', microservice_name: 'user-service' },
-  { key: 'admin:users:archive', description: '관리자 - 회원 보관', microservice_name: 'user-service' },
-  { key: 'admin:users:purge', description: '관리자 - 회원 완전삭제', microservice_name: 'user-service' },
-  { key: 'admin:settings:*', description: '관리자 - 설정 전체 권한', microservice_name: 'user-service' },
-  { key: 'admin:logs:read', description: '관리자 - 로그 조회', microservice_name: 'user-service' },
-];
-
-export const USER_SERVICE_REFERENCE_ROLE_SCOPE_MAP: Record<string, string[]> = {
-  master: ['master'],
-  admin: SCOPES.map((s) => s.key).filter((k) => k !== 'master'),
-  // user:delete 는 "본인 계정 탈퇴" 다. 관리자 권한이 아니라 고객이 당연히 가져야 하는 스코프.
-  membership: ['user:read', 'user:modify', 'user:delete'],
-  user: ['user:read', 'user:modify', 'user:delete'],
-};
-
-const ROLE_SCOPE_MAP = USER_SERVICE_REFERENCE_ROLE_SCOPE_MAP;
-
 export class UserServiceSeedStep extends SeedStep {
   readonly groups = ['baseline'] as const;
 
@@ -161,16 +136,6 @@ export class UserServiceSeedStep extends SeedStep {
     const roleNames = ROLES.map((r) => r.name);
     const existingRoles = await this.findExistingIds('roles', roleNames, 'name');
     const missingRoles = ROLES.filter((r) => !existingRoles.has(r.name));
-
-    // Scopes
-    const scopeKeys = SCOPES.map((s) => s.key);
-    const existingScopes = await this.findExistingKeys('scopes', scopeKeys, 'key', 'auth');
-    const missingScopes = SCOPES.filter((s) => !existingScopes.has(s.key));
-
-    // Role-scope mappings: count total expected vs existing
-    const expectedMappings = Object.values(ROLE_SCOPE_MAP).reduce((sum, keys) => sum + keys.length, 0);
-    const existingMappingRows = await this.client.unsafe(`SELECT count(*)::int as count FROM auth.role_scope_mapping`);
-    const existingMappingCount = existingMappingRows[0].count;
 
     // Admin user
     const existingUsers = await this.findExistingIds('users', [FIXED_UUIDS.USER_ADMIN]);
@@ -234,19 +199,6 @@ export class UserServiceSeedStep extends SeedStep {
         missingDetails: missingRoles.map((r) => r.name),
       },
       {
-        entity: 'auth.scopes',
-        expected: SCOPES.length,
-        existing: existingScopes.size,
-        missing: missingScopes.length,
-        missingDetails: missingScopes.map((s) => s.key),
-      },
-      {
-        entity: 'auth.role_scope_mapping',
-        expected: expectedMappings,
-        existing: Math.min(existingMappingCount, expectedMappings),
-        missing: Math.max(0, expectedMappings - existingMappingCount),
-      },
-      {
         entity: 'users (admin)',
         expected: 1,
         existing: 1 - adminMissing,
@@ -290,7 +242,7 @@ export class UserServiceSeedStep extends SeedStep {
 
     try {
       // Step 1: Roles
-      this.logger.step(1, 6, 'Inserting roles');
+      this.logger.step(1, 4, 'Inserting roles');
       for (const role of ROLES) {
         await this.db.execute(sql`
           INSERT INTO roles (role_id, name, description, display_name)
@@ -300,31 +252,8 @@ export class UserServiceSeedStep extends SeedStep {
       }
       itemsApplied += ROLES.length;
 
-      // Step 2: Scopes
-      this.logger.step(2, 6, 'Upserting auth.scopes');
-      for (const scope of SCOPES) {
-        await this.db.execute(sql`
-          INSERT INTO auth.scopes (key, description, microservice_name)
-          VALUES (${scope.key}, ${scope.description}, ${scope.microservice_name})
-          ON CONFLICT (key) DO NOTHING
-        `);
-      }
-      itemsApplied += SCOPES.length;
-
-      // Step 3: Role-scope mappings
-      this.logger.step(3, 6, 'Upserting auth.role_scope_mapping');
-      for (const [roleName, scopeKeys] of Object.entries(ROLE_SCOPE_MAP)) {
-        for (const scopeKey of scopeKeys) {
-          await this.db.execute(sql`
-            INSERT INTO auth.role_scope_mapping (role_name, scope_id)
-            SELECT ${roleName}, id FROM auth.scopes WHERE key = ${scopeKey}
-            ON CONFLICT (role_name, scope_id) DO NOTHING
-          `);
-        }
-      }
-
-      // Step 4: Admin user
-      this.logger.step(4, 6, 'Creating admin user');
+      // Step 2: Admin user
+      this.logger.step(2, 4, 'Creating admin user');
       const hashedPassword = await bcrypt.hash(this.adminPassword, 10);
       await this.db.execute(sql`
         INSERT INTO users (id, login_id, username, nickname, email, password, is_email_verified)
@@ -336,8 +265,8 @@ export class UserServiceSeedStep extends SeedStep {
       `);
       itemsApplied += 1;
 
-      // Step 5: Admin roles
-      this.logger.step(5, 6, 'Assigning master and admin roles to admin user');
+      // Step 3: Admin roles
+      this.logger.step(3, 4, 'Assigning master and admin roles to admin user');
       await this.db.execute(sql`
         INSERT INTO user_roles (user_id, role_id)
         VALUES (${FIXED_UUIDS.USER_ADMIN}, ${FIXED_UUIDS.ROLE_MASTER})
@@ -350,9 +279,9 @@ export class UserServiceSeedStep extends SeedStep {
       `);
       itemsApplied += 2;
 
-      // Step 6: Assign 'user' role to all existing users without any role
-      const totalSteps = this.oauthClients.length > 0 ? 7 : 6;
-      this.logger.step(6, totalSteps, 'Assigning user role to existing users without roles');
+      // Step 4: Assign 'user' role to all existing users without any role
+      const totalSteps = this.oauthClients.length > 0 ? 5 : 4;
+      this.logger.step(4, totalSteps, 'Assigning user role to existing users without roles');
       await this.db.execute(sql`
         INSERT INTO user_roles (user_id, role_id)
         SELECT u.id, r.role_id
@@ -365,9 +294,9 @@ export class UserServiceSeedStep extends SeedStep {
         ON CONFLICT DO NOTHING
       `);
 
-      // Step 7: OAuth clients (멱등 upsert — 기존 secret_hash 는 덮지 않음).
+      // Step 5: OAuth clients (멱등 upsert — 기존 secret_hash 는 덮지 않음).
       if (this.oauthClients.length > 0) {
-        this.logger.step(7, totalSteps, 'Upserting OAuth clients');
+        this.logger.step(5, totalSteps, 'Upserting OAuth clients');
         for (const seed of this.oauthClients) {
           const isPublic = seed.clientType === 'public';
           const plaintextSecret = isPublic ? null : (seed.clientSecret ?? crypto.randomBytes(32).toString('base64url'));

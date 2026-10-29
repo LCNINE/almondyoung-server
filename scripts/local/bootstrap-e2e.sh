@@ -106,7 +106,7 @@ if [ "${SKIP_SEED:-}" = "1" ]; then
 else
   step "3. 시드 (전부 ON CONFLICT — 다시 돌려도 안전하다)"
   npm run --silent db:seed:user-service:local >/dev/null 2>&1 \
-    && ok "user-service — 역할·스코프·admin 계정·OAuth 클라이언트 3" || bad "user-service 시드 실패"
+    && ok "user-service — 역할·admin 계정·OAuth 클라이언트 3" || bad "user-service 시드 실패"
   npm run --silent db:seed:wallet:local >/dev/null 2>&1 \
     && ok "wallet — 결제수단·지역 (없으면 결제화면이 「사용 가능한 결제수단이 없습니다」)" || bad "wallet 시드 실패"
   npm run --silent db:seed:core:local >/dev/null 2>&1 \

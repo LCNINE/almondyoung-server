@@ -40,7 +40,6 @@ export const ROLE_LITERAL_BASELINE: Readonly<Record<string, { count: number; kin
   'apps/admin-web/src/lib/services/products/use-product-detail.ts': { count: 2, kind: 'data-value' },
   'apps/admin-web/src/lib/types/dto/products.ts': { count: 2, kind: 'data-value' },
   'apps/admin-web/src/lib/types/dto/review.ts': { count: 1, kind: 'data-value' },
-  'apps/ai/src/platform/auth/ai-scopes.ts': { count: 2, kind: 'role-mapping' },
   'apps/core/src/modules/sales-order/channel-cancel-request/channel-cancel-request.manager.ts': {
     count: 1,
     kind: 'data-value',
@@ -58,12 +57,9 @@ export const ROLE_LITERAL_BASELINE: Readonly<Record<string, { count: number; kin
   'apps/core/src/modules/sales-order/dto/cancel-sales-order.dto.ts': { count: 1, kind: 'data-value' },
   // 취소 기록의 cancelledBy 값('admin') — 판정이 아니다(K7 PR4 가 관리자 문에서 옮겨 왔다)
   'apps/core/src/modules/sales-order/order-cancellation/order-cancellation.ts': { count: 1, kind: 'data-value' },
-  'apps/core/src/platform/auth/fulfillment-scopes.ts': { count: 2, kind: 'role-mapping' },
-  'apps/core/src/platform/auth/inventory-scopes.ts': { count: 3, kind: 'role-mapping' },
   'apps/file-service/src/access/service-delegation.ts': { count: 1, kind: 'system-identity' },
   'apps/membership/src/config/swagger.config.ts': { count: 1, kind: 'data-value' },
   'apps/membership/src/controllers/admin-operations.controller.ts': { count: 2, kind: 'data-value' },
-  'apps/membership/src/shared/auth/membership-scopes.ts': { count: 2, kind: 'role-mapping' },
   'apps/notification/src/dispatcher/handlers/order-event.consumer.ts': { count: 1, kind: 'data-value' },
   'apps/notification/src/provider/dto/update-provider.dto.ts': { count: 1, kind: 'data-value' },
   'apps/notification/src/template/dto/create-template.dto.ts': { count: 1, kind: 'data-value' },
@@ -71,19 +67,22 @@ export const ROLE_LITERAL_BASELINE: Readonly<Record<string, { count: number; kin
   'apps/ugc-service/src/review-permissions/types.ts': { count: 1, kind: 'data-value' },
   'apps/ugc-service/src/reviews/dto/admin-review-response.dto.ts': { count: 2, kind: 'data-value' },
   'apps/ugc-service/src/reviews/dto/review-list-query.dto.ts': { count: 3, kind: 'data-value' },
-  'apps/ugc-service/src/shared/auth/ugc-scopes.ts': { count: 4, kind: 'role-mapping' },
   'apps/ugc-service/src/shop-listings/dto/shop-listing-response.dto.ts': { count: 2, kind: 'data-value' },
   'apps/ugc-service/src/shop-listings/shop-listing-moderation.manager.ts': { count: 1, kind: 'data-value' },
   'apps/ugc-service/src/shop-listings/shop-listing.constants.ts': { count: 2, kind: 'data-value' },
   'apps/ugc-service/src/shop-listings/shop-listing.manager.ts': { count: 1, kind: 'data-value' },
-  'apps/user-service/src/api/iam/iam.constants.ts': { count: 1, kind: 'system-role-rule' },
-  'apps/user-service/src/api/shop/shop.controller.ts': { count: 4, kind: 'legacy-route-guard' },
-  'apps/user-service/src/api/users/users.controller.ts': { count: 2, kind: 'legacy-route-guard' },
-  'apps/user-service/src/app.module.ts': { count: 5, kind: 'role-mapping' },
+  // 휴면 처리 대상에서 고객 역할 보유자를 고르는 조회 조건 — 판정이 아니라 대상 선별
+  'apps/user-service/src/api/admin/dormant/dormant.service.ts': { count: 1, kind: 'data-value' },
+  // 역할 이름 필터 파라미터 설명의 예시 문자열
+  'apps/user-service/src/api/admin/users/dto/get-users-query.dto.ts': { count: 1, kind: 'data-value' },
+  // 가입 시 고객 역할을 붙이기 위한 역할 조회
+  'apps/user-service/src/api/auth/auth.service.ts': { count: 1, kind: 'data-value' },
+  // 고객 역할 이름 목록(직원 = 고객이 아닌 역할)과 시스템 역할 이름 — 최소 1명·편집 불가 규칙의 입력
+  'apps/user-service/src/api/iam/iam.constants.ts': { count: 3, kind: 'system-role-rule' },
+  // 신규 계정에 기본 고객 역할을 붙이기 위한 역할 조회
+  'apps/user-service/src/api/users/users.service.ts': { count: 1, kind: 'data-value' },
   'apps/wallet/src/admin/refund-admin.controller.ts': { count: 1, kind: 'data-value' },
   'apps/wallet/src/admin/refund-requests-admin.controller.ts': { count: 2, kind: 'data-value' },
-  'libs/authorization/src/guards/scope.guard.ts': { count: 2, kind: 'legacy-library' },
   'libs/authorization/src/permissions/permission-catalog.ts': { count: 18, kind: 'role-mapping' },
   'libs/authorization/src/permissions/permission.types.ts': { count: 4, kind: 'role-mapping' },
-  'libs/authorization/src/services/authorization.service.ts': { count: 3, kind: 'legacy-library' },
 };

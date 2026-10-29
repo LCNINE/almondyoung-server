@@ -25,6 +25,9 @@ export interface ReturnLine {
 
 export interface ReturnView {
   id: string;
+  reason: string;
+  feeBearer: string;
+  note: string | null;
   status: string;
   order: { orderNo: string };
   warehouseId: string | null;
@@ -36,6 +39,7 @@ export interface ReceivingItem {
   id: string;
   orderNo: string;
   customerMasked: string;
+  reason: string;
   productSummary: string;
   expectedQty: number;
   arrivedQty: number;

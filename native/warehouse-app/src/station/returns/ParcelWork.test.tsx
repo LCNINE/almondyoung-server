@@ -59,6 +59,39 @@ const BULK: FakeReturn = {
   ],
 };
 
+describe('반품 사유와 메모', () => {
+  it('판매자 부담 밴드와 고객 메모를 보여 준다', async () => {
+    setupReturns({ returns: [PARTIAL] });
+    await openByScan('8801002');
+
+    expect(within(region()).getByText('오배송 · 판매자 부담')).toHaveClass(
+      'bg-[#FFF1C7]',
+      'text-[#5E3B00]'
+    );
+    expect(
+      within(region()).getByText(`메모: ${PARTIAL.note}`)
+    ).toBeInTheDocument();
+  });
+
+  it.each([null, ''])(
+    '고객 부담이고 메모가 %p이면 메모 줄이 없다',
+    async (note) => {
+      setupReturns({
+        returns: [
+          { ...PARTIAL, reason: 'change_of_mind', feeBearer: 'customer', note },
+        ],
+      });
+      await openByScan('8801002');
+
+      expect(within(region()).getByText('단순 변심 · 고객 부담')).toHaveClass(
+        'bg-[#EDEEF0]',
+        'text-[#3F4450]'
+      );
+      expect(within(region()).queryByText(/^메모:/)).toBeNull();
+    }
+  );
+});
+
 describe('소포 세기 — 화면', () => {
   it('표 `상품 | 남은 수량 | 이번 소포`, 남은 수량 = 기대 − 이미 도착, 큰 숫자 «이번 소포 0», F10 은 없다', async () => {
     setupReturns();

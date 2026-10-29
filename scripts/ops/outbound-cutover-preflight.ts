@@ -264,25 +264,7 @@ async function checkCore(tx: Sql): Promise<void> {
       where foi.fulfillment_order_id = fo.id)`;
   info(`dispatch 없이 shipped 인 출고주문 ${scriptShipped.n}건 = 셀메이트 스크립트가 마감한 것`);
 
-  section('8. 권한 — fulfillment 스코프를 가진 역할');
-  // platform/auth/fulfillment-scopes.ts. admin 은 fulfillment 스코프가 0 이라 배치·운송장 화면은
-  // master 이거나 admin + logistics_* 여야 한다. 부팅 시 ensureRoleScopeMappings 가 목록 밖 매핑을 지운다.
-  const scopes = await tx`
-    select m.role_name, string_agg(s.key, ', ' order by s.key) as scopes
-    from auth.role_scope_mapping m join auth.scopes s on s.id = m.scope_id
-    where s.key like 'fulfillment.%' group by 1 order by 1`;
-  table(scopes);
-  if (
-    scopes.some((r) => r.role_name === 'logistics_worker' && String(r.scopes).includes('fulfillment.warehouse.operate'))
-  )
-    ok('logistics_worker 에 fulfillment.warehouse.operate 매핑됨');
-  else
-    bad(
-      'logistics_worker 에 fulfillment.warehouse.operate 가 없다',
-      'core 재배포(ScopeBootstrapService 가 부팅 시 매핑을 upsert)',
-    );
-
-  section('9. 판매 채널');
+  section('8. 판매 채널');
   table(
     await tx`
       select c.site, c.is_active, count(l.id)::int as listings,
@@ -294,7 +276,7 @@ async function checkCore(tx: Sql): Promise<void> {
 }
 
 async function checkChannelAdapter(tx: Sql): Promise<void> {
-  section('10. 채널 수집 격리 (channel_adapter)');
+  section('9. 채널 수집 격리 (channel_adapter)');
   table(
     await tx`
       select channel, status, reason, count(*)::int, max(created_at) as last_at
@@ -303,7 +285,7 @@ async function checkChannelAdapter(tx: Sql): Promise<void> {
 }
 
 async function checkUserService(tx: Sql): Promise<void> {
-  section('11. 역할 보유자 (user_service)');
+  section('10. 역할 보유자 (user_service)');
   const holders = await tx`
     select r.name as role, count(distinct ur.user_id)::int as holders
     from roles r left join user_roles ur on ur.role_id = r.role_id
@@ -339,7 +321,7 @@ async function checkUserService(tx: Sql): Promise<void> {
       '관리자 계정에 logistics_manager 부여',
     );
 
-  section('12. warehouse-app OAuth 클라이언트');
+  section('11. warehouse-app OAuth 클라이언트');
   const clients = await tx`
     select client_id, client_type, is_active, redirect_uris from oauth_clients where client_id = 'warehouse-app'`;
   table(clients);
@@ -348,6 +330,26 @@ async function checkUserService(tx: Sql): Promise<void> {
     bad(
       'warehouse-app OAuth 클라이언트가 없거나 비활성 → 앱 로그인 불가',
       'user-service admin /admin/oauth-clients 로 등록',
+    );
+
+  section('12. 권한 — fulfillment 권한을 가진 역할');
+  // libs/authorization/src/permissions/permission-catalog.ts 의 첫 등록 부여가 시작값이고, 그 뒤엔
+  // iam_role_permissions 가 원본이다(코드는 덮어쓰지 않는다).
+  const grants = await tx`
+    select r.name as role_name, string_agg(p.permission_key, ', ' order by p.permission_key) as permissions
+    from iam_role_permissions p join roles r on r.role_id = p.role_id
+    where p.permission_key like 'fulfillment.%' group by 1 order by 1`;
+  table(grants);
+  if (
+    grants.some(
+      (r) => r.role_name === 'logistics_worker' && String(r.permissions).includes('fulfillment.warehouse.operate'),
+    )
+  )
+    ok('logistics_worker 에 fulfillment.warehouse.operate 부여됨');
+  else
+    bad(
+      'logistics_worker 에 fulfillment.warehouse.operate 가 없다',
+      '관리자 화면 역할·권한에서 logistics_worker 에 부여',
     );
 }
 

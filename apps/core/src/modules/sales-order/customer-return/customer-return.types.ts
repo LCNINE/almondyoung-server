@@ -45,6 +45,7 @@ export type CustomerReturnSettlement = {
 /** `customer_returns.settlement_outcome` — 정산 결과(환불액·차감) */
 export type CustomerReturnSettlementOutcome = {
   refundAmount: number;
+  shippingRefund?: number;
   deduction: ReturnSettlementDeduction;
   feeNotAdjusted: boolean;
   refundMode: 'auto' | 'manual';

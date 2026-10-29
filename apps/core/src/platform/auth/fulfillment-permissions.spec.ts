@@ -4,13 +4,8 @@ import {
   SHORT_PICK_REPORT_PERMISSIONS,
   SIMPLE_OUTBOUND_FORCE_PERMISSIONS,
 } from './fulfillment-permissions';
-import { FULFILLMENT_SCOPE } from './fulfillment-scopes';
 
 describe('fulfillment permission keys', () => {
-  it('keeps the same strings the scope table registers', () => {
-    expect(FULFILLMENT_PERMISSION).toEqual(FULFILLMENT_SCOPE);
-  });
-
   it('names only catalog permissions', () => {
     const catalog = new Set<string>(PERMISSION_CATALOG.map((entry) => entry.key));
     expect(Object.values(FULFILLMENT_PERMISSION).filter((key) => !catalog.has(key))).toEqual([]);

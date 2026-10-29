@@ -127,12 +127,14 @@ async function run(container: MedusaContainer, input: RequestOrderReturnInput): 
   if (!reasonRow) throw new ReturnRequestRejected('reason_not_found', '반품 사유를 찾을 수 없습니다');
 
   const target = await returnTarget(container);
+  const note = input.note?.trim();
 
   const record: ReturnRequestRecord = {
     requestId: input.requestId,
     requestHash,
     requestedBy: input.requestedBy,
     reasonValue: reasonRow.value,
+    ...(note ? { note } : {}),
     feeBearer: plan.feeBearer,
     windowOverride: plan.windowOverridden
       ? { reason: (input.windowOverrideReason ?? '').trim(), actorId: input.actorId ?? null }
@@ -221,12 +223,11 @@ async function rollback(
   if (p.topUp.length > 0) {
     // 되돌림 표지 — 여기서 실패해도 다음 같은 requestId 시도가 이력으로 남은 몫만 되돌린다(clearAbandonedAttempt).
     // 다른 반품이 잡은 출고 수량 아래로는 내리지 않는다(capRevertToUnheld) — 못 내린 몫은 이력에 남아 같은 재시도가 다시 본다
-    await lowerUnheldTopUp(container, p.orderId, p.requestId, p.topUp)
-      .catch((e: unknown) =>
-        logger.error(
-          `[return-request] 올린 출고 수량 되돌리기 실패: orderId=${p.orderId} items=${JSON.stringify(p.topUp)} — ${describeError(e)}`,
-        ),
-      );
+    await lowerUnheldTopUp(container, p.orderId, p.requestId, p.topUp).catch((e: unknown) =>
+      logger.error(
+        `[return-request] 올린 출고 수량 되돌리기 실패: orderId=${p.orderId} items=${JSON.stringify(p.topUp)} — ${describeError(e)}`,
+      ),
+    );
   }
 }
 

@@ -7,7 +7,6 @@ import { CronOnceModule } from '@app/cron-once';
 import { DbModule } from '@app/db';
 import {
   AuthorizationModule,
-  authorizationSchema,
   AuthzObserverGuard,
   AuthzShadowInterceptor,
   JwtAuthGuard,
@@ -26,9 +25,6 @@ import { ShopListingsModule } from './shop-listings/shop-listings.module';
 import { LogoContestModule } from './logo-contest/logo-contest.module';
 import { AlmondTemplateModule } from './almond-template/almond-template.module';
 import { ugcServiceSchema } from './db/schema';
-import { UGC_ROLE_MAPPINGS, UGC_SCOPES } from './shared/auth/ugc-scopes';
-
-const combinedSchema = { ...ugcServiceSchema, ...authorizationSchema };
 
 @Module({
   imports: [
@@ -37,17 +33,13 @@ const combinedSchema = { ...ugcServiceSchema, ...authorizationSchema };
       isGlobal: true,
       envFilePath: ['.env', 'apps/ugc-service/.env'],
     }),
-    AuthorizationModule.forRoot({
-      microserviceName: 'ugc-service',
-      scopes: UGC_SCOPES,
-      roleMappings: UGC_ROLE_MAPPINGS,
-    }),
+    AuthorizationModule.forAuthOnly(),
     PermissionModule.forRoot({ service: 'ugc-service' }),
     DbModule.forRoot({
       config: {
         connectionString: process.env.DATABASE_URL ?? '',
       },
-      schema: combinedSchema,
+      schema: ugcServiceSchema,
     }),
     SCHEDULE_ROOT,
     CronOnceModule,

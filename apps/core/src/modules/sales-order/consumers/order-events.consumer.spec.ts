@@ -883,7 +883,12 @@ describe('OrderEventsConsumer — 채널 반품 사실 위임 (K8 PR5)', () => {
 
   it('ChannelReturnRequested 를 서비스에 그대로 넘긴다', async () => {
     const { consumer, customerReturns } = makeSubject();
-    const payload = { returnId: 'ret-1', salesChannel: 'medusa', externalOrderId: 'order_1' };
+    const payload = {
+      returnId: 'ret-1',
+      salesChannel: 'medusa',
+      externalOrderId: 'order_1',
+      note: '포장이 찢어졌어요',
+    };
     await consumer.handleChannelReturnRequested(payload as never, envelope as never);
     expect(customerReturns.recordRequested).toHaveBeenCalledWith(payload);
   });

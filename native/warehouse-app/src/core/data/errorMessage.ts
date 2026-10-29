@@ -95,6 +95,8 @@ const OUTBOUND_CONFLICT_MESSAGES: Record<string, string> = {
   WAYBILL_LABEL_NOT_ALLOCATED: WAYBILL_LABEL_NOT_ALLOCATED_MESSAGE,
   BATCH_NOT_JOINABLE:
     '이 배치에는 더 넣을 수 없어요(끝났거나 멈춘 배치). 다른 배치를 골라 주세요.',
+  PICKING_BATCH_EMPTY:
+    '배치에 박스가 없어서 시작할 수 없어요. 관리자 화면에서 박스를 먼저 넣어 주세요.',
   SHIPMENT_WITHDRAWN: SHIPMENT_WITHDRAWN_MESSAGE,
   SHIPMENT_ALREADY_WITHDRAWING:
     '이미 빼는 중인 박스예요. 송장을 스캔해 뺄 상품을 되돌림 바구니에 넣어 주세요.',

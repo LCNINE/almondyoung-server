@@ -32,7 +32,7 @@ export type CustomerReturnPickupView = {
   createdAt: string;
 };
 
-/** 반품 기록 한 건의 관리자·창고 화면 모양 (K8 PR6). 고객 개인정보는 싣지 않는다. */
+/** 관리자·창고 반품 상세. 자유문구 메모에는 고객 개인정보가 포함될 수 있다. */
 export type CustomerReturnView = {
   id: string;
   salesOrderId: string;
@@ -45,6 +45,7 @@ export type CustomerReturnView = {
   /** 교환 상자를 연 시각 — 열기 전·반품이면 null (K8 PR11) */
   exchangeReleasedAt: string | null;
   reason: string;
+  note: string | null;
   feeBearer: string;
   requestedBy: string;
   warehouseId: string | null;
@@ -133,6 +134,7 @@ export type CustomerReturnReceivingItem = {
   id: string;
   orderNo: string;
   customerMasked: string;
+  reason: string;
   productSummary: string;
   /** SKU 항목 기대 수량의 합 */
   expectedQty: number;
@@ -313,6 +315,7 @@ export class CustomerReturnReader {
           id: r.id,
           salesOrderId: r.salesOrderId,
           status: r.status,
+          reason: r.reason,
           requestedAt: r.requestedAt,
           csResolution: r.csResolution,
           channelOrderId: so.channelOrderId,
@@ -357,6 +360,7 @@ export class CustomerReturnReader {
             id: row.id,
             orderNo: row.displayOrderNo ?? row.channelOrderId,
             customerMasked: maskName(row.customerName ?? ''),
+            reason: row.reason,
             productSummary: summary?.productSummary ?? '',
             expectedQty,
             arrivedQty,
@@ -592,6 +596,7 @@ export class CustomerReturnReader {
         kind: record.kind,
         exchangeReleasedAt: record.exchangeReleasedAt?.toISOString() ?? null,
         reason: record.reason,
+        note: record.note,
         feeBearer: record.feeBearer,
         requestedBy: record.requestedBy,
         warehouseId: record.warehouseId,

@@ -5,6 +5,8 @@ import * as React from "react"
 import {
     Select,
     SelectContent,
+    SelectGroup,
+    SelectLabel,
     SelectItem,
     SelectTrigger,
     SelectValue
@@ -15,6 +17,8 @@ interface SelectOption {
     value: string
     label: string
     disabled?: boolean
+    /** 같은 group 끼리 라벨 아래로 묶는다. group 없는 항목은 맨 위에 그대로 둔다 */
+    group?: string
 }
 
 interface FormSelectProps {
@@ -42,6 +46,21 @@ export const FormSelect = React.forwardRef<
     disabled,
     ...props
 }, ref) => {
+    const ungrouped = options.filter((option) => !option.group)
+    const groupNames = Array.from(new Set(options.flatMap((option) => (option.group ? [option.group] : []))))
+    const renderItem = (option: SelectOption) => (
+        <SelectItem
+            key={option.value}
+            value={option.value}
+            disabled={option.disabled}
+            className={cn(
+                "text-[13px] leading-5",
+                "focus:bg-gray-50"
+            )}
+        >
+            {option.label}
+        </SelectItem>
+    )
     return (
         <div className="space-y-1">
             <Select value={value} onValueChange={onValueChange} disabled={disabled}>
@@ -86,18 +105,12 @@ export const FormSelect = React.forwardRef<
                         "max-h-72 w-[var(--radix-select-trigger-width)]"
                     )}
                 >
-                    {options.map((option) => (
-                        <SelectItem
-                            key={option.value}
-                            value={option.value}
-                            disabled={option.disabled}
-                            className={cn(
-                                "text-[13px] leading-5",
-                                "focus:bg-gray-50"
-                            )}
-                        >
-                            {option.label}
-                        </SelectItem>
+                    {ungrouped.map(renderItem)}
+                    {groupNames.map((name) => (
+                        <SelectGroup key={name}>
+                            <SelectLabel className="text-[11px] text-gray-500">{name}</SelectLabel>
+                            {options.filter((option) => option.group === name).map(renderItem)}
+                        </SelectGroup>
                     ))}
                 </SelectContent>
             </Select>

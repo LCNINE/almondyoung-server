@@ -31,8 +31,7 @@ import { SearchKeywordService } from './search-keyword.service';
       isGlobal: true,
       envFilePath: ['.env', 'apps/search/.env'],
     }),
-    // 관리자 키워드 통계 라우트의 JwtAuthGuard 용. 스코프를 쓰지 않아 forRoot(스코프
-    // 부트스트랩) 대신 인증 전용 forAuthOnly 를 유지한다. AUTH_SECRET 또는
+    // 관리자 키워드 통계 라우트의 JwtAuthGuard 용. AUTH_SECRET 또는
     // OIDC_ISSUER_URL 둘 중 하나라도 없으면 부팅이 실패한다 (notification 판례 — 이
     // 서비스도 그 전까지 인증이 아예 없었다). 배포 env 는
     // deployments/lcnine/services/infra/services.ts 의 searchEnv 에서 주입한다.

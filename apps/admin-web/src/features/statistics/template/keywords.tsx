@@ -36,7 +36,7 @@ import {
   NeglectDistribution,
   StatusFilterChips,
 } from '@/features/keyword-ops/components/summary';
-import { ZeroHitTable, useAssigneeOptions, withCurrentAssignee } from '@/features/keyword-ops/components/ZeroHitTable';
+import { AssigneeOptionItems, ZeroHitTable, useAssigneeOptions, withCurrentAssignee } from '@/features/keyword-ops/components/ZeroHitTable';
 import { buildZeroSearchForecastSentence } from '@/features/keyword-ops/diagnosis';
 import { buildKeywordTrendChart } from '@/features/keyword-ops/forecast-chart';
 import { estimateMissedDemand } from '@/features/keyword-ops/missed-demand';
@@ -539,11 +539,7 @@ function KeywordIssueEditor({ detail }: { detail: KeywordDetail }) {
               className="min-w-40 rounded border border-gray-200 bg-white px-2 py-1.5"
             >
               <option value="">미지정</option>
-              {assigneeOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
+              <AssigneeOptionItems options={assigneeOptions} />
             </select>
           </label>
           <label className="flex min-w-64 flex-1 flex-col gap-1">

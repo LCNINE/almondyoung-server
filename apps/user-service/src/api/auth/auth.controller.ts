@@ -1,4 +1,4 @@
-import { RequireScopes, JwtPayload, StoreRoute } from '@app/authorization';
+import { JwtPayload, StoreRoute } from '@app/authorization';
 import { CurrentUser } from '@app/shared/decorators/current-user.decorator';
 import {
   BadRequestException,
@@ -254,7 +254,6 @@ export class AuthController {
   @StoreRoute()
   @Delete('')
   @UseGuards(AuthGuard('jwt'))
-  @RequireScopes('user:delete')
   async softDeleteUser(@CurrentUser() user: JwtPayload) {
     return this.authService.softDeleteUser(user.id);
   }

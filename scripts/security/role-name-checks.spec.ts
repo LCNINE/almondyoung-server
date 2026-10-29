@@ -32,7 +32,7 @@ for (const file of sources) {
 describe('역할 이름 판정', () => {
   it('검사가 실제로 무언가를 찾는다 — 빈 결과는 검사가 깨졌다는 뜻이다', () => {
     expect(sources.length).toBeGreaterThan(1000);
-    expect(counts.get('libs/authorization/src/guards/scope.guard.ts')).toBeGreaterThan(0);
+    expect(counts.get('libs/authorization/src/permissions/permission-catalog.ts')).toBeGreaterThan(0);
   });
 
   it('역할 이름 문자열이 기준 목록 밖에서 생기거나 기준보다 늘지 않는다', () => {
@@ -50,7 +50,9 @@ describe('역할 이름 판정', () => {
   });
 
   it('판정 지점 이름은 리터럴이다(여러 줄 호출 포함)', () => {
-    const offenders = sources.flatMap((file) => nonLiteralCheckpointCalls(read(file), file).map((line) => `${file}:${line}`));
+    const offenders = sources.flatMap((file) =>
+      nonLiteralCheckpointCalls(read(file), file).map((line) => `${file}:${line}`),
+    );
     expect(offenders).toEqual([]);
   });
 });

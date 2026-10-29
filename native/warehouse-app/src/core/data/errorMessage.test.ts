@@ -290,6 +290,7 @@ describe('합류·이탈 거절 문구 (#988)', () => {
     ['WORK_ITEM_ALLOCATED', '결품 처리 중인 박스예요. 관리자에게 문의해 주세요.'],
     ['OUTBOUND_BATCH_STARTED_RETRY', '방금 작업이 시작된 배치예요. 다시 넣어 주세요.'],
     ['PICKING_SESSION_NOT_ACTIVE', '배치 재고 기록을 확인해야 해요. 관리자에게 문의해 주세요.'],
+    ['PICKING_BATCH_EMPTY', '배치에 박스가 없어서 시작할 수 없어요. 관리자 화면에서 박스를 먼저 넣어 주세요.'],
   ])('%s 문구', (code, text) => {
     expect(errorMessage(new ConflictError('m', code), 'outbound')).toBe(text);
   });

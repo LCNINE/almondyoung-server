@@ -1,6 +1,6 @@
 'use client';
 
-import { useAssigneeOptions, withCurrentAssignee } from '@/features/keyword-ops/components/ZeroHitTable';
+import { AssigneeOptionItems, useAssigneeOptions, withCurrentAssignee } from '@/features/keyword-ops/components/ZeroHitTable';
 import { STATUS_LABELS } from '@/features/keyword-ops/labels';
 import { BoardHeader } from '@/features/main/BoardHeader';
 import { SkeletonRows } from '@/features/main/DailyBoards';
@@ -176,11 +176,7 @@ function SourcingRow({
               className={cn(SELECT_CLASS, 'min-w-32')}
             >
               <option value="">미지정</option>
-              {options.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.name}
-                </option>
-              ))}
+              <AssigneeOptionItems options={options} text="name" />
             </select>
           )}
         </BlockedReason>
