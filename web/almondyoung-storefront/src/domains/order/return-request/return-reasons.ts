@@ -45,6 +45,7 @@ export const RETURN_REJECT_MESSAGE_KEYS: Record<string, string> = {
   return_picked_up: "reject.returnPickedUp",
   exchange_requires_seller_fault: "reject.exchangeRequiresSellerFault",
   exchange_released: "reject.exchangeReleased",
+  exchange_item_unsupported: "reject.exchangeItemUnsupported",
 }
 
 const has = (table: Record<string, string>, key: string) => Object.prototype.hasOwnProperty.call(table, key)

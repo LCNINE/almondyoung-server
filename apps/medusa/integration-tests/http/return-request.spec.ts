@@ -427,6 +427,31 @@ medusaIntegrationTestRunner({
       expect(await openChanges(orderId)).toHaveLength(0);
     });
 
+    /** 인쇄(디자인) 줄 — core 가 그 줄을 exchangeable false 로 답한다(K8 PR11b N3) */
+    const printedOrder = async () => {
+      const { orderId } = await placeOrder(ctx, c, wallet, { lines: [{ variant: 'A', quantity: 2 }] });
+      const o = await loadOrder(getContainer(), orderId);
+      core.setEligibility(
+        orderId,
+        o.items.map((i: any) => ({ channelOrderItemId: i.id, deliveredUnits: num(i.quantity), lastDeliveredAt: yesterday(), exchangeable: false })),
+      );
+      return { orderId, itemId: o.items[0].id as string };
+    };
+
+    it('exchangeable false 줄로 교환 접수 → exchange_item_unsupported, 반품 0·열린 주문 변경 0 / 같은 줄 반품 접수 → 통과', async () => {
+      const { orderId, itemId } = await printedOrder();
+      const reason = await rejection(
+        request({ orderId, kind: 'exchange', reasonValue: 'defective', items: [{ itemId, quantity: 1 }] }),
+      );
+      expect(reason).toBe('exchange_item_unsupported');
+      expect(await returnsOf(orderId)).toHaveLength(0);
+      expect(await openChanges(orderId)).toHaveLength(0);
+
+      const res = await request({ orderId, reasonValue: 'defective', items: [{ itemId, quantity: 1 }] });
+      expect(res).toMatchObject({ kind: 'return', status: 'requested', feeBearer: 'seller' });
+      expect(await returnsOf(orderId)).toHaveLength(1);
+    });
+
     it('kind 없는 반품: 기록에 kind 칸이 없고 결과 kind return, requestHash 가 PR 11 이전 값과 같다', async () => {
       const { orderId, itemOf } = await deliveredOrder([{ variant: 'A', quantity: 2 }]);
       const res = await request({ orderId, requestId: 'r-plain', items: [{ itemId: itemOf('A'), quantity: 1 }] });

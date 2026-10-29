@@ -688,6 +688,7 @@
         "returnPickedUp": "The courier has already picked up this return, so it can't be canceled.",
         "exchangeRequiresSellerFault": "Exchanges can only be requested for product problems (defects, wrong item, damage, etc.).",
         "exchangeReleased": "The replacement has already been sent, so this can't be canceled.",
+        "exchangeItemUnsupported": "Printed items can't be exchanged — please request a return instead.",
         "generic": "We couldn't submit your return. Please contact customer service."
       }
     },

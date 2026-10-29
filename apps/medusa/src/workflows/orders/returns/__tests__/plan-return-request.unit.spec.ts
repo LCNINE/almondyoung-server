@@ -14,9 +14,9 @@ const AFTER = new Date('2026-11-05T00:00:00.000Z');
 const item = (o: Partial<ReturnableOrderItem> = {}): ReturnableOrderItem => ({
   id: 'i1', quantity: 2, fulfilled: 0, returnRequested: 0, returnReceived: 0, returnDismissed: 0, ...o,
 });
-const core = (deliveredUnits = 2, id = 'i1'): CoreReturnEligibility => ({
+const core = (deliveredUnits = 2, id = 'i1', exchangeable = true): CoreReturnEligibility => ({
   found: true,
-  lines: [{ channelOrderItemId: id, deliveredUnits, lastDeliveredAt: DELIVERED }],
+  lines: [{ channelOrderItemId: id, deliveredUnits, lastDeliveredAt: DELIVERED, exchangeable }],
   customerReturns: [],
 });
 const changeOfMind = { value: 'change_of_mind', feeBearer: 'customer' as const, customerSelectable: true };
@@ -143,8 +143,19 @@ describe('describeReturnable', () => {
   it('음수는 0, windowEndsAt 은 lastDeliveredAt 기준', () => {
     const items = [item({ id: 'i1', returnRequested: 3 }), item({ id: 'i2' })];
     const lines = describeReturnable(items, core(2));
-    expect(lines[0]).toEqual({ itemId: 'i1', returnableQuantity: 0, windowEndsAt: new Date('2026-10-27T14:59:59.999Z') });
-    expect(lines[1]).toEqual({ itemId: 'i2', returnableQuantity: 0, windowEndsAt: null });
+    expect(lines[0]).toEqual({
+      itemId: 'i1',
+      returnableQuantity: 0,
+      windowEndsAt: new Date('2026-10-27T14:59:59.999Z'),
+      exchangeable: true,
+    });
+    expect(lines[1]).toEqual({ itemId: 'i2', returnableQuantity: 0, windowEndsAt: null, exchangeable: false });
+  });
+
+  it('exchangeable 은 core 줄을 따르고, core 줄이 없으면 false (K8 PR11b N3)', () => {
+    const lines = describeReturnable([item({ id: 'i1' }), item({ id: 'i2' })], core(2, 'i1', false));
+    expect(lines.map((l) => l.exchangeable)).toEqual([false, false]);
+    expect(describeReturnable([item()], core(2, 'i1', true))[0].exchangeable).toBe(true);
   });
 });
 
@@ -152,8 +163,8 @@ describe('describeOrderReturnable', () => {
   it('취소된 주문은 core 를 묻지 않고 전 줄 0·기한 없음 — POST 의 order_canceled 와 같은 판정', async () => {
     const loadCore = jest.fn(async () => core());
     expect(await describeOrderReturnable('canceled', [item(), item({ id: 'i2' })], loadCore)).toEqual([
-      { itemId: 'i1', returnableQuantity: 0, windowEndsAt: null },
-      { itemId: 'i2', returnableQuantity: 0, windowEndsAt: null },
+      { itemId: 'i1', returnableQuantity: 0, windowEndsAt: null, exchangeable: false },
+      { itemId: 'i2', returnableQuantity: 0, windowEndsAt: null, exchangeable: false },
     ]);
     expect(loadCore).not.toHaveBeenCalled();
     expect(reasonOf(() => planReturnRequest({ ...base, orderStatus: 'canceled' }))).toBe('order_canceled');
@@ -189,5 +200,55 @@ describe('planReturnRequest — 교환 (K8 PR11 N2)', () => {
   it('kind 가 없거나 return 이면 change_of_mind 도 그대로 통과(반품 동작 불변)', () => {
     expect(planReturnRequest(base).feeBearer).toBe('customer');
     expect(planReturnRequest({ ...base, kind: 'return' }).feeBearer).toBe('customer');
+  });
+});
+
+describe('planReturnRequest — 인쇄 상품 교환 거절 (K8 PR11b N3)', () => {
+  const exchange = { ...base, kind: 'exchange' as const, requestedBy: 'operator' as const, reason: defective };
+  const twoLines = (exchangeable: { i1: boolean; i2: boolean }): CoreReturnEligibility => ({
+    found: true,
+    lines: [
+      { channelOrderItemId: 'i1', deliveredUnits: 2, lastDeliveredAt: DELIVERED, exchangeable: exchangeable.i1 },
+      { channelOrderItemId: 'i2', deliveredUnits: 2, lastDeliveredAt: DELIVERED, exchangeable: exchangeable.i2 },
+    ],
+    customerReturns: [],
+  });
+  const items = [item({ id: 'i1' }), item({ id: 'i2' })];
+
+  it('교환 + exchangeable false 줄 → exchange_item_unsupported', () => {
+    expect(reasonOf(() => planReturnRequest({ ...exchange, core: core(2, 'i1', false) }))).toBe('exchange_item_unsupported');
+  });
+
+  it('반품 + exchangeable false 줄 → 통과(인쇄 상품도 반품은 된다)', () => {
+    expect(planReturnRequest({ ...base, kind: 'return', core: core(2, 'i1', false) }).items).toEqual([
+      { itemId: 'i1', quantity: 2 },
+    ]);
+    expect(planReturnRequest({ ...base, core: core(2, 'i1', false) }).items).toEqual([{ itemId: 'i1', quantity: 2 }]);
+  });
+
+  it('교환 — 두 줄 중 false 줄을 고르면 거절, 다른 줄만 고르면 통과', () => {
+    const c = twoLines({ i1: true, i2: false });
+    expect(
+      reasonOf(() =>
+        planReturnRequest({ ...exchange, items, core: c, requested: [{ itemId: 'i1', quantity: 1 }, { itemId: 'i2', quantity: 1 }] }),
+      ),
+    ).toBe('exchange_item_unsupported');
+    expect(planReturnRequest({ ...exchange, items, core: c, requested: [{ itemId: 'i1', quantity: 1 }] }).items).toEqual([
+      { itemId: 'i1', quantity: 1 },
+    ]);
+  });
+
+  it('교환 + core 줄 없음 → not_delivered(인쇄인지는 core 줄이 있을 때만 판정한다)', () => {
+    expect(reasonOf(() => planReturnRequest({ ...exchange, core: { found: true, lines: [], customerReturns: [] } }))).toBe(
+      'not_delivered',
+    );
+  });
+
+  it('교환 판정은 수량·기한보다 먼저다 — false 줄이면 수량 초과·기한 지남이어도 exchange_item_unsupported', () => {
+    const c = core(2, 'i1', false);
+    expect(reasonOf(() => planReturnRequest({ ...exchange, core: c, requested: [{ itemId: 'i1', quantity: 9 }] }))).toBe(
+      'exchange_item_unsupported',
+    );
+    expect(reasonOf(() => planReturnRequest({ ...exchange, core: c, now: AFTER }))).toBe('exchange_item_unsupported');
   });
 });

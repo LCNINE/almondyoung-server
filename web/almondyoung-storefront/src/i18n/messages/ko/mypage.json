@@ -688,6 +688,7 @@
         "returnPickedUp": "택배 기사님이 이미 가져간 반품이라 취소할 수 없어요",
         "exchangeRequiresSellerFault": "교환은 상품 문제(하자·오배송·파손 등)일 때만 신청할 수 있어요",
         "exchangeReleased": "교환품이 이미 출발해 취소할 수 없어요",
+        "exchangeItemUnsupported": "인쇄 상품은 교환할 수 없어요 — 반품으로 신청해 주세요",
         "generic": "반품을 신청하지 못했어요. 고객센터로 문의해 주세요."
       }
     },

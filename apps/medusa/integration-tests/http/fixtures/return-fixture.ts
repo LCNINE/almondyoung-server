@@ -8,7 +8,8 @@ export const CORE_PORT = 39132;
 export const CORE_BASE_URL = `http://127.0.0.1:${CORE_PORT}`;
 export const CORE_INTERNAL_KEY = 'test-core-key';
 
-type EligibilityLine = { channelOrderItemId: string; deliveredUnits: number; lastDeliveredAt: string | null };
+/** exchangeable 을 안 주면 true 로 답한다 — 지금 core 는 인쇄 줄만 false 라 일반 상품 주문의 기본값이다(K8 PR11b). 옛 core(칸 없음)는 단위 스펙이 본다 */
+type EligibilityLine = { channelOrderItemId: string; deliveredUnits: number; lastDeliveredAt: string | null; exchangeable?: boolean };
 
 /**
  * core 의 `POST /internal/sales-orders/return-eligibility` 스텁(K8 PR3 Task 1).
@@ -95,7 +96,7 @@ export class FakeCore {
       return { status: 404, payload: { message: url } };
     }
     if (this.failStatus !== null) return { status: this.failStatus, payload: { message: 'injected' } };
-    const lines = this.eligibility.get(externalOrderId);
+    const lines = this.eligibility.get(externalOrderId)?.map((l) => ({ ...l, exchangeable: l.exchangeable ?? true }));
     const customerReturns = this.customerReturns.get(externalOrderId) ?? [];
     return { status: 200, payload: lines ? { found: true, lines, customerReturns } : { found: false, lines: [], customerReturns: [] } };
   }

@@ -228,11 +228,13 @@ async function open(
 // ── 판정·금액 (미리보기와 같이 쓴다) ────────────────────────────────────────────
 
 /**
- * 선환불·미리보기가 열리는 반품인지 본다 — 우리 반품(요청 기록)이고, 취소되지 않았고, 정산 기록이 없고 수령 전(requested).
+ * 선환불·미리보기가 열리는 반품인지 본다 — 우리 반품(요청 기록)이고, 취소되지 않았고, 교환이 아니고, 정산 기록이 없고 수령 전(requested).
  * 정산 기록은 읽히는지와 무관하게 키가 있으면 정산된 것으로 본다 — 반만 믿고 돈을 움직이지 않는다.
  */
 export function assertPrepayableReturn(ret: ReturnRow): ReturnRequestRecord {
   const request = assertOurLiveReturn(ret);
+  // 미리보기도 선환불과 같은 자리에서 교환을 닫는다(K8 PR11b N6) — 교환에 돌려줄 금액을 보여 주면 CS 가 그 숫자를 믿는다
+  if (isExchangeRecord(request)) throw new ReturnPrepayRejected('exchange_unsupported', '교환은 선환불할 수 없습니다');
   if (isSettledOrReceived(ret)) {
     throw new ReturnPrepayRejected('return_already_settled', '이미 정산(수령)한 반품입니다 — 선환불할 수 없습니다');
   }

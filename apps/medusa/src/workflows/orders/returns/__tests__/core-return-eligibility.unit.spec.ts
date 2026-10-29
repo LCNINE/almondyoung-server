@@ -74,6 +74,30 @@ describe('fetchCoreReturnEligibility', () => {
     await expect(fetchCoreReturnEligibility('o')).rejects.toBeInstanceOf(CoreEligibilityUnavailable);
   });
 
+  it('줄 exchangeable 을 그대로 싣고, 칸이 없는 옛 core 줄은 false(교환 안 됨 — 반품은 영향 없음, K8 PR11b N2)', async () => {
+    fetchMock.mockResolvedValue(
+      respond(200, {
+        found: true,
+        lines: [
+          { channelOrderItemId: 'a', deliveredUnits: 1, lastDeliveredAt: null, exchangeable: true },
+          { channelOrderItemId: 'b', deliveredUnits: 1, lastDeliveredAt: null, exchangeable: false },
+          { channelOrderItemId: 'c', deliveredUnits: 1, lastDeliveredAt: null },
+        ],
+      }),
+    );
+    expect((await fetchCoreReturnEligibility('o')).lines.map((l) => l.exchangeable)).toEqual([true, false, false]);
+  });
+
+  it("줄 exchangeable 'yes' → CoreEligibilityUnavailable", async () => {
+    fetchMock.mockResolvedValue(
+      respond(200, {
+        found: true,
+        lines: [{ channelOrderItemId: 'a', deliveredUnits: 1, lastDeliveredAt: null, exchangeable: 'yes' }],
+      }),
+    );
+    await expect(fetchCoreReturnEligibility('o')).rejects.toBeInstanceOf(CoreEligibilityUnavailable);
+  });
+
   it('lastDeliveredAt null 은 null 로', async () => {
     fetchMock.mockResolvedValue(
       respond(200, { found: true, lines: [{ channelOrderItemId: 'a', deliveredUnits: 0, lastDeliveredAt: null }] }),

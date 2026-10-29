@@ -105,6 +105,7 @@ export const RETURN_REJECT_MESSAGES: Record<ReturnRejectReason, string> = {
   return_picked_up: '한진 기사가 이미 회수한 반품이라 취소할 수 없습니다',
   exchange_requires_seller_fault: '교환은 판매자 잘못 사유(하자·오배송·파손 등)일 때만 접수할 수 있습니다',
   exchange_released: '교환품이 이미 출발해 취소할 수 없습니다',
+  exchange_item_unsupported: '인쇄(디자인) 상품은 교환할 수 없습니다 — 반품으로 접수하세요',
 };
 
 const CORE_UNAVAILABLE = '주문 확인이 잠시 안 됩니다. 잠시 뒤 다시 시도하세요';

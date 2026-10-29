@@ -229,7 +229,8 @@ export type ReturnRejectReason =
   | 'return_prepaid'
   | 'return_picked_up'
   | 'exchange_requires_seller_fault'
-  | 'exchange_released';
+  | 'exchange_released'
+  | 'exchange_item_unsupported';
 
 export interface OrderReturnable {
   items: Array<{ item_id: string; returnable_quantity: number; window_ends_at: string | null }>;
