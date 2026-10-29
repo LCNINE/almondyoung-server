@@ -1,6 +1,7 @@
 import { sql } from 'drizzle-orm';
 import { SeedStep } from './base-seed-step';
 import { SeedCheckResult, SeedApplyResult } from '../lib/types';
+import { ALL_TENANTS_SEED_GROUP } from '../lib/seed-groups';
 
 /**
  * 재고 보충 전역 설정 1행 (#743 A, 스펙 §6 「초기값」). 운영자가 규칙 화면(B)에서 고친다.
@@ -43,7 +44,7 @@ export const REPLENISHMENT_GRADE_RULE_SEEDS = [
 ] as const;
 
 export class ReplenishmentSeedStep extends SeedStep {
-  readonly groups = ['baseline'] as const;
+  readonly groups = [ALL_TENANTS_SEED_GROUP] as const;
 
   constructor(databaseUrl: string) {
     super('Replenishment', databaseUrl);

@@ -83,7 +83,7 @@ npm run db:migrate:local          # 11개 논리 DB 전부 (dev_core 포함)
 # ③ 시드 4종
 npm run db:seed:user-service:local                    # 역할·admin 계정·OAuth 클라이언트 3개
 npm run db:seed:wallet:local                          # 🔴 결제수단·지역. 없으면 결제 불가
-npm run db:seed:core:local                            # 🔴 판매채널(수집 게이트)·공급처·매칭 backfill
+npm run db:seed:core:local                            # 🔴 창고·판매채널(수집 게이트)·공급처·매칭 backfill
 (cd apps/medusa && npx medusa exec ./src/scripts/seed.ts && npx medusa exec ./src/scripts/seed-shipping.ts)
 ```
 
@@ -624,8 +624,9 @@ npm run db:seed:core:local     # 상품을 «새로 발행할 때마다» 다시
 공급처가 두 벌이 되지 않는다.
 
 ⚠️ **창고보다 먼저 돌면 입고 창고가 빈 채로 들어간다.** 그 상태로도 매칭은 열리지만 발주는 400 이다
-(「이 공급처에 입고 창고가 지정되지 않아…」). core 를 한 번 띄워 기본 창고가 생긴 뒤 시드를 **다시
-돌리면** 채워진다 — 사람이 골라 둔 값은 덮어쓰지 않고 비어 있을 때만 채운다.
+(「이 공급처에 입고 창고가 지정되지 않아…」). `seed-core-local.ts` 는 창고 시드(`WmsSeedStep`)를 먼저 돌려
+이걸 피한다 — core 부팅은 창고를 만들지 않는다(2026-10-30). 비어 있는 행은 시드를 **다시 돌리면**
+채워진다 — 사람이 골라 둔 값은 덮어쓰지 않고 비어 있을 때만 채운다.
 
 🟡 **(정정) 「신규 등록이 `window.prompt()` 라 자동화가 못 지난다」는 앞선 판의 오진이었다.**
 `handleCreateSupplier`·`handleCreateHolder`(옛 `:327`·`:344`) 는 **참조 0곳**이라 애초에 실행되지
@@ -732,7 +733,7 @@ core 에 대응 컬럼이 없어 받아도 버려지던 것들이다. 원가는 
 | `scripts/local/preflight-e2e.sh` | 사전 «판정». 읽기 전용 — 아무것도 고치지 않는다. 모든 ✗ 가 고치는 명령을 함께 적는다 |
 | **`env-templates/.env.file-service.local.example`** | file-service 로컬 템플릿 신설. required 11개 중 유일하게 없었다 |
 | `scripts/local/seed-wallet-local.ts` | 로컬 wallet reference 시드(결제수단·지역) — `npm run db:seed:wallet:local`. 이게 없어 결제가 막혔다 |
-| **`scripts/local/seed-core-local.ts`** | **로컬 core(`dev_core`) reference 시드 — `npm run db:seed:core:local`.** `PimSeedStep`(수집 게이트를 여는 `sales_channels`) + `SupplierLocalSeedStep`(매칭 다이얼로그의 공급처 드롭다운) + `ProductMatchingBackfillSeedStep`(매칭 화면을 여는 `product_matchings`). 셋 다 없으면 «조용히» 막힌다 |
+| **`scripts/local/seed-core-local.ts`** | **로컬 core(`dev_core`) reference 시드 — `npm run db:seed:core:local`.** `WmsSeedStep`(부천 판매·중국 창고 — core 부팅은 창고를 만들지 않는다) + `PimSeedStep`(수집 게이트를 여는 `sales_channels`) + `SupplierLocalSeedStep`(매칭 다이얼로그의 공급처 드롭다운) + `ProductMatchingBackfillSeedStep`(매칭 화면을 여는 `product_matchings`). 넷 다 없으면 «조용히» 막힌다 |
 | **`scripts/local/supplier.seed-step.ts`** | 「개발용 공급처」 1행. 라이브엔 실제 공급처가 있어 reference 시드(`db:seed:ref`)로 올리면 안 되므로 orchestrator 에 등록하지 않았다 — 이 파일이 `scripts/seeding/steps/` 가 아니라 `scripts/local/` 에 있는 이유다 |
 | **`scripts/local/seed-points-local.ts`** | **로컬 구매자 적립금 — `npm run db:seed:points:local`.** 🔴 `point_events` 만 넣으면 «잔액은 맞는데 결제는 INSUFFICIENT_POINTS» 가 된다 — 사용은 `point_event_details` 의 lot 에서 차감한다. 두 테이블을 함께 쓴다 |
 | `scripts/local/sms-stub.js` | 폰 인증용 로컬 SMS 스텁. 외부 발송 없음 |

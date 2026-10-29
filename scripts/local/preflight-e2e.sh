@@ -130,6 +130,9 @@ WAL=$(url_of apps/wallet/.env)
     && ok "wallet: 결제수단 매핑 존재" || bad "결제화면이 「사용 가능한 결제수단이 없습니다」 → npm run db:seed:wallet:local"
 }
 [ -n "$CORE" ] && {
+  # core 부팅은 창고를 만들지 않는다. 판매 창고가 없으면 이행 오더가 생기지 않는다(409).
+  [ "$(pgq "$CORE" "SELECT count(*) FROM warehouses WHERE is_sellable")" -ge 1 ] 2>/dev/null \
+    && ok "core: 판매 창고 존재" || bad "판매 창고 0행 → 주문이 출고로 안 넘어간다 → npm run db:seed:core:local"
   # 활성 판매채널이 없으면 주문 수집이 «이번 주기의 모든 채널을 건너뛴다» — 워터마크가 안 움직인다.
   [ "$(pgq "$CORE" "SELECT count(*) FROM sales_channels")" -ge 1 ] 2>/dev/null \
     && ok "core: 판매채널 존재 (주문 수집 게이트)" || bad "판매채널 0행 → 주문이 core 로 안 흘러온다 → npm run db:seed:core:local"

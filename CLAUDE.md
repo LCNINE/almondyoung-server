@@ -113,6 +113,8 @@ npm run db:setup -- --stage dev --deployment lcnine-services
 npm run db:setup -- --stage dev --deployment lcnine-auth
 ```
 
+core 참조 시드는 두 그룹이다(`scripts/seeding/lib/seed-groups.ts`): `baseline`(모든 테넌트 — 보충 기본값·등급 규칙, core 밖 서비스 시드) 과 `baseline-tenant-1`(기존 core DB 전용 — 부천·중국 창고·구역·창고 설정, 자사몰 판매채널). `db:setup` 은 그룹을 하나만 고르므로 기존 core DB 를 처음 채울 땐 두 번 돌려 둘 다 고른다. core 부팅은 창고를 만들지 않는다. `db:seed:ref` 는 둘 다 돈다.
+
 `db:setup` 은 **interactive dev 전용 wrapper** 다 — `--yes` / `--non-interactive` 거부, `--stage live` / `SST_STAGE=live` 거부. 비대화식·배포 경로에선 분리된 4개 명령을 *직접* 호출 (ADR-0005 §3):
 
 ```bash

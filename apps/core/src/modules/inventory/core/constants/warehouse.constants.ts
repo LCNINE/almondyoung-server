@@ -1,33 +1,12 @@
 import { warehouseTypeEnum } from '../../schema/inventory.schema';
 
+/**
+ * 예전 부팅 훅이 만들던 껍데기 창고 두 개의 id. 부팅은 더는 창고를 만들지 않지만(새 테넌트 DB 에
+ * 아몬드영 창고가 생기던 길이었다) 라이브 테넌트 1 에는 이 행들이 남아 있어, 삭제 금지 가드만 이 id 를 본다.
+ */
 export const WAREHOUSE_CONSTANTS = {
-  // 기본 창고들
-  DEFAULT_DOMESTIC_WAREHOUSE: {
-    id: '00000000-0000-0000-0000-000000000001',
-    name: '국내 메인 창고',
-    location: '부천시',
-    type: 'domestic' as const,
-    // 이 값이 비면 배치 생성 게이트가 막아 출고에 쓸 수 없는 창고가 된다.
-    // discrete(개별 피킹)만 켠다 — 토탈·멀티오더는 창고 설정 화면에서 명시적으로.
-    supportedPickingStrategies: ['discrete'] as const,
-    // 비판매다. 이 두 창고는 실운영 창고가 아니라 부팅이 만드는 껍데기이고, 실제 판매
-    // 창고(부천)는 시드가 만든다. 여기를 true 로 두면 신선한 환경이 부팅+시드 후 판매
-    // 창고 2개로 시작해, WarehouseReader.getDefaultId() 가 의존하는 "정확히 하나"
-    // 불변식이 처음부터 깨진다 — 둘 다 직접 INSERT 라 update 가드가 못 잡는 경로다.
-    isSellable: false,
-  },
-  DEFAULT_OVERSEAS_WAREHOUSE: {
-    id: '00000000-0000-0000-0000-000000000002',
-    name: '해외 메인 창고',
-    location: '중국',
-    type: 'overseas' as const,
-    // 비판매 창고다. 이 값이 비면 배치 생성 게이트가 막아 출고에 쓸 수 없는 창고가 된다.
-    supportedPickingStrategies: [] as const,
-    // 비판매 창고. 컬럼 기본값이 true 라서 이 값을 명시하지 않으면 이미 존재하는
-    // 라이브 중국 창고 행이 영원히 판매 창고로 남고, inSellableWarehouse() 가
-    // 모든 창고를 매칭해 판매 게이트와 공급 파이프라인 필터가 통째로 no-op 이 된다.
-    isSellable: false,
-  },
+  DEFAULT_DOMESTIC_WAREHOUSE: { id: '00000000-0000-0000-0000-000000000001' },
+  DEFAULT_OVERSEAS_WAREHOUSE: { id: '00000000-0000-0000-0000-000000000002' },
 } as const;
 
 export type WarehouseType = (typeof warehouseTypeEnum.enumValues)[number];

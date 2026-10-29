@@ -135,7 +135,7 @@ else
   npm run --silent db:seed:wallet:local >/dev/null 2>&1 \
     && ok "wallet — 결제수단·지역 (없으면 결제화면이 「사용 가능한 결제수단이 없습니다」)" || bad "wallet 시드 실패"
   npm run --silent db:seed:core:local >/dev/null 2>&1 \
-    && ok "core(dev_core) — 판매채널·공급처·매칭 backfill" || bad "core 시드 실패"
+    && ok "core(dev_core) — 창고·판매채널·공급처·매칭 backfill" || bad "core 시드 실패"
 
   # Medusa 시드는 ON CONFLICT 가 아니다 — 이미 시드됐으면 건너뛴다.
   REGIONS=$(pgq "${PG}/medusa" "SELECT count(*) FROM region")
