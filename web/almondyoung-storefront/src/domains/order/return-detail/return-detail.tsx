@@ -65,7 +65,14 @@ export default async function ReturnDetail({ order, ret, progress }: ReturnDetai
     .join(" ")
 
   const reasonKey = RETURN_REASON_LABEL_KEYS[ret.reason] ?? "reason.unknown"
-  const completedAt = ret.refund?.refundedAt ?? progress?.settledAt ?? null
+  // 완료일은 마지막 정산이 끝난 때다 — 선환불한 때는 완료가 아니다
+  const completedAt = exchange
+    ? ret.stage === "exchanged"
+      ? progress?.settledAt ?? null
+      : null
+    : ret.stage === "refunded" && ret.refund?.kind === "settled"
+      ? ret.refund.refundedAt
+      : null
 
   return (
     <article className="bg-white px-4 py-6 md:rounded-[10px] md:border md:border-border md:p-8">
@@ -182,7 +189,7 @@ export default async function ReturnDetail({ order, ret, progress }: ReturnDetai
                   <dd>{won(ret.refund.itemTotal)}</dd>
                 </div>
                 <div className="flex justify-between font-bold text-foreground">
-                  <dt>{t("refund.prepaid")}</dt>
+                  <dt>{t(ret.refund.refundedAt ? "refund.prepaid" : "refund.prepaidPending")}</dt>
                   <dd>{won(ret.refund.total)}</dd>
                 </div>
               </dl>

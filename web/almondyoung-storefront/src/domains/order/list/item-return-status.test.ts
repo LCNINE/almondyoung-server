@@ -82,6 +82,17 @@ describe("originalLineTotal", () => {
     ).toBe(11000)
   })
 
+  it("가격·할인마다 세금 포함 여부를 따로 본다 — Medusa 계산기와 같은 값", () => {
+    // 세금 포함 11,000 − 세금 별도 할인 1,000 → (10,000 − 1,000) × 1.1
+    expect(
+      originalLineTotal({ unit_price: 11000, quantity: 1, is_tax_inclusive: true, adjustments: [{ amount: 1000, is_tax_inclusive: false }], tax_lines: [{ rate: 10 }] })
+    ).toBe(9900)
+    // 세금 별도 10,000 − 세금 포함 할인 1,100 → (10,000 − 1,000) × 1.1
+    expect(
+      originalLineTotal({ unit_price: 10000, quantity: 1, is_tax_inclusive: false, adjustments: [{ amount: 1100, is_tax_inclusive: true }], tax_lines: [{ rate: 10 }] })
+    ).toBe(9900)
+  })
+
   it("할인이 없으면 단가 × 수량", () => {
     expect(originalLineTotal({ unit_price: 9000, quantity: 1, adjustments: undefined })).toBe(9000)
   })

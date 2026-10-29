@@ -125,4 +125,24 @@ describe("return-outcome", () => {
     })
     expect(cancelOutcomeFromError(500, undefined)).toEqual({ kind: "unknown" })
   })
+
+  it("toCustomerReturns: refund.kind 가 없는 응답은 received_at 으로 가르고, 선환불이면 차감을 0 으로 읽는다", () => {
+    const base = {
+      return_id: "ret_1",
+      stage: "refunded" as const,
+      requested_at: "2026-10-20T00:00:00.000Z",
+      reason: "defective",
+      fee_bearer: "seller" as const,
+      items: [{ item_id: "i1", quantity: 1 }],
+      can_cancel: false,
+    }
+    const [prepaid, settled] = toCustomerReturns({
+      returns: [
+        { ...base, refund: { item_total: 60000, shipping_refund: 0, fees: 50000, total: 10000, received_at: null, refunded_at: null } },
+        { ...base, refund: { item_total: 30000, shipping_refund: 0, fees: 3000, total: 27000, received_at: "2026-10-21T00:00:00.000Z", refunded_at: "2026-10-22T00:00:00.000Z" } },
+      ],
+    })
+    expect(prepaid.refund).toMatchObject({ kind: "prepaid", fees: 0, total: 10000 })
+    expect(settled.refund).toMatchObject({ kind: "settled", fees: 3000 })
+  })
 })

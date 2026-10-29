@@ -965,7 +965,8 @@
         "notYet": "The refund amount is set once the item arrives and is inspected.",
         "notice": "Card refunds take 3-7 business days after the cancellation request. Points are returned right away.",
         "prepaid": "Refunded in advance",
-        "prepaidRest": "The rest of the refund is set once the item arrives and is inspected."
+        "prepaidRest": "The rest of the refund is set once the item arrives and is inspected.",
+        "prepaidPending": "Advance refund in progress"
       },
       "toOrder": "Order details",
       "toList": "Orders",

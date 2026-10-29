@@ -1,5 +1,6 @@
 import type {
   StoreReturnErrorDto,
+  StoreReturnListItemDto,
   StoreReturnListResponseDto,
   StoreReturnRequestDto,
   StoreReturnRequestResponseDto,
@@ -86,6 +87,11 @@ export function toReturnableLines(
   }))
 }
 
+/** kind 가 없던 응답은 받은 때로 가른다 — 정산 기록은 수령 때 생기므로 received_at 이 없으면 선환불이다 */
+function refundKind(r: NonNullable<StoreReturnListItemDto["refund"]>): "settled" | "prepaid" {
+  return r.kind ?? (r.received_at ? "settled" : "prepaid")
+}
+
 export function toCustomerReturns(
   dto: StoreReturnListResponseDto
 ): CustomerReturn[] {
@@ -100,10 +106,11 @@ export function toCustomerReturns(
     canCancel: r.can_cancel,
     refund: r.refund
       ? {
-          kind: r.refund.kind === "prepaid" ? "prepaid" : "settled",
+          kind: refundKind(r.refund),
           itemTotal: r.refund.item_total,
           shippingRefund: r.refund.shipping_refund,
-          fees: r.refund.fees,
+          // 선환불이면 차감은 아직 없다 — 옛 응답이 지어낸 값(상품값 − 선환불액)을 쓰지 않는다
+          fees: refundKind(r.refund) === "prepaid" ? 0 : r.refund.fees,
           total: r.refund.total,
           receivedAt: r.refund.received_at,
           refundedAt: r.refund.refunded_at,

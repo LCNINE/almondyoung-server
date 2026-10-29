@@ -51,19 +51,23 @@ export function itemReturnStatus(itemId: string, returns: CustomerReturn[]): Ite
 
 /**
  * 반품한 줄의 처음 낸 금액. Medusa 는 받은 반품 수량을 빼고 item.total 을 다시 계산해서 다 반품하면 0원이 된다 —
- * 단가 × 주문 수량에서 그 줄 할인(adjustments, 주문 수량 전체 몫)을 빼고, 세금 별도 가격이면 세율을 얹는다.
- * Medusa 줄 합계와 같은 식이다(@medusajs/utils line-item totals). 할인 금액은 단가와 같은 세금 기준이라고 본다.
+ * 같은 식을 주문 수량 전체로 다시 푼다(@medusajs/utils line-item·adjustment totals):
+ * (단가 × 수량 세전 − 할인 세전 합) × (1 + 세율). 가격·할인마다 세금 포함 여부를 따로 본다.
  */
 export function originalLineTotal(item: {
   unit_price?: number
   quantity?: number
   is_tax_inclusive?: boolean
-  adjustments?: ReadonlyArray<{ amount: number }> | null
+  adjustments?: ReadonlyArray<{ amount: number; is_tax_inclusive?: boolean }> | null
   tax_lines?: ReadonlyArray<{ rate: number }> | null
 }): number {
-  const discount = (item.adjustments ?? []).reduce((sum, a) => sum + (Number(a.amount) || 0), 0)
-  const net = (item.unit_price ?? 0) * (item.quantity ?? 0) - discount
-  if (item.is_tax_inclusive !== false) return net
-  const rate = (item.tax_lines ?? []).reduce((sum, t) => sum + (Number(t.rate) || 0), 0)
-  return Math.round(net * (1 + rate / 100))
+  const rate = (item.tax_lines ?? []).reduce((sum, t) => sum + (Number(t.rate) || 0), 0) / 100
+  const preTax = (amount: number, inclusive: boolean | undefined) => (inclusive ? amount / (1 + rate) : amount)
+  // 세금 포함 여부가 비어 있으면 포함으로 본다 — 원화 가격은 세금 포함이다
+  const subtotal = preTax((item.unit_price ?? 0) * (item.quantity ?? 0), item.is_tax_inclusive !== false)
+  const discount = (item.adjustments ?? []).reduce(
+    (sum, a) => sum + preTax(Number(a.amount) || 0, a.is_tax_inclusive),
+    0
+  )
+  return Math.round((subtotal - discount) * (1 + rate))
 }

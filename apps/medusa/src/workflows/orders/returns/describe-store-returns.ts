@@ -49,13 +49,15 @@ const PROCESSING_STATUSES: ReadonlySet<string> = new Set(['received', 'partially
 
 function stageOf(r: StoreReturnSource): StoreReturnStage {
   if (r.status === 'canceled') return 'canceled';
-  if (
-    readReturnSettlementRecord(r.metadata)?.stage === 'refunded' ||
-    readReturnPrepayRecord(r.metadata)?.stage === 'refunded'
-  )
-    return 'refunded';
-  if (readReturnSettlementRecord(r.metadata)?.stage === 'exchanged') return 'exchanged';
-  if (PROCESSING_STATUSES.has(r.status) || readReturnSettlementRecord(r.metadata)) return 'processing';
+  // 정산 기록이 있으면 그 단계가 정본이다 — 선환불이 끝났어도 나머지 정산이 refunded 가 아니면 아직 끝나지 않았다
+  const settlement = readReturnSettlementRecord(r.metadata);
+  if (settlement) {
+    if (settlement.stage === 'refunded') return 'refunded';
+    if (settlement.stage === 'exchanged') return 'exchanged';
+    return 'processing';
+  }
+  if (readReturnPrepayRecord(r.metadata)?.stage === 'refunded') return 'refunded';
+  if (PROCESSING_STATUSES.has(r.status)) return 'processing';
   return 'requested';
 }
 

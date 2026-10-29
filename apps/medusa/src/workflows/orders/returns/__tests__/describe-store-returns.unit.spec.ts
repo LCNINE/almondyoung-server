@@ -202,4 +202,11 @@ describe('describeStoreReturns — 교환 (K8 PR11b N5)', () => {
     ]);
     expect(r.refund).toBeNull();
   });
+  it('선환불이 끝났어도 나머지 정산이 refunded 가 아니면 processing — 남은 환불이 실패한 반품을 끝났다고 하지 않는다', () => {
+    const [r] = describeStoreReturns([
+      src({ status: 'received', extra: { almondReturnPrepay: prepay('refunded'), almondReturnSettlement: settlement('charged') } }),
+    ]);
+    expect(r.stage).toBe('processing');
+    expect(r.refund).toMatchObject({ kind: 'settled', refundedAt: null });
+  });
 });
