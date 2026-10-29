@@ -89,6 +89,8 @@ export type CustomerReturnView = {
       heldQty: number | null;
       /** SKU 바코드 — 주 바코드 먼저, 그다음 바코드 오름차순 (K8 PR7b N5) */
       barcodes: string[];
+      /** 검수한 물건을 다시 꽂을 대표 선반(sku_shelf_positions). 정해지지 않았으면 null */
+      shelfCode: string | null;
     }>;
   }>;
 };
@@ -639,6 +641,7 @@ export class CustomerReturnReader {
               rejectedQty: item.rejectedQty,
               heldQty: item.heldQty,
               barcodes: item.barcodes,
+              shelfCode: item.shelfCode,
             })),
         })),
       };
@@ -666,9 +669,11 @@ export class CustomerReturnReader {
         acceptedQty: i.acceptedQty,
         rejectedQty: i.rejectedQty,
         heldQty: i.heldQty,
+        shelfCode: wmsTables.skuShelfPositions.positionCode,
       })
       .from(i)
       .innerJoin(wmsTables.skus, eq(wmsTables.skus.id, i.skuId))
+      .leftJoin(wmsTables.skuShelfPositions, eq(wmsTables.skuShelfPositions.skuId, i.skuId))
       .where(inArray(i.customerReturnLineId, lineIds))
       .orderBy(asc(i.skuId), asc(i.id));
     if (items.length === 0) return [];

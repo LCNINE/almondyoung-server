@@ -18,6 +18,7 @@ import type { StationAction } from '../actions';
 import { useFeedback } from '../feedback/FeedbackProvider';
 import { BigPanel, WorkGrid, type BigPanelContent } from '../outbound/panels';
 import { ReturnReasonBand } from './ReturnReasonBand';
+import { ShelfCode } from './ShelfCode';
 import { RETURNS_ACTIONS } from './returnsActions';
 import type { ReturnsNotice } from './returnsTypes';
 
@@ -258,6 +259,7 @@ export function InspectReturn({
                       name={item.skuName}
                       // 세트 구성품이면 어느 상품의 것인지
                       product={line.productName !== item.skuName ? line.productName : null}
+                      shelfCode={item.shelfCode}
                       arrived={item.arrivedQty}
                       accepted={acceptedOf(item, draft)}
                       rejected={cell.rejected}
@@ -293,6 +295,7 @@ function InspectRow({
   itemId,
   name,
   product,
+  shelfCode,
   arrived,
   accepted,
   rejected,
@@ -302,6 +305,7 @@ function InspectRow({
   itemId: string;
   name: string;
   product: string | null;
+  shelfCode: string | null;
   arrived: number;
   accepted: number;
   rejected: number;
@@ -338,6 +342,7 @@ function InspectRow({
       <td className="px-4">
         <div className="font-semibold">{name}</div>
         {product ? <div className="text-sm text-[#535968]">{product}</div> : null}
+        <ShelfCode code={shelfCode} />
       </td>
       <td data-col="arrived" className="px-4 text-right font-mono">
         {arrived}

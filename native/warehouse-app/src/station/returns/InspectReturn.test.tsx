@@ -12,7 +12,7 @@ const UNCERTAIN = '결과를 확인하지 못했어요 — F10 다시 보내기'
 const DISCARD_PROMPT = '한 번 더 누르면 입력을 버려요';
 const NOT_IN_RETURN = '이 반품에 없는 상품이에요';
 
-type Col = 'arrived' | 'accepted' | 'rejected' | 'held';
+type Col = 'arrived' | 'accepted' | 'rejected' | 'held' | 'shelf';
 
 const bar = () => within(screen.getByRole('toolbar', { name: '기능키' }));
 const region = () => screen.getByRole('region', { name: '검수' });
@@ -38,7 +38,7 @@ const TWO: FakeReturn = {
   status: 'arrived',
   requestedAt: '2026-10-25T01:00:00.000Z',
   lines: [
-    { id: 'crl-5a', productName: '헤어밴드', items: [{ id: 'cri-5a', skuName: '헤어밴드', expectedQty: 3, arrivedQty: 3, barcodes: ['8805001'] }] },
+    { id: 'crl-5a', productName: '헤어밴드', items: [{ id: 'cri-5a', skuName: '헤어밴드', expectedQty: 3, arrivedQty: 3, barcodes: ['8805001'], shelfCode: 'B-03-2' }] },
     { id: 'crl-5b', productName: '빗', items: [{ id: 'cri-5b', skuName: '빗', expectedQty: 2, arrivedQty: 2, barcodes: ['8805002'] }] },
   ],
 };
@@ -110,6 +110,8 @@ describe('검수 — 화면', () => {
     expect(cell('cri-5a', 'rejected')).toBe('0');
     expect(cell('cri-5a', 'held')).toBe('0');
     expect(cell('cri-5b', 'accepted')).toBe('2');
+    expect(cell('cri-5a', 'shelf')).toBe('선반 B-03-2');
+    expect(cell('cri-5b', 'shelf')).toBe('선반 미지정');
     // 숫자가 들어갈 칸은 첫 줄의 불량 — 양품 칸은 어느 때도 입력 칸이 되지 않는다
     expect(itemRow('cri-5a')).toHaveAttribute('aria-selected', 'true');
     expect(activeCell()).toBe(cellEl('cri-5a', 'rejected'));

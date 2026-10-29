@@ -13,6 +13,7 @@ export function item(over: Partial<ReturnItem> = {}): ReturnItem {
     rejectedQty: 0,
     heldQty: 0,
     barcodes: ['880'],
+    shelfCode: null,
     ...over,
   };
 }

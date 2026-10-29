@@ -36,7 +36,7 @@ export const PARTIAL: FakeReturn = {
     {
       id: 'crl-2',
       productName: '헤어클립 집게핀',
-      items: [{ id: 'cri-2', skuName: '헤어클립 집게핀', expectedQty: 3, arrivedQty: 1, barcodes: ['8801002'] }],
+      items: [{ id: 'cri-2', skuName: '헤어클립 집게핀', expectedQty: 3, arrivedQty: 1, barcodes: ['8801002'], shelfCode: 'A-01-4' }],
     },
     { id: 'crl-3', productName: '샴푸 퍼퓸', items: [{ id: 'cri-3', skuName: '샴푸 퍼퓸', expectedQty: 1, barcodes: ['8801003'] }] },
   ],
