@@ -144,9 +144,10 @@ describe('PimToMedusaTransformer', () => {
     });
 
     it('does not allow productInfo to resurrect a revoked 3D model', () => {
+      const productInfo = { manufacturer: 'Manufacturer', model3dFileId: 'stale-file-id' };
       const result = transformPimToMedusa({
         ...mockSnapshot,
-        productInfo: { model3dFileId: 'stale-file-id' },
+        productInfo,
       });
 
       expect(result.metadata.model3dFileId).toBe('');
