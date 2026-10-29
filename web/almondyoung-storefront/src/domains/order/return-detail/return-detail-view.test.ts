@@ -27,17 +27,17 @@ describe("returnSteps", () => {
 describe("returnSteps — 선환불", () => {
   const prepaid = { kind: "prepaid" as const, itemTotal: 60000, shippingRefund: 0, fees: 0, total: 10000, receivedAt: null, refundedAt: "2026-10-27T00:00:00.000Z" }
 
-  it("선환불만 끝났으면 환불 단계만 끝 — 회수·검수는 아직", () => {
+  it("선환불만 끝났으면 접수만 끝 — 회수·검수·환불 완료는 아직", () => {
     const steps = returnSteps({ kind: "return", stage: "refunded", refund: prepaid }, { ...none, pickupStatus: "requested" })
-    expect(steps.map((s) => s.done)).toEqual([true, false, false, true])
+    expect(steps.map((s) => s.done)).toEqual([true, false, false, false])
   })
 
-  it("선환불 뒤 창고가 받았으면 회수·검수도 끝", () => {
+  it("선환불 뒤 창고가 받아 검수했어도 정산 전이면 환불 완료는 아직", () => {
     const steps = returnSteps(
       { kind: "return", stage: "refunded", refund: prepaid },
       { ...none, arrivedAt: "2026-10-28T00:00:00.000Z", inspectedAt: "2026-10-28T01:00:00.000Z" }
     )
-    expect(steps.every((s) => s.done)).toBe(true)
+    expect(steps.map((s) => s.done)).toEqual([true, true, true, false])
   })
 })
 

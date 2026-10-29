@@ -4,14 +4,14 @@ export type ReturnStepKey = "requested" | "pickedUp" | "inspected" | "refunded" 
 
 /**
  * 반품 상세의 진행 단계. 회수·검수는 물건이 실제로 왔다는 근거로만 끝낸다 —
- * processing 은 창고가 받아 검수까지 마친 뒤다(정산이 검수 때 열린다). 선환불만 끝난 반품은 마지막 단계(환불)만 끝났고
- * 회수·검수는 core 진행·받은 때로 따로 본다.
+ * processing 은 창고가 받아 검수까지 마친 뒤다(정산이 검수 때 열린다). 선환불만 끝난 반품은 아무 단계도 앞당기지 않는다 —
+ * 회수·검수는 core 진행·받은 때로 보고, 마지막 단계는 정산이 끝나야 켠다.
  */
 export function returnSteps(
   ret: Pick<CustomerReturn, "kind" | "stage" | "refund">,
   progress: Pick<CustomerReturnProgress, "pickupStatus" | "arrivedAt" | "inspectedAt"> | null
 ): { key: ReturnStepKey; done: boolean }[] {
-  const finished = ret.stage === "refunded" || ret.stage === "exchanged"
+  // 마지막 단계는 정산이 끝났을 때만 — 선환불만 끝난 반품은 남은 금액이 검수 뒤에 정해진다
   const settled = ret.stage === "exchanged" || (ret.stage === "refunded" && ret.refund?.kind !== "prepaid")
   const inspected =
     settled || ret.stage === "processing" || Boolean(progress?.inspectedAt) || Boolean(ret.refund?.receivedAt)
@@ -20,7 +20,7 @@ export function returnSteps(
     { key: "requested", done: true },
     { key: "pickedUp", done: pickedUp },
     { key: "inspected", done: inspected },
-    { key: ret.kind === "exchange" ? "exchanged" : "refunded", done: finished },
+    { key: ret.kind === "exchange" ? "exchanged" : "refunded", done: settled },
   ]
 }
 
