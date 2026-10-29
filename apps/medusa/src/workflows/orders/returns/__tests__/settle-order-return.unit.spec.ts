@@ -145,6 +145,23 @@ describe('판매자 전량 반품 정산', () => {
     expect(readReturnSettlementRecord(ret.metadata)).toEqual(records[2]);
   });
 
+  it.each([
+    [6000, 1490],
+    [7490, 0],
+  ])('외부 환불 %i이 품목값을 넘으면 넘는 몫은 배송비로 상계하고 %i원만 환불한다', async (externalRefund, refundAmount) => {
+    const { container, input, records } = setup(0, externalRefund);
+
+    const result = await settleOrderReturn(container, input);
+
+    expect(result.refundAmount).toBe(refundAmount);
+    expect(records.at(-1)).toMatchObject({
+      owed: 4990,
+      shippingRefund: 2500,
+      refundAmount,
+      externalRefundApplied: externalRefund,
+    });
+  });
+
   it('환불 재시도는 저장한 배송비 환불을 쓰고 완료 뒤에는 다시 환불하지 않는다', async () => {
     const { container, input, records } = setup(4990);
     jest.mocked(refundOrderPayments).mockRejectedValueOnce(new Error('일시 실패')).mockResolvedValue(undefined);

@@ -24,7 +24,7 @@ export type ReturnSettlementRecord = {
   owed: number;
   deduction: ReturnSettlementDeduction;
   feeNotAdjusted: boolean;
-  /** owed − 상계 적용액(prepaidApplied·externalRefundApplied) − deduction 합 + shippingRefund */
+  /** owed − 상계 적용액(prepaidApplied·externalRefundApplied) − deduction 합 + shippingRefund. 외부 환불이 배송비를 덮은 몫은 상계 적용액에 든다 */
   refundAmount: number;
   /** 판매자 부담 전량 반품의 기존 배송비 환불액 */
   shippingRefund?: number;
