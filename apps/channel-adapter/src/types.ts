@@ -583,6 +583,7 @@ export interface PimProductSnapshot {
   description?: string;
   descriptionHtml?: string;
   thumbnail?: string;
+  model3dFileId?: string;
   images?: Array<{
     fileId: string;
     url: string;

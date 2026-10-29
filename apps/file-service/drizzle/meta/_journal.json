@@ -36,6 +36,13 @@
       "when": 1786291955011,
       "tag": "20260809161235_outbox-partition-created-index",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1793235215182,
+      "tag": "20261029005335_sku-3d-model-context",
+      "breakpoints": true
     }
   ]
 }

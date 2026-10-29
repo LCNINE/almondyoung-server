@@ -104,6 +104,8 @@ export function transformPimToMedusa(
     fulfillmentKind,
     requiresShipping,
     shippingGroupCode,
+    // Medusa merges metadata; only an explicit empty string removes a revoked model.
+    model3dFileId: snapshot.model3dFileId ?? '',
     syncedAt: new Date().toISOString(),
   };
 
