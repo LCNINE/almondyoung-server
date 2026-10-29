@@ -88,6 +88,50 @@ export const PII_ROUTES: readonly string[] = [
   'wallet POST /v1/admin/refund-requests/:id/reject',
 ];
 
+/**
+ * 위 라우트 중 단건 상세라 기본 가림 모드에서 [보기]로 원문을 다시 받는 것(`@PiiResponse({ reveal: true })`).
+ * admin-web 화면표(`pii-screens.ts`)의 [보기] 표시가 이것으로 검사된다. 선언과 양쪽으로 맞아야 한다(`pii-routes.spec.ts`).
+ */
+export const PII_REVEAL_ROUTES: readonly string[] = [
+  'channel-adapter GET /adapter/order-collection-failures/:id',
+  'core GET /cs-cases/:id',
+  'core GET /fulfillments/:id',
+  'core GET /sales-order-amendments/:id',
+  'core GET /sales-orders/:id',
+  'core GET /shipments/:id',
+  'membership GET /admin/members/:userId',
+  'notification GET /notifications/:id',
+  'notification GET /sms-gate/conversations/messages',
+  'ugc-service GET /admin/shop-listings/:id',
+  'ugc-service GET /reviews/admin/reviews/:id',
+  'user-service GET /admin/blacklists/:userId',
+  'user-service GET /admin/business-licenses//user/:userId',
+  'user-service GET /admin/business-licenses/:id',
+  'user-service GET /admin/users/:userId',
+  'user-service GET /consents/profile/:userId',
+  'wallet GET /v1/admin/payment-intents/:id',
+];
+
+/**
+ * 위 라우트 중 선언한 필드가 모두 받는 분 정보 권한(`fulfillment.recipient.read`)으로도 열리는 것 — 그 권한자에게는
+ * 전부 원문이 간다. admin-web 화면표의 `recipientCoversAll` 이 이것으로 검사된다. 선언과 양쪽으로 맞아야 한다.
+ */
+export const PII_RECIPIENT_ROUTES: readonly string[] = [
+  'core GET /direct-ship/handoffs/:handoffId/sheet',
+  'core GET /fulfillment-operations/:operationId',
+  'core GET /fulfillments',
+  'core GET /fulfillments/:id',
+  'core GET /order-progress/orders',
+  'core GET /shipments/:id',
+  'core GET /shipments/consolidation-candidates',
+  'core PATCH /shipments/:id/recipient',
+  'core POST /direct-ship/suppliers/:supplierId/handoffs',
+  'core POST /fulfillments',
+  'core POST /shipments/:id/plan',
+  'core POST /shipments/:id/split-unreserved',
+  'core POST /shipments/:id/splits',
+];
+
 /** `*.export` 권한 라우트 중 사유 헤더를 강제하지 않는 것. 값은 이유. */
 export const PII_EXPORT_EXCEPTIONS: Readonly<Record<string, string>> = {
   // 현재 예외 없음 — 모든 `*.export` 라우트가 사유 헤더를 강제한다. 예외를 더하면 값에 이유를 적는다.

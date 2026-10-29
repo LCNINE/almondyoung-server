@@ -168,7 +168,7 @@ export const SCREEN_ACCESS: Readonly<Record<string, ScreenAccess>> = {
   '/demo': any('system.operations.read'),
 };
 
-function parentOf(route: string): string | null {
+export function parentOf(route: string): string | null {
   const cut = route.replace(/\/[^/]+$/, '');
   return cut === route || cut === '' ? null : cut;
 }

@@ -4,7 +4,7 @@ import axios, { AxiosError, AxiosInstance, AxiosRequestConfig } from 'axios';
 import { CustomError } from './customError';
 // 상대 경로로 둔다 — 다른 앱의 계약 테스트가 이 파일을 직접 import 한다.
 import { permissionDeniedMessage, readRequiredPermissions } from '../auth/permission-labels';
-import { consumeReveal, parsePiiHeaders, reportPiiResponse } from '../pii/pii-notices';
+import { applyRevealHeader, parsePiiHeaders, transientPiiError } from '../pii/pii-notices';
 
 const REFRESH_LOCK_NAME = 'admin-web:auth-refresh';
 const REFRESH_MARKER_KEY = 'admin-web:last-auth-refresh';
@@ -101,9 +101,9 @@ client.interceptors.request.use((config) => {
     // 필요시 서버에서 특정 origin을 명시적으로 허용하도록 수정해야 함
     config.withCredentials = false;
   }
-  // 개인정보 [보기] — 표시된 요청 한 번에만 원문을 요청한다(서버가 권한·기록을 다시 판정한다).
-  if (config.url && consumeReveal(config.url)) {
-    config.headers.set('x-pii-reveal', '1');
+  // 개인정보 [보기] — 이 화면에 머무는 동안 모든 요청이 원문을 요청한다(서버가 권한·기록을 다시 판정한다).
+  if (typeof window !== 'undefined') {
+    applyRevealHeader(config.headers, window.location.pathname);
   }
   return config;
 });
@@ -132,15 +132,13 @@ function readErrorMessage(data: unknown): string | null {
 
 client.interceptors.response.use(
   (response) => {
-    if (response.config.url) {
-      reportPiiResponse(
-        response.config.url,
-        parsePiiHeaders((name) => {
-          const value: unknown = response.headers[name];
-          return typeof value === 'string' ? value : undefined;
-        }),
-      );
-    }
+    const parsed = parsePiiHeaders((name) => {
+      const value: unknown = response.headers[name];
+      return typeof value === 'string' ? value : undefined;
+    });
+    // 일시 장애로 가려진 GET 은 오류로 끝낸다 — 가린 값이 react-query 캐시에 데이터로 남지 않게.
+    const message = transientPiiError(parsed, response.config.method);
+    if (message) throw new CustomError({ message, statusCode: 503 });
     if (isApiEnvelope(response.data)) {
       response.data = response.data.data;
     }
