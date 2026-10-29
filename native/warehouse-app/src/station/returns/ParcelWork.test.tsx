@@ -16,7 +16,7 @@ function itemRow(itemId: string): HTMLElement {
   if (!found) throw new Error(`row ${itemId} not found`);
   return found;
 }
-const cell = (itemId: string, col: 'remaining' | 'parcel') =>
+const cell = (itemId: string, col: 'remaining' | 'parcel' | 'shelf') =>
   itemRow(itemId).querySelector(`[data-col="${col}"]`)?.textContent ?? '';
 const parcelOf = (itemId: string) => cell(itemId, 'parcel');
 const bigCount = () => screen.getByRole('status', { name: '이번 소포' });
@@ -100,11 +100,22 @@ describe('소포 세기 — 화면', () => {
     expect(headers).toEqual(['상품', '남은 수량', '이번 소포']);
     expect(cell('cri-2', 'remaining')).toBe('2');
     expect(cell('cri-3', 'remaining')).toBe('1');
+    expect(cell('cri-2', 'shelf')).toBe('선반 A-01-4');
+    expect(cell('cri-3', 'shelf')).toBe('선반 미지정');
     expect(parcelOf('cri-2')).toBe('0');
     expect(bigCount()).toHaveTextContent('이번 소포0');
     expect(screen.getByText('이미 받은 소포가 있어요')).toBeInTheDocument();
     await waitFor(() => expect(bar().getByRole('button', { name: /Esc\s*목록/ })).toBeInTheDocument());
     expect(arrivalKey()).toBeNull();
+  });
+
+  it('기능키 바에 바코드 없이 세는 키를 알려 주고, 목록으로 나가면 지운다', async () => {
+    setupReturns();
+    await openByScan('8801002');
+    const hints = await waitFor(() => bar().getByLabelText('키 안내'));
+    expect(hints).toHaveTextContent('↑↓상품 고르기0-9수량⌫지우기');
+    press('Escape');
+    await waitFor(() => expect(bar().queryByLabelText('키 안내')).toBeNull());
   });
 
   it('아직 아무것도 안 온 반품엔 «이미 받은 소포» 줄이 없다', async () => {

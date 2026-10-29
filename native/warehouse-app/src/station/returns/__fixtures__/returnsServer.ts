@@ -16,6 +16,7 @@ export interface FakeReturnItem {
   expectedQty: number;
   arrivedQty?: number;
   barcodes?: string[];
+  shelfCode?: string | null;
   skuId?: string;
   skuCode?: string;
   qtyPerUnit?: number;
@@ -115,6 +116,7 @@ function live(init: FakeReturn): LiveReturn {
         expectedQty: item.expectedQty,
         arrivedQty: item.arrivedQty ?? 0,
         barcodes: item.barcodes ?? [],
+        shelfCode: item.shelfCode ?? null,
         skuId: item.skuId ?? `sku-${item.id}`,
         skuCode: item.skuCode ?? `C-${item.id}`,
         qtyPerUnit: item.qtyPerUnit ?? 1,

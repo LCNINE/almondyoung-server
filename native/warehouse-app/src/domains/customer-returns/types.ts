@@ -13,6 +13,8 @@ export interface ReturnItem {
   heldQty: number | null;
   /** 주 바코드 먼저, 그다음 오름차순. */
   barcodes: string[];
+  /** 대표 선반(sku_shelf_positions). 정해지지 않았으면 null */
+  shelfCode: string | null;
 }
 
 export interface ReturnLine {

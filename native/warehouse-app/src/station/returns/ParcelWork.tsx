@@ -12,11 +12,12 @@ import {
   type ParcelCounts,
 } from '../../domains/customer-returns/parcel';
 import type { ReturnView } from '../../domains/customer-returns/types';
-import { useDigitCommands, useStationActions } from '../ActionRegistry';
+import { useDigitCommands, useStationActions, useStationKeyHints, type KeyHint } from '../ActionRegistry';
 import type { StationAction } from '../actions';
 import { useFeedback } from '../feedback/FeedbackProvider';
 import { BigPanel, WorkGrid, type BigPanelContent } from '../outbound/panels';
 import { ReturnReasonBand } from './ReturnReasonBand';
+import { ShelfCode } from './ShelfCode';
 import { RETURNS_ACTIONS } from './returnsActions';
 import type { ReturnsNotice } from './returnsTypes';
 
@@ -24,6 +25,13 @@ type ArrivalBody = Parameters<typeof recordArrival>[2];
 
 /** «한 번 더 눌러 확정» 대기 — F10 이미 받은 소포가 있는 반품, Esc 센 수량 버리기 */
 type Armed = 'send' | 'discard' | null;
+
+// 바코드가 안 찍히는 상품은 이 키로 센다
+const KEY_HINTS: readonly KeyHint[] = [
+  { keys: '↑↓', label: '상품 고르기' },
+  { keys: '0-9', label: '수량' },
+  { keys: '⌫', label: '지우기' },
+];
 
 const UNCERTAIN_MESSAGE = '결과를 확인하지 못했어요 — F10 다시 보내기';
 const CARD = 'rounded-[10px] border border-[#D5D8DE] bg-white';
@@ -197,6 +205,7 @@ export function ParcelWork({
     },
   ];
   useStationActions(actions);
+  useStationKeyHints(KEY_HINTS);
 
   const big: BigPanelContent | null =
     armed === 'send'
@@ -243,6 +252,7 @@ export function ParcelWork({
                     name={item.skuName}
                     // 세트 구성품이면 어느 상품의 것인지
                     product={line.productName !== item.skuName ? line.productName : null}
+                    shelfCode={item.shelfCode}
                     remaining={item.expectedQty - item.arrivedQty}
                     parcel={counts.get(item.id) ?? 0}
                     selected={index === cursor}
@@ -274,6 +284,7 @@ function ParcelRow({
   itemId,
   name,
   product,
+  shelfCode,
   remaining,
   parcel,
   selected,
@@ -281,6 +292,7 @@ function ParcelRow({
   itemId: string;
   name: string;
   product: string | null;
+  shelfCode: string | null;
   remaining: number;
   parcel: number;
   selected: boolean;
@@ -304,6 +316,7 @@ function ParcelRow({
       <td className="px-4">
         <div className="font-semibold">{name}</div>
         {product ? <div className="text-sm text-[#535968]">{product}</div> : null}
+        <ShelfCode code={shelfCode} />
       </td>
       <td data-col="remaining" className="px-4 text-right font-mono">
         {remaining}

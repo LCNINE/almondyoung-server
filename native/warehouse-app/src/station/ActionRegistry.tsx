@@ -14,12 +14,20 @@ export interface RegistryApi {
   register(layerId: number, actions: readonly StationAction[]): void;
   unregister(layerId: number): void;
   setDigitHandler(layerId: number, handler: ((digit: number) => void) | null): void;
+  setKeyHints(layerId: number, hints: readonly KeyHint[] | null): void;
   /** 이벤트 처리기용 — 렌더와 무관하게 마지막 등록(최신 `run`)으로 판정한다. */
   resolveKey(key: StationKey): KeyDispatch;
   digitHandler(): ((digit: number) => void) | null;
 }
 
+/** 기능키가 아닌 키(↑↓·숫자)의 사용법 — 기능키 바 오른쪽에 그린다. 가장 안쪽 층 하나만 보인다. */
+export interface KeyHint {
+  keys: string;
+  label: string;
+}
+
 const ApiContext = createContext<RegistryApi | null>(null);
+const HintsContext = createContext<readonly KeyHint[]>([]);
 /** 표시용 — `run` 이 낡았을 수 있다(서명 불변이면 갱신 안 함). 실행은 `RegistryApi.resolveKey`. */
 const ResolvedContext = createContext<ReadonlyMap<StationKey, StationAction>>(new Map());
 
@@ -41,6 +49,8 @@ export function ActionRegistryProvider({ children }: { children: ReactNode }) {
   const layers = useRef(new Map<number, readonly StationAction[]>());
   const digits = useRef(new Map<number, (digit: number) => void>());
   const [resolved, setResolved] = useState<ReadonlyMap<StationKey, StationAction>>(() => new Map());
+  const hintLayers = useRef(new Map<number, readonly KeyHint[]>());
+  const [hints, setHints] = useState<readonly KeyHint[]>([]);
 
   const api = useMemo<RegistryApi>(() => {
     const current = () => resolveActions(ordered(layers.current));
@@ -58,6 +68,11 @@ export function ActionRegistryProvider({ children }: { children: ReactNode }) {
         digits.current.delete(layerId);
         setResolved(current());
       },
+      setKeyHints(layerId, next) {
+        if (next) hintLayers.current.set(layerId, next);
+        else hintLayers.current.delete(layerId);
+        setHints(ordered(hintLayers.current).at(-1) ?? []);
+      },
       setDigitHandler(layerId, handler) {
         if (handler) digits.current.set(layerId, handler);
         else digits.current.delete(layerId);
@@ -69,7 +84,9 @@ export function ActionRegistryProvider({ children }: { children: ReactNode }) {
 
   return (
     <ApiContext.Provider value={api}>
-      <ResolvedContext.Provider value={resolved}>{children}</ResolvedContext.Provider>
+      <ResolvedContext.Provider value={resolved}>
+        <HintsContext.Provider value={hints}>{children}</HintsContext.Provider>
+      </ResolvedContext.Provider>
     </ApiContext.Provider>
   );
 }
@@ -85,6 +102,20 @@ export function useStationActions(actions: readonly StationAction[]): void {
     api?.register(layerId, actions);
   }, [api, layerId, actions]);
   useEffect(() => () => api?.unregister(layerId), [api, layerId]);
+}
+
+/** 지금 화면의 키 사용법을 기능키 바에 띄운다. 모듈 상수처럼 렌더마다 같은 배열을 넘긴다. */
+export function useStationKeyHints(hints: readonly KeyHint[]): void {
+  const api = useContext(ApiContext);
+  const layerId = useLayerId();
+  useEffect(() => {
+    api?.setKeyHints(layerId, hints);
+    return () => api?.setKeyHints(layerId, null);
+  }, [api, layerId, hints]);
+}
+
+export function useKeyHints(): readonly KeyHint[] {
+  return useContext(HintsContext);
 }
 
 /** 숫자 명령(`%91%N`)을 받을 곳 — 「수량」 입력 중인 화면만 건다(스펙 §5.3). 가장 안쪽 하나만 받는다. */

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import type { ReactNode } from 'react';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import {
@@ -88,12 +88,16 @@ describe('InventoryLookupScreen', () => {
   it('searches and shows results with stock in a table', async () => {
     const client: ApiClient = {
       // vi.fn 반환 타입은 ApiClient.request의 제네릭 <T>를 만족 못 하므로 캐스트(httpClient.test.ts의 `doFetch as never`와 같은 패턴).
-      request: vi.fn(async () => ({
-        items: [
-          { id: '1', code: 'SKU-8891', name: '코튼 티', optionKey: '흰색 / M', currentStock: 5, safetyStock: 10 },
-        ],
-        total: 1,
-      })) as ApiClient['request'],
+      request: vi.fn(async (opts: { path: string }) =>
+        opts.path.startsWith('/inventory/skus?barcode=')
+          ? []
+          : {
+              items: [
+                { id: '1', code: 'SKU-8891', name: '코튼 티', optionKey: '흰색 / M', currentStock: 5, safetyStock: 10 },
+              ],
+              total: 1,
+            }
+      ) as ApiClient['request'],
     };
     const user = userEvent.setup();
     renderWith(client);
@@ -110,7 +114,9 @@ describe('InventoryLookupScreen', () => {
 
   it('shows the empty message when there are no results', async () => {
     const client: ApiClient = {
-      request: vi.fn(async () => ({ items: [], total: 0 })) as ApiClient['request'],
+      request: vi.fn(async (opts: { path: string }) =>
+        opts.path.startsWith('/inventory/skus?barcode=') ? [] : { items: [], total: 0 }
+      ) as ApiClient['request'],
     };
     const user = userEvent.setup();
     renderWith(client);
@@ -118,6 +124,84 @@ describe('InventoryLookupScreen', () => {
     await user.click(screen.getByRole('button', { name: '검색' }));
 
     expect(await screen.findByText('결과가 없어요.')).toBeInTheDocument();
+  });
+
+  it('검색칸에 친 바코드가 한 건이면 상세로 이동한다', async () => {
+    const request = vi.fn(async (opts: { path: string }) =>
+      opts.path === '/inventory/skus?barcode=8801234567890'
+        ? [{ id: 'sku-1', code: 'CT-001', name: '코튼셔츠', currentStock: 1, safetyStock: 0 }]
+        : { items: [], total: 0 }
+    );
+    const user = userEvent.setup();
+    renderWith({ request: request as ApiClient['request'] });
+    await user.type(await screen.findByPlaceholderText(/검색/), '8801234567890{Enter}');
+
+    expect(await screen.findByText('상세화면')).toBeInTheDocument();
+    expect(request.mock.calls.some(([o]) => o.path.startsWith('/inventory/skus/search/advanced'))).toBe(false);
+  });
+
+  it('검색칸에 친 바코드가 여러 건이면 고르게 한다', async () => {
+    const client: ApiClient = {
+      request: vi.fn(async (opts: { path: string }) =>
+        opts.path.startsWith('/inventory/skus?barcode=')
+          ? [
+              { id: 'a', code: 'A-1', name: '상품A', currentStock: 1, safetyStock: 0 },
+              { id: 'b', code: 'B-1', name: '상품B', currentStock: 1, safetyStock: 0 },
+            ]
+          : { items: [], total: 0 }
+      ) as ApiClient['request'],
+    };
+    const user = userEvent.setup();
+    renderWith(client);
+    await user.type(await screen.findByPlaceholderText(/검색/), '8801234567890{Enter}');
+
+    expect(await screen.findByText('스캔한 바코드의 상품')).toBeInTheDocument();
+    expect(screen.getByText('상품B')).toBeInTheDocument();
+  });
+
+  it('앞 바코드 조회가 늦게 와도 마지막 검색만 반영한다', async () => {
+    const pending = new Map<string, (hits: unknown) => void>();
+    const request = vi.fn((opts: { path: string }) => {
+      const m = /barcode=(.+)$/.exec(opts.path);
+      if (m) return new Promise((resolve) => pending.set(m[1], resolve));
+      return Promise.resolve({
+        items: [{ id: 'n', code: 'N-1', name: '이름검색결과', currentStock: 1, safetyStock: 0 }],
+        total: 1,
+      });
+    });
+    const user = userEvent.setup();
+    renderWith({ request: request as unknown as ApiClient['request'] });
+    const input = await screen.findByPlaceholderText(/검색/);
+    await user.type(input, '1111{Enter}');
+    await user.clear(input);
+    await user.type(input, '2222{Enter}');
+    await waitFor(() => expect(pending.has('2222')).toBe(true));
+
+    pending.get('2222')!([]);
+    expect(await screen.findByText('이름검색결과')).toBeInTheDocument();
+    pending.get('1111')!([{ id: 'sku-a', code: 'A', name: 'A', currentStock: 1, safetyStock: 0 }]);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(screen.queryByText('상세화면')).toBeNull();
+    expect(navigateSpy).not.toHaveBeenCalled();
+  });
+
+  it('조회 중에 검색칸을 비우고 검색하면 늦게 온 조회 결과를 버린다', async () => {
+    let resolveLookup: (hits: unknown) => void = () => {};
+    const request = vi.fn((opts: { path: string }) =>
+      opts.path.startsWith('/inventory/skus?barcode=')
+        ? new Promise((resolve) => (resolveLookup = resolve))
+        : Promise.resolve({ items: [], total: 0 })
+    );
+    const user = userEvent.setup();
+    renderWith({ request: request as unknown as ApiClient['request'] });
+    const input = await screen.findByPlaceholderText(/검색/);
+    await user.type(input, '1111{Enter}');
+    await user.clear(input);
+    await user.click(screen.getByRole('button', { name: '검색' }));
+
+    resolveLookup([{ id: 'sku-a', code: 'A', name: 'A', currentStock: 1, safetyStock: 0 }]);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(navigateSpy).not.toHaveBeenCalled();
   });
 
   it('shows a friendly message on error', async () => {

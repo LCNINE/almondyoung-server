@@ -173,6 +173,21 @@ describeIfDb('CustomerReturnReader — 상세 뷰 (K8 PR7)', () => {
     });
   });
 
+  it('항목이 SKU 대표 선반을 싣고, 없으면 null 이다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = await seedWorld(tx);
+      const wired = wire();
+      const s = await seed(tx, w, wired);
+
+      const none = await wired.reader.findById(s.customerReturnId, tx);
+      expect(none.lines[0].items[0].shelfCode).toBeNull();
+
+      await tx.insert(wmsTables.skuShelfPositions).values({ skuId: w.skuId, positionCode: 'B-03-2' });
+      const view = await wired.reader.findById(s.customerReturnId, tx);
+      expect(view.lines[0].items[0].shelfCode).toBe('B-03-2');
+    });
+  });
+
   it('항목이 SKU 바코드를 주 바코드 먼저 싣는다', async () => {
     await inRollbackTx(db, async (tx) => {
       const w = await seedWorld(tx);
