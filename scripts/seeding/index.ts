@@ -17,7 +17,7 @@
 import chalk from 'chalk';
 import { confirm } from '@inquirer/prompts';
 import { runDatabaseCreation } from './phases/01-database-creation';
-import { runSchemaSync } from './phases/02-schema-sync';
+import { runSchemaSync, SchemaSyncError } from './phases/02-schema-sync';
 import { runSeeding } from './phases/03-seed-orchestrator';
 import { listGroupsForDeployment } from './phases/03-seed-orchestrator';
 import { ensureInsideSstShell } from './lib/sst-shell-relaunch';
@@ -159,6 +159,7 @@ async function main() {
   try {
     schemasSynced = await runSchemaSync(options);
   } catch (error: any) {
+    if (error instanceof SchemaSyncError) schemasSynced = error.synced;
     console.log(chalk.red(`\n  Phase 2 failed: ${error.message}`));
     const shouldContinue = await confirm({
       message: 'Continue to Phase 3 (Seeding)?',
