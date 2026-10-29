@@ -185,6 +185,25 @@ describe('InventoryLookupScreen', () => {
     expect(navigateSpy).not.toHaveBeenCalled();
   });
 
+  it('조회 중에 검색칸을 비우고 검색하면 늦게 온 조회 결과를 버린다', async () => {
+    let resolveLookup: (hits: unknown) => void = () => {};
+    const request = vi.fn((opts: { path: string }) =>
+      opts.path.startsWith('/inventory/skus?barcode=')
+        ? new Promise((resolve) => (resolveLookup = resolve))
+        : Promise.resolve({ items: [], total: 0 })
+    );
+    const user = userEvent.setup();
+    renderWith({ request: request as unknown as ApiClient['request'] });
+    const input = await screen.findByPlaceholderText(/검색/);
+    await user.type(input, '1111{Enter}');
+    await user.clear(input);
+    await user.click(screen.getByRole('button', { name: '검색' }));
+
+    resolveLookup([{ id: 'sku-a', code: 'A', name: 'A', currentStock: 1, safetyStock: 0 }]);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(navigateSpy).not.toHaveBeenCalled();
+  });
+
   it('shows a friendly message on error', async () => {
     const client: ApiClient = {
       request: vi.fn(async () => {
