@@ -117,7 +117,7 @@ export function RequestReturnDialog({ orderId, onClose }: Props) {
           </>
         ) : (
           <>
-            <div className="space-y-3">
+            <div className="min-w-0 space-y-3">
               <RadioGroup
                 className="flex gap-4"
                 value={form.kind}
@@ -137,7 +137,7 @@ export function RequestReturnDialog({ orderId, onClose }: Props) {
               <div className="space-y-2">
                 {lines.map((l) => (
                   <div key={l.item_id} className="flex items-center gap-2 text-sm">
-                    <span className="flex-1 min-w-0 truncate">{nameOf(l.item_id)}</span>
+                    <span className="flex-1 min-w-0 break-words">{nameOf(l.item_id)}</span>
                     <span className="text-xs text-muted-foreground whitespace-nowrap">
                       {exchange && !l.exchangeable ? '교환 불가(인쇄 상품)' : `가능 ${l.returnable_quantity}`}
                     </span>
