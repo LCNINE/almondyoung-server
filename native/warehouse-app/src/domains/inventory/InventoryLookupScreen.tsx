@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import type {
   ColumnDef,
   OnChangeFn,
@@ -41,12 +41,18 @@ export function InventoryLookupScreen() {
   // 이 호출의 onSuccess 에서만 정확히 한 번 소비한다. 캐시 신선도(staleTime)나
   // effect 의 재진입에 기대지 않는다 — 그 설계는 두 방향의 버그(응답 누락, 중복
   // 처리)를 모두 냈다.
+  // 마지막 조회만 결과를 쓴다 — 늦게 온 앞 조회가 화면을 덮거나 다른 상품으로 이동시키지 않게
+  const lookupSeq = useRef(0);
+
   // 한 건이면 상세로, 여러 건이면 고르게 한다. 0건이면 onMiss 가 정한다.
   const lookupBarcode = (code: string, onMiss: () => void) => {
+    const seq = ++lookupSeq.current;
+    const latest = () => seq === lookupSeq.current;
     setScanNotice(null);
     setScanHits([]);
     byBarcode.mutate(code, {
       onSuccess: (hits) => {
+        if (!latest()) return;
         if (hits.length === 1) {
           void navigate({ to: '/inventory/$sku', params: { sku: hits[0].id } });
         } else if (hits.length === 0) {
@@ -55,7 +61,9 @@ export function InventoryLookupScreen() {
           setScanHits(hits);
         }
       },
-      onError: onMiss,
+      onError: () => {
+        if (latest()) onMiss();
+      },
     });
   };
 
@@ -71,8 +79,10 @@ export function InventoryLookupScreen() {
       setQuery(value);
     };
     const code = value.trim();
-    if (code === '' || byBarcode.isPending) searchByName();
-    else lookupBarcode(code, searchByName);
+    if (code === '') {
+      lookupSeq.current += 1; // 진행 중인 조회는 버린다
+      searchByName();
+    } else lookupBarcode(code, searchByName);
   };
 
   const sort = sorting[0];

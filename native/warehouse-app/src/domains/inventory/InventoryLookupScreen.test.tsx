@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import type { ReactNode } from 'react';
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import {
@@ -157,6 +157,32 @@ describe('InventoryLookupScreen', () => {
 
     expect(await screen.findByText('스캔한 바코드의 상품')).toBeInTheDocument();
     expect(screen.getByText('상품B')).toBeInTheDocument();
+  });
+
+  it('앞 바코드 조회가 늦게 와도 마지막 검색만 반영한다', async () => {
+    const pending = new Map<string, (hits: unknown) => void>();
+    const request = vi.fn((opts: { path: string }) => {
+      const m = /barcode=(.+)$/.exec(opts.path);
+      if (m) return new Promise((resolve) => pending.set(m[1], resolve));
+      return Promise.resolve({
+        items: [{ id: 'n', code: 'N-1', name: '이름검색결과', currentStock: 1, safetyStock: 0 }],
+        total: 1,
+      });
+    });
+    const user = userEvent.setup();
+    renderWith({ request: request as unknown as ApiClient['request'] });
+    const input = await screen.findByPlaceholderText(/검색/);
+    await user.type(input, '1111{Enter}');
+    await user.clear(input);
+    await user.type(input, '2222{Enter}');
+    await waitFor(() => expect(pending.has('2222')).toBe(true));
+
+    pending.get('2222')!([]);
+    expect(await screen.findByText('이름검색결과')).toBeInTheDocument();
+    pending.get('1111')!([{ id: 'sku-a', code: 'A', name: 'A', currentStock: 1, safetyStock: 0 }]);
+    await new Promise((r) => setTimeout(r, 20));
+    expect(screen.queryByText('상세화면')).toBeNull();
+    expect(navigateSpy).not.toHaveBeenCalled();
   });
 
   it('shows a friendly message on error', async () => {
