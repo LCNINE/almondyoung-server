@@ -22,4 +22,9 @@ describe('deriveCustOrdNo', () => {
   it('rejects a non-uuid input', () => {
     expect(() => deriveCustOrdNo('not-a-uuid')).toThrow(/invalid uuid/);
   });
+  it('접두사를 바꾸면 회수용 AR + 26자 = 28자, 기본 결과는 그대로 (K8 PR9)', () => {
+    expect(deriveCustOrdNo(A, 'AR')).toMatch(/^AR[0-9ABCDEFGHJKMNPQRSTVWXYZ]{26}$/);
+    expect(deriveCustOrdNo(A, 'AR').slice(2)).toBe(deriveCustOrdNo(A).slice(2));
+    expect(deriveCustOrdNo(A)).toMatch(/^AY/);
+  });
 });

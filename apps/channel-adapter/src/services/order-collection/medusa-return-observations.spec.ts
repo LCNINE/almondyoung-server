@@ -304,4 +304,62 @@ describe('medusaReturnObservations', () => {
       expect(skipped).toEqual([{ returnId: 'ret_1', reason: 'no_settlement_record' }]);
     });
   });
+  describe('교환 (K8 PR11)', () => {
+    const exchangeRecord = (kind: unknown = 'exchange') => ({
+      almondReturn: { ...record().almondReturn, kind, feeBearer: 'seller', reasonValue: 'defective' },
+    });
+    const exchanged = (over: Record<string, unknown> = {}) => ({
+      ...exchangeRecord(),
+      almondReturnSettlement: {
+        requestId: 'cr_1',
+        requestHash: 'h',
+        stage: 'exchanged',
+        items: [{ itemId: 'item_1', received: 1, dismissed: 0 }],
+        deduction: { returnShipping: 0, freeShippingBreak: 0, roundTrip: 0 },
+        feeNotAdjusted: false,
+        refundAmount: 0,
+        exchangedAt: '2026-10-28T05:00:00.000Z',
+        exchangeItems: [{ sourceItemId: 'item_1', itemId: 'item_x', quantity: 1 }],
+        ...over,
+      },
+    });
+
+    it('kind exchange 기록 -> ChannelReturnRequested.kind exchange', () => {
+      const { observations } = medusaReturnObservations(order([ret({ metadata: exchangeRecord() })]));
+      expect(observations[0].payload).toMatchObject({ kind: 'exchange' });
+    });
+
+    it('kind 없는 기록 -> payload 에 kind 칸 없음', () => {
+      const { observations } = medusaReturnObservations(order([ret()]));
+      expect(observations[0].payload).not.toHaveProperty('kind');
+    });
+
+    it('kind swap -> skipped no_record', () => {
+      const { observations, skipped } = medusaReturnObservations(order([ret({ metadata: exchangeRecord('swap') })]));
+      expect(observations).toEqual([]);
+      expect(skipped).toEqual([{ returnId: 'ret_1', reason: 'no_record' }]);
+    });
+
+    it('exchanged 기록 -> ChannelReturnSettled { refundAmount 0, refundMode auto, settledAt = exchangedAt, exchangeItems }', () => {
+      const { observations, skipped } = medusaReturnObservations(
+        order([ret({ status: 'received', metadata: exchanged() })]),
+      );
+      expect(skipped).toEqual([]);
+      expect(observations.map((o) => o.eventKey)).toEqual(['return:ret_1:requested', 'return:ret_1:settled']);
+      expect(observations[1].payload).toMatchObject({
+        refundAmount: 0,
+        refundMode: 'auto',
+        settledAt: '2026-10-28T05:00:00.000Z',
+        exchangeItems: [{ sourceItemId: 'item_1', itemId: 'item_x', quantity: 1 }],
+        items: [{ channelOrderItemId: 'item_1', received: 1, dismissed: 0 }],
+      });
+    });
+
+    it('exchangeItems 가 빈 exchanged 기록 -> no_settlement_record', () => {
+      const { skipped } = medusaReturnObservations(
+        order([ret({ status: 'received', metadata: exchanged({ exchangeItems: [] }) })]),
+      );
+      expect(skipped).toEqual([{ returnId: 'ret_1', reason: 'no_settlement_record' }]);
+    });
+  });
 });

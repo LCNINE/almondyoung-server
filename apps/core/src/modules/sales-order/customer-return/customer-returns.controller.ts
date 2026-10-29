@@ -17,7 +17,7 @@ import {
 
 /**
  * 고객 반품 기록(K8 PR6) — 조회와 창고의 도착·검수, CS 의 미도착 닫기·보류 정산·선환불과
- * 정산·선환불의 다시 시도·계좌 송금(PR6b).
+ * 정산·선환불의 다시 시도·계좌 송금(PR6b), 교환품 보내기(PR11).
  * 고객 개인정보는 목록의 고객명뿐이고 `@PiiResponse` 가 가린다. 상세·쓰기 응답엔 없다(수량·상태·CS 메모뿐).
  */
 @ApiTags('Admin - Customer Returns')
@@ -106,6 +106,31 @@ export class CustomerReturnsController {
       memo: dto.memo,
       actorId: authenticatedWarehouseActor(user),
     });
+  }
+
+  @RequirePermission('order.claim.write')
+  @Post(':id/exchange-release')
+  @ApiOperation({
+    summary:
+      '교환품 보내기 — 교환 상자를 연다(K8 PR11). 보류면 정산도 연다, 수령 전이면 먼저 보낸다(선발송). 돈은 움직이지 않는다',
+  })
+  @ApiResponse({ status: 200, description: '연 뒤의 교환 기록(exchangeReleasedAt). 이미 열렸으면 그대로' })
+  @ApiResponse({ status: 400, description: '반품(교환이 아님) · 창고에서 내보내지 않는 상품' })
+  @ApiResponse({ status: 409, description: '보류·수령 전이 아님(이미 정산·취소됨)' })
+  @HttpCode(HttpStatus.OK)
+  releaseExchange(@Param('id', ParseUUIDPipe) id: string, @User() user?: WarehouseActor) {
+    return this.service.releaseExchange({ customerReturnId: id, actorId: authenticatedWarehouseActor(user) });
+  }
+
+  @RequirePermission('order.claim.write')
+  @Post(':id/pickup/retry')
+  @ApiOperation({ summary: '반품 회수 다시 접수 — 실패·취소된 한진 회수를 다시 접수한다 (K8 PR9)' })
+  @ApiResponse({ status: 200, description: '접수한 뒤의 반품 기록(pickup 에 마지막 회수 행)' })
+  @ApiResponse({ status: 404, description: '반품 기록 없음' })
+  @ApiResponse({ status: 409, description: '반품이 expected 가 아님 · 활성 회수가 이미 있음 · 놓아주기가 진행 중' })
+  @HttpCode(HttpStatus.OK)
+  retryPickup(@Param('id', ParseUUIDPipe) id: string, @User() user?: WarehouseActor) {
+    return this.service.retryPickup(id, authenticatedWarehouseActor(user));
   }
 
   @RequirePermission('payment.refund.execute')

@@ -171,17 +171,11 @@ function judgeCtes(scope: SQL, now: SQL): SQL {
        GROUP BY c.sales_order_id
     ),
     rx AS (
-      SELECT DISTINCT ON (x.sales_order_id) x.sales_order_id, x.kind || ':' || x.status AS state, x.created_at
-        FROM (
-          SELECT r.sales_order_id, 'return' AS kind, r.status::text AS status, r.created_at
-            FROM return_requests r JOIN so ON so.id = r.sales_order_id
-           WHERE r.status NOT IN ('completed', 'rejected', 'cancelled')
-          UNION ALL
-          SELECT e.sales_order_id, 'exchange', e.status::text, e.created_at
-            FROM exchange_requests e JOIN so ON so.id = e.sales_order_id
-           WHERE e.status NOT IN ('completed', 'rejected', 'cancelled')
-        ) x
-       ORDER BY x.sales_order_id, x.created_at ASC
+      -- 열린 반품 예정 기록(K8 PR 10) — 가장 먼저 접수된 것. 옛 반품·교환 요청 표는 걷었다
+      SELECT DISTINCT ON (cr.sales_order_id) cr.sales_order_id, 'return:' || cr.status::text AS state, cr.requested_at AS created_at
+        FROM customer_returns cr JOIN so ON so.id = cr.sales_order_id
+       WHERE cr.status NOT IN ('settled', 'cancelled')
+       ORDER BY cr.sales_order_id, cr.requested_at ASC
     ),
     has_fo AS (SELECT DISTINCT sales_order_id FROM fo),
     -- 채널 취소 요청 — 확정됨·정산 중(#1016 36번 재설계). 한 주문에 여럿일 수 있다(정산 중 요청 둘) — 나쁜 순(거절 > 지연 > 정산 중), 같으면 오래된 것.
@@ -217,7 +211,9 @@ function judgeCtes(scope: SQL, now: SQL): SQL {
                WHEN so.status IN ('cancelled', 'timeout')
                  AND (ob.sales_order_id IS NOT NULL OR orr.sales_order_id IS NOT NULL) THEN 'cancel_open'
                WHEN so.status IN ('cancelled', 'timeout') THEN 'cancelled'
-               WHEN rx.sales_order_id IS NOT NULL THEN 'return_exchange'
+               -- 열린 반품은 상자 일이 다 끝난 주문에서만 이긴다(K8 PR 10) — 나눠 보낸 주문의 남은 상자가 진행 중이면 그 단계가
+               -- 보이고, 리컨실러의 상자 규칙 제외(D16)도 그 상자를 빼지 않는다
+               WHEN rx.sales_order_id IS NOT NULL AND (rep.stage IS NULL OR rep.stage = 'done') THEN 'return_exchange'
                WHEN bl.status = 'not_required' THEN 'not_required'
                WHEN hf.sales_order_id IS NULL AND bl.sales_order_id IS NULL THEN 'accept'
                WHEN hf.sales_order_id IS NULL AND bl.status <> 'completed' THEN 'fo'
@@ -367,7 +363,7 @@ export function shipmentScopeSql(shipmentId: string): SQL {
 }
 
 /**
- * 갱신 대상(스펙 §5.2): 진행 중 행 + 행 없는 판매주문 + 직전 주기 뒤 판매주문·반품·교환·취소·변경 기록(취소 요청)이 바뀐 주문.
+ * 갱신 대상(스펙 §5.2): 진행 중 행 + 행 없는 판매주문 + 직전 주기 뒤 판매주문·반품 예정 기록·취소·변경 기록(취소 요청)이 바뀐 주문.
  * sinceIso 가 null 이면(첫 실행) 전 판매주문. 2분 겹침은 직전 주기의 스냅샷 뒤·evaluated_at 앞에 커밋된 변경을 놓치지 않기 위해서다.
  */
 export function candidateIdsSql(sinceIso: string | null): SQL {
@@ -378,8 +374,7 @@ export function candidateIdsSql(sinceIso: string | null): SQL {
       FROM sales_orders s
       LEFT JOIN order_progress p ON p.sales_order_id = s.id
      WHERE p.sales_order_id IS NULL OR p.outcome IS NULL OR s.updated_at > ${since}
-    UNION SELECT r.sales_order_id FROM return_requests r WHERE r.updated_at > ${since}
-    UNION SELECT e.sales_order_id FROM exchange_requests e WHERE e.updated_at > ${since}
+    UNION SELECT cr.sales_order_id FROM customer_returns cr WHERE cr.updated_at > ${since}
     UNION SELECT c.sales_order_id FROM sales_order_cancellations c WHERE c.updated_at > ${since}
     UNION SELECT a.sales_order_id FROM sales_order_amendments a WHERE a.updated_at > ${since}
   `;

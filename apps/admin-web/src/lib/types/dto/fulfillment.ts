@@ -1397,23 +1397,6 @@ export interface ToteReleaseResult {
   status: 'released';
 }
 
-export interface ReturnEligibilityItem {
-  salesOrderLineId: string;
-  shipmentId: string;
-  shipmentLineId: string;
-  dispatchAttemptId: string;
-  deliveredAt: string;
-  shippedQty: number;
-  claimedQty: number;
-  remainingEligibleQty: number;
-  salesOrderLineRemainingEligibleQty: number;
-}
-
-export interface ReturnEligibilityResponse {
-  orderId: string;
-  items: ReturnEligibilityItem[];
-}
-
 // ===== Waybill (운송장) =====
 
 export type CarrierCode =

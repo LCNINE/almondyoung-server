@@ -974,6 +974,27 @@
       "when": 1793125969727,
       "tag": "20261027183249_add-customer-return-inspected-by",
       "breakpoints": true
+    },
+    {
+      "idx": 139,
+      "version": "7",
+      "when": 1793161552219,
+      "tag": "20261028042552_add-customer-return-pickups",
+      "breakpoints": true
+    },
+    {
+      "idx": 140,
+      "version": "7",
+      "when": 1793195175037,
+      "tag": "20261028134615_drop-legacy-claim-tables",
+      "breakpoints": true
+    },
+    {
+      "idx": 141,
+      "version": "7",
+      "when": 1793227023408,
+      "tag": "20261028223703_add-customer-exchange",
+      "breakpoints": true
     }
   ]
 }

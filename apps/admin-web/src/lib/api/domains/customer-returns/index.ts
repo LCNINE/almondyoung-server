@@ -68,6 +68,12 @@ export const customerReturnApi = {
     return res.data;
   },
 
+  /** 회수(한진) 예약을 다시 접수한다. 받을 수 없는 상태면 서버가 409 로 문구를 준다 */
+  retryPickup: async (id: string): Promise<CustomerReturnView> => {
+    const res = await client.post(`${CORE}/${encodeURIComponent(id)}/pickup/retry`);
+    return res.data;
+  },
+
   // ---- Medusa ----
   returnable: async (orderId: string): Promise<OrderReturnable> => {
     const res = await client.get<OrderReturnable>(

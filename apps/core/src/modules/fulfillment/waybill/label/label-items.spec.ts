@@ -1,4 +1,4 @@
-import { labelItemsOf, paginate } from './label-items';
+import { labelItemsOf, labelLocationCode, paginate } from './label-items';
 
 describe('labelItemsOf — 배정 행을 (로케이션, SKU) 로', () => {
   const row = (locationCode: string, skuId: string, skuName: string, qty: number) => ({
@@ -75,5 +75,17 @@ describe('paginate', () => {
 
   it('한 쪽 줄 수가 1 미만이면 던진다', () => {
     expect(() => paginate([1], 0)).toThrow(/perPage/);
+  });
+});
+
+describe('labelLocationCode — 송장에 찍을 위치', () => {
+  it('입고기본존 같은 시스템 로케이션이면 셀메이트 상품위치를 쓴다', () => {
+    expect(labelLocationCode({ locationCode: 'RECEIVING_DEFAULT', systemRole: 'inbound_default', shelfCode: 'CC-02-02' })).toBe('CC-02-02');
+  });
+  it('상품위치가 없으면 로케이션 코드를 그대로 쓴다', () => {
+    expect(labelLocationCode({ locationCode: 'RECEIVING_DEFAULT', systemRole: 'inbound_default', shelfCode: null })).toBe('RECEIVING_DEFAULT');
+  });
+  it('실제 선반 로케이션에 배정됐으면 그 로케이션이 우선이다', () => {
+    expect(labelLocationCode({ locationCode: 'A-01-01', systemRole: null, shelfCode: 'CC-02-02' })).toBe('A-01-01');
   });
 });

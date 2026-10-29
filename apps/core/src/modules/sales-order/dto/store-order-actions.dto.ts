@@ -1,7 +1,8 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { ArrayMaxSize, ArrayNotEmpty, IsArray, IsBoolean, IsIn, IsOptional, IsString, MaxLength } from 'class-validator';
 
-export type StoreOrderAction = 'cancel' | 'track' | 'return' | 'exchange' | 'receipt';
+// 교환(`exchange`)은 K8 PR 10 에서 닫았다 — PR 11(Medusa 교환)이 다시 연다. 스토어프론트는 그 값을 계속 안다(⊇).
+export type StoreOrderAction = 'cancel' | 'track' | 'return' | 'receipt';
 
 export type StoreFulfillmentStatus =
   | 'not_created' // FO 없음 = 결제완료·출고대기
@@ -31,7 +32,6 @@ export type StoreCancelUnavailableReason =
 export type StoreClaimStatus =
   | 'none'
   | 'return_requested'
-  | 'exchange_requested'
   | 'returning'
   | 'completed';
 
@@ -100,10 +100,10 @@ export class StoreOrderActionsResponseDto {
   @ApiPropertyOptional({ type: RefundSummaryDto, description: '환불 상세 요약 (취소/부분취소 주문에서 제공)' })
   refundSummary?: RefundSummaryDto;
 
-  @ApiProperty({ enum: ['cancel', 'track', 'return', 'exchange', 'receipt'], isArray: true })
+  @ApiProperty({ enum: ['cancel', 'track', 'return', 'receipt'], isArray: true })
   availableActions: StoreOrderAction[];
 
-  @ApiProperty({ enum: ['none', 'return_requested', 'exchange_requested', 'returning', 'completed'] })
+  @ApiProperty({ enum: ['none', 'return_requested', 'returning', 'completed'] })
   claimStatus: StoreClaimStatus;
 
   @ApiPropertyOptional({

@@ -19,6 +19,7 @@ const CONFIG: HanjinConfig = {
   },
   boxType: 'A',
   payType: 'CD',
+  returnPayType: 'CT',
   labelType: 'NS',
 };
 

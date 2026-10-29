@@ -127,7 +127,8 @@ export class AlmondPaymentProviderService extends AbstractPaymentProvider<Almond
     const firstName = customer?.first_name as string | null | undefined;
     const lastName = customer?.last_name as string | null | undefined;
     const customerName = [firstName, lastName].filter(Boolean).join(' ') || undefined;
-    const customerEmail = customer?.email as string | undefined;
+    // 세션 생성 요청에 고객 인증이 안 붙으면 Medusa 가 customer 를 비워 넘기므로 storefront 가 실어 보낸 카트 이메일로 메운다
+    const customerEmail = (customer?.email ?? data?.customerEmail) as string | undefined;
     const customerMobilePhone = customer?.phone as string | null | undefined;
     const orderName = data?.orderName as string | undefined;
 

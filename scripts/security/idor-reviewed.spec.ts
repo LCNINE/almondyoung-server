@@ -181,53 +181,11 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
     predicate: 'if (customerId !== undefined && so.customerId !== customerId)',
     note: 'getTracking -> findSoOrThrow({id: orderId}, customerId).',
   },
-  'core GET /store/orders/:orderId/exchange-requests/:exchangeRequestId': {
-    verdict: 'SAFE',
-    evidence: 'apps/core/src/modules/sales-order/services/store-return-exchange.service.ts:295',
-    predicate: 'this.assertOwnership(so, customerId);',
-    note: 'getExchangeRequest.',
-  },
-  'core GET /store/orders/:orderId/return-eligibility': {
-    verdict: 'SAFE',
-    evidence: 'apps/core/src/modules/sales-order/services/store-return-exchange.service.ts:336',
-    predicate: 'this.assertOwnership(so, customerId);',
-    note: 'getReturnEligibility.',
-  },
-  'core GET /store/orders/:orderId/return-requests/:returnRequestId': {
-    verdict: 'SAFE',
-    evidence: 'apps/core/src/modules/sales-order/services/store-return-exchange.service.ts:274',
-    predicate: 'this.assertOwnership(so, customerId);',
-    note: 'getReturnRequest; returnRequestId로 조회한 row의 salesOrderId 로 SO를 다시 찾아 소유권 검증.',
-  },
   'core GET /store/orders/by-channel-order/:channelOrderId/actions': {
     verdict: 'SAFE',
     evidence: 'apps/core/src/modules/sales-order/services/store-sales-orders.service.ts:369',
     predicate: 'if (customerId !== undefined && so.customerId !== customerId)',
     note: "getActionsByChannelOrder -> findSoOrThrow({channelOrderId, salesChannel:'medusa'}, customerId).",
-  },
-  'core GET /store/orders/by-channel-order/:channelOrderId/exchange-requests/:exchangeRequestId': {
-    verdict: 'SAFE',
-    evidence: 'apps/core/src/modules/sales-order/services/store-return-exchange.service.ts:414',
-    predicate: 'this.assertOwnership(so, customerId);',
-    note: 'getExchangeRequestByChannelOrder; 이중 검증 (getExchangeRequestByChannelOrder 의 assertOwnership + 위임받은 getExchangeRequest 의 assertOwnership).',
-  },
-  'core GET /store/orders/by-channel-order/:channelOrderId/lines': {
-    verdict: 'SAFE',
-    evidence: 'apps/core/src/modules/sales-order/services/store-return-exchange.service.ts:309',
-    predicate: 'this.assertOwnership(so, customerId);',
-    note: 'getOrderLinesByChannelOrder.',
-  },
-  'core GET /store/orders/by-channel-order/:channelOrderId/return-eligibility': {
-    verdict: 'SAFE',
-    evidence: 'apps/core/src/modules/sales-order/services/store-return-exchange.service.ts:336',
-    predicate: 'this.assertOwnership(so, customerId);',
-    note: 'getReturnEligibilityByChannelOrder -> findSoByChannelOrderOrThrow 후 this.getReturnEligibility(so.id, customerId) 로 위임, 실제 검증은 getReturnEligibility 의 assertOwnership 에서 수행.',
-  },
-  'core GET /store/orders/by-channel-order/:channelOrderId/return-requests/:returnRequestId': {
-    verdict: 'SAFE',
-    evidence: 'apps/core/src/modules/sales-order/services/store-return-exchange.service.ts:404',
-    predicate: 'this.assertOwnership(so, customerId);',
-    note: 'getReturnRequestByChannelOrder; channelOrderId로 찾은 SO에 대해 검증 후 getReturnRequest 에서 반품요청 자체의 SO로도 재검증 (이중 검증).',
   },
   'core GET /store/orders/by-channel-order/:channelOrderId/tracking': {
     verdict: 'SAFE',
@@ -253,35 +211,11 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
     predicate: 'if (customerId !== undefined && so.customerId !== customerId)',
     note: 'cancelRequest -> findSoOrThrow({id: orderId}, customerId) -> processCancelRequest 는 이미 소유권 검증된 so 만 사용.',
   },
-  'core POST /store/orders/:orderId/exchange-requests': {
-    verdict: 'SAFE',
-    evidence: 'apps/core/src/modules/sales-order/services/store-return-exchange.service.ts:202',
-    predicate: 'this.assertOwnership(so, customerId);',
-    note: 'createExchangeRequest.',
-  },
-  'core POST /store/orders/:orderId/return-requests': {
-    verdict: 'SAFE',
-    evidence: 'apps/core/src/modules/sales-order/services/store-return-exchange.service.ts:110',
-    predicate: 'this.assertOwnership(so, customerId);',
-    note: 'createReturnRequest; assertOwnership 정의는 같은 파일의 private assertOwnership (if (so.customerId !== customerId) throw ForbiddenException).',
-  },
   'core POST /store/orders/by-channel-order/:channelOrderId/cancel-request': {
     verdict: 'SAFE',
     evidence: 'apps/core/src/modules/sales-order/services/store-sales-orders.service.ts:369',
     predicate: 'if (customerId !== undefined && so.customerId !== customerId)',
     note: "cancelRequestByChannelOrder -> findSoOrThrow({channelOrderId, salesChannel:'medusa'}, customerId).",
-  },
-  'core POST /store/orders/by-channel-order/:channelOrderId/exchange-requests': {
-    verdict: 'SAFE',
-    evidence: 'apps/core/src/modules/sales-order/services/store-return-exchange.service.ts:202',
-    predicate: 'this.assertOwnership(so, customerId);',
-    note: 'createExchangeRequestByChannelOrder -> this.createExchangeRequest(so.id, customerId, dto) 로 위임, 실제 검증은 createExchangeRequest 의 assertOwnership.',
-  },
-  'core POST /store/orders/by-channel-order/:channelOrderId/return-requests': {
-    verdict: 'SAFE',
-    evidence: 'apps/core/src/modules/sales-order/services/store-return-exchange.service.ts:110',
-    predicate: 'this.assertOwnership(so, customerId);',
-    note: 'createReturnRequestByChannelOrder -> findSoByChannelOrderOrThrow 후 this.createReturnRequest(so.id, customerId, dto) 로 위임, 실제 검증은 createReturnRequest 의 assertOwnership.',
   },
   'core POST /store/orders/by-channel-order/actions/batch': {
     verdict: 'SAFE',
@@ -1762,15 +1696,15 @@ const keyOf = (r: AuditRow): string => `${r.app} ${r.verb} ${r.route}`;
 describe('IDOR 검사 대상 집합', () => {
   it('감사 스크립트가 idorTarget 을 내보낸다', () => {
     const targets = runAudit().filter((r) => r.idorTarget);
-    expect(targets).toHaveLength(286);
+    expect(targets).toHaveLength(275);
   });
 
   // search 와 analytics 가 둘 다 `GET /health` 이고, user-service 와 file-service 가 둘 다
   // `POST /files/upload` 다. `<VERB> <route>` 로 키를 만들면 그만큼 뭉개지고 스냅샷이 조용히 잃는다.
   it('키에 app 이 들어가야 충돌하지 않는다', () => {
     const targets = runAudit().filter((r) => r.idorTarget);
-    expect(new Set(targets.map(keyOf)).size).toBe(286);
-    expect(new Set(targets.map((r) => `${r.verb} ${r.route}`)).size).toBe(284);
+    expect(new Set(targets.map(keyOf)).size).toBe(275);
+    expect(new Set(targets.map((r) => `${r.verb} ${r.route}`)).size).toBe(273);
   });
 
   it('감사 스크립트의 대상 집합과 명단이 정확히 일치한다', () => {

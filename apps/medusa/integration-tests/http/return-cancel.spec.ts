@@ -237,6 +237,96 @@ medusaIntegrationTestRunner({
       expect(await revertChanges(o.orderId)).toHaveLength(0);
     });
 
+    it('core 가 picked_up 이라고 하면 반품 취소 400 return_picked_up, 반품·출고 수량 그대로', async () => {
+      const o = await ownedOrder(2);
+      const req = await requestAsCustomer({ ...o, customerId: o.me.customerId });
+      core.setPickupRelease(req.returnId, 'picked_up');
+
+      const res = await fail(api.post(cancelUrl(o.orderId, req.returnId), {}, o.me.headers));
+      expect(res.status).toBe(400);
+      expect(res.data).toMatchObject({ code: 'return_rejected', reason: 'return_picked_up' });
+      expect((await returnOf(req.returnId)).status).not.toBe('canceled');
+      expect(await detailOf(o.orderId, o.itemId)).toMatchObject({ fulfilled: 1, returnRequested: 1 });
+      expect(await revertChanges(o.orderId)).toHaveLength(0);
+      expect(core.releaseCalls).toHaveLength(1);
+    });
+
+    it('core 가 released 라고 하면 지금처럼 취소되고, 놓아주기는 한 번 부른다(Bearer 키 포함)', async () => {
+      const o = await ownedOrder(2);
+      const req = await requestAsCustomer({ ...o, customerId: o.me.customerId });
+      core.setPickupRelease(req.returnId, 'released');
+      const res = await api.post(cancelUrl(o.orderId, req.returnId), {}, o.me.headers);
+      expect(res.status).toBe(200);
+      expect((await returnOf(req.returnId)).status).toBe('canceled');
+      expect(core.releaseCalls).toEqual([
+        { channelReturnId: req.returnId, authorization: `Bearer ${CORE_INTERNAL_KEY}` },
+      ]);
+    });
+
+    it('교환 반품 + core 가 exchangeReleased true → 400 exchange_released, 놓아주기 0, 반품 그대로', async () => {
+      const o = await ownedOrder(2);
+      const req = await requestAsCustomer({ ...o, customerId: o.me.customerId });
+      core.setCustomerReturns(o.orderId, [
+        { channelReturnId: req.returnId, status: 'expected', kind: 'exchange', exchangeReleased: true },
+      ]);
+
+      const res = await fail(api.post(cancelUrl(o.orderId, req.returnId), {}, o.me.headers));
+      expect(res.status).toBe(400);
+      expect(res.data).toMatchObject({ code: 'return_rejected', reason: 'exchange_released' });
+      expect(core.releaseCalls).toHaveLength(0);
+      expect((await returnOf(req.returnId)).status).not.toBe('canceled');
+      expect(await detailOf(o.orderId, o.itemId)).toMatchObject({ fulfilled: 1, returnRequested: 1 });
+      expect(await revertChanges(o.orderId)).toHaveLength(0);
+    });
+
+    it('교환 반품이라도 core 가 exchangeReleased false 면 지금처럼 취소된다', async () => {
+      const o = await ownedOrder(2);
+      const req = await requestAsCustomer({ ...o, customerId: o.me.customerId });
+      core.setCustomerReturns(o.orderId, [
+        { channelReturnId: req.returnId, status: 'expected', kind: 'exchange', exchangeReleased: false },
+      ]);
+      const res = await api.post(cancelUrl(o.orderId, req.returnId), {}, o.me.headers);
+      expect(res.status).toBe(200);
+      expect((await returnOf(req.returnId)).status).toBe('canceled');
+    });
+
+    it('자격 조회 뒤 CS 가 교환품을 먼저 보냈다(놓아주기가 exchange_released) → 400 exchange_released, 반품·출고 수량 그대로 (K8 PR11)', async () => {
+      const o = await ownedOrder(2);
+      const req = await requestAsCustomer({ ...o, customerId: o.me.customerId });
+      // 자격 조회 시점엔 아직 안 열렸다 — 놓아주기 시점에 core 가 열린 것을 본다
+      core.setCustomerReturns(o.orderId, [
+        { channelReturnId: req.returnId, status: 'expected', kind: 'exchange', exchangeReleased: false },
+      ]);
+      core.setPickupRelease(req.returnId, 'exchange_released');
+
+      const res = await fail(api.post(cancelUrl(o.orderId, req.returnId), {}, o.me.headers));
+      expect(res.status).toBe(400);
+      expect(res.data).toMatchObject({ code: 'return_rejected', reason: 'exchange_released' });
+      expect(core.releaseCalls).toHaveLength(1);
+      expect((await returnOf(req.returnId)).status).not.toBe('canceled');
+      expect(await detailOf(o.orderId, o.itemId)).toMatchObject({ fulfilled: 1, returnRequested: 1 });
+      expect(await revertChanges(o.orderId)).toHaveLength(0);
+    });
+
+    it('도착 거절(return_arrived)이면 놓아주기를 부르지 않는다', async () => {
+      const o = await ownedOrder(2);
+      const req = await requestAsCustomer({ ...o, customerId: o.me.customerId });
+      core.setCustomerReturns(o.orderId, [{ channelReturnId: req.returnId, status: 'arrived' }]);
+      await fail(api.post(cancelUrl(o.orderId, req.returnId), {}, o.me.headers));
+      expect(core.releaseCalls).toHaveLength(0);
+    });
+
+    it('놓아주기가 409 면 502 core_unavailable, 반품·출고 수량 그대로', async () => {
+      const o = await ownedOrder(2);
+      const req = await requestAsCustomer({ ...o, customerId: o.me.customerId });
+      core.failPickupReleaseWith(409);
+      const res = await fail(api.post(cancelUrl(o.orderId, req.returnId), {}, o.me.headers));
+      expect(res.status).toBe(502);
+      expect(res.data).toMatchObject({ type: 'core_unavailable' });
+      expect((await returnOf(req.returnId)).status).not.toBe('canceled');
+      expect(await detailOf(o.orderId, o.itemId)).toMatchObject({ fulfilled: 1, returnRequested: 1 });
+    });
+
     it('선환불한 반품 취소 → 400 return_prepaid, 반품 그대로', async () => {
       const o = await ownedOrder(2);
       const req = await requestAsCustomer({ ...o, customerId: o.me.customerId });

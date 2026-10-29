@@ -12,9 +12,8 @@ export type ParcelClaimEligibility = {
   dispatchAttemptId: string;
   deliveredAt: Date;
   deliveredQty: number;
-  claimedQty: number;
   skuClaimable: number;
-  /** 이 소포에서 더 반품·교환할 수 있는 SKU 수량. 음수일 수 있다 — 표시는 소비자가 클램프한다. */
+  /** 이 소포에서 더 반품할 수 있는 SKU 수량. 음수일 수 있다 — 표시는 소비자가 클램프한다. */
   claimable: number;
 };
 
@@ -27,7 +26,6 @@ type ParcelRow = {
   /** raw execute 는 드라이버 설정에 따라 timestamptz 를 문자열로 줄 수 있다 — Date 로 옮긴다. */
   delivered_at: string | Date;
   delivered_qty: number;
-  claimed_qty: number;
   sku_claimable: number;
   claimable: number;
 };
@@ -54,7 +52,6 @@ export async function readParcelClaimEligibility(
     dispatchAttemptId: row.dispatch_attempt_id,
     deliveredAt: new Date(row.delivered_at),
     deliveredQty: row.delivered_qty,
-    claimedQty: row.claimed_qty,
     skuClaimable: row.sku_claimable,
     claimable: row.claimable,
   }));

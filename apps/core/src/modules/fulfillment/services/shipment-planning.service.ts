@@ -1820,11 +1820,13 @@ export class ShipmentPlanningService {
 
   private async assertTrustedExternalLineIdentity(aggregate: ShipmentAggregate, tx: DbTx): Promise<void> {
     const origins = await this.loadSalesOrderLineOrigins(aggregate.lines, tx);
+    // 교환 줄(K8 PR11)은 Medusa 품목 id 를 정산 사실이 나중에 채운다 — 선발송·정산 전 출고가 그 id 를 기다리지 않는다.
+    // 채널 발송 이벤트는 교환 줄을 싣지 않는다(dispatch-effects). 채널 품목 id 가 이미 있으면 같은 신뢰 검사를 받는다
     const invalid = origins.filter(
       (origin) =>
         TRUSTED_CHANNELS.has(origin.salesChannel) &&
-        (!origin.channelOrderItemId?.trim() ||
-          (origin.channelProductId?.trim() && origin.channelOrderItemId.trim() === origin.channelProductId.trim())),
+        ((origin.exchangeReturnLineId === null && !origin.channelOrderItemId?.trim()) ||
+          (origin.channelProductId?.trim() && origin.channelOrderItemId?.trim() === origin.channelProductId.trim())),
     );
     if (invalid.length) {
       throw this.conflict(
@@ -1845,6 +1847,7 @@ export class ShipmentPlanningService {
       channelOrderId: string;
       channelOrderItemId: string | null;
       channelProductId: string | null;
+      exchangeReturnLineId: string | null;
     }>
   > {
     const ids = uniqueSorted(lines.flatMap((line) => (line.salesOrderLineId ? [line.salesOrderLineId] : [])));
@@ -1859,7 +1862,8 @@ export class ShipmentPlanningService {
              so.sales_channel::text AS "salesChannel",
              so.channel_order_id AS "channelOrderId",
              sol.channel_order_item_id AS "channelOrderItemId",
-             sol.channel_product_id AS "channelProductId"
+             sol.channel_product_id AS "channelProductId",
+             sol.exchange_return_line_id::text AS "exchangeReturnLineId"
         FROM sales_order_lines sol
         JOIN sales_orders so ON so.id = sol.sales_order_id
        WHERE sol.id::text IN (${idList})
@@ -1872,6 +1876,7 @@ export class ShipmentPlanningService {
       channelOrderId: string;
       channelOrderItemId: string | null;
       channelProductId: string | null;
+      exchangeReturnLineId: string | null;
     }>;
   }
 

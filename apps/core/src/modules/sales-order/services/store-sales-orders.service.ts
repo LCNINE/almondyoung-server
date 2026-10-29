@@ -2,7 +2,7 @@ import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundEx
 import { createHash } from 'crypto';
 import { InjectTypedDb } from '@app/db';
 import { and, desc, eq, inArray, isNotNull, isNull, ne, notInArray, sql } from 'drizzle-orm';
-import { inventorySchema, inventoryTables, returnExchangeTables } from '../../inventory/schema/inventory.schema';
+import { inventorySchema, inventoryTables } from '../../inventory/schema/inventory.schema';
 import { digitalAssetOwnerships } from '../../library/schema/library.schema';
 import { WAYBILL_TERMINAL_STATUSES } from '../../fulfillment/waybill/waybill.constants';
 import {
@@ -35,7 +35,7 @@ import {
   readOrderFulfillmentPhases,
   type OrderFulfillmentPhase,
 } from '../line-quantities/order-fulfillment-phase.reader';
-import { ACTIVE_EXCHANGE_STATUSES, ACTIVE_RETURN_STATUSES } from '../line-quantities/claim-statuses';
+import { CUSTOMER_RETURN_ACTIVE_STATUSES } from '../line-quantities/claim-statuses';
 import { readParcelClaimEligibility } from '../line-quantities/parcel-claim-eligibility.reader';
 import { selfCancelBlock, SelfCancelBlock } from './self-cancel-block';
 import { CARRIER_CODE_ALIASES, CARRIER_NAME_BY_CODE } from '../../fulfillment/waybill/carrier/carrier-names';
@@ -554,42 +554,25 @@ export class StoreSalesOrdersService {
     } else if (cancelUnavailableReason === 'already_shipped') {
       availableActions.push('track');
       availableActions.push('receipt');
-      // 진행 중인 claim 은 claimable 과 상관없이 claimStatus 로 드러낸다 — 진행 중 반품이 배송완료 소포를
-      // 전부 덮으면 claimable 이 0 이 되므로, 이 조회를 claimable 뒤에 두면 claimStatus 가 'none' 으로 남는다.
-      // return/exchange: 진행 중인 claim 이 없고 청구 가능한 배송완료 소포(claimable > 0)가 있을 때만 허용 (K6 PR3a, C8)
-      const [activeReturn, activeExchange] = await Promise.all([
+      // claimStatus 는 진행 중 반품 예정 기록이 있는지만 말한다(K8 PR 10 N5). 반품 버튼은 그것과 무관하게 청구 가능한
+      // 배송완료 소포(claimable > 0)가 있으면 낸다 — Medusa 는 한 주문에 반품 여럿을 받고(K8 PR 3), 진행 중 반품이 잡은
+      // 수량은 이미 claimable 에서 빠져 있다(K6 SKU 몫). 교환은 PR 11(Medusa 교환)이 열 때까지 내지 않는다.
+      const [activeReturn, claimableParcels] = await Promise.all([
         this.db.db
-          .select({ id: returnExchangeTables.returnRequests.id })
-          .from(returnExchangeTables.returnRequests)
+          .select({ id: inventoryTables.customerReturns.id })
+          .from(inventoryTables.customerReturns)
           .where(
             and(
-              eq(returnExchangeTables.returnRequests.salesOrderId, so.id),
-              inArray(returnExchangeTables.returnRequests.status, [...ACTIVE_RETURN_STATUSES]),
+              eq(inventoryTables.customerReturns.salesOrderId, so.id),
+              inArray(inventoryTables.customerReturns.status, [...CUSTOMER_RETURN_ACTIVE_STATUSES]),
             ),
           )
           .limit(1)
           .then((r) => r[0]),
-        this.db.db
-          .select({ id: returnExchangeTables.exchangeRequests.id })
-          .from(returnExchangeTables.exchangeRequests)
-          .where(
-            and(
-              eq(returnExchangeTables.exchangeRequests.salesOrderId, so.id),
-              inArray(returnExchangeTables.exchangeRequests.status, [...ACTIVE_EXCHANGE_STATUSES]),
-            ),
-          )
-          .limit(1)
-          .then((r) => r[0]),
+        readParcelClaimEligibility(this.db.db, so.id),
       ]);
       if (activeReturn) claimStatus = 'return_requested';
-      else if (activeExchange) claimStatus = 'exchange_requested';
-      if (claimStatus === 'none') {
-        const claimableParcels = await readParcelClaimEligibility(this.db.db, so.id);
-        if (claimableParcels.some((parcel) => parcel.claimable > 0)) {
-          availableActions.push('return');
-          availableActions.push('exchange');
-        }
-      }
+      if (claimableParcels.some((parcel) => parcel.claimable > 0)) availableActions.push('return');
     } else if (cancelUnavailableReason) {
       availableActions.push('receipt');
     } else {

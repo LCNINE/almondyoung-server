@@ -225,6 +225,11 @@ export const CUSTOMER_RETURN_REASONS = [
 
 export type CustomerReturnReason = (typeof CUSTOMER_RETURN_REASONS)[number];
 
+/** 반품 접수의 종류 (K8 PR11). 없으면 `return`. */
+export const CUSTOMER_RETURN_KINDS = ['return', 'exchange'] as const;
+
+export type CustomerReturnKind = (typeof CUSTOMER_RETURN_KINDS)[number];
+
 /**
  * 채널 반품 접수 사실 (K8 PR5). channel-adapter 가 Medusa 주문의 `returns` 에서 관측해 낸다.
  * `orderId` 는 channel-adapter 의 wmsOrderId 이고 정본은 채널 키(`salesChannel`+`externalOrderId`)다(#656).
@@ -242,6 +247,8 @@ export interface ChannelReturnRequestedPayload {
   windowOverrideReason?: string;
   requestedAt: string;
   items: Array<{ channelOrderItemId: string; quantity: number }>;
+  /** 반품/교환 (K8 PR11). 없으면 `return` */
+  kind?: CustomerReturnKind;
 }
 
 /**
@@ -431,6 +438,7 @@ const ChannelReturnRequestedSchema = z.object({
   feeBearer: z.enum(['customer', 'seller']),
   requestedBy: z.enum(['customer', 'operator']),
   windowOverrideReason: z.string().optional(),
+  kind: z.enum(CUSTOMER_RETURN_KINDS).optional(),
   requestedAt: z.string().datetime(),
   items: z
     .array(
@@ -713,6 +721,8 @@ export interface ChannelReturnSettledPayload {
   prepaidAmount?: number;
   /** 외부 결제 몫 가운데 이번 정산이 실제로 되돌린 금액(원, K8 PR6b) */
   externalRefundApplied?: number;
+  /** 교환이면 원래 줄(`sourceItemId`)을 대체한 새 Medusa 줄(`itemId`) (K8 PR11) */
+  exchangeItems?: Array<{ sourceItemId: string; itemId: string; quantity: number }>;
 }
 
 /** 반품 선환불 성공 사실 (K8 PR6b). channel-adapter 가 Medusa 선환불 응답을 보고 낸다. */
@@ -784,6 +794,16 @@ const ChannelReturnSettledSchema = z.object({
   items: z.array(ReturnSettlementItemSchema).min(1),
   prepaidAmount: z.number().int().nonnegative().optional(),
   externalRefundApplied: z.number().int().nonnegative().optional(),
+  exchangeItems: z
+    .array(
+      z.object({
+        sourceItemId: z.string().min(1),
+        itemId: z.string().min(1),
+        quantity: z.number().int().positive(),
+      }),
+    )
+    .min(1)
+    .optional(),
 });
 
 const ChannelReturnPrepaidSchema = z.object({

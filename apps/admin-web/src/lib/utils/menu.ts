@@ -397,11 +397,6 @@ const allMenus: MainMenu[] = [
         path: '/inventory/holders',
       },
       {
-        id: 'inventory-returns',
-        title: '회수/반품 처리',
-        path: '/inventory/returns',
-      },
-      {
         id: 'product-matching',
         title: '상품 매칭',
         path: '/matching/products',
@@ -467,13 +462,18 @@ const allMenus: MainMenu[] = [
       },
       {
         id: 'return-exchange',
-        title: '반품&교환 관리',
+        title: '반품 관리',
         path: '/cs/return-exchange',
       },
       {
         id: 'review-management',
         title: '리뷰 관리',
         path: '/cs/reviews',
+      },
+      {
+        id: 'purchase-satisfaction',
+        title: '구매 만족도',
+        path: '/cs/purchase-satisfaction',
       },
       {
         id: 'review-reward-policy',

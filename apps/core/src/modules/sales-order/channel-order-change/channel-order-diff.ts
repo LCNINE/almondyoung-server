@@ -37,11 +37,38 @@ function addressChanged(current: ShippingAddress, next: ShippingAddress): boolea
 }
 
 /**
- * 채널 스냅샷과 «지금 유효한» 판매주문의 차이 (스펙 §6). 판정(반영/대기)은 하지 않는다.
- * 비교하지 않는 것: 총액·할인(감소의 결과), 우리 쪽 식별·상품명(6번 행의 오탐), 공동현관 비밀번호.
+ * 교환 줄(K8 PR11 N18)을 양쪽에서 뺀다 — 판매주문 쪽은 교환 줄, 스냅샷 쪽은 교환 줄에 이어진 대체 품목 줄.
+ * 교환 줄은 교환 사실로만 생기고 지워진다. 스냅샷과 비교하면 «채널에 없음 → 0 으로 정정»(교환품 출고 취소)이나
+ * «새 품목 → add_product 대기»가 된다.
  */
-export function diffChannelSnapshot(order: EffectiveSalesOrder, snapshot: ChannelOrderSnapshot): ChannelDelta[] {
-  if (NOT_DIFFED_STATUSES.has(order.status)) return [];
+function channelLinesOnly(
+  order: EffectiveSalesOrder,
+  snapshot: ChannelOrderSnapshot,
+): { order: EffectiveSalesOrder; snapshot: ChannelOrderSnapshot } {
+  const exchangeItemIds = new Set(
+    order.lines.flatMap((line) =>
+      line.exchangeReturnLineId !== null && line.channelOrderItemId ? [line.channelOrderItemId] : [],
+    ),
+  );
+  return {
+    order: { ...order, lines: order.lines.filter((line) => line.exchangeReturnLineId === null) },
+    snapshot: {
+      ...snapshot,
+      lines: snapshot.lines.filter((line) => !line.channelOrderItemId || !exchangeItemIds.has(line.channelOrderItemId)),
+    },
+  };
+}
+
+/**
+ * 채널 스냅샷과 «지금 유효한» 판매주문의 차이 (스펙 §6). 판정(반영/대기)은 하지 않는다.
+ * 비교하지 않는 것: 총액·할인(감소의 결과), 우리 쪽 식별·상품명(6번 행의 오탐), 공동현관 비밀번호, 교환 줄(N18).
+ */
+export function diffChannelSnapshot(
+  effectiveOrder: EffectiveSalesOrder,
+  channelSnapshot: ChannelOrderSnapshot,
+): ChannelDelta[] {
+  if (NOT_DIFFED_STATUSES.has(effectiveOrder.status)) return [];
+  const { order, snapshot } = channelLinesOnly(effectiveOrder, channelSnapshot);
   const deltas: ChannelDelta[] = [];
 
   if (addressChanged(order.shippingAddress, snapshot.shippingAddress)) {
@@ -134,6 +161,8 @@ export function removesAllLines(order: EffectiveSalesOrder, deltas: ChannelDelta
   const corrected = new Map(
     deltas.flatMap((delta) => (delta.type === 'quantity_correction' ? [[delta.salesOrderLineId, delta.correctedQuantity] as const] : [])),
   );
-  const remaining = order.lines.reduce((sum, line) => sum + (corrected.get(line.id) ?? line.effectiveQuantity), 0);
-  return remaining === 0 && order.lines.some((line) => line.effectiveQuantity > 0);
+  // 교환 줄은 채널 줄이 아니다 — 채널 줄을 다 지웠으면 교환 줄이 남아 있어도 전 라인 제거다(N18)
+  const lines = order.lines.filter((line) => line.exchangeReturnLineId === null);
+  const remaining = lines.reduce((sum, line) => sum + (corrected.get(line.id) ?? line.effectiveQuantity), 0);
+  return remaining === 0 && lines.some((line) => line.effectiveQuantity > 0);
 }

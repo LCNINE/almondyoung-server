@@ -19,7 +19,10 @@ export type ReturnRejectReason =
   | 'return_already_received'
   | 'not_our_return'
   | 'return_arrived'
-  | 'return_prepaid';
+  | 'return_prepaid'
+  | 'return_picked_up'
+  | 'exchange_requires_seller_fault'
+  | 'exchange_released';
 
 /** 정해진 거절 — 호출자는 이걸 400 계열로 닫는다(500 이면 channel-adapter 류가 재시도를 되풀이한다). */
 export class ReturnRequestRejected extends Error {
@@ -85,6 +88,8 @@ export type PlanReturnRequestInput = {
   requestedBy: ReturnRequestedBy;
   reason: { value: string; feeBearer: ReturnFeeBearer | null; customerSelectable: boolean } | null;
   operatorFeeBearer?: 'customer' | 'seller';
+  /** 접수 종류(K8 PR11) — exchange 는 확정된 부담 주체가 seller 일 때만 통과한다(N2) */
+  kind?: 'return' | 'exchange';
   windowOverrideReason?: string;
   now: Date;
 };
@@ -107,6 +112,9 @@ export function planReturnRequest(input: PlanReturnRequestInput): ReturnRequestP
     throw new ReturnRequestRejected('order_canceled', '취소된 주문은 반품할 수 없습니다');
 
   const feeBearer = resolveFeeBearer(input);
+  if (input.kind === 'exchange' && feeBearer !== 'seller') {
+    throw new ReturnRequestRejected('exchange_requires_seller_fault', '교환은 판매자 잘못 사유일 때만 접수할 수 있습니다');
+  }
   const lines = describeReturnable(input.items, input.core);
 
   const picked = input.requested.map((req) => {

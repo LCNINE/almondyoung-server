@@ -1,11 +1,13 @@
 import type {
   CustomerReturnAttention,
+  CustomerReturnPickupStatus,
   CustomerReturnReason,
   CustomerReturnStatus,
 } from '@/lib/types/dto/customer-returns';
 import {
   RETURN_ATTENTION_LABELS,
   RETURN_FEE_BEARER_LABELS,
+  RETURN_PICKUP_STATUS_LABELS,
   RETURN_REASON_LABELS,
   RETURN_REASON_OPTIONS,
   RETURN_STATUS_LABELS,
@@ -35,6 +37,15 @@ const ATTENTIONS: CustomerReturnAttention[] = [
   'prepayment_failed',
   'partial_arrival',
   'refund_overdue',
+  'pickup_failed',
+];
+const PICKUP_STATUSES: CustomerReturnPickupStatus[] = [
+  'pending',
+  'reserved',
+  'failed',
+  'void',
+  'cancel_pending',
+  'cancelled',
 ];
 
 const keys = (o: object) => Object.keys(o).sort();
@@ -51,6 +62,12 @@ describe('customer-return-labels', () => {
   });
   it('확인 필요 라벨 키가 유니온 전체와 같다', () => {
     expect(keys(RETURN_ATTENTION_LABELS)).toEqual([...ATTENTIONS].sort());
+  });
+  it('회수 상태 라벨 키가 유니온 전체와 같고 비어 있지 않다', () => {
+    expect(keys(RETURN_PICKUP_STATUS_LABELS)).toEqual([...PICKUP_STATUSES].sort());
+    for (const s of PICKUP_STATUSES) expect(RETURN_PICKUP_STATUS_LABELS[s]).not.toBe('');
+    expect(RETURN_PICKUP_STATUS_LABELS.failed).toBe('접수 실패');
+    expect(RETURN_ATTENTION_LABELS.pickup_failed).toBe('회수 미접수');
   });
   it('문구가 정해진 값이다', () => {
     expect(RETURN_STATUS_LABELS.refund_pending).toBe('환불 실패');

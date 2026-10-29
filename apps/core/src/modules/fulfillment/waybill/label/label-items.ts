@@ -17,6 +17,18 @@ export interface AllocatedLabelRow {
 const codepoint = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 
 /**
+ * 송장에 찍을 위치. 셀메이트 재고 동기화가 재고를 전부 입고기본존(시스템 로케이션)에 두므로, 배정이 시스템
+ * 로케이션이면 셀메이트 "상품위치"(sku_shelf_positions)를 쓴다. 실제 선반 로케이션에 배정됐으면 그게 우선이다.
+ */
+export function labelLocationCode(row: {
+  locationCode: string;
+  systemRole: string | null;
+  shelfCode: string | null;
+}): string {
+  return row.systemRole !== null && row.shelfCode ? row.shelfCode : row.locationCode;
+}
+
+/**
  * 배정 행을 (로케이션, SKU) 로 합친다 — 한 SKU 가 출고 줄 여럿(FOI 별)이어도 같은 곳에서 집는 동작은 하나다.
  * 로케이션 코드 순(동선이 코드 순이다) → 이름순 → skuId 순. 입력 순서에 흔들리지 않는다(지문이 이 순서를 먹는다).
  */

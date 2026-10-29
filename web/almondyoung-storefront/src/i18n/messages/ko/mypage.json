@@ -685,6 +685,9 @@
         "notOurReturn": "이 화면에서 처리할 수 없는 반품이에요. 고객센터로 문의해 주세요.",
         "returnArrived": "이미 물건이 창고에 도착한 반품이에요.",
         "returnPrepaid": "이미 환불이 시작된 반품이에요.",
+        "returnPickedUp": "택배 기사님이 이미 가져간 반품이라 취소할 수 없어요",
+        "exchangeRequiresSellerFault": "교환은 상품 문제(하자·오배송·파손 등)일 때만 신청할 수 있어요",
+        "exchangeReleased": "교환품이 이미 출발해 취소할 수 없어요",
         "generic": "반품을 신청하지 못했어요. 고객센터로 문의해 주세요."
       }
     },
@@ -706,6 +709,8 @@
       "cancelReject": {
         "returnArrived": "이미 창고에 도착해 취소할 수 없어요.",
         "returnPrepaid": "이미 환불이 시작돼 취소할 수 없어요.",
+        "returnPickedUp": "이미 택배 기사님이 가져가서 취소할 수 없어요. 도착하면 검수 뒤 환불돼요",
+        "exchangeReleased": "교환품이 이미 출발해 취소할 수 없어요",
         "notOurReturn": "이 화면에서 취소할 수 없는 반품이에요. 고객센터로 문의해 주세요."
       }
     },
@@ -854,6 +859,12 @@
       "started": "다운로드를 시작합니다",
       "failed": "다운로드에 실패했습니다",
       "exerciseFailed": "사용 처리에 실패했습니다"
+    },
+    "exchangeUnavailable": {
+      "title": "교환 신청은 고객센터에서 받고 있어요",
+      "body": "주문번호와 바꾸고 싶은 상품을 알려 주시면 도와드릴게요.",
+      "inquiry": "1:1 문의하기",
+      "orderDetail": "주문 상세"
     }
   },
   "membership": {

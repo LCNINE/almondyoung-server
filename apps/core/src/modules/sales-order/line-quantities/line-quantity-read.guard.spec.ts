@@ -43,6 +43,14 @@ function filesMatchingIn(roots: string[], predicate: (source: string) => boolean
     .sort();
 }
 
+/** 스키마 파일까지 훑는다 — 지운 표·enum 의 정의가 되살아나는 것도 잡아야 할 때. */
+function filesMatchingWithSchema(predicate: (source: string) => boolean): string[] {
+  return walk(SRC)
+    .filter((path) => predicate(readFileSync(path, 'utf8')))
+    .map((path) => relative(ROOT, path))
+    .sort();
+}
+
 describe('취소 수량 읽는 문', () => {
   it('only the line-quantity kernel and the recorder read cancellation lines', () => {
     expect(filesMatching((source) => /salesOrderCancellationLines/.test(source))).toEqual([RECORDER, FRAGMENTS]);
@@ -87,8 +95,8 @@ describe('취소 수량 읽는 문', () => {
     // 비테스트 운영 파일만 센다(walk 가 스펙·__support__ 를 뺀다). 픽스처는 현실 데이터를 흉내 내려 추적 행을 써야 한다.
     // - store-sales-orders.service.ts: 배송조회 화면의 추적 이벤트 목록이다(수량이 아니다).
     // - line-quantities.sql.ts: `deliveredParcelsSql` 이 «배송완료 소포»의 단 하나의 정의다(SKU 층 `delivered` 와 소포 단위 청구 자격이 함께 쓴다).
-    // 반품 자격(store-return-exchange.service.ts)은 K6 PR3a 가 소포 단위 청구 자격(`parcel-claim-eligibility`)으로 옮겼다 —
-    // 그 SQL 은 `deliveredParcelsSql` 을 불러 쓰므로 추적 테이블 이름을 직접 쓰지 않는다.
+    // 반품 자격은 소포 단위 청구 자격(`parcel-claim-eligibility`)이 낸다 — 그 SQL 은 `deliveredParcelsSql` 을 불러 쓰므로
+    // 추적 테이블 이름을 직접 쓰지 않는다.
     const salesOrder = 'apps/core/src/modules/sales-order/';
     const files = filesMatching((source) => /shipment_tracking|shipmentTracking/.test(source)).filter((path) =>
       path.startsWith(salesOrder),
@@ -102,35 +110,38 @@ describe('취소 수량 읽는 문', () => {
   });
 });
 
-describe('청구(반품·교환) 수량 읽는 문', () => {
+/**
+ * 옛 판매주문 반품·교환 표(`return_requests`·`exchange_requests` 계열)는 K8 PR 10 이 코드에서 걷었고 PR 10b 가 DROP 했다.
+ * 스키마 포함 어디서든 이 이름이나 그 enum 정의가 다시 나오면 빨갛다(라이브엔 그 표가 없다).
+ */
+const LEGACY_CLAIM_IDENTIFIERS =
+  /\b(returnRequests|returnRequestItems|exchangeRequests|exchangeRequestItems|returnRefundAttempts|returnExchangeTables|returnExchangeSchema|StoreReturnExchangeService|ACTIVE_RETURN_STATUSES|ACTIVE_EXCHANGE_STATUSES|CONSUMED_RETURN_STATUSES|exchange_active|exchangeActive|return_requests|return_request_items|exchange_requests|exchange_request_items|return_refund_attempts)\b|pgEnum\(\s*'(return_request_status|exchange_request_status|return_reason_code|exchange_reason_code|return_refund_attempt_status)'/;
+
+describe('청구(반품) 수량 읽는 문', () => {
   const salesOrder = 'apps/core/src/modules/sales-order/';
 
-  it('only the kernel and the claim service touch claim items', () => {
-    // 커널 SQL 조각(`claim-quantities.sql.ts`)이 수량을 읽고, 서비스는 항목을 만들고(INSERT) 요청을 다룬다.
-    // `claim-quantities.reader.ts`·`parcel-claim-eligibility.*` 는 조각을 불러 쓸 뿐 이 테이블 이름을 쓰지 않는다(R2).
-    const files = filesMatching((source) => /\breturnRequestItems\b|\bexchangeRequestItems\b/.test(source)).filter(
-      (path) => path.startsWith(salesOrder),
-    );
-    expect(files).toEqual(
-      [
-        `${salesOrder}line-quantities/claim-quantities.sql.ts`,
-        `${salesOrder}services/store-return-exchange.service.ts`,
-      ].sort(),
-    );
-    expect(filesMatching((source) => /\breturnRequestItems\b|\bexchangeRequestItems\b/.test(source)).sort()).toEqual(
-      files,
-    );
+  it('retired legacy claims stay gone', () => {
+    expect(filesMatchingWithSchema((source) => LEGACY_CLAIM_IDENTIFIERS.test(source))).toEqual([]);
   });
 
-  it('claim quantities are summed only in the kernel', () => {
-    // 서비스의 INSERT(`quantity: line.quantity`)는 걸리지 않는다. 항목 수량을 읽는 표현은 커널 SQL 조각(`claim-quantities.sql.ts`)의 raw SQL 별칭 `return_item.quantity`·`exchange_item.quantity` 뿐이다.
-    expect(filesMatching((source) => /\b(returnRequestItems|exchangeRequestItems)\.quantity\b/.test(source))).toEqual(
-      [],
-    );
+  it('inventory 옛 반품은 다시 오지 않는다', () => {
+    // inventory ReturnService·/inventory/returns 는 K8 PR 10 이 걷었고 표(`returns`·`return_items`)·enum `return_status` 는 PR 10b 가 DROP 했다
+    const pattern =
+      /\breturnStatusValues\b|\bprocessReturn\b|from '\.\.?\/services\/return\.service'|@Controller\('inventory\/returns'\)|\bwmsTables\.returns\b|\bwmsTables\.returnItems\b|\breturnItems\b|pgTable\(\s*'(returns|return_items)'|pgEnum\(\s*'return_status'/;
+    expect(filesMatchingWithSchema((source) => pattern.test(source))).toEqual([]);
+  });
+
+  it('only the kernel reads customer return lines for quantities', () => {
+    // 반품 예정 줄의 수량을 청구로 세는 표현은 커널 SQL 조각의 raw SQL 별칭뿐이다(K8 PR5·PR10)
+    expect(
+      filesMatching((source) => /\b(customer_return_line|held_return_line)\.quantity\b/.test(source)).filter((path) =>
+        path.startsWith(salesOrder),
+      ),
+    ).toEqual([`${salesOrder}line-quantities/claim-quantities.sql.ts`]);
   });
 
   it('claim statuses have one home', () => {
-    expect(filesMatching((source) => /const\s+ACTIVE_(RETURN|EXCHANGE)_STATUSES\s*=/.test(source))).toEqual([
+    expect(filesMatching((source) => /const\s+CUSTOMER_RETURN_(ACTIVE|CONSUMED)_STATUSES\s*=/.test(source))).toEqual([
       `${salesOrder}line-quantities/claim-statuses.ts`,
     ]);
   });

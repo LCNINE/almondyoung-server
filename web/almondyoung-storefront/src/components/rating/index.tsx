@@ -25,6 +25,10 @@ type Props = {
    * 별점 크기 (기본값: 24)
    */
   size?: number
+  /**
+   * 주어지면 별을 radio 로 노출하고 이 라벨을 접근 가능한 이름으로 쓴다 (탭 영역 48px 이상)
+   */
+  getStarLabel?: (starValue: number) => string
 }
 
 /**
@@ -40,6 +44,7 @@ export function Rating({
   activeColor = "#FFA500",
   inactiveColor = "#D9D9D9",
   size = 24,
+  getStarLabel,
 }: Props) {
   // hover는 일시적 UI 피드백이므로 로컬 상태로만 관리
   // API 요청과 무관한 순수한 UI 상태
@@ -64,9 +69,21 @@ export function Rating({
           type="button"
           onClick={() => onRatingChange?.(starValue)}
           onMouseEnter={() => setHoveredRating(starValue)}
-          className="transition-transform hover:scale-110"
-          aria-label={`${starValue}점`}
-          aria-pressed={rating >= starValue}
+          className={
+            getStarLabel
+              ? "flex min-h-12 min-w-12 items-center justify-center transition-transform hover:scale-110"
+              : "transition-transform hover:scale-110"
+          }
+          {...(getStarLabel
+            ? {
+                role: "radio" as const,
+                "aria-checked": rating === starValue,
+                "aria-label": getStarLabel(starValue),
+              }
+            : {
+                "aria-label": `${starValue}점`,
+                "aria-pressed": rating >= starValue,
+              })}
         >
           <StarIcon fill={getStarFill(starValue)} size={size} />
         </button>

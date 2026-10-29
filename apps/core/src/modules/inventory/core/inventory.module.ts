@@ -9,7 +9,6 @@ import { InventoryController } from './controllers/inventory.controller';
 import { LocationController } from './controllers/location.controller';
 import { SkuManagersController, ManagerSkusController } from './controllers/sku-managers.controller';
 import { ReservationController } from './controllers/reservation.controller';
-import { ReturnController } from './controllers/return.controller';
 import { HolderController } from './controllers/holder.controller';
 import { LedgerReconciliationController } from './controllers/ledger-reconciliation.controller';
 
@@ -23,7 +22,6 @@ import { FifoLocationStrategy, LOCATION_RESOLUTION_STRATEGY } from './services/l
 import { LedgerReconciliationService } from './services/ledger-reconciliation.service';
 import { FulfillmentReservationReconciliationService } from './services/fulfillment-reservation-reconciliation.service';
 import { InventoryIdempotencyService } from './services/inventory-idempotency.service';
-import { ReturnService } from './services/return.service';
 import { HolderService } from './services/holder.service';
 import { BatchControlledStockGuard } from './services/batch-controlled-stock.guard';
 
@@ -41,7 +39,6 @@ import { StockEventStore } from './repositories/stock-event.store';
     SkuManagersController,
     ManagerSkusController,
     ReservationController,
-    ReturnController,
     HolderController,
     LedgerReconciliationController,
   ],
@@ -56,7 +53,6 @@ import { StockEventStore } from './repositories/stock-event.store';
     LedgerReconciliationService,
     FulfillmentReservationReconciliationService,
     InventoryIdempotencyService,
-    ReturnService,
     HolderService,
     BatchControlledStockGuard,
   ],
@@ -68,7 +64,6 @@ import { StockEventStore } from './repositories/stock-event.store';
     InventoryQueryService,
     SkuManagersService,
     LOCATION_RESOLUTION_STRATEGY,
-    ReturnService,
     HolderService,
     BatchControlledStockGuard,
     InventoryIdempotencyService,

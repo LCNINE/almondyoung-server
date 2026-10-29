@@ -8,19 +8,19 @@ import { PrintOrderModule } from '../print-order/print-order.module';
 import { LibraryModule } from '../library/library.module';
 import { FulfillmentOrderCreationBacklogModule } from '../fulfillment/backlog/fulfillment-order-creation-backlog.module';
 import { UnboxedDemandModule } from '../fulfillment/unboxed-demand/unboxed-demand.module';
+import { WaybillModule } from '../fulfillment/waybill/waybill.module';
+import { ExchangeShipmentModule } from '../fulfillment/exchange-shipment/exchange-shipment.module';
 
 import { SalesOrdersController } from './controllers/sales-orders.controller';
 import { SalesOrderAmendmentsController } from './controllers/sales-order-amendments.controller';
 import { StoreSalesOrdersController } from './controllers/store-sales-orders.controller';
-import { StoreSalesOrderReturnExchangeController } from './controllers/store-return-exchange.controller';
-import { AdminReturnExchangeController } from './controllers/admin-return-exchange.controller';
+import { AdminSalesOrderCancellationController } from './controllers/admin-sales-order-cancellation.controller';
 import { OrderEventsConsumer } from './consumers/order-events.consumer';
 import { EntrancePasswordCleaner } from './services/entrance-password-cleaner';
 import { SalesOrdersService } from './services/sales-orders.service';
 import { SalesOrderAmendmentsService } from './services/sales-order-amendments.service';
 import { SalesOrderQueryService } from './services/sales-order-query.service';
 import { StoreSalesOrdersService } from './services/store-sales-orders.service';
-import { StoreReturnExchangeService } from './services/store-return-exchange.service';
 import { WalletRefundClient } from './services/wallet-refund.client';
 import { CancellationRefundManager } from './cancellation-refund/cancellation-refund.manager';
 import { ChannelOrderChangeReader } from './channel-order-change/channel-order-change.reader';
@@ -37,7 +37,10 @@ import { CustomerReturnReader } from './customer-return/customer-return.reader';
 import { CustomerReturnReceivingManager } from './customer-return/customer-return-receiving.manager';
 import { CustomerReturnSettlementManager } from './customer-return/customer-return-settlement.manager';
 import { CustomerReturnCsManager } from './customer-return/customer-return-cs.manager';
+import { CustomerExchangeReleaser } from './customer-return/customer-exchange.releaser';
 import { CustomerReturnSettlementRetryCron } from './customer-return/customer-return-settlement-retry.cron';
+import { CustomerReturnPickupManager } from './customer-return/customer-return-pickup.manager';
+import { CustomerReturnPickupCron } from './customer-return/customer-return-pickup.cron';
 import { CustomerReturnsController } from './customer-return/customer-returns.controller';
 import { CustomerReturnReceivingController } from './customer-return/customer-return-receiving.controller';
 import { OrderCancellation } from './order-cancellation/order-cancellation';
@@ -95,13 +98,18 @@ import { SalesOrderLookupService } from './internal/sales-order-lookup.service';
 
     // 인쇄 외주 송장·상태 (배송조회·이행 단계에 반영)
     PrintOrderModule,
+
+    // 반품 회수 워커의 한진 게이트웨이·설정(K8 PR9). WaybillModule 은 FulfillmentCommandModule 만 물어 순환이 없다
+    WaybillModule,
+
+    // 교환 상자 열기의 출고 쪽 쓰기(K8 PR11). 소형 모듈이라 FulfillmentModule ↔ SalesOrderModule 순환이 없다
+    ExchangeShipmentModule,
   ],
   controllers: [
     SalesOrdersController,
     SalesOrderAmendmentsController,
     StoreSalesOrdersController,
-    StoreSalesOrderReturnExchangeController,
-    AdminReturnExchangeController,
+    AdminSalesOrderCancellationController,
     // 반품 기록 조회·도착·검수(K8 PR6)
     CustomerReturnsController,
     CustomerReturnReceivingController,
@@ -114,7 +122,6 @@ import { SalesOrderLookupService } from './internal/sales-order-lookup.service';
     SalesOrderAmendmentsService,
     SalesOrderQueryService,
     StoreSalesOrdersService,
-    StoreReturnExchangeService,
     WalletRefundClient,
     // 취소의 환불 기록·실행 — Wallet 을 부르는 취소 쪽 파일은 이것 하나(K7 PR4)
     CancellationRefundManager,
@@ -139,7 +146,12 @@ import { SalesOrderLookupService } from './internal/sales-order-lookup.service';
     CustomerReturnReceivingManager,
     CustomerReturnSettlementManager,
     CustomerReturnCsManager,
+    // 교환 상자 열기 — 검수·CS 문이 부른다(K8 PR11)
+    CustomerExchangeReleaser,
     CustomerReturnSettlementRetryCron,
+    // 반품 회수 한진 예약·취소 워커(K8 PR9)
+    CustomerReturnPickupManager,
+    CustomerReturnPickupCron,
     CustomerReturnService,
 
     // 채널 대사(#1016 45번)의 묶음 조회 — 호출자는 channel-adapter

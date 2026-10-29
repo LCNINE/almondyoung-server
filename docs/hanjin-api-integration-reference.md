@@ -300,6 +300,23 @@ NL·FS 의 필드별 폰트 크기는 NS(§3.2)와 다르다 — 포털 「운�
 > 형태다(금액 표시 의무 없음). **월 정산 계약이면 `CD` 하나로 확정된다** — `CT` 는 이 배송구분에서 거절되므로.
 > **우리 계약은 신용(월 정산)이다(2026-09-28 사내 확인) → `CD` 확정, 라벨 ⑬ 에 운송료 금액을 찍지 않는다.**
 
+> **실측 (2026-10-28) — 배송구분 `R`(반품 회수) DEV 스모크.** 테스트 계약번호·가짜 주소로 호출했고 예약은 전부 취소했다(계약번호 실값은 적지 않는다).
+>
+> | 질문 | 결과 |
+> | --- | --- |
+> | `payTypCd` | **`CD` → `ERROR-14`**. `PP`·`CC`·`CT` → `OK`. 출고(S)와 반대다(S 는 `CD` OK·`CT` 거절) |
+> | 회수 운송장번호 | **`insert-order` 응답에 바로 온다** — `{"resultCode":"OK","wblNo":"560…","custOrdNo":…}`. `print-wbl` 불필요(한진이 출력). 번호대가 출고(`100…`)와 다르다 |
+> | 원운송장 `wblNo` | 비워도·키를 빼도·체크디지트가 틀려도·없는 번호여도 `OK` — 검증하지 않는다 |
+> | 우편번호 | 송하인 `sndrZip` `00000` 도 `OK` — R 은 우편번호를 검증하지 않는다(DEV) |
+> | 같은 `custOrdNo` 재전송 | **`ERROR-03` 중복 + 처음 받은 `wblNo` 를 응답에 싣는다** → 응답을 잃은 예약의 재시도가 번호를 되찾는다 |
+> | 취소한 `custOrdNo` 로 재예약 | `ERROR-03` + 취소된 `wblNo` — 한 번 취소한 주문번호는 다시 못 쓴다 |
+> | 거절당한 `custOrdNo` 로 재예약 | 거절(`ERROR-14`)된 번호는 나중에 다시 `OK`(새 `wblNo`). 그 뒤 중복은 `ERROR-03` + `wblNo` |
+> | `custOrdNo` 31자 이상 | `ERROR-02` (30 Byte) |
+> | `comodityList` 없음 | `OK` |
+> | 갓 예약한 회수 운송장 추적 | `ERROR-01` — 집하 스캔 전이라 정상(§4.4) |
+>
+> 라이브 계약에서 R + `CT` 가 열려 있는지는 **미확인**이다(개통 전 LIVE 키로 §7 의 회수 스모크).
+
 주문정보 결과코드
 
 | 코드 | 설명 |
@@ -337,6 +354,10 @@ NL·FS 의 필드별 폰트 크기는 NS(§3.2)와 다르다 — 포털 「운�
 
 예약취소 결과코드: `OK` / `ERROR-01` 필수 누락 / `ERROR-02` 길이 초과(`custOrdNo` 30 Byte) /
 `ERROR-03` 미접수된 주문번호 / `ERROR-04` 취소 불가 (예: `상태: 운송장출력`) / `ERROR-90` / `ERROR-99`.
+
+실측 (2026-10-28, R 예약): 취소 성공 `OK`(+`wblNo`), 이미 취소한 주문 다시 취소 **`ERROR-05` 이미 취소된 주문(문서에 없음, 실측)**, 없는 주문·S 주문 `ERROR-03`. `ERROR-04`(운송장출력 상태)는 DEV 에 기사가 안 와 재현하지 못했다 — 라이브에서 처음 본다.
+
+> **R(반품 회수)은 취소할 수 있다.** 위 «S 는 취소 경로가 없다» 는 출고 이야기다. 회수는 K8 PR9 가 `cancel-order` 로 취소한다(설계 4.7).
 
 ### 4.4 택배 - 배송정보 (`pd-tracking`)
 
@@ -483,6 +504,10 @@ grep -rn "labelData" apps/core/src apps/admin-web/src native/warehouse-app/src -
 # 스테이징 스모크 — env 는 «바깥에서» 주입한다 (스크립트는 dotenv 를 부르지 않는다).
 # 그냥 `npx tsx …` 만 하면 env 를 못 읽어 언제나 SKIP + exit 2 다.
 npx dotenv -e apps/core/.env -- npx tsx scripts/smoke/hanjin-staging-smoke.ts
+
+# 반품 회수(R) 스모크 (K8 PR9) — 예약 → 재예약 → 취소 → 재취소, 예약은 끝에서 취소한다.
+# 🔴 개통 전에 LIVE 키로 한 번: HANJIN_RETURN_PAY_TYPE(기본 CT)이 우리 계약에서 OK 인지 본다.
+npx dotenv -e apps/core/.env -- npx tsx scripts/smoke/hanjin-return-pickup-smoke.ts
 ```
 
 ### 7.1 통합테스트 샘플 만들기 (§1 「통합테스트 — 한진 회신」 의 ①·②)

@@ -95,7 +95,7 @@ describe('permission catalog', () => {
       Object.keys(expected).map((key) => [key, findPermission(key)?.grantOnFirstRegistration ?? null]),
     );
     expect(actual).toEqual(expected);
-    expect(PERMISSION_CATALOG).toHaveLength(112);
+    expect(PERMISSION_CATALOG).toHaveLength(114);
   });
 
   it('registers the wage permissions for master only', () => {

@@ -6,7 +6,7 @@ import { drizzle, PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { and, eq } from 'drizzle-orm';
 import { DbService } from '@app/db';
 import { INVENTORY_STREAM } from '@packages/event-contracts/streams';
-import { DbTx, returnExchangeTables, wmsSchema, wmsTables } from './inventory.schema';
+import { DbTx, wmsSchema, wmsTables } from './inventory.schema';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
@@ -479,20 +479,6 @@ describeIfDb('outbound-v2-schema (PostgreSQL constraints, rollback-only)', () =>
         'ck_stock_ledgers_version_positive',
       );
 
-      const [returnRequest] = await tx
-        .insert(returnExchangeTables.returnRequests)
-        .values({ salesOrderId: f.salesOrder.id, reasonCode: 'other' })
-        .returning();
-      await expectViolation(
-        tx,
-        (sp) =>
-          sp.insert(returnExchangeTables.returnRequestItems).values({
-            returnRequestId: returnRequest.id,
-            salesOrderLineId: randomUUID(),
-            quantity: 0,
-          }),
-        'ck_return_request_items_quantity_positive',
-      );
     });
   });
 

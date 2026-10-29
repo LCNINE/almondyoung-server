@@ -16,6 +16,8 @@ import {
 import { outboxPublisherFor } from '../../../apps/core/src/modules/fulfillment/outbox/__support__/outbox-publisher.factory';
 import { CustomerReturnReader } from '../../../apps/core/src/modules/sales-order/customer-return/customer-return.reader';
 import { CustomerReturnReceivingManager } from '../../../apps/core/src/modules/sales-order/customer-return/customer-return-receiving.manager';
+import { CustomerExchangeReleaser } from '../../../apps/core/src/modules/sales-order/customer-return/customer-exchange.releaser';
+import { ExchangeShipmentOpener } from '../../../apps/core/src/modules/fulfillment/exchange-shipment/exchange-shipment-opener';
 import { CHANNEL_ORDERS_COMMAND_STREAM, CORE_ORDER_STREAM } from '@packages/event-contracts/streams';
 
 const SEED_URL = process.env.SEED_DEV_CORE_URL;
@@ -813,12 +815,14 @@ describeIfSeedDb('dev_core 시드', () => {
       await inRollbackTx(db, async (tx) => {
         const dbService = makeDbService(db);
         const reader = new CustomerReturnReader(dbService);
+        const logistics = wireLogistics(dbService);
         const receiving = new CustomerReturnReceivingManager(
           dbService,
           reader,
-          wireLogistics(dbService).command,
+          logistics.command,
           outboxPublisherFor(CORE_ORDER_STREAM, dbService),
           outboxPublisherFor(CHANNEL_ORDERS_COMMAND_STREAM, dbService),
+          new CustomerExchangeReleaser(new ExchangeShipmentOpener(logistics.shipmentReservations)),
         );
         const actorId = '019d0008-0001-7000-a000-000000000001';
         const { items } = await reader.listForReceiving({ warehouseId: BUCHEON, limit: 100 }, tx);

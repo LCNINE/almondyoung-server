@@ -23,7 +23,6 @@ function line(
       partnerCompleted: 0,
       returnActive: 0,
       returnConsumed: 0,
-      exchangeActive: 0,
       claimable: 0,
       ...sku,
     })),

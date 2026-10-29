@@ -114,13 +114,6 @@ export const carrierEnum = pgEnum('carrier', [
   'CHUNIL', // 천일택배
   'KUNYOUNG', // 건영택배
 ]);
-export const returnStatusEnum = pgEnum('return_status', [
-  'requested',
-  'received',
-  'qc_passed',
-  'qc_failed',
-  'disposed',
-]);
 export const matchingStatusEnum = pgEnum('matching_status', ['pending', 'matched', 'ignored']);
 export const matchingPriorityEnum = pgEnum('matching_priority', ['normal', 'high']);
 
@@ -1513,6 +1506,12 @@ export const salesOrderLines = pgTable(
     // TODO(outbound-v2-contract Task 25): trusted post-cutover channel orders require channelOrderItemId.
     channelOrderItemId: varchar('channel_order_item_id', { length: 255 }),
     channelProductId: varchar('channel_product_id', { length: 255 }),
+    /** 교환 대체 줄이면 그 교환의 반품 줄(K8 PR11). 일반 줄은 null. 반품 줄마다 대체 줄은 하나뿐이다 */
+    // customer_return_lines 가 이 표를 다시 가리킨다 — 반환 타입을 적지 않으면 두 표의 추론이 서로를 기다리다
+    // 검사 순서에 따라 any 로 무너진다(로컬 0, CI 에서만 TS2339). 같은 표의 다른 순환 참조와 같은 꼴
+    exchangeReturnLineId: uuid('exchange_return_line_id').references((): AnyPgColumn => customerReturnLines.id, {
+      onDelete: 'restrict',
+    }),
 
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
@@ -1525,6 +1524,9 @@ export const salesOrderLines = pgTable(
     uqSalesOrderChannelItem: uniqueIndex('uq_sales_order_lines_order_channel_item')
       .on(t.salesOrderId, t.channelOrderItemId)
       .where(sql`${t.channelOrderItemId} IS NOT NULL`),
+    uqExchangeReturnLine: uniqueIndex('uq_sales_order_lines_exchange_return_line')
+      .on(t.exchangeReturnLineId)
+      .where(sql`${t.exchangeReturnLineId} IS NOT NULL`),
     compositionSourceCheck: check(
       'sales_order_lines_composition_source_check',
       sql`${t.compositionSource} IN ('matching', 'operator')`,
@@ -1566,6 +1568,9 @@ export const customerReturnStatusEnum = pgEnum('customer_return_status', [
   'cancelled',
 ]);
 
+/** 반품인지 교환인지(K8 PR11). 교환은 회수 뒤 환불 대신 대체 품목을 다시 보낸다 */
+export const customerReturnKindEnum = pgEnum('customer_return_kind', ['return', 'exchange']);
+
 /** 값은 packages/event-contracts 의 CUSTOMER_RETURN_REASONS 와 같아야 한다(스펙이 지킨다). */
 export const customerReturnReasonEnum = pgEnum('customer_return_reason', [
   'change_of_mind',
@@ -1590,6 +1595,10 @@ export const customerReturns = pgTable(
     channelReturnId: varchar('channel_return_id', { length: 255 }).notNull(),
     channelRequestId: varchar('channel_request_id', { length: 255 }).notNull(),
     status: customerReturnStatusEnum('status').notNull().default('expected'),
+    kind: customerReturnKindEnum('kind').notNull().default('return'),
+    /** 교환 상자를 연 시각·사람(K8 PR11) — 열기 전엔 null. 열린 교환은 취소하지 않는다 */
+    exchangeReleasedAt: timestamp('exchange_released_at', { withTimezone: true }),
+    exchangeReleasedBy: uuid('exchange_released_by'),
     reason: customerReturnReasonEnum('reason').notNull(),
     feeBearer: varchar('fee_bearer', { length: 16 }).notNull(),
     requestedBy: varchar('requested_by', { length: 16 }).notNull(),
@@ -1618,6 +1627,55 @@ export const customerReturns = pgTable(
     idxSalesOrder: index('idx_customer_returns_sales_order').on(t.salesOrderId),
     ckFeeBearer: check('ck_customer_returns_fee_bearer', sql`${t.feeBearer} IN ('customer', 'seller')`),
     ckRequestedBy: check('ck_customer_returns_requested_by', sql`${t.requestedBy} IN ('customer', 'operator')`),
+  }),
+);
+
+export const customerReturnPickupStatusEnum = pgEnum('customer_return_pickup_status', [
+  'pending',
+  'reserved',
+  'failed',
+  'void',
+  'cancel_pending',
+  'cancelled',
+]);
+
+/**
+ * 반품 회수 예약(K8 PR9). 한진 회수(R) 접수·취소의 진행 기록이다.
+ * id 는 앱이 준다 — cust_ord_no 가 id 에서 파생되므로 삽입 전에 번호가 필요하다.
+ * 한 반품의 활성 행(pending·reserved·cancel_pending)은 하나뿐이고, 다시 접수는 새 행 = 새 번호다.
+ */
+export const customerReturnPickups = pgTable(
+  'customer_return_pickups',
+  {
+    id: uuid('id').primaryKey(),
+    customerReturnId: uuid('customer_return_id')
+      .references(() => customerReturns.id, { onDelete: 'cascade' })
+      .notNull(),
+    carrier: carrierEnum('carrier').notNull(),
+    custOrdNo: varchar('cust_ord_no', { length: 30 }).notNull().unique(),
+    status: customerReturnPickupStatusEnum('status').notNull().default('pending'),
+    waybillNo: varchar('waybill_no', { length: 32 }),
+    originalWaybillNo: varchar('original_waybill_no', { length: 32 }),
+    attempts: integer('attempts').notNull().default(0),
+    lastError: text('last_error'),
+    nextAttemptAt: timestamp('next_attempt_at', { withTimezone: true }),
+    leaseUntil: timestamp('lease_until', { withTimezone: true }),
+    reservedAt: timestamp('reserved_at', { withTimezone: true }),
+    pickedUpAt: timestamp('picked_up_at', { withTimezone: true }),
+    cancelledAt: timestamp('cancelled_at', { withTimezone: true }),
+    /** null = 시스템(접수가 자동으로 만든 행) */
+    createdBy: varchar('created_by', { length: 255 }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    uqActive: uniqueIndex('uq_customer_return_pickups_active')
+      .on(t.customerReturnId)
+      .where(sql`${t.status} IN ('pending', 'reserved', 'cancel_pending')`),
+    uqWaybill: uniqueIndex('uq_customer_return_pickups_waybill')
+      .on(t.waybillNo)
+      .where(sql`${t.waybillNo} IS NOT NULL`),
+    idxDue: index('idx_customer_return_pickups_due').on(t.status, t.nextAttemptAt),
   }),
 );
 
@@ -2378,64 +2436,6 @@ export const salesVariantPolicies = pgTable('sales_variant_policies', {
   updatedBy: uuid('updated_by'),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
-
-/*───────────────────────────
- * RETURNS
- *──────────────────────────*/
-export const returns = pgTable(
-  'returns',
-  {
-    id: uuid('id').primaryKey().defaultRandom(),
-    orderId: uuid('order_id').references(() => salesOrders.id, { onDelete: 'set null' }),
-    shipmentId: uuid('shipment_id').references(() => shipments.id, { onDelete: 'set null' }),
-    warehouseId: uuid('warehouse_id')
-      .references(() => warehouses.id, { onDelete: 'restrict' })
-      .notNull(),
-    status: returnStatusEnum('status').notNull().default('requested'),
-    returnReason: varchar('return_reason', { length: 500 }), // 반품 사유
-    qcInspectedAt: timestamp('qc_inspected_at', { withTimezone: true }), // QC 검사 시간
-    qcInspectedBy: varchar('qc_inspected_by', { length: 128 }), // QC 검사자
-    qcNotes: text('qc_notes'), // QC 검사 노트
-    restockQuantity: integer('restock_quantity').notNull().default(0),
-    disposeQuantity: integer('dispose_quantity').notNull().default(0),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => ({
-    warehouseIdx: index('returns_warehouse_idx').on(t.warehouseId),
-    statusIdx: index('returns_status_idx').on(t.status),
-    orderIdx: index('returns_order_idx').on(t.orderId),
-  }),
-);
-
-export const returnItems = pgTable(
-  'return_items',
-  {
-    id: uuid('id').primaryKey().defaultRandom(),
-    returnId: uuid('return_id')
-      .references(() => returns.id, { onDelete: 'cascade' })
-      .notNull(),
-    skuId: uuid('sku_id')
-      .references(() => skus.id, { onDelete: 'restrict' })
-      .notNull(),
-    requestedQuantity: integer('requested_quantity').notNull(), // 요청 수량
-    receivedQuantity: integer('received_quantity').notNull().default(0), // 실제 입고 수량
-    qcPassedQuantity: integer('qc_passed_quantity').notNull().default(0), // QC 통과 수량
-    qcFailedQuantity: integer('qc_failed_quantity').notNull().default(0), // QC 실패 수량
-    restockedQuantity: integer('restocked_quantity').notNull().default(0), // 재입고 수량
-    disposedQuantity: integer('disposed_quantity').notNull().default(0), // 폐기 수량
-    locationId: uuid('location_id').references(() => locations.id, { onDelete: 'set null' }), // 입고 위치
-    qcStatus: varchar('qc_status', { length: 50 }).notNull().default('pending'), // pending, passed, failed
-    qcReason: text('qc_reason'), // QC 결과 사유
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => ({
-    returnIdx: index('return_items_return_idx').on(t.returnId),
-    skuIdx: index('return_items_sku_idx').on(t.skuId),
-    qcStatusIdx: index('return_items_qc_status_idx').on(t.qcStatus),
-  }),
-);
 
 /*───────────────────────────
  * SETTINGS & HOLIDAYS
@@ -3968,6 +3968,7 @@ export const wmsTables = {
   salesOrderLineCompositions,
   customerReturns,
   customerReturnLines,
+  customerReturnPickups,
   customerReturnItems,
   customerReturnArrivals,
   orderEvents,
@@ -3987,8 +3988,6 @@ export const wmsTables = {
   shipments,
   shipmentLines,
   shipmentTracking,
-  returns,
-  returnItems,
   salesVariantPolicies,
   settings,
   holidays,
@@ -4397,7 +4396,6 @@ export const salesOrdersRelations = relations(salesOrders, ({ one, many }) => ({
   fulfillmentOrderCreationBacklogs: many(fulfillmentOrderCreationBacklogs),
   orderEvents: many(orderEvents),
   cancellations: many(salesOrderCancellations),
-  returns: many(returns),
 }));
 
 export const salesOrderLinesRelations = relations(salesOrderLines, ({ one }) => ({
@@ -4490,7 +4488,6 @@ export const shipmentsRelations = relations(shipments, ({ one, many }) => ({
   }),
   lines: many(shipmentLines),
   shipmentTracking: many(shipmentTracking),
-  returns: many(returns),
   operationMembers: many(shipmentOperationMembers),
   workItems: many(outboundBatchWorkItems),
   pickingPlanMembers: many(pickingPlanMembers),
@@ -4533,17 +4530,6 @@ export const shipmentTrackingRelations = relations(shipmentTracking, ({ one }) =
   dispatchAttempt: one(dispatchAttempts, {
     fields: [shipmentTracking.dispatchAttemptId],
     references: [dispatchAttempts.id],
-  }),
-}));
-
-export const returnsRelations = relations(returns, ({ one }) => ({
-  order: one(salesOrders, {
-    fields: [returns.orderId],
-    references: [salesOrders.id],
-  }),
-  shipment: one(shipments, {
-    fields: [returns.shipmentId],
-    references: [shipments.id],
   }),
 }));
 
@@ -4970,7 +4956,6 @@ export const wmsRelations = {
   shipmentsRelations,
   shipmentLinesRelations,
   shipmentTrackingRelations,
-  returnsRelations,
 
   // Outbound V2 Relations
   fulfillmentCommandRequestsRelations,
@@ -5177,13 +5162,6 @@ export type NewShipmentLine = InferInsertModel<typeof shipmentLines>;
 export type ShipmentTracking = InferSelectModel<typeof shipmentTracking>;
 export type NewShipmentTracking = InferInsertModel<typeof shipmentTracking>;
 
-// Return Types
-export type Return = InferSelectModel<typeof returns>;
-export type NewReturn = InferInsertModel<typeof returns>;
-
-export type ReturnItem = InferSelectModel<typeof returnItems>;
-export type NewReturnItem = InferInsertModel<typeof returnItems>;
-
 // Policy & Settings Types
 export type SalesVariantPolicy = InferSelectModel<typeof salesVariantPolicies>;
 export type NewSalesVariantPolicy = InferInsertModel<typeof salesVariantPolicies>;
@@ -5291,212 +5269,3 @@ export type NewDispatchAttemptSource = InferInsertModel<typeof dispatchAttemptSo
 export const inventoryTables = wmsTables;
 export const inventorySchema = wmsSchema;
 export type InventorySchema = typeof wmsSchema;
-
-/*───────────────────────────
- * RETURN / EXCHANGE REQUEST
- *──────────────────────────*/
-
-export const returnRequestStatusEnum = pgEnum('return_request_status', [
-  'requested',
-  'approved',
-  'rejected',
-  'collection_pending',
-  'collected',
-  'inspected',
-  'refund_pending',
-  'completed',
-  'cancelled',
-]);
-
-export const exchangeRequestStatusEnum = pgEnum('exchange_request_status', [
-  'requested',
-  'approved',
-  'rejected',
-  'collection_pending',
-  'collected',
-  'inspected',
-  'refund_pending',
-  'completed',
-  'cancelled',
-]);
-
-export const returnReasonCodeEnum = pgEnum('return_reason_code', [
-  'defective',
-  'not_as_described',
-  'change_of_mind',
-  'wrong_item',
-  'damaged_in_shipping',
-  'other',
-]);
-
-export const exchangeReasonCodeEnum = pgEnum('exchange_reason_code', [
-  'defective',
-  'not_as_described',
-  'change_of_mind',
-  'wrong_item',
-  'damaged_in_shipping',
-  'other',
-]);
-
-export const returnRefundAttemptStatusEnum = pgEnum('return_refund_attempt_status', ['pending', 'succeeded', 'failed']);
-
-export const returnRequests = pgTable(
-  'return_requests',
-  {
-    id: uuid('id').primaryKey().defaultRandom(),
-    salesOrderId: uuid('sales_order_id')
-      .references(() => salesOrders.id, { onDelete: 'restrict' })
-      .notNull(),
-    customerId: uuid('customer_id'),
-    status: returnRequestStatusEnum('status').notNull().default('requested'),
-    reasonCode: returnReasonCodeEnum('reason_code').notNull(),
-    reasonDetail: text('reason_detail'),
-    returnAddress: json('return_address'),
-    adminNote: text('admin_note'),
-    // 세트 일부 반품의 관리자 입력 환불액 (K6 PR3b). null = 자동 계산 경로.
-    adminRefundAmount: integer('admin_refund_amount'),
-    decidedAt: timestamp('decided_at', { withTimezone: true }),
-    collectedAt: timestamp('collected_at', { withTimezone: true }),
-    completedAt: timestamp('completed_at', { withTimezone: true }),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => ({
-    idxReturnRequestsSalesOrder: index('idx_return_requests_sales_order').on(t.salesOrderId),
-    idxReturnRequestsStatus: index('idx_return_requests_status').on(t.status),
-    idxReturnRequestsCustomer: index('idx_return_requests_customer').on(t.customerId),
-    ckReturnRequestsAdminRefundAmountNonnegative: check(
-      'ck_return_requests_admin_refund_amount_nonnegative',
-      sql`${t.adminRefundAmount} >= 0`,
-    ),
-  }),
-);
-
-export const returnRequestItems = pgTable(
-  'return_request_items',
-  {
-    id: uuid('id').primaryKey().defaultRandom(),
-    returnRequestId: uuid('return_request_id')
-      .references(() => returnRequests.id, { onDelete: 'cascade' })
-      .notNull(),
-    salesOrderLineId: uuid('sales_order_line_id').notNull(),
-    // TODO(outbound-v2-contract Task 25): require both links for post-cutover physical returns.
-    shipmentLineId: uuid('shipment_line_id').references(() => shipmentLines.id, { onDelete: 'restrict' }),
-    dispatchAttemptId: uuid('dispatch_attempt_id').references(() => dispatchAttempts.id, { onDelete: 'restrict' }),
-    quantity: integer('quantity').notNull(),
-    reasonCode: returnReasonCodeEnum('reason_code'),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => ({
-    idxReturnRequestItemsRequest: index('idx_return_request_items_request').on(t.returnRequestId),
-    idxReturnRequestItemsOrderLine: index('idx_return_request_items_order_line').on(t.salesOrderLineId),
-    idxReturnRequestItemsShipmentLine: index('idx_return_request_items_shipment_line').on(t.shipmentLineId),
-    idxReturnRequestItemsDispatchAttempt: index('idx_return_request_items_dispatch_attempt').on(t.dispatchAttemptId),
-    ckReturnRequestItemQuantity: check('ck_return_request_items_quantity_positive', sql`${t.quantity} > 0`),
-  }),
-);
-
-export const returnRefundAttempts = pgTable(
-  'return_refund_attempts',
-  {
-    id: uuid('id').primaryKey().defaultRandom(),
-    returnRequestId: uuid('return_request_id')
-      .references(() => returnRequests.id, { onDelete: 'cascade' })
-      .notNull(),
-    attemptNumber: integer('attempt_number').notNull(),
-    // = correlationId = Wallet Idempotency-Key. 시도별 결정적 key 의 단일 진실(SoT).
-    idempotencyKey: text('idempotency_key').notNull(),
-    // Wallet body 의 SoT — 재사용(재생) 시 동일 amount 강제 (body-hash 일치).
-    amount: integer('amount').notNull(),
-    status: returnRefundAttemptStatusEnum('status').notNull().default('pending'),
-    walletOutcome: jsonb('wallet_outcome'),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => ({
-    uqReturnRefundAttemptNumber: unique('uq_return_refund_attempt_number').on(t.returnRequestId, t.attemptNumber),
-    // 불변식: 반품당 in-flight(pending) attempt 최대 1개 — Phase A 의 "pending 재사용" 규칙을 DB 로 강제
-    uqReturnRefundAttemptPending: uniqueIndex('uq_return_refund_attempt_pending')
-      .on(t.returnRequestId)
-      .where(sql`${t.status} = 'pending'`),
-    idxReturnRefundAttemptsRequest: index('idx_return_refund_attempts_request').on(t.returnRequestId),
-  }),
-);
-
-export const exchangeRequests = pgTable(
-  'exchange_requests',
-  {
-    id: uuid('id').primaryKey().defaultRandom(),
-    salesOrderId: uuid('sales_order_id')
-      .references(() => salesOrders.id, { onDelete: 'restrict' })
-      .notNull(),
-    customerId: uuid('customer_id'),
-    status: exchangeRequestStatusEnum('status').notNull().default('requested'),
-    reasonCode: exchangeReasonCodeEnum('reason_code').notNull(),
-    reasonDetail: text('reason_detail'),
-    adminNote: text('admin_note'),
-    decidedAt: timestamp('decided_at', { withTimezone: true }),
-    completedAt: timestamp('completed_at', { withTimezone: true }),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => ({
-    idxExchangeRequestsSalesOrder: index('idx_exchange_requests_sales_order').on(t.salesOrderId),
-    idxExchangeRequestsStatus: index('idx_exchange_requests_status').on(t.status),
-    idxExchangeRequestsCustomer: index('idx_exchange_requests_customer').on(t.customerId),
-  }),
-);
-
-export const exchangeRequestItems = pgTable(
-  'exchange_request_items',
-  {
-    id: uuid('id').primaryKey().defaultRandom(),
-    exchangeRequestId: uuid('exchange_request_id')
-      .references(() => exchangeRequests.id, { onDelete: 'cascade' })
-      .notNull(),
-    salesOrderLineId: uuid('sales_order_line_id').notNull(),
-    // 반품 항목과 같은 모양 — 교환 수량도 (SKU, 소포) 단위다(K6 PR3a C3). 옛 행은 null 이고 커널이 세지 않는다(N1).
-    shipmentLineId: uuid('shipment_line_id').references(() => shipmentLines.id, { onDelete: 'restrict' }),
-    dispatchAttemptId: uuid('dispatch_attempt_id').references(() => dispatchAttempts.id, { onDelete: 'restrict' }),
-    quantity: integer('quantity').notNull(),
-    desiredVariantId: varchar('desired_variant_id', { length: 255 }),
-    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
-  },
-  (t) => ({
-    idxExchangeRequestItemsRequest: index('idx_exchange_request_items_request').on(t.exchangeRequestId),
-    idxExchangeRequestItemsOrderLine: index('idx_exchange_request_items_order_line').on(t.salesOrderLineId),
-    idxExchangeRequestItemsShipmentLine: index('idx_exchange_request_items_shipment_line').on(t.shipmentLineId),
-    idxExchangeRequestItemsDispatchAttempt: index('idx_exchange_request_items_dispatch_attempt').on(
-      t.dispatchAttemptId,
-    ),
-  }),
-);
-
-export const returnExchangeTables = {
-  returnRequests,
-  returnRequestItems,
-  exchangeRequests,
-  exchangeRequestItems,
-  returnRefundAttempts,
-} as const;
-
-export const returnExchangeSchema = {
-  ...returnExchangeTables,
-} as const;
-
-// Return Request Types
-export type ReturnRequest = InferSelectModel<typeof returnRequests>;
-export type NewReturnRequest = InferInsertModel<typeof returnRequests>;
-
-export type ReturnRequestItem = InferSelectModel<typeof returnRequestItems>;
-export type NewReturnRequestItem = InferInsertModel<typeof returnRequestItems>;
-
-export type ReturnRefundAttempt = InferSelectModel<typeof returnRefundAttempts>;
-export type NewReturnRefundAttempt = InferInsertModel<typeof returnRefundAttempts>;
-
-// Exchange Request Types
-export type ExchangeRequest = InferSelectModel<typeof exchangeRequests>;
-export type NewExchangeRequest = InferInsertModel<typeof exchangeRequests>;
-
-export type ExchangeRequestItem = InferSelectModel<typeof exchangeRequestItems>;
-export type NewExchangeRequestItem = InferInsertModel<typeof exchangeRequestItems>;

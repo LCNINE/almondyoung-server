@@ -59,6 +59,48 @@ describeIfDb('WaybillModule DI', () => {
     expect(moduleRef.get(WaybillService)).toBeInstanceOf(WaybillService);
     await moduleRef.close();
   });
+
+  it('exports HANJIN_CONFIG and the registry to an importing module (K8 PR9 반품 회수 워커)', async () => {
+    process.env.AUTH_SECRET = process.env.AUTH_SECRET ?? 'waybill-module-spec-test-secret';
+
+    const { Test } = await import('@nestjs/testing');
+    const { Inject, Injectable, Module } = await import('@nestjs/common');
+    const { ConfigModule } = await import('@nestjs/config');
+    const { DbModule } = await import('@app/db');
+    const { AuthorizationModule } = await import('@app/authorization');
+    const { mergedSchema } = await import('../../../platform/database/merged-schema');
+    const { WaybillModule } = await import('./waybill.module');
+    const { HANJIN_CONFIG } = await import('./waybill.tokens');
+
+    // 다른 모듈에서 두 토큰을 주입받을 수 있어야 한다 — export 가 빠지면 compile 이 실패한다
+    @Injectable()
+    class PickupConsumer {
+      constructor(
+        @Inject(HANJIN_CONFIG) readonly config: unknown,
+        readonly registry: CarrierGatewayRegistry,
+      ) {}
+    }
+    @Module({ imports: [WaybillModule], providers: [PickupConsumer] })
+    class ConsumerModule {}
+
+    const moduleRef = await Test.createTestingModule({
+      imports: [
+        ConfigModule.forRoot({ isGlobal: true }),
+        DbModule.forRootAsync({
+          useFactory: (configService) => ({
+            connectionString: configService.get<string>('DATABASE_URL') ?? '',
+          }),
+          schema: mergedSchema,
+        }),
+        AuthorizationModule.forAuthOnly(),
+        ConsumerModule,
+      ],
+    }).compile();
+    const consumer = moduleRef.get(PickupConsumer);
+    expect(consumer.config).toHaveProperty('returnPayType');
+    expect(consumer.registry).toBeInstanceOf(CarrierGatewayRegistry);
+    await moduleRef.close();
+  });
 });
 
 // DATABASE_URL 유무와 무관하게 항상 실행: 캐리어 팩토리 자체의 배선(순수 함수, DB/Kafka 불필요)을 검증.

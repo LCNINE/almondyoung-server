@@ -403,5 +403,42 @@ medusaIntegrationTestRunner({
       expect(await detailOf(orderId, itemOf('A'))).toMatchObject({ quantity: 2, fulfilled: 1 });
       expect(wallet.refundCalls()).toHaveLength(0);
     });
+    it('kind exchange 로 접수 → 반품 metadata.almondReturn.kind exchange, 결과 kind exchange / 같은 requestId·같은 본문 재전송 → 같은 반품 / kind 만 바꾸면 request_id_conflict', async () => {
+      const { orderId, itemOf } = await deliveredOrder([{ variant: 'A', quantity: 2 }]);
+      const body = { orderId, requestId: 'r-exch', reasonValue: 'defective', kind: 'exchange' as const, items: [{ itemId: itemOf('A'), quantity: 1 }] };
+      const a = await request(body);
+      expect(a).toMatchObject({ kind: 'exchange', status: 'requested', feeBearer: 'seller' });
+      const [ret] = await returnsOf(orderId);
+      expect(ret.metadata.almondReturn).toMatchObject({ requestId: 'r-exch', kind: 'exchange', feeBearer: 'seller' });
+
+      expect(await request(body)).toEqual(a);
+      expect(await returnsOf(orderId)).toHaveLength(1);
+
+      expect(await rejection(request({ ...body, kind: 'return' }))).toBe('request_id_conflict');
+      expect(await rejection(request({ ...body, kind: undefined }))).toBe('request_id_conflict');
+      expect(await returnsOf(orderId)).toHaveLength(1);
+    });
+
+    it('교환 + change_of_mind → exchange_requires_seller_fault, 반품 0·열린 주문 변경 0', async () => {
+      const { orderId, itemOf } = await deliveredOrder([{ variant: 'A', quantity: 2 }]);
+      const reason = await rejection(request({ orderId, kind: 'exchange', items: [{ itemId: itemOf('A'), quantity: 1 }] }));
+      expect(reason).toBe('exchange_requires_seller_fault');
+      expect(await returnsOf(orderId)).toHaveLength(0);
+      expect(await openChanges(orderId)).toHaveLength(0);
+    });
+
+    it('kind 없는 반품: 기록에 kind 칸이 없고 결과 kind return, requestHash 가 PR 11 이전 값과 같다', async () => {
+      const { orderId, itemOf } = await deliveredOrder([{ variant: 'A', quantity: 2 }]);
+      const res = await request({ orderId, requestId: 'r-plain', items: [{ itemId: itemOf('A'), quantity: 1 }] });
+      expect(res.kind).toBe('return');
+      const [ret] = await returnsOf(orderId);
+      expect(ret.metadata.almondReturn).not.toHaveProperty('kind');
+      // PR 11 이전 구현으로 계산한 값 — items=[{itemId: 'item_01', quantity: 2}] 의 고정 해시는 단위 스펙이 핀한다. 여기서는 같은 함수 정의를 직접 다시 계산해 대조한다
+      const { createHash } = require('crypto');
+      const legacy = createHash('sha256')
+        .update(JSON.stringify({ items: [{ itemId: itemOf('A'), quantity: 1 }], reasonValue: 'change_of_mind', operatorFeeBearer: null }))
+        .digest('hex');
+      expect(ret.metadata.almondReturn.requestHash).toBe(legacy);
+    });
   },
 });

@@ -49,6 +49,14 @@ import { DemoCarrierRepository } from './carrier/demo/demo-carrier.repository';
   ],
   // CarrierGatewayRegistry: 배송추적 폴러(FulfillmentModule)가 캐리어 추적을 부른다(#917).
   // WaybillRepository: 직배 시트 적용(FulfillmentModule)이 입점사 수기 송장을 쓴다(K3 PR5) — 입점사 상자는 발급·등록 문을 타지 않는다.
-  exports: [WaybillService, CarrierGatewayRegistry, LabelCurrencyGuard, WaybillLabelStateReader, WaybillRepository],
+  // HANJIN_CONFIG: 반품 회수 워커(SalesOrderModule)가 수하인(창고)·지불조건을 읽는다(K8 PR9).
+  exports: [
+    WaybillService,
+    CarrierGatewayRegistry,
+    LabelCurrencyGuard,
+    WaybillLabelStateReader,
+    WaybillRepository,
+    HANJIN_CONFIG,
+  ],
 })
 export class WaybillModule {}

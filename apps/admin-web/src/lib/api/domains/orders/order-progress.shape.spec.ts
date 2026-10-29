@@ -21,6 +21,7 @@ import {
   toProgressPage,
   toProgressSummary,
 } from './order-progress.shape';
+import { RETURN_STATUS_LABELS } from '@/features/cs/return-exchange/customer-return-labels';
 
 describe('order-progress shape', () => {
   it('보드 단계 순서: 0 수집부터 8 추적, 그다음 취소·반품·교환·분류 안 됨', () => {
@@ -135,9 +136,18 @@ describe('order-progress shape', () => {
     expect(cellCount(undefined, true)).toBeNull();
   });
 
+  it('반품 단계 세부 상태는 반품 예정 기록의 상태 이름이다 (K8 PR 10)', () => {
+    for (const status of ['expected', 'arrived', 'inspected', 'held', 'refund_pending'] as const) {
+      expect(stateLabel(`return:${status}`)).toBe(`반품 ${RETURN_STATUS_LABELS[status]}`);
+    }
+    expect(stateLabel('return:zzz')).toBe('반품 zzz');
+    // 교환은 PR 11 까지 없다 — 옛 접두어는 모르는 값처럼 그대로 보인다
+    expect(stateLabel('exchange:requested')).toBe('exchange:requested');
+  });
+
   it('세부 상태 한국어 이름, 모르는 값은 그대로', () => {
     expect(stateLabel('awaiting_matching')).toBe('매칭 대기');
-    expect(stateLabel('return:collection_pending')).toBe('반품 회수 대기');
+    expect(stateLabel('return:collection_pending')).toBe('반품 collection_pending');
     expect(stateLabel('SOMETHING_NEW')).toBe('SOMETHING_NEW');
     expect(stateLabel(null)).toBe('');
     expect(stateLabel('DISPATCH_RECALL_PENDING')).toBe('회수 재처리 대기');

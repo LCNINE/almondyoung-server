@@ -27,7 +27,6 @@ function line(
         outstanding: 0,
         returnActive: 0,
         returnConsumed: 0,
-        exchangeActive: 0,
         claimable: 0,
       }),
     ),
@@ -43,7 +42,6 @@ function parcel(lineId: string, deliveredAt: string): ParcelClaimEligibility {
     dispatchAttemptId: 'da',
     deliveredAt: new Date(deliveredAt),
     deliveredQty: 1,
-    claimedQty: 0,
     skuClaimable: 1,
     claimable: 1,
   };

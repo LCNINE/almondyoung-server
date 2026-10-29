@@ -15,6 +15,7 @@ export type PiiSubjectType =
   | 'shipment'
   | 'fulfillment_order'
   | 'fulfillment_operation'
+  // 옛 반품·교환(K8 PR 10 에서 라우트 삭제) — 보존 중인 접속기록의 대상 종류라 남긴다
   | 'return_request'
   | 'exchange_request'
   | 'cs_case'

@@ -23,6 +23,11 @@ export interface ChannelBlocker {
 
 export interface EffectiveSalesOrderLine {
   id: string;
+  /**
+   * 교환 줄이면 그 반품 줄 id(K8 PR11). 교환 줄은 교환 사실로만 생기고 지워진다 — 채널 스냅샷과 비교하지 않는다(N18).
+   * 정산 뒤 `channelOrderItemId` 에 Medusa 대체 품목 줄 id 가 이어져도 그 품목은 스냅샷 쪽에서도 뺀다.
+   */
+  exchangeReturnLineId: string | null;
   channelOrderItemId: string | null;
   channelProductId: string | null;
   /** 라인 수량 − 이미 취소된 수량 */

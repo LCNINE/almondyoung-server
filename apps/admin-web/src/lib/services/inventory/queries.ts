@@ -21,7 +21,6 @@ import { locationsClient } from '../../api/domains/inventory/locations.client';
 import { purchaseOrdersClient } from '../../api/domains/inventory/purchase-orders.client';
 import { inboundClient } from '../../api/domains/inventory/inbound.client';
 import { expectedArrivalsClient } from '../../api/domains/inventory/expected-arrivals.client';
-import { returnsClient } from '../../api/domains/inventory/returns.client';
 import { movementClient } from '../../api/domains/inventory/movement.client';
 import { replenishmentClient } from '../../api/domains/inventory/replenishment.client';
 import type {
@@ -36,7 +35,6 @@ import type {
   InboundReceiptsQuery,
   InboundWorkLogsQuery,
   InboundStatusQuery,
-  ReturnFiltersDto,
   MovementHistoryQuery,
   SuggestionActionFilter,
 } from '../../types/dto/inventory';
@@ -537,24 +535,6 @@ export const useReplenishmentSkuOverrides = (q: string) =>
     queryFn: () => replenishmentClient.rules.getSkuOverrides(q || undefined),
     placeholderData: keepPreviousData,
   });
-
-// ===== 회수(Returns) =====
-
-export const useReturns = (filters: ReturnFiltersDto = {}) => {
-  return useQuery({
-    queryKey: inventoryQueryKeys.returns(filters),
-    queryFn: () => returnsClient.listReturns(filters),
-    staleTime: 30 * 1000,
-  });
-};
-
-export const useReturn = (id: string) => {
-  return useQuery({
-    queryKey: inventoryQueryKeys.return(id),
-    queryFn: () => returnsClient.getReturn(id),
-    enabled: !!id,
-  });
-};
 
 // ===== 즉시 이동(Movement) =====
 

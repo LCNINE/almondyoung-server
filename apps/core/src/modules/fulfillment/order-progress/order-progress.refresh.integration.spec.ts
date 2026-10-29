@@ -92,7 +92,7 @@ describeIfDb('order-progress 갱신 upsert (PostgreSQL integration)', () => {
       expect(closed).toMatchObject({ stage: null, outcome: 'delivered' });
       expect(closed.closedAt?.toISOString()).toBe('2026-10-06T00:00:00.000Z');
 
-      await f.seedReturn(tx, o.salesOrderId, 'requested');
+      await f.seedReturn(tx, o.salesOrderId, 'expected');
       await manager.refreshScope(only(o.salesOrderId), new Date('2026-10-07T00:00:00.000Z'), tx);
       const reopened = await read(tx, o.salesOrderId);
       expect(reopened).toMatchObject({ stage: 'return_exchange', outcome: null, closedAt: null });
@@ -112,7 +112,7 @@ describeIfDb('order-progress 갱신 upsert (PostgreSQL integration)', () => {
       expect(await read(tx, fresh.salesOrderId)).toMatchObject({ stage: 'fo' });
       expect(await read(tx, closing.salesOrderId)).toMatchObject({ stage: null, outcome: 'delivered' });
 
-      await f.seedReturn(tx, closing.salesOrderId, 'requested');
+      await f.seedReturn(tx, closing.salesOrderId, 'expected');
       await manager.refresh(new Date(Date.now() + 60_000), tx);
       expect(await read(tx, closing.salesOrderId)).toMatchObject({
         stage: 'return_exchange',

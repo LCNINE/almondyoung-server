@@ -124,12 +124,13 @@ describe('returnRejectMessage', () => {
     'order_canceled', 'item_not_in_order', 'not_delivered', 'quantity_exceeds_returnable', 'window_closed',
     'window_override_reason_required', 'reason_not_found', 'reason_not_selectable', 'fee_bearer_required',
     'request_id_conflict', 'return_option_missing', 'return_already_received', 'not_our_return',
-    'return_arrived', 'return_prepaid',
+    'return_arrived', 'return_prepaid', 'return_picked_up',
+    'exchange_requires_seller_fault', 'exchange_released',
   ];
 
-  it('맵의 키 집합은 15종 전체다', () => {
+  it('맵의 키 집합은 18종 전체다', () => {
     expect(Object.keys(RETURN_REJECT_MESSAGES).sort()).toEqual([...ALL].sort());
-    expect(ALL).toHaveLength(15);
+    expect(ALL).toHaveLength(18);
   });
 
   it('400 return_rejected 는 reason 을 한국어로 옮긴다', () => {

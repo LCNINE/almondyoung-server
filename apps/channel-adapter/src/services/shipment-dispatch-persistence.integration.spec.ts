@@ -383,4 +383,67 @@ describeIfDb('shipment dispatch persistence migration', () => {
     expect(count.count).toBe(0);
     expect(factory.getAdapter).not.toHaveBeenCalled();
   });
+
+  it('채널 주문 없이 나간 상자(교환 줄만 실은 교환 상자, K8 PR11)의 배송완료·회수는 채널 일 없이 끝난다', async () => {
+    const factory = { getAdapter: jest.fn() };
+    const projection = { updateOrderShipmentAttemptProjection: jest.fn() };
+    const consumer = new ShipmentEventsConsumer({ db } as any);
+    const worker = new ShipmentDispatchInboxWorker({ db } as any, factory as any, projection as any);
+    const shipmentId = randomUUID();
+    const dispatchAttemptId = randomUUID();
+    const delivered = {
+      shipmentId,
+      dispatchAttemptId,
+      attemptNo: 1,
+      providerEventId: 'provider-delivered-exchange',
+      deliveredAt: '2026-07-14T02:00:00.000Z',
+    };
+
+    // 발송 사실을 아직 처리하지 않았으면 배송완료는 기다린다(순서 뒤바뀜) — 던지고 임대가 끝나면 다시 집힌다
+    await sql`
+      INSERT INTO inbox_events (id, event_type, idempotency_key, status, payload, next_attempt_at)
+      VALUES (${randomUUID()}, 'ShipmentShipped', ${dispatchAttemptId}, 'processing',
+              ${JSON.stringify({ dispatchAttemptId, orders: [] })}::jsonb, now() + interval '1 hour')
+    `;
+    await consumer.handleShipmentDelivered(delivered, { messageId: randomUUID() } as any);
+    await expect(worker.processPending()).rejects.toThrow(/No dispatch operation exists/);
+    const [waiting] = await sql`
+      SELECT status FROM inbox_events
+      WHERE event_type = 'ShipmentDelivered' AND idempotency_key = ${`${dispatchAttemptId}:provider-delivered-exchange`}
+    `;
+    expect(waiting.status).not.toBe('published');
+
+    // 발송 사실을 처리했고(published) 그 사실에 채널 주문이 없으면 배송완료·회수 모두 끝낸다
+    await sql`
+      UPDATE inbox_events SET status = 'published'
+      WHERE event_type = 'ShipmentShipped' AND idempotency_key = ${dispatchAttemptId}
+    `;
+    await sql`
+      UPDATE inbox_events SET next_attempt_at = now() - interval '1 second'
+      WHERE event_type = 'ShipmentDelivered' AND idempotency_key = ${`${dispatchAttemptId}:provider-delivered-exchange`}
+    `;
+    await worker.processPending();
+    const recallOperationId = randomUUID();
+    await consumer.handleShipmentDispatchRecalled(
+      { shipmentId, dispatchAttemptId, attemptNo: 1, recallOperationId, recalledAt: '2026-07-14T03:00:00.000Z' },
+      { messageId: randomUUID() } as any,
+    );
+    await worker.processPending();
+
+    const statuses = await sql`
+      SELECT event_type, status FROM inbox_events
+      WHERE event_type IN ('ShipmentDelivered', 'ShipmentDispatchRecalled')
+      ORDER BY event_type
+    `;
+    expect(statuses.map((row) => [row.event_type, row.status])).toEqual([
+      ['ShipmentDelivered', 'published'],
+      ['ShipmentDispatchRecalled', 'published'],
+    ]);
+    const [count] = await sql`
+      SELECT count(*)::integer AS count FROM channel_dispatch_operations WHERE dispatch_attempt_id = ${dispatchAttemptId}
+    `;
+    expect(count.count).toBe(0);
+    expect(projection.updateOrderShipmentAttemptProjection).not.toHaveBeenCalled();
+    expect(factory.getAdapter).not.toHaveBeenCalled();
+  });
 });

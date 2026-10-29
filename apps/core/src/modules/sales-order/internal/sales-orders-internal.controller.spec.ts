@@ -4,6 +4,8 @@ import { SalesOrderLookupRequestDto } from './sales-order-lookup.dto';
 import type { SalesOrderLookupService } from './sales-order-lookup.service';
 import type { ReturnEligibilityService } from './return-eligibility.service';
 import { ReturnEligibilityRequestDto } from './return-eligibility.dto';
+import type { CustomerReturnService } from '../customer-return/customer-return.service';
+import { ReleaseCustomerReturnPickupDto } from './dto/release-customer-return-pickup.dto';
 
 const pipe = new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: true });
 const validate = (body: unknown): Promise<SalesOrderLookupRequestDto> =>
@@ -19,6 +21,7 @@ describe('SalesOrdersInternalController', () => {
     const controller = new SalesOrdersInternalController(
       { lookup } as unknown as SalesOrderLookupService,
       {} as unknown as ReturnEligibilityService,
+      {} as unknown as CustomerReturnService,
     );
     const dto = await validate({ salesChannel: 'medusa', orders: [{ externalOrderId: 'order_1' }] });
 
@@ -51,6 +54,7 @@ describe('SalesOrdersInternalController', () => {
       const controller = new SalesOrdersInternalController(
         {} as unknown as SalesOrderLookupService,
         { read } as unknown as ReturnEligibilityService,
+        {} as unknown as CustomerReturnService,
       );
       const dto = await pipe.transform(
         { salesChannel: 'medusa', externalOrderId: 'order_1' },
@@ -69,5 +73,30 @@ describe('SalesOrdersInternalController', () => {
         ),
       ).rejects.toThrow();
     });
+  });
+
+  describe('releaseCustomerReturnPickup', () => {
+    const validateRelease = (body: unknown): Promise<ReleaseCustomerReturnPickupDto> =>
+      pipe.transform(body, { type: 'body', metatype: ReleaseCustomerReturnPickupDto });
+
+    it('channelReturnId 를 서비스에 넘기고 결과를 그대로 돌려준다', async () => {
+      const releasePickup = jest.fn().mockResolvedValue({ result: 'picked_up' });
+      const controller = new SalesOrdersInternalController(
+        {} as unknown as SalesOrderLookupService,
+        {} as unknown as ReturnEligibilityService,
+        { releasePickup } as unknown as CustomerReturnService,
+      );
+      const dto = await validateRelease({ channelReturnId: 'return_01' });
+
+      await expect(controller.releaseCustomerReturnPickup(dto)).resolves.toEqual({ result: 'picked_up' });
+      expect(releasePickup).toHaveBeenCalledWith('return_01');
+    });
+
+    it.each([{}, { channelReturnId: '' }, { channelReturnId: 7 }, { channelReturnId: 'r'.repeat(256) }])(
+      '본문 %o 는 400',
+      async (body) => {
+        await expect(validateRelease(body)).rejects.toThrow();
+      },
+    );
   });
 });

@@ -11,7 +11,7 @@ import { listOrderRefunds, orderCancelLockKey } from '../settlement/order-paymen
 import { refundOrderPayments } from '../settlement/refund-order-payments';
 import type { RefundMode } from '../settlement/refund-mode';
 import { reconcileOrderWalletRefunds } from '../settlement/wallet-refund-ledger';
-import { readReturnRequestRecord, type ReturnRequestRecord } from './load-return-order';
+import { isExchangeRecord, readReturnRequestRecord, type ReturnRequestRecord } from './load-return-order';
 import { planReturnFees, type ReturnSettlementDeduction } from './plan-return-fees';
 import { ReturnOrderNotFound } from './request-order-return';
 import { returnItemValue } from './return-item-value';
@@ -55,7 +55,8 @@ export type ReturnPrepayRejectReason =
   | 'request_id_conflict'
   | 'prepay_exceeds_item_value'
   | 'external_refund_unresolved'
-  | 'pending_refund_outstanding';
+  | 'pending_refund_outstanding'
+  | 'exchange_unsupported';
 
 /** 정해진 거절 — 다시 불러도 같다. 라우트가 400 code=return_prepay_rejected + reason 으로 낸다. 돈은 움직이지 않았다. */
 export class ReturnPrepayRejected extends Error {
@@ -112,6 +113,8 @@ async function run(container: MedusaContainer, input: PrepayOrderReturnInput): P
   // 다른 주문의 반품 id 는 «없는 반품» — 존재 여부를 가르지 않는다
   if (!ret || ret.orderId !== input.orderId) throw new ReturnOrderNotFound(`반품을 찾을 수 없습니다: ${input.returnId}`);
   const request = assertOurLiveReturn(ret);
+  // 교환은 돈이 움직이지 않는다(K8 PR11 N6) — 기록 «전»에 닫는다. core 가 먼저 막으므로(N15) 뒷문이다
+  if (isExchangeRecord(request)) throw new ReturnPrepayRejected('exchange_unsupported', '교환은 선환불할 수 없습니다');
   const requestHash = hashReturnPrepay(input.requestId, input.amount ?? null, input.memo);
   const existing = readPrepayRecordStrict(ret);
   if (existing && existing.requestHash !== requestHash) {

@@ -27,7 +27,29 @@ export type CustomerReturnAttention =
   | 'settlement_failed'
   | 'prepayment_failed'
   | 'partial_arrival'
-  | 'refund_overdue';
+  | 'refund_overdue'
+  | 'pickup_failed';
+
+export type CustomerReturnPickupStatus =
+  | 'pending'
+  | 'reserved'
+  | 'failed'
+  | 'void'
+  | 'cancel_pending'
+  | 'cancelled';
+
+/** 반품의 마지막 회수(한진) 행 — core customer-return.reader.ts CustomerReturnPickupView 와 같다 */
+export interface CustomerReturnPickup {
+  status: CustomerReturnPickupStatus;
+  waybillNo: string | null;
+  originalWaybillNo: string | null;
+  lastError: string | null;
+  attempts: number;
+  reservedAt: string | null;
+  pickedUpAt: string | null;
+  cancelledAt: string | null;
+  createdAt: string;
+}
 
 export type CustomerReturnBucket = 'open' | 'attention' | 'closed';
 
@@ -130,6 +152,7 @@ export interface CustomerReturnView {
   settlementOutcome: CustomerReturnSettlementOutcome | null;
   prepayment: CustomerReturnPrepayment | null;
   csResolution: CustomerReturnCsResolution | null;
+  pickup: CustomerReturnPickup | null;
   lines: CustomerReturnViewLine[];
 }
 
@@ -152,6 +175,7 @@ export interface CustomerReturnListItem {
   quantity: number;
   productSummary: string;
   refundAmount: number | null;
+  pickupWaybillNo: string | null;
   attention: CustomerReturnAttention[];
 }
 
@@ -202,7 +226,10 @@ export type ReturnRejectReason =
   | 'return_already_received'
   | 'not_our_return'
   | 'return_arrived'
-  | 'return_prepaid';
+  | 'return_prepaid'
+  | 'return_picked_up'
+  | 'exchange_requires_seller_fault'
+  | 'exchange_released';
 
 export interface OrderReturnable {
   items: Array<{ item_id: string; returnable_quantity: number; window_ends_at: string | null }>;

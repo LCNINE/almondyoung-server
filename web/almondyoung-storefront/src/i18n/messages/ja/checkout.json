@@ -327,7 +327,37 @@
       "address": "配送先住所"
     },
     "review": {
-      "ratingTitle": "ご購入体験はいかがでしたか?"
+      "title": "お買い物の手続きはいかがでしたか?",
+      "subtitle": "商品レビューは商品が届いてから書けます",
+      "scores": {
+        "1": "よくない",
+        "2": "いまいち",
+        "3": "普通",
+        "4": "良い",
+        "5": "最高"
+      },
+      "saving": "保存しています",
+      "saveFailed": "保存できませんでした。もう一度星を押してください",
+      "reasonTitle": "どの点が残念でしたか?",
+      "reasonHint": "複数選べます",
+      "reasons": {
+        "ADDRESS_INPUT": "配送先の入力が不便でした",
+        "COUPON_DISCOUNT": "クーポン・割引の適用が難しかったです",
+        "CASH_RECEIPT": "現金領収書の申請が難しかったです",
+        "PAYMENT_METHOD": "決済方法が不便でした",
+        "PAYMENT_ERROR": "決済中にエラーが発生しました",
+        "PRODUCT_SEARCH": "欲しい商品を探しにくかったです",
+        "OTHER": "その他"
+      },
+      "memoLabel": "その他ご意見 (任意)",
+      "memoPlaceholder": "例: 希望の決済方法がありませんでした",
+      "skip": "あとで",
+      "submit": "送信",
+      "thanksTitle": "貴重なご意見ありがとうございます",
+      "thanksLow": "いただいた内容をもとに改善いたします",
+      "thanksHigh": "次回も満足いただけるお買い物をご用意します",
+      "changeRating": "評価を変更",
+      "saveDetailFailed": "保存できませんでした。もう一度送信してください"
     },
     "downloadBtn": "デジタル商品をダウンロード"
   },

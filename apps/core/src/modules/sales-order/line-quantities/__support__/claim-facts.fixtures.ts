@@ -1,19 +1,14 @@
 import { randomUUID } from 'crypto';
 import { eq } from 'drizzle-orm';
-import {
-  DbTx,
-  returnExchangeTables,
-  returnRequestStatusEnum,
-  wmsTables,
-} from '../../../inventory/schema/inventory.schema';
+import { DbTx, wmsTables } from '../../../inventory/schema/inventory.schema';
 import { seedBox, seedOrder, World } from '../../../fulfillment/order-progress/__support__/order-progress.fixtures';
 import type { CustomerReturnStatus } from '../../customer-return/customer-return.types';
 import { seedDispatchedParcel } from './shipment-facts.fixtures';
 
 /**
- * 청구 사실 픽스처 (K6 PR3a) — 배송완료 소포가 있는 라인과 그 소포를 적은 반품·교환 요청.
+ * 청구 사실 픽스처 (K6 PR3a) — 배송완료 소포가 있는 라인과 그 라인의 반품 예정 기록(K8 PR5·PR10).
  * 출고·배송은 `seedDispatchedParcel` 로 만든다(상자 status 만 바꾼 데이터는 수량 문이 출고로 보지 않는다, P5).
- * 청구 행은 서비스를 거치지 않고 직접 넣는다 — 수량 문이 읽는 칸(상태·항목 수량·소포 칸)만 채운다.
+ * 반품 예정 기록은 매니저를 거치지 않고 직접 넣는다 — 수량 문이 읽는 칸만 채운다.
  */
 
 export type DeliveredLine = {
@@ -45,6 +40,8 @@ export async function seedDeliveredLine(
     composition: Array<{ skuId: string; qtyPerUnit: number }>;
     parcels: Array<{ qtyBySku: Record<string, number>; delivered?: boolean }>;
     customerId?: string;
+    /** 소포의 출고 원장(SHIP 이벤트)까지 남긴다 — `seedDispatchedParcel` 의 `ledger` */
+    ledger?: boolean;
   },
 ): Promise<DeliveredLine> {
   const order = await seedOrder(tx, { quantity: args.quantity });
@@ -124,45 +121,12 @@ export async function seedDeliveredLine(
         qty: content.qty,
       })),
       delivered: parcel.delivered ?? true,
+      ledger: args.ledger,
     });
     parcels.push({ shipmentId: box.shipmentId, dispatchAttemptId, shipmentLineIdBySku });
   }
 
   return { salesOrderId: order.salesOrderId, lineId: order.lineId, foItemIdBySku, parcels };
-}
-
-/** 반품·교환 요청 하나와 그 항목들. 두 상태 enum 은 같은 값이다. */
-export async function seedClaim(
-  tx: DbTx,
-  args: {
-    kind: 'return' | 'exchange';
-    salesOrderId: string;
-    status: (typeof returnRequestStatusEnum.enumValues)[number];
-    items: Array<{
-      salesOrderLineId: string;
-      shipmentLineId: string | null;
-      dispatchAttemptId: string | null;
-      quantity: number;
-    }>;
-  },
-): Promise<{ requestId: string }> {
-  const t = returnExchangeTables;
-  if (args.kind === 'return') {
-    const [request] = await tx
-      .insert(t.returnRequests)
-      .values({ salesOrderId: args.salesOrderId, status: args.status, reasonCode: 'defective' })
-      .returning();
-    await tx.insert(t.returnRequestItems).values(args.items.map((item) => ({ returnRequestId: request.id, ...item })));
-    return { requestId: request.id };
-  }
-  const [request] = await tx
-    .insert(t.exchangeRequests)
-    .values({ salesOrderId: args.salesOrderId, status: args.status, reasonCode: 'defective' })
-    .returning();
-  await tx
-    .insert(t.exchangeRequestItems)
-    .values(args.items.map((item) => ({ exchangeRequestId: request.id, ...item })));
-  return { requestId: request.id };
 }
 
 /**
@@ -201,4 +165,46 @@ export async function insertCustomerReturn(
     })),
   );
   return { customerReturnId: customerReturn.id };
+}
+
+/**
+ * 교환(K8 PR11) 하나 — `kind 'exchange'` 반품 예정 기록(줄 하나)과 같은 판매주문의 0원 교환 줄(접수가 만드는 모양:
+ * 원래 줄의 variant·상품명·채널 상품, 채널 품목 id 없음). 교환 상자는 열지 않는다(FOI 없음). 구성은 복사하지 않는다.
+ */
+export async function insertExchange(
+  tx: DbTx,
+  args: { salesOrderId: string; sourceLineId: string; quantity: number; status?: CustomerReturnStatus },
+): Promise<{ customerReturnId: string; customerReturnLineId: string; exchangeLineId: string }> {
+  const { customerReturnId } = await insertCustomerReturn(tx, {
+    salesOrderId: args.salesOrderId,
+    status: args.status ?? 'expected',
+    lines: [{ salesOrderLineId: args.sourceLineId, quantity: args.quantity }],
+  });
+  await tx
+    .update(wmsTables.customerReturns)
+    .set({ kind: 'exchange' })
+    .where(eq(wmsTables.customerReturns.id, customerReturnId));
+  const [returnLine] = await tx
+    .select({ id: wmsTables.customerReturnLines.id })
+    .from(wmsTables.customerReturnLines)
+    .where(eq(wmsTables.customerReturnLines.customerReturnId, customerReturnId));
+  const [source] = await tx
+    .select()
+    .from(wmsTables.salesOrderLines)
+    .where(eq(wmsTables.salesOrderLines.id, args.sourceLineId));
+  const [line] = await tx
+    .insert(wmsTables.salesOrderLines)
+    .values({
+      salesOrderId: args.salesOrderId,
+      variantId: source.variantId,
+      productName: source.productName,
+      channelProductId: source.channelProductId,
+      quantity: args.quantity,
+      unitPrice: 0,
+      totalPrice: 0,
+      channelOrderItemId: null,
+      exchangeReturnLineId: returnLine.id,
+    })
+    .returning({ id: wmsTables.salesOrderLines.id });
+  return { customerReturnId, customerReturnLineId: returnLine.id, exchangeLineId: line.id };
 }

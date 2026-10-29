@@ -3,6 +3,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import type { MouseEvent, ReactNode } from 'react';
+import { PurchaseSatisfactionSection } from '../purchase-satisfaction-section';
 import { MoreHorizontal } from 'lucide-react';
 import {
   cancelActionOf,
@@ -170,6 +171,7 @@ function OrderDetailPanel({ lines, onClose }: { lines: OrderLineRow[]; onClose: 
                   ))}
                 </ul>
               </section>
+              {o.channel === 'medusa' && <PurchaseSatisfactionSection medusaOrderId={o.channelOrderId} />}
               <dl className="grid grid-cols-[72px_1fr] gap-x-3 gap-y-2">
                 {fields.map(([k, v]) => (
                   <div key={k} className="contents">
@@ -495,99 +497,11 @@ const RELATION_LABELS: Record<
     color: 'bg-indigo-100 text-indigo-700',
     icon: '📋',
   },
-  // 반품/교환 (세부 이벤트는 LIFECYCLE_EVENT_LABELS에서 metadata.event로 처리)
-  return_lifecycle_event: {
-    label: '반품 이력',
-    color: 'bg-amber-100 text-amber-700',
-    icon: '↩️',
-  },
-  exchange_lifecycle_event: {
-    label: '교환 이력',
-    color: 'bg-amber-100 text-amber-700',
-    icon: '🔁',
-  },
-  return_requested: {
-    label: '반품 신청 접수됨',
-    color: 'bg-amber-100 text-amber-700',
-    icon: '↩️',
-  },
-  exchange_requested: {
-    label: '교환 신청 접수됨',
-    color: 'bg-amber-100 text-amber-700',
-    icon: '🔁',
-  },
   // 정정
   opened_amendment: {
     label: '주문 정정됨',
     color: 'bg-cyan-100 text-cyan-700',
     icon: '✏️',
-  },
-};
-
-// metadata.event 기반 반품/교환 라이프사이클 이벤트 레이블
-const LIFECYCLE_EVENT_LABELS: Record<
-  string,
-  { label: string; color: string; icon: string }
-> = {
-  return_approved: {
-    label: '반품 승인됨',
-    color: 'bg-green-100 text-green-700',
-    icon: '↩️',
-  },
-  return_rejected: {
-    label: '반품 거절됨',
-    color: 'bg-red-100 text-red-700',
-    icon: '↩️',
-  },
-  return_collection_pending: {
-    label: '반품 수거 대기',
-    color: 'bg-amber-100 text-amber-700',
-    icon: '↩️',
-  },
-  return_collected: {
-    label: '반품 수거 완료',
-    color: 'bg-blue-100 text-blue-700',
-    icon: '↩️',
-  },
-  return_inspected: {
-    label: '반품 검수 완료',
-    color: 'bg-blue-100 text-blue-700',
-    icon: '↩️',
-  },
-  return_completed: {
-    label: '반품 완료',
-    color: 'bg-green-100 text-green-700',
-    icon: '✅',
-  },
-  exchange_approved: {
-    label: '교환 승인됨',
-    color: 'bg-green-100 text-green-700',
-    icon: '🔁',
-  },
-  exchange_rejected: {
-    label: '교환 거절됨',
-    color: 'bg-red-100 text-red-700',
-    icon: '🔁',
-  },
-  exchange_collection_pending: {
-    label: '교환 수거 대기',
-    color: 'bg-amber-100 text-amber-700',
-    icon: '🔁',
-  },
-  exchange_collected: {
-    label: '교환 수거 완료',
-    color: 'bg-blue-100 text-blue-700',
-    icon: '🔁',
-  },
-  exchange_inspected: {
-    label: '교환 검수 완료',
-    color: 'bg-blue-100 text-blue-700',
-    icon: '🔁',
-  },
-  exchange_completed: {
-    label: '교환 완료',
-    color: 'bg-green-100 text-green-700',
-    icon: '✅',
   },
 };
 
@@ -627,17 +541,13 @@ const EFFECT_STATUS_LABELS: Record<string, string> = {
 function TimelineItem({ item }: { item: SalesOrderBusinessTimelineItemDto }) {
   const [showRaw, setShowRaw] = useState(false);
 
-  // lifecycle 이벤트는 metadata.event로 세부 레이블 결정
   const metaEvent =
     typeof item.metadata?.event === 'string' ? item.metadata.event : null;
-  const mapping =
-    metaEvent && LIFECYCLE_EVENT_LABELS[metaEvent]
-      ? LIFECYCLE_EVENT_LABELS[metaEvent]
-      : (RELATION_LABELS[item.relationName] ?? {
-          label: item.relationName,
-          color: 'bg-gray-100 text-gray-600',
-          icon: '•',
-        });
+  const mapping = RELATION_LABELS[item.relationName] ?? {
+    label: item.relationName,
+    color: 'bg-gray-100 text-gray-600',
+    icon: '•',
+  };
 
   const entityLabel =
     ENTITY_TYPE_LABELS[item.linkedEntity.type] ?? item.linkedEntity.type;

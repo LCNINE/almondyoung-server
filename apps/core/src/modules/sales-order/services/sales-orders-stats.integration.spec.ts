@@ -157,6 +157,43 @@ describeIfDb('주문 현황 통계 (실 Postgres)', () => {
     });
   }
 
+  it('일별 반품 수는 그날 KST 에 접수된 반품 예정 기록 수다(취소 포함) — K8 PR 10', async () => {
+    const db = drizzle(sql);
+    const returnsByDay = (series: Array<{ bucket: string; return: number }>) =>
+      Object.fromEntries(series.map((point) => [point.bucket, point.return]));
+    let before!: Record<string, number>;
+    let after!: Record<string, number>;
+    let series!: Array<Record<string, unknown>>;
+    try {
+      await db.transaction(async (trx) => {
+        const tx = trx as unknown as DbTx;
+        const service = new SalesOrdersService(
+          { db: trx } as never,
+          {} as never,
+          {} as never,
+          {} as never,
+          {} as never,
+          {} as never,
+        );
+        before = returnsByDay((await service.getDailyStatusStats('2026-10-27', '2026-10-28')).series);
+        const o = await f.seedOrder(tx);
+        // 10-27 23:30 KST = 14:30Z, 10-28 00:10 KST = 10-27 15:10Z
+        await f.seedReturn(tx, o.salesOrderId, 'expected', new Date('2026-10-27T14:30:00.000Z'));
+        await f.seedReturn(tx, o.salesOrderId, 'cancelled', new Date('2026-10-27T14:30:00.000Z'));
+        await f.seedReturn(tx, o.salesOrderId, 'expected', new Date('2026-10-27T15:10:00.000Z'));
+        const result = await service.getDailyStatusStats('2026-10-27', '2026-10-28');
+        series = result.series as unknown as Array<Record<string, unknown>>;
+        after = returnsByDay(result.series);
+        throw new Rollback();
+      });
+    } catch (error) {
+      if (!(error instanceof Rollback)) throw error;
+    }
+    expect(after['2026-10-27'] - before['2026-10-27']).toBe(2);
+    expect(after['2026-10-28'] - before['2026-10-28']).toBe(1);
+    expect(series.every((point) => !('exchange' in point))).toBe(true);
+  });
+
   it('출고 불가는 보드 «예약» 단계의 진행 중 주문 수다 — 기간·주문 상태 창이 없다', async () => {
     const delta = await withFixtures(async ({ trx, order }) => {
       // 14일보다 오래된 주문이어도, confirmed 가 아니어도 보드 «예약» 칸에 있으면 센다

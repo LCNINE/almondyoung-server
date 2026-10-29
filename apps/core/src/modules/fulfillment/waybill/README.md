@@ -146,6 +146,13 @@ CI 아님 — 사람이 dev key 를 손에 쥐고 직접 실행하는 스크립�
   (정본 §4.2) 게이트가 함께 본다 — 예전에는 이들이 비어도 게이트를 통과해, 설정 누락이 복구 가능한
   409 가 아니라 한진 `ERROR-01` → waybill `failed`(종료상태)로 기록됐다(#912).
 
+## 반품 회수(R)는 이 상태머신을 타지 않는다
+
+고객 반품 회수 예약(K8 PR9)은 `CarrierGateway` 와 `HanjinApiClient` 만 같이 쓴다(`reservePickup`·`cancelPickup`).
+`waybills`·`WaybillIssueMachine` 은 거치지 않고 자기 테이블 `customer_return_pickups` 와 리스 CAS 워커가 상태를
+들고 있다. 회수 운송장번호는 `insert-order` 응답으로 오며(`560…`), 출고와 달리 취소할 수 있다.
+설계는 `docs/superpowers/specs/2026-10-26-k8-returns-on-medusa-design.md` §4.7.
+
 ## 미해결 리스크 (UNRESOLVED RISKS)
 
 1. **print-wbl 방화벽 IP whitelist (§3.1-4)** — `allocate`(print-wbl, print 호스트)는 발신 IP 가 한진 측
