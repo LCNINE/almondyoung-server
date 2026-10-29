@@ -16,7 +16,7 @@ Reuse the product outbox and Medusa metadata to distribute the selected file ID.
 
 - Preserve existing thumbnails and list screens.
 - GLB MIME is `model/gltf-binary`; file context must be public and provisioned by a migration, not only a seed.
-- Model statuses: `approved`, `needs_revision`, `needs_photos`, `failed`.
+- Model statuses: `approved`, `needs_revision`, `needs_more_photos`, `failed`.
 - New generation creates a new version; latest approved version is visible even when a newer version is unapproved.
 - Publish only when a product's selected GLB changes, in the same database transaction.
 - Batch approvals publish with origin `bulk_import`.

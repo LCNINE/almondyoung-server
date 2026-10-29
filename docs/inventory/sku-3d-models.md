@@ -67,12 +67,12 @@ curl -sSI -L -H 'Origin: https://YOUR_STOREFRONT' \
 재생성은 새 POST로 새 버전을 만든다.
 이전 버전의 파일을 교체하는 API는 두지 않는다.
 
-| 상태             | 의미                      |
-| ---------------- | ------------------------- |
-| `approved`       | 검수 통과, 고객 노출 후보 |
-| `needs_revision` | 수정 필요                 |
-| `needs_photos`   | 추가 사진 필요            |
-| `failed`         | 생성 실패                 |
+| 상태                | 의미                      |
+| ------------------- | ------------------------- |
+| `approved`          | 검수 통과, 고객 노출 후보 |
+| `needs_revision`    | 수정 필요                 |
+| `needs_more_photos` | 추가 사진 필요            |
+| `failed`            | 생성 실패                 |
 
 통과 처리는 `{"status":"approved"}`로 요청한다.
 일괄 요청에는 `ids` 배열을 함께 보낸다.
