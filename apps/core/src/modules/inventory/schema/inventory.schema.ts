@@ -798,6 +798,32 @@ export const skuReferencePhotos = pgTable(
   }),
 );
 
+export type Sku3dModelStatus = 'approved' | 'needs_revision' | 'needs_more_photos' | 'failed';
+
+export const sku3dModels = pgTable(
+  'sku_3d_models',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    skuId: uuid('sku_id')
+      .notNull()
+      .references(() => skus.id, { onDelete: 'cascade' }),
+    version: integer('version').notNull(),
+    glbFileId: uuid('glb_file_id'),
+    status: varchar('status', { length: 32 }).$type<Sku3dModelStatus>().notNull(),
+    notes: jsonb('notes').$type<Record<string, unknown>>().notNull().default({}),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    uniqueVersion: uniqueIndex('uq_sku_3d_models_sku_version').on(t.skuId, t.version),
+    validVersion: check('ck_sku_3d_models_version', sql`${t.version} > 0`),
+    validStatus: check(
+      'ck_sku_3d_models_status',
+      sql`${t.status} IN ('approved', 'needs_revision', 'needs_more_photos', 'failed')`,
+    ),
+    approvedFile: check('ck_sku_3d_models_approved_file', sql`${t.status} <> 'approved' OR ${t.glbFileId} IS NOT NULL`),
+  }),
+);
+
 export const skuFieldCaptures = pgTable(
   'sku_field_captures',
   {
@@ -3929,6 +3955,7 @@ export const wmsTables = {
   skuBarcodes,
   skuShelfPositions,
   skuReferencePhotos,
+  sku3dModels,
   skuFieldCaptures,
   skuFieldCaptureEvents,
   skuImages,

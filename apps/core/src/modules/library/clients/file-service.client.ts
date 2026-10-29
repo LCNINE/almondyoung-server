@@ -88,10 +88,10 @@ export class FileServiceClient {
   // expiresIn 은 짧게 (클릭→다운로드 시작에 충분). 관리자 회수 후 이미 발급된 URL 의 유효창을 줄인다.
   async getDownloadUrl(fileId: string, onBehalfOf: string, expiresIn = 60): Promise<string> {
     const token = this.delegationToken(onBehalfOf);
-    const res = await fetch(
-      `${this.baseUrl()}/files/${fileId}/download?expiresIn=${expiresIn}&download=true`,
-      { method: 'GET', headers: { Authorization: `Bearer ${token}` } },
-    );
+    const res = await fetch(`${this.baseUrl()}/files/${fileId}/download?expiresIn=${expiresIn}&download=true`, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${token}` },
+    });
     if (!res.ok) {
       const body = await res.text().catch(() => '');
       throw new Error(`file-service download endpoint failed: ${res.status} ${res.statusText} — ${body}`);
@@ -115,6 +115,7 @@ export class FileServiceClient {
     mimeType: string | null;
     status: string | null;
     contextId: string | null;
+    isPublic: boolean;
   }> {
     const token = this.delegationToken(onBehalfOf);
     const res = await fetch(`${this.baseUrl()}/files/${fileId}/metadata`, {
@@ -131,6 +132,7 @@ export class FileServiceClient {
       mimeType?: string;
       status?: string;
       contextId?: string;
+      isPublic?: boolean;
     };
     return {
       fileName: meta.fileName ?? meta.originalName ?? fileId,
@@ -138,6 +140,7 @@ export class FileServiceClient {
       mimeType: meta.mimeType ?? null,
       status: meta.status ?? null,
       contextId: meta.contextId ?? null,
+      isPublic: meta.isPublic === true,
     };
   }
 }

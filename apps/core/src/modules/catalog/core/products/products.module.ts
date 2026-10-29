@@ -14,6 +14,7 @@ import { ProjectionSnapshotAssembler } from './assemblers/projection-snapshot.as
 import { OptionReadLoader } from './loaders/option-read.loader';
 import { ProductVersionReadLoader } from './loaders/product-version-read.loader';
 import { TagReadLoader } from './loaders/tag-read.loader';
+import { ProductModel3dLoader } from './loaders/product-model3d.loader';
 import { ProductMatchingModule } from '../../../product-matching/product-matching.module';
 import { LibraryModule } from '../../../library/library.module';
 import { ProductSellableQuantityModule } from '../../../inventory/product-sellable-quantity/product-sellable-quantity.module';
@@ -37,6 +38,7 @@ import { ProductSellableQuantityModule } from '../../../inventory/product-sellab
     OptionReadLoader,
     ProductVersionReadLoader,
     TagReadLoader,
+    ProductModel3dLoader,
   ],
   exports: [
     ProductMastersService,
@@ -44,6 +46,7 @@ import { ProductSellableQuantityModule } from '../../../inventory/product-sellab
     ProductVersionsService,
     ProductPurchaseConstraintsService,
     ProductReadAssembler,
+    ProductModel3dLoader,
     // 카테고리 서비스가 상품-카테고리 변경 시 프로젝션 스냅샷을 재발행하는 데 사용한다.
     ProjectionSnapshotAssembler,
     // 대량등록이 조합 문자열 → variantId 해석에 사용한다 (엑셀에 UUID 가 없으므로
