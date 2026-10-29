@@ -41,22 +41,39 @@ export function InventoryLookupScreen() {
   // 이 호출의 onSuccess 에서만 정확히 한 번 소비한다. 캐시 신선도(staleTime)나
   // effect 의 재진입에 기대지 않는다 — 그 설계는 두 방향의 버그(응답 누락, 중복
   // 처리)를 모두 냈다.
-  useScanner((e) => {
-    if (byBarcode.isPending) return; // 응답을 기다리는 동안 겹치는 스캔은 무시한다
+  // 한 건이면 상세로, 여러 건이면 고르게 한다. 0건이면 onMiss 가 정한다.
+  const lookupBarcode = (code: string, onMiss: () => void) => {
     setScanNotice(null);
     setScanHits([]);
-    byBarcode.mutate(e.code, {
+    byBarcode.mutate(code, {
       onSuccess: (hits) => {
         if (hits.length === 1) {
           void navigate({ to: '/inventory/$sku', params: { sku: hits[0].id } });
         } else if (hits.length === 0) {
-          setScanNotice(`등록되지 않은 바코드예요: ${e.code}`);
+          onMiss();
         } else {
           setScanHits(hits);
         }
       },
+      onError: onMiss,
     });
+  };
+
+  useScanner((e) => {
+    if (byBarcode.isPending) return; // 응답을 기다리는 동안 겹치는 스캔은 무시한다
+    lookupBarcode(e.code, () => setScanNotice(`등록되지 않은 바코드예요: ${e.code}`));
   });
+
+  // 검색칸에 찍힌(친) 바코드는 스캔 버스로 오지 않는다 — 바코드로 먼저 찾고, 없으면 상품명·코드 검색
+  const search = (value: string) => {
+    const searchByName = () => {
+      setPagination((p) => ({ ...p, pageIndex: 0 }));
+      setQuery(value);
+    };
+    const code = value.trim();
+    if (code === '' || byBarcode.isPending) searchByName();
+    else lookupBarcode(code, searchByName);
+  };
 
   const sort = sorting[0];
   const { data, isLoading, isError, error } = useSkuSearch({
@@ -118,13 +135,12 @@ export function InventoryLookupScreen() {
         className="flex gap-2"
         onSubmit={(e) => {
           e.preventDefault();
-          setPagination((p) => ({ ...p, pageIndex: 0 }));
-          setQuery(term);
+          search(term);
         }}
       >
         <input
           className="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm"
-          placeholder="상품명·코드 검색"
+          placeholder="상품명·코드·바코드 검색"
           value={term}
           onChange={(e) => setTerm(e.target.value)}
         />
