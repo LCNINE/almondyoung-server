@@ -38,13 +38,14 @@ export class SalesOrdersInternalController {
 
   /**
    * K8 PR9 N6 — Medusa 가 반품을 취소하기 전에 한진 회수 예약을 먼저 놓는다. released 면 취소해도 되고 picked_up 이면
-   * 기사가 이미 집하해 취소를 거절한다. 409(보내는 중)·502(한진 취소 실패)는 Medusa 가 «판정 불가»로 읽는다.
+   * 기사가 이미 집하해 취소를 거절한다. exchange_released 면 교환 대체 상자가 이미 열려 취소를 거절한다(K8 PR11).
+   * 409(보내는 중)·502(한진 취소 실패)는 Medusa 가 «판정 불가»로 읽는다.
    */
   @Post('customer-return-pickup/release')
   @HttpCode(HttpStatus.OK)
   releaseCustomerReturnPickup(
     @Body() dto: ReleaseCustomerReturnPickupDto,
-  ): Promise<{ result: 'released' | 'picked_up' }> {
+  ): Promise<{ result: 'released' | 'picked_up' | 'exchange_released' }> {
     return this.customerReturnService.releasePickup(dto.channelReturnId);
   }
 }

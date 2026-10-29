@@ -255,11 +255,15 @@ export const PRINT_PAYMENT_UNCONFIRMED_ERROR = 'payment not confirmed — verify
  * 교환 줄(K8 PR11)은 취소로 줄이지 않는다(N18) — 교환 사실로만 생기고 지워진다. Medusa 는 정산 전까지 그 줄을 모르고,
  * 정산 뒤엔 대체 품목 줄의 반품이 갈 길이다.
  */
-function isExchangeLine(line: { exchangeReturnLineId?: string | null }): boolean {
-  return typeof line.exchangeReturnLineId === 'string';
+function isExchangeLine(line: { exchangeReturnLineId: string | null }): boolean {
+  // 칸을 고르지 않은 행이면(undefined) «교환 아님»으로 새지 않고 결함으로 멈춘다 — 타입이 막고, 런타임도 막는다
+  if (line.exchangeReturnLineId === undefined) {
+    throw new Error('sales order line was read without exchange_return_line_id');
+  }
+  return line.exchangeReturnLineId !== null;
 }
 
-function assertNotExchangeLine(line: { id: string; exchangeReturnLineId?: string | null }): void {
+function assertNotExchangeLine(line: { id: string; exchangeReturnLineId: string | null }): void {
   if (isExchangeLine(line)) {
     throw new BadRequestError(`교환 줄은 취소할 수 없습니다 (line ${line.id})`);
   }

@@ -182,7 +182,7 @@ async function run(container: MedusaContainer, input: SettleOrderReturnInput): P
   if (existing?.stage === 'refunded' || existing?.stage === 'exchanged') return toResult(input, existing);
   const mode = input.refundMode ?? 'auto';
 
-  const received = existing ?? (await receive(container, input, ret, request.feeBearer, requestHash));
+  const received = existing ?? (await receive(container, input, ret, request.feeBearer, requestHash, exchange));
   const charged = received.stage === 'received' ? await charge(container, input, received) : received;
   if (exchange) return exchangeAfterReceive(container, input, ret.id, charged);
 
@@ -215,6 +215,7 @@ async function receive(
   ret: ReturnRow,
   feeBearer: 'customer' | 'seller',
   requestHash: string,
+  exchange: boolean,
 ): Promise<ReturnSettlementRecord> {
   const closesMissing = input.closesMissing === true;
   assertItemsMatch(ret.quantities, input.items, closesMissing);
@@ -226,7 +227,9 @@ async function receive(
   await reconcileOrderWalletRefunds(container, input.orderId);
   const reconciled = await loadOrder(container, input.orderId);
   const refunds = await listOrderRefunds(container, input.orderId);
-  assertExternalRefundResolved(refunds, reconciled, otherReturns, input.alreadyRefundedAmount);
+  // 교환은 돈이 움직이지 않는다(환불 대신 대체 품목) — 품목에 연결 안 된 외부 환불이 있어도 이중 환불이 생기지 않는다.
+  // 교환은 alreadyRefundedAmount 도 받지 않으니(assertExchangeSettlable) 이 검사를 두면 그런 주문의 교환은 나갈 길이 없다
+  if (!exchange) assertExternalRefundResolved(refunds, reconciled, otherReturns, input.alreadyRefundedAmount);
   // 선환불한 금액의 정본은 이 메모 환불 행이다(N6) — 선환불 기록의 amount 가 아니다
   const prepaid = prepaidTotal(refunds, input.requestId);
   const externalRefund = input.alreadyRefundedAmount ?? 0;

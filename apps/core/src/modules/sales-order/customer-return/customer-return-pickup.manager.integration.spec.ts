@@ -663,6 +663,35 @@ describeIfDb('CustomerReturnPickupManager — 반품 회수 워커 (K8 PR9)', ()
       }),
     );
 
+    it('교환 대체 상자를 이미 연 교환(CS 선발송) → exchange_released, 한진 안 부름·회수 그대로 (K8 PR11)', () =>
+      inRollbackTx(db, async (tx) => {
+        const { gateway, manager } = wire(tx);
+        const { pickupId, channelReturnId, customerReturnId } = await seedSent(tx, 'reserved');
+        await tx
+          .update(wmsTables.customerReturns)
+          .set({ kind: 'exchange', exchangeReleasedAt: now, exchangeReleasedBy: randomUUID() })
+          .where(eq(wmsTables.customerReturns.id, customerReturnId));
+        const before = await rowOf(tx, pickupId);
+
+        expect(await manager.release(channelReturnId, now)).toEqual({ result: 'exchange_released' });
+        expect(gateway.cancelCalls).toHaveLength(0);
+        expect(await rowOf(tx, pickupId)).toEqual(before);
+      }));
+
+    it('아직 상자를 열지 않은 교환 → 반품과 같이 회수를 놓는다(released)', () =>
+      inRollbackTx(db, async (tx) => {
+        const { gateway, manager } = wire(tx);
+        gateway.cancelScript = () => Promise.resolve({ kind: 'cancelled' });
+        const { channelReturnId, customerReturnId } = await seedSent(tx, 'reserved');
+        await tx
+          .update(wmsTables.customerReturns)
+          .set({ kind: 'exchange' })
+          .where(eq(wmsTables.customerReturns.id, customerReturnId));
+
+        expect(await manager.release(channelReturnId, now)).toEqual({ result: 'released' });
+        expect(gateway.cancelCalls).toHaveLength(1);
+      }));
+
     it.each(['void', 'cancelled'] as const)('활성 회수 없음(%s 뿐) → released, 한진 안 부름', (status) =>
       inRollbackTx(db, async (tx) => {
         const { gateway, manager } = wire(tx);

@@ -1519,6 +1519,24 @@ describeIfDb('CustomerReturnSettlementManager — 반품 정산 결과·재발�
       });
     });
 
+    it('반품 기록에 exchangeItems 가 실린 settled → ConflictError, 반품으로 닫지 않고 SalesOrderReturned 도 없다', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const w = await seedWorld(tx);
+        const wired = wire();
+        const s = await seedInspected(tx, w, wired);
+
+        await expect(
+          wired.settlement.recordSettled(exchangeFact(s, `item_${randomUUID().slice(0, 8)}`), tx),
+        ).rejects.toBeInstanceOf(ConflictError);
+
+        expect((await recordOf(tx, s.customerReturnId)).status).toBe('inspected');
+        expect(wired.eventsOf('SalesOrderReturned')).toHaveLength(0);
+        expect(wired.eventsOf('SalesOrderClaimProgressed').filter((e) => e.payload.stage === 'completed')).toHaveLength(
+          0,
+        );
+      });
+    });
+
     it('교환 settled 인데 exchangeItems 가 없거나 원래 줄·수량과 맞지 않으면 → ConflictError, 아무것도 쓰지 않는다', async () => {
       await inRollbackTx(db, async (tx) => {
         const w = await seedWorld(tx);

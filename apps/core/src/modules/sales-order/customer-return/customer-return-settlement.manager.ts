@@ -109,6 +109,13 @@ export class CustomerReturnSettlementManager {
 
       // 교환은 환불 대신 Medusa 대체 품목 줄로 닫혔다 — 그 줄 id 를 교환 줄에 잇는다(N16). 쓰기 전에 맞춰 본다
       const exchangeLinks = record.kind === 'exchange' ? await this.matchExchangeItems(trx, record, fact) : null;
+      // 반대 방향 어긋남 — 반품으로 받은 기록에 대체 품목이 실려 왔다. 반품으로 닫으면 고객은 환불도 대체품도 받은 셈이 되고
+      // SalesOrderReturned 가 거짓이 된다. DLQ 에 남겨 사람이 본다
+      if (record.kind !== 'exchange' && fact.exchangeItems?.length) {
+        throw new ConflictError(
+          `Customer return ${record.id} (channel ${fact.returnId}) is a return but the settled fact carries exchange items`,
+        );
+      }
       const settledAt = new Date(fact.settledAt);
       const outcome: CustomerReturnSettlementOutcome = {
         refundAmount: fact.refundAmount,

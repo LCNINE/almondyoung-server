@@ -1042,7 +1042,7 @@ medusaIntegrationTestRunner({
         target: { variant: 'A' | 'B' | 'E'; quantity: number },
         promoCode?: string,
       ) => {
-        const { orderId } = await placeOrder(ctx, c, wallet, { lines, promoCode });
+        const { orderId, intentId } = await placeOrder(ctx, c, wallet, { lines, promoCode });
         const o = await loadOrder(getContainer(), orderId);
         core.setEligibility(
           orderId,
@@ -1058,7 +1058,7 @@ medusaIntegrationTestRunner({
           kind: 'exchange',
         });
         expect(res.kind).toBe('exchange');
-        return { orderId, returnId: res.returnId, itemId: itemOf(target.variant), itemOf };
+        return { orderId, intentId, returnId: res.returnId, itemId: itemOf(target.variant), itemOf };
       };
       const replacementLines = async (orderId: string) =>
         (await loadOrder(getContainer(), orderId)).items.filter((i: any) => !!i.metadata?.almondExchange);
@@ -1172,6 +1172,20 @@ medusaIntegrationTestRunner({
         expect((await changesTagged(orderId, tag)).filter((ch) => ch.status === 'pending' || ch.status === 'requested')).toHaveLength(0);
         expect(Math.abs(await pending(orderId))).toBeLessThan(0.01);
         expect(await notPaidCollections(orderId)).toBe(0);
+        expect(wallet.refundCalls()).toHaveLength(0);
+      });
+
+      it('품목에 연결 안 된 wallet 직접 환불이 있는 주문의 교환 → external_refund_unresolved 로 거절하지 않는다(돈이 안 움직인다)', async () => {
+        const { orderId, intentId, returnId, itemId } = await exchangeRequested([{ variant: 'A', quantity: 1 }], { variant: 'A', quantity: 1 });
+        wallet.addExternalRefund(intentId, 10000);
+
+        const res = await settle(orderId, returnId, { requestId: rid('exs'), items: [{ item_id: itemId, received: 1, dismissed: 0 }] });
+
+        // 영구 거절(400)로 닫지 않는다 — 교환은 alreadyRefundedAmount 를 받지 않아 그 거절엔 나갈 길이 없다.
+        // 알려진 잔여(최종 리뷰 M5, 미룸): 대체 줄 확정 뒤 차액 검사(N5)가 «절대» 차액을 봐서 이 주문의 외부 환불 10,000 이
+        // 남은 차액으로 보이고 500(일시)으로 멈춘다 — 재시도·stalled 뒤 사람이 본다. 환불은 나가지 않는다
+        expect(res.status).not.toBe(400);
+        expect(res.data).not.toEqual(expect.objectContaining({ reason: 'external_refund_unresolved' }));
         expect(wallet.refundCalls()).toHaveLength(0);
       });
 

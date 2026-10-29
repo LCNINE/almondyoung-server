@@ -166,8 +166,13 @@ export class CustomerReturnPickupManager {
    * 취소된 반품의 소포가 기록 없이 창고로 오지 않는다. released = 한진에 회수가 없다(취소해도 된다),
    * picked_up = 기사가 이미 집하했다(취소 거절). 판정할 수 없으면 409(누가 보내는 중)·502(한진 취소 실패) —
    * Medusa 는 둘 다 «판정 불가»로 읽고 반품을 그대로 둔다.
+   * exchange_released = 교환 대체 상자를 이미 열었다(K8 PR11, CS 선발송이 Medusa 의 자격 조회 뒤에 끼었다) — 취소 거절이고
+   * 회수는 건드리지 않는다. Medusa 는 이를 `ReturnRequestRejected('exchange_released')` 로 닫는다.
    */
-  async release(channelReturnId: string, now: Date): Promise<{ result: 'released' | 'picked_up' }> {
+  async release(
+    channelReturnId: string,
+    now: Date,
+  ): Promise<{ result: 'released' | 'picked_up' | 'exchange_released' }> {
     const target = await this.dbService.run((trx) => this.findReleaseTarget(trx, channelReturnId));
     if (target.kind !== 'pickup') return { result: target.kind };
     const pickup = target.pickup;
@@ -208,14 +213,17 @@ export class CustomerReturnPickupManager {
   private async findReleaseTarget(
     trx: DbTx,
     channelReturnId: string,
-  ): Promise<{ kind: 'released' | 'picked_up' } | { kind: 'pickup'; pickup: PickupRow }> {
+  ): Promise<{ kind: 'released' | 'picked_up' | 'exchange_released' } | { kind: 'pickup'; pickup: PickupRow }> {
     const r = wmsTables.customerReturns;
+    // 교환 상자 열기(CustomerExchangeReleaser)도 이 행을 잠그고 exchange_released_at 을 쓴다 — 잠가 읽어 둘 중 먼저 끝난 쪽을 본다
     const [record] = await trx
-      .select({ id: r.id, status: r.status })
+      .select({ id: r.id, status: r.status, kind: r.kind, exchangeReleasedAt: r.exchangeReleasedAt })
       .from(r)
       .where(eq(r.channelReturnId, channelReturnId))
-      .limit(1);
+      .limit(1)
+      .for('update');
     if (!record) return { kind: 'released' };
+    if (record.kind === 'exchange' && record.exchangeReleasedAt !== null) return { kind: 'exchange_released' };
     if (record.status !== 'expected' && record.status !== 'cancelled') return { kind: 'picked_up' };
 
     const t = wmsTables.customerReturnPickups;

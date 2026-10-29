@@ -102,8 +102,13 @@ async function run(container: MedusaContainer, input: CancelOrderReturnInput): P
   }
   // 한진 회수 예약을 core 가 먼저 취소한다 — 기사가 이미 가져갔으면 취소를 거절한다. core 가 취소한 뒤 아래가 실패해도
   // 회수만 없어진 쪽(CS 가 다시 접수)이 소포가 기록 없이 오는 쪽보다 낫다(N6). 주문 변경을 건드리기 «전»이다.
-  if ((await releaseCoreReturnPickup(ret.id)) === 'picked_up') {
+  const released = await releaseCoreReturnPickup(ret.id);
+  if (released === 'picked_up') {
     throw new ReturnRequestRejected('return_picked_up', '택배 기사님이 이미 회수한 반품은 취소할 수 없습니다');
+  }
+  // 위 자격 조회와 이 호출 사이에 CS 가 교환품을 먼저 보냈다 — core 는 회수를 놓지 않고 거절한다(같은 기록 잠금 안에서 본다)
+  if (released === 'exchange_released') {
+    throw new ReturnRequestRejected('exchange_released', '교환 상품을 이미 준비한 교환은 취소할 수 없습니다');
   }
 
   for (const f of query.fulfillments.filter((x) => !x.canceledAt)) {
