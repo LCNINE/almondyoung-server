@@ -102,41 +102,9 @@ Swagger UI를 통해 API 문서를 제공합니다:
 
 ### 새로운 권한 추가하기
 
-1. 스코프 정의 (`database/seed.ts`)
-
-```typescript
-export const PREDEFINED_SCOPES = {
-  MASTER: 'master',
-  USER: 'user',
-  NEW_SCOPE: 'new_scope', // 새로운 스코프
-};
-```
-
-2. 역할 정의
-
-```typescript
-export const PREDEFINED_ROLES = {
-  MASTER: 'master',
-  NEW_ROLE: 'new_role', // 새로운 역할
-};
-```
-
-3. 매핑 설정
-
-```typescript
-const DEFAULT_ROLE_SCOPE_MAPPINGS = [
-  {
-    roleId: PREDEFINED_ROLES.NEW_ROLE,
-    scopeIds: [PREDEFINED_SCOPES.NEW_SCOPE],
-  },
-];
-```
-
-4. 시드 실행
-
-```bash
-npm run seed:user-service
-```
+권한 키는 `libs/authorization/src/permissions/permission-catalog.ts` 에만 있다. 새 키를 거기에 더하고
+`grantOnFirstRegistration` 에 그 기능을 오늘 쓰는 역할을 적는다(첫 등록 때 한 번만 부여된다). 이후 역할↔권한은
+관리자 화면에서 바꾼다. 규칙은 `docs/adr/0048-admin-permission-model.md`.
 
 ### 테스트
 

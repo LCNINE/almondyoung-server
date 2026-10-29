@@ -48,7 +48,7 @@ export abstract class SeedStep {
     return new Set(rows.map((r) => r.id));
   }
 
-  /** 특정 키들 중 DB에 존재하는 것들의 Set 반환 (auth.scopes 등 non-uuid PK 용) */
+  /** 특정 키들 중 DB에 존재하는 것들의 Set 반환 (non-uuid PK 용) */
   protected async findExistingKeys(
     table: string,
     keys: string[],

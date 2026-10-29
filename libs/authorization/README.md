@@ -48,7 +48,3 @@ export class MeController {
   me(@User() user: JwtPayload) { /* user.id 로만 자기 데이터를 고른다 */ }
 }
 ```
-
-## 남은 옛 정의
-
-`database/auth.schema.ts`·`auth.types.ts` 의 옛 표 정의는 표를 지우는 마이그레이션 전까지만 남는다. 새 코드는 쓰지 않는다.

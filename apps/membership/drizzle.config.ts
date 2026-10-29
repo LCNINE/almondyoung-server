@@ -8,7 +8,6 @@ export default defineConfig({
     'apps/membership/src/**/schema.ts',
     'libs/events/src/outbox/outbox.schema.ts',
     'libs/events/src/tracking/tracking.schema.ts',
-    'libs/authorization/src/database/auth.schema.ts',
     'libs/cron-once/src/cron-runs.schema.ts',
   ],
   out: './apps/membership/drizzle',
@@ -16,6 +15,6 @@ export default defineConfig({
   dbCredentials: {
     url: process.env.DATABASE_URL || '',
   },
-  schemaFilter: ['public', 'event', 'auth'],
+  schemaFilter: ['public', 'event'],
   migrations: { prefix: 'supabase' },
 });
