@@ -1,5 +1,5 @@
 import { ConflictException } from '@nestjs/common';
-import { asc, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { PublisherFor } from '@app/events';
 import {
   CORE_ORDER_STREAM,
@@ -46,6 +46,24 @@ interface EventLineIdentity {
   fulfillmentOrderItemCanceledQty: number;
 }
 
+/**
+ * 교환 상자 줄(K8 PR11) — 판매 줄에 `exchange_return_line_id` 가 있다. Medusa 품목 id 는 정산 사실이 나중에 채우므로
+ * (선발송이면 정산보다 먼저 나간다) 채널 품목 신원을 요구하지 않고, 채널 발송 이벤트 줄에도 싣지 않는다 — 원래 품목 id 로
+ * 실으면 그 품목의 발송 수량을 두 번 센다. 고객 발송 알림과 v1 완료 투영의 주문 신원(판매주문·채널 주문 id)만 쓴다.
+ */
+interface ExchangeLineIdentity {
+  fulfillmentOrderId: string;
+  salesOrderId: string;
+  salesChannel: 'medusa' | 'naver' | 'coupang' | '3pl';
+  channelOrderId: string;
+}
+
+/** 고객 발송 알림이 읽는 주문 신원 — 채널 발송 이벤트 줄이 없는(교환 줄만 실은) 상자도 알림은 간다 */
+export type ShipmentNoticeOrder = Pick<
+  ShipmentEventOrder,
+  'salesOrderId' | 'salesChannel' | 'channelOrderId' | 'isPartial'
+>;
+
 export interface FulfillmentSummary {
   fulfillmentOrderId: string;
   salesOrderId: string | null;
@@ -89,7 +107,10 @@ function conflict(code: string, message: string): ConflictException {
   return new ConflictException({ code, message });
 }
 
-/** 요약을 읽고 전량 발송된 FO 에 shipped_at 을 찍는다. */
+/**
+ * 요약을 읽고 전량 발송된 FO 에 shipped_at 을 찍는다. 이미 찍힌 FO 는 그대로 둔다 — 다 나간 FO 에 교환 상자(K8 PR11)가
+ * 더 나가 다시 전량 발송이 돼도 처음 다 나간 시각이 남는다(v1 완료 투영도 FO 당 한 번이다). 회수는 이 칸을 비운다.
+ */
 export async function markFullyShippedOrders(
   tx: DbTx,
   lines: ShipmentLineRow[],
@@ -101,7 +122,12 @@ export async function markFullyShippedOrders(
       await tx
         .update(wmsTables.fulfillmentOrders)
         .set({ shippedAt: at, updatedAt: at })
-        .where(eq(wmsTables.fulfillmentOrders.id, summary.fulfillmentOrderId));
+        .where(
+          and(
+            eq(wmsTables.fulfillmentOrders.id, summary.fulfillmentOrderId),
+            isNull(wmsTables.fulfillmentOrders.shippedAt),
+          ),
+        );
     }
   }
   return summaries;
@@ -167,7 +193,10 @@ export async function loadFulfillmentSummaries(tx: DbTx, lines: ShipmentLineRow[
   return summaries;
 }
 
-async function loadEventLineIdentities(tx: DbTx, shipmentId: string): Promise<EventLineIdentity[]> {
+async function loadEventLineIdentities(
+  tx: DbTx,
+  shipmentId: string,
+): Promise<{ lines: EventLineIdentity[]; exchangeLines: ExchangeLineIdentity[] }> {
   const rows = await tx
     .select({
       shipmentLineId: wmsTables.shipmentLines.id,
@@ -179,6 +208,7 @@ async function loadEventLineIdentities(tx: DbTx, shipmentId: string): Promise<Ev
       channelOrderId: wmsTables.salesOrders.channelOrderId,
       channelOrderItemId: wmsTables.salesOrderLines.channelOrderItemId,
       channelProductId: wmsTables.salesOrderLines.channelProductId,
+      exchangeReturnLineId: wmsTables.salesOrderLines.exchangeReturnLineId,
       skuId: wmsTables.shipmentLines.skuId,
       qty: wmsTables.shipmentLines.qty,
       fulfillmentOrderItemQty: wmsTables.fulfillmentOrderItems.qty,
@@ -201,6 +231,7 @@ async function loadEventLineIdentities(tx: DbTx, shipmentId: string): Promise<Ev
     )
     .where(eq(wmsTables.shipmentLines.shipmentId, shipmentId))
     .orderBy(asc(wmsTables.fulfillmentOrders.id), asc(wmsTables.shipmentLines.id));
+  // 교환 줄은 채널 품목 id 없이도 나간다(위 ExchangeLineIdentity) — 판매주문·채널 주문 신원은 그대로 요구한다
   const invalid = rows.find(
     (row) =>
       row.salesChannel !== null &&
@@ -208,7 +239,7 @@ async function loadEventLineIdentities(tx: DbTx, shipmentId: string): Promise<Ev
       (!row.salesOrderId ||
         !row.salesOrderLineId ||
         !UUID_PATTERN.test(row.salesOrderLineId) ||
-        !row.channelOrderItemId?.trim() ||
+        (row.exchangeReturnLineId === null && !row.channelOrderItemId?.trim()) ||
         !row.channelOrderId?.trim()),
   );
   if (invalid) {
@@ -217,15 +248,27 @@ async function loadEventLineIdentities(tx: DbTx, shipmentId: string): Promise<Ev
       `Shipment line ${invalid.shipmentLineId} has no trusted channel identity`,
     );
   }
-  return rows.filter(
+  const identified = rows.filter(
     (row) =>
       row.salesOrderId !== null &&
       row.salesOrderLineId !== null &&
       UUID_PATTERN.test(row.salesOrderLineId) &&
       row.salesChannel !== null &&
-      Boolean(row.channelOrderId?.trim()) &&
-      Boolean(row.channelOrderItemId?.trim()),
-  ) as EventLineIdentity[];
+      Boolean(row.channelOrderId?.trim()),
+  );
+  return {
+    lines: identified.filter(
+      (row) => row.exchangeReturnLineId === null && Boolean(row.channelOrderItemId?.trim()),
+    ) as EventLineIdentity[],
+    exchangeLines: identified
+      .filter((row) => row.exchangeReturnLineId !== null)
+      .map((row) => ({
+        fulfillmentOrderId: row.fulfillmentOrderId,
+        salesOrderId: row.salesOrderId!,
+        salesChannel: row.salesChannel!,
+        channelOrderId: row.channelOrderId!,
+      })),
+  };
 }
 
 export async function emitShipmentDispatched(
@@ -236,7 +279,7 @@ export async function emitShipmentDispatched(
   const { shipments, fulfillmentsV2, fulfillmentsV1, coreOrders } = deps;
   const { attemptId, attemptNo, dispatchedAt, summaries, waybill } = e;
   const carrier = waybill.carrier;
-  const lines = await loadEventLineIdentities(tx, e.shipmentId);
+  const { lines, exchangeLines } = await loadEventLineIdentities(tx, e.shipmentId);
   const summaryByFo = new Map(summaries.map((summary) => [summary.fulfillmentOrderId, summary]));
   const orders: ShipmentEventOrder[] = [];
   for (const fulfillmentOrderId of [...new Set(lines.map((line) => line.fulfillmentOrderId))].sort()) {
@@ -275,7 +318,26 @@ export async function emitShipmentDispatched(
     orders,
   };
   await shipments.enqueue(shipmentShippedOutboxEvent(shipmentPayload), tx);
-  await enqueueCustomerShipmentNotices(coreOrders, tx, orders, attemptId, carrier, waybill.trackingNo, dispatchedAt);
+  // 알림은 채널 발송 이벤트 줄과 별개로 상자가 실은 판매주문마다 하나 — 교환 줄만 실은 상자도 고객에게 알린다
+  const noticeOrders: ShipmentNoticeOrder[] = [...orders];
+  for (const exchange of exchangeLines) {
+    if (noticeOrders.some((order) => order.salesOrderId === exchange.salesOrderId)) continue;
+    noticeOrders.push({
+      salesOrderId: exchange.salesOrderId,
+      salesChannel: exchange.salesChannel,
+      channelOrderId: exchange.channelOrderId,
+      isPartial: (summaryByFo.get(exchange.fulfillmentOrderId)?.outstandingQty ?? 0) > 0,
+    });
+  }
+  await enqueueCustomerShipmentNotices(
+    coreOrders,
+    tx,
+    noticeOrders,
+    attemptId,
+    carrier,
+    waybill.trackingNo,
+    dispatchedAt,
+  );
 
   for (const summary of summaries) {
     const progressed: FulfillmentProgressedPayload = {
@@ -289,7 +351,11 @@ export async function emitShipmentDispatched(
     };
     await fulfillmentsV2.enqueue(fulfillmentProgressedOutboxEvent(progressed), tx);
 
-    const eventLine = lines.find((line) => line.fulfillmentOrderId === summary.fulfillmentOrderId);
+    // v1 완료 투영은 FO 당 한 번(멱등 키 `${foId}:fully-shipped`) — 이미 다 나간 FO 에 교환 상자가 더 나가 다시 완료돼도
+    // 아웃박스가 두 번째 행을 버린다. 교환 상자가 마지막으로 FO 를 끝낸 경우를 위해 교환 줄의 주문 신원도 쓴다
+    const eventLine =
+      lines.find((line) => line.fulfillmentOrderId === summary.fulfillmentOrderId) ??
+      exchangeLines.find((line) => line.fulfillmentOrderId === summary.fulfillmentOrderId);
     if (summary.fullyShipped && summary.salesOrderId && eventLine) {
       const v1Payload: FulfillmentShippedPayload = {
         fulfillmentId: summary.fulfillmentOrderId,
@@ -310,7 +376,7 @@ export async function emitShipmentDispatched(
 export async function enqueueCustomerShipmentNotices(
   coreOrders: DispatchEventDeps['coreOrders'],
   tx: DbTx,
-  orders: ShipmentEventOrder[],
+  orders: ShipmentNoticeOrder[],
   attemptId: string,
   carrier: string,
   trackingNo: string,

@@ -259,6 +259,9 @@ export class ShipmentDispatchInboxWorker {
       );
 
     if (!previousDispatches.length) {
+      // 채널 주문을 하나도 싣지 않은 발송(core 내부 상자·교환 줄만 실은 교환 상자, K8 PR11)은 배송완료·회수도 채널에 할 일이
+      // 없다. 그 발송 사실을 이미 처리했을 때만 끝낸다 — 아직이면 순서가 뒤바뀐 것이라 기다린다
+      if (await this.shippedWithoutChannelOrders(payload.dispatchAttemptId)) return;
       throw new Error(`No dispatch operation exists for attempt ${payload.dispatchAttemptId}`);
     }
     const retryablePriorDispatch = previousDispatches.find((previous) =>
@@ -295,6 +298,22 @@ export class ShipmentDispatchInboxWorker {
         })),
       )
       .onConflictDoNothing();
+  }
+
+  private async shippedWithoutChannelOrders(dispatchAttemptId: string): Promise<boolean> {
+    const [shipped] = await this.dbService.db
+      .select({ payload: inboxEvents.payload })
+      .from(inboxEvents)
+      .where(
+        and(
+          eq(inboxEvents.eventType, 'ShipmentShipped'),
+          eq(inboxEvents.idempotencyKey, dispatchAttemptId),
+          eq(inboxEvents.status, 'published'),
+        ),
+      )
+      .limit(1);
+    const orders = (shipped?.payload as Partial<ShipmentShippedPayload> | undefined)?.orders;
+    return Array.isArray(orders) && orders.length === 0;
   }
 
   private async processOperation(operation: ChannelDispatchOperation): Promise<void> {
