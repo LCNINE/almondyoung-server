@@ -31,6 +31,13 @@ describe('로컬 E2E 테넌트 설정', () => {
     expect(parseTenantGateMode(mode)).toBe(mode);
   });
 
+  it('user-service 의 앱 설정 T 는 목록에 있고 템플릿이 같은 값을 든다', () => {
+    const served = shellValue('E2E_SERVED_TENANT_ID');
+    expect(parseTenantList(list).find(served)).toBeDefined();
+    const body = readFileSync(join(REPO, 'env-templates', '.env.user-service.local.example'), 'utf8');
+    expect(body).toContain(`SERVED_TENANT_ID=${served}`);
+  });
+
   it('kind=nest 행을 찾았다 — 못 찾으면 아래 대조가 아무것도 안 잰다', () => {
     expect(nestRows.length).toBeGreaterThanOrEqual(11);
   });

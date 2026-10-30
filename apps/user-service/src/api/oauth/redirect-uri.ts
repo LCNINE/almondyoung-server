@@ -92,6 +92,17 @@ export function matchRedirectUri(
   return false;
 }
 
+/**
+ * 리디렉트 주소의 host(포트 포함, 소문자) — `tenant_domains.host` 와 같은 모양이다. 웹 직원 앱은 이 값이 토큰 테넌트를 정한다.
+ * 커스텀 스킴·잘못된 주소는 host 가 없다(null).
+ */
+export function redirectHost(uri: string): string | null {
+  const url = tryParse(uri);
+  if (!url || (url.protocol !== 'http:' && url.protocol !== 'https:')) return null;
+  const host = url.host.toLowerCase();
+  return host.length > 0 ? host : null;
+}
+
 export function isRedirectUriRegistered(
   registeredList: string[],
   incoming: string,

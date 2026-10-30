@@ -24,7 +24,7 @@ export interface HeldAssignment {
   readonly tenantId: string | null;
 }
 
-// 토큰 발급(`getUserRoleNames`)과 같은 기준 — 지금 시각을 앱에서 넘긴다.
+// 토큰 발급(`UsersService.getTokenRoleNames`)과 같은 기준 — 지금 시각을 앱에서 넘긴다.
 const activeAssignment = () => or(isNull(userRoleAssignments.expiresAt), gt(userRoleAssignments.expiresAt, new Date()));
 
 /** 역할과 사람↔역할 부여. 권한 목록 자체는 IamRepository 가 맡는다. */

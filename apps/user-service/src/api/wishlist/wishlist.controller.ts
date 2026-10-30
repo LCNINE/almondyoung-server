@@ -6,9 +6,11 @@ import { WishlistService } from './wishlist.service';
 import { AddToWishlistDto } from './dto/wishlist.dto';
 import { CurrentUser } from '@app/shared/decorators/current-user.decorator';
 import { StoreRoute } from '@app/authorization';
+import { ServedTenantData } from '../../tenancy/served-tenant.guard';
 
 @ApiTags('찜하기')
 @ApiBearerAuth('access-token')
+@ServedTenantData()
 @Controller('wishlist')
 export class WishlistController {
   constructor(private readonly wishlistService: WishlistService) {}

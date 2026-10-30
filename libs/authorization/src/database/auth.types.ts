@@ -15,4 +15,6 @@ export interface JwtPayload {
   email: string;
   roles: string[];
   login_id?: string;
+  /** 토큰 테넌트(`tenant` 클레임). 이 클레임 전에 나간 토큰과 옛 내부 토큰에는 없다. */
+  tenant?: string;
 }

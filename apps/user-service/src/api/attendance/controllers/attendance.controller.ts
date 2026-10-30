@@ -36,7 +36,9 @@ import {
   UpdateWorksiteDto,
   WorksiteDto,
 } from '../dto/attendance.dto';
+import { ServedTenantData } from '../../../tenancy/served-tenant.guard';
 
+@ServedTenantData()
 @Controller('attendance')
 @UseGuards(ActiveAttendanceStaffGuard)
 export class AttendanceController {

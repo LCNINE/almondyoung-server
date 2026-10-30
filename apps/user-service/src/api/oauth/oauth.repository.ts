@@ -23,9 +23,15 @@ type TokenInsert = {
   scope?: string | null;
   expiresAt: Date;
   rotatedFrom?: string | null;
+  tenantId: string;
 };
 
 export type OAuthClientRow = typeof userServiceSchema.oauthClients.$inferSelect;
+
+export type OAuthTokenRow = typeof userServiceSchema.oauthTokens.$inferSelect;
+
+/** 토큰 테넌트 판정에 쓰는 테넌트 행의 일부. */
+export type TokenTenantRow = Pick<typeof userServiceSchema.tenants.$inferSelect, 'id' | 'status'>;
 
 @Injectable()
 export class OAuthRepository {
@@ -115,9 +121,34 @@ export class OAuthRepository {
         scope: input.scope ?? null,
         expiresAt: input.expiresAt,
         rotatedFrom: input.rotatedFrom ?? null,
+        tenantId: input.tenantId,
       })
       .returning();
     return row;
+  }
+
+  // ─────────────────────────────────────────
+  // 토큰 테넌트 (테넌트 도메인 → 테넌트, 상태)
+  // ─────────────────────────────────────────
+  async findTenantByHost(host: string, tx?: DbTransaction): Promise<TokenTenantRow | null> {
+    const client = this.getClient(tx);
+    const [row] = await client
+      .select({ id: userServiceSchema.tenants.id, status: userServiceSchema.tenants.status })
+      .from(userServiceSchema.tenantDomains)
+      .innerJoin(userServiceSchema.tenants, eq(userServiceSchema.tenants.id, userServiceSchema.tenantDomains.tenantId))
+      .where(eq(userServiceSchema.tenantDomains.host, host))
+      .limit(1);
+    return row ?? null;
+  }
+
+  async findTenantById(tenantId: string, tx?: DbTransaction): Promise<TokenTenantRow | null> {
+    const client = this.getClient(tx);
+    const [row] = await client
+      .select({ id: userServiceSchema.tenants.id, status: userServiceSchema.tenants.status })
+      .from(userServiceSchema.tenants)
+      .where(eq(userServiceSchema.tenants.id, tenantId))
+      .limit(1);
+    return row ?? null;
   }
 
   async findOAuthTokenByRefresh(refreshToken: string, tx?: DbTransaction, forUpdate = false) {

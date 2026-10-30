@@ -13,6 +13,7 @@ import { ConsentsService } from '../consents/consents.service';
 import { TokensService } from '../tokens/tokens.service';
 import { UsersService } from '../users/users.service';
 import { Cafe24LinkService } from '../cafe24-link/cafe24-link.service';
+import { SERVED_TENANT_ID } from '../../tenancy/served-tenant';
 
 // bcrypt mock
 jest.mock('bcrypt', () => ({
@@ -96,6 +97,7 @@ describe('AuthService - signUp', () => {
         { provide: TokensService, useValue: {} },
         { provide: RoleAssignmentManager, useValue: { assertNotStaff: jest.fn() } },
         { provide: PlatformOperatorManager, useValue: { assertCanLeave: jest.fn() } },
+        { provide: SERVED_TENANT_ID, useValue: '1' },
         {
           provide: Cafe24LinkService,
           useValue: {
@@ -283,6 +285,7 @@ describe('AuthService - 탈퇴 익명화', () => {
         { provide: Cafe24LinkService, useValue: {} },
         { provide: RoleAssignmentManager, useValue: leaving },
         { provide: PlatformOperatorManager, useValue: leaving },
+        { provide: SERVED_TENANT_ID, useValue: '1' },
       ],
     }).compile();
 

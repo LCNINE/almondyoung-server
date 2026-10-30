@@ -18,6 +18,7 @@ import * as crypto from 'crypto';
 import { SeedStep } from './base-seed-step';
 import { SeedCheckResult, SeedApplyResult } from '../lib/types';
 import { OAUTH_CLIENT_UPSERT_ON_CONFLICT } from './user-service.seed-step';
+import { tenantOneBackfillStatements } from '../lib/tenant-one-backfill';
 
 const CLIENT_ID = 'dabeau';
 const DEFAULT_API_BASE = 'https://api.dev.dabeau.kr';
@@ -135,6 +136,9 @@ export class DabeauOAuthClientSeedStep extends SeedStep {
         )
         ${OAUTH_CLIENT_UPSERT_ON_CONFLICT}
       `);
+      // user-service 단계의 백필보다 늦게 들어온 클라이언트다 — 다시 돌려야 고정 테넌트(테넌트 1)가 붙는다.
+      // 없으면 토큰 테넌트를 리디렉트 host 로 찾다가 «테넌트 도메인 아님»으로 로그인이 막힌다.
+      for (const statement of tenantOneBackfillStatements()) await this.db.execute(sql.raw(statement));
 
       if (!config.clientSecret) {
         // env 미주입으로 우리가 secret을 생성한 경우에만 1회 출력.

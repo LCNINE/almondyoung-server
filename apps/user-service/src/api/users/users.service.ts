@@ -403,9 +403,8 @@ export class UsersService {
   }
 
   /**
-   * 사용자의 활성 역할 이름 목록을 평문 string[] 으로 반환.
-   * OAuth access_token 의 `roles` claim 에 그대로 박는 용도. expiresAt 이 null 이거나
-   * 미래인 역할만 포함한다 (auth.service.ts 의 동명 메서드와 동일 정책).
+   * 사용자의 활성 역할 이름 목록 — 모든 테넌트의 부여. 토큰에 싣는 역할은 `getTokenRoleNames` 다.
+   * expiresAt 이 null 이거나 미래인 역할만 포함한다.
    */
   async getUserRoleNames(userId: string, tx?: DbTransaction): Promise<string[]> {
     const client = this.getClient(tx);
@@ -416,6 +415,26 @@ export class UsersService {
       .where(
         and(
           eq(schema.userRoleAssignments.userId, userId),
+          or(isNull(schema.userRoleAssignments.expiresAt), gt(schema.userRoleAssignments.expiresAt, new Date())),
+        ),
+      );
+    return [...new Set(rows.map((r) => r.roleName))];
+  }
+
+  /**
+   * 토큰에 싣는 역할 — 토큰 테넌트에서 받은 살아 있는 부여만. 다른 테넌트의 부여가 섞이면 그 테넌트의 권한이 이 토큰으로
+   * 넘어간다(역할 정의는 전역이다).
+   */
+  async getTokenRoleNames(userId: string, tenantId: string, tx?: DbTransaction): Promise<string[]> {
+    const client = this.getClient(tx);
+    const rows = await client
+      .select({ roleName: schema.roles.name })
+      .from(schema.userRoleAssignments)
+      .innerJoin(schema.roles, eq(schema.userRoleAssignments.roleId, schema.roles.roleId))
+      .where(
+        and(
+          eq(schema.userRoleAssignments.userId, userId),
+          eq(schema.userRoleAssignments.tenantId, tenantId),
           or(isNull(schema.userRoleAssignments.expiresAt), gt(schema.userRoleAssignments.expiresAt, new Date())),
         ),
       );
@@ -480,7 +499,7 @@ export class UsersService {
   }
 
   // 사용자에게 역할을 할당해줍니다.
-  async assignUserRole(userId: string, roleId: string, tx?: DbTransaction): Promise<void> {
+  async assignUserRole(userId: string, roleId: string, tenantId: string, tx?: DbTransaction): Promise<void> {
     const client = this.getClient(tx);
 
     this.logger.debug('사용자-역할 할당 시작');
@@ -490,6 +509,7 @@ export class UsersService {
       .values({
         userId: userId,
         roleId: roleId,
+        tenantId,
       })
       .returning();
 
@@ -498,13 +518,12 @@ export class UsersService {
     return;
   }
 
-  async assignDefaultRoleToUser(userId: string, tx?: DbTransaction): Promise<void> {
-    const client = this.getClient(tx);
-
+  /** 고객 가입의 고객 역할. 테넌트는 가입을 받은 고정 테넌트 앱(쇼핑몰)의 테넌트다. */
+  async assignDefaultRoleToUser(userId: string, tenantId: string, tx?: DbTransaction): Promise<void> {
     const [role] = await this.findByRoleName('user', tx);
 
     if (!role) throw new InternalServerErrorException();
-    await this.assignUserRole(userId, role.roleId, tx);
+    await this.assignUserRole(userId, role.roleId, tenantId, tx);
 
     return;
   }

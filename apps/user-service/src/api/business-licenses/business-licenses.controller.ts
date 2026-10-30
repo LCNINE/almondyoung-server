@@ -10,9 +10,11 @@ import {
   UpdateBusinessLicenseDto,
 } from './dto/business-license.dto';
 import { BusinessLicenseResponseDto } from './dto/business-license.response.dto';
+import { ServedTenantData } from '../../tenancy/served-tenant.guard';
 
 @ApiTags('사업자 등록 관리')
 @ApiBearerAuth('access-token')
+@ServedTenantData()
 @Controller('business-licenses')
 export class BusinessLicensesController {
   constructor(private readonly businessLicensesService: BusinessLicensesService) {}

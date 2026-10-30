@@ -204,7 +204,8 @@ describeIfDb('tenant 1 backfill migration against a real database', () => {
       await backfill(tx);
 
       expect(before).toEqual(['admin', 'intern', 'user']);
-      expect((await issuer.getUserRoleNames(person, tx)).sort()).toEqual(before);
+      // 토큰은 토큰 테넌트의 부여만 싣는다 — 백필 뒤 테넌트 1 토큰의 역할이 백필 전 전체 역할과 같다.
+      expect((await issuer.getTokenRoleNames(person, '1', tx)).sort()).toEqual(before);
     });
   });
 

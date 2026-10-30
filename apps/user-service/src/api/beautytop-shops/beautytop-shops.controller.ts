@@ -7,10 +7,12 @@ import { User } from 'apps/user-service/database/drizzle/schema';
 import { BeautytopShopsService } from './beautytop-shops.service';
 import { BeautytopShopDto, SetMyShopDto, SHOP_KINDS } from './dto/beautytop-shops.dto';
 import { StoreRoute } from '@app/authorization';
+import { ServedTenantData } from '../../tenancy/served-tenant.guard';
 
 /** 로그인한 본인의 뷰티탑 «내 샵»·관심 샵. 대상 사용자는 토큰에서만 정한다. */
 @ApiTags('뷰티탑 저장 샵')
 @ApiBearerAuth('access-token')
+@ServedTenantData()
 @Controller('beautytop/shops')
 @UseGuards(AuthGuard('jwt'))
 export class BeautytopShopsController {

@@ -19,9 +19,11 @@ import { GetUsersQueryDto } from './dto/get-users-query.dto';
 import { DateRangeQueryDto } from './dto/date-range-query.dto';
 import { UsersService } from './users.service';
 import { UserConsent } from '../../consents/types/consent.type';
+import { ServedTenantData } from '../../../tenancy/served-tenant.guard';
 
 @ApiTags('사용자 관리')
 @ApiBearerAuth('access-token')
+@ServedTenantData()
 @Controller('admin/users')
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}

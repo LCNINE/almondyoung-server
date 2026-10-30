@@ -155,6 +155,20 @@
       "when": 1793339576287,
       "tag": "20261030055256_backfill-tenant-one-memberships-operators",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1793355780936,
+      "tag": "20261030102300_add-oauth-client-and-token-tenant",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1793355781468,
+      "tag": "20261030102301_backfill-oauth-client-fixed-tenant",
+      "breakpoints": true
     }
   ]
 }

@@ -90,6 +90,8 @@ describe('저장소 전수', () => {
     const auth = read('deployments/lcnine/auth/infra/services.ts');
     expect(auth).toMatch(/TENANT_LIST: tenantList\.value/);
     expect(auth).toMatch(/TENANT_GATE_MODE: tenantGateMode/);
+    // user-service 의 앱 설정 T(고객·근태·옛 내부 토큰). 빠지면 user-service 가 뜨지 않는다.
+    expect(auth).toMatch(/SERVED_TENANT_ID: servedTenantId\.value/);
     const services = read('deployments/lcnine/services/infra/services.ts');
     const spreads = services.match(/\.\.\.tenancyEnv,/g) ?? [];
     expect(spreads).toHaveLength(apps.filter((a) => a !== 'user-service').length);

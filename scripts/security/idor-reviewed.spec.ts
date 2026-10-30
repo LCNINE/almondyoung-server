@@ -957,15 +957,15 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'user-service POST /auth/change-password': {
     verdict: 'SAFE',
-    evidence: 'apps/user-service/src/api/auth/auth.service.ts:960',
+    evidence: 'apps/user-service/src/api/auth/auth.service.ts:944',
     predicate: '.where(eq(userServiceSchema.users.id, userId))',
-    note: 'changePassword(current, next, userId) 의 userId 는 CurrentUser(JWT)에서만 온다. 조회(960행)와 갱신(988행) 모두 같은 predicate 로 본인 행만 건드리고, 현재 비밀번호를 bcrypt 로 확인한다.',
+    note: 'changePassword(current, next, userId) 의 userId 는 CurrentUser(JWT)에서만 온다. 조회(944행)와 갱신(972행) 모두 같은 predicate 로 본인 행만 건드리고, 현재 비밀번호를 bcrypt 로 확인한다.',
   },
   'user-service POST /auth/verify-password-for-pin-reset': {
     verdict: 'SAFE',
-    evidence: 'apps/user-service/src/api/auth/auth.service.ts:1015',
+    evidence: 'apps/user-service/src/api/auth/auth.service.ts:999',
     predicate: '.where(eq(userServiceSchema.users.id, userId))',
-    note: 'verifyPasswordAndIssuePinResetToken(password, userId) 는 checkPassword(1015행)로 본인 행의 비밀번호만 확인하고 sub=userId 토큰을 서명한다. userId 는 CurrentUser(JWT)에서만 온다.',
+    note: 'verifyPasswordAndIssuePinResetToken(password, userId) 는 checkPassword(999행)로 본인 행의 비밀번호만 확인하고 sub=userId 토큰을 서명한다. userId 는 CurrentUser(JWT)에서만 온다.',
   },
   'user-service POST /auth/payment-handoff': {
     verdict: 'N/A',

@@ -5,8 +5,10 @@ import { ConsentsService } from './consents.service';
 import { CreateConsentDto, UpdateMarketingConsentDto } from './dto/consent-dto';
 import { UserConsent } from './types/consent.type';
 import { CurrentUser } from '@app/shared/decorators/current-user.decorator';
+import { ServedTenantData } from '../../tenancy/served-tenant.guard';
 
 @ApiTags('동의 관리')
+@ServedTenantData()
 @Controller('consents')
 @ApiBearerAuth('access-token')
 export class ConsentsController {

@@ -65,6 +65,9 @@ export function setup(infra: IdpInfra) {
   // 앱에 기본값이 없어서 이 줄이 빠지면 앱이 뜨지 않는다. services 앱도 아래 SSM 으로 같은 값을 받는다.
   // ⚠️ 바꿀 때는 auth → services 순서로 배포한다. services 배포가 끝날 때까지 user-service 와 나머지 앱의 모드가 다르다.
   const tenantGateMode = 'warn';
+  // user-service 의 앱 설정 T — 고객·근태 데이터와 옛 내부 토큰(쇼핑몰·auth-web 세션)이 섬기는 테넌트. 목록에 있어야 뜬다.
+  //   sst secret set ServedTenantId '<테넌트 1 의 id>' --stage <stage>
+  const servedTenantId = new sst.Secret('ServedTenantId');
 
   // ─── Observability ───
   // user-service 는 별도 앱이라 lcnine-services 의 Alloy 로 보내면 auth→services 순환 의존이
@@ -114,6 +117,7 @@ export function setup(infra: IdpInfra) {
       DATABASE_URL: dbUrl('user_service'),
       TENANT_LIST: tenantList.value,
       TENANT_GATE_MODE: tenantGateMode,
+      SERVED_TENANT_ID: servedTenantId.value,
       // platform이 제공하는 VPC 내부 Redpanda. kafka-config.util은 API key/SASL 미지정 시
       // plaintext로 자동 fallback하므로 브로커 주소만 주입하면 됨.
       KAFKA_BROKERS: kafkaBrokers,
@@ -132,15 +136,6 @@ export function setup(infra: IdpInfra) {
       AUTH_WEB_ORIGIN: authWebUrl,
       SIGNUP_CALLBACK_URL: `${authWebUrl}/callback/signup`,
       USER_SERVICE_URL: userServiceUrl,
-      REDIRECT_URL_WHITELIST: [
-        'http://localhost:8000/callback/signup',
-        'http://localhost:8000/',
-        'http://localhost:8000',
-        `${userServiceUrl}/`,
-        `${authWebUrl}/`,
-        `${authWebUrl}/callback/signup`,
-        'http://localhost:8080/',
-      ].join(','),
       CORS_ORIGIN_DOMAINS: [
         authWebUrl,
         'http://localhost:8000',

@@ -7,9 +7,11 @@ import { BusinessAdminUpdateDto } from './dto/business-updeta.dto';
 import { BusinessAdminUpsertDto } from './dto/business-upsert.dto';
 import { BusinessLicenseQueryDto } from './dto/pagination-query-dto';
 import { DateRangeQueryDto } from '../users/dto/date-range-query.dto';
+import { ServedTenantData } from '../../../tenancy/served-tenant.guard';
 
 @ApiTags('사업자 등록 관리')
 @ApiBearerAuth('access-token')
+@ServedTenantData()
 @Controller('admin/business-licenses')
 export class BusinessLicensesController {
   constructor(private readonly businessLicensesService: BusinessLicensesService) {}

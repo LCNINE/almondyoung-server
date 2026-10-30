@@ -19,8 +19,8 @@ import { UsersService } from '../users/users.service';
 import { IssueCodeRequestDto } from './dto/issue-code.dto';
 import { TokenRequestDto, TokenResponseDto } from './dto/token.dto';
 import { OAuthReader } from './oauth.reader';
-import { OAuthRepository } from './oauth.repository';
-import { isRedirectUriRegistered } from './redirect-uri';
+import { OAuthClientRow, OAuthRepository, OAuthTokenRow, TokenTenantRow } from './oauth.repository';
+import { isRedirectUriRegistered, matchRedirectUri, redirectHost } from './redirect-uri';
 
 const CODE_TTL_SECONDS = 300;
 
@@ -86,6 +86,8 @@ export class OAuthManager {
     }
     const user = await this.usersService.findUserById(input.userId);
     if (!user || user.deletedAt || user.dormantAt) throw new BadRequestError('user not found');
+    // 준비·정지 테넌트, 테넌트 도메인이 아닌 리디렉트로는 code 부터 내주지 않는다(교환 때 한 번 더 본다).
+    this.assertIssuable(await this.tenantForRedirect(client, input.redirectUri));
 
     const code = crypto.randomBytes(48).toString('base64url');
     const expiresAt = new Date(Date.now() + CODE_TTL_SECONDS * 1000);
@@ -154,9 +156,12 @@ export class OAuthManager {
       const computed = crypto.createHash('sha256').update(input.codeVerifier!).digest('base64url');
       if (computed !== row.codeChallenge) throw new BadRequestError('PKCE verification failed');
 
+      const client = await this.reader.getClientOrThrow(row.clientId);
+      const tenantId = this.assertIssuable(await this.tenantForRedirect(client, row.redirectUri, tx));
+
       await this.repo.markCodeConsumed(row.code, tx);
 
-      const tokens = await this.mintTokenPair(row.userId, row.clientId, row.scope, undefined, tx, {
+      const tokens = await this.mintTokenPair(row.userId, row.clientId, tenantId, row.scope, undefined, tx, {
         authTime: row.createdAt,
         nonce: row.nonce ?? undefined,
       });
@@ -200,15 +205,31 @@ export class OAuthManager {
 
     const userId = payload.sub;
     const scope = (client.allowedScopes ?? []).join(' ') || null;
-    return this.inTx((tx) =>
-      this.mintTokenPair(userId, input.clientId, scope, undefined, tx, { authTime: new Date() }),
-    );
+    return this.inTx(async (tx) => {
+      const tenantId = this.assertIssuable(await this.tenantForSession(client, null, tx));
+      return this.mintTokenPair(userId, input.clientId, tenantId, scope, undefined, tx, { authTime: new Date() });
+    });
   }
 
   private async refreshTokens(input: TokenRequestDto): Promise<TokenResponseDto> {
     if (!input.refreshToken) throw new BadRequestError('refresh_token required');
 
-    return this.inTx(async (tx) => {
+    // 테넌트 때문에 갱신을 거절할 때는 세션을 끊는다. 끊는 쓰기가 롤백되지 않게 트랜잭션 밖에서 던진다.
+    const outcome = await this.inTx(async (tx): Promise<TokenResponseDto | { cut: UnauthorizedError }> => {
+      const client = await this.reader.getClientOrThrow(input.clientId);
+      const rotate = async (from: OAuthTokenRow) => {
+        let tenantId: string;
+        try {
+          tenantId = this.assertIssuable(await this.tenantForSession(client, from.tenantId, tx));
+        } catch (error) {
+          if (!(error instanceof UnauthorizedError)) throw error;
+          await this.repo.revokeChain(from.id, tx);
+          return { cut: error };
+        }
+        await this.repo.revokeTokenById(from.id, tx);
+        return this.mintTokenPair(from.userId, from.clientId, tenantId, from.scope, from.id, tx);
+      };
+
       // FOR UPDATE: 동일 토큰에 대한 동시 회전 요청을 직렬화해 SELECT→UPDATE race 를 제거한다.
       const row = await this.repo.findOAuthTokenByRefresh(input.refreshToken!, tx, true);
       if (!row) throw new UnauthorizedError('invalid refresh_token');
@@ -224,8 +245,7 @@ export class OAuthManager {
         const child = withinGrace ? await this.repo.findChildToken(row.id, tx) : null;
         if (child && !child.isRevoked && child.expiresAt > new Date()) {
           this.logger.warn(`refresh token concurrent-rotation tolerated (grace) parent=${row.id} child=${child.id}`);
-          await this.repo.revokeTokenById(child.id, tx);
-          return this.mintTokenPair(child.userId, child.clientId, child.scope, child.id, tx);
+          return rotate(child);
         }
         this.logger.warn(`refresh token reuse detected for tokenId=${row.id}`);
         await this.repo.revokeChain(row.id, tx);
@@ -237,14 +257,73 @@ export class OAuthManager {
       }
 
       // rotation: 이전 토큰 revoke + 새 토큰 발급 (rotatedFrom = 이전 id)
-      await this.repo.revokeTokenById(row.id, tx);
-      return this.mintTokenPair(row.userId, row.clientId, row.scope, row.id, tx);
+      return rotate(row);
     });
+    if ('cut' in outcome) throw outcome.cut;
+    return outcome;
+  }
+
+  // ─────────────────────────────────────────
+  // 토큰 테넌트
+  // ─────────────────────────────────────────
+  // 웹 직원 앱(고정 테넌트 없음)은 등록된 리디렉트 주소의 host → 테넌트 도메인 → 테넌트, 고정 테넌트 앱은 클라이언트의
+  // 테넌트다. 요청 파라미터·Host 헤더는 보지 않는다 — 들어온 redirect_uri 는 등록 목록의 어느 항목인지 고르는 데만 쓴다.
+
+  private async tenantForRedirect(
+    client: OAuthClientRow,
+    redirectUri: string,
+    tx?: DbTransaction,
+  ): Promise<TokenTenantRow> {
+    if (client.tenantId) return this.tenantById(client.tenantId, tx);
+
+    const registered = client.redirectUris.find((uri) => matchRedirectUri(uri, redirectUri, client.clientType));
+    if (!registered) throw new BadRequestError('invalid redirect_uri (not registered)');
+    const tenant = await this.tenantOfRegisteredUri(registered, tx);
+    if (!tenant) throw new BadRequestError('invalid redirect_uri (not a tenant domain)');
+    return tenant;
+  }
+
+  /** 리디렉트 없이 이어지는 발급(갱신·핸드오프). 세션에 적힌 테넌트 → 고정 테넌트 → 등록 주소들이 가리키는 유일한 테넌트. */
+  private async tenantForSession(
+    client: OAuthClientRow,
+    sessionTenantId: string | null,
+    tx: DbTransaction,
+  ): Promise<TokenTenantRow> {
+    if (sessionTenantId) return this.tenantById(sessionTenantId, tx);
+    if (client.tenantId) return this.tenantById(client.tenantId, tx);
+
+    // 테넌트 칸이 생기기 전에 나간 세션. 주소가 테넌트 하나만 가리킬 때만 그 테넌트로 이어 간다.
+    const found = new Map<string, TokenTenantRow>();
+    for (const uri of client.redirectUris) {
+      const tenant = await this.tenantOfRegisteredUri(uri, tx);
+      if (tenant) found.set(tenant.id, tenant);
+    }
+    if (found.size !== 1) throw new UnauthorizedError('session has no tenant; sign in again');
+    return [...found.values()][0];
+  }
+
+  /** 등록된 리디렉트 주소의 host 를 테넌트 도메인으로 가진 테넌트. 커스텀 스킴·모르는 host 는 null. */
+  private async tenantOfRegisteredUri(uri: string, tx?: DbTransaction): Promise<TokenTenantRow | null> {
+    const host = redirectHost(uri);
+    return host ? this.repo.findTenantByHost(host, tx) : null;
+  }
+
+  private async tenantById(tenantId: string, tx?: DbTransaction): Promise<TokenTenantRow> {
+    const tenant = await this.repo.findTenantById(tenantId, tx);
+    if (!tenant) throw new UnauthorizedError('tenant not found');
+    return tenant;
+  }
+
+  /** 준비·정지 테넌트로는 발급·갱신하지 않는다. */
+  private assertIssuable(tenant: TokenTenantRow): string {
+    if (tenant.status !== 'active') throw new UnauthorizedError('tenant not active');
+    return tenant.id;
   }
 
   private async mintTokenPair(
     userId: string,
     clientId: string,
+    tenantId: string,
     scope: string | null,
     rotatedFrom: string | undefined,
     tx: DbTransaction,
@@ -261,13 +340,15 @@ export class OAuthManager {
     // 탈퇴 계정에는 토큰을 내주지 않는다. authorization_code / refresh_token 두 그랜트가 모두
     // 여기를 지나므로, 탈퇴 시점에 살아있던 세션도 다음 회전에서 끊긴다.
     if (user?.deletedAt || user?.dormantAt) throw new UnauthorizedError('user withdrawn');
-    const roles = user ? await this.usersService.getUserRoleNames(userId, tx) : [];
+    // 역할은 토큰 테넌트에서 받은 부여만 싣는다. 빠지면 테넌트 2 관리자가 테넌트 1 쇼핑몰 토큰으로 테넌트 1 관리자가 된다.
+    const roles = user ? await this.usersService.getTokenRoleNames(userId, tenantId, tx) : [];
 
     // access token: RS256 JWT. iss/kid/alg은 모듈 기본 signOptions에서 부여, aud=client_id.
     const accessToken = await this.jwtService.signAsync(
       {
         sub: userId,
         client_id: clientId,
+        tenant: tenantId,
         scope: scope ?? undefined,
         ...(user
           ? {
@@ -314,6 +395,7 @@ export class OAuthManager {
         scope,
         expiresAt: refreshExpiresAt,
         rotatedFrom: rotatedFrom ?? null,
+        tenantId,
       },
       tx,
     );
@@ -454,7 +536,14 @@ export class OAuthManager {
   async validateRedirectUri(input: { clientId: string; redirectUri: string }): Promise<boolean> {
     const client = await this.repo.findActiveClientById(input.clientId);
     if (!client) return false;
-    return isRedirectUriRegistered(client.redirectUris, input.redirectUri, client.clientType);
+    // 등록 여부 + 웹 직원 앱이면 host 가 테넌트 도메인인지(그것이 리디렉트 허용 목록이다). DB 장애는 «허용 안 됨» 으로 바꾸지 않는다.
+    try {
+      await this.tenantForRedirect(client, input.redirectUri);
+      return isRedirectUriRegistered(client.redirectUris, input.redirectUri, client.clientType);
+    } catch (error) {
+      if (error instanceof BadRequestError || error instanceof UnauthorizedError) return false;
+      throw error;
+    }
   }
 
   // ─────────────────────────────────────────

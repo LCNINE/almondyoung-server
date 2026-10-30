@@ -18,7 +18,9 @@ import {
   WagePeriodQueryDto,
 } from './dto/wage-settlement.dto';
 import { WageSettlementService } from './wage-settlement.service';
+import { ServedTenantData } from '../../../tenancy/served-tenant.guard';
 
+@ServedTenantData()
 @Controller('attendance/wage')
 @UseGuards(ActiveAttendanceStaffGuard)
 export class WageSettlementController {

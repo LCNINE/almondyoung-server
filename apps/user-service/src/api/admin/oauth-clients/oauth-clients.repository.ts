@@ -1,7 +1,7 @@
 import { DbService, InjectDb } from '@app/db';
 import { Injectable } from '@nestjs/common';
 import { userServiceSchema, type UserServiceSchema } from 'apps/user-service/database/drizzle/schema';
-import { eq } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 
 export type OAuthClientRow = typeof userServiceSchema.oauthClients.$inferSelect;
 
@@ -12,6 +12,7 @@ type CreateInput = {
   redirectUris: string[];
   postLogoutRedirectUris?: string[] | null;
   allowedScopes: string[] | null;
+  tenantId: string | null;
 };
 
 type UpdateInput = {
@@ -52,9 +53,30 @@ export class OAuthClientsRepository {
         redirectUris: input.redirectUris,
         postLogoutRedirectUris: input.postLogoutRedirectUris ?? null,
         allowedScopes: input.allowedScopes,
+        tenantId: input.tenantId,
       })
       .returning();
     return row;
+  }
+
+  async tenantExists(tenantId: string): Promise<boolean> {
+    const [row] = await this.dbService.db
+      .select({ id: userServiceSchema.tenants.id })
+      .from(userServiceSchema.tenants)
+      .where(eq(userServiceSchema.tenants.id, tenantId))
+      .limit(1);
+    return row !== undefined;
+  }
+
+  /** 주어진 host 중 테넌트 도메인이 아닌 것. */
+  async hostsWithoutTenant(hosts: string[]): Promise<string[]> {
+    if (hosts.length === 0) return [];
+    const rows = await this.dbService.db
+      .select({ host: userServiceSchema.tenantDomains.host })
+      .from(userServiceSchema.tenantDomains)
+      .where(inArray(userServiceSchema.tenantDomains.host, hosts));
+    const known = new Set(rows.map((r) => r.host));
+    return hosts.filter((h) => !known.has(h));
   }
 
   async update(clientId: string, patch: UpdateInput): Promise<OAuthClientRow> {

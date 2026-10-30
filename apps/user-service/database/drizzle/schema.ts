@@ -696,6 +696,9 @@ export const oauthClients = pgTable(
     redirectUris: jsonb('redirect_uris').$type<string[]>().notNull(),
     postLogoutRedirectUris: jsonb('post_logout_redirect_uris').$type<string[] | null>(),
     allowedScopes: jsonb('allowed_scopes').$type<string[] | null>(),
+    // 고정 테넌트 앱(쇼핑몰 등)의 테넌트. 비어 있으면 웹 직원 앱이다 — 토큰 테넌트를 등록된 리디렉트 주소의 host
+    // (테넌트 도메인)로 정한다.
+    tenantId: varchar('tenant_id', { length: 64 }).references(() => tenants.id),
     isActive: boolean('is_active').default(true).notNull(),
     deactivatedAt: timestamp('deactivated_at'),
     ...timestampColumns,
@@ -745,6 +748,8 @@ export const oauthTokens = pgTable(
     isRevoked: boolean('is_revoked').default(false).notNull(),
     expiresAt: timestamp('expires_at').notNull(),
     rotatedFrom: uuid('rotated_from'),
+    // 이 세션의 토큰 테넌트. 갱신은 같은 테넌트로만 한다. 비어 있으면 이 칸 전에 발급된 세션이다.
+    tenantId: varchar('tenant_id', { length: 64 }).references(() => tenants.id, { onDelete: 'cascade' }),
     ...timestampColumns,
   },
   (table) => ({

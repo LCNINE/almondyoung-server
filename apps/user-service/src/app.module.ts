@@ -50,6 +50,8 @@ import { ThrottlerModule } from '@nestjs/throttler';
 import { ServeStaticModule } from '@nestjs/serve-static';
 import { EventTraceController } from './api/events/event-trace.controller';
 import { TenancyModule } from '@app/tenancy';
+import { ServedTenantModule } from './tenancy/served-tenant';
+import { ServedTenantGuard } from './tenancy/served-tenant.guard';
 
 // ─── Optional modules (enabled only when env vars are present) ───
 const optionalModules: any[] = [];
@@ -91,6 +93,7 @@ const staticRoot = existsSync(join(__dirname, 'static')) ? join(__dirname, 'stat
     }),
     // 테넌트 목록·전환 모드. 틀리면 여기서 기동 거부 (@app/tenancy).
     TenancyModule,
+    ServedTenantModule,
     DbModule.forRoot({
       config: {
         connectionString: process.env.DATABASE_URL || 'postgres://postgres:postgres@localhost:5432/postgres',
@@ -170,6 +173,8 @@ const staticRoot = existsSync(join(__dirname, 'static')) ? join(__dirname, 'stat
       provide: APP_GUARD,
       useClass: JwtAuthGuard,
     },
+    // 고객·근태 등 T 데이터는 토큰 테넌트가 T 일 때만 — 역할이 전역이라 권한 판정만으로는 못 막는다. 인증 가드 뒤에 둔다.
+    { provide: APP_GUARD, useClass: ServedTenantGuard },
     // 권한 판정 — 라우트 인가를 결정한다(설정으로 끌 수 없다). 인증 가드 뒤에 둔다.
     { provide: APP_GUARD, useClass: PermissionGuard },
   ],

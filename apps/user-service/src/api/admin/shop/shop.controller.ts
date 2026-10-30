@@ -3,7 +3,9 @@ import { Controller, Get, Param } from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiResponse } from '@nestjs/swagger';
 import { ShopResponseDto } from 'apps/user-service/src/commons/dto/shop.dto';
 import { ShopService } from './shop.service';
+import { ServedTenantData } from '../../../tenancy/served-tenant.guard';
 
+@ServedTenantData()
 @Controller('admin/shops')
 export class ShopController {
   constructor(private readonly shopService: ShopService) {}

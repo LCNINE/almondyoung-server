@@ -18,9 +18,11 @@ import type { User } from 'apps/user-service/database/drizzle/schema';
 import { GrowthNoteTargetDto, RecordGrowthNoteDto } from './dto/growth-note.dto';
 import { GrowthNotesService } from './growth-notes.service';
 import { StoreRoute } from '@app/authorization';
+import { ServedTenantData } from '../../tenancy/served-tenant.guard';
 
 @ApiTags('뷰티탑 성장 노트')
 @ApiBearerAuth('access-token')
+@ServedTenantData()
 @Controller('beautytop/growth-notes')
 @UseGuards(AuthGuard('jwt'))
 export class GrowthNotesController {

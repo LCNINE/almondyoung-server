@@ -4,7 +4,9 @@ import { Body, Controller, Get, Param, ParseUUIDPipe, Post, UseGuards } from '@n
 import { ActiveAttendanceStaffGuard } from '../guards/active-attendance-staff.guard';
 import { AttendanceRequestManager } from '../services/attendance-request.manager';
 import { CancelRequestDto, CreateRequestDto, DecisionDto } from '../dto/attendance.dto';
+import { ServedTenantData } from '../../../tenancy/served-tenant.guard';
 
+@ServedTenantData()
 @Controller('attendance')
 @UseGuards(ActiveAttendanceStaffGuard)
 export class AttendanceRequestsController {

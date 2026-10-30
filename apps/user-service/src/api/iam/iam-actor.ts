@@ -11,6 +11,8 @@ export interface IamActor {
   readonly requestId: string | null;
   /** 관리자 화면 프록시가 넘긴 직원 단말 주소(없으면 null). */
   readonly ip: string | null;
+  /** 토큰 테넌트. 이 클레임 전에 나간 토큰에는 없다. */
+  readonly tenantId?: string;
 }
 
 const header = (request: FastifyRequest, name: string): string | null => {
@@ -26,6 +28,7 @@ export function actorFrom(request: FastifyRequest & { user: JwtPayload }): IamAc
     userAgent: header(request, 'user-agent'),
     requestId: header(request, 'x-request-id'),
     ip: staffClientOf(request).claimedIp,
+    tenantId: request.user.tenant,
   };
 }
 

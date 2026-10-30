@@ -56,13 +56,6 @@ export function setup(infra: IdpInfra) {
       AUTH_WEB_ORIGIN: authWebUrl,
       SIGNUP_CALLBACK_URL: `${authWebUrl}/callback/signup`,
       USER_SERVICE_URL: userServiceUrl,
-      REDIRECT_URL_WHITELIST: [
-        `${userServiceUrl}/`,
-        `${authWebUrl}/`,
-        `${authWebUrl}/callback/signup`,
-        `${url('admin')}/auth/callback`,
-        'almondwms-demo://oauth/callback',
-      ].join(','),
       CORS_ORIGIN_DOMAINS: [authWebUrl, url('admin')].join(','),
       AWS_REGION: 'ap-northeast-2',
       AWS_S3_BUCKET: uploads.name,

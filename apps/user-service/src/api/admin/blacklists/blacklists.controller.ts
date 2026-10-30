@@ -5,9 +5,11 @@ import { ApiBearerAuth, ApiBody, ApiOperation, ApiParam, ApiQuery, ApiResponse, 
 import { BlacklistsService } from './blacklists.service';
 import { BlacklistsCreateDto } from './dto/blacklists-create.dto';
 import { BlacklistsResponseDto } from './dto/blacklists-response.dto';
+import { ServedTenantData } from '../../../tenancy/served-tenant.guard';
 
 @ApiTags('블랙리스트 관리')
 @ApiBearerAuth('access-token')
+@ServedTenantData()
 @Controller('admin/blacklists')
 export class BlacklistsController {
   constructor(private readonly blacklistsService: BlacklistsService) {}
