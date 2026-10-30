@@ -22,6 +22,7 @@ import {
 } from '../rules/iam-rules';
 import type { CreateRoleDto, ReplaceRolePermissionsDto, UpdateRoleDto } from './dto/role-admin.dto';
 import { RoleRepository, type RoleRow } from './role.repository';
+import { ActorTenantReader } from '../tenancy/actor-tenant.reader';
 
 const labelOf = (row: RoleRow) => row.displayName ?? row.name;
 
@@ -37,6 +38,7 @@ export class RoleAdminManager {
     private readonly iam: IamRepository,
     private readonly audit: IamAuditCreator,
     private readonly myPermissions: MyPermissionsReader,
+    private readonly actorTenant: ActorTenantReader,
   ) {}
 
   async create(actor: IamActor, dto: CreateRoleDto): Promise<string> {
@@ -64,6 +66,7 @@ export class RoleAdminManager {
       if (!created) throw new RoleNameTakenError(`'${dto.name}' 역할이 이미 있습니다.`);
       await this.roles.replaceGrants(created.roleId, permissions, [], actor.userId, tx);
       await this.audit.record(tx, actor, {
+        tenantId: await this.actorTenant.resolve(actor, tx),
         action: 'role.create',
         targetType: 'role',
         targetId: created.roleId,
@@ -108,6 +111,7 @@ export class RoleAdminManager {
       if (Object.keys(patch).length === 0) return;
       await this.roles.updateRole(roleId, patch, tx);
       await this.audit.record(tx, actor, {
+        tenantId: await this.actorTenant.resolve(actor, tx),
         action: 'role.update',
         targetType: 'role',
         targetId: roleId,
@@ -136,6 +140,7 @@ export class RoleAdminManager {
       await this.roles.replaceGrants(roleId, added, removed, actor.userId, tx);
       await this.roles.bumpVersion(roleId, tx);
       await this.audit.record(tx, actor, {
+        tenantId: await this.actorTenant.resolve(actor, tx),
         action: 'role.permissions.replace',
         targetType: 'role',
         targetId: roleId,
@@ -158,6 +163,7 @@ export class RoleAdminManager {
       const permissions = await this.roles.grantsOf(roleId, tx);
       await this.roles.deleteRole(roleId, tx);
       await this.audit.record(tx, actor, {
+        tenantId: await this.actorTenant.resolve(actor, tx),
         action: 'role.delete',
         targetType: 'role',
         targetId: roleId,

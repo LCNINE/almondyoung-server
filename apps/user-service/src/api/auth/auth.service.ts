@@ -14,6 +14,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { RoleAssignmentManager } from '../iam/assignments/role-assignment.manager';
+import { PlatformOperatorManager } from '../iam/tenancy/platform-operator.manager';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import * as jwt from 'jsonwebtoken';
@@ -72,7 +73,9 @@ export class AuthService {
     private readonly consentsService: ConsentsService,
     private readonly tokensService: TokensService,
     @Inject(RoleAssignmentManager)
-    private readonly roleAssignments: Pick<RoleAssignmentManager, 'assertCanLeave' | 'assertNotStaff'>,
+    private readonly roleAssignments: Pick<RoleAssignmentManager, 'assertNotStaff'>,
+    @Inject(PlatformOperatorManager)
+    private readonly operators: Pick<PlatformOperatorManager, 'assertCanLeave'>,
     @Optional() private readonly cafe24LinkService?: Cafe24LinkService,
   ) {}
 
@@ -1044,9 +1047,9 @@ export class AuthService {
       // 직원 계정은 역할이 회수되기 전에는 떠날 수 없다 — 토큰 폐기·익명화·이벤트보다 먼저 막는다.
       await this.roleAssignments.assertNotStaff(userId, tx);
 
-      // 기간 없이 시스템 역할을 가진 마지막 관리자는 떠날 수 없다 — 역할 관리를 고칠 사람이 없어진다. 같은 트랜잭션에서
-      // 그 역할 행을 잠그고 세므로 동시 탈퇴·회수가 차례로 판정된다.
-      await this.roleAssignments.assertCanLeave(userId, tx);
+      // 마지막 플랫폼 운영자는 떠날 수 없다 — 플랫폼을 관리할 사람이 없어진다. 같은 트랜잭션에서 운영자 행을 잠그고
+      // 세므로 동시 탈퇴·강등이 차례로 판정된다.
+      await this.operators.assertCanLeave(userId, tx);
 
       // 탈퇴는 세션 종료까지 포함한다. 살아있는 refresh token 을 남기면 IdP 세션이 그대로
       // 유지돼, 탈퇴한 계정이 로그인 화면을 거치지 않고 silent SSO 로 다시 들어온다.

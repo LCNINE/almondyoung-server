@@ -141,6 +141,20 @@
       "when": 1793244089049,
       "tag": "20261029032129_drop-legacy-scope-tables",
       "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1793339556397,
+      "tag": "20261030055236_add-tenants-memberships-grant-tenant",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1793339576287,
+      "tag": "20261030055256_backfill-tenant-one-memberships-operators",
+      "breakpoints": true
     }
   ]
 }

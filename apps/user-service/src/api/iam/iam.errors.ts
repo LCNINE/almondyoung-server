@@ -48,13 +48,55 @@ export class IamSelfChangeError extends ConflictError {
   }
 }
 
-export class IamLastMasterError extends ConflictError {
+export class IamLastOperatorError extends ConflictError {
   constructor() {
-    super('기간 없이 시스템 역할을 가진 관리자가 최소 1명 남아야 합니다.');
+    super('로그인할 수 있는 플랫폼 운영자가 최소 1명 남아야 합니다.');
   }
 
   getErrorCode(): string {
-    return 'IAM_LAST_MASTER';
+    return 'IAM_LAST_OPERATOR';
+  }
+}
+
+export class IamNotTenantMemberError extends ConflictError {
+  constructor() {
+    super('이 테넌트 소속이 아닌 계정에는 직원 역할을 줄 수 없습니다.');
+  }
+
+  getErrorCode(): string {
+    return 'IAM_NOT_TENANT_MEMBER';
+  }
+}
+
+/** 부여 행은 사람·역할마다 하나라(테넌트 칸 contract 전까지) 같은 역할을 두 테넌트에서 받을 수 없다. */
+export class IamGrantedElsewhereError extends ConflictError {
+  constructor() {
+    super('이 역할은 다른 테넌트에서 이미 받은 역할입니다.');
+  }
+
+  getErrorCode(): string {
+    return 'IAM_GRANTED_ELSEWHERE';
+  }
+}
+
+/** 요청자가 어느 테넌트에서 일하는지 정할 수 없다 — 토큰 테넌트가 들어오기 전에는 소속이 정확히 하나여야 한다. */
+export class IamTenantUnresolvedError extends ForbiddenError {
+  constructor() {
+    super('작업할 테넌트를 정할 수 없습니다.');
+  }
+
+  getErrorCode(): string {
+    return 'IAM_TENANT_UNRESOLVED';
+  }
+}
+
+export class IamOperatorOnlyError extends ForbiddenError {
+  constructor() {
+    super('플랫폼 운영자만 할 수 있습니다.');
+  }
+
+  getErrorCode(): string {
+    return 'IAM_OPERATOR_ONLY';
   }
 }
 

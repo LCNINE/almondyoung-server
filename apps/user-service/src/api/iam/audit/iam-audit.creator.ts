@@ -12,10 +12,13 @@ export const IAM_AUDIT_ACTIONS = [
   'role.member.remove',
   'admin_user.create',
   'pii_access_log.view',
+  'user.platform_operator.set',
 ] as const;
 export type IamAuditAction = (typeof IAM_AUDIT_ACTIONS)[number];
 
 export interface IamAuditEntry {
+  /** 어느 테넌트에서 한 일인가. 역할 정의처럼 전역인 변경은 요청자가 일한 테넌트. 운영자 성질처럼 테넌트 밖의 일은 null. */
+  readonly tenantId: string | null;
   readonly action: IamAuditAction;
   readonly targetType: 'role' | 'user' | 'pii_access_log';
   readonly targetId: string;
@@ -43,6 +46,7 @@ export class IamAuditCreator {
         ip: actor.ip,
         userAgent: actor.userAgent,
         requestId: actor.requestId,
+        tenantId: entry.tenantId,
       },
       tx,
     );

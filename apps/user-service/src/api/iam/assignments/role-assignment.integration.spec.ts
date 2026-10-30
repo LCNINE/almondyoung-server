@@ -2,6 +2,7 @@ import { DbService } from '@app/db';
 import {
   iamAuditLogs,
   roles,
+  tenantMemberships,
   userRoleAssignments,
   users,
   userServiceSchema,
@@ -11,11 +12,14 @@ import { and, count, eq, inArray, isNull, like, notLike } from 'drizzle-orm';
 import { IamAuditCreator } from '../audit/iam-audit.creator';
 import { IamAuditRepository } from '../audit/iam-audit.repository';
 import { SYSTEM_ROLE_NAME } from '../iam.constants';
-import { IamLastMasterError } from '../iam.errors';
+import { IamLastOperatorError } from '../iam.errors';
 import { IamRepository } from '../iam.repository';
 import { MyPermissionsReader } from '../my-permissions.reader';
 import { RolePermissionsReader } from '../role-permissions.reader';
 import { RoleRepository } from '../roles/role.repository';
+import { ActorTenantReader } from '../tenancy/actor-tenant.reader';
+import { PlatformOperatorManager } from '../tenancy/platform-operator.manager';
+import { TenancyRepository } from '../tenancy/tenancy.repository';
 import { RoleAssignmentManager } from './role-assignment.manager';
 
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -36,6 +40,7 @@ const PREFIX = 'zzp4';
 describeIfDb('role assignments against a real database', () => {
   let dbService: DbService<UserServiceSchema>;
   let manager: RoleAssignmentManager;
+  let operators: PlatformOperatorManager;
 
   const roleId = async (name: string) => {
     const [found] = await dbService.db.select({ id: roles.roleId }).from(roles).where(eq(roles.name, name));
@@ -43,7 +48,7 @@ describeIfDb('role assignments against a real database', () => {
     const [made] = await dbService.db.insert(roles).values({ name }).returning({ id: roles.roleId });
     return made.id;
   };
-  const makeUser = async (suffix: string) => {
+  const makeUser = async (suffix: string, isPlatformOperator = false) => {
     const [row] = await dbService.db
       .insert(users)
       .values({
@@ -51,9 +56,26 @@ describeIfDb('role assignments against a real database', () => {
         username: suffix,
         nickname: suffix,
         email: `${PREFIX}${suffix}@example.test`,
+        isPlatformOperator,
       })
       .returning({ id: users.id });
     return row.id;
+  };
+  // 테넌트 1 행은 백필 마이그가 만든다.
+  const joinTenantOne = (userId: string) => dbService.db.insert(tenantMemberships).values({ userId, tenantId: '1' });
+  const otherSignInOperators = async () => {
+    const [row] = await dbService.db
+      .select({ n: count() })
+      .from(users)
+      .where(
+        and(
+          eq(users.isPlatformOperator, true),
+          isNull(users.deletedAt),
+          isNull(users.dormantAt),
+          notLike(users.loginId, `${PREFIX}%`),
+        ),
+      );
+    return Number(row?.n ?? 0);
   };
   const actor = (userId: string) => ({
     userId,
@@ -78,13 +100,19 @@ describeIfDb('role assignments against a real database', () => {
     dbService = new DbService({ connectionString: DATABASE_URL ?? '' }, userServiceSchema);
     const iam = new IamRepository(dbService);
     const snapshots = new RolePermissionsReader(iam);
+    const roleRepository = new RoleRepository(dbService);
+    const tenancy = new TenancyRepository(dbService);
+    const audit = new IamAuditCreator(new IamAuditRepository(dbService));
     manager = new RoleAssignmentManager(
       dbService,
-      new RoleRepository(dbService),
-      new IamAuditCreator(new IamAuditRepository(dbService)),
+      roleRepository,
+      audit,
       new MyPermissionsReader(snapshots, iam),
       snapshots,
+      tenancy,
+      new ActorTenantReader(tenancy),
     );
+    operators = new PlatformOperatorManager(dbService, tenancy, roleRepository, audit);
   });
   beforeEach(cleanup);
   afterAll(async () => {
@@ -92,80 +120,38 @@ describeIfDb('role assignments against a real database', () => {
     await dbService.onApplicationShutdown();
   });
 
-  it('serializes changes to the system role so the last permanent holder survives', async () => {
-    const system = await roleId(SYSTEM_ROLE_NAME);
-    const [others] = await dbService.db
-      .select({ n: count() })
-      .from(userRoleAssignments)
-      .innerJoin(users, eq(users.id, userRoleAssignments.userId))
-      .where(
-        and(
-          eq(userRoleAssignments.roleId, system),
-          isNull(userRoleAssignments.expiresAt),
-          isNull(users.deletedAt),
-          isNull(users.dormantAt),
-          notLike(users.loginId, `${PREFIX}%`),
-        ),
-      );
-    // 다른 무기한 보유자가 있으면 «둘 다 성공»이 정답이라 이 경합을 볼 수 없다 — 남의 데이터는 바꾸지 않는다.
-    if (Number(others?.n ?? 0) > 0 && cannotObserve('this database already has a permanent system-role holder')) return;
-    const a = await makeUser('a');
-    const b = await makeUser('b');
-    await dbService.db.insert(userRoleAssignments).values([
-      { userId: a, roleId: system },
-      { userId: b, roleId: system },
-    ]);
+  it('serializes operator demotions so the last operator who can sign in survives', async () => {
+    // 다른 운영자가 있으면 «둘 다 성공»이 정답이라 이 경합을 볼 수 없다 — 남의 데이터는 바꾸지 않는다.
+    if ((await otherSignInOperators()) > 0 && cannotObserve('this database already has a platform operator')) return;
+    const a = await makeUser('a', true);
+    const b = await makeUser('b', true);
 
-    // 다른 요청이 시스템 역할 행을 잡고 있는 동안 회수 요청은 기다려야 하고, 그 요청이 다른 보유자를 회수한 뒤에는
-    // 마지막 보유자를 지키려고 거절해야 한다. 잠금이 없으면 기다리지 않고 둘 다 회수해 0명이 된다.
+    // 다른 요청이 운영자 행을 잡고 있는 동안 강등 요청은 기다려야 하고, 그 요청이 다른 운영자를 강등한 뒤에는
+    // 마지막 운영자를 지키려고 거절해야 한다. 잠금이 없으면 기다리지 않고 둘 다 강등해 0명이 된다.
     let settled = false;
     let outcome: unknown;
     await dbService.db.transaction(async (tx) => {
-      await tx.select().from(roles).where(eq(roles.roleId, system)).for('update');
-      const pending = manager.replaceStaff(actor(a), b, []).then(
+      await tx.select({ id: users.id }).from(users).where(eq(users.isPlatformOperator, true)).for('update');
+      const pending = operators.setOperator(actor(a), b, false).then(
         () => (outcome = 'saved'),
         (error: unknown) => (outcome = error),
       );
       void pending.finally(() => (settled = true));
       await new Promise((resolve) => setTimeout(resolve, 300));
       expect(settled).toBe(false);
-      await tx
-        .delete(userRoleAssignments)
-        .where(and(eq(userRoleAssignments.userId, a), eq(userRoleAssignments.roleId, system)));
+      await tx.update(users).set({ isPlatformOperator: false }).where(eq(users.id, a));
     });
-    await new Promise((resolve) => setTimeout(resolve, 0));
     for (let i = 0; i < 50 && !settled; i += 1) await new Promise((resolve) => setTimeout(resolve, 20));
 
-    expect(outcome).toBeInstanceOf(IamLastMasterError);
-    const [left] = await dbService.db
-      .select({ n: count() })
-      .from(userRoleAssignments)
-      .where(and(eq(userRoleAssignments.roleId, system), inArray(userRoleAssignments.userId, [a, b])));
-    expect(Number(left?.n)).toBe(1);
+    expect(outcome).toBeInstanceOf(IamLastOperatorError);
+    const [b_] = await dbService.db.select({ op: users.isPlatformOperator }).from(users).where(eq(users.id, b));
+    expect(b_?.op).toBe(true);
   });
 
-  it('lets only one of the last two permanent holders withdraw at the same time', async () => {
-    const system = await roleId(SYSTEM_ROLE_NAME);
-    const [others] = await dbService.db
-      .select({ n: count() })
-      .from(userRoleAssignments)
-      .innerJoin(users, eq(users.id, userRoleAssignments.userId))
-      .where(
-        and(
-          eq(userRoleAssignments.roleId, system),
-          isNull(userRoleAssignments.expiresAt),
-          isNull(users.deletedAt),
-          isNull(users.dormantAt),
-          notLike(users.loginId, `${PREFIX}%`),
-        ),
-      );
-    if (Number(others?.n ?? 0) > 0 && cannotObserve('this database already has a permanent system-role holder')) return;
-    const a = await makeUser('wa');
-    const b = await makeUser('wb');
-    await dbService.db.insert(userRoleAssignments).values([
-      { userId: a, roleId: system },
-      { userId: b, roleId: system },
-    ]);
+  it('lets only one of the last two operators withdraw at the same time', async () => {
+    if ((await otherSignInOperators()) > 0 && cannotObserve('this database already has a platform operator')) return;
+    const a = await makeUser('wa', true);
+    const b = await makeUser('wb', true);
     const withdraw = (tx: Parameters<Parameters<typeof dbService.run>[0]>[0], userId: string) =>
       tx.update(users).set({ deletedAt: new Date() }).where(eq(users.id, userId));
 
@@ -173,10 +159,10 @@ describeIfDb('role assignments against a real database', () => {
     let settled = false;
     let outcome: unknown;
     await dbService.run(async (tx) => {
-      await manager.assertCanLeave(a, tx);
+      await operators.assertCanLeave(a, tx);
       const pending = dbService
         .run(async (tx2) => {
-          await manager.assertCanLeave(b, tx2);
+          await operators.assertCanLeave(b, tx2);
           await withdraw(tx2, b);
         })
         .then(
@@ -190,7 +176,7 @@ describeIfDb('role assignments against a real database', () => {
     });
     for (let i = 0; i < 50 && !settled; i += 1) await new Promise((resolve) => setTimeout(resolve, 20));
 
-    expect(outcome).toBeInstanceOf(IamLastMasterError);
+    expect(outcome).toBeInstanceOf(IamLastOperatorError);
     const [b_] = await dbService.db.select({ deletedAt: users.deletedAt }).from(users).where(eq(users.id, b));
     expect(b_?.deletedAt).toBeNull();
   });
@@ -198,6 +184,8 @@ describeIfDb('role assignments against a real database', () => {
   it('keeps the end date and assignment time of a role the save did not change', async () => {
     const boss = await makeUser('boss');
     const target = await makeUser('c');
+    await joinTenantOne(boss);
+    await joinTenantOne(target);
     const intern = await roleId('intern');
     const membership = await roleId('membership');
     const admin = await roleId('admin');
@@ -228,5 +216,11 @@ describeIfDb('role assignments against a real database', () => {
     const history = await dbService.db.select().from(iamAuditLogs).where(eq(iamAuditLogs.targetId, target));
     expect(history).toHaveLength(1);
     expect(history[0].action).toBe('user.roles.replace');
+    expect(history[0].tenantId).toBe('1');
+    const [added] = await dbService.db
+      .select({ tenantId: userRoleAssignments.tenantId })
+      .from(userRoleAssignments)
+      .where(and(eq(userRoleAssignments.userId, target), eq(userRoleAssignments.roleId, admin)));
+    expect(added?.tenantId).toBe('1');
   });
 });

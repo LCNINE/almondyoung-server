@@ -5,7 +5,14 @@ import { IamAuditRepository } from './iam-audit.repository';
 describe('IamAuditCreator', () => {
   const repository = { insert: jest.fn() };
   const tx = { insert: jest.fn() };
-  const actor = { userId: 'u-1', loginId: 'boss', roles: ['master'], userAgent: 'ua', requestId: 'req-1', ip: '203.0.113.7' };
+  const actor = {
+    userId: 'u-1',
+    loginId: 'boss',
+    roles: ['master'],
+    userAgent: 'ua',
+    requestId: 'req-1',
+    ip: '203.0.113.7',
+  };
   let creator: IamAuditCreator;
 
   beforeEach(async () => {
@@ -16,8 +23,9 @@ describe('IamAuditCreator', () => {
     creator = module.get(IamAuditCreator);
   });
 
-  it('writes one row in the caller transaction with who, what and the request', async () => {
+  it('writes one row in the caller transaction with who, what, where and the request', async () => {
     await creator.record(tx, actor, {
+      tenantId: '1',
       action: 'role.update',
       targetType: 'role',
       targetId: 'r-1',
@@ -38,6 +46,7 @@ describe('IamAuditCreator', () => {
         ip: '203.0.113.7',
         userAgent: 'ua',
         requestId: 'req-1',
+        tenantId: '1',
       },
       tx,
     );
@@ -45,6 +54,7 @@ describe('IamAuditCreator', () => {
 
   it('cuts a long target name to the column size', async () => {
     await creator.record(tx, actor, {
+      tenantId: '1',
       action: 'role.create',
       targetType: 'role',
       targetId: 'r-1',
@@ -59,6 +69,7 @@ describe('IamAuditCreator', () => {
     repository.insert.mockRejectedValueOnce(new Error('db down'));
     await expect(
       creator.record(tx, actor, {
+        tenantId: '1',
         action: 'role.delete',
         targetType: 'role',
         targetId: 'r-1',

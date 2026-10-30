@@ -4,6 +4,7 @@ import * as crypto from 'crypto';
 import { SeedStep } from './base-seed-step';
 import { SeedCheckResult, SeedApplyResult } from '../lib/types';
 import { FIXED_UUIDS } from '../constants/uuids';
+import { tenantOneBackfillStatements } from '../lib/tenant-one-backfill';
 
 /**
  * OAuth RP 시드 정의. 새 RP 가 추가되면 여기 항목을 늘리고 orchestrator 의 collectConfig 에
@@ -330,6 +331,10 @@ export class UserServiceSeedStep extends SeedStep {
           itemsApplied += 1;
         }
       }
+
+      // 관리자·OAuth 클라이언트가 들어간 뒤 테넌트 1 백필을 다시 돌린다 — 관리자를 테넌트 1 소속·운영자로, admin-web
+      // 주소를 테넌트 1 도메인으로. 없으면 새 DB 에서 역할 화면이 «작업할 테넌트를 정할 수 없습니다»로 막힌다.
+      for (const statement of tenantOneBackfillStatements()) await this.db.execute(sql.raw(statement));
 
       this.logger.success('User Service seeding completed');
       return { service: 'User Service', success: true, itemsApplied, duration: Date.now() - start };

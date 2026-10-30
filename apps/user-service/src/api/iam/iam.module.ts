@@ -30,6 +30,9 @@ import { RoleAdminManager } from './roles/role-admin.manager';
 import { RoleAdminReader } from './roles/role-admin.reader';
 import { RoleAdminService } from './roles/role-admin.service';
 import { RoleRepository } from './roles/role.repository';
+import { ActorTenantReader } from './tenancy/actor-tenant.reader';
+import { PlatformOperatorManager } from './tenancy/platform-operator.manager';
+import { TenancyRepository } from './tenancy/tenancy.repository';
 
 @Module({
   controllers: [
@@ -54,6 +57,9 @@ import { RoleRepository } from './roles/role.repository';
     IamAuditReader,
     IamAuditService,
     RoleRepository,
+    TenancyRepository,
+    ActorTenantReader,
+    PlatformOperatorManager,
     RoleAdminReader,
     RoleAdminManager,
     RoleAdminService,
@@ -67,6 +73,6 @@ import { RoleRepository } from './roles/role.repository';
     PiiAccessService,
     PiiAccessRetentionCron,
   ],
-  exports: [IamService, RoleAssignmentManager, PiiAccessCreator],
+  exports: [IamService, RoleAssignmentManager, PlatformOperatorManager, PiiAccessCreator],
 })
 export class IamModule {}

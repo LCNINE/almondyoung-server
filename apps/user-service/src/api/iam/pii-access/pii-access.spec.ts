@@ -12,6 +12,7 @@ import { PiiAccessManager } from './pii-access.manager';
 import { PiiAccessReader } from './pii-access.reader';
 import { PiiAccessRepository } from './pii-access.repository';
 import { PiiAccessRetentionCron } from './pii-access-retention.cron';
+import { ActorTenantReader } from '../tenancy/actor-tenant.reader';
 
 const actor: IamActor = {
   userId: '0192f3a4-0000-7000-8000-000000000001',
@@ -121,6 +122,7 @@ describe('PiiAccessManager', () => {
         { provide: DbService, useValue: dbService },
         { provide: PiiAccessCreator, useValue: creator },
         { provide: PermissionCache, useValue: cache },
+        { provide: ActorTenantReader, useValue: { resolve: async () => '1' } },
       ],
     }).compile();
     manager = module.get(PiiAccessManager);
@@ -149,13 +151,22 @@ describe('PiiAccessManager', () => {
     expect(audit.record).toHaveBeenCalledWith(
       tx,
       actor,
-      expect.objectContaining({ action: 'pii_access_log.view', targetType: 'pii_access_log', targetId: actor.userId }),
+      expect.objectContaining({
+        tenantId: '1',
+        action: 'pii_access_log.view',
+        targetType: 'pii_access_log',
+        targetId: actor.userId,
+      }),
     );
   });
 
   it('rejects a review range that ends before it starts', async () => {
     await expect(
-      manager.createReview(actor, { period: '2026-10', rangeFrom: '2026-10-31T00:00:00Z', rangeTo: '2026-10-01T00:00:00Z' }),
+      manager.createReview(actor, {
+        period: '2026-10',
+        rangeFrom: '2026-10-31T00:00:00Z',
+        rangeTo: '2026-10-01T00:00:00Z',
+      }),
     ).rejects.toBeInstanceOf(BadRequestError);
   });
 
@@ -167,7 +178,12 @@ describe('PiiAccessManager', () => {
       note: '이상 없음',
     });
     expect(repository.insertReview).toHaveBeenCalledWith(
-      expect.objectContaining({ period: '2026-10', reviewedBy: actor.userId, reviewedByLoginId: 'master1', note: '이상 없음' }),
+      expect.objectContaining({
+        period: '2026-10',
+        reviewedBy: actor.userId,
+        reviewedByLoginId: 'master1',
+        note: '이상 없음',
+      }),
     );
   });
 });
@@ -177,7 +193,9 @@ describe('PiiAccessConsumer', () => {
     const creator = { record: jest.fn().mockResolvedValue(undefined) };
     const consumer = new PiiAccessConsumer(creator);
     await consumer.onPiiAccessed({ ...record, occurredAt: '2026-10-19T05:00:00.000Z' });
-    expect(creator.record).toHaveBeenCalledWith(expect.objectContaining({ eventId: record.eventId, occurredAt: record.occurredAt }));
+    expect(creator.record).toHaveBeenCalledWith(
+      expect.objectContaining({ eventId: record.eventId, occurredAt: record.occurredAt }),
+    );
   });
 
   it('rejects a payload that breaks the contract so it goes to the dead letter path', async () => {

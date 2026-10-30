@@ -358,8 +358,8 @@ Medusa 를 새로 부르면 `medusa-permissions.ts` 에 경로를 더한다(`med
 접속기록이 남고 기록을 못 남기면 가린 값이 나간다 — 규칙은 ADR-0048 §29~36.
 고객 개인정보를 부르는 관리자 화면(admin-web 페이지)은 `apps/admin-web/src/lib/pii/pii-screens.ts` 의 `PII_SCREENS` 에 표시를 단다. 개인정보를 그리지 않는 화면이면 `PII_SCREEN_NOT_SHOWN` 에 사유와 함께 적는다(둘 다 없으면 `pii-screens.gate.spec.ts` 가 빨갛다). 표시의 `reveal`·`opens`·`recipientCoversAll` 은 그 화면이 닿는 경로로 정해진다 — `@PiiResponse` 의 `reveal: true`·받는 분 권한 선언은 `pii-routes.ts` 의 `PII_REVEAL_ROUTES`·`PII_RECIPIENT_ROUTES` 와 맞아야 하고, 화면 게이트가 그 두 목록으로 표시를 검사한다.
 
-역할·권한·부여를 바꾸는 코드는 user-service `iam` 의 Manager 를 거친다 — 권한 상승 방지·시스템 역할·자기 자신·마지막
-시스템 역할 보유자 규칙과 변경 이력이 거기서 같은 트랜잭션으로 묶인다(ADR-0048 §24~28). 새 권한을 추가할 때 같은 대상의
+역할·권한·부여·소속·운영자를 바꾸는 코드는 user-service `iam` 의 Manager 를 거친다 — 권한 상승 방지·시스템 역할·자기 자신·
+마지막 플랫폼 운영자·소속 없는 테넌트 부여 거절 규칙과 변경 이력이 거기서 같은 트랜잭션으로 묶인다(ADR-0048 §24~28·§42·§47). 새 권한을 추가할 때 같은 대상의
 `.read` 가 없으면 `requires` 나 `standalone` 을 적는다(`permission-dependencies.spec.ts` 가 빨갛다).
 
 권한 라우트는 언제나 `PermissionGuard` 가 결정한다 — 스위치는 없고, 되돌리기는 직전 `deploy/<stage>/…` 태그 커밋을 코드·배포 설정째 재배포한다(이미지만 돌리면 옛 가드가 판정한다, ADR-0048 §37~39).

@@ -13,6 +13,7 @@ import {
 import { MyPermissionsReader } from '../my-permissions.reader';
 import { RoleAdminManager } from './role-admin.manager';
 import { RoleRepository } from './role.repository';
+import { ActorTenantReader } from '../tenancy/actor-tenant.reader';
 
 const role = (over: Partial<{ roleId: string; name: string; version: number; displayName: string | null }> = {}) => ({
   roleId: 'r-intern',
@@ -70,6 +71,8 @@ describe('RoleAdminManager', () => {
         { provide: IamAuditCreator, useValue: audit },
         { provide: MyPermissionsReader, useValue: myPermissions },
         { provide: DbService, useValue: { run } },
+        // 요청자가 일하는 테넌트 — 역할 정의는 전역이어도 이력은 그 테넌트에 남는다.
+        { provide: ActorTenantReader, useValue: { resolve: async () => '1' } },
       ],
     }).compile();
     manager = module.get(RoleAdminManager);
@@ -89,6 +92,7 @@ describe('RoleAdminManager', () => {
       expect(roles.replaceGrants).toHaveBeenCalledWith('r-intern', ['order.order.write'], [], 'u-master', tx);
       expect(roles.bumpVersion).toHaveBeenCalledWith('r-intern', tx);
       expect(audit.record).toHaveBeenCalledWith(tx, actor, {
+        tenantId: '1',
         action: 'role.permissions.replace',
         targetType: 'role',
         targetId: 'r-intern',

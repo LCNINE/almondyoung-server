@@ -6,12 +6,19 @@ import type { UserServiceSchema, UserServiceTx } from 'apps/user-service/databas
 import { fromZonedTime } from 'date-fns-tz';
 import { IamAuditCreator, type IamAuditAction } from '../audit/iam-audit.creator';
 import type { IamActor } from '../iam-actor';
-import { SYSTEM_ROLE_NAME } from '../iam.constants';
-import { IamEscalationError, IamLastMasterError, IamSelfChangeError, IamStaffCannotLeaveError } from '../iam.errors';
+import {
+  IamEscalationError,
+  IamGrantedElsewhereError,
+  IamNotTenantMemberError,
+  IamSelfChangeError,
+  IamStaffCannotLeaveError,
+} from '../iam.errors';
 import { MyPermissionsReader } from '../my-permissions.reader';
 import { RolePermissionsReader } from '../role-permissions.reader';
 import { RoleRepository, type HeldAssignment } from '../roles/role.repository';
-import { isCustomerRole, isSystemRole } from '../rules/iam-rules';
+import { isCustomerRole } from '../rules/iam-rules';
+import { ActorTenantReader } from '../tenancy/actor-tenant.reader';
+import { TenancyRepository } from '../tenancy/tenancy.repository';
 
 interface WantedAssignment {
   readonly roleId: string;
@@ -33,6 +40,13 @@ export function endOfKoreanDay(date: string, now: Date = new Date()): Date {
   return end;
 }
 
+/** 요청자가 일하는 테넌트와, 대상의 부여 중 그 테넌트 것(held)·다른 테넌트에 있는 역할(elsewhere). */
+interface TenantScope {
+  readonly tenantId: string;
+  readonly held: readonly HeldAssignment[];
+  readonly elsewhere: ReadonlySet<string>;
+}
+
 const sameTime = (a: Date | null | undefined, b: Date | null) => (a?.getTime() ?? null) === (b?.getTime() ?? null);
 
 @Injectable()
@@ -43,15 +57,31 @@ export class RoleAssignmentManager {
     private readonly audit: IamAuditCreator,
     private readonly myPermissions: MyPermissionsReader,
     private readonly snapshots: RolePermissionsReader,
+    private readonly tenancy: TenancyRepository,
+    private readonly actorTenant: ActorTenantReader,
   ) {}
+
+  /**
+   * 요청자가 일하는 테넌트와, 대상의 부여를 그 테넌트 것과 나머지로 나눈 것. 교체·추가·회수는 그 테넌트 안에서만 계산한다 —
+   * 다른 테넌트의 부여는 보지도 지우지도 않는다.
+   */
+  private async scope(tx: UserServiceTx, actor: IamActor, userId: string): Promise<TenantScope> {
+    const tenantId = await this.actorTenant.resolve(actor, tx);
+    const all = await this.roles.assignmentsOf(userId, tx);
+    return {
+      tenantId,
+      held: all.filter((h) => h.tenantId === tenantId),
+      elsewhere: new Set(all.filter((h) => h.tenantId !== tenantId).map((h) => h.roleId)),
+    };
+  }
 
   /** 고객 상세 창의 계약: 고객 역할까지 «이 목록으로» 교체한다. 남는 역할의 종료일은 그대로 둔다. */
   async replaceAll(actor: IamActor, userId: string, roleIds: readonly string[]): Promise<void> {
     await this.dbService.run(async (tx) => {
-      const held = await this.roles.assignmentsOf(userId, tx);
-      const kept = new Map(held.map((h) => [h.roleId, h.expiresAt]));
+      const scope = await this.scope(tx, actor, userId);
+      const kept = new Map(scope.held.map((h) => [h.roleId, h.expiresAt]));
       const wanted = [...new Set(roleIds)].map((roleId) => ({ roleId, expiresAt: kept.get(roleId) ?? null }));
-      await this.apply(tx, actor, userId, held, wanted, 'user.roles.replace');
+      await this.apply(tx, actor, userId, scope, wanted, 'user.roles.replace');
     });
   }
 
@@ -76,18 +106,18 @@ export class RoleAssignmentManager {
       if (asked.some((r) => isCustomerRole(r.name))) {
         throw new BadRequestError('고객 역할은 직원 역할 편집에서 줄 수 없습니다.');
       }
-      const held = await this.roles.assignmentsOf(userId, tx);
+      const scope = await this.scope(tx, actor, userId);
       const named = new Set(staff.map((s) => s.roleId));
       // 고객 역할과, 요청이 말하지 않은 «기간이 지난» 직원 부여는 그대로 둔다 — 화면은 만료 기록을 꺼진 채로
       // 보여 줄 뿐이라, 다른 역할만 고친 저장이 그 기록까지 지우면 안 된다. 지우는 건 회수(removeMember)다.
       const now = Date.now();
-      const untouched = held
+      const untouched = scope.held
         .filter(
           (h) =>
             isCustomerRole(h.name) || (!named.has(h.roleId) && h.expiresAt !== null && h.expiresAt.getTime() <= now),
         )
         .map((h) => ({ roleId: h.roleId, expiresAt: h.expiresAt }));
-      await this.apply(tx, actor, userId, held, [...untouched, ...staff], 'user.roles.replace');
+      await this.apply(tx, actor, userId, scope, [...untouched, ...staff], 'user.roles.replace');
     });
   }
 
@@ -101,33 +131,23 @@ export class RoleAssignmentManager {
     const end = expiresAt === null ? null : endOfKoreanDay(expiresAt);
     await this.dbService.run(async (tx) => {
       for (const userId of [...new Set(userIds)]) {
-        const held = await this.roles.assignmentsOf(userId, tx);
-        const others = held
+        const scope = await this.scope(tx, actor, userId);
+        const others = scope.held
           .filter((h) => h.roleId !== roleId)
           .map((h) => ({ roleId: h.roleId, expiresAt: h.expiresAt }));
-        await this.apply(tx, actor, userId, held, [...others, { roleId, expiresAt: end }], 'role.members.add');
+        await this.apply(tx, actor, userId, scope, [...others, { roleId, expiresAt: end }], 'role.members.add');
       }
     });
   }
 
   async removeMember(actor: IamActor, roleId: string, userId: string): Promise<void> {
     await this.dbService.run(async (tx) => {
-      const held = await this.roles.assignmentsOf(userId, tx);
-      const rest = held.filter((h) => h.roleId !== roleId).map((h) => ({ roleId: h.roleId, expiresAt: h.expiresAt }));
-      await this.apply(tx, actor, userId, held, rest, 'role.member.remove');
+      const scope = await this.scope(tx, actor, userId);
+      const rest = scope.held
+        .filter((h) => h.roleId !== roleId)
+        .map((h) => ({ roleId: h.roleId, expiresAt: h.expiresAt }));
+      await this.apply(tx, actor, userId, scope, rest, 'role.member.remove');
     });
-  }
-
-  /**
-   * 탈퇴 전 확인 — 기간 없이 시스템 역할을 가진 마지막 사람은 떠날 수 없다. 그 역할 행을 잠그고 세므로 탈퇴 트랜잭션
-   * 안에서 부른다(`tx`) — 잠금이 탈퇴가 끝날 때까지 남아 동시 탈퇴·회수가 차례로 판정된다.
-   */
-  async assertCanLeave(userId: string, tx?: UserServiceTx): Promise<void> {
-    await this.dbService.run(async (tx) => {
-      const held = await this.roles.assignmentsOf(userId, tx);
-      if (!held.some((h) => isSystemRole(h.name) && h.expiresAt === null)) return;
-      await this.assertSystemRoleSurvives(tx, { id: userId, canSignIn: false }, new Map());
-    }, tx);
   }
 
   /** 탈퇴 전 확인 — 지금 직원 역할이 유효한 계정은 스스로 떠날 수 없다. 역할 회수가 먼저다. */
@@ -137,19 +157,29 @@ export class RoleAssignmentManager {
     }, tx);
   }
 
-  /** 관리자 계정을 만들 때의 첫 역할 — 같은 규칙, 같은 트랜잭션. */
-  assignOnCreate(tx: UserServiceTx, actor: IamActor, userId: string, roleId: string): Promise<void> {
-    return this.apply(tx, actor, userId, [], [{ roleId, expiresAt: null }], 'admin_user.create');
+  /** 관리자 계정을 만들 때의 첫 역할 — 요청자 테넌트의 소속을 먼저 만들고, 같은 규칙·같은 트랜잭션으로 준다. */
+  async assignOnCreate(tx: UserServiceTx, actor: IamActor, userId: string, roleId: string): Promise<void> {
+    const tenantId = await this.actorTenant.resolve(actor, tx);
+    await this.tenancy.addMembership(userId, tenantId, tx);
+    await this.apply(
+      tx,
+      actor,
+      userId,
+      { tenantId, held: [], elsewhere: new Set() },
+      [{ roleId, expiresAt: null }],
+      'admin_user.create',
+    );
   }
 
   private async apply(
     tx: UserServiceTx,
     actor: IamActor,
     userId: string,
-    held: readonly HeldAssignment[],
+    scope: TenantScope,
     wanted: readonly WantedAssignment[],
     action: IamAuditAction,
   ): Promise<void> {
+    const { tenantId, held } = scope;
     const user = await this.roles.findUser(userId, tx);
     if (!user) throw new NotFoundError('사용자를 찾을 수 없습니다.');
     if (user.id === actor.userId) throw new IamSelfChangeError();
@@ -175,17 +205,21 @@ export class RoleAssignmentManager {
       actor,
       touched.map((id) => nameOf.get(id) ?? ''),
     );
-    if (touched.some((id) => isSystemRole(nameOf.get(id) ?? ''))) {
-      await this.assertSystemRoleSurvives(tx, user, after);
+    if (added.some((a) => scope.elsewhere.has(a.roleId))) throw new IamGrantedElsewhereError();
+    // 직원 역할을 주거나 늘리는 것은 그 테넌트의 직원에게만 — 회수는 소속과 무관하게 된다.
+    const giving = [...added, ...retimed].filter((w) => !isCustomerRole(nameOf.get(w.roleId) ?? ''));
+    if (giving.length > 0 && !(await this.tenancy.isMember(userId, tenantId, tx))) {
+      throw new IamNotTenantMemberError();
     }
 
-    await this.roles.deleteAssignments(userId, removed, tx);
-    await this.roles.insertAssignments(userId, added, tx);
-    for (const r of retimed) await this.roles.updateExpiry(userId, r.roleId, r.expiresAt, tx);
+    await this.roles.deleteAssignments(userId, tenantId, removed, tx);
+    await this.roles.insertAssignments(userId, tenantId, added, tx);
+    for (const r of retimed) await this.roles.updateExpiry(userId, tenantId, r.roleId, r.expiresAt, tx);
 
     const view = (rows: readonly WantedAssignment[]) =>
       rows.map((r) => ({ roleId: r.roleId, name: nameOf.get(r.roleId) ?? '', expiresAt: r.expiresAt }));
     await this.audit.record(tx, actor, {
+      tenantId,
       action,
       targetType: 'user',
       targetId: userId,
@@ -220,20 +254,6 @@ export class RoleAssignmentManager {
         );
       }
     }
-  }
-
-  /** 시스템 역할을 기간 없이 가진 사람이 남는지 — 동시에 서로 회수해도 0명이 되지 않게 그 역할 행을 잠근 뒤 센다. */
-  private async assertSystemRoleSurvives(
-    tx: UserServiceTx,
-    user: { id: string; canSignIn: boolean },
-    after: ReadonlyMap<string, Date | null>,
-  ): Promise<void> {
-    const system = await this.roles.findRoleByName(SYSTEM_ROLE_NAME, tx);
-    if (!system) return;
-    await this.roles.lockRole(system.roleId, tx);
-    const others = await this.roles.countPermanentHolders(system.roleId, tx, user.id);
-    const remains = user.canSignIn && after.has(system.roleId) && after.get(system.roleId) === null;
-    if (others + (remains ? 1 : 0) < 1) throw new IamLastMasterError();
   }
 
   /** 토큰의 역할 중 지금도 유효한 것만 — 토큰 발급 뒤 기간이 끝나거나 회수된 역할로 남에게 권한을 주지 못하게. */
