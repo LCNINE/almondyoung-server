@@ -46,9 +46,13 @@ export function ProductDetailInfo({
 }: Props) {
   const t = useTranslations("productDetail.info")
   const [isExpanded, setIsExpanded] = useState(false)
-  const optimizedDescriptionHtml = useMemo(
-    () =>
-      descriptionHtml ? optimizeDescriptionHtmlImages(descriptionHtml) : "",
+  // React 19 는 {__html} 객체가 새로 만들어지면 같은 문자열이어도 innerHTML 을 다시 써서 이미지가 접혔다 펴진다
+  const descriptionHtmlProps = useMemo(
+    () => ({
+      __html: descriptionHtml
+        ? optimizeDescriptionHtmlImages(descriptionHtml)
+        : "",
+    }),
     [descriptionHtml]
   )
 
@@ -143,7 +147,7 @@ export function ProductDetailInfo({
               <h4 className="sr-only">{t("detailSrTitle")}</h4>
               <div
                 className="prose max-w-none"
-                dangerouslySetInnerHTML={{ __html: optimizedDescriptionHtml }}
+                dangerouslySetInnerHTML={descriptionHtmlProps}
               />
             </section>
           ) : (
