@@ -12,7 +12,8 @@ export const POST = (req: AuthenticatedMedusaRequest, res: MedusaResponse) => ha
 
 /**
  * 고객 반품 목록(K8 PR8). 우리가 받은 반품만, 요청 늦은 순. 남의 주문·없는 주문은 404. GET /store/orders/:id/returns
- * 응답 200 { returns: [{ return_id, stage: 'requested'|'processing'|'refunded'|'canceled', requested_at, reason, fee_bearer, items: [{ item_id, quantity }], can_cancel }] }
+ * 응답 200 { returns: [{ return_id, stage: 'requested'|'processing'|'refunded'|'canceled', requested_at, reason, fee_bearer, items: [{ item_id, quantity }], can_cancel, kind, refund }] }
+ * refund 는 { item_total, shipping_refund, fees, total, received_at, refunded_at } 또는 null(교환·정산 전)
  * can_cancel 은 Medusa 상태까지만 본 값이다 — core 도착은 취소 POST 가 return_arrived 로 거절한다.
  */
 export const GET = (req: AuthenticatedMedusaRequest, res: MedusaResponse) => handleStoreReturnList(req, res);

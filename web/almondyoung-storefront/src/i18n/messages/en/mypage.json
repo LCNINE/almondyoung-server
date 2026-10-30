@@ -563,7 +563,19 @@
       "recent6m": "Last 6 months",
       "showMoreItems": "Show {count} more items",
       "totalPaid": "Total paid",
-      "itemQuantity": "Qty {count}"
+      "itemQuantity": "Qty {count}",
+      "itemReturn": {
+        "returning": "Return in progress",
+        "returned": "Returned",
+        "exchanging": "Exchange in progress",
+        "exchanged": "Exchanged",
+        "quantity": "{count} item(s)",
+        "waitingPickup": "Waiting for pickup",
+        "inspecting": "Inspected · Refunding",
+        "refundedOn": "Refunded {date}",
+        "viewReturnDetail": "View return",
+        "viewExchangeDetail": "View exchange"
+      }
     },
     "filter": {
       "label": "Filter",
@@ -888,6 +900,77 @@
       "started": "Download started",
       "failed": "Download failed",
       "exerciseFailed": "Failed to mark the license as used"
+    },
+    "returnDetail": {
+      "title": "Cancellation / Return / Exchange Details",
+      "orderedOn": "Ordered {date}",
+      "orderNumber": "Order {number}",
+      "stepsLabel": "Progress",
+      "step": {
+        "requested": "Requested",
+        "pickedUp": "Picked up",
+        "inspected": "Inspected",
+        "refunded": "Refunded",
+        "exchanged": "Exchange processed"
+      },
+      "canceled": "Canceled",
+      "table": {
+        "product": "Item",
+        "amount": "Amount",
+        "status": "Status"
+      },
+      "unknownItem": "Item not found",
+      "quantity": "{count} item(s)",
+      "info": {
+        "title": "Details",
+        "requestedAt": "Return requested",
+        "exchangeRequestedAt": "Exchange requested",
+        "returnNumber": "Return number",
+        "exchangeNumber": "Exchange number",
+        "completedAt": "Return completed",
+        "exchangedAt": "Exchange completed"
+      },
+      "pickup": {
+        "title": "Pickup",
+        "status": "Pickup status",
+        "state": {
+          "none": "Preparing pickup",
+          "requested": "Pickup booked · A courier will visit",
+          "pickedUp": "Picked up",
+          "cancelled": "Pickup canceled"
+        },
+        "unavailable": "Checking pickup details",
+        "carrier": "Courier",
+        "waybill": "Tracking number",
+        "name": "Name",
+        "phone": "Phone",
+        "address": "Pickup address"
+      },
+      "reason": {
+        "title": "Return reason",
+        "reason": "Reason",
+        "feeBearer": "Shipping fee paid by",
+        "bearer": {
+          "customer": "Customer",
+          "seller": "Seller"
+        }
+      },
+      "refund": {
+        "title": "Refund",
+        "itemTotal": "Item amount",
+        "shippingRefund": "Shipping refund",
+        "fees": "Return fee",
+        "done": "Refunded",
+        "planned": "Refund amount",
+        "notYet": "The refund amount is set once the item arrives and is inspected.",
+        "notice": "Card refunds take 3-7 business days after the cancellation request. Points are returned right away.",
+        "prepaid": "Refunded in advance",
+        "prepaidRest": "The rest of the refund is set once the item arrives and is inspected.",
+        "prepaidPending": "Advance refund in progress"
+      },
+      "toOrder": "Order details",
+      "toList": "Orders",
+      "notFound": "We couldn't find this return."
     }
   },
   "membership": {

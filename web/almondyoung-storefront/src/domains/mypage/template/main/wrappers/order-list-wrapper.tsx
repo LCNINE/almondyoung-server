@@ -35,6 +35,7 @@ export async function OrderListWrapper({
         count={0}
         actionsMap={{}}
         refundMap={{}}
+        returnsMap={{}}
         reviewHrefs={{}}
         hasError
         embedded
@@ -52,6 +53,7 @@ export async function OrderListWrapper({
       count={data.count}
       actionsMap={data.actionsMap}
       refundMap={data.refundMap}
+      returnsMap={data.returnsMap}
       reviewHrefs={data.reviewHrefs}
       hasError={data.hasError}
       embedded

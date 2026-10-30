@@ -1,12 +1,14 @@
 import "server-only"
 
 import { getOrders } from "@/lib/api/medusa/orders"
+import { getOrderReturns } from "@/lib/api/medusa/returns"
 import {
   getOrderActionsBatchByMedusaId,
   type StoreOrderActionsResponse,
 } from "@/lib/api/orders/store-orders"
 import { getReviewEligibilities } from "@/lib/api/ugc/reviews"
 import { getActiveRefundRequest } from "@/lib/api/wallet"
+import type { CustomerReturn } from "@/lib/types/ui/returns"
 import type { HttpTypes } from "@medusajs/types"
 import { subMonths } from "date-fns"
 
@@ -28,6 +30,8 @@ export interface OrderListPageData {
   actionsMap: Record<string, StoreOrderActionsResponse>
   refundMap: Record<string, string>
   reviewHrefs: Record<string, string>
+  /** Medusa 주문 id → 반품 목록. 취소 주문과 반품 없음·조회 실패는 빠진다 */
+  returnsMap: Record<string, CustomerReturn[]>
   hasError: boolean
 }
 
@@ -62,7 +66,7 @@ function periodToRange(period: string): { dateFrom?: string; dateTo?: string } {
 
 /**
  * 주문목록 한 페이지의 모든 데이터를 서버에서 조립한다.
- * Medusa(주문) 1콜 → Core(액션) 배치 1콜 + Wallet(무통장 환불신청) 0~n콜 병렬.
+ * Medusa(주문) 1콜 → Core(액션) 배치 1콜 + Wallet(무통장 환불신청) 0~n콜 + Medusa(반품) 0~n콜 병렬.
  * 부가정보 실패는 빈 map 으로 강등 — 목록 렌더는 항상 진행.
  */
 export async function getOrderListPageData(params: {
@@ -92,7 +96,11 @@ export async function getOrderListPageData(params: {
     return bts === "confirmed" && intentId ? [{ id: o.id, intentId }] : []
   })
 
-  const [actionsList, refundEntries, eligibilities] = await Promise.all([
+  // 출고 상태로 거르지 않는다 — core 가 출고한 주문은 Medusa 에 fulfillment 가 없어 not_fulfilled 로 남는다.
+  // 한 페이지가 ORDER_PAGE_SIZE 개라 많아야 그만큼 부른다
+  const returnTargets = orders.filter((o) => o.status !== "canceled")
+
+  const [actionsList, refundEntries, eligibilities, returnEntries] = await Promise.all([
     getOrderActionsBatchByMedusaId(orders.map((o) => o.id)).catch(() => []),
     Promise.all(
       refundTargets.map(
@@ -106,6 +114,11 @@ export async function getOrderListPageData(params: {
       )
     ),
     getReviewEligibilities({ limit: 100 }).catch(() => null),
+    Promise.all(
+      returnTargets.map(
+        async (o) => [o.id, await getOrderReturns(o.id).catch(() => null)] as const
+      )
+    ),
   ])
 
   const count = ordersData?.count ?? 0
@@ -126,6 +139,9 @@ export async function getOrderListPageData(params: {
         e.orderLineId,
         `/mypage/reviews?write=${e.id}&productId=${e.productId}`,
       ])
+    ),
+    returnsMap: Object.fromEntries(
+      returnEntries.flatMap(([id, returns]) => (returns && returns.length > 0 ? [[id, returns]] : []))
     ),
     hasError: ordersData === null,
   }

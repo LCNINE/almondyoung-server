@@ -110,6 +110,15 @@ export async function handleStoreReturnList(req: AuthenticatedMedusaRequest, res
         items: r.items.map((i) => ({ item_id: i.itemId, quantity: i.quantity })),
         can_cancel: r.canCancel,
         kind: r.kind,
+        refund: r.refund && {
+          kind: r.refund.kind,
+          item_total: r.refund.itemTotal,
+          shipping_refund: r.refund.shippingRefund,
+          fees: r.refund.fees,
+          total: r.refund.total,
+          received_at: r.refund.receivedAt,
+          refunded_at: r.refund.refundedAt,
+        },
       })),
     });
   } catch (error) {

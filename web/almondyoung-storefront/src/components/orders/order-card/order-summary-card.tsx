@@ -27,6 +27,12 @@ export interface OrderSummaryItem {
   variantId?: string
   isDigital?: boolean
   reviewHref?: string
+  /** 반품·교환한 줄이면 주문 상태 대신 이 줄의 상태 */
+  statusLabel?: string
+  statusHint?: string
+  /** 반품·교환 상세로 가는 링크와 버튼 문구 */
+  returnHref?: string
+  returnLinkLabel?: string
 }
 
 interface OrderSummaryCardProps {
@@ -78,6 +84,8 @@ export default function OrderSummaryCard({
   const [expanded, setExpanded] = useState(false)
   const visibleItems = expanded ? items : items.slice(0, COLLAPSED_ITEM_COUNT)
   const hiddenCount = items.length - visibleItems.length
+  // 주문 버튼(배송 조회 등)은 반품하지 않은 첫 줄에 단다. 전부 반품했으면 첫 줄
+  const actionsIndex = Math.max(0, visibleItems.findIndex((item) => !item.returnHref))
 
   return (
     <OrderCard
@@ -87,7 +95,10 @@ export default function OrderSummaryCard({
     >
       <ul className="group/items flex flex-col gap-3">
         {visibleItems.map((item, index) => {
-          const orderActions = index === 0 ? children : null
+          const orderActions = index === actionsIndex ? children : null
+          const itemStatus = item.statusLabel ?? status
+          const itemHint = item.statusLabel ? item.statusHint : deliveryInfo
+          const hasSide = Boolean(orderActions || item.reviewHref || item.returnHref)
 
           return (
             <li
@@ -96,9 +107,9 @@ export default function OrderSummaryCard({
             >
               <div className="min-w-0 flex-1 p-4 md:p-5">
                 <p className="mb-3 text-base font-bold md:text-lg">
-                  <span className={statusColor(status)}>{status}</span>
-                  {deliveryInfo && (
-                    <span className="text-gray-500"> · {deliveryInfo}</span>
+                  <span className={statusColor(itemStatus)}>{itemStatus}</span>
+                  {itemHint && (
+                    <span className="font-medium text-gray-500"> · {itemHint}</span>
                   )}
                 </p>
                 <div className="flex items-center gap-3.5">
@@ -142,14 +153,27 @@ export default function OrderSummaryCard({
                 </div>
               </div>
 
-              {(orderActions || item.reviewHref) && (
+              {hasSide && (
                 <div
                   className={cn(
                     "flex shrink-0 flex-col gap-2 border-t border-gray-200 p-4 md:w-48 md:border-t-0 md:border-l md:p-5",
                     !item.reviewHref &&
+                      !item.returnHref &&
                       "md:hidden md:has-[[data-order-actions]]:flex"
                   )}
                 >
+                  {item.returnHref && (
+                    <LocalizedClientLink href={item.returnHref}>
+                      <CustomButton
+                        variant="outline"
+                        color="secondary"
+                        size="md"
+                        fullWidth
+                      >
+                        {item.returnLinkLabel}
+                      </CustomButton>
+                    </LocalizedClientLink>
+                  )}
                   {orderActions}
                   {item.reviewHref && (
                     <LocalizedClientLink href={item.reviewHref}>
@@ -165,7 +189,7 @@ export default function OrderSummaryCard({
                   )}
                 </div>
               )}
-              {!orderActions && !item.reviewHref && (
+              {!hasSide && (
                 <div className="hidden shrink-0 border-l border-gray-200 md:w-48 md:group-has-[[data-order-actions]]/items:block" />
               )}
             </li>

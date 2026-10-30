@@ -2,6 +2,8 @@
 
 import { api } from "@lib/api/api"
 import { ApiAuthError, HttpApiError } from "@lib/api/api-error"
+import type { StoreReturnProgressDto } from "@lib/types/dto/returns"
+import type { CustomerReturnProgress } from "@lib/types/ui/returns"
 
 // ── Tracking types ────────────────────────────────────────────────────────
 
@@ -207,4 +209,24 @@ export async function getOrderTrackingByMedusaId(
     `/store/orders/by-channel-order/${encodeURIComponent(medusaOrderId)}/tracking`,
     { method: "GET", withAuth: true }
   )
+}
+
+// ── Return progress ───────────────────────────────────────────────────────
+
+/** 반품 상세의 회수·창고 진행. 인증 외 실패는 null — 화면은 회수 정보 칸만 «확인 중»으로 둔다. */
+export async function getReturnProgressByMedusaId(
+  medusaOrderId: string,
+  medusaReturnId: string
+): Promise<CustomerReturnProgress | null> {
+  try {
+    const dto = await api<StoreReturnProgressDto>(
+      "wms",
+      `/store/orders/by-channel-order/${encodeURIComponent(medusaOrderId)}/returns/${encodeURIComponent(medusaReturnId)}/progress`,
+      { method: "GET", withAuth: true }
+    )
+    return { ...dto }
+  } catch (error) {
+    if (error instanceof ApiAuthError) throw error
+    return null
+  }
 }
