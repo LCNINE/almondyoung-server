@@ -50,6 +50,13 @@ const TITLES: Record<IamAuditAction, string> = {
   'role.member.remove': '역할 회수',
   'admin_user.create': '관리자 계정 생성',
   'pii_access_log.view': '개인정보 접속기록 조회',
+  'user.platform_operator.set': '플랫폼 운영자 변경',
+  'tenant.create': '테넌트 만듦',
+  'tenant.status.set': '테넌트 상태 변경',
+  'tenant.delete': '테넌트 삭제',
+  'tenant.membership.add': '테넌트 소속 추가',
+  'tenant.oauth_redirects.add': '테넌트 로그인 주소 등록',
+  'user.password.reissue': '비밀번호 재발급',
 };
 
 const FIELD_NAMES: Record<string, string> = {

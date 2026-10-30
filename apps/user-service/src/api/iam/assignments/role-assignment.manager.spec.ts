@@ -6,6 +6,7 @@ import {
   IamEscalationError,
   IamGrantedElsewhereError,
   IamNotTenantMemberError,
+  IamOperatorOnlyError,
   IamSelfChangeError,
   IamStaffCannotLeaveError,
   IamTenantUnresolvedError,
@@ -14,6 +15,7 @@ import { MyPermissionsReader } from '../my-permissions.reader';
 import { RolePermissionsReader } from '../role-permissions.reader';
 import { RoleRepository } from '../roles/role.repository';
 import { ActorTenantReader } from '../tenancy/actor-tenant.reader';
+import { PlatformOperatorManager } from '../tenancy/platform-operator.manager';
 import { TenancyRepository } from '../tenancy/tenancy.repository';
 import { endOfKoreanDay, RoleAssignmentManager } from './role-assignment.manager';
 
@@ -52,7 +54,13 @@ describe('RoleAssignmentManager', () => {
     activeRoleNamesOf: jest.fn(),
     hasLiveStaffRole: jest.fn(),
   };
-  const tenancy = { tenantsOf: jest.fn(), isMember: jest.fn(), addMembership: jest.fn() };
+  const tenancy = {
+    tenantsOf: jest.fn(),
+    isMember: jest.fn(),
+    addMembership: jest.fn(),
+    isOperator: jest.fn(),
+    tenantExists: jest.fn(),
+  };
   const audit = { record: jest.fn() };
   const myPermissions = { forRoles: jest.fn() };
   const snapshots = { snapshot: jest.fn() };
@@ -76,6 +84,8 @@ describe('RoleAssignmentManager', () => {
     // 요청자는 테넌트 1 소속, 대상도 테넌트 1 소속이 기본이다.
     tenancy.tenantsOf.mockResolvedValue(['1']);
     tenancy.isMember.mockResolvedValue(true);
+    tenancy.isOperator.mockImplementation(async (userId: string) => userId === master.userId);
+    tenancy.tenantExists.mockResolvedValue(true);
     roles.activeRoleNamesOf.mockImplementation(async (userId: string) =>
       userId === master.userId ? ['master'] : userId === adminActor.userId ? ['admin'] : [],
     );
@@ -85,6 +95,7 @@ describe('RoleAssignmentManager', () => {
         { provide: RoleRepository, useValue: roles },
         { provide: TenancyRepository, useValue: tenancy },
         ActorTenantReader,
+        PlatformOperatorManager,
         { provide: IamAuditCreator, useValue: audit },
         { provide: MyPermissionsReader, useValue: myPermissions },
         { provide: RolePermissionsReader, useValue: snapshots },
@@ -392,6 +403,48 @@ describe('RoleAssignmentManager', () => {
       roles.hasLiveStaffRole.mockResolvedValue(false);
       held({ role: 'membership' });
       await expect(manager.assertNotStaff('u-target')).resolves.toBeUndefined();
+    });
+  });
+
+  describe('granting in a named tenant (platform operator)', () => {
+    it('grants in the named tenant instead of the one the operator works in', async () => {
+      held();
+      await manager.addMembers(master, 'r-intern', ['u-target'], null, 't2');
+      expect(roles.insertAssignments).toHaveBeenCalledWith(
+        'u-target',
+        't2',
+        [{ roleId: 'r-intern', expiresAt: null }],
+        tx,
+      );
+      expect(audit.record).toHaveBeenCalledWith(tx, master, expect.objectContaining({ tenantId: 't2' }));
+    });
+
+    it('refuses someone who is not a platform operator, even if they hold the permissions', async () => {
+      held();
+      await expect(manager.addMembers(adminActor, 'r-intern', ['u-target'], null, 't2')).rejects.toBeInstanceOf(
+        IamOperatorOnlyError,
+      );
+      expect(roles.insertAssignments).not.toHaveBeenCalled();
+    });
+
+    it('refuses a tenant that does not exist', async () => {
+      held();
+      tenancy.tenantExists.mockResolvedValue(false);
+      await expect(manager.addMembers(master, 'r-intern', ['u-target'], null, 'nope')).rejects.toBeInstanceOf(
+        NotFoundError,
+      );
+    });
+
+    it('creates an account as a member of the named tenant', async () => {
+      tenancy.addMembership.mockImplementation(async () => tenancy.isMember.mockResolvedValue(true));
+      await manager.assignOnCreate(tx as never, master, 'u-target', 'r-intern', 't2');
+      expect(tenancy.addMembership).toHaveBeenCalledWith('u-target', 't2', tx);
+      expect(roles.insertAssignments).toHaveBeenCalledWith(
+        'u-target',
+        't2',
+        [{ roleId: 'r-intern', expiresAt: null }],
+        tx,
+      );
     });
   });
 });

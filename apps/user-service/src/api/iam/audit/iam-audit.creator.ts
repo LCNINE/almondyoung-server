@@ -13,14 +13,22 @@ export const IAM_AUDIT_ACTIONS = [
   'admin_user.create',
   'pii_access_log.view',
   'user.platform_operator.set',
+  'tenant.create',
+  'tenant.status.set',
+  'tenant.delete',
+  'tenant.membership.add',
+  'tenant.oauth_redirects.add',
+  'user.password.reissue',
 ] as const;
+export const IAM_AUDIT_TARGET_TYPES = ['role', 'user', 'pii_access_log', 'tenant', 'oauth_client'] as const;
+export type IamAuditTargetType = (typeof IAM_AUDIT_TARGET_TYPES)[number];
 export type IamAuditAction = (typeof IAM_AUDIT_ACTIONS)[number];
 
 export interface IamAuditEntry {
   /** 어느 테넌트에서 한 일인가. 역할 정의처럼 전역인 변경은 요청자가 일한 테넌트. 운영자 성질처럼 테넌트 밖의 일은 null. */
   readonly tenantId: string | null;
   readonly action: IamAuditAction;
-  readonly targetType: 'role' | 'user' | 'pii_access_log';
+  readonly targetType: IamAuditTargetType;
   readonly targetId: string;
   readonly targetLabel: string;
   readonly before: unknown;

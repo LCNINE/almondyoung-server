@@ -34,7 +34,7 @@ export class RoleAssignmentService {
   }
 
   addMembers(actor: IamActor, roleId: string, dto: AddRoleMembersDto): Promise<void> {
-    return this.manager.addMembers(actor, roleId, dto.userIds, dto.expiresAt);
+    return this.manager.addMembers(actor, roleId, dto.userIds, dto.expiresAt, dto.tenantId);
   }
 
   removeMember(actor: IamActor, roleId: string, userId: string): Promise<void> {

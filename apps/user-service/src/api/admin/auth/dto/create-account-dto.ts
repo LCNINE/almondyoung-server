@@ -1,5 +1,16 @@
-import { ApiProperty } from '@nestjs/swagger';
-import { IsEmail, IsNotEmpty, IsOptional, IsString, Length, Matches, MaxLength, MinLength } from 'class-validator';
+import { TENANT_ID_PATTERN } from '@app/tenancy';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import {
+  IsBoolean,
+  IsEmail,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  Length,
+  Matches,
+  MaxLength,
+  MinLength,
+} from 'class-validator';
 
 export class CreateAccountDto {
   @ApiProperty({
@@ -62,4 +73,16 @@ export class CreateAccountDto {
     message: '전화번호는 E.164 형식이어야 합니다. (예: +821012345678)',
   })
   phone_number?: string;
+
+  @ApiPropertyOptional({ description: '이 테넌트의 직원으로 만든다(소속·첫 역할). 플랫폼 운영자만', example: '2' })
+  @IsOptional()
+  @Matches(TENANT_ID_PATTERN, { message: '테넌트 id 형식이 아닙니다.' })
+  tenantId?: string;
+
+  @ApiPropertyOptional({
+    description: '첫 로그인 때 비밀번호 변경 강제(기본 true). false 는 점검 계정용 — 플랫폼 운영자만',
+  })
+  @IsOptional()
+  @IsBoolean()
+  forcePasswordChange?: boolean;
 }

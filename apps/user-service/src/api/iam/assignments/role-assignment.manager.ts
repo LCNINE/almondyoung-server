@@ -17,7 +17,7 @@ import { MyPermissionsReader } from '../my-permissions.reader';
 import { RolePermissionsReader } from '../role-permissions.reader';
 import { RoleRepository, type HeldAssignment } from '../roles/role.repository';
 import { isCustomerRole } from '../rules/iam-rules';
-import { ActorTenantReader } from '../tenancy/actor-tenant.reader';
+import { PlatformOperatorManager } from '../tenancy/platform-operator.manager';
 import { TenancyRepository } from '../tenancy/tenancy.repository';
 
 interface WantedAssignment {
@@ -58,15 +58,15 @@ export class RoleAssignmentManager {
     private readonly myPermissions: MyPermissionsReader,
     private readonly snapshots: RolePermissionsReader,
     private readonly tenancy: TenancyRepository,
-    private readonly actorTenant: ActorTenantReader,
+    private readonly operators: PlatformOperatorManager,
   ) {}
 
   /**
    * 요청자가 일하는 테넌트와, 대상의 부여를 그 테넌트 것과 나머지로 나눈 것. 교체·추가·회수는 그 테넌트 안에서만 계산한다 —
-   * 다른 테넌트의 부여는 보지도 지우지도 않는다.
+   * 다른 테넌트의 부여는 보지도 지우지도 않는다. 테넌트를 지정하는 것은 운영자만 한다.
    */
-  private async scope(tx: UserServiceTx, actor: IamActor, userId: string): Promise<TenantScope> {
-    const tenantId = await this.actorTenant.resolve(actor, tx);
+  private async scope(tx: UserServiceTx, actor: IamActor, userId: string, tenant?: string): Promise<TenantScope> {
+    const tenantId = await this.operators.workingTenant(actor, tenant, tx);
     const all = await this.roles.assignmentsOf(userId, tx);
     return {
       tenantId,
@@ -121,17 +121,18 @@ export class RoleAssignmentManager {
     });
   }
 
-  /** 여러 사람에게 역할 하나를 더한다(이미 있으면 종료일만 바꾼다). */
+  /** 여러 사람에게 역할 하나를 더한다(이미 있으면 종료일만 바꾼다). `tenantId` 를 주면 그 테넌트에서(운영자만). */
   async addMembers(
     actor: IamActor,
     roleId: string,
     userIds: readonly string[],
     expiresAt: string | null,
+    tenantId?: string,
   ): Promise<void> {
     const end = expiresAt === null ? null : endOfKoreanDay(expiresAt);
     await this.dbService.run(async (tx) => {
       for (const userId of [...new Set(userIds)]) {
-        const scope = await this.scope(tx, actor, userId);
+        const scope = await this.scope(tx, actor, userId, tenantId);
         const others = scope.held
           .filter((h) => h.roleId !== roleId)
           .map((h) => ({ roleId: h.roleId, expiresAt: h.expiresAt }));
@@ -157,9 +158,18 @@ export class RoleAssignmentManager {
     }, tx);
   }
 
-  /** 관리자 계정을 만들 때의 첫 역할 — 요청자 테넌트의 소속을 먼저 만들고, 같은 규칙·같은 트랜잭션으로 준다. */
-  async assignOnCreate(tx: UserServiceTx, actor: IamActor, userId: string, roleId: string): Promise<void> {
-    const tenantId = await this.actorTenant.resolve(actor, tx);
+  /**
+   * 관리자 계정을 만들 때의 첫 역할 — 그 테넌트(지정 없으면 요청자 테넌트, 지정은 운영자만)의 소속을 먼저 만들고, 같은
+   * 규칙·같은 트랜잭션으로 준다.
+   */
+  async assignOnCreate(
+    tx: UserServiceTx,
+    actor: IamActor,
+    userId: string,
+    roleId: string,
+    tenant?: string,
+  ): Promise<void> {
+    const tenantId = await this.operators.workingTenant(actor, tenant, tx);
     await this.tenancy.addMembership(userId, tenantId, tx);
     await this.apply(
       tx,

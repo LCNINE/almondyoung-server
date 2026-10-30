@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { OAuthCorsModule } from '../oauth/cors/oauth-cors.module';
 import { RoleAssignmentController } from './assignments/role-assignment.controller';
 import { RoleAssignmentManager } from './assignments/role-assignment.manager';
 import { RoleAssignmentReader } from './assignments/role-assignment.reader';
@@ -24,6 +25,13 @@ import { PiiAccessRepository } from './pii-access/pii-access.repository';
 import { PiiAccessService } from './pii-access/pii-access.service';
 import { PermissionCatalogSyncBootstrap } from './permission-catalog-sync.bootstrap';
 import { PermissionCatalogSyncManager } from './permission-catalog-sync.manager';
+import { PlatformController } from './platform/platform.controller';
+import { PlatformRepository } from './platform/platform.repository';
+import { PlatformService } from './platform/platform.service';
+import { PlatformTenantManager } from './platform/platform-tenant.manager';
+import { PlatformTenantReader } from './platform/platform-tenant.reader';
+import { TenantBrandController } from './platform/tenant-brand.controller';
+import { TenantBrandReader } from './platform/tenant-brand.reader';
 import { RolePermissionsReader } from './role-permissions.reader';
 import { RoleAdminController } from './roles/role-admin.controller';
 import { RoleAdminManager } from './roles/role-admin.manager';
@@ -35,6 +43,8 @@ import { PlatformOperatorManager } from './tenancy/platform-operator.manager';
 import { TenancyRepository } from './tenancy/tenancy.repository';
 
 @Module({
+  // 웹 직원 앱 클라이언트 주소를 바꾸면 이 태스크의 CORS 캐시를 비운다.
+  imports: [OAuthCorsModule],
   controllers: [
     IamInternalController,
     MePermissionsController,
@@ -44,6 +54,8 @@ import { TenancyRepository } from './tenancy/tenancy.repository';
     PiiAccessLogController,
     PiiAccessRecordController,
     PiiAccessConsumer,
+    PlatformController,
+    TenantBrandController,
   ],
   providers: [
     IamRepository,
@@ -60,6 +72,11 @@ import { TenancyRepository } from './tenancy/tenancy.repository';
     TenancyRepository,
     ActorTenantReader,
     PlatformOperatorManager,
+    PlatformRepository,
+    PlatformTenantReader,
+    PlatformTenantManager,
+    TenantBrandReader,
+    PlatformService,
     RoleAdminReader,
     RoleAdminManager,
     RoleAdminService,

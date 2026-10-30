@@ -6,6 +6,7 @@ import { IamAuditCreator } from '../audit/iam-audit.creator';
 import type { IamActor } from '../iam-actor';
 import { IamLastOperatorError, IamOperatorOnlyError, IamSelfChangeError } from '../iam.errors';
 import { RoleRepository } from '../roles/role.repository';
+import { ActorTenantReader } from './actor-tenant.reader';
 import { TenancyRepository } from './tenancy.repository';
 
 /**
@@ -19,12 +20,33 @@ export class PlatformOperatorManager {
     private readonly tenancy: TenancyRepository,
     private readonly roles: RoleRepository,
     private readonly audit: IamAuditCreator,
+    private readonly actorTenant: ActorTenantReader,
   ) {}
 
-  /** 운영자 성질을 주거나 거둔다. 운영자만, 남에게만 한다. 아직 이걸 부르는 라우트는 없다(운영자 API 가 연다). */
+  /**
+   * 운영자만 하는 일의 문 — 권한 키가 아니라 계정 성질을 본다(테넌트 안의 master 도 운영자가 아니면 거절). 변경과 같은
+   * 트랜잭션에서 부른다.
+   */
+  async assertOperator(actor: IamActor, tx: UserServiceTx): Promise<void> {
+    if (!(await this.tenancy.isOperator(actor.userId, tx))) throw new IamOperatorOnlyError();
+  }
+
+  /**
+   * 관리 API 가 일할 테넌트. 요청이 테넌트를 지정하지 않으면 요청자 테넌트, 지정하면 운영자만 그 테넌트로 일한다 — 다른 테넌트의
+   * 계정·부여를 만드는 것은 테넌트 역할이 아니라 운영자의 일이다.
+   */
+  async workingTenant(actor: IamActor, requested: string | undefined, tx: UserServiceTx): Promise<string> {
+    if (requested === undefined) return this.actorTenant.resolve(actor, tx);
+    await this.assertOperator(actor, tx);
+    if (!(await this.tenancy.tenantExists(requested, tx)))
+      throw new NotFoundError(`테넌트를 찾을 수 없습니다: ${requested}`);
+    return requested;
+  }
+
+  /** 운영자 성질을 주거나 거둔다. 운영자만, 남에게만 한다. */
   async setOperator(actor: IamActor, userId: string, isOperator: boolean): Promise<void> {
     await this.dbService.run(async (tx) => {
-      if (!(await this.tenancy.isOperator(actor.userId, tx))) throw new IamOperatorOnlyError();
+      await this.assertOperator(actor, tx);
       if (userId === actor.userId) throw new IamSelfChangeError();
       const user = await this.roles.findUser(userId, tx);
       if (!user) throw new NotFoundError('사용자를 찾을 수 없습니다.');

@@ -234,7 +234,8 @@ export const iamAuditLogs = pgTable(
     actorLoginId: varchar('actor_login_id', { length: 30 }),
     action: varchar('action', { length: 50 }).notNull(),
     targetType: varchar('target_type', { length: 20 }).notNull(),
-    targetId: uuid('target_id').notNull(),
+    // 사람·역할은 uuid, 테넌트·OAuth 클라이언트는 문자열 id 라 문자열로 둔다.
+    targetId: varchar('target_id', { length: 64 }).notNull(),
     targetLabel: varchar('target_label', { length: 100 }).notNull(),
     before: jsonb('before'),
     after: jsonb('after'),

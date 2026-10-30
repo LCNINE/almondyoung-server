@@ -25,6 +25,8 @@ const ALL_TENANT_CONTROLLERS: Record<string, string> = {
   'apps/user-service/src/api/iam/pii-access/pii-access-record.controller.ts': '개인정보 접속기록 적재(서비스 간)',
   'apps/user-service/src/api/iam/pii-access/pii-access.consumer.ts': 'Kafka 소비자(HTTP 아님)',
   'apps/user-service/src/api/iam/roles/role-admin.controller.ts': '역할 정의 — 전역',
+  'apps/user-service/src/api/iam/platform/platform.controller.ts': '플랫폼 운영자의 테넌트 관리 — 테넌트 밖의 일',
+  'apps/user-service/src/api/iam/platform/tenant-brand.controller.ts': '주소 → 테넌트 브랜드(로그인 전, 토큰 없음)',
   // 섞여 있다: `/users/me`·`/users/roles` 는 계정(관리자 헤더가 부른다), 고객 조회 라우트는 라우트에 표시를 단다.
   'apps/user-service/src/api/users/users.controller.ts': '계정 라우트 + 라우트 단위 표시',
 };

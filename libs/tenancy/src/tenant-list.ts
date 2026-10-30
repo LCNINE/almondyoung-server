@@ -16,9 +16,13 @@ const S3_BUCKET = { re: /^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/, rule: 'S3 버킷 �
 
 // 값이 그대로 흘러가는 곳의 문법: id 는 토큰·헤더·메트릭 라벨, slug 는 DB 이름(`core_<slug>`),
 // coreDb 는 DB 도구가 SQL 식별자로 쓴다, 버킷은 S3 이름 규칙.
+// 테넌트 행을 만드는 user-service 운영자 API 도 같은 문법으로 받는다 — 행과 목록이 같은 값이어야 한다.
+export const TENANT_ID_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
+export const TENANT_SLUG_PATTERN = /^[a-z][a-z0-9]{0,31}$/;
+
 const PATTERNS: Record<Field, { re: RegExp; rule: string }> = {
-  id: { re: /^[A-Za-z0-9_-]{1,64}$/, rule: '영문·숫자·_·- 64자 이하' },
-  slug: { re: /^[a-z][a-z0-9]{0,31}$/, rule: '소문자 영문으로 시작하는 소문자 영문·숫자 32자 이하' },
+  id: { re: TENANT_ID_PATTERN, rule: '영문·숫자·_·- 64자 이하' },
+  slug: { re: TENANT_SLUG_PATTERN, rule: '소문자 영문으로 시작하는 소문자 영문·숫자 32자 이하' },
   coreDb: { re: /^[a-z_][a-z0-9_]{0,62}$/, rule: '소문자·숫자·_ 63자 이하 (Postgres 식별자)' },
   publicBucket: S3_BUCKET,
   privateBucket: S3_BUCKET,

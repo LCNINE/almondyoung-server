@@ -4,6 +4,7 @@ import { Test } from '@nestjs/testing';
 import { IamAuditCreator } from '../audit/iam-audit.creator';
 import { IamLastOperatorError, IamOperatorOnlyError, IamSelfChangeError } from '../iam.errors';
 import { RoleRepository } from '../roles/role.repository';
+import { ActorTenantReader } from './actor-tenant.reader';
 import { PlatformOperatorManager } from './platform-operator.manager';
 import { TenancyRepository } from './tenancy.repository';
 
@@ -13,6 +14,7 @@ describe('PlatformOperatorManager', () => {
     lockOperators: jest.fn(),
     countSignInOperators: jest.fn(),
     setOperator: jest.fn(),
+    tenantExists: jest.fn(),
   };
   const roles = { findUser: jest.fn() };
   const audit = { record: jest.fn() };
@@ -34,6 +36,7 @@ describe('PlatformOperatorManager', () => {
         { provide: RoleRepository, useValue: roles },
         { provide: IamAuditCreator, useValue: audit },
         { provide: DbService, useValue: { run } },
+        { provide: ActorTenantReader, useValue: { resolve: async () => '1' } },
       ],
     }).compile();
     manager = module.get(PlatformOperatorManager);
@@ -110,6 +113,29 @@ describe('PlatformOperatorManager', () => {
     it('lets someone who is not an operator withdraw without locking', async () => {
       await expect(manager.assertCanLeave('u-someone')).resolves.toBeUndefined();
       expect(tenancy.lockOperators).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('workingTenant', () => {
+    const notOperator = { ...operator, userId: 'u-plain' };
+
+    it("is the actor's own tenant when the request names none", async () => {
+      await expect(manager.workingTenant(notOperator, undefined, tx as never)).resolves.toBe('1');
+    });
+
+    it('lets an operator work in a named tenant', async () => {
+      tenancy.tenantExists.mockResolvedValue(true);
+      await expect(manager.workingTenant(operator, 't2', tx as never)).resolves.toBe('t2');
+    });
+
+    it('refuses to let anyone else name a tenant', async () => {
+      tenancy.tenantExists.mockResolvedValue(true);
+      await expect(manager.workingTenant(notOperator, 't2', tx as never)).rejects.toBeInstanceOf(IamOperatorOnlyError);
+    });
+
+    it('reports a tenant that does not exist', async () => {
+      tenancy.tenantExists.mockResolvedValue(false);
+      await expect(manager.workingTenant(operator, 'nope', tx as never)).rejects.toBeInstanceOf(NotFoundError);
     });
   });
 });

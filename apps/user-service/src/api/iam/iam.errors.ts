@@ -109,3 +109,33 @@ export class IamStaffCannotLeaveError extends ConflictError {
     return 'IAM_STAFF_CANNOT_LEAVE';
   }
 }
+
+export class TenantExistsError extends ConflictError {
+  getErrorCode(): string {
+    return 'TENANT_EXISTS';
+  }
+}
+
+export class TenantDomainTakenError extends ConflictError {
+  getErrorCode(): string {
+    return 'TENANT_DOMAIN_TAKEN';
+  }
+}
+
+/** 준비 → 활성 ↔ 정지 밖의 전환, 준비가 아닌 테넌트 삭제. */
+export class TenantStatusConflictError extends ConflictError {
+  getErrorCode(): string {
+    return 'TENANT_STATUS_CONFLICT';
+  }
+}
+
+/** 운영자가 지금 일하는 테넌트를 정지하면 정지를 풀 사람의 세션도 함께 끊긴다. */
+export class TenantOwnSuspendError extends ConflictError {
+  constructor() {
+    super('지금 일하는 테넌트는 정지할 수 없습니다.');
+  }
+
+  getErrorCode(): string {
+    return 'TENANT_OWN_SUSPEND';
+  }
+}

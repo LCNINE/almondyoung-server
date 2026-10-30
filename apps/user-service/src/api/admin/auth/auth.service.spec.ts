@@ -2,7 +2,9 @@ import { DbService } from '@app/db';
 import { createCheckpointsForTesting, PermissionCheckpoints } from '@app/authorization';
 import { ForbiddenError, NotFoundError } from '@app/shared';
 import { Test } from '@nestjs/testing';
+import { userServiceSchema } from 'apps/user-service/database/drizzle/schema';
 import { RoleAssignmentManager } from '../../iam/assignments/role-assignment.manager';
+import { PlatformOperatorManager } from '../../iam/tenancy/platform-operator.manager';
 import { UsersService } from '../../users/users.service';
 import { AuthService } from './auth.service';
 
@@ -23,6 +25,7 @@ describe('AuthService.changePassword', () => {
         { provide: DbService, useValue: { db } },
         { provide: UsersService, useValue: usersService },
         { provide: RoleAssignmentManager, useValue: { assignOnCreate: jest.fn() } },
+        { provide: PlatformOperatorManager, useValue: { assertOperator: jest.fn() } },
         { provide: PermissionCheckpoints, useValue: createCheckpointsForTesting(byRole) },
       ],
     }).compile();
@@ -123,6 +126,7 @@ describe('AuthService.createAccount', () => {
         { provide: DbService, useValue: { run } },
         { provide: UsersService, useValue: usersService },
         { provide: RoleAssignmentManager, useValue: assignments },
+        { provide: PlatformOperatorManager, useValue: { assertOperator: jest.fn() } },
         { provide: PermissionCheckpoints, useValue: createCheckpointsForTesting({}) },
       ],
     }).compile();
@@ -134,7 +138,7 @@ describe('AuthService.createAccount', () => {
       { username: '새사람', nickname: '새', loginId: 'newbie', email: 'n@e.w', roleId: 'r-intern' },
       actor,
     );
-    expect(assignments.assignOnCreate).toHaveBeenCalledWith(tx, actor, 'u-new', 'r-intern');
+    expect(assignments.assignOnCreate).toHaveBeenCalledWith(tx, actor, 'u-new', 'r-intern', undefined);
     expect(usersService.assignUserRole).not.toHaveBeenCalled();
   });
 
@@ -147,5 +151,74 @@ describe('AuthService.createAccount', () => {
       ),
     ).rejects.toBeInstanceOf(ForbiddenError);
     expect(usersService.updateMyProfile).not.toHaveBeenCalled();
+  });
+});
+
+describe('AuthService.createAccount — 운영자가 대행해 만드는 직원 계정', () => {
+  const inserted: { table: unknown; values: Record<string, unknown> }[] = [];
+  const tx = {
+    insert: jest.fn((table: unknown) => ({
+      values: (values: Record<string, unknown>) => {
+        inserted.push({ table, values });
+        return {
+          returning: async () => [{ id: 'u-new', loginId: values.loginId, email: values.email, username: 'x' }],
+        };
+      },
+    })),
+  };
+  const run = jest.fn(async (work: (t: unknown) => Promise<unknown>) => work(tx));
+  const usersService = { findUserByLoginId: jest.fn(), findUserByEmail: jest.fn(), updateMyProfile: jest.fn() };
+  const roleAssignments = { assignOnCreate: jest.fn() };
+  const operators = { assertOperator: jest.fn() };
+  const actor = { userId: 'u-op', loginId: 'op', roles: ['master'], userAgent: null, requestId: null, ip: null };
+  const dto = {
+    username: '홍길동',
+    nickname: '홍길동',
+    loginId: 'staff1',
+    email: 'staff1@example.test',
+    roleId: 'r-staff',
+  };
+  let service: AuthService;
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    inserted.length = 0;
+    usersService.findUserByLoginId.mockResolvedValue(null);
+    usersService.findUserByEmail.mockResolvedValue(null);
+    const module = await Test.createTestingModule({
+      providers: [
+        AuthService,
+        { provide: DbService, useValue: { run } },
+        { provide: UsersService, useValue: usersService },
+        { provide: RoleAssignmentManager, useValue: roleAssignments },
+        { provide: PlatformOperatorManager, useValue: operators },
+        { provide: PermissionCheckpoints, useValue: createCheckpointsForTesting({}) },
+      ],
+    }).compile();
+    service = module.get(AuthService);
+  });
+
+  it('forces a password change by default and gives the first role in the actor tenant', async () => {
+    const { initialPassword } = await service.createAccount(dto, actor);
+    expect(initialPassword).toHaveLength(16);
+    expect(inserted[0].values).toMatchObject({ loginId: 'staff1', mustChangePassword: true });
+    expect(roleAssignments.assignOnCreate).toHaveBeenCalledWith(tx, actor, 'u-new', 'r-staff', undefined);
+    expect(operators.assertOperator).not.toHaveBeenCalled();
+  });
+
+  it('makes the account a member of a named tenant (the operator rule lives in the grant)', async () => {
+    await service.createAccount({ ...dto, tenantId: 't2' }, actor);
+    expect(roleAssignments.assignOnCreate).toHaveBeenCalledWith(tx, actor, 'u-new', 'r-staff', 't2');
+  });
+
+  it('leaves the change unforced only for an operator (the check account)', async () => {
+    await service.createAccount({ ...dto, tenantId: 't2', forcePasswordChange: false }, actor);
+    expect(operators.assertOperator).toHaveBeenCalledWith(actor, tx);
+    expect(inserted[0].values).toMatchObject({ mustChangePassword: false });
+  });
+
+  it('writes only the account row — no UserCreated (a customer sign-up event) goes out', async () => {
+    await service.createAccount({ ...dto, tenantId: 't2' }, actor);
+    expect(inserted.map((i) => i.table)).toEqual([userServiceSchema.users]);
   });
 });

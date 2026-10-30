@@ -103,6 +103,7 @@ describeIfDb('role assignments against a real database', () => {
     const roleRepository = new RoleRepository(dbService);
     const tenancy = new TenancyRepository(dbService);
     const audit = new IamAuditCreator(new IamAuditRepository(dbService));
+    operators = new PlatformOperatorManager(dbService, tenancy, roleRepository, audit, new ActorTenantReader(tenancy));
     manager = new RoleAssignmentManager(
       dbService,
       roleRepository,
@@ -110,9 +111,8 @@ describeIfDb('role assignments against a real database', () => {
       new MyPermissionsReader(snapshots, iam),
       snapshots,
       tenancy,
-      new ActorTenantReader(tenancy),
+      operators,
     );
-    operators = new PlatformOperatorManager(dbService, tenancy, roleRepository, audit);
   });
   beforeEach(cleanup);
   afterAll(async () => {
