@@ -18,6 +18,7 @@ describe('buildConsolidationProgressSources', () => {
       waybills: [{ shipmentId: 'a', id: 'wb-1', status: 'registered', trackingNo: 'T-1' }],
       reconcileStates: [{ shipmentId: 'a', gaveUpAt, nextCheckAt }],
     });
+
     expect(result).toEqual([
       {
         shipmentId: 'a',
@@ -57,6 +58,7 @@ describe('buildConsolidationProgressSources', () => {
         { shipmentId: 'a', id: 'wb-old', status: 'registered', trackingNo: 'T-old' },
       ],
     });
+
     expect(source).toMatchObject({ batchId: 'new', workItemStatus: 'picking', waybillId: 'wb-new', trackingNo: null });
   });
 
@@ -66,6 +68,7 @@ describe('buildConsolidationProgressSources', () => {
       sourceIds: ['a'],
       reconcileStates: [{ shipmentId: 'a', gaveUpAt: null, nextCheckAt: new Date('2026-10-29T03:00:00.000Z') }],
     });
+
     expect(source).toMatchObject({ gaveUpAt: null, nextCheckAt: '2026-10-29T03:00:00.000Z' });
   });
 
@@ -80,6 +83,7 @@ describe('buildConsolidationProgressSources', () => {
       ],
       workItems: [{ shipmentId: 'x', batchId: 'batch-x', status: 'queued' }],
     });
+
     expect(result).toHaveLength(1);
     expect(result[0]).toMatchObject({ blockers: ['ACTIVE_INVOICE', 'CUSTODY_REQUIRES_UNPICK'], batchId: null });
   });
@@ -99,6 +103,7 @@ describe('buildConsolidationProgressResponse', () => {
       operation: { id: 'op', status: 'completed' },
       members,
     });
+
     expect(result).toMatchObject({ operationId: 'op', status: 'completed', targetShipmentId: 't' });
     expect(result.sources.map((s) => s.shipmentId)).toEqual(['a', 'b']);
   });
@@ -110,6 +115,7 @@ describe('buildConsolidationProgressResponse', () => {
       members,
       blockers: [{ shipmentId: 'a', codes: ['ACTIVE_INVOICE'] }],
     });
+
     expect(result).toMatchObject({ status, targetShipmentId: null });
     expect(result.sources.map((s) => [s.shipmentId, s.blockers])).toEqual([
       ['a', ['ACTIVE_INVOICE']],

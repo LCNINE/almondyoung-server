@@ -52,7 +52,8 @@ export const consolidationClient = {
     shipmentId: string
   ): Promise<ConsolidationOptionsResponse> => {
     const res = await client.get(
-      `${ALMONDYOUNG_API_BASE_URL}/shipments/${encodeURIComponent(shipmentId)}/consolidation-options`
+      `${ALMONDYOUNG_API_BASE_URL}/shipments/consolidation-options`,
+      { params: { shipmentId } }
     );
     return res.data;
   },

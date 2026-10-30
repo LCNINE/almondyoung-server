@@ -1,4 +1,4 @@
-import { NotFoundException } from '@nestjs/common';
+import { ArgumentMetadata, NotFoundException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import { createGlobalValidationPipe } from '../../../platform/http/validation-pipe';
 import { GUARDS_METADATA } from '@nestjs/common/constants';
@@ -11,6 +11,7 @@ import {
 import { register } from 'prom-client';
 import { ConsolidationController } from '../controllers/consolidation.controller';
 import {
+  ConsolidationOptionsQueryDto,
   ConsolidationOptionsResponseDto,
   ConsolidationProgressResponseDto,
   CreateConsolidationDto,
@@ -221,8 +222,17 @@ describe('ConsolidationService command boundary', () => {
     };
     const controller = await controllerWith({ options });
 
-    await expect(controller.findOptions(first)).resolves.toBe(response);
+    await expect(controller.findOptions({ shipmentId: first })).resolves.toBe(response);
     expect(options.findOptions).toHaveBeenCalledWith(first);
+  });
+
+  it('rejects consolidation options without a UUID shipmentId query', async () => {
+    const pipe = createGlobalValidationPipe();
+    const meta: ArgumentMetadata = { type: 'query', metatype: ConsolidationOptionsQueryDto };
+
+    await expect(pipe.transform({}, meta)).rejects.toThrow();
+    await expect(pipe.transform({ shipmentId: 'not-a-uuid' }, meta)).rejects.toThrow();
+    await expect(pipe.transform({ shipmentId: first }, meta)).resolves.toEqual({ shipmentId: first });
   });
 
   it('routes consolidation progress through the service layer', async () => {

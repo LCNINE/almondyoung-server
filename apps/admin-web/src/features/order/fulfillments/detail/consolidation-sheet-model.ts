@@ -46,8 +46,42 @@ export type OptionCard = {
   memoMark: '(같음)' | '(다름)' | '';
 };
 
+export type SheetPermissions = {
+  canOverrideRecipient: boolean;
+  canReopen: boolean;
+};
+
+const NEEDS_REOPEN_NOTE =
+  '출고 준비가 시작된 주문이라 합치려면 출고 재개방 권한이 필요해요';
+
+// 서버는 원본 중 하나라도 draft 가 아니거나 배치·송장이 걸려 있으면 재개방 권한을 요구한다.
+export function needsReopenPermission(
+  sources: readonly ConsolidationOptionShipment[],
+  canReopen: boolean
+): boolean {
+  return !canReopen && sources.some(needsUnwindSteps);
+}
+
 // 표시와 선택 가능 여부는 서버 reason 으로만 정한다. 받는 사람 문자열은 가려져 올 수 있다.
 export function optionCard(
+  option: ConsolidationOption,
+  permissions: SheetPermissions
+): OptionCard {
+  const card = reasonCard(option, permissions.canOverrideRecipient);
+
+  if (card.pickable && needsReopenPermission([option], permissions.canReopen)) {
+    return {
+      ...card,
+      pickable: false,
+      tone: 'blocked',
+      note: NEEDS_REOPEN_NOTE,
+    };
+  }
+
+  return card;
+}
+
+function reasonCard(
   option: ConsolidationOption,
   canOverrideRecipient: boolean
 ): OptionCard {
@@ -104,9 +138,9 @@ export function optionCard(
 export function togglePick(
   picked: readonly string[],
   option: ConsolidationOption,
-  canOverrideRecipient: boolean
+  permissions: SheetPermissions
 ): string[] {
-  if (!optionCard(option, canOverrideRecipient).pickable) {
+  if (!optionCard(option, permissions).pickable) {
     return [...picked];
   }
 
@@ -120,6 +154,7 @@ export function togglePick(
 export function step2Blocker(input: {
   hasLostCommand: boolean;
   pickedCount: number;
+  needsReopen: boolean;
   hasMemoChoices: boolean;
   memoFrom: string;
   reason: string;
@@ -131,6 +166,10 @@ export function step2Blocker(input: {
   // 다시 읽은 뒤 고른 주문이 모두 빠지면 원본 하나짜리 요청이 나가지 않게 막는다.
   if (input.pickedCount === 0) {
     return '같이 보낼 주문이 없어졌어요. 다시 골라 주세요';
+  }
+
+  if (input.needsReopen) {
+    return '출고 준비가 시작된 주문이 있어 합치려면 출고 재개방 권한이 필요해요';
   }
 
   if (input.hasMemoChoices && !input.memoFrom) {

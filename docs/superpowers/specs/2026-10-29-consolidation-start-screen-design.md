@@ -107,7 +107,7 @@
 
 둘 다 `apps/core` fulfillment 의 consolidation 컨트롤러에 둔다. 상태를 바꾸지 않는다.
 
-### `GET /shipments/:shipmentId/consolidation-options`
+### `GET /shipments/consolidation-options?shipmentId=<uuid>`
 
 기준 상자와 같은 고객의 다른 상자를 분류해 돌려준다.
 

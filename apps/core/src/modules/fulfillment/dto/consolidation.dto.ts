@@ -1,4 +1,4 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
   ArrayMinSize,
@@ -24,6 +24,11 @@ export class ConsolidationCandidateQueryDto {
   @IsUUID()
   @IsOptional()
   sourceShipmentId?: string;
+}
+
+export class ConsolidationOptionsQueryDto {
+  @IsUUID()
+  shipmentId: string;
 }
 
 export class ConsolidationSourceDto {
@@ -73,6 +78,24 @@ export type ConsolidationActor = {
   roles: string[];
 };
 
+/** 상자에 저장된 수령인 스냅샷. 오래된 상자는 일부 칸이 비거나 통째로 빈 객체일 수 있다 */
+export class ConsolidationRecipientSnapshotDto {
+  @ApiPropertyOptional({ description: '수령인 이름' })
+  recipientName?: string;
+  @ApiPropertyOptional({ description: '수령인 연락처' })
+  phone?: string;
+  @ApiPropertyOptional({ description: '우편번호' })
+  postalCode?: string;
+  @ApiPropertyOptional({ description: '도로명 주소' })
+  roadAddress?: string;
+  @ApiPropertyOptional({ description: '상세 주소' })
+  detailAddress?: string;
+  @ApiPropertyOptional({ description: '배송 메모' })
+  deliveryNote?: string;
+  @ApiPropertyOptional({ description: '개인통관고유부호' })
+  personalCustomsCode?: string;
+}
+
 export class ConsolidationOptionShipmentDto {
   shipmentId: string;
   status: string;
@@ -81,8 +104,8 @@ export class ConsolidationOptionShipmentDto {
   @ApiProperty({ description: '첫 상품명 외 N건' })
   itemSummary: string;
   totalQty: number;
-  @ApiProperty({ type: Object, description: '상자의 수령인 스냅샷. 비어 있으면 빈 객체' })
-  recipientSnapshot: Record<string, unknown>;
+  @ApiProperty({ type: ConsolidationRecipientSnapshotDto, description: '상자의 수령인 스냅샷. 비어 있으면 빈 객체' })
+  recipientSnapshot: ConsolidationRecipientSnapshotDto;
   @ApiProperty({ type: String, nullable: true, description: '끝나지 않은 배치 작업 항목의 배치' })
   batchId: string | null;
   @ApiProperty({ type: String, nullable: true, description: '종료되지 않은 송장의 번호' })

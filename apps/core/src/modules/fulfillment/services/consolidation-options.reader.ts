@@ -7,6 +7,7 @@ import {
   ConsolidationOptionDto,
   ConsolidationOptionShipmentDto,
   ConsolidationOptionsResponseDto,
+  ConsolidationRecipientSnapshotDto,
 } from '../dto/consolidation.dto';
 import { WAYBILL_TERMINAL_STATUSES } from '../waybill/waybill.constants';
 import {
@@ -39,7 +40,7 @@ interface ShipmentProgress {
 const OPTION_STATUSES: ShipmentRow['status'][] = ['draft', 'planned'];
 const CLOSED_WORK_ITEM_STATUSES = ['excluded', 'completed'] as const;
 
-function asRecipient(value: unknown): Record<string, unknown> {
+function asRecipient(value: unknown): ConsolidationRecipientSnapshotDto {
   return value !== null && typeof value === 'object' && !Array.isArray(value) ? { ...value } : {};
 }
 
@@ -61,6 +62,7 @@ export class ConsolidationOptionsReader {
         .from(wmsTables.shipments)
         .where(eq(wmsTables.shipments.id, shipmentId))
         .limit(1);
+
       if (!source) throw new NotFoundError(`Shipment ${shipmentId} not found`);
 
       const sourceLines = await this.loadLines(trx, [source.id]);
@@ -68,6 +70,7 @@ export class ConsolidationOptionsReader {
       const candidateIds = await this.candidateIds(trx, source, sourceLines, sourceKey);
       const candidateLines = await this.loadLines(trx, candidateIds);
       const linesByShipment = new Map<string, OptionLine[]>();
+
       for (const line of candidateLines) {
         linesByShipment.set(line.shipmentId, [...(linesByShipment.get(line.shipmentId) ?? []), line]);
       }
@@ -82,20 +85,27 @@ export class ConsolidationOptionsReader {
       const progress = await this.loadProgress(trx, [source.id, ...candidateIds]);
 
       const options: ConsolidationOptionDto[] = [];
+
       for (const candidate of candidates) {
         const lines = linesByShipment.get(candidate.id) ?? [];
+
         if (lines.length === 0) continue;
+
         // 창고가 직접 내보내지 않는 라인이 섞인 상자는 합포장 대상이 아니다.
         if (lines.some((line) => line.fulfillmentMode !== 'in_house' || line.skuStockType === 'drop_shipped')) continue;
+
         const optionKey = consolidationCustomerKey(lines);
+
         // DB 조건은 주문 하나만 맞으면 상자를 고르므로, 상자 전체의 고객 키로 다시 본다.
         if (sourceKey && optionKey && sourceKey !== optionKey) continue;
+
         const verdict = classifyConsolidationOption({
           sourceRecipient: source.recipientSnapshot,
           sourceCustomerKey: sourceKey,
           optionRecipient: candidate.recipientSnapshot,
           optionCustomerKey: optionKey,
         });
+
         options.push({ ...this.summary(candidate, lines, progress), ...verdict });
       }
 
@@ -115,6 +125,7 @@ export class ConsolidationOptionsReader {
     sourceKey: string | null,
   ): Promise<string[]> {
     if (!source.warehouseId || !source.shippingProfileId || sourceLines.length === 0) return [];
+
     const customerIds = uniqueInOrder(sourceLines.flatMap((line) => (line.customerId ? [line.customerId] : [])));
     const phones = uniqueInOrder(
       sourceLines.map((line) => customerPhoneDigits(line.customerPhone)).filter((digits) => digits !== ''),
@@ -123,10 +134,12 @@ export class ConsolidationOptionsReader {
     // JS 의 trim + 공백 접기 + 소문자와 같은 정규화. 이름 비교도 DB 에서 끝내야 이름이 다른 손님을 읽지 않는다.
     const contactName = sql<string>`lower(regexp_replace(regexp_replace(${wmsTables.salesOrders.customerName}, '^\\s+|\\s+$', '', 'g'), '\\s+', ' ', 'g'))`;
     let customerFilter: SQL | undefined;
+
     if (customerIds.length > 0) {
       customerFilter = inArray(wmsTables.salesOrders.customerId, customerIds);
     } else if (sourceKey) {
       const [first] = sourceLines;
+
       customerFilter = and(
         isNull(wmsTables.salesOrders.customerId),
         eq(contactName, customerContactName(first.customerName)),
@@ -135,6 +148,7 @@ export class ConsolidationOptionsReader {
     } else if (phones.length > 0) {
       customerFilter = and(isNull(wmsTables.salesOrders.customerId), inArray(phoneDigits, phones));
     }
+
     if (!customerFilter) return [];
 
     const rows = await trx
@@ -161,11 +175,13 @@ export class ConsolidationOptionsReader {
         ),
       )
       .orderBy(asc(wmsTables.shipments.id));
+
     return rows.map((row) => row.id);
   }
 
   private async loadLines(trx: DbTx, shipmentIds: string[]): Promise<OptionLine[]> {
     if (shipmentIds.length === 0) return [];
+
     return trx
       .select({
         shipmentId: wmsTables.shipmentLines.shipmentId,
@@ -221,12 +237,19 @@ export class ConsolidationOptionsReader {
         .orderBy(desc(wmsTables.waybills.createdAt)),
     ]);
     const batchByShipment = new Map<string, string>();
-    for (const row of workItems) batchByShipment.set(row.shipmentId, row.batchId);
-    const trackingByShipment = new Map<string, string>();
-    for (const row of waybills) {
-      if (row.trackingNo && !trackingByShipment.has(row.shipmentId))
-        trackingByShipment.set(row.shipmentId, row.trackingNo);
+
+    for (const row of workItems) {
+      batchByShipment.set(row.shipmentId, row.batchId);
     }
+
+    const trackingByShipment = new Map<string, string>();
+
+    for (const row of waybills) {
+      if (row.trackingNo && !trackingByShipment.has(row.shipmentId)) {
+        trackingByShipment.set(row.shipmentId, row.trackingNo);
+      }
+    }
+
     return { batchByShipment, trackingByShipment };
   }
 
@@ -236,12 +259,14 @@ export class ConsolidationOptionsReader {
     progress: ShipmentProgress,
   ): ConsolidationOptionShipmentDto {
     const names = lines.map((line) => line.skuName);
+
     return {
       shipmentId: shipment.id,
       status: shipment.status,
       salesOrderNos: uniqueInOrder(
         lines.flatMap((line) => {
           const orderNo = line.displayOrderNo ?? line.channelOrderId;
+
           return orderNo ? [orderNo] : [];
         }),
       ),

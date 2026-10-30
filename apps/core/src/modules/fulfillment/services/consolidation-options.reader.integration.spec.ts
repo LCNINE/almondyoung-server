@@ -30,8 +30,13 @@ describeIfDb('ConsolidationOptionsReader (DB integration)', () => {
   let reader: ConsolidationOptionsReader;
 
   beforeAll(() => {
-    ({ sql: client, db } = makeDb(DATABASE_URL as string));
+    if (!DATABASE_URL) {
+      throw new Error('DATABASE_URL is required');
+    }
+
+    ({ sql: client, db } = makeDb(DATABASE_URL));
     const dbService = makeDbService(db);
+
     wired = wireLogistics(dbService, 'v2');
     reader = new ConsolidationOptionsReader(dbService);
   });
@@ -51,6 +56,7 @@ describeIfDb('ConsolidationOptionsReader (DB integration)', () => {
         createConsolidationSource(tx, wired, b, { quantity: 1, customerId: owner, recipient });
 
       const source = await make();
+
       await setStatus(tx, source.shipment.id, 'planned');
       const [batch] = await tx
         .insert(wmsTables.outboundBatches)
@@ -60,8 +66,10 @@ describeIfDb('ConsolidationOptionsReader (DB integration)', () => {
           pickingMethod: 'individual',
         })
         .returning();
+
       await tx.insert(wmsTables.outboundBatchWorkItems).values({ batchId: batch.id, shipmentId: source.shipment.id });
       const trackingNo = `consolidation-options-${randomUUID()}`;
+
       await tx.insert(wmsTables.waybills).values({
         shipmentId: source.shipment.id,
         source: 'manual',
@@ -75,13 +83,16 @@ describeIfDb('ConsolidationOptionsReader (DB integration)', () => {
       const same = await make();
       const memo = await make({ ...CONSOLIDATION_RECIPIENT, deliveryNote: '문 앞에 놔 주세요' });
       const addr = await make({ ...CONSOLIDATION_RECIPIENT, roadAddress: 'Seoul other road 9' });
+
       await setStatus(tx, addr.shipment.id, 'planned');
 
       const otherCustomer = await make(CONSOLIDATION_RECIPIENT, randomUUID());
       const shipped = await make();
+
       await setStatus(tx, shipped.shipment.id, 'shipped');
 
       const { warehouseId: otherWarehouseId, locationId } = await seedWarehouseWithZone(tx);
+
       await tx.insert(wmsTables.stockLedgers).values({
         skuId: base.skuId,
         warehouseId: otherWarehouseId,
@@ -116,10 +127,13 @@ describeIfDb('ConsolidationOptionsReader (DB integration)', () => {
       );
       expect(res.options).toHaveLength(3);
       const ids = res.options.map((o) => o.shipmentId);
+
       for (const excluded of [otherCustomer, shipped, otherWarehouse, source]) {
         expect(ids).not.toContain(excluded.shipment.id);
       }
+
       const sameOption = res.options.find((o) => o.shipmentId === same.shipment.id);
+
       expect(sameOption).toMatchObject({ status: 'draft', batchId: null, waybillTrackingNo: null });
     });
   });
@@ -130,10 +144,12 @@ describeIfDb('ConsolidationOptionsReader (DB integration)', () => {
       const phone = `010-${randomUUID().replace(/\D/g, '').slice(0, 8)}`;
       const guest = async (customerName: string, customerPhone: string) => {
         const fixture = await createConsolidationSource(tx, wired, base, { quantity: 1, customerId: randomUUID() });
+
         await tx
           .update(wmsTables.salesOrders)
           .set({ customerId: null, customerName, customerPhone })
           .where(eq(wmsTables.salesOrders.id, fixture.salesOrderId));
+
         return fixture;
       };
 

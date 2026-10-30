@@ -21,7 +21,9 @@ export class ConsolidationProgressReader {
   async findForShipment(shipmentId: string, tx?: DbTx): Promise<ConsolidationProgressResponseDto | null> {
     return this.dbService.run(async (trx) => {
       const operation = await this.latestOperation(trx, shipmentId);
+
       if (!operation) return null;
+
       const members = await trx
         .select({
           shipmentId: wmsTables.shipmentOperationMembers.shipmentId,
@@ -78,6 +80,7 @@ export class ConsolidationProgressReader {
             ),
           ),
       ]);
+
       return buildConsolidationProgressResponse({
         operation,
         members,
@@ -107,6 +110,7 @@ export class ConsolidationProgressReader {
       )
       .orderBy(desc(wmsTables.shipmentOperations.createdAt), desc(wmsTables.shipmentOperations.id))
       .limit(1);
+
     return row ?? null;
   }
 }

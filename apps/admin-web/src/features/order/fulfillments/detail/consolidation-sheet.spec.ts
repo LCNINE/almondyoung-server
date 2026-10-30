@@ -8,11 +8,13 @@ import {
   freshCommand,
   isStaleVersionConflict,
   keptAfterFailure,
+  needsReopenPermission,
   needsUnwindSteps,
   optionCard,
   showsConsolidationButton,
   step2Blocker,
   togglePick,
+  type SheetPermissions,
 } from './consolidation-sheet-model';
 
 const shipment = (
@@ -35,12 +37,23 @@ const shipment = (
 
 const option = (
   shipmentId: string,
-  reason: ConsolidationOptionReason
+  reason: ConsolidationOptionReason,
+  overrides: Partial<ConsolidationOptionShipment> = {}
 ): ConsolidationOption => ({
-  ...shipment(shipmentId),
+  ...shipment(shipmentId, overrides),
   reason,
   selectable: reason === 'ok' || reason === 'memo_differs',
 });
+
+const all: SheetPermissions = { canOverrideRecipient: true, canReopen: true };
+const noOverride: SheetPermissions = {
+  canOverrideRecipient: false,
+  canReopen: true,
+};
+const noReopen: SheetPermissions = {
+  canOverrideRecipient: true,
+  canReopen: false,
+};
 
 describe('합포장 버튼', () => {
   const both = { canConsolidate: true, canReopen: true };
@@ -99,12 +112,12 @@ describe('합포장 버튼', () => {
 
 describe('1단계 주문 카드', () => {
   it('배송지가 다른 주문은 고를 수 없다', () => {
-    const card = optionCard(option('b', 'address_differs'), true);
+    const card = optionCard(option('b', 'address_differs'), all);
 
     expect(card.pickable).toBe(false);
     expect(card.note).toBe('배송지가 달라서 같이 보낼 수 없어요.');
     expect(card.addressMark).toBe('(다름)');
-    expect(togglePick([], option('b', 'address_differs'), true)).toEqual([]);
+    expect(togglePick([], option('b', 'address_differs'), all)).toEqual([]);
   });
 
   const lacking: ConsolidationOptionReason[] = [
@@ -113,7 +126,7 @@ describe('1단계 주문 카드', () => {
   ];
 
   it.each(lacking)('%s 는 정보가 부족하다고 쓰고 고를 수 없다', (reason) => {
-    const card = optionCard(option('b', reason), true);
+    const card = optionCard(option('b', reason), all);
 
     expect(card.pickable).toBe(false);
     expect(card.note).toBe('정보가 부족해 합칠 수 없어요.');
@@ -121,15 +134,15 @@ describe('1단계 주문 카드', () => {
 
   it('카드 어디를 눌러도 체크된다', () => {
     const ok = option('b', 'ok');
-    const picked = togglePick([], ok, false);
+    const picked = togglePick([], ok, noOverride);
 
     expect(picked).toEqual(['b']);
-    expect(togglePick(picked, ok, false)).toEqual([]);
+    expect(togglePick(picked, ok, noOverride)).toEqual([]);
   });
 
   it('(같음)/(다름)은 서버 reason 으로만 붙인다', () => {
-    const same = optionCard(option('b', 'ok'), false);
-    const memo = optionCard(option('c', 'memo_differs'), true);
+    const same = optionCard(option('b', 'ok'), noOverride);
+    const memo = optionCard(option('c', 'memo_differs'), all);
 
     expect([same.addressMark, same.memoMark]).toEqual(['(같음)', '(같음)']);
     expect([memo.addressMark, memo.memoMark]).toEqual(['(같음)', '(다름)']);
@@ -137,20 +150,55 @@ describe('1단계 주문 카드', () => {
 
   it('override_recipient 가 없으면 memo_differs 카드도 비활성이고 이유를 쓴다', () => {
     const memo = option('c', 'memo_differs');
-    const card = optionCard(memo, false);
+    const card = optionCard(memo, noOverride);
 
     expect(card.pickable).toBe(false);
     expect(card.note).toBe(
       '배송 메모가 달라 합치려면 수령인 변경 권한이 필요해요'
     );
-    expect(togglePick([], memo, false)).toEqual([]);
+    expect(togglePick([], memo, noOverride)).toEqual([]);
   });
 
   it('override_recipient 가 있으면 memo_differs 카드를 고를 수 있다', () => {
     const memo = option('c', 'memo_differs');
 
-    expect(optionCard(memo, true).pickable).toBe(true);
-    expect(togglePick([], memo, true)).toEqual(['c']);
+    expect(optionCard(memo, all).pickable).toBe(true);
+    expect(togglePick([], memo, all)).toEqual(['c']);
+  });
+
+  it('재개방 권한이 없으면 계획이 확정된 주문은 고를 수 없고 이유를 쓴다', () => {
+    const planned = option('p', 'ok', { status: 'planned' });
+    const card = optionCard(planned, noReopen);
+
+    expect(card.pickable).toBe(false);
+    expect(card.tone).toBe('blocked');
+    expect(card.note).toBe(
+      '출고 준비가 시작된 주문이라 합치려면 출고 재개방 권한이 필요해요'
+    );
+    expect(togglePick([], planned, noReopen)).toEqual([]);
+  });
+
+  it('재개방 권한이 없으면 배치나 송장이 걸린 draft 주문도 고를 수 없다', () => {
+    expect(
+      optionCard(option('b', 'ok', { batchId: 'batch-1' }), noReopen).pickable
+    ).toBe(false);
+    expect(
+      optionCard(option('w', 'ok', { waybillTrackingNo: 'T1' }), noReopen)
+        .pickable
+    ).toBe(false);
+  });
+
+  it('재개방 권한이 없어도 draft 끼리는 합칠 수 있다', () => {
+    const draft = option('d', 'ok');
+
+    expect(optionCard(draft, noReopen).pickable).toBe(true);
+    expect(togglePick([], draft, noReopen)).toEqual(['d']);
+  });
+
+  it('재개방 권한이 있으면 계획이 확정된 주문도 고를 수 있다', () => {
+    expect(
+      optionCard(option('p', 'ok', { status: 'planned' }), all).pickable
+    ).toBe(true);
   });
 });
 
@@ -158,6 +206,7 @@ describe('2단계 요청 버튼', () => {
   const ready = {
     hasLostCommand: false,
     pickedCount: 1,
+    needsReopen: false,
     hasMemoChoices: false,
     memoFrom: 'a',
     reason: '고객 요청',
@@ -180,15 +229,30 @@ describe('2단계 요청 버튼', () => {
 
   it('다시 읽은 뒤 고른 주문이 모두 빠지면 요청이 꺼지고 다시 고르라고 한다', () => {
     const memo = option('c', 'memo_differs');
-    const picked = togglePick([], memo, true);
+    const picked = togglePick([], memo, all);
     const stillPickable = [memo].filter(
       (entry) =>
-        picked.includes(entry.shipmentId) && optionCard(entry, false).pickable
+        picked.includes(entry.shipmentId) &&
+        optionCard(entry, noOverride).pickable
     );
 
     expect(stillPickable).toEqual([]);
     expect(step2Blocker({ ...ready, pickedCount: stillPickable.length })).toBe(
       '같이 보낼 주문이 없어졌어요. 다시 골라 주세요'
+    );
+  });
+
+  it('draft 원본에 계획이 확정된 주문이 섞이면 재개방 권한 없이는 요청이 꺼진다', () => {
+    const sources = [shipment('a'), shipment('p', { status: 'planned' })];
+    const needsReopen = needsReopenPermission(sources, false);
+
+    expect(needsReopen).toBe(true);
+    expect(step2Blocker({ ...ready, needsReopen })).toBe(
+      '출고 준비가 시작된 주문이 있어 합치려면 출고 재개방 권한이 필요해요'
+    );
+    expect(needsReopenPermission(sources, true)).toBe(false);
+    expect(needsReopenPermission([shipment('a'), shipment('b')], false)).toBe(
+      false
     );
   });
 

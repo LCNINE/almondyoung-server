@@ -50,8 +50,10 @@ export function buildConsolidationProgressSources(input: {
   const states = firstByShipment(input.reconcileStates);
 
   const blockers = new Map<string, Set<string>>();
+
   for (const row of input.blockers) {
     const codes = blockers.get(row.shipmentId) ?? new Set<string>();
+
     row.codes.forEach((code) => codes.add(code));
     blockers.set(row.shipmentId, codes);
   }

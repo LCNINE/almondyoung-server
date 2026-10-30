@@ -45,6 +45,7 @@ describe('consolidationCustomerKey', () => {
     customerName: customer.customerName ?? null,
     customerPhone: customer.customerPhone ?? null,
   });
+
   it('customerId 가 하나면 그것으로 맺는다', () =>
     expect(consolidationCustomerKey([line('o1', { customerId: 'c1' }), line('o2', { customerId: 'c1' })])).toBe(
       'id:c1',

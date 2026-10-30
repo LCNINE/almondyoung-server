@@ -29,8 +29,10 @@ describeIfDb('ConsolidationProgressReader (DB integration)', () => {
 
   beforeAll(() => {
     if (!DATABASE_URL) throw new Error('DATABASE_URL is required');
+
     ({ sql: client, db } = makeDb(DATABASE_URL));
     const dbService = makeDbService(db);
+
     wired = wireLogistics(dbService, 'v2');
     consolidation = makeConsolidationService(dbService, wired);
     reader = new ConsolidationProgressReader(dbService, consolidation);
@@ -60,6 +62,7 @@ describeIfDb('ConsolidationProgressReader (DB integration)', () => {
         .returning();
       const nextCheckAt = new Date('2026-10-29T02:00:00.000Z');
       const gaveUpAt = new Date('2026-10-29T01:00:00.000Z');
+
       await tx.insert(wmsTables.shipmentReconcileState).values({
         rule: 'resume-pending-consolidation',
         shipmentId: sourceA,
@@ -75,9 +78,11 @@ describeIfDb('ConsolidationProgressReader (DB integration)', () => {
       });
 
       const pending = await reader.findForShipment(sourceA, tx);
+
       expect(pending).toMatchObject({ operationId: p.operationId, status: 'pending', targetShipmentId: null });
       expect(pending?.sources.map((s) => s.shipmentId).sort()).toEqual([sourceA, sourceB].sort());
       const a = pending?.sources.find((s) => s.shipmentId === sourceA);
+
       expect(a?.blockers).toEqual(expect.arrayContaining(['ACTIVE_INVOICE', 'ACTIVE_WORK_ITEM']));
       expect(a).toMatchObject({
         batchId: batch.id,
@@ -104,6 +109,7 @@ describeIfDb('ConsolidationProgressReader (DB integration)', () => {
       await consolidation.resumePending(p.operationId, tx);
 
       const done = await reader.findForShipment(sourceA, tx);
+
       expect(done).toMatchObject({ operationId: p.operationId, status: 'completed' });
       expect(typeof done?.targetShipmentId).toBe('string');
       expect(done?.sources.every((s) => s.blockers.length === 0)).toBe(true);
@@ -124,15 +130,18 @@ describeIfDb('ConsolidationProgressReader (DB integration)', () => {
           createdAt: new Date(Date.now() + 60_000),
         })
         .returning();
+
       await tx
         .insert(wmsTables.shipmentOperationMembers)
         .values({ operationId: failed.id, shipmentId: sourceA, role: 'source' });
       const latest = await reader.findForShipment(sourceA, tx);
+
       expect(latest).toMatchObject({ operationId: failed.id, status: 'failed', targetShipmentId: null });
       expect(latest?.sources.map((s) => s.shipmentId)).toEqual([sourceA]);
       expect((await reader.findForShipment(sourceB, tx))?.operationId).toBe(p.operationId);
 
       const unrelated = await createConsolidationSource(tx, wired, p.base, { quantity: 1, customerId: randomUUID() });
+
       expect(await reader.findForShipment(unrelated.shipment.id, tx)).toBeNull();
     });
   });

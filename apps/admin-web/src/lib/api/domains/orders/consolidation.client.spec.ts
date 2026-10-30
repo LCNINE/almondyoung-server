@@ -31,8 +31,27 @@ describe('consolidationClient.getProgress', () => {
       targetShipmentId: null,
       sources: [],
     };
+
     mockedGet.mockResolvedValue({ data: body });
 
     await expect(consolidationClient.getProgress('s1')).resolves.toEqual(body);
+  });
+});
+
+describe('consolidationClient.getOptions', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('기준 상자를 경로가 아니라 쿼리로 보낸다', async () => {
+    const body = { source: {}, options: [] };
+
+    mockedGet.mockResolvedValue({ data: body });
+
+    await expect(consolidationClient.getOptions('s/1')).resolves.toEqual(body);
+    expect(mockedGet).toHaveBeenCalledWith(
+      '/core/shipments/consolidation-options',
+      { params: { shipmentId: 's/1' } }
+    );
   });
 });

@@ -33,6 +33,7 @@ import {
   freshCommand,
   isStaleVersionConflict,
   keptAfterFailure,
+  needsReopenPermission,
   needsUnwindSteps,
   optionCard,
   orderNoText,
@@ -171,7 +172,10 @@ export function ConsolidationSheet({
   onRequested?: (result: ShipmentConsolidationResponse) => void;
 }) {
   const { can } = usePermissionCheck();
-  const canOverrideRecipient = can(['fulfillment.shipment.override_recipient']);
+  const permissions = {
+    canOverrideRecipient: can(['fulfillment.shipment.override_recipient']),
+    canReopen: can(['fulfillment.shipment.reopen']),
+  };
   const options = useConsolidationOptions(shipmentId, open);
   const create = useCreateShipmentConsolidation();
   const [step, setStep] = useState<Step>(1);
@@ -187,7 +191,7 @@ export function ConsolidationSheet({
   const pickedOptions = allOptions.filter(
     (option) =>
       picked.includes(option.shipmentId) &&
-      optionCard(option, canOverrideRecipient).pickable
+      optionCard(option, permissions).pickable
   );
   const choices = source ? memoChoices(source, pickedOptions) : [];
   const memoFrom =
@@ -199,6 +203,9 @@ export function ConsolidationSheet({
   const blocker = step2Blocker({
     hasLostCommand: lostCommand !== null,
     pickedCount: pickedOptions.length,
+    needsReopen: source
+      ? needsReopenPermission([source, ...pickedOptions], permissions.canReopen)
+      : false,
     hasMemoChoices: choices.length > 0,
     memoFrom,
     reason,
@@ -243,6 +250,7 @@ export function ConsolidationSheet({
         toast.info('그사이 상자가 바뀌었어요. 다시 불러올게요');
         setStep(1);
         await options.refetch();
+
         return;
       }
 
@@ -375,12 +383,12 @@ export function ConsolidationSheet({
                 <OptionCheckCard
                   key={option.shipmentId}
                   option={option}
-                  card={optionCard(option, canOverrideRecipient)}
+                  card={optionCard(option, permissions)}
                   checked={pickedOptions.some(
                     (entry) => entry.shipmentId === option.shipmentId
                   )}
                   onToggle={() =>
-                    setPicked(togglePick(picked, option, canOverrideRecipient))
+                    setPicked(togglePick(picked, option, permissions))
                   }
                 />
               ))}

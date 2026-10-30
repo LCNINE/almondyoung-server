@@ -13,6 +13,7 @@ import { User, RequirePermission, PiiResponse, OPEN_WITH_RECIPIENT } from '@app/
 import {
   ConsolidationActor,
   ConsolidationCandidateQueryDto,
+  ConsolidationOptionsQueryDto,
   ConsolidationOptionsResponseDto,
   ConsolidationProgressResponseDto,
   CreateConsolidationDto,
@@ -102,9 +103,9 @@ export class ConsolidationController {
     },
   })
   @RequirePermission('fulfillment.shipment.read')
-  @Get(':id/consolidation-options')
-  findOptions(@Param('id', ParseUUIDPipe) id: string): Promise<ConsolidationOptionsResponseDto> {
-    return this.options.findOptions(id);
+  @Get('consolidation-options')
+  findOptions(@Query() query: ConsolidationOptionsQueryDto): Promise<ConsolidationOptionsResponseDto> {
+    return this.options.findOptions(query.shipmentId);
   }
 
   // 수령인을 담지 않으므로 PII 선언이 없다
