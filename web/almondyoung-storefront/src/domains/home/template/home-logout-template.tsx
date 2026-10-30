@@ -16,6 +16,7 @@ import {
   isInterestBannerVisible,
 } from "./interest-categories"
 import {
+  NEW_ARRIVALS_CATEGORY,
   SHOWCASE_CATEGORIES,
   ShowcaseCategoryWrapper,
 } from "./showcase-categories"
@@ -190,6 +191,17 @@ export async function HomeLogoutTemplate({
           <BrandShowcaseWrapper />
         </Suspense>
       </ErrorBoundary>
+
+      <HomeSection>
+        <ErrorBoundary fallback={null}>
+          <Suspense fallback={<MainSectionSkeleton />}>
+            <ShowcaseCategoryWrapper
+              countryCode={countryCode}
+              {...NEW_ARRIVALS_CATEGORY}
+            />
+          </Suspense>
+        </ErrorBoundary>
+      </HomeSection>
 
       {/* 카테고리별 제품 섹션  */}
       <HomeSection>

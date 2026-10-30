@@ -9,8 +9,9 @@ import { getTranslations } from "next-intl/server"
 import { ShowcaseSection } from "../../components/sections/showcase-section"
 
 export type ShowcaseCategory = {
-  titleKey: "canva" | "class"
+  titleKey: "canva" | "class" | "newArrivals"
   handle: string
+  order?: string
   /** 이 자식 카테고리 상품을 섹션 앞쪽에 먼저 깐다 (마진 좋은 상품 우선 노출) */
   priorityHandle?: string
 }
@@ -25,6 +26,12 @@ export const SHOWCASE_CATEGORIES: readonly ShowcaseCategory[] = [
   { titleKey: "class", handle: "cafe24-cat-86" }, // 클래스 (지역별)
 ]
 
+export const NEW_ARRIVALS_CATEGORY: ShowcaseCategory = {
+  titleKey: "newArrivals",
+  handle: "xfpg5f",
+  order: "-created_at",
+}
+
 const SECTION_LIMIT = 10
 // 앞 5칸만 우선 카테고리로 채우고 나머지는 기존 정렬 유지. 한 줄 전부 교재로 깔려면 SECTION_LIMIT 로 올릴 것.
 const PRIORITY_LIMIT = 5
@@ -36,6 +43,7 @@ export async function ShowcaseCategoryWrapper({
   titleKey,
   handle,
   priorityHandle,
+  order,
 }: {
   countryCode: string
 } & ShowcaseCategory) {
@@ -66,6 +74,7 @@ export async function ShowcaseCategoryWrapper({
       queryParams: {
         category_id: collectCategoryIds(category),
         limit: SECTION_LIMIT * OVERFETCH,
+        order,
       },
       regionId: region?.id,
     }),
