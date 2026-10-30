@@ -12,6 +12,7 @@ export type ShowcaseCategory = {
   titleKey: "canva" | "class" | "newArrivals"
   handle: string
   order?: string
+  hideRank?: boolean
   /** 이 자식 카테고리 상품을 섹션 앞쪽에 먼저 깐다 (마진 좋은 상품 우선 노출) */
   priorityHandle?: string
 }
@@ -22,6 +23,7 @@ export const SHOWCASE_CATEGORIES: readonly ShowcaseCategory[] = [
     titleKey: "canva",
     handle: "cafe24-cat-345",
     priorityHandle: "cafe24-cat-523",
+    hideRank: true,
   },
   { titleKey: "class", handle: "cafe24-cat-86" }, // 클래스 (지역별)
 ]
@@ -30,6 +32,7 @@ export const NEW_ARRIVALS_CATEGORY: ShowcaseCategory = {
   titleKey: "newArrivals",
   handle: "xfpg5f",
   order: "-created_at",
+  hideRank: true,
 }
 
 const SECTION_LIMIT = 10
@@ -44,6 +47,7 @@ export async function ShowcaseCategoryWrapper({
   handle,
   priorityHandle,
   order,
+  hideRank,
 }: {
   countryCode: string
 } & ShowcaseCategory) {
@@ -105,6 +109,7 @@ export async function ShowcaseCategoryWrapper({
       title={t(titleKey)}
       handle={handle}
       products={sectionProducts}
+      hideRank={hideRank}
       customer={customer}
       wishlistIds={new Set(wishlist.map((item) => item.productId))}
     />

@@ -11,6 +11,7 @@ interface ShowcaseSectionProps {
   products: HttpTypes.StoreProduct[]
   customer: StoreCustomerWithGroups | null
   wishlistIds?: Set<string>
+  hideRank?: boolean
 }
 
 /**
@@ -23,6 +24,7 @@ export function ShowcaseSection({
   products,
   customer,
   wishlistIds,
+  hideRank,
 }: ShowcaseSectionProps) {
   const t = useTranslations("home.categoryBest")
   const tab = { id: handle, name: title, handle }
@@ -47,6 +49,7 @@ export function ShowcaseSection({
       customer={customer}
       wishlistIds={wishlistIds}
       hideTabs
+      renderOverlay={hideRank ? () => null : undefined}
       emptyTitle={t("emptyTitle")}
       emptyDescription={t("emptyDescription")}
     />
