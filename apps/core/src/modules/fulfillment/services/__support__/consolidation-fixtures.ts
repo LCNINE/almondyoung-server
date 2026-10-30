@@ -20,6 +20,7 @@ export const CONSOLIDATION_RECIPIENT = {
   roadAddress: 'Seoul test road 1',
   detailAddress: '101',
 };
+export type ConsolidationRecipient = typeof CONSOLIDATION_RECIPIENT & { deliveryNote?: string };
 
 export function makeConsolidationService(
   dbService: DbService<typeof wmsSchema>,
@@ -69,7 +70,7 @@ export async function createConsolidationSource(
   options: {
     quantity: number;
     customerId: string;
-    recipient?: typeof CONSOLIDATION_RECIPIENT;
+    recipient?: ConsolidationRecipient;
     salesChannel?: 'medusa' | 'naver' | 'coupang';
     entrancePassword?: string;
     orderDate?: Date;

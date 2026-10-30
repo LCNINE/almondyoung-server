@@ -41,7 +41,7 @@ const SELF = ':(exclude)scripts/jest/no-self-loaded-env-in-specs.spec.ts';
 /** `git grep` 은 매치가 없으면 exit code 1 로 끝난다 — 그건 "위반 0" 이지 오류가 아니다. */
 function grepSpecs(pattern: string): string[] {
   try {
-    const out = execFileSync('git', ['grep', '-nE', pattern, '--', '*.spec.ts', SELF], {
+    const out = execFileSync('git', ['grep', '-nE', pattern, '--', '*.spec.ts', '*.spec.tsx', SELF], {
       cwd: REPO,
       encoding: 'utf8',
     });

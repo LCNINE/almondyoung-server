@@ -28,6 +28,10 @@ import { AvailabilityService } from './services/availability.service';
 import { PoliciesService } from './services/policies.service';
 import { PickingProcessService } from './services/picking-process.service';
 import { ConsolidationService } from './services/consolidation.service';
+import { ConsolidationOptionsReader } from './services/consolidation-options.reader';
+import { ConsolidationOptionsService } from './services/consolidation-options.service';
+import { ConsolidationProgressReader } from './services/consolidation-progress.reader';
+import { ConsolidationProgressService } from './services/consolidation-progress.service';
 import { SupplierHandoffService } from './supplier-shipment/supplier-handoff.service';
 import { SupplierSheetApplyService } from './supplier-shipment/supplier-sheet-apply.service';
 import { SupplierHandoffListReader } from './supplier-shipment/supplier-handoff-list.reader';
@@ -95,7 +99,13 @@ import { ShipmentRecallController, ShipmentRecallOperationController } from './c
     // INVENTORY_STREAM publisher는 InventoryModule이 전역으로 등록
     // CHANNEL_ORDERS_COMMAND_STREAM: «다시 확인» 명령(#1016 6번 행). 선언이 기동 때 토픽도 만든다
     EventsModule.forApp({
-      publishes: [FULFILLMENT_STREAM, CORE_ORDER_STREAM, SHIPMENT_STREAM, FULFILLMENT_V2_STREAM, CHANNEL_ORDERS_COMMAND_STREAM],
+      publishes: [
+        FULFILLMENT_STREAM,
+        CORE_ORDER_STREAM,
+        SHIPMENT_STREAM,
+        FULFILLMENT_V2_STREAM,
+        CHANNEL_ORDERS_COMMAND_STREAM,
+      ],
       serviceName: 'almondyoung',
       enableDLQ: true,
     }),
@@ -162,6 +172,10 @@ import { ShipmentRecallController, ShipmentRecallOperationController } from './c
     ShipmentRecallService,
     ToteLifecycleService,
     ConsolidationService,
+    ConsolidationOptionsReader,
+    ConsolidationOptionsService,
+    ConsolidationProgressReader,
+    ConsolidationProgressService,
     SupplierShipmentQueueReader,
     SupplierHandoffListReader,
     SupplierHandoffService,

@@ -57,8 +57,10 @@ function activeVoidableWaybill(
 
 export function WaybillActions({
   shipment,
+  voidLockedReason = null,
 }: {
   shipment: ShipmentAdminDetail;
+  voidLockedReason?: string | null;
 }) {
   const { canRun } = usePermissionCheck();
   const issue = useIssueWaybill();
@@ -111,6 +113,11 @@ export function WaybillActions({
   };
 
   const runIssueLike = async (kind: 'issue' | 'reissue', originalKey?: string) => {
+    // 재발급은 서버가 활성 운송장을 먼저 무효화하므로 무효화와 같이 막는다
+    if (kind === 'reissue' && voidLockedReason) {
+      toast.error(voidLockedReason);
+      return;
+    }
     if (!isCarrierSupported(carrier)) {
       toast.error('현재 지원되는 택배사는 HANJIN 뿐입니다.');
       return;
@@ -167,6 +174,10 @@ export function WaybillActions({
   };
 
   const runVoid = async () => {
+    if (voidLockedReason) {
+      toast.error(voidLockedReason);
+      return;
+    }
     if (!voidTarget) {
       toast.error('무효화할 활성 운송장이 없습니다.');
       return;
@@ -225,6 +236,7 @@ export function WaybillActions({
           <Button
             size="sm"
             variant="outline"
+            disabled={!!voidLockedReason}
             onClick={() => {
               setCarrier('HANJIN');
               setLastKey(null);
@@ -240,7 +252,7 @@ export function WaybillActions({
           <Button
             size="sm"
             variant="destructive"
-            disabled={!voidTarget}
+            disabled={!voidTarget || !!voidLockedReason}
             onClick={() => {
               setReason('');
               setAction('void');
@@ -250,6 +262,11 @@ export function WaybillActions({
           </Button>
         )}
       </div>
+
+      {(canRun(useVoidWaybill) || canRun(useReissueWaybill)) &&
+        voidLockedReason && (
+          <p className="text-xs text-muted-foreground">{voidLockedReason}</p>
+        )}
 
       {pendingNotice && (
         <Alert className="border-amber-300 bg-amber-50 dark:bg-amber-950/20">

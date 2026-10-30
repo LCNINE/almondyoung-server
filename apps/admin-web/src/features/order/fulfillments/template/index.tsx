@@ -6,6 +6,7 @@ import { FulfillmentsTable } from '../components/table';
 import { Container } from '@/components/admin-ui-experimental/common/container/container';
 import { Header } from '@/components/admin-ui-experimental/common/header/header';
 import { useShipmentDetail } from '@/lib/services/orders/queries';
+import { fulfillmentDetailHref } from './detail-href';
 
 export default function FulfillmentsListTemplate() {
   const router = useRouter();
@@ -15,8 +16,10 @@ export default function FulfillmentsListTemplate() {
 
   // 배치 화면의 상자 링크(?shipmentId=)는 그 상자의 출고주문 상세로 보낸다
   useEffect(() => {
-    if (fulfillmentOrderId) router.replace(`/order/fulfillments/${fulfillmentOrderId}`);
-  }, [fulfillmentOrderId, router]);
+    if (fulfillmentOrderId) {
+      router.replace(fulfillmentDetailHref(fulfillmentOrderId, shipmentId));
+    }
+  }, [fulfillmentOrderId, shipmentId, router]);
 
   return (
     <Container>

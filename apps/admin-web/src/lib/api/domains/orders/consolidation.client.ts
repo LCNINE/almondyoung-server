@@ -18,6 +18,8 @@ import type {
   ShipmentConsolidationCandidateQuery,
   CreateShipmentConsolidationRequest,
   ShipmentConsolidationResponse,
+  ConsolidationOptionsResponse,
+  ConsolidationProgressResponse,
 } from '@/lib/types/dto/fulfillment';
 
 const BASE = `${ALMONDYOUNG_API_BASE_URL}/consolidation`;
@@ -46,6 +48,27 @@ export const consolidationClient = {
     );
     return res.data;
   },
+  getOptions: async (
+    shipmentId: string
+  ): Promise<ConsolidationOptionsResponse> => {
+    const res = await client.get(
+      `${ALMONDYOUNG_API_BASE_URL}/shipments/consolidation-options`,
+      { params: { shipmentId } }
+    );
+    return res.data;
+  },
+
+  // 합포장이 없으면 서버가 본문 없는 200 을 준다
+  getProgress: async (
+    shipmentId: string
+  ): Promise<ConsolidationProgressResponse | null> => {
+    const res = await client.get(
+      `${ALMONDYOUNG_API_BASE_URL}/shipments/${encodeURIComponent(shipmentId)}/consolidation-progress`
+    );
+
+    return res.data ? res.data : null;
+  },
+
   getCandidates: async (
     warehouseId: string
   ): Promise<ConsolidationCandidate[]> => {

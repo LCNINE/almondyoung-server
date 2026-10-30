@@ -21,11 +21,14 @@ import {
   useFulfillmentShipments,
   useShipmentDetail,
 } from '@/lib/services/orders';
+import { useConsolidationProgress } from '@/lib/services/orders/queries';
 import type {
+  ConsolidationProgressResponse,
   FulfillmentOrderDetail,
   ShipmentAdminDetail,
 } from '@/lib/types/dto/fulfillment';
 import { useChannelDispatchViewModel } from './channel-dispatch-query';
+import { ConsolidationProgressPanel } from './consolidation-progress-panel';
 import {
   ChannelDispatchAlerts,
   ChannelDispatchAttemptStatus,
@@ -58,6 +61,35 @@ function when(value: string | null | undefined) {
   return value ? new Date(value).toLocaleString('ko-KR') : '-';
 }
 
+// 합포장 중에는 배치에서 빠진 뒤에만 운송장을 취소해야 해서 진행 안내의 버튼으로만 받는다.
+// 진행 상태를 모르면 열지 않는다 — 조회가 끝나 합포장이 없다고 확인된 뒤에만 무효화·재발급을 연다.
+function waybillVoidLockReason(
+  consolidation: {
+    data: ConsolidationProgressResponse | null | undefined;
+    isSuccess: boolean;
+    isError: boolean;
+  },
+  shipmentId: string
+): string | null {
+  if (consolidation.isError) {
+    return '합포장 진행 상태를 확인하지 못했어요. 새로고침해 주세요';
+  }
+
+  if (!consolidation.isSuccess) {
+    return '합포장 진행 상태를 확인하는 중이에요';
+  }
+
+  const isPendingSource =
+    consolidation.data?.status === 'pending' &&
+    consolidation.data.sources.some(
+      (source) => source.shipmentId === shipmentId
+    );
+
+  return isPendingSource
+    ? '합포장 진행 중에는 위 진행 안내에서 운송장을 취소해요'
+    : null;
+}
+
 function ShipmentDetailView({ shipment }: { shipment: ShipmentAdminDetail }) {
   const operations = shipment.operations ?? [];
   const waybills = shipment.waybills ?? [];
@@ -69,237 +101,263 @@ function ShipmentDetailView({ shipment }: { shipment: ShipmentAdminDetail }) {
     (entry) => entry.id === shipment.supplierId
   )?.name;
 
+  const consolidation = useConsolidationProgress(shipment.id);
+  const voidLockedReason = waybillVoidLockReason(consolidation, shipment.id);
+
   return (
     <div className="space-y-6">
-      <ChannelDispatchAlerts viewModel={channelDispatch} />
+      <ConsolidationProgressPanel shipmentId={shipment.id}>
+        <ChannelDispatchAlerts viewModel={channelDispatch} />
 
-      <section className="space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h3 className="font-mono text-sm font-semibold">{shipment.id}</h3>
-            <p className="text-xs text-muted-foreground">
-              manifest v{shipment.manifestVersion} · reservation v
-              {shipment.reservationVersion} ·{' '}
-              {ownerLabel(shipment, supplierName)}
-            </p>
+        <section className="space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 className="font-mono text-sm font-semibold">{shipment.id}</h3>
+              <p className="text-xs text-muted-foreground">
+                manifest v{shipment.manifestVersion} · reservation v
+                {shipment.reservationVersion} ·{' '}
+                {ownerLabel(shipment, supplierName)}
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Badge variant={STATUS_VARIANT(shipment.status)}>
+                {shipment.status}
+              </Badge>
+              {shipment.recoveryCode && (
+                <Badge variant="destructive">{shipment.recoveryCode}</Badge>
+              )}
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            <Badge variant={STATUS_VARIANT(shipment.status)}>
-              {shipment.status}
-            </Badge>
-            {shipment.recoveryCode && (
-              <Badge variant="destructive">{shipment.recoveryCode}</Badge>
+          <ShipmentActions shipment={shipment} />
+        </section>
+
+        <section>
+          <h3 className="mb-2 text-sm font-semibold">
+            shipment 라인 / 진행 수량
+          </h3>
+          <div className="overflow-auto rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>라인</TableHead>
+                  <TableHead>원본 주문</TableHead>
+                  <TableHead className="text-right">수량</TableHead>
+                  <TableHead className="text-right">예약</TableHead>
+                  <TableHead className="text-right">검수</TableHead>
+                  <TableHead className="text-right">버전</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {shipment.lines.map((line) => (
+                  <TableRow key={line.id}>
+                    <TableCell>
+                      <p className="font-mono text-xs">{shortId(line.id)}</p>
+                      <p className="font-mono text-[11px] text-muted-foreground">
+                        SKU {shortId(line.skuId)}
+                      </p>
+                    </TableCell>
+                    <TableCell className="text-xs">
+                      {line.origin ? (
+                        <>
+                          <p>
+                            {line.origin.salesChannel} ·{' '}
+                            {shortId(line.origin.salesOrderId)}
+                          </p>
+                          <p className="text-muted-foreground">
+                            item {shortId(line.origin.channelOrderItemId)}
+                          </p>
+                        </>
+                      ) : (
+                        '-'
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {line.qty}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {isSupplier ? '—' : line.reservedQty}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      {line.inspectedQty}
+                    </TableCell>
+                    <TableCell className="text-right tabular-nums">
+                      v{line.lineVersion}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        </section>
+
+        <section>
+          <h3 className="mb-2 text-sm font-semibold">
+            운송장 이력 ({waybills.length})
+          </h3>
+          {showsWaybillActions(shipment) && (
+            <WaybillActions
+              shipment={shipment}
+              voidLockedReason={voidLockedReason}
+            />
+          )}
+          {waybills.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              발행된 운송장이 없습니다.
+            </p>
+          ) : (
+            <div className="divide-y rounded-md border text-sm">
+              {waybills.map((waybill) => (
+                <div key={waybill.id} className="grid gap-2 p-3 sm:grid-cols-4">
+                  <span className="font-mono text-xs">
+                    {shortId(waybill.id)}
+                  </span>
+                  <span className="font-mono text-xs">
+                    {waybill.trackingNo || '-'}
+                  </span>
+                  <Badge
+                    variant={STATUS_VARIANT(waybill.status)}
+                    className="w-fit"
+                  >
+                    {waybill.status}
+                  </Badge>
+                  <span className="text-xs text-muted-foreground">
+                    발행 {when(waybill.issuedAt)} · void{' '}
+                    {when(waybill.voidedAt)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
+        <section>
+          <h3 className="mb-2 text-sm font-semibold">
+            출고 attempt / 운송 추적 ({attempts.length})
+          </h3>
+          {attempts.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              출고 시도가 없습니다.
+            </p>
+          ) : (
+            <div className="space-y-3">
+              {attempts.map((attempt) => (
+                <div key={attempt.id} className="rounded-md border p-3 text-sm">
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <span className="font-semibold">
+                        시도 #{attempt.attemptNo}
+                      </span>
+                      <span className="ml-2 font-mono text-xs text-muted-foreground">
+                        {shortId(attempt.id)}
+                      </span>
+                    </div>
+                    <Badge variant={STATUS_VARIANT(attempt.status)}>
+                      {attempt.status}
+                    </Badge>
+                  </div>
+                  <ChannelDispatchAttemptStatus
+                    attemptId={attempt.id}
+                    viewModel={channelDispatch}
+                  />
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <div>
+                      <p className="mb-1 text-xs font-medium">
+                        실제 출고 source
+                      </p>
+                      {(attempt.sources ?? []).map((source) => (
+                        <p
+                          key={source.id}
+                          className="font-mono text-xs text-muted-foreground"
+                        >
+                          line {shortId(source.shipmentLineId)} · location{' '}
+                          {shortId(source.sourceLocationId)} · {source.quantity}
+                          개
+                        </p>
+                      ))}
+                      {(attempt.sources?.length ?? 0) === 0 && (
+                        <p className="text-xs text-muted-foreground">
+                          source 기록 없음
+                        </p>
+                      )}
+                    </div>
+                    <div>
+                      <p className="mb-1 text-xs font-medium">
+                        tracking history
+                      </p>
+                      {(attempt.trackingEvents ?? []).map((event) => (
+                        <p
+                          key={event.id}
+                          className="text-xs text-muted-foreground"
+                        >
+                          {when(event.timestamp)} · {event.status}
+                          {event.location ? ` · ${event.location}` : ''}
+                        </p>
+                      ))}
+                      {(attempt.trackingEvents?.length ?? 0) === 0 && (
+                        <p className="text-xs text-muted-foreground">
+                          추적 이벤트 없음
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
+        <section>
+          <h3 className="mb-2 text-sm font-semibold">
+            durable operation 이력 ({operations.length})
+          </h3>
+          <div className="divide-y rounded-md border">
+            {operations.map((operation) => (
+              <div
+                key={operation.operationId}
+                className="flex flex-wrap items-center justify-between gap-2 p-3 text-xs"
+              >
+                <div>
+                  <p className="font-medium">
+                    {operation.type} · {shortId(operation.operationId)}
+                  </p>
+                  <p className="text-muted-foreground">
+                    {when(operation.createdAt)}
+                    {operation.lastError ? ` · ${operation.lastError}` : ''}
+                  </p>
+                </div>
+                <Badge
+                  variant={
+                    isRecoverableOperation(operation.status)
+                      ? 'secondary'
+                      : STATUS_VARIANT(operation.status)
+                  }
+                >
+                  {operation.status}
+                </Badge>
+              </div>
+            ))}
+            {operations.length === 0 && (
+              <p className="p-4 text-sm text-muted-foreground">
+                operation 기록 없음
+              </p>
             )}
           </div>
-        </div>
-        <ShipmentActions shipment={shipment} />
-      </section>
-
-      <section>
-        <h3 className="mb-2 text-sm font-semibold">
-          shipment 라인 / 진행 수량
-        </h3>
-        <div className="overflow-auto rounded-md border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>라인</TableHead>
-                <TableHead>원본 주문</TableHead>
-                <TableHead className="text-right">수량</TableHead>
-                <TableHead className="text-right">예약</TableHead>
-                <TableHead className="text-right">검수</TableHead>
-                <TableHead className="text-right">버전</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {shipment.lines.map((line) => (
-                <TableRow key={line.id}>
-                  <TableCell>
-                    <p className="font-mono text-xs">{shortId(line.id)}</p>
-                    <p className="font-mono text-[11px] text-muted-foreground">
-                      SKU {shortId(line.skuId)}
-                    </p>
-                  </TableCell>
-                  <TableCell className="text-xs">
-                    {line.origin ? (
-                      <>
-                        <p>
-                          {line.origin.salesChannel} ·{' '}
-                          {shortId(line.origin.salesOrderId)}
-                        </p>
-                        <p className="text-muted-foreground">
-                          item {shortId(line.origin.channelOrderItemId)}
-                        </p>
-                      </>
-                    ) : (
-                      '-'
-                    )}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {line.qty}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {isSupplier ? '—' : line.reservedQty}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    {line.inspectedQty}
-                  </TableCell>
-                  <TableCell className="text-right tabular-nums">
-                    v{line.lineVersion}
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      </section>
-
-      <section>
-        <h3 className="mb-2 text-sm font-semibold">
-          운송장 이력 ({waybills.length})
-        </h3>
-        {showsWaybillActions(shipment) && (
-          <WaybillActions shipment={shipment} />
-        )}
-        {waybills.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            발행된 운송장이 없습니다.
-          </p>
-        ) : (
-          <div className="divide-y rounded-md border text-sm">
-            {waybills.map((waybill) => (
-              <div key={waybill.id} className="grid gap-2 p-3 sm:grid-cols-4">
-                <span className="font-mono text-xs">{shortId(waybill.id)}</span>
-                <span className="font-mono text-xs">
-                  {waybill.trackingNo || '-'}
-                </span>
-                <Badge
-                  variant={STATUS_VARIANT(waybill.status)}
-                  className="w-fit"
-                >
-                  {waybill.status}
-                </Badge>
-                <span className="text-xs text-muted-foreground">
-                  발행 {when(waybill.issuedAt)} · void {when(waybill.voidedAt)}
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
-
-      <section>
-        <h3 className="mb-2 text-sm font-semibold">
-          출고 attempt / 운송 추적 ({attempts.length})
-        </h3>
-        {attempts.length === 0 ? (
-          <p className="text-sm text-muted-foreground">출고 시도가 없습니다.</p>
-        ) : (
-          <div className="space-y-3">
-            {attempts.map((attempt) => (
-              <div key={attempt.id} className="rounded-md border p-3 text-sm">
-                <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <span className="font-semibold">
-                      시도 #{attempt.attemptNo}
-                    </span>
-                    <span className="ml-2 font-mono text-xs text-muted-foreground">
-                      {shortId(attempt.id)}
-                    </span>
-                  </div>
-                  <Badge variant={STATUS_VARIANT(attempt.status)}>
-                    {attempt.status}
-                  </Badge>
-                </div>
-                <ChannelDispatchAttemptStatus
-                  attemptId={attempt.id}
-                  viewModel={channelDispatch}
-                />
-                <div className="grid gap-3 md:grid-cols-2">
-                  <div>
-                    <p className="mb-1 text-xs font-medium">실제 출고 source</p>
-                    {(attempt.sources ?? []).map((source) => (
-                      <p
-                        key={source.id}
-                        className="font-mono text-xs text-muted-foreground"
-                      >
-                        line {shortId(source.shipmentLineId)} · location{' '}
-                        {shortId(source.sourceLocationId)} · {source.quantity}개
-                      </p>
-                    ))}
-                    {(attempt.sources?.length ?? 0) === 0 && (
-                      <p className="text-xs text-muted-foreground">
-                        source 기록 없음
-                      </p>
-                    )}
-                  </div>
-                  <div>
-                    <p className="mb-1 text-xs font-medium">tracking history</p>
-                    {(attempt.trackingEvents ?? []).map((event) => (
-                      <p
-                        key={event.id}
-                        className="text-xs text-muted-foreground"
-                      >
-                        {when(event.timestamp)} · {event.status}
-                        {event.location ? ` · ${event.location}` : ''}
-                      </p>
-                    ))}
-                    {(attempt.trackingEvents?.length ?? 0) === 0 && (
-                      <p className="text-xs text-muted-foreground">
-                        추적 이벤트 없음
-                      </p>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
-
-      <section>
-        <h3 className="mb-2 text-sm font-semibold">
-          durable operation 이력 ({operations.length})
-        </h3>
-        <div className="divide-y rounded-md border">
-          {operations.map((operation) => (
-            <div
-              key={operation.operationId}
-              className="flex flex-wrap items-center justify-between gap-2 p-3 text-xs"
-            >
-              <div>
-                <p className="font-medium">
-                  {operation.type} · {shortId(operation.operationId)}
-                </p>
-                <p className="text-muted-foreground">
-                  {when(operation.createdAt)}
-                  {operation.lastError ? ` · ${operation.lastError}` : ''}
-                </p>
-              </div>
-              <Badge
-                variant={
-                  isRecoverableOperation(operation.status)
-                    ? 'secondary'
-                    : STATUS_VARIANT(operation.status)
-                }
-              >
-                {operation.status}
-              </Badge>
-            </div>
-          ))}
-          {operations.length === 0 && (
-            <p className="p-4 text-sm text-muted-foreground">
-              operation 기록 없음
-            </p>
-          )}
-        </div>
-      </section>
+        </section>
+      </ConsolidationProgressPanel>
     </div>
   );
 }
 
-export function ShipmentTab({ fo }: { fo: FulfillmentOrderDetail }) {
-  const [requestedShipmentId, setRequestedShipmentId] = useState('');
+export function ShipmentTab({
+  fo,
+  initialShipmentId,
+}: {
+  fo: FulfillmentOrderDetail;
+  initialShipmentId?: string;
+}) {
+  const [requestedShipmentId, setRequestedShipmentId] = useState(
+    initialShipmentId ?? ''
+  );
   const shipments = useFulfillmentShipments(fo.id);
   const selectedShipmentId = shipments.data?.some(
     (shipment) => shipment.id === requestedShipmentId

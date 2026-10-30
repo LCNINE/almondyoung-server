@@ -97,6 +97,10 @@ export const orderQueryKeys = {
   consolidationSavings: (warehouseId: string, days: number) =>
     ['consolidation', 'savings', warehouseId, days] as const,
   consolidationRules: ['consolidation', 'rules'] as const,
+  consolidationOptions: (shipmentId: string) =>
+    ['shipments', shipmentId, 'consolidation-options'] as const,
+  consolidationProgress: (shipmentId: string) =>
+    ['shipments', shipmentId, 'consolidation-progress'] as const,
 
   // 위치 최적화 관련
   locationOptimizationZones: ['location-optimization', 'zones'] as const,
