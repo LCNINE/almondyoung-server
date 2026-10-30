@@ -71,6 +71,7 @@ async function bootstrap() {
     await EventsModule.startConsumer(app, {
       groupId: process.env.KAFKA_GROUP_ID ?? 'ai-consumer',
       kafka: kafkaConfig,
+      tenancy: 'served-tenant',
     });
   } else {
     console.warn('⚠️  KAFKA_BROKERS 가 없다 — 탈퇴 회원의 대화가 지워지지 않는다.');

@@ -15,6 +15,7 @@ import { Test } from '@nestjs/testing';
 import { randomUUID } from 'crypto';
 import { CART_STREAM } from '@packages/event-contracts/streams/cart.stream';
 import { EventsModule } from '../events.module';
+import { testTenancyModule } from '../testing/tenancy';
 import { EventPayload, On } from '../consumers/decorators';
 import { EventTypeGuard } from '../guards/event-type.guard';
 import { StreamPublisher } from '../publishers/stream-publisher.service';
@@ -37,18 +38,28 @@ class CartProbe {
 
 async function startConsumerApp(groupId: string): Promise<INestApplication> {
   const moduleRef = await Test.createTestingModule({
-    imports: [EventsModule.forApp({ publishes: [CART_STREAM], serviceName: 'kafka-commit-it', kafka })],
+    imports: [
+      testTenancyModule(),
+      EventsModule.forApp({ publishes: [CART_STREAM], serviceName: 'kafka-commit-it', kafka }),
+    ],
     controllers: [CartProbe],
   }).compile();
   const app = moduleRef.createNestApplication({ logger: false });
-  await EventsModule.startConsumer(app, { groupId, kafka });
+  await EventsModule.startConsumer(app, {
+    tenancy: 'per-message',
+    groupId,
+    kafka,
+  });
   await app.init();
   return app;
 }
 
 async function startPublisherApp(): Promise<INestApplication> {
   const moduleRef = await Test.createTestingModule({
-    imports: [EventsModule.forApp({ publishes: [CART_STREAM], serviceName: 'kafka-commit-it-pub', kafka })],
+    imports: [
+      testTenancyModule(),
+      EventsModule.forApp({ publishes: [CART_STREAM], serviceName: 'kafka-commit-it-pub', kafka }),
+    ],
   }).compile();
   const app = moduleRef.createNestApplication({ logger: false });
   await app.init();
@@ -77,8 +88,7 @@ describeIfKafka('컨슈머 오프셋 커밋 (실 브로커)', () => {
   let publisherApp: INestApplication;
   let publisher: StreamPublisher<typeof CART_STREAM.events>;
 
-  const publish = (id: string) =>
-    publisher.publishEvent({ eventType: 'CartCreated', aggregateId, payload: cart(id) });
+  const publish = (id: string) => publisher.publishEvent({ eventType: 'CartCreated', aggregateId, payload: cart(id) });
 
   beforeAll(async () => {
     publisherApp = await startPublisherApp();

@@ -384,6 +384,7 @@ ECS 태스크가 겹쳐도(롤링 배포·`scaling.max > 1`) 한 주기가 클�
 - Auto-DLQ support for failed consumers
 - Graceful shutdown support; see `libs/events/docs/` for patterns
 - 봉투 `metadata.tenantId` 는 라이브러리가 찍는다 — 생산 코드는 넘기지 않는다(넘겨도 덮어쓴다). 직접 발행은 CLS 맥락(`TENANT_CONTEXT_KEY`) → 앱 설정 T(`SERVED_TENANT_ID`), outbox 는 디스패처가 «행이 든 DB 의 테넌트»(`OUTBOX_TENANT_ID`, 없으면 T)로 나갈 때 찍는다. payload 에는 싣지 않는다(strict 토픽). 계정 이벤트는 계약에 `event(…, { tenancy: 'account' })` 로 선언하고 선언이 없으면 테넌트 이벤트다. **core 는 직접 발행하지 않는다** — 전부 `enqueue` (`core-no-direct-publish.spec.ts`)
+- 소비 앱은 `startConsumer(app, { tenancy })` 로 테넌트 모드를 선언한다(기본값 없음, 빠지면 기동 거부): `per-message`(core·user-service — 봉투의 테넌트를 맥락으로) / `served-tenant`(나머지 — `SERVED_TENANT_ID` 만 섬김). 핸들러 앞의 문(`libs/events/src/tenancy/event-tenant-gate.ts`)이 남의 테넌트 이벤트는 건너뛰고 세며, 테넌트 이벤트인데 테넌트가 없거나 목록에 없으면 `reject` 는 재시도 없이 DLQ·`warn` 은 경고 + 셈. 계정 이벤트는 통과. 모드↔SST·로컬 T 배선은 `tenancy-wiring.spec.ts` 가 지킨다
 
 ### AI (`apps/ai`) — 스킬은 도구를 들고, 앱은 다른 서비스를 HTTP 로만 부른다
 

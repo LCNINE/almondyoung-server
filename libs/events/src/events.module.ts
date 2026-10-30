@@ -56,6 +56,7 @@ import {
   KafkaConsumerTuning,
 } from './transport/kafka-consumer-options';
 import { ConsumerLagCollector, registerConsumerLagCollector } from './consumers/consumer-lag.collector';
+import { CONSUMER_TENANCIES, type ConsumerTenancy, EventTenantGate } from './tenancy/event-tenant-gate';
 
 export { KAFKA_CONSUMER_GROUP_POSTFIX };
 
@@ -143,6 +144,13 @@ export interface EventsAppOptions {
  */
 export interface StartConsumerOptions extends KafkaConsumerTuning {
   kafka?: KafkaConfig; // 없으면 환경변수에서 생성
+
+  /**
+   * 이 앱의 테넌트 모드 — 코드에서 도출할 수 없는 사실이라 선언한다. 기본값은 없다.
+   * `served-tenant` 는 `SERVED_TENANT_ID` 를 목록과 대조하고, 없거나 목록에 없으면 기동을 거부한다.
+   * 핸들러 앞의 문이 이 선언으로 판정한다 — `tenancy/event-tenant-gate.ts`.
+   */
+  tenancy: ConsumerTenancy;
 
   /** 도출된 토픽의 DLQ 토픽까지 부트스트랩할지 (기본: true) */
   enableAutoDLQ?: boolean;
@@ -432,6 +440,7 @@ export class EventsModule {
   static async startConsumer(app: INestApplication, options: StartConsumerOptions): Promise<DerivedConsumerConfig> {
     const logger = new Logger('EventsConsumer');
     const kafka = options.kafka || this.requireKafkaConfigFromEnv('startConsumer');
+    const tenantGate = this.requireTenantGate(app, options.tenancy);
     const derived = deriveConsumerConfig(discoverEventHandlers(app));
 
     const enableAutoDLQ = options.enableAutoDLQ ?? true;
@@ -460,7 +469,7 @@ export class EventsModule {
     // 실패 테이블 (#1016 8번). 앱이 `EventFailuresModule` 을 import 했을 때만 있다.
     const deadLetters = await this.enableDeadLetters(app, options.groupId, server, logger);
 
-    microservice.useGlobalInterceptors(...buildConsumerInterceptors(app, derived.streams, deadLetters));
+    microservice.useGlobalInterceptors(...buildConsumerInterceptors(app, derived.streams, deadLetters, tenantGate));
     microservice.registerListeners();
     microservice.setIsInitialized(true);
     microservice.setIsInitHookCalled(true);
@@ -479,6 +488,31 @@ export class EventsModule {
     }
 
     return derived;
+  }
+
+  /**
+   * 테넌트 문을 세운다. 틀리면 소비를 시작하기 전에 던진다 — 기동 거부. 전부 «조용히 죽는» 실수다:
+   * - 모드 선언이 없다(JS 호출·타입 우회). 기본 모드를 두면 «T 만 섬김» 앱이 «메시지마다»로 남의 테넌트를 처리한다.
+   * - 테넌트 목록이 없다(`TenancyModule` 미import). 문이 판정할 기준이 없다.
+   * - `served-tenant` 인데 T 가 없거나 목록에 없다. 모든 메시지를 건너뛰며 아무 일도 하지 않는다.
+   */
+  private static requireTenantGate(app: INestApplication, tenancy: ConsumerTenancy | undefined): EventTenantGate {
+    if (!tenancy || !CONSUMER_TENANCIES.includes(tenancy)) {
+      throw new TenancyConfigError('startConsumer({ tenancy })', [
+        `소비 앱의 테넌트 모드가 없거나 틀렸다(${String(tenancy)}) — ${CONSUMER_TENANCIES.join(' 또는 ')}. 기본값은 없다`,
+      ]);
+    }
+    const config = optionalGet(app, TenancyConfig);
+    if (!config) {
+      throw new TenancyConfigError('TenancyModule', [
+        '소비 앱이 테넌트 목록을 받지 않았다 — 루트 모듈에 TenancyModule(@app/tenancy) 을 import 할 것',
+      ]);
+    }
+    const servedTenantId =
+      tenancy === 'served-tenant'
+        ? requireServedTenant(config.tenants, process.env[TENANCY_ENV.servedTenantId]).id
+        : undefined;
+    return new EventTenantGate({ tenancy, servedTenantId, tenants: config.tenants, gateMode: config.gateMode });
   }
 
   /**

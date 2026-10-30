@@ -191,6 +191,8 @@ async function bootstrap() {
       KAFKA_BROKERS: process.env.KAFKA_BROKERS!,
     }),
     groupId: 'channel-adapter-consumers',
+    // 테넌트 모드 — 기본값 없음. 'served-tenant' 는 SERVED_TENANT_ID 를 테넌트 목록과 대조한다
+    tenancy: 'served-tenant',
   });
 
   await app.listen(3003);
@@ -573,7 +575,7 @@ users.events.v1
 ### Consumer가 메시지를 받지 못할 때
 ```typescript
 // main.ts에서 connectMicroservice() 확인
-await EventsModule.startConsumer(app, { groupId });
+await EventsModule.startConsumer(app, { groupId, tenancy: 'served-tenant' });
 await app.startAllMicroservices();  // 이거 필수!
 ```
 

@@ -5,6 +5,7 @@ import { getDLQTopicName } from '@packages/event-contracts/types';
 import { DbService } from '@app/db';
 import { OutboxDispatcher } from '../outbox/outbox-dispatcher.service';
 import { EventsModule } from '../events.module';
+import { testTenancyModule } from '../testing/tenancy';
 import { EventPayload, On } from '../consumers/decorators';
 import { EventTypeGuard } from '../guards/event-type.guard';
 import { RetryPolicy } from '../retry/retry-policy.decorator';
@@ -69,6 +70,7 @@ describe('EventFailuresModule 배선 (#1016 8번)', () => {
     const moduleRef = await Test.createTestingModule({
       imports: [
         FakeInfraModule,
+        testTenancyModule(),
         EventsModule.forApp({
           publishes: [CART_STREAM],
           serviceName: 'wiring-spec',
@@ -93,6 +95,7 @@ describe('EventFailuresModule 배선 (#1016 8번)', () => {
       .compile();
     app = moduleRef.createNestApplication({ logger: false });
     await EventsModule.startConsumer(app, {
+      tenancy: 'per-message',
       groupId: 'wiring-group',
       kafka: { clientId: 'w', brokers: ['unused:9092'] },
       strategy: new InMemoryServer(broker),

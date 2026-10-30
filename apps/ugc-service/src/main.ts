@@ -76,6 +76,7 @@ async function bootstrap() {
   // 설정을 요구하므로, KAFKA_BROKERS 가 없으면 여기 오기 전에 원인을 말하며 죽는다.
   await EventsModule.startConsumer(app, {
     groupId: process.env.KAFKA_GROUP_ID || 'ugc-service-consumer',
+    tenancy: 'served-tenant',
   });
 
   // 3030 이 정본이다 — Dockerfile·Caddyfile·e2e-env-map·storefront `backend.ts` 가 모두 3030 을 본다.

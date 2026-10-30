@@ -102,6 +102,7 @@ async function bootstrap() {
   await EventsModule.startConsumer(app, {
     groupId: process.env.KAFKA_GROUP_ID || 'notification-consumer',
     kafka: createKafkaConfigFromEnv()!,
+    tenancy: 'served-tenant',
   });
 
   const port = process.env.PORT ?? 5001;

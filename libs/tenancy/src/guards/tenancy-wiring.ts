@@ -7,7 +7,7 @@ export interface SourceFile {
 
 export interface TenancyWiringViolation {
   readonly app: string;
-  readonly rule: 'tenancy-module-missing' | 'root-module-unresolved';
+  readonly rule: 'tenancy-module-missing' | 'root-module-unresolved' | 'consumer-tenancy-missing';
   readonly detail: string;
 }
 
@@ -17,6 +17,19 @@ const NON_CONSUMER_TENANT_APPS = ['file-service'];
 /** `apps/<app>/src/main.ts` 를 받아 그 앱이 테넌트 목록을 받아야 하는지 — Kafka 소비 앱 + file-service. */
 export function requiresTenancy(main: SourceFile): boolean {
   return main.content.includes('EventsModule.startConsumer') || NON_CONSUMER_TENANT_APPS.includes(appOf(main.path));
+}
+
+/**
+ * `startConsumer` 에 선언한 테넌트 모드. 타입이 선언을 강제하지만 «어느 앱이 T 를 받아야 하나»는 이 값에서
+ * 도출한다 — SST·로컬 정본이 손으로 적은 목록과 갈리지 않게.
+ */
+export function consumerTenancyOf(main: SourceFile): 'per-message' | 'served-tenant' | undefined {
+  // startConsumer 호출의 옵션 객체 안에서만 찾는다 — 주석·다른 객체의 같은 글자에 속지 않게
+  const m = /EventsModule\.startConsumer\(\s*app\s*,\s*\{[^}]*?\btenancy:\s*'(per-message|served-tenant)'/s.exec(
+    main.content,
+  );
+  // as 정당화: 정규식의 캡처 그룹이 바로 이 두 값만 잡는다
+  return m ? (m[1] as 'per-message' | 'served-tenant') : undefined;
 }
 
 function appOf(path: string): string {
@@ -43,6 +56,13 @@ export function findTenancyWiringViolations(files: readonly SourceFile[]): Tenan
     if (moduleSource === undefined) {
       violations.push({ app, rule: 'root-module-unresolved', detail: `${main.path} 의 루트 모듈 파일을 못 찾았다` });
       continue;
+    }
+    if (main.content.includes('EventsModule.startConsumer') && !consumerTenancyOf(main)) {
+      violations.push({
+        app,
+        rule: 'consumer-tenancy-missing',
+        detail: `${main.path} 의 startConsumer 가 테넌트 모드(tenancy: 'per-message' | 'served-tenant')를 선언하지 않는다`,
+      });
     }
     if (!/\bTenancyModule\b/.test(moduleSource)) {
       violations.push({

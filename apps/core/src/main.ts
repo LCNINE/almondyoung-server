@@ -86,7 +86,7 @@ async function bootstrap() {
   // Kafka consumer 연결 — 구독 목록 인자가 없다. 소비 집합은 컨트롤러의 `@On`
   // 데코레이터에서 도출되고, 소비 인터셉터(재시도·DLQ·스키마 검증)도 여기서
   // 마이크로서비스 스코프로 붙는다 (ADR-0029 §3·§8).
-  await EventsModule.startConsumer(app, { groupId: 'almondyoung-order-consumer' });
+  await EventsModule.startConsumer(app, { groupId: 'almondyoung-order-consumer', tenancy: 'per-message' });
 
   const port = process.env.PORT ?? 3000;
   await app.listen(port, '0.0.0.0');

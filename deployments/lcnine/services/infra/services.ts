@@ -71,8 +71,9 @@ export function setup(infra: SharedInfra) {
     }).value,
   };
   // 앱 설정 T(«이 앱이 섬기는 테넌트») — 1단계의 T 만 섬기는 앱은 모두 테넌트 1 이라 auth 의 ServedTenantId 하나를 받는다
-  // (값을 코드에 두지 않는다). 지금은 Kafka 로 «발행하는» 앱만 받는다: 직접 발행·outbox 의 봉투 테넌트가 T 다.
-  // core 는 T 가 없다 — «메시지마다» 앱이고 outbox 테넌트는 접속 DB 로 정한다. 목록에 없는 T 면 그 앱은 뜨지 않는다.
+  // (값을 코드에 두지 않는다). «T 만 섬김» 소비 앱이 전부 받는다: 핸들러 앞의 문이 T 와 다른 테넌트 이벤트를 건너뛰고,
+  // 직접 발행·outbox 의 봉투 테넌트도 T 다. core 는 T 가 없다 — «메시지마다» 앱이고 outbox 테넌트는 접속 DB 로 정한다.
+  // T 가 없거나 목록에 없으면 그 앱은 뜨지 않는다. 받는 앱 수는 tenancy-wiring.spec 이 main.ts 의 선언과 대조한다.
   const servedTenantEnv = {
     SERVED_TENANT_ID: aws.ssm.getParameterOutput({
       name: `/lcnine-auth/${$app.stage}/served-tenant-id`,
@@ -388,6 +389,7 @@ export function setup(infra: SharedInfra) {
   const analyticsEnv = withPrefix('ANALYTICS', {
     DATABASE_URL: dbUrl('analytics'),
     ...tenancyEnv,
+    ...servedTenantEnv,
     ...kafkaEnv('analytics', 'analytics-group'),
     AUTH_SECRET: authSecret.value,
     OIDC_ISSUER_URL: idpUserServiceUrl,
@@ -459,6 +461,7 @@ export function setup(infra: SharedInfra) {
   const notificationEnv = withPrefix('NOTIFICATION', {
     DATABASE_URL: dbUrl('notification'),
     ...tenancyEnv,
+    ...servedTenantEnv,
     ...kafkaEnv('notification', 'notification-group'),
     // 전역 JwtAuthGuard 용. 둘 중 하나라도 없으면 부팅이 실패한다
     // (AuthorizationModule 의 AUTH_CONFIG 팩토리). 이 서비스는 그 전까지 인증이 아예 없었다.
@@ -542,6 +545,7 @@ export function setup(infra: SharedInfra) {
     // 키워드 운영 상태(담당·메모) 테이블 — search 논리 DB (bootstrap 이 생성, migrate 가 적용)
     DATABASE_URL: dbUrl('search'),
     ...tenancyEnv,
+    ...servedTenantEnv,
     ...kafkaEnv('search', 'search-indexer-group'),
     // 관리자 키워드 통계 라우트의 JwtAuthGuard 용. 둘 중 하나라도 없으면 부팅이 실패한다
     // (AuthorizationModule 의 AUTH_CONFIG 팩토리). 이 서비스는 그 전까지 인증이 아예 없었다.
@@ -627,6 +631,7 @@ export function setup(infra: SharedInfra) {
       ...kafkaEnv('ai', 'ai-consumer'),
       DATABASE_URL: dbUrl('ai'),
       ...tenancyEnv,
+      ...servedTenantEnv,
       AUTH_SECRET: authSecret.value,
       JWT_ISSUER: 'almondyoung-auth',
       // admin-web 이 넘겨 준 RS256 토큰을 검증한다.

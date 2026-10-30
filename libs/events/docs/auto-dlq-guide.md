@@ -48,7 +48,7 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
   // Kafka Consumer 연결 — 구독 목록 인자 없음
-  await EventsModule.startConsumer(app, { groupId: 'your-service-consumers' });
+  await EventsModule.startConsumer(app, { groupId: 'your-service-consumers', tenancy: 'served-tenant' });
 
   await app.listen(3000);
 }

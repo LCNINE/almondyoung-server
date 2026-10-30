@@ -129,7 +129,7 @@ async function bootstrap() {
   );
 
   // 다른 서비스가 적재한 개인정보 접속기록(`PiiAccessed`)을 받는다. 소비 집합은 `@On` 에서 도출된다.
-  await EventsModule.startConsumer(app, { groupId: 'user-service-consumer' });
+  await EventsModule.startConsumer(app, { groupId: 'user-service-consumer', tenancy: 'per-message' });
   // 이게 없으면 종료 때 onApplicationShutdown 이 불리지 않아 컨슈머가 그룹을 떠나지 않는다.
   app.enableShutdownHooks();
 

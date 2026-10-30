@@ -131,6 +131,7 @@ async function bootstrap() {
   // 위아래로 흩어져 있던 두 호출이 여기 한 줄로 모였다.
   await EventsModule.startConsumer(app, {
     groupId: process.env.KAFKA_GROUP_ID || 'wallet-consumer',
+    tenancy: 'served-tenant',
   });
   await app.listen(port, '0.0.0.0');
 }

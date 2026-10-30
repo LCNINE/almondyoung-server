@@ -14,13 +14,14 @@
 
 import type { INestApplicationContext, NestInterceptor, Type } from '@nestjs/common';
 import { ModuleRef, ModulesContainer, Reflector } from '@nestjs/core';
-import { ClsInterceptor } from 'nestjs-cls';
+import { ClsInterceptor, ClsService } from 'nestjs-cls';
 import type { SchemaValidationOptions, StreamConfig } from '@packages/event-contracts/types';
 import { DLQHandler } from '../dlq/dlq-handler.service';
 import { ChainContextInterceptor } from '../interceptors/chain-context.interceptor';
 import { DeadLetterInterceptorOptions, EventRetryInterceptor } from '../interceptors/event-retry.interceptor';
 import { SchemaValidationInterceptor } from '../interceptors/schema-validation.interceptor';
 import { EventChainService } from '../tracking/event-chain.service';
+import { EventTenantGate, TenantGateInterceptor, TenantGateRejectInterceptor } from '../tenancy/event-tenant-gate';
 
 /**
  * 앱이 선언한 소비 정책. **스트림 목록은 여기 없다** — 그건 데코레이터에서 도출된다.
@@ -90,15 +91,24 @@ export function assertSinglePolicyDeclaration(app: INestApplicationContext): voi
  *
  * @param streams `@On` 에서 **도출된** 스트림 목록 — 검증 스키마 맵이 된다
  * @param deadLetters 앱이 실패 테이블을 켰을 때만 (#1016 8번). 없으면 지금처럼 `.dlq` 토픽으로 보낸다
+ * @param tenantGate 핸들러 앞의 테넌트 문. `startConsumer` 는 언제나 넘긴다 — 빠진 채 뜨는 길은 거기서 기동 거부다.
+ *   이 함수만 직접 부르는 하네스는 문 없이 파이프라인의 나머지를 잰다.
  */
 export function buildConsumerInterceptors(
   app: INestApplicationContext,
   streams: StreamConfig[],
   deadLetters?: DeadLetterInterceptorOptions,
+  tenantGate?: EventTenantGate,
 ): NestInterceptor[] {
   const reflector = app.get(Reflector, { strict: false });
   assertSinglePolicyDeclaration(app);
   const policy = optionalGet<EventsConsumerPolicy>(app, EVENTS_CONSUMER_POLICY);
+  // `forApp` 이 ClsModule 을 언제나 등록하지만, 빠졌을 때 `app.get` 은 catch 전에 프로세스를 죽인다(optionalGet 주석)
+  const cls = tenantGate ? optionalGet(app, ClsService) : undefined;
+  if (tenantGate && !cls)
+    throw new Error(
+      'startConsumer(): 테넌트 문이 맥락을 세울 ClsService 가 없다 — EventsModule.forApp 을 import 할 것',
+    );
 
   const interceptors: NestInterceptor[] = [
     // **최외곽 — CLS 컨텍스트를 연다 (#612).** 소비 경로에는 ClsGuard/ClsInterceptor 가 없어
@@ -118,7 +128,11 @@ export function buildConsumerInterceptors(
     // DLQ 로 나가는 메시지도 인바운드 사슬을 물고 나간다. 에러는 그대로 통과시키므로
     // (`error: (err) => subscriber.error(err)`) 아래 재시도·분류망의 순서 의미는 그대로다.
     new ClsInterceptor({ saveCtx: false, resolveProxyProviders: false }),
+    // 테넌트 문은 두 면이다. 건너뛰기·맥락은 재시도 «바깥»(건너뛴 메시지가 재시도·실패 기록·보류 검사에 닿지 않게),
+    // ② 의 거절은 재시도 «안쪽»(비재시도 에러로 분류돼 DLQ 로 가게). CLS 안쪽이어야 맥락을 세울 수 있다.
+    ...(tenantGate && cls ? [new TenantGateInterceptor(tenantGate, reflector, cls)] : []),
     new EventRetryInterceptor(reflector, optionalGet(app, DLQHandler), deadLetters),
+    ...(tenantGate ? [new TenantGateRejectInterceptor(tenantGate, reflector)] : []),
     new SchemaValidationInterceptor(reflector, streams, policy?.validation),
   ];
 
