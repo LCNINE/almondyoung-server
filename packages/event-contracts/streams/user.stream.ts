@@ -231,6 +231,12 @@ const SocialIdentityUnlinkedSchema = z.object({
 
 // ===== Stream Config (타입 안전 버전) =====
 
+/**
+ * 계정 수명주기 — 계정은 테넌트로 쪼개지지 않으므로 탈퇴·휴면·영구 삭제는 그 계정을 든 모든 테넌트의 서비스가
+ * 들어야 한다. 나머지는 들어온 앱의 테넌트에서 일어난 일이라 테넌트 이벤트다.
+ */
+const ACCOUNT = { tenancy: 'account' } as const;
+
 export const USER_STREAM = stream({
   topic: 'users.events.v1',
   partitions: 6,
@@ -248,9 +254,9 @@ export const USER_STREAM = stream({
       UserPasswordChangedSchema,
     ),
     UserUpdated: event<'UserUpdated', UserUpdatedPayload>('UserUpdated', UserUpdatedSchema),
-    UserDeleted: event<'UserDeleted', UserDeletedPayload>('UserDeleted', UserDeletedSchema),
-    UserDormantConverted: event<'UserDormantConverted', UserDormantConvertedPayload>('UserDormantConverted', UserDormantConvertedSchema),
-    UserPermanentDeleted: event<'UserPermanentDeleted', UserPermanentDeletedPayload>('UserPermanentDeleted', UserPermanentDeletedSchema),
+    UserDeleted: event<'UserDeleted', UserDeletedPayload>('UserDeleted', UserDeletedSchema, ACCOUNT),
+    UserDormantConverted: event<'UserDormantConverted', UserDormantConvertedPayload>('UserDormantConverted', UserDormantConvertedSchema, ACCOUNT),
+    UserPermanentDeleted: event<'UserPermanentDeleted', UserPermanentDeletedPayload>('UserPermanentDeleted', UserPermanentDeletedSchema, ACCOUNT),
     BusinessLicenseApproved: event<'BusinessLicenseApproved', BusinessLicenseApprovedPayload>('BusinessLicenseApproved', BusinessLicenseApprovedSchema),
     Cafe24Linked: event<'Cafe24Linked', Cafe24LinkedPayload>('Cafe24Linked', Cafe24LinkedSchema),
     Cafe24Unlinked: event<'Cafe24Unlinked', Cafe24UnlinkedPayload>('Cafe24Unlinked', Cafe24UnlinkedSchema),

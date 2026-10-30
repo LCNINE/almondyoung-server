@@ -34,6 +34,7 @@ import { DemoModule } from './modules/demo/demo.module';
 import { PrintOrderModule } from './modules/print-order/print-order.module';
 import { PrintOrderAdminModule } from './modules/print-order/print-order-admin.module';
 import { TenancyModule } from '@app/tenancy';
+import { CoreOutboxTenantModule } from './platform/tenancy/core-outbox-tenant.module';
 
 @Module({
   imports: [
@@ -44,6 +45,8 @@ import { TenancyModule } from '@app/tenancy';
     }),
     // 테넌트 목록·전환 모드. 틀리면 여기서 기동 거부 (@app/tenancy).
     TenancyModule,
+    // outbox 가 나갈 때 찍는 테넌트 = 접속한 DB 의 테넌트. 목록에 없는 DB 면 기동 거부.
+    CoreOutboxTenantModule,
     LoggerModule.forRoot(loggerConfig),
     // 크론 «주기당 한 번» 선점 (ADR-0036). SCHEDULE_ROOT 는 inventory.module 등이 이미 import 한다.
     CronOnceModule,

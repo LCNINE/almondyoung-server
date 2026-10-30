@@ -31,11 +31,26 @@ describe('로컬 E2E 테넌트 설정', () => {
     expect(parseTenantGateMode(mode)).toBe(mode);
   });
 
-  it('user-service 의 앱 설정 T 는 목록에 있고 템플릿이 같은 값을 든다', () => {
+  it('앱 설정 T 는 목록에 있고, T 를 받는 앱의 템플릿이 같은 값을 든다', () => {
     const served = shellValue('E2E_SERVED_TENANT_ID');
     expect(parseTenantList(list).find(served)).toBeDefined();
-    const body = readFileSync(join(REPO, 'env-templates', '.env.user-service.local.example'), 'utf8');
-    expect(body).toContain(`SERVED_TENANT_ID=${served}`);
+
+    const apps = shellValue('E2E_SERVED_TENANT_APPS').split(' ');
+    // 직접 발행·outbox 의 봉투 테넌트가 T 인 발행 앱과, T 의 데이터를 답하는 user-service.
+    expect(apps).toEqual(
+      expect.arrayContaining(['user-service', 'channel-adapter', 'membership', 'ugc-service', 'wallet']),
+    );
+    const missing = nestRows
+      .filter((r) => apps.includes(r.name) && r.template !== '-')
+      .filter(
+        (r) => !readFileSync(join(REPO, 'env-templates', r.template), 'utf8').includes(`SERVED_TENANT_ID=${served}`),
+      )
+      .map((r) => r.template);
+    expect(missing).toEqual([]);
+  });
+
+  it('core 는 T 를 받지 않는다 — «메시지마다» 앱이고 outbox 테넌트는 접속 DB 로 정한다', () => {
+    expect(shellValue('E2E_SERVED_TENANT_APPS').split(' ')).not.toContain('core');
   });
 
   it('kind=nest 행을 찾았다 — 못 찾으면 아래 대조가 아무것도 안 잰다', () => {

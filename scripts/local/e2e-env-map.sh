@@ -41,9 +41,11 @@ E2E_ENV_ROWS=(
 # 쓰이지 않지만, 라이브와 같은 모양(공개 = 비공개 = 한 버킷)으로 둔다.
 E2E_TENANT_LIST='[{"id":"1","slug":"almondyoung","coreDb":"dev_core","publicBucket":"almondyoung-demo","privateBucket":"almondyoung-demo"}]'
 E2E_TENANT_GATE_MODE='warn'
-# 앱 설정 T(SERVED_TENANT_ID) — 지금은 user-service 만 받는다(고객·근태 데이터와 옛 내부 토큰이 섬기는 테넌트).
-# 목록에 있는 id 여야 뜬다. 같은 spec 이 목록과 대조한다.
+# 앱 설정 T(SERVED_TENANT_ID) — 목록에 있는 id 여야 뜬다. 같은 spec 이 목록과 대조한다.
+# 받는 앱: user-service(고객·근태 데이터와 옛 내부 토큰이 섬기는 테넌트) + Kafka 로 발행하는 «T 만 섬기는» 앱
+# (직접 발행·outbox 의 봉투 테넌트가 T 다). core 는 받지 않는다 — outbox 테넌트를 접속 DB 로 정한다.
 E2E_SERVED_TENANT_ID='1'
+E2E_SERVED_TENANT_APPS='user-service channel-adapter membership ugc-service wallet'
 
 # 행을 필드로 쪼개 콜백에 넘긴다. 사용: e2e_env_each required my_fn   (tier 생략 시 전부)
 e2e_env_each() {

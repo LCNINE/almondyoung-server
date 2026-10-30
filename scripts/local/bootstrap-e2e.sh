@@ -83,7 +83,7 @@ ensure_tenancy() {
     [ -n "$(tail -c1 "$dest")" ] && echo >> "$dest"
     printf 'TENANT_GATE_MODE=%s\n' "$E2E_TENANT_GATE_MODE" >> "$dest"; added="${added:+$added · }TENANT_GATE_MODE"
   fi
-  if [ "$name" = "user-service" ] && ! grep -q '^SERVED_TENANT_ID=' "$dest"; then
+  if [[ " $E2E_SERVED_TENANT_APPS " == *" $name "* ]] && ! grep -q '^SERVED_TENANT_ID=' "$dest"; then
     [ -n "$(tail -c1 "$dest")" ] && echo >> "$dest"
     printf 'SERVED_TENANT_ID=%s\n' "$E2E_SERVED_TENANT_ID" >> "$dest"; added="${added:+$added · }SERVED_TENANT_ID"
   fi

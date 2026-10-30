@@ -49,6 +49,8 @@
 SSM publish:
 
 - `/lcnine-auth/<stage>/user-service-url`, `auth-web-url`, `issuer-url`
+- `/lcnine-auth/<stage>/tenant-list` (SecureString)·`tenant-gate-mode` — 테넌트 목록·전환 모드(`@app/tenancy`). SoT 는 auth 의 `TenantList` 시크릿·`tenantGateMode` 한 줄.
+- `/lcnine-auth/<stage>/served-tenant-id` — services 의 «T 만 섬기는» 발행 앱(channel-adapter·membership·ugc-service·wallet)이 받는 앱 설정 T. SoT 는 auth 의 `ServedTenantId` 시크릿. 이 키를 처음 만드는 배포는 auth → services 순서.
 - `/lcnine-auth/<stage>/auth-secret` — **TEMP(시연용)** SecureString. services 의 Medusa 가 동일 시크릿으로 user-service JWT 를 verify 하기 위함.
 
 ## 3. lcnine-services — 도메인 서비스

@@ -70,6 +70,14 @@ export function setup(infra: SharedInfra) {
       name: `/lcnine-auth/${$app.stage}/tenant-gate-mode`,
     }).value,
   };
+  // 앱 설정 T(«이 앱이 섬기는 테넌트») — 1단계의 T 만 섬기는 앱은 모두 테넌트 1 이라 auth 의 ServedTenantId 하나를 받는다
+  // (값을 코드에 두지 않는다). 지금은 Kafka 로 «발행하는» 앱만 받는다: 직접 발행·outbox 의 봉투 테넌트가 T 다.
+  // core 는 T 가 없다 — «메시지마다» 앱이고 outbox 테넌트는 접속 DB 로 정한다. 목록에 없는 T 면 그 앱은 뜨지 않는다.
+  const servedTenantEnv = {
+    SERVED_TENANT_ID: aws.ssm.getParameterOutput({
+      name: `/lcnine-auth/${$app.stage}/served-tenant-id`,
+    }).value,
+  };
 
   // storefront가 미인증 보호경로 redirect 대상으로 쓰는 auth-web origin.
   const idpAuthWebUrl = aws.ssm.getParameterOutput({
@@ -394,6 +402,7 @@ export function setup(infra: SharedInfra) {
   const channelAdapterEnv = withPrefix('CHANNEL_ADAPTER', {
     DATABASE_URL: dbUrl('channel_adapter'),
     ...tenancyEnv,
+    ...servedTenantEnv,
     ...kafkaEnv('channel-adapter', 'channel-adapter-group'),
     // 전역 JwtAuthGuard 용 (위 notification 과 같은 이유).
     AUTH_SECRET: authSecret.value,
@@ -431,6 +440,7 @@ export function setup(infra: SharedInfra) {
   const membershipEnv = withPrefix('MEMBERSHIP', {
     DATABASE_URL: dbUrl('membership'),
     ...tenancyEnv,
+    ...servedTenantEnv,
     ...kafkaEnv('membership', 'membership-group'),
     WALLET_API_KEY: walletApiKey.value,
     WALLET_API_URL: url('wallet'),
@@ -514,6 +524,7 @@ export function setup(infra: SharedInfra) {
   const ugcEnv = withPrefix('UGC', {
     DATABASE_URL: dbUrl('ugc'),
     ...tenancyEnv,
+    ...servedTenantEnv,
     ...kafkaEnv('ugc-service', 'ugc-service-group'),
     AUTH_SECRET: authSecret.value,
     JWT_ISSUER: 'almondyoung-auth',
@@ -736,6 +747,7 @@ export function setup(infra: SharedInfra) {
     environment: {
       DATABASE_URL: dbUrl('wallet'),
       ...tenancyEnv,
+      ...servedTenantEnv,
       ...kafkaEnv('wallet', 'wallet-group'),
       AUTH_SECRET: authSecret.value,
       USER_JWT_SECRET: authSecret.value,

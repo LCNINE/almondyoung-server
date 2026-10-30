@@ -158,3 +158,23 @@ function singleBucketTenants(entries: readonly TenantEntry[]): string[] {
 function quoted(ids: Iterable<string>): string {
   return [...ids].map((id) => `«${id}»`).join(', ');
 }
+
+/**
+ * core DB 접속 주소가 가리키는 DB 의 테넌트. core 는 테넌트마다 DB 가 따로라 «행이 든 DB 가 곧 테넌트»다.
+ * 목록의 `coreDb` 중 어느 것도 아니면 기동을 거부한다 — 모르는 DB 의 outbox 를 아무 테넌트로나 내보내지 않는다.
+ */
+export function tenantOfCoreDatabase(tenants: TenantList, databaseUrl: string | undefined): TenantEntry {
+  const name = 'DATABASE_URL';
+  let database: string | undefined;
+  try {
+    database = databaseUrl ? decodeURIComponent(new URL(databaseUrl).pathname.replace(/^\//, '')) : undefined;
+  } catch {
+    database = undefined;
+  }
+  if (!database) throw new TenancyConfigError(name, [`${name} 에서 DB 이름을 읽지 못했다`]);
+
+  const entry = tenants.entries.find((t) => t.coreDb === database);
+  // DB 이름은 비공개 값이라 메시지에 싣지 않는다(tenant-list.ts 와 같은 규칙).
+  if (!entry) throw new TenancyConfigError(name, [`${name} 의 DB 가 테넌트 목록의 어느 coreDb 도 아니다`]);
+  return entry;
+}

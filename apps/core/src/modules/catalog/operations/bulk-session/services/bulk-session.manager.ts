@@ -513,9 +513,9 @@ export class BulkSessionManager {
    * draft 생성 실패 행 재시도(스펙 §3.12 의 두 재시도 지점 중 앞의 것).
    *
    * ⚠️ **신규 행 재시도에는 대가가 있다.** `createMaster` 는 트랜잭션 밖으로 새는 부수효과
-   * 둘을 낸다 — 브로커로 직송되는 `ProductVariantCreated` 이벤트와, `tx` 를 전파받지 않아
-   * 독립 커밋되는 `product_matchings` 행(스펙 §5.1 정정). 롤백돼도 남으므로 **재시도
-   * 횟수만큼 누적된다.** 근본 수정은 catalog core 전체에 걸리는 별건이다.
+   * 하나를 낸다 — `tx` 를 전파받지 않아 독립 커밋되는 `product_matchings` 행(스펙 §5.1 정정).
+   * 롤백돼도 남으므로 **재시도 횟수만큼 누적된다.** 근본 수정은 catalog core 전체에 걸리는 별건이다.
+   * (`ProductVariantCreated` 이벤트는 outbox 로 같은 트랜잭션에 실려 함께 롤백된다.)
    */
   async retryDraft(sessionId: string, userId: string, tx?: DbTransaction): Promise<BulkSessionProgressDto> {
     return this.db.run(async (trx) => {

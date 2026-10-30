@@ -248,6 +248,13 @@ export function setup(infra: IdpInfra) {
     value: tenantGateMode,
   });
 
+  // services 의 T 만 섬기는 발행 앱(channel-adapter·membership·ugc-service·wallet)이 받는 T. 1단계는 모두 user-service 와 같은 테넌트 1 이다.
+  new aws.ssm.Parameter('IdpServedTenantId', {
+    name: `/lcnine-auth/${$app.stage}/served-tenant-id`,
+    type: 'String',
+    value: servedTenantId.value,
+  });
+
   new aws.ssm.Parameter('IdpIssuerUrl', {
     name: `/lcnine-auth/${$app.stage}/issuer-url`,
     type: 'String',

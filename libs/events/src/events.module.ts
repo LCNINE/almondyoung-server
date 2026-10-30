@@ -16,7 +16,8 @@ import {
 } from '@nestjs/microservices';
 import { APP_INTERCEPTOR, ModuleRef } from '@nestjs/core';
 import { Kafka } from 'kafkajs';
-import { ClsModule } from 'nestjs-cls';
+import { ClsModule, ClsService } from 'nestjs-cls';
+import { requireServedTenant, TENANCY_ENV, TENANT_CONTEXT_KEY, TenancyConfig, TenancyConfigError } from '@app/tenancy';
 import { StreamPublisher } from './publishers/stream-publisher.service';
 import { getPublisherToken } from './publishers/publisher-token';
 import { DLQHandler } from './dlq/dlq-handler.service';
@@ -34,6 +35,8 @@ import { OutboxDispatcher } from './outbox/outbox-dispatcher.service';
 import { OutboxMetricsCollector } from './outbox/outbox-metrics.collector';
 import { OutboxWriter } from './outbox/outbox-writer.port';
 import { OUTBOX_DISPATCH_GATE, type OutboxDispatchGate } from './outbox/outbox-dispatch-gate.port';
+import { OUTBOX_TENANT_ID } from './outbox/outbox-tenant.port';
+import { EventTenantStamp } from './tenancy/event-tenant-stamp';
 import { bootstrapKafkaTopics } from './bootstrap/topic-bootstrap.service';
 import { outboxSchema } from './outbox/outbox.schema';
 import { trackingSchema } from './tracking/tracking.schema';
@@ -64,6 +67,32 @@ const eventTransportProvider = {
   provide: EVENT_TRANSPORT,
   useFactory: (kafkaClient: ClientKafka): EventTransport => new KafkaTransport(kafkaClient),
   inject: ['KAFKA_CLIENT'],
+};
+
+/**
+ * 봉투에 테넌트를 찍는 도구 . 테넌트 목록(`TenancyModule`)이 없는 앱이면 `undefined` 이고 찍지 않는다 —
+ * 운영의 발행 앱은 전부 Kafka 소비 앱이라 `tenancy-wiring.spec` 이 목록을 강제한다. T·outbox 테넌트가 목록에 없으면
+ * 여기서 던져 기동을 거부한다.
+ */
+const eventTenantStampProvider = {
+  provide: EventTenantStamp,
+  useFactory: (cls: ClsService, tenancy?: TenancyConfig, outboxTenantId?: string): EventTenantStamp | undefined => {
+    if (!tenancy) return undefined;
+
+    const rawServed = process.env[TENANCY_ENV.servedTenantId];
+    const servedTenantId = rawServed ? requireServedTenant(tenancy.tenants, rawServed).id : undefined;
+    if (outboxTenantId !== undefined && !tenancy.tenants.find(outboxTenantId)) {
+      throw new TenancyConfigError('OUTBOX_TENANT_ID', [`outbox 테넌트 «${outboxTenantId}» 가 테넌트 목록에 없다`]);
+    }
+
+    return new EventTenantStamp({
+      contextTenant: () => (cls.isActive() ? cls.get<string | undefined>(TENANT_CONTEXT_KEY) : undefined),
+      servedTenantId,
+      outboxTenantId: outboxTenantId ?? servedTenantId,
+      gateMode: tenancy.gateMode,
+    });
+  },
+  inject: [ClsService, { token: TenancyConfig, optional: true }, { token: OUTBOX_TENANT_ID, optional: true }],
 };
 
 /**
@@ -167,6 +196,7 @@ export class EventsModule {
         eventChainService: EventChainService,
         eventTrackingService: EventTrackingService,
         outboxWriter?: OutboxWriter,
+        tenantStamp?: EventTenantStamp,
       ) => {
         return new StreamPublisher(
           transport,
@@ -176,6 +206,7 @@ export class EventsModule {
           eventChainService,
           eventTrackingService,
           outboxWriter,
+          tenantStamp,
         );
       },
       // `OutboxPublisher` 는 **항상 optional 로** 주입한다 (Task 6-C-2). 그 전에는 같은
@@ -184,7 +215,13 @@ export class EventsModule {
       // 아웃박스를 켰지만 inventory·fulfillment·sales-order 의 publisher 도 `enqueue` 를 쓴다.
       // 이 모듈은 `@Global()` 이라 어느 한 곳이 켜면 provider 는 앱 전체에서 보인다. 아무도 켜지
       // 않은 앱에서는 그대로 `undefined` 이고 `enqueue` 가 던진다 = 이 변경 전과 같다.
-      inject: [EVENT_TRANSPORT, EventChainService, EventTrackingService, { token: OutboxPublisher, optional: true }],
+      inject: [
+        EVENT_TRANSPORT,
+        EventChainService,
+        EventTrackingService,
+        { token: OutboxPublisher, optional: true },
+        EventTenantStamp,
+      ],
     }));
 
     // DLQ Handler 제공자 (DLQ가 활성화된 경우에만)
@@ -234,6 +271,7 @@ export class EventsModule {
               eventTrackingService: EventTrackingService,
               moduleRef: ModuleRef,
               dispatchGate?: OutboxDispatchGate,
+              tenantStamp?: EventTenantStamp,
             ) => {
               // topic -> StreamPublisher 매핑 생성
               const publisherMap = new Map<string, StreamPublisher>();
@@ -261,7 +299,14 @@ export class EventsModule {
                 }
               };
 
-              return new OutboxDispatcher(dbService, publisherMap, options.outbox, resolvePublisher, dispatchGate);
+              return new OutboxDispatcher(
+                dbService,
+                publisherMap,
+                options.outbox,
+                resolvePublisher,
+                dispatchGate,
+                tenantStamp,
+              );
             },
             inject: [
               DbService,
@@ -270,6 +315,7 @@ export class EventsModule {
               EventTrackingService,
               ModuleRef,
               { token: OUTBOX_DISPATCH_GATE, optional: true },
+              EventTenantStamp,
             ],
           },
           {
@@ -316,6 +362,7 @@ export class EventsModule {
     const providers = [
       retryInterceptorProvider, // 최외곽 — 등록 순서가 래핑 순서
       eventTransportProvider, // Kafka 로 나가는 유일한 통로
+      eventTenantStampProvider, // 봉투 테넌트 — publisher·디스패처가 주입받는다
       ...publisherProviders,
       ...(dlqProvider ? [dlqProvider] : []),
       ...outboxProviders,

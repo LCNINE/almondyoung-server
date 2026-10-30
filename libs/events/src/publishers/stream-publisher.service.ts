@@ -16,6 +16,7 @@ import { EventTrackingService } from '../tracking/event-tracking.service';
 import { EventTransport } from '../transport/transport.port';
 import type { OutboxWriter } from '../outbox/outbox-writer.port';
 import type { DbTx } from '../outbox/outbox.types';
+import type { EventTenantStamp } from '../tenancy/event-tenant-stamp';
 
 export interface CausedByResource {
   resourceType: string;
@@ -108,6 +109,11 @@ export class StreamPublisher<TEvents extends StreamEventTypes = StreamEventTypes
      * 켜지 않았다는 뜻이고, 조용히 이벤트를 버리는 것보다 부팅/호출 시점에 드러나는 편이 낫다.
      */
     private readonly outboxWriter?: OutboxWriter,
+    /**
+     * 직접 발행의 봉투에 테넌트를 찍는다. 없으면 찍지 않는다 — `EventsModule.forApp` 은 테넌트 목록이 있는
+     * 앱에서 항상 넘긴다. `enqueue` 는 찍지 않는다: outbox 행의 테넌트는 디스패처가 나갈 때 그 DB 로 찍는다.
+     */
+    private readonly tenantStamp?: EventTenantStamp,
   ) {
     this.logger = new Logger(`StreamPublisher:${streamConfig.topic.topic}`);
     this.validationOptions = {
@@ -131,7 +137,7 @@ export class StreamPublisher<TEvents extends StreamEventTypes = StreamEventTypes
       causedBy?: CausedByResource;
     },
   ): Promise<void> {
-    const envelope = this.buildEventEnvelope(params);
+    const envelope = this.stampDirect(this.buildEventEnvelope(params));
 
     const partitionKey = this.resolvePartitionKey(envelope.payload, params.aggregateId);
     await this.sendMessage(envelope, partitionKey);
@@ -329,7 +335,11 @@ export class StreamPublisher<TEvents extends StreamEventTypes = StreamEventTypes
       expiresAt: params.expiresIn ? new Date(Date.now() + params.expiresIn).toISOString() : undefined,
     };
 
-    await this.sendMessage(envelope, params.aggregateId);
+    await this.sendMessage(this.stampDirect(envelope), params.aggregateId);
+  }
+
+  private stampDirect<T extends MessageEnvelope>(envelope: T): T {
+    return this.tenantStamp?.stampDirect(envelope) ?? envelope;
   }
 
   /**
