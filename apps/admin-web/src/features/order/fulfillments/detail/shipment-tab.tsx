@@ -21,7 +21,9 @@ import {
   useFulfillmentShipments,
   useShipmentDetail,
 } from '@/lib/services/orders';
+import { useConsolidationProgress } from '@/lib/services/orders/queries';
 import type {
+  ConsolidationProgressResponse,
   FulfillmentOrderDetail,
   ShipmentAdminDetail,
 } from '@/lib/types/dto/fulfillment';
@@ -59,6 +61,35 @@ function when(value: string | null | undefined) {
   return value ? new Date(value).toLocaleString('ko-KR') : '-';
 }
 
+// 합포장 중에는 배치에서 빠진 뒤에만 운송장을 취소해야 해서 진행 안내의 버튼으로만 받는다.
+// 진행 상태를 모르면 열지 않는다 — 조회가 끝나 합포장이 없다고 확인된 뒤에만 무효화·재발급을 연다.
+function waybillVoidLockReason(
+  consolidation: {
+    data: ConsolidationProgressResponse | null | undefined;
+    isSuccess: boolean;
+    isError: boolean;
+  },
+  shipmentId: string
+): string | null {
+  if (consolidation.isError) {
+    return '합포장 진행 상태를 확인하지 못했어요. 새로고침해 주세요';
+  }
+
+  if (!consolidation.isSuccess) {
+    return '합포장 진행 상태를 확인하는 중이에요';
+  }
+
+  const isPendingSource =
+    consolidation.data?.status === 'pending' &&
+    consolidation.data.sources.some(
+      (source) => source.shipmentId === shipmentId
+    );
+
+  return isPendingSource
+    ? '합포장 진행 중에는 위 진행 안내에서 운송장을 취소해요'
+    : null;
+}
+
 function ShipmentDetailView({ shipment }: { shipment: ShipmentAdminDetail }) {
   const operations = shipment.operations ?? [];
   const waybills = shipment.waybills ?? [];
@@ -69,6 +100,9 @@ function ShipmentDetailView({ shipment }: { shipment: ShipmentAdminDetail }) {
   const supplierName = directDeliverySuppliers(suppliers.data?.data).find(
     (entry) => entry.id === shipment.supplierId
   )?.name;
+
+  const consolidation = useConsolidationProgress(shipment.id);
+  const voidLockedReason = waybillVoidLockReason(consolidation, shipment.id);
 
   return (
     <div className="space-y-6">
@@ -161,7 +195,10 @@ function ShipmentDetailView({ shipment }: { shipment: ShipmentAdminDetail }) {
             운송장 이력 ({waybills.length})
           </h3>
           {showsWaybillActions(shipment) && (
-            <WaybillActions shipment={shipment} />
+            <WaybillActions
+              shipment={shipment}
+              voidLockedReason={voidLockedReason}
+            />
           )}
           {waybills.length === 0 ? (
             <p className="text-sm text-muted-foreground">
@@ -311,8 +348,16 @@ function ShipmentDetailView({ shipment }: { shipment: ShipmentAdminDetail }) {
   );
 }
 
-export function ShipmentTab({ fo }: { fo: FulfillmentOrderDetail }) {
-  const [requestedShipmentId, setRequestedShipmentId] = useState('');
+export function ShipmentTab({
+  fo,
+  initialShipmentId,
+}: {
+  fo: FulfillmentOrderDetail;
+  initialShipmentId?: string;
+}) {
+  const [requestedShipmentId, setRequestedShipmentId] = useState(
+    initialShipmentId ?? ''
+  );
   const shipments = useFulfillmentShipments(fo.id);
   const selectedShipmentId = shipments.data?.some(
     (shipment) => shipment.id === requestedShipmentId

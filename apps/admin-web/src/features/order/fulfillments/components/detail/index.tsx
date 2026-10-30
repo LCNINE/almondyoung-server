@@ -43,8 +43,14 @@ function InfoRow({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-export function FulfillmentDetail({ id }: { id: string }) {
-  const { canRun } = usePermissionCheck();
+export function FulfillmentDetail({
+  id,
+  shipmentId,
+}: {
+  id: string;
+  shipmentId?: string;
+}) {
+  const { can, canRun } = usePermissionCheck();
   const { data, isLoading } = useFulfillmentOrder(id);
 
   if (isLoading) {
@@ -67,6 +73,9 @@ export function FulfillmentDetail({ id }: { id: string }) {
   }
 
   const isTerminal = TERMINAL_STATUSES.has(data.status);
+
+  // 상자 링크로 들어왔으면 배송 탭에서 그 상자를 연다
+  const opensShipment = !!shipmentId && can(['fulfillment.shipment.read']);
   const fo = {
     ...data,
     items: data.items ?? [],
@@ -199,7 +208,10 @@ export function FulfillmentDetail({ id }: { id: string }) {
       <Container>
         <Header title="운영 액션" />
         <div className="p-3">
-          <Tabs defaultValue="inventory" className="w-full">
+          <Tabs
+            defaultValue={opensShipment ? 'shipment' : 'inventory'}
+            className="w-full"
+          >
             <TabsList className="flex h-auto flex-wrap justify-start">
               <TabsTrigger value="inventory">재고</TabsTrigger>
               <Can anyOf={['fulfillment.shipment.read']}>
@@ -212,7 +224,7 @@ export function FulfillmentDetail({ id }: { id: string }) {
             </TabsContent>
             <Can anyOf={['fulfillment.shipment.read']}>
               <TabsContent value="shipment">
-                <ShipmentTab fo={fo} />
+                <ShipmentTab fo={fo} initialShipmentId={shipmentId} />
               </TabsContent>
             </Can>
             <TabsContent value="history">
