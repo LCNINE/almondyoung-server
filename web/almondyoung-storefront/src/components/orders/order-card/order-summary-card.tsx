@@ -2,7 +2,6 @@
 
 import { CustomButton } from "@/components/shared/custom-buttons"
 import LocalizedClientLink from "@/components/shared/localized-client-link"
-import { cn } from "@/lib/utils"
 import { getThumbnailUrl } from "@lib/utils/get-thumbnail-url"
 import { useTranslations } from "next-intl"
 import { useState, type ReactNode } from "react"
@@ -84,21 +83,17 @@ export default function OrderSummaryCard({
   const [expanded, setExpanded] = useState(false)
   const visibleItems = expanded ? items : items.slice(0, COLLAPSED_ITEM_COUNT)
   const hiddenCount = items.length - visibleItems.length
-  // 주문 버튼(배송 조회 등)은 반품하지 않은 첫 줄에 단다. 전부 반품했으면 첫 줄
-  const actionsIndex = Math.max(0, visibleItems.findIndex((item) => !item.returnHref))
-
   return (
     <OrderCard
       orderId={orderId}
       orderDate={orderDate}
       orderNumber={orderNumber}
     >
-      <ul className="group/items flex flex-col gap-3">
-        {visibleItems.map((item, index) => {
-          const orderActions = index === actionsIndex ? children : null
+      <ul className="flex flex-col gap-3">
+        {visibleItems.map((item) => {
           const itemStatus = item.statusLabel ?? status
           const itemHint = item.statusLabel ? item.statusHint : deliveryInfo
-          const hasSide = Boolean(orderActions || item.reviewHref || item.returnHref)
+          const hasSide = Boolean(item.reviewHref || item.returnHref)
 
           return (
             <li
@@ -154,14 +149,7 @@ export default function OrderSummaryCard({
               </div>
 
               {hasSide && (
-                <div
-                  className={cn(
-                    "flex shrink-0 flex-col gap-2 border-t border-gray-200 p-4 md:w-48 md:border-t-0 md:border-l md:p-5",
-                    !item.reviewHref &&
-                      !item.returnHref &&
-                      "md:hidden md:has-[[data-order-actions]]:flex"
-                  )}
-                >
+                <div className="flex shrink-0 flex-col gap-2 border-t border-gray-200 p-4 md:w-48 md:border-t-0 md:border-l md:p-5">
                   {item.returnHref && (
                     <LocalizedClientLink href={item.returnHref}>
                       <CustomButton
@@ -174,7 +162,6 @@ export default function OrderSummaryCard({
                       </CustomButton>
                     </LocalizedClientLink>
                   )}
-                  {orderActions}
                   {item.reviewHref && (
                     <LocalizedClientLink href={item.reviewHref}>
                       <CustomButton
@@ -188,9 +175,6 @@ export default function OrderSummaryCard({
                     </LocalizedClientLink>
                   )}
                 </div>
-              )}
-              {!hasSide && (
-                <div className="hidden shrink-0 border-l border-gray-200 md:w-48 md:group-has-[[data-order-actions]]/items:block" />
               )}
             </li>
           )
@@ -207,16 +191,21 @@ export default function OrderSummaryCard({
         </button>
       )}
 
-      {totalPrice && (
-        <p className="mt-3 text-right text-sm text-gray-700">
-          {t("list.totalPaid")}{" "}
-          {originalPrice && (
-            <span className="mr-1 text-gray-400 line-through">
-              {originalPrice}
-            </span>
+      {(totalPrice || children) && (
+        <div className="mt-3 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+          {totalPrice && (
+            <p className="text-right text-sm text-gray-700 md:text-left">
+              {t("list.totalPaid")}{" "}
+              {originalPrice && (
+                <span className="mr-1 text-gray-400 line-through">
+                  {originalPrice}
+                </span>
+              )}
+              <span className="font-bold text-black">{totalPrice}</span>
+            </p>
           )}
-          <span className="font-bold text-black">{totalPrice}</span>
-        </p>
+          {children}
+        </div>
       )}
     </OrderCard>
   )

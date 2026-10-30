@@ -500,6 +500,7 @@ export function OrderList({
                     orderId={order.orderId}
                     paymentStatus={order.paymentStatus}
                     productName={order.productName}
+                    itemCount={order.items.length}
                     showInquiry={order.showInquiry}
                     coreActions={actions}
                     bankTransferStatus={order.bankTransferStatus}

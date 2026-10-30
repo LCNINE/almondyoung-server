@@ -50,6 +50,7 @@ interface OrderActionsProps {
   orderId: string
   paymentStatus: string
   productName: string
+  itemCount?: number
   showInquiry?: boolean
   coreActions?: StoreOrderActionsResponse
   availableActions?: StoreOrderAction[]
@@ -86,6 +87,7 @@ export default function OrderActions({
   orderId,
   paymentStatus,
   productName,
+  itemCount = 1,
   showInquiry = true,
   coreActions,
   availableActions: availableActionsProp,
@@ -231,7 +233,7 @@ export default function OrderActions({
   if (showSelfCancel)
     actions.push({
       key: "cancel",
-      label: "주문취소",
+      label: "주문 전체 취소",
       icon: RotateCcw,
       danger: true,
       onClick: () => setShowCancelDialog(true),
@@ -270,8 +272,14 @@ export default function OrderActions({
     })
   if (showInquiry) actions.push({ key: "inquiry", label: "문의" })
 
-  // 모바일 주요 버튼: 구매확정 > 배송조회, 둘 다 없으면 주문 상세 이동.
-  const primaryKey = canConfirm ? "confirm" : canTrack ? "track" : null
+  // 모바일 주요 버튼: 구매확정 > 배송조회 > 주문 전체 취소, 모두 없으면 주문 상세 이동.
+  const primaryKey = canConfirm
+    ? "confirm"
+    : canTrack
+      ? "track"
+      : showSelfCancel
+        ? "cancel"
+        : null
   const primaryAction = actions.find((a) => a.key === primaryKey)
   const menuActions = actions.filter((a) => a.key !== primaryKey)
 
@@ -345,9 +353,9 @@ export default function OrderActions({
 
   return (
     <>
-      {/* 데스크탑: 세로 버튼 나열 */}
+      {/* 데스크탑: 카드 아래 가로 버튼 나열 */}
       {actions.length > 0 && (
-        <div data-order-actions className="hidden flex-col gap-2 md:flex">
+        <div className="hidden gap-2 md:flex">
           {actions.map((action) => (
             <div key={action.key}>{renderButton(action, "md")}</div>
           ))}
@@ -444,13 +452,13 @@ export default function OrderActions({
       >
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>주문 취소</DialogTitle>
+            <DialogTitle>주문을 전부 취소할까요?</DialogTitle>
           </DialogHeader>
           <div className="space-y-3 text-sm">
-            <p>
-              <span className="font-medium">{productName}</span> 주문을
-              취소하시겠습니까?
-            </p>
+            <p className="font-medium">{productName}</p>
+            {itemCount > 1 && (
+              <p>이 주문의 상품 {itemCount}개가 함께 취소돼요.</p>
+            )}
             <p className="text-muted-foreground text-xs">
               취소 완료 후 결제 수단에 따라 환불이 진행됩니다.
             </p>

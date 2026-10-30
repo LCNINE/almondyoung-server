@@ -39,7 +39,11 @@ function ShippingCard({ order }: { order: ShippingOrder }) {
         },
       ]}
     >
-      <Button variant="outline" onClick={handleTrack} className="w-full">
+      <Button
+        variant="outline"
+        onClick={handleTrack}
+        className="w-full md:ml-auto md:w-auto"
+      >
         {t("trackButton")}
       </Button>
     </OrderSummaryCard>
