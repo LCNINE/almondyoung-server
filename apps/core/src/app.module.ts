@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
+import { ClsService } from 'nestjs-cls';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { LoggerModule } from 'nestjs-pino';
 import { DbModule } from '@app/db';
@@ -33,8 +34,10 @@ import { ArchiveModule } from './modules/archive/archive.module';
 import { DemoModule } from './modules/demo/demo.module';
 import { PrintOrderModule } from './modules/print-order/print-order.module';
 import { PrintOrderAdminModule } from './modules/print-order/print-order-admin.module';
-import { TenancyModule } from '@app/tenancy';
+import { TenancyConfig, TenancyModule } from '@app/tenancy';
 import { CoreOutboxTenantModule } from './platform/tenancy/core-outbox-tenant.module';
+import { coreTenantDbRouter } from './platform/tenancy/core-tenant-db-router';
+import { coreRequestTenantProviders } from './platform/tenancy/core-request-tenant.interceptor';
 
 @Module({
   imports: [
@@ -55,6 +58,11 @@ import { CoreOutboxTenantModule } from './platform/tenancy/core-outbox-tenant.mo
         connectionString: configService.get<string>('DATABASE_URL') ?? '',
       }),
       schema: mergedSchema,
+      // ②(reject)면 테넌트마다 풀 하나, 맥락으로 고른다. ①(warn)이면 null — 위 DATABASE_URL 하나를 그대로 쓴다.
+      router: {
+        inject: [TenancyConfig, { token: ClsService, optional: true }],
+        useFactory: coreTenantDbRouter,
+      },
     }),
     AuthorizationModule.forAuthOnly(),
     PermissionModule.forRoot({ service: 'core', tenancy: 'per-token' }),
@@ -85,6 +93,8 @@ import { CoreOutboxTenantModule } from './platform/tenancy/core-outbox-tenant.mo
     { provide: APP_GUARD, useClass: PermissionGuard },
     // 개인정보 표시 제한 — 다른 응답 인터셉터보다 바깥에서 최종 본문을 본다.
     ...piiMaskingProviders({ service: 'core', recorder: OutboxPiiAccessRecorder }),
+    // 요청 문 — 토큰·내부 키 헤더·@Public 헤더로 테넌트 맥락을 정한다. DB 라우터가 그 맥락을 읽는다.
+    ...coreRequestTenantProviders(),
   ],
 })
 export class AppModule {}
