@@ -1,4 +1,5 @@
-import { Injectable } from '@nestjs/common';
+import { OutboundTenant } from '@app/tenancy';
+import { Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { z } from 'zod';
 
@@ -19,7 +20,10 @@ export type UgcPrintLink = z.infer<typeof printLinkInfo>;
 
 @Injectable()
 export class UgcAlmondDesignClient {
-  constructor(private readonly config: ConfigService) {}
+  constructor(
+    private readonly config: ConfigService,
+    @Inject(OutboundTenant) private readonly outboundTenant: Pick<OutboundTenant, 'headers'>,
+  ) {}
 
   design(id: string): Promise<UgcAlmondDesignInfo> {
     return this.get(`/internal/almond-designs/${encodeURIComponent(id)}`, DESIGN_TIMEOUT_MS, designInfo);
@@ -39,7 +43,7 @@ export class UgcAlmondDesignClient {
     const key = this.config.get<string>('UGC_INTERNAL_KEY');
     if (!baseUrl || !key) throw new Error('UGC_SERVICE_URL/UGC_INTERNAL_KEY is not configured');
     const res = await fetch(`${baseUrl.replace(/\/+$/, '')}${path}`, {
-      headers: { Authorization: `Bearer ${key}` },
+      headers: { Authorization: `Bearer ${key}`, ...this.outboundTenant.headers() },
       signal: AbortSignal.timeout(timeoutMs),
     });
     if (!res.ok) throw new Error(`ugc ${path.split('?')[0]} failed: HTTP ${res.status}`);

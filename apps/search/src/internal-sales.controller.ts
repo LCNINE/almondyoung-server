@@ -6,11 +6,12 @@ import {
   Headers,
   Logger,
   Post,
+  UseGuards,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ProductIndexService } from './product-index.service';
 import { UpdateSalesCountsDto, UpdateSalesCountsResponseDto } from './dto/update-sales-counts.dto';
-import { Public } from '@app/authorization';
+import { PermissionGuard, Public, ServiceKeyRoute } from '@app/authorization';
 
 /**
  * Medusa 가 누적 판매 수량을 밀어 넣는 내부 라우트.
@@ -31,7 +32,10 @@ export class InternalSalesController {
     this.internalKey = configService.get<string>('SEARCH_INTERNAL_KEY');
   }
 
+  // search 는 권한 가드가 전역이 아니다 — 서비스 키 입구의 테넌트 헤더를 보려면 여기서 건다.
   @Public()
+  @ServiceKeyRoute()
+  @UseGuards(PermissionGuard)
   @Post('sales-counts')
   async updateSalesCounts(
     @Headers('authorization') authorization: string | undefined,

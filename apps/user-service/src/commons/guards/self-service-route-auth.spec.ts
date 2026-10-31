@@ -57,7 +57,7 @@ describe('user-service 고객 셀프서비스 라우트 인증', () => {
           load: [() => ({ OAUTH_JWT_PUBLIC_KEY: publicKey, OAUTH_ISSUER_URL: ISSUER })],
         }),
         PassportModule,
-        PermissionModule.forRoot({ service: 'user-service', source: UnconfiguredSource }),
+        PermissionModule.forRoot({ service: 'user-service', tenancy: 'per-token', source: UnconfiguredSource }),
       ],
       controllers: [ConsentsController, UsersController],
       providers: [

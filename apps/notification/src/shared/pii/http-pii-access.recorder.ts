@@ -1,3 +1,4 @@
+import { OutboundTenant } from '@app/tenancy';
 import { PiiAccessRecorder, type PiiAccessRecord } from '@app/authorization';
 import { Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -10,7 +11,10 @@ const TIMEOUT_MS = 2_000;
  */
 @Injectable()
 export class HttpPiiAccessRecorder extends PiiAccessRecorder {
-  constructor(@Inject(ConfigService) private readonly config: Pick<ConfigService, 'get'>) {
+  constructor(
+    @Inject(ConfigService) private readonly config: Pick<ConfigService, 'get'>,
+    @Inject(OutboundTenant) private readonly outboundTenant: Pick<OutboundTenant, 'headers'>,
+  ) {
     super();
   }
 
@@ -20,7 +24,7 @@ export class HttpPiiAccessRecorder extends PiiAccessRecorder {
     if (!baseUrl || !key) throw new Error('pii access log endpoint is not configured');
     const response = await fetch(`${baseUrl.replace(/\/$/, '')}/internal/iam/pii-access-logs`, {
       method: 'POST',
-      headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json' },
+      headers: { authorization: `Bearer ${key}`, 'content-type': 'application/json', ...this.outboundTenant.headers() },
       body: JSON.stringify({ ...entry, occurredAt: entry.occurredAt.toISOString() }),
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });

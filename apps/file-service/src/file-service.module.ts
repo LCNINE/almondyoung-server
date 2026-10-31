@@ -28,7 +28,7 @@ import { TenancyModule } from '@app/tenancy';
     // 테넌트 목록·전환 모드. 틀리면 여기서 기동 거부 (@app/tenancy).
     TenancyModule,
     AuthorizationModule.forAuthOnly(),
-    PermissionModule.forRoot({ service: 'file-service' }),
+    PermissionModule.forRoot({ service: 'file-service', tenancy: 'per-token' }),
     DbModule.forRoot({
       config: {
         connectionString: process.env.DATABASE_URL ?? '',

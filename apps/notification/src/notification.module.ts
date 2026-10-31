@@ -64,7 +64,7 @@ import { TenancyModule } from '@app/tenancy';
       schema: notificationTables,
     }),
     AuthorizationModule.forAuthOnly(),
-    PermissionModule.forRoot({ service: 'notification' }),
+    PermissionModule.forRoot({ service: 'notification', tenancy: 'served-tenant' }),
     EventTraceApiModule,
     SharedModule,
     DispatcherModule,

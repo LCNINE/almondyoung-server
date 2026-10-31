@@ -166,7 +166,7 @@ export { AuthenticatedRequest, WalletAuthGuard } from './wallet-auth.guard';
     // 테넌트 목록·전환 모드. 틀리면 여기서 기동 거부 (@app/tenancy).
     TenancyModule,
     PassportModule.register({ defaultStrategy: 'jwt' }),
-    PermissionModule.forRoot({ service: 'wallet' }),
+    PermissionModule.forRoot({ service: 'wallet', tenancy: 'served-tenant' }),
     DbModule.forRoot({
       config: { connectionString: process.env.DATABASE_URL ?? '' },
       schema: walletSchema,

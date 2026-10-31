@@ -57,7 +57,7 @@ import { CoreOutboxTenantModule } from './platform/tenancy/core-outbox-tenant.mo
       schema: mergedSchema,
     }),
     AuthorizationModule.forAuthOnly(),
-    PermissionModule.forRoot({ service: 'core' }),
+    PermissionModule.forRoot({ service: 'core', tenancy: 'per-token' }),
     // EventsModule.forApp 은 각 BC 모듈 내부에서 등록 (Catalog: PRODUCT_STREAM)
 
     CatalogModule,

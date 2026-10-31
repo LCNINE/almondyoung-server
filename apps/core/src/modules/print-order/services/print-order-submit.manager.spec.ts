@@ -1,3 +1,4 @@
+import { outboundTenantForTesting } from '@app/tenancy';
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DbService } from '@app/db';
@@ -91,7 +92,7 @@ class FakeUgc extends UgcAlmondDesignClient {
     Promise.resolve({ url: 'https://s3/print.jpg', fileName: 'print.jpg' }),
   );
   constructor() {
-    super(new ConfigService({}));
+    super(new ConfigService({}), outboundTenantForTesting(undefined));
   }
 }
 

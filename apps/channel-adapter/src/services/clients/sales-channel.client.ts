@@ -1,4 +1,5 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { OutboundTenant } from '@app/tenancy';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 import { firstValueFrom } from 'rxjs';
@@ -23,6 +24,7 @@ export class SalesChannelClient {
   constructor(
     private readonly httpService: HttpService,
     private readonly configService: ConfigService,
+    @Inject(OutboundTenant) private readonly outboundTenant: Pick<OutboundTenant, 'headers'>,
   ) {
     this.pimBaseUrl = this.configService.get<string>('PIM_API_URL') || 'http://localhost:3001';
   }
@@ -36,7 +38,7 @@ export class SalesChannelClient {
 
     const response = await firstValueFrom(
       this.httpService.get<ActiveChannelSitesResponse>(`${this.pimBaseUrl}/internal/channels/active-sites`, {
-        headers: { Authorization: `Bearer ${internalKey}` },
+        headers: { Authorization: `Bearer ${internalKey}`, ...this.outboundTenant.headers() },
         timeout: 5000,
       }),
     );

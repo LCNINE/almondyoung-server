@@ -111,7 +111,7 @@ import { TenancyModule } from '@app/tenancy';
     // 테넌트 목록·전환 모드. 틀리면 여기서 기동 거부 (@app/tenancy).
     TenancyModule,
     AuthorizationModule.forAuthOnly(),
-    PermissionModule.forRoot({ service: 'membership' }),
+    PermissionModule.forRoot({ service: 'membership', tenancy: 'served-tenant' }),
     HttpModule,
     SCHEDULE_ROOT,
     CronOnceModule,

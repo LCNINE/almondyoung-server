@@ -1,7 +1,9 @@
+import { OutboundTenant } from '@app/tenancy';
 import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  Inject,
   Injectable,
   NotFoundException,
   ServiceUnavailableException,
@@ -69,7 +71,10 @@ export function assertDecisionAllowed(canReview: boolean, status: RequestStatus,
 
 @Injectable()
 export class AttendanceRequestManager {
-  constructor(private readonly repo: AttendanceRepository) {}
+  constructor(
+    private readonly repo: AttendanceRepository,
+    @Inject(OutboundTenant) private readonly outboundTenant: Pick<OutboundTenant, 'headers'>,
+  ) {}
 
   async list(userId: string, master = false) {
     const rows = await this.repo.db
@@ -190,7 +195,7 @@ export class AttendanceRequestManager {
 
     for (const id of fileIds) {
       const response = await fetch(`${base.replace(/\/$/, '')}/internal/files/${encodeURIComponent(id)}`, {
-        headers: { Authorization: `Bearer ${key}` },
+        headers: { Authorization: `Bearer ${key}`, ...this.outboundTenant.headers() },
         signal: AbortSignal.timeout(10000),
       });
 

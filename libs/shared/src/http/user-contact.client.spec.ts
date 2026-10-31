@@ -1,3 +1,4 @@
+import { outboundTenantForTesting } from '@app/tenancy';
 import { of } from 'rxjs';
 import { UserContactClient } from './user-contact.client';
 
@@ -8,7 +9,7 @@ function makeClient(response: unknown) {
   const configService = {
     get: (k: string) => (k === 'USER_SERVICE_URL' ? 'http://user' : 'secret'),
   } as any;
-  return { client: new UserContactClient(httpService, configService), httpService };
+  return { client: new UserContactClient(httpService, configService, outboundTenantForTesting()), httpService };
 }
 
 describe('UserContactClient', () => {

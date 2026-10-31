@@ -85,7 +85,7 @@ import { TenancyModule } from '@app/tenancy';
       policy: { validateOnConsume: true },
     }),
     AuthorizationModule.forAuthOnly(),
-    PermissionModule.forRoot({ service: 'analytics' }),
+    PermissionModule.forRoot({ service: 'analytics', tenancy: 'served-tenant' }),
   ],
   controllers: [
     AnalyticsController,

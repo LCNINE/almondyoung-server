@@ -62,6 +62,7 @@ describe('RouteRequirementResolver', () => {
   it('reads a single permission and the route path', () => {
     expect(resolver.resolve(contextFor(OrdersController, proto.list))).toEqual({
       requirement: { kind: 'permission', anyOf: ['order.order.read'] },
+      tenantEntry: 'token',
       path: '/orders',
     });
   });
@@ -82,6 +83,7 @@ describe('RouteRequirementResolver', () => {
   it('inherits a class-level customer marker', () => {
     expect(resolver.resolve(contextFor(CustomerController, CustomerController.prototype.me))).toEqual({
       requirement: { kind: 'open' },
+      tenantEntry: 'token',
       path: '/me',
     });
   });
@@ -89,6 +91,7 @@ describe('RouteRequirementResolver', () => {
   it('reports an unmarked route as unclassified', () => {
     expect(resolver.resolve(contextFor(OrdersController, proto.unmarked))).toEqual({
       requirement: { kind: 'unclassified' },
+      tenantEntry: 'none',
       path: '/orders/:id',
     });
   });

@@ -16,10 +16,17 @@ import {
 } from './services/permission-runtime.options';
 import { RolePermissionSource } from './services/role-permission-source';
 import { RouteRequirementResolver } from './services/route-requirement.resolver';
+import { PermissionTenancy, ServedTenantGate } from './services/served-tenant-gate';
+import { requireServedTenant, TENANCY_ENV, TenancyConfig } from '@app/tenancy';
 
 export interface PermissionModuleOptions {
   /** 지표·로그의 service 라벨. */
   readonly service: OwnerService;
+  /**
+   * 앱이 테넌트를 어떻게 섬기나. 기본값은 없다 — `served-tenant` 면 앱 설정 T(`SERVED_TENANT_ID`)를 목록과 대조하고,
+   * 없거나 목록에 없으면 기동을 거부한다. 어느 앱이 무엇을 선언하는지는 `scripts/security/permission-wiring.spec.ts`.
+   */
+  readonly tenancy: PermissionTenancy;
   /** 기본은 user-service HTTP. user-service 자신만 DB 소스를 넘긴다. */
   readonly source?: Type<RolePermissionSource>;
   /** source 의 의존성을 가진 모듈. */
@@ -58,10 +65,21 @@ export class PermissionModule {
           }),
         },
         { provide: RolePermissionSource, useClass: options.source ?? HttpRolePermissionSource },
+        {
+          provide: ServedTenantGate,
+          inject: [ConfigService, { token: TenancyConfig, optional: true }],
+          useFactory: (config: ConfigService, tenancy?: TenancyConfig): ServedTenantGate => {
+            if (options.tenancy === 'per-token') return ServedTenantGate.perToken();
+            if (!tenancy)
+              throw new Error(`${options.service}: «T 만 섬김» 앱은 루트 모듈이 TenancyModule 을 import 해야 한다`);
+            const served = requireServedTenant(tenancy.tenants, config.get<string>(TENANCY_ENV.servedTenantId));
+            return new ServedTenantGate({ service: options.service, tenantId: served.id, gateMode: tenancy.gateMode });
+          },
+        },
         ...EXPORTED,
       ],
       // 옵션 토큰도 내보낸다 — 앱이 PermissionGuard 를 자기 모듈의 APP_GUARD 로 걸면 거기서 풀린다.
-      exports: [...EXPORTED, PERMISSION_RUNTIME_OPTIONS],
+      exports: [...EXPORTED, ServedTenantGate, PERMISSION_RUNTIME_OPTIONS],
     };
   }
 }

@@ -1,3 +1,4 @@
+import { outboundTenantForTesting } from '@app/tenancy';
 import { ConfigService } from '@nestjs/config';
 import { BadRequestError } from '@app/shared';
 import { LOGO_CONTEST_IMAGE_CONTEXT_ID } from '../constants/logo-contest.constants';
@@ -27,7 +28,7 @@ const describeAs = (overrides: Record<string, string | number>) => {
     }),
   }) as unknown as typeof fetch;
 
-  return new FileOwnerClient(configOf());
+  return new FileOwnerClient(configOf(), outboundTenantForTesting());
 };
 
 describe('FileOwnerClient.assertOwnedImages', () => {
@@ -103,6 +104,8 @@ describe('FileOwnerClient.assertOwnedImages', () => {
       .fn()
       .mockResolvedValue({ ok: false, status: 404, json: async () => ({}) }) as unknown as typeof fetch;
 
-    await expect(new FileOwnerClient(configOf()).assertOwnedImages([FILE_ID], OWNER)).rejects.toThrow(BadRequestError);
+    await expect(
+      new FileOwnerClient(configOf(), outboundTenantForTesting()).assertOwnedImages([FILE_ID], OWNER),
+    ).rejects.toThrow(BadRequestError);
   });
 });

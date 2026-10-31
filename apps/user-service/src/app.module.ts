@@ -140,7 +140,7 @@ const staticRoot = existsSync(join(__dirname, 'static')) ? join(__dirname, 'stat
     SCHEDULE_ROOT,
     CronOnceModule,
     AuthorizationModule.forAuthOnly(),
-    PermissionModule.forRoot({ service: 'user-service', source: LocalRolePermissionSource, imports: [IamModule] }),
+    PermissionModule.forRoot({ service: 'user-service', tenancy: 'per-token', source: LocalRolePermissionSource, imports: [IamModule] }),
     AuthModule.register(),
     OAuthModule,
     OAuthCorsModule,

@@ -12,7 +12,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { IsISO8601, IsString } from 'class-validator';
-import { Public } from '@app/authorization';
+import { Public, ServiceKeyRoute } from '@app/authorization';
 import { ChannelOrderReconcileService } from '../services/order-reconcile/channel-order-reconcile.service';
 import { isSyncableChannel } from '../services/order-collection/syncable-channels';
 import { errorMessage } from '../services/order-collection/order-processing-stage.error';
@@ -30,6 +30,7 @@ export class SweepBodyDto {
 // 배포 직후 한 번 운영자가 부른다(스펙 §9). 사용자 JWT 가 없어 `ChannelOrderSyncController` 처럼 전역 가드를 면제하고
 // **모든 핸들러가** verifyInternalKey 로 CHANNEL_ADAPTER_INTERNAL_KEY 를 검증한다.
 @Public()
+@ServiceKeyRoute()
 @Controller('adapter/order-reconcile')
 export class OrderReconcileSweepController {
   private readonly logger = new Logger(OrderReconcileSweepController.name);

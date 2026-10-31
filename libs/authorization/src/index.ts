@@ -32,3 +32,5 @@ export * from './interceptors/pii-masking.providers';
 export * from './services/pii-access-recorder';
 export * from './services/staff-client';
 export * from './pii/pii-export-reason';
+export * from './decorators/service-key-route.decorator';
+export * from './services/served-tenant-gate';

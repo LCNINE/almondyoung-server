@@ -1,3 +1,4 @@
+import { outboundTenantForTesting } from '@app/tenancy';
 import { AttendanceJobsService, reminderDue } from './attendance-jobs.service';
 import { DEFAULT_ATTENDANCE_SETTINGS } from '@packages/domain-types/attendance';
 
@@ -65,7 +66,7 @@ describe('attendance job recipients', () => {
       settings: () => Promise.reject(new Error('this test does not read settings')),
       withUserLock: () => Promise.reject(new Error('this test does not lock')),
     };
-    const service = new AttendanceJobsService(repo);
+    const service = new AttendanceJobsService(repo, outboundTenantForTesting());
 
     await expect(service.tick()).resolves.toBeUndefined();
   });

@@ -4,3 +4,4 @@ export * from './tenancy-settings';
 export * from './tenancy.module';
 export * from './tenant-list';
 export * from './tenant-context';
+export * from './tenant-header';

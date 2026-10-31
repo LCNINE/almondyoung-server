@@ -518,9 +518,9 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'search POST /search/products/internal/sales-counts': {
     verdict: 'N/A',
-    evidence: 'apps/search/src/internal-sales.controller.ts:40',
+    evidence: 'apps/search/src/internal-sales.controller.ts:44',
     predicate: 'authorization !== `Bearer ${this.internalKey}`',
-    note: '서비스 간 내부 라우트 — Medusa 가 누적 판매 수량을 검색 색인에 밀어 넣는다. 사용자 토큰이 아니라 공유 시크릿(SEARCH_INTERNAL_KEY)으로 막으며(internal-sales.controller.ts:40-45), 키가 비어 있으면 라우트를 아예 잠근다(:40-42, fail-closed). 바디의 masterId 는 상품 마스터 ID 로 사용자 소유 리소스가 아니고 쓰기 대상(색인의 sales_count)도 전역 카탈로그 데이터라 소유권 개념이 없어 IDOR 대상 아님. 키가 새면 임의 상품의 판매량을 조작해 검색 랭킹을 흔들 수 있으므로(관련도 동점 구간 한정) 시크릿 취급은 결제 키에 준한다.',
+    note: '서비스 간 내부 라우트 — Medusa 가 누적 판매 수량을 검색 색인에 밀어 넣는다. 사용자 토큰이 아니라 공유 시크릿(SEARCH_INTERNAL_KEY)으로 막으며(internal-sales.controller.ts:44-49), 키가 비어 있으면 라우트를 아예 잠근다(:44-46, fail-closed). 바디의 masterId 는 상품 마스터 ID 로 사용자 소유 리소스가 아니고 쓰기 대상(색인의 sales_count)도 전역 카탈로그 데이터라 소유권 개념이 없어 IDOR 대상 아님. 키가 새면 임의 상품의 판매량을 조작해 검색 랭킹을 흔들 수 있으므로(관련도 동점 구간 한정) 시크릿 취급은 결제 키에 준한다.',
   },
   'search GET /search/products/suggestions': {
     verdict: 'N/A',
@@ -636,7 +636,7 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'ugc-service POST /logo-contest/entries': {
     verdict: 'SAFE',
-    evidence: 'apps/ugc-service/src/logo-contest/clients/file-owner.client.ts:38',
+    evidence: 'apps/ugc-service/src/logo-contest/clients/file-owner.client.ts:42',
     predicate: 'if (file.uploadedBy !== userId) {',
     note: '생성 라우트라 대상 객체는 없지만(userId 는 토큰값, CreateLogoContestEntryDto 에 userId 필드 없음) 바디의 mediaFileIds 가 남의 fileId 일 수 있어 file-service 내부 조회로 업로더와 컨텍스트를 확인한다 — 리뷰의 normalizeMediaFileIds 는 개수·중복만 봐서 이 구멍이 열려 있다.',
   },

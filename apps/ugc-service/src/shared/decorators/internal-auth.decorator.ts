@@ -1,5 +1,5 @@
 import { applyDecorators, UseGuards } from '@nestjs/common';
-import { Public } from '@app/authorization';
+import { Public, ServiceKeyRoute } from '@app/authorization';
 import { UgcInternalApiKeyGuard } from '../guards/internal-api-key.guard';
 
 /**
@@ -9,5 +9,6 @@ import { UgcInternalApiKeyGuard } from '../guards/internal-api-key.guard';
  * `Authorization: Bearer ${UGC_INTERNAL_KEY}` 를 강제한다.
  *
  * `@Public()` 을 단독으로 쓰면 인증이 통째로 사라진다 — 내부 라우트에는 항상 이 데코레이터를 쓴다.
+ * 서비스 키 입구라 테넌트 헤더도 필수다(`ServiceKeyRoute`).
  */
-export const UgcInternalAuth = () => applyDecorators(Public(), UseGuards(UgcInternalApiKeyGuard));
+export const UgcInternalAuth = () => applyDecorators(Public(), ServiceKeyRoute(), UseGuards(UgcInternalApiKeyGuard));

@@ -38,7 +38,7 @@ import { TenancyModule } from '@app/tenancy';
     // 서비스도 그 전까지 인증이 아예 없었다). 배포 env 는
     // deployments/lcnine/services/infra/services.ts 의 searchEnv 에서 주입한다.
     AuthorizationModule.forAuthOnly(),
-    PermissionModule.forRoot({ service: 'search' }),
+    PermissionModule.forRoot({ service: 'search', tenancy: 'served-tenant' }),
     // 키워드 운영 상태(담당·메모) 테이블 전용 search 논리 DB. postgres.js 는 lazy 연결이라
     // DATABASE_URL 이 없어도 부팅은 되고, 이슈 라우트 첫 쿼리에서 실패한다.
     DbModule.forRoot({

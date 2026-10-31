@@ -1,3 +1,4 @@
+import { OutboundTenant } from '@app/tenancy';
 import { CronOnce } from '@app/cron-once';
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { and, eq, gt, gte, inArray, isNull, lt, lte, or, sql } from 'drizzle-orm';
@@ -55,6 +56,7 @@ export class AttendanceJobsService {
       AttendanceRepository,
       'db' | 'permissionsLoaded' | 'staff' | 'holdersOf' | 'settings' | 'withUserLock'
     >,
+    @Inject(OutboundTenant) private readonly outboundTenant: Pick<OutboundTenant, 'headers'>,
   ) {}
 
   @CronOnce('*/30 * * * * *', { name: 'attendance-jobs', timeZone: 'Asia/Seoul' })
@@ -315,7 +317,7 @@ export class AttendanceJobsService {
 
     const response = await fetch(`${base.replace(/\/$/, '')}${path}`, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json', ...this.outboundTenant.headers() },
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(60000),
     });
