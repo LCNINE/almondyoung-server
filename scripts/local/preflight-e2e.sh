@@ -224,5 +224,21 @@ elif [ -n "$TENANCY_FIRST" ]; then
     || ok "정본과 같다 (모드 $E2E_TENANT_GATE_MODE)"
 fi
 
+echo "── 12. 서버 자격증명 라우트의 테넌트 판정 (admin-web Medusa 프록시·channel-dispatch)"
+# 🔴 없으면 두 라우트가 503 이다(기본값이 없다) — 상품·주문 화면의 Medusa 호출이 전부 실패한다.
+check_server_credential_gate() {
+  local name="$1" dest="$2"
+  [[ " $E2E_SERVER_CREDENTIAL_GATE_APPS " == *" $name "* ]] || return 0
+  e2e_env_present "$dest" || return 0
+  local tenant mode
+  tenant=$(e2e_env_raw_value "$dest" SERVER_CREDENTIAL_TENANT_ID); mode=$(e2e_env_raw_value "$dest" TENANT_GATE_MODE)
+  if [ -z "$tenant" ] || [ -z "$mode" ]; then
+    bad "$name — SERVER_CREDENTIAL_TENANT_ID·TENANT_GATE_MODE 가 없다 → Medusa 프록시 503. npm run bootstrap:e2e:local"
+  elif [ "$tenant" != "$E2E_SERVED_TENANT_ID" ] || [ "$mode" != "$E2E_TENANT_GATE_MODE" ]; then
+    warn "$name — 정본(e2e-env-map.sh)과 다르다 — 손으로 바꾼 값인지 확인 (정본으로 돌리려면 두 줄을 지우고 npm run bootstrap:e2e:local)"
+  else ok "$name"; fi
+}
+e2e_env_each "" check_server_credential_gate
+
 echo
 [ "$FAIL" -eq 0 ] && echo "✅ 사전 점검 통과" || { echo "❌ 위 ✗ 를 먼저 해결할 것"; exit 1; }

@@ -7,6 +7,8 @@ export interface TokenPayload {
   email: string;
   login_id: string;
   must_change_password: boolean;
+  /** 토큰 테넌트. `tenant` 클레임 전에 나간 토큰에는 없다. */
+  tenant?: string;
 }
 
 const OAUTH_JWKS_URL = process.env.OAUTH_JWKS_URL;
@@ -47,6 +49,7 @@ export async function verifyAccessToken(token: string): Promise<TokenPayload | n
       email: (payload.email as string) ?? '',
       login_id: (payload.login_id as string) ?? '',
       must_change_password: (payload.must_change_password as boolean) ?? false,
+      tenant: typeof payload.tenant === 'string' && payload.tenant !== '' ? payload.tenant : undefined,
     };
   } catch {
     return null;

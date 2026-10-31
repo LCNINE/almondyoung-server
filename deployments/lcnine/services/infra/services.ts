@@ -987,6 +987,10 @@ export function setup(infra: SharedInfra) {
       ALMONDYOUNG_API_URL: url('core'),
       MEDUSA_API_URL: url('medusa'),
       MEDUSA_API_KEY: medusaApiKey.value,
+      // 서버 자격증명 라우트(Medusa 프록시·channel-dispatch)의 테넌트 판정 — 그 업스트림이 섬기는 T 와 전환 모드.
+      // admin-web 은 여러 테넌트를 섬기므로 SERVED_TENANT_ID 라 부르지 않는다. 없으면 두 라우트가 503 이다.
+      SERVER_CREDENTIAL_TENANT_ID: servedTenantEnv.SERVED_TENANT_ID,
+      TENANT_GATE_MODE: tenancyEnv.TENANT_GATE_MODE,
       USER_SERVICE_URL: idpUserServiceUrl,
       WALLET_SERVICE_URL: url('wallet'),
       MEMBERSHIP_SERVICE_URL: url('membership'),

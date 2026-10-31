@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getMyPermissions, type PermissionState } from '@/lib/auth/my-permissions.server';
 import { canAny } from '@/lib/auth/screen-access';
+import { admitServerCredentialTenant } from '@/lib/auth/server-credential-tenant.server';
 import { forwardRequest, staffClientHeaders } from '../../_lib/forward';
 import { applyMedusaPii, medusaPiiRuleFor, type MedusaAccessRecord } from './medusa-pii';
 import { requiredForMedusa } from './medusa-permissions';
@@ -16,7 +17,8 @@ function medusaExtraHeaders(): Record<string, string> | undefined {
   return { Authorization: `Basic ${encoded}` };
 }
 
-// Medusa 는 사용자 토큰이 아니라 공유 키 하나로 호출되므로, 넘기기 전에 여기서 경로별 권한을 확인한다.
+// Medusa 는 사용자 토큰이 아니라 공유 키 하나로 호출되므로, 넘기기 전에 여기서 테넌트와 경로별 권한을 확인한다.
+// 이 Medusa 는 한 테넌트 T 만 섬긴다 — 남의 테넌트 토큰은 권한 키가 맞아도 T 의 상품·주문을 열 수 없다.
 type Gate = { rejection: NextResponse } | { rejection: null; permissions: ReadonlySet<string> };
 
 async function rejectWithoutPermission(method: string, path: string[]): Promise<Gate> {
@@ -32,6 +34,8 @@ async function rejectWithoutPermission(method: string, path: string[]): Promise<
   if (state.state === 'unavailable') {
     return { rejection: NextResponse.json({ error: 'Permission data is not loaded yet' }, { status: 503 }) };
   }
+  const tenant = await admitServerCredentialTenant('medusa');
+  if (tenant.rejection) return { rejection: tenant.rejection };
   const required = requiredForMedusa(method, path);
   if (!required || !canAny(state.permissions, required)) {
     return {

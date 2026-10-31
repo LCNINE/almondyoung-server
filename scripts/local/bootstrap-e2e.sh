@@ -79,6 +79,19 @@ ensure_tenancy() {
     printf 'SERVED_TENANT_ID=%s\n' "$E2E_SERVED_TENANT_ID" >> "$dest"; ok "$name — SERVED_TENANT_ID 를 더했다"
     return 0
   fi
+  if [[ " $E2E_SERVER_CREDENTIAL_GATE_APPS " == *" $name "* ]]; then
+    local gate=""
+    if ! grep -q '^SERVER_CREDENTIAL_TENANT_ID=' "$dest"; then
+      [ -n "$(tail -c1 "$dest")" ] && echo >> "$dest"
+      printf 'SERVER_CREDENTIAL_TENANT_ID=%s\n' "$E2E_SERVED_TENANT_ID" >> "$dest"; gate="SERVER_CREDENTIAL_TENANT_ID"
+    fi
+    if ! grep -q '^TENANT_GATE_MODE=' "$dest"; then
+      [ -n "$(tail -c1 "$dest")" ] && echo >> "$dest"
+      printf 'TENANT_GATE_MODE=%s\n' "$E2E_TENANT_GATE_MODE" >> "$dest"; gate="${gate:+$gate · }TENANT_GATE_MODE"
+    fi
+    if [ -n "$gate" ]; then ok "$name — $gate 를 더했다"; else ok "$name"; fi
+    return 0
+  fi
   [ "$kind" = "nest" ] || return 0
   local added=""
   if ! grep -q '^TENANT_LIST=' "$dest"; then

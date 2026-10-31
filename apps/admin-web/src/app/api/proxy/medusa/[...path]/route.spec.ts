@@ -1,12 +1,21 @@
 import type { NextRequest } from 'next/server';
+import { getTokenPayload, type TokenPayload } from '@/lib/auth/get-token-payload';
 import { getMyPermissions, type PermissionState } from '@/lib/auth/my-permissions.server';
 import { DELETE, GET, POST } from './route';
 
 jest.mock('@/lib/auth/my-permissions.server', () => ({
   getMyPermissions: jest.fn(),
 }));
+jest.mock('@/lib/auth/get-token-payload', () => ({
+  getTokenPayload: jest.fn(),
+}));
 
 const mockedGetMyPermissions = getMyPermissions as jest.MockedFunction<typeof getMyPermissions>;
+const mockedGetTokenPayload = getTokenPayload as jest.MockedFunction<typeof getTokenPayload>;
+
+function tokenOf(tenant: string | undefined): TokenPayload {
+  return { sub: 'u1', roles: [], email: '', login_id: '', must_change_password: false, tenant };
+}
 
 function request(method = 'GET') {
   return {
@@ -32,11 +41,48 @@ describe('Medusa admin proxy', () => {
     transport = jest
       .spyOn(globalThis, 'fetch')
       .mockResolvedValue(new Response('{}', { status: 200 }));
+    process.env.SERVER_CREDENTIAL_TENANT_ID = '1';
+    process.env.TENANT_GATE_MODE = 'reject';
+    mockedGetTokenPayload.mockResolvedValue(tokenOf('1'));
   });
 
   afterEach(() => {
     jest.restoreAllMocks();
     mockedGetMyPermissions.mockReset();
+    mockedGetTokenPayload.mockReset();
+  });
+
+  describe('테넌트', () => {
+    it('테넌트 2 토큰은 상품 조회 권한이 있어도 Medusa 에 닿지 않는다', async () => {
+      mockedGetMyPermissions.mockResolvedValue(ready('catalog.product.read', 'order.order.read'));
+      mockedGetTokenPayload.mockResolvedValue(tokenOf('2'));
+
+      expect((await GET(request(), paramsFor('admin', 'orders'))).status).toBe(403);
+      expect(transport).not.toHaveBeenCalled();
+    });
+
+    it('테넌트 없는 토큰은 reject 에서 403, warn 에서 통과하고 경고를 남긴다', async () => {
+      mockedGetMyPermissions.mockResolvedValue(ready('marketing.promotion.read'));
+      mockedGetTokenPayload.mockResolvedValue(tokenOf(undefined));
+      const warned = jest.spyOn(console, 'warn').mockImplementation(() => undefined);
+
+      expect((await GET(request(), params)).status).toBe(403);
+      expect(transport).not.toHaveBeenCalled();
+
+      process.env.TENANT_GATE_MODE = 'warn';
+      expect((await GET(request(), params)).status).toBe(200);
+      expect(transport).toHaveBeenCalledTimes(1);
+      expect(String(warned.mock.calls[0]?.[0])).toContain('admin_web_untenanted_server_credential_request');
+    });
+
+    it('판정 설정이 없으면 닫는다', async () => {
+      mockedGetMyPermissions.mockResolvedValue(ready('marketing.promotion.read'));
+      delete process.env.SERVER_CREDENTIAL_TENANT_ID;
+      jest.spyOn(console, 'error').mockImplementation(() => undefined);
+
+      expect((await GET(request(), params)).status).toBe(503);
+      expect(transport).not.toHaveBeenCalled();
+    });
   });
 
   it('rejects requests without a valid admin session before reaching Medusa', async () => {

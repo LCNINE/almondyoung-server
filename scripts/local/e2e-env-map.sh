@@ -50,6 +50,9 @@ E2E_SERVED_TENANT_APPS='user-service channel-adapter membership ugc-service wall
 # Nest 밖의 한 테넌트 앱. 테넌트 목록은 안 받고 T 만 받아 서비스 호출에 테넌트 헤더로 싣는다
 # (쇼핑몰 → core 무인증 라우트, Medusa → 내부 키 라우트).
 E2E_FIXED_TENANT_CALLERS='medusa storefront'
+# 여러 테넌트를 섬기지만 T 만 섬기는 업스트림을 서버 자격증명으로 부르는 앱(admin-web 의 Medusa 프록시·channel-dispatch).
+# 토큰 테넌트를 그 T 와 대조한다 — SERVER_CREDENTIAL_TENANT_ID(= E2E_SERVED_TENANT_ID)와 TENANT_GATE_MODE 를 받는다.
+E2E_SERVER_CREDENTIAL_GATE_APPS='admin-web'
 
 # 행을 필드로 쪼개 콜백에 넘긴다. 사용: e2e_env_each required my_fn   (tier 생략 시 전부)
 e2e_env_each() {

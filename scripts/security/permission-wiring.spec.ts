@@ -207,9 +207,6 @@ describe('공유 서비스 문 배선', () => {
     // ai 는 토큰 테넌트별 앱이라 호출 테넌트를 요청 맥락에서 정해야 한다 — 그 앱의 테넌트 축 작업이 단다.
     const LATER = ['apps/ai/src/'];
     const NON_NEST = ['apps/medusa/', 'apps/admin-web/'];
-    const NON_NEST_BEFORE_REJECT = [
-      'apps/admin-web/src/app/api/fulfillment/channel-dispatch/attempts/[dispatchAttemptId]/orders/[salesOrderId]/route.ts',
-    ];
     const callers = [...tracked('apps/*/src'), ...tracked('libs/*/src')].filter((f) => {
       const src = read(f);
       const usesKey = /(get<string>\(|process\.env\.)\s*'?[A-Z_]+_INTERNAL_KEY/.test(src);
@@ -230,13 +227,11 @@ describe('공유 서비스 문 배선', () => {
       .filter((f) => !/servedTenantHeaders\(\)/.test(read(f)));
     expect(medusaMissing).toEqual([]);
 
-    // 나머지 Nest 밖 호출자는 배포 ② 전에 각자 자기 T 를 헤더로 실어야 하므로 목록을 정확히 붙잡아 둔다 — 고치면 여기서 빼고,
-    // 새로 생기면 빨갛다.
-    const nonNest = callers
-      .filter((f) => NON_NEST.some((prefix) => f.startsWith(prefix)))
-      .filter((f) => !f.startsWith('apps/medusa/'))
-      .sort();
-    expect(nonNest).toEqual(NON_NEST_BEFORE_REJECT);
+    // admin-web 은 여러 테넌트를 섬기므로 T 를 그냥 싣지 않는다 — 토큰 테넌트를 판정한 결과(`admitServerCredentialTenant` 의
+    // `tenantHeaders`)를 싣는다. 판정 없이 서버 자격증명을 쓰는 라우트는 admin-web 의 server-credential-routes.spec 이 막는다.
+    const adminWeb = callers.filter((f) => f.startsWith('apps/admin-web/'));
+    expect(adminWeb.length).toBeGreaterThanOrEqual(1);
+    expect(adminWeb.filter((f) => !/\.\.\.\w+\.tenantHeaders\b/.test(read(f)))).toEqual([]);
   });
 
   // T 가 없으면 두 앱은 헤더를 싣지 않고(기본 테넌트로 채우지 않는다) 배포 ② 에서 깨진다.
@@ -261,8 +256,30 @@ describe('공유 서비스 문 배선', () => {
     expect(/^E2E_FIXED_TENANT_CALLERS='([^']*)'$/m.exec(map)?.[1]?.split(' ').sort()).toEqual(['medusa', 'storefront']);
   });
 
-  // 두 트리는 루트 libs 를 못 가져와 헤더 이름을 사본으로 둔다.
-  it('Medusa·쇼핑몰의 테넌트 헤더 이름은 @app/tenancy 와 같다', () => {
+  // 없으면 admin-web 의 서버 자격증명 라우트(Medusa 프록시·channel-dispatch)가 503 이다 — 판정 설정에 기본값이 없다.
+  it('admin-web 은 서버 자격증명 라우트의 T·전환 모드를 SST·로컬에서 받는다', () => {
+    const code = read('apps/admin-web/src/lib/auth/server-credential-tenant.ts');
+    expect(code).toContain('env.SERVER_CREDENTIAL_TENANT_ID');
+    expect(code).toContain('env.TENANT_GATE_MODE');
+
+    const services = read('deployments/lcnine/services/infra/services.ts');
+    const start = services.indexOf("new sst.aws.Nextjs('AdminWeb'");
+    const end = services.indexOf('new sst.aws.Nextjs(', start + 1);
+    expect(start >= 0 && end > start).toBe(true);
+    const adminWeb = services.slice(start, end);
+    expect(adminWeb).toContain('SERVER_CREDENTIAL_TENANT_ID: servedTenantEnv.SERVED_TENANT_ID,');
+    expect(adminWeb).toContain('TENANT_GATE_MODE: tenancyEnv.TENANT_GATE_MODE,');
+
+    const map = read('scripts/local/e2e-env-map.sh');
+    const shell = (name: string) => new RegExp(`^${name}='([^']*)'$`, 'm').exec(map)?.[1];
+    expect(shell('E2E_SERVER_CREDENTIAL_GATE_APPS')).toBe('admin-web');
+    const template = read('env-templates/.env.admin-web.local.example');
+    expect(template).toContain(`SERVER_CREDENTIAL_TENANT_ID=${shell('E2E_SERVED_TENANT_ID')}\n`);
+    expect(template).toContain(`TENANT_GATE_MODE=${shell('E2E_TENANT_GATE_MODE')}\n`);
+  });
+
+  // 세 트리는 루트 libs 를 못 가져와 헤더 이름을 사본으로 둔다.
+  it('Medusa·쇼핑몰·admin-web 의 테넌트 헤더 이름은 @app/tenancy 와 같다', () => {
     const medusa = /export const TENANT_HEADER = '([^']+)'/.exec(
       read('apps/medusa/src/utils/served-tenant-headers.ts'),
     )?.[1];
@@ -271,5 +288,9 @@ describe('공유 서비스 문 배선', () => {
       read('web/almondyoung-storefront/src/lib/config/backend.ts'),
     )?.[1];
     expect(storefront).toBe(TENANT_HEADER);
+    const adminWeb = /export const TENANT_HEADER = '([^']+)'/.exec(
+      read('apps/admin-web/src/lib/auth/server-credential-tenant.ts'),
+    )?.[1];
+    expect(adminWeb).toBe(TENANT_HEADER);
   });
 });
