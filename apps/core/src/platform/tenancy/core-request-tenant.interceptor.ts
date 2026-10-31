@@ -18,9 +18,23 @@ import {
   TENANT_CONTEXT_KEY,
   TenancyConfig,
   tenantHeaderOf,
+  tokenTenantOf,
   type RequestEntry,
 } from '@app/tenancy';
+import { HttpTenantStatusSource } from './http-tenant-status.source';
 import { TENANT_FREE_KEY } from './tenant-free.decorator';
+import {
+  DEFAULT_TENANT_STATUS_OPTIONS,
+  TENANT_STATUS_OPTIONS,
+  TenantStatusCache,
+  TenantStatusSource,
+  type TenantRefusal,
+} from './tenant-status-cache';
+
+const REFUSAL_MESSAGE: Record<TenantRefusal, string> = {
+  suspended: '이용이 정지된 테넌트입니다.',
+  preparing: '아직 열리지 않은 테넌트입니다.',
+};
 
 /** @Public 라우트에서 사람 토큰을 읽는다(전역 인증 가드는 @Public 을 건너뛴다). 틀린·없는 토큰은 «토큰 없음»이다. */
 export const PUBLIC_ROUTE_TOKEN = Symbol('PUBLIC_ROUTE_TOKEN');
@@ -37,6 +51,14 @@ const untenanted = new Counter({
   registers: [register],
 });
 
+// 정지 스위치가 막은 요청. 정지 뒤 이 셈이 오르고 그 테넌트의 토큰 수명(15분)이 지나면 멈춘다.
+const refused = new Counter({
+  name: 'core_tenant_refused_requests_total',
+  help: 'core requests refused because the token tenant is suspended or still preparing',
+  labelNames: ['tenant', 'reason'],
+  registers: [register],
+});
+
 /**
  * core 요청 문. 요청의 테넌트를 정해 CLS 맥락(`TENANT_CONTEXT_KEY`)에 싣는다 — DB 라우터·서비스 간 헤더가 그 값을 읽는다.
  *
@@ -46,6 +68,8 @@ const untenanted = new Counter({
  *
  * - 틀린 값(토큰≠헤더, 목록 밖 테넌트)은 두 모드 모두 403.
  * - 모르는 테넌트는 ①(warn) 통과 + 셈, ②(reject) 403.
+ * - 토큰 테넌트가 활성이 아니면(정지 스위치) 두 모드 모두 403. 서비스 신원(내부 키·헤더) 호출은 막지 않는다 —
+ *   이미 들어온 일(이벤트 뒤처리·서비스 간 조회)을 반쯤 끊지 않고, 사람이 새로 하는 일만 멈춘다.
  */
 @Injectable()
 export class CoreRequestTenantInterceptor implements NestInterceptor {
@@ -55,6 +79,7 @@ export class CoreRequestTenantInterceptor implements NestInterceptor {
     private readonly reflector: Reflector,
     private readonly tenancy: TenancyConfig,
     private readonly cls: ClsService,
+    private readonly statusCache: TenantStatusCache,
     @Inject(PUBLIC_ROUTE_TOKEN) private readonly publicToken: PublicRouteToken,
   ) {}
 
@@ -74,6 +99,13 @@ export class CoreRequestTenantInterceptor implements NestInterceptor {
     const route = `${context.getClass().name}.${context.getHandler().name}`;
 
     if ('tenant' in verdict) {
+      if (tokenTenantOf(request.user) !== undefined) {
+        const refusal = this.statusCache.refusal(verdict.tenant);
+        if (refusal) {
+          refused.inc({ tenant: verdict.tenant, reason: refusal });
+          throw new ForbiddenException(REFUSAL_MESSAGE[refusal]);
+        }
+      }
       // 막지 않지만 ① 의 경고 수에 넣는다 — 클레임 없는 토큰을 core 로 보내는 경로(쇼핑몰 공개 조회)를 찾는 셈이다.
       if (verdict.claimlessToken) this.countUntenanted('token', route);
       if (this.cls.isActive()) this.cls.set(TENANT_CONTEXT_KEY, verdict.tenant);
@@ -119,6 +151,9 @@ export function coreRequestTenantProviders(): Provider[] {
         return { read: async (context) => void (await guard.canActivate(context)) };
       },
     },
+    { provide: TENANT_STATUS_OPTIONS, useValue: DEFAULT_TENANT_STATUS_OPTIONS },
+    { provide: TenantStatusSource, useClass: HttpTenantStatusSource },
+    TenantStatusCache,
     { provide: APP_INTERCEPTOR, useClass: CoreRequestTenantInterceptor },
   ];
 }

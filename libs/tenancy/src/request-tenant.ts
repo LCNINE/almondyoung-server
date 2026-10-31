@@ -25,7 +25,8 @@ export type RequestTenant =
   | { readonly tenant: string; readonly claimlessToken?: true }
   | { readonly untenanted: RequestEntry };
 
-function claimOf(user: object | null | undefined): string | undefined {
+/** 검증된 토큰의 `tenant` 클레임. 없거나 빈 값이면 undefined. */
+export function tokenTenantOf(user: object | null | undefined): string | undefined {
   if (!user || !('tenant' in user)) return undefined;
   const claim: unknown = user.tenant;
   return typeof claim === 'string' && claim !== '' ? claim : undefined;
@@ -40,7 +41,7 @@ function claimOf(user: object | null | undefined): string | undefined {
  * (쇼핑몰은 로그인 세션의 옛 내부 토큰을 공개 조회에도 붙인다).
  */
 export function resolveRequestTenant(input: RequestTenantInput, tenants: TenantList): RequestTenant {
-  const claim = claimOf(input.user);
+  const claim = tokenTenantOf(input.user);
   const { header } = input;
 
   if (claim !== undefined && header !== undefined && header !== claim) {
