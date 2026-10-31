@@ -20,9 +20,11 @@ export interface HeldAssignment {
   readonly displayName: string | null;
   readonly assignedAt: Date;
   readonly expiresAt: Date | null;
+  /** 어느 테넌트에서의 부여인가. contract(NOT NULL) 전까지는 타입상 비어 있을 수 있다. */
+  readonly tenantId: string | null;
 }
 
-// 토큰 발급(`getUserRoleNames`)과 같은 기준 — 지금 시각을 앱에서 넘긴다.
+// 토큰 발급(`UsersService.getTokenRoleNames`)과 같은 기준 — 지금 시각을 앱에서 넘긴다.
 const activeAssignment = () => or(isNull(userRoleAssignments.expiresAt), gt(userRoleAssignments.expiresAt, new Date()));
 
 /** 역할과 사람↔역할 부여. 권한 목록 자체는 IamRepository 가 맡는다. */
@@ -69,7 +71,7 @@ export class RoleRepository {
     return row ?? null;
   }
 
-  /** 같은 역할을 고치는 요청끼리 줄을 세운다(버전 비교와 마지막 시스템 역할 보유자 계산의 전제). */
+  /** 같은 역할을 고치는 요청끼리 줄을 세운다(버전 비교의 전제). */
   async lockRole(roleId: string, tx: UserServiceTx): Promise<RoleRow | null> {
     const [row] = await tx.select().from(roles).where(eq(roles.roleId, roleId)).for('update');
     return row ?? null;
@@ -205,7 +207,7 @@ export class RoleRepository {
     return rows.map((r) => r.name);
   }
 
-  /** 기간이 지난 부여까지 돌려준다 — 화면은 «만료됨»으로 보이고, 교체 계산은 그대로 비교한다. */
+  /** 기간이 지난 부여까지, 모든 테넌트의 것을 돌려준다 — 화면은 «만료됨»으로 보이고, 교체 계산은 테넌트로 나눠 비교한다. */
   assignmentsOf(userId: string, tx?: UserServiceTx): Promise<HeldAssignment[]> {
     return (
       this.client(tx)
@@ -215,6 +217,7 @@ export class RoleRepository {
           displayName: roles.displayName,
           assignedAt: userRoleAssignments.assignedAt,
           expiresAt: userRoleAssignments.expiresAt,
+          tenantId: userRoleAssignments.tenantId,
         })
         .from(userRoleAssignments)
         .innerJoin(roles, eq(roles.roleId, userRoleAssignments.roleId))
@@ -225,45 +228,51 @@ export class RoleRepository {
 
   async insertAssignments(
     userId: string,
+    tenantId: string,
     rows: readonly { roleId: string; expiresAt: Date | null }[],
     tx: UserServiceTx,
   ): Promise<void> {
     if (rows.length === 0) return;
     await tx
       .insert(userRoleAssignments)
-      .values(rows.map((r) => ({ userId, roleId: r.roleId, expiresAt: r.expiresAt })));
+      .values(rows.map((r) => ({ userId, tenantId, roleId: r.roleId, expiresAt: r.expiresAt })));
   }
 
-  async deleteAssignments(userId: string, roleIds: readonly string[], tx: UserServiceTx): Promise<void> {
+  async deleteAssignments(
+    userId: string,
+    tenantId: string,
+    roleIds: readonly string[],
+    tx: UserServiceTx,
+  ): Promise<void> {
     if (roleIds.length === 0) return;
     await tx
       .delete(userRoleAssignments)
-      .where(and(eq(userRoleAssignments.userId, userId), inArray(userRoleAssignments.roleId, [...roleIds])));
+      .where(
+        and(
+          eq(userRoleAssignments.userId, userId),
+          eq(userRoleAssignments.tenantId, tenantId),
+          inArray(userRoleAssignments.roleId, [...roleIds]),
+        ),
+      );
   }
 
-  async updateExpiry(userId: string, roleId: string, expiresAt: Date | null, tx: UserServiceTx): Promise<void> {
+  async updateExpiry(
+    userId: string,
+    tenantId: string,
+    roleId: string,
+    expiresAt: Date | null,
+    tx: UserServiceTx,
+  ): Promise<void> {
     await tx
       .update(userRoleAssignments)
       .set({ expiresAt, updatedAt: new Date() })
-      .where(and(eq(userRoleAssignments.userId, userId), eq(userRoleAssignments.roleId, roleId)));
-  }
-
-  /** `exceptUserId` 를 뺀, 기간 없이 지금 로그인할 수 있는 보유자 수(탈퇴·휴면 제외). 잠근 뒤에 부른다. */
-  async countPermanentHolders(roleId: string, tx: UserServiceTx, exceptUserId: string): Promise<number> {
-    const [row] = await tx
-      .select({ n: count() })
-      .from(userRoleAssignments)
-      .innerJoin(users, eq(users.id, userRoleAssignments.userId))
       .where(
         and(
+          eq(userRoleAssignments.userId, userId),
+          eq(userRoleAssignments.tenantId, tenantId),
           eq(userRoleAssignments.roleId, roleId),
-          ne(userRoleAssignments.userId, exceptUserId),
-          isNull(userRoleAssignments.expiresAt),
-          isNull(users.deletedAt),
-          isNull(users.dormantAt),
         ),
       );
-    return Number(row?.n ?? 0);
   }
 
   async membersOf(roleId: string) {

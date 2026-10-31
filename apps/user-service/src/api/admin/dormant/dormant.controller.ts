@@ -2,9 +2,11 @@ import { RequirePermission } from '@app/authorization';
 import { Controller, Post } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { DormantService } from './dormant.service';
+import { ServedTenantData } from '../../../tenancy/served-tenant.guard';
 
 @ApiTags('Admin/Dormant')
 @ApiBearerAuth('access-token')
+@ServedTenantData()
 @Controller('admin/dormant')
 export class DormantController {
   constructor(private readonly dormantService: DormantService) {}

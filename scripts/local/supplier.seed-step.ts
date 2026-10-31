@@ -48,10 +48,9 @@ interface CountRow {
 
 /**
  * `default_warehouse_id` 는 여기서 고정하지 않고 apply 시점에 DB 에서 고른다.
- * 창고 id 가 환경마다 다르기 때문이다 — `seed-dev-core` 를 돌린 DB 는 `FIXED_UUIDS` 의 창고
- * 2개(`019d0001-…`)를 갖고, 그냥 core 를 띄우기만 한 DB 는 부팅 수렴이 만든
- * `WAREHOUSE_CONSTANTS` 의 창고 2개(`00000000-…`)를 갖는다. 상수를 박으면 없는 창고를 가리켜
- * FK 위반으로 apply 가 통째로 실패한다.
+ * 창고 id 가 환경마다 다르기 때문이다 — 시드(`WmsSeedStep`·`seed-dev-core`)가 넣은 DB 는
+ * `FIXED_UUIDS` 의 창고 2개(`019d0001-…`)를 갖고, 예전 core 부팅이 만들던 창고 2개(`00000000-…`)가
+ * 남은 DB 도 있다. 상수를 박으면 없는 창고를 가리켜 FK 위반으로 apply 가 통째로 실패한다.
  */
 export const SUPPLIER_SEEDS = [
   {
@@ -111,7 +110,7 @@ export class SupplierLocalSeedStep extends SeedStep {
       summary: isFullySeeded
         ? 'All local supplier seed data present'
         : warehouseCount === 0
-          ? '창고가 0행이다 — core 를 한 번 띄워 기본 창고를 만든 뒤 다시 돌릴 것'
+          ? '창고가 0행이다 — WmsSeedStep(npm run db:seed:core:local)이 창고를 넣은 뒤 다시 돌릴 것'
           : `${missing.length} missing supplier(s), ${withoutWarehouse} without default warehouse`,
     };
   }
@@ -126,7 +125,7 @@ export class SupplierLocalSeedStep extends SeedStep {
       if (defaultWarehouseId === null) {
         this.logger.warn(
           '창고가 0행이라 입고 창고 없이 공급처를 넣는다 — 매칭은 열리지만 발주는 400 으로 막힌다. ' +
-            'core 를 한 번 띄운 뒤 이 시드를 다시 돌리면 채워진다.',
+            '창고 시드(WmsSeedStep)를 넣은 뒤 이 시드를 다시 돌리면 채워진다.',
         );
       }
 

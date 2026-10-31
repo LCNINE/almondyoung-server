@@ -1,5 +1,6 @@
+import { OutboundTenant } from '@app/tenancy';
 import { HttpService } from '@nestjs/axios';
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { firstValueFrom } from 'rxjs';
 
@@ -57,6 +58,7 @@ export class UserContactClient {
   constructor(
     private readonly httpService: HttpService,
     private readonly configService: ConfigService,
+    @Inject(OutboundTenant) private readonly outboundTenant: Pick<OutboundTenant, 'headers'>,
   ) {}
 
   async findContacts(userIds: string[]): Promise<Map<string, UserContact>> {
@@ -76,7 +78,10 @@ export class UserContactClient {
         this.httpService.post<{ data: UserContact[] }>(
           `${baseUrl}/users/internal/contacts`,
           { userIds: chunk },
-          { headers: { Authorization: `Bearer ${key}` }, timeout: REQUEST_TIMEOUT_MS },
+          {
+            headers: { Authorization: `Bearer ${key}`, ...this.outboundTenant.headers() },
+            timeout: REQUEST_TIMEOUT_MS,
+          },
         ),
       );
       for (const contact of data.data) {
@@ -104,7 +109,7 @@ export class UserContactClient {
       this.httpService.post<{ data: { userIds: string[]; withdrawnUserIds: string[] } }>(
         `${baseUrl}/users/internal/marketing-consent/withdraw`,
         { phoneNumber, via },
-        { headers: { Authorization: `Bearer ${key}` }, timeout: REQUEST_TIMEOUT_MS },
+        { headers: { Authorization: `Bearer ${key}`, ...this.outboundTenant.headers() }, timeout: REQUEST_TIMEOUT_MS },
       ),
     );
     return data.data;
@@ -151,6 +156,6 @@ export class UserContactClient {
   private headers(): Record<string, string> {
     const key = this.configService.get<string>('USER_SERVICE_INTERNAL_KEY');
     if (!key) throw new Error('USER_SERVICE_INTERNAL_KEY is not configured');
-    return { Authorization: `Bearer ${key}` };
+    return { Authorization: `Bearer ${key}`, ...this.outboundTenant.headers() };
   }
 }

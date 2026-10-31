@@ -1,3 +1,5 @@
+import { servedTenantHeaders } from '../../../utils/served-tenant-headers';
+
 export type CoreReturnEligibility = {
   found: boolean;
   lines: Array<{
@@ -43,7 +45,7 @@ export async function fetchCoreReturnEligibility(orderId: string): Promise<CoreR
   try {
     res = await fetch(`${baseUrl.replace(/\/+$/, '')}/internal/sales-orders/return-eligibility`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}`, ...servedTenantHeaders() },
       body: JSON.stringify({ salesChannel: 'medusa', externalOrderId: orderId }),
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });

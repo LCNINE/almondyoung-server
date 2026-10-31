@@ -52,6 +52,23 @@ export function setup(infra: IdpInfra) {
   const oauthJwtPrivateKey = new sst.Secret('OauthJwtPrivateKey');
   const oauthJwtPublicKey = new sst.Secret('OauthJwtPublicKey');
 
+  // ─── 테넌트 (@app/tenancy) ───
+  // 테넌트 목록 JSON `[{ id, slug, coreDb, publicBucket, privateBucket }]`. 기본값이 없다 — 미설정이면 배포가 멈춘다.
+  // SoT 는 여기 하나다. services 앱(core·file-service·소비 앱)은 아래 SSM SecureString 으로 같은 값을 받는다.
+  // 🔴 공개 레포다. 테넌트 2 이후의 값은 이 파일·주석 어디에도 적지 않는다 — `sst secret set` 으로만 넣는다.
+  //   sst secret set TenantList '[{"id":"…","slug":"…","coreDb":"core","publicBucket":"almondyoung-demo","privateBucket":"almondyoung-demo"}]' --stage <stage>
+  // 값을 바꾸면 auth → services 순서로 배포한다(services 가 배포 때 SSM 을 읽는다).
+  const tenantList = new sst.Secret('TenantList');
+  // 전환 모드 — 모든 문(DB 라우팅·이벤트·권한·파일)이 이 값 하나를 읽는다. 문마다 따로 두지 않는다.
+  //   'warn'   전환 배포 ①: 테넌트를 모르는 입력을 경고하고 세기만 한다
+  //   'reject' 전환 배포 ②: 거절한다
+  // 앱에 기본값이 없어서 이 줄이 빠지면 앱이 뜨지 않는다. services 앱도 아래 SSM 으로 같은 값을 받는다.
+  // ⚠️ 바꿀 때는 auth → services 순서로 배포한다. services 배포가 끝날 때까지 user-service 와 나머지 앱의 모드가 다르다.
+  const tenantGateMode = 'warn';
+  // user-service 의 앱 설정 T — 고객·근태 데이터와 옛 내부 토큰(쇼핑몰·auth-web 세션)이 섬기는 테넌트. 목록에 있어야 뜬다.
+  //   sst secret set ServedTenantId '<테넌트 1 의 id>' --stage <stage>
+  const servedTenantId = new sst.Secret('ServedTenantId');
+
   // ─── Observability ───
   // user-service 는 별도 앱이라 lcnine-services 의 Alloy 로 보내면 auth→services 순환 의존이
   // 생긴다 (현재는 services→auth 단방향). 그래서 lcnine-services 의 Next.js 앱들과 동일하게
@@ -98,6 +115,9 @@ export function setup(infra: IdpInfra) {
     },
     environment: {
       DATABASE_URL: dbUrl('user_service'),
+      TENANT_LIST: tenantList.value,
+      TENANT_GATE_MODE: tenantGateMode,
+      SERVED_TENANT_ID: servedTenantId.value,
       // platform이 제공하는 VPC 내부 Redpanda. kafka-config.util은 API key/SASL 미지정 시
       // plaintext로 자동 fallback하므로 브로커 주소만 주입하면 됨.
       KAFKA_BROKERS: kafkaBrokers,
@@ -116,15 +136,6 @@ export function setup(infra: IdpInfra) {
       AUTH_WEB_ORIGIN: authWebUrl,
       SIGNUP_CALLBACK_URL: `${authWebUrl}/callback/signup`,
       USER_SERVICE_URL: userServiceUrl,
-      REDIRECT_URL_WHITELIST: [
-        'http://localhost:8000/callback/signup',
-        'http://localhost:8000/',
-        'http://localhost:8000',
-        `${userServiceUrl}/`,
-        `${authWebUrl}/`,
-        `${authWebUrl}/callback/signup`,
-        'http://localhost:8080/',
-      ].join(','),
       CORS_ORIGIN_DOMAINS: [
         authWebUrl,
         'http://localhost:8000',
@@ -222,6 +233,26 @@ export function setup(infra: IdpInfra) {
     name: `/lcnine-auth/${$app.stage}/user-service-internal-key`,
     type: 'SecureString',
     value: userServiceInternalKey.value,
+  });
+
+  // 테넌트 목록·전환 모드 — 값은 위 한 곳에서만 관리한다(양쪽에 따로 넣으면 갈린다).
+  new aws.ssm.Parameter('IdpTenantList', {
+    name: `/lcnine-auth/${$app.stage}/tenant-list`,
+    type: 'SecureString',
+    value: tenantList.value,
+  });
+
+  new aws.ssm.Parameter('IdpTenantGateMode', {
+    name: `/lcnine-auth/${$app.stage}/tenant-gate-mode`,
+    type: 'String',
+    value: tenantGateMode,
+  });
+
+  // services 의 T 만 섬기는 발행 앱(channel-adapter·membership·ugc-service·wallet)이 받는 T. 1단계는 모두 user-service 와 같은 테넌트 1 이다.
+  new aws.ssm.Parameter('IdpServedTenantId', {
+    name: `/lcnine-auth/${$app.stage}/served-tenant-id`,
+    type: 'String',
+    value: servedTenantId.value,
   });
 
   new aws.ssm.Parameter('IdpIssuerUrl', {

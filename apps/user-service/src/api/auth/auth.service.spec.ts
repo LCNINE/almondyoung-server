@@ -1,5 +1,6 @@
 import { RoleAssignmentManager } from '../iam/assignments/role-assignment.manager';
-import { IamLastMasterError, IamStaffCannotLeaveError } from '../iam/iam.errors';
+import { IamLastOperatorError, IamStaffCannotLeaveError } from '../iam/iam.errors';
+import { PlatformOperatorManager } from '../iam/tenancy/platform-operator.manager';
 import { DbService } from '@app/db';
 import { ConflictException, InternalServerErrorException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -12,6 +13,7 @@ import { ConsentsService } from '../consents/consents.service';
 import { TokensService } from '../tokens/tokens.service';
 import { UsersService } from '../users/users.service';
 import { Cafe24LinkService } from '../cafe24-link/cafe24-link.service';
+import { SERVED_TENANT_ID } from '../../tenancy/served-tenant';
 
 // bcrypt mock
 jest.mock('bcrypt', () => ({
@@ -93,7 +95,9 @@ describe('AuthService - signUp', () => {
         { provide: 'STREAM_PUBLISHER_users.events.v1', useValue: { publishEvent: jest.fn() } },
         { provide: ConsentsService, useValue: {} },
         { provide: TokensService, useValue: {} },
-        { provide: RoleAssignmentManager, useValue: { assertCanLeave: jest.fn(), assertNotStaff: jest.fn() } },
+        { provide: RoleAssignmentManager, useValue: { assertNotStaff: jest.fn() } },
+        { provide: PlatformOperatorManager, useValue: { assertCanLeave: jest.fn() } },
+        { provide: SERVED_TENANT_ID, useValue: '1' },
         {
           provide: Cafe24LinkService,
           useValue: {
@@ -280,6 +284,8 @@ describe('AuthService - 탈퇴 익명화', () => {
         { provide: TokensService, useValue: { deleteAllTokens: jest.fn().mockResolvedValue(undefined) } },
         { provide: Cafe24LinkService, useValue: {} },
         { provide: RoleAssignmentManager, useValue: leaving },
+        { provide: PlatformOperatorManager, useValue: leaving },
+        { provide: SERVED_TENANT_ID, useValue: '1' },
       ],
     }).compile();
 
@@ -343,14 +349,14 @@ describe('AuthService - 탈퇴 익명화', () => {
     );
   });
 
-  it('refuses to withdraw the last permanent system role holder', async () => {
-    leaving.assertCanLeave.mockRejectedValue(new IamLastMasterError());
-    await expect(service.softDeleteUser(USER_ID)).rejects.toBeInstanceOf(IamLastMasterError);
+  it('refuses to withdraw the last platform operator', async () => {
+    leaving.assertCanLeave.mockRejectedValue(new IamLastOperatorError());
+    await expect(service.softDeleteUser(USER_ID)).rejects.toBeInstanceOf(IamLastOperatorError);
     expect(updates).toHaveLength(0);
     expect(publishEvent).not.toHaveBeenCalled();
   });
 
-  it('checks the last system role holder inside the withdrawal transaction', async () => {
+  it('checks the last platform operator inside the withdrawal transaction', async () => {
     await service.softDeleteUser(USER_ID);
     expect(leaving.assertCanLeave).toHaveBeenCalledWith(USER_ID, tx);
   });
@@ -365,4 +371,3 @@ describe('AuthService - 탈퇴 익명화', () => {
     expect(publishEvent).not.toHaveBeenCalled();
   });
 });
-

@@ -7,6 +7,7 @@ import { outbox_events } from './outbox.schema';
 import { OutboxConfig } from './outbox.types';
 import { recordOutboxFailed, recordOutboxPublished } from './outbox.metrics';
 import type { OutboxDispatchGate } from './outbox-dispatch-gate.port';
+import type { EventTenantStamp } from '../tenancy/event-tenant-stamp';
 import { eq, inArray, notInArray, and, lt, lte, or, isNull, not, ilike, sql, type SQL } from 'drizzle-orm';
 
 /**
@@ -92,6 +93,11 @@ export class OutboxDispatcher {
      * 발행을 일시 보류할 행을 고르는 게이트 (선택). 없으면 보류 없음 = 이 인자가 생기기 전 동작.
      */
     private readonly dispatchGate?: OutboxDispatchGate,
+    /**
+     * 나가는 봉투에 이 outbox DB 의 테넌트를 찍는다. 적재 때가 아니라 여기서 찍으므로 이미 쌓인 행도 찍힌다.
+     * 없으면 행에 실린 봉투 그대로 보낸다 — `EventsModule.forApp` 은 테넌트 목록이 있는 앱에서 항상 넘긴다.
+     */
+    private readonly tenantStamp?: EventTenantStamp,
   ) {
     this.publisherMap = publisherMap;
     const retryDelaysSeconds = config?.retryDelaysSeconds ?? OUTBOX_RETRY_DELAYS_SECONDS;
@@ -363,7 +369,9 @@ export class OutboxDispatcher {
     // 컬럼을 채우지 않으므로 라이브 동작은 그대로다.
     // `payload` 컬럼은 jsonb 라 drizzle 이 `unknown` 으로 준다. 이 행에 실린 것이 조립·검증을
     // 마친 envelope 라는 것은 적재 쪽(`OutboxWriter.write`)의 계약이므로 여기서 좁힌다.
-    await publisher.publishStoredEnvelope(event.payload as MessageEnvelope, event.partitionKey ?? event.aggregateId);
+    const stored = event.payload as MessageEnvelope;
+    const envelope = this.tenantStamp?.stampOutbox(stored) ?? stored;
+    await publisher.publishStoredEnvelope(envelope, event.partitionKey ?? event.aggregateId);
 
     await this.db
       .update(outbox_events)

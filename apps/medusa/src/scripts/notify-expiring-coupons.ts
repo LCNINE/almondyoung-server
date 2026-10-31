@@ -2,6 +2,7 @@ import type { ExecArgs, MedusaContainer } from '@medusajs/framework/types';
 import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
 import { PROMOTION_META_MODULE } from '../modules/promotion-meta';
 import type PromotionMetaModuleService from '../modules/promotion-meta/service';
+import { servedTenantHeaders } from '../utils/served-tenant-headers';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const SCAN_LIMIT = 500;
@@ -24,7 +25,10 @@ export function groupNotices(
     const userId = userIdByCustomer.get(grant.customer_id);
     if (!userId) continue;
     const notice = byUser.get(userId) ?? { userId, coupons: [], grantIds: [] };
-    notice.coupons.push({ name: nameByPromotion.get(grant.promotion_id) ?? '쿠폰', expiresAt: grant.expires_at.toISOString() });
+    notice.coupons.push({
+      name: nameByPromotion.get(grant.promotion_id) ?? '쿠폰',
+      expiresAt: grant.expires_at.toISOString(),
+    });
     notice.grantIds.push(grant.id);
     byUser.set(userId, notice);
   }
@@ -67,14 +71,20 @@ export async function notifyExpiringCoupons(container: MedusaContainer, now = ne
     try {
       const res = await fetch(`${baseUrl}/internal/notifications/coupon-expiry`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${internalKey}` },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${internalKey}`,
+          ...servedTenantHeaders(),
+        },
         body: JSON.stringify(notice),
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       sent += 1;
     } catch (error) {
       await service.releaseExpiryNotice(grantIds);
-      logger.warn(`[coupon] 만료 예정 안내 실패 userId=${notice.userId}: ${(error as Error).message} — 다음 회차에 다시 보낸다`);
+      logger.warn(
+        `[coupon] 만료 예정 안내 실패 userId=${notice.userId}: ${(error as Error).message} — 다음 회차에 다시 보낸다`,
+      );
     }
   }
   logger.info(`[coupon] 만료 예정 안내 ${sent}명 (대상 ${grants.length}장)`);

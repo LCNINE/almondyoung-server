@@ -1,6 +1,6 @@
 import { Body, Controller, HttpCode, HttpStatus, Logger, Post, UnauthorizedException, Headers } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Public } from '@app/authorization';
+import { Public, ServiceKeyRoute } from '@app/authorization';
 import { DbService } from '@app/db';
 import { InboxService } from '../services/inbox.service';
 import { MembershipDailySyncService } from '../services/membership-daily-sync.service';
@@ -24,6 +24,7 @@ interface FirebaseSyncBody {
 // 면제하는 대신 **모든 핸들러가** `verifyInternalKey()` 로 CHANNEL_ADAPTER_INTERNAL_KEY 를 직접
 // 검증한다 — 이 클래스에 핸들러를 추가할 때 그 호출을 빠뜨리면 무인증으로 열린다.
 @Public()
+@ServiceKeyRoute()
 @Controller('internal/membership')
 export class InternalMembershipController {
   private readonly logger = new Logger(InternalMembershipController.name);

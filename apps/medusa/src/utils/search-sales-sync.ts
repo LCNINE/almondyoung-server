@@ -1,3 +1,5 @@
+import { servedTenantHeaders } from './served-tenant-headers';
+
 /**
  * 누적 판매 수량을 search 색인으로 밀어 넣는다.
  *
@@ -42,7 +44,7 @@ export async function pushSalesCounts(
   try {
     const response = await fetch(`${SEARCH_SERVICE_URL}/search/products/internal/sales-counts`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}`, ...servedTenantHeaders() },
       body: JSON.stringify({ items: entries }),
       signal: AbortSignal.timeout(SALES_SYNC_TIMEOUT_MS),
     });

@@ -1,12 +1,12 @@
-import { of, throwError } from 'rxjs';
+import { outboundTenantForTesting } from '@app/tenancy';
+import { Observable, of, throwError } from 'rxjs';
 import type { HttpService } from '@nestjs/axios';
 import type { ConfigService } from '@nestjs/config';
 import { ChannelListingClient } from './channel-listing.client';
 
 /**
- * 배포 순서는 Core → 어댑터지만, **Core 를 롤백하면 순서가 뒤집힌다.** 그때
- * `/resolve` 는 404 다. 폴백이 없으면 그 순간 모든 라인 해석이 예외가 되어 수집이 통째로
- * 멈춘다 — 사유를 얻으려다 수집을 잃는 것은 명백한 퇴행이다 (#674).
+ * core 의 리스팅 해석은 내부 키 입구다 — 키와 테넌트 헤더를 싣는다. 무인증 `@Public` 이던 때의 «401·404 면 `/lookup` 폴백»은
+ * 없앴다: 이제 401 은 «옛 Core» 가 아니라 «키가 틀렸다» 이고, 그걸 폴백으로 삼키면 모든 라인이 조용히 미식별이 된다.
  */
 describe('ChannelListingClient.resolveByChannelCode (#674)', () => {
   const listing = {
@@ -19,16 +19,29 @@ describe('ChannelListingClient.resolveByChannelCode (#674)', () => {
     isActive: true,
   };
 
-  function clientWith(get: jest.Mock): ChannelListingClient {
+  function clientWith(get: jest.Mock, values: Record<string, string | undefined> = { CORE_INTERNAL_KEY: 'k' }) {
     const http = { get } as unknown as HttpService;
-    const config = { get: () => 'http://core.test' } as unknown as ConfigService;
-    return new ChannelListingClient(http, config);
+    const config = {
+      get: (key: string) => ({ PIM_API_URL: 'http://core.test', ...values })[key],
+    } as unknown as ConfigService;
+    return new ChannelListingClient(http, config, outboundTenantForTesting('1'));
   }
 
-  it('성공하면 found: true 와 매핑을 준다', async () => {
-    const get = jest.fn().mockReturnValue(of({ status: 200, data: { found: true, listing } }));
+  it('내부 키와 테넌트 헤더로 core 의 내부 해석 라우트를 부른다', async () => {
+    // 인자 타입을 선언해야 mock.calls[0][1] 이 타입 검사를 지난다
+    const get = jest
+      .fn<Observable<{ status: number; data: unknown }>, [string, unknown]>()
+      .mockReturnValue(of({ status: 200, data: { found: true, listing } }));
+
     const result = await clientWith(get).resolveByChannelCode('naver', 'item-1');
+
     expect(result).toEqual({ found: true, listing });
+    expect(get).toHaveBeenCalledTimes(1);
+    expect(get.mock.calls[0][0]).toBe('http://core.test/internal/channel-listings/resolve');
+    expect(get.mock.calls[0][1]).toMatchObject({
+      params: { channelCode: 'naver', channelItemId: 'item-1' },
+      headers: { Authorization: 'Bearer k', 'x-tenant-id': '1' },
+    });
   });
 
   it('실패 사유를 그대로 전달한다', async () => {
@@ -43,53 +56,16 @@ describe('ChannelListingClient.resolveByChannelCode (#674)', () => {
     expect(result).toEqual({ found: false, cause: 'unknown' });
   });
 
-  it('/resolve 가 404 면 /lookup 으로 폴백한다 — 매핑이 있으면 found: true', async () => {
-    const get = jest
-      .fn()
-      .mockReturnValueOnce(throwError(() => ({ response: { status: 404 } })))
-      .mockReturnValueOnce(of({ status: 200, data: listing }));
-
-    const result = await clientWith(get).resolveByChannelCode('naver', 'item-1');
-
-    expect(result).toEqual({ found: true, listing });
-    expect(get).toHaveBeenCalledTimes(2);
-    expect(get.mock.calls[0][0]).toContain('/channel-listings/resolve');
-    expect(get.mock.calls[1][0]).toContain('/channel-listings/lookup');
-  });
-
-  it('/resolve 가 401 이어도 /lookup 으로 폴백한다 — 옛 Core 는 :id 라우트가 인증을 요구한다', async () => {
-    // 옛 Core 는 `/channel-listings/resolve` 라우트가 없어 `@Get(':id')` 가 id="resolve" 로
-    // 가로챈다. 그 핸들러는 @Public() 이 아니라서 미인증 요청은 401 로 거절된다 (#674 회귀).
-    const get = jest
-      .fn()
-      .mockReturnValueOnce(throwError(() => ({ response: { status: 401 } })))
-      .mockReturnValueOnce(of({ status: 200, data: listing }));
-
-    const result = await clientWith(get).resolveByChannelCode('naver', 'item-1');
-
-    expect(result).toEqual({ found: true, listing });
-    expect(get).toHaveBeenCalledTimes(2);
-    expect(get.mock.calls[0][0]).toContain('/channel-listings/resolve');
-    expect(get.mock.calls[1][0]).toContain('/channel-listings/lookup');
-  });
-
-  it('폴백에서 매핑이 없으면 사유를 지어내지 않고 unknown 이다', async () => {
-    const get = jest
-      .fn()
-      .mockReturnValueOnce(throwError(() => ({ response: { status: 404 } })))
-      .mockReturnValueOnce(of({ status: 204, data: null }));
-
-    const result = await clientWith(get).resolveByChannelCode('naver', 'item-1');
-
-    expect(result).toEqual({ found: false, cause: 'unknown' });
-  });
-
-  it('404 가 아닌 오류는 삼키지 않는다', async () => {
-    const get = jest
-      .fn()
-      .mockReturnValueOnce(throwError(() => ({ response: { status: 500 }, message: 'boom' })));
+  it('401 은 폴백하지 않고 던진다 — 키가 틀린 것을 미식별로 바꾸지 않는다', async () => {
+    const get = jest.fn().mockReturnValueOnce(throwError(() => ({ response: { status: 401 }, message: '401' })));
     await expect(clientWith(get).resolveByChannelCode('naver', 'item-1')).rejects.toBeDefined();
     expect(get).toHaveBeenCalledTimes(1);
+  });
+
+  it('키가 없으면 부르지 않고 던진다', async () => {
+    const get = jest.fn();
+    await expect(clientWith(get, {}).resolveByChannelCode('naver', 'item-1')).rejects.toThrow('CORE_INTERNAL_KEY');
+    expect(get).not.toHaveBeenCalled();
   });
 
   it('found=true 인데 listing 이 없으면 Core 응답 오류로 던진다', async () => {

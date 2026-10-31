@@ -90,6 +90,7 @@ async function bootstrap() {
     await EventsModule.startConsumer(app, {
       groupId,
       kafka: createKafkaConfigFromEnv()!,
+      tenancy: 'served-tenant',
     });
   }
 

@@ -117,6 +117,15 @@
         "tsConfigPath": "libs/shared/tsconfig.lib.json"
       }
     },
+    "tenancy": {
+      "type": "library",
+      "root": "libs/tenancy",
+      "entryFile": "index",
+      "sourceRoot": "libs/tenancy/src",
+      "compilerOptions": {
+        "tsConfigPath": "libs/tenancy/tsconfig.lib.json"
+      }
+    },
     "test-auth-scope": {
       "type": "application",
       "root": "apps/test-auth-scope",

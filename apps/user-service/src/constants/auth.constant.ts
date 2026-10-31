@@ -1,3 +1,5 @@
+import { INTERNAL_SESSION_TOKEN_AUDIENCE } from '@app/authorization';
+
 // jsonwebtoken 의 expiresIn 은 '15m' 같은 리터럴 타입이라 env(string) 은 캐스팅이 필요하다.
 const JWT_ACCESS_TOKEN_EXPIRATION = (process.env.JWT_ACCESS_TOKEN_EXPIRATION ?? '15m') as `${number}m`;
 const JWT_RESET_PASSWORD_ACCESS_TOKEN_EXPIRATION = '5m'; // 비밀번호 재설정 액세스 토큰 만료 시간
@@ -10,7 +12,8 @@ const JWT_SOCIAL_CALLBACK_TOKEN_EXPIRATION = '60s'; // 소셜 콜백 → storefr
 const JWT_PAYMENT_HANDOFF_TOKEN_EXPIRATION = '120s'; // 결제창(wallet-web) 핸드오프 → storefront 가 발급, wallet-web 이 한 번 교환.
 
 // 내부 access token의 audience. OAuth로 발급된 토큰(aud=client_id)과 구분하기 위함.
-const INTERNAL_TOKEN_AUDIENCE = 'user-service-internal';
+// 값은 공유 서비스 문과 한 곳에서 온다 — 문은 이 토큰을 «T 의 토큰»으로 본다(`served-tenant-gate.ts`).
+const INTERNAL_TOKEN_AUDIENCE = INTERNAL_SESSION_TOKEN_AUDIENCE;
 
 // signup callback 토큰의 purpose claim. 다른 verification JWT가 callbackSignup에 잘못 사용되는 것을 막는다.
 const SIGNUP_CALLBACK_TOKEN_PURPOSE = 'signup_callback';

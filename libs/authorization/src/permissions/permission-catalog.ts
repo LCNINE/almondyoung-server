@@ -63,6 +63,18 @@ export const PERMISSION_CATALOG = [
     grant: NOBODY,
     ...DANGEROUS,
   }),
+  // 테넌트 관리 — 라우트 문은 이 키로 열고, 판정은 플랫폼 운영자 성질로 한다(테넌트 안의 master 가 이 키를 가져도
+  // 운영자가 아니면 iam Manager 가 거절한다).
+  permission('iam.tenant.read', '테넌트 조회', '테넌트 목록·상태·도메인을 본다(플랫폼 운영자만)', {
+    owners: ['user-service'],
+    grant: NOBODY,
+  }),
+  permission(
+    'iam.tenant.write',
+    '테넌트 관리',
+    '테넌트를 만들고 상태를 바꾸고, 소속·대행 계정·비밀번호 재발급·운영자 성질을 다룬다(플랫폼 운영자만)',
+    { owners: ['user-service'], grant: NOBODY, ...DANGEROUS },
+  ),
   permission('iam.audit_log.read', '권한 변경 이력 조회', '역할·권한·부여 변경 이력을 본다', {
     owners: ['user-service'],
     grant: ADMIN,
@@ -84,7 +96,16 @@ export const PERMISSION_CATALOG = [
     grant: ADMIN,
   }),
   permission('customer.pii.read', '개인정보 보기', '가려진 이름·연락처·주소·계좌의 원본을 본다(열람 기록이 남는다)', {
-    owners: ['user-service', 'core', 'membership', 'notification', 'wallet', 'ugc-service', 'channel-adapter', 'admin-web'],
+    owners: [
+      'user-service',
+      'core',
+      'membership',
+      'notification',
+      'wallet',
+      'ugc-service',
+      'channel-adapter',
+      'admin-web',
+    ],
     grant: ADMIN,
     ...DANGEROUS,
   }),
@@ -154,12 +175,17 @@ export const PERMISSION_CATALOG = [
     owners: ['core'],
     grant: ['admin', 'intern', ...LOGISTICS],
   }),
-  permission('fulfillment.recipient.read', '수령인 정보 보기', '출고 화면의 받는 분·주문자 이름·연락처·주소 원문을 본다(열람 기록이 남는다)', {
-    owners: ['core'],
-    grant: ADMIN_LOGISTICS,
-    dangerous: true,
-    requires: ['fulfillment.order.read'],
-  }),
+  permission(
+    'fulfillment.recipient.read',
+    '수령인 정보 보기',
+    '출고 화면의 받는 분·주문자 이름·연락처·주소 원문을 본다(열람 기록이 남는다)',
+    {
+      owners: ['core'],
+      grant: ADMIN_LOGISTICS,
+      dangerous: true,
+      requires: ['fulfillment.order.read'],
+    },
+  ),
   permission('fulfillment.order.write', '출고 요청 처리', '직배송을 전달·완료하고 출고 요청을 만들고 취소한다', {
     owners: ['core'],
     grant: ADMIN,
@@ -593,12 +619,17 @@ export const PERMISSION_CATALOG = [
     requires: ['attendance.staff.read'],
     ...DANGEROUS,
   }),
-  permission('attendance.wage.write', '급여 설정', '급여 그룹·계산 규칙·명단·시급·근무 시간표를 바꾸고 정산을 확정한다', {
-    owners: ['user-service'],
-    grant: NOBODY,
-    requires: ['attendance.wage.read'],
-    ...DANGEROUS,
-  }),
+  permission(
+    'attendance.wage.write',
+    '급여 설정',
+    '급여 그룹·계산 규칙·명단·시급·근무 시간표를 바꾸고 정산을 확정한다',
+    {
+      owners: ['user-service'],
+      grant: NOBODY,
+      requires: ['attendance.wage.read'],
+      ...DANGEROUS,
+    },
+  ),
   permission('attendance.wage.export', '급여 내려받기', '급여 정산을 엑셀로 내려받는다', {
     owners: ['user-service'],
     grant: NOBODY,

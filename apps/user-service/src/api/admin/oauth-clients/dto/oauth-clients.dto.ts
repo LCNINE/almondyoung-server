@@ -42,6 +42,16 @@ export class CreateOAuthClientDto {
   @IsOptional()
   @IsString({ each: true })
   allowedScopes?: string[];
+
+  @ApiProperty({
+    description:
+      '고정 테넌트 앱(쇼핑몰 등)의 테넌트 id. 비우면 웹 직원 앱 — 토큰 테넌트를 등록된 리디렉트 host(테넌트 도메인)로 정한다.',
+    required: false,
+  })
+  @IsOptional()
+  @IsString()
+  @Matches(/^[A-Za-z0-9_-]{1,64}$/)
+  tenantId?: string;
 }
 
 export class UpdateOAuthClientDto {
@@ -76,6 +86,7 @@ export class OAuthClientResponseDto {
   redirectUris: string[];
   postLogoutRedirectUris: string[] | null;
   allowedScopes: string[] | null;
+  tenantId: string | null;
   isActive: boolean;
   hasPreviousSecret: boolean;
   secretRotatedAt: Date | null;

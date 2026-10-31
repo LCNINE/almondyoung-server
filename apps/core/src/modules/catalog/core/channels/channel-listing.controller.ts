@@ -1,26 +1,12 @@
-import {
-  Controller,
-  Get,
-  Post,
-  Put,
-  Delete,
-  Body,
-  Param,
-  Query,
-  BadRequestException,
-  ConflictException,
-  NotFoundException,
-} from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiQuery, ApiBody } from '@nestjs/swagger';
-import { Public, RequirePermission } from '@app/authorization';
+import { Controller, Get, Post, Put, Delete, Body, Param, ConflictException, NotFoundException } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiResponse, ApiParam, ApiBody } from '@nestjs/swagger';
+import { RequirePermission } from '@app/authorization';
 import { ChannelListingService } from './channel-listing.service';
 import {
   CreateChannelListingDto,
   UpdateChannelListingDto,
   ChannelListingDto,
   ChannelListingWithChannelDto,
-  LookupChannelListingResponseDto,
-  ResolveChannelListingResponseDto,
 } from './dto';
 import { ChannelListingMapper } from './mappers';
 
@@ -28,90 +14,6 @@ import { ChannelListingMapper } from './mappers';
 @Controller('channel-listings')
 export class ChannelListingController {
   constructor(private readonly channelListingService: ChannelListingService) {}
-
-  @Get('lookup')
-  @Public()
-  @ApiOperation({
-    summary: '채널 상품 ID로 Variant 조회',
-    description:
-      '채널에서의 상품 ID를 사용하여 매핑된 PIM Variant를 조회합니다. Channel Adapter에서 주문 처리 시 호출됩니다.',
-  })
-  @ApiQuery({
-    name: 'salesChannelId',
-    required: false,
-    description: '판매 채널 ID (UUID)',
-  })
-  @ApiQuery({
-    name: 'channelCode',
-    required: false,
-    description: '채널 코드 (site). salesChannelId 대신 사용 가능 (예: coupang, naver)',
-  })
-  @ApiQuery({
-    name: 'channelItemId',
-    required: true,
-    description: '채널에서의 상품 ID',
-  })
-  @ApiResponse({
-    status: 200,
-    description: '매핑 조회 성공',
-    type: LookupChannelListingResponseDto,
-  })
-  @ApiResponse({
-    status: 204,
-    description: '매핑이 존재하지 않음 (null 반환)',
-  })
-  @ApiResponse({ status: 400, description: '잘못된 요청 (salesChannelId 또는 channelCode, channelItemId 필수)' })
-  async lookup(
-    @Query('salesChannelId') salesChannelId?: string,
-    @Query('channelCode') channelCode?: string,
-    @Query('channelItemId') channelItemId?: string,
-  ): Promise<LookupChannelListingResponseDto | null> {
-    if (!channelItemId) {
-      throw new BadRequestException('channelItemId is required');
-    }
-
-    if (!salesChannelId && !channelCode) {
-      throw new BadRequestException('Either salesChannelId or channelCode is required');
-    }
-
-    if (salesChannelId) {
-      return this.channelListingService.lookupVariant(salesChannelId, channelItemId);
-    }
-    return this.channelListingService.lookupVariantByChannelCode(channelCode!, channelItemId);
-  }
-
-  @Get('resolve')
-  @Public()
-  @ApiOperation({
-    summary: '채널 상품 ID로 Variant 해석 (사유 포함)',
-    description:
-      '`/lookup` 과 같은 조회에 **실패 사유**를 붙여 돌려준다. 미스도 204 가 아니라 200 이며 ' +
-      '`{ found: false, cause }` 본문을 갖는다. `/lookup` 은 미스가 204 라 같은 경로를 200 으로 ' +
-      '바꾸면 옛 클라이언트가 본문을 매핑으로 오독한다 — 그래서 경로를 나눴다 (#674).',
-  })
-  @ApiQuery({ name: 'salesChannelId', required: false, description: '판매 채널 ID (UUID)' })
-  @ApiQuery({ name: 'channelCode', required: false, description: '채널 코드 (site). salesChannelId 대신 사용 가능' })
-  @ApiQuery({ name: 'channelItemId', required: true, description: '채널에서의 상품 ID' })
-  @ApiResponse({ status: 200, description: '해석 결과 (성공·실패 모두)', type: ResolveChannelListingResponseDto })
-  @ApiResponse({ status: 400, description: '잘못된 요청' })
-  async resolve(
-    @Query('salesChannelId') salesChannelId?: string,
-    @Query('channelCode') channelCode?: string,
-    @Query('channelItemId') channelItemId?: string,
-  ): Promise<ResolveChannelListingResponseDto> {
-    if (!channelItemId) {
-      throw new BadRequestException('channelItemId is required');
-    }
-    if (!salesChannelId && !channelCode) {
-      throw new BadRequestException('Either salesChannelId or channelCode is required');
-    }
-
-    const result = salesChannelId
-      ? await this.channelListingService.resolveVariant(salesChannelId, channelItemId)
-      : await this.channelListingService.resolveVariantByChannelCode(channelCode!, channelItemId);
-
-    return result.found ? { found: true, listing: result.listing } : { found: false, cause: result.cause };
-  }
 
   @RequirePermission('catalog.channel_listing.write')
   @Post()

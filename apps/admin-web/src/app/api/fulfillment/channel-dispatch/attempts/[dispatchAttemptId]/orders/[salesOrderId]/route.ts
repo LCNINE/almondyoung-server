@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getMyPermissions } from '@/lib/auth/my-permissions.server';
+import { admitServerCredentialTenant } from '@/lib/auth/server-credential-tenant.server';
 import {
   buildChannelDispatchUpstreamUrl,
   canReadChannelDispatch,
@@ -41,6 +42,10 @@ export async function GET(_request: Request, { params }: Params) {
     );
   }
 
+  // channel-adapter 는 한 테넌트 T 만 섬기고, 내부 키 입구는 테넌트 헤더가 T 여야 한다.
+  const tenant = await admitServerCredentialTenant('channel-adapter', RESPONSE_HEADERS);
+  if (tenant.rejection) return tenant.rejection;
+
   const serviceUrl = process.env.CHANNEL_ADAPTER_SERVICE_URL;
   const internalKey = process.env.CHANNEL_ADAPTER_INTERNAL_KEY?.trim();
   if (!serviceUrl || !internalKey) {
@@ -58,7 +63,7 @@ export async function GET(_request: Request, { params }: Params) {
   try {
     const upstream = await fetch(upstreamUrl, {
       method: 'GET',
-      headers: { Authorization: `Bearer ${internalKey}` },
+      headers: { Authorization: `Bearer ${internalKey}`, ...tenant.tenantHeaders },
       cache: 'no-store',
       signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
     });

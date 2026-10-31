@@ -6,11 +6,7 @@ import { Logger } from '../lib/logger';
 import { resolveAdminPassword } from '../lib/admin-password';
 import { SeedCheckResult, SeedApplyResult, ServiceConfig, PhaseOptions } from '../lib/types';
 import { SeedStep } from '../steps/base-seed-step';
-import { WmsSeedStep } from '../steps/wms.seed-step';
-import { PimSeedStep } from '../steps/pim.seed-step';
-import { ProductMatchingBackfillSeedStep } from '../steps/product-matching-backfill.seed-step';
-import { ReplenishmentSeedStep } from '../steps/replenishment.seed-step';
-import { DemoLogisticsSeedStep } from '../steps/demo-logistics.seed-step';
+import { buildCoreSeedSteps } from '../lib/core-seed-steps';
 import { DemoLogisticsAuthSeedStep } from '../steps/demo-logistics-auth.seed-step';
 import {
   UserServiceSeedStep,
@@ -190,12 +186,7 @@ function buildSeedSteps(
 
   const coreEntry = registryMap.get('core');
   if (coreEntry?.hasSeedStep) {
-    const coreDbUrl = urlFor(coreEntry.database);
-    steps.push(new WmsSeedStep(coreDbUrl));
-    steps.push(new PimSeedStep(coreDbUrl));
-    steps.push(new ProductMatchingBackfillSeedStep(coreDbUrl));
-    steps.push(new ReplenishmentSeedStep(coreDbUrl));
-    steps.push(new DemoLogisticsSeedStep(coreDbUrl));
+    steps.push(...buildCoreSeedSteps(urlFor(coreEntry.database)));
   }
 
   const userEntry = registryMap.get('user-service');

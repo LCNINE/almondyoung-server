@@ -51,7 +51,9 @@ describe('EventsModule Kafka client configuration', () => {
 
     it('startConsumer 도 같은 메시지로 거부한다', async () => {
       const app = { get: jest.fn(), select: jest.fn() } as any;
-      await expect(EventsModule.startConsumer(app, { groupId: 'g' })).rejects.toThrow(/KAFKA_BROKERS/);
+      await expect(EventsModule.startConsumer(app, { groupId: 'g', tenancy: 'per-message' })).rejects.toThrow(
+        /KAFKA_BROKERS/,
+      );
     });
   });
 });

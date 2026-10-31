@@ -3,8 +3,10 @@ import { ApiTags, ApiOperation, ApiResponse, ApiBody } from '@nestjs/swagger';
 import { Public } from 'apps/user-service/src/commons/decorator/public.decorator';
 import { VerifyCodeDto } from '../dto/verify-code.dto';
 import { VerifyCodeService } from '../services/verify-code.service';
+import { ServedTenantData } from '../../../tenancy/served-tenant.guard';
 
 @ApiTags('휴대폰 인증 - 인증번호 확인')
+@ServedTenantData()
 @Controller('twilio/verify-code')
 export class VerifyCodeController {
   constructor(private readonly verifyCodeService: VerifyCodeService) {}

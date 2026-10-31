@@ -16,7 +16,8 @@ import {
 } from '@nestjs/microservices';
 import { APP_INTERCEPTOR, ModuleRef } from '@nestjs/core';
 import { Kafka } from 'kafkajs';
-import { ClsModule } from 'nestjs-cls';
+import { ClsModule, ClsService } from 'nestjs-cls';
+import { requireServedTenant, TENANCY_ENV, TENANT_CONTEXT_KEY, TenancyConfig, TenancyConfigError } from '@app/tenancy';
 import { StreamPublisher } from './publishers/stream-publisher.service';
 import { getPublisherToken } from './publishers/publisher-token';
 import { DLQHandler } from './dlq/dlq-handler.service';
@@ -34,6 +35,8 @@ import { OutboxDispatcher } from './outbox/outbox-dispatcher.service';
 import { OutboxMetricsCollector } from './outbox/outbox-metrics.collector';
 import { OutboxWriter } from './outbox/outbox-writer.port';
 import { OUTBOX_DISPATCH_GATE, type OutboxDispatchGate } from './outbox/outbox-dispatch-gate.port';
+import { OUTBOX_TENANT_ID } from './outbox/outbox-tenant.port';
+import { EventTenantStamp } from './tenancy/event-tenant-stamp';
 import { bootstrapKafkaTopics } from './bootstrap/topic-bootstrap.service';
 import { outboxSchema } from './outbox/outbox.schema';
 import { trackingSchema } from './tracking/tracking.schema';
@@ -53,6 +56,7 @@ import {
   KafkaConsumerTuning,
 } from './transport/kafka-consumer-options';
 import { ConsumerLagCollector, registerConsumerLagCollector } from './consumers/consumer-lag.collector';
+import { CONSUMER_TENANCIES, type ConsumerTenancy, EventTenantGate } from './tenancy/event-tenant-gate';
 
 export { KAFKA_CONSUMER_GROUP_POSTFIX };
 
@@ -64,6 +68,32 @@ const eventTransportProvider = {
   provide: EVENT_TRANSPORT,
   useFactory: (kafkaClient: ClientKafka): EventTransport => new KafkaTransport(kafkaClient),
   inject: ['KAFKA_CLIENT'],
+};
+
+/**
+ * 봉투에 테넌트를 찍는 도구 . 테넌트 목록(`TenancyModule`)이 없는 앱이면 `undefined` 이고 찍지 않는다 —
+ * 운영의 발행 앱은 전부 Kafka 소비 앱이라 `tenancy-wiring.spec` 이 목록을 강제한다. T·outbox 테넌트가 목록에 없으면
+ * 여기서 던져 기동을 거부한다.
+ */
+const eventTenantStampProvider = {
+  provide: EventTenantStamp,
+  useFactory: (cls: ClsService, tenancy?: TenancyConfig, outboxTenantId?: string): EventTenantStamp | undefined => {
+    if (!tenancy) return undefined;
+
+    const rawServed = process.env[TENANCY_ENV.servedTenantId];
+    const servedTenantId = rawServed ? requireServedTenant(tenancy.tenants, rawServed).id : undefined;
+    if (outboxTenantId !== undefined && !tenancy.tenants.find(outboxTenantId)) {
+      throw new TenancyConfigError('OUTBOX_TENANT_ID', [`outbox 테넌트 «${outboxTenantId}» 가 테넌트 목록에 없다`]);
+    }
+
+    return new EventTenantStamp({
+      contextTenant: () => (cls.isActive() ? cls.get<string | undefined>(TENANT_CONTEXT_KEY) : undefined),
+      servedTenantId,
+      outboxTenantId: outboxTenantId ?? servedTenantId,
+      gateMode: tenancy.gateMode,
+    });
+  },
+  inject: [ClsService, { token: TenancyConfig, optional: true }, { token: OUTBOX_TENANT_ID, optional: true }],
 };
 
 /**
@@ -114,6 +144,13 @@ export interface EventsAppOptions {
  */
 export interface StartConsumerOptions extends KafkaConsumerTuning {
   kafka?: KafkaConfig; // 없으면 환경변수에서 생성
+
+  /**
+   * 이 앱의 테넌트 모드 — 코드에서 도출할 수 없는 사실이라 선언한다. 기본값은 없다.
+   * `served-tenant` 는 `SERVED_TENANT_ID` 를 목록과 대조하고, 없거나 목록에 없으면 기동을 거부한다.
+   * 핸들러 앞의 문이 이 선언으로 판정한다 — `tenancy/event-tenant-gate.ts`.
+   */
+  tenancy: ConsumerTenancy;
 
   /** 도출된 토픽의 DLQ 토픽까지 부트스트랩할지 (기본: true) */
   enableAutoDLQ?: boolean;
@@ -167,6 +204,7 @@ export class EventsModule {
         eventChainService: EventChainService,
         eventTrackingService: EventTrackingService,
         outboxWriter?: OutboxWriter,
+        tenantStamp?: EventTenantStamp,
       ) => {
         return new StreamPublisher(
           transport,
@@ -176,6 +214,7 @@ export class EventsModule {
           eventChainService,
           eventTrackingService,
           outboxWriter,
+          tenantStamp,
         );
       },
       // `OutboxPublisher` 는 **항상 optional 로** 주입한다 (Task 6-C-2). 그 전에는 같은
@@ -184,7 +223,13 @@ export class EventsModule {
       // 아웃박스를 켰지만 inventory·fulfillment·sales-order 의 publisher 도 `enqueue` 를 쓴다.
       // 이 모듈은 `@Global()` 이라 어느 한 곳이 켜면 provider 는 앱 전체에서 보인다. 아무도 켜지
       // 않은 앱에서는 그대로 `undefined` 이고 `enqueue` 가 던진다 = 이 변경 전과 같다.
-      inject: [EVENT_TRANSPORT, EventChainService, EventTrackingService, { token: OutboxPublisher, optional: true }],
+      inject: [
+        EVENT_TRANSPORT,
+        EventChainService,
+        EventTrackingService,
+        { token: OutboxPublisher, optional: true },
+        EventTenantStamp,
+      ],
     }));
 
     // DLQ Handler 제공자 (DLQ가 활성화된 경우에만)
@@ -234,6 +279,7 @@ export class EventsModule {
               eventTrackingService: EventTrackingService,
               moduleRef: ModuleRef,
               dispatchGate?: OutboxDispatchGate,
+              tenantStamp?: EventTenantStamp,
             ) => {
               // topic -> StreamPublisher 매핑 생성
               const publisherMap = new Map<string, StreamPublisher>();
@@ -261,7 +307,14 @@ export class EventsModule {
                 }
               };
 
-              return new OutboxDispatcher(dbService, publisherMap, options.outbox, resolvePublisher, dispatchGate);
+              return new OutboxDispatcher(
+                dbService,
+                publisherMap,
+                options.outbox,
+                resolvePublisher,
+                dispatchGate,
+                tenantStamp,
+              );
             },
             inject: [
               DbService,
@@ -270,6 +323,7 @@ export class EventsModule {
               EventTrackingService,
               ModuleRef,
               { token: OUTBOX_DISPATCH_GATE, optional: true },
+              EventTenantStamp,
             ],
           },
           {
@@ -316,6 +370,7 @@ export class EventsModule {
     const providers = [
       retryInterceptorProvider, // 최외곽 — 등록 순서가 래핑 순서
       eventTransportProvider, // Kafka 로 나가는 유일한 통로
+      eventTenantStampProvider, // 봉투 테넌트 — publisher·디스패처가 주입받는다
       ...publisherProviders,
       ...(dlqProvider ? [dlqProvider] : []),
       ...outboxProviders,
@@ -385,6 +440,7 @@ export class EventsModule {
   static async startConsumer(app: INestApplication, options: StartConsumerOptions): Promise<DerivedConsumerConfig> {
     const logger = new Logger('EventsConsumer');
     const kafka = options.kafka || this.requireKafkaConfigFromEnv('startConsumer');
+    const tenantGate = this.requireTenantGate(app, options.tenancy);
     const derived = deriveConsumerConfig(discoverEventHandlers(app));
 
     const enableAutoDLQ = options.enableAutoDLQ ?? true;
@@ -413,7 +469,7 @@ export class EventsModule {
     // 실패 테이블 (#1016 8번). 앱이 `EventFailuresModule` 을 import 했을 때만 있다.
     const deadLetters = await this.enableDeadLetters(app, options.groupId, server, logger);
 
-    microservice.useGlobalInterceptors(...buildConsumerInterceptors(app, derived.streams, deadLetters));
+    microservice.useGlobalInterceptors(...buildConsumerInterceptors(app, derived.streams, deadLetters, tenantGate));
     microservice.registerListeners();
     microservice.setIsInitialized(true);
     microservice.setIsInitHookCalled(true);
@@ -432,6 +488,31 @@ export class EventsModule {
     }
 
     return derived;
+  }
+
+  /**
+   * 테넌트 문을 세운다. 틀리면 소비를 시작하기 전에 던진다 — 기동 거부. 전부 «조용히 죽는» 실수다:
+   * - 모드 선언이 없다(JS 호출·타입 우회). 기본 모드를 두면 «T 만 섬김» 앱이 «메시지마다»로 남의 테넌트를 처리한다.
+   * - 테넌트 목록이 없다(`TenancyModule` 미import). 문이 판정할 기준이 없다.
+   * - `served-tenant` 인데 T 가 없거나 목록에 없다. 모든 메시지를 건너뛰며 아무 일도 하지 않는다.
+   */
+  private static requireTenantGate(app: INestApplication, tenancy: ConsumerTenancy | undefined): EventTenantGate {
+    if (!tenancy || !CONSUMER_TENANCIES.includes(tenancy)) {
+      throw new TenancyConfigError('startConsumer({ tenancy })', [
+        `소비 앱의 테넌트 모드가 없거나 틀렸다(${String(tenancy)}) — ${CONSUMER_TENANCIES.join(' 또는 ')}. 기본값은 없다`,
+      ]);
+    }
+    const config = optionalGet(app, TenancyConfig);
+    if (!config) {
+      throw new TenancyConfigError('TenancyModule', [
+        '소비 앱이 테넌트 목록을 받지 않았다 — 루트 모듈에 TenancyModule(@app/tenancy) 을 import 할 것',
+      ]);
+    }
+    const servedTenantId =
+      tenancy === 'served-tenant'
+        ? requireServedTenant(config.tenants, process.env[TENANCY_ENV.servedTenantId]).id
+        : undefined;
+    return new EventTenantGate({ tenancy, servedTenantId, tenants: config.tenants, gateMode: config.gateMode });
   }
 
   /**

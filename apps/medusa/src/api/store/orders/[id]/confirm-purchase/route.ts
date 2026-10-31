@@ -3,6 +3,7 @@ import { ContainerRegistrationKeys, MedusaError, Modules } from '@medusajs/frame
 import { confirmPurchaseWorkflow } from '../../../../../workflows/orders/workflows/confirm-purchase-workflow';
 import type { CreateReviewEligibilityResult } from '../../../../../workflows/orders/steps/create-review-eligibility-step';
 import { ELIGIBILITY_ISSUED_METADATA_KEY } from '../../../../../scripts/lib/auto-review-eligibility';
+import { servedTenantHeaders } from '../../../../../utils/served-tenant-headers';
 
 const MEMBERSHIP_SERVICE_URL = process.env.MEMBERSHIP_SERVICE_URL || 'http://localhost:3040';
 const MEMBERSHIP_INTERNAL_KEY = process.env.MEMBERSHIP_INTERNAL_KEY || '';
@@ -41,6 +42,7 @@ async function markWelcomeMembershipPurchased(
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${MEMBERSHIP_INTERNAL_KEY}`,
+        ...servedTenantHeaders(),
       },
       // 구매 시각은 주문 시각이다 — 빼면 membership 이 이 호출(구매확정) 시각을 구매 시각으로 적는다.
       body: JSON.stringify({ orderId, ...(orderedAt && { orderedAt }) }),

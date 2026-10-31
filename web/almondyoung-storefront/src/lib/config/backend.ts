@@ -123,3 +123,16 @@ export const requireBackendBaseUrl = (service: BackendService) => {
 
   return baseUrl
 }
+
+/**
+ * core 로 가는 요청의 테넌트 헤더(`x-tenant-id`). 쇼핑몰은 한 테넌트만 섬기는 앱이라 그 테넌트는 앱 설정
+ * `SERVED_TENANT_ID` 다. core 의 무인증 라우트(배너·공지·팝업·상품 상세)는 이 헤더로만 테넌트 DB 를 고른다.
+ * 서버에서만 읽힌다(`api()` 는 서버 전용). 값이 없으면 싣지 않는다 — 기본 테넌트로 채우지 않는다.
+ */
+export const backendTenantHeaders = (
+  service: BackendService
+): Record<string, string> => {
+  if (SERVICE_SUBDOMAINS[service] !== "core") return {}
+  const tenant = process.env.SERVED_TENANT_ID?.trim()
+  return tenant ? { "x-tenant-id": tenant } : {}
+}

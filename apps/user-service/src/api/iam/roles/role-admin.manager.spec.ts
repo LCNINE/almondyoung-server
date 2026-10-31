@@ -13,6 +13,7 @@ import {
 import { MyPermissionsReader } from '../my-permissions.reader';
 import { RoleAdminManager } from './role-admin.manager';
 import { RoleRepository } from './role.repository';
+import { PlatformOperatorManager } from '../tenancy/platform-operator.manager';
 
 const role = (over: Partial<{ roleId: string; name: string; version: number; displayName: string | null }> = {}) => ({
   roleId: 'r-intern',
@@ -70,6 +71,12 @@ describe('RoleAdminManager', () => {
         { provide: IamAuditCreator, useValue: audit },
         { provide: MyPermissionsReader, useValue: myPermissions },
         { provide: DbService, useValue: { run } },
+        // 요청자가 일하는 테넌트(역할 정의는 전역이어도 이력은 그 테넌트에 남는다). 테넌트를 지정한 요청은 운영자 판정을
+        // 거친다 — 그 판정 자체는 PlatformOperatorManager 스펙이 본다.
+        {
+          provide: PlatformOperatorManager,
+          useValue: { workingTenant: async (_actor: unknown, requested?: string) => requested ?? '1' },
+        },
       ],
     }).compile();
     manager = module.get(RoleAdminManager);
@@ -89,6 +96,7 @@ describe('RoleAdminManager', () => {
       expect(roles.replaceGrants).toHaveBeenCalledWith('r-intern', ['order.order.write'], [], 'u-master', tx);
       expect(roles.bumpVersion).toHaveBeenCalledWith('r-intern', tx);
       expect(audit.record).toHaveBeenCalledWith(tx, actor, {
+        tenantId: '1',
         action: 'role.permissions.replace',
         targetType: 'role',
         targetId: 'r-intern',
@@ -168,6 +176,27 @@ describe('RoleAdminManager', () => {
   });
 
   describe('create', () => {
+    it('records a role made for a named tenant under that tenant (the create script)', async () => {
+      roles.findRoleByName.mockResolvedValue(null);
+      roles.insertRole.mockResolvedValue(role({ roleId: 'r-new', name: 't2_staff', displayName: '창고', version: 1 }));
+      await manager.create(actor, {
+        name: 't2_staff',
+        displayName: '창고',
+        landingPath: '/warehouses',
+        permissions: ['order.order.read'],
+        tenantId: 't2',
+      });
+      expect(audit.record).toHaveBeenCalledWith(
+        tx,
+        actor,
+        expect.objectContaining({
+          tenantId: 't2',
+          action: 'role.create',
+          after: expect.objectContaining({ landingPath: '/warehouses' }),
+        }),
+      );
+    });
+
     it('reports a name taken by a request that committed first as a conflict, not a crash', async () => {
       roles.findRoleByName.mockResolvedValue(null);
       roles.insertRole.mockResolvedValue(null);

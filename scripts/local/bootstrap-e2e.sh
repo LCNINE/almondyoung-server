@@ -66,6 +66,54 @@ if [ "$MISSING" = "1" ]; then
   exit 1
 fi
 
+# ─────────────────────────────────────────────────────────── 0-b. 테넌트 설정
+# 템플릿에 줄이 생기기 전에 만든 .env 에는 두 키가 없다 — 그대로 띄우면 kind=nest 앱이 전부 기동을 거부한다.
+# 빠진 줄만 정본 값으로 더한다. 이미 있는 줄은 다르더라도 덮지 않는다(손으로 바꾼 값일 수 있다 — 판정은 preflight).
+step "0-b. 테넌트 목록·전환 모드 (정본: E2E_TENANT_LIST · E2E_TENANT_GATE_MODE)"
+ensure_tenancy() {
+  local name="$1" dest="$2" kind="$6"
+  e2e_env_present "$dest" || return 0
+  if [[ " $E2E_FIXED_TENANT_CALLERS " == *" $name "* ]]; then
+    if grep -q '^SERVED_TENANT_ID=' "$dest"; then ok "$name"; return 0; fi
+    [ -n "$(tail -c1 "$dest")" ] && echo >> "$dest"
+    printf 'SERVED_TENANT_ID=%s\n' "$E2E_SERVED_TENANT_ID" >> "$dest"; ok "$name — SERVED_TENANT_ID 를 더했다"
+    return 0
+  fi
+  if [[ " $E2E_SERVER_CREDENTIAL_GATE_APPS " == *" $name "* ]]; then
+    local gate=""
+    if ! grep -q '^SERVER_CREDENTIAL_TENANT_ID=' "$dest"; then
+      [ -n "$(tail -c1 "$dest")" ] && echo >> "$dest"
+      printf 'SERVER_CREDENTIAL_TENANT_ID=%s\n' "$E2E_SERVED_TENANT_ID" >> "$dest"; gate="SERVER_CREDENTIAL_TENANT_ID"
+    fi
+    if ! grep -q '^TENANT_GATE_MODE=' "$dest"; then
+      [ -n "$(tail -c1 "$dest")" ] && echo >> "$dest"
+      printf 'TENANT_GATE_MODE=%s\n' "$E2E_TENANT_GATE_MODE" >> "$dest"; gate="${gate:+$gate · }TENANT_GATE_MODE"
+    fi
+    if [ -n "$gate" ]; then ok "$name — $gate 를 더했다"; else ok "$name"; fi
+    return 0
+  fi
+  [ "$kind" = "nest" ] || return 0
+  local added=""
+  if ! grep -q '^TENANT_LIST=' "$dest"; then
+    [ -n "$(tail -c1 "$dest")" ] && echo >> "$dest"
+    printf "TENANT_LIST='%s'\n" "$E2E_TENANT_LIST" >> "$dest"; added="TENANT_LIST"
+  fi
+  if ! grep -q '^TENANT_GATE_MODE=' "$dest"; then
+    [ -n "$(tail -c1 "$dest")" ] && echo >> "$dest"
+    printf 'TENANT_GATE_MODE=%s\n' "$E2E_TENANT_GATE_MODE" >> "$dest"; added="${added:+$added · }TENANT_GATE_MODE"
+  fi
+  if [[ " $E2E_SERVED_TENANT_APPS " == *" $name "* ]] && ! grep -q '^SERVED_TENANT_ID=' "$dest"; then
+    [ -n "$(tail -c1 "$dest")" ] && echo >> "$dest"
+    printf 'SERVED_TENANT_ID=%s\n' "$E2E_SERVED_TENANT_ID" >> "$dest"; added="${added:+$added · }SERVED_TENANT_ID"
+  fi
+  if [ -n "$added" ]; then ok "$name — $added 를 더했다"
+  elif [ "$(e2e_env_raw_value "$dest" TENANT_LIST)" != "$E2E_TENANT_LIST" ] \
+    || [ "$(e2e_env_raw_value "$dest" TENANT_GATE_MODE)" != "$E2E_TENANT_GATE_MODE" ]; then
+    warn "$name — 정본과 다른 값이 이미 있다. 그대로 둔다 (정본으로 돌리려면 두 줄을 지우고 다시 실행)"
+  else ok "$name"; fi
+}
+e2e_env_each "" ensure_tenancy
+
 # ─────────────────────────────────────────────────────────── 1. 컨테이너
 if [ "${SKIP_CONTAINERS:-}" = "1" ]; then
   step "1. 컨테이너 — SKIP_CONTAINERS=1 이라 건너뜀"
@@ -110,7 +158,7 @@ else
   npm run --silent db:seed:wallet:local >/dev/null 2>&1 \
     && ok "wallet — 결제수단·지역 (없으면 결제화면이 「사용 가능한 결제수단이 없습니다」)" || bad "wallet 시드 실패"
   npm run --silent db:seed:core:local >/dev/null 2>&1 \
-    && ok "core(dev_core) — 판매채널·공급처·매칭 backfill" || bad "core 시드 실패"
+    && ok "core(dev_core) — 창고·판매채널·공급처·매칭 backfill" || bad "core 시드 실패"
 
   # Medusa 시드는 ON CONFLICT 가 아니다 — 이미 시드됐으면 건너뛴다.
   REGIONS=$(pgq "${PG}/medusa" "SELECT count(*) FROM region")

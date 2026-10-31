@@ -25,7 +25,9 @@ import {
   UpdateWorkScheduleDto,
 } from './dto/wage-settings.dto';
 import { WageSettingsService } from './wage-settings.service';
+import { ServedTenantData } from '../../../tenancy/served-tenant.guard';
 
+@ServedTenantData()
 @Controller('attendance/wage')
 @UseGuards(ActiveAttendanceStaffGuard)
 export class WageSettingsController {

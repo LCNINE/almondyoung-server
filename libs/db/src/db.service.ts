@@ -1,5 +1,5 @@
 // src/common/db/db.service.ts
-import { Injectable, Inject, OnApplicationShutdown } from '@nestjs/common';
+import { Injectable, Inject, OnApplicationShutdown, Optional } from '@nestjs/common';
 import { drizzle, PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import * as postgres from 'postgres';
 import { DrizzleSchema, TxFor } from './types';
@@ -11,33 +11,82 @@ const postgresFn: typeof postgres =
 
 export const DB_CONNECTION = 'DB_CONNECTION';
 export const DB_SCHEMA = 'DB_SCHEMA';
+export const DB_ROUTER = 'DB_ROUTER';
 
 // 기존의 host, port 등 개별 설정 대신 connectionString 하나로 관리
 export interface DbConfig {
   connectionString: string; // Neon에서 제공하는 DATABASE_URL
 }
 
+/**
+ * DB 를 여럿 두고 맥락으로 하나를 고르는 앱(core 의 테넌트별 DB)만 준다. 없으면 접속 주소 하나에 풀 하나다.
+ * 풀마다 붙을 DB 이름만 정한다 — 호스트·계정은 `connectionString` 의 것을 쓴다.
+ * 세션 단위 `SET`(search_path 등)으로 갈라 쓰지 않는다: postgres.js 는 연결을 파이프라이닝하므로 한 연결에 건 설정이
+ * 다른 요청의 쿼리로 샌다. 그래서 DB 마다 풀이 따로다.
+ */
+export interface DbRouter {
+  /** 풀 키 → 그 풀이 붙을 DB 이름. */
+  readonly databases: ReadonlyMap<string, string>;
+  /** 지금 맥락이 고르는 풀 키. 고를 수 없으면 던진다 — 아무 풀로나 떨어지지 않는다. */
+  current(): string;
+}
+
+/** 라우팅 풀 하나의 크기. 연결 예산(테넌트당 10)이 이 값으로 잡혀 있다. */
+const ROUTED_POOL_MAX = 10;
+
+/** 접속 주소의 DB 이름만 바꾼다. */
+export function connectionStringFor(connectionString: string, database: string): string {
+  const url = new URL(connectionString);
+  url.pathname = `/${encodeURIComponent(database)}`;
+  return url.toString();
+}
+
+interface Pool<TSchema extends DrizzleSchema> {
+  client: postgres.Sql;
+  db: PostgresJsDatabase<TSchema>;
+}
+
 @Injectable()
 export class DbService<TSchema extends DrizzleSchema = Record<string, never>> implements OnApplicationShutdown {
   private _db: PostgresJsDatabase<TSchema>;
   private _client: postgres.Sql | null = null;
+  /** 라우터가 있을 때의 풀들(키 → 풀). 이때 `_db`·`_client` 는 쓰지 않는다. */
+  private routed: Map<string, Pool<TSchema>> | null = null;
 
   constructor(
     @Inject(DB_CONNECTION) private readonly config: DbConfig,
     @Inject(DB_SCHEMA) private readonly schema: TSchema,
+    @Optional() @Inject(DB_ROUTER) private readonly router: DbRouter | null = null,
   ) {
     this.initializeConnection();
   }
 
   private initializeConnection(): void {
+    if (this.router) {
+      // postgres.js 는 첫 쿼리 때 접속하므로 풀을 미리 만들어도 연결은 열리지 않는다.
+      this.routed = new Map(
+        [...this.router.databases].map(([key, database]) => {
+          const client = postgresFn(connectionStringFor(this.config.connectionString, database), {
+            max: ROUTED_POOL_MAX,
+          });
+          return [key, { client, db: drizzle(client, { schema: this.schema }) }];
+        }),
+      );
+      return;
+    }
     // postgres.js는 Connection String을 직접 받을 수 있습니다.
     const client = postgresFn(this.config.connectionString);
     this._client = client;
     this._db = drizzle(client, { schema: this.schema });
   }
 
+  /** 라우터가 있으면 지금 맥락의 풀. 맥락이 없거나 풀이 없는 키면 던진다. */
   get db(): PostgresJsDatabase<TSchema> {
-    return this._db;
+    if (!this.router) return this._db;
+    const key = this.router.current();
+    const pool = this.routed?.get(key);
+    if (!pool) throw new Error(`DbService: 라우터가 고른 키 «${key}» 의 풀이 없다`);
+    return pool.db;
   }
 
   /**
@@ -47,7 +96,7 @@ export class DbService<TSchema extends DrizzleSchema = Record<string, never>> im
    * schema (`TxFor<TSchema>`); cross-BC seam services inject a wider schema.
    */
   async run<T>(fn: (tx: TxFor<TSchema>) => Promise<T>, tx?: TxFor<TSchema>): Promise<T> {
-    return tx ? fn(tx) : this._db.transaction(fn);
+    return tx ? fn(tx) : this.db.transaction(fn);
   }
 
   // 풀은 여기서만 닫는다. Nest 종료 순서는 destroy 훅, dispose()(HTTP 와 마이크로서비스 컨슈머 정지),
@@ -58,12 +107,17 @@ export class DbService<TSchema extends DrizzleSchema = Record<string, never>> im
   }
 
   private async close(): Promise<void> {
-    try {
-      await (this._client as any)?.end?.();
-    } catch {
-      // ignore
-    } finally {
-      this._client = null;
-    }
+    const clients = [this._client, ...[...(this.routed?.values() ?? [])].map((p) => p.client)];
+    await Promise.all(
+      clients.map(async (client) => {
+        try {
+          await client?.end();
+        } catch {
+          // ignore
+        }
+      }),
+    );
+    this._client = null;
+    this.routed = null;
   }
 }

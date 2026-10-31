@@ -14,6 +14,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { RoleAssignmentManager } from '../iam/assignments/role-assignment.manager';
+import { PlatformOperatorManager } from '../iam/tenancy/platform-operator.manager';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import * as jwt from 'jsonwebtoken';
@@ -54,6 +55,7 @@ import { LocalSignUpDto } from './dto/sign-up.dto';
 import { getCookieOptions, getDomain, logCookieDebugInfo } from './utils/cookies';
 import { generateSocialNickname } from './utils/generate-social-nickname';
 import { isSamePhoneNumber } from '../../commons/utils/phone-number';
+import { SERVED_TENANT_ID } from '../../tenancy/served-tenant';
 
 const INVALID_CREDENTIALS_MESSAGE = '아이디 또는 비밀번호가 올바르지 않습니다';
 const NO_MATCHING_ACCOUNT_MESSAGE = '입력하신 정보와 일치하는 계정이 없습니다';
@@ -72,7 +74,11 @@ export class AuthService {
     private readonly consentsService: ConsentsService,
     private readonly tokensService: TokensService,
     @Inject(RoleAssignmentManager)
-    private readonly roleAssignments: Pick<RoleAssignmentManager, 'assertCanLeave' | 'assertNotStaff'>,
+    private readonly roleAssignments: Pick<RoleAssignmentManager, 'assertNotStaff'>,
+    @Inject(PlatformOperatorManager)
+    private readonly operators: Pick<PlatformOperatorManager, 'assertCanLeave'>,
+    // 내부 토큰(쇼핑몰·auth-web 세션)과 고객 가입이 섬기는 테넌트.
+    @Inject(SERVED_TENANT_ID) private readonly servedTenantId: string,
     @Optional() private readonly cafe24LinkService?: Cafe24LinkService,
   ) {}
 
@@ -304,17 +310,9 @@ export class AuthService {
       //  사용된 인증 토큰 삭제
       await this.tokensService.deleteTokenByValue(token);
 
-      let redirectUrl = this.configService.getOrThrow('SIGNUP_CALLBACK_URL');
-      const url = new URL(redirectUrl);
-
-      const redirectUrlWhitelist = this.configService
-        .getOrThrow('REDIRECT_URL_WHITELIST')
-        .split(',')
-        .map((url) => url.trim());
-
-      if (!redirectUrlWhitelist.includes(redirectUrl)) {
-        redirectUrl = this.configService.getOrThrow('SIGNUP_CALLBACK_URL');
-      }
+      // 가입은 테넌트 1 쇼핑몰의 일이라 돌아갈 곳은 SIGNUP_CALLBACK_URL 하나뿐이다. (옛 REDIRECT_URL_WHITELIST 는 이 값을
+      // 자기 자신과 비교해 아무것도 거르지 않았다 — 리디렉트 허용 목록은 OAuth 클라이언트 등록 주소와 테넌트 도메인이다.)
+      const url = new URL(this.configService.getOrThrow('SIGNUP_CALLBACK_URL'));
 
       // 이메일 인증은 isEmailVerified 플래그만 토글한다. 세션은 가입 시점에 이미 발급됐거나 별도 로그인을
       // 통해 얻으므로 여기서 signup_token 을 다시 내려줄 필요가 없다.
@@ -364,7 +362,7 @@ export class AuthService {
       if (!user) throw new NotFoundException('존재하지 않는 사용자입니다');
 
       // 기본 역할 설정을 'user'로 하고 기본권한 부여
-      await this.usersService.assignDefaultRoleToUser(user.id, trx);
+      await this.usersService.assignDefaultRoleToUser(user.id, this.servedTenantId, trx);
 
       const { accessToken } = await this.setAccessToken(user, reply, trx);
       const { refreshToken } = await this.setRefreshToken(user.id, reply, false, trx);
@@ -646,6 +644,7 @@ export class AuthService {
     await tx.insert(userServiceSchema.userRoleAssignments).values({
       userId: newUser.id,
       roleId: userRole.roleId,
+      tenantId: this.servedTenantId,
     });
 
     return { user: newUser };
@@ -724,27 +723,12 @@ export class AuthService {
     }, tx);
   }
 
+  /**
+   * 내부 토큰의 역할 — T 에서 받은 부여만. 이 토큰에는 `tenant` 가 없으므로(테넌트 문이 reject 모드인 core 는 거절한다) 역할을 좁히는 것이
+   * 테넌트 2 직원이 테넌트 도메인에서 로그인했을 때 그 역할이 쇼핑몰 세션으로 새지 않게 하는 유일한 장치다.
+   */
   private async getUserRoles(userId: string, tx?: DbTransaction): Promise<string[]> {
-    const client = this.getClient(tx);
-
-    const userRoles = await client
-      .select({ roleName: userServiceSchema.roles.name })
-      .from(userServiceSchema.userRoleAssignments)
-      .innerJoin(
-        userServiceSchema.roles,
-        eq(userServiceSchema.userRoleAssignments.roleId, userServiceSchema.roles.roleId),
-      )
-      .where(
-        and(
-          eq(userServiceSchema.userRoleAssignments.userId, userId),
-          or(
-            isNull(userServiceSchema.userRoleAssignments.expiresAt),
-            gt(userServiceSchema.userRoleAssignments.expiresAt, new Date()),
-          ),
-        ),
-      );
-
-    return [...new Set(userRoles.map((r) => r.roleName))];
+    return this.usersService.getTokenRoleNames(userId, this.servedTenantId, tx);
   }
 
   private async setAccessToken(user: IUser, reply: FastifyReply, tx?: DbTransaction): Promise<{ accessToken: string }> {
@@ -1044,9 +1028,9 @@ export class AuthService {
       // 직원 계정은 역할이 회수되기 전에는 떠날 수 없다 — 토큰 폐기·익명화·이벤트보다 먼저 막는다.
       await this.roleAssignments.assertNotStaff(userId, tx);
 
-      // 기간 없이 시스템 역할을 가진 마지막 관리자는 떠날 수 없다 — 역할 관리를 고칠 사람이 없어진다. 같은 트랜잭션에서
-      // 그 역할 행을 잠그고 세므로 동시 탈퇴·회수가 차례로 판정된다.
-      await this.roleAssignments.assertCanLeave(userId, tx);
+      // 마지막 플랫폼 운영자는 떠날 수 없다 — 플랫폼을 관리할 사람이 없어진다. 같은 트랜잭션에서 운영자 행을 잠그고
+      // 세므로 동시 탈퇴·강등이 차례로 판정된다.
+      await this.operators.assertCanLeave(userId, tx);
 
       // 탈퇴는 세션 종료까지 포함한다. 살아있는 refresh token 을 남기면 IdP 세션이 그대로
       // 유지돼, 탈퇴한 계정이 로그인 화면을 거치지 않고 silent SSO 로 다시 들어온다.

@@ -111,7 +111,7 @@
 
 | Method | Path | Name |
 |--------|------|------|
-| GET | `/channel-listings/lookup` | 채널 상품 ID로 Variant 조회 |
+| GET | `/internal/channel-listings/resolve` | 채널 상품 ID로 Variant 해석 (내부 키 전용, 옛 `/channel-listings/lookup` 은 삭제) |
 | POST | `/channel-listings` | 채널 매핑 생성 |
 | GET | `/channel-listings/by-variant/:variantId` | Variant의 채널 등록 현황 조회 |
 | GET | `/channel-listings/:id` | 채널 매핑 상세 조회 |

@@ -26,6 +26,7 @@ import { UserDetailsResponseDto } from './dto/user-details.response.dto';
 import { UsersService } from './users.service';
 import { WithdrawnReplayService } from './withdrawn-replay.service';
 import { CurrentUser } from '@app/shared/decorators/current-user.decorator';
+import { ServedTenantData } from '../../tenancy/served-tenant.guard';
 
 @ApiTags('Users')
 @ApiBearerAuth()
@@ -44,6 +45,8 @@ export class UsersController {
   })
   @ApiQuery({ name: 'email', description: '찾고자 하는 사용자의 이메일' })
   @PiiResponse({ fields: { username: 'name', email: 'email' }, subjects: [{ path: 'id', type: 'user' }] })
+  // 고객 조회 — T 데이터. 같은 컨트롤러의 `/users/me` 는 계정이라 모든 테넌트가 쓴다.
+  @ServedTenantData()
   @RequirePermission('customer.profile.read')
   @Get('find-by-email')
   // 이메일 하나로 loginId·실명이 나오므로 공개하면 익명 열거가 된다.

@@ -156,14 +156,18 @@ export class ProductMastersService {
   ) {}
 
   /**
-   * ProductVariantCreated 이벤트 발행
+   * ProductVariantCreated 를 outbox 에 적재하고, Product Matching BC 를 직접 부른다.
    *
-   * variant 생성 시 WMS에 매칭 생성을 위한 이벤트를 발행합니다.
-   * 이벤트 발행 실패해도 트랜잭션은 커밋됩니다 (Orchestrator가 WMS에 직접 요청하므로 복원력 보장).
+   * 이벤트는 호출자의 트랜잭션에 행으로 남는다 — 롤백되면 이벤트도 사라지고, 봉투의 테넌트는 그 행이 든 DB 로
+   * 찍힌다(`core-no-direct-publish.spec`). 그래서 적재 실패는 삼키지 않고 트랜잭션을 실패시킨다.
    */
-  private async publishVariantCreatedEvent(version: ProductMasterVersion, variant: any): Promise<void> {
-    try {
-      await this.productPublisher.publishEvent({
+  private async enqueueVariantCreatedEvent(
+    version: ProductMasterVersion,
+    variant: any,
+    tx: DbTransaction,
+  ): Promise<void> {
+    await this.productPublisher.enqueue(
+      {
         eventType: 'ProductVariantCreated',
         aggregateId: version.masterId,
         payload: {
@@ -182,13 +186,11 @@ export class ProductMastersService {
 
           createdAt: new Date().toISOString(),
         },
-      });
+      },
+      tx,
+    );
 
-      this.logger.log(`📤 Published ProductVariantCreated: ${variant.id} (${version.name})`);
-    } catch (error) {
-      this.logger.error(`❌ Failed to publish ProductVariantCreated: ${variant.id}`, error.stack);
-      // 이벤트 발행 실패해도 트랜잭션은 커밋
-    }
+    this.logger.log(`📥 Enqueued ProductVariantCreated: ${variant.id} (${version.name})`);
 
     // Product Matching BC 직접 호출 (Phase 4)
     if (this.productMatchingService) {
@@ -253,8 +255,8 @@ export class ProductMastersService {
         createdAt: new Date(),
       });
 
-      // 5. WMS 이벤트 발행
-      await this.publishVariantCreatedEvent(version, variant);
+      // 5. WMS 이벤트 적재(outbox, 같은 트랜잭션)
+      await this.enqueueVariantCreatedEvent(version, variant, tx);
 
       await recordProductAudit(tx, { masterId, versionId, action: 'created', userId: ownerId });
 

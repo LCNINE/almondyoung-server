@@ -1,3 +1,4 @@
+import { outboundTenantForTesting } from '@app/tenancy';
 import type { PiiAccessRecord } from '@app/authorization';
 import { HttpPiiAccessRecorder } from './http-pii-access.recorder';
 
@@ -33,7 +34,7 @@ describe('HttpPiiAccessRecorder', () => {
   it('posts the record to the user-service internal path with the internal key', async () => {
     const fetchMock = jest.fn().mockResolvedValue(new Response(null, { status: 204 }));
     global.fetch = fetchMock;
-    const recorder = new HttpPiiAccessRecorder(config({ USER_SERVICE_URL: 'http://user', USER_SERVICE_INTERNAL_KEY: 'k' }));
+    const recorder = new HttpPiiAccessRecorder(config({ USER_SERVICE_URL: 'http://user', USER_SERVICE_INTERNAL_KEY: 'k' }), outboundTenantForTesting());
     await recorder.record(entry);
     const [url, init] = fetchMock.mock.calls[0];
     expect(url).toBe('http://user/internal/iam/pii-access-logs');
@@ -44,12 +45,12 @@ describe('HttpPiiAccessRecorder', () => {
 
   it('throws when the internal call fails', async () => {
     global.fetch = jest.fn().mockResolvedValue(new Response('no', { status: 500 }));
-    const recorder = new HttpPiiAccessRecorder(config({ USER_SERVICE_URL: 'http://user', USER_SERVICE_INTERNAL_KEY: 'k' }));
+    const recorder = new HttpPiiAccessRecorder(config({ USER_SERVICE_URL: 'http://user', USER_SERVICE_INTERNAL_KEY: 'k' }), outboundTenantForTesting());
     await expect(recorder.record(entry)).rejects.toThrow('500');
   });
 
   it('throws when the user-service address or key is not configured', async () => {
-    const recorder = new HttpPiiAccessRecorder(config({}));
+    const recorder = new HttpPiiAccessRecorder(config({}), outboundTenantForTesting());
     await expect(recorder.record(entry)).rejects.toThrow('not configured');
   });
 });

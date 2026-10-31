@@ -11,7 +11,7 @@
  *    `packages/event-contracts/index.ts` 하나뿐이다.
  */
 
-import type { StreamConfig } from '../types/stream-config.types';
+import type { EventTenancy, StreamConfig } from '../types/stream-config.types';
 import * as streamExports from './index';
 
 /**
@@ -74,3 +74,19 @@ export const STREAM_REGISTRY: Readonly<Record<string, StreamConfig>> = buildStre
 export function streamForTopic(topic: string): StreamConfig | undefined {
   return STREAM_REGISTRY[topic];
 }
+
+/**
+ * 이벤트의 테넌트 성격. 계약이 `tenancy: 'account'` 로 선언한 것만 계정 이벤트이고, 선언이 없거나 모르는
+ * 토픽·이벤트면 테넌트 이벤트다 — 모르는 것을 «문을 통과하는» 쪽으로 분류하지 않는다.
+ */
+export function eventTenancy(topic: string, messageType: string): EventTenancy {
+  return streamForTopic(topic)?.events[messageType]?.tenancy === 'account' ? 'account' : 'tenant';
+}
+
+/** 계정 이벤트 목록 — 손으로 적지 않고 계약 선언에서 도출한다. */
+export const ACCOUNT_EVENTS: readonly { topic: string; messageType: string }[] = Object.values(STREAM_REGISTRY).flatMap(
+  (stream) =>
+    Object.entries(stream.events)
+      .filter(([, definition]) => definition.tenancy === 'account')
+      .map(([messageType]) => ({ topic: stream.topic.topic, messageType })),
+);

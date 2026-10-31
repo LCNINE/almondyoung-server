@@ -4,6 +4,7 @@ import { Test } from '@nestjs/testing';
 import { CART_STREAM } from '@packages/event-contracts/streams/cart.stream';
 import { getDLQTopicName } from '@packages/event-contracts/types';
 import { EventsModule } from '../events.module';
+import { testTenancyModule } from '../testing/tenancy';
 import { EventPayload, On } from '../consumers/decorators';
 import { EventTypeGuard } from '../guards/event-type.guard';
 import { DisableDLQ, RetryPolicy } from '../retry/retry-policy.decorator';
@@ -93,7 +94,7 @@ describe('EventRetryInterceptor — dead letter 모드 (#1016 8번)', () => {
     broker = new InMemoryBroker();
     recorder = new MemoryRecorder();
     const moduleRef = await Test.createTestingModule({
-      imports: [EventsModule.forApp({ publishes: [CART_STREAM], serviceName: 'dl-spec', kafka })],
+      imports: [testTenancyModule(), EventsModule.forApp({ publishes: [CART_STREAM], serviceName: 'dl-spec', kafka })],
       controllers: [CartConsumer, CartAuditConsumer],
     })
       .overrideProvider(EVENT_TRANSPORT)
@@ -258,14 +259,19 @@ describe('EventRetryInterceptor — dead letter 모드 (#1016 8번)', () => {
     await app.close();
     broker = new InMemoryBroker();
     const moduleRef = await Test.createTestingModule({
-      imports: [EventsModule.forApp({ publishes: [CART_STREAM], serviceName: 'dl-spec', kafka })],
+      imports: [testTenancyModule(), EventsModule.forApp({ publishes: [CART_STREAM], serviceName: 'dl-spec', kafka })],
       controllers: [CartConsumer],
     })
       .overrideProvider(EVENT_TRANSPORT)
       .useValue(new InMemoryTransport(broker))
       .compile();
     app = moduleRef.createNestApplication({ logger: false });
-    await EventsModule.startConsumer(app, { groupId: 'g', kafka, strategy: new InMemoryServer(broker) });
+    await EventsModule.startConsumer(app, {
+      tenancy: 'per-message',
+      groupId: 'g',
+      kafka,
+      strategy: new InMemoryServer(broker),
+    });
     await app.init();
     failCreated = true;
     await app
@@ -302,7 +308,7 @@ describe('EventRetryInterceptor — dead letter 모드의 @DisableDLQ (#1016 7·
     const broker = new InMemoryBroker();
     const recorder = new MemoryRecorder();
     const moduleRef = await Test.createTestingModule({
-      imports: [EventsModule.forApp({ publishes: [CART_STREAM], serviceName: 'dl-spec', kafka })],
+      imports: [testTenancyModule(), EventsModule.forApp({ publishes: [CART_STREAM], serviceName: 'dl-spec', kafka })],
       controllers: [DiscardingConsumer],
     })
       .overrideProvider(EVENT_TRANSPORT)

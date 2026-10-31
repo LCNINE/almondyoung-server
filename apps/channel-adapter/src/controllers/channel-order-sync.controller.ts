@@ -14,7 +14,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { ApiBearerAuth, ApiOperation, ApiPropertyOptional, ApiTags } from '@nestjs/swagger';
 import { IsBoolean, IsOptional } from 'class-validator';
-import { Public } from '@app/authorization';
+import { Public, ServiceKeyRoute } from '@app/authorization';
 import { OrderPollerOrchestrator, OrderSyncOutcome } from '../services/order-collection/order-poller.orchestrator';
 import { isSyncableChannel } from '../services/order-collection/syncable-channels';
 
@@ -31,6 +31,7 @@ export class SyncOrderBodyDto {
 // 전역 JwtAuthGuard 를 면제하는 대신 **모든 핸들러가** verifyInternalKey 로 CHANNEL_ADAPTER_INTERNAL_KEY 를
 // 검증한다 — 핸들러를 더할 때 그 호출을 빠뜨리면 무인증으로 열린다.
 @Public()
+@ServiceKeyRoute()
 @Controller('adapter/orders')
 export class ChannelOrderSyncController {
   private readonly logger = new Logger(ChannelOrderSyncController.name);

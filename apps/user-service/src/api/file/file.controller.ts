@@ -7,7 +7,9 @@ import { FileService } from './file.service';
 import { FastifyFile, FastifyFileInterceptor } from './interceptors/fastify-file.interceptor';
 import { ValidatedFile } from './interfaces/validated-file.interface';
 import { FileValidatorPipe } from './pipes/file-validator.pipe';
+import { ServedTenantData } from '../../tenancy/served-tenant.guard';
 
+@ServedTenantData()
 @Controller('files')
 @ApiTags('파일')
 @ApiBearerAuth('access-token')

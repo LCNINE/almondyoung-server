@@ -62,7 +62,8 @@ export class ChannelListingService {
   }
 
   /**
-   * 채널 상품 ID로 Variant 조회 (Channel Adapter에서 호출)
+   * 채널 상품 ID로 Variant 조회. HTTP 진입점은 없다 — channel-adapter 는 같은 빌더·술어를 쓰는 `resolveVariant*` 를
+   * 내부 라우트로 부른다. 통합 스펙이 이걸로 조회 조건을 잰다.
    */
   async lookupVariant(
     salesChannelId: string,
@@ -78,8 +79,8 @@ export class ChannelListingService {
   }
 
   /**
-   * 채널 코드(site)로 Variant 조회. **주문 수집이 실제로 타는 경로다**
-   * (ChannelLineIdentityResolver → lookupByChannelCode).
+   * 채널 코드(site)로 Variant 조회. 주문 수집이 실제로 타는 `resolveVariantByChannelCode` 와 같은 빌더·술어다
+   * (ChannelLineIdentityResolver → resolveByChannelCode → `/internal/channel-listings/resolve`).
    */
   async lookupVariantByChannelCode(
     channelCode: string,

@@ -1,4 +1,5 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { OutboundTenant } from '@app/tenancy';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 import { firstValueFrom } from 'rxjs';
@@ -10,6 +11,7 @@ export class MembershipServiceClient {
   constructor(
     private readonly httpService: HttpService,
     private readonly configService: ConfigService,
+    @Inject(OutboundTenant) private readonly outboundTenant: Pick<OutboundTenant, 'headers'>,
   ) {}
 
   private getBaseUrl(): string {
@@ -18,7 +20,7 @@ export class MembershipServiceClient {
 
   private getAuthHeaders(): Record<string, string> {
     const key = this.configService.get<string>('MEMBERSHIP_INTERNAL_KEY');
-    return key ? { Authorization: `Bearer ${key}` } : {};
+    return key ? { Authorization: `Bearer ${key}`, ...this.outboundTenant.headers() } : {};
   }
 
   /**

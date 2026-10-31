@@ -42,7 +42,7 @@ describe('PermissionModule', () => {
     Test.createTestingModule({
       imports: [
         ConfigModule.forRoot({ ignoreEnvFile: true, ignoreEnvVars: true, load: [() => env] }),
-        PermissionModule.forRoot({ service: 'core', source: StubSource }),
+        PermissionModule.forRoot({ service: 'core', tenancy: 'per-token', source: StubSource }),
       ],
     }).compile();
 
@@ -60,11 +60,9 @@ describe('PermissionModule', () => {
     const module = await Test.createTestingModule({
       imports: [
         ConfigModule.forRoot({ ignoreEnvFile: true, ignoreEnvVars: true, load: [() => ({})] }),
-        PermissionModule.forRoot({ service: 'core', source: StubSource }),
+        PermissionModule.forRoot({ service: 'core', tenancy: 'per-token', source: StubSource }),
       ],
-      providers: [
-        { provide: APP_GUARD, useClass: PermissionGuard },
-      ],
+      providers: [{ provide: APP_GUARD, useClass: PermissionGuard }],
     }).compile();
     const app = module.createNestApplication();
     await expect(app.init()).resolves.toBe(app);
@@ -79,7 +77,7 @@ describe('PermissionModule', () => {
     const module = await Test.createTestingModule({
       imports: [
         ConfigModule.forRoot({ ignoreEnvFile: true, ignoreEnvVars: true, load: [() => ({})] }),
-        PermissionModule.forRoot({ service: 'core', source: StubSource }),
+        PermissionModule.forRoot({ service: 'core', tenancy: 'per-token', source: StubSource }),
       ],
       providers: [UsesCheckpoints],
     }).compile();
@@ -93,7 +91,7 @@ describe('PermissionModule', () => {
       const module = await Test.createTestingModule({
         imports: [
           ConfigModule.forRoot({ ignoreEnvFile: true, ignoreEnvVars: true, load: [() => env] }),
-          PermissionModule.forRoot({ service: 'core', source: ReadySource }),
+          PermissionModule.forRoot({ service: 'core', tenancy: 'per-token', source: ReadySource }),
         ],
       }).compile();
       await module.get(PermissionCache).refresh();
@@ -125,4 +123,3 @@ describe('PermissionModule', () => {
     log.mockRestore();
   });
 });
-

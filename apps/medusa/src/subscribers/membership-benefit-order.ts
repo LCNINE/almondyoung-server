@@ -1,5 +1,6 @@
 import { ContainerRegistrationKeys, Modules } from '@medusajs/framework/utils';
 import { type SubscriberConfig, type SubscriberArgs } from '@medusajs/medusa';
+import { servedTenantHeaders } from '../utils/served-tenant-headers';
 
 const MEMBERSHIP_SERVICE_URL = process.env.MEMBERSHIP_SERVICE_URL || 'http://localhost:3040';
 
@@ -14,7 +15,7 @@ function internalHeaders(): Record<string, string> {
   if (!key) {
     throw new Error('MEMBERSHIP_INTERNAL_KEY is not configured');
   }
-  return { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` };
+  return { 'Content-Type': 'application/json', Authorization: `Bearer ${key}`, ...servedTenantHeaders() };
 }
 
 export type OrderItem = {
@@ -183,8 +184,7 @@ export async function resolveMembershipDiscount(
     // 그대로 두면 "멤버십 귀속 0원" 이 되어 혜택을 쓴 고객이 전액 환불된다 — 돌이킬 수 없는 방향이다.
     let unresolvedDiscountedItems = 0;
     for (const item of items) {
-      const hasDiscount =
-        item.compare_at_unit_price != null && item.compare_at_unit_price > item.unit_price;
+      const hasDiscount = item.compare_at_unit_price != null && item.compare_at_unit_price > item.unit_price;
       const priceSetId = item.variant_id ? variantToPriceSet.get(item.variant_id) : undefined;
       const quantity = resolveQuantity(item);
       const nonMemberPrice =

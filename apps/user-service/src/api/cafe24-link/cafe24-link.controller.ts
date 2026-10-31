@@ -7,9 +7,11 @@ import { Cafe24LinkService } from './cafe24-link.service';
 import { Cafe24MemberInfoRequestDto, Cafe24MemberInfoResponseDto } from './dto/member-info.dto';
 import { Cafe24MigrationItemDto, Cafe24MigrationListResponseDto } from './dto/migration.dto';
 import { Cafe24LinkRequestDto, Cafe24LinkResponseDto } from './dto/link.dto';
+import { ServedTenantData } from '../../tenancy/served-tenant.guard';
 
 @ApiTags('Cafe24 Link')
 @ApiBearerAuth('access-token')
+@ServedTenantData()
 @Controller('cafe24')
 export class Cafe24LinkController {
   constructor(private readonly cafe24LinkService: Cafe24LinkService) {}

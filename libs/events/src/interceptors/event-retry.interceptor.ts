@@ -23,6 +23,7 @@ import { EVENT_TYPE_FILTER } from '../consumers/decorators';
 import { DEAD_LETTER_HEADERS, type DeadLetterMessage, type DeadLetterRecorder } from '../dead-letter/dead-letter.types';
 import { SchemaValidationError, type MessageEnvelope } from '@packages/event-contracts/types';
 import { parseEnvelope } from '../utils/envelope.util';
+import { TenantGateRejection } from '../tenancy/event-tenant-gate';
 import {
   RETRY_POLICY_METADATA,
   DISABLE_DLQ_METADATA,
@@ -158,9 +159,10 @@ export class EventRetryInterceptor implements NestInterceptor {
       this.reflector.getAllAndOverride<boolean | undefined>(DISABLE_DLQ_METADATA, policyTargets) ?? false;
 
     // 방어 복사 — @RetryPolicy 메타데이터가 소유한 배열을 in-place 변형하지 않는다
+    // 봉투가 바뀌지 않는 한 같은 답이 나오는 거절 둘 — 스키마 위반, 테넌트 문 ②
     const nonRetryable = [...(retryPolicy.nonRetryableErrors ?? [])];
-    if (!nonRetryable.includes(SchemaValidationError)) {
-      nonRetryable.push(SchemaValidationError);
+    for (const ErrorClass of [SchemaValidationError, TenantGateRejection]) {
+      if (!nonRetryable.includes(ErrorClass)) nonRetryable.push(ErrorClass);
     }
     retryPolicy.nonRetryableErrors = nonRetryable;
 

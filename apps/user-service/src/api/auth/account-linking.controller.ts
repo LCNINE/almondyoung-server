@@ -23,9 +23,11 @@ import { ProviderType } from '../../commons/types';
 import { AccountLinkingService } from './account-linking.service';
 import { LinkedIdentitiesResponseDto, LinkIdentityResultDto } from './dto/identity-list.dto';
 import { StartLinkingDto } from './dto/link-identity.dto';
+import { ServedTenantData } from '../../tenancy/served-tenant.guard';
 
 @ApiTags('Auth - Account Linking')
 @ApiBearerAuth('access-token')
+@ServedTenantData()
 @Controller('auth')
 export class AccountLinkingController {
   constructor(

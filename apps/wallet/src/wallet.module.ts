@@ -147,6 +147,7 @@ import { UgcCommandConsumer } from './consumers/ugc-command.consumer';
 import { BillingChargeConsumer } from './consumers/billing-charge.consumer';
 import { EventTraceController } from './admin/event-trace.controller';
 import { WalletAuthGuard } from './wallet-auth.guard';
+import { TenancyModule } from '@app/tenancy';
 
 export { WALLET_JWT_AUTH_KEY, WalletJwtAuth } from './wallet-auth.decorator';
 
@@ -162,8 +163,10 @@ export { AuthenticatedRequest, WalletAuthGuard } from './wallet-auth.guard';
       validate: validateWalletEnv,
       envFilePath: ['.env', 'apps/wallet/.env'],
     }),
+    // 테넌트 목록·전환 모드. 틀리면 여기서 기동 거부 (@app/tenancy).
+    TenancyModule,
     PassportModule.register({ defaultStrategy: 'jwt' }),
-    PermissionModule.forRoot({ service: 'wallet' }),
+    PermissionModule.forRoot({ service: 'wallet', tenancy: 'served-tenant' }),
     DbModule.forRoot({
       config: { connectionString: process.env.DATABASE_URL ?? '' },
       schema: walletSchema,

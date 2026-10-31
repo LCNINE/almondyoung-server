@@ -306,9 +306,6 @@ describe('ProductMastersService.createMaster ownership', () => {
         },
       })),
     };
-    // publishVariantCreatedEvent 은 이벤트 발행이라 스텁 처리(deleteMaster 테스트의 _emit* 스텁과 동일 패턴)
-    (service as any).publishVariantCreatedEvent = jest.fn().mockResolvedValue(undefined);
-
     await service.createMaster('user-123', tx);
 
     const versionValues = insertedValues.find((v) => v.status === 'draft' && 'masterId' in v);
@@ -324,6 +321,42 @@ describe('ProductMastersService.createMaster ownership', () => {
       action: 'created',
       userId: 'user-123',
     });
+  });
+
+  // core 는 직접 발행하지 않는다 — outbox 행의 DB 가 봉투의 테넌트를 정하고, 롤백되면 이벤트도 사라진다.
+  // 소비자(medusa·search 등) 입장에서 토픽(PRODUCT_STREAM)·payload 는 그대로다.
+  it('ProductVariantCreated 를 같은 트랜잭션의 outbox 로 낸다 — 브로커로 직접 보내지 않는다', async () => {
+    const { service, productPublisher } = makeService();
+    const tx: any = {
+      insert: jest.fn(() => ({
+        values: (v: any) => ({ returning: () => [{ id: v.id ?? 'variant-1', ...v }] }),
+      })),
+    };
+
+    const version = await service.createMaster('user-123', tx);
+
+    expect(productPublisher.publishEvent).not.toHaveBeenCalled();
+    expect(productPublisher.enqueue).toHaveBeenCalledTimes(1);
+    expect(productPublisher.enqueue).toHaveBeenCalledWith(
+      {
+        eventType: 'ProductVariantCreated',
+        aggregateId: version.masterId,
+        payload: {
+          masterId: version.masterId,
+          versionId: version.id,
+          productName: undefined,
+          variantId: 'variant-1',
+          variantName: null,
+          isDefault: true,
+          status: 'active',
+          inventoryManagement: true,
+          preStockSellable: false,
+          alwaysSellableZeroStock: false,
+          createdAt: expect.any(String),
+        },
+      },
+      tx,
+    );
   });
 });
 

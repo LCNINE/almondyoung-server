@@ -7,15 +7,14 @@
  *   npm run db:seed:ref -- --stage dev --deployment lcnine-services --yes
  *
  * autodeploy workflow 의 마지막 DB step. 멱등성 필수 — UPSERT / ON CONFLICT DO NOTHING.
- * group prefix 'demo-' 이 *아닌* 모든 그룹을 순회 실행한다 (현재 사실상 'baseline').
+ * group prefix 'demo-' 이 *아닌* 모든 그룹을 순회 실행한다 ('baseline' · 'baseline-tenant-1' — `lib/seed-groups.ts`).
  * backfill 그룹은 사람이 명시적으로 선택할 때만 실행한다.
  */
 
 import chalk from 'chalk';
 import { runSeeding, listGroupsForDeployment } from './phases/03-seed-orchestrator';
 import { ensureInsideSstShell, parseCommonArgs } from './lib/sst-shell-relaunch';
-
-const DEMO_GROUP_PREFIX = 'demo-';
+import { selectReferenceSeedGroups } from './lib/seed-groups';
 
 async function main() {
   const parsed = parseCommonArgs(process.argv);
@@ -26,7 +25,7 @@ async function main() {
   if (parsed.deployment) console.log(chalk.gray(`  Deployment: ${parsed.deployment}`));
 
   const allGroups = await listGroupsForDeployment(parsed.deployment);
-  const refGroups = allGroups.filter((g) => !g.startsWith(DEMO_GROUP_PREFIX) && g !== 'backfill');
+  const refGroups = selectReferenceSeedGroups(allGroups);
 
   if (refGroups.length === 0) {
     console.log(chalk.gray('  No reference seed groups registered for this deployment.'));

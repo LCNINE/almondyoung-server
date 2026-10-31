@@ -6,9 +6,11 @@ import { AddToRecentViewsDto } from './dto/recent-views.dto';
 import { RecentViewsService } from './recent-views.service';
 import { JwtPayload, StoreRoute } from '@app/authorization';
 import { CurrentUser } from '@app/shared/decorators/current-user.decorator';
+import { ServedTenantData } from '../../tenancy/served-tenant.guard';
 
 @ApiTags('최근 본 상품')
 @ApiBearerAuth()
+@ServedTenantData()
 @Controller('/recent-views')
 export class RecentViewsController {
   constructor(private readonly recentViewsService: RecentViewsService) {}

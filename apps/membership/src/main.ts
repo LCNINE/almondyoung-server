@@ -108,6 +108,7 @@ async function bootstrap(): Promise<void> {
   // 구독 목록 인자가 없다: 소비 집합은 컨트롤러의 `@On` 에서 도출된다 (ADR-0029 §3).
   await EventsModule.startConsumer(app, {
     groupId: process.env.KAFKA_GROUP_ID || 'membership-consumer',
+    tenancy: 'served-tenant',
   });
 
   const port = process.env.PORT ? parseInt(process.env.PORT, 10) : 3001;

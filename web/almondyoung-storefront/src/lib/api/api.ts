@@ -1,6 +1,10 @@
 import { getAccessToken, getCookies } from "@lib/data/cookies"
 import { ApiAuthError, ApiNetworkError, HttpApiError } from "./api-error"
-import { getBackendBaseUrl, type BackendService } from "@/lib/config/backend"
+import {
+  backendTenantHeaders,
+  getBackendBaseUrl,
+  type BackendService,
+} from "@/lib/config/backend"
 
 const MEDUSA_PUBLISHABLE_KEY =
   process.env.NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY ?? ""
@@ -56,6 +60,7 @@ export async function api<T>(
 
   const headers: HeadersInit = {
     ...init.headers,
+    ...backendTenantHeaders(service),
   }
 
   // body가 있고 FormData가 아닐 때만 Content-Type 설정

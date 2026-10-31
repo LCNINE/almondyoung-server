@@ -1,5 +1,6 @@
+import { OutboundTenant } from '@app/tenancy';
 import { HttpService } from '@nestjs/axios';
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { firstValueFrom } from 'rxjs';
 import { ServiceUnavailableError, UpstreamUnavailableError } from '@app/shared';
@@ -13,6 +14,7 @@ export class MembershipAudienceClient {
   constructor(
     private readonly httpService: HttpService,
     private readonly configService: ConfigService,
+    @Inject(OutboundTenant) private readonly outboundTenant: Pick<OutboundTenant, 'headers'>,
   ) {}
 
   async activeUserIds(): Promise<Set<string>> {
@@ -36,7 +38,7 @@ export class MembershipAudienceClient {
         this.httpService.post<T>(
           `${baseUrl}/internal/memberships/${path}`,
           {},
-          { headers: { Authorization: `Bearer ${key}` }, timeout: TIMEOUT_MS },
+          { headers: { Authorization: `Bearer ${key}`, ...this.outboundTenant.headers() }, timeout: TIMEOUT_MS },
         ),
       );
       return response.data;

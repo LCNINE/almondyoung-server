@@ -1,4 +1,5 @@
-import { HttpStatus, Injectable, Logger } from '@nestjs/common';
+import { OutboundTenant } from '@app/tenancy';
+import { HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios, { AxiosInstance } from 'axios';
 import { PhoneVerificationException } from '../exceptions/phone-verification.exceptions';
@@ -19,7 +20,10 @@ export class SmsSenderService {
   private readonly logger = new Logger(SmsSenderService.name);
   private client?: AxiosInstance;
 
-  constructor(private readonly configService: ConfigService) {}
+  constructor(
+    private readonly configService: ConfigService,
+    @Inject(OutboundTenant) private readonly outboundTenant: Pick<OutboundTenant, 'headers'>,
+  ) {}
 
   private getClient(channel?: 'SMS' | 'KAKAO'): AxiosInstance {
     if (this.client) return this.client;
@@ -43,6 +47,11 @@ export class SmsSenderService {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${internalKey}`,
       },
+    });
+    // 클라이언트는 한 번 만들어 재사용하므로 테넌트 헤더는 요청마다 맥락에서 찍는다.
+    this.client.interceptors.request.use((config) => {
+      config.headers.set(this.outboundTenant.headers());
+      return config;
     });
 
     return this.client;

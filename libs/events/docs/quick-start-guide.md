@@ -206,7 +206,8 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
   // 구독 목록 인자가 없다. 도출된 토픽은 startConsumer 가 로그로 찍는다.
-  await EventsModule.startConsumer(app, { groupId: 'my-service-orders-consumer' });
+  // tenancy 는 필수다 — 'per-message'(봉투의 테넌트를 맥락으로) 또는 'served-tenant'(SERVED_TENANT_ID 하나만 섬김).
+  await EventsModule.startConsumer(app, { groupId: 'my-service-orders-consumer', tenancy: 'served-tenant' });
 
   await app.listen(3000);
 }
@@ -214,9 +215,15 @@ async function bootstrap() {
 bootstrap();
 ```
 
-`startConsumer` 는 세 가지를 부팅에서 거부한다 — 전부 지금까지 무증상이던 실수다:
+`startConsumer` 는 이런 것을 부팅에서 거부한다 — 전부 지금까지 무증상이던 실수다:
 계약 레지스트리에 없는 토픽 구독 · `@On` 핸들러 0개(컨슈머 컨트롤러를
-`controllers: []` 에 등록하지 않은 경우) · 정책 중복 선언.
+`controllers: []` 에 등록하지 않은 경우) · 정책 중복 선언 · 테넌트 모드 미선언 ·
+테넌트 목록 없음(루트 모듈에 `TenancyModule`) · `served-tenant` 인데 T 가 없거나 목록에 없음.
+
+핸들러 앞에서 테넌트 문이 판정한다(`tenancy/event-tenant-gate.ts`): T 와 다른 테넌트 이벤트는 건너뛰고
+`events_skipped_other_tenant_total` 로 센다. 테넌트 이벤트인데 봉투 테넌트가 없거나 목록에 없으면
+`TENANT_GATE_MODE=reject` 는 재시도 없이 DLQ, `warn` 은 경고 + `events_consumed_without_known_tenant_total`.
+계정 이벤트(계약의 `tenancy: 'account'`)는 통과한다.
 
 ### Consumer 구현
 

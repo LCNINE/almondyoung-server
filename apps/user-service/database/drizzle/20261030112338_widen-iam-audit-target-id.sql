@@ -1,0 +1,1 @@
+ALTER TABLE "iam_audit_logs" ALTER COLUMN "target_id" SET DATA TYPE varchar(64);

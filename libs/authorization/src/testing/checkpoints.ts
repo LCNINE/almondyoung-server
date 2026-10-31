@@ -8,6 +8,7 @@ import { PermissionCheckpoints } from '../services/permission-checkpoints';
 import { PermissionDecider } from '../services/permission-decider';
 import { PermissionRuntimeOptions } from '../services/permission-runtime.options';
 import { RouteRequirementResolver } from '../services/route-requirement.resolver';
+import { ServedTenantGate } from '../services/served-tenant-gate';
 import { FIRST_GRANT_ROLE_PERMISSIONS } from './first-grant-roles';
 
 /**
@@ -35,7 +36,10 @@ export function enforcedPermissionProvidersForTesting(
   const log = new AuthzDecisionLog(cache, runtimeOptions());
   return [
     { provide: PermissionCheckpoints, useValue: createCheckpointsForTesting(byRole) },
-    { provide: APP_GUARD, useValue: new PermissionGuard(resolver, new PermissionDecider(cache), log) },
+    {
+      provide: APP_GUARD,
+      useValue: new PermissionGuard(resolver, new PermissionDecider(cache), log, ServedTenantGate.perToken()),
+    },
   ];
 }
 

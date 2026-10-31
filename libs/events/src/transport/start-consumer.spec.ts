@@ -18,6 +18,7 @@ import { event, getDLQTopicName, stream } from '@packages/event-contracts/types'
 import { CART_STREAM } from '@packages/event-contracts/streams/cart.stream';
 import type { DLQMessage } from '../dlq/dlq.types';
 import { EventsModule } from '../events.module';
+import { testTenancyModule } from '../testing/tenancy';
 import { EventPayload, On } from '../consumers/decorators';
 import { EventTypeGuard } from '../guards/event-type.guard';
 import { StreamPublisher } from '../publishers/stream-publisher.service';
@@ -89,6 +90,7 @@ async function buildModule(controllers: unknown[], broker: InMemoryBroker): Prom
     imports: [
       // 발행 능력만 선언한다. 소비 스트림·groupId 를 넘길 자리가 애초에 없다 —
       // 토픽은 `@On` 에서 도출되고 groupId 는 `startConsumer` 가 받는다 (ADR-0029 §3).
+      testTenancyModule(),
       EventsModule.forApp({ publishes: [CART_STREAM], serviceName: 'start-consumer-spec', kafka }),
     ],
     // as 정당화: Nest 의 `controllers` 는 `Type<any>[]` 를 받고, 이 헬퍼는 테스트마다
@@ -114,6 +116,7 @@ describe('startConsumer — 소비 집합 도출', () => {
 
     // 운영 main.ts 와 같은 순서 — connect 가 init 보다 먼저다
     const derived = await EventsModule.startConsumer(app, {
+      tenancy: 'per-message',
       groupId: 'spec-consumer',
       kafka,
       strategy: new InMemoryServer(broker),
@@ -226,7 +229,12 @@ describe('startConsumer — 부팅 거부', () => {
     const app = moduleRef.createNestApplication({ logger: false });
 
     await expect(
-      EventsModule.startConsumer(app, { groupId: 'spec-consumer', kafka, strategy: new InMemoryServer(broker) }),
+      EventsModule.startConsumer(app, {
+        tenancy: 'per-message',
+        groupId: 'spec-consumer',
+        kafka,
+        strategy: new InMemoryServer(broker),
+      }),
     ).rejects.toThrow(/controllers/);
 
     await app.close();
@@ -238,7 +246,12 @@ describe('startConsumer — 부팅 거부', () => {
     const app = moduleRef.createNestApplication({ logger: false });
 
     await expect(
-      EventsModule.startConsumer(app, { groupId: 'spec-consumer', kafka, strategy: new InMemoryServer(broker) }),
+      EventsModule.startConsumer(app, {
+        tenancy: 'per-message',
+        groupId: 'spec-consumer',
+        kafka,
+        strategy: new InMemoryServer(broker),
+      }),
     ).rejects.toThrow(/nobody\.declared\.this\.v1.*GhostConsumer\.onGhost/s);
 
     await app.close();

@@ -21,6 +21,8 @@ tsConfigPaths.register({
     '@app/events/*': ['libs/events/src/*'],
     '@app/shared': ['libs/shared/src'],
     '@app/shared/*': ['libs/shared/src/*'],
+    '@app/tenancy': ['libs/tenancy/src'],
+    '@app/tenancy/*': ['libs/tenancy/src/*'],
   },
 });
 

@@ -20,6 +20,8 @@ type RepoMock = jest.Mocked<
     | 'revokeTokenById'
     | 'revokeAllUserTokens'
     | 'revokeChain'
+    | 'findTenantByHost'
+    | 'findTenantById'
   >
 >;
 
@@ -33,6 +35,7 @@ function makeClient(overrides: Partial<OAuthClientRow> = {}): OAuthClientRow {
     redirectUris: ['https://admin.example.com/auth/callback'],
     postLogoutRedirectUris: ['https://admin.example.com/login'],
     allowedScopes: ['openid', 'profile'],
+    tenantId: '1',
     isActive: true,
     deactivatedAt: null,
     createdAt: new Date('2026-01-01'),
@@ -63,6 +66,8 @@ describe('OAuthManager — nonce propagation', () => {
       revokeTokenById: jest.fn().mockResolvedValue(undefined),
       revokeAllUserTokens: jest.fn().mockResolvedValue(undefined),
       revokeChain: jest.fn().mockResolvedValue(undefined),
+      findTenantByHost: jest.fn().mockResolvedValue({ id: '1', status: 'active' }),
+      findTenantById: jest.fn().mockResolvedValue({ id: '1', status: 'active' }),
     } as unknown as RepoMock;
 
     reader = {
@@ -76,7 +81,7 @@ describe('OAuthManager — nonce propagation', () => {
 
     usersService = {
       findUserById: jest.fn().mockResolvedValue({ id: 'u-1', email: 'a@b.c', nickname: 'n', username: 'u' }),
-      getUserRoleNames: jest.fn().mockResolvedValue([]),
+      getTokenRoleNames: jest.fn().mockResolvedValue([]),
     } as unknown as jest.Mocked<UsersService>;
 
     tokensService = {

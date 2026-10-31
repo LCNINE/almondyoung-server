@@ -1,3 +1,4 @@
+import { outboundTenantForTesting } from '@app/tenancy';
 import { of, throwError } from 'rxjs';
 import type { HttpService } from '@nestjs/axios';
 import type { ConfigService } from '@nestjs/config';
@@ -23,6 +24,7 @@ describe('CoreSalesOrderLookupClient', () => {
     const client = new CoreSalesOrderLookupClient(
       { post } as unknown as HttpService,
       config({ CORE_INTERNAL_KEY: 'k', PIM_API_URL: 'http://core' }),
+      outboundTenantForTesting(),
     );
     const orders = Array.from({ length: CORE_LOOKUP_BATCH + 1 }, (_, i) => ({ externalOrderId: `o${i}` }));
 
@@ -36,25 +38,25 @@ describe('CoreSalesOrderLookupClient', () => {
 
   it('빈 목록이면 부르지 않는다', async () => {
     const post = jest.fn();
-    const client = new CoreSalesOrderLookupClient({ post } as unknown as HttpService, config({ CORE_INTERNAL_KEY: 'k' }));
+    const client = new CoreSalesOrderLookupClient({ post } as unknown as HttpService, config({ CORE_INTERNAL_KEY: 'k' }), outboundTenantForTesting());
     await expect(client.lookup('medusa', [])).resolves.toEqual(new Map());
     expect(post).not.toHaveBeenCalled();
   });
 
   it('키가 없으면 던진다', async () => {
-    const client = new CoreSalesOrderLookupClient({ post: jest.fn() } as unknown as HttpService, config({}));
+    const client = new CoreSalesOrderLookupClient({ post: jest.fn() } as unknown as HttpService, config({}), outboundTenantForTesting());
     await expect(client.lookup('medusa', [{ externalOrderId: 'a' }])).rejects.toThrow('CORE_INTERNAL_KEY');
   });
 
   it('HTTP 오류는 던진다', async () => {
     const post = jest.fn(() => throwError(() => new Error('502')));
-    const client = new CoreSalesOrderLookupClient({ post } as unknown as HttpService, config({ CORE_INTERNAL_KEY: 'k' }));
+    const client = new CoreSalesOrderLookupClient({ post } as unknown as HttpService, config({ CORE_INTERNAL_KEY: 'k' }), outboundTenantForTesting());
     await expect(client.lookup('medusa', [{ externalOrderId: 'a' }])).rejects.toThrow('502');
   });
 
   it('응답에 물은 주문이 빠져 있으면 던진다', async () => {
     const post = jest.fn(() => of({ data: { orders: [] } }));
-    const client = new CoreSalesOrderLookupClient({ post } as unknown as HttpService, config({ CORE_INTERNAL_KEY: 'k' }));
+    const client = new CoreSalesOrderLookupClient({ post } as unknown as HttpService, config({ CORE_INTERNAL_KEY: 'k' }), outboundTenantForTesting());
     await expect(client.lookup('medusa', [{ externalOrderId: 'a' }])).rejects.toThrow('a');
   });
 });

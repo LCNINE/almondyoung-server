@@ -46,6 +46,8 @@
       "@app/events/*": ["libs/events/src/*"],
       "@app/shared": ["libs/shared/src"],
       "@app/shared/*": ["libs/shared/src/*"],
+      "@app/tenancy": ["libs/tenancy/src"],
+      "@app/tenancy/*": ["libs/tenancy/src/*"],
       "@packages/domain-types": ["packages/domain-types"],
       "@packages/domain-types/*": ["packages/domain-types/*"],
       "@permission-catalog": ["libs/authorization/src/permissions/index.ts"],

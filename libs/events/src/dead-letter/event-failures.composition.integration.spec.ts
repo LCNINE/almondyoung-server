@@ -15,6 +15,7 @@ import { CART_STREAM } from '@packages/event-contracts/streams/cart.stream';
 import { getDLQTopicName } from '@packages/event-contracts/types';
 import { DbService } from '@app/db';
 import { EventsModule } from '../events.module';
+import { testTenancyModule } from '../testing/tenancy';
 import { EventPayload, On } from '../consumers/decorators';
 import { EventTypeGuard } from '../guards/event-type.guard';
 import { RetryPolicy } from '../retry/retry-policy.decorator';
@@ -72,6 +73,7 @@ describeIfDb('이벤트 실패 출구 조립 (PostgreSQL 통합)', () => {
     const moduleRef = await Test.createTestingModule({
       imports: [
         RealDbModule,
+        testTenancyModule(),
         EventsModule.forApp({ publishes: [CART_STREAM], serviceName: 'composition-spec', kafka }),
         EventFailuresModule.forRoot({ sequencedTopics: [TOPIC] }),
       ],
@@ -81,7 +83,12 @@ describeIfDb('이벤트 실패 출구 조립 (PostgreSQL 통합)', () => {
       .useValue(new InMemoryTransport(broker))
       .compile();
     app = moduleRef.createNestApplication({ logger: false });
-    await EventsModule.startConsumer(app, { groupId: GROUP, kafka, strategy: new InMemoryServer(broker) });
+    await EventsModule.startConsumer(app, {
+      tenancy: 'per-message',
+      groupId: GROUP,
+      kafka,
+      strategy: new InMemoryServer(broker),
+    });
     await app.init();
     db = app.get<DbService>(DbService).db;
   });

@@ -33,6 +33,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `@app/auth-core` — JWT auth core
 - `@app/roles` — Role definitions
 - `@app/shared` — Common utilities
+- `@app/tenancy` — 테넌트 목록(`TENANT_LIST`)·전환 모드(`TENANT_GATE_MODE`)·앱 설정 T(`SERVED_TENANT_ID`)를 읽고 검증한다. 기본값·기본 테넌트가 없어 틀리면 기동 거부. Kafka 소비 앱 + file-service 의 루트 모듈이 `TenancyModule` 을 import 한다(`libs/tenancy/src/guards/tenancy-wiring.spec.ts`). 값의 SoT 는 lcnine-auth 의 `TenantList` 시크릿·`tenantGateMode` 한 줄이고 services 앱은 SSM 으로 받는다
 
 ## Development Commands
 
@@ -111,6 +112,8 @@ npm run db:setup -- --stage dev --deployment lcnine-services
 # user-service is owned by the lcnine-auth deployment:
 npm run db:setup -- --stage dev --deployment lcnine-auth
 ```
+
+core 참조 시드는 두 그룹이다(`scripts/seeding/lib/seed-groups.ts`): `baseline`(모든 테넌트 — 보충 기본값·등급 규칙, core 밖 서비스 시드) 과 `baseline-tenant-1`(기존 core DB 전용 — 부천·중국 창고·구역·창고 설정, 자사몰 판매채널). `db:setup` 은 그룹을 하나만 고르므로 기존 core DB 를 처음 채울 땐 두 번 돌려 둘 다 고른다. core 부팅은 창고를 만들지 않는다. `db:seed:ref` 는 둘 다 돈다.
 
 `db:setup` 은 **interactive dev 전용 wrapper** 다 — `--yes` / `--non-interactive` 거부, `--stage live` / `SST_STAGE=live` 거부. 비대화식·배포 경로에선 분리된 4개 명령을 *직접* 호출 (ADR-0005 §3):
 
@@ -355,8 +358,8 @@ Medusa 를 새로 부르면 `medusa-permissions.ts` 에 경로를 더한다(`med
 접속기록이 남고 기록을 못 남기면 가린 값이 나간다 — 규칙은 ADR-0048 §29~36.
 고객 개인정보를 부르는 관리자 화면(admin-web 페이지)은 `apps/admin-web/src/lib/pii/pii-screens.ts` 의 `PII_SCREENS` 에 표시를 단다. 개인정보를 그리지 않는 화면이면 `PII_SCREEN_NOT_SHOWN` 에 사유와 함께 적는다(둘 다 없으면 `pii-screens.gate.spec.ts` 가 빨갛다). 표시의 `reveal`·`opens`·`recipientCoversAll` 은 그 화면이 닿는 경로로 정해진다 — `@PiiResponse` 의 `reveal: true`·받는 분 권한 선언은 `pii-routes.ts` 의 `PII_REVEAL_ROUTES`·`PII_RECIPIENT_ROUTES` 와 맞아야 하고, 화면 게이트가 그 두 목록으로 표시를 검사한다.
 
-역할·권한·부여를 바꾸는 코드는 user-service `iam` 의 Manager 를 거친다 — 권한 상승 방지·시스템 역할·자기 자신·마지막
-시스템 역할 보유자 규칙과 변경 이력이 거기서 같은 트랜잭션으로 묶인다(ADR-0048 §24~28). 새 권한을 추가할 때 같은 대상의
+역할·권한·부여·소속·운영자를 바꾸는 코드는 user-service `iam` 의 Manager 를 거친다 — 권한 상승 방지·시스템 역할·자기 자신·
+마지막 플랫폼 운영자·소속 없는 테넌트 부여 거절 규칙과 변경 이력이 거기서 같은 트랜잭션으로 묶인다(ADR-0048 §24~28·§42·§47). 새 권한을 추가할 때 같은 대상의
 `.read` 가 없으면 `requires` 나 `standalone` 을 적는다(`permission-dependencies.spec.ts` 가 빨갛다).
 
 권한 라우트는 언제나 `PermissionGuard` 가 결정한다 — 스위치는 없고, 되돌리기는 직전 `deploy/<stage>/…` 태그 커밋을 코드·배포 설정째 재배포한다(이미지만 돌리면 옛 가드가 판정한다, ADR-0048 §37~39).
@@ -380,6 +383,8 @@ ECS 태스크가 겹쳐도(롤링 배포·`scaling.max > 1`) 한 주기가 클�
 - Transactional outbox pattern for reliable event publishing
 - Auto-DLQ support for failed consumers
 - Graceful shutdown support; see `libs/events/docs/` for patterns
+- 봉투 `metadata.tenantId` 는 라이브러리가 찍는다 — 생산 코드는 넘기지 않는다(넘겨도 덮어쓴다). 직접 발행은 CLS 맥락(`TENANT_CONTEXT_KEY`) → 앱 설정 T(`SERVED_TENANT_ID`), outbox 는 디스패처가 «행이 든 DB 의 테넌트»(`OUTBOX_TENANT_ID`, 없으면 T)로 나갈 때 찍는다. payload 에는 싣지 않는다(strict 토픽). 계정 이벤트는 계약에 `event(…, { tenancy: 'account' })` 로 선언하고 선언이 없으면 테넌트 이벤트다. **core 는 직접 발행하지 않는다** — 전부 `enqueue` (`core-no-direct-publish.spec.ts`)
+- 소비 앱은 `startConsumer(app, { tenancy })` 로 테넌트 모드를 선언한다(기본값 없음, 빠지면 기동 거부): `per-message`(core·user-service — 봉투의 테넌트를 맥락으로) / `served-tenant`(나머지 — `SERVED_TENANT_ID` 만 섬김). 핸들러 앞의 문(`libs/events/src/tenancy/event-tenant-gate.ts`)이 남의 테넌트 이벤트는 건너뛰고 세며, 테넌트 이벤트인데 테넌트가 없거나 목록에 없으면 `reject` 는 재시도 없이 DLQ·`warn` 은 경고 + 셈. 계정 이벤트는 통과. 모드↔SST·로컬 T 배선은 `tenancy-wiring.spec.ts` 가 지킨다
 
 ### AI (`apps/ai`) — 스킬은 도구를 들고, 앱은 다른 서비스를 HTTP 로만 부른다
 

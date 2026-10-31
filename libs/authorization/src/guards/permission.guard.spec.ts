@@ -3,6 +3,7 @@ import { ExecutionContextHost } from '@nestjs/core/helpers/execution-context-hos
 import { getPermissionDecision } from '../services/permission-decision';
 import { PermissionDecider, Verdict } from '../services/permission-decider';
 import { RouteRequirementResolver } from '../services/route-requirement.resolver';
+import { ServedTenantGate } from '../services/served-tenant-gate';
 import { PermissionGuard } from './permission.guard';
 
 class Probe {
@@ -20,7 +21,11 @@ const context = (type: 'http' | 'rpc' = 'http'): ExecutionContextHost => {
 };
 
 const permissionRoute: Pick<RouteRequirementResolver, 'resolve'> = {
-  resolve: () => ({ requirement: { kind: 'permission', anyOf: ['order.order.write'] }, path: '/orders' }),
+  resolve: () => ({
+    requirement: { kind: 'permission', anyOf: ['order.order.write'] },
+    tenantEntry: 'token',
+    path: '/orders',
+  }),
 };
 
 const guardWith = (verdict: Verdict, granted: readonly string[] | null = ['order.order.write']) => {
@@ -28,7 +33,7 @@ const guardWith = (verdict: Verdict, granted: readonly string[] | null = ['order
   const grantedAmong = jest.fn((): readonly string[] | null => granted);
   const record = jest.fn();
   return {
-    guard: new PermissionGuard(permissionRoute, { decide, grantedAmong }, { record }),
+    guard: new PermissionGuard(permissionRoute, { decide, grantedAmong }, { record }, ServedTenantGate.perToken()),
     decide,
     grantedAmong,
     record,
@@ -113,14 +118,16 @@ describe('PermissionGuard', () => {
 
   it('does not stamp an open route', () => {
     const resolver: Pick<RouteRequirementResolver, 'resolve'> = {
-      resolve: () => ({ requirement: { kind: 'open' }, path: '/x' }),
+      resolve: () => ({ requirement: { kind: 'open' }, tenantEntry: 'none', path: '/x' }),
     };
     const decider: Pick<PermissionDecider, 'decide' | 'grantedAmong'> = {
       decide: jest.fn((): Verdict => ({ allowed: true })),
       grantedAmong: jest.fn(),
     };
     const record = jest.fn();
-    expect(new PermissionGuard(resolver, decider, { record }).canActivate(context())).toBe(true);
+    expect(new PermissionGuard(resolver, decider, { record }, ServedTenantGate.perToken()).canActivate(context())).toBe(
+      true,
+    );
     expect(decider.grantedAmong).not.toHaveBeenCalled();
     expect(record).not.toHaveBeenCalled();
   });

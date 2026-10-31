@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
+import { ClsService } from 'nestjs-cls';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { LoggerModule } from 'nestjs-pino';
 import { DbModule } from '@app/db';
@@ -33,6 +34,10 @@ import { ArchiveModule } from './modules/archive/archive.module';
 import { DemoModule } from './modules/demo/demo.module';
 import { PrintOrderModule } from './modules/print-order/print-order.module';
 import { PrintOrderAdminModule } from './modules/print-order/print-order-admin.module';
+import { TenancyConfig, TenancyModule } from '@app/tenancy';
+import { CoreOutboxTenantModule } from './platform/tenancy/core-outbox-tenant.module';
+import { coreTenantDbRouter } from './platform/tenancy/core-tenant-db-router';
+import { coreRequestTenantProviders } from './platform/tenancy/core-request-tenant.interceptor';
 
 @Module({
   imports: [
@@ -41,6 +46,10 @@ import { PrintOrderAdminModule } from './modules/print-order/print-order-admin.m
       validate: validateAlmondyoungEnv,
       envFilePath: ['.env', 'apps/core/.env'],
     }),
+    // 테넌트 목록·전환 모드. 틀리면 여기서 기동 거부 (@app/tenancy).
+    TenancyModule,
+    // outbox 가 나갈 때 찍는 테넌트 = 접속한 DB 의 테넌트. 목록에 없는 DB 면 기동 거부.
+    CoreOutboxTenantModule,
     LoggerModule.forRoot(loggerConfig),
     // 크론 «주기당 한 번» 선점 (ADR-0036). SCHEDULE_ROOT 는 inventory.module 등이 이미 import 한다.
     CronOnceModule,
@@ -49,9 +58,14 @@ import { PrintOrderAdminModule } from './modules/print-order/print-order-admin.m
         connectionString: configService.get<string>('DATABASE_URL') ?? '',
       }),
       schema: mergedSchema,
+      // ②(reject)면 테넌트마다 풀 하나, 맥락으로 고른다. ①(warn)이면 null — 위 DATABASE_URL 하나를 그대로 쓴다.
+      router: {
+        inject: [TenancyConfig, { token: ClsService, optional: true }],
+        useFactory: coreTenantDbRouter,
+      },
     }),
     AuthorizationModule.forAuthOnly(),
-    PermissionModule.forRoot({ service: 'core' }),
+    PermissionModule.forRoot({ service: 'core', tenancy: 'per-token' }),
     // EventsModule.forApp 은 각 BC 모듈 내부에서 등록 (Catalog: PRODUCT_STREAM)
 
     CatalogModule,
@@ -79,6 +93,8 @@ import { PrintOrderAdminModule } from './modules/print-order/print-order-admin.m
     { provide: APP_GUARD, useClass: PermissionGuard },
     // 개인정보 표시 제한 — 다른 응답 인터셉터보다 바깥에서 최종 본문을 본다.
     ...piiMaskingProviders({ service: 'core', recorder: OutboxPiiAccessRecorder }),
+    // 요청 문 — 토큰·내부 키 헤더·@Public 헤더로 테넌트 맥락을 정한다. DB 라우터가 그 맥락을 읽는다.
+    ...coreRequestTenantProviders(),
   ],
 })
 export class AppModule {}

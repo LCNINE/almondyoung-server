@@ -74,6 +74,7 @@ async function bootstrap() {
     await EventsModule.startConsumer(app, {
       groupId: process.env.KAFKA_GROUP_ID || 'analytics-consumer',
       kafka: kafkaConfig,
+      tenancy: 'served-tenant',
     });
   } else {
     logger.warn('Kafka consumer disabled: KAFKA_BROKERS not set.');

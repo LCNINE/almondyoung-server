@@ -1,10 +1,11 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Inject, Injectable, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PassportStrategy } from '@nestjs/passport';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { INTERNAL_TOKEN_AUDIENCE } from '../../../constants/auth.constant';
 import { OAuthRepository } from '../../oauth/oauth.repository';
 import { UsersService } from '../../users/users.service';
+import { SERVED_TENANT_ID } from '../../../tenancy/served-tenant';
 
 @Injectable()
 export class JwtAccessStrategy extends PassportStrategy(Strategy) {
@@ -12,6 +13,7 @@ export class JwtAccessStrategy extends PassportStrategy(Strategy) {
     private configService: ConfigService,
     private usersService: UsersService,
     private oauthRepository: OAuthRepository,
+    @Inject(SERVED_TENANT_ID) private readonly servedTenantId: string,
   ) {
     const publicKey = configService.get<string>('OAUTH_JWT_PUBLIC_KEY');
     const issuer = configService.get<string>('OAUTH_ISSUER_URL');
@@ -44,7 +46,14 @@ export class JwtAccessStrategy extends PassportStrategy(Strategy) {
 
   async validate(
     req: any,
-    payload: { sub: string; email: string; roles: string[]; login_id?: string; aud?: string | string[] },
+    payload: {
+      sub: string;
+      email: string;
+      roles: string[];
+      login_id?: string;
+      tenant?: string;
+      aud?: string | string[];
+    },
   ) {
     const aud = Array.isArray(payload.aud) ? payload.aud[0] : payload.aud;
     if (!aud) {
@@ -63,6 +72,9 @@ export class JwtAccessStrategy extends PassportStrategy(Strategy) {
       email: payload.email,
       roles: payload.roles ?? [],
       login_id: payload.login_id,
+      // 옛 내부 토큰에는 tenant 가 없지만 T 의 부여만 실어 발급하므로 user-service 안에서는 T 의 토큰이다.
+      // OAuth 토큰에 tenant 가 없으면 이 클레임 도입 전에 나간 토큰이다 — 비워 두고 문이 모드대로 다룬다.
+      tenant: aud === INTERNAL_TOKEN_AUDIENCE ? this.servedTenantId : payload.tenant,
     };
   }
 }

@@ -7,6 +7,7 @@ import { DbTransaction } from 'apps/user-service/src/commons/types';
 import * as bcrypt from 'bcrypt';
 import { RoleAssignmentManager } from '../../iam/assignments/role-assignment.manager';
 import type { IamActor } from '../../iam/iam-actor';
+import { PlatformOperatorManager } from '../../iam/tenancy/platform-operator.manager';
 import { CUSTOMER_ROLE_NAMES } from '../../iam/iam.constants';
 import { UsersService } from '../../users/users.service';
 import { CreateAccountDto } from './dto/create-account-dto';
@@ -22,6 +23,7 @@ export class AuthService {
     private readonly usersService: UsersService,
     private readonly checkpoints: PermissionCheckpoints,
     private readonly roleAssignments: RoleAssignmentManager,
+    private readonly operators: PlatformOperatorManager,
   ) {}
 
   private getClient(tx?: DbTransaction) {
@@ -43,7 +45,10 @@ export class AuthService {
 
   private async _createAccountWithTransaction(createAccountDto: CreateAccountDto, actor: IamActor, tx: UserServiceTx) {
     const client = this.getClient(tx);
-    const { loginId, roleId, phone_number, email, username, nickname } = createAccountDto;
+    const { loginId, roleId, phone_number, email, username, nickname, tenantId } = createAccountDto;
+    // 첫 로그인 변경 강제를 끄는 것은 점검 계정용이다 — 운영자만.
+    const mustChangePassword = createAccountDto.forcePasswordChange ?? true;
+    if (!mustChangePassword) await this.operators.assertOperator(actor, tx);
 
     const initialPassword = generateInitialPassword();
     const hash = await bcrypt.hash(initialPassword, 10);
@@ -56,13 +61,14 @@ export class AuthService {
         loginId,
         password: hash,
         isEmailVerified: true,
-        mustChangePassword: true,
+        mustChangePassword,
         email,
       })
       .returning();
 
-    // 첫 역할도 부여 규칙(권한 상승 방지·시스템 역할)과 변경 이력을 같은 트랜잭션으로 탄다.
-    await this.roleAssignments.assignOnCreate(tx, actor, user.id, roleId);
+    // 첫 역할도 부여 규칙(권한 상승 방지·시스템 역할·테넌트 지정은 운영자만)과 변경 이력을 같은 트랜잭션으로 탄다.
+    // 대행 계정은 고객 가입이 아니라 UserCreated 를 내지 않는다(그 이벤트의 소비자는 가입 혜택·고객 행을 만든다).
+    await this.roleAssignments.assignOnCreate(tx, actor, user.id, roleId, tenantId);
     await this.usersService.updateMyProfile(user.id, { phoneNumber: phone_number }, tx);
 
     return {
@@ -101,5 +107,4 @@ export class AuthService {
 
     return { message: '비밀번호가 변경되었습니다.' };
   }
-
 }

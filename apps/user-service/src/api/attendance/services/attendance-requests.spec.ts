@@ -1,3 +1,4 @@
+import { outboundTenantForTesting } from '@app/tenancy';
 import { validateCorrection, assertDecisionAllowed, AttendanceRequestManager } from './attendance-request.manager';
 import type { AttendanceRepository } from '../repositories/attendance.repository';
 
@@ -42,7 +43,7 @@ describe('attendance correction boundaries', () => {
     const fetchSpy = jest.spyOn(globalThis, 'fetch').mockResolvedValue(new Response('null'));
 
     try {
-      const manager = new AttendanceRequestManager({} as AttendanceRepository);
+      const manager = new AttendanceRequestManager({} as AttendanceRepository, outboundTenantForTesting());
 
       await expect(manager.verifyFiles('owner', ['image'])).rejects.toMatchObject({ status: 400 });
     } finally {

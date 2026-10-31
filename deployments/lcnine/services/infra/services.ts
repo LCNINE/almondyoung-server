@@ -59,6 +59,27 @@ export function setup(infra: SharedInfra) {
     withDecryption: true,
   }).value;
 
+  // 테넌트 목록·전환 모드(@app/tenancy). SoT 는 auth 앱의 TenantList 시크릿과 tenantGateMode 한 줄이다 —
+  // 여기서 따로 세팅하지 않는다. core·file-service·Kafka 소비 앱이 전부 받는다(빠지면 그 앱은 뜨지 않는다).
+  const tenancyEnv = {
+    TENANT_LIST: aws.ssm.getParameterOutput({
+      name: `/lcnine-auth/${$app.stage}/tenant-list`,
+      withDecryption: true,
+    }).value,
+    TENANT_GATE_MODE: aws.ssm.getParameterOutput({
+      name: `/lcnine-auth/${$app.stage}/tenant-gate-mode`,
+    }).value,
+  };
+  // 앱 설정 T(«이 앱이 섬기는 테넌트») — 1단계의 T 만 섬기는 앱은 모두 테넌트 1 이라 auth 의 ServedTenantId 하나를 받는다
+  // (값을 코드에 두지 않는다). «T 만 섬김» 소비 앱이 전부 받는다: 핸들러 앞의 문이 T 와 다른 테넌트 이벤트를 건너뛰고,
+  // 직접 발행·outbox 의 봉투 테넌트도 T 다. core 는 T 가 없다 — «메시지마다» 앱이고 outbox 테넌트는 접속 DB 로 정한다.
+  // T 가 없거나 목록에 없으면 그 앱은 뜨지 않는다. 받는 앱 수는 tenancy-wiring.spec 이 main.ts 의 선언과 대조한다.
+  const servedTenantEnv = {
+    SERVED_TENANT_ID: aws.ssm.getParameterOutput({
+      name: `/lcnine-auth/${$app.stage}/served-tenant-id`,
+    }).value,
+  };
+
   // storefront가 미인증 보호경로 redirect 대상으로 쓰는 auth-web origin.
   const idpAuthWebUrl = aws.ssm.getParameterOutput({
     name: `/lcnine-auth/${$app.stage}/auth-web-url`,
@@ -367,6 +388,8 @@ export function setup(infra: SharedInfra) {
   // 앱별 env (프리픽스 부여). 태스크에는 담당 앱 것만 병합해 넘긴다.
   const analyticsEnv = withPrefix('ANALYTICS', {
     DATABASE_URL: dbUrl('analytics'),
+    ...tenancyEnv,
+    ...servedTenantEnv,
     ...kafkaEnv('analytics', 'analytics-group'),
     AUTH_SECRET: authSecret.value,
     OIDC_ISSUER_URL: idpUserServiceUrl,
@@ -380,6 +403,8 @@ export function setup(infra: SharedInfra) {
   });
   const channelAdapterEnv = withPrefix('CHANNEL_ADAPTER', {
     DATABASE_URL: dbUrl('channel_adapter'),
+    ...tenancyEnv,
+    ...servedTenantEnv,
     ...kafkaEnv('channel-adapter', 'channel-adapter-group'),
     // 전역 JwtAuthGuard 용 (위 notification 과 같은 이유).
     AUTH_SECRET: authSecret.value,
@@ -416,6 +441,8 @@ export function setup(infra: SharedInfra) {
   });
   const membershipEnv = withPrefix('MEMBERSHIP', {
     DATABASE_URL: dbUrl('membership'),
+    ...tenancyEnv,
+    ...servedTenantEnv,
     ...kafkaEnv('membership', 'membership-group'),
     WALLET_API_KEY: walletApiKey.value,
     WALLET_API_URL: url('wallet'),
@@ -433,6 +460,8 @@ export function setup(infra: SharedInfra) {
   });
   const notificationEnv = withPrefix('NOTIFICATION', {
     DATABASE_URL: dbUrl('notification'),
+    ...tenancyEnv,
+    ...servedTenantEnv,
     ...kafkaEnv('notification', 'notification-group'),
     // 전역 JwtAuthGuard 용. 둘 중 하나라도 없으면 부팅이 실패한다
     // (AuthorizationModule 의 AUTH_CONFIG 팩토리). 이 서비스는 그 전까지 인증이 아예 없었다.
@@ -497,6 +526,8 @@ export function setup(infra: SharedInfra) {
 
   const ugcEnv = withPrefix('UGC', {
     DATABASE_URL: dbUrl('ugc'),
+    ...tenancyEnv,
+    ...servedTenantEnv,
     ...kafkaEnv('ugc-service', 'ugc-service-group'),
     AUTH_SECRET: authSecret.value,
     JWT_ISSUER: 'almondyoung-auth',
@@ -513,6 +544,8 @@ export function setup(infra: SharedInfra) {
     SEARCH_PRODUCTS_INDEX: 'search_products_v2',
     // 키워드 운영 상태(담당·메모) 테이블 — search 논리 DB (bootstrap 이 생성, migrate 가 적용)
     DATABASE_URL: dbUrl('search'),
+    ...tenancyEnv,
+    ...servedTenantEnv,
     ...kafkaEnv('search', 'search-indexer-group'),
     // 관리자 키워드 통계 라우트의 JwtAuthGuard 용. 둘 중 하나라도 없으면 부팅이 실패한다
     // (AuthorizationModule 의 AUTH_CONFIG 팩토리). 이 서비스는 그 전까지 인증이 아예 없었다.
@@ -597,6 +630,8 @@ export function setup(infra: SharedInfra) {
     environment: {
       ...kafkaEnv('ai', 'ai-consumer'),
       DATABASE_URL: dbUrl('ai'),
+      ...tenancyEnv,
+      ...servedTenantEnv,
       AUTH_SECRET: authSecret.value,
       JWT_ISSUER: 'almondyoung-auth',
       // admin-web 이 넘겨 준 RS256 토큰을 검증한다.
@@ -637,6 +672,7 @@ export function setup(infra: SharedInfra) {
     },
     environment: {
       DATABASE_URL: dbUrl('core'),
+      ...tenancyEnv,
       ...kafkaEnv('core', 'core-group'),
       // 출고 워크플로 스위치. 값은 `maintenance | v2` 뿐이고 **기본값이 없다** — 미설정이면 어느
       // 환경이든 startup 실패다 (apps/core/src/config/env.validation.ts). `legacy` 는 V1 출고 경로와
@@ -715,6 +751,8 @@ export function setup(infra: SharedInfra) {
     },
     environment: {
       DATABASE_URL: dbUrl('wallet'),
+      ...tenancyEnv,
+      ...servedTenantEnv,
       ...kafkaEnv('wallet', 'wallet-group'),
       AUTH_SECRET: authSecret.value,
       USER_JWT_SECRET: authSecret.value,
@@ -759,6 +797,7 @@ export function setup(infra: SharedInfra) {
     link: [db],
     environment: {
       DATABASE_URL: dbUrl('file_service'),
+      ...tenancyEnv,
       ...kafkaEnv('file-service', 'file-service-group'),
       AUTH_SECRET: authSecret.value,
       // OIDC: storefront/admin-web 의 RS256 토큰 검증용.
@@ -827,6 +866,10 @@ export function setup(infra: SharedInfra) {
     // 반품 요청이 core 에 배송완료 수량·시각을 묻는다(K8 PR3). core 의 같은 이름 키와 같은 값.
     CORE_SERVICE_URL: url('core'),
     CORE_INTERNAL_KEY: coreInternalKey.value,
+    // 내부 키 호출(core·membership·ugc·search·notification)은 테넌트 헤더를 싣는다 — 이 Medusa 는 한 테넌트만 섬기므로
+    // 앱 설정 T 다(src/utils/served-tenant-headers.ts). servedTenantEnv 를 펼치지 않는 건 그 개수가 «T 만 섬기는 소비 앱»
+    // 수라서다(tenancy-wiring.spec).
+    SERVED_TENANT_ID: servedTenantEnv.SERVED_TENANT_ID,
     UGC_SERVICE_URL: url('ugc'),
     UGC_INTERNAL_KEY: ugcInternalKey.value,
     SEARCH_SERVICE_URL: url('search'),
@@ -944,6 +987,10 @@ export function setup(infra: SharedInfra) {
       ALMONDYOUNG_API_URL: url('core'),
       MEDUSA_API_URL: url('medusa'),
       MEDUSA_API_KEY: medusaApiKey.value,
+      // 서버 자격증명 라우트(Medusa 프록시·channel-dispatch)의 테넌트 판정 — 그 업스트림이 섬기는 T 와 전환 모드.
+      // admin-web 은 여러 테넌트를 섬기므로 SERVED_TENANT_ID 라 부르지 않는다. 없으면 두 라우트가 503 이다.
+      SERVER_CREDENTIAL_TENANT_ID: servedTenantEnv.SERVED_TENANT_ID,
+      TENANT_GATE_MODE: tenancyEnv.TENANT_GATE_MODE,
       USER_SERVICE_URL: idpUserServiceUrl,
       WALLET_SERVICE_URL: url('wallet'),
       MEMBERSHIP_SERVICE_URL: url('membership'),
@@ -1107,6 +1154,10 @@ export function setup(infra: SharedInfra) {
       NEXT_PUBLIC_MEDUSA_MEMBERSHIP_GROUP_ID: 'cusgroup_01KFZ12A1M344F6HKGDV35J28A',
       NEXT_PUBLIC_BACKEND_DOMAIN: backendRootDomain,
       BACKEND_DOMAIN: backendRootDomain,
+      // core 의 무인증 라우트(배너·공지·팝업·상품 상세)는 호출자가 보낸 테넌트 헤더로만 DB 를 고른다 — 쇼핑몰은 한 테넌트만
+      // 섬기므로 앱 설정 T 를 싣는다(src/lib/config/backend.ts). servedTenantEnv 를 펼치지 않는 건 그 개수가 «T 만 섬기는
+      // 소비 앱» 수라서다(tenancy-wiring.spec).
+      SERVED_TENANT_ID: servedTenantEnv.SERVED_TENANT_ID,
       NEXT_PUBLIC_USE_RAILWAY_BACKEND: 'true',
       USE_RAILWAY_BACKEND: 'true',
       NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY: medusaPublishableKey.value,

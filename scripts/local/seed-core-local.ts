@@ -7,6 +7,10 @@
  *
  * 무엇이 없어서 무엇이 막히는가:
  *
+ * 0. `WmsSeedStep` — 부천(판매)·중국 창고와 그 구역·창고 설정. 라이브 테넌트 1 과 같은 행이다.
+ *    🔴 core 부팅은 창고를 만들지 않는다 — 이게 없으면 창고 0행이라 판매 창고가 없고
+ *    (이행 오더 생성이 409), 아래 공급처도 입고 창고 없이 들어가 발주가 400 이다.
+ *
  * 1. `PimSeedStep` — `sales_channels` 의 `site='medusa'` 활성 채널 1행.
  *    🔴 이게 없으면 channel-adapter 의 주문 수집 게이트가 닫힌 채로 **조용히** 매 주기를 건너뛴다.
  *    (`OrderPollerOrchestrator` 는 활성 채널만 폴링한다) → 스토어프론트에서 주문을 만들어도
@@ -14,8 +18,8 @@
  *
  * 2. `SupplierLocalSeedStep` — 「개발용 공급처」 1행.
  *    🔴 이게 없으면 매칭 다이얼로그의 **공급처(발주처) 드롭다운이 비어** 필수 3칸 중 하나를
- *    못 채우고 저장이 안 열린다. 물류처·재고소유는 core 부팅이 수렴시키는데 공급처만 그 경로가
- *    없다. 발주도 같이 막힌다 (#795).
+ *    못 채우고 저장이 안 열린다. 재고소유는 core 부팅이 보장하는데 공급처는 그 경로가 없다.
+ *    발주도 같이 막힌다 (#795). 입고 창고를 고르므로 창고(0번) 뒤에 돈다.
  *
  * 3. `ProductMatchingBackfillSeedStep` — active variant 마다 `product_matchings` pending 행.
  *    🔴 이게 없으면 어드민 매칭 화면에서 「이 주문의 매칭 레코드가 없습니다」가 뜨고
@@ -28,6 +32,7 @@
  * 창고·SKU·주문 픽스처를 채우는 개발용 시드다. 이 스크립트는 파괴적이지 않고 멱등이다.
  */
 import { SeedStep } from '../seeding/steps/base-seed-step';
+import { WmsSeedStep } from '../seeding/steps/wms.seed-step';
 import { PimSeedStep } from '../seeding/steps/pim.seed-step';
 import { ProductMatchingBackfillSeedStep } from '../seeding/steps/product-matching-backfill.seed-step';
 // 공급처는 라이브에 실제 행이 있어 reference 시드로 올리면 안 된다 — 그래서 이 스텝만
@@ -57,8 +62,9 @@ async function runStep(step: SeedStep, label: string): Promise<void> {
 
 async function main(): Promise<void> {
   console.log(`대상: ${DATABASE_URL}`);
-  // 순서가 있다: 채널이 먼저 있어야 수집이 열리고, 매칭 backfill 은 variant 를 훑으므로 뒤에 온다.
-  // 공급처는 다른 스텝과 무관하지만 마스터데이터라 backfill 앞에 둔다.
+  // 순서가 있다: 창고가 먼저 있어야 공급처가 입고 창고를 고르고, 채널이 있어야 수집이 열리고,
+  // 매칭 backfill 은 variant 를 훑으므로 맨 뒤에 온다.
+  await runStep(new WmsSeedStep(DATABASE_URL), 'WMS (warehouses·locations·settings)');
   await runStep(new PimSeedStep(DATABASE_URL), 'PIM (sales_channels)');
   await runStep(new SupplierLocalSeedStep(DATABASE_URL), '공급처 (suppliers)');
   await runStep(new ProductMatchingBackfillSeedStep(DATABASE_URL), 'ProductMatching backfill');

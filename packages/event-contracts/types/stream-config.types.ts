@@ -37,7 +37,16 @@ export interface StreamTopicConfig {
 export interface EventType<TMessageType extends string = string, TPayload = unknown> {
   messageType: TMessageType;
   schema?: ZodSchema<TPayload>; // Zod 스키마 (런타임 검증용, 선택)
+  /**
+   * 이 이벤트의 테넌트 성격. 선언이 없으면 «테넌트 이벤트»다 — 한 테넌트의 업무라, 소비 앱의 문이 봉투의
+   * 테넌트로 거른다. `'account'` 는 «계정 이벤트»(`users.events.v1` 의 계정 수명주기)로, 계정이 테넌트로
+   * 쪼개지지 않으므로 문이 테넌트와 상관없이 통과시킨다. 조회는 레지스트리의 `eventTenancy`.
+   */
+  tenancy?: EventTenancy;
 }
+
+/** `'tenant'` 은 선언하지 않는다(기본값). 선언으로 쓰는 값은 `'account'` 하나다. */
+export type EventTenancy = 'tenant' | 'account';
 
 /**
  * Stream의 모든 이벤트 타입들

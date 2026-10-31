@@ -12,8 +12,9 @@ export class WarehouseService implements OnModuleInit {
     private readonly manager: WarehouseManager,
   ) {}
 
+  /** 창고는 만들지 않는다. 지금은 단일 DB 에서 한 번 — 테넌트가 여럿이면 테넌트마다 불러야 한다. */
   onModuleInit() {
-    return this.manager.ensureDefaultsExist();
+    return this.manager.convergeSystemLocations();
   }
 
   findAll(tx?: DbTx) {

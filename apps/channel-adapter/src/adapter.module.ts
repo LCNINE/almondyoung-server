@@ -137,6 +137,7 @@ import { DEMO_RUN_REPOSITORY, DemoRunService } from './demo/demo-run.service';
 import { DemoRunRepository } from './demo/demo-run.repository';
 import { DemoDispatchOutcomeReader } from './demo/demo-dispatch-outcome.reader';
 import { DemoCatalogClient } from './demo/demo-catalog.client';
+import { TenancyModule } from '@app/tenancy';
 
 const IS_SAFE_DEMO_MODE = isSafeDemoMode(process.env);
 
@@ -172,6 +173,8 @@ const NO_KAFKA_PUBLISHER_STREAMS: StreamConfig[] = [
       isGlobal: true,
       validate: validateChannelAdapterEnv,
     }),
+    // 테넌트 목록·전환 모드. 틀리면 여기서 기동 거부 (@app/tenancy).
+    TenancyModule,
     SCHEDULE_ROOT, // ← Cron 활성화
     CronOnceModule,
     HttpModule,
@@ -187,7 +190,7 @@ const NO_KAFKA_PUBLISHER_STREAMS: StreamConfig[] = [
     }),
     // 내부 호출용 `internal/*` 는 각자 공유키를 직접 검증하므로 @Public 로 빠진다.
     AuthorizationModule.forAuthOnly(),
-    PermissionModule.forRoot({ service: 'channel-adapter' }),
+    PermissionModule.forRoot({ service: 'channel-adapter', tenancy: 'served-tenant' }),
     EventTraceApiModule,
     // Kafka 환경변수가 있으면 실제 EventsModule 활성화 (로컬 개발 환경 제외)
     ...(process.env.KAFKA_BROKERS

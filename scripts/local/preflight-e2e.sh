@@ -130,6 +130,9 @@ WAL=$(url_of apps/wallet/.env)
     && ok "wallet: 결제수단 매핑 존재" || bad "결제화면이 「사용 가능한 결제수단이 없습니다」 → npm run db:seed:wallet:local"
 }
 [ -n "$CORE" ] && {
+  # core 부팅은 창고를 만들지 않는다. 판매 창고가 없으면 이행 오더가 생기지 않는다(409).
+  [ "$(pgq "$CORE" "SELECT count(*) FROM warehouses WHERE is_sellable")" -ge 1 ] 2>/dev/null \
+    && ok "core: 판매 창고 존재" || bad "판매 창고 0행 → 주문이 출고로 안 넘어간다 → npm run db:seed:core:local"
   # 활성 판매채널이 없으면 주문 수집이 «이번 주기의 모든 채널을 건너뛴다» — 워터마크가 안 움직인다.
   [ "$(pgq "$CORE" "SELECT count(*) FROM sales_channels")" -ge 1 ] 2>/dev/null \
     && ok "core: 판매채널 존재 (주문 수집 게이트)" || bad "판매채널 0행 → 주문이 core 로 안 흘러온다 → npm run db:seed:core:local"
@@ -196,6 +199,46 @@ echo "── 10. 포트 충돌"
 CA=$(e2e_env_value apps/channel-adapter/.env PORT)
 FS=$(e2e_env_value apps/file-service/.env PORT)
 [ -n "$CA" ] && [ "$CA" = "$FS" ] && bad "channel-adapter 와 file-service 가 둘 다 PORT=$CA — 하나만 뜬다" || ok "channel-adapter(${CA:-?}) ≠ file-service(${FS:-?})"
+
+echo "── 11. 테넌트 목록·전환 모드 (@app/tenancy — kind=nest 앱 전부)"
+# 🔴 없으면 그 앱은 기동을 거부한다(기본값이 없다). 앱마다 다르면 한 앱은 테넌트로 받는 이벤트를
+# 다른 앱은 «목록에 없는 테넌트»로 DLQ 에 보낸다 — 화면으로는 원인이 안 보인다.
+TENANCY_FIRST="" TENANCY_SPLIT=0 TENANCY_DIFFERS_FROM_CANON=0
+check_tenancy() {
+  local name="$1" dest="$2" kind="$6" list mode
+  [ "$kind" = "nest" ] || return 0
+  e2e_env_present "$dest" || return 0
+  list=$(e2e_env_raw_value "$dest" TENANT_LIST); mode=$(e2e_env_raw_value "$dest" TENANT_GATE_MODE)
+  if [ -z "$list" ] || [ -z "$mode" ]; then
+    bad "$name — TENANT_LIST·TENANT_GATE_MODE 가 없다 → 기동 거부. npm run bootstrap:e2e:local"; return
+  fi
+  if [ -z "$TENANCY_FIRST" ]; then TENANCY_FIRST="$list|$mode"
+  elif [ "$list|$mode" != "$TENANCY_FIRST" ]; then TENANCY_SPLIT=1; fi
+  [ "$list" = "$E2E_TENANT_LIST" ] && [ "$mode" = "$E2E_TENANT_GATE_MODE" ] || TENANCY_DIFFERS_FROM_CANON=1
+}
+e2e_env_each "" check_tenancy
+if [ "$TENANCY_SPLIT" = "1" ]; then
+  bad "앱마다 TENANT_LIST·TENANT_GATE_MODE 가 다르다 → 다른 줄을 지우고 npm run bootstrap:e2e:local"
+elif [ -n "$TENANCY_FIRST" ]; then
+  [ "$TENANCY_DIFFERS_FROM_CANON" = "1" ] && warn "앱끼리는 같지만 정본(e2e-env-map.sh)과 다르다 — 손으로 바꾼 값인지 확인" \
+    || ok "정본과 같다 (모드 $E2E_TENANT_GATE_MODE)"
+fi
+
+echo "── 12. 서버 자격증명 라우트의 테넌트 판정 (admin-web Medusa 프록시·channel-dispatch)"
+# 🔴 없으면 두 라우트가 503 이다(기본값이 없다) — 상품·주문 화면의 Medusa 호출이 전부 실패한다.
+check_server_credential_gate() {
+  local name="$1" dest="$2"
+  [[ " $E2E_SERVER_CREDENTIAL_GATE_APPS " == *" $name "* ]] || return 0
+  e2e_env_present "$dest" || return 0
+  local tenant mode
+  tenant=$(e2e_env_raw_value "$dest" SERVER_CREDENTIAL_TENANT_ID); mode=$(e2e_env_raw_value "$dest" TENANT_GATE_MODE)
+  if [ -z "$tenant" ] || [ -z "$mode" ]; then
+    bad "$name — SERVER_CREDENTIAL_TENANT_ID·TENANT_GATE_MODE 가 없다 → Medusa 프록시 503. npm run bootstrap:e2e:local"
+  elif [ "$tenant" != "$E2E_SERVED_TENANT_ID" ] || [ "$mode" != "$E2E_TENANT_GATE_MODE" ]; then
+    warn "$name — 정본(e2e-env-map.sh)과 다르다 — 손으로 바꾼 값인지 확인 (정본으로 돌리려면 두 줄을 지우고 npm run bootstrap:e2e:local)"
+  else ok "$name"; fi
+}
+e2e_env_each "" check_server_credential_gate
 
 echo
 [ "$FAIL" -eq 0 ] && echo "✅ 사전 점검 통과" || { echo "❌ 위 ✗ 를 먼저 해결할 것"; exit 1; }

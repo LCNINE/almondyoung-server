@@ -2,6 +2,7 @@ import { Controller, Get } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { Public, RequirePermission } from '@app/authorization';
 import { HealthService } from '../services/health.service';
+import { TenantFree } from '../../../../platform/tenancy/tenant-free.decorator';
 
 @ApiTags('Health')
 @Controller('inventory/health')
@@ -10,6 +11,7 @@ export class HealthController {
 
   @Get()
   @Public()
+  @TenantFree()
   @ApiOperation({
     summary: '\uc804\uccb4 \ud5ec\uc2a4\uccb4\ud06c',
     description: 'WMS \uc11c\ube44\uc2a4\uc758 \uc804\uccb4 \uc0c1\ud0dc\ub97c \ud655\uc778\ud569\ub2c8\ub2e4.',
@@ -20,6 +22,7 @@ export class HealthController {
     return this.healthService.checkHealth();
   }
 
+  // DB 를 읽는다(checkDatabase) — 다른 @Public 처럼 토큰이나 테넌트 헤더가 그 테넌트의 풀을 고른다.
   @Get('ready')
   @Public()
   @ApiOperation({
@@ -35,6 +38,7 @@ export class HealthController {
 
   @Get('live')
   @Public()
+  @TenantFree()
   @ApiOperation({
     summary: '\uc0dd\uc874\uc0c1\ud0dc \ud655\uc778',
     description: '\uc11c\ube44\uc2a4\uac00 \uc0b4\uc544\uc788\ub294\uc9c0 \ud655\uc778\ud569\ub2c8\ub2e4.',

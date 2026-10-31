@@ -4,9 +4,11 @@ import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagg
 import { CreateShopInfoDto } from './dto/create-shop-info.dto';
 import { ShopService } from './shop.service';
 import { CurrentUser } from '@app/shared/decorators/current-user.decorator';
+import { ServedTenantData } from '../../tenancy/served-tenant.guard';
 
 @ApiTags('Shop')
 @ApiBearerAuth('access-token')
+@ServedTenantData()
 @Controller('shop')
 export class ShopController {
   constructor(private readonly shopService: ShopService) {}

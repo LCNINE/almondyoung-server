@@ -82,11 +82,15 @@ export * from './outbox/outbox.schema';
 export * from './outbox/outbox.types';
 export * from './outbox/outbox-writer.port';
 export * from './outbox/outbox-dispatch-gate.port';
+export * from './outbox/outbox-tenant.port';
 export * from './outbox/outbox-publisher.service';
 export * from './outbox/outbox-dispatcher.service';
 export * from './outbox/outbox-failures.service';
 export * from './outbox/outbox.metrics';
 export * from './outbox/outbox-metrics.collector';
+
+// 봉투 테넌트 찍기
+export * from './tenancy/event-tenant-stamp';
 
 // Utilities
 export * from './utils/message-id.util';

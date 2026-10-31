@@ -7,6 +7,9 @@ import { PassportModule } from '@nestjs/passport';
 import { FastifyAdapter, NestFastifyApplication } from '@nestjs/platform-fastify';
 import { Test } from '@nestjs/testing';
 import { JwtAccessStrategy } from '../../api/auth/strategies/jwt-access.strategy';
+import { TenancyConfig } from '@app/tenancy';
+import { SERVED_TENANT_ID } from '../../tenancy/served-tenant';
+import { ServedTenantGuard } from '../../tenancy/served-tenant.guard';
 import { ConsentsController } from '../../api/consents/consents.controller';
 import { ConsentsService } from '../../api/consents/consents.service';
 import { OAuthRepository } from '../../api/oauth/oauth.repository';
@@ -54,7 +57,7 @@ describe('user-service 고객 셀프서비스 라우트 인증', () => {
           load: [() => ({ OAUTH_JWT_PUBLIC_KEY: publicKey, OAUTH_ISSUER_URL: ISSUER })],
         }),
         PassportModule,
-        PermissionModule.forRoot({ service: 'user-service', source: UnconfiguredSource }),
+        PermissionModule.forRoot({ service: 'user-service', tenancy: 'per-token', source: UnconfiguredSource }),
       ],
       controllers: [ConsentsController, UsersController],
       providers: [
@@ -64,7 +67,10 @@ describe('user-service 고객 셀프서비스 라우트 인증', () => {
         { provide: UsersService, useValue: users },
         { provide: WithdrawnReplayService, useValue: {} },
         { provide: APP_GUARD, useClass: DemoBoundaryGuard },
+        { provide: SERVED_TENANT_ID, useValue: '1' },
+        { provide: TenancyConfig, useValue: { gateMode: 'reject' } },
         { provide: APP_GUARD, useClass: JwtAuthGuard },
+        { provide: APP_GUARD, useClass: ServedTenantGuard },
         { provide: APP_GUARD, useClass: PermissionGuard },
       ],
     }).compile();

@@ -29,6 +29,7 @@ import { getDLQTopicName } from '@packages/event-contracts/types';
 import { CART_STREAM } from '@packages/event-contracts/streams/cart.stream';
 import type { DLQMessage } from '../dlq/dlq.types';
 import { EventsModule } from '../events.module';
+import { testTenancyModule } from '../testing/tenancy';
 import { EventPayload, On } from '../consumers/decorators';
 import { EventTypeGuard } from '../guards/event-type.guard';
 import { RetryPolicy } from '../retry/retry-policy.decorator';
@@ -82,7 +83,10 @@ async function buildModule(broker: InMemoryBroker): Promise<TestingModule> {
   process.env.KAFKA_BOOTSTRAP_TOPICS = 'false';
 
   return Test.createTestingModule({
-    imports: [EventsModule.forApp({ publishes: [CART_STREAM], serviceName: 'handler-failure-spec', kafka })],
+    imports: [
+      testTenancyModule(),
+      EventsModule.forApp({ publishes: [CART_STREAM], serviceName: 'handler-failure-spec', kafka }),
+    ],
     controllers: [ExplodingConsumer],
   })
     .overrideProvider(EVENT_TRANSPORT)
@@ -163,6 +167,7 @@ describe('핸들러 throw — startConsumer 배선', () => {
     app = moduleRef.createNestApplication({ logger: false });
 
     await EventsModule.startConsumer(app, {
+      tenancy: 'per-message',
       groupId: 'spec-consumer',
       kafka,
       strategy: new InMemoryServer(broker),

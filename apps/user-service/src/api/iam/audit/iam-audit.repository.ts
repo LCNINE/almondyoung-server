@@ -2,6 +2,7 @@ import { DbService, InjectDb } from '@app/db';
 import { Injectable } from '@nestjs/common';
 import { iamAuditLogs, type UserServiceSchema, type UserServiceTx } from 'apps/user-service/database/drizzle/schema';
 import { and, desc, eq, gte, lt, or, sql, type SQL } from 'drizzle-orm';
+import type { IamAuditTargetType } from './iam-audit.creator';
 
 export type NewIamAuditLog = typeof iamAuditLogs.$inferInsert;
 export type IamAuditLogRow = typeof iamAuditLogs.$inferSelect;
@@ -12,7 +13,7 @@ export interface IamAuditFilter {
   readonly from?: Date;
   readonly to?: Date;
   readonly actorUserId?: string;
-  readonly targetType?: 'role' | 'user' | 'pii_access_log';
+  readonly targetType?: IamAuditTargetType;
   readonly targetId?: string;
   readonly roleId?: string;
   readonly action?: string;

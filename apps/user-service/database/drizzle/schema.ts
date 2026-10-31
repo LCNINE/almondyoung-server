@@ -52,6 +52,9 @@ export const oauthCodeChallengeMethodEnum = pgEnum('oauth_code_challenge_method'
 // confidential: server-side RP (client_secret + PKCE), public: SPA/모바일 (PKCE only, RFC 8252).
 export const oauthClientTypeEnum = pgEnum('oauth_client_type', ['confidential', 'public']);
 
+// 준비 → 활성 ↔ 정지. 준비·정지 테넌트에는 토큰이 나가지 않는다.
+export const tenantStatusEnum = pgEnum('tenant_status', ['preparing', 'active', 'suspended']);
+
 /*───────────────────────────
  * HELPER COLUMNS
  *──────────────────────────*/
@@ -110,8 +113,62 @@ export const users = pgTable('users', {
   deletedAt: timestamp('deleted_at'),
   // 장기 미접속 휴면 전환 시각. 되살릴 수 있는 상태라 탈퇴와 성격이 다르다.
   dormantAt: timestamp('dormant_at'),
+  // 플랫폼 운영자 — 테넌트 역할이 아니라 계정에 붙는 성질이다. 로그인할 수 있는 운영자가 최소 1명 남아야 한다.
+  isPlatformOperator: boolean('is_platform_operator').notNull().default(false),
   ...timestampColumns,
 });
+
+/***
+ * tenant schema — 계정은 전역 하나이고, 테넌트와의 관계는 소속과 테넌트별 역할 부여로만 표현한다.
+ */
+// id 는 테넌트 목록(TENANT_LIST)·토큰 tenant·이벤트 봉투와 같은 문자열이다.
+export const tenants = pgTable('tenants', {
+  id: varchar('id', { length: 64 }).primaryKey(),
+  slug: varchar('slug', { length: 64 }).notNull().unique(),
+  status: tenantStatusEnum('status').notNull().default('preparing'),
+  displayName: varchar('display_name', { length: 100 }).notNull(),
+  logoUrl: text('logo_url'),
+  ...timestampColumns,
+});
+
+// 테넌트 도메인 — 웹 직원 앱의 주소가 테넌트를 정한다. 한 주소는 한 테넌트에만 속한다.
+export const tenantDomains = pgTable(
+  'tenant_domains',
+  {
+    // URL 의 host(포트 포함, 소문자).
+    host: varchar('host', { length: 255 }).primaryKey(),
+    tenantId: varchar('tenant_id', { length: 64 })
+      .references(() => tenants.id, { onDelete: 'cascade' })
+      .notNull(),
+    createdAt: timestamp('created_at')
+      .default(sql`now()`)
+      .notNull(),
+  },
+  (table) => ({
+    tenantIdx: index('tenant_domains_tenant_id_idx').on(table.tenantId),
+  }),
+);
+
+// 소속 — 계정이 어느 테넌트의 직원인가. 역할이 아직 없어도 있을 수 있고, 소속 없는 테넌트에서는 직원 역할을 받을 수 없다.
+// 고객은 소속이 없다(고객 역할 부여만 있다).
+export const tenantMemberships = pgTable(
+  'tenant_memberships',
+  {
+    userId: uuid('user_id')
+      .references(() => users.id, { onDelete: 'cascade' })
+      .notNull(),
+    tenantId: varchar('tenant_id', { length: 64 })
+      .references(() => tenants.id, { onDelete: 'cascade' })
+      .notNull(),
+    createdAt: timestamp('created_at')
+      .default(sql`now()`)
+      .notNull(),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.userId, table.tenantId] }),
+    tenantIdx: index('tenant_memberships_tenant_id_idx').on(table.tenantId),
+  }),
+);
 
 // 역할 정의 테이블
 export const roles = pgTable('roles', {
@@ -177,7 +234,8 @@ export const iamAuditLogs = pgTable(
     actorLoginId: varchar('actor_login_id', { length: 30 }),
     action: varchar('action', { length: 50 }).notNull(),
     targetType: varchar('target_type', { length: 20 }).notNull(),
-    targetId: uuid('target_id').notNull(),
+    // 사람·역할은 uuid, 테넌트·OAuth 클라이언트는 문자열 id 라 문자열로 둔다.
+    targetId: varchar('target_id', { length: 64 }).notNull(),
     targetLabel: varchar('target_label', { length: 100 }).notNull(),
     before: jsonb('before'),
     after: jsonb('after'),
@@ -185,6 +243,8 @@ export const iamAuditLogs = pgTable(
     ip: varchar('ip', { length: 45 }),
     userAgent: text('user_agent'),
     requestId: varchar('request_id', { length: 100 }),
+    // 어느 테넌트에서 한 변경인가(역할 정의처럼 전역인 것은 요청자가 일한 테넌트). 이력은 지워진 테넌트보다 오래 남으므로 FK 를 걸지 않는다.
+    tenantId: varchar('tenant_id', { length: 64 }),
   },
   (table) => ({
     occurredIdx: index('iam_audit_logs_occurred_at_idx').on(table.occurredAt),
@@ -219,6 +279,8 @@ export const piiAccessLogs = pgTable(
     kinds: text('kinds').array().notNull(),
     queryKeys: text('query_keys').array().notNull(),
     reason: text('reason'),
+    // 열람이 일어난 테넌트. 접속기록은 어떤 경우에도 남아야 하므로 FK 를 걸지 않는다.
+    tenantId: varchar('tenant_id', { length: 64 }),
     recordedAt: timestamp('recorded_at', { precision: 3 })
       .default(sql`now()`)
       .notNull(),
@@ -264,6 +326,8 @@ export const userRoleAssignments = pgTable(
       .notNull(),
     assignedAt: timestamp('assigned_at').defaultNow().notNull(),
     expiresAt: timestamp('expires_at'),
+    // 어느 테넌트에서의 부여인가. 역할 정의는 전역이고 부여에만 테넌트가 있다. NOT NULL 은 백필 뒤 별도 contract 마이그다.
+    tenantId: varchar('tenant_id', { length: 64 }).references(() => tenants.id, { onDelete: 'cascade' }),
     ...timestampColumns,
   },
   (table) => ({
@@ -633,6 +697,9 @@ export const oauthClients = pgTable(
     redirectUris: jsonb('redirect_uris').$type<string[]>().notNull(),
     postLogoutRedirectUris: jsonb('post_logout_redirect_uris').$type<string[] | null>(),
     allowedScopes: jsonb('allowed_scopes').$type<string[] | null>(),
+    // 고정 테넌트 앱(쇼핑몰 등)의 테넌트. 비어 있으면 웹 직원 앱이다 — 토큰 테넌트를 등록된 리디렉트 주소의 host
+    // (테넌트 도메인)로 정한다.
+    tenantId: varchar('tenant_id', { length: 64 }).references(() => tenants.id),
     isActive: boolean('is_active').default(true).notNull(),
     deactivatedAt: timestamp('deactivated_at'),
     ...timestampColumns,
@@ -682,6 +749,8 @@ export const oauthTokens = pgTable(
     isRevoked: boolean('is_revoked').default(false).notNull(),
     expiresAt: timestamp('expires_at').notNull(),
     rotatedFrom: uuid('rotated_from'),
+    // 이 세션의 토큰 테넌트. 갱신은 같은 테넌트로만 한다. 비어 있으면 이 칸 전에 발급된 세션이다.
+    tenantId: varchar('tenant_id', { length: 64 }).references(() => tenants.id, { onDelete: 'cascade' }),
     ...timestampColumns,
   },
   (table) => ({
@@ -858,6 +927,9 @@ export const userServiceTables = {
   iamAuditLogs,
   piiAccessLogs,
   piiAccessReviews,
+  tenants,
+  tenantDomains,
+  tenantMemberships,
   userRoleAssignments,
   userIdentities,
   businessLicenses,
@@ -909,6 +981,7 @@ export const userServiceEnums = {
   phoneVerificationPurposeEnum,
   emailVerificationPurposeEnum,
   oauthCodeChallengeMethodEnum,
+  tenantStatusEnum,
 } as const;
 
 /*───────────────────────────
@@ -928,7 +1001,8 @@ export type UserServiceTables = typeof userServiceTables;
 export type UserServiceEnums = typeof userServiceEnums;
 
 export type User = typeof users.$inferSelect;
-export type UserWithoutPassword = Omit<User, 'password'>;
+// 운영자 성질은 계정 응답에 싣지 않는다 — 판정은 iam 이 DB 에서 한다.
+export type UserWithoutPassword = Omit<User, 'password' | 'isPlatformOperator'>;
 export type Shop = typeof shops.$inferSelect;
 export type Wishlist = typeof wishlist.$inferSelect;
 export type BeautytopSavedShop = typeof beautytopSavedShops.$inferSelect;

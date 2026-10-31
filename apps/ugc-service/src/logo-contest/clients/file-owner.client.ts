@@ -1,4 +1,5 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { OutboundTenant } from '@app/tenancy';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { BadRequestError } from '@app/shared';
 import { ALLOWED_IMAGE_MIME_TYPES, LOGO_CONTEST_IMAGE_CONTEXT_ID } from '../constants/logo-contest.constants';
@@ -25,7 +26,10 @@ export class FileOwnerClient {
   private readonly baseUrl: string;
   private readonly internalKey: string;
 
-  constructor(configService: ConfigService) {
+  constructor(
+    configService: ConfigService,
+    @Inject(OutboundTenant) private readonly outboundTenant: Pick<OutboundTenant, 'headers'>,
+  ) {
     this.baseUrl = (configService.get<string>('FILE_SERVICE_URL') ?? 'http://localhost:3010').replace(/\/+$/, '');
     this.internalKey = configService.get<string>('FILE_SERVICE_INTERNAL_KEY') ?? '';
   }
@@ -61,7 +65,7 @@ export class FileOwnerClient {
 
   private async describe(fileId: string): Promise<FileDescription> {
     const response = await fetch(`${this.baseUrl}/internal/files/${fileId}`, {
-      headers: { Authorization: `Bearer ${this.internalKey}` },
+      headers: { Authorization: `Bearer ${this.internalKey}`, ...this.outboundTenant.headers() },
       signal: AbortSignal.timeout(5_000),
     }).catch((error: unknown) => {
       this.logger.error(`file-service 조회 실패 fileId=${fileId}: ${String(error)}`);

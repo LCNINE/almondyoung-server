@@ -777,11 +777,10 @@ export class BulkSessionJobManager {
    * 커밋에 실려, 커밋 전에 워커가 죽어도 고아 master 가 남지 않는다.)
    *
    * **다만 "phantom masterId 가 완전히 사라진다"는 아니다**(최종 리뷰 정정, 스펙 §5.1). 롤백돼도
-   * `createMaster` 가 낸 두 부수효과는 남는다: 브로커로 직송된 `ProductVariantCreated` Kafka
-   * 이벤트(`product-masters.service.ts:136` → `stream-publisher.service.ts:209` — 아웃박스가
-   * 아니다)와, `tx` 를 전파받지 않아 독립 커밋되는 `product_matchings` 행
-   * (`product-masters.service.ts:167` → `product-matching.service.ts:272,297`). 이 브랜치의
-   * 회귀가 아니라 v1·v3 와 공유하는 `createMaster` 의 기존 동작이다.
+   * `createMaster` 가 낸 부수효과 하나는 남는다: `tx` 를 전파받지 않아 독립 커밋되는 `product_matchings` 행
+   * (`ProductMastersService.enqueueVariantCreatedEvent` → `ProductMatchingService.handleVariantCreated`).
+   * v1·v3 와 공유하는 `createMaster` 의 기존 동작이다. `ProductVariantCreated` 이벤트는 이제 outbox 로
+   * 같은 트랜잭션에 실려 함께 롤백된다.
    */
   async runDraftSlice(claimed: ClaimedBulkSession): Promise<void> {
     const { sessionId, leaseToken } = claimed;

@@ -1,3 +1,4 @@
+import { outboundTenantForTesting } from '@app/tenancy';
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import { migrate } from 'drizzle-orm/postgres-js/migrator';
 import {
@@ -88,7 +89,7 @@ run('attendance PostgreSQL transactions', () => {
 
     calendar = new AttendanceCalendarService(repo);
 
-    requests = new AttendanceRequestManager(repo);
+    requests = new AttendanceRequestManager(repo, outboundTenantForTesting());
   }, 120000);
 
   afterAll(async () => {
@@ -240,7 +241,7 @@ run('attendance PostgreSQL transactions', () => {
       VALUES (${owner}, '2026-10-19', '2026-10-19T00:00:00Z')
     `);
 
-    const worker = new AttendanceJobsService(repo) as unknown as {
+    const worker = new AttendanceJobsService(repo, outboundTenantForTesting()) as unknown as {
       scheduleReminders: (now: Date) => Promise<void>;
     };
 
@@ -436,7 +437,7 @@ run('attendance PostgreSQL transactions', () => {
     process.env.NOTIFICATION_INTERNAL_KEY = 'isolated-integration-key';
 
     try {
-      const worker = new AttendanceJobsService(repo) as unknown as {
+      const worker = new AttendanceJobsService(repo, outboundTenantForTesting()) as unknown as {
         scheduleVacationReminders: (now: Date) => Promise<void>;
         run: (job: typeof attendanceJobs.$inferSelect) => Promise<void>;
       };
@@ -629,7 +630,7 @@ run('attendance PostgreSQL transactions', () => {
       expiresAt: new Date(Date.now() + (mode === 'crashed' ? 60000 : -1000)),
     });
 
-    await new AttendanceJobsService(repo).tick();
+    await new AttendanceJobsService(repo, outboundTenantForTesting()).tick();
 
     const jobs = await database.db.select().from(attendanceJobs);
     const rows = await database.db.select().from(attendanceRequests);
@@ -744,7 +745,7 @@ run('attendance PostgreSQL transactions', () => {
 
       fetchSpy.mockImplementation(() => Promise.resolve(new Response('Service unavailable', { status: 503 })));
 
-      const worker = new AttendanceJobsService(repo);
+      const worker = new AttendanceJobsService(repo, outboundTenantForTesting());
 
       await worker.tick();
 
@@ -856,7 +857,7 @@ run('attendance PostgreSQL transactions', () => {
         return new Response(JSON.stringify(attendanceAiResponse));
       });
 
-      await new AttendanceJobsService(repo).tick();
+      await new AttendanceJobsService(repo, outboundTenantForTesting()).tick();
 
       const [resubmitted] = await database.db
         .select()
@@ -911,7 +912,7 @@ run('attendance PostgreSQL transactions', () => {
       );
 
     try {
-      const worker = new AttendanceJobsService(repo);
+      const worker = new AttendanceJobsService(repo, outboundTenantForTesting());
 
       for (let attempt = 0; attempt < 3; attempt++) {
         await database.db.update(attendanceJobs).set({ runAfter: new Date(Date.now() - 1000) });

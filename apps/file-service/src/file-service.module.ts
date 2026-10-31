@@ -15,6 +15,7 @@ import { UploadModule } from './upload/upload.module';
 import { InternalFilesModule } from './internal/internal-files.module';
 import { LifecycleModule } from './lifecycle/lifecycle.module';
 import { DownloadModule } from './download/download.module';
+import { TenancyModule } from '@app/tenancy';
 
 @Module({
   imports: [
@@ -24,8 +25,10 @@ import { DownloadModule } from './download/download.module';
       validate: validateFileServiceEnv,
       envFilePath: ['.env', 'apps/file-service/.env'], // root .env 먼저 읽기
     }),
+    // 테넌트 목록·전환 모드. 틀리면 여기서 기동 거부 (@app/tenancy).
+    TenancyModule,
     AuthorizationModule.forAuthOnly(),
-    PermissionModule.forRoot({ service: 'file-service' }),
+    PermissionModule.forRoot({ service: 'file-service', tenancy: 'per-token' }),
     DbModule.forRoot({
       config: {
         connectionString: process.env.DATABASE_URL ?? '',

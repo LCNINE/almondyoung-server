@@ -62,6 +62,22 @@ Express가 아닌 Fastify를 사용한다. 파일 업로드는 `@fastify/multipa
 ### Cafe24 조건부 Unique 인덱스
 `cafe24_links` 테이블에서 `unlinkedAt IS NULL` 조건의 partial unique index를 사용하여, 해제 후 재연동을 허용한다.
 
+### 토큰 테넌트 (멀티테넌트)
+OAuth 액세스 토큰에는 `tenant` 가 실리고 `roles` 는 그 테넌트의 부여만 싣는다(`UsersService.getTokenRoleNames`). 토큰 테넌트는
+클라이언트의 고정 테넌트(`oauth_clients.tenant_id`, 쇼핑몰 등)이거나, 비어 있으면(웹 직원 앱) 등록된 리디렉트 주소의 host →
+`tenant_domains` 로 정한다 — 요청 파라미터·Host 헤더로 정하지 않는다. 준비·정지 테넌트는 발급·갱신을 거절하고 세션을 끊는다.
+옛 내부 토큰(`aud=user-service-internal`)에는 `tenant` 가 없고 역할은 앱 설정 T(`SERVED_TENANT_ID`)의 부여만 싣는다.
+고객·근태처럼 T 의 데이터를 답하는 컨트롤러(또는 라우트)는 `@ServedTenantData()` 를 단다 — 토큰 테넌트 ≠ T 면 403.
+어느 쪽인지 안 정한 컨트롤러는 `src/tenancy/served-tenant-classification.spec.ts` 가 빨갛게 한다.
+
+### 플랫폼 운영자 API (`/admin/platform/*`)
+테넌트 행(준비 → 활성 ↔ 정지, 준비만 삭제)·소속 추가·웹 직원 앱 클라이언트의 테넌트 도메인 주소·직원 비밀번호 재발급·운영자 성질은
+`src/api/iam/platform/` 이 연다. 라우트 문은 `iam.tenant.read`/`iam.tenant.write` 이고 판정은 Manager 가 운영자 성질
+(`users.is_platform_operator`)로 한다 — 테넌트 안의 master 도 운영자가 아니면 403. 기존 계정 만들기·역할 만들기·역할 부여는
+`tenantId` 를 받는데, 지정하면 운영자만 된다(`PlatformOperatorManager.workingTenant`). 정지는 그 테넌트의 `oauth_tokens` 를
+그 자리에서 끊는다. 대행해 만드는 직원 계정은 `UserCreated` 를 내지 않는다(고객 가입 이벤트다).
+`GET /tenant-brand?host=` 는 로그인 전 브랜드 조회라 공개이고 이름·로고·활성 여부만 돌려준다.
+
 ### 역할 만료
 `user_roles.expiresAt`으로 시한부 역할 할당을 지원한다.
 
@@ -140,5 +156,6 @@ phone_verifications (독립, 전화번호 기준)
 | `AWS_ACCESS_KEY_ID/SECRET_ACCESS_KEY/REGION/S3_BUCKET` | S3 파일 업로드 |
 | `CAFE24_CLIENT_ID/CLIENT_SECRET/SERVICE_KEY` | Cafe24 연동 |
 | `CORS_ORIGIN_DOMAIN`, `COOKIE_DOMAIN` | CORS/쿠키 설정 |
+| `TENANT_LIST`, `TENANT_GATE_MODE`, `SERVED_TENANT_ID` | 테넌트 목록·전환 모드·앱 설정 T (`@app/tenancy`, 기본값 없음 — 빠지면 기동 거부) |
 
 환경 변수 검증: `src/config/env.validation.ts` (Zod 스키마, 앱 시작 시 검증)

@@ -1,4 +1,5 @@
 import { CoreEligibilityUnavailable } from './core-return-eligibility';
+import { servedTenantHeaders } from '../../../utils/served-tenant-headers';
 
 /** core 가 한진 취소까지 기다린다(한진 15초) — 자격 조회(5초)보다 길게 잡는다. */
 const TIMEOUT_MS = 20_000;
@@ -22,7 +23,7 @@ export async function releaseCoreReturnPickup(
   try {
     res = await fetch(`${baseUrl.replace(/\/+$/, '')}/internal/sales-orders/customer-return-pickup/release`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}`, ...servedTenantHeaders() },
       body: JSON.stringify({ channelReturnId: returnId }),
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });

@@ -24,10 +24,12 @@ import type { DomainEvent } from './envelope.types';
 export function event<TMessageType extends string, TPayload = unknown>(
   messageType: TMessageType,
   schema?: ZodSchema<TPayload>,
+  options?: { tenancy: 'account' },
 ): EventType<TMessageType, TPayload> {
   return {
     messageType,
     schema,
+    ...(options ? { tenancy: options.tenancy } : {}),
   };
 }
 

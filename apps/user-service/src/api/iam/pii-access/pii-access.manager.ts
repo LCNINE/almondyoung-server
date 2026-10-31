@@ -14,6 +14,7 @@ import type {
 import { PiiAccessCreator, type StoredPiiAccess } from './pii-access.creator';
 import { PiiAccessReader } from './pii-access.reader';
 import { PiiAccessRepository } from './pii-access.repository';
+import { ActorTenantReader } from '../tenancy/actor-tenant.reader';
 
 @Injectable()
 export class PiiAccessManager {
@@ -24,6 +25,7 @@ export class PiiAccessManager {
     private readonly audit: IamAuditCreator,
     private readonly creator: PiiAccessCreator,
     @Inject(PermissionCache) private readonly permissions: Pick<PermissionCache, 'permissionsFor'>,
+    private readonly actorTenant: ActorTenantReader,
   ) {}
 
   /**
@@ -32,7 +34,8 @@ export class PiiAccessManager {
    */
   async recordOwn(actor: IamActor, entry: StoredPiiAccess): Promise<void> {
     const held = this.permissions.permissionsFor(actor.roles);
-    if (!held?.has('customer.pii.read')) throw new ForbiddenError('개인정보 보기 권한이 있어야 접속기록을 남길 수 있습니다.');
+    if (!held?.has('customer.pii.read'))
+      throw new ForbiddenError('개인정보 보기 권한이 있어야 접속기록을 남길 수 있습니다.');
     await this.creator.record(entry);
   }
 
@@ -41,6 +44,7 @@ export class PiiAccessManager {
     return this.dbService.run(async (tx) => {
       const page = await this.reader.page(query, tx);
       await this.audit.record(tx, actor, {
+        tenantId: await this.actorTenant.resolve(actor, tx),
         action: 'pii_access_log.view',
         targetType: 'pii_access_log',
         targetId: actor.userId,
@@ -55,7 +59,8 @@ export class PiiAccessManager {
   async createReview(actor: IamActor, dto: CreatePiiAccessReviewDto): Promise<PiiAccessReviewDto> {
     const rangeFrom = new Date(dto.rangeFrom);
     const rangeTo = new Date(dto.rangeTo);
-    if (!(rangeFrom.getTime() < rangeTo.getTime())) throw new BadRequestError('점검 기간의 끝이 시작보다 뒤여야 합니다.');
+    if (!(rangeFrom.getTime() < rangeTo.getTime()))
+      throw new BadRequestError('점검 기간의 끝이 시작보다 뒤여야 합니다.');
     return this.repository.insertReview({
       period: dto.period,
       rangeFrom,

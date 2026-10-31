@@ -28,6 +28,8 @@ tsConfigPaths.register({
     '@app/shared/*': ['libs/shared/src/*'],
     '@app/authorization': ['libs/authorization/src'],
     '@app/authorization/*': ['libs/authorization/src/*'],
+    '@app/tenancy': ['libs/tenancy/src'],
+    '@app/tenancy/*': ['libs/tenancy/src/*'],
     '@packages/event-contracts': ['packages/event-contracts'],
     '@packages/event-contracts/*': ['packages/event-contracts/*'],
     '@packages/domain-types': ['packages/domain-types'],

@@ -42,7 +42,14 @@ describe('permission catalog', () => {
   });
 
   it('keeps role and admin-account management out of every first grant (master only, as before)', () => {
-    const masterOnly = ['iam.role.read', 'iam.role.write', 'iam.role.assign', 'iam.admin_user.write'];
+    const masterOnly = [
+      'iam.role.read',
+      'iam.role.write',
+      'iam.role.assign',
+      'iam.admin_user.write',
+      'iam.tenant.read',
+      'iam.tenant.write',
+    ];
     const granted = PERMISSION_CATALOG.filter(
       (p) => masterOnly.includes(p.key) && p.grantOnFirstRegistration.length > 0,
     );
@@ -95,7 +102,7 @@ describe('permission catalog', () => {
       Object.keys(expected).map((key) => [key, findPermission(key)?.grantOnFirstRegistration ?? null]),
     );
     expect(actual).toEqual(expected);
-    expect(PERMISSION_CATALOG).toHaveLength(114);
+    expect(PERMISSION_CATALOG).toHaveLength(116);
   });
 
   it('registers the wage permissions for master only', () => {

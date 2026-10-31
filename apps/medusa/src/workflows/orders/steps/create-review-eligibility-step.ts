@@ -2,6 +2,7 @@ import { createStep, StepResponse } from '@medusajs/framework/workflows-sdk';
 import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
 import { logger } from '@medusajs/framework';
 import type { RemoteQueryFunction } from '@medusajs/framework/types';
+import { servedTenantHeaders } from '../../../utils/served-tenant-headers';
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -168,6 +169,7 @@ export async function createReviewEligibility(
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${ugcInternalKey}`,
+        ...servedTenantHeaders(),
       },
       body: JSON.stringify({
         userId: almondUserId,

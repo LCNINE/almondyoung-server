@@ -112,48 +112,21 @@ export class WarehouseManager {
     return deleted;
   }
 
-  async ensureDefaultsExist(): Promise<void> {
-    try {
-      const defaults = [WAREHOUSE_CONSTANTS.DEFAULT_DOMESTIC_WAREHOUSE, WAREHOUSE_CONSTANTS.DEFAULT_OVERSEAS_WAREHOUSE];
-
-      for (const data of defaults) {
-        const existing = await this.reader.findOneOrNull(data.id);
-
-        if (!existing) {
-          await this.dbService.run(async (trx) => {
-            await trx.insert(wmsTables.warehouses).values({
-              id: data.id,
-              name: data.name,
-              type: data.type,
-              location: data.location,
-              supportedPickingStrategies: [...data.supportedPickingStrategies],
-              isSellable: data.isSellable,
-            });
-            await this.locationService.ensureSystemLocations(data.id, trx);
-          });
-          this.logger.log(`기본 창고 생성: ${data.name}`);
-        }
-        // 행이 이미 있으면 아무것도 하지 않는다 — insert-only 다.
-        //
-        // 예전에는 여기서 is_sellable 을 상수 값으로 수렴시켰다. 그건 "컬럼이
-        // DEFAULT true 로 깔려 이미 존재하는 해외 창고 행이 영원히 판매 창고로
-        // 남는다"는 일회성 백필을 부팅 수렴으로 구현한 것이었고, 그 임무는 끝났다.
-        // 이제 is_sellable 은 운영자가 창고 설정 화면에서 바꾸는 값이라
-        // (UpdateWarehouseDto.isSellable) 수렴을 남겨두면 컬럼에 주인이 둘이 되어
-        // 운영자가 끈 판매 창고가 다음 재시작에 조용히 되살아난다.
-        // supported_picking_strategies 를 수렴 대상에서 뺀 것과 같은 논리다.
-      }
-
-      // 기존 custom warehouse도 신규 system role이 추가된 배포 직후 바로 bootstrap한다.
-      // unique (warehouse_id, system_role) + LocationService 잠금이 role당 활성 한 개로 수렴시킨다.
-      const warehouses = await this.reader.findAll();
-      for (const warehouse of warehouses) {
-        await this.locationService.ensureSystemLocations(warehouse.id);
-      }
-    } catch (error) {
-      this.logger.error('기본 창고 생성 중 오류 발생:', error);
-      // 필수 system location이 없는 창고로 서비스를 시작하지 않도록 bootstrap 실패를 숨기지 않는다.
-      throw error;
+  /**
+   * 이 DB 의 모든 창고에 시스템 로케이션을 수렴시킨다. 새 system role 이 추가된 배포 직후 기존
+   * 창고도 바로 갖게 하려고 부팅이 부른다. unique (warehouse_id, system_role) + LocationService 잠금이
+   * role 당 활성 한 개로 수렴시킨다.
+   *
+   * 한 DB(= 한 테넌트) 안의 일이라 그 DB 의 트랜잭션을 받는다. 창고는 만들지 않는다 — 기본 창고는
+   * 테넌트 1 전용 데이터라 `baseline-tenant-1` 시드가 넣는다. 부팅이 만들면 새 테넌트 DB 에도 생긴다.
+   *
+   * 실패를 삼키지 않는다 — 필수 시스템 로케이션이 없는 창고로 서비스를 시작하지 않으려는 것이다
+   * (기본 보유자 보장은 반대로 삼킨다. 둘을 맞추지 말 것).
+   */
+  async convergeSystemLocations(tx?: DbTx): Promise<void> {
+    const warehouses = await this.reader.findAll(tx);
+    for (const warehouse of warehouses) {
+      await this.locationService.ensureSystemLocations(warehouse.id, tx);
     }
   }
 }

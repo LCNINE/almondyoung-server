@@ -2,6 +2,7 @@ import { sql } from 'drizzle-orm';
 import { SeedStep } from './base-seed-step';
 import { SeedCheckResult, SeedApplyResult } from '../lib/types';
 import { FIXED_UUIDS } from '../constants/uuids';
+import { TENANT1_ONLY_SEED_GROUP } from '../lib/seed-groups';
 
 /** `site` 는 `SalesChannel` 어휘여야 한다 (ADR-0031 결정 7) — `pim.seed-step.spec.ts` 가 지킨다. */
 export const PIM_SALES_CHANNEL_SEEDS = [
@@ -15,7 +16,7 @@ export const PIM_SALES_CHANNEL_SEEDS = [
 ];
 
 export class PimSeedStep extends SeedStep {
-  readonly groups = ['baseline'] as const;
+  readonly groups = [TENANT1_ONLY_SEED_GROUP] as const;
 
   constructor(databaseUrl: string) {
     super('PIM', databaseUrl);

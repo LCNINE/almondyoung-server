@@ -1,4 +1,5 @@
-import { Injectable } from '@nestjs/common';
+import { OutboundTenant } from '@app/tenancy';
+import { Inject, Injectable } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 import { firstValueFrom } from 'rxjs';
@@ -25,6 +26,7 @@ export class CoreSalesOrderLookupClient {
   constructor(
     private readonly httpService: HttpService,
     private readonly configService: ConfigService,
+    @Inject(OutboundTenant) private readonly outboundTenant: Pick<OutboundTenant, 'headers'>,
   ) {
     this.baseUrl = this.configService.get<string>('PIM_API_URL') || 'http://localhost:3001';
   }
@@ -45,7 +47,7 @@ export class CoreSalesOrderLookupClient {
         this.httpService.post<{ orders: CoreSalesOrderLookupItem[] }>(
           `${this.baseUrl}/internal/sales-orders/lookup`,
           { salesChannel: channel, orders: batch },
-          { headers: { Authorization: `Bearer ${internalKey}` }, timeout: 10_000 },
+          { headers: { Authorization: `Bearer ${internalKey}`, ...this.outboundTenant.headers() }, timeout: 10_000 },
         ),
       );
       for (const item of response.data?.orders ?? []) result.set(item.externalOrderId, item);

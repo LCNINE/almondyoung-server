@@ -7,8 +7,10 @@ import { SendEmailCodeDto, VerifyEmailCodeDto } from './dto/email-verification.d
 import { IdentityVerificationService } from './services/identity-verification.service';
 import { SendEmailCodeService } from './services/send-email-code.service';
 import { VerifyEmailCodeService } from './services/verify-email-code.service';
+import { ServedTenantData } from '../../tenancy/served-tenant.guard';
 
 @ApiTags('email-verification')
+@ServedTenantData()
 @Controller('email-verification')
 export class EmailVerificationController {
   constructor(

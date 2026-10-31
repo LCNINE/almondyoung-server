@@ -5,6 +5,7 @@ import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
 import { Logger } from '../shared/logger';
 import { FIXED_UUIDS } from '../constants/uuids';
+import { tenantOneBackfillStatements } from '../../seeding/lib/tenant-one-backfill';
 
 const logger = new Logger('User Service Seeder');
 
@@ -213,6 +214,9 @@ export async function seedUserService(
       }
       logger.success(`Upserted ${options.oauthClients.length} OAuth client(s)`);
     }
+
+    // 테넌트 1 백필 재실행(scripts/seeding 쪽과 같은 정본) — 근거는 그 파일 주석.
+    for (const statement of tenantOneBackfillStatements()) await db.execute(sql.raw(statement));
 
     logger.success('User Service seeding completed successfully');
   } catch (error) {

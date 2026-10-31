@@ -34,6 +34,26 @@ E2E_ENV_ROWS=(
   "ai|apps/ai/.env|.env.ai.local.example|3070|extra|nest|ai|no|어드민 AI 어시스턴트·상품설명 초안"
 )
 
+# 테넌트 목록·전환 모드의 로컬 정본 (@app/tenancy). kind=nest 인 앱은 전부 이 두 값을 받는다 —
+# 없거나 틀리면 그 앱은 «뜨지 않는다»(기본값이 없다). 템플릿의 두 줄도 이 값과 같아야 하고,
+# libs/tenancy/src/guards/local-e2e-tenancy.spec.ts 가 이 값을 실제 파서에 통과시키고 템플릿과 대조한다.
+# 로컬 테넌트 1 의 core DB 는 dev_core 다(apps/core/.env 가 그걸 본다). 버킷은 로컬이 STORAGE_PROVIDER=LOCAL 이라
+# 쓰이지 않지만, 라이브와 같은 모양(공개 = 비공개 = 한 버킷)으로 둔다.
+E2E_TENANT_LIST='[{"id":"1","slug":"almondyoung","coreDb":"dev_core","publicBucket":"almondyoung-demo","privateBucket":"almondyoung-demo"}]'
+E2E_TENANT_GATE_MODE='warn'
+# 앱 설정 T(SERVED_TENANT_ID) — 목록에 있는 id 여야 뜬다. 같은 spec 이 목록과 대조한다.
+# 받는 앱: user-service(고객·근태 데이터와 옛 내부 토큰이 섬기는 테넌트) + «T 만 섬기는» 소비 앱 전부
+# (핸들러 앞의 문이 T 로 거르고, 직접 발행·outbox 의 봉투 테넌트도 T 다). core 는 받지 않는다 — «메시지마다» 앱이다.
+# «T 만 섬기는» 앱은 main.ts 의 startConsumer({ tenancy }) 에서 도출해 tenancy-wiring.spec 이 이 줄과 대조한다.
+E2E_SERVED_TENANT_ID='1'
+E2E_SERVED_TENANT_APPS='user-service channel-adapter membership ugc-service wallet analytics notification search ai'
+# Nest 밖의 한 테넌트 앱. 테넌트 목록은 안 받고 T 만 받아 서비스 호출에 테넌트 헤더로 싣는다
+# (쇼핑몰 → core 무인증 라우트, Medusa → 내부 키 라우트).
+E2E_FIXED_TENANT_CALLERS='medusa storefront'
+# 여러 테넌트를 섬기지만 T 만 섬기는 업스트림을 서버 자격증명으로 부르는 앱(admin-web 의 Medusa 프록시·channel-dispatch).
+# 토큰 테넌트를 그 T 와 대조한다 — SERVER_CREDENTIAL_TENANT_ID(= E2E_SERVED_TENANT_ID)와 TENANT_GATE_MODE 를 받는다.
+E2E_SERVER_CREDENTIAL_GATE_APPS='admin-web'
+
 # 행을 필드로 쪼개 콜백에 넘긴다. 사용: e2e_env_each required my_fn   (tier 생략 시 전부)
 e2e_env_each() {
   local want="${1:-}" fn="$2" row name dest tmpl port tier kind target needs desc
@@ -52,6 +72,14 @@ e2e_env_value() {
   local file="$1" key="$2"
   [ -f "$file" ] || return 0
   grep -m1 "^${key}=" "$file" 2>/dev/null | cut -d= -f2- | tr -d '"'"'"' ' || true
+}
+
+# e2e_env_value 와 달리 따옴표·공백을 벗기지 않는다(JSON 값을 그대로 읽는다). 바깥 작은따옴표 한 겹만 벗긴다.
+e2e_env_raw_value() {
+  local file="$1" key="$2" v
+  [ -f "$file" ] || return 0
+  v=$(grep -m1 "^${key}=" "$file" 2>/dev/null | cut -d= -f2-) || true
+  v="${v#\'}"; printf '%s' "${v%\'}"
 }
 
 # 🔴 kafka 없이 부팅하면 channel-adapter·wallet·membership 이 «죽는다» —

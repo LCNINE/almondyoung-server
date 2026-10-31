@@ -33,6 +33,7 @@ import { DeviceModule } from './device/device.module';
 import { SmsGateModule } from './sms-gate/sms-gate.module';
 import { AlimtalkModule } from './alimtalk/alimtalk.module';
 import { EventTraceController } from './shared/controllers/event-trace.controller';
+import { TenancyModule } from '@app/tenancy';
 
 @Module({
   imports: [
@@ -42,6 +43,8 @@ import { EventTraceController } from './shared/controllers/event-trace.controlle
       envFilePath: process.env.NOTIFICATION_ENV_PATH,
       validate: validateNotificationEnv,
     }),
+    // 테넌트 목록·전환 모드. 틀리면 여기서 기동 거부 (@app/tenancy).
+    TenancyModule,
     // Redis가 있으면 Bull 큐 사용, 없으면 직접 발송
     ...(process.env.REDIS_HOST
       ? [
@@ -61,7 +64,7 @@ import { EventTraceController } from './shared/controllers/event-trace.controlle
       schema: notificationTables,
     }),
     AuthorizationModule.forAuthOnly(),
-    PermissionModule.forRoot({ service: 'notification' }),
+    PermissionModule.forRoot({ service: 'notification', tenancy: 'served-tenant' }),
     EventTraceApiModule,
     SharedModule,
     DispatcherModule,

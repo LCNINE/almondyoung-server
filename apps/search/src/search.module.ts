@@ -22,6 +22,7 @@ import { HealthController } from './health.controller';
 import { OpenSearchKeywordRepository } from './opensearch-keyword.repository';
 import { SEARCH_KEYWORD_REPOSITORY } from './search-keyword.repository';
 import { SearchKeywordService } from './search-keyword.service';
+import { TenancyModule } from '@app/tenancy';
 
 @Module({
   imports: [
@@ -30,12 +31,14 @@ import { SearchKeywordService } from './search-keyword.service';
       isGlobal: true,
       envFilePath: ['.env', 'apps/search/.env'],
     }),
+    // 테넌트 목록·전환 모드. 틀리면 여기서 기동 거부 (@app/tenancy).
+    TenancyModule,
     // 관리자 키워드 통계 라우트의 JwtAuthGuard 용. AUTH_SECRET 또는
     // OIDC_ISSUER_URL 둘 중 하나라도 없으면 부팅이 실패한다 (notification 판례 — 이
     // 서비스도 그 전까지 인증이 아예 없었다). 배포 env 는
     // deployments/lcnine/services/infra/services.ts 의 searchEnv 에서 주입한다.
     AuthorizationModule.forAuthOnly(),
-    PermissionModule.forRoot({ service: 'search' }),
+    PermissionModule.forRoot({ service: 'search', tenancy: 'served-tenant' }),
     // 키워드 운영 상태(담당·메모) 테이블 전용 search 논리 DB. postgres.js 는 lazy 연결이라
     // DATABASE_URL 이 없어도 부팅은 되고, 이슈 라우트 첫 쿼리에서 실패한다.
     DbModule.forRoot({

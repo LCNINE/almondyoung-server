@@ -29,6 +29,7 @@ import {
   IAM_AUDIT_ACTIONS,
   type IamAuditAction,
   type IamAuditFilter,
+  type IamAuditTargetType,
 } from '@/lib/types/dto/iam';
 import { describeAudit } from './audit-format';
 
@@ -43,6 +44,18 @@ const ACTION_LABELS: Record<IamAuditAction, string> = {
   'role.member.remove': '역할 회수',
   'admin_user.create': '관리자 계정 생성',
   'pii_access_log.view': '개인정보 접속기록 조회',
+  'user.platform_operator.set': '플랫폼 운영자 변경',
+  'tenant.create': '테넌트 만듦',
+  'tenant.status.set': '테넌트 상태 변경',
+  'tenant.delete': '테넌트 삭제',
+  'tenant.membership.add': '테넌트 소속 추가',
+  'tenant.oauth_redirects.add': '테넌트 로그인 주소 등록',
+  'user.password.reissue': '비밀번호 재발급',
+};
+const TARGET_LABELS: Partial<Record<IamAuditTargetType, string>> = {
+  role: '역할',
+  tenant: '테넌트',
+  oauth_client: 'OAuth 클라이언트',
 };
 const isAction = (v: string | null): v is IamAuditAction =>
   IAM_AUDIT_ACTIONS.some((a) => a === v);
@@ -207,7 +220,7 @@ export function AuditLog() {
                     </TableCell>
                     <TableCell>
                       <Badge variant="outline" className="mr-1">
-                        {log.targetType === 'role' ? '역할' : '사람'}
+                        {TARGET_LABELS[log.targetType] ?? '사람'}
                       </Badge>
                       <button
                         type="button"

@@ -6,6 +6,7 @@ import { CurrentIamActor, type IamActor } from '../../iam/iam-actor';
 import { AuthService } from './auth.service';
 import { CreateAccountDto } from './dto/create-account-dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
+import { ServedTenantData } from '../../../tenancy/served-tenant.guard';
 
 @Controller('admin/auth')
 @ApiBearerAuth('access-token')
@@ -18,6 +19,8 @@ export class AuthController {
     return this.authService.createAccount(createAccountDto, actor);
   }
 
+  // 고객 계정의 비밀번호까지 바꾼다 — 고객은 T 의 데이터다. 역할이 전역이라 권한 키만으로는 다른 테넌트 토큰을 못 막는다.
+  @ServedTenantData()
   @RequirePermission('customer.profile.write')
   @Patch('change-password')
   changePassword(@Body() changePasswordDto: ChangePasswordDto, @CurrentUser() user: JwtPayload) {

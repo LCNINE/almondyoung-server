@@ -151,7 +151,7 @@ Core(구 PIM) (Kafka) → PimProductEventConsumer → inbox_events
 | Medusa Admin API | `MedusaClient` | 상품/고객/주문 동기화 |
 | AlmondAuth (Firebase) | `AlmondAuthClient` | 멤버십 상태 조회 |
 | user-service | `UserServiceClient` | 사용자 정보 조회 |
-| PIM (channel-listing) | `ChannelListingClient` | 채널 리스팅 매핑 조회 |
+| Core (내부 라우트) | `ChannelListingClient` | 주문 라인의 채널 상품 ID → variant 해석 `GET /internal/channel-listings/resolve` (`CORE_INTERNAL_KEY` + 테넌트 헤더). 실패는 삼키지 않고 그 주문을 처리 실패로 격리한다 |
 | Core (내부 라우트) | `SalesChannelClient` | 활성 판매채널 `site` 목록 조회 (수집 게이트, `CORE_INTERNAL_KEY` 필요) |
 | Core (내부 라우트) | `CoreSalesOrderLookupClient` | 채널 대사의 판매주문 묶음 조회 `POST /internal/sales-orders/lookup` (`CORE_INTERNAL_KEY`). 실패는 «SO 없음»이 아니라 그 주기 건너뛰기 |
 

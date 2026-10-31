@@ -2,13 +2,28 @@ import { sql } from 'drizzle-orm';
 import { SeedStep } from './base-seed-step';
 import { SeedCheckResult, SeedApplyResult } from '../lib/types';
 import { FIXED_UUIDS } from '../constants/uuids';
+import { TENANT1_ONLY_SEED_GROUP } from '../lib/seed-groups';
 
 
 // is_sellable 은 컬럼 DEFAULT(false)에 맡기지 않고 명시한다 — 생략하면 새 환경의
 // 부천 창고가 비판매로 깔려 판매가능수량이 전부 0 이 된다.
+// supported_picking_strategies 도 명시한다 — 컬럼에 DEFAULT 가 없어 NULL 이면 출고 배치 게이트가
+// 막는다. 국내(판매) 창고만 discrete, 해외(비판매)는 빈 배열(seed-dev-core 와 같은 구분).
 const WAREHOUSES = [
-  { id: FIXED_UUIDS.WAREHOUSE_BUCHEON_DOMESTIC, name: '부천 물류창고', type: 'domestic', isSellable: true },
-  { id: FIXED_UUIDS.WAREHOUSE_CHINA_OVERSEAS, name: '중국 물류창고', type: 'overseas', isSellable: false },
+  {
+    id: FIXED_UUIDS.WAREHOUSE_BUCHEON_DOMESTIC,
+    name: '부천 물류창고',
+    type: 'domestic',
+    isSellable: true,
+    supportedPickingStrategies: '{discrete}',
+  },
+  {
+    id: FIXED_UUIDS.WAREHOUSE_CHINA_OVERSEAS,
+    name: '중국 물류창고',
+    type: 'overseas',
+    isSellable: false,
+    supportedPickingStrategies: '{}',
+  },
 ];
 
 const LOCATIONS = [
@@ -30,7 +45,7 @@ const SETTINGS = [
 ];
 
 export class WmsSeedStep extends SeedStep {
-  readonly groups = ['baseline'] as const;
+  readonly groups = [TENANT1_ONLY_SEED_GROUP] as const;
 
   constructor(databaseUrl: string) {
     super('WMS', databaseUrl);
@@ -103,8 +118,8 @@ export class WmsSeedStep extends SeedStep {
       this.logger.step(1, 3, 'Inserting warehouses');
       for (const w of WAREHOUSES) {
         await this.db.execute(sql`
-          INSERT INTO warehouses (id, name, type, is_sellable)
-          VALUES (${w.id}, ${w.name}, ${w.type}, ${w.isSellable})
+          INSERT INTO warehouses (id, name, type, is_sellable, supported_picking_strategies)
+          VALUES (${w.id}, ${w.name}, ${w.type}, ${w.isSellable}, ${w.supportedPickingStrategies}::picking_strategy[])
           ON CONFLICT (id) DO NOTHING
         `);
       }
