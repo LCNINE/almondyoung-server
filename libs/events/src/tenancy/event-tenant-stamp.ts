@@ -1,6 +1,7 @@
 import { Logger } from '@nestjs/common';
 import type { TenantGateMode } from '@app/tenancy';
 import type { MessageEnvelope } from '@packages/event-contracts/types';
+import { OUTBOX_TENANT_FROM_CONTEXT, type OutboxTenant } from '../outbox/outbox-tenant.port';
 import { recordPublishedWithoutTenant } from './tenant-stamp.metrics';
 
 export interface EventTenantStampOptions {
@@ -8,8 +9,11 @@ export interface EventTenantStampOptions {
   contextTenant: () => string | undefined;
   /** 앱 설정 T. 목록과 대조를 마친 값이다. «T 만 섬기는» 앱이 아니면 `undefined`. */
   servedTenantId: string | undefined;
-  /** 이 앱 outbox 테이블이 든 DB 의 테넌트. core 는 그 DB 로, 다른 앱은 T 로 정해진다. */
-  outboxTenantId: string | undefined;
+  /**
+   * 이 앱 outbox 테이블이 든 DB 의 테넌트. core ① 은 접속한 DB 로, 다른 앱은 T 로 정해진다.
+   * `OUTBOX_TENANT_FROM_CONTEXT` 면 DB 를 맥락이 고른다(core ②) — 디스패처가 도는 테넌트 루프의 맥락으로 찍는다.
+   */
+  outboxTenantId: OutboxTenant | undefined;
   gateMode: TenantGateMode;
 }
 
@@ -18,7 +22,7 @@ export interface EventTenantStampOptions {
  *
  * - 직접 발행: 맥락의 테넌트, 없으면 앱의 T.
  * - outbox 발행: 행이 든 DB 의 테넌트. 적재 때가 아니라 나갈 때 찍으므로, 이 코드 전에 쌓인 행도 찍힌다.
- *   맥락은 보지 않는다 — 디스패처는 요청 밖에서 돌고, 행의 테넌트는 DB 가 이미 말한다.
+ *   ① 은 맥락을 보지 않는다 — 행의 테넌트는 DB 가 이미 말한다. ② 의 core 는 그 DB 를 맥락이 골랐으므로 맥락이 곧 DB 의 테넌트다.
  *
  * 정할 수 없으면 ① warn 은 테넌트 없이 보내고 경고·셈, ② reject 는 던진다(발행이 실패한다).
  */
@@ -42,7 +46,9 @@ export class EventTenantStamp {
   }
 
   forOutboxPublish(): string | undefined {
-    return this.resolveOrWarn(this.options.outboxTenantId, 'outbox');
+    const { outboxTenantId } = this.options;
+    const tenantId = outboxTenantId === OUTBOX_TENANT_FROM_CONTEXT ? this.options.contextTenant() : outboxTenantId;
+    return this.resolveOrWarn(tenantId, 'outbox');
   }
 
   private resolveOrWarn(tenantId: string | undefined, path: 'direct' | 'outbox'): string | undefined {

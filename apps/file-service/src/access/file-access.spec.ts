@@ -43,6 +43,7 @@ describe('FileAccess', () => {
     metadata: null,
     uploadedBy: 'owner-1',
     isPublic: false,
+    tenantId: '1',
     contextId: 'ctx-1',
     createdAt: new Date(),
     updatedAt: new Date(),
@@ -69,75 +70,77 @@ describe('FileAccess', () => {
   describe('loadReadable', () => {
     it('keeps attendance evidence private to its owner and master', async () => {
       repo.findById.mockResolvedValue({ ...baseFile, contextId: 'attendance-request-image' });
-      await expect(fileAccess.loadReadable(baseFile.id, adminUser)).rejects.toThrow(ForbiddenError);
-      await expect(fileAccess.loadReadable(baseFile.id, ownerUser)).resolves.toBeDefined();
-      await expect(fileAccess.loadReadable(baseFile.id, masterUser)).resolves.toBeDefined();
+      await expect(fileAccess.loadReadable(baseFile.id, adminUser, '1')).rejects.toThrow(ForbiddenError);
+      await expect(fileAccess.loadReadable(baseFile.id, ownerUser, '1')).resolves.toBeDefined();
+      await expect(fileAccess.loadReadable(baseFile.id, masterUser, '1')).resolves.toBeDefined();
     });
 
     it('prevents generic deletion of attendance evidence even by its owner or master', async () => {
       repo.findById.mockResolvedValue({ ...baseFile, contextId: 'attendance-request-image' });
-      await expect(fileAccess.delete(baseFile.id, ownerUser)).rejects.toThrow(ForbiddenError);
-      await expect(fileAccess.delete(baseFile.id, masterUser)).rejects.toThrow(ForbiddenError);
+      await expect(fileAccess.delete(baseFile.id, ownerUser, '1')).rejects.toThrow(ForbiddenError);
+      await expect(fileAccess.delete(baseFile.id, masterUser, '1')).rejects.toThrow(ForbiddenError);
       expect(repo.softDelete).not.toHaveBeenCalled();
     });
     it('throws NotFoundError when file does not exist', async () => {
       repo.findById.mockResolvedValue(undefined as unknown as Upload);
-      await expect(fileAccess.loadReadable('missing', ownerUser)).rejects.toBeInstanceOf(NotFoundError);
+      await expect(fileAccess.loadReadable('missing', ownerUser, '1')).rejects.toBeInstanceOf(NotFoundError);
     });
 
     it('throws NotFoundError when file is deleted', async () => {
       repo.findById.mockResolvedValue({ ...baseFile, status: 'deleted' } as Upload);
-      await expect(fileAccess.loadReadable('file-1', ownerUser)).rejects.toBeInstanceOf(NotFoundError);
+      await expect(fileAccess.loadReadable('file-1', ownerUser, '1')).rejects.toBeInstanceOf(NotFoundError);
     });
 
     it('returns public file to any user', async () => {
       repo.findById.mockResolvedValue({ ...baseFile, isPublic: true } as Upload);
-      await expect(fileAccess.loadReadable('file-1', otherUser)).resolves.toMatchObject({ id: 'file-1' });
+      await expect(fileAccess.loadReadable('file-1', otherUser, '1')).resolves.toMatchObject({ id: 'file-1' });
     });
 
     it('returns private file to owner', async () => {
       repo.findById.mockResolvedValue(baseFile);
-      await expect(fileAccess.loadReadable('file-1', ownerUser)).resolves.toMatchObject({ id: 'file-1' });
+      await expect(fileAccess.loadReadable('file-1', ownerUser, '1')).resolves.toMatchObject({ id: 'file-1' });
     });
 
     it('returns private file to master scope holder', async () => {
       repo.findById.mockResolvedValue(baseFile);
-      await expect(fileAccess.loadReadable('file-1', masterUser)).resolves.toMatchObject({ id: 'file-1' });
+      await expect(fileAccess.loadReadable('file-1', masterUser, '1')).resolves.toMatchObject({ id: 'file-1' });
     });
 
     it('returns private file to a delegation token', async () => {
       repo.findById.mockResolvedValue(baseFile);
-      await expect(fileAccess.loadReadable('file-1', serviceTokenUser)).resolves.toMatchObject({ id: 'file-1' });
+      await expect(fileAccess.loadReadable('file-1', serviceTokenUser, '1')).resolves.toMatchObject({ id: 'file-1' });
     });
 
     it('refuses a private file to the retired master-scope token', async () => {
       repo.findById.mockResolvedValue(baseFile);
-      await expect(fileAccess.loadReadable('file-1', retiredServiceTokenUser)).rejects.toBeInstanceOf(ForbiddenError);
+      await expect(fileAccess.loadReadable('file-1', retiredServiceTokenUser, '1')).rejects.toBeInstanceOf(
+        ForbiddenError,
+      );
     });
 
     it('throws ForbiddenError when private file requested by non-owner non-master', async () => {
       repo.findById.mockResolvedValue(baseFile);
-      await expect(fileAccess.loadReadable('file-1', otherUser)).rejects.toBeInstanceOf(ForbiddenError);
+      await expect(fileAccess.loadReadable('file-1', otherUser, '1')).rejects.toBeInstanceOf(ForbiddenError);
     });
 
     it('returns digital asset file to admin (non-owner, non-master)', async () => {
       repo.findById.mockResolvedValue({ ...baseFile, contextId: 'digital-asset-file' } as Upload);
-      await expect(fileAccess.loadReadable('file-1', adminUser)).resolves.toMatchObject({ id: 'file-1' });
+      await expect(fileAccess.loadReadable('file-1', adminUser, '1')).resolves.toMatchObject({ id: 'file-1' });
     });
 
     it('아카이브 첨부는 올린 사람이 아니어도 관리자면 읽는다 — 이관은 계정 하나가 전부 올린다', async () => {
       repo.findById.mockResolvedValue({ ...baseFile, contextId: 'archive-page-attachment' } as Upload);
-      await expect(fileAccess.loadReadable('file-1', adminUser)).resolves.toMatchObject({ id: 'file-1' });
+      await expect(fileAccess.loadReadable('file-1', adminUser, '1')).resolves.toMatchObject({ id: 'file-1' });
     });
 
     it('아카이브 첨부라도 직원이 아니면 못 읽는다', async () => {
       repo.findById.mockResolvedValue({ ...baseFile, contextId: 'archive-page-attachment' } as Upload);
-      await expect(fileAccess.loadReadable('file-1', otherUser)).rejects.toBeInstanceOf(ForbiddenError);
+      await expect(fileAccess.loadReadable('file-1', otherUser, '1')).rejects.toBeInstanceOf(ForbiddenError);
     });
 
     it('still hides other private contexts from admin', async () => {
       repo.findById.mockResolvedValue({ ...baseFile, contextId: 'business-license' } as Upload);
-      await expect(fileAccess.loadReadable('file-1', adminUser)).rejects.toBeInstanceOf(ForbiddenError);
+      await expect(fileAccess.loadReadable('file-1', adminUser, '1')).rejects.toBeInstanceOf(ForbiddenError);
     });
   });
 
@@ -166,42 +169,42 @@ describe('FileAccess', () => {
   describe('delete', () => {
     it('throws NotFoundError when file does not exist', async () => {
       repo.findById.mockResolvedValue(undefined as unknown as Upload);
-      await expect(fileAccess.delete('missing', ownerUser)).rejects.toBeInstanceOf(NotFoundError);
+      await expect(fileAccess.delete('missing', ownerUser, '1')).rejects.toBeInstanceOf(NotFoundError);
     });
 
     it('throws NotFoundError when file is already deleted', async () => {
       repo.findById.mockResolvedValue({ ...baseFile, status: 'deleted' } as Upload);
-      await expect(fileAccess.delete('file-1', ownerUser)).rejects.toBeInstanceOf(NotFoundError);
+      await expect(fileAccess.delete('file-1', ownerUser, '1')).rejects.toBeInstanceOf(NotFoundError);
       expect(repo.softDelete).not.toHaveBeenCalled();
     });
 
     it('soft-deletes when called by owner', async () => {
       repo.findById.mockResolvedValue(baseFile);
-      await expect(fileAccess.delete('file-1', ownerUser)).resolves.toMatchObject({ success: true });
+      await expect(fileAccess.delete('file-1', ownerUser, '1')).resolves.toMatchObject({ success: true });
       expect(repo.softDelete).toHaveBeenCalledWith('file-1');
     });
 
     it('soft-deletes when called by master scope holder', async () => {
       repo.findById.mockResolvedValue(baseFile);
-      await expect(fileAccess.delete('file-1', masterUser)).resolves.toMatchObject({ success: true });
+      await expect(fileAccess.delete('file-1', masterUser, '1')).resolves.toMatchObject({ success: true });
       expect(repo.softDelete).toHaveBeenCalledWith('file-1');
     });
 
     it('refuses deletion to the retired master-scope token', async () => {
       repo.findById.mockResolvedValue(baseFile);
-      await expect(fileAccess.delete('file-1', retiredServiceTokenUser)).rejects.toBeInstanceOf(ForbiddenError);
+      await expect(fileAccess.delete('file-1', retiredServiceTokenUser, '1')).rejects.toBeInstanceOf(ForbiddenError);
       expect(repo.softDelete.mock.calls).toHaveLength(0);
     });
 
     it('soft-deletes when called via a delegation token', async () => {
       repo.findById.mockResolvedValue(baseFile);
-      await expect(fileAccess.delete('file-1', serviceTokenUser)).resolves.toMatchObject({ success: true });
+      await expect(fileAccess.delete('file-1', serviceTokenUser, '1')).resolves.toMatchObject({ success: true });
       expect(repo.softDelete).toHaveBeenCalledWith('file-1');
     });
 
     it('throws ForbiddenError when caller is neither owner nor master', async () => {
       repo.findById.mockResolvedValue(baseFile);
-      await expect(fileAccess.delete('file-1', otherUser)).rejects.toBeInstanceOf(ForbiddenError);
+      await expect(fileAccess.delete('file-1', otherUser, '1')).rejects.toBeInstanceOf(ForbiddenError);
       expect(repo.softDelete).not.toHaveBeenCalled();
     });
   });

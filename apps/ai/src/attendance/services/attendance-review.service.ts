@@ -1,6 +1,8 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { BadRequestException, Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { z } from 'zod';
+import { TENANT_HEADER } from '@app/tenancy';
+import type { RequestTenantId } from '../../tenancy/request-tenant';
 import { AttendanceReviewDto } from '../dto/attendance-review.dto';
 import { attendanceReviewSchema, unwrapAttendanceResponse } from '@packages/domain-types/attendance-review';
 
@@ -23,7 +25,11 @@ const PROMPT = [
 export class AttendanceReviewService {
   private client: Anthropic | null = null;
 
-  async review(input: AttendanceReviewDto) {
+  /**
+   * `tenant` 는 부른 쪽(user-service 근태)이 헤더로 보낸 테넌트다. 증빙은 그 테넌트로 file-service 에 묻는다 —
+   * file-service 내부 키 라우트는 헤더 테넌트의 파일만 본다. 모르면(①) 헤더 없이 지금처럼 묻는다.
+   */
+  async review(input: AttendanceReviewDto, tenant: RequestTenantId) {
     if (!process.env.ANTHROPIC_API_KEY) {
       throw new ServiceUnavailableException('Attendance AI review is not configured');
     }
@@ -48,7 +54,7 @@ export class AttendanceReviewService {
       }
 
       const response = await fetch(`${base.replace(/\/$/, '')}/internal/files/${id}/attendance-evidence`, {
-        headers: { Authorization: `Bearer ${key}` },
+        headers: { Authorization: `Bearer ${key}`, ...(tenant === null ? {} : { [TENANT_HEADER]: tenant }) },
         signal: AbortSignal.timeout(10000),
       });
 

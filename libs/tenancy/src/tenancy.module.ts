@@ -57,8 +57,19 @@ export class OutboundTenant {
   }
 
   headers(): Record<string, string> {
-    const contextTenant = this.cls?.isActive() ? this.cls.get<string | undefined>(TENANT_CONTEXT_KEY) : undefined;
-    return outboundTenantHeaders(contextTenant, this.servedTenantId);
+    return outboundTenantHeaders(this.contextTenant(), this.servedTenantId);
+  }
+
+  /**
+   * 헤더와 같은 규칙의 테넌트 id(맥락 → T, 둘 다 없으면 undefined). 헤더 대신 서명하는 토큰의 `tenant` 클레임에 싣는다
+   * (core·ugc 가 file-service 를 부르는 토큰).
+   */
+  tenantId(): string | undefined {
+    return this.contextTenant() ?? this.servedTenantId;
+  }
+
+  private contextTenant(): string | undefined {
+    return this.cls?.isActive() ? this.cls.get<string | undefined>(TENANT_CONTEXT_KEY) : undefined;
   }
 }
 

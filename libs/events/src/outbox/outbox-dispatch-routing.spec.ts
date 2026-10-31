@@ -15,6 +15,7 @@
 
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { DbService } from '@app/db';
+import { singleDatabase } from '@app/db/testing/single-database';
 import { StreamPublisher } from '../publishers/stream-publisher.service';
 import { OutboxDispatcher } from './outbox-dispatcher.service';
 import type { OutboxDispatchGate } from './outbox-dispatch-gate.port';
@@ -55,7 +56,7 @@ function makeDb(pendingRows: unknown[]) {
     }),
     delete: () => ({ where: () => thenable() }),
   };
-  return { dbService: { db } as unknown as DbService, captured };
+  return { dbService: singleDatabase({ db }) as unknown as DbService, captured };
 }
 
 const row = (overrides: Record<string, unknown> = {}) => ({

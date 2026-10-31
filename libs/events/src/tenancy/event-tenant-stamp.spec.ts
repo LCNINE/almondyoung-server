@@ -1,6 +1,8 @@
 import { z } from 'zod';
+import { singleDatabase } from '@app/db/testing/single-database';
 import { event, stream, type MessageEnvelope } from '@packages/event-contracts/types';
 import { OutboxDispatcher } from '../outbox/outbox-dispatcher.service';
+import { OUTBOX_TENANT_FROM_CONTEXT } from '../outbox/outbox-tenant.port';
 import { StreamPublisher } from '../publishers/stream-publisher.service';
 import type { EventTransport, TransportMessage } from '../transport/transport.port';
 import { EventTenantStamp, type EventTenantStampOptions } from './event-tenant-stamp';
@@ -167,8 +169,9 @@ describe('outbox 발행의 테넌트 찍기', () => {
       gateMode: 'warn',
       ...options,
     });
+    const db = { update, transaction };
     const dispatcher = new OutboxDispatcher(
-      { db: { update, transaction } } as never,
+      singleDatabase({ db }) as never,
       new Map([[STRICT_STREAM.topic.topic, publisher as StreamPublisher]]),
       undefined,
       undefined,
@@ -204,4 +207,46 @@ describe('outbox 발행의 테넌트 찍기', () => {
 
     expect(transport.sent).toHaveLength(0);
   });
+
+  it('② outbox DB 가 테넌트 맥락을 따르면, DB 마다 도는 디스패처가 그 루프의 테넌트로 찍는다', async () => {
+    const { publisher, transport } = setup();
+    let context: string | undefined;
+    const select = () => ({
+      from: () => ({
+        where: () => ({ orderBy: () => ({ limit: () => ({ for: async () => [storedRow({})] }) }) }),
+      }),
+    });
+    const where = () => Object.assign(Promise.resolve(undefined), { returning: async () => [] });
+    const update = () => ({ set: () => ({ where }) });
+    const transaction = async (callback: (tx: unknown) => Promise<unknown>) => callback({ select, update });
+    // 테넌트 DB 마다 그 테넌트 맥락에서 돈다 — `DbService.forEachDatabase` 와 같은 약속(여기선 차례로)
+    const forEachDatabase = async (fn: (key: string) => Promise<unknown>) => {
+      const runs: unknown[] = [];
+      for (const key of ['1', '2']) {
+        context = key;
+        runs.push(await fn(key));
+      }
+      context = undefined;
+      return runs;
+    };
+    const stamp = new EventTenantStamp({
+      contextTenant: () => context,
+      servedTenantId: undefined,
+      outboxTenantId: OUTBOX_TENANT_FROM_CONTEXT,
+      gateMode: 'reject',
+    });
+    const dispatcher = new OutboxDispatcher(
+      { db: { update, transaction }, forEachDatabase } as never,
+      new Map([[STRICT_STREAM.topic.topic, publisher as StreamPublisher]]),
+      undefined,
+      undefined,
+      undefined,
+      stamp,
+    );
+
+    await dispatcher.dispatchPendingEvents();
+
+    expect(transport.envelopes().map((e) => e.metadata?.tenantId)).toEqual(['1', '2']);
+  });
 });
+

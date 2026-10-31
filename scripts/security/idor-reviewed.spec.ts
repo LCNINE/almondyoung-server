@@ -231,25 +231,25 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'file-service DELETE /files/:fileId': {
     verdict: 'SAFE',
-    evidence: 'apps/file-service/src/access/file-access.ts:87',
+    evidence: 'apps/file-service/src/access/file-access.ts:96',
     predicate: 'if (file.uploadedBy === user.userId) return true;',
     note: 'LifecycleController.deleteFile -> FileAccess.delete(fileId, user) (file-access.ts:65) -> isOwnerOrFileManager(file, user) (file-access.ts:70) gates the softDelete call on file.uploadedBy === user.userId, else the checkpoint file.owner_exception (system.file.manage; core delegation token = system principal). repo.softDelete(id) itself (file.repository.ts:44) only filters by eq(uploads.id, id), so all ownership enforcement lives in this application-layer check. Delete is NOT widened by the staff-context path — that path lives in loadReadable only.',
   },
   'file-service GET /files/:fileId/download': {
     verdict: 'SAFE',
-    evidence: 'apps/file-service/src/access/file-access.ts:87',
+    evidence: 'apps/file-service/src/access/file-access.ts:96',
     predicate: 'if (file.uploadedBy === user.userId) return true;',
     note: "DownloadController.getSignedUrl -> DownloadService.getSignedUrl (apps/file-service/src/download/download.service.ts:21) -> FileAccess.loadReadable(fileId, user) (file-access.ts:36) -> isOwnerOrFileManager (file-access.ts:86) compares file.uploadedBy against caller's own userId, else requires system.file.manage. A further allow path (file-access.ts:47-50): a caller holding the screen permission of the file's context (STAFF_CONTEXT_PERMISSIONS: digital-asset-file -> catalog.product.read, archive-page-attachment -> archive.page.read) may read files of that context. That is an intentional permission grant for admin review, not an IDOR: it is scoped by context, not by object id, and file-access.spec.ts asserts admin still cannot read a business-license file. Everything else throws ForbiddenError.",
   },
   'file-service GET /files/:fileId/open': {
     verdict: 'SAFE',
-    evidence: 'apps/file-service/src/access/file-access.ts:87',
+    evidence: 'apps/file-service/src/access/file-access.ts:96',
     predicate: 'if (file.uploadedBy === user.userId) return true;',
     note: "DownloadController.openFile -> DownloadService.getSignedUrl (apps/file-service/src/download/download.service.ts:21) -> FileAccess.loadReadable(fileId, user) (file-access.ts:36) -> isOwnerOrFileManager (file-access.ts:86) compares file.uploadedBy against the caller's own userId before the row is returned; the route then 302s to a 5-minute signed URL for that same row. Same gate as GET /files/:fileId/download — this route only changes the response shape (redirect instead of JSON) so a plain anchor in archive body text can open a private attachment. The staff-context allow path (file-access.ts:47-50) covers archive-page-attachment via archive.page.read: an intentional permission grant scoped by context, not by object id, and file-access.spec.ts asserts a non-staff caller is still refused.",
   },
   'file-service GET /files/:fileId/metadata': {
     verdict: 'SAFE',
-    evidence: 'apps/file-service/src/access/file-access.ts:87',
+    evidence: 'apps/file-service/src/access/file-access.ts:96',
     predicate: 'if (file.uploadedBy === user.userId) return true;',
     note: 'DownloadController.getMetadata -> DownloadService.getMetadata (download.service.ts:50) -> FileAccess.loadReadable(fileId, user) -> same isOwnerOrFileManager ownership check as the download route, and the same staff-context permission path at file-access.ts:47-50.',
   },
@@ -267,7 +267,7 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'file-service POST /files/upload/confirm': {
     verdict: 'SAFE',
-    evidence: 'apps/file-service/src/upload/upload.service.ts:187',
+    evidence: 'apps/file-service/src/upload/upload.service.ts:198',
     predicate: 'if (file.uploadedBy !== userId) {',
     note: 'UploadController.confirmUpload -> UploadService.confirmUpload(dto.fileId, user.userId). 바디의 fileId 가 기존 pending 행을 가리키는 client-supplied id 지만, 행을 읽자마자 file.uploadedBy 를 호출자 userId 와 대조해 다르면 ForbiddenError — 타인의 pending 업로드를 대신 activate 하거나 존재 여부를 활성화로 확인할 수 없다. upload.service.spec.ts 가 발급자 불일치 거부를 고정한다.',
   },

@@ -44,6 +44,15 @@ export class FulfillmentOrderCreationBacklogWorker {
 
     this.isProcessing = true;
     try {
+      // 테넌트 DB 마다 그 맥락에서. 아래 본문이 실패를 삼키므로 한 DB 의 실패가 다른 DB 를 막지 않는다.
+      await this.dbService.forEachDatabase(() => this.processPendingInCurrentDatabase());
+    } finally {
+      this.isProcessing = false;
+    }
+  }
+
+  private async processPendingInCurrentDatabase() {
+    try {
       const rows = await this.backlog.claimPending(20);
       for (const row of rows) {
         try {
@@ -59,8 +68,6 @@ export class FulfillmentOrderCreationBacklogWorker {
       }
     } catch (error) {
       this.logger.error('Failed to process fulfillment creation backlog batch', error);
-    } finally {
-      this.isProcessing = false;
     }
   }
 

@@ -17,6 +17,7 @@ import { DownloadService } from './download.service';
 import { SignedUrlResponseDto } from './dto/signed-url-response.dto';
 import { FileMetadataResponseDto } from './dto/file-metadata-response.dto';
 import { JwtPayload } from '../shared/types/jwt-payload.interface';
+import { RequestTenant, type RequestTenantId } from '../tenancy/request-tenant';
 
 /**
  * /open 링크가 돌려주는 서명 URL 의 수명. 링크를 누른 뒤 실제로 내려받기 시작할 때까지의
@@ -49,9 +50,10 @@ export class DownloadController {
     @Param('fileId', ParseUUIDPipe) fileId: string,
     @Query('expiresIn', new DefaultValuePipe(3600), ParseIntPipe) expiresIn: number,
     @User() user: JwtPayload,
+    @RequestTenant() tenant: RequestTenantId,
     @Query('download') download?: string,
   ): Promise<SignedUrlResponseDto> {
-    return this.downloadService.getSignedUrl(fileId, expiresIn, user, download === 'true' || download === '1');
+    return this.downloadService.getSignedUrl(fileId, expiresIn, user, tenant, download === 'true' || download === '1');
   }
 
   /**
@@ -72,6 +74,7 @@ export class DownloadController {
   async openFile(
     @Param('fileId', ParseUUIDPipe) fileId: string,
     @User() user: JwtPayload,
+    @RequestTenant() tenant: RequestTenantId,
     @Res() res: Response,
     @Query('download') download?: string,
   ) {
@@ -79,6 +82,7 @@ export class DownloadController {
       fileId,
       OPEN_LINK_EXPIRES_IN_SECONDS,
       user,
+      tenant,
       download === 'true' || download === '1',
     );
     return res.redirect(302, signedUrl);
@@ -94,8 +98,9 @@ export class DownloadController {
   async getMetadata(
     @Param('fileId', ParseUUIDPipe) fileId: string,
     @User() user: JwtPayload,
+    @RequestTenant() tenant: RequestTenantId,
   ): Promise<FileMetadataResponseDto> {
-    return this.downloadService.getMetadata(fileId, user);
+    return this.downloadService.getMetadata(fileId, user, tenant);
   }
 
   // 공개 파일은 브라우저 fetch도 302를 따라갈 수 있어야 GLB 로더에서 읽을 수 있다.

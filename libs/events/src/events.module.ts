@@ -35,7 +35,7 @@ import { OutboxDispatcher } from './outbox/outbox-dispatcher.service';
 import { OutboxMetricsCollector } from './outbox/outbox-metrics.collector';
 import { OutboxWriter } from './outbox/outbox-writer.port';
 import { OUTBOX_DISPATCH_GATE, type OutboxDispatchGate } from './outbox/outbox-dispatch-gate.port';
-import { OUTBOX_TENANT_ID } from './outbox/outbox-tenant.port';
+import { OUTBOX_TENANT_ID, type OutboxTenant } from './outbox/outbox-tenant.port';
 import { EventTenantStamp } from './tenancy/event-tenant-stamp';
 import { bootstrapKafkaTopics } from './bootstrap/topic-bootstrap.service';
 import { outboxSchema } from './outbox/outbox.schema';
@@ -77,12 +77,17 @@ const eventTransportProvider = {
  */
 const eventTenantStampProvider = {
   provide: EventTenantStamp,
-  useFactory: (cls: ClsService, tenancy?: TenancyConfig, outboxTenantId?: string): EventTenantStamp | undefined => {
+  useFactory: (
+    cls: ClsService,
+    tenancy?: TenancyConfig,
+    outboxTenantId?: OutboxTenant,
+  ): EventTenantStamp | undefined => {
     if (!tenancy) return undefined;
 
     const rawServed = process.env[TENANCY_ENV.servedTenantId];
     const servedTenantId = rawServed ? requireServedTenant(tenancy.tenants, rawServed).id : undefined;
-    if (outboxTenantId !== undefined && !tenancy.tenants.find(outboxTenantId)) {
+    // 맥락을 따르는 outbox 는 부팅 때 대조할 값이 없다 — 목록 밖 맥락은 DB 라우터가 행을 읽기 전에 거절한다
+    if (typeof outboxTenantId === 'string' && !tenancy.tenants.find(outboxTenantId)) {
       throw new TenancyConfigError('OUTBOX_TENANT_ID', [`outbox 테넌트 «${outboxTenantId}» 가 테넌트 목록에 없다`]);
     }
 

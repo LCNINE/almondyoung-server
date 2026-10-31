@@ -68,10 +68,61 @@ describe('findGuardViolations (픽스처)', () => {
   });
 
   it('libs/*/src 도 검사한다 — 마커 없는 @Cron 은 위반', () => {
-    const v = findGuardViolations([file('libs/foo/src/x.ts', `  @Cron('0 3 * * *')\n  async run() {}`)]);
+    // 본문은 테넌트 루프를 연다 — 이 it 은 마커 규칙만 본다
+    const v = findGuardViolations([
+      file(
+        'libs/foo/src/x.ts',
+        `  @Cron('0 3 * * *')\n  async run() {\n    await this.db.forEachDatabase(() => go());\n  }`,
+      ),
+    ]);
     expect(v).toEqual([
       expect.objectContaining({ rule: 'raw-cron-without-marker', path: 'libs/foo/src/x.ts', line: 1 }),
     ]);
+  });
+});
+
+describe('테넌트 루프 밖에서 DB 에 닿는 크론 (multi-tenant 13)', () => {
+  // core 는 테넌트마다 DB 가 따로라 요청 밖 코드는 `forEachDatabase` 로만 DB 맥락을 얻는다.
+  // `@CronOnce` 는 러너가 감싸므로 자동이고, 남는 길은 직접 돌리는 `@Cron`·`@Interval`·`@Timeout` 이다.
+  const safe = `  ${OVERLAP_SAFE_MARKER} lease CAS\n`;
+
+  it('core 의 @Cron 메서드 본문에 forEachDatabase 가 없으면 위반', () => {
+    const v = findGuardViolations([
+      file(
+        'apps/core/src/a.worker.ts',
+        `${safe}  @Cron('* * * * *')\n  async tick() {\n    await this.repo.claim();\n  }\n`,
+      ),
+    ]);
+    expect(v).toEqual([
+      expect.objectContaining({ rule: 'cron-outside-tenant-loop', path: 'apps/core/src/a.worker.ts', line: 2 }),
+    ]);
+  });
+
+  it('본문이 forEachDatabase 로 돌면 허용 — 다음 메서드의 것은 세지 않는다', () => {
+    const ok = `${safe}  @Cron('* * * * *')\n  async tick() {\n    await this.db.forEachDatabase(() => this.once());\n  }\n`;
+    expect(findGuardViolations([file('apps/core/src/a.worker.ts', ok)])).toEqual([]);
+
+    const borrowed = `${safe}  @Cron('* * * * *')\n  async tick() {\n    if (x) { y(); }\n  }\n\n  other() {\n    this.db.forEachDatabase(() => z());\n  }\n`;
+    expect(findGuardViolations([file('apps/core/src/b.worker.ts', borrowed)]).map((x) => x.rule)).toEqual([
+      'cron-outside-tenant-loop',
+    ]);
+  });
+
+  it('공용 lib(core 가 싣는다)도 검사하고, core 밖 앱은 검사하지 않는다(DB 가 하나다)', () => {
+    const body = `${safe}  @Cron('* * * * *')\n  async tick() {\n    await this.claim();\n  }\n`;
+    const v = findGuardViolations([file('libs/foo/src/x.ts', body), file('apps/wallet/src/x.ts', body)]);
+    expect(v.map((x) => [x.rule, x.path])).toEqual([['cron-outside-tenant-loop', 'libs/foo/src/x.ts']]);
+  });
+
+  it('@Interval·@Timeout 도 같은 규칙이다', () => {
+    const v = findGuardViolations([
+      file('apps/core/src/a.ts', `  @Interval(1000)\n  poll() {\n    return this.repo.read();\n  }\n`),
+      file(
+        'apps/core/src/b.ts',
+        `  @Timeout(1000)\n  once() {\n    return this.db.forEachDatabase(() => go());\n  }\n`,
+      ),
+    ]);
+    expect(v.map((x) => [x.rule, x.path])).toEqual([['cron-outside-tenant-loop', 'apps/core/src/a.ts']]);
   });
 });
 

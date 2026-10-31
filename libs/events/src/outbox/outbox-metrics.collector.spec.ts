@@ -1,6 +1,38 @@
 import { Logger } from '@nestjs/common';
 import { register } from 'prom-client';
+import type { DatabaseRun } from '@app/db';
+import { singleDatabase } from '@app/db/testing/single-database';
 import { OutboxMetricsCollector } from './outbox-metrics.collector';
+
+/** 테넌트 DB 여럿. `db` 는 지금 도는 DB 의 것이고, 실패를 주면 그 DB 의 집계가 던진다. */
+function makeTenantDbs(byKey: Record<string, AggregateRow[] | Error>) {
+  let current = '';
+  const dbOf = (rows: AggregateRow[] | Error) => {
+    const groupBy = () => (rows instanceof Error ? Promise.reject(rows) : Promise.resolve(rows));
+    return {
+      select: () => ({ from: () => ({ where: () => ({ groupBy }) }) }),
+      selectDistinct: () => ({ from: () => Promise.resolve([]) }),
+    };
+  };
+  const dbService = {
+    get db() {
+      return dbOf(byKey[current]);
+    },
+    forEachDatabase: async <R>(fn: (key: string) => Promise<R>): Promise<DatabaseRun<R>[]> => {
+      const runs: DatabaseRun<R>[] = [];
+      for (const key of Object.keys(byKey)) {
+        current = key;
+        try {
+          runs.push({ key, ok: true, value: await fn(key) });
+        } catch (error) {
+          runs.push({ key, ok: false, error });
+        }
+      }
+      return runs;
+    },
+  };
+  return dbService as never;
+}
 
 type AggregateRow = {
   topic: string;
@@ -18,7 +50,7 @@ function makeDb(aggregateRows: AggregateRow[], distinctTopics: string[] = []) {
   const groupBy = jest.fn().mockResolvedValue(aggregateRows);
   const select = jest.fn(() => ({ from: () => ({ where: () => ({ groupBy }) }) }));
   const selectDistinct = jest.fn(() => ({ from: () => Promise.resolve(distinctTopics.map((topic) => ({ topic }))) }));
-  return { dbService: { db: { select, selectDistinct } } as never, select, selectDistinct, groupBy };
+  return { dbService: singleDatabase({ db: { select, selectDistinct } }) as never, select, selectDistinct, groupBy };
 }
 
 async function seriesValue(name: string, labels: Record<string, string> = {}): Promise<number | undefined> {
@@ -127,5 +159,33 @@ describe('OutboxMetricsCollector', () => {
     await expect(collector.refresh()).resolves.toBeUndefined();
 
     jest.restoreAllMocks();
+  });
+
+  it('테넌트 DB 가 여럿이면 건수는 더하고 가장 오래 기다린 나이는 가장 큰 값이다', async () => {
+    const collector = new OutboxMetricsCollector(
+      makeTenantDbs({
+        '1': [row('multi.topic', { pending: '2', failed: '1', retryPending: '1', oldestPendingAgeSeconds: '30' })],
+        '2': [row('multi.topic', { pending: '3', oldestPendingAgeSeconds: '90' })],
+      }),
+      [],
+    );
+
+    await collector.refresh();
+
+    expect(await seriesValue('events_outbox_pending', { topic: 'multi.topic' })).toBe(5);
+    expect(await seriesValue('events_outbox_failed_rows', { topic: 'multi.topic' })).toBe(1);
+    expect(await seriesValue('events_outbox_oldest_pending_age_seconds', { topic: 'multi.topic' })).toBe(90);
+  });
+
+  it('한 테넌트 DB 의 집계가 실패해도 나머지 DB 의 값은 쓴다', async () => {
+    jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    const collector = new OutboxMetricsCollector(
+      makeTenantDbs({ '1': new Error('tenant 1 DB 깨짐'), '2': [row('isolated.topic', { pending: '4' })] }),
+      [],
+    );
+
+    await collector.refresh();
+
+    expect(await seriesValue('events_outbox_pending', { topic: 'isolated.topic' })).toBe(4);
   });
 });

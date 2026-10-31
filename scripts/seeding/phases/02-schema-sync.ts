@@ -1,7 +1,8 @@
 import { execSync } from 'child_process';
 import * as path from 'path';
 import chalk from 'chalk';
-import { getServiceRegistry } from '../lib/service-registry';
+import { resolveRegistry } from '../lib/tenant-registry';
+import { serviceLabel } from '../lib/core-tenants';
 import { buildDatabaseUrl } from '../lib/db-connection';
 import { Logger } from '../lib/logger';
 
@@ -23,29 +24,35 @@ export class SchemaSyncError extends Error {
   }
 }
 
-export async function runSchemaSync(options: { yes: boolean; deployment?: string }): Promise<string[]> {
+/** core 는 테넌트 DB 마다 한 번씩 돈다(`resolveRegistry`). 테넌트 하나만 실패해도 던진다 — 「일부 테넌트만 새 버전」은 배포 조건 위반이다. */
+export async function runSchemaSync(options: {
+  yes: boolean;
+  deployment?: string;
+  tenant?: string;
+}): Promise<string[]> {
   console.log(chalk.bold.cyan('\nPhase 2: Schema Sync'));
   console.log(chalk.cyan('─'.repeat(40)));
 
-  const registry = getServiceRegistry(options.deployment);
+  const registry = resolveRegistry(options);
   const services = registry.filter((s) => s.drizzleConfig);
 
   const synced: string[] = [];
   const failed: string[] = [];
   for (const svc of services) {
     const url = buildDatabaseUrl(svc.database);
-    console.log(`\n  ${chalk.bold(`── Migrating: ${svc.name} ──`)}`);
+    const label = serviceLabel(svc);
+    console.log(`\n  ${chalk.bold(`── Migrating: ${label} ──`)}`);
     try {
       execSync(`drizzle-kit migrate --config ${svc.drizzleConfig}`, {
         stdio: 'inherit',
         cwd: PROJECT_ROOT,
         env: { ...process.env, DATABASE_URL: url },
       });
-      synced.push(svc.name);
+      synced.push(label);
     } catch (e) {
-      logger.error(`Failed to migrate: ${svc.name}`);
+      logger.error(`Failed to migrate: ${label}`);
       console.error(e);
-      failed.push(svc.name);
+      failed.push(label);
     }
   }
   if (failed.length > 0) throw new SchemaSyncError(failed, synced);

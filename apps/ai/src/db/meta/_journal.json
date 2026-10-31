@@ -43,6 +43,20 @@
       "when": 1793244086419,
       "tag": "20261029032126_drop-legacy-scope-tables",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1793465017800,
+      "tag": "20261031164337_add-tenant-to-chat-and-files",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1793465020155,
+      "tag": "20261031164340_backfill-tenant-one",
+      "breakpoints": true
     }
   ]
 }

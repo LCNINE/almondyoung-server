@@ -11,9 +11,10 @@
  *
  * - 대기 마이그는 라이브 DB 의 적용 이력(`drizzle.__drizzle_migrations`)과 저장소 journal 을 직접 비교한다 — 기준 커밋이 없어도 된다.
  *   lcnine-services 와 lcnine-auth 를 둘 다 본다(user-service 는 auth 쪽이라 빠뜨리기 쉽다).
+ * - core 는 테넌트 목록의 테넌트 DB 마다 본다. 테넌트 DB 사이 적용 이력이 다르면 1, 목록 밖 `core_*` DB 는 경고만 한다.
  * - 이벤트 계약·Medusa 마이그는 마지막 배포 태그(`deploy/<stage>/*`) 이후의 git 변경으로 본다.
  * - 종료 코드 1: 한 배포 안에서 expand 와 contract 마이그가 섞였을 때(어느 순서로도 한쪽이 깨진다), drizzle 가 영영 건너뛸
- *   마이그가 있을 때, 이 머신이 arm64 이미지를 빌드하지 못할 때, 판정 재료를 못 읽었을 때. 나머지는 목록과 권장 순서만 보여 주고 판단은 사람이 한다.
+ *   마이그가 있을 때, 테넌트 core DB 사이 마이그 버전이 다를 때, 이 머신이 arm64 이미지를 빌드하지 못할 때, 판정 재료를 못 읽었을 때. 나머지는 목록과 권장 순서만 보여 주고 판단은 사람이 한다.
  * - 배포 직전 점검이 HEAD 를 기록하고 `--mark-deployed` 는 그 커밋에 태그를 찍는다 — 배포 중에 pull 해도 기준점이 밀리지 않는다.
  */
 import { execFileSync, spawnSync } from 'node:child_process';
@@ -23,11 +24,13 @@ import { join, resolve } from 'node:path';
 import type { Sql } from 'postgres';
 import { z } from 'zod';
 import { createServiceConnection } from '../seeding/lib/db-connection';
-import { getServiceRegistry } from '../seeding/lib/service-registry';
+import { serviceLabel } from '../seeding/lib/core-tenants';
+import { resolveRegistry } from '../seeding/lib/tenant-registry';
 import { deploymentToCwd } from '../seeding/lib/sst-shell-relaunch';
 import {
   buildMachineFindings,
   classifyMigration,
+  coreVersionMismatch,
   DeploymentVerdict,
   deployTagName,
   EcsServiceSnapshot,
@@ -38,6 +41,7 @@ import {
   parseJournal,
   rolloutProblems,
   uncheckedDeployLines,
+  unlistedCoreDatabases,
 } from './batch-deploy-preflight.lib';
 
 const ROOT = resolve(__dirname, '../..');
@@ -89,6 +93,9 @@ const migrationStateSchema = z.object({
     }),
   ),
   skipped: z.array(z.object({ service: z.string(), tag: z.string() })),
+  /** 테넌트 core DB 마다의 적용 이력(core 가 없는 배포는 빈 배열) */
+  coreTenants: z.array(z.object({ label: z.string(), applied: z.array(z.number()) })),
+  unlistedCoreDatabases: z.array(z.string()),
 });
 type MigrationState = z.infer<typeof migrationStateSchema>;
 
@@ -108,21 +115,25 @@ async function appliedAt(sql: Sql): Promise<number[]> {
   }
 }
 
-/** sst shell 안에서 돈다 — 한 배포의 drizzle 서비스마다 적용 이력을 읽어 journal 과 맞춘다 */
+/** sst shell 안에서 돈다 — 한 배포의 drizzle 서비스마다(core 는 테넌트 DB 마다) 적용 이력을 읽어 journal 과 맞춘다 */
 async function collectMigrationState(deployment: Deployment, stage: string): Promise<MigrationState> {
-  const state: MigrationState = { pending: [], skipped: [] };
-  for (const svc of getServiceRegistry(deployment)) {
+  const state: MigrationState = { pending: [], skipped: [], coreTenants: [], unlistedCoreDatabases: [] };
+  const registry = resolveRegistry({ deployment });
+  for (const svc of registry) {
     if (!svc.drizzleConfig) continue;
+    const service = serviceLabel(svc);
     const dir = join(ROOT, migrationsOutDir(readFileSync(join(ROOT, svc.drizzleConfig), 'utf8')));
     const entries = parseJournal(readFileSync(join(dir, 'meta/_journal.json'), 'utf8'));
     const sql = createServiceConnection(svc.database, { max: 1, connect_timeout: 15, onnotice: () => undefined });
     try {
-      const status = migrationStatus(entries, await appliedAt(sql));
+      const applied = await appliedAt(sql);
+      if (svc.tenant) state.coreTenants.push({ label: service, applied });
+      const status = migrationStatus(entries, applied);
       for (const entry of status.pending) {
         const cls = classifyMigration(readFileSync(join(dir, `${entry.tag}.sql`), 'utf8'));
-        state.pending.push({ service: svc.name, tag: entry.tag, ...cls });
+        state.pending.push({ service, tag: entry.tag, ...cls });
       }
-      state.skipped.push(...status.skipped.map((entry) => ({ service: svc.name, tag: entry.tag })));
+      state.skipped.push(...status.skipped.map((entry) => ({ service, tag: entry.tag })));
     } catch (error) {
       if (z.object({ code: z.literal(UNDEFINED_DATABASE) }).safeParse(error).success) {
         throw new Error(
@@ -134,7 +145,40 @@ async function collectMigrationState(deployment: Deployment, stage: string): Pro
       await sql.end();
     }
   }
+  const cores = registry.filter((s) => s.tenant);
+  if (cores.length) {
+    // pg_database 는 인스턴스 공용 카탈로그라 아무 core DB 에서나 읽힌다.
+    const sql = createServiceConnection(cores[0].database, { max: 1, connect_timeout: 15, onnotice: () => undefined });
+    try {
+      const rows = await sql<{ datname: string }[]>`select datname from pg_database where not datistemplate`;
+      state.unlistedCoreDatabases = unlistedCoreDatabases(
+        rows.map((r) => r.datname),
+        cores.map((s) => s.database),
+      );
+    } finally {
+      await sql.end();
+    }
+  }
   return state;
+}
+
+/** 막을 일이 있으면 false. 목록 밖 core DB 는 경고만 한다 */
+function reportCoreTenants(state: MigrationState): boolean {
+  if (!state.coreTenants.length) return true;
+  let fine = true;
+  const mismatch = coreVersionMismatch(state.coreTenants);
+  if (mismatch) {
+    fine = false;
+    bad(mismatch, '뒤처진 테넌트 DB 를 db:migrate 로 맞춘다 — 전 테넌트 동일 버전이 배포 조건이다');
+  } else {
+    ok(`테넌트 core DB ${state.coreTenants.length}개 마이그 버전 같음`);
+  }
+  for (const db of state.unlistedCoreDatabases) {
+    info(
+      `경고: ${db} 는 테넌트 목록에 없다 — 도구가 마이그하지 않는다(준비 중 테넌트면 --tenant <slug> 로, 아니면 지울지 확인)`,
+    );
+  }
+  return fine;
 }
 
 /** 배포마다 그 배포의 sst shell 안에서 이 파일을 다시 띄워 수집한다 — DB 자격증명은 sst 리소스로만 온다 */
@@ -300,6 +344,7 @@ function reportMigrations(states: Map<Deployment, MigrationState>): boolean {
       const labels = [...m.expand.map((l) => `+${l}`), ...m.contract.map((l) => `−${l}`)].join(' ');
       info(`${m.service}/${m.tag}  [${m.kind}] ${labels}`);
     }
+    if (!reportCoreTenants(state)) fine = false;
     const verdict = judgeDeployment(state.pending);
     if (verdict.kind === 'mixed') {
       fine = false;
@@ -385,6 +430,7 @@ function markDeployed(stage: string, states: Map<Deployment, MigrationState>): b
   const deployed = readFileSync(recordPath, 'utf8').trim();
   let fine = true;
   for (const [deployment, state] of states) {
+    if (!reportCoreTenants(state)) fine = false;
     if (state.pending.length || state.skipped.length) {
       fine = false;
       bad(

@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
-import { DbService } from '@app/db';
+import { DbService, describeFailedRun } from '@app/db';
 import { inArray, sql } from 'drizzle-orm';
 import { outbox_events } from './outbox.schema';
 import {
@@ -58,14 +58,29 @@ export class OutboxMetricsCollector {
   // cron-overlap-safe: 겹쳐도 게이지에 같은 값을 두 번 쓸 뿐인 멱등 갱신이다(#707) — CronOnceModule 없는 앱에서도 돌아야 하므로 @CronOnce 로 바꾸지 않는다(ADR-0036).
   @Cron('*/15 * * * * *')
   async refresh(): Promise<void> {
-    try {
-      await this.seedHistoricalTopicsOnce();
-      await this.publishAggregate();
-    } catch (error) {
-      // 던지면 스케줄러 로그만 더럽히고 다음 tick 도 같은 이유로 죽는다. 값은 낡은 채 남는데,
-      // 그건 `up` 과 스크레이프 자체가 여전히 성공한다는 뜻이라 무음보다 낫다.
-      this.logger.error(`Outbox metrics refresh failed: ${error instanceof Error ? error.message : String(error)}`);
+    // DB(테넌트)마다 집계해 합친다. 게이지에 테넌트 라벨은 없다 — DB 마다 쓰면 마지막 DB 가 앞의 값을 덮는다.
+    const runs = await this.dbService.forEachDatabase(async () => {
+      const historical = this.historicalTopicsSeeded ? [] : await this.historicalTopics();
+      return { historical, rows: await this.aggregate() };
+    });
+
+    const merged = new Map<string, TopicAggregate>();
+    let allSeeded = true;
+    for (const run of runs) {
+      if (!run.ok) {
+        // 던지면 스케줄러 로그만 더럽히고 다음 tick 도 같은 이유로 죽는다. 그 DB 의 몫만 빠진 값을 쓴다 —
+        // 한 테넌트 DB 가 깨졌다고 다른 테넌트의 적체까지 낡게 두지 않는다.
+        allSeeded = false;
+        this.logger.error(`Outbox metrics refresh failed: ${describeFailedRun(run)}`);
+        continue;
+      }
+      run.value.historical.forEach((topic) => this.track(topic));
+      for (const row of run.value.rows) mergeInto(merged, row);
     }
+    // 이력 훑기는 모든 DB 가 한 번씩 성공할 때까지 다시 돈다
+    if (allSeeded) this.historicalTopicsSeeded = true;
+    if (runs.every((run) => !run.ok)) return; // 값이 하나도 없으면 낡은 값을 0 으로 덮지 않는다(옛 동작)
+    this.publish(merged);
   }
 
   /**
@@ -75,23 +90,20 @@ export class OutboxMetricsCollector {
    *
    * 한 번만 돈다. 이후에 새로 생기는 토픽은 집계 결과에 나타나는 순간 등록된다.
    */
-  private async seedHistoricalTopicsOnce(): Promise<void> {
-    if (this.historicalTopicsSeeded) return;
-
+  private async historicalTopics(): Promise<string[]> {
     const rows = await this.db.selectDistinct({ topic: outbox_events.topic }).from(outbox_events);
-    rows.forEach((row: { topic: string }) => this.track(row.topic));
-    this.historicalTopicsSeeded = true;
+    return rows.map((row: { topic: string }) => row.topic);
   }
 
   /**
-   * 집계는 **DB 왕복 1회**다. 토픽마다 쿼리를 돌면 적체 중에 왕복이 토픽 수만큼 늘어난다.
+   * 집계는 DB 하나에 **왕복 1회**다. 토픽마다 쿼리를 돌면 적체 중에 왕복이 토픽 수만큼 늘어난다.
    *
    * 나이를 DB 안에서 계산하는 이유: `created_at` 은 이 테이블에서 `withTimezone` 이 **아닌**
    * 컬럼이다(스키마 주석 참고 — tz 를 붙인 것은 `next_attempt_at` 하나뿐이다). JS 로 가져와
    * `Date.now()` 와 빼면 세션 TZ 차이만큼 어긋나고, **세션 TZ 가 UTC 인 환경에서는 무증상**이라
    * 더 나쁘다. `now() at time zone 'UTC'` 로 양쪽을 UTC wall time 으로 맞춰 뺀다.
    */
-  private async publishAggregate(): Promise<void> {
+  private async aggregate(): Promise<TopicAggregate[]> {
     const rows = await this.db
       .select({
         topic: outbox_events.topic,
@@ -105,21 +117,46 @@ export class OutboxMetricsCollector {
       .from(outbox_events)
       .where(inArray(outbox_events.status, ['PENDING', 'FAILED']))
       .groupBy(outbox_events.topic);
+    return rows.map((row) => ({
+      topic: row.topic,
+      pending: toCount(row.pending),
+      failed: toCount(row.failed),
+      retryPending: toCount(row.retryPending),
+      oldestPendingAgeSeconds: toCount(row.oldestPendingAgeSeconds),
+    }));
+  }
 
-    const byTopic = new Map<string, (typeof rows)[number]>();
-    for (const row of rows) {
-      this.track(row.topic);
-      byTopic.set(row.topic, row);
-    }
-
+  private publish(byTopic: Map<string, TopicAggregate>): void {
+    for (const topic of byTopic.keys()) this.track(topic);
     // 결과에 없는 토픽에도 0 을 쓴다 — `setLedgerDrift` 계열의 관례다. 안 그러면 적체가 해소된
     // 뒤에도 마지막 값이 남아 영원히 적체 중인 것처럼 보인다.
     for (const topic of this.knownTopics) {
       const row = byTopic.get(topic);
-      setOutboxPending(topic, toCount(row?.pending));
-      setOutboxFailedRows(topic, toCount(row?.failed));
-      setOutboxRetryPending(topic, toCount(row?.retryPending));
-      setOutboxOldestPendingAge(topic, toCount(row?.oldestPendingAgeSeconds));
+      setOutboxPending(topic, row?.pending ?? 0);
+      setOutboxFailedRows(topic, row?.failed ?? 0);
+      setOutboxRetryPending(topic, row?.retryPending ?? 0);
+      setOutboxOldestPendingAge(topic, row?.oldestPendingAgeSeconds ?? 0);
     }
   }
+}
+
+interface TopicAggregate {
+  topic: string;
+  pending: number;
+  failed: number;
+  retryPending: number;
+  oldestPendingAgeSeconds: number;
+}
+
+/** 건수는 더하고, 나이는 가장 오래 기다린 행의 것을 남긴다. */
+function mergeInto(merged: Map<string, TopicAggregate>, row: TopicAggregate): void {
+  const seen = merged.get(row.topic);
+  if (!seen) {
+    merged.set(row.topic, { ...row });
+    return;
+  }
+  seen.pending += row.pending;
+  seen.failed += row.failed;
+  seen.retryPending += row.retryPending;
+  seen.oldestPendingAgeSeconds = Math.max(seen.oldestPendingAgeSeconds, row.oldestPendingAgeSeconds);
 }

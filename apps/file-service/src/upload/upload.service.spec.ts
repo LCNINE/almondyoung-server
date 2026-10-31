@@ -16,7 +16,9 @@ import { LOGO_CONTEST_IMAGE_CONTEXT_ID } from '../database/default-file-contexts
 describe('UploadService (direct upload)', () => {
   let service: UploadService;
   let storageService: {
-    getDirectUploadPort: jest.Mock;
+    supportsDirectUpload: jest.Mock;
+    createDirectUpload: jest.Mock;
+    headObject: jest.Mock;
     delete: jest.Mock;
     upload: jest.Mock;
   };
@@ -54,6 +56,7 @@ describe('UploadService (direct upload)', () => {
     contextId: 'banner-image',
     uploadedBy: 'user-1',
     isPublic: true,
+    tenantId: '1',
     metadata: null,
     createdAt: new Date(),
     updatedAt: new Date(),
@@ -73,7 +76,9 @@ describe('UploadService (direct upload)', () => {
       headObject: jest.fn(),
     };
     storageService = {
-      getDirectUploadPort: jest.fn().mockReturnValue(directPort),
+      supportsDirectUpload: jest.fn().mockReturnValue(true),
+      createDirectUpload: jest.fn((_tenant: unknown, req: unknown): unknown => directPort.createDirectUpload(req)),
+      headObject: jest.fn((_tenant: unknown, req: unknown): unknown => directPort.headObject(req)),
       delete: jest.fn().mockResolvedValue(undefined),
       upload: jest.fn(),
     };
@@ -122,6 +127,7 @@ describe('UploadService (direct upload)', () => {
       { buffer, size: buffer.length, mimetype: 'image/png', originalname: 'logo.png' } as Express.Multer.File,
       { contextId: LOGO_CONTEST_IMAGE_CONTEXT_ID },
       'user-1',
+      '1',
     );
 
     expect(fileRepository.create).toHaveBeenCalledWith(
@@ -135,6 +141,7 @@ describe('UploadService (direct upload)', () => {
       service.presignUpload(
         { contextId: LOGO_CONTEST_IMAGE_CONTEXT_ID, fileName: 'logo.png', size: 100, mimeType: 'image/png' },
         'user-1',
+        '1',
       ),
     ).rejects.toThrow(BadRequestError);
   });
@@ -148,7 +155,7 @@ describe('UploadService (direct upload)', () => {
     };
 
     it('발급 시점에 컨텍스트 검증을 통과하면 pending 레코드를 만들고 presigned URL 을 돌려준다', async () => {
-      const result = await service.presignUpload(dto, 'user-1');
+      const result = await service.presignUpload(dto, 'user-1', '1');
 
       expect(result.uploadUrl).toBe('https://bucket.example/signed-put');
       expect(result.headers['Content-Type']).toBe('image/webp');
@@ -173,26 +180,26 @@ describe('UploadService (direct upload)', () => {
     });
 
     it('신고 크기가 컨텍스트 상한을 넘으면 발급을 거부한다', async () => {
-      await expect(service.presignUpload({ ...dto, size: 11 * 1024 * 1024 }, 'user-1')).rejects.toThrow(
+      await expect(service.presignUpload({ ...dto, size: 11 * 1024 * 1024 }, 'user-1', '1')).rejects.toThrow(
         BadRequestError,
       );
       expect(fileRepository.create).not.toHaveBeenCalled();
     });
 
     it('허용 안 된 MIME 타입이면 발급을 거부한다', async () => {
-      await expect(service.presignUpload({ ...dto, mimeType: 'application/zip' }, 'user-1')).rejects.toThrow(
+      await expect(service.presignUpload({ ...dto, mimeType: 'application/zip' }, 'user-1', '1')).rejects.toThrow(
         BadRequestError,
       );
     });
 
     it('비활성 컨텍스트면 발급을 거부한다', async () => {
       fileContextRepository.findById.mockResolvedValue({ ...imageContext, isActive: false });
-      await expect(service.presignUpload(dto, 'user-1')).rejects.toThrow(BadRequestError);
+      await expect(service.presignUpload(dto, 'user-1', '1')).rejects.toThrow(BadRequestError);
     });
 
     it('직접 업로드를 지원하지 않는 프로바이더면 404 로 거부해 클라이언트가 폴백하게 한다', async () => {
-      storageService.getDirectUploadPort.mockReturnValue(null);
-      await expect(service.presignUpload(dto, 'user-1')).rejects.toThrow(NotFoundError);
+      storageService.supportsDirectUpload.mockReturnValue(false);
+      await expect(service.presignUpload(dto, 'user-1', '1')).rejects.toThrow(NotFoundError);
     });
   });
 
@@ -234,7 +241,7 @@ describe('UploadService (direct upload)', () => {
       directPort.headObject.mockResolvedValue({ size: 11 * 1024 * 1024 });
 
       await expect(service.confirmUpload('file-1', 'user-1')).rejects.toThrow(BadRequestError);
-      expect(storageService.delete).toHaveBeenCalledWith({
+      expect(storageService.delete).toHaveBeenCalledWith('1', {
         key: pendingFile.filePath,
         isPublic: true,
       });
@@ -246,7 +253,7 @@ describe('UploadService (direct upload)', () => {
       directPort.headObject.mockResolvedValue({ size: 1000, contentType: 'text/html' });
 
       await expect(service.confirmUpload('file-1', 'user-1')).rejects.toThrow(BadRequestError);
-      expect(storageService.delete).toHaveBeenCalledWith({
+      expect(storageService.delete).toHaveBeenCalledWith('1', {
         key: pendingFile.filePath,
         isPublic: true,
       });

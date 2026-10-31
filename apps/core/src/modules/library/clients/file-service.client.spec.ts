@@ -1,11 +1,15 @@
 import { ConfigService } from '@nestjs/config';
 import { verify } from 'jsonwebtoken';
+import { outboundTenantForTesting } from '@app/tenancy';
 import { FileServiceClient } from './file-service.client';
 
 const SECRET = 'secret';
 
-function client(): FileServiceClient {
-  return new FileServiceClient(new ConfigService({ AUTH_SECRET: SECRET, FILE_SERVICE_URL: 'http://file-service/' }));
+function client(tenant = '1'): FileServiceClient {
+  return new FileServiceClient(
+    new ConfigService({ AUTH_SECRET: SECRET, FILE_SERVICE_URL: 'http://file-service/' }),
+    outboundTenantForTesting(tenant),
+  );
 }
 
 function respondWith(body: object): jest.SpyInstance<Promise<Response>, Parameters<typeof fetch>> {
@@ -34,6 +38,14 @@ describe('library FileServiceClient', () => {
     expect(url).toBe('http://file-service/files/f1/download?expiresIn=60&download=true');
     expect(token).toMatchObject({ sub: 'customer-1', act: { sub: 'core' }, aud: 'file-service' });
     expect(token).not.toHaveProperty('scopes');
+  });
+
+  it('delegates within the context tenant', async () => {
+    const fetchMock = respondWith({ signedUrl: 'https://s/a' });
+
+    await client('2').getDownloadUrl('f1', 'customer-1');
+
+    expect(sent(fetchMock).token).toMatchObject({ act: { sub: 'core' }, tenant: '2' });
   });
 
   it('preserves explicit public access for approved GLB validation and fails closed when omitted', async () => {

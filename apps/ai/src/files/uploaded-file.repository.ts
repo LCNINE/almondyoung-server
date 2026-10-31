@@ -1,7 +1,8 @@
 import { DbService, InjectTypedDb } from '@app/db';
 import { Injectable } from '@nestjs/common';
-import { and, asc, count, inArray, isNotNull, isNull, lt } from 'drizzle-orm';
+import { and, asc, count, eq, inArray, isNotNull, isNull, lt } from 'drizzle-orm';
 import { assistantUploadedFiles, type AiSchema } from '../db/schema';
+import type { RequestTenantId } from '../tenancy/request-tenant';
 
 export type UploadedFileRow = typeof assistantUploadedFiles.$inferSelect;
 
@@ -13,21 +14,23 @@ export class UploadedFileRepository {
   /**
    * 같은 fileId 가 다시 오면 무시한다. 업로드마다 새 uuid 라 보통 안 겹치지만,
    * 겹쳤을 때 기록이 터져서 업로드가 실패하면 안 된다.
+   * 테넌트를 모르면(①) 싣지 않는다 — DB 기본값이 채운다.
    */
-  async record(fileId: string, contextId: string, sessionId: string | null): Promise<void> {
+  async record(fileId: string, contextId: string, sessionId: string | null, tenant: RequestTenantId): Promise<void> {
     await this.dbService.db
       .insert(assistantUploadedFiles)
-      .values({ fileId, contextId, sessionId })
+      .values({ fileId, contextId, sessionId, ...(tenant === null ? {} : { tenantId: tenant }) })
       .onConflictDoNothing();
   }
 
-  /** 아직 판정하지 않은 것 중 유예가 지난 것. stuck 행은 큐에서 뺀다. */
-  async findUnchecked(uploadedBefore: Date, limit: number): Promise<UploadedFileRow[]> {
+  /** 그 테넌트의 것 중 아직 판정하지 않았고 유예가 지난 것. stuck 행은 큐에서 뺀다. */
+  async findUnchecked(tenantId: string, uploadedBefore: Date, limit: number): Promise<UploadedFileRow[]> {
     return this.dbService.db
       .select()
       .from(assistantUploadedFiles)
       .where(
         and(
+          eq(assistantUploadedFiles.tenantId, tenantId),
           isNull(assistantUploadedFiles.stuckAt),
           isNull(assistantUploadedFiles.releasedAt),
           lt(assistantUploadedFiles.uploadedAt, uploadedBefore),
@@ -37,13 +40,14 @@ export class UploadedFileRepository {
       .limit(limit);
   }
 
-  /** soft delete 를 요청한 것 중 S3 유예까지 지난 것. stuck 행은 큐에서 뺀다. */
-  async findReleasedBefore(releasedBefore: Date, limit: number): Promise<UploadedFileRow[]> {
+  /** 그 테넌트의 것 중 soft delete 를 요청했고 S3 유예까지 지난 것. stuck 행은 큐에서 뺀다. */
+  async findReleasedBefore(tenantId: string, releasedBefore: Date, limit: number): Promise<UploadedFileRow[]> {
     return this.dbService.db
       .select()
       .from(assistantUploadedFiles)
       .where(
         and(
+          eq(assistantUploadedFiles.tenantId, tenantId),
           isNull(assistantUploadedFiles.stuckAt),
           isNotNull(assistantUploadedFiles.releasedAt),
           lt(assistantUploadedFiles.releasedAt, releasedBefore),

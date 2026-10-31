@@ -1,5 +1,6 @@
 import { Logger } from '@nestjs/common';
 import { verify } from 'jsonwebtoken';
+import { outboundTenantForTesting } from '@app/tenancy';
 import { FormExportFileClient, BULK_FORM_CONTEXT_ID } from './form-export-file.client';
 
 const SECRET = 'secret';
@@ -12,6 +13,28 @@ describe('FormExportFileClient', () => {
 
   afterEach(() => jest.restoreAllMocks());
 
+  describe('토큰의 테넌트', () => {
+    const tokenOf = (fetchMock: jest.Mock): unknown => {
+      const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+      const auth = new Headers(init.headers).get('Authorization') ?? '';
+      return verify(auth.replace('Bearer ', ''), SECRET);
+    };
+
+    it('워크북 위임 토큰과 이미지 ownerToken 둘 다 맥락의 테넌트를 싣는다 — 테넌트 2 세션의 업로드는 테넌트 2 버킷으로 간다', async () => {
+      const client = new FormExportFileClient(config, outboundTenantForTesting('2'));
+
+      const upload = jest.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve({ id: 'f-1' }) });
+      global.fetch = upload as never;
+      await client.upload({ buffer: Buffer.from('x'), fileName: 'form.xlsx', userId: 'u1' });
+      expect(tokenOf(upload)).toMatchObject({ act: { sub: 'core' }, tenant: '2' });
+
+      const metadata = jest.fn().mockResolvedValue({ status: 404, ok: false });
+      global.fetch = metadata as never;
+      await client.getMetadata('f-1', 'u1');
+      expect(tokenOf(metadata)).toMatchObject({ userId: 'u1', tenant: '2' });
+    });
+  });
+
   describe('upload', () => {
     it('올바른 컨텍스트·file 필드명으로 업로드하고 fileId 를 돌려준다', async () => {
       const fetchMock = jest.fn().mockResolvedValue({
@@ -20,7 +43,7 @@ describe('FormExportFileClient', () => {
       });
       global.fetch = fetchMock as never;
 
-      const client = new FormExportFileClient(config);
+      const client = new FormExportFileClient(config, outboundTenantForTesting());
       const out = await client.upload({ buffer: Buffer.from('x'), fileName: 'form.xlsx', userId: 'u1' });
 
       expect(out.fileId).toBe('0193cccc-dddd-7eee-8fff-000011112222');
@@ -52,7 +75,7 @@ describe('FormExportFileClient', () => {
         text: () => Promise.resolve(upstreamJunk),
       }) as never;
 
-      const client = new FormExportFileClient(config);
+      const client = new FormExportFileClient(config, outboundTenantForTesting());
       const promise = client.upload({ buffer: Buffer.from('x'), fileName: 'form.xlsx', userId: 'u1' });
 
       await expect(promise).rejects.toThrow(/413/);
@@ -77,7 +100,7 @@ describe('FormExportFileClient', () => {
       });
       global.fetch = fetchMock as never;
 
-      const client = new FormExportFileClient(config);
+      const client = new FormExportFileClient(config, outboundTenantForTesting());
       const url = await client.getDownloadUrl(FILE_ID, 'u1');
 
       expect(url).toBe('https://signed.example/form.xlsx?sig=abc');
@@ -102,7 +125,7 @@ describe('FormExportFileClient', () => {
         text: () => Promise.resolve('not found'),
       }) as never;
 
-      const client = new FormExportFileClient(config);
+      const client = new FormExportFileClient(config, outboundTenantForTesting());
       await expect(client.getDownloadUrl(FILE_ID, 'u1')).rejects.toThrow(/404/);
     });
   });
@@ -139,7 +162,7 @@ describe('FormExportFileClient', () => {
       });
       global.fetch = fetchMock as never;
 
-      const client = new FormExportFileClient(config);
+      const client = new FormExportFileClient(config, outboundTenantForTesting());
       const out = await client.download(FILE_ID, 'u1');
 
       expect(out.equals(fileBytes)).toBe(true);
@@ -155,7 +178,7 @@ describe('FormExportFileClient', () => {
       );
       global.fetch = fetchMock as never;
 
-      const client = new FormExportFileClient(config);
+      const client = new FormExportFileClient(config, outboundTenantForTesting());
       const promise = client.download(FILE_ID, 'u1');
 
       await expect(promise).rejects.toThrow('업로드 파일 다운로드 실패 (403)');
@@ -183,7 +206,7 @@ describe('FormExportFileClient', () => {
       });
       global.fetch = fetchMock as never;
 
-      const client = new FormExportFileClient(config);
+      const client = new FormExportFileClient(config, outboundTenantForTesting());
       await expect(client.getMetadata('f1', 'u1')).resolves.toEqual({
         id: 'f1',
         contextId: 'product-image',
@@ -207,7 +230,7 @@ describe('FormExportFileClient', () => {
       });
       global.fetch = fetchMock as never;
 
-      const client = new FormExportFileClient(config);
+      const client = new FormExportFileClient(config, outboundTenantForTesting());
       await client.getMetadata('f1', 'u1');
 
       const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
@@ -231,7 +254,7 @@ describe('FormExportFileClient', () => {
         text: () => Promise.resolve('not found'),
       }) as never;
 
-      const client = new FormExportFileClient(config);
+      const client = new FormExportFileClient(config, outboundTenantForTesting());
       await expect(client.getMetadata('f1', 'u1')).resolves.toBeNull();
     });
 
@@ -243,7 +266,7 @@ describe('FormExportFileClient', () => {
         text: () => Promise.resolve('boom'),
       }) as never;
 
-      const client = new FormExportFileClient(config);
+      const client = new FormExportFileClient(config, outboundTenantForTesting());
       await expect(client.getMetadata('f1', 'u1')).rejects.toThrow('(500)');
     });
 
@@ -254,7 +277,7 @@ describe('FormExportFileClient', () => {
         json: () => Promise.resolve({ id: 'f1' }),
       }) as never;
 
-      const client = new FormExportFileClient(config);
+      const client = new FormExportFileClient(config, outboundTenantForTesting());
       await expect(client.getMetadata('f1', 'u1')).rejects.toThrow('형태');
     });
   });
@@ -283,7 +306,7 @@ describe('FormExportFileClient', () => {
     // 잡 소유자와 다른 맥락(크론)에서 돈다 — owner 검사를 통과할 수 없으므로 core 위임 토큰이 필요하다.
     it('softDelete(워크북)는 core 위임 토큰을 쓴다', async () => {
       const fetchMock = deleteFetchMock();
-      await new FormExportFileClient(config).softDelete(FILE_ID, 'u1');
+      await new FormExportFileClient(config, outboundTenantForTesting()).softDelete(FILE_ID, 'u1');
 
       const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
       expect(url).toBe(`http://file-service/files/${FILE_ID}`);
@@ -294,7 +317,7 @@ describe('FormExportFileClient', () => {
 
     it('softDeleteOwnedFile(이미지)는 위임 표기를 싣지 않는다 — 본인 파일만 지운다', async () => {
       const fetchMock = deleteFetchMock();
-      await new FormExportFileClient(config).softDeleteOwnedFile(FILE_ID, 'u1');
+      await new FormExportFileClient(config, outboundTenantForTesting()).softDeleteOwnedFile(FILE_ID, 'u1');
 
       const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
       expect(url).toBe(`http://file-service/files/${FILE_ID}`);
@@ -310,7 +333,7 @@ describe('FormExportFileClient', () => {
     // 404 = 이미 지워졌다 — 정리는 멱등해야 하므로 성공과 동등 취급한다(두 경로 공통).
     it('두 경로 모두 404 를 성공으로 취급하고, 403 은 던진다', async () => {
       jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
-      const client = new FormExportFileClient(config);
+      const client = new FormExportFileClient(config, outboundTenantForTesting());
 
       global.fetch = jest.fn().mockResolvedValue({ ok: false, status: 404, text: () => Promise.resolve('') }) as never;
       await expect(client.softDelete(FILE_ID, 'u1')).resolves.toBeUndefined();

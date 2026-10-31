@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
-import { DbService } from '@app/db';
+import { DbService, describeFailedRun } from '@app/db';
 import type { MessageEnvelope } from '@packages/event-contracts/types';
 import { StreamPublisher } from '../publishers/stream-publisher.service';
 import { outbox_events } from './outbox.schema';
@@ -123,6 +123,11 @@ export class OutboxDispatcher {
   // cron-overlap-safe: acquireEventBatch 가 FOR UPDATE SKIP LOCKED 로 배치를 선점해 겹쳐도 같은 행을 두 번 못 잡는다 — CronOnceModule 없는 앱(notification·file-service·search)에서도 돌아야 하므로 @CronOnce 로 바꾸지 않는다(ADR-0036).
   @Cron('*/5 * * * * *')
   async dispatchPendingEvents() {
+    // DB(테넌트)마다 그 맥락에서 돈다. 아래 본문이 실패를 삼키므로 한 DB 의 실패가 다른 DB 의 발행을 막지 않는다.
+    await this.dbService.forEachDatabase((key) => this.dispatchFromCurrentDatabase(key));
+  }
+
+  private async dispatchFromCurrentDatabase(key: string | undefined) {
     try {
       await this.requeueStaleProcessingEvents();
       const events = await this.acquireEventBatch();
@@ -137,7 +142,7 @@ export class OutboxDispatcher {
         await this.processEvent(event);
       }
     } catch (error) {
-      this.logger.error('Dispatcher error:', error);
+      this.logger.error(key === undefined ? 'Dispatcher error:' : `Dispatcher error [db=${key}]:`, error);
     }
   }
 
@@ -441,6 +446,13 @@ export class OutboxDispatcher {
   // cron-overlap-safe: PUBLISHED 행 DELETE 는 겹쳐도 같은 행을 다시 지우거나 0건일 뿐인 멱등 연산이다 — CronOnceModule 없는 앱에서도 돌아야 하므로 @CronOnce 로 바꾸지 않는다(ADR-0036).
   @Cron('0 2 * * *', { timeZone: 'Asia/Seoul' })
   async cleanupOldEvents() {
+    const runs = await this.dbService.forEachDatabase(() => this.cleanupCurrentDatabase());
+    for (const run of runs) {
+      if (!run.ok) this.logger.error(`Outbox cleanup failed: ${describeFailedRun(run)}`, run.error);
+    }
+  }
+
+  private async cleanupCurrentDatabase() {
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - this.config.cleanupDays);
 

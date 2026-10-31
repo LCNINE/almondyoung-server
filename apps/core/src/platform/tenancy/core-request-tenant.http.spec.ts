@@ -10,6 +10,7 @@ import { GlobalExceptionFilter } from '@app/shared';
 import { parseTenantList, TENANT_CONTEXT_KEY, TenancyConfig, type TenantGateMode } from '@app/tenancy';
 import { coreRequestTenantProviders, PUBLIC_ROUTE_TOKEN } from './core-request-tenant.interceptor';
 import { TenantFree } from './tenant-free.decorator';
+import { TenantStatusCache, TenantStatusSource, type TenantStatus } from './tenant-status-cache';
 
 const tenants = parseTenantList(
   JSON.stringify([
@@ -17,6 +18,17 @@ const tenants = parseTenantList(
     { id: '2', slug: 'two', coreDb: 'core_two', publicBucket: 'b-two-pub', privateBucket: 'b-two-priv' },
   ]),
 );
+
+/** user-service 테넌트 상태 자리. 스펙이 값을 바꾸고 `TenantStatusCache.refresh()` 로 들인다. */
+const statuses = new Map<string, TenantStatus>();
+class FakeTenantStatusSource extends TenantStatusSource {
+  isConfigured(): boolean {
+    return true;
+  }
+  fetch(): Promise<ReadonlyMap<string, TenantStatus>> {
+    return Promise.resolve(new Map(statuses));
+  }
+}
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -100,12 +112,15 @@ async function boot(mode: TenantGateMode): Promise<NestFastifyApplication> {
         return Promise.resolve();
       },
     })
+    .overrideProvider(TenantStatusSource)
+    .useValue(new FakeTenantStatusSource())
     .compile();
   const app = moduleRef.createNestApplication<NestFastifyApplication>(new FastifyAdapter());
   mountEventChainContext(app);
   app.useGlobalFilters(new GlobalExceptionFilter());
   await app.init();
   await app.getHttpAdapter().getInstance().ready();
+  await app.get(TenantStatusCache).refresh();
   return app;
 }
 
@@ -117,6 +132,51 @@ async function untenantedCount(entry: string): Promise<number> {
 }
 
 describe('core 요청 테넌트 맥락 (HTTP)', () => {
+  beforeEach(() => {
+    statuses.clear();
+    statuses.set('1', 'active');
+    statuses.set('2', 'active');
+  });
+
+  describe.each(['reject', 'warn'] as const)('정지 스위치 (%s)', (mode) => {
+    let app: NestFastifyApplication;
+    beforeAll(async () => {
+      app = await boot(mode);
+    });
+    afterAll(async () => {
+      await app.close();
+    });
+    const switchTo = async (status: TenantStatus) => {
+      statuses.set('2', status);
+      await app.get(TenantStatusCache).refresh();
+    };
+
+    it('정지된 테넌트의 사람 토큰은 갱신 뒤 바로 403 이고, 다른 테넌트는 그대로다', async () => {
+      await switchTo('suspended');
+      expect((await app.inject({ url: '/token?id=x', headers: { 'x-test-user': user('2') } })).statusCode).toBe(403);
+      expect((await app.inject({ url: '/public?id=x', headers: { 'x-test-user': user('2') } })).statusCode).toBe(403);
+      expect((await app.inject({ url: '/token?id=x', headers: { 'x-test-user': user('1') } })).json()).toEqual({
+        tenant: '1',
+      });
+    });
+
+    it('서비스 신원(내부 키+헤더) 호출은 막지 않는다 — 정지는 사람 토큰을 멈추는 스위치다', async () => {
+      await switchTo('suspended');
+      expect((await app.inject({ url: '/internal?id=x', headers: { 'x-tenant-id': '2' } })).json()).toEqual({
+        tenant: '2',
+      });
+    });
+
+    it('활성으로 되돌리면 다음 갱신부터 다시 통과한다', async () => {
+      await switchTo('suspended');
+      expect((await app.inject({ url: '/token?id=x', headers: { 'x-test-user': user('2') } })).statusCode).toBe(403);
+      await switchTo('active');
+      expect((await app.inject({ url: '/token?id=x', headers: { 'x-test-user': user('2') } })).json()).toEqual({
+        tenant: '2',
+      });
+    });
+  });
+
   describe('② reject', () => {
     let app: NestFastifyApplication;
     beforeAll(async () => {

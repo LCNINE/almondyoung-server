@@ -2,6 +2,7 @@ import { DbService, InjectTypedDb } from '@app/db';
 import { Injectable } from '@nestjs/common';
 import { and, asc, desc, eq, gt, isNull, lt } from 'drizzle-orm';
 import { assistantChatMessages, assistantChatSessions, type AiSchema } from '../../db/schema';
+import type { RequestTenantId } from '../../tenancy/request-tenant';
 
 export type SessionRow = typeof assistantChatSessions.$inferSelect;
 export type MessageRow = typeof assistantChatMessages.$inferSelect;
@@ -15,23 +16,35 @@ export type NewMessage = {
 };
 
 /**
+ * 대화의 테넌트 조건. 테넌트를 모르면(①) 거르지 않는다 — 지금처럼 계정 하나의 대화 전부다.
+ * 탈퇴 감추기·파기는 이 조건을 쓰지 않는다: 계정 이벤트라 그 계정의 모든 테넌트 대화가 대상이다.
+ */
+function sameTenant(tenant: RequestTenantId) {
+  return tenant === null ? undefined : eq(assistantChatSessions.tenantId, tenant);
+}
+
+/**
  * 대화 기록의 DB 접근. 이 파일 밖에서 drizzle 을 부르지 않는다.
  *
- * 소유 판정은 하지 않는다 — 그건 Reader/Manager 의 일이고, 여기서는 userId 로도 거를 수
+ * 소유 판정은 하지 않는다 — 그건 Reader/Manager 의 일이고, 여기서는 userId·테넌트로도 거를 수
  * 있게 조건을 받기만 한다.
  */
 @Injectable()
 export class AssistantChatRepository {
   constructor(@InjectTypedDb<AiSchema>() private readonly dbService: DbService<AiSchema>) {}
 
-  async insertSession(userId: string, title: string | null): Promise<SessionRow> {
-    const [session] = await this.dbService.db.insert(assistantChatSessions).values({ userId, title }).returning();
+  /** 테넌트를 모르면(①) 싣지 않는다 — DB 기본값이 채운다. */
+  async insertSession(userId: string, tenant: RequestTenantId, title: string | null): Promise<SessionRow> {
+    const [session] = await this.dbService.db
+      .insert(assistantChatSessions)
+      .values({ userId, title, ...(tenant === null ? {} : { tenantId: tenant }) })
+      .returning();
 
     if (!session) throw new Error('세션 생성 후 결과가 비어 있다');
     return session;
   }
 
-  async findSessionsByUser(userId: string, limit: number) {
+  async findSessionsByUser(userId: string, tenant: RequestTenantId, limit: number) {
     return this.dbService.db
       .select({
         id: assistantChatSessions.id,
@@ -40,12 +53,22 @@ export class AssistantChatRepository {
         updatedAt: assistantChatSessions.updatedAt,
       })
       .from(assistantChatSessions)
-      .where(and(eq(assistantChatSessions.userId, userId), isNull(assistantChatSessions.deletedAt)))
+      .where(
+        and(
+          eq(assistantChatSessions.userId, userId),
+          sameTenant(tenant),
+          isNull(assistantChatSessions.deletedAt),
+        ),
+      )
       .orderBy(desc(assistantChatSessions.updatedAt))
       .limit(limit);
   }
 
-  async findSessionOwnedBy(userId: string, sessionId: string): Promise<SessionRow | undefined> {
+  async findSessionOwnedBy(
+    userId: string,
+    tenant: RequestTenantId,
+    sessionId: string,
+  ): Promise<SessionRow | undefined> {
     const [found] = await this.dbService.db
       .select()
       .from(assistantChatSessions)
@@ -53,6 +76,7 @@ export class AssistantChatRepository {
         and(
           eq(assistantChatSessions.id, sessionId),
           eq(assistantChatSessions.userId, userId),
+          sameTenant(tenant),
           isNull(assistantChatSessions.deletedAt),
         ),
       )

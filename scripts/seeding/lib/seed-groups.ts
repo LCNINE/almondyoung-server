@@ -16,7 +16,8 @@ const BACKFILL_GROUP = 'backfill';
 
 /**
  * `db:seed:ref` 가 도는 그룹: demo- 와 backfill(사람이 명시적으로 고를 때만)을 뺀 전부.
- * 지금 core 참조 시드가 닿는 DB 는 테넌트 1(기존 core) 하나라 두 갈래를 다 돈다.
+ * 갈래를 어느 core DB 에 넣을지는 여기가 아니라 스텝을 만들 때 테넌트마다 정한다 — 테넌트 1 DB 엔 두 갈래,
+ * 그 밖의 테넌트 DB 엔 «모든 테넌트» 갈래의 core 스텝만(`core-seed-steps.ts`).
  */
 export function selectReferenceSeedGroups(all: readonly string[]): string[] {
   return all.filter((g) => !g.startsWith(DEMO_GROUP_PREFIX) && g !== BACKFILL_GROUP);

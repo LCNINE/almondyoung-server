@@ -1,5 +1,5 @@
 import { ForbiddenException } from '@nestjs/common';
-import { parseTenantList } from '@app/tenancy';
+import { parseTenantList } from './tenant-list';
 import { resolveRequestTenant, type RequestTenantInput } from './request-tenant';
 
 const tenants = parseTenantList(

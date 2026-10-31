@@ -10,6 +10,11 @@ export enum StorageProviderType {
 // ────────────────────── Request/Response Types ──────────────────────
 
 export interface UploadRequest {
+  /**
+   * 객체가 사는 버킷. `StorageService` 가 파일의 테넌트로 정해 넣는다(테넌트 목록의 항목).
+   * undefined = 테넌트 전 위치 — S3 는 없으면 실패, LOCAL 은 루트 디렉터리.
+   */
+  bucket: string | undefined;
   key: string;
   buffer: Buffer;
   contentType: string;
@@ -31,11 +36,15 @@ export interface UploadResult {
 }
 
 export interface DeleteRequest {
+  /** 객체가 사는 버킷 — `UploadRequest.bucket` 과 같다. */
+  bucket: string | undefined;
   key: string;
   isPublic?: boolean;
 }
 
 export interface SignedUrlRequest {
+  /** 객체가 사는 버킷 — `UploadRequest.bucket` 과 같다. */
+  bucket: string | undefined;
   key: string;
   expiresIn: number;
   operation?: 'get' | 'put';
@@ -50,6 +59,8 @@ export interface SignedUrlResult {
 }
 
 export interface DirectUploadRequest {
+  /** 객체가 사는 버킷 — `UploadRequest.bucket` 과 같다. */
+  bucket: string | undefined;
   key: string;
   contentType: string;
   isPublic: boolean;
@@ -67,6 +78,8 @@ export interface DirectUploadResult {
 }
 
 export interface HeadObjectRequest {
+  /** 객체가 사는 버킷 — `UploadRequest.bucket` 과 같다. */
+  bucket: string | undefined;
   key: string;
   isPublic?: boolean;
 }

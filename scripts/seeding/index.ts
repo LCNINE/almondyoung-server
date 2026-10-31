@@ -29,6 +29,7 @@ function parseArgs(argv: string[]) {
   let stage: string | undefined;
   let deployment: string | undefined;
   let group: string | undefined;
+  let tenant: string | undefined;
   let listGroups = false;
   let rejectedNonInteractiveFlag: string | undefined;
 
@@ -41,12 +42,14 @@ function parseArgs(argv: string[]) {
       rejectedNonInteractiveFlag = args[i];
     } else if (args[i] === '--group' && args[i + 1] !== undefined) {
       group = args[++i];
+    } else if (args[i] === '--tenant' && args[i + 1]) {
+      tenant = args[++i];
     } else if (args[i] === '--list-groups') {
       listGroups = true;
     }
   }
 
-  return { stage, deployment, group, listGroups, rejectedNonInteractiveFlag };
+  return { stage, deployment, group, tenant, listGroups, rejectedNonInteractiveFlag };
 }
 
 // ─── Report ─────────────────────────────────────────────────────
@@ -139,6 +142,7 @@ async function main() {
   const options = {
     yes: false,
     deployment,
+    tenant: parsed.tenant,
     group: parsed.group,
   };
   let databasesCreated: string[] = [];

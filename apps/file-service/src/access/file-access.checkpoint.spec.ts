@@ -21,6 +21,7 @@ const file: Upload = {
   metadata: null,
   uploadedBy: 'owner',
   isPublic: false,
+  tenantId: '1',
   createdAt: new Date('2026-10-01T00:00:00Z'),
   updatedAt: new Date('2026-10-01T00:00:00Z'),
   deletedAt: null,
@@ -49,27 +50,29 @@ async function access(
 describe('FileAccess permission checkpoints', () => {
   it('opens a staff context to whoever holds that screen permission', async () => {
     const files = await access();
-    await expect(files.loadReadable('f-1', user('a', ['admin']))).resolves.toBe(file);
-    await expect(files.loadReadable('f-1', user('i', ['intern']))).resolves.toBe(file);
-    await expect(files.loadReadable('f-1', user('w', ['logistics_worker']))).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(files.loadReadable('f-1', user('a', ['admin']), '1')).resolves.toBe(file);
+    await expect(files.loadReadable('f-1', user('i', ['intern']), '1')).resolves.toBe(file);
+    await expect(files.loadReadable('f-1', user('w', ['logistics_worker']), '1')).rejects.toBeInstanceOf(
+      ForbiddenError,
+    );
   });
 
   it('does not open a file by an old role name alone', async () => {
     const files = await access({ master: [], admin: [] });
-    await expect(files.loadReadable('f-1', user('m', ['master']))).rejects.toBeInstanceOf(ForbiddenError);
-    await expect(files.loadReadable('f-1', user('a', ['admin']))).rejects.toBeInstanceOf(ForbiddenError);
-    await expect(files.delete('f-1', user('m', ['master']))).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(files.loadReadable('f-1', user('m', ['master']), '1')).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(files.loadReadable('f-1', user('a', ['admin']), '1')).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(files.delete('f-1', user('m', ['master']), '1')).rejects.toBeInstanceOf(ForbiddenError);
   });
 
   it('lets the file management permission open and delete files it does not own', async () => {
     const files = await access({ file_keeper: ['system.file.manage'] });
-    await expect(files.loadReadable('f-1', user('k', ['file_keeper']))).resolves.toBe(file);
-    await expect(files.delete('f-1', user('k', ['file_keeper']))).resolves.toMatchObject({ success: true });
+    await expect(files.loadReadable('f-1', user('k', ['file_keeper']), '1')).resolves.toBe(file);
+    await expect(files.delete('f-1', user('k', ['file_keeper']), '1')).resolves.toMatchObject({ success: true });
   });
 
   it('no longer treats the retired master-scope token as a system principal', async () => {
     const files = await access(null);
-    await expect(files.loadReadable('f-1', user('core-library-service', [], ['master']))).rejects.toBeInstanceOf(
+    await expect(files.loadReadable('f-1', user('core-library-service', [], ['master']), '1')).rejects.toBeInstanceOf(
       ForbiddenError,
     );
   });
@@ -84,23 +87,23 @@ describe('FileAccess permission checkpoints', () => {
       client_id: 'ugc-service',
       aud: 'file-service',
     };
-    await expect(files.loadReadable('f-1', onBehalf)).resolves.toBe(file);
-    await expect(files.delete('f-1', serviceOnly)).resolves.toMatchObject({ success: true });
+    await expect(files.loadReadable('f-1', onBehalf, '1')).resolves.toBe(file);
+    await expect(files.delete('f-1', serviceOnly, '1')).resolves.toMatchObject({ success: true });
   });
 
   it('does not treat a delegation token addressed to another service as a system principal', async () => {
     const files = await access(null);
     const elsewhere: JwtPayload = { userId: 'u1', email: '', roles: [], act: { sub: 'core' }, aud: 'core' };
-    await expect(files.loadReadable('f-1', elsewhere)).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(files.loadReadable('f-1', elsewhere, '1')).rejects.toBeInstanceOf(ForbiddenError);
   });
 
   it('denies non-owners before the permission copy arrives', async () => {
     const files = await access(null);
-    await expect(files.loadReadable('f-1', user('m', ['master']))).rejects.toBeInstanceOf(ForbiddenError);
+    await expect(files.loadReadable('f-1', user('m', ['master']), '1')).rejects.toBeInstanceOf(ForbiddenError);
   });
 
   it('lets the owner in without any permission', async () => {
     const files = await access({});
-    await expect(files.loadReadable('f-1', user('owner', ['logistics_worker']))).resolves.toBe(file);
+    await expect(files.loadReadable('f-1', user('owner', ['logistics_worker']), '1')).resolves.toBe(file);
   });
 });

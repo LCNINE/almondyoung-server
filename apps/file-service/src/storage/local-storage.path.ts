@@ -1,4 +1,5 @@
 import { ConfigService } from '@nestjs/config';
+import type { TenantList } from '@app/tenancy';
 import * as path from 'path';
 
 /**
@@ -24,4 +25,20 @@ export function resolveWithinUploadsDir(baseDir: string, key: string): string | 
   const resolved = path.resolve(root, key);
   if (resolved !== root && !resolved.startsWith(root + path.sep)) return null;
   return resolved;
+}
+
+/**
+ * 공개·비공개를 버킷 하나에 두는 테넌트(테넌트 목록 규칙상 테넌트 1 하나뿐)의 버킷. 그 버킷은 로컬에서 루트에 그대로 둔다 —
+ * 테넌트 전부터 쌓인 로컬 파일과 그 URL 이 바뀌지 않게. 테넌트 id 를 코드에 두지 않으려고 목록의 모양으로 고른다.
+ */
+export function sharedBucketsOf(tenants: TenantList): ReadonlySet<string> {
+  return new Set(tenants.entries.filter((t) => t.publicBucket === t.privateBucket).map((t) => t.publicBucket));
+}
+
+/**
+ * 버킷의 로컬 디렉터리(루트 기준). 버킷마다 디렉터리를 갈라 로컬에서도 버킷 격리를 잴 수 있게 한다.
+ * `''` = 루트: 공용 버킷과 테넌트 전 위치(버킷 없음).
+ */
+export function localBucketDir(bucket: string | undefined, sharedBuckets: ReadonlySet<string>): string {
+  return !bucket || sharedBuckets.has(bucket) ? '' : bucket;
 }

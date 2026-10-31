@@ -1,7 +1,14 @@
 import { ConfigService } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import { IamInternalController, type EtagReply } from './iam-internal.controller';
+import { DbService } from '@app/db';
+import { InternalApiKeyGuard } from '../../commons/guards/internal-api-key.guard';
 import { IamService } from './iam.service';
+import { MyPermissionsReader } from './my-permissions.reader';
+import { PlatformTenantReader } from './platform/platform-tenant.reader';
+import { PlatformRepository } from './platform/platform.repository';
+import { RolePermissionsReader } from './role-permissions.reader';
+import { PlatformOperatorManager } from './tenancy/platform-operator.manager';
 
 describe('IamInternalController', () => {
   const snapshot = { version: 'abc123', roles: { admin: ['a.b.read'] } };
@@ -50,5 +57,51 @@ describe('IamInternalController', () => {
   it('returns the snapshot when the caller sends no ETag', async () => {
     const { fake } = reply();
     expect(await controller.rolePermissions(undefined, fake)).toEqual(snapshot);
+  });
+});
+
+describe('IamInternalController — tenant statuses (core 정지 스위치)', () => {
+  const row = (id: string, status: 'preparing' | 'active' | 'suspended') => ({
+    id,
+    slug: `t${id}`,
+    status,
+    displayName: `테넌트 ${id}`,
+    logoUrl: 'https://logo',
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
+
+  it('내부 키로만 열고, 모든 테넌트의 id·상태만 돌려준다(이름·로고·도메인 없음)', async () => {
+    const module = await Test.createTestingModule({
+      controllers: [IamInternalController],
+      providers: [
+        IamService,
+        PlatformTenantReader,
+        { provide: RolePermissionsReader, useValue: {} },
+        { provide: MyPermissionsReader, useValue: {} },
+        { provide: PlatformOperatorManager, useValue: {} },
+        { provide: DbService, useValue: {} },
+        {
+          provide: PlatformRepository,
+          useValue: {
+            listTenants: () => Promise.resolve([row('1', 'active'), row('2', 'suspended'), row('3', 'preparing')]),
+          },
+        },
+        { provide: ConfigService, useValue: { get: () => undefined } },
+      ],
+    }).compile();
+    const controller = module.get(IamInternalController);
+
+    expect(await controller.tenantStatuses()).toEqual({
+      tenants: [
+        { id: '1', status: 'active' },
+        { id: '2', status: 'suspended' },
+        { id: '3', status: 'preparing' },
+      ],
+    });
+    const handler: unknown = Object.getOwnPropertyDescriptor(IamInternalController.prototype, 'tenantStatuses')?.value;
+    if (typeof handler !== 'function') throw new Error('tenantStatuses handler not found');
+    const guards: unknown = Reflect.getMetadata('__guards__', handler);
+    expect(guards).toContain(InternalApiKeyGuard);
   });
 });

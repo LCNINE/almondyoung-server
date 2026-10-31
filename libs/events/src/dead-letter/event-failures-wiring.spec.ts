@@ -3,6 +3,7 @@ import { Test } from '@nestjs/testing';
 import { CART_STREAM } from '@packages/event-contracts/streams/cart.stream';
 import { getDLQTopicName } from '@packages/event-contracts/types';
 import { DbService } from '@app/db';
+import { singleDatabase } from '@app/db/testing/single-database';
 import { OutboxDispatcher } from '../outbox/outbox-dispatcher.service';
 import { EventsModule } from '../events.module';
 import { testTenancyModule } from '../testing/tenancy';
@@ -33,14 +34,14 @@ let tables: boolean | 'throws' = true;
   providers: [
     {
       provide: DbService,
-      useValue: {
+      useValue: singleDatabase({
         db: {
           execute: () =>
             tables === 'throws'
               ? Promise.reject(new Error('relation does not exist'))
               : Promise.resolve([{ present: tables }]),
         },
-      },
+      }),
     },
     { provide: OutboxDispatcher, useValue: {} },
   ],

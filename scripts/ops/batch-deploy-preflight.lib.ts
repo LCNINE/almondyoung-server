@@ -150,6 +150,32 @@ export function migrationStatus(
   };
 }
 
+export interface CoreTenantVersion {
+  label: string;
+  /** 적용 이력의 journal `when` 들 */
+  applied: readonly number[];
+}
+
+/**
+ * 테넌트 core DB 들의 적용 이력이 같은가. 전 테넌트 동일 버전이 배포 조건이다 — 「일부 테넌트만 새 버전」이면
+ * expand-contract 규율(한 DB 전제)이 깨진다. 다르면 사람이 읽을 이유, 같으면 null.
+ */
+export function coreVersionMismatch(versions: readonly CoreTenantVersion[]): string | null {
+  const key = (v: CoreTenantVersion) => [...new Set(v.applied)].sort((a, b) => a - b).join(',');
+  if (new Set(versions.map(key)).size <= 1) return null;
+  return `테넌트 core DB 사이 마이그 버전이 다르다: ${versions.map((v) => `${v.label} ${v.applied.length}건`).join(' · ')}`;
+}
+
+const CORE_DATABASE_NAME = /^core(_|$)/;
+
+/**
+ * 테넌트 목록에 없는 core 꼴 DB. 이름으로 테넌트를 «찾지» 않으므로 이런 DB 는 도구가 마이그하지 않는다 —
+ * 준비 중 테넌트(`--tenant`)나 지우다 만 DB 다. 막지 않고 경고만 한다.
+ */
+export function unlistedCoreDatabases(databases: readonly string[], listed: readonly string[]): string[] {
+  return databases.filter((d) => CORE_DATABASE_NAME.test(d) && !listed.includes(d));
+}
+
 export interface PendingMigration extends MigrationClass {
   service: string;
   tag: string;
