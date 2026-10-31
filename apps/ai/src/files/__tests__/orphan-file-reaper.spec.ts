@@ -1,5 +1,16 @@
+import { parseTenantList, TenancyConfig, TENANT_HEADER } from '@app/tenancy';
 import { OrphanFileReaperService } from '../orphan-file-reaper.service';
 import type { UploadedFileRepository, UploadedFileRow } from '../uploaded-file.repository';
+
+const tenancy = new TenancyConfig(
+  parseTenantList(
+    JSON.stringify([
+      { id: '1', slug: 'one', coreDb: 'core', publicBucket: 'one-shared', privateBucket: 'one-shared' },
+      { id: '2', slug: 'two', coreDb: 'core_two', publicBucket: 'two-pub', privateBucket: 'two-priv' },
+    ]),
+  ),
+  'reject',
+);
 
 const DAY = 24 * 60 * 60 * 1000;
 
@@ -7,6 +18,7 @@ function row(fileId: string, overrides: Partial<UploadedFileRow> = {}): Uploaded
   return {
     fileId,
     sessionId: 's1',
+    tenantId: '1',
     contextId: 'product-image',
     uploadedAt: new Date(Date.now() - 40 * DAY),
     releasedAt: null,
@@ -17,6 +29,8 @@ function row(fileId: string, overrides: Partial<UploadedFileRow> = {}): Uploaded
 
 type Fakes = {
   service: OrphanFileReaperService;
+  /** 나간 요청마다 `<테넌트 헤더> <메서드> <URL>`. */
+  calls: string[];
   released: string[][];
   forgotten: string[][];
   deleted: string[];
@@ -29,15 +43,23 @@ function setup(options: {
   referenced?: string[] | 'fail';
   /** file-service 가 이 경로에 404 를 낸다. */
   missingOn?: '/restore' | '/object' | '';
+  /** 이 테넌트의 행을 읽으면 저장소가 던진다. */
+  brokenTenant?: string;
 }): Fakes {
   const released: string[][] = [];
   const forgotten: string[][] = [];
   const deleted: string[] = [];
   const stuck: string[][] = [];
+  const calls: string[] = [];
 
+  // 저장소 자리: 테넌트의 행만 준다(실제 저장소의 WHERE tenant_id).
+  const ofTenant = (rows: UploadedFileRow[] | undefined, tenantId: string) => {
+    if (tenantId === options.brokenTenant) return Promise.reject(new Error('db down'));
+    return Promise.resolve((rows ?? []).filter((r) => r.tenantId === tenantId));
+  };
   const repository = {
-    findUnchecked: () => Promise.resolve(options.unchecked ?? []),
-    findReleasedBefore: () => Promise.resolve(options.releasedRows ?? []),
+    findUnchecked: (tenantId: string) => ofTenant(options.unchecked, tenantId),
+    findReleasedBefore: (tenantId: string) => ofTenant(options.releasedRows, tenantId),
     markReleased: (ids: string[]) => {
       released.push(ids);
       return Promise.resolve();
@@ -55,6 +77,8 @@ function setup(options: {
 
   global.fetch = ((url: string | URL, init?: RequestInit) => {
     const href = String(url);
+    const headers = new Headers(init?.headers);
+    calls.push(`${headers.get(TENANT_HEADER) ?? '-'} ${init?.method ?? 'GET'} ${href}`);
     if (href.includes('/internal/product-files/referenced')) {
       if (options.referenced === 'fail') return Promise.resolve(new Response('', { status: 500 }));
       return Promise.resolve(Response.json({ referenced: options.referenced ?? [] }));
@@ -65,7 +89,7 @@ function setup(options: {
     return Promise.resolve(Response.json({ success: true }));
   }) as typeof fetch;
 
-  return { service: new OrphanFileReaperService(repository), released, forgotten, deleted, stuck };
+  return { service: new OrphanFileReaperService(repository, tenancy), calls, released, forgotten, deleted, stuck };
 }
 
 describe('고아 파일 수거', () => {
@@ -175,5 +199,50 @@ describe('고아 파일 수거', () => {
 
     expect(released).toEqual([]);
     expect(deleted).toEqual([]);
+  });
+
+  // 상품은 테넌트 core DB 마다 따로다. 테넌트 2 파일을 테넌트 1 core 에 물으면 «미참조»로 읽혀 살아 있는 파일을 지운다.
+  describe('테넌트마다', () => {
+    it('그 테넌트의 파일만 그 테넌트 헤더를 붙여 core·file-service 에 묻는다', async () => {
+      const { service, calls } = setup({
+        unchecked: [row('one-a'), row('two-a', { tenantId: '2' })],
+        releasedRows: [row('two-old', { tenantId: '2', releasedAt: new Date(Date.now() - 20 * DAY) })],
+      });
+
+      await service.reap();
+
+      expect(calls).toEqual(
+        expect.arrayContaining([
+          '1 GET http://localhost:3100/internal/product-files/referenced?fileIds=one-a',
+          '1 DELETE http://localhost:3010/internal/files/one-a',
+          '2 GET http://localhost:3100/internal/product-files/referenced?fileIds=two-a',
+          '2 DELETE http://localhost:3010/internal/files/two-a',
+          '2 GET http://localhost:3100/internal/product-files/referenced?fileIds=two-old',
+          '2 DELETE http://localhost:3010/internal/files/two-old/object',
+        ]),
+      );
+      expect(calls.filter((c) => c.startsWith('1 ') && c.includes('two-'))).toEqual([]);
+      expect(calls.filter((c) => c.startsWith('2 ') && c.includes('one-'))).toEqual([]);
+      expect(calls.filter((c) => c.startsWith('- '))).toEqual([]);
+    });
+
+    it('목록 밖 테넌트의 행은 건드리지 않는다', async () => {
+      const { service, calls } = setup({ unchecked: [row('stray', { tenantId: '9' }), row('legacy', { tenantId: null })] });
+
+      await service.reap();
+
+      expect(calls).toEqual([]);
+    });
+
+    it('한 테넌트가 실패해도 다른 테넌트는 돌고, 주기는 실패로 남는다', async () => {
+      const { service, released } = setup({
+        unchecked: [row('one-a'), row('two-a', { tenantId: '2' })],
+        brokenTenant: '1',
+      });
+
+      await expect(service.reap()).rejects.toThrow(/tenant=1/);
+
+      expect(released).toContainEqual(['two-a']);
+    });
   });
 });

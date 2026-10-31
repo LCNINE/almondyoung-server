@@ -8,6 +8,7 @@ import { getOpenAiClient, logUsage, model, toUserMessage } from '../lib/openai';
 import type OpenAI from 'openai';
 import { urlEnv } from '../../platform/env';
 import { UploadedFileRepository } from '../../files/uploaded-file.repository';
+import type { RequestTenantId } from '../../tenancy/request-tenant';
 
 /**
  * 한 요청 안에서 도는 도구 호출 라운드 상한. 모델이 같은 도구를 물고 늘어져도 여기서 끊긴다.
@@ -43,6 +44,8 @@ export type RunInput = {
   signal: AbortSignal;
   /** 올린 파일을 어느 대화에서 올렸는지 기록하려고 받는다. */
   sessionId?: string;
+  /** 올린 파일의 테넌트(= 요청 테넌트, file-service 가 같은 토큰으로 적는 값). 수거 크론이 이 테넌트로 묻는다. */
+  tenant: RequestTenantId;
   now?: Date;
 };
 
@@ -97,7 +100,8 @@ export class AssistantRunnerService {
       // 도구 안에서 조회 → 저장으로 이어질 때, 취소 이후 저장이 나가는 것을 막는다.
       signal,
       attachments,
-      onUpload: (fileId, contextId) => this.uploadedFiles.record(fileId, contextId, input.sessionId ?? null),
+      onUpload: (fileId, contextId) =>
+        this.uploadedFiles.record(fileId, contextId, input.sessionId ?? null, input.tenant),
     };
 
     // system 은 매번 서버가 새로 붙인다 — 지시문을 고치면 진행 중인 대화에도 바로 반영된다.

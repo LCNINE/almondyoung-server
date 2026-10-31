@@ -7,11 +7,14 @@ import { AssistantSessionManager } from './assistant-session.manager';
 import { AssistantSessionReader } from './assistant-session.reader';
 import { ConversationCompactorService } from './conversation-compactor.service';
 import { SessionTurnLock } from './session-turn.lock';
+import type { RequestTenantId } from '../../tenancy/request-tenant';
 
 export type TurnEvent = RunEvent | { type: 'title'; title: string };
 
 export type TurnInput = {
   userId: string;
+  /** 요청 테넌트. 대화의 주인은 (계정, 테넌트)다. */
+  tenant: RequestTenantId;
   sessionId: string;
   turn: IncomingTurn;
   coreHeaders: SkillContext['coreHeaders'];
@@ -37,10 +40,10 @@ export class AssistantChatService {
   ) {}
 
   async *runTurn(input: TurnInput): AsyncGenerator<TurnEvent> {
-    const { userId, sessionId, turn, coreHeaders, signal, grantedPermissions } = input;
+    const { userId, tenant, sessionId, turn, coreHeaders, signal, grantedPermissions } = input;
 
     // 소유 확인이 먼저다 — 남의 세션 id 로 락을 잡게 두면 그 대화를 막을 수 있다.
-    const session = await this.reader.requireOwnedSession(userId, sessionId);
+    const session = await this.reader.requireOwnedSession(userId, tenant, sessionId);
 
     this.lock.acquire(sessionId);
     try {
@@ -58,6 +61,7 @@ export class AssistantChatService {
         signal,
         grantedPermissions,
         sessionId,
+        tenant,
       })) {
         if (event.type !== 'settled') {
           yield event;

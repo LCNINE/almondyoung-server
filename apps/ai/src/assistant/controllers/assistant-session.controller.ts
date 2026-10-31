@@ -5,6 +5,7 @@ import { CreateSessionDto } from '../dto/create-session.dto';
 import { ListSessionsQueryDto } from '../dto/list-sessions-query.dto';
 import { ChatMessageDto, DeletedDto, SessionSummaryDto } from '../dto/session.dto';
 import { AssistantSessionService } from '../services/assistant-session.service';
+import { RequestTenant, type RequestTenantId } from '../../tenancy/request-tenant';
 
 /**
  * `request.user` 의 실제 모양. `JwtPayload` 는 id 를 선언하지만 런타임 객체에는 없다 —
@@ -28,16 +29,24 @@ export class AssistantSessionController {
   @Post()
   @ApiOperation({ summary: '대화 시작' })
   @ApiResponse({ status: 201, type: SessionSummaryDto })
-  createSession(@User() user: AuthenticatedUser, @Body() dto: CreateSessionDto) {
-    return this.service.createSession(user.userId, dto);
+  createSession(
+    @User() user: AuthenticatedUser,
+    @RequestTenant() tenant: RequestTenantId,
+    @Body() dto: CreateSessionDto,
+  ) {
+    return this.service.createSession(user.userId, tenant, dto);
   }
 
   @RequirePermission('ai.assistant.use')
   @Get()
   @ApiOperation({ summary: '내 대화 목록 (최근 순)' })
   @ApiResponse({ status: 200, type: [SessionSummaryDto] })
-  listSessions(@User() user: AuthenticatedUser, @Query() query: ListSessionsQueryDto) {
-    return this.service.listSessions(user.userId, query.limit);
+  listSessions(
+    @User() user: AuthenticatedUser,
+    @RequestTenant() tenant: RequestTenantId,
+    @Query() query: ListSessionsQueryDto,
+  ) {
+    return this.service.listSessions(user.userId, tenant, query.limit);
   }
 
   @RequirePermission('ai.assistant.use')
@@ -48,8 +57,12 @@ export class AssistantSessionController {
   })
   @ApiResponse({ status: 200, type: [ChatMessageDto] })
   @ApiResponse({ status: 404, description: '대화가 없거나 내 것이 아님' })
-  listMessages(@User() user: AuthenticatedUser, @Param('sessionId') sessionId: string) {
-    return this.service.listMessages(user.userId, sessionId);
+  listMessages(
+    @User() user: AuthenticatedUser,
+    @RequestTenant() tenant: RequestTenantId,
+    @Param('sessionId') sessionId: string,
+  ) {
+    return this.service.listMessages(user.userId, tenant, sessionId);
   }
 
   @RequirePermission('ai.assistant.use')
@@ -57,7 +70,11 @@ export class AssistantSessionController {
   @ApiOperation({ summary: '대화 삭제', description: '메시지도 함께 지워진다.' })
   @ApiResponse({ status: 200, type: DeletedDto })
   @ApiResponse({ status: 404, description: '대화가 없거나 내 것이 아님' })
-  deleteSession(@User() user: AuthenticatedUser, @Param('sessionId') sessionId: string) {
-    return this.service.deleteSession(user.userId, sessionId);
+  deleteSession(
+    @User() user: AuthenticatedUser,
+    @RequestTenant() tenant: RequestTenantId,
+    @Param('sessionId') sessionId: string,
+  ) {
+    return this.service.deleteSession(user.userId, tenant, sessionId);
   }
 }
