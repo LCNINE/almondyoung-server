@@ -30,6 +30,24 @@ export function readStageTenantList(stage: string): TenantList {
 }
 
 /**
+ * 지금 도는 stage. sst shell 은 `SST_STAGE` 를 주지 않고 앱 리소스(`SST_RESOURCE_App` = `{"name","stage"}`)로만 준다.
+ * `SST_STAGE` 는 sst shell 밖에서 직접 넘긴 경우의 대안이다.
+ */
+export function sstShellStage(env: NodeJS.ProcessEnv): string | undefined {
+  const raw = env.SST_RESOURCE_App;
+  if (raw !== undefined) {
+    try {
+      const app: unknown = JSON.parse(raw);
+      if (typeof app === 'object' && app !== null && 'stage' in app && typeof app.stage === 'string') return app.stage;
+    } catch {
+      // 읽을 수 없는 리소스는 없는 것으로 본다
+    }
+    return undefined;
+  }
+  return env.SST_STAGE || undefined;
+}
+
+/**
  * DB 도구가 도는 레지스트리. core 가 있는 배포면 core 한 줄을 테넌트 목록의 테넌트마다 펼친다.
  * `tenant`(`--tenant <slug>`)를 주면 그 테넌트의 core DB 하나만 남긴다 — 목록에 아직 없는 준비 중 테넌트는
  * 이 길로만 닿는다.
@@ -43,8 +61,8 @@ export function resolveRegistry(options: { deployment?: string; tenant?: string 
     }
     return registry;
   }
-  const stage = process.env.SST_STAGE;
-  if (!stage) throw new Error('SST_STAGE 가 없다 — sst shell 안에서 돌아야 그 stage 의 테넌트 목록을 읽는다');
+  const stage = sstShellStage(process.env);
+  if (!stage) throw new Error('stage 를 모른다 — sst shell 안에서 돌아야 그 stage 의 테넌트 목록을 읽는다');
 
   const targets = resolveCoreTargets(readStageTenantList(stage), {
     legacyDatabase: core.database,
