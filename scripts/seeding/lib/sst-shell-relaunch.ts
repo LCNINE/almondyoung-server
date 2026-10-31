@@ -95,6 +95,8 @@ export interface CommonArgs {
   yes: boolean;
   group?: string;
   infraOnly?: boolean;
+  /** `--tenant <slug>` — 그 테넌트의 core DB 하나만(목록에 아직 없는 준비 중 테넌트도) */
+  tenant?: string;
 }
 
 export function parseCommonArgs(argv: string[]): CommonArgs {
@@ -106,6 +108,7 @@ export function parseCommonArgs(argv: string[]): CommonArgs {
     else if (args[i] === '--yes' || args[i] === '--non-interactive') out.yes = true;
     else if (args[i] === '--group' && args[i + 1] !== undefined) out.group = args[++i];
     else if (args[i] === '--infra-only') out.infraOnly = true;
+    else if (args[i] === '--tenant' && args[i + 1]) out.tenant = args[++i];
   }
   return out;
 }

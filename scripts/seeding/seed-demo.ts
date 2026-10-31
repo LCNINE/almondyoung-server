@@ -11,7 +11,8 @@
  */
 
 import chalk from 'chalk';
-import { runSeeding, listGroupsForDeployment } from './phases/03-seed-orchestrator';
+import { runSeeding, listGroupsForRegistry } from './phases/03-seed-orchestrator';
+import { resolveRegistry } from './lib/tenant-registry';
 import { ensureInsideSstShell, parseCommonArgs } from './lib/sst-shell-relaunch';
 
 import { selectDemoSeedGroups } from './lib/demo-seed-groups';
@@ -37,8 +38,10 @@ async function main() {
   console.log(chalk.bold.cyan('\n=== db:seed:demo ==='));
   console.log(chalk.gray(`  Stage: ${parsed.stage ?? process.env.SST_STAGE ?? '(unknown)'}`));
   if (parsed.deployment) console.log(chalk.gray(`  Deployment: ${parsed.deployment}`));
+  if (parsed.tenant) console.log(chalk.gray(`  Tenant: ${parsed.tenant} (core DB 하나만)`));
 
-  const allGroups = await listGroupsForDeployment(parsed.deployment);
+  // 그룹은 테넌트 목록으로 펼친 레지스트리에서 모은다 — `--tenant` 로 새 테넌트 DB 를 지목하면 테넌트 1 전용 갈래가 없다.
+  const allGroups = await listGroupsForRegistry(resolveRegistry(parsed));
   const demoGroups = selectDemoSeedGroups(allGroups, parsed.stage ?? process.env.SST_STAGE, parsed.group);
 
   if (demoGroups.length === 0) {
@@ -53,6 +56,7 @@ async function main() {
     const results = await runSeeding({
       yes: true,
       deployment: parsed.deployment,
+      tenant: parsed.tenant,
       group,
       allowDemoInProd: false,
     });

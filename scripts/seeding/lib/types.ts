@@ -34,12 +34,24 @@ export interface DatabaseCheckResult {
   exists: boolean;
 }
 
+/** 테넌트 목록에서 펼친 core DB 하나 (`core-tenants.ts`) */
+export interface CoreTenantTarget {
+  /** 목록 밖(준비 중, `--tenant`)이면 null */
+  tenantId: string | null;
+  slug: string;
+  database: string;
+  /** 테넌트 1 전용 시드(창고·자사몰)를 받는가 — 정적 레지스트리의 core DB 인 테넌트만 */
+  tenantOneData: boolean;
+}
+
 /** 서비스 레지스트리 항목 */
 export interface ServiceConfig {
   name: string;
   database: string;
   drizzleConfig?: string;
   hasSeedStep: boolean;
+  /** 테넌트 목록에서 펼친 core 항목에만 있다 */
+  tenant?: CoreTenantTarget;
 }
 
 /** 최종 리포트 */
@@ -62,6 +74,8 @@ export interface PhaseOptions {
    *  - 그 외: 해당 그룹의 step만 실행
    */
   group?: string | null;
+  /** `--tenant <slug>` — core DB 하나만(`resolveRegistry`) */
+  tenant?: string;
   /** 운영 stage에서도 demo-* 그룹 실행 허용 */
   allowDemoInProd?: boolean;
 }
