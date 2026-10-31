@@ -10,6 +10,10 @@ import type { StreamPublisher } from '../publishers/stream-publisher.service';
 import { EVENT_TRANSPORT, type TransportMessage } from '../transport/transport.port';
 import { EventTenantStamp } from './event-tenant-stamp';
 
+// forApp 은 provider 해석 때 Kafka 에 토픽을 만든다 — 브로커 없는 곳(CI)에서 재시도하다 타임아웃한다.
+// 이 스펙은 찍기 배선만 보므로 토픽 만들기를 끈다.
+jest.mock('../bootstrap/topic-bootstrap.service', () => ({ bootstrapKafkaTopics: jest.fn(async () => undefined) }));
+
 /**
  * `EventsModule.forApp` 이 앱의 테넌트 설정으로 찍기를 배선한다.
  * 맥락은 CLS 의 `TENANT_CONTEXT_KEY`, T 는 `SERVED_TENANT_ID`(목록과 대조), outbox DB 의 테넌트는 앱이 주는
