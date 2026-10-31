@@ -866,6 +866,10 @@ export function setup(infra: SharedInfra) {
     // 반품 요청이 core 에 배송완료 수량·시각을 묻는다(K8 PR3). core 의 같은 이름 키와 같은 값.
     CORE_SERVICE_URL: url('core'),
     CORE_INTERNAL_KEY: coreInternalKey.value,
+    // 내부 키 호출(core·membership·ugc·search·notification)은 테넌트 헤더를 싣는다 — 이 Medusa 는 한 테넌트만 섬기므로
+    // 앱 설정 T 다(src/utils/served-tenant-headers.ts). servedTenantEnv 를 펼치지 않는 건 그 개수가 «T 만 섬기는 소비 앱»
+    // 수라서다(tenancy-wiring.spec).
+    SERVED_TENANT_ID: servedTenantEnv.SERVED_TENANT_ID,
     UGC_SERVICE_URL: url('ugc'),
     UGC_INTERNAL_KEY: ugcInternalKey.value,
     SEARCH_SERVICE_URL: url('search'),
@@ -1146,6 +1150,10 @@ export function setup(infra: SharedInfra) {
       NEXT_PUBLIC_MEDUSA_MEMBERSHIP_GROUP_ID: 'cusgroup_01KFZ12A1M344F6HKGDV35J28A',
       NEXT_PUBLIC_BACKEND_DOMAIN: backendRootDomain,
       BACKEND_DOMAIN: backendRootDomain,
+      // core 의 무인증 라우트(배너·공지·팝업·상품 상세)는 호출자가 보낸 테넌트 헤더로만 DB 를 고른다 — 쇼핑몰은 한 테넌트만
+      // 섬기므로 앱 설정 T 를 싣는다(src/lib/config/backend.ts). servedTenantEnv 를 펼치지 않는 건 그 개수가 «T 만 섬기는
+      // 소비 앱» 수라서다(tenancy-wiring.spec).
+      SERVED_TENANT_ID: servedTenantEnv.SERVED_TENANT_ID,
       NEXT_PUBLIC_USE_RAILWAY_BACKEND: 'true',
       USE_RAILWAY_BACKEND: 'true',
       NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY: medusaPublishableKey.value,

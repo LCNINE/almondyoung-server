@@ -72,8 +72,14 @@ fi
 step "0-b. 테넌트 목록·전환 모드 (정본: E2E_TENANT_LIST · E2E_TENANT_GATE_MODE)"
 ensure_tenancy() {
   local name="$1" dest="$2" kind="$6"
-  [ "$kind" = "nest" ] || return 0
   e2e_env_present "$dest" || return 0
+  if [[ " $E2E_FIXED_TENANT_CALLERS " == *" $name "* ]]; then
+    if grep -q '^SERVED_TENANT_ID=' "$dest"; then ok "$name"; return 0; fi
+    [ -n "$(tail -c1 "$dest")" ] && echo >> "$dest"
+    printf 'SERVED_TENANT_ID=%s\n' "$E2E_SERVED_TENANT_ID" >> "$dest"; ok "$name — SERVED_TENANT_ID 를 더했다"
+    return 0
+  fi
+  [ "$kind" = "nest" ] || return 0
   local added=""
   if ! grep -q '^TENANT_LIST=' "$dest"; then
     [ -n "$(tail -c1 "$dest")" ] && echo >> "$dest"

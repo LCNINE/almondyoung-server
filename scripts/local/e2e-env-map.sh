@@ -47,6 +47,9 @@ E2E_TENANT_GATE_MODE='warn'
 # «T 만 섬기는» 앱은 main.ts 의 startConsumer({ tenancy }) 에서 도출해 tenancy-wiring.spec 이 이 줄과 대조한다.
 E2E_SERVED_TENANT_ID='1'
 E2E_SERVED_TENANT_APPS='user-service channel-adapter membership ugc-service wallet analytics notification search ai'
+# Nest 밖의 한 테넌트 앱. 테넌트 목록은 안 받고 T 만 받아 서비스 호출에 테넌트 헤더로 싣는다
+# (쇼핑몰 → core 무인증 라우트, Medusa → 내부 키 라우트).
+E2E_FIXED_TENANT_CALLERS='medusa storefront'
 
 # 행을 필드로 쪼개 콜백에 넘긴다. 사용: e2e_env_each required my_fn   (tier 생략 시 전부)
 e2e_env_each() {

@@ -196,7 +196,7 @@ describeIfDb('채널 리스팅 조회는 활성 버전만 내준다 (실 Postgre
   });
 
   // 주문 수집이 실제로 타는 진입점은 이쪽이다
-  // (ChannelLineIdentityResolver → lookupByChannelCode → 컨트롤러 → lookupVariantByChannelCode).
+  // (ChannelLineIdentityResolver → resolveByChannelCode → 내부 컨트롤러 → resolveVariantByChannelCode 가 같은 빌더·술어를 쓴다).
   // 두 진입점이 같은 빌더를 쓰지만, 채널 선택 술어와 salesChannels 조인은 여기만의 것이다.
   describe('채널 코드(site) 진입점 — 주문 수집 실사용 경로', () => {
     it('활성 버전에 매달린 품목은 그대로 조회된다', async () => {

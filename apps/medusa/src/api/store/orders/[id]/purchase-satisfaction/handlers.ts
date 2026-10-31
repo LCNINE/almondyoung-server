@@ -2,6 +2,7 @@ import type { AuthenticatedMedusaRequest, MedusaResponse } from '@medusajs/frame
 import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
 
 import type { StorePurchaseSatisfactionWriteType } from './validators';
+import { servedTenantHeaders } from '../../../../../utils/served-tenant-headers';
 
 const UGC_REQUEST_TIMEOUT_MS = 5_000;
 
@@ -13,7 +14,8 @@ type UgcResult =
   | { kind: 'invalid'; message: string }
   | { kind: 'unavailable' };
 
-const notFound = (res: MedusaResponse) => res.status(404).json({ type: 'not_found', message: '주문을 찾을 수 없습니다' });
+const notFound = (res: MedusaResponse) =>
+  res.status(404).json({ type: 'not_found', message: '주문을 찾을 수 없습니다' });
 
 async function loadOwnedOrder(req: AuthenticatedMedusaRequest): Promise<OwnedOrder | undefined> {
   const actorId = req.auth_context?.actor_id;
@@ -46,7 +48,7 @@ async function callUgc(orderId: string, method: 'GET' | 'PUT', body?: unknown): 
   try {
     const response = await fetch(`${baseUrl}/purchase-satisfactions/internal/orders/${encodeURIComponent(orderId)}`, {
       method,
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}`, ...servedTenantHeaders() },
       body: body === undefined ? undefined : JSON.stringify(body),
       signal: AbortSignal.timeout(UGC_REQUEST_TIMEOUT_MS),
     });

@@ -2,6 +2,7 @@ import { execSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import * as ts from 'typescript';
+import { TENANT_HEADER } from '@app/tenancy';
 
 /**
  * 권한 판정 가드·가림 인터셉터의 «등록 순서»가 규칙대로인지(APP_GUARD·APP_INTERCEPTOR 는 루트 모듈 providers 순서대로 돈다).
@@ -208,15 +209,6 @@ describe('공유 서비스 문 배선', () => {
     const NON_NEST = ['apps/medusa/', 'apps/admin-web/'];
     const NON_NEST_BEFORE_REJECT = [
       'apps/admin-web/src/app/api/fulfillment/channel-dispatch/attempts/[dispatchAttemptId]/orders/[salesOrderId]/route.ts',
-      'apps/medusa/src/api/store/orders/[id]/confirm-purchase/route.ts',
-      'apps/medusa/src/api/store/orders/[id]/purchase-satisfaction/handlers.ts',
-      'apps/medusa/src/scripts/notify-expiring-coupons.ts',
-      'apps/medusa/src/subscribers/membership-benefit-order.ts',
-      'apps/medusa/src/subscribers/welcome-membership-order.ts',
-      'apps/medusa/src/utils/search-sales-sync.ts',
-      'apps/medusa/src/workflows/orders/returns/core-return-eligibility.ts',
-      'apps/medusa/src/workflows/orders/returns/core-return-pickup.ts',
-      'apps/medusa/src/workflows/orders/steps/create-review-eligibility-step.ts',
     ];
     const callers = [...tracked('apps/*/src'), ...tracked('libs/*/src')].filter((f) => {
       const src = read(f);
@@ -231,9 +223,53 @@ describe('공유 서비스 문 배선', () => {
       .filter((f) => !/outboundTenant\.headers\(\)/.test(read(f)));
     expect(missing).toEqual([]);
 
-    // Nest 밖 호출자(Medusa·admin-web)는 공용 클라이언트가 닿지 않는다. 배포 ② 전에 각자 자기 T 를 헤더로 실어야 하므로
-    // 목록을 정확히 붙잡아 둔다 — 고치면 여기서 빼고, 새로 생기면 빨갛다.
-    const nonNest = callers.filter((f) => NON_NEST.some((prefix) => f.startsWith(prefix))).sort();
+    // Medusa 는 한 테넌트만 섬기는 앱이라 앱 설정 T 를 싣는다(`servedTenantHeaders`). 루트 libs 를 못 가져와 공용 클라이언트가
+    // 닿지 않으므로 호출부마다 본다.
+    const medusaMissing = callers
+      .filter((f) => f.startsWith('apps/medusa/'))
+      .filter((f) => !/servedTenantHeaders\(\)/.test(read(f)));
+    expect(medusaMissing).toEqual([]);
+
+    // 나머지 Nest 밖 호출자는 배포 ② 전에 각자 자기 T 를 헤더로 실어야 하므로 목록을 정확히 붙잡아 둔다 — 고치면 여기서 빼고,
+    // 새로 생기면 빨갛다.
+    const nonNest = callers
+      .filter((f) => NON_NEST.some((prefix) => f.startsWith(prefix)))
+      .filter((f) => !f.startsWith('apps/medusa/'))
+      .sort();
     expect(nonNest).toEqual(NON_NEST_BEFORE_REJECT);
+  });
+
+  // T 가 없으면 두 앱은 헤더를 싣지 않고(기본 테넌트로 채우지 않는다) 배포 ② 에서 깨진다.
+  it('Nest 밖 한 테넌트 앱(Medusa·쇼핑몰)은 SST·로컬에서 T 를 받는다', () => {
+    const services = read('deployments/lcnine/services/infra/services.ts');
+    expect(services.match(/SERVED_TENANT_ID: servedTenantEnv\.SERVED_TENANT_ID,/g) ?? []).toHaveLength(2);
+    // 앞 표지에서 다음 표지까지 — 표지가 없어지면 엉뚱한 구간을 보지 않고 빨갛다.
+    const block = (from: string, to: string) => {
+      const start = services.indexOf(from);
+      const end = services.indexOf(to, start);
+      expect(start >= 0 && end >= 0).toBe(true);
+      return services.slice(start, end);
+    };
+    expect(block('const medusaEnv = {', 'const medusaCommon')).toContain(
+      'SERVED_TENANT_ID: servedTenantEnv.SERVED_TENANT_ID,',
+    );
+    expect(block("new sst.aws.Nextjs('Storefront'", "new sst.aws.Nextjs('WalletWeb'")).toContain(
+      'SERVED_TENANT_ID: servedTenantEnv.SERVED_TENANT_ID,',
+    );
+
+    const map = read('scripts/local/e2e-env-map.sh');
+    expect(/^E2E_FIXED_TENANT_CALLERS='([^']*)'$/m.exec(map)?.[1]?.split(' ').sort()).toEqual(['medusa', 'storefront']);
+  });
+
+  // 두 트리는 루트 libs 를 못 가져와 헤더 이름을 사본으로 둔다.
+  it('Medusa·쇼핑몰의 테넌트 헤더 이름은 @app/tenancy 와 같다', () => {
+    const medusa = /export const TENANT_HEADER = '([^']+)'/.exec(
+      read('apps/medusa/src/utils/served-tenant-headers.ts'),
+    )?.[1];
+    expect(medusa).toBe(TENANT_HEADER);
+    const storefront = /\{ "([^"]+)": tenant \}/.exec(
+      read('web/almondyoung-storefront/src/lib/config/backend.ts'),
+    )?.[1];
+    expect(storefront).toBe(TENANT_HEADER);
   });
 });

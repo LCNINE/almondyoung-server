@@ -14,6 +14,7 @@ vi.mock("next/headers", () => ({
 
 vi.mock("@/lib/config/backend", () => ({
   getBackendBaseUrl: () => "http://medusa.test",
+  backendTenantHeaders: () => ({}),
 }))
 
 import { ApiAuthError } from "@lib/api/api-error"

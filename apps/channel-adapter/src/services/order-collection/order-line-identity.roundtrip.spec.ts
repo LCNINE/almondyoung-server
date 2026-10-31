@@ -54,7 +54,7 @@ describe('external order-line identity real component round trip', () => {
       } as never),
       new ChannelOrderTranslator(
         new ChannelLineIdentityResolver({
-          lookupByChannelCode: () => {
+          resolveByChannelCode: () => {
             throw new Error('Medusa 수집은 채널 리스팅 조회를 타면 안 된다 (lineIdentity=embedded)');
           },
         } as never),

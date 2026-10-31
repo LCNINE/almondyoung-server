@@ -16,7 +16,7 @@ import { createOrderProvider } from './translating-order.provider';
  * 이 스펙들이 먼저 깨진다.
  */
 const listingClientThatMustNotBeCalled = {
-  lookupByChannelCode: () => {
+  resolveByChannelCode: () => {
     throw new Error('Medusa 수집은 채널 리스팅 조회를 타면 안 된다 (lineIdentity=embedded)');
   },
 } as never;

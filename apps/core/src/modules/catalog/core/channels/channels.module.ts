@@ -4,6 +4,7 @@ import { SalesChannelsController } from './sales-channels.controller';
 import { SalesChannelsInternalController } from './sales-channels-internal.controller';
 import { ChannelCategoriesController } from './channel-categories.controller';
 import { ChannelListingController } from './channel-listing.controller';
+import { ChannelListingsInternalController } from './channel-listings-internal.controller';
 import { SalesChannelsService } from './sales-channels.service';
 import { ChannelCategoriesService } from './channel-categories.service';
 import { ChannelListingService } from './channel-listing.service';
@@ -17,6 +18,7 @@ import { ProductSellableQuantityModule } from '../../../inventory/product-sellab
     SalesChannelsInternalController,
     ChannelCategoriesController,
     ChannelListingController,
+    ChannelListingsInternalController,
   ],
   providers: [
     SalesChannelsService,
