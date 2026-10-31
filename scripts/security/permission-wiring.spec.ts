@@ -202,8 +202,11 @@ describe('공유 서비스 문 배선', () => {
    * ② 에서 거절하므로, 빠뜨린 호출자는 ② 배포에서 깨진다. 받는 쪽(컨트롤러·가드·키 이름 주입)은 대상이 아니다.
    */
   it('내부 키 호출자는 테넌트 헤더를 싣는다', () => {
-    // 권한 사본은 모든 테넌트에 공통인 역할 정의라 테넌트가 없다.
-    const GLOBAL_CALLS = ['libs/authorization/src/services/http-role-permission.source.ts'];
+    // 권한 사본은 모든 테넌트에 공통인 역할 정의라 테넌트가 없다. 테넌트 상태는 모든 테넌트의 상태를 한 번에 받는다.
+    const GLOBAL_CALLS = [
+      'libs/authorization/src/services/http-role-permission.source.ts',
+      'apps/core/src/platform/tenancy/http-tenant-status.source.ts',
+    ];
     // ai 는 토큰 테넌트별 앱이고 맥락(CLS)이 없다 — 호출 테넌트를 요청 테넌트·수거 루프의 테넌트로 직접 싣는다.
     const PER_REQUEST = ['apps/ai/src/'];
     const NON_NEST = ['apps/medusa/', 'apps/admin-web/'];
