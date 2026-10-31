@@ -1,10 +1,13 @@
 import { INestApplication } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { APP_INTERCEPTOR } from '@nestjs/core';
 import { Test } from '@nestjs/testing';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import * as request from 'supertest';
+import { parseTenantList, TenancyConfig } from '@app/tenancy';
+import { FileRequestTenantInterceptor } from '../tenancy/file-request-tenant.interceptor';
 import { DownloadController } from './download.controller';
 import { DownloadService } from './download.service';
 import { LocalFileController } from './local-file.controller';
@@ -35,6 +38,16 @@ describe('public file browser access', () => {
           provide: ConfigService,
           useValue: new ConfigService({ STORAGE_PROVIDER: 'LOCAL', LOCAL_STORAGE_DIR: baseDir }),
         },
+        {
+          provide: TenancyConfig,
+          useValue: new TenancyConfig(
+            parseTenantList(
+              JSON.stringify([{ id: '1', slug: 'one', coreDb: 'core', publicBucket: 'b-one', privateBucket: 'b-one' }]),
+            ),
+            'warn',
+          ),
+        },
+        { provide: APP_INTERCEPTOR, useClass: FileRequestTenantInterceptor },
       ],
     }).compile();
 

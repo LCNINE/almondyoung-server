@@ -3,12 +3,14 @@ import {
   Controller,
   DefaultValuePipe,
   Get,
+  Inject,
   Param,
   ParseIntPipe,
   ParseUUIDPipe,
   Query,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { OutboundTenant } from '@app/tenancy';
 import { ApiBearerAuth, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { UgcInternalAuth } from '../../shared/decorators/internal-auth.decorator';
 import { mintServiceToken } from '../clients/service-token';
@@ -25,6 +27,7 @@ export class InternalAlmondDesignsController {
   constructor(
     private readonly service: AlmondDesignsService,
     private readonly config: ConfigService,
+    @Inject(OutboundTenant) private readonly outboundTenant: Pick<OutboundTenant, 'tenantId'>,
   ) {}
 
   @Get(':id')
@@ -53,6 +56,11 @@ export class InternalAlmondDesignsController {
     const parsed = parsePrintFormatAndDpi(format, dpi);
     const secret = this.config.get<string>('AUTH_SECRET');
     if (!secret) throw new Error('AUTH_SECRET is not configured');
-    return this.service.printLink(id, parsed.format, parsed.dpi, mintServiceToken(secret));
+    return this.service.printLink(
+      id,
+      parsed.format,
+      parsed.dpi,
+      mintServiceToken(secret, this.outboundTenant.tenantId()),
+    );
   }
 }

@@ -4,7 +4,9 @@ import type { StorageService } from '../storage/storage.service';
 
 const DAY = 24 * 60 * 60 * 1000;
 
-function setup(file: Record<string, unknown> | undefined) {
+function setup(row: Record<string, unknown> | undefined) {
+  // 내부 호출은 헤더 테넌트의 파일만 본다 — 여기 픽스처는 모두 테넌트 1 의 파일이고 호출도 테넌트 1 이다.
+  const file = row && { tenantId: '1', ...row };
   const storageDeleted: unknown[] = [];
   const hardDeleted: string[] = [];
   const softDeleted: string[] = [];
@@ -28,7 +30,7 @@ function setup(file: Record<string, unknown> | undefined) {
 
   const storage = {
     getSignedUrl: () => Promise.resolve({ signedUrl: 'https://storage.example.test/private', expiresAt: new Date() }),
-    delete: (req: unknown) => {
+    delete: (_tenant: unknown, req: unknown) => {
       storageDeleted.push(req);
       return Promise.resolve();
     },
@@ -58,7 +60,7 @@ describe('내부 파일 정리', () => {
       filePath: 'attendance/evidence/f1.png',
     });
 
-    await expect(service.attendanceEvidence('f1')).resolves.toMatchObject({
+    await expect(service.attendanceEvidence('f1', '1')).resolves.toMatchObject({
       uploadedBy: 'owner',
       url: 'https://storage.example.test/private',
     });
@@ -68,7 +70,7 @@ describe('내부 파일 정리', () => {
         status: 'active',
         contextId: 'business-verification-file',
         isPublic: false,
-      }).service.attendanceEvidence('f1'),
+      }).service.attendanceEvidence('f1', '1'),
     ).rejects.toThrow();
   });
   it('공모전이 확인할 수 있도록 이미지의 실제 크기를 반환한다', async () => {
@@ -81,7 +83,7 @@ describe('내부 파일 정리', () => {
       metadata: { width: 512, height: 512 },
     });
 
-    await expect(service.describe('f1')).resolves.toMatchObject({ width: 512, height: 512 });
+    await expect(service.describe('f1', '1')).resolves.toMatchObject({ width: 512, height: 512 });
   });
 
   it('soft delete 는 S3 객체를 건드리지 않는다', async () => {
@@ -91,7 +93,7 @@ describe('내부 파일 정리', () => {
       deletedAt: null,
     });
 
-    await service.softDelete('f1');
+    await service.softDelete('f1', '1');
 
     expect(softDeleted).toEqual(['f1']);
     expect(storageDeleted).toEqual([]);
@@ -101,14 +103,14 @@ describe('내부 파일 정리', () => {
   it('soft delete 되지 않은 파일은 purge 를 거부한다', async () => {
     const { service, storageDeleted } = setup({ ...deletedFile(new Date()), status: 'active', deletedAt: null });
 
-    await expect(service.purgeObject('f1')).rejects.toThrow(/not soft-deleted/);
+    await expect(service.purgeObject('f1', '1')).rejects.toThrow(/not soft-deleted/);
     expect(storageDeleted).toEqual([]);
   });
 
   it('유예기간 안이면 purge 를 거부한다', async () => {
     const { service, storageDeleted, hardDeleted } = setup(deletedFile(new Date(Date.now() - 1 * DAY)));
 
-    await expect(service.purgeObject('f1')).rejects.toThrow(/grace period/);
+    await expect(service.purgeObject('f1', '1')).rejects.toThrow(/grace period/);
     expect(storageDeleted).toEqual([]);
     expect(hardDeleted).toEqual([]);
   });
@@ -116,7 +118,7 @@ describe('내부 파일 정리', () => {
   it('복구는 status 를 active 로 되돌리고 deleted_at 을 비운다', async () => {
     const { service, statusUpdates, storageDeleted } = setup(deletedFile(new Date()));
 
-    await service.restore('f1');
+    await service.restore('f1', '1');
 
     expect(statusUpdates).toEqual([{ id: 'f1', status: 'active', extra: { deletedAt: null } }]);
     expect(storageDeleted).toEqual([]);
@@ -126,7 +128,7 @@ describe('내부 파일 정리', () => {
     const past = new Date(Date.now() - (OBJECT_PURGE_GRACE_DAYS + 1) * DAY);
     const { service, storageDeleted, hardDeleted } = setup(deletedFile(past));
 
-    await service.purgeObject('f1');
+    await service.purgeObject('f1', '1');
 
     expect(storageDeleted).toEqual([{ key: 'products/images/f1.png', isPublic: true }]);
     expect(hardDeleted).toEqual(['f1']);

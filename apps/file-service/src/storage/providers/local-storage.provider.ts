@@ -14,43 +14,53 @@ import {
   StorageProviderType,
   StorageError,
 } from '../storage-provider.interface';
-import { localUploadsDir } from '../local-storage.path';
+import { TenancyConfig } from '@app/tenancy';
+import { localBucketDir, localUploadsDir, sharedBucketsOf } from '../local-storage.path';
 
 @Injectable()
 export class LocalStorageProvider implements StorageUploadPort, StorageDeletePort, StorageSignedUrlPort {
   private readonly logger = new Logger(LocalStorageProvider.name);
   private readonly baseDir: string;
   private readonly port: string;
+  private readonly sharedBuckets: ReadonlySet<string>;
 
-  constructor(private readonly configService: ConfigService) {
+  constructor(
+    private readonly configService: ConfigService,
+    tenancy: TenancyConfig,
+  ) {
     this.port = this.configService.get<string>('PORT', '3000');
     this.baseDir = localUploadsDir(this.configService);
+    this.sharedBuckets = sharedBucketsOf(tenancy.tenants);
+  }
+
+  /** 루트 기준 상대 경로 — 버킷 디렉터리 + key. 디스크 경로와 서빙 URL 이 같은 값을 쓴다. */
+  private relativePath(bucket: string | undefined, key: string): string {
+    const dir = localBucketDir(bucket, this.sharedBuckets);
+    return dir ? `${dir}/${key}` : key;
   }
 
   /**
    * 이 URL 을 실제로 받아내는 라우트는 `LocalFileController` 다(`GET /files/local/*`).
    * 둘 중 하나만 고치면 업로드는 되는데 되읽기가 404 가 되므로 같이 본다.
    */
-  private buildUrl(key: string, responseContentDisposition?: string): string {
-    const base = `http://localhost:${this.port}/files/local/${key}`;
+  private buildUrl(bucket: string | undefined, key: string, responseContentDisposition?: string): string {
+    const base = `http://localhost:${this.port}/files/local/${this.relativePath(bucket, key)}`;
     // S3 의 ResponseContentDisposition 대응물. 이게 없으면 워크북이 원본 파일명 대신
     // UUID 로 저장돼 `download=true` 의 의미가 로컬에서만 사라진다.
-    return responseContentDisposition
-      ? `${base}?disposition=${encodeURIComponent(responseContentDisposition)}`
-      : base;
+    return responseContentDisposition ? `${base}?disposition=${encodeURIComponent(responseContentDisposition)}` : base;
   }
 
   async upload(request: UploadRequest): Promise<UploadResult> {
     try {
       const isPublic = request.isPublic ?? false;
-      const filePath = path.join(this.baseDir, request.key);
+      const filePath = path.join(this.baseDir, this.relativePath(request.bucket, request.key));
       const dir = path.dirname(filePath);
 
       await fs.mkdir(dir, { recursive: true });
 
       await fs.writeFile(filePath, request.buffer);
 
-      const url = this.buildUrl(request.key);
+      const url = this.buildUrl(request.bucket, request.key);
 
       this.logger.log(`File uploaded to local (${isPublic ? 'public' : 'private'}): ${request.key}`);
 
@@ -69,7 +79,7 @@ export class LocalStorageProvider implements StorageUploadPort, StorageDeletePor
 
   async delete(request: DeleteRequest): Promise<void> {
     try {
-      const filePath = path.join(this.baseDir, request.key);
+      const filePath = path.join(this.baseDir, this.relativePath(request.bucket, request.key));
       await fs.unlink(filePath);
       this.logger.log(`File deleted from local: ${request.key}`);
     } catch (error) {
@@ -81,7 +91,7 @@ export class LocalStorageProvider implements StorageUploadPort, StorageDeletePor
   }
 
   async getSignedUrl(request: SignedUrlRequest): Promise<SignedUrlResult> {
-    const signedUrl = this.buildUrl(request.key, request.responseContentDisposition);
+    const signedUrl = this.buildUrl(request.bucket, request.key, request.responseContentDisposition);
     const expiresAt = new Date(Date.now() + request.expiresIn * 1000);
 
     return { signedUrl, expiresAt };

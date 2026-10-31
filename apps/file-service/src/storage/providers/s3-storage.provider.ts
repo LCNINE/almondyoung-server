@@ -33,8 +33,6 @@ export class S3StorageProvider
   private readonly logger = new Logger(S3StorageProvider.name);
   private s3Client: S3Client;
   private presignClient: S3Client;
-  private publicBucket: string;
-  private privateBucket: string;
   private region: string;
 
   constructor(private readonly configService: ConfigService) {}
@@ -50,8 +48,6 @@ export class S3StorageProvider
     this.region = this.configService.getOrThrow<string>('AWS_REGION');
     const accessKeyId = this.configService.get<string>('AWS_ACCESS_KEY_ID');
     const secretAccessKey = this.configService.get<string>('AWS_SECRET_ACCESS_KEY');
-    this.publicBucket = this.configService.getOrThrow<string>('AWS_S3_PUBLIC_BUCKET');
-    this.privateBucket = this.configService.getOrThrow<string>('AWS_S3_PRIVATE_BUCKET');
 
     const credentials = accessKeyId && secretAccessKey ? { accessKeyId, secretAccessKey } : undefined;
 
@@ -70,19 +66,20 @@ export class S3StorageProvider
     this.logger.log('S3 Storage Provider initialized');
   }
 
-  private getBucket(isPublic: boolean): string {
-    return isPublic ? this.publicBucket : this.privateBucket;
+  /** 버킷은 `StorageService` 가 파일의 테넌트로 정해 넘긴다. 없으면 어느 테넌트 버킷에도 쓰지 않는다. */
+  private requireBucket(bucket: string | undefined): string {
+    if (!bucket) throw new StorageError('S3_BUCKET_MISSING', 'S3 요청에 버킷이 없다');
+    return bucket;
   }
 
-  private buildUrl(key: string, isPublic: boolean): string {
-    const bucket = this.getBucket(isPublic);
+  private buildUrl(key: string, bucket: string): string {
     return `https://${bucket}.s3.${this.region}.amazonaws.com/${key}`;
   }
 
   async upload(request: UploadRequest): Promise<UploadResult> {
     try {
       const isPublic = request.isPublic ?? false;
-      const bucket = this.getBucket(isPublic);
+      const bucket = this.requireBucket(request.bucket);
 
       const commandParams: any = {
         Bucket: bucket,
@@ -99,7 +96,7 @@ export class S3StorageProvider
       const command = new PutObjectCommand(commandParams);
       const response = await this.s3Client.send(command);
 
-      const url = this.buildUrl(request.key, isPublic);
+      const url = this.buildUrl(request.key, bucket);
 
       this.logger.log(`File uploaded to S3 (${isPublic ? 'public' : 'private'}): ${request.key}`);
 
@@ -124,7 +121,7 @@ export class S3StorageProvider
   async delete(request: DeleteRequest): Promise<void> {
     try {
       const isPublic = request.isPublic ?? false;
-      const bucket = this.getBucket(isPublic);
+      const bucket = this.requireBucket(request.bucket);
 
       const command = new DeleteObjectCommand({
         Bucket: bucket,
@@ -141,8 +138,7 @@ export class S3StorageProvider
 
   async getSignedUrl(request: SignedUrlRequest): Promise<SignedUrlResult> {
     try {
-      const isPublic = request.isPublic ?? false;
-      const bucket = this.getBucket(isPublic);
+      const bucket = this.requireBucket(request.bucket);
 
       const command =
         request.operation === 'put'
@@ -173,7 +169,7 @@ export class S3StorageProvider
 
   async createDirectUpload(request: DirectUploadRequest): Promise<DirectUploadResult> {
     try {
-      const bucket = this.getBucket(request.isPublic);
+      const bucket = this.requireBucket(request.bucket);
 
       // ACL 은 presigner 가 서명된 쿼리 파라미터(x-amz-acl)로 옮기므로 브라우저가
       // 따로 헤더를 실을 필요가 없고, 위조도 안 된다. 이게 없으면 public 버킷 객체가
@@ -199,7 +195,7 @@ export class S3StorageProvider
         provider: StorageProviderType.S3,
         uploadUrl,
         headers,
-        fileUrl: this.buildUrl(request.key, request.isPublic),
+        fileUrl: this.buildUrl(request.key, bucket),
         expiresAt: new Date(Date.now() + request.expiresIn * 1000),
       };
     } catch (error) {
@@ -209,7 +205,7 @@ export class S3StorageProvider
   }
 
   async headObject(request: HeadObjectRequest): Promise<HeadObjectResult | null> {
-    const bucket = this.getBucket(request.isPublic ?? false);
+    const bucket = this.requireBucket(request.bucket);
     try {
       const response = await this.s3Client.send(new HeadObjectCommand({ Bucket: bucket, Key: request.key }));
       return {

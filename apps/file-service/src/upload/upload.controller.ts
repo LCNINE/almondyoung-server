@@ -18,6 +18,7 @@ import { UploadResponseDto, BatchUploadResponseDto } from './dto/upload-response
 import { PresignUploadDto, PresignUploadResponseDto, ConfirmUploadDto } from './dto/presign-upload.dto';
 import { UPLOAD_MULTER_OPTIONS } from './multer-options';
 import { User, StoreRoute } from '@app/authorization';
+import { RequestTenant, type RequestTenantId } from '../tenancy/request-tenant';
 
 interface JwtPayload {
   userId: string;
@@ -74,6 +75,7 @@ export class UploadController {
     @UploadedFile() file: Express.Multer.File,
     @Body() dto: UploadFileDto,
     @User() user: JwtPayload,
+    @RequestTenant() tenant: RequestTenantId,
   ): Promise<UploadResponseDto> {
     if (!file) {
       throw new BadRequestException('File is required');
@@ -83,7 +85,7 @@ export class UploadController {
       dto.isPublic = dto.isPublic === 'true';
     }
 
-    return this.uploadService.uploadFile(file, dto, user.userId);
+    return this.uploadService.uploadFile(file, dto, user.userId, tenant);
   }
 
   @StoreRoute()
@@ -95,8 +97,12 @@ export class UploadController {
   @ApiResponse({ status: 200, description: 'Presigned URL issued', type: PresignUploadResponseDto })
   @ApiResponse({ status: 400, description: 'Bad request' })
   @ApiResponse({ status: 404, description: 'Direct upload not supported or context not found' })
-  async presignUpload(@Body() dto: PresignUploadDto, @User() user: JwtPayload): Promise<PresignUploadResponseDto> {
-    return this.uploadService.presignUpload(dto, user.userId);
+  async presignUpload(
+    @Body() dto: PresignUploadDto,
+    @User() user: JwtPayload,
+    @RequestTenant() tenant: RequestTenantId,
+  ): Promise<PresignUploadResponseDto> {
+    return this.uploadService.presignUpload(dto, user.userId, tenant);
   }
 
   @StoreRoute()
@@ -156,6 +162,7 @@ export class UploadController {
     @UploadedFiles() files: Express.Multer.File[],
     @Body() dto: UploadFileDto,
     @User() user: JwtPayload,
+    @RequestTenant() tenant: RequestTenantId,
   ): Promise<BatchUploadResponseDto> {
     if (!files || files.length === 0) {
       throw new BadRequestException('At least one file is required');
@@ -165,6 +172,6 @@ export class UploadController {
       dto.isPublic = dto.isPublic === 'true';
     }
 
-    return this.uploadService.batchUploadFiles(files, dto, user.userId);
+    return this.uploadService.batchUploadFiles(files, dto, user.userId, tenant);
   }
 }

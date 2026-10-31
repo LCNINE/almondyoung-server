@@ -25,6 +25,7 @@ export function outboundTenantHeaders(
 /** 스펙에서 `OutboundTenant` 대신 넘긴다 — 맥락 없이 앱의 T 만 있는 상태와 같다. */
 export function outboundTenantForTesting(servedTenantId: string | undefined = '1'): {
   headers(): Record<string, string>;
+  tenantId(): string | undefined;
 } {
-  return { headers: () => outboundTenantHeaders(undefined, servedTenantId) };
+  return { headers: () => outboundTenantHeaders(undefined, servedTenantId), tenantId: () => servedTenantId };
 }

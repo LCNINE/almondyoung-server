@@ -13,8 +13,13 @@ import { ClsService } from 'nestjs-cls';
 import { Counter, register } from 'prom-client';
 import type { Observable } from 'rxjs';
 import { IS_PUBLIC_KEY, IS_SERVICE_KEY_ROUTE_KEY, OptionalAuthGuard } from '@app/authorization';
-import { TENANT_CONTEXT_KEY, TenancyConfig, tenantHeaderOf } from '@app/tenancy';
-import { resolveRequestTenant, type RequestEntry } from './request-tenant';
+import {
+  resolveRequestTenant,
+  TENANT_CONTEXT_KEY,
+  TenancyConfig,
+  tenantHeaderOf,
+  type RequestEntry,
+} from '@app/tenancy';
 import { TENANT_FREE_KEY } from './tenant-free.decorator';
 
 /** @Public 라우트에서 사람 토큰을 읽는다(전역 인증 가드는 @Public 을 건너뛴다). 틀린·없는 토큰은 «토큰 없음»이다. */

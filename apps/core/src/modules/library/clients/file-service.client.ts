@@ -1,5 +1,6 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { OutboundTenant } from '@app/tenancy';
 import { signFileServiceDelegation } from '../../../platform/auth/file-service-delegation';
 
 /**
@@ -19,7 +20,10 @@ import { signFileServiceDelegation } from '../../../platform/auth/file-service-d
 export class FileServiceClient {
   private readonly logger = new Logger(FileServiceClient.name);
 
-  constructor(private readonly config: ConfigService) {}
+  constructor(
+    private readonly config: ConfigService,
+    @Inject(OutboundTenant) private readonly outboundTenant: Pick<OutboundTenant, 'tenantId'>,
+  ) {}
 
   private delegationToken(onBehalfOf: string): string {
     const secret = this.config.get<string>('AUTH_SECRET');
@@ -28,7 +32,7 @@ export class FileServiceClient {
         'FileServiceClient requires AUTH_SECRET (HS256 shared with file-service) to mint a service token.',
       );
     }
-    return signFileServiceDelegation(secret, onBehalfOf, '1m');
+    return signFileServiceDelegation(secret, onBehalfOf, '1m', this.outboundTenant.tenantId());
   }
 
   private baseUrl(): string {
