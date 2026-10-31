@@ -1,3 +1,4 @@
+import { singleDatabase } from '@app/db/testing/single-database';
 import { FormExportJobWorker } from './form-export-job.worker';
 import { ClaimedExport } from './form-export-job.manager';
 
@@ -28,6 +29,7 @@ function makeWorker(opts: { enabled?: string; claims?: Array<string | null>; rem
     { claim, runExport, recordJobError, clearConsecutiveFailures } as never,
     { purgeExpired } as never,
     config as never,
+    singleDatabase({}) as never,
   );
   return { worker, claim, runExport, recordJobError, clearConsecutiveFailures, purgeExpired };
 }
@@ -162,7 +164,10 @@ describe('FormExportJobWorker 크론 등록', () => {
 
     const jobManager = { claim: jest.fn((): Promise<null> => Promise.resolve(null)) };
     const manager = { purgeExpired: jest.fn((): Promise<number> => Promise.resolve(0)) };
-    const db = { run: jest.fn(() => Promise.resolve([])), db: { execute: jest.fn(() => Promise.resolve([])) } };
+    const db = singleDatabase({
+      run: jest.fn(() => Promise.resolve([])),
+      db: { execute: jest.fn(() => Promise.resolve([])) },
+    });
 
     // CronOnceModule 의 CronRunClaimer 는 자기 모듈 안에서 DbService 를 찾는다 — @Global()
     // 은 «내가 export 하는 것을 남에게 보여준다» 방향으로만 작동하고, 반대로 이 테스트 루트의

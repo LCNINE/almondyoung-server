@@ -37,5 +37,12 @@ export function coreTenantDbRouter(tenancy: TenancyConfig, cls: ClsService | und
       if (!tenancy.tenants.find(tenant)) throw new TenantNotListedError(tenant);
       return tenant;
     },
+    // 새 CLS 맥락을 열어 그 안에서만 테넌트를 세운다 — 바깥 맥락(돌던 요청·다른 테넌트 루프)에 새지 않는다.
+    within<T>(tenant: string, fn: () => Promise<T>): Promise<T> {
+      return cls.run(() => {
+        cls.set(TENANT_CONTEXT_KEY, tenant);
+        return fn();
+      });
+    },
   };
 }

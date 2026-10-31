@@ -29,6 +29,19 @@ export interface DbRouter {
   readonly databases: ReadonlyMap<string, string>;
   /** 지금 맥락이 고르는 풀 키. 고를 수 없으면 던진다 — 아무 풀로나 떨어지지 않는다. */
   current(): string;
+  /** `fn` 을 키의 맥락에서 돌린다. 요청 밖(크론·폴러·부팅)이 맥락을 세우는 유일한 길이다 — `forEachDatabase` 가 부른다. */
+  within<T>(key: string, fn: () => Promise<T>): Promise<T>;
+}
+
+/** `forEachDatabase` 의 DB 하나의 결과. `key` 는 라우터의 풀 키이고, 라우터가 없으면 `undefined` 다. */
+export type DatabaseRun<T> =
+  | { key: string | undefined; ok: true; value: T }
+  | { key: string | undefined; ok: false; error: unknown };
+
+/** 실패한 DB 하나를 로그 한 줄로. 라우터가 없으면(키 없음) 꼬리표를 달지 않는다 — 단일 DB 앱의 로그는 그대로다. */
+export function describeFailedRun(run: { key: string | undefined; error: unknown }): string {
+  const message = run.error instanceof Error ? run.error.message : String(run.error);
+  return run.key === undefined ? message : `[db=${run.key}] ${message}`;
 }
 
 /** 라우팅 풀 하나의 크기. 연결 예산(테넌트당 10)이 이 값으로 잡혀 있다. */
@@ -87,6 +100,29 @@ export class DbService<TSchema extends DrizzleSchema = Record<string, never>> im
     const pool = this.routed?.get(key);
     if (!pool) throw new Error(`DbService: 라우터가 고른 키 «${key}» 의 풀이 없다`);
     return pool.db;
+  }
+
+  /**
+   * 요청 밖 작업(크론·폴러·outbox·부팅 훅)을 DB 마다 한 번씩, 그 DB 의 맥락에서 돌린다. 라우터가 없으면 맥락 없이 한 번이다.
+   *
+   * DB 는 차례로 돈다. 동시에 돌리면 크론 본문 다수가 쓰는 인스턴스의 «도는 중» 깃발을 둘째 테넌트가 보고 조용히 건너뛴다
+   * (그 주기는 `cron_runs` 에 ok 로 남는다). 대가는 느린 테넌트 DB 가 뒤 테넌트를 그만큼 늦추는 것이다 — 막지는 않는다.
+   * 한 DB 의 실패는 그 DB 의 결과로만 돌아오고 다른 DB 를 멈추지 않는다. 이 메서드는 던지지 않으므로 실패를 어떻게 다룰지
+   * (로그·기동 거부)는 부르는 쪽이 정한다. 로그 한 줄은 `describeFailedRun`.
+   */
+  async forEachDatabase<T>(fn: (key: string | undefined) => Promise<T>): Promise<DatabaseRun<T>[]> {
+    const router = this.router;
+    const keys: (string | undefined)[] = router ? [...router.databases.keys()] : [undefined];
+    const runs: DatabaseRun<T>[] = [];
+    for (const key of keys) {
+      try {
+        const value = router && key !== undefined ? await router.within(key, () => fn(key)) : await fn(key);
+        runs.push({ key, ok: true, value });
+      } catch (error) {
+        runs.push({ key, ok: false, error });
+      }
+    }
+    return runs;
   }
 
   /**

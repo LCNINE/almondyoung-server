@@ -17,7 +17,16 @@ import { CronRunClaimer } from './cron-run.claimer';
  */
 const NEVER = '0 0 0 29 2 1';
 
-const fakeDb = { provide: DbService, useValue: { db: { execute: jest.fn().mockResolvedValue([]) } } };
+const fakeDb = {
+  provide: DbService,
+  useValue: {
+    db: { execute: jest.fn().mockResolvedValue([]) },
+    // 라우터 없는 앱처럼 한 번 돈다
+    forEachDatabase: async (fn: (key: undefined) => Promise<unknown>) => [
+      { key: undefined, ok: true, value: await fn(undefined) },
+    ],
+  },
+};
 
 /**
  * 실제 앱에서 `DbService` 는 `DbModule.forRoot` 라는 **글로벌** 모듈이 export 한다
