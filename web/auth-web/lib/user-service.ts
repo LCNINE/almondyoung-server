@@ -443,16 +443,21 @@ export async function getMe(accessToken: string): Promise<UserProfile> {
   return readApiData<UserProfile>(res)
 }
 
-/** 본인 비밀번호 변경. 성공하면 user-service 가 mustChangePassword 를 끈다. */
+/**
+ * 본인 비밀번호 변경. 성공하면 user-service 가 mustChangePassword 를 끈다.
+ * `siteHeaders` 는 테넌트 화면의 보증 헤더(`siteTenantHeaders`) — 비밀번호 변경 이벤트가 그 테넌트로 찍힌다.
+ */
 export async function changePassword(
   accessToken: string,
-  body: { currentPassword: string; newPassword: string }
+  body: { currentPassword: string; newPassword: string },
+  siteHeaders: Record<string, string>
 ): Promise<void> {
   const res = await fetch(`${env.userServiceUrl}/auth/change-password`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
       authorization: `Bearer ${accessToken}`,
+      ...siteHeaders,
     },
     body: JSON.stringify(body),
     cache: "no-store",

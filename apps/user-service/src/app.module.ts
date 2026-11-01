@@ -51,6 +51,7 @@ import { ServeStaticModule } from '@nestjs/serve-static';
 import { EventTraceController } from './api/events/event-trace.controller';
 import { TenancyModule } from '@app/tenancy';
 import { ServedTenantModule } from './tenancy/served-tenant';
+import { UserRequestTenantInterceptor } from './tenancy/user-request-tenant.interceptor';
 import { ServedTenantGuard } from './tenancy/served-tenant.guard';
 
 // ─── Optional modules (enabled only when env vars are present) ───
@@ -169,6 +170,8 @@ const staticRoot = existsSync(join(__dirname, 'static')) ? join(__dirname, 'stat
       provide: APP_INTERCEPTOR,
       useClass: ResponseInterceptor,
     },
+    // 요청의 테넌트를 이벤트 맥락에 — 테넌트 2 화면에서 일어난 일이 봉투에 T(1) 로 찍히지 않게. 맥락만 세운다.
+    { provide: APP_INTERCEPTOR, useClass: UserRequestTenantInterceptor },
     {
       provide: APP_GUARD,
       useClass: JwtAuthGuard,

@@ -16,6 +16,7 @@ export type Site =
   /** 활성 테넌트의 도메인 — 그 테넌트 브랜드만, 가입·찾기·아몬드영 약관 없음. */
   | {
       kind: "tenant"
+      tenantId: string
       origin: string
       displayName: string
       logoUrl: string | null
@@ -42,12 +43,26 @@ export async function resolveSite(
   if (!tenant?.active) return { kind: "unavailable" }
   return {
     kind: "tenant",
+    tenantId: tenant.tenantId,
     // CloudFront 뒤에서는 x-forwarded-proto 가 늘 믿을 만하지 않다 — 테넌트 배포도 기본 주소와 같은 scheme 이다.
     origin: `${defaultUrl.protocol}//${host}`,
     displayName: tenant.displayName,
     logoUrl: tenant.logoUrl,
     hosts: tenant.hosts,
   }
+}
+
+/**
+ * user-service 에 «이 요청은 그 테넌트 화면에서 왔다»를 보증하는 헤더. 내부 세션 토큰은 로그인한 도메인과 무관하게
+ * `tenant: T` 라, 이게 없으면 테넌트 화면에서 한 일(첫 로그인 비밀번호 변경)의 이벤트가 T 로 찍혀 아몬드영 메일이 간다.
+ * user-service 는 비밀이 맞을 때만 헤더를 믿는다 — 브라우저는 이 비밀을 모른다.
+ */
+export function siteTenantHeaders(
+  site: Site,
+  internalSecret: string
+): Record<string, string> {
+  if (site.kind !== "tenant" || !internalSecret) return {}
+  return { "x-tenant-id": site.tenantId, "x-internal-secret": internalSecret }
 }
 
 /**

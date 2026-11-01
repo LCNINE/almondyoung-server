@@ -25,6 +25,7 @@ import {
   requireDefaultSite,
   sanitizeRedirectTo,
 } from "@/lib/site/site"
+import { siteTenantHeaders } from "@/lib/site/site-rules"
 import {
   callbackSignup,
   changePassword,
@@ -795,7 +796,8 @@ export async function completeSignupCallback(
 export async function changeInitialPasswordAction(
   formData: FormData
 ): Promise<ActionResult> {
-  if ((await getSite()).kind !== "tenant") {
+  const site = await getSite()
+  if (site.kind !== "tenant") {
     return { ok: false, error: "이 주소에서는 쓸 수 없어요." }
   }
   const redirectToRaw = String(formData.get("redirectTo") ?? "")
@@ -809,7 +811,11 @@ export async function changeInitialPasswordAction(
     if (!accessToken) {
       throw new UserFacingError("로그인이 만료됐어요. 다시 로그인해 주세요.")
     }
-    await changePassword(accessToken, { currentPassword, newPassword })
+    await changePassword(
+      accessToken,
+      { currentPassword, newPassword },
+      siteTenantHeaders(site, env.oauthInternalSecret)
+    )
     me = await getMe(accessToken)
   } catch (e) {
     return {

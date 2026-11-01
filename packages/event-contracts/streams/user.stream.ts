@@ -232,8 +232,13 @@ const SocialIdentityUnlinkedSchema = z.object({
 // ===== Stream Config (타입 안전 버전) =====
 
 /**
- * 계정 수명주기 — 계정은 테넌트로 쪼개지지 않으므로 탈퇴·휴면·영구 삭제는 그 계정을 든 모든 테넌트의 서비스가
- * 들어야 한다. 나머지는 들어온 앱의 테넌트에서 일어난 일이라 테넌트 이벤트다.
+ * 계정 이벤트 — 계정은 테넌트로 쪼개지지 않으므로(ADR 0002) 그 계정을 든 모든 테넌트의 서비스가 들어야 하는 것.
+ * - 수명주기(탈퇴·휴면·영구 삭제).
+ * - `UserUpdated`: 이메일·프로필은 계정 전역이다. 테넌트 2 셸에서 고쳐도 아몬드영 Medusa 고객 이메일이 따라가야 한다
+ *   (소비자는 channel-adapter 하나). ADR 0002 를 뒤집어 테넌트마다 계정을 두게 되면 테넌트 이벤트로 되돌린다.
+ *
+ * 나머지는 테넌트 이벤트다 — 봉투의 테넌트는 «그 일이 일어난 화면의 테넌트»(user-service 요청 맥락, 없으면 T)다.
+ * 비밀번호 변경·인증 메일·가입 환영은 브랜드가 붙은 메일이라, 테넌트 2 화면에서 일어난 일에 아몬드영 메일이 가면 안 된다.
  */
 const ACCOUNT = { tenancy: 'account' } as const;
 
@@ -253,7 +258,7 @@ export const USER_STREAM = stream({
       'UserPasswordChanged',
       UserPasswordChangedSchema,
     ),
-    UserUpdated: event<'UserUpdated', UserUpdatedPayload>('UserUpdated', UserUpdatedSchema),
+    UserUpdated: event<'UserUpdated', UserUpdatedPayload>('UserUpdated', UserUpdatedSchema, ACCOUNT),
     UserDeleted: event<'UserDeleted', UserDeletedPayload>('UserDeleted', UserDeletedSchema, ACCOUNT),
     UserDormantConverted: event<'UserDormantConverted', UserDormantConvertedPayload>('UserDormantConverted', UserDormantConvertedSchema, ACCOUNT),
     UserPermanentDeleted: event<'UserPermanentDeleted', UserPermanentDeletedPayload>('UserPermanentDeleted', UserPermanentDeletedSchema, ACCOUNT),

@@ -71,6 +71,12 @@ OAuth 액세스 토큰에는 `tenant` 가 실리고 `roles` 는 그 테넌트의
 고객·근태처럼 T 의 데이터를 답하는 컨트롤러(또는 라우트)는 `@ServedTenantData()` 를 단다 — 토큰 테넌트 ≠ T 면 403.
 어느 쪽인지 안 정한 컨트롤러는 `src/tenancy/served-tenant-classification.spec.ts` 가 빨갛게 한다.
 
+이벤트 봉투의 테넌트는 «그 일이 일어난 화면의 테넌트»다 — `UserRequestTenantInterceptor` 가 요청마다 CLS `TENANT_CONTEXT_KEY` 를
+세우고(판정 `src/tenancy/request-event-tenant.ts`), 못 정하면 T 로 찍힌다. 토큰 라우트는 토큰 `tenant`, 단 auth-web 서버가
+`x-internal-secret`(= `OAUTH_INTERNAL_SECRET`)과 함께 실은 `x-tenant-id` 가 먼저다 — 내부 세션 토큰은 늘 T 라 테넌트 auth-web 의
+비밀번호 변경은 그 헤더로만 테넌트를 안다. 비밀 없는 헤더는 무시한다. 맥락만 세우고 거절하지 않는다.
+계정 이벤트(모든 테넌트 서비스가 듣는 것)의 선언과 근거는 `packages/event-contracts/streams/user.stream.ts` 에 있다.
+
 ### 플랫폼 운영자 API (`/admin/platform/*`)
 테넌트 행(준비 → 활성 ↔ 정지, 준비만 삭제)·소속 추가·웹 직원 앱 클라이언트의 테넌트 도메인 주소·직원 비밀번호 재발급·운영자 성질은
 `src/api/iam/platform/` 이 연다. 라우트 문은 `iam.tenant.read`/`iam.tenant.write` 이고 판정은 Manager 가 운영자 성질

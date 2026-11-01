@@ -1,4 +1,12 @@
-import { allowedRedirect, cachedLookup, codeRedirectAllowed, resolveSite, type Site, type TenantSite } from '../../web/auth-web/lib/site/site-rules';
+import {
+  allowedRedirect,
+  cachedLookup,
+  codeRedirectAllowed,
+  resolveSite,
+  siteTenantHeaders,
+  type Site,
+  type TenantSite,
+} from '../../web/auth-web/lib/site/site-rules';
 
 /**
  * auth-web 은 들어온 주소로 «어느 화면»인지 정한다 — 기본 주소(AUTH_WEB_ORIGIN)는 지금 그대로, 테넌트 도메인은 그 테넌트
@@ -28,6 +36,7 @@ describe('auth-web 주소 → 화면', () => {
     const site = await resolveSite('Rehearsal.localhost:8001', DEFAULT_ORIGIN, lookupOf({ 'rehearsal.localhost:8001': rehearsal }));
     expect(site).toEqual({
       kind: 'tenant',
+      tenantId: '2',
       origin: 'http://rehearsal.localhost:8001',
       displayName: '리허설 상사',
       logoUrl: 'https://rehearsal-public.example/logo.png',
@@ -54,6 +63,7 @@ describe('auth-web 주소 → 화면', () => {
 describe('리디렉트 허용', () => {
   const tenantSite: Site = {
     kind: 'tenant',
+    tenantId: '2',
     origin: 'http://rehearsal.localhost:8001',
     displayName: '리허설 상사',
     logoUrl: null,
@@ -130,6 +140,7 @@ describe('브랜드 조회 캐시', () => {
 describe('인가 코드를 보낼 redirect_uri', () => {
   const tenantSite: Site = {
     kind: 'tenant',
+    tenantId: '2',
     origin: 'http://rehearsal.localhost:8001',
     displayName: '리허설 상사',
     logoUrl: null,
@@ -176,5 +187,29 @@ describe('브랜드 조회 캐시 크기', () => {
     await cached('c');
     await cached('a');
     expect(lookup.mock.calls.map((c) => c[0])).toEqual(['a', 'b', 'c', 'a']);
+  });
+});
+
+describe('user-service 에 «이 요청은 그 테넌트 화면에서 왔다»를 보증하는 헤더', () => {
+  const tenantSite: Site = {
+    kind: 'tenant',
+    tenantId: '2',
+    origin: 'http://rehearsal.localhost:8001',
+    displayName: '리허설 상사',
+    logoUrl: null,
+    hosts: ['rehearsal.localhost:8001'],
+  };
+
+  it('테넌트 화면은 그 테넌트와 내부 비밀을 싣는다 — 첫 로그인 비밀번호 변경이 아몬드영 메일을 부르지 않게', () => {
+    expect(siteTenantHeaders(tenantSite, 'secret')).toEqual({ 'x-tenant-id': '2', 'x-internal-secret': 'secret' });
+  });
+
+  it('기본 화면·중립 오류 화면은 아무것도 싣지 않는다 — 토큰 테넌트(T) 그대로', () => {
+    expect(siteTenantHeaders({ kind: 'default', origin: DEFAULT_ORIGIN }, 'secret')).toEqual({});
+    expect(siteTenantHeaders({ kind: 'unavailable' }, 'secret')).toEqual({});
+  });
+
+  it('비밀이 비어 있으면 싣지 않는다 — 보증 없는 헤더는 user-service 가 무시한다', () => {
+    expect(siteTenantHeaders(tenantSite, '')).toEqual({});
   });
 });
