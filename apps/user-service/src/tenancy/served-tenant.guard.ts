@@ -32,7 +32,7 @@ const untenanted = new Counter({
 
 /**
  * 역할 정의는 전역이라 권한 키만으로는 테넌트 2 토큰을 못 막는다. 인증 가드 뒤, 권한 가드 앞에 둔다.
- * 토큰 테넌트는 `JwtAccessStrategy` 가 채운다(옛 내부 토큰은 T 의 부여만 실어 발급하므로 T 로 본다).
+ * 토큰 테넌트는 `JwtAccessStrategy` 가 채운다(내부 세션 토큰은 T 의 부여와 `tenant: T` 를 실어 발급한다 — 클레임 전에 나간 것도 T 로 본다).
  */
 @Injectable()
 export class ServedTenantGuard implements CanActivate {

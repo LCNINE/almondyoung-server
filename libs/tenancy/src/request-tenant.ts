@@ -38,7 +38,7 @@ export function tokenTenantOf(user: object | null | undefined): string | undefin
  *
  * 클레임 없는 토큰은 사람 토큰 라우트에선 «모르는 테넌트»다: 헤더가 대신하면 클레임 전 토큰의 역할(그 시절의 테넌트 1
  * 부여)이 헤더가 고른 테넌트에서 쓰인다. @Public 에선 토큰의 역할을 쓰지 않으므로 헤더가 공개 콘텐츠의 DB 를 고른다
- * (쇼핑몰은 로그인 세션의 옛 내부 토큰을 공개 조회에도 붙인다).
+ * (쇼핑몰은 로그인 세션의 내부 토큰을 공개 조회에도 붙인다 — 클레임 전에 나간 것은 클레임이 없다).
  */
 export function resolveRequestTenant(input: RequestTenantInput, tenants: TenantList): RequestTenant {
   const claim = tokenTenantOf(input.user);

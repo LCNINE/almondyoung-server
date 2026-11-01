@@ -171,7 +171,7 @@ describe.each(['warn', 'reject'] as const)('공유 서비스 문 — 두 모드 
     await expect(pass(handler, { user: staff({ tenant: '2' }), headers: {} })).rejects.toThrow(ForbiddenException);
   });
 
-  it('옛 내부 토큰(쇼핑몰·auth-web 세션)은 tenant 가 없어도 T 의 토큰이다', async () => {
+  it('클레임 전에 나간 내부 토큰(쇼핑몰·auth-web 세션)은 tenant 가 없어도 T 의 토큰이다', async () => {
     const pass = await gateFor(mode);
     const session = staff({ aud: INTERNAL_SESSION_TOKEN_AUDIENCE });
     await expect(pass('store', { user: session, headers: {} })).resolves.toBe(true);

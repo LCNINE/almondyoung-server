@@ -15,11 +15,11 @@ import { INTERNAL_TOKEN_AUDIENCE } from '../../constants/auth.constant';
 import { AuthService } from './auth.service';
 
 /**
- * 옛 내부 토큰(`aud=user-service-internal`) — 쇼핑몰과 auth-web 이 쿠키로 들고 다니는 세션. `tenant` 클레임이 없고
- * (테넌트 문이 reject 모드인 core 는 이 토큰을 거절한다), 역할은 user-service 의 T 에서 받은 부여만 싣는다. 테넌트 2 직원이 테넌트 도메인
- * 에서 로그인해도 이 토큰에는 테넌트 2 역할이 실리지 않는다.
+ * 내부 세션 토큰(`aud=user-service-internal`) — 쇼핑몰과 auth-web 이 쿠키로 들고 다니는 세션. 역할은 user-service 의 T 에서
+ * 받은 부여만 싣고, 그래서 `tenant` 도 T 다. 클레임이 없으면 클레임만 보는 core·file-service·ai 가 reject 모드에서 쇼핑몰
+ * 고객의 업로드·`@StoreRoute` 를 거절한다. 테넌트 2 직원이 테넌트 도메인에서 로그인해도 이 토큰에는 테넌트 2 역할이 실리지 않는다.
  */
-describe('옛 내부 토큰 — 테넌트 클레임 없이 T 의 부여만 싣는다', () => {
+describe('내부 세션 토큰 — T 의 테넌트와 T 의 부여만 싣는다', () => {
   const { privateKey } = generateKeyPairSync('rsa', {
     modulusLength: 2048,
     privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
@@ -94,11 +94,17 @@ describe('옛 내부 토큰 — 테넌트 클레임 없이 T 의 부여만 싣�
 
   const accessClaims = () => jwt.decode(cookies.accessToken) as Record<string, unknown>;
 
-  it('로그인한 내부 토큰에는 tenant 클레임이 없고 aud 는 내부 토큰이다', async () => {
+  it('로그인한 내부 토큰의 tenant 는 T 이고 aud 는 내부 토큰이다', async () => {
     await service.signIn({ loginId: 'shopper', password: 'pw', rememberMe: false }, reply as never);
 
     expect(accessClaims().aud).toBe(INTERNAL_TOKEN_AUDIENCE);
-    expect(accessClaims()).not.toHaveProperty('tenant');
+    expect(accessClaims().tenant).toBe('1');
+  });
+
+  it('토큰을 다시 받아도(restoreToken) tenant 는 T 다', async () => {
+    await service.restoreToken('u-1', reply as never);
+
+    expect(accessClaims().tenant).toBe('1');
   });
 
   it('역할은 T 에서 받은 부여만 — 다른 테넌트의 부여는 실리지 않는다', async () => {

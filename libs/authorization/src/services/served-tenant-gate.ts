@@ -11,9 +11,9 @@ import { rawResponseOf } from './request-identity';
 export type PermissionTenancy = 'served-tenant' | 'per-token';
 
 /**
- * user-service 가 로그인 세션(쇼핑몰·auth-web)에 내주는 옛 내부 토큰의 audience. 이 토큰에는 `tenant` 가 없지만
- * user-service 가 자기 T 의 부여만 실어 발급하고, 공유 서비스의 T 는 그 T 를 그대로 받는다(SST 의 `servedTenantEnv`,
- * 로컬 `E2E_SERVED_TENANT_ID`). 그래서 이 문에선 T 의 토큰이다. user-service 의 `INTERNAL_TOKEN_AUDIENCE` 가 이 값을 쓴다.
+ * user-service 가 로그인 세션(쇼핑몰·auth-web)에 내주는 내부 토큰의 audience. user-service 가 자기 T 의 부여와 `tenant: T`
+ * 를 실어 발급하고, 공유 서비스의 T 는 그 T 를 그대로 받는다(SST 의 `servedTenantEnv`, 로컬 `E2E_SERVED_TENANT_ID`).
+ * `tenant` 클레임 전에 나간 내부 토큰도 이 문에선 T 의 토큰이다. user-service 의 `INTERNAL_TOKEN_AUDIENCE` 가 이 값을 쓴다.
  */
 export const INTERNAL_SESSION_TOKEN_AUDIENCE = 'user-service-internal';
 

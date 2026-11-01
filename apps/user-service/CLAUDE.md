@@ -66,7 +66,8 @@ Express가 아닌 Fastify를 사용한다. 파일 업로드는 `@fastify/multipa
 OAuth 액세스 토큰에는 `tenant` 가 실리고 `roles` 는 그 테넌트의 부여만 싣는다(`UsersService.getTokenRoleNames`). 토큰 테넌트는
 클라이언트의 고정 테넌트(`oauth_clients.tenant_id`, 쇼핑몰 등)이거나, 비어 있으면(웹 직원 앱) 등록된 리디렉트 주소의 host →
 `tenant_domains` 로 정한다 — 요청 파라미터·Host 헤더로 정하지 않는다. 준비·정지 테넌트는 발급·갱신을 거절하고 세션을 끊는다.
-옛 내부 토큰(`aud=user-service-internal`)에는 `tenant` 가 없고 역할은 앱 설정 T(`SERVED_TENANT_ID`)의 부여만 싣는다.
+내부 세션 토큰(`aud=user-service-internal`, 쇼핑몰·auth-web 쿠키)은 `tenant` 가 앱 설정 T(`SERVED_TENANT_ID`)이고 역할은 T 의 부여만 싣는다 —
+로그인한 도메인과 무관하다. 클레임만 보는 core·file-service·ai 가 이 토큰을 T 의 것으로 받으려면 클레임이 있어야 한다.
 고객·근태처럼 T 의 데이터를 답하는 컨트롤러(또는 라우트)는 `@ServedTenantData()` 를 단다 — 토큰 테넌트 ≠ T 면 403.
 어느 쪽인지 안 정한 컨트롤러는 `src/tenancy/served-tenant-classification.spec.ts` 가 빨갛게 한다.
 

@@ -42,7 +42,7 @@ export interface PublicRouteToken {
   read(context: ExecutionContext): Promise<void>;
 }
 
-// ① 의 셈. 입구마다 0 에 멈춰야 ② 로 바꾼다 — token 은 클레임 전 토큰(쇼핑몰 옛 내부 토큰 포함)이 사라지면,
+// ① 의 셈. 입구마다 0 에 멈춰야 ② 로 바꾼다 — token 은 클레임 전에 나간 토큰(쇼핑몰 내부 토큰 포함)이 사라지면,
 // service 는 내부 키 호출자가 모두 헤더를 실으면, public 은 공개 호출자가 모두 헤더를 실으면 0 이 된다.
 const untenanted = new Counter({
   name: 'core_untenanted_requests_total',

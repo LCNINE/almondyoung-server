@@ -724,7 +724,7 @@ export class AuthService {
   }
 
   /**
-   * 내부 토큰의 역할 — T 에서 받은 부여만. 이 토큰에는 `tenant` 가 없으므로(테넌트 문이 reject 모드인 core 는 거절한다) 역할을 좁히는 것이
+   * 내부 토큰의 역할 — T 에서 받은 부여만. 이 토큰의 `tenant` 는 로그인한 도메인과 무관하게 T 이므로, 역할을 좁히는 것이
    * 테넌트 2 직원이 테넌트 도메인에서 로그인했을 때 그 역할이 쇼핑몰 세션으로 새지 않게 하는 유일한 장치다.
    */
   private async getUserRoles(userId: string, tx?: DbTransaction): Promise<string[]> {
@@ -742,6 +742,9 @@ export class AuthService {
       login_id: user.loginId,
       // 작업 기록 등 다른 서비스가 누가 했는지를 사람 이름으로 남기게
       name: user.username,
+      // 역할이 T 의 부여뿐이라 이 토큰은 T 의 것이다. 클레임만 보는 core·file-service·ai 는 이게 없으면 reject 모드에서
+      // 쇼핑몰 고객 요청을 «테넌트 없는 토큰»으로 거절한다.
+      tenant: this.servedTenantId,
     };
 
     const expiresIn = JWT_ACCESS_TOKEN_EXPIRATION;
