@@ -7,6 +7,7 @@ import {
   getIdpAccessToken,
   hasIdpRefreshToken,
 } from "@/lib/idp-session"
+import { codeRedirectAllowedHere, getSite } from "@/lib/site/site"
 import { getMe, restoreAccessToken } from "@/lib/user-service"
 
 /**
@@ -86,7 +87,18 @@ async function handleEndSession(req: NextRequest): Promise<NextResponse> {
   await clearIdpSessionCookies()
   if (userId) await invalidateAccountRefreshToken(userId)
 
-  return NextResponse.redirect(validatedRedirect ?? env.selfOrigin, {
+  // user-service 는 클라이언트 등록 주소인지만 본다 — 같은 admin-web 클라이언트에 여러 테넌트 주소가 있으니, 이 화면에서 나가도
+  // 되는 주소인지는 인가 코드와 같은 규칙으로 한 번 더 본다(`codeRedirectAllowed`). 중립 오류 화면은 어디로도 보내지 않는다 —
+  // 상대 주소 `/` 로 같은 호스트에 남긴다(req.url 은 CloudFront 뒤에서 함수 URL 일 수 있다).
+  const site = await getSite()
+  if (site.kind === "unavailable") {
+    return new NextResponse(null, { status: 302, headers: { location: "/" } })
+  }
+  const target =
+    validatedRedirect && (await codeRedirectAllowedHere(validatedRedirect))
+      ? validatedRedirect
+      : site.origin
+  return NextResponse.redirect(target, {
     status: 302,
   })
 }

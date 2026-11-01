@@ -193,9 +193,8 @@ export function setup(infra: IdpInfra) {
     domain: { name: domain('auth') },
     environment: {
       USER_SERVICE_URL: userServiceUrl,
-      PARENT_COOKIE_DOMAIN: `.${baseDomain}`,
-      PARENT_COOKIE_SECURE: 'true',
-      PARENT_COOKIE_SAMESITE: 'lax',
+      // 세션 쿠키는 host-only 다(PARENT_COOKIE_* 안 씀) — 테넌트 도메인에 아몬드영 부모 도메인 쿠키가 붙지 않게.
+      // 리디렉트 허용은 기본 주소에만 이 값, 테넌트 도메인은 user-service 의 테넌트 도메인 행에서 읽는다.
       ALLOWED_REDIRECT_HOSTS: `.${baseDomain}`,
       AUTH_WEB_ORIGIN: authWebUrl,
       OAUTH_INTERNAL_SECRET: oauthInternalSecret.value,

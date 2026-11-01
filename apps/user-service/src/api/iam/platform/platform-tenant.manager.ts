@@ -159,6 +159,34 @@ export class PlatformTenantManager {
     this.publicClientOrigins.invalidate();
   }
 
+  /**
+   * 이미 있는 테넌트에 도메인을 더한다 — admin-web 과 auth-web 이 테넌트마다 다른 주소라(CloudFront 배포가 둘) auth-web 주소도
+   * 테넌트 도메인이다. 이미 이 테넌트의 것이면 아무것도 안 한다. 상태는 묻지 않는다(활성 테넌트에도 붙인다).
+   */
+  async addDomain(actor: IamActor, tenantId: string, host: string): Promise<void> {
+    const domain = host.toLowerCase();
+    await this.dbService.run(async (tx) => {
+      await this.operators.assertOperator(actor, tx);
+      const row = await this.lockedTenant(tenantId, tx);
+      const mine = await this.platform.domainsOf(tenantId, tx);
+      if (mine.includes(domain)) return;
+      if ((await this.platform.takenHosts([domain], tx)).length > 0) {
+        throw new TenantDomainTakenError(`다른 테넌트의 도메인입니다: ${domain}`);
+      }
+
+      await this.platform.insertDomains(tenantId, [domain], tx);
+      await this.audit.record(tx, actor, {
+        tenantId,
+        action: 'tenant.domain.add',
+        targetType: 'tenant',
+        targetId: tenantId,
+        targetLabel: row.displayName,
+        before: { domains: mine },
+        after: { host: domain, domains: [...mine, domain].sort() },
+      });
+    });
+  }
+
   /** 계정을 이 테넌트의 직원으로 들인다(역할은 따로 준다). 이미 소속이면 아무것도 안 한다. */
   async addMember(actor: IamActor, tenantId: string, userId: string): Promise<void> {
     await this.dbService.run(async (tx) => {

@@ -56,11 +56,13 @@ E2E_SERVER_CREDENTIAL_GATE_APPS='admin-web'
 
 # 로컬 테넌트 2 — 만들기 스크립트 리허설(scripts/local/create-tenant-local.sh, bootstrap 4단계)이 만든다.
 # 🔒 실제 테넌트 2 와 무관한 값이다. 레포에 들어가는 테넌트 2 값은 이것뿐이다 — 실제 slug·이름·도메인·버킷은 적지 않는다.
-# 도메인은 *.localhost 라 브라우저가 따로 설정 없이 127.0.0.1 로 보낸다(포트는 admin-web).
+# 도메인은 *.localhost 라 브라우저가 따로 설정 없이 127.0.0.1 로 보낸다. 테넌트 도메인은 앱마다 하나다 —
+# E2E_TENANT2_DOMAIN 은 admin-web(:8002), E2E_TENANT2_AUTH_DOMAIN 은 같은 auth-web 이 테넌트 브랜드로 뜨는 주소(:8001).
 E2E_TENANT2_ID='2'
 E2E_TENANT2_SLUG='rehearsal'
 E2E_TENANT2_NAME='리허설 상사'
 E2E_TENANT2_DOMAIN='rehearsal.localhost:8002'
+E2E_TENANT2_AUTH_DOMAIN='rehearsal.localhost:8001'
 E2E_TENANT2_CORE_DB='core_rehearsal'
 E2E_TENANT2_PUBLIC_BUCKET='rehearsal-public'
 E2E_TENANT2_PRIVATE_BUCKET='rehearsal-private'

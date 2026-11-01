@@ -4,6 +4,7 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentIamActor, type IamActor } from '../iam-actor';
 import {
   AddStaffClientUrisDto,
+  AddTenantDomainDto,
   AddTenantMemberDto,
   CreateTenantDto,
   ReissuedPasswordDto,
@@ -62,6 +63,17 @@ export class PlatformController {
   @HttpCode(HttpStatus.NO_CONTENT)
   delete(@CurrentIamActor() actor: IamActor, @Param('tenantId') tenantId: string): Promise<void> {
     return this.service.delete(actor, tenantId);
+  }
+
+  @ApiOperation({ summary: '이미 있는 테넌트에 도메인 더하기(auth-web 주소 등). 이미 있으면 그대로' })
+  @RequirePermission('iam.tenant.write')
+  @Post('tenants/:tenantId/domains')
+  addDomain(
+    @CurrentIamActor() actor: IamActor,
+    @Param('tenantId') tenantId: string,
+    @Body() dto: AddTenantDomainDto,
+  ): Promise<TenantDto> {
+    return this.service.addDomain(actor, tenantId, dto);
   }
 
   @ApiOperation({ summary: '계정을 테넌트 소속으로(역할은 따로 준다)' })

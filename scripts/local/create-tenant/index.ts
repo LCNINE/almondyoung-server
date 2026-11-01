@@ -42,6 +42,7 @@ async function main(): Promise<void> {
 
   const slug = required('E2E_TENANT2_SLUG');
   const domain = required('E2E_TENANT2_DOMAIN');
+  const authDomain = required('E2E_TENANT2_AUTH_DOMAIN');
   const checkLoginId = required('E2E_TENANT2_CHECK_LOGIN_ID');
   const plan: TenantPlan = {
     entry: {
@@ -52,7 +53,7 @@ async function main(): Promise<void> {
       privateBucket: required('E2E_TENANT2_PRIVATE_BUCKET'),
     },
     displayName: required('E2E_TENANT2_NAME'),
-    domains: [domain],
+    domains: [domain, authDomain],
     staffClient: {
       clientId: 'admin-web',
       redirectUris: [`http://${domain}/auth/callback`],

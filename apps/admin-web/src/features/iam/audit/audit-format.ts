@@ -55,6 +55,7 @@ const TITLES: Record<IamAuditAction, string> = {
   'tenant.status.set': '테넌트 상태 변경',
   'tenant.delete': '테넌트 삭제',
   'tenant.membership.add': '테넌트 소속 추가',
+  'tenant.domain.add': '테넌트 도메인 추가',
   'tenant.oauth_redirects.add': '테넌트 로그인 주소 등록',
   'user.password.reissue': '비밀번호 재발급',
 };

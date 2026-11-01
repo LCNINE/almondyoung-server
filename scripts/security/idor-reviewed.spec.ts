@@ -1194,6 +1194,12 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
     predicate: '',
     note: '플랫폼 운영자의 테넌트 관리 — 임의의 테넌트·계정을 고르는 것이 기능이다. 라우트 문은 권한 키 iam.tenant.write(첫 부여 없음 = master 만)이고, 판정은 iam Manager(PlatformTenantManager·PlatformOperatorManager)가 트랜잭션 안에서 운영자 성질(users.is_platform_operator)로 한다 — 테넌트 안의 master 가 키를 가져도 운영자가 아니면 403.',
   },
+  'user-service POST /admin/platform/tenants/:tenantId/domains': {
+    verdict: 'N/A',
+    evidence: 'apps/user-service/src/api/iam/platform/platform.controller.ts:70',
+    predicate: '',
+    note: '플랫폼 운영자의 테넌트 관리 — 임의의 테넌트를 고르는 것이 기능이다. 라우트 문은 권한 키 iam.tenant.write(첫 부여 없음 = master 만)이고, 판정은 PlatformTenantManager 가 트랜잭션 안에서 운영자 성질(users.is_platform_operator)로 한다. 다른 테넌트의 도메인이면 409.',
+  },
   'user-service POST /admin/platform/tenants/:tenantId/members': {
     verdict: 'N/A',
     evidence: 'apps/user-service/src/api/iam/platform/platform.controller.ts:78',
@@ -1756,15 +1762,15 @@ const keyOf = (r: AuditRow): string => `${r.app} ${r.verb} ${r.route}`;
 describe('IDOR 검사 대상 집합', () => {
   it('감사 스크립트가 idorTarget 을 내보낸다', () => {
     const targets = runAudit().filter((r) => r.idorTarget);
-    expect(targets).toHaveLength(285);
+    expect(targets).toHaveLength(286);
   });
 
   // search 와 analytics 가 둘 다 `GET /health` 이고, user-service 와 file-service 가 둘 다
   // `POST /files/upload` 다. `<VERB> <route>` 로 키를 만들면 그만큼 뭉개지고 스냅샷이 조용히 잃는다.
   it('키에 app 이 들어가야 충돌하지 않는다', () => {
     const targets = runAudit().filter((r) => r.idorTarget);
-    expect(new Set(targets.map(keyOf)).size).toBe(285);
-    expect(new Set(targets.map((r) => `${r.verb} ${r.route}`)).size).toBe(283);
+    expect(new Set(targets.map(keyOf)).size).toBe(286);
+    expect(new Set(targets.map((r) => `${r.verb} ${r.route}`)).size).toBe(284);
   });
 
   it('감사 스크립트의 대상 집합과 명단이 정확히 일치한다', () => {

@@ -19,10 +19,15 @@ import {
   setIdpSessionCookies,
 } from "@/lib/idp-session"
 import { normalizePhoneNumber } from "@/lib/phone-number"
-import { parseAuthorizeRedirectTarget } from "@/lib/oauth-redirect"
-import { sanitizeRedirectTo } from "@/lib/redirect"
+import { redirectAfterAuth } from "@/lib/oauth-issue"
+import {
+  getSite,
+  requireDefaultSite,
+  sanitizeRedirectTo,
+} from "@/lib/site/site"
 import {
   callbackSignup,
+  changePassword,
   checkEmailAvailable,
   checkLoginIdAvailable,
   checkNicknameAvailable,
@@ -31,7 +36,6 @@ import {
   findUserId,
   forgotPassword,
   getMe,
-  issueOAuthCodeInternal,
   resetPassword,
   restoreAccessToken,
   sendPhoneVerificationCode,
@@ -40,6 +44,7 @@ import {
   signUp,
   type LocalSignUpInput,
   type TokenPair,
+  type UserProfile,
   verifyPhoneCode,
 } from "@/lib/user-service"
 
@@ -84,7 +89,7 @@ async function promoteTokens(
   tokens: TokenPair,
   rememberMe: boolean,
   expectUserId?: string
-): Promise<string> {
+): Promise<UserProfile> {
   // 권위 있는 userId 는 user-service 의 /users/me 응답만 신뢰한다.
   // 로컬 토큰 payload 디코드는 서명 검증을 거치지 않은 값이라 폴백으로도 쓰지 않는다.
   const me = await getMe(tokens.accessToken)
@@ -109,48 +114,7 @@ async function promoteTokens(
     tokens.refreshToken
   )
   await setIdpSessionCookies({ ...tokens, rememberMe })
-  return me.id
-}
-
-// OAuth code 발급 후 redirect_uri로 302. 성공/실패 모두 throw redirect.
-export async function issueOAuthCodeAndRedirect(
-  userId: string,
-  params: {
-    clientId: string
-    redirectUri: string
-    codeChallenge: string
-    scope?: string
-    state: string
-    nonce?: string
-  }
-): Promise<never> {
-  const { code } = await issueOAuthCodeInternal({
-    clientId: params.clientId,
-    userId,
-    redirectUri: params.redirectUri,
-    codeChallenge: params.codeChallenge,
-    codeChallengeMethod: "S256",
-    scope: params.scope,
-    nonce: params.nonce,
-  })
-
-  const url = new URL(params.redirectUri)
-  url.searchParams.set("code", code)
-  url.searchParams.set("state", params.state)
-  redirect(url.toString())
-}
-
-async function redirectAfterAuth(
-  userId: string,
-  redirectToRaw: string | null | undefined
-): Promise<never> {
-  const oauthParams = parseAuthorizeRedirectTarget(redirectToRaw)
-  if (oauthParams) {
-    return issueOAuthCodeAndRedirect(userId, oauthParams)
-  }
-
-  const redirectTo = sanitizeRedirectTo(redirectToRaw)
-  redirect(redirectTo ?? "/")
+  return me
 }
 
 class UserFacingError extends Error {}
@@ -201,6 +165,31 @@ function getVerificationCode(formData: FormData) {
   return code
 }
 
+/** 새 비밀번호 칸 둘(password·passwordConfirm)을 user-service 와 같은 규칙으로 본다. */
+function newPasswordFrom(formData: FormData): string {
+  const password = String(formData.get("password") ?? "")
+  const passwordConfirm = String(formData.get("passwordConfirm") ?? "")
+
+  if (password !== passwordConfirm) {
+    throw new UserFacingError("비밀번호가 일치하지 않습니다.")
+  }
+
+  if (password.length < 8 || password.length > 20) {
+    throw new UserFacingError("비밀번호는 8~20자여야 합니다.")
+  }
+
+  if (
+    !/^(?=.*[a-zA-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]).+$/.test(
+      password
+    )
+  ) {
+    throw new UserFacingError(
+      "비밀번호는 영문, 숫자, 특수문자를 각각 1개 이상 포함해야 합니다."
+    )
+  }
+  return password
+}
+
 async function setPasswordResetTokenCookie(token: string) {
   const jar = await cookies()
   jar.set(PASSWORD_RESET_TOKEN_COOKIE, token, {
@@ -231,6 +220,7 @@ async function clearPasswordResetTokenCookie() {
 export async function sendRecoveryCodeAction(
   formData: FormData
 ): Promise<SendRecoveryCodeResult> {
+  await requireDefaultSite()
   let phoneNumber: string
 
   // 문자가 스팸보관함으로 들어간 경우 서버는 발송 성공으로 기록한다 — 실패를 감지할 방법이 없다.
@@ -259,6 +249,7 @@ export async function sendRecoveryCodeAction(
 export async function findUserIdAction(
   formData: FormData
 ): Promise<FindUserIdActionResult> {
+  await requireDefaultSite()
   try {
     const phoneNumber = getNormalizedPhoneNumber(formData)
     const code = getVerificationCode(formData)
@@ -280,6 +271,7 @@ export async function issuePasswordResetTokenAction(
   loginId: string,
   phoneNumber: string
 ): Promise<StartPasswordResetResult> {
+  await requireDefaultSite()
   try {
     const result = await forgotPassword({ loginId, phoneNumber })
     await setPasswordResetTokenCookie(result.verificationToken)
@@ -293,27 +285,9 @@ export async function issuePasswordResetTokenAction(
 export async function resetForgottenPasswordAction(
   formData: FormData
 ): Promise<ResetForgottenPasswordResult> {
+  await requireDefaultSite()
   try {
-    const password = String(formData.get("password") ?? "")
-    const passwordConfirm = String(formData.get("passwordConfirm") ?? "")
-
-    if (password !== passwordConfirm) {
-      throw new UserFacingError("비밀번호가 일치하지 않습니다.")
-    }
-
-    if (password.length < 8 || password.length > 20) {
-      throw new UserFacingError("비밀번호는 8~20자여야 합니다.")
-    }
-
-    if (
-      !/^(?=.*[a-zA-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]).+$/.test(
-        password
-      )
-    ) {
-      throw new UserFacingError(
-        "비밀번호는 영문, 숫자, 특수문자를 각각 1개 이상 포함해야 합니다."
-      )
-    }
+    const password = newPasswordFrom(formData)
 
     const token = await getPasswordResetTokenCookie()
     if (!token) {
@@ -345,11 +319,15 @@ export async function signInAction(formData: FormData): Promise<ActionResult> {
   // 재인증 모드 (계정 허브에서 stale RT 로 진입) 에서는 hidden 필드로 전달된 reauthUserId 와
   // 실제 로그인된 userId 를 엄격 매칭한다. 빈 문자열 ("") 이면 일반 signin 으로 취급.
   const reauthUserId = String(formData.get("reauthUserId") ?? "").trim()
-  let userId: string
+  let user: UserProfile
+
+  if ((await getSite()).kind === "unavailable") {
+    return { ok: false, error: "이 주소에서는 로그인할 수 없어요." }
+  }
 
   try {
     const tokens = await signIn({ loginId, password, rememberMe })
-    userId = await promoteTokens(tokens, rememberMe, reauthUserId || undefined)
+    user = await promoteTokens(tokens, rememberMe, reauthUserId || undefined)
   } catch (e) {
     if (e instanceof ApiError) {
       // 404(존재하지 않는 사용자)도 자격 증명 오류로 묶는다 — 계정 존재 여부를 흘리지 않고,
@@ -363,7 +341,7 @@ export async function signInAction(formData: FormData): Promise<ActionResult> {
     return { ok: false, error: userMessage(e, "로그인하지 못했어요.") }
   }
 
-  return redirectAfterAuth(userId, redirectToRaw)
+  return redirectAfterAuth(user, redirectToRaw)
 }
 
 /** 이메일/아이디 사전 중복확인이 공유하는 결과 형태. */
@@ -376,6 +354,7 @@ export type CheckEmailResult =
 export async function checkLoginIdAvailableAction(
   loginId: string
 ): Promise<CheckEmailResult> {
+  await requireDefaultSite()
   const normalized = loginId.trim()
   if (!normalized) {
     return { status: "invalid", message: "아이디를 입력해주세요." }
@@ -401,6 +380,7 @@ export async function checkLoginIdAvailableAction(
 export async function checkEmailAvailableAction(
   email: string
 ): Promise<CheckEmailResult> {
+  await requireDefaultSite()
   const normalized = email.trim()
   if (!normalized) {
     return { status: "invalid", message: "이메일을 입력해주세요." }
@@ -424,6 +404,7 @@ export async function checkEmailAvailableAction(
 export async function checkNicknameAvailableAction(
   nickname: string
 ): Promise<CheckEmailResult> {
+  await requireDefaultSite()
   const normalized = nickname.trim()
   if (!normalized) {
     return { status: "invalid", message: "닉네임을 입력해주세요." }
@@ -479,6 +460,8 @@ export async function signUpAction(formData: FormData): Promise<ActionResult> {
   const redirectToRaw = String(formData.get("redirectTo") ?? "")
   let userId: string
 
+  await requireDefaultSite()
+
   // 가입 단계에서 이메일 인증을 강제하지 않는다. signUp 응답의 단발성 signupToken 을 즉시
   // callbackSignup 으로 교환해 세션을 시작한다. 이전처럼 body 의 userId 를 직접 신뢰하지 않으므로
   // 외부 호출자가 임의 userId 로 callbackSignup 을 호출하는 우회는 차단된다.
@@ -491,7 +474,7 @@ export async function signUpAction(formData: FormData): Promise<ActionResult> {
     })
     const result = await signUp(input)
     const tokens = await callbackSignup(result.signupToken)
-    userId = await promoteTokens(tokens, false)
+    userId = (await promoteTokens(tokens, false)).id
   } catch (e) {
     return {
       ok: false,
@@ -516,6 +499,7 @@ export async function signUpAction(formData: FormData): Promise<ActionResult> {
 export async function finishSignupAction(
   redirectToRaw: string
 ): Promise<ActionResult> {
+  await requireDefaultSite()
   // accessToken 쿠키는 15분짜리라(ACCESS_MAX_AGE) 사업자 인증 스텝에 조금만 머물러도 사라진다.
   // 2주짜리 refreshToken 으로 복원해서, 가입은 끝났는데 마지막 이동만 막히는 상황을 없앤다.
   const accessToken =
@@ -535,7 +519,7 @@ export async function finishSignupAction(
     }
   }
 
-  return redirectAfterAuth(me.id, redirectToRaw)
+  return redirectAfterAuth(me, redirectToRaw)
 }
 
 /** refreshToken 으로 access 를 재발급하고 세션 쿠키를 갱신한다. 실패하면 null. */
@@ -588,6 +572,7 @@ function isRealStartDate(yyyymmdd: string): boolean {
 export async function registerBusinessAction(
   formData: FormData
 ): Promise<RegisterBusinessActionResult> {
+  await requireDefaultSite()
   const accessToken =
     (await getIdpAccessToken()) ?? (await restoreSessionFromRefreshToken())
   if (!accessToken) {
@@ -680,6 +665,9 @@ export async function selectAccountAction(
   userId: string,
   redirectToRaw: string
 ): Promise<ActionResult> {
+  if ((await getSite()).kind === "unavailable") {
+    return { ok: false, error: "이 주소에서는 로그인할 수 없어요." }
+  }
   const refreshToken = await getRefreshToken(userId)
 
   // RT 쿠키 자체가 사라진 경우 (브라우저 만료/수동 삭제 등) 도 reauth 흐름과 동일하게 취급.
@@ -716,10 +704,9 @@ export async function selectAccountAction(
 
   const accessToken = restored.accessToken
 
-  let resolvedUserId: string
+  let resolved: UserProfile
   try {
-    const me = await getMe(accessToken)
-    resolvedUserId = me.id
+    resolved = await getMe(accessToken)
   } catch (e) {
     return {
       ok: false,
@@ -727,12 +714,12 @@ export async function selectAccountAction(
     }
   }
 
-  if (resolvedUserId !== userId) {
+  if (resolved.id !== userId) {
     return { ok: false, error: "계정 정보가 일치하지 않습니다" }
   }
 
   await setIdpSessionCookies({ accessToken, refreshToken })
-  return redirectAfterAuth(resolvedUserId, redirectToRaw)
+  return redirectAfterAuth(resolved, redirectToRaw)
 }
 
 export async function removeAccountAction(userId: string): Promise<void> {
@@ -778,18 +765,19 @@ export async function signOutAction(
   // active session 쿠키 만료 + 계정 허브 per-account RT 무효화 (다음 선택 시 비밀번호 재입력 강제).
   await clearIdpSessionCookies()
   if (userId) await invalidateAccountRefreshToken(userId)
-  redirect(sanitizeRedirectTo(redirectTo) ?? "/")
+  redirect((await sanitizeRedirectTo(redirectTo)) ?? "/")
 }
 
 export async function completeSignupCallback(
   signupToken: string,
   redirectToRaw: string
 ): Promise<ActionResult> {
-  let resolvedUserId: string
+  let resolved: UserProfile
 
+  await requireDefaultSite()
   try {
     const tokens = await callbackSignup(signupToken)
-    resolvedUserId = await promoteTokens(tokens, false)
+    resolved = await promoteTokens(tokens, false)
   } catch (e) {
     return {
       ok: false,
@@ -797,5 +785,41 @@ export async function completeSignupCallback(
     }
   }
 
-  return redirectAfterAuth(resolvedUserId, redirectToRaw)
+  return redirectAfterAuth(resolved, redirectToRaw)
+}
+
+/**
+ * 테넌트 도메인의 첫 로그인 — 운영자가 준 초기 비밀번호를 바꾼 뒤 원래 가던 곳(authorize)으로 잇는다.
+ * userId 를 받지 않는다: 방금 심은 세션 쿠키의 토큰이 정한다.
+ */
+export async function changeInitialPasswordAction(
+  formData: FormData
+): Promise<ActionResult> {
+  if ((await getSite()).kind !== "tenant") {
+    return { ok: false, error: "이 주소에서는 쓸 수 없어요." }
+  }
+  const redirectToRaw = String(formData.get("redirectTo") ?? "")
+  let me: UserProfile
+
+  try {
+    const currentPassword = String(formData.get("currentPassword") ?? "")
+    const newPassword = newPasswordFrom(formData)
+    const accessToken =
+      (await getIdpAccessToken()) ?? (await restoreSessionFromRefreshToken())
+    if (!accessToken) {
+      throw new UserFacingError("로그인이 만료됐어요. 다시 로그인해 주세요.")
+    }
+    await changePassword(accessToken, { currentPassword, newPassword })
+    me = await getMe(accessToken)
+  } catch (e) {
+    return {
+      ok: false,
+      error: userMessage(
+        e,
+        "비밀번호를 바꾸지 못했어요. 잠시 후 다시 시도해 주세요."
+      ),
+    }
+  }
+
+  return redirectAfterAuth(me, redirectToRaw)
 }

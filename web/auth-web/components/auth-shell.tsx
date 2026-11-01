@@ -1,3 +1,4 @@
+import { getSite } from "@/lib/site/site"
 import { cn } from "@/lib/utils"
 
 /**
@@ -6,16 +7,18 @@ import { cn } from "@/lib/utils"
  * - 모바일: 화면을 꽉 채우고 하단 CTA 는 `mt-auto` 로 바닥에 붙는다.
  * - 데스크톱(sm~): 카드로 묶어 화면 세로 중앙에 띄운다. 뷰포트가 세로로 길 때
  *   요소들이 위아래로 벌어져 붕 떠 보이는 것을 막는다.
+ * - 테넌트 도메인: 맨 위에 그 테넌트의 로고·이름. 기본 주소는 지금 그대로(브랜드 줄 없음).
  *
  * 내부에서 `flex-1` / `mt-auto` 가 계속 동작하도록, 데스크톱에서도 최소 높이를 준다.
  */
-export function AuthShell({
+export async function AuthShell({
   children,
   className,
 }: {
   children: React.ReactNode
   className?: string
 }) {
+  const site = await getSite()
   return (
     <div className="flex min-h-svh flex-col items-center sm:justify-center sm:bg-muted sm:p-6">
       <main
@@ -25,6 +28,16 @@ export function AuthShell({
           className
         )}
       >
+        {site.kind === "tenant" && (
+          <div className="flex items-center gap-3">
+            {site.logoUrl && (
+              // 테넌트 버킷의 주소 그대로 — next/image 최적화를 거치면 원격 호스트를 설정에 적어야 한다.
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={site.logoUrl} alt="" className="h-8 w-auto" />
+            )}
+            <span className="text-base font-semibold">{site.displayName}</span>
+          </div>
+        )}
         {children}
       </main>
     </div>

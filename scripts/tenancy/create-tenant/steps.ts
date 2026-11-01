@@ -11,7 +11,7 @@ import { messageOf, StepRefused, type CreationStep } from './runner';
 export interface TenantPlan {
   entry: TenantEntry;
   displayName: string;
-  /** 테넌트 도메인(host, 포트 포함) */
+  /** 테넌트 도메인(host, 포트 포함) — admin-web 주소와 auth-web 주소 둘(CloudFront 배포가 앱마다 하나) */
   domains: string[];
   staffClient: { clientId: string; redirectUris: string[]; postLogoutRedirectUris: string[] };
   /** 역할은 전역이다 — 이름은 테넌트 이름이 아닌 일반 이름 */
@@ -27,6 +27,8 @@ export interface OperatorApi {
   createTenant(input: { id: string; slug: string; displayName: string; domains: string[] }): Promise<void>;
   /** 준비 상태만 지워진다(소속·부여·도메인·리디렉트 주소는 user-service 가 함께 걷는다) */
   deleteTenant(id: string): Promise<void>;
+  /** 이미 있는 테넌트에 도메인 하나 — 이미 그 테넌트 것이면 아무것도 안 한다 */
+  addDomain(tenantId: string, host: string): Promise<void>;
   setTenantStatus(id: string, status: 'active' | 'suspended'): Promise<void>;
   staffClientUris(clientId: string): Promise<{ redirectUris: string[]; postLogoutRedirectUris: string[] }>;
   addStaffClientUris(
@@ -145,6 +147,19 @@ export function buildCreationSteps(plan: TenantPlan, ports: CreationPorts): Crea
         const status = await tenantStatus();
         if (status === 'preparing') await operator.deleteTenant(entry.id);
         else if (status) throw new Error(`테넌트 ${entry.id} 가 «${status}» 라 지우지 않는다`);
+      },
+    },
+    {
+      // 행 단계는 «행이 있나»만 본다 — 계획의 도메인이 나중에 늘면(auth-web 주소) 이 단계가 이미 있는 테넌트에 붙인다.
+      // 되돌리기는 행 삭제가 도메인째 걷는다.
+      name: `테넌트 도메인 붙이기 (${plan.domains.join(', ')})`,
+      isDone: async () => {
+        const mine = (await ourTenant())?.domains ?? [];
+        return plan.domains.every((d) => mine.includes(d.toLowerCase()));
+      },
+      async run() {
+        const mine = (await ourTenant())?.domains ?? [];
+        for (const d of plan.domains) if (!mine.includes(d.toLowerCase())) await operator.addDomain(entry.id, d);
       },
     },
     {

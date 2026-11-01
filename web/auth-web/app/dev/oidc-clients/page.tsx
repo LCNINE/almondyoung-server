@@ -2,6 +2,7 @@ import { notFound, redirect } from "next/navigation"
 
 import { Toaster } from "@/components/ui/sonner"
 import { env } from "@/lib/env"
+import { requireDefaultSite } from "@/lib/site/site"
 import { probeListOAuthClients } from "@/lib/user-service-admin"
 
 import { DevOidcClientsClient } from "./dev-oidc-clients-client"
@@ -11,6 +12,7 @@ export const dynamic = "force-dynamic"
 
 export default async function Page() {
   if (!env.devToolsEnabled) notFound()
+  await requireDefaultSite()
 
   const probe = await probeListOAuthClients()
 

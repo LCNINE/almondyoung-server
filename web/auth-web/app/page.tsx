@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { listAccounts } from "@/lib/account-store"
 import { hasIdpRefreshToken } from "@/lib/idp-session"
 import { decodeJwtPayload } from "@/lib/jwt"
-import { sanitizeRedirectTo } from "@/lib/redirect"
+import { getSite, sanitizeRedirectTo } from "@/lib/site/site"
 
 type SearchParams = Promise<{
   redirect_to?: string
@@ -21,7 +21,8 @@ export default async function AccountHubPage({
   searchParams: SearchParams
 }) {
   const params = await searchParams
-  const redirectTo = sanitizeRedirectTo(params.redirect_to) ?? ""
+  const site = await getSite()
+  const redirectTo = await sanitizeRedirectTo(params.redirect_to) ?? ""
   const editing = params.edit === "1"
 
   // prompt=login (authorize → /?force_login=1) → 계정 선택 건너뛰고 signin.
@@ -55,7 +56,9 @@ export default async function AccountHubPage({
         <p className="text-sm leading-5 text-muted-foreground">
           {hasAccounts
             ? "계속 진행할 계정을 선택하거나 다른 계정으로 로그인하세요."
-            : "아몬드영 계정으로 로그인하고 계속 진행하세요."}
+            : site.kind === "tenant"
+              ? "아이디와 비밀번호로 로그인하세요."
+              : "아몬드영 계정으로 로그인하고 계속 진행하세요."}
         </p>
       </header>
 
@@ -95,7 +98,8 @@ export default async function AccountHubPage({
             {hasAccounts ? "다른 계정으로 로그인" : "로그인"}
           </Link>
         </Button>
-        {process.env.APP_STAGE !== "demo" && <Button
+        {/* 테넌트 도메인엔 가입이 없다 — 직원 계정은 운영자가 만든다 */}
+        {process.env.APP_STAGE !== "demo" && site.kind === "default" && <Button
           asChild
           variant="ghost"
           className="h-[52px] rounded-lg text-base font-medium"

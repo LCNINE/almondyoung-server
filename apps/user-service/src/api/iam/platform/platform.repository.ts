@@ -152,9 +152,9 @@ export class PlatformRepository {
 
   async findBrandByHost(
     host: string,
-  ): Promise<{ displayName: string; logoUrl: string | null; status: TenantStatus } | null> {
+  ): Promise<{ tenantId: string; displayName: string; logoUrl: string | null; status: TenantStatus } | null> {
     const [row] = await this.dbService.db
-      .select({ displayName: tenants.displayName, logoUrl: tenants.logoUrl, status: tenants.status })
+      .select({ tenantId: tenants.id, displayName: tenants.displayName, logoUrl: tenants.logoUrl, status: tenants.status })
       .from(tenantDomains)
       .innerJoin(tenants, eq(tenants.id, tenantDomains.tenantId))
       .where(eq(tenantDomains.host, host))

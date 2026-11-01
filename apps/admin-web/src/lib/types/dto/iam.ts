@@ -91,6 +91,7 @@ export const IAM_AUDIT_ACTIONS = [
   'tenant.status.set',
   'tenant.delete',
   'tenant.membership.add',
+  'tenant.domain.add',
   'tenant.oauth_redirects.add',
   'user.password.reissue',
 ] as const;

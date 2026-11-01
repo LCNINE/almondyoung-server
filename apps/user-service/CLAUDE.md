@@ -79,6 +79,9 @@ OAuth 액세스 토큰에는 `tenant` 가 실리고 `roles` 는 그 테넌트의
 남은 액세스 토큰은 core 가 막는다 — `GET /internal/iam/tenant-statuses`(내부 키, id·상태만)를 15초마다 받아 정지·준비 테넌트의
 사람 토큰을 403 한다(`apps/core/src/platform/tenancy/tenant-status-cache.ts`).
 `GET /tenant-brand?host=` 는 로그인 전 브랜드 조회라 공개이고 이름·로고·활성 여부만 돌려준다.
+`GET /tenant-brand/site?host=` 는 auth-web 서버 전용(`x-internal-secret` = `OAUTH_INTERNAL_SECRET`)이라 테넌트 id 와 그 테넌트의
+도메인 전부를 더한다 — auth-web 이 테넌트 화면의 리디렉트를 그 안에 가둔다. 테넌트 도메인은 앱마다 하나다(admin-web 주소·auth-web
+주소, CloudFront 배포가 앱마다 따로라). 이미 있는 테넌트에 더하는 길은 `POST /admin/platform/tenants/:id/domains`.
 
 ### 역할 만료
 `user_roles.expiresAt`으로 시한부 역할 할당을 지원한다.

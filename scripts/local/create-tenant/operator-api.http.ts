@@ -29,6 +29,10 @@ export class HttpOperatorApi implements OperatorApi {
     await this.call('DELETE', `/admin/platform/tenants/${encodeURIComponent(id)}`);
   }
 
+  async addDomain(tenantId: string, host: string) {
+    await this.call('POST', `/admin/platform/tenants/${encodeURIComponent(tenantId)}/domains`, { host });
+  }
+
   async setTenantStatus(id: string, status: 'active' | 'suspended') {
     await this.call('PUT', `/admin/platform/tenants/${encodeURIComponent(id)}/status`, { status });
   }

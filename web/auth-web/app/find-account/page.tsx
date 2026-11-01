@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation"
 import { AuthShell } from "@/components/auth-shell"
 import { FindAccountForm } from "@/components/find-account-form"
-import { sanitizeRedirectTo } from "@/lib/redirect"
+import { requireDefaultSite, sanitizeRedirectTo } from "@/lib/site/site"
 
 type SearchParams = Promise<{ redirect_to?: string }>
 
@@ -10,9 +10,11 @@ export default async function FindAccountPage({
 }: {
   searchParams: SearchParams
 }) {
+  // 가입·찾기는 기본 주소에만 — 테넌트 도메인엔 없다(인증 문자가 아몬드영 이름으로 나간다).
+  await requireDefaultSite()
   if (process.env.APP_STAGE === "demo") notFound()
   const params = await searchParams
-  const redirectTo = sanitizeRedirectTo(params.redirect_to) ?? ""
+  const redirectTo = (await sanitizeRedirectTo(params.redirect_to)) ?? ""
 
   return (
     <AuthShell>

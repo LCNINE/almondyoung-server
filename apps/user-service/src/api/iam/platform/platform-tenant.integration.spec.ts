@@ -408,4 +408,59 @@ describeIfDb('platform operator tenant API against a real database', () => {
       await expect(brands.byHost(`unknown.${HOST}`)).rejects.toBeInstanceOf(NotFoundError);
     });
   });
+
+  describe('adding a domain to an existing tenant (the auth-web address)', () => {
+    it('adds it once to an active tenant and logs it under the tenant — running it again changes nothing', async () => {
+      const op = await makeUser('op', true);
+      await manager.createTenant(actor(op), newTenant());
+      await manager.setStatus(actor(op), TENANT, 'active');
+
+      await manager.addDomain(actor(op), TENANT, `AUTH.${HOST}`);
+      await manager.addDomain(actor(op), TENANT, `auth.${HOST}`);
+
+      const domains = await dbService.db.select().from(tenantDomains).where(eq(tenantDomains.tenantId, TENANT));
+      expect(domains.map((d) => d.host).sort()).toEqual([`auth.${HOST}`, HOST]);
+      const logs = (await auditOf(TENANT)).filter((l) => l.action === 'tenant.domain.add');
+      expect(logs).toHaveLength(1);
+      expect(logs[0]).toMatchObject({ targetType: 'tenant', targetId: TENANT, after: { host: `auth.${HOST}` } });
+    });
+
+    it("refuses another tenant's domain", async () => {
+      const op = await makeUser('op', true);
+      await manager.createTenant(actor(op), newTenant());
+      await manager.createTenant(actor(op), newTenant(`${TENANT}2`, `other.${HOST}`));
+
+      await expect(manager.addDomain(actor(op), `${TENANT}2`, HOST)).rejects.toBeInstanceOf(TenantDomainTakenError);
+    });
+
+    it('refuses a non-operator and an unknown tenant', async () => {
+      const op = await makeUser('op', true);
+      const notOp = await makeUser('notop');
+      await manager.createTenant(actor(op), newTenant());
+
+      await expect(manager.addDomain(actor(notOp), TENANT, `auth.${HOST}`)).rejects.toBeInstanceOf(IamOperatorOnlyError);
+      await expect(manager.addDomain(actor(op), `${TENANT}x`, `auth.${HOST}`)).rejects.toBeInstanceOf(NotFoundError);
+    });
+  });
+
+  describe('site lookup by address (auth-web server, internal secret)', () => {
+    it("answers the tenant, its brand and every domain of that tenant — auth-web keeps redirects inside them", async () => {
+      const op = await makeUser('op', true);
+      await manager.createTenant(actor(op), { ...newTenant(), domains: [HOST, `auth.${HOST}`] });
+
+      const site = await brands.siteByHost(`AUTH.${HOST}`);
+
+      expect({ ...site, hosts: [...site.hosts].sort() }).toEqual({
+        tenantId: TENANT,
+        displayName: `브랜드 ${TENANT}`,
+        logoUrl: `https://cdn.example.test/${TENANT}.png`,
+        active: false,
+        hosts: [`auth.${HOST}`, HOST],
+      });
+    });
+
+    it('does not know an address that is not a tenant domain', async () => {
+      await expect(brands.siteByHost(`unknown.${HOST}`)).rejects.toBeInstanceOf(NotFoundError);
+    });
+  });
 });

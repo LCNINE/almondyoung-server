@@ -1,17 +1,20 @@
 import "server-only";
 
-import { env } from "./env";
 import {
   type AuthorizeParams,
   parseAuthorizeParams,
 } from "./oauth-params";
-import { sanitizeRedirectTo } from "./redirect";
+import { getSite, sanitizeRedirectTo } from "./site/site";
 
-export function parseAuthorizeRedirectTarget(
+/** redirect_to 가 «이 주소의» `/oauth/authorize` 면 그 파라미터. 테넌트 도메인이면 기원은 그 도메인이다. */
+export async function parseAuthorizeRedirectTarget(
   raw: string | null | undefined,
-): AuthorizeParams | null {
-  const redirectTo = sanitizeRedirectTo(raw);
+): Promise<AuthorizeParams | null> {
+  const redirectTo = await sanitizeRedirectTo(raw);
   if (!redirectTo) return null;
+
+  const site = await getSite();
+  if (site.kind === "unavailable") return null;
 
   let url: URL;
   try {
@@ -20,7 +23,7 @@ export function parseAuthorizeRedirectTarget(
     return null;
   }
 
-  if (url.origin !== env.selfOrigin || url.pathname !== "/oauth/authorize") {
+  if (url.origin !== site.origin || url.pathname !== "/oauth/authorize") {
     return null;
   }
 

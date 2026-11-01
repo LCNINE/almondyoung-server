@@ -60,6 +60,13 @@ export class SetTenantStatusDto {
   status!: 'active' | 'suspended';
 }
 
+export class AddTenantDomainDto {
+  @ApiProperty({ description: '더할 테넌트 도메인(host, 포트 포함) — 예: 그 테넌트의 auth-web 주소' })
+  @Matches(HOST)
+  @MaxLength(255)
+  host!: string;
+}
+
 export class AddTenantMemberDto {
   @ApiProperty() @IsUUID() userId!: string;
 }
@@ -103,4 +110,10 @@ export class TenantBrandDto {
   @ApiProperty() displayName!: string;
   @ApiProperty({ nullable: true, type: String }) logoUrl!: string | null;
   @ApiProperty({ description: '활성 테넌트인가(아니면 로그인할 수 없다)' }) active!: boolean;
+}
+
+export class TenantSiteDto extends TenantBrandDto {
+  @ApiProperty() tenantId!: string;
+  @ApiProperty({ type: [String], description: '그 테넌트의 도메인 전부 — auth-web 이 리디렉트를 이 안에 가둔다' })
+  hosts!: string[];
 }

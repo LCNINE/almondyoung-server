@@ -1,7 +1,7 @@
 import Link from "next/link"
 
 import { Button } from "@/components/ui/button"
-import { sanitizeRedirectTo } from "@/lib/redirect"
+import { requireDefaultSite, sanitizeRedirectTo } from "@/lib/site/site"
 
 type SearchParams = Promise<{ email?: string; redirect_to?: string }>
 
@@ -10,9 +10,11 @@ export default async function SignUpPendingPage({
 }: {
   searchParams: SearchParams
 }) {
+  // 가입·찾기는 기본 주소에만 — 테넌트 도메인엔 없다(인증 문자가 아몬드영 이름으로 나간다).
+  await requireDefaultSite()
   const params = await searchParams
   const email = params.email ?? ""
-  const redirectTo = sanitizeRedirectTo(params.redirect_to) ?? ""
+  const redirectTo = (await sanitizeRedirectTo(params.redirect_to)) ?? ""
   const qs = new URLSearchParams()
   if (redirectTo) qs.set("redirect_to", redirectTo)
 

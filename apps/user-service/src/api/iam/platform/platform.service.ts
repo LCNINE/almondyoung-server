@@ -3,12 +3,14 @@ import type { IamActor } from '../iam-actor';
 import { PlatformOperatorManager } from '../tenancy/platform-operator.manager';
 import type {
   AddStaffClientUrisDto,
+  AddTenantDomainDto,
   CreateTenantDto,
   ReissuedPasswordDto,
   ReissuePasswordDto,
   SetTenantStatusDto,
   TenantBrandDto,
   TenantDto,
+  TenantSiteDto,
 } from './dto/platform.dto';
 import { PlatformTenantManager } from './platform-tenant.manager';
 import { PlatformTenantReader } from './platform-tenant.reader';
@@ -45,6 +47,11 @@ export class PlatformService {
     return this.manager.deleteTenant(actor, tenantId);
   }
 
+  async addDomain(actor: IamActor, tenantId: string, dto: AddTenantDomainDto): Promise<TenantDto> {
+    await this.manager.addDomain(actor, tenantId, dto.host);
+    return this.reader.get(actor, tenantId);
+  }
+
   addMember(actor: IamActor, tenantId: string, userId: string): Promise<void> {
     return this.manager.addMember(actor, tenantId, userId);
   }
@@ -68,5 +75,9 @@ export class PlatformService {
 
   brand(host: string): Promise<TenantBrandDto> {
     return this.brands.byHost(host);
+  }
+
+  site(host: string): Promise<TenantSiteDto> {
+    return this.brands.siteByHost(host);
   }
 }

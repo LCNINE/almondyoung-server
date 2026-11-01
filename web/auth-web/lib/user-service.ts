@@ -2,6 +2,7 @@ import "server-only"
 
 import { env } from "./env"
 import { readApiData, readJson, throwIfBad } from "./api-helpers"
+import type { TenantSite } from "./site/site-rules"
 
 type SignInBody = { loginId: string; password: string; rememberMe?: boolean }
 
@@ -60,6 +61,8 @@ export type UserProfile = {
   username: string
   email: string
   isEmailVerified: boolean
+  /** 운영자가 만든·재발급한 초기 비밀번호면 true — 테넌트 도메인은 코드를 내주기 전에 바꾸게 한다. */
+  mustChangePassword?: boolean
 }
 
 export async function signIn(body: SignInBody): Promise<TokenPair> {
@@ -438,4 +441,46 @@ export async function getMe(accessToken: string): Promise<UserProfile> {
   })
   await throwIfBad(res, "me")
   return readApiData<UserProfile>(res)
+}
+
+/** 본인 비밀번호 변경. 성공하면 user-service 가 mustChangePassword 를 끈다. */
+export async function changePassword(
+  accessToken: string,
+  body: { currentPassword: string; newPassword: string }
+): Promise<void> {
+  const res = await fetch(`${env.userServiceUrl}/auth/change-password`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${accessToken}`,
+    },
+    body: JSON.stringify(body),
+    cache: "no-store",
+    redirect: "manual",
+  })
+  await throwIfBad(res, "change-password")
+}
+
+/**
+ * 주소 → 테넌트·브랜드·그 테넌트 도메인 전부(내부 secret). 모르는 주소는 null.
+ * 브라우저가 아니라 auth-web 서버가 부른다 — 테넌트 도메인 화면에서 user-service 호스트가 보이면 안 된다.
+ */
+export async function lookupTenantSite(
+  host: string
+): Promise<TenantSite | null> {
+  if (!env.oauthInternalSecret) {
+    throw new Error("OAUTH_INTERNAL_SECRET not configured on auth-web")
+  }
+  const res = await fetch(
+    `${env.userServiceUrl}/tenant-brand/site?host=${encodeURIComponent(host)}`,
+    {
+      headers: { "x-internal-secret": env.oauthInternalSecret },
+      cache: "no-store",
+      redirect: "manual",
+    }
+  )
+  // 400 = host 꼴이 아니다(Host 헤더에 아무 값이나 올 수 있다) — 모르는 주소와 같다.
+  if (res.status === 404 || res.status === 400) return null
+  await throwIfBad(res, "tenant-site")
+  return readApiData<TenantSite>(res)
 }

@@ -1,7 +1,7 @@
 import { AuthShell } from "@/components/auth-shell"
 import { SignInForm } from "@/components/signin-form"
 import { listAccounts } from "@/lib/account-store"
-import { sanitizeRedirectTo } from "@/lib/redirect"
+import { getSite, sanitizeRedirectTo } from "@/lib/site/site"
 
 type SearchParams = Promise<{
   redirect_to?: string
@@ -15,7 +15,7 @@ export default async function SignInPage({
   searchParams: SearchParams
 }) {
   const params = await searchParams
-  const redirectTo = sanitizeRedirectTo(params.redirect_to) ?? ""
+  const redirectTo = (await sanitizeRedirectTo(params.redirect_to)) ?? ""
   const prefilledLoginId = (params.login_id ?? "").trim()
   const reauthUserId = (params.reauth_user_id ?? "").trim()
   const isReauth = reauthUserId.length > 0
@@ -41,7 +41,11 @@ export default async function SignInPage({
         prefilledLoginId={prefilledLoginId}
         reauthUserId={reauthUserId}
         hasAccounts={hasAccounts}
-        allowRecovery={process.env.APP_STAGE !== "demo"}
+        // 테넌트 도메인엔 아이디·비밀번호 찾기가 없다 — 운영자가 초기 비밀번호를 재발급한다.
+        allowRecovery={
+          process.env.APP_STAGE !== "demo" &&
+          (await getSite()).kind === "default"
+        }
       />
     </AuthShell>
   )
