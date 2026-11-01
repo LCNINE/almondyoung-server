@@ -121,6 +121,24 @@ admin-web 리디렉트 등록 → 역할 `warehouse_catalog_staff`(키 9개) →
 테넌트 2 는 **② 모드에서만** 섬긴다(① 의 core 는 단일 DB). `E2E_GATE_MODE=reject npm run start:all:local` 로 띄우면
 preflight §13 이 «core ② — 테넌트 2 DB 에서 크론이 돈다»까지 본다. ① 로 띄우면 §13 은 그 줄을 경고로만 남긴다.
 
+### §2-D. 테넌트 격리 실측 — preflight 옆의 네 번째 명령
+
+```bash
+npm run isolation:check:local              # 읽기 전용 — 라이브에서 매 배포 뒤 도는 부분과 같다
+npm run isolation:check:local -- --write   # + 쓰기 경로·정지 스위치 («[개통 점검]» 이름으로 만들고 지운다)
+```
+
+preflight 가 «환경이 옳은가»를 본다면 이건 «테넌트가 섞이지 않는가»를 본다. 테넌트 1(로컬 admin)·테넌트 2(점검 계정)
+토큰으로 실제 경로를 부르는 블랙박스 점검이고, 판정만 한다. 점검 목록은 라이브(`npm run isolation:check -- --stage live`)와
+한 벌이다(`scripts/tenancy/isolation-check/checks.ts`) — 대상만 갈아 끼운다. 모든 ✗ 는 어느 티켓·명령이 고치는지 적는다.
+
+- core 가 ② 로 떠 있어야 한다(아니면 시작을 거절한다).
+- 403 은 **문의 문구**까지 본다. 테넌트 2 역할에 없는 권한의 라우트는 문이 꺼져도 권한 거절로 403 이라, 상태만 보면 문 하나가 빠져도 초록이다.
+- 로컬에선 analytics·notification·search 가 `.env` 가 없어 «못 쟀다(!)» 로 남는다 — 실패가 아니라 경고다. 라이브는 건너뜀도 실패다.
+- `--write` 는 테넌트 2 를 잠깐 «정지»했다가 되돌린다(Ctrl+C 로 끊어도 되돌린다). 테넌트 2 로 로그인한 브라우저 세션은 끊긴다.
+  처음 한 번은 테넌트 1 디지털 상품 파일 픽스처를 올린다(로컬 전용 — 읽기 점검이 열어 볼 파일).
+- 지우기: 창고·로케이션·SKU 는 점검 계정이 API 로 지운다. 상품은 역할에 `catalog.product.delete` 가 없어 로컬만 직접 soft delete 한다.
+
 ### 앱 기동
 
 ```bash
@@ -752,7 +770,7 @@ core 에 대응 컬럼이 없어 받아도 버려지던 것들이다. 원가는 
 | 파일 | 무엇 |
 |---|---|
 | **`scripts/local/bootstrap-e2e.sh`** | **`npm run bootstrap:e2e:local`.** 준비를 «만든다» — 컨테이너·마이그·시드·키. 멱등. preflight 의 짝 |
-| **`scripts/local/e2e-env-map.sh`** | **앱↔.env↔포트 정본 표.** 세 스크립트가 전부 이걸 source 한다. 문서 두 벌이 6개/11개로 갈렸던 자리 |
+| **`scripts/local/e2e-env-map.sh`** | **앱↔.env↔포트 정본 표.** 세 스크립트와 격리 실측(`isolation-check-local.sh`)이 전부 이걸 source 한다. 문서 두 벌이 6개/11개로 갈렸던 자리 |
 | `scripts/local/preflight-e2e.sh` | 사전 «판정». 읽기 전용 — 아무것도 고치지 않는다. 모든 ✗ 가 고치는 명령을 함께 적는다 |
 | **`env-templates/.env.file-service.local.example`** | file-service 로컬 템플릿 신설. required 11개 중 유일하게 없었다 |
 | `scripts/local/seed-wallet-local.ts` | 로컬 wallet reference 시드(결제수단·지역) — `npm run db:seed:wallet:local`. 이게 없어 결제가 막혔다 |

@@ -1,0 +1,81 @@
+/**
+ * 격리 실측이 재는 «대상» — 로컬 E2E 와 라이브가 같은 점검(`checks.ts`)을 돌고, 대상만 갈아 끼운다.
+ * 테스트와 운영 점검이 갈라지지 않게 하는 이음매다. 라이브 값(점검 계정 비밀번호 등)은 SST Secret 에서만 온다.
+ */
+
+/** 1단계에서 테넌트 1 만 섬기는 공유 서비스(비공개 ADR 0005). */
+export type SharedServiceName =
+  | 'wallet'
+  | 'membership'
+  | 'analytics'
+  | 'ugc-service'
+  | 'notification'
+  | 'search'
+  | 'channel-adapter';
+
+/**
+ * 서비스마다 대표 라우트 하나 — 토큰 입구(`@RequirePermission`·`@StoreRoute`)의 GET 이다. 문이 권한보다 «먼저» 판정하므로
+ * 테넌트 2 역할에 그 권한이 없어도 문의 거절 문구가 나와야 한다. 테넌트 1 토큰은 같은 경로에서 2xx 여야 한다(대조) —
+ * 경로가 썩으면 거기서 빨개진다.
+ */
+export const SHARED_SERVICE_PROBES: Readonly<Record<SharedServiceName, string>> = {
+  wallet: '/v1/admin/payment-methods',
+  membership: '/subscriptions/current',
+  analytics: '/statistics/operating-costs',
+  'ugc-service': '/reviews/admin/rewards/rules',
+  notification: '/logs/stats',
+  search: '/search/admin/keywords/statistics',
+  'channel-adapter': '/adapter/order-reconcile-findings',
+};
+
+export interface CronObservation {
+  /** 테넌트 1 core DB 에서 최근 `windowMinutes` 안에 선점된 크론 이름 수 — 0 이면 대조가 무의미하다 */
+  readonly tenantOneRecent: number;
+  /** 그중 테넌트 2 core DB 에 최근 선점 행이 없는 크론 — 테넌트별로 안 돈다 */
+  readonly missingInTenantTwo: readonly string[];
+  readonly windowMinutes: number;
+}
+
+/** 앱 이름 → 그 앱 `/metrics` 의 합. 못 읽은 앱은 키가 없다 — 비교는 두 번 다 읽힌 앱끼리만 한다. */
+export interface ConsumerMetrics {
+  /** 소비 앱마다 `events_skipped_other_tenant_total` */
+  readonly skippedOtherTenant: Readonly<Record<string, number>>;
+  /** 앱마다 `events_dlq_messages_total` */
+  readonly deadLettered: Readonly<Record<string, number>>;
+  /** 메트릭을 못 읽은 소비 앱 */
+  readonly unreachable: readonly string[];
+}
+
+export interface IsolationTarget {
+  readonly label: string;
+  /** 건너뜀을 실패로 센다(라이브) */
+  readonly strict: boolean;
+  readonly tenantOneId: string;
+  readonly tenantTwoId: string;
+  readonly urls: {
+    readonly core: string;
+    readonly fileService: string;
+    /** Medusa 스토어 API(쇼핑몰이 부르는 곳) */
+    readonly medusa: string;
+    /** 테넌트 1 admin-web. API 라우트는 주소와 무관하게 토큰 테넌트로 판정한다 */
+    readonly adminWeb: string;
+  };
+  /** url null = 이 대상에 그 서비스가 없다(로컬의 extra 앱) */
+  readonly sharedServices: readonly { readonly name: SharedServiceName; readonly url: string | null }[];
+  /** 부를 때마다 새로 로그인한다. 거절되면 `TokenRefused` 를 던진다 */
+  readonly signIn: { readonly tenantOne: () => Promise<string>; readonly tenantTwo: () => Promise<string> };
+  /** 쇼핑몰 클라이언트로 받은 고객 토큰 */
+  readonly customerToken: () => Promise<string>;
+  readonly storePublishableKey: string;
+  /** 테넌트 1 의 디지털 상품 파일 id 하나(없으면 null) */
+  readonly tenantOneDigitalFileId: () => Promise<string | null>;
+  /** 테넌트 2 core DB 의 `cron_runs` */
+  readonly tenantTwoCronRuns: () => Promise<CronObservation>;
+  /** 쓰기 부분에서만 — 없으면 그 대상은 쓰기 부분을 못 돈다 */
+  readonly write?: {
+    readonly consumerMetrics: () => Promise<ConsumerMetrics>;
+    readonly setTenantStatus: (tenantId: string, status: 'active' | 'suspended') => Promise<void>;
+    /** 역할로 못 지우는 것(상품)을 치운다. 없으면 남은 id 를 경고로 적는다 */
+    readonly removeProducts?: (masterIds: readonly string[]) => Promise<void>;
+  };
+}

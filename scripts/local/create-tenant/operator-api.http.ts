@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from 'node:crypto';
+import { tokenForUser } from '../../tenancy/staff-token';
 import type { OperatorApi, TenantDomain, TenantDomainApp, TenantStatus } from '../../tenancy/create-tenant/steps';
 
 /**
@@ -190,37 +190,5 @@ export async function localOperatorToken(opts: {
   clientSecret: string;
   redirectUri: string;
 }): Promise<string> {
-  const verifier = randomBytes(32).toString('base64url');
-  const challenge = createHash('sha256').update(verifier).digest('base64url');
-
-  const issued = await fetch(`${opts.baseUrl}/oauth/internal/issue-code`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-internal-secret': opts.internalSecret },
-    body: JSON.stringify({
-      clientId: opts.clientId,
-      userId: opts.operatorUserId,
-      redirectUri: opts.redirectUri,
-      codeChallenge: challenge,
-      codeChallengeMethod: 'S256',
-      scope: 'openid profile email',
-    }),
-  });
-  if (!issued.ok) throw new Error(`운영자 코드 발급 실패 ${issued.status} ${(await issued.text()).slice(0, 200)}`);
-  const { code } = (await issued.json()) as { code: string };
-
-  const token = await fetch(`${opts.baseUrl}/oauth/token`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      grant_type: 'authorization_code',
-      code,
-      redirect_uri: opts.redirectUri,
-      code_verifier: verifier,
-      client_id: opts.clientId,
-      client_secret: opts.clientSecret,
-    }),
-  });
-  if (!token.ok) throw new Error(`운영자 토큰 교환 실패 ${token.status} ${(await token.text()).slice(0, 200)}`);
-  const { access_token } = (await token.json()) as { access_token: string };
-  return access_token;
+  return tokenForUser(opts, opts.operatorUserId);
 }

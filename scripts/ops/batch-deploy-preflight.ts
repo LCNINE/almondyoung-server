@@ -450,6 +450,9 @@ function markDeployed(stage: string, states: Map<Deployment, MigrationState>): b
   run('git', ['tag', tag, deployed]);
   run('git', ['push', 'origin', tag]);
   ok(`${tag} → ${run('git', ['log', '-1', '--format=%h %s', deployed])}`);
+  // 테넌트가 둘 이상이면 배포마다 격리 실측의 읽기 전용 부분을 다시 돈다(점검 계정 Secret 이 있어야 돈다).
+  const coreTenants = states.get('lcnine-services')?.coreTenants.length ?? 0;
+  if (coreTenants > 1) info(`다음: npm run isolation:check -- --stage ${stage} — 테넌트 격리 실측(읽기 전용). 실패하면 테넌트를 «정지»로 돌린다`);
   return true;
 }
 
