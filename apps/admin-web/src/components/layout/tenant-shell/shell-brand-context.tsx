@@ -1,7 +1,7 @@
 'use client';
 
 import { createContext, useContext, type ReactNode } from 'react';
-import type { ShellBrand } from '@/lib/tenant-shell/shell-brand';
+import { unavailableUpstreamsOf, type ShellBrand, type TenantOneOnlyUpstream } from '@/lib/tenant-shell/shell-brand';
 
 const ShellBrandContext = createContext<ShellBrand>({ kind: 'default' });
 
@@ -12,4 +12,12 @@ export function ShellBrandProvider({ brand, children }: { brand: ShellBrand; chi
 
 export function useShellBrand(): ShellBrand {
   return useContext(ShellBrandContext);
+}
+
+/**
+ * 이 셸에서 그 업스트림을 쓸 수 있는가. 못 쓰면 그 업스트림을 부르는 본문 블록은 숨고 쿼리도 켜지 않는다 —
+ * 숨기만 하고 쿼리를 켜 두면 브라우저가 그대로 부른다.
+ */
+export function useUpstreamAvailable(upstream: TenantOneOnlyUpstream): boolean {
+  return !unavailableUpstreamsOf(useShellBrand()).has(upstream);
 }

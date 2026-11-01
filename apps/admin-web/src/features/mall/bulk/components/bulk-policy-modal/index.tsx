@@ -35,6 +35,7 @@ import {
 import { FormSelect } from '@/components/common/form';
 import { DEFAULT_SHIPPING_GROUP_CODE } from '@/lib/api/domains/medusa/shipping-groups';
 import { useShippingGroups } from '@/lib/services/medusa-shipping-groups';
+import { useUpstreamAvailable } from '@/components/layout/tenant-shell/shell-brand-context';
 
 interface Props {
   open: boolean;
@@ -51,16 +52,19 @@ interface Props {
   onSuccess: () => void;
 }
 
-const ROWS: { flag: PolicyFlag; label: string; desc: string }[] = [
+/** `channelExposure` — 채널 어댑터가 테넌트 1 스토어로 옮기는 노출 스위치. 테넌트 셸에선 숨는다. */
+const ROWS: { flag: PolicyFlag; label: string; desc: string; channelExposure?: true }[] = [
   {
     flag: 'hideMembershipPriceForNonMembers',
     label: '멤버십가 비공개',
     desc: '비회원에게 멤버십가 숫자 대신 "멤버십 회원에게 가격 공개"를 표시합니다.',
+    channelExposure: true,
   },
   {
     flag: 'isVisibleToMembersOnly',
     label: '멤버십 회원 전용 노출',
     desc: '비회원의 상품 목록·검색·상세 접근에서 숨깁니다.',
+    channelExposure: true,
   },
   {
     flag: 'isOverseas',
@@ -87,7 +91,10 @@ export function BulkPolicyModal({
   const [shippingGroupChoice, setShippingGroupChoice] = useState<string>(
     SHIPPING_GROUP_UNCHANGED
   );
-  const { data: shippingGroups } = useShippingGroups();
+  const shippingAvailable = useUpstreamAvailable('medusa');
+  const channelExposureAvailable = useUpstreamAvailable('channel-adapter');
+  const rows = ROWS.filter((row) => channelExposureAvailable || !row.channelExposure);
+  const { data: shippingGroups } = useShippingGroups(shippingAvailable);
   const shippingGroupOptions = [
     { value: SHIPPING_GROUP_UNCHANGED, label: '변경 안 함' },
     { value: SHIPPING_GROUP_DEFAULT, label: '기본 설정 사용' },
@@ -161,7 +168,7 @@ export function BulkPolicyModal({
             변경할 항목만 체크하고 켜기/끄기를 선택하세요.
           </p>
 
-          {ROWS.map(({ flag, label, desc }) => {
+          {rows.map(({ flag, label, desc }) => {
             const stats = flagStats(selectedItems, flag);
             const choice = choices[flag];
             const impact = flagImpact(stats, choice);
@@ -201,18 +208,20 @@ export function BulkPolicyModal({
             );
           })}
 
-          <div className="flex flex-col gap-2 rounded-md border p-3">
-            <Label htmlFor="bulk-policy-shipping-group">배송비 그룹</Label>
-            <p className="text-xs text-muted-foreground">
-              같은 그룹 상품끼리는 배송비가 한 번만 부과됩니다. 디지털 상품에는
-              적용되지 않습니다.
-            </p>
-            <FormSelect
-              value={shippingGroupChoice}
-              onValueChange={setShippingGroupChoice}
-              options={shippingGroupOptions}
-            />
-          </div>
+          {shippingAvailable && (
+            <div className="flex flex-col gap-2 rounded-md border p-3">
+              <Label htmlFor="bulk-policy-shipping-group">배송비 그룹</Label>
+              <p className="text-xs text-muted-foreground">
+                같은 그룹 상품끼리는 배송비가 한 번만 부과됩니다. 디지털 상품에는
+                적용되지 않습니다.
+              </p>
+              <FormSelect
+                value={shippingGroupChoice}
+                onValueChange={setShippingGroupChoice}
+                options={shippingGroupOptions}
+              />
+            </div>
+          )}
 
           <BulkFailureList items={failedItems} />
         </div>

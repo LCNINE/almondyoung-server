@@ -3,7 +3,7 @@ import { canAccess, resolveScreenAccess } from '../auth/screen-access';
 
 /**
  * 테넌트 셸의 허용 목록 — 테넌트마다가 아니라 코드에 하나다(비공개 ADR 0008). 목록 밖 화면은 테넌트 도메인에서 404 다.
- * 키는 `screen-access.ts` 와 같은 화면 경로(동적 세그먼트는 `[id]` 그대로)다.
+ * 키는 `screen-access.ts` 와 같은 화면 경로(동적 세그먼트는 `[id]` 그대로)다. 메뉴에 없는 화면은 메뉴 화면 아래 경로여야 한다(상세·만들기).
  *
  * 새 화면을 더하면 `tenant-shell.gate.spec.ts` 가 다시 잰다 — 그 화면이 테넌트 1 만 섬기는 업스트림(Medusa·wallet …)을 부르지
  * 않는지, `screen-access.ts` 에 있는지, 본문에 아몬드영·LCNINE 문구가 없는지.
@@ -11,6 +11,7 @@ import { canAccess, resolveScreenAccess } from '../auth/screen-access';
  */
 export const TENANT_SHELL_SCREENS = [
   '/inventory/warehouses',
+  '/inventory/warehouses/new',
   '/inventory/locations',
   '/inventory/skus',
   '/inventory/sku-groups',

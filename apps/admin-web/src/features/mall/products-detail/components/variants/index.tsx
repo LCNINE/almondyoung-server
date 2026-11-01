@@ -60,6 +60,7 @@ import {
 import { useQueryClient } from '@tanstack/react-query';
 import { useAdjustStock } from '@/lib/services/inventory';
 import { usePermissionCheck } from '@/hooks/use-permission';
+import { useUpstreamAvailable } from '@/components/layout/tenant-shell/shell-brand-context';
 import type {
   StockPolicyDto,
   VariantMatchingBatchItemDto,
@@ -616,6 +617,8 @@ function VariantsTable({
   );
 }
 
+// 매칭 열과 단건 SKU 연결 패널은 판매채널(Medusa) 품목을 SKU 에 잇는 도구다 — 읽기 키 `order.order.read` 가
+// Medusa 주문까지 연다. 테넌트 셸에선 열·패널을 숨기고 매칭 조회도 켜지 않는다. SKU 연결은 일괄 세션으로 한다.
 function VariantsFromMaster({ masterId }: { masterId: string }) {
   const { data: detail } = useProductDetailSuspense(masterId, null);
   const { page } = useQueryParams(['page'], 'variants');
@@ -625,7 +628,8 @@ function VariantsFromMaster({ masterId }: { masterId: string }) {
     currentPage,
     PAGE_SIZE
   );
-  const showMatchingColumns = detail.status === 'active';
+  const skuLinkAvailable = useUpstreamAvailable('medusa');
+  const showMatchingColumns = detail.status === 'active' && skuLinkAvailable;
   const variantIds = useMemo(
     () => variants.data.map((variant) => variant.id),
     [variants.data]
@@ -669,7 +673,8 @@ function VariantsFromVersion({
     currentPage,
     PAGE_SIZE
   );
-  const showMatchingColumns = detail.status === 'active';
+  const skuLinkAvailable = useUpstreamAvailable('medusa');
+  const showMatchingColumns = detail.status === 'active' && skuLinkAvailable;
   const variantIds = useMemo(
     () => variants.data.map((variant) => variant.id),
     [variants.data]

@@ -19,6 +19,7 @@ import {
   DrawerTitle,
 } from '@/components/ui/drawer';
 import { FormSelect } from '@/components/common/form';
+import { useUpstreamAvailable } from '@/components/layout/tenant-shell/shell-brand-context';
 import type { ShippingGroup } from '@/lib/api/domains/medusa/shipping-groups';
 import { useShippingGroups } from '@/lib/services/medusa-shipping-groups';
 import { useSuppliers } from '@/lib/services/inventory/queries';
@@ -117,7 +118,9 @@ function ProductBasicInformationEditDrawer({
   onOpenChange: (open: boolean) => void;
 }) {
   const updateVersion = useUpdateMasterVersion();
-  const { data: shippingGroups } = useShippingGroups();
+  // 배송비 그룹의 정의는 Medusa 에 있다. 테넌트 셸에선 블록을 숨기고 코드는 비운 채(null) 저장된다.
+  const shippingAvailable = useUpstreamAvailable('medusa');
+  const { data: shippingGroups } = useShippingGroups(shippingAvailable);
   const { data: suppliers } = useSuppliers({ limit: 200 });
   const supplierOptions = useMemo(
     () => [
@@ -289,13 +292,15 @@ function ProductBasicInformationEditDrawer({
                 </div>
               </div>
 
-              <ShippingInfoBlock
-                value={values.shippingGroupCode}
-                onChange={(next) => setValue('shippingGroupCode', next)}
-                groups={shippingGroups}
-                disabled={updateVersion.isPending}
-                digital={values.fulfillmentKind === 'digital'}
-              />
+              {shippingAvailable && (
+                <ShippingInfoBlock
+                  value={values.shippingGroupCode}
+                  onChange={(next) => setValue('shippingGroupCode', next)}
+                  groups={shippingGroups}
+                  disabled={updateVersion.isPending}
+                  digital={values.fulfillmentKind === 'digital'}
+                />
+              )}
 
               <div className="flex flex-col gap-2">
                 <Label htmlFor="product-basic-seo-title">SEO 제목</Label>
@@ -569,7 +574,10 @@ function ProductDetailGeneralContent({ masterId, versionId }: Props) {
     versionId
   );
   const updateShippingGroup = useUpdateShippingGroup(masterId, versionId);
-  const { data: shippingGroups } = useShippingGroups();
+  const shippingAvailable = useUpstreamAvailable('medusa');
+  // 멤버십 노출 스위치는 채널 어댑터가 테넌트 1 스토어로 옮긴다 — 테넌트 셸에는 그 스토어가 없다.
+  const channelExposureAvailable = useUpstreamAvailable('channel-adapter');
+  const { data: shippingGroups } = useShippingGroups(shippingAvailable);
   const { blockedReason } = usePermissionCheck();
   const membershipPriceReason = blockedReason(useUpdateMembershipPriceVisibility);
   const membersOnlyReason = blockedReason(useUpdateMembersOnlyVisibility);
@@ -595,13 +603,17 @@ function ProductDetailGeneralContent({ masterId, versionId }: Props) {
     { key: '시장가', value: formatMoney(data.marketPrice) },
     { key: '상태', value: formatStatus(data.status) },
     { key: '배송 유형', value: formatFulfillmentKind(data.fulfillmentKind) },
-    {
-      key: '배송비 그룹',
-      value:
-        data.fulfillmentKind === 'digital'
-          ? '-'
-          : labelByShippingGroupCode(shippingGroups, data.shippingGroupCode),
-    },
+    ...(shippingAvailable
+      ? [
+          {
+            key: '배송비 그룹',
+            value:
+              data.fulfillmentKind === 'digital'
+                ? '-'
+                : labelByShippingGroupCode(shippingGroups, data.shippingGroupCode),
+          },
+        ]
+      : []),
     { key: '도매 전용', value: formatBool(data.isWholesaleOnly) },
     { key: '해외직구', value: formatBool(data.isOverseas) },
     { key: 'SEO 제목', value: data.seoTitle ?? '-' },
@@ -697,107 +709,113 @@ function ProductDetailGeneralContent({ masterId, versionId }: Props) {
           </div>
         ))}
         <div className="flex flex-col gap-3 p-3">
-          <div>
-            <div className="text-sm font-medium text-gray-700">
-              운영 노출 정책
-            </div>
-            <p className="mt-1 text-xs text-gray-500">
-              active version에 즉시 적용되며 채널 어댑터를 통해 스토어에
-              반영됩니다.
-            </p>
-          </div>
+          {channelExposureAvailable && (
+            <>
+              <div>
+                <div className="text-sm font-medium text-gray-700">
+                  운영 노출 정책
+                </div>
+                <p className="mt-1 text-xs text-gray-500">
+                  active version에 즉시 적용되며 채널 어댑터를 통해 스토어에
+                  반영됩니다.
+                </p>
+              </div>
 
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex flex-col min-w-0 gap-1">
-              <Label htmlFor="product-detail-membership-price-visibility">
-                멤버십가 비공개
-              </Label>
-              <p className="text-xs text-gray-500">
-                비회원에게 멤버십가 숫자 대신 &ldquo;멤버십 회원에게 가격 공개&rdquo;를
-                표시합니다.
-              </p>
-            </div>
-            <BlockedReason reason={membershipPriceReason}>
-              {(blocked) => (
-                <Switch
-                  {...blocked}
-                  id="product-detail-membership-price-visibility"
-                  checked={data.hideMembershipPriceForNonMembers ?? false}
-                  onCheckedChange={
-                    membershipPriceReason
-                      ? undefined
-                      : handleMembershipPriceVisibilityChange
-                  }
-                  disabled={updateMembershipPriceVisibility.isPending}
-                  className="data-[state=unchecked]:border-gray-300"
-                />
-              )}
-            </BlockedReason>
-          </div>
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex flex-col min-w-0 gap-1">
+                  <Label htmlFor="product-detail-membership-price-visibility">
+                    멤버십가 비공개
+                  </Label>
+                  <p className="text-xs text-gray-500">
+                    비회원에게 멤버십가 숫자 대신 &ldquo;멤버십 회원에게 가격 공개&rdquo;를
+                    표시합니다.
+                  </p>
+                </div>
+                <BlockedReason reason={membershipPriceReason}>
+                  {(blocked) => (
+                    <Switch
+                      {...blocked}
+                      id="product-detail-membership-price-visibility"
+                      checked={data.hideMembershipPriceForNonMembers ?? false}
+                      onCheckedChange={
+                        membershipPriceReason
+                          ? undefined
+                          : handleMembershipPriceVisibilityChange
+                      }
+                      disabled={updateMembershipPriceVisibility.isPending}
+                      className="data-[state=unchecked]:border-gray-300"
+                    />
+                  )}
+                </BlockedReason>
+              </div>
 
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex flex-col min-w-0 gap-1">
-              <Label htmlFor="product-detail-members-only-visibility">
-                멤버십 회원 전용 노출
-              </Label>
-              <p className="text-xs text-gray-500">
-                비회원의 상품 목록, 검색 결과, 상세 접근에서 숨깁니다.
-              </p>
-            </div>
-            <BlockedReason reason={membersOnlyReason}>
-              {(blocked) => (
-                <Switch
-                  {...blocked}
-                  id="product-detail-members-only-visibility"
-                  checked={data.isVisibleToMembersOnly ?? false}
-                  onCheckedChange={
-                    membersOnlyReason
-                      ? undefined
-                      : handleMembersOnlyVisibilityChange
-                  }
-                  disabled={updateMembersOnlyVisibility.isPending}
-                  className="data-[state=unchecked]:border-gray-300"
-                />
-              )}
-            </BlockedReason>
-          </div>
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex flex-col min-w-0 gap-1">
+                  <Label htmlFor="product-detail-members-only-visibility">
+                    멤버십 회원 전용 노출
+                  </Label>
+                  <p className="text-xs text-gray-500">
+                    비회원의 상품 목록, 검색 결과, 상세 접근에서 숨깁니다.
+                  </p>
+                </div>
+                <BlockedReason reason={membersOnlyReason}>
+                  {(blocked) => (
+                    <Switch
+                      {...blocked}
+                      id="product-detail-members-only-visibility"
+                      checked={data.isVisibleToMembersOnly ?? false}
+                      onCheckedChange={
+                        membersOnlyReason
+                          ? undefined
+                          : handleMembersOnlyVisibilityChange
+                      }
+                      disabled={updateMembersOnlyVisibility.isPending}
+                      className="data-[state=unchecked]:border-gray-300"
+                    />
+                  )}
+                </BlockedReason>
+              </div>
 
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex flex-col min-w-0 gap-1">
-              <Label htmlFor="product-detail-requires-membership">
-                멤버십 전용 구매
-              </Label>
-              <p className="text-xs text-gray-500">
-                멤버십 회원만 구매할 수 있습니다. 비회원과 일반회원에게는 품절로
-                표시됩니다. 상품 노출은 제한되지 않습니다.
-              </p>
-            </div>
-            <BlockedReason reason={requiresMembershipReason}>
-              {(blocked) => (
-                <Switch
-                  {...blocked}
-                  id="product-detail-requires-membership"
-                  checked={data.requiresMembership ?? false}
-                  onCheckedChange={
-                    requiresMembershipReason
-                      ? undefined
-                      : handleRequiresMembershipChange
-                  }
-                  disabled={updateRequiresMembership.isPending}
-                  className="data-[state=unchecked]:border-gray-300"
-                />
-              )}
-            </BlockedReason>
-          </div>
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex flex-col min-w-0 gap-1">
+                  <Label htmlFor="product-detail-requires-membership">
+                    멤버십 전용 구매
+                  </Label>
+                  <p className="text-xs text-gray-500">
+                    멤버십 회원만 구매할 수 있습니다. 비회원과 일반회원에게는 품절로
+                    표시됩니다. 상품 노출은 제한되지 않습니다.
+                  </p>
+                </div>
+                <BlockedReason reason={requiresMembershipReason}>
+                  {(blocked) => (
+                    <Switch
+                      {...blocked}
+                      id="product-detail-requires-membership"
+                      checked={data.requiresMembership ?? false}
+                      onCheckedChange={
+                        requiresMembershipReason
+                          ? undefined
+                          : handleRequiresMembershipChange
+                      }
+                      disabled={updateRequiresMembership.isPending}
+                      className="data-[state=unchecked]:border-gray-300"
+                    />
+                  )}
+                </BlockedReason>
+              </div>
+            </>
+          )}
 
-          <ShippingInfoBlock
-            value={data.shippingGroupCode ?? ''}
-            onChange={handleShippingGroupChange}
-            groups={shippingGroups}
-            disabled={updateShippingGroup.isPending}
-            blockedReason={shippingGroupReason}
-            digital={data.fulfillmentKind === 'digital'}
-          />
+          {shippingAvailable && (
+            <ShippingInfoBlock
+              value={data.shippingGroupCode ?? ''}
+              onChange={handleShippingGroupChange}
+              groups={shippingGroups}
+              disabled={updateShippingGroup.isPending}
+              blockedReason={shippingGroupReason}
+              digital={data.fulfillmentKind === 'digital'}
+            />
+          )}
 
           <div className="flex items-center justify-between gap-3">
             <div className="flex flex-col min-w-0 gap-1">

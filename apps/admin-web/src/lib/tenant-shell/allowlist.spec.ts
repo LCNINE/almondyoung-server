@@ -9,6 +9,7 @@ describe('tenantShellScreenOf — the tenant shell opens only its allowlist', ()
   it.each([
     ['/inventory/warehouses', '/inventory/warehouses'],
     ['/inventory/warehouses/', '/inventory/warehouses'],
+    ['/inventory/warehouses/new', '/inventory/warehouses/new'],
     ['/mall/products-list/abc-123', '/mall/products-list/[masterId]'],
     ['/mall/products-list/abc-123/versions', '/mall/products-list/[masterId]/versions'],
     ['/mall/bulk-sessions/7', '/mall/bulk-sessions/[id]'],

@@ -13,11 +13,13 @@ const shippingGroupKeys = {
   all: ['medusa-shipping-groups'] as const,
 };
 
-export const useShippingGroups = () =>
+/** `enabled: false` 면 부르지 않는다 — 테넌트 셸은 Medusa 를 못 쓴다(`useUpstreamAvailable('medusa')`). */
+export const useShippingGroups = (enabled = true) =>
   useQuery({
     queryKey: shippingGroupKeys.all,
     queryFn: () => medusaShippingGroupsApi.list(),
     staleTime: 30_000,
+    enabled,
   });
 
 export const useCreateShippingGroup = () => {
