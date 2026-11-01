@@ -19,6 +19,8 @@ const nextConfig: NextConfig = {
     '/demo/manual/*': ['./demo-guides/**/*'],
   },
   transpilePackages: ['dagre', '@packages/web-observability'],
+  // next dev 가 로컬 테넌트 도메인(rehearsal.localhost:8002)을 다른 기원으로 막지 않게 — 배포 빌드엔 영향 없다.
+  allowedDevOrigins: ['*.localhost'],
   // Next.js 15부터 instrumentationHook은 stable로 전환되어 experimental 설정이 불필요
   // experimental: {
   //   instrumentationHook: true,

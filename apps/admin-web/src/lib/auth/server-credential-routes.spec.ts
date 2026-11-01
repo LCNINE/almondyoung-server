@@ -14,7 +14,8 @@ const GATED = ['CHANNEL_ADAPTER_INTERNAL_KEY', 'MEDUSA_API_KEY'];
 
 /** 테넌트 데이터를 열지 않는 자격증명과 그 이유. */
 const NOT_TENANT_DATA: Record<string, string> = {
-  OIDC_CLIENT_SECRET: '로그인 코드를 토큰으로 바꾼다 — 토큰 테넌트는 user-service 가 정한다',
+  OIDC_CLIENT_SECRET:
+    '로그인 코드를 토큰으로 바꾼다 — 토큰 테넌트는 user-service 가 정한다. 테넌트 셸의 «주소 → 테넌트» 조회(브랜드·auth 주소)도 이 자격으로 연다',
   KAKAO_REST_API_KEY: '카카오 주소 검색 — 외부 공용 데이터',
   GRAFANA_OTLP_TOKEN: '관측 데이터를 내보내기만 한다',
 };

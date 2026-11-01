@@ -6,13 +6,69 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { PermissionStatusBanner } from '@/components/auth/permission-status-banner';
 import { PiiMaskedBanner } from '@/components/pii/pii-masked-banner';
+import type { ShellBrand } from '@/lib/tenant-shell/shell-brand';
 import { usesStandaloneLayout } from './page-layout-mode';
+import { ShellBrandProvider } from './tenant-shell/shell-brand-context';
 
 const AdminShell = dynamic(() =>
   import('./admin-shell').then((module) => module.AdminShell)
 );
+const TenantShell = dynamic(() =>
+  import('./tenant-shell/tenant-shell').then((module) => module.TenantShell)
+);
 
-export function MainLayout({ children }: { children: ReactNode }) {
+/** 들어온 주소가 셸을 정한다(루트 레이아웃이 `brand` 로 내려 준다). 본문은 두 셸이 같다. */
+export function MainLayout({
+  brand,
+  children,
+}: {
+  brand: ShellBrand;
+  children: ReactNode;
+}) {
+  return (
+    <ShellBrandProvider brand={brand}>
+      {brand.kind === 'tenant' ? (
+        <TenantLayout displayName={brand.displayName} logoUrl={brand.logoUrl}>
+          {children}
+        </TenantLayout>
+      ) : brand.kind === 'neutral' ? (
+        children
+      ) : (
+        <DefaultLayout>{children}</DefaultLayout>
+      )}
+    </ShellBrandProvider>
+  );
+}
+
+/** 테넌트 셸 — 데모 배너는 없다(테넌트 도메인은 데모 배포가 아니다). */
+function TenantLayout({
+  displayName,
+  logoUrl,
+  children,
+}: {
+  displayName: string;
+  logoUrl: string | null;
+  children: ReactNode;
+}) {
+  const pathname = usePathname();
+  if (usesStandaloneLayout(pathname)) return <>{children}</>;
+  return (
+    <TenantShell
+      displayName={displayName}
+      logoUrl={logoUrl}
+      banner={
+        <>
+          <PermissionStatusBanner />
+          <PiiMaskedBanner />
+        </>
+      }
+    >
+      {children}
+    </TenantShell>
+  );
+}
+
+function DefaultLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
 
   const demoBanner = process.env.NEXT_PUBLIC_APP_STAGE === 'demo' && (
@@ -47,7 +103,10 @@ export function MainLayout({ children }: { children: ReactNode }) {
   }
 
   if (usesStandaloneLayout(pathname)) {
-    const signedOut = pathname === '/login' || pathname === '/unauthorized';
+    const signedOut =
+      pathname === '/login' ||
+      pathname === '/unauthorized' ||
+      pathname === '/wrong-account';
     return (
       <>
         {demoBanner}

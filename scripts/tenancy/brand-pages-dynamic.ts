@@ -16,7 +16,13 @@ export const BRAND_PAGE_TREES: readonly {
     sharedDirs: ['web/auth-web/components', 'web/auth-web/lib'],
     nextConfig: 'web/auth-web/next.config.mjs',
   },
-  // admin-web 테넌트 셸(티켓 20)이 생기면 그 세그먼트를 여기 더한다.
+  {
+    // 테넌트 셸은 따로 세그먼트가 아니다 — 같은 경로를 들어온 주소로 가른다(루트 레이아웃이 셸·탭 제목·파비콘을 고른다).
+    name: 'admin-web (앱 전체 — 기본 주소와 테넌트 도메인을 같은 배포가 받는다)',
+    appDir: 'apps/admin-web/src/app',
+    sharedDirs: ['apps/admin-web/src/components', 'apps/admin-web/src/lib', 'apps/admin-web/src/features'],
+    nextConfig: 'apps/admin-web/next.config.ts',
+  },
 ];
 
 export interface BrandPageStaticViolation {

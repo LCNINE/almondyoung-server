@@ -7,6 +7,7 @@ import {
   clearSessionCookiesOn,
   writeSessionCookies,
 } from '@/lib/auth/session-cookies';
+import { redirectOriginOf, siteOfRequest } from '@/lib/tenant-shell/site.server';
 
 /**
  * Route Handler 는 Node 런타임에서만 돈다. 미들웨어(Edge)가 refresh 를 못 하는 이유 —
@@ -31,7 +32,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   const redirectTo = sanitizeInternalRedirect(
     request.nextUrl.searchParams.get('redirect_to')
   );
-  const origin = request.nextUrl.origin;
+  const origin = redirectOriginOf(await siteOfRequest(request), request);
 
   const refresh = request.cookies.get(
     SESSION_COOKIE_NAMES.REFRESH_TOKEN

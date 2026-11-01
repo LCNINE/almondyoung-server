@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from 'node:crypto';
-import type { OperatorApi, TenantStatus } from '../../tenancy/create-tenant/steps';
+import type { OperatorApi, TenantDomain, TenantDomainApp, TenantStatus } from '../../tenancy/create-tenant/steps';
 
 /**
  * user-service 운영자 API(`/admin/platform/*` + 테넌트를 받는 역할·계정·부여 API)의 HTTP 어댑터.
@@ -12,7 +12,11 @@ export class HttpOperatorApi implements OperatorApi {
   ) {}
 
   async getTenant(id: string) {
-    const t = await this.call<{ slug: string; status: TenantStatus; domains: string[] }>(
+    const t = await this.call<{
+      slug: string;
+      status: TenantStatus;
+      domains: { host: string; app: TenantDomainApp | null }[];
+    }>(
       'GET',
       `/admin/platform/tenants/${encodeURIComponent(id)}`,
       undefined,
@@ -21,7 +25,7 @@ export class HttpOperatorApi implements OperatorApi {
     return t ?? null;
   }
 
-  async createTenant(input: { id: string; slug: string; displayName: string; domains: string[] }) {
+  async createTenant(input: { id: string; slug: string; displayName: string; domains: TenantDomain[] }) {
     await this.call('POST', '/admin/platform/tenants', input);
   }
 
@@ -29,8 +33,8 @@ export class HttpOperatorApi implements OperatorApi {
     await this.call('DELETE', `/admin/platform/tenants/${encodeURIComponent(id)}`);
   }
 
-  async addDomain(tenantId: string, host: string) {
-    await this.call('POST', `/admin/platform/tenants/${encodeURIComponent(tenantId)}/domains`, { host });
+  async addDomain(tenantId: string, domain: TenantDomain) {
+    await this.call('POST', `/admin/platform/tenants/${encodeURIComponent(tenantId)}/domains`, domain);
   }
 
   async setTenantStatus(id: string, status: 'active' | 'suspended') {

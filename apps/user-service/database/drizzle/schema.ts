@@ -131,6 +131,9 @@ export const tenants = pgTable('tenants', {
   ...timestampColumns,
 });
 
+export const TENANT_DOMAIN_APPS = ['admin-web', 'auth-web'] as const;
+export type TenantDomainApp = (typeof TENANT_DOMAIN_APPS)[number];
+
 // 테넌트 도메인 — 웹 직원 앱의 주소가 테넌트를 정한다. 한 주소는 한 테넌트에만 속한다.
 export const tenantDomains = pgTable(
   'tenant_domains',
@@ -140,6 +143,9 @@ export const tenantDomains = pgTable(
     tenantId: varchar('tenant_id', { length: 64 })
       .references(() => tenants.id, { onDelete: 'cascade' })
       .notNull(),
+    // 이 주소가 어느 앱의 주소인가('admin-web' | 'auth-web') — admin-web 테넌트 셸이 로그인을 그 테넌트의 auth-web 주소로 보낸다.
+    // 아직 nullable 이다(expand). 비면 그 주소로는 테넌트 셸·로그인 주소를 고르지 않는다.
+    app: varchar('app', { length: 16 }).$type<TenantDomainApp>(),
     createdAt: timestamp('created_at')
       .default(sql`now()`)
       .notNull(),

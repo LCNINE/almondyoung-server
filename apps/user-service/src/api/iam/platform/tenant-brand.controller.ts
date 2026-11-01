@@ -2,8 +2,9 @@ import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { ApiExcludeEndpoint, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Public } from '../../../commons/decorator/public.decorator';
 import { OAuthInternalSecretGuard } from '../../../commons/guards/oauth-internal-secret.guard';
-import { TenantBrandDto, TenantBrandQueryDto, TenantSiteDto } from './dto/platform.dto';
+import { TenantAdminSiteDto, TenantBrandDto, TenantBrandQueryDto, TenantSiteDto } from './dto/platform.dto';
 import { PlatformService } from './platform.service';
+import { StaffWebClientGuard } from './staff-web-client.guard';
 
 /** 로그인 전에 그 주소의 브랜드를 그리려고 auth-web·admin-web 서버가 토큰 없이 부른다. */
 @ApiTags('Tenant brand')
@@ -28,5 +29,17 @@ export class TenantBrandController {
   @Get('site')
   site(@Query() query: TenantBrandQueryDto): Promise<TenantSiteDto> {
     return this.service.site(query.host);
+  }
+
+  /**
+   * admin-web 서버 전용(직원 웹 클라이언트의 OIDC 자격, `StaffWebClientGuard`) — admin-web 주소면 테넌트 id·브랜드와 그 테넌트의
+   * auth-web 주소. 테넌트 셸이 토큰 테넌트를 대조하고 로그인을 그 주소로 보낸다. admin-web 주소가 아니면 404.
+   */
+  @ApiExcludeEndpoint()
+  @Public()
+  @UseGuards(StaffWebClientGuard)
+  @Get('admin-site')
+  adminSite(@Query() query: TenantBrandQueryDto): Promise<TenantAdminSiteDto> {
+    return this.service.adminSite(query.host);
   }
 }

@@ -1,14 +1,18 @@
 import type { CreationStep } from './runner';
-import { buildCreationSteps, type CreationPorts, type OperatorApi, type TenantPlan } from './steps';
+import { buildCreationSteps, type CreationPorts, type OperatorApi, type TenantDomainApp, type TenantPlan } from './steps';
 
 /**
  * 테넌트 도메인은 admin-web 주소와 auth-web 주소 둘이다(CloudFront 배포가 앱마다 하나). 계획의 도메인이 나중에 늘어도 —
- * 이미 만든 테넌트에 auth-web 주소를 처음 붙일 때처럼 — 다시 돌리면 빠진 도메인만 붙는다.
+ * 이미 만든 테넌트에 auth-web 주소를 처음 붙일 때처럼 — 다시 돌리면 빠진 도메인만 붙는다. 앱이 빈 도메인(앱 칸 전에 붙인 것)도
+ * 다시 붙여 앱을 채운다 — admin-web 테넌트 셸이 그 앱으로 로그인 주소를 고른다.
  */
 const plan: TenantPlan = {
   entry: { id: '2', slug: 'rehearsal', coreDb: 'core_rehearsal', publicBucket: 'rehearsal-public', privateBucket: 'rehearsal-private' },
   displayName: '리허설 상사',
-  domains: ['rehearsal.localhost:8002', 'rehearsal.localhost:8001'],
+  domains: [
+    { host: 'rehearsal.localhost:8002', app: 'admin-web' },
+    { host: 'rehearsal.localhost:8001', app: 'auth-web' },
+  ],
   staffClient: { clientId: 'admin-web', redirectUris: [], postLogoutRedirectUris: [] },
   role: { name: 'r', displayName: 'r', description: 'r', landingPath: '/', permissions: [] },
   checkAccount: { loginId: 'c', username: 'c', nickname: 'c', email: 'c@example.test' },
@@ -29,16 +33,18 @@ function stub<T extends object>(name: string, impl: Partial<T> = {}): T {
   }) as T;
 }
 
-function fakeOperator(tenant: { status: 'preparing' | 'active'; domains: string[] } | null) {
+type Domain = { host: string; app: TenantDomainApp | null };
+
+function fakeOperator(tenant: { status: 'preparing' | 'active'; domains: Domain[] } | null) {
   const added: string[] = [];
   const operator = stub<OperatorApi>('operator', {
     async getTenant(id: string) {
       return tenant && id === '2' ? { slug: 'rehearsal', ...tenant } : null;
     },
-    async addDomain(tenantId: string, host: string) {
+    async addDomain(tenantId: string, domain: { host: string; app: TenantDomainApp }) {
       if (!tenant || tenantId !== '2') throw new Error('없는 테넌트');
-      tenant.domains.push(host);
-      added.push(host);
+      tenant.domains = [...tenant.domains.filter((d) => d.host !== domain.host), domain];
+      added.push(domain.host);
     },
   });
   return { operator, added };
@@ -62,7 +68,10 @@ const domainStep = (operator: OperatorApi): CreationStep => {
 
 describe('테넌트 도메인 단계', () => {
   it('이미 활성인 테넌트에 계획의 빠진 도메인만 붙인다', async () => {
-    const { operator, added } = fakeOperator({ status: 'active', domains: ['rehearsal.localhost:8002'] });
+    const { operator, added } = fakeOperator({
+      status: 'active',
+      domains: [{ host: 'rehearsal.localhost:8002', app: 'admin-web' }],
+    });
     const step = domainStep(operator);
 
     expect(await step.isDone()).toBe(false);
@@ -73,8 +82,31 @@ describe('테넌트 도메인 단계', () => {
   });
 
   it('계획의 도메인이 다 있으면 «이미 됐다»', async () => {
-    const { operator } = fakeOperator({ status: 'active', domains: ['rehearsal.localhost:8001', 'rehearsal.localhost:8002'] });
+    const { operator } = fakeOperator({
+      status: 'active',
+      domains: [
+        { host: 'rehearsal.localhost:8001', app: 'auth-web' },
+        { host: 'rehearsal.localhost:8002', app: 'admin-web' },
+      ],
+    });
     expect(await domainStep(operator).isDone()).toBe(true);
+  });
+
+  it('앱이 빈 도메인은 다시 붙여 앱을 채운다', async () => {
+    const { operator, added } = fakeOperator({
+      status: 'active',
+      domains: [
+        { host: 'rehearsal.localhost:8001', app: null },
+        { host: 'rehearsal.localhost:8002', app: 'admin-web' },
+      ],
+    });
+    const step = domainStep(operator);
+
+    expect(await step.isDone()).toBe(false);
+    await step.run();
+
+    expect(added).toEqual(['rehearsal.localhost:8001']);
+    expect(await step.isDone()).toBe(true);
   });
 
   it('행 단계 뒤에 온다 — 행이 없으면 붙일 곳이 없다', async () => {

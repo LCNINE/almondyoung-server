@@ -3,6 +3,7 @@ import "server-only";
 import * as crypto from "crypto";
 import { createRemoteJWKSet, jwtVerify } from "jose";
 
+import type { OidcEndpoints } from "../tenant-shell/site-rules";
 import { oidcEnv } from "./env";
 
 /**
@@ -15,6 +16,11 @@ export type OidcStateRecord = {
   codeVerifier: string;
   /** 로그인 후 돌려보낼 admin-web 내부 경로 (절대 외부 URL 거부) */
   redirectTo: string;
+  /**
+   * authorize 에 실은 redirect_uri — 토큰 교환에 같은 값을 실어야 한다. 테넌트 셸은 들어온 주소마다 다르다.
+   * 이 칸 전에 심은 쿠키(배포 직후 10분)에는 없다 — 그때는 env 값이다.
+   */
+  redirectUri?: string;
 };
 
 export type TokenSet = {
@@ -44,8 +50,12 @@ function s256(verifier: string): string {
 /**
  * authorize 단계 비밀 + redirectTo 를 함께 묶어 반환. 호출자는 record 를 단일
  * 단기 HttpOnly 쿠키로 직렬화하고, authorizeUrl 로 사용자를 redirect 한다.
+ * 주소(authorize·redirect_uri)는 들어온 셸이 정한다(`oidcEndpointsOf`).
  */
-export function createAuthorizationRequest(redirectTo: string): {
+export function createAuthorizationRequest(
+  redirectTo: string,
+  endpoints: Pick<OidcEndpoints, "authorizationUrl" | "redirectUri">,
+): {
   authorizeUrl: string;
   stateRecord: OidcStateRecord;
 } {
@@ -54,10 +64,10 @@ export function createAuthorizationRequest(redirectTo: string): {
   const codeVerifier = randomBase64Url(64);
   const codeChallenge = s256(codeVerifier);
 
-  const url = new URL(oidcEnv.authorizationUrl);
+  const url = new URL(endpoints.authorizationUrl);
   url.searchParams.set("response_type", "code");
   url.searchParams.set("client_id", oidcEnv.clientId);
-  url.searchParams.set("redirect_uri", oidcEnv.redirectUri);
+  url.searchParams.set("redirect_uri", endpoints.redirectUri);
   url.searchParams.set("scope", oidcEnv.scope);
   url.searchParams.set("state", state);
   url.searchParams.set("nonce", nonce);
@@ -66,7 +76,7 @@ export function createAuthorizationRequest(redirectTo: string): {
 
   return {
     authorizeUrl: url.toString(),
-    stateRecord: { state, nonce, codeVerifier, redirectTo },
+    stateRecord: { state, nonce, codeVerifier, redirectTo, redirectUri: endpoints.redirectUri },
   };
 }
 
@@ -79,11 +89,12 @@ export function createAuthorizationRequest(redirectTo: string): {
 export async function exchangeCodeForTokens(
   code: string,
   codeVerifier: string,
+  redirectUri: string,
 ): Promise<TokenSet> {
   const body = new URLSearchParams({
     grant_type: "authorization_code",
     code,
-    redirect_uri: oidcEnv.redirectUri,
+    redirect_uri: redirectUri,
     client_id: oidcEnv.clientId,
     client_secret: oidcEnv.clientSecret,
     code_verifier: codeVerifier,
@@ -196,11 +207,14 @@ export async function verifyIdToken(
  * 위임하기 때문. user-service origin(issuerUrl) 으로 직접 navigate 하면 cross-domain 이라 auth-web
  * 세션 쿠키가 안 지워져 자동 재로그인된다.
  */
-export function buildEndSessionUrl(idToken: string | null): string {
-  const authWebOrigin = new URL(oidcEnv.authorizationUrl).origin;
+export function buildEndSessionUrl(
+  idToken: string | null,
+  endpoints: Pick<OidcEndpoints, "authorizationUrl" | "postLogoutRedirectUri">,
+): string {
+  const authWebOrigin = new URL(endpoints.authorizationUrl).origin;
   const url = new URL(`${authWebOrigin}/oauth/end_session`);
   url.searchParams.set("client_id", oidcEnv.clientId);
-  url.searchParams.set("post_logout_redirect_uri", oidcEnv.postLogoutRedirectUri);
+  url.searchParams.set("post_logout_redirect_uri", endpoints.postLogoutRedirectUri);
   if (idToken) url.searchParams.set("id_token_hint", idToken);
   return url.toString();
 }

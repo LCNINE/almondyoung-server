@@ -53,7 +53,10 @@ async function main(): Promise<void> {
       privateBucket: required('E2E_TENANT2_PRIVATE_BUCKET'),
     },
     displayName: required('E2E_TENANT2_NAME'),
-    domains: [domain, authDomain],
+    domains: [
+      { host: domain, app: 'admin-web' },
+      { host: authDomain, app: 'auth-web' },
+    ],
     staffClient: {
       clientId: 'admin-web',
       redirectUris: [`http://${domain}/auth/callback`],

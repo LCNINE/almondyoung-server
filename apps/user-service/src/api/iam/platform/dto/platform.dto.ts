@@ -13,11 +13,25 @@ import {
   IsUUID,
   Matches,
   MaxLength,
+  ValidateNested,
 } from 'class-validator';
+import { Type } from 'class-transformer';
+import { TENANT_DOMAIN_APPS, type TenantDomainApp } from 'apps/user-service/database/drizzle/schema';
 import { IsRedirectUri } from '../../../oauth/redirect-uri';
 
 /** URL 의 host(포트 포함). 대소문자는 저장할 때 소문자로 맞춘다. */
 const HOST = /^[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)*(?::\d{1,5})?$/;
+
+/** 테넌트 도메인 하나 — 주소와 그 주소가 부르는 앱(admin-web 의 테넌트 셸 / auth-web 의 테넌트 로그인). */
+export class TenantDomainDto {
+  @ApiProperty({ description: 'host(포트 포함)' })
+  @Matches(HOST)
+  @MaxLength(255)
+  host!: string;
+  @ApiProperty({ enum: TENANT_DOMAIN_APPS })
+  @IsIn(TENANT_DOMAIN_APPS)
+  app!: TenantDomainApp;
+}
 
 export class TenantDto {
   @ApiProperty() id!: string;
@@ -25,7 +39,8 @@ export class TenantDto {
   @ApiProperty({ enum: ['preparing', 'active', 'suspended'] }) status!: 'preparing' | 'active' | 'suspended';
   @ApiProperty() displayName!: string;
   @ApiProperty({ nullable: true, type: String }) logoUrl!: string | null;
-  @ApiProperty({ type: [String], description: '테넌트 도메인(host)' }) domains!: string[];
+  @ApiProperty({ type: [TenantDomainDto], description: '테넌트 도메인. app 이 null 이면 앱 칸 전에 들어온 행이다' })
+  domains!: { host: string; app: TenantDomainApp | null }[];
   @ApiProperty() createdAt!: Date;
   @ApiProperty() updatedAt!: Date;
 }
@@ -45,13 +60,13 @@ export class CreateTenantDto {
   @IsUrl({ protocols: ['https'], require_protocol: true })
   @MaxLength(1000)
   logoUrl?: string;
-  @ApiProperty({ type: [String], description: '테넌트 도메인(host, 포트 포함). 1개 이상' })
+  @ApiProperty({ type: [TenantDomainDto], description: '테넌트 도메인과 그 앱. 1개 이상' })
   @IsArray()
   @ArrayMinSize(1)
   @ArrayMaxSize(10)
-  @Matches(HOST, { each: true })
-  @MaxLength(255, { each: true })
-  domains!: string[];
+  @ValidateNested({ each: true })
+  @Type(() => TenantDomainDto)
+  domains!: TenantDomainDto[];
 }
 
 export class SetTenantStatusDto {
@@ -60,12 +75,8 @@ export class SetTenantStatusDto {
   status!: 'active' | 'suspended';
 }
 
-export class AddTenantDomainDto {
-  @ApiProperty({ description: '더할 테넌트 도메인(host, 포트 포함) — 예: 그 테넌트의 auth-web 주소' })
-  @Matches(HOST)
-  @MaxLength(255)
-  host!: string;
-}
+/** 더할 테넌트 도메인 — 예: 그 테넌트의 auth-web 주소. */
+export class AddTenantDomainDto extends TenantDomainDto {}
 
 export class AddTenantMemberDto {
   @ApiProperty() @IsUUID() userId!: string;
@@ -110,6 +121,12 @@ export class TenantBrandDto {
   @ApiProperty() displayName!: string;
   @ApiProperty({ nullable: true, type: String }) logoUrl!: string | null;
   @ApiProperty({ description: '활성 테넌트인가(아니면 로그인할 수 없다)' }) active!: boolean;
+}
+
+export class TenantAdminSiteDto extends TenantBrandDto {
+  @ApiProperty() tenantId!: string;
+  @ApiProperty({ nullable: true, type: String, description: '그 테넌트의 auth-web 주소 — 테넌트 셸이 로그인을 여기로 보낸다' })
+  authHost!: string | null;
 }
 
 export class TenantSiteDto extends TenantBrandDto {

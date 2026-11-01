@@ -5,6 +5,7 @@ import {
   consumeStateCookie,
   setSessionCookies,
 } from "@/lib/auth/session-cookies";
+import { oidcEnv } from "@/lib/auth/env";
 import { chooseLanding } from "@/lib/auth/landing";
 import { getMyPermissionsForToken } from "@/lib/auth/my-permissions.server";
 import {
@@ -12,6 +13,9 @@ import {
   verifyIdToken,
   type OidcStateRecord,
 } from "@/lib/auth/oidc-client";
+import { chooseTenantLanding } from "@/lib/tenant-shell/allowlist";
+import { redirectOriginOf, siteOfRequest } from "@/lib/tenant-shell/site.server";
+import type { AdminSite } from "@/lib/tenant-shell/site-rules";
 
 /**
  * IdP 가 사용자 동의/로그인 완료 후 redirect 로 진입하는 callback 라우트.
@@ -27,31 +31,33 @@ import {
  */
 export async function GET(request: NextRequest): Promise<NextResponse> {
   const url = request.nextUrl;
+  const site = await siteOfRequest(request);
+  const origin = redirectOriginOf(site, request);
   const code = url.searchParams.get("code");
   const stateFromQuery = url.searchParams.get("state");
   const errorFromIdp = url.searchParams.get("error");
 
   if (errorFromIdp) {
-    return failRedirect(request, errorFromIdp);
+    return failRedirect(origin, errorFromIdp);
   }
   if (!code || !stateFromQuery) {
-    return failRedirect(request, "missing_code_or_state");
+    return failRedirect(origin, "missing_code_or_state");
   }
 
   const stateRecord = await consumeStateCookie<OidcStateRecord>();
   if (!stateRecord) {
-    return failRedirect(request, "state_cookie_missing");
+    return failRedirect(origin, "state_cookie_missing");
   }
   if (stateRecord.state !== stateFromQuery) {
-    return failRedirect(request, "state_mismatch");
+    return failRedirect(origin, "state_mismatch");
   }
 
   let tokens;
   try {
-    tokens = await exchangeCodeForTokens(code, stateRecord.codeVerifier);
+    tokens = await exchangeCodeForTokens(code, stateRecord.codeVerifier, stateRecord.redirectUri ?? oidcEnv.redirectUri);
   } catch (e) {
     console.error("[oidc-callback] token exchange failed", e);
-    return failRedirect(request, "token_exchange_failed");
+    return failRedirect(origin, "token_exchange_failed");
   }
 
   if (tokens.idToken) {
@@ -59,11 +65,11 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       await verifyIdToken(tokens.idToken, stateRecord.nonce);
     } catch (e) {
       console.error("[oidc-callback] id_token verification failed", e);
-      return failRedirect(request, "id_token_verification_failed");
+      return failRedirect(origin, "id_token_verification_failed");
     }
   }
 
-  const dest = new URL(await landingFor(stateRecord.redirectTo, tokens.accessToken), request.nextUrl.origin);
+  const dest = new URL(await landingFor(site, stateRecord.redirectTo, tokens.accessToken), origin);
   const response = NextResponse.redirect(dest);
 
   // NextResponse.redirect 의 cookies API 는 .set 을 지원 — session-cookies 의 writeSessionCookies 가
@@ -76,21 +82,24 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
 /**
  * 기본 목적지(`/`)로 가는 로그인이면 역할이 지정한 첫 화면으로 보낸다. 권한 조회는 역할 조합 캐시를 타고,
- * 실패하면 가려던 곳 그대로 — 첫 화면은 편의라 로그인을 막지 않는다.
+ * 실패하면 가려던 곳 그대로 — 첫 화면은 편의라 로그인을 막지 않는다. 테넌트 셸은 허용 목록 안에서만 고른다
+ * (목록 밖이면 `/` 가 다시 고른다 — route-guard).
  */
-async function landingFor(redirectTo: string, accessToken: string): Promise<string> {
+async function landingFor(site: AdminSite, redirectTo: string, accessToken: string): Promise<string> {
   if (redirectTo !== "/") return redirectTo;
   try {
     const mine = await getMyPermissionsForToken(accessToken);
-    return mine ? chooseLanding(mine, redirectTo) : redirectTo;
+    if (!mine) return redirectTo;
+    if (site.kind === "tenant") return chooseTenantLanding(mine) ?? redirectTo;
+    return chooseLanding(mine, redirectTo);
   } catch (e) {
     console.error("[oidc-callback] landing lookup failed", e);
     return redirectTo;
   }
 }
 
-function failRedirect(request: NextRequest, code: string): NextResponse {
-  const url = new URL("/login", request.nextUrl.origin);
+function failRedirect(origin: string, code: string): NextResponse {
+  const url = new URL("/login", origin);
   url.searchParams.set("error", code);
   return NextResponse.redirect(url);
 }

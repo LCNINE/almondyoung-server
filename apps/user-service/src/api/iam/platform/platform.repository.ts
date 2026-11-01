@@ -7,12 +7,19 @@ import {
   tenants,
   tokens,
   users,
+  type TenantDomainApp,
   type UserServiceSchema,
   type UserServiceTx,
 } from 'apps/user-service/database/drizzle/schema';
 import { and, eq, inArray, isNull } from 'drizzle-orm';
 
 export type TenantStatus = (typeof tenants.$inferSelect)['status'];
+
+export interface TenantDomainEntry {
+  readonly host: string;
+  /** 앱 칸 전에 들어온 행은 null 이다. */
+  readonly app: TenantDomainApp | null;
+}
 
 export interface ClientUris {
   readonly clientId: string;
@@ -126,9 +133,18 @@ export class PlatformRepository {
     return rows.map((r) => r.host);
   }
 
-  async domainsOfAll(): Promise<{ host: string; tenantId: string }[]> {
+  /** 도메인과 그 앱 — 앱이 빈 행은 앱 칸 전에 들어온 행이다. */
+  async domainEntriesOf(tenantId: string, tx?: UserServiceTx): Promise<TenantDomainEntry[]> {
+    return this.client(tx)
+      .select({ host: tenantDomains.host, app: tenantDomains.app })
+      .from(tenantDomains)
+      .where(eq(tenantDomains.tenantId, tenantId))
+      .orderBy(tenantDomains.host);
+  }
+
+  async domainsOfAll(): Promise<{ host: string; tenantId: string; app: TenantDomainApp | null }[]> {
     return this.dbService.db
-      .select({ host: tenantDomains.host, tenantId: tenantDomains.tenantId })
+      .select({ host: tenantDomains.host, tenantId: tenantDomains.tenantId, app: tenantDomains.app })
       .from(tenantDomains)
       .orderBy(tenantDomains.host);
   }
@@ -143,18 +159,36 @@ export class PlatformRepository {
     return rows.map((r) => r.host);
   }
 
-  async insertDomains(tenantId: string, hosts: readonly string[], tx: UserServiceTx): Promise<void> {
-    if (hosts.length === 0) return;
-    await tx.insert(tenantDomains).values(hosts.map((host) => ({ host, tenantId })));
+  async insertDomains(
+    tenantId: string,
+    domains: readonly { host: string; app: TenantDomainApp }[],
+    tx: UserServiceTx,
+  ): Promise<void> {
+    if (domains.length === 0) return;
+    await tx.insert(tenantDomains).values(domains.map(({ host, app }) => ({ host, app, tenantId })));
+  }
+
+  async setDomainApp(host: string, app: TenantDomainApp, tx: UserServiceTx): Promise<void> {
+    await tx.update(tenantDomains).set({ app }).where(eq(tenantDomains.host, host));
   }
 
   // ── 브랜드(비인증 조회)
 
-  async findBrandByHost(
-    host: string,
-  ): Promise<{ tenantId: string; displayName: string; logoUrl: string | null; status: TenantStatus } | null> {
+  async findBrandByHost(host: string): Promise<{
+    tenantId: string;
+    displayName: string;
+    logoUrl: string | null;
+    status: TenantStatus;
+    app: TenantDomainApp | null;
+  } | null> {
     const [row] = await this.dbService.db
-      .select({ tenantId: tenants.id, displayName: tenants.displayName, logoUrl: tenants.logoUrl, status: tenants.status })
+      .select({
+        tenantId: tenants.id,
+        displayName: tenants.displayName,
+        logoUrl: tenants.logoUrl,
+        status: tenants.status,
+        app: tenantDomains.app,
+      })
       .from(tenantDomains)
       .innerJoin(tenants, eq(tenants.id, tenantDomains.tenantId))
       .where(eq(tenantDomains.host, host))
@@ -163,6 +197,26 @@ export class PlatformRepository {
   }
 
   // ── OAuth 클라이언트
+
+  /** 활성 클라이언트의 비밀 해시 — 직원 웹 클라이언트 자격 판정(`StaffWebClientGuard`)용. */
+  async findActiveClientSecrets(clientId: string): Promise<{
+    clientType: (typeof oauthClients.$inferSelect)['clientType'];
+    tenantId: string | null;
+    clientSecretHash: string;
+    previousSecretHash: string | null;
+  } | null> {
+    const [row] = await this.dbService.db
+      .select({
+        clientType: oauthClients.clientType,
+        tenantId: oauthClients.tenantId,
+        clientSecretHash: oauthClients.clientSecretHash,
+        previousSecretHash: oauthClients.previousSecretHash,
+      })
+      .from(oauthClients)
+      .where(and(eq(oauthClients.clientId, clientId), eq(oauthClients.isActive, true)))
+      .limit(1);
+    return row ?? null;
+  }
 
   async countClientsFixedTo(tenantId: string, tx: UserServiceTx): Promise<number> {
     const rows = await tx

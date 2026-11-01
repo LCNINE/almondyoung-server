@@ -22,7 +22,7 @@ export class PlatformTenantReader {
     const [rows, domains] = await Promise.all([this.platform.listTenants(), this.platform.domainsOfAll()]);
     return rows.map((row) => ({
       ...row,
-      domains: domains.filter((d) => d.tenantId === row.id).map((d) => d.host),
+      domains: domains.filter((d) => d.tenantId === row.id).map(({ host, app }) => ({ host, app })),
     }));
   }
 
@@ -30,7 +30,7 @@ export class PlatformTenantReader {
     await this.dbService.run((tx) => this.operators.assertOperator(actor, tx));
     const row = await this.platform.findTenant(tenantId);
     if (!row) throw new NotFoundError(`테넌트를 찾을 수 없습니다: ${tenantId}`);
-    return { ...row, domains: await this.platform.domainsOf(tenantId) };
+    return { ...row, domains: await this.platform.domainEntriesOf(tenantId) };
   }
 
   /** 모든 테넌트의 상태(내부 경로). 도메인이 없으니 운영자 판정 없이 내부 키 하나로 연다. */

@@ -3,6 +3,7 @@ export function usesStandaloneLayout(pathname: string) {
   return (
     pathname === '/login' ||
     pathname === '/unauthorized' ||
+    pathname === '/wrong-account' ||
     pathname === '/attendance' ||
     pathname.startsWith('/attendance/') ||
     pathname.startsWith('/mobile') ||

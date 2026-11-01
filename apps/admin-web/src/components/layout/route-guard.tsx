@@ -3,7 +3,9 @@ import { getTokenPayload } from '@/lib/auth/get-token-payload';
 import { canAccess, resolveScreenAccess } from '@/lib/auth/screen-access';
 import { homeRedirect } from '@/lib/auth/landing';
 import { mainMenus } from '@/lib/utils/menu';
-import { redirect } from 'next/navigation';
+import { chooseTenantLanding, isTenantShellScreen, TENANT_SHELL_MENU } from '@/lib/tenant-shell/allowlist';
+import { getAdminSite } from '@/lib/tenant-shell/site.server';
+import { notFound, redirect } from 'next/navigation';
 import { ForbiddenPanel, PermissionUnavailablePanel } from './forbidden-panel';
 
 /**
@@ -21,6 +23,22 @@ export default async function RouteGuard({
 
   const access = resolveScreenAccess(screen);
   if (!access) throw new Error(`screen access is not declared: ${screen}`);
+
+  // 테넌트 셸은 허용 목록 화면만 — 미들웨어가 먼저 404 를 내고, 여기는 그 매칭이 빠졌을 때의 둘째 줄이다. `/`(대시보드)는 그리지 않고
+  // 첫 화면으로 보낸다.
+  const site = await getAdminSite();
+  if (site.kind === 'tenant') {
+    if (screen === '/') {
+      const state = await getMyPermissions();
+      if (state.state === 'unauthenticated') redirect('/login');
+      if (state.state === 'unavailable') return <PermissionUnavailablePanel />;
+      const landing = chooseTenantLanding(state);
+      if (landing) redirect(landing);
+      return <ForbiddenPanel required={tenantMenuPermissions()} />;
+    }
+    if (!isTenantShellScreen(screen)) notFound();
+  }
+
   if (access.kind === 'open') return <>{children}</>;
   if (access.kind === 'authenticated') {
     if (!(await getTokenPayload())) redirect('/login');
@@ -36,4 +54,15 @@ export default async function RouteGuard({
     if (next) redirect(next);
   }
   return <ForbiddenPanel required={access.anyOf} />;
+}
+
+/** 테넌트 셸 메뉴를 하나라도 여는 권한들 — 아무것도 못 여는 사람에게 무엇을 요청할지 보인다. */
+function tenantMenuPermissions(): string[] {
+  const keys = TENANT_SHELL_MENU.flatMap((group) =>
+    group.items.flatMap((item) => {
+      const access = resolveScreenAccess(item.path);
+      return access?.kind === 'permission' ? access.anyOf : [];
+    })
+  );
+  return [...new Set(keys)];
 }

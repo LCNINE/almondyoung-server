@@ -20,6 +20,8 @@ const any = (...anyOf: Permission[]): ScreenAccess => ({ kind: 'permission', any
 export const SCREEN_ACCESS: Readonly<Record<string, ScreenAccess>> = {
   '/': any('analytics.report.read'),
   '/unauthorized': OPEN,
+  // 토큰 테넌트 ≠ 주소 테넌트 — 로그아웃만 권한다(미들웨어가 보낸다)
+  '/wrong-account': OPEN,
   '/account/change-password': SIGNED_IN,
   '/company/my-account': SIGNED_IN,
   '/demo/manual': SIGNED_IN,

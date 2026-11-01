@@ -8,6 +8,7 @@ import type {
   ReissuedPasswordDto,
   ReissuePasswordDto,
   SetTenantStatusDto,
+  TenantAdminSiteDto,
   TenantBrandDto,
   TenantDto,
   TenantSiteDto,
@@ -48,7 +49,7 @@ export class PlatformService {
   }
 
   async addDomain(actor: IamActor, tenantId: string, dto: AddTenantDomainDto): Promise<TenantDto> {
-    await this.manager.addDomain(actor, tenantId, dto.host);
+    await this.manager.addDomain(actor, tenantId, dto);
     return this.reader.get(actor, tenantId);
   }
 
@@ -79,5 +80,9 @@ export class PlatformService {
 
   site(host: string): Promise<TenantSiteDto> {
     return this.brands.siteByHost(host);
+  }
+
+  adminSite(host: string): Promise<TenantAdminSiteDto> {
+    return this.brands.adminSiteByHost(host);
   }
 }

@@ -2,7 +2,7 @@ import { DbService, InjectDb } from '@app/db';
 import { BadRequestError, NotFoundError } from '@app/shared';
 import { Injectable } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
-import type { UserServiceSchema, UserServiceTx } from 'apps/user-service/database/drizzle/schema';
+import type { TenantDomainApp, UserServiceSchema, UserServiceTx } from 'apps/user-service/database/drizzle/schema';
 import { generateInitialPassword } from '../../admin/auth/lib/generate-initial-password';
 import { PublicClientOriginsCache } from '../../oauth/cors/public-client-origins.cache';
 import { redirectHost } from '../../oauth/redirect-uri';
@@ -47,8 +47,13 @@ export interface NewTenant {
   readonly slug: string;
   readonly displayName: string;
   readonly logoUrl?: string | null;
-  /** 테넌트 도메인(host, 포트 포함). 소문자로 맞춰 저장한다. */
-  readonly domains: readonly string[];
+  /** 테넌트 도메인(host, 포트 포함)과 그 주소의 앱. host 는 소문자로 맞춰 저장한다. */
+  readonly domains: readonly NewTenantDomain[];
+}
+
+export interface NewTenantDomain {
+  readonly host: string;
+  readonly app: TenantDomainApp;
 }
 
 /**
@@ -70,7 +75,10 @@ export class PlatformTenantManager {
 
   /** «준비» 상태로 만든다 — 준비가 끝날 때까지 이 테넌트로는 토큰이 나가지 않는다. */
   async createTenant(actor: IamActor, input: NewTenant): Promise<void> {
-    const domains = [...new Set(input.domains.map((d) => d.toLowerCase()))];
+    const domains = [
+      ...new Map(input.domains.map((d) => [d.host.toLowerCase(), { host: d.host.toLowerCase(), app: d.app }])).values(),
+    ];
+    const hosts = domains.map((d) => d.host);
     await this.dbService.run(async (tx) => {
       await this.operators.assertOperator(actor, tx);
       if (await this.platform.findTenant(input.id, tx))
@@ -78,7 +86,7 @@ export class PlatformTenantManager {
       if (await this.platform.findTenantBySlug(input.slug, tx)) {
         throw new TenantExistsError(`이미 쓰는 slug 입니다: ${input.slug}`);
       }
-      const taken = await this.platform.takenHosts(domains, tx);
+      const taken = await this.platform.takenHosts(hosts, tx);
       if (taken.length > 0) throw new TenantDomainTakenError(`다른 테넌트의 도메인입니다: ${taken.join(', ')}`);
 
       const row = await this.platform.insertTenant(
@@ -161,28 +169,35 @@ export class PlatformTenantManager {
 
   /**
    * 이미 있는 테넌트에 도메인을 더한다 — admin-web 과 auth-web 이 테넌트마다 다른 주소라(CloudFront 배포가 둘) auth-web 주소도
-   * 테넌트 도메인이다. 이미 이 테넌트의 것이면 아무것도 안 한다. 상태는 묻지 않는다(활성 테넌트에도 붙인다).
+   * 테넌트 도메인이다. 이미 이 테넌트의 것이고 앱이 같으면 아무것도 안 한다. 앱 칸 전에 들어와 앱이 빈 이 테넌트의 도메인이면 앱만
+   * 채운다. 앱을 바꾸지는 않는다(그 주소의 CloudFront 배포가 다른 앱을 부른다). 상태는 묻지 않는다(활성 테넌트에도 붙인다).
    */
-  async addDomain(actor: IamActor, tenantId: string, host: string): Promise<void> {
-    const domain = host.toLowerCase();
+  async addDomain(actor: IamActor, tenantId: string, input: NewTenantDomain): Promise<void> {
+    const domain = input.host.toLowerCase();
     await this.dbService.run(async (tx) => {
       await this.operators.assertOperator(actor, tx);
       const row = await this.lockedTenant(tenantId, tx);
-      const mine = await this.platform.domainsOf(tenantId, tx);
-      if (mine.includes(domain)) return;
-      if ((await this.platform.takenHosts([domain], tx)).length > 0) {
+      const mine = await this.platform.domainEntriesOf(tenantId, tx);
+      const existing = mine.find((d) => d.host === domain);
+      if (existing?.app === input.app) return;
+      if (existing && existing.app !== null) {
+        throw new TenantDomainTakenError(`이미 ${existing.app} 주소인 도메인입니다: ${domain}`);
+      }
+      if (!existing && (await this.platform.takenHosts([domain], tx)).length > 0) {
         throw new TenantDomainTakenError(`다른 테넌트의 도메인입니다: ${domain}`);
       }
 
-      await this.platform.insertDomains(tenantId, [domain], tx);
+      if (existing) await this.platform.setDomainApp(domain, input.app, tx);
+      else await this.platform.insertDomains(tenantId, [{ host: domain, app: input.app }], tx);
+      const hosts = mine.map((d) => d.host);
       await this.audit.record(tx, actor, {
         tenantId,
         action: 'tenant.domain.add',
         targetType: 'tenant',
         targetId: tenantId,
         targetLabel: row.displayName,
-        before: { domains: mine },
-        after: { host: domain, domains: [...mine, domain].sort() },
+        before: { domains: hosts, ...(existing ? { app: null } : {}) },
+        after: { host: domain, app: input.app, domains: [...new Set([...hosts, domain])].sort() },
       });
     });
   }
