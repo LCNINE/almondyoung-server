@@ -14,15 +14,9 @@ import { useUpdateWarehouse, useWarehouses } from '@/lib/services/inventory';
 import { Can } from '@/components/auth/can';
 import type { WarehouseDto } from '@/lib/types/dto/inventory';
 import { methodsForStrategies, PICKING_METHOD_LABELS } from '@/lib/utils/picking-method';
+import { WAREHOUSE_TYPE_LABELS } from '../../lib/labels';
 import { PickingMethodDialog } from '../picking-method-dialog';
 import { SellableToggle } from '../sellable-toggle';
-
-const WAREHOUSE_TYPE_LABELS: Record<WarehouseDto['type'], string> = {
-  domestic: '국내',
-  overseas: '해외',
-  bonded: '보세',
-  return: '반품',
-};
 
 export function WarehousesTable() {
   const { data: warehouses = [], isLoading } = useWarehouses();

@@ -121,6 +121,7 @@ export const PII_SCREEN_NOT_SHOWN: Readonly<Record<string, string>> = {
   '/cs/reviews/new': '새로 입력하는 만들기 폼이다',
   '/cs/reviews/rewards':
     '리뷰 상세 [id] 와 다른 페이지이고 개인정보 API 를 부르지 않는다',
+  '/inventory/warehouses/new': '새로 입력하는 만들기 폼이다',
   '/mall/products-list/[masterId]': '상품 상세 — 등록자 고르기가 없다',
   '/mall/shop-listings/new': '새로 입력하는 만들기 폼이다',
   '/order/manual-bulk': '주문 등록만 부르고 주문 목록·상세를 그리지 않는다',

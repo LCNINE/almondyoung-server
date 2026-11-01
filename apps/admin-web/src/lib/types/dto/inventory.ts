@@ -767,8 +767,8 @@ export interface SkuStockSummaryDto {
 
 export interface CreateWarehouseDto {
   name: string;
-  type: 'domestic' | 'overseas' | 'bonded' | 'return';
-  location: string;
+  type?: 'domestic' | 'overseas' | 'bonded' | 'return';
+  location?: string;
 }
 
 export interface UpdateWarehouseDto {
