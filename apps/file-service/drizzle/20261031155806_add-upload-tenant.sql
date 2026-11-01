@@ -1,0 +1,1 @@
+ALTER TABLE "uploads" ADD COLUMN "tenant_id" varchar(64);

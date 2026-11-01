@@ -1,3 +1,4 @@
+import { outboundTenantForTesting } from '@app/tenancy';
 import { DbService } from '@app/db';
 import { ConfigService } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
@@ -141,7 +142,7 @@ describe('DigitalAssetService.rollbackToFileVersion', () => {
 
 describe('DigitalAssetService file reference check', () => {
   it('asks file-service about the attached file on behalf of the requesting admin', async () => {
-    const files = new FileServiceClient(new ConfigService({}));
+    const files = new FileServiceClient(new ConfigService({}), outboundTenantForTesting());
     const fetchMetadata = jest.spyOn(files, 'fetchMetadata').mockRejectedValue(new Error('unreachable'));
     const module = await Test.createTestingModule({
       providers: [DigitalAssetService, { provide: DbService, useValue: {} }, { provide: FileServiceClient, useValue: files }],

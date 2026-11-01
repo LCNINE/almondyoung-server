@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import { verify } from 'jsonwebtoken';
 import { GlobalExceptionFilter, NotFoundError } from '@app/shared';
+import { OutboundTenant, outboundTenantForTesting } from '@app/tenancy';
 import { AlmondDesignsService } from '../services/almond-designs.service';
 import { InternalAlmondDesignsController } from './internal-almond-designs.controller';
 
@@ -22,6 +23,7 @@ describe('InternalAlmondDesignsController', () => {
       controllers: [InternalAlmondDesignsController],
       providers: [
         { provide: AlmondDesignsService, useValue: { printLink, getInfo } },
+        { provide: OutboundTenant, useValue: outboundTenantForTesting() },
         {
           provide: ConfigService,
           useValue: { get: (k: string) => ({ UGC_INTERNAL_KEY: KEY, AUTH_SECRET: SECRET })[k] },

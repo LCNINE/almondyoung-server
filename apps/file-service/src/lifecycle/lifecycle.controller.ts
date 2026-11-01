@@ -4,6 +4,7 @@ import { User, StoreRoute } from '@app/authorization';
 import { FileAccess } from '../access/file-access';
 import { DeleteResponseDto } from './dto/delete-response.dto';
 import { JwtPayload } from '../shared/types/jwt-payload.interface';
+import { RequestTenant, type RequestTenantId } from '../tenancy/request-tenant';
 
 @ApiTags('Lifecycle')
 @ApiBearerAuth()
@@ -22,7 +23,8 @@ export class LifecycleController {
   async deleteFile(
     @Param('fileId', ParseUUIDPipe) fileId: string,
     @User() user: JwtPayload,
+    @RequestTenant() tenant: RequestTenantId,
   ): Promise<DeleteResponseDto> {
-    return this.fileAccess.delete(fileId, user);
+    return this.fileAccess.delete(fileId, user, tenant);
   }
 }

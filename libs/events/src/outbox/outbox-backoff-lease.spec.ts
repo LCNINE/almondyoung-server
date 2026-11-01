@@ -1,4 +1,5 @@
 import { PgDialect } from 'drizzle-orm/pg-core';
+import { singleDatabase } from '@app/db/testing/single-database';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { and, eq, lt } from 'drizzle-orm';
 import { DbService } from '@app/db';
@@ -79,7 +80,7 @@ function makeDb(pendingRows: unknown[]) {
     delete: () => ({ where: () => thenableWithReturning() }),
   };
 
-  return { dbService: { db } as unknown as DbService, captured };
+  return { dbService: singleDatabase({ db }) as unknown as DbService, captured };
 }
 
 /** 항상 실패하는 publisher — 실패 경로(백오프 예약)를 돌리기 위한 것. */

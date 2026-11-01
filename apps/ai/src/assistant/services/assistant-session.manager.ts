@@ -1,6 +1,7 @@
 import { BadRequestError } from '@app/shared';
 import { Injectable } from '@nestjs/common';
 import { AssistantChatRepository, type NewMessage } from '../repositories/assistant-chat.repository';
+import type { RequestTenantId } from '../../tenancy/request-tenant';
 import { AssistantSessionReader } from './assistant-session.reader';
 
 const MAX_TITLE_LENGTH = 40;
@@ -19,12 +20,12 @@ export class AssistantSessionManager {
     private readonly reader: AssistantSessionReader,
   ) {}
 
-  async createSession(userId: string, title?: string) {
-    return this.repository.insertSession(userId, title?.trim() || null);
+  async createSession(userId: string, tenant: RequestTenantId, title?: string) {
+    return this.repository.insertSession(userId, tenant, title?.trim() || null);
   }
 
-  async deleteSession(userId: string, sessionId: string) {
-    await this.reader.requireOwnedSession(userId, sessionId);
+  async deleteSession(userId: string, tenant: RequestTenantId, sessionId: string) {
+    await this.reader.requireOwnedSession(userId, tenant, sessionId);
     await this.repository.deleteSession(sessionId);
     return { deleted: true };
   }

@@ -1,3 +1,4 @@
+import { singleDatabase } from '@app/db/testing/single-database';
 import { BadRequestException } from '@nestjs/common';
 import { wmsTables } from '../../inventory/schema/inventory.schema';
 import { FulfillmentOrderCreationBacklogWorker } from './fulfillment-order-creation-backlog.worker';
@@ -54,11 +55,11 @@ describe('FulfillmentOrderCreationBacklogWorker', () => {
     } = {},
   ) {
     const tx = options.tx ?? makeTx();
-    const db = {
+    const db = singleDatabase({
       db: {
         transaction: jest.fn((fn) => fn(tx)),
       },
-    };
+    });
     const backlog = {
       claimPending: jest.fn(),
       findById: jest.fn().mockResolvedValue({

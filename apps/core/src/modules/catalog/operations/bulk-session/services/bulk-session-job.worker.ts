@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { DbService, describeFailedRun } from '@app/db';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { BulkSessionJobManager, ClaimedBulkSession } from './bulk-session-job.manager';
 
@@ -25,6 +26,7 @@ export class BulkSessionJobWorker {
   constructor(
     private readonly jobManager: BulkSessionJobManager,
     private readonly config: ConfigService,
+    private readonly dbService: DbService,
   ) {}
 
   private get enabled(): boolean {
@@ -41,6 +43,18 @@ export class BulkSessionJobWorker {
     }
 
     this.isProcessing = true;
+    try {
+      // 테넌트 DB 마다 그 맥락에서 한 슬라이스씩. 한 DB 의 실패는 그 DB 의 세션에만 남는다.
+      const runs = await this.dbService.forEachDatabase(() => this.tickInCurrentDatabase());
+      for (const run of runs) {
+        if (!run.ok) this.logger.error(`일괄 세션 슬라이스 실패 기록 실패: ${describeFailedRun(run)}`, run.error);
+      }
+    } finally {
+      this.isProcessing = false;
+    }
+  }
+
+  private async tickInCurrentDatabase(): Promise<void> {
     let claimed: ClaimedBulkSession | null = null;
     try {
       claimed = await this.jobManager.claim();
@@ -60,8 +74,6 @@ export class BulkSessionJobWorker {
         error instanceof Error ? error.stack : undefined,
       );
       if (claimed) await this.jobManager.recordJobError(claimed.sessionId, message);
-    } finally {
-      this.isProcessing = false;
     }
   }
 }

@@ -38,7 +38,8 @@ const CONTENT_TYPES: Record<string, string> = {
  *
  * 라우트 충돌은 없다: `DownloadController` 의 `files` 라우트는 전부 2세그먼트
  * (`:fileId/download`·`:fileId/metadata`·`public/:fileId`)인데 스토리지 key 는
- * `<prefix>/<year>/<month>/<uuid>.<ext>` 4세그먼트다(`path-builder.service.ts`).
+ * `<prefix>/<year>/<month>/<uuid>.<ext>` 4세그먼트 이상이다(`path-builder.service.ts`).
+ * 테넌트 버킷의 파일은 그 앞에 버킷 디렉터리가 붙는다(`localBucketDir`) — 서빙은 경로째라 따로 알 필요가 없다.
  */
 @ApiExcludeController()
 @Controller('files/local')

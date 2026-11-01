@@ -1,5 +1,5 @@
 import { Injectable, Logger, BadRequestException, NotFoundException, OnModuleInit } from '@nestjs/common';
-import { InjectTypedDb, DbService } from '@app/db';
+import { InjectTypedDb, DbService, describeFailedRun } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../schema/inventory.schema';
 import { HOLDER_CONSTANTS } from '../constants/holder.constants';
 import { eq, and, like, count, asc, SQL } from 'drizzle-orm';
@@ -16,16 +16,13 @@ export class HolderService implements OnModuleInit {
 
   // 실패해도 core 는 뜬다 — 보유자가 없으면 매칭 화면의 재고소유 칸만 빈다.
   async onModuleInit() {
-    try {
-      await this.ensureDefaultHolder();
-    } catch (error) {
-      this.logger.error('기본 Holder 생성 중 오류 발생:', error);
-    }
+    const runs = await this.dbService.forEachDatabase(() => this.ensureDefaultHolder());
+    for (const run of runs) if (!run.ok) this.logger.error(`기본 Holder 생성 중 오류 발생: ${describeFailedRun(run)}`);
   }
 
   /**
    * 기본 보유자 한 행을 보장한다. 한 DB(= 한 테넌트) 안의 일이라 그 DB 의 트랜잭션을 받는다.
-   * 지금은 부팅이 단일 DB 에서 한 번 부른다 — 테넌트가 여럿이면 테넌트마다 불러야 한다.
+   * 부팅 훅이 테넌트 DB 마다 그 맥락에서 부른다.
    */
   async ensureDefaultHolder(tx?: DbTx): Promise<void> {
     await this.dbService.run(async (trx) => {

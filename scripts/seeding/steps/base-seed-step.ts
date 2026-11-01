@@ -26,6 +26,11 @@ export abstract class SeedStep {
     this.db = drizzle(this.client);
   }
 
+  /** 붙는 논리 DB 이름 — core 는 테넌트마다 DB 가 달라 같은 스텝이 여러 번 돈다 */
+  get databaseName(): string {
+    return decodeURIComponent(new URL(this.databaseUrl).pathname.replace(/^\//, ''));
+  }
+
   /** Phase 1: 현재 상태 확인 — 뭐가 있고 뭐가 빠졌는지 */
   abstract check(): Promise<SeedCheckResult>;
 

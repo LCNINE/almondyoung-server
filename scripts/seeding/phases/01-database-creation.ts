@@ -2,13 +2,18 @@ import chalk from 'chalk';
 import { confirm } from '@inquirer/prompts';
 import { Sql } from 'postgres';
 import { createAdminConnection } from '../lib/db-connection';
-import { getServiceRegistry } from '../lib/service-registry';
+import { resolveRegistry } from '../lib/tenant-registry';
 import { DatabaseCheckResult } from '../lib/types';
 import { Logger } from '../lib/logger';
 
 const logger = new Logger('DB Creation');
 
-export async function runDatabaseCreation(options: { yes: boolean; deployment?: string }): Promise<string[]> {
+/** core 는 테넌트 목록의 테넌트마다 DB 하나, `--tenant` 면 그 테넌트의 core DB 하나만 만든다(`resolveRegistry`). */
+export async function runDatabaseCreation(options: {
+  yes: boolean;
+  deployment?: string;
+  tenant?: string;
+}): Promise<string[]> {
   console.log(chalk.bold.cyan('\nPhase 1: Database Creation'));
   console.log(chalk.cyan('─'.repeat(40)));
 
@@ -17,7 +22,7 @@ export async function runDatabaseCreation(options: { yes: boolean; deployment?: 
   try {
     adminSql = createAdminConnection();
 
-    const registry = getServiceRegistry(options.deployment);
+    const registry = resolveRegistry(options);
     const databases = [...new Set(registry.map((s) => s.database))];
     const results: DatabaseCheckResult[] = [];
 

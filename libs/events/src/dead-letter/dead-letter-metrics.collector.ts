@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
-import { DbService } from '@app/db';
+import { DbService, describeFailedRun } from '@app/db';
 import { inArray, sql } from 'drizzle-orm';
 import { dead_letters } from './dead-letter.schema';
 import { setDeadLetterCount } from './dead-letter.metrics';
@@ -37,28 +37,38 @@ export class DeadLetterMetricsCollector {
       }
       return;
     }
-    try {
-      const rows = await this.dbService.db
+    // DB(테넌트)마다 세어 더한다. 게이지에 테넌트 라벨은 없다 — DB 마다 쓰면 마지막 DB 가 앞의 값을 덮는다.
+    const runs = await this.dbService.forEachDatabase(() =>
+      this.dbService.db
         .select({ topic: dead_letters.topic, status: dead_letters.status, count: sql<number>`count(*)::int` })
         .from(dead_letters)
         .where(inArray(dead_letters.status, ['failed', 'held']))
-        .groupBy(dead_letters.topic, dead_letters.status);
+        .groupBy(dead_letters.topic, dead_letters.status),
+    );
 
-      const seen = new Set<string>();
-      for (const row of rows) {
+    const counts = new Map<string, { topic: string; status: UnresolvedDeadLetterStatus; count: number }>();
+    for (const run of runs) {
+      if (!run.ok) {
+        this.logger.error(`Dead letter metrics refresh failed: ${describeFailedRun(run)}`);
+        continue;
+      }
+      for (const row of run.value) {
         if (!isUnresolvedStatus(row.status)) continue;
         const key = `${row.topic}\u0000${row.status}`;
-        seen.add(key);
-        this.known.set(key, { topic: row.topic, status: row.status });
-        setDeadLetterCount(row.topic, row.status, Number(row.count));
+        const seen = counts.get(key);
+        if (seen) seen.count += Number(row.count);
+        else counts.set(key, { topic: row.topic, status: row.status, count: Number(row.count) });
       }
-      for (const [key, { topic, status }] of this.known) {
-        if (!seen.has(key)) setDeadLetterCount(topic, status, 0);
-      }
-    } catch (error) {
-      this.logger.error(
-        `Dead letter metrics refresh failed: ${error instanceof Error ? error.message : String(error)}`,
-      );
+    }
+    // 값이 하나도 없으면 낡은 값을 0 으로 덮지 않는다(옛 동작)
+    if (runs.every((run) => !run.ok)) return;
+
+    for (const [key, entry] of counts) {
+      this.known.set(key, { topic: entry.topic, status: entry.status });
+      setDeadLetterCount(entry.topic, entry.status, entry.count);
+    }
+    for (const [key, { topic, status }] of this.known) {
+      if (!counts.has(key)) setDeadLetterCount(topic, status, 0);
     }
   }
 }

@@ -11,8 +11,6 @@ describe('S3StorageProvider', () => {
       AWS_REGION: 'ap-northeast-2',
       AWS_ACCESS_KEY_ID: 'test-access-key',
       AWS_SECRET_ACCESS_KEY: 'test-secret-key',
-      AWS_S3_PUBLIC_BUCKET: 'public-bucket',
-      AWS_S3_PRIVATE_BUCKET: 'private-bucket',
     };
     const configService = {
       get: jest.fn((key: string, def?: string) => env[key] ?? def),
@@ -34,6 +32,7 @@ describe('S3StorageProvider', () => {
   describe('createDirectUpload', () => {
     it('공개 업로드는 x-amz-acl 이 서명된 쿼리로 들어가고 Content-Type 헤더를 돌려준다', async () => {
       const result = await provider.createDirectUpload({
+        bucket: 'public-bucket',
         key: 'banners/images/2026/08/f1.webp',
         contentType: 'image/webp',
         isPublic: true,
@@ -52,6 +51,7 @@ describe('S3StorageProvider', () => {
 
     it('비공개 업로드는 비공개 버킷으로 가고 ACL 을 붙이지 않는다', async () => {
       const result = await provider.createDirectUpload({
+        bucket: 'private-bucket',
         key: 'library/digital-assets/2026/08/f2.zip',
         contentType: 'application/zip',
         isPublic: false,
@@ -66,6 +66,7 @@ describe('S3StorageProvider', () => {
 
     it('checksum 파라미터를 서명에 넣지 않는다 — 있으면 브라우저의 실제 본문 PUT 이 전부 거부된다', async () => {
       const result = await provider.createDirectUpload({
+        bucket: 'public-bucket',
         key: 'a/b.webp',
         contentType: 'image/webp',
         isPublic: true,
@@ -77,9 +78,39 @@ describe('S3StorageProvider', () => {
     });
   });
 
+  describe('버킷', () => {
+    it('버킷은 env 가 아니라 요청이 정한다 — 테넌트 버킷 이름이 URL 에 그대로 나온다', async () => {
+      const result = await provider.createDirectUpload({
+        bucket: 'tenant-two-public',
+        key: 'products/images/2026/11/f3.png',
+        contentType: 'image/png',
+        isPublic: true,
+        expiresIn: 600,
+      });
+
+      expect(result.fileUrl).toBe(
+        'https://tenant-two-public.s3.ap-northeast-2.amazonaws.com/products/images/2026/11/f3.png',
+      );
+      expect(new URL(result.uploadUrl).hostname).toBe('tenant-two-public.s3.ap-northeast-2.amazonaws.com');
+    });
+
+    it('버킷이 없는 요청은 어느 버킷에도 쓰지 않고 실패한다', async () => {
+      await expect(
+        provider.createDirectUpload({
+          bucket: undefined,
+          key: 'a/b.png',
+          contentType: 'image/png',
+          isPublic: true,
+          expiresIn: 600,
+        }),
+      ).rejects.toThrow();
+    });
+  });
+
   describe('getSignedUrl (download 회귀)', () => {
     it('GET presign 은 종전대로 서명되고 Content-Type 을 서명에 넣지 않는다', async () => {
       const result = await provider.getSignedUrl({
+        bucket: 'private-bucket',
         key: 'library/digital-assets/2026/08/f2.zip',
         expiresIn: 300,
         operation: 'get',

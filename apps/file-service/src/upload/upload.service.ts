@@ -13,6 +13,7 @@ import { Upload } from '../shared/types/file.types';
 import { v7 as uuidv7 } from 'uuid';
 import { LOGO_CONTEST_IMAGE_CONTEXT_ID } from '../database/default-file-contexts';
 import { imageDimensions } from './image-dimensions';
+import type { RequestTenantId } from '../tenancy/request-tenant';
 
 /** presigned PUT URL 유효 시간. 발급 직후 바로 올리는 흐름이라 길 이유가 없다 */
 const PRESIGN_EXPIRES_IN_SECONDS = 600;
@@ -30,7 +31,12 @@ export class UploadService {
     private readonly fileTypeDetector: FileTypeDetector,
   ) {}
 
-  async uploadFile(file: Express.Multer.File, dto: UploadFileDto, userId: string): Promise<UploadResponseDto> {
+  async uploadFile(
+    file: Express.Multer.File,
+    dto: UploadFileDto,
+    userId: string,
+    tenant: RequestTenantId,
+  ): Promise<UploadResponseDto> {
     if (!file) {
       throw new BadRequestError('File is required');
     }
@@ -79,7 +85,7 @@ export class UploadService {
       extension,
     });
 
-    const uploadResult = await this.storageService.upload({
+    const uploadResult = await this.storageService.upload(tenant, {
       key: filePath,
       buffer: file.buffer,
       contentType: normalizedClientMimeType,
@@ -103,6 +109,7 @@ export class UploadService {
       uploadedBy: userId,
       storageProvider: uploadResult.provider.toLowerCase(),
       isPublic,
+      ...tenantColumn(tenant),
       metadata: dimensions ? { ...dto.metadata, ...dimensions } : dto.metadata,
       activatedAt: new Date(),
     });
@@ -114,9 +121,12 @@ export class UploadService {
    * 브라우저가 스토리지에 직접 PUT 할 presigned URL 을 발급한다. 서버가 파일 바이트를
    * 보지 못하므로 검증은 신고값(크기·MIME) 기준이고, 실제 객체 검증은 confirm 에서 한다.
    */
-  async presignUpload(dto: PresignUploadDto, userId: string): Promise<PresignUploadResponseDto> {
-    const direct = this.storageService.getDirectUploadPort();
-    if (!direct) {
+  async presignUpload(
+    dto: PresignUploadDto,
+    userId: string,
+    tenant: RequestTenantId,
+  ): Promise<PresignUploadResponseDto> {
+    if (!this.storageService.supportsDirectUpload()) {
       // 404 는 "이 서버엔 직접 업로드가 없다"는 신호 — 구버전 서버의 미존재 라우트
       // 404 와 같은 코드로 내려, 클라이언트가 한 가지 조건으로 프록시 업로드에 폴백한다
       throw new NotFoundError('Direct upload is not supported by the current storage provider');
@@ -144,7 +154,7 @@ export class UploadService {
       extension,
     });
 
-    const directUpload = await direct.createDirectUpload({
+    const directUpload = await this.storageService.createDirectUpload(tenant, {
       key: filePath,
       contentType: mimeType,
       isPublic,
@@ -164,6 +174,7 @@ export class UploadService {
       uploadedBy: userId,
       storageProvider: directUpload.provider.toLowerCase(),
       isPublic,
+      ...tenantColumn(tenant),
       metadata: dto.metadata,
     });
 
@@ -192,19 +203,19 @@ export class UploadService {
       return this.toUploadResponse(file);
     }
 
-    const direct = this.storageService.getDirectUploadPort();
-    if (!direct) {
+    if (!this.storageService.supportsDirectUpload()) {
       throw new NotFoundError('Direct upload is not supported by the current storage provider');
     }
 
-    const head = await direct.headObject({ key: file.filePath, isPublic: file.isPublic });
+    // 객체는 presign 때 행의 테넌트 버킷에 올라갔다 — 확인·정리도 그 버킷에서 한다.
+    const head = await this.storageService.headObject(file.tenantId, { key: file.filePath, isPublic: file.isPublic });
     if (!head) {
       throw new BadRequestError('File has not been uploaded to storage');
     }
 
     const context = await this.fileContextRepository.findById(file.contextId);
     if (context && head.size > context.maxFileSize) {
-      await this.storageService.delete({ key: file.filePath, isPublic: file.isPublic });
+      await this.storageService.delete(file.tenantId, { key: file.filePath, isPublic: file.isPublic });
       await this.fileRepository.softDelete(file.id);
       this.contextValidator.validateFileSize(context, head.size);
     }
@@ -213,7 +224,7 @@ export class UploadService {
     // 있다 — 객체에 저장된 타입으로 화이트리스트를 다시 강제한다
     const actualMimeType = head.contentType ? this.fileTypeDetector.normalizeClientMimeType(head.contentType) : null;
     if (context && actualMimeType && !this.contextValidator.isValidMimeType(context, actualMimeType)) {
-      await this.storageService.delete({ key: file.filePath, isPublic: file.isPublic });
+      await this.storageService.delete(file.tenantId, { key: file.filePath, isPublic: file.isPublic });
       await this.fileRepository.softDelete(file.id);
       this.contextValidator.validateMimeType(context, actualMimeType);
     }
@@ -231,12 +242,13 @@ export class UploadService {
     files: Express.Multer.File[],
     dto: UploadFileDto,
     userId: string,
+    tenant: RequestTenantId,
   ): Promise<BatchUploadResponseDto> {
     if (!files || files.length === 0) {
       throw new BadRequestError('At least one file is required');
     }
 
-    const uploadPromises = files.map((file) => this.uploadFile(file, dto, userId));
+    const uploadPromises = files.map((file) => this.uploadFile(file, dto, userId, tenant));
 
     const uploadedFiles = await Promise.all(uploadPromises);
 
@@ -279,4 +291,12 @@ export class UploadService {
     const parts = filename.split('.');
     return parts.length > 1 ? parts.pop() || '' : '';
   }
+}
+
+/**
+ * 행에 적을 테넌트. 테넌트를 모르는 쓰기(① 만)는 칸을 비워 보내 DB 기본값(테넌트 1)이 채운다 — `null` 을 적으면
+ * 기본값을 덮는다. 그 쓰기의 버킷은 테넌트 전 버킷 env 이고, 라이브에선 테넌트 1 의 버킷과 같다.
+ */
+function tenantColumn(tenant: RequestTenantId): { tenantId?: string } {
+  return tenant === null ? {} : { tenantId: tenant };
 }

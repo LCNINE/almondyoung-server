@@ -130,7 +130,9 @@ describeIfDb('아웃박스 멱등 (PostgreSQL 통합)', () => {
     // 바뀌는 변수는 unique 제약 하나뿐이고, 넣는 문장은 위 케이스와 같은
     // `INSERT ... ON CONFLICT DO NOTHING` 이다.
     await inRollbackTx(async (tx) => {
-      await tx.execute(sql`CREATE TEMP TABLE outbox_events_no_constraint (LIKE event.outbox_events INCLUDING DEFAULTS)`);
+      await tx.execute(
+        sql`CREATE TEMP TABLE outbox_events_no_constraint (LIKE event.outbox_events INCLUDING DEFAULTS)`,
+      );
 
       const insertTwice = async () => {
         for (let i = 0; i < 2; i++) {
@@ -201,9 +203,7 @@ describeIfDb('아웃박스 멱등 (PostgreSQL 통합)', () => {
           aggregateId: outbox_events.aggregateId,
         })
         .from(outbox_events)
-        .where(
-          and(eq(outbox_events.topic, HARNESS_STREAM.topic.topic), eq(outbox_events.eventType, 'StockShipped')),
-        );
+        .where(and(eq(outbox_events.topic, HARNESS_STREAM.topic.topic), eq(outbox_events.eventType, 'StockShipped')));
 
       expect(row).toEqual({ idempotencyKey: 'stock-event:carried', partitionKey: 'SKU-9', aggregateId: 'agg-1' });
     });

@@ -1,4 +1,5 @@
 import { register } from 'prom-client';
+import { singleDatabase } from '@app/db/testing/single-database';
 import { OutboxDispatcher } from './outbox-dispatcher.service';
 
 function makeSelectReturning(rows: unknown[]) {
@@ -37,9 +38,13 @@ describe('OutboxDispatcher stale processing recovery', () => {
     // 콜백 파라미터를 tx 로 두면 그 이름이 typeof tx 를 가려 자기참조가 된다.
     const transaction = jest.fn(async (callback: (trx: typeof tx) => Promise<unknown>) => callback(tx));
 
-    const dispatcher = new OutboxDispatcher({ db: { update: rootUpdate, transaction } } as any, new Map(), {
-      processingTimeoutMs: 60_000,
-    });
+    const dispatcher = new OutboxDispatcher(
+      singleDatabase({ db: { update: rootUpdate, transaction } }) as any,
+      new Map(),
+      {
+        processingTimeoutMs: 60_000,
+      },
+    );
 
     await dispatcher.dispatchPendingEvents();
 
@@ -77,7 +82,7 @@ describe('OutboxDispatcher 발행 카운터', () => {
     const transaction = jest.fn(async (callback: (trx: typeof tx) => Promise<unknown>) => callback(tx));
 
     const publisherMap = new Map([[row.topic as string, { publishStoredEnvelope: publish } as never]]);
-    return new OutboxDispatcher({ db: { update, transaction } } as never, publisherMap, { maxRetries });
+    return new OutboxDispatcher(singleDatabase({ db: { update, transaction } }) as never, publisherMap, { maxRetries });
   }
 
   const rowFor = (topic: string, retryCount = 0) => ({

@@ -1,5 +1,5 @@
 import { ForbiddenException } from '@nestjs/common';
-import type { TenantList } from '@app/tenancy';
+import type { TenantList } from './tenant-list';
 
 /**
  * 요청이 들어온 입구.
@@ -25,14 +25,15 @@ export type RequestTenant =
   | { readonly tenant: string; readonly claimlessToken?: true }
   | { readonly untenanted: RequestEntry };
 
-function claimOf(user: object | null | undefined): string | undefined {
+/** 검증된 토큰의 `tenant` 클레임. 없거나 빈 값이면 undefined. */
+export function tokenTenantOf(user: object | null | undefined): string | undefined {
   if (!user || !('tenant' in user)) return undefined;
   const claim: unknown = user.tenant;
   return typeof claim === 'string' && claim !== '' ? claim : undefined;
 }
 
 /**
- * core 요청의 테넌트 맥락을 정한다. 토큰이 언제나 이기고, 헤더가 토큰과 다르면 누가 문을 고르려 한 것이라 거절한다.
+ * 요청의 테넌트 맥락을 정한다(core·file-service). 토큰이 언제나 이기고, 헤더가 토큰과 다르면 누가 문을 고르려 한 것이라 거절한다.
  * 목록에 없는 테넌트는 두 모드 모두 거절한다 — «모르는» 게 아니라 틀린 값이다.
  *
  * 클레임 없는 토큰은 사람 토큰 라우트에선 «모르는 테넌트»다: 헤더가 대신하면 클레임 전 토큰의 역할(그 시절의 테넌트 1
@@ -40,7 +41,7 @@ function claimOf(user: object | null | undefined): string | undefined {
  * (쇼핑몰은 로그인 세션의 옛 내부 토큰을 공개 조회에도 붙인다).
  */
 export function resolveRequestTenant(input: RequestTenantInput, tenants: TenantList): RequestTenant {
-  const claim = claimOf(input.user);
+  const claim = tokenTenantOf(input.user);
   const { header } = input;
 
   if (claim !== undefined && header !== undefined && header !== claim) {

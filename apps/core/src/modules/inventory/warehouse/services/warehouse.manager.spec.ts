@@ -1,4 +1,6 @@
-import { DbService } from '@app/db';
+import { DatabaseRun, DbService } from '@app/db';
+import { singleDatabase } from '@app/db/testing/single-database';
+import { Logger } from '@nestjs/common';
 import { ConflictError } from '@app/shared';
 import { wmsSchema } from '../../schema/inventory.schema';
 import { WarehouseManager } from './warehouse.manager';
@@ -12,7 +14,7 @@ describe('WarehouseService 부팅', () => {
       findAll: jest.fn().mockResolvedValue([{ id: 'bucheon' }, { id: 'custom-warehouse' }]),
     };
     const locationService = { ensureSystemLocations: jest.fn().mockResolvedValue(undefined) };
-    const dbService = { run: jest.fn() };
+    const dbService = singleDatabase({ run: jest.fn() });
     const manager = new WarehouseManager(
       dbService as unknown as DbService<typeof wmsSchema>,
       reader as never,
@@ -31,13 +33,69 @@ describe('WarehouseService 부팅', () => {
   it('빈 DB 에서는 아무것도 쓰지 않는다', async () => {
     const reader = { findAll: jest.fn().mockResolvedValue([]) };
     const locationService = { ensureSystemLocations: jest.fn() };
-    const dbService = { run: jest.fn() };
+    const dbService = singleDatabase({ run: jest.fn() });
     const manager = new WarehouseManager(dbService as never, reader as never, locationService as never);
 
     await new WarehouseService(reader as never, manager).onModuleInit();
 
     expect(dbService.run).not.toHaveBeenCalled();
     expect(locationService.ensureSystemLocations).not.toHaveBeenCalled();
+  });
+});
+
+describe('WarehouseService 부팅 — 테넌트 DB 마다', () => {
+  /** 테넌트 DB 마다 그 맥락에서 돈다. `failing` 테넌트의 창고 조회는 던진다. */
+  function tenants(keys: string[], failing: string[]) {
+    let current = '';
+    const reader = {
+      findAll: jest.fn(() =>
+        failing.includes(current)
+          ? Promise.reject(new Error(`tenant ${current} DB 깨짐`))
+          : Promise.resolve([{ id: `w-${current}` }]),
+      ),
+    };
+    const dbService = {
+      run: jest.fn(),
+      forEachDatabase: async <R>(fn: (key: string) => Promise<R>): Promise<DatabaseRun<R>[]> => {
+        const runs: DatabaseRun<R>[] = [];
+        for (const key of keys) {
+          current = key;
+          try {
+            runs.push({ key, ok: true, value: await fn(key) });
+          } catch (error) {
+            runs.push({ key, ok: false, error });
+          }
+        }
+        return runs;
+      },
+    };
+    const locationService = { ensureSystemLocations: jest.fn().mockResolvedValue(undefined) };
+    const manager = new WarehouseManager(dbService as never, reader as never, locationService as never);
+    return { service: new WarehouseService(reader as never, manager), locationService };
+  }
+
+  it('모든 테넌트 DB 의 창고를 각자의 맥락에서 수렴시킨다', async () => {
+    const { service, locationService } = tenants(['1', '2'], []);
+
+    await service.onModuleInit();
+
+    expect(locationService.ensureSystemLocations.mock.calls.map(([id]) => id)).toEqual(['w-1', 'w-2']);
+  });
+
+  it('한 테넌트 DB 가 깨져도 다른 테넌트는 수렴하고 core 는 뜬다', async () => {
+    jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    const { service, locationService } = tenants(['1', '2'], ['2']);
+
+    await expect(service.onModuleInit()).resolves.toBeUndefined();
+
+    expect(locationService.ensureSystemLocations.mock.calls.map(([id]) => id)).toEqual(['w-1']);
+  });
+
+  it('어느 테넌트도 수렴하지 못하면 기동을 거부한다 — 단일 DB(①)의 옛 동작과 같다', async () => {
+    jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    const { service } = tenants(['1', '2'], ['1', '2']);
+
+    await expect(service.onModuleInit()).rejects.toThrow('DB 깨짐');
   });
 });
 

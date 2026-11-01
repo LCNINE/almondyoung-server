@@ -2,37 +2,38 @@ import { NotFoundError } from '@app/shared';
 import { Injectable } from '@nestjs/common';
 import { AssistantChatRepository, type MessageRow, type SessionRow } from '../repositories/assistant-chat.repository';
 import { restoreConversation, type Message } from '../lib/conversation';
+import type { RequestTenantId } from '../../tenancy/request-tenant';
 
 const DEFAULT_LIST_LIMIT = 20;
 const MAX_LIST_LIMIT = 100;
 
 /**
  * 대화 조회. 소유 판정이 여기 있다 — 남의 대화가 보이면 상품 원가·매입가 같은 내부
- * 정보가 그대로 새어 나간다.
+ * 정보가 그대로 새어 나간다. 소유는 (계정, 테넌트)다: 같은 계정이라도 다른 테넌트 토큰이면 남의 대화다.
  */
 @Injectable()
 export class AssistantSessionReader {
   constructor(private readonly repository: AssistantChatRepository) {}
 
   /** 목록이 지나치게 길어지지 않게 여기서 자른다. 컨트롤러는 원문 문자열만 넘긴다. */
-  async listSessions(userId: string, rawLimit?: string) {
+  async listSessions(userId: string, tenant: RequestTenantId, rawLimit?: string) {
     const parsed = Number(rawLimit);
     const limit = Number.isFinite(parsed)
       ? Math.min(Math.max(Math.trunc(parsed), 1), MAX_LIST_LIMIT)
       : DEFAULT_LIST_LIMIT;
 
-    return this.repository.findSessionsByUser(userId, limit);
+    return this.repository.findSessionsByUser(userId, tenant, limit);
   }
 
   /** 내 세션이 아니면 없는 것으로 답한다 — 남의 세션 존재 여부도 알려주지 않는다. */
-  async requireOwnedSession(userId: string, sessionId: string): Promise<SessionRow> {
-    const session = await this.repository.findSessionOwnedBy(userId, sessionId);
+  async requireOwnedSession(userId: string, tenant: RequestTenantId, sessionId: string): Promise<SessionRow> {
+    const session = await this.repository.findSessionOwnedBy(userId, tenant, sessionId);
     if (!session) throw new NotFoundError(`대화를 찾을 수 없습니다: ${sessionId}`);
     return session;
   }
 
-  async listMessages(userId: string, sessionId: string): Promise<MessageRow[]> {
-    await this.requireOwnedSession(userId, sessionId);
+  async listMessages(userId: string, tenant: RequestTenantId, sessionId: string): Promise<MessageRow[]> {
+    await this.requireOwnedSession(userId, tenant, sessionId);
     return this.repository.findMessages(sessionId);
   }
 

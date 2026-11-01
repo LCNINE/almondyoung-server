@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { DbService } from '@app/db';
 import { CronOnceMetadata } from './cron-once.constants';
 import { CronRunClaimer } from './cron-run.claimer';
 import { computePeriodAt } from './period-key';
@@ -11,12 +12,18 @@ import { computePeriodAt } from './period-key';
  * - 본문 throw → error 기록 + error 로그. Nest 의 `@Cron` 래퍼와 같이 프로세스를 죽이지 않는다.
  *
  * 반환 함수는 절대 reject 하지 않는다 — `cron` 의 onTick 에서 던져진 예외는 unhandled 가 된다.
+ *
+ * 위 절차 전체를 `DbService.forEachDatabase` 로 DB 마다 그 DB 의 맥락에서 돈다(core 는 테넌트 DB 마다, 다른 앱은 한 번).
+ * 그래서 `cron_runs` 선점이 DB 마다이고 한 DB 의 실패는 그 DB 의 주기에만 남는다. 새 `@CronOnce` 는 따로 할 일 없이 테넌트별이다.
  */
 @Injectable()
 export class CronOnceRunner {
   private readonly logger = new Logger('CronOnce');
 
-  constructor(private readonly claimer: CronRunClaimer) {}
+  constructor(
+    private readonly claimer: CronRunClaimer,
+    private readonly dbService: DbService,
+  ) {}
 
   wrap(meta: CronOnceMetadata, body: () => Promise<unknown>, now: () => Date = () => new Date()): () => Promise<void> {
     return async () => {
@@ -27,32 +34,45 @@ export class CronOnceRunner {
         this.logger.error(`invalid schedule for ${meta.name}: ${meta.expression} — ${this.describe(error)}`);
         return;
       }
-
-      let claimed: boolean;
-      try {
-        claimed = await this.claimer.claim(meta.name, periodAt);
-      } catch (error) {
-        this.logger.error(`claim failed, skipping ${meta.name}@${periodAt.toISOString()} — ${this.describe(error)}`);
-        return;
-      }
-      if (!claimed) {
-        this.logger.debug(`skip ${meta.name}@${periodAt.toISOString()}: claimed by another instance`);
-        return;
-      }
-
-      let outcome: 'ok' | 'error' = 'ok';
-      try {
-        await body();
-      } catch (error) {
-        outcome = 'error';
-        this.logger.error(`${meta.name}@${periodAt.toISOString()} failed — ${this.describe(error)}`);
-      }
-      try {
-        await this.claimer.finish(meta.name, periodAt, outcome);
-      } catch (error) {
-        this.logger.error(`finish failed for ${meta.name}@${periodAt.toISOString()} — ${this.describe(error)}`);
-      }
+      // runOnce 는 던지지 않는다 — 결과의 실패는 없다
+      await this.dbService.forEachDatabase((key) => this.runOnce(meta, body, periodAt, key));
     };
+  }
+
+  /** DB 하나에서의 한 주기. 맥락은 `forEachDatabase` 가 세웠다. */
+  private async runOnce(
+    meta: CronOnceMetadata,
+    body: () => Promise<unknown>,
+    periodAt: Date,
+    key: string | undefined,
+  ): Promise<void> {
+    const where = key === undefined ? '' : ` [db=${key}]`;
+    let claimed: boolean;
+    try {
+      claimed = await this.claimer.claim(meta.name, periodAt);
+    } catch (error) {
+      this.logger.error(
+        `claim failed, skipping ${meta.name}@${periodAt.toISOString()}${where} — ${this.describe(error)}`,
+      );
+      return;
+    }
+    if (!claimed) {
+      this.logger.debug(`skip ${meta.name}@${periodAt.toISOString()}${where}: claimed by another instance`);
+      return;
+    }
+
+    let outcome: 'ok' | 'error' = 'ok';
+    try {
+      await body();
+    } catch (error) {
+      outcome = 'error';
+      this.logger.error(`${meta.name}@${periodAt.toISOString()}${where} failed — ${this.describe(error)}`);
+    }
+    try {
+      await this.claimer.finish(meta.name, periodAt, outcome);
+    } catch (error) {
+      this.logger.error(`finish failed for ${meta.name}@${periodAt.toISOString()}${where} — ${this.describe(error)}`);
+    }
   }
 
   /**

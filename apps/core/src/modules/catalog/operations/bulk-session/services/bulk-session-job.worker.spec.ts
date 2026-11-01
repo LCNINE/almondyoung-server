@@ -10,6 +10,7 @@ jest.mock(
   { virtual: true },
 );
 
+import { singleDatabase } from '@app/db/testing/single-database';
 import { Logger } from '@nestjs/common';
 import { BulkSessionJobWorker } from './bulk-session-job.worker';
 import { ClaimedBulkSession } from './bulk-session-job.manager';
@@ -42,6 +43,7 @@ function makeWorker(opts: { enabled?: string; claimed?: ClaimedBulkSession | nul
       clearConsecutiveFailures,
     } as never,
     config as never,
+    singleDatabase({}) as never,
   );
   return {
     worker,

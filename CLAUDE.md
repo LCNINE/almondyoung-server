@@ -115,6 +115,8 @@ npm run db:setup -- --stage dev --deployment lcnine-auth
 
 core 참조 시드는 두 그룹이다(`scripts/seeding/lib/seed-groups.ts`): `baseline`(모든 테넌트 — 보충 기본값·등급 규칙, core 밖 서비스 시드) 과 `baseline-tenant-1`(기존 core DB 전용 — 부천·중국 창고·구역·창고 설정, 자사몰 판매채널). `db:setup` 은 그룹을 하나만 고르므로 기존 core DB 를 처음 채울 땐 두 번 돌려 둘 다 고른다. core 부팅은 창고를 만들지 않는다. `db:seed:ref` 는 둘 다 돈다.
 
+core 는 테넌트마다 논리 DB 가 따로라, `db:bootstrap`·`db:migrate`·`db:seed:ref`·`deploy:preflight` 는 레지스트리의 core 한 줄을 **테넌트 목록(SSM `/lcnine-auth/<stage>/tenant-list`)의 테넌트마다** 펼친다(`scripts/seeding/lib/tenant-registry.ts`). 이름 규칙(`core_*`)으로 테넌트를 찾지 않는다. 목록에 아직 없는 준비 중 테넌트는 `--tenant <slug>` 로만 지목하고(그 core DB 하나만, 목록 밖이면 `core_<slug>`), 테넌트 1 전용 갈래는 레지스트리의 기존 core DB 에만 들어간다. preflight 는 테넌트 DB 사이 마이그 버전이 다르면 1, 목록 밖 `core_*` DB 는 경고만 한다.
+
 `db:setup` 은 **interactive dev 전용 wrapper** 다 — `--yes` / `--non-interactive` 거부, `--stage live` / `SST_STAGE=live` 거부. 비대화식·배포 경로에선 분리된 4개 명령을 *직접* 호출 (ADR-0005 §3):
 
 ```bash

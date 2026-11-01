@@ -2,6 +2,7 @@ import chalk from 'chalk';
 import { select, password } from '@inquirer/prompts';
 import { buildDatabaseUrl } from '../lib/db-connection';
 import { getServiceRegistry } from '../lib/service-registry';
+import { resolveRegistry } from '../lib/tenant-registry';
 import { Logger } from '../lib/logger';
 import { resolveAdminPassword } from '../lib/admin-password';
 import { SeedCheckResult, SeedApplyResult, ServiceConfig, PhaseOptions } from '../lib/types';
@@ -171,6 +172,7 @@ function printCheckResult(result: SeedCheckResult): void {
  * Registry 기반으로 seed step 목록을 생성.
  * - 서비스가 registry에 있고 hasSeedStep=true인 경우만 생성
  * - core 서비스가 catalog+inventory 통합 스키마를 가지므로 WMS/PIM 시딩은 core DB로 연결
+ * - core 는 테넌트 DB 마다 한 줄이다(`resolveRegistry`). 테넌트 1 이 아닌 DB 엔 «모든 테넌트» 갈래 스텝만 붙는다.
  */
 function buildSeedSteps(
   registry: ServiceConfig[],
@@ -184,9 +186,10 @@ function buildSeedSteps(
   const steps: SeedStep[] = [];
   const registryMap = new Map(registry.map((s) => [s.name, s]));
 
-  const coreEntry = registryMap.get('core');
-  if (coreEntry?.hasSeedStep) {
-    steps.push(...buildCoreSeedSteps(urlFor(coreEntry.database)));
+  for (const coreEntry of registry.filter((s) => s.name === 'core' && s.hasSeedStep)) {
+    // 펼치지 않은 레지스트리(--list-groups)의 core 는 기존 core DB = 테넌트 1 이다.
+    const tenantOneData = coreEntry.tenant?.tenantOneData ?? true;
+    steps.push(...buildCoreSeedSteps(urlFor(coreEntry.database), { tenantOneData }));
   }
 
   const userEntry = registryMap.get('user-service');
@@ -239,7 +242,7 @@ export async function runSeeding(options: PhaseOptions): Promise<SeedApplyResult
   console.log(chalk.cyan('─'.repeat(40)));
 
   const config = await collectConfig({ yes: options.yes, deployment: options.deployment });
-  const registry = getServiceRegistry(options.deployment);
+  const registry = resolveRegistry(options);
 
   // Create seed steps based on registry
   const steps = buildSeedSteps(registry, config);
@@ -296,13 +299,14 @@ export async function runSeeding(options: PhaseOptions): Promise<SeedApplyResult
 
   console.log(chalk.gray(`\n  Selected group: ${chalk.bold(selectedGroup)}`));
 
-  // 그룹 필터 (serviceName 기준 dedupe)
+  // 그룹 필터 (serviceName·DB 기준 dedupe — core 스텝은 테넌트 DB 마다 하나씩 있다)
   const filteredSteps: SeedStep[] = [];
   const seenServices = new Set<string>();
   for (const step of steps) {
     if (!step.groups.includes(selectedGroup)) continue;
-    if (seenServices.has(step.serviceName)) continue;
-    seenServices.add(step.serviceName);
+    const key = `${step.serviceName}@${step.databaseName}`;
+    if (seenServices.has(key)) continue;
+    seenServices.add(key);
     filteredSteps.push(step);
   }
 
@@ -325,7 +329,8 @@ export async function runSeeding(options: PhaseOptions): Promise<SeedApplyResult
 
     for (const step of filteredSteps) {
       try {
-        const result = await step.check();
+        // core 스텝은 테넌트 DB 마다 하나라 이름에 DB 를 붙인다 — 어느 테넌트가 비었는지 보여야 한다.
+        const result = { ...(await step.check()), service: `${step.serviceName} (${step.databaseName})` };
         checkResults.push(result);
         printCheckResult(result);
       } catch (error: any) {
@@ -351,8 +356,8 @@ export async function runSeeding(options: PhaseOptions): Promise<SeedApplyResult
     for (let i = 0; i < filteredSteps.length; i++) {
       const step = filteredSteps[i];
       if (checkResults[i].isFullySeeded) continue;
-      console.log(`  ${chalk.bold(`Seeding ${step.serviceName}...`)}`);
-      const result = await step.apply();
+      console.log(`  ${chalk.bold(`Seeding ${step.serviceName} (${step.databaseName})...`)}`);
+      const result = { ...(await step.apply()), service: `${step.serviceName} (${step.databaseName})` };
       results.push(result);
       if (result.success) {
         logger.success(`${step.serviceName} done (${result.duration}ms)`);
@@ -373,8 +378,13 @@ export async function runSeeding(options: PhaseOptions): Promise<SeedApplyResult
   }
 }
 
-/** index.ts가 --list-groups에서 사용 (sst shell/DB 접속 없이 메타만 조회) */
+/** index.ts가 --list-groups에서 사용 (sst shell/DB 접속 없이 메타만 조회). 테넌트 목록을 읽지 않는다 — core 는 테넌트 1 로 본다 */
 export async function listGroupsForDeployment(deployment?: string): Promise<string[]> {
+  return listGroupsForRegistry(getServiceRegistry(deployment));
+}
+
+/** 그 레지스트리(테넌트 목록으로 펼친 것)의 스텝이 속한 그룹들 — DB 에 붙지 않는다 */
+export async function listGroupsForRegistry(registry: ServiceConfig[]): Promise<string[]> {
   const PLACEHOLDER_URL = 'postgres://placeholder:placeholder@localhost:5432/placeholder';
   const placeholder: Awaited<ReturnType<typeof collectConfig>> = {
     adminPassword: 'placeholder',
@@ -391,7 +401,6 @@ export async function listGroupsForDeployment(deployment?: string): Promise<stri
     },
     oauthClients: [],
   };
-  const registry = getServiceRegistry(deployment);
   const steps = buildSeedSteps(registry, placeholder, () => PLACEHOLDER_URL);
   try {
     return collectGroups(steps);

@@ -7,6 +7,7 @@ import {
   BuildMachineFinding,
   buildMachineFindings,
   classifyMigration,
+  coreVersionMismatch,
   IMAGE_BUILD_PEAK_BYTES,
   deployTagName,
   EcsServiceSnapshot,
@@ -17,6 +18,7 @@ import {
   PendingMigration,
   rolloutProblems,
   uncheckedDeployLines,
+  unlistedCoreDatabases,
 } from './batch-deploy-preflight.lib';
 
 const ROOT = resolve(__dirname, '../..');
@@ -313,5 +315,53 @@ describe('저장소의 drizzle 마이그', () => {
       .filter((path) => destructive.test(repoSql(path).replace(/--.*$/gm, '')))
       .filter((path) => ['expand', 'neutral'].includes(classifyMigration(repoSql(path)).kind));
     expect(leaked).toEqual([]);
+  });
+});
+
+describe('coreVersionMismatch — 전 테넌트 동일 버전이 배포 조건이다', () => {
+  it('테넌트 DB 들의 적용 이력이 같으면 없음', () => {
+    expect(
+      coreVersionMismatch([
+        { label: 'core(테넌트 1)', applied: [10, 20, 30] },
+        { label: 'core(테넌트 2)', applied: [30, 10, 20] },
+      ]),
+    ).toBeNull();
+  });
+
+  it('테넌트 하나뿐이면 비교할 것이 없다', () => {
+    expect(coreVersionMismatch([{ label: 'core(테넌트 1)', applied: [10] }])).toBeNull();
+  });
+
+  it('하나라도 다르면 어느 테넌트가 몇 건인지 적는다', () => {
+    expect(
+      coreVersionMismatch([
+        { label: 'core(테넌트 1)', applied: [10, 20, 30] },
+        { label: 'core(테넌트 2)', applied: [10, 20] },
+      ]),
+    ).toBe('테넌트 core DB 사이 마이그 버전이 다르다: core(테넌트 1) 3건 · core(테넌트 2) 2건');
+  });
+
+  it('건수가 같아도 다른 마이그면 다르다(한쪽이 건너뛴 경우)', () => {
+    expect(
+      coreVersionMismatch([
+        { label: 'a', applied: [10, 30] },
+        { label: 'b', applied: [10, 20] },
+      ]),
+    ).not.toBeNull();
+  });
+});
+
+describe('unlistedCoreDatabases — 이름 규칙으로 테넌트를 찾지 않고, 목록 밖 core DB 는 경고만 한다', () => {
+  it('목록에 없는 core·core_* 만 고른다', () => {
+    expect(
+      unlistedCoreDatabases(
+        ['postgres', 'core', 'core_two', 'core_old', 'dev_core', 'corex', 'wallet'],
+        ['core', 'core_two'],
+      ),
+    ).toEqual(['core_old']);
+  });
+
+  it('기존 core DB 가 목록에 없어도 경고 대상이다', () => {
+    expect(unlistedCoreDatabases(['core', 'core_two'], ['core_two'])).toEqual(['core']);
   });
 });

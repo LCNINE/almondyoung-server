@@ -6,6 +6,7 @@ import { ARCHIVE_PAGE_ATTACHMENT_CONTEXT_ID, DIGITAL_ASSET_FILE_CONTEXT_ID } fro
 import { Upload } from '../shared/types/file.types';
 import { JwtPayload } from '../shared/types/jwt-payload.interface';
 import { delegationOf, FileDelegate } from './service-delegation';
+import { fileBelongsTo, type RequestTenantId } from '../tenancy/request-tenant';
 
 export interface DeleteResult {
   success: boolean;
@@ -19,6 +20,9 @@ export interface DeleteResult {
 // 아카이브 첨부는 사내 문서에 딸린 파일이라 «올린 사람만 읽는» 것이 오히려 틀렸다 —
 // 문서 자체가 팀 스페이스에서 관리자 전체에게 열려 있는데 첨부만 못 열면 문서가 반쪽이 된다.
 // 이관은 계정 하나가 전부 올리므로, 이 줄이 없으면 나머지 관리자에게 403 이 된다.
+//
+// 소유자가 아닌 사람에게 여는 예외(이 표·파일 관리자·서비스 위임)는 전부 파일 테넌트 = 요청 테넌트일 때만 연다 —
+// 권한 키는 테넌트마다 받으므로, 테넌트 2 의 `catalog.product.read` 가 테넌트 1 파일을 열면 안 된다.
 const STAFF_CONTEXT_PERMISSIONS: ReadonlyMap<string, Permission> = new Map<string, Permission>([
   [DIGITAL_ASSET_FILE_CONTEXT_ID, 'catalog.product.read'],
   [ARCHIVE_PAGE_ATTACHMENT_CONTEXT_ID, 'archive.page.read'],
@@ -37,7 +41,7 @@ export class FileAccess {
     private readonly checkpoints: PermissionCheckpoints,
   ) {}
 
-  async loadReadable(fileId: string, user: JwtPayload): Promise<Upload> {
+  async loadReadable(fileId: string, user: JwtPayload, tenant: RequestTenantId): Promise<Upload> {
     const file = await this.repo.findById(fileId);
     if (!file || file.status !== 'active') {
       throw new NotFoundError('File not found');
@@ -45,12 +49,13 @@ export class FileAccess {
     if (file.isPublic) {
       return file;
     }
-    if (this.isOwnerOrFileManager(file, user)) {
+    if (this.isOwnerOrFileManager(file, user, tenant)) {
       return file;
     }
     const contextPermission = STAFF_CONTEXT_PERMISSIONS.get(file.contextId);
     if (
       contextPermission &&
+      fileBelongsTo(file, tenant) &&
       this.checkpoints.check('file.staff_context_read', this.subjectOf(user), [contextPermission])
     ) {
       return file;
@@ -66,12 +71,12 @@ export class FileAccess {
     return file;
   }
 
-  async delete(fileId: string, user: JwtPayload): Promise<DeleteResult> {
+  async delete(fileId: string, user: JwtPayload, tenant: RequestTenantId): Promise<DeleteResult> {
     const file = await this.repo.findById(fileId);
     if (!file || file.status === 'deleted') {
       throw new NotFoundError('File not found');
     }
-    if (!this.isOwnerOrFileManager(file, user)) {
+    if (!this.isOwnerOrFileManager(file, user, tenant)) {
       throw new ForbiddenError('You do not have permission to delete this file');
     }
     if (file.contextId === 'attendance-request-image') {
@@ -87,8 +92,9 @@ export class FileAccess {
     return delegation ? FILE_DELEGATION[delegation] : { roles: user.roles ?? [] };
   }
 
-  private isOwnerOrFileManager(file: Upload, user: JwtPayload): boolean {
+  private isOwnerOrFileManager(file: Upload, user: JwtPayload, tenant: RequestTenantId): boolean {
     if (file.uploadedBy === user.userId) return true;
+    if (!fileBelongsTo(file, tenant)) return false;
     return this.checkpoints.check('file.owner_exception', this.subjectOf(user), ['system.file.manage']);
   }
 }

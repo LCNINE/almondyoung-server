@@ -76,6 +76,8 @@ OAuth 액세스 토큰에는 `tenant` 가 실리고 `roles` 는 그 테넌트의
 (`users.is_platform_operator`)로 한다 — 테넌트 안의 master 도 운영자가 아니면 403. 기존 계정 만들기·역할 만들기·역할 부여는
 `tenantId` 를 받는데, 지정하면 운영자만 된다(`PlatformOperatorManager.workingTenant`). 정지는 그 테넌트의 `oauth_tokens` 를
 그 자리에서 끊는다. 대행해 만드는 직원 계정은 `UserCreated` 를 내지 않는다(고객 가입 이벤트다).
+남은 액세스 토큰은 core 가 막는다 — `GET /internal/iam/tenant-statuses`(내부 키, id·상태만)를 15초마다 받아 정지·준비 테넌트의
+사람 토큰을 403 한다(`apps/core/src/platform/tenancy/tenant-status-cache.ts`).
 `GET /tenant-brand?host=` 는 로그인 전 브랜드 조회라 공개이고 이름·로고·활성 여부만 돌려준다.
 
 ### 역할 만료

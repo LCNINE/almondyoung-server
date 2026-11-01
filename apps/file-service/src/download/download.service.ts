@@ -4,6 +4,7 @@ import { FileAccess } from '../access/file-access';
 import { SignedUrlResponseDto } from './dto/signed-url-response.dto';
 import { FileMetadataResponseDto } from './dto/file-metadata-response.dto';
 import { JwtPayload } from '../shared/types/jwt-payload.interface';
+import type { RequestTenantId } from '../tenancy/request-tenant';
 
 @Injectable()
 export class DownloadService {
@@ -16,9 +17,10 @@ export class DownloadService {
     fileId: string,
     expiresIn: number,
     user: JwtPayload,
+    tenant: RequestTenantId,
     download = false,
   ): Promise<SignedUrlResponseDto> {
-    const file = await this.fileAccess.loadReadable(fileId, user);
+    const file = await this.fileAccess.loadReadable(fileId, user, tenant);
 
     if (file.isPublic) {
       return {
@@ -32,7 +34,8 @@ export class DownloadService {
       ? `attachment; filename*=UTF-8''${encodeURIComponent(file.originalName)}`
       : undefined;
 
-    const signedUrlResult = await this.storageService.getSignedUrl({
+    // 버킷은 요청이 아니라 파일 행의 테넌트 것이다 — 객체가 거기 있다.
+    const signedUrlResult = await this.storageService.getSignedUrl(file.tenantId, {
       key: file.filePath,
       expiresIn,
       operation: 'get',
@@ -46,8 +49,8 @@ export class DownloadService {
     };
   }
 
-  async getMetadata(fileId: string, user: JwtPayload): Promise<FileMetadataResponseDto> {
-    const file = await this.fileAccess.loadReadable(fileId, user);
+  async getMetadata(fileId: string, user: JwtPayload, tenant: RequestTenantId): Promise<FileMetadataResponseDto> {
+    const file = await this.fileAccess.loadReadable(fileId, user, tenant);
 
     const response: FileMetadataResponseDto = {
       id: file.id,
@@ -70,6 +73,7 @@ export class DownloadService {
     return response;
   }
 
+  /** 공개 파일은 맥락 없이 꺼내 준다 — URL 이 이미 행의 테넌트 공개 버킷을 가리킨다(올릴 때 정해졌다). */
   async resolvePublicUrl(fileId: string): Promise<string> {
     const file = await this.fileAccess.loadPublicServable(fileId);
     return file.url;

@@ -50,6 +50,20 @@
       "when": 1793244082316,
       "tag": "20261029032122_drop-legacy-scope-tables",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1793462286818,
+      "tag": "20261031155806_add-upload-tenant",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1793462290966,
+      "tag": "20261031155810_backfill-upload-tenant-one",
+      "breakpoints": true
     }
   ]
 }

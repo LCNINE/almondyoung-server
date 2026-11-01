@@ -5,6 +5,7 @@ import type { FastifyReply } from 'fastify';
 import { Public } from '../../commons/decorator/public.decorator';
 import { InternalApiKeyGuard } from '../../commons/guards/internal-api-key.guard';
 import { RolePermissionsSnapshotDto } from './dto/role-permissions-snapshot.dto';
+import { TenantStatusesDto } from './dto/tenant-statuses.dto';
 import { IamService } from './iam.service';
 
 /** 이 경로가 응답 객체에서 쓰는 부분. */
@@ -13,7 +14,7 @@ export type EtagReply = {
   header(name: string, value: string): EtagReply;
 };
 
-/** 다른 서비스가 역할별 권한을 받아 가는 경로. 사람 토큰이 아니라 내부 키로만 연다. */
+/** 다른 서비스가 역할별 권한·테넌트 상태를 받아 가는 경로. 사람 토큰이 아니라 내부 키로만 연다. */
 @ApiExcludeController()
 @Controller('internal/iam')
 export class IamInternalController {
@@ -35,5 +36,14 @@ export class IamInternalController {
       return undefined;
     }
     return snapshot;
+  }
+
+  /** core 가 15초마다 받아 정지된 테넌트의 남은 액세스 토큰을 거절한다. 작은 목록이라 ETag 없이 통째로 준다. */
+  @Get('tenant-statuses')
+  @Public()
+  @UseGuards(InternalApiKeyGuard)
+  @SkipResponseEnvelope()
+  tenantStatuses(): Promise<TenantStatusesDto> {
+    return this.iamService.tenantStatuses();
   }
 }

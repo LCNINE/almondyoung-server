@@ -202,10 +202,13 @@ describe('공유 서비스 문 배선', () => {
    * ② 에서 거절하므로, 빠뜨린 호출자는 ② 배포에서 깨진다. 받는 쪽(컨트롤러·가드·키 이름 주입)은 대상이 아니다.
    */
   it('내부 키 호출자는 테넌트 헤더를 싣는다', () => {
-    // 권한 사본은 모든 테넌트에 공통인 역할 정의라 테넌트가 없다.
-    const GLOBAL_CALLS = ['libs/authorization/src/services/http-role-permission.source.ts'];
-    // ai 는 토큰 테넌트별 앱이라 호출 테넌트를 요청 맥락에서 정해야 한다 — 그 앱의 테넌트 축 작업이 단다.
-    const LATER = ['apps/ai/src/'];
+    // 권한 사본은 모든 테넌트에 공통인 역할 정의라 테넌트가 없다. 테넌트 상태는 모든 테넌트의 상태를 한 번에 받는다.
+    const GLOBAL_CALLS = [
+      'libs/authorization/src/services/http-role-permission.source.ts',
+      'apps/core/src/platform/tenancy/http-tenant-status.source.ts',
+    ];
+    // ai 는 토큰 테넌트별 앱이고 맥락(CLS)이 없다 — 호출 테넌트를 요청 테넌트·수거 루프의 테넌트로 직접 싣는다.
+    const PER_REQUEST = ['apps/ai/src/'];
     const NON_NEST = ['apps/medusa/', 'apps/admin-web/'];
     const callers = [...tracked('apps/*/src'), ...tracked('libs/*/src')].filter((f) => {
       const src = read(f);
@@ -215,10 +218,14 @@ describe('공유 서비스 문 배선', () => {
     });
     expect(callers.length).toBeGreaterThanOrEqual(10);
     const missing = callers
-      .filter((f) => !GLOBAL_CALLS.includes(f) && !LATER.some((prefix) => f.startsWith(prefix)))
+      .filter((f) => !GLOBAL_CALLS.includes(f) && !PER_REQUEST.some((prefix) => f.startsWith(prefix)))
       .filter((f) => !NON_NEST.some((prefix) => f.startsWith(prefix)))
       .filter((f) => !/outboundTenant\.headers\(\)/.test(read(f)));
     expect(missing).toEqual([]);
+
+    const ai = callers.filter((f) => PER_REQUEST.some((prefix) => f.startsWith(prefix)));
+    expect(ai.length).toBeGreaterThanOrEqual(2); // 고아 수거 + 근태 검토
+    expect(ai.filter((f) => !/\[TENANT_HEADER\]:/.test(read(f)))).toEqual([]);
 
     // Medusa 는 한 테넌트만 섬기는 앱이라 앱 설정 T 를 싣는다(`servedTenantHeaders`). 루트 libs 를 못 가져와 공용 클라이언트가
     // 닿지 않으므로 호출부마다 본다.

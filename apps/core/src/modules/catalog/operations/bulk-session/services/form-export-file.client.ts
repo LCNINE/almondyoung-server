@@ -1,7 +1,8 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { sign as jwtSign } from 'jsonwebtoken';
-import { signFileServiceDelegation } from '../../../../../platform/auth/file-service-delegation';
+import { OutboundTenant } from '@app/tenancy';
+import { signFileServiceDelegation, tenantClaim } from '../../../../../platform/auth/file-service-delegation';
 
 export const BULK_FORM_CONTEXT_ID = 'product-bulk-form';
 const MAX_ERROR_BODY_CHARS = 200;
@@ -42,7 +43,15 @@ export interface BulkFileMetadata {
 export class FormExportFileClient {
   private readonly logger = new Logger(FormExportFileClient.name);
 
-  constructor(private readonly config: ConfigService) {}
+  /**
+   * 두 토큰 모두 맥락(요청·크론)의 테넌트를 싣는다 — file-service 가 그 테넌트 버킷에 쓰고, 위임 토큰의 예외(소유자 검사
+   * 건너뛰기)는 그 테넌트 파일에만 연다. `ownerToken` 은 소유자 경로라 테넌트를 따지지 않는다 — 본인 파일이면 다른 테넌트에서
+   * 올린 것도 열린다(남의 파일 id 로 여는 길은 소유자 검사가 막는다).
+   */
+  constructor(
+    private readonly config: ConfigService,
+    @Inject(OutboundTenant) private readonly outboundTenant: Pick<OutboundTenant, 'tenantId'>,
+  ) {}
 
   private secret(): string {
     const secret = this.config.get<string>('AUTH_SECRET');
@@ -65,7 +74,7 @@ export class FormExportFileClient {
    * 둔 것**이다 — 외부에서 임의 fileId 를 주입할 통로가 없다.
    */
   private workbookToken(userId: string): string {
-    return signFileServiceDelegation(this.secret(), userId, '5m');
+    return signFileServiceDelegation(this.secret(), userId, '5m', this.outboundTenant.tenantId());
   }
 
   /**
@@ -82,10 +91,14 @@ export class FormExportFileClient {
    */
   private ownerToken(userId: string): string {
     // `userId` 클레임이 file-service 의 validatePayload 에서 `sub` 파생 userId 를 덮는다 — 그 값이 소유자 판정에 쓰인다.
-    return jwtSign({ sub: 'core-bulk-session', userId, scopes: [] }, this.secret(), {
-      algorithm: 'HS256',
-      expiresIn: '5m',
-    });
+    return jwtSign(
+      { sub: 'core-bulk-session', userId, scopes: [], ...tenantClaim(this.outboundTenant.tenantId()) },
+      this.secret(),
+      {
+        algorithm: 'HS256',
+        expiresIn: '5m',
+      },
+    );
   }
 
   private get baseUrl(): string {

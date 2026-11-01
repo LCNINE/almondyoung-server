@@ -12,7 +12,7 @@ import { SCHEDULE_ROOT } from '@app/shared/schedule/schedule-root';
 import { Module } from '@nestjs/common';
 import { AttendanceAiModule } from './attendance/attendance.module';
 import { ConfigModule } from '@nestjs/config';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { LoggerModule } from 'nestjs-pino';
 import { AiController } from './ai.controller';
 import { AssistantModule } from './assistant/assistant.module';
@@ -20,6 +20,7 @@ import { FilesModule } from './files/files.module';
 import { aiSchema } from './db/schema';
 import { ProductDescriptionModule } from './product-description/product-description.module';
 import { TenancyModule } from '@app/tenancy';
+import { AiRequestTenantInterceptor } from './tenancy/ai-request-tenant.interceptor';
 
 @Module({
   imports: [
@@ -65,6 +66,8 @@ import { TenancyModule } from '@app/tenancy';
     },
     // 권한 판정 — 라우트 인가를 결정한다(설정으로 끌 수 없다). 인증 가드 뒤에 둔다.
     { provide: APP_GUARD, useClass: PermissionGuard },
+    // 요청 테넌트 문 — 가드 뒤에 돈다. 대화·업로드 추적이 이 테넌트로 갈린다.
+    { provide: APP_INTERCEPTOR, useClass: AiRequestTenantInterceptor },
   ],
 })
 export class AiModule {}

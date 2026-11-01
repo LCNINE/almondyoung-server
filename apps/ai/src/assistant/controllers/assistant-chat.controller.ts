@@ -5,6 +5,7 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import { clientAbortSignal } from '../lib/client-abort';
 import { callerAuthHeaders, readTurn } from '../lib/multipart';
 import { AssistantChatService, type TurnEvent } from '../services/assistant-chat.service';
+import { RequestTenant, type RequestTenantId } from '../../tenancy/request-tenant';
 
 /**
  * 마지막 프레임에 실을 도구 결과의 상한(자). 클라이언트 파서가 1MB 를 넘으면 던지고,
@@ -50,6 +51,7 @@ export class AssistantChatController {
   @ApiResponse({ status: 404, description: '대화가 없거나 내 것이 아님' })
   async sendMessage(
     @User() user: { userId: string },
+    @RequestTenant() tenant: RequestTenantId,
     @Param('sessionId') sessionId: string,
     @Req() request: FastifyRequest,
     @Res() reply: FastifyReply,
@@ -64,6 +66,7 @@ export class AssistantChatController {
 
     const events = this.service.runTurn({
       userId: user.userId,
+      tenant,
       sessionId,
       turn,
       // 여기서 기다릴 것이 없으므로 async 가 아니다 — 타입만 Promise 면 도구 쪽은 그대로 await 한다.

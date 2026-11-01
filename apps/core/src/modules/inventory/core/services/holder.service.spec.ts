@@ -1,3 +1,6 @@
+import { Logger } from '@nestjs/common';
+import type { DatabaseRun } from '@app/db';
+import { singleDatabase } from '@app/db/testing/single-database';
 import { HOLDER_CONSTANTS } from '../constants/holder.constants';
 import { HolderService } from './holder.service';
 
@@ -46,8 +49,44 @@ describe('HolderService.ensureDefaultHolder', () => {
 
   // 오늘의 부팅 동작 그대로: 보유자 보장이 실패해도 core 는 뜬다(로그만 남긴다).
   it('부팅 훅은 실패를 삼킨다', async () => {
-    const dbService = { run: jest.fn().mockRejectedValue(new Error('db down')) };
+    jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    const dbService = singleDatabase({ run: jest.fn().mockRejectedValue(new Error('db down')) });
 
     await expect(new HolderService(dbService as never).onModuleInit()).resolves.toBeUndefined();
+  });
+
+  it('부팅 훅은 테넌트 DB 마다 그 맥락에서 보장한다 — 한 DB 의 실패가 다른 DB 를 막지 않는다', async () => {
+    jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    let current = '';
+    const insertedBy: string[] = [];
+    const dbService = {
+      run: jest.fn((fn: (t: unknown) => unknown) => {
+        if (current === '1') return Promise.reject(new Error('tenant 1 DB 깨짐'));
+        const { trx } = fakeTrx([]);
+        trx.insert.mockImplementation(() => ({
+          values: () => {
+            insertedBy.push(current);
+            return Promise.resolve();
+          },
+        }));
+        return fn(trx);
+      }),
+      forEachDatabase: async <R>(fn: (key: string) => Promise<R>): Promise<DatabaseRun<R>[]> => {
+        const runs: DatabaseRun<R>[] = [];
+        for (const key of ['1', '2']) {
+          current = key;
+          try {
+            runs.push({ key, ok: true, value: await fn(key) });
+          } catch (error) {
+            runs.push({ key, ok: false, error });
+          }
+        }
+        return runs;
+      },
+    };
+
+    await expect(new HolderService(dbService as never).onModuleInit()).resolves.toBeUndefined();
+
+    expect(insertedBy).toEqual(['2']);
   });
 });

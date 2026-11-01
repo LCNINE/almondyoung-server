@@ -1,5 +1,7 @@
 import { Logger } from '@nestjs/common';
 import { register } from 'prom-client';
+import type { DatabaseRun } from '@app/db';
+import { singleDatabase } from '@app/db/testing/single-database';
 import { DeadLetterMetricsCollector } from './dead-letter-metrics.collector';
 import type { DeadLetterRuntime } from './dead-letter.runtime';
 
@@ -19,9 +21,9 @@ describe('events_dead_letters 게이지 (#1016 8번)', () => {
       { topic: 'orders.events.v1', status: 'held', count: 5 },
     ];
     const collector = new DeadLetterMetricsCollector(
-      {
+      singleDatabase({
         db: { select: () => ({ from: () => ({ where: () => ({ groupBy: () => Promise.resolve(rows) }) }) }) },
-      } as never,
+      }) as never,
       attached,
     );
 
@@ -36,14 +38,15 @@ describe('events_dead_letters 게이지 (#1016 8번)', () => {
   });
 
   it('조회가 실패해도 던지지 않는다 — 스크레이프를 죽이지 않는다', async () => {
+    jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
     const collector = new DeadLetterMetricsCollector(
-      {
+      singleDatabase({
         db: {
           select: () => ({
             from: () => ({ where: () => ({ groupBy: async () => Promise.reject(new Error('db down')) }) }),
           }),
         },
-      } as never,
+      }) as never,
       attached,
     );
     await expect(collector.refresh()).resolves.toBeUndefined();
@@ -52,7 +55,7 @@ describe('events_dead_letters 게이지 (#1016 8번)', () => {
   it('실패 테이블 모드가 꺼져 있으면 DB 를 읽지 않고 조용히 건너뛴다 — 경고는 한 번', async () => {
     const select = jest.fn();
     const collector = new DeadLetterMetricsCollector(
-      { db: { select } } as never,
+      singleDatabase({ db: { select } }) as never,
       {
         isAttached: false,
       } as DeadLetterRuntime,
@@ -66,5 +69,43 @@ describe('events_dead_letters 게이지 (#1016 8번)', () => {
     } finally {
       warn.mockRestore();
     }
+  });
+
+  it('테넌트 DB 가 여럿이면 건수를 더한다 — 한 DB 의 실패는 그 DB 몫만 빠진다', async () => {
+    jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    const byKey: Record<string, Array<{ topic: string; status: string; count: number }> | Error> = {
+      '1': [{ topic: 'multi.dl.v1', status: 'failed', count: 2 }],
+      '2': [{ topic: 'multi.dl.v1', status: 'failed', count: 3 }],
+      '3': new Error('tenant 3 DB 깨짐'),
+    };
+    let current = '';
+    const dbService = {
+      get db() {
+        const rows = byKey[current];
+        return {
+          select: () => ({
+            from: () => ({
+              where: () => ({ groupBy: () => (rows instanceof Error ? Promise.reject(rows) : Promise.resolve(rows)) }),
+            }),
+          }),
+        };
+      },
+      forEachDatabase: async <R>(fn: (key: string) => Promise<R>): Promise<DatabaseRun<R>[]> => {
+        const runs: DatabaseRun<R>[] = [];
+        for (const key of Object.keys(byKey)) {
+          current = key;
+          try {
+            runs.push({ key, ok: true, value: await fn(key) });
+          } catch (error) {
+            runs.push({ key, ok: false, error });
+          }
+        }
+        return runs;
+      },
+    };
+
+    await new DeadLetterMetricsCollector(dbService as never, attached).refresh();
+
+    expect(await gauge('multi.dl.v1', 'failed')).toBe(5);
   });
 });

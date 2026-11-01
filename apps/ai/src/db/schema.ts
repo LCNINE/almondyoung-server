@@ -14,6 +14,12 @@ export const assistantChatSessions = pgTable(
   {
     id: uuid('id').primaryKey().defaultRandom(),
     userId: uuid('user_id').notNull(),
+    /**
+     * 대화가 열린 토큰의 테넌트. 목록·열기는 (계정, 테넌트)로 가른다 — 두 테넌트에 소속된 계정이 테넌트 2 로
+     * 들어와 테넌트 1 대화(아몬드영 상품·원가가 담긴 도구 결과)를 보면 안 된다.
+     * nullable 은 expand 기간 한정이다. 옛 행·테넌트 없는 쓰기는 DB 기본값 '1'(마이그에만, 여기엔 적지 않는다).
+     */
+    tenantId: varchar('tenant_id', { length: 64 }),
     /** 목록에 보여줄 이름. 첫 사용자 발화에서 따온다. */
     title: text('title'),
     /**
@@ -83,6 +89,12 @@ export const assistantUploadedFiles = pgTable(
   {
     fileId: uuid('file_id').primaryKey(),
     sessionId: uuid('session_id'),
+    /**
+     * 올린 토큰의 테넌트. 수거 크론이 이 테넌트의 core 에 참조를 묻고 이 테넌트로 file-service 를 부른다 —
+     * 상품(파일을 참조하는 쪽)은 테넌트 core DB 마다 따로라, 다른 테넌트 core 에 물으면 «미참조»로 읽혀 살아 있는 파일을 지운다.
+     * 대화 쪽과 같은 expand 다리(DB 기본값 '1').
+     */
+    tenantId: varchar('tenant_id', { length: 64 }),
     contextId: varchar('context_id', { length: 50 }).notNull(),
     uploadedAt: timestamp('uploaded_at', { withTimezone: true }).notNull().defaultNow(),
     /** 미참조로 판정해 file-service 에 soft delete 를 요청한 시각. */

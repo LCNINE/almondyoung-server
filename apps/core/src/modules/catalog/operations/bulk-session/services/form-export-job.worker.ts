@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { DbService, describeFailedRun } from '@app/db';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { CronOnce } from '@app/cron-once';
 import { ClaimedExport, FormExportJobManager } from './form-export-job.manager';
@@ -25,6 +26,7 @@ export class FormExportJobWorker {
     private readonly jobManager: FormExportJobManager,
     private readonly manager: FormExportManager,
     private readonly config: ConfigService,
+    private readonly dbService: DbService,
   ) {}
 
   private get enabled(): boolean {
@@ -41,6 +43,18 @@ export class FormExportJobWorker {
     }
 
     this.isProcessing = true;
+    try {
+      // 테넌트 DB 마다 그 맥락에서 한 잡씩. 한 DB 의 실패는 그 DB 의 잡에만 남는다.
+      const runs = await this.dbService.forEachDatabase(() => this.tickInCurrentDatabase());
+      for (const run of runs) {
+        if (!run.ok) this.logger.error(`양식 조립 실패 기록 실패: ${describeFailedRun(run)}`, run.error);
+      }
+    } finally {
+      this.isProcessing = false;
+    }
+  }
+
+  private async tickInCurrentDatabase(): Promise<void> {
     let claimed: ClaimedExport | null = null;
     try {
       claimed = await this.jobManager.claim();
@@ -61,8 +75,6 @@ export class FormExportJobWorker {
       // 토큰을 같이 넘겨야 recordJobError 의 CAS 가 성립한다 — 내가 이미 lease 를 잃은
       // 좀비라면 그쪽에서 0행을 매치해 조용히 버린다(후임의 lease 를 깎지 않는다).
       if (claimed) await this.jobManager.recordJobError(claimed.exportId, claimed.leaseToken, message);
-    } finally {
-      this.isProcessing = false;
     }
   }
 

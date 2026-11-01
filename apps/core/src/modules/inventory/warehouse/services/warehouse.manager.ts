@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { eq } from 'drizzle-orm';
 import { ConflictError, NotFoundError } from '@app/shared';
-import { InjectTypedDb, DbService } from '@app/db';
+import { InjectTypedDb, DbService, describeFailedRun } from '@app/db';
 import { wmsTables, wmsSchema, DbTx, Warehouse } from '../../schema/inventory.schema';
 import { WAREHOUSE_CONSTANTS } from '../../core/constants/warehouse.constants';
 import { LocationService } from '../../core/services/location.service';
@@ -127,6 +127,20 @@ export class WarehouseManager {
     const warehouses = await this.reader.findAll(tx);
     for (const warehouse of warehouses) {
       await this.locationService.ensureSystemLocations(warehouse.id, tx);
+    }
+  }
+
+  /**
+   * 부팅 훅. 테넌트 DB 마다(① 은 단일 DB 한 번) 그 맥락에서 `convergeSystemLocations` 를 돈다.
+   * 한 테넌트 DB 의 실패는 그 테넌트에 갇힌다 — 에러 로그를 남기고 나머지 테넌트로 core 가 뜬다. 한 테넌트의 깨진 DB 가
+   * 아몬드영까지 기동 거부로 끌어내리지 않게 하려는 것이다. 어느 DB 도 수렴하지 못하면 기동을 거부한다(단일 DB 의 옛 동작).
+   */
+  async convergeSystemLocationsInEveryDatabase(): Promise<void> {
+    const runs = await this.dbService.forEachDatabase(() => this.convergeSystemLocations());
+    const failures = runs.flatMap((run) => (run.ok ? [] : [run]));
+    if (failures.length === runs.length) throw failures[0].error;
+    for (const failure of failures) {
+      this.logger.error(`시스템 로케이션 수렴 실패 — 이 테넌트만 빼고 뜬다: ${describeFailedRun(failure)}`);
     }
   }
 }
