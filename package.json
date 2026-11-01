@@ -36,6 +36,7 @@
     "start:all:local": "./scripts/local/start-all.sh",
     "bootstrap:e2e:local": "./scripts/local/bootstrap-e2e.sh",
     "preflight:e2e:local": "./scripts/local/preflight-e2e.sh",
+    "tenant:create:local": "./scripts/local/create-tenant-local.sh",
     "db:seed:ref": "npx tsx scripts/seeding/seed-ref.ts",
     "db:seed:demo": "npx tsx scripts/seeding/seed-demo.ts",
     "db:generate:ai": "drizzle-kit generate --config apps/ai/src/db/drizzle.config.ts",

@@ -28,6 +28,13 @@ SERVICES=(
   "ai:apps/ai/src/db/drizzle.config.ts"
 )
 
+# 테넌트 2 의 core DB(로컬 리허설). 🔴 «있을 때만» 마이그한다 — 만드는 건 만들기 스크립트의 일이고(목록 전 실패면
+# 지운다), 여기서 만들면 테넌트 행 없는 core DB 가 생긴다. 테넌트 1 과 같은 마이그를 받아야 preflight 가 초록이다.
+source scripts/local/e2e-env-map.sh
+if psql "${PG}/postgres" -Atc "SELECT 1 FROM pg_database WHERE datname='${E2E_TENANT2_CORE_DB}'" 2>/dev/null | grep -q 1; then
+  SERVICES+=("${E2E_TENANT2_CORE_DB}:apps/core/drizzle.config.ts")
+fi
+
 # macOS 에는 GNU timeout 이 없다. gtimeout(coreutils) 이 있으면 쓰고, 없으면 그냥 돌린다.
 TIMEOUT=""
 if command -v timeout >/dev/null 2>&1; then TIMEOUT="timeout 180"

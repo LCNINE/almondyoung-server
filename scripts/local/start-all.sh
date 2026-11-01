@@ -6,6 +6,7 @@
 #         E2E_PROFILE=full npm run start:all:local # extra 앱(리뷰·통계·알림·검색)도 함께
 #         SKIP_KEY_SYNC=1 …                        # Medusa 키 동기화 생략
 #         DRY_RUN=1 npm run start:all:local        # 무엇을 어떤 «순서»로 띄울지만 출력
+#         E2E_GATE_MODE=reject npm run start:all:local  # ② 모드(문이 «없으면 거절», core 테넌트 라우팅) — 테넌트 2 를 섬긴다
 # 종료:   Ctrl+C (전 프로세스 함께 종료)
 #
 # 🔴 «띄우는 집합»이 문서의 E2E 구성과 어긋나 있던 자리다. 앱 목록도 기동 방법도 이제
@@ -24,6 +25,15 @@ mkdir -p logs
 
 PROFILE="${E2E_PROFILE:-e2e}"
 DRY="${DRY_RUN:-}"
+
+# ── 전환 모드. .env 의 TENANT_GATE_MODE(정본 warn = ①)는 그대로 두고, 띄우는 프로세스에만 덮어 준다 —
+# dotenv-cli·Next 는 이미 있는 환경변수를 덮지 않으므로 셸 값이 이긴다. ① 에서 core 는 단일 DB 라 테넌트 2 를 못 섬긴다.
+if [ -n "${E2E_GATE_MODE:-}" ]; then
+  case "$E2E_GATE_MODE" in
+    warn|reject) export TENANT_GATE_MODE="$E2E_GATE_MODE"; echo "── 전환 모드: TENANT_GATE_MODE=$E2E_GATE_MODE (모든 앱)" ;;
+    *) echo "❌ E2E_GATE_MODE 는 warn 또는 reject 다: $E2E_GATE_MODE"; exit 2 ;;
+  esac
+fi
 
 # ── kafka 게이트. 🔴 channel-adapter·wallet·membership 은 kafka 없이 부팅하면 경고가 아니라
 # KafkaJSNonRetriableError 로 «죽는다». 그 상태로 띄우면 로그를 열기 전엔 안 보인다.

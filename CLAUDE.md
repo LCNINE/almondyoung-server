@@ -67,6 +67,9 @@ bootstrap 은 이미 건강한 kafka 를 재기동하지 않는다 — 그러면
 **판정자(preflight)는 고치지 않는다** — 고치기까지 하면 초록불이 「원래 옳았다」의 증거가 아니라
 「방금 내가 고쳤다」가 되어 신호가 사라진다. preflight 의 모든 ✗ 는 어느 명령이 고치는지를 함께 적는다.
 
+bootstrap 은 **테넌트 2**(로컬 전용 값 `rehearsal`)도 만든다 — 만들기 스크립트(`scripts/tenancy/create-tenant/`)의 로컬 리허설이다.
+테넌트 2 는 ② 모드에서만 섬긴다: `E2E_GATE_MODE=reject npm run start:all:local`. 자세한 건 `docs/local-e2e-environment.md` §2-C.
+
 앱↔`.env`↔포트 목록은 **`scripts/local/e2e-env-map.sh` 한 곳**이 정본이고 세 스크립트가 그걸 source 한다.
 앱을 늘리면 거기만 고칠 것 — 이 표가 산문으로만 있던 동안 문서 두 벌이 6개/11개로 갈렸고
 `start-all.sh` 는 또 다른 집합을 띄웠다. 배경·함정은 `docs/local-e2e-environment.md`.

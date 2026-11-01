@@ -14,6 +14,7 @@
 #   SKIP_MIGRATE=1 / SKIP_SEED=1                   # 각 단계 생략
 #   FORCE_KAFKA_RECREATE=1 …                       # 건강한 kafka 도 굳이 재기동 (znode 꼬임 복구용)
 #   LOCAL_POINT_LOGIN_IDS=<가입한아이디> …          # 포인트 시드 대상 (§2-B — 기본 계정은 새 DB 에 없다)
+#   SKIP_TENANT2=1 …                               # 테넌트 2(만들기 스크립트 리허설) 단계 생략
 #
 # 끝나면 `npm run start:all:local` → `npm run preflight:e2e:local` 순서다.
 set -uo pipefail
@@ -25,7 +26,7 @@ INSTALL_ENV=0
 for arg in "$@"; do
   case "$arg" in
     --install-env) INSTALL_ENV=1 ;;
-    -h|--help) sed -n '2,20p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,21p' "$0"; exit 0 ;;
     *) echo "알 수 없는 인자: $arg" >&2; exit 2 ;;
   esac
 done
@@ -107,7 +108,7 @@ ensure_tenancy() {
     printf 'SERVED_TENANT_ID=%s\n' "$E2E_SERVED_TENANT_ID" >> "$dest"; added="${added:+$added · }SERVED_TENANT_ID"
   fi
   if [ -n "$added" ]; then ok "$name — $added 를 더했다"
-  elif [ "$(e2e_env_raw_value "$dest" TENANT_LIST)" != "$E2E_TENANT_LIST" ] \
+  elif ! e2e_canonical_tenant_list "$(e2e_env_raw_value "$dest" TENANT_LIST)" \
     || [ "$(e2e_env_raw_value "$dest" TENANT_GATE_MODE)" != "$E2E_TENANT_GATE_MODE" ]; then
     warn "$name — 정본과 다른 값이 이미 있다. 그대로 둔다 (정본으로 돌리려면 두 줄을 지우고 다시 실행)"
   else ok "$name"; fi
@@ -179,8 +180,24 @@ else
   fi
 fi
 
-# ─────────────────────────────────────────────────────────── 4. Medusa 키 동기화
-step "4. Medusa API 키 동기화"
+# ─────────────────────────────────────────────────────────── 4. 테넌트 2
+# 만들기 스크립트의 로컬 리허설 — 라이브와 같은 단계를 같은 순서로 돈다(운영자 API·목록 전 되돌리기). 멱등이라 매번 돌린다.
+# user-service 가 안 떠 있으면 잠깐 띄우고, «로컬 배포»(core 를 ② 로 띄워 크론 한 주기)도 스스로 한다.
+# 🔴 core 가 이미 떠 있으면(앱을 띄운 채 bootstrap) 목록을 넣은 뒤 «로컬 배포»에서 멈춘다 — 그 core 는 옛 목록이다.
+if [ "${SKIP_TENANT2:-}" = "1" ]; then
+  step "4. 테넌트 2 — SKIP_TENANT2=1 이라 건너뜀"
+else
+  step "4. 테넌트 2 (${E2E_TENANT2_SLUG} — 만들기 스크립트 리허설, 로그 logs/tenant-create.log)"
+  mkdir -p logs
+  if ./scripts/local/create-tenant-local.sh > logs/tenant-create.log 2>&1; then
+    ok "$(tail -1 logs/tenant-create.log)"
+  else
+    bad "테넌트 2 만들기 실패 → logs/tenant-create.log ($(grep -m1 '❌' logs/tenant-create.log || tail -1 logs/tenant-create.log))"
+  fi
+fi
+
+# ─────────────────────────────────────────────────────────── 5. Medusa 키 동기화
+step "5. Medusa API 키 동기화"
 if (echo > /dev/tcp/127.0.0.1/9000) >/dev/null 2>&1; then
   npm run --silent sync:medusa-keys:local >/dev/null 2>&1 \
     && ok "publishable · secret 키를 storefront·channel-adapter·admin-web 에 반영" \

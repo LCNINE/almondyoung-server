@@ -483,6 +483,8 @@ apps/admin-web/playwright-report/
 
 # file-service STORAGE_PROVIDER=LOCAL 의 저장 루트 (로컬 개발 전용)
 /uploads/
+# 로컬 테넌트 만들기 리허설이 남기는 점검 계정 비밀번호 (scripts/local/create-tenant-local.sh, 라이브의 SST Secret 자리)
+/.local-e2e/
 skills/product-bulk-form/.venv/
 
 # 로컬 확인용 Next 빌드 (NEXT_DIST_DIR)

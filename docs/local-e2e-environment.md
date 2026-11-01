@@ -63,7 +63,7 @@ npm run bootstrap:e2e:local                    # 전부
 npm run bootstrap:e2e:local -- --install-env   # 없는 .env 를 템플릿에서 복사까지
 ```
 
-`SKIP_CONTAINERS=1` / `SKIP_MIGRATE=1` / `SKIP_SEED=1` 로 단계를 건너뛸 수 있다. **멱등하다** —
+`SKIP_CONTAINERS=1` / `SKIP_MIGRATE=1` / `SKIP_SEED=1` / `SKIP_TENANT2=1` 로 단계를 건너뛸 수 있다. **멱등하다** —
 건강한 kafka 는 손대지 않고(`FORCE_KAFKA_RECREATE=1` 로 강제),
 시드는 전부 `ON CONFLICT`, 마이그레이션은 적용된 것을 건너뛰고, Medusa 시드는 `region` 이 있으면
 스킵한다(`FORCE_MEDUSA_SEED=1` 로 강제).
@@ -99,12 +99,35 @@ LOCAL_POINT_LOGIN_IDS=<가입한아이디> npm run db:seed:points:local
 (secret 은 DB 에 해시로만 남아 실제 호출로 유효성을 잰다). `start-all.sh` 가 medusa 기동 직후,
 그 키를 부팅 시 읽는 세 앱(channel-adapter·admin-web·storefront)**보다 먼저** 자동으로 부른다.
 
+### §2-C. 테넌트 2 — 만들기 스크립트의 로컬 리허설
+
+bootstrap 4단계가 **테넌트 2**(slug `rehearsal`, 도메인 `rehearsal.localhost:8002`, core DB `core_rehearsal` —
+실제 테넌트 2 와 무관한 값, 정본 `e2e-env-map.sh` 의 `E2E_TENANT2_*`)를 만든다. 혼자 돌리려면 `npm run tenant:create:local`.
+라이브의 만들기 스크립트와 **같은 단계 러너**(`scripts/tenancy/create-tenant/`)를 로컬 어댑터로 돈다:
+
+테넌트 행 «준비»(운영자 API) → `core_rehearsal` 생성·마이그·«모든 테넌트» 시드 → 로컬 버킷 둘(`uploads/rehearsal-*`) →
+admin-web 리디렉트 등록 → 역할 `warehouse_catalog_staff`(키 9개) → 점검 계정 `rehearsalcheck` → 재마이그 + 테넌트 1 과 버전 비교 →
+**목록에 넣기**(Nest 앱 `.env` 의 `TENANT_LIST`) → 로컬 배포(core 를 ② 로 잠깐 띄워 크론 한 주기) → 만든 직후 확인 → «활성».
+
+- **멱등하다.** 단계마다 «이미 됐나»를 먼저 본다. 중간에 죽으면 다시 돌려 이어간다. 겹쳐 돌리면 두 번째가 거절된다(`logs/.tenant-create-<slug>.lock`).
+- **목록에 넣기 전의 실패는 되돌린다** — `DROP DATABASE` + 테넌트 행 삭제(도메인·리디렉트 주소·소속·부여가 함께 걷힌다) + 빈 버킷 삭제.
+  역할·계정은 전역이라 남고, 다시 돌리면 그대로 이어 쓴다. 목록에 넣은 뒤의 실패는 되돌리지 않는다.
+- 역할·계정·소속·부여는 **운영자 API 로만** 만든다(로컬 admin = 운영자). user-service DB 에 직접 쓰지 않는다.
+- user-service 가 안 떠 있으면 빌드해서 잠깐 띄운다. 🔴 **core(:3100)가 이미 떠 있으면 «로컬 배포»에서 멈춘다** —
+  목록을 받기 전에 뜬 core 라 테넌트 2 를 섬기지 않는다. 앱을 내리고 다시 돌리거나 ② 로 다시 띄운 뒤 다시 돌린다.
+- 점검 계정 비밀번호는 git 밖 `.local-e2e/tenants/rehearsal-check-account.json` 에만 있다(라이브의 SST Secret 자리).
+- 로그: `logs/tenant-create.log`(bootstrap), 임시로 띄운 앱은 `logs/<앱>.tenant-create.log`.
+
+테넌트 2 는 **② 모드에서만** 섬긴다(① 의 core 는 단일 DB). `E2E_GATE_MODE=reject npm run start:all:local` 로 띄우면
+preflight §13 이 «core ② — 테넌트 2 DB 에서 크론이 돈다»까지 본다. ① 로 띄우면 §13 은 그 줄을 경고로만 남긴다.
+
 ### 앱 기동
 
 ```bash
 npm run start:all:local                    # E2E 11개 + sms-stub
 E2E_PROFILE=full npm run start:all:local   # extra 4개(리뷰·통계·알림·검색)도 — .env 가 있는 것만
 DRY_RUN=1 npm run start:all:local          # 무엇을 어떤 순서로 띄울지만 출력
+E2E_GATE_MODE=reject npm run start:all:local  # ② 모드(없으면 거절 + core 테넌트 라우팅). .env 는 안 바꾸고 프로세스에만 덮는다
 ```
 
 🔴 **kafka(:9092)가 닫혀 있으면 아무것도 안 띄우고 거절한다** — channel-adapter·wallet·membership 이

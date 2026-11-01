@@ -54,6 +54,36 @@ E2E_FIXED_TENANT_CALLERS='medusa storefront'
 # 토큰 테넌트를 그 T 와 대조한다 — SERVER_CREDENTIAL_TENANT_ID(= E2E_SERVED_TENANT_ID)와 TENANT_GATE_MODE 를 받는다.
 E2E_SERVER_CREDENTIAL_GATE_APPS='admin-web'
 
+# 로컬 테넌트 2 — 만들기 스크립트 리허설(scripts/local/create-tenant-local.sh, bootstrap 4단계)이 만든다.
+# 🔒 실제 테넌트 2 와 무관한 값이다. 레포에 들어가는 테넌트 2 값은 이것뿐이다 — 실제 slug·이름·도메인·버킷은 적지 않는다.
+# 도메인은 *.localhost 라 브라우저가 따로 설정 없이 127.0.0.1 로 보낸다(포트는 admin-web).
+E2E_TENANT2_ID='2'
+E2E_TENANT2_SLUG='rehearsal'
+E2E_TENANT2_NAME='리허설 상사'
+E2E_TENANT2_DOMAIN='rehearsal.localhost:8002'
+E2E_TENANT2_CORE_DB='core_rehearsal'
+E2E_TENANT2_PUBLIC_BUCKET='rehearsal-public'
+E2E_TENANT2_PRIVATE_BUCKET='rehearsal-private'
+# 점검 계정(비밀번호 변경 강제 없음). 비밀번호는 git 밖 .local-e2e/tenants/<slug>-check-account.json 에만 있다.
+E2E_TENANT2_CHECK_LOGIN_ID='rehearsalcheck'
+# 테넌트 2 를 «목록에 넣은 뒤»의 정본. 만들기 스크립트가 kind=nest 앱 .env 의 TENANT_LIST 끝에 테넌트 2 항목을 더하면
+# 이 값이 된다(칸 순서까지 같다). 위의 E2E_TENANT_LIST 는 «넣기 전»(템플릿·0-b)의 정본이다.
+# local-e2e-tenancy.spec 이 이 값 = E2E_TENANT_LIST + 위 칸들 임을 대조한다.
+E2E_TENANT_LIST_WITH_TENANT2='[{"id":"1","slug":"almondyoung","coreDb":"dev_core","publicBucket":"almondyoung-demo","privateBucket":"almondyoung-demo"},{"id":"2","slug":"rehearsal","coreDb":"core_rehearsal","publicBucket":"rehearsal-public","privateBucket":"rehearsal-private"}]'
+
+# 그 목록이 두 정본 중 하나인가(넣기 전 / 테넌트 2 를 넣은 뒤).
+e2e_canonical_tenant_list() { [ "$1" = "$E2E_TENANT_LIST" ] || [ "$1" = "$E2E_TENANT_LIST_WITH_TENANT2" ]; }
+
+# 목록을 받는 앱(kind=nest)의 .env 중 «배치된» 것 — 만들기 스크립트가 목록을 넣는 곳.
+e2e_tenant_list_env_files() {
+  local row name dest tmpl port tier kind rest out=""
+  for row in "${E2E_ENV_ROWS[@]}"; do
+    IFS='|' read -r name dest tmpl port tier kind rest <<< "$row"
+    [ "$kind" = "nest" ] && e2e_env_present "$dest" && out="${out:+$out }$dest"
+  done
+  printf '%s' "$out"
+}
+
 # 행을 필드로 쪼개 콜백에 넘긴다. 사용: e2e_env_each required my_fn   (tier 생략 시 전부)
 e2e_env_each() {
   local want="${1:-}" fn="$2" row name dest tmpl port tier kind target needs desc

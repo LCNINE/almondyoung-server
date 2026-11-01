@@ -214,7 +214,7 @@ check_tenancy() {
   fi
   if [ -z "$TENANCY_FIRST" ]; then TENANCY_FIRST="$list|$mode"
   elif [ "$list|$mode" != "$TENANCY_FIRST" ]; then TENANCY_SPLIT=1; fi
-  [ "$list" = "$E2E_TENANT_LIST" ] && [ "$mode" = "$E2E_TENANT_GATE_MODE" ] || TENANCY_DIFFERS_FROM_CANON=1
+  e2e_canonical_tenant_list "$list" && [ "$mode" = "$E2E_TENANT_GATE_MODE" ] || TENANCY_DIFFERS_FROM_CANON=1
 }
 e2e_env_each "" check_tenancy
 if [ "$TENANCY_SPLIT" = "1" ]; then
@@ -239,6 +239,50 @@ check_server_credential_gate() {
   else ok "$name"; fi
 }
 e2e_env_each "" check_server_credential_gate
+
+echo "── 13. 테넌트 2 (${E2E_TENANT2_SLUG} — 만들기 스크립트 리허설)"
+# 고치는 건 bootstrap 4단계(scripts/local/create-tenant-local.sh)다. 여기선 «만든 결과»가 그대로인지만 본다.
+T2_DB="${E2E_TENANT2_CORE_DB}"
+T2_LISTED=0 T2_UNLISTED=0
+for f in $(e2e_tenant_list_env_files); do
+  if [ "$(e2e_env_raw_value "$f" TENANT_LIST)" = "$E2E_TENANT_LIST_WITH_TENANT2" ]; then T2_LISTED=$((T2_LISTED + 1))
+  else T2_UNLISTED=$((T2_UNLISTED + 1)); fi
+done
+T2_ROW=""
+[ -n "$USR" ] && T2_ROW=$(pgq "$USR" "SELECT status FROM tenants WHERE id='${E2E_TENANT2_ID}'")
+if [ "$T2_LISTED" = "0" ] && [ -z "$T2_ROW" ]; then
+  # 테넌트 2 를 아예 안 만든 로컬(SKIP_TENANT2=1) — 반쯤 만든 상태가 아니므로 막지 않는다.
+  warn "테넌트 2 가 없다 (SKIP_TENANT2=1 로 bootstrap 했나) → npm run tenant:create:local"
+else
+[ "$T2_UNLISTED" = "0" ] && ok "목록에 있다 (kind=nest 앱 전부)" \
+  || bad "테넌트 2 가 목록에 없는 앱이 ${T2_UNLISTED}개 → npm run bootstrap:e2e:local"
+[ -n "$USR" ] && {
+  [ "$T2_ROW" = "active" ] && ok "테넌트 행 «활성»" \
+    || bad "테넌트 행이 ${T2_ROW:-없음} → npm run bootstrap:e2e:local"
+}
+T1_DB="${CORE##*/}"
+if [ "$(pgq "${PG}/postgres" "SELECT 1 FROM pg_database WHERE datname='${T2_DB}'")" = "1" ]; then
+  # 적용 이력(해시 집합)이 테넌트 1 과 같아야 한다 — 다르면 일부 테넌트만 새 버전이다(deploy:preflight 와 같은 판정).
+  T1_MIG=$(psql "${PG}/${T1_DB}" -tAc "SELECT string_agg(hash, ',' ORDER BY hash) FROM drizzle.__drizzle_migrations" 2>/dev/null)
+  T2_MIG=$(psql "${PG}/${T2_DB}" -tAc "SELECT string_agg(hash, ',' ORDER BY hash) FROM drizzle.__drizzle_migrations" 2>/dev/null)
+  [ -n "$T1_MIG" ] && [ "$T1_MIG" = "$T2_MIG" ] && ok "${T2_DB} 마이그 = 테넌트 1(${T1_DB})" \
+    || bad "${T2_DB} 마이그가 테넌트 1 과 다르다 → npm run bootstrap:e2e:local"
+else
+  bad "${T2_DB} 가 없다 → npm run bootstrap:e2e:local"
+fi
+# core 가 ② 로 떠 있어야 테넌트 2 를 섬긴다(① 은 단일 DB). 모드는 3100 을 쥔 프로세스의 환경에서 읽는다.
+CORE_PID=$(ss -ltnpH "sport = :3100" 2>/dev/null | grep -oP 'pid=\K[0-9]+' | head -1)
+CORE_MODE=""
+[ -n "$CORE_PID" ] && CORE_MODE=$(tr '\0' '\n' < "/proc/$CORE_PID/environ" 2>/dev/null | grep -m1 '^TENANT_GATE_MODE=' | cut -d= -f2-)
+case "$CORE_MODE" in
+  reject)
+    [ "$(pgq "${PG}/${T2_DB}" "SELECT count(*) > 0 FROM cron_runs WHERE claimed_at > now() - interval '3 minutes'")" = "t" ] \
+      && ok "core ② — 테넌트 2 DB 에서 크론이 돈다 (최근 3분 cron_runs)" \
+      || bad "core 는 ② 인데 ${T2_DB} 에서 크론이 안 돈다 — 목록을 받기 전에 뜬 core 다 → 재기동 (E2E_GATE_MODE=reject npm run start:all:local)" ;;
+  "") warn "core 모드를 못 읽었다(안 떠 있음) — 테넌트 2 크론 판정 생략" ;;
+  *) warn "core 가 ① 모드(${CORE_MODE}) — 테넌트 2 는 ② 에서만 섬긴다 → E2E_GATE_MODE=reject npm run start:all:local" ;;
+esac
+fi
 
 echo
 [ "$FAIL" -eq 0 ] && echo "✅ 사전 점검 통과" || { echo "❌ 위 ✗ 를 먼저 해결할 것"; exit 1; }
