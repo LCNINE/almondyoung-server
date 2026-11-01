@@ -27,7 +27,7 @@ import {
 } from '../../tenancy/isolation-check/target';
 import { signInStaff, type StaffClient } from '../../tenancy/staff-token';
 import { FIXED_UUIDS } from '../../seeding/constants/uuids';
-import { HttpOperatorApi, localOperatorToken } from '../create-tenant/operator-api.http';
+import { HttpOperatorApi, localOperatorToken } from '../../tenancy/create-tenant/operator-api.http';
 import { readEnvFile, REPO } from '../create-tenant/local-ports';
 
 function required(name: string): string {
@@ -195,7 +195,7 @@ async function main(): Promise<void> {
     write: {
       consumerMetrics,
       setTenantStatus: async (id, status) =>
-        new HttpOperatorApi(userService, await operatorToken()).setTenantStatus(id, status),
+        new HttpOperatorApi(userService, operatorToken).setTenantStatus(id, status),
       // 테넌트 2 역할엔 catalog.product.delete 가 없다. 로컬 픽스처라 API 의 지우기와 같은 soft delete 를 직접 건다.
       removeProducts: async (ids) => {
         await sql`UPDATE product_masters SET deleted_at = now() WHERE id IN ${sql(ids)} AND deleted_at IS NULL`;

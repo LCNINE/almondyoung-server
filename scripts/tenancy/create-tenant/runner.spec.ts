@@ -1,4 +1,11 @@
-import { CreationStep, runCreation, StepRefused, TenantCreationFailed } from './runner';
+import {
+  CreationStep,
+  runCreation,
+  StepPaused,
+  StepRefused,
+  TenantCreationFailed,
+  TenantCreationPaused,
+} from './runner';
 
 /** 상태를 들고 있는 가짜 단계. `done` 이 곧 «이미 됐나»의 답이고, run 은 done 을 켠다. */
 function fakeStep(name: string, opts: { done?: boolean; fails?: boolean; commitPoint?: boolean } = {}) {
@@ -129,10 +136,30 @@ describe('테넌트 만들기 단계 러너', () => {
     const liar = fakeStep('역할');
     liar.run = async () => undefined;
 
-    const failure = await runCreation([liar, fakeStep('목록', { commitPoint: true })], quiet).catch(
-      (e: unknown) => e,
-    );
+    const failure = await runCreation([liar, fakeStep('목록', { commitPoint: true })], quiet).catch((e: unknown) => e);
 
     expect(failure).toMatchObject({ failedStep: '역할', rolledBack: true });
+  });
+
+  it('사람 손 단계에서 멈추면 목록 전이라도 되돌리지 않는다 — 다시 돌리면 그 단계부터 이어간다', async () => {
+    const db = fakeStep('DB');
+    const secrets = fakeStep('칸 Secret');
+    let humanDone = false;
+    secrets.isDone = async () => humanDone;
+    secrets.run = async () => {
+      throw new StepPaused(['npx sst secret load … --stage live']);
+    };
+    const list = fakeStep('목록', { commitPoint: true });
+
+    const paused = await runCreation([db, secrets, list], quiet).catch((e: unknown) => e);
+
+    expect(paused).toBeInstanceOf(TenantCreationPaused);
+    expect(paused).toMatchObject({ pausedStep: '칸 Secret', todo: ['npx sst secret load … --stage live'] });
+    expect(db.calls).toEqual(['run']);
+    expect(db.done).toBe(true);
+
+    humanDone = true;
+    const resumed = await runCreation([db, secrets, list], quiet);
+    expect(resumed.map((r) => r.outcome)).toEqual(['skipped', 'skipped', 'ran']);
   });
 });

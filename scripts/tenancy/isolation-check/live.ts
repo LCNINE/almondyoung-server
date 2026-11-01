@@ -11,7 +11,7 @@
  * 쓰기 부분(--write)은 아직 라이브에서 못 돈다: 소비 앱 메트릭(건너뜀·DLQ)은 VPC 안에서만 읽힌다. 개통 전에
  * 그 관측 경로를 단다.
  */
-import { execFileSync, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
@@ -23,7 +23,8 @@ import { resolveRegistry } from '../../seeding/lib/tenant-registry';
 import { signInStaff, type StaffClient } from '../staff-token';
 import { buildIsolationChecks } from './checks';
 import { findDigitalAssetFile, observeCronRuns } from './db-observation';
-import { ISOLATION_CHECK_SECRET, parseIsolationCheckSecret, parseSecretList, stageServiceUrl } from './live-config';
+import { authParameter, needSecret as need, secretsOf } from '../sst-live';
+import { ISOLATION_CHECK_SECRET, parseIsolationCheckSecret, stageServiceUrl } from './live-config';
 import { runChecks } from './runner';
 import { tenantDomainsOf } from './tenant-domains';
 import { SHARED_SERVICE_PROBES, type CronObservation, type IsolationTarget, type SharedServiceName } from './target';
@@ -123,35 +124,6 @@ function observeDb(stage: string, tenantOneId: string, tenantTwoId: string): DbO
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
-}
-
-function secretsOf(stage: string, deployment: 'lcnine-services' | 'lcnine-auth'): Map<string, string> {
-  try {
-    const stdout = execFileSync('npx', ['sst', 'secret', 'list', '--stage', stage], {
-      cwd: join(ROOT, deploymentToCwd(deployment)),
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
-    return parseSecretList(stdout);
-  } catch {
-    throw new Error(`${deployment} 의 SST Secret 을 못 읽었다 — AWS 로그인(aws login --profile login)을 확인한다`);
-  }
-}
-
-function need(map: Map<string, string>, name: string, deployment: string): string {
-  const v = map.get(name);
-  if (!v) throw new Error(`${deployment} 에 Secret ${name} 가 없다`);
-  return v;
-}
-
-/** lcnine-auth 가 publish 한 SSM 값(user-service 주소·앱 설정 T). */
-function authParameter(stage: string, key: string): string {
-  const name = `/lcnine-auth/${stage}/${key}`;
-  return execFileSync(
-    'aws',
-    ['ssm', 'get-parameter', '--name', name, '--with-decryption', '--query', 'Parameter.Value', '--output', 'text'],
-    { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, AWS_REGION: REGION } },
-  ).trim();
 }
 
 async function main(): Promise<void> {

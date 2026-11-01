@@ -14,7 +14,7 @@ import { runCreation, TenantCreationFailed } from '../../tenancy/create-tenant/r
 import { buildCreationSteps, TenantPlan } from '../../tenancy/create-tenant/steps';
 import { TENANT_STAFF_ROLE } from '../../tenancy/create-tenant/tenant-staff-role';
 import { FIXED_UUIDS } from '../../seeding/constants/uuids';
-import { HttpOperatorApi, localOperatorToken } from './operator-api.http';
+import { HttpOperatorApi, localOperatorToken } from '../../tenancy/create-tenant/operator-api.http';
 import {
   ensureNestApp,
   LocalCheckAccountSecret,
@@ -38,7 +38,8 @@ const log = (line: string) => console.log(`  ${line}`);
 
 async function main(): Promise<void> {
   const LOCAL_PG = process.env.LOCAL_PG ?? 'postgresql://postgres:postgres@localhost:5432';
-  if (!/@(localhost|127\.0\.0\.1)[:/]/.test(LOCAL_PG)) throw new Error(`로컬 전용이다. LOCAL_PG 가 localhost 가 아니다`);
+  if (!/@(localhost|127\.0\.0\.1)[:/]/.test(LOCAL_PG))
+    throw new Error(`로컬 전용이다. LOCAL_PG 가 localhost 가 아니다`);
 
   const slug = required('E2E_TENANT2_SLUG');
   const domain = required('E2E_TENANT2_DOMAIN');
@@ -114,11 +115,15 @@ async function main(): Promise<void> {
 
     const databases = new LocalCoreDatabases(LOCAL_PG);
     const steps = buildCreationSteps(plan, {
-      operator: new HttpOperatorApi(baseUrl, token),
+      operator: new HttpOperatorApi(baseUrl, () => Promise.resolve(token)),
       tenantOneCoreDb,
       databases,
       buckets: new LocalDiskBuckets(fileEnv.LOCAL_STORAGE_DIR ?? join(REPO, 'uploads')),
-      list: new LocalEnvTenantList(required('E2E_TENANT_ENV_FILES').split(' ').map((f) => join(REPO, f))),
+      list: new LocalEnvTenantList(
+        required('E2E_TENANT_ENV_FILES')
+          .split(' ')
+          .map((f) => join(REPO, f)),
+      ),
       deployment: new LocalCoreDeployment({ port: Number(coreEnv.PORT ?? 3100), envFile: coreEnvFile, databases, log }),
       checkSecret: new LocalCheckAccountSecret(join(REPO, '.local-e2e/tenants', `${slug}-check-account.json`)),
     });
@@ -138,7 +143,9 @@ main().then(
   (e: unknown) => {
     if (e instanceof TenantCreationFailed) {
       console.error(`❌ ${e.message}`);
-      console.error(e.rolledBack ? '   목록에 넣기 전이라 되돌렸다.' : '   되돌리지 않았다 — 고친 뒤 다시 돌리면 이어간다.');
+      console.error(
+        e.rolledBack ? '   목록에 넣기 전이라 되돌렸다.' : '   되돌리지 않았다 — 고친 뒤 다시 돌리면 이어간다.',
+      );
       for (const u of e.undoErrors) console.error(`   🔴 되돌리기 실패: ${u}`);
     } else {
       console.error(e);

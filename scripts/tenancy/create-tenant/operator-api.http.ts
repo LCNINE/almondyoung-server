@@ -1,14 +1,16 @@
-import { tokenForUser } from '../../tenancy/staff-token';
-import type { OperatorApi, TenantDomain, TenantDomainApp, TenantStatus } from '../../tenancy/create-tenant/steps';
+import { tokenForUser } from '../staff-token';
+import type { OperatorApi, TenantDomain, TenantDomainApp, TenantStatus } from './steps';
 
 /**
  * user-service 운영자 API(`/admin/platform/*` + 테넌트를 받는 역할·계정·부여 API)의 HTTP 어댑터.
  * 모든 쓰기는 iam Manager 를 거친다 — 이 파일은 그 API 를 부르기만 한다.
+ *
+ * 토큰은 부를 때마다 받는다 — 라이브 액세스 토큰은 15분이고, 한 실행이 그보다 길 수 있다(인증서 발급 대기).
  */
 export class HttpOperatorApi implements OperatorApi {
   constructor(
     private readonly baseUrl: string,
-    private readonly accessToken: string,
+    private readonly accessToken: () => Promise<string>,
   ) {}
 
   async getTenant(id: string) {
@@ -16,12 +18,7 @@ export class HttpOperatorApi implements OperatorApi {
       slug: string;
       status: TenantStatus;
       domains: { host: string; app: TenantDomainApp | null }[];
-    }>(
-      'GET',
-      `/admin/platform/tenants/${encodeURIComponent(id)}`,
-      undefined,
-      { allow404: true },
-    );
+    }>('GET', `/admin/platform/tenants/${encodeURIComponent(id)}`, undefined, { allow404: true });
     return t ?? null;
   }
 
@@ -65,10 +62,12 @@ export class HttpOperatorApi implements OperatorApi {
     const roles = (await this.call<{ roleId: string; name: string }[]>('GET', '/admin/roles')) ?? [];
     const summary = roles.find((r) => r.name === name);
     if (!summary) return null;
-    const detail = await this.call<{ roleId: string; version: number; landingPath: string | null; permissions: string[] }>(
-      'GET',
-      `/admin/roles/${summary.roleId}`,
-    );
+    const detail = await this.call<{
+      roleId: string;
+      version: number;
+      landingPath: string | null;
+      permissions: string[];
+    }>('GET', `/admin/roles/${summary.roleId}`);
     if (!detail) return null;
     return {
       roleId: detail.roleId,
@@ -152,7 +151,7 @@ export class HttpOperatorApi implements OperatorApi {
     const res = await fetch(`${this.baseUrl}${path}`, {
       method,
       headers: {
-        authorization: `Bearer ${this.accessToken}`,
+        authorization: `Bearer ${await this.accessToken()}`,
         ...(body === undefined ? {} : { 'content-type': 'application/json' }),
       },
       body: body === undefined ? undefined : JSON.stringify(body),

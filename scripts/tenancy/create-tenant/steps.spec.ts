@@ -1,5 +1,12 @@
 import type { CreationStep } from './runner';
-import { buildCreationSteps, type CreationPorts, type OperatorApi, type TenantDomainApp, type TenantPlan } from './steps';
+import { stub } from './stub-port';
+import {
+  buildCreationSteps,
+  type CreationPorts,
+  type OperatorApi,
+  type TenantDomainApp,
+  type TenantPlan,
+} from './steps';
 
 /**
  * 테넌트 도메인은 admin-web 주소와 auth-web 주소 둘이다(CloudFront 배포가 앱마다 하나). 계획의 도메인이 나중에 늘어도 —
@@ -7,7 +14,13 @@ import { buildCreationSteps, type CreationPorts, type OperatorApi, type TenantDo
  * 다시 붙여 앱을 채운다 — admin-web 테넌트 셸이 그 앱으로 로그인 주소를 고른다.
  */
 const plan: TenantPlan = {
-  entry: { id: '2', slug: 'rehearsal', coreDb: 'core_rehearsal', publicBucket: 'rehearsal-public', privateBucket: 'rehearsal-private' },
+  entry: {
+    id: '2',
+    slug: 'rehearsal',
+    coreDb: 'core_rehearsal',
+    publicBucket: 'rehearsal-public',
+    privateBucket: 'rehearsal-private',
+  },
   displayName: '리허설 상사',
   domains: [
     { host: 'rehearsal.localhost:8002', app: 'admin-web' },
@@ -17,21 +30,6 @@ const plan: TenantPlan = {
   role: { name: 'r', displayName: 'r', description: 'r', landingPath: '/', permissions: [] },
   checkAccount: { loginId: 'c', username: 'c', nickname: 'c', email: 'c@example.test' },
 };
-
-/**
- * 이 spec 이 쓰는 메서드만 채운 포트. 나머지는 부르면 던진다 — 도메인 단계가 다른 포트를 건드리면 빨갛게.
- * 포트 인터페이스를 다 채우지 않으려고 Proxy 를 쓰고, 그 때문에 한 번만 `as T` 로 넓힌다.
- */
-function stub<T extends object>(name: string, impl: Partial<T> = {}): T {
-  return new Proxy(impl, {
-    get(target, prop: string) {
-      if (prop in target) return target[prop as keyof T];
-      return () => {
-        throw new Error(`이 spec 은 ${name}.${prop} 을 부르지 않는다`);
-      };
-    },
-  }) as T;
-}
 
 type Domain = { host: string; app: TenantDomainApp | null };
 

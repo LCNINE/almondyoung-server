@@ -1,7 +1,8 @@
 import { StepRefused } from './runner';
 import { addTenantToEnv, envListsTenant, removeTenantFromEnv } from './tenant-list-env';
 
-const ONE = '{"id":"1","slug":"almondyoung","coreDb":"dev_core","publicBucket":"almondyoung-demo","privateBucket":"almondyoung-demo"}';
+const ONE =
+  '{"id":"1","slug":"almondyoung","coreDb":"dev_core","publicBucket":"almondyoung-demo","privateBucket":"almondyoung-demo"}';
 const TWO = {
   id: '2',
   slug: 'rehearsal',

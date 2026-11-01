@@ -9,6 +9,8 @@
  * - 목록에 넣은 뒤는 되돌리지 않는다. 그 테넌트는 이미 앱들이 섬기는 테넌트다(빼는 것은 퇴출이고 범위 밖).
  * - 단계가 «남의 상태»를 보고 거절했으면(`StepRefused`) 되돌리지 않는다. 같은 id 의 다른 테넌트가 있다는 뜻이라,
  *   되돌리기가 지우는 DB·행이 이 실행의 것이라는 보장이 없다.
+ * - 사람 손이 필요한 단계(Secret 넣기·배포)나 오래 걸리는 대기(인증서 발급)는 `StepPaused` 로 멈춘다. 실패가 아니라
+ *   되돌리지 않는다 — 할 일을 하고 다시 돌리면 그 단계의 «이미 됐나»부터 이어간다.
  */
 export interface CreationStep {
   readonly name: string;
@@ -30,6 +32,24 @@ export class StepRefused extends Error {
   constructor(message: string) {
     super(message);
     this.name = 'StepRefused';
+  }
+}
+
+/** 사람 손 단계에서 멈춘다 — `todo` 는 «무엇을, 어느 Secret 에, 어떤 명령으로». 값 자체는 싣지 않는다. */
+export class StepPaused extends Error {
+  constructor(readonly todo: string[]) {
+    super('사람 손 단계 — 할 일을 하고 다시 돌린다');
+    this.name = 'StepPaused';
+  }
+}
+
+export class TenantCreationPaused extends Error {
+  constructor(
+    readonly pausedStep: string,
+    readonly todo: string[],
+  ) {
+    super(`«${pausedStep}» 에서 멈췄다`);
+    this.name = 'TenantCreationPaused';
   }
 }
 
@@ -62,6 +82,10 @@ export async function runCreation(steps: readonly CreationStep[], log: Log): Pro
       log(`✓ ${step.name}`);
       report.push({ name: step.name, outcome: 'ran' });
     } catch (cause) {
+      if (cause instanceof StepPaused) {
+        log(`⏸ ${step.name} — 사람 손 단계. 되돌리지 않는다`);
+        throw new TenantCreationPaused(step.name, cause.todo);
+      }
       log(`✗ ${step.name} — ${messageOf(cause)}`);
       throw await failWith(steps, step.name, cause, log);
     }

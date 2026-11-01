@@ -6,7 +6,10 @@ import { dirname, join } from 'node:path';
 import postgres from 'postgres';
 import { parse as parseEnv } from 'dotenv';
 import type { TenantEntry } from '../../../libs/tenancy/src/tenant-list';
-import { buildCoreSeedSteps } from '../../seeding/lib/core-seed-steps';
+import { PostgresCoreDatabases } from '../../tenancy/create-tenant/postgres-core-databases';
+import { isAlive } from '../../tenancy/create-tenant/run-lock';
+// 한 번에 하나 — 잠금은 라이브와 같이 쓴다
+export { takeRunLock } from '../../tenancy/create-tenant/run-lock';
 import type {
   Buckets,
   CheckAccountSecret,
@@ -16,15 +19,9 @@ import type {
 } from '../../tenancy/create-tenant/steps';
 import { addTenantToEnv, envListsTenant, removeTenantFromEnv } from '../../tenancy/create-tenant/tenant-list-env';
 
-/** 로컬 E2E 의 어댑터들. 라이브 짝(RDS·S3·Secret·배포)은 아직 없다. */
+/** 로컬 E2E 의 어댑터들. 라이브 짝은 `scripts/tenancy/create-tenant/live/`. */
 
 export const REPO = join(__dirname, '..', '..', '..');
-
-const IDENT = /^[a-z_][a-z0-9_]{0,62}$/;
-function ident(db: string): string {
-  if (!IDENT.test(db)) throw new Error(`DB 이름이 식별자 규칙 밖이다: ${db}`);
-  return `"${db}"`;
-}
 
 export function readEnvFile(path: string): Record<string, string> {
   return existsSync(path) ? parseEnv(readFileSync(path)) : {};
@@ -32,104 +29,11 @@ export function readEnvFile(path: string): Record<string, string> {
 
 // ─────────────────────────────────────────── core DB (로컬 postgres)
 
-export class LocalCoreDatabases implements CoreDatabases {
-  constructor(private readonly pg: string) {}
-
-  private url(db: string) {
-    return `${this.pg}/${db}`;
-  }
-
-  private async withSql<T>(db: string, fn: (sql: postgres.Sql) => Promise<T>): Promise<T> {
-    const sql = postgres(this.url(db), { max: 1, onnotice: () => undefined });
-    try {
-      return await fn(sql);
-    } finally {
-      await sql.end({ timeout: 5 });
-    }
-  }
-
-  async exists(db: string) {
-    const rows = await this.withSql('postgres', (sql) => sql`SELECT 1 FROM pg_database WHERE datname = ${db}`);
-    return rows.length > 0;
-  }
-
-  async create(db: string) {
-    await this.withSql('postgres', (sql) => sql.unsafe(`CREATE DATABASE ${ident(db)}`));
-  }
-
-  async drop(db: string) {
-    // 목록에 넣기 전이라 이 DB 에 붙은 앱이 없어야 하지만, 남은 세션(이 스크립트의 시드 등)이 있으면 끊고 지운다.
-    await this.withSql('postgres', (sql) => sql.unsafe(`DROP DATABASE IF EXISTS ${ident(db)} WITH (FORCE)`));
-  }
-
-  async migrate(db: string) {
-    // migrate-all.sh 와 같은 방식 — DATABASE_URL 을 명시 주입해 .env 가 어디를 가리키든 로컬만 건드린다.
-    execFileSync('npx', ['drizzle-kit', 'migrate', '--config', 'apps/core/drizzle.config.ts'], {
-      cwd: REPO,
-      env: { ...process.env, DATABASE_URL: this.url(db) },
-      stdio: ['ignore', 'ignore', 'pipe'],
-      timeout: 180_000,
-    });
-  }
-
-  async appliedMigrations(db: string) {
-    return this.withSql(db, async (sql) => {
-      const [t] = await sql`SELECT to_regclass('drizzle.__drizzle_migrations') AS t`;
-      if (!t?.t) return [];
-      const rows = await sql`SELECT hash FROM drizzle.__drizzle_migrations ORDER BY id`;
-      return rows.map((r) => String(r.hash));
-    });
-  }
-
-  repoMigrationCount() {
-    const journal = JSON.parse(readFileSync(join(REPO, 'apps/core/drizzle/meta/_journal.json'), 'utf8')) as {
-      entries: unknown[];
-    };
-    return journal.entries.length;
-  }
-
-  private async withSeedSteps<T>(db: string, fn: (steps: ReturnType<typeof buildCoreSeedSteps>) => Promise<T>) {
-    // 테넌트 1 이 아닌 core DB — «모든 테넌트» 갈래만(창고·자사몰 없음). db:seed:ref --tenant 와 같은 스텝.
-    const steps = buildCoreSeedSteps(this.url(db), { tenantOneData: false });
-    try {
-      return await fn(steps);
-    } finally {
-      await Promise.all(steps.map((s) => s.dispose()));
-    }
-  }
-
-  async allTenantsSeedDone(db: string) {
-    if (!(await this.exists(db))) return false;
-    return this.withSeedSteps(db, async (steps) => {
-      for (const s of steps) if (!(await s.check()).isFullySeeded) return false;
-      return steps.length > 0;
-    });
-  }
-
-  async seedAllTenants(db: string) {
-    await this.withSeedSteps(db, async (steps) => {
-      for (const s of steps) {
-        const r = await s.apply();
-        if (!r.success) throw new Error(`${r.service} 시드 실패: ${r.error ?? '(원인 미상)'}`);
-      }
-    });
-  }
-
-  async warehouseCount(db: string) {
-    return this.withSql(db, async (sql) => Number((await sql`SELECT count(*)::int AS n FROM warehouses`)[0].n));
-  }
-
-  async cronRuns(db: string) {
-    if (!(await this.exists(db))) return { rows: 0, duplicatedPeriods: 0 };
-    return this.withSql(db, async (sql) => {
-      const [t] = await sql`SELECT to_regclass('public.cron_runs') AS t`;
-      if (!t?.t) return { rows: 0, duplicatedPeriods: 0 };
-      const [r] = await sql`SELECT count(*)::int AS n FROM cron_runs`;
-      const [d] = await sql`
-        SELECT count(*)::int AS n FROM (
-          SELECT 1 FROM cron_runs GROUP BY name, period_at HAVING count(*) > 1
-        ) dup`;
-      return { rows: Number(r.n), duplicatedPeriods: Number(d.n) };
+export class LocalCoreDatabases extends PostgresCoreDatabases {
+  constructor(pg: string) {
+    super({
+      url: (db) => `${pg}/${db}`,
+      connect: (db) => postgres(`${pg}/${db}`, { max: 1, onnotice: () => undefined }),
     });
   }
 }
@@ -152,7 +56,12 @@ export class LocalDiskBuckets implements Buckets {
     }
   }
 
-  async create(bucket: string) {
+  // 로컬 디스크 드라이버엔 ACL·CORS 가 없다 — 공개·비공개는 디렉터리가 있으면 된다.
+  async ready(bucket: string) {
+    return this.exists(bucket);
+  }
+
+  async ensure(bucket: string) {
     await mkdir(this.dir(bucket), { recursive: true });
   }
 
@@ -216,36 +125,6 @@ export class LocalCheckAccountSecret implements CheckAccountSecret {
     await mkdir(dirname(this.path), { recursive: true });
     await writeFile(this.path, `${JSON.stringify({ loginId, password }, null, 2)}\n`, { mode: 0o600 });
     await chmod(this.path, 0o600);
-  }
-}
-
-// ─────────────────────────────────────────── 한 번에 하나
-
-/**
- * 두 실행이 겹치면 한쪽의 되돌리기가 다른 쪽이 막 만든 DB 를 지운다. pid 파일로 막는다 — 주인이 죽었으면 넘겨받는다.
- * (flock 은 macOS 에 없다.)
- */
-export function takeRunLock(path: string): () => void {
-  const take = () => writeFileSync(path, String(process.pid), { flag: 'wx' });
-  try {
-    take();
-  } catch {
-    const owner = Number(readFileSync(path, 'utf8'));
-    if (owner && isAlive(owner)) throw new Error(`이미 돌고 있다 (pid ${owner}) — 끝난 뒤 다시 돌릴 것`);
-    unlinkSync(path);
-    take();
-  }
-  return () => {
-    if (existsSync(path) && readFileSync(path, 'utf8') === String(process.pid)) unlinkSync(path);
-  };
-}
-
-function isAlive(pid: number): boolean {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch {
-    return false;
   }
 }
 
