@@ -3,6 +3,7 @@ import { TokenRefused } from '../staff-token';
 import { expectOk, probe, waitFor } from './http';
 import { fail, messageOf, onlyOwnRows, pass, Probe, refusedByTenantGate, skip, tokenTenantOf, Verdict } from './judge';
 import type { IsolationCheck } from './runner';
+import { buildScreenChecks } from './screens';
 import { SHARED_SERVICE_PROBES, type ConsumerMetrics, type IsolationTarget } from './target';
 
 /**
@@ -96,6 +97,8 @@ export function buildIsolationChecks(t: IsolationTarget): {
   checks: IsolationCheck<void>[];
   /** 정지를 건 채로 끊겼으면(Ctrl+C) 활성으로 되돌린다 — 진입점이 신호 처리에서 부른다 */
   restoreIfSuspended: () => Promise<void>;
+  /** 화면 실측의 브라우저를 닫는다 — 진입점이 끝에 부른다 */
+  closeBrowser: () => Promise<void>;
 } {
   const tokens: { one?: string; two?: string } = {};
   const one = async () => (tokens.one ??= await t.signIn.tenantOne());
@@ -466,6 +469,10 @@ export function buildIsolationChecks(t: IsolationTarget): {
       return delta === 0 ? pass : fail(`Medusa 상품 수가 ${delta} 바뀌었다 — 그 사이 다른 사람이 만들었는지 확인`);
     },
   });
+  // ── 화면·주소 교차 (읽기 전용) — 쓰기 부분이 만든 상품·일괄 세션이 지워지기 전에 돈다(동적 화면이 그 행으로 열린다)
+  const screens = buildScreenChecks(t, two);
+  checks.push(...screens.checks);
+
   add({
     section: '쓰기 경로',
     title: `지우기 — «${STAMP_PREFIX}» 로 만든 것`,
@@ -563,6 +570,7 @@ export function buildIsolationChecks(t: IsolationTarget): {
     restoreIfSuspended: async () => {
       if (state.suspended && write) await write.setTenantStatus(t.tenantTwoId, 'active');
     },
+    closeBrowser: screens.close,
   };
 }
 

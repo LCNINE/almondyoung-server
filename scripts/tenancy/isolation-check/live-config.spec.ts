@@ -18,6 +18,7 @@ describe('parseIsolationCheckSecret — 점검 계정 Secret', () => {
     tenantOne: { loginId: 'c1', password: 'p1' },
     tenantTwo: { id: '2', loginId: 'c2', password: 'p2', adminRedirectUri: 'https://t2.example/auth/callback' },
     customer: { loginId: 'c3', password: 'p3', redirectUri: 'https://shop.example/kr/callback/oidc' },
+    forbiddenWords: ['acme'],
   };
 
   it('완전한 값을 받는다', () => {
@@ -30,6 +31,10 @@ describe('parseIsolationCheckSecret — 점검 계정 Secret', () => {
     expect(() => parseIsolationCheckSecret(JSON.stringify(partial))).toThrow(
       /customer[\s\S]*sst secret set IsolationCheck/,
     );
+  });
+
+  it('금지어가 비면 거절한다 — 빈 목록은 «흔적 0» 을 늘 초록으로 만든다', () => {
+    expect(() => parseIsolationCheckSecret(JSON.stringify({ ...valid, forbiddenWords: [] }))).toThrow(/forbiddenWords/);
   });
 
   it('JSON 이 아니면 거절한다', () => {

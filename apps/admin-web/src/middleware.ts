@@ -61,12 +61,8 @@ async function verifyAccessToken(token: string) {
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
-  if (
-    (pathname === '/demo' ||
-      pathname.startsWith('/demo/') ||
-      pathname.startsWith('/api/demo/')) &&
-    !isDemoConsoleEnabled(process.env)
-  ) {
+  const demoConsoleOff = !isDemoConsoleEnabled(process.env);
+  if (pathname.startsWith('/api/demo/') && demoConsoleOff) {
     return new NextResponse('Not found', { status: 404 });
   }
   if (process.env.APP_STAGE === 'demo' && isDemoUnavailablePath(pathname)) {
@@ -92,6 +88,15 @@ export async function middleware(request: NextRequest) {
     requestHostFrom((name) => request.headers.get(name))
   );
   if (site.kind === 'unavailable') return neutralPageResponse();
+  // 테넌트 셸은 아래 허용 목록이 셸의 not-found 로 404 를 낸다 — 글자 응답엔 파비콘 링크가 없어 브라우저가 기본
+  // /favicon.ico(아몬드영 아이콘)를 부르므로 여기서 끊지 않는다.
+  if (
+    (pathname === '/demo' || pathname.startsWith('/demo/')) &&
+    demoConsoleOff &&
+    site.kind !== 'tenant'
+  ) {
+    return new NextResponse('Not found', { status: 404 });
+  }
   const origin = redirectOriginOf(site, request);
 
   // BYPASS_AUTH=true 환경변수로만 인증 우회 가능 (개발 환경에서 MSW 사용 시)

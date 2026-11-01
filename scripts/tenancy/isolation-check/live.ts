@@ -6,6 +6,7 @@
  * 매 배포 뒤 `deploy:preflight --mark-deployed` 다음에 돈다. 필요한 것: AWS 로그인(aws login --profile login),
  * 터널(npx sst tunnel --stage <stage> — DB 를 읽는 두 항목), Secret `IsolationCheck`(live-config.ts).
  * 비밀은 SST Secret 에서만 읽는다(`sst secret list`). 건너뜀은 실패다 — 라이브에서 «못 쟀다»는 통과가 아니다.
+ * 화면 항목은 이 머신의 Chrome 을 헤드리스로 띄운다(없으면 실패 — `ISOLATION_CHECK_CHROME` 으로 경로를 줄 수 있다).
  *
  * 쓰기 부분(--write)은 아직 라이브에서 못 돈다: 소비 앱 메트릭(건너뜀·DLQ)은 VPC 안에서만 읽힌다. 개통 전에
  * 그 관측 경로를 단다.
@@ -15,6 +16,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'no
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { z } from 'zod';
+import { parseTenantList } from '../../../libs/tenancy/src/tenant-list';
 import { createServiceConnection } from '../../seeding/lib/db-connection';
 import { deploymentToCwd } from '../../seeding/lib/sst-shell-relaunch';
 import { resolveRegistry } from '../../seeding/lib/tenant-registry';
@@ -23,6 +25,7 @@ import { buildIsolationChecks } from './checks';
 import { findDigitalAssetFile, observeCronRuns } from './db-observation';
 import { ISOLATION_CHECK_SECRET, parseIsolationCheckSecret, parseSecretList, stageServiceUrl } from './live-config';
 import { runChecks } from './runner';
+import { tenantDomainsOf } from './tenant-domains';
 import { SHARED_SERVICE_PROBES, type CronObservation, type IsolationTarget, type SharedServiceName } from './target';
 
 const ROOT = resolve(__dirname, '../../..');
@@ -188,6 +191,10 @@ async function main(): Promise<void> {
     redirectUri: check.customer.redirectUri,
   };
   const db = observeDb(stage, servedTenant, check.tenantTwo.id);
+  const tenantTwoEntry = parseTenantList(need(auth, 'TenantList', 'lcnine-auth')).find(check.tenantTwo.id);
+  if (!tenantTwoEntry) throw new Error(`lcnine-auth 의 TenantList 에 테넌트 ${check.tenantTwo.id} 가 없다`);
+  const tenantTwoAdmin = new URL(check.tenantTwo.adminRedirectUri);
+  let tenantTwoHosts: Promise<string[]> | null = null;
 
   const target: IsolationTarget = {
     label: stage,
@@ -214,11 +221,22 @@ async function main(): Promise<void> {
     storePublishableKey: need(services, 'MedusaPublishableKey', 'lcnine-services'),
     tenantOneDigitalFileId: () => Promise.resolve(db.tenantOneDigitalFileId),
     tenantTwoCronRuns: (): Promise<CronObservation> => Promise.resolve(db.cron),
+    screens: {
+      tenantTwoAdmin: tenantTwoAdmin.origin,
+      accounts: { tenantOne: check.tenantOne, tenantTwo: check.tenantTwo },
+      tenantTwoHosts: () =>
+        (tenantTwoHosts ??= tenantDomainsOf(users, internalSecret, tenantTwoAdmin.host, check.tenantTwo.id)),
+      // file-service S3 공급자의 주소 꼴(s3-storage.provider.ts) — 공개 URL·서명 URL 모두 버킷 호스트다.
+      tenantTwoBucketPrefixes: [tenantTwoEntry.publicBucket, tenantTwoEntry.privateBucket].map(
+        (bucket) => `https://${bucket}.s3.${REGION}.amazonaws.com/`,
+      ),
+      forbiddenWords: () => Promise.resolve(check.forbiddenWords),
+    },
   };
 
   console.log(`테넌트 격리 실측 — ${stage} (읽기 전용)`);
-  const { checks } = buildIsolationChecks(target);
-  const result = await runChecks(checks, undefined, { write: false, strict: target.strict });
+  const { checks, closeBrowser } = buildIsolationChecks(target);
+  const result = await runChecks(checks, undefined, { write: false, strict: target.strict }).finally(closeBrowser);
   console.log('');
   if (result.failed === 0) console.log(`✅ 격리 실측 통과 (${result.passed})`);
   else

@@ -36,6 +36,25 @@ export interface CronObservation {
   readonly windowMinutes: number;
 }
 
+/** 화면 실측이 로그인하는 계정 — 화면(auth-web 로그인 폼)으로 들어간다. */
+export interface ScreenAccount {
+  readonly loginId: string;
+  readonly password: string;
+}
+
+/** 화면 실측(브라우저) 쪽 — `screens.ts`. */
+export interface ScreenTarget {
+  /** 테넌트 2 admin-web 의 기원(테넌트 도메인). 테넌트 1 은 `urls.adminWeb` */
+  readonly tenantTwoAdmin: string;
+  readonly accounts: { readonly tenantOne: ScreenAccount; readonly tenantTwo: ScreenAccount };
+  /** 테넌트 2 의 테넌트 도메인 전부(호스트:포트) — user-service 가 들고 있는 값을 그대로 읽는다 */
+  readonly tenantTwoHosts: () => Promise<readonly string[]>;
+  /** 테넌트 2 버킷의 URL 접두사(공개·비공개). 브라우저가 닿아도 되는 테넌트 도메인 밖의 유일한 곳 */
+  readonly tenantTwoBucketPrefixes: readonly string[];
+  /** «흔적 0» 의 금지어 — 비공개 값이라 레포 밖(로컬 파일·라이브 Secret)에서 읽는다. 없으면 null(못 잰다) */
+  readonly forbiddenWords: () => Promise<readonly string[] | null>;
+}
+
 /** 앱 이름 → 그 앱 `/metrics` 의 합. 못 읽은 앱은 키가 없다 — 비교는 두 번 다 읽힌 앱끼리만 한다. */
 export interface ConsumerMetrics {
   /** 소비 앱마다 `events_skipped_other_tenant_total` */
@@ -71,6 +90,7 @@ export interface IsolationTarget {
   readonly tenantOneDigitalFileId: () => Promise<string | null>;
   /** 테넌트 2 core DB 의 `cron_runs` */
   readonly tenantTwoCronRuns: () => Promise<CronObservation>;
+  readonly screens: ScreenTarget;
   /** 쓰기 부분에서만 — 없으면 그 대상은 쓰기 부분을 못 돈다 */
   readonly write?: {
     readonly consumerMetrics: () => Promise<ConsumerMetrics>;

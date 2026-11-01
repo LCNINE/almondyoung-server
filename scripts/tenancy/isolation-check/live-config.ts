@@ -14,12 +14,14 @@ const isolationCheckSecretSchema = z.object({
   tenantOne: z.object(account),
   tenantTwo: z.object({ ...account, id: z.string().min(1), adminRedirectUri: z.string().url() }),
   customer: z.object({ ...account, redirectUri: z.string().url() }),
+  /** 화면 실측 «흔적 0» 의 금지어 — 비공개 값이라 레포에 두지 않는다. 비면 그 항목이 언제나 초록이 되므로 거절한다 */
+  forbiddenWords: z.array(z.string().min(1)).min(1),
 });
 export type IsolationCheckSecret = z.infer<typeof isolationCheckSecretSchema>;
 
 const SET_HINT =
   `npx sst secret set ${ISOLATION_CHECK_SECRET} '<JSON>' --stage <stage> (deployments/lcnine/services 에서). ` +
-  '모양: {"tenantOne":{loginId,password},"tenantTwo":{id,loginId,password,adminRedirectUri},"customer":{loginId,password,redirectUri}}';
+  '모양: {"tenantOne":{loginId,password},"tenantTwo":{id,loginId,password,adminRedirectUri},"customer":{loginId,password,redirectUri},"forbiddenWords":["…"]}';
 
 export function parseIsolationCheckSecret(raw: string): IsolationCheckSecret {
   let json: unknown;

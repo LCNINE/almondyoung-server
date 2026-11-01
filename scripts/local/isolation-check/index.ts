@@ -5,7 +5,7 @@
  * 로컬 값의 출처: 앱 .env 들, 테넌트 2 점검 계정 파일(`.local-e2e/tenants/<slug>-check-account.json`, 만들기 스크립트가 쓴다),
  * 로컬 운영자는 시드 admin(운영자 + 테넌트 1 master — 테넌트 1 점검 계정과 고객 로그인을 겸한다).
  */
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import postgres from 'postgres';
 import { resolveMetricsPort } from '../../../libs/shared/src/observability/metrics-server';
@@ -18,6 +18,7 @@ import {
 import { expectOk } from '../../tenancy/isolation-check/http';
 import { sumSamples } from '../../tenancy/isolation-check/prometheus';
 import { runChecks } from '../../tenancy/isolation-check/runner';
+import { tenantDomainsOf } from '../../tenancy/isolation-check/tenant-domains';
 import {
   SHARED_SERVICE_PROBES,
   type ConsumerMetrics,
@@ -148,6 +149,10 @@ async function main(): Promise<void> {
       redirectUri: tenantOneClient.redirectUri,
     });
 
+  const tenantTwoDomain = required('E2E_TENANT2_DOMAIN');
+  const fileServiceUrl = mustUrl('file-service');
+  let tenantTwoHosts: Promise<string[]> | null = null;
+
   const sql = postgres(`${pg}/${tenantTwoDb}`, { max: 1, onnotice: () => undefined });
   const tenantOneSql = postgres(app('core')?.env.DATABASE_URL ?? '', { max: 1, onnotice: () => undefined });
   const fileSql = fileServiceDb ? postgres(fileServiceDb, { max: 1, onnotice: () => undefined }) : null;
@@ -160,7 +165,7 @@ async function main(): Promise<void> {
     tenantTwoId,
     urls: {
       core: mustUrl('core'),
-      fileService: mustUrl('file-service'),
+      fileService: fileServiceUrl,
       medusa: mustUrl('medusa'),
       adminWeb: mustUrl('admin-web'),
     },
@@ -176,6 +181,17 @@ async function main(): Promise<void> {
     storePublishableKey: storefrontEnv.NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY ?? '',
     tenantOneDigitalFileId: digitalFileId,
     tenantTwoCronRuns: () => observeCronRuns(tenantOneSql, sql),
+    screens: {
+      tenantTwoAdmin: `http://${tenantTwoDomain}`,
+      accounts: { tenantOne: { loginId: 'admin', password: adminPassword }, tenantTwo: checkAccount },
+      tenantTwoHosts: () =>
+        (tenantTwoHosts ??= tenantDomainsOf(userService, tenantOneClient.internalSecret, tenantTwoDomain, tenantTwoId)),
+      // 로컬 file-service 는 S3 대신 버킷마다 디렉터리를 두고 자기 주소로 서빙한다(local-storage.path.ts).
+      tenantTwoBucketPrefixes: [required('E2E_TENANT2_PUBLIC_BUCKET'), required('E2E_TENANT2_PRIVATE_BUCKET')].map(
+        (bucket) => `${fileServiceUrl}/files/local/${bucket}/`,
+      ),
+      forbiddenWords: () => Promise.resolve(readForbiddenWords()),
+    },
     write: {
       consumerMetrics,
       setTenantStatus: async (id, status) =>
@@ -187,11 +203,13 @@ async function main(): Promise<void> {
     },
   };
 
-  const { checks, restoreIfSuspended } = buildIsolationChecks(target);
+  const { checks, restoreIfSuspended, closeBrowser } = buildIsolationChecks(target);
   for (const signal of ['SIGINT', 'SIGTERM'] as const) {
     process.once(signal, () => {
       // 정지 스위치 중간에 끊기면 테넌트 2 가 정지인 채로 남는다 — 되돌리고 끝낸다.
-      void restoreIfSuspended().finally(() => process.exit(130));
+      void restoreIfSuspended()
+        .finally(closeBrowser)
+        .finally(() => process.exit(130));
     });
   }
 
@@ -209,11 +227,30 @@ async function main(): Promise<void> {
     else console.log(`❌ ${result.failed}개 실패 (통과 ${result.passed}${tail}) — 각 ✗ 의 → 가 고칠 곳이다`);
     process.exitCode = result.failed === 0 ? 0 : 1;
   } finally {
-    await restoreIfSuspended();
-    await sql.end();
-    await tenantOneSql.end();
-    await fileSql?.end();
+    try {
+      await restoreIfSuspended();
+    } finally {
+      await closeBrowser();
+      await sql.end();
+      await tenantOneSql.end();
+      await fileSql?.end();
+    }
   }
+}
+
+/**
+ * «흔적 0» 의 금지어 — 비공개 값이라 레포에 두지 않는다. 한 줄에 하나, `#` 줄은 주석. 없으면 null(화면의 흔적 항목이 «못 쟀다»).
+ * 로컬 위치: `.local-e2e/isolation-check/forbidden-words.txt`(gitignore), 다른 곳이면 `ISOLATION_FORBIDDEN_WORDS_FILE`.
+ */
+function readForbiddenWords(): string[] | null {
+  const file =
+    process.env.ISOLATION_FORBIDDEN_WORDS_FILE ?? join(REPO, '.local-e2e/isolation-check/forbidden-words.txt');
+  if (!existsSync(file)) return null;
+  const words = readFileSync(file, 'utf8')
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l && !l.startsWith('#'));
+  return words.length > 0 ? words : null;
 }
 
 async function uploadTenantOneDigitalFile(fileService: string, token: string): Promise<void> {
