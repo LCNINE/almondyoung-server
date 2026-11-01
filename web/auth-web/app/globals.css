@@ -1,5 +1,4 @@
-/* 스토어프론트와 동일한 본문 폰트 (web/almondyoung-storefront/src/styles/globals.css 와 같은 CDN) */
-@import url("https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard-dynamic-subset.min.css");
+/* 본문 폰트 Pretendard 의 @font-face 는 app/layout.tsx 가 npm 패키지에서 싣는다(스토어프론트와 같은 판 1.3.9, 출처만 같은 기원) */
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";

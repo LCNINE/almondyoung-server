@@ -1,6 +1,8 @@
 import type { Metadata } from "next"
 import { Geist_Mono } from "next/font/google"
 
+// 본문 폰트(Pretendard)는 같은 기원에서 낸다 — 테넌트 도메인 로그인 화면이 외부 CDN 을 부르지 않게(격리 실측 «네트워크 호스트»).
+import "pretendard/dist/web/static/pretendard-dynamic-subset.css"
 import "./globals.css"
 import { SiteUnavailable } from "@/components/site-unavailable"
 import { ThemeProvider } from "@/components/theme-provider"
