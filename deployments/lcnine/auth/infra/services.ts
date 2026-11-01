@@ -1,5 +1,6 @@
 /// <reference path="../../../../.sst/platform/config.d.ts" />
 
+import { attachTenantDomainSlots } from '../../tenant-domain-distribution';
 import type { IdpInfra } from './shared';
 
 export function setup(infra: IdpInfra) {
@@ -186,7 +187,8 @@ export function setup(infra: IdpInfra) {
 
   // ─── auth-web (Nextjs / OpenNext, CloudFront) ───
   // 자체 CloudFront 배포이므로 ALB와 충돌 없음.
-  new sst.aws.Nextjs('AuthWeb', {
+  // protection 은 주지 않는다(기본 none) — 테넌트 도메인 칸의 배포가 이 사이트의 함수 URL 을 부른다.
+  const authWeb = new sst.aws.Nextjs('AuthWeb', {
     path: '../../../web/auth-web',
     domain: { name: domain('auth') },
     environment: {
@@ -204,6 +206,7 @@ export function setup(infra: IdpInfra) {
       DEV_TOOLS_ENABLED: 'true', // TEMP(live 임시 개방): 위 주석 참고하여 dev-only 로 환원할 것.
     },
   });
+  attachTenantDomainSlots('AuthWeb', authWeb);
 
   // ─── Cross-stack exports via SSM Parameter Store ───
   // consumer 앱(루트 core 등)은 aws.ssm.getParameterOutput()으로 읽는다.

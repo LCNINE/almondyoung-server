@@ -1,5 +1,6 @@
 /// <reference path="../../../../.sst/platform/config.d.ts" />
 
+import { attachTenantDomainSlots } from '../../tenant-domain-distribution';
 import type { SharedInfra } from './shared';
 
 export function setup(infra: SharedInfra) {
@@ -971,7 +972,8 @@ export function setup(infra: SharedInfra) {
   // ─── admin-web (Next.js / OpenNext, CloudFront) ───
   // admin-web 자체가 OIDC RP. 빌드 단계의 page-data collection 이 OIDC env 를 required 로 읽으므로,
   // 아래 7개 변수는 누락 시 OpenNext 빌드가 실패한다 (apps/admin-web/src/lib/auth/env.ts 참조).
-  new sst.aws.Nextjs('AdminWeb', {
+  // protection 은 주지 않는다(기본 none) — 테넌트 도메인 칸의 배포가 이 사이트의 함수 URL 을 부른다.
+  const adminWeb = new sst.aws.Nextjs('AdminWeb', {
     path: '../../../apps/admin-web',
     buildCommand: next15BuildCommand,
     // arm64(Graviton) Lambda — server 함수 ~20% 저렴. 문제 시 이 줄만 지우면 x86 복귀.
@@ -1027,6 +1029,7 @@ export function setup(infra: SharedInfra) {
       GRAFANA_OTLP_TOKEN: grafanaCloudWebOtlpToken.value,
     },
   });
+  attachTenantDomainSlots('AdminWeb', adminWeb);
 
   // ─── storefront IP 차단 (CloudFront Function) ───
   // 레거시 cafe24 상점/보안 설정에서 차단하던 IP를 뉴 아몬드영 스토어프론트에도 동일 적용.

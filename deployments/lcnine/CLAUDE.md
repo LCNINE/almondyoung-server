@@ -86,6 +86,15 @@ SSM publish:
 
 cross-stack: `/lcnine-auth/<stage>/user-service-url`, `/auth-web-url`, (TEMP) `auth-secret` 을 읽어 Medusa·Storefront·admin 등에 주입.
 
+### 테넌트 도메인 칸 (AdminWeb·AuthWeb)
+
+테넌트 도메인마다 CloudFront 배포를 하나씩 따로 세운다(`../tenant-domain-distribution.ts`). SST `domain.aliases` 는 쓰지 않는다 — 별칭이 우리 인증서 SAN 에 들어간다.
+
+- 칸 개수는 `../tenant-domain-slots.ts` 의 stage 표에만 있다. 도메인·인증서 ARN·존 ID 는 그 앱의 Secret(`<사이트>TenantSlot<n>{Domain,CertArn,ZoneId}`)이고 레포에 적지 않는다.
+- 칸을 켰는데 Secret 이 비면 `run()` 맨 앞에서 멈춘다. 그래서 Secret 을 먼저 넣고 표를 고친다.
+- AdminWeb·AuthWeb 의 `protection` 은 `none` 고정(`scripts/deployment/tenant-slot-protection.spec.ts`). 바꾸면 칸의 배포가 403 이다.
+- 두 앱의 `command` 프로바이더는 칸의 무효화 명령용이다. 배포 머신에 aws CLI v2 가 있어야 한다.
+
 ### Core
 
 `apps/core` (= 배포 이름 **Core**, hostname `core.…`) 는 **wms 와 pim 의 도메인을 모두 포함하는 통합 백엔드**. legacy `apps/wms`, `apps/pim` 은 제거됨 — 신규 도메인 로직은 모두 Core 에 추가.

@@ -14,10 +14,16 @@ export default $config({
       state: { retention: 30 },
       providers: {
         aws: { region: "ap-northeast-2" },
+        // command — 테넌트 도메인 칸 배포의 무효화 명령(`tenant-domain-distribution.ts`). 배포 머신에 aws CLI v2 가 있어야 한다.
+        command: "1.0.1",
       },
     };
   },
   async run() {
+    // 테넌트 도메인 칸이 켜졌는데 Secret 이 비었으면 리소스 하나 등록하기 전에 멈춘다(`tenant-domain-slots.ts`).
+    const tenantSlots = await import("../tenant-domain-slots");
+    tenantSlots.assertTenantSlotSecretsSet($app.stage, "AuthWeb", process.env);
+
     const shared = await import("./infra/shared");
     const infra = shared.setup();
     const infraOnly = $app.stage === "demo" && process.env.DEMO_INFRA_ONLY === "true";

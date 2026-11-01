@@ -18,6 +18,8 @@ export default $config({
       state: { retention: 30 },
       providers: {
         aws: { region: 'ap-northeast-2' },
+        // command — 테넌트 도메인 칸 배포의 무효화 명령(`tenant-domain-distribution.ts`). 배포 머신에 aws CLI v2 가 있어야 한다.
+        command: '1.0.1',
       },
     };
   },
@@ -29,6 +31,10 @@ export default $config({
     // require 가 실패하면 Next 는 그걸 삼키고 원본 이미지를 그대로 반환하므로, 에러 하나 없이
     // 모든 이미지가 무손실 원본으로 나간다. 이 변수는 빌드 프로세스로 상속된다.
     process.env.npm_config_platform = 'linux';
+
+    // 테넌트 도메인 칸이 켜졌는데 Secret 이 비었으면 리소스 하나 등록하기 전에 멈춘다(`tenant-domain-slots.ts`).
+    const tenantSlots = await import('../tenant-domain-slots');
+    tenantSlots.assertTenantSlotSecretsSet($app.stage, 'AdminWeb', process.env);
 
     if ($app.stage === 'demo') {
       const shared = await import('./infra/demo-shared');
