@@ -12,7 +12,7 @@ import { MessageEnvelope } from '@packages/event-contracts/types';
 import { EVENT_TRANSPORT, EventTransport } from '../transport/transport.port';
 import { getDLQTopicName } from '@packages/event-contracts/types';
 import { generateMessageId } from '../utils/message-id.util';
-import { DLQMessage } from './dlq.types';
+import { DLQMessage, type DlqOrigin, type UnrecognizedMessage } from './dlq.types';
 import { dlqMessagesTotal, dlqSendFailuresTotal } from './dlq.metrics';
 
 @Injectable()
@@ -42,12 +42,13 @@ export class DLQHandler {
    */
   async sendToDLQ<TPayload = unknown>(params: {
     originalTopic: string;
-    originalMessage: MessageEnvelope<TPayload>;
+    originalMessage: MessageEnvelope<TPayload> | UnrecognizedMessage;
     error: Error;
     context: {
       partition: number;
       offset: string;
       consumer: string;
+      origin?: DlqOrigin;
       retryCount: number;
       attemptHistory?: Array<{
         attemptedAt: string;
@@ -76,6 +77,7 @@ export class DLQHandler {
 
       context: {
         consumer: params.context.consumer,
+        ...params.context.origin,
         retryCount: params.context.retryCount,
         attemptHistory: params.context.attemptHistory || [],
       },
@@ -88,9 +90,10 @@ export class DLQHandler {
 
     // source 가 없는 envelope 도 DLQ 에 도달해야 한다. 여기서 던지면 kafkajs 가 컨슈머를 크래시시키고
     // 커밋된 오프셋 때문에 재시작해도 같은 메시지가 와 앱 전체가 무한 루프에 빠진다 (#1073).
-    const aggregateId = params.originalMessage.source?.aggregateId ?? 'unknown';
-    const partitionKey =
-      params.originalMessage.source?.aggregateId ?? params.originalMessage.messageId ?? params.originalTopic;
+    const original = 'raw' in params.originalMessage ? undefined : params.originalMessage;
+    const aggregateId = original?.source?.aggregateId ?? 'unknown';
+    const partitionKey = original?.source?.aggregateId ?? original?.messageId ?? params.originalTopic;
+    const messageType = original?.messageType ?? 'unknown';
 
     try {
       // DLQ 토픽으로 발행
@@ -100,8 +103,8 @@ export class DLQHandler {
         headers: {
           'dlq-message-id': dlqMessageId,
           'original-topic': params.originalTopic,
-          'original-message-type': params.originalMessage.messageType,
-          'original-message-id': params.originalMessage.messageId,
+          'original-message-type': messageType,
+          'original-message-id': original?.messageId ?? 'unknown',
           'original-aggregate-id': aggregateId,
           'failure-reason': params.error.name,
           'retry-count': String(params.context.retryCount),
@@ -110,10 +113,10 @@ export class DLQHandler {
       });
 
       this.logger.warn({
-        msg: `📤 Message sent to DLQ: ${params.originalMessage.messageType}`,
+        msg: `📤 Message sent to DLQ: ${messageType}`,
         dlqTopic,
         dlqMessageId,
-        originalMessageId: params.originalMessage.messageId,
+        originalMessageId: original?.messageId,
         aggregateId,
         errorMessage: params.error.message,
         retryCount: params.context.retryCount,

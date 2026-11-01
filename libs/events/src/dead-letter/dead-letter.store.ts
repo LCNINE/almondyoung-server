@@ -73,6 +73,10 @@ export class DeadLetterStore implements DeadLetterRecorder {
     return this.dbService.db;
   }
 
+  canRecord(): boolean {
+    return this.dbService.hasCurrentDatabase();
+  }
+
   async holdIfBlocked(message: DeadLetterMessage): Promise<boolean> {
     const row = toInsert(message);
     const sequenceKey = row.sequenceKey;

@@ -15,6 +15,7 @@ import { InMemoryTransport } from '../transport/in-memory.transport';
 import { InMemoryServer } from '../transport/in-memory.server';
 import { buildConsumerInterceptors } from '../consumers/consumer-interceptors';
 import { DEAD_LETTER_HEADERS, type DeadLetterMessage, type DeadLetterRecorder } from './dead-letter.types';
+import * as retryUtil from '../retry/retry.util';
 
 const TOPIC = CART_STREAM.topic.topic;
 
@@ -22,7 +23,13 @@ const TOPIC = CART_STREAM.topic.topic;
 class MemoryRecorder implements DeadLetterRecorder {
   rows: Array<DeadLetterMessage & { id: number; status: string; error?: string; errorName?: string }> = [];
   private nextId = 1;
+  /** 적을 DB 가 없는 맥락(② core 의 테넌트 없는 메시지)을 흉내낸다 — 진짜 store 처럼 닿으면 던진다 */
+  homeless = false;
+  canRecord() {
+    return !this.homeless;
+  }
   holdIfBlocked(m: DeadLetterMessage) {
+    if (this.homeless) return Promise.reject(new Error('TenantContextMissingError'));
     const blocked = this.rows.some(
       (r) => r.topic === m.topic && r.sequenceKey === m.sequenceKey && ['failed', 'held'].includes(r.status),
     );
@@ -32,6 +39,7 @@ class MemoryRecorder implements DeadLetterRecorder {
     return Promise.resolve(blocked);
   }
   recordFailure(m: DeadLetterMessage, e: Error) {
+    if (this.homeless) return Promise.reject(new Error('TenantContextMissingError'));
     this.rows.push({ ...m, id: this.nextId++, status: 'failed', error: e.message, errorName: e.name });
     return Promise.resolve();
   }
@@ -219,6 +227,41 @@ describe('EventRetryInterceptor — dead letter 모드 (#1016 8번)', () => {
     expect(broker.deliveryFailures).toHaveLength(1);
     expect(caughtNames).toContain('DlqDeliveryError');
     expect(recorder.rows).toEqual([]);
+  });
+
+  describe('적을 DB 가 없는 맥락 (② core 의 테넌트 없는·목록 밖 메시지, ticket 30)', () => {
+    beforeEach(() => {
+      recorder.homeless = true;
+    });
+    afterEach(() => jest.restoreAllMocks());
+
+    it('보류 검사 없이 처리하고 최종 실패는 .dlq 로 보내 커밋한다 — 컨슈머 그룹·핸들러를 싣는다', async () => {
+      failCreated = true;
+      await publisher.publishEvent({ eventType: 'CartCreated', aggregateId: 'cart-1', payload: cart('cart-1') });
+      await publisher.publishEvent({ eventType: 'CartCreated', aggregateId: 'cart-1', payload: cart('cart-1') });
+
+      // 순서 토픽이지만 둘째도 핸들러에 닿는다 — 보류할 테이블이 없다. 재시도 1회씩
+      expect(calls.filter((c) => c.startsWith('created:'))).toHaveLength(4);
+      expect(broker.deliveryFailures).toHaveLength(0);
+      expect(recorder.rows).toEqual([]);
+      const dlq = broker.envelopesOn<{ context: Record<string, unknown> }>(getDLQTopicName(TOPIC));
+      expect(dlq.map((m) => [m.context.consumerGroup, m.context.handler])).toEqual([
+        ['spec-group', 'CartConsumer.onCreated'],
+        ['spec-group', 'CartConsumer.onCreated'],
+      ]);
+    });
+
+    it('봉투를 못 알아보는 메시지도 같은 출구다 — 파티션을 멈추지 않는다', async () => {
+      // 깨진 JSON 은 재시도 대상 에러라 기본 정책(1s→2s→4s)을 다 기다린다 — 기다림만 없앤다
+      jest.spyOn(retryUtil, 'sleep').mockResolvedValue(undefined);
+      await broker.inject(TOPIC, 'not json at all');
+
+      expect(broker.deliveryFailures).toHaveLength(0);
+      expect(recorder.rows).toEqual([]);
+      const dlq = broker.envelopesOn<{ originalMessage: unknown }>(getDLQTopicName(TOPIC));
+      expect(dlq.length).toBeGreaterThan(0);
+      expect(dlq.map((m) => m.originalMessage)).toEqual(dlq.map(() => ({ raw: 'not json at all' })));
+    });
   });
 
   it('다시 넣기 헤더가 있으면 대상 핸들러만 한 번 돌리고 결과를 그 행에 적는다', async () => {

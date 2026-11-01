@@ -74,6 +74,16 @@ export class EventTenantGate {
     if (this.options.tenancy === 'served-tenant' && tenantId !== this.options.servedTenantId) return { kind: 'skip' };
     return { kind: 'pass', tenantId };
   }
+
+  /**
+   * 실패 테이블 다시 넣기에서 봉투에 맞출 테넌트 = 그 행이 든 DB 의 테넌트 (ticket 30, `DeadLetterRuntime.dispatch`). «T 만 섬김» 앱의 DB 는
+   * T 의 것이고, «메시지마다» 앱(core)은 라우터가 고른 DB 의 키(= 테넌트)다. ② 에서만 — ① 은 봉투를 그대로 보낸다(① 의 동작을
+   * 바꾸지 않는다). 라우터 없는 «메시지마다» 앱이면 `dbKey` 가 없어 그대로 보낸다.
+   */
+  redriveTenant(dbKey: string | undefined): string | undefined {
+    if (this.options.gateMode !== 'reject') return undefined;
+    return this.options.tenancy === 'served-tenant' ? this.options.servedTenantId : dbKey;
+  }
 }
 
 /**

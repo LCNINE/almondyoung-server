@@ -4,6 +4,19 @@
 
 import { MessageEnvelope } from '@packages/event-contracts/types';
 
+/** `.dlq` 로 보낸 실패가 누구의 것인가 — 토픽이 구독자끼리 섞이므로 가져오기(`untenanted-dlq-import`)가 이걸로 고른다 */
+export interface DlqOrigin {
+  /** 실패 테이블을 켠 앱만 안다 */
+  consumerGroup?: string;
+  /** `클래스.메서드` — 실패 행의 `handler` 칸·다시 넣기 헤더와 같은 값 */
+  handler: string;
+}
+
+/** 봉투로 알아볼 수 없는 메시지의 원본 */
+export interface UnrecognizedMessage {
+  raw: string;
+}
+
 /**
  * DLQ에 저장되는 메시지 구조
  */
@@ -16,7 +29,8 @@ export interface DLQMessage<TPayload = unknown> {
   originalTopic: string;
   originalPartition: number;
   originalOffset: string;
-  originalMessage: MessageEnvelope<TPayload>;
+  /** 알아볼 수 없는 메시지(깨진 JSON·`messageType` 없음)는 원본 글자를 `raw` 로 */
+  originalMessage: MessageEnvelope<TPayload> | UnrecognizedMessage;
 
   // 에러 정보
   error: {
@@ -27,7 +41,7 @@ export interface DLQMessage<TPayload = unknown> {
   };
 
   // 처리 컨텍스트
-  context: {
+  context: Partial<DlqOrigin> & {
     consumer: string; // Consumer 이름
     retryCount: number; // 재시도 횟수
     attemptHistory: Array<{

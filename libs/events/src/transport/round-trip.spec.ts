@@ -318,7 +318,7 @@ describe('발행 → 소비 왕복 (인메모리 transport)', () => {
     expect(dlq).toHaveLength(1);
     expect(dlq[0].error.name).toBe('SchemaValidationError');
     expect(dlq[0].originalTopic).toBe(STRICT_STREAM.topic.topic);
-    expect(dlq[0].originalMessage.messageId).toBe('msg-bad');
+    expect(dlq[0].originalMessage).toMatchObject({ messageId: 'msg-bad' });
 
     // 소비 실패가 발행자에게 전파되지 않았음 — 운영에서도 그 둘은 분리돼 있다
     expect(broker.deliveryFailures).toHaveLength(0);

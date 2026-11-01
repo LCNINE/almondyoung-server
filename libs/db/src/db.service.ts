@@ -102,6 +102,21 @@ export class DbService<TSchema extends DrizzleSchema = Record<string, never>> im
     return pool.db;
   }
 
+  /** `db` 가 지금 맥락에서 풀을 고를 수 있는가 — 던지지 않는다. 라우터가 없으면 언제나 true. */
+  hasCurrentDatabase(): boolean {
+    if (!this.router) return true;
+    try {
+      return this.routed?.has(this.router.current()) ?? false;
+    } catch {
+      return false;
+    }
+  }
+
+  /** 지금 맥락이 고르는 풀 키(core 에선 테넌트). 라우터가 없으면 undefined, 맥락이 없으면 `db` 처럼 던진다. */
+  currentDatabaseKey(): string | undefined {
+    return this.router ? this.router.current() : undefined;
+  }
+
   /**
    * 요청 밖 작업(크론·폴러·outbox·부팅 훅)을 DB 마다 한 번씩, 그 DB 의 맥락에서 돌린다. 라우터가 없으면 맥락 없이 한 번이다.
    *

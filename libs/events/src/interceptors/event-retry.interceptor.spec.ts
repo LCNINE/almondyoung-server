@@ -309,6 +309,7 @@ class TypedConsumer {
 describe('EventRetryInterceptor — 실패 테이블 모드의 입력 방어 (#1016 7·8번 최종 리뷰 D4·D5)', () => {
   let interceptor: EventRetryInterceptor;
   let recorder: {
+    canRecord: () => boolean;
     holdIfBlocked: jest.Mock;
     recordFailure: jest.Mock;
     markRedriven: jest.Mock;
@@ -317,6 +318,7 @@ describe('EventRetryInterceptor — 실패 테이블 모드의 입력 방어 (#1
 
   beforeEach(() => {
     recorder = {
+      canRecord: () => true,
       holdIfBlocked: jest.fn().mockResolvedValue(false),
       recordFailure: jest.fn().mockResolvedValue(undefined),
       markRedriven: jest.fn().mockResolvedValue(undefined),

@@ -8,7 +8,7 @@ import { CART_STREAM } from '@packages/event-contracts/streams/cart.stream';
 import { USER_STREAM } from '@packages/event-contracts/streams/user.stream';
 import type { DLQMessage } from '../dlq/dlq.types';
 import { EventsModule } from '../events.module';
-import type { ConsumerTenancy } from './event-tenant-gate';
+import { EventTenantGate, type ConsumerTenancy } from './event-tenant-gate';
 import { EventPayload, On } from '../consumers/decorators';
 import { EventTypeGuard } from '../guards/event-type.guard';
 import { EVENT_TRANSPORT } from '../transport/transport.port';
@@ -297,5 +297,31 @@ describe('기동 거부', () => {
 
   it('«메시지마다» 는 T 없이 뜬다', async () => {
     await expect((await bootWith({ tenancy: 'per-message' }))()).resolves.toBeDefined();
+  });
+});
+
+describe('다시 넣기에서 봉투에 붙일 테넌트 — 그 행이 든 DB 의 테넌트 (ticket 30)', () => {
+  const list = parseTenantList(
+    JSON.stringify([
+      { id: '1', slug: 'one', coreDb: 'core', publicBucket: 'b-one', privateBucket: 'b-one' },
+      { id: '2', slug: 'two', coreDb: 'core_two', publicBucket: 'b-two-pub', privateBucket: 'b-two-priv' },
+    ]),
+  );
+  const gate = (tenancy: ConsumerTenancy, gateMode: TenantGateMode) =>
+    new EventTenantGate({
+      tenancy,
+      servedTenantId: tenancy === 'served-tenant' ? '2' : undefined,
+      tenants: list,
+      gateMode,
+    });
+
+  it('② «메시지마다» 는 라우터가 고른 DB 의 키, «T 만 섬김» 은 T', () => {
+    expect(gate('per-message', 'reject').redriveTenant('1')).toBe('1');
+    expect(gate('served-tenant', 'reject').redriveTenant(undefined)).toBe('2');
+  });
+
+  it('① 에서는 붙이지 않는다 — 테넌트 없이도 통과하므로 ① 의 동작이 그대로다', () => {
+    expect(gate('per-message', 'warn').redriveTenant('1')).toBeUndefined();
+    expect(gate('served-tenant', 'warn').redriveTenant(undefined)).toBeUndefined();
   });
 });

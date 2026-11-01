@@ -48,6 +48,11 @@ export interface DeadLetterMessage {
  * 모든 메서드는 실패하면 던진다. 인터셉터가 그것을 `DlqDeliveryError` 로 바꿔 오프셋을 커밋하지 않게 한다.
  */
 export interface DeadLetterRecorder {
+  /**
+   * 지금 맥락에서 적을 DB 가 있는가. 없으면(② core 의 테넌트 없는 메시지 — 테넌트 DB 를 고를 수 없다) 인터셉터가 보류 검사·
+   * 기록을 하지 않고 `.dlq` 토픽으로 보낸다. 던지지 않는다
+   */
+  canRecord(): boolean;
   /** 같은 순서에 안 푼 행이 있으면 이 메시지를 `held` 로 적고 true. 없으면 아무것도 안 적고 false */
   holdIfBlocked(message: DeadLetterMessage): Promise<boolean>;
   /** 최종 실패를 `failed` 로 적는다. 같은 유일 키가 있으면 그 행을 갱신한다 */

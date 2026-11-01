@@ -59,7 +59,7 @@ describeIfDb('DeadLetterRedriver (PostgreSQL 통합)', () => {
             }
           : null,
     } as unknown as Server;
-    runtime.attach({ consumerGroup: GROUP, server });
+    runtime.attach({ consumerGroup: GROUP, server, redriveTenant: () => undefined });
     redriver = new DeadLetterRedriver(dbService, runtime, new FailureActionLog(dbService), {
       sequencedTopics: [TOPIC],
     });

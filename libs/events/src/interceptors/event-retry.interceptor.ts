@@ -18,6 +18,7 @@ import { Reflector } from '@nestjs/core';
 import { KafkaContext, KafkaHeaders } from '@nestjs/microservices';
 import { defer, lastValueFrom, Observable, of } from 'rxjs';
 import { DLQHandler } from '../dlq/dlq-handler.service';
+import type { DlqOrigin } from '../dlq/dlq.types';
 import { dlqMessagesTotal } from '../dlq/dlq.metrics';
 import { EVENT_TYPE_FILTER } from '../consumers/decorators';
 import { DEAD_LETTER_HEADERS, type DeadLetterMessage, type DeadLetterRecorder } from '../dead-letter/dead-letter.types';
@@ -105,6 +106,14 @@ function unrecognizedEnvelope(value: unknown): unknown {
   return { raw: String(value) };
 }
 
+/** `.dlq` 로 보낼 알아볼 수 없는 메시지의 글자. 객체는 JSON 으로(`String(obj)` 의 `[object Object]` 가 되지 않게) */
+function rawText(value: unknown): string {
+  if (Buffer.isBuffer(value)) return value.toString('utf-8');
+  if (typeof value === 'string') return value;
+  if (value !== null && typeof value === 'object') return JSON.stringify(value);
+  return String(value);
+}
+
 function nonEmptyString(value: unknown): string | null {
   return typeof value === 'string' && value.length > 0 ? value : null;
 }
@@ -167,7 +176,10 @@ export class EventRetryInterceptor implements NestInterceptor {
     retryPolicy.nonRetryableErrors = nonRetryable;
 
     if (!this.deadLetters) {
-      return defer(() => this.executeWithRetry(next, handler.name, kafkaContext, retryPolicy, disableDLQ));
+      const origin: DlqOrigin = { handler: handlerIdOf(context.getClass(), handler) };
+      return defer(() =>
+        this.executeWithRetry(next, handler.name, kafkaContext, retryPolicy, disableDLQ, undefined, origin),
+      );
     }
 
     // ── 실패 테이블 모드 (#1016 8번, 스펙 §6) ──
@@ -209,6 +221,18 @@ export class EventRetryInterceptor implements NestInterceptor {
       }
       const recorder = this.deadLetters.recorder;
       return defer(() => this.executeRedrive(next, redriveId, handlerId, recorder));
+    }
+
+    // 적을 DB 가 없는 맥락 (ticket 30). ② core 에서 테넌트가 없거나 목록 밖인 메시지·봉투를 못 알아보는 메시지·계정 이벤트는
+    // 문이 맥락 없이 넘긴다 — 테넌트를 모르니 어느 테넌트 DB 에도 둘 수 없다. 여기서 보류 검사·기록을 하면 매번 던지고 →
+    // `DlqDeliveryError` → 커밋되지 않아 파티션이 영영 멈춘다. 그래서 보류 없이 처리하고 최종 실패는 옛 `.dlq` 토픽으로 보낸다
+    // (10-15 설계 D6 의 예외 하나). 사람이 `scripts/events/untenanted-dlq-import.ts` 로 테넌트를 붙여 그 테넌트의 실패
+    // 테이블로 옮긴다 — 그래서 그룹·핸들러를 싣는다.
+    if (!this.deadLetters.recorder.canRecord()) {
+      const origin: DlqOrigin = { consumerGroup: this.deadLetters.consumerGroup, handler: handlerId };
+      return defer(() =>
+        this.executeWithRetry(next, handler.name, kafkaContext, retryPolicy, disableDLQ, undefined, origin),
+      );
     }
 
     const message = this.toDeadLetterMessage(kafkaContext, envelope, rawValue, handlerId, this.deadLetters);
@@ -301,6 +325,7 @@ export class EventRetryInterceptor implements NestInterceptor {
     retryPolicy: NormalizedRetryPolicy,
     disableDLQ: boolean,
     deadLetterMessage?: DeadLetterMessage,
+    origin?: DlqOrigin,
   ): Promise<unknown> {
     let retryContext = createRetryContext();
 
@@ -337,6 +362,7 @@ export class EventRetryInterceptor implements NestInterceptor {
             retryContext,
             disableDLQ,
             deadLetterMessage,
+            origin,
           );
           return undefined; // 에러 삼킴 → 정상 완료 → offset commit
         }
@@ -365,6 +391,7 @@ export class EventRetryInterceptor implements NestInterceptor {
     retryContext: RetryContext,
     disableDLQ: boolean,
     deadLetterMessage?: DeadLetterMessage,
+    origin?: DlqOrigin,
   ): Promise<void> {
     const topic = kafkaContext.getTopic();
     const offset = kafkaContext.getMessage().offset;
@@ -405,7 +432,15 @@ export class EventRetryInterceptor implements NestInterceptor {
       return;
     }
 
-    await this.sendToDLQ(kafkaContext, error, handlerName, retryContext, this.dlqHandler);
+    if (origin?.consumerGroup) {
+      // 그룹은 실패 테이블 모드에서 적을 DB 가 없을 때만 싣는다(`intercept`)
+      this.logger.warn({
+        msg: `적을 DB 가 없는 맥락(테넌트 없음·목록 밖·봉투 모름)의 실패 — .dlq 토픽으로 보낸다: ${handlerName}`,
+        topic,
+        offset,
+      });
+    }
+    await this.sendToDLQ(kafkaContext, error, handlerName, retryContext, this.dlqHandler, origin);
 
     this.logger.error({
       msg: `❌ Handler failed after ${retries} retries: ${handlerName}`,
@@ -422,24 +457,25 @@ export class EventRetryInterceptor implements NestInterceptor {
     consumerName: string,
     retryContext: RetryContext,
     dlqHandler: DLQHandler,
+    origin?: DlqOrigin,
   ): Promise<void> {
     const message = kafkaContext.getMessage();
     const topic = kafkaContext.getTopic();
 
     try {
-      // DLQ 전송은 실패 메시지 보존이 목적이라 envelope 형태를 신뢰하고 전달한다.
-      // 파싱 관용구를 직접 쓰지 않는 이유는 parseEnvelope 주석 참조 — 여기서 터지면
-      // DlqDeliveryError 가 되어 offset 미커밋 → 무한 재전달이 된다.
-      const envelope = parseEnvelope(message.value);
+      // 알아볼 수 없는 메시지(깨진 JSON 등)도 원본 글자 그대로 보낸다 — 파싱하다 던지면 DlqDeliveryError 가 되어
+      // offset 미커밋 → 무한 재전달이 된다(ticket 30: 봉투를 못 알아보는 메시지도 같은 출구).
+      const envelope = recognizedEnvelope(message.value);
 
       await dlqHandler.sendToDLQ({
         originalTopic: topic,
-        originalMessage: envelope,
+        originalMessage: envelope ?? { raw: rawText(message.value) },
         error,
         context: {
           partition: kafkaContext.getPartition(),
           offset: String(message.offset),
           consumer: consumerName,
+          origin,
           retryCount: retryContext.attemptHistory.length,
           attemptHistory: retryContext.attemptHistory,
         },
@@ -448,8 +484,8 @@ export class EventRetryInterceptor implements NestInterceptor {
       this.logger.log({
         msg: `📤 Message sent to DLQ after ${retryContext.attemptHistory.length} failed attempts`,
         topic,
-        messageType: envelope.messageType,
-        aggregateId: envelope.source?.aggregateId,
+        messageType: envelope?.messageType,
+        aggregateId: envelope?.source?.aggregateId,
       });
     } catch (dlqError) {
       this.logger.error({

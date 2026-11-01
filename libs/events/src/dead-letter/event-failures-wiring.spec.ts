@@ -85,6 +85,7 @@ describe('EventFailuresModule 배선 (#1016 8번)', () => {
       .useValue(new InMemoryTransport(broker))
       .overrideProvider(DeadLetterStore)
       .useValue({
+        canRecord: () => true,
         holdIfBlocked: () => Promise.resolve(false),
         recordFailure: (m: DeadLetterMessage) => {
           recorded.push(m);

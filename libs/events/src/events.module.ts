@@ -472,7 +472,7 @@ export class EventsModule {
     ) as NestMicroservice;
 
     // 실패 테이블 (#1016 8번). 앱이 `EventFailuresModule` 을 import 했을 때만 있다.
-    const deadLetters = await this.enableDeadLetters(app, options.groupId, server, logger);
+    const deadLetters = await this.enableDeadLetters(app, options.groupId, server, logger, tenantGate);
 
     microservice.useGlobalInterceptors(...buildConsumerInterceptors(app, derived.streams, deadLetters, tenantGate));
     microservice.registerListeners();
@@ -530,11 +530,13 @@ export class EventsModule {
     consumerGroup: string,
     server: Server,
     logger: Logger,
+    tenantGate: EventTenantGate,
   ): Promise<DeadLetterInterceptorOptions | undefined> {
     const runtime = optionalGet(app, DeadLetterRuntime);
     if (!runtime) return undefined;
 
-    const tables = await checkDeadLetterTables(app.get(DbService, { strict: false }));
+    const dbService = app.get<DbService>(DbService, { strict: false });
+    const tables = await checkDeadLetterTables(dbService);
     if (!tables.present) {
       logger.error(
         `실패 테이블 모드를 켜지 않는다 — event.dead_letters·event.failure_actions 가 없다` +
@@ -546,7 +548,12 @@ export class EventsModule {
       return undefined;
     }
 
-    runtime.attach({ consumerGroup, server });
+    // 다시 넣기는 관리자 요청 안에서 돈다 — 그 요청이 고른 DB(= 행이 든 DB)의 키가 테넌트다
+    runtime.attach({
+      consumerGroup,
+      server,
+      redriveTenant: () => tenantGate.redriveTenant(dbService.currentDatabaseKey()),
+    });
     return {
       recorder: app.get(DeadLetterStore, { strict: false }),
       consumerGroup,

@@ -171,7 +171,7 @@ describe('소비 스키마 검증 ON (validateOnConsume: true)', () => {
     const dlq = dlqOf();
     expect(dlq).toHaveLength(1);
     expect(dlq[0].error.name).toBe('SchemaValidationError');
-    expect(dlq[0].originalMessage.messageId).toBe('msg-bad');
+    expect(dlq[0].originalMessage).toMatchObject({ messageId: 'msg-bad' });
   });
 
   /**
