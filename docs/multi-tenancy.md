@@ -71,7 +71,7 @@ core 쓰기 ─ outbox 행(그 DB) ─▶ 디스패처가 봉투 metadata.tenant
 | user-service | 계정 층(전역) + 테넌트 1 데이터는 토큰 테넌트 1 일 때만 | `per-message` | 전역 DB, 부여·소속·이력에 테넌트 (🔸 0056: 계정 행에 테넌트) |
 | file-service · ai | 토큰 테넌트 | (ai: 계정 이벤트만) | 행에 테넌트 축, file-service 는 테넌트별 버킷 |
 | wallet · membership · analytics · ugc-service · notification · search · channel-adapter | T 만 섬김, 다른 토큰은 403 | `served-tenant` | 테넌트 축 없음(= 테넌트 1) |
-| Medusa · 쇼핑몰 | 테넌트 1 전용. admin-web 의 Medusa 프록시도 토큰 테넌트 ≠ T 면 403. 다른 서비스를 내부 키로 부를 땐 T 를 헤더로 싣는다(`apps/medusa/src/utils/served-tenant-headers.ts`) | Kafka 직접 소비 없음 | Medusa DB(테넌트 1) |
+| Medusa · 쇼핑몰 | 테넌트 1 전용. admin-web 의 Medusa 프록시도 토큰 테넌트 ≠ T 면 403. Medusa 로그인 입구 둘(SSO 콜백은 access_token, `my-auth` 는 내부 토큰)도 토큰 테넌트 ≠ T 면 거절한다(`refuseForeignTenantToken`). 다른 서비스를 내부 키로 부를 땐 T 를 헤더로 싣는다(`apps/medusa/src/utils/served-tenant-headers.ts`) | Kafka 직접 소비 없음 | Medusa DB(테넌트 1) |
 
 ## 4. 실수하기 쉬운 곳
 
