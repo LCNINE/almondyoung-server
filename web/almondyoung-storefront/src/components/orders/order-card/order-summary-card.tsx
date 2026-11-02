@@ -1,38 +1,12 @@
 "use client"
 
-import { CustomButton } from "@/components/shared/custom-buttons"
-import LocalizedClientLink from "@/components/shared/localized-client-link"
-import { getThumbnailUrl } from "@lib/utils/get-thumbnail-url"
 import { useTranslations } from "next-intl"
-import { useState, type ReactNode } from "react"
+import type { ReactNode } from "react"
 import OrderCard from "./order-card"
-import OrderItemCartButton from "./order-item-cart-button"
+import OrderStatusCards from "./order-status-cards"
+import type { OrderSummaryItem } from "./order-summary-items"
 
-function statusColor(label: string): string {
-  if (label.includes("배송"))
-    return label.includes("완료") ? "text-green-600" : "text-primary"
-  return "text-gray-900"
-}
-
-const COLLAPSED_ITEM_COUNT = 3
-
-export interface OrderSummaryItem {
-  id: string
-  title: string
-  thumbnail: string
-  href?: string
-  price: string
-  options?: string[]
-  variantId?: string
-  isDigital?: boolean
-  reviewHref?: string
-  /** 반품·교환한 줄이면 주문 상태 대신 이 줄의 상태 */
-  statusLabel?: string
-  statusHint?: string
-  /** 반품·교환 상세로 가는 링크와 버튼 문구 */
-  returnHref?: string
-  returnLinkLabel?: string
-}
+export type { OrderSummaryItem } from "./order-summary-items"
 
 interface OrderSummaryCardProps {
   orderId: string
@@ -48,26 +22,6 @@ interface OrderSummaryCardProps {
   children?: ReactNode
 }
 
-function ItemLink({
-  href,
-  className,
-  children,
-}: {
-  href?: string
-  className?: string
-  children: ReactNode
-}) {
-  if (!href) return <div className={className}>{children}</div>
-  return (
-    <LocalizedClientLink href={href} className={className}>
-      {children}
-    </LocalizedClientLink>
-  )
-}
-
-/**
- * 주문/배송 요약 카드
- */
 export default function OrderSummaryCard({
   orderId,
   orderDate,
@@ -80,132 +34,31 @@ export default function OrderSummaryCard({
   children,
 }: OrderSummaryCardProps) {
   const t = useTranslations("mypage.order")
-  const [expanded, setExpanded] = useState(false)
-  const visibleItems = expanded ? items : items.slice(0, COLLAPSED_ITEM_COUNT)
-  const hiddenCount = items.length - visibleItems.length
+
   return (
     <OrderCard
       orderId={orderId}
       orderDate={orderDate}
       orderNumber={orderNumber}
     >
-      <ul className="flex flex-col gap-3">
-        {visibleItems.map((item) => {
-          const itemStatus = item.statusLabel ?? status
-          const itemHint = item.statusLabel ? item.statusHint : deliveryInfo
-          const hasSide = Boolean(item.reviewHref || item.returnHref)
-
-          return (
-            <li
-              key={item.id}
-              className="flex flex-col rounded-lg border border-gray-200 md:flex-row"
-            >
-              <div className="min-w-0 flex-1 p-4 md:p-5">
-                <p className="mb-3 text-base font-bold md:text-lg">
-                  <span className={statusColor(itemStatus)}>{itemStatus}</span>
-                  {itemHint && (
-                    <span className="font-medium text-gray-500"> · {itemHint}</span>
-                  )}
-                </p>
-                <div className="flex items-center gap-3.5">
-                  <ItemLink href={item.href} className="shrink-0">
-                    <img
-                      className="h-20 w-20 rounded-md border border-[#ececec] object-cover"
-                      src={getThumbnailUrl(item.thumbnail)}
-                      alt={item.title}
-                    />
-                  </ItemLink>
-                  <div className="flex min-w-0 flex-1 flex-col gap-1">
-                    <ItemLink href={item.href} className="min-w-0">
-                      <p className="line-clamp-2 text-sm font-medium text-black md:text-base">
-                        {item.title}
-                      </p>
-                    </ItemLink>
-                    <div className="flex items-end justify-between gap-2">
-                      <div className="text-xs text-gray-500 md:text-sm">
-                        <p>{item.price}</p>
-                        {item.options?.map((option, i) => (
-                          <p key={i}>- {option}</p>
-                        ))}
-                      </div>
-                      {item.isDigital ? (
-                        <LocalizedClientLink href="/mypage/download">
-                          <CustomButton
-                            variant="outline"
-                            color="secondary"
-                            size="sm"
-                          >
-                            {t("actions.download")}
-                          </CustomButton>
-                        </LocalizedClientLink>
-                      ) : (
-                        item.variantId && (
-                          <OrderItemCartButton variantId={item.variantId} />
-                        )
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {hasSide && (
-                <div className="flex shrink-0 flex-col gap-2 border-t border-gray-200 p-4 md:w-48 md:border-t-0 md:border-l md:p-5">
-                  {item.returnHref && (
-                    <LocalizedClientLink href={item.returnHref}>
-                      <CustomButton
-                        variant="outline"
-                        color="secondary"
-                        size="md"
-                        fullWidth
-                      >
-                        {item.returnLinkLabel}
-                      </CustomButton>
-                    </LocalizedClientLink>
-                  )}
-                  {item.reviewHref && (
-                    <LocalizedClientLink href={item.reviewHref}>
-                      <CustomButton
-                        variant="outline"
-                        color="secondary"
-                        size="md"
-                        fullWidth
-                      >
-                        {t("actions.writeReview")}
-                      </CustomButton>
-                    </LocalizedClientLink>
-                  )}
-                </div>
-              )}
-            </li>
-          )
-        })}
-      </ul>
-
-      {hiddenCount > 0 && (
-        <button
-          type="button"
-          onClick={() => setExpanded(true)}
-          className="mt-3 w-full cursor-pointer rounded-lg border border-gray-200 py-2.5 text-sm text-gray-600 hover:bg-gray-50"
-        >
-          {t("list.showMoreItems", { count: hiddenCount })}
-        </button>
-      )}
-
-      {(totalPrice || children) && (
-        <div className="mt-3 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-          {totalPrice && (
-            <p className="text-right text-sm text-gray-700 md:text-left">
-              {t("list.totalPaid")}{" "}
-              {originalPrice && (
-                <span className="mr-1 text-gray-400 line-through">
-                  {originalPrice}
-                </span>
-              )}
-              <span className="font-bold text-black">{totalPrice}</span>
-            </p>
+      <OrderStatusCards
+        status={status}
+        deliveryInfo={deliveryInfo}
+        items={items}
+        collapsible
+      >
+        {children}
+      </OrderStatusCards>
+      {totalPrice && (
+        <p className="mt-3 text-right text-sm text-gray-700 md:text-left">
+          {t("list.totalPaid")}{" "}
+          {originalPrice && (
+            <span className="mr-1 text-gray-400 line-through">
+              {originalPrice}
+            </span>
           )}
-          {children}
-        </div>
+          <span className="font-bold text-black">{totalPrice}</span>
+        </p>
       )}
     </OrderCard>
   )

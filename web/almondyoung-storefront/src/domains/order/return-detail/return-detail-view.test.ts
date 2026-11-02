@@ -1,43 +1,64 @@
 import { describe, expect, it } from "vitest"
-import { pickupLabelKey, returnSteps, returnedAmount } from "./return-detail-view"
+import {
+  pickupLabelKey,
+  returnedAmount,
+  receiptItemAmounts,
+} from "./return-detail-view"
 
-const none = { pickupStatus: "none" as const, arrivedAt: null, inspectedAt: null }
+describe("receiptItemAmounts", () => {
+  const item = {
+    id: "item-1",
+    unit_price: 10000,
+    quantity: 3,
+    adjustments: [{ amount: 3000 }],
+  }
+  const returned = [{ itemId: "item-1", quantity: 1 }]
 
-describe("returnSteps", () => {
-  it("접수만 됐으면 첫 단계만 끝", () => {
-    expect(returnSteps({ kind: "return", stage: "requested", refund: null }, none).map((s) => s.done)).toEqual([true, false, false, false])
+  it("부분 반품의 할인 전 상품금액과 할인액을 구한다", () => {
+    expect(receiptItemAmounts([item], returned, 9000)).toEqual({
+      itemTotal: 10000,
+      discount: 1000,
+    })
   })
 
-  it("기사님이 가져가면 회수까지", () => {
-    const steps = returnSteps({ kind: "return", stage: "requested", refund: null }, { ...none, pickupStatus: "picked_up" })
-    expect(steps.map((s) => s.done)).toEqual([true, true, false, false])
+  it("세금 포함 할인과 여러 상품의 금액을 합한다", () => {
+    const taxed = {
+      ...item,
+      tax_lines: [{ rate: 10 }],
+      adjustments: [{ amount: 3300, is_tax_inclusive: true }],
+    }
+    const other = { id: "item-2", unit_price: 2000, quantity: 1 }
+
+    expect(
+      receiptItemAmounts(
+        [taxed, other],
+        [...returned, { itemId: "item-2", quantity: 1 }],
+        10900
+      )
+    ).toEqual({ itemTotal: 12000, discount: 1100 })
   })
 
-  it("Medusa processing 이면 core 진행을 못 읽어도 검수까지", () => {
-    expect(returnSteps({ kind: "return", stage: "processing", refund: null }, null).map((s) => s.done)).toEqual([true, true, true, false])
+  it("할인이 없으면 차감은 0이다", () => {
+    expect(
+      receiptItemAmounts([{ ...item, adjustments: [] }], returned, 10000)
+    ).toEqual({ itemTotal: 10000, discount: 0 })
   })
 
-  it("환불이 끝나면 전부, 교환은 마지막 단계가 exchanged", () => {
-    expect(returnSteps({ kind: "return", stage: "refunded", refund: null }, null).every((s) => s.done)).toBe(true)
-    const ex = returnSteps({ kind: "exchange", stage: "exchanged", refund: null }, null)
-    expect(ex.at(-1)).toEqual({ key: "exchanged", done: true })
-  })
-})
-
-describe("returnSteps — 선환불", () => {
-  const prepaid = { kind: "prepaid" as const, itemTotal: 60000, shippingRefund: 0, fees: 0, total: 10000, receivedAt: null, refundedAt: "2026-10-27T00:00:00.000Z" }
-
-  it("선환불만 끝났으면 접수만 끝 — 회수·검수·환불 완료는 아직", () => {
-    const steps = returnSteps({ kind: "return", stage: "refunded", refund: prepaid }, { ...none, pickupStatus: "requested" })
-    expect(steps.map((s) => s.done)).toEqual([true, false, false, false])
+  it("정산액이 다르면 차액을 할인으로 추정하지 않는다", () => {
+    expect(receiptItemAmounts([item], returned, 6000)).toEqual({
+      itemTotal: 6000,
+      discount: null,
+    })
   })
 
-  it("선환불 뒤 창고가 받아 검수했어도 정산 전이면 환불 완료는 아직", () => {
-    const steps = returnSteps(
-      { kind: "return", stage: "refunded", refund: prepaid },
-      { ...none, arrivedAt: "2026-10-28T00:00:00.000Z", inspectedAt: "2026-10-28T01:00:00.000Z" }
+  it("상품이나 수량이 없으면 정산 상품금액만 사용한다", () => {
+    expect(receiptItemAmounts([], returned, 9000)).toEqual({
+      itemTotal: 9000,
+      discount: null,
+    })
+    expect(receiptItemAmounts([{ ...item, quantity: 0 }], returned, 0)).toEqual(
+      { itemTotal: 0, discount: null }
     )
-    expect(steps.map((s) => s.done)).toEqual([true, true, true, false])
   })
 })
 
@@ -53,11 +74,20 @@ describe("returnedAmount", () => {
 
 describe("pickupLabelKey", () => {
   it("창고에 도착했으면 회수 행이 없어도 회수 완료", () => {
-    expect(pickupLabelKey({ pickupStatus: "none", arrivedAt: "2026-10-21T00:00:00.000Z" })).toBe("pickedUp")
+    expect(
+      pickupLabelKey({
+        pickupStatus: "none",
+        arrivedAt: "2026-10-21T00:00:00.000Z",
+      })
+    ).toBe("pickedUp")
   })
 
   it("접수된 회수는 requested, 아무것도 없으면 none", () => {
-    expect(pickupLabelKey({ pickupStatus: "requested", arrivedAt: null })).toBe("requested")
-    expect(pickupLabelKey({ pickupStatus: "none", arrivedAt: null })).toBe("none")
+    expect(pickupLabelKey({ pickupStatus: "requested", arrivedAt: null })).toBe(
+      "requested"
+    )
+    expect(pickupLabelKey({ pickupStatus: "none", arrivedAt: null })).toBe(
+      "none"
+    )
   })
 })

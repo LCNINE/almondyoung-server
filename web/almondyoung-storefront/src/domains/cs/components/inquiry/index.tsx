@@ -15,6 +15,7 @@ export function Inquiry({ product }: InquiryProps) {
   const searchParams = useSearchParams()
   const t = useTranslations("cs.inquiry")
   const productId = product?.id ?? searchParams.get("productId") ?? undefined
+  const orderNumber = searchParams.get("orderNumber")
 
   const handleSuccess = () => {
     toast.success(t("successToast"), {
@@ -33,10 +34,11 @@ export function Inquiry({ product }: InquiryProps) {
         <p className="mt-1 text-sm text-gray-500">{t("subtitle")}</p>
       </div>
 
-      <div className="rounded-lg border border-gray-200 bg-white p-4">
+      <div className="bg-white md:rounded-lg md:border md:border-gray-200 md:p-4">
         <InquiryForm
           productId={productId}
           productTitle={product?.title}
+          orderNumber={orderNumber ?? undefined}
           onSuccess={handleSuccess}
         />
       </div>

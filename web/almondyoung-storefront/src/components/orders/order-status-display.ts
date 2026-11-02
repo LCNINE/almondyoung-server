@@ -2,6 +2,43 @@ import type {
   StoreFulfillmentStatus,
   StoreOrderActionsResponse,
 } from "@/lib/api/orders/store-orders"
+import {
+  isReturnInProgress,
+  itemReturnStatus,
+} from "@/domains/order/list/item-return-status"
+import type { CustomerReturn } from "@/lib/types/ui/returns"
+
+export function getCompletedOrderReturnStatus(
+  items: ReadonlyArray<{ id: string; quantity: number }> | null | undefined,
+  returns: CustomerReturn[] | null | undefined
+): "returned" | "exchanged" | null {
+  if (!items?.length || !returns?.length) {
+    return null
+  }
+
+  for (const [kind, stage, key] of [
+    ["return", "refunded", "returned"],
+    ["exchange", "exchanged", "exchanged"],
+  ] as const) {
+    const completed = returns.filter(
+      (ret) =>
+        ret.kind === kind && ret.stage === stage && !isReturnInProgress(ret)
+    )
+    const fullyCovered = items.every((item) => {
+      const status = itemReturnStatus(item.id, completed)
+
+      return (
+        item.quantity > 0 && status !== null && status.quantity >= item.quantity
+      )
+    })
+
+    if (fullyCovered) {
+      return key
+    }
+  }
+
+  return null
+}
 
 // Core 상태 → 고객 표시 텍스트 변환 로직.
 // 'use client' 모듈(order-status-badges.tsx)에 두면 서버 컴포넌트에서 import 시

@@ -11,7 +11,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -22,13 +21,17 @@ import { requestRefundAction } from "../refund-request-action"
 
 interface RefundRequestDialogProps {
   intentId: string
-  className?: string
+  open: boolean
+  onOpenChange: (open: boolean) => void
 }
 
-export function RefundRequestDialog({ intentId, className }: RefundRequestDialogProps) {
+export function RefundRequestDialog({
+  intentId,
+  open,
+  onOpenChange,
+}: RefundRequestDialogProps) {
   const t = useTranslations("mypage.order.refundRequest")
   const router = useRouter()
-  const [open, setOpen] = useState(false)
   const [bankCode, setBankCode] = useState("")
   const [accountNumber, setAccountNumber] = useState("")
   const [holderName, setHolderName] = useState("")
@@ -57,7 +60,7 @@ export function RefundRequestDialog({ intentId, className }: RefundRequestDialog
           reason: reason || undefined,
         })
         toast.success(t("success"))
-        setOpen(false)
+        onOpenChange(false)
         reset()
         router.refresh()
       } catch (error: unknown) {
@@ -72,25 +75,16 @@ export function RefundRequestDialog({ intentId, className }: RefundRequestDialog
     <Dialog
       open={open}
       onOpenChange={(o) => {
-        setOpen(o)
+        onOpenChange(o)
         if (!o) reset()
       }}
     >
-      <DialogTrigger asChild>
-        <button
-          type="button"
-          className={
-            className ??
-            "inline-flex cursor-pointer items-center justify-center rounded-[5px] px-4 py-3 text-sm text-red-600 outline-1 outline-red-300"
-          }
-        >
-          {t("trigger")}
-        </button>
-      </DialogTrigger>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{t("title")}</DialogTitle>
-          <DialogDescription>{t("description")}</DialogDescription>
+          <DialogDescription className="whitespace-pre-line">
+            {t("description")}
+          </DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
           <div className="space-y-1">
@@ -138,7 +132,7 @@ export function RefundRequestDialog({ intentId, className }: RefundRequestDialog
           </div>
         </div>
         <DialogFooter>
-          <Button variant="outline" onClick={() => setOpen(false)}>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
             {t("cancel")}
           </Button>
           <Button onClick={submit} disabled={!ready || isPending}>

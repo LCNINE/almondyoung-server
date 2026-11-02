@@ -15,6 +15,7 @@ import LocalizedClientLink from "@/components/shared/localized-client-link"
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -43,7 +44,8 @@ import {
 } from "lucide-react"
 import { useTranslations } from "next-intl"
 import { useRouter } from "next/navigation"
-import { useState, useTransition } from "react"
+import { useEffect, useState, useTransition, type ReactNode } from "react"
+import { RefundRequestDialog } from "@/domains/order/details/components/refund-request-dialog"
 import { toast } from "sonner"
 
 interface OrderActionsProps {
@@ -52,12 +54,22 @@ interface OrderActionsProps {
   productName: string
   itemCount?: number
   showInquiry?: boolean
+  /** 1:1 문의 제목에 미리 채울 주문번호 */
+  orderNumber?: string
   coreActions?: StoreOrderActionsResponse
   availableActions?: StoreOrderAction[]
   cancelUnavailableReason?: StoreCancelUnavailableReason
   channelInfo?: { channel: string; cancelUrl?: string; returnUrl?: string }
   bankTransferStatus?: string
   refundRequestStatus?: string
+  refundIntentId?: string
+  autoOpenRefund?: boolean
+  autoOpenRefundMedia?: string
+  refundBlocked?: boolean
+  isDetails?: boolean
+  hasReturns?: boolean
+  trackingHref?: string
+  children?: (actions: ReactNode) => ReactNode
 }
 
 /**
@@ -80,21 +92,27 @@ interface OrderAction {
   external?: boolean
 }
 
-/**
- * 주문 카드의 액션 버튼 영역 — OrderSummaryCard 의 children 으로 주입.
- */
 export default function OrderActions({
   orderId,
   paymentStatus,
   productName,
   itemCount = 1,
   showInquiry = true,
+  orderNumber,
   coreActions,
   availableActions: availableActionsProp,
   cancelUnavailableReason: cancelUnavailableReasonProp,
   channelInfo: channelInfoProp,
   bankTransferStatus,
   refundRequestStatus,
+  refundIntentId,
+  autoOpenRefund = false,
+  autoOpenRefundMedia,
+  refundBlocked = false,
+  isDetails = false,
+  hasReturns = false,
+  trackingHref,
+  children,
 }: OrderActionsProps) {
   const availableActions = coreActions?.availableActions ?? availableActionsProp
   const cancelUnavailableReason =
@@ -105,6 +123,28 @@ export default function OrderActions({
   const { askPrintPartialCancel, printPartialCancelDialog } =
     usePrintPartialCancelDialog(() => runCancel(true))
   const router = useRouter()
+  const [showRefundDialog, setShowRefundDialog] = useState(false)
+
+  useEffect(() => {
+    if (!autoOpenRefund) {
+      return
+    }
+
+    if (
+      autoOpenRefundMedia &&
+      !window.matchMedia(autoOpenRefundMedia).matches
+    ) {
+      return
+    }
+
+    setShowRefundDialog(true)
+
+    // 주소에 남겨 두면 뒤로·앞으로 가기로 돌아올 때마다 다시 열린다
+    const url = new URL(window.location.href)
+    url.searchParams.delete("refund")
+    window.history.replaceState(window.history.state, "", url)
+  }, [autoOpenRefund, autoOpenRefundMedia])
+
   const [isPending, startTransition] = useTransition()
   const [isConfirmed, setIsConfirmed] = useState(false)
   const [showCancelDialog, setShowCancelDialog] = useState(false)
@@ -115,7 +155,6 @@ export default function OrderActions({
     useState<CancelReasonCode>("CHANGE_OF_MIND")
   const [cancelReasonDetail, setCancelReasonDetail] = useState("")
 
-  // 무통장입금 주문 식별 (#439 마커)
   const isBankTransferConfirmed = bankTransferStatus === "confirmed"
   // 입금 대기(미결제) 무통장 주문은 결제가 authorized 로 매핑되지만 아직 입금 전이라
   // 구매확정 버튼을 노출하지 않는다.
@@ -128,12 +167,15 @@ export default function OrderActions({
     awaitingDeposit: isBankTransferAwaitingDeposit,
     actions: coreActions,
   })
-  const hasPendingRefundRequest = refundRequestStatus === "REQUESTED"
+  const hasPendingRefundRequest =
+    refundRequestStatus === "REQUESTED" || refundRequestStatus === "APPROVED"
 
-  const canCancel = availableActions
-    ? availableActions.includes("cancel")
-    : false
-  const canTrack = availableActions ? availableActions.includes("track") : false
+  // 반품·교환이 걸린 주문은 이미 출고된 주문이다. 데이터가 어긋나도 이중 환불이 나지 않게 취소를 막는다
+  const canCancel =
+    !hasReturns && (availableActions?.includes("cancel") ?? false)
+  const canTrack = isDetails
+    ? Boolean(trackingHref)
+    : (availableActions?.includes("track") ?? false)
   const canReturn = availableActions?.includes("return") ?? false
   const canExchange = availableActions?.includes("exchange") ?? false
   const cancelTooltip = cancelUnavailableReason
@@ -141,7 +183,6 @@ export default function OrderActions({
     : undefined
 
   // 무통장 확정 주문의 취소는 토스 환불신청 → 관리자 수락이 필요하다(즉시 자동환불 아님).
-  // 셀프 취소 버튼 대신 '환불 신청'(주문 상세에서 신청)으로 안내한다.
   const showSelfCancel = canCancel && !isBankTransferConfirmed
   const showBankTransferCancelGuide = canCancel && isBankTransferConfirmed
 
@@ -214,7 +255,7 @@ export default function OrderActions({
       key: "track",
       label: "배송 조회",
       icon: Package,
-      onClick: handleTrack,
+      ...(trackingHref ? { href: trackingHref } : { onClick: handleTrack }),
     })
   if (canReturn)
     actions.push({
@@ -233,7 +274,7 @@ export default function OrderActions({
   if (showSelfCancel)
     actions.push({
       key: "cancel",
-      label: "주문 전체 취소",
+      label: "주문 취소",
       icon: RotateCcw,
       danger: true,
       onClick: () => setShowCancelDialog(true),
@@ -241,16 +282,21 @@ export default function OrderActions({
   else if (showBankTransferCancelGuide && hasPendingRefundRequest)
     actions.push({
       key: "refundRequested",
-      label: "환불 신청됨",
+      label: refundRequestStatus === "APPROVED" ? "환불 완료" : "환불 신청됨",
       icon: RotateCcw,
       disabled: true,
     })
   else if (showBankTransferCancelGuide)
     actions.push({
       key: "refundRequest",
-      label: "환불 신청",
+      label: "주문 취소",
       icon: RotateCcw,
-      href: `/mypage/order/details?orderId=${orderId}`,
+      disabled: refundBlocked || (isDetails && !refundIntentId),
+      ...(isDetails
+        ? { onClick: () => setShowRefundDialog(true) }
+        : {
+            href: `/mypage/order/details?orderId=${encodeURIComponent(orderId)}&refund=1`,
+          }),
     })
   else if (cancelUnavailableReason && channelInfo?.cancelUrl)
     actions.push({
@@ -270,16 +316,28 @@ export default function OrderActions({
       label: "주문취소 불가",
       disabled: true,
     })
-  if (showInquiry) actions.push({ key: "inquiry", label: "문의" })
+  if (showInquiry) {
+    actions.push({
+      key: "inquiry",
+      label: "1:1 문의",
+      href: orderNumber
+        ? `/cs?tab=inquiry&orderNumber=${encodeURIComponent(orderNumber)}`
+        : "/cs?tab=inquiry",
+    })
+  }
 
-  // 모바일 주요 버튼: 구매확정 > 배송조회 > 주문 전체 취소, 모두 없으면 주문 상세 이동.
+  // 모바일은 주요 버튼 하나와 더보기 메뉴로 나눈다.
   const primaryKey = canConfirm
     ? "confirm"
     : canTrack
       ? "track"
       : showSelfCancel
         ? "cancel"
-        : null
+        : showBankTransferCancelGuide
+          ? hasPendingRefundRequest
+            ? "refundRequested"
+            : "refundRequest"
+          : null
   const primaryAction = actions.find((a) => a.key === primaryKey)
   const menuActions = actions.filter((a) => a.key !== primaryKey)
 
@@ -295,6 +353,7 @@ export default function OrderActions({
         isLoading={action.key === "confirm" ? isPending : undefined}
         onClick={action.onClick}
         title={action.key === "cancelUnavailable" ? cancelTooltip : undefined}
+        className={action.primary ? undefined : "active:bg-secondary"}
       >
         {action.label}
       </CustomButton>
@@ -351,11 +410,10 @@ export default function OrderActions({
     )
   }
 
-  return (
+  const controls = (
     <>
-      {/* 데스크탑: 카드 아래 가로 버튼 나열 */}
       {actions.length > 0 && (
-        <div className="hidden gap-2 md:flex">
+        <div className="hidden flex-col gap-2 md:flex">
           {actions.map((action) => (
             <div key={action.key}>{renderButton(action, "md")}</div>
           ))}
@@ -365,7 +423,7 @@ export default function OrderActions({
       {/* 모바일: 주요 버튼 + 더보기 메뉴 */}
       <div className="flex items-center gap-2 md:hidden">
         {primaryAction ? (
-          <div className="flex-1">{renderButton(primaryAction, "lg")}</div>
+          <div className="flex-1">{renderButton(primaryAction, "md")}</div>
         ) : (
           <LocalizedClientLink
             href={`/mypage/order/details?orderId=${orderId}`}
@@ -375,7 +433,7 @@ export default function OrderActions({
               type="button"
               variant="outline"
               color="secondary"
-              size="lg"
+              size="md"
               fullWidth
             >
               배송·주문 관리
@@ -401,6 +459,34 @@ export default function OrderActions({
         )}
       </div>
 
+      {isDetails &&
+        cancelTooltip &&
+        cancelUnavailableReason !== "already_cancelled" && (
+          <p className="text-xs text-red-600">{cancelTooltip}</p>
+        )}
+      {showBankTransferCancelGuide && isDetails && refundBlocked && (
+        <p className="text-muted-foreground text-xs">
+          이미 다운로드한 상품이 있어 취소할 수 없어요. 고객센터로 문의해
+          주세요.
+        </p>
+      )}
+    </>
+  )
+
+  return (
+    <>
+      {children ? children(controls) : controls}
+      {showBankTransferCancelGuide &&
+        refundIntentId &&
+        !hasPendingRefundRequest &&
+        !refundBlocked && (
+          <RefundRequestDialog
+            intentId={refundIntentId}
+            open={showRefundDialog}
+            onOpenChange={setShowRefundDialog}
+          />
+        )}
+
       {/* 구매확정 확인 dialog */}
       <Dialog
         open={showConfirmPurchaseDialog}
@@ -412,9 +498,9 @@ export default function OrderActions({
           </DialogHeader>
           <div className="space-y-2 text-sm">
             <p>구매를 확정할까요?</p>
-            <p className="text-muted-foreground text-xs">
+            <DialogDescription className="text-xs">
               확정 후에는 반품·교환 가능 조건이 달라질 수 있어요.
-            </p>
+            </DialogDescription>
           </div>
           <DialogFooter>
             <CustomButton
@@ -452,16 +538,16 @@ export default function OrderActions({
       >
         <DialogContent className="max-w-sm">
           <DialogHeader>
-            <DialogTitle>주문을 전부 취소할까요?</DialogTitle>
+            <DialogTitle>주문을 취소할까요?</DialogTitle>
           </DialogHeader>
           <div className="space-y-3 text-sm">
             <p className="font-medium">{productName}</p>
             {itemCount > 1 && (
               <p>이 주문의 상품 {itemCount}개가 함께 취소돼요.</p>
             )}
-            <p className="text-muted-foreground text-xs">
-              취소 완료 후 결제 수단에 따라 환불이 진행됩니다.
-            </p>
+            <DialogDescription className="text-xs">
+              취소 완료 후 결제 수단에 따라 환불이 진행돼요.
+            </DialogDescription>
             <CancelReasonForm
               reasonCode={cancelReasonCode}
               reasonDetail={cancelReasonDetail}

@@ -1,6 +1,6 @@
 "use client"
 
-import { Camera, Plus, X } from "lucide-react"
+import { Camera, X } from "lucide-react"
 import { useRef } from "react"
 import { useTranslations } from "next-intl"
 
@@ -73,62 +73,49 @@ export function ImageUpload({
         disabled={disabled}
       />
 
-      {images.length === 0 ? (
-        <button
-          type="button"
-          onClick={() => fileInputRef.current?.click()}
-          disabled={disabled}
-          className="flex w-full cursor-pointer flex-col items-center rounded-lg border border-dashed border-gray-300 px-4 py-5 transition-colors hover:border-gray-400 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          <Camera className="mb-1 h-6 w-6 text-gray-500" />
-          <p className="text-[15px] font-semibold text-gray-800">
-            {tForm("addPhoto")}
-          </p>
-          <p className="mt-0.5 text-[13px] text-gray-500">
-            {tForm("addPhotoHint", { max: MAX_PHOTO_COUNT, sizeMB: MAX_FILE_SIZE_MB })}
-          </p>
-        </button>
-      ) : (
-        <div className="rounded-lg border border-gray-200 p-3">
-          <div className="mb-2 flex items-center justify-between">
-            <p className="text-[13px] font-medium text-gray-700">
-              {tForm("photoCount", { count: images.length, max: MAX_PHOTO_COUNT })}
-            </p>
+      <div className="flex flex-wrap gap-2">
+        {images.length < MAX_PHOTO_COUNT && (
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={disabled}
+            aria-label={tForm("addPhoto")}
+            className="bg-muted border-border text-muted-foreground flex h-20 w-20 shrink-0 cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border transition-colors duration-150 hover:brightness-95 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <Camera className="h-5 w-5" />
+            <span className="text-xs">
+              {images.length}/{MAX_PHOTO_COUNT}
+            </span>
+          </button>
+        )}
+        {images.map((image) => (
+          <div
+            key={image.id}
+            className="border-border relative h-20 w-20 shrink-0 overflow-hidden rounded-lg border"
+          >
+            <img
+              src={image.previewUrl}
+              alt={tForm("photoAlt")}
+              className="absolute inset-0 h-full w-full object-cover"
+            />
+            <button
+              type="button"
+              onClick={() => handlePhotoRemove(image.id)}
+              disabled={disabled}
+              aria-label={tForm("removePhoto")}
+              className="absolute top-1 right-1 z-10 flex h-5 w-5 cursor-pointer items-center justify-center rounded-full bg-black/50 text-white transition-colors hover:bg-black/70 disabled:cursor-not-allowed"
+            >
+              <X className="h-3 w-3" />
+            </button>
           </div>
-          <div className="flex gap-2 overflow-x-auto">
-            {images.map((image) => (
-              <div
-                key={image.id}
-                className="relative h-20 w-20 shrink-0 overflow-hidden rounded-lg border border-gray-200"
-              >
-                <img
-                  src={image.previewUrl}
-                  alt={tForm("photoAlt")}
-                  className="absolute inset-0 h-full w-full object-cover"
-                />
-                <button
-                  type="button"
-                  onClick={() => handlePhotoRemove(image.id)}
-                  disabled={disabled}
-                  className="absolute top-0.5 right-0.5 z-10 flex h-5 w-5 cursor-pointer items-center justify-center rounded-full bg-black/50 text-white transition-colors hover:bg-black/70 disabled:cursor-not-allowed"
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              </div>
-            ))}
-            {images.length < MAX_PHOTO_COUNT && (
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={disabled}
-                className="flex h-20 w-20 shrink-0 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-gray-300 transition-colors hover:border-gray-400 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <Plus className="h-5 w-5 text-gray-400" />
-              </button>
-            )}
-          </div>
-        </div>
-      )}
+        ))}
+      </div>
+      <p className="text-muted-foreground mt-2 text-xs">
+        {tForm("addPhotoHint", {
+          max: MAX_PHOTO_COUNT,
+          sizeMB: MAX_FILE_SIZE_MB,
+        })}
+      </p>
     </div>
   )
 }

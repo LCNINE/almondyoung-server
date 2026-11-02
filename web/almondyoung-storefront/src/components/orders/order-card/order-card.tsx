@@ -1,6 +1,6 @@
 import type { ReactNode } from "react"
 import LocalizedClientLink from "@/components/shared/localized-client-link"
-import { ArrowRight } from "lucide-react"
+import { ChevronRight } from "lucide-react"
 
 interface OrderCardProps {
   orderId: string
@@ -35,10 +35,10 @@ export default function OrderCard({
         {/* 주문 상세보기 */}
         <LocalizedClientLink
           href={`/mypage/order/details?orderId=${orderId}`}
-          className="inline-flex items-center gap-1 text-xs text-primary md:gap-2 md:text-base"
+          className="text-primary inline-flex items-center gap-1 text-xs md:gap-2 md:text-base"
         >
           주문 상세보기
-          <ArrowRight className="h-3 w-3 md:h-4 md:w-4" />
+          <ChevronRight className="h-3 w-3 md:h-4 md:w-4" />
         </LocalizedClientLink>
       </header>
 

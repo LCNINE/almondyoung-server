@@ -97,6 +97,7 @@ export function toCustomerReturns(
 ): CustomerReturn[] {
   return dto.returns.map((r) => ({
     returnId: r.return_id,
+    displayId: r.display_id ?? null,
     kind: r.kind === "exchange" ? "exchange" : "return",
     stage: r.stage,
     requestedAt: r.requested_at,

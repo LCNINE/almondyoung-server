@@ -21,6 +21,7 @@ export type StoreReturnStageDto =
 
 export interface StoreReturnListItemDto {
   return_id: string
+  display_id?: number | null
   /** 칸이 없던 옛 Medusa 는 반품으로 읽는다. */
   kind?: "return" | "exchange"
   stage: StoreReturnStageDto

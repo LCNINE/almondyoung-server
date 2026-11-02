@@ -587,8 +587,6 @@
       "cancelCompleted": "注文がキャンセルされました。",
       "cancelFailedConfirm": "確認",
       "contactCs": "カスタマーサポートへ問い合わせ",
-      "bankTransferCancelGuide": "銀行振込注文のキャンセル・返金は、「返金申請」ボタンからお申し込みください。",
-      "bankTransferRefundNotice": "入金前の未入金注文は、入金期限（7日）を過ぎると自動的にキャンセルされます。入金後のキャンセル・返金は「返金申請」で返金口座（銀行・口座番号・口座名義）を入力してください。管理者確認後、その口座へ返金され（約2営業日）、口座名義が正確である必要があります。",
       "download": "ダウンロード",
       "cancelUnavailable": {
         "cancel_requested": "キャンセル処理中です。",
@@ -889,17 +887,21 @@
       "exerciseFailed": "使用処理に失敗しました"
     },
     "returnDetail": {
+      "paymentMethod": {
+        "TOSS": "カード・簡単決済",
+        "CARD": "カード決済",
+        "NICEPAY": "カード決済",
+        "TOSS_BILLING": "カード自動決済",
+        "NICEPAY_BILLING": "カード自動決済",
+        "POINTS": "ポイント",
+        "BANK_TRANSFER": "銀行振込",
+        "BNPL": "後払い",
+        "CMS_BATCH": "口座自動引き落とし",
+        "other": "その他の決済手段"
+      },
       "title": "キャンセル・返品・交換・返金の詳細",
       "orderedOn": "注文日 {date}",
       "orderNumber": "注文番号 {number}",
-      "stepsLabel": "進行状況",
-      "step": {
-        "requested": "受付",
-        "pickedUp": "回収",
-        "inspected": "検品",
-        "refunded": "返金完了",
-        "exchanged": "交換処理"
-      },
       "canceled": "キャンセルしました",
       "table": {
         "product": "商品",
@@ -931,16 +933,15 @@
         "waybill": "伝票番号",
         "name": "回収者",
         "phone": "連絡先",
-        "address": "回収先"
+        "address": "回収先",
+        "waybillTitle": "返送伝票情報",
+        "track": "回収状況を確認",
+        "comingSoon": "準備中です"
       },
       "reason": {
         "title": "返品理由",
         "reason": "理由",
-        "feeBearer": "送料負担",
-        "bearer": {
-          "customer": "お客様負担",
-          "seller": "販売者負担"
-        }
+        "exchangeTitle": "交換理由"
       },
       "refund": {
         "title": "返金案内",
@@ -950,14 +951,28 @@
         "done": "返金完了",
         "planned": "返金予定",
         "notYet": "商品が倉庫に届き検品が終わると返金額が決まります。",
-        "notice": "カード決済はカード会社への取消依頼後、平日3〜7日かかります。ポイントはすぐに戻ります。",
+        "notice": "カード決済はカード会社への取消依頼後、平日3〜7日かかります。",
         "prepaid": "先行返金額",
         "prepaidRest": "残りの返金額は商品が倉庫に届き検品が終わると決まります。",
-        "prepaidPending": "先行返金手続き中の金額"
+        "prepaidPending": "先行返金手続き中の金額",
+        "method": "返金方法",
+        "unsettled": "検品後に確定します",
+        "pointsNotice": "ポイントはすぐに戻ります。",
+        "processedOn": "返金処理日 {date}",
+        "prepaidProcessedOn": "先行返金処理日 {date}"
       },
-      "toOrder": "注文詳細",
       "toList": "注文一覧",
-      "notFound": "返品履歴が見つかりません。"
+      "notFound": "返品履歴が見つかりません。",
+      "amount": "₩{value}",
+      "receipt": {
+        "open": "取消明細を確認",
+        "title": "取消明細",
+        "close": "閉じる",
+        "itemTotal": "商品取消金額",
+        "discount": "割引額の差し引き",
+        "discountIncluded": "商品金額に反映されています",
+        "total": "返金合計額"
+      }
     }
   },
   "membership": {

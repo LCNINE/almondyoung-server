@@ -10,6 +10,8 @@ export type StoreReturnStage = 'requested' | 'processing' | 'refunded' | 'exchan
 
 export type StoreReturnSource = {
   id: string;
+  /** 고객에게 보이는 반품 접수번호 */
+  displayId?: number | null;
   status: string;
   requestedAt: string | null;
   createdAt: string;
@@ -34,6 +36,7 @@ export type StoreReturnRefund = {
 
 export type StoreReturnView = {
   returnId: string;
+  displayId: number | null;
   stage: StoreReturnStage;
   requestedAt: string;
   reason: string;
@@ -103,6 +106,7 @@ export function describeStoreReturns(returns: StoreReturnSource[]): StoreReturnV
     const stage = stageOf(r);
     const view: StoreReturnView = {
       returnId: r.id,
+      displayId: r.displayId ?? null,
       stage,
       requestedAt: r.requestedAt ?? r.createdAt,
       reason: record.reasonValue,

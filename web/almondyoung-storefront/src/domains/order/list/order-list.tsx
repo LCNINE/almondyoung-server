@@ -8,8 +8,10 @@ import OrderActions from "@components/orders/order-card/order-actions"
 import OrderSummaryCard, {
   type OrderSummaryItem,
 } from "@components/orders/order-card/order-summary-card"
-import { getCoreDisplayStatus } from "@components/orders/order-status-badges"
-import { isDigitalItem } from "@/lib/api/medusa/shipping-method-policy"
+import {
+  getCoreDisplayStatus,
+  getCompletedOrderReturnStatus,
+} from "@/components/orders/order-status-display"
 import type { HttpTypes } from "@medusajs/types"
 import {
   ChevronLeft,
@@ -21,9 +23,8 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { getOrderPointsUsed } from "@/lib/utils/price-utils"
-import { DATE_FORMATS, formatDate as formatDateText } from "@/lib/utils/format-date"
 import type { CustomerReturn } from "@/lib/types/ui/returns"
-import { itemReturnStatus, originalLineTotal, type ItemReturnStatus } from "./item-return-status"
+import { mapOrderSummaryItems } from "@/components/orders/order-card/order-summary-items"
 import { useTranslations } from "next-intl"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { useEffect, useMemo, useState, useTransition } from "react"
@@ -83,6 +84,7 @@ interface OrderItem {
   orderNumber: string
   orderDate: string
   status: string
+  returnStatusLabel: string | null
   paymentStatus: string
   deliveryInfo: string
   shippingNote: string
@@ -146,21 +148,6 @@ interface MapperContext {
   returnsMap: Record<string, CustomerReturn[]>
 }
 
-function returnStatusText(
-  status: ItemReturnStatus,
-  lineQuantity: number,
-  tList: MapperContext["tList"]
-): { label: string; hint?: string } {
-  const hints: string[] = []
-  if (status.quantity < lineQuantity) hints.push(tList("itemReturn.quantity", { count: status.quantity }))
-  if (status.key === "returning" || status.key === "exchanging") {
-    hints.push(tList(status.stage === "processing" ? "itemReturn.inspecting" : "itemReturn.waitingPickup"))
-  } else if (status.key === "returned" && status.refundedAt) {
-    hints.push(tList("itemReturn.refundedOn", { date: formatDateText(status.refundedAt, DATE_FORMATS.KO_DOT) }))
-  }
-  return { label: tList(`itemReturn.${status.key}`), hint: hints.length > 0 ? hints.join(" · ") : undefined }
-}
-
 const mapStoreOrderToOrderItem = (
   order: HttpTypes.StoreOrder,
   ctx: MapperContext
@@ -184,48 +171,17 @@ const mapStoreOrderToOrderItem = (
   const displayPrice = orderTotal - pointsUsed
 
   const orderReturns = ctx.returnsMap[order.id] ?? []
-  const items: OrderSummaryItem[] = (order.items ?? []).map((item) => {
-    const handle = item.product_handle || item.variant?.product?.handle
-    const returnStatus = itemReturnStatus(item.id, orderReturns)
-    const lineTotal = returnStatus
-      ? originalLineTotal(item)
-      : typeof item.total === "number"
-        ? item.total
-        : (item.unit_price ?? 0) * (item.quantity ?? 0)
-    const returnText = returnStatus ? returnStatusText(returnStatus, item.quantity ?? 0, ctx.tList) : null
-    return {
-      id: item.id,
-      title:
-        item.title ||
-        item.variant?.product?.title ||
-        ctx.tList("defaultProductName"),
-      thumbnail:
-        item.thumbnail ||
-        item.variant?.product?.thumbnail ||
-        "https://placehold.co/80x80",
-      href: handle ? `/products/${handle}` : undefined,
-      price: `${lineTotal.toLocaleString()}원 · ${ctx.tList("itemQuantity", { count: item.quantity ?? 0 })}`,
-      options:
-        item.variant?.title && item.variant.title !== "Default"
-          ? [item.variant.title]
-          : [],
-      variantId: item.variant_id ?? undefined,
-      isDigital: isDigitalItem(item),
-      reviewHref: ctx.reviewHrefs[item.id],
-      ...(returnStatus && returnText
-        ? {
-            statusLabel: returnText.label,
-            statusHint: returnText.hint,
-            returnHref: `/mypage/order/returns/${returnStatus.returnId}?orderId=${order.id}`,
-            returnLinkLabel: ctx.tList(
-              returnStatus.key === "exchanging" || returnStatus.key === "exchanged"
-                ? "itemReturn.viewExchangeDetail"
-                : "itemReturn.viewReturnDetail"
-            ),
-          }
-        : {}),
-    }
-  })
+  const items = mapOrderSummaryItems(
+    order,
+    orderReturns,
+    ctx.tList,
+    ctx.reviewHrefs
+  )
+
+  const completedReturnStatus = getCompletedOrderReturnStatus(
+    order.items,
+    orderReturns
+  )
 
   return {
     orderId: order.id,
@@ -234,6 +190,9 @@ const mapStoreOrderToOrderItem = (
       : `#${order.id.slice(0, 12)}`,
     orderDate: formatDate,
     status: ctx.tStatus(getOrderStatusKey(order)),
+    returnStatusLabel: completedReturnStatus
+      ? ctx.tList(`itemReturn.${completedReturnStatus}`)
+      : null,
     paymentStatus: order.payment_status ?? "",
     deliveryInfo: "",
     shippingNote: "",
@@ -479,34 +438,44 @@ export function OrderList({
               const actions = actionsMap[order.orderId]
               const refund = refundMap[order.orderId]
               const displayStatus =
-                refund === "REQUESTED"
+                order.returnStatusLabel ??
+                (refund === "REQUESTED"
                   ? "환불 신청됨 · 처리 대기중"
                   : actions
                     ? getCoreDisplayStatus(actions)
-                    : order.status
+                    : order.status)
+
               return (
-                <OrderSummaryCard
+                <OrderActions
                   key={order.orderId}
                   orderId={order.orderId}
-                  orderDate={order.orderDate}
+                  paymentStatus={order.paymentStatus}
+                  productName={order.productName}
                   orderNumber={order.orderNumber}
-                  status={displayStatus}
-                  deliveryInfo={order.deliveryInfo}
-                  items={order.items}
-                  totalPrice={order.price}
-                  originalPrice={order.originalPrice}
+                  itemCount={order.items.length}
+                  showInquiry={
+                    order.showInquiry || actions?.fulfillmentStatus === "delivered"
+                  }
+                  coreActions={actions}
+                  bankTransferStatus={order.bankTransferStatus}
+                  refundRequestStatus={refund}
+                  hasReturns={order.items.some((item) => item.statusLabel)}
                 >
-                  <OrderActions
-                    orderId={order.orderId}
-                    paymentStatus={order.paymentStatus}
-                    productName={order.productName}
-                    itemCount={order.items.length}
-                    showInquiry={order.showInquiry}
-                    coreActions={actions}
-                    bankTransferStatus={order.bankTransferStatus}
-                    refundRequestStatus={refund}
-                  />
-                </OrderSummaryCard>
+                  {(actions) => (
+                    <OrderSummaryCard
+                      orderId={order.orderId}
+                      orderDate={order.orderDate}
+                      orderNumber={order.orderNumber}
+                      status={displayStatus}
+                      deliveryInfo={order.deliveryInfo}
+                      items={order.items}
+                      totalPrice={order.price}
+                      originalPrice={order.originalPrice}
+                    >
+                      {actions}
+                    </OrderSummaryCard>
+                  )}
+                </OrderActions>
               )
             })}
           </section>

@@ -2,15 +2,17 @@ import { BadRequestException, Injectable, NotFoundException } from '@nestjs/comm
 import { InjectPublisher, PublisherFor } from '@app/events';
 import { PAYMENT_STREAM } from '@packages/event-contracts/streams';
 import { DbService } from '@app/db';
-import { and, desc, eq, isNull, sql } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { randomBytes } from 'node:crypto';
 import {
   WalletSchema,
   charges,
+  paymentMethods,
   paymentIntents,
   paymentIntentItems,
   paymentIntentItemDiscounts,
   paymentIntentOrderDiscounts,
+  type PaymentMethodType,
 } from '../schema';
 import { StateTransitionService } from '../domain/state-transition/state-transition.service';
 import { GatewayEventType, buildPaymentIntentEventPayload } from '../messaging/gateway-event.builder';
@@ -234,6 +236,34 @@ export class PaymentIntentsService {
       amount: typeof nextAction.amount === 'number' ? nextAction.amount : intent.payableAmount,
       currency: intent.currency,
     };
+  }
+
+  /**
+   * 고객: 이 결제에 쓰인 결제수단 종류(카드·포인트·무통장 등). 남의 결제나 없는 결제면 null.
+   * 환불도 결제한 수단으로 돌아가므로 반품 상세의 환불 수단이 이 값을 보인다.
+   */
+  async getPaymentMethodTypes(intentId: string, userId: string): Promise<PaymentMethodType[] | null> {
+    const intent = await this.dbService.db
+      .select({ userId: paymentIntents.userId })
+      .from(paymentIntents)
+      .where(eq(paymentIntents.id, intentId))
+      .limit(1)
+      .then((r) => r[0]);
+    if (!intent || intent.userId !== userId) return null;
+
+    const rows = await this.dbService.db
+      .selectDistinct({ type: paymentMethods.type })
+      .from(charges)
+      .innerJoin(paymentMethods, eq(paymentMethods.id, charges.paymentMethodId))
+      .where(
+        and(
+          eq(charges.intentId, intentId),
+          eq(charges.operation, 'AUTHORIZE'),
+          inArray(charges.status, ['SUCCEEDED', 'REFUNDED']),
+        ),
+      );
+
+    return rows.map((row) => row.type);
   }
 
   async findById(id: string) {

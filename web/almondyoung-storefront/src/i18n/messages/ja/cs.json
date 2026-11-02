@@ -90,28 +90,26 @@
     "form": {
       "productLabel": "お問い合わせ商品",
       "categoryLabel": "お問い合わせ種別",
-      "titleLabel": "件名",
-      "titlePlaceholder": "件名を入力してください",
       "contentLabel": "お問い合わせ内容",
-      "contentPlaceholder": "お問い合わせ内容を入力してください。(最低 {min} 文字)",
-      "imageSectionLabel": "画像添付",
-      "categoryPlaceholder": "お問い合わせ種別を選択",
-      "subCategoryPlaceholder": "詳細種別を選択",
-      "subCategorySelectFirst": "先にお問い合わせ種別を選択",
+      "contentPlaceholder": "どの商品でどのような問題があったかご記入ください。\n写真を添付いただくと、より早く確認できます。",
+      "imageSectionLabel": "写真",
+      "subCategoryPlaceholder": "詳細な種類を選択してください",
       "addPhoto": "写真を添付",
       "addPhotoHint": "最大 {max} 枚、各 {sizeMB}MB 以下",
-      "photoCount": "写真 {count}/{max}",
       "photoAlt": "添付画像",
       "processing": "処理中...",
       "submit": "問い合わせる",
       "validation": {
         "categoryRequired": "お問い合わせ種別を選択してください。",
         "subCategoryRequired": "詳細種別を選択してください。",
-        "titleRequired": "件名を入力してください。",
-        "titleMax": "件名は {max} 文字以下で入力してください。",
         "contentMin": "最低 {min} 文字以上入力してください。",
         "contentMax": "最大 {max} 文字まで入力できます。"
-      }
+      },
+      "orderLabel": "注文番号",
+      "autoTitleWithOrder": "注文番号 {orderNumber}",
+      "contentHelper": "{min}文字以上ご記入ください",
+      "optional": "任意",
+      "removePhoto": "写真を削除"
     },
     "categories": {
       "delivery": "配送",

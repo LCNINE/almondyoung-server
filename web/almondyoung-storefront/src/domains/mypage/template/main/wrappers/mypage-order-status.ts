@@ -1,5 +1,10 @@
 import type { HttpTypes } from "@medusajs/types"
-import { getCoreDisplayStatus } from "@/components/orders/order-status-display"
+import {
+  getCompletedOrderReturnStatus,
+  getCoreDisplayStatus,
+} from "@/components/orders/order-status-display"
+import { getOrderReturns } from "@/lib/api/medusa/returns"
+import { getTranslations } from "next-intl/server"
 import {
   getOrderActionsByMedusaId,
   type StoreOrderActionsResponse,
@@ -42,12 +47,26 @@ export async function resolveMypageCoreView(
   order: HttpTypes.StoreOrder,
   fallbackLabel: string
 ): Promise<{ statusLabel: string; cancelledByCore: boolean }> {
-  const actions = await withMypageTimeout<StoreOrderActionsResponse | null>(
-    getOrderActionsByMedusaId(order.id),
-    null,
-    3000
+  const [actions, returns] = await Promise.all([
+    withMypageTimeout<StoreOrderActionsResponse | null>(
+      getOrderActionsByMedusaId(order.id),
+      null,
+      3000
+    ),
+    withMypageTimeout(getOrderReturns(order.id), null, 3000),
+  ])
+  const completedReturnStatus = getCompletedOrderReturnStatus(
+    order.items,
+    returns
   )
-  return actions
-    ? { statusLabel: getCoreDisplayStatus(actions), cancelledByCore: isCancelledByCore(actions) }
-    : { statusLabel: fallbackLabel, cancelledByCore: false }
+  const tItemReturn = await getTranslations("mypage.order.list.itemReturn")
+
+  return {
+    statusLabel: completedReturnStatus
+      ? tItemReturn(completedReturnStatus)
+      : actions
+        ? getCoreDisplayStatus(actions)
+        : fallbackLabel,
+    cancelledByCore: actions ? isCancelledByCore(actions) : false,
+  }
 }

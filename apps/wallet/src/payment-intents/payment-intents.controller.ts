@@ -86,6 +86,18 @@ export class PaymentIntentsController {
   }
 
   @StoreRoute()
+  @Get(':id/payment-methods')
+  @WalletJwtAuth()
+  @ApiOperation({ summary: '결제에 쓰인 결제수단 종류 조회 (고객)' })
+  async paymentMethods(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
+    if (!req.jwtUserId) throw new ForbiddenException('JWT authentication required');
+    const types = await this.service.getPaymentMethodTypes(id, req.jwtUserId);
+    if (!types) throw new NotFoundException('결제를 찾을 수 없습니다.');
+
+    return { types };
+  }
+
+  @StoreRoute()
   @Post(':id/confirm')
   @HttpCode(200)
   @WalletJwtAuth()
