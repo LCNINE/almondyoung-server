@@ -74,6 +74,24 @@ describe('CmsAccountCheckService', () => {
     expect(cmsApi.inquirePayerName).not.toHaveBeenCalled();
   });
 
+  it('tells a business number mismatch to retry as personal with the owner birthdate', async () => {
+    const { dbService } = makeDb();
+    const cmsApi = {
+      verifyPayerNumber: jest
+        .fn()
+        .mockResolvedValue({ ok: true, data: { check: { result: { flag: 'N', code: '2001' } } } }),
+      inquirePayerName: jest.fn(),
+    };
+    const service = new CmsAccountCheckService(dbService as never, cmsApi as never);
+
+    const result = await service.check('user-1', { ...input, payerNumber: '1234567890' });
+
+    expect(result).toMatchObject({
+      reason: 'MISMATCH',
+      message: '은행에서 사업자등록번호로 확인되지 않았어요. 개인 명의를 누르고 대표자 생년월일로 다시 해주세요.',
+    });
+  });
+
   it.each([
     ['flag missing', {}],
     ['flag null', { flag: null }],

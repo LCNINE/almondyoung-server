@@ -49,7 +49,9 @@ const MISMATCH_MESSAGE_BY_CODE: Record<string, (payerNumber: string) => string> 
   '1001': () => '이 은행에 없는 계좌번호예요.',
   // 6자리면 생년월일, 10자리면 사업자등록번호다. 무엇이 틀렸는지 그 이름 그대로 말한다.
   '2001': (payerNumber) =>
-    payerNumber.length === 10 ? '계좌에 등록된 사업자등록번호와 달라요.' : '계좌에 등록된 생년월일과 달라요.',
+    payerNumber.length === 10
+      ? '은행에서 사업자등록번호로 확인되지 않았어요. 개인 명의를 누르고 대표자 생년월일로 다시 해주세요.'
+      : '계좌에 등록된 생년월일과 달라요.',
 };
 const UNAVAILABLE_MESSAGE = '지금은 은행에 확인할 수 없어요. 잠시 후 다시 시도해주세요.';
 

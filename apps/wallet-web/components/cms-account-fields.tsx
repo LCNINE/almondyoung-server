@@ -457,10 +457,10 @@ export function CmsAccountFields({ value, onChange, onComplete, verified, onVeri
                   invalid={Boolean(error)}
                 />
                 <FieldError message={error} id="payer-number-error" />
-                <p className="mt-3 text-[13px] leading-relaxed text-muted-foreground">
+                <p className="mt-3 text-[13px] leading-relaxed text-muted-foreground break-keep">
                   {isPersonal
                     ? '주민등록번호 앞 6자리예요. 계좌를 만들 때 등록한 번호와 같아야 합니다.'
-                    : '‘-’ 없이 10자리. 계좌가 사업자(상호) 명의일 때만 선택하세요.'}
+                    : '‘-’ 없이 10자리. 계좌가 사업자(상호) 명의일 때만 선택하세요. 대표자 개인 계좌라면 ‘개인 명의’를 고르세요.'}
                 </p>
               </div>
             )}
@@ -692,7 +692,7 @@ function FieldError({ message, id }: { message: string | null; id?: string }) {
   return (
     <p
       id={id}
-      className="mt-3.5 flex items-start gap-2 text-[13.5px] font-medium leading-[1.6] text-destructive animate-in fade-in slide-in-from-top-1 duration-200"
+      className="mt-3.5 flex items-start gap-2 text-[13.5px] font-medium leading-[1.6] text-destructive break-keep animate-in fade-in slide-in-from-top-1 duration-200"
     >
       <AlertCircle className="mt-[3px] size-4 shrink-0" />
       <span>{message}</span>
