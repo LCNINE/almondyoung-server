@@ -8,7 +8,7 @@ import {
 import type { Browser } from 'playwright-core';
 import { ChromeUnavailable, launchChrome, ScreenSession, type PageCapture } from './browser';
 import { expectOk } from './http';
-import { fail, pass, skip, type Skipped, type Verdict } from './judge';
+import { fail, pass, skip, skipNoRows, type Skipped, type Verdict } from './judge';
 import type { IsolationCheck } from './runner';
 import {
   concretePath,
@@ -184,7 +184,7 @@ export function buildScreenChecks(
         });
         if (problems.length > 0) return fail(problems.join(' · '));
         if (noRows.length > 0)
-          return skip(`${opened.length}개는 열렸다. 테넌트 2 에 행이 없어 못 연 화면: ${noRows.join(', ')}`);
+          return skipNoRows(`${opened.length}개는 열렸다. 테넌트 2 에 행이 없어 못 연 화면: ${noRows.join(', ')}`);
         return pass;
       }),
   });

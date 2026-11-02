@@ -143,7 +143,7 @@ export interface HumanStep {
   pause(): Promise<never>;
 }
 
-/** 격리 실측(읽기 전용). 실패하면 직원 계정을 만들지 않고 `suspendCommand` 를 안내한다 */
+/** 격리 실측(읽기 전용, «행이 없어 못 잼»만 남으면 쓰기 실측 — `live/isolation-gate.ts`). 실패하면 직원 계정을 만들지 않고 `suspendCommand` 를 안내한다 */
 export interface IsolationGate {
   passes(): Promise<boolean>;
   readonly suspendCommand: string;

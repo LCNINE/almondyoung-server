@@ -26,6 +26,7 @@ import { AcmCertificates } from './acm-certificates';
 import type { Aws } from './aws-cli';
 import { deployTodo, prepareSlotSecrets, prepareTenantListSecret, suspendTodo, type PreparedStop } from './human-stops';
 import { IamBucketGrant } from './iam-bucket-grant';
+import { isolationGatePasses } from './isolation-gate';
 import type { FilledLivePlan } from './live-plan';
 import { S3Buckets } from './s3-buckets';
 import { buildIdOf, certSanOf, slotInvalidations, slotMeasurementProblems } from './slot-measurements';
@@ -250,12 +251,11 @@ class LiveIsolationGate implements IsolationGate {
     // 실측은 자기 `sst shell` 을 따로 띄운다 — 이 셸의 리소스 env 를 넘기지 않는다.
     const env: NodeJS.ProcessEnv = {};
     for (const [k, v] of Object.entries(process.env)) if (!k.startsWith('SST_')) env[k] = v;
-    const r = spawnSync('npx', ['tsx', 'scripts/tenancy/isolation-check/live.ts', '--stage', this.ctx.stage], {
-      cwd: ROOT,
-      env,
-      stdio: 'inherit',
+    return isolationGatePasses((write) => {
+      const args = ['tsx', 'scripts/tenancy/isolation-check/live.ts', '--stage', this.ctx.stage];
+      const r = spawnSync('npx', write ? [...args, '--write'] : args, { cwd: ROOT, env, stdio: 'inherit' });
+      return r.status ?? 1;
     });
-    return r.status === 0;
   }
 }
 

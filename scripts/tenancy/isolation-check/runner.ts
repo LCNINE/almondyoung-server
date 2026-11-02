@@ -25,6 +25,19 @@ export interface RunResult {
   readonly passed: number;
   readonly failed: number;
   readonly skipped: number;
+  /** `failed` 중 «테넌트 2 에 잴 행이 없어 못 쟀다»(strict 건너뜀)인 것 */
+  readonly failedForNoRows: number;
+}
+
+/**
+ * 읽기 전용 실행이 «행이 없어 못 잼»만으로 빨갰다 — 쓰기 실측(--write)이 행을 만들어 재면 된다.
+ * 새 테넌트는 상품이 0 이라 상세 화면을 읽기 전용으로는 영영 못 연다(테넌트 만들기의 직원 단계가 이 코드를 받는다).
+ */
+export const NO_ROWS_ONLY_EXIT = 3;
+
+export function exitCodeOf(result: RunResult, opts: { readonly write: boolean }): number {
+  if (result.failed === 0) return 0;
+  return !opts.write && result.failed === result.failedForNoRows ? NO_ROWS_ONLY_EXIT : 1;
 }
 
 const GREEN = '\x1b[32m✓\x1b[0m';
@@ -40,6 +53,7 @@ export async function runChecks<Ctx>(
   let passed = 0;
   let failed = 0;
   let skipped = 0;
+  let failedForNoRows = 0;
   let section = '';
   for (const c of checks) {
     if (c.part === 'write' && !opts.write) continue;
@@ -61,12 +75,13 @@ export async function runChecks<Ctx>(
       print(`  ${YELLOW} ${c.title} — 못 쟀다: ${verdict.reason}`);
     } else {
       failed++;
+      if (verdict.ok === 'skipped' && verdict.noRows) failedForNoRows++;
       const detail = verdict.ok === 'skipped' ? `못 쟀다: ${verdict.reason}` : verdict.detail;
       print(`  ${RED} ${c.title} — ${detail}`);
       print(`      → ${c.fixedBy}`);
     }
   }
-  return { passed, failed, skipped };
+  return { passed, failed, skipped, failedForNoRows };
 }
 
 /** 쓰기 부분이 못 지운 것 — 실행 맨 끝에, 지울 id 와 함께. */

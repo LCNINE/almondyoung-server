@@ -36,7 +36,7 @@ import { probe } from './http';
 import { infraSecretDefault, ISOLATION_CHECK_SECRET, parseIsolationCheckSecret, stageServiceUrl } from './live-config';
 import { metricJobs } from './metric-jobs';
 import { consumerMetricsFromVectors, prometheusQueryUrl } from './prometheus';
-import { printLeftovers, runChecks } from './runner';
+import { exitCodeOf, NO_ROWS_ONLY_EXIT, printLeftovers, runChecks } from './runner';
 import { tenantDomainsOf } from './tenant-domains';
 import {
   SHARED_SERVICE_PROBES,
@@ -328,7 +328,10 @@ async function main(): Promise<void> {
     console.log(
       `❌ ${result.failed}개 실패 (통과 ${result.passed}) — 각 ✗ 의 → 가 고칠 곳이다. 개통 중이면 테넌트를 «정지»로 돌린다`,
     );
-  process.exitCode = result.failed === 0 ? 0 : 1;
+  const code = exitCodeOf(result, { write });
+  if (code === NO_ROWS_ONLY_EXIT)
+    console.log('  남은 실패는 «테넌트 2 에 잴 행이 없다»뿐이다 — --write 가 행을 만들어 잰다(만들고 지운다).');
+  process.exitCode = code;
 }
 
 main().catch((e: unknown) => {

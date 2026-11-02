@@ -8,11 +8,17 @@ export interface Probe {
 
 export type Verdict = { readonly ok: true } | { readonly ok: false; readonly detail: string };
 /** 잴 수 없었다(로컬에 그 앱이 없다 등). 로컬은 경고, 라이브(strict)는 실패다. */
-export type Skipped = { readonly ok: 'skipped'; readonly reason: string };
+export type Skipped = {
+  readonly ok: 'skipped';
+  readonly reason: string;
+  /** 테넌트 2 에 잴 행이 없어서 못 쟀다 — 쓰기 실측(--write)이 행을 만들면 잴 수 있다(`runner.exitCodeOf`). */
+  readonly noRows?: true;
+};
 
 export const pass: Verdict = { ok: true };
 export const fail = (detail: string): Verdict => ({ ok: false, detail });
 export const skip = (reason: string): Skipped => ({ ok: 'skipped', reason });
+export const skipNoRows = (reason: string): Skipped => ({ ok: 'skipped', reason, noRows: true });
 
 /** Nest(`message`)·Next 라우트(`error`) 오류 봉투의 문구. */
 export function messageOf(body: unknown): string {
