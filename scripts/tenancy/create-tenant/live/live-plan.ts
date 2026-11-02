@@ -21,6 +21,9 @@ export function forbiddenWordsIn(value: string): string[] {
 const HOST = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/;
 const S3_BUCKET = /^[a-z0-9][a-z0-9-]{1,61}[a-z0-9]$/;
 const host = z.string().regex(HOST, '소문자 호스트 이름(스킴·포트·경로 없이)');
+// user-service 계정 만들기(`create-account-dto.ts`)와 같은 규칙 — 어기면 배포·실측을 다 돈 끝 단계에서야 400 이 난다.
+const loginId = z.string().regex(/^[a-z0-9]{4,20}$/, '아이디는 소문자·숫자 4~20자(하이픈 없이)');
+const username = z.string().min(2, '이름은 2~8자').max(8, '이름은 2~8자');
 
 const livePlanSchema = z.object({
   id: z.string().regex(TENANT_ID_PATTERN),
@@ -28,10 +31,8 @@ const livePlanSchema = z.object({
   displayName: z.string().min(1),
   adminDomain: host,
   authDomain: host,
-  checkAccount: z.object({ loginId: z.string().min(1), email: z.string().email() }),
-  staff: z
-    .array(z.object({ loginId: z.string().min(1), username: z.string().min(1), email: z.string().email() }))
-    .default([]),
+  checkAccount: z.object({ loginId, email: z.string().email() }),
+  staff: z.array(z.object({ loginId, username, email: z.string().email() })).default([]),
   publicBucket: z.string().regex(S3_BUCKET).optional(),
   privateBucket: z.string().regex(S3_BUCKET).optional(),
   slot: z.number().int().positive().optional(),

@@ -13,7 +13,7 @@ const raw = {
   adminDomain: 'admin.acme.test',
   authDomain: 'login.acme.test',
   checkAccount: { loginId: 'acmecheck', email: 'check@acme.test' },
-  staff: [{ loginId: 'kim', username: '김직원', email: 'kim@acme.test' }],
+  staff: [{ loginId: 'kimstaff', username: '김직원', email: 'kim@acme.test' }],
 };
 
 describe('라이브 계획', () => {
@@ -106,5 +106,20 @@ describe('칸 번호', () => {
       }),
     ).toBe(3);
     expect(pickSlot({ table: [], slotDomains: new Map(), host: 'admin.acme.test' })).toBe(1);
+  });
+
+  it('직원·점검 계정 아이디·이름은 user-service 계정 만들기 규칙으로 먼저 거절한다 — 끝 단계 400 이 아니라 시작 전에', () => {
+    // 2026-11-03 테넌트 2 첫 직원: 배포·실측을 다 돈 뒤 POST /admin/auth 400 «이름은 최대 8자».
+    const withStaff = (staff: unknown) => () => parseLivePlan({ ...raw, staff });
+    expect(withStaff([{ loginId: 'demo-staff', username: '데모', email: 'd@acme.test' }])).toThrow(/staff\.0\.loginId/);
+    expect(withStaff([{ loginId: 'abc', username: '데모', email: 'd@acme.test' }])).toThrow(/staff\.0\.loginId/);
+    expect(withStaff([{ loginId: 'demostaff', username: '데모 창고·상품 담당', email: 'd@acme.test' }])).toThrow(
+      /staff\.0\.username/,
+    );
+    expect(withStaff([{ loginId: 'demostaff', username: '데', email: 'd@acme.test' }])).toThrow(/staff\.0\.username/);
+    expect(() => parseLivePlan({ ...raw, checkAccount: { loginId: 'Check', email: 'c@acme.test' } })).toThrow(
+      /checkAccount\.loginId/,
+    );
+    expect(withStaff([{ loginId: 'demostaff', username: '데모 상품담당', email: 'd@acme.test' }])).not.toThrow();
   });
 });
