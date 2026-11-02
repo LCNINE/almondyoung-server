@@ -35,6 +35,8 @@ const livePlanSchema = z.object({
   publicBucket: z.string().regex(S3_BUCKET).optional(),
   privateBucket: z.string().regex(S3_BUCKET).optional(),
   slot: z.number().int().positive().optional(),
+  /** 우리가 쓰는 테넌트(데모 등) — 우리 이름이 slug·도메인·버킷에 들어가도 된다. 남의 회사 테넌트엔 쓰지 않는다 */
+  ownBrand: z.boolean().default(false),
 });
 export type LivePlan = z.infer<typeof livePlanSchema>;
 
@@ -53,7 +55,7 @@ export function parseLivePlan(json: unknown): LivePlan {
     ['publicBucket', plan.publicBucket],
     ['privateBucket', plan.privateBucket],
   ] as const) {
-    if (value === undefined) continue;
+    if (value === undefined || plan.ownBrand) continue;
     const words = forbiddenWordsIn(value);
     if (words.length > 0) problems.push(`${field} 에 금지어 ${words.join('·')}`);
   }

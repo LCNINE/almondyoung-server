@@ -73,6 +73,12 @@ describe('라이브 계획', () => {
     expect(() => parseLivePlan({ ...raw, publicBucket: 'acme-lcnine-1', privateBucket: 'acme-p-1' })).toThrow(/lcnine/);
   });
 
+  it('우리 테넌트(ownBrand)는 금지어를 보지 않는다 — 기본은 본다', () => {
+    const ours = { ...raw, slug: 'almonddemo', adminDomain: 'admin.almondyoung-next.com' };
+    expect(parseLivePlan({ ...ours, ownBrand: true }).adminDomain).toBe('admin.almondyoung-next.com');
+    expect(() => parseLivePlan(ours)).toThrow(/almond/);
+  });
+
   it('공개·비공개 버킷이 같으면 거절한다', () => {
     expect(() => parseLivePlan({ ...raw, publicBucket: 'acme-x1', privateBucket: 'acme-x1' })).toThrow(/달라야/);
   });

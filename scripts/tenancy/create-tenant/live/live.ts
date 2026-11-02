@@ -184,6 +184,8 @@ async function main(): Promise<number> {
   if (!existsSync(planPath)) throw new Error(`계획 파일이 없다: ${planPath}`);
   assertPrivatePlanPath(planPath);
 
+  // sst shell 은 deployments/lcnine/services 에서 이 스크립트를 다시 띄운다 — 상대 경로를 그대로 넘기면 거기서 못 찾는다.
+  process.argv[process.argv.indexOf('--plan') + 1] = planPath;
   await ensureInsideSstShell({ stage, deployment: 'lcnine-services' });
 
   const aws = awsCli(REGION);
