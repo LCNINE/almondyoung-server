@@ -1,3 +1,5 @@
+import { REQUIRED_RECIPIENT_FIELDS } from '../waybill/waybill-request.assembler';
+
 function normalizedText(value: unknown): string {
   return typeof value === 'string' ? value.trim().replace(/\s+/g, ' ').toLocaleLowerCase('ko-KR') : '';
 }
@@ -22,7 +24,7 @@ export function canonicalConsolidationRecipient(value: unknown): Record<string, 
     result.deliveryNote = input.deliveryNote.trim().replace(/\s+/g, ' ');
   }
 
-  if (Object.entries(result).some(([key, entry]) => key !== 'deliveryNote' && !entry)) return null;
+  if (REQUIRED_RECIPIENT_FIELDS.some((field) => !result[field])) return null;
 
   return result;
 }

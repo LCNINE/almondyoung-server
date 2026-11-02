@@ -31,7 +31,18 @@ describe('classifyConsolidationOption', () => {
   it('이름이 다르면 address_differs', () =>
     expect(classify({ ...base, recipientName: '박알몬' }).reason).toBe('address_differs'));
   it('수령인이 불완전하면 incomplete_recipient', () =>
-    expect(classify({ ...base, detailAddress: '' }).reason).toBe('incomplete_recipient'));
+    expect(classify({ ...base, roadAddress: '' }).reason).toBe('incomplete_recipient'));
+  it('양쪽 다 상세주소가 없으면 같은 주소다', () =>
+    expect(
+      classifyConsolidationOption({
+        sourceRecipient: { ...base, detailAddress: '' },
+        sourceCustomerKey: 'id:c1',
+        optionRecipient: { ...base, detailAddress: '' },
+        optionCustomerKey: 'id:c1',
+      }),
+    ).toEqual({ reason: 'ok', selectable: true }));
+  it('한쪽만 상세주소가 있으면 address_differs', () =>
+    expect(classify({ ...base, detailAddress: '' }).reason).toBe('address_differs'));
   it('고객을 모르면 unknown_customer', () => expect(classify(base, null).reason).toBe('unknown_customer'));
 });
 
