@@ -21,7 +21,7 @@ import type {
 } from "@/lib/types/ui/almond-template"
 import { uploadFile } from "@/lib/api/file/upload"
 import { rasterThumbnail, uploadDesignImages } from "../lib/design-images"
-import { parseDesign, type Design } from "../lib/document"
+import { hasProduct, parseDesign, type Design } from "../lib/document"
 import type { PublishedTemplate } from "../lib/gallery-filter"
 import { printSvg } from "../components/print-svg"
 import { PRINT_PRODUCTS } from "../lib/catalog"
@@ -254,6 +254,11 @@ export function useTemplateStorage({
     return true
   }
   const openSaveDialog = (name: string) => {
+    if (!hasProduct(design)) {
+      setMessage("왼쪽 규격 메뉴에서 작업 상품을 먼저 선택해 주세요.")
+      return
+    }
+
     setSaveName(name)
     setSaveDialog(true)
   }

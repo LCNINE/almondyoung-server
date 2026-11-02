@@ -3,6 +3,7 @@ import { PRINT_PRODUCTS, PRINT_SPECS, sizeFromOption } from "./catalog"
 import { makeLayer } from "./layer"
 import { CLIPART_IDS } from "./art-library"
 import {
+  hasProduct,
   imageDpi,
   newDesign,
   parseDesign,
@@ -14,8 +15,46 @@ import {
   resizeLayerFromHandle,
   sideBackground,
   updateLayer,
+  withProduct,
   withSideBackground,
 } from "./document"
+
+const CARD_PRODUCT = "6c2b7437-7c72-4685-a72c-0cd18f9d7bfb"
+
+describe("작업 상품 지정", () => {
+  it("상품을 고르지 않은 새 시안은 저장 대상 상품이 없다", () => {
+    expect(hasProduct(newDesign("pet"))).toBe(false)
+    expect(hasProduct(newDesign("card", "not-a-uuid"))).toBe(false)
+    expect(hasProduct(newDesign("card", CARD_PRODUCT))).toBe(true)
+  })
+
+  it("같은 유형의 상품을 고르면 레이어와 크기를 그대로 둔다", () => {
+    const design = newDesign("card")
+    design.title = "내 시안"
+    design.front = [makeLayer("text", design)]
+
+    const next = withProduct(design, CARD_PRODUCT)
+
+    expect(next.productId).toBe(CARD_PRODUCT)
+    expect(next.title).toBe("내 시안")
+    expect(next.front).toEqual(design.front)
+    expect(next.widthMm).toBe(design.widthMm)
+  })
+
+  it("유형이 다른 상품을 고르면 레이어를 지우지 않고 그 유형의 규격에 맞춘다", () => {
+    const design = newDesign("pet")
+    design.front = [makeLayer("text", design)]
+
+    const next = withProduct(design, CARD_PRODUCT, "card")
+    const [widthMm, heightMm] = PRINT_SPECS.card.sizes[0]
+
+    expect(next.kind).toBe("card")
+    expect([next.widthMm, next.heightMm]).toEqual([widthMm, heightMm])
+    expect(next.front).toHaveLength(1)
+    expect(next.front[0].id).toBe(design.front[0].id)
+    expect(next.front[0].width).toBeLessThan(design.front[0].width)
+  })
+})
 
 describe("아몬드템플릿", () => {
   it("50개 전환 상품을 모두 유형과 규격에 연결한다", () => {
