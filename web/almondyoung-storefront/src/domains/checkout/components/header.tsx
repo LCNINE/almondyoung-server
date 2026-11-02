@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import Image from "next/image"
+import { BrandLogo } from "@/components/shared/brand-logo"
 import { useTranslations } from "next-intl"
 
 export const PCHeader = () => {
@@ -13,12 +13,9 @@ export const PCHeader = () => {
       <div className="hidden w-full border-b border-gray-200 bg-white lg:block">
         <div className="relative container mx-auto flex max-w-[1080px] items-center justify-between px-0 py-5">
           <Link href={storefrontOrigin} className="shrink-0">
-            <Image
-              src="/images/almondyoung-logo.png"
+            <BrandLogo
               alt={tCheckout("logoAltAlmondyoung")}
               className="h-9 w-auto"
-              width={512}
-              height={107}
             />
           </Link>
           <h1 className="absolute left-1/2 -translate-x-1/2 transform text-2xl font-bold">

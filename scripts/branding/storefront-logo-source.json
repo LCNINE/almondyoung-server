@@ -4,5 +4,10 @@
   "wordmarkFileId": "01a0e6c2-f8da-75ac-8ac4-1360f0c5bb44",
   "symbolFileId": "01a0e6c2-f98a-7279-bbad-505ccd27762a",
   "wordmarkAsset": "web/almondyoung-storefront/public/images/almondyoung-logo.png",
-  "symbolAsset": "web/almondyoung-storefront/public/images/almondyoung-symbol.png"
+  "symbolAsset": "web/almondyoung-storefront/public/images/almondyoung-symbol.png",
+  "variants": {
+    "light": "web/almondyoung-storefront/public/images/almondyoung-logo-on-light.png",
+    "dark": "web/almondyoung-storefront/public/images/almondyoung-logo-on-dark.png",
+    "white": "web/almondyoung-storefront/public/images/almondyoung-logo-white.png"
+  }
 }

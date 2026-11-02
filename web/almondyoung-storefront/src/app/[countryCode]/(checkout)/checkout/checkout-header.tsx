@@ -1,7 +1,7 @@
 "use client"
 
 import LocalizedClientLink from "@/components/shared/localized-client-link"
-import Image from "next/image"
+import { BrandLogo } from "@/components/shared/brand-logo"
 import { useTranslations } from "next-intl"
 
 export default function CheckoutHeader({ title }: { title: string }) {
@@ -10,10 +10,7 @@ export default function CheckoutHeader({ title }: { title: string }) {
     <header className="flex w-full items-center justify-center self-stretch bg-white px-4 py-3 shadow-sm sm:px-10 sm:py-5">
       <div className="flex w-full max-w-6xl items-center justify-between">
         <LocalizedClientLink href="/" className="shrink-0">
-          <Image
-            src="/images/almondyoung-logo.png"
-            width={512}
-            height={107}
+          <BrandLogo
             className="h-8 w-auto object-contain sm:h-10"
             alt={t("logoAlt")}
           />

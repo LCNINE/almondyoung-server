@@ -1,7 +1,7 @@
 "use client"
 
 import LocalizedClientLink from "@/components/shared/localized-client-link"
-import Image from "next/image"
+import { BrandLogo } from "@/components/shared/brand-logo"
 import { useEffect, useState } from "react"
 import ErrorCard from "./error-card"
 import PanoramaScene from "./panorama-scene"
@@ -34,13 +34,10 @@ export default function ErrorPageContent({
     <div className="flex min-h-screen flex-col">
       <header className="bg-header-background border-b">
         <div className="container mx-auto flex h-16 items-center px-4">
-          <LocalizedClientLink href="/" className="rounded bg-white px-2 py-1">
-            <Image
-              src="/images/almondyoung-logo.png"
-              alt="아몬드영"
-              width={512}
-              height={107}
-              className="h-auto w-[160px] object-contain"
+          <LocalizedClientLink href="/">
+            <BrandLogo
+              appearance="header"
+              className="block w-[160px]"
               priority
             />
           </LocalizedClientLink>

@@ -386,6 +386,27 @@ input[type="search"]::-webkit-search-results-decoration {
   --button-accent: var(--christmas-gold);
 }
 
+/* Header backgrounds are dark except for the pale Valentine theme. */
+.brand-logo-header-light {
+  display: none;
+}
+
+.brand-logo-header-dark {
+  display: block;
+}
+
+.valentine .brand-logo-header-light {
+  display: block;
+}
+
+.valentine .brand-logo-header-dark {
+  display: none;
+}
+
+.christmas .brand-logo-header-dark {
+  filter: brightness(0) invert(1);
+}
+
 @layer components {
   .animate-fade-in {
     animation: fade-in 0.3s ease-out;
