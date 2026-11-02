@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import type { IamActor } from '../iam-actor';
 import type {
   AddRoleMembersDto,
+  RemoveRoleMemberQueryDto,
   ReplaceStaffRolesDto,
   ReplaceUserRolesDto,
   RoleMemberDto,
@@ -37,7 +38,7 @@ export class RoleAssignmentService {
     return this.manager.addMembers(actor, roleId, dto.userIds, dto.expiresAt, dto.tenantId);
   }
 
-  removeMember(actor: IamActor, roleId: string, userId: string): Promise<void> {
-    return this.manager.removeMember(actor, roleId, userId);
+  removeMember(actor: IamActor, roleId: string, userId: string, query: RemoveRoleMemberQueryDto): Promise<void> {
+    return this.manager.removeMember(actor, roleId, userId, query.tenantId);
   }
 }

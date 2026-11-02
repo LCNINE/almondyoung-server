@@ -81,7 +81,7 @@ export class HttpOperatorApi implements OperatorApi {
     name: string;
     displayName: string;
     description: string;
-    landingPath: string;
+    landingPath?: string;
     permissions: string[];
     tenantId: string;
   }) {
@@ -129,6 +129,16 @@ export class HttpOperatorApi implements OperatorApi {
 
   async addRoleMembers(roleId: string, tenantId: string, userIds: string[]) {
     await this.call('POST', `/admin/roles/${roleId}/members`, { userIds, expiresAt: null, tenantId });
+  }
+
+  /** 그날(`YYYY-MM-DD`) 자정 KST 까지의 부여 — 격리 실측 정리 역할(`isolation-check/cleanup-grant.ts`). 이미 있으면 종료일만 바뀐다. */
+  async grantRoleUntil(roleId: string, tenantId: string, userId: string, untilDate: string) {
+    await this.call('POST', `/admin/roles/${roleId}/members`, { userIds: [userId], expiresAt: untilDate, tenantId });
+  }
+
+  /** 그 테넌트의 부여에서 회수한다(운영자만). 테넌트를 안 주면 운영자 토큰의 테넌트(1)에서 찾는다 — 테넌트 2 부여가 남는다. */
+  async removeRoleMember(roleId: string, tenantId: string, userId: string) {
+    await this.call('DELETE', `/admin/roles/${roleId}/members/${userId}?tenantId=${encodeURIComponent(tenantId)}`);
   }
 
   async reissuePassword(tenantId: string, userId: string, forcePasswordChange: boolean) {

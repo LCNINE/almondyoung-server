@@ -1,9 +1,10 @@
 import { RequirePermission, PiiResponse } from '@app/authorization';
-import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Post, Put } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Post, Put, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentIamActor, type IamActor } from '../iam-actor';
 import {
   AddRoleMembersDto,
+  RemoveRoleMemberQueryDto,
   ReplaceStaffRolesDto,
   ReplaceUserRolesDto,
   RoleMemberDto,
@@ -65,14 +66,15 @@ export class RoleAssignmentController {
     return this.service.addMembers(actor, roleId, dto);
   }
 
-  @ApiOperation({ summary: '한 사람에게서 역할 회수' })
+  @ApiOperation({ summary: '한 사람에게서 역할 회수(tenantId 를 주면 그 테넌트의 부여에서 — 운영자만)' })
   @RequirePermission('iam.role.assign')
   @Delete('admin/roles/:roleId/members/:userId')
   removeMember(
     @CurrentIamActor() actor: IamActor,
     @Param('roleId', ParseUUIDPipe) roleId: string,
     @Param('userId', ParseUUIDPipe) userId: string,
+    @Query() query: RemoveRoleMemberQueryDto,
   ): Promise<void> {
-    return this.service.removeMember(actor, roleId, userId);
+    return this.service.removeMember(actor, roleId, userId, query);
   }
 }

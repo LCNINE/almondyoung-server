@@ -1,3 +1,5 @@
+import type { ConsumerMetrics } from './target';
+
 /** 실측 한 번의 HTTP 응답. 본문은 JSON 이면 파싱한 값, 아니면 글자 그대로. */
 export interface Probe {
   readonly status: number;
@@ -51,15 +53,48 @@ export function onlyOwnRows(ids: { tenantOne: readonly string[]; tenantTwo: read
   return pass;
 }
 
-/** 액세스 토큰의 `tenant` 클레임. 서명은 보지 않는다 — 판정은 서버들의 몫이고, 여기선 «어느 테넌트로 받았나»만 본다. */
-export function tokenTenantOf(token: string): string | undefined {
+/** 액세스 토큰의 클레임. 서명은 보지 않는다 — 판정은 서버들의 몫이고, 여기선 «무엇을 받았나»만 본다. 못 읽으면 빈 객체. */
+export function tokenClaimsOf(token: string): Record<string, unknown> {
   const payload = token.split('.')[1];
-  if (!payload) return undefined;
+  if (!payload) return {};
   try {
     const claims: unknown = JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
-    if (typeof claims !== 'object' || claims === null || !('tenant' in claims)) return undefined;
-    return typeof claims.tenant === 'string' && claims.tenant !== '' ? claims.tenant : undefined;
+    return typeof claims === 'object' && claims !== null ? { ...claims } : {};
   } catch {
-    return undefined;
+    return {};
   }
+}
+
+/** 액세스 토큰의 `tenant` 클레임. */
+export function tokenTenantOf(token: string): string | undefined {
+  const tenant = tokenClaimsOf(token).tenant;
+  return typeof tenant === 'string' && tenant !== '' ? tenant : undefined;
+}
+
+/** 두 번 다 읽힌 앱 중 값이 오른 앱. 한 번만 읽힌 앱은 비교하지 않는다(합으로 비교하면 거짓 증감이 난다). */
+export function risen(before: Readonly<Record<string, number>>, after: Readonly<Record<string, number>>): string[] {
+  return Object.keys(after).filter((app) => app in before && after[app] > before[app]);
+}
+
+const clock = (ms: number) => new Date(ms).toISOString().slice(11, 19);
+
+/**
+ * 쓰기 뒤 DLQ 로 간 메시지가 없는가. «0» 은 `since`(이벤트가 처리됐어야 할 시각) 뒤의 수집에서 나온 값일 때만 믿는다 —
+ * 라이브 메트릭은 원격 저장소를 거쳐 늦게 들어와, 옛 수집을 읽으면 아무 일이 없었던 것처럼 보인다.
+ * 오른 앱이 하나라도 있으면 다른 앱이 덜 들어왔어도 실패다(이미 증거가 있다).
+ */
+export function noNewDeadLetters(before: ConsumerMetrics, after: ConsumerMetrics, since: number): Verdict | Skipped {
+  const rose = risen(before.deadLettered, after.deadLettered);
+  if (rose.length > 0) return fail(`DLQ 가 오른 앱: ${rose.join(', ')}`);
+  const noBaseline = before.unreachable;
+  const judged = new Set([...Object.keys(before.deadLettered), ...after.unreachable]);
+  const late = [...judged]
+    .filter((app) => !noBaseline.includes(app))
+    .filter((app) => (after.scrapedAt[app] ?? 0) < since)
+    .map((app) => (app in after.scrapedAt ? `${app}(마지막 수집 ${clock(after.scrapedAt[app])})` : `${app}(못 읽음)`));
+  const reasons = [
+    ...(late.length > 0 ? [`쓰기 뒤(${clock(since)} UTC) 메트릭이 아직 안 들어왔다: ${late.join(', ')}`] : []),
+    ...(noBaseline.length > 0 ? [`기준값을 못 읽은 앱: ${noBaseline.join(', ')}`] : []),
+  ];
+  return reasons.length > 0 ? skip(reasons.join(' · ')) : pass;
 }

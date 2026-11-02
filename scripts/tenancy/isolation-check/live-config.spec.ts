@@ -1,4 +1,6 @@
-import { parseIsolationCheckSecret, parseSecretList, stageServiceUrl } from './live-config';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { infraSecretDefault, parseIsolationCheckSecret, parseSecretList, stageServiceUrl } from './live-config';
 
 describe('parseSecretList — `sst secret list` 출력', () => {
   it('Name=value 줄을 읽고 머리글·빈 줄은 무시한다', () => {
@@ -49,5 +51,19 @@ describe('stageServiceUrl — 인프라의 domain() 규칙과 같다', () => {
 
   it('그 밖의 stage 는 <slug>.dev.lcnine-dev.com', () => {
     expect(stageServiceUrl('dev', 'wallet')).toBe('https://wallet.dev.lcnine-dev.com');
+  });
+});
+
+describe('infraSecretDefault — 인프라 코드의 Secret 기본값', () => {
+  it('여러 줄에 걸친 선언에서도 기본값을 읽는다', () => {
+    const src = `const a = new sst.Secret(\n    'GrafanaUrl',\n    'https://x/api/prom/push',\n  );\nconst b = new sst.Secret('Token');`;
+    expect(infraSecretDefault(src, 'GrafanaUrl')).toBe('https://x/api/prom/push');
+    expect(infraSecretDefault(src, 'Token')).toBeUndefined();
+  });
+
+  it('라이브 쓰기 부분이 기대는 두 기본값이 서비스 인프라에 있다(이름이 바뀌면 여기서 빨갛다)', () => {
+    const src = readFileSync(join(__dirname, '../../../deployments/lcnine/services/infra/services.ts'), 'utf8');
+    expect(infraSecretDefault(src, 'GrafanaCloudPrometheusRemoteWriteUrl')).toMatch(/\/api\/prom\/push$/);
+    expect(infraSecretDefault(src, 'GrafanaCloudPrometheusUsername')).toMatch(/^\d+$/);
   });
 });

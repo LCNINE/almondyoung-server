@@ -435,6 +435,23 @@ describe('RoleAssignmentManager', () => {
       );
     });
 
+    it('takes a role away in the named tenant, not the one the operator works in', async () => {
+      // 테넌트 1 에도 같은 역할이 있다 — 그쪽은 건드리지 않는다
+      held({ role: 'intern', tenantId: 't2' }, { role: 'intern', tenantId: '1' });
+      await manager.removeMember(master, 'r-intern', 'u-target', 't2');
+      expect(roles.deleteAssignments).toHaveBeenCalledWith('u-target', 't2', ['r-intern'], tx);
+      expect(roles.deleteAssignments).not.toHaveBeenCalledWith('u-target', '1', expect.anything(), tx);
+      expect(audit.record).toHaveBeenCalledWith(tx, master, expect.objectContaining({ tenantId: 't2' }));
+    });
+
+    it('refuses to take a role away in a named tenant for someone who is not a platform operator', async () => {
+      held({ role: 'intern' });
+      await expect(manager.removeMember(adminActor, 'r-intern', 'u-target', 't2')).rejects.toBeInstanceOf(
+        IamOperatorOnlyError,
+      );
+      expect(roles.deleteAssignments).not.toHaveBeenCalled();
+    });
+
     it('creates an account as a member of the named tenant', async () => {
       tenancy.addMembership.mockImplementation(async () => tenancy.isMember.mockResolvedValue(true));
       await manager.assignOnCreate(tx as never, master, 'u-target', 'r-intern', 't2');

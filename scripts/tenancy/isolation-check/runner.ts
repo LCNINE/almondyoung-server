@@ -68,3 +68,11 @@ export async function runChecks<Ctx>(
   }
   return { passed, failed, skipped };
 }
+
+/** 쓰기 부분이 못 지운 것 — 실행 맨 끝에, 지울 id 와 함께. */
+export function printLeftovers(left: readonly string[], print: (line: string) => void = (l) => console.log(l)): void {
+  if (left.length === 0) return;
+  print('');
+  print(`\x1b[33m남은 것 ${left.length}건 — 실측이 만든 것, 아래 id 로 지운다:\x1b[0m`);
+  for (const line of left) print(`  · ${line}`);
+}

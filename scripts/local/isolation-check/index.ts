@@ -17,7 +17,7 @@ import {
 } from '../../tenancy/isolation-check/db-observation';
 import { expectOk } from '../../tenancy/isolation-check/http';
 import { sumSamples } from '../../tenancy/isolation-check/prometheus';
-import { runChecks } from '../../tenancy/isolation-check/runner';
+import { printLeftovers, runChecks } from '../../tenancy/isolation-check/runner';
 import { tenantDomainsOf } from '../../tenancy/isolation-check/tenant-domains';
 import {
   SHARED_SERVICE_PROBES,
@@ -119,6 +119,7 @@ async function main(): Promise<void> {
   const consumerMetrics = async (): Promise<ConsumerMetrics> => {
     const skippedOtherTenant: Record<string, number> = {};
     const deadLettered: Record<string, number> = {};
+    const scrapedAt: Record<string, number> = {};
     const unreachable: string[] = [];
     for (const a of apps.filter((x) => x.kind === 'nest')) {
       const target = metricsUrl(a);
@@ -135,8 +136,9 @@ async function main(): Promise<void> {
       if (consumerApps.includes(a.name))
         skippedOtherTenant[a.name] = sumSamples(text, 'events_skipped_other_tenant_total');
       deadLettered[a.name] = sumSamples(text, 'events_dlq_messages_total');
+      scrapedAt[a.name] = Date.now();
     }
-    return { skippedOtherTenant, deadLettered, unreachable };
+    return { skippedOtherTenant, deadLettered, scrapedAt, unreachable };
   };
 
   const operatorToken = () =>
@@ -194,22 +196,27 @@ async function main(): Promise<void> {
     },
     write: {
       consumerMetrics,
+      metricsLagMs: 0,
       setTenantStatus: async (id, status) =>
         new HttpOperatorApi(userService, operatorToken).setTenantStatus(id, status),
       // 테넌트 2 역할엔 catalog.product.delete 가 없다. 로컬 픽스처라 API 의 지우기와 같은 soft delete 를 직접 건다.
       removeProducts: async (ids) => {
         await sql`UPDATE product_masters SET deleted_at = now() WHERE id IN ${sql(ids)} AND deleted_at IS NULL`;
+        return [];
       },
     },
   };
 
-  const { checks, restoreIfSuspended, closeBrowser } = buildIsolationChecks(target);
+  const { checks, restoreIfSuspended, closeBrowser, leftovers } = buildIsolationChecks(target);
   for (const signal of ['SIGINT', 'SIGTERM'] as const) {
     process.once(signal, () => {
       // 정지 스위치 중간에 끊기면 테넌트 2 가 정지인 채로 남는다 — 되돌리고 끝낸다.
       void restoreIfSuspended()
         .finally(closeBrowser)
-        .finally(() => process.exit(130));
+        .finally(() => {
+          printLeftovers(leftovers());
+          process.exit(130);
+        });
     });
   }
 
@@ -221,6 +228,7 @@ async function main(): Promise<void> {
       console.log('  · 준비(로컬 전용): 테넌트 1 디지털 상품 파일을 하나 올렸다');
     }
     const result = await runChecks(checks, undefined, { write, strict: target.strict });
+    printLeftovers(leftovers());
     console.log('');
     const tail = result.skipped ? ` · 못 잰 것 ${result.skipped}` : '';
     if (result.failed === 0) console.log(`✅ 격리 실측 통과 (${result.passed}${tail})`);

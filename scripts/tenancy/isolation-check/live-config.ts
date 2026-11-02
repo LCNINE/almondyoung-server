@@ -52,3 +52,12 @@ export function parseSecretList(stdout: string): Map<string, string> {
 export function stageServiceUrl(stage: string, slug: string): string {
   return stage === 'live' ? `https://${slug}.almondyoung.com` : `https://${slug}.dev.lcnine-dev.com`;
 }
+
+/**
+ * 인프라 코드가 `new sst.Secret('<name>', '<기본값>')` 으로 둔 기본값. `sst secret list` 는 따로 넣은 값만 보여 주므로,
+ * 기본값으로 도는 Secret(Grafana 주소·사용자)은 여기서 읽는다 — 값을 이 파일에 또 적으면 인프라와 갈린다.
+ */
+export function infraSecretDefault(infraSource: string, name: string): string | undefined {
+  const m = new RegExp(`new sst\\.Secret\\(\\s*'${name}'\\s*,\\s*'([^']*)'`).exec(infraSource);
+  return m?.[1] || undefined;
+}

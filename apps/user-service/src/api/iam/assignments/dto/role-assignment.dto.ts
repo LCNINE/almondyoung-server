@@ -81,6 +81,13 @@ export class AddRoleMembersDto {
   tenantId?: string;
 }
 
+export class RemoveRoleMemberQueryDto {
+  @ApiPropertyOptional({ description: '이 테넌트의 부여에서 회수한다. 플랫폼 운영자만' })
+  @IsOptional()
+  @Matches(TENANT_ID_PATTERN)
+  tenantId?: string;
+}
+
 export class RoleMemberDto {
   @ApiProperty() userId!: string;
   @ApiProperty() loginId!: string;

@@ -141,9 +141,10 @@ export class RoleAssignmentManager {
     });
   }
 
-  async removeMember(actor: IamActor, roleId: string, userId: string): Promise<void> {
+  /** 역할 하나를 회수한다. `tenantId` 를 주면 그 테넌트의 부여에서(운영자만) — 주지 않으면 요청자가 일하는 테넌트다. */
+  async removeMember(actor: IamActor, roleId: string, userId: string, tenantId?: string): Promise<void> {
     await this.dbService.run(async (tx) => {
-      const scope = await this.scope(tx, actor, userId);
+      const scope = await this.scope(tx, actor, userId, tenantId);
       const rest = scope.held
         .filter((h) => h.roleId !== roleId)
         .map((h) => ({ roleId: h.roleId, expiresAt: h.expiresAt }));

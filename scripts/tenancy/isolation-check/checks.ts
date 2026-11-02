@@ -1,7 +1,21 @@
 import * as ExcelJS from 'exceljs';
+import { DEFAULT_RETRY_POLICY } from '../../../libs/events/src/retry/retry-policy.types';
+import { calculateBackoffDelay } from '../../../libs/events/src/retry/retry.util';
 import { TokenRefused } from '../staff-token';
 import { expectOk, probe, waitFor } from './http';
-import { fail, messageOf, onlyOwnRows, pass, Probe, refusedByTenantGate, skip, tokenTenantOf, Verdict } from './judge';
+import {
+  fail,
+  messageOf,
+  noNewDeadLetters,
+  onlyOwnRows,
+  pass,
+  Probe,
+  refusedByTenantGate,
+  risen,
+  skip,
+  tokenTenantOf,
+  Verdict,
+} from './judge';
 import type { IsolationCheck } from './runner';
 import { buildScreenChecks } from './screens';
 import { SHARED_SERVICE_PROBES, type ConsumerMetrics, type IsolationTarget } from './target';
@@ -43,12 +57,23 @@ const FIXED_BY = {
 export const TENANT_NOT_ISSUABLE = 'tenant not active';
 const STAMP_PREFIX = '[개통 점검]';
 
-/** 두 번 다 읽힌 앱 중 값이 오른 앱. 한 번만 읽힌 앱은 비교하지 않는다(합으로 비교하면 거짓 증감이 난다). */
-function risen(before: Readonly<Record<string, number>>, after: Readonly<Record<string, number>>): string[] {
-  return Object.keys(after).filter((app) => app in before && after[app] > before[app]);
-}
 const EVENT_WAIT_MS = 90_000;
+/** 소비 실패가 DLQ 에 닿기까지 — 기본 재시도 정책의 백오프 합에 여유 5초. 핸들러별 정책이 더 길면 그만큼 놓친다 */
+const DLQ_SETTLE_MS =
+  Array.from({ length: DEFAULT_RETRY_POLICY.maxRetries }, (_, i) =>
+    calculateBackoffDelay(
+      i + 1,
+      DEFAULT_RETRY_POLICY.backoff,
+      DEFAULT_RETRY_POLICY.initialDelayMs,
+      DEFAULT_RETRY_POLICY.maxDelayMs,
+    ),
+  ).reduce((a, b) => a + b, 0) + 5_000;
 const SUSPEND_WAIT_MS = 45_000;
+
+/** 원격 저장소 조회는 2초마다 두드리지 않는다 — 지연이 있는 대상은 10초 간격 */
+function metricsPollMs(lagMs: number): number {
+  return lagMs > 0 ? 10_000 : 2_000;
+}
 
 /** 목록 응답(배열 또는 `{ data }`)의 행 id. 상품 요약은 `masterId` 가 행의 id 다. */
 function idsOf(body: unknown, key: 'id' | 'masterId' = 'id'): string[] {
@@ -84,10 +109,13 @@ interface WriteState {
   stamp: string;
   baseline?: { metrics: ConsumerMetrics; medusaCount: number };
   warehouseId?: string;
+  zoneId?: string;
   skuId?: string;
   masterIds: string[];
   bulkSessionId?: string;
   suspended: boolean;
+  /** 지우기가 못 지운 것 — 진입점이 실행 끝에 출력한다. null = 지우기가 아직 안 돌았다 */
+  leftovers: string[] | null;
 }
 
 /**
@@ -100,6 +128,8 @@ export function buildIsolationChecks(t: IsolationTarget): {
   restoreIfSuspended: () => Promise<void>;
   /** 화면 실측의 브라우저를 닫는다 — 진입점이 끝에 부른다 */
   closeBrowser: () => Promise<void>;
+  /** 쓰기 부분이 못 지운 것(«[개통 점검]» 이름) — 진입점이 실행 끝에 출력한다 */
+  leftovers: () => readonly string[];
 } {
   const tokens: { one?: string; two?: string } = {};
   const one = async () => (tokens.one ??= await t.signIn.tenantOne());
@@ -113,6 +143,7 @@ export function buildIsolationChecks(t: IsolationTarget): {
     stamp: `${STAMP_PREFIX} ${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`,
     masterIds: [],
     suspended: false,
+    leftovers: null,
   };
 
   const medusaProductCount = async (q?: string) => {
@@ -124,6 +155,16 @@ export function buildIsolationChecks(t: IsolationTarget): {
       },
     )) as { count: number };
     return body.count;
+  };
+
+  /** 일괄 세션이 만든 상품 — 게시 전에 실패해도 초안이 남으니 지우기 전에 다시 모은다 */
+  const collectBulkMasters = async () => {
+    if (!state.bulkSessionId) return;
+    const items = (await expectOk('GET', core(`/product-bulk-sessions/${state.bulkSessionId}/items?limit=100`), {
+      bearer: await two(),
+    })) as { data: { masterId?: string | null }[] };
+    for (const item of items.data)
+      if (item.masterId && !state.masterIds.includes(item.masterId)) state.masterIds.push(item.masterId);
   };
 
   const checks: IsolationCheck<void>[] = [];
@@ -332,6 +373,9 @@ export function buildIsolationChecks(t: IsolationTarget): {
         bearer: await two(),
         json: { code: `ISOCHECK${Date.now() % 100000}`, displayName: `${state.stamp} 구역` },
       });
+      const body: unknown = r.body;
+      if (typeof body === 'object' && body !== null && 'id' in body && typeof body.id === 'string')
+        state.zoneId = body.id;
       return isOk(r) ? pass : fail(`${r.status} «${messageOf(r.body)}»`);
     },
   });
@@ -416,10 +460,7 @@ export function buildIsolationChecks(t: IsolationTarget): {
       await settle('drafted');
       await expectOk('POST', `${session}/publish`, { bearer: await two(), json: {} });
       await settle('published');
-      const items = (await expectOk('GET', `${session}/items?limit=100`, { bearer: await two() })) as {
-        data: { masterId?: string | null }[];
-      };
-      for (const item of items.data) if (item.masterId) state.masterIds.push(item.masterId);
+      await collectBulkMasters();
       return hiddenFromTenantOne(await probe('GET', session, { bearer: await one() }), '일괄 세션');
     },
   });
@@ -431,16 +472,16 @@ export function buildIsolationChecks(t: IsolationTarget): {
     run: async () => {
       if (!write || !state.baseline) return fail('기준값이 없다');
       const before = state.baseline.metrics.skippedOtherTenant;
+      const waitMs = EVENT_WAIT_MS + write.metricsLagMs;
       const after = await waitFor(
         write.consumerMetrics,
         (m) => risen(before, m.skippedOtherTenant).length > 0,
-        EVENT_WAIT_MS,
+        waitMs,
+        metricsPollMs(write.metricsLagMs),
       );
       const rose = risen(before, after.skippedOtherTenant);
       if (rose.length === 0) {
-        return fail(
-          `${EVENT_WAIT_MS / 1000}초 동안 어느 소비 앱도 건너뛰지 않았다 — 이벤트가 안 나갔거나 문이 통과시켰다`,
-        );
+        return fail(`${waitMs / 1000}초 동안 어느 소비 앱도 건너뛰지 않았다 — 이벤트가 안 나갔거나 문이 통과시켰다`);
       }
       // 문이 통과시킨 앱은 여기선 안 보인다(다른 앱이 건너뛰어 초록) — 아래 DLQ·Medusa 항목이 그 앱의 흔적을 본다.
       return after.unreachable.length > 0
@@ -455,8 +496,16 @@ export function buildIsolationChecks(t: IsolationTarget): {
     fixedBy: `${FIXED_BY.events}. 어느 토픽인지는 각 앱 /metrics 의 events_dlq_messages_total`,
     run: async () => {
       if (!write || !state.baseline) return fail('기준값이 없다');
-      const rose = risen(state.baseline.metrics.deadLettered, (await write.consumerMetrics()).deadLettered);
-      return rose.length === 0 ? pass : fail(`DLQ 가 오른 앱: ${rose.join(', ')}`);
+      // 앞 항목에서 이벤트가 소비 앱에 닿았다 — 실패한 소비가 DLQ 에 닿을 시간을 준 «그 뒤»의 수집만 믿는다.
+      const since = Date.now() + DLQ_SETTLE_MS;
+      const before = state.baseline.metrics;
+      const after = await waitFor(
+        write.consumerMetrics,
+        (m) => noNewDeadLetters(before, m, since).ok !== 'skipped',
+        DLQ_SETTLE_MS + write.metricsLagMs + EVENT_WAIT_MS,
+        metricsPollMs(write.metricsLagMs),
+      );
+      return noNewDeadLetters(before, after, since);
     },
   });
   add({
@@ -480,33 +529,54 @@ export function buildIsolationChecks(t: IsolationTarget): {
     section: '쓰기 경로',
     title: `지우기 — «${STAMP_PREFIX}» 로 만든 것`,
     part: 'write',
-    fixedBy: '남은 것은 출력의 id 로 지운다',
+    fixedBy: '실행 끝 «남은 것» 의 id 로 지운다(테넌트 2 점검 계정 또는 운영자 화면)',
     run: async () => {
-      const left: string[] = [];
-      if (state.bulkSessionId) {
-        await probe('POST', core(`/product-bulk-sessions/${state.bulkSessionId}/purge-drafts`), {
-          bearer: await two(),
-          json: {},
-        });
+      try {
+        state.leftovers = await removeWhatWasMade();
+      } catch (e) {
+        // 중간에 던지면 무엇이 지워졌는지 모른다 — 만든 것을 전부 «확인 필요»로 적는다
+        const why = e instanceof Error ? e.message : String(e);
+        state.leftovers = madeSoFar().map((m) => `${m} (지우기가 중간에 던졌다 «${why}» — 남았는지 확인)`);
       }
-      for (const id of state.masterIds) {
-        await probe('PATCH', core(`/masters/${id}/unpublish`), { bearer: await two(), json: {} });
-      }
-      if (state.masterIds.length > 0) {
-        if (write?.removeProducts) await write.removeProducts(state.masterIds);
-        else left.push(`상품 ${state.masterIds.join(', ')} (게시 내림만 — 역할에 catalog.product.delete 가 없다)`);
-      }
-      if (state.skuId) {
-        const r = await probe('DELETE', core(`/inventory/skus/${state.skuId}`), { bearer: await two() });
-        if (!isOk(r)) left.push(`SKU ${state.skuId} (${r.status} «${messageOf(r.body)}»)`);
-      }
-      if (state.warehouseId) {
-        const r = await probe('DELETE', core(`/inventory/warehouses/${state.warehouseId}`), { bearer: await two() });
-        if (!isOk(r)) left.push(`창고 ${state.warehouseId} (${r.status} «${messageOf(r.body)}»)`);
-      }
-      return left.length === 0 ? pass : skip(`남은 것: ${left.join(' · ')}`);
+      return state.leftovers.length === 0 ? pass : skip(`남은 것 ${state.leftovers.length}건 — 실행 끝에 적는다`);
     },
   });
+
+  const warehouseLabel = (id: string) => `창고 ${id}${state.zoneId ? ` + 구역 ${state.zoneId}` : ''}`;
+  /** 쓰기 부분이 지금까지 만든 것(일괄 세션 상품은 모은 데까지) */
+  const madeSoFar = (): string[] => [
+    ...(state.masterIds.length ? [`상품 ${state.masterIds.join(', ')}`] : []),
+    ...(state.bulkSessionId ? [`일괄 세션 ${state.bulkSessionId}`] : []),
+    ...(state.skuId ? [`SKU ${state.skuId}`] : []),
+    ...(state.warehouseId ? [warehouseLabel(state.warehouseId)] : []),
+  ];
+
+  async function removeWhatWasMade(): Promise<string[]> {
+    const left: string[] = [];
+    if (state.bulkSessionId) {
+      await collectBulkMasters().catch(() => undefined);
+      await probe('POST', core(`/product-bulk-sessions/${state.bulkSessionId}/purge-drafts`), {
+        bearer: await two(),
+        json: {},
+      });
+    }
+    for (const id of state.masterIds) {
+      await probe('PATCH', core(`/masters/${id}/unpublish`), { bearer: await two(), json: {} });
+    }
+    if (state.masterIds.length > 0) {
+      if (write?.removeProducts) left.push(...(await write.removeProducts(state.masterIds)));
+      else left.push(`상품 ${state.masterIds.join(', ')} (게시 내림만 — 역할에 catalog.product.delete 가 없다)`);
+    }
+    if (state.skuId) {
+      const r = await probe('DELETE', core(`/inventory/skus/${state.skuId}`), { bearer: await two() });
+      if (!isOk(r)) left.push(`SKU ${state.skuId} (${r.status} «${messageOf(r.body)}»)`);
+    }
+    if (state.warehouseId) {
+      const r = await probe('DELETE', core(`/inventory/warehouses/${state.warehouseId}`), { bearer: await two() });
+      if (!isOk(r)) left.push(`${warehouseLabel(state.warehouseId)} (${r.status} «${messageOf(r.body)}»)`);
+    }
+    return left;
+  }
 
   // ── 정지 스위치 (개통 때 한 번 — 정지하면 그 테넌트 세션이 끊긴다)
   add({
@@ -517,8 +587,9 @@ export function buildIsolationChecks(t: IsolationTarget): {
     run: async () => {
       if (!write) return fail('쓰기 대상 없음');
       await two(); // 정지 전에 받아 둔 토큰 — 다음 항목이 core 에서 거절되는지 본다
-      await write.setTenantStatus(t.tenantTwoId, 'suspended');
+      // 부르기 «전»에 표시한다 — 요청이 가는 중에 끊겨도 되돌리기가 돈다(정지 아닌 테넌트를 활성으로 두는 건 무해하다)
       state.suspended = true;
+      await write.setTenantStatus(t.tenantTwoId, 'suspended');
       try {
         await t.signIn.tenantTwo();
         return fail('정지 중인데 토큰이 나왔다');
@@ -573,6 +644,8 @@ export function buildIsolationChecks(t: IsolationTarget): {
     restoreIfSuspended: async () => {
       if (state.suspended && write) await write.setTenantStatus(t.tenantTwoId, 'active');
     },
+    // 지우기 전에 끝났으면(Ctrl+C) 만든 것 전부가 남은 것이다
+    leftovers: () => state.leftovers ?? madeSoFar().map((m) => `${m} (지우기 전에 끝났다)`),
     closeBrowser: screens.close,
   };
 }

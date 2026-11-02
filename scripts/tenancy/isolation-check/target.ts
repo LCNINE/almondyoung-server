@@ -62,7 +62,12 @@ export interface ConsumerMetrics {
   readonly skippedOtherTenant: Readonly<Record<string, number>>;
   /** 앱마다 `events_dlq_messages_total` */
   readonly deadLettered: Readonly<Record<string, number>>;
-  /** 메트릭을 못 읽은 소비 앱 */
+  /**
+   * 앱마다 값이 나온 수집의 시각(epoch ms). 로컬은 `/metrics` 를 직접 읽어 «지금»이고, 라이브는 원격 저장소의 마지막 샘플이라
+   * 스크레이프 주기 + 원격 쓰기 지연만큼 늦다 — «0» 을 믿으려면 이 시각이 기준보다 뒤여야 한다(`judge.noNewDeadLetters`).
+   */
+  readonly scrapedAt: Readonly<Record<string, number>>;
+  /** 메트릭을 못 읽은 앱. 라이브는 스크레이프 대상 전부, 로컬은 소비 앱만(file-service 는 메트릭 서버를 안 띄운다) */
   readonly unreachable: readonly string[];
 }
 
@@ -95,8 +100,10 @@ export interface IsolationTarget {
   /** 쓰기 부분에서만 — 없으면 그 대상은 쓰기 부분을 못 돈다 */
   readonly write?: {
     readonly consumerMetrics: () => Promise<ConsumerMetrics>;
+    /** 일어난 일이 `consumerMetrics` 에 보이기까지의 최대 지연 — 로컬 0, 라이브는 스크레이프 주기 + 원격 쓰기 */
+    readonly metricsLagMs: number;
     readonly setTenantStatus: (tenantId: string, status: 'active' | 'suspended') => Promise<void>;
-    /** 역할로 못 지우는 것(상품)을 치운다. 없으면 남은 id 를 경고로 적는다 */
-    readonly removeProducts?: (masterIds: readonly string[]) => Promise<void>;
+    /** 직원 역할로 못 지우는 것(상품)을 치운다. 못 지운 것의 설명을 돌려준다(실행 끝에 출력). 없으면 전부 남는다 */
+    readonly removeProducts?: (masterIds: readonly string[]) => Promise<string[]>;
   };
 }

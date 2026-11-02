@@ -1,4 +1,5 @@
-import { onlyOwnRows, refusedByTenantGate, tokenTenantOf } from './judge';
+import { noNewDeadLetters, onlyOwnRows, refusedByTenantGate, tokenTenantOf } from './judge';
+import type { ConsumerMetrics } from './target';
 
 describe('refusedByTenantGate — 403 이 «테넌트 문»의 거절인가', () => {
   const GATE = '이 테넌트에서는 쓸 수 없는 기능입니다.';
@@ -67,5 +68,51 @@ describe('tokenTenantOf', () => {
   it('클레임이 없거나 JWT 가 아니면 undefined', () => {
     expect(tokenTenantOf(jwt({ sub: 'u' }))).toBeUndefined();
     expect(tokenTenantOf('not-a-jwt')).toBeUndefined();
+  });
+});
+
+describe('noNewDeadLetters — DLQ 0 은 쓰기 뒤의 수집으로만 믿는다', () => {
+  const SINCE = 1_000_000;
+  const metrics = (over: Partial<ConsumerMetrics>): ConsumerMetrics => ({
+    skippedOtherTenant: {},
+    deadLettered: {},
+    scrapedAt: {},
+    unreachable: [],
+    ...over,
+  });
+  const before = metrics({ deadLettered: { core: 2, wallet: 0 }, scrapedAt: { core: 1, wallet: 1 } });
+
+  it('모든 앱이 기준 뒤에 수집됐고 오르지 않았으면 통과', () => {
+    const after = metrics({ deadLettered: { core: 2, wallet: 0 }, scrapedAt: { core: SINCE, wallet: SINCE + 5 } });
+    expect(noNewDeadLetters(before, after, SINCE)).toEqual({ ok: true });
+  });
+
+  it('수집이 기준보다 옛것인 앱이 있으면 «0» 이어도 초록이 아니다 — 아직 안 들어왔다', () => {
+    const after = metrics({ deadLettered: { core: 2, wallet: 0 }, scrapedAt: { core: SINCE, wallet: SINCE - 1 } });
+    const v = noNewDeadLetters(before, after, SINCE);
+    expect(v.ok).toBe('skipped');
+    expect(v.ok === 'skipped' && v.reason).toMatch(/wallet/);
+  });
+
+  it('오른 앱이 있으면 다른 앱이 덜 들어왔어도 실패다', () => {
+    const after = metrics({ deadLettered: { core: 3, wallet: 0 }, scrapedAt: { core: SINCE, wallet: SINCE - 1 } });
+    const v = noNewDeadLetters(before, after, SINCE);
+    expect(v.ok).toBe(false);
+    expect(v.ok === false && v.detail).toMatch(/core/);
+  });
+
+  it('기준값 뒤에 못 읽게 된 앱은 «안 들어옴»이다', () => {
+    const after = metrics({ deadLettered: { core: 2 }, scrapedAt: { core: SINCE } });
+    const v = noNewDeadLetters(before, after, SINCE);
+    expect(v.ok === 'skipped' && v.reason).toMatch(/wallet/);
+  });
+
+  it('기준값을 못 읽은 소비 앱은 잴 수 없다', () => {
+    const after = metrics({
+      deadLettered: { core: 2, wallet: 0, search: 0 },
+      scrapedAt: { core: SINCE, wallet: SINCE, search: SINCE },
+    });
+    const v = noNewDeadLetters({ ...before, unreachable: ['search'] }, after, SINCE);
+    expect(v.ok === 'skipped' && v.reason).toMatch(/search/);
   });
 });
