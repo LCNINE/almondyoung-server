@@ -2,7 +2,7 @@ import { CanActivate, ExecutionContext, INestApplication, Injectable } from '@ne
 import { ConfigService } from '@nestjs/config';
 import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { Test } from '@nestjs/testing';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -45,7 +45,11 @@ const tenants = parseTenantList(
   ]),
 );
 
-const PNG = readFileSync(join(__dirname, '../upload/__fixtures__/logo.png'));
+// 루트 .gitignore 가 *.png 를 막아 픽스처 파일은 저장소에 오르지 않는다 — 1x1 PNG 를 코드로 둔다
+const PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=',
+  'base64',
+);
 const PORT = '3999';
 const INTERNAL_KEY = 'test-internal-key';
 
