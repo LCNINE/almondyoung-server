@@ -21,7 +21,7 @@ import { resolvePublicFileUrl } from '@/lib/utils/file-url';
 import {
   compressImageForUpload,
   formatBytes,
-} from '@/lib/utils/image-compress';
+} from '@packages/image-compress';
 import { cropImageToArea, loadImage } from '@/lib/utils/image-crop';
 
 type Slot = { width: number; height: number } | null;

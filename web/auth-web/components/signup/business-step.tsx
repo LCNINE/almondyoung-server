@@ -10,6 +10,10 @@ import {
   floatingInputClass,
 } from "@/components/ui/floating-label-input"
 import { Spinner } from "@/components/ui/spinner"
+import {
+  MAX_UPLOAD_BYTES,
+  compressImageForUpload,
+} from "@packages/image-compress"
 import { cn } from "@/lib/utils"
 import { Image as ImageIcon, Lock, Upload, X } from "lucide-react"
 
@@ -17,9 +21,11 @@ import { Image as ImageIcon, Lock, Upload, X } from "lucide-react"
 function FilePicker({
   file,
   onChange,
+  disabled,
 }: {
   file: File | null
   onChange: (file: File | null) => void
+  disabled: boolean
 }) {
   const inputRef = React.useRef<HTMLInputElement>(null)
 
@@ -35,8 +41,9 @@ function FilePicker({
         id="file"
         name="file"
         type="file"
-        accept="image/jpeg,image/png,image/gif"
+        accept="image/jpeg,image/png,image/gif,image/webp"
         className="sr-only"
+        disabled={disabled}
         onChange={(e) => onChange(e.target.files?.[0] ?? null)}
       />
 
@@ -58,6 +65,7 @@ function FilePicker({
             size="icon"
             className="size-11 shrink-0"
             onClick={clear}
+            disabled={disabled}
             aria-label="첨부 파일 삭제"
           >
             <X className="size-4" aria-hidden />
@@ -67,12 +75,13 @@ function FilePicker({
         <button
           type="button"
           onClick={() => inputRef.current?.click()}
+          disabled={disabled}
           className="flex w-full flex-col items-center gap-1 rounded-xl border border-dashed border-border bg-background px-4 py-6 transition-colors hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
         >
           <Upload className="size-5 text-muted-foreground" aria-hidden />
           <span className="text-sm font-medium">서류 첨부하기</span>
           <span className="text-xs text-muted-foreground">
-            JPG · PNG · GIF · 5MB 이하
+            JPG · PNG · GIF · 큰 사진은 자동으로 줄여서 올려요
           </span>
         </button>
       )}
@@ -104,14 +113,33 @@ export function BusinessStep({
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
+    const formData = new FormData(e.currentTarget)
     setSubmitting(true)
     setError(null)
-    const res = await registerBusinessAction(new FormData(e.currentTarget))
-    setSubmitting(false)
-    if (res.ok) {
-      setApproved(res.approved)
-    } else {
-      setError(res.error)
+    // 액션 호출이 예외로 끝나도(본문 한도 초과·네트워크 끊김·배포 직후의 옛 화면) 버튼이 풀려야 한다.
+    try {
+      if (file) {
+        const { file: upload } = await compressImageForUpload(file)
+        if (upload.size > MAX_UPLOAD_BYTES) {
+          setError(
+            "파일이 너무 커요. 4MB 이하의 JPG·PNG·GIF 파일을 첨부해 주세요."
+          )
+          return
+        }
+        formData.set("file", upload)
+      }
+      const res = await registerBusinessAction(formData)
+      if (res.ok) {
+        setApproved(res.approved)
+      } else {
+        setError(res.error)
+      }
+    } catch {
+      setError(
+        "전송 중 문제가 생겼어요. 잠시 후 다시 시도해 주세요. 계속 안 되면 건너뛰고 마이페이지에서 등록할 수 있어요."
+      )
+    } finally {
+      setSubmitting(false)
     }
   }
 
@@ -242,7 +270,7 @@ export function BusinessStep({
           후 처리해 드려요.
         </p>
 
-        <FilePicker file={file} onChange={setFile} />
+        <FilePicker file={file} onChange={setFile} disabled={busy} />
         {!hasFile && (
           <p className="text-xs text-muted-foreground">
             파일을 첨부하면 위 입력값 대신 서류로 심사합니다.

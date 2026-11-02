@@ -1,0 +1,8 @@
+{
+  "name": "@packages/image-compress",
+  "version": "0.0.1",
+  "description": "업로드 전 브라우저 이미지 무손실 webp 변환 (외부 import 없음)",
+  "private": true,
+  "main": "index.ts",
+  "types": "index.ts"
+}

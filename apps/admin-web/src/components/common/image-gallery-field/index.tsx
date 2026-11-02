@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { uploadFileToFileService } from '@/lib/api/domains/files/upload.client';
 import { resolvePublicFileUrl } from '@/lib/utils/file-url';
-import { compressImageForUpload, formatBytes } from '@/lib/utils/image-compress';
+import { compressImageForUpload, formatBytes } from '@packages/image-compress';
 import { cn } from '@/lib/utils';
 import { CropDialog } from './crop-dialog';
 

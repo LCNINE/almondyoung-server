@@ -10,6 +10,7 @@ import {
   removeAccount,
   upsertAccount,
 } from "@/lib/account-store"
+import { MAX_UPLOAD_BYTES } from "@packages/image-compress"
 import { ApiError } from "@/lib/api-helpers"
 import { env } from "@/lib/env"
 import {
@@ -76,10 +77,13 @@ export type ResetForgottenPasswordResult =
 const PASSWORD_RESET_TOKEN_COOKIE = "passwordResetToken"
 const PASSWORD_RESET_TOKEN_MAX_AGE = 60 * 5
 
-// user-service 의 FILE_SIZE_LIMIT / ALLOWED_MIME_TYPES 와 동일하게 유지할 것.
-// (서버가 최종 판정하고, 여기서는 왕복 전에 걸러 안내 문구만 개선한다.)
-const BUSINESS_FILE_MAX_BYTES = 5 * 1024 * 1024
-const BUSINESS_FILE_MIME_TYPES = ["image/jpeg", "image/png", "image/gif"]
+// user-service 의 ALLOWED_MIME_TYPES 와 같게 유지할 것. webp 는 화면이 사진을 변환해 보내는 형식이다.
+const BUSINESS_FILE_MIME_TYPES = [
+  "image/jpeg",
+  "image/png",
+  "image/gif",
+  "image/webp",
+]
 
 /**
  * @param expectUserId 재인증 흐름에서 호출자가 "이 userId 의 자격증명만 허용" 을 강제하고 싶을 때 전달.
@@ -587,16 +591,15 @@ export async function registerBusinessAction(
   const file = formData.get("file")
   const hasFile = file instanceof File && file.size > 0
 
-  // user-service FileValidatorPipe 와 같은 규칙. 여기서 먼저 걸러 업로드 왕복을 아끼고
-  // 사용자에게도 서버 원문 대신 읽기 쉬운 문구를 준다.
+  // 화면이 이미 거른 값이지만 서버 액션은 화면을 거치지 않고도 불린다.
   if (hasFile) {
-    if (file.size > BUSINESS_FILE_MAX_BYTES) {
-      return { ok: false, error: "파일 크기는 5MB 이하만 첨부할 수 있습니다." }
+    if (file.size > MAX_UPLOAD_BYTES) {
+      return { ok: false, error: "파일 크기는 4MB 이하만 첨부할 수 있습니다." }
     }
     if (!BUSINESS_FILE_MIME_TYPES.includes(file.type)) {
       return {
         ok: false,
-        error: "JPG, PNG, GIF 이미지 파일만 첨부할 수 있습니다.",
+        error: "JPG, PNG, GIF, WEBP 이미지 파일만 첨부할 수 있습니다.",
       }
     }
   }

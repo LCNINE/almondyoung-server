@@ -8,7 +8,7 @@ import { toast } from "sonner"
 import { MAX_SHOP_LISTING_IMAGES } from "@/domains/shop-trade/listing-form"
 import { uploadFile } from "@/lib/api/file/upload"
 import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
-import { MAX_UPLOAD_BYTES, compressImageForUpload } from "@/lib/utils/image-compress"
+import { MAX_UPLOAD_BYTES, compressImageForUpload } from "@packages/image-compress"
 import { cn } from "@/lib/utils"
 
 // file-service file_contexts 시드와 같아야 한다(spec §8.2). 없으면 업로드가 404.
@@ -41,7 +41,7 @@ export function ImagePicker({
     setUploading(true)
     try {
       // 폰 사진 원본은 업로드 서버 액션이 거치는 Lambda 프록시의 본문 상한을 base64 인코딩 뒤
-      // 쉽게 넘는다(image-compress.ts 참고). 업로드 전에 무손실 webp 로 줄인다.
+      // 쉽게 넘는다(@packages/image-compress 참고). 업로드 전에 무손실 webp 로 줄인다.
       const compressed = await Promise.all(picked.map((file) => compressImageForUpload(file)))
       const withinLimit = compressed.filter((result) => result.file.size <= MAX_UPLOAD_BYTES)
       if (withinLimit.length < compressed.length) toast.error(t("imageTooLarge"))

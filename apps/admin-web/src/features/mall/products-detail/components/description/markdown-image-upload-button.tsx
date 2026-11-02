@@ -8,7 +8,7 @@ import {
   PRODUCT_DESCRIPTION_IMAGE_CONTEXT_ID,
   uploadFileToFileService,
 } from '@/lib/api/domains/files/upload.client';
-import { type CompressOptions } from '@/lib/utils/image-compress';
+import { type CompressOptions } from '@packages/image-compress';
 import { createProductImageDirective } from '@packages/product-description';
 
 /**

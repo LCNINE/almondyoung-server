@@ -8,7 +8,7 @@ import {
   formatBytes,
   isCompressible,
   type CompressOptions,
-} from '@/lib/utils/image-compress';
+} from '@packages/image-compress';
 
 // file-service 업로드 클라이언트.
 // 주의: axios `client`(baseURL='/api') 대신 fetch 절대경로를 쓴다.

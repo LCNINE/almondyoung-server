@@ -38,6 +38,9 @@
       "@packages/product-description/*": [
         "../../packages/product-description/*"
       ],
+      "@packages/image-compress": [
+        "../../packages/image-compress"
+      ],
       "@packages/shop-listing-markdown": [
         "../../packages/shop-listing-markdown"
       ],

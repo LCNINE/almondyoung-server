@@ -4,7 +4,9 @@
   "type": "module",
   "private": true,
   "scripts": {
+    "predev": "node scripts/check-local-packages.mjs",
     "dev": "next dev --turbopack -p 8001",
+    "prebuild": "node scripts/check-local-packages.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
@@ -13,6 +15,7 @@
   },
   "dependencies": {
     "@base-ui/react": "^1.4.0",
+    "@packages/image-compress": "file:../../packages/image-compress",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
