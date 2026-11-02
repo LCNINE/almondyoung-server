@@ -72,7 +72,8 @@ export async function slotInvalidations(aws: Aws, site: TenantSlotSite, slot: nu
   const id = list.DistributionList?.Items?.find((d) => d.Comment === comment)?.Id;
   if (!id) return null;
   const inv = (await aws(['cloudfront', 'list-invalidations', '--distribution-id', id], { region: 'us-east-1' })) as {
-    InvalidationList?: { Quantity?: number };
+    InvalidationList?: { Quantity?: number; Items?: unknown[] };
   };
-  return inv.InvalidationList?.Quantity ?? 0;
+  // aws CLI v2 는 페이지를 자동으로 합치면서 Quantity 를 빼고 Items 만 준다 — Quantity 만 보면 언제나 0 이다.
+  return inv.InvalidationList?.Items?.length ?? inv.InvalidationList?.Quantity ?? 0;
 }
