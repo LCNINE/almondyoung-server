@@ -1109,6 +1109,9 @@ export function setup(infra: SharedInfra) {
   }
 
   // ─── storefront (Next.js / OpenNext, CloudFront) ───
+  // 빌드마다 키가 바뀌면 서버 액션 id 도 바뀌어, 배포 전에 연 탭의 저장·업로드가 전부 실패한다.
+  //   sst secret set StorefrontServerActionsKey "$(openssl rand -base64 32)" --stage <stage>
+  const storefrontServerActionsKey = new sst.Secret('StorefrontServerActionsKey');
   // Medusa STORE_CORS/AUTH_CORS에 이미 url("www")로 등록되어 있다.
   // 백엔드 서비스 URL은 storefront가 BACKEND_DOMAIN + 서비스 서브도메인 규칙으로 조립한다.
   new sst.aws.Nextjs('Storefront', {
@@ -1165,6 +1168,7 @@ export function setup(infra: SharedInfra) {
       USE_RAILWAY_BACKEND: 'true',
       NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY: medusaPublishableKey.value,
       REVALIDATE_SECRET: storefrontRevalidateSecret.value,
+      NEXT_SERVER_ACTIONS_ENCRYPTION_KEY: storefrontServerActionsKey.value,
       BEAUTYTOP_SIGNING_PRIVATE_KEY: beautytopSigningPrivateKey.value,
       BEAUTYTOP_API_ORIGIN: beautytopApiOrigin.value,
       // 인증 일원화: auth-web origin + user-service 직접 호출(server-side).
