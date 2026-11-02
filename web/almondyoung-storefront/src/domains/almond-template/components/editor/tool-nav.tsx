@@ -36,7 +36,8 @@ const GROUPS: [EditorTool, LucideIcon, string][][] = [
 ]
 
 export function ToolNav({ editor }: { editor: AlmondEditor }) {
-  const { tool, setTool, setPanelOpen, drawMode, exitDrawing } = editor
+  const { tool, setTool, setPanelOpen, setSelectedId, drawMode, exitDrawing } =
+    editor
   return (
     <nav
       aria-label="편집 도구"
@@ -58,6 +59,9 @@ export function ToolNav({ editor }: { editor: AlmondEditor }) {
                 aria-pressed={on}
                 onClick={() => {
                   if (drawMode && id !== "draw") exitDrawing()
+                  // 선택이 남아 있으면 속성 패널이 메뉴를 가린다. 레이어 패널만 고른 채로 쓴다
+                  if (id !== "layers") setSelectedId(null)
+
                   setPanelOpen(true)
                   setTool(id)
                 }}

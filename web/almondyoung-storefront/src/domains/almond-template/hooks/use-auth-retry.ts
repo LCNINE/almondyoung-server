@@ -1,3 +1,4 @@
+import { unstable_isUnrecognizedActionError } from "next/navigation"
 import { useEffect, useRef, useState } from "react"
 
 export const AUTH_CHANNEL = "almond-template-auth"
@@ -44,6 +45,14 @@ export function isUnauthorized(error: unknown) {
   return err?.digest === "UNAUTHORIZED" || err?.message === "UNAUTHORIZED"
 }
 
+// 배포 전에 연 탭은 서버 액션 id 가 달라 저장·업로드가 전부 실패한다
+export function failureMessage(error: unknown, failure: string) {
+  if (unstable_isUnrecognizedActionError(error))
+    return "사이트가 업데이트되어 이 화면에서는 처리할 수 없습니다. 새로고침 후 다시 시도해 주세요. 저장하지 않은 작업은 사라집니다."
+
+  return failure
+}
+
 type Task = () => Promise<void>
 
 export function useAuthRetry(setMessage: (message: string) => void) {
@@ -73,8 +82,8 @@ export function useAuthRetry(setMessage: (message: string) => void) {
       if (await attempt(task)) return
       pending.current = { task, failure }
       setAuthRequired(true)
-    } catch {
-      setMessage(failure)
+    } catch (error) {
+      setMessage(failureMessage(error, failure))
     }
   }
 
@@ -86,10 +95,10 @@ export function useAuthRetry(setMessage: (message: string) => void) {
         pending.current = null
         setAuthRequired(false)
       }
-    } catch {
+    } catch (error) {
       pending.current = null
       setAuthRequired(false)
-      setMessage(current.failure)
+      setMessage(failureMessage(error, current.failure))
     }
   }
 
