@@ -16,7 +16,7 @@ type SlotTable = Readonly<Record<string, readonly number[]>>;
  * 그래서 인증서가 아직 없는 칸은 켜지 않는다 — 켜는 것은 테넌트 만들기(라이브)의 사람 손 단계다.
  * `run()` 을 도는 다른 명령(`sst diff`·`sst remove`·`sst shell`)도 같이 멈춘다.
  */
-export const TENANT_DOMAIN_SLOTS: SlotTable = {};
+export const TENANT_DOMAIN_SLOTS: SlotTable = { live: [1] };
 
 export function tenantDomainSlotsFor(stage: string, table: SlotTable = TENANT_DOMAIN_SLOTS): readonly number[] {
   return table[stage] ?? [];
