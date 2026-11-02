@@ -58,10 +58,10 @@ export function setup(opts?: { baseDomain?: string }) {
   // ─── Database ───
   const db = new sst.aws.Postgres('Db', {
     vpc,
-    // t4g.small(2GB): 데모 트래픽 + 논리 DB 11개 기준 다운사이즈 (비용 절감, medium 대비 -$37/월).
-    // 메모리 압박(스왑/커넥션 실패) 관측 시 't4g.medium' 으로 원복 — 인스턴스 클래스 변경은
-    // in-place modify 로 수 분 다운타임만 발생.
-    instance: 't4g.small',
+    // t4g.medium(4GB, max_connections ≤450): core 는 테넌트마다 풀 10 을 따로 연다(배포 중 태스크 2 벌).
+    // small(≤225)로는 테넌트 둘에서 배포 중 연결이 상한에 닿는다. 클래스 변경은 in-place modify
+    // (applyImmediately) 라 그 배포 중 수 분 끊긴다.
+    instance: 't4g.medium',
   });
 
   const dbUrl = (dbName: string) =>

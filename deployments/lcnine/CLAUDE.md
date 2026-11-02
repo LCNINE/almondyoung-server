@@ -58,7 +58,7 @@ SSM publish:
 `services/infra/shared.ts`
 
 - platform VPC + Kafka 를 SSM 으로 가져옴.
-- 자체 소유: `Postgres("Db")` (db.t4g.small), **wildcard ALB** (`*.dev.lcnine-dev.com` 또는 `*.almondyoung.com`).
+- 자체 소유: `Postgres("Db")` (db.t4g.medium), **wildcard ALB** (`*.dev.lcnine-dev.com` 또는 `*.almondyoung.com`).
 - 한 Postgres 인스턴스에 서비스별 논리 DB(`dbUrl("analytics")` 등)로 분리.
 - **OpenSearch**: VPC private subnet 단일 노드(t3.small, 10GB gp3) + `analysis-nori` 패키지 associate.
   FGAC master user 를 SST 가 만들어 `opensearch.username/password` 로 내준다. 노드가 하나라
