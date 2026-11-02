@@ -52,7 +52,8 @@ const SUSPEND_WAIT_MS = 45_000;
 
 /** 목록 응답(배열 또는 `{ data }`)의 행 id. 상품 요약은 `masterId` 가 행의 id 다. */
 function idsOf(body: unknown, key: 'id' | 'masterId' = 'id'): string[] {
-  const rows: unknown = Array.isArray(body) ? body : (body as { data?: unknown } | null)?.data;
+  const envelope = body as { data?: unknown; items?: unknown } | null;
+  const rows: unknown = Array.isArray(body) ? body : (envelope?.data ?? envelope?.items);
   if (!Array.isArray(rows)) throw new Error(`목록 모양이 아니다: ${JSON.stringify(body).slice(0, 120)}`);
   return rows.map((r: Record<string, unknown>) => {
     const id = r[key];
@@ -204,11 +205,12 @@ export function buildIsolationChecks(t: IsolationTarget): {
   });
 
   // ── core 목록: 테넌트 2 토큰에는 테넌트 2 행만
-  // /masters 는 page 가 없으면 limit 을 무시하고 전부 준다 — 테넌트 1 토큰으로 그렇게 부르면 core 가 OOM 으로 죽는다(11-02 라이브).
+  // 테넌트 1 토큰으로 «전부»를 부르면 core(512MB)가 OOM 으로 죽는다(11-02 라이브, 두 번) — 한도가 먹는 경로만 쓴다.
+  // /masters 는 page 가 없으면 limit 을 무시하고, GET /inventory/skus 는 limit 을 아예 안 받는다(고급 검색은 받는다).
   for (const [what, path, key] of [
     ['창고', '/inventory/warehouses', 'id'],
     ['상품', '/masters?mode=all&page=1&limit=100', 'masterId'],
-    ['SKU', '/inventory/skus?limit=100', 'id'],
+    ['SKU', '/inventory/skus/search/advanced?limit=100', 'id'],
   ] as const) {
     add({
       section: 'core 목록',
