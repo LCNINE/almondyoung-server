@@ -3,7 +3,7 @@ import {
   PRINT_SPECS,
   type PrintKind,
 } from "../../../lib/catalog"
-import { newDesign, resizeDesign } from "../../../lib/document"
+import { newDesign, resizeDesign, withProduct } from "../../../lib/document"
 import type { AlmondEditor } from "../../../hooks/use-almond-editor"
 
 export function SpecPanel({ editor }: { editor: AlmondEditor }) {
@@ -91,8 +91,7 @@ export function SpecPanel({ editor }: { editor: AlmondEditor }) {
           disabled={!!productId}
           onChange={(event) => {
             const id = event.target.value
-            const item = PRINT_PRODUCTS[id]
-            change(newDesign(item?.kind ?? "pet", id))
+            change(withProduct(design, id, PRINT_PRODUCTS[id]?.kind))
             setSelectedId(null)
           }}
         >

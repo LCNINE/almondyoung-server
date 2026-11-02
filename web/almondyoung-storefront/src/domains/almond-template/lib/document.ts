@@ -476,6 +476,27 @@ export function resizeDesign(
   }
 }
 
+const PRODUCT_ID =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+export function hasProduct(design: Design) {
+  return PRODUCT_ID.test(design.productId)
+}
+
+export function withProduct(
+  design: Design,
+  productId: string,
+  kind: PrintKind = design.kind
+): Design {
+  const next = { ...design, productId, kind }
+  const { sizes } = PRINT_SPECS[kind]
+  const fits = sizes.some(
+    ([width, height]) => width === design.widthMm && height === design.heightMm
+  )
+
+  return fits ? next : resizeDesign(next, sizes[0][0], sizes[0][1])
+}
+
 const within = (value: unknown, min: number, max: number) =>
   typeof value === "number" &&
   Number.isFinite(value) &&
