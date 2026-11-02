@@ -12,7 +12,6 @@ import { PresignUploadDto, PresignUploadResponseDto } from './dto/presign-upload
 import { Upload } from '../shared/types/file.types';
 import { v7 as uuidv7 } from 'uuid';
 import { LOGO_CONTEST_IMAGE_CONTEXT_ID } from '../database/default-file-contexts';
-import { imageDimensions } from './image-dimensions';
 import type { RequestTenantId } from '../tenancy/request-tenant';
 
 /** presigned PUT URL 유효 시간. 발급 직후 바로 올리는 흐름이라 길 이유가 없다 */
@@ -66,14 +65,6 @@ export class UploadService {
       this.logger.debug(`Using client Content-Type (normalized): ${normalizedClientMimeType}`);
     }
 
-    const dimensions =
-      context.id === LOGO_CONTEST_IMAGE_CONTEXT_ID
-        ? imageDimensions(file.buffer, detectedMimeType ?? normalizedClientMimeType)
-        : null;
-    if (context.id === LOGO_CONTEST_IMAGE_CONTEXT_ID && !dimensions) {
-      throw new BadRequestError('이미지의 가로세로 크기를 확인할 수 없습니다.');
-    }
-
     const isPublic = this.contextValidator.resolveIsPublic(context, dto.isPublic);
 
     const fileId = uuidv7();
@@ -110,7 +101,7 @@ export class UploadService {
       storageProvider: uploadResult.provider.toLowerCase(),
       isPublic,
       ...tenantColumn(tenant),
-      metadata: dimensions ? { ...dto.metadata, ...dimensions } : dto.metadata,
+      metadata: dto.metadata,
       activatedAt: new Date(),
     });
 
@@ -133,10 +124,6 @@ export class UploadService {
     }
 
     const context = await this.loadActiveContext(dto.contextId);
-
-    if (context.id === LOGO_CONTEST_IMAGE_CONTEXT_ID) {
-      throw new BadRequestError('공모전 이미지는 파일 업로드를 사용해 주세요.');
-    }
 
     this.contextValidator.validateFileSize(context, dto.size);
 
@@ -261,6 +248,10 @@ export class UploadService {
   private async loadActiveContext(contextId: string | undefined) {
     if (!contextId) {
       throw new BadRequestError('contextId is required');
+    }
+
+    if (contextId === LOGO_CONTEST_IMAGE_CONTEXT_ID) {
+      throw new BadRequestError('로고 공모전이 종료되어 이미지를 업로드할 수 없습니다.');
     }
 
     const context = await this.fileContextRepository.findById(contextId);

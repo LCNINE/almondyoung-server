@@ -28,7 +28,10 @@ const DEFAULT_OG_IMAGE = {
 
 // OpenGraph 메타데이터 생성 함수. url 은 그 페이지의 canonical 과 같아야 하므로
 // 알 수 없으면 아예 넣지 않는다 — 전 페이지에 홈 주소를 박으면 공유 카드가 홈을 가리킨다.
-const createOpenGraphMetadata = (openGraph: OpenGraph, canonicalUrl?: string) => ({
+const createOpenGraphMetadata = (
+  openGraph: OpenGraph,
+  canonicalUrl?: string
+) => ({
   title: openGraph.title || siteConfig.appName,
   description: openGraph.description || siteConfig.appDescription,
   ...(openGraph.url || canonicalUrl
@@ -57,7 +60,7 @@ const createSchemaData = () => ({
   description: siteConfig.appDescription,
   image: `https://${siteConfig.domainName}/icon.png`,
   // 구글 검색결과·지식패널이 기업 로고로 읽는 필드(표시 여부는 구글이 결정)
-  logo: `https://${siteConfig.domainName}/images/almond-logo.png`,
+  logo: `https://${siteConfig.domainName}/images/almondyoung-symbol.png`,
   url: HOME_URL,
 })
 

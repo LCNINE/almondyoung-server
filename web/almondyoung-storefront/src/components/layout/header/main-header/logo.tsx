@@ -4,36 +4,22 @@ import Image from "next/image"
 import Link from "next/link"
 import { useParams } from "next/navigation"
 
-export function Logo({ tone = "light" }: { tone?: "light" | "dark" }) {
+export function Logo() {
   const { countryCode } = useParams()
 
-  if (tone === "dark") {
-    return (
-      <Link
-        href={`/${countryCode}`}
-        className="flex h-12 items-center text-[28px] leading-none font-black tracking-normal whitespace-nowrap text-[#3f3a34] italic"
-      >
-        ALMOND
-        <span className="border-primary mx-1 inline-flex h-8 w-5 rotate-12 items-center justify-center rounded-[50%] border-[3px] text-transparent">
-          O
-        </span>
-        YOUNG
-      </Link>
-    )
-  }
-
   return (
-    <Link href={`/${countryCode}`}>
-      <div className="relative h-10 w-[106px] md:w-[120px] lg:h-[45px] lg:w-[120px]">
-        <Image
-          src="/images/almond-logo.png"
-          alt="아몬드영"
-          width={120}
-          height={45}
-          className="h-full w-full object-contain object-left invert"
-          priority
-        />
-      </div>
+    <Link
+      href={`/${countryCode}`}
+      className="flex h-10 shrink-0 items-center rounded bg-white px-2 lg:h-[45px]"
+    >
+      <Image
+        src="/images/almondyoung-logo.png"
+        alt="아몬드영"
+        width={512}
+        height={107}
+        className="h-auto w-[140px] object-contain md:w-[160px]"
+        priority
+      />
     </Link>
   )
 }

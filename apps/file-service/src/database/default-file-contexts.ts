@@ -301,7 +301,7 @@ export const FILE_CONTEXTS: FileContextSeed[] = [
     allowedMimeTypes: ['image/jpeg', 'image/png', 'image/webp'],
     maxFileSize: 10485760,
     pathPrefix: 'contests/logo-image',
-    isActive: true,
+    isActive: false,
   },
   {
     id: ALMOND_PRINT_FILE_CONTEXT_ID,

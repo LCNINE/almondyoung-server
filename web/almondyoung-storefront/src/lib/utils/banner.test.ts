@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest"
 
-import { getActiveBanners, isBannerGroupVisible, isHeroListReady } from "./banner"
+import {
+  getActiveBanners,
+  isBannerGroupVisible,
+  isHeroListReady,
+} from "./banner"
 import type { BannerDto } from "../types/dto/pim"
 
 const banner = (over: Partial<BannerDto> = {}): BannerDto =>
@@ -25,12 +29,17 @@ const banner = (over: Partial<BannerDto> = {}): BannerDto =>
 
 describe("isBannerGroupVisible", () => {
   it("그룹이 비활성이면 안에 활성 배너가 있어도 노출하지 않는다", () => {
-    expect(isBannerGroupVisible({ isActive: false, deletedAt: null })).toBe(false)
+    expect(isBannerGroupVisible({ isActive: false, deletedAt: null })).toBe(
+      false
+    )
   })
 
   it("삭제된 그룹은 노출하지 않는다", () => {
     expect(
-      isBannerGroupVisible({ isActive: true, deletedAt: "2026-01-01T00:00:00.000Z" })
+      isBannerGroupVisible({
+        isActive: true,
+        deletedAt: "2026-01-01T00:00:00.000Z",
+      })
     ).toBe(false)
   })
 
@@ -45,6 +54,14 @@ describe("isBannerGroupVisible", () => {
 })
 
 describe("getActiveBanners", () => {
+  it.each([
+    "/kr/logo-contest",
+    "/logo-contest/submit",
+    "https://almondyoung.com/kr/logo-contest?sort=popular",
+  ])("종료된 공모전 배너를 제외한다: %s", (linkUrl) => {
+    expect(getActiveBanners([banner({ linkUrl })])).toHaveLength(0)
+  })
+
   it("비활성 배너는 제외한다", () => {
     expect(getActiveBanners([banner({ isActive: false })])).toHaveLength(0)
   })
@@ -103,7 +120,13 @@ describe("getActiveBanners — sortOrder 동점", () => {
     const later = at("b", -1, "2026-07-14T00:00:00Z")
     const earlier = at("a", -1, "2026-07-02T00:00:00Z")
     // 입력 순서를 뒤집어도 결과가 같아야 한다
-    expect(getActiveBanners([later, earlier]).map((b) => b.id)).toEqual(["a", "b"])
-    expect(getActiveBanners([earlier, later]).map((b) => b.id)).toEqual(["a", "b"])
+    expect(getActiveBanners([later, earlier]).map((b) => b.id)).toEqual([
+      "a",
+      "b",
+    ])
+    expect(getActiveBanners([earlier, later]).map((b) => b.id)).toEqual([
+      "a",
+      "b",
+    ])
   })
 })

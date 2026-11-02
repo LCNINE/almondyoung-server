@@ -24,7 +24,6 @@ export const MENU_ITEMS: MenuItem[] = [
     icon: "🏪",
     path: "/mypage/shop-listings",
   },
-  { label: "mypage.menu.contests", icon: "🎨", path: "/mypage/contests" },
   {
     label: "mypage.menu.almondTemplates",
     icon: "🖌️",
@@ -124,7 +123,6 @@ export const MENU_SECTIONS: MenuSection[] = [
         icon: "🏪",
         path: "/mypage/shop-listings",
       },
-      { label: "mypage.menu.contests", icon: "🎨", path: "/mypage/contests" },
       {
         label: "mypage.menu.almondTemplates",
         icon: "🖌️",
@@ -236,12 +234,6 @@ export const SIDEBAR_MENU_ITEMS = [
     path: "/mypage/inquiries",
   },
   {
-    id: "contests",
-    label: "mypage.menu.contests",
-    hasSubMenu: false,
-    path: "/mypage/contests",
-  },
-  {
     id: "almond-templates",
     label: "mypage.menu.almondTemplates",
     hasSubMenu: false,
@@ -324,11 +316,6 @@ export const SIDEBAR_SECTIONS: {
         id: "shop-listings",
         label: "mypage.menu.myShopListings",
         path: "/mypage/shop-listings",
-      },
-      {
-        id: "contests",
-        label: "mypage.menu.contests",
-        path: "/mypage/contests",
       },
       {
         id: "almond-templates",

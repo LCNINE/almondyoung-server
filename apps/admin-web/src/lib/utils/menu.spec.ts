@@ -73,18 +73,11 @@ describe('admin menu navigation', () => {
     });
   });
 
-  it('로고 공모전이 최상위 메뉴로 있고 출품작 한 페이지를 가진다', () => {
-    const contest = getMenuById('logo-contest');
-
-    expect(contest?.title).toBe('로고 공모전');
-    expect(contest?.defaultPath).toBe('/logo-contest');
-    expect(contest?.children).toEqual([
-      { id: 'logo-contest-entries', title: '출품작', path: '/logo-contest' },
-    ]);
-    expect(getFirstPagePath('logo-contest')).toBe('/logo-contest');
+  it('종료된 로고 공모전 메뉴를 노출하지 않는다', () => {
+    expect(getMenuById('logo-contest')).toBeNull();
     expect(getActiveMenuAndItem('/logo-contest')).toEqual({
-      menuId: 'logo-contest',
-      itemId: 'logo-contest-entries',
+      menuId: null,
+      itemId: null,
     });
   });
 
@@ -113,7 +106,9 @@ describe('admin menu navigation', () => {
     const ids = order?.children.map((item) => item.id) ?? [];
 
     expect(ids.indexOf('event-failures')).toBe(ids.indexOf('stall-board') + 1);
-    expect(order?.children.find((item) => item.id === 'event-failures')).toMatchObject({
+    expect(
+      order?.children.find((item) => item.id === 'event-failures')
+    ).toMatchObject({
       title: '이벤트 실패',
       path: '/events/failures',
     });

@@ -10,9 +10,10 @@ describe("pageTypeEvent", () => {
     expect(pageTypeEvent("/kr/search")).toBe("view_item_list")
     expect(pageTypeEvent("/kr/cart")).toBe("view_cart")
     expect(pageTypeEvent("/kr/shop-trade/abc")).toBe("view_board")
-    expect(pageTypeEvent("/kr/logo-contest/submit")).toBe("view_board")
     expect(pageTypeEvent("/kr/checkout")).toBe("view_checkout")
-    expect(pageTypeEvent("/kr/checkout/success/intent_1")).toBe("view_order_complete")
+    expect(pageTypeEvent("/kr/checkout/success/intent_1")).toBe(
+      "view_order_complete"
+    )
   })
 
   it("이벤트를 따로 보내는 화면과 그 밖의 화면은 보내지 않는다", () => {

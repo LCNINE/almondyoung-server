@@ -54,10 +54,10 @@ export default function MembershipBenefitsGuide({
           <div className="relative z-10 flex flex-col items-center pt-40 pb-10">
             <div className="mb-6">
               <Image
-                src="/images/logo.webp"
+                src="/images/almondyoung-symbol.png"
                 alt={t("logoAlt")}
                 width={120}
-                height={80}
+                height={120}
               />
             </div>
             <h1 className="mb-1 text-xl font-bold text-white md:text-2xl">
@@ -69,7 +69,7 @@ export default function MembershipBenefitsGuide({
             {showSubscribeCta && (
               <CustomButton
                 onClick={handleSubscribe}
-                className="mb-4 h-12 w-full max-w-sm cursor-pointer rounded-lg bg-primary text-base font-semibold text-white hover:bg-[#e69500]"
+                className="bg-primary mb-4 h-12 w-full max-w-sm cursor-pointer rounded-lg text-base font-semibold text-white hover:bg-[#e69500]"
               >
                 {t("history.subscribe")}
               </CustomButton>

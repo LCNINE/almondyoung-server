@@ -34,6 +34,9 @@ export const metadata: Metadata = getSEOTags({
   },
   extraTags: {
     manifest: "/site.webmanifest",
+    icons: {
+      shortcut: "https://almondyoung.com/favicon.ico",
+    },
   },
 })
 
@@ -61,7 +64,11 @@ export default async function RootLayout(props: { children: React.ReactNode }) {
     <html lang={locale} suppressHydrationWarning>
       <head>
         {/* globals.css 안의 @import 로 두면 메인 CSS 를 다 받은 뒤에야 요청이 나가 첫 표시가 한 단계 밀린다 */}
-        <link rel="preconnect" href="https://cdn.jsdelivr.net" crossOrigin="anonymous" />
+        <link
+          rel="preconnect"
+          href="https://cdn.jsdelivr.net"
+          crossOrigin="anonymous"
+        />
         <link
           rel="stylesheet"
           href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard-dynamic-subset.min.css"
@@ -96,22 +103,22 @@ export default async function RootLayout(props: { children: React.ReactNode }) {
                 <PushNotificationProvider />
                 <CartProvider initialCart={cart}>
                   <ShippingGroupsProvider groups={shippingGroups}>
-                  <ThemeProvider
-                    attribute="class"
-                    defaultTheme="light"
-                    enableSystem={false}
-                    disableTransitionOnChange
-                  >
-                    <CustomThemeProvider>
-                      <div className="relative">
-                        {props.children}
+                    <ThemeProvider
+                      attribute="class"
+                      defaultTheme="light"
+                      enableSystem={false}
+                      disableTransitionOnChange
+                    >
+                      <CustomThemeProvider>
+                        <div className="relative">
+                          {props.children}
 
-                        <FloatingButtons />
-                      </div>
-                      <Toaster />
-                    </CustomThemeProvider>
-                  </ThemeProvider>
-                  <BottomNavigation />
+                          <FloatingButtons />
+                        </div>
+                        <Toaster />
+                      </CustomThemeProvider>
+                    </ThemeProvider>
+                    <BottomNavigation />
                   </ShippingGroupsProvider>
                 </CartProvider>
               </UserProvider>

@@ -11,9 +11,9 @@ export default function CheckoutHeader({ title }: { title: string }) {
       <div className="flex w-full max-w-6xl items-center justify-between">
         <LocalizedClientLink href="/" className="shrink-0">
           <Image
-            src="/images/almond-logo.png"
-            width={1024}
-            height={386}
+            src="/images/almondyoung-logo.png"
+            width={512}
+            height={107}
             className="h-8 w-auto object-contain sm:h-10"
             alt={t("logoAlt")}
           />
@@ -23,10 +23,7 @@ export default function CheckoutHeader({ title }: { title: string }) {
           {title}
         </p>
 
-        <div
-          className="w-0 shrink-0 md:h-10 md:w-[106px]"
-          aria-hidden
-        />
+        <div className="w-0 shrink-0 md:h-10 md:w-[106px]" aria-hidden />
       </div>
     </header>
   )

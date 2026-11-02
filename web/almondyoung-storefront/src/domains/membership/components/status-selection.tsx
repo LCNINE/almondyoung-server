@@ -15,7 +15,7 @@ export default function MembershipStatusSection({
       <header className="flex flex-col items-center gap-3 text-center">
         <figure className="flex flex-col items-center gap-2">
           <Image
-            src="/icons/membership-logo.svg"
+            src="/images/almondyoung-symbol.png"
             alt={t("logoAlt")}
             width={64}
             height={64}

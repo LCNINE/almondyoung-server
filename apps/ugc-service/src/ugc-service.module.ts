@@ -20,7 +20,6 @@ import { ReviewsModule } from './reviews/reviews.module';
 import { QnaModule } from './qna/qna.module';
 import { PurchaseSatisfactionModule } from './purchase-satisfaction/purchase-satisfaction.module';
 import { ShopListingsModule } from './shop-listings/shop-listings.module';
-import { LogoContestModule } from './logo-contest/logo-contest.module';
 import { AlmondTemplateModule } from './almond-template/almond-template.module';
 import { ugcServiceSchema } from './db/schema';
 import { TenancyModule } from '@app/tenancy';
@@ -48,7 +47,6 @@ import { TenancyModule } from '@app/tenancy';
     QnaModule,
     ShopListingsModule,
     PurchaseSatisfactionModule,
-    LogoContestModule,
     AlmondTemplateModule,
   ],
   controllers: [UgcServiceController],

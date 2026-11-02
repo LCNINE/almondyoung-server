@@ -80,7 +80,7 @@ export function SurveyPromptBanner({
           <div className="flex items-center gap-3">
             <div className="h-9 w-9 shrink-0">
               <Image
-                src="/images/logo.webp"
+                src="/images/almondyoung-symbol.png"
                 alt={t("logoAlt")}
                 width={36}
                 height={36}
@@ -109,7 +109,9 @@ export function SurveyPromptBanner({
                 size="sm"
                 className="h-auto rounded-full px-3.5 py-1.5 text-[12px]"
               >
-                <LocalizedClientLink href="/shop-survey">{t("configure")}</LocalizedClientLink>
+                <LocalizedClientLink href="/shop-survey">
+                  {t("configure")}
+                </LocalizedClientLink>
               </CustomButton>
             </div>
           </div>
@@ -138,7 +140,7 @@ export function SurveyPromptBanner({
           <div className="flex items-start gap-4">
             <div className="h-10 w-10 shrink-0">
               <Image
-                src="/images/logo.webp"
+                src="/images/almondyoung-symbol.png"
                 alt={t("logoAlt")}
                 width={40}
                 height={40}

@@ -1,10 +1,5 @@
 import { HeroBannerCarousel } from "@/components/banner/banner-carousel"
-import {
-  logoContestHeroImage,
-  logoContestListThumbnail,
-} from "@/domains/logo-contest/banner-assets"
 import { getBannerGroupByCode } from "@/lib/api/pim/banner"
-import type { BannerDto } from "@/lib/types/dto/pim"
 import type { BannerGroup } from "@/lib/types/ui/pim"
 import {
   getActiveBanners,
@@ -22,25 +17,7 @@ export async function HeroBanner() {
           return null
         })
 
-  // 배너 그룹 내에서 현재 노출 가능한 활성 배너만 필터링하고 정렬
-  const activeBanners: BannerDto[] = getActiveBanners([
-    ...(bannerGroup?.banners ?? []),
-    ...(process.env.NODE_ENV === "development" && bannerGroup
-      ? [
-          {
-            ...bannerGroup.banners[0],
-            id: "local-logo-contest",
-            title: "아몬드영 로고 공모전",
-            pcImageFileId: logoContestHeroImage,
-            mobileImageFileId: logoContestHeroImage,
-            listImageFileId: logoContestListThumbnail,
-            listLabel: "로고 공모전",
-            linkUrl: "/kr/logo-contest",
-            sortOrder: 5,
-          },
-        ]
-      : []),
-  ])
+  const activeBanners = getActiveBanners(bannerGroup?.banners ?? [])
 
   if (!isBannerGroupVisible(bannerGroup) || activeBanners.length === 0) {
     return null

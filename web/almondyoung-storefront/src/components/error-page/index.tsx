@@ -34,13 +34,13 @@ export default function ErrorPageContent({
     <div className="flex min-h-screen flex-col">
       <header className="bg-header-background border-b">
         <div className="container mx-auto flex h-16 items-center px-4">
-          <LocalizedClientLink href="/">
+          <LocalizedClientLink href="/" className="rounded bg-white px-2 py-1">
             <Image
-              src="/images/almond-logo.png"
+              src="/images/almondyoung-logo.png"
               alt="아몬드영"
-              width={1024}
-              height={386}
-              className="h-full w-auto object-contain invert"
+              width={512}
+              height={107}
+              className="h-auto w-[160px] object-contain"
               priority
             />
           </LocalizedClientLink>

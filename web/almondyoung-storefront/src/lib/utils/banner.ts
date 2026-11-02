@@ -35,7 +35,12 @@ export function getActiveBanners(banners: BannerDto[] = []): BannerDto[] {
       ? new Date(banner.displayEndAt).getTime()
       : Infinity
 
-    return banner.isActive && start <= now && end >= now
+    // 종료된 공모전으로 연결되는 기존 운영 배너도 노출을 중단한다.
+    const isRetiredContest = /(?:^|\/)logo-contest(?:[/?#]|$)/.test(
+      banner.linkUrl ?? ""
+    )
+
+    return banner.isActive && !isRetiredContest && start <= now && end >= now
   })
 }
 

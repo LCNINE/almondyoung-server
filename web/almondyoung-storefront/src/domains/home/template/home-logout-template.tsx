@@ -8,7 +8,6 @@ import { HomeSection } from "../components/shared/home-section"
 import { BrandShowcaseWrapper } from "./brand-showcase"
 import { CategoryBestProductsWrapper } from "./best-categories"
 import { OverseasShowcaseWrapper } from "./overseas-showcase"
-import { LogoContestWrapper } from "./logo-contest"
 import { ShopTradeWrapper } from "./shop-trade"
 import { TimeSaleWrapper } from "./time-sale"
 import {
@@ -151,12 +150,6 @@ export async function HomeLogoutTemplate({
       </div>
 
       <BeautyTopHomeCard />
-
-      <ErrorBoundary fallback={null}>
-        <Suspense fallback={null}>
-          <LogoContestWrapper countryCode={countryCode} />
-        </Suspense>
-      </ErrorBoundary>
 
       <ErrorBoundary fallback={null}>
         <Suspense fallback={null}>

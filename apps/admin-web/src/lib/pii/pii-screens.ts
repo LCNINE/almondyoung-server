@@ -63,7 +63,6 @@ const SHOWN: Readonly<Record<string, PiiScreen>> = {
   '/cs/reviews': CUSTOMER,
   '/cs/reviews/[id]': CUSTOMER_DETAIL,
 
-  '/logo-contest': CUSTOMER_DETAIL,
   '/mall/almond-templates': CUSTOMER_DETAIL,
   '/mall/audit': CUSTOMER,
   '/mall/channel-listings': CUSTOMER,

@@ -15,7 +15,10 @@ export type ScreenAccess =
 
 const OPEN: ScreenAccess = { kind: 'open' };
 const SIGNED_IN: ScreenAccess = { kind: 'authenticated' };
-const any = (...anyOf: Permission[]): ScreenAccess => ({ kind: 'permission', anyOf });
+const any = (...anyOf: Permission[]): ScreenAccess => ({
+  kind: 'permission',
+  anyOf,
+});
 
 export const SCREEN_ACCESS: Readonly<Record<string, ScreenAccess>> = {
   '/': any('analytics.report.read'),
@@ -123,7 +126,6 @@ export const SCREEN_ACCESS: Readonly<Record<string, ScreenAccess>> = {
   '/cs/reviews/new': any('cs.review.moderate'),
   '/cs/qna': any('cs.inquiry.read'),
   '/cs/business-licenses': any('customer.profile.read'),
-  '/logo-contest': any('cs.review.read'),
 
   // 통계
   '/statistics': any('analytics.report.read'),
@@ -184,17 +186,26 @@ export function resolveScreenAccess(route: string): ScreenAccess | undefined {
   return undefined;
 }
 
-export function canAny(held: ReadonlySet<string>, anyOf: readonly string[]): boolean {
+export function canAny(
+  held: ReadonlySet<string>,
+  anyOf: readonly string[]
+): boolean {
   return anyOf.some((permission) => held.has(permission));
 }
 
-export function canAccess(access: ScreenAccess, held: ReadonlySet<string>): boolean {
+export function canAccess(
+  access: ScreenAccess,
+  held: ReadonlySet<string>
+): boolean {
   return access.kind !== 'permission' || canAny(held, access.anyOf);
 }
 
 const isRealItem = (item: MenuItem) => Boolean(item.path) && !item.isComingSoon;
 
-export function isMenuItemVisible(item: MenuItem, held: ReadonlySet<string>): boolean {
+export function isMenuItemVisible(
+  item: MenuItem,
+  held: ReadonlySet<string>
+): boolean {
   if (!item.path) return false;
   const access = resolveScreenAccess(item.path);
   return access !== undefined && canAccess(access, held);
@@ -212,25 +223,40 @@ function prune(items: MenuItem[], held: ReadonlySet<string>): MenuItem[] {
   });
 }
 
-const hasOpenable = (items: readonly MenuItem[], held: ReadonlySet<string>): boolean =>
-  items.some((item) => (isRealItem(item) && isMenuItemVisible(item, held)) || hasOpenable(item.children ?? [], held));
+const hasOpenable = (
+  items: readonly MenuItem[],
+  held: ReadonlySet<string>
+): boolean =>
+  items.some(
+    (item) =>
+      (isRealItem(item) && isMenuItemVisible(item, held)) ||
+      hasOpenable(item.children ?? [], held)
+  );
 
 /**
  * 한 메인 메뉴의 하위 목록에서 보이는 항목만 남긴다. 상위 항목은 보이는 하위가 있을 때만.
  * «준비중» 항목은 그 메인 메뉴에 실제로 열리는 화면이 하나라도 있을 때 그대로 둔다 —
  * 오늘처럼 «준비중»만 모인 묶음(예: 경영지원)도 보이고, 권한이 전혀 없는 메인 메뉴는 통째로 숨는다.
  */
-export function filterMenuItems(items: MenuItem[], held: ReadonlySet<string>): MenuItem[] {
+export function filterMenuItems(
+  items: MenuItem[],
+  held: ReadonlySet<string>
+): MenuItem[] {
   const kept = prune(items, held);
   return hasOpenable(kept, held) ? kept : [];
 }
 
-function firstPath(items: readonly MenuItem[], held: ReadonlySet<string>, skipSignedIn: boolean): string | null {
+function firstPath(
+  items: readonly MenuItem[],
+  held: ReadonlySet<string>,
+  skipSignedIn: boolean
+): string | null {
   for (const item of items) {
     if (item.path && !item.isComingSoon) {
       const access = resolveScreenAccess(item.path);
       const permitted = access !== undefined && canAccess(access, held);
-      if (permitted && !(skipSignedIn && access.kind !== 'permission')) return item.path;
+      if (permitted && !(skipSignedIn && access.kind !== 'permission'))
+        return item.path;
     }
     if (item.children) {
       const found = firstPath(item.children, held, skipSignedIn);
@@ -241,7 +267,10 @@ function firstPath(items: readonly MenuItem[], held: ReadonlySet<string>, skipSi
 }
 
 /** 첫 화면(`/`) 권한이 없을 때 갈 곳. 로그인만 요구하는 화면(내 계정 등)은 건너뛴다. */
-export function firstAccessiblePath(menus: readonly MainMenu[], held: ReadonlySet<string>): string | null {
+export function firstAccessiblePath(
+  menus: readonly MainMenu[],
+  held: ReadonlySet<string>
+): string | null {
   for (const menu of menus) {
     const found = firstPath(menu.children, held, true);
     if (found) return found;
@@ -250,6 +279,12 @@ export function firstAccessiblePath(menus: readonly MainMenu[], held: ReadonlySe
 }
 
 /** 메인 탭을 눌렀을 때 그 탭 안에서 갈 곳. */
-export function firstAccessiblePathIn(menu: MainMenu, held: ReadonlySet<string>): string | null {
-  return firstPath(menu.children, held, true) ?? firstPath(menu.children, held, false);
+export function firstAccessiblePathIn(
+  menu: MainMenu,
+  held: ReadonlySet<string>
+): string | null {
+  return (
+    firstPath(menu.children, held, true) ??
+    firstPath(menu.children, held, false)
+  );
 }
