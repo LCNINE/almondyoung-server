@@ -74,8 +74,8 @@ describe('라이브 계획', () => {
   });
 
   it('우리 테넌트(ownBrand)는 금지어를 보지 않는다 — 기본은 본다', () => {
-    const ours = { ...raw, slug: 'almonddemo', adminDomain: 'admin.almondyoung-next.com' };
-    expect(parseLivePlan({ ...ours, ownBrand: true }).adminDomain).toBe('admin.almondyoung-next.com');
+    const ours = { ...raw, slug: 'almondshop', adminDomain: 'admin.almond-shop.example' };
+    expect(parseLivePlan({ ...ours, ownBrand: true }).adminDomain).toBe('admin.almond-shop.example');
     expect(() => parseLivePlan(ours)).toThrow(/almond/);
   });
 
@@ -111,15 +111,17 @@ describe('칸 번호', () => {
   it('직원·점검 계정 아이디·이름은 user-service 계정 만들기 규칙으로 먼저 거절한다 — 끝 단계 400 이 아니라 시작 전에', () => {
     // 2026-11-03 테넌트 2 첫 직원: 배포·실측을 다 돈 뒤 POST /admin/auth 400 «이름은 최대 8자».
     const withStaff = (staff: unknown) => () => parseLivePlan({ ...raw, staff });
-    expect(withStaff([{ loginId: 'demo-staff', username: '데모', email: 'd@acme.test' }])).toThrow(/staff\.0\.loginId/);
-    expect(withStaff([{ loginId: 'abc', username: '데모', email: 'd@acme.test' }])).toThrow(/staff\.0\.loginId/);
-    expect(withStaff([{ loginId: 'demostaff', username: '데모 창고·상품 담당', email: 'd@acme.test' }])).toThrow(
+    expect(withStaff([{ loginId: 'kim-staff', username: '김직원', email: 'd@acme.test' }])).toThrow(
+      /staff\.0\.loginId/,
+    );
+    expect(withStaff([{ loginId: 'abc', username: '김직원', email: 'd@acme.test' }])).toThrow(/staff\.0\.loginId/);
+    expect(withStaff([{ loginId: 'kimstaff', username: '김직원 창고·상품 담당', email: 'd@acme.test' }])).toThrow(
       /staff\.0\.username/,
     );
-    expect(withStaff([{ loginId: 'demostaff', username: '데', email: 'd@acme.test' }])).toThrow(/staff\.0\.username/);
+    expect(withStaff([{ loginId: 'kimstaff', username: '데', email: 'd@acme.test' }])).toThrow(/staff\.0\.username/);
     expect(() => parseLivePlan({ ...raw, checkAccount: { loginId: 'Check', email: 'c@acme.test' } })).toThrow(
       /checkAccount\.loginId/,
     );
-    expect(withStaff([{ loginId: 'demostaff', username: '데모 상품담당', email: 'd@acme.test' }])).not.toThrow();
+    expect(withStaff([{ loginId: 'kimstaff', username: '김 창고담당', email: 'd@acme.test' }])).not.toThrow();
   });
 });

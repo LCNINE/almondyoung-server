@@ -385,6 +385,14 @@ ECS 태스크가 겹쳐도(롤링 배포·`scaling.max > 1`) 한 주기가 클�
 `@Cron`·이름 중복·모듈 누락을 막는다. 크론 목록은 `grep -rn "@CronOnce(\|@Cron(" apps/*/src --include=*.ts | grep -v '\.spec\.'`
 로 도출한다. 로컬에서 겹침을 실측하려면 core 를 `PORT` 만 다르게 둘 띄우고 `cron_runs` 가 주기당 1행인지 본다.
 
+### 멀티테넌트 — 테넌트에 닿는 코드를 고치기 전에 `docs/multi-tenancy.md`
+
+여러 테넌트가 같은 인스턴스(core·RDS·Kafka·ALB)를 쓴다. 정본은 `docs/multi-tenancy.md`(흐름·앱별 모드·실수하기 쉬운 곳 41개·운영 절차)와 ADR 0051~0055.
+- **기본 테넌트는 없다.** 맥락이 없으면 core 는 `TenantContextMissingError`, 소비 문은 DLQ, 공유 서비스는 403 이다. «없으면 테넌트 1» 폴백을 넣지 않는다.
+- 요청 밖에서 core DB 에 닿는 코드는 `DbService.forEachDatabase` 안에서 돈다(크론·폴러·부팅 훅).
+- 🔴 1 이 아닌 테넌트를 만든 뒤에는 전환 배포 ② 이전으로 되돌리지 않는다.
+- 🔒 공개 레포다 — 테넌트 값(누구인지·slug·도메인·버킷·존 ID)을 코드·문서·이슈·PR·커밋에 적지 않는다. 예시는 `acme`·`tenant-2.example`.
+
 ### Events / Kafka (`@app/events`)
 - Transactional outbox pattern for reliable event publishing
 - Auto-DLQ support for failed consumers
