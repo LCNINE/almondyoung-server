@@ -65,7 +65,7 @@ export function setup(infra: IdpInfra) {
   //   'reject' 전환 배포 ②: 거절한다
   // 앱에 기본값이 없어서 이 줄이 빠지면 앱이 뜨지 않는다. services 앱도 아래 SSM 으로 같은 값을 받는다.
   // ⚠️ 바꿀 때는 auth → services 순서로 배포한다. services 배포가 끝날 때까지 user-service 와 나머지 앱의 모드가 다르다.
-  const tenantGateMode = 'warn';
+  const tenantGateMode = 'reject';
   // user-service 의 앱 설정 T — 고객·근태 데이터와 옛 내부 토큰(쇼핑몰·auth-web 세션)이 섬기는 테넌트. 목록에 있어야 뜬다.
   //   sst secret set ServedTenantId '<테넌트 1 의 id>' --stage <stage>
   const servedTenantId = new sst.Secret('ServedTenantId');
