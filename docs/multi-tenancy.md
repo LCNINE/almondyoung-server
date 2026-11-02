@@ -7,10 +7,14 @@
 | 결정 | ADR |
 |---|---|
 | core 는 테넌트마다 논리 DB | [[0051-core-tenant-per-database]] |
-| 계정은 전역, 테넌트는 소속과 부여 | [[0052-account-is-global-tenant-is-membership-and-grant]] |
+| 계정은 전역, 테넌트는 소속과 부여 (🔸 일부 대체됨 → 0056) | [[0052-account-is-global-tenant-is-membership-and-grant]] |
+| 계정은 한 테넌트의 것 (**미구현**) | [[0056-account-belongs-to-one-tenant]] |
 | 이벤트 테넌트는 라이브러리가 찍고 문에서 거른다 | [[0053-event-tenant-stamped-by-library-gated-before-handler]] |
 | 공유 서비스는 한 테넌트만 섬긴다 | [[0054-shared-services-serve-one-tenant]] |
 | 테넌트 직원 화면 = 테넌트 도메인의 테넌트 셸 | [[0055-tenant-shell-on-tenant-domain]] |
+
+🔸 **계정 모델이 바뀐다(0056, 미구현).** 아래 «계정·소속·플랫폼 운영자», 3절의 user-service 줄, 함정 6·28·29·31 은 **지금 코드**를 적은 것이다 —
+0056 이 구현되면 계정은 한 테넌트의 것이 되고 소속은 없어진다. 그 PR 이 이 항목들을 다시 쓴다. 계정 전역을 새로 더 굳히는 코드는 그 전에 0056 과 맞는지 먼저 본다.
 
 🔒 **공개 레포다.** 테넌트 값(누구인지·slug·도메인·버킷·인증서 ARN·존 ID·로고)을 코드·문서·이슈·PR·커밋 메시지에 적지 않는다. 값은 Secret·user-service 테넌트 행·
 레포 밖 계획 파일에만 있다. 예시는 `acme`·`tenant-2.example` 같은 가짜 값으로 쓴다.
@@ -21,10 +25,10 @@
 |---|---|
 | **테넌트** | 이 시스템을 자기 업무에 쓰는 회사 하나. 바뀌지 않는 `id`·`slug`(우리가 짓고 회사 이름을 쓰지 않는다)와 상태 **준비 → 활성 ↔ 정지**를 갖는다. 테넌트 1 도 특별한 «본사»가 아니라 테넌트 중 하나다. |
 | **테넌트 목록** | `{ id, slug, coreDb, publicBucket, privateBucket }[]` JSON Secret(`TENANT_LIST`). 값의 SoT 는 lcnine-auth 의 `TenantList`, services 앱은 SSM 으로 받는다. 이름·로고·도메인은 목록이 아니라 user-service 테넌트 행. |
-| **계정** | 사람 한 명의 신원. 시스템 전체에 하나이고 어느 테넌트의 것도 아니다. |
-| **소속** | 계정이 어느 테넌트의 직원인가. 역할 부여는 언제나 «어느 테넌트에서의» 부여이고, 소속 없는 테넌트에선 받을 수 없다. |
+| **계정** | 사람 한 명의 신원. 시스템 전체에 하나이고 어느 테넌트의 것도 아니다. 🔸 0056: 정확히 한 테넌트의 것으로 바뀐다. |
+| **소속** | 계정이 어느 테넌트의 직원인가. 역할 부여는 언제나 «어느 테넌트에서의» 부여이고, 소속 없는 테넌트에선 받을 수 없다. 🔸 0056: 없어진다(부여의 테넌트 = 계정의 테넌트). |
 | **고객** | 어느 테넌트의 고객 역할을 가진 계정. 어느 테넌트의 고객인지는 들어온 앱이 정한다. 운영자가 만들어 주는 직원 계정은 고객 가입이 아니다. |
-| **플랫폼 운영자** | 이 시스템을 운영하는 우리. 테넌트 역할이 아니라 계정의 성질. `master` 는 테넌트 안의 전권 역할일 뿐이다. |
+| **플랫폼 운영자** | 이 시스템을 운영하는 우리. 테넌트 역할이 아니라 계정의 성질. `master` 는 테넌트 안의 전권 역할일 뿐이다. 🔸 0056: 플랫폼 일만, 다른 테넌트 계정엔 첫 `master` 만들기·비번 비상 초기화만. |
 | **토큰 테넌트** | 토큰의 `tenant` 클레임. 토큰의 역할은 이 테넌트에서 받은 부여만 실린다. |
 | **앱 설정 T** | `SERVED_TENANT_ID` — 한 테넌트만 섬기는 앱이 섬기는 그 테넌트. |
 | **문 모드** | `TENANT_GATE_MODE` = `warn`(없으면 경고 + 셈) / `reject`(없으면 거절). 라이브는 `reject`. SoT 는 lcnine-auth 의 `tenantGateMode` 한 줄. |
@@ -64,7 +68,7 @@ core 쓰기 ─ outbox 행(그 DB) ─▶ 디스패처가 봉투 metadata.tenant
 | 앱 | HTTP | 이벤트 | 저장소 |
 |---|---|---|---|
 | core | 토큰/헤더 테넌트로 DB 라우팅 | `per-message` | 테넌트별 논리 DB |
-| user-service | 계정 층(전역) + 테넌트 1 데이터는 토큰 테넌트 1 일 때만 | `per-message` | 전역 DB, 부여·소속·이력에 테넌트 |
+| user-service | 계정 층(전역) + 테넌트 1 데이터는 토큰 테넌트 1 일 때만 | `per-message` | 전역 DB, 부여·소속·이력에 테넌트 (🔸 0056: 계정 행에 테넌트) |
 | file-service · ai | 토큰 테넌트 | (ai: 계정 이벤트만) | 행에 테넌트 축, file-service 는 테넌트별 버킷 |
 | wallet · membership · analytics · ugc-service · notification · search · channel-adapter | T 만 섬김, 다른 토큰은 403 | `served-tenant` | 테넌트 축 없음(= 테넌트 1) |
 | Medusa · 쇼핑몰 | 테넌트 1 전용. admin-web 의 Medusa 프록시도 토큰 테넌트 ≠ T 면 403. 다른 서비스를 내부 키로 부를 땐 T 를 헤더로 싣는다(`apps/medusa/src/utils/served-tenant-headers.ts`) | Kafka 직접 소비 없음 | Medusa DB(테넌트 1) |
@@ -185,7 +189,7 @@ CSS `@import` 외부 폰트(네트워크 호스트 흔적 — 자체 서빙), �
 계획 파일이 git 추적 경로면 거절한다. 계획 파일 검사가 user-service 계정 규칙(아이디 소문자·숫자 4~20자, 이름 2~8자)을 먼저 본다.
 장치: `scripts/tenancy/create-tenant/runner.spec.ts`, `steps.spec.ts`, `live/live-plan.spec.ts`.
 
-**29. 계정·역할은 전역이다.** 테넌트를 지워도 계정은 남고, 재실행은 «계정 있으면 소속 추가 → 비밀번호 재발급»으로 이어 간다. 역할 이름에 테넌트 이름을 넣지 않는다. 부여 unique 가 `(user, role)` 이라
+**29. 계정·역할은 전역이다.** 🔸 0056 이 계정 쪽을 뒤집는다(역할 정의는 전역 그대로). 테넌트를 지워도 계정은 남고, 재실행은 «계정 있으면 소속 추가 → 비밀번호 재발급»으로 이어 간다. 역할 이름에 테넌트 이름을 넣지 않는다. 부여 unique 가 `(user, role)` 이라
 같은 역할을 두 테넌트에서 받을 수 없다(`IAM_GRANTED_ELSEWHERE`). 회수는 테넌트를 지정한다(`DELETE /admin/roles/:id/members/:userId?tenantId=`) — 지정 없는 회수는 토큰 테넌트 부여만 보고 2xx 로 끝나 다른 테넌트 부여가 조용히 남는다.
 장치: `apps/user-service/src/api/iam/assignments/role-assignment.manager.spec.ts`, `platform-tenant.integration.spec.ts`.
 

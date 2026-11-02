@@ -2,7 +2,8 @@
 
 ## Status
 Accepted (2026-10-29, 교정 10-30). 라이브(2026-11-02). [[0048-admin-permission-model]] 의 역할·권한 사슬 위에 테넌트를 얹는다.
-멀티테넌트 전체 그림은 `docs/multi-tenancy.md`. 🔸 열린 질문: «테넌트마다 계정을 따로 둔다»로 이 결정을 다시 열 수 있다(아래 Consequences 끝).
+멀티테넌트 전체 그림은 `docs/multi-tenancy.md`.
+🔸 **일부 대체됨 (2026-11-03): [[0056-account-belongs-to-one-tenant]]** — 결정 1(계정 전역)·소속·결정 5 의 교차 테넌트 부분. 0056 구현 전까지 코드는 이 ADR 그대로다.
 
 ## Context
 user-service 는 계정·역할·토큰을 한 DB 에 들고 있고, [[0048-admin-permission-model]] 의 권한 사슬은 역할 «이름»을 키로 토큰·스냅샷·캐시를 잇는다.
