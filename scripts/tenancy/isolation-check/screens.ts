@@ -95,7 +95,7 @@ export function buildScreenChecks(
    */
   const sampleIds = async (): Promise<Record<string, string>> => {
     const bearer = await tenantTwoToken();
-    const masters = (await expectOk('GET', `${t.urls.core}/masters?mode=all&limit=100`, { bearer })) as {
+    const masters = (await expectOk('GET', `${t.urls.core}/masters?mode=all&page=1&limit=100`, { bearer })) as {
       data?: { masterId?: string; status?: string }[];
     };
     const rows = masters.data ?? [];

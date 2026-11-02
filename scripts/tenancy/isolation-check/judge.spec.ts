@@ -15,6 +15,11 @@ describe('refusedByTenantGate — 403 이 «테넌트 문»의 거절인가', ()
     expect(r).toEqual({ ok: true });
   });
 
+  it('문구가 한 겹 안쪽에 있어도 읽는다(notification 필터의 모양)', () => {
+    const body = { statusCode: 403, message: { message: GATE, error: 'Forbidden', statusCode: 403 } };
+    expect(refusedByTenantGate({ status: 403, body }, GATE)).toEqual({ ok: true });
+  });
+
   it('200 이면 남의 테넌트 데이터가 나온 것이다', () => {
     const r = refusedByTenantGate({ status: 200, body: { items: [] } }, GATE);
     expect(r.ok).toBe(false);

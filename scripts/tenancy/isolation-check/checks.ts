@@ -204,9 +204,10 @@ export function buildIsolationChecks(t: IsolationTarget): {
   });
 
   // ── core 목록: 테넌트 2 토큰에는 테넌트 2 행만
+  // /masters 는 page 가 없으면 limit 을 무시하고 전부 준다 — 테넌트 1 토큰으로 그렇게 부르면 core 가 OOM 으로 죽는다(11-02 라이브).
   for (const [what, path, key] of [
     ['창고', '/inventory/warehouses', 'id'],
-    ['상품', '/masters?mode=all&limit=100', 'masterId'],
+    ['상품', '/masters?mode=all&page=1&limit=100', 'masterId'],
     ['SKU', '/inventory/skus?limit=100', 'id'],
   ] as const) {
     add({

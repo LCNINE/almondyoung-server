@@ -21,6 +21,8 @@ export function messageOf(body: unknown): string {
     const v = record[key];
     if (typeof v === 'string') return v;
     if (Array.isArray(v)) return v.join(', ');
+    // notification 의 필터는 Nest 예외 응답 객체를 통째로 message 에 넣는다 — { message: { message, error, statusCode } }
+    if (typeof v === 'object' && v !== null) return messageOf(v);
   }
   return '';
 }

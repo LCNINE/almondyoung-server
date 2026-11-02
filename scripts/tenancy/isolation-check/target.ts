@@ -24,7 +24,8 @@ export const SHARED_SERVICE_PROBES: Readonly<Record<SharedServiceName, string>> 
   analytics: '/statistics/operating-costs',
   'ugc-service': '/reviews/admin/rewards/rules',
   notification: '/logs/stats',
-  search: '/search/admin/keywords/statistics',
+  // from·to 가 필수다(없으면 대조가 400). 하루 창이면 충분하다 — 판정은 상태·문구만 본다.
+  search: '/search/admin/keywords/statistics?from=2026-01-01&to=2026-01-01',
   'channel-adapter': '/adapter/order-reconcile-findings',
 };
 
