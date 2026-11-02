@@ -7,10 +7,12 @@ import {
   Min,
   IsDateString,
   IsArray,
+  ArrayMaxSize,
   IsBoolean,
   Matches,
 } from 'class-validator';
 import { Type, Transform } from 'class-transformer';
+import { MASTER_LIST_MAX_LIMIT } from '../services/product-masters-paging.util';
 
 export class ListProductMastersQueryDto {
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) page?: number;
@@ -89,6 +91,7 @@ export class ListProductMastersQueryDto {
       : value,
   )
   @IsArray()
+  @ArrayMaxSize(MASTER_LIST_MAX_LIMIT)
   @IsString({ each: true })
   ids?: string[];
 }

@@ -269,7 +269,7 @@ export class PimClient {
   async healthCheck(): Promise<boolean> {
     try {
       const response = await this.client.get('/masters', {
-        params: { limit: 1 },
+        params: { page: 1, limit: 1 },
       });
       return response.status === 200;
     } catch (error) {

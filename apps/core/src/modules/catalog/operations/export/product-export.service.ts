@@ -10,6 +10,9 @@ import { ExportRow, resolveColumns } from './product-export.columns';
 /** 한 번에 내보낼 수 있는 상한. 넘으면 필터를 좁히라고 되돌린다. */
 const MAX_ROWS = 50_000;
 
+/** 조회 한 묶음. 한 번에 다 읽으면 버전 행(상세 HTML 포함)이 한꺼번에 올라와 core 가 OOM 으로 죽었다(2026-11-02). */
+const BATCH_SIZE = 1_000;
+
 export type ProductExportRequest = {
   /** 내보낼 열 key 순서. 비우면 기본 양식. */
   columns?: string[];
@@ -31,13 +34,12 @@ export class ProductExportService {
   /**
    * 상품 목록을 xlsx 스트림으로 내보낸다.
    *
-   * 행은 한 번에 조회하고 시트 쓰기는
+   * 행은 BATCH_SIZE 묶음으로 조회해 요약만 모으고, 시트 쓰기는
    * WorkbookWriter 로 스트리밍한다 — 비스트리밍 Workbook 은 셀 객체를 전부
    * 메모리에 들고 있어 10,021행 × 19열이면 그쪽이 먼저 터진다.
    *
-   * ponytail: 조회는 단일 배치다. MAX_ROWS(5만)까지는 이 방식으로 버틴다.
-   * 그 위로 올라가면 getMasters 에 keyset 페이징을 열고 배치마다 addRow 하도록
-   * 바꾼다 — 시트 쓰기가 이미 스트리밍이라 그때 조회만 갈아끼우면 된다.
+   * 묶음은 offset 페이징이라 내보내는 도중 상품이 추가·삭제되면 행이 겹치거나 빠질 수 있다.
+   * 엑셀 내보내기에선 받아들인다.
    */
   async export(request: ProductExportRequest): Promise<{ stream: Readable; rowCount: number }> {
     const columns = resolveColumns(request.columns);
@@ -72,27 +74,33 @@ export class ProductExportService {
   private async loadRows(request: ProductExportRequest): Promise<ExportRow[]> {
     const ids = request.ids?.filter(Boolean);
 
-    // page 를 넘기지 않으면 getMasters 가 전량을 반환한다(내부 limit 99999).
-    //
     // ids 경로는 mode='all' 로 간다. 기본값 'active' 를 쓰면 목록에서 작성중(draft)이나
     // 판매안함(inactive) 행을 골라 내려받았을 때 빈 파일이 나온다 — 화면에 보이는 걸
     // 선택했는데 결과가 비는 건 사용자가 원인을 알 수 없는 실패다.
     const filters = ids?.length
       ? { ids, deleted: false as const, mode: 'all' as const }
-      : { ...(request.filters ?? {}), page: undefined, limit: undefined };
+      : { ...(request.filters ?? {}) };
 
-    const result = await this.productMastersService.getMasters(filters);
+    const summaries: ReturnType<typeof ProductMasterMapper.toProductSummary>[] = [];
+    for (let page = 1; ; page++) {
+      const result = await this.productMastersService.getMasters({ ...filters, page, limit: BATCH_SIZE }, undefined, {
+        maxLimit: BATCH_SIZE,
+        withPreviews: false,
+      });
 
-    if (result.total > MAX_ROWS) {
-      throw new BadRequestError(
-        `내보낼 상품이 ${result.total.toLocaleString()}건입니다. ` +
-          `한 번에 ${MAX_ROWS.toLocaleString()}건까지만 가능하니 필터를 좁혀주세요.`,
-      );
+      // 첫 묶음의 total 로 판정한다 — 상한 초과를 다 읽은 뒤에 알면 이미 늦다.
+      if (result.total > MAX_ROWS) {
+        throw new BadRequestError(
+          `내보낼 상품이 ${result.total.toLocaleString()}건입니다. ` +
+            `한 번에 ${MAX_ROWS.toLocaleString()}건까지만 가능하니 필터를 좁혀주세요.`,
+        );
+      }
+
+      for (const item of result.data) {
+        summaries.push(ProductMasterMapper.toProductSummary({ ...item.product, ...item.aggregate }));
+      }
+      if (result.data.length < BATCH_SIZE) break;
     }
-
-    const summaries = result.data.map((item) =>
-      ProductMasterMapper.toProductSummary({ ...item.product, ...item.aggregate }),
-    );
 
     const supplierNames = await this.loadSupplierNames();
 

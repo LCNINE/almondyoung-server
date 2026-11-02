@@ -1,5 +1,5 @@
 import { Body, Controller, Delete, Get, HttpCode, HttpStatus, Param, Patch, Post, Put, Query } from '@nestjs/common';
-import { ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { RequirePermission } from '@app/authorization';
 import { SkuCatalogService } from '../services/sku-catalog.service';
 import { CreateSkuDto } from '../dto/create-sku.dto';
@@ -8,6 +8,7 @@ import { AddBarcodeDto } from '../dto/add-barcode.dto';
 import { BarcodeDto, SkuResponseDto } from '../dto/sku-response.dto';
 import { DeletedSkuFiltersDto } from '../dto/deleted-sku-filters.dto';
 import { AdvancedInventoryFiltersDto } from '../dto/advanced-filters.dto';
+import { SkuSearchQueryDto } from '../dto/sku-search-query.dto';
 import { SkuBarcodeMapper } from '../mappers/sku.mapper';
 
 @ApiTags('Inventory')
@@ -48,27 +49,10 @@ export class SkuCatalogController {
   @RequirePermission('inventory.stock.read')
   @Get()
   @ApiOperation({ summary: 'SKU 검색' })
-  @ApiQuery({ name: 'id', required: false })
-  @ApiQuery({ name: 'code', required: false })
-  @ApiQuery({ name: 'barcode', required: false })
-  @ApiQuery({ name: 'name', required: false })
-  @ApiQuery({ name: 'supplierName', required: false })
-  @ApiQuery({ name: 'inventoryManagement', required: false, type: Boolean })
-  @ApiQuery({ name: 'groupId', required: false })
-  @ApiQuery({ name: 'holderId', required: false })
-  @ApiResponse({ status: 200, description: '검색된 SKU 목록', type: [SkuResponseDto] })
+  @ApiResponse({ status: 200, description: '검색된 SKU 목록 (최대 limit 건, 기본 50 · 최대 200)', type: [SkuResponseDto] })
   @ApiResponse({ status: 403, description: '재고 현장 작업 권한이 없습니다.' })
-  async search(
-    @Query('id') id?: string,
-    @Query('code') code?: string,
-    @Query('barcode') barcode?: string,
-    @Query('name') name?: string,
-    @Query('supplierName') supplierName?: string,
-    @Query('inventoryManagement') inventoryManagement?: boolean,
-    @Query('groupId') groupId?: string,
-    @Query('holderId') holderId?: string,
-  ): Promise<SkuResponseDto[]> {
-    return this.skus.search({ id, code, barcode, name, supplierName, inventoryManagement, groupId, holderId });
+  async search(@Query() query: SkuSearchQueryDto): Promise<SkuResponseDto[]> {
+    return this.skus.search(query);
   }
 
   @RequirePermission('inventory.stock.read')

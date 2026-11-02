@@ -107,6 +107,18 @@ export const useSkus = (query?: Parameters<typeof skusClient.getSkus>[0]) => {
   });
 };
 
+/**
+ * SKU 목록 화면용 — 서버 페이징과 total 이 있는 search/advanced 를 쓴다.
+ * GET /inventory/skus 는 total 없이 한 쪽(최대 200건)만 준다.
+ */
+export const useSkuList = (query: Parameters<typeof skusClient.searchAdvanced>[0]) => {
+  return useQuery({
+    queryKey: inventoryQueryKeys.skuList(query),
+    queryFn: () => skusClient.searchAdvanced(query),
+    staleTime: 2 * 60 * 1000,
+  });
+};
+
 /** SKU 이름/코드 통합 검색. 검색어가 비어 있으면 요청하지 않는다. */
 export const useSkuSearch = (searchQuery: string, page = 1, limit = 10) => {
   return useQuery({

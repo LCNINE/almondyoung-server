@@ -24,6 +24,13 @@ describe('ListProductMastersQueryDto', () => {
     expect(toDto({ ids: 'a, b ,c' }).ids).toEqual(['a', 'b', 'c']);
   });
 
+  // ids 로 부르면 id 수만큼 준다 — 상한이 없으면 id 를 수만 개 붙인 요청이 전량 조회와 같다.
+  it('ids 는 100 개까지 받는다', async () => {
+    const ids = (n: number) => Array.from({ length: n }, (_, i) => `id-${i}`).join(',');
+    expect(await validate(toDto({ ids: ids(100) }))).toHaveLength(0);
+    expect((await validate(toDto({ ids: ids(101) }))).map((e) => e.property)).toEqual(['ids']);
+  });
+
   it('normalises supplierId to an array (단일/콤마 다중 모두)', async () => {
     const a = '11111111-1111-4111-8111-111111111111';
     const b = '22222222-2222-4222-8222-222222222222';

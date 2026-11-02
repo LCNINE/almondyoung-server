@@ -321,14 +321,6 @@ export const useActiveChannels = () => {
 
 // ===== 채널별 제품 관련 쿼리 =====
 
-// ===== 이름 변경 대응 별칭 (구 코드 호환성) =====
-
-/**
- * 제품 마스터 목록 조회 (useMasterList → useMasters로 이름 변경됨)
- * @deprecated useMasters 사용 권장
- */
-export const useMasterList = () => useMasters();
-
 // ===== 배너 그룹 관련 쿼리 =====
 
 export const useBannerGroups = (query?: { category?: string }) => {

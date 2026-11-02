@@ -1,15 +1,16 @@
 // src/features/order/input/manual-single/components/index.tsx
 'use client';
 
-import { useSkus, useWarehouses } from '@/lib/services/inventory';
+import { useSkuSearch, useWarehouses } from '@/lib/services/inventory';
 import { useCreateSalesOrder } from '@/lib/services/orders';
 import {
   useActiveChannels,
-  useMasterList,
+  useMasters,
   useVariantsByMaster,
 } from '@/lib/services/products';
 import { useRouter } from 'next/navigation';
 import React, { useMemo, useState } from 'react';
+import { useDebounced } from '@/hooks/use-debounced';
 
 import { AddressSearchDialog } from '@/components/common/address-search-dialog';
 import { Button } from '@/components/ui/button';
@@ -75,6 +76,9 @@ type Address = {
 };
 
 // -------------------------
+/** 상품검색 모달이 한 번에 받는 건수. */
+const SEARCH_LIMIT = 20;
+
 const seq = { n: 1 };
 const genOrderNo = () => {
   const d = new Date();
@@ -589,25 +593,17 @@ function ProductSearch({
   const [tab, setTab] = useState<'product' | 'sku'>('product');
   const [q, setQ] = useState('');
 
-  // 판매상품
-  const { data: masters } = useMasterList();
-
-  // 재고상품 (SkuQuery에 search가 없어서 클라이언트 필터)
-  const { data: skusRaw } = useSkus();
-  const skus = useMemo(() => {
-    const arr = (skusRaw?.items ?? []) as any[];
-    if (!q) return arr;
-    const kw = q.toLowerCase();
-    return arr.filter(
-      (s) =>
-        String(s.name ?? s.title ?? s.id ?? '')
-          .toLowerCase()
-          .includes(kw) ||
-        String(s.id ?? '')
-          .toLowerCase()
-          .includes(kw)
-    );
-  }, [skusRaw, q]);
+  // 검색은 서버가 한다 — 전부 받아 브라우저에서 거르던 시절엔 이 화면이 뜰 때마다
+  // 상품·SKU 전량을 불러 core 를 위험하게 했다. 한 쪽(SEARCH_LIMIT)만 받는다.
+  const keyword = useDebounced(q.trim());
+  const { data: masters } = useMasters({
+    q: keyword || undefined,
+    page: 1,
+    limit: SEARCH_LIMIT,
+  });
+  // 재고상품은 검색어를 넣어야 부른다(빈 검색어면 요청하지 않는다).
+  const { data: skuResult } = useSkuSearch(keyword, 1, SEARCH_LIMIT);
+  const skus = (skuResult?.items ?? []) as any[];
 
   const onSelectSku = (row: any) => {
     addLine({
@@ -702,7 +698,14 @@ function ProductSearch({
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {(skus ?? []).map((s: any) => (
+                  {!keyword && (
+                    <TableRow>
+                      <TableCell colSpan={3} className="text-center text-muted-foreground">
+                        SKU 이름이나 코드를 입력하세요
+                      </TableCell>
+                    </TableRow>
+                  )}
+                  {skus.map((s: any) => (
                     <TableRow key={s.id}>
                       <TableCell className="font-mono">{s.id}</TableCell>
                       <TableCell>{s.name || '-'}</TableCell>

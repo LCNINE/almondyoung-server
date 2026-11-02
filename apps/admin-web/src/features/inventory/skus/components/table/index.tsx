@@ -12,7 +12,7 @@ import {
   useCreateSku,
   useDeleteSku,
   useRemoveSkuFromGroup,
-  useSkus,
+  useSkuList,
   useUpdateSku,
 } from '@/lib/services/inventory';
 import { usePermissionCheck } from '@/hooks/use-permission';
@@ -27,7 +27,7 @@ const PAGE_SIZE = 20;
 
 export function SkusTable() {
   const { searchParams: query } = useSkusTableQuery({ pageSize: PAGE_SIZE });
-  const { data, isLoading, isFetching } = useSkus(query);
+  const { data, isLoading, isFetching } = useSkuList(query);
   const filters = useSkusTableFilters();
 
   const [editRow, setEditRow] = useState<SkuResponseDto | null>(null);
