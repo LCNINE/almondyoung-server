@@ -7,11 +7,12 @@ import { retrieveCustomer } from "@/lib/api/medusa/customer"
 import { getOrderReturns } from "@/lib/api/medusa/returns"
 import { getOrderActionsByMedusaId } from "@/lib/api/orders/store-orders"
 import { getCashReceipts, getBankTransferDepositAccount, getActiveRefundRequest } from "@/lib/api/wallet"
+import { getReviewEligibilities } from "@/lib/api/ugc/reviews"
 import { getOwnerships } from "@/lib/api/library/library-api"
 
 interface OrderDetailsPageProps {
   params: Promise<{ countryCode: string }>
-  searchParams: Promise<{ orderId?: string }>
+  searchParams: Promise<{ orderId?: string; refund?: string }>
 }
 
 export default async function OrderDetailsPage({
@@ -19,7 +20,7 @@ export default async function OrderDetailsPage({
   searchParams,
 }: OrderDetailsPageProps) {
   const { countryCode } = await params
-  const { orderId } = await searchParams
+  const { orderId, refund } = await searchParams
 
   // 반품 목록은 부가 정보다 — 실패는 null(칸이 안 뜸), 인증 실패만 getOrderReturns 가 던져 error.tsx 로 간다
   const [rawOrder, customer, rawCoreActions, rawReturns] = await Promise.all([
@@ -47,7 +48,7 @@ export default async function OrderDetailsPage({
   )?.intentId as string | undefined
   // coreActions.orderId = Core sales order id. 디지털 ownership 은 이 id 로 발급된다.
   const coreOrderId = coreActions?.orderId
-  const [cashReceipts, depositAccount, refundRequest, ownerships] =
+  const [cashReceipts, depositAccount, refundRequest, ownerships, eligibilities] =
     await Promise.all([
       intentId ? getCashReceipts(intentId) : Promise.resolve([]),
       intentId ? getBankTransferDepositAccount(intentId) : Promise.resolve(null),
@@ -57,8 +58,15 @@ export default async function OrderDetailsPage({
             () => null
           )
         : Promise.resolve(null),
+      order ? getReviewEligibilities({ limit: 100 }).catch(() => null) : Promise.resolve(null),
     ])
   const digitalOwnerships = ownerships?.data ?? []
+  const reviewHrefs = Object.fromEntries(
+    (eligibilities?.data ?? []).map((eligibility) => [
+      eligibility.orderLineId,
+      `/mypage/reviews?write=${eligibility.id}&productId=${eligibility.productId}`,
+    ])
+  )
 
   return (
     <WithHeaderLayout
@@ -81,6 +89,8 @@ export default async function OrderDetailsPage({
             refundRequestStatus={refundRequest?.status}
             digitalOwnerships={digitalOwnerships}
             returns={returns}
+            autoOpenRefund={refund === "1"}
+            reviewHrefs={reviewHrefs}
           />
         </MypageLayout>
       </div>
@@ -97,6 +107,8 @@ export default async function OrderDetailsPage({
           refundRequestStatus={refundRequest?.status}
           digitalOwnerships={digitalOwnerships}
           returns={returns}
+          autoOpenRefund={refund === "1"}
+          reviewHrefs={reviewHrefs}
         />
       </div>
     </WithHeaderLayout>

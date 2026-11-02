@@ -14,6 +14,8 @@ export type CustomerReturnStage =
 
 export interface CustomerReturn {
   returnId: string
+  /** 고객에게 보이는 접수번호. 옛 Medusa 는 내려주지 않는다 */
+  displayId?: number | null
   kind: "return" | "exchange"
   stage: CustomerReturnStage
   requestedAt: string

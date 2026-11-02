@@ -46,6 +46,7 @@ const src = (over: Partial<StoreReturnSource> & { extra?: Record<string, unknown
   const { extra, ...rest } = over;
   return {
     id: 'ret_1',
+    displayId: 1001,
     status: 'requested',
     requestedAt: '2026-10-27T00:00:00.000Z',
     createdAt: '2026-10-26T00:00:00.000Z',
@@ -70,6 +71,7 @@ describe('describeStoreReturns', () => {
     ]);
     expect(r).toEqual({
       returnId: 'ret_1',
+      displayId: 1001,
       stage: 'requested',
       requestedAt: '2026-10-27T00:00:00.000Z',
       reason: 'defective',

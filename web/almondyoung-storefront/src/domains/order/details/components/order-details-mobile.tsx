@@ -1,23 +1,7 @@
 "use client"
 
-import { useCancelFailureAlert } from "@/components/orders/cancel-failure-alert"
-import {
-  PRINT_PARTIAL_CANCEL_AVAILABLE,
-  usePrintPartialCancelDialog,
-} from "@/components/orders/print-partial-cancel-dialog"
-import LocalizedClientLink from "@/components/shared/localized-client-link"
-import OrderItemCartButton from "@/components/orders/order-card/order-item-cart-button"
-import { cartRequiresShipping, isDigitalItem } from "@/lib/api/medusa/shipping-method-policy"
-import { CustomButton } from "@/components/shared/custom-buttons/custom-button"
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
+import { cartRequiresShipping } from "@/lib/api/medusa/shipping-method-policy"
 import { buildAddressLine } from "@/lib/utils/address-line"
-import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
 import {
   calculateMembershipDiscount,
   getOrderPointsUsed,
@@ -28,35 +12,28 @@ import {
   OrderInfoCardRoot,
   OrderInfoCardRow,
   OrderInfoCardRowItem,
-} from "@components/orders/order-info-card.atomic"
+} from "@/components/orders/order-info-card.atomic"
 import {
   OrderStatusBadges,
   getCoreDisplayStatus,
   getPaymentStatusI18nKey,
 } from "@/components/orders/order-status-badges"
-import {
-  CancelReasonForm,
-  type CancelReasonCode,
-} from "@/components/orders/cancel-reason-form"
 import type { StoreOrderActionsResponse, RefundSummary } from "@/lib/api/orders/store-orders"
-import { cancelOrderByMedusaId } from "@/lib/api/orders/store-orders"
-import { paymentStatusForDisplay, showTrackLink } from "@/lib/orders/core-order-view"
+import { paymentStatusForDisplay } from "@/lib/orders/core-order-view"
 import { refundTone, resolveRefundStatus } from "@/lib/orders/refund-status"
 import { REFUND_TONE_TEXT_CLASS } from "@/components/orders/refund-status-style"
 import type { IssuedCashReceiptDto } from "@/lib/types/dto/wallet"
 import { CashReceiptInfo } from "./cash-receipt-info"
 import { HttpTypes } from "@medusajs/types"
 import { useTranslations } from "next-intl"
-import { useState, useTransition } from "react"
-import { useRouter } from "next/navigation"
-import { toast } from "sonner"
-import { RefundRequestDialog } from "./refund-request-dialog"
+import OrderDetailsStatusCards from "./order-details-status-cards"
 import { DepositAccountInfo } from "./deposit-account-info"
 import type { BankTransferDepositAccount } from "@/lib/api/wallet"
 import type { DigitalAssetOwnership } from "@lib/types/ui/library.ui"
 import { OrderDigitalDownloads } from "./order-digital-downloads"
 import { OrderReturnsSection } from "./order-returns-section"
 import type { CustomerReturn } from "@lib/types/ui/returns"
+import { getCompletedOrderReturnStatus } from "@/components/orders/order-status-display"
 
 const formatAmount = (value?: number | null) =>
   `${(value ?? 0).toLocaleString()}원`
@@ -70,6 +47,8 @@ export const OrderDetailsMobile = ({
   refundRequestStatus,
   digitalOwnerships = [],
   returns = null,
+  autoOpenRefund = false,
+  reviewHrefs = {},
 }: {
   order: HttpTypes.StoreOrder | null
   countryCode: string
@@ -80,23 +59,15 @@ export const OrderDetailsMobile = ({
   refundRequestStatus?: string
   digitalOwnerships?: DigitalAssetOwnership[]
   returns?: CustomerReturn[] | null
+  autoOpenRefund?: boolean
+  reviewHrefs?: Record<string, string>
 }) => {
   const tLabels = useTranslations("mypage.order.labels")
   const tStatus = useTranslations("mypage.order.status")
-  const tActions = useTranslations("mypage.order.actions")
-  const tReturns = useTranslations("mypage.order.returns")
-  const { showCancelFailure, cancelFailureAlert } = useCancelFailureAlert()
-  const { askPrintPartialCancel, printPartialCancelDialog } =
-    usePrintPartialCancelDialog(() => runCancel(true))
+  const tItemReturn = useTranslations("mypage.order.list.itemReturn")
   const tPaymentStatus = useTranslations("mypage.order.paymentStatus")
   const tRefundInfo = useTranslations("mypage.order.refundInfo")
   const tRefundRequest = useTranslations("mypage.order.refundRequest")
-  const router = useRouter()
-  const [showCancelDialog, setShowCancelDialog] = useState(false)
-  const [isCancelling, startCancelTransition] = useTransition()
-  const [cancelReasonCode, setCancelReasonCode] =
-    useState<CancelReasonCode>("CHANGE_OF_MIND")
-  const [cancelReasonDetail, setCancelReasonDetail] = useState("")
 
   if (!order) {
     return (
@@ -127,41 +98,7 @@ export const OrderDetailsMobile = ({
   // 디지털 단독 주문이면 배송 정보를 숨긴다.
   const requiresShipping = cartRequiresShipping(order.items)
 
-  const availableActions = coreActions?.availableActions ?? []
-  const canCancel = availableActions.includes("cancel")
-  const canTrack = availableActions.includes("track")
-  const canReturn = availableActions.includes("return")
-  const canExchange = availableActions.includes("exchange")
-  const cancelUnavailableReason = coreActions?.cancelUnavailableReason
-
-  // 입금확인 완료된 무통장 주문은 셀프 취소 시 자동환불이 되지 않아 관리자가 인지하기 어렵다.
-  // 셀프 취소를 막고 고객센터(카카오채널) 문의로 안내한다.
-  const isBankTransferConfirmed =
-    (order.metadata as Record<string, unknown> | null)?.bank_transfer_status ===
-    "confirmed"
-  const showSelfCancel = canCancel && !isBankTransferConfirmed
-  const showBankTransferCancelGuide = canCancel && isBankTransferConfirmed
-  // 이미 다운로드한 디지털 상품은 회수 불가 — 무통장 환불신청도 막고 고객센터 문의로 안내.
-  // (셀프 취소는 Core 가 cancelUnavailableReason='digital_downloaded' 로 이미 막음)
-  const hasExercisedDigital = digitalOwnerships.some((o) => !!o.exercisedAt)
-  // 취소/환불이 막힌 사유는 비활성 버튼이 아니라 버튼 줄 위 빨간 텍스트 한 줄로 안내한다.
-  // TODO: 부분취소/부분환불이 가능해지면 digital_downloaded 분기는 삭제 (Core 가드와 세트).
-  const blockedNotice =
-    showBankTransferCancelGuide && !refundRequestStatus && hasExercisedDigital
-      ? tRefundRequest("digitalDownloadedBlocked")
-      : cancelUnavailableReason && cancelUnavailableReason !== "already_cancelled"
-        ? tActions(`cancelUnavailable.${cancelUnavailableReason}`)
-        : undefined
-
-  // 배송조회는 배송이 필요한 주문에서만(디지털 단독 주문은 숨김). core 가 취소를 확정한 주문은 Medusa 이행만으로 띄우지 않는다
-  const showTrack = showTrackLink({
-    requiresShipping,
-    canTrack,
-    medusaFulfillmentStatus: order.fulfillment_status,
-    actions: coreActions,
-  })
-
-  const statusLabel = refundRequestStatus === "REQUESTED"
+  const deliveryStatusLabel = refundRequestStatus === "REQUESTED"
     ? tRefundRequest("requested")
     : coreActions
     ? getCoreDisplayStatus(coreActions)
@@ -187,6 +124,14 @@ export const OrderDetailsMobile = ({
                     : "paid"
       )
 
+  const completedReturnStatus = getCompletedOrderReturnStatus(
+    order.items,
+    returns
+  )
+  const statusLabel = completedReturnStatus
+    ? tItemReturn(completedReturnStatus)
+    : deliveryStatusLabel
+
   const paymentStatusLabel = tPaymentStatus(
     getPaymentStatusI18nKey(paymentStatusForDisplay(order.payment_status ?? "", coreActions))
   )
@@ -197,41 +142,6 @@ export const OrderDetailsMobile = ({
   const refundStatusBadgeLabel = tRefundInfo(`statusLabels.${refundStatus}`)
   const refundGuidance = tRefundInfo(`guidance.${refundStatus}`)
   const showRefundSection = refundStatus !== "none"
-
-  const handleCancelConfirm = () => runCancel(false)
-
-  const runCancel = (excludePrint: boolean) => {
-    startCancelTransition(async () => {
-      try {
-        const result = await cancelOrderByMedusaId(order.id, {
-          reasonCode: cancelReasonCode,
-          ...(excludePrint ? { excludePrint: true } : {}),
-          reasonDetail:
-            cancelReasonCode === "OTHER" && cancelReasonDetail
-              ? cancelReasonDetail
-              : undefined,
-        })
-        if (!result.success) {
-          setShowCancelDialog(false)
-          if (result.code === PRINT_PARTIAL_CANCEL_AVAILABLE) {
-            askPrintPartialCancel()
-            return
-          }
-          showCancelFailure(result.error)
-          return
-        }
-        setShowCancelDialog(false)
-        // 취소는 요청 순간 확정된다(#1016 36번 재설계 §8.2) — 응답이 곧 «취소 완료»다. 환불은 환불 배지가 말한다
-        toast.success(tActions("cancelCompleted"))
-        router.refresh()
-      } catch (err: unknown) {
-        // 인증 실패는 error.tsx 가 토큰 복구를 처리하도록 전파
-        if ((err as { digest?: string }).digest === "UNAUTHORIZED") throw err
-        setShowCancelDialog(false)
-        showCancelFailure(tActions("cancelError"))
-      }
-    })
-  }
 
   return (
     <main className="min-h-screen w-full bg-[#f8f8f8] font-sans">
@@ -248,6 +158,25 @@ export const OrderDetailsMobile = ({
             })}
           </span>
         </header>
+
+        <section className="mb-6 space-y-3">
+          <OrderDetailsStatusCards
+            order={order}
+            status={deliveryStatusLabel}
+            coreActions={coreActions}
+            returns={returns}
+            intentId={intentId}
+            refundRequestStatus={refundRequestStatus}
+            autoOpenRefund={autoOpenRefund}
+            autoOpenRefundMedia="(max-width: 1023px)"
+            reviewHrefs={reviewHrefs}
+            digitalOwnerships={digitalOwnerships}
+          />
+          {depositAccount?.accountNumber && (
+            <DepositAccountInfo account={depositAccount} />
+          )}
+          <OrderDigitalDownloads ownerships={digitalOwnerships} />
+        </section>
 
         <section aria-labelledby="payment-details-title">
           <h3 id="payment-details-title" className="sr-only">
@@ -431,217 +360,20 @@ export const OrderDetailsMobile = ({
         </section>
         )}
 
-        <section className="mt-3 rounded-lg bg-white shadow-sm">
-          <div className="p-4">
-            <h3 className="font-bold text-gray-800">{statusLabel}</h3>
-            <p className="mt-2 text-sm text-gray-500">
-              {tLabels("items", { count: order.items?.length ?? 0 })}
-            </p>
-            {depositAccount && depositAccount.accountNumber && (
-              <div className="mt-3">
-                <DepositAccountInfo account={depositAccount} />
-              </div>
-            )}
-          </div>
-
+        {returns && returns.length > 0 && (
           <div className="border-border-muted border-t p-4">
-            {order.items?.map((item) => {
-              const thumbnail = getThumbnailUrl(
-                item.thumbnail ?? item.variant?.product?.thumbnail ?? ""
-              )
-              const productHref = item.product_handle
-                ? `/products/${item.product_handle}`
-                : undefined
-              return (
-                <article
-                  key={item.id}
-                  className="flex gap-3 py-3 first:pt-0 last:pb-0"
-                >
-                  <LocalizedClientLink
-                    href={productHref ?? "#"}
-                    className={productHref ? "shrink-0" : "pointer-events-none shrink-0"}
-                  >
-                    {thumbnail ? (
-                      <img
-                        src={thumbnail}
-                        alt={item.title}
-                        className="h-20 w-20 rounded-md object-cover"
-                      />
-                    ) : (
-                      <div className="h-20 w-20 rounded-md bg-gray-100" />
-                    )}
-                  </LocalizedClientLink>
-                  <div className="flex-grow">
-                    <LocalizedClientLink
-                      href={productHref ?? "#"}
-                      className={productHref ? undefined : "pointer-events-none"}
-                    >
-                      <p className="font-semibold text-gray-800">{item.title}</p>
-                    </LocalizedClientLink>
-                    <p className="mt-1 text-sm text-gray-500">
-                      {formatAmount(item.unit_price)} · {item.quantity}
-                    </p>
-                    {item.variant?.title && item.variant.title !== "Default" && (
-                      <p className="mt-1 text-xs text-gray-400">
-                        - {item.variant.title}
-                      </p>
-                    )}
-                    {canReturn && (
-                      <LocalizedClientLink
-                        href={`/mypage/exchange?orderId=${encodeURIComponent(order.id)}&type=return&itemId=${encodeURIComponent(item.id)}`}
-                        className="mt-2 inline-block text-xs text-gray-600 underline"
-                      >
-                        {tReturns("requestItem")}
-                      </LocalizedClientLink>
-                    )}
-                  </div>
-                  {/* 디지털 라인: 이 주문의 ownership 이 잡히면 아래 다운로드 블록이 대신 처리한다. */}
-                  {isDigitalItem(item) ? (
-                    digitalOwnerships.length > 0 ? null : (
-                      <LocalizedClientLink href="/mypage/download">
-                        <CustomButton variant="outline" size="sm">
-                          {tActions("download")}
-                        </CustomButton>
-                      </LocalizedClientLink>
-                    )
-                  ) : (
-                    item.variant_id && (
-                      <OrderItemCartButton variantId={item.variant_id} />
-                    )
-                  )}
-                </article>
-              )
-            })}
-            <OrderDigitalDownloads ownerships={digitalOwnerships} />
-          </div>
-
-          {returns && returns.length > 0 && (
-            <div className="border-border-muted border-t p-4">
-              <OrderReturnsSection
-                orderId={order.id}
-                returns={returns}
-                items={(order.items ?? []).map((i) => ({
-                  id: i.id,
-                  title: i.title,
-                  variantTitle: i.variant?.title ?? null,
-                }))}
-              />
-            </div>
-          )}
-
-          <div className="border-border-muted mt-2 flex flex-wrap gap-2 border-t p-4">
-            {blockedNotice && (
-              <p className="w-full text-sm text-red-600">{blockedNotice}</p>
-            )}
-            {showTrack && (
-              <LocalizedClientLink
-                href={`/mypage/order/track?orderId=${order.id}`}
-              >
-                <CustomButton variant="outline" size="sm">
-                  {tActions("trackDelivery")}
-                </CustomButton>
-              </LocalizedClientLink>
-            )}
-            {canReturn && (
-              <LocalizedClientLink
-                href={`/mypage/exchange?orderId=${order.id}&type=return`}
-              >
-                <CustomButton variant="outline" size="sm">
-                  {tActions("returnRequest")}
-                </CustomButton>
-              </LocalizedClientLink>
-            )}
-            {canExchange && (
-              <LocalizedClientLink
-                href={`/mypage/exchange?orderId=${order.id}&type=exchange`}
-              >
-                <CustomButton variant="outline" size="sm">
-                  {tActions("exchangeRequest")}
-                </CustomButton>
-              </LocalizedClientLink>
-            )}
-            {showSelfCancel && (
-              <CustomButton
-                variant="outline"
-                size="sm"
-                onClick={() => setShowCancelDialog(true)}
-                className="text-red-600 outline-red-300"
-              >
-                {tActions("cancelOrder")}
-              </CustomButton>
-            )}
-            {showBankTransferCancelGuide &&
-              intentId &&
-              !refundRequestStatus &&
-              !hasExercisedDigital && <RefundRequestDialog intentId={intentId} />}
-            {showBankTransferCancelGuide && refundRequestStatus && (
-              <span className="inline-flex cursor-not-allowed items-center justify-center rounded-[5px] px-4 py-3 text-sm text-gray-400 outline-1 outline-gray-200">
-                {tRefundRequest(refundRequestStatus === "APPROVED" ? "refunded" : "requested")}
-              </span>
-            )}
-            {showBankTransferCancelGuide && (
-              <div className="w-full space-y-1">
-                <p className="text-[11px] text-muted-foreground">
-                  {tActions("bankTransferCancelGuide")}
-                </p>
-                <p className="text-[11px] text-muted-foreground whitespace-pre-line">
-                  {tActions("bankTransferRefundNotice")}
-                </p>
-              </div>
-            )}
-          </div>
-        </section>
-      </div>
-
-      <Dialog
-        open={showCancelDialog}
-        onOpenChange={(open) => {
-          setShowCancelDialog(open)
-          if (!open) {
-            setCancelReasonCode("CHANGE_OF_MIND")
-            setCancelReasonDetail("")
-          }
-        }}
-      >
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>{tActions("cancelDialogTitle")}</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3 text-sm">
-            <p className="text-muted-foreground text-xs">
-              {tActions("cancelDialogDescription")}
-            </p>
-            <CancelReasonForm
-              reasonCode={cancelReasonCode}
-              reasonDetail={cancelReasonDetail}
-              onReasonCodeChange={setCancelReasonCode}
-              onReasonDetailChange={setCancelReasonDetail}
+            <OrderReturnsSection
+              orderId={order.id}
+              returns={returns}
+              items={(order.items ?? []).map((i) => ({
+                id: i.id,
+                title: i.title,
+                variantTitle: i.variant?.title ?? null,
+              }))}
             />
           </div>
-          <DialogFooter>
-            <CustomButton
-              variant="outline"
-              color="secondary"
-              size="md"
-              onClick={() => setShowCancelDialog(false)}
-              disabled={isCancelling}
-            >
-              {tActions("cancelGoBack")}
-            </CustomButton>
-            <CustomButton
-              variant="fill"
-              color="primary"
-              size="md"
-              onClick={handleCancelConfirm}
-              isLoading={isCancelling}
-            >
-              {tActions("cancelConfirm")}
-            </CustomButton>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-      {cancelFailureAlert}
-      {printPartialCancelDialog}
+        )}
+      </div>
     </main>
   )
 }

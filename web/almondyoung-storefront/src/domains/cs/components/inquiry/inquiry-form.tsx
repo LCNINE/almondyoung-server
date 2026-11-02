@@ -1,6 +1,6 @@
 "use client"
 
-import { Button } from "@/components/ui/button"
+import { CustomButton } from "@/components/shared/custom-buttons"
 import {
   Form,
   FormControl,
@@ -9,7 +9,6 @@ import {
   FormLabel,
   FormMessage,
 } from "@/components/ui/form"
-import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { useUser } from "@/contexts/user-context"
 import { uploadFile } from "@/lib/api/file/upload"
@@ -39,8 +38,8 @@ function ContentCharCounter({
 }) {
   const content = useWatch({ control, name: "content" })
   return (
-    <p className="text-[12px] text-gray-400">
-      {(content?.length ?? 0).toLocaleString()} / {maxLength.toLocaleString()}
+    <p className="text-muted-foreground shrink-0 text-xs">
+      {(content?.length ?? 0).toLocaleString()}/{maxLength.toLocaleString()}
     </p>
   )
 }
@@ -48,12 +47,15 @@ function ContentCharCounter({
 interface InquiryFormProps {
   productId?: string
   productTitle?: string
+  /** 주문에서 들어오면 주문 칩으로 보이고 제목에 붙는다 */
+  orderNumber?: string
   onSuccess?: () => void
 }
 
 export function InquiryForm({
   productId,
   productTitle,
+  orderNumber,
   onSuccess,
 }: InquiryFormProps) {
   const { user } = useUser()
@@ -69,8 +71,6 @@ export function InquiryForm({
       buildInquiryFormSchema({
         categoryRequired: tValidation("categoryRequired"),
         subCategoryRequired: tValidation("subCategoryRequired"),
-        titleRequired: tValidation("titleRequired"),
-        titleMax: tValidation("titleMax", { max: MAX_TITLE_LENGTH }),
         contentMin: tValidation("contentMin", { min: MIN_CONTENT_LENGTH }),
         contentMax: tValidation("contentMax", {
           max: MAX_CONTENT_LENGTH.toLocaleString(),
@@ -85,7 +85,6 @@ export function InquiryForm({
     defaultValues: {
       category: undefined,
       subCategory: "",
-      title: "",
       content: "",
     },
   })
@@ -101,6 +100,20 @@ export function InquiryForm({
   const subCategory = watch("subCategory")
 
   const isBusy = isSubmitting || isUploading || isPending
+
+  // 제목 칸은 두지 않는다. 유형은 관리자 목록에 따로 보이므로 주문번호나 내용 첫 줄을 제목으로 쓴다
+  const buildTitle = (data: InquiryFormValues) => {
+    const firstLine =
+      data.content
+        .split("\n")
+        .map((line) => line.trim())
+        .find(Boolean) ?? ""
+    const title = orderNumber
+      ? tForm("autoTitleWithOrder", { orderNumber })
+      : firstLine
+
+    return title.slice(0, MAX_TITLE_LENGTH)
+  }
 
   const uploadImages = async (): Promise<string[]> => {
     const results = await Promise.all(
@@ -137,7 +150,7 @@ export function InquiryForm({
           productId: productId,
           category: data.category,
           subCategory: data.subCategory,
-          title: data.title,
+          title: buildTitle(data),
           content: data.content,
           mediaFileIds,
         })
@@ -157,22 +170,35 @@ export function InquiryForm({
 
   return (
     <Form {...form}>
-      <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-5">
-        {productTitle && (
-          <p className="text-sm">
-            <span className="font-medium text-gray-500">{tForm("productLabel")}</span>
-            <span className="mx-2 text-gray-300">|</span>
-            <span className="text-gray-900">{productTitle}</span>
-          </p>
+      <form onSubmit={handleSubmit(onSubmit)} className="flex flex-col gap-6">
+        {(orderNumber || productTitle) && (
+          <dl className="bg-muted flex flex-col gap-1 rounded-lg px-4 py-3 text-sm">
+            {orderNumber && (
+              <div className="flex gap-2">
+                <dt className="text-muted-foreground">{tForm("orderLabel")}</dt>
+                <dd className="text-foreground font-medium">{orderNumber}</dd>
+              </div>
+            )}
+            {productTitle && (
+              <div className="flex gap-2">
+                <dt className="text-muted-foreground shrink-0">
+                  {tForm("productLabel")}
+                </dt>
+                <dd className="text-foreground min-w-0 truncate font-medium">
+                  {productTitle}
+                </dd>
+              </div>
+            )}
+          </dl>
         )}
 
         <FormField
           control={form.control}
           name="category"
           render={() => (
-            <FormItem>
-              <FormLabel className="text-sm font-medium">
-                {tForm("categoryLabel")} <span className="text-red-500">*</span>
+            <FormItem className="gap-3">
+              <FormLabel className="text-foreground text-sm font-bold">
+                {tForm("categoryLabel")}
               </FormLabel>
               <FormControl>
                 <CategorySelect
@@ -182,7 +208,10 @@ export function InquiryForm({
                     setValue("category", value, { shouldValidate: true })
                   }
                   onSubCategoryChange={(value: string) =>
-                    setValue("subCategory", value, { shouldValidate: true })
+                    // 대분류를 바꿔 비울 때는 아직 고를 기회를 주고 검사하지 않는다
+                    setValue("subCategory", value, {
+                      shouldValidate: value !== "",
+                    })
                   }
                   disabled={isBusy}
                 />
@@ -196,28 +225,7 @@ export function InquiryForm({
           control={form.control}
           name="subCategory"
           render={() => (
-            <FormItem className="hidden">
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        <FormField
-          control={form.control}
-          name="title"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel className="text-sm font-medium">
-                {tForm("titleLabel")} <span className="text-red-500">*</span>
-              </FormLabel>
-              <FormControl>
-                <Input
-                  {...field}
-                  placeholder={tForm("titlePlaceholder")}
-                  className="h-11 bg-white text-gray-900"
-                  disabled={isBusy}
-                />
-              </FormControl>
+            <FormItem className="-mt-4 empty:hidden">
               <FormMessage />
             </FormItem>
           )}
@@ -227,9 +235,9 @@ export function InquiryForm({
           control={form.control}
           name="content"
           render={({ field }) => (
-            <FormItem>
-              <FormLabel className="text-sm font-medium">
-                {tForm("contentLabel")} <span className="text-red-500">*</span>
+            <FormItem className="gap-2">
+              <FormLabel className="text-foreground text-sm font-bold">
+                {tForm("contentLabel")}
               </FormLabel>
               <FormControl>
                 <Textarea
@@ -239,13 +247,19 @@ export function InquiryForm({
                       field.onChange(e.target.value)
                     }
                   }}
-                  placeholder={tForm("contentPlaceholder", { min: MIN_CONTENT_LENGTH })}
-                  className="min-h-[180px] resize-none"
+                  placeholder={tForm("contentPlaceholder")}
+                  className="bg-muted border-border min-h-[160px] resize-none rounded-lg p-4 text-sm leading-6 placeholder:text-[#b0b3ba]"
                   disabled={isBusy}
                 />
               </FormControl>
-              <div className="mt-1 flex items-center justify-between">
-                <FormMessage />
+              <div className="flex items-start justify-between gap-4">
+                {form.formState.errors.content ? (
+                  <FormMessage className="text-xs" />
+                ) : (
+                  <p className="text-muted-foreground text-xs">
+                    {tForm("contentHelper", { min: MIN_CONTENT_LENGTH })}
+                  </p>
+                )}
                 <ContentCharCounter
                   control={form.control}
                   maxLength={MAX_CONTENT_LENGTH}
@@ -255,8 +269,13 @@ export function InquiryForm({
           )}
         />
 
-        <div>
-          <p className="mb-2 text-sm font-medium">{tForm("imageSectionLabel")}</p>
+        <div className="flex flex-col gap-2">
+          <p className="text-foreground text-sm font-bold">
+            {tForm("imageSectionLabel")}
+            <span className="text-muted-foreground ml-1 text-[13px] font-normal">
+              {tForm("optional")}
+            </span>
+          </p>
           <ImageUpload
             images={images}
             onImagesChange={setImages}
@@ -264,15 +283,14 @@ export function InquiryForm({
           />
         </div>
 
-        <div className="mt-2">
-          <Button
-            type="submit"
-            disabled={isBusy}
-            className="h-12 w-full bg-[#ffa500] text-base font-bold hover:bg-[#e69500]"
-          >
-            {isBusy ? tForm("processing") : tForm("submit")}
-          </Button>
-        </div>
+        <CustomButton
+          type="submit"
+          color="primary"
+          disabled={isBusy}
+          className="h-[52px] w-full rounded-xl text-base font-bold"
+        >
+          {isBusy ? tForm("processing") : tForm("submit")}
+        </CustomButton>
       </form>
     </Form>
   )

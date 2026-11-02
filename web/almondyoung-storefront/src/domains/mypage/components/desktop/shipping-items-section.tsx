@@ -1,6 +1,7 @@
 "use client"
 
 import LocalizedClientLink from "@/components/shared/localized-client-link"
+import { CustomButton } from "@/components/shared/custom-buttons"
 import { Button } from "@/components/ui/button"
 import { formatDate } from "@/lib/utils/format-date"
 import OrderSummaryCard from "@components/orders/order-card/order-summary-card"
@@ -39,13 +40,15 @@ function ShippingCard({ order }: { order: ShippingOrder }) {
         },
       ]}
     >
-      <Button
+      <CustomButton
         variant="outline"
+        color="secondary"
+        size="md"
+        fullWidth
         onClick={handleTrack}
-        className="w-full md:ml-auto md:w-auto"
       >
         {t("trackButton")}
-      </Button>
+      </CustomButton>
     </OrderSummaryCard>
   )
 }

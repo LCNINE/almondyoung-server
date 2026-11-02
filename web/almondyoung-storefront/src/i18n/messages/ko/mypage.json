@@ -572,7 +572,7 @@
     },
     "actions": {
       "trackDelivery": "배송 조회",
-      "cancelOrder": "주문취소",
+      "cancelOrder": "주문 취소",
       "cancelOrReturn": "주문 취소 / 반품 신청",
       "backToList": "주문목록 돌아가기",
       "addToCart": "장바구니 담기",
@@ -587,8 +587,6 @@
       "cancelCompleted": "주문이 취소되었습니다.",
       "cancelFailedConfirm": "확인",
       "contactCs": "고객센터 문의",
-      "bankTransferCancelGuide": "무통장입금 주문의 취소·환불은 ‘환불 신청’ 버튼으로 신청해 주세요.",
-      "bankTransferRefundNotice": "입금 전 미입금 주문은 입금 기한(7일) 경과 시 자동 취소됩니다. 입금 후 취소·환불은 ‘환불 신청’에서 환불 계좌(은행·계좌번호·예금주)를 입력해 주세요. 관리자 확인 후 입력하신 계좌로 환불되며(약 2영업일), 예금주명이 정확해야 합니다.",
       "download": "다운로드",
       "cancelUnavailable": {
         "cancel_requested": "취소 처리 중입니다.",
@@ -849,7 +847,7 @@
     "refundRequest": {
       "trigger": "환불 신청",
       "title": "환불 계좌 신청",
-      "description": "환불받으실 계좌 정보를 입력해 주세요. 관리자 확인 후 입력하신 계좌로 환불됩니다(약 2영업일). 예금주명이 정확해야 합니다.",
+      "description": "환불받을 계좌를 입력해 주세요.\n관리자 확인 후 입력한 계좌로 환불해 드려요. 환불까지 약 2영업일이 걸려요.\n예금주명을 정확히 입력해 주세요.",
       "bank": "은행",
       "bankPlaceholder": "은행 선택",
       "accountNumber": "계좌번호",
@@ -861,11 +859,11 @@
       "cancel": "취소",
       "submit": "환불 신청",
       "submitting": "신청 중...",
-      "success": "환불 신청이 접수되었습니다. 확인 후 처리됩니다.",
-      "error": "환불 신청에 실패했습니다. 다시 시도해 주세요.",
+      "success": "환불 신청을 접수했어요. 확인 후 환불해 드려요.",
+      "error": "환불 신청을 하지 못했어요. 다시 시도해 주세요.",
       "requested": "환불 신청됨 · 처리 대기중",
       "refunded": "환불 완료",
-      "digitalDownloadedBlocked": "다운로드하신 디지털 상품이 포함되어 있어 환불 신청이 불가합니다. 고객센터로 문의해 주세요."
+      "digitalDownloadedBlocked": "다운로드한 디지털 상품이 있어 환불 신청을 할 수 없어요. 고객센터로 문의해 주세요."
     },
     "depositAccount": {
       "title": "입금 계좌 안내",
@@ -892,14 +890,6 @@
       "title": "취소/반품/교환/환불내역 상세",
       "orderedOn": "주문일 {date}",
       "orderNumber": "주문번호 {number}",
-      "stepsLabel": "진행 단계",
-      "step": {
-        "requested": "접수",
-        "pickedUp": "회수",
-        "inspected": "검수",
-        "refunded": "환불 완료",
-        "exchanged": "교환 처리"
-      },
       "canceled": "취소했어요",
       "table": {
         "product": "상품",
@@ -910,19 +900,19 @@
       "quantity": "{count}개",
       "info": {
         "title": "상세정보",
-        "requestedAt": "반품 접수일",
-        "exchangeRequestedAt": "교환 접수일",
-        "returnNumber": "반품 번호",
-        "exchangeNumber": "교환 번호",
-        "completedAt": "반품 완료일",
-        "exchangedAt": "교환 완료일"
+        "requestedAt": "반품접수일자",
+        "exchangeRequestedAt": "교환접수일자",
+        "returnNumber": "반품접수번호",
+        "exchangeNumber": "교환접수번호",
+        "completedAt": "반품완료일",
+        "exchangedAt": "교환완료일"
       },
       "pickup": {
-        "title": "상품 회수 정보",
-        "status": "회수 상태",
+        "title": "상품 회수정보",
+        "status": "상품회수 진행여부",
         "state": {
           "none": "회수 접수를 준비하고 있어요",
-          "requested": "회수를 접수했어요 · 기사님이 방문해요",
+          "requested": "기사님 방문을 기다리고 있어요",
           "pickedUp": "회수했어요",
           "cancelled": "회수를 취소했어요"
         },
@@ -930,34 +920,47 @@
         "carrier": "택배사",
         "waybill": "송장번호",
         "name": "회수인",
-        "phone": "연락처",
-        "address": "회수지"
+        "phone": "휴대폰/연락처",
+        "address": "주소",
+        "waybillTitle": "반송장정보",
+        "track": "회수조회",
+        "comingSoon": "준비 중이에요"
       },
       "reason": {
         "title": "반품 사유",
         "reason": "사유",
-        "feeBearer": "택배비 부담",
-        "bearer": {
-          "customer": "고객 부담",
-          "seller": "판매자 부담"
-        }
+        "exchangeTitle": "교환 사유"
       },
       "refund": {
-        "title": "환불 안내",
+        "title": "환불안내",
         "itemTotal": "상품금액",
-        "shippingRefund": "배송비 환급",
+        "shippingRefund": "배송비",
         "fees": "반품비",
         "done": "환불 완료",
         "planned": "환불 예정",
         "notYet": "상품이 창고에 도착해 검수를 마치면 환불 금액이 정해져요.",
-        "notice": "카드 결제는 카드사에 취소를 요청한 뒤 평일 기준 3~7일 걸려요. 포인트는 바로 돌아가요.",
+        "notice": "카드 결제는 카드사에 취소를 요청한 뒤 평일 기준 3~7일 걸려요.",
         "prepaid": "먼저 환불한 금액",
         "prepaidRest": "나머지 환불 금액은 상품이 창고에 도착해 검수를 마치면 정해져요.",
-        "prepaidPending": "먼저 환불하는 중인 금액"
+        "prepaidPending": "먼저 환불하는 중인 금액",
+        "method": "환불 수단",
+        "unsettled": "검수 후 정해져요",
+        "pointsNotice": "포인트는 바로 돌아가요.",
+        "processedOn": "환불 처리일 {date}",
+        "prepaidProcessedOn": "선환불 처리일 {date}"
       },
-      "toOrder": "주문 상세",
-      "toList": "주문 목록",
-      "notFound": "반품 내역을 찾을 수 없어요."
+      "toList": "목록",
+      "notFound": "반품 내역을 찾을 수 없어요.",
+      "amount": "{value}원",
+      "receipt": {
+        "open": "취소영수증 확인",
+        "title": "취소영수증",
+        "close": "닫기",
+        "itemTotal": "상품 취소 금액",
+        "discount": "할인금액 차감",
+        "discountIncluded": "상품금액에 반영됐어요",
+        "total": "총 환불 금액"
+      }
     }
   },
   "membership": {

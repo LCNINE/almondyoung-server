@@ -587,8 +587,6 @@
       "cancelCompleted": "Your order has been cancelled.",
       "cancelFailedConfirm": "OK",
       "contactCs": "Contact Support",
-      "bankTransferCancelGuide": "To cancel or refund a bank transfer order, please use the ‘Request refund’ button.",
-      "bankTransferRefundNotice": "Unpaid orders are automatically canceled after the deposit deadline (7 days). To cancel or refund after deposit, enter your refund account (bank, account number, account holder) via ‘Request refund’. After admin review, the refund is sent to that account (about 2 business days). The account holder name must match exactly.",
       "download": "Download",
       "cancelUnavailable": {
         "cancel_requested": "Cancellation is in progress.",
@@ -892,14 +890,6 @@
       "title": "Cancellation / Return / Exchange Details",
       "orderedOn": "Ordered {date}",
       "orderNumber": "Order {number}",
-      "stepsLabel": "Progress",
-      "step": {
-        "requested": "Requested",
-        "pickedUp": "Picked up",
-        "inspected": "Inspected",
-        "refunded": "Refunded",
-        "exchanged": "Exchange processed"
-      },
       "canceled": "Canceled",
       "table": {
         "product": "Item",
@@ -931,16 +921,15 @@
         "waybill": "Tracking number",
         "name": "Name",
         "phone": "Phone",
-        "address": "Pickup address"
+        "address": "Pickup address",
+        "waybillTitle": "Return tracking information",
+        "track": "Track pickup",
+        "comingSoon": "Coming soon"
       },
       "reason": {
         "title": "Return reason",
         "reason": "Reason",
-        "feeBearer": "Shipping fee paid by",
-        "bearer": {
-          "customer": "Customer",
-          "seller": "Seller"
-        }
+        "exchangeTitle": "Exchange reason"
       },
       "refund": {
         "title": "Refund",
@@ -950,14 +939,28 @@
         "done": "Refunded",
         "planned": "Refund amount",
         "notYet": "The refund amount is set once the item arrives and is inspected.",
-        "notice": "Card refunds take 3-7 business days after the cancellation request. Points are returned right away.",
+        "notice": "Card refunds take 3–7 business days after the cancellation request.",
         "prepaid": "Refunded in advance",
         "prepaidRest": "The rest of the refund is set once the item arrives and is inspected.",
-        "prepaidPending": "Advance refund in progress"
+        "prepaidPending": "Advance refund in progress",
+        "method": "Refund method",
+        "unsettled": "Determined after inspection",
+        "pointsNotice": "Points are returned right away.",
+        "processedOn": "Refund processed {date}",
+        "prepaidProcessedOn": "Advance refund processed {date}"
       },
-      "toOrder": "Order details",
       "toList": "Orders",
-      "notFound": "We couldn't find this return."
+      "notFound": "We couldn't find this return.",
+      "amount": "₩{value}",
+      "receipt": {
+        "open": "View cancellation receipt",
+        "title": "Cancellation receipt",
+        "close": "Close",
+        "itemTotal": "Canceled item amount",
+        "discount": "Discount deduction",
+        "discountIncluded": "Already included in the item amount",
+        "total": "Total refund amount"
+      }
     }
   },
   "membership": {

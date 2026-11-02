@@ -103,6 +103,7 @@ export async function handleStoreReturnList(req: AuthenticatedMedusaRequest, res
     res.status(200).json({
       returns: describeStoreReturns(order.returns).map((r) => ({
         return_id: r.returnId,
+        display_id: r.displayId,
         stage: r.stage,
         requested_at: r.requestedAt,
         reason: r.reason,

@@ -6,6 +6,7 @@ import type { StoreReturnSource } from './describe-store-returns';
 
 type GraphReturn = {
   id: string;
+  display_id?: number | null;
   status: string;
   requested_at?: string | Date | null;
   created_at: string | Date;
@@ -30,6 +31,7 @@ export async function loadStoreReturns(
       'id',
       'customer_id',
       'returns.id',
+      'returns.display_id',
       'returns.status',
       'returns.requested_at',
       'returns.created_at',
@@ -47,6 +49,7 @@ export async function loadStoreReturns(
         ? [
             {
               id: r.id,
+              displayId: r.display_id ?? null,
               status: r.status,
               requestedAt: r.requested_at ? iso(r.requested_at) : null,
               createdAt: iso(r.created_at),

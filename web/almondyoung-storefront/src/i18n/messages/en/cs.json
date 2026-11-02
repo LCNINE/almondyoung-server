@@ -90,28 +90,26 @@
     "form": {
       "productLabel": "Product",
       "categoryLabel": "Inquiry type",
-      "titleLabel": "Title",
-      "titlePlaceholder": "Enter a title",
       "contentLabel": "Inquiry",
-      "contentPlaceholder": "Please describe your inquiry. (min {min} chars)",
-      "imageSectionLabel": "Attach images",
-      "categoryPlaceholder": "Select inquiry type",
-      "subCategoryPlaceholder": "Select sub type",
-      "subCategorySelectFirst": "Select inquiry type first",
+      "contentPlaceholder": "Tell us which product had what issue.\nAdding photos helps us check faster.",
+      "imageSectionLabel": "Photos",
+      "subCategoryPlaceholder": "Choose a detailed type",
       "addPhoto": "Attach photos",
       "addPhotoHint": "Up to {max} photos, each under {sizeMB}MB",
-      "photoCount": "Photos {count}/{max}",
       "photoAlt": "Attached image",
       "processing": "Processing...",
       "submit": "Submit",
       "validation": {
         "categoryRequired": "Please select an inquiry type.",
         "subCategoryRequired": "Please select a sub-type.",
-        "titleRequired": "Please enter a title.",
-        "titleMax": "Title must be {max} characters or fewer.",
         "contentMin": "Please enter at least {min} characters.",
         "contentMax": "You can enter up to {max} characters."
-      }
+      },
+      "orderLabel": "Order",
+      "autoTitleWithOrder": "Order {orderNumber}",
+      "contentHelper": "Write at least {min} characters",
+      "optional": "Optional",
+      "removePhoto": "Remove photo"
     },
     "categories": {
       "delivery": "Shipping",
