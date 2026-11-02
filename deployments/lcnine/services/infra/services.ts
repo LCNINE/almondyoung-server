@@ -657,6 +657,10 @@ export function setup(infra: SharedInfra) {
   createService('Core', {
     // arm64(Graviton) Fargate — 동일 성능에 ~20% 저렴. 문제 시 이 줄만 지우면 x86 복귀.
     architecture: 'arm64',
+    // 0.5 GB(SST 기본값)에서 평소 50~60% 였고, 목록 «전부» 조회 한 번에 OOM 으로 두 번 죽었다(2026-11-02).
+    // 목록 한도는 코드로 막았고 이건 여유분이다 — 0.25 vCPU 가 받는 메모리는 0.5·1·2 GB 뿐이다.
+    cpu: '0.25 vCPU',
+    memory: '1 GB',
     dockerfile: 'apps/core/Dockerfile',
     domainSlug: 'core',
     port: 3000,

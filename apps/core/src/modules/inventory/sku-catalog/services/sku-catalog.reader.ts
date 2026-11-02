@@ -136,6 +136,8 @@ export class SkuCatalogReader {
       inventoryManagement?: boolean;
       groupId?: string;
       holderId?: string;
+      limit?: number;
+      offset?: number;
     },
     tx?: DbTx,
   ): Promise<SkuResponseDto[]> {
@@ -178,10 +180,15 @@ export class SkuCatalogReader {
         conditions.push(inArray(wmsTables.skus.id, skuIdFilter));
       }
 
+      // 한도 없이 전부 돌려주던 시절 필터 없는 요청 하나가 core 를 OOM 으로 내렸다(2026-11-02).
+      // 정렬은 offset 페이징이 행을 빠뜨리거나 겹치지 않게 하려고 둔다.
       const skus = await trx
         .select()
         .from(wmsTables.skus)
-        .where(conditions.length > 0 ? and(...conditions) : undefined);
+        .where(conditions.length > 0 ? and(...conditions) : undefined)
+        .orderBy(desc(wmsTables.skus.createdAt), desc(wmsTables.skus.id))
+        .limit(query.limit ?? 50)
+        .offset(query.offset ?? 0);
 
       if (skus.length === 0) return [];
 
@@ -276,6 +283,31 @@ export class SkuCatalogReader {
         );
       }
 
+      if (filters.name) conditions.push(sql`${wmsTables.skus.name} ILIKE ${'%' + filters.name + '%'}`);
+      if (filters.code) conditions.push(eq(wmsTables.skus.code, filters.code));
+      if (filters.barcode) {
+        conditions.push(
+          inArray(
+            wmsTables.skus.id,
+            trx
+              .selectDistinct({ skuId: wmsTables.skuBarcodes.skuId })
+              .from(wmsTables.skuBarcodes)
+              .where(eq(wmsTables.skuBarcodes.barcode, filters.barcode)),
+          ),
+        );
+      }
+      if (filters.supplierName) {
+        conditions.push(
+          inArray(
+            wmsTables.skus.id,
+            trx
+              .selectDistinct({ skuId: wmsTables.skuSuppliers.skuId })
+              .from(wmsTables.skuSuppliers)
+              .innerJoin(wmsTables.suppliers, eq(wmsTables.skuSuppliers.supplierId, wmsTables.suppliers.id))
+              .where(sql`${wmsTables.suppliers.name} ILIKE ${'%' + filters.supplierName + '%'}`),
+          ),
+        );
+      }
       if (filters.groupId) conditions.push(eq(wmsTables.skus.groupId, filters.groupId));
       if (filters.supplierId) {
         conditions.push(

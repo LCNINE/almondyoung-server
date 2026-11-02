@@ -33,6 +33,7 @@ export const inventoryQueryKeys = {
   // SKU 관련
   skus: (query?: any) => ['skus', query] as const,
   sku: (id: string) => ['skus', id] as const,
+  skuList: (query: object) => ['skus', 'list', query] as const,
   skuSearch: (query: string, page: number, limit: number) =>
     ['skus', 'search', query, page, limit] as const,
   skuStockSummary: (sku: string) => ['skus', sku, 'stock-summary'] as const,

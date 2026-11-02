@@ -1,4 +1,4 @@
-import { IsOptional, IsString, IsInt, Min, IsDateString } from 'class-validator';
+import { IsOptional, IsString, IsInt, Min, Max, IsDateString } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 
@@ -41,6 +41,7 @@ export class DeletedSkuFiltersDto {
   @Type(() => Number)
   @IsInt()
   @Min(1)
+  @Max(200)
   @IsOptional()
   limit?: number = 50;
 

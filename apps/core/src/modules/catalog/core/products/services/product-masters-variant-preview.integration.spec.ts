@@ -418,17 +418,31 @@ describeIfDb('상품 목록 품목 미리보기 (실 Postgres)', () => {
     expect(aggregate.variantPreviews[0].name).toBe('');
   });
 
-  it('page 없이 전량 조회하면 미리보기를 만들지 않는다', async () => {
+  it('엑셀 내보내기처럼 withPreviews: false 로 부르면 미리보기를 만들지 않는다', async () => {
     const product = await seedProduct({
-      name: '미리보기 전량조회 상품',
+      name: '미리보기 내보내기 상품',
       basePrice: 5000,
       options: [{ group: '색상', values: ['화이트', '블랙'] }],
     });
 
-    const result = await masters.getMasters({ ids: [product.masterId], mode: 'all' });
+    const result = await masters.getMasters({ ids: [product.masterId], mode: 'all' }, undefined, {
+      withPreviews: false,
+    });
     const aggregate = result.data.find((item) => item.product.id === product.masterId)!.aggregate;
 
     expect(aggregate.variantCount).toBe(2);
     expect(aggregate.variantPreviews).toEqual([]);
+  });
+
+  // 예전엔 page 가 없으면 limit 을 무시하고 전량을 줬고, 그 요청 하나가 core 를 OOM 으로 내렸다(2026-11-02).
+  it('page 없이 불러도 limit 만큼만 주고 total 은 전체 건수다', async () => {
+    const a = await seedProduct({ name: '쪽 나눔 상품 A', basePrice: 1000, options: [] });
+    const b = await seedProduct({ name: '쪽 나눔 상품 B', basePrice: 1000, options: [] });
+
+    const result = await masters.getMasters({ ids: [a.masterId, b.masterId], mode: 'all', limit: 1 });
+
+    expect(result.data).toHaveLength(1);
+    expect(result.total).toBe(2);
+    expect(result.page).toBe(1);
   });
 });

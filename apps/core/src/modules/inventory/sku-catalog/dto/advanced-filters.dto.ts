@@ -1,4 +1,4 @@
-import { IsOptional, IsString, IsEnum, IsIn, IsInt, Min, IsBoolean, IsDateString, IsUUID } from 'class-validator';
+import { IsOptional, IsString, IsEnum, IsIn, IsInt, Min, Max, IsBoolean, IsDateString, IsUUID } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { StockTypeEnum, stockTypeValues } from '../../schema/enum-values';
@@ -103,6 +103,22 @@ export class AdvancedInventoryFiltersDto {
   @IsOptional()
   barcode?: string;
 
+  // SKU 목록 화면의 칸별 필터 — search(이름·코드 부분일치 한 칸)와 따로 쓴다.
+  @ApiProperty({ description: 'SKU 이름 (부분일치)', required: false })
+  @IsString()
+  @IsOptional()
+  name?: string;
+
+  @ApiProperty({ description: 'SKU 코드 (정확일치)', required: false })
+  @IsString()
+  @IsOptional()
+  code?: string;
+
+  @ApiProperty({ description: '공급사 이름 (부분일치)', required: false })
+  @IsString()
+  @IsOptional()
+  supplierName?: string;
+
   // ===== WMS-INTERNAL GROUPING FILTERS =====
 
   @ApiProperty({
@@ -145,6 +161,7 @@ export class AdvancedInventoryFiltersDto {
   @Type(() => Number)
   @IsInt()
   @Min(1)
+  @Max(200)
   @IsOptional()
   limit?: number = 50;
 

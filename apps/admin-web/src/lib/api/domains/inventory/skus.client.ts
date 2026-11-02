@@ -60,6 +60,12 @@ export const skusClient = {
    */
   searchAdvanced: async (query: {
     search?: string;
+    /** 칸별 필터 — name·supplierName 은 부분일치, code·barcode 는 정확일치. */
+    name?: string;
+    code?: string;
+    barcode?: string;
+    supplierName?: string;
+    groupId?: string;
     limit?: number;
     offset?: number;
   }): Promise<{ items: SkuResponseDto[]; total: number; limit: number; offset: number }> => {

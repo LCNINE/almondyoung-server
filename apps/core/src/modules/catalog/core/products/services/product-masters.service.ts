@@ -50,6 +50,7 @@ import { keywordMatch } from '../../../common/keyword-match';
 import { MAX_BULK_PRODUCTS } from '../../../operations/bulk/dto/bulk-operations.dto';
 import { ProductVersionsService } from './product-versions.service';
 import { resolveMasterSort } from './product-masters-sort.util';
+import { resolveMasterListPaging } from './product-masters-paging.util';
 import { PricingCalculatorService } from '../../pricing/pricing-calculator.service';
 import { VariantPriceCacheService } from '../../pricing/variant-price-cache.service';
 import { v7 as uuidv7 } from 'uuid';
@@ -339,9 +340,14 @@ export class ProductMastersService {
     return this.productReadAssembler.getMasterDetail(masterId, undefined, tx);
   }
 
+  /**
+   * options 는 HTTP 를 거치지 않는 내부 호출(엑셀 내보내기)만 쓴다 — 한 쪽 상한을 올리고
+   * 화면용 품목 미리보기를 건너뛴다.
+   */
   async getMasters(
     filters?: MasterListFilters,
     tx?: DbTransaction,
+    options?: { maxLimit?: number; withPreviews?: boolean },
   ): Promise<{
     data: {
       product: ProductMasterWithVersion;
@@ -360,10 +366,7 @@ export class ProductMastersService {
   }> {
     return this.db.run(async (trx) => {
       // ===== 페이징 기초 계산 =====
-      const returnAll = filters?.page === undefined;
-      const page = filters?.page ?? 1;
-      const limit = returnAll ? 99999 : Math.min(filters?.limit ?? 15, 100);
-      const offset = (page - 1) * limit;
+      const { page, limit, offset } = resolveMasterListPaging(filters ?? {}, options?.maxLimit);
 
       const { mode, rankedVersionsSubquery, categoryIds, whereClause } = await this.buildMasterListScope(
         trx,
@@ -432,7 +435,7 @@ export class ProductMastersService {
 
       const [{ c }] = await (whereClause ? countQuery.where(whereClause) : countQuery);
       total = c;
-      rawData = await (returnAll ? orderedQuery : orderedQuery.limit(limit).offset(offset));
+      rawData = await orderedQuery.limit(limit).offset(offset);
 
       // ===== 결과 가공: ProductMasterWithVersion + aggregate 데이터 =====
 
@@ -473,10 +476,11 @@ export class ProductMastersService {
         .where(inArray(productMasterVariants.versionId, versionIds))
         .groupBy(productMasterVariants.versionId);
 
-      // 전량 조회(엑셀·배치)는 화면 렌더가 아니고 상품 수가 만 단위라 미리보기를 만들지 않는다.
-      const variantPreviewMap = returnAll
-        ? new Map<string, VariantPreview[]>()
-        : await this.getVariantPreviewsByVersionIds(versionIds, trx);
+      // 엑셀 내보내기는 화면 렌더가 아니라 미리보기를 만들지 않는다.
+      const variantPreviewMap =
+        options?.withPreviews === false
+          ? new Map<string, VariantPreview[]>()
+          : await this.getVariantPreviewsByVersionIds(versionIds, trx);
 
       // 한 번에 모든 primary 이미지 조회 (thumbnail용)
       const thumbnailMap = await this.productReadAssembler.getPrimaryImagesByVersionIds(versionIds, trx);
