@@ -887,6 +887,18 @@
       "exerciseFailed": "使用処理に失敗しました"
     },
     "returnDetail": {
+      "paymentMethod": {
+        "TOSS": "カード・簡単決済",
+        "CARD": "カード決済",
+        "NICEPAY": "カード決済",
+        "TOSS_BILLING": "カード自動決済",
+        "NICEPAY_BILLING": "カード自動決済",
+        "POINTS": "ポイント",
+        "BANK_TRANSFER": "銀行振込",
+        "BNPL": "後払い",
+        "CMS_BATCH": "口座自動引き落とし",
+        "other": "その他の決済手段"
+      },
       "title": "キャンセル・返品・交換・返金の詳細",
       "orderedOn": "注文日 {date}",
       "orderNumber": "注文番号 {number}",

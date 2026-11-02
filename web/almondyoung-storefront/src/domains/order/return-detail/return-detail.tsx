@@ -67,10 +67,8 @@ export default async function ReturnDetail({
   order,
   ret,
   progress,
-  paymentMethodLabel: realPaymentMethodLabel,
+  paymentMethodLabel,
 }: ReturnDetailProps) {
-  // 시안 확인용 고정값. 실제 카드사·할부를 받으면 지운다
-  const paymentMethodLabel = realPaymentMethodLabel ?? "KB 기업카드 / 일시불"
   const t = await getTranslations("mypage.order.returnDetail")
   const tList = await getTranslations("mypage.order.list")
   const tReason = await getTranslations("mypage.order.returnRequest")
@@ -344,9 +342,11 @@ export default async function ReturnDetail({
                         </strong>
                       </Row>
                       <Row label={t("refund.method")}>
-                        <span className="text-muted-foreground mr-2">
-                          {paymentMethodLabel}
-                        </span>
+                        {paymentMethodLabel && (
+                          <span className="text-muted-foreground mr-2">
+                            {paymentMethodLabel}
+                          </span>
+                        )}
                         <strong>{won(refund.total)}</strong>
                       </Row>
                     </Rows>
@@ -403,9 +403,11 @@ export default async function ReturnDetail({
                       {t("refund.method")}
                     </dt>
                     <dd className="min-w-0 text-right break-words">
-                      <span className="text-muted-foreground mr-2">
-                        {paymentMethodLabel}
-                      </span>
+                      {paymentMethodLabel && (
+                        <span className="text-muted-foreground mr-2">
+                          {paymentMethodLabel}
+                        </span>
+                      )}
                       <strong className="text-foreground text-base">
                         {won(refund.total)}
                       </strong>

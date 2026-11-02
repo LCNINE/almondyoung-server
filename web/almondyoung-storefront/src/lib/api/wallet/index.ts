@@ -696,6 +696,23 @@ export interface BankTransferDepositAccount {
  * 무통장(가상계좌) 입금 안내 계좌 조회. wallet-web 결제화면을 벗어난 뒤에도
  * 주문내역에서 입금 계좌를 다시 확인할 수 있도록 한다. 대상 아니면 null.
  */
+/** 결제에 쓰인 결제수단 종류(TOSS·POINTS·BANK_TRANSFER 등). 남의 결제·실패면 null. */
+export async function getPaymentMethodTypes(
+  intentId: string
+): Promise<string[] | null> {
+  try {
+    const res = await api<{ types: string[] }>(
+      "wallet",
+      `/v1/payment-intents/${intentId}/payment-methods`,
+      { method: "GET", withAuth: true }
+    )
+
+    return res.types
+  } catch {
+    return null
+  }
+}
+
 export async function getBankTransferDepositAccount(
   intentId: string
 ): Promise<BankTransferDepositAccount | null> {

@@ -9,6 +9,7 @@ import {
   getOrderActionsByMedusaId,
   getReturnProgressByMedusaId,
 } from "@/lib/api/orders/store-orders"
+import { getPaymentMethodTypes } from "@/lib/api/wallet"
 import ReturnDetail from "domains/order/return-detail/return-detail"
 import { getTranslations } from "next-intl/server"
 
@@ -48,10 +49,28 @@ export default async function ReturnDetailPage({
   const ret = order
     ? (returns?.find((r) => r.returnId === returnId) ?? null)
     : null
-  const actions =
+  const intentId = (
+    order?.payment_collections?.[0]?.payment_sessions?.[0]?.data as
+      | Record<string, unknown>
+      | undefined
+  )?.intentId as string | undefined
+  const [actions, methodTypes] =
     order && ret
-      ? await getOrderActionsByMedusaId(order.id).catch(() => null)
-      : null
+      ? await Promise.all([
+          getOrderActionsByMedusaId(order.id).catch(() => null),
+          intentId ? getPaymentMethodTypes(intentId) : null,
+        ])
+      : [null, null]
+  const methodLabel = methodTypes?.length
+    ? methodTypes
+        .map((type) =>
+          t.has(`paymentMethod.${type}`)
+            ? t(`paymentMethod.${type}` as "paymentMethod.TOSS")
+            : t("paymentMethod.other")
+        )
+        .filter((label, i, all) => all.indexOf(label) === i)
+        .join(" + ")
+    : null
 
   return (
     <WithHeaderLayout
@@ -69,7 +88,7 @@ export default async function ReturnDetailPage({
             ret={ret}
             progress={progress}
             paymentMethodLabel={
-              actions?.refundSummary?.paymentMethodLabel ?? null
+              actions?.refundSummary?.paymentMethodLabel ?? methodLabel
             }
           />
         ) : (

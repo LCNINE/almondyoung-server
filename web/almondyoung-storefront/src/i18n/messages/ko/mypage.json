@@ -887,6 +887,18 @@
       "exerciseFailed": "사용 처리에 실패했습니다"
     },
     "returnDetail": {
+      "paymentMethod": {
+        "TOSS": "카드·간편결제",
+        "CARD": "카드결제",
+        "NICEPAY": "카드결제",
+        "TOSS_BILLING": "카드 자동결제",
+        "NICEPAY_BILLING": "카드 자동결제",
+        "POINTS": "포인트",
+        "BANK_TRANSFER": "무통장입금",
+        "BNPL": "후불결제",
+        "CMS_BATCH": "계좌 자동이체",
+        "other": "기타 결제수단"
+      },
       "title": "취소/반품/교환/환불내역 상세",
       "orderedOn": "주문일 {date}",
       "orderNumber": "주문번호 {number}",
