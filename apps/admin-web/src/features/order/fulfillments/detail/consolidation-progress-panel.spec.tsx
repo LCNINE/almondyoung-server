@@ -532,6 +532,32 @@ describe('합포장 진행 패널', () => {
     ).toBeTruthy();
   });
 
+  it('한 상자에 주문이 여럿이면 주문번호마다 #를 붙인다', () => {
+    mockProgress.mockReturnValue({
+      data: pending([
+        source({ orderNo: '6314', batchId: null, blockers: [] }),
+        source({
+          shipmentId: 'other',
+          orderNo: '6275, 6276',
+          trackingNo: '100037690642',
+          batchId: null,
+          waybillId: 'wb-2',
+          blockers: ['ACTIVE_INVOICE'],
+        }),
+      ]),
+    });
+    grant('fulfillment.shipment.reopen');
+
+    renderPanel();
+
+    expect(
+      screen.getByText('#6275, #6276 상자의 운송장을 취소해 주세요')
+    ).toBeTruthy();
+    expect(
+      screen.getByText(/#6275, #6276 상자\(송장 100037690642\)의 일이에요/)
+    ).toBeTruthy();
+  });
+
   it('상대 주문 상자를 배치에서 뺄 때도 그 주문을 말한다', () => {
     mockProgress.mockReturnValue({
       data: pending([
