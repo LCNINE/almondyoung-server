@@ -77,11 +77,18 @@ const EXCEPTION_REASON: Record<Exception, string> = {
   operation: '합포장 작업이 실패했거나 복구가 필요한 상태예요.',
 };
 
+function orderNoLabel(orderNo: string): string {
+  return orderNo
+    .split(', ')
+    .map((no) => `#${no}`)
+    .join(', ');
+}
+
 function boxLabel(source: ConsolidationProgressSource): string {
   if (source.orderNo) {
     return source.trackingNo
-      ? `#${source.orderNo} 상자(송장 ${source.trackingNo})`
-      : `#${source.orderNo} 상자`;
+      ? `${orderNoLabel(source.orderNo)} 상자(송장 ${source.trackingNo})`
+      : `${orderNoLabel(source.orderNo)} 상자`;
   }
 
   return source.trackingNo
@@ -90,7 +97,9 @@ function boxLabel(source: ConsolidationProgressSource): string {
 }
 
 function boxName(source: ConsolidationProgressSource): string {
-  return source.orderNo ? `#${source.orderNo} 상자` : boxLabel(source);
+  return source.orderNo
+    ? `${orderNoLabel(source.orderNo)} 상자`
+    : boxLabel(source);
 }
 
 function orderNosOf(
