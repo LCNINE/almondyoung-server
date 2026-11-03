@@ -20,10 +20,14 @@ const mockBoard = jest.fn<
   QueryState<{ groups: ConsolidationBoardGroup[] }>,
   [string]
 >();
-const mockMutateAsync = jest.fn();
+const mockMutateAsync = jest.fn<
+  Promise<unknown[]>,
+  [{ data: { shipmentIds: string[]; carrier: string }; idempotencyKey: string }]
+>();
+let keyCounter = 0;
 
 jest.mock('@/lib/services/orders', () => ({
-  createIdempotentCommand: () => ({ idempotencyKey: 'key-1' }),
+  createIdempotentCommand: () => ({ idempotencyKey: `key-${++keyCounter}` }),
   getServerDenyMessage: (_error: unknown, fallback: string) => fallback,
   isCarrierSupported: () => true,
   isWaybillFailed: () => false,
@@ -111,6 +115,7 @@ const refetch = jest.fn();
 
 beforeEach(() => {
   jest.clearAllMocks();
+  keyCounter = 0;
   mockPlanned.mockReturnValue({ data: planned, isError: false, refetch });
   mockBoard.mockReturnValue({
     data: { groups: [boardGroup] },
@@ -168,7 +173,7 @@ describe('WaybillIssueTemplate', () => {
 
     const issue = screen.getByRole('button', { name: /일괄발급/ });
 
-    expect((issue as HTMLButtonElement).disabled).toBe(false);
+    expect(issue.hasAttribute('disabled')).toBe(false);
   });
 
   it('발급 전에 건수를 확인하는 창을 띄우고 확인해야 요청한다', async () => {
@@ -203,5 +208,77 @@ describe('WaybillIssueTemplate', () => {
 
     expect(screen.queryByText('#6321')).toBeNull();
     expect(screen.getByText('#6324')).toBeTruthy();
+  });
+
+  it('목록에서 사라진 상자는 선택에서 빠져 건수와 요청에 들어가지 않는다', async () => {
+    const { rerender } = render(<WaybillIssueTemplate />);
+
+    await pick('6321', '6324');
+    mockPlanned.mockReturnValue({
+      data: planned.filter((row) => row.shipmentId !== 'a1111111-0000'),
+      isError: false,
+      refetch,
+    });
+    rerender(<WaybillIssueTemplate />);
+
+    expect(
+      screen.getByRole('button', { name: /선택 1건 일괄발급/ })
+    ).toBeTruthy();
+
+    await userEvent.click(screen.getByRole('button', { name: /일괄발급/ }));
+    await userEvent.click(
+      within(screen.getByRole('dialog')).getByRole('button', { name: '발급' })
+    );
+
+    await waitFor(() =>
+      expect(mockMutateAsync).toHaveBeenCalledWith({
+        data: { shipmentIds: ['c3333333-0000'], carrier: 'HANJIN' },
+        idempotencyKey: 'key-1',
+      })
+    );
+  });
+
+  it('응답을 못 받고 실패하면 같은 선택은 같은 키로 다시 보내고 선택이 바뀌면 새 키를 쓴다', async () => {
+    mockMutateAsync.mockRejectedValueOnce(new Error('Network Error'));
+    render(<WaybillIssueTemplate />);
+
+    const issue = async () => {
+      await userEvent.click(screen.getByRole('button', { name: /일괄발급/ }));
+      await userEvent.click(
+        within(screen.getByRole('dialog')).getByRole('button', { name: '발급' })
+      );
+    };
+
+    await pick('6321', '6324');
+    await issue();
+    await waitFor(() => expect(mockMutateAsync).toHaveBeenCalledTimes(1));
+
+    await issue();
+    await waitFor(() => expect(mockMutateAsync).toHaveBeenCalledTimes(2));
+
+    expect(mockMutateAsync.mock.calls[1][0]).toEqual(
+      mockMutateAsync.mock.calls[0][0]
+    );
+  });
+
+  it('선택을 바꾸면 실패 뒤에도 새 키를 쓴다', async () => {
+    mockMutateAsync.mockRejectedValueOnce(new Error('Network Error'));
+    render(<WaybillIssueTemplate />);
+
+    await pick('6321');
+    await userEvent.click(screen.getByRole('button', { name: /일괄발급/ }));
+    await userEvent.click(
+      within(screen.getByRole('dialog')).getByRole('button', { name: '발급' })
+    );
+    await waitFor(() => expect(mockMutateAsync).toHaveBeenCalledTimes(1));
+
+    await pick('6324');
+    await userEvent.click(screen.getByRole('button', { name: /일괄발급/ }));
+    await userEvent.click(
+      within(screen.getByRole('dialog')).getByRole('button', { name: '발급' })
+    );
+    await waitFor(() => expect(mockMutateAsync).toHaveBeenCalledTimes(2));
+
+    expect(mockMutateAsync.mock.calls[1][0].idempotencyKey).toBe('key-2');
   });
 });

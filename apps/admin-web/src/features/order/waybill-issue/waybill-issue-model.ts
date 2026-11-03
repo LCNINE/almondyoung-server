@@ -1,5 +1,7 @@
+import { parseServerError } from '@/lib/api/server-error';
 import type {
   ConsolidationBoardGroup,
+  CarrierCode,
   PlannedShipment,
 } from '@/lib/types/dto/fulfillment';
 
@@ -74,4 +76,47 @@ export function mergePairs(
   }
 
   return pairs;
+}
+
+export type BatchCommand = {
+  idempotencyKey: string;
+  data: { shipmentIds: string[]; carrier: CarrierCode };
+};
+
+function sameSelection(left: readonly string[], right: readonly string[]) {
+  const sorted = [...right].sort();
+
+  return (
+    left.length === right.length &&
+    [...left].sort().every((id, index) => id === sorted[index])
+  );
+}
+
+export function batchCommandFor(
+  pending: BatchCommand | null,
+  shipmentIds: readonly string[],
+  carrier: CarrierCode,
+  newKey: () => string
+): BatchCommand {
+  if (
+    pending &&
+    pending.data.carrier === carrier &&
+    sameSelection(pending.data.shipmentIds, shipmentIds)
+  ) {
+    return pending;
+  }
+
+  return {
+    idempotencyKey: newKey(),
+    data: { shipmentIds: [...shipmentIds], carrier },
+  };
+}
+
+export function batchKeptAfterFailure(
+  sent: BatchCommand,
+  error: unknown
+): BatchCommand | null {
+  const status = parseServerError(error).status;
+
+  return status === null || status >= 500 ? sent : null;
 }

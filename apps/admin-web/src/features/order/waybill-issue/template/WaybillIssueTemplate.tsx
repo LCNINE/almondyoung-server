@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -55,7 +55,10 @@ import {
   BATCH_ISSUE_LIMIT,
   PLANNED_LIST_LIMIT,
   filterPlanned,
+  batchCommandFor,
+  batchKeptAfterFailure,
   isPlannedListCapped,
+  type BatchCommand,
   mergePairs,
   plannedOrderText,
   type MergePair,
@@ -85,9 +88,11 @@ export default function WaybillIssueTemplate() {
     () => filterPlanned(plannedShipments, search),
     [plannedShipments, search]
   );
+  const listedIds = new Set(plannedShipments.map((s) => s.shipmentId));
   const selectedIds = Object.entries(selected)
-    .filter(([, v]) => v)
+    .filter(([id, v]) => v && listedIds.has(id))
     .map(([id]) => id);
+  const pendingCommand = useRef<BatchCommand | null>(null);
   const pairs = board.isError
     ? []
     : mergePairs(selectedIds, board.data?.groups ?? [], plannedShipments);
@@ -143,12 +148,22 @@ export default function WaybillIssueTemplate() {
   const runBatch = async () => {
     setConfirmOpen(false);
 
-    const key = createIdempotentCommand({}).idempotencyKey;
+    const command = batchCommandFor(
+      pendingCommand.current,
+      selectedIds,
+      carrier,
+      () => createIdempotentCommand({}).idempotencyKey
+    );
+
+    pendingCommand.current = command;
+
     try {
       const res = await batch.mutateAsync({
-        data: { shipmentIds: selectedIds, carrier },
-        idempotencyKey: key,
+        data: command.data,
+        idempotencyKey: command.idempotencyKey,
       });
+
+      pendingCommand.current = null;
       setResults(res);
       const issued = res.filter((r) => isWaybillIssued(r.status)).length;
       const waiting = res.filter((r) =>
@@ -164,6 +179,7 @@ export default function WaybillIssueTemplate() {
       void planned.refetch();
       void board.refetch();
     } catch (error) {
+      pendingCommand.current = batchKeptAfterFailure(command, error);
       toast.error(getServerDenyMessage(error, '일괄 발급 요청 실패'));
     }
   };
