@@ -23,6 +23,7 @@ import { compatibleShippingProfileId } from './shipping-profile';
 import { openShipment } from '../shipment/shipment-lifecycle';
 import { reprojectFulfillmentOrders } from '../fulfillment-order/fulfillment-order-projection';
 import { directSuppliersOfSkus } from '../supplier-shipment/direct-suppliers-of-skus';
+import { FoConsolidation, loadFoConsolidations } from './fo-consolidation-labels';
 
 type FulfillmentStatus = (typeof wmsTables.fulfillmentOrders.status.enumValues)[number];
 type FulfillmentMode = (typeof wmsTables.fulfillmentOrders.fulfillmentMode.enumValues)[number];
@@ -62,10 +63,15 @@ function uniqueStrings(values: readonly string[]): string[] {
   return [...new Set(values)].sort();
 }
 
-type FoLabels = { displayOrderNo: string | null; salesChannel: string | null; warehouseName: string | null };
+type FoLabels = {
+  displayOrderNo: string | null;
+  salesChannel: string | null;
+  warehouseName: string | null;
+  consolidation: FoConsolidation | null;
+};
 
 /** 화면이 내부 id 대신 고객이 아는 주문번호와 창고 이름을 보이게 한다 */
-async function withFoLabels<T extends { salesOrderId: string | null; warehouseId: string | null }>(
+async function withFoLabels<T extends { id: string; salesOrderId: string | null; warehouseId: string | null }>(
   db: DbTx | DbService<typeof wmsSchema>['db'],
   rows: T[],
 ): Promise<(T & FoLabels)[]> {
@@ -89,6 +95,10 @@ async function withFoLabels<T extends { salesOrderId: string | null; warehouseId
     : [];
   const orderById = new Map(orders.map((order) => [order.id, order]));
   const warehouseNameById = new Map(warehouses.map((warehouse) => [warehouse.id, warehouse.name]));
+  const consolidations = await loadFoConsolidations(
+    db,
+    rows.map((row) => ({ id: row.id, salesOrderId: row.salesOrderId, warehouseId: row.warehouseId })),
+  );
   return rows.map((row) => {
     const order = row.salesOrderId ? orderById.get(row.salesOrderId) : undefined;
     return {
@@ -96,6 +106,7 @@ async function withFoLabels<T extends { salesOrderId: string | null; warehouseId
       displayOrderNo: order?.displayOrderNo ?? null,
       salesChannel: order?.salesChannel ?? null,
       warehouseName: row.warehouseId ? (warehouseNameById.get(row.warehouseId) ?? null) : null,
+      consolidation: consolidations.get(row.id) ?? null,
     };
   });
 }
