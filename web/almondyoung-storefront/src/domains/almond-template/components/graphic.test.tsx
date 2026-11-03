@@ -86,6 +86,7 @@ describe("LayerGraphic", () => {
   describe("fitTextBoxes", () => {
     const narrow = {
       ...layer,
+      fontFamily: "'Black Han Sans', sans-serif",
       text: "커트",
       fontSize: 15,
       width: 16.8,
@@ -114,10 +115,14 @@ describe("LayerGraphic", () => {
             }
           })
       )
+      const faces = arrives
+        ? [{ family: '"Black Han Sans"', status: "loaded" }]
+        : [{ family: "Noto Sans KR", status: "loaded" }]
       Object.defineProperty(document, "fonts", {
         value: Object.assign(new EventTarget(), {
           load,
-          check: () => arrives,
+          check: () => true,
+          [Symbol.iterator]: () => faces[Symbol.iterator](),
         }),
         configurable: true,
       })
@@ -137,6 +142,29 @@ describe("LayerGraphic", () => {
       expect(load).toHaveBeenCalledWith(expect.stringContaining("16px"), "커트")
       expect(fitted.width).toBe(17.8)
       expect(fittedFontSize(fitted)).toBe(15)
+    })
+
+    it("앞뒷면 id 가 겹쳐도 맞춘 글상자만 바꾼다", async () => {
+      const { load, arrive } = fontsArriving(true)
+      const { fitTextBoxes } = await import("./graphic")
+      const rect = {
+        id: narrow.id,
+        type: "rect",
+        x: 0,
+        y: 0,
+        width: 5,
+        height: 5,
+      } as Layer
+      const zero = { ...narrow, fontSize: 0 }
+
+      const pending = fitTextBoxes({ ...designOf(narrow, zero), back: [rect] })
+      await vi.waitFor(() => expect(load).toHaveBeenCalled())
+      arrive()
+      const fitted = await pending
+
+      expect(fitted.front[0].width).toBe(17.8)
+      expect(fitted.front[1]).toEqual(zero)
+      expect(fitted.back[0]).toEqual(rect)
     })
 
     it("받지 못한 글꼴과 글자 크기 0 인 글상자는 그대로 둔다", async () => {

@@ -116,12 +116,23 @@ export function stretchText(layer: Layer, box: Partial<Layer>): Partial<Layer> {
   }
 }
 
+const unquote = (family: string) => family.trim().replace(/^["']|["']$/g, "")
+
+function hasLoadedFace(layer: Layer) {
+  const primary = unquote(fontStack(layer.fontFamily).split(",")[0])
+
+  return Array.from(document.fonts).some(
+    (face) => unquote(face.family) === primary && face.status === "loaded"
+  )
+}
+
 // 바깥에서 만든 시안(JSON)은 상자 폭이 글꼴과 안 맞을 수 있다. 글꼴을 받은 뒤 편집기처럼 글자에 맞춘다
 export async function fitTextBoxes(design: Design): Promise<Design> {
   const texts = [...design.front, ...design.back].filter(
     (layer) => layer.type === "text" && (layer.fontSize ?? 10) > 0
   )
   // 받지 못한 글꼴의 글상자는 그대로 둔다. 대체 글꼴 폭으로 맞추면 글꼴이 나중에 도착했을 때 다시 어긋난다
+  // fonts.check 는 대체 글꼴로도 참이 되므로, 첫 글꼴의 면이 실제로 받아졌는지 본다
   const loaded = new Set(
     (
       await Promise.all(
@@ -130,20 +141,16 @@ export async function fitTextBoxes(design: Design): Promise<Design> {
             .then(() =>
               document.fonts.load(fontOf(layer, 16), layer.text || undefined)
             )
-            .then(() =>
-              document.fonts.check(fontOf(layer, 16), layer.text || undefined)
-                ? layer.id
-                : null
-            )
+            .then(() => (hasLoadedFace(layer) ? layer : null))
             .catch(() => null)
         )
       )
-    ).filter((id) => id !== null)
+    ).filter((layer) => layer !== null)
   )
   measured.clear()
 
   const fit = (layer: Layer) =>
-    loaded.has(layer.id)
+    loaded.has(layer)
       ? { ...layer, ...textBoxFor(layer, layer.fontSize ?? 10, design) }
       : layer
 
