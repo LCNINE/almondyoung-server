@@ -1,5 +1,6 @@
 import { ConsolidationBoardShipmentDto } from '../dto/consolidation.dto';
-import { BoardRow, groupConsolidationBoard } from './consolidation-board.reader';
+import { assembleConsolidationBoard, BoardRow, groupConsolidationBoard } from './consolidation-board.reader';
+import { OptionLine, ShipmentProgress, ShipmentRow } from './consolidation-shipment-reads';
 
 const address = {
   recipientName: '김알몬',
@@ -17,13 +18,13 @@ function row(
 ): BoardRow {
   return {
     customerKey,
+    recipient,
     shipment: {
       shipmentId: id,
       status: 'draft',
       salesOrderNos: [],
       itemSummary: '',
       totalQty: 1,
-      recipientSnapshot: recipient,
       batchId: null,
       waybillTrackingNo: null,
       manifestVersion: 1,
@@ -90,5 +91,132 @@ describe('groupConsolidationBoard', () => {
 
   it('고객이 다르면 주소가 같아도 갈라진다', () => {
     expect(groupConsolidationBoard([row('a'), row('b', address, 'id:c2')])).toEqual([]);
+  });
+
+  it('응답 키에 수령인 원문이 없고 상자에는 수령인이 없다', () => {
+    const [group] = groupConsolidationBoard([row('a'), row('b')]);
+
+    expect(group.key).toMatch(/^[0-9a-f]{64}$/);
+
+    for (const value of Object.values(address)) {
+      expect(group.key).not.toContain(value);
+    }
+
+    for (const shipment of group.shipments) {
+      expect(Object.keys(shipment)).not.toContain('recipientSnapshot');
+    }
+
+    expect(JSON.stringify(group.shipments)).not.toContain(address.phone);
+    expect(JSON.stringify(group.shipments)).not.toContain(address.roadAddress);
+  });
+});
+
+function shipmentRow(id: string, patch: Partial<ShipmentRow> = {}): ShipmentRow {
+  return {
+    id,
+    warehouseId: 'w1',
+    supplierId: null,
+    supplierHandoffId: null,
+    openedForFulfillmentOrderId: null,
+    status: 'draft',
+    shippingProfileId: 'p1',
+    recipientSnapshot: address,
+    entrancePassword: null,
+    manifestVersion: 1,
+    reservationVersion: 1,
+    openedBy: null,
+    openedAt: new Date('2026-11-01T00:00:00Z'),
+    plannedAt: null,
+    shippedAt: null,
+    deliveredAt: null,
+    supersededAt: null,
+    recoveryCode: null,
+    lastUpdated: new Date('2026-11-01T00:00:00Z'),
+    createdAt: new Date('2026-11-01T00:00:00Z'),
+    ...patch,
+  };
+}
+
+function optionLine(shipmentId: string, patch: Partial<OptionLine> = {}): OptionLine {
+  return {
+    shipmentId,
+    qty: 1,
+    salesOrderId: `so-${shipmentId}`,
+    fulfillmentMode: 'in_house',
+    skuStockType: 'stocked',
+    skuName: '상품',
+    customerId: 'c1',
+    customerName: '김알몬',
+    customerPhone: '010-1234-5678',
+    displayOrderNo: null,
+    channelOrderId: `ch-${shipmentId}`,
+    salesChannel: 'medusa',
+    salesOrderCreatedAt: new Date('2026-11-02T00:00:00Z'),
+    ...patch,
+  };
+}
+
+const noProgress: ShipmentProgress = { batchByShipment: new Map(), trackingByShipment: new Map() };
+
+describe('assembleConsolidationBoard', () => {
+  it('공급사 상자와 in_house 아닌 라인, drop_shipped 라인이 있는 상자를 뺀다', () => {
+    const groups = assembleConsolidationBoard(
+      [
+        shipmentRow('a'),
+        shipmentRow('b'),
+        shipmentRow('s', { supplierId: 'sup' }),
+        shipmentRow('d', { shippingProfileId: 'p1' }),
+        shipmentRow('x'),
+      ],
+      [
+        optionLine('a'),
+        optionLine('b'),
+        optionLine('s'),
+        optionLine('d', { fulfillmentMode: 'drop_ship' }),
+        optionLine('x', { skuStockType: 'drop_shipped' }),
+      ],
+      noProgress,
+    );
+
+    expect(groups).toHaveLength(1);
+    expect(groups[0].shipments.map((shipment) => shipment.shipmentId)).toEqual(['a', 'b']);
+  });
+
+  it('배치와 송장을 붙이고 canMergeNow 를 false 로 만든다', () => {
+    const progress: ShipmentProgress = {
+      batchByShipment: new Map([['b', 'batch-1']]),
+      trackingByShipment: new Map([['a', '1234']]),
+    };
+    const [group] = assembleConsolidationBoard(
+      [shipmentRow('a'), shipmentRow('b')],
+      [optionLine('a'), optionLine('b')],
+      progress,
+    );
+
+    expect(group.shipments.map((shipment) => [shipment.batchId, shipment.waybillTrackingNo])).toEqual([
+      [null, '1234'],
+      ['batch-1', null],
+    ]);
+    expect(group.canMergeNow).toBe(false);
+  });
+
+  it('가장 이른 주문 시각과 판매채널을 모은다', () => {
+    const [group] = assembleConsolidationBoard(
+      [shipmentRow('a'), shipmentRow('b')],
+      [
+        optionLine('a', { salesOrderId: 'so1', salesOrderCreatedAt: new Date('2026-10-30T00:00:00Z') }),
+        optionLine('a', {
+          salesOrderId: 'so1',
+          salesChannel: 'naver',
+          salesOrderCreatedAt: new Date('2026-10-28T00:00:00Z'),
+        }),
+        optionLine('b'),
+      ],
+      noProgress,
+    );
+
+    expect(group.shipments[0].orderedAt).toEqual(new Date('2026-10-28T00:00:00Z'));
+    expect(group.shipments[0].salesChannels).toEqual(['medusa', 'naver']);
+    expect(group.canMergeNow).toBe(true);
   });
 });
