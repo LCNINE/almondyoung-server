@@ -9,7 +9,7 @@ import { redirectHost } from '../../oauth/redirect-uri';
 import { IamAuditCreator } from '../audit/iam-audit.creator';
 import type { IamActor } from '../iam-actor';
 import {
-  IamNotTenantMemberError,
+  IamNotAccountTenantError,
   IamSelfChangeError,
   TenantDomainTakenError,
   TenantExistsError,
@@ -271,7 +271,7 @@ export class PlatformTenantManager {
   }
 
   /**
-   * 테넌트 직원의 비밀번호를 새로 정해 한 번만 돌려준다(저장하지 않는다). 테넌트 도메인엔 찾기가 없어 이것이 유일한 복구다.
+   * 테넌트 계정의 비밀번호를 새로 정해 한 번만 돌려준다(저장하지 않는다). 대상은 그 테넌트의 계정이어야 한다(ADR-0056).
    * 기본은 첫 로그인 때 변경 강제 — 점검 계정만 `forcePasswordChange = false`. 그 계정의 세션은 모두 끊는다.
    */
   async reissuePassword(
@@ -288,7 +288,7 @@ export class PlatformTenantManager {
       if (userId === actor.userId) throw new IamSelfChangeError();
       const user = await this.roles.findUser(userId, tx);
       if (!user) throw new NotFoundError('사용자를 찾을 수 없습니다.');
-      if (!(await this.tenancy.isMember(userId, tenantId, tx))) throw new IamNotTenantMemberError();
+      if (user.tenantId !== tenantId) throw new IamNotAccountTenantError();
 
       await this.platform.setPassword(userId, hash, forcePasswordChange, tx);
       await this.platform.revokeUserSessions(userId, tx);

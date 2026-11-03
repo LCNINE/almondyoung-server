@@ -927,15 +927,15 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'user-service POST /auth/change-password': {
     verdict: 'SAFE',
-    evidence: 'apps/user-service/src/api/auth/auth.service.ts:973',
+    evidence: 'apps/user-service/src/api/auth/auth.service.ts:960',
     predicate: '.where(eq(userServiceSchema.users.id, userId))',
-    note: 'changePassword(current, next, userId) 의 userId 는 CurrentUser(JWT)에서만 온다. 조회(973행)와 갱신(1001행) 모두 같은 predicate 로 본인 행만 건드리고, 현재 비밀번호를 bcrypt 로 확인한다.',
+    note: 'changePassword(current, next, userId) 의 userId 는 CurrentUser(JWT)에서만 온다. 조회(960행)와 갱신(988행) 모두 같은 predicate 로 본인 행만 건드리고, 현재 비밀번호를 bcrypt 로 확인한다.',
   },
   'user-service POST /auth/verify-password-for-pin-reset': {
     verdict: 'SAFE',
-    evidence: 'apps/user-service/src/api/auth/auth.service.ts:1028',
+    evidence: 'apps/user-service/src/api/auth/auth.service.ts:1015',
     predicate: '.where(eq(userServiceSchema.users.id, userId))',
-    note: 'verifyPasswordAndIssuePinResetToken(password, userId) 는 checkPassword(1022행)로 본인 행의 비밀번호만 확인하고 sub=userId 토큰을 서명한다. userId 는 CurrentUser(JWT)에서만 온다.',
+    note: 'verifyPasswordAndIssuePinResetToken(password, userId) 는 checkPassword(1009행)로 본인 행의 비밀번호만 확인하고 sub=userId 토큰을 서명한다. userId 는 CurrentUser(JWT)에서만 온다.',
   },
   'user-service POST /auth/payment-handoff': {
     verdict: 'N/A',
@@ -1026,9 +1026,15 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
     predicate: '',
     note: '역할·권한·관리자 계정 관리 화면 — 임의의 역할·사람을 고르는 것이 기능이다. 권한 상승·시스템 역할 규칙은 iam Manager 가 지킨다. 판정은 권한 키 iam.admin_user.write(첫 부여 없음 = master 만) 하나가 한다. 옛 스코프 가드를 걷어 내며 대상에 들어왔다 — 접근 범위는 권한 강제 이후와 같다.',
   },
+  'user-service POST /admin/auth/staff/:userId/password': {
+    verdict: 'SAFE',
+    evidence: 'apps/user-service/src/api/iam/staff/staff-password.manager.ts:43',
+    predicate: 'if (user.tenantId !== tenantId) throw new IamNotAccountTenantError();',
+    note: '테넌트 관리자가 자기 테넌트 계정의 비밀번호를 초기화한다(ADR-0056). 경로의 userId 는 임의 계정을 고르는 것이 기능이지만, 계정의 테넌트가 토큰 테넌트(ActorTenantReader)와 같아야 한다 — 요청이 테넌트를 지정하는 길은 없다. 직원 계정만(지금 유효한 직원 역할), 자기 자신 거절, 운영자 계정은 운영자만, 그 계정의 역할을 줄 수 있는 사람만(GrantAuthority). 권한 키 iam.admin_user.write.',
+  },
   'user-service PATCH /admin/auth/change-password': {
     verdict: 'N/A',
-    evidence: 'apps/user-service/src/api/admin/auth/auth.controller.ts:21',
+    evidence: 'apps/user-service/src/api/admin/auth/auth.controller.ts:33',
     predicate: '',
     note: '관리자 회원 관리 화면 — 임의 회원을 식별자로 고르는 것이 기능이다(고객 역할은 이 권한을 갖지 않는다). 판정은 권한 키 customer.profile.write(첫 부여: admin) 하나가 한다. 옛 스코프 가드를 걷어 내며 대상에 들어왔다 — 접근 범위는 권한 강제 이후와 같다.',
   },
@@ -1732,15 +1738,15 @@ const keyOf = (r: AuditRow): string => `${r.app} ${r.verb} ${r.route}`;
 describe('IDOR 검사 대상 집합', () => {
   it('감사 스크립트가 idorTarget 을 내보낸다', () => {
     const targets = runAudit().filter((r) => r.idorTarget);
-    expect(targets).toHaveLength(281);
+    expect(targets).toHaveLength(282);
   });
 
   // search 와 analytics 가 둘 다 `GET /health` 이고, user-service 와 file-service 가 둘 다
   // `POST /files/upload` 다. `<VERB> <route>` 로 키를 만들면 그만큼 뭉개지고 스냅샷이 조용히 잃는다.
   it('키에 app 이 들어가야 충돌하지 않는다', () => {
     const targets = runAudit().filter((r) => r.idorTarget);
-    expect(new Set(targets.map(keyOf)).size).toBe(281);
-    expect(new Set(targets.map((r) => `${r.verb} ${r.route}`)).size).toBe(279);
+    expect(new Set(targets.map(keyOf)).size).toBe(282);
+    expect(new Set(targets.map((r) => `${r.verb} ${r.route}`)).size).toBe(280);
   });
 
   it('감사 스크립트의 대상 집합과 명단이 정확히 일치한다', () => {

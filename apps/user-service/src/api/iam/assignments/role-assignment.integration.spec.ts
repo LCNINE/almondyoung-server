@@ -20,6 +20,7 @@ import { RoleRepository } from '../roles/role.repository';
 import { ActorTenantReader } from '../tenancy/actor-tenant.reader';
 import { PlatformOperatorManager } from '../tenancy/platform-operator.manager';
 import { TenancyRepository } from '../tenancy/tenancy.repository';
+import { GrantAuthority } from './grant-authority';
 import { RoleAssignmentManager } from './role-assignment.manager';
 
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -108,8 +109,7 @@ describeIfDb('role assignments against a real database', () => {
       dbService,
       roleRepository,
       audit,
-      new MyPermissionsReader(snapshots, iam),
-      snapshots,
+      new GrantAuthority(roleRepository, new MyPermissionsReader(snapshots, iam), snapshots),
       tenancy,
       operators,
     );

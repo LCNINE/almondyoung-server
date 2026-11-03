@@ -1,20 +1,17 @@
-import type { Permission } from '@app/authorization';
 import { DbService, InjectDb } from '@app/db';
 import { BadRequestError, NotFoundError } from '@app/shared';
 import { Injectable } from '@nestjs/common';
 import type { UserServiceSchema, UserServiceTx } from 'apps/user-service/database/drizzle/schema';
 import { fromZonedTime } from 'date-fns-tz';
 import { IamAuditCreator, type IamAuditAction } from '../audit/iam-audit.creator';
+import { GrantAuthority } from './grant-authority';
 import type { IamActor } from '../iam-actor';
 import {
-  IamEscalationError,
   IamGrantedElsewhereError,
-  IamNotTenantMemberError,
+  IamNotAccountTenantError,
   IamSelfChangeError,
   IamStaffCannotLeaveError,
 } from '../iam.errors';
-import { MyPermissionsReader } from '../my-permissions.reader';
-import { RolePermissionsReader } from '../role-permissions.reader';
 import { RoleRepository, type HeldAssignment } from '../roles/role.repository';
 import { isCustomerRole } from '../rules/iam-rules';
 import { PlatformOperatorManager } from '../tenancy/platform-operator.manager';
@@ -26,9 +23,6 @@ interface WantedAssignment {
 }
 
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
-
-/** 고객 역할(회원 등급)을 바꾸는 데 필요한 권한. */
-const CUSTOMER_ROLE_CHANGE_PERMISSION: Permission = 'customer.profile.write';
 
 /** `YYYY-MM-DD` → 그날 23:59:59.999(한국 시각). 오늘 이후가 아니면 400. */
 export function endOfKoreanDay(date: string, now: Date = new Date()): Date {
@@ -55,8 +49,7 @@ export class RoleAssignmentManager {
     @InjectDb() private readonly dbService: DbService<UserServiceSchema>,
     private readonly roles: RoleRepository,
     private readonly audit: IamAuditCreator,
-    private readonly myPermissions: MyPermissionsReader,
-    private readonly snapshots: RolePermissionsReader,
+    private readonly authority: GrantAuthority,
     private readonly tenancy: TenancyRepository,
     private readonly operators: PlatformOperatorManager,
   ) {}
@@ -168,8 +161,8 @@ export class RoleAssignmentManager {
   }
 
   /**
-   * 관리자 계정을 만들 때의 첫 역할 — `tenantForNewAccount` 가 정한 계정의 테넌트에서. 그 소속을 먼저 만들고, 같은 규칙·같은
-   * 트랜잭션으로 준다.
+   * 관리자 계정을 만들 때의 첫 역할 — `tenantForNewAccount` 가 정한 계정의 테넌트에서, 같은 규칙·같은 트랜잭션으로 준다.
+   * 소속은 판정에 쓰지 않지만 소속 표를 걷는 contract(티켓 10) 전까지 계속 쓴다 — 옛 코드로 되돌리면 옛 코드는 소속으로 판정한다.
    */
   async assignOnCreate(
     tx: UserServiceTx,
@@ -218,17 +211,15 @@ export class RoleAssignmentManager {
     const touched = [...added.map((a) => a.roleId), ...removed, ...retimed.map((r) => r.roleId)];
     if (touched.length === 0) return;
 
-    await this.assertCanGrant(
+    await this.authority.assertCanGrant(
       tx,
       actor,
       touched.map((id) => nameOf.get(id) ?? ''),
     );
     if (added.some((a) => scope.elsewhere.has(a.roleId))) throw new IamGrantedElsewhereError();
-    // 직원 역할을 주거나 늘리는 것은 그 테넌트의 직원에게만 — 회수는 소속과 무관하게 된다.
-    const giving = [...added, ...retimed].filter((w) => !isCustomerRole(nameOf.get(w.roleId) ?? ''));
-    if (giving.length > 0 && !(await this.tenancy.isMember(userId, tenantId, tx))) {
-      throw new IamNotTenantMemberError();
-    }
+    // 주거나 늘리는 것은 그 테넌트의 계정에만(ADR-0056) — 고객 역할도 같다. 회수는 계정의 테넌트와 무관하게 된다: 이 테넌트에
+    // 남은 어긋난 부여(채우기 전에 생긴 것)를 거두는 길이고, 거두는 것은 이 테넌트의 부여뿐이다.
+    if (added.length + retimed.length > 0 && user.tenantId !== tenantId) throw new IamNotAccountTenantError();
 
     await this.roles.deleteAssignments(userId, tenantId, removed, tx);
     await this.roles.insertAssignments(userId, tenantId, added, tx);
@@ -245,38 +236,5 @@ export class RoleAssignmentManager {
       before: view(held.map((h) => ({ roleId: h.roleId, expiresAt: h.expiresAt }))),
       after: view(wanted),
     });
-  }
-
-  /**
-   * 바뀌는 역할의 권한을 내가 모두 가져야 한다 — 주는 것도, 회수하는 것도(줄 수 없는 역할은 회수도 못 한다:
-   * 낮은 권한자가 상위 관리자를 강등하지 못하게 하는 우리 정책).
-   */
-  private async assertCanGrant(tx: UserServiceTx, actor: IamActor, roleNames: readonly string[]): Promise<void> {
-    const [snapshot, mine] = await Promise.all([
-      this.snapshots.snapshot(),
-      this.actorRoles(tx, actor).then((names) => this.myPermissions.forRoles(names)),
-    ]);
-    const held = new Set(mine.permissions);
-    // 고객 역할(회원 등급)을 바꾸는 것은 고객 정보를 고치는 일이다 — 고객 정보를 고칠 수 있는 사람만 바꾼다.
-    if (roleNames.some(isCustomerRole) && !held.has(CUSTOMER_ROLE_CHANGE_PERMISSION)) {
-      throw new IamEscalationError(
-        `고객 역할을 주거나 회수하려면 '${CUSTOMER_ROLE_CHANGE_PERMISSION}' 권한이 필요합니다.`,
-      );
-    }
-    for (const name of new Set(roleNames)) {
-      const grants = Object.hasOwn(snapshot.roles, name) ? snapshot.roles[name] : [];
-      const beyond = grants.filter((key) => !held.has(key));
-      if (beyond.length > 0) {
-        throw new IamEscalationError(
-          `'${name}' 역할을 주거나 회수할 수 없습니다 — 내가 가진 권한만 줄 수 있습니다: ${beyond.join(', ')}`,
-        );
-      }
-    }
-  }
-
-  /** 토큰의 역할 중 지금도 유효한 것만 — 토큰 발급 뒤 기간이 끝나거나 회수된 역할로 남에게 권한을 주지 못하게. */
-  private async actorRoles(tx: UserServiceTx, actor: IamActor): Promise<string[]> {
-    const active = new Set(await this.roles.activeRoleNamesOf(actor.userId, tx));
-    return actor.roles.filter((name) => active.has(name));
   }
 }

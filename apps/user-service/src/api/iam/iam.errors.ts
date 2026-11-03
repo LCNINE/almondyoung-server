@@ -58,13 +58,14 @@ export class IamLastOperatorError extends ConflictError {
   }
 }
 
-export class IamNotTenantMemberError extends ConflictError {
+/** 계정은 한 테넌트의 것이다(ADR-0056) — 다른 테넌트의 계정에는 역할을 주거나 늘리지도, 비밀번호를 정하지도 못한다. */
+export class IamNotAccountTenantError extends ConflictError {
   constructor() {
-    super('이 테넌트 소속이 아닌 계정에는 직원 역할을 줄 수 없습니다.');
+    super('이 테넌트의 계정이 아니라 할 수 없습니다.');
   }
 
   getErrorCode(): string {
-    return 'IAM_NOT_TENANT_MEMBER';
+    return 'IAM_NOT_ACCOUNT_TENANT';
   }
 }
 

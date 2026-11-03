@@ -1,19 +1,27 @@
 import { PermissionCheckpoints, type JwtPayload } from '@app/authorization';
 import { ConflictError, ForbiddenError, NotFoundError } from '@app/shared';
 import { DbService, InjectDb } from '@app/db';
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { userServiceSchema, UserServiceSchema, type UserServiceTx } from 'apps/user-service/database/drizzle/schema';
 import { DbTransaction } from 'apps/user-service/src/commons/types';
 import * as bcrypt from 'bcrypt';
 import { RoleAssignmentManager } from '../../iam/assignments/role-assignment.manager';
 import type { IamActor } from '../../iam/iam-actor';
+import { StaffPasswordManager } from '../../iam/staff/staff-password.manager';
 import { PlatformOperatorManager } from '../../iam/tenancy/platform-operator.manager';
 import { CUSTOMER_ROLE_NAMES } from '../../iam/iam.constants';
+import { globalUniqueFieldOf } from '../../users/global-unique-field';
 import { UsersService } from '../../users/users.service';
+import { SERVED_TENANT_ID } from '../../../tenancy/served-tenant';
 import { CreateAccountDto } from './dto/create-account-dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { generateInitialPassword } from './lib/generate-initial-password';
 import { eq } from 'drizzle-orm';
+
+const DUPLICATE_MESSAGE = {
+  loginId: '이미 존재하는 로그인 ID 입니다.',
+  email: '이미 존재하는 이메일 입니다.',
+} as const;
 
 @Injectable()
 export class AuthService {
@@ -24,6 +32,8 @@ export class AuthService {
     private readonly checkpoints: PermissionCheckpoints,
     private readonly roleAssignments: RoleAssignmentManager,
     private readonly operators: PlatformOperatorManager,
+    private readonly staffPasswords: StaffPasswordManager,
+    @Inject(SERVED_TENANT_ID) private readonly servedTenantId: string,
   ) {}
 
   private getClient(tx?: DbTransaction) {
@@ -31,15 +41,6 @@ export class AuthService {
   }
 
   async createAccount(createAccountDto: CreateAccountDto, actor: IamActor, tx?: UserServiceTx) {
-    const { loginId, email } = createAccountDto;
-
-    if (await this.usersService.findUserByLoginId(loginId)) {
-      throw new ConflictError('이미 존재하는 로그인 ID 입니다.');
-    }
-    if (await this.usersService.findUserByEmail(email)) {
-      throw new ConflictError('이미 존재하는 이메일 입니다.');
-    }
-
     return this.dbService.run((trx) => this._createAccountWithTransaction(createAccountDto, actor, trx), tx);
   }
 
@@ -50,6 +51,14 @@ export class AuthService {
     // 첫 로그인 변경 강제를 끄는 것은 점검 계정용이다 — 운영자만.
     const mustChangePassword = createAccountDto.forcePasswordChange ?? true;
     if (!mustChangePassword) await this.operators.assertOperator(actor, tx);
+
+    // 중복은 이 계정이 속할 테넌트 안에서만 본다(ADR-0056) — 다른 테넌트의 같은 아이디는 다른 계정이다.
+    if (await this.usersService.findUserByLoginIdInTenant(tenantId, loginId, tx)) {
+      throw new ConflictError(DUPLICATE_MESSAGE.loginId);
+    }
+    if (await this.usersService.findUserByEmailInTenant(tenantId, email, tx)) {
+      throw new ConflictError(DUPLICATE_MESSAGE.email);
+    }
 
     const initialPassword = generateInitialPassword();
     const hash = await bcrypt.hash(initialPassword, 10);
@@ -66,7 +75,12 @@ export class AuthService {
         email,
         tenantId,
       })
-      .returning();
+      .returning()
+      .catch((error: unknown) => {
+        // unique 가 아직 전역이라(contract 전) 다른 테넌트 계정의 값이면 여기서 걸린다 — 같은 409 로.
+        const field = globalUniqueFieldOf(error);
+        throw field ? new ConflictError(DUPLICATE_MESSAGE[field]) : error;
+      });
 
     // 첫 역할도 부여 규칙(권한 상승 방지·시스템 역할)과 변경 이력을 같은 트랜잭션으로 탄다 — 계정과 같은 테넌트에서.
     // 대행 계정은 고객 가입이 아니라 UserCreated 를 내지 않는다(그 이벤트의 소비자는 가입 혜택·고객 행을 만든다).
@@ -79,6 +93,11 @@ export class AuthService {
     };
   }
 
+  /** 자기 테넌트 계정의 비밀번호를 초기화한다 — 규칙은 iam Manager 에. */
+  reissueStaffPassword(actor: IamActor, userId: string): Promise<{ initialPassword: string }> {
+    return this.staffPasswords.reissue(actor, userId);
+  }
+
   /**
    * 관리자가 다른 계정의 비밀번호를 정한다.
    *
@@ -88,7 +107,8 @@ export class AuthService {
   async changePassword(changePasswordDto: ChangePasswordDto, actor: Pick<JwtPayload, 'roles'>) {
     const { loginId, newPassword } = changePasswordDto;
 
-    const user = await this.usersService.findUserByLoginId(loginId);
+    // 이 라우트는 T 의 토큰만 받는다(`@ServedTenantData`) — 계정도 T 의 것만 찾는다(ADR-0056). 다른 테넌트의 같은 아이디는 없는 계정이다.
+    const user = await this.usersService.findUserByLoginIdInTenant(this.servedTenantId, loginId);
     if (!user) {
       throw new NotFoundError('사용자를 찾을 수 없습니다.');
     }

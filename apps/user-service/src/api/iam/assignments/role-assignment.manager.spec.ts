@@ -5,7 +5,7 @@ import { IamAuditCreator } from '../audit/iam-audit.creator';
 import {
   IamEscalationError,
   IamGrantedElsewhereError,
-  IamNotTenantMemberError,
+  IamNotAccountTenantError,
   IamOperatorOnlyError,
   IamSelfChangeError,
   IamStaffCannotLeaveError,
@@ -17,6 +17,7 @@ import { RoleRepository } from '../roles/role.repository';
 import { ActorTenantReader } from '../tenancy/actor-tenant.reader';
 import { PlatformOperatorManager } from '../tenancy/platform-operator.manager';
 import { TenancyRepository } from '../tenancy/tenancy.repository';
+import { GrantAuthority } from './grant-authority';
 import { endOfKoreanDay, RoleAssignmentManager } from './role-assignment.manager';
 
 const at = new Date(0);
@@ -77,13 +78,12 @@ describe('RoleAssignmentManager', () => {
     myPermissions.forRoles.mockImplementation(async (names: string[]) => ({
       permissions: [...new Set(names.flatMap((n) => GRANTS[n] ?? []))],
     }));
-    roles.findUser.mockResolvedValue({ id: 'u-target', loginId: 'kim', username: '김', canSignIn: true });
+    roles.findUser.mockResolvedValue({ id: 'u-target', loginId: 'kim', username: '김', canSignIn: true, tenantId: '1' });
     roles.findRolesByIds.mockImplementation(async (ids: readonly string[]) =>
       ALL.filter((r) => ids.includes(r.roleId)),
     );
-    // 요청자는 테넌트 1 소속, 대상도 테넌트 1 소속이 기본이다.
+    // 요청자는 테넌트 1 에서 일하고, 대상 계정도 테넌트 1 의 것이 기본이다.
     tenancy.tenantsOf.mockResolvedValue(['1']);
-    tenancy.isMember.mockResolvedValue(true);
     tenancy.isOperator.mockImplementation(async (userId: string) => userId === master.userId);
     tenancy.tenantExists.mockResolvedValue(true);
     roles.activeRoleNamesOf.mockImplementation(async (userId: string) =>
@@ -92,6 +92,7 @@ describe('RoleAssignmentManager', () => {
     const module = await Test.createTestingModule({
       providers: [
         RoleAssignmentManager,
+        GrantAuthority,
         { provide: RoleRepository, useValue: roles },
         { provide: TenancyRepository, useValue: tenancy },
         ActorTenantReader,
@@ -138,7 +139,7 @@ describe('RoleAssignmentManager', () => {
 
   it('refuses to change your own roles', async () => {
     held();
-    roles.findUser.mockResolvedValue({ id: 'u-boss', loginId: 'boss', username: '보스', canSignIn: true });
+    roles.findUser.mockResolvedValue({ id: 'u-boss', loginId: 'boss', username: '보스', canSignIn: true, tenantId: '1' });
     await expect(manager.replaceStaff(master, 'u-boss', [])).rejects.toBeInstanceOf(IamSelfChangeError);
   });
 
@@ -283,8 +284,8 @@ describe('RoleAssignmentManager', () => {
       .mockResolvedValueOnce([{ ...ROLES.intern, assignedAt: at, expiresAt: null, tenantId: '1' }])
       .mockResolvedValueOnce([]);
     roles.findUser
-      .mockResolvedValueOnce({ id: 'u-1', loginId: 'one', username: '1' })
-      .mockResolvedValueOnce({ id: 'u-2', loginId: 'two', username: '2' });
+      .mockResolvedValueOnce({ id: 'u-1', loginId: 'one', username: '1', tenantId: '1' })
+      .mockResolvedValueOnce({ id: 'u-2', loginId: 'two', username: '2', tenantId: '1' });
     await manager.addMembers(master, 'r-intern', ['u-1', 'u-2'], '2099-01-01');
     expect(roles.updateExpiry).toHaveBeenCalledWith('u-1', '1', 'r-intern', new Date('2099-01-01T14:59:59.999Z'), tx);
     expect(roles.insertAssignments).toHaveBeenCalledWith(
@@ -296,56 +297,88 @@ describe('RoleAssignmentManager', () => {
     expect(audit.record).toHaveBeenCalledTimes(2);
   });
 
-  describe('tenant of a grant', () => {
-    it('refuses a staff role for an account that is not a member of the tenant', async () => {
+  describe('tenant of a grant — the account\'s tenant (ADR-0056)', () => {
+    const accountOf = (tenantId: string | null) =>
+      roles.findUser.mockResolvedValue({ id: 'u-target', loginId: 'kim', username: '김', canSignIn: true, tenantId });
+
+    it('refuses a staff role for an account of another tenant', async () => {
       held();
-      tenancy.isMember.mockResolvedValue(false);
+      accountOf('2');
       await expect(
         manager.replaceStaff(master, 'u-target', [{ roleId: 'r-intern', expiresAt: null }]),
-      ).rejects.toBeInstanceOf(IamNotTenantMemberError);
-      expect(tenancy.isMember).toHaveBeenCalledWith('u-target', '1', tx);
+      ).rejects.toBeInstanceOf(IamNotAccountTenantError);
+      expect(roles.insertAssignments).not.toHaveBeenCalled();
+      expect(audit.record).not.toHaveBeenCalled();
+    });
+
+    it('refuses a customer role for an account of another tenant too — the account is not ours', async () => {
+      held();
+      accountOf('2');
+      await expect(manager.replaceAll(master, 'u-target', ['r-membership'])).rejects.toBeInstanceOf(
+        IamNotAccountTenantError,
+      );
       expect(roles.insertAssignments).not.toHaveBeenCalled();
     });
 
-    it('refuses to extend an expired staff role of someone who is no longer a member', async () => {
+    it('refuses to extend an expired role of an account of another tenant', async () => {
       held({ role: 'intern', expiresAt: new Date('2000-01-01T00:00:00Z') });
-      tenancy.isMember.mockResolvedValue(false);
+      accountOf('2');
       await expect(
         manager.replaceStaff(master, 'u-target', [{ roleId: 'r-intern', expiresAt: '2099-01-01' }]),
-      ).rejects.toBeInstanceOf(IamNotTenantMemberError);
+      ).rejects.toBeInstanceOf(IamNotAccountTenantError);
+      expect(roles.updateExpiry).not.toHaveBeenCalled();
     });
 
-    it('gives a customer role without a membership — customers are not staff', async () => {
+    it('refuses an account that does not know its tenant — there is no default tenant', async () => {
+      held();
+      accountOf(null);
+      await expect(
+        manager.replaceStaff(master, 'u-target', [{ roleId: 'r-intern', expiresAt: null }]),
+      ).rejects.toBeInstanceOf(IamNotAccountTenantError);
+    });
+
+    it('does not look at memberships any more — an account of the tenant gets the role without one', async () => {
       held();
       tenancy.isMember.mockResolvedValue(false);
-      await manager.replaceAll(master, 'u-target', ['r-membership']);
+      await manager.replaceStaff(master, 'u-target', [{ roleId: 'r-intern', expiresAt: null }]);
       expect(roles.insertAssignments).toHaveBeenCalledWith(
         'u-target',
         '1',
-        [{ roleId: 'r-membership', expiresAt: null }],
+        [{ roleId: 'r-intern', expiresAt: null }],
         tx,
       );
     });
 
-    it('lets a staff role be taken away from someone who is not a member', async () => {
+    it('lets a stray grant in this tenant be taken away from an account of another tenant', async () => {
       held({ role: 'intern' });
-      tenancy.isMember.mockResolvedValue(false);
+      accountOf('2');
       await manager.removeMember(master, 'r-intern', 'u-target');
       expect(roles.deleteAssignments).toHaveBeenCalledWith('u-target', '1', ['r-intern'], tx);
     });
 
-    it('grants in the tenant the actor works in', async () => {
-      tenancy.tenantsOf.mockImplementation(async (userId: string) => (userId === master.userId ? ['7'] : []));
+    it('lets the master of another tenant manage the staff of that tenant, in that tenant', async () => {
+      const tenantMaster = { ...master, userId: 'u-boss2', loginId: 'boss2', tenantId: '7' };
+      roles.activeRoleNamesOf.mockResolvedValue(['master']);
       held();
-      await manager.replaceStaff(master, 'u-target', [{ roleId: 'r-intern', expiresAt: null }]);
-      expect(tenancy.isMember).toHaveBeenCalledWith('u-target', '7', tx);
+      accountOf('7');
+      await manager.replaceStaff(tenantMaster, 'u-target', [{ roleId: 'r-intern', expiresAt: null }]);
       expect(roles.insertAssignments).toHaveBeenCalledWith(
         'u-target',
         '7',
         [{ roleId: 'r-intern', expiresAt: null }],
         tx,
       );
-      expect(audit.record).toHaveBeenCalledWith(tx, master, expect.objectContaining({ tenantId: '7' }));
+      expect(audit.record).toHaveBeenCalledWith(tx, tenantMaster, expect.objectContaining({ tenantId: '7' }));
+    });
+
+    it('refuses the master of another tenant on an account of tenant 1', async () => {
+      const tenantMaster = { ...master, userId: 'u-boss2', loginId: 'boss2', tenantId: '7' };
+      roles.activeRoleNamesOf.mockResolvedValue(['master']);
+      held();
+      await expect(
+        manager.addMembers(tenantMaster, 'r-intern', ['u-target'], null),
+      ).rejects.toBeInstanceOf(IamNotAccountTenantError);
+      expect(roles.insertAssignments).not.toHaveBeenCalled();
     });
 
     it('leaves grants from another tenant alone when replacing everything', async () => {
@@ -373,9 +406,7 @@ describe('RoleAssignmentManager', () => {
       ).rejects.toBeInstanceOf(IamTenantUnresolvedError);
     });
 
-    it('makes a new staff account a member of the actor tenant before its first role', async () => {
-      tenancy.isMember.mockResolvedValue(false);
-      tenancy.addMembership.mockImplementation(async () => tenancy.isMember.mockResolvedValue(true));
+    it('still writes the membership of a new staff account until the membership table goes (rollback safety)', async () => {
       await manager.assignOnCreate(tx as never, master, 'u-target', 'r-intern', '1');
       expect(tenancy.addMembership).toHaveBeenCalledWith('u-target', '1', tx);
       expect(roles.insertAssignments).toHaveBeenCalledWith(
@@ -383,6 +414,13 @@ describe('RoleAssignmentManager', () => {
         '1',
         [{ roleId: 'r-intern', expiresAt: null }],
         tx,
+      );
+    });
+
+    it('refuses the first role of a new account in a tenant that is not the account\'s', async () => {
+      accountOf('1');
+      await expect(manager.assignOnCreate(tx as never, master, 'u-target', 'r-intern', '7')).rejects.toBeInstanceOf(
+        IamNotAccountTenantError,
       );
     });
   });
@@ -407,8 +445,9 @@ describe('RoleAssignmentManager', () => {
   });
 
   describe('granting in a named tenant (platform operator)', () => {
-    it('grants in the named tenant instead of the one the operator works in', async () => {
+    it('grants in the named tenant instead of the one the operator works in — to an account of that tenant', async () => {
       held();
+      roles.findUser.mockResolvedValue({ id: 'u-target', loginId: 'kim', username: '김', canSignIn: true, tenantId: 't2' });
       await manager.addMembers(master, 'r-intern', ['u-target'], null, 't2');
       expect(roles.insertAssignments).toHaveBeenCalledWith(
         'u-target',
@@ -463,7 +502,7 @@ describe('RoleAssignmentManager', () => {
     });
 
     it('creates an account as a member of the tenant it was made in', async () => {
-      tenancy.addMembership.mockImplementation(async () => tenancy.isMember.mockResolvedValue(true));
+      roles.findUser.mockResolvedValue({ id: 'u-target', loginId: 'kim', username: '김', canSignIn: true, tenantId: 't2' });
       await manager.assignOnCreate(tx as never, master, 'u-target', 'r-intern', 't2');
       expect(tenancy.addMembership).toHaveBeenCalledWith('u-target', 't2', tx);
       expect(roles.insertAssignments).toHaveBeenCalledWith(

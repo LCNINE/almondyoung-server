@@ -103,6 +103,18 @@ userId 묶음 조회(`/users/internal/contacts`)는 거르지 않는다 — 계�
 도메인 전부를 더한다 — auth-web 이 테넌트 화면의 리디렉트를 그 안에 가둔다. 테넌트 도메인은 앱마다 하나다(admin-web 주소·auth-web
 주소, CloudFront 배포가 앱마다 따로라). 이미 있는 테넌트에 더하는 길은 `POST /admin/platform/tenants/:id/domains`.
 
+### 테넌트 안의 직원 관리 (ADR-0056)
+계정은 한 테넌트의 것이라, 직원 계정과 역할은 **그 테넌트의 관리자**(`iam.admin_user.write`·`iam.role.assign` 을 가진 사람, 보통
+그 테넌트의 `master`)가 토큰 테넌트 안에서 관리한다. 만들기는 `POST /admin/auth`(계정의 테넌트 = 토큰 테넌트, 중복은 그 테넌트
+안에서만 — unique 가 아직 전역이라 다른 테넌트의 값은 insert 23505 를 같은 409 로), 부여·회수는 `/admin/users/:id/(staff-)roles`·
+`/admin/roles/:id/members`, 비밀번호 초기화는 `POST /admin/auth/staff/:userId/password`(`StaffPasswordManager` — 새 비번을 한 번만
+돌려주고 변경 강제·세션 끊기·이력). iam Manager 가 «계정의 테넌트 ≠ 일하는 테넌트»면 주기·늘리기·비번 초기화를
+`IAM_NOT_ACCOUNT_TENANT`(409)로 거절한다 — 고객 역할도 같다. 회수는 거절하지 않는다(그 테넌트에 남은 어긋난 부여를 거두는 길).
+비번 초기화는 지금 유효한 직원 역할이 있는 계정만 되고(고객은 404), 권한 상승 방지(`GrantAuthority`)를 그 계정의 역할에 대고 지나며, 운영자 계정은 운영자만 초기화한다.
+관리자의 고객 비밀번호 변경(`PATCH /admin/auth/change-password`, T 전용)도 T 의 계정만 찾는다.
+⚠️ 부여 읽기(`GET /admin/users/:id/roles`·`/admin/roles/:id/members`)는 아직 테넌트로 거르지 않는다 — 테넌트 만들기 스크립트의 재실행 판정이 운영자 토큰으로 다른 테넌트 구성원을 읽기 때문이다. 스크립트를 바꾸는 쪽이 함께 거른다.
+소속은 판정에 쓰지 않지만 contract 까지 계속 쓴다(되돌린 옛 코드는 소속으로 판정한다). 테넌트 셸에는 아직 이 화면이 없다(API 만).
+
 ### 역할 만료
 `user_roles.expiresAt`으로 시한부 역할 할당을 지원한다.
 

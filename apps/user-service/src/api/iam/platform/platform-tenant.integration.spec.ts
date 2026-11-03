@@ -19,7 +19,7 @@ import { SYSTEM_ROLE_NAME } from '../iam.constants';
 import { BadRequestError, NotFoundError } from '@app/shared';
 import * as bcrypt from 'bcrypt';
 import {
-  IamNotTenantMemberError,
+  IamNotAccountTenantError,
   IamOperatorOnlyError,
   TenantDomainTakenError,
   TenantOwnSuspendError,
@@ -48,7 +48,8 @@ describeIfDb('platform operator tenant API against a real database', () => {
   let manager: PlatformTenantManager;
   let brands: TenantBrandReader;
 
-  const makeUser = async (suffix: string, isPlatformOperator = false) => {
+  // 테넌트를 주지 않으면 DB 기본값(테넌트 1)의 계정이다 — 기본값은 contract(티켓 10) 가 걷는다.
+  const makeUser = async (suffix: string, isPlatformOperator = false, tenantId?: string) => {
     const [row] = await dbService.db
       .insert(users)
       .values({
@@ -57,6 +58,7 @@ describeIfDb('platform operator tenant API against a real database', () => {
         nickname: suffix,
         email: `${PREFIX}${suffix}@example.test`,
         isPlatformOperator,
+        ...(tenantId ? { tenantId } : {}),
       })
       .returning({ id: users.id });
     return row.id;
@@ -139,8 +141,9 @@ describeIfDb('platform operator tenant API against a real database', () => {
       );
     await dbService.db.delete(oauthTokens).where(like(oauthTokens.clientId, `${PREFIX}%`));
     await dbService.db.delete(oauthClients).where(like(oauthClients.clientId, `${PREFIX}%`));
-    await dbService.db.delete(tenants).where(like(tenants.id, `${PREFIX}%`));
+    // 계정이 테넌트를 가리키므로(ADR-0056) 계정을 먼저 지운다.
     await dbService.db.delete(users).where(like(users.loginId, `${PREFIX}%`));
+    await dbService.db.delete(tenants).where(like(tenants.id, `${PREFIX}%`));
   };
 
   beforeAll(() => {
@@ -350,11 +353,10 @@ describeIfDb('platform operator tenant API against a real database', () => {
       return row;
     };
 
-    it('gives a member a new initial password, forces a change, cuts their sessions and keeps the password out of the log', async () => {
+    it('gives an account of the tenant a new initial password, forces a change, cuts their sessions and keeps the password out of the log', async () => {
       const op = await makeUser('op', true);
-      const staff = await makeUser('staff');
       await manager.createTenant(actor(op), newTenant());
-      await manager.addMember(actor(op), TENANT, staff);
+      const staff = await makeUser('staff', false, TENANT);
       const session = await openSession(staff, await makeClient('client', null), TENANT);
 
       const { initialPassword } = await manager.reissuePassword(actor(op), TENANT, staff, true);
@@ -370,22 +372,22 @@ describeIfDb('platform operator tenant API against a real database', () => {
 
     it('can leave the change unforced (the read-only check account)', async () => {
       const op = await makeUser('op', true);
-      const check = await makeUser('check');
       await manager.createTenant(actor(op), newTenant());
-      await manager.addMember(actor(op), TENANT, check);
+      const check = await makeUser('check', false, TENANT);
 
       await manager.reissuePassword(actor(op), TENANT, check, false);
 
       expect((await passwordOf(check)).mustChange).toBe(false);
     });
 
-    it('refuses an account that is not a member of the tenant', async () => {
+    it('refuses an account of another tenant, even one with a membership there', async () => {
       const op = await makeUser('op', true);
       const stranger = await makeUser('stranger');
       await manager.createTenant(actor(op), newTenant());
+      await manager.addMember(actor(op), TENANT, stranger);
 
       await expect(manager.reissuePassword(actor(op), TENANT, stranger, true)).rejects.toBeInstanceOf(
-        IamNotTenantMemberError,
+        IamNotAccountTenantError,
       );
     });
   });

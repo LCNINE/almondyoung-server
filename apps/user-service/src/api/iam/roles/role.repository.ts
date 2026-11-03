@@ -181,12 +181,14 @@ export class RoleRepository {
   async findUser(
     userId: string,
     tx?: UserServiceTx,
-  ): Promise<{ id: string; loginId: string; username: string; canSignIn: boolean } | null> {
+  ): Promise<{ id: string; loginId: string; username: string; canSignIn: boolean; tenantId: string | null } | null> {
     const [row] = await this.client(tx)
       .select({
         id: users.id,
         loginId: users.loginId,
         username: users.username,
+        // 계정의 테넌트(ADR-0056). contract(NOT NULL) 전까지 타입상 비어 있을 수 있다.
+        tenantId: users.tenantId,
         deletedAt: users.deletedAt,
         dormantAt: users.dormantAt,
       })
