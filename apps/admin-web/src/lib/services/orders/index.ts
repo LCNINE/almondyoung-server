@@ -35,6 +35,7 @@ export {
   useConsolidationCandidates,
   useShipmentConsolidationCandidates,
   useConsolidationCandidatesV2,
+  useConsolidationBoard,
   useConsolidationLive,
   useConsolidationSavings,
   useConsolidationRules,

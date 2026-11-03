@@ -955,6 +955,33 @@ export interface ConsolidationOption extends ConsolidationOptionShipment {
   selectable: boolean;
 }
 
+export interface ConsolidationBoardShipment {
+  shipmentId: string;
+  status: string;
+  salesOrderNos: string[];
+  itemSummary: string;
+  totalQty: number;
+  batchId: string | null;
+  waybillTrackingNo: string | null;
+  manifestVersion: number;
+  reservationVersion: number;
+  createdAt: string;
+  orderedAt: string | null;
+  salesChannels: string[];
+}
+
+export interface ConsolidationBoardGroup {
+  key: string;
+  recipientSnapshot: Record<string, unknown>;
+  memoDiffers: boolean;
+  canMergeNow: boolean;
+  shipments: ConsolidationBoardShipment[];
+}
+
+export interface ConsolidationBoardResponse {
+  groups: ConsolidationBoardGroup[];
+}
+
 export interface ConsolidationOptionsResponse {
   source: ConsolidationOptionShipment;
   options: ConsolidationOption[];
