@@ -1,4 +1,5 @@
-import { JwtPayload, RequirePermission, StoreRoute, PiiResponse } from '@app/authorization';
+import { JwtPayload, RequirePermission, ServiceKeyRoute, StoreRoute, PiiResponse } from '@app/authorization';
+import { TenancyConfig } from '@app/tenancy';
 import {
   BadRequestException,
   Body,
@@ -10,6 +11,7 @@ import {
   Patch,
   Post,
   Query,
+  Req,
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
@@ -29,6 +31,7 @@ import { WithdrawnReplayService } from './withdrawn-replay.service';
 import { CurrentUser } from '@app/shared/decorators/current-user.decorator';
 import { SERVED_TENANT_ID } from '../../tenancy/served-tenant';
 import { ServedTenantData } from '../../tenancy/served-tenant.guard';
+import { internalCallTenant } from '../../tenancy/internal-call-tenant';
 
 @ApiTags('Users')
 @ApiBearerAuth()
@@ -37,8 +40,9 @@ export class UsersController {
   constructor(
     private readonly usersService: UsersService,
     private readonly withdrawnReplayService: WithdrawnReplayService,
-    // 가입 폼의 사전 중복 체크는 가입과 같은 테넌트(앱 설정 T) 안에서 묻는다 — 고객 가입 계정이 T 의 것이다(ADR-0056).
+    // 가입 폼의 사전 중복 체크·이메일 고객 조회는 앱 설정 T 안에서 묻는다 — 고객 가입 계정이 T 의 것이다(ADR-0056).
     @Inject(SERVED_TENANT_ID) private readonly servedTenantId: string,
+    private readonly tenancy: TenancyConfig,
   ) {}
 
   @ApiOperation({ summary: '이메일로 사용자 찾기' })
@@ -58,7 +62,8 @@ export class UsersController {
   // 사전 중복확인이 필요한 가입 폼은 boolean 만 주는 email-available 을 쓴다.
   @HttpCode(HttpStatus.OK)
   async findUserByEmail(@Query('email') email: string) {
-    return this.usersService.findUserByEmail(email);
+    // @ServedTenantData 가 토큰 테넌트 = T 를 이미 보장한다 — 다른 테넌트의 같은 이메일 계정은 이 화면의 고객이 아니다.
+    return this.usersService.findUserByEmailInTenant(this.servedTenantId, email);
   }
 
   @ApiOperation({
@@ -206,14 +211,17 @@ export class UsersController {
     summary: '[Internal] 휴대폰 번호로 활성 회원 조회',
     description: '받은 문자의 발신번호를 회원과 잇는 용도. Authorization: Bearer ${USER_SERVICE_INTERNAL_KEY} 필요.',
   })
+  // 전화번호·발송 대상 내부 조회 넷은 호출 테넌트(x-tenant-id)의 계정만 본다. 헤더가 없으면 403(기본 테넌트 없음).
   @Post('internal/contacts/by-phone')
   @Public()
+  @ServiceKeyRoute()
   @UseGuards(InternalApiKeyGuard)
   @HttpCode(HttpStatus.OK)
   async getInternalContactsByPhone(
+    @Req() request: unknown,
     @Body() body: InternalContactsByPhoneRequestDto,
   ): Promise<{ userId: string; username: string }[]> {
-    return this.usersService.findActiveContactsByPhone(body.phoneNumber);
+    return this.usersService.findActiveContactsByPhone(this.callTenant(request), body.phoneNumber);
   }
 
   @ApiOperation({
@@ -223,9 +231,10 @@ export class UsersController {
   @ApiQuery({ name: 'marketingOnly', required: false, type: Boolean })
   @Get('internal/sms-audience')
   @Public()
+  @ServiceKeyRoute()
   @UseGuards(InternalApiKeyGuard)
-  async getSmsAudience(@Query('marketingOnly') marketingOnly?: string) {
-    return this.usersService.findSmsAudience(marketingOnly === 'true');
+  async getSmsAudience(@Req() request: unknown, @Query('marketingOnly') marketingOnly?: string) {
+    return this.usersService.findSmsAudience(this.callTenant(request), marketingOnly === 'true');
   }
 
   @ApiOperation({
@@ -234,25 +243,28 @@ export class UsersController {
   })
   @Get('internal/sms-audience/summary')
   @Public()
+  @ServiceKeyRoute()
   @UseGuards(InternalApiKeyGuard)
-  async getSmsAudienceSummary() {
-    return this.usersService.summarizeSmsAudience();
+  async getSmsAudienceSummary(@Req() request: unknown) {
+    return this.usersService.summarizeSmsAudience(this.callTenant(request));
   }
 
   @ApiOperation({
     summary: '[Internal] 휴대폰 번호로 마케팅 수신 동의 철회',
     description:
-      '문자 답장 "수신거부" 처리용. 같은 번호를 쓰는 계정 전부를 철회한다. ' +
+      '문자 답장 "수신거부" 처리용. 호출 테넌트에서 같은 번호를 쓰는 계정 전부를 철회한다. ' +
       'Authorization: Bearer ${USER_SERVICE_INTERNAL_KEY} 필요.',
   })
   @Post('internal/marketing-consent/withdraw')
   @Public()
+  @ServiceKeyRoute()
   @UseGuards(InternalApiKeyGuard)
   @HttpCode(HttpStatus.OK)
   async withdrawMarketingConsent(
+    @Req() request: unknown,
     @Body() body: WithdrawMarketingConsentRequestDto,
   ): Promise<{ userIds: string[]; withdrawnUserIds: string[] }> {
-    return this.usersService.withdrawMarketingConsentByPhone(body.phoneNumber, body.via);
+    return this.usersService.withdrawMarketingConsentByPhone(this.callTenant(request), body.phoneNumber, body.via);
   }
 
   @ApiOperation({
@@ -274,4 +286,8 @@ export class UsersController {
   // Tempo 트레이스상 7일간 호출 0건이었다. 사용자 단건 조회가 다시 필요하면
   // 본인은 /users/me, 어드민은 /admin/users/:id 를 쓴다.
   // (UsersService.findUserById 는 OIDC·인증 등 13곳에서 쓰이므로 그대로 남아있다.)
+
+  private callTenant(request: unknown): string {
+    return internalCallTenant(request, this.tenancy.tenants);
+  }
 }

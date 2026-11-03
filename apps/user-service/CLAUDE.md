@@ -76,6 +76,11 @@ OAuth 액세스 토큰에는 `tenant` 가 실리고 `roles` 는 그 테넌트의
 가입(`POST /auth/signup`)과 가입 폼의 사전 체크(`/users/*-available`)·소셜 로그인의 «기존 계정»·이메일 중복은 앱 설정 T 의 계정만 본다
 (`UsersService.find…InTenant`·`findSocialAccountInTenant`). 이메일·아이디 unique 는 contract 마이그 전까지 전역이라 다른 테넌트 계정이 가진 값은
 insert 에서 23505 로 걸린다 — 가입은 같은 409 문구로, 소셜 가입은 개인정보 없는 문구로 바꾼다(카카오 콜백이 오류 문구를 리디렉트 주소에 싣는다).
+아이디·비밀번호 찾기·재설정(`/auth/forget-userid`·`forget-password`·`reset-password`, 레거시 이메일 토큰 포함)과 관리자 이메일 고객 조회
+(`/users/find-by-email`)도 앱 설정 T 의 계정만 찾고, 찾기를 여는 휴대폰 인증도 T 의 기록만 본다 — 다른 테넌트의 같은 번호·아이디·이메일은 «없는 계정»이다.
+전화번호·발송 대상으로 계정을 찾는 내부 라우트 넷(`/users/internal/contacts/by-phone`·`sms-audience`·`sms-audience/summary`·
+`marketing-consent/withdraw`)은 호출자가 실은 `x-tenant-id` 의 계정만 보고, 헤더가 없거나 목록 밖이면 403 이다(`src/tenancy/internal-call-tenant.ts`).
+userId 묶음 조회(`/users/internal/contacts`)는 거르지 않는다 — 계정 id 는 전역 UUID 이고 호출자가 자기 테넌트에서 얻은 id 다.
 고객·근태처럼 T 의 데이터를 답하는 컨트롤러(또는 라우트)는 `@ServedTenantData()` 를 단다 — 토큰 테넌트 ≠ T 면 403.
 어느 쪽인지 안 정한 컨트롤러는 `src/tenancy/served-tenant-classification.spec.ts` 가 빨갛게 한다.
 

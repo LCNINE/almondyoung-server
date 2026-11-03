@@ -161,16 +161,24 @@ export class UsersService {
     return rows.map((row) => ({ ...row, marketingConsent: row.marketingConsent ?? false }));
   }
 
-  async findActiveContactsByPhone(phoneNumber: string): Promise<{ userId: string; username: string }[]> {
-    const users = await this.findUsersByPhoneNumber(phoneNumber);
+  // 전화번호·발송 대상으로 계정을 찾는 내부 조회 넷은 호출 테넌트의 계정만 본다(ADR-0056) — 다른 테넌트에 같은 번호가 있어도
+  // 그 테넌트의 문자 답장·수신거부가 이 테넌트 회원에게 닿지 않게.
+  async findActiveContactsByPhone(
+    tenantId: string,
+    phoneNumber: string,
+    tx?: DbTransaction,
+  ): Promise<{ userId: string; username: string }[]> {
+    const users = await this.findUsersByPhoneNumber(tenantId, phoneNumber, tx);
     return users.filter((u) => !u.deletedAt && !u.dormantAt).map((u) => ({ userId: u.id, username: u.username }));
   }
 
   /** 폰 문자 대량 발송 대상: 활성(탈퇴·휴면 아님) 회원 중 휴대폰 번호가 있는 사람 전원. */
-  async findSmsAudience(marketingOnly: boolean): Promise<
-    { userId: string; username: string; phoneNumber: string; marketingConsent: boolean }[]
-  > {
-    const rows = await this.dbService.db
+  async findSmsAudience(
+    tenantId: string,
+    marketingOnly: boolean,
+    tx?: DbTransaction,
+  ): Promise<{ userId: string; username: string; phoneNumber: string; marketingConsent: boolean }[]> {
+    const rows = await this.getClient(tx)
       .select({
         userId: schema.users.id,
         username: schema.users.username,
@@ -182,7 +190,7 @@ export class UsersService {
       .leftJoin(schema.userConsents, eq(schema.userConsents.userId, schema.users.id))
       .where(
         and(
-          ...this.smsAudienceConditions(),
+          ...this.smsAudienceConditions(tenantId),
           marketingOnly ? eq(schema.userConsents.marketingConsent, true) : undefined,
         ),
       )
@@ -190,12 +198,16 @@ export class UsersService {
     return rows.map((row) => ({ ...row, phoneNumber: row.phoneNumber ?? '', marketingConsent: row.marketingConsent ?? false }));
   }
 
-  async summarizeSmsAudience(): Promise<{ active: number; withPhone: number; consented: number }> {
-    const [active] = await this.dbService.db
+  async summarizeSmsAudience(
+    tenantId: string,
+    tx?: DbTransaction,
+  ): Promise<{ active: number; withPhone: number; consented: number }> {
+    const client = this.getClient(tx);
+    const [active] = await client
       .select({ value: count() })
       .from(schema.users)
-      .where(and(isNull(schema.users.deletedAt), isNull(schema.users.dormantAt)));
-    const [withPhone] = await this.dbService.db
+      .where(and(eq(schema.users.tenantId, tenantId), isNull(schema.users.deletedAt), isNull(schema.users.dormantAt)));
+    const [withPhone] = await client
       .select({
         value: count(),
         consented: sql<number>`count(*) filter (where ${schema.userConsents.marketingConsent} = true)`.mapWith(Number),
@@ -203,12 +215,13 @@ export class UsersService {
       .from(schema.users)
       .innerJoin(schema.profiles, eq(schema.profiles.userId, schema.users.id))
       .leftJoin(schema.userConsents, eq(schema.userConsents.userId, schema.users.id))
-      .where(and(...this.smsAudienceConditions()));
+      .where(and(...this.smsAudienceConditions(tenantId)));
     return { active: active?.value ?? 0, withPhone: withPhone?.value ?? 0, consented: withPhone?.consented ?? 0 };
   }
 
-  private smsAudienceConditions() {
+  private smsAudienceConditions(tenantId: string) {
     return [
+      eq(schema.users.tenantId, tenantId),
       isNull(schema.users.deletedAt),
       isNull(schema.users.dormantAt),
       isNotNull(schema.profiles.phoneNumber),
@@ -217,14 +230,16 @@ export class UsersService {
   }
 
   async withdrawMarketingConsentByPhone(
+    tenantId: string,
     phoneNumber: string,
     via: string,
+    tx?: DbTransaction,
   ): Promise<{ userIds: string[]; withdrawnUserIds: string[] }> {
-    const users = await this.findUsersByPhoneNumber(phoneNumber);
+    const users = await this.findUsersByPhoneNumber(tenantId, phoneNumber, tx);
     const userIds = users.map((u) => u.id);
     if (userIds.length === 0) return { userIds, withdrawnUserIds: [] };
 
-    const withdrawn = await this.dbService.db
+    const withdrawn = await this.getClient(tx)
       .update(schema.userConsents)
       .set({
         marketingConsent: false,
@@ -251,8 +266,8 @@ export class UsersService {
     return (await this.findUserByNicknameInTenant(tenantId, nickname, tx)) === null;
   }
 
-  // 휴대폰 번호로 사용자 찾기 (복수 가능)
-  async findUsersByPhoneNumber(phoneNumber: string, tx?: DbTransaction): Promise<schema.User[]> {
+  // 그 테넌트에서 이 휴대폰 번호를 쓰는 계정 (복수 가능). 전화번호는 unique 가 아니라 다른 테넌트에도 같은 번호가 있다(ADR-0056).
+  async findUsersByPhoneNumber(tenantId: string, phoneNumber: string, tx?: DbTransaction): Promise<schema.User[]> {
     const client = this.getClient(tx);
     try {
       const rows = await client
@@ -263,9 +278,12 @@ export class UsersService {
         .innerJoin(schema.profiles, eq(schema.users.id, schema.profiles.userId))
         // 저장된 표기가 E.164/하이픈/숫자로 섞여 있어, 숫자만 남긴 값으로 비교한다
         .where(
-          inArray(
-            sql`regexp_replace(${schema.profiles.phoneNumber}, '[^0-9]', '', 'g')`,
-            phoneNumberDigitVariants(phoneNumber),
+          and(
+            eq(schema.users.tenantId, tenantId),
+            inArray(
+              sql`regexp_replace(${schema.profiles.phoneNumber}, '[^0-9]', '', 'g')`,
+              phoneNumberDigitVariants(phoneNumber),
+            ),
           ),
         );
 
@@ -313,7 +331,20 @@ export class UsersService {
     return user ?? null;
   }
 
-  /** 그 테넌트 계정 중 이 이메일을 쓰는 것. 가입·소셜 가입의 이메일 중복은 테넌트 안에서만 본다(ADR-0056). */
+  /** 그 테넌트의 계정 id. 비밀번호 재설정 토큰의 `sub` 가 다른 테넌트 계정을 가리키면 없는 계정이다(ADR-0056). */
+  async findUserByIdInTenant(tenantId: string, userId: string, tx?: DbTransaction): Promise<schema.User | null> {
+    if (!isValidUUID(userId)) return null;
+    const [user] = await this.getClient(tx)
+      .select()
+      .from(schema.users)
+      .where(and(eq(schema.users.tenantId, tenantId), eq(schema.users.id, userId)))
+      .limit(1);
+    return user ?? null;
+  }
+
+  /**
+   * 그 테넌트 계정 중 이 이메일을 쓰는 것. 가입·소셜 가입의 이메일 중복과 레거시 재설정 토큰(이메일 문자열)은 테넌트 안에서만 본다(ADR-0056).
+   */
   async findUserByEmailInTenant(
     tenantId: string,
     email: string,

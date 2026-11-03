@@ -525,3 +525,105 @@ describe('AuthService - 탈퇴 익명화', () => {
     expect(publishEvent).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * 아이디 찾기·비밀번호 찾기·재설정은 그 앱의 테넌트(앱 설정 T) 계정만 찾는다(ADR-0056) — 같은 번호·아이디·이메일의 다른 테넌트
+ * 계정은 «없는 계정»과 같다. 찾기 화면은 쇼핑몰(T)에만 있다.
+ */
+describe('AuthService - 찾기·재설정은 테넌트 안', () => {
+  let service: AuthService;
+  let updated: jest.Mock;
+  let jwt: { signAsync: jest.Mock; verify: jest.Mock };
+
+  const PHONE = '01012345678';
+  const MINE = { id: '00000000-0000-0000-0000-00000000000a', loginId: 'mine', email: 'mine@example.com' };
+  const THEIRS = { id: '00000000-0000-0000-0000-00000000000b', loginId: 'theirs', email: 'theirs@example.com' };
+  /** 계정 둘 — MINE 은 T, THEIRS 는 다른 테넌트. 같은 번호를 쓴다. */
+  const accountsOf = (tenantId: string) => (tenantId === SERVED ? [MINE] : [THEIRS]);
+
+  /** select 체인 — 어떤 경로든 마지막 limit 이 이 값을 낸다(인증 기록·프로필 번호). */
+  const selectChain = (rows: unknown[]) => {
+    const chain: Record<string, jest.Mock> = {};
+    for (const step of ['from', 'where', 'orderBy']) chain[step] = jest.fn(() => chain);
+    chain.limit = jest.fn().mockResolvedValue(rows);
+    return chain;
+  };
+
+  beforeEach(async () => {
+    updated = jest.fn().mockResolvedValue(undefined);
+    jwt = { signAsync: jest.fn().mockResolvedValue('reset-token'), verify: jest.fn() };
+
+    const usersService = {
+      findUsersByPhoneNumber: jest.fn(async (tenantId: string) => accountsOf(tenantId)),
+      findUserByLoginIdInTenant: jest.fn(
+        async (tenantId: string, loginId: string) => accountsOf(tenantId).find((a) => a.loginId === loginId) ?? null,
+      ),
+      findUserByIdInTenant: jest.fn(
+        async (tenantId: string, id: string) => accountsOf(tenantId).find((a) => a.id === id) ?? null,
+      ),
+      findUserByEmailInTenant: jest.fn(
+        async (tenantId: string, email: string) => accountsOf(tenantId).find((a) => a.email === email) ?? null,
+      ),
+    };
+
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        AuthService,
+        { provide: UsersService, useValue: usersService },
+        { provide: JwtService, useValue: jwt },
+        { provide: ConfigService, useValue: { get: jest.fn(), getOrThrow: jest.fn().mockReturnValue('secret') } },
+        {
+          provide: DbService,
+          useValue: {
+            db: {
+              // 인증 기록과 프로필 둘 다 «같은 번호로 인증됨» 이다.
+              select: jest.fn(() => selectChain([{ phoneNumber: PHONE }])),
+              update: jest.fn(() => ({ set: jest.fn(() => ({ where: updated })) })),
+            },
+          },
+        },
+        { provide: 'STREAM_PUBLISHER_users.events.v1', useValue: { publishEvent: jest.fn() } },
+        { provide: ConsentsService, useValue: {} },
+        { provide: TokensService, useValue: {} },
+        { provide: Cafe24LinkService, useValue: {} },
+        { provide: RoleAssignmentManager, useValue: {} },
+        { provide: PlatformOperatorManager, useValue: {} },
+        { provide: SERVED_TENANT_ID, useValue: SERVED },
+      ],
+    }).compile();
+
+    service = module.get<AuthService>(AuthService);
+  });
+
+  it('아이디 찾기는 같은 번호의 다른 테넌트 계정을 돌려주지 않는다', async () => {
+    await expect(service.forgetUserId(PHONE)).resolves.toEqual({ loginIds: ['mine'] });
+  });
+
+  it('비밀번호 찾기에서 다른 테넌트의 아이디는 «일치하는 계정 없음»이다', async () => {
+    await expect(service.forgotPassword(PHONE, 'theirs')).rejects.toMatchObject({ status: 404 });
+    expect(jwt.signAsync).not.toHaveBeenCalled();
+
+    await expect(service.forgotPassword(PHONE, 'mine')).resolves.toEqual({ verificationToken: 'reset-token' });
+    expect(jwt.signAsync).toHaveBeenCalledWith({ sub: MINE.id }, expect.anything());
+  });
+
+  it('재설정 토큰이 다른 테넌트 계정을 가리키면 바꾸지 않는다', async () => {
+    jwt.verify.mockReturnValue({ sub: THEIRS.id });
+    await expect(service.resetPassword('t', 'new-password')).rejects.toMatchObject({ status: 404 });
+    expect(updated).not.toHaveBeenCalled();
+
+    jwt.verify.mockReturnValue({ sub: MINE.id });
+    await expect(service.resetPassword('t', 'new-password')).resolves.toBeUndefined();
+    expect(updated).toHaveBeenCalledTimes(1);
+  });
+
+  it('레거시 재설정 토큰(이메일 문자열)도 그 테넌트의 이메일만 찾는다', async () => {
+    jwt.verify.mockReturnValue(THEIRS.email);
+    await expect(service.resetPassword('t', 'new-password')).rejects.toMatchObject({ status: 404 });
+    expect(updated).not.toHaveBeenCalled();
+
+    jwt.verify.mockReturnValue(MINE.email);
+    await expect(service.resetPassword('t', 'new-password')).resolves.toBeUndefined();
+    expect(updated).toHaveBeenCalledTimes(1);
+  });
+});

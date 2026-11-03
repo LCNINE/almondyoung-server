@@ -872,10 +872,12 @@ export class AuthService {
     return await this.setAccessToken(user, reply, client);
   }
 
+  // 찾기·재설정 셋은 앱 설정 T 의 계정만 찾는다(ADR-0056) — 찾기 화면은 쇼핑몰에만 있고, 가입이 계정을 만드는 테넌트도 T 다.
+  // 같은 번호·아이디·이메일의 다른 테넌트 계정은 «없는 계정»과 같은 응답이다.
   async forgetUserId(phoneNumber: string) {
     await this.assertPhoneVerified(phoneNumber);
 
-    const users = await this.usersService.findUsersByPhoneNumber(phoneNumber);
+    const users = await this.usersService.findUsersByPhoneNumber(this.servedTenantId, phoneNumber);
     if (users.length === 0) throw new NotFoundException('존재하지 않는 휴대폰 번호입니다');
 
     return { loginIds: users.map((user) => user.loginId) };
@@ -884,7 +886,7 @@ export class AuthService {
   async forgotPassword(phoneNumber: string, loginId: string) {
     await this.assertPhoneVerified(phoneNumber);
 
-    const user = await this.usersService.findUserByLoginId(loginId);
+    const user = await this.usersService.findUserByLoginIdInTenant(this.servedTenantId, loginId);
     if (!user) throw new NotFoundException(NO_MATCHING_ACCOUNT_MESSAGE);
 
     const [profile] = await this.dbService.db
@@ -919,14 +921,9 @@ export class AuthService {
     let user: UserWithoutPassword | null = null;
 
     if (typeof payload === 'string') {
-      user = await this.usersService.findUserByEmail(payload);
+      user = await this.usersService.findUserByEmailInTenant(this.servedTenantId, payload);
     } else if (payload?.sub) {
-      const [row] = await this.dbService.db
-        .select()
-        .from(userServiceSchema.users)
-        .where(eq(userServiceSchema.users.id, payload.sub))
-        .limit(1);
-      user = row ?? null;
+      user = await this.usersService.findUserByIdInTenant(this.servedTenantId, payload.sub);
     }
 
     if (!user) {
@@ -950,6 +947,8 @@ export class AuthService {
       .from(userServiceSchema.phoneVerifications)
       .where(
         and(
+          // 인증번호 발송이 기록하는 테넌트(앱 설정 T)와 같은 테넌트의 인증만 찾기를 연다(ADR-0056).
+          eq(userServiceSchema.phoneVerifications.tenantId, this.servedTenantId),
           eq(userServiceSchema.phoneVerifications.phoneNumber, phoneNumber),
           eq(userServiceSchema.phoneVerifications.purpose, userServiceEnums.phoneVerificationPurposeEnum.enumValues[0]),
           eq(userServiceSchema.phoneVerifications.isVerified, true),
