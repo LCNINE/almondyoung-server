@@ -44,7 +44,7 @@
 ## 2. 테넌트가 정해지고 흐르는 길
 
 ```
-사람 ─ 로그인 ─▶ user-service ─ 토큰(tenant: T) ─▶ admin-web / 쇼핑몰
+사람 ─ 로그인 ─▶ user-service ─ 토큰(tenant: T, 계정의 테넌트와 같아야 한다) ─▶ admin-web / 쇼핑몰
                   (리디렉트 호스트 → 테넌트 도메인 → T)
 admin-web / 다른 앱 ─ HTTP(토큰, 또는 내부 키 + x-tenant-id) ─▶ core
 core 요청 문 ─ CLS(TENANT_CONTEXT_KEY = T) ─▶ DbService 라우터 ─▶ core_<slug> 풀
@@ -94,7 +94,7 @@ core 쓰기 ─ outbox 행(그 DB) ─▶ 디스패처가 봉투 metadata.tenant
 장치: `libs/cron-once/src/guards/cron-once-guard.spec.ts`(규칙 `cron-outside-tenant-loop` — 데코레이터 본문만 본다), `apps/core/src/platform/tenancy/core-non-request-tenancy.integration.spec.ts`,
 `libs/db/src/db.service.spec.ts`. `onModuleInit`·`setInterval`·`startConsumer` 부팅 경로는 규율.
 
-**3. 토큰의 역할은 토큰 테넌트의 부여만.** 모든 테넌트의 부여를 실으면 다른 테넌트 직원이 테넌트 1 쇼핑몰 토큰으로 테넌트 1 관리자가 된다. 내부 세션 토큰도 T 의 부여로 좁힌다.
+**3. 토큰의 역할은 토큰 테넌트의 부여만.** 모든 테넌트의 부여를 실으면 다른 테넌트 직원이 테넌트 1 쇼핑몰 토큰으로 테넌트 1 관리자가 된다. 내부 세션 토큰은 계정 테넌트의 부여로 좁힌다(0056 — 그 전에는 T). 계정 테넌트 ≠ 토큰 테넌트면 발급·갱신하지 않는다.
 장치: `apps/user-service/src/api/oauth/token-tenant.spec.ts`, `token-tenant.integration.spec.ts`, `apps/user-service/src/api/auth/internal-token-tenant.spec.ts`.
 
 **4. 토큰 vs 헤더: 사람 토큰이 있으면 언제나 토큰이 이긴다.** «`@Public` 은 헤더로만»처럼 구현하면 사람 토큰으로 `@Public` 을 부르는 호출자가 ② 에서 깨진다. 헤더와 토큰이 다르거나

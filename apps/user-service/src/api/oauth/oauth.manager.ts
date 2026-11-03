@@ -87,7 +87,11 @@ export class OAuthManager {
     const user = await this.usersService.findUserById(input.userId);
     if (!user || user.deletedAt || user.dormantAt) throw new BadRequestError('user not found');
     // 준비·정지 테넌트, 테넌트 도메인이 아닌 리디렉트로는 code 부터 내주지 않는다(교환 때 한 번 더 본다).
-    this.assertIssuable(await this.tenantForRedirect(client, input.redirectUri));
+    const tenantId = this.assertIssuable(await this.tenantForRedirect(client, input.redirectUri));
+    // 계정은 한 테넌트의 것이다(ADR-0056) — 그 테넌트에서는 «없는 사용자»다. auth-web 이 로그인 화면의 테넌트를 잘못 넘겼을
+    // 때의 두 번째 방어선이고, auth-web 이 테넌트를 넘기기 전에는 이게 첫 방어선이다.
+    if ((await this.usersService.accountTenantOf(input.userId)) !== tenantId)
+      throw new BadRequestError('user not found');
 
     const code = crypto.randomBytes(48).toString('base64url');
     const expiresAt = new Date(Date.now() + CODE_TTL_SECONDS * 1000);
@@ -221,6 +225,7 @@ export class OAuthManager {
         let tenantId: string;
         try {
           tenantId = this.assertIssuable(await this.tenantForSession(client, from.tenantId, tx));
+          await this.assertAccountInTenant(from.userId, tenantId, tx);
         } catch (error) {
           if (!(error instanceof UnauthorizedError)) throw error;
           await this.repo.revokeChain(from.id, tx);
@@ -314,6 +319,13 @@ export class OAuthManager {
     return tenant;
   }
 
+  /** 계정의 테넌트가 아닌 토큰 테넌트로는 발급·갱신하지 않는다(ADR-0056). 갱신에서는 세션을 끊는 거절이다. */
+  private async assertAccountInTenant(userId: string, tenantId: string, tx?: DbTransaction): Promise<void> {
+    if ((await this.usersService.accountTenantOf(userId, tx)) !== tenantId) {
+      throw new UnauthorizedError('account belongs to another tenant');
+    }
+  }
+
   /** 준비·정지 테넌트로는 발급·갱신하지 않는다. */
   private assertIssuable(tenant: TokenTenantRow): string {
     if (tenant.status !== 'active') throw new UnauthorizedError('tenant not active');
@@ -340,6 +352,8 @@ export class OAuthManager {
     // 탈퇴 계정에는 토큰을 내주지 않는다. authorization_code / refresh_token 두 그랜트가 모두
     // 여기를 지나므로, 탈퇴 시점에 살아있던 세션도 다음 회전에서 끊긴다.
     if (user?.deletedAt || user?.dormantAt) throw new UnauthorizedError('user withdrawn');
+    // code 교환·갱신·핸드오프가 모두 여기를 지난다 — 앞에서 놓쳐도 다른 테넌트 계정에 토큰이 나가지 않는다.
+    await this.assertAccountInTenant(userId, tenantId, tx);
     // 역할은 토큰 테넌트에서 받은 부여만 싣는다. 빠지면 테넌트 2 관리자가 테넌트 1 쇼핑몰 토큰으로 테넌트 1 관리자가 된다.
     const roles = user ? await this.usersService.getTokenRoleNames(userId, tenantId, tx) : [];
 

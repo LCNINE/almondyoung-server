@@ -49,7 +49,12 @@ describe('AuthController', () => {
           },
         },
         // 컨트롤러가 OAuth 실패 리다이렉트에서 FRONTEND_URL 을 읽는다.
-        { provide: ConfigService, useValue: { get: jest.fn(() => undefined) } },
+        {
+          provide: ConfigService,
+          useValue: {
+            get: jest.fn((key: string) => (key === 'OAUTH_INTERNAL_SECRET' ? 'internal-secret' : undefined)),
+          },
+        },
       ],
     }).compile();
 
@@ -98,13 +103,27 @@ describe('AuthController', () => {
     );
   });
 
-  it('signIn 은 dto 와 res 를 authService 에 넘긴다', async () => {
+  it('signIn 은 dto 와 res 를 authService 에 넘긴다 — 화면 테넌트 없이 오면 테넌트 없이', async () => {
     const signInDto: SignInDto = { loginId: 'user1234', password: 'password123!' };
 
-    const result = await controller.signIn(signInDto, res);
+    const result = await controller.signIn(signInDto, { headers: {} } as never, res);
 
     expect(result).toEqual({ accessToken: 'test-token' });
-    expect(authService.signIn).toHaveBeenCalledWith(signInDto, res);
+    expect(authService.signIn).toHaveBeenCalledWith(signInDto, res, undefined);
+  });
+
+  it('signIn 은 auth-web 이 보증한 화면 테넌트를 넘기고, 보증 없는 헤더는 버린다', async () => {
+    const signInDto: SignInDto = { loginId: 'user1234', password: 'password123!' };
+
+    await controller.signIn(
+      signInDto,
+      { headers: { 'x-tenant-id': '2', 'x-internal-secret': 'internal-secret' } } as never,
+      res,
+    );
+    expect(authService.signIn).toHaveBeenLastCalledWith(signInDto, res, '2');
+
+    await controller.signIn(signInDto, { headers: { 'x-tenant-id': '2' } } as never, res);
+    expect(authService.signIn).toHaveBeenLastCalledWith(signInDto, res, undefined);
   });
 
   it('signOut 은 request 와 reply 를 authService 에 넘긴다', async () => {

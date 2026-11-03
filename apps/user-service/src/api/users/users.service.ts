@@ -1,3 +1,4 @@
+import { NotFoundError } from '@app/shared';
 import { DbService, InjectDb } from '@app/db';
 import { InjectPublisher, PublisherFor } from '@app/events';
 import {
@@ -312,6 +313,33 @@ export class UsersService {
     } catch (error) {
       throw new InternalServerErrorException('로그인 ID로 사용자 조회 중 오류가 발생했습니다.');
     }
+  }
+
+  /** 그 테넌트의 계정만 찾는다(ADR-0056). 로그인 아이디 unique 가 테넌트 안으로 넓혀진 뒤에도 한 행이다. */
+  async findUserByLoginIdInTenant(tenantId: string, loginId: string, tx?: DbTransaction): Promise<schema.User | null> {
+    const client = this.getClient(tx);
+    const [user] = await client
+      .select()
+      .from(schema.users)
+      .where(and(eq(schema.users.tenantId, tenantId), eq(schema.users.loginId, loginId)))
+      .limit(1);
+    return user ?? null;
+  }
+
+  /**
+   * 계정의 테넌트 — 토큰의 `tenant`·역할이 이것으로 정해진다. 비어 있으면 채우기 마이그(…_backfill-account-tenant)가 안 돈
+   * DB 다 — 테넌트 1 로 짐작하지 않고 멈춘다(기본 테넌트 없음).
+   */
+  async accountTenantOf(userId: string, tx?: DbTransaction): Promise<string> {
+    const client = this.getClient(tx);
+    const [row] = await client
+      .select({ tenantId: schema.users.tenantId })
+      .from(schema.users)
+      .where(eq(schema.users.id, userId))
+      .limit(1);
+    if (!row) throw new NotFoundError('사용자를 찾을 수 없습니다.');
+    if (!row.tenantId) throw new Error(`account ${userId} has no tenant — run the account tenant backfill migration`);
+    return row.tenantId;
   }
 
   // 공개 API용 기본 정보

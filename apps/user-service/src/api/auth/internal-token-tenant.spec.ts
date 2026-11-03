@@ -1,4 +1,5 @@
 import { DbService } from '@app/db';
+import { BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { Test } from '@nestjs/testing';
@@ -15,18 +16,18 @@ import { INTERNAL_TOKEN_AUDIENCE } from '../../constants/auth.constant';
 import { AuthService } from './auth.service';
 
 /**
- * 내부 세션 토큰(`aud=user-service-internal`) — 쇼핑몰과 auth-web 이 쿠키로 들고 다니는 세션. 역할은 user-service 의 T 에서
- * 받은 부여만 싣고, 그래서 `tenant` 도 T 다. 클레임이 없으면 클레임만 보는 core·file-service·ai 가 reject 모드에서 쇼핑몰
- * 고객의 업로드·`@StoreRoute` 를 거절한다. 테넌트 2 직원이 테넌트 도메인에서 로그인해도 이 토큰에는 테넌트 2 역할이 실리지 않는다.
+ * 내부 세션 토큰(`aud=user-service-internal`) — 쇼핑몰과 auth-web 이 쿠키로 들고 다니는 세션. 계정은 한 테넌트의 것이라
+ * (ADR-0056) `tenant` 는 그 계정의 테넌트이고 역할은 그 테넌트에서 받은 부여만 싣는다. 테넌트 1 계정에게는 지금과 같다(T = 1).
+ * 클레임이 없으면 클레임만 보는 core·file-service·ai 가 reject 모드에서 쇼핑몰 고객의 업로드·`@StoreRoute` 를 거절한다.
  */
-describe('내부 세션 토큰 — T 의 테넌트와 T 의 부여만 싣는다', () => {
+describe('내부 세션 토큰 — 계정의 테넌트와 그 테넌트의 부여만 싣는다', () => {
   const { privateKey } = generateKeyPairSync('rsa', {
     modulusLength: 2048,
     privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
     publicKeyEncoding: { type: 'spki', format: 'pem' },
   });
   const grants: Record<string, string[]> = { '1': ['user'], '2': ['catalog_manager'] };
-  const user = {
+  const shopper = {
     id: 'u-1',
     email: 'a@b.c',
     loginId: 'shopper',
@@ -35,11 +36,15 @@ describe('내부 세션 토큰 — T 의 테넌트와 T 의 부여만 싣는다'
     deletedAt: null,
     dormantAt: null,
   };
+  const staffTwo = { ...shopper, id: 'u-2', loginId: 'acmestaff' };
+  const tenantOf: Record<string, string> = { 'u-1': '1', 'u-2': '2' };
 
   let service: AuthService;
   let usersService: {
     findUserByLoginId: jest.Mock;
+    findUserByLoginIdInTenant: jest.Mock;
     findUserById: jest.Mock;
+    accountTenantOf: jest.Mock;
     getTokenRoleNames: jest.Mock;
     assignDefaultRoleToUser: jest.Mock;
   };
@@ -50,8 +55,13 @@ describe('내부 세션 토큰 — T 의 테넌트와 T 의 부여만 싣는다'
   beforeEach(async () => {
     cookies = {};
     usersService = {
-      findUserByLoginId: jest.fn().mockResolvedValue(user),
-      findUserById: jest.fn().mockResolvedValue(user),
+      findUserByLoginId: jest.fn().mockResolvedValue(shopper),
+      // 테넌트 안에서 찾기 — 그 테넌트의 계정만 나온다.
+      findUserByLoginIdInTenant: jest.fn((tenantId: string, loginId: string) =>
+        Promise.resolve([shopper, staffTwo].find((u) => u.loginId === loginId && tenantOf[u.id] === tenantId) ?? null),
+      ),
+      findUserById: jest.fn((id: string) => Promise.resolve(id === 'u-2' ? staffTwo : shopper)),
+      accountTenantOf: jest.fn((id: string) => Promise.resolve(tenantOf[id])),
       getTokenRoleNames: jest.fn((_userId: string, tenantId: string) => Promise.resolve(grants[tenantId] ?? [])),
       assignDefaultRoleToUser: jest.fn().mockResolvedValue(undefined),
     };
@@ -93,33 +103,61 @@ describe('내부 세션 토큰 — T 의 테넌트와 T 의 부여만 싣는다'
   afterEach(() => jest.restoreAllMocks());
 
   const accessClaims = () => jwt.decode(cookies.accessToken) as Record<string, unknown>;
+  const signIn = (loginId: string, siteTenantId?: string) =>
+    service.signIn({ loginId, password: 'pw', rememberMe: false }, reply as never, siteTenantId);
 
-  it('로그인한 내부 토큰의 tenant 는 T 이고 aud 는 내부 토큰이다', async () => {
-    await service.signIn({ loginId: 'shopper', password: 'pw', rememberMe: false }, reply as never);
+  it('테넌트 1 계정의 내부 토큰은 지금과 같다 — tenant 1, 테넌트 1 의 부여, 내부 토큰 aud', async () => {
+    await signIn('shopper');
 
     expect(accessClaims().aud).toBe(INTERNAL_TOKEN_AUDIENCE);
     expect(accessClaims().tenant).toBe('1');
-  });
-
-  it('토큰을 다시 받아도(restoreToken) tenant 는 T 다', async () => {
-    await service.restoreToken('u-1', reply as never);
-
-    expect(accessClaims().tenant).toBe('1');
-  });
-
-  it('역할은 T 에서 받은 부여만 — 다른 테넌트의 부여는 실리지 않는다', async () => {
-    await service.signIn({ loginId: 'shopper', password: 'pw', rememberMe: false }, reply as never);
-
     expect(accessClaims().roles).toEqual(['user']);
-    expect(usersService.getTokenRoleNames).toHaveBeenCalledWith('u-1', '1', undefined);
-    expect(usersService.getTokenRoleNames).not.toHaveBeenCalledWith('u-1', '2', expect.anything());
   });
 
-  it('리프레시 토큰의 역할도 T 의 부여만', async () => {
-    await service.signIn({ loginId: 'shopper', password: 'pw', rememberMe: false }, reply as never);
+  it('다른 테넌트 계정의 내부 토큰은 그 테넌트의 것이고 그 테넌트의 부여만 싣는다', async () => {
+    usersService.findUserByLoginId.mockResolvedValue(staffTwo);
+
+    await signIn('acmestaff');
+
+    expect(accessClaims().tenant).toBe('2');
+    expect(accessClaims().roles).toEqual(['catalog_manager']);
+    expect(usersService.getTokenRoleNames).not.toHaveBeenCalledWith('u-2', '1', expect.anything());
+  });
+
+  it('토큰을 다시 받아도(restoreToken) 계정의 테넌트다', async () => {
+    await service.restoreToken('u-2', reply as never);
+
+    expect(accessClaims().tenant).toBe('2');
+  });
+
+  it('리프레시 토큰의 역할도 계정 테넌트의 부여만', async () => {
+    usersService.findUserByLoginId.mockResolvedValue(staffTwo);
+
+    await signIn('acmestaff');
 
     const [[refreshPayload]] = jwtService.signAsync.mock.calls as [[{ roles: string[] }]];
-    expect(refreshPayload.roles).toEqual(['user']);
+    expect(refreshPayload.roles).toEqual(['catalog_manager']);
+  });
+
+  it('화면의 테넌트가 오면 그 테넌트 안에서만 계정을 찾는다', async () => {
+    await signIn('acmestaff', '2');
+
+    expect(usersService.findUserByLoginIdInTenant).toHaveBeenCalledWith('2', 'acmestaff');
+    expect(usersService.findUserByLoginId).not.toHaveBeenCalled();
+    expect(accessClaims().tenant).toBe('2');
+  });
+
+  it('다른 테넌트의 계정은 «아이디 또는 비밀번호 틀림»과 같은 응답으로 거절한다', async () => {
+    const otherTenant = await signIn('acmestaff', '1').catch((e: unknown) => e);
+    jest.spyOn(bcrypt, 'compare').mockResolvedValue(false as never);
+    const wrongPassword = await signIn('shopper', '1').catch((e: unknown) => e);
+
+    expect(otherTenant).toBeInstanceOf(BadRequestException);
+    expect(wrongPassword).toBeInstanceOf(BadRequestException);
+    expect((otherTenant as BadRequestException).getResponse()).toEqual(
+      (wrongPassword as BadRequestException).getResponse(),
+    );
+    expect(cookies.accessToken).toBeUndefined();
   });
 
   it('고객 가입은 고객 역할을 T 에서 준다', async () => {

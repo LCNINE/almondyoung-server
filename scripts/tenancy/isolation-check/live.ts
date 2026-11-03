@@ -27,7 +27,7 @@ import { deploymentToCwd } from '../../seeding/lib/sst-shell-relaunch';
 import { resolveRegistry } from '../../seeding/lib/tenant-registry';
 import { HttpOperatorApi } from '../create-tenant/operator-api.http';
 import { operatorSession } from '../operator-session';
-import { signInStaff, type StaffClient } from '../staff-token';
+import { signInAtSite, signInStaff, type StaffClient } from '../staff-token';
 import { buildIsolationChecks } from './checks';
 import { removeProductsWithTemporaryGrant } from './cleanup-grant';
 import { findDigitalAssetFile, observeCronRuns } from './db-observation';
@@ -282,6 +282,10 @@ async function main(): Promise<void> {
       tenantOne: () =>
         signInStaff(staff(`${adminWeb}/auth/callback`), check.tenantOne.loginId, check.tenantOne.password),
       tenantTwo: signInTenantTwo,
+      at: (account, siteTenantId) =>
+        signInAtSite({ baseUrl: users, internalSecret }, check[account].loginId, check[account].password, siteTenantId),
+      tenantTwoAtTenantOneAdmin: () =>
+        signInStaff(staff(`${adminWeb}/auth/callback`), check.tenantTwo.loginId, check.tenantTwo.password),
     },
     customerToken: () => signInStaff(storefront, check.customer.loginId, check.customer.password),
     storePublishableKey: need(services, 'MedusaPublishableKey', 'lcnine-services'),

@@ -1,4 +1,4 @@
-import { noNewDeadLetters, onlyOwnRows, refusedByTenantGate, tokenTenantOf } from './judge';
+import { refusedAsWrongCredentials, noNewDeadLetters, onlyOwnRows, refusedByTenantGate, tokenTenantOf } from './judge';
 import type { ConsumerMetrics } from './target';
 
 describe('refusedByTenantGate — 403 이 «테넌트 문»의 거절인가', () => {
@@ -114,5 +114,24 @@ describe('noNewDeadLetters — DLQ 0 은 쓰기 뒤의 수집으로만 믿는다
     });
     const v = noNewDeadLetters({ ...before, unreachable: ['search'] }, after, SINCE);
     expect(v.ok === 'skipped' && v.reason).toMatch(/search/);
+  });
+});
+
+describe('refusedAsWrongCredentials', () => {
+  const MESSAGE = '아이디 또는 비밀번호가 올바르지 않습니다';
+
+  it('passes only the plain wrong-credentials refusal', () => {
+    expect(refusedAsWrongCredentials({ status: 400, body: { message: MESSAGE } }, MESSAGE)).toEqual({ ok: true });
+  });
+
+  it('fails a sign-in that went through', () => {
+    expect(refusedAsWrongCredentials({ status: 200, body: {} }, MESSAGE)).toEqual(
+      expect.objectContaining({ ok: false, detail: expect.stringContaining('로그인됐다') }),
+    );
+  });
+
+  it('fails a refusal that tells the account apart (withdrawn, dormant) or a server error', () => {
+    expect(refusedAsWrongCredentials({ status: 403, body: { message: '탈퇴한 계정입니다.' } }, MESSAGE).ok).toBe(false);
+    expect(refusedAsWrongCredentials({ status: 500, body: { message: 'boom' } }, MESSAGE).ok).toBe(false);
   });
 });

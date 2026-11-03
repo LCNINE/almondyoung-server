@@ -66,15 +66,20 @@ Express가 아닌 Fastify를 사용한다. 파일 업로드는 `@fastify/multipa
 OAuth 액세스 토큰에는 `tenant` 가 실리고 `roles` 는 그 테넌트의 부여만 싣는다(`UsersService.getTokenRoleNames`). 토큰 테넌트는
 클라이언트의 고정 테넌트(`oauth_clients.tenant_id`, 쇼핑몰 등)이거나, 비어 있으면(웹 직원 앱) 등록된 리디렉트 주소의 host →
 `tenant_domains` 로 정한다 — 요청 파라미터·Host 헤더로 정하지 않는다. 준비·정지 테넌트는 발급·갱신을 거절하고 세션을 끊는다.
-내부 세션 토큰(`aud=user-service-internal`, 쇼핑몰·auth-web 쿠키)은 `tenant` 가 앱 설정 T(`SERVED_TENANT_ID`)이고 역할은 T 의 부여만 싣는다 —
-로그인한 도메인과 무관하다. 클레임만 보는 core·file-service·ai 가 이 토큰을 T 의 것으로 받으려면 클레임이 있어야 한다.
+계정은 한 테넌트의 것이다(`users.tenant_id`, ADR-0056) — 계정의 테넌트 ≠ 토큰 테넌트면 코드 발급은 «없는 사용자»(400 `user not found`),
+교환·갱신·핸드오프는 401 이고 갱신은 세션을 끊는다(`OAuthManager.assertAccountInTenant`).
+내부 세션 토큰(`aud=user-service-internal`, 쇼핑몰·auth-web 쿠키)은 `tenant` 가 계정의 테넌트이고 역할은 그 테넌트의 부여만 싣는다 —
+로그인한 도메인과 무관하다(테넌트 1 계정에게는 T). 클레임만 보는 core·file-service·ai 가 이 토큰의 테넌트를 알려면 클레임이 있어야 한다.
+로그인(`POST /auth/signin`)은 auth-web 이 보증 헤더(`x-tenant-id` + `x-internal-secret`)로 화면 테넌트를 실으면 그 테넌트의 계정만 찾는다 —
+다른 테넌트의 계정은 «아이디 또는 비밀번호 틀림»과 같다. 본문 필드가 아닌 건 옛 user-service 가 모르는 헤더를 무시해 auth-web 을 먼저
+내보내도 되게 하려는 것이다. 헤더가 없으면 아직 전체에서 찾는다(읽기 전환 기간).
 고객·근태처럼 T 의 데이터를 답하는 컨트롤러(또는 라우트)는 `@ServedTenantData()` 를 단다 — 토큰 테넌트 ≠ T 면 403.
 어느 쪽인지 안 정한 컨트롤러는 `src/tenancy/served-tenant-classification.spec.ts` 가 빨갛게 한다.
 
 이벤트 봉투의 테넌트는 «그 일이 일어난 화면의 테넌트»다 — `UserRequestTenantInterceptor` 가 요청마다 CLS `TENANT_CONTEXT_KEY` 를
 세우고(판정 `src/tenancy/request-event-tenant.ts`), 못 정하면 T 로 찍힌다. 토큰 라우트는 토큰 `tenant`, 단 auth-web 서버가
-`x-internal-secret`(= `OAUTH_INTERNAL_SECRET`)과 함께 실은 `x-tenant-id` 가 먼저다 — 내부 세션 토큰은 늘 T 라 테넌트 auth-web 의
-비밀번호 변경은 그 헤더로만 테넌트를 안다. 비밀 없는 헤더는 무시한다. 맥락만 세우고 거절하지 않는다.
+`x-internal-secret`(= `OAUTH_INTERNAL_SECRET`)과 함께 실은 `x-tenant-id` 가 먼저다(판정 `src/tenancy/vouched-site-tenant.ts`) — 화면의
+테넌트이고, 그다음이 토큰의 `tenant`(계정의 테넌트)다. 비밀 없는 헤더는 무시한다. 맥락만 세우고 거절하지 않는다.
 계정 이벤트(모든 테넌트 서비스가 듣는 것)의 선언과 근거는 `packages/event-contracts/streams/user.stream.ts` 에 있다.
 
 ### 플랫폼 운영자 API (`/admin/platform/*`)

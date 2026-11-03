@@ -180,6 +180,16 @@ describe.each(['warn', 'reject'] as const)('공유 서비스 문 — 두 모드 
     );
   });
 
+  it('내부 토큰도 tenant 클레임이 있으면 그 테넌트다 — 다른 테넌트 계정의 세션은 그 테넌트의 부여를 싣는다(ADR-0056)', async () => {
+    const pass = await gateFor(mode);
+    await expect(
+      pass('staff', { user: staff({ aud: INTERNAL_SESSION_TOKEN_AUDIENCE, tenant: '2' }), headers: {} }),
+    ).rejects.toThrow(ForbiddenException);
+    await expect(
+      pass('store', { user: staff({ aud: INTERNAL_SESSION_TOKEN_AUDIENCE, tenant: '1' }), headers: {} }),
+    ).resolves.toBe(true);
+  });
+
   it('토큰이 이긴다 — 헤더가 T 여도 토큰 테넌트가 다르면 403, 헤더가 토큰과 다르면 403', async () => {
     const pass = await gateFor(mode);
     await expect(pass('staff', { user: staff({ tenant: '2' }), headers: { [TENANT_HEADER]: '1' } })).rejects.toThrow(

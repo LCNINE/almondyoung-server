@@ -25,7 +25,7 @@ import {
   type IsolationTarget,
   type SharedServiceName,
 } from '../../tenancy/isolation-check/target';
-import { signInStaff, type StaffClient } from '../../tenancy/staff-token';
+import { signInAtSite, signInStaff, type StaffClient } from '../../tenancy/staff-token';
 import { FIXED_UUIDS } from '../../seeding/constants/uuids';
 import { HttpOperatorApi, localOperatorToken } from '../../tenancy/create-tenant/operator-api.http';
 import { readEnvFile, REPO } from '../create-tenant/local-ports';
@@ -160,6 +160,7 @@ async function main(): Promise<void> {
   const fileSql = fileServiceDb ? postgres(fileServiceDb, { max: 1, onnotice: () => undefined }) : null;
   const digitalFileId = () => (fileSql ? findDigitalAssetFile(fileSql, tenantOneId) : Promise.resolve(null));
 
+  const accounts = { tenantOne: { loginId: 'admin', password: adminPassword }, tenantTwo: checkAccount };
   const target: IsolationTarget = {
     label: '로컬',
     strict: false,
@@ -178,6 +179,9 @@ async function main(): Promise<void> {
     signIn: {
       tenantOne: () => signInStaff(tenantOneClient, 'admin', adminPassword),
       tenantTwo: () => signInStaff(tenantTwoClient, checkAccount.loginId, checkAccount.password),
+      at: (account, siteTenantId) =>
+        signInAtSite(tenantOneClient, accounts[account].loginId, accounts[account].password, siteTenantId),
+      tenantTwoAtTenantOneAdmin: () => signInStaff(tenantOneClient, checkAccount.loginId, checkAccount.password),
     },
     customerToken: () => signInStaff(storefrontClient, 'admin', adminPassword),
     storePublishableKey: storefrontEnv.NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY ?? '',

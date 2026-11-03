@@ -82,6 +82,8 @@ describe('OAuthManager — nonce propagation', () => {
     usersService = {
       findUserById: jest.fn().mockResolvedValue({ id: 'u-1', email: 'a@b.c', nickname: 'n', username: 'u' }),
       getTokenRoleNames: jest.fn().mockResolvedValue([]),
+      // 이 스펙의 테넌트(위 findTenantById·findTenantByHost)와 같은 테넌트의 계정.
+      accountTenantOf: jest.fn().mockResolvedValue('1'),
     } as unknown as jest.Mocked<UsersService>;
 
     tokensService = {

@@ -1,3 +1,5 @@
+import type { Probe } from './judge';
+
 /**
  * 격리 실측이 재는 «대상» — 로컬 E2E 와 라이브가 같은 점검(`checks.ts`)을 돌고, 대상만 갈아 끼운다.
  * 테스트와 운영 점검이 갈라지지 않게 하는 이음매다. 라이브 값(점검 계정 비밀번호 등)은 SST Secret 에서만 온다.
@@ -88,7 +90,17 @@ export interface IsolationTarget {
   /** url null = 이 대상에 그 서비스가 없다(로컬의 extra 앱) */
   readonly sharedServices: readonly { readonly name: SharedServiceName; readonly url: string | null }[];
   /** 부를 때마다 새로 로그인한다. 거절되면 `TokenRefused` 를 던진다 */
-  readonly signIn: { readonly tenantOne: () => Promise<string>; readonly tenantTwo: () => Promise<string> };
+  readonly signIn: {
+    readonly tenantOne: () => Promise<string>;
+    readonly tenantTwo: () => Promise<string>;
+    /**
+     * 그 점검 계정으로 그 테넌트의 로그인 화면에서 로그인한다(화면 테넌트를 실은 호출, `staff-token.signInAtSite`).
+     * 응답을 판정한다 — 계정은 한 테넌트의 것이라(ADR-0056) 남의 화면에서는 «아이디 또는 비밀번호 틀림»이어야 한다.
+     */
+    readonly at: (account: 'tenantOne' | 'tenantTwo', siteTenantId: string) => Promise<Probe>;
+    /** 테넌트 2 점검 계정으로 테넌트 1 관리자 주소의 토큰을 받는다(화면 테넌트 없는 로그인 → 코드 발급). 거절되면 `TokenRefused` */
+    readonly tenantTwoAtTenantOneAdmin: () => Promise<string>;
+  };
   /** 쇼핑몰 클라이언트로 받은 고객 토큰 */
   readonly customerToken: () => Promise<string>;
   readonly storePublishableKey: string;

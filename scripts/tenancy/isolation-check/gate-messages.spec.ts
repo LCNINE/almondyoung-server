@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { GATE_MESSAGES, TENANT_NOT_ISSUABLE } from './checks';
+import { GATE_MESSAGES, INVALID_CREDENTIALS, NOT_IN_TOKEN_TENANT, TENANT_NOT_ISSUABLE } from './checks';
 
 /**
  * 실측은 403 을 «문의 문구»로 구별한다(`judge.refusedByTenantGate`). 문구가 바뀌면 실측이 «문이 판정하지 않았다»로
@@ -17,6 +17,18 @@ const SOURCES: Record<keyof typeof GATE_MESSAGES, string> = {
 describe('격리 실측이 기다리는 문의 문구', () => {
   it.each(Object.entries(SOURCES))('%s 의 문구가 그 문의 소스에 있다', (key, file) => {
     expect(readFileSync(join(ROOT, file), 'utf8')).toContain(GATE_MESSAGES[key as keyof typeof GATE_MESSAGES]);
+  });
+
+  it('로그인 거절 문구가 user-service 로그인에 있다', () => {
+    expect(readFileSync(join(ROOT, 'apps/user-service/src/api/auth/auth.service.ts'), 'utf8')).toContain(
+      INVALID_CREDENTIALS,
+    );
+  });
+
+  it('다른 테넌트 계정의 코드 발급 거절 문구가 user-service 에 있다', () => {
+    expect(readFileSync(join(ROOT, 'apps/user-service/src/api/oauth/oauth.manager.ts'), 'utf8')).toContain(
+      `BadRequestError('${NOT_IN_TOKEN_TENANT}')`,
+    );
   });
 
   it('정지·준비 테넌트의 발급 거절 문구가 user-service 에 있다', () => {

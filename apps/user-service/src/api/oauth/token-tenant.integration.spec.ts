@@ -89,6 +89,65 @@ describeIfDb('token tenant queries against a real database', () => {
     });
   });
 
+  it('계정의 테넌트는 계정 행이 정한다 — 발급·갱신은 이것과 토큰 테넌트를 대조한다', async () => {
+    await rolledBack(async (tx) => {
+      await tenant(tx, `${PREFIX}t`, 'active');
+      const [one] = await tx
+        .insert(users)
+        .values({ loginId: `${PREFIX}one`, username: 'o', nickname: `${PREFIX}o`, email: `${PREFIX}o@example.test` })
+        .returning({ id: users.id });
+      const [two] = await tx
+        .insert(users)
+        .values({
+          loginId: `${PREFIX}two`,
+          username: 't',
+          nickname: `${PREFIX}t`,
+          email: `${PREFIX}t@example.test`,
+          tenantId: `${PREFIX}t`,
+        })
+        .returning({ id: users.id });
+
+      // 테넌트를 넘기지 않은 쓰기는 expand 다리(DB 기본값)로 테넌트 1 이다.
+      await expect(issuer.accountTenantOf(one.id, tx)).resolves.toBe('1');
+      await expect(issuer.accountTenantOf(two.id, tx)).resolves.toBe(`${PREFIX}t`);
+    });
+  });
+
+  it('로그인 화면의 테넌트로 찾으면 그 테넌트의 계정만 나온다', async () => {
+    await rolledBack(async (tx) => {
+      await tenant(tx, `${PREFIX}t`, 'active');
+      await tx.insert(users).values({
+        loginId: `${PREFIX}staff`,
+        username: 's',
+        nickname: `${PREFIX}s`,
+        email: `${PREFIX}s@example.test`,
+        tenantId: `${PREFIX}t`,
+      });
+
+      await expect(issuer.findUserByLoginIdInTenant(`${PREFIX}t`, `${PREFIX}staff`, tx)).resolves.toEqual(
+        expect.objectContaining({ loginId: `${PREFIX}staff` }),
+      );
+      await expect(issuer.findUserByLoginIdInTenant('1', `${PREFIX}staff`, tx)).resolves.toBeNull();
+    });
+  });
+
+  it('테넌트가 빈 계정에는 테넌트를 짐작하지 않는다(채우기 마이그 전 DB)', async () => {
+    await rolledBack(async (tx) => {
+      const [loose] = await tx
+        .insert(users)
+        .values({
+          loginId: `${PREFIX}loose`,
+          username: 'l',
+          nickname: `${PREFIX}l`,
+          email: `${PREFIX}l@example.test`,
+          tenantId: null,
+        })
+        .returning({ id: users.id });
+
+      await expect(issuer.accountTenantOf(loose.id, tx)).rejects.toThrow(/has no tenant/);
+    });
+  });
+
   it('주소는 그 주소를 테넌트 도메인으로 가진 테넌트와 그 상태를 돌려준다. 모르는 주소는 null', async () => {
     await rolledBack(async (tx) => {
       await tenant(tx, `${PREFIX}s`, 'suspended');

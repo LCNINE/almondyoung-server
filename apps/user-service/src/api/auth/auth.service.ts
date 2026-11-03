@@ -425,14 +425,21 @@ export class AuthService {
     return;
   }
 
+  /**
+   * @param siteTenantId 로그인 화면의 테넌트(auth-web 이 보증 헤더로 싣는다). 오면 그 테넌트의 계정만 찾는다 — 다른 테넌트의
+   *   계정은 «없는 아이디»와 같다(ADR-0056). 아직 필수가 아니다: 안 오면 지금처럼 전체에서 찾는다(읽기 전환 기간).
+   */
   async signIn(
     signInDto: SignInDto,
     reply: FastifyReply,
+    siteTenantId?: string,
   ): Promise<void | { accessToken: string; refreshToken: string }> {
-    const user = await this.usersService.findUserByLoginId(signInDto.loginId);
+    const user = siteTenantId
+      ? await this.usersService.findUserByLoginIdInTenant(siteTenantId, signInDto.loginId)
+      : await this.usersService.findUserByLoginId(signInDto.loginId);
 
     // 아이디 없음과 비밀번호 틀림을 구분해 알려주면 계정 존재 여부가 새고, 사용자는
-    // "존재하지 않는 사용자" 를 "내 정보가 사라졌다" 로 읽는다. 두 경우를 한 문구로 묶는다.
+    // "존재하지 않는 사용자" 를 "내 정보가 사라졌다" 로 읽는다. 두 경우를 한 문구로 묶는다(다른 테넌트의 계정도 같다).
     if (!user) throw new BadRequestException(INVALID_CREDENTIALS_MESSAGE);
 
     if (user.deletedAt) {
@@ -727,16 +734,19 @@ export class AuthService {
   }
 
   /**
-   * 내부 토큰의 역할 — T 에서 받은 부여만. 이 토큰의 `tenant` 는 로그인한 도메인과 무관하게 T 이므로, 역할을 좁히는 것이
-   * 테넌트 2 직원이 테넌트 도메인에서 로그인했을 때 그 역할이 쇼핑몰 세션으로 새지 않게 하는 유일한 장치다.
+   * 내부 토큰의 테넌트와 역할 — 계정은 한 테넌트의 것이라(ADR-0056) 그 계정의 테넌트와 거기서 받은 부여만. 로그인한 도메인과
+   * 무관하다. 테넌트 1 계정에게는 예전(T 와 T 의 부여)과 같다.
    */
-  private async getUserRoles(userId: string, tx?: DbTransaction): Promise<string[]> {
-    return this.usersService.getTokenRoleNames(userId, this.servedTenantId, tx);
+  private async accountTenantAndRoles(
+    userId: string,
+    tx?: DbTransaction,
+  ): Promise<{ tenant: string; roles: string[] }> {
+    const tenant = await this.usersService.accountTenantOf(userId, tx);
+    return { tenant, roles: await this.usersService.getTokenRoleNames(userId, tenant, tx) };
   }
 
   private async setAccessToken(user: IUser, reply: FastifyReply, tx?: DbTransaction): Promise<{ accessToken: string }> {
-    const client = this.getClient(tx);
-    const roles = await this.getUserRoles(user.id, tx);
+    const { tenant, roles } = await this.accountTenantAndRoles(user.id, tx);
 
     const payload = {
       sub: user.id,
@@ -745,9 +755,9 @@ export class AuthService {
       login_id: user.loginId,
       // 작업 기록 등 다른 서비스가 누가 했는지를 사람 이름으로 남기게
       name: user.username,
-      // 역할이 T 의 부여뿐이라 이 토큰은 T 의 것이다. 클레임만 보는 core·file-service·ai 는 이게 없으면 reject 모드에서
-      // 쇼핑몰 고객 요청을 «테넌트 없는 토큰»으로 거절한다.
-      tenant: this.servedTenantId,
+      // 역할이 계정 테넌트의 부여뿐이라 이 토큰은 그 테넌트의 것이다. 클레임만 보는 core·file-service·ai 는 이게 없으면
+      // reject 모드에서 쇼핑몰 고객 요청을 «테넌트 없는 토큰»으로 거절한다.
+      tenant,
     };
 
     const expiresIn = JWT_ACCESS_TOKEN_EXPIRATION;
@@ -798,9 +808,7 @@ export class AuthService {
     rememberMe: boolean = false,
     tx?: DbTransaction,
   ): Promise<{ refreshToken: string }> {
-    const client = this.getClient(tx);
-
-    const roles = await this.getUserRoles(userId, tx);
+    const { roles } = await this.accountTenantAndRoles(userId, tx);
 
     // 자동 로그인 여부에 따라 만료 시간 결정
     const expiresIn = this.getRefreshTokenExpiration(rememberMe);

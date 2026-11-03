@@ -1,4 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
+import { probe } from './isolation-check/http';
+import type { Probe } from './isolation-check/judge';
 
 /**
  * 직원 앱 클라이언트(admin-web)의 액세스 토큰을 auth-web 이 로그인 뒤 하는 길 그대로 받는다:
@@ -58,6 +60,22 @@ export async function tokenForUser(client: StaffClient, userId: string): Promise
   if (!token.ok) throw new TokenRefused('token', token.status, await token.text());
   const { access_token } = (await token.json()) as { access_token: string };
   return access_token;
+}
+
+/**
+ * 로그인 화면의 테넌트를 실은 로그인 — auth-web 이 그 테넌트 화면에서 하는 호출 그대로(보증 헤더 `x-tenant-id` +
+ * `x-internal-secret`). 판정하려고 응답을 상태·본문 그대로 돌려준다(던지지 않는다).
+ */
+export function signInAtSite(
+  client: Pick<StaffClient, 'baseUrl' | 'internalSecret'>,
+  loginId: string,
+  password: string,
+  siteTenantId: string,
+): Promise<Probe> {
+  return probe('POST', `${client.baseUrl}/auth/signin`, {
+    json: { loginId, password },
+    headers: { 'x-tenant-id': siteTenantId, 'x-internal-secret': client.internalSecret },
+  });
 }
 
 /** 비밀번호로 로그인한 뒤(auth-web 의 signin 과 같은 호출) 그 계정의 직원 토큰을 받는다. */

@@ -22,6 +22,7 @@ import { ApiBearerAuth, ApiBody, ApiOperation, ApiResponse, ApiTags } from '@nes
 import { FastifyReply, FastifyRequest } from 'fastify';
 import { Public } from '../../commons/decorator/public.decorator';
 import { ProviderType } from '../../commons/types';
+import { vouchedSiteTenant } from '../../tenancy/vouched-site-tenant';
 import { AuthService } from './auth.service';
 import { Cafe24SignupBootstrapRequestDto, Cafe24SignupBootstrapResponseDto } from './dto/cafe24-signup-bootstrap.dto';
 import { ChangePasswordDto } from './dto/change-pw.dto';
@@ -98,10 +99,14 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   async signIn(
     @Body() signInDto: SignInDto,
+    @Req() req: FastifyRequest,
     @Res({ passthrough: true }) res: FastifyReply,
     @Query('redirect_to') redirectTo?: string,
   ) {
-    return await this.authService.signIn(signInDto, res);
+    // 로그인 화면의 테넌트는 본문이 아니라 auth-web 의 보증 헤더로 온다 — 옛 user-service 는 모르는 헤더를 무시하므로
+    // auth-web 을 먼저 내보내도 로그인이 깨지지 않는다(본문 필드였다면 forbidNonWhitelisted 로 400).
+    const siteTenantId = vouchedSiteTenant(req.headers, this.configService.get<string>('OAUTH_INTERNAL_SECRET'));
+    return await this.authService.signIn(signInDto, res, siteTenantId);
   }
 
   @ApiOperation({ summary: '로그아웃' })
