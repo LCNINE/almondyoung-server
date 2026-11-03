@@ -978,6 +978,12 @@ export interface ConsolidationBoardGroup {
   shipments: ConsolidationBoardShipment[];
 }
 
+export interface PlannedShipment {
+  shipmentId: string;
+  orderNos: string[];
+  totalQty: number;
+}
+
 export interface ConsolidationBoardResponse {
   groups: ConsolidationBoardGroup[];
 }

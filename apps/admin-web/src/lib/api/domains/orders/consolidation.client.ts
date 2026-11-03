@@ -10,6 +10,7 @@ import { ALMONDYOUNG_API_BASE_URL } from '@/const';
 import { client } from '../../client';
 import type {
   ConsolidationCandidate,
+  PlannedShipment,
   ConsolidationAnalysisResult,
   ConsolidationLiveOpportunities,
   ConsolidationSavingsProjection,
@@ -54,6 +55,15 @@ export const consolidationClient = {
   ): Promise<ConsolidationBoardResponse> => {
     const res = await client.get(
       `${ALMONDYOUNG_API_BASE_URL}/shipments/consolidation-board`,
+      { params: { warehouseId } }
+    );
+
+    return res.data;
+  },
+
+  getPlanned: async (warehouseId: string): Promise<PlannedShipment[]> => {
+    const res = await client.get(
+      `${ALMONDYOUNG_API_BASE_URL}/shipments/planned`,
       { params: { warehouseId } }
     );
 
