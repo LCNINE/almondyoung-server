@@ -3,6 +3,7 @@ import {
   iamAuditLogs,
   roles,
   tenantMemberships,
+  tenants,
   userRoleAssignments,
   users,
   userServiceSchema,
@@ -20,7 +21,10 @@ import { RoleRepository } from '../roles/role.repository';
 import { ActorTenantReader } from '../tenancy/actor-tenant.reader';
 import { PlatformOperatorManager } from '../tenancy/platform-operator.manager';
 import { TenancyRepository } from '../tenancy/tenancy.repository';
+import { GrantAuthority } from './grant-authority';
+import { NotFoundError } from '@app/shared';
 import { RoleAssignmentManager } from './role-assignment.manager';
+import { RoleAssignmentReader } from './role-assignment.reader';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 if (process.env.REQUIRE_USER_SERVICE_DB === '1' && !DATABASE_URL) {
@@ -41,6 +45,8 @@ describeIfDb('role assignments against a real database', () => {
   let dbService: DbService<UserServiceSchema>;
   let manager: RoleAssignmentManager;
   let operators: PlatformOperatorManager;
+  let reader: RoleAssignmentReader;
+  const OTHER_TENANT = `${PREFIX}t`;
 
   const roleId = async (name: string) => {
     const [found] = await dbService.db.select({ id: roles.roleId }).from(roles).where(eq(roles.name, name));
@@ -48,7 +54,7 @@ describeIfDb('role assignments against a real database', () => {
     const [made] = await dbService.db.insert(roles).values({ name }).returning({ id: roles.roleId });
     return made.id;
   };
-  const makeUser = async (suffix: string, isPlatformOperator = false) => {
+  const makeUser = async (suffix: string, isPlatformOperator = false, tenantId?: string) => {
     const [row] = await dbService.db
       .insert(users)
       .values({
@@ -57,6 +63,7 @@ describeIfDb('role assignments against a real database', () => {
         nickname: suffix,
         email: `${PREFIX}${suffix}@example.test`,
         isPlatformOperator,
+        ...(tenantId ? { tenantId } : {}),
       })
       .returning({ id: users.id });
     return row.id;
@@ -77,13 +84,14 @@ describeIfDb('role assignments against a real database', () => {
       );
     return Number(row?.n ?? 0);
   };
-  const actor = (userId: string) => ({
+  const actor = (userId: string, tenantId?: string) => ({
     userId,
     loginId: null,
     roles: [SYSTEM_ROLE_NAME],
     userAgent: null,
     requestId: null,
     ip: null,
+    ...(tenantId ? { tenantId } : {}),
   });
   const cleanup = async () => {
     const ids = (
@@ -94,6 +102,8 @@ describeIfDb('role assignments against a real database', () => {
     ).map((u) => u.id);
     if (ids.length > 0) await dbService.db.delete(iamAuditLogs).where(inArray(iamAuditLogs.targetId, ids));
     await dbService.db.delete(users).where(like(users.loginId, `${PREFIX}%`));
+    await dbService.db.delete(roles).where(like(roles.name, `${PREFIX}%`));
+    await dbService.db.delete(tenants).where(like(tenants.id, `${PREFIX}%`));
   };
 
   beforeAll(() => {
@@ -108,11 +118,11 @@ describeIfDb('role assignments against a real database', () => {
       dbService,
       roleRepository,
       audit,
-      new MyPermissionsReader(snapshots, iam),
-      snapshots,
+      new GrantAuthority(roleRepository, new MyPermissionsReader(snapshots, iam), snapshots),
       tenancy,
       operators,
     );
+    reader = new RoleAssignmentReader(roleRepository, new ActorTenantReader(tenancy));
   });
   beforeEach(cleanup);
   afterAll(async () => {
@@ -191,6 +201,8 @@ describeIfDb('role assignments against a real database', () => {
     const admin = await roleId('admin');
     const end = new Date(Date.now() + 10 * 24 * 60 * 60 * 1000);
     await dbService.db.insert(userRoleAssignments).values([
+      // 권한 상승 방지는 토큰이 아니라 DB 의 지금 부여를 본다 — 요청자가 정말 master 여야 admin 을 준다.
+      { userId: boss, roleId: await roleId(SYSTEM_ROLE_NAME) },
       { userId: target, roleId: intern, expiresAt: end },
       { userId: target, roleId: membership },
     ]);
@@ -222,5 +234,37 @@ describeIfDb('role assignments against a real database', () => {
       .from(userRoleAssignments)
       .where(and(eq(userRoleAssignments.userId, target), eq(userRoleAssignments.roleId, admin)));
     expect(added?.tenantId).toBe('1');
+  });
+
+  describe("reading grants stays inside the reader's tenant (ADR-0056)", () => {
+    const setUp = async () => {
+      await dbService.db.insert(tenants).values({ id: OTHER_TENANT, slug: `${PREFIX}t`, displayName: OTHER_TENANT });
+      const shared = await roleId(`${PREFIX}_shared`);
+      const mine = await makeUser('mine');
+      const theirs = await makeUser('theirs', false, OTHER_TENANT);
+      await dbService.db.insert(userRoleAssignments).values([
+        { userId: mine, roleId: shared, tenantId: '1' },
+        { userId: theirs, roleId: shared, tenantId: OTHER_TENANT },
+      ]);
+      return { shared, mine, theirs, admin: await makeUser('admin') };
+    };
+
+    it("lists only this tenant's accounts as members of a role every tenant shares", async () => {
+      const { shared, admin, theirs } = await setUp();
+
+      expect((await reader.members(actor(admin, '1'), shared)).map((m) => m.loginId)).toEqual([`${PREFIX}mine`]);
+      expect((await reader.members(actor(theirs, OTHER_TENANT), shared)).map((m) => m.loginId)).toEqual([
+        `${PREFIX}theirs`,
+      ]);
+    });
+
+    it("answers an account of another tenant as unknown, and an account's own tenant grants to its tenant", async () => {
+      const { admin, theirs } = await setUp();
+
+      await expect(reader.rolesOf(actor(admin, '1'), theirs)).rejects.toBeInstanceOf(NotFoundError);
+      expect((await reader.rolesOf(actor(admin, OTHER_TENANT), theirs)).roles.map((r) => r.name)).toEqual([
+        `${PREFIX}_shared`,
+      ]);
+    });
   });
 });

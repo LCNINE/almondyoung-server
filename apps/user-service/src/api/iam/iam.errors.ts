@@ -58,13 +58,14 @@ export class IamLastOperatorError extends ConflictError {
   }
 }
 
-export class IamNotTenantMemberError extends ConflictError {
+/** 계정은 한 테넌트의 것이다(ADR-0056) — 다른 테넌트의 계정에는 역할을 주거나 늘리지도, 비밀번호를 정하지도 못한다. */
+export class IamNotAccountTenantError extends ConflictError {
   constructor() {
-    super('이 테넌트 소속이 아닌 계정에는 직원 역할을 줄 수 없습니다.');
+    super('이 테넌트의 계정이 아니라 할 수 없습니다.');
   }
 
   getErrorCode(): string {
-    return 'IAM_NOT_TENANT_MEMBER';
+    return 'IAM_NOT_ACCOUNT_TENANT';
   }
 }
 
@@ -137,5 +138,16 @@ export class TenantOwnSuspendError extends ConflictError {
 
   getErrorCode(): string {
     return 'TENANT_OWN_SUSPEND';
+  }
+}
+
+/** 첫 master 는 «처음»만 운영자가 세운다 — master 가 있는 테넌트의 직원은 그 master 가 관리한다(ADR-0056). */
+export class TenantHasMasterError extends ConflictError {
+  constructor() {
+    super('이미 master 가 있는 테넌트입니다. 그 master 의 비밀번호를 잃었으면 비상 초기화를 쓰세요.');
+  }
+
+  getErrorCode(): string {
+    return 'TENANT_HAS_MASTER';
   }
 }

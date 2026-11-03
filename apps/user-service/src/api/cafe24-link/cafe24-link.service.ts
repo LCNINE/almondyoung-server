@@ -16,6 +16,7 @@ import {
 } from '../../../database/drizzle/schema';
 import { USER_STREAM } from '@packages/event-contracts/streams';
 import { DbTransaction } from '../../commons/types';
+import { accountTenantForEvent, inAccountTenant } from '../../tenancy/account-event-tenant';
 
 export interface Cafe24SignupPrefill {
   email: string | null;
@@ -236,13 +237,16 @@ export class Cafe24LinkService {
     // Medusa 가 customer email 을 따라 갱신하게 한다 (미전파 시 멤버십 그룹 sync 의 유령고객 가드 오작동).
     if (key === 'email') {
       try {
-        await this.eventPublisher.publishEvent({
-          eventType: 'UserUpdated',
-          aggregateId: userId,
-          payload: { userId, email: cafe24Value },
-        });
+        // 계정의 테넌트로 낸다 — 요청 화면의 테넌트가 아니다(ADR-0056)
+        await inAccountTenant(await accountTenantForEvent(client, userId), () =>
+          this.eventPublisher.publishEvent({
+            eventType: 'UserUpdated',
+            aggregateId: userId,
+            payload: { userId, email: cafe24Value },
+          }),
+        );
       } catch (err) {
-        this.logger.error(`Failed to publish UserUpdated(email) event for userId=${userId}`, err?.message);
+        this.logger.error(`Failed to read account tenant or publish UserUpdated(email) for userId=${userId}`, err?.message);
       }
     }
 

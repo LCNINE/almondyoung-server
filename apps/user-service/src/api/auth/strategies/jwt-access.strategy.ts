@@ -72,9 +72,10 @@ export class JwtAccessStrategy extends PassportStrategy(Strategy) {
       email: payload.email,
       roles: payload.roles ?? [],
       login_id: payload.login_id,
-      // 내부 토큰은 T 의 부여만 실어 발급하므로 T 의 토큰이다 — `tenant` 클레임 전에 나간 내부 토큰(수명 동안)도 T 로 본다.
-      // OAuth 토큰에 tenant 가 없으면 이 클레임 도입 전에 나간 토큰이다 — 비워 두고 문이 모드대로 다룬다.
-      tenant: aud === INTERNAL_TOKEN_AUDIENCE ? this.servedTenantId : payload.tenant,
+      // 내부 토큰의 `tenant` 는 계정의 테넌트다(ADR-0056) — 클레임을 그대로 믿는다(우리 키로 서명한 값). 클레임 전에 나간 내부
+      // 토큰(수명 동안)은 T 의 부여만 실었으니 T 로 본다. OAuth 토큰에 tenant 가 없으면 이 클레임 도입 전에 나간 토큰이다 —
+      // 비워 두고 문이 모드대로 다룬다.
+      tenant: payload.tenant ?? (aud === INTERNAL_TOKEN_AUDIENCE ? this.servedTenantId : undefined),
     };
   }
 }

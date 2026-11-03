@@ -2,7 +2,7 @@ import "server-only"
 
 import { env } from "./env"
 import { readApiData, readJson, throwIfBad } from "./api-helpers"
-import type { TenantSite } from "./site/site-rules"
+import type { SignInTenantHeaders, TenantSite } from "./site/site-rules"
 
 type SignInBody = { loginId: string; password: string; rememberMe?: boolean }
 
@@ -65,10 +65,17 @@ export type UserProfile = {
   mustChangePassword?: boolean
 }
 
-export async function signIn(body: SignInBody): Promise<TokenPair> {
+/**
+ * 로그인. `tenantHeaders` 는 화면의 테넌트 보증 헤더(`signInTenantHeaders`) — user-service 는 그 테넌트의 계정만 찾는다.
+ * 본문이 아니라 헤더인 건 옛 user-service 가 모르는 헤더는 무시하지만 모르는 본문 필드는 400 으로 거절하기 때문이다.
+ */
+export async function signIn(
+  body: SignInBody,
+  tenantHeaders: SignInTenantHeaders
+): Promise<TokenPair> {
   const res = await fetch(`${env.userServiceUrl}/auth/signin`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", ...tenantHeaders },
     body: JSON.stringify(body),
     cache: "no-store",
     redirect: "manual",

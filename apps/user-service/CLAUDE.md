@@ -66,29 +66,60 @@ Express가 아닌 Fastify를 사용한다. 파일 업로드는 `@fastify/multipa
 OAuth 액세스 토큰에는 `tenant` 가 실리고 `roles` 는 그 테넌트의 부여만 싣는다(`UsersService.getTokenRoleNames`). 토큰 테넌트는
 클라이언트의 고정 테넌트(`oauth_clients.tenant_id`, 쇼핑몰 등)이거나, 비어 있으면(웹 직원 앱) 등록된 리디렉트 주소의 host →
 `tenant_domains` 로 정한다 — 요청 파라미터·Host 헤더로 정하지 않는다. 준비·정지 테넌트는 발급·갱신을 거절하고 세션을 끊는다.
-내부 세션 토큰(`aud=user-service-internal`, 쇼핑몰·auth-web 쿠키)은 `tenant` 가 앱 설정 T(`SERVED_TENANT_ID`)이고 역할은 T 의 부여만 싣는다 —
-로그인한 도메인과 무관하다. 클레임만 보는 core·file-service·ai 가 이 토큰을 T 의 것으로 받으려면 클레임이 있어야 한다.
+계정은 한 테넌트의 것이다(`users.tenant_id`, ADR-0056) — 계정의 테넌트 ≠ 토큰 테넌트면 코드 발급은 «없는 사용자»(400 `user not found`),
+교환·갱신·핸드오프는 401 이고 갱신은 세션을 끊는다(`OAuthManager.assertAccountInTenant`).
+내부 세션 토큰(`aud=user-service-internal`, 쇼핑몰·auth-web 쿠키)은 `tenant` 가 계정의 테넌트이고 역할은 그 테넌트의 부여만 싣는다 —
+로그인한 도메인과 무관하다(테넌트 1 계정에게는 T). 클레임만 보는 core·file-service·ai 가 이 토큰의 테넌트를 알려면 클레임이 있어야 한다.
+로그인(`POST /auth/signin`)은 auth-web 이 보증 헤더(`x-tenant-id` + `x-internal-secret`)로 화면 테넌트를 실으면 그 테넌트의 계정만 찾는다 —
+다른 테넌트의 계정은 «아이디 또는 비밀번호 틀림»과 같다. 본문 필드가 아닌 건 옛 user-service 가 모르는 헤더를 무시해 auth-web 을 먼저
+내보내도 되게 하려는 것이다. 헤더가 없으면 아직 전체에서 찾는다(읽기 전환 기간).
+가입(`POST /auth/signup`)과 가입 폼의 사전 체크(`/users/*-available`)·소셜 로그인의 «기존 계정»·이메일 중복은 앱 설정 T 의 계정만 본다
+(`UsersService.find…InTenant`·`findSocialAccountInTenant`). 이메일·아이디 unique 는 contract 마이그 전까지 전역이라 다른 테넌트 계정이 가진 값은
+insert 에서 23505 로 걸린다 — 가입은 같은 409 문구로, 소셜 가입은 개인정보 없는 문구로 바꾼다(카카오 콜백이 오류 문구를 리디렉트 주소에 싣는다).
+아이디·비밀번호 찾기·재설정(`/auth/forget-userid`·`forget-password`·`reset-password`, 레거시 이메일 토큰 포함)과 관리자 이메일 고객 조회
+(`/users/find-by-email`)도 앱 설정 T 의 계정만 찾고, 찾기를 여는 휴대폰 인증도 T 의 기록만 본다 — 다른 테넌트의 같은 번호·아이디·이메일은 «없는 계정»이다.
+전화번호·발송 대상으로 계정을 찾는 내부 라우트 넷(`/users/internal/contacts/by-phone`·`sms-audience`·`sms-audience/summary`·
+`marketing-consent/withdraw`)은 호출자가 실은 `x-tenant-id` 의 계정만 보고, 헤더가 없거나 목록 밖이면 403 이다(`src/tenancy/internal-call-tenant.ts`).
+userId 묶음 조회(`/users/internal/contacts`)는 거르지 않는다 — 계정 id 는 전역 UUID 이고 호출자가 자기 테넌트에서 얻은 id 다.
 고객·근태처럼 T 의 데이터를 답하는 컨트롤러(또는 라우트)는 `@ServedTenantData()` 를 단다 — 토큰 테넌트 ≠ T 면 403.
 어느 쪽인지 안 정한 컨트롤러는 `src/tenancy/served-tenant-classification.spec.ts` 가 빨갛게 한다.
 
 이벤트 봉투의 테넌트는 «그 일이 일어난 화면의 테넌트»다 — `UserRequestTenantInterceptor` 가 요청마다 CLS `TENANT_CONTEXT_KEY` 를
 세우고(판정 `src/tenancy/request-event-tenant.ts`), 못 정하면 T 로 찍힌다. 토큰 라우트는 토큰 `tenant`, 단 auth-web 서버가
-`x-internal-secret`(= `OAUTH_INTERNAL_SECRET`)과 함께 실은 `x-tenant-id` 가 먼저다 — 내부 세션 토큰은 늘 T 라 테넌트 auth-web 의
-비밀번호 변경은 그 헤더로만 테넌트를 안다. 비밀 없는 헤더는 무시한다. 맥락만 세우고 거절하지 않는다.
-계정 이벤트(모든 테넌트 서비스가 듣는 것)의 선언과 근거는 `packages/event-contracts/streams/user.stream.ts` 에 있다.
+`x-internal-secret`(= `OAUTH_INTERNAL_SECRET`)과 함께 실은 `x-tenant-id` 가 먼저다(판정 `src/tenancy/vouched-site-tenant.ts`) — 화면의
+테넌트이고, 그다음이 토큰의 `tenant`(계정의 테넌트)다. 비밀 없는 헤더는 무시한다. 맥락만 세우고 거절하지 않는다.
+예외는 계정 변경·탈퇴·휴면 전환·영구 삭제 넷이다 — 그 테넌트는 «계정의 테넌트»라, 생산자가 `src/tenancy/account-event-tenant.ts` 의
+`inAccountTenant` 로 계정의 테넌트를 맥락에 세우고 낸다(크론 포함, ADR-0056). 새 생산 지점도 그걸 거칠 것 — 그냥 내면 요청 화면의 테넌트나 T 로 찍힌다.
 
 ### 플랫폼 운영자 API (`/admin/platform/*`)
-테넌트 행(준비 → 활성 ↔ 정지, 준비만 삭제)·소속 추가·웹 직원 앱 클라이언트의 테넌트 도메인 주소·직원 비밀번호 재발급·운영자 성질은
+테넌트 행(준비 → 활성 ↔ 정지, 준비만 삭제 — 그 테넌트의 계정이 있으면 거절)·웹 직원 앱 클라이언트의 테넌트 도메인 주소·운영자 성질은
 `src/api/iam/platform/` 이 연다. 라우트 문은 `iam.tenant.read`/`iam.tenant.write` 이고 판정은 Manager 가 운영자 성질
-(`users.is_platform_operator`)로 한다 — 테넌트 안의 master 도 운영자가 아니면 403. 기존 계정 만들기·역할 만들기·역할 부여는
-`tenantId` 를 받는데, 지정하면 운영자만 된다(`PlatformOperatorManager.workingTenant`). 정지는 그 테넌트의 `oauth_tokens` 를
-그 자리에서 끊는다. 대행해 만드는 직원 계정은 `UserCreated` 를 내지 않는다(고객 가입 이벤트다).
+(`users.is_platform_operator`)로 한다 — 테넌트 안의 master 도 운영자가 아니면 403.
+**다른 테넌트의 계정에 닿는 운영자 일은 둘뿐이다(ADR-0056):** 그 테넌트의 첫 master 만들기(`POST tenants/:id/first-master` —
+master 가 있으면 409 `TENANT_HAS_MASTER`, 그 아이디의 계정이 그 테넌트에 이미 있으면 그 계정을 세운다)와 그 master 의 비밀번호 비상 초기화
+(`POST tenants/:id/masters/:userId/password` — 지금 그 테넌트의 master 가 아니면 404). 둘의 재실행 판정용 목록이 `GET tenants/:id/masters`.
+그 밖에 요청에 테넌트를 실어 «그 테넌트로 일하는» 길은 없다 — 계정 만들기·역할 만들기·부여·회수는 언제나 요청자 테넌트다
+(`PlatformOperatorManager.workingTenant`). 운영자 성질은 운영자 테넌트의 계정에만 준다. 늘리면 `operator-cross-tenant-routes.spec.ts` 가 빨갛다.
+정지는 그 테넌트의 `oauth_tokens` 를 그 자리에서 끊는다. 대행해 만드는 직원 계정은 `UserCreated` 를 내지 않는다(고객 가입 이벤트다).
 남은 액세스 토큰은 core 가 막는다 — `GET /internal/iam/tenant-statuses`(내부 키, id·상태만)를 15초마다 받아 정지·준비 테넌트의
 사람 토큰을 403 한다(`apps/core/src/platform/tenancy/tenant-status-cache.ts`).
 `GET /tenant-brand?host=` 는 로그인 전 브랜드 조회라 공개이고 이름·로고·활성 여부만 돌려준다.
 `GET /tenant-brand/site?host=` 는 auth-web 서버 전용(`x-internal-secret` = `OAUTH_INTERNAL_SECRET`)이라 테넌트 id 와 그 테넌트의
 도메인 전부를 더한다 — auth-web 이 테넌트 화면의 리디렉트를 그 안에 가둔다. 테넌트 도메인은 앱마다 하나다(admin-web 주소·auth-web
 주소, CloudFront 배포가 앱마다 따로라). 이미 있는 테넌트에 더하는 길은 `POST /admin/platform/tenants/:id/domains`.
+
+### 테넌트 안의 직원 관리 (ADR-0056)
+계정은 한 테넌트의 것이라, 직원 계정과 역할은 **그 테넌트의 관리자**(`iam.admin_user.write`·`iam.role.assign` 을 가진 사람, 보통
+그 테넌트의 `master`)가 토큰 테넌트 안에서 관리한다. 만들기는 `POST /admin/auth`(계정의 테넌트 = 토큰 테넌트, 중복은 그 테넌트
+안에서만 — unique 가 아직 전역이라 다른 테넌트의 값은 insert 23505 를 같은 409 로), 부여·회수는 `/admin/users/:id/(staff-)roles`·
+`/admin/roles/:id/members`, 비밀번호 초기화는 `POST /admin/auth/staff/:userId/password`(`StaffPasswordManager` — 새 비번을 한 번만
+돌려주고 변경 강제·세션 끊기·이력). iam Manager 가 «계정의 테넌트 ≠ 일하는 테넌트»면 주기·늘리기·비번 초기화를
+`IAM_NOT_ACCOUNT_TENANT`(409)로 거절한다 — 고객 역할도 같다. 회수는 거절하지 않는다(그 테넌트에 남은 어긋난 부여를 거두는 길).
+비번 초기화는 지금 유효한 직원 역할이 있는 계정만 되고(고객은 404), 권한 상승 방지(`GrantAuthority`)를 그 계정의 역할에 대고 지나며, 운영자 계정은 운영자만 초기화한다.
+관리자의 고객 비밀번호 변경(`PATCH /admin/auth/change-password`, T 전용)도 T 의 계정만 찾는다.
+부여 읽기(`GET /admin/users/:id/roles`·`/admin/roles/:id/members`)는 요청자 테넌트의 계정·그 테넌트 부여만 답한다 — 다른 테넌트의 계정은 404,
+공용 역할의 구성원 목록에 다른 테넌트 직원이 나오지 않는다.
+소속은 판정에 쓰지 않지만 contract 까지 계속 쓴다(되돌린 옛 코드는 소속으로 판정한다). 테넌트 셸에는 아직 이 화면이 없다(API 만).
 
 ### 역할 만료
 `user_roles.expiresAt`으로 시한부 역할 할당을 지원한다.

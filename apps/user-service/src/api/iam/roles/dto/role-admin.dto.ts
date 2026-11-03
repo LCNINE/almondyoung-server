@@ -1,4 +1,3 @@
-import { TENANT_ID_PATTERN } from '@app/tenancy';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
@@ -60,10 +59,6 @@ export class CreateRoleDto {
   @IsOptional()
   @IsUUID()
   copyFromRoleId?: string;
-  @ApiPropertyOptional({ description: '이 테넌트용으로 만든다(이력의 테넌트). 플랫폼 운영자만' })
-  @IsOptional()
-  @Matches(TENANT_ID_PATTERN)
-  tenantId?: string;
 }
 
 export class UpdateRoleDto {

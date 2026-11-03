@@ -6,6 +6,8 @@ import {
   tenantDomains,
   tenantMemberships,
   tenants,
+  roles,
+  userRoleAssignments,
   users,
   userServiceSchema,
   type UserServiceSchema,
@@ -16,21 +18,28 @@ import { PublicClientOriginsRepository } from '../../oauth/cors/public-client-or
 import { IamAuditCreator } from '../audit/iam-audit.creator';
 import { IamAuditRepository } from '../audit/iam-audit.repository';
 import { SYSTEM_ROLE_NAME } from '../iam.constants';
-import { BadRequestError, NotFoundError } from '@app/shared';
+import { BadRequestError, ConflictError, NotFoundError } from '@app/shared';
 import * as bcrypt from 'bcrypt';
 import {
-  IamNotTenantMemberError,
+  IamNotAccountTenantError,
   IamOperatorOnlyError,
   TenantDomainTakenError,
+  TenantHasMasterError,
   TenantOwnSuspendError,
   TenantStatusConflictError,
 } from '../iam.errors';
+import { GrantAuthority } from '../assignments/grant-authority';
+import { RoleAssignmentManager } from '../assignments/role-assignment.manager';
+import { IamRepository } from '../iam.repository';
+import { MyPermissionsReader } from '../my-permissions.reader';
+import { RolePermissionsReader } from '../role-permissions.reader';
 import { RoleRepository } from '../roles/role.repository';
 import { ActorTenantReader } from '../tenancy/actor-tenant.reader';
 import { PlatformOperatorManager } from '../tenancy/platform-operator.manager';
 import { TenancyRepository } from '../tenancy/tenancy.repository';
 import { PlatformRepository } from './platform.repository';
 import { PlatformTenantManager } from './platform-tenant.manager';
+import { PlatformTenantReader } from './platform-tenant.reader';
 import { TenantBrandReader } from './tenant-brand.reader';
 
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -47,8 +56,10 @@ describeIfDb('platform operator tenant API against a real database', () => {
   let dbService: DbService<UserServiceSchema>;
   let manager: PlatformTenantManager;
   let brands: TenantBrandReader;
+  let reader: PlatformTenantReader;
 
-  const makeUser = async (suffix: string, isPlatformOperator = false) => {
+  // 테넌트를 주지 않으면 DB 기본값(테넌트 1)의 계정이다 — 기본값은 contract(티켓 10) 가 걷는다.
+  const makeUser = async (suffix: string, isPlatformOperator = false, tenantId?: string) => {
     const [row] = await dbService.db
       .insert(users)
       .values({
@@ -57,6 +68,7 @@ describeIfDb('platform operator tenant API against a real database', () => {
         nickname: suffix,
         email: `${PREFIX}${suffix}@example.test`,
         isPlatformOperator,
+        ...(tenantId ? { tenantId } : {}),
       })
       .returning({ id: users.id });
     return row.id;
@@ -121,6 +133,35 @@ describeIfDb('platform operator tenant API against a real database', () => {
       .where(eq(iamAuditLogs.tenantId, tenantId))
       .orderBy(iamAuditLogs.occurredAt);
 
+  const masterRoleId = async () => {
+    const [row] = await dbService.db.select({ id: roles.roleId }).from(roles).where(eq(roles.name, SYSTEM_ROLE_NAME));
+    if (row) return row.id;
+    const [made] = await dbService.db.insert(roles).values({ name: SYSTEM_ROLE_NAME }).returning({ id: roles.roleId });
+    return made.id;
+  };
+  /** 운영자 — 운영자 성질 + 테넌트 1 master(권한 상승 방지: master 를 주려면 master 의 권한을 다 가져야 한다). */
+  const makeOperator = async (suffix = 'op') => {
+    const id = await makeUser(suffix, true);
+    await dbService.db.insert(userRoleAssignments).values({ userId: id, roleId: await masterRoleId(), tenantId: '1' });
+    return id;
+  };
+  const grantsOf = (userId: string) =>
+    dbService.db
+      .select({ name: roles.name, tenantId: userRoleAssignments.tenantId })
+      .from(userRoleAssignments)
+      .innerJoin(roles, eq(roles.roleId, userRoleAssignments.roleId))
+      .where(eq(userRoleAssignments.userId, userId));
+  const accountOf = async (userId: string) => {
+    const [row] = await dbService.db.select().from(users).where(eq(users.id, userId));
+    return row;
+  };
+  const bossInput = (suffix = 'boss') => ({
+    loginId: `${PREFIX}${suffix}`,
+    username: '대표',
+    nickname: '대표',
+    email: `${PREFIX}${suffix}@example.test`,
+  });
+
   const cleanup = async () => {
     const ids = (
       await dbService.db
@@ -139,8 +180,10 @@ describeIfDb('platform operator tenant API against a real database', () => {
       );
     await dbService.db.delete(oauthTokens).where(like(oauthTokens.clientId, `${PREFIX}%`));
     await dbService.db.delete(oauthClients).where(like(oauthClients.clientId, `${PREFIX}%`));
-    await dbService.db.delete(tenants).where(like(tenants.id, `${PREFIX}%`));
+    // 계정이 테넌트를 가리키므로(ADR-0056) 계정을 먼저 지운다.
     await dbService.db.delete(users).where(like(users.loginId, `${PREFIX}%`));
+    await dbService.db.delete(roles).where(like(roles.name, `${PREFIX}%`));
+    await dbService.db.delete(tenants).where(like(tenants.id, `${PREFIX}%`));
   };
 
   beforeAll(() => {
@@ -149,16 +192,33 @@ describeIfDb('platform operator tenant API against a real database', () => {
     const roleRepository = new RoleRepository(dbService);
     const audit = new IamAuditCreator(new IamAuditRepository(dbService));
     const platform = new PlatformRepository(dbService);
+    const iam = new IamRepository(dbService);
+    const snapshots = new RolePermissionsReader(iam);
+    const operators = new PlatformOperatorManager(
+      dbService,
+      tenancy,
+      roleRepository,
+      audit,
+      new ActorTenantReader(tenancy),
+    );
     brands = new TenantBrandReader(platform);
+    reader = new PlatformTenantReader(dbService, platform, operators);
     manager = new PlatformTenantManager(
       dbService,
       platform,
-      tenancy,
       roleRepository,
-      new PlatformOperatorManager(dbService, tenancy, roleRepository, audit, new ActorTenantReader(tenancy)),
+      operators,
       new ActorTenantReader(tenancy),
       audit,
       new PublicClientOriginsCache(new PublicClientOriginsRepository(dbService)),
+      new RoleAssignmentManager(
+        dbService,
+        roleRepository,
+        audit,
+        new GrantAuthority(roleRepository, new MyPermissionsReader(snapshots, iam), snapshots),
+        tenancy,
+        operators,
+      ),
     );
   });
   beforeEach(cleanup);
@@ -313,7 +373,8 @@ describeIfDb('platform operator tenant API against a real database', () => {
       const op = await makeUser('op', true);
       const staff = await makeUser('staff');
       await manager.createTenant(actor(op), newTenant());
-      await manager.addMember(actor(op), TENANT, staff);
+      // 소속은 contract 까지 남는 옛 표다 — 남아 있으면 테넌트와 함께 걷힌다.
+      await dbService.db.insert(tenantMemberships).values({ userId: staff, tenantId: TENANT });
       const client = await makeClient('staff', null, ['http://localhost:8002/api/auth/callback']);
       await manager.addStaffClientUris(actor(op), TENANT, client, {
         redirectUris: [`https://${HOST}/api/auth/callback`],
@@ -331,6 +392,15 @@ describeIfDb('platform operator tenant API against a real database', () => {
       expect((await auditOf(TENANT)).map((l) => l.action)).toContain('tenant.delete');
     });
 
+    it('refuses a tenant that already has an account (its first master) — an account belongs to its tenant', async () => {
+      const op = await makeOperator();
+      await manager.createTenant(actor(op), newTenant());
+      await manager.createFirstMaster(actor(op), TENANT, bossInput());
+
+      await expect(manager.deleteTenant(actor(op), TENANT)).rejects.toBeInstanceOf(TenantStatusConflictError);
+      expect(await statusOf(TENANT)).toBe('preparing');
+    });
+
     it('refuses a tenant that has left «preparing»', async () => {
       const op = await makeUser('op', true);
       await manager.createTenant(actor(op), newTenant());
@@ -341,51 +411,148 @@ describeIfDb('platform operator tenant API against a real database', () => {
     });
   });
 
-  describe('reissuing a staff password', () => {
-    const passwordOf = async (userId: string) => {
-      const [row] = await dbService.db
-        .select({ hash: users.password, mustChange: users.mustChangePassword })
-        .from(users)
-        .where(eq(users.id, userId));
-      return row;
-    };
-
-    it('gives a member a new initial password, forces a change, cuts their sessions and keeps the password out of the log', async () => {
-      const op = await makeUser('op', true);
-      const staff = await makeUser('staff');
+  describe("making a tenant's first master (one of the two cross-tenant jobs)", () => {
+    it('creates an account of that tenant holding master, returns the password once with a change forced, and logs it under the tenant', async () => {
+      const op = await makeOperator();
       await manager.createTenant(actor(op), newTenant());
-      await manager.addMember(actor(op), TENANT, staff);
-      const session = await openSession(staff, await makeClient('client', null), TENANT);
 
-      const { initialPassword } = await manager.reissuePassword(actor(op), TENANT, staff, true);
+      const made = await manager.createFirstMaster(actor(op), TENANT, bossInput());
 
-      const { hash, mustChange } = await passwordOf(staff);
-      expect(await bcrypt.compare(initialPassword, hash ?? '')).toBe(true);
-      expect(mustChange).toBe(true);
+      const account = await accountOf(made.userId);
+      expect(account).toMatchObject({ tenantId: TENANT, loginId: `${PREFIX}boss`, mustChangePassword: true });
+      expect(await bcrypt.compare(made.initialPassword, account.password ?? '')).toBe(true);
+      expect(await grantsOf(made.userId)).toEqual([{ name: SYSTEM_ROLE_NAME, tenantId: TENANT }]);
+      const logs = (await auditOf(TENANT)).filter((l) => l.targetId === made.userId);
+      expect(logs.map((l) => l.action)).toEqual(['admin_user.create']);
+      expect(JSON.stringify(logs)).not.toContain(made.initialPassword);
+    });
+
+    it('can leave the change unforced — our check account, whose password lives in a secret', async () => {
+      const op = await makeOperator();
+      await manager.createTenant(actor(op), newTenant());
+
+      const made = await manager.createFirstMaster(actor(op), TENANT, { ...bossInput('check'), forcePasswordChange: false });
+
+      expect((await accountOf(made.userId)).mustChangePassword).toBe(false);
+    });
+
+    it('makes an account already in that tenant its first master with a new password, keeping its other roles and cutting its sessions', async () => {
+      const op = await makeOperator();
+      await manager.createTenant(actor(op), newTenant());
+      const before = await makeUser('check', false, TENANT);
+      const [staffRole] = await dbService.db
+        .insert(roles)
+        .values({ name: `${PREFIX}_staff` })
+        .returning({ id: roles.roleId });
+      await dbService.db.insert(userRoleAssignments).values({ userId: before, roleId: staffRole.id, tenantId: TENANT });
+      const session = await openSession(before, await makeClient('client', null), TENANT);
+
+      const made = await manager.createFirstMaster(actor(op), TENANT, bossInput('check'));
+
+      expect(made.userId).toBe(before);
+      expect(await bcrypt.compare(made.initialPassword, (await accountOf(before)).password ?? '')).toBe(true);
+      expect((await grantsOf(before)).map((g) => g.name)).toEqual(
+        expect.arrayContaining([SYSTEM_ROLE_NAME, `${PREFIX}_staff`]),
+      );
+      expect(await isRevoked(session)).toBe(true);
+      expect((await auditOf(TENANT)).map((l) => l.action)).toEqual(
+        expect.arrayContaining(['role.members.add', 'user.password.reissue']),
+      );
+    });
+
+    it('does not take over a withdrawn or dormant account of that tenant — it is refused like a taken login id', async () => {
+      const op = await makeOperator();
+      await manager.createTenant(actor(op), newTenant());
+      const gone = await makeUser('gone', false, TENANT);
+      await dbService.db.update(users).set({ deletedAt: new Date() }).where(eq(users.id, gone));
+
+      await expect(manager.createFirstMaster(actor(op), TENANT, bossInput('gone'))).rejects.toBeInstanceOf(ConflictError);
+      expect(await grantsOf(gone)).toEqual([]);
+    });
+
+    it('refuses once the tenant has a master — after that its master manages its staff', async () => {
+      const op = await makeOperator();
+      await manager.createTenant(actor(op), newTenant());
+      await manager.createFirstMaster(actor(op), TENANT, bossInput());
+
+      await expect(manager.createFirstMaster(actor(op), TENANT, bossInput('second'))).rejects.toBeInstanceOf(
+        TenantHasMasterError,
+      );
+      await expect(manager.createFirstMaster(actor(op), TENANT, bossInput())).rejects.toBeInstanceOf(
+        TenantHasMasterError,
+      );
+    });
+
+    it('refuses a login id or e-mail an account of that tenant already uses, and a non-operator', async () => {
+      const op = await makeOperator();
+      await manager.createTenant(actor(op), newTenant());
+      await makeUser('taken', false, TENANT);
+
+      await expect(
+        manager.createFirstMaster(actor(op), TENANT, { ...bossInput(), email: `${PREFIX}taken@example.test` }),
+      ).rejects.toBeInstanceOf(ConflictError);
+      await expect(manager.createFirstMaster(actor(await makeUser('notop')), TENANT, bossInput())).rejects.toBeInstanceOf(
+        IamOperatorOnlyError,
+      );
+      expect(await reader.masters(actor(op), TENANT)).toEqual([]);
+    });
+
+    it("lists that tenant's masters for the create script, and refuses a non-operator", async () => {
+      const op = await makeOperator();
+      await manager.createTenant(actor(op), newTenant());
+      const made = await manager.createFirstMaster(actor(op), TENANT, bossInput());
+
+      expect(await reader.masters(actor(op), TENANT)).toEqual([{ userId: made.userId, loginId: `${PREFIX}boss` }]);
+      await expect(reader.masters(actor(await makeUser('notop')), TENANT)).rejects.toBeInstanceOf(
+        IamOperatorOnlyError,
+      );
+    });
+  });
+
+  describe("resetting a tenant master's password (the other cross-tenant job)", () => {
+    it('gives the master a new password, forces a change, cuts their sessions and keeps the password out of the log', async () => {
+      const op = await makeOperator();
+      await manager.createTenant(actor(op), newTenant());
+      const { userId } = await manager.createFirstMaster(actor(op), TENANT, bossInput());
+      const session = await openSession(userId, await makeClient('client', null), TENANT);
+
+      const { initialPassword } = await manager.resetMasterPassword(actor(op), TENANT, userId);
+
+      const account = await accountOf(userId);
+      expect(await bcrypt.compare(initialPassword, account.password ?? '')).toBe(true);
+      expect(account.mustChangePassword).toBe(true);
       expect(await isRevoked(session)).toBe(true);
       const [log] = (await auditOf(TENANT)).filter((l) => l.action === 'user.password.reissue');
-      expect(log).toMatchObject({ targetType: 'user', targetId: staff });
+      expect(log).toMatchObject({ targetType: 'user', targetId: userId });
       expect(JSON.stringify([log.before, log.after])).not.toContain(initialPassword);
     });
 
-    it('can leave the change unforced (the read-only check account)', async () => {
-      const op = await makeUser('op', true);
-      const check = await makeUser('check');
+    it('can leave the change unforced (our check account)', async () => {
+      const op = await makeOperator();
       await manager.createTenant(actor(op), newTenant());
-      await manager.addMember(actor(op), TENANT, check);
+      const { userId } = await manager.createFirstMaster(actor(op), TENANT, bossInput());
 
-      await manager.reissuePassword(actor(op), TENANT, check, false);
+      await manager.resetMasterPassword(actor(op), TENANT, userId, false);
 
-      expect((await passwordOf(check)).mustChange).toBe(false);
+      expect((await accountOf(userId)).mustChangePassword).toBe(false);
     });
 
-    it('refuses an account that is not a member of the tenant', async () => {
-      const op = await makeUser('op', true);
+    it('refuses an account of that tenant that is not its master — its master resets staff passwords', async () => {
+      const op = await makeOperator();
+      await manager.createTenant(actor(op), newTenant());
+      const staff = await makeUser('staff', false, TENANT);
+
+      await expect(manager.resetMasterPassword(actor(op), TENANT, staff)).rejects.toBeInstanceOf(NotFoundError);
+    });
+
+    it('refuses an account of another tenant, even one with a membership there', async () => {
+      const op = await makeOperator();
       const stranger = await makeUser('stranger');
       await manager.createTenant(actor(op), newTenant());
+      await dbService.db.insert(tenantMemberships).values({ userId: stranger, tenantId: TENANT });
 
-      await expect(manager.reissuePassword(actor(op), TENANT, stranger, true)).rejects.toBeInstanceOf(
-        IamNotTenantMemberError,
+      await expect(manager.resetMasterPassword(actor(op), TENANT, stranger)).rejects.toBeInstanceOf(
+        IamNotAccountTenantError,
       );
     });
   });

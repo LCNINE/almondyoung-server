@@ -12,6 +12,7 @@ import type { UsersService } from '../users/users.service';
  * - 웹 직원 앱(고정 테넌트 없음): 등록된 리디렉트 주소의 host → 테넌트 도메인 → 테넌트
  * - 고정 테넌트 앱(쇼핑몰 등): 클라이언트에 적힌 테넌트
  * - 준비·정지 테넌트로는 발급·갱신하지 않고, 갱신이 거절된 세션은 끊는다
+ * - 계정은 한 테넌트의 것이다(ADR-0056) — 계정의 테넌트가 아닌 토큰 테넌트로는 발급·갱신하지 않는다
  */
 
 type Tenant = { id: string; status: 'preparing' | 'active' | 'suspended' };
@@ -48,8 +49,10 @@ function setup() {
     '2': { id: '2', status: 'active' },
   };
   const domains: Record<string, string> = { 'admin.one.test': '1', 'admin.two.test': '2' };
-  // 한 계정이 두 테넌트에서 서로 다른 역할을 받았다.
+  // 테넌트마다 받은 역할이 다르다 — 토큰에는 토큰 테넌트의 부여만 실려야 한다.
   const grants: Record<string, string[]> = { '1': ['admin', 'user'], '2': ['catalog_manager'] };
+  // 계정의 테넌트. 테넌트 2 토큰을 보는 케이스는 테넌트 2 계정으로 바꾼다(`accountIn`).
+  let accountTenant = '1';
 
   let client = makeClient();
   const repo = {
@@ -74,6 +77,7 @@ function setup() {
   const usersService = {
     findUserById: jest.fn().mockResolvedValue({ id: 'u-1', email: 'a@b.c', loginId: 'a', username: 'u' }),
     getTokenRoleNames: jest.fn((_userId: string, tenantId: string) => Promise.resolve(grants[tenantId] ?? [])),
+    accountTenantOf: jest.fn(() => Promise.resolve(accountTenant)),
   } as unknown as jest.Mocked<UsersService>;
   const tokensService = { deleteAllTokens: jest.fn() } as unknown as TokensService;
   const dbService = { db: { transaction: jest.fn((fn: (tx: unknown) => Promise<unknown>) => fn({})) } };
@@ -155,6 +159,9 @@ function setup() {
     useClient: (overrides: Partial<OAuthClientRow>) => {
       client = makeClient({ clientType: 'public', ...overrides });
     },
+    accountIn: (tenantId: string) => {
+      accountTenant = tenantId;
+    },
   };
 }
 
@@ -174,8 +181,9 @@ describe('토큰 테넌트 — 웹 직원 앱은 등록된 리디렉트 주소�
     expect(t.repo.insertOAuthToken).toHaveBeenCalledWith(expect.objectContaining({ tenantId: '1' }), expect.anything());
   });
 
-  it('같은 클라이언트라도 테넌트 2 주소로 받은 토큰에는 테넌트 2 부여만 실린다', async () => {
+  it('같은 클라이언트라도 테넌트 2 주소로 받은 테넌트 2 계정의 토큰에는 테넌트 2 부여만 실린다', async () => {
     const t = setup();
+    t.accountIn('2');
     t.useClient({ tenantId: null });
 
     await t.exchange(ADMIN_TWO);
@@ -200,6 +208,7 @@ describe('토큰 테넌트 — 웹 직원 앱은 등록된 리디렉트 주소�
 
   it('loopback 클라이언트는 들어온 포트가 아니라 등록된 주소의 host 로 테넌트를 정한다', async () => {
     const t = setup();
+    t.accountIn('2');
     t.useClient({ tenantId: null, redirectUris: ['http://127.0.0.1/callback'] });
     t.repo.findTenantByHost.mockImplementation((host: string) =>
       Promise.resolve(host === '127.0.0.1' ? t.tenants['2'] : t.tenants['1']),
@@ -231,6 +240,7 @@ describe('토큰 테넌트 — 고정 테넌트 앱은 클라이언트에 적힌
 
   it('테넌트 2 고정 앱 토큰에는 테넌트 1 부여가 실리지 않는다', async () => {
     const t = setup();
+    t.accountIn('2');
     t.useClient({ clientId: 'tenant-two-app', tenantId: '2', redirectUris: ['https://shop.two.test/cb'] });
 
     await t.exchange('https://shop.two.test/cb');
@@ -247,6 +257,7 @@ describe('토큰 테넌트 — 갱신은 같은 테넌트로만 한다', () => {
 
   it('세션에 적힌 테넌트로 갱신하고 새 세션에도 같은 테넌트를 적는다', async () => {
     const t = setup();
+    t.accountIn('2');
     t.useClient({ tenantId: null });
 
     await t.refresh({ tenantId: '2' });
@@ -283,6 +294,7 @@ describe('토큰 테넌트 — 준비·정지 테넌트로는 발급·갱신하�
   it.each(['preparing', 'suspended'] as const)('%s 테넌트 주소로는 code 를 내주지 않는다', async (status) => {
     const t = setup();
     t.useClient({ tenantId: null });
+    t.accountIn('2');
     t.tenants['2'].status = status;
 
     await expect(t.issueCode(ADMIN_TWO)).rejects.toThrow(/not active/);
@@ -292,6 +304,7 @@ describe('토큰 테넌트 — 준비·정지 테넌트로는 발급·갱신하�
   it.each(['preparing', 'suspended'] as const)('%s 테넌트로 code 를 교환하면 거절한다', async (status) => {
     const t = setup();
     t.useClient({ tenantId: null });
+    t.accountIn('2');
     t.tenants['2'].status = status;
 
     await expect(t.exchange(ADMIN_TWO)).rejects.toThrow(/not active/);
@@ -301,6 +314,7 @@ describe('토큰 테넌트 — 준비·정지 테넌트로는 발급·갱신하�
   it.each(['preparing', 'suspended'] as const)('%s 테넌트 세션은 갱신하지 않고 끊는다', async (status) => {
     const t = setup();
     t.useClient({ tenantId: null });
+    t.accountIn('2');
     t.tenants['2'].status = status;
 
     await expect(t.refresh({ tenantId: '2' })).rejects.toThrow(/not active/);
@@ -311,8 +325,56 @@ describe('토큰 테넌트 — 준비·정지 테넌트로는 발급·갱신하�
   it('고정 테넌트 앱도 그 테넌트가 정지면 발급하지 않는다', async () => {
     const t = setup();
     t.useClient({ clientId: 'tenant-two-app', tenantId: '2', redirectUris: ['https://shop.two.test/cb'] });
+    t.accountIn('2');
     t.tenants['2'].status = 'suspended';
 
     await expect(t.exchange('https://shop.two.test/cb')).rejects.toThrow(/not active/);
+  });
+});
+
+describe('토큰 테넌트 — 계정의 테넌트가 아닌 테넌트로는 발급·갱신하지 않는다 (ADR-0056)', () => {
+  beforeEach(() => {
+    jest.spyOn(bcrypt, 'compare').mockResolvedValue(true as never);
+  });
+  afterEach(() => jest.restoreAllMocks());
+
+  it('다른 테넌트 관리자 주소로는 code 를 내주지 않는다 — 그 테넌트에는 없는 사용자다', async () => {
+    const t = setup();
+    t.useClient({ tenantId: null });
+
+    await expect(t.issueCode(ADMIN_TWO)).rejects.toThrow(/user not found/);
+    expect(t.repo.insertAuthorizationCode).not.toHaveBeenCalled();
+  });
+
+  it('제 테넌트 관리자 주소로는 그대로 code 를 내준다', async () => {
+    const t = setup();
+    t.useClient({ tenantId: null });
+
+    await expect(t.issueCode(ADMIN_ONE)).resolves.toEqual(expect.objectContaining({ code: expect.any(String) }));
+  });
+
+  it('다른 테넌트로 code 를 교환하면 토큰을 내주지 않는다', async () => {
+    const t = setup();
+    t.useClient({ tenantId: null });
+
+    await expect(t.exchange(ADMIN_TWO)).rejects.toThrow(/another tenant/);
+    expect(t.repo.insertOAuthToken).not.toHaveBeenCalled();
+  });
+
+  it('다른 테넌트 고정 앱으로도 토큰을 내주지 않는다', async () => {
+    const t = setup();
+    t.useClient({ clientId: 'tenant-two-app', tenantId: '2', redirectUris: ['https://shop.two.test/cb'] });
+
+    await expect(t.exchange('https://shop.two.test/cb')).rejects.toThrow(/another tenant/);
+    expect(t.repo.insertOAuthToken).not.toHaveBeenCalled();
+  });
+
+  it('다른 테넌트로 적힌 세션은 갱신하지 않고 끊는다', async () => {
+    const t = setup();
+    t.useClient({ tenantId: null });
+
+    await expect(t.refresh({ tenantId: '2' })).rejects.toThrow(/another tenant/);
+    expect(t.repo.revokeChain).toHaveBeenCalledWith('rt-1', expect.anything());
+    expect(t.repo.insertOAuthToken).not.toHaveBeenCalled();
   });
 });

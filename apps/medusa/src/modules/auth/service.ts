@@ -1,6 +1,7 @@
 import { AuthIdentityProviderService, AuthenticationInput, AuthenticationResponse } from '@medusajs/framework/types';
 import { AbstractAuthModuleProvider, MedusaError } from '@medusajs/framework/utils';
 import { createRemoteJWKSet, jwtVerify, type JWTPayload } from 'jose';
+import { refuseForeignTenantToken } from '../../utils/served-tenant-headers';
 
 // user-service가 /auth/signin 으로 발급하는 내부 access token 의 audience.
 // (OAuth 발급 토큰과 구분: apps/user-service/src/constants/auth.constant.ts)
@@ -10,6 +11,7 @@ type AlmondTokenPayload = JWTPayload & {
   email: string;
   roles?: string[];
   login_id?: string;
+  tenant?: unknown;
 };
 
 export class AuthProviderService extends AbstractAuthModuleProvider {
@@ -111,6 +113,12 @@ export class AuthProviderService extends AbstractAuthModuleProvider {
         audience: INTERNAL_TOKEN_AUDIENCE,
       });
       const payload = rawPayload as AlmondTokenPayload;
+
+      // 다른 테넌트의 토큰은 관리자 역할이 있어도 들이지 않는다(docs/adr/0056).
+      const tenantRefusal = refuseForeignTenantToken(payload.tenant);
+      if (tenantRefusal) {
+        return { success: false, error: tenantRefusal };
+      }
 
       // authIdentityProviderService를 사용하여 인증 정보 조회
       const authIdentity = await authIdentityProviderService.retrieve({

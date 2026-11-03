@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { OAuthCorsModule } from '../oauth/cors/oauth-cors.module';
 import { RoleAssignmentController } from './assignments/role-assignment.controller';
+import { GrantAuthority } from './assignments/grant-authority';
 import { RoleAssignmentManager } from './assignments/role-assignment.manager';
 import { RoleAssignmentReader } from './assignments/role-assignment.reader';
 import { RoleAssignmentService } from './assignments/role-assignment.service';
@@ -38,6 +39,7 @@ import { RoleAdminManager } from './roles/role-admin.manager';
 import { RoleAdminReader } from './roles/role-admin.reader';
 import { RoleAdminService } from './roles/role-admin.service';
 import { RoleRepository } from './roles/role.repository';
+import { StaffPasswordManager } from './staff/staff-password.manager';
 import { ActorTenantReader } from './tenancy/actor-tenant.reader';
 import { PlatformOperatorManager } from './tenancy/platform-operator.manager';
 import { TenancyRepository } from './tenancy/tenancy.repository';
@@ -81,7 +83,9 @@ import { TenancyRepository } from './tenancy/tenancy.repository';
     RoleAdminManager,
     RoleAdminService,
     RoleAssignmentReader,
+    GrantAuthority,
     RoleAssignmentManager,
+    StaffPasswordManager,
     RoleAssignmentService,
     PiiAccessRepository,
     PiiAccessCreator,
@@ -90,6 +94,6 @@ import { TenancyRepository } from './tenancy/tenancy.repository';
     PiiAccessService,
     PiiAccessRetentionCron,
   ],
-  exports: [IamService, RoleAssignmentManager, PlatformOperatorManager, PiiAccessCreator],
+  exports: [IamService, RoleAssignmentManager, StaffPasswordManager, PlatformOperatorManager, PiiAccessCreator],
 })
 export class IamModule {}

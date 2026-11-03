@@ -2,7 +2,6 @@ import { Injectable } from '@nestjs/common';
 import type { IamActor } from '../iam-actor';
 import type {
   AddRoleMembersDto,
-  RemoveRoleMemberQueryDto,
   ReplaceStaffRolesDto,
   ReplaceUserRolesDto,
   RoleMemberDto,
@@ -18,8 +17,8 @@ export class RoleAssignmentService {
     private readonly manager: RoleAssignmentManager,
   ) {}
 
-  rolesOf(userId: string): Promise<UserRolesResponseDto> {
-    return this.reader.rolesOf(userId);
+  rolesOf(actor: IamActor, userId: string): Promise<UserRolesResponseDto> {
+    return this.reader.rolesOf(actor, userId);
   }
 
   replaceAll(actor: IamActor, userId: string, dto: ReplaceUserRolesDto): Promise<void> {
@@ -30,15 +29,15 @@ export class RoleAssignmentService {
     return this.manager.replaceStaff(actor, userId, dto.assignments);
   }
 
-  members(roleId: string): Promise<RoleMemberDto[]> {
-    return this.reader.members(roleId);
+  members(actor: IamActor, roleId: string): Promise<RoleMemberDto[]> {
+    return this.reader.members(actor, roleId);
   }
 
   addMembers(actor: IamActor, roleId: string, dto: AddRoleMembersDto): Promise<void> {
-    return this.manager.addMembers(actor, roleId, dto.userIds, dto.expiresAt, dto.tenantId);
+    return this.manager.addMembers(actor, roleId, dto.userIds, dto.expiresAt);
   }
 
-  removeMember(actor: IamActor, roleId: string, userId: string, query: RemoveRoleMemberQueryDto): Promise<void> {
-    return this.manager.removeMember(actor, roleId, userId, query.tenantId);
+  removeMember(actor: IamActor, roleId: string, userId: string): Promise<void> {
+    return this.manager.removeMember(actor, roleId, userId);
   }
 }

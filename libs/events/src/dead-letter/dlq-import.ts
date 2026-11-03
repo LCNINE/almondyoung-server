@@ -1,12 +1,11 @@
 import type { TenantList } from '@app/tenancy';
-import { eventTenancy } from '@packages/event-contracts/streams/registry';
 import type { dead_letters } from './dead-letter.schema';
 import { asRecord, stampEnvelopeTenant } from '../tenancy/envelope-tenant';
 
 export type DeadLetterImportRow = typeof dead_letters.$inferInsert;
 
 /** 가져오지 않는 이유. `other-consumer` 는 공용 토픽의 남의 몫이라 목록에도 보이지 않는다 */
-export type DlqSkipCode = 'not-dlq' | 'other-consumer' | 'unrecognized' | 'account-event' | 'other-tenant';
+export type DlqSkipCode = 'not-dlq' | 'other-consumer' | 'unrecognized' | 'other-tenant';
 
 export type DlqImportVerdict =
   | { kind: 'import'; row: DeadLetterImportRow }
@@ -35,8 +34,7 @@ function text(value: unknown): string | undefined {
  * 그 주문의 새 메시지가 이 행 뒤에 보류되는데, 지킬 순서는 이미 깨져 있다.
  *
  * 가져오지 않는 것(skip): 다른 컨슈머 그룹·그룹이 없는 옛 메시지(공용 토픽이라 섞인다), 봉투를 못 알아보는 메시지(다시 넣어도
- * 검증에서 실패한다), 계정 이벤트(테넌트 맥락 없이 처리돼야 해 이 길로 살릴 수 없다), 목록에 있는 다른 테넌트의 봉투(사람이
- * 테넌트를 잘못 골랐다). 지목한 테넌트가 목록에 없으면 던진다 — 넣을 DB 가 없다.
+ * 검증에서 실패한다), 목록에 있는 다른 테넌트의 봉투(사람이 테넌트를 잘못 골랐다). 지목한 테넌트가 목록에 없으면 던진다 — 넣을 DB 가 없다.
  */
 export function deadLetterFromDlq(message: unknown, target: DlqImportTarget): DlqImportVerdict {
   if (!target.tenants.find(target.tenantId)) {
@@ -67,9 +65,6 @@ export function deadLetterFromDlq(message: unknown, target: DlqImportTarget): Dl
   const messageType = text(envelope?.messageType);
   if (!envelope || !messageType) {
     return { kind: 'skip', code: 'unrecognized', reason: '봉투를 못 알아본다 — 다시 넣어도 검증에서 실패한다' };
-  }
-  if (eventTenancy(topic, messageType) === 'account') {
-    return { kind: 'skip', code: 'account-event', reason: `계정 이벤트 ${messageType} — 테넌트를 붙여 살릴 수 없다` };
   }
 
   const metadata = asRecord(envelope.metadata) ?? {};

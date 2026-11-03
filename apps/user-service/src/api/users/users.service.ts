@@ -1,3 +1,4 @@
+import { NotFoundError } from '@app/shared';
 import { DbService, InjectDb } from '@app/db';
 import { InjectPublisher, PublisherFor } from '@app/events';
 import {
@@ -14,6 +15,7 @@ import { and, count, eq, gt, inArray, isNotNull, isNull, ne, or, sql } from 'dri
 import * as schema from '../../../database/drizzle/schema';
 import { AddressDto } from '../../commons/dto/address.dto';
 import { DbTransaction } from '../../commons/types';
+import { ProviderType } from '../../commons/types/auth.type';
 import { isValidUUID } from '../../commons/utils/is-valid-uuid';
 import { NICKNAME_RULE_MESSAGE, isValidNickname } from '../../commons/utils/nickname';
 import { phoneNumberDigitVariants } from '../../commons/utils/phone-number';
@@ -21,6 +23,23 @@ import { UpdateUserDto } from './dto/update-user.dto';
 import { UserDetailsResponseDto } from './dto/user-details.response.dto';
 import { UserRolesResponse } from './dto/user-role-scopes.response.dto';
 import { UserRolesReader } from './user-roles.reader';
+import { accountTenantForEvent, inAccountTenant } from '../../tenancy/account-event-tenant';
+
+/** 비밀번호를 뺀 계정 칸 — 이메일 조회가 돌려주는 모양(`schema.UserWithoutPassword`). */
+const userWithoutPasswordColumns = {
+  id: schema.users.id,
+  loginId: schema.users.loginId,
+  username: schema.users.username,
+  nickname: schema.users.nickname,
+  email: schema.users.email,
+  isEmailVerified: schema.users.isEmailVerified,
+  mustChangePassword: schema.users.mustChangePassword,
+  lastActivityAt: schema.users.lastActivityAt,
+  deletedAt: schema.users.deletedAt,
+  dormantAt: schema.users.dormantAt,
+  createdAt: schema.users.createdAt,
+  updatedAt: schema.users.updatedAt,
+};
 
 @Injectable()
 export class UsersService {
@@ -104,20 +123,7 @@ export class UsersService {
     const client = this.getClient(tx);
     try {
       const [users] = await client
-        .select({
-          id: schema.users.id,
-          loginId: schema.users.loginId,
-          username: schema.users.username,
-          nickname: schema.users.nickname,
-          email: schema.users.email,
-          isEmailVerified: schema.users.isEmailVerified,
-          mustChangePassword: schema.users.mustChangePassword,
-          lastActivityAt: schema.users.lastActivityAt,
-          deletedAt: schema.users.deletedAt,
-          dormantAt: schema.users.dormantAt,
-          createdAt: schema.users.createdAt,
-          updatedAt: schema.users.updatedAt,
-        })
+        .select(userWithoutPasswordColumns)
         .from(schema.users)
         .where(eq(schema.users.email, email))
         .limit(1);
@@ -156,16 +162,24 @@ export class UsersService {
     return rows.map((row) => ({ ...row, marketingConsent: row.marketingConsent ?? false }));
   }
 
-  async findActiveContactsByPhone(phoneNumber: string): Promise<{ userId: string; username: string }[]> {
-    const users = await this.findUsersByPhoneNumber(phoneNumber);
+  // 전화번호·발송 대상으로 계정을 찾는 내부 조회 넷은 호출 테넌트의 계정만 본다(ADR-0056) — 다른 테넌트에 같은 번호가 있어도
+  // 그 테넌트의 문자 답장·수신거부가 이 테넌트 회원에게 닿지 않게.
+  async findActiveContactsByPhone(
+    tenantId: string,
+    phoneNumber: string,
+    tx?: DbTransaction,
+  ): Promise<{ userId: string; username: string }[]> {
+    const users = await this.findUsersByPhoneNumber(tenantId, phoneNumber, tx);
     return users.filter((u) => !u.deletedAt && !u.dormantAt).map((u) => ({ userId: u.id, username: u.username }));
   }
 
   /** 폰 문자 대량 발송 대상: 활성(탈퇴·휴면 아님) 회원 중 휴대폰 번호가 있는 사람 전원. */
-  async findSmsAudience(marketingOnly: boolean): Promise<
-    { userId: string; username: string; phoneNumber: string; marketingConsent: boolean }[]
-  > {
-    const rows = await this.dbService.db
+  async findSmsAudience(
+    tenantId: string,
+    marketingOnly: boolean,
+    tx?: DbTransaction,
+  ): Promise<{ userId: string; username: string; phoneNumber: string; marketingConsent: boolean }[]> {
+    const rows = await this.getClient(tx)
       .select({
         userId: schema.users.id,
         username: schema.users.username,
@@ -177,7 +191,7 @@ export class UsersService {
       .leftJoin(schema.userConsents, eq(schema.userConsents.userId, schema.users.id))
       .where(
         and(
-          ...this.smsAudienceConditions(),
+          ...this.smsAudienceConditions(tenantId),
           marketingOnly ? eq(schema.userConsents.marketingConsent, true) : undefined,
         ),
       )
@@ -185,12 +199,16 @@ export class UsersService {
     return rows.map((row) => ({ ...row, phoneNumber: row.phoneNumber ?? '', marketingConsent: row.marketingConsent ?? false }));
   }
 
-  async summarizeSmsAudience(): Promise<{ active: number; withPhone: number; consented: number }> {
-    const [active] = await this.dbService.db
+  async summarizeSmsAudience(
+    tenantId: string,
+    tx?: DbTransaction,
+  ): Promise<{ active: number; withPhone: number; consented: number }> {
+    const client = this.getClient(tx);
+    const [active] = await client
       .select({ value: count() })
       .from(schema.users)
-      .where(and(isNull(schema.users.deletedAt), isNull(schema.users.dormantAt)));
-    const [withPhone] = await this.dbService.db
+      .where(and(eq(schema.users.tenantId, tenantId), isNull(schema.users.deletedAt), isNull(schema.users.dormantAt)));
+    const [withPhone] = await client
       .select({
         value: count(),
         consented: sql<number>`count(*) filter (where ${schema.userConsents.marketingConsent} = true)`.mapWith(Number),
@@ -198,12 +216,13 @@ export class UsersService {
       .from(schema.users)
       .innerJoin(schema.profiles, eq(schema.profiles.userId, schema.users.id))
       .leftJoin(schema.userConsents, eq(schema.userConsents.userId, schema.users.id))
-      .where(and(...this.smsAudienceConditions()));
+      .where(and(...this.smsAudienceConditions(tenantId)));
     return { active: active?.value ?? 0, withPhone: withPhone?.value ?? 0, consented: withPhone?.consented ?? 0 };
   }
 
-  private smsAudienceConditions() {
+  private smsAudienceConditions(tenantId: string) {
     return [
+      eq(schema.users.tenantId, tenantId),
       isNull(schema.users.deletedAt),
       isNull(schema.users.dormantAt),
       isNotNull(schema.profiles.phoneNumber),
@@ -212,14 +231,16 @@ export class UsersService {
   }
 
   async withdrawMarketingConsentByPhone(
+    tenantId: string,
     phoneNumber: string,
     via: string,
+    tx?: DbTransaction,
   ): Promise<{ userIds: string[]; withdrawnUserIds: string[] }> {
-    const users = await this.findUsersByPhoneNumber(phoneNumber);
+    const users = await this.findUsersByPhoneNumber(tenantId, phoneNumber, tx);
     const userIds = users.map((u) => u.id);
     if (userIds.length === 0) return { userIds, withdrawnUserIds: [] };
 
-    const withdrawn = await this.dbService.db
+    const withdrawn = await this.getClient(tx)
       .update(schema.userConsents)
       .set({
         marketingConsent: false,
@@ -232,27 +253,22 @@ export class UsersService {
     return { userIds, withdrawnUserIds: withdrawn.map((row) => row.userId) };
   }
 
-  // 이메일 가입 가능 여부 확인 (중복 여부만 boolean 으로 반환, PII 미노출)
-  // 회원가입 폼의 사전 중복 체크용. 가입 시점 중복 검증과 동일하게 findUserByEmail 을 재사용한다.
-  async isEmailAvailable(email: string, tx?: DbTransaction): Promise<boolean> {
-    const user = await this.findUserByEmail(email, tx);
-    return user === null;
+  // 가입 가능 여부 확인 셋 — 회원가입 폼의 사전 중복 체크용. 중복 여부만 boolean 으로 반환한다(PII 미노출).
+  // 가입 시점 중복 검증과 같은 조회를 쓴다: 그 테넌트 안의 계정만 중복이다(ADR-0056).
+  async isEmailAvailable(tenantId: string, email: string, tx?: DbTransaction): Promise<boolean> {
+    return (await this.findUserByEmailInTenant(tenantId, email, tx)) === null;
   }
 
-  // 로그인 ID 가입 가능 여부 확인 (isEmailAvailable 과 동일한 계약 — boolean 만, PII 미노출)
-  async isLoginIdAvailable(loginId: string, tx?: DbTransaction): Promise<boolean> {
-    const user = await this.findUserByLoginId(loginId, tx);
-    return !user;
+  async isLoginIdAvailable(tenantId: string, loginId: string, tx?: DbTransaction): Promise<boolean> {
+    return (await this.findUserByLoginIdInTenant(tenantId, loginId, tx)) === null;
   }
 
-  // 닉네임 가입 가능 여부 확인 (isEmailAvailable 과 동일한 계약 — boolean 만, PII 미노출)
-  async isNicknameAvailable(nickname: string, tx?: DbTransaction): Promise<boolean> {
-    const user = await this.findUserByNickname(nickname, tx);
-    return !user;
+  async isNicknameAvailable(tenantId: string, nickname: string, tx?: DbTransaction): Promise<boolean> {
+    return (await this.findUserByNicknameInTenant(tenantId, nickname, tx)) === null;
   }
 
-  // 휴대폰 번호로 사용자 찾기 (복수 가능)
-  async findUsersByPhoneNumber(phoneNumber: string, tx?: DbTransaction): Promise<schema.User[]> {
+  // 그 테넌트에서 이 휴대폰 번호를 쓰는 계정 (복수 가능). 전화번호는 unique 가 아니라 다른 테넌트에도 같은 번호가 있다(ADR-0056).
+  async findUsersByPhoneNumber(tenantId: string, phoneNumber: string, tx?: DbTransaction): Promise<schema.User[]> {
     const client = this.getClient(tx);
     try {
       const rows = await client
@@ -263,9 +279,12 @@ export class UsersService {
         .innerJoin(schema.profiles, eq(schema.users.id, schema.profiles.userId))
         // 저장된 표기가 E.164/하이픈/숫자로 섞여 있어, 숫자만 남긴 값으로 비교한다
         .where(
-          inArray(
-            sql`regexp_replace(${schema.profiles.phoneNumber}, '[^0-9]', '', 'g')`,
-            phoneNumberDigitVariants(phoneNumber),
+          and(
+            eq(schema.users.tenantId, tenantId),
+            inArray(
+              sql`regexp_replace(${schema.profiles.phoneNumber}, '[^0-9]', '', 'g')`,
+              phoneNumberDigitVariants(phoneNumber),
+            ),
           ),
         );
 
@@ -290,18 +309,6 @@ export class UsersService {
     }
   }
 
-  // 닉네임으로 사용자 찾기
-  async findUserByNickname(nickname: string, tx?: DbTransaction): Promise<schema.User | null> {
-    const client = this.getClient(tx);
-    try {
-      const [users] = await client.select().from(schema.users).where(eq(schema.users.nickname, nickname)).limit(1);
-
-      return users;
-    } catch (error) {
-      throw new InternalServerErrorException('사용자명으로 사용자 조회 중 오류가 발생했습니다.');
-    }
-  }
-
   // 로그인 ID로 사용자 찾기
   async findUserByLoginId(id: string, tx?: DbTransaction): Promise<schema.User | null> {
     const client = this.getClient(tx);
@@ -312,6 +319,102 @@ export class UsersService {
     } catch (error) {
       throw new InternalServerErrorException('로그인 ID로 사용자 조회 중 오류가 발생했습니다.');
     }
+  }
+
+  /** 그 테넌트의 계정만 찾는다(ADR-0056). 로그인 아이디 unique 가 테넌트 안으로 넓혀진 뒤에도 한 행이다. */
+  async findUserByLoginIdInTenant(tenantId: string, loginId: string, tx?: DbTransaction): Promise<schema.User | null> {
+    const client = this.getClient(tx);
+    const [user] = await client
+      .select()
+      .from(schema.users)
+      .where(and(eq(schema.users.tenantId, tenantId), eq(schema.users.loginId, loginId)))
+      .limit(1);
+    return user ?? null;
+  }
+
+  /** 그 테넌트의 계정 id. 비밀번호 재설정 토큰의 `sub` 가 다른 테넌트 계정을 가리키면 없는 계정이다(ADR-0056). */
+  async findUserByIdInTenant(tenantId: string, userId: string, tx?: DbTransaction): Promise<schema.User | null> {
+    if (!isValidUUID(userId)) return null;
+    const [user] = await this.getClient(tx)
+      .select()
+      .from(schema.users)
+      .where(and(eq(schema.users.tenantId, tenantId), eq(schema.users.id, userId)))
+      .limit(1);
+    return user ?? null;
+  }
+
+  /**
+   * 그 테넌트 계정 중 이 이메일을 쓰는 것. 가입·소셜 가입의 이메일 중복과 레거시 재설정 토큰(이메일 문자열)은 테넌트 안에서만 본다(ADR-0056).
+   */
+  async findUserByEmailInTenant(
+    tenantId: string,
+    email: string,
+    tx?: DbTransaction,
+  ): Promise<schema.UserWithoutPassword | null> {
+    const client = this.getClient(tx);
+    const [user] = await client
+      .select(userWithoutPasswordColumns)
+      .from(schema.users)
+      .where(and(eq(schema.users.tenantId, tenantId), eq(schema.users.email, email)))
+      .limit(1);
+    return user ?? null;
+  }
+
+  /** 그 테넌트 계정 중 이 닉네임을 쓰는 것. 닉네임은 DB unique 가 없어 이 조회가 유일한 중복 검사다. */
+  async findUserByNicknameInTenant(
+    tenantId: string,
+    nickname: string,
+    tx?: DbTransaction,
+  ): Promise<schema.UserWithoutPassword | null> {
+    const client = this.getClient(tx);
+    const [user] = await client
+      .select(userWithoutPasswordColumns)
+      .from(schema.users)
+      .where(and(eq(schema.users.tenantId, tenantId), eq(schema.users.nickname, nickname)))
+      .limit(1);
+    return user ?? null;
+  }
+
+  /**
+   * 소셜 로그인의 «기존 계정» — 이 소셜 신원(provider, provider 쪽 id)이 붙은 그 테넌트의 계정. 다른 테넌트 계정에 붙은
+   * 같은 신원은 이 테넌트에선 처음 보는 신원이다(ADR-0056).
+   */
+  async findSocialAccountInTenant(
+    tenantId: string,
+    provider: ProviderType,
+    providerId: string,
+    tx?: DbTransaction,
+  ): Promise<schema.UserWithoutPassword | null> {
+    const client = this.getClient(tx);
+    const [row] = await client
+      .select({ user: userWithoutPasswordColumns })
+      .from(schema.userIdentities)
+      .innerJoin(schema.users, eq(schema.userIdentities.userId, schema.users.id))
+      .where(
+        and(
+          eq(schema.users.tenantId, tenantId),
+          eq(schema.userIdentities.provider, provider),
+          eq(schema.userIdentities.providerId, providerId),
+        ),
+      )
+      .limit(1);
+    return row?.user ?? null;
+  }
+
+  /**
+   * 계정의 테넌트 — 토큰의 `tenant`·역할이 이것으로 정해진다. 비어 있으면 채우기 마이그(…_backfill-account-tenant)가 안 돈
+   * DB 다 — 테넌트 1 로 짐작하지 않고 멈춘다(기본 테넌트 없음).
+   */
+  async accountTenantOf(userId: string, tx?: DbTransaction): Promise<string> {
+    const client = this.getClient(tx);
+    const [row] = await client
+      .select({ tenantId: schema.users.tenantId })
+      .from(schema.users)
+      .where(eq(schema.users.id, userId))
+      .limit(1);
+    if (!row) throw new NotFoundError('사용자를 찾을 수 없습니다.');
+    if (!row.tenantId) throw new Error(`account ${userId} has no tenant — run the account tenant backfill migration`);
+    return row.tenantId;
   }
 
   // 공개 API용 기본 정보
@@ -385,15 +488,18 @@ export class UsersService {
       }
 
       // 트랜잭션 컨텍스트(tx)가 주입된 경우, 커밋 이후 상위 레벨에서 이벤트를 발행하는 코드 작성.
+      // 프로필 수정은 계정의 테넌트 일이다 — 요청 화면의 테넌트가 아니다(ADR-0056).
       if (!tx) {
-        await this.eventPublisher.publishEvent({
-          eventType: 'UserUpdated',
-          aggregateId: userId,
-          payload: {
-            userId,
-            ...updateUserDto,
-          },
-        });
+        await inAccountTenant(await accountTenantForEvent(client, userId), () =>
+          this.eventPublisher.publishEvent({
+            eventType: 'UserUpdated',
+            aggregateId: userId,
+            payload: {
+              userId,
+              ...updateUserDto,
+            },
+          }),
+        );
       }
 
       return;

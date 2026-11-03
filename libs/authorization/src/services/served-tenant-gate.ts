@@ -11,9 +11,9 @@ import { rawResponseOf } from './request-identity';
 export type PermissionTenancy = 'served-tenant' | 'per-token';
 
 /**
- * user-service 가 로그인 세션(쇼핑몰·auth-web)에 내주는 내부 토큰의 audience. user-service 가 자기 T 의 부여와 `tenant: T`
- * 를 실어 발급하고, 공유 서비스의 T 는 그 T 를 그대로 받는다(SST 의 `servedTenantEnv`, 로컬 `E2E_SERVED_TENANT_ID`).
- * `tenant` 클레임 전에 나간 내부 토큰도 이 문에선 T 의 토큰이다. user-service 의 `INTERNAL_TOKEN_AUDIENCE` 가 이 값을 쓴다.
+ * user-service 가 로그인 세션(쇼핑몰·auth-web)에 내주는 내부 토큰의 audience. user-service 가 계정 테넌트의 부여와 `tenant`
+ * (계정의 테넌트, ADR-0056)를 실어 발급한다 — 테넌트 1 계정이면 공유 서비스의 T 와 같다. `tenant` 클레임 전에 나간 내부
+ * 토큰만 이 문에서 T 의 토큰으로 본다. user-service 의 `INTERNAL_TOKEN_AUDIENCE` 가 이 값을 쓴다.
  */
 export const INTERNAL_SESSION_TOKEN_AUDIENCE = 'user-service-internal';
 
@@ -64,11 +64,12 @@ export class ServedTenantGate {
 
     const audience: unknown = 'aud' in user ? (Array.isArray(user.aud) ? user.aud[0] : user.aud) : undefined;
     const claim: unknown = 'tenant' in user ? user.tenant : undefined;
+    // 클레임이 먼저다 — 내부 토큰도 계정의 테넌트를 싣는다(ADR-0056). 클레임 전에 나간 내부 토큰만 T 로 본다.
     const tokenTenant =
-      audience === INTERNAL_SESSION_TOKEN_AUDIENCE
-        ? this.served.tenantId
-        : typeof claim === 'string' && claim !== ''
-          ? claim
+      typeof claim === 'string' && claim !== ''
+        ? claim
+        : audience === INTERNAL_SESSION_TOKEN_AUDIENCE
+          ? this.served.tenantId
           : undefined;
 
     // 토큰이 이긴다 — 헤더는 토큰 테넌트를 바꾸지 못하고, 다르면 누가 문을 고르려 한 것이다.

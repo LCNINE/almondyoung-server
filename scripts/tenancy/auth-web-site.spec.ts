@@ -3,6 +3,7 @@ import {
   cachedLookup,
   codeRedirectAllowed,
   resolveSite,
+  signInTenantHeaders,
   siteTenantHeaders,
   type Site,
   type TenantSite,
@@ -211,5 +212,33 @@ describe('user-service 에 «이 요청은 그 테넌트 화면에서 왔다»�
 
   it('비밀이 비어 있으면 싣지 않는다 — 보증 없는 헤더는 user-service 가 무시한다', () => {
     expect(siteTenantHeaders(tenantSite, '')).toEqual({});
+  });
+});
+
+describe('로그인 요청의 테넌트 — 비밀번호를 확인하기 «전에» 정한다(계정은 한 테넌트의 것, ADR-0056)', () => {
+  const tenantSite: Site = {
+    kind: 'tenant',
+    tenantId: '2',
+    origin: 'http://rehearsal.localhost:8001',
+    displayName: '리허설 상사',
+    logoUrl: null,
+    hosts: ['rehearsal.localhost:8001'],
+  };
+
+  it('테넌트 화면은 그 테넌트의 계정만 찾게 한다', () => {
+    expect(signInTenantHeaders(tenantSite, 'secret')).toEqual({ 'x-tenant-id': '2', 'x-internal-secret': 'secret' });
+  });
+
+  it('기본 화면은 테넌트 1 이다 — 다른 테넌트 직원이 아몬드영 주소에서 로그인하면 «아이디 또는 비밀번호» 거절', () => {
+    expect(signInTenantHeaders({ kind: 'default', origin: DEFAULT_ORIGIN }, 'secret')).toEqual({
+      'x-tenant-id': '1',
+      'x-internal-secret': 'secret',
+    });
+  });
+
+  it('중립 오류 화면·비밀 없음은 정하지 못한다(null) — 로그인을 시도하지 않는다. 헤더 없는 로그인은 전체에서 찾는다', () => {
+    expect(signInTenantHeaders({ kind: 'unavailable' }, 'secret')).toBeNull();
+    expect(signInTenantHeaders(tenantSite, '')).toBeNull();
+    expect(signInTenantHeaders({ kind: 'default', origin: DEFAULT_ORIGIN }, '')).toBeNull();
   });
 });

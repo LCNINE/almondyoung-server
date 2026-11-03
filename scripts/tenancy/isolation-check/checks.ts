@@ -10,6 +10,7 @@ import {
   onlyOwnRows,
   pass,
   Probe,
+  refusedAsWrongCredentials,
   refusedByTenantGate,
   risen,
   skip,
@@ -51,10 +52,17 @@ const FIXED_BY = {
     '비공개 지도 08 — 소비 앱 핸들러 앞의 문(libs/events/src/tenancy/event-tenant-gate.ts)과 07 의 봉투 테넌트 찍기',
   suspend: '비공개 지도 16 — 정지 스위치(user-service 발급 거절 + core TenantStatusCache, 15초 주기)',
   tenantOne: '전환 배포 회귀 — 테넌트 1 이 지금 그대로 일해야 한다. 각 앱 로그부터 본다(로컬: logs/<앱>.log)',
+  accountTenant:
+    'ADR-0056 — 계정은 한 테넌트의 것. user-service 로그인의 화면 테넌트 조회(auth.service.ts signIn)와 코드 발급·갱신의 계정 테넌트 대조(oauth.manager.ts). ' +
+    '로컬 DB 는 계정 테넌트 채우기 마이그가 돌았어야 한다 → npm run bootstrap:e2e:local',
 } as const;
 
 /** user-service 가 준비·정지 테넌트로 발급·갱신을 거절할 때의 문구(apps/user-service/src/api/oauth/oauth.manager.ts). */
 export const TENANT_NOT_ISSUABLE = 'tenant not active';
+/** 로그인 거절 문구 — 없는 아이디·틀린 비밀번호·다른 테넌트의 계정이 모두 이것이다(apps/user-service/src/api/auth/auth.service.ts). */
+export const INVALID_CREDENTIALS = '아이디 또는 비밀번호가 올바르지 않습니다';
+/** 다른 테넌트 계정에 코드를 내주지 않을 때의 문구 — 그 테넌트에서는 없는 사용자다(apps/user-service/src/api/oauth/oauth.manager.ts). */
+export const NOT_IN_TOKEN_TENANT = 'user not found';
 const STAMP_PREFIX = '[개통 점검]';
 
 const EVENT_WAIT_MS = 90_000;
@@ -189,6 +197,39 @@ export function buildIsolationChecks(t: IsolationTarget): {
     run: async () => {
       const tenant = tokenTenantOf(await one());
       return tenant === t.tenantOneId ? pass : fail(`토큰 테넌트가 ${tenant ?? '없음'}`);
+    },
+  });
+  add({
+    section: '점검 계정',
+    title: '테넌트 2 점검 계정으로 테넌트 1 로그인 화면에서 로그인하면 «아이디 또는 비밀번호» 거절이다',
+    part: 'read',
+    fixedBy: FIXED_BY.accountTenant,
+    run: async () => {
+      // 대조 둘 — 테넌트 1 화면이 제 계정을 받고, 테넌트 2 점검 계정의 비밀번호가 맞다. 둘 중 하나라도 아니면 거절은 아무것도 증명 못 한다.
+      const own = control(await t.signIn.at('tenantOne', t.tenantOneId));
+      if (own) return own;
+      const right = await t.signIn.at('tenantTwo', t.tenantTwoId);
+      if (!isOk(right)) return fail(`대조(테넌트 2 화면의 테넌트 2 계정)가 ${right.status} «${messageOf(right.body)}»`);
+      return refusedAsWrongCredentials(await t.signIn.at('tenantTwo', t.tenantOneId), INVALID_CREDENTIALS);
+    },
+  });
+  add({
+    section: '점검 계정',
+    title: '테넌트 2 점검 계정에는 테넌트 1 관리자 주소의 토큰이 나가지 않는다',
+    part: 'read',
+    fixedBy: FIXED_BY.accountTenant,
+    run: async () => {
+      // 대조: 같은 계정이 제 테넌트 주소에서는 토큰을 받는다(위 «토큰의 테넌트가 2» 항목과 같은 호출).
+      await two();
+      try {
+        const token = await t.signIn.tenantTwoAtTenantOneAdmin();
+        return fail(`토큰이 나갔다 — 테넌트 ${tokenTenantOf(token) ?? '없음'}`);
+      } catch (e) {
+        if (!(e instanceof TokenRefused)) throw e;
+        return e.stage === 'issue-code' && e.message.includes(NOT_IN_TOKEN_TENANT)
+          ? pass
+          : fail(`계정 테넌트가 아닌 이유로 거절됐다: ${e.message}`);
+      }
     },
   });
 

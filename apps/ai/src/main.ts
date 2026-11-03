@@ -66,12 +66,14 @@ async function bootstrap() {
   SwaggerModule.setup('docs', app, document, { yamlDocumentUrl: '/docs.yaml' });
 
   // 소비 집합은 `@On` 에서 도출된다 (ADR-0029 §3). ai.module.ts 의 `forApp` 조건과 짝이다.
+  // «메시지마다» — 대화 행이 테넌트 축이라 모든 테넌트 계정의 영구 삭제를 그 테넌트 맥락으로 받는다. «T 만 섬김» 이면 테넌트 2
+  // 계정의 영구 삭제를 건너뛰어 그 대화가 영영 안 지워진다(계정 이벤트가 테넌트 이벤트가 된 뒤, ADR-0056).
   const kafkaConfig = createKafkaConfigFromEnv();
   if (kafkaConfig) {
     await EventsModule.startConsumer(app, {
       groupId: process.env.KAFKA_GROUP_ID ?? 'ai-consumer',
       kafka: kafkaConfig,
-      tenancy: 'served-tenant',
+      tenancy: 'per-message',
     });
   } else {
     console.warn('⚠️  KAFKA_BROKERS 가 없다 — 탈퇴 회원의 대화가 지워지지 않는다.');

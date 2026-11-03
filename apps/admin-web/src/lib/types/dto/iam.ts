@@ -140,7 +140,7 @@ export const IAM_ERROR_CODES = {
   escalation: 'IAM_ESCALATION',
   selfChange: 'IAM_SELF_CHANGE',
   lastOperator: 'IAM_LAST_OPERATOR',
-  notTenantMember: 'IAM_NOT_TENANT_MEMBER',
+  notAccountTenant: 'IAM_NOT_ACCOUNT_TENANT',
   grantedElsewhere: 'IAM_GRANTED_ELSEWHERE',
   tenantUnresolved: 'IAM_TENANT_UNRESOLVED',
   operatorOnly: 'IAM_OPERATOR_ONLY',

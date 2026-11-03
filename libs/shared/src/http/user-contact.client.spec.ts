@@ -45,4 +45,24 @@ describe('UserContactClient', () => {
     expect((await client.findContacts([])).size).toBe(0);
     expect(httpService.post).not.toHaveBeenCalled();
   });
+
+  // user-service 는 전화번호·발송 대상 조회 넷을 호출 테넌트로 거르고, 테넌트 헤더 없는 호출은 403 이다(ADR-0056) —
+  // 헤더가 빠지면 문자 답장·수신거부 처리가 조용히 실패한다.
+  it('전화번호·발송 대상 조회 넷은 이 앱의 테넌트를 싣는다', async () => {
+    const httpService = {
+      post: jest.fn().mockReturnValue(of({ data: { success: true, data: [] } })),
+      get: jest.fn().mockReturnValue(of({ data: { success: true, data: [] } })),
+    } as any;
+    const configService = { get: (k: string) => (k === 'USER_SERVICE_URL' ? 'http://user' : 'secret') } as any;
+    const client = new UserContactClient(httpService, configService, outboundTenantForTesting('2'));
+
+    await client.findActiveContactsByPhone('01012345678');
+    await client.withdrawMarketingConsentByPhone('01012345678', 'sms-reply');
+    await client.findSmsAudience(true);
+    await client.summarizeSmsAudience();
+
+    const configs = [...httpService.post.mock.calls, ...httpService.get.mock.calls].map((call) => call.at(-1));
+    expect(configs).toHaveLength(4);
+    for (const config of configs) expect(config.headers['x-tenant-id']).toBe('2');
+  });
 });

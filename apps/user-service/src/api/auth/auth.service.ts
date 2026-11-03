@@ -56,9 +56,19 @@ import { getCookieOptions, getDomain, logCookieDebugInfo } from './utils/cookies
 import { generateSocialNickname } from './utils/generate-social-nickname';
 import { isSamePhoneNumber } from '../../commons/utils/phone-number';
 import { SERVED_TENANT_ID } from '../../tenancy/served-tenant';
+import { inAccountTenant } from '../../tenancy/account-event-tenant';
+import { globalUniqueFieldOf } from '../users/global-unique-field';
 
 const INVALID_CREDENTIALS_MESSAGE = '아이디 또는 비밀번호가 올바르지 않습니다';
 const NO_MATCHING_ACCOUNT_MESSAGE = '입력하신 정보와 일치하는 계정이 없습니다';
+
+const SIGN_UP_DUPLICATE_MESSAGE = {
+  email: '이미 가입된 이메일입니다.',
+  loginId: '이미 존재하는 아이디입니다.',
+  nickname: '이미 존재하는 닉네임입니다.',
+} as const;
+/** 소셜 가입이 중복으로 실패할 때의 안내. 카카오 콜백이 이 문구를 리디렉트 주소에 실으므로 개인정보를 담지 않는다. */
+const SOCIAL_SIGN_UP_DUPLICATE_MESSAGE = 'This email already exists';
 
 @Injectable()
 export class AuthService {
@@ -187,21 +197,21 @@ export class AuthService {
       return await this.dbService.db.transaction(async (tx) => {
         const client = this.getClient(tx);
 
-        // 이메일, 아이디, 닉네임 각각 중복 체크
+        // 이메일, 아이디, 닉네임 각각 중복 체크 — 새 계정의 테넌트(T) 안에서만 중복이다(ADR-0056).
         const [existingEmail, existingLoginId, existingNickname] = await Promise.all([
-          this.usersService.findUserByEmail(signUpDto.email, client),
-          this.usersService.findUserByLoginId(signUpDto.loginId, client),
-          this.usersService.findUserByNickname(signUpDto.nickname, client),
+          this.usersService.findUserByEmailInTenant(this.servedTenantId, signUpDto.email, client),
+          this.usersService.findUserByLoginIdInTenant(this.servedTenantId, signUpDto.loginId, client),
+          this.usersService.findUserByNicknameInTenant(this.servedTenantId, signUpDto.nickname, client),
         ]);
 
         if (existingEmail) {
-          throw new ConflictException('이미 가입된 이메일입니다.');
+          throw new ConflictException(SIGN_UP_DUPLICATE_MESSAGE.email);
         }
         if (existingLoginId) {
-          throw new ConflictException('이미 존재하는 아이디입니다.');
+          throw new ConflictException(SIGN_UP_DUPLICATE_MESSAGE.loginId);
         }
         if (existingNickname) {
-          throw new ConflictException('이미 존재하는 닉네임입니다.');
+          throw new ConflictException(SIGN_UP_DUPLICATE_MESSAGE.nickname);
         }
 
         const saltOrRounds = 10;
@@ -217,6 +227,8 @@ export class AuthService {
             loginId,
             password: hash,
             isEmailVerified: true,
+            // 고객 가입 계정은 이 앱이 섬기는 테넌트의 것이다(ADR-0056).
+            tenantId: this.servedTenantId,
           })
           .returning();
 
@@ -255,6 +267,8 @@ export class AuthService {
       if (error instanceof ConflictException || error instanceof BadRequestException) {
         throw error;
       }
+      const globalDuplicate = globalUniqueFieldOf(error);
+      if (globalDuplicate) throw new ConflictException(SIGN_UP_DUPLICATE_MESSAGE[globalDuplicate]);
       console.error('회원가입 중 오류:', error);
       throw new InternalServerErrorException('회원가입 중 오류가 발생했습니다.');
     }
@@ -423,14 +437,21 @@ export class AuthService {
     return;
   }
 
+  /**
+   * @param siteTenantId 로그인 화면의 테넌트(auth-web 이 보증 헤더로 싣는다). 오면 그 테넌트의 계정만 찾는다 — 다른 테넌트의
+   *   계정은 «없는 아이디»와 같다(ADR-0056). 아직 필수가 아니다: 안 오면 지금처럼 전체에서 찾는다(읽기 전환 기간).
+   */
   async signIn(
     signInDto: SignInDto,
     reply: FastifyReply,
+    siteTenantId?: string,
   ): Promise<void | { accessToken: string; refreshToken: string }> {
-    const user = await this.usersService.findUserByLoginId(signInDto.loginId);
+    const user = siteTenantId
+      ? await this.usersService.findUserByLoginIdInTenant(siteTenantId, signInDto.loginId)
+      : await this.usersService.findUserByLoginId(signInDto.loginId);
 
     // 아이디 없음과 비밀번호 틀림을 구분해 알려주면 계정 존재 여부가 새고, 사용자는
-    // "존재하지 않는 사용자" 를 "내 정보가 사라졌다" 로 읽는다. 두 경우를 한 문구로 묶는다.
+    // "존재하지 않는 사용자" 를 "내 정보가 사라졌다" 로 읽는다. 두 경우를 한 문구로 묶는다(다른 테넌트의 계정도 같다).
     if (!user) throw new BadRequestException(INVALID_CREDENTIALS_MESSAGE);
 
     if (user.deletedAt) {
@@ -563,27 +584,14 @@ export class AuthService {
     reply: FastifyReply,
     tx: DbTransaction,
   ) {
-    // 소셜 providerId로 기존 identity 조회
-    const existingIdentity = await tx
-      .select({
-        identity: userServiceSchema.userIdentities,
-        user: userServiceSchema.users,
-      })
-      .from(userServiceSchema.userIdentities)
-      .innerJoin(userServiceSchema.users, eq(userServiceSchema.userIdentities.userId, userServiceSchema.users.id))
-      .where(
-        and(
-          eq(userServiceSchema.userIdentities.provider, provider),
-          eq(userServiceSchema.userIdentities.providerId, socialUser.providerId),
-        ),
-      )
-      .limit(1)
-      .then((rows) => rows[0]);
-
-    if (!existingIdentity) {
-      return null;
-    }
-    return existingIdentity;
+    // 이 소셜 신원이 붙은 T 의 계정 — 다른 테넌트 계정에 붙은 같은 신원은 여기선 처음 보는 신원이다(ADR-0056).
+    const user = await this.usersService.findSocialAccountInTenant(
+      this.servedTenantId,
+      provider,
+      socialUser.providerId,
+      tx,
+    );
+    return user ? { user } : null;
   }
 
   // 소셜 회원가입
@@ -598,16 +606,17 @@ export class AuthService {
 
     tx: DbTransaction,
   ): Promise<{ user: User }> {
-    // 이메일 중복 확인
-    const existingUser = await this.usersService.findUserByEmail(socialUser.email, tx);
+    // 이메일 중복 확인 — 새 계정의 테넌트(T) 안에서만 중복이다.
+    const existingUser = await this.usersService.findUserByEmailInTenant(this.servedTenantId, socialUser.email, tx);
 
     if (existingUser) {
-      throw new Error('This email already exists');
+      throw new Error(SOCIAL_SIGN_UP_DUPLICATE_MESSAGE);
     }
 
     const nickname = generateSocialNickname();
 
-    // 새 사용자 생성
+    // 새 사용자 생성 — 다른 테넌트 계정이 가진 이메일·아이디(`<provider>_<id>`)면 전역 unique 에 걸린다. DB 오류 원문엔
+    // 질의 파라미터(이메일·이름)가 들어 있어 그대로 던지면 콜백 리디렉트 주소로 나간다.
     const [newUser] = await tx
       .insert(userServiceSchema.users)
       .values({
@@ -617,8 +626,13 @@ export class AuthService {
         email: socialUser.email,
         password: null,
         isEmailVerified: true,
+        tenantId: this.servedTenantId,
       })
-      .returning();
+      .returning()
+      .catch((error: unknown) => {
+        if (globalUniqueFieldOf(error)) throw new Error(SOCIAL_SIGN_UP_DUPLICATE_MESSAGE);
+        throw error;
+      });
 
     // identity 생성
     await tx.insert(userServiceSchema.userIdentities).values({
@@ -724,16 +738,19 @@ export class AuthService {
   }
 
   /**
-   * 내부 토큰의 역할 — T 에서 받은 부여만. 이 토큰의 `tenant` 는 로그인한 도메인과 무관하게 T 이므로, 역할을 좁히는 것이
-   * 테넌트 2 직원이 테넌트 도메인에서 로그인했을 때 그 역할이 쇼핑몰 세션으로 새지 않게 하는 유일한 장치다.
+   * 내부 토큰의 테넌트와 역할 — 계정은 한 테넌트의 것이라(ADR-0056) 그 계정의 테넌트와 거기서 받은 부여만. 로그인한 도메인과
+   * 무관하다. 테넌트 1 계정에게는 예전(T 와 T 의 부여)과 같다.
    */
-  private async getUserRoles(userId: string, tx?: DbTransaction): Promise<string[]> {
-    return this.usersService.getTokenRoleNames(userId, this.servedTenantId, tx);
+  private async accountTenantAndRoles(
+    userId: string,
+    tx?: DbTransaction,
+  ): Promise<{ tenant: string; roles: string[] }> {
+    const tenant = await this.usersService.accountTenantOf(userId, tx);
+    return { tenant, roles: await this.usersService.getTokenRoleNames(userId, tenant, tx) };
   }
 
   private async setAccessToken(user: IUser, reply: FastifyReply, tx?: DbTransaction): Promise<{ accessToken: string }> {
-    const client = this.getClient(tx);
-    const roles = await this.getUserRoles(user.id, tx);
+    const { tenant, roles } = await this.accountTenantAndRoles(user.id, tx);
 
     const payload = {
       sub: user.id,
@@ -742,9 +759,9 @@ export class AuthService {
       login_id: user.loginId,
       // 작업 기록 등 다른 서비스가 누가 했는지를 사람 이름으로 남기게
       name: user.username,
-      // 역할이 T 의 부여뿐이라 이 토큰은 T 의 것이다. 클레임만 보는 core·file-service·ai 는 이게 없으면 reject 모드에서
-      // 쇼핑몰 고객 요청을 «테넌트 없는 토큰»으로 거절한다.
-      tenant: this.servedTenantId,
+      // 역할이 계정 테넌트의 부여뿐이라 이 토큰은 그 테넌트의 것이다. 클레임만 보는 core·file-service·ai 는 이게 없으면
+      // reject 모드에서 쇼핑몰 고객 요청을 «테넌트 없는 토큰»으로 거절한다.
+      tenant,
     };
 
     const expiresIn = JWT_ACCESS_TOKEN_EXPIRATION;
@@ -795,9 +812,7 @@ export class AuthService {
     rememberMe: boolean = false,
     tx?: DbTransaction,
   ): Promise<{ refreshToken: string }> {
-    const client = this.getClient(tx);
-
-    const roles = await this.getUserRoles(userId, tx);
+    const { roles } = await this.accountTenantAndRoles(userId, tx);
 
     // 자동 로그인 여부에 따라 만료 시간 결정
     const expiresIn = this.getRefreshTokenExpiration(rememberMe);
@@ -845,10 +860,12 @@ export class AuthService {
     return await this.setAccessToken(user, reply, client);
   }
 
+  // 찾기·재설정 셋은 앱 설정 T 의 계정만 찾는다(ADR-0056) — 찾기 화면은 쇼핑몰에만 있고, 가입이 계정을 만드는 테넌트도 T 다.
+  // 같은 번호·아이디·이메일의 다른 테넌트 계정은 «없는 계정»과 같은 응답이다.
   async forgetUserId(phoneNumber: string) {
     await this.assertPhoneVerified(phoneNumber);
 
-    const users = await this.usersService.findUsersByPhoneNumber(phoneNumber);
+    const users = await this.usersService.findUsersByPhoneNumber(this.servedTenantId, phoneNumber);
     if (users.length === 0) throw new NotFoundException('존재하지 않는 휴대폰 번호입니다');
 
     return { loginIds: users.map((user) => user.loginId) };
@@ -857,7 +874,7 @@ export class AuthService {
   async forgotPassword(phoneNumber: string, loginId: string) {
     await this.assertPhoneVerified(phoneNumber);
 
-    const user = await this.usersService.findUserByLoginId(loginId);
+    const user = await this.usersService.findUserByLoginIdInTenant(this.servedTenantId, loginId);
     if (!user) throw new NotFoundException(NO_MATCHING_ACCOUNT_MESSAGE);
 
     const [profile] = await this.dbService.db
@@ -892,14 +909,9 @@ export class AuthService {
     let user: UserWithoutPassword | null = null;
 
     if (typeof payload === 'string') {
-      user = await this.usersService.findUserByEmail(payload);
+      user = await this.usersService.findUserByEmailInTenant(this.servedTenantId, payload);
     } else if (payload?.sub) {
-      const [row] = await this.dbService.db
-        .select()
-        .from(userServiceSchema.users)
-        .where(eq(userServiceSchema.users.id, payload.sub))
-        .limit(1);
-      user = row ?? null;
+      user = await this.usersService.findUserByIdInTenant(this.servedTenantId, payload.sub);
     }
 
     if (!user) {
@@ -923,6 +935,8 @@ export class AuthService {
       .from(userServiceSchema.phoneVerifications)
       .where(
         and(
+          // 인증번호 발송이 기록하는 테넌트(앱 설정 T)와 같은 테넌트의 인증만 찾기를 연다(ADR-0056).
+          eq(userServiceSchema.phoneVerifications.tenantId, this.servedTenantId),
           eq(userServiceSchema.phoneVerifications.phoneNumber, phoneNumber),
           eq(userServiceSchema.phoneVerifications.purpose, userServiceEnums.phoneVerificationPurposeEnum.enumValues[0]),
           eq(userServiceSchema.phoneVerifications.isVerified, true),
@@ -1046,22 +1060,29 @@ export class AuthService {
       await this.tokensService.deleteAllTokens(userId, tx);
 
       const [before] = await tx
-        .select({ email: userServiceSchema.users.email, username: userServiceSchema.users.username })
+        .select({
+          email: userServiceSchema.users.email,
+          username: userServiceSchema.users.username,
+          tenantId: userServiceSchema.users.tenantId,
+        })
         .from(userServiceSchema.users)
         .where(eq(userServiceSchema.users.id, userId))
         .limit(1);
 
       await this.anonymizeIdentity(userId, tx);
 
-      await this.eventPublisher.publishEvent({
-        eventType: 'UserDeleted',
-        aggregateId: userId,
-        payload: {
-          userId,
-          ...(before?.email?.includes('@') ? { email: before.email } : {}),
-          ...(before?.username ? { name: before.username } : {}),
-        },
-      });
+      // 탈퇴는 계정의 테넌트 일이다 — 요청 화면의 테넌트가 아니다(ADR-0056)
+      await inAccountTenant(before?.tenantId, () =>
+        this.eventPublisher.publishEvent({
+          eventType: 'UserDeleted',
+          aggregateId: userId,
+          payload: {
+            userId,
+            ...(before?.email?.includes('@') ? { email: before.email } : {}),
+            ...(before?.username ? { name: before.username } : {}),
+          },
+        }),
+      );
     }, tx);
   }
 

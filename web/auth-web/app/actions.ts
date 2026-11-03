@@ -26,7 +26,7 @@ import {
   requireDefaultSite,
   sanitizeRedirectTo,
 } from "@/lib/site/site"
-import { siteTenantHeaders } from "@/lib/site/site-rules"
+import { signInTenantHeaders, siteTenantHeaders } from "@/lib/site/site-rules"
 import {
   callbackSignup,
   changePassword,
@@ -326,12 +326,20 @@ export async function signInAction(formData: FormData): Promise<ActionResult> {
   const reauthUserId = String(formData.get("reauthUserId") ?? "").trim()
   let user: UserProfile
 
-  if ((await getSite()).kind === "unavailable") {
+  // 테넌트를 못 정하면 비밀번호를 보내지 않는다 — 테넌트 없는 로그인은 모든 테넌트에서 계정을 찾는다(기본 테넌트 없음).
+  const tenantHeaders = signInTenantHeaders(
+    await getSite(),
+    env.oauthInternalSecret
+  )
+  if (!tenantHeaders) {
     return { ok: false, error: "이 주소에서는 로그인할 수 없어요." }
   }
 
   try {
-    const tokens = await signIn({ loginId, password, rememberMe })
+    const tokens = await signIn(
+      { loginId, password, rememberMe },
+      tenantHeaders
+    )
     user = await promoteTokens(tokens, rememberMe, reauthUserId || undefined)
   } catch (e) {
     if (e instanceof ApiError) {

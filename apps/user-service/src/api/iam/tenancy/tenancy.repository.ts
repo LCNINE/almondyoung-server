@@ -2,7 +2,6 @@ import { DbService, InjectDb } from '@app/db';
 import { Injectable } from '@nestjs/common';
 import {
   tenantMemberships,
-  tenants,
   users,
   type UserServiceSchema,
   type UserServiceTx,
@@ -16,11 +15,6 @@ export class TenancyRepository {
 
   private client(tx?: UserServiceTx) {
     return tx ?? this.dbService.db;
-  }
-
-  async tenantExists(tenantId: string, tx: UserServiceTx): Promise<boolean> {
-    const [row] = await tx.select({ id: tenants.id }).from(tenants).where(eq(tenants.id, tenantId)).limit(1);
-    return row !== undefined;
   }
 
   // ── 소속

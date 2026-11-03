@@ -1,4 +1,3 @@
-import { timingSafeEqual } from 'node:crypto';
 import { CallHandler, ExecutionContext, Injectable, NestInterceptor } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Reflector } from '@nestjs/core';
@@ -7,6 +6,7 @@ import type { Observable } from 'rxjs';
 import { IS_PUBLIC_KEY, IS_SERVICE_KEY_ROUTE_KEY } from '@app/authorization';
 import { TENANT_CONTEXT_KEY, TenancyConfig, tenantHeaderOf } from '@app/tenancy';
 import { requestEventTenant } from './request-event-tenant';
+import { isVouchedByAuthWeb } from './vouched-site-tenant';
 
 /**
  * user-service 요청의 테넌트를 CLS 맥락(`TENANT_CONTEXT_KEY`)에 세운다 — 같은 요청 안의 직접 발행이 봉투에 그 테넌트를 찍는다
@@ -17,7 +17,7 @@ import { requestEventTenant } from './request-event-tenant';
  */
 @Injectable()
 export class UserRequestTenantInterceptor implements NestInterceptor {
-  private readonly internalSecret: Buffer | undefined;
+  private readonly internalSecret: string | undefined;
 
   constructor(
     private readonly reflector: Reflector,
@@ -25,8 +25,7 @@ export class UserRequestTenantInterceptor implements NestInterceptor {
     private readonly cls: ClsService,
     config: ConfigService,
   ) {
-    const secret = config.get<string>('OAUTH_INTERNAL_SECRET');
-    this.internalSecret = secret ? Buffer.from(secret) : undefined;
+    this.internalSecret = config.get<string>('OAUTH_INTERNAL_SECRET');
   }
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
@@ -43,7 +42,12 @@ export class UserRequestTenantInterceptor implements NestInterceptor {
       .switchToHttp()
       .getRequest<{ user?: object | null; headers?: Record<string, string | string[] | undefined> }>();
     const tenant = requestEventTenant(
-      { entry, user: request.user, header: tenantHeaderOf(request), vouched: this.vouched(request.headers) },
+      {
+        entry,
+        user: request.user,
+        header: tenantHeaderOf(request),
+        vouched: isVouchedByAuthWeb(request.headers, this.internalSecret),
+      },
       this.tenancy.tenants,
     );
     if (!tenant) return next.handle();
@@ -53,12 +57,5 @@ export class UserRequestTenantInterceptor implements NestInterceptor {
       throw new Error('user-service: 요청에 CLS 맥락이 없다 — main.ts 가 mountEventChainContext 를 불러야 한다');
     }
     return next.handle();
-  }
-
-  private vouched(headers: Record<string, string | string[] | undefined> | undefined): boolean {
-    const given = headers?.['x-internal-secret'];
-    if (!this.internalSecret || typeof given !== 'string') return false;
-    const candidate = Buffer.from(given);
-    return candidate.length === this.internalSecret.length && timingSafeEqual(candidate, this.internalSecret);
   }
 }

@@ -7,6 +7,7 @@ import {
 } from '@medusajs/framework/types';
 import { AbstractAuthModuleProvider, MedusaError } from '@medusajs/framework/utils';
 import { createRemoteJWKSet, jwtVerify, JWTPayload } from 'jose';
+import { refuseForeignTenantToken } from '../../utils/served-tenant-headers';
 
 type Options = {
   issuerUrl: string;
@@ -46,8 +47,7 @@ type IdTokenClaims = JWTPayload & {
   login_id?: string;
 };
 
-const base64url = (buf: Buffer) =>
-  buf.toString('base64').replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_');
+const base64url = (buf: Buffer) => buf.toString('base64').replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_');
 
 export class UserServiceSsoProviderService extends AbstractAuthModuleProvider {
   static identifier = 'user-service-sso';
@@ -179,6 +179,23 @@ export class UserServiceSsoProviderService extends AbstractAuthModuleProvider {
       return { success: false, error: 'id_token missing sub claim' };
     }
 
+    // 토큰 테넌트는 id_token 이 아니라 access_token 에 실린다. auth identity 를 만들거나 고치기 «전에» 본다 —
+    // 다른 테넌트 계정이 이메일로 이 Medusa 의 고객에 이어지면 안 된다(docs/adr/0056).
+    let accessClaims: JWTPayload;
+    try {
+      accessClaims = await this.verifyAccessToken(tokens.access_token);
+    } catch (error: any) {
+      return { success: false, error: error?.message ?? 'access_token verification failed' };
+    }
+    if (accessClaims.sub !== entity_id) {
+      return { success: false, error: 'access_token sub does not match id_token sub' };
+    }
+    const tenantRefusal = refuseForeignTenantToken(accessClaims.tenant);
+    if (tenantRefusal) {
+      this.logger_.warn(`user-service-sso: refused callback — ${tenantRefusal}`);
+      return { success: false, error: tenantRefusal };
+    }
+
     let userMetadata: Record<string, unknown> = {
       email: claims.email,
       email_verified: claims.email_verified,
@@ -240,11 +257,7 @@ export class UserServiceSsoProviderService extends AbstractAuthModuleProvider {
     return { success: true, authIdentity };
   }
 
-  private async exchangeCode(
-    code: string,
-    codeVerifier: string,
-    redirectUri: string,
-  ): Promise<TokenResponse> {
+  private async exchangeCode(code: string, codeVerifier: string, redirectUri: string): Promise<TokenResponse> {
     const tokenUrl = new URL('/oauth/token', this.options_.issuerUrl);
     const basic = Buffer.from(`${this.options_.clientId}:${this.options_.clientSecret}`).toString('base64');
     const body = new URLSearchParams({
@@ -284,6 +297,14 @@ export class UserServiceSsoProviderService extends AbstractAuthModuleProvider {
     });
 
     return payload as IdTokenClaims;
+  }
+
+  private async verifyAccessToken(accessToken: string): Promise<JWTPayload> {
+    const { payload } = await jwtVerify(accessToken, this.jwks_, {
+      issuer: this.options_.issuerUrl,
+      audience: this.options_.clientId,
+    });
+    return payload;
   }
 
   private async fetchUserinfo(

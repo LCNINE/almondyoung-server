@@ -47,6 +47,17 @@ export function refusedByTenantGate(probe: Probe, gateMessage: string): Verdict 
 }
 
 /**
+ * 로그인이 «아이디 또는 비밀번호 틀림»으로 거절됐는가 — 다른 테넌트의 계정은 그 테넌트에 «없는 아이디»와 같아야 한다(ADR-0056).
+ * 다른 문구(탈퇴·휴면·5xx)는 계정의 존재를 드러내거나 아무것도 증명하지 못한다.
+ */
+export function refusedAsWrongCredentials(probe: Probe, invalidCredentials: string): Verdict {
+  const message = messageOf(probe.body);
+  if (probe.status === 400 && message === invalidCredentials) return pass;
+  if (probe.status >= 200 && probe.status < 300) return fail(`${probe.status} — 다른 테넌트의 계정으로 로그인됐다`);
+  return fail(`${probe.status} «${message}» — «${invalidCredentials}» 거절이 아니다`);
+}
+
+/**
  * 테넌트 2 목록에 테넌트 1 행이 없는가. 테넌트 1 목록이 비면 «겹침 없음»이 아무것도 증명하지 않으므로 실패로 본다
  * (둘 다 빈 DB 를 봐도 초록이 된다).
  */

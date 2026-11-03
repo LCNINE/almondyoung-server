@@ -3,15 +3,18 @@ import { Injectable } from '@nestjs/common';
 import {
   oauthClients,
   oauthTokens,
+  roles,
   tenantDomains,
   tenants,
   tokens,
+  userRoleAssignments,
   users,
   type TenantDomainApp,
   type UserServiceSchema,
   type UserServiceTx,
 } from 'apps/user-service/database/drizzle/schema';
-import { and, eq, inArray, isNull } from 'drizzle-orm';
+import { and, count, eq, gt, inArray, isNull, or } from 'drizzle-orm';
+import { SYSTEM_ROLE_NAME } from '../iam.constants';
 
 export type TenantStatus = (typeof tenants.$inferSelect)['status'];
 
@@ -113,6 +116,76 @@ export class PlatformRepository {
       .set({ isRevoked: true, updatedAt: new Date() })
       .where(and(eq(oauthTokens.userId, userId), eq(oauthTokens.isRevoked, false)));
     await tx.delete(tokens).where(and(eq(tokens.userId, userId), eq(tokens.type, 'refresh')));
+  }
+
+  // ── 그 테넌트의 계정 — 운영자가 다른 테넌트 계정에 닿는 두 일(첫 master 만들기·master 비번 비상 초기화)만 쓴다
+
+  /** 그 테넌트에서 지금 `master` 부여가 유효한 계정(탈퇴 제외) — 계정의 테넌트와 부여의 테넌트가 둘 다 그 테넌트인 것. */
+  async mastersOf(tenantId: string, tx?: UserServiceTx): Promise<{ userId: string; loginId: string }[]> {
+    return this.client(tx)
+      .select({ userId: users.id, loginId: users.loginId })
+      .from(userRoleAssignments)
+      .innerJoin(roles, eq(roles.roleId, userRoleAssignments.roleId))
+      .innerJoin(users, eq(users.id, userRoleAssignments.userId))
+      .where(
+        and(
+          eq(roles.name, SYSTEM_ROLE_NAME),
+          eq(userRoleAssignments.tenantId, tenantId),
+          eq(users.tenantId, tenantId),
+          isNull(users.deletedAt),
+          or(isNull(userRoleAssignments.expiresAt), gt(userRoleAssignments.expiresAt, new Date())),
+        ),
+      )
+      .orderBy(users.loginId);
+  }
+
+  /** 그 테넌트에서 로그인할 수 있는 계정(탈퇴·휴면 제외) — 탈퇴·휴면 계정의 값은 insert 의 unique 가 409 로 막는다. */
+  async findAccountInTenant(
+    tenantId: string,
+    by: { loginId: string } | { email: string },
+    tx: UserServiceTx,
+  ): Promise<{ id: string } | null> {
+    const match = 'loginId' in by ? eq(users.loginId, by.loginId) : eq(users.email, by.email);
+    const [row] = await tx
+      .select({ id: users.id })
+      .from(users)
+      .where(and(eq(users.tenantId, tenantId), match, isNull(users.deletedAt), isNull(users.dormantAt)))
+      .limit(1);
+    return row ?? null;
+  }
+
+  async countAccountsOf(tenantId: string, tx: UserServiceTx): Promise<number> {
+    const [row] = await tx.select({ n: count() }).from(users).where(eq(users.tenantId, tenantId));
+    return Number(row?.n ?? 0);
+  }
+
+  /** 직원 계정 행 — 고객 가입이 아니라 이메일 인증을 묻지 않는다(관리자가 만드는 계정과 같다). */
+  async insertStaffAccount(
+    account: {
+      tenantId: string;
+      loginId: string;
+      username: string;
+      nickname: string;
+      email: string;
+      passwordHash: string;
+      mustChangePassword: boolean;
+    },
+    tx: UserServiceTx,
+  ): Promise<{ id: string }> {
+    const [row] = await tx
+      .insert(users)
+      .values({
+        tenantId: account.tenantId,
+        loginId: account.loginId,
+        username: account.username,
+        nickname: account.nickname,
+        email: account.email,
+        password: account.passwordHash,
+        mustChangePassword: account.mustChangePassword,
+        isEmailVerified: true,
+      })
+      .returning({ id: users.id });
+    return row;
   }
 
   async setPassword(userId: string, hash: string, mustChangePassword: boolean, tx: UserServiceTx): Promise<void> {

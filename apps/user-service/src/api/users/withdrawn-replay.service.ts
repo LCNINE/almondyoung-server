@@ -5,6 +5,7 @@ import { USER_STREAM } from '@packages/event-contracts/streams';
 import { and, asc, gt, isNotNull, like, type SQL } from 'drizzle-orm';
 import * as schema from '../../../database/drizzle/schema';
 import { type UserServiceSchema } from '../../../database/drizzle/schema';
+import { inAccountTenant } from '../../tenancy/account-event-tenant';
 
 export type ReplayWithdrawnParams = { dryRun: boolean; limit?: number; afterUserId?: string };
 export type ReplayWithdrawnResult = {
@@ -58,7 +59,7 @@ export class WithdrawnReplayService {
     const limit = Math.min(params.limit ?? DEFAULT_LIMIT, MAX_LIMIT);
 
     const rows = await this.dbService.db
-      .select({ id: schema.users.id })
+      .select({ id: schema.users.id, tenantId: schema.users.tenantId })
       .from(schema.users)
       .where(withdrawnUsersSelection(params.afterUserId))
       .orderBy(asc(schema.users.id))
@@ -75,12 +76,14 @@ export class WithdrawnReplayService {
     let published = 0;
     let lastUserId: string | null = null;
     let failedUserId: string | null = null;
-    for (const userId of userIds) {
+    for (const { id: userId, tenantId } of rows) {
       // softDeleteUser 와 같은 발행 방식 — 즉시 Kafka. 하나가 실패하면 여기서 멈추고 published 까지만 보고한다.
       // 호출자는 마지막 «성공» id 뒤부터 다시 부른다 (하류가 멱등이라 겹쳐도 안전) — 그래서
       // lastUserId 는 매칭된 마지막 행이 아니라 실제로 발행에 성공한 마지막 id 여야 한다.
       try {
-        await this.eventPublisher.publishEvent({ eventType: 'UserDeleted', aggregateId: userId, payload: { userId } });
+        await inAccountTenant(tenantId, () =>
+          this.eventPublisher.publishEvent({ eventType: 'UserDeleted', aggregateId: userId, payload: { userId } }),
+        );
         published++;
         lastUserId = userId;
       } catch (error) {

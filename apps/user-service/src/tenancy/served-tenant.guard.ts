@@ -32,7 +32,8 @@ const untenanted = new Counter({
 
 /**
  * 역할 정의는 전역이라 권한 키만으로는 테넌트 2 토큰을 못 막는다. 인증 가드 뒤, 권한 가드 앞에 둔다.
- * 토큰 테넌트는 `JwtAccessStrategy` 가 채운다(내부 세션 토큰은 T 의 부여와 `tenant: T` 를 실어 발급한다 — 클레임 전에 나간 것도 T 로 본다).
+ * 토큰 테넌트는 `JwtAccessStrategy` 가 채운다(내부 세션 토큰은 계정 테넌트의 부여와 `tenant` 를 실어 발급한다 — 클레임 전에 나간 것은 T 로 본다).
+ * 그래서 다른 테넌트 계정의 쇼핑몰 세션은 T 의 고객 데이터를 열지 못한다.
  */
 @Injectable()
 export class ServedTenantGuard implements CanActivate {

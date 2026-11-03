@@ -1,17 +1,19 @@
 import { DbService } from '@app/db';
 import { createCheckpointsForTesting, PermissionCheckpoints } from '@app/authorization';
-import { ForbiddenError, NotFoundError } from '@app/shared';
+import { ConflictError, ForbiddenError, NotFoundError } from '@app/shared';
 import { Test } from '@nestjs/testing';
 import { userServiceSchema } from 'apps/user-service/database/drizzle/schema';
 import { RoleAssignmentManager } from '../../iam/assignments/role-assignment.manager';
+import { StaffPasswordManager } from '../../iam/staff/staff-password.manager';
 import { PlatformOperatorManager } from '../../iam/tenancy/platform-operator.manager';
 import { UsersService } from '../../users/users.service';
+import { SERVED_TENANT_ID } from '../../../tenancy/served-tenant';
 import { AuthService } from './auth.service';
 
 describe('AuthService.changePassword', () => {
   const where = jest.fn();
   const db = { update: jest.fn(() => ({ set: jest.fn(() => ({ where })) })) };
-  const usersService = { findUserByLoginId: jest.fn(), getUserRoleNames: jest.fn() };
+  const usersService = { findUserByLoginIdInTenant: jest.fn(), getUserRoleNames: jest.fn() };
   let service: AuthService;
 
   const admin = { roles: ['admin'] };
@@ -26,6 +28,8 @@ describe('AuthService.changePassword', () => {
         { provide: UsersService, useValue: usersService },
         { provide: RoleAssignmentManager, useValue: { assignOnCreate: jest.fn() } },
         { provide: PlatformOperatorManager, useValue: { assertOperator: jest.fn() } },
+        { provide: StaffPasswordManager, useValue: { reissue: jest.fn() } },
+        { provide: SERVED_TENANT_ID, useValue: 'T' },
         { provide: PermissionCheckpoints, useValue: createCheckpointsForTesting(byRole) },
       ],
     }).compile();
@@ -34,7 +38,9 @@ describe('AuthService.changePassword', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
-    usersService.findUserByLoginId.mockResolvedValue({ id: 'u-1', loginId: 'target' });
+    usersService.findUserByLoginIdInTenant.mockImplementation(async (tenantId: string) =>
+      tenantId === 'T' ? { id: 'u-1', loginId: 'target' } : null,
+    );
     service = await serviceWith({ master: ['iam.admin_user.write'], admin: [] });
   });
 
@@ -66,8 +72,16 @@ describe('AuthService.changePassword', () => {
   });
 
   it('reports an unknown login id as not found', async () => {
-    usersService.findUserByLoginId.mockResolvedValue(undefined);
+    usersService.findUserByLoginIdInTenant.mockResolvedValue(null);
     await expect(service.changePassword(request, master)).rejects.toBeInstanceOf(NotFoundError);
+  });
+
+  it('looks for the account only in the served tenant — another tenant\'s account with the same login id is not found (ADR-0056)', async () => {
+    await service.changePassword(request, master);
+    expect(usersService.findUserByLoginIdInTenant).toHaveBeenCalledWith('T', 'target');
+    usersService.findUserByLoginIdInTenant.mockResolvedValue(null);
+    await expect(service.changePassword(request, master)).rejects.toBeInstanceOf(NotFoundError);
+    expect(where).toHaveBeenCalledTimes(1);
   });
 
   it('does not let an old role name alone reset a staff account', async () => {
@@ -106,20 +120,20 @@ describe('AuthService.createAccount', () => {
   const created = { id: 'u-new', loginId: 'newbie', email: 'n@e.w', username: '새사람' };
   const run = jest.fn(async (work: (t: unknown) => Promise<unknown>) => work(tx));
   const usersService = {
-    findUserByLoginId: jest.fn(),
-    findUserByEmail: jest.fn(),
+    findUserByLoginIdInTenant: jest.fn(),
+    findUserByEmailInTenant: jest.fn(),
     updateMyProfile: jest.fn(),
     assignUserRole: jest.fn(),
   };
-  const assignments = { assignOnCreate: jest.fn() };
+  const assignments = { assignOnCreate: jest.fn(), tenantForNewAccount: async () => '1' };
   const actor = { userId: 'u-boss', loginId: 'boss', roles: ['master'], userAgent: null, requestId: null, ip: null };
   let service: AuthService;
 
   beforeEach(async () => {
     jest.clearAllMocks();
     run.mockImplementation(async (work: (t: unknown) => Promise<unknown>) => work(tx));
-    usersService.findUserByLoginId.mockResolvedValue(null);
-    usersService.findUserByEmail.mockResolvedValue(null);
+    usersService.findUserByLoginIdInTenant.mockResolvedValue(null);
+    usersService.findUserByEmailInTenant.mockResolvedValue(null);
     const module = await Test.createTestingModule({
       providers: [
         AuthService,
@@ -127,6 +141,8 @@ describe('AuthService.createAccount', () => {
         { provide: UsersService, useValue: usersService },
         { provide: RoleAssignmentManager, useValue: assignments },
         { provide: PlatformOperatorManager, useValue: { assertOperator: jest.fn() } },
+        { provide: StaffPasswordManager, useValue: { reissue: jest.fn() } },
+        { provide: SERVED_TENANT_ID, useValue: 'T' },
         { provide: PermissionCheckpoints, useValue: createCheckpointsForTesting({}) },
       ],
     }).compile();
@@ -138,7 +154,7 @@ describe('AuthService.createAccount', () => {
       { username: '새사람', nickname: '새', loginId: 'newbie', email: 'n@e.w', roleId: 'r-intern' },
       actor,
     );
-    expect(assignments.assignOnCreate).toHaveBeenCalledWith(tx, actor, 'u-new', 'r-intern', undefined);
+    expect(assignments.assignOnCreate).toHaveBeenCalledWith(tx, actor, 'u-new', 'r-intern', '1');
     expect(usersService.assignUserRole).not.toHaveBeenCalled();
   });
 
@@ -161,14 +177,25 @@ describe('AuthService.createAccount — 운영자가 대행해 만드는 직원 
       values: (values: Record<string, unknown>) => {
         inserted.push({ table, values });
         return {
-          returning: async () => [{ id: 'u-new', loginId: values.loginId, email: values.email, username: 'x' }],
+          returning: async () => {
+            if (insertFails) throw insertFails;
+            return [{ id: 'u-new', loginId: values.loginId, email: values.email, username: 'x' }];
+          },
         };
       },
     })),
   };
+  // drizzle 이 postgres.js 의 unique 위반을 cause 로 감싸 던지는 꼴.
+  let insertFails: Error | null = null;
+  const uniqueViolation = (constraint: string) =>
+    Object.assign(new Error('insert failed'), { cause: { code: '23505', constraint_name: constraint } });
   const run = jest.fn(async (work: (t: unknown) => Promise<unknown>) => work(tx));
-  const usersService = { findUserByLoginId: jest.fn(), findUserByEmail: jest.fn(), updateMyProfile: jest.fn() };
-  const roleAssignments = { assignOnCreate: jest.fn() };
+  const usersService = {
+    findUserByLoginIdInTenant: jest.fn(),
+    findUserByEmailInTenant: jest.fn(),
+    updateMyProfile: jest.fn(),
+  };
+  const roleAssignments = { assignOnCreate: jest.fn(), tenantForNewAccount: jest.fn() };
   const operators = { assertOperator: jest.fn() };
   const actor = { userId: 'u-op', loginId: 'op', roles: ['master'], userAgent: null, requestId: null, ip: null };
   const dto = {
@@ -183,8 +210,11 @@ describe('AuthService.createAccount — 운영자가 대행해 만드는 직원 
   beforeEach(async () => {
     jest.clearAllMocks();
     inserted.length = 0;
-    usersService.findUserByLoginId.mockResolvedValue(null);
-    usersService.findUserByEmail.mockResolvedValue(null);
+    insertFails = null;
+    usersService.findUserByLoginIdInTenant.mockResolvedValue(null);
+    usersService.findUserByEmailInTenant.mockResolvedValue(null);
+    // 계정의 테넌트 = 요청자의 테넌트(여기선 '1') — 운영자도 다른 테넌트를 지정하지 않는다(ADR-0056).
+    roleAssignments.tenantForNewAccount.mockResolvedValue('1');
     const module = await Test.createTestingModule({
       providers: [
         AuthService,
@@ -192,6 +222,8 @@ describe('AuthService.createAccount — 운영자가 대행해 만드는 직원 
         { provide: UsersService, useValue: usersService },
         { provide: RoleAssignmentManager, useValue: roleAssignments },
         { provide: PlatformOperatorManager, useValue: operators },
+        { provide: StaffPasswordManager, useValue: { reissue: jest.fn() } },
+        { provide: SERVED_TENANT_ID, useValue: 'T' },
         { provide: PermissionCheckpoints, useValue: createCheckpointsForTesting({}) },
       ],
     }).compile();
@@ -202,23 +234,65 @@ describe('AuthService.createAccount — 운영자가 대행해 만드는 직원 
     const { initialPassword } = await service.createAccount(dto, actor);
     expect(initialPassword).toHaveLength(16);
     expect(inserted[0].values).toMatchObject({ loginId: 'staff1', mustChangePassword: true });
-    expect(roleAssignments.assignOnCreate).toHaveBeenCalledWith(tx, actor, 'u-new', 'r-staff', undefined);
+    expect(roleAssignments.assignOnCreate).toHaveBeenCalledWith(tx, actor, 'u-new', 'r-staff', '1');
     expect(operators.assertOperator).not.toHaveBeenCalled();
   });
 
-  it('makes the account a member of a named tenant (the operator rule lives in the grant)', async () => {
-    await service.createAccount({ ...dto, tenantId: 't2' }, actor);
-    expect(roleAssignments.assignOnCreate).toHaveBeenCalledWith(tx, actor, 'u-new', 'r-staff', 't2');
+  it('makes the account belong to the tenant the actor works in', async () => {
+    await service.createAccount(dto, actor);
+    expect(roleAssignments.tenantForNewAccount).toHaveBeenCalledWith(actor, tx);
+    expect(inserted[0].values).toMatchObject({ loginId: 'staff1', tenantId: '1' });
   });
 
-  it('leaves the change unforced only for an operator (the check account)', async () => {
-    await service.createAccount({ ...dto, tenantId: 't2', forcePasswordChange: false }, actor);
+  it('creates nothing when the tenant the actor works in cannot be told', async () => {
+    roleAssignments.tenantForNewAccount.mockRejectedValueOnce(new ForbiddenError('tenant unresolved'));
+    await expect(service.createAccount(dto, actor)).rejects.toBeInstanceOf(ForbiddenError);
+    expect(inserted).toEqual([]);
+    expect(roleAssignments.assignOnCreate).not.toHaveBeenCalled();
+  });
+
+  it('leaves the change unforced only for an operator', async () => {
+    await service.createAccount({ ...dto, forcePasswordChange: false }, actor);
     expect(operators.assertOperator).toHaveBeenCalledWith(actor, tx);
     expect(inserted[0].values).toMatchObject({ mustChangePassword: false });
   });
 
+  describe('duplicates are judged within the tenant the account will belong to (ADR-0056)', () => {
+    it('looks for the login id and the email only among accounts of that tenant', async () => {
+      roleAssignments.tenantForNewAccount.mockResolvedValue('7');
+      await service.createAccount(dto, actor);
+      expect(usersService.findUserByLoginIdInTenant).toHaveBeenCalledWith('7', 'staff1', tx);
+      expect(usersService.findUserByEmailInTenant).toHaveBeenCalledWith('7', 'staff1@example.test', tx);
+    });
+
+    it('refuses a login id or an email already used in the tenant', async () => {
+      usersService.findUserByLoginIdInTenant.mockResolvedValueOnce({ id: 'u-old' });
+      await expect(service.createAccount(dto, actor)).rejects.toThrow(
+        new ConflictError('이미 존재하는 로그인 ID 입니다.'),
+      );
+      usersService.findUserByEmailInTenant.mockResolvedValueOnce({ id: 'u-old' });
+      await expect(service.createAccount(dto, actor)).rejects.toThrow(new ConflictError('이미 존재하는 이메일 입니다.'));
+      expect(inserted).toEqual([]);
+    });
+
+    it('answers the same 409 when another tenant holds the value and the unique is still global', async () => {
+      insertFails = uniqueViolation('users_login_id_unique');
+      await expect(service.createAccount(dto, actor)).rejects.toThrow(
+        new ConflictError('이미 존재하는 로그인 ID 입니다.'),
+      );
+      insertFails = uniqueViolation('users_email_unique');
+      await expect(service.createAccount(dto, actor)).rejects.toThrow(new ConflictError('이미 존재하는 이메일 입니다.'));
+      expect(roleAssignments.assignOnCreate).not.toHaveBeenCalled();
+    });
+
+    it('lets any other insert failure through as it is', async () => {
+      insertFails = new Error('connection lost');
+      await expect(service.createAccount(dto, actor)).rejects.toThrow('connection lost');
+    });
+  });
+
   it('writes only the account row — no UserCreated (a customer sign-up event) goes out', async () => {
-    await service.createAccount({ ...dto, tenantId: 't2' }, actor);
+    await service.createAccount(dto, actor);
     expect(inserted.map((i) => i.table)).toEqual([userServiceSchema.users]);
   });
 });

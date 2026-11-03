@@ -829,18 +829,18 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'user-service GET /cafe24/link': {
     verdict: 'SAFE',
-    evidence: 'apps/user-service/src/api/cafe24-link/cafe24-link.service.ts:370',
+    evidence: 'apps/user-service/src/api/cafe24-link/cafe24-link.service.ts:374',
     predicate: '.where(and(eq(cafe24Links.userId, userId), isNull(cafe24Links.unlinkedAt)))',
   },
   'user-service GET /cafe24/migration': {
     verdict: 'SAFE',
-    evidence: 'apps/user-service/src/api/cafe24-link/cafe24-link.service.ts:272',
+    evidence: 'apps/user-service/src/api/cafe24-link/cafe24-link.service.ts:276',
     predicate: '.where(and(eq(cafe24Links.userId, userId), isNull(cafe24Links.unlinkedAt)))',
     note: 'getMigrationItems(userId) -> lookupMigrationItem(userId, key) -> getCafe24LinkByUserId(userId) 에서 위 predicate로 스코프. 사용자 데이터 조회(getUserAndProfile)도 512행 .where(eq(users.id, userId)) 로 스코프.',
   },
   'user-service GET /cafe24/migration/:key': {
     verdict: 'SAFE',
-    evidence: 'apps/user-service/src/api/cafe24-link/cafe24-link.service.ts:272',
+    evidence: 'apps/user-service/src/api/cafe24-link/cafe24-link.service.ts:276',
     predicate: '.where(and(eq(cafe24Links.userId, userId), isNull(cafe24Links.unlinkedAt)))',
     note: 'path 의 :key 는 assertMigrationKey 로 email/name/birthday/phone 중 하나인지만 검증하는 필드명이고 리소스 식별자가 아니다. 실제 대상 스코프는 CurrentUser(JWT)의 user.id 로만 결정되며 위 predicate 를 그대로 통과한다.',
   },
@@ -852,14 +852,14 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'user-service GET /users/me': {
     verdict: 'SAFE',
-    evidence: 'apps/user-service/src/api/users/users.service.ts:63',
+    evidence: 'apps/user-service/src/api/users/users.service.ts:83',
     predicate: '.where(eq(schema.users.id, userId))',
   },
   'user-service GET /users/me/profile': {
     verdict: 'SAFE',
-    evidence: 'apps/user-service/src/api/users/users.service.ts:93',
+    evidence: 'apps/user-service/src/api/users/users.service.ts:111',
     predicate: '.where(eq(schema.users.id, userId))',
-    note: 'getUserDetails(userId) 는 getUserBaseInfo(userId)(65행 동일 predicate)와 getUserExtendedInfo(userId)(93행)를 병렬로 호출하며 둘 다 eq(schema.users.id, userId) 로 스코프된다.',
+    note: 'getUserDetails(userId) 는 getUserBaseInfo(userId)(83행 동일 predicate)와 getUserExtendedInfo(userId)(111행)를 병렬로 호출하며 둘 다 eq(schema.users.id, userId) 로 스코프된다.',
   },
   'user-service GET /beautytop/growth-notes': {
     verdict: 'SAFE',
@@ -927,15 +927,15 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'user-service POST /auth/change-password': {
     verdict: 'SAFE',
-    evidence: 'apps/user-service/src/api/auth/auth.service.ts:944',
+    evidence: 'apps/user-service/src/api/auth/auth.service.ts:960',
     predicate: '.where(eq(userServiceSchema.users.id, userId))',
-    note: 'changePassword(current, next, userId) 의 userId 는 CurrentUser(JWT)에서만 온다. 조회(944행)와 갱신(972행) 모두 같은 predicate 로 본인 행만 건드리고, 현재 비밀번호를 bcrypt 로 확인한다.',
+    note: 'changePassword(current, next, userId) 의 userId 는 CurrentUser(JWT)에서만 온다. 조회(960행)와 갱신(988행) 모두 같은 predicate 로 본인 행만 건드리고, 현재 비밀번호를 bcrypt 로 확인한다.',
   },
   'user-service POST /auth/verify-password-for-pin-reset': {
     verdict: 'SAFE',
-    evidence: 'apps/user-service/src/api/auth/auth.service.ts:999',
+    evidence: 'apps/user-service/src/api/auth/auth.service.ts:1015',
     predicate: '.where(eq(userServiceSchema.users.id, userId))',
-    note: 'verifyPasswordAndIssuePinResetToken(password, userId) 는 checkPassword(999행)로 본인 행의 비밀번호만 확인하고 sub=userId 토큰을 서명한다. userId 는 CurrentUser(JWT)에서만 온다.',
+    note: 'verifyPasswordAndIssuePinResetToken(password, userId) 는 checkPassword(1009행)로 본인 행의 비밀번호만 확인하고 sub=userId 토큰을 서명한다. userId 는 CurrentUser(JWT)에서만 온다.',
   },
   'user-service POST /auth/payment-handoff': {
     verdict: 'N/A',
@@ -951,13 +951,13 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'user-service POST /cafe24/migration/:key': {
     verdict: 'SAFE',
-    evidence: 'apps/user-service/src/api/cafe24-link/cafe24-link.service.ts:606',
+    evidence: 'apps/user-service/src/api/cafe24-link/cafe24-link.service.ts:610',
     predicate: '.where(eq(users.id, userId));',
     note: 'migrateItem(userId, key) 도 getCafe24LinkByUserId(userId)(272행)로 먼저 스코프한 뒤, applyMigration 에서 key 에 따라 users/profiles 를 userId 로 갱신한다(606/610행: users, 618행: profiles.userId onConflict, 629-635행: profiles.userId onConflict). 모두 userId(JWT) 기준.',
   },
   'user-service POST /cafe24/unlink': {
     verdict: 'SAFE',
-    evidence: 'apps/user-service/src/api/cafe24-link/cafe24-link.service.ts:301',
+    evidence: 'apps/user-service/src/api/cafe24-link/cafe24-link.service.ts:305',
     predicate: '.where(and(eq(cafe24Links.userId, userId), isNull(cafe24Links.unlinkedAt)))',
     note: '이 predicate 로 조회된 link 만 존재하며, 이후 update(308행: .where(eq(cafe24Links.id, link.id)))는 그 link.id 를 그대로 쓴다 — 최종 write 자체에 userId 재확인은 없지만 id 가 userId 스코프 조회에서만 나온다.',
   },
@@ -1026,9 +1026,15 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
     predicate: '',
     note: '역할·권한·관리자 계정 관리 화면 — 임의의 역할·사람을 고르는 것이 기능이다. 권한 상승·시스템 역할 규칙은 iam Manager 가 지킨다. 판정은 권한 키 iam.admin_user.write(첫 부여 없음 = master 만) 하나가 한다. 옛 스코프 가드를 걷어 내며 대상에 들어왔다 — 접근 범위는 권한 강제 이후와 같다.',
   },
+  'user-service POST /admin/auth/staff/:userId/password': {
+    verdict: 'SAFE',
+    evidence: 'apps/user-service/src/api/iam/staff/staff-password.manager.ts:43',
+    predicate: 'if (user.tenantId !== tenantId) throw new IamNotAccountTenantError();',
+    note: '테넌트 관리자가 자기 테넌트 계정의 비밀번호를 초기화한다(ADR-0056). 경로의 userId 는 임의 계정을 고르는 것이 기능이지만, 계정의 테넌트가 토큰 테넌트(ActorTenantReader)와 같아야 한다 — 요청이 테넌트를 지정하는 길은 없다. 직원 계정만(지금 유효한 직원 역할), 자기 자신 거절, 운영자 계정은 운영자만, 그 계정의 역할을 줄 수 있는 사람만(GrantAuthority). 권한 키 iam.admin_user.write.',
+  },
   'user-service PATCH /admin/auth/change-password': {
     verdict: 'N/A',
-    evidence: 'apps/user-service/src/api/admin/auth/auth.controller.ts:21',
+    evidence: 'apps/user-service/src/api/admin/auth/auth.controller.ts:33',
     predicate: '',
     note: '관리자 회원 관리 화면 — 임의 회원을 식별자로 고르는 것이 기능이다(고객 역할은 이 권한을 갖지 않는다). 판정은 권한 키 customer.profile.write(첫 부여: admin) 하나가 한다. 옛 스코프 가드를 걷어 내며 대상에 들어왔다 — 접근 범위는 권한 강제 이후와 같다.',
   },
@@ -1136,61 +1142,67 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'user-service GET /admin/platform/tenants': {
     verdict: 'N/A',
-    evidence: 'apps/user-service/src/api/iam/platform/platform.controller.ts:38',
+    evidence: 'apps/user-service/src/api/iam/platform/platform.controller.ts:36',
     predicate: '',
     note: '플랫폼 운영자의 테넌트 관리 — 임의의 테넌트를 고르는 것이 기능이다. 라우트 문은 권한 키 iam.tenant.read(첫 부여 없음 = master 만)이고, 판정은 PlatformTenantReader 가 운영자 성질(users.is_platform_operator)로 한다 — 테넌트 안의 master 가 키를 가져도 운영자가 아니면 403.',
   },
   'user-service GET /admin/platform/tenants/:tenantId': {
     verdict: 'N/A',
-    evidence: 'apps/user-service/src/api/iam/platform/platform.controller.ts:45',
+    evidence: 'apps/user-service/src/api/iam/platform/platform.controller.ts:43',
     predicate: '',
     note: '플랫폼 운영자의 테넌트 관리 — 임의의 테넌트를 고르는 것이 기능이다. 라우트 문은 권한 키 iam.tenant.read(첫 부여 없음 = master 만)이고, 판정은 PlatformTenantReader 가 운영자 성질(users.is_platform_operator)로 한다 — 테넌트 안의 master 가 키를 가져도 운영자가 아니면 403.',
   },
   'user-service POST /admin/platform/tenants': {
     verdict: 'N/A',
-    evidence: 'apps/user-service/src/api/iam/platform/platform.controller.ts:52',
+    evidence: 'apps/user-service/src/api/iam/platform/platform.controller.ts:50',
     predicate: '',
     note: '플랫폼 운영자의 테넌트 관리 — 임의의 테넌트·계정을 고르는 것이 기능이다. 라우트 문은 권한 키 iam.tenant.write(첫 부여 없음 = master 만)이고, 판정은 iam Manager(PlatformTenantManager·PlatformOperatorManager)가 트랜잭션 안에서 운영자 성질(users.is_platform_operator)로 한다 — 테넌트 안의 master 가 키를 가져도 운영자가 아니면 403.',
   },
   'user-service PUT /admin/platform/tenants/:tenantId/status': {
     verdict: 'N/A',
-    evidence: 'apps/user-service/src/api/iam/platform/platform.controller.ts:59',
+    evidence: 'apps/user-service/src/api/iam/platform/platform.controller.ts:57',
     predicate: '',
     note: '플랫폼 운영자의 테넌트 관리 — 임의의 테넌트·계정을 고르는 것이 기능이다. 라우트 문은 권한 키 iam.tenant.write(첫 부여 없음 = master 만)이고, 판정은 iam Manager(PlatformTenantManager·PlatformOperatorManager)가 트랜잭션 안에서 운영자 성질(users.is_platform_operator)로 한다 — 테넌트 안의 master 가 키를 가져도 운영자가 아니면 403.',
   },
   'user-service DELETE /admin/platform/tenants/:tenantId': {
     verdict: 'N/A',
-    evidence: 'apps/user-service/src/api/iam/platform/platform.controller.ts:70',
+    evidence: 'apps/user-service/src/api/iam/platform/platform.controller.ts:69',
     predicate: '',
     note: '플랫폼 운영자의 테넌트 관리 — 임의의 테넌트·계정을 고르는 것이 기능이다. 라우트 문은 권한 키 iam.tenant.write(첫 부여 없음 = master 만)이고, 판정은 iam Manager(PlatformTenantManager·PlatformOperatorManager)가 트랜잭션 안에서 운영자 성질(users.is_platform_operator)로 한다 — 테넌트 안의 master 가 키를 가져도 운영자가 아니면 403.',
   },
   'user-service POST /admin/platform/tenants/:tenantId/domains': {
     verdict: 'N/A',
-    evidence: 'apps/user-service/src/api/iam/platform/platform.controller.ts:70',
+    evidence: 'apps/user-service/src/api/iam/platform/platform.controller.ts:76',
     predicate: '',
     note: '플랫폼 운영자의 테넌트 관리 — 임의의 테넌트를 고르는 것이 기능이다. 라우트 문은 권한 키 iam.tenant.write(첫 부여 없음 = master 만)이고, 판정은 PlatformTenantManager 가 트랜잭션 안에서 운영자 성질(users.is_platform_operator)로 한다. 다른 테넌트의 도메인이면 409.',
   },
-  'user-service POST /admin/platform/tenants/:tenantId/members': {
-    verdict: 'N/A',
-    evidence: 'apps/user-service/src/api/iam/platform/platform.controller.ts:78',
-    predicate: '',
-    note: '플랫폼 운영자의 테넌트 관리 — 임의의 테넌트·계정을 고르는 것이 기능이다. 라우트 문은 권한 키 iam.tenant.write(첫 부여 없음 = master 만)이고, 판정은 iam Manager(PlatformTenantManager·PlatformOperatorManager)가 트랜잭션 안에서 운영자 성질(users.is_platform_operator)로 한다 — 테넌트 안의 master 가 키를 가져도 운영자가 아니면 403.',
-  },
   'user-service POST /admin/platform/tenants/:tenantId/oauth-clients/:clientId/uris': {
     verdict: 'N/A',
-    evidence: 'apps/user-service/src/api/iam/platform/platform.controller.ts:90',
+    evidence: 'apps/user-service/src/api/iam/platform/platform.controller.ts:88',
     predicate: '',
     note: '플랫폼 운영자의 테넌트 관리 — 임의의 테넌트·계정을 고르는 것이 기능이다. 라우트 문은 권한 키 iam.tenant.write(첫 부여 없음 = master 만)이고, 판정은 iam Manager(PlatformTenantManager·PlatformOperatorManager)가 트랜잭션 안에서 운영자 성질(users.is_platform_operator)로 한다 — 테넌트 안의 master 가 키를 가져도 운영자가 아니면 403.',
   },
-  'user-service POST /admin/platform/tenants/:tenantId/users/:userId/password': {
+  'user-service GET /admin/platform/tenants/:tenantId/masters': {
     verdict: 'N/A',
-    evidence: 'apps/user-service/src/api/iam/platform/platform.controller.ts:103',
+    evidence: 'apps/user-service/src/api/iam/platform/platform.controller.ts:100',
     predicate: '',
-    note: '플랫폼 운영자의 테넌트 관리 — 임의의 테넌트·계정을 고르는 것이 기능이다. 라우트 문은 권한 키 iam.tenant.write(첫 부여 없음 = master 만)이고, 판정은 iam Manager(PlatformTenantManager·PlatformOperatorManager)가 트랜잭션 안에서 운영자 성질(users.is_platform_operator)로 한다 — 테넌트 안의 master 가 키를 가져도 운영자가 아니면 403.',
+    note: '운영자가 다른 테넌트 계정에 닿는 두 일(ADR-0056)의 재실행 판정 — 그 테넌트의 master 아이디만. 라우트 문은 iam.tenant.read 이고 판정은 PlatformTenantManager 가 운영자 성질로 한다.',
+  },
+  'user-service POST /admin/platform/tenants/:tenantId/first-master': {
+    verdict: 'N/A',
+    evidence: 'apps/user-service/src/api/iam/platform/platform.controller.ts:109',
+    predicate: '',
+    note: '운영자가 다른 테넌트 계정에 닿는 두 일 중 하나(ADR-0056) — 그 테넌트에 master 가 없을 때만, 그 테넌트의 계정으로. 플랫폼 운영자의 테넌트 관리 — 임의의 테넌트·계정을 고르는 것이 기능이다. 라우트 문은 권한 키 iam.tenant.write(첫 부여 없음 = master 만)이고, 판정은 iam Manager(PlatformTenantManager·PlatformOperatorManager)가 트랜잭션 안에서 운영자 성질(users.is_platform_operator)로 한다 — 테넌트 안의 master 가 키를 가져도 운영자가 아니면 403.',
+  },
+  'user-service POST /admin/platform/tenants/:tenantId/masters/:userId/password': {
+    verdict: 'N/A',
+    evidence: 'apps/user-service/src/api/iam/platform/platform.controller.ts:122',
+    predicate: '',
+    note: '운영자가 다른 테넌트 계정에 닿는 두 일 중 하나(ADR-0056) — 대상은 지금 그 테넌트의 master 인 그 테넌트 계정뿐(아니면 404·409). 플랫폼 운영자의 테넌트 관리 — 임의의 테넌트·계정을 고르는 것이 기능이다. 라우트 문은 권한 키 iam.tenant.write(첫 부여 없음 = master 만)이고, 판정은 iam Manager(PlatformTenantManager·PlatformOperatorManager)가 트랜잭션 안에서 운영자 성질(users.is_platform_operator)로 한다 — 테넌트 안의 master 가 키를 가져도 운영자가 아니면 403.',
   },
   'user-service PUT /admin/platform/operators/:userId': {
     verdict: 'N/A',
-    evidence: 'apps/user-service/src/api/iam/platform/platform.controller.ts:115',
+    evidence: 'apps/user-service/src/api/iam/platform/platform.controller.ts:135',
     predicate: '',
     note: '플랫폼 운영자의 테넌트 관리 — 임의의 테넌트·계정을 고르는 것이 기능이다. 라우트 문은 권한 키 iam.tenant.write(첫 부여 없음 = master 만)이고, 판정은 iam Manager(PlatformTenantManager·PlatformOperatorManager)가 트랜잭션 안에서 운영자 성질(users.is_platform_operator)로 한다 — 테넌트 안의 master 가 키를 가져도 운영자가 아니면 403.',
   },
@@ -1670,7 +1682,7 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'user-service PATCH /users/me': {
     verdict: 'SAFE',
-    evidence: 'apps/user-service/src/api/users/users.service.ts:357',
+    evidence: 'apps/user-service/src/api/users/users.service.ts:451',
     predicate: '.where(eq(schema.users.id, userId))',
     note: '본인 프로필 수정. 핸들러가 @CurrentUser() user.id(서명 검증된 토큰)만 넘기고 경로·바디로 대상 회원을 받지 않는다. 옛 스코프 가드를 걷어 내며 대상에 들어왔다.',
   },
@@ -1732,15 +1744,15 @@ const keyOf = (r: AuditRow): string => `${r.app} ${r.verb} ${r.route}`;
 describe('IDOR 검사 대상 집합', () => {
   it('감사 스크립트가 idorTarget 을 내보낸다', () => {
     const targets = runAudit().filter((r) => r.idorTarget);
-    expect(targets).toHaveLength(281);
+    expect(targets).toHaveLength(283);
   });
 
   // search 와 analytics 가 둘 다 `GET /health` 이고, user-service 와 file-service 가 둘 다
   // `POST /files/upload` 다. `<VERB> <route>` 로 키를 만들면 그만큼 뭉개지고 스냅샷이 조용히 잃는다.
   it('키에 app 이 들어가야 충돌하지 않는다', () => {
     const targets = runAudit().filter((r) => r.idorTarget);
-    expect(new Set(targets.map(keyOf)).size).toBe(281);
-    expect(new Set(targets.map((r) => `${r.verb} ${r.route}`)).size).toBe(279);
+    expect(new Set(targets.map(keyOf)).size).toBe(283);
+    expect(new Set(targets.map((r) => `${r.verb} ${r.route}`)).size).toBe(281);
   });
 
   it('감사 스크립트의 대상 집합과 명단이 정확히 일치한다', () => {

@@ -6,8 +6,9 @@ import { messageOf, StepRefused, type CreationStep } from './runner';
  * 로컬은 `scripts/local/create-tenant/`, 라이브는 `./live/`. 라이브에만 있는 포트(버킷 접근 권한·인증서·칸 Secret·
  * 격리 실측)가 있으면 그 단계가 끼고, 없으면(로컬) 23 의 단계 그대로다.
  *
- * 🔴 역할·계정·소속·부여는 `OperatorApi`(iam Manager 를 거치는 운영자 API)로만 만든다. user-service DB 에 직접 쓰지 않는다 —
- * 권한 상승 방지와 변경 이력이 그 길에만 있다.
+ * 🔴 역할·계정·부여는 iam Manager 를 거치는 API 로만 만든다. user-service DB 에 직접 쓰지 않는다 — 권한 상승 방지와 변경 이력이
+ * 그 길에만 있다. 계정은 그 테넌트의 것이라(ADR-0056) 운영자(`OperatorApi`)가 그 테넌트 계정에 닿는 일은 «첫 master 만들기»·
+ * «master 비번 비상 초기화» 둘뿐이다 — 점검 계정이 그 첫 master 이고, 직원 명단은 그 master 의 토큰(`TenantMasterApi`)으로 만든다.
  */
 export interface TenantPlan {
   entry: TenantEntry;
@@ -17,9 +18,9 @@ export interface TenantPlan {
   staffClient: { clientId: string; redirectUris: string[]; postLogoutRedirectUris: string[] };
   /** 역할은 전역이다 — 이름은 테넌트 이름이 아닌 일반 이름 */
   role: { name: string; displayName: string; description: string; landingPath: string; permissions: string[] };
-  /** 점검 계정 — 비밀번호 변경 강제 없음, 비밀번호는 `CheckAccountSecret` 에만 */
+  /** 점검 계정 = 그 테넌트의 첫 master(우리 것). 비밀번호 변경 강제 없음, 비밀번호는 `CheckAccountSecret` 에만 */
   checkAccount: { loginId: string; username: string; nickname: string; email: string };
-  /** 직원 명단 — «활성 + 격리 실측 통과» 뒤에만 만든다. 첫 로그인에 비밀번호 변경 강제. 로컬은 없다 */
+  /** 직원 명단 — «활성 + 격리 실측 통과» 뒤에만 점검 master 의 토큰으로 만든다. 첫 로그인에 비밀번호 변경 강제. 로컬은 없다 */
   staff?: StaffMember[];
 }
 
@@ -45,7 +46,7 @@ export interface OperatorApi {
     id: string,
   ): Promise<{ slug: string; status: TenantStatus; domains: { host: string; app: TenantDomainApp | null }[] } | null>;
   createTenant(input: { id: string; slug: string; displayName: string; domains: TenantDomain[] }): Promise<void>;
-  /** 준비 상태만 지워진다(소속·부여·도메인·리디렉트 주소는 user-service 가 함께 걷는다) */
+  /** 준비 상태이고 그 테넌트의 계정이 없을 때만 지워진다(부여·도메인·리디렉트 주소는 user-service 가 함께 걷는다) */
   deleteTenant(id: string): Promise<void>;
   /** 이미 있는 테넌트에 도메인 하나 — 이미 그 테넌트 것이고 앱이 같으면 아무것도 안 한다, 앱이 비었으면 채운다 */
   addDomain(tenantId: string, domain: TenantDomain): Promise<void>;
@@ -59,18 +60,19 @@ export interface OperatorApi {
   findRole(
     name: string,
   ): Promise<{ roleId: string; version: number; landingPath: string | null; permissions: string[] } | null>;
-  createRole(input: TenantPlan['role'] & { tenantId: string }): Promise<void>;
+  /** 역할 정의는 전역이다(이력은 운영자 테넌트) */
+  createRole(input: TenantPlan['role']): Promise<void>;
   replaceRolePermissions(roleId: string, permissions: string[], version: number): Promise<void>;
   setRoleLandingPath(roleId: string, landingPath: string): Promise<void>;
-  /** 그 역할을 받은 사람(테넌트를 가리지 않는다 — 운영자 API 의 역할 구성원 조회가 테넌트를 안 싣는다) */
-  roleMemberLoginIds(roleId: string): Promise<string[]>;
-  findUserIdByLoginId(loginId: string): Promise<string | null>;
-  createStaff(
-    input: TenantPlan['checkAccount'] & { roleId: string; tenantId: string; forcePasswordChange: boolean },
+  /** 그 테넌트에서 지금 master 인 계정 — 첫 master 단계의 재실행 판정 */
+  tenantMasters(tenantId: string): Promise<{ userId: string; loginId: string }[]>;
+  /** 그 테넌트의 첫 master — master 가 이미 있으면 거절된다. 그 아이디의 계정이 그 테넌트에 있으면 그 계정을 세운다 */
+  createFirstMaster(
+    tenantId: string,
+    input: TenantPlan['checkAccount'] & { forcePasswordChange: boolean },
   ): Promise<{ userId: string; initialPassword: string }>;
-  addMember(tenantId: string, userId: string): Promise<void>;
-  addRoleMembers(roleId: string, tenantId: string, userIds: string[]): Promise<void>;
-  reissuePassword(tenantId: string, userId: string, forcePasswordChange: boolean): Promise<string>;
+  /** 그 테넌트 master 의 비밀번호 비상 초기화 — 새 비밀번호를 돌려준다 */
+  resetMasterPassword(tenantId: string, userId: string, forcePasswordChange: boolean): Promise<string>;
 }
 
 const hasDomain = (mine: readonly { host: string; app: TenantDomainApp | null }[], d: TenantDomain) =>
@@ -149,6 +151,20 @@ export interface IsolationGate {
   readonly suspendCommand: string;
 }
 
+/** 그 테넌트 안의 일 — 점검 master 의 토큰으로 부른다(운영자 토큰이 아니다). 직원 명단 단계만 쓴다 */
+export interface TenantMasterApi {
+  /** 그 역할을 받은 이 테넌트의 계정 */
+  roleMemberLoginIds(roleId: string): Promise<string[]>;
+  /** 첫 로그인 변경 강제. 아이디·이메일을 이 테넌트의 다른 계정이 쓰면 null(409) */
+  createStaff(input: {
+    loginId: string;
+    username: string;
+    nickname: string;
+    email: string;
+    roleId: string;
+  }): Promise<{ userId: string; initialPassword: string } | null>;
+}
+
 export interface CheckAccountSecret {
   has(): Promise<boolean>;
   save(loginId: string, password: string): Promise<void>;
@@ -169,6 +185,8 @@ export interface CreationPorts {
   /** 테넌트 도메인 칸 Secret 셋씩(두 앱) — 목록 바로 앞. 18 의 칸 켜기 ① */
   domainSlotSecrets?: HumanStep;
   isolation?: IsolationGate;
+  /** 점검 master 로 로그인한 그 테넌트 안의 API — 직원 명단 단계 */
+  tenantMaster?: TenantMasterApi;
   /** 만든 직후 확인에 더하는 테넌트 도메인 실측(18 의 칸 켠 첫 배포 실측) — 문제 목록 */
   domainProbe?: { problems(): Promise<string[]> };
   /** 직원 초기 비밀번호를 터미널에 한 번만. 파일·로그에 남기지 않는다 */
@@ -288,7 +306,7 @@ export function buildCreationSteps(plan: TenantPlan, ports: CreationPorts): Crea
       async run() {
         const role = await operator.findRole(plan.role.name);
         if (!role) {
-          await operator.createRole({ ...plan.role, tenantId: entry.id });
+          await operator.createRole(plan.role);
           return;
         }
         if (!sameSet(role.permissions, plan.role.permissions)) {
@@ -296,33 +314,6 @@ export function buildCreationSteps(plan: TenantPlan, ports: CreationPorts): Crea
         }
         if (role.landingPath !== plan.role.landingPath)
           await operator.setRoleLandingPath(role.roleId, plan.role.landingPath);
-      },
-    },
-    {
-      // 계정은 전역이라 되돌리기 뒤에도 남는다 — 다시 돌리면 «있으면 소속 → 부여 → 비밀번호 재발급»으로 이어 간다.
-      name: `점검 계정 ${plan.checkAccount.loginId} (비밀번호 변경 강제 없음)`,
-      // 테넌트를 지우면 그 부여도 걷히므로, 되돌리기 뒤에는 구성원에서 빠져 이 단계가 다시 돈다.
-      async isDone() {
-        const members = await operator.roleMemberLoginIds(await roleId());
-        return members.includes(plan.checkAccount.loginId) && (await ports.checkSecret.has());
-      },
-      async run() {
-        const role = await roleId();
-        const existing = await operator.findUserIdByLoginId(plan.checkAccount.loginId);
-        if (!existing) {
-          const made = await operator.createStaff({
-            ...plan.checkAccount,
-            roleId: role,
-            tenantId: entry.id,
-            forcePasswordChange: false,
-          });
-          await ports.checkSecret.save(plan.checkAccount.loginId, made.initialPassword);
-          return;
-        }
-        await operator.addMember(entry.id, existing);
-        await operator.addRoleMembers(role, entry.id, [existing]);
-        const password = await operator.reissuePassword(entry.id, existing, false);
-        await ports.checkSecret.save(plan.checkAccount.loginId, password);
       },
     },
     {
@@ -347,6 +338,8 @@ export function buildCreationSteps(plan: TenantPlan, ports: CreationPorts): Crea
       run: () => ports.list.add(entry),
       undo: () => ports.list.remove(entry.id),
     },
+    // 계정은 그 테넌트의 것이라(ADR-0056) 계정이 생긴 테넌트는 되돌리기(테넌트 행 삭제)로 지울 수 없다 — 그래서 목록 뒤에 둔다.
+    firstMasterStep(plan, ports),
     {
       name: ports.deployment.describe(),
       isDone: async () => {
@@ -364,12 +357,44 @@ export function buildCreationSteps(plan: TenantPlan, ports: CreationPorts): Crea
         await operator.setTenantStatus(entry.id, 'active');
       },
     },
-    ...optionalSteps(plan.staff?.length ? staffStep(plan, plan.staff, ports, tenantStatus, roleId) : undefined),
+    ...optionalSteps(plan.staff?.length ? staffStep(plan.staff, ports, tenantStatus, roleId) : undefined),
   ];
 }
 
 function optionalSteps(...steps: (CreationStep | undefined | false)[]): CreationStep[] {
   return steps.filter((s): s is CreationStep => !!s);
+}
+
+/**
+ * 점검 계정 = 그 테넌트의 첫 master. 운영자가 그 테넌트 계정에 닿는 두 일만 쓴다: 없으면 첫 master 만들기, 그 아이디의 master 가
+ * 있으면(Secret 이 비었거나 다른 계정 것) 비상 초기화. 다른 아이디의 master 가 있으면 손대지 않는다 — 그 테넌트는 이미 주인이 있다.
+ */
+function firstMasterStep(plan: TenantPlan, ports: CreationPorts): CreationStep {
+  const { operator, checkSecret } = ports;
+  const tenantId = plan.entry.id;
+  const { loginId } = plan.checkAccount;
+  return {
+    name: `첫 master = 점검 계정 ${loginId} (비밀번호 변경 강제 없음)`,
+    async isDone() {
+      const masters = await operator.tenantMasters(tenantId);
+      return masters.some((m) => m.loginId === loginId) && (await checkSecret.has());
+    },
+    async run() {
+      const masters = await operator.tenantMasters(tenantId);
+      const mine = masters.find((m) => m.loginId === loginId);
+      if (mine) {
+        await checkSecret.save(loginId, await operator.resetMasterPassword(tenantId, mine.userId, false));
+        return;
+      }
+      if (masters.length > 0) {
+        throw new StepRefused(
+          `테넌트 ${tenantId} 에 이미 다른 master(${masters.map((m) => m.loginId).join(', ')})가 있다 — 계획의 점검 계정 아이디를 그 master 로 맞추거나 사람이 본다`,
+        );
+      }
+      const made = await operator.createFirstMaster(tenantId, { ...plan.checkAccount, forcePasswordChange: false });
+      await checkSecret.save(loginId, made.initialPassword);
+    },
+  };
 }
 
 function slotSecretsStep(human: HumanStep | undefined): CreationStep | undefined {
@@ -409,23 +434,27 @@ function liveBucketAndCertSteps(plan: TenantPlan, ports: CreationPorts): Creatio
 
 /**
  * 직원 명단 — 목록에 넣은 뒤라 되돌리지 않는다. «활성 + 격리 실측 통과»를 매번 그 자리에서 확인한다
- * (지난 실행의 통과를 믿지 않는다 — 그 사이 배포가 문을 바꿨을 수 있다).
+ * (지난 실행의 통과를 믿지 않는다 — 그 사이 배포가 문을 바꿨을 수 있다). 운영자가 아니라 그 테넌트의 점검 master 가 만든다
+ * (ADR-0056 — 테넌트 안의 직원은 그 테넌트 master 의 일이다).
  */
 function staffStep(
-  plan: TenantPlan,
   staff: StaffMember[],
   ports: CreationPorts,
   tenantStatus: () => Promise<TenantStatus | null>,
   roleId: () => Promise<string>,
 ): CreationStep {
-  const { operator } = ports;
+  const master = () => {
+    if (!ports.tenantMaster) throw new Error('점검 master 포트가 없다 — 직원 계정은 라이브 경로에서만 만든다');
+    return ports.tenantMaster;
+  };
   const missing = async () => {
-    const members = await operator.roleMemberLoginIds(await roleId());
+    const members = await master().roleMemberLoginIds(await roleId());
     return staff.filter((m) => !members.includes(m.loginId));
   };
   return {
     name: `직원 계정 ${staff.length}명 (첫 로그인 비밀번호 변경 강제)`,
-    isDone: async () => (await missing()).length === 0,
+    // 테넌트가 «활성» 전이면 점검 master 가 로그인할 수 없다 — 그때는 묻지 않고 «아직»이다.
+    isDone: async () => (await tenantStatus()) === 'active' && (await missing()).length === 0,
     async run() {
       const status = await tenantStatus();
       if (status !== 'active')
@@ -439,24 +468,23 @@ function staffStep(
         );
       }
       const role = await roleId();
-      const todo = await missing();
-      // 먼저 다 본다 — 남의 계정이 하나라도 있으면 아무도 만들지 않는다(반쯤 만든 명단을 남기지 않게).
-      for (const m of todo) {
-        if (await operator.findUserIdByLoginId(m.loginId)) {
-          throw new StepRefused(`직원 아이디 ${m.loginId} 가 이미 다른 계정이다 — 명단의 아이디를 바꿀 것`);
-        }
-      }
-      for (const m of todo) {
-        const made = await operator.createStaff({
+      const made: string[] = [];
+      for (const m of await missing()) {
+        const account = await master().createStaff({
           loginId: m.loginId,
           username: m.username,
           nickname: m.username,
           email: m.email,
           roleId: role,
-          tenantId: plan.entry.id,
-          forcePasswordChange: true,
         });
-        ports.printInitialPassword(m.loginId, made.initialPassword);
+        if (!account) {
+          throw new StepRefused(
+            `직원 아이디 ${m.loginId}(또는 이메일)를 이 테넌트의 다른 계정이 쓴다 — 명단을 바꿀 것` +
+              (made.length > 0 ? ` (이번에 만든 사람: ${made.join(', ')} — 다시 돌리면 건너뛴다)` : ''),
+          );
+        }
+        made.push(m.loginId);
+        ports.printInitialPassword(m.loginId, account.initialPassword);
       }
     },
   };

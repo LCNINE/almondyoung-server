@@ -4,7 +4,12 @@ import { Injectable } from '@nestjs/common';
 import type { UserServiceSchema, UserServiceTx } from 'apps/user-service/database/drizzle/schema';
 import { IamAuditCreator } from '../audit/iam-audit.creator';
 import type { IamActor } from '../iam-actor';
-import { IamLastOperatorError, IamOperatorOnlyError, IamSelfChangeError } from '../iam.errors';
+import {
+  IamLastOperatorError,
+  IamNotAccountTenantError,
+  IamOperatorOnlyError,
+  IamSelfChangeError,
+} from '../iam.errors';
 import { RoleRepository } from '../roles/role.repository';
 import { ActorTenantReader } from './actor-tenant.reader';
 import { TenancyRepository } from './tenancy.repository';
@@ -32,18 +37,14 @@ export class PlatformOperatorManager {
   }
 
   /**
-   * 관리 API 가 일할 테넌트. 요청이 테넌트를 지정하지 않으면 요청자 테넌트, 지정하면 운영자만 그 테넌트로 일한다 — 다른 테넌트의
-   * 계정·부여를 만드는 것은 테넌트 역할이 아니라 운영자의 일이다.
+   * 관리 API 가 일할 테넌트 = 요청자 테넌트. 운영자도 다른 테넌트를 지정해 일하지 않는다(ADR-0056) — 다른 테넌트 계정에 닿는 일은
+   * 운영자 API 의 두 라우트(첫 master 만들기·master 비번 비상 초기화)뿐이다.
    */
-  async workingTenant(actor: IamActor, requested: string | undefined, tx: UserServiceTx): Promise<string> {
-    if (requested === undefined) return this.actorTenant.resolve(actor, tx);
-    await this.assertOperator(actor, tx);
-    if (!(await this.tenancy.tenantExists(requested, tx)))
-      throw new NotFoundError(`테넌트를 찾을 수 없습니다: ${requested}`);
-    return requested;
+  workingTenant(actor: IamActor, tx: UserServiceTx): Promise<string> {
+    return this.actorTenant.resolve(actor, tx);
   }
 
-  /** 운영자 성질을 주거나 거둔다. 운영자만, 남에게만 한다. */
+  /** 운영자 성질을 주거나 거둔다. 운영자만, 남에게만, 주는 것은 자기 테넌트의 계정에만 한다. */
   async setOperator(actor: IamActor, userId: string, isOperator: boolean): Promise<void> {
     await this.dbService.run(async (tx) => {
       await this.assertOperator(actor, tx);
@@ -53,6 +54,11 @@ export class PlatformOperatorManager {
 
       const was = await this.tenancy.isOperator(userId, tx);
       if (was === isOperator) return;
+      // 운영자는 운영자 테넌트의 계정이다 — 다른 테넌트 계정을 운영자로 세우면 그 테넌트 안에서 플랫폼 일을 하게 된다.
+      // 거두기는 막지 않는다(어긋난 운영자를 걷는 길).
+      if (isOperator && user.tenantId !== (await this.actorTenant.resolve(actor, tx))) {
+        throw new IamNotAccountTenantError();
+      }
       if (!isOperator) await this.assertAnotherRemains(tx, userId);
 
       await this.tenancy.setOperator(userId, isOperator, tx);

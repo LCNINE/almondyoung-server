@@ -69,12 +69,20 @@ describe('deadLetterFromDlq — .dlq 메시지에 테넌트를 붙여 실패 행
     ['봉투를 못 알아본다', dlqMessage({}, { raw: 'not json' })],
     ['목록에 있는 다른 테넌트의 봉투', dlqMessage({}, envelope({ tenantId: 'a' }))],
     ['DLQ 메시지 모양이 아니다', { hello: 1 }],
-    [
-      '계정 이벤트(테넌트 맥락 없이 처리돼야 한다)',
-      dlqMessage({ originalTopic: 'users.events.v1' }, { ...envelope(), messageType: 'UserDeleted' }),
-    ],
   ])('%s 은 가져오지 않는다', (_name, message) => {
     expect(deadLetterFromDlq(message, target).kind).toBe('skip');
+  });
+
+  it('계정 탈퇴(UserDeleted)도 테넌트 이벤트라 지목한 테넌트를 붙여 가져온다', () => {
+    const verdict = deadLetterFromDlq(
+      dlqMessage({ originalTopic: 'users.events.v1' }, { ...envelope(), messageType: 'UserDeleted' }),
+      target,
+    );
+    expect(verdict.kind === 'import' && verdict.row.envelope).toEqual({
+      ...envelope(),
+      messageType: 'UserDeleted',
+      metadata: { tenantId: 'b' },
+    });
   });
 
   it('목록에 없는 테넌트로는 붙이지 않는다', () => {

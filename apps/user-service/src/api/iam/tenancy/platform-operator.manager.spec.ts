@@ -2,7 +2,12 @@ import { DbService } from '@app/db';
 import { NotFoundError } from '@app/shared';
 import { Test } from '@nestjs/testing';
 import { IamAuditCreator } from '../audit/iam-audit.creator';
-import { IamLastOperatorError, IamOperatorOnlyError, IamSelfChangeError } from '../iam.errors';
+import {
+  IamLastOperatorError,
+  IamNotAccountTenantError,
+  IamOperatorOnlyError,
+  IamSelfChangeError,
+} from '../iam.errors';
 import { RoleRepository } from '../roles/role.repository';
 import { ActorTenantReader } from './actor-tenant.reader';
 import { PlatformOperatorManager } from './platform-operator.manager';
@@ -14,7 +19,6 @@ describe('PlatformOperatorManager', () => {
     lockOperators: jest.fn(),
     countSignInOperators: jest.fn(),
     setOperator: jest.fn(),
-    tenantExists: jest.fn(),
   };
   const roles = { findUser: jest.fn() };
   const audit = { record: jest.fn() };
@@ -28,7 +32,7 @@ describe('PlatformOperatorManager', () => {
     run.mockImplementation(async (work: (t: unknown) => Promise<unknown>) => work(tx));
     tenancy.isOperator.mockImplementation(async (userId: string) => userId === 'u-op' || userId === 'u-target');
     tenancy.countSignInOperators.mockResolvedValue(1);
-    roles.findUser.mockResolvedValue({ id: 'u-target', loginId: 'kim', username: '김', canSignIn: true });
+    roles.findUser.mockResolvedValue({ id: 'u-target', loginId: 'kim', username: '김', canSignIn: true, tenantId: '1' });
     const module = await Test.createTestingModule({
       providers: [
         PlatformOperatorManager,
@@ -86,6 +90,13 @@ describe('PlatformOperatorManager', () => {
     await expect(manager.setOperator(operator, 'u-x', true)).rejects.toBeInstanceOf(NotFoundError);
   });
 
+  it("refuses an account of another tenant — operators are accounts of the operator's own tenant", async () => {
+    roles.findUser.mockResolvedValue({ id: 'u-target', loginId: 'kim', username: '김', canSignIn: true, tenantId: 't2' });
+    tenancy.isOperator.mockImplementation(async (userId: string) => userId === 'u-op');
+    await expect(manager.setOperator(operator, 'u-target', true)).rejects.toBeInstanceOf(IamNotAccountTenantError);
+    expect(tenancy.setOperator).not.toHaveBeenCalled();
+  });
+
   it('writes nothing when the status does not change', async () => {
     await manager.setOperator(operator, 'u-target', true);
     expect(tenancy.setOperator).not.toHaveBeenCalled();
@@ -117,25 +128,10 @@ describe('PlatformOperatorManager', () => {
   });
 
   describe('workingTenant', () => {
-    const notOperator = { ...operator, userId: 'u-plain' };
-
-    it("is the actor's own tenant when the request names none", async () => {
-      await expect(manager.workingTenant(notOperator, undefined, tx as never)).resolves.toBe('1');
-    });
-
-    it('lets an operator work in a named tenant', async () => {
-      tenancy.tenantExists.mockResolvedValue(true);
-      await expect(manager.workingTenant(operator, 't2', tx as never)).resolves.toBe('t2');
-    });
-
-    it('refuses to let anyone else name a tenant', async () => {
-      tenancy.tenantExists.mockResolvedValue(true);
-      await expect(manager.workingTenant(notOperator, 't2', tx as never)).rejects.toBeInstanceOf(IamOperatorOnlyError);
-    });
-
-    it('reports a tenant that does not exist', async () => {
-      tenancy.tenantExists.mockResolvedValue(false);
-      await expect(manager.workingTenant(operator, 'nope', tx as never)).rejects.toBeInstanceOf(NotFoundError);
+    // 운영자에게도 «요청 테넌트로 일하기»는 없다(ADR-0056) — 다른 테넌트 계정에 닿는 두 일은 운영자 API 의 자기 라우트다.
+    it("is the actor's own tenant, operator or not", async () => {
+      await expect(manager.workingTenant({ ...operator, userId: 'u-plain' }, tx as never)).resolves.toBe('1');
+      await expect(manager.workingTenant(operator, tx as never)).resolves.toBe('1');
     });
   });
 });
