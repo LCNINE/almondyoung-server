@@ -40,6 +40,8 @@ function mockMutation() {
 
 jest.mock('@/lib/services/orders/queries', () => ({
   useConsolidationProgress: (shipmentId: string) => mockProgress(shipmentId),
+  useConsolidationProgresses: (ids: string[]) =>
+    ids.map((id) => mockProgress(id).data),
   useOutboundBatchV2: () => ({
     data: { name: '정중식 테스트 v2', batchNumber: 'B-001' },
   }),
@@ -416,5 +418,89 @@ describe('합포장 중 기존 무효화 버튼', () => {
     expectVoidAndReissueLocked(
       '합포장 진행 상태를 확인하지 못했어요. 새로고침해 주세요'
     );
+  });
+});
+
+describe('합쳐진 뒤 상자 선택', () => {
+  const completed = (
+    target: string,
+    orderNos: string[]
+  ): ConsolidationProgressResponse => ({
+    operationId: `op-${target}`,
+    status: 'completed',
+    targetShipmentId: target,
+    sources: orderNos.map((orderNo) => ({
+      ...source(`src-${orderNo}`),
+      orderNo,
+    })),
+  });
+
+  it('보던 원본 상자가 합쳐지면 새 상자로 옮기고 쓰지 않는 상자 목록을 접는다', () => {
+    window.history.replaceState(
+      null,
+      '',
+      '/order/fulfillments/fo-1?shipmentId=ship-a'
+    );
+    mockShipments.mockReturnValue(loaded([summary('ship-a', 'draft')]));
+    mockDetail.mockImplementation((id) => loaded(detail(id, 'draft')));
+    mockProgress.mockReturnValue({
+      data: null,
+      isSuccess: true,
+      isError: false,
+    });
+
+    const view = renderTab('ship-a');
+
+    expect(screen.getByRole('heading', { name: 'ship-a' })).toBeTruthy();
+
+    mockShipments.mockReturnValue(
+      loaded([summary('ship-a', 'superseded'), summary('ship-new', 'draft')])
+    );
+    mockProgress.mockImplementation((id) => ({
+      data: id === 'ship-a' ? completed('ship-new', ['1', '2']) : null,
+      isSuccess: true,
+      isError: false,
+    }));
+    view.rerender(<ShipmentTab fo={fo} initialShipmentId="ship-a" />);
+
+    expect(screen.getByRole('heading', { name: 'ship-new' })).toBeTruthy();
+    expect(
+      screen
+        .getByRole('button', { name: '쓰지 않는 상자 1개' })
+        .getAttribute('aria-expanded')
+    ).toBe('false');
+    expect(window.location.search).toBe('?shipmentId=ship-new');
+  });
+
+  it('합쳐진 결과 상자가 또 합쳐졌으면 마지막 상자에 완료 카드를 보인다', () => {
+    mockShipments.mockReturnValue(
+      loaded([
+        summary('box-a', 'superseded'),
+        summary('box-b', 'superseded'),
+        summary('box-c', 'superseded'),
+        summary('box-d', 'superseded'),
+        summary('box-e', 'draft'),
+      ])
+    );
+    mockDetail.mockImplementation((id) =>
+      loaded(detail(id, id === 'box-e' ? 'draft' : 'superseded'))
+    );
+    mockProgress.mockImplementation((id) => {
+      const data =
+        id === 'box-a' || id === 'box-b'
+          ? completed('box-c', ['10', '20'])
+          : id === 'box-c' || id === 'box-d'
+            ? completed('box-e', ['6275', '6314'])
+            : null;
+
+      return { data, isSuccess: true, isError: false };
+    });
+
+    renderTab();
+
+    expect(screen.getByRole('heading', { name: 'box-e' })).toBeTruthy();
+    expect(
+      screen.getByText('#6275와 #6314가 새 상자 하나로 합쳐졌어요')
+    ).toBeTruthy();
   });
 });

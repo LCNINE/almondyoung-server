@@ -42,12 +42,12 @@ describe('mergedHeading', () => {
 });
 
 describe('nextStepsAfterMerge', () => {
-  const target = (
-    overrides: Partial<Parameters<typeof nextStepsAfterMerge>[0]> = {}
-  ) => ({
+  type Target = Parameters<typeof nextStepsAfterMerge>[0];
+
+  const target = (overrides: Partial<Target> = {}): Target => ({
     status: 'draft',
-    waybills: [] as Array<{ voidedAt: string | null }>,
-    workItems: [] as Array<{ status: string }>,
+    waybills: [],
+    workItems: [],
     ...overrides,
   });
 
@@ -65,15 +65,23 @@ describe('nextStepsAfterMerge', () => {
     ).toEqual(['done', 'current', 'later']);
   });
 
-  it('취소된 송장은 발급으로 치지 않는다', () => {
+  it.each(['voided', 'failed', 'abandoned', 'pending', 'allocated'])(
+    '%s 송장은 발급으로 치지 않는다',
+    (status) => {
+      expect(
+        nextStepsAfterMerge(
+          target({ status: 'planned', waybills: [{ status }] })
+        ).map((s) => s.state)
+      ).toEqual(['done', 'current', 'later']);
+    }
+  );
+
+  it('used 송장도 발급으로 친다', () => {
     expect(
       nextStepsAfterMerge(
-        target({
-          status: 'planned',
-          waybills: [{ voidedAt: '2026-11-02T00:00:00Z' }],
-        })
+        target({ status: 'planned', waybills: [{ status: 'used' }] })
       ).map((s) => s.state)
-    ).toEqual(['done', 'current', 'later']);
+    ).toEqual(['done', 'done', 'current']);
   });
 
   it('송장이 있으면 배치 넣기가 지금 할 일이고, 빠진 항목은 넣은 것으로 안 센다', () => {
@@ -81,7 +89,7 @@ describe('nextStepsAfterMerge', () => {
       nextStepsAfterMerge(
         target({
           status: 'planned',
-          waybills: [{ voidedAt: null }],
+          waybills: [{ status: 'registered' }],
           workItems: [{ status }],
         })
       ).map((s) => s.state);

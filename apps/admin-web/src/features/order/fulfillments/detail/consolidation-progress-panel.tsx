@@ -162,7 +162,7 @@ const NEXT_STEP_HINT: Record<NextStepKey, Record<NextStepState, string>> = {
 
 export interface MergedTarget {
   status: string;
-  waybills: Array<{ voidedAt: string | null }>;
+  waybills: Array<{ status: string }>;
   workItems: Array<{ status: string }>;
 }
 

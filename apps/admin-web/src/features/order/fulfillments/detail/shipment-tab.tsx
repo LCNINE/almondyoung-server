@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   AlertTriangle,
   ChevronDown,
@@ -26,7 +26,10 @@ import {
   useFulfillmentShipments,
   useShipmentDetail,
 } from '@/lib/services/orders';
-import { useConsolidationProgress } from '@/lib/services/orders/queries';
+import {
+  useConsolidationProgress,
+  useConsolidationProgresses,
+} from '@/lib/services/orders/queries';
 import type {
   ConsolidationProgressResponse,
   FulfillmentOrderDetail,
@@ -98,6 +101,30 @@ function waybillVoidLockReason(
   return isPendingSource
     ? '합포장 진행 중에는 위 진행 안내에서 운송장을 취소해요'
     : null;
+}
+
+function resolveResultBox(
+  startId: string,
+  progressById: Map<string, ConsolidationProgressResponse | null | undefined>,
+  activeIds: Set<string>
+): string | null {
+  let id = startId;
+
+  for (let hop = 0; hop <= progressById.size; hop += 1) {
+    const progress = progressById.get(id);
+
+    if (progress?.status !== 'completed' || !progress.targetShipmentId) {
+      return null;
+    }
+
+    id = progress.targetShipmentId;
+
+    if (activeIds.has(id)) {
+      return id;
+    }
+  }
+
+  return null;
 }
 
 function ShipmentDetailView({
@@ -418,6 +445,59 @@ export function ShipmentTab({
   const selectedIsRetired = retired.some(
     (shipment) => shipment.id === selectedShipmentId
   );
+  const retiredProgress = useConsolidationProgresses(
+    retired.map((shipment) => shipment.id)
+  );
+  const progressById = new Map(
+    retired.map((shipment, index) => [shipment.id, retiredProgress[index]])
+  );
+  const mergedFromId =
+    retired.find(
+      (shipment) =>
+        progressById.get(shipment.id)?.status === 'completed' &&
+        progressById.get(shipment.id)?.targetShipmentId === selectedShipmentId
+    )?.id ?? retired[0]?.id;
+  const selectedStatus = shipments.data?.find(
+    (shipment) => shipment.id === selectedShipmentId
+  )?.status;
+  const followedId = useRef('');
+
+  useEffect(() => {
+    if (!selectedShipmentId) {
+      return;
+    }
+
+    if (selectedStatus !== 'superseded') {
+      followedId.current = selectedShipmentId;
+
+      return;
+    }
+
+    if (followedId.current !== selectedShipmentId) {
+      return;
+    }
+
+    const next = resolveResultBox(
+      selectedShipmentId,
+      progressById,
+      new Set(active.map((shipment) => shipment.id))
+    );
+
+    if (!next) {
+      return;
+    }
+
+    followedId.current = next;
+    setRequestedShipmentId(next);
+    setRetiredOpen(false);
+
+    const url = new URL(window.location.href);
+
+    if (url.searchParams.has('shipmentId')) {
+      url.searchParams.set('shipmentId', next);
+      window.history.replaceState(window.history.state, '', url);
+    }
+  });
   const detail = useShipmentDetail(selectedShipmentId);
 
   if (shipments.isLoading)
@@ -509,7 +589,7 @@ export function ShipmentTab({
         ) : detail.data ? (
           <ShipmentDetailView
             shipment={detail.data}
-            retiredShipmentId={retired[0]?.id}
+            retiredShipmentId={mergedFromId}
           />
         ) : null}
       </main>

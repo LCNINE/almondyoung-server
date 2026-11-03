@@ -1,3 +1,5 @@
+import { isWaybillIssued } from '@/lib/services/orders/waybill-policy';
+
 const OPEN_ENDING_DIGITS = new Set(['2', '4', '5', '9']);
 
 type JosaPair = [open: string, closed: string];
@@ -50,12 +52,12 @@ export interface NextStep {
 
 export function nextStepsAfterMerge(target: {
   status: string;
-  waybills: Array<{ voidedAt: string | null }>;
+  waybills: Array<{ status: string }>;
   workItems: Array<{ status: string }>;
 }): NextStep[] {
   const done: Record<NextStepKey, boolean> = {
     plan: target.status !== 'draft',
-    waybill: target.waybills.some((waybill) => !waybill.voidedAt),
+    waybill: target.waybills.some((waybill) => isWaybillIssued(waybill.status)),
     batch: target.workItems.some((item) => item.status !== 'excluded'),
   };
   const steps: Array<{ key: NextStepKey; title: string }> = [
