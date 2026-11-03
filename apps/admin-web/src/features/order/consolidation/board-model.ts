@@ -261,3 +261,26 @@ export function summarizeBulk(results: readonly BulkResult[]): string {
 
   return parts.join(' ');
 }
+
+export function unconfirmedKeys(results: readonly BulkResult[]): Set<string> {
+  return new Set(
+    results
+      .filter((result) => result.status === 'unconfirmed')
+      .map((result) => result.key)
+  );
+}
+
+export function pickableForMerge(
+  groups: readonly ConsolidationBoardGroup[],
+  selected: readonly string[],
+  results: readonly BulkResult[]
+): ConsolidationBoardGroup[] {
+  const held = unconfirmedKeys(results);
+
+  return groups.filter(
+    (group) =>
+      selected.includes(group.key) &&
+      isBulkSelectable(group) &&
+      !held.has(group.key)
+  );
+}
