@@ -205,6 +205,7 @@ medusaIntegrationTestRunner({
       expect(before.data.returns).toEqual([
         {
           return_id: mine.data.return_id,
+          display_id: expect.any(Number),
           stage: 'requested',
           requested_at: expect.any(String),
           reason: 'change_of_mind',
