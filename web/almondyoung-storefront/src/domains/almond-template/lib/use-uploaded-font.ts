@@ -15,4 +15,12 @@ export function useUploadedFont(
       setLoads((count) => count + 1)
     })
   }, [family])
+
+  // 구글 글꼴도 늦게 도착한다. 대체 글꼴로 재서 줄여 그린 글자를 다시 그린다
+  useEffect(() => {
+    const redraw = () => setLoads((count) => count + 1)
+    document.fonts?.addEventListener("loadingdone", redraw)
+
+    return () => document.fonts?.removeEventListener("loadingdone", redraw)
+  }, [])
 }
