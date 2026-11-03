@@ -1,6 +1,12 @@
 import { MotionMaskGraphic } from "./motion-mask"
 import { EffectLayerGraphic } from "./effect-layer"
 import { PhotoEffectsGraphic } from "./photo-effects"
+import {
+  ColorFilterDef,
+  GradientDef,
+  colorFilterId,
+  gradientId,
+} from "./style-defs"
 import { Fragment, memo } from "react"
 import {
   SHAPE_TEXT_TYPES,
@@ -592,8 +598,10 @@ function LayerGraphicView({ layer }: { layer: Layer }) {
   const cx = layer.x + layer.width / 2,
     cy = layer.y + layer.height / 2
   const transform = `translate(${cx} ${cy}) rotate(${layer.rotation ?? 0}) scale(${layer.flipX ? -1 : 1} ${layer.flipY ? -1 : 1}) translate(${-cx} ${-cy})`
+  const fill = layer.gradient ? `url(#${gradientId(layer)})` : layer.fill
+  const filtered = !!layer.colorFilter && layer.colorFilter.amount > 0
   const paint = {
-    fill: layer.fill,
+    fill: layer.fill === "none" ? "none" : fill,
     stroke: layer.stroke ?? "none",
     strokeWidth: layer.strokeWidth ?? 0,
     ...strokeStyle(layer, layer.strokeWidth ?? 0),
@@ -610,213 +618,229 @@ function LayerGraphicView({ layer }: { layer: Layer }) {
   const clipartSource =
     CLIPART_DATA[LEGACY_CLIPART[layer.clipartId ?? ""] ?? layer.clipartId ?? ""]
   return (
-    <g transform={transform} opacity={layer.opacity ?? 1}>
-      {filterId && (
-        <defs>
-          <EffectFilter layer={layer} id={filterId} />
-        </defs>
-      )}
-      <g filter={filterId ? `url(#${filterId})` : undefined}>
-        {layer.type === "effect" && <EffectLayerGraphic layer={layer} />}
-        {SHAPE_TEXT_TYPES.has(layer.type) && (
-          <ShapeBody layer={layer} paint={paint} />
-        )}
-        {SHAPE_TEXT_TYPES.has(layer.type) && layer.image && (
-          <>
-            <defs>
-              <clipPath id={`clip-${layer.id}`}>
-                <ShapeBody layer={layer} paint={{}} />
-              </clipPath>
-            </defs>
-            <image
-              href={imageSrc(layer.image)}
-              {...photoBox(layer)}
-              clipPath={`url(#clip-${layer.id})`}
-            />
-            {paint.stroke !== "none" && paint.strokeWidth > 0 && (
-              <ShapeBody layer={layer} paint={{ ...paint, fill: "none" }} />
-            )}
-          </>
-        )}
-        {layer.type === "clipart" && clipartSource && (
-          <>
-            <TintFilter layer={layer} />
-            <image
-              x={layer.x}
-              y={layer.y}
-              width={layer.width}
-              height={layer.height}
-              href={clipartSource}
-              preserveAspectRatio="xMidYMid meet"
-              filter={layer.imageTint ? `url(#tint-${layer.id})` : undefined}
-            />
-          </>
-        )}
-        {layer.type === "line" &&
-          (() => {
-            const width = lineWidth(layer)
-            const color = layer.stroke ?? layer.fill
-            const { d, caps } = lineGeometry(layer)
-            return (
-              <>
-                <path
-                  d={d}
-                  fill="none"
-                  stroke={color}
-                  strokeWidth={width}
-                  strokeDasharray={lineDashArray(layer)}
-                  strokeLinecap={layer.strokeRound ? "round" : "square"}
-                  strokeLinejoin={layer.strokeRound ? "round" : "miter"}
-                />
-                {caps.map((cap, index) => (
+    <g
+      transform={transform}
+      opacity={layer.opacity ?? 1}
+      style={
+        layer.blendMode && layer.blendMode !== "normal"
+          ? { mixBlendMode: layer.blendMode }
+          : undefined
+      }
+    >
+      <defs>
+        {filterId && <EffectFilter layer={layer} id={filterId} />}
+        <GradientDef layer={layer} />
+        <ColorFilterDef layer={layer} />
+      </defs>
+      <g filter={filtered ? `url(#${colorFilterId(layer)})` : undefined}>
+        <g filter={filterId ? `url(#${filterId})` : undefined}>
+          {layer.type === "effect" && <EffectLayerGraphic layer={layer} />}
+          {SHAPE_TEXT_TYPES.has(layer.type) && (
+            <ShapeBody layer={layer} paint={paint} />
+          )}
+          {SHAPE_TEXT_TYPES.has(layer.type) && layer.image && (
+            <>
+              <defs>
+                <clipPath id={`clip-${layer.id}`}>
+                  <ShapeBody layer={layer} paint={{}} />
+                </clipPath>
+              </defs>
+              <image
+                href={imageSrc(layer.image)}
+                {...photoBox(layer)}
+                clipPath={`url(#clip-${layer.id})`}
+              />
+              {paint.stroke !== "none" && paint.strokeWidth > 0 && (
+                <ShapeBody layer={layer} paint={{ ...paint, fill: "none" }} />
+              )}
+            </>
+          )}
+          {layer.type === "clipart" && clipartSource && (
+            <>
+              <TintFilter layer={layer} />
+              <image
+                x={layer.x}
+                y={layer.y}
+                width={layer.width}
+                height={layer.height}
+                href={clipartSource}
+                preserveAspectRatio="xMidYMid meet"
+                filter={layer.imageTint ? `url(#tint-${layer.id})` : undefined}
+              />
+            </>
+          )}
+          {layer.type === "line" &&
+            (() => {
+              const width = lineWidth(layer)
+              const color = layer.stroke ?? layer.fill
+              const { d, caps } = lineGeometry(layer)
+              return (
+                <>
                   <path
-                    key={index}
-                    d={cap.d}
-                    fill={cap.filled ? color : "none"}
-                    stroke={cap.stroked ? color : "none"}
-                    strokeWidth={cap.stroked ? width : undefined}
-                    strokeLinejoin="miter"
+                    d={d}
+                    fill="none"
+                    stroke={color}
+                    strokeWidth={width}
+                    strokeDasharray={lineDashArray(layer)}
+                    strokeLinecap={layer.strokeRound ? "round" : "square"}
+                    strokeLinejoin={layer.strokeRound ? "round" : "miter"}
                   />
-                ))}
-              </>
-            )
-          })()}
-        {layer.type === "image" && layer.image && (
-          <>
-            <defs>
-              <clipPath id={`clip-${layer.id}`}>
-                <rect
-                  x={layer.x}
-                  y={layer.y}
-                  width={layer.width}
-                  height={layer.height}
-                />
-              </clipPath>
-            </defs>
-            <TintFilter layer={layer} />
-            <MotionPhoto layer={layer} source={imageSrc(layer.image)} />
-          </>
-        )}
-        {layer.type === "frame" && (
-          <>
-            <defs>
-              <clipPath
-                id={`clip-${layer.id}`}
-                clipPathUnits="objectBoundingBox"
-              >
-                {shape === "ellipse" ? (
-                  <ellipse cx=".5" cy=".5" rx=".5" ry=".5" />
-                ) : FRAME_PATHS[shape] ? (
-                  <path d={FRAME_PATHS[shape]} transform="scale(0.01)" />
-                ) : shape === "star" ? (
-                  <polygon points={star.map((p) => p.join(",")).join(" ")} />
-                ) : shape === "heart" ? (
-                  <path d={heart} />
-                ) : (
-                  <rect width="1" height="1" />
-                )}
-              </clipPath>
-            </defs>
-            <rect
-              x={layer.x}
-              y={layer.y}
-              width={layer.width}
-              height={layer.height}
-              fill="#e7e7e7"
-              clipPath={`url(#clip-${layer.id})`}
-            />
-            {layer.image ? (
+                  {caps.map((cap, index) => (
+                    <path
+                      key={index}
+                      d={cap.d}
+                      fill={cap.filled ? color : "none"}
+                      stroke={cap.stroked ? color : "none"}
+                      strokeWidth={cap.stroked ? width : undefined}
+                      strokeLinejoin="miter"
+                    />
+                  ))}
+                </>
+              )
+            })()}
+          {layer.type === "image" && layer.image && (
+            <>
+              <defs>
+                <clipPath id={`clip-${layer.id}`}>
+                  <rect
+                    x={layer.x}
+                    y={layer.y}
+                    width={layer.width}
+                    height={layer.height}
+                  />
+                </clipPath>
+              </defs>
+              <TintFilter layer={layer} />
               <MotionPhoto layer={layer} source={imageSrc(layer.image)} />
-            ) : (
-              <text
-                x={cx}
-                y={cy}
-                textAnchor="middle"
-                dominantBaseline="middle"
-                fill="#777"
-                fontSize={Math.min(layer.width / 6, layer.height / 6)}
-              >
-                이미지 넣기
-              </text>
-            )}
-          </>
-        )}
-        {layer.type === "qr" && qrSize > 0 && layer.qrBits && (
-          <>
-            <rect
-              x={layer.x}
-              y={layer.y}
-              width={layer.width}
-              height={layer.height}
-              fill="white"
-            />
-            {Array.from(layer.qrBits).map((bit, i) =>
-              bit === "1" ? (
-                <rect
+            </>
+          )}
+          {layer.type === "frame" && (
+            <>
+              <defs>
+                <clipPath
+                  id={`clip-${layer.id}`}
+                  clipPathUnits="objectBoundingBox"
+                >
+                  {shape === "ellipse" ? (
+                    <ellipse cx=".5" cy=".5" rx=".5" ry=".5" />
+                  ) : FRAME_PATHS[shape] ? (
+                    <path d={FRAME_PATHS[shape]} transform="scale(0.01)" />
+                  ) : shape === "star" ? (
+                    <polygon points={star.map((p) => p.join(",")).join(" ")} />
+                  ) : shape === "heart" ? (
+                    <path d={heart} />
+                  ) : (
+                    <rect width="1" height="1" />
+                  )}
+                </clipPath>
+              </defs>
+              <rect
+                x={layer.x}
+                y={layer.y}
+                width={layer.width}
+                height={layer.height}
+                fill="#e7e7e7"
+                clipPath={`url(#clip-${layer.id})`}
+              />
+              {layer.image ? (
+                <MotionPhoto layer={layer} source={imageSrc(layer.image)} />
+              ) : (
+                <text
+                  x={cx}
+                  y={cy}
+                  textAnchor="middle"
+                  dominantBaseline="middle"
+                  fill="#777"
+                  fontSize={Math.min(layer.width / 6, layer.height / 6)}
+                >
+                  이미지 넣기
+                </text>
+              )}
+            </>
+          )}
+          {layer.type === "qr" && qrSize > 0 && layer.qrBits && (
+            <>
+              <rect
+                x={layer.x}
+                y={layer.y}
+                width={layer.width}
+                height={layer.height}
+                fill="white"
+              />
+              {Array.from(layer.qrBits).map((bit, i) =>
+                bit === "1" ? (
+                  <rect
+                    key={i}
+                    x={
+                      layer.x +
+                      (((i % qrSize) + 4) * layer.width) / (qrSize + 8)
+                    }
+                    y={
+                      layer.y +
+                      ((Math.floor(i / qrSize) + 4) * layer.height) /
+                        (qrSize + 8)
+                    }
+                    width={layer.width / (qrSize + 8) + 0.01}
+                    height={layer.height / (qrSize + 8) + 0.01}
+                    fill={layer.fill}
+                  />
+                ) : null
+              )}
+            </>
+          )}
+          {layer.type === "text" && (
+            <text
+              transform={
+                widthRatio(layer) === 1
+                  ? undefined
+                  : `translate(${textAnchorX}) scale(${widthRatio(layer)} 1) translate(${-textAnchorX})`
+              }
+              stroke={
+                layer.stroke && layer.stroke !== "none" && !layer.knockout
+                  ? layer.stroke
+                  : undefined
+              }
+              strokeWidth={
+                layer.stroke && layer.stroke !== "none"
+                  ? (layer.strokeWidth ?? 0)
+                  : undefined
+              }
+              strokeLinejoin={strokeRounded(layer) ? "round" : "miter"}
+              paintOrder="stroke"
+              x={textAnchorX}
+              y={layer.y + line}
+              textAnchor={
+                layer.align === "center"
+                  ? "middle"
+                  : layer.align === "right"
+                    ? "end"
+                    : "start"
+              }
+              fill={fill}
+              // 뚫어내기 글자는 아래 레이어의 구멍으로만 보인다. 투명하게 남겨 두어야 화면에서 잡을 수 있다
+              fillOpacity={layer.knockout ? 0 : undefined}
+              fontSize={line}
+              fontFamily={fontStack(layer.fontFamily)}
+              fontWeight={layer.fontWeight ?? "normal"}
+              fontStyle={layer.italic ? "italic" : "normal"}
+              letterSpacing={layer.letterSpacing ?? 0}
+              style={{ whiteSpace: "pre" }}
+            >
+              {(layer.text ?? "").split("\n").map((row, i) => (
+                <tspan
                   key={i}
-                  x={
-                    layer.x + (((i % qrSize) + 4) * layer.width) / (qrSize + 8)
-                  }
-                  y={
-                    layer.y +
-                    ((Math.floor(i / qrSize) + 4) * layer.height) / (qrSize + 8)
-                  }
-                  width={layer.width / (qrSize + 8) + 0.01}
-                  height={layer.height / (qrSize + 8) + 0.01}
-                  fill={layer.fill}
-                />
-              ) : null
-            )}
-          </>
-        )}
-        {layer.type === "text" && (
-          <text
-            transform={
-              widthRatio(layer) === 1
-                ? undefined
-                : `translate(${textAnchorX}) scale(${widthRatio(layer)} 1) translate(${-textAnchorX})`
-            }
-            stroke={
-              layer.stroke && layer.stroke !== "none" ? layer.stroke : undefined
-            }
-            strokeWidth={
-              layer.stroke && layer.stroke !== "none"
-                ? (layer.strokeWidth ?? 0)
-                : undefined
-            }
-            strokeLinejoin={strokeRounded(layer) ? "round" : "miter"}
-            paintOrder="stroke"
-            x={textAnchorX}
-            y={layer.y + line}
-            textAnchor={
-              layer.align === "center"
-                ? "middle"
-                : layer.align === "right"
-                  ? "end"
-                  : "start"
-            }
-            fill={layer.fill}
-            fontSize={line}
-            fontFamily={fontStack(layer.fontFamily)}
-            fontWeight={layer.fontWeight ?? "normal"}
-            fontStyle={layer.italic ? "italic" : "normal"}
-            letterSpacing={layer.letterSpacing ?? 0}
-            style={{ whiteSpace: "pre" }}
-          >
-            {(layer.text ?? "").split("\n").map((row, i) => (
-              <tspan
-                key={i}
-                x={textAnchorX}
-                dy={i ? line * ((layer.lineHeight ?? 120) / 100) : 0}
-              >
-                {row}
-              </tspan>
-            ))}
-          </text>
-        )}
-        {SHAPE_TEXT_TYPES.has(layer.type) && layer.text && (
-          <ShapeText layer={layer} />
-        )}
+                  x={textAnchorX}
+                  dy={i ? line * ((layer.lineHeight ?? 120) / 100) : 0}
+                >
+                  {row}
+                </tspan>
+              ))}
+            </text>
+          )}
+          {SHAPE_TEXT_TYPES.has(layer.type) && layer.text && (
+            <ShapeText layer={layer} />
+          )}
+        </g>
       </g>
     </g>
   )

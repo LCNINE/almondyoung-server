@@ -20,6 +20,7 @@ import {
 } from "react"
 import { createPortal } from "react-dom"
 import { Backdrop, LayerGraphic, photoBox } from "../graphic"
+import { KnockedOut } from "../layer-stack"
 import {
   currentCrop,
   gaps,
@@ -570,7 +571,9 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
               </g>
             )}
             <g clipPath="url(#almond-print-area)">
-              {layers.map((layer) =>
+              {/* 혼합 모드는 같은 묶음 안에서만 아래를 본다. 배경을 이 안에도 한 번 더 깔아야 배경 사진과 섞인다 */}
+              <Backdrop value={sideBackground(design, side)} />
+              {layers.map((layer, index) =>
                 layer.visible === false ? null : (
                   <g
                     key={layer.id}
@@ -594,7 +597,9 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
                         : "cursor-move"
                     }
                   >
-                    <LayerGraphic layer={layer} />
+                    <KnockedOut layers={layers} index={index}>
+                      <LayerGraphic layer={layer} />
+                    </KnockedOut>
                     {seeThrough(layer) && layer.type === "path" && (
                       // 속이 빈 펜·연필 선은 화면 1~2px 선만 잡혀 끌 수가 없어서, 둘레에 안 보이는 잡기 영역을 둔다
                       <path

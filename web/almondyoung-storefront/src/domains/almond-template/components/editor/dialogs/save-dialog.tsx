@@ -1,5 +1,6 @@
 import { INDUSTRIES, PURPOSES } from "../../../lib/gallery-filter"
-import { Backdrop, LayerGraphic } from "../../graphic"
+import { Backdrop } from "../../graphic"
+import { LayerStack } from "../../layer-stack"
 import type { AlmondEditor } from "../../../hooks/use-almond-editor"
 import { sideBackground } from "../../../lib/document"
 
@@ -33,11 +34,7 @@ export function SaveDialog({ editor }: { editor: AlmondEditor }) {
             className="h-[95%] max-w-[95%] bg-white shadow"
           >
             <Backdrop value={sideBackground(design, "front")} />
-            {design.front
-              .filter((layer) => layer.visible !== false)
-              .map((layer) => (
-                <LayerGraphic key={layer.id} layer={layer} />
-              ))}
+            <LayerStack layers={design.front} />
           </svg>
         </div>
         <label className="block text-sm">

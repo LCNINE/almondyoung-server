@@ -1,3 +1,4 @@
+import { LayerStyleControls } from "./layer-style-controls"
 import { PhotoEffectControls } from "./photo-effect-controls"
 import { useRef } from "react"
 import { Link, Unlink, Crop, Eraser } from "lucide-react"
@@ -282,6 +283,7 @@ export function ImageProperties({
         disabled={disabled}
         onValue={(opacity) => patch(selected.id, { opacity })}
       />
+      <LayerStyleControls editor={editor} selected={selected} />
       {mode === "designer" && (
         <PropSection className="py-[15px]">
           <Toggle

@@ -1,0 +1,232 @@
+import type { AlmondEditor } from "../../hooks/use-almond-editor"
+import type { Layer } from "../../lib/document"
+import {
+  BLEND_MODES,
+  COLORED_FILTERS,
+  COLOR_FILTERS,
+  DEFAULT_FILTER_COLOR,
+  DEFAULT_GRADIENT,
+  type BlendMode,
+  type ColorFilterKind,
+  type Gradient,
+} from "../../lib/layer-style"
+import { PrintColorPicker } from "../color-picker"
+import { PropSection, PropSlider, SettingBox, Toggle } from "./prop-sections"
+
+const selectClass =
+  "mt-2 w-full rounded-md border border-[#dce0e5] bg-white p-2 text-sm"
+
+export function LayerStyleControls({
+  editor,
+  selected,
+  gradient = false,
+}: {
+  editor: AlmondEditor
+  selected: Layer
+  gradient?: boolean
+}) {
+  const disabled = !editor.editable
+  const patch = (value: Partial<Layer>) => editor.patch(selected.id, value)
+  const filter = selected.colorFilter
+
+  return (
+    <PropSection className="space-y-[15px] py-5">
+      <label className="block text-[15px] text-[#3F4250]">
+        혼합 모드
+        <select
+          aria-label="혼합 모드"
+          className={selectClass}
+          value={selected.blendMode ?? "normal"}
+          disabled={disabled}
+          onChange={(event) => {
+            const blendMode = event.target.value as BlendMode
+
+            patch({ blendMode: blendMode === "normal" ? undefined : blendMode })
+          }}
+        >
+          {BLEND_MODES.map(([key, label]) => (
+            <option key={key} value={key}>
+              {label}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="block text-[15px] text-[#3F4250]">
+        필터
+        <select
+          aria-label="필터"
+          className={selectClass}
+          value={filter?.kind ?? ""}
+          disabled={disabled}
+          onChange={(event) => {
+            const kind = event.target.value as ColorFilterKind | ""
+
+            patch({
+              colorFilter: kind
+                ? {
+                    kind,
+                    amount: filter?.amount ?? 70,
+                    color: COLORED_FILTERS.has(kind)
+                      ? DEFAULT_FILTER_COLOR[kind]
+                      : undefined,
+                  }
+                : undefined,
+            })
+          }}
+        >
+          <option value="">없음</option>
+          {COLOR_FILTERS.map(([key, label]) => (
+            <option key={key} value={key}>
+              {label}
+            </option>
+          ))}
+        </select>
+      </label>
+      {filter && (
+        <SettingBox
+          title="필터 설정"
+          disabled={disabled}
+          onClear={() => patch({ colorFilter: undefined })}
+        >
+          <PropSlider
+            label="강도"
+            min={0}
+            max={100}
+            value={filter.amount}
+            disabled={disabled}
+            onValue={(amount) => patch({ colorFilter: { ...filter, amount } })}
+          />
+          {COLORED_FILTERS.has(filter.kind) && (
+            <PrintColorPicker
+              label="필터 색상"
+              value={filter.color ?? DEFAULT_FILTER_COLOR[filter.kind]}
+              disabled={disabled}
+              onApply={(color) => patch({ colorFilter: { ...filter, color } })}
+            />
+          )}
+        </SettingBox>
+      )}
+      {gradient && (
+        <GradientControls
+          selected={selected}
+          patch={patch}
+          disabled={disabled}
+        />
+      )}
+      {selected.type === "text" && (
+        <>
+          <Toggle
+            label="글자로 뚫기"
+            checked={!!selected.knockout}
+            disabled={disabled}
+            onChange={(knockout) => patch({ knockout: knockout || undefined })}
+          />
+          {selected.knockout && (
+            <p className="text-[13px] leading-[19px] text-[#70777F]">
+              글자 모양대로 아래 도형·사진을 모두 뚫어 배경이 보입니다.
+            </p>
+          )}
+        </>
+      )}
+    </PropSection>
+  )
+}
+
+function GradientControls({
+  selected,
+  patch,
+  disabled,
+}: {
+  selected: Layer
+  patch: (value: Partial<Layer>) => void
+  disabled: boolean
+}) {
+  const value = selected.gradient
+  const set = (change: Partial<Gradient>) =>
+    value && patch({ gradient: { ...value, ...change } })
+
+  return (
+    <>
+      <Toggle
+        label="그라데이션"
+        checked={!!value}
+        disabled={disabled}
+        onChange={(on) =>
+          patch({
+            gradient: on
+              ? {
+                  ...DEFAULT_GRADIENT,
+                  from:
+                    selected.fill === "none"
+                      ? DEFAULT_GRADIENT.from
+                      : selected.fill,
+                }
+              : undefined,
+          })
+        }
+      />
+      {value && (
+        <SettingBox
+          title="그라데이션 설정"
+          disabled={disabled}
+          onClear={() => patch({ gradient: undefined })}
+        >
+          <label className="block text-[15px] text-[#3F4250]">
+            방식
+            <select
+              aria-label="그라데이션 방식"
+              className={selectClass}
+              value={value.type}
+              disabled={disabled}
+              onChange={(event) =>
+                set({ type: event.target.value as Gradient["type"] })
+              }
+            >
+              <option value="linear">직선</option>
+              <option value="radial">원형</option>
+            </select>
+          </label>
+          <PrintColorPicker
+            label="시작 색상"
+            value={value.from}
+            disabled={disabled}
+            onApply={(from) => set({ from })}
+          />
+          <PropSlider
+            label="시작 불투명도"
+            min={0}
+            max={100}
+            value={Math.round(value.fromOpacity * 100)}
+            disabled={disabled}
+            onValue={(percent) => set({ fromOpacity: percent / 100 })}
+          />
+          <PrintColorPicker
+            label="끝 색상"
+            value={value.to}
+            disabled={disabled}
+            onApply={(to) => set({ to })}
+          />
+          <PropSlider
+            label="끝 불투명도"
+            min={0}
+            max={100}
+            value={Math.round(value.toOpacity * 100)}
+            disabled={disabled}
+            onValue={(percent) => set({ toOpacity: percent / 100 })}
+          />
+          {value.type === "linear" && (
+            <PropSlider
+              label="각도"
+              min={-180}
+              max={180}
+              step={15}
+              value={value.angle}
+              disabled={disabled}
+              onValue={(angle) => set({ angle })}
+            />
+          )}
+        </SettingBox>
+      )}
+    </>
+  )
+}

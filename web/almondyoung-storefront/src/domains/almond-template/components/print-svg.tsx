@@ -1,6 +1,7 @@
 import { PRINT_SPECS } from "../lib/catalog"
 import { sideBackground, type Design, type Layer } from "../lib/document"
-import { Backdrop, LayerGraphic } from "./graphic"
+import { Backdrop } from "./graphic"
+import { LayerStack } from "./layer-stack"
 
 const EDGE_MM = 0.5
 
@@ -56,17 +57,11 @@ export async function printSvg(
         height={height}
       />
       <g transform={`translate(${bleedMm} ${bleedMm})`}>
-        {design[side].map((layer) => (
-          <LayerGraphic
-            key={layer.id}
-            layer={bleedExtended(
-              layer,
-              design.widthMm,
-              design.heightMm,
-              bleedMm
-            )}
-          />
-        ))}
+        <LayerStack
+          layers={design[side].map((layer) =>
+            bleedExtended(layer, design.widthMm, design.heightMm, bleedMm)
+          )}
+        />
       </g>
     </svg>
   )

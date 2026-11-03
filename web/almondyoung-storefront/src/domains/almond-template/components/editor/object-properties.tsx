@@ -28,6 +28,7 @@ import {
 } from "./prop-sections"
 import type { AlmondEditor } from "../../hooks/use-almond-editor"
 import type { PropertyPanelState } from "../../hooks/use-property-panel"
+import { LayerStyleControls } from "./layer-style-controls"
 import { ObjectPropertiesMore } from "./object-properties-more"
 import { shapeOutline } from "../../lib/path-shape"
 import {
@@ -399,6 +400,11 @@ export function ObjectProperties({
             disabled={!editable}
             onValue={(opacity) => patch(selected.id, { opacity })}
           />
+          <LayerStyleControls
+            editor={editor}
+            selected={selected}
+            gradient={selected.type === "text"}
+          />
         </>
       ) : selected.type === "line" ? (
         <>
@@ -410,6 +416,11 @@ export function ObjectProperties({
             value={selected.opacity}
             disabled={!editable}
             onValue={(opacity) => patch(selected.id, { opacity })}
+          />
+          <LayerStyleControls
+            editor={editor}
+            selected={selected}
+            gradient={false}
           />
         </>
       ) : (
@@ -576,6 +587,11 @@ export function ObjectProperties({
             value={selected.opacity}
             disabled={!editable}
             onValue={(opacity) => patch(selected.id, { opacity })}
+          />
+          <LayerStyleControls
+            editor={editor}
+            selected={selected}
+            gradient={filled}
           />
         </>
       )}

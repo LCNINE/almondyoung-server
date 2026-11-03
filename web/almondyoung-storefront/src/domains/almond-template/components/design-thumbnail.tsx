@@ -4,7 +4,8 @@ import { useEffect, useState } from "react"
 import { getAlmondDesign } from "@/lib/api/ugc/almond-designs"
 import { cn } from "@/lib/utils"
 import { parseDesign, sideBackground, type Design } from "../lib/document"
-import { Backdrop, LayerGraphic } from "./graphic"
+import { Backdrop } from "./graphic"
+import { LayerStack } from "./layer-stack"
 import { ImagePreviews } from "../lib/image-previews"
 
 // 주문용으로 저장한 시안(almond-designs)의 앞면을 편집기와 같은 그리기로 작게 보여 준다
@@ -46,9 +47,7 @@ export function DesignThumbnail({
             </defs>
             <g clipPath={`url(#thumb-${id})`}>
               <Backdrop value={sideBackground(design, "front")} />
-              {design.front.map((layer) => (
-                <LayerGraphic key={layer.id} layer={layer} />
-              ))}
+              <LayerStack layers={design.front} />
             </g>
           </svg>
         </ImagePreviews.Provider>

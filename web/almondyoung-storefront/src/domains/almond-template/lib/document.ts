@@ -5,6 +5,14 @@ import {
   type MotionMask,
 } from "./effect-layer"
 import { validPhotoEffects, type PhotoEffects } from "./photo-effects"
+import {
+  validBlendMode,
+  validColorFilter,
+  validGradient,
+  type BlendMode,
+  type ColorFilter,
+  type Gradient,
+} from "./layer-style"
 import { PRINT_SPECS, type PrintKind } from "./catalog"
 import { CLIPART_IDS, FRAME_IDS, SHAPE_VARIANTS } from "./art-library"
 import { FILE_IMAGE_REF } from "./image-ref"
@@ -104,6 +112,11 @@ export type Layer = {
   lineDashCustom?: [number, number]
   linePath?: { x: number; y: number }[]
   lineCurved?: boolean
+  blendMode?: BlendMode
+  colorFilter?: ColorFilter
+  gradient?: Gradient
+  // 글자 모양대로 아래 레이어를 모두 뚫어 배경이 보이게 한다
+  knockout?: boolean
 }
 
 export const SHAPE_TEXT_TYPES: ReadonlySet<Layer["type"]> = new Set<
@@ -334,6 +347,12 @@ export function parseDesign(value: unknown): Design {
           layer.strokeWidth > 50)) ||
       !validEffects(layer) ||
       !validPhotoEffects(layer.photoEffects) ||
+      !validBlendMode(layer.blendMode) ||
+      !validColorFilter(layer.colorFilter) ||
+      !validGradient(layer.gradient) ||
+      (layer.knockout !== undefined &&
+        (typeof layer.knockout !== "boolean" ||
+          (layer.knockout && layer.type !== "text"))) ||
       !validMotionMask(layer.imageMotionMask) ||
       (layer.type === "effect" &&
         !EFFECT_LAYERS.some(([key]) => key === layer.effectKind)) ||
