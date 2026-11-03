@@ -19,9 +19,11 @@ import {
   ConsolidationOptionsResponseDto,
   ConsolidationProgressResponseDto,
   CreateConsolidationDto,
+  PlannedShipmentDto,
 } from '../dto/consolidation.dto';
 import { ConsolidationOptionsService } from '../services/consolidation-options.service';
 import { ConsolidationProgressService } from '../services/consolidation-progress.service';
+import { PlannedShipmentsReader } from '../services/planned-shipments.reader';
 import { ConsolidationService } from '../services/consolidation.service';
 
 type AuthenticatedUser = {
@@ -37,6 +39,7 @@ export class ConsolidationController {
     private readonly consolidation: ConsolidationService,
     private readonly options: ConsolidationOptionsService,
     private readonly progress: ConsolidationProgressService,
+    private readonly planned: PlannedShipmentsReader,
   ) {}
 
   @PiiResponse({
@@ -135,6 +138,13 @@ export class ConsolidationController {
   @Get('consolidation-board')
   findBoard(@Query() query: ConsolidationBoardQueryDto): Promise<ConsolidationBoardResponseDto> {
     return this.options.findBoard(query.warehouseId);
+  }
+
+  // 수령인을 담지 않으므로 PII 선언이 없다
+  @RequirePermission('fulfillment.shipment.read')
+  @Get('planned')
+  findPlanned(@Query() query: ConsolidationBoardQueryDto): Promise<PlannedShipmentDto[]> {
+    return this.planned.findPlanned(query.warehouseId);
   }
 
   // 수령인을 담지 않으므로 PII 선언이 없다
