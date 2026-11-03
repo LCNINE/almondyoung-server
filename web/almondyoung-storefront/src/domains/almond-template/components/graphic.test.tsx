@@ -2,7 +2,7 @@
 import { act } from "react"
 import { createRoot } from "react-dom/client"
 import { afterEach, describe, expect, it, vi } from "vitest"
-import type { Layer } from "../lib/document"
+import type { Design, Layer } from "../lib/document"
 
 const layer = {
   id: "t",
@@ -78,5 +78,36 @@ describe("LayerGraphic", () => {
     expect(narrowed.fontSize).toBe(15)
     expect(narrowed.widthScale).toBe(94.6)
     expect(fittedFontSize(narrowed)).toBeCloseTo(15, 1)
+  })
+
+  it("JSON 으로 들여온 글상자를 글꼴을 받은 뒤 글자 폭에 맞춘다", async () => {
+    em = 1.184
+    const load = vi.fn().mockResolvedValue([])
+    Object.defineProperty(document, "fonts", {
+      value: Object.assign(new EventTarget(), { load }),
+      configurable: true,
+    })
+    const { fitTextBoxes, fittedFontSize } = await import("./graphic")
+    const narrow = {
+      ...layer,
+      text: "커트",
+      fontSize: 15,
+      width: 16.8,
+      height: 18,
+    }
+    const design = {
+      kind: "pet",
+      productId: "",
+      widthMm: 210,
+      heightMm: 297,
+      front: [narrow],
+      back: [],
+    } as unknown as Design
+
+    const fitted = (await fitTextBoxes(design)).front[0]
+
+    expect(load).toHaveBeenCalledWith(expect.stringContaining("16px"), "커트")
+    expect(fitted.width).toBe(17.8)
+    expect(fittedFontSize(fitted)).toBe(15)
   })
 })

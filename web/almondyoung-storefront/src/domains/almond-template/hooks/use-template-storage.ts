@@ -24,6 +24,7 @@ import { rasterThumbnail, uploadDesignImages } from "../lib/design-images"
 import { hasProduct, parseDesign, type Design } from "../lib/document"
 import type { PublishedTemplate } from "../lib/gallery-filter"
 import { printSvg } from "../components/print-svg"
+import { fitTextBoxes } from "../components/graphic"
 import { PRINT_PRODUCTS } from "../lib/catalog"
 import { useLeaveWarning } from "./use-leave-warning"
 
@@ -368,7 +369,7 @@ export function useTemplateStorage({
     if (file.size > 10_000_000)
       return setMessage("10MB 이하 JSON만 불러올 수 있습니다.")
     try {
-      const loaded = forRoute(JSON.parse(await file.text()))
+      const loaded = await fitTextBoxes(forRoute(JSON.parse(await file.text())))
       change(loaded)
       setSelectedId(null)
       setLoadDialog(false)

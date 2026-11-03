@@ -4,6 +4,7 @@ import { PhotoEffectsGraphic } from "./photo-effects"
 import { Fragment, memo } from "react"
 import {
   SHAPE_TEXT_TYPES,
+  type Design,
   type Layer,
   type SideBackground,
 } from "../lib/document"
@@ -12,7 +13,7 @@ import { FRAME_PATHS, LEGACY_CLIPART } from "../lib/art-library"
 import { DRAW_ART } from "../lib/draw-art"
 import { CLIPART_DATA } from "../lib/clipart-data"
 import { useImageSrc } from "../lib/image-previews"
-import { fontStack } from "../lib/fonts"
+import { fontStack, loadUploadedFont } from "../lib/fonts"
 import { useUploadedFont } from "../lib/use-uploaded-font"
 import {
   HEART_PATH as heart,
@@ -32,12 +33,15 @@ if (typeof document !== "undefined")
   // 웹폰트가 늦게 도착하면 대체 글꼴로 잰 값을 버린다
   document.fonts?.addEventListener("loadingdone", () => measured.clear())
 
+const fontOf = (layer: Layer, px: number) =>
+  `${layer.italic ? "italic " : ""}${layer.fontWeight === "bold" ? "bold " : ""}${px}px ${fontStack(layer.fontFamily)}`
+
 // 한 줄의 폭을 글자 크기 1 기준(em)으로 잰다. 브라우저 밖(테스트·SSR)에선 한글 1, 그 외 0.6 어림값
 function lineEm(line: string, layer: Layer) {
   const guess = () =>
     Array.from(line).reduce((n, ch) => n + (HANGUL.test(ch) ? 1 : 0.6), 0)
   if (typeof document === "undefined") return guess()
-  const font = `${layer.italic ? "italic " : ""}${layer.fontWeight === "bold" ? "bold " : ""}100px ${fontStack(layer.fontFamily)}`
+  const font = fontOf(layer, 100)
   const key = `${font}\u0000${line}`
   const hit = measured.get(key)
   if (hit !== undefined) return hit
@@ -110,6 +114,31 @@ export function stretchText(layer: Layer, box: Partial<Layer>): Partial<Layer> {
         ) * 10
       ) / 10,
   }
+}
+
+// 바깥에서 만든 시안(JSON)은 상자 폭이 글꼴과 안 맞을 수 있다. 글꼴을 받은 뒤 편집기처럼 글자에 맞춘다
+export async function fitTextBoxes(design: Design): Promise<Design> {
+  const texts = [...design.front, ...design.back].filter(
+    (layer) => layer.type === "text"
+  )
+  // 글꼴 하나를 못 받아도 나머지는 맞춘다. 못 받은 글꼴은 대체 글꼴 폭으로 잰다
+  await Promise.all(
+    texts.map((layer) =>
+      Promise.resolve(loadUploadedFont(layer.fontFamily))
+        .then(() =>
+          document.fonts.load(fontOf(layer, 16), layer.text || undefined)
+        )
+        .catch(() => undefined)
+    )
+  )
+  measured.clear()
+
+  const fit = (layer: Layer) =>
+    layer.type === "text"
+      ? { ...layer, ...textBoxFor(layer, layer.fontSize ?? 10, design) }
+      : layer
+
+  return { ...design, front: design.front.map(fit), back: design.back.map(fit) }
 }
 
 function polygonPoints(layer: Layer, points: number[][]) {
