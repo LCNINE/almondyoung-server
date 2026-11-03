@@ -96,12 +96,14 @@ export class ScreenSession {
     if (await loginInput.isVisible()) await loginInput.fill(account.loginId);
     await this.page.locator('input[name="password"]').fill(account.password);
     await this.page.locator('form button[type="submit"]').click();
-    const alert = this.page.locator('[role="alert"]');
+    // 글자가 있는 첫 alert — Next 의 경로 안내(`#__next-route-announcer__`)도 role="alert" 라 그냥 고르면 strict mode 가 던진다.
+    // 거절이 로그인 폼에서 나는 지금(계정은 한 테넌트의 것, ADR-0056) 주소 교차가 늘 이 길을 탄다.
+    const alert = this.page.locator('[role="alert"]').filter({ hasText: /\S/ }).first();
     await Promise.race([
       this.page.waitForURL((u) => u.host === adminHost && !u.pathname.startsWith('/auth/'), {
         waitUntil: 'load',
       }),
-      alert.filter({ hasText: /\S/ }).waitFor({ state: 'visible' }),
+      alert.waitFor({ state: 'visible' }),
     ]);
     await this.settle();
     const error = new URL(this.page.url()).host === adminHost ? null : (await alert.innerText()).trim() || null;
