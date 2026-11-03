@@ -189,6 +189,7 @@ const loaded = <T,>(data: T): QueryState<T> => ({
 
 const source = (shipmentId: string): ConsolidationProgressSource => ({
   shipmentId,
+  orderNo: null,
   trackingNo: '4567-8901-2345',
   batchId: 'batch-1',
   workItemStatus: 'picking',
@@ -253,16 +254,82 @@ describe('배송 탭 상자 선택', () => {
     expect(mockDetail).toHaveBeenLastCalledWith('ship-new');
   });
 
-  it('상자를 지정하지 않으면 지금처럼 첫 상자를 연다', () => {
+  it('상자를 지정하지 않으면 쓰지 않는 상자가 아니라 열린 상자를 연다', () => {
     renderTab();
 
-    expect(screen.getByRole('heading', { name: 'ship-old' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: 'ship-new' })).toBeTruthy();
+    expect(mockDetail).toHaveBeenLastCalledWith('ship-new');
   });
 
-  it('없는 상자를 지정하면 첫 상자를 연다', () => {
+  it('없는 상자를 지정하면 열린 상자를 연다', () => {
     renderTab('ship-gone');
 
+    expect(screen.getByRole('heading', { name: 'ship-new' })).toBeTruthy();
+  });
+
+  it('쓰지 않는 상자는 접어 두고 개수만 보인다', async () => {
+    renderTab();
+
+    expect(screen.queryByText('ship-old')).toBeNull();
+
+    await userEvent.click(
+      screen.getByRole('button', { name: '쓰지 않는 상자 1개' })
+    );
+
+    expect(screen.getByText('ship-old')).toBeTruthy();
+  });
+
+  it('쓰지 않는 상자로 들어오면 접힌 목록을 펼쳐 둔다', () => {
+    renderTab('ship-old');
+
     expect(screen.getByRole('heading', { name: 'ship-old' })).toBeTruthy();
+    expect(screen.getAllByText('ship-old').length).toBeGreaterThan(0);
+  });
+
+  it('목록에는 상자 전체 수량을 그대로 보인다', () => {
+    mockShipments.mockReturnValue(
+      loaded([{ ...summary('ship-new', 'draft'), totalQty: 5, reservedQty: 5 }])
+    );
+
+    renderTab();
+
+    expect(screen.getByText(/draft · 5개 · 예약 5/)).toBeTruthy();
+  });
+});
+
+describe('합쳐진 새 상자 카드', () => {
+  beforeEach(() => {
+    mockShipments.mockReturnValue(
+      loaded([summary('ship-old', 'superseded'), summary('ship-new', 'draft')])
+    );
+    mockDetail.mockImplementation((id) =>
+      loaded(detail(id, id === 'ship-old' ? 'superseded' : 'draft'))
+    );
+    mockProgress.mockImplementation((id) => ({
+      data:
+        id === 'ship-old'
+          ? {
+              operationId: 'op-1',
+              status: 'completed',
+              targetShipmentId: 'ship-new',
+              sources: [
+                { ...source('ship-old'), orderNo: '6275' },
+                { ...source('ship-old-2'), orderNo: '6314' },
+              ],
+            }
+          : null,
+      isSuccess: true,
+      isError: false,
+    }));
+  });
+
+  it('열린 새 상자 맨 위에 합쳐졌다는 카드와 다음 할 일이 뜬다', () => {
+    renderTab();
+
+    expect(
+      screen.getByText('#6275와 #6314가 새 상자 하나로 합쳐졌어요')
+    ).toBeTruthy();
+    expect(screen.getByText('1. 계획 확정')).toBeTruthy();
   });
 });
 

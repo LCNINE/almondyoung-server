@@ -5,7 +5,7 @@ import {
   ProgressMemberRow,
 } from './consolidation-progress';
 
-const empty = { blockers: [], workItems: [], waybills: [], reconcileStates: [] };
+const empty = { blockers: [], workItems: [], waybills: [], reconcileStates: [], orderNos: [] };
 
 describe('buildConsolidationProgressSources', () => {
   it('원본마다 막힘·작업 항목·송장·리컨실러 상태를 붙인다', () => {
@@ -17,11 +17,13 @@ describe('buildConsolidationProgressSources', () => {
       workItems: [{ shipmentId: 'a', batchId: 'batch-1', status: 'withdrawing' }],
       waybills: [{ shipmentId: 'a', id: 'wb-1', status: 'registered', trackingNo: 'T-1' }],
       reconcileStates: [{ shipmentId: 'a', gaveUpAt, nextCheckAt }],
+      orderNos: [{ shipmentId: 'a', orderNo: '6314' }],
     });
 
     expect(result).toEqual([
       {
         shipmentId: 'a',
+        orderNo: '6314',
         trackingNo: 'T-1',
         batchId: 'batch-1',
         workItemStatus: 'withdrawing',
@@ -33,6 +35,7 @@ describe('buildConsolidationProgressSources', () => {
       },
       {
         shipmentId: 'b',
+        orderNo: null,
         trackingNo: null,
         batchId: null,
         workItemStatus: null,
@@ -60,6 +63,20 @@ describe('buildConsolidationProgressSources', () => {
     });
 
     expect(source).toMatchObject({ batchId: 'new', workItemStatus: 'picking', waybillId: 'wb-new', trackingNo: null });
+  });
+
+  it('같은 원본의 주문번호가 여럿이면 앞의 것을 쓴다', () => {
+    const [source] = buildConsolidationProgressSources({
+      ...empty,
+      sourceIds: ['a'],
+      orderNos: [
+        { shipmentId: 'x', orderNo: '1' },
+        { shipmentId: 'a', orderNo: '6275' },
+        { shipmentId: 'a', orderNo: '6314' },
+      ],
+    });
+
+    expect(source.orderNo).toBe('6275');
   });
 
   it('포기 전이면 gaveUpAt 은 null 이고 다음 재확인 시각만 준다', () => {

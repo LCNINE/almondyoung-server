@@ -1,6 +1,6 @@
 'use client';
 
-import type { ReactNode } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import Link from 'next/link';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -21,6 +21,13 @@ import type {
   ConsolidationProgressSource,
 } from '@/lib/types/dto/fulfillment';
 import { cn } from '@/lib/utils/ui';
+import {
+  mergedHeading,
+  mergingHeading,
+  nextStepsAfterMerge,
+  type NextStepKey,
+  type NextStepState,
+} from './consolidation-copy';
 import { overallProgress, type ConsolidationStep } from './consolidation-model';
 
 const EXCLUDE_REASON = '합포장';
@@ -71,9 +78,34 @@ const EXCEPTION_REASON: Record<Exception, string> = {
 };
 
 function boxLabel(source: ConsolidationProgressSource): string {
+  if (source.orderNo) {
+    return source.trackingNo
+      ? `#${source.orderNo} 상자(송장 ${source.trackingNo})`
+      : `#${source.orderNo} 상자`;
+  }
+
   return source.trackingNo
     ? `송장 ${source.trackingNo} 상자`
     : `상자 ${source.shipmentId.slice(0, 8)}`;
+}
+
+function boxName(source: ConsolidationProgressSource): string {
+  return source.orderNo ? `#${source.orderNo} 상자` : boxLabel(source);
+}
+
+function orderNosOf(
+  sources: ConsolidationProgressSource[],
+  shipmentId?: string
+): string[] | null {
+  const ordered = [
+    ...sources.filter((source) => source.shipmentId === shipmentId),
+    ...sources.filter((source) => source.shipmentId !== shipmentId),
+  ];
+  const orderNos = ordered.flatMap((source) =>
+    source.orderNo ? [source.orderNo] : []
+  );
+
+  return orderNos.length === ordered.length ? orderNos : null;
 }
 
 function trackState(index: number, current: number): TrackState {
@@ -110,30 +142,98 @@ function GaveUpNotice({ description }: { description: string }) {
   );
 }
 
+const NEXT_STEP_HINT: Record<NextStepKey, Record<NextStepState, string>> = {
+  plan: {
+    done: '끝났어요',
+    current: '아래 상자 작업의 계획 확정 버튼으로 해요',
+    later: '',
+  },
+  waybill: {
+    done: '끝났어요',
+    current: '아래 운송장 이력에서 발급해요',
+    later: '계획 확정 뒤',
+  },
+  batch: {
+    done: '끝났어요',
+    current: '출고 배치 화면에서 이 상자를 넣어요',
+    later: '운송장 발급 뒤',
+  },
+};
+
+export interface MergedTarget {
+  status: string;
+  waybills: Array<{ voidedAt: string | null }>;
+  workItems: Array<{ status: string }>;
+}
+
 function MergedPanel({
-  targetShipmentId,
+  sources,
+  target,
 }: {
-  targetShipmentId: string | null;
+  sources: ConsolidationProgressSource[];
+  target: MergedTarget | undefined;
 }) {
+  const orderNos = orderNosOf(sources);
+  const heading =
+    (orderNos && mergedHeading(orderNos)) ??
+    `상자 ${sources.length}개가 새 상자 하나로 합쳐졌어요`;
+  const steps = target ? nextStepsAfterMerge(target) : [];
+
   return (
-    <section className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-green-300 bg-green-50 p-5">
-      <div>
-        <p className="text-base font-semibold">합쳐졌어요</p>
+    <section className="overflow-hidden rounded-lg border border-green-300">
+      <div className="bg-green-50 px-5 py-4">
+        <p className="text-base font-semibold">{heading}</p>
         <p className="mt-1 text-sm text-zinc-700">
-          상품이 새 상자 하나에 담겼어요. 이 상자는 이제 쓰지 않아요. 새
-          상자에서 계획 확정, 운송장 발급, 배치 넣기를 이어서 해 주세요.
+          {orderNos
+            ? '두 주문 화면 어디서 보든 같은 상자예요. 아래 순서대로 이어서 하면 돼요.'
+            : '아래 순서대로 이어서 하면 돼요.'}
         </p>
       </div>
 
-      {targetShipmentId && (
-        <Button asChild>
-          <Link
-            href={`/order/fulfillments?shipmentId=${encodeURIComponent(targetShipmentId)}`}
-          >
-            새 상자로 가기
-          </Link>
-        </Button>
+      {steps.length > 0 && (
+        <div className="p-5">
+          <p className="text-sm font-semibold">다음 할 일</p>
+          <ol className="mt-2 flex flex-col gap-1.5">
+            {steps.map((step, index) => (
+              <li
+                key={step.key}
+                className={cn(
+                  'flex flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-2',
+                  step.state === 'current'
+                    ? 'border-green-300 bg-green-50'
+                    : 'bg-white'
+                )}
+              >
+                <span
+                  className={cn(
+                    'text-sm',
+                    step.state === 'current' ? 'font-semibold' : 'font-medium',
+                    step.state === 'later' && 'text-muted-foreground'
+                  )}
+                >
+                  {`${index + 1}. ${step.title}`}
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  {NEXT_STEP_HINT[step.key][step.state]}
+                </span>
+              </li>
+            ))}
+          </ol>
+        </div>
       )}
+    </section>
+  );
+}
+
+function RetiredNotice() {
+  return (
+    <section className="rounded-lg border bg-zinc-50 p-5">
+      <p className="text-base font-semibold">
+        합쳐져서 지금은 쓰지 않는 상자예요
+      </p>
+      <p className="mt-1 text-sm text-zinc-700">
+        상품은 새 상자에 담겼어요. 송장 이력은 아래에 그대로 남아 있어요.
+      </p>
     </section>
   );
 }
@@ -225,6 +325,11 @@ function PendingPanel({
     }
   };
 
+  const orderNos = orderNosOf(progress.sources, shipmentId);
+  const heading = orderNos && mergingHeading(orderNos);
+  const ownsStep = !current || current.shipmentId === shipmentId;
+  const stepBox = current ? boxName(current) : '이 상자';
+
   const warehouseMessage = current
     ? `${batchName ? `${batchName} 배치의 ` : ''}${boxLabel(current)}를 뺐어요. 담아 둔 상품을 되돌려 주세요.`
     : '';
@@ -245,13 +350,26 @@ function PendingPanel({
   return (
     <section className="overflow-hidden rounded-lg border border-blue-200">
       <div className="bg-blue-50 px-5 py-4">
-        <p className="text-base font-semibold">합포장 진행 중</p>
-        <p className="mt-1 text-sm text-zinc-700">
-          {`상자 ${progress.sources.length}개를 하나로 합치는 중이에요`}
-        </p>
-        <p className="text-sm text-zinc-700">
-          끝날 때까지 이 상자는 출고되지 않아요
-        </p>
+        {heading ? (
+          <>
+            <p className="text-base font-semibold">{heading}</p>
+            <p className="mt-1 text-sm text-zinc-700">
+              {progress.sources.length === 2
+                ? '끝날 때까지 두 상자 모두 출고되지 않아요'
+                : `끝날 때까지 상자 ${progress.sources.length}개 모두 출고되지 않아요`}
+            </p>
+          </>
+        ) : (
+          <>
+            <p className="text-base font-semibold">합포장 진행 중</p>
+            <p className="mt-1 text-sm text-zinc-700">
+              {`상자 ${progress.sources.length}개를 하나로 합치는 중이에요`}
+            </p>
+            <p className="text-sm text-zinc-700">
+              끝날 때까지 이 상자는 출고되지 않아요
+            </p>
+          </>
+        )}
       </div>
 
       {exception === null && (
@@ -307,7 +425,9 @@ function PendingPanel({
             <div>
               <p className="text-xs font-semibold text-blue-700">지금 할 일</p>
               <p className="mt-0.5 text-base font-semibold">
-                이 상자를 배치에서 빼 주세요
+                {ownsStep
+                  ? '이 상자를 배치에서 빼 주세요'
+                  : `${stepBox}를 배치에서 빼 주세요`}
               </p>
               <p className="mt-1 text-sm text-zinc-700">
                 {`${batchName ? `${batchName} 배치` : '배치'}에 들어 있어요. 빼면 창고에서 담아 둔 상품을 되돌리는 작업이 생겨요.`}
@@ -357,7 +477,9 @@ function PendingPanel({
             <div>
               <p className="text-xs font-semibold text-blue-700">지금 할 일</p>
               <p className="mt-0.5 text-base font-semibold">
-                기존 운송장을 취소해 주세요
+                {ownsStep
+                  ? '기존 운송장을 취소해 주세요'
+                  : `${stepBox}의 운송장을 취소해 주세요`}
               </p>
               <p className="mt-1 text-sm text-zinc-700">
                 {`${current ? boxLabel(current) : '이 상자'}의 송장은 더 쓸 수 없어요. 합쳐진 상자에 새로 발급해요.`}
@@ -404,15 +526,58 @@ function PendingPanel({
   );
 }
 
-// 합쳐진 원본 상자는 superseded 라 아래 상자 내용(children)을 흐리게 둔다. 초록 패널은 흐리지 않는다.
 export function ConsolidationProgressPanel({
   shipmentId,
+  mergedFromShipmentId,
+  target,
   children,
 }: {
   shipmentId: string;
+  mergedFromShipmentId?: string;
+  target?: MergedTarget;
   children?: ReactNode;
 }) {
-  const { data } = useConsolidationProgress(shipmentId);
+  const queryClient = useQueryClient();
+  const own = useConsolidationProgress(shipmentId);
+  const via = useConsolidationProgress(mergedFromShipmentId ?? '');
+
+  const fromSource =
+    mergedFromShipmentId &&
+    via.data?.status === 'completed' &&
+    via.data.targetShipmentId === shipmentId
+      ? via.data
+      : null;
+  const data = own.data ?? fromSource;
+  const status = data?.status;
+  const previousStatus = useRef(status);
+
+  useEffect(() => {
+    if (
+      previousStatus.current === 'pending' &&
+      status === 'completed' &&
+      data
+    ) {
+      const shipmentIds = new Set([
+        shipmentId,
+        ...data.sources.map((source) => source.shipmentId),
+        ...(data.targetShipmentId ? [data.targetShipmentId] : []),
+      ]);
+
+      void queryClient.invalidateQueries({
+        queryKey: orderQueryKeys.fulfillments,
+      });
+      void queryClient.invalidateQueries({
+        queryKey: orderQueryKeys.fulfillmentOrders,
+      });
+      shipmentIds.forEach((id) => {
+        void queryClient.invalidateQueries({
+          queryKey: orderQueryKeys.shipment(id),
+        });
+      });
+    }
+
+    previousStatus.current = status;
+  }, [status, data, shipmentId, queryClient]);
 
   const superseded =
     data?.status === 'completed' &&
@@ -421,7 +586,12 @@ export function ConsolidationProgressPanel({
   let panel: ReactNode = null;
 
   if (data?.status === 'completed') {
-    panel = <MergedPanel targetShipmentId={data.targetShipmentId} />;
+    panel =
+      data.targetShipmentId === shipmentId ? (
+        <MergedPanel sources={data.sources} target={target} />
+      ) : (
+        <RetiredNotice />
+      );
   } else if (data) {
     panel = <PendingPanel shipmentId={shipmentId} progress={data} />;
   }

@@ -6,6 +6,7 @@ import {
 
 export type ProgressMemberRow = { shipmentId: string; role: 'source' | 'target' };
 
+export type ProgressOrderNoRow = { shipmentId: string; orderNo: string };
 export type ProgressWorkItemRow = { shipmentId: string; batchId: string; status: string };
 export type ProgressWaybillRow = { shipmentId: string; id: string; status: string; trackingNo: string | null };
 export type ProgressReconcileRow = { shipmentId: string; gaveUpAt: Date | null; nextCheckAt: Date };
@@ -25,6 +26,7 @@ export function buildConsolidationProgressResponse(input: {
   workItems: ProgressWorkItemRow[];
   waybills: ProgressWaybillRow[];
   reconcileStates: ProgressReconcileRow[];
+  orderNos: ProgressOrderNoRow[];
 }): ConsolidationProgressResponseDto {
   const { operation, members, ...rows } = input;
   const target = members.find((member) => member.role === 'target');
@@ -44,7 +46,9 @@ export function buildConsolidationProgressSources(input: {
   workItems: ProgressWorkItemRow[];
   waybills: ProgressWaybillRow[];
   reconcileStates: ProgressReconcileRow[];
+  orderNos: ProgressOrderNoRow[];
 }): ConsolidationProgressSourceDto[] {
+  const orderNos = firstByShipment(input.orderNos);
   const workItems = firstByShipment(input.workItems);
   const waybills = firstByShipment(input.waybills);
   const states = firstByShipment(input.reconcileStates);
@@ -65,6 +69,7 @@ export function buildConsolidationProgressSources(input: {
 
     return {
       shipmentId,
+      orderNo: orderNos.get(shipmentId)?.orderNo ?? null,
       trackingNo: waybill?.trackingNo ?? null,
       batchId: workItem?.batchId ?? null,
       workItemStatus: workItem?.status ?? null,

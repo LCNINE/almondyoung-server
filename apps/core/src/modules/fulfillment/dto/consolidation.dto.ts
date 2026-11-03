@@ -177,6 +177,8 @@ export class ConsolidationOptionsResponseDto {
 /** 합포장 진행의 원본 하나. 수령인은 담지 않는다 */
 export class ConsolidationProgressSourceDto {
   shipmentId: string;
+  @ApiProperty({ type: String, nullable: true, description: '이 상자에 담긴 주문의 번호' })
+  orderNo: string | null;
   @ApiProperty({ type: String, nullable: true, description: '종료되지 않은 송장의 번호' })
   trackingNo: string | null;
   @ApiProperty({ type: String, nullable: true, description: '빠지지 않은 배치 작업 항목의 배치' })

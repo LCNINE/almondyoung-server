@@ -5,6 +5,7 @@ import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.sch
 import { ConsolidationProgressResponseDto } from '../dto/consolidation.dto';
 import { WAYBILL_TERMINAL_STATUSES } from '../waybill/waybill.constants';
 import { buildConsolidationProgressResponse, consolidationProgressSourceIds } from './consolidation-progress';
+import { loadShipmentLines } from './consolidation-shipment-reads';
 import { ConsolidationService } from './consolidation.service';
 
 const RESUME_RULE = 'resume-pending-consolidation';
@@ -36,7 +37,7 @@ export class ConsolidationProgressReader {
         operation.status === 'pending'
           ? ((await this.consolidation.resumeReadiness(operation.id, trx))?.blockers ?? [])
           : [];
-      const [workItems, waybills, reconcileStates] = await Promise.all([
+      const [workItems, waybills, reconcileStates, lines] = await Promise.all([
         trx
           .select({
             shipmentId: wmsTables.outboundBatchWorkItems.shipmentId,
@@ -79,7 +80,13 @@ export class ConsolidationProgressReader {
               inArray(wmsTables.shipmentReconcileState.shipmentId, sourceIds),
             ),
           ),
+        loadShipmentLines(trx, sourceIds),
       ]);
+      const orderNos = lines.flatMap((line) => {
+        const orderNo = line.displayOrderNo ?? line.channelOrderId;
+
+        return orderNo ? [{ shipmentId: line.shipmentId, orderNo }] : [];
+      });
 
       return buildConsolidationProgressResponse({
         operation,
@@ -88,6 +95,7 @@ export class ConsolidationProgressReader {
         workItems,
         waybills,
         reconcileStates,
+        orderNos,
       });
     }, tx);
   }
