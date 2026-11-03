@@ -5,7 +5,6 @@ import { assembleConsolidationBoard } from './consolidation-board.reader';
 import { CONSOLIDATION_RECOVERY_CODE } from './consolidation-recovery';
 import {
   loadShipmentLines,
-  loadShipmentProgress,
   OPTION_STATUSES,
   OptionLine,
   ReadDb,
@@ -165,11 +164,20 @@ export async function loadFoConsolidations(
     .from(wmsTables.shipments)
     .where(inArray(wmsTables.shipments.id, shipmentIds));
   const lines = await loadShipmentLines(db, shipmentIds);
-  const progress = await loadShipmentProgress(db, shipmentIds);
-  const groups = assembleConsolidationBoard(
-    shipments.filter((shipment) => OPTION_STATUSES.includes(shipment.status)),
-    lines,
-    progress,
+  const emptyProgress = { batchByShipment: new Map<string, string>(), trackingByShipment: new Map<string, string>() };
+  const openShipments = shipments.filter((shipment) => OPTION_STATUSES.includes(shipment.status));
+  const partitions = new Map<string, ShipmentRow[]>();
+
+  for (const shipment of openShipments) {
+    if (!shipment.shippingProfileId) continue;
+
+    const key = `${shipment.warehouseId}|${shipment.shippingProfileId}`;
+
+    partitions.set(key, [...(partitions.get(key) ?? []), shipment]);
+  }
+
+  const groups = [...partitions.values()].flatMap((members) =>
+    assembleConsolidationBoard(members, lines, emptyProgress),
   );
   const groupByShipment = new Map<string, string[]>();
 
@@ -207,7 +215,7 @@ export async function loadFoConsolidations(
             {
               status: shipment.status,
               recoveryCode: shipment.recoveryCode,
-              orderNos: summarizeShipmentWithoutRecipient(shipment, linesByShipment.get(id) ?? [], progress)
+              orderNos: summarizeShipmentWithoutRecipient(shipment, linesByShipment.get(id) ?? [], emptyProgress)
                 .salesOrderNos,
             },
           ]

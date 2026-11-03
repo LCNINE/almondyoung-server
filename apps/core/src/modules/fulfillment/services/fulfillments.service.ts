@@ -74,6 +74,7 @@ type FoLabels = {
 async function withFoLabels<T extends { id: string; salesOrderId: string | null; warehouseId: string | null }>(
   db: DbTx | DbService<typeof wmsSchema>['db'],
   rows: T[],
+  consolidations: ReadonlyMap<string, FoConsolidation>,
 ): Promise<(T & FoLabels)[]> {
   const salesOrderIds = uniqueStrings(rows.flatMap((row) => (row.salesOrderId ? [row.salesOrderId] : [])));
   const warehouseIds = uniqueStrings(rows.flatMap((row) => (row.warehouseId ? [row.warehouseId] : [])));
@@ -95,10 +96,6 @@ async function withFoLabels<T extends { id: string; salesOrderId: string | null;
     : [];
   const orderById = new Map(orders.map((order) => [order.id, order]));
   const warehouseNameById = new Map(warehouses.map((warehouse) => [warehouse.id, warehouse.name]));
-  const consolidations = await loadFoConsolidations(
-    db,
-    rows.map((row) => ({ id: row.id, salesOrderId: row.salesOrderId, warehouseId: row.warehouseId })),
-  );
   return rows.map((row) => {
     const order = row.salesOrderId ? orderById.get(row.salesOrderId) : undefined;
     return {
@@ -123,6 +120,24 @@ export class FulfillmentsService {
     @Optional() private readonly shipmentReservation?: ShipmentReservationService,
     @Optional() private readonly fulfillmentProgress?: FulfillmentProgressService,
   ) {}
+
+  private async consolidationsOf(
+    rows: readonly { id: string; salesOrderId: string | null; warehouseId: string | null }[],
+    tx?: DbTx,
+  ): Promise<Map<string, FoConsolidation>> {
+    if (tx) return new Map();
+
+    try {
+      return await loadFoConsolidations(
+        this.db.db,
+        rows.map((row) => ({ id: row.id, salesOrderId: row.salesOrderId, warehouseId: row.warehouseId })),
+      );
+    } catch (error) {
+      this.logger.warn(`consolidation labels skipped: ${error instanceof Error ? error.message : String(error)}`);
+
+      return new Map();
+    }
+  }
 
   async requiresPhysicalFulfillmentOrder(salesOrderId: string, tx?: DbTx): Promise<boolean> {
     return this.db.run(async (trx) => {
@@ -635,7 +650,7 @@ export class FulfillmentsService {
       itemsWithSku.map((item) => item.salesOrderLineId).filter((lineId): lineId is string => lineId !== null),
     );
     const lineViews = await selectLineCompositionViews(db, salesOrderLineIds);
-    const [labeled] = await withFoLabels(db, [fulfillmentOrder]);
+    const [labeled] = await withFoLabels(db, [fulfillmentOrder], await this.consolidationsOf([fulfillmentOrder], tx));
     return {
       ...labeled,
       progress,
@@ -686,6 +701,9 @@ export class FulfillmentsService {
       .orderBy(desc(wmsTables.fulfillmentOrders.createdAt));
 
     // V1 의 FO-소유 invoice 조인(issuedForFO)은 Task 25 에서 제거됐다 — V2 invoice 는 shipment 소유다.
-    return { data: await withFoLabels(db, fulfillmentOrders), total };
+    return {
+      data: await withFoLabels(db, fulfillmentOrders, await this.consolidationsOf(fulfillmentOrders, tx)),
+      total,
+    };
   }
 }

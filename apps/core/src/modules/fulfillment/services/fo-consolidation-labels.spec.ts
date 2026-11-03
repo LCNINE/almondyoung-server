@@ -1,4 +1,3 @@
-import { DbTx } from '../../inventory/schema/inventory.schema';
 import { CONSOLIDATION_RECOVERY_CODE } from './consolidation-recovery';
 import { foConsolidationState, loadFoConsolidations } from './fo-consolidation-labels';
 
@@ -98,9 +97,9 @@ describe('loadFoConsolidations 조회 횟수', () => {
       return chain;
     };
 
-    const db = { select: jest.fn(query) };
+    const db: any = { select: jest.fn(query) };
 
-    return { db: db as unknown as DbTx, count: () => queries };
+    return { db, count: () => queries };
   }
 
   const targets = (size: number) =>
@@ -118,7 +117,7 @@ describe('loadFoConsolidations 조회 횟수', () => {
     await loadFoConsolidations(many.db, targets(20));
 
     expect(many.count()).toBe(one.count());
-    expect(many.count()).toBeLessThanOrEqual(8);
+    expect(many.count()).toBeLessThanOrEqual(6);
   });
 
   it('행이 없으면 조회하지 않는다', async () => {
@@ -136,8 +135,10 @@ describe('loadFoConsolidations 조회 횟수', () => {
       roadAddress: '경기 부천시 원미로 12',
       detailAddress: '101호',
     };
-    const shipment = (id: string) => ({
+    const shipment = (id: string, warehouseId = 'wh-1') => ({
       id,
+      warehouseId,
+      shippingProfileId: 'profile-1',
       status: 'draft',
       supplierId: null,
       recoveryCode: null,
@@ -174,5 +175,52 @@ describe('loadFoConsolidations 조회 횟수', () => {
 
     expect(result.get('fo-0')).toEqual({ state: 'mergeable', partnerOrderNos: ['B-2'] });
     expect(JSON.stringify([...result.values()])).not.toContain('김알몬');
+  });
+
+  it('다른 창고의 같은 고객 같은 주소 상자는 mergeable 이 아니다', async () => {
+    const recipient = {
+      recipientName: '김알몬',
+      phone: '010-1234-5678',
+      postalCode: '14500',
+      roadAddress: '경기 부천시 원미로 12',
+      detailAddress: '101호',
+    };
+    const shipment = (id: string, warehouseId: string) => ({
+      id,
+      warehouseId,
+      shippingProfileId: 'profile-1',
+      status: 'draft',
+      supplierId: null,
+      recoveryCode: null,
+      recipientSnapshot: recipient,
+      manifestVersion: 1,
+      reservationVersion: 1,
+      createdAt: new Date('2026-11-01T00:00:00Z'),
+    });
+    const line = (shipmentId: string, salesOrderId: string, displayOrderNo: string) => ({
+      shipmentId,
+      qty: 1,
+      salesOrderId,
+      fulfillmentMode: 'in_house',
+      skuStockType: 'stocked',
+      skuName: '상품',
+      customerId: 'c1',
+      customerName: '김알몬',
+      customerPhone: '01012345678',
+      displayOrderNo,
+      channelOrderId: null,
+      salesChannel: 'medusa',
+      salesOrderCreatedAt: new Date('2026-11-01T00:00:00Z'),
+    });
+    const fake = countingDb(1, [
+      [{ customerId: 'c1', phone: '01012345678' }],
+      [{ shipmentId: 'sh-other' }],
+      [shipment('sh-0', 'wh-1'), shipment('sh-other', 'wh-2')],
+      [line('sh-0', 'so-0', 'A-1'), line('sh-other', 'so-x', 'B-2')],
+    ]);
+
+    const result = await loadFoConsolidations(fake.db, targets(1));
+
+    expect(result.get('fo-0')).toEqual({ state: 'none', partnerOrderNos: [] });
   });
 });
