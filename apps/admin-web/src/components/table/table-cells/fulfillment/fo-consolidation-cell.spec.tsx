@@ -18,10 +18,18 @@ describe('FoConsolidationCell', () => {
     expect(screen.getByText('#6275와 한 상자')).toBeTruthy();
   });
 
+  it('합치는 중이면 amber 배지로 보여요', () => {
+    render(<FoConsolidationCell value={{ state: 'merging', partnerOrderNos: ['6275'] }} />);
+
+    const badge = screen.getByText('#6275와 합치는 중');
+
+    expect(badge.className).toContain('bg-amber-100');
+  });
+
   it('짝이 여럿이면 외 N건으로 줄여요', () => {
     render(<FoConsolidationCell value={{ state: 'merging', partnerOrderNos: ['6275', '6280'] }} />);
 
-    expect(screen.getByText('#6275 외 1건과 한 상자')).toBeTruthy();
+    expect(screen.getByText('#6275 외 1건과 합치는 중')).toBeTruthy();
   });
 
   it('받침 있는 번호에는 과를 붙여요', () => {
