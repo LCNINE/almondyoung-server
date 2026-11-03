@@ -68,9 +68,9 @@ describe('AuthService - signUp', () => {
     jest.clearAllMocks();
 
     usersService = {
-      findUserByEmail: jest.fn(),
-      findUserByLoginId: jest.fn(),
-      findUserByNickname: jest.fn(),
+      findUserByEmailInTenant: jest.fn(),
+      findUserByLoginIdInTenant: jest.fn(),
+      findUserByNicknameInTenant: jest.fn(),
       updateMyProfile: jest.fn().mockResolvedValue(undefined),
     };
 
@@ -141,9 +141,9 @@ describe('AuthService - signUp', () => {
 
   describe('새 유저 회원가입', () => {
     beforeEach(() => {
-      usersService.findUserByEmail.mockResolvedValue(null);
-      usersService.findUserByLoginId.mockResolvedValue(null);
-      usersService.findUserByNickname.mockResolvedValue(null);
+      usersService.findUserByEmailInTenant.mockResolvedValue(null);
+      usersService.findUserByLoginIdInTenant.mockResolvedValue(null);
+      usersService.findUserByNicknameInTenant.mockResolvedValue(null);
     });
 
     it('가입에 성공하면 userId·signupToken·성공 메시지를 반환한다', async () => {
@@ -190,42 +190,65 @@ describe('AuthService - signUp', () => {
 
   describe('중복 거절', () => {
     beforeEach(() => {
-      usersService.findUserByEmail.mockResolvedValue(null);
-      usersService.findUserByLoginId.mockResolvedValue(null);
-      usersService.findUserByNickname.mockResolvedValue(null);
+      usersService.findUserByEmailInTenant.mockResolvedValue(null);
+      usersService.findUserByLoginIdInTenant.mockResolvedValue(null);
+      usersService.findUserByNicknameInTenant.mockResolvedValue(null);
     });
 
     it('이미 가입된 이메일이면 ConflictException 을 던진다', async () => {
-      usersService.findUserByEmail.mockResolvedValue({ id: 'other-user-id' } as any);
+      usersService.findUserByEmailInTenant.mockResolvedValue({ id: 'other-user-id' } as any);
 
       await expect(service.signUp(baseSignUpDto, mockReply)).rejects.toThrow(ConflictException);
       await expect(service.signUp(baseSignUpDto, mockReply)).rejects.toThrow('이미 가입된 이메일입니다.');
     });
 
     it('이메일 인증 여부와 무관하게 거절한다 (미인증 재가입 흐름은 없다)', async () => {
-      usersService.findUserByEmail.mockResolvedValue({ id: 'other-user-id', isEmailVerified: false } as any);
+      usersService.findUserByEmailInTenant.mockResolvedValue({ id: 'other-user-id', isEmailVerified: false } as any);
 
       await expect(service.signUp(baseSignUpDto, mockReply)).rejects.toThrow('이미 가입된 이메일입니다.');
     });
 
     it('이미 존재하는 loginId면 ConflictException을 던져야 한다', async () => {
-      usersService.findUserByLoginId.mockResolvedValue({ id: 'other-user-id' } as any);
+      usersService.findUserByLoginIdInTenant.mockResolvedValue({ id: 'other-user-id' } as any);
 
       await expect(service.signUp(baseSignUpDto, mockReply)).rejects.toThrow(ConflictException);
       await expect(service.signUp(baseSignUpDto, mockReply)).rejects.toThrow('이미 존재하는 아이디입니다.');
     });
 
     it('이미 존재하는 닉네임이면 ConflictException을 던져야 한다', async () => {
-      usersService.findUserByNickname.mockResolvedValue({ id: 'other-user-id' } as any);
+      usersService.findUserByNicknameInTenant.mockResolvedValue({ id: 'other-user-id' } as any);
 
       await expect(service.signUp(baseSignUpDto, mockReply)).rejects.toThrow(ConflictException);
       await expect(service.signUp(baseSignUpDto, mockReply)).rejects.toThrow('이미 존재하는 닉네임입니다.');
     });
 
+    it('세 값의 중복은 이 앱이 섬기는 테넌트 안에서만 묻는다', async () => {
+      await service.signUp(baseSignUpDto, mockReply);
+
+      expect(usersService.findUserByEmailInTenant).toHaveBeenCalledWith(SERVED, 'test@example.com', mockClient);
+      expect(usersService.findUserByLoginIdInTenant).toHaveBeenCalledWith(SERVED, 'testuser', mockClient);
+      expect(usersService.findUserByNicknameInTenant).toHaveBeenCalledWith(SERVED, '테스트닉', mockClient);
+    });
+
+    // 10(contract) 전에는 DB 가 이메일·아이디를 아직 전역으로 막는다 — 다른 테넌트 계정이 가진 값이면 테넌트 안 검사는 통과하고
+    // insert 가 23505 로 실패한다. 오늘과 같은 안내(409)로 돌려준다.
+    it.each([
+      ['users_email_unique', '이미 가입된 이메일입니다.'],
+      ['users_login_id_unique', '이미 존재하는 아이디입니다.'],
+    ])('DB 전역 unique(%s)에 걸리면 같은 409 안내를 준다', async (constraint, message) => {
+      mockReturning.mockRejectedValueOnce(
+        Object.assign(new Error('Failed query'), { cause: { code: '23505', constraint_name: constraint } }),
+      );
+
+      const attempt = service.signUp(baseSignUpDto, mockReply);
+      await expect(attempt).rejects.toThrow(ConflictException);
+      await expect(attempt).rejects.toThrow(message);
+    });
+
     it('이메일 중복이 loginId·닉네임 중복보다 먼저 판정된다', async () => {
-      usersService.findUserByEmail.mockResolvedValue({ id: 'a' } as any);
-      usersService.findUserByLoginId.mockResolvedValue({ id: 'b' } as any);
-      usersService.findUserByNickname.mockResolvedValue({ id: 'c' } as any);
+      usersService.findUserByEmailInTenant.mockResolvedValue({ id: 'a' } as any);
+      usersService.findUserByLoginIdInTenant.mockResolvedValue({ id: 'b' } as any);
+      usersService.findUserByNicknameInTenant.mockResolvedValue({ id: 'c' } as any);
 
       await expect(service.signUp(baseSignUpDto, mockReply)).rejects.toThrow('이미 가입된 이메일입니다.');
     });
@@ -233,7 +256,7 @@ describe('AuthService - signUp', () => {
 
   describe('에러 핸들링', () => {
     it('ConflictException이 아닌 에러는 InternalServerErrorException으로 변환해야 한다', async () => {
-      usersService.findUserByEmail.mockRejectedValue(new Error('DB connection failed'));
+      usersService.findUserByEmailInTenant.mockRejectedValue(new Error('DB connection failed'));
 
       await expect(service.signUp(baseSignUpDto, mockReply)).rejects.toThrow(InternalServerErrorException);
     });
@@ -244,6 +267,7 @@ describe('AuthService - 소셜 가입', () => {
   // 처음 보는 소셜 계정이면 계정을 새로 만든다 — 그 계정도 이 앱이 섬기는 테넌트의 것이다.
   const inserted: Array<{ table: unknown; values: Record<string, unknown> }> = [];
   const limit = jest.fn();
+  const returning = jest.fn();
   const chain = { from: () => chain, innerJoin: () => chain, where: () => chain, limit };
   const tx = {
     select: () => chain,
@@ -251,21 +275,32 @@ describe('AuthService - 소셜 가입', () => {
       values: (values: Record<string, unknown>) => {
         inserted.push({ table, values });
         return Object.assign(Promise.resolve(undefined), {
-          returning: () => Promise.resolve([{ id: 'social-user', email: values.email, username: values.username }]),
+          returning: () => returning(values),
         });
       },
     }),
   };
   let service: AuthService;
+  let usersService: { findUserByEmailInTenant: jest.Mock; findSocialAccountInTenant: jest.Mock };
+  const reply = () => ({ status: jest.fn().mockReturnValue({ redirect: jest.fn() }) }) as never;
 
   beforeEach(async () => {
     inserted.length = 0;
     limit.mockReset();
-    limit.mockResolvedValueOnce([]).mockResolvedValueOnce([{ roleId: 'role-user' }]);
+    // 기본 역할 조회 하나뿐이다 — 기존 계정 찾기·이메일 중복은 UsersService 의 테넌트 안 조회다.
+    limit.mockResolvedValueOnce([{ roleId: 'role-user' }]);
+    returning.mockReset();
+    returning.mockImplementation((values: Record<string, unknown>) =>
+      Promise.resolve([{ id: 'social-user', email: values.email, username: values.username }]),
+    );
+    usersService = {
+      findUserByEmailInTenant: jest.fn().mockResolvedValue(null),
+      findSocialAccountInTenant: jest.fn().mockResolvedValue(null),
+    };
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AuthService,
-        { provide: UsersService, useValue: { findUserByEmail: jest.fn().mockResolvedValue(null) } },
+        { provide: UsersService, useValue: usersService },
         { provide: JwtService, useValue: { signAsync: jest.fn().mockResolvedValue('social-token') } },
         {
           provide: ConfigService,
@@ -284,12 +319,10 @@ describe('AuthService - 소셜 가입', () => {
   });
 
   it('records the served tenant on the new account and on its customer role', async () => {
-    const reply = { status: jest.fn().mockReturnValue({ redirect: jest.fn() }) } as any;
-
     await service.signInWithSocial(
       { name: '소셜', email: 'social@example.com', providerId: 'k-1' },
       ProviderType.KAKAO,
-      reply,
+      reply(),
       tx as never,
     );
 
@@ -297,6 +330,55 @@ describe('AuthService - 소셜 가입', () => {
     expect(account?.values).toEqual(expect.objectContaining({ tenantId: SERVED }));
     const role = inserted.find((i) => i.values.roleId === 'role-user');
     expect(role?.values).toEqual(expect.objectContaining({ tenantId: SERVED }));
+  });
+
+  it('기존 계정 찾기와 이메일 중복은 이 앱이 섬기는 테넌트 안에서 묻는다', async () => {
+    await service.signInWithSocial(
+      { name: '소셜', email: 'social@example.com', providerId: 'k-1' },
+      ProviderType.KAKAO,
+      reply(),
+      tx as never,
+    );
+
+    expect(usersService.findSocialAccountInTenant).toHaveBeenCalledWith(SERVED, ProviderType.KAKAO, 'k-1', tx);
+    expect(usersService.findUserByEmailInTenant).toHaveBeenCalledWith(SERVED, 'social@example.com', tx);
+  });
+
+  // 다른 테넌트 계정에 붙은 신원이면 이 테넌트에선 새 가입으로 가는데, 10(contract) 전에는 전역 unique 가 insert 를 막는다.
+  // 그 DB 오류 원문(이메일·이름이 든 질의 파라미터)이 카카오 콜백의 리디렉트 주소(?errorMessage=)로 나가면 안 된다.
+  it.each(['users_login_id_unique', 'users_email_unique'])(
+    'DB 전역 unique(%s)에 걸리면 개인정보 없는 안내로 실패한다',
+    async (constraint) => {
+      returning.mockRejectedValueOnce(
+        Object.assign(new Error('Failed query: insert into "users" params: kakao_k-1,소셜,social@example.com'), {
+          cause: { code: '23505', constraint_name: constraint },
+        }),
+      );
+
+      const attempt = service.signInWithSocial(
+        { name: '소셜', email: 'social@example.com', providerId: 'k-1' },
+        ProviderType.KAKAO,
+        reply(),
+        tx as never,
+      );
+
+      await expect(attempt).rejects.toThrow('This email already exists');
+      await expect(attempt).rejects.not.toThrow(/social@example\.com|소셜/);
+    },
+  );
+
+  it('이 테넌트에 그 소셜 신원의 계정이 있으면 새로 만들지 않고 그 계정으로 들어간다', async () => {
+    usersService.findSocialAccountInTenant.mockResolvedValue({ id: 'kakao-regular', email: 'social@example.com' });
+
+    await service.signInWithSocial(
+      { name: '소셜', email: 'social@example.com', providerId: 'k-1' },
+      ProviderType.KAKAO,
+      reply(),
+      tx as never,
+    );
+
+    expect(inserted).toHaveLength(0);
+    expect(usersService.findUserByEmailInTenant).not.toHaveBeenCalled();
   });
 });
 

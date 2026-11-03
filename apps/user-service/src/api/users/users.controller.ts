@@ -6,6 +6,7 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  Inject,
   Patch,
   Post,
   Query,
@@ -26,6 +27,7 @@ import { UserDetailsResponseDto } from './dto/user-details.response.dto';
 import { UsersService } from './users.service';
 import { WithdrawnReplayService } from './withdrawn-replay.service';
 import { CurrentUser } from '@app/shared/decorators/current-user.decorator';
+import { SERVED_TENANT_ID } from '../../tenancy/served-tenant';
 import { ServedTenantData } from '../../tenancy/served-tenant.guard';
 
 @ApiTags('Users')
@@ -35,6 +37,8 @@ export class UsersController {
   constructor(
     private readonly usersService: UsersService,
     private readonly withdrawnReplayService: WithdrawnReplayService,
+    // 가입 폼의 사전 중복 체크는 가입과 같은 테넌트(앱 설정 T) 안에서 묻는다 — 고객 가입 계정이 T 의 것이다(ADR-0056).
+    @Inject(SERVED_TENANT_ID) private readonly servedTenantId: string,
   ) {}
 
   @ApiOperation({ summary: '이메일로 사용자 찾기' })
@@ -77,7 +81,7 @@ export class UsersController {
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalized)) {
       throw new BadRequestException('올바른 이메일 형식이 아닙니다.');
     }
-    const available = await this.usersService.isEmailAvailable(normalized);
+    const available = await this.usersService.isEmailAvailable(this.servedTenantId, normalized);
     return { available };
   }
 
@@ -102,7 +106,7 @@ export class UsersController {
     if (!/^[a-z0-9]{4,20}$/.test(normalized)) {
       throw new BadRequestException('아이디는 영문 소문자와 숫자만, 4~20자로 입력해주세요.');
     }
-    const available = await this.usersService.isLoginIdAvailable(normalized);
+    const available = await this.usersService.isLoginIdAvailable(this.servedTenantId, normalized);
     return { available };
   }
 
@@ -127,7 +131,7 @@ export class UsersController {
     if (normalized.length < 2 || normalized.length > 8) {
       throw new BadRequestException('닉네임은 2~8자로 입력해주세요.');
     }
-    const available = await this.usersService.isNicknameAvailable(normalized);
+    const available = await this.usersService.isNicknameAvailable(this.servedTenantId, normalized);
     return { available };
   }
 

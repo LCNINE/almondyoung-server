@@ -73,6 +73,9 @@ OAuth 액세스 토큰에는 `tenant` 가 실리고 `roles` 는 그 테넌트의
 로그인(`POST /auth/signin`)은 auth-web 이 보증 헤더(`x-tenant-id` + `x-internal-secret`)로 화면 테넌트를 실으면 그 테넌트의 계정만 찾는다 —
 다른 테넌트의 계정은 «아이디 또는 비밀번호 틀림»과 같다. 본문 필드가 아닌 건 옛 user-service 가 모르는 헤더를 무시해 auth-web 을 먼저
 내보내도 되게 하려는 것이다. 헤더가 없으면 아직 전체에서 찾는다(읽기 전환 기간).
+가입(`POST /auth/signup`)과 가입 폼의 사전 체크(`/users/*-available`)·소셜 로그인의 «기존 계정»·이메일 중복은 앱 설정 T 의 계정만 본다
+(`UsersService.find…InTenant`·`findSocialAccountInTenant`). 이메일·아이디 unique 는 contract 마이그 전까지 전역이라 다른 테넌트 계정이 가진 값은
+insert 에서 23505 로 걸린다 — 가입은 같은 409 문구로, 소셜 가입은 개인정보 없는 문구로 바꾼다(카카오 콜백이 오류 문구를 리디렉트 주소에 싣는다).
 고객·근태처럼 T 의 데이터를 답하는 컨트롤러(또는 라우트)는 `@ServedTenantData()` 를 단다 — 토큰 테넌트 ≠ T 면 403.
 어느 쪽인지 안 정한 컨트롤러는 `src/tenancy/served-tenant-classification.spec.ts` 가 빨갛게 한다.
 

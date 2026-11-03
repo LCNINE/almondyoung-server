@@ -852,14 +852,14 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'user-service GET /users/me': {
     verdict: 'SAFE',
-    evidence: 'apps/user-service/src/api/users/users.service.ts:63',
+    evidence: 'apps/user-service/src/api/users/users.service.ts:83',
     predicate: '.where(eq(schema.users.id, userId))',
   },
   'user-service GET /users/me/profile': {
     verdict: 'SAFE',
-    evidence: 'apps/user-service/src/api/users/users.service.ts:93',
+    evidence: 'apps/user-service/src/api/users/users.service.ts:111',
     predicate: '.where(eq(schema.users.id, userId))',
-    note: 'getUserDetails(userId) 는 getUserBaseInfo(userId)(65행 동일 predicate)와 getUserExtendedInfo(userId)(93행)를 병렬로 호출하며 둘 다 eq(schema.users.id, userId) 로 스코프된다.',
+    note: 'getUserDetails(userId) 는 getUserBaseInfo(userId)(83행 동일 predicate)와 getUserExtendedInfo(userId)(111행)를 병렬로 호출하며 둘 다 eq(schema.users.id, userId) 로 스코프된다.',
   },
   'user-service GET /beautytop/growth-notes': {
     verdict: 'SAFE',
@@ -927,13 +927,13 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'user-service POST /auth/change-password': {
     verdict: 'SAFE',
-    evidence: 'apps/user-service/src/api/auth/auth.service.ts:958',
+    evidence: 'apps/user-service/src/api/auth/auth.service.ts:974',
     predicate: '.where(eq(userServiceSchema.users.id, userId))',
     note: 'changePassword(current, next, userId) 의 userId 는 CurrentUser(JWT)에서만 온다. 조회(958행)와 갱신(986행) 모두 같은 predicate 로 본인 행만 건드리고, 현재 비밀번호를 bcrypt 로 확인한다.',
   },
   'user-service POST /auth/verify-password-for-pin-reset': {
     verdict: 'SAFE',
-    evidence: 'apps/user-service/src/api/auth/auth.service.ts:1013',
+    evidence: 'apps/user-service/src/api/auth/auth.service.ts:1029',
     predicate: '.where(eq(userServiceSchema.users.id, userId))',
     note: 'verifyPasswordAndIssuePinResetToken(password, userId) 는 checkPassword(1013행)로 본인 행의 비밀번호만 확인하고 sub=userId 토큰을 서명한다. userId 는 CurrentUser(JWT)에서만 온다.',
   },
@@ -1670,7 +1670,7 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'user-service PATCH /users/me': {
     verdict: 'SAFE',
-    evidence: 'apps/user-service/src/api/users/users.service.ts:384',
+    evidence: 'apps/user-service/src/api/users/users.service.ts:428',
     predicate: '.where(eq(schema.users.id, userId))',
     note: '본인 프로필 수정. 핸들러가 @CurrentUser() user.id(서명 검증된 토큰)만 넘기고 경로·바디로 대상 회원을 받지 않는다. 옛 스코프 가드를 걷어 내며 대상에 들어왔다.',
   },
