@@ -5,6 +5,7 @@ import {
   useQuery,
   useMutation,
   useInfiniteQuery,
+  useQueries,
   useQueryClient,
   keepPreviousData,
 } from '@tanstack/react-query';
@@ -143,6 +144,20 @@ export const useShipmentConsolidationCandidates = (
 
 export const useConsolidationCandidatesV2 = useShipmentConsolidationCandidates;
 
+export const useConsolidationBoard = (warehouseId: string) =>
+  useQuery({
+    queryKey: orderQueryKeys.consolidationBoard(warehouseId),
+    queryFn: () => orders.consolidation.getBoard(warehouseId),
+    enabled: !!warehouseId,
+  });
+
+export const usePlannedShipments = (warehouseId: string) =>
+  useQuery({
+    queryKey: orderQueryKeys.plannedShipments(warehouseId),
+    queryFn: () => orders.consolidation.getPlanned(warehouseId),
+    enabled: !!warehouseId,
+  });
+
 export const useConsolidationOptions = (
   shipmentId: string,
   enabled: boolean
@@ -162,6 +177,17 @@ export const useConsolidationProgress = (shipmentId: string) => {
     refetchInterval: (query) =>
       query.state.data?.status === 'pending' ? 15_000 : false,
   });
+};
+
+export const useConsolidationProgresses = (shipmentIds: string[]) => {
+  const results = useQueries({
+    queries: shipmentIds.map((id) => ({
+      queryKey: orderQueryKeys.consolidationProgress(id),
+      queryFn: () => orders.consolidation.getProgress(id),
+    })),
+  });
+
+  return results.map((result) => result.data);
 };
 
 export const useConsolidationLive = (warehouseId: string) => {

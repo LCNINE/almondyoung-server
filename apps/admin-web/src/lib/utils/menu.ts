@@ -236,7 +236,7 @@ const allMenus: MainMenu[] = [
           },
           {
             id: 'consolidation',
-            title: '합포장 분석',
+            title: '합칠 수 있는 주문',
             path: '/order/consolidation',
           },
           {

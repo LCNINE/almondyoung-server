@@ -5,6 +5,14 @@ import {
   type MotionMask,
 } from "./effect-layer"
 import { validPhotoEffects, type PhotoEffects } from "./photo-effects"
+import {
+  validBlendMode,
+  validColorFilter,
+  validGradient,
+  type BlendMode,
+  type ColorFilter,
+  type Gradient,
+} from "./layer-style"
 import { PRINT_SPECS, type PrintKind } from "./catalog"
 import { CLIPART_IDS, FRAME_IDS, SHAPE_VARIANTS } from "./art-library"
 import { FILE_IMAGE_REF } from "./image-ref"
@@ -104,6 +112,13 @@ export type Layer = {
   lineDashCustom?: [number, number]
   linePath?: { x: number; y: number }[]
   lineCurved?: boolean
+  blendMode?: BlendMode
+  colorFilter?: ColorFilter
+  gradient?: Gradient
+  // 글자 모양대로 아래 레이어를 모두 뚫어 배경이 보이게 한다
+  knockout?: boolean
+  // 이 레이어 모양 안에서는 배경과 아래 레이어가 필터 없이 원래 색으로 보인다
+  filterBypass?: boolean
 }
 
 export const SHAPE_TEXT_TYPES: ReadonlySet<Layer["type"]> = new Set<
@@ -123,6 +138,7 @@ export type Design = {
   backgroundImage?: string
   backgroundPixelWidth?: number
   backgroundPixelHeight?: number
+  backgroundFilter?: ColorFilter
   backBackground?: SideBackground
   // 원본 file: 참조 → 편집 화면용 축소본 file: 참조
   imagePreviews?: Record<string, string>
@@ -136,6 +152,7 @@ export type SideBackground = Pick<
   | "backgroundImage"
   | "backgroundPixelWidth"
   | "backgroundPixelHeight"
+  | "backgroundFilter"
 >
 
 export function sideBackground(
@@ -148,7 +165,12 @@ export function sideBackground(
     backgroundImage: design.backgroundImage,
     backgroundPixelWidth: design.backgroundPixelWidth,
     backgroundPixelHeight: design.backgroundPixelHeight,
+    backgroundFilter: design.backgroundFilter,
   }
+}
+
+export function unfiltered(value: SideBackground): SideBackground {
+  return { ...value, backgroundFilter: undefined }
 }
 
 export function printsBack(design: Design): boolean {
@@ -171,6 +193,7 @@ export function withSideBackground(
     backgroundImage: undefined,
     backgroundPixelWidth: undefined,
     backgroundPixelHeight: undefined,
+    backgroundFilter: undefined,
     ...value,
   }
 }
@@ -334,6 +357,14 @@ export function parseDesign(value: unknown): Design {
           layer.strokeWidth > 50)) ||
       !validEffects(layer) ||
       !validPhotoEffects(layer.photoEffects) ||
+      !validBlendMode(layer.blendMode) ||
+      !validColorFilter(layer.colorFilter) ||
+      !validGradient(layer.gradient) ||
+      (layer.knockout !== undefined &&
+        (typeof layer.knockout !== "boolean" ||
+          (layer.knockout && layer.type !== "text"))) ||
+      (layer.filterBypass !== undefined &&
+        typeof layer.filterBypass !== "boolean") ||
       !validMotionMask(layer.imageMotionMask) ||
       (layer.type === "effect" &&
         !EFFECT_LAYERS.some(([key]) => key === layer.effectKind)) ||
@@ -415,6 +446,8 @@ function checkBackgroundImage(data: Partial<SideBackground>) {
         data.backgroundPixelHeight < 1))
   )
     throw new Error("배경 이미지 해상도가 올바르지 않습니다.")
+  if (!validColorFilter(data.backgroundFilter))
+    throw new Error("배경 필터가 올바르지 않습니다.")
 }
 
 export function updateLayer(

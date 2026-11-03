@@ -9,7 +9,7 @@ import {
   textLayerName,
 } from "../lib/layer"
 import { unionBounds } from "../lib/canvas-math"
-import { textBoxFor } from "../components/graphic"
+import { stretchText, textBoxFor } from "../components/graphic"
 
 // 바뀌면 글자 덩치가 달라지는 속성. 이때 상자를 글자에 다시 맞춘다
 const TEXT_SHAPE_KEYS = new Set([
@@ -122,6 +122,8 @@ export function useLayerActions({
     )
     change({ ...design, [side]: [...layers, layer] })
     setSelectedId(layer.id)
+
+    return layer.id
   }
   const editable =
     selected &&
@@ -246,7 +248,18 @@ export function useLayerActions({
       field === "width" || field === "height" ? 1 : -limit,
       Math.min(raw, limit * 2)
     )
-    patch(selected.id, { [field]: value })
+    if (field === "x" || field === "y")
+      return patch(selected.id, { [field]: value })
+
+    // 글상자 크기를 숫자로 바꿔도 손잡이로 끌 때처럼 장평·글자 크기로 채운다. 안 그러면 글자만 줄고 패널 크기 값은 그대로다
+    patch(
+      selected.id,
+      stretchText(selected, {
+        width: selected.width,
+        height: selected.height,
+        [field]: value,
+      })
+    )
   }
 
   return {

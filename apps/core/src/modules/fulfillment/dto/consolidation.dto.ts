@@ -1,4 +1,4 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional, OmitType } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
   ArrayMinSize,
@@ -24,6 +24,11 @@ export class ConsolidationCandidateQueryDto {
   @IsUUID()
   @IsOptional()
   sourceShipmentId?: string;
+}
+
+export class ConsolidationBoardQueryDto {
+  @IsUUID()
+  warehouseId: string;
 }
 
 export class ConsolidationOptionsQueryDto {
@@ -115,6 +120,47 @@ export class ConsolidationOptionShipmentDto {
   createdAt: Date;
 }
 
+export class ConsolidationBoardShipmentDto extends OmitType(ConsolidationOptionShipmentDto, [
+  'recipientSnapshot',
+] as const) {
+  @ApiProperty({ type: Date, nullable: true, description: '담긴 판매주문 중 가장 이른 주문 시각' })
+  orderedAt: Date | null;
+  @ApiProperty({ type: [String], description: '담긴 판매주문의 판매채널' })
+  salesChannels: string[];
+}
+
+export class ConsolidationBoardGroupDto {
+  @ApiProperty({ description: '묶음을 가리키는 불투명한 값' })
+  key: string;
+  @ApiProperty({
+    type: ConsolidationRecipientSnapshotDto,
+    description: '묶음의 수령인 스냅샷. 상자별 수령인은 응답에 담지 않는다',
+  })
+  recipientSnapshot: ConsolidationRecipientSnapshotDto;
+  @ApiProperty({ description: '상자들의 배송 메모가 서로 다르면 true' })
+  memoDiffers: boolean;
+  @ApiProperty({ description: '전부 draft 이고 배치와 송장이 없어 지금 합칠 수 있으면 true' })
+  canMergeNow: boolean;
+  @ApiProperty({ type: [ConsolidationBoardShipmentDto] })
+  shipments: ConsolidationBoardShipmentDto[];
+}
+
+export class ConsolidationBoardResponseDto {
+  @ApiProperty({ type: [ConsolidationBoardGroupDto] })
+  groups: ConsolidationBoardGroupDto[];
+}
+
+export class PlannedShipmentDto {
+  @ApiProperty()
+  shipmentId: string;
+
+  @ApiProperty({ type: [String] })
+  orderNos: string[];
+
+  @ApiProperty()
+  totalQty: number;
+}
+
 export class ConsolidationOptionDto extends ConsolidationOptionShipmentDto {
   @ApiProperty({ enum: ['ok', 'memo_differs', 'address_differs', 'incomplete_recipient', 'unknown_customer'] })
   reason: ConsolidationOptionReason;
@@ -131,6 +177,8 @@ export class ConsolidationOptionsResponseDto {
 /** 합포장 진행의 원본 하나. 수령인은 담지 않는다 */
 export class ConsolidationProgressSourceDto {
   shipmentId: string;
+  @ApiProperty({ type: String, nullable: true, description: '이 상자에 담긴 주문의 번호' })
+  orderNo: string | null;
   @ApiProperty({ type: String, nullable: true, description: '종료되지 않은 송장의 번호' })
   trackingNo: string | null;
   @ApiProperty({ type: String, nullable: true, description: '빠지지 않은 배치 작업 항목의 배치' })

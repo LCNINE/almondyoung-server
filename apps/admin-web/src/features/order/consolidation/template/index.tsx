@@ -1,17 +1,21 @@
 'use client';
 
-import { useState } from 'react';
-import { AlertTriangle, Boxes, RefreshCw } from 'lucide-react';
+import { Fragment, useState } from 'react';
+import { AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 import { Container } from '@/components/admin-ui-experimental/common/container/container';
 import { Header } from '@/components/admin-ui-experimental/common/header/header';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
+import { Checkbox } from '@/components/ui/checkbox';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import {
   Select,
   SelectContent,
@@ -19,268 +23,446 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import { ConsolidationSheet } from '@/features/order/fulfillments/detail/consolidation-sheet';
+import type { PendingCommand } from '@/features/order/fulfillments/detail/consolidation-sheet-model';
 import { usePermissionCheck } from '@/hooks/use-permission';
 import { useWarehouses } from '@/lib/services/inventory/queries';
 import {
-  useShipmentConsolidationCandidates,
-  createIdempotentCommand,
   getServerDenyMessage,
-  isRecoverableOperation,
+  useConsolidationBoard,
   useCreateShipmentConsolidation,
-  useFulfillmentOperation,
 } from '@/lib/services/orders';
-import type { FulfillmentOperationStatus } from '@/lib/types/dto/fulfillment';
+import type {
+  ConsolidationBoardGroup,
+  ConsolidationBoardShipment,
+} from '@/lib/types/dto/fulfillment';
+import { cn } from '@/lib/utils/ui';
+import {
+  BOARD_EMPTY_TEXT,
+  boardFooterText,
+  boardRecipientView,
+  boardRowAction,
+  defaultWarehouseId,
+  filterBoardGroups,
+  groupOrderNos,
+  isBulkSelectable,
+  pickableForMerge,
+  unconfirmedKeys,
+  shipmentBadge,
+  summarizeBulk,
+  replaceResult,
+  retryUnconfirmed,
+  runBulkMerge,
+  type BulkResult,
+} from '../board-model';
 
-type RetryState = {
-  operationId: string;
-  operationStatus: FulfillmentOperationStatus;
-  idempotencyKey: string;
-  data: {
-    sources: Array<{
-      shipmentId: string;
-      expectedManifestVersion: number;
-      expectedReservationVersion: number;
-    }>;
-    recipientSourceShipmentId: string;
-    reason: string;
-    csCaseId?: string;
-    note?: string;
-  };
+const BULK_LABEL: Record<BulkResult['status'], string> = {
+  done: '성공',
+  failed: '실패',
+  unconfirmed: '확인 필요',
 };
 
-function shortId(value: string) {
-  return value ? `${value.slice(0, 8)}…` : '응답 대기';
+function orderedAtText(value: string | null): string {
+  if (!value) {
+    return '-';
+  }
+
+  return new Date(value).toLocaleString('ko-KR', {
+    month: 'numeric',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  });
+}
+
+function shipmentNo(shipment: ConsolidationBoardShipment): string {
+  return shipment.salesOrderNos.length === 0
+    ? `상자 ${shipment.shipmentId.slice(0, 8)}`
+    : shipment.salesOrderNos.map((no) => `#${no}`).join(', ');
 }
 
 export default function ConsolidationTemplate() {
   const { data: warehouses = [] } = useWarehouses();
   const { can, canRun, isPermissionLoading } = usePermissionCheck();
-  const [warehouseId, setWarehouseId] = useState('');
-  const [reason, setReason] = useState('동일 수령인 합포장');
-  const [csCaseId, setCsCaseId] = useState('');
-  const [note, setNote] = useState('');
-  const [retry, setRetry] = useState<RetryState | null>(null);
+  const [pickedWarehouse, setPickedWarehouse] = useState('');
+  const [todayOnly, setTodayOnly] = useState(false);
+  const [beforeWaybillOnly, setBeforeWaybillOnly] = useState(false);
+  const [selected, setSelected] = useState<string[]>([]);
+  const [sheetShipmentId, setSheetShipmentId] = useState('');
+  const [results, setResults] = useState<BulkResult[]>([]);
+  const [resultsOpen, setResultsOpen] = useState(false);
+  const [running, setRunning] = useState(false);
 
+  const warehouseId = pickedWarehouse || defaultWarehouseId(warehouses);
   const canRead = can(['fulfillment.shipment.read']);
   const canCreate = canRun(useCreateShipmentConsolidation);
-  const candidates = useShipmentConsolidationCandidates({ warehouseId });
+  const board = useConsolidationBoard(canRead ? warehouseId : '');
   const create = useCreateShipmentConsolidation();
-  const operation = useFulfillmentOperation(retry?.operationId ?? '');
-  const currentStatus = operation.data?.status ?? retry?.operationStatus;
 
-  const run = async (state: RetryState) => {
-    setRetry(state);
-    try {
-      const result = await create.mutateAsync({
-        data: state.data,
-        idempotencyKey: state.idempotencyKey,
-      });
-      const next = {
-        ...state,
-        operationId: result.operationId,
-        operationStatus: result.operationStatus,
-      };
-      setRetry(next);
-      if (result.operationStatus === 'completed') {
-        toast.success('합포장 작업이 완료되었습니다.');
-        await candidates.refetch();
-      } else {
-        toast.info(
-          '합포장 복구 작업이 접수되었습니다. 완료 전까지 결과를 확정 표시하지 않습니다.'
-        );
-      }
-    } catch (error) {
-      toast.error(getServerDenyMessage(error, '합포장 요청에 실패했습니다.'));
+  const groups = filterBoardGroups(
+    board.data?.groups ?? [],
+    { todayOnly, beforeWaybillOnly },
+    new Date()
+  );
+  const pickedGroups = pickableForMerge(groups, selected, results);
+  const held = unconfirmedKeys(results);
+
+  const toggle = (key: string, checked: boolean) =>
+    setSelected((current) =>
+      checked ? [...current, key] : current.filter((value) => value !== key)
+    );
+
+  const send = (command: PendingCommand) => create.mutateAsync(command);
+  const describe = (error: unknown) =>
+    getServerDenyMessage(error, '합포장 요청에 실패했어요.');
+
+  const mergeSelected = async () => {
+    setRunning(true);
+
+    const collected = await runBulkMerge(pickedGroups, send, describe);
+
+    setRunning(false);
+    setSelected([]);
+    setResults((current) => [
+      ...current.filter(
+        (result) =>
+          result.status === 'unconfirmed' &&
+          !collected.some((next) => next.key === result.key)
+      ),
+      ...collected,
+    ]);
+    setResultsOpen(true);
+
+    if (collected.some((result) => result.status === 'done')) {
+      toast.success('선택한 주문의 합포장을 마쳤어요.');
     }
+
+    await board.refetch();
   };
 
-  const consolidate = async (
-    group: NonNullable<typeof candidates.data>[number]
-  ) => {
-    if (!reason.trim()) {
-      toast.error('작업 사유를 입력하세요.');
-      return;
-    }
-    const state: RetryState = {
-      operationId: '',
-      operationStatus: 'pending',
-      idempotencyKey: createIdempotentCommand({}).idempotencyKey,
-      data: {
-        sources: group.shipments.map((shipment) => ({
-          shipmentId: shipment.shipmentId,
-          expectedManifestVersion: shipment.manifestVersion,
-          expectedReservationVersion: shipment.reservationVersion,
-        })),
-        recipientSourceShipmentId: group.shipments[0].shipmentId,
-        reason: reason.trim(),
-        ...(csCaseId.trim() ? { csCaseId: csCaseId.trim() } : {}),
-        ...(note.trim() ? { note: note.trim() } : {}),
-      },
-    };
-    await run(state);
+  const recheck = async (result: BulkResult) => {
+    setRunning(true);
+
+    const next = await retryUnconfirmed(result, send, describe);
+
+    setRunning(false);
+    setResults((current) => replaceResult(current, next));
+    await board.refetch();
   };
+
+  const unconfirmedCount = results.filter(
+    (result) => result.status === 'unconfirmed'
+  ).length;
 
   return (
     <Container>
       <Header
-        title="합포장 계획"
-        subtitle="서버가 검증한 Draft shipment 후보를 명시적으로 선택해 하나의 shipment로 합칩니다."
+        title="합칠 수 있는 주문"
+        subtitle="같은 고객, 같은 주소로 가는 주문이에요. 고른 주문은 새 상자 하나, 송장 한 장으로 나가요."
       />
       <div className="flex flex-col gap-4 p-4">
-        {!isPermissionLoading && !canRead && (
-          <Alert variant="destructive">
+        {unconfirmedCount > 0 && (
+          <Alert>
             <AlertTriangle />
-            <AlertTitle>조회 권한 없음</AlertTitle>
-            <AlertDescription>
-              합포장 후보를 조회할 권한이 없습니다.
-            </AlertDescription>
-          </Alert>
-        )}
-
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="space-y-1.5">
-            <Label>창고</Label>
-            <Select
-              value={warehouseId}
-              onValueChange={setWarehouseId}
-              disabled={!canRead}
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="창고 선택" />
-              </SelectTrigger>
-              <SelectContent>
-                {warehouses.map((warehouse) => (
-                  <SelectItem key={warehouse.id} value={warehouse.id}>
-                    {warehouse.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1.5">
-            <Label>작업 사유 (필수)</Label>
-            <Input
-              value={reason}
-              onChange={(event) => setReason(event.target.value)}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label>CS case UUID</Label>
-            <Input
-              value={csCaseId}
-              onChange={(event) => setCsCaseId(event.target.value)}
-              placeholder="선택"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label>운영 메모</Label>
-            <Textarea
-              value={note}
-              onChange={(event) => setNote(event.target.value)}
-              rows={1}
-            />
-          </div>
-        </div>
-
-        {canCreate && retry && isRecoverableOperation(currentStatus) && (
-          <Alert className="border-amber-300 bg-amber-50 dark:bg-amber-950/20">
-            <RefreshCw />
-            <AlertTitle>합포장 작업 {currentStatus}</AlertTitle>
+            <AlertTitle>
+              확인이 필요한 합포장이 {unconfirmedCount}건 있어요
+            </AlertTitle>
             <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
-              <span>
-                {retry.operationId
-                  ? `작업 ${shortId(retry.operationId)}`
-                  : '서버 응답 미확인 · 원래 요청 키 보존'}{' '}
-                · 완료가 확인되기 전에는 target shipment를 성공으로 표시하지
-                않습니다.
-              </span>
+              <span>응답을 받지 못해서 서버가 처리했는지 알 수 없어요.</span>
               <Button
                 size="sm"
                 variant="outline"
-                onClick={() => run(retry)}
-                disabled={create.isPending}
+                onClick={() => setResultsOpen(true)}
               >
-                동일 키로 안전 재시도
+                결과 보기
               </Button>
             </AlertDescription>
           </Alert>
         )}
 
+        {!isPermissionLoading && !canRead && (
+          <Alert variant="destructive">
+            <AlertTriangle />
+            <AlertTitle>조회 권한 없음</AlertTitle>
+            <AlertDescription>
+              합칠 수 있는 주문을 볼 권한이 없어요.
+            </AlertDescription>
+          </Alert>
+        )}
+
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <Select
+              value={warehouseId}
+              onValueChange={(value) => {
+                setPickedWarehouse(value);
+                setSelected([]);
+              }}
+              disabled={!canRead}
+            >
+              <SelectTrigger className="w-48" aria-label="창고">
+                <SelectValue placeholder="창고 선택" />
+              </SelectTrigger>
+              <SelectContent>
+                {warehouses.map((warehouse) => (
+                  <SelectItem key={warehouse.id} value={warehouse.id}>
+                    창고: {warehouse.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button
+              variant={todayOnly ? 'secondary' : 'outline'}
+              aria-pressed={todayOnly}
+              onClick={() => setTodayOnly((value) => !value)}
+            >
+              주문일: 오늘
+            </Button>
+            <Button
+              variant={beforeWaybillOnly ? 'secondary' : 'outline'}
+              aria-pressed={beforeWaybillOnly}
+              onClick={() => setBeforeWaybillOnly((value) => !value)}
+            >
+              송장 전 주문만
+            </Button>
+          </div>
+          {canCreate && (
+            <Button
+              onClick={mergeSelected}
+              disabled={running || pickedGroups.length === 0}
+            >
+              {running ? '합치는 중...' : '선택 항목 합치기'}
+            </Button>
+          )}
+        </div>
+
         {!warehouseId ? (
           <p className="py-8 text-center text-sm text-muted-foreground">
-            창고를 선택하세요.
+            창고를 선택해 주세요.
           </p>
-        ) : candidates.isLoading ? (
+        ) : board.isLoading ? (
           <p className="py-8 text-center text-sm text-muted-foreground">
-            실제 후보를 조회하는 중입니다.
+            합칠 수 있는 주문을 불러오고 있어요.
           </p>
-        ) : candidates.isError ? (
+        ) : board.isError ? (
           <Alert variant="destructive">
             <AlertTriangle />
             <AlertDescription>
               {getServerDenyMessage(
-                candidates.error,
-                '합포장 후보 조회에 실패했습니다.'
+                board.error,
+                '합칠 수 있는 주문을 불러오지 못했어요.'
               )}
             </AlertDescription>
           </Alert>
-        ) : (candidates.data?.length ?? 0) === 0 ? (
+        ) : groups.length === 0 ? (
           <p className="py-8 text-center text-sm text-muted-foreground">
-            현재 합포장 가능한 shipment 그룹이 없습니다.
+            {BOARD_EMPTY_TEXT}
           </p>
         ) : (
-          <div className="grid gap-4 xl:grid-cols-2">
-            {candidates.data?.map((group) => (
-              <Card key={group.compatibilityKey}>
-                <CardHeader className="pb-3">
-                  <CardTitle className="flex items-center justify-between text-sm">
-                    <span className="flex items-center gap-2">
-                      <Boxes className="h-4 w-4" /> 후보{' '}
-                      {group.shipments.length}건
-                    </span>
-                    <Badge variant="outline">
-                      {shortId(group.shippingProfileId)}
-                    </Badge>
-                  </CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-3">
-                  <div className="divide-y rounded-md border">
-                    {group.shipments.map((shipment) => (
-                      <div
-                        key={shipment.shipmentId}
-                        className="flex items-center justify-between gap-3 p-3 text-xs"
-                      >
-                        <div>
-                          <p className="font-mono">
-                            {shortId(shipment.shipmentId)}
-                          </p>
-                          <p className="text-muted-foreground">
-                            {shipment.salesChannels.join(', ')} ·{' '}
-                            {shipment.lineCount}라인 · {shipment.totalQty}개
-                          </p>
-                        </div>
-                        <span className="text-muted-foreground">
-                          M{shipment.manifestVersion} / R
-                          {shipment.reservationVersion}
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                  {canCreate && (
-                    <Button
-                      className="w-full"
-                      onClick={() => consolidate(group)}
-                      disabled={create.isPending || !reason.trim()}
-                    >
-                      {create.isPending ? '요청 중...' : '이 그룹 합포장'}
-                    </Button>
-                  )}
-                </CardContent>
-              </Card>
-            ))}
+          <div className="rounded-lg border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-10" />
+                  <TableHead>주문번호</TableHead>
+                  <TableHead>주문시각</TableHead>
+                  <TableHead>받는 분</TableHead>
+                  <TableHead>배송지</TableHead>
+                  <TableHead>송장번호</TableHead>
+                  <TableHead>합칠 수 있는지</TableHead>
+                  <TableHead />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {groups.map((group, index) => (
+                  <GroupRows
+                    key={group.key}
+                    group={group}
+                    striped={index % 2 === 1}
+                    canCreate={canCreate}
+                    held={held.has(group.key)}
+                    checked={selected.includes(group.key)}
+                    onCheck={(checked) => toggle(group.key, checked)}
+                    onOpen={() =>
+                      setSheetShipmentId(group.shipments[0].shipmentId)
+                    }
+                  />
+                ))}
+              </TableBody>
+            </Table>
+            <div className="border-t px-4 py-3 text-sm">
+              <span>{boardFooterText(groups)}</span>
+            </div>
           </div>
         )}
       </div>
+
+      {sheetShipmentId && (
+        <ConsolidationSheet
+          shipmentId={sheetShipmentId}
+          open
+          onOpenChange={(open) => {
+            if (!open) {
+              setSheetShipmentId('');
+            }
+          }}
+          onRequested={() => {
+            board.refetch();
+          }}
+        />
+      )}
+
+      <Dialog open={resultsOpen} onOpenChange={setResultsOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>합치기 결과</DialogTitle>
+            <DialogDescription>{summarizeBulk(results)}</DialogDescription>
+          </DialogHeader>
+          <ul className="flex flex-col gap-2 text-sm">
+            {results.map((result) => (
+              <li
+                key={result.key}
+                className="flex items-start justify-between gap-3 rounded-md border p-3"
+              >
+                <span className="font-medium">{result.orderNos}</span>
+                <span className="text-right">
+                  <Badge variant="outline">{BULK_LABEL[result.status]}</Badge>
+                  <span className="mt-1 block text-muted-foreground">
+                    {result.message}
+                  </span>
+                  {result.status === 'unconfirmed' && canCreate && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="mt-2"
+                      disabled={running}
+                      onClick={() => recheck(result)}
+                    >
+                      다시 확인
+                    </Button>
+                  )}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </DialogContent>
+      </Dialog>
     </Container>
+  );
+}
+
+function GroupRows({
+  group,
+  striped,
+  canCreate,
+  held,
+  checked,
+  onCheck,
+  onOpen,
+}: {
+  group: ConsolidationBoardGroup;
+  striped: boolean;
+  canCreate: boolean;
+  held: boolean;
+  checked: boolean;
+  onCheck: (checked: boolean) => void;
+  onOpen: () => void;
+}) {
+  const span = group.shipments.length;
+  const recipient = boardRecipientView(group.recipientSnapshot);
+  const action = boardRowAction(group);
+  const selectable = isBulkSelectable(group);
+  const rowClass = cn(striped && 'bg-muted/40');
+
+  return (
+    <Fragment>
+      {group.shipments.map((shipment, index) => {
+        const badge = shipmentBadge(shipment);
+
+        return (
+          <TableRow key={shipment.shipmentId} className={rowClass}>
+            {index === 0 && (
+              <TableCell rowSpan={span}>
+                <Checkbox
+                  checked={checked}
+                  disabled={!selectable || !canCreate || held}
+                  onCheckedChange={(value) => onCheck(value === true)}
+                  aria-label={`${groupOrderNos(group)} 선택`}
+                />
+              </TableCell>
+            )}
+            <TableCell>
+              <span className="font-semibold">{shipmentNo(shipment)}</span>{' '}
+              <span className="text-xs text-muted-foreground">
+                {shipment.salesChannels.join(', ')}
+              </span>
+            </TableCell>
+            <TableCell className="text-xs">
+              {orderedAtText(shipment.orderedAt)}
+            </TableCell>
+            {index === 0 && (
+              <>
+                <TableCell rowSpan={span}>
+                  {recipient.name}
+                  <div className="text-xs text-muted-foreground">
+                    전화번호 같음
+                  </div>
+                </TableCell>
+                <TableCell rowSpan={span}>
+                  {recipient.address}
+                  <div className="text-xs text-muted-foreground">
+                    {recipient.addressNote}
+                  </div>
+                  {group.memoDiffers && (
+                    <div className="text-xs text-muted-foreground">
+                      배송 메모가 서로 달라요
+                    </div>
+                  )}
+                </TableCell>
+              </>
+            )}
+            <TableCell className="text-xs">
+              {shipment.waybillTrackingNo ?? (
+                <span className="text-muted-foreground">없음</span>
+              )}
+            </TableCell>
+            <TableCell>
+              <Badge
+                variant="outline"
+                className={cn(
+                  'text-neutral-800',
+                  badge.tone === 'ok'
+                    ? 'border-green-300 bg-green-50'
+                    : 'border-amber-300 bg-amber-50'
+                )}
+              >
+                {badge.label}
+              </Badge>
+            </TableCell>
+            {index === 0 && (
+              <TableCell rowSpan={span}>
+                {canCreate && (
+                  <Button
+                    size="sm"
+                    variant={action === 'merge' ? 'default' : 'outline'}
+                    onClick={onOpen}
+                  >
+                    {action === 'merge' ? '합치기' : '되돌리고 합치기'}
+                  </Button>
+                )}
+              </TableCell>
+            )}
+          </TableRow>
+        );
+      })}
+    </Fragment>
   );
 }

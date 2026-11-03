@@ -83,6 +83,7 @@ const source = (
   overrides: Partial<ConsolidationProgressSource> = {}
 ): ConsolidationProgressSource => ({
   shipmentId: 'src',
+  orderNo: null,
   trackingNo: '4567-8901-2345',
   batchId: 'batch-1',
   workItemStatus: 'picking',
@@ -103,15 +104,24 @@ const pending = (
   sources,
 });
 
+const TARGET = { status: 'draft', waybills: [], workItems: [] };
+
 let queryClient: QueryClient;
 
-const renderPanel = (children?: ReactNode) => {
+const renderPanel = (
+  children?: ReactNode,
+  props: { mergedFromShipmentId?: string; shipmentId?: string } = {}
+) => {
   const wrapper = ({ children: tree }: { children: ReactNode }) => (
     <QueryClientProvider client={queryClient}>{tree}</QueryClientProvider>
   );
 
   return render(
-    <ConsolidationProgressPanel shipmentId="src">
+    <ConsolidationProgressPanel
+      shipmentId={props.shipmentId ?? 'src'}
+      mergedFromShipmentId={props.mergedFromShipmentId}
+      target={TARGET}
+    >
       {children}
     </ConsolidationProgressPanel>,
     { wrapper }
@@ -311,7 +321,7 @@ describe('합포장 진행 패널', () => {
     ).toBe('/order/stall-board');
   });
 
-  it('completed 면 "합쳐졌어요"와 새 상자 링크(/order/fulfillments?shipmentId=<target>)', () => {
+  it('completed 인 원본 상자는 새 상자로 가라고 하지 않고 쓰지 않는 상자라고만 알린다', () => {
     mockProgress.mockReturnValue({
       data: {
         operationId: 'op-1',
@@ -323,12 +333,247 @@ describe('합포장 진행 패널', () => {
 
     renderPanel();
 
-    expect(screen.getByText('합쳐졌어요')).toBeTruthy();
-    expect(
-      screen.getByRole('link', { name: '새 상자로 가기' }).getAttribute('href')
-    ).toBe('/order/fulfillments?shipmentId=target-1');
+    expect(screen.getByText('합쳐져서 지금은 쓰지 않는 상자예요')).toBeTruthy();
+    expect(screen.queryByRole('link', { name: '새 상자로 가기' })).toBeNull();
     expect(screen.queryByText('합포장 진행 중')).toBeNull();
     expect(screen.queryByText('자동으로 합쳐지지 않았어요')).toBeNull();
+  });
+
+  it('한 원본에 주문이 여럿이어도 제목에 모든 주문번호를 센다', () => {
+    mockProgress.mockImplementation((id) => ({
+      data:
+        id === 'src'
+          ? {
+              operationId: 'op-1',
+              status: 'completed',
+              targetShipmentId: 'target-1',
+              sources: [
+                source({ orderNo: '6275, 6276' }),
+                source({ shipmentId: 'other', orderNo: '6314' }),
+              ],
+            }
+          : null,
+    }));
+
+    renderPanel(<p>상자 내용</p>, {
+      shipmentId: 'target-1',
+      mergedFromShipmentId: 'src',
+    });
+
+    expect(
+      screen.getByText('#6275 외 2건이 새 상자 하나로 합쳐졌어요')
+    ).toBeTruthy();
+  });
+
+  it('새 상자에서는 합쳐졌다는 카드와 다음 할 일 세 단계를 맨 위에 보인다', () => {
+    mockProgress.mockImplementation((id) => ({
+      data:
+        id === 'src'
+          ? {
+              operationId: 'op-1',
+              status: 'completed',
+              targetShipmentId: 'target-1',
+              sources: [
+                source({ orderNo: '6275' }),
+                source({ shipmentId: 'other', orderNo: '6314' }),
+              ],
+            }
+          : null,
+    }));
+
+    renderPanel(<p>상자 내용</p>, {
+      shipmentId: 'target-1',
+      mergedFromShipmentId: 'src',
+    });
+
+    expect(
+      screen.getByText('#6275와 #6314가 새 상자 하나로 합쳐졌어요')
+    ).toBeTruthy();
+    expect(screen.getByText('다음 할 일')).toBeTruthy();
+    expect(screen.getByText('1. 계획 확정')).toBeTruthy();
+    expect(screen.getByText('2. 운송장 발급')).toBeTruthy();
+    expect(screen.getByText('3. 배치 넣기')).toBeTruthy();
+    expect(screen.queryByRole('link', { name: '새 상자로 가기' })).toBeNull();
+    expect(hasDimmedAncestor(screen.getByText('상자 내용'))).toBe(false);
+    expect(
+      screen
+        .getByText('#6275와 #6314가 새 상자 하나로 합쳐졌어요')
+        .compareDocumentPosition(screen.getByText('상자 내용')) &
+        Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+  });
+
+  it('주문번호를 모르면 상자 수로 말한다', () => {
+    mockProgress.mockImplementation((id) => ({
+      data:
+        id === 'src'
+          ? {
+              operationId: 'op-1',
+              status: 'completed',
+              targetShipmentId: 'target-1',
+              sources: [source(), source({ shipmentId: 'other' })],
+            }
+          : null,
+    }));
+
+    renderPanel(undefined, {
+      shipmentId: 'target-1',
+      mergedFromShipmentId: 'src',
+    });
+
+    expect(
+      screen.getByText('상자 2개가 새 상자 하나로 합쳐졌어요')
+    ).toBeTruthy();
+  });
+
+  it('합포장이 끝나면 출고주문과 상자 조회를 다시 불러온다', async () => {
+    const invalidate = jest.spyOn(queryClient, 'invalidateQueries');
+    mockProgress.mockReturnValue({
+      data: pending([source(), source({ shipmentId: 'other' })]),
+    });
+
+    const view = renderPanel();
+
+    expect(invalidate).not.toHaveBeenCalledWith({
+      queryKey: orderQueryKeys.fulfillments,
+    });
+
+    mockProgress.mockReturnValue({
+      data: {
+        operationId: 'op-1',
+        status: 'completed',
+        targetShipmentId: 'target-1',
+        sources: [source(), source({ shipmentId: 'other' })],
+      },
+    });
+    view.rerender(
+      <ConsolidationProgressPanel shipmentId="src" target={TARGET} />
+    );
+
+    await waitFor(() =>
+      expect(invalidate).toHaveBeenCalledWith({
+        queryKey: orderQueryKeys.fulfillments,
+      })
+    );
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: orderQueryKeys.fulfillmentOrders,
+    });
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: orderQueryKeys.shipment('src'),
+    });
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: orderQueryKeys.shipment('other'),
+    });
+    expect(invalidate).toHaveBeenCalledWith({
+      queryKey: orderQueryKeys.shipment('target-1'),
+    });
+  });
+
+  it('이미 합쳐진 상자를 처음 열 때는 다시 불러오지 않는다', () => {
+    const invalidate = jest.spyOn(queryClient, 'invalidateQueries');
+    mockProgress.mockReturnValue({
+      data: {
+        operationId: 'op-1',
+        status: 'completed',
+        targetShipmentId: 'target-1',
+        sources: [source()],
+      },
+    });
+
+    renderPanel();
+
+    expect(invalidate).not.toHaveBeenCalled();
+  });
+
+  it('진행 중 제목은 합치는 두 주문을 말하고 내 주문을 앞에 둔다', () => {
+    mockProgress.mockReturnValue({
+      data: pending([
+        source({ shipmentId: 'other', orderNo: '6275', batchId: null }),
+        source({
+          orderNo: '6314',
+          batchId: null,
+          blockers: ['ACTIVE_INVOICE'],
+        }),
+      ]),
+    });
+
+    renderPanel();
+
+    expect(screen.getByText('#6314와 #6275를 합치는 중이에요')).toBeTruthy();
+    expect(
+      screen.getByText('끝날 때까지 두 상자 모두 출고되지 않아요')
+    ).toBeTruthy();
+  });
+
+  it('상대 주문 상자의 일이면 이 상자가 아니라 주문번호와 송장번호로 말한다', () => {
+    mockProgress.mockReturnValue({
+      data: pending([
+        source({ orderNo: '6314', batchId: null, blockers: [] }),
+        source({
+          shipmentId: 'other',
+          orderNo: '6275',
+          trackingNo: '100037690642',
+          batchId: null,
+          waybillId: 'wb-2',
+          blockers: ['ACTIVE_INVOICE'],
+        }),
+      ]),
+    });
+    grant('fulfillment.shipment.reopen');
+
+    renderPanel();
+
+    expect(
+      screen.getByText('#6275 상자의 운송장을 취소해 주세요')
+    ).toBeTruthy();
+    expect(screen.queryByText('기존 운송장을 취소해 주세요')).toBeNull();
+    expect(
+      screen.getByText(/#6275 상자\(송장 100037690642\)의 일이에요/)
+    ).toBeTruthy();
+  });
+
+  it('한 상자에 주문이 여럿이면 주문번호마다 #를 붙인다', () => {
+    mockProgress.mockReturnValue({
+      data: pending([
+        source({ orderNo: '6314', batchId: null, blockers: [] }),
+        source({
+          shipmentId: 'other',
+          orderNo: '6275, 6276',
+          trackingNo: '100037690642',
+          batchId: null,
+          waybillId: 'wb-2',
+          blockers: ['ACTIVE_INVOICE'],
+        }),
+      ]),
+    });
+    grant('fulfillment.shipment.reopen');
+
+    renderPanel();
+
+    expect(
+      screen.getByText('#6275, #6276 상자의 운송장을 취소해 주세요')
+    ).toBeTruthy();
+    expect(
+      screen.getByText(/#6275, #6276 상자\(송장 100037690642\)의 일이에요/)
+    ).toBeTruthy();
+  });
+
+  it('상대 주문 상자를 배치에서 뺄 때도 그 주문을 말한다', () => {
+    mockProgress.mockReturnValue({
+      data: pending([
+        source({ orderNo: '6314', batchId: null, blockers: [] }),
+        source({
+          shipmentId: 'other',
+          orderNo: '6275',
+          trackingNo: '100037690642',
+        }),
+      ]),
+    });
+
+    renderPanel();
+
+    expect(screen.getByText('#6275 상자를 배치에서 빼 주세요')).toBeTruthy();
+    expect(screen.queryByText('이 상자를 배치에서 빼 주세요')).toBeNull();
   });
 
   it('원본이 둘이면 지금 할 일에 그 상자의 송장번호를 적는다', async () => {
@@ -427,7 +672,9 @@ describe('합포장 진행 패널', () => {
 
     renderPanel();
 
-    expect(screen.getByText('이 상자를 배치에서 빼 주세요')).toBeTruthy();
+    expect(
+      screen.getByText('송장 1111-2222-3333 상자를 배치에서 빼 주세요')
+    ).toBeTruthy();
     expect(screen.getByRole('button', { name: '배치에서 빼기' })).toBeTruthy();
     expect(
       screen.getByText('송장 1111-2222-3333 상자의 일이에요')
@@ -448,9 +695,8 @@ describe('합포장 진행 패널', () => {
     renderPanel(<p>상자 내용</p>);
 
     expect(hasDimmedAncestor(screen.getByText('상자 내용'))).toBe(true);
-    expect(hasDimmedAncestor(screen.getByText('합쳐졌어요'))).toBe(false);
     expect(
-      hasDimmedAncestor(screen.getByRole('link', { name: '새 상자로 가기' }))
+      hasDimmedAncestor(screen.getByText('합쳐져서 지금은 쓰지 않는 상자예요'))
     ).toBe(false);
   });
 

@@ -1,3 +1,12 @@
+export function orderShipments<T extends { status: string }>(
+  shipments: readonly T[]
+): { active: T[]; retired: T[] } {
+  return {
+    active: shipments.filter((shipment) => shipment.status !== 'superseded'),
+    retired: shipments.filter((shipment) => shipment.status === 'superseded'),
+  };
+}
+
 export type ShipmentAction = 'split' | 'recipient' | 'plan' | 'recall';
 
 const ALL_ACTIONS: readonly ShipmentAction[] = [

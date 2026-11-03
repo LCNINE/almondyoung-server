@@ -52,6 +52,13 @@ export interface ReservationSummary {
 }
 
 /** GET /fulfillments 목록 / 상세 응답 (Core FulfillmentOrderResponseDto) */
+export type ConsolidationState = 'none' | 'mergeable' | 'merging' | 'merged';
+
+export interface FulfillmentConsolidation {
+  state: ConsolidationState;
+  partnerOrderNos: string[];
+}
+
 export interface FulfillmentOrder {
   id: string;
   salesOrderId: string | null;
@@ -75,6 +82,7 @@ export interface FulfillmentOrder {
   canceledAt: string | null;
   shippingAddress?: unknown;
   labelNo: string | null;
+  consolidation?: FulfillmentConsolidation | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -947,6 +955,39 @@ export interface ConsolidationOption extends ConsolidationOptionShipment {
   selectable: boolean;
 }
 
+export interface ConsolidationBoardShipment {
+  shipmentId: string;
+  status: string;
+  salesOrderNos: string[];
+  itemSummary: string;
+  totalQty: number;
+  batchId: string | null;
+  waybillTrackingNo: string | null;
+  manifestVersion: number;
+  reservationVersion: number;
+  createdAt: string;
+  orderedAt: string | null;
+  salesChannels: string[];
+}
+
+export interface ConsolidationBoardGroup {
+  key: string;
+  recipientSnapshot: Record<string, unknown>;
+  memoDiffers: boolean;
+  canMergeNow: boolean;
+  shipments: ConsolidationBoardShipment[];
+}
+
+export interface PlannedShipment {
+  shipmentId: string;
+  orderNos: string[];
+  totalQty: number;
+}
+
+export interface ConsolidationBoardResponse {
+  groups: ConsolidationBoardGroup[];
+}
+
 export interface ConsolidationOptionsResponse {
   source: ConsolidationOptionShipment;
   options: ConsolidationOption[];
@@ -954,6 +995,7 @@ export interface ConsolidationOptionsResponse {
 
 export interface ConsolidationProgressSource {
   shipmentId: string;
+  orderNo: string | null;
   trackingNo: string | null;
   batchId: string | null;
   workItemStatus: string | null;

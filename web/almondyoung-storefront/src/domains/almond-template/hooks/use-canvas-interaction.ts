@@ -14,7 +14,7 @@ import {
 } from "../lib/document"
 import { mm } from "../lib/layer"
 import { lineFromPoints, lineWidth, lineWorldPoints } from "../lib/line-shape"
-import { textExtent } from "../components/graphic"
+import { stretchText } from "../components/graphic"
 import {
   cropToBox,
   layerBounds,
@@ -45,24 +45,6 @@ type Params = {
 
 export const MIN_ZOOM = 0.1
 export const MAX_ZOOM = 8
-
-// 텍스트는 상자를 꽉 채운다. 높이가 글자 크기를, 남는 가로 비율이 장평을 정한다
-function stretchText(layer: Layer, box: Partial<Layer>): Partial<Layer> {
-  if (layer.type !== "text" || !box.width || !box.height) return box
-  const plain = textExtent(layer, false)
-  const fontSize = Math.max(1, box.height / plain.height)
-  return {
-    ...box,
-    fontSize: Math.round(fontSize * 100) / 100,
-    widthScale:
-      Math.round(
-        Math.max(
-          10,
-          Math.min(1000, (box.width / (plain.width * fontSize)) * 100)
-        ) * 10
-      ) / 10,
-  }
-}
 
 export function useCanvasInteraction({
   design,

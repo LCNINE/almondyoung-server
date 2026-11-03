@@ -18,6 +18,7 @@ import {
 } from '../dto/consolidation.dto';
 import { ConsolidationOptionsService } from './consolidation-options.service';
 import { ConsolidationProgressService } from './consolidation-progress.service';
+import { PlannedShipmentsReader } from './planned-shipments.reader';
 import { canonicalFulfillmentRequestHash } from './fulfillment-command.service';
 import {
   canonicalConsolidationRecipient,
@@ -38,6 +39,7 @@ async function controllerWith(stubs: {
   consolidation?: Partial<ConsolidationService>;
   options?: Partial<ConsolidationOptionsService>;
   progress?: Partial<ConsolidationProgressService>;
+  planned?: Partial<PlannedShipmentsReader>;
 }): Promise<ConsolidationController> {
   const moduleRef = await Test.createTestingModule({
     controllers: [ConsolidationController],
@@ -45,6 +47,7 @@ async function controllerWith(stubs: {
       { provide: ConsolidationService, useValue: stubs.consolidation ?? {} },
       { provide: ConsolidationOptionsService, useValue: stubs.options ?? {} },
       { provide: ConsolidationProgressService, useValue: stubs.progress ?? {} },
+      { provide: PlannedShipmentsReader, useValue: stubs.planned ?? {} },
     ],
   }).compile();
   return moduleRef.get(ConsolidationController);
@@ -249,6 +252,15 @@ describe('ConsolidationService command boundary', () => {
 
     await expect(controller.findProgress(first)).resolves.toBe(response);
     expect(progress.findForShipment).toHaveBeenCalledWith(first);
+  });
+
+  it('passes the warehouse to the planned shipments reader', async () => {
+    const rows = [{ shipmentId: first, orderNos: ['6321'], totalQty: 2 }];
+    const planned: Pick<PlannedShipmentsReader, 'findPlanned'> = { findPlanned: jest.fn().mockResolvedValue(rows) };
+    const controller = await controllerWith({ planned });
+
+    await expect(controller.findPlanned({ warehouseId: second })).resolves.toBe(rows);
+    expect(planned.findPlanned).toHaveBeenCalledWith(second);
   });
 
   it('takes the actor from JWT and strips a forged body operator', async () => {

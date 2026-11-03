@@ -1,7 +1,8 @@
 import { X } from "lucide-react"
-import { Backdrop, LayerGraphic } from "../../graphic"
+import { Backdrop } from "../../graphic"
+import { LayerStack } from "../../layer-stack"
 import type { AlmondEditor } from "../../../hooks/use-almond-editor"
-import { sideBackground } from "../../../lib/document"
+import { sideBackground, unfiltered } from "../../../lib/document"
 
 export function PreviewDialog({ editor }: { editor: AlmondEditor }) {
   const {
@@ -72,9 +73,14 @@ export function PreviewDialog({ editor }: { editor: AlmondEditor }) {
           className="bg-white shadow-xl"
         >
           <Backdrop value={sideBackground(design, previewSide)} />
-          {design[previewSide].map((layer) => (
-            <LayerGraphic key={layer.id} layer={layer} />
-          ))}
+          <LayerStack
+            layers={design[previewSide]}
+            backdrop={
+              <Backdrop
+                value={unfiltered(sideBackground(design, previewSide))}
+              />
+            }
+          />
         </svg>
       </div>
       <div className="flex items-center justify-end gap-3 border-t p-4">

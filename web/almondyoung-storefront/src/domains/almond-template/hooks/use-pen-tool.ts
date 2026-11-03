@@ -197,16 +197,12 @@ export function usePenTool({
     pointEditId && selected?.id === pointEditId ? selected : undefined
   useEffect(() => {
     if (!pointEditId || selected?.id === pointEditId) return
-    // 다른 요소를 골랐으면 점 편집도 끝낸다. 상자는 곡선에 다시 맞춘다
+    // 점 편집은 완료로만 끝난다. 빈 곳을 눌러 선택이 풀려도 편집하던 도형을 다시 고른다
+    if (design[side].some((layer) => layer.id === pointEditId))
+      return setSelectedId(pointEditId)
     setPointEditId(null)
     setActivePoint(null)
-    setDesign((old) => {
-      const layer = old[side].find((item) => item.id === pointEditId)
-      return layer?.pathPoints
-        ? updateLayer(old, side, layer.id, refitPathLayer(layer))
-        : old
-    })
-  }, [pointEditId, selected?.id])
+  }, [pointEditId, selected?.id, design, side])
 
   const point = (event: PointerEvent) => {
     const rect = svgRef.current!.getBoundingClientRect()
@@ -552,6 +548,12 @@ export function usePenTool({
     setActivePoint(null)
     setPointEditId(selected.id)
   }
+  // 방금 넣은 도형처럼 아직 선택 상태에 반영되지 않은 레이어도 바로 점 편집에 들어간다
+  const editPointsOf = (id: string) => {
+    stopDrawing()
+    setActivePoint(null)
+    setPointEditId(id)
+  }
   const finishPointEdit = () => {
     const layer = editing
     setPointEditId(null)
@@ -640,6 +642,19 @@ export function usePenTool({
         ),
       })
     )
+  }
+  // 윤곽선을 누른 자리와 가장 가까운 변 사이에 꼭짓점을 끼운다
+  const insertPoint = (event: PointerEvent<SVGElement>) => {
+    event.stopPropagation()
+    const layer = editing
+    if (!layer?.pathPoints) return
+    const at = normalize(layer, localPoint(event, layer))
+    const index = nearestSegment(layer, at)
+    const points = [...layer.pathPoints]
+
+    points.splice(index + 1, 0, at)
+    change(updateLayer(design, side, layer.id, { pathPoints: points }))
+    setActivePoint(index + 1)
   }
   const removeActivePoint = () => {
     const layer = editing
@@ -759,10 +774,54 @@ export function usePenTool({
     editPoints,
     activePoint,
     startPointEdit,
+    editPointsOf,
     finishPointEdit,
+    insertPoint,
     editDown,
     editMove,
     editUp,
     toggleActiveSmooth,
   }
+}
+
+// 비율 좌표를 mm 로 펴서 잰다. 곡선 구간은 양끝을 잇는 직선으로 어림한다
+export function nearestSegment(layer: Layer, at: { x: number; y: number }) {
+  const points = layer.pathPoints ?? []
+  const count = layer.pathClosed ? points.length : points.length - 1
+  const toMm = (p: { x: number; y: number }) => ({
+    x: p.x * layer.width,
+    y: p.y * layer.height,
+  })
+  const target = toMm(at)
+  let best = 0
+  let bestDistance = Infinity
+
+  for (let i = 0; i < count; i++) {
+    const a = toMm(points[i])
+    const b = toMm(points[(i + 1) % points.length])
+    const dx = b.x - a.x
+    const dy = b.y - a.y
+    const t =
+      dx || dy
+        ? Math.max(
+            0,
+            Math.min(
+              1,
+              ((target.x - a.x) * dx + (target.y - a.y) * dy) /
+                (dx * dx + dy * dy)
+            )
+          )
+        : 0
+    const distance = Math.hypot(
+      a.x + dx * t - target.x,
+      a.y + dy * t - target.y
+    )
+
+    if (distance < bestDistance) {
+      best = i
+      bestDistance = distance
+    }
+  }
+
+  return best
 }

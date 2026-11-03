@@ -10,6 +10,7 @@ import { ALMONDYOUNG_API_BASE_URL } from '@/const';
 import { client } from '../../client';
 import type {
   ConsolidationCandidate,
+  PlannedShipment,
   ConsolidationAnalysisResult,
   ConsolidationLiveOpportunities,
   ConsolidationSavingsProjection,
@@ -18,6 +19,7 @@ import type {
   ShipmentConsolidationCandidateQuery,
   CreateShipmentConsolidationRequest,
   ShipmentConsolidationResponse,
+  ConsolidationBoardResponse,
   ConsolidationOptionsResponse,
   ConsolidationProgressResponse,
 } from '@/lib/types/dto/fulfillment';
@@ -48,6 +50,26 @@ export const consolidationClient = {
     );
     return res.data;
   },
+  getBoard: async (
+    warehouseId: string
+  ): Promise<ConsolidationBoardResponse> => {
+    const res = await client.get(
+      `${ALMONDYOUNG_API_BASE_URL}/shipments/consolidation-board`,
+      { params: { warehouseId } }
+    );
+
+    return res.data;
+  },
+
+  getPlanned: async (warehouseId: string): Promise<PlannedShipment[]> => {
+    const res = await client.get(
+      `${ALMONDYOUNG_API_BASE_URL}/shipments/planned`,
+      { params: { warehouseId } }
+    );
+
+    return res.data;
+  },
+
   getOptions: async (
     shipmentId: string
   ): Promise<ConsolidationOptionsResponse> => {

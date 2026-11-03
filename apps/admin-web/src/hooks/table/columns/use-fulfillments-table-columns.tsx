@@ -6,6 +6,7 @@ import type { FulfillmentOrderListItem } from '@/lib/types/dto/fulfillment';
 import { IdCell, DateCell } from '@/components/table/table-cells/common';
 import {
   FoStatusCell,
+  FoConsolidationCell,
   FoPriorityCell,
   FoModeCell,
 } from '@/components/table/table-cells/fulfillment';
@@ -34,7 +35,14 @@ export const useFulfillmentsTableColumns = () => {
       }),
       columnHelper.accessor('status', {
         header: '상태',
-        cell: ({ getValue }) => <FoStatusCell value={getValue()} />,
+        cell: ({ row }) => (
+          <FoStatusCell value={row.original.status} consolidation={row.original.consolidation} />
+        ),
+      }),
+      columnHelper.display({
+        id: 'consolidation',
+        header: '상자',
+        cell: ({ row }) => <FoConsolidationCell value={row.original.consolidation} />,
       }),
       columnHelper.accessor('warehouseId', {
         header: '창고',

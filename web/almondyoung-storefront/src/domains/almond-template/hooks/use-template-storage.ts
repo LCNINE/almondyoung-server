@@ -24,6 +24,7 @@ import { rasterThumbnail, uploadDesignImages } from "../lib/design-images"
 import { hasProduct, parseDesign, type Design } from "../lib/document"
 import type { PublishedTemplate } from "../lib/gallery-filter"
 import { printSvg } from "../components/print-svg"
+import { fitTextBoxes } from "../components/graphic"
 import { PRINT_PRODUCTS } from "../lib/catalog"
 import { useLeaveWarning } from "./use-leave-warning"
 
@@ -75,6 +76,7 @@ export function useTemplateStorage({
   const saving = useRef(false)
   const ownerChecked = useRef<string | null>(null)
   const latest = useRef(design)
+  const importToken = useRef(0)
   latest.current = design
   const [savedItems, setSavedItems] = useState<SavedItem[]>([])
   const [publishedTemplates, setPublishedTemplates] = useState<
@@ -367,8 +369,17 @@ export function useTemplateStorage({
   const importJson = async (file: File) => {
     if (file.size > 10_000_000)
       return setMessage("10MB 이하 JSON만 불러올 수 있습니다.")
+    const token = ++importToken.current
+    const before = latest.current
     try {
-      const loaded = forRoute(JSON.parse(await file.text()))
+      const loaded = await fitTextBoxes(forRoute(JSON.parse(await file.text())))
+      // 글꼴을 받는 동안 다른 파일을 골랐거나 편집했으면 그 상태를 덮지 않는다
+      if (token !== importToken.current) return
+      if (latest.current !== before)
+        return setMessage(
+          "불러오는 동안 디자인이 바뀌어 불러오기를 멈췄습니다."
+        )
+
       change(loaded)
       setSelectedId(null)
       setLoadDialog(false)

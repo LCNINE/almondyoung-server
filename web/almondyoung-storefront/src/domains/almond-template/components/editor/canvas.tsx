@@ -20,6 +20,7 @@ import {
 } from "react"
 import { createPortal } from "react-dom"
 import { Backdrop, LayerGraphic, photoBox } from "../graphic"
+import { StackedLayer } from "../layer-stack"
 import {
   currentCrop,
   gaps,
@@ -45,6 +46,7 @@ import {
   layerImageDpi,
   SHAPE_TEXT_TYPES,
   sideBackground,
+  unfiltered,
   type Layer,
 } from "../../lib/document"
 
@@ -570,7 +572,9 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
               </g>
             )}
             <g clipPath="url(#almond-print-area)">
-              {layers.map((layer) =>
+              {/* 혼합 모드는 같은 묶음 안에서만 아래를 본다. 배경을 이 안에도 한 번 더 깔아야 배경 사진과 섞인다 */}
+              <Backdrop value={sideBackground(design, side)} />
+              {layers.map((layer, index) =>
                 layer.visible === false ? null : (
                   <g
                     key={layer.id}
@@ -594,7 +598,15 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
                         : "cursor-move"
                     }
                   >
-                    <LayerGraphic layer={layer} />
+                    <StackedLayer
+                      layers={layers}
+                      index={index}
+                      backdrop={
+                        <Backdrop
+                          value={unfiltered(sideBackground(design, side))}
+                        />
+                      }
+                    />
                     {seeThrough(layer) && layer.type === "path" && (
                       // 속이 빈 펜·연필 선은 화면 1~2px 선만 잡혀 끌 수가 없어서, 둘레에 안 보이는 잡기 영역을 둔다
                       <path
@@ -989,8 +1001,9 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
           {penActive && <DrawToolbar editor={editor} />}
           {pointEditLayer && (
             <div className="absolute -top-11 left-1/2 z-30 flex -translate-x-1/2 items-center gap-2 rounded bg-[#303030] px-3 py-1.5 text-xs whitespace-nowrap text-white shadow">
-              점·핸들을 끌어 모양을 바꾸세요 · 점 두 번 클릭: 곡선↔꺾기 ·
-              Alt+끌기: 핸들 따로 · 방향키: 점 옮기기 · Delete: 점 지우기
+              점·핸들을 끌어 모양을 바꾸세요 · 선 클릭: 점 추가 · 점 두 번 클릭:
+              곡선↔꺾기 · Alt+끌기: 핸들 따로 · Delete: 점 지우기 · 끝내려면
+              완료
               <button
                 type="button"
                 onClick={finishPointEdit}

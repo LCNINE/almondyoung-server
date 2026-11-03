@@ -1166,15 +1166,19 @@ export class ShipmentPlanningService {
         .where(eq(wmsTables.fulfillmentOrders.id, fulfillmentOrderId))
         .limit(1);
       if (!fulfillmentOrder) throw new NotFoundException(`Fulfillment order ${fulfillmentOrderId} not found`);
-      const rows = await trx
-        .select({ shipment: wmsTables.shipments, line: wmsTables.shipmentLines })
+      const ownShipmentIds = trx
+        .select({ id: wmsTables.shipmentLines.shipmentId })
         .from(wmsTables.shipmentLines)
-        .innerJoin(wmsTables.shipments, eq(wmsTables.shipments.id, wmsTables.shipmentLines.shipmentId))
         .innerJoin(
           wmsTables.fulfillmentOrderItems,
           eq(wmsTables.fulfillmentOrderItems.id, wmsTables.shipmentLines.fulfillmentOrderItemId),
         )
-        .where(eq(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, fulfillmentOrderId))
+        .where(eq(wmsTables.fulfillmentOrderItems.fulfillmentOrderId, fulfillmentOrderId));
+      const rows = await trx
+        .select({ shipment: wmsTables.shipments, line: wmsTables.shipmentLines })
+        .from(wmsTables.shipmentLines)
+        .innerJoin(wmsTables.shipments, eq(wmsTables.shipments.id, wmsTables.shipmentLines.shipmentId))
+        .where(inArray(wmsTables.shipmentLines.shipmentId, ownShipmentIds))
         .orderBy(asc(wmsTables.shipments.createdAt), asc(wmsTables.shipments.id), asc(wmsTables.shipmentLines.id));
       const byShipment = new Map<string, ShipmentSummaryResponseDto>();
       for (const { shipment, line } of rows) {

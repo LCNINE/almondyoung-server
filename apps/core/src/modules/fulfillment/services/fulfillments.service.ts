@@ -23,6 +23,7 @@ import { compatibleShippingProfileId } from './shipping-profile';
 import { openShipment } from '../shipment/shipment-lifecycle';
 import { reprojectFulfillmentOrders } from '../fulfillment-order/fulfillment-order-projection';
 import { directSuppliersOfSkus } from '../supplier-shipment/direct-suppliers-of-skus';
+import { FoConsolidation, loadFoConsolidations } from './fo-consolidation-labels';
 
 type FulfillmentStatus = (typeof wmsTables.fulfillmentOrders.status.enumValues)[number];
 type FulfillmentMode = (typeof wmsTables.fulfillmentOrders.fulfillmentMode.enumValues)[number];
@@ -62,12 +63,18 @@ function uniqueStrings(values: readonly string[]): string[] {
   return [...new Set(values)].sort();
 }
 
-type FoLabels = { displayOrderNo: string | null; salesChannel: string | null; warehouseName: string | null };
+type FoLabels = {
+  displayOrderNo: string | null;
+  salesChannel: string | null;
+  warehouseName: string | null;
+  consolidation: FoConsolidation | null;
+};
 
 /** 화면이 내부 id 대신 고객이 아는 주문번호와 창고 이름을 보이게 한다 */
-async function withFoLabels<T extends { salesOrderId: string | null; warehouseId: string | null }>(
+async function withFoLabels<T extends { id: string; salesOrderId: string | null; warehouseId: string | null }>(
   db: DbTx | DbService<typeof wmsSchema>['db'],
   rows: T[],
+  consolidations: ReadonlyMap<string, FoConsolidation>,
 ): Promise<(T & FoLabels)[]> {
   const salesOrderIds = uniqueStrings(rows.flatMap((row) => (row.salesOrderId ? [row.salesOrderId] : [])));
   const warehouseIds = uniqueStrings(rows.flatMap((row) => (row.warehouseId ? [row.warehouseId] : [])));
@@ -96,6 +103,7 @@ async function withFoLabels<T extends { salesOrderId: string | null; warehouseId
       displayOrderNo: order?.displayOrderNo ?? null,
       salesChannel: order?.salesChannel ?? null,
       warehouseName: row.warehouseId ? (warehouseNameById.get(row.warehouseId) ?? null) : null,
+      consolidation: consolidations.get(row.id) ?? null,
     };
   });
 }
@@ -112,6 +120,24 @@ export class FulfillmentsService {
     @Optional() private readonly shipmentReservation?: ShipmentReservationService,
     @Optional() private readonly fulfillmentProgress?: FulfillmentProgressService,
   ) {}
+
+  private async consolidationsOf(
+    rows: readonly { id: string; salesOrderId: string | null; warehouseId: string | null }[],
+    tx?: DbTx,
+  ): Promise<Map<string, FoConsolidation>> {
+    if (tx) return new Map();
+
+    try {
+      return await loadFoConsolidations(
+        this.db.db,
+        rows.map((row) => ({ id: row.id, salesOrderId: row.salesOrderId, warehouseId: row.warehouseId })),
+      );
+    } catch (error) {
+      this.logger.warn(`consolidation labels skipped: ${error instanceof Error ? error.message : String(error)}`);
+
+      return new Map();
+    }
+  }
 
   async requiresPhysicalFulfillmentOrder(salesOrderId: string, tx?: DbTx): Promise<boolean> {
     return this.db.run(async (trx) => {
@@ -624,7 +650,7 @@ export class FulfillmentsService {
       itemsWithSku.map((item) => item.salesOrderLineId).filter((lineId): lineId is string => lineId !== null),
     );
     const lineViews = await selectLineCompositionViews(db, salesOrderLineIds);
-    const [labeled] = await withFoLabels(db, [fulfillmentOrder]);
+    const [labeled] = await withFoLabels(db, [fulfillmentOrder], await this.consolidationsOf([fulfillmentOrder], tx));
     return {
       ...labeled,
       progress,
@@ -675,6 +701,9 @@ export class FulfillmentsService {
       .orderBy(desc(wmsTables.fulfillmentOrders.createdAt));
 
     // V1 의 FO-소유 invoice 조인(issuedForFO)은 Task 25 에서 제거됐다 — V2 invoice 는 shipment 소유다.
-    return { data: await withFoLabels(db, fulfillmentOrders), total };
+    return {
+      data: await withFoLabels(db, fulfillmentOrders, await this.consolidationsOf(fulfillmentOrders, tx)),
+      total,
+    };
   }
 }
