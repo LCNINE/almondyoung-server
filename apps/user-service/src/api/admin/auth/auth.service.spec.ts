@@ -213,8 +213,8 @@ describe('AuthService.createAccount — 운영자가 대행해 만드는 직원 
     insertFails = null;
     usersService.findUserByLoginIdInTenant.mockResolvedValue(null);
     usersService.findUserByEmailInTenant.mockResolvedValue(null);
-    // 이름 없는 요청은 요청자의 테넌트(여기선 '1'), 이름이 있으면 그 테넌트 — 운영자만 된다는 판정은 iam Manager 의 몫이다.
-    roleAssignments.tenantForNewAccount.mockImplementation(async (_actor: unknown, requested?: string) => requested ?? '1');
+    // 계정의 테넌트 = 요청자의 테넌트(여기선 '1') — 운영자도 다른 테넌트를 지정하지 않는다(ADR-0056).
+    roleAssignments.tenantForNewAccount.mockResolvedValue('1');
     const module = await Test.createTestingModule({
       providers: [
         AuthService,
@@ -238,28 +238,21 @@ describe('AuthService.createAccount — 운영자가 대행해 만드는 직원 
     expect(operators.assertOperator).not.toHaveBeenCalled();
   });
 
-  it('makes the account belong to the tenant the actor works in when none is named', async () => {
+  it('makes the account belong to the tenant the actor works in', async () => {
     await service.createAccount(dto, actor);
-    expect(roleAssignments.tenantForNewAccount).toHaveBeenCalledWith(actor, undefined, tx);
+    expect(roleAssignments.tenantForNewAccount).toHaveBeenCalledWith(actor, tx);
     expect(inserted[0].values).toMatchObject({ loginId: 'staff1', tenantId: '1' });
   });
 
-  it('makes the account belong to a named tenant, and gives its first role there (the first master)', async () => {
-    await service.createAccount({ ...dto, tenantId: 't2' }, actor);
-    expect(roleAssignments.tenantForNewAccount).toHaveBeenCalledWith(actor, 't2', tx);
-    expect(inserted[0].values).toMatchObject({ tenantId: 't2' });
-    expect(roleAssignments.assignOnCreate).toHaveBeenCalledWith(tx, actor, 'u-new', 'r-staff', 't2');
-  });
-
-  it('creates nothing when the actor may not work in the named tenant', async () => {
-    roleAssignments.tenantForNewAccount.mockRejectedValueOnce(new ForbiddenError('operators only'));
-    await expect(service.createAccount({ ...dto, tenantId: 't2' }, actor)).rejects.toBeInstanceOf(ForbiddenError);
+  it('creates nothing when the tenant the actor works in cannot be told', async () => {
+    roleAssignments.tenantForNewAccount.mockRejectedValueOnce(new ForbiddenError('tenant unresolved'));
+    await expect(service.createAccount(dto, actor)).rejects.toBeInstanceOf(ForbiddenError);
     expect(inserted).toEqual([]);
     expect(roleAssignments.assignOnCreate).not.toHaveBeenCalled();
   });
 
-  it('leaves the change unforced only for an operator (the check account)', async () => {
-    await service.createAccount({ ...dto, tenantId: 't2', forcePasswordChange: false }, actor);
+  it('leaves the change unforced only for an operator', async () => {
+    await service.createAccount({ ...dto, forcePasswordChange: false }, actor);
     expect(operators.assertOperator).toHaveBeenCalledWith(actor, tx);
     expect(inserted[0].values).toMatchObject({ mustChangePassword: false });
   });
@@ -299,7 +292,7 @@ describe('AuthService.createAccount — 운영자가 대행해 만드는 직원 
   });
 
   it('writes only the account row — no UserCreated (a customer sign-up event) goes out', async () => {
-    await service.createAccount({ ...dto, tenantId: 't2' }, actor);
+    await service.createAccount(dto, actor);
     expect(inserted.map((i) => i.table)).toEqual([userServiceSchema.users]);
   });
 });

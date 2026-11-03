@@ -1142,61 +1142,67 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'user-service GET /admin/platform/tenants': {
     verdict: 'N/A',
-    evidence: 'apps/user-service/src/api/iam/platform/platform.controller.ts:38',
+    evidence: 'apps/user-service/src/api/iam/platform/platform.controller.ts:36',
     predicate: '',
     note: '플랫폼 운영자의 테넌트 관리 — 임의의 테넌트를 고르는 것이 기능이다. 라우트 문은 권한 키 iam.tenant.read(첫 부여 없음 = master 만)이고, 판정은 PlatformTenantReader 가 운영자 성질(users.is_platform_operator)로 한다 — 테넌트 안의 master 가 키를 가져도 운영자가 아니면 403.',
   },
   'user-service GET /admin/platform/tenants/:tenantId': {
     verdict: 'N/A',
-    evidence: 'apps/user-service/src/api/iam/platform/platform.controller.ts:45',
+    evidence: 'apps/user-service/src/api/iam/platform/platform.controller.ts:43',
     predicate: '',
     note: '플랫폼 운영자의 테넌트 관리 — 임의의 테넌트를 고르는 것이 기능이다. 라우트 문은 권한 키 iam.tenant.read(첫 부여 없음 = master 만)이고, 판정은 PlatformTenantReader 가 운영자 성질(users.is_platform_operator)로 한다 — 테넌트 안의 master 가 키를 가져도 운영자가 아니면 403.',
   },
   'user-service POST /admin/platform/tenants': {
     verdict: 'N/A',
-    evidence: 'apps/user-service/src/api/iam/platform/platform.controller.ts:52',
+    evidence: 'apps/user-service/src/api/iam/platform/platform.controller.ts:50',
     predicate: '',
     note: '플랫폼 운영자의 테넌트 관리 — 임의의 테넌트·계정을 고르는 것이 기능이다. 라우트 문은 권한 키 iam.tenant.write(첫 부여 없음 = master 만)이고, 판정은 iam Manager(PlatformTenantManager·PlatformOperatorManager)가 트랜잭션 안에서 운영자 성질(users.is_platform_operator)로 한다 — 테넌트 안의 master 가 키를 가져도 운영자가 아니면 403.',
   },
   'user-service PUT /admin/platform/tenants/:tenantId/status': {
     verdict: 'N/A',
-    evidence: 'apps/user-service/src/api/iam/platform/platform.controller.ts:59',
+    evidence: 'apps/user-service/src/api/iam/platform/platform.controller.ts:57',
     predicate: '',
     note: '플랫폼 운영자의 테넌트 관리 — 임의의 테넌트·계정을 고르는 것이 기능이다. 라우트 문은 권한 키 iam.tenant.write(첫 부여 없음 = master 만)이고, 판정은 iam Manager(PlatformTenantManager·PlatformOperatorManager)가 트랜잭션 안에서 운영자 성질(users.is_platform_operator)로 한다 — 테넌트 안의 master 가 키를 가져도 운영자가 아니면 403.',
   },
   'user-service DELETE /admin/platform/tenants/:tenantId': {
     verdict: 'N/A',
-    evidence: 'apps/user-service/src/api/iam/platform/platform.controller.ts:70',
+    evidence: 'apps/user-service/src/api/iam/platform/platform.controller.ts:69',
     predicate: '',
     note: '플랫폼 운영자의 테넌트 관리 — 임의의 테넌트·계정을 고르는 것이 기능이다. 라우트 문은 권한 키 iam.tenant.write(첫 부여 없음 = master 만)이고, 판정은 iam Manager(PlatformTenantManager·PlatformOperatorManager)가 트랜잭션 안에서 운영자 성질(users.is_platform_operator)로 한다 — 테넌트 안의 master 가 키를 가져도 운영자가 아니면 403.',
   },
   'user-service POST /admin/platform/tenants/:tenantId/domains': {
     verdict: 'N/A',
-    evidence: 'apps/user-service/src/api/iam/platform/platform.controller.ts:70',
+    evidence: 'apps/user-service/src/api/iam/platform/platform.controller.ts:76',
     predicate: '',
     note: '플랫폼 운영자의 테넌트 관리 — 임의의 테넌트를 고르는 것이 기능이다. 라우트 문은 권한 키 iam.tenant.write(첫 부여 없음 = master 만)이고, 판정은 PlatformTenantManager 가 트랜잭션 안에서 운영자 성질(users.is_platform_operator)로 한다. 다른 테넌트의 도메인이면 409.',
   },
-  'user-service POST /admin/platform/tenants/:tenantId/members': {
-    verdict: 'N/A',
-    evidence: 'apps/user-service/src/api/iam/platform/platform.controller.ts:78',
-    predicate: '',
-    note: '플랫폼 운영자의 테넌트 관리 — 임의의 테넌트·계정을 고르는 것이 기능이다. 라우트 문은 권한 키 iam.tenant.write(첫 부여 없음 = master 만)이고, 판정은 iam Manager(PlatformTenantManager·PlatformOperatorManager)가 트랜잭션 안에서 운영자 성질(users.is_platform_operator)로 한다 — 테넌트 안의 master 가 키를 가져도 운영자가 아니면 403.',
-  },
   'user-service POST /admin/platform/tenants/:tenantId/oauth-clients/:clientId/uris': {
     verdict: 'N/A',
-    evidence: 'apps/user-service/src/api/iam/platform/platform.controller.ts:90',
+    evidence: 'apps/user-service/src/api/iam/platform/platform.controller.ts:88',
     predicate: '',
     note: '플랫폼 운영자의 테넌트 관리 — 임의의 테넌트·계정을 고르는 것이 기능이다. 라우트 문은 권한 키 iam.tenant.write(첫 부여 없음 = master 만)이고, 판정은 iam Manager(PlatformTenantManager·PlatformOperatorManager)가 트랜잭션 안에서 운영자 성질(users.is_platform_operator)로 한다 — 테넌트 안의 master 가 키를 가져도 운영자가 아니면 403.',
   },
-  'user-service POST /admin/platform/tenants/:tenantId/users/:userId/password': {
+  'user-service GET /admin/platform/tenants/:tenantId/masters': {
     verdict: 'N/A',
-    evidence: 'apps/user-service/src/api/iam/platform/platform.controller.ts:103',
+    evidence: 'apps/user-service/src/api/iam/platform/platform.controller.ts:100',
     predicate: '',
-    note: '플랫폼 운영자의 테넌트 관리 — 임의의 테넌트·계정을 고르는 것이 기능이다. 라우트 문은 권한 키 iam.tenant.write(첫 부여 없음 = master 만)이고, 판정은 iam Manager(PlatformTenantManager·PlatformOperatorManager)가 트랜잭션 안에서 운영자 성질(users.is_platform_operator)로 한다 — 테넌트 안의 master 가 키를 가져도 운영자가 아니면 403.',
+    note: '운영자가 다른 테넌트 계정에 닿는 두 일(ADR-0056)의 재실행 판정 — 그 테넌트의 master 아이디만. 라우트 문은 iam.tenant.read 이고 판정은 PlatformTenantManager 가 운영자 성질로 한다.',
+  },
+  'user-service POST /admin/platform/tenants/:tenantId/first-master': {
+    verdict: 'N/A',
+    evidence: 'apps/user-service/src/api/iam/platform/platform.controller.ts:109',
+    predicate: '',
+    note: '운영자가 다른 테넌트 계정에 닿는 두 일 중 하나(ADR-0056) — 그 테넌트에 master 가 없을 때만, 그 테넌트의 계정으로. 플랫폼 운영자의 테넌트 관리 — 임의의 테넌트·계정을 고르는 것이 기능이다. 라우트 문은 권한 키 iam.tenant.write(첫 부여 없음 = master 만)이고, 판정은 iam Manager(PlatformTenantManager·PlatformOperatorManager)가 트랜잭션 안에서 운영자 성질(users.is_platform_operator)로 한다 — 테넌트 안의 master 가 키를 가져도 운영자가 아니면 403.',
+  },
+  'user-service POST /admin/platform/tenants/:tenantId/masters/:userId/password': {
+    verdict: 'N/A',
+    evidence: 'apps/user-service/src/api/iam/platform/platform.controller.ts:122',
+    predicate: '',
+    note: '운영자가 다른 테넌트 계정에 닿는 두 일 중 하나(ADR-0056) — 대상은 지금 그 테넌트의 master 인 그 테넌트 계정뿐(아니면 404·409). 플랫폼 운영자의 테넌트 관리 — 임의의 테넌트·계정을 고르는 것이 기능이다. 라우트 문은 권한 키 iam.tenant.write(첫 부여 없음 = master 만)이고, 판정은 iam Manager(PlatformTenantManager·PlatformOperatorManager)가 트랜잭션 안에서 운영자 성질(users.is_platform_operator)로 한다 — 테넌트 안의 master 가 키를 가져도 운영자가 아니면 403.',
   },
   'user-service PUT /admin/platform/operators/:userId': {
     verdict: 'N/A',
-    evidence: 'apps/user-service/src/api/iam/platform/platform.controller.ts:115',
+    evidence: 'apps/user-service/src/api/iam/platform/platform.controller.ts:135',
     predicate: '',
     note: '플랫폼 운영자의 테넌트 관리 — 임의의 테넌트·계정을 고르는 것이 기능이다. 라우트 문은 권한 키 iam.tenant.write(첫 부여 없음 = master 만)이고, 판정은 iam Manager(PlatformTenantManager·PlatformOperatorManager)가 트랜잭션 안에서 운영자 성질(users.is_platform_operator)로 한다 — 테넌트 안의 master 가 키를 가져도 운영자가 아니면 403.',
   },
@@ -1738,15 +1744,15 @@ const keyOf = (r: AuditRow): string => `${r.app} ${r.verb} ${r.route}`;
 describe('IDOR 검사 대상 집합', () => {
   it('감사 스크립트가 idorTarget 을 내보낸다', () => {
     const targets = runAudit().filter((r) => r.idorTarget);
-    expect(targets).toHaveLength(282);
+    expect(targets).toHaveLength(283);
   });
 
   // search 와 analytics 가 둘 다 `GET /health` 이고, user-service 와 file-service 가 둘 다
   // `POST /files/upload` 다. `<VERB> <route>` 로 키를 만들면 그만큼 뭉개지고 스냅샷이 조용히 잃는다.
   it('키에 app 이 들어가야 충돌하지 않는다', () => {
     const targets = runAudit().filter((r) => r.idorTarget);
-    expect(new Set(targets.map(keyOf)).size).toBe(282);
-    expect(new Set(targets.map((r) => `${r.verb} ${r.route}`)).size).toBe(280);
+    expect(new Set(targets.map(keyOf)).size).toBe(283);
+    expect(new Set(targets.map((r) => `${r.verb} ${r.route}`)).size).toBe(281);
   });
 
   it('감사 스크립트의 대상 집합과 명단이 정확히 일치한다', () => {

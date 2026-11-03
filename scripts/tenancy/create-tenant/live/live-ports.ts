@@ -9,7 +9,9 @@ import {
 } from '../../../../deployments/lcnine/tenant-domain-slots';
 import { buildDatabaseUrl, createServiceConnection } from '../../../seeding/lib/db-connection';
 import { ISOLATION_CHECK_SECRET, stageServiceUrl } from '../../isolation-check/live-config';
-import { needSecret, secretsOf, setSecret } from '../../sst-live';
+import { authParameter, needSecret, secretsOf, setSecret } from '../../sst-live';
+import { signInStaff } from '../../staff-token';
+import { HttpTenantMasterApi } from '../operator-api.http';
 import { PostgresCoreDatabases } from '../postgres-core-databases';
 import { StepPaused } from '../runner';
 import type {
@@ -62,6 +64,7 @@ export function buildLivePorts(ctx: LiveContext): CreationPorts {
   const certificates = new AcmCertificates(aws, { zoneFor, pollMs: 15_000, maxPolls: 80 });
   const services = () => secretsOf(stage, 'lcnine-services');
 
+  const checkSecret = new LiveCheckAccountSecret(ctx);
   const databases = new PostgresCoreDatabases({
     url: buildDatabaseUrl,
     connect: (db) => createServiceConnection(db, { max: 1, onnotice: () => undefined }),
@@ -87,7 +90,8 @@ export function buildLivePorts(ctx: LiveContext): CreationPorts {
     domainSlotSecrets: new LiveDomainSlotSecrets(ctx, certificates, zoneFor),
     list: new LiveTenantList(ctx),
     deployment: new LiveDeployment(ctx, databases),
-    checkSecret: new LiveCheckAccountSecret(ctx),
+    checkSecret,
+    tenantMaster: new HttpTenantMasterApi(authParameter(stage, 'user-service-url'), checkMasterToken(ctx, checkSecret)),
     domainProbe: { problems: () => measureSlots(ctx) },
     isolation: new LiveIsolationGate(ctx),
     printInitialPassword: ctx.printInitialPassword,
@@ -222,8 +226,14 @@ class LiveCheckAccountSecret implements CheckAccountSecret {
   }
 
   async has() {
+    return (await this.password()) !== null;
+  }
+
+  /** 이 계획의 점검 계정 비밀번호 — 다른 테넌트·다른 아이디의 칸이면 null */
+  async password(): Promise<string | null> {
     const two = this.read().tenantTwo as { id?: unknown; loginId?: unknown; password?: unknown } | undefined;
-    return two?.id === this.ctx.plan.id && two.loginId === this.ctx.plan.checkAccount.loginId && !!two.password;
+    const mine = two?.id === this.ctx.plan.id && two.loginId === this.ctx.plan.checkAccount.loginId;
+    return mine && typeof two.password === 'string' && two.password ? two.password : null;
   }
 
   async save(loginId: string, password: string) {
@@ -238,6 +248,38 @@ class LiveCheckAccountSecret implements CheckAccountSecret {
     };
     setSecret(this.ctx.stage, 'lcnine-services', ISOLATION_CHECK_SECRET, JSON.stringify(next));
   }
+}
+
+const TOKEN_REUSE_MS = 10 * 60_000;
+
+/**
+ * 점검 계정(그 테넌트의 첫 master)의 직원 토큰 — 그 테넌트 admin-web 주소로 받아 토큰 테넌트가 그 테넌트다. 직원 명단은 이 토큰으로
+ * 만든다(운영자 토큰이 아니다, ADR-0056). 수명 15분이라 10분마다 다시 받는다.
+ */
+function checkMasterToken(ctx: LiveContext, secret: LiveCheckAccountSecret): () => Promise<string> {
+  let cached: { token: string; at: number } | null = null;
+  return async () => {
+    if (cached && Date.now() - cached.at < TOKEN_REUSE_MS) return cached.token;
+    const password = await secret.password();
+    if (!password) throw new Error('점검 계정 비밀번호가 Secret 에 없다 — 첫 master 단계가 먼저다');
+    const token = await signInStaff(
+      {
+        baseUrl: authParameter(ctx.stage, 'user-service-url'),
+        internalSecret: needSecret(secretsOf(ctx.stage, 'lcnine-auth'), 'OauthInternalSecret', 'lcnine-auth'),
+        clientId: 'admin-web',
+        clientSecret: needSecret(
+          secretsOf(ctx.stage, 'lcnine-services'),
+          'AdminWebOidcClientSecret',
+          'lcnine-services',
+        ),
+        redirectUri: `https://${ctx.plan.adminDomain}/auth/callback`,
+      },
+      ctx.plan.checkAccount.loginId,
+      password,
+    );
+    cached = { token, at: Date.now() };
+    return token;
+  };
 }
 
 class LiveIsolationGate implements IsolationGate {

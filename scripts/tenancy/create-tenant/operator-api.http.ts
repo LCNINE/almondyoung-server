@@ -1,9 +1,9 @@
 import { tokenForUser } from '../staff-token';
-import type { OperatorApi, TenantDomain, TenantDomainApp, TenantStatus } from './steps';
+import type { OperatorApi, TenantDomain, TenantDomainApp, TenantMasterApi, TenantStatus } from './steps';
 
 /**
- * user-service 운영자 API(`/admin/platform/*` + 테넌트를 받는 역할·계정·부여 API)의 HTTP 어댑터.
- * 모든 쓰기는 iam Manager 를 거친다 — 이 파일은 그 API 를 부르기만 한다.
+ * user-service 운영자 API(`/admin/platform/*` + 역할 정의)의 HTTP 어댑터. 운영자가 다른 테넌트의 계정에 닿는 것은 첫 master
+ * 만들기·master 비번 비상 초기화 둘뿐이다(ADR-0056). 모든 쓰기는 iam Manager 를 거친다 — 이 파일은 그 API 를 부르기만 한다.
  *
  * 토큰은 부를 때마다 받는다 — 라이브 액세스 토큰은 15분이고, 한 실행이 그보다 길 수 있다(인증서 발급 대기).
  */
@@ -83,7 +83,6 @@ export class HttpOperatorApi implements OperatorApi {
     description: string;
     landingPath?: string;
     permissions: string[];
-    tenantId: string;
   }) {
     await this.call('POST', '/admin/roles', input);
   }
@@ -96,83 +95,113 @@ export class HttpOperatorApi implements OperatorApi {
     await this.call('PATCH', `/admin/roles/${roleId}`, { landingPath });
   }
 
-  async roleMemberLoginIds(roleId: string) {
-    const members = (await this.call<{ loginId: string }[]>('GET', `/admin/roles/${roleId}/members`)) ?? [];
-    return members.map((m) => m.loginId);
-  }
-
-  async findUserIdByLoginId(loginId: string) {
-    const page = await this.call<{ data: { id: string; loginId: string }[] }>(
-      'GET',
-      `/admin/users?q=${encodeURIComponent(loginId)}&limit=100`,
+  async tenantMasters(tenantId: string) {
+    return (
+      (await this.call<{ userId: string; loginId: string }[]>(
+        'GET',
+        `/admin/platform/tenants/${encodeURIComponent(tenantId)}/masters`,
+      )) ?? []
     );
-    return page?.data.find((u) => u.loginId === loginId)?.id ?? null;
   }
 
-  async createStaff(input: {
-    loginId: string;
-    username: string;
-    nickname: string;
-    email: string;
-    roleId: string;
-    tenantId: string;
-    forcePasswordChange: boolean;
-  }) {
-    const made = await this.call<{ user: { id: string }; initialPassword: string }>('POST', '/admin/auth', input);
-    if (!made) throw new Error('계정 만들기 응답이 비었다');
-    return { userId: made.user.id, initialPassword: made.initialPassword };
+  async createFirstMaster(
+    tenantId: string,
+    input: { loginId: string; username: string; nickname: string; email: string; forcePasswordChange: boolean },
+  ) {
+    const made = await this.call<{ userId: string; initialPassword: string }>(
+      'POST',
+      `/admin/platform/tenants/${encodeURIComponent(tenantId)}/first-master`,
+      input,
+    );
+    if (!made) throw new Error('첫 master 만들기 응답이 비었다');
+    return made;
   }
 
-  async addMember(tenantId: string, userId: string) {
-    await this.call('POST', `/admin/platform/tenants/${encodeURIComponent(tenantId)}/members`, { userId });
-  }
-
-  async addRoleMembers(roleId: string, tenantId: string, userIds: string[]) {
-    await this.call('POST', `/admin/roles/${roleId}/members`, { userIds, expiresAt: null, tenantId });
-  }
-
-  /** 그날(`YYYY-MM-DD`) 자정 KST 까지의 부여 — 격리 실측 정리 역할(`isolation-check/cleanup-grant.ts`). 이미 있으면 종료일만 바뀐다. */
-  async grantRoleUntil(roleId: string, tenantId: string, userId: string, untilDate: string) {
-    await this.call('POST', `/admin/roles/${roleId}/members`, { userIds: [userId], expiresAt: untilDate, tenantId });
-  }
-
-  /** 그 테넌트의 부여에서 회수한다(운영자만). 테넌트를 안 주면 운영자 토큰의 테넌트(1)에서 찾는다 — 테넌트 2 부여가 남는다. */
-  async removeRoleMember(roleId: string, tenantId: string, userId: string) {
-    await this.call('DELETE', `/admin/roles/${roleId}/members/${userId}?tenantId=${encodeURIComponent(tenantId)}`);
-  }
-
-  async reissuePassword(tenantId: string, userId: string, forcePasswordChange: boolean) {
+  async resetMasterPassword(tenantId: string, userId: string, forcePasswordChange: boolean) {
     const r = await this.call<{ initialPassword: string }>(
       'POST',
-      `/admin/platform/tenants/${encodeURIComponent(tenantId)}/users/${userId}/password`,
+      `/admin/platform/tenants/${encodeURIComponent(tenantId)}/masters/${userId}/password`,
       { forcePasswordChange },
     );
-    if (!r) throw new Error('비밀번호 재발급 응답이 비었다');
+    if (!r) throw new Error('비밀번호 비상 초기화 응답이 비었다');
     return r.initialPassword;
   }
 
-  /** user-service 응답 봉투(`{ success, data }`)를 벗긴다. 404 를 «없음»으로 받는 호출만 `allow404`. */
   private async call<T>(
     method: string,
     path: string,
     body?: unknown,
     opts: { allow404?: boolean } = {},
   ): Promise<T | undefined> {
-    const res = await fetch(`${this.baseUrl}${path}`, {
-      method,
-      headers: {
-        authorization: `Bearer ${await this.accessToken()}`,
-        ...(body === undefined ? {} : { 'content-type': 'application/json' }),
-      },
-      body: body === undefined ? undefined : JSON.stringify(body),
-    });
-    if (opts.allow404 && res.status === 404) return undefined;
-    const text = await res.text();
-    if (!res.ok) throw new Error(`${method} ${path} → ${res.status} ${errorMessage(text)}`);
-    if (!text) return undefined;
-    const json = JSON.parse(text) as { data?: T };
-    return json.data;
+    const r = await callUserService<T>(this.baseUrl, this.accessToken, method, path, body, opts);
+    if (r === CONFLICT) throw new Error(`${method} ${path} → 409`);
+    return r;
   }
+}
+
+/**
+ * 그 테넌트 안의 일 — 점검 master(그 테넌트의 첫 master)의 토큰으로 직원 계정을 만든다. 테넌트는 토큰 테넌트뿐이라 요청에
+ * 테넌트를 싣지 않는다(ADR-0056).
+ */
+export class HttpTenantMasterApi implements TenantMasterApi {
+  constructor(
+    private readonly baseUrl: string,
+    private readonly accessToken: () => Promise<string>,
+  ) {}
+
+  async roleMemberLoginIds(roleId: string) {
+    const members = await callUserService<{ loginId: string }[]>(
+      this.baseUrl,
+      this.accessToken,
+      'GET',
+      `/admin/roles/${roleId}/members`,
+    );
+    if (members === CONFLICT) throw new Error('역할 구성원 조회 → 409');
+    return (members ?? []).map((m) => m.loginId);
+  }
+
+  async createStaff(input: { loginId: string; username: string; nickname: string; email: string; roleId: string }) {
+    const made = await callUserService<{ user: { id: string }; initialPassword: string }>(
+      this.baseUrl,
+      this.accessToken,
+      'POST',
+      '/admin/auth',
+      input,
+      { allow409: true },
+    );
+    if (made === CONFLICT) return null;
+    if (!made) throw new Error('계정 만들기 응답이 비었다');
+    return { userId: made.user.id, initialPassword: made.initialPassword };
+  }
+}
+
+/** `allow409` 호출이 409 를 받았다 */
+const CONFLICT = Symbol('409');
+
+/** user-service 응답 봉투(`{ success, data }`)를 벗긴다. 404 를 «없음»으로 받는 호출만 `allow404`, 409 를 «이미 있음»으로 받는 호출만 `allow409`. */
+async function callUserService<T>(
+  baseUrl: string,
+  accessToken: () => Promise<string>,
+  method: string,
+  path: string,
+  body?: unknown,
+  opts: { allow404?: boolean; allow409?: boolean } = {},
+): Promise<T | typeof CONFLICT | undefined> {
+  const res = await fetch(`${baseUrl}${path}`, {
+    method,
+    headers: {
+      authorization: `Bearer ${await accessToken()}`,
+      ...(body === undefined ? {} : { 'content-type': 'application/json' }),
+    },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  if (opts.allow404 && res.status === 404) return undefined;
+  if (opts.allow409 && res.status === 409) return CONFLICT;
+  const text = await res.text();
+  if (!res.ok) throw new Error(`${method} ${path} → ${res.status} ${errorMessage(text)}`);
+  if (!text) return undefined;
+  const json = JSON.parse(text) as { data?: T };
+  return json.data;
 }
 
 /** 오류 봉투의 `message` 만 — 로컬 user-service 는 stack 까지 싣는다. */

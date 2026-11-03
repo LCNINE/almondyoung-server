@@ -1,5 +1,5 @@
 import { TENANT_ID_PATTERN, TENANT_SLUG_PATTERN } from '@app/tenancy';
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional, PickType } from '@nestjs/swagger';
 import {
   ArrayMaxSize,
   ArrayMinSize,
@@ -10,13 +10,13 @@ import {
   IsOptional,
   IsString,
   IsUrl,
-  IsUUID,
   Matches,
   MaxLength,
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { TENANT_DOMAIN_APPS, type TenantDomainApp } from 'apps/user-service/database/drizzle/schema';
+import { CreateAccountDto } from '../../../admin/auth/dto/create-account-dto';
 import { IsRedirectUri } from '../../../oauth/redirect-uri';
 
 /** URL 의 host(포트 포함). 대소문자는 저장할 때 소문자로 맞춘다. */
@@ -78,8 +78,23 @@ export class SetTenantStatusDto {
 /** 더할 테넌트 도메인 — 예: 그 테넌트의 auth-web 주소. */
 export class AddTenantDomainDto extends TenantDomainDto {}
 
-export class AddTenantMemberDto {
-  @ApiProperty() @IsUUID() userId!: string;
+/** 첫 master — 계정 만들기와 같은 칸·규칙(아이디·이름 길이 등). 역할은 고르지 않는다(언제나 master). */
+export class CreateFirstMasterDto extends PickType(CreateAccountDto, [
+  'loginId',
+  'username',
+  'nickname',
+  'email',
+  'forcePasswordChange',
+] as const) {}
+
+export class FirstMasterDto {
+  @ApiProperty() userId!: string;
+  @ApiProperty({ description: '한 번만 나간다 — 서버에 원문이 남지 않는다' }) initialPassword!: string;
+}
+
+export class TenantMasterDto {
+  @ApiProperty() userId!: string;
+  @ApiProperty() loginId!: string;
 }
 
 export class AddStaffClientUrisDto {
@@ -96,7 +111,7 @@ export class AddStaffClientUrisDto {
 }
 
 export class ReissuePasswordDto {
-  @ApiPropertyOptional({ description: '첫 로그인 때 변경 강제(기본 true). false 는 점검 계정용' })
+  @ApiPropertyOptional({ description: '첫 로그인 때 변경 강제(기본 true). false 는 우리 점검 계정용' })
   @IsOptional()
   @IsBoolean()
   forcePasswordChange?: boolean;
@@ -125,7 +140,11 @@ export class TenantBrandDto {
 
 export class TenantAdminSiteDto extends TenantBrandDto {
   @ApiProperty() tenantId!: string;
-  @ApiProperty({ nullable: true, type: String, description: '그 테넌트의 auth-web 주소 — 테넌트 셸이 로그인을 여기로 보낸다' })
+  @ApiProperty({
+    nullable: true,
+    type: String,
+    description: '그 테넌트의 auth-web 주소 — 테넌트 셸이 로그인을 여기로 보낸다',
+  })
   authHost!: string | null;
 }
 

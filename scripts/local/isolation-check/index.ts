@@ -15,7 +15,8 @@ import {
   findDigitalAssetFile,
   observeCronRuns,
 } from '../../tenancy/isolation-check/db-observation';
-import { expectOk } from '../../tenancy/isolation-check/http';
+import { removeProductsAsCheckMaster } from '../../tenancy/isolation-check/cleanup-products';
+import { expectOk, probe } from '../../tenancy/isolation-check/http';
 import { sumSamples } from '../../tenancy/isolation-check/prometheus';
 import { printLeftovers, runChecks } from '../../tenancy/isolation-check/runner';
 import { tenantDomainsOf } from '../../tenancy/isolation-check/tenant-domains';
@@ -203,11 +204,16 @@ async function main(): Promise<void> {
       metricsLagMs: 0,
       setTenantStatus: async (id, status) =>
         new HttpOperatorApi(userService, operatorToken).setTenantStatus(id, status),
-      // 테넌트 2 역할엔 catalog.product.delete 가 없다. 로컬 픽스처라 API 의 지우기와 같은 soft delete 를 직접 건다.
-      removeProducts: async (ids) => {
-        await sql`UPDATE product_masters SET deleted_at = now() WHERE id IN ${sql(ids)} AND deleted_at IS NULL`;
-        return [];
-      },
+      // 점검 계정은 테넌트 2 의 첫 master 라 자기 토큰으로 지운다 — 라이브와 같은 길(cleanup-products.ts).
+      removeProducts: (ids) =>
+        removeProductsAsCheckMaster(
+          {
+            signInTenantTwo: () => signInStaff(tenantTwoClient, checkAccount.loginId, checkAccount.password),
+            deleteProduct: (token, masterId) =>
+              probe('DELETE', `${mustUrl('core')}/masters/${masterId}`, { bearer: token }),
+          },
+          ids,
+        ),
     },
   };
 

@@ -47,7 +47,7 @@ export class AuthService {
   private async _createAccountWithTransaction(createAccountDto: CreateAccountDto, actor: IamActor, tx: UserServiceTx) {
     const client = this.getClient(tx);
     const { loginId, roleId, phone_number, email, username, nickname } = createAccountDto;
-    const tenantId = await this.roleAssignments.tenantForNewAccount(actor, createAccountDto.tenantId, tx);
+    const tenantId = await this.roleAssignments.tenantForNewAccount(actor, tx);
     // 첫 로그인 변경 강제를 끄는 것은 점검 계정용이다 — 운영자만.
     const mustChangePassword = createAccountDto.forcePasswordChange ?? true;
     if (!mustChangePassword) await this.operators.assertOperator(actor, tx);

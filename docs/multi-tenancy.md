@@ -13,8 +13,8 @@
 | 공유 서비스는 한 테넌트만 섬긴다 | [[0054-shared-services-serve-one-tenant]] |
 | 테넌트 직원 화면 = 테넌트 도메인의 테넌트 셸 | [[0055-tenant-shell-on-tenant-domain]] |
 
-🔸 **계정 모델이 바뀐다(0056, 미구현).** 아래 «계정·소속·플랫폼 운영자», 3절의 user-service 줄, 함정 6·28·29·31 은 **지금 코드**를 적은 것이다 —
-0056 이 구현되면 계정은 한 테넌트의 것이 되고 소속은 없어진다. 그 PR 이 이 항목들을 다시 쓴다. 계정 전역을 새로 더 굳히는 코드는 그 전에 0056 과 맞는지 먼저 본다.
+🔸 **계정 모델이 바뀐다(0056, 구현 중).** 아래 «계정·소속», 3절의 user-service 줄, 함정 6 은 아직 **지금 코드**를 적은 것이다 —
+0056 이 다 구현되면 계정은 한 테넌트의 것이 되고 소속은 없어진다. 운영자 쪽(«플랫폼 운영자», 함정 28·29·31)은 이미 새 사실이다. 계정 전역을 새로 더 굳히는 코드는 그 전에 0056 과 맞는지 먼저 본다.
 지금은 expand 까지다: `users.tenant_id`(nullable, 마이그 SQL 에만 DB 기본값 `'1'`)가 채워졌고 새 계정(고객·소셜 가입 = 앱 설정 T,
 직원 대행 = 요청자 테넌트, 첫 `master` = 대상 테넌트)과 인증번호 기록이 테넌트를 쓴다. 로그인은 화면 테넌트가 오면 그 안에서,
 가입·소셜 로그인의 중복 확인(이메일·아이디·닉네임·소셜 신원)과 아이디·비밀번호 찾기·재설정은 앱 설정 T 안에서 찾고,
@@ -36,7 +36,7 @@
 | **계정** | 사람 한 명의 신원. 시스템 전체에 하나이고 어느 테넌트의 것도 아니다. 🔸 0056: 정확히 한 테넌트의 것으로 바뀐다. |
 | **소속** | 계정이 어느 테넌트의 직원인가. 🔸 0056: 판정에 더는 쓰지 않는다 — 역할을 주고 늘리는 것은 계정의 테넌트에서만이다(부여의 테넌트 = 계정의 테넌트). 표는 옛 코드로 되돌릴 때를 위해 contract 까지 계속 쓰고, contract 가 걷는다. |
 | **고객** | 어느 테넌트의 고객 역할을 가진 계정. 어느 테넌트의 고객인지는 들어온 앱이 정한다. 운영자가 만들어 주는 직원 계정은 고객 가입이 아니다. |
-| **플랫폼 운영자** | 이 시스템을 운영하는 우리. 테넌트 역할이 아니라 계정의 성질. `master` 는 테넌트 안의 전권 역할일 뿐이다. 🔸 0056: 플랫폼 일만, 다른 테넌트 계정엔 첫 `master` 만들기·비번 비상 초기화만. |
+| **플랫폼 운영자** | 이 시스템을 운영하는 우리. 테넌트 역할이 아니라 계정의 성질(운영자 테넌트의 계정에만 준다). `master` 는 테넌트 안의 전권 역할일 뿐이다. 운영자 API 는 플랫폼 일(테넌트·역할 정의·로그인 클라이언트)만 하고, 다른 테넌트의 계정에 닿는 일은 둘뿐이다: 그 테넌트의 첫 `master` 만들기, 그 `master` 의 비밀번호 비상 초기화(0056). 요청에 테넌트를 실어 «그 테넌트로 일하는» 길은 없다. |
 | **토큰 테넌트** | 토큰의 `tenant` 클레임. 토큰의 역할은 이 테넌트에서 받은 부여만 실린다. |
 | **앱 설정 T** | `SERVED_TENANT_ID` — 한 테넌트만 섬기는 앱이 섬기는 그 테넌트. |
 | **문 모드** | `TENANT_GATE_MODE` = `warn`(없으면 경고 + 셈) / `reject`(없으면 거절). 라이브는 `reject`. SoT 는 lcnine-auth 의 `tenantGateMode` 한 줄. |
@@ -192,16 +192,20 @@ CSS `@import` 외부 폰트(네트워크 호스트 흔적 — 자체 서빙), �
 
 ### 4.3 테넌트 만들기·운영
 
-**28. 만들기 스크립트를 우회하지 않는다.** 역할·계정·소속·부여는 운영자 API(iam Manager)로만 만든다 — 직접 SQL 은 권한 상승 방지와 이력을 건너뛴다. 목록 넣기 전 실패는 지나온 단계를 거꾸로 되돌리고,
+**28. 만들기 스크립트를 우회하지 않는다.** 역할·계정·부여는 iam Manager 를 거치는 API 로만 만든다 — 직접 SQL 은 권한 상승 방지와 이력을 건너뛴다. 목록 넣기 전 실패는 지나온 단계를 거꾸로 되돌리고,
 목록 뒤 실패는 되돌리지 않는다. 같은 id 다른 slug 같은 «남의 상태»를 만나면 되돌리지 않고 멈춘다(`StepRefused` — 되돌리면 남의 행·DB 를 지운다). 사람 손 멈춤은 exit 2, 재실행이 이어간다.
 계획 파일이 git 추적 경로면 거절한다. 계획 파일 검사가 user-service 계정 규칙(아이디 소문자·숫자 4~20자, 이름 2~8자)을 먼저 본다.
 장치: `scripts/tenancy/create-tenant/runner.spec.ts`, `steps.spec.ts`, `live/live-plan.spec.ts`.
 
-**29. 계정·역할은 전역이다.** 🔸 0056 이 계정 쪽을 뒤집는다(역할 정의는 전역 그대로). 테넌트를 지워도 계정은 남고, 재실행은 «계정 있으면 소속 추가 → 비밀번호 재발급»으로 이어 간다. 역할 이름에 테넌트 이름을 넣지 않는다. 부여 unique 가 `(user, role)` 이라
-같은 역할을 두 테넌트에서 받을 수 없다(`IAM_GRANTED_ELSEWHERE`). 회수는 테넌트를 지정한다(`DELETE /admin/roles/:id/members/:userId?tenantId=`) — 지정 없는 회수는 토큰 테넌트 부여만 보고 2xx 로 끝나 다른 테넌트 부여가 조용히 남는다.
-장치: `apps/user-service/src/api/iam/assignments/role-assignment.manager.spec.ts`, `platform-tenant.integration.spec.ts`.
+**29. 역할 정의는 전역, 계정은 그 테넌트의 것이다(0056).** 역할 이름에 테넌트 이름을 넣지 않는다. 만들기 스크립트가 그 테넌트 계정에 닿는 것은 «첫 `master` 만들기» 하나다 —
+점검 계정이 그 첫 `master` 이고(비밀번호는 `IsolationCheck` Secret 에만, 변경 강제 없음), 재실행은 «그 테넌트에 그 아이디의 `master` 가 있으면 비상 초기화로 비밀번호 재발급»으로 이어 간다 — Secret 에 그 계정 비밀번호가 없을 때만(있으면 «이미 됐다», 매번 돌리면 실측 Secret 이 실행마다 바뀐다).
+다른 아이디의 `master` 가 있으면 멈춘다. 첫 `master` 가 우리 점검 계정이라, 그 테넌트 회사의 관리자(`master` 든 직원 역할이든)는 운영자가 아니라 점검 `master` 가 그 테넌트 안에서 만든다(`POST /admin/auth`). 직원 명단과 격리 실측 `--write` 의 상품 지우기는 점검 `master` 의 토큰으로 그 테넌트 안에서 한다. 첫 `master` 단계는 목록 «뒤»다 —
+계정이 생긴 테넌트는 되돌리기(테넌트 행 삭제)로 지울 수 없다(`deleteTenant` 가 거절한다). 부여 읽기(`/admin/users/:id/roles`·`/admin/roles/:id/members`)는 요청자 테넌트의 계정·부여만 답한다.
+부여 unique 가 `(user, role)` 이라 같은 역할을 두 테넌트에서 받을 수 없다(`IAM_GRANTED_ELSEWHERE`, contract 전까지).
+장치: `apps/user-service/src/api/iam/platform/operator-cross-tenant-routes.spec.ts`(운영자 교차 경로 둘), `platform-tenant.integration.spec.ts`, `role-assignment.integration.spec.ts`, `scripts/tenancy/create-tenant/steps.spec.ts`.
 
-**30. 1 이 아닌 테넌트 역할에 테넌트 1 업스트림을 여는 키를 주지 않는다** — `order.*`·`customer.profile.read`·`analytics.report.read`·`ai.assistant.use`·`channel.*`·`master` 등. Medusa 프록시와 공유 서비스는 테넌트 축이 없다(T = 1).
+**30. 1 이 아닌 테넌트의 직원 역할에 테넌트 1 업스트림을 여는 키를 주지 않는다** — `order.*`·`customer.profile.read`·`analytics.report.read`·`ai.assistant.use`·`channel.*`·`master` 등. Medusa 프록시와 공유 서비스는 테넌트 축이 없다(T = 1).
+그 테넌트의 `master`(첫 `master` = 점검 계정, 0056)는 이 키를 다 갖는다 — 그래서 방어선은 키가 아니라 문(공유 서비스 `ServedTenantGate`·admin-web 서버 자격증명 문이 남의 테넌트 토큰을 두 모드 모두 403)이고, 격리 실측이 그 문을 `master` 토큰으로 잰다.
 예: 단건 SKU 연결 패널이 요구하는 주문 조회 권한은 Medusa 프록시로 테넌트 1 주문을 연다 — 그래서 새 테넌트의 SKU 연결은 일괄 세션으로만 한다. 새 테넌트에 주문·고객 화면을 열려면 역할이 아니라 Medusa 의 테넌트 분리가 먼저다.
 장치: `scripts/tenancy/create-tenant/tenant-staff-role.ts`(키 집합 정본), `live/live-plan.spec.ts`.
 
@@ -252,15 +256,15 @@ RDS 클래스 변경은 수 분 끊김을 동반한다. 장치: `scripts/tenancy
 
 **테넌트 만들기** — `npm run tenant:create -- --stage <stage> --plan <계획 파일>`(`scripts/tenancy/create-tenant/live/live.ts`).
 계획 파일(`live-plan.ts` 스키마)은 레포 밖이나 git 이 무시하는 곳에 둔다 — 테넌트 값은 그 파일에만 있다. 단계 러너가 멱등이라 멈춤마다 할 일을 하고 다시 돌리면 이어간다.
-순서: 시작 조건 → 테넌트 행 «준비» → core DB·마이그·시드 → 버킷 둘·권한 → 인증서 → 리디렉트 → 역할 → 점검 계정 → [멈춤] 칸 Secret → [멈춤] 목록 Secret →
-[멈춤] 칸 표 커밋 + 배포 → 만든 직후 확인 → «활성» → 격리 실측 → 직원 명단(초기 비밀번호는 이때 한 번만 출력). 목록 Secret 전 실패는 DB·행·버킷·권한을 되돌린다.
+순서: 시작 조건 → 테넌트 행 «준비» → core DB·마이그·시드 → 버킷 둘·권한 → 인증서 → 리디렉트 → 역할 → [멈춤] 칸 Secret → [멈춤] 목록 Secret → 첫 `master`(= 점검 계정) →
+[멈춤] 칸 표 커밋 + 배포 → 만든 직후 확인 → «활성» → 격리 실측 → 직원 명단(점검 `master` 가 만든다, 초기 비밀번호는 이때 한 번만 출력). 목록 Secret 전 실패는 DB·행·버킷·권한을 되돌린다.
 로컬 리허설은 `npm run tenant:create:local` 과 `docs/local-e2e-environment.md` §2-C.
 
 **정지** — `npm run tenant:create -- --stage <stage> --plan <계획 파일> --suspend`. user-service 의 테넌트 상태를 «정지»로 바꾼다. 새 토큰 발급은 바로 막히고,
 core 는 상태 캐시(약 15초) + 요청 경로 지연(≤5초) 안에 남은 액세스 토큰도 거절한다. user-service 에 닿지 못하는 경로는 액세스 토큰 수명(15분)까지 열려 있다.
 file-service 직접 업로드도 토큰 수명까지 열린다. 데이터는 그대로 남는다.
 
-**격리 실측** — 매 배포 뒤 `npm run isolation:check -- --stage live`(읽기 전용), 개통 때 한 번 `-- --write`(테넌트 2 점검 계정으로 «[개통 점검]» 행을 만들고 지운다,
+**격리 실측** — 매 배포 뒤 `npm run isolation:check -- --stage live`(읽기 전용), 개통 때 한 번 `-- --write`(테넌트 2 점검 계정 = 첫 `master` 로 «[개통 점검]» 행을 만들고 지운다,
 정지 스위치도 잰다). 로컬은 `npm run isolation:check:local`. 점검 목록은 로컬·라이브가 한 벌이다(`scripts/tenancy/isolation-check/checks.ts`). 라이브에서 «못 쟀다»는 통과가 아니다.
 `deploy:preflight --mark-deployed` 가 테넌트가 둘 이상이면 끝에 이 명령을 알려 준다.
 

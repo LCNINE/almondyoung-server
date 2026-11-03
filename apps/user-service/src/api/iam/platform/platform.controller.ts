@@ -5,19 +5,24 @@ import { CurrentIamActor, type IamActor } from '../iam-actor';
 import {
   AddStaffClientUrisDto,
   AddTenantDomainDto,
-  AddTenantMemberDto,
+  CreateFirstMasterDto,
   CreateTenantDto,
+  FirstMasterDto,
   ReissuedPasswordDto,
   ReissuePasswordDto,
   SetPlatformOperatorDto,
   SetTenantStatusDto,
   TenantDto,
+  TenantMasterDto,
 } from './dto/platform.dto';
 import { PlatformService } from './platform.service';
 
 /**
  * 플랫폼 운영자 API — 만들기 스크립트와 운영자가 부른다. 권한 키는 라우트 문일 뿐이고, 판정은 iam Manager 가 운영자 성질로
  * 한다(테넌트 안의 master 가 키를 가져도 운영자가 아니면 403).
+ *
+ * 다른 테넌트의 계정에 닿는 라우트는 둘뿐이다(ADR-0056): 첫 master 만들기, master 비밀번호 비상 초기화(+ 그 둘이 다시 돌 때 보는
+ * master 목록). 그 테넌트의 직원·부여는 그 테넌트의 master 가 관리한다. 늘리면 `operator-cross-tenant-routes.spec.ts` 가 빨갛다.
  */
 @ApiTags('Admin/Platform')
 @ApiBearerAuth('access-token')
@@ -76,18 +81,6 @@ export class PlatformController {
     return this.service.addDomain(actor, tenantId, dto);
   }
 
-  @ApiOperation({ summary: '계정을 테넌트 소속으로(역할은 따로 준다)' })
-  @RequirePermission('iam.tenant.write')
-  @Post('tenants/:tenantId/members')
-  @HttpCode(HttpStatus.NO_CONTENT)
-  addMember(
-    @CurrentIamActor() actor: IamActor,
-    @Param('tenantId') tenantId: string,
-    @Body() dto: AddTenantMemberDto,
-  ): Promise<void> {
-    return this.service.addMember(actor, tenantId, dto.userId);
-  }
-
   @ApiOperation({ summary: '웹 직원 앱 OAuth 클라이언트에 이 테넌트 도메인의 리디렉트·로그아웃 주소 더하기' })
   @RequirePermission('iam.tenant.write')
   @Post('tenants/:tenantId/oauth-clients/:clientId/uris')
@@ -101,19 +94,41 @@ export class PlatformController {
     return this.service.addStaffClientUris(actor, tenantId, clientId, dto);
   }
 
-  @ApiOperation({ summary: '테넌트 직원 비밀번호 재발급(한 번만 돌려준다, 세션을 끊는다)' })
+  @ApiOperation({ summary: '그 테넌트에서 지금 master 인 계정(아이디만) — 만들기 스크립트의 재실행 판정' })
+  @RequirePermission('iam.tenant.read')
+  @Get('tenants/:tenantId/masters')
+  masters(@CurrentIamActor() actor: IamActor, @Param('tenantId') tenantId: string): Promise<TenantMasterDto[]> {
+    return this.service.masters(actor, tenantId);
+  }
+
+  @ApiOperation({
+    summary: '그 테넌트의 첫 master 만들기(master 가 없을 때만, 비밀번호는 한 번만 돌려준다) — 교차 테넌트 일 ①',
+  })
   @RequirePermission('iam.tenant.write')
-  @Post('tenants/:tenantId/users/:userId/password')
-  reissuePassword(
+  @Post('tenants/:tenantId/first-master')
+  createFirstMaster(
+    @CurrentIamActor() actor: IamActor,
+    @Param('tenantId') tenantId: string,
+    @Body() dto: CreateFirstMasterDto,
+  ): Promise<FirstMasterDto> {
+    return this.service.createFirstMaster(actor, tenantId, dto);
+  }
+
+  @ApiOperation({
+    summary: '그 테넌트 master 의 비밀번호 비상 초기화(한 번만 돌려준다, 세션을 끊는다) — 교차 테넌트 일 ②',
+  })
+  @RequirePermission('iam.tenant.write')
+  @Post('tenants/:tenantId/masters/:userId/password')
+  resetMasterPassword(
     @CurrentIamActor() actor: IamActor,
     @Param('tenantId') tenantId: string,
     @Param('userId', ParseUUIDPipe) userId: string,
     @Body() dto: ReissuePasswordDto,
   ): Promise<ReissuedPasswordDto> {
-    return this.service.reissuePassword(actor, tenantId, userId, dto);
+    return this.service.resetMasterPassword(actor, tenantId, userId, dto);
   }
 
-  @ApiOperation({ summary: '플랫폼 운영자 성질 주기·거두기(마지막 운영자는 거둘 수 없다)' })
+  @ApiOperation({ summary: '플랫폼 운영자 성질 주기·거두기(운영자 테넌트의 계정만, 마지막 운영자는 거둘 수 없다)' })
   @RequirePermission('iam.tenant.write')
   @Put('operators/:userId')
   @HttpCode(HttpStatus.NO_CONTENT)

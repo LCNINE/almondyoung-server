@@ -1,25 +1,28 @@
 import { DbService, InjectDb } from '@app/db';
-import { BadRequestError, NotFoundError } from '@app/shared';
+import { BadRequestError, ConflictError, NotFoundError } from '@app/shared';
 import { Injectable } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import type { TenantDomainApp, UserServiceSchema, UserServiceTx } from 'apps/user-service/database/drizzle/schema';
 import { generateInitialPassword } from '../../admin/auth/lib/generate-initial-password';
 import { PublicClientOriginsCache } from '../../oauth/cors/public-client-origins.cache';
 import { redirectHost } from '../../oauth/redirect-uri';
+import { globalUniqueFieldOf } from '../../users/global-unique-field';
+import { RoleAssignmentManager } from '../assignments/role-assignment.manager';
 import { IamAuditCreator } from '../audit/iam-audit.creator';
+import { SYSTEM_ROLE_NAME } from '../iam.constants';
 import type { IamActor } from '../iam-actor';
 import {
   IamNotAccountTenantError,
   IamSelfChangeError,
   TenantDomainTakenError,
   TenantExistsError,
+  TenantHasMasterError,
   TenantOwnSuspendError,
   TenantStatusConflictError,
 } from '../iam.errors';
 import { RoleRepository } from '../roles/role.repository';
 import { ActorTenantReader } from '../tenancy/actor-tenant.reader';
 import { PlatformOperatorManager } from '../tenancy/platform-operator.manager';
-import { TenancyRepository } from '../tenancy/tenancy.repository';
 import { PlatformRepository, type TenantRow, type TenantStatus } from './platform.repository';
 
 /** 준비 → 활성 ↔ 정지. 준비로 되돌아가는 길은 없다(준비 중 실패는 삭제로 되돌린다). */
@@ -42,6 +45,20 @@ const asStored = (redirectUris: string[], postLogoutRedirectUris: string[]) => (
   postLogoutRedirectUris: postLogoutRedirectUris.length === 0 ? null : postLogoutRedirectUris,
 });
 
+export interface FirstMaster {
+  readonly loginId: string;
+  readonly username: string;
+  readonly nickname: string;
+  readonly email: string;
+  /** 기본 true(첫 로그인에 변경 강제). false 는 우리 점검 계정 — 비밀번호를 Secret 에 두고 격리 실측이 쓴다. */
+  readonly forcePasswordChange?: boolean;
+}
+
+const DUPLICATE_MESSAGE = {
+  loginId: '이미 존재하는 로그인 ID 입니다.',
+  email: '이미 존재하는 이메일 입니다.',
+} as const;
+
 export interface NewTenant {
   readonly id: string;
   readonly slug: string;
@@ -59,18 +76,21 @@ export interface NewTenantDomain {
 /**
  * 플랫폼 운영자의 테넌트 관리 — 만들기 스크립트와 운영자가 부른다. 모든 쓰기는 운영자 성질을 먼저 보고(권한 키는 라우트 문일
  * 뿐이다), 변경 이력에 대상 테넌트를 남긴다.
+ *
+ * 다른 테넌트의 «계정»에 닿는 일은 둘뿐이다(ADR-0056): 그 테넌트의 첫 master 세우기(`createFirstMaster`)와 그 master 의
+ * 비밀번호 비상 초기화(`resetMasterPassword`). 그 밖의 직원·부여는 그 테넌트의 master 가 자기 토큰으로 관리한다.
  */
 @Injectable()
 export class PlatformTenantManager {
   constructor(
     @InjectDb() private readonly dbService: DbService<UserServiceSchema>,
     private readonly platform: PlatformRepository,
-    private readonly tenancy: TenancyRepository,
     private readonly roles: RoleRepository,
     private readonly operators: PlatformOperatorManager,
     private readonly actorTenant: ActorTenantReader,
     private readonly audit: IamAuditCreator,
     private readonly publicClientOrigins: PublicClientOriginsCache,
+    private readonly roleAssignments: RoleAssignmentManager,
   ) {}
 
   /** «준비» 상태로 만든다 — 준비가 끝날 때까지 이 테넌트로는 토큰이 나가지 않는다. */
@@ -138,7 +158,7 @@ export class PlatformTenantManager {
 
   /**
    * 테넌트를 지운다 — 만들기 스크립트가 목록에 넣기 전에 실패했을 때 되돌리는 길이라 «준비»만 된다. 소속·부여·세션·도메인은
-   * cascade 로 지워지고, 웹 직원 앱 클라이언트에서 이 테넌트 도메인의 주소를 걷어낸다. 계정은 남는다(계정은 전역이다).
+   * cascade 로 지워지고, 웹 직원 앱 클라이언트에서 이 테넌트 도메인의 주소를 걷어낸다. 그 테넌트의 계정이 있으면 거절한다.
    */
   async deleteTenant(actor: IamActor, tenantId: string): Promise<void> {
     await this.dbService.run(async (tx) => {
@@ -149,6 +169,10 @@ export class PlatformTenantManager {
       }
       if ((await this.platform.countClientsFixedTo(tenantId, tx)) > 0) {
         throw new TenantStatusConflictError('이 테넌트에 묶인 OAuth 클라이언트가 있어 지울 수 없습니다.');
+      }
+      // 계정은 테넌트의 것이라(ADR-0056) 테넌트와 함께 지우지 않는다 — 만든 첫 master 가 있으면 사람이 본다.
+      if ((await this.platform.countAccountsOf(tenantId, tx)) > 0) {
+        throw new TenantStatusConflictError('이 테넌트의 계정이 있어 지울 수 없습니다.');
       }
       const domains = await this.platform.domainsOf(tenantId, tx);
       const stripped = await this.stripStaffClientUris(new Set(domains), tx);
@@ -202,28 +226,6 @@ export class PlatformTenantManager {
     });
   }
 
-  /** 계정을 이 테넌트의 직원으로 들인다(역할은 따로 준다). 이미 소속이면 아무것도 안 한다. */
-  async addMember(actor: IamActor, tenantId: string, userId: string): Promise<void> {
-    await this.dbService.run(async (tx) => {
-      await this.operators.assertOperator(actor, tx);
-      await this.lockedTenant(tenantId, tx);
-      const user = await this.roles.findUser(userId, tx);
-      if (!user) throw new NotFoundError('사용자를 찾을 수 없습니다.');
-      if (await this.tenancy.isMember(userId, tenantId, tx)) return;
-
-      await this.tenancy.addMembership(userId, tenantId, tx);
-      await this.audit.record(tx, actor, {
-        tenantId,
-        action: 'tenant.membership.add',
-        targetType: 'user',
-        targetId: userId,
-        targetLabel: user.loginId,
-        before: { member: false },
-        after: { member: true },
-      });
-    });
-  }
-
   /**
    * 웹 직원 앱 클라이언트(같은 `admin-web`)에 이 테넌트 도메인의 리디렉트·로그아웃 주소를 더한다. 주소의 host 는 이 테넌트의
    * 도메인이어야 한다 — 그 host 가 로그인한 토큰의 테넌트를 정하기 때문이다. 이미 있는 주소는 그대로 둔다.
@@ -271,10 +273,54 @@ export class PlatformTenantManager {
   }
 
   /**
-   * 테넌트 계정의 비밀번호를 새로 정해 한 번만 돌려준다(저장하지 않는다). 대상은 그 테넌트의 계정이어야 한다(ADR-0056).
-   * 기본은 첫 로그인 때 변경 강제 — 점검 계정만 `forcePasswordChange = false`. 그 계정의 세션은 모두 끊는다.
+   * 그 테넌트의 첫 master 를 세운다 — 운영자가 다른 테넌트 계정에 닿는 두 일 중 하나. master 가 이미 있으면 거절한다(그 뒤의 직원은
+   * 그 master 가 관리한다). 그 아이디의 계정이 그 테넌트에 이미 있으면(만들기 전부터 있던 점검 계정) 새로 만들지 않고 그 계정을 세운다.
+   * 비밀번호는 새로 정해 한 번만 돌려주고(저장하지 않는다), 계정의 세션을 끊는다. 계정의 테넌트는 그 테넌트다.
    */
-  async reissuePassword(
+  async createFirstMaster(
+    actor: IamActor,
+    tenantId: string,
+    input: FirstMaster,
+  ): Promise<{ userId: string; initialPassword: string }> {
+    const initialPassword = generateInitialPassword();
+    const hash = await bcrypt.hash(initialPassword, 10);
+    const mustChangePassword = input.forcePasswordChange ?? true;
+    const userId = await this.dbService.run(async (tx) => {
+      await this.operators.assertOperator(actor, tx);
+      // 테넌트 행 잠금이 동시에 온 두 «첫 master» 를 차례로 세운다 — 뒤의 것은 master 를 보고 거절된다.
+      await this.lockedTenant(tenantId, tx);
+      if ((await this.platform.mastersOf(tenantId, tx)).length > 0) throw new TenantHasMasterError();
+      const master = await this.roles.findRoleByName(SYSTEM_ROLE_NAME, tx);
+      if (!master) throw new Error(`${SYSTEM_ROLE_NAME} 역할이 없다`);
+
+      const existing = await this.platform.findAccountInTenant(tenantId, { loginId: input.loginId }, tx);
+      if (existing) {
+        await this.roleAssignments.grantInTenant(tx, actor, existing.id, master.roleId, tenantId);
+        await this.setPasswordAndLog(tx, actor, tenantId, existing.id, input.loginId, hash, mustChangePassword);
+        return existing.id;
+      }
+      if (await this.platform.findAccountInTenant(tenantId, { email: input.email }, tx)) {
+        throw new ConflictError(DUPLICATE_MESSAGE.email);
+      }
+      const made = await this.platform
+        .insertStaffAccount({ ...input, tenantId, passwordHash: hash, mustChangePassword }, tx)
+        .catch((error: unknown) => {
+          // unique 가 아직 전역이라(contract 전) 다른 테넌트 계정의 값이면 여기서 걸린다 — 같은 409 로.
+          const field = globalUniqueFieldOf(error);
+          throw field ? new ConflictError(DUPLICATE_MESSAGE[field]) : error;
+        });
+      await this.roleAssignments.assignOnCreate(tx, actor, made.id, master.roleId, tenantId);
+      return made.id;
+    });
+    return { userId, initialPassword };
+  }
+
+  /**
+   * 그 테넌트 master 의 비밀번호 비상 초기화 — 운영자가 다른 테넌트 계정에 닿는 두 일 중 하나. 대상은 그 테넌트의 계정이고
+   * 지금 그 테넌트의 master 여야 한다(그 밖의 직원 비밀번호는 그 테넌트의 master 가 초기화한다). 새 비밀번호는 한 번만 돌려준다.
+   * 기본은 첫 로그인 때 변경 강제 — 우리 점검 계정만 `forcePasswordChange = false`. 그 계정의 세션은 모두 끊는다.
+   */
+  async resetMasterPassword(
     actor: IamActor,
     tenantId: string,
     userId: string,
@@ -289,20 +335,34 @@ export class PlatformTenantManager {
       const user = await this.roles.findUser(userId, tx);
       if (!user) throw new NotFoundError('사용자를 찾을 수 없습니다.');
       if (user.tenantId !== tenantId) throw new IamNotAccountTenantError();
-
-      await this.platform.setPassword(userId, hash, forcePasswordChange, tx);
-      await this.platform.revokeUserSessions(userId, tx);
-      await this.audit.record(tx, actor, {
-        tenantId,
-        action: 'user.password.reissue',
-        targetType: 'user',
-        targetId: userId,
-        targetLabel: user.loginId,
-        before: null,
-        after: { mustChangePassword: forcePasswordChange },
-      });
+      if (!(await this.platform.mastersOf(tenantId, tx)).some((m) => m.userId === userId)) {
+        throw new NotFoundError('이 테넌트의 master 를 찾을 수 없습니다.');
+      }
+      await this.setPasswordAndLog(tx, actor, tenantId, userId, user.loginId, hash, forcePasswordChange);
     });
     return { initialPassword };
+  }
+
+  private async setPasswordAndLog(
+    tx: UserServiceTx,
+    actor: IamActor,
+    tenantId: string,
+    userId: string,
+    loginId: string,
+    hash: string,
+    mustChangePassword: boolean,
+  ): Promise<void> {
+    await this.platform.setPassword(userId, hash, mustChangePassword, tx);
+    await this.platform.revokeUserSessions(userId, tx);
+    await this.audit.record(tx, actor, {
+      tenantId,
+      action: 'user.password.reissue',
+      targetType: 'user',
+      targetId: userId,
+      targetLabel: loginId,
+      before: null,
+      after: { mustChangePassword },
+    });
   }
 
   private async lockedTenant(tenantId: string, tx: UserServiceTx): Promise<TenantRow> {

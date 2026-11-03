@@ -91,11 +91,15 @@ userId 묶음 조회(`/users/internal/contacts`)는 거르지 않는다 — 계�
 계정 이벤트(모든 테넌트 서비스가 듣는 것)의 선언과 근거는 `packages/event-contracts/streams/user.stream.ts` 에 있다.
 
 ### 플랫폼 운영자 API (`/admin/platform/*`)
-테넌트 행(준비 → 활성 ↔ 정지, 준비만 삭제)·소속 추가·웹 직원 앱 클라이언트의 테넌트 도메인 주소·직원 비밀번호 재발급·운영자 성질은
+테넌트 행(준비 → 활성 ↔ 정지, 준비만 삭제 — 그 테넌트의 계정이 있으면 거절)·웹 직원 앱 클라이언트의 테넌트 도메인 주소·운영자 성질은
 `src/api/iam/platform/` 이 연다. 라우트 문은 `iam.tenant.read`/`iam.tenant.write` 이고 판정은 Manager 가 운영자 성질
-(`users.is_platform_operator`)로 한다 — 테넌트 안의 master 도 운영자가 아니면 403. 기존 계정 만들기·역할 만들기·역할 부여는
-`tenantId` 를 받는데, 지정하면 운영자만 된다(`PlatformOperatorManager.workingTenant`). 정지는 그 테넌트의 `oauth_tokens` 를
-그 자리에서 끊는다. 대행해 만드는 직원 계정은 `UserCreated` 를 내지 않는다(고객 가입 이벤트다).
+(`users.is_platform_operator`)로 한다 — 테넌트 안의 master 도 운영자가 아니면 403.
+**다른 테넌트의 계정에 닿는 운영자 일은 둘뿐이다(ADR-0056):** 그 테넌트의 첫 master 만들기(`POST tenants/:id/first-master` —
+master 가 있으면 409 `TENANT_HAS_MASTER`, 그 아이디의 계정이 그 테넌트에 이미 있으면 그 계정을 세운다)와 그 master 의 비밀번호 비상 초기화
+(`POST tenants/:id/masters/:userId/password` — 지금 그 테넌트의 master 가 아니면 404). 둘의 재실행 판정용 목록이 `GET tenants/:id/masters`.
+그 밖에 요청에 테넌트를 실어 «그 테넌트로 일하는» 길은 없다 — 계정 만들기·역할 만들기·부여·회수는 언제나 요청자 테넌트다
+(`PlatformOperatorManager.workingTenant`). 운영자 성질은 운영자 테넌트의 계정에만 준다. 늘리면 `operator-cross-tenant-routes.spec.ts` 가 빨갛다.
+정지는 그 테넌트의 `oauth_tokens` 를 그 자리에서 끊는다. 대행해 만드는 직원 계정은 `UserCreated` 를 내지 않는다(고객 가입 이벤트다).
 남은 액세스 토큰은 core 가 막는다 — `GET /internal/iam/tenant-statuses`(내부 키, id·상태만)를 15초마다 받아 정지·준비 테넌트의
 사람 토큰을 403 한다(`apps/core/src/platform/tenancy/tenant-status-cache.ts`).
 `GET /tenant-brand?host=` 는 로그인 전 브랜드 조회라 공개이고 이름·로고·활성 여부만 돌려준다.
@@ -112,7 +116,8 @@ userId 묶음 조회(`/users/internal/contacts`)는 거르지 않는다 — 계�
 `IAM_NOT_ACCOUNT_TENANT`(409)로 거절한다 — 고객 역할도 같다. 회수는 거절하지 않는다(그 테넌트에 남은 어긋난 부여를 거두는 길).
 비번 초기화는 지금 유효한 직원 역할이 있는 계정만 되고(고객은 404), 권한 상승 방지(`GrantAuthority`)를 그 계정의 역할에 대고 지나며, 운영자 계정은 운영자만 초기화한다.
 관리자의 고객 비밀번호 변경(`PATCH /admin/auth/change-password`, T 전용)도 T 의 계정만 찾는다.
-⚠️ 부여 읽기(`GET /admin/users/:id/roles`·`/admin/roles/:id/members`)는 아직 테넌트로 거르지 않는다 — 테넌트 만들기 스크립트의 재실행 판정이 운영자 토큰으로 다른 테넌트 구성원을 읽기 때문이다. 스크립트를 바꾸는 쪽이 함께 거른다.
+부여 읽기(`GET /admin/users/:id/roles`·`/admin/roles/:id/members`)는 요청자 테넌트의 계정·그 테넌트 부여만 답한다 — 다른 테넌트의 계정은 404,
+공용 역할의 구성원 목록에 다른 테넌트 직원이 나오지 않는다.
 소속은 판정에 쓰지 않지만 contract 까지 계속 쓴다(되돌린 옛 코드는 소속으로 판정한다). 테넌트 셸에는 아직 이 화면이 없다(API 만).
 
 ### 역할 만료

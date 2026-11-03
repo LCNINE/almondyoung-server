@@ -277,7 +277,8 @@ export class RoleRepository {
       );
   }
 
-  async membersOf(roleId: string) {
+  /** 그 테넌트 계정의 그 테넌트 부여만 — 다른 테넌트의 구성원은 나오지 않는다. */
+  async membersOf(roleId: string, tenantId: string) {
     const rows = await this.dbService.db
       .select({
         userId: users.id,
@@ -290,7 +291,13 @@ export class RoleRepository {
       })
       .from(userRoleAssignments)
       .innerJoin(users, eq(users.id, userRoleAssignments.userId))
-      .where(eq(userRoleAssignments.roleId, roleId))
+      .where(
+        and(
+          eq(userRoleAssignments.roleId, roleId),
+          eq(userRoleAssignments.tenantId, tenantId),
+          eq(users.tenantId, tenantId),
+        ),
+      )
       .orderBy(users.loginId);
     const now = Date.now();
     return rows.map(({ deletedAt, dormantAt, ...r }) => ({

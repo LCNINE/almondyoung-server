@@ -60,7 +60,6 @@ describe('RoleAssignmentManager', () => {
     isMember: jest.fn(),
     addMembership: jest.fn(),
     isOperator: jest.fn(),
-    tenantExists: jest.fn(),
   };
   const audit = { record: jest.fn() };
   const myPermissions = { forRoles: jest.fn() };
@@ -85,7 +84,6 @@ describe('RoleAssignmentManager', () => {
     // 요청자는 테넌트 1 에서 일하고, 대상 계정도 테넌트 1 의 것이 기본이다.
     tenancy.tenantsOf.mockResolvedValue(['1']);
     tenancy.isOperator.mockImplementation(async (userId: string) => userId === master.userId);
-    tenancy.tenantExists.mockResolvedValue(true);
     roles.activeRoleNamesOf.mockImplementation(async (userId: string) =>
       userId === master.userId ? ['master'] : userId === adminActor.userId ? ['admin'] : [],
     );
@@ -444,61 +442,47 @@ describe('RoleAssignmentManager', () => {
     });
   });
 
-  describe('granting in a named tenant (platform operator)', () => {
-    it('grants in the named tenant instead of the one the operator works in — to an account of that tenant', async () => {
+  describe('an operator works in its own tenant too (ADR-0056)', () => {
+    it("refuses giving an operator's role to an account of another tenant — no «work in the named tenant»", async () => {
       held();
       roles.findUser.mockResolvedValue({ id: 'u-target', loginId: 'kim', username: '김', canSignIn: true, tenantId: 't2' });
-      await manager.addMembers(master, 'r-intern', ['u-target'], null, 't2');
-      expect(roles.insertAssignments).toHaveBeenCalledWith(
-        'u-target',
-        't2',
-        [{ roleId: 'r-intern', expiresAt: null }],
-        tx,
-      );
-      expect(audit.record).toHaveBeenCalledWith(tx, master, expect.objectContaining({ tenantId: 't2' }));
-    });
-
-    it('refuses someone who is not a platform operator, even if they hold the permissions', async () => {
-      held();
-      await expect(manager.addMembers(adminActor, 'r-intern', ['u-target'], null, 't2')).rejects.toBeInstanceOf(
-        IamOperatorOnlyError,
+      await expect(manager.addMembers(master, 'r-intern', ['u-target'], null)).rejects.toBeInstanceOf(
+        IamNotAccountTenantError,
       );
       expect(roles.insertAssignments).not.toHaveBeenCalled();
     });
 
-    it('refuses a tenant that does not exist', async () => {
-      held();
-      tenancy.tenantExists.mockResolvedValue(false);
-      await expect(manager.addMembers(master, 'r-intern', ['u-target'], null, 'nope')).rejects.toBeInstanceOf(
-        NotFoundError,
-      );
+    it("takes a role away only in the operator's tenant, leaving the other tenant's grant", async () => {
+      held({ role: 'intern', tenantId: 't2' }, { role: 'intern', tenantId: '1' });
+      await manager.removeMember(master, 'r-intern', 'u-target');
+      expect(roles.deleteAssignments).toHaveBeenCalledWith('u-target', '1', ['r-intern'], tx);
+      expect(roles.deleteAssignments).not.toHaveBeenCalledWith('u-target', 't2', expect.anything(), tx);
     });
 
-    it('takes a role away in the named tenant, not the one the operator works in', async () => {
-      // 테넌트 1 에도 같은 역할이 있다 — 그쪽은 건드리지 않는다
-      held({ role: 'intern', tenantId: 't2' }, { role: 'intern', tenantId: '1' });
-      await manager.removeMember(master, 'r-intern', 'u-target', 't2');
-      expect(roles.deleteAssignments).toHaveBeenCalledWith('u-target', 't2', ['r-intern'], tx);
-      expect(roles.deleteAssignments).not.toHaveBeenCalledWith('u-target', '1', expect.anything(), tx);
+    it('makes a new account belong to the tenant the actor works in, operator or not', async () => {
+      await expect(manager.tenantForNewAccount(master, tx as never)).resolves.toBe('1');
+      await expect(manager.tenantForNewAccount(adminActor, tx as never)).resolves.toBe('1');
+    });
+
+    it("sets up a tenant's first master in that tenant, keeping that tenant's other grants (the operator API's own path)", async () => {
+      held({ role: 'intern', tenantId: 't2' });
+      roles.findUser.mockResolvedValue({ id: 'u-target', loginId: 'kim', username: '김', canSignIn: true, tenantId: 't2' });
+      await manager.grantInTenant(tx as never, master, 'u-target', 'r-master', 't2');
+      expect(roles.insertAssignments).toHaveBeenCalledWith(
+        'u-target',
+        't2',
+        [{ roleId: 'r-master', expiresAt: null }],
+        tx,
+      );
+      expect(roles.deleteAssignments).not.toHaveBeenCalledWith('u-target', 't2', ['r-intern'], tx);
       expect(audit.record).toHaveBeenCalledWith(tx, master, expect.objectContaining({ tenantId: 't2' }));
     });
 
-    it('refuses to take a role away in a named tenant for someone who is not a platform operator', async () => {
-      held({ role: 'intern' });
-      await expect(manager.removeMember(adminActor, 'r-intern', 'u-target', 't2')).rejects.toBeInstanceOf(
-        IamOperatorOnlyError,
+    it("refuses a first master that is an account of another tenant", async () => {
+      held();
+      await expect(manager.grantInTenant(tx as never, master, 'u-target', 'r-master', 't2')).rejects.toBeInstanceOf(
+        IamNotAccountTenantError,
       );
-      expect(roles.deleteAssignments).not.toHaveBeenCalled();
-    });
-
-    it('makes a new account belong to the tenant the actor works in, or a named one for an operator only', async () => {
-      await expect(manager.tenantForNewAccount(master, undefined, tx as never)).resolves.toBe('1');
-      await expect(manager.tenantForNewAccount(master, 't2', tx as never)).resolves.toBe('t2');
-      await expect(manager.tenantForNewAccount(adminActor, 't2', tx as never)).rejects.toBeInstanceOf(
-        IamOperatorOnlyError,
-      );
-      tenancy.tenantExists.mockResolvedValue(false);
-      await expect(manager.tenantForNewAccount(master, 'nope', tx as never)).rejects.toBeInstanceOf(NotFoundError);
     });
 
     it('creates an account as a member of the tenant it was made in', async () => {

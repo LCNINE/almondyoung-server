@@ -1,16 +1,6 @@
-import { TENANT_ID_PATTERN } from '@app/tenancy';
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import {
-  ArrayMaxSize,
-  IsArray,
-  IsOptional,
-  IsString,
-  IsUUID,
-  Matches,
-  ValidateIf,
-  ValidateNested,
-} from 'class-validator';
+import { ArrayMaxSize, IsArray, IsString, IsUUID, Matches, ValidateIf, ValidateNested } from 'class-validator';
 
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -75,17 +65,6 @@ export class AddRoleMembersDto {
   @IsString()
   @Matches(DATE_ONLY)
   expiresAt!: string | null;
-  @ApiPropertyOptional({ description: '이 테넌트에서 준다(받는 사람은 그 테넌트 소속이어야 한다). 플랫폼 운영자만' })
-  @IsOptional()
-  @Matches(TENANT_ID_PATTERN)
-  tenantId?: string;
-}
-
-export class RemoveRoleMemberQueryDto {
-  @ApiPropertyOptional({ description: '이 테넌트의 부여에서 회수한다. 플랫폼 운영자만' })
-  @IsOptional()
-  @Matches(TENANT_ID_PATTERN)
-  tenantId?: string;
 }
 
 export class RoleMemberDto {

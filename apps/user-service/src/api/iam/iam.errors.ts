@@ -140,3 +140,14 @@ export class TenantOwnSuspendError extends ConflictError {
     return 'TENANT_OWN_SUSPEND';
   }
 }
+
+/** 첫 master 는 «처음»만 운영자가 세운다 — master 가 있는 테넌트의 직원은 그 master 가 관리한다(ADR-0056). */
+export class TenantHasMasterError extends ConflictError {
+  constructor() {
+    super('이미 master 가 있는 테넌트입니다. 그 master 의 비밀번호를 잃었으면 비상 초기화를 쓰세요.');
+  }
+
+  getErrorCode(): string {
+    return 'TENANT_HAS_MASTER';
+  }
+}

@@ -4,13 +4,16 @@ import { PlatformOperatorManager } from '../tenancy/platform-operator.manager';
 import type {
   AddStaffClientUrisDto,
   AddTenantDomainDto,
+  CreateFirstMasterDto,
   CreateTenantDto,
+  FirstMasterDto,
   ReissuedPasswordDto,
   ReissuePasswordDto,
   SetTenantStatusDto,
   TenantAdminSiteDto,
   TenantBrandDto,
   TenantDto,
+  TenantMasterDto,
   TenantSiteDto,
 } from './dto/platform.dto';
 import { PlatformTenantManager } from './platform-tenant.manager';
@@ -53,21 +56,25 @@ export class PlatformService {
     return this.reader.get(actor, tenantId);
   }
 
-  addMember(actor: IamActor, tenantId: string, userId: string): Promise<void> {
-    return this.manager.addMember(actor, tenantId, userId);
-  }
-
   addStaffClientUris(actor: IamActor, tenantId: string, clientId: string, dto: AddStaffClientUrisDto): Promise<void> {
     return this.manager.addStaffClientUris(actor, tenantId, clientId, dto);
   }
 
-  reissuePassword(
+  masters(actor: IamActor, tenantId: string): Promise<TenantMasterDto[]> {
+    return this.reader.masters(actor, tenantId);
+  }
+
+  createFirstMaster(actor: IamActor, tenantId: string, dto: CreateFirstMasterDto): Promise<FirstMasterDto> {
+    return this.manager.createFirstMaster(actor, tenantId, dto);
+  }
+
+  resetMasterPassword(
     actor: IamActor,
     tenantId: string,
     userId: string,
     dto: ReissuePasswordDto,
   ): Promise<ReissuedPasswordDto> {
-    return this.manager.reissuePassword(actor, tenantId, userId, dto.forcePasswordChange);
+    return this.manager.resetMasterPassword(actor, tenantId, userId, dto.forcePasswordChange);
   }
 
   setOperator(actor: IamActor, userId: string, isOperator: boolean): Promise<void> {

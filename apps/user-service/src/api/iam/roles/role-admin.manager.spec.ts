@@ -71,12 +71,8 @@ describe('RoleAdminManager', () => {
         { provide: IamAuditCreator, useValue: audit },
         { provide: MyPermissionsReader, useValue: myPermissions },
         { provide: DbService, useValue: { run } },
-        // 요청자가 일하는 테넌트(역할 정의는 전역이어도 이력은 그 테넌트에 남는다). 테넌트를 지정한 요청은 운영자 판정을
-        // 거친다 — 그 판정 자체는 PlatformOperatorManager 스펙이 본다.
-        {
-          provide: PlatformOperatorManager,
-          useValue: { workingTenant: async (_actor: unknown, requested?: string) => requested ?? '1' },
-        },
+        // 요청자가 일하는 테넌트(역할 정의는 전역이어도 이력은 그 테넌트에 남는다).
+        { provide: PlatformOperatorManager, useValue: { workingTenant: async () => '1' } },
       ],
     }).compile();
     manager = module.get(RoleAdminManager);
@@ -176,7 +172,7 @@ describe('RoleAdminManager', () => {
   });
 
   describe('create', () => {
-    it('records a role made for a named tenant under that tenant (the create script)', async () => {
+    it("records a new role under the tenant the actor works in", async () => {
       roles.findRoleByName.mockResolvedValue(null);
       roles.insertRole.mockResolvedValue(role({ roleId: 'r-new', name: 't2_staff', displayName: '창고', version: 1 }));
       await manager.create(actor, {
@@ -184,13 +180,12 @@ describe('RoleAdminManager', () => {
         displayName: '창고',
         landingPath: '/warehouses',
         permissions: ['order.order.read'],
-        tenantId: 't2',
       });
       expect(audit.record).toHaveBeenCalledWith(
         tx,
         actor,
         expect.objectContaining({
-          tenantId: 't2',
+          tenantId: '1',
           action: 'role.create',
           after: expect.objectContaining({ landingPath: '/warehouses' }),
         }),

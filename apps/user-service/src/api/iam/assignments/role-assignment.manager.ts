@@ -56,10 +56,13 @@ export class RoleAssignmentManager {
 
   /**
    * 요청자가 일하는 테넌트와, 대상의 부여를 그 테넌트 것과 나머지로 나눈 것. 교체·추가·회수는 그 테넌트 안에서만 계산한다 —
-   * 다른 테넌트의 부여는 보지도 지우지도 않는다. 테넌트를 지정하는 것은 운영자만 한다.
+   * 다른 테넌트의 부여는 보지도 지우지도 않는다. 일하는 테넌트는 언제나 요청자 테넌트다(운영자도, ADR-0056).
    */
-  private async scope(tx: UserServiceTx, actor: IamActor, userId: string, tenant?: string): Promise<TenantScope> {
-    const tenantId = await this.operators.workingTenant(actor, tenant, tx);
+  private async scope(tx: UserServiceTx, actor: IamActor, userId: string): Promise<TenantScope> {
+    return this.scopeIn(tx, userId, await this.operators.workingTenant(actor, tx));
+  }
+
+  private async scopeIn(tx: UserServiceTx, userId: string, tenantId: string): Promise<TenantScope> {
     const all = await this.roles.assignmentsOf(userId, tx);
     return {
       tenantId,
@@ -114,18 +117,17 @@ export class RoleAssignmentManager {
     });
   }
 
-  /** 여러 사람에게 역할 하나를 더한다(이미 있으면 종료일만 바꾼다). `tenantId` 를 주면 그 테넌트에서(운영자만). */
+  /** 여러 사람에게 역할 하나를 더한다(이미 있으면 종료일만 바꾼다). */
   async addMembers(
     actor: IamActor,
     roleId: string,
     userIds: readonly string[],
     expiresAt: string | null,
-    tenantId?: string,
   ): Promise<void> {
     const end = expiresAt === null ? null : endOfKoreanDay(expiresAt);
     await this.dbService.run(async (tx) => {
       for (const userId of [...new Set(userIds)]) {
-        const scope = await this.scope(tx, actor, userId, tenantId);
+        const scope = await this.scope(tx, actor, userId);
         const others = scope.held
           .filter((h) => h.roleId !== roleId)
           .map((h) => ({ roleId: h.roleId, expiresAt: h.expiresAt }));
@@ -134,10 +136,10 @@ export class RoleAssignmentManager {
     });
   }
 
-  /** 역할 하나를 회수한다. `tenantId` 를 주면 그 테넌트의 부여에서(운영자만) — 주지 않으면 요청자가 일하는 테넌트다. */
-  async removeMember(actor: IamActor, roleId: string, userId: string, tenantId?: string): Promise<void> {
+  /** 역할 하나를 회수한다 — 요청자 테넌트의 부여에서. */
+  async removeMember(actor: IamActor, roleId: string, userId: string): Promise<void> {
     await this.dbService.run(async (tx) => {
-      const scope = await this.scope(tx, actor, userId, tenantId);
+      const scope = await this.scope(tx, actor, userId);
       const rest = scope.held
         .filter((h) => h.roleId !== roleId)
         .map((h) => ({ roleId: h.roleId, expiresAt: h.expiresAt }));
@@ -153,11 +155,11 @@ export class RoleAssignmentManager {
   }
 
   /**
-   * 관리자가 만드는 계정의 테넌트 — 이름이 없으면 요청자가 일하는 테넌트, 이름이 있으면(첫 master) 운영자만. 계정 행보다 먼저
-   * 정해야 행에 실리므로 첫 역할(`assignOnCreate`)과 따로 묻는다. 계정은 그 테넌트의 것이고 만든 뒤 바뀌지 않는다(ADR-0056).
+   * 관리자가 만드는 계정의 테넌트 = 요청자 테넌트(다른 테넌트의 첫 master 는 운영자 API 의 길이다). 계정 행보다 먼저 정해야 행에
+   * 실리므로 첫 역할(`assignOnCreate`)과 따로 묻는다. 계정은 그 테넌트의 것이고 만든 뒤 바뀌지 않는다(ADR-0056).
    */
-  tenantForNewAccount(actor: IamActor, requested: string | undefined, tx: UserServiceTx): Promise<string> {
-    return this.operators.workingTenant(actor, requested, tx);
+  tenantForNewAccount(actor: IamActor, tx: UserServiceTx): Promise<string> {
+    return this.operators.workingTenant(actor, tx);
   }
 
   /**
@@ -180,6 +182,18 @@ export class RoleAssignmentManager {
       [{ roleId, expiresAt: null }],
       'admin_user.create',
     );
+  }
+
+  /**
+   * 운영자가 대상 테넌트의 첫 master 를 세운다 — `PlatformTenantManager` 의 첫 master 만들기만 부른다(운영자 성질은 거기서 본다).
+   * 그 테넌트의 다른 부여는 그대로 두고 역할 하나를 더한다. 규칙(권한 상승 방지·계정의 테넌트)과 이력은 다른 부여와 같다.
+   */
+  async grantInTenant(tx: UserServiceTx, actor: IamActor, userId: string, roleId: string, tenantId: string) {
+    const scope = await this.scopeIn(tx, userId, tenantId);
+    const others = scope.held
+      .filter((h) => h.roleId !== roleId)
+      .map((h) => ({ roleId: h.roleId, expiresAt: h.expiresAt }));
+    await this.apply(tx, actor, userId, scope, [...others, { roleId, expiresAt: null }], 'role.members.add');
   }
 
   private async apply(

@@ -1,4 +1,3 @@
-import { TENANT_ID_PATTERN } from '@app/tenancy';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsBoolean,
@@ -74,13 +73,8 @@ export class CreateAccountDto {
   })
   phone_number?: string;
 
-  @ApiPropertyOptional({ description: '이 테넌트의 직원으로 만든다(소속·첫 역할). 플랫폼 운영자만', example: '2' })
-  @IsOptional()
-  @Matches(TENANT_ID_PATTERN, { message: '테넌트 id 형식이 아닙니다.' })
-  tenantId?: string;
-
   @ApiPropertyOptional({
-    description: '첫 로그인 때 비밀번호 변경 강제(기본 true). false 는 점검 계정용 — 플랫폼 운영자만',
+    description: '첫 로그인 때 비밀번호 변경 강제(기본 true). false 는 점검 계정용 — 플랫폼 운영자만(자기 테넌트에서)',
   })
   @IsOptional()
   @IsBoolean()

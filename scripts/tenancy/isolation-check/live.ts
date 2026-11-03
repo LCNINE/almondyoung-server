@@ -10,8 +10,8 @@
  * `ISOLATION_CHECK_CHROME` 으로 경로를 줄 수 있다).
  *
  * 쓰기 부분은 테넌트 2 점검 계정으로만 쓴다(테넌트 1 토큰은 읽기·대조만). 거기에 더 필요한 것:
- * - 운영자 로그인(화면에 안 보이게 받는다) — 정지 스위치, 그리고 상품 지우기의 임시 역할(`cleanup-grant.ts`). 그 회수는
- *   user-service 의 테넌트 지정 회수(`DELETE /admin/roles/:id/members/:userId?tenantId=`)를 쓴다 — lcnine-auth 배포 뒤에 돈다.
+ * - 운영자 로그인(화면에 안 보이게 받는다) — 정지 스위치. 실측이 만든 상품은 점검 계정(테넌트 2 의 첫 master)이 자기 토큰으로
+ *   지운다(`cleanup-products.ts`) — 운영자가 다른 테넌트에 역할을 주는 길은 없다(ADR-0056).
  * - 소비 앱 메트릭(건너뜀·DLQ)은 VPC 밖에선 `/metrics` 로 못 읽어, Alloy 가 원격 쓰기한 Grafana Cloud Prometheus 를
  *   조회한다(Secret `GrafanaCloudApiToken`). 거기 값은 스크레이프 주기 + 원격 쓰기만큼 늦다 — «0» 은 쓰기 뒤의
  *   수집에서 나온 값일 때만 믿는다(`judge.noNewDeadLetters`).
@@ -29,7 +29,7 @@ import { HttpOperatorApi } from '../create-tenant/operator-api.http';
 import { operatorSession } from '../operator-session';
 import { signInAtSite, signInStaff, type StaffClient } from '../staff-token';
 import { buildIsolationChecks } from './checks';
-import { removeProductsWithTemporaryGrant } from './cleanup-grant';
+import { removeProductsAsCheckMaster } from './cleanup-products';
 import { findDigitalAssetFile, observeCronRuns } from './db-observation';
 import { authParameter, needSecret as need, secretsOf } from '../sst-live';
 import { probe } from './http';
@@ -54,8 +54,6 @@ const SERVICES_INFRA = 'deployments/lcnine/services/infra/services.ts';
  * 원격 쓰기 지연 여유 30초. 이 시간만큼 «오름»을 더 기다리고, DLQ «0» 은 그 뒤 수집이 들어올 때까지 판정하지 않는다.
  */
 const METRICS_LAG_MS = 90_000;
-/** 새로 만든 정리 역할이 core 권한 캐시(30초 주기)에 들어오기까지 */
-const PERMISSION_CACHE_WAIT_MS = 45_000;
 
 /** 서비스 이름 → 공개 호스트의 앞부분(인프라 `createService` 의 hostname) */
 const HOST_SLUG: Readonly<Record<SharedServiceName, string>> = {
@@ -241,24 +239,12 @@ async function main(): Promise<void> {
       metricsLagMs: METRICS_LAG_MS,
       setTenantStatus: (id, status) => api.setTenantStatus(id, status),
       removeProducts: (masterIds) =>
-        removeProductsWithTemporaryGrant(
+        removeProductsAsCheckMaster(
           {
-            findRole: (name) => api.findRole(name),
-            createRole: (input) => api.createRole(input),
-            replaceRolePermissions: (roleId, permissions, version) =>
-              api.replaceRolePermissions(roleId, permissions, version),
-            grantUntil: (roleId, tenantId, userId, untilDate) =>
-              api.grantRoleUntil(roleId, tenantId, userId, untilDate),
-            revoke: (roleId, tenantId, userId) => api.removeRoleMember(roleId, tenantId, userId),
             signInTenantTwo,
             deleteProduct: (token, masterId) => probe('DELETE', `${core}/masters/${masterId}`, { bearer: token }),
-            now: () => new Date(),
           },
-          {
-            tenantTwoId: check.tenantTwo.id,
-            masterIds,
-            permissionWaitMs: PERMISSION_CACHE_WAIT_MS,
-          },
+          masterIds,
         ),
     };
   };
