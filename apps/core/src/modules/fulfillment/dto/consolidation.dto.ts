@@ -1,4 +1,4 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional, OmitType } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
   ArrayMinSize,
@@ -120,7 +120,9 @@ export class ConsolidationOptionShipmentDto {
   createdAt: Date;
 }
 
-export class ConsolidationBoardShipmentDto extends ConsolidationOptionShipmentDto {
+export class ConsolidationBoardShipmentDto extends OmitType(ConsolidationOptionShipmentDto, [
+  'recipientSnapshot',
+] as const) {
   @ApiProperty({ type: Date, nullable: true, description: '담긴 판매주문 중 가장 이른 주문 시각' })
   orderedAt: Date | null;
   @ApiProperty({ type: [String], description: '담긴 판매주문의 판매채널' })
@@ -128,9 +130,12 @@ export class ConsolidationBoardShipmentDto extends ConsolidationOptionShipmentDt
 }
 
 export class ConsolidationBoardGroupDto {
-  @ApiProperty({ description: '고객 키와 메모를 뺀 수령인 키' })
+  @ApiProperty({ description: '묶음을 가리키는 불투명한 값' })
   key: string;
-  @ApiProperty({ type: ConsolidationRecipientSnapshotDto, description: '첫 상자의 수령인 스냅샷' })
+  @ApiProperty({
+    type: ConsolidationRecipientSnapshotDto,
+    description: '묶음의 수령인 스냅샷. 상자별 수령인은 응답에 담지 않는다',
+  })
   recipientSnapshot: ConsolidationRecipientSnapshotDto;
   @ApiProperty({ description: '상자들의 배송 메모가 서로 다르면 true' })
   memoDiffers: boolean;
