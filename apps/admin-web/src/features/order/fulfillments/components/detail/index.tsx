@@ -6,7 +6,10 @@ import { Header } from '@/components/admin-ui-experimental/common/header';
 import { Spinner } from '@/components/ui/spinner';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Can } from '@/components/auth/can';
-import { FoStatusBadge } from '@/components/table/table-cells/fulfillment';
+import {
+  FoConsolidationCell,
+  FoStatusBadge,
+} from '@/components/table/table-cells/fulfillment';
 import { usePermissionCheck } from '@/hooks/use-permission';
 import { useFulfillmentOrder } from '@/lib/services/orders/queries';
 import type {
@@ -109,6 +112,11 @@ export function FulfillmentDetail({
         <InfoRow label="상태">
           <FoStatusBadge status={fo.status} consolidation={fo.consolidation} />
         </InfoRow>
+        {fo.consolidation != null && (
+          <InfoRow label="상자">
+            <FoConsolidationCell value={fo.consolidation} />
+          </InfoRow>
+        )}
         <InfoRow label="창고">
           {fo.warehouseName ?? (
             <span className="font-mono text-xs">{fo.warehouseId ?? '-'}</span>
@@ -120,7 +128,7 @@ export function FulfillmentDetail({
         <InfoRow label="우선순위">
           {PRIORITY_LABEL[fo.priority] ?? fo.priority}
         </InfoRow>
-        <InfoRow label="수량">
+        <InfoRow label="이 주문 수량">
           아이템 {fo.totalItems} / 총 {fo.totalQty} / 예약 {fo.totalReservedQty}
         </InfoRow>
         {fo.salesOrderId && (

@@ -1,4 +1,5 @@
 import {
+  orderShipments,
   ownerLabel,
   recallConfirmText,
   shipmentActionsFor,
@@ -62,5 +63,25 @@ describe('ownerLabel', () => {
     expect(
       ownerLabel({ supplierId: SUPPLIER, warehouseId: null }, undefined)
     ).toBe('입점사 ab12cd34…');
+  });
+});
+
+describe('orderShipments', () => {
+  const box = (id: string, status: string) => ({ id, status });
+
+  it('합쳐져 쓰지 않는 상자는 뒤로 보내고 순서는 그대로 둔다', () => {
+    const result = orderShipments([
+      box('a', 'superseded'),
+      box('b', 'draft'),
+      box('c', 'superseded'),
+      box('d', 'planned'),
+    ]);
+
+    expect(result.active.map((s) => s.id)).toEqual(['b', 'd']);
+    expect(result.retired.map((s) => s.id)).toEqual(['a', 'c']);
+  });
+
+  it('쓰지 않는 상자가 없으면 retired 는 비어 있다', () => {
+    expect(orderShipments([box('a', 'draft')]).retired).toEqual([]);
   });
 });

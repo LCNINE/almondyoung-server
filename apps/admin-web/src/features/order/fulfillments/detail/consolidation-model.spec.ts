@@ -13,6 +13,7 @@ const src = (
   o: Partial<ConsolidationProgressSource>
 ): ConsolidationProgressSource => ({
   shipmentId: 's1',
+  orderNo: null,
   trackingNo: 'T1',
   batchId: null,
   workItemStatus: null,

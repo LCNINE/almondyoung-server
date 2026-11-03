@@ -1,7 +1,12 @@
 'use client';
 
 import { useState } from 'react';
-import { AlertTriangle, PackageOpen } from 'lucide-react';
+import {
+  AlertTriangle,
+  ChevronDown,
+  ChevronRight,
+  PackageOpen,
+} from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -26,6 +31,7 @@ import type {
   ConsolidationProgressResponse,
   FulfillmentOrderDetail,
   ShipmentAdminDetail,
+  ShipmentAdminSummary,
 } from '@/lib/types/dto/fulfillment';
 import { useChannelDispatchViewModel } from './channel-dispatch-query';
 import { ConsolidationProgressPanel } from './consolidation-progress-panel';
@@ -34,7 +40,11 @@ import {
   ChannelDispatchAttemptStatus,
 } from './channel-dispatch-status';
 import { ShipmentActions } from './shipment-actions';
-import { ownerLabel, showsWaybillActions } from './shipment-owner';
+import {
+  orderShipments,
+  ownerLabel,
+  showsWaybillActions,
+} from './shipment-owner';
 import { WaybillActions } from './waybill-actions';
 
 const STATUS_VARIANT = (
@@ -90,7 +100,13 @@ function waybillVoidLockReason(
     : null;
 }
 
-function ShipmentDetailView({ shipment }: { shipment: ShipmentAdminDetail }) {
+function ShipmentDetailView({
+  shipment,
+  retiredShipmentId,
+}: {
+  shipment: ShipmentAdminDetail;
+  retiredShipmentId?: string;
+}) {
   const operations = shipment.operations ?? [];
   const waybills = shipment.waybills ?? [];
   const attempts = shipment.dispatchAttempts ?? [];
@@ -106,7 +122,13 @@ function ShipmentDetailView({ shipment }: { shipment: ShipmentAdminDetail }) {
 
   return (
     <div className="space-y-6">
-      <ConsolidationProgressPanel shipmentId={shipment.id}>
+      <ConsolidationProgressPanel
+        shipmentId={shipment.id}
+        mergedFromShipmentId={
+          shipment.status === 'superseded' ? undefined : retiredShipmentId
+        }
+        target={shipment}
+      >
         <ChannelDispatchAlerts viewModel={channelDispatch} />
 
         <section className="space-y-3">
@@ -348,6 +370,33 @@ function ShipmentDetailView({ shipment }: { shipment: ShipmentAdminDetail }) {
   );
 }
 
+function ShipmentListButton({
+  shipment,
+  selected,
+  onSelect,
+}: {
+  shipment: ShipmentAdminSummary;
+  selected: boolean;
+  onSelect: (id: string) => void;
+}) {
+  return (
+    <Button
+      variant={selected ? 'secondary' : 'outline'}
+      className="h-auto w-full justify-start p-3 text-left"
+      onClick={() => onSelect(shipment.id)}
+    >
+      <span className="min-w-0">
+        <span className="block truncate font-mono text-xs">{shipment.id}</span>
+        <span className="mt-1 block text-xs font-normal text-muted-foreground">
+          {shipment.status} · {shipment.totalQty}개 · 예약{' '}
+          {shipment.reservedQty} · M{shipment.manifestVersion}/R
+          {shipment.reservationVersion}
+        </span>
+      </span>
+    </Button>
+  );
+}
+
 export function ShipmentTab({
   fo,
   initialShipmentId,
@@ -359,11 +408,16 @@ export function ShipmentTab({
     initialShipmentId ?? ''
   );
   const shipments = useFulfillmentShipments(fo.id);
+  const [retiredOpen, setRetiredOpen] = useState(false);
+  const { active, retired } = orderShipments(shipments.data ?? []);
   const selectedShipmentId = shipments.data?.some(
     (shipment) => shipment.id === requestedShipmentId
   )
     ? requestedShipmentId
-    : (shipments.data?.[0]?.id ?? '');
+    : (active[0]?.id ?? retired[0]?.id ?? '');
+  const selectedIsRetired = retired.some(
+    (shipment) => shipment.id === selectedShipmentId
+  );
   const detail = useShipmentDetail(selectedShipmentId);
 
   if (shipments.isLoading)
@@ -400,27 +454,42 @@ export function ShipmentTab({
         <h3 className="text-sm font-semibold">
           shipment 목록 ({shipments.data.length})
         </h3>
-        {shipments.data.map((shipment) => (
-          <Button
+        {active.map((shipment) => (
+          <ShipmentListButton
             key={shipment.id}
-            variant={
-              shipment.id === selectedShipmentId ? 'secondary' : 'outline'
-            }
-            className="h-auto w-full justify-start p-3 text-left"
-            onClick={() => setRequestedShipmentId(shipment.id)}
-          >
-            <span className="min-w-0">
-              <span className="block truncate font-mono text-xs">
-                {shipment.id}
-              </span>
-              <span className="mt-1 block text-xs font-normal text-muted-foreground">
-                {shipment.status} · {shipment.totalQty}개 · 예약{' '}
-                {shipment.reservedQty} · M{shipment.manifestVersion}/R
-                {shipment.reservationVersion}
-              </span>
-            </span>
-          </Button>
+            shipment={shipment}
+            selected={shipment.id === selectedShipmentId}
+            onSelect={setRequestedShipmentId}
+          />
         ))}
+        {retired.length > 0 && (
+          <div className="space-y-2 pt-1">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-auto w-full justify-start gap-1 px-1 py-1 text-xs text-muted-foreground"
+              aria-expanded={retiredOpen || selectedIsRetired}
+              onClick={() => setRetiredOpen((open) => !open)}
+            >
+              {retiredOpen || selectedIsRetired ? (
+                <ChevronDown className="h-3.5 w-3.5" />
+              ) : (
+                <ChevronRight className="h-3.5 w-3.5" />
+              )}
+              {`쓰지 않는 상자 ${retired.length}개`}
+            </Button>
+            {(retiredOpen || selectedIsRetired) &&
+              retired.map((shipment) => (
+                <ShipmentListButton
+                  key={shipment.id}
+                  shipment={shipment}
+                  selected={shipment.id === selectedShipmentId}
+                  onSelect={setRequestedShipmentId}
+                />
+              ))}
+          </div>
+        )}
       </aside>
       <main className="min-w-0">
         {detail.isLoading ? (
@@ -438,7 +507,10 @@ export function ShipmentTab({
             </AlertDescription>
           </Alert>
         ) : detail.data ? (
-          <ShipmentDetailView shipment={detail.data} />
+          <ShipmentDetailView
+            shipment={detail.data}
+            retiredShipmentId={retired[0]?.id}
+          />
         ) : null}
       </main>
     </div>

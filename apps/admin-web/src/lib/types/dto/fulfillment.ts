@@ -995,6 +995,7 @@ export interface ConsolidationOptionsResponse {
 
 export interface ConsolidationProgressSource {
   shipmentId: string;
+  orderNo: string | null;
   trackingNo: string | null;
   batchId: string | null;
   workItemStatus: string | null;
