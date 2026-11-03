@@ -1,4 +1,8 @@
-import { assemblePlannedShipments } from './planned-shipments.reader';
+import * as postgres from 'postgres';
+import { drizzle } from 'drizzle-orm/postgres-js';
+import { wmsSchema } from '../../inventory/schema/inventory.schema';
+import { PgDialect } from 'drizzle-orm/pg-core';
+import { assemblePlannedShipments, plannedShipmentCondition } from './planned-shipments.reader';
 import { OptionLine } from './consolidation-shipment-reads';
 
 function line(shipmentId: string, qty: number, patch: Partial<OptionLine> = {}): OptionLine {
@@ -42,5 +46,20 @@ describe('assemblePlannedShipments', () => {
       { shipmentId: 'a', orderNos: [], totalQty: 1 },
       { shipmentId: 'c', orderNos: [], totalQty: 0 },
     ]);
+  });
+});
+
+describe('plannedShipmentCondition', () => {
+  it('끝나지 않은 운송장이 있는 상자를 뺀다', () => {
+    const db = drizzle(postgres('postgres://unused:unused@127.0.0.1:1/unused'), { schema: wmsSchema });
+    const condition = plannedShipmentCondition(db, 'w1');
+
+    if (!condition) throw new Error('condition');
+
+    const query = new PgDialect().sqlToQuery(condition);
+
+    expect(query.sql).toMatch(/not exists \(select/i);
+    expect(query.sql).toContain('"waybills"');
+    expect(query.params).toEqual(expect.arrayContaining(['w1', 'planned', 'voided', 'failed', 'abandoned']));
   });
 });

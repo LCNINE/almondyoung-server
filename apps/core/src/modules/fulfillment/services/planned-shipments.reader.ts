@@ -1,9 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { DbService, InjectTypedDb } from '@app/db';
-import { and, asc, eq, isNull } from 'drizzle-orm';
+import { and, asc, SQL, eq, isNull, notExists, notInArray } from 'drizzle-orm';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import { PlannedShipmentDto } from '../dto/consolidation.dto';
-import { loadShipmentLines, OptionLine, uniqueInOrder } from './consolidation-shipment-reads';
+import { WAYBILL_TERMINAL_STATUSES } from '../waybill/waybill.constants';
+import { loadShipmentLines, OptionLine, ReadDb, uniqueInOrder } from './consolidation-shipment-reads';
 
 export const PLANNED_SHIPMENTS_LIMIT = 200;
 
@@ -34,6 +35,25 @@ export function assemblePlannedShipments(
   });
 }
 
+export function plannedShipmentCondition(trx: ReadDb, warehouseId: string): SQL | undefined {
+  return and(
+    eq(wmsTables.shipments.warehouseId, warehouseId),
+    eq(wmsTables.shipments.status, 'planned'),
+    isNull(wmsTables.shipments.supplierId),
+    notExists(
+      trx
+        .select({ id: wmsTables.waybills.id })
+        .from(wmsTables.waybills)
+        .where(
+          and(
+            eq(wmsTables.waybills.shipmentId, wmsTables.shipments.id),
+            notInArray(wmsTables.waybills.status, [...WAYBILL_TERMINAL_STATUSES]),
+          ),
+        ),
+    ),
+  );
+}
+
 @Injectable()
 export class PlannedShipmentsReader {
   constructor(
@@ -46,13 +66,7 @@ export class PlannedShipmentsReader {
       const shipments = await trx
         .select({ id: wmsTables.shipments.id })
         .from(wmsTables.shipments)
-        .where(
-          and(
-            eq(wmsTables.shipments.warehouseId, warehouseId),
-            eq(wmsTables.shipments.status, 'planned'),
-            isNull(wmsTables.shipments.supplierId),
-          ),
-        )
+        .where(plannedShipmentCondition(trx, warehouseId))
         .orderBy(asc(wmsTables.shipments.createdAt), asc(wmsTables.shipments.id))
         .limit(PLANNED_SHIPMENTS_LIMIT);
       const ids = shipments.map((shipment) => shipment.id);
