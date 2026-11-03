@@ -15,9 +15,11 @@ function row(
   recipient: Record<string, string> = address,
   customerKey: string | null = 'id:c1',
   patch: Partial<ConsolidationBoardShipmentDto> = {},
+  shippingProfileId: string | null = 'p1',
 ): BoardRow {
   return {
     customerKey,
+    shippingProfileId,
     recipient,
     shipment: {
       shipmentId: id,
@@ -58,6 +60,30 @@ describe('groupConsolidationBoard', () => {
     const groups = groupConsolidationBoard([row('a'), row('b', { ...address, roadAddress: '서울 마포구 양화로 45' })]);
 
     expect(groups).toEqual([]);
+  });
+
+  it('같은 고객 같은 주소라도 배송 프로필이 다르면 따로 묶는다', () => {
+    const groups = groupConsolidationBoard([
+      row('a'),
+      row('b'),
+      row('c', address, 'id:c1', {}, 'p2'),
+      row('d', address, 'id:c1', {}, 'p2'),
+    ]);
+
+    expect(groups.map((group) => group.shipments.map((shipment) => shipment.shipmentId))).toEqual([
+      ['a', 'b'],
+      ['c', 'd'],
+    ]);
+    expect(
+      groupConsolidationBoard([row('a'), row('b'), row('c', address, 'id:c1', {}, 'p2')])[0].shipments,
+    ).toHaveLength(2);
+    expect(groupConsolidationBoard([row('a'), row('c', address, 'id:c1', {}, 'p2')])).toEqual([]);
+  });
+
+  it('배송 프로필이 없는 상자는 뺀다', () => {
+    expect(
+      groupConsolidationBoard([row('a', address, 'id:c1', {}, null), row('b', address, 'id:c1', {}, null)]),
+    ).toEqual([]);
   });
 
   it('고객 키가 없는 상자는 뺀다', () => {

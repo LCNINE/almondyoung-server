@@ -27,6 +27,7 @@ import {
 
 export interface BoardRow {
   customerKey: string | null;
+  shippingProfileId: string | null;
   recipient: ConsolidationRecipientSnapshotDto;
   shipment: ConsolidationBoardShipmentDto;
 }
@@ -41,13 +42,13 @@ export function groupConsolidationBoard(rows: readonly BoardRow[]): BoardGroup[]
   const buckets = new Map<string, BoardRow[]>();
 
   for (const row of rows) {
-    if (!row.customerKey) continue;
+    if (!row.customerKey || !row.shippingProfileId) continue;
 
     const recipient = canonicalConsolidationRecipient(row.recipient);
 
     if (!recipient) continue;
 
-    const key = `${row.customerKey}|${recipientAddressKey(recipient)}`;
+    const key = `${row.customerKey}|${row.shippingProfileId}|${recipientAddressKey(recipient)}`;
 
     buckets.set(key, [...(buckets.get(key) ?? []), row]);
   }
@@ -108,6 +109,7 @@ export function assembleConsolidationBoard(
 
     rows.push({
       customerKey: consolidationCustomerKey(shipmentLines),
+      shippingProfileId: shipment.shippingProfileId,
       recipient: asRecipient(shipment.recipientSnapshot),
       shipment: {
         ...summary,
