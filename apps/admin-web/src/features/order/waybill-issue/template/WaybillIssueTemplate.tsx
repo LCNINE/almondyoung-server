@@ -161,8 +161,8 @@ export default function WaybillIssueTemplate() {
       if (pending || waiting || failed) toast.warning(summary);
       else toast.success(summary);
       setSelected({});
-      planned.refetch();
-      board.refetch();
+      void planned.refetch();
+      void board.refetch();
     } catch (error) {
       toast.error(getServerDenyMessage(error, '일괄 발급 요청 실패'));
     }
@@ -330,7 +330,7 @@ export default function WaybillIssueTemplate() {
             <Button variant="outline" onClick={() => setConfirmOpen(false)}>
               취소
             </Button>
-            <Button onClick={runBatch}>발급</Button>
+            <Button onClick={() => void runBatch()}>발급</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -345,8 +345,8 @@ export default function WaybillIssueTemplate() {
             }
           }}
           onRequested={() => {
-            planned.refetch();
-            board.refetch();
+            void planned.refetch();
+            void board.refetch();
           }}
         />
       )}
