@@ -150,6 +150,17 @@ export class ConsolidationBoardResponseDto {
   groups: ConsolidationBoardGroupDto[];
 }
 
+export class PlannedShipmentDto {
+  @ApiProperty()
+  shipmentId: string;
+
+  @ApiProperty({ type: [String] })
+  orderNos: string[];
+
+  @ApiProperty()
+  totalQty: number;
+}
+
 export class ConsolidationOptionDto extends ConsolidationOptionShipmentDto {
   @ApiProperty({ enum: ['ok', 'memo_differs', 'address_differs', 'incomplete_recipient', 'unknown_customer'] })
   reason: ConsolidationOptionReason;
