@@ -190,6 +190,20 @@
       "when": 1793516388598,
       "tag": "20261101065948_backfill-tenant-domain-app",
       "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1793669852069,
+      "tag": "20261103013732_add-account-tenant",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1793669854533,
+      "tag": "20261103013734_backfill-account-tenant",
+      "breakpoints": true
     }
   ]
 }

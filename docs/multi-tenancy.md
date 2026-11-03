@@ -8,13 +8,18 @@
 |---|---|
 | core 는 테넌트마다 논리 DB | [[0051-core-tenant-per-database]] |
 | 계정은 전역, 테넌트는 소속과 부여 (🔸 일부 대체됨 → 0056) | [[0052-account-is-global-tenant-is-membership-and-grant]] |
-| 계정은 한 테넌트의 것 (**미구현**) | [[0056-account-belongs-to-one-tenant]] |
+| 계정은 한 테넌트의 것 (**expand 만** — 계정 칸·채우기·새 계정 쓰기. 읽기는 아직 전역) | [[0056-account-belongs-to-one-tenant]] |
 | 이벤트 테넌트는 라이브러리가 찍고 문에서 거른다 | [[0053-event-tenant-stamped-by-library-gated-before-handler]] |
 | 공유 서비스는 한 테넌트만 섬긴다 | [[0054-shared-services-serve-one-tenant]] |
 | 테넌트 직원 화면 = 테넌트 도메인의 테넌트 셸 | [[0055-tenant-shell-on-tenant-domain]] |
 
 🔸 **계정 모델이 바뀐다(0056, 미구현).** 아래 «계정·소속·플랫폼 운영자», 3절의 user-service 줄, 함정 6·28·29·31 은 **지금 코드**를 적은 것이다 —
 0056 이 구현되면 계정은 한 테넌트의 것이 되고 소속은 없어진다. 그 PR 이 이 항목들을 다시 쓴다. 계정 전역을 새로 더 굳히는 코드는 그 전에 0056 과 맞는지 먼저 본다.
+지금은 expand 까지다: `users.tenant_id`(nullable, 마이그 SQL 에만 DB 기본값 `'1'`)가 채워졌고 새 계정(고객·소셜 가입 = 앱 설정 T,
+직원 대행 = 요청자 테넌트, 첫 `master` = 대상 테넌트)과 인증번호 기록이 테넌트를 쓴다. 로그인·가입·찾기는 아직 전역으로 찾는다.
+채우기 마이그(`…_backfill-account-tenant.sql`) 전에 라이브에서 `npm run tenancy:account-tenant-preview -- --stage live` 를 돌린다 —
+테넌트 1 에 남으며 다른 테넌트 부여를 잃는 계정이 있으면 끝 코드 1 이고 명단을 보여 준다. 채우기는 테넌트 1 «소속»을 이음으로 치지 않는다:
+테넌트 1 백필 마이그를 시드가 다시 돌리면 다른 테넌트 직원 부여를 보고도 테넌트 1 소속을 만들기 때문이다(그 가짜 소속은 채우기가 거둔다).
 
 🔒 **공개 레포다.** 테넌트 값(누구인지·slug·도메인·버킷·인증서 ARN·존 ID·로고)을 코드·문서·이슈·PR·커밋 메시지에 적지 않는다. 값은 Secret·user-service 테넌트 행·
 레포 밖 계획 파일에만 있다. 예시는 `acme`·`tenant-2.example` 같은 가짜 값으로 쓴다.

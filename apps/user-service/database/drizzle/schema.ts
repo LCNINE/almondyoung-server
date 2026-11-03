@@ -115,11 +115,14 @@ export const users = pgTable('users', {
   dormantAt: timestamp('dormant_at'),
   // 플랫폼 운영자 — 테넌트 역할이 아니라 계정에 붙는 성질이다. 로그인할 수 있는 운영자가 최소 1명 남아야 한다.
   isPlatformOperator: boolean('is_platform_operator').notNull().default(false),
+  // 계정의 테넌트 — 계정은 한 테넌트의 것이고 만든 뒤 바뀌지 않는다(ADR-0056). 아직 nullable 이다(expand):
+  // 로그인 아이디·이메일 unique 를 (테넌트, …) 로 넓히고 NOT NULL 로 조이는 것은 contract 마이그다.
+  tenantId: varchar('tenant_id', { length: 64 }).references(() => tenants.id),
   ...timestampColumns,
 });
 
 /***
- * tenant schema — 계정은 전역 하나이고, 테넌트와의 관계는 소속과 테넌트별 역할 부여로만 표현한다.
+ * tenant schema — 테넌트 행·도메인·소속. 계정은 한 테넌트의 것(`users.tenant_id`, ADR-0056)으로 옮겨 가는 중이라 소속은 contract 에서 없어진다.
  */
 // id 는 테넌트 목록(TENANT_LIST)·토큰 tenant·이벤트 봉투와 같은 문자열이다.
 export const tenants = pgTable('tenants', {
@@ -635,6 +638,9 @@ export const phoneVerifications = pgTable(
 
     // 용도 구분
     purpose: phoneVerificationPurposeEnum('purpose').notNull(), // 'phone_verify' | 'pin_reset' ...
+    // 어느 테넌트 화면의 인증인가 — 같은 번호로 다른 테넌트에서 동시에 진행되는 인증과 엉키지 않게 조회 키에 들어간다(읽기 전환 뒤).
+    // 아직 nullable 이다(expand).
+    tenantId: varchar('tenant_id', { length: 64 }),
 
     // 발송 채널
     channel: varchar('channel', { length: 10 }).default('SMS').notNull(), // 'SMS' | 'KAKAO'
@@ -669,6 +675,8 @@ export const emailVerifications = pgTable(
 
     // 용도 구분
     purpose: emailVerificationPurposeEnum('purpose').notNull(),
+    // phone_verifications.tenant_id 와 같다. 아직 nullable 이다(expand).
+    tenantId: varchar('tenant_id', { length: 64 }),
 
     // 검증 관련
     isVerified: boolean('is_verified').default(false).notNull(),
@@ -1008,7 +1016,8 @@ export type UserServiceEnums = typeof userServiceEnums;
 
 export type User = typeof users.$inferSelect;
 // 운영자 성질은 계정 응답에 싣지 않는다 — 판정은 iam 이 DB 에서 한다.
-export type UserWithoutPassword = Omit<User, 'password' | 'isPlatformOperator'>;
+// 응답에 싣는 계정 모양. 계정의 테넌트는 읽기 전환(ADR-0056) 전까지 응답에 새로 싣지 않는다.
+export type UserWithoutPassword = Omit<User, 'password' | 'isPlatformOperator' | 'tenantId'>;
 export type Shop = typeof shops.$inferSelect;
 export type Wishlist = typeof wishlist.$inferSelect;
 export type BeautytopSavedShop = typeof beautytopSavedShops.$inferSelect;

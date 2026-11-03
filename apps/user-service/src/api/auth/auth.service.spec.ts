@@ -14,11 +14,15 @@ import { TokensService } from '../tokens/tokens.service';
 import { UsersService } from '../users/users.service';
 import { Cafe24LinkService } from '../cafe24-link/cafe24-link.service';
 import { SERVED_TENANT_ID } from '../../tenancy/served-tenant';
+import { ProviderType } from '../../commons/types';
 
 // bcrypt mock
 jest.mock('bcrypt', () => ({
   hash: jest.fn().mockResolvedValue('hashed_password'),
 }));
+
+// 가입이 계정을 기록하는 테넌트가 '1' 이라는 기본값에서 오지 않음을 보이려고 다른 값을 섬긴다.
+const SERVED = 'acme';
 
 describe('AuthService - signUp', () => {
   let service: AuthService;
@@ -97,7 +101,7 @@ describe('AuthService - signUp', () => {
         { provide: TokensService, useValue: {} },
         { provide: RoleAssignmentManager, useValue: { assertNotStaff: jest.fn() } },
         { provide: PlatformOperatorManager, useValue: { assertCanLeave: jest.fn() } },
-        { provide: SERVED_TENANT_ID, useValue: '1' },
+        { provide: SERVED_TENANT_ID, useValue: SERVED },
         {
           provide: Cafe24LinkService,
           useValue: {
@@ -157,6 +161,14 @@ describe('AuthService - signUp', () => {
 
       expect(mockReply.status).not.toHaveBeenCalled();
       expect(mockRedirect).not.toHaveBeenCalled();
+    });
+
+    it('새 계정은 이 앱이 섬기는 테넌트의 계정이다', async () => {
+      await service.signUp(baseSignUpDto, mockReply);
+
+      const values = mockClient.insert.mock.results[0].value.values as jest.Mock;
+      const userValues = values.mock.calls.map(([v]) => v).find((v) => v.loginId === 'testuser');
+      expect(userValues).toEqual(expect.objectContaining({ tenantId: SERVED }));
     });
 
     it('비밀번호를 bcrypt로 해싱해야 한다', async () => {
@@ -225,6 +237,66 @@ describe('AuthService - signUp', () => {
 
       await expect(service.signUp(baseSignUpDto, mockReply)).rejects.toThrow(InternalServerErrorException);
     });
+  });
+});
+
+describe('AuthService - 소셜 가입', () => {
+  // 처음 보는 소셜 계정이면 계정을 새로 만든다 — 그 계정도 이 앱이 섬기는 테넌트의 것이다.
+  const inserted: Array<{ table: unknown; values: Record<string, unknown> }> = [];
+  const limit = jest.fn();
+  const chain = { from: () => chain, innerJoin: () => chain, where: () => chain, limit };
+  const tx = {
+    select: () => chain,
+    insert: (table: unknown) => ({
+      values: (values: Record<string, unknown>) => {
+        inserted.push({ table, values });
+        return Object.assign(Promise.resolve(undefined), {
+          returning: () => Promise.resolve([{ id: 'social-user', email: values.email, username: values.username }]),
+        });
+      },
+    }),
+  };
+  let service: AuthService;
+
+  beforeEach(async () => {
+    inserted.length = 0;
+    limit.mockReset();
+    limit.mockResolvedValueOnce([]).mockResolvedValueOnce([{ roleId: 'role-user' }]);
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        AuthService,
+        { provide: UsersService, useValue: { findUserByEmail: jest.fn().mockResolvedValue(null) } },
+        { provide: JwtService, useValue: { signAsync: jest.fn().mockResolvedValue('social-token') } },
+        {
+          provide: ConfigService,
+          useValue: { get: jest.fn().mockReturnValue(undefined), getOrThrow: jest.fn().mockReturnValue('secret') },
+        },
+        { provide: DbService, useValue: {} },
+        { provide: 'STREAM_PUBLISHER_users.events.v1', useValue: { publishEvent: jest.fn() } },
+        { provide: ConsentsService, useValue: {} },
+        { provide: TokensService, useValue: {} },
+        { provide: RoleAssignmentManager, useValue: { assertNotStaff: jest.fn() } },
+        { provide: PlatformOperatorManager, useValue: { assertCanLeave: jest.fn() } },
+        { provide: SERVED_TENANT_ID, useValue: SERVED },
+      ],
+    }).compile();
+    service = module.get(AuthService);
+  });
+
+  it('records the served tenant on the new account and on its customer role', async () => {
+    const reply = { status: jest.fn().mockReturnValue({ redirect: jest.fn() }) } as any;
+
+    await service.signInWithSocial(
+      { name: '소셜', email: 'social@example.com', providerId: 'k-1' },
+      ProviderType.KAKAO,
+      reply,
+      tx as never,
+    );
+
+    const account = inserted.find((i) => i.values.loginId === 'kakao_k-1');
+    expect(account?.values).toEqual(expect.objectContaining({ tenantId: SERVED }));
+    const role = inserted.find((i) => i.values.roleId === 'role-user');
+    expect(role?.values).toEqual(expect.objectContaining({ tenantId: SERVED }));
   });
 });
 

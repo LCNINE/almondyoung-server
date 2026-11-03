@@ -1,5 +1,5 @@
 import { DbService, InjectDb } from '@app/db';
-import { HttpStatus, Injectable } from '@nestjs/common';
+import { HttpStatus, Inject, Injectable } from '@nestjs/common';
 import { userServiceSchema, UserServiceSchema } from 'apps/user-service/database/drizzle/schema';
 import { DbTransaction } from 'apps/user-service/src/commons/types';
 import { and, eq, gt } from 'drizzle-orm';
@@ -8,6 +8,7 @@ import { SendVerificationCodeDto } from '../dto/phone-verification.dto';
 import { PhoneVerificationException } from '../exceptions/phone-verification.exceptions';
 import { ExpireExistingCodesService } from './expire-existing-codes';
 import { SmsSenderService } from './sms-sender.service';
+import { SERVED_TENANT_ID } from '../../../tenancy/served-tenant';
 
 /**
  * 발송 제한은 **전화번호 기준**으로, 문자와 카카오톡을 각각 따로 센다.
@@ -27,6 +28,8 @@ export class SendMessageService {
 
     private readonly expireExistingCodesService: ExpireExistingCodesService,
     private readonly smsSender: SmsSenderService,
+    // 인증번호를 묻는 화면(가입·아이디/비밀번호 찾기·PIN 재설정)은 이 앱이 섬기는 테넌트 쇼핑몰의 것이다.
+    @Inject(SERVED_TENANT_ID) private readonly servedTenantId: string,
   ) {}
 
   private async inTx<T>(fn: (tx: DbTransaction) => Promise<T>, tx?: DbTransaction) {
@@ -82,6 +85,7 @@ export class SendMessageService {
         purpose: _purpose,
         channel: _channel,
         expiresAt: new Date(Date.now() + 3 * 60 * 1000), // 3분
+        tenantId: this.servedTenantId,
       });
 
       // 5. 발송 (notification 서비스에 위임)

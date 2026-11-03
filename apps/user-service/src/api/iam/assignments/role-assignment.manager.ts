@@ -160,17 +160,24 @@ export class RoleAssignmentManager {
   }
 
   /**
-   * 관리자 계정을 만들 때의 첫 역할 — 그 테넌트(지정 없으면 요청자 테넌트, 지정은 운영자만)의 소속을 먼저 만들고, 같은
-   * 규칙·같은 트랜잭션으로 준다.
+   * 관리자가 만드는 계정의 테넌트 — 이름이 없으면 요청자가 일하는 테넌트, 이름이 있으면(첫 master) 운영자만. 계정 행보다 먼저
+   * 정해야 행에 실리므로 첫 역할(`assignOnCreate`)과 따로 묻는다. 계정은 그 테넌트의 것이고 만든 뒤 바뀌지 않는다(ADR-0056).
+   */
+  tenantForNewAccount(actor: IamActor, requested: string | undefined, tx: UserServiceTx): Promise<string> {
+    return this.operators.workingTenant(actor, requested, tx);
+  }
+
+  /**
+   * 관리자 계정을 만들 때의 첫 역할 — `tenantForNewAccount` 가 정한 계정의 테넌트에서. 그 소속을 먼저 만들고, 같은 규칙·같은
+   * 트랜잭션으로 준다.
    */
   async assignOnCreate(
     tx: UserServiceTx,
     actor: IamActor,
     userId: string,
     roleId: string,
-    tenant?: string,
+    tenantId: string,
   ): Promise<void> {
-    const tenantId = await this.operators.workingTenant(actor, tenant, tx);
     await this.tenancy.addMembership(userId, tenantId, tx);
     await this.apply(
       tx,

@@ -21,7 +21,11 @@ export class SendEmailCodeService {
     const purpose = dto.purpose ?? 'password_change';
 
     const [user] = await this.dbService.db
-      .select({ email: userServiceSchema.users.email, name: userServiceSchema.users.username })
+      .select({
+        email: userServiceSchema.users.email,
+        name: userServiceSchema.users.username,
+        tenantId: userServiceSchema.users.tenantId,
+      })
       .from(userServiceSchema.users)
       .where(eq(userServiceSchema.users.id, userId))
       .limit(1);
@@ -39,6 +43,8 @@ export class SendEmailCodeService {
       code,
       purpose,
       expiresAt: new Date(Date.now() + 3 * 60 * 1000), // 3분
+      // 로그인한 계정 본인의 주소로 보내는 코드라 그 계정의 테넌트다.
+      tenantId: user.tenantId,
     });
 
     // 실제 이메일 발송은 notification 서비스가 Kafka 이벤트를 받아 처리

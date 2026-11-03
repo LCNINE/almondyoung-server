@@ -45,7 +45,8 @@ export class AuthService {
 
   private async _createAccountWithTransaction(createAccountDto: CreateAccountDto, actor: IamActor, tx: UserServiceTx) {
     const client = this.getClient(tx);
-    const { loginId, roleId, phone_number, email, username, nickname, tenantId } = createAccountDto;
+    const { loginId, roleId, phone_number, email, username, nickname } = createAccountDto;
+    const tenantId = await this.roleAssignments.tenantForNewAccount(actor, createAccountDto.tenantId, tx);
     // 첫 로그인 변경 강제를 끄는 것은 점검 계정용이다 — 운영자만.
     const mustChangePassword = createAccountDto.forcePasswordChange ?? true;
     if (!mustChangePassword) await this.operators.assertOperator(actor, tx);
@@ -63,10 +64,11 @@ export class AuthService {
         isEmailVerified: true,
         mustChangePassword,
         email,
+        tenantId,
       })
       .returning();
 
-    // 첫 역할도 부여 규칙(권한 상승 방지·시스템 역할·테넌트 지정은 운영자만)과 변경 이력을 같은 트랜잭션으로 탄다.
+    // 첫 역할도 부여 규칙(권한 상승 방지·시스템 역할)과 변경 이력을 같은 트랜잭션으로 탄다 — 계정과 같은 테넌트에서.
     // 대행 계정은 고객 가입이 아니라 UserCreated 를 내지 않는다(그 이벤트의 소비자는 가입 혜택·고객 행을 만든다).
     await this.roleAssignments.assignOnCreate(tx, actor, user.id, roleId, tenantId);
     await this.usersService.updateMyProfile(user.id, { phoneNumber: phone_number }, tx);

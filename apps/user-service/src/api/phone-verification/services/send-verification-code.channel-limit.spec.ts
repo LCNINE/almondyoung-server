@@ -38,6 +38,7 @@ function makeService(recentSendCount: number) {
     { db: { transaction: (fn: (tx: unknown) => unknown) => fn(trx) } } as never,
     { expireExistingCodes: jest.fn().mockResolvedValue(undefined) } as never,
     smsSender as never,
+    '1',
   );
 
   return { service, captured, smsSender };

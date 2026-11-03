@@ -376,7 +376,7 @@ describe('RoleAssignmentManager', () => {
     it('makes a new staff account a member of the actor tenant before its first role', async () => {
       tenancy.isMember.mockResolvedValue(false);
       tenancy.addMembership.mockImplementation(async () => tenancy.isMember.mockResolvedValue(true));
-      await manager.assignOnCreate(tx as never, master, 'u-target', 'r-intern');
+      await manager.assignOnCreate(tx as never, master, 'u-target', 'r-intern', '1');
       expect(tenancy.addMembership).toHaveBeenCalledWith('u-target', '1', tx);
       expect(roles.insertAssignments).toHaveBeenCalledWith(
         'u-target',
@@ -452,7 +452,17 @@ describe('RoleAssignmentManager', () => {
       expect(roles.deleteAssignments).not.toHaveBeenCalled();
     });
 
-    it('creates an account as a member of the named tenant', async () => {
+    it('makes a new account belong to the tenant the actor works in, or a named one for an operator only', async () => {
+      await expect(manager.tenantForNewAccount(master, undefined, tx as never)).resolves.toBe('1');
+      await expect(manager.tenantForNewAccount(master, 't2', tx as never)).resolves.toBe('t2');
+      await expect(manager.tenantForNewAccount(adminActor, 't2', tx as never)).rejects.toBeInstanceOf(
+        IamOperatorOnlyError,
+      );
+      tenancy.tenantExists.mockResolvedValue(false);
+      await expect(manager.tenantForNewAccount(master, 'nope', tx as never)).rejects.toBeInstanceOf(NotFoundError);
+    });
+
+    it('creates an account as a member of the tenant it was made in', async () => {
       tenancy.addMembership.mockImplementation(async () => tenancy.isMember.mockResolvedValue(true));
       await manager.assignOnCreate(tx as never, master, 'u-target', 'r-intern', 't2');
       expect(tenancy.addMembership).toHaveBeenCalledWith('u-target', 't2', tx);

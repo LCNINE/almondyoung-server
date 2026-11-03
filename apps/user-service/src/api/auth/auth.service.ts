@@ -217,6 +217,8 @@ export class AuthService {
             loginId,
             password: hash,
             isEmailVerified: true,
+            // 고객 가입 계정은 이 앱이 섬기는 테넌트의 것이다(ADR-0056).
+            tenantId: this.servedTenantId,
           })
           .returning();
 
@@ -617,6 +619,7 @@ export class AuthService {
         email: socialUser.email,
         password: null,
         isEmailVerified: true,
+        tenantId: this.servedTenantId,
       })
       .returning();
 

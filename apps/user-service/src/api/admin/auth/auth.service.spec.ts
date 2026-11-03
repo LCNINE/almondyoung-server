@@ -111,7 +111,7 @@ describe('AuthService.createAccount', () => {
     updateMyProfile: jest.fn(),
     assignUserRole: jest.fn(),
   };
-  const assignments = { assignOnCreate: jest.fn() };
+  const assignments = { assignOnCreate: jest.fn(), tenantForNewAccount: async () => '1' };
   const actor = { userId: 'u-boss', loginId: 'boss', roles: ['master'], userAgent: null, requestId: null, ip: null };
   let service: AuthService;
 
@@ -138,7 +138,7 @@ describe('AuthService.createAccount', () => {
       { username: '새사람', nickname: '새', loginId: 'newbie', email: 'n@e.w', roleId: 'r-intern' },
       actor,
     );
-    expect(assignments.assignOnCreate).toHaveBeenCalledWith(tx, actor, 'u-new', 'r-intern', undefined);
+    expect(assignments.assignOnCreate).toHaveBeenCalledWith(tx, actor, 'u-new', 'r-intern', '1');
     expect(usersService.assignUserRole).not.toHaveBeenCalled();
   });
 
@@ -168,7 +168,7 @@ describe('AuthService.createAccount — 운영자가 대행해 만드는 직원 
   };
   const run = jest.fn(async (work: (t: unknown) => Promise<unknown>) => work(tx));
   const usersService = { findUserByLoginId: jest.fn(), findUserByEmail: jest.fn(), updateMyProfile: jest.fn() };
-  const roleAssignments = { assignOnCreate: jest.fn() };
+  const roleAssignments = { assignOnCreate: jest.fn(), tenantForNewAccount: jest.fn() };
   const operators = { assertOperator: jest.fn() };
   const actor = { userId: 'u-op', loginId: 'op', roles: ['master'], userAgent: null, requestId: null, ip: null };
   const dto = {
@@ -185,6 +185,8 @@ describe('AuthService.createAccount — 운영자가 대행해 만드는 직원 
     inserted.length = 0;
     usersService.findUserByLoginId.mockResolvedValue(null);
     usersService.findUserByEmail.mockResolvedValue(null);
+    // 이름 없는 요청은 요청자의 테넌트(여기선 '1'), 이름이 있으면 그 테넌트 — 운영자만 된다는 판정은 iam Manager 의 몫이다.
+    roleAssignments.tenantForNewAccount.mockImplementation(async (_actor: unknown, requested?: string) => requested ?? '1');
     const module = await Test.createTestingModule({
       providers: [
         AuthService,
@@ -202,13 +204,28 @@ describe('AuthService.createAccount — 운영자가 대행해 만드는 직원 
     const { initialPassword } = await service.createAccount(dto, actor);
     expect(initialPassword).toHaveLength(16);
     expect(inserted[0].values).toMatchObject({ loginId: 'staff1', mustChangePassword: true });
-    expect(roleAssignments.assignOnCreate).toHaveBeenCalledWith(tx, actor, 'u-new', 'r-staff', undefined);
+    expect(roleAssignments.assignOnCreate).toHaveBeenCalledWith(tx, actor, 'u-new', 'r-staff', '1');
     expect(operators.assertOperator).not.toHaveBeenCalled();
   });
 
-  it('makes the account a member of a named tenant (the operator rule lives in the grant)', async () => {
+  it('makes the account belong to the tenant the actor works in when none is named', async () => {
+    await service.createAccount(dto, actor);
+    expect(roleAssignments.tenantForNewAccount).toHaveBeenCalledWith(actor, undefined, tx);
+    expect(inserted[0].values).toMatchObject({ loginId: 'staff1', tenantId: '1' });
+  });
+
+  it('makes the account belong to a named tenant, and gives its first role there (the first master)', async () => {
     await service.createAccount({ ...dto, tenantId: 't2' }, actor);
+    expect(roleAssignments.tenantForNewAccount).toHaveBeenCalledWith(actor, 't2', tx);
+    expect(inserted[0].values).toMatchObject({ tenantId: 't2' });
     expect(roleAssignments.assignOnCreate).toHaveBeenCalledWith(tx, actor, 'u-new', 'r-staff', 't2');
+  });
+
+  it('creates nothing when the actor may not work in the named tenant', async () => {
+    roleAssignments.tenantForNewAccount.mockRejectedValueOnce(new ForbiddenError('operators only'));
+    await expect(service.createAccount({ ...dto, tenantId: 't2' }, actor)).rejects.toBeInstanceOf(ForbiddenError);
+    expect(inserted).toEqual([]);
+    expect(roleAssignments.assignOnCreate).not.toHaveBeenCalled();
   });
 
   it('leaves the change unforced only for an operator (the check account)', async () => {
