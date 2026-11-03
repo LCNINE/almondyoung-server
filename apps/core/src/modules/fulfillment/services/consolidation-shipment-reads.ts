@@ -1,7 +1,10 @@
 import { and, asc, desc, eq, inArray, notInArray } from 'drizzle-orm';
-import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
+import { DbService } from '@app/db';
+import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import { ConsolidationOptionShipmentDto, ConsolidationRecipientSnapshotDto } from '../dto/consolidation.dto';
 import { WAYBILL_TERMINAL_STATUSES } from '../waybill/waybill.constants';
+
+export type ReadDb = DbTx | DbService<typeof wmsSchema>['db'];
 
 export type ShipmentRow = typeof wmsTables.shipments.$inferSelect;
 export interface OptionLine {
@@ -36,7 +39,7 @@ export function uniqueInOrder(values: readonly string[]): string[] {
   return [...new Set(values)];
 }
 
-export async function loadShipmentLines(trx: DbTx, shipmentIds: string[]): Promise<OptionLine[]> {
+export async function loadShipmentLines(trx: ReadDb, shipmentIds: string[]): Promise<OptionLine[]> {
   if (shipmentIds.length === 0) return [];
 
   return trx
@@ -70,7 +73,7 @@ export async function loadShipmentLines(trx: DbTx, shipmentIds: string[]): Promi
     .orderBy(asc(wmsTables.shipmentLines.createdAt), asc(wmsTables.shipmentLines.id));
 }
 
-export async function loadShipmentProgress(trx: DbTx, shipmentIds: string[]): Promise<ShipmentProgress> {
+export async function loadShipmentProgress(trx: ReadDb, shipmentIds: string[]): Promise<ShipmentProgress> {
   const [workItems, waybills] = await Promise.all([
     trx
       .select({

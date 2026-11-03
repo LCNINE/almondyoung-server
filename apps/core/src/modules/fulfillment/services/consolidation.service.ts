@@ -16,6 +16,7 @@ import { AuditService } from '../../inventory/shared/services/audit.service';
 import { ConsolidationActor, ConsolidationSourceDto, CreateConsolidationDto } from '../dto/consolidation.dto';
 import { WAYBILL_TERMINAL_STATUSES } from '../waybill/waybill.constants';
 import { canonicalConsolidationRecipient, consolidationCustomerKey } from './consolidation-options';
+import { CONSOLIDATION_RECOVERY_CODE } from './consolidation-recovery';
 import { selectEntrancePasswordForMerge } from './entrance-password.selection';
 import { FulfillmentCommandService } from './fulfillment-command.service';
 import { FulfillmentInvariantService } from './fulfillment-invariant.service';
@@ -36,7 +37,6 @@ const TERMINAL_OR_UNSAFE_SOURCE_STATUSES = new Set([
   'canceled',
   'superseded',
 ]);
-const CONSOLIDATION_RECOVERY_CODE = 'CONSOLIDATION_PENDING';
 
 type ShipmentRow = typeof wmsTables.shipments.$inferSelect;
 type ShipmentLineRow = typeof wmsTables.shipmentLines.$inferSelect & {

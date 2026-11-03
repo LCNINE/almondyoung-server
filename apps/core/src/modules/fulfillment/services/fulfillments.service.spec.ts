@@ -93,6 +93,7 @@ describe('FulfillmentsService', () => {
           const result = rows(selectRowsFor(table, selection));
           const query: any = {
             innerJoin: () => query,
+            leftJoin: () => query,
             where: (_where: unknown) => result,
             limit: (count: number) => result.limit(count),
             orderBy: (...args: unknown[]) => result.orderBy(...args),

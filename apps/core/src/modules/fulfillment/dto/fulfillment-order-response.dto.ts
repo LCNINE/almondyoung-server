@@ -151,6 +151,20 @@ export class FulfillmentV2ShipmentSummaryDto {
   reservedQty: number;
 }
 
+export class FoConsolidationDto {
+  @ApiProperty({
+    enum: ['none', 'mergeable', 'merging', 'merged'],
+    description: '합포장 상태. 합칠 수 있음, 합치는 중, 합쳐짐 중 하나이고 해당 없으면 none',
+  })
+  state: 'none' | 'mergeable' | 'merging' | 'merged';
+
+  @ApiProperty({
+    type: [String],
+    description: '함께 묶이거나 묶일 수 있는 다른 주문의 주문번호. 수령인 정보는 담지 않는다',
+  })
+  partnerOrderNos: string[];
+}
+
 export class FulfillmentOrderResponseDto {
   @ApiProperty()
   id: string;
@@ -169,6 +183,9 @@ export class FulfillmentOrderResponseDto {
 
   @ApiProperty({ nullable: true })
   warehouseName: string | null;
+
+  @ApiProperty({ type: FoConsolidationDto, nullable: true })
+  consolidation: FoConsolidationDto | null;
 
   @ApiProperty({ nullable: true })
   ownerId: string | null;
@@ -318,6 +335,9 @@ export class FulfillmentOrderV2ResponseDto {
 
   @ApiProperty({ nullable: true })
   warehouseName: string | null;
+
+  @ApiProperty({ type: FoConsolidationDto, nullable: true })
+  consolidation: FoConsolidationDto | null;
 
   @ApiProperty()
   status: string;
