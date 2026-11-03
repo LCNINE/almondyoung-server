@@ -18,6 +18,12 @@ const layer = {
 
 // graphic 은 잰 값을 담는 canvas 를 모듈에 한 번 만들어 두므로, 폭은 이 변수 하나로 바꾼다
 let em = 10
+function measureWith(value: number) {
+  em = value
+  vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
+    measureText: () => ({ width: em * 100 }),
+  } as unknown as RenderingContext)
+}
 
 describe("LayerGraphic", () => {
   afterEach(() => {
@@ -33,10 +39,7 @@ describe("LayerGraphic", () => {
       configurable: true,
     })
     // 대체 글꼴은 폭이 10em 이라 상자에 맞추면 10 으로 줄고, 진짜 글꼴은 3em 이라 20 그대로 들어간다
-    em = 10
-    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
-      measureText: () => ({ width: em * 100 }),
-    } as unknown as RenderingContext)
+    measureWith(10)
 
     const { LayerGraphic } = await import("./graphic")
     const host = document.createElement("div")
@@ -60,7 +63,7 @@ describe("LayerGraphic", () => {
   })
 
   it("글상자 너비를 줄이면 글자 크기는 두고 장평으로 맞춘다", async () => {
-    em = 1.184
+    measureWith(1.184)
     const { fittedFontSize, stretchText } = await import("./graphic")
     const heading = {
       ...layer,
@@ -80,14 +83,7 @@ describe("LayerGraphic", () => {
     expect(fittedFontSize(narrowed)).toBeCloseTo(15, 1)
   })
 
-  it("JSON 으로 들여온 글상자를 글꼴을 받은 뒤 글자 폭에 맞춘다", async () => {
-    em = 1.184
-    const load = vi.fn().mockResolvedValue([])
-    Object.defineProperty(document, "fonts", {
-      value: Object.assign(new EventTarget(), { load }),
-      configurable: true,
-    })
-    const { fitTextBoxes, fittedFontSize } = await import("./graphic")
+  describe("fitTextBoxes", () => {
     const narrow = {
       ...layer,
       text: "커트",
@@ -95,19 +91,66 @@ describe("LayerGraphic", () => {
       width: 16.8,
       height: 18,
     }
-    const design = {
-      kind: "pet",
-      productId: "",
-      widthMm: 210,
-      heightMm: 297,
-      front: [narrow],
-      back: [],
-    } as unknown as Design
+    const designOf = (...front: Layer[]) =>
+      ({
+        kind: "pet",
+        productId: "",
+        widthMm: 210,
+        heightMm: 297,
+        front,
+        back: [],
+      }) as unknown as Design
 
-    const fitted = (await fitTextBoxes(design)).front[0]
+    // 글꼴이 도착하기 전엔 대체 글꼴 폭(2em)으로 재지고, 도착하면 진짜 폭(1.184em)이 된다
+    function fontsArriving(arrives: boolean) {
+      measureWith(2)
+      let arrive = () => {}
+      const load = vi.fn(
+        () =>
+          new Promise((resolve) => {
+            arrive = () => {
+              if (arrives) em = 1.184
+              resolve([])
+            }
+          })
+      )
+      Object.defineProperty(document, "fonts", {
+        value: Object.assign(new EventTarget(), {
+          load,
+          check: () => arrives,
+        }),
+        configurable: true,
+      })
 
-    expect(load).toHaveBeenCalledWith(expect.stringContaining("16px"), "커트")
-    expect(fitted.width).toBe(17.8)
-    expect(fittedFontSize(fitted)).toBe(15)
+      return { load, arrive: () => arrive() }
+    }
+
+    it("글꼴이 도착한 뒤의 폭으로 글상자를 맞춘다", async () => {
+      const { load, arrive } = fontsArriving(true)
+      const { fitTextBoxes, fittedFontSize } = await import("./graphic")
+
+      const pending = fitTextBoxes(designOf(narrow))
+      await vi.waitFor(() => expect(load).toHaveBeenCalled())
+      arrive()
+      const fitted = (await pending).front[0]
+
+      expect(load).toHaveBeenCalledWith(expect.stringContaining("16px"), "커트")
+      expect(fitted.width).toBe(17.8)
+      expect(fittedFontSize(fitted)).toBe(15)
+    })
+
+    it("받지 못한 글꼴과 글자 크기 0 인 글상자는 그대로 둔다", async () => {
+      const { load, arrive } = fontsArriving(false)
+      const { fitTextBoxes } = await import("./graphic")
+      const zero = { ...narrow, id: "z", fontSize: 0 }
+
+      const pending = fitTextBoxes(designOf(narrow, zero))
+      await vi.waitFor(() => expect(load).toHaveBeenCalled())
+      arrive()
+      const [kept, zeroKept] = (await pending).front
+
+      expect(kept).toEqual(narrow)
+      expect(zeroKept).toEqual(zero)
+    })
   })
 })

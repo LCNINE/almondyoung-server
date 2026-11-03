@@ -119,22 +119,31 @@ export function stretchText(layer: Layer, box: Partial<Layer>): Partial<Layer> {
 // 바깥에서 만든 시안(JSON)은 상자 폭이 글꼴과 안 맞을 수 있다. 글꼴을 받은 뒤 편집기처럼 글자에 맞춘다
 export async function fitTextBoxes(design: Design): Promise<Design> {
   const texts = [...design.front, ...design.back].filter(
-    (layer) => layer.type === "text"
+    (layer) => layer.type === "text" && (layer.fontSize ?? 10) > 0
   )
-  // 글꼴 하나를 못 받아도 나머지는 맞춘다. 못 받은 글꼴은 대체 글꼴 폭으로 잰다
-  await Promise.all(
-    texts.map((layer) =>
-      Promise.resolve(loadUploadedFont(layer.fontFamily))
-        .then(() =>
-          document.fonts.load(fontOf(layer, 16), layer.text || undefined)
+  // 받지 못한 글꼴의 글상자는 그대로 둔다. 대체 글꼴 폭으로 맞추면 글꼴이 나중에 도착했을 때 다시 어긋난다
+  const loaded = new Set(
+    (
+      await Promise.all(
+        texts.map((layer) =>
+          Promise.resolve(loadUploadedFont(layer.fontFamily))
+            .then(() =>
+              document.fonts.load(fontOf(layer, 16), layer.text || undefined)
+            )
+            .then(() =>
+              document.fonts.check(fontOf(layer, 16), layer.text || undefined)
+                ? layer.id
+                : null
+            )
+            .catch(() => null)
         )
-        .catch(() => undefined)
-    )
+      )
+    ).filter((id) => id !== null)
   )
   measured.clear()
 
   const fit = (layer: Layer) =>
-    layer.type === "text"
+    loaded.has(layer.id)
       ? { ...layer, ...textBoxFor(layer, layer.fontSize ?? 10, design) }
       : layer
 
