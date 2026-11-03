@@ -223,7 +223,7 @@ bootstrap();
 핸들러 앞에서 테넌트 문이 판정한다(`tenancy/event-tenant-gate.ts`): T 와 다른 테넌트 이벤트는 건너뛰고
 `events_skipped_other_tenant_total` 로 센다. 테넌트 이벤트인데 봉투 테넌트가 없거나 목록에 없으면
 `TENANT_GATE_MODE=reject` 는 재시도 없이 DLQ, `warn` 은 경고 + `events_consumed_without_known_tenant_total`.
-계정 이벤트(계약의 `tenancy: 'account'`)는 통과한다.
+테넌트와 상관없이 통과하는 이벤트는 없다(옛 «계정 이벤트» 선언은 ADR-0056 이 없앴다).
 
 ### Consumer 구현
 

@@ -43,10 +43,10 @@ E2E_TENANT_LIST='[{"id":"1","slug":"almondyoung","coreDb":"dev_core","publicBuck
 E2E_TENANT_GATE_MODE='warn'
 # 앱 설정 T(SERVED_TENANT_ID) — 목록에 있는 id 여야 뜬다. 같은 spec 이 목록과 대조한다.
 # 받는 앱: user-service(고객·근태 데이터와 옛 내부 토큰이 섬기는 테넌트) + «T 만 섬기는» 소비 앱 전부
-# (핸들러 앞의 문이 T 로 거르고, 직접 발행·outbox 의 봉투 테넌트도 T 다). core 는 받지 않는다 — «메시지마다» 앱이다.
+# (핸들러 앞의 문이 T 로 거르고, 직접 발행·outbox 의 봉투 테넌트도 T 다). core·ai 는 받지 않는다 — «메시지마다» 앱이다.
 # «T 만 섬기는» 앱은 main.ts 의 startConsumer({ tenancy }) 에서 도출해 tenancy-wiring.spec 이 이 줄과 대조한다.
 E2E_SERVED_TENANT_ID='1'
-E2E_SERVED_TENANT_APPS='user-service channel-adapter membership ugc-service wallet analytics notification search ai'
+E2E_SERVED_TENANT_APPS='user-service channel-adapter membership ugc-service wallet analytics notification search'
 # Nest 밖의 한 테넌트 앱. 테넌트 목록은 안 받고 T 만 받아 서비스 호출에 테넌트 헤더로 싣는다
 # (쇼핑몰 → core 무인증 라우트, Medusa → 내부 키 라우트).
 E2E_FIXED_TENANT_CALLERS='medusa storefront'

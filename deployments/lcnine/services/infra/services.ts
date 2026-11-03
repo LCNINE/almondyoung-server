@@ -632,7 +632,7 @@ export function setup(infra: SharedInfra) {
       ...kafkaEnv('ai', 'ai-consumer'),
       DATABASE_URL: dbUrl('ai'),
       ...tenancyEnv,
-      ...servedTenantEnv,
+      // T 는 넣지 않는다 — «메시지마다» 소비 앱이고 발행하지 않는다(tenancy-wiring.spec 이 «T 만 섬김» 앱 수와 대조한다).
       AUTH_SECRET: authSecret.value,
       JWT_ISSUER: 'almondyoung-auth',
       // admin-web 이 넘겨 준 RS256 토큰을 검증한다.

@@ -3,7 +3,6 @@ import type { Server } from '@nestjs/microservices';
 import { dispatchToServerHandler } from '../transport/kafka-context.factory';
 import { DEAD_LETTER_HEADERS, type DeadLetterRow } from './dead-letter.types';
 import { DEAD_LETTER_MIGRATION_NAME } from './dead-letter-tables';
-import { eventTenancy } from '@packages/event-contracts/streams/registry';
 import { asRecord, stampEnvelopeTenant } from '../tenancy/envelope-tenant';
 
 interface AttachedConsumer {
@@ -16,13 +15,11 @@ interface AttachedConsumer {
 /**
  * 다시 넣을 봉투의 테넌트를 그 행이 든 DB 의 테넌트로 맞춘다 (ticket 30). 다시 넣기는 메시지마다 새 CLS 맥락에서 돌아 봉투의
  * 테넌트가 곧 DB 를 고른다 — 맞추지 않으면 ① 시절의 테넌트 없는 행은 ② 문에서 다시 거절되고, 봉투가 다른 테넌트면 핸들러와
- * 결과 기록(`markRedriven`)이 남의 테넌트 DB 에 닿는다(같은 id 의 남의 행을 고친다). 계정 이벤트는 테넌트와 무관하게 통과하므로
- * 건드리지 않는다. 봉투를 못 알아보면 그대로 둔다.
+ * 결과 기록(`markRedriven`)이 남의 테넌트 DB 에 닿는다(같은 id 의 남의 행을 고친다). 봉투를 못 알아보면 그대로 둔다.
  */
 function withRowTenant(row: DeadLetterRow, tenantId: string | undefined): unknown {
   const envelope = asRecord(row.envelope);
   if (!tenantId || !envelope || typeof envelope.messageType !== 'string') return row.envelope;
-  if (eventTenancy(row.topic, envelope.messageType) === 'account') return row.envelope;
   return stampEnvelopeTenant(envelope, tenantId);
 }
 

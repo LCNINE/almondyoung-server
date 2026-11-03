@@ -829,18 +829,18 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'user-service GET /cafe24/link': {
     verdict: 'SAFE',
-    evidence: 'apps/user-service/src/api/cafe24-link/cafe24-link.service.ts:370',
+    evidence: 'apps/user-service/src/api/cafe24-link/cafe24-link.service.ts:374',
     predicate: '.where(and(eq(cafe24Links.userId, userId), isNull(cafe24Links.unlinkedAt)))',
   },
   'user-service GET /cafe24/migration': {
     verdict: 'SAFE',
-    evidence: 'apps/user-service/src/api/cafe24-link/cafe24-link.service.ts:272',
+    evidence: 'apps/user-service/src/api/cafe24-link/cafe24-link.service.ts:276',
     predicate: '.where(and(eq(cafe24Links.userId, userId), isNull(cafe24Links.unlinkedAt)))',
     note: 'getMigrationItems(userId) -> lookupMigrationItem(userId, key) -> getCafe24LinkByUserId(userId) 에서 위 predicate로 스코프. 사용자 데이터 조회(getUserAndProfile)도 512행 .where(eq(users.id, userId)) 로 스코프.',
   },
   'user-service GET /cafe24/migration/:key': {
     verdict: 'SAFE',
-    evidence: 'apps/user-service/src/api/cafe24-link/cafe24-link.service.ts:272',
+    evidence: 'apps/user-service/src/api/cafe24-link/cafe24-link.service.ts:276',
     predicate: '.where(and(eq(cafe24Links.userId, userId), isNull(cafe24Links.unlinkedAt)))',
     note: 'path 의 :key 는 assertMigrationKey 로 email/name/birthday/phone 중 하나인지만 검증하는 필드명이고 리소스 식별자가 아니다. 실제 대상 스코프는 CurrentUser(JWT)의 user.id 로만 결정되며 위 predicate 를 그대로 통과한다.',
   },
@@ -951,13 +951,13 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'user-service POST /cafe24/migration/:key': {
     verdict: 'SAFE',
-    evidence: 'apps/user-service/src/api/cafe24-link/cafe24-link.service.ts:606',
+    evidence: 'apps/user-service/src/api/cafe24-link/cafe24-link.service.ts:610',
     predicate: '.where(eq(users.id, userId));',
     note: 'migrateItem(userId, key) 도 getCafe24LinkByUserId(userId)(272행)로 먼저 스코프한 뒤, applyMigration 에서 key 에 따라 users/profiles 를 userId 로 갱신한다(606/610행: users, 618행: profiles.userId onConflict, 629-635행: profiles.userId onConflict). 모두 userId(JWT) 기준.',
   },
   'user-service POST /cafe24/unlink': {
     verdict: 'SAFE',
-    evidence: 'apps/user-service/src/api/cafe24-link/cafe24-link.service.ts:301',
+    evidence: 'apps/user-service/src/api/cafe24-link/cafe24-link.service.ts:305',
     predicate: '.where(and(eq(cafe24Links.userId, userId), isNull(cafe24Links.unlinkedAt)))',
     note: '이 predicate 로 조회된 link 만 존재하며, 이후 update(308행: .where(eq(cafe24Links.id, link.id)))는 그 link.id 를 그대로 쓴다 — 최종 write 자체에 userId 재확인은 없지만 id 가 userId 스코프 조회에서만 나온다.',
   },

@@ -6,6 +6,7 @@ import { CronExpression } from '@nestjs/schedule';
 import { CronOnce } from '@app/cron-once';
 import { and, eq, inArray, isNotNull, isNull, lt, or } from 'drizzle-orm';
 import * as schema from '../../../../database/drizzle/schema';
+import { inAccountTenant } from '../../../tenancy/account-event-tenant';
 import { userServiceSchema, type UserServiceSchema } from '../../../../database/drizzle/schema';
 
 /**
@@ -64,20 +65,22 @@ export class DormantService {
           dormantAt: new Date(),
         })
         .where(and(inArray(schema.users.id, userIds), isNull(schema.users.dormantAt)))
-        .returning({ id: schema.users.id, email: schema.users.email });
+        .returning({ id: schema.users.id, email: schema.users.email, tenantId: schema.users.tenantId });
 
-      // 각 사용자에 대해 휴면 계정 전환이 되었다는 안내 이벤트 발행
+      // 각 사용자에 대해 휴면 계정 전환이 되었다는 안내 이벤트 발행 — 계정의 테넌트로(크론엔 맥락이 없다)
       for (const user of converted) {
         try {
-          await this.eventPublisher.publishEvent({
-            eventType: 'UserDormantConverted',
-            aggregateId: user.id,
-            payload: {
-              userId: user.id,
-              email: user.email,
-              convertedAt: new Date().toISOString(),
-            },
-          });
+          await inAccountTenant(user.tenantId, () =>
+            this.eventPublisher.publishEvent({
+              eventType: 'UserDormantConverted',
+              aggregateId: user.id,
+              payload: {
+                userId: user.id,
+                email: user.email,
+                convertedAt: new Date().toISOString(),
+              },
+            }),
+          );
         } catch (error) {
           this.logger.error(`휴면 계정 전환 이벤트 발행 실패 (사용자 ID: ${user.id})`, error);
         }
@@ -146,7 +149,7 @@ export class DormantService {
 
     while (true) {
       const targetUsers = await this.dbService.db
-        .select({ id: schema.users.id })
+        .select({ id: schema.users.id, tenantId: schema.users.tenantId })
         .from(schema.users)
         .where(
           or(
@@ -164,16 +167,18 @@ export class DormantService {
 
       await this.dbService.db.delete(schema.users).where(inArray(schema.users.id, userIds));
 
-      // 각 사용자에 대해 영구 삭제가 되었다는 안내 이벤트 발행
+      // 각 사용자에 대해 영구 삭제가 되었다는 안내 이벤트 발행 — 행은 이미 지웠으므로 테넌트는 위에서 읽어 둔 값이다
       for (const user of targetUsers) {
-        await this.eventPublisher.publishEvent({
-          eventType: 'UserPermanentDeleted',
-          aggregateId: user.id,
-          payload: {
-            userId: user.id,
-            deletedAt: new Date().toISOString(),
-          },
-        });
+        await inAccountTenant(user.tenantId, () =>
+          this.eventPublisher.publishEvent({
+            eventType: 'UserPermanentDeleted',
+            aggregateId: user.id,
+            payload: {
+              userId: user.id,
+              deletedAt: new Date().toISOString(),
+            },
+          }),
+        );
       }
 
       totalDeleted += targetUsers.length;

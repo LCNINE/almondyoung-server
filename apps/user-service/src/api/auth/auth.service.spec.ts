@@ -14,6 +14,8 @@ import { TokensService } from '../tokens/tokens.service';
 import { UsersService } from '../users/users.service';
 import { Cafe24LinkService } from '../cafe24-link/cafe24-link.service';
 import { SERVED_TENANT_ID } from '../../tenancy/served-tenant';
+import { TENANT_CONTEXT_KEY } from '@app/tenancy';
+import { ClsServiceManager } from 'nestjs-cls';
 import { ProviderType } from '../../commons/types';
 
 // bcrypt mock
@@ -388,6 +390,7 @@ describe('AuthService - 소셜 가입', () => {
  */
 describe('AuthService - 탈퇴 익명화', () => {
   let service: AuthService;
+  let publishedInTenant: (string | undefined)[];
   let updates: { table: unknown; set: Record<string, unknown> }[];
   let deletes: unknown[];
   let publishEvent: jest.Mock;
@@ -400,7 +403,11 @@ describe('AuthService - 탈퇴 익명화', () => {
     leaving.assertNotStaff.mockResolvedValue(undefined);
     updates = [];
     deletes = [];
-    publishEvent = jest.fn();
+    publishedInTenant = [];
+    publishEvent = jest.fn(() => {
+      const cls = ClsServiceManager.getClsService();
+      publishedInTenant.push(cls.isActive() ? cls.get<string>(TENANT_CONTEXT_KEY) : undefined);
+    });
 
     tx = {
       update: jest.fn((table: unknown) => ({
@@ -415,7 +422,8 @@ describe('AuthService - 탈퇴 익명화', () => {
       }),
       select: jest.fn(() => ({
         from: () => ({
-          where: () => ({ limit: jest.fn().mockResolvedValue([{ email: 'member@example.com', username: '홍길동' }]) }),
+          where: () => ({ limit: jest.fn().mockResolvedValue([{ email: 'member@example.com', username: '홍길동', tenantId: '2' }]),
+          }),
         }),
       })),
     };
@@ -501,6 +509,19 @@ describe('AuthService - 탈퇴 익명화', () => {
         payload: { userId: USER_ID, email: 'member@example.com', name: '홍길동' },
       }),
     );
+  });
+
+  // 봉투의 테넌트는 발행 순간의 맥락이다 — 요청이 다른 테넌트 화면에서 왔어도 탈퇴는 계정의 테넌트 일이다(ADR-0056).
+  it('UserDeleted 는 계정의 테넌트로 낸다 — 요청 맥락이 다른 테넌트여도', async () => {
+    const cls = ClsServiceManager.getClsService();
+    const after = await cls.run(async () => {
+      cls.set(TENANT_CONTEXT_KEY, '1');
+      await service.softDeleteUser(USER_ID);
+      return cls.get<string>(TENANT_CONTEXT_KEY);
+    });
+
+    expect(publishedInTenant).toEqual(['2']);
+    expect(after).toBe('1'); // 같은 요청의 다른 이벤트는 그대로 화면의 테넌트
   });
 
   it('refuses to withdraw the last platform operator', async () => {

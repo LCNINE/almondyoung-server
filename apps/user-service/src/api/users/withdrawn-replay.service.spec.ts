@@ -1,7 +1,9 @@
 import { PgDialect } from 'drizzle-orm/pg-core';
+import { TENANT_CONTEXT_KEY } from '@app/tenancy';
+import { ClsServiceManager } from 'nestjs-cls';
 import { WithdrawnReplayService, withdrawnUsersSelection } from './withdrawn-replay.service';
 
-function createDbMock(rows: Array<{ id: string }>) {
+function createDbMock(rows: Array<{ id: string; tenantId?: string | null }>) {
   const captured: { where?: unknown; limit?: number } = {};
   const limit = jest.fn((n: number) => {
     captured.limit = n;
@@ -21,7 +23,7 @@ describe('WithdrawnReplayService (#786 백필)', () => {
   const A = '00000000-0000-4000-8000-00000000000a';
   const B = '00000000-0000-4000-8000-00000000000b';
 
-  function createService(rows: Array<{ id: string }>) {
+  function createService(rows: Array<{ id: string; tenantId?: string | null }>) {
     const dbMock = createDbMock(rows);
     const publisher = { publishEvent: jest.fn().mockResolvedValue(undefined) };
     const service = new WithdrawnReplayService({ db: dbMock.db } as any, publisher as any);
@@ -49,6 +51,23 @@ describe('WithdrawnReplayService (#786 백필)', () => {
       payload: { userId: A },
     });
     expect(result).toEqual({ matched: 2, published: 2, lastUserId: B, failedUserId: null, userIds: [A, B] });
+  });
+
+  it('UserDeleted 는 행마다 그 계정의 테넌트로 낸다', async () => {
+    const { service, publisher } = createService([
+      { id: A, tenantId: '1' },
+      { id: B, tenantId: '2' },
+    ]);
+    const seen: (string | undefined)[] = [];
+    publisher.publishEvent.mockImplementation(() => {
+      const cls = ClsServiceManager.getClsService();
+      seen.push(cls.isActive() ? cls.get<string>(TENANT_CONTEXT_KEY) : undefined);
+      return Promise.resolve();
+    });
+
+    await service.replay({ dryRun: false });
+
+    expect(seen).toEqual(['1', '2']);
   });
 
   it('행이 없으면 lastUserId 는 null', async () => {

@@ -88,7 +88,8 @@ userId 묶음 조회(`/users/internal/contacts`)는 거르지 않는다 — 계�
 세우고(판정 `src/tenancy/request-event-tenant.ts`), 못 정하면 T 로 찍힌다. 토큰 라우트는 토큰 `tenant`, 단 auth-web 서버가
 `x-internal-secret`(= `OAUTH_INTERNAL_SECRET`)과 함께 실은 `x-tenant-id` 가 먼저다(판정 `src/tenancy/vouched-site-tenant.ts`) — 화면의
 테넌트이고, 그다음이 토큰의 `tenant`(계정의 테넌트)다. 비밀 없는 헤더는 무시한다. 맥락만 세우고 거절하지 않는다.
-계정 이벤트(모든 테넌트 서비스가 듣는 것)의 선언과 근거는 `packages/event-contracts/streams/user.stream.ts` 에 있다.
+예외는 계정 변경·탈퇴·휴면 전환·영구 삭제 넷이다 — 그 테넌트는 «계정의 테넌트»라, 생산자가 `src/tenancy/account-event-tenant.ts` 의
+`inAccountTenant` 로 계정의 테넌트를 맥락에 세우고 낸다(크론 포함, ADR-0056). 새 생산 지점도 그걸 거칠 것 — 그냥 내면 요청 화면의 테넌트나 T 로 찍힌다.
 
 ### 플랫폼 운영자 API (`/admin/platform/*`)
 테넌트 행(준비 → 활성 ↔ 정지, 준비만 삭제 — 그 테넌트의 계정이 있으면 거절)·웹 직원 앱 클라이언트의 테넌트 도메인 주소·운영자 성질은

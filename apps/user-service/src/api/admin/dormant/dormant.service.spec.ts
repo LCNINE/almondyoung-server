@@ -1,5 +1,7 @@
 import { DbService } from '@app/db';
 import { Test, TestingModule } from '@nestjs/testing';
+import { TENANT_CONTEXT_KEY } from '@app/tenancy';
+import { ClsServiceManager } from 'nestjs-cls';
 import { DormantService } from './dormant.service';
 import * as schema from '../../../../database/drizzle/schema';
 
@@ -16,7 +18,8 @@ describe('DormantService', () => {
   let updateCalls: { set: Record<string, unknown> }[];
   let selectRows: unknown[][];
   let returningRows: unknown[][];
-  let publishedEvents: { eventType: string; aggregateId: string }[];
+  // `tenant` = 발행하는 순간 맥락의 테넌트 — 봉투 찍기(`EventTenantStamp`)가 그 값을 봉투에 찍는다.
+  let publishedEvents: { eventType: string; aggregateId: string; tenant: string | undefined }[];
 
   function makeDb() {
     updateCalls = [];
@@ -69,7 +72,8 @@ describe('DormantService', () => {
           provide: 'STREAM_PUBLISHER_users.events.v1',
           useValue: {
             publishEvent: jest.fn((e: { eventType: string; aggregateId: string }) => {
-              publishedEvents.push(e);
+              const cls = ClsServiceManager.getClsService();
+              publishedEvents.push({ ...e, tenant: cls.isActive() ? cls.get<string>(TENANT_CONTEXT_KEY) : undefined });
               return Promise.resolve();
             }),
           },
@@ -126,6 +130,25 @@ describe('DormantService', () => {
     await service.handleDormantAccounts();
 
     expect(publishedEvents).toEqual([]);
+  });
+
+  // 크론은 요청 밖이라 맥락이 없다 — 세우지 않으면 봉투가 앱 설정 T(테넌트 1)로 찍혀 테넌트 2 계정의 휴면·영구 삭제가
+  // 테넌트 1 서비스에 닿는다(ADR-0056).
+  it('휴면 전환·영구 삭제 이벤트는 계정의 테넌트로 낸다 — 크론에 맥락이 없어도', async () => {
+    selectRows.push([{ id: 'u-2', email: 'a@b.c', tenantId: '2' }]); // 휴면 후보
+    returningRows.push([{ id: 'u-2', email: 'a@b.c', tenantId: '2' }]);
+    selectRows.push([
+      { id: 'u-1', tenantId: '1' },
+      { id: 'u-3', tenantId: '2' },
+    ]); // 영구 삭제 대상
+
+    await service.handleDormantAccounts();
+
+    expect(publishedEvents.map(({ eventType, aggregateId, tenant }) => ({ eventType, aggregateId, tenant }))).toEqual([
+      { eventType: 'UserDormantConverted', aggregateId: 'u-2', tenant: '2' },
+      { eventType: 'UserPermanentDeleted', aggregateId: 'u-1', tenant: '1' },
+      { eventType: 'UserPermanentDeleted', aggregateId: 'u-3', tenant: '2' },
+    ]);
   });
 
   it('스키마에 dormant_at 과 deleted_at 이 별도 컬럼으로 존재한다', () => {

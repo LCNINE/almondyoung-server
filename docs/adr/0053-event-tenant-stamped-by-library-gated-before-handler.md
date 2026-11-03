@@ -1,7 +1,7 @@
 # 이벤트의 테넌트는 봉투에 라이브러리가 찍고, 소비 앱은 핸들러 앞의 문에서 거른다
 
 ## Status
-Accepted (2026-10-29, 교정 10-30). 라이브(전환 배포 ②, 2026-11-02). 멀티테넌트 전체 그림은 `docs/multi-tenancy.md`.
+Accepted (2026-10-29, 교정 10-30). 라이브(전환 배포 ②, 2026-11-02). 결정 2·3 의 «계정 이벤트»는 [[0056-account-belongs-to-one-tenant]] 결정 6 이 없앴다 — 이벤트는 전부 테넌트 이벤트다. 멀티테넌트 전체 그림은 `docs/multi-tenancy.md`.
 선행: [[0051-core-tenant-per-database]] · [[0029-events-module-registration-surfaces]].
 
 ## Context

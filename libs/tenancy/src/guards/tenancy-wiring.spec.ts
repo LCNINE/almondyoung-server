@@ -140,14 +140,15 @@ describe('소비 앱의 테넌트 모드', () => {
     .map((f) => ({ app: f.path.split('/')[1], tenancy: consumerTenancyOf(f) }));
   const served = consumers.filter((c) => c.tenancy === 'served-tenant').map((c) => c.app);
 
-  it('core·user-service 는 «메시지마다», 나머지 소비 앱은 «T 만 섬김» 이다', () => {
+  // ai 는 대화 행이 테넌트 축이라 모든 테넌트 계정의 영구 삭제를 받아야 한다(ADR-0056).
+  it('core·user-service·ai 는 «메시지마다», 나머지 소비 앱은 «T 만 섬김» 이다', () => {
     expect(consumers.length).toBeGreaterThanOrEqual(10);
     expect(
       consumers
         .filter((c) => c.tenancy === 'per-message')
         .map((c) => c.app)
         .sort(),
-    ).toEqual(['core', 'user-service']);
+    ).toEqual(['ai', 'core', 'user-service']);
     expect(consumers.filter((c) => c.tenancy === undefined)).toEqual([]);
   });
 

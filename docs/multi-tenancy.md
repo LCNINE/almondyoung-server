@@ -77,7 +77,7 @@ core 쓰기 ─ outbox 행(그 DB) ─▶ 디스패처가 봉투 metadata.tenant
 |---|---|---|---|
 | core | 토큰/헤더 테넌트로 DB 라우팅 | `per-message` | 테넌트별 논리 DB |
 | user-service | 계정 층(전역) + 테넌트 1 데이터는 토큰 테넌트 1 일 때만 | `per-message` | 전역 DB, 부여·소속·이력에 테넌트 (🔸 0056: 계정 행에 테넌트) |
-| file-service · ai | 토큰 테넌트 | (ai: 계정 이벤트만) | 행에 테넌트 축, file-service 는 테넌트별 버킷 |
+| file-service · ai | 토큰 테넌트 | (ai: `per-message` — 계정 영구 삭제를 모든 테넌트에서 받는다) | 행에 테넌트 축, file-service 는 테넌트별 버킷 |
 | wallet · membership · analytics · ugc-service · notification · search · channel-adapter | T 만 섬김, 다른 토큰은 403 | `served-tenant` | 테넌트 축 없음(= 테넌트 1) |
 | Medusa · 쇼핑몰 | 테넌트 1 전용. admin-web 의 Medusa 프록시도 토큰 테넌트 ≠ T 면 403. Medusa 로그인 입구 둘(SSO 콜백은 access_token, `my-auth` 는 내부 토큰)도 토큰 테넌트 ≠ T 면 거절한다(`refuseForeignTenantToken`). 다른 서비스를 내부 키로 부를 땐 T 를 헤더로 싣는다(`apps/medusa/src/utils/served-tenant-headers.ts`) | Kafka 직접 소비 없음 | Medusa DB(테넌트 1) |
 
@@ -110,8 +110,9 @@ core 쓰기 ─ outbox 행(그 DB) ─▶ 디스패처가 봉투 metadata.tenant
 장치: `apps/user-service/src/api/auth/internal-token-tenant.spec.ts`, `apps/core/src/platform/auth/file-service-delegation.spec.ts`, `apps/ugc-service/src/almond-template/clients/service-token.spec.ts`.
 
 **6. 이벤트를 내는 앱은 요청 테넌트를 CLS 맥락에 세운다.** 맥락이 없으면 직접 발행은 T(테넌트 1)로 찍히고, 문은 그 이벤트를 테넌트 1 것으로 통과시킨다 — 아예 없는 것보다 나쁘다
-(다른 테넌트 직원의 계정 변경이 테넌트 1 브랜드 알림으로 나갈 뻔했다). 반대로 «계정 이벤트»로 선언하면 모든 T 앱의 문을 통과하니 그것도 답이 아니다. 분류 기준은 «그 일이 일어난 화면의 테넌트»이고, 선언이 없으면 테넌트 이벤트다.
-장치: `packages/event-contracts/streams/event-tenancy.spec.ts`, `apps/user-service/src/tenancy/user-request-tenant.interceptor.spec.ts`, `libs/events/src/tenancy/event-tenant-stamp.spec.ts`.
+(다른 테넌트 직원의 계정 변경이 테넌트 1 브랜드 알림으로 나갈 뻔했다). 테넌트와 상관없이 문을 통과하는 선언(옛 «계정 이벤트»)은 없앴다 — 모든 T 앱의 문을 통과해 테넌트 1 서비스가 남의 테넌트 계정을 지운다. 기준은 «그 일이 일어난 화면의 테넌트»이고,
+계정 변경·탈퇴·휴면·영구 삭제만 «계정의 테넌트»다(user-service `inAccountTenant`, 크론도 — ADR-0056).
+장치: `packages/event-contracts/streams/event-tenancy.spec.ts`, `apps/user-service/src/tenancy/user-request-tenant.interceptor.spec.ts`, `apps/user-service/src/api/admin/dormant/dormant.service.spec.ts`, `libs/events/src/tenancy/event-tenant-stamp.spec.ts`.
 
 **7. core 는 `publishEvent` 를 직접 부르지 않고, 생산 코드는 `metadata.tenantId` 를 넣지 않는다.** core 의 테넌트 = outbox 행이 든 DB 다. 직접 발행은 어느 DB 의 일인지 모른다.
 넣은 값은 라이브러리가 덮어쓴다. 정적 게이트는 `publishEvent|publishEvents|publishCommand(` 를 줄 단위로만 본다 — `publishStoredEnvelope`·전송 계층 직접 호출은 못 잡는다.

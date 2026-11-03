@@ -23,7 +23,7 @@ import { InMemoryServer } from '../transport/in-memory.server';
  * - «T 만 섬김»: T 와 다른 테넌트 이벤트는 건너뛰고 센다 — 실패·재시도·DLQ 어디에도 남지 않는다.
  * - «메시지마다»: 테넌트가 목록에 있으면 그 테넌트를 맥락으로 핸들러에 넘긴다.
  * - 테넌트 이벤트인데 테넌트가 없거나 목록에 없으면 ② reject 는 재시도 없이 DLQ, ① warn 은 경고 + 셈 후 처리.
- * - 계정 이벤트는 테넌트와 상관없이 통과한다.
+ * - 계정 수명주기(탈퇴 등)도 테넌트 이벤트다 — 계정은 한 테넌트의 것이다(ADR-0056).
  */
 const CART_TOPIC = CART_STREAM.topic.topic;
 const USER_TOPIC = USER_STREAM.topic.topic;
@@ -57,9 +57,11 @@ class CartConsumer {
 @Controller()
 @UseInterceptors(EventTypeGuard)
 class UserConsumer {
+  constructor(private readonly cls: ClsService) {}
+
   @On(USER_STREAM, 'UserDeleted')
   onDeleted(@EventPayload() _payload: unknown): void {
-    calls.push({ handler: 'onDeleted', tenant: undefined });
+    calls.push({ handler: 'onDeleted', tenant: this.cls.get<string | undefined>(TENANT_CONTEXT_KEY) });
   }
 }
 
@@ -210,21 +212,35 @@ describe.each<ConsumerTenancy>(['served-tenant', 'per-message'])('테넌트가 �
   });
 });
 
-describe('계정 이벤트는 테넌트와 상관없이 통과한다', () => {
-  it.each<[ConsumerTenancy, string | undefined, TenantGateMode]>([
-    ['served-tenant', '2', 'reject'],
-    ['served-tenant', undefined, 'reject'],
-    ['per-message', undefined, 'reject'],
-    ['served-tenant', '2', 'warn'],
-    ['per-message', undefined, 'warn'],
-  ])('%s · 봉투 테넌트 %s · %s', async (tenancy, tenantId, mode) => {
+describe('계정 탈퇴(UserDeleted)도 테넌트 이벤트다 — 계정은 한 테넌트의 것', () => {
+  it.each<TenantGateMode>(['warn', 'reject'])('«T 만 섬김»(T=1) 은 테넌트 1 계정 탈퇴를 받고 테넌트 2 계정 탈퇴는 건너뛴다 (%s)', async (mode) => {
     let broker: InMemoryBroker;
-    ({ app, broker } = await start({ mode, tenancy, servedTenantId: '1' }));
+    ({ app, broker } = await start({ mode, tenancy: 'served-tenant', servedTenantId: '1' }));
 
-    await broker.inject(USER_TOPIC, userDeletedEnvelope(`acct-${tenancy}-${String(tenantId)}-${mode}`, tenantId));
+    await broker.inject(USER_TOPIC, userDeletedEnvelope(`acct-1-${mode}`, '1'));
+    await broker.inject(USER_TOPIC, userDeletedEnvelope(`acct-2-${mode}`, '2'));
 
-    expect(calls.map((c) => c.handler)).toEqual(['onDeleted']);
+    expect(calls).toEqual([{ handler: 'onDeleted', tenant: '1' }]);
     expect(broker.envelopesOn<DLQMessage>(getDLQTopicName(USER_TOPIC))).toHaveLength(0);
+  });
+
+  it('«메시지마다» 는 테넌트 2 계정 탈퇴를 그 테넌트 맥락으로 받는다', async () => {
+    let broker: InMemoryBroker;
+    ({ app, broker } = await start({ mode: 'reject', tenancy: 'per-message' }));
+
+    await broker.inject(USER_TOPIC, userDeletedEnvelope('acct-pm-2', '2'));
+
+    expect(calls).toEqual([{ handler: 'onDeleted', tenant: '2' }]);
+  });
+
+  it('② reject 에서 테넌트 없는 계정 탈퇴는 핸들러에 닿지 않고 DLQ 로 간다', async () => {
+    let broker: InMemoryBroker;
+    ({ app, broker } = await start({ mode: 'reject', tenancy: 'served-tenant', servedTenantId: '1' }));
+
+    await broker.inject(USER_TOPIC, userDeletedEnvelope('acct-missing', undefined));
+
+    expect(calls).toEqual([]);
+    expect(broker.envelopesOn<DLQMessage>(getDLQTopicName(USER_TOPIC))).toHaveLength(1);
   });
 });
 

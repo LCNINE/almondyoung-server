@@ -4,7 +4,6 @@ import { KafkaContext } from '@nestjs/microservices';
 import { ClsService } from 'nestjs-cls';
 import { Observable, of } from 'rxjs';
 import { TENANT_CONTEXT_KEY, type TenantGateMode, type TenantList } from '@app/tenancy';
-import { eventTenancy } from '@packages/event-contracts/streams/registry';
 import { EVENT_TYPE_FILTER } from '../consumers/decorators';
 import { parseEnvelope } from '../utils/envelope.util';
 import { recordConsumedWithoutKnownTenant, recordSkippedOtherTenant } from './tenant-gate.metrics';
@@ -30,8 +29,8 @@ export class TenantGateRejection extends Error {
 }
 
 export type TenantGateVerdict =
-  /** 핸들러에 넘긴다. `tenantId` 가 있으면 그것이 맥락이다. 계정 이벤트·① 의 모르는 테넌트는 맥락 없이 넘긴다. */
-  | { kind: 'pass'; tenantId: string | undefined }
+  /** 핸들러에 넘긴다. `tenantId` 가 그 맥락이다. */
+  | { kind: 'pass'; tenantId: string }
   /** 남의 테넌트 — 그 테넌트의 정상 업무라 실패가 아니다. */
   | { kind: 'skip' }
   /** ② 에서 테넌트가 없거나 목록에 없다. */
@@ -39,7 +38,7 @@ export type TenantGateVerdict =
   /** ① 에서 테넌트가 없거나 목록에 없다 — 경고하고 세고 맥락 없이 넘긴다. */
   | { kind: 'warn'; reason: string; cause: 'missing' | 'unlisted' };
 
-/** 문이 보는 봉투의 두 칸 — 종류(계정/테넌트 판정)와 테넌트. 남이 보낸 값이라 `tenantId` 는 모양을 믿지 않는다. */
+/** 문이 보는 봉투의 두 칸 — 종류(사유 문구)와 테넌트. 남이 보낸 값이라 `tenantId` 는 모양을 믿지 않는다. */
 export interface GatedEnvelope {
   messageType: string;
   metadata?: { tenantId?: unknown };
@@ -57,13 +56,11 @@ export interface EventTenantGateOptions {
 export class EventTenantGate {
   constructor(private readonly options: EventTenantGateOptions) {}
 
-  judge(topic: string, envelope: GatedEnvelope): TenantGateVerdict {
-    if (eventTenancy(topic, envelope.messageType) === 'account') return { kind: 'pass', tenantId: undefined };
-
+  judge(envelope: GatedEnvelope): TenantGateVerdict {
     const raw = envelope.metadata?.tenantId;
     const tenantId = typeof raw === 'string' && raw.length > 0 ? raw : undefined;
-    const cause = !tenantId ? 'missing' : !this.options.tenants.find(tenantId) ? 'unlisted' : undefined;
-    if (cause) {
+    if (!tenantId || !this.options.tenants.find(tenantId)) {
+      const cause = !tenantId ? 'missing' : 'unlisted';
       const reason =
         cause === 'missing'
           ? `테넌트 이벤트 ${envelope.messageType} 에 봉투 테넌트(metadata.tenantId)가 없다`
@@ -91,7 +88,7 @@ export class EventTenantGate {
  * - Kafka 메시지가 아닌 실행(HTTP 등)
  * - 이 핸들러가 받는 종류가 아닌 메시지 — `EventTypeGuard`·재시도 인터셉터가 조용히 버린다. 여기서 판정하면 한 토픽의
  *   핸들러 수만큼 세고, ② 에선 그만큼 DLQ 에 쌓인다.
- * - 봉투로 알아볼 수 없는 메시지(`messageType` 이 문자열이 아니다) — 종류를 모르니 계정/테넌트도 모른다. 검증 인터셉터 몫이다.
+ * - 봉투로 알아볼 수 없는 메시지(`messageType` 이 문자열이 아니다) — 검증 인터셉터 몫이다.
  */
 function judgeable(
   context: ExecutionContext,
@@ -139,13 +136,13 @@ export class TenantGateInterceptor implements NestInterceptor {
     const target = judgeable(context, this.reflector);
     if (!target) return next.handle();
 
-    const verdict = this.gate.judge(target.topic, target.envelope);
+    const verdict = this.gate.judge(target.envelope);
     switch (verdict.kind) {
       case 'skip':
         recordSkippedOtherTenant(target.topic);
         return of(undefined); // 정상 완료 → 커밋
       case 'pass':
-        if (verdict.tenantId) this.cls.set(TENANT_CONTEXT_KEY, verdict.tenantId);
+        this.cls.set(TENANT_CONTEXT_KEY, verdict.tenantId);
         return next.handle();
       case 'warn':
         this.logger.warn(`${verdict.reason}. 맥락 없이 처리한다(TENANT_GATE_MODE=warn). topic=${target.topic}`);
@@ -169,7 +166,7 @@ export class TenantGateRejectInterceptor implements NestInterceptor {
     const target = judgeable(context, this.reflector);
     if (!target) return next.handle();
 
-    const verdict = this.gate.judge(target.topic, target.envelope);
+    const verdict = this.gate.judge(target.envelope);
     if (verdict.kind === 'reject') throw new TenantGateRejection(verdict.reason);
     return next.handle();
   }

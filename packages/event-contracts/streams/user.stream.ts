@@ -232,16 +232,12 @@ const SocialIdentityUnlinkedSchema = z.object({
 // ===== Stream Config (타입 안전 버전) =====
 
 /**
- * 계정 이벤트 — 계정은 테넌트로 쪼개지지 않으므로(ADR 0002) 그 계정을 든 모든 테넌트의 서비스가 들어야 하는 것.
- * - 수명주기(탈퇴·휴면·영구 삭제).
- * - `UserUpdated`: 이메일·프로필은 계정 전역이다. 테넌트 2 셸에서 고쳐도 아몬드영 Medusa 고객 이메일이 따라가야 한다
- *   (소비자는 channel-adapter 하나). ADR 0002 를 뒤집어 테넌트마다 계정을 두게 되면 테넌트 이벤트로 되돌린다.
- *
- * 나머지는 테넌트 이벤트다 — 봉투의 테넌트는 «그 일이 일어난 화면의 테넌트»(user-service 요청 맥락, 없으면 T)다.
- * 비밀번호 변경·인증 메일·가입 환영은 브랜드가 붙은 메일이라, 테넌트 2 화면에서 일어난 일에 아몬드영 메일이 가면 안 된다.
+ * 이 스트림의 이벤트는 전부 테넌트 이벤트다 — 소비 앱의 문이 봉투의 테넌트로 거른다.
+ * - 계정 변경·탈퇴·휴면 전환·영구 삭제(`UserUpdated`·`UserDeleted`·`UserDormantConverted`·`UserPermanentDeleted`)의
+ *   테넌트는 «그 계정의 테넌트»다(ADR-0056 — 계정은 한 테넌트의 것). 생산자가 `inAccountTenant` 로 맥락에 세운다(크론 포함).
+ * - 나머지의 테넌트는 «그 일이 일어난 화면의 테넌트»(user-service 요청 맥락, 없으면 T)다. 비밀번호 변경·인증 메일·가입 환영은
+ *   브랜드가 붙은 메일이라, 테넌트 2 화면에서 일어난 일에 아몬드영 메일이 가면 안 된다.
  */
-const ACCOUNT = { tenancy: 'account' } as const;
-
 export const USER_STREAM = stream({
   topic: 'users.events.v1',
   partitions: 6,
@@ -258,10 +254,10 @@ export const USER_STREAM = stream({
       'UserPasswordChanged',
       UserPasswordChangedSchema,
     ),
-    UserUpdated: event<'UserUpdated', UserUpdatedPayload>('UserUpdated', UserUpdatedSchema, ACCOUNT),
-    UserDeleted: event<'UserDeleted', UserDeletedPayload>('UserDeleted', UserDeletedSchema, ACCOUNT),
-    UserDormantConverted: event<'UserDormantConverted', UserDormantConvertedPayload>('UserDormantConverted', UserDormantConvertedSchema, ACCOUNT),
-    UserPermanentDeleted: event<'UserPermanentDeleted', UserPermanentDeletedPayload>('UserPermanentDeleted', UserPermanentDeletedSchema, ACCOUNT),
+    UserUpdated: event<'UserUpdated', UserUpdatedPayload>('UserUpdated', UserUpdatedSchema),
+    UserDeleted: event<'UserDeleted', UserDeletedPayload>('UserDeleted', UserDeletedSchema),
+    UserDormantConverted: event<'UserDormantConverted', UserDormantConvertedPayload>('UserDormantConverted', UserDormantConvertedSchema),
+    UserPermanentDeleted: event<'UserPermanentDeleted', UserPermanentDeletedPayload>('UserPermanentDeleted', UserPermanentDeletedSchema),
     BusinessLicenseApproved: event<'BusinessLicenseApproved', BusinessLicenseApprovedPayload>('BusinessLicenseApproved', BusinessLicenseApprovedSchema),
     Cafe24Linked: event<'Cafe24Linked', Cafe24LinkedPayload>('Cafe24Linked', Cafe24LinkedSchema),
     Cafe24Unlinked: event<'Cafe24Unlinked', Cafe24UnlinkedPayload>('Cafe24Unlinked', Cafe24UnlinkedSchema),

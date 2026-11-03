@@ -56,6 +56,7 @@ import { getCookieOptions, getDomain, logCookieDebugInfo } from './utils/cookies
 import { generateSocialNickname } from './utils/generate-social-nickname';
 import { isSamePhoneNumber } from '../../commons/utils/phone-number';
 import { SERVED_TENANT_ID } from '../../tenancy/served-tenant';
+import { inAccountTenant } from '../../tenancy/account-event-tenant';
 import { globalUniqueFieldOf } from '../users/global-unique-field';
 
 const INVALID_CREDENTIALS_MESSAGE = '아이디 또는 비밀번호가 올바르지 않습니다';
@@ -1059,22 +1060,29 @@ export class AuthService {
       await this.tokensService.deleteAllTokens(userId, tx);
 
       const [before] = await tx
-        .select({ email: userServiceSchema.users.email, username: userServiceSchema.users.username })
+        .select({
+          email: userServiceSchema.users.email,
+          username: userServiceSchema.users.username,
+          tenantId: userServiceSchema.users.tenantId,
+        })
         .from(userServiceSchema.users)
         .where(eq(userServiceSchema.users.id, userId))
         .limit(1);
 
       await this.anonymizeIdentity(userId, tx);
 
-      await this.eventPublisher.publishEvent({
-        eventType: 'UserDeleted',
-        aggregateId: userId,
-        payload: {
-          userId,
-          ...(before?.email?.includes('@') ? { email: before.email } : {}),
-          ...(before?.username ? { name: before.username } : {}),
-        },
-      });
+      // 탈퇴는 계정의 테넌트 일이다 — 요청 화면의 테넌트가 아니다(ADR-0056)
+      await inAccountTenant(before?.tenantId, () =>
+        this.eventPublisher.publishEvent({
+          eventType: 'UserDeleted',
+          aggregateId: userId,
+          payload: {
+            userId,
+            ...(before?.email?.includes('@') ? { email: before.email } : {}),
+            ...(before?.username ? { name: before.username } : {}),
+          },
+        }),
+      );
     }, tx);
   }
 

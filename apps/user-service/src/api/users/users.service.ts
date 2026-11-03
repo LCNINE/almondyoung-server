@@ -23,6 +23,7 @@ import { UpdateUserDto } from './dto/update-user.dto';
 import { UserDetailsResponseDto } from './dto/user-details.response.dto';
 import { UserRolesResponse } from './dto/user-role-scopes.response.dto';
 import { UserRolesReader } from './user-roles.reader';
+import { accountTenantForEvent, inAccountTenant } from '../../tenancy/account-event-tenant';
 
 /** 비밀번호를 뺀 계정 칸 — 이메일 조회가 돌려주는 모양(`schema.UserWithoutPassword`). */
 const userWithoutPasswordColumns = {
@@ -487,15 +488,18 @@ export class UsersService {
       }
 
       // 트랜잭션 컨텍스트(tx)가 주입된 경우, 커밋 이후 상위 레벨에서 이벤트를 발행하는 코드 작성.
+      // 프로필 수정은 계정의 테넌트 일이다 — 요청 화면의 테넌트가 아니다(ADR-0056).
       if (!tx) {
-        await this.eventPublisher.publishEvent({
-          eventType: 'UserUpdated',
-          aggregateId: userId,
-          payload: {
-            userId,
-            ...updateUserDto,
-          },
-        });
+        await inAccountTenant(await accountTenantForEvent(client, userId), () =>
+          this.eventPublisher.publishEvent({
+            eventType: 'UserUpdated',
+            aggregateId: userId,
+            payload: {
+              userId,
+              ...updateUserDto,
+            },
+          }),
+        );
       }
 
       return;
