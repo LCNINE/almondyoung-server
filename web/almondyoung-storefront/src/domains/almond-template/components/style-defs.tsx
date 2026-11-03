@@ -1,5 +1,5 @@
 import type { Layer } from "../lib/document"
-import { DEFAULT_FILTER_COLOR } from "../lib/layer-style"
+import { DEFAULT_FILTER_COLOR, type ColorFilter } from "../lib/layer-style"
 
 export const gradientId = (layer: Layer) => `grad-${layer.id}`
 export const colorFilterId = (layer: Layer) => `cf-${layer.id}`
@@ -36,8 +36,15 @@ const RETRO_MATRIX =
   "0.334 0.654 0.161 0 0.06  0.297 0.583 0.143 0 0.05  0.231 0.454 0.111 0 0.08  0 0 0 1 0"
 
 // 고른 색을 레이어 자기 픽셀 위에 그 방식으로 섞고, 세기만큼 원본과 섞는다. 레이어 모양 밖으로는 번지지 않는다
-export function ColorFilterDef({ layer }: { layer: Layer }) {
-  const filter = layer.colorFilter
+export function ColorFilterDef({
+  id,
+  filter,
+  size,
+}: {
+  id: string
+  filter: ColorFilter | undefined
+  size: number
+}) {
   if (!filter || filter.amount <= 0) return null
   const a = filter.amount / 100
   const color = filter.color ?? DEFAULT_FILTER_COLOR[filter.kind]
@@ -56,7 +63,7 @@ export function ColorFilterDef({ layer }: { layer: Layer }) {
 
   return (
     <filter
-      id={colorFilterId(layer)}
+      id={id}
       x="-50%"
       y="-50%"
       width="200%"
@@ -67,9 +74,7 @@ export function ColorFilterDef({ layer }: { layer: Layer }) {
         <feColorMatrix type="saturate" values={String(1 - a)} />
       )}
       {filter.kind === "blur" && (
-        <feGaussianBlur
-          stdDeviation={Math.min(layer.width, layer.height) * 0.15 * a}
-        />
+        <feGaussianBlur stdDeviation={size * 0.15 * a} />
       )}
       {filter.kind === "retro" && (
         <>

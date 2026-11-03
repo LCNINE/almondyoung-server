@@ -1,5 +1,10 @@
 import { PRINT_SPECS } from "../lib/catalog"
-import { sideBackground, type Design, type Layer } from "../lib/document"
+import {
+  sideBackground,
+  unfiltered,
+  type Design,
+  type Layer,
+} from "../lib/document"
 import { Backdrop } from "./graphic"
 import { LayerStack } from "./layer-stack"
 
@@ -61,6 +66,15 @@ export async function printSvg(
           layers={design[side].map((layer) =>
             bleedExtended(layer, design.widthMm, design.heightMm, bleedMm)
           )}
+          backdrop={
+            <g transform={`translate(${-bleedMm} ${-bleedMm})`}>
+              <Backdrop
+                value={unfiltered(sideBackground(design, side))}
+                width={width}
+                height={height}
+              />
+            </g>
+          }
         />
       </g>
     </svg>

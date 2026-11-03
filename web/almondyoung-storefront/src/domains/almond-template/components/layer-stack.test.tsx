@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server"
 import { describe, expect, it } from "vitest"
 import { newDesign, parseDesign, type Layer } from "../lib/document"
 import { LayerStack } from "./layer-stack"
+import { nearestSegment } from "../hooks/use-pen-tool"
 
 const rect: Layer = {
   id: "box",
@@ -116,5 +117,69 @@ describe("레이어 꾸미기", () => {
         })
       )
     ).toThrow()
+  })
+
+  it("필터 무효화 레이어는 자기 모양의 창에 필터를 뺀 배경과 아래 레이어를 보여 준다", () => {
+    const html = renderToStaticMarkup(
+      <svg>
+        <LayerStack
+          layers={[
+            { ...rect, colorFilter: { kind: "grayscale", amount: 100 } },
+            { ...top, id: "win", filterBypass: true },
+          ]}
+          backdrop={<rect id="raw-bg" />}
+        />
+      </svg>
+    )
+    const window = html.slice(html.indexOf('mask="url(#bypass-win)"'))
+
+    expect(html).toContain('<mask id="bypass-win"')
+    expect(window).toContain('id="raw-bg"')
+    expect(window.indexOf("cf-box")).toBe(-1)
+    expect(html).toContain('filter="url(#cf-box)"')
+  })
+
+  it("배경 필터를 검사하고 무효화 표시는 참·거짓만 받는다", () => {
+    const base = { ...newDesign("card"), front: [rect] }
+
+    expect(() =>
+      parseDesign({
+        ...base,
+        backgroundFilter: { kind: "grayscale", amount: 100 },
+      })
+    ).not.toThrow()
+    expect(() =>
+      parseDesign({
+        ...base,
+        backgroundFilter: { kind: "nope", amount: 100 },
+      })
+    ).toThrow()
+    expect(() =>
+      parseDesign({
+        ...base,
+        front: [{ ...rect, filterBypass: "yes" as never }],
+      })
+    ).toThrow()
+  })
+
+  it("윤곽선을 누른 자리에 가장 가까운 변을 고른다", () => {
+    const square: Layer = {
+      ...rect,
+      type: "path",
+      pathClosed: true,
+      pathPoints: [
+        { x: 0, y: 0 },
+        { x: 1, y: 0 },
+        { x: 1, y: 1 },
+        { x: 0, y: 1 },
+      ],
+    }
+
+    expect(nearestSegment(square, { x: 0.5, y: 0 })).toBe(0)
+    expect(nearestSegment(square, { x: 1, y: 0.4 })).toBe(1)
+    expect(nearestSegment(square, { x: 0, y: 0.6 })).toBe(3)
+    expect(
+      nearestSegment({ ...square, pathClosed: false }, { x: 0, y: 0.6 })
+    ).toBe(2)
   })
 })

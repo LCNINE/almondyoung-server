@@ -9,6 +9,9 @@ export const BLEND_MODES = [
   ["darken", "어둡게"],
   ["lighten", "밝게"],
   ["luminosity", "광도"],
+  ["saturation", "채도"],
+  ["hue", "색조"],
+  ["color", "색상"],
 ] as const
 
 export type BlendMode = (typeof BLEND_MODES)[number][0]

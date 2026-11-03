@@ -122,6 +122,8 @@ export function useLayerActions({
     )
     change({ ...design, [side]: [...layers, layer] })
     setSelectedId(layer.id)
+
+    return layer.id
   }
   const editable =
     selected &&

@@ -3,7 +3,12 @@
 import { useEffect, useState } from "react"
 import { getAlmondDesign } from "@/lib/api/ugc/almond-designs"
 import { cn } from "@/lib/utils"
-import { parseDesign, sideBackground, type Design } from "../lib/document"
+import {
+  parseDesign,
+  sideBackground,
+  unfiltered,
+  type Design,
+} from "../lib/document"
 import { Backdrop } from "./graphic"
 import { LayerStack } from "./layer-stack"
 import { ImagePreviews } from "../lib/image-previews"
@@ -47,7 +52,14 @@ export function DesignThumbnail({
             </defs>
             <g clipPath={`url(#thumb-${id})`}>
               <Backdrop value={sideBackground(design, "front")} />
-              <LayerStack layers={design.front} />
+              <LayerStack
+                layers={design.front}
+                backdrop={
+                  <Backdrop
+                    value={unfiltered(sideBackground(design, "front"))}
+                  />
+                }
+              />
             </g>
           </svg>
         </ImagePreviews.Provider>

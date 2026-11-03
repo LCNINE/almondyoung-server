@@ -327,7 +327,7 @@ export function PointEditOverlay({ editor }: { editor: AlmondEditor }) {
     editMove,
     editUp,
     toggleActiveSmooth,
-    finishPointEdit,
+    insertPoint,
     handleSize,
     canvasFit,
     zoom,
@@ -347,10 +347,7 @@ export function PointEditOverlay({ editor }: { editor: AlmondEditor }) {
         width={design.widthMm * 7}
         height={design.heightMm * 7}
         fill="transparent"
-        onPointerDown={(event) => {
-          event.stopPropagation()
-          finishPointEdit()
-        }}
+        onPointerDown={(event) => event.stopPropagation()}
       />
       <path
         d={pathData(editPoints, !!layer.pathClosed)}
@@ -358,6 +355,15 @@ export function PointEditOverlay({ editor }: { editor: AlmondEditor }) {
         stroke={ACCENT}
         strokeWidth={stroke}
         pointerEvents="none"
+      />
+      <path
+        aria-label="윤곽선을 눌러 점 추가"
+        d={pathData(editPoints, !!layer.pathClosed)}
+        fill="none"
+        stroke="transparent"
+        strokeWidth={handleSize}
+        className="cursor-copy"
+        onPointerDown={insertPoint}
       />
       {editPoints.map((p, i) => (
         <g key={i}>
@@ -367,6 +373,15 @@ export function PointEditOverlay({ editor }: { editor: AlmondEditor }) {
             stroke={stroke}
             onGrab={(kind) => (event) => editDown(event, i, kind)}
             dragProps={dragProps}
+          />
+          <circle
+            cx={p.x}
+            cy={p.y}
+            r={handleSize * 1.2}
+            fill="transparent"
+            className="cursor-move"
+            onPointerDown={(event) => editDown(event, i, "anchor")}
+            {...dragProps}
           />
           <circle
             role="button"

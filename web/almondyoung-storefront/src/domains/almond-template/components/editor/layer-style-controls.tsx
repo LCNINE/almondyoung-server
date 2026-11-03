@@ -7,6 +7,7 @@ import {
   DEFAULT_FILTER_COLOR,
   DEFAULT_GRADIENT,
   type BlendMode,
+  type ColorFilter,
   type ColorFilterKind,
   type Gradient,
 } from "../../lib/layer-style"
@@ -51,61 +52,11 @@ export function LayerStyleControls({
           ))}
         </select>
       </label>
-      <label className="block text-[15px] text-[#3F4250]">
-        필터
-        <select
-          aria-label="필터"
-          className={selectClass}
-          value={filter?.kind ?? ""}
-          disabled={disabled}
-          onChange={(event) => {
-            const kind = event.target.value as ColorFilterKind | ""
-
-            patch({
-              colorFilter: kind
-                ? {
-                    kind,
-                    amount: filter?.amount ?? 70,
-                    color: COLORED_FILTERS.has(kind)
-                      ? DEFAULT_FILTER_COLOR[kind]
-                      : undefined,
-                  }
-                : undefined,
-            })
-          }}
-        >
-          <option value="">없음</option>
-          {COLOR_FILTERS.map(([key, label]) => (
-            <option key={key} value={key}>
-              {label}
-            </option>
-          ))}
-        </select>
-      </label>
-      {filter && (
-        <SettingBox
-          title="필터 설정"
-          disabled={disabled}
-          onClear={() => patch({ colorFilter: undefined })}
-        >
-          <PropSlider
-            label="강도"
-            min={0}
-            max={100}
-            value={filter.amount}
-            disabled={disabled}
-            onValue={(amount) => patch({ colorFilter: { ...filter, amount } })}
-          />
-          {COLORED_FILTERS.has(filter.kind) && (
-            <PrintColorPicker
-              label="필터 색상"
-              value={filter.color ?? DEFAULT_FILTER_COLOR[filter.kind]}
-              disabled={disabled}
-              onApply={(color) => patch({ colorFilter: { ...filter, color } })}
-            />
-          )}
-        </SettingBox>
-      )}
+      <ColorFilterFields
+        value={filter}
+        disabled={disabled}
+        onChange={(colorFilter) => patch({ colorFilter })}
+      />
       {gradient && (
         <GradientControls
           selected={selected}
@@ -124,6 +75,22 @@ export function LayerStyleControls({
           {selected.knockout && (
             <p className="text-[13px] leading-[19px] text-[#70777F]">
               글자 모양대로 아래 도형·사진을 모두 뚫어 배경이 보입니다.
+            </p>
+          )}
+        </>
+      )}
+      {selected.type !== "image" && (
+        <>
+          <Toggle
+            label="필터 무효화"
+            checked={!!selected.filterBypass}
+            disabled={disabled}
+            onChange={(on) => patch({ filterBypass: on || undefined })}
+          />
+          {selected.filterBypass && (
+            <p className="text-[13px] leading-[19px] text-[#70777F]">
+              이 모양 안에서는 배경 사진과 아래 레이어가 필터 없이 원래 색으로
+              보입니다.
             </p>
           )}
         </>
@@ -223,6 +190,76 @@ function GradientControls({
               value={value.angle}
               disabled={disabled}
               onValue={(angle) => set({ angle })}
+            />
+          )}
+        </SettingBox>
+      )}
+    </>
+  )
+}
+
+export function ColorFilterFields({
+  value,
+  disabled,
+  onChange,
+}: {
+  value: ColorFilter | undefined
+  disabled: boolean
+  onChange: (value: ColorFilter | undefined) => void
+}) {
+  return (
+    <>
+      <label className="block text-[15px] text-[#3F4250]">
+        필터
+        <select
+          aria-label="필터"
+          className={selectClass}
+          value={value?.kind ?? ""}
+          disabled={disabled}
+          onChange={(event) => {
+            const kind = event.target.value as ColorFilterKind | ""
+
+            onChange(
+              kind
+                ? {
+                    kind,
+                    amount: value?.amount ?? 70,
+                    color: COLORED_FILTERS.has(kind)
+                      ? DEFAULT_FILTER_COLOR[kind]
+                      : undefined,
+                  }
+                : undefined
+            )
+          }}
+        >
+          <option value="">없음</option>
+          {COLOR_FILTERS.map(([key, label]) => (
+            <option key={key} value={key}>
+              {label}
+            </option>
+          ))}
+        </select>
+      </label>
+      {value && (
+        <SettingBox
+          title="필터 설정"
+          disabled={disabled}
+          onClear={() => onChange(undefined)}
+        >
+          <PropSlider
+            label="강도"
+            min={0}
+            max={100}
+            value={value.amount}
+            disabled={disabled}
+            onValue={(amount) => onChange({ ...value, amount })}
+          />
+          {COLORED_FILTERS.has(value.kind) && (
+            <PrintColorPicker
+              label="필터 색상"
+              value={value.color ?? DEFAULT_FILTER_COLOR[value.kind]}
+              disabled={disabled}
+              onApply={(color) => onChange({ ...value, color })}
             />
           )}
         </SettingBox>

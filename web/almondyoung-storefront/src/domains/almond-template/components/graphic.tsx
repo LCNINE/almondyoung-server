@@ -7,7 +7,7 @@ import {
   colorFilterId,
   gradientId,
 } from "./style-defs"
-import { Fragment, memo } from "react"
+import { Fragment, memo, useId } from "react"
 import {
   SHAPE_TEXT_TYPES,
   type Design,
@@ -630,7 +630,11 @@ function LayerGraphicView({ layer }: { layer: Layer }) {
       <defs>
         {filterId && <EffectFilter layer={layer} id={filterId} />}
         <GradientDef layer={layer} />
-        <ColorFilterDef layer={layer} />
+        <ColorFilterDef
+          id={colorFilterId(layer)}
+          filter={layer.colorFilter}
+          size={Math.min(layer.width, layer.height)}
+        />
       </defs>
       <g filter={filtered ? `url(#${colorFilterId(layer)})` : undefined}>
         <g filter={filterId ? `url(#${filterId})` : undefined}>
@@ -858,16 +862,29 @@ export function Backdrop({
   height?: number | string
 }) {
   const imageSrc = useImageSrc()
+  const filterId = `bg-cf-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`
+  const filtered = !!value.backgroundFilter && value.backgroundFilter.amount > 0
   return (
     <>
       <rect width={width} height={height} fill={value.background} />
       {value.backgroundImage && (
-        <image
-          href={imageSrc(value.backgroundImage)}
-          width={width}
-          height={height}
-          preserveAspectRatio="xMidYMid slice"
-        />
+        <>
+          <defs>
+            {/* ponytail: 배경 크기를 모르는 곳이 많아 블러 기준을 50mm 로 고정. 큰 현수막에선 약하게 보인다 */}
+            <ColorFilterDef
+              id={filterId}
+              filter={value.backgroundFilter}
+              size={50}
+            />
+          </defs>
+          <image
+            href={imageSrc(value.backgroundImage)}
+            width={width}
+            height={height}
+            preserveAspectRatio="xMidYMid slice"
+            filter={filtered ? `url(#${filterId})` : undefined}
+          />
+        </>
       )}
     </>
   )

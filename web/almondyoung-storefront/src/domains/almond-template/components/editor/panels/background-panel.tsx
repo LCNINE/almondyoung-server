@@ -3,6 +3,7 @@ import { PrintColorPicker } from "../../color-picker"
 import type { AlmondEditor } from "../../../hooks/use-almond-editor"
 import { sideBackground, withSideBackground } from "../../../lib/document"
 import { GrayButton } from "../object-properties"
+import { ColorFilterFields } from "../layer-style-controls"
 
 export function BackgroundPanel({ editor }: { editor: AlmondEditor }) {
   const {
@@ -44,6 +45,19 @@ export function BackgroundPanel({ editor }: { editor: AlmondEditor }) {
           <GrayButton onClick={removeBackgroundImage}>
             배경 이미지 삭제
           </GrayButton>
+        </div>
+      )}
+      {bg.backgroundImage && (
+        <div className="mt-5 space-y-[15px]">
+          <ColorFilterFields
+            value={bg.backgroundFilter}
+            disabled={false}
+            onChange={(backgroundFilter) =>
+              change(
+                withSideBackground(design, side, { ...bg, backgroundFilter })
+              )
+            }
+          />
         </div>
       )}
       <input

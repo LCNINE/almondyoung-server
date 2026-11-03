@@ -20,7 +20,7 @@ export function ShapePanel({
   setShapeColumns: (value: 1 | 2) => void
 }) {
   const [mode, setMode] = useState<"shape" | "effect">("shape")
-  const { add, design } = editor
+  const { add, design, editPointsOf } = editor
   const side = Math.min(design.widthMm, design.heightMm) * 0.3
   // 처음 넣을 때는 정비율(정사각)로 넣는다. 선만 가로로 길게 둔다
   const square = (type: string) =>
@@ -77,6 +77,30 @@ export function ShapePanel({
               onChange={setShapeColumns}
             />
           </div>
+          <button
+            type="button"
+            className="mb-4 w-full rounded-md border border-[#dce0e5] py-2 text-sm hover:bg-[#f6f7f9]"
+            onClick={() =>
+              editPointsOf(
+                add("path", {
+                  ...square("path"),
+                  name: "자유도형",
+                  fill: "#d9d9d9",
+                  stroke: "#9a9a9a",
+                  strokeWidth: 0.5,
+                  pathClosed: true,
+                  pathPoints: [
+                    { x: 0, y: 0 },
+                    { x: 1, y: 0 },
+                    { x: 1, y: 1 },
+                    { x: 0, y: 1 },
+                  ],
+                })
+              )
+            }
+          >
+            + 자유도형 (선을 눌러 꼭짓점 추가)
+          </button>
           <div
             className={`grid gap-2 border-t pt-5 ${shapeColumns === 1 ? "grid-cols-1 group-data-[wide]/panel:grid-cols-2" : "grid-cols-2 group-data-[wide]/panel:grid-cols-4"}`}
           >

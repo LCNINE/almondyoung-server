@@ -1,6 +1,6 @@
 import { Ban, RotateCcw, X } from "lucide-react"
 import type { AlmondEditor } from "../../hooks/use-almond-editor"
-import { sideBackground } from "../../lib/document"
+import { sideBackground, unfiltered } from "../../lib/document"
 import { Backdrop } from "../graphic"
 import { LayerStack } from "../layer-stack"
 
@@ -93,7 +93,14 @@ export function StatusBar({ editor }: { editor: AlmondEditor }) {
                     }}
                   >
                     <Backdrop value={sideBackground(design, item)} />
-                    <LayerStack layers={design[item]} />
+                    <LayerStack
+                      layers={design[item]}
+                      backdrop={
+                        <Backdrop
+                          value={unfiltered(sideBackground(design, item))}
+                        />
+                      }
+                    />
                   </svg>
                   {removed && (
                     <span className="absolute inset-0 flex items-center justify-center bg-black/55 text-white">

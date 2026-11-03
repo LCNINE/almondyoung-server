@@ -2,7 +2,7 @@ import { INDUSTRIES, PURPOSES } from "../../../lib/gallery-filter"
 import { Backdrop } from "../../graphic"
 import { LayerStack } from "../../layer-stack"
 import type { AlmondEditor } from "../../../hooks/use-almond-editor"
-import { sideBackground } from "../../../lib/document"
+import { sideBackground, unfiltered } from "../../../lib/document"
 
 export function SaveDialog({ editor }: { editor: AlmondEditor }) {
   const {
@@ -34,7 +34,12 @@ export function SaveDialog({ editor }: { editor: AlmondEditor }) {
             className="h-[95%] max-w-[95%] bg-white shadow"
           >
             <Backdrop value={sideBackground(design, "front")} />
-            <LayerStack layers={design.front} />
+            <LayerStack
+              layers={design.front}
+              backdrop={
+                <Backdrop value={unfiltered(sideBackground(design, "front"))} />
+              }
+            />
           </svg>
         </div>
         <label className="block text-sm">

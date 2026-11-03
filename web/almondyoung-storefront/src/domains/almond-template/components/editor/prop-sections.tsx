@@ -589,13 +589,11 @@ export function OpacitySection({
     <PropSection className="py-5">
       <PropSlider
         label="불투명도"
-        min={10}
+        min={0}
         max={100}
         value={Math.round((value ?? 1) * 100)}
         disabled={disabled}
-        onValue={(percent) =>
-          onValue(Math.max(0.1, Math.min(1, percent / 100)))
-        }
+        onValue={(percent) => onValue(Math.max(0, Math.min(1, percent / 100)))}
       />
     </PropSection>
   )
