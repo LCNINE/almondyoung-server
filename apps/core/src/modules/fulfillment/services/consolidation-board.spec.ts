@@ -170,6 +170,7 @@ function optionLine(shipmentId: string, patch: Partial<OptionLine> = {}): Option
     salesOrderId: `so-${shipmentId}`,
     fulfillmentMode: 'in_house',
     skuStockType: 'stocked',
+    skuProfileId: 'p1',
     skuName: '상품',
     customerId: 'c1',
     customerName: '김알몬',
@@ -182,6 +183,7 @@ function optionLine(shipmentId: string, patch: Partial<OptionLine> = {}): Option
   };
 }
 
+const inHouse = new Set(['p1']);
 const noProgress: ShipmentProgress = { batchByShipment: new Map(), trackingByShipment: new Map() };
 
 describe('assembleConsolidationBoard', () => {
@@ -202,6 +204,7 @@ describe('assembleConsolidationBoard', () => {
         optionLine('x', { skuStockType: 'drop_shipped' }),
       ],
       noProgress,
+      inHouse,
     );
 
     expect(groups).toHaveLength(1);
@@ -217,6 +220,7 @@ describe('assembleConsolidationBoard', () => {
       [shipmentRow('a'), shipmentRow('b')],
       [optionLine('a'), optionLine('b')],
       progress,
+      inHouse,
     );
 
     expect(group.shipments.map((shipment) => [shipment.batchId, shipment.waybillTrackingNo])).toEqual([
@@ -239,10 +243,34 @@ describe('assembleConsolidationBoard', () => {
         optionLine('b'),
       ],
       noProgress,
+      inHouse,
     );
 
     expect(group.shipments[0].orderedAt).toEqual(new Date('2026-10-28T00:00:00Z'));
     expect(group.shipments[0].salesChannels).toEqual(['medusa', 'naver']);
     expect(group.canMergeNow).toBe(true);
+  });
+
+  it('상품 배송 프로필이 상자와 다르거나 프로필이 in_house 를 지원하지 않으면 뺀다', () => {
+    const shipments = [shipmentRow('a'), shipmentRow('b'), shipmentRow('c')];
+    const lines = [optionLine('a'), optionLine('b'), optionLine('c')];
+
+    expect(
+      assembleConsolidationBoard(
+        shipments,
+        [optionLine('a'), optionLine('b', { skuProfileId: 'p2' }), optionLine('c')],
+        noProgress,
+        inHouse,
+      )[0].shipments.map((shipment) => shipment.shipmentId),
+    ).toEqual(['a', 'c']);
+    expect(
+      assembleConsolidationBoard(
+        shipments,
+        [optionLine('a'), optionLine('b', { skuProfileId: null }), optionLine('c', { salesOrderId: null })],
+        noProgress,
+        inHouse,
+      ),
+    ).toEqual([]);
+    expect(assembleConsolidationBoard(shipments, lines, noProgress, new Set())).toEqual([]);
   });
 });

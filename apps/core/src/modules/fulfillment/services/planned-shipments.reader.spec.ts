@@ -12,6 +12,7 @@ function line(shipmentId: string, qty: number, patch: Partial<OptionLine> = {}):
     salesOrderId: 'so',
     fulfillmentMode: 'in_house',
     skuStockType: 'stocked',
+    skuProfileId: 'p1',
     skuName: 'sku',
     customerId: null,
     customerName: null,

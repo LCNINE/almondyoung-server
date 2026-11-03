@@ -153,6 +153,7 @@ describe('loadFoConsolidations 조회 횟수', () => {
       salesOrderId,
       fulfillmentMode: 'in_house',
       skuStockType: 'stocked',
+      skuProfileId: 'profile-1',
       skuName: '상품',
       customerId: 'c1',
       customerName: '김알몬',
@@ -167,14 +168,62 @@ describe('loadFoConsolidations 조회 횟수', () => {
       [{ shipmentId: 'sh-other' }],
       [shipment('sh-0'), shipment('sh-other')],
       [line('sh-0', 'so-0', 'A-1'), line('sh-other', 'so-x', 'B-2')],
-      [],
-      [],
+      [{ id: 'profile-1', modes: ['in_house'] }],
     ]);
 
     const result = await loadFoConsolidations(fake.db, targets(1));
 
     expect(result.get('fo-0')).toEqual({ state: 'mergeable', partnerOrderNos: ['B-2'] });
     expect(JSON.stringify([...result.values()])).not.toContain('김알몬');
+  });
+
+  it('같은 고객 같은 주소의 다른 주문 상자를 SKU 배송 프로필이 상자와 다르거나 프로필이 in_house 를 지원하지 않으면 none 이다', async () => {
+    const recipient = {
+      recipientName: '김알몬',
+      phone: '010-1234-5678',
+      postalCode: '14500',
+      roadAddress: '경기 부천시 원미로 12',
+      detailAddress: '101호',
+    };
+    const shipment = (id: string, warehouseId = 'wh-1') => ({
+      id,
+      warehouseId,
+      shippingProfileId: 'profile-1',
+      status: 'draft',
+      supplierId: null,
+      recoveryCode: null,
+      recipientSnapshot: recipient,
+      manifestVersion: 1,
+      reservationVersion: 1,
+      createdAt: new Date('2026-11-01T00:00:00Z'),
+    });
+    const line = (shipmentId: string, salesOrderId: string, displayOrderNo: string) => ({
+      shipmentId,
+      qty: 1,
+      salesOrderId,
+      fulfillmentMode: 'in_house',
+      skuStockType: 'stocked',
+      skuProfileId: 'profile-1',
+      skuName: '상품',
+      customerId: 'c1',
+      customerName: '김알몬',
+      customerPhone: '01012345678',
+      displayOrderNo,
+      channelOrderId: null,
+      salesChannel: 'medusa',
+      salesOrderCreatedAt: new Date('2026-11-01T00:00:00Z'),
+    });
+    const fake = countingDb(1, [
+      [{ customerId: 'c1', phone: '01012345678' }],
+      [{ shipmentId: 'sh-other' }],
+      [shipment('sh-0'), shipment('sh-other')],
+      [line('sh-0', 'so-0', 'A-1'), { ...line('sh-other', 'so-x', 'B-2'), skuProfileId: 'profile-2' }],
+      [{ id: 'profile-1', modes: ['in_house'] }],
+    ]);
+
+    const result = await loadFoConsolidations(fake.db, targets(1));
+
+    expect(result.get('fo-0')).toEqual({ state: 'none', partnerOrderNos: [] });
   });
 
   it('다른 창고의 같은 고객 같은 주소 상자는 mergeable 이 아니다', async () => {
@@ -203,6 +252,7 @@ describe('loadFoConsolidations 조회 횟수', () => {
       salesOrderId,
       fulfillmentMode: 'in_house',
       skuStockType: 'stocked',
+      skuProfileId: 'profile-1',
       skuName: '상품',
       customerId: 'c1',
       customerName: '김알몬',
@@ -217,6 +267,7 @@ describe('loadFoConsolidations 조회 횟수', () => {
       [{ shipmentId: 'sh-other' }],
       [shipment('sh-0', 'wh-1'), shipment('sh-other', 'wh-2')],
       [line('sh-0', 'so-0', 'A-1'), line('sh-other', 'so-x', 'B-2')],
+      [{ id: 'profile-1', modes: ['in_house'] }],
     ]);
 
     const result = await loadFoConsolidations(fake.db, targets(1));

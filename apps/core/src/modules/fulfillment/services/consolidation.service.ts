@@ -15,6 +15,7 @@ import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.sch
 import { AuditService } from '../../inventory/shared/services/audit.service';
 import { ConsolidationActor, ConsolidationSourceDto, CreateConsolidationDto } from '../dto/consolidation.dto';
 import { WAYBILL_TERMINAL_STATUSES } from '../waybill/waybill.constants';
+import { linesAreInHouse, supportsInHouse } from './consolidation-eligibility';
 import { canonicalConsolidationRecipient, consolidationCustomerKey } from './consolidation-options';
 import { CONSOLIDATION_RECOVERY_CODE } from './consolidation-recovery';
 import { selectEntrancePasswordForMerge } from './entrance-password.selection';
@@ -937,14 +938,7 @@ export class ConsolidationService {
   }
 
   private aggregateIsInHouse(aggregate: ShipmentAggregate): boolean {
-    return aggregate.lines.every(
-      (line) =>
-        line.salesOrderId !== null &&
-        line.fulfillmentMode === 'in_house' &&
-        line.skuStockType !== 'drop_shipped' &&
-        line.skuProfileId !== null &&
-        line.skuProfileId === aggregate.shipment.shippingProfileId,
-    );
+    return linesAreInHouse(aggregate.lines, aggregate.shipment.shippingProfileId);
   }
 
   private async profileSupportsInHouse(profileId: string, tx: DbTx): Promise<boolean> {
@@ -953,7 +947,7 @@ export class ConsolidationService {
       .from(wmsTables.deliveryProfiles)
       .where(eq(wmsTables.deliveryProfiles.id, profileId))
       .limit(1);
-    return Boolean(profile?.modes?.includes('in_house'));
+    return supportsInHouse(profile?.modes);
   }
 
   private resolveRecipient(dto: CreateConsolidationDto, aggregates: ShipmentAggregate[]): Record<string, unknown> {

@@ -9,7 +9,9 @@ function withPartner(partnerOrderNos: string[]) {
   if (first == null) return '';
   if (rest.length > 0) return `#${first} 외 ${rest.length}건과`;
 
-  return VOWEL_ENDING_DIGITS.has(first.slice(-1)) ? `#${first}와` : `#${first}과`;
+  return VOWEL_ENDING_DIGITS.has(first.slice(-1))
+    ? `#${first}와`
+    : `#${first}과`;
 }
 
 export const FoConsolidationCell = ({
@@ -43,5 +45,5 @@ export const FoConsolidationCell = ({
     );
   }
 
-  return <span className="text-xs text-gray-500">상자 1개</span>;
+  return null;
 };
