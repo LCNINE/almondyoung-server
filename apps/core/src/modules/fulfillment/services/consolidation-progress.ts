@@ -39,7 +39,7 @@ export function buildConsolidationProgressResponse(input: {
   };
 }
 
-/** 행 목록은 최근 것이 앞에 오게 넘긴다. 같은 원본의 행이 여럿이면 첫 행만 쓴다 */
+/** 행 목록은 최근 것이 앞에 오게 넘긴다. 같은 원본의 행이 여럿이면 첫 행만 쓰고, 주문번호만 모두 이어 붙인다 */
 export function buildConsolidationProgressSources(input: {
   sourceIds: string[];
   blockers: Array<{ shipmentId: string; codes: string[] }>;
@@ -48,7 +48,14 @@ export function buildConsolidationProgressSources(input: {
   reconcileStates: ProgressReconcileRow[];
   orderNos: ProgressOrderNoRow[];
 }): ConsolidationProgressSourceDto[] {
-  const orderNos = firstByShipment(input.orderNos);
+  const orderNos = new Map<string, string[]>();
+
+  for (const row of input.orderNos) {
+    const joined = orderNos.get(row.shipmentId) ?? [];
+
+    if (!joined.includes(row.orderNo)) orderNos.set(row.shipmentId, [...joined, row.orderNo]);
+  }
+
   const workItems = firstByShipment(input.workItems);
   const waybills = firstByShipment(input.waybills);
   const states = firstByShipment(input.reconcileStates);
@@ -69,7 +76,7 @@ export function buildConsolidationProgressSources(input: {
 
     return {
       shipmentId,
-      orderNo: orderNos.get(shipmentId)?.orderNo ?? null,
+      orderNo: orderNos.get(shipmentId)?.join(', ') ?? null,
       trackingNo: waybill?.trackingNo ?? null,
       batchId: workItem?.batchId ?? null,
       workItemStatus: workItem?.status ?? null,

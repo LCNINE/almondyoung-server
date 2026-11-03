@@ -339,6 +339,32 @@ describe('합포장 진행 패널', () => {
     expect(screen.queryByText('자동으로 합쳐지지 않았어요')).toBeNull();
   });
 
+  it('한 원본에 주문이 여럿이어도 제목에 모든 주문번호를 센다', () => {
+    mockProgress.mockImplementation((id) => ({
+      data:
+        id === 'src'
+          ? {
+              operationId: 'op-1',
+              status: 'completed',
+              targetShipmentId: 'target-1',
+              sources: [
+                source({ orderNo: '6275, 6276' }),
+                source({ shipmentId: 'other', orderNo: '6314' }),
+              ],
+            }
+          : null,
+    }));
+
+    renderPanel(<p>상자 내용</p>, {
+      shipmentId: 'target-1',
+      mergedFromShipmentId: 'src',
+    });
+
+    expect(
+      screen.getByText('#6275 외 2건이 새 상자 하나로 합쳐졌어요')
+    ).toBeTruthy();
+  });
+
   it('새 상자에서는 합쳐졌다는 카드와 다음 할 일 세 단계를 맨 위에 보인다', () => {
     mockProgress.mockImplementation((id) => ({
       data:

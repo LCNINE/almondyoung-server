@@ -101,11 +101,9 @@ function orderNosOf(
     ...sources.filter((source) => source.shipmentId === shipmentId),
     ...sources.filter((source) => source.shipmentId !== shipmentId),
   ];
-  const orderNos = ordered.flatMap((source) =>
-    source.orderNo ? [source.orderNo] : []
-  );
+  if (ordered.some((source) => !source.orderNo)) return null;
 
-  return orderNos.length === ordered.length ? orderNos : null;
+  return ordered.flatMap((source) => (source.orderNo ?? '').split(', '));
 }
 
 function trackState(index: number, current: number): TrackState {

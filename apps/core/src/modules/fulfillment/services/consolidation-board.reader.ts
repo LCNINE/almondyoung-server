@@ -9,6 +9,7 @@ import {
   ConsolidationBoardShipmentDto,
   ConsolidationRecipientSnapshotDto,
 } from '../dto/consolidation.dto';
+import { isEligibleInHouseBox } from './consolidation-eligibility';
 import {
   canonicalConsolidationRecipient,
   consolidationCustomerKey,
@@ -16,6 +17,7 @@ import {
 } from './consolidation-options';
 import {
   asRecipient,
+  loadInHouseProfileIds,
   loadShipmentLines,
   loadShipmentProgress,
   OPTION_STATUSES,
@@ -23,6 +25,7 @@ import {
   ShipmentProgress,
   ShipmentRow,
   summarizeShipmentWithoutRecipient,
+  uniqueInOrder,
 } from './consolidation-shipment-reads';
 
 export interface BoardRow {
@@ -87,6 +90,7 @@ export function assembleConsolidationBoard(
   shipments: readonly ShipmentRow[],
   lines: readonly OptionLine[],
   progress: ShipmentProgress,
+  inHouseProfileIds: ReadonlySet<string>,
 ): BoardGroup[] {
   const linesByShipment = new Map<string, OptionLine[]>();
 
@@ -101,9 +105,7 @@ export function assembleConsolidationBoard(
 
     if (shipment.supplierId || shipmentLines.length === 0) continue;
 
-    if (shipmentLines.some((line) => line.fulfillmentMode !== 'in_house' || line.skuStockType === 'drop_shipped')) {
-      continue;
-    }
+    if (!isEligibleInHouseBox(shipmentLines, shipment.shippingProfileId, inHouseProfileIds)) continue;
 
     const summary = summarizeShipmentWithoutRecipient(shipment, shipmentLines, progress);
 
@@ -145,8 +147,10 @@ export class ConsolidationBoardReader {
       const ids = shipments.map((shipment) => shipment.id);
       const lines = await loadShipmentLines(trx, ids);
       const progress = await loadShipmentProgress(trx, ids);
+      const profileIds = uniqueInOrder(shipments.flatMap((shipment) => shipment.shippingProfileId ?? []));
+      const inHouseProfileIds = await loadInHouseProfileIds(trx, profileIds);
 
-      return { groups: assembleConsolidationBoard(shipments, lines, progress) };
+      return { groups: assembleConsolidationBoard(shipments, lines, progress, inHouseProfileIds) };
     }, tx);
   }
 }

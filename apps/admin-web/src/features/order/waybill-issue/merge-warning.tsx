@@ -1,6 +1,11 @@
 'use client';
 
+import { Can } from '@/components/auth/can';
 import { Button } from '@/components/ui/button';
+import {
+  useBatchIssueWaybills,
+  useCreateShipmentConsolidation,
+} from '@/lib/services/orders';
 import type { MergePair } from './waybill-issue-model';
 
 type MergeWarningProps = {
@@ -33,10 +38,14 @@ export function MergeWarning({ pairs, onMerge, onDismiss }: MergeWarningProps) {
             </p>
           </div>
           <div className="flex gap-2">
-            <Button onClick={() => onMerge(pair)}>합치기</Button>
-            <Button variant="outline" onClick={onDismiss}>
-              따로 발급
-            </Button>
+            <Can run={useCreateShipmentConsolidation}>
+              <Button onClick={() => onMerge(pair)}>합치기</Button>
+            </Can>
+            <Can run={useBatchIssueWaybills}>
+              <Button variant="outline" onClick={onDismiss}>
+                따로 발급
+              </Button>
+            </Can>
           </div>
         </div>
       ))}

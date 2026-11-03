@@ -65,7 +65,7 @@ describe('buildConsolidationProgressSources', () => {
     expect(source).toMatchObject({ batchId: 'new', workItemStatus: 'picking', waybillId: 'wb-new', trackingNo: null });
   });
 
-  it('같은 원본의 주문번호가 여럿이면 앞의 것을 쓴다', () => {
+  it('같은 원본의 주문번호가 여럿이면 모두 이어 붙인다', () => {
     const [source] = buildConsolidationProgressSources({
       ...empty,
       sourceIds: ['a'],
@@ -76,7 +76,7 @@ describe('buildConsolidationProgressSources', () => {
       ],
     });
 
-    expect(source.orderNo).toBe('6275');
+    expect(source.orderNo).toBe('6275, 6314');
   });
 
   it('포기 전이면 gaveUpAt 은 null 이고 다음 재확인 시각만 준다', () => {

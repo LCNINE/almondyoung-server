@@ -4,6 +4,7 @@ import { FoConsolidationDto } from '../dto/fulfillment-order-response.dto';
 import { assembleConsolidationBoard } from './consolidation-board.reader';
 import { CONSOLIDATION_RECOVERY_CODE } from './consolidation-recovery';
 import {
+  loadInHouseProfileIds,
   loadShipmentLines,
   OPTION_STATUSES,
   OptionLine,
@@ -176,8 +177,10 @@ export async function loadFoConsolidations(
     partitions.set(key, [...(partitions.get(key) ?? []), shipment]);
   }
 
+  const profileIds = uniqueInOrder(openShipments.flatMap((shipment) => shipment.shippingProfileId ?? []));
+  const inHouseProfileIds = await loadInHouseProfileIds(db, profileIds);
   const groups = [...partitions.values()].flatMap((members) =>
-    assembleConsolidationBoard(members, lines, emptyProgress),
+    assembleConsolidationBoard(members, lines, emptyProgress, inHouseProfileIds),
   );
   const groupByShipment = new Map<string, string[]>();
 

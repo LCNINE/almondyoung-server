@@ -2,6 +2,7 @@ import { and, asc, desc, eq, inArray, notInArray } from 'drizzle-orm';
 import { DbService } from '@app/db';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import { ConsolidationOptionShipmentDto, ConsolidationRecipientSnapshotDto } from '../dto/consolidation.dto';
+import { supportsInHouse } from './consolidation-eligibility';
 import { WAYBILL_TERMINAL_STATUSES } from '../waybill/waybill.constants';
 
 export type ReadDb = DbTx | DbService<typeof wmsSchema>['db'];
@@ -13,6 +14,7 @@ export interface OptionLine {
   salesOrderId: string | null;
   fulfillmentMode: string | null;
   skuStockType: string;
+  skuProfileId: string | null;
   skuName: string;
   customerId: string | null;
   customerName: string | null;
@@ -49,6 +51,7 @@ export async function loadShipmentLines(trx: ReadDb, shipmentIds: string[]): Pro
       salesOrderId: wmsTables.fulfillmentOrders.salesOrderId,
       fulfillmentMode: wmsTables.fulfillmentOrders.fulfillmentMode,
       skuStockType: wmsTables.skus.stockType,
+      skuProfileId: wmsTables.skus.deliveryProfileId,
       skuName: wmsTables.skus.name,
       customerId: wmsTables.salesOrders.customerId,
       customerName: wmsTables.salesOrders.customerName,
@@ -71,6 +74,17 @@ export async function loadShipmentLines(trx: ReadDb, shipmentIds: string[]): Pro
     .leftJoin(wmsTables.salesOrders, eq(wmsTables.salesOrders.id, wmsTables.fulfillmentOrders.salesOrderId))
     .where(inArray(wmsTables.shipmentLines.shipmentId, shipmentIds))
     .orderBy(asc(wmsTables.shipmentLines.createdAt), asc(wmsTables.shipmentLines.id));
+}
+
+export async function loadInHouseProfileIds(trx: ReadDb, profileIds: readonly string[]): Promise<Set<string>> {
+  if (profileIds.length === 0) return new Set();
+
+  const rows = await trx
+    .select({ id: wmsTables.deliveryProfiles.id, modes: wmsTables.deliveryProfiles.supportedFulfillmentModes })
+    .from(wmsTables.deliveryProfiles)
+    .where(inArray(wmsTables.deliveryProfiles.id, [...profileIds]));
+
+  return new Set(rows.filter((row) => supportsInHouse(row.modes)).map((row) => row.id));
 }
 
 export async function loadShipmentProgress(trx: ReadDb, shipmentIds: string[]): Promise<ShipmentProgress> {

@@ -1,6 +1,6 @@
 import { Body, Controller, Delete, Get, Param, Patch, Post } from '@nestjs/common';
 import { ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
-import { RequirePermission } from '@app/authorization';
+import { RequireAnyPermission, RequirePermission } from '@app/authorization';
 import { CreateWarehouseDto } from '../dto/create-warehouse.dto';
 import { UpdateWarehouseDto } from '../dto/update-warehouse.dto';
 import { WarehouseDto } from '../dto/warehouse.dto';
@@ -22,7 +22,7 @@ export class WarehouseController {
     return WarehouseMapper.toDto(warehouse);
   }
 
-  @RequirePermission('inventory.stock.read')
+  @RequireAnyPermission('inventory.stock.read', 'fulfillment.shipment.read')
   @Get()
   @ApiOperation({ summary: '모든 창고 목록 조회' })
   @ApiResponse({ status: 200, description: '창고 목록을 반환합니다.' })

@@ -12,7 +12,7 @@ describe('WarehouseController authorization contract', () => {
   };
 
   const WRITE_HANDLERS = ['create', 'update', 'remove'];
-  const READ_HANDLERS = ['findAll', 'findOne', 'getStockSummary'];
+  const READ_HANDLERS = ['findOne', 'getStockSummary'];
 
   it.each(WRITE_HANDLERS)('closes %s behind the warehouse write permission', (name) => {
     expect(Reflect.getMetadata(REQUIRED_PERMISSIONS_KEY, handlerFor(name))).toEqual(['inventory.warehouse.write']);
@@ -21,6 +21,13 @@ describe('WarehouseController authorization contract', () => {
   // warehouse-app 이 GET /inventory/warehouses 로 창고를 고르므로 읽기는 재고 조회 권한이면 된다.
   it.each(READ_HANDLERS)('opens %s to the stock read permission so the field PDA can read it', (name) => {
     expect(Reflect.getMetadata(REQUIRED_PERMISSIONS_KEY, handlerFor(name))).toEqual(['inventory.stock.read']);
+  });
+
+  it('opens the warehouse list to shipment readers so the waybill screen loads without stock read', () => {
+    expect(Reflect.getMetadata(REQUIRED_PERMISSIONS_KEY, handlerFor('findAll'))).toEqual([
+      'inventory.stock.read',
+      'fulfillment.shipment.read',
+    ]);
   });
 
   it('carries no legacy guard or class-level requirement on the controller', () => {
