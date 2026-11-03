@@ -1,5 +1,6 @@
 'use client';
 
+import type { FulfillmentConsolidation } from '@/lib/types/dto/fulfillment';
 import { PlaceholderCell } from '../common/placeholder-cell';
 
 // FO 상태 → 한글 라벨 + 색상 클래스 매핑 (FulfillmentOrderStatus 전체)
@@ -15,9 +16,21 @@ const FO_STATUS_CONFIG: Record<string, { label: string; className: string }> = {
   recovery_required: { label: '복구필요', className: 'bg-red-100 text-red-700' },
 };
 
-export function FoStatusBadge({ status }: { status: string | null | undefined }) {
+const MERGING_CONFIG = { label: '합포장 중', className: 'bg-amber-100 text-amber-700' };
+
+export function FoStatusBadge({
+  status,
+  consolidation,
+}: {
+  status: string | null | undefined;
+  consolidation?: FulfillmentConsolidation | null;
+}) {
   if (status == null) return <PlaceholderCell />;
-  const cfg = FO_STATUS_CONFIG[status] ?? { label: status, className: 'bg-gray-100 text-gray-600' };
+  const fallback = { label: status, className: 'bg-gray-100 text-gray-600' };
+  const cfg =
+    consolidation?.state === 'merging'
+      ? MERGING_CONFIG
+      : (FO_STATUS_CONFIG[status] ?? fallback);
   return (
     <span
       className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium whitespace-nowrap ${cfg.className}`}
@@ -27,9 +40,13 @@ export function FoStatusBadge({ status }: { status: string | null | undefined })
   );
 }
 
-export const FoStatusCell = ({ value }: { value: string | null | undefined }) => (
-  <FoStatusBadge status={value} />
-);
+export const FoStatusCell = ({
+  value,
+  consolidation,
+}: {
+  value: string | null | undefined;
+  consolidation?: FulfillmentConsolidation | null;
+}) => <FoStatusBadge status={value} consolidation={consolidation} />;
 
 // 우선순위 라벨 + 색상
 const PRIORITY_CONFIG: Record<string, { label: string; className: string }> = {

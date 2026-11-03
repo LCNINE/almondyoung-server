@@ -107,7 +107,7 @@ export function FulfillmentDetail({
           <span className="font-mono text-xs">{data.id}</span>
         </InfoRow>
         <InfoRow label="상태">
-          <FoStatusBadge status={fo.status} />
+          <FoStatusBadge status={fo.status} consolidation={fo.consolidation} />
         </InfoRow>
         <InfoRow label="창고">
           {fo.warehouseName ?? (

@@ -52,6 +52,13 @@ export interface ReservationSummary {
 }
 
 /** GET /fulfillments 목록 / 상세 응답 (Core FulfillmentOrderResponseDto) */
+export type ConsolidationState = 'none' | 'mergeable' | 'merging' | 'merged';
+
+export interface FulfillmentConsolidation {
+  state: ConsolidationState;
+  partnerOrderNos: string[];
+}
+
 export interface FulfillmentOrder {
   id: string;
   salesOrderId: string | null;
@@ -75,6 +82,7 @@ export interface FulfillmentOrder {
   canceledAt: string | null;
   shippingAddress?: unknown;
   labelNo: string | null;
+  consolidation?: FulfillmentConsolidation | null;
   createdAt: string;
   updatedAt: string;
 }
