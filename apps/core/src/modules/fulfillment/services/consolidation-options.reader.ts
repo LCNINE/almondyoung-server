@@ -17,8 +17,8 @@ import {
   customerPhoneDigits,
 } from './consolidation-options';
 
-type ShipmentRow = typeof wmsTables.shipments.$inferSelect;
-interface OptionLine {
+export type ShipmentRow = typeof wmsTables.shipments.$inferSelect;
+export interface OptionLine {
   shipmentId: string;
   qty: number;
   salesOrderId: string | null;
@@ -30,14 +30,16 @@ interface OptionLine {
   customerPhone: string | null;
   displayOrderNo: string | null;
   channelOrderId: string | null;
+  salesChannel: string | null;
+  salesOrderCreatedAt: Date | null;
 }
 
-interface ShipmentProgress {
+export interface ShipmentProgress {
   batchByShipment: Map<string, string>;
   trackingByShipment: Map<string, string>;
 }
 
-const OPTION_STATUSES: ShipmentRow['status'][] = ['draft', 'planned'];
+export const OPTION_STATUSES: ShipmentRow['status'][] = ['draft', 'planned'];
 const CLOSED_WORK_ITEM_STATUSES = ['excluded', 'completed'] as const;
 
 function asRecipient(value: unknown): ConsolidationRecipientSnapshotDto {
@@ -179,7 +181,7 @@ export class ConsolidationOptionsReader {
     return rows.map((row) => row.id);
   }
 
-  private async loadLines(trx: DbTx, shipmentIds: string[]): Promise<OptionLine[]> {
+  async loadLines(trx: DbTx, shipmentIds: string[]): Promise<OptionLine[]> {
     if (shipmentIds.length === 0) return [];
 
     return trx
@@ -195,6 +197,8 @@ export class ConsolidationOptionsReader {
         customerPhone: wmsTables.salesOrders.customerPhone,
         displayOrderNo: wmsTables.salesOrders.displayOrderNo,
         channelOrderId: wmsTables.salesOrders.channelOrderId,
+        salesChannel: wmsTables.salesOrders.salesChannel,
+        salesOrderCreatedAt: wmsTables.salesOrders.createdAt,
       })
       .from(wmsTables.shipmentLines)
       .innerJoin(
@@ -211,7 +215,7 @@ export class ConsolidationOptionsReader {
       .orderBy(asc(wmsTables.shipmentLines.createdAt), asc(wmsTables.shipmentLines.id));
   }
 
-  private async loadProgress(trx: DbTx, shipmentIds: string[]): Promise<ShipmentProgress> {
+  async loadProgress(trx: DbTx, shipmentIds: string[]): Promise<ShipmentProgress> {
     const [workItems, waybills] = await Promise.all([
       trx
         .select({
@@ -253,7 +257,7 @@ export class ConsolidationOptionsReader {
     return { batchByShipment, trackingByShipment };
   }
 
-  private summary(
+  summary(
     shipment: ShipmentRow,
     lines: OptionLine[],
     progress: ShipmentProgress,

@@ -28,6 +28,7 @@ import { AvailabilityService } from './services/availability.service';
 import { PoliciesService } from './services/policies.service';
 import { PickingProcessService } from './services/picking-process.service';
 import { ConsolidationService } from './services/consolidation.service';
+import { ConsolidationBoardReader } from './services/consolidation-board.reader';
 import { ConsolidationOptionsReader } from './services/consolidation-options.reader';
 import { ConsolidationOptionsService } from './services/consolidation-options.service';
 import { ConsolidationProgressReader } from './services/consolidation-progress.reader';
@@ -172,6 +173,7 @@ import { ShipmentRecallController, ShipmentRecallOperationController } from './c
     ShipmentRecallService,
     ToteLifecycleService,
     ConsolidationService,
+    ConsolidationBoardReader,
     ConsolidationOptionsReader,
     ConsolidationOptionsService,
     ConsolidationProgressReader,

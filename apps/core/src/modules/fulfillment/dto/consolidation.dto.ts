@@ -26,6 +26,11 @@ export class ConsolidationCandidateQueryDto {
   sourceShipmentId?: string;
 }
 
+export class ConsolidationBoardQueryDto {
+  @IsUUID()
+  warehouseId: string;
+}
+
 export class ConsolidationOptionsQueryDto {
   @IsUUID()
   shipmentId: string;
@@ -113,6 +118,31 @@ export class ConsolidationOptionShipmentDto {
   manifestVersion: number;
   reservationVersion: number;
   createdAt: Date;
+}
+
+export class ConsolidationBoardShipmentDto extends ConsolidationOptionShipmentDto {
+  @ApiProperty({ type: Date, nullable: true, description: '담긴 판매주문 중 가장 이른 주문 시각' })
+  orderedAt: Date | null;
+  @ApiProperty({ type: [String], description: '담긴 판매주문의 판매채널' })
+  salesChannels: string[];
+}
+
+export class ConsolidationBoardGroupDto {
+  @ApiProperty({ description: '고객 키와 메모를 뺀 수령인 키' })
+  key: string;
+  @ApiProperty({ type: ConsolidationRecipientSnapshotDto, description: '첫 상자의 수령인 스냅샷' })
+  recipientSnapshot: ConsolidationRecipientSnapshotDto;
+  @ApiProperty({ description: '상자들의 배송 메모가 서로 다르면 true' })
+  memoDiffers: boolean;
+  @ApiProperty({ description: '전부 draft 이고 배치와 송장이 없어 지금 합칠 수 있으면 true' })
+  canMergeNow: boolean;
+  @ApiProperty({ type: [ConsolidationBoardShipmentDto] })
+  shipments: ConsolidationBoardShipmentDto[];
+}
+
+export class ConsolidationBoardResponseDto {
+  @ApiProperty({ type: [ConsolidationBoardGroupDto] })
+  groups: ConsolidationBoardGroupDto[];
 }
 
 export class ConsolidationOptionDto extends ConsolidationOptionShipmentDto {
