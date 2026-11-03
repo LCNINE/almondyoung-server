@@ -8,6 +8,7 @@ import {
 } from "@/lib/api/ugc/almond-fonts"
 import type { AlmondEditor } from "../../hooks/use-almond-editor"
 import {
+  canDecodeFont,
   fontOptions,
   loadUploadedFont,
   setUploadedFonts,
@@ -65,6 +66,11 @@ export function FontUpload({ editor }: { editor: AlmondEditor }) {
     if (!file || !name.trim() || !licensed || sameFont(name)) return
     startTransition(() =>
       runAuthed(async () => {
+        if (!(await canDecodeFont(await file.arrayBuffer())))
+          return setMessage(
+            "브라우저가 읽을 수 없는 글꼴 파일입니다. 다른 파일로 올려 주세요."
+          )
+
         const presigned = await presignAlmondFont({
           fileName: file.name,
           size: file.size,

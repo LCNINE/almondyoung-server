@@ -145,7 +145,57 @@ export function subscribeFontOptions(listener: () => void) {
 export const fontOptions = () => allOptions
 export const uploadedFonts = () => uploaded
 
+const SFNT_VERSIONS = [0x00010000, 0x74727565]
+const MAXP_TAG = 0x6d617870
+const SFNT_HEADER_BYTES = 12
+const SFNT_TABLE_RECORD_BYTES = 16
+const MAXP_ZONES_OFFSET = 14
+
+// 오래된 TTF 는 maxp.maxZones 가 규격(1·2)을 벗어난 경우가 있고, 브라우저는 그 값 하나로 글꼴 전체를 거부한다.
+// ponytail: 이 값만 고친다. 다른 이유로 거부되는 파일은 canDecodeFont 가 업로드 때 막는다
+export function repairMaxZones(bytes: ArrayBuffer) {
+  if (bytes.byteLength < SFNT_HEADER_BYTES) return
+
+  const view = new DataView(bytes)
+  if (!SFNT_VERSIONS.includes(view.getUint32(0))) return
+
+  const tables = view.getUint16(4)
+  for (let index = 0; index < tables; index++) {
+    const record = SFNT_HEADER_BYTES + index * SFNT_TABLE_RECORD_BYTES
+    if (record + SFNT_TABLE_RECORD_BYTES > bytes.byteLength) return
+    if (view.getUint32(record) !== MAXP_TAG) continue
+
+    const maxp = view.getUint32(record + 8)
+    const zones = maxp + MAXP_ZONES_OFFSET
+    if (zones + 2 > bytes.byteLength) return
+    if (view.getUint32(maxp) === 0x00010000 && view.getUint16(zones) > 2)
+      view.setUint16(zones, 2)
+
+    return
+  }
+}
+
+export function canDecodeFont(bytes: ArrayBuffer) {
+  repairMaxZones(bytes)
+
+  return new FontFace("AlmondFontCheck", bytes).load().then(
+    () => true,
+    () => false
+  )
+}
+
 const loading = new Map<string, Promise<void>>()
+
+async function fetchUploadedFont(family: string, fileId: string) {
+  const response = await fetch(`/api/almond-template/font/${fileId}`)
+  if (!response.ok) throw new Error(`글꼴 다운로드 실패 (${response.status})`)
+
+  const bytes = await response.arrayBuffer()
+  repairMaxZones(bytes)
+  const face = new FontFace(family, bytes)
+  document.fonts.add(face)
+  await face.load()
+}
 
 // 쓰일 때만 받는다(한 글꼴이 수십 MB 일 수 있다). 목록에서 지운 글꼴도 이미 쓴 시안에선 계속 받는다
 export function loadUploadedFont(value: string | undefined) {
@@ -155,17 +205,9 @@ export function loadUploadedFont(value: string | undefined) {
   let pending = loading.get(family)
   if (!pending) {
     const fileId = `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
-    const face = new FontFace(
-      family,
-      `url(/api/almond-template/font/${fileId})`
-    )
-    document.fonts.add(face)
-    pending = face.load().then(
-      () => undefined,
-      () => {
-        loading.delete(family)
-      }
-    )
+    pending = fetchUploadedFont(family, fileId).catch(() => {
+      loading.delete(family)
+    })
     loading.set(family, pending)
   }
   return pending
