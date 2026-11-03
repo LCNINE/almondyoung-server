@@ -11,6 +11,7 @@ import {
   defaultWarehouseId,
   filterBoardGroups,
   isBulkSelectable,
+  pickableForMerge,
   replaceResult,
   retryUnconfirmed,
   runBulkMerge,
@@ -308,5 +309,28 @@ describe('summarizeBulk', () => {
     ).toBe(
       '3건 중 1건을 합쳤어요. 1건은 실패했어요. 1건은 결과를 확인해야 해요.'
     );
+  });
+});
+
+describe('pickableForMerge', () => {
+  it('leaves out groups that still wait for confirmation', () => {
+    const x = group('x', [shipment('a'), shipment('b')]);
+    const y = group('y', [shipment('c'), shipment('d')]);
+    const held: BulkResult = {
+      key: 'y',
+      orderNos: '',
+      status: 'unconfirmed',
+      message: '',
+      command: { idempotencyKey: 'k', data: { sources: [], reason: '' } },
+    };
+
+    expect(
+      pickableForMerge([x, y], ['x', 'y'], [held]).map((g) => g.key)
+    ).toEqual(['x']);
+    expect(
+      pickableForMerge([x, y], ['x', 'y'], [{ ...held, status: 'done' }]).map(
+        (g) => g.key
+      )
+    ).toEqual(['x', 'y']);
   });
 });

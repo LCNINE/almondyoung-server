@@ -54,6 +54,8 @@ import {
   filterBoardGroups,
   groupOrderNos,
   isBulkSelectable,
+  pickableForMerge,
+  unconfirmedKeys,
   shipmentBadge,
   summarizeBulk,
   replaceResult,
@@ -110,9 +112,8 @@ export default function ConsolidationTemplate() {
     { todayOnly, beforeWaybillOnly },
     new Date()
   );
-  const pickedGroups = groups.filter(
-    (group) => selected.includes(group.key) && isBulkSelectable(group)
-  );
+  const pickedGroups = pickableForMerge(groups, selected, results);
+  const held = unconfirmedKeys(results);
 
   const toggle = (key: string, checked: boolean) =>
     setSelected((current) =>
@@ -287,6 +288,7 @@ export default function ConsolidationTemplate() {
                     group={group}
                     striped={index % 2 === 1}
                     canCreate={canCreate}
+                    held={held.has(group.key)}
                     checked={selected.includes(group.key)}
                     onCheck={(checked) => toggle(group.key, checked)}
                     onOpen={() =>
@@ -361,6 +363,7 @@ function GroupRows({
   group,
   striped,
   canCreate,
+  held,
   checked,
   onCheck,
   onOpen,
@@ -368,6 +371,7 @@ function GroupRows({
   group: ConsolidationBoardGroup;
   striped: boolean;
   canCreate: boolean;
+  held: boolean;
   checked: boolean;
   onCheck: (checked: boolean) => void;
   onOpen: () => void;
@@ -389,7 +393,7 @@ function GroupRows({
               <TableCell rowSpan={span}>
                 <Checkbox
                   checked={checked}
-                  disabled={!selectable || !canCreate}
+                  disabled={!selectable || !canCreate || held}
                   onCheckedChange={(value) => onCheck(value === true)}
                   aria-label={`${groupOrderNos(group)} 선택`}
                 />
