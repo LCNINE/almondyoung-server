@@ -12,6 +12,8 @@ import {
 import { User, RequirePermission, PiiResponse, OPEN_WITH_RECIPIENT } from '@app/authorization';
 import {
   ConsolidationActor,
+  ConsolidationBoardQueryDto,
+  ConsolidationBoardResponseDto,
   ConsolidationCandidateQueryDto,
   ConsolidationOptionsQueryDto,
   ConsolidationOptionsResponseDto,
@@ -106,6 +108,33 @@ export class ConsolidationController {
   @Get('consolidation-options')
   findOptions(@Query() query: ConsolidationOptionsQueryDto): Promise<ConsolidationOptionsResponseDto> {
     return this.options.findOptions(query.shipmentId);
+  }
+
+  @PiiResponse({
+    fields: {
+      'groups[].recipientSnapshot.recipientName': 'name',
+      'groups[].recipientSnapshot.phone': 'phone',
+      'groups[].recipientSnapshot.postalCode': 'postal',
+      'groups[].recipientSnapshot.roadAddress': 'address',
+      'groups[].recipientSnapshot.detailAddress': 'text',
+      'groups[].recipientSnapshot.deliveryNote': 'text',
+      'groups[].recipientSnapshot.personalCustomsCode': 'secret',
+    },
+    subjects: [{ path: 'groups[].shipments[].shipmentId', type: 'shipment' }],
+    rawWithByField: {
+      'groups[].recipientSnapshot.recipientName': OPEN_WITH_RECIPIENT,
+      'groups[].recipientSnapshot.phone': OPEN_WITH_RECIPIENT,
+      'groups[].recipientSnapshot.postalCode': OPEN_WITH_RECIPIENT,
+      'groups[].recipientSnapshot.roadAddress': OPEN_WITH_RECIPIENT,
+      'groups[].recipientSnapshot.detailAddress': OPEN_WITH_RECIPIENT,
+      'groups[].recipientSnapshot.deliveryNote': OPEN_WITH_RECIPIENT,
+      'groups[].recipientSnapshot.personalCustomsCode': OPEN_WITH_RECIPIENT,
+    },
+  })
+  @RequirePermission('fulfillment.shipment.read')
+  @Get('consolidation-board')
+  findBoard(@Query() query: ConsolidationBoardQueryDto): Promise<ConsolidationBoardResponseDto> {
+    return this.options.findBoard(query.warehouseId);
   }
 
   // 수령인을 담지 않으므로 PII 선언이 없다

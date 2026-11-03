@@ -92,7 +92,7 @@ export interface ConsolidationOptionInput {
   optionCustomerKey: string | null;
 }
 
-function withoutNote(recipient: Record<string, unknown>): string {
+export function recipientAddressKey(recipient: Record<string, unknown>): string {
   const rest = { ...recipient };
 
   delete rest.deliveryNote;
@@ -116,7 +116,7 @@ export function classifyConsolidationOption(input: ConsolidationOptionInput): {
 
   if (!source || !option) return verdict('incomplete_recipient');
 
-  if (withoutNote(source) !== withoutNote(option)) return verdict('address_differs');
+  if (recipientAddressKey(source) !== recipientAddressKey(option)) return verdict('address_differs');
 
   if (source.deliveryNote !== option.deliveryNote) return verdict('memo_differs');
 
