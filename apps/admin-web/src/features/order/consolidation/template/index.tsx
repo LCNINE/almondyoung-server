@@ -32,7 +32,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { ConsolidationSheet } from '@/features/order/fulfillments/detail/consolidation-sheet';
-import { freshCommand } from '@/features/order/fulfillments/detail/consolidation-sheet-model';
+import type { PendingCommand } from '@/features/order/fulfillments/detail/consolidation-sheet-model';
 import { usePermissionCheck } from '@/hooks/use-permission';
 import { useWarehouses } from '@/lib/services/inventory/queries';
 import {
@@ -56,9 +56,17 @@ import {
   isBulkSelectable,
   shipmentBadge,
   summarizeBulk,
+  replaceResult,
+  retryUnconfirmed,
   runBulkMerge,
   type BulkResult,
 } from '../board-model';
+
+const BULK_LABEL: Record<BulkResult['status'], string> = {
+  done: '성공',
+  failed: '실패',
+  unconfirmed: '확인 필요',
+};
 
 function orderedAtText(value: string | null): string {
   if (!value) {
@@ -87,7 +95,8 @@ export default function ConsolidationTemplate() {
   const [beforeWaybillOnly, setBeforeWaybillOnly] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
   const [sheetShipmentId, setSheetShipmentId] = useState('');
-  const [results, setResults] = useState<BulkResult[] | null>(null);
+  const [results, setResults] = useState<BulkResult[]>([]);
+  const [resultsOpen, setResultsOpen] = useState(false);
   const [running, setRunning] = useState(false);
 
   const warehouseId = pickedWarehouse || defaultWarehouseId(warehouses);
@@ -110,25 +119,47 @@ export default function ConsolidationTemplate() {
       checked ? [...current, key] : current.filter((value) => value !== key)
     );
 
+  const send = (command: PendingCommand) => create.mutateAsync(command);
+  const describe = (error: unknown) =>
+    getServerDenyMessage(error, '합포장 요청에 실패했어요.');
+
   const mergeSelected = async () => {
     setRunning(true);
 
-    const collected = await runBulkMerge(
-      pickedGroups,
-      (request) => create.mutateAsync(freshCommand(request)),
-      (error) => getServerDenyMessage(error, '합포장 요청에 실패했어요.')
-    );
+    const collected = await runBulkMerge(pickedGroups, send, describe);
 
     setRunning(false);
     setSelected([]);
-    setResults(collected);
+    setResults((current) => [
+      ...current.filter(
+        (result) =>
+          result.status === 'unconfirmed' &&
+          !collected.some((next) => next.key === result.key)
+      ),
+      ...collected,
+    ]);
+    setResultsOpen(true);
 
-    if (collected.some((result) => result.ok)) {
+    if (collected.some((result) => result.status === 'done')) {
       toast.success('선택한 주문의 합포장을 마쳤어요.');
     }
 
     await board.refetch();
   };
+
+  const recheck = async (result: BulkResult) => {
+    setRunning(true);
+
+    const next = await retryUnconfirmed(result, send, describe);
+
+    setRunning(false);
+    setResults((current) => replaceResult(current, next));
+    await board.refetch();
+  };
+
+  const unconfirmedCount = results.filter(
+    (result) => result.status === 'unconfirmed'
+  ).length;
 
   return (
     <Container>
@@ -137,6 +168,25 @@ export default function ConsolidationTemplate() {
         subtitle="같은 고객, 같은 주소로 가는 주문이에요. 고른 주문은 새 상자 하나, 송장 한 장으로 나가요."
       />
       <div className="flex flex-col gap-4 p-4">
+        {unconfirmedCount > 0 && (
+          <Alert>
+            <AlertTriangle />
+            <AlertTitle>
+              확인이 필요한 합포장이 {unconfirmedCount}건 있어요
+            </AlertTitle>
+            <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
+              <span>응답을 받지 못해서 서버가 처리했는지 알 수 없어요.</span>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setResultsOpen(true)}
+              >
+                결과 보기
+              </Button>
+            </AlertDescription>
+          </Alert>
+        )}
+
         {!isPermissionLoading && !canRead && (
           <Alert variant="destructive">
             <AlertTriangle />
@@ -268,33 +318,35 @@ export default function ConsolidationTemplate() {
         />
       )}
 
-      <Dialog
-        open={results !== null}
-        onOpenChange={(open) => {
-          if (!open) {
-            setResults(null);
-          }
-        }}
-      >
+      <Dialog open={resultsOpen} onOpenChange={setResultsOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>합치기 결과</DialogTitle>
-            <DialogDescription>
-              {results ? summarizeBulk(results) : ''}
-            </DialogDescription>
+            <DialogDescription>{summarizeBulk(results)}</DialogDescription>
           </DialogHeader>
           <ul className="flex flex-col gap-2 text-sm">
-            {results?.map((result) => (
+            {results.map((result) => (
               <li
                 key={result.key}
                 className="flex items-start justify-between gap-3 rounded-md border p-3"
               >
                 <span className="font-medium">{result.orderNos}</span>
                 <span className="text-right">
-                  <Badge variant="outline">{result.ok ? '성공' : '실패'}</Badge>
+                  <Badge variant="outline">{BULK_LABEL[result.status]}</Badge>
                   <span className="mt-1 block text-muted-foreground">
                     {result.message}
                   </span>
+                  {result.status === 'unconfirmed' && canCreate && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="mt-2"
+                      disabled={running}
+                      onClick={() => recheck(result)}
+                    >
+                      다시 확인
+                    </Button>
+                  )}
                 </span>
               </li>
             ))}

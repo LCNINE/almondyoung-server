@@ -1,7 +1,10 @@
 import {
+  freshCommand,
+  keptAfterFailure,
   needsUnwindSteps,
   orderNoText,
   progressLabel,
+  type PendingCommand,
 } from '@/features/order/fulfillments/detail/consolidation-sheet-model';
 import type {
   ConsolidationBoardGroup,
@@ -133,58 +136,128 @@ export function boardRecipientView(snapshot: Record<string, unknown>): {
   };
 }
 
+export type BulkStatus = 'done' | 'failed' | 'unconfirmed';
+
 export type BulkResult = {
   key: string;
   orderNos: string;
-  ok: boolean;
+  status: BulkStatus;
   message: string;
+  command: PendingCommand;
 };
 
-export function summarizeBulk(results: readonly BulkResult[]): string {
-  const succeeded = results.filter((result) => result.ok).length;
+export const UNCONFIRMED_MESSAGE = '확인이 필요해요';
 
-  if (succeeded === results.length) {
-    return `${results.length}건을 모두 합쳤어요.`;
+type Send = (command: PendingCommand) => Promise<ShipmentConsolidationResponse>;
+
+async function attempt(
+  key: string,
+  orderNos: string,
+  command: PendingCommand,
+  send: Send,
+  describeError: (error: unknown) => string
+): Promise<BulkResult> {
+  try {
+    const response = await send(command);
+
+    return {
+      key,
+      orderNos,
+      command,
+      status: 'done',
+      message:
+        response.operationStatus === 'completed'
+          ? '합쳤어요.'
+          : '요청했어요. 상자 화면에서 다음 할 일을 알려 줘요.',
+    };
+  } catch (error) {
+    if (keptAfterFailure(command, error)) {
+      return {
+        key,
+        orderNos,
+        command,
+        status: 'unconfirmed',
+        message: UNCONFIRMED_MESSAGE,
+      };
+    }
+
+    return {
+      key,
+      orderNos,
+      command,
+      status: 'failed',
+      message: describeError(error),
+    };
   }
-
-  return `${results.length}건 중 ${succeeded}건을 합쳤고 ${results.length - succeeded}건은 실패했어요.`;
 }
 
 export async function runBulkMerge(
   groups: readonly ConsolidationBoardGroup[],
-  send: (
-    request: CreateShipmentConsolidationRequest
-  ) => Promise<ShipmentConsolidationResponse>,
+  send: Send,
   describeError: (error: unknown) => string
 ): Promise<BulkResult[]> {
   const results: BulkResult[] = [];
 
   for (const group of groups) {
-    const orderNos = groupOrderNos(group);
+    const command = freshCommand(
+      buildBoardRequest(group, DEFAULT_MERGE_REASON)
+    );
 
-    try {
-      const response = await send(
-        buildBoardRequest(group, DEFAULT_MERGE_REASON)
-      );
-
-      results.push({
-        key: group.key,
-        orderNos,
-        ok: true,
-        message:
-          response.operationStatus === 'completed'
-            ? '합쳤어요.'
-            : '요청했어요. 상자 화면에서 다음 할 일을 알려 줘요.',
-      });
-    } catch (error) {
-      results.push({
-        key: group.key,
-        orderNos,
-        ok: false,
-        message: describeError(error),
-      });
-    }
+    results.push(
+      await attempt(
+        group.key,
+        groupOrderNos(group),
+        command,
+        send,
+        describeError
+      )
+    );
   }
 
   return results;
+}
+
+export async function retryUnconfirmed(
+  result: BulkResult,
+  send: Send,
+  describeError: (error: unknown) => string
+): Promise<BulkResult> {
+  return attempt(
+    result.key,
+    result.orderNos,
+    result.command,
+    send,
+    describeError
+  );
+}
+
+export function replaceResult(
+  results: readonly BulkResult[],
+  next: BulkResult
+): BulkResult[] {
+  return results.map((result) => (result.key === next.key ? next : result));
+}
+
+export function summarizeBulk(results: readonly BulkResult[]): string {
+  const count = (status: BulkStatus) =>
+    results.filter((result) => result.status === status).length;
+  const done = count('done');
+  const unconfirmed = count('unconfirmed');
+  const failed = count('failed');
+
+  if (done === results.length) {
+    return `${results.length}건을 모두 합쳤어요.`;
+  }
+
+  const parts = [`${results.length}건 중 ${done}건을 합쳤어요.`];
+
+  if (failed > 0) {
+    parts.push(`${failed}건은 실패했어요.`);
+  }
+
+  if (unconfirmed > 0) {
+    parts.push(`${unconfirmed}건은 결과를 확인해야 해요.`);
+  }
+
+  return parts.join(' ');
 }

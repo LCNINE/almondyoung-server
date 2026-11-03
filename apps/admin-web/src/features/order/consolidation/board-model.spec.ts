@@ -11,7 +11,10 @@ import {
   defaultWarehouseId,
   filterBoardGroups,
   isBulkSelectable,
+  replaceResult,
+  retryUnconfirmed,
   runBulkMerge,
+  type BulkResult,
   shipmentBadge,
   summarizeBulk,
 } from './board-model';
@@ -204,43 +207,106 @@ describe('texts', () => {
   });
 });
 
-describe('summarizeBulk', () => {
-  it('reports successes and failures together', () => {
-    expect(
-      summarizeBulk([
-        { key: 'a', orderNos: '#1, #2', ok: true, message: '' },
-        { key: 'b', orderNos: '#3, #4', ok: false, message: '실패' },
-      ])
-    ).toBe('2건 중 1건을 합쳤고 1건은 실패했어요.');
-    expect(
-      summarizeBulk([{ key: 'a', orderNos: '#1', ok: true, message: '' }])
-    ).toBe('1건을 모두 합쳤어요.');
-  });
-});
+const networkError = () => Object.assign(new Error('Network Error'), {});
+
+const serverReject = (status: number) =>
+  Object.assign(new Error('reject'), { response: { status, data: {} } });
 
 describe('runBulkMerge', () => {
-  it('keeps going after a failure and reports each group', async () => {
-    const groups = [
-      group('x', [shipment('a'), shipment('b')]),
-      group('y', [shipment('c'), shipment('d')]),
-      group('z', [shipment('e'), shipment('f')]),
-    ];
+  const groups = [
+    group('x', [shipment('a'), shipment('b')]),
+    group('y', [shipment('c'), shipment('d')]),
+    group('z', [shipment('e'), shipment('f')]),
+  ];
+
+  it('keeps going after a failure and classifies each group', async () => {
     const send = jest
       .fn()
       .mockResolvedValueOnce({ operationStatus: 'completed' })
-      .mockRejectedValueOnce(new Error('boom'))
-      .mockResolvedValueOnce({ operationStatus: 'pending' });
+      .mockRejectedValueOnce(serverReject(409))
+      .mockRejectedValueOnce(networkError());
 
     const results = await runBulkMerge(groups, send, () => '막혔어요');
 
     expect(send).toHaveBeenCalledTimes(3);
-    expect(send.mock.calls[1][0].recipientSourceShipmentId).toBe('c');
-    expect(results.map((result) => [result.key, result.ok])).toEqual([
-      ['x', true],
-      ['y', false],
-      ['z', true],
+    expect(send.mock.calls[1][0].data.recipientSourceShipmentId).toBe('c');
+    expect(results.map((result) => [result.key, result.status])).toEqual([
+      ['x', 'done'],
+      ['y', 'failed'],
+      ['z', 'unconfirmed'],
     ]);
     expect(results[1].message).toBe('막혔어요');
+    expect(results[2].message).toBe('확인이 필요해요');
     expect(results[0].orderNos).toBe('#SO-a, #SO-b');
+  });
+
+  it('treats a 5xx without a verdict as unconfirmed', async () => {
+    const send = jest.fn().mockRejectedValue(serverReject(502));
+
+    const [result] = await runBulkMerge([groups[0]], send, () => 'x');
+
+    expect(result.status).toBe('unconfirmed');
+  });
+
+  it('retries an unconfirmed group with the same command and key', async () => {
+    const send = jest
+      .fn()
+      .mockRejectedValueOnce(networkError())
+      .mockResolvedValueOnce({ operationStatus: 'completed' });
+
+    const [first] = await runBulkMerge([groups[0]], send, () => 'x');
+    const second = await retryUnconfirmed(first, send, () => 'x');
+
+    expect(second.status).toBe('done');
+    expect(send.mock.calls[1][0]).toBe(send.mock.calls[0][0]);
+    expect(send.mock.calls[1][0].idempotencyKey).toBe(
+      first.command.idempotencyKey
+    );
+  });
+
+  it('keeps the key when a retry is still unconfirmed', async () => {
+    const send = jest.fn().mockRejectedValue(networkError());
+
+    const [first] = await runBulkMerge([groups[0]], send, () => 'x');
+    const second = await retryUnconfirmed(first, send, () => 'x');
+
+    expect(second.status).toBe('unconfirmed');
+    expect(second.command.idempotencyKey).toBe(first.command.idempotencyKey);
+  });
+
+  it('replaces only the retried result', () => {
+    const base = (key: string, status: BulkResult['status']): BulkResult => ({
+      key,
+      orderNos: '',
+      status,
+      message: '',
+      command: { idempotencyKey: key, data: { sources: [], reason: '' } },
+    });
+
+    expect(
+      replaceResult(
+        [base('x', 'done'), base('y', 'unconfirmed')],
+        base('y', 'done')
+      ).map((result) => result.status)
+    ).toEqual(['done', 'done']);
+  });
+});
+
+describe('summarizeBulk', () => {
+  const result = (status: BulkResult['status']): BulkResult => ({
+    key: status,
+    orderNos: '',
+    status,
+    message: '',
+    command: { idempotencyKey: 'k', data: { sources: [], reason: '' } },
+  });
+
+  it('reports successes, failures, and unconfirmed groups', () => {
+    expect(summarizeBulk([result('done')])).toBe('1건을 모두 합쳤어요.');
+    expect(
+      summarizeBulk([result('done'), result('failed'), result('unconfirmed')])
+    ).toBe(
+      '3건 중 1건을 합쳤어요. 1건은 실패했어요. 1건은 결과를 확인해야 해요.'
+    );
   });
 });
