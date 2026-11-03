@@ -143,6 +143,13 @@ export const useShipmentConsolidationCandidates = (
 
 export const useConsolidationCandidatesV2 = useShipmentConsolidationCandidates;
 
+export const useConsolidationBoard = (warehouseId: string) =>
+  useQuery({
+    queryKey: orderQueryKeys.consolidationBoard(warehouseId),
+    queryFn: () => orders.consolidation.getBoard(warehouseId),
+    enabled: !!warehouseId,
+  });
+
 export const useConsolidationOptions = (
   shipmentId: string,
   enabled: boolean

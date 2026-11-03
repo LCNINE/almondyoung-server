@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { FulfillmentsTable } from '../components/table';
 import { Container } from '@/components/admin-ui-experimental/common/container/container';
 import { Header } from '@/components/admin-ui-experimental/common/header/header';
+import { ConsolidationBoardBanner } from '@/features/order/consolidation/board-banner';
 import { useShipmentDetail } from '@/lib/services/orders/queries';
 import { fulfillmentDetailHref } from './detail-href';
 
@@ -24,6 +25,7 @@ export default function FulfillmentsListTemplate() {
   return (
     <Container>
       <Header title="출고주문" />
+      <ConsolidationBoardBanner />
       <FulfillmentsTable />
     </Container>
   );

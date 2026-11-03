@@ -183,7 +183,12 @@ export function step2Blocker(input: {
   return null;
 }
 
-export function needsUnwindSteps(source: ConsolidationOptionShipment): boolean {
+export function needsUnwindSteps(
+  source: Pick<
+    ConsolidationOptionShipment,
+    'status' | 'batchId' | 'waybillTrackingNo'
+  >
+): boolean {
   return (
     source.status !== 'draft' ||
     source.batchId !== null ||
@@ -191,7 +196,12 @@ export function needsUnwindSteps(source: ConsolidationOptionShipment): boolean {
   );
 }
 
-export function progressLabel(source: ConsolidationOptionShipment): string {
+export function progressLabel(
+  source: Pick<
+    ConsolidationOptionShipment,
+    'status' | 'batchId' | 'waybillTrackingNo'
+  >
+): string {
   if (source.batchId) {
     return '창고에서 작업 중';
   }
@@ -260,7 +270,9 @@ export function recipientView(snapshot: Record<string, unknown>): {
   };
 }
 
-export function orderNoText(shipment: ConsolidationOptionShipment): string {
+export function orderNoText(
+  shipment: Pick<ConsolidationOptionShipment, 'shipmentId' | 'salesOrderNos'>
+): string {
   if (shipment.salesOrderNos.length === 0) {
     return `상자 ${shipment.shipmentId.slice(0, 8)}`;
   }
