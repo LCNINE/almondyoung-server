@@ -5,6 +5,7 @@ import {
   useQuery,
   useMutation,
   useInfiniteQuery,
+  useQueries,
   useQueryClient,
   keepPreviousData,
 } from '@tanstack/react-query';
@@ -176,6 +177,17 @@ export const useConsolidationProgress = (shipmentId: string) => {
     refetchInterval: (query) =>
       query.state.data?.status === 'pending' ? 15_000 : false,
   });
+};
+
+export const useConsolidationProgresses = (shipmentIds: string[]) => {
+  const results = useQueries({
+    queries: shipmentIds.map((id) => ({
+      queryKey: orderQueryKeys.consolidationProgress(id),
+      queryFn: () => orders.consolidation.getProgress(id),
+    })),
+  });
+
+  return results.map((result) => result.data);
 };
 
 export const useConsolidationLive = (warehouseId: string) => {
