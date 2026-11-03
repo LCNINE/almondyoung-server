@@ -16,6 +16,9 @@ const layer = {
   fontFamily: "Black Han Sans",
 } as Layer
 
+// graphic 은 잰 값을 담는 canvas 를 모듈에 한 번 만들어 두므로, 폭은 이 변수 하나로 바꾼다
+let em = 10
+
 describe("LayerGraphic", () => {
   afterEach(() => {
     vi.unstubAllGlobals()
@@ -30,7 +33,7 @@ describe("LayerGraphic", () => {
       configurable: true,
     })
     // 대체 글꼴은 폭이 10em 이라 상자에 맞추면 10 으로 줄고, 진짜 글꼴은 3em 이라 20 그대로 들어간다
-    let em = 10
+    em = 10
     vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
       measureText: () => ({ width: em * 100 }),
     } as unknown as RenderingContext)
@@ -54,5 +57,26 @@ describe("LayerGraphic", () => {
     })
     expect(size()).toBe("20")
     root.unmount()
+  })
+
+  it("글상자 너비를 줄이면 글자 크기는 두고 장평으로 맞춘다", async () => {
+    em = 1.184
+    const { fittedFontSize, stretchText } = await import("./graphic")
+    const heading = {
+      ...layer,
+      text: "커트",
+      fontSize: 15,
+      width: 17.8,
+      height: 18,
+    }
+
+    const narrowed = {
+      ...heading,
+      ...stretchText(heading, { width: 16.8, height: 18 }),
+    }
+
+    expect(narrowed.fontSize).toBe(15)
+    expect(narrowed.widthScale).toBe(94.6)
+    expect(fittedFontSize(narrowed)).toBeCloseTo(15, 1)
   })
 })
