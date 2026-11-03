@@ -52,9 +52,12 @@ export async function resolveSite(
   }
 }
 
+/** 기본 주소(AUTH_WEB_ORIGIN)가 섬기는 테넌트 — 아몬드영 로그인은 테넌트 1 이다. */
+const DEFAULT_SITE_TENANT_ID = "1"
+
 /**
- * user-service 에 «이 요청은 그 테넌트 화면에서 왔다»를 보증하는 헤더. 내부 세션 토큰은 로그인한 도메인과 무관하게
- * `tenant: T` 라, 이게 없으면 테넌트 화면에서 한 일(첫 로그인 비밀번호 변경)의 이벤트가 T 로 찍혀 아몬드영 메일이 간다.
+ * user-service 에 «이 요청은 그 테넌트 화면에서 왔다»를 보증하는 헤더. 이게 없으면 테넌트 화면에서 한 일(첫 로그인 비밀번호
+ * 변경)의 이벤트가 화면이 아니라 토큰의 테넌트로 찍힌다.
  * user-service 는 비밀이 맞을 때만 헤더를 믿는다 — 브라우저는 이 비밀을 모른다.
  */
 export function siteTenantHeaders(
@@ -63,6 +66,30 @@ export function siteTenantHeaders(
 ): Record<string, string> {
   if (site.kind !== "tenant" || !internalSecret) return {}
   return { "x-tenant-id": site.tenantId, "x-internal-secret": internalSecret }
+}
+
+export type SignInTenantHeaders = {
+  "x-tenant-id": string
+  "x-internal-secret": string
+}
+
+/**
+ * 로그인(`POST /auth/signin`)에 싣는 테넌트 보증 헤더 — 계정은 한 테넌트의 것이라(ADR-0056) 비밀번호를 확인하기 «전에»
+ * 테넌트를 정하고, user-service 는 그 테넌트의 계정만 찾는다.
+ * - 테넌트 화면: 그 테넌트. 이 화면이 코드를 보내는 곳은 그 테넌트 도메인뿐이다(`codeRedirectAllowed`).
+ * - 기본 화면: 테넌트 1. 다른 테넌트 도메인으로는 코드를 보내지 않고, 고정 테넌트 앱(쇼핑몰·결제창·물류앱)은 모두 테넌트 1 이다.
+ *   다른 테넌트의 고정 테넌트 앱이 생겨 이 화면으로 오면 «아이디 또는 비밀번호» 거절로 닫힌다 — 그때 그 앱의 테넌트를 여기서 풀 것.
+ * - 정할 수 없으면(중립 오류 화면·비밀 없음) null — 호출자는 로그인을 시도하지 않는다. 헤더 없는 로그인은 user-service 가
+ *   모든 테넌트에서 찾는다(읽기 전환 기간의 옛 길).
+ */
+export function signInTenantHeaders(
+  site: Site,
+  internalSecret: string
+): SignInTenantHeaders | null {
+  if (site.kind === "unavailable" || !internalSecret) return null
+  const tenantId =
+    site.kind === "tenant" ? site.tenantId : DEFAULT_SITE_TENANT_ID
+  return { "x-tenant-id": tenantId, "x-internal-secret": internalSecret }
 }
 
 /**
@@ -122,9 +149,6 @@ export function cachedLookup(
     return value
   }
 }
-
-/** 기본 주소(AUTH_WEB_ORIGIN)가 섬기는 테넌트 — 아몬드영 로그인은 테넌트 1 이다. */
-const DEFAULT_SITE_TENANT_ID = "1"
 
 /**
  * 인가 코드를 이 redirect_uri 로 보내도 되는가(클라이언트 등록 여부는 user-service 가 따로 본다).
