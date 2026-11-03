@@ -7,7 +7,10 @@ import { loadShipmentLines, OptionLine, uniqueInOrder } from './consolidation-sh
 
 export const PLANNED_SHIPMENTS_LIMIT = 200;
 
-export function assemblePlannedShipments(shipmentIds: readonly string[], lines: readonly OptionLine[]): PlannedShipmentDto[] {
+export function assemblePlannedShipments(
+  shipmentIds: readonly string[],
+  lines: readonly OptionLine[],
+): PlannedShipmentDto[] {
   const linesByShipment = new Map<string, OptionLine[]>();
 
   for (const line of lines) {

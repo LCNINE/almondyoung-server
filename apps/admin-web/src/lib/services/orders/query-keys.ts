@@ -94,6 +94,8 @@ export const orderQueryKeys = {
     ['shipments', 'consolidation-candidates', params] as const,
   consolidationBoard: (warehouseId: string) =>
     ['shipments', 'consolidation-board', warehouseId] as const,
+  plannedShipments: (warehouseId: string) =>
+    ['shipments', 'planned', warehouseId] as const,
   consolidationLive: (warehouseId: string) =>
     ['consolidation', 'live', warehouseId] as const,
   consolidationSavings: (warehouseId: string, days: number) =>

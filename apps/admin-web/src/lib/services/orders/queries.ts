@@ -150,6 +150,13 @@ export const useConsolidationBoard = (warehouseId: string) =>
     enabled: !!warehouseId,
   });
 
+export const usePlannedShipments = (warehouseId: string) =>
+  useQuery({
+    queryKey: orderQueryKeys.plannedShipments(warehouseId),
+    queryFn: () => orders.consolidation.getPlanned(warehouseId),
+    enabled: !!warehouseId,
+  });
+
 export const useConsolidationOptions = (
   shipmentId: string,
   enabled: boolean
