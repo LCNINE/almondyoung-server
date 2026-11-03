@@ -27,7 +27,15 @@ export const FoConsolidationCell = ({
     );
   }
 
-  if (value.state === 'merging' || value.state === 'merged') {
+  if (value.state === 'merging') {
+    return (
+      <span className="inline-flex items-center rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium whitespace-nowrap text-amber-700">
+        {withPartner(value.partnerOrderNos)} 합치는 중
+      </span>
+    );
+  }
+
+  if (value.state === 'merged') {
     return (
       <span className="inline-flex items-center rounded-full bg-green-100 px-2 py-0.5 text-[11px] font-medium whitespace-nowrap text-green-700">
         {withPartner(value.partnerOrderNos)} 한 상자
