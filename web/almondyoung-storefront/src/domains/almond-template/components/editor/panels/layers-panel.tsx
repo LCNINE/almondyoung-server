@@ -7,6 +7,7 @@ import {
   Folder,
   Lock,
   LockOpen,
+  SquarePen,
 } from "lucide-react"
 import { LayerGraphic } from "../../graphic"
 import type { AlmondEditor } from "../../../hooks/use-almond-editor"
@@ -58,6 +59,8 @@ export function LayersPanel({ editor }: { editor: AlmondEditor }) {
     mergeGroup,
     splitGroup,
     mergedGroup,
+    setPinnedId,
+    setLayerInspect,
   } = editor
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set())
@@ -85,6 +88,7 @@ export function LayersPanel({ editor }: { editor: AlmondEditor }) {
       return selectLayers(order.slice(a, b + 1))
     }
     anchor.current = id
+    setPinnedId(null)
     if (event.metaKey || event.ctrlKey)
       return selectLayers(
         selection.includes(id)
@@ -92,6 +96,12 @@ export function LayersPanel({ editor }: { editor: AlmondEditor }) {
           : [...selection, id]
       )
     selectLayers([id])
+    setPinnedId(id)
+  }
+  const edit = (id: string) => {
+    selectLayers([id])
+    setPinnedId(id)
+    setLayerInspect(true)
   }
 
   // 끈 묶음을 놓은 줄 자리로 옮긴다. 그룹 안 줄에 놓으면 그 그룹에 들어가고, 밖에 놓으면 빠진다
@@ -274,8 +284,10 @@ export function LayersPanel({ editor }: { editor: AlmondEditor }) {
                 if (
                   event.target === event.currentTarget &&
                   event.key === "Enter"
-                )
+                ) {
                   selectLayers([layer.id])
+                  setPinnedId(layer.id)
+                }
               }}
             >
               <span className="flex h-8 w-8 shrink-0 items-center justify-center overflow-hidden bg-[#f5f5f5]">
@@ -307,6 +319,13 @@ export function LayersPanel({ editor }: { editor: AlmondEditor }) {
                 </span>
               )}
             </div>
+            <button
+              title="편집"
+              aria-label={`${layer.name} 편집`}
+              onClick={() => edit(layer.id)}
+            >
+              <SquarePen size={15} />
+            </button>
             {toggles([layer], layer.name)}
           </div>
         )

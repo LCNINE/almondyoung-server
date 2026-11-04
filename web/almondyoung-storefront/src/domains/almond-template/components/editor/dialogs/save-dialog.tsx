@@ -36,9 +36,15 @@ export function SaveDialog({ editor }: { editor: AlmondEditor }) {
             <Backdrop value={sideBackground(design, "front")} />
             <LayerStack
               layers={design.front}
-              backdrop={
-                <Backdrop value={unfiltered(sideBackground(design, "front"))} />
-              }
+              backdrop={(filtered) => (
+                <Backdrop
+                  value={
+                    filtered
+                      ? sideBackground(design, "front")
+                      : unfiltered(sideBackground(design, "front"))
+                  }
+                />
+              )}
             />
           </svg>
         </div>

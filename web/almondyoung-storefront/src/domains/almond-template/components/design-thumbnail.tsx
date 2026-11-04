@@ -54,11 +54,15 @@ export function DesignThumbnail({
               <Backdrop value={sideBackground(design, "front")} />
               <LayerStack
                 layers={design.front}
-                backdrop={
+                backdrop={(filtered) => (
                   <Backdrop
-                    value={unfiltered(sideBackground(design, "front"))}
+                    value={
+                      filtered
+                        ? sideBackground(design, "front")
+                        : unfiltered(sideBackground(design, "front"))
+                    }
                   />
-                }
+                )}
               />
             </g>
           </svg>

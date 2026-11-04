@@ -91,6 +91,8 @@ export type Layer = {
   shadowBlur?: number
   shadowColor?: string
   shadowOpacity?: number
+  // 그림자를 아래 그림과 곱하기로 섞는다
+  shadowMultiply?: boolean
   texture?: boolean
   bevel?: boolean
   bevelSize?: number
@@ -119,6 +121,10 @@ export type Layer = {
   knockout?: boolean
   // 이 레이어 모양 안에서는 배경과 아래 레이어가 필터 없이 원래 색으로 보인다
   filterBypass?: boolean
+  // 0~100. 레이어 가장자리를 흐리게 풀어 아래와 자연스럽게 잇는다
+  edgeBlur?: number
+  // 글자 채우기만의 불투명도. 윤곽선은 그대로 남는다
+  fillOpacity?: number
 }
 
 export const SHAPE_TEXT_TYPES: ReadonlySet<Layer["type"]> = new Set<
@@ -365,6 +371,8 @@ export function parseDesign(value: unknown): Design {
           (layer.knockout && layer.type !== "text"))) ||
       (layer.filterBypass !== undefined &&
         typeof layer.filterBypass !== "boolean") ||
+      (layer.edgeBlur !== undefined && !within(layer.edgeBlur, 0, 100)) ||
+      (layer.fillOpacity !== undefined && !within(layer.fillOpacity, 0, 1)) ||
       !validMotionMask(layer.imageMotionMask) ||
       (layer.type === "effect" &&
         !EFFECT_LAYERS.some(([key]) => key === layer.effectKind)) ||
@@ -572,6 +580,7 @@ function validEffects(layer: Layer) {
       (v) => typeof v === "string" && color.test(v)
     ) &&
     optional(layer.shadowOpacity, (v) => within(v, 0, 1)) &&
+    optional(layer.shadowMultiply, isBool) &&
     optional(layer.bevel, isBool) &&
     optional(layer.bevelSize, (v) => within(v, 0.05, 20)) &&
     optional(layer.bevelDepth, (v) => within(v, 0, 100)) &&

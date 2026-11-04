@@ -95,11 +95,15 @@ export function StatusBar({ editor }: { editor: AlmondEditor }) {
                     <Backdrop value={sideBackground(design, item)} />
                     <LayerStack
                       layers={design[item]}
-                      backdrop={
+                      backdrop={(filtered) => (
                         <Backdrop
-                          value={unfiltered(sideBackground(design, item))}
+                          value={
+                            filtered
+                              ? sideBackground(design, item)
+                              : unfiltered(sideBackground(design, item))
+                          }
                         />
-                      }
+                      )}
                     />
                   </svg>
                   {removed && (

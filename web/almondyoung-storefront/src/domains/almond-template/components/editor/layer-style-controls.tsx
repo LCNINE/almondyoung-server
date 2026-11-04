@@ -1,5 +1,5 @@
 import type { AlmondEditor } from "../../hooks/use-almond-editor"
-import type { Layer } from "../../lib/document"
+import { SHAPE_TEXT_TYPES, type Layer } from "../../lib/document"
 import {
   BLEND_MODES,
   COLORED_FILTERS,
@@ -57,6 +57,13 @@ export function LayerStyleControls({
         disabled={disabled}
         onChange={(colorFilter) => patch({ colorFilter })}
       />
+      {filter &&
+        SHAPE_TEXT_TYPES.has(selected.type) &&
+        !selected.filterBypass && (
+          <p className="text-[13px] leading-[19px] text-[#70777F]">
+            도형 색 대신 이 모양 안의 배경 사진과 아래 레이어에 필터가 걸립니다.
+          </p>
+        )}
       {gradient && (
         <GradientControls
           selected={selected}
@@ -95,6 +102,14 @@ export function LayerStyleControls({
           )}
         </>
       )}
+      <PropSlider
+        label="가장자리 흐림"
+        min={0}
+        max={100}
+        value={selected.edgeBlur ?? 0}
+        disabled={disabled}
+        onValue={(edgeBlur) => patch({ edgeBlur: edgeBlur || undefined })}
+      />
     </PropSection>
   )
 }

@@ -66,15 +66,19 @@ export async function printSvg(
           layers={design[side].map((layer) =>
             bleedExtended(layer, design.widthMm, design.heightMm, bleedMm)
           )}
-          backdrop={
+          backdrop={(filtered) => (
             <g transform={`translate(${-bleedMm} ${-bleedMm})`}>
               <Backdrop
-                value={unfiltered(sideBackground(design, side))}
+                value={
+                  filtered
+                    ? sideBackground(design, side)
+                    : unfiltered(sideBackground(design, side))
+                }
                 width={width}
                 height={height}
               />
             </g>
-          }
+          )}
         />
       </g>
     </svg>

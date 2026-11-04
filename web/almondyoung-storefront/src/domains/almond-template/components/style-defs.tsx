@@ -35,6 +35,7 @@ export function GradientDef({ layer }: { layer: Layer }) {
 const RETRO_MATRIX =
   "0.334 0.654 0.161 0 0.06  0.297 0.583 0.143 0 0.05  0.231 0.454 0.111 0 0.08  0 0 0 1 0"
 
+// 톤은 만화처럼 밝기를 검정·흰색 둘로 가른다.
 // 고른 색을 레이어 자기 픽셀 위에 그 방식으로 섞고, 세기만큼 원본과 섞는다. 레이어 모양 밖으로는 번지지 않는다
 export function ColorFilterDef({
   id,
@@ -76,6 +77,18 @@ export function ColorFilterDef({
       {filter.kind === "blur" && (
         <feGaussianBlur stdDeviation={size * 0.15 * a} />
       )}
+      {filter.kind === "tone" && (
+        <>
+          <feColorMatrix type="saturate" values="0" />
+          <feComponentTransfer>
+            <feFuncR type="discrete" tableValues="0 1" />
+            <feFuncG type="discrete" tableValues="0 1" />
+            <feFuncB type="discrete" tableValues="0 1" />
+          </feComponentTransfer>
+          {inShape}
+          {mixed}
+        </>
+      )}
       {filter.kind === "retro" && (
         <>
           <feColorMatrix type="matrix" values={RETRO_MATRIX} />
@@ -85,14 +98,11 @@ export function ColorFilterDef({
       )}
       {filter.kind !== "grayscale" &&
         filter.kind !== "blur" &&
+        filter.kind !== "tone" &&
         filter.kind !== "retro" && (
           <>
             <feFlood floodColor={color} result="paint" />
-            <feBlend
-              in="paint"
-              in2="SourceGraphic"
-              mode={filter.kind === "tone" ? "color" : filter.kind}
-            />
+            <feBlend in="paint" in2="SourceGraphic" mode={filter.kind} />
             {inShape}
             {mixed}
           </>

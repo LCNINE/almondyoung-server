@@ -29,7 +29,7 @@ export const COLOR_FILTERS = [
 
 export type ColorFilterKind = (typeof COLOR_FILTERS)[number][0]
 
-// amount 는 0~100. color 는 톤·오버레이·발광 닷지·색상 번·곱하기에서 덮는 색이다
+// amount 는 0~100. color 는 오버레이·발광 닷지·색상 번·곱하기에서 덮는 색이다
 export type ColorFilter = {
   kind: ColorFilterKind
   amount: number
@@ -37,18 +37,12 @@ export type ColorFilter = {
 }
 
 export const COLORED_FILTERS: ReadonlySet<ColorFilterKind> =
-  new Set<ColorFilterKind>([
-    "tone",
-    "overlay",
-    "color-dodge",
-    "color-burn",
-    "multiply",
-  ])
+  new Set<ColorFilterKind>(["overlay", "color-dodge", "color-burn", "multiply"])
 
 export const DEFAULT_FILTER_COLOR: Record<ColorFilterKind, string> = {
   grayscale: "#000000",
   blur: "#000000",
-  tone: "#c08a4a",
+  tone: "#000000",
   retro: "#000000",
   overlay: "#ff7a3d",
   "color-dodge": "#ffb36b",

@@ -75,11 +75,15 @@ export function PreviewDialog({ editor }: { editor: AlmondEditor }) {
           <Backdrop value={sideBackground(design, previewSide)} />
           <LayerStack
             layers={design[previewSide]}
-            backdrop={
+            backdrop={(filtered) => (
               <Backdrop
-                value={unfiltered(sideBackground(design, previewSide))}
+                value={
+                  filtered
+                    ? sideBackground(design, previewSide)
+                    : unfiltered(sideBackground(design, previewSide))
+                }
               />
-            }
+            )}
           />
         </svg>
       </div>

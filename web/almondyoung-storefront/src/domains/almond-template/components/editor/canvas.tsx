@@ -19,8 +19,8 @@ import {
   useState,
 } from "react"
 import { createPortal } from "react-dom"
-import { Backdrop, LayerGraphic, photoBox } from "../graphic"
-import { StackedLayer } from "../layer-stack"
+import { Backdrop, photoBox } from "../graphic"
+import { LayerStack, StackedLayer } from "../layer-stack"
 import {
   currentCrop,
   gaps,
@@ -566,9 +566,7 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
             {showOverflow && (
               // 작업영역 밖으로 나간 부분을 흐리게 보여준다. 인쇄·저장 파일에서는 빠진다
               <g id="overflow-ghost" opacity={0.3} pointerEvents="none">
-                {layers.map((layer) => (
-                  <LayerGraphic key={layer.id} layer={layer} />
-                ))}
+                <LayerStack layers={layers} />
               </g>
             )}
             <g clipPath="url(#almond-print-area)">
@@ -601,11 +599,15 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
                     <StackedLayer
                       layers={layers}
                       index={index}
-                      backdrop={
+                      backdrop={(filtered) => (
                         <Backdrop
-                          value={unfiltered(sideBackground(design, side))}
+                          value={
+                            filtered
+                              ? sideBackground(design, side)
+                              : unfiltered(sideBackground(design, side))
+                          }
                         />
-                      }
+                      )}
                     />
                     {seeThrough(layer) && layer.type === "path" && (
                       // 속이 빈 펜·연필 선은 화면 1~2px 선만 잡혀 끌 수가 없어서, 둘레에 안 보이는 잡기 영역을 둔다
@@ -676,6 +678,20 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
                       </g>
                     )
                   })()}
+                {!cropping &&
+                  editor.pinnedId === selected.id &&
+                  selected.type !== "line" && (
+                    // 레이어 패널에서 고른 레이어는 위에 겹친 레이어가 있어도 상자 안을 끌면 이 레이어가 움직인다
+                    <rect
+                      x={selected.x}
+                      y={selected.y}
+                      width={selected.width}
+                      height={selected.height}
+                      fill="transparent"
+                      className="cursor-move"
+                      onPointerDown={(event) => startDrag(event, selected)}
+                    />
+                  )}
                 {cropping ? null : selected.type === "line" ? (
                   <LineHandles
                     layer={selected}

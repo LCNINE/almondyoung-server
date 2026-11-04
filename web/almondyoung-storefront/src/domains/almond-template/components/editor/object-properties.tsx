@@ -345,6 +345,18 @@ export function ObjectProperties({
               disabled={!editable}
               onApply={(color) => patch(selected.id, { fill: color })}
             />
+            <PropSlider
+              label="글자 투명도"
+              min={0}
+              max={100}
+              value={Math.round((1 - (selected.fillOpacity ?? 1)) * 100)}
+              disabled={!editable}
+              onValue={(percent) =>
+                patch(selected.id, {
+                  fillOpacity: percent ? 1 - percent / 100 : undefined,
+                })
+              }
+            />
             <PrintColorPicker
               label="윤곽선"
               value={noStroke ? "#ffffff" : (selected.stroke ?? "#ffffff")}

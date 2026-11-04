@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react"
+import { ChevronLeft } from "lucide-react"
 import { CLIPART, SHAPES } from "../../lib/art-library"
 import type { AlmondEditor } from "../../hooks/use-almond-editor"
 import { useQrBuilder } from "../../hooks/use-qr-builder"
@@ -27,9 +28,10 @@ export function ToolPanel({ editor }: { editor: AlmondEditor }) {
     editable,
     setMessage,
   } = editor
-  // 레이어 패널은 고르면서 쓰는 곳이라 속성으로 바꾸지 않는다
+  // 레이어 패널은 고르면서 쓰는 곳이라 편집 버튼을 누를 때만 속성으로 바꾼다
+  const fromLayers = tool === "layers" && editor.layerInspect && !!selected
   const inspecting =
-    tool !== "layers" &&
+    (tool !== "layers" || fromLayers) &&
     ((!!selected && selected.visible !== false) || group.length > 1)
   useEffect(() => {
     if (inspecting) setPanelOpen(true)
@@ -73,6 +75,15 @@ export function ToolPanel({ editor }: { editor: AlmondEditor }) {
           style={{ width: wide ? 696 : 360 }}
           className={`group/panel relative h-full border-r border-[#e0e1e5] bg-white ${inspecting ? "overflow-y-auto [&::-webkit-scrollbar]:w-5 [&::-webkit-scrollbar-thumb]:min-h-[50px] [&::-webkit-scrollbar-thumb]:rounded-[14px] [&::-webkit-scrollbar-thumb]:border-[7px] [&::-webkit-scrollbar-thumb]:border-solid [&::-webkit-scrollbar-thumb]:border-transparent [&::-webkit-scrollbar-thumb]:bg-clip-padding hover:[&::-webkit-scrollbar-thumb]:bg-[#e6e7ea] [&::-webkit-scrollbar-thumb:hover]:bg-[#222]" : `p-5 ${tool === "background" ? "overflow-visible" : "overflow-y-auto"}`}`}
         >
+          {fromLayers && (
+            <button
+              type="button"
+              onClick={() => editor.setLayerInspect(false)}
+              className="flex h-10 w-full items-center gap-1 border-b border-[#e0e1e5] px-4 text-[14px] text-[#3F4250] hover:bg-[#F3F5F8]"
+            >
+              <ChevronLeft size={16} /> 레이어 목록
+            </button>
+          )}
           {inspecting && <PropertyPanel editor={editor} />}
           {/* 선택을 풀면 메뉴가 스크롤·탭 그대로 돌아오도록 숨기기만 한다 */}
           <div hidden={inspecting}>

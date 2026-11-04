@@ -510,6 +510,12 @@ export function ShadowRow({
               disabled={disabled}
               onValue={(value) => apply({ shadowOpacity: value / 100 })}
             />
+            <Toggle
+              label="곱하기"
+              checked={layers.every((layer) => !!layer.shadowMultiply)}
+              disabled={disabled}
+              onChange={(on) => apply({ shadowMultiply: on || undefined })}
+            />
           </SettingBox>
         </div>
       </div>

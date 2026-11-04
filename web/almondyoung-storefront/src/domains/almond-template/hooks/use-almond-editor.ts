@@ -108,6 +108,15 @@ export function useAlmondEditor({
     "editing" | "shortcuts" | "image" | "print"
   >("editing")
   const [moveMode, setMoveMode] = useState(false)
+  // 레이어 패널에서 고른 레이어. 위에 다른 레이어가 겹쳐 있어도 캔버스에서 이 레이어만 끌린다
+  const [pinnedId, setPinnedId] = useState<string | null>(null)
+  // 레이어 패널에서 편집 버튼으로 들어오면 레이어 패널 자리에 속성을 보여 준다
+  const [layerInspect, setLayerInspect] = useState(false)
+  useEffect(() => {
+    if (selectedId === pinnedId) return
+    setPinnedId(null)
+    setLayerInspect(false)
+  }, [selectedId])
   const [previewSide, setPreviewSide] = useState<Side>("front")
   const [preview, setPreview] = useState(false)
   const backPrinted = printsBack(design)
@@ -465,6 +474,10 @@ export function useAlmondEditor({
   })
 
   return {
+    pinnedId,
+    setPinnedId,
+    layerInspect,
+    setLayerInspect,
     productId,
     mode,
     variantId,
