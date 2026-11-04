@@ -1102,6 +1102,37 @@ describe('MedusaClient.ensurePriceList', () => {
   });
 });
 
+describe('MedusaClient.syncProductQuantityDiscount', () => {
+  function makeClient(fetch: jest.Mock) {
+    const client = Object.create(MedusaClient.prototype) as MedusaClient;
+    (client as any).sdk = { client: { fetch } };
+    (client as any).logger = { log: jest.fn(), warn: jest.fn(), debug: jest.fn(), error: jest.fn() };
+    return client;
+  }
+
+  it('replaces the product tier prices with one request and returns the lists holding them', async () => {
+    const fetch = jest.fn().mockResolvedValue({ price_list_ids: ['pl_g3', 'pl_m3'] });
+    const client = makeClient(fetch);
+    const body = {
+      period: null,
+      general: [{ variant_id: 'variant_1', min_quantity: 3, amount: 9500 }],
+      membership: [{ variant_id: 'variant_1', min_quantity: 3, amount: 7200 }],
+    };
+
+    await expect(client.syncProductQuantityDiscount('prod_1', body)).resolves.toEqual(['pl_g3', 'pl_m3']);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(fetch).toHaveBeenCalledWith('/admin/quantity-discounts/products/prod_1', { method: 'post', body });
+  });
+
+  it('fails loudly so the sync is recorded as failed and retried', async () => {
+    const client = makeClient(jest.fn().mockRejectedValue(new Error('boom')));
+
+    await expect(
+      client.syncProductQuantityDiscount('prod_1', { period: null, general: [], membership: [] }),
+    ).rejects.toThrow('syncProductQuantityDiscount');
+  });
+});
+
 describe('MedusaClient.addCustomerToGroup', () => {
   const GROUP = 'cusgroup_membership';
 

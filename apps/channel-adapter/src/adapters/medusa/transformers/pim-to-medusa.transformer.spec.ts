@@ -305,6 +305,25 @@ describe('PimToMedusaTransformer', () => {
       ]);
     });
 
+    it('carries member tier prices and the discount period so the storefront needs no extra request', () => {
+      const period = { startsAt: '2026-11-09T15:00:00.000Z', endsAt: null };
+      const result = transformPimToMedusa({
+        ...mockSnapshot,
+        quantityDiscount: period,
+        variants: [{ ...mockSnapshot.variants[0], membershipTieredPrices: [{ minQuantity: 10, price: 7600 }] }],
+      });
+
+      expect(result.variants![0].metadata?.membershipTieredPrices).toEqual([{ minQuantity: 10, price: 7600 }]);
+      expect(result.metadata.quantityDiscount).toEqual(period);
+    });
+
+    it('writes empty member tiers and a null period so a removed table clears stale metadata', () => {
+      const result = transformPimToMedusa(mockSnapshot);
+
+      expect(result.variants![0].metadata?.membershipTieredPrices).toEqual([]);
+      expect(result.metadata.quantityDiscount).toBeNull();
+    });
+
     it('should not add membership price to the product payload if MEMBERSHIP_GROUP_ID is not set', () => {
       delete process.env.MEDUSA_MEMBERSHIP_GROUP_ID;
 

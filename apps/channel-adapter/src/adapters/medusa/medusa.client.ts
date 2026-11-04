@@ -356,7 +356,6 @@ export class MedusaClient {
   private readonly typeCache = new Map<string, string>(); // key: value
   private readonly salesChannelCache = new Map<string, string>(); // key: name
   private defaultShippingProfileId?: string;
-  private allRegionIds?: string[];
   private priceListIdByName?: Map<string, string>;
   private readonly shippingProfileIdByGroupCode = new Map<string, string>(); // key: 배송비 그룹 코드
   private projectionStockLocationId?: string;
@@ -386,7 +385,6 @@ export class MedusaClient {
     this.typeCache.clear();
     this.salesChannelCache.clear();
     this.defaultShippingProfileId = undefined;
-    this.allRegionIds = undefined;
     this.priceListIdByName = undefined;
     this.shippingProfileIdByGroupCode.clear();
     this.logger.log('All caches cleared');
@@ -2320,26 +2318,6 @@ export class MedusaClient {
   }
 
   // ===== Price Lists =====
-  /**
-   * 전 방문자에게 매칭되는 price list 룰.
-   *
-   * Medusa 는 후보 가격을 `rules_count 내림 → amount 오름` 으로 고른다. 룰이 0 개인 리스트는 아무리
-   * 싸도 룰 1 개짜리 멤버십 리스트에 지므로, 조건 없는 세일 리스트에도 룰 1 개를 붙여 동률을 만든다.
-   * 그래야 마지막 기준인 amount 가 심판이 되어 언제나 최저가가 나간다.
-   *
-   * 키가 region_id 인 이유: pricing 모듈이 currency_code 를 context 에서 지우고 별도 컬럼으로 비교해
-   * 룰로 쓸 수 없다. 전 방문자 컨텍스트에 항상 실리는 키는 region_id 뿐이다. 전 리전을 넣으므로
-   * 리전이 늘거나 재생성돼도 따라간다 — 하드코딩하면 어긋나는 순간 리스트가 통째로 제외돼
-   * 멤버십가·수량 할인가가 조용히 사라진다.
-   */
-  async getAllVisitorsPriceListRule(): Promise<Record<string, string[]> | undefined> {
-    if (!this.allRegionIds) {
-      const { regions } = await this.sdk.admin.region.list({ limit: 100, fields: 'id' });
-      this.allRegionIds = (regions ?? []).map((region) => region.id).filter(Boolean);
-    }
-    return this.allRegionIds.length > 0 ? { region_id: this.allRegionIds } : undefined;
-  }
-
   private normalizePriceListRules(rules?: Record<string, string[]>): Record<string, string[]> | undefined {
     if (!rules) return undefined;
 
@@ -2363,7 +2341,7 @@ export class MedusaClient {
     rules?: Record<string, string[]>;
   }): Promise<string> {
     try {
-      // 리스트의 status·rules 는 프로세스 수명 동안 바뀌지 않으므로(region 목록도 allRegionIds 로 같은 수명 캐시)
+      // 리스트의 status·rules 는 프로세스 수명 동안 바뀌지 않으므로
       // 한 번 확인한 리스트는 다시 조회·갱신하지 않는다.
       const cached = this.priceListIdByName?.get(payload.name);
       if (cached) return cached;
@@ -2464,6 +2442,24 @@ export class MedusaClient {
       const fetchError = error as FetchError;
       this.logger.error(`Failed to remove product ${productId} from list ${priceListId}: ${fetchError.message}`);
       throw new Error(`Medusa removeProductFromPriceList failed: ${fetchError.message}`, { cause: fetchError });
+    }
+  }
+
+  /**
+   * 상품 하나의 수량 할인 가격을 Medusa 수량 할인 모듈이 한 워크플로로 교체한다(리스트 보장·새 가격·옛 가격 삭제).
+   * 반환은 이 상품의 구간가가 들어 있는 price list id.
+   */
+  async syncProductQuantityDiscount(productId: string, body: QuantityDiscountSyncBody): Promise<string[]> {
+    try {
+      const result = await this.sdk.client.fetch<{ price_list_ids: string[] }>(
+        `/admin/quantity-discounts/products/${productId}`,
+        { method: 'post', body },
+      );
+      return result.price_list_ids;
+    } catch (error) {
+      const fetchError = error as FetchError;
+      this.logger.error(`Failed to sync quantity discount of product ${productId}: ${fetchError.message}`);
+      throw new Error(`Medusa syncProductQuantityDiscount failed: ${fetchError.message}`, { cause: fetchError });
     }
   }
 
@@ -2902,3 +2898,10 @@ export class MedusaClient {
     return { status: res.status, body: isJsonObject(parsed) ? parsed : {} };
   }
 }
+
+export type QuantityDiscountTierPrice = { variant_id: string; min_quantity: number; amount: number };
+export type QuantityDiscountSyncBody = {
+  period: { starts_at: string | null; ends_at: string | null } | null;
+  general: QuantityDiscountTierPrice[];
+  membership: QuantityDiscountTierPrice[];
+};
