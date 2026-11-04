@@ -746,6 +746,7 @@ export class ProductMatchingService {
     params: {
       matchingStatus?: 'pending' | 'matched' | 'ignored' | 'unregistered';
       excludeMatched?: boolean;
+      excludeShipped?: boolean;
       salesChannel?: string;
       startDate?: string;
       endDate?: string;
@@ -773,6 +774,15 @@ export class ProductMatchingService {
         // «해결된 라인 제외» 판정은 라인 구성 판정의 SQL 짝 하나로 한다(#1063) — 1회 지정·void 로 풀린 라인도 빠진다
         conditions.push(sql`NOT ${lineResolvedSql()}`);
         conditions.push(isNull(salesOrderLines.almondDesignId));
+      }
+
+      if (params.excludeShipped) {
+        conditions.push(sql`${salesOrders.status} NOT IN ('shipped', 'delivered')`);
+        conditions.push(sql`NOT EXISTS (
+          SELECT 1 FROM ${wmsTables.fulfillmentOrders}
+          WHERE ${wmsTables.fulfillmentOrders.salesOrderId} = ${salesOrders.id}
+            AND ${wmsTables.fulfillmentOrders.shippedAt} IS NOT NULL
+        )`);
       }
 
       if (salesChannel) {

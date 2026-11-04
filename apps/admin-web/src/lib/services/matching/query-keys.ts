@@ -2,6 +2,8 @@
 
 export const matchingQueryKeys = {
   all: ['matchings'] as const,
+  nameMatchPreview: () =>
+    [...matchingQueryKeys.all, 'name-match-preview'] as const,
 
   lists: () => [...matchingQueryKeys.all, 'list'] as const,
   list: (query: unknown) => [...matchingQueryKeys.lists(), query] as const,

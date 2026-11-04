@@ -140,3 +140,12 @@ export const useMatchingsWithOrders = (query: MatchingsQuery = {}) =>
   useMatchings(query);
 
 export const useVariantSkuMapping = useVariantSkuLookup;
+
+export const useNameMatchPreview = (enabled: boolean) => {
+  return useQuery({
+    queryKey: matchingQueryKeys.nameMatchPreview(),
+    queryFn: () => matchingClient.previewNameMatch(),
+    enabled,
+    staleTime: 0,
+  });
+};
