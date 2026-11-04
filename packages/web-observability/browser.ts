@@ -139,6 +139,8 @@ function shouldPropagateTo(input: RequestInfo | URL): boolean {
   try {
     const url = input instanceof Request ? new URL(input.url) : new URL(String(input), window.location.origin);
     if (url.pathname.startsWith('/_next/') || url.pathname === '/favicon.ico') return false;
+    // 공개 파일은 다른 오리진으로 리다이렉트된다 — 헤더를 붙이면 그쪽 CORS 사전 확인에서 막힌다
+    if (url.pathname.startsWith('/api/proxy/file/files/public/')) return false;
     return url.origin === window.location.origin;
   } catch {
     return false;

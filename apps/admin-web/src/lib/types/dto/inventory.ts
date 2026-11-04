@@ -1950,3 +1950,12 @@ export interface CompleteFieldCaptureRequest {
   /** 화면을 열 때 본 마지막 완료 시각(없었으면 null) — 그사이 다른 작업자가 저장했으면 409 */
   expectedLastCompletedAt?: string | null;
 }
+
+export type Sku3dModelDto = {
+  id: string;
+  skuId: string;
+  version: number;
+  glbFileId: string | null;
+  status: 'approved' | 'needs_revision' | 'needs_more_photos' | 'failed';
+  createdAt: string;
+};
