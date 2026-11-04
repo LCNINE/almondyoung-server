@@ -6,6 +6,7 @@ import { ChevronLeft, ChevronRight, Search } from 'lucide-react';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { skuFieldCaptureClient } from '@/lib/api/domains/inventory/sku-field-capture.client';
 import { resolvePublicFileUrl } from '@/lib/utils/file-url';
+import { Sku3dActions } from './components/sku-3d-actions';
 import {
   fieldCaptureKeys,
   groupPhotosBySku,
@@ -28,16 +29,32 @@ export function FieldCapturePhotoGallery() {
   const [text, setText] = useState('');
   const [q, setQ] = useState('');
   const [openId, setOpenId] = useState<string | null>(null);
-  const { from, to } = periodRange(period, kstDateOf(new Date().toISOString()), null);
+  const { from, to } = periodRange(
+    period,
+    kstDateOf(new Date().toISOString()),
+    null
+  );
 
-  const { data, isLoading, isError, refetch, hasNextPage, fetchNextPage, isFetchingNextPage } =
-    useInfiniteQuery({
-      queryKey: fieldCaptureKeys.photos(from ?? '', to ?? '', q),
-      queryFn: ({ pageParam }) =>
-        skuFieldCaptureClient.getPhotos({ from, to, q: q || undefined, before: pageParam }),
-      initialPageParam: undefined as string | undefined,
-      getNextPageParam: (last) => last.nextCursor ?? undefined,
-    });
+  const {
+    data,
+    isLoading,
+    isError,
+    refetch,
+    hasNextPage,
+    fetchNextPage,
+    isFetchingNextPage,
+  } = useInfiniteQuery({
+    queryKey: fieldCaptureKeys.photos(from ?? '', to ?? '', q),
+    queryFn: ({ pageParam }) =>
+      skuFieldCaptureClient.getPhotos({
+        from,
+        to,
+        q: q || undefined,
+        before: pageParam,
+      }),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (last) => last.nextCursor ?? undefined,
+  });
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
@@ -59,7 +76,9 @@ export function FieldCapturePhotoGallery() {
     // 불러온 마지막 사진이면 다음 묶음을 불러와 이어 간다
     if (step === 1 && hasNextPage && !isFetchingNextPage) {
       const res = await fetchNextPage();
-      const next = groupPhotosBySku(res.data?.pages.flatMap((p) => p.photos) ?? []).flat()[idx + 1];
+      const next = groupPhotosBySku(
+        res.data?.pages.flatMap((p) => p.photos) ?? []
+      ).flat()[idx + 1];
       if (next) setOpenId(next.id);
     }
   };
@@ -71,8 +90,8 @@ export function FieldCapturePhotoGallery() {
           찍은 사진
           {data && (
             <span className="ml-2 text-sm font-normal text-muted-foreground">
-              {groups.length.toLocaleString('ko-KR')}개 상품 · {photos.length.toLocaleString('ko-KR')}장
-              {hasNextPage && ' 이상'}
+              {groups.length.toLocaleString('ko-KR')}개 상품 ·{' '}
+              {photos.length.toLocaleString('ko-KR')}장{hasNextPage && ' 이상'}
             </span>
           )}
         </h2>
@@ -92,7 +111,10 @@ export function FieldCapturePhotoGallery() {
             </button>
           ))}
         </div>
-        <form onSubmit={submit} className="flex items-center gap-1 rounded-lg border px-2">
+        <form
+          onSubmit={submit}
+          className="flex items-center gap-1 rounded-lg border px-2"
+        >
           <Search className="h-4 w-4 text-muted-foreground" />
           <input
             value={text}
@@ -103,11 +125,17 @@ export function FieldCapturePhotoGallery() {
         </form>
       </div>
 
-      {isLoading && <p className="text-sm text-muted-foreground">불러오는 중…</p>}
+      {isLoading && (
+        <p className="text-sm text-muted-foreground">불러오는 중…</p>
+      )}
       {isError && (
         <div className="flex items-center gap-3 text-sm text-red-600">
           <span>사진을 불러오지 못했어요</span>
-          <button type="button" className="rounded border px-2 py-1" onClick={() => refetch()}>
+          <button
+            type="button"
+            className="rounded border px-2 py-1"
+            onClick={() => refetch()}
+          >
             다시 시도
           </button>
         </div>
@@ -128,8 +156,20 @@ export function FieldCapturePhotoGallery() {
                   {head.positionCode ?? '선반 없음'}
                 </span>
                 <span className="font-medium">{head.name}</span>
-                <span className="text-xs text-muted-foreground">{head.code}</span>
-                <span className="text-xs tabular-nums">{packageLine(head)}</span>
+                <span className="text-xs text-muted-foreground">
+                  {head.code}
+                </span>
+                <span className="text-xs tabular-nums">
+                  {packageLine(head)}
+                </span>
+                <div className="ml-auto">
+                  <Sku3dActions
+                    skuId={head.skuId}
+                    code={head.code}
+                    name={head.name}
+                    dims={head}
+                  />
+                </div>
               </div>
               <div className="flex flex-wrap gap-2">
                 {g.map((p) => (
@@ -180,9 +220,13 @@ export function FieldCapturePhotoGallery() {
           {open && (
             <>
               <DialogTitle className="pr-8 text-sm font-medium">
-                <span className="mr-2 font-mono">{open.positionCode ?? '선반 없음'}</span>
+                <span className="mr-2 font-mono">
+                  {open.positionCode ?? '선반 없음'}
+                </span>
                 {open.name}
-                <span className="ml-2 text-xs font-normal tabular-nums">{packageLine(open)}</span>
+                <span className="ml-2 text-xs font-normal tabular-nums">
+                  {packageLine(open)}
+                </span>
                 <span className="ml-2 text-xs font-normal text-muted-foreground">
                   {open.takenByLabel} · {kstShortTime(open.createdAt)}
                 </span>

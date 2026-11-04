@@ -43,6 +43,7 @@ export type FileSignedUrlResponse = {
 };
 
 export const DIGITAL_ASSET_FILE_CONTEXT_ID = 'digital-asset-file';
+export const SKU_3D_MODEL_CONTEXT_ID = 'sku-3d-model';
 export const PRODUCT_IMAGE_CONTEXT_ID = 'product-image';
 export const CATEGORY_IMAGE_CONTEXT_ID = 'category-image';
 export const BANNER_IMAGE_CONTEXT_ID = 'banner-image';
