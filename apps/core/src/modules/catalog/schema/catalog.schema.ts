@@ -174,7 +174,7 @@ export const productMasterVersions = pgTable(
     name: varchar('name', { length: 255 }).notNull().default('새 상품'),
     description: text('description'),
     brand: varchar('brand', { length: 100 }),
-    thumbnail: text('thumbnail'), // 썸네일 이미지 파일 ID
+    thumbnail: text('thumbnail'), // 쓰지 않는 컬럼 — 대표 이미지는 product_images 의 isPrimary 행이다
 
     seoTitle: varchar('seo_title', { length: 255 }), // SEO 제목
     seoDescription: text('seo_description'), // SEO 설명

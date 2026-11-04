@@ -16,6 +16,7 @@ import {
   productOptionGroupDisplays,
   productOptionValueDisplays,
   variantOptionValues,
+  productImages,
 } from '../../../schema/catalog.schema';
 import { eq, ne, and, or, like, ilike, count, asc, desc, sql, inArray, SQL, isNull } from 'drizzle-orm';
 import { v7 as uuidv7 } from 'uuid';
@@ -510,13 +511,18 @@ export class ProductVariantsService {
         masterId: productMasterVariants.masterId,
         versionId: productMasterVariants.versionId,
         masterName: productMasterVersions.name,
-        thumbnail: productMasterVersions.thumbnail, // 마스터 버전 대표 썸네일(파일 ID)
+        // 대표 이미지의 원본은 product_images 다. 버전의 thumbnail 컬럼은 새로 만든 상품에서 비어 있다
+        thumbnail: sql<string | null>`coalesce(${productImages.fileId}, ${productMasterVersions.thumbnail})`,
       })
       .from(productVariants)
       .innerJoin(productMasterVariants, eq(productMasterVariants.variantId, productVariants.id))
       .innerJoin(
         productMasterVersions,
         and(eq(productMasterVersions.id, productMasterVariants.versionId), eq(productMasterVersions.status, 'active')),
+      )
+      .leftJoin(
+        productImages,
+        and(eq(productImages.versionId, productMasterVersions.id), eq(productImages.isPrimary, true)),
       )
       .where(inArray(productVariants.id, ids));
 
