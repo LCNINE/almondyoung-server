@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import ko from "@/i18n/messages/ko/productDetail.json"
 import en from "@/i18n/messages/en/productDetail.json"
 import ja from "@/i18n/messages/ja/productDetail.json"
-import { ProductModel3dViewer } from "./index"
+import { canAutoLoad3d, ProductModel3dLayer } from "./index"
 
 const { mountViewer, disposeViewer } = vi.hoisted(() => ({
   mountViewer: vi.fn(),
@@ -33,110 +33,139 @@ beforeEach(() => {
 afterEach(async () => {
   await act(async () => root.unmount())
   container.remove()
+  vi.unstubAllGlobals()
 })
 
-async function render(fileId: unknown, locale: "ko" | "en" | "ja" = "ko") {
+async function render(
+  fileId: unknown,
+  {
+    visible = true,
+    locale = "ko",
+  }: { visible?: boolean; locale?: "ko" | "en" | "ja" } = {}
+) {
   await act(async () => {
     root.render(
       <NextIntlClientProvider
         locale={locale}
         messages={{ productDetail: { ko, en, ja }[locale] }}
       >
-        <ProductModel3dViewer fileId={fileId} productName="테스트 상품" />
+        <ProductModel3dLayer
+          fileId={fileId}
+          productName="테스트 상품"
+          visible={visible}
+        />
       </NextIntlClientProvider>
     )
   })
 }
 
-async function open() {
+async function idle() {
   await act(async () => {
-    const button = container.querySelector("button")!
-    button.dispatchEvent(new MouseEvent("click", { bubbles: true }))
+    await new Promise((resolve) => setTimeout(resolve, 10))
   })
 }
 
-describe("ProductModel3dViewer", () => {
+function layer() {
+  return container.firstElementChild as HTMLElement | null
+}
+
+describe("canAutoLoad3d", () => {
   it.each([
-    ["en", "View in 3D", "Based on a representative option"],
-    ["ja", "3Dで見る", "代表オプションを表示しています"],
-  ] as const)(
-    "uses the %s locale for the viewer and option warning",
-    async (locale, label, warning) => {
-      await render("model-file", locale)
+    [{}, true],
+    [{ connection: { effectiveType: "4g" }, deviceMemory: 8 }, true],
+    [{ deviceMemory: 4 }, true],
+    [{ connection: { saveData: true, effectiveType: "4g" } }, false],
+    [{ connection: { effectiveType: "3g" } }, false],
+    [{ connection: { effectiveType: "slow-2g" } }, false],
+    [{ deviceMemory: 2 }, false],
+  ])("%j → %s", (hints, expected) => {
+    expect(canAutoLoad3d(hints)).toBe(expected)
+  })
+})
 
-      expect(container.querySelector("button")?.textContent).toContain(label)
-
-      await open()
-
-      expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
-        warning
-      )
-    }
-  )
-
+describe("ProductModel3dLayer", () => {
   it.each([undefined, null, "", "  ", 12, {}])(
-    "hides the button for an absent or invalid model: %s",
+    "renders nothing for an absent or invalid model: %s",
     async (id) => {
       await render(id)
+      await idle()
 
-      expect(container.querySelector("button")).toBeNull()
+      expect(layer()).toBeNull()
       expect(mountViewer).not.toHaveBeenCalled()
     }
   )
 
-  it("keeps the model unloaded until an explicit click, including hover and focus", async () => {
+  it("keeps the photo until the model loads, then fades the model in", async () => {
     await render("model-file")
-    const button = container.querySelector("button")!
 
-    await act(async () => {
-      button.dispatchEvent(new MouseEvent("mouseover", { bubbles: true }))
-      button.focus()
-    })
-
-    expect(button.textContent).toContain("3D로 보기")
     expect(mountViewer).not.toHaveBeenCalled()
-    expect(document.querySelector('[role="dialog"]')).toBeNull()
 
-    await open()
+    await idle()
 
     expect(mountViewer).toHaveBeenCalledTimes(1)
     expect(mountViewer.mock.calls[0][1]).toMatchObject({
       src: "https://files.test/files/public/model-file",
       alt: "테스트 상품 3D 모델",
     })
-    expect(document.querySelector('[role="dialog"]')?.textContent).toContain(
-      "대표 옵션 기준"
-    )
+    expect(layer()?.className).toContain("opacity-0")
+
+    await act(async () => mountViewer.mock.calls[0][1].onLoad())
+
+    expect(layer()?.className).toContain("opacity-100")
+    expect(layer()?.textContent).toContain("대표 옵션 기준")
   })
 
-  it("shows loading and model errors and retries on reopen", async () => {
+  it("uses the locale for the option warning", async () => {
+    await render("model-file", { locale: "en" })
+
+    expect(layer()?.textContent).toContain("Based on a representative option")
+  })
+
+  it("hides the model while another photo is selected", async () => {
     await render("model-file")
-    await open()
+    await idle()
+    await act(async () => mountViewer.mock.calls[0][1].onLoad())
+    await render("model-file", { visible: false })
 
-    expect(document.body.textContent).toContain("3D 모델을 불러오고 있어요")
+    expect(layer()?.className).toContain("opacity-0")
+    expect(mountViewer).toHaveBeenCalledTimes(1)
+  })
 
+  it("stays on the photo when the model fails", async () => {
+    await render("model-file")
+    await idle()
     await act(async () => mountViewer.mock.calls[0][1].onError())
 
-    expect(document.body.textContent).toContain("3D 모델을 불러오지 못했어요")
-    expect(disposeViewer).toHaveBeenCalledTimes(1)
+    expect(layer()?.className).toContain("opacity-0")
   })
 
-  it("releases the viewer on close and restores focus to the trigger", async () => {
+  it("stays on the photo when WebGL is unavailable", async () => {
+    mountViewer.mockRejectedValue(new Error("WebGL 2 is not available"))
     await render("model-file")
-    await open()
+    await idle()
 
-    await act(async () => {
-      document
-        .querySelector<HTMLButtonElement>('[aria-label="3D 보기 닫기"]')!
-        .click()
-    })
-
-    expect(disposeViewer).toHaveBeenCalledTimes(1)
-    expect(document.querySelector('[role="dialog"]')).toBeNull()
-    expect(document.activeElement?.textContent).toContain("3D로 보기")
+    expect(layer()?.className).toContain("opacity-0")
   })
 
-  it("disposes a late initialization when the dialog has already closed", async () => {
+  it("skips the download on data saver", async () => {
+    vi.stubGlobal("navigator", { ...navigator, connection: { saveData: true } })
+    await render("model-file")
+    await idle()
+
+    expect(mountViewer).not.toHaveBeenCalled()
+  })
+
+  it("releases the old model when the product changes", async () => {
+    await render("model-file")
+    await idle()
+    await render("new-model")
+    await idle()
+
+    expect(disposeViewer).toHaveBeenCalledTimes(1)
+    expect(mountViewer).toHaveBeenCalledTimes(2)
+  })
+
+  it("disposes a late initialization after unmount", async () => {
     let resolve!: (dispose: () => void) => void
     mountViewer.mockReturnValue(
       new Promise((done) => {
@@ -144,24 +173,11 @@ describe("ProductModel3dViewer", () => {
       })
     )
     await render("model-file")
-    await open()
-
-    await act(async () => {
-      document
-        .querySelector<HTMLButtonElement>('[aria-label="3D 보기 닫기"]')!
-        .click()
-      resolve(disposeViewer)
-    })
+    await idle()
+    await act(async () => root.unmount())
+    await act(async () => resolve(disposeViewer))
 
     expect(disposeViewer).toHaveBeenCalledTimes(1)
-  })
-
-  it("hides an old model when product metadata changes", async () => {
-    await render("model-file")
-    await open()
-    await render("new-model")
-
-    expect(disposeViewer).toHaveBeenCalledTimes(1)
-    expect(document.querySelector('[role="dialog"]')).toBeNull()
+    root = createRoot(container)
   })
 })

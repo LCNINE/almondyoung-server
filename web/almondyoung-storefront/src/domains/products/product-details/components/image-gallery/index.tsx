@@ -10,6 +10,7 @@ import { SoldOutOverlay } from "@/components/products/sold-out-overlay"
 import { pickComingSoon } from "@/domains/products/product-details/components/product-actions/coming-soon"
 import { ComingSoonBadge } from "@/components/shared/badges/coming-soon-badge"
 import { calculateStockStatus } from "@/domains/products/components/product-card/quantity/stock-status"
+import { ProductModel3dLayer } from "../model3d-viewer"
 
 type Props = {
   product: HttpTypes.StoreProduct
@@ -83,6 +84,11 @@ export function ImageGallery({ product }: Props) {
             priority
           />
         )}
+        <ProductModel3dLayer
+          fileId={product.metadata?.model3dFileId}
+          productName={product.title ?? ""}
+          visible={selectedIndex === 0}
+        />
         {isSoldOut && comingSoon && (
           <ComingSoonBadge
             date={comingSoon.date}

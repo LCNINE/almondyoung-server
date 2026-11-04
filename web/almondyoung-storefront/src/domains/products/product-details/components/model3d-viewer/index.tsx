@@ -1,157 +1,160 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
-import { Box } from "lucide-react"
 import { useTranslations } from "next-intl"
-import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog"
+import { cn } from "@/lib/utils"
 import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
 
-export function ProductModel3dViewer({
+type NetworkInfo = { saveData?: boolean; effectiveType?: string }
+
+export type DeviceHints = {
+  connection?: NetworkInfo
+  deviceMemory?: number
+}
+
+const SLOW_NETWORKS = ["slow-2g", "2g", "3g"]
+
+// 브라우저가 알려 주지 않는 값(사파리의 connection·deviceMemory)은 막지 않는다.
+export function canAutoLoad3d({ connection, deviceMemory }: DeviceHints) {
+  if (connection?.saveData) {
+    return false
+  }
+
+  if (
+    connection?.effectiveType &&
+    SLOW_NETWORKS.includes(connection.effectiveType)
+  ) {
+    return false
+  }
+
+  return deviceMemory === undefined || deviceMemory >= 4
+}
+
+function afterPageIdle(run: () => void): () => void {
+  let idleId: number | undefined
+  let timerId: number | undefined
+
+  const schedule = () => {
+    if (typeof window.requestIdleCallback === "function") {
+      idleId = window.requestIdleCallback(run, { timeout: 3000 })
+    } else {
+      timerId = window.setTimeout(run, 1)
+    }
+  }
+
+  if (document.readyState === "complete") {
+    schedule()
+  } else {
+    window.addEventListener("load", schedule, { once: true })
+  }
+
+  return () => {
+    window.removeEventListener("load", schedule)
+
+    if (idleId !== undefined) {
+      window.cancelIdleCallback(idleId)
+    }
+
+    window.clearTimeout(timerId)
+  }
+}
+
+export function ProductModel3dLayer({
   fileId,
   productName,
+  visible,
 }: {
   fileId: unknown
   productName: string
+  visible: boolean
 }) {
   if (typeof fileId !== "string" || !fileId.trim()) {
     return null
   }
 
-  // 다른 상품으로 이동하면 열린 뷰어와 이전 모델을 함께 해제한다.
+  // 다른 상품으로 이동하면 이전 모델을 해제하고 새로 받는다.
   return (
-    <Model3dDialog key={fileId} fileId={fileId} productName={productName} />
+    <Model3dLayer
+      key={fileId}
+      fileId={fileId}
+      productName={productName}
+      visible={visible}
+    />
   )
 }
 
-function Model3dDialog({
+function Model3dLayer({
   fileId,
   productName,
+  visible,
 }: {
   fileId: string
   productName: string
-}) {
-  const t = useTranslations("productDetail.model3d")
-  const [open, setOpen] = useState(false)
-
-  return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <button
-          type="button"
-          className="mb-8 inline-flex min-h-11 items-center gap-2 rounded-md border px-4 py-2 text-sm font-medium"
-        >
-          <Box className="size-4" aria-hidden="true" />
-          {t("open")}
-        </button>
-      </DialogTrigger>
-
-      {open && (
-        <DialogContent className="sm:max-w-3xl" showCloseButton={false}>
-          <DialogTitle>{t("title", { name: productName })}</DialogTitle>
-          <DialogDescription>{t("representativeOption")}</DialogDescription>
-
-          <Model3dContent fileId={fileId} productName={productName} />
-
-          <p className="text-muted-foreground text-sm">{t("instructions")}</p>
-          <DialogClose asChild>
-            <button
-              type="button"
-              aria-label={t("closeAria")}
-              className="min-h-11 rounded-md border px-4 py-2 text-sm"
-            >
-              {t("close")}
-            </button>
-          </DialogClose>
-        </DialogContent>
-      )}
-    </Dialog>
-  )
-}
-
-function Model3dContent({
-  fileId,
-  productName,
-}: {
-  fileId: string
-  productName: string
+  visible: boolean
 }) {
   const t = useTranslations("productDetail.model3d")
   const container = useRef<HTMLDivElement>(null)
-  const [loaded, setLoaded] = useState(false)
-  const [failed, setFailed] = useState(false)
+  const [ready, setReady] = useState(false)
+  const alt = t("modelAlt", { name: productName })
 
   useEffect(() => {
-    if (failed || !container.current) {
+    if (!canAutoLoad3d(navigator as Navigator & DeviceHints)) {
       return
     }
 
     let cancelled = false
     let dispose: (() => void) | undefined
-    const timeout = window.setTimeout(() => setFailed(true), 45_000)
 
-    // 버튼을 누르기 전에는 뷰어 코드와 GLB 모두 다운로드하지 않는다.
-    void import("./mount-viewer")
-      .then(({ mountViewer }) => {
-        if (cancelled || !container.current) {
-          return
-        }
+    // 사진이 먼저 뜨고 페이지가 한가해진 뒤에 뷰어 코드와 GLB를 받는다.
+    const cancelWait = afterPageIdle(() => {
+      void import("./mount-viewer")
+        .then(({ mountViewer }) => {
+          if (cancelled || !container.current) {
+            return
+          }
 
-        return mountViewer(container.current, {
-          src: getThumbnailUrl(fileId),
-          alt: t("modelAlt", { name: productName }),
-          onLoad: () => {
-            window.clearTimeout(timeout)
-            setLoaded(true)
-          },
-          onError: () => setFailed(true),
+          return mountViewer(container.current, {
+            src: getThumbnailUrl(fileId),
+            alt,
+            onLoad: () => setReady(true),
+            onError: () => setReady(false),
+          })
         })
-      })
-      .then((cleanup) => {
-        if (cancelled) {
-          cleanup?.()
-        } else {
-          dispose = cleanup
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setFailed(true)
-        }
-      })
+        .then((cleanup) => {
+          if (cancelled) {
+            cleanup?.()
+          } else {
+            dispose = cleanup
+          }
+        })
+        // WebGL 미지원·다운로드 실패면 사진을 그대로 둔다.
+        .catch(() => {})
+    })
 
     return () => {
       cancelled = true
-      window.clearTimeout(timeout)
+      cancelWait()
       dispose?.()
     }
-  }, [fileId, productName, failed, t])
+  }, [fileId, alt])
+
+  const shown = ready && visible
 
   return (
-    <div className="relative aspect-square max-h-[60vh] w-full">
+    <div
+      aria-hidden={!shown}
+      className={cn(
+        "bg-muted absolute inset-0 z-[5] transition-opacity duration-300",
+        shown ? "opacity-100" : "pointer-events-none opacity-0"
+      )}
+    >
       <div ref={container} className="size-full" />
-      {!loaded && !failed && (
-        <p
-          role="status"
-          className="absolute inset-0 flex items-center justify-center"
-        >
-          {t("loading")}
-        </p>
-      )}
-      {failed && (
-        <p
-          role="alert"
-          className="absolute inset-0 flex items-center justify-center text-center"
-        >
-          {t("error")}
-        </p>
-      )}
+      <span className="bg-foreground/80 pointer-events-none absolute top-3 left-3 rounded-full px-2.5 py-1 text-xs font-bold text-white">
+        3D
+      </span>
+      <p className="text-muted-foreground pointer-events-none absolute right-3 bottom-3 left-3 text-center text-xs">
+        {t("representativeOption")}
+      </p>
     </div>
   )
 }
