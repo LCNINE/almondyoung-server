@@ -28,6 +28,7 @@ export async function fixCompareAtPrices(
         'items.unit_price',
         'items.compare_at_unit_price',
         'items.quantity',
+        'items.is_custom_price',
       ],
       filters: { id: cart.id },
     }),
@@ -55,26 +56,40 @@ export async function fixCompareAtPrices(
     customer: refreshedCart.customer,
   };
 
-  const priceSetIds = [...new Set(variantToPriceSetId.values())];
-  if (priceSetIds.length === 0) return;
-
-  const calculatedPrices = await pricingModule.calculatePrices(
-    { id: priceSetIds },
-    { context: pricingContext },
-  );
+  // 수량 할인은 price.min_quantity 로 걸러지므로 컨텍스트에 라인 수량이 있어야 한다. 없으면 수량가 라인이
+  // 정가로 되돌아간다. 수량은 라인마다 다르니 수량별로 묶어 조회한다.
+  const priceSetsByQuantity = new Map<number, Set<string>>();
+  for (const item of refreshedCart.items) {
+    if (item.is_custom_price) continue;
+    const priceSetId = variantToPriceSetId.get(item.variant_id);
+    const quantity = Number(item.quantity);
+    if (!priceSetId || !Number.isFinite(quantity) || quantity <= 0) continue;
+    const bucket = priceSetsByQuantity.get(quantity) ?? new Set<string>();
+    bucket.add(priceSetId);
+    priceSetsByQuantity.set(quantity, bucket);
+  }
+  if (priceSetsByQuantity.size === 0) return;
 
   const priceSetToResult = new Map<string, any>();
-  for (const cp of calculatedPrices) {
-    priceSetToResult.set(cp.id, cp);
+  for (const [quantity, priceSetIds] of priceSetsByQuantity) {
+    const calculatedPrices = await pricingModule.calculatePrices(
+      { id: [...priceSetIds] },
+      { context: { ...pricingContext, quantity } },
+    );
+    for (const cp of calculatedPrices) {
+      priceSetToResult.set(`${cp.id}:${quantity}`, cp);
+    }
   }
 
   const updates: Array<{ id: string; unit_price?: number; compare_at_unit_price?: number | null }> = [];
 
   for (const item of refreshedCart.items) {
+    // 커스텀 단가(함께 구매 등)는 이 함수가 아니라 그 단가를 만든 쪽이 다시 판정한다.
+    if (item.is_custom_price) continue;
     const priceSetId = variantToPriceSetId.get(item.variant_id);
     if (!priceSetId) continue;
 
-    const pricing = priceSetToResult.get(priceSetId);
+    const pricing = priceSetToResult.get(`${priceSetId}:${Number(item.quantity)}`);
     if (!pricing) continue;
 
     const isSalePrice = pricing.calculated_price?.price_list_type === 'sale';
