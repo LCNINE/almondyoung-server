@@ -34,6 +34,9 @@ const TIME_SALE_LIST_COLUMNS = `
 // 상시 운영되는 `Membership Prices`·`Tiered Prices - Min N` 리스트는 starts_at·ends_at 이 둘 다 null 이라
 // `starts_at or ends_at is not null` 하나로 타임세일 처리(경계 크론·캐시 비우기)에서 빠진다. 이 조건을
 // 지우면 상시 리스트가 타임세일로 잡힌다. 이름 접두사 규칙보다 깨질 구석이 적다.
+// 기간이 있는 수량 할인 리스트(`… - Min N - {시작}-{끝}`)도 이 조건에 걸린다 — 의도다. 이 조건을 쓰는 곳은
+// 경계 캐시 비우기뿐이라, 수량 할인 기간의 시작·종료에도 상품 캐시가 비워진다. 타임세일 목록·관리 화면은
+// time_sale 모듈 링크로 고르므로 수량 할인 리스트가 타임세일로 보이지 않는다.
 const TIME_SALE_BASE_WHERE = `
   pl.deleted_at is null
   and pl.status = 'active'
