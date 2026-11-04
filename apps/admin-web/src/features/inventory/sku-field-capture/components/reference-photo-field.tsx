@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState, type ChangeEvent } from 'react';
-import { Camera, Loader2, X } from 'lucide-react';
+import { Camera, ChevronLeft, ChevronRight, Loader2, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { uploadFileToFileService } from '@/lib/api/domains/files/upload.client';
@@ -32,7 +32,8 @@ export function ReferencePhotoField({ skuId, photos, onDetail, disabled = false 
   const [pending, setPending] = useState<string[]>([]);
   const [removing, setRemoving] = useState<ReadonlySet<string>>(new Set());
   const [cameraOpen, setCameraOpen] = useState(false);
-  const [zoomed, setZoomed] = useState<string | null>(null);
+  const [zoomed, setZoomed] = useState<number | null>(null);
+  const touchX = useRef(0);
   // 화면 안 카메라를 못 쓰면(권한 거부·미지원) 이 화면에선 폰 카메라 앱으로 찍는다
   const [nativeOnly, setNativeOnly] = useState(false);
   // 방금 찍은 사진은 서버에서 다시 받지 않고 찍은 파일로 보여 준다 — 다시 받는 요청이 늦거나 실패하면 엑박이 떴다.
@@ -117,15 +118,20 @@ export function ReferencePhotoField({ skuId, photos, onDetail, disabled = false 
     });
   };
 
+  const srcs = photos.map((p) => localPreviews.current.get(p.fileId) ?? resolvePublicFileUrl(p.fileId) ?? '');
+  // 끝에서 넘기면 처음으로, 처음에서 거꾸로 넘기면 끝으로
+  const step = (d: -1 | 1) => setZoomed((i) => (i === null ? i : (i + d + srcs.length) % srcs.length));
+  const zoomedSrc = zoomed === null ? null : (srcs[zoomed] ?? null);
+
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap gap-2">
-        {photos.map((p) => {
-          const src = localPreviews.current.get(p.fileId) ?? resolvePublicFileUrl(p.fileId);
+        {photos.map((p, i) => {
+          const src = srcs[i];
           return (
             <div key={p.id} className="relative h-20 w-20 overflow-hidden rounded-lg bg-gray-200">
               {src && (
-                <button type="button" onClick={() => setZoomed(src)} aria-label="사진 크게 보기" className="h-full w-full">
+                <button type="button" onClick={() => setZoomed(i)} aria-label="사진 크게 보기" className="h-full w-full">
                   <PhotoImg src={src} />
                 </button>
               )}
@@ -172,10 +178,50 @@ export function ReferencePhotoField({ skuId, photos, onDetail, disabled = false 
         {photos.length}/{MIN_REFERENCE_PHOTOS}장 이상
         {pending.length > 0 && ` · ${pending.length}장 올리는 중`}
       </p>
-      <Dialog open={zoomed !== null} onOpenChange={(v) => !v && setZoomed(null)}>
-        <DialogContent className="max-w-[calc(100%-1rem)] p-2">
+      <Dialog open={zoomedSrc !== null} onOpenChange={(v) => !v && setZoomed(null)}>
+        <DialogContent
+          className="max-w-[calc(100%-1rem)] p-2"
+          onKeyDown={(e) => {
+            if (e.key === 'ArrowLeft') step(-1);
+            if (e.key === 'ArrowRight') step(1);
+          }}
+        >
           <DialogTitle className="sr-only">사진 크게 보기</DialogTitle>
-          {zoomed && <PhotoImg src={zoomed} className="max-h-[85vh] w-full rounded-md object-contain" />}
+          {zoomedSrc && (
+            <div
+              className="relative"
+              onTouchStart={(e) => (touchX.current = e.touches[0]!.clientX)}
+              onTouchEnd={(e) => {
+                const dx = e.changedTouches[0]!.clientX - touchX.current;
+                if (Math.abs(dx) > 40) step(dx < 0 ? 1 : -1);
+              }}
+            >
+              <PhotoImg key={zoomedSrc} src={zoomedSrc} className="max-h-[85vh] w-full rounded-md object-contain" />
+              {srcs.length > 1 && (
+                <>
+                  <button
+                    type="button"
+                    aria-label="이전 사진"
+                    onClick={() => step(-1)}
+                    className="absolute left-1 top-1/2 -translate-y-1/2 rounded-full bg-black/50 p-2 text-white"
+                  >
+                    <ChevronLeft className="h-6 w-6" />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="다음 사진"
+                    onClick={() => step(1)}
+                    className="absolute right-1 top-1/2 -translate-y-1/2 rounded-full bg-black/50 p-2 text-white"
+                  >
+                    <ChevronRight className="h-6 w-6" />
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+          <p className="text-center text-xs text-gray-500 tabular-nums">
+            {(zoomed ?? 0) + 1} / {srcs.length}
+          </p>
         </DialogContent>
       </Dialog>
       {cameraOpen && (
