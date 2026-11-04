@@ -83,7 +83,7 @@ const buttonVariants = cva(
         variant: "outline",
         color: "secondary",
         className:
-          "bg-white text-gray-900 border-zinc-400 hover:bg-gray-100 disabled:border-muted disabled:text-muted-foreground active:bg-yellow-10",
+          "bg-white text-gray-900 border-zinc-400 hover:bg-gray-100 disabled:border-muted disabled:text-muted-foreground",
       },
       {
         variant: "link",

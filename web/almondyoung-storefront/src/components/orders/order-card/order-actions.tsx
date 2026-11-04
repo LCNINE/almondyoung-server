@@ -440,7 +440,7 @@ export default function OrderActions({
             <DropdownMenuTrigger asChild>
               <button
                 type="button"
-                className="flex h-[44px] w-[44px] shrink-0 items-center justify-center rounded-md border border-gray-300 bg-white transition hover:bg-gray-50"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-gray-300 bg-white transition hover:bg-gray-50"
                 aria-label="더보기"
               >
                 <MoreVertical className="h-4 w-4 text-gray-600" />
