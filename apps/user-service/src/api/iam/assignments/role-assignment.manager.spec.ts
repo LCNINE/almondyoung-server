@@ -56,9 +56,7 @@ describe('RoleAssignmentManager', () => {
     hasLiveStaffRole: jest.fn(),
   };
   const tenancy = {
-    tenantsOf: jest.fn(),
-    isMember: jest.fn(),
-    addMembership: jest.fn(),
+    accountTenantOf: jest.fn(),
     isOperator: jest.fn(),
   };
   const audit = { record: jest.fn() };
@@ -82,7 +80,7 @@ describe('RoleAssignmentManager', () => {
       ALL.filter((r) => ids.includes(r.roleId)),
     );
     // 요청자는 테넌트 1 에서 일하고, 대상 계정도 테넌트 1 의 것이 기본이다.
-    tenancy.tenantsOf.mockResolvedValue(['1']);
+    tenancy.accountTenantOf.mockResolvedValue('1');
     tenancy.isOperator.mockImplementation(async (userId: string) => userId === master.userId);
     roles.activeRoleNamesOf.mockImplementation(async (userId: string) =>
       userId === master.userId ? ['master'] : userId === adminActor.userId ? ['admin'] : [],
@@ -335,9 +333,8 @@ describe('RoleAssignmentManager', () => {
       ).rejects.toBeInstanceOf(IamNotAccountTenantError);
     });
 
-    it('does not look at memberships any more — an account of the tenant gets the role without one', async () => {
+    it('gives the role to an account of the tenant — there are no memberships to look at', async () => {
       held();
-      tenancy.isMember.mockResolvedValue(false);
       await manager.replaceStaff(master, 'u-target', [{ roleId: 'r-intern', expiresAt: null }]);
       expect(roles.insertAssignments).toHaveBeenCalledWith(
         'u-target',
@@ -394,19 +391,14 @@ describe('RoleAssignmentManager', () => {
 
     it('refuses to act when the tenant the actor works in cannot be told', async () => {
       held();
-      tenancy.tenantsOf.mockResolvedValue([]);
-      await expect(
-        manager.replaceStaff(master, 'u-target', [{ roleId: 'r-intern', expiresAt: null }]),
-      ).rejects.toBeInstanceOf(IamTenantUnresolvedError);
-      tenancy.tenantsOf.mockResolvedValue(['1', '2']);
+      tenancy.accountTenantOf.mockResolvedValue(null);
       await expect(
         manager.replaceStaff(master, 'u-target', [{ roleId: 'r-intern', expiresAt: null }]),
       ).rejects.toBeInstanceOf(IamTenantUnresolvedError);
     });
 
-    it('still writes the membership of a new staff account until the membership table goes (rollback safety)', async () => {
+    it('gives a new staff account its first role in the account tenant', async () => {
       await manager.assignOnCreate(tx as never, master, 'u-target', 'r-intern', '1');
-      expect(tenancy.addMembership).toHaveBeenCalledWith('u-target', '1', tx);
       expect(roles.insertAssignments).toHaveBeenCalledWith(
         'u-target',
         '1',
@@ -485,10 +477,9 @@ describe('RoleAssignmentManager', () => {
       );
     });
 
-    it('creates an account as a member of the tenant it was made in', async () => {
+    it('gives the first role in the tenant the account was made in', async () => {
       roles.findUser.mockResolvedValue({ id: 'u-target', loginId: 'kim', username: '김', canSignIn: true, tenantId: 't2' });
       await manager.assignOnCreate(tx as never, master, 'u-target', 'r-intern', 't2');
-      expect(tenancy.addMembership).toHaveBeenCalledWith('u-target', 't2', tx);
       expect(roles.insertAssignments).toHaveBeenCalledWith(
         'u-target',
         't2',

@@ -9,13 +9,14 @@ export class ExpireEmailCodesService {
   private readonly logger = new Logger(ExpireEmailCodesService.name);
   constructor(@InjectDb() private readonly dbService: DbService<UserServiceSchema>) {}
 
-  // 새 코드 발급 전에 해당 이메일의 미검증 코드를 만료 처리
-  async expireExistingCodes(email: string) {
+  // 새 코드 발급 전에 해당 이메일의 미검증 코드를 만료 처리 — 그 테넌트의 것만(같은 이메일의 다른 테넌트 계정 인증은 건드리지 않는다)
+  async expireExistingCodes(tenantId: string, email: string) {
     await this.dbService.db
       .update(userServiceSchema.emailVerifications)
       .set({ isExpired: true })
       .where(
         and(
+          eq(userServiceSchema.emailVerifications.tenantId, tenantId),
           eq(userServiceSchema.emailVerifications.email, email),
           eq(userServiceSchema.emailVerifications.isVerified, false),
         ),

@@ -1,14 +1,13 @@
 import { DbService, InjectDb } from '@app/db';
 import { Injectable } from '@nestjs/common';
 import {
-  tenantMemberships,
   users,
   type UserServiceSchema,
   type UserServiceTx,
 } from 'apps/user-service/database/drizzle/schema';
 import { and, count, eq, isNull, ne } from 'drizzle-orm';
 
-/** 소속(계정 ↔ 테넌트)과 플랫폼 운영자 성질. 바꾸는 쪽은 iam Manager 뿐이다. */
+/** 계정의 테넌트와 플랫폼 운영자 성질. 바꾸는 쪽은 iam Manager 뿐이다(계정의 테넌트는 만든 뒤 바뀌지 않는다, ADR-0056). */
 @Injectable()
 export class TenancyRepository {
   constructor(@InjectDb() private readonly dbService: DbService<UserServiceSchema>) {}
@@ -17,28 +16,12 @@ export class TenancyRepository {
     return tx ?? this.dbService.db;
   }
 
-  // ── 소속
+  // ── 계정의 테넌트
 
-  async tenantsOf(userId: string, tx?: UserServiceTx): Promise<string[]> {
-    const rows = await this.client(tx)
-      .select({ tenantId: tenantMemberships.tenantId })
-      .from(tenantMemberships)
-      .where(eq(tenantMemberships.userId, userId))
-      .orderBy(tenantMemberships.tenantId);
-    return rows.map((r) => r.tenantId);
-  }
-
-  async isMember(userId: string, tenantId: string, tx: UserServiceTx): Promise<boolean> {
-    const [row] = await tx
-      .select({ userId: tenantMemberships.userId })
-      .from(tenantMemberships)
-      .where(and(eq(tenantMemberships.userId, userId), eq(tenantMemberships.tenantId, tenantId)))
-      .limit(1);
-    return row !== undefined;
-  }
-
-  async addMembership(userId: string, tenantId: string, tx: UserServiceTx): Promise<void> {
-    await tx.insert(tenantMemberships).values({ userId, tenantId }).onConflictDoNothing();
+  /** 계정이 없으면 null. */
+  async accountTenantOf(userId: string, tx?: UserServiceTx): Promise<string | null> {
+    const [row] = await this.client(tx).select({ tenantId: users.tenantId }).from(users).where(eq(users.id, userId));
+    return row?.tenantId ?? null;
   }
 
   // ── 플랫폼 운영자

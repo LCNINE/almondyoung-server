@@ -8,6 +8,7 @@ import {
   boolean,
   check,
   date,
+  foreignKey,
   index,
   integer,
   jsonb,
@@ -100,10 +101,10 @@ export const users = pgTable(
   'users',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    loginId: varchar('login_id', { length: 30 }).notNull().unique(),
+    loginId: varchar('login_id', { length: 30 }).notNull(),
     username: varchar('username', { length: 30 }).notNull(),
     nickname: varchar('nickname', { length: 30 }).notNull(),
-    email: varchar('email', { length: 60 }).notNull().unique(),
+    email: varchar('email', { length: 60 }).notNull(),
     password: varchar('password', { length: 255 }),
     isEmailVerified: boolean('is_email_verified').notNull().default(false),
     mustChangePassword: boolean('must_change_password').notNull().default(false),
@@ -117,20 +118,23 @@ export const users = pgTable(
     dormantAt: timestamp('dormant_at'),
     // 플랫폼 운영자 — 테넌트 역할이 아니라 계정에 붙는 성질이다. 로그인할 수 있는 운영자가 최소 1명 남아야 한다.
     isPlatformOperator: boolean('is_platform_operator').notNull().default(false),
-    // 계정의 테넌트 — 계정은 한 테넌트의 것이고 만든 뒤 바뀌지 않는다(ADR-0056). 아직 nullable 이다(expand):
-    // 로그인 아이디·이메일 unique 를 (테넌트, …) 로 넓히고 NOT NULL 로 조이는 것은 contract 마이그다.
-    tenantId: varchar('tenant_id', { length: 64 }).references(() => tenants.id),
+    // 계정의 테넌트 — 계정은 한 테넌트의 것이고 만든 뒤 바뀌지 않는다(ADR-0056). DB 기본값은 없다(기본 테넌트 없음):
+    // 계정을 만드는 곳이 정한다. 로그인 아이디·이메일은 이 테넌트 안에서만 unique 다.
+    tenantId: varchar('tenant_id', { length: 64 })
+      .references(() => tenants.id)
+      .notNull(),
     ...timestampColumns,
   },
   (table) => ({
-    // 계정에 딸린 행(소셜 신원·사업자 등록)이 (user_id, tenant_id) FK 로 이 계정을 가리켜, 그 행의 테넌트 = 계정의 테넌트를 DB 가 지키게 한다
-    // (FK 는 contract 에서 건다). id 가 이미 PK 라 이 unique 는 아무것도 더 막지 않는다 — FK 의 참조 대상일 뿐이다.
+    tenantLoginIdUnique: unique('users_tenant_id_login_id_unique').on(table.tenantId, table.loginId),
+    tenantEmailUnique: unique('users_tenant_id_email_unique').on(table.tenantId, table.email),
+    // 계정에 딸린 행(소셜 신원·사업자 등록)이 (user_id, tenant_id) 로 이 계정을 가리켜, 그 행의 테넌트 = 계정의 테넌트를 DB 가 지킨다.
     idTenantUnique: unique('users_id_tenant_id_unique').on(table.id, table.tenantId),
   }),
 );
 
 /***
- * tenant schema — 테넌트 행·도메인·소속. 계정은 한 테넌트의 것(`users.tenant_id`, ADR-0056)으로 옮겨 가는 중이라 소속은 contract 에서 없어진다.
+ * tenant schema — 테넌트 행·도메인. 계정은 한 테넌트의 것이다(`users.tenant_id`, ADR-0056) — 소속 표는 없다.
  */
 // id 는 테넌트 목록(TENANT_LIST)·토큰 tenant·이벤트 봉투와 같은 문자열이다.
 export const tenants = pgTable('tenants', {
@@ -163,27 +167,6 @@ export const tenantDomains = pgTable(
   },
   (table) => ({
     tenantIdx: index('tenant_domains_tenant_id_idx').on(table.tenantId),
-  }),
-);
-
-// 소속 — 계정이 어느 테넌트의 직원인가. 역할이 아직 없어도 있을 수 있고, 소속 없는 테넌트에서는 직원 역할을 받을 수 없다.
-// 고객은 소속이 없다(고객 역할 부여만 있다).
-export const tenantMemberships = pgTable(
-  'tenant_memberships',
-  {
-    userId: uuid('user_id')
-      .references(() => users.id, { onDelete: 'cascade' })
-      .notNull(),
-    tenantId: varchar('tenant_id', { length: 64 })
-      .references(() => tenants.id, { onDelete: 'cascade' })
-      .notNull(),
-    createdAt: timestamp('created_at')
-      .default(sql`now()`)
-      .notNull(),
-  },
-  (table) => ({
-    pk: primaryKey({ columns: [table.userId, table.tenantId] }),
-    tenantIdx: index('tenant_memberships_tenant_id_idx').on(table.tenantId),
   }),
 );
 
@@ -461,16 +444,27 @@ export const userIdentities = pgTable(
     provider: providerTypeEnum('provider').notNull(),
     providerId: varchar('provider_id', { length: 255 }).notNull(),
     providerData: jsonb('provider_data'),
-    // 신원이 붙은 계정의 테넌트(= users.tenant_id). 같은 소셜 계정이 테넌트마다 따로 가입할 수 있게 unique 가 이 칸을 품는다(ADR-0056).
-    // 아직 nullable 이다(expand) — NOT NULL·(테넌트, provider, provider_id) unique 는 contract 마이그다.
-    tenantId: varchar('tenant_id', { length: 64 }).references(() => tenants.id),
+    // 신원이 붙은 계정의 테넌트(= users.tenant_id, 아래 FK 가 지킨다). 같은 소셜 계정이 테넌트마다 따로 가입할 수 있게 unique 가
+    // 이 칸을 품는다(ADR-0056). 쓰는 문장이 계정에서 읽어 적는다(`accountTenantOf`).
+    tenantId: varchar('tenant_id', { length: 64 })
+      .references(() => tenants.id)
+      .notNull(),
     ...timestampColumns,
   },
   (table) => ({
     // 각 사용자는 provider 당 하나의 identity만 가질 수 있음
     providerUserIdx: unique().on(table.userId, table.provider),
-    // 각 provider의 providerId는 unique해야 함
-    providerIdIdx: unique().on(table.provider, table.providerId),
+    // 한 테넌트 안에서 provider 쪽 id 는 한 계정에만 붙는다
+    tenantProviderIdIdx: unique('user_identities_tenant_id_provider_provider_id_unique').on(
+      table.tenantId,
+      table.provider,
+      table.providerId,
+    ),
+    accountTenantFk: foreignKey({
+      name: 'user_identities_account_tenant_fk',
+      columns: [table.userId, table.tenantId],
+      foreignColumns: [users.id, users.tenantId],
+    }).onDelete('cascade'),
   }),
 );
 
@@ -626,13 +620,22 @@ export const businessLicenses = pgTable(
     fileUrl: varchar('file_url', { length: 1024 }), // 증빙 검증 파일 url
     // 부가 정보 저장 가능
     metadata: jsonb('metadata'),
-    // 등록한 계정의 테넌트(= users.tenant_id). 사업자번호 unique 가 이 칸을 품는다(ADR-0056).
-    // 아직 nullable 이다(expand) — NOT NULL·(테넌트, 사업자번호) unique 는 contract 마이그다.
-    tenantId: varchar('tenant_id', { length: 64 }).references(() => tenants.id),
+    // 등록한 계정의 테넌트(= users.tenant_id, 아래 FK 가 지킨다). 사업자번호는 이 테넌트 안에서만 unique 다(ADR-0056).
+    tenantId: varchar('tenant_id', { length: 64 })
+      .references(() => tenants.id)
+      .notNull(),
     ...timestampColumns,
   },
   (table) => ({
-    businessNumberUniqueIdx: unique().on(table.businessNumber),
+    tenantBusinessNumberUniqueIdx: unique('business_licenses_tenant_id_business_number_unique').on(
+      table.tenantId,
+      table.businessNumber,
+    ),
+    accountTenantFk: foreignKey({
+      name: 'business_licenses_account_tenant_fk',
+      columns: [table.userId, table.tenantId],
+      foreignColumns: [users.id, users.tenantId],
+    }).onDelete('cascade'),
     userUniqueIdx: unique().on(table.userId), // 사용자당 하나의 사업자 등록만 허용
     shopUniqueIdx: unique().on(table.shopId), // 상점당 하나의 사업자 등록만 허용
     verificationOrFullInfo: check(
@@ -652,9 +655,9 @@ export const phoneVerifications = pgTable(
 
     // 용도 구분
     purpose: phoneVerificationPurposeEnum('purpose').notNull(), // 'phone_verify' | 'pin_reset' ...
-    // 어느 테넌트 화면의 인증인가 — 같은 번호로 다른 테넌트에서 동시에 진행되는 인증과 엉키지 않게 조회 키에 들어간다(읽기 전환 뒤).
-    // 아직 nullable 이다(expand).
-    tenantId: varchar('tenant_id', { length: 64 }),
+    // 어느 테넌트 화면의 인증인가 — 같은 번호로 다른 테넌트에서 동시에 진행되는 인증과 엉키지 않게 조회 키에 들어간다(ADR-0056).
+    // DB 기본값은 없다 — 인증을 시작하는 곳이 정한다.
+    tenantId: varchar('tenant_id', { length: 64 }).notNull(),
 
     // 발송 채널
     channel: varchar('channel', { length: 10 }).default('SMS').notNull(), // 'SMS' | 'KAKAO'
@@ -673,7 +676,7 @@ export const phoneVerifications = pgTable(
     createdAt: timestamp('created_at').defaultNow().notNull(),
   },
   (table) => ({
-    phoneNumberIdx: index('phone_verifications_phone_number_idx').on(table.phoneNumber),
+    tenantPhoneNumberIdx: index('phone_verifications_tenant_id_phone_number_idx').on(table.tenantId, table.phoneNumber),
     purposeIdx: index('phone_verifications_purpose_idx').on(table.purpose),
   }),
 );
@@ -689,8 +692,8 @@ export const emailVerifications = pgTable(
 
     // 용도 구분
     purpose: emailVerificationPurposeEnum('purpose').notNull(),
-    // phone_verifications.tenant_id 와 같다. 아직 nullable 이다(expand).
-    tenantId: varchar('tenant_id', { length: 64 }),
+    // phone_verifications.tenant_id 와 같다.
+    tenantId: varchar('tenant_id', { length: 64 }).notNull(),
 
     // 검증 관련
     isVerified: boolean('is_verified').default(false).notNull(),
@@ -706,7 +709,7 @@ export const emailVerifications = pgTable(
     createdAt: timestamp('created_at').defaultNow().notNull(),
   },
   (table) => ({
-    emailIdx: index('email_verifications_email_idx').on(table.email),
+    tenantEmailIdx: index('email_verifications_tenant_id_email_idx').on(table.tenantId, table.email),
     purposeIdx: index('email_verifications_purpose_idx').on(table.purpose),
   }),
 );
@@ -957,7 +960,6 @@ export const userServiceTables = {
   piiAccessReviews,
   tenants,
   tenantDomains,
-  tenantMemberships,
   userRoleAssignments,
   userIdentities,
   businessLicenses,

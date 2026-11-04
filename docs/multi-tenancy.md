@@ -7,22 +7,19 @@
 | 결정 | ADR |
 |---|---|
 | core 는 테넌트마다 논리 DB | [[0051-core-tenant-per-database]] |
-| 계정은 전역, 테넌트는 소속과 부여 (🔸 일부 대체됨 → 0056) | [[0052-account-is-global-tenant-is-membership-and-grant]] |
-| 계정은 한 테넌트의 것 (**expand 만** — 계정 칸·채우기·새 계정 쓰기. 읽기는 아직 전역) | [[0056-account-belongs-to-one-tenant]] |
+| 계정은 전역, 테넌트는 소속과 부여 (계정·소속 부분은 0056 이 대체했다 — 운영자 성질·토큰 테넌트 부여는 그대로) | [[0052-account-is-global-tenant-is-membership-and-grant]] |
+| 계정은 한 테넌트의 것 — 아이디·이메일·소셜 신원·사업자번호는 테넌트 안에서만 unique, 소속 없음 | [[0056-account-belongs-to-one-tenant]] |
 | 이벤트 테넌트는 라이브러리가 찍고 문에서 거른다 | [[0053-event-tenant-stamped-by-library-gated-before-handler]] |
 | 공유 서비스는 한 테넌트만 섬긴다 | [[0054-shared-services-serve-one-tenant]] |
 | 테넌트 직원 화면 = 테넌트 도메인의 테넌트 셸 | [[0055-tenant-shell-on-tenant-domain]] |
 
-🔸 **계정 모델이 바뀐다(0056, 구현 중).** 아래 «계정·소속», 3절의 user-service 줄, 함정 6 은 아직 **지금 코드**를 적은 것이다 —
-0056 이 다 구현되면 계정은 한 테넌트의 것이 되고 소속은 없어진다. 운영자 쪽(«플랫폼 운영자», 함정 28·29·31)은 이미 새 사실이다. 계정 전역을 새로 더 굳히는 코드는 그 전에 0056 과 맞는지 먼저 본다.
-지금은 expand 까지다: `users.tenant_id`(nullable, 마이그 SQL 에만 DB 기본값 `'1'`)가 채워졌고 새 계정(고객·소셜 가입 = 앱 설정 T,
-직원 대행 = 요청자 테넌트, 첫 `master` = 대상 테넌트)과 인증번호 기록이 테넌트를 쓴다. 로그인은 화면 테넌트가 오면 그 안에서,
-가입·소셜 로그인의 중복 확인(이메일·아이디·닉네임·소셜 신원)과 아이디·비밀번호 찾기·재설정은 앱 설정 T 안에서 찾고,
-전화번호·발송 대상으로 계정을 찾는 user-service 내부 라우트는 호출의 `x-tenant-id` 안에서 찾는다(헤더 없으면 403). unique 는 아직 전역이라
-다른 테넌트 계정이 가진 이메일·아이디로 가입하면 사전 체크는 «사용 가능»이고 가입은 오늘과 같은 409 로 실패한다(contract 전까지).
-채우기 마이그(`…_backfill-account-tenant.sql`) 전에 라이브에서 `npm run tenancy:account-tenant-preview -- --stage live` 를 돌린다 —
-테넌트 1 에 남으며 다른 테넌트 부여를 잃는 계정이 있으면 끝 코드 1 이고 명단을 보여 준다. 채우기는 테넌트 1 «소속»을 이음으로 치지 않는다:
-테넌트 1 백필 마이그를 시드가 다시 돌리면 다른 테넌트 직원 부여를 보고도 테넌트 1 소속을 만들기 때문이다(그 가짜 소속은 채우기가 거둔다).
+**계정은 한 테넌트의 것이다(0056).** 계정 행에 테넌트(`users.tenant_id`, NOT NULL, DB 기본값 없음)가 있고 만든 뒤 바뀌지 않는다. 계정 id 는 전역 UUID 그대로라
+다른 서비스는 `user_id` 만 들고 있다. 로그인 아이디·이메일·소셜 신원(provider, provider 쪽 id)·사업자번호는 **테넌트 안에서만** unique 다 — 같은 값의 계정이
+두 테넌트에 따로 있을 수 있고 둘은 서로 모른다. 소셜 신원·사업자 등록 행도 테넌트를 들고 `(user_id, tenant_id)` FK 가 그 테넌트 = 계정의 테넌트를 지킨다.
+계정을 만드는 곳이 테넌트를 정한다: 고객·소셜 가입 = 앱 설정 T, 테넌트 관리자가 만드는 직원 = 요청자 테넌트, 첫 `master` = 대상 테넌트.
+로그인은 언제나 한 테넌트 안에서 찾는다 — auth-web 이 보증 헤더로 싣는 화면 테넌트, 헤더가 없으면(쇼핑몰이 직접 부르는 로그인) 앱 설정 T. 전체에서 찾는 길은 없다.
+가입·소셜 로그인의 중복 확인과 아이디·비밀번호 찾기·재설정은 T 안에서, 전화번호·발송 대상으로 계정을 찾는 user-service 내부 라우트는 호출의 `x-tenant-id` 안에서
+찾는다(헤더 없으면 403). 소속(옛 `tenant_memberships`)은 없다 — 직원/고객은 그 테넌트에서 받은 역할로만 갈린다.
 
 🔒 **공개 레포다.** 테넌트 값(누구인지·slug·도메인·버킷·인증서 ARN·존 ID·로고)을 코드·문서·이슈·PR·커밋 메시지에 적지 않는다. 값은 Secret·user-service 테넌트 행·
 레포 밖 계획 파일에만 있다. 예시는 `acme`·`tenant-2.example` 같은 가짜 값으로 쓴다.
@@ -33,9 +30,8 @@
 |---|---|
 | **테넌트** | 이 시스템을 자기 업무에 쓰는 회사 하나. 바뀌지 않는 `id`·`slug`(우리가 짓고 회사 이름을 쓰지 않는다)와 상태 **준비 → 활성 ↔ 정지**를 갖는다. 테넌트 1 도 특별한 «본사»가 아니라 테넌트 중 하나다. |
 | **테넌트 목록** | `{ id, slug, coreDb, publicBucket, privateBucket }[]` JSON Secret(`TENANT_LIST`). 값의 SoT 는 lcnine-auth 의 `TenantList`, services 앱은 SSM 으로 받는다. 이름·로고·도메인은 목록이 아니라 user-service 테넌트 행. |
-| **계정** | 사람 한 명의 신원. 시스템 전체에 하나이고 어느 테넌트의 것도 아니다. 🔸 0056: 정확히 한 테넌트의 것으로 바뀐다. |
-| **소속** | 계정이 어느 테넌트의 직원인가. 🔸 0056: 판정에 더는 쓰지 않는다 — 역할을 주고 늘리는 것은 계정의 테넌트에서만이다(부여의 테넌트 = 계정의 테넌트). 표는 옛 코드로 되돌릴 때를 위해 contract 까지 계속 쓰고, contract 가 걷는다. |
-| **고객** | 어느 테넌트의 고객 역할을 가진 계정. 어느 테넌트의 고객인지는 들어온 앱이 정한다. 운영자가 만들어 주는 직원 계정은 고객 가입이 아니다. |
+| **계정** | 한 테넌트 안의 사람 한 명의 신원. 정확히 한 테넌트의 것이고(0056) 바뀌지 않는다. 같은 사람이 두 테넌트를 쓰면 계정이 둘이고 비밀번호·정보·탈퇴가 따로다. |
+| **고객** | 그 테넌트의 고객 역할을 가진 계정(직원은 직원 역할). 역할을 주고 늘리는 것은 계정의 테넌트에서만이다(부여의 테넌트 = 계정의 테넌트). 어느 테넌트의 고객인지는 들어온 앱이 정한다. 운영자가 만들어 주는 직원 계정은 고객 가입이 아니다. |
 | **플랫폼 운영자** | 이 시스템을 운영하는 우리. 테넌트 역할이 아니라 계정의 성질(운영자 테넌트의 계정에만 준다). `master` 는 테넌트 안의 전권 역할일 뿐이다. 운영자 API 는 플랫폼 일(테넌트·역할 정의·로그인 클라이언트)만 하고, 다른 테넌트의 계정에 닿는 일은 둘뿐이다: 그 테넌트의 첫 `master` 만들기, 그 `master` 의 비밀번호 비상 초기화(0056). 요청에 테넌트를 실어 «그 테넌트로 일하는» 길은 없다. |
 | **토큰 테넌트** | 토큰의 `tenant` 클레임. 토큰의 역할은 이 테넌트에서 받은 부여만 실린다. |
 | **앱 설정 T** | `SERVED_TENANT_ID` — 한 테넌트만 섬기는 앱이 섬기는 그 테넌트. |
@@ -76,7 +72,7 @@ core 쓰기 ─ outbox 행(그 DB) ─▶ 디스패처가 봉투 metadata.tenant
 | 앱 | HTTP | 이벤트 | 저장소 |
 |---|---|---|---|
 | core | 토큰/헤더 테넌트로 DB 라우팅 | `per-message` | 테넌트별 논리 DB |
-| user-service | 계정 층(전역) + 테넌트 1 데이터는 토큰 테넌트 1 일 때만 | `per-message` | 전역 DB, 부여·소속·이력에 테넌트 (🔸 0056: 계정 행에 테넌트) |
+| user-service | 계정은 그 테넌트 안에서 찾고 만든다 + 테넌트 1 데이터는 토큰 테넌트 1 일 때만 | `per-message` | DB 하나, 계정 행·부여·이력에 테넌트 |
 | file-service · ai | 토큰 테넌트 | (ai: `per-message` — 계정 영구 삭제를 모든 테넌트에서 받는다) | 행에 테넌트 축, file-service 는 테넌트별 버킷 |
 | wallet · membership · analytics · ugc-service · notification · search · channel-adapter | T 만 섬김, 다른 토큰은 403 | `served-tenant` | 테넌트 축 없음(= 테넌트 1) |
 | Medusa · 쇼핑몰 | 테넌트 1 전용. admin-web 의 Medusa 프록시도 토큰 테넌트 ≠ T 면 403. Medusa 로그인 입구 둘(SSO 콜백은 access_token, `my-auth` 는 내부 토큰)도 토큰 테넌트 ≠ T 면 거절한다(`refuseForeignTenantToken`). 다른 서비스를 내부 키로 부를 땐 T 를 헤더로 싣는다(`apps/medusa/src/utils/served-tenant-headers.ts`) | Kafka 직접 소비 없음 | Medusa DB(테넌트 1) |
@@ -188,7 +184,8 @@ CSS `@import` 외부 폰트(네트워크 호스트 흔적 — 자체 서빙), �
 장치: 규율(코드는 `deployments/lcnine/tenant-domain-distribution.ts`).
 
 **27. 테넌트 칸 백필의 DB 기본값 `'1'` 은 contract 에서 함께 걷는다.** user-service·file-service·ai 의 테넌트 칸 기본값은 마이그 SQL 에만 있고 `schema.ts` 엔 없다 — drizzle 이 모르므로 NOT NULL 을 거는 custom 마이그에 `DROP DEFAULT` 를 함께 넣는다.
-기본값이 남아 있는 동안 «테넌트를 안 넘기는 쓰기»는 조용히 테넌트 1 이 된다. 운영자 성질 변경 이력 행은 일부러 테넌트 null 이다. contract 는 `deploy → migrate` 이고 expand 와 한 배포에 섞지 않는다.
+기본값이 남아 있는 동안 «테넌트를 안 넘기는 쓰기»는 조용히 테넌트 1 이 된다. user-service 의 계정·인증 기록은 걷었다(0056 contract — 계정을 넣는 시드는 `scripts/seeding/lib/tenant-one-backfill.ts` 의
+`TENANT_ONE_ID` 를 적는다). 부여·변경 이력·접속기록(`user_roles`·`iam_audit_logs`·`pii_access_logs`)과 file-service·ai 는 아직 기본값이 있다. 운영자 성질 변경 이력 행은 일부러 테넌트 null 이다. contract 는 `deploy → migrate` 이고 expand 와 한 배포에 섞지 않는다.
 장치: `npm run deploy:preflight`(expand/contract 섞임이면 1). `DROP DEFAULT` 는 규율.
 
 ### 4.3 테넌트 만들기·운영
@@ -202,7 +199,7 @@ CSS `@import` 외부 폰트(네트워크 호스트 흔적 — 자체 서빙), �
 점검 계정이 그 첫 `master` 이고(비밀번호는 `IsolationCheck` Secret 에만, 변경 강제 없음), 재실행은 «그 테넌트에 그 아이디의 `master` 가 있으면 비상 초기화로 비밀번호 재발급»으로 이어 간다 — Secret 에 그 계정 비밀번호가 없을 때만(있으면 «이미 됐다», 매번 돌리면 실측 Secret 이 실행마다 바뀐다).
 다른 아이디의 `master` 가 있으면 멈춘다. 첫 `master` 가 우리 점검 계정이라, 그 테넌트 회사의 관리자(`master` 든 직원 역할이든)는 운영자가 아니라 점검 `master` 가 그 테넌트 안에서 만든다(`POST /admin/auth`). 직원 명단과 격리 실측 `--write` 의 상품 지우기는 점검 `master` 의 토큰으로 그 테넌트 안에서 한다. 첫 `master` 단계는 목록 «뒤»다 —
 계정이 생긴 테넌트는 되돌리기(테넌트 행 삭제)로 지울 수 없다(`deleteTenant` 가 거절한다). 부여 읽기(`/admin/users/:id/roles`·`/admin/roles/:id/members`)는 요청자 테넌트의 계정·부여만 답한다.
-부여 unique 가 `(user, role)` 이라 같은 역할을 두 테넌트에서 받을 수 없다(`IAM_GRANTED_ELSEWHERE`, contract 전까지).
+계정은 한 테넌트의 것이라 부여도 그 테넌트에만 생긴다 — 부여 unique `(user, role)` 은 그대로 맞다. 계정의 테넌트가 아닌 테넌트의 부여가 남아 있으면 contract 마이그가 멈췄다(`…_prepare-account-contract`).
 장치: `apps/user-service/src/api/iam/platform/operator-cross-tenant-routes.spec.ts`(운영자 교차 경로 둘), `platform-tenant.integration.spec.ts`, `role-assignment.integration.spec.ts`, `scripts/tenancy/create-tenant/steps.spec.ts`.
 
 **30. 1 이 아닌 테넌트의 직원 역할에 테넌트 1 업스트림을 여는 키를 주지 않는다** — `order.*`·`customer.profile.read`·`analytics.report.read`·`ai.assistant.use`·`channel.*`·`master` 등. Medusa 프록시와 공유 서비스는 테넌트 축이 없다(T = 1).

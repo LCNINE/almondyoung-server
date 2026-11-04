@@ -232,12 +232,12 @@ describe('AuthService - signUp', () => {
       expect(usersService.findUserByNicknameInTenant).toHaveBeenCalledWith(SERVED, '테스트닉', mockClient);
     });
 
-    // 10(contract) 전에는 DB 가 이메일·아이디를 아직 전역으로 막는다 — 다른 테넌트 계정이 가진 값이면 테넌트 안 검사는 통과하고
-    // insert 가 23505 로 실패한다. 오늘과 같은 안내(409)로 돌려준다.
+    // 같은 값의 동시 가입은 테넌트 안 검사를 함께 통과하고 insert 가 (테넌트, …) unique 로 23505 를 낸다 — 검사에 걸린 것과 같은
+    // 안내(409)로 돌려준다.
     it.each([
-      ['users_email_unique', '이미 가입된 이메일입니다.'],
-      ['users_login_id_unique', '이미 존재하는 아이디입니다.'],
-    ])('DB 전역 unique(%s)에 걸리면 같은 409 안내를 준다', async (constraint, message) => {
+      ['users_tenant_id_email_unique', '이미 가입된 이메일입니다.'],
+      ['users_tenant_id_login_id_unique', '이미 존재하는 아이디입니다.'],
+    ])('DB unique(%s)에 걸리면 같은 409 안내를 준다', async (constraint, message) => {
       mockReturning.mockRejectedValueOnce(
         Object.assign(new Error('Failed query'), { cause: { code: '23505', constraint_name: constraint } }),
       );
@@ -346,10 +346,10 @@ describe('AuthService - 소셜 가입', () => {
     expect(usersService.findUserByEmailInTenant).toHaveBeenCalledWith(SERVED, 'social@example.com', tx);
   });
 
-  // 다른 테넌트 계정에 붙은 신원이면 이 테넌트에선 새 가입으로 가는데, 10(contract) 전에는 전역 unique 가 insert 를 막는다.
+  // 같은 값의 동시 가입은 (테넌트, …) unique 가 insert 를 막는다.
   // 그 DB 오류 원문(이메일·이름이 든 질의 파라미터)이 카카오 콜백의 리디렉트 주소(?errorMessage=)로 나가면 안 된다.
-  it.each(['users_login_id_unique', 'users_email_unique'])(
-    'DB 전역 unique(%s)에 걸리면 개인정보 없는 안내로 실패한다',
+  it.each(['users_tenant_id_login_id_unique', 'users_tenant_id_email_unique'])(
+    'DB unique(%s)에 걸리면 개인정보 없는 안내로 실패한다',
     async (constraint) => {
       returning.mockRejectedValueOnce(
         Object.assign(new Error('Failed query: insert into "users" params: kakao_k-1,소셜,social@example.com'), {

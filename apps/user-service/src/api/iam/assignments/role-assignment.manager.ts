@@ -15,7 +15,6 @@ import {
 import { RoleRepository, type HeldAssignment } from '../roles/role.repository';
 import { isCustomerRole } from '../rules/iam-rules';
 import { PlatformOperatorManager } from '../tenancy/platform-operator.manager';
-import { TenancyRepository } from '../tenancy/tenancy.repository';
 
 interface WantedAssignment {
   readonly roleId: string;
@@ -50,7 +49,6 @@ export class RoleAssignmentManager {
     private readonly roles: RoleRepository,
     private readonly audit: IamAuditCreator,
     private readonly authority: GrantAuthority,
-    private readonly tenancy: TenancyRepository,
     private readonly operators: PlatformOperatorManager,
   ) {}
 
@@ -162,10 +160,7 @@ export class RoleAssignmentManager {
     return this.operators.workingTenant(actor, tx);
   }
 
-  /**
-   * 관리자 계정을 만들 때의 첫 역할 — `tenantForNewAccount` 가 정한 계정의 테넌트에서, 같은 규칙·같은 트랜잭션으로 준다.
-   * 소속은 판정에 쓰지 않지만 소속 표를 걷는 contract(티켓 10) 전까지 계속 쓴다 — 옛 코드로 되돌리면 옛 코드는 소속으로 판정한다.
-   */
+  /** 관리자 계정을 만들 때의 첫 역할 — `tenantForNewAccount` 가 정한 계정의 테넌트에서, 같은 규칙·같은 트랜잭션으로 준다. */
   async assignOnCreate(
     tx: UserServiceTx,
     actor: IamActor,
@@ -173,7 +168,6 @@ export class RoleAssignmentManager {
     roleId: string,
     tenantId: string,
   ): Promise<void> {
-    await this.tenancy.addMembership(userId, tenantId, tx);
     await this.apply(
       tx,
       actor,

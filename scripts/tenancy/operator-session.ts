@@ -47,7 +47,7 @@ export async function operatorSession(stage: string): Promise<{ users: string; t
   let cached: { token: string; at: number } | null = null;
   const token = async () => {
     if (cached && Date.now() - cached.at < TOKEN_REUSE_MS) return cached.token;
-    const t = await signInStaff(client, loginId, password);
+    const t = await signInStaff(client, loginId, password, servedTenant);
     if (tokenTenantOf(t) !== servedTenant) {
       throw new Error(
         `운영자 토큰의 테넌트가 ${tokenTenantOf(t) ?? '없음'} 이다 — 테넌트 1(${servedTenant}) 주소로 받아야 한다`,

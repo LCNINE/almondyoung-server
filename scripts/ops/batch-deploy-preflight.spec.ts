@@ -65,6 +65,29 @@ describe('classifyMigration', () => {
     );
   });
 
+  it('유니크를 칸을 더한 유니크로 넓히는 것은 contract — 제약이 풀리기만 하고, 옛 코드의 ON CONFLICT (옛 칸) 만 깨진다(실제 파일)', () => {
+    const cls = classifyMigration(
+      repoSql('apps/user-service/database/drizzle/20261104051625_contract-account-unique-within-tenant.sql'),
+    );
+    expect(cls.kind).toBe('contract');
+    expect(cls.contract).toEqual(expect.arrayContaining(['유니크 제거', 'DROP TABLE', 'SET NOT NULL']));
+  });
+
+  it('넓히기가 아닌 새 유니크는 같은 파일에 유니크 제거가 있어도 expand 로 센다', () => {
+    const sql = [
+      'ALTER TABLE "users" DROP CONSTRAINT "users_email_unique";',
+      'ALTER TABLE "users" ADD CONSTRAINT "users_tenant_id_email_unique" UNIQUE("tenant_id","email");',
+      'ALTER TABLE "users" ADD CONSTRAINT "users_nickname_unique" UNIQUE("nickname");',
+    ].join('--> statement-breakpoint\n');
+    expect(classifyMigration(sql).kind).toBe('mixed');
+    // 칸이 줄어드는 «좁히기»(옛 유니크보다 엄격)는 넓히기가 아니다
+    expect(
+      classifyMigration(
+        'ALTER TABLE "a" DROP CONSTRAINT "a_t_b_unique";--> statement-breakpoint\nALTER TABLE "a" ADD CONSTRAINT "a_b_unique" UNIQUE("b");',
+      ).kind,
+    ).toBe('mixed');
+  });
+
   it('기존 표에 기본값 없는 NOT NULL 칸을 붙이면 한 걸음으로 안전한 순서가 없다', () => {
     expect(classifyMigration('ALTER TABLE "a" ADD COLUMN "b" text NOT NULL;').kind).toBe('mixed');
   });

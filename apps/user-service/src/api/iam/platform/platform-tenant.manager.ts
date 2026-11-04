@@ -6,7 +6,7 @@ import type { TenantDomainApp, UserServiceSchema, UserServiceTx } from 'apps/use
 import { generateInitialPassword } from '../../admin/auth/lib/generate-initial-password';
 import { PublicClientOriginsCache } from '../../oauth/cors/public-client-origins.cache';
 import { redirectHost } from '../../oauth/redirect-uri';
-import { globalUniqueFieldOf } from '../../users/global-unique-field';
+import { accountUniqueFieldOf } from '../../users/account-unique-field';
 import { RoleAssignmentManager } from '../assignments/role-assignment.manager';
 import { IamAuditCreator } from '../audit/iam-audit.creator';
 import { SYSTEM_ROLE_NAME } from '../iam.constants';
@@ -157,7 +157,7 @@ export class PlatformTenantManager {
   }
 
   /**
-   * 테넌트를 지운다 — 만들기 스크립트가 목록에 넣기 전에 실패했을 때 되돌리는 길이라 «준비»만 된다. 소속·부여·세션·도메인은
+   * 테넌트를 지운다 — 만들기 스크립트가 목록에 넣기 전에 실패했을 때 되돌리는 길이라 «준비»만 된다. 부여·세션·도메인은
    * cascade 로 지워지고, 웹 직원 앱 클라이언트에서 이 테넌트 도메인의 주소를 걷어낸다. 그 테넌트의 계정이 있으면 거절한다.
    */
   async deleteTenant(actor: IamActor, tenantId: string): Promise<void> {
@@ -305,8 +305,8 @@ export class PlatformTenantManager {
       const made = await this.platform
         .insertStaffAccount({ ...input, tenantId, passwordHash: hash, mustChangePassword }, tx)
         .catch((error: unknown) => {
-          // unique 가 아직 전역이라(contract 전) 다른 테넌트 계정의 값이면 여기서 걸린다 — 같은 409 로.
-          const field = globalUniqueFieldOf(error);
+          // 같은 값의 동시 만들기는 중복 검사를 함께 지나 (테넌트, …) unique 에 걸린다 — 같은 409 로.
+          const field = accountUniqueFieldOf(error);
           throw field ? new ConflictError(DUPLICATE_MESSAGE[field]) : error;
         });
       await this.roleAssignments.assignOnCreate(tx, actor, made.id, master.roleId, tenantId);

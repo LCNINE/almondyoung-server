@@ -41,7 +41,6 @@ describe('내부 세션 토큰 — 계정의 테넌트와 그 테넌트의 부�
 
   let service: AuthService;
   let usersService: {
-    findUserByLoginId: jest.Mock;
     findUserByLoginIdInTenant: jest.Mock;
     findUserById: jest.Mock;
     accountTenantOf: jest.Mock;
@@ -55,7 +54,6 @@ describe('내부 세션 토큰 — 계정의 테넌트와 그 테넌트의 부�
   beforeEach(async () => {
     cookies = {};
     usersService = {
-      findUserByLoginId: jest.fn().mockResolvedValue(shopper),
       // 테넌트 안에서 찾기 — 그 테넌트의 계정만 나온다.
       findUserByLoginIdInTenant: jest.fn((tenantId: string, loginId: string) =>
         Promise.resolve([shopper, staffTwo].find((u) => u.loginId === loginId && tenantOf[u.id] === tenantId) ?? null),
@@ -115,9 +113,7 @@ describe('내부 세션 토큰 — 계정의 테넌트와 그 테넌트의 부�
   });
 
   it('다른 테넌트 계정의 내부 토큰은 그 테넌트의 것이고 그 테넌트의 부여만 싣는다', async () => {
-    usersService.findUserByLoginId.mockResolvedValue(staffTwo);
-
-    await signIn('acmestaff');
+    await signIn('acmestaff', '2');
 
     expect(accessClaims().tenant).toBe('2');
     expect(accessClaims().roles).toEqual(['catalog_manager']);
@@ -131,9 +127,7 @@ describe('내부 세션 토큰 — 계정의 테넌트와 그 테넌트의 부�
   });
 
   it('리프레시 토큰의 역할도 계정 테넌트의 부여만', async () => {
-    usersService.findUserByLoginId.mockResolvedValue(staffTwo);
-
-    await signIn('acmestaff');
+    await signIn('acmestaff', '2');
 
     const [[refreshPayload]] = jwtService.signAsync.mock.calls as [[{ roles: string[] }]];
     expect(refreshPayload.roles).toEqual(['catalog_manager']);
@@ -143,8 +137,16 @@ describe('내부 세션 토큰 — 계정의 테넌트와 그 테넌트의 부�
     await signIn('acmestaff', '2');
 
     expect(usersService.findUserByLoginIdInTenant).toHaveBeenCalledWith('2', 'acmestaff');
-    expect(usersService.findUserByLoginId).not.toHaveBeenCalled();
     expect(accessClaims().tenant).toBe('2');
+  });
+
+  it('화면의 테넌트가 없으면(쇼핑몰이 직접 부르는 로그인) 앱 설정 T 의 계정만 찾는다 — 전체에서 찾지 않는다', async () => {
+    await signIn('shopper');
+    expect(usersService.findUserByLoginIdInTenant).toHaveBeenLastCalledWith('1', 'shopper');
+
+    const otherTenant = await signIn('acmestaff').catch((e: unknown) => e);
+    expect(otherTenant).toBeInstanceOf(BadRequestException);
+    expect((otherTenant as BadRequestException).message).toMatch(/아이디 또는 비밀번호/);
   });
 
   it('다른 테넌트의 계정은 «아이디 또는 비밀번호 틀림»과 같은 응답으로 거절한다', async () => {

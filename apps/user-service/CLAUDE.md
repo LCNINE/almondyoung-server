@@ -72,10 +72,13 @@ OAuth 액세스 토큰에는 `tenant` 가 실리고 `roles` 는 그 테넌트의
 로그인한 도메인과 무관하다(테넌트 1 계정에게는 T). 클레임만 보는 core·file-service·ai 가 이 토큰의 테넌트를 알려면 클레임이 있어야 한다.
 로그인(`POST /auth/signin`)은 auth-web 이 보증 헤더(`x-tenant-id` + `x-internal-secret`)로 화면 테넌트를 실으면 그 테넌트의 계정만 찾는다 —
 다른 테넌트의 계정은 «아이디 또는 비밀번호 틀림»과 같다. 본문 필드가 아닌 건 옛 user-service 가 모르는 헤더를 무시해 auth-web 을 먼저
-내보내도 되게 하려는 것이다. 헤더가 없으면 아직 전체에서 찾는다(읽기 전환 기간).
+내보내도 되게 하려는 것이다. 헤더가 없으면(쇼핑몰이 직접 부르는 로그인) 앱 설정 T 의 계정만 찾는다 — 전체에서 찾는 길은 없다.
+아이디·이메일·소셜 신원(provider, provider 쪽 id)·사업자번호는 테넌트 안에서만 unique 다(`users_tenant_id_login_id_unique` 등) — 그래서 `UsersService` 에
+«전체에서» 아이디·이메일로 찾는 메서드는 없다. 소셜 신원·사업자 등록 행은 계정의 테넌트를 들고(`accountTenantOf`, `src/tenancy/account-owned-row-tenant.ts`),
+`(user_id, tenant_id)` FK 가 그 값 = 계정의 테넌트를 지킨다. 계정 테넌트에 DB 기본값은 없다 — 계정을 만드는 곳이 정한다.
 가입(`POST /auth/signup`)과 가입 폼의 사전 체크(`/users/*-available`)·소셜 로그인의 «기존 계정»·이메일 중복은 앱 설정 T 의 계정만 본다
-(`UsersService.find…InTenant`·`findSocialAccountInTenant`). 이메일·아이디 unique 는 contract 마이그 전까지 전역이라 다른 테넌트 계정이 가진 값은
-insert 에서 23505 로 걸린다 — 가입은 같은 409 문구로, 소셜 가입은 개인정보 없는 문구로 바꾼다(카카오 콜백이 오류 문구를 리디렉트 주소에 싣는다).
+(`UsersService.find…InTenant`·`findSocialAccountInTenant`). 같은 값의 동시 가입은 검사를 함께 지나 insert 에서 (테넌트, …) unique 23505 로 걸린다
+(`accountUniqueFieldOf`) — 가입은 같은 409 문구로, 소셜 가입은 개인정보 없는 문구로 바꾼다(카카오 콜백이 오류 문구를 리디렉트 주소에 싣는다).
 아이디·비밀번호 찾기·재설정(`/auth/forget-userid`·`forget-password`·`reset-password`, 레거시 이메일 토큰 포함)과 관리자 이메일 고객 조회
 (`/users/find-by-email`)도 앱 설정 T 의 계정만 찾고, 찾기를 여는 휴대폰 인증도 T 의 기록만 본다 — 다른 테넌트의 같은 번호·아이디·이메일은 «없는 계정»이다.
 전화번호·발송 대상으로 계정을 찾는 내부 라우트 넷(`/users/internal/contacts/by-phone`·`sms-audience`·`sms-audience/summary`·
@@ -111,7 +114,7 @@ master 가 있으면 409 `TENANT_HAS_MASTER`, 그 아이디의 계정이 그 테
 ### 테넌트 안의 직원 관리 (ADR-0056)
 계정은 한 테넌트의 것이라, 직원 계정과 역할은 **그 테넌트의 관리자**(`iam.admin_user.write`·`iam.role.assign` 을 가진 사람, 보통
 그 테넌트의 `master`)가 토큰 테넌트 안에서 관리한다. 만들기는 `POST /admin/auth`(계정의 테넌트 = 토큰 테넌트, 중복은 그 테넌트
-안에서만 — unique 가 아직 전역이라 다른 테넌트의 값은 insert 23505 를 같은 409 로), 부여·회수는 `/admin/users/:id/(staff-)roles`·
+안에서만 — 동시 만들기의 insert 23505 도 같은 409 로), 부여·회수는 `/admin/users/:id/(staff-)roles`·
 `/admin/roles/:id/members`, 비밀번호 초기화는 `POST /admin/auth/staff/:userId/password`(`StaffPasswordManager` — 새 비번을 한 번만
 돌려주고 변경 강제·세션 끊기·이력). iam Manager 가 «계정의 테넌트 ≠ 일하는 테넌트»면 주기·늘리기·비번 초기화를
 `IAM_NOT_ACCOUNT_TENANT`(409)로 거절한다 — 고객 역할도 같다. 회수는 거절하지 않는다(그 테넌트에 남은 어긋난 부여를 거두는 길).
@@ -119,7 +122,7 @@ master 가 있으면 409 `TENANT_HAS_MASTER`, 그 아이디의 계정이 그 테
 관리자의 고객 비밀번호 변경(`PATCH /admin/auth/change-password`, T 전용)도 T 의 계정만 찾는다.
 부여 읽기(`GET /admin/users/:id/roles`·`/admin/roles/:id/members`)는 요청자 테넌트의 계정·그 테넌트 부여만 답한다 — 다른 테넌트의 계정은 404,
 공용 역할의 구성원 목록에 다른 테넌트 직원이 나오지 않는다.
-소속은 판정에 쓰지 않지만 contract 까지 계속 쓴다(되돌린 옛 코드는 소속으로 판정한다). 테넌트 셸에는 아직 이 화면이 없다(API 만).
+소속(옛 `tenant_memberships`)은 없다 — 표째 걷었다. 테넌트 셸에는 아직 이 화면이 없다(API 만).
 
 ### 역할 만료
 `user_roles.expiresAt`으로 시한부 역할 할당을 지원한다.

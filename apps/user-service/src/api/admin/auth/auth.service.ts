@@ -10,7 +10,7 @@ import type { IamActor } from '../../iam/iam-actor';
 import { StaffPasswordManager } from '../../iam/staff/staff-password.manager';
 import { PlatformOperatorManager } from '../../iam/tenancy/platform-operator.manager';
 import { CUSTOMER_ROLE_NAMES } from '../../iam/iam.constants';
-import { globalUniqueFieldOf } from '../../users/global-unique-field';
+import { accountUniqueFieldOf } from '../../users/account-unique-field';
 import { UsersService } from '../../users/users.service';
 import { SERVED_TENANT_ID } from '../../../tenancy/served-tenant';
 import { CreateAccountDto } from './dto/create-account-dto';
@@ -77,8 +77,8 @@ export class AuthService {
       })
       .returning()
       .catch((error: unknown) => {
-        // unique 가 아직 전역이라(contract 전) 다른 테넌트 계정의 값이면 여기서 걸린다 — 같은 409 로.
-        const field = globalUniqueFieldOf(error);
+        // 같은 값의 동시 만들기는 중복 검사를 함께 지나 (테넌트, …) unique 에 걸린다 — 같은 409 로.
+        const field = accountUniqueFieldOf(error);
         throw field ? new ConflictError(DUPLICATE_MESSAGE[field]) : error;
       });
 

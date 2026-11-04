@@ -14,7 +14,8 @@ export class ExpireExistingCodesService {
     return tx ?? this.dbService.db;
   }
 
-  async expireExistingCodes(phoneNumber: string, tx?: DbTransaction) {
+  /** 그 테넌트 화면의 미검증 코드만 만료한다 — 같은 번호로 다른 테넌트에서 진행 중인 인증은 건드리지 않는다(ADR-0056). */
+  async expireExistingCodes(tenantId: string, phoneNumber: string, tx?: DbTransaction) {
     const client = this.getClient(tx);
 
     await client
@@ -24,6 +25,7 @@ export class ExpireExistingCodesService {
       })
       .where(
         and(
+          eq(userServiceSchema.phoneVerifications.tenantId, tenantId),
           eq(userServiceSchema.phoneVerifications.phoneNumber, phoneNumber),
           eq(userServiceSchema.phoneVerifications.isVerified, false),
         ),

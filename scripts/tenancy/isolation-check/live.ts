@@ -230,7 +230,12 @@ async function main(): Promise<void> {
   let tenantTwoHosts: Promise<string[]> | null = null;
   const core = stageServiceUrl(stage, 'core');
   const signInTenantTwo = () =>
-    signInStaff(staff(check.tenantTwo.adminRedirectUri), check.tenantTwo.loginId, check.tenantTwo.password);
+    signInStaff(
+      staff(check.tenantTwo.adminRedirectUri),
+      check.tenantTwo.loginId,
+      check.tenantTwo.password,
+      check.tenantTwo.id,
+    );
 
   const liveWrite = (op: { users: string; token: () => Promise<string> }): NonNullable<IsolationTarget['write']> => {
     const api = new HttpOperatorApi(op.users, op.token);
@@ -259,6 +264,7 @@ async function main(): Promise<void> {
       fileService: stageServiceUrl(stage, 'file'),
       medusa: stageServiceUrl(stage, 'medusa'),
       adminWeb,
+      userService: users,
     },
     sharedServices: (Object.keys(SHARED_SERVICE_PROBES) as SharedServiceName[]).map((name) => ({
       name,
@@ -266,14 +272,27 @@ async function main(): Promise<void> {
     })),
     signIn: {
       tenantOne: () =>
-        signInStaff(staff(`${adminWeb}/auth/callback`), check.tenantOne.loginId, check.tenantOne.password),
+        signInStaff(
+          staff(`${adminWeb}/auth/callback`),
+          check.tenantOne.loginId,
+          check.tenantOne.password,
+          servedTenant,
+        ),
       tenantTwo: signInTenantTwo,
       at: (account, siteTenantId) =>
         signInAtSite({ baseUrl: users, internalSecret }, check[account].loginId, check[account].password, siteTenantId),
+      // 제 테넌트 화면에서 로그인하고(비밀번호는 맞다) 테넌트 1 관리자 주소의 코드를 청한다 — 코드 발급의 계정 테넌트 대조가 거절해야 한다.
       tenantTwoAtTenantOneAdmin: () =>
-        signInStaff(staff(`${adminWeb}/auth/callback`), check.tenantTwo.loginId, check.tenantTwo.password),
+        signInStaff(
+          staff(`${adminWeb}/auth/callback`),
+          check.tenantTwo.loginId,
+          check.tenantTwo.password,
+          check.tenantTwo.id,
+        ),
+      asAccount: (loginId, password, siteTenantId) =>
+        signInAtSite({ baseUrl: users, internalSecret }, loginId, password, siteTenantId),
     },
-    customerToken: () => signInStaff(storefront, check.customer.loginId, check.customer.password),
+    customerToken: () => signInStaff(storefront, check.customer.loginId, check.customer.password, servedTenant),
     storePublishableKey: need(services, 'MedusaPublishableKey', 'lcnine-services'),
     tenantOneDigitalFileId: () => Promise.resolve(db.tenantOneDigitalFileId),
     tenantTwoCronRuns: (): Promise<CronObservation> => Promise.resolve(db.cron),

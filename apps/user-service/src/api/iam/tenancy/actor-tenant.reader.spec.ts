@@ -13,15 +13,15 @@ describe('ActorTenantReader — 관리 API 요청자가 일하는 테넌트', ()
     ip: null,
     tenantId,
   });
-  const reader = (memberships: string[]) =>
-    new ActorTenantReader({ tenantsOf: () => Promise.resolve(memberships) } as unknown as TenancyRepository);
+  const reader = (accountTenant: string | null) =>
+    new ActorTenantReader({ accountTenantOf: () => Promise.resolve(accountTenant) } as unknown as TenancyRepository);
 
-  it('토큰 테넌트가 있으면 그것이다 — 소속이 둘이어도', async () => {
-    await expect(reader(['1', '2']).resolve(actor('2'))).resolves.toBe('2');
+  it('토큰 테넌트가 있으면 그것이다', async () => {
+    await expect(reader('1').resolve(actor('2'))).resolves.toBe('2');
   });
 
-  it('테넌트 없는 토큰(`tenant` 클레임 도입 전 발급)은 소속이 정확히 하나일 때만 그 소속', async () => {
-    await expect(reader(['1']).resolve(actor())).resolves.toBe('1');
-    await expect(reader(['1', '2']).resolve(actor())).rejects.toBeInstanceOf(IamTenantUnresolvedError);
+  it('테넌트 없는 토큰(`tenant` 클레임 도입 전 발급)은 요청자 계정의 테넌트 — 계정은 한 테넌트의 것이다', async () => {
+    await expect(reader('7').resolve(actor())).resolves.toBe('7');
+    await expect(reader(null).resolve(actor())).rejects.toBeInstanceOf(IamTenantUnresolvedError);
   });
 });

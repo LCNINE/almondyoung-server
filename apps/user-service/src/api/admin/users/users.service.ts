@@ -13,6 +13,7 @@ import { DbTransaction } from 'apps/user-service/src/commons/types';
 import { UserConsent } from '../../consents/types/consent.type';
 import { liveStaffAssignment } from '../../iam/iam.constants';
 import { type RoleHolderLookup, RoleHoldersUnavailableError, rolesHoldingOrThrow } from '../../iam/role-holders';
+import { SERVED_TENANT_ID } from '../../../tenancy/served-tenant';
 
 export interface StaffRole {
   name: string;
@@ -36,6 +37,9 @@ export class UsersService {
     @InjectDb()
     private readonly dbService: DbService<UserServiceSchema>,
     @Inject(PermissionCache) private readonly roleHolders: RoleHolderLookup,
+    // 이 목록은 T 의 회원·직원 명단이다(컨트롤러가 @ServedTenantData). 계정은 한 테넌트의 것이고 아이디·이메일은 테넌트 안에서만
+    // unique 라(ADR-0056), 거르지 않으면 같은 아이디의 다른 테넌트 계정이 섞여 나온다.
+    @Inject(SERVED_TENANT_ID) private readonly servedTenantId: string,
   ) {}
 
   private getClient(tx?: DbTransaction) {
@@ -129,7 +133,7 @@ export class UsersService {
       const sortBy = filters?.sort || 'createdAt';
       const sortOrder = filters?.order || 'desc';
 
-      const conditions = [] as any[];
+      const conditions = [eq(schema.users.tenantId, this.servedTenantId)] as any[];
       if (hasIdFilter) {
         conditions.push(inArray(schema.users.id, idList!));
       }

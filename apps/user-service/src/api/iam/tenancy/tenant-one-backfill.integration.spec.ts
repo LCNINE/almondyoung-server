@@ -5,7 +5,6 @@ import {
   piiAccessLogs,
   roles,
   tenantDomains,
-  tenantMemberships,
   tenants,
   userRoleAssignments,
   users,
@@ -67,6 +66,7 @@ describeIfDb('tenant 1 backfill migration against a real database', () => {
         username: suffix,
         nickname: suffix,
         email: `${PREFIX}${suffix}@example.test`,
+        tenantId: '1',
         ...extra,
       })
       .returning({ id: users.id });
@@ -76,11 +76,6 @@ describeIfDb('tenant 1 backfill migration against a real database', () => {
   const legacyGrant = async (tx: UserServiceTx, userId: string, role: string, expiresAt: Date | null) => {
     await tx.insert(userRoleAssignments).values({ userId, roleId: await roleId(tx, role), expiresAt, tenantId: null });
   };
-  const membershipsOf = async (tx: UserServiceTx, userIds: string[]) =>
-    tx
-      .select({ userId: tenantMemberships.userId, tenantId: tenantMemberships.tenantId })
-      .from(tenantMemberships)
-      .where(inArray(tenantMemberships.userId, userIds));
   const operatorFlag = async (tx: UserServiceTx, userId: string) => {
     const [row] = await tx.select({ op: users.isPlatformOperator }).from(users).where(eq(users.id, userId));
     return row?.op;
@@ -118,33 +113,6 @@ describeIfDb('tenant 1 backfill migration against a real database', () => {
         .from(tenantDomains)
         .where(eq(tenantDomains.tenantId, '1'));
       expect(hosts.map((h) => h.host).sort()).toEqual(['admin.example.test', 'localhost:3000']);
-    });
-  });
-
-  it('makes accounts with a live staff grant members of tenant 1, and nobody else', async () => {
-    await rolledBack(async (tx) => {
-      const staff = await account(tx, 'staff');
-      const ending = await account(tx, 'ending');
-      const former = await account(tx, 'former');
-      const customer = await account(tx, 'customer');
-      const boss = await account(tx, 'mboss');
-      await legacyGrant(tx, boss, 'master', null);
-      await legacyGrant(tx, staff, 'intern', null);
-      await legacyGrant(tx, ending, 'admin', new Date(Date.now() + DAY));
-      await legacyGrant(tx, former, 'intern', new Date(Date.now() - DAY));
-      await legacyGrant(tx, customer, 'user', null);
-      await legacyGrant(tx, customer, 'membership', null);
-
-      await backfill(tx);
-
-      const rows = await membershipsOf(tx, [staff, ending, former, customer]);
-      expect(rows).toEqual(
-        expect.arrayContaining([
-          { userId: staff, tenantId: '1' },
-          { userId: ending, tenantId: '1' },
-        ]),
-      );
-      expect(rows).toHaveLength(2);
     });
   });
 

@@ -1,4 +1,5 @@
 import { Client } from 'pg';
+import { TENANT_ONE_ID } from '../seeding/lib/tenant-one-backfill';
 
 const connectionString = process.env.LOCAL_ATTENDANCE_DEMO_DATABASE_URL;
 
@@ -42,12 +43,12 @@ async function main() {
       const name = `샘플 직원 ${suffix}`;
       const email = `${login}@example.invalid`;
       const user = await database.query(
-        `INSERT INTO users (login_id, username, nickname, email)
-         VALUES ($1, $2, $2, $3)
-         ON CONFLICT (login_id) DO UPDATE SET username = EXCLUDED.username
+        `INSERT INTO users (login_id, username, nickname, email, tenant_id)
+         VALUES ($1, $2, $2, $3, $4)
+         ON CONFLICT (tenant_id, login_id) DO UPDATE SET username = EXCLUDED.username
          WHERE users.email = EXCLUDED.email
          RETURNING id`,
-        [login, name, email],
+        [login, name, email, TENANT_ONE_ID],
       );
       const userId: string | undefined = user.rows[0]?.id;
 

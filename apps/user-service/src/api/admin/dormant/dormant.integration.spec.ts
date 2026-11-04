@@ -43,6 +43,7 @@ describeIfDb('dormant candidates against a real database', () => {
         email: `${PREFIX}${suffix}@example.test`,
         lastActivityAt: LONG_AGO,
         isPlatformOperator,
+        tenantId: '1',
       })
       .returning({ id: users.id });
     for (const r of roleNames) {

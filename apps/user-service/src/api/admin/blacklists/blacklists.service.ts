@@ -1,5 +1,5 @@
 import { DbService, InjectDb } from '@app/db';
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { userServiceSchema, type UserServiceSchema } from 'apps/user-service/database/drizzle/schema';
 import { DbTransaction } from 'apps/user-service/src/commons/types';
 import { and, count, eq, ilike, or } from 'drizzle-orm';
@@ -7,10 +7,15 @@ import { and, count, eq, ilike, or } from 'drizzle-orm';
 import { BlacklistsCreateDto } from './dto/blacklists-create.dto';
 import { BlacklistsResponseDto } from './dto/blacklists-response.dto';
 import { BlacklistsAlreadyExistsException, BlacklistsNotFoundException } from './exceptions/blacklists.exceptions';
+import { SERVED_TENANT_ID } from '../../../tenancy/served-tenant';
 
 @Injectable()
 export class BlacklistsService {
-  constructor(@InjectDb() private readonly dbService: DbService<UserServiceSchema>) {}
+  constructor(
+    @InjectDb() private readonly dbService: DbService<UserServiceSchema>,
+    // 블랙리스트는 T 의 고객 명단이다(컨트롤러가 @ServedTenantData) — 같은 아이디·이메일의 다른 테넌트 계정을 섞지 않는다(ADR-0056).
+    @Inject(SERVED_TENANT_ID) private readonly servedTenantId: string,
+  ) {}
 
   private getClient(tx?: DbTransaction) {
     return tx ?? this.dbService.db;
@@ -31,7 +36,7 @@ export class BlacklistsService {
     const limit = Math.min(filters?.limit || 20, 100);
     const offset = (page - 1) * limit;
 
-    const whereConditions: any[] = [];
+    const whereConditions: any[] = [eq(userServiceSchema.users.tenantId, this.servedTenantId)];
     if (filters?.userId) {
       whereConditions.push(eq(userServiceSchema.blacklists.userId, filters.userId));
     }

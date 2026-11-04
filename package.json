@@ -38,7 +38,6 @@
     "bootstrap:e2e:local": "./scripts/local/bootstrap-e2e.sh",
     "preflight:e2e:local": "./scripts/local/preflight-e2e.sh",
     "tenant:create": "npx tsx scripts/tenancy/create-tenant/live/live.ts",
-    "tenancy:account-tenant-preview": "npx tsx scripts/tenancy/account-tenant-preview/preview.ts",
     "tenant:create:local": "./scripts/local/create-tenant-local.sh",
     "isolation:check:local": "./scripts/local/isolation-check-local.sh",
     "db:seed:ref": "npx tsx scripts/seeding/seed-ref.ts",
