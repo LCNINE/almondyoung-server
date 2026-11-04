@@ -438,6 +438,15 @@ export const useVersionPricingRules = (versionId: string) => {
   });
 };
 
+export const useVersionQuantityDiscount = (masterId: string, versionId: string) => {
+  return useQuery({
+    queryKey: productQueryKeys.pricingVersionQuantityDiscount(versionId),
+    queryFn: () => products.pricing.versions.getQuantityDiscount(masterId, versionId),
+    enabled: !!masterId && !!versionId,
+    staleTime: 30 * 1000,
+  });
+};
+
 export const useMasterPricingRules = (masterId: string) => {
   return useQuery({
     queryKey: productQueryKeys.pricingMasterRules(masterId),

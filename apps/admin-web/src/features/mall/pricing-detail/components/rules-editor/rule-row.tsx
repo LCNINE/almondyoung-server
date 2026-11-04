@@ -12,7 +12,6 @@ import {
 } from '@/components/ui/select';
 import { ChevronUp, ChevronDown, Trash2 } from 'lucide-react';
 import type {
-  PricingLayer,
   PricingScopeType,
   PricingOperationType,
   PricingRuleInput,
@@ -40,7 +39,6 @@ interface Props {
   rule: PricingRuleInput;
   index: number;
   total: number;
-  layer: PricingLayer;
   readonly: boolean;
   optionGroups: ProductOptionGroup[];
   variantOptions: ScopeTargetVariant[];
@@ -54,7 +52,6 @@ export function RuleRow({
   rule,
   index,
   total,
-  layer,
   readonly,
   optionGroups,
   variantOptions,
@@ -215,26 +212,6 @@ export function RuleRow({
           )}
         </div>
       </td>
-      {layer === 'tiered_price' && (
-        <td className="px-3 py-2">
-          <Input
-            type="number"
-            min={1}
-            step={1}
-            className="h-8 w-20 text-xs"
-            value={rule.minQuantity ?? ''}
-            onChange={(e) => {
-              const v = parseInt(e.target.value);
-              onChange(index, {
-                ...rule,
-                minQuantity: isNaN(v) ? undefined : v,
-              });
-            }}
-            disabled={readonly}
-            placeholder="수량"
-          />
-        </td>
-      )}
       <td className="px-3 py-2">
         <div className="flex items-center gap-1">
           <Button
