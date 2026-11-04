@@ -512,7 +512,7 @@ export class ProductVariantsService {
         versionId: productMasterVariants.versionId,
         masterName: productMasterVersions.name,
         // 대표 이미지의 원본은 product_images 다. 버전의 thumbnail 컬럼은 새로 만든 상품에서 비어 있다
-        thumbnail: sql<string | null>`coalesce(${productImages.fileId}, ${productMasterVersions.thumbnail})`,
+        thumbnail: sql<string | null>`coalesce(${productImages.fileId}::text, ${productMasterVersions.thumbnail})`,
       })
       .from(productVariants)
       .innerJoin(productMasterVariants, eq(productMasterVariants.variantId, productVariants.id))
