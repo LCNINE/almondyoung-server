@@ -16,6 +16,8 @@ import type {
 } from '@packages/event-contracts/streams/product.stream';
 import type { ProductSellableQuantityChangedPayload } from '@packages/event-contracts/streams/inventory.stream';
 
+type PriceListPrice = Parameters<MedusaClient['addPricesToPriceList']>[1][number];
+
 /**
  * 대량 출처 목록. inbox-worker 의 BULK_ORIGINS 와 같은 값이지만, 그쪽은 metadata 를 읽는
  * SQL 레인 판정이고 이쪽은 payload 를 읽는 핸들러 분기라 의도적으로 따로 둔다.
@@ -317,6 +319,9 @@ export class PimMedusaSyncService {
   ): Promise<SyncResult> {
     const { masterId, versionId } = snapshot;
     const startedAt = Date.now();
+    // 가격표 작업 중 실패해도 «이 상품 가격이 들어갔을 수 있는 리스트»를 잃지 않도록 실패 기록에도 남긴다.
+    // null 이면 가격표 작업 전이라 기록을 건드리지 않는다.
+    let touchedPriceListIds: Set<string> | null = null;
 
     this.logger.log(`Syncing from event snapshot: ${masterId} (v${snapshot.version})`);
 
@@ -405,10 +410,13 @@ export class PimMedusaSyncService {
 
       this.logger.log(`Sync completed: ${masterId} → Medusa ${product.id} (${action})`);
 
-      await this.syncPriceLists(snapshot, product.id, product.variants, {
+      touchedPriceListIds = new Set(existingMapping?.syncedPriceListIds ?? []);
+      const syncedPriceListIds = await this.syncPriceLists(snapshot, product.id, product.variants, {
         // 신규 생성 상품은 price list 에 항목이 있을 수 없다. remove 는 상품당 3.30초로
         // 상품 생성(2.86초)보다 비싼 호출이라 건너뛰는 값어치가 크다.
         skipRemove: action === 'created',
+        previousListIds: existingMapping?.syncedPriceListIds ?? null,
+        touched: touchedPriceListIds,
       });
 
       await this.mappingRepo.recordSuccess(masterId, {
@@ -417,6 +425,7 @@ export class PimMedusaSyncService {
         medusaProductId: product.id,
         medusaHandle: medusaPayload.handle,
         action,
+        syncedPriceListIds,
       });
 
       // 대량등록은 상품마다 무효화하면 전역 목록 태그를 상품 수만큼 지우게 된다.
@@ -445,6 +454,7 @@ export class PimMedusaSyncService {
           pimVersionId: versionId,
           pimVersion: snapshot.version,
           error: error.message,
+          ...(touchedPriceListIds ? { syncedPriceListIds: [...touchedPriceListIds] } : {}),
         });
       } catch (recordError) {
         this.logger.error('Failed to record failure', recordError);
@@ -602,24 +612,30 @@ export class PimMedusaSyncService {
     return { pim, medusa, overall };
   }
 
+  /**
+   * 상품의 멤버십·수량 할인 가격표를 «교체»한다. 이번에 넣을 리스트뿐 아니라 지난번에 넣었던 리스트에서도
+   * 상품을 빼야, 구간을 지우거나 기준 수량을 바꾸거나 멤버십가를 없앤 뒤에 옛 가격이 남지 않는다.
+   * 반환값은 이번에 가격을 넣은 리스트 id 이고, 매핑에 기록돼 다음 동기화의 «지난번»이 된다.
+   *
+   * previousListIds 가 null(기록 이전 상품)이면 이번 리스트에서만 뺀다 — 지금까지와 같은 호출이다.
+   */
   private async syncPriceLists(
     snapshot: PimProductSnapshot,
     medusaProductId: string,
     medusaVariants: MedusaProduct['variants'] | undefined,
-    opts: { skipRemove?: boolean } = {},
-  ): Promise<void> {
-    if (!medusaVariants || medusaVariants.length === 0) return;
+    opts: { skipRemove?: boolean; previousListIds?: string[] | null; touched?: Set<string> } = {},
+  ): Promise<string[]> {
+    // 아무것도 빼지 않았으므로 지난번 기록을 그대로 돌려줘야 다음 동기화가 옛 리스트를 비운다.
+    if (!medusaVariants || medusaVariants.length === 0) return opts.previousListIds ?? [];
 
     const MEMBERSHIP_GROUP_ID = process.env.MEDUSA_MEMBERSHIP_GROUP_ID;
-    const membershipPrices: any[] = [];
-    const tieredPricesMap = new Map<number, any[]>(); // minQuantity -> prices
+    const membershipPrices: PriceListPrice[] = [];
+    const tieredPricesMap = new Map<number, PriceListPrice[]>(); // minQuantity -> prices
 
-    // 1. 가격 데이터 수집
     for (const variant of snapshot.variants) {
       const medusaVariant = medusaVariants.find((mv) => mv.metadata?.pimVariantId === variant.id);
       if (!medusaVariant) continue;
 
-      // 멤버십 가격
       if (variant.membershipPrice && MEMBERSHIP_GROUP_ID) {
         membershipPrices.push({
           amount: Math.round(variant.membershipPrice),
@@ -628,7 +644,6 @@ export class PimMedusaSyncService {
         });
       }
 
-      // Tier 가격
       if (variant.tieredPrices && variant.tieredPrices.length > 0) {
         for (const tier of variant.tieredPrices) {
           const list = tieredPricesMap.get(tier.minQuantity) || [];
@@ -643,7 +658,8 @@ export class PimMedusaSyncService {
       }
     }
 
-    // 2. Membership Price List 동기화
+    const targets: Array<{ listId: string; prices: PriceListPrice[] }> = [];
+
     if (membershipPrices.length > 0 && MEMBERSHIP_GROUP_ID) {
       const listId = await this.medusaClient.ensurePriceList({
         name: 'Membership Prices',
@@ -652,18 +668,9 @@ export class PimMedusaSyncService {
         status: 'active',
         rules: { 'customer.groups.id': [MEMBERSHIP_GROUP_ID] },
       });
-      // Replace, not append: clear this product's existing prices before adding the current ones,
-      // otherwise re-sync accumulates duplicate rows and a stale-lower price wins (Medusa applies
-      // the lowest). Remove→add briefly leaves the product without a membership price; that only
-      // ever falls back to the higher base price, so it never undercharges.
-      // 신규 생성 상품은 지울 항목이 없으므로 skipRemove 로 건너뛴다.
-      if (!opts.skipRemove) {
-        await this.medusaClient.removeProductFromPriceList(listId, medusaProductId);
-      }
-      await this.medusaClient.addPricesToPriceList(listId, membershipPrices);
+      targets.push({ listId, prices: membershipPrices });
     }
 
-    // 3. Tiered Price Lists 동기화
     // 수량 할인 리스트를 멤버십 리스트와 rules_count 동률로 맞춘다 — 빼면 조용히 최저가가 아닌 값이
     // 나간다. 근거는 getAllVisitorsPriceListRule 주석.
     const allVisitorsRule =
@@ -677,12 +684,28 @@ export class PimMedusaSyncService {
         status: 'active',
         rules: allVisitorsRule,
       });
-      // Replace, not append (same rationale as the membership list above).
+      targets.push({ listId, prices });
+    }
+
+    // Replace, not append: addPricesToPriceList 는 append 라 빼지 않으면 재동기화마다 행이 쌓이고 옛 최저가가
+    // 이긴다. remove→add 사이엔 잠깐 기본가로 떨어질 뿐 덜 받는 일은 없다. 신규 생성 상품은 뺄 것이 없다.
+    const targetIds = new Set(targets.map((t) => t.listId));
+    if (!opts.skipRemove) {
+      for (const listId of opts.previousListIds ?? []) {
+        if (!targetIds.has(listId)) {
+          await this.medusaClient.removeProductFromPriceList(listId, medusaProductId);
+        }
+      }
+    }
+    for (const { listId, prices } of targets) {
+      opts.touched?.add(listId);
       if (!opts.skipRemove) {
         await this.medusaClient.removeProductFromPriceList(listId, medusaProductId);
       }
       await this.medusaClient.addPricesToPriceList(listId, prices);
     }
+
+    return [...targetIds];
   }
 
   /**

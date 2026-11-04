@@ -357,6 +357,7 @@ export class MedusaClient {
   private readonly salesChannelCache = new Map<string, string>(); // key: name
   private defaultShippingProfileId?: string;
   private allRegionIds?: string[];
+  private priceListIdByName?: Map<string, string>;
   private readonly shippingProfileIdByGroupCode = new Map<string, string>(); // key: 배송비 그룹 코드
   private projectionStockLocationId?: string;
   private shipmentProjectionQueues?: Map<string, Promise<void>>;
@@ -386,6 +387,7 @@ export class MedusaClient {
     this.salesChannelCache.clear();
     this.defaultShippingProfileId = undefined;
     this.allRegionIds = undefined;
+    this.priceListIdByName = undefined;
     this.shippingProfileIdByGroupCode.clear();
     this.logger.log('All caches cleared');
   }
@@ -2361,12 +2363,17 @@ export class MedusaClient {
     rules?: Record<string, string[]>;
   }): Promise<string> {
     try {
+      // 리스트의 status·rules 는 프로세스 수명 동안 바뀌지 않으므로(region 목록도 allRegionIds 로 같은 수명 캐시)
+      // 한 번 확인한 리스트는 다시 조회·갱신하지 않는다.
+      const cached = this.priceListIdByName?.get(payload.name);
+      if (cached) return cached;
+
       const normalizedRules = this.normalizePriceListRules(payload.rules);
 
-      // 1. 이름으로 기존 Price List 조회
+      // q 는 부분일치 검색이라 «Min 2» 를 찾을 때 «Min 20» 이 먼저 올 수 있다. 넉넉히 받아 제목 정확 일치로 고른다.
       const { price_lists } = await this.sdk.admin.priceList.list({
         q: payload.name,
-        limit: 1,
+        limit: 50,
       });
       const existing = price_lists?.find((pl) => pl.title === payload.name);
 
@@ -2378,6 +2385,7 @@ export class MedusaClient {
         };
 
         await this.sdk.admin.priceList.update(existing.id, updatePayload);
+        this.rememberPriceListId(payload.name, existing.id);
         return existing.id;
       }
 
@@ -2393,6 +2401,7 @@ export class MedusaClient {
       this.logger.debug(`Creating Price List: ${JSON.stringify(createPayload)}`);
 
       const { price_list } = await this.sdk.admin.priceList.create(createPayload);
+      this.rememberPriceListId(payload.name, price_list.id);
 
       return price_list.id;
     } catch (error) {
@@ -2400,6 +2409,10 @@ export class MedusaClient {
       this.logger.error(`Failed to ensure price list ${payload.name}: ${fetchError.message}`);
       throw new Error(`Medusa ensurePriceList failed: ${fetchError.message}`, { cause: fetchError });
     }
+  }
+
+  private rememberPriceListId(name: string, id: string): void {
+    (this.priceListIdByName ??= new Map()).set(name, id);
   }
 
   async addPricesToPriceList(

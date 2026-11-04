@@ -1047,6 +1047,61 @@ describe('MedusaClient.removeProductFromPriceList', () => {
   });
 });
 
+describe('MedusaClient.ensurePriceList', () => {
+  const logger = { log: jest.fn(), warn: jest.fn(), debug: jest.fn(), error: jest.fn() };
+  const payload = (name: string) => ({
+    name,
+    description: 'd',
+    type: 'sale' as const,
+    status: 'active' as const,
+    rules: { region_id: ['reg_kr'] },
+  });
+
+  function makeClient(existing: Array<{ id: string; title: string }>) {
+    const priceList = {
+      list: jest.fn(async ({ limit }: { limit?: number }) => ({ price_lists: existing.slice(0, limit ?? 50) })),
+      update: jest.fn().mockResolvedValue({}),
+      create: jest.fn().mockResolvedValue({ price_list: { id: 'pl_created' } }),
+    };
+    const client = Object.create(MedusaClient.prototype) as MedusaClient;
+    (client as any).sdk = { admin: { priceList } };
+    (client as any).logger = logger;
+    return { client, priceList };
+  }
+
+  it('does not reuse a list whose title only shares a prefix', async () => {
+    const { client, priceList } = makeClient([{ id: 'pl_20', title: 'Tiered Prices - Min 20' }]);
+
+    const id = await client.ensurePriceList(payload('Tiered Prices - Min 2'));
+
+    expect(id).toBe('pl_created');
+    expect(priceList.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('finds the exact title even when it is not the first search hit', async () => {
+    const { client, priceList } = makeClient([
+      { id: 'pl_20', title: 'Tiered Prices - Min 20' },
+      { id: 'pl_2', title: 'Tiered Prices - Min 2' },
+    ]);
+
+    const id = await client.ensurePriceList(payload('Tiered Prices - Min 2'));
+
+    expect(id).toBe('pl_2');
+    expect(priceList.create).not.toHaveBeenCalled();
+  });
+
+  it('returns the cached id without listing again', async () => {
+    const { client, priceList } = makeClient([{ id: 'pl_2', title: 'Tiered Prices - Min 2' }]);
+
+    await client.ensurePriceList(payload('Tiered Prices - Min 2'));
+    const id = await client.ensurePriceList(payload('Tiered Prices - Min 2'));
+
+    expect(id).toBe('pl_2');
+    expect(priceList.list).toHaveBeenCalledTimes(1);
+    expect(priceList.update).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe('MedusaClient.addCustomerToGroup', () => {
   const GROUP = 'cusgroup_membership';
 

@@ -1,0 +1,1 @@
+ALTER TABLE "pim_medusa_mappings" ADD COLUMN "synced_price_list_ids" text[];

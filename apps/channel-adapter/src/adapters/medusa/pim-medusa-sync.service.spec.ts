@@ -162,6 +162,94 @@ describe('PimMedusaSyncService.syncFromSnapshot 의 revalidate 분기', () => {
   });
 });
 
+describe('PimMedusaSyncService.syncFromSnapshot 의 가격표 기록', () => {
+  const OLD_GROUP = process.env.MEDUSA_MEMBERSHIP_GROUP_ID;
+  beforeAll(() => {
+    process.env.MEDUSA_MEMBERSHIP_GROUP_ID = 'cusgroup_membership';
+  });
+  afterAll(() => {
+    process.env.MEDUSA_MEMBERSHIP_GROUP_ID = OLD_GROUP;
+  });
+
+  const snapshot: PimProductSnapshot = {
+    masterId: 'master-1',
+    versionId: 'version-2',
+    version: 2,
+    name: 'Test Product',
+    variants: [
+      {
+        id: 'pim-var-1',
+        isDefault: true,
+        status: 'active',
+        basePrice: 10000,
+        tieredPrices: [
+          { minQuantity: 3, price: 9000 },
+          { minQuantity: 5, price: 8000 },
+        ],
+      },
+    ],
+    status: 'active',
+  };
+
+  it('keeps every list it touched when an add fails midway so the next sync can clear them', async () => {
+    const medusaClient = {
+      ensureProductType: jest.fn().mockResolvedValue('ptype_1'),
+      getDefaultSalesChannel: jest.fn().mockResolvedValue('sc_1'),
+      getShippingProfileIdForGroup: jest.fn().mockResolvedValue('ship_1'),
+      upsertProduct: jest.fn().mockResolvedValue({
+        product: { id: 'prod_1', variants: [{ id: 'variant_m1', metadata: { pimVariantId: 'pim-var-1' } }] },
+        action: 'updated',
+      }),
+      ensurePriceList: jest.fn(async ({ name }: { name: string }) => `plist_${name.replace(/\s+/g, '_')}`),
+      getAllVisitorsPriceListRule: jest.fn().mockResolvedValue({ region_id: ['reg_kr'] }),
+      removeProductFromPriceList: jest.fn().mockResolvedValue(undefined),
+      addPricesToPriceList: jest.fn(async (listId: string) => {
+        if (listId === 'plist_Tiered_Prices_-_Min_5') throw new Error('medusa down');
+      }),
+    };
+    const mappingRepo = {
+      findByPimMasterId: jest.fn().mockResolvedValue({ syncedPriceListIds: ['plist_old'] }),
+      recordSuccess: jest.fn(),
+      recordFailure: jest.fn().mockResolvedValue(undefined),
+    };
+    const service = new PimMedusaSyncService(
+      medusaClient as any,
+      mappingRepo as any,
+      { revalidateProduct: jest.fn() } as any,
+      { enqueue: jest.fn() } as any,
+      new CategoryEnsureMemoService({ get: () => undefined } as never),
+    );
+
+    await expect(service.syncFromSnapshot(snapshot, { skipCategorySync: true })).rejects.toThrow('medusa down');
+
+    const recorded = mappingRepo.recordFailure.mock.calls[0][1].syncedPriceListIds;
+    expect([...recorded].sort()).toEqual(
+      ['plist_Tiered_Prices_-_Min_3', 'plist_Tiered_Prices_-_Min_5', 'plist_old'].sort(),
+    );
+  });
+
+  it('leaves the recorded lists alone when the failure happens before any price list work', async () => {
+    const medusaClient = {
+      ensureProductType: jest.fn().mockRejectedValue(new Error('type failed')),
+    };
+    const mappingRepo = {
+      findByPimMasterId: jest.fn().mockResolvedValue({ syncedPriceListIds: ['plist_old'] }),
+      recordFailure: jest.fn().mockResolvedValue(undefined),
+    };
+    const service = new PimMedusaSyncService(
+      medusaClient as any,
+      mappingRepo as any,
+      { revalidateProduct: jest.fn() } as any,
+      { enqueue: jest.fn() } as any,
+      new CategoryEnsureMemoService({ get: () => undefined } as never),
+    );
+
+    await expect(service.syncFromSnapshot(snapshot, { skipCategorySync: true })).rejects.toThrow('type failed');
+
+    expect(mappingRepo.recordFailure.mock.calls[0][1].syncedPriceListIds).toBeUndefined();
+  });
+});
+
 describe('PimMedusaSyncService.handleProductMasterDeleted', () => {
   function createService(mapping?: { medusaProductId?: string | null } | null) {
     const medusaClient = {
@@ -358,6 +446,96 @@ describe('PimMedusaSyncService.syncPriceLists (replace semantics)', () => {
 
     expect(medusaClient.removeProductFromPriceList).toHaveBeenCalledTimes(1);
     expect(calls).toEqual(['remove', 'add']);
+  });
+
+  const MIN3 = 'plist_Tiered_Prices_-_Min_3';
+  const MIN5 = 'plist_Tiered_Prices_-_Min_5';
+  const medusaVariants = [{ id: 'variant_m1', metadata: { pimVariantId: 'pim-var-1' } }];
+  const removedLists = (medusaClient: any) =>
+    medusaClient.removeProductFromPriceList.mock.calls.map(([listId]: [string]) => listId).sort();
+  const addedLists = (medusaClient: any) =>
+    medusaClient.addPricesToPriceList.mock.calls.map(([listId]: [string]) => listId).sort();
+
+  it('removes a tier list the product no longer has', async () => {
+    const { service, medusaClient } = createService();
+    const snapshot = { variants: [{ id: 'pim-var-1', membershipPrice: 8000, tieredPrices: [] }] };
+
+    const synced = await (service as any).syncPriceLists(snapshot, 'prod_1', medusaVariants, {
+      previousListIds: ['plist_membership', MIN3],
+    });
+
+    expect(removedLists(medusaClient)).toEqual([MIN3, 'plist_membership'].sort());
+    expect(addedLists(medusaClient)).toEqual(['plist_membership']);
+    expect(synced).toEqual(['plist_membership']);
+  });
+
+  it('moves prices when the tier threshold changes', async () => {
+    const { service, medusaClient } = createService();
+    const snapshot = {
+      variants: [{ id: 'pim-var-1', membershipPrice: 8000, tieredPrices: [{ minQuantity: 5, price: 7000 }] }],
+    };
+
+    const synced = await (service as any).syncPriceLists(snapshot, 'prod_1', medusaVariants, {
+      previousListIds: ['plist_membership', MIN3],
+    });
+
+    expect(removedLists(medusaClient)).toEqual([MIN3, MIN5, 'plist_membership'].sort());
+    expect(addedLists(medusaClient)).toEqual([MIN5, 'plist_membership'].sort());
+    expect([...synced].sort()).toEqual([MIN5, 'plist_membership'].sort());
+  });
+
+  it('removes the membership list when the membership price disappears', async () => {
+    const { service, medusaClient } = createService();
+    const snapshot = { variants: [{ id: 'pim-var-1', tieredPrices: [] }] };
+
+    const synced = await (service as any).syncPriceLists(snapshot, 'prod_1', medusaVariants, {
+      previousListIds: ['plist_membership'],
+    });
+
+    expect(removedLists(medusaClient)).toEqual(['plist_membership']);
+    expect(medusaClient.addPricesToPriceList).not.toHaveBeenCalled();
+    expect(synced).toEqual([]);
+  });
+
+  it("keeps today's call set when no previous lists are recorded", async () => {
+    const { service, medusaClient } = createService();
+    const snapshot = {
+      variants: [{ id: 'pim-var-1', membershipPrice: 8000, tieredPrices: [{ minQuantity: 5, price: 7000 }] }],
+    };
+
+    await (service as any).syncPriceLists(snapshot, 'prod_1', medusaVariants, { previousListIds: null });
+
+    expect(removedLists(medusaClient)).toEqual([MIN5, 'plist_membership'].sort());
+  });
+
+  it('removes nothing for a product without prices and no recorded lists', async () => {
+    const { service, medusaClient } = createService();
+    const snapshot = { variants: [{ id: 'pim-var-1', tieredPrices: [] }] };
+
+    await (service as any).syncPriceLists(snapshot, 'prod_1', medusaVariants, { previousListIds: null });
+
+    expect(medusaClient.removeProductFromPriceList).not.toHaveBeenCalled();
+  });
+
+  it('keeps the recorded lists when there are no Medusa variants to price', async () => {
+    const { service } = createService();
+    const snapshot = { variants: [{ id: 'pim-var-1', membershipPrice: 8000, tieredPrices: [] }] };
+
+    const synced = await (service as any).syncPriceLists(snapshot, 'prod_1', [], { previousListIds: [MIN3] });
+
+    expect(synced).toEqual([MIN3]);
+  });
+
+  it('skips every remove for newly created products even with recorded lists', async () => {
+    const { service, medusaClient } = createService();
+    const snapshot = { variants: [{ id: 'pim-var-1', membershipPrice: 8000, tieredPrices: [] }] };
+
+    await (service as any).syncPriceLists(snapshot, 'prod_1', medusaVariants, {
+      skipRemove: true,
+      previousListIds: [MIN3],
+    });
+
+    expect(medusaClient.removeProductFromPriceList).not.toHaveBeenCalled();
   });
 });
 
