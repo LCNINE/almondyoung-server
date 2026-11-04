@@ -16,6 +16,8 @@ export type DeviceHints = {
 
 const SLOW_NETWORKS = ["slow-2g", "2g", "3g"]
 
+export type Model3dStatus = "loading" | "ready" | "failed"
+
 // 브라우저가 알려 주지 않는 값(사파리의 connection·deviceMemory)은 막지 않는다.
 export function canAutoLoad3d({ connection, deviceMemory }: DeviceHints) {
   if (connection?.saveData) {
@@ -65,12 +67,12 @@ export function ProductModel3dLayer({
   fileId,
   productName,
   visible,
-  onReady,
+  onStatus,
 }: {
   fileId: unknown
   productName: string
   visible: boolean
-  onReady?: () => void
+  onStatus?: (status: Model3dStatus) => void
 }) {
   if (typeof fileId !== "string" || !fileId.trim()) {
     return null
@@ -83,7 +85,7 @@ export function ProductModel3dLayer({
       fileId={fileId}
       productName={productName}
       visible={visible}
-      onReady={onReady}
+      onStatus={onStatus}
     />
   )
 }
@@ -92,18 +94,19 @@ function Model3dLayer({
   fileId,
   productName,
   visible,
-  onReady,
+  onStatus,
 }: {
   fileId: string
   productName: string
   visible: boolean
-  onReady?: () => void
+  onStatus?: (status: Model3dStatus) => void
 }) {
   const t = useTranslations("productDetail.model3d")
   const container = useRef<HTMLDivElement>(null)
   const [ready, setReady] = useState(false)
-  const onReadyRef = useRef(onReady)
-  onReadyRef.current = onReady
+  const onStatusRef = useRef(onStatus)
+  onStatusRef.current = onStatus
+  const spun = useRef(false)
   const alt = t("modelAlt", { name: productName })
 
   useEffect(() => {
@@ -113,6 +116,14 @@ function Model3dLayer({
 
     let cancelled = false
     let dispose: (() => void) | undefined
+    const fail = () => {
+      if (!cancelled) {
+        setReady(false)
+        onStatusRef.current?.("failed")
+      }
+    }
+
+    onStatusRef.current?.("loading")
 
     // 사진이 먼저 뜨고 페이지가 한가해진 뒤에 뷰어 코드와 GLB를 받는다.
     const cancelWait = afterPageIdle(() => {
@@ -127,9 +138,9 @@ function Model3dLayer({
             alt,
             onLoad: () => {
               setReady(true)
-              onReadyRef.current?.()
+              onStatusRef.current?.("ready")
             },
-            onError: () => setReady(false),
+            onError: fail,
           })
         })
         .then((cleanup) => {
@@ -139,8 +150,8 @@ function Model3dLayer({
             dispose = cleanup
           }
         })
-        // WebGL 미지원·다운로드 실패면 사진을 그대로 둔다.
-        .catch(() => {})
+        // WebGL 미지원·다운로드 실패면 3D 칸을 빼고 사진만 둔다.
+        .catch(fail)
     })
 
     return () => {
@@ -152,6 +163,32 @@ function Model3dLayer({
 
   const shown = ready && visible
 
+  // 3D 라는 걸 알아보게 처음 보일 때 한 바퀴만 돌리고 멈춘다.
+  useEffect(() => {
+    const viewer = container.current?.querySelector("model-viewer")
+
+    if (!shown || spun.current || !viewer) {
+      return
+    }
+
+    spun.current = true
+
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      return
+    }
+
+    viewer.setAttribute("rotation-per-second", "90deg")
+    viewer.setAttribute("auto-rotate-delay", "0")
+    viewer.setAttribute("auto-rotate", "")
+    const stop = () => viewer.removeAttribute("auto-rotate")
+    const timer = window.setTimeout(stop, 4000)
+
+    return () => {
+      window.clearTimeout(timer)
+      stop()
+    }
+  }, [shown])
+
   const zoom = (steps: number) => {
     container.current
       ?.querySelector<ModelViewerElement>("model-viewer")
@@ -160,17 +197,30 @@ function Model3dLayer({
 
   return (
     <div
-      aria-hidden={!shown}
+      aria-hidden={!visible}
       className={cn(
         "bg-muted absolute inset-0 z-[5] transition-opacity duration-300",
-        shown ? "opacity-100" : "pointer-events-none opacity-0"
+        visible ? "opacity-100" : "pointer-events-none opacity-0"
       )}
     >
       <div ref={container} className="size-full" />
+      {visible && !ready && (
+        <p
+          role="status"
+          className="text-muted-foreground absolute inset-0 flex items-center justify-center text-sm"
+        >
+          {t("loading")}
+        </p>
+      )}
       <span className="bg-foreground/80 pointer-events-none absolute top-3 left-3 rounded-full px-2.5 py-1 text-xs font-bold text-white">
         3D
       </span>
-      <div className="absolute top-3 right-3 flex flex-col gap-2">
+      <div
+        className={cn(
+          "absolute top-3 right-3 flex flex-col gap-2",
+          !ready && "hidden"
+        )}
+      >
         {(
           [
             ["zoomIn", ZoomIn, 3],

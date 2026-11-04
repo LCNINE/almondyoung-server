@@ -232,6 +232,7 @@
     "modelAlt": "{name}の3Dモデル",
     "representativeOption": "代表オプションを表示しています。選択したオプションと色や柄が異なる場合があります。",
     "zoomIn": "拡大",
-    "zoomOut": "縮小"
+    "zoomOut": "縮小",
+    "loading": "3Dモデルを読み込んでいます…"
   }
 }

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useRef, useState } from "react"
 import { Box } from "lucide-react"
 import { HttpTypes } from "@medusajs/types"
 import Image from "next/image"
@@ -11,7 +11,7 @@ import { SoldOutOverlay } from "@/components/products/sold-out-overlay"
 import { pickComingSoon } from "@/domains/products/product-details/components/product-actions/coming-soon"
 import { ComingSoonBadge } from "@/components/shared/badges/coming-soon-badge"
 import { calculateStockStatus } from "@/domains/products/components/product-card/quantity/stock-status"
-import { ProductModel3dLayer } from "../model3d-viewer"
+import { type Model3dStatus, ProductModel3dLayer } from "../model3d-viewer"
 
 type Props = {
   product: HttpTypes.StoreProduct
@@ -26,12 +26,31 @@ export function ImageGallery({ product }: Props) {
       : []
 
   const [selectedIndex, setSelectedIndex] = useState(0)
-  const [modelReady, setModelReady] = useState(false)
-  // 3D 를 받으면 첫 칸에 3D 를 끼우고 원래 사진들은 한 칸씩 뒤로 민다.
-  const slides = modelReady ? [null, ...images] : images
+  const [modelStatus, setModelStatus] = useState<Model3dStatus | null>(null)
+  const userPicked = useRef(false)
+  // 3D 를 받기 시작하면 첫 칸에 3D 를 끼우고 사진들은 한 칸씩 뒤로 민다. 사진은 그대로 다 남는다.
+  const hasModelSlot = modelStatus === "loading" || modelStatus === "ready"
+  const slides = hasModelSlot ? [null, ...images] : images
   const selectedImage = slides[selectedIndex] ?? images[0]
   const isSoldOut = calculateStockStatus(product).kind === "soldOut"
   const comingSoon = pickComingSoon(product.variants)
+
+  const pick = (index: number) => {
+    userPicked.current = true
+    setSelectedIndex(index)
+  }
+
+  const handleModelStatus = (status: Model3dStatus) => {
+    setModelStatus(status)
+
+    if (status === "loading") {
+      setSelectedIndex((index) => index + 1)
+    } else if (status === "ready" && !userPicked.current) {
+      setSelectedIndex(0)
+    } else if (status === "failed") {
+      setSelectedIndex((index) => Math.max(0, index - 1))
+    }
+  }
 
   if (images.length === 0) {
     return (
@@ -56,8 +75,8 @@ export function ImageGallery({ product }: Props) {
                   ? "border-primary"
                   : "hover:border-primary/40 border-transparent"
               )}
-              onMouseEnter={() => setSelectedIndex(index)}
-              onClick={() => setSelectedIndex(index)}
+              onMouseEnter={() => pick(index)}
+              onClick={() => pick(index)}
             >
               {image ? (
                 <Image
@@ -66,7 +85,7 @@ export function ImageGallery({ product }: Props) {
                     product.title
                       ? t("altIndex", {
                           name: product.title,
-                          index: modelReady ? index : index + 1,
+                          index: hasModelSlot ? index : index + 1,
                         })
                       : t("mainAlt")
                   }
@@ -101,11 +120,8 @@ export function ImageGallery({ product }: Props) {
         <ProductModel3dLayer
           fileId={product.metadata?.model3dFileId}
           productName={product.title ?? ""}
-          visible={modelReady && selectedIndex === 0}
-          onReady={() => {
-            setModelReady(true)
-            setSelectedIndex((index) => (index === 0 ? 0 : index + 1))
-          }}
+          visible={hasModelSlot && selectedIndex === 0}
+          onStatus={handleModelStatus}
         />
         {isSoldOut && comingSoon && (
           <ComingSoonBadge

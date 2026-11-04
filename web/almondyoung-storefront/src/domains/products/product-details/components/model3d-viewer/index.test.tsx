@@ -20,6 +20,7 @@ vi.mock("@/lib/utils/get-thumbnail-url", () => ({
 
 let root: Root
 let container: HTMLDivElement
+let idleCallbacks: (() => void)[]
 
 beforeEach(() => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
@@ -28,6 +29,13 @@ beforeEach(() => {
   root = createRoot(container)
   mountViewer.mockReset().mockResolvedValue(disposeViewer)
   disposeViewer.mockReset()
+  idleCallbacks = []
+  vi.stubGlobal("requestIdleCallback", (run: () => void) => {
+    idleCallbacks.push(run)
+
+    return idleCallbacks.length
+  })
+  vi.stubGlobal("cancelIdleCallback", () => {})
 })
 
 afterEach(async () => {
@@ -41,11 +49,11 @@ async function render(
   {
     visible = true,
     locale = "ko",
-    onReady,
+    onStatus,
   }: {
     visible?: boolean
     locale?: "ko" | "en" | "ja"
-    onReady?: () => void
+    onStatus?: (status: string) => void
   } = {}
 ) {
   await act(async () => {
@@ -58,7 +66,7 @@ async function render(
           fileId={fileId}
           productName="테스트 상품"
           visible={visible}
-          onReady={onReady}
+          onStatus={onStatus}
         />
       </NextIntlClientProvider>
     )
@@ -67,7 +75,8 @@ async function render(
 
 async function idle() {
   await act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 10))
+    idleCallbacks.splice(0).forEach((run) => run())
+    await new Promise((resolve) => setTimeout(resolve, 0))
   })
 }
 
@@ -101,7 +110,7 @@ describe("ProductModel3dLayer", () => {
     }
   )
 
-  it("keeps the photo until the model loads, then fades the model in", async () => {
+  it("downloads after the page is idle and shows loading until the model is ready", async () => {
     await render("model-file")
 
     expect(mountViewer).not.toHaveBeenCalled()
@@ -113,24 +122,27 @@ describe("ProductModel3dLayer", () => {
       src: "https://files.test/files/public/model-file",
       alt: "테스트 상품 3D 모델",
     })
-    expect(layer()?.className).toContain("opacity-0")
+    expect(layer()?.querySelector('[role="status"]')?.textContent).toContain(
+      "3D 모델을 불러오고 있어요"
+    )
 
     await act(async () => mountViewer.mock.calls[0][1].onLoad())
 
+    expect(layer()?.querySelector('[role="status"]')).toBeNull()
     expect(layer()?.className).toContain("opacity-100")
     expect(layer()?.textContent).toContain("대표 옵션 기준")
   })
 
-  it("tells the gallery once the model is ready", async () => {
-    const onReady = vi.fn()
-    await render("model-file", { onReady })
+  it("reports loading then ready to the gallery", async () => {
+    const onStatus = vi.fn()
+    await render("model-file", { onStatus })
+
+    expect(onStatus.mock.calls).toEqual([["loading"]])
+
     await idle()
-
-    expect(onReady).not.toHaveBeenCalled()
-
     await act(async () => mountViewer.mock.calls[0][1].onLoad())
 
-    expect(onReady).toHaveBeenCalledTimes(1)
+    expect(onStatus.mock.calls).toEqual([["loading"], ["ready"]])
   })
 
   it("zooms the viewer with the buttons", async () => {
@@ -169,28 +181,32 @@ describe("ProductModel3dLayer", () => {
     expect(mountViewer).toHaveBeenCalledTimes(1)
   })
 
-  it("stays on the photo when the model fails", async () => {
-    await render("model-file")
+  it("reports a failed model so the gallery drops the 3D slot", async () => {
+    const onStatus = vi.fn()
+    await render("model-file", { onStatus })
     await idle()
     await act(async () => mountViewer.mock.calls[0][1].onError())
 
-    expect(layer()?.className).toContain("opacity-0")
+    expect(onStatus).toHaveBeenLastCalledWith("failed")
   })
 
-  it("stays on the photo when WebGL is unavailable", async () => {
+  it("reports failure when WebGL is unavailable", async () => {
+    const onStatus = vi.fn()
     mountViewer.mockRejectedValue(new Error("WebGL 2 is not available"))
-    await render("model-file")
+    await render("model-file", { onStatus })
     await idle()
 
-    expect(layer()?.className).toContain("opacity-0")
+    expect(onStatus).toHaveBeenLastCalledWith("failed")
   })
 
-  it("skips the download on data saver", async () => {
+  it("never offers 3D on data saver", async () => {
+    const onStatus = vi.fn()
     vi.stubGlobal("navigator", { ...navigator, connection: { saveData: true } })
-    await render("model-file")
+    await render("model-file", { onStatus })
     await idle()
 
     expect(mountViewer).not.toHaveBeenCalled()
+    expect(onStatus).not.toHaveBeenCalled()
   })
 
   it("releases the old model when the product changes", async () => {
