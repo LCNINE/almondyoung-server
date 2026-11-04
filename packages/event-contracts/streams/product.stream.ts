@@ -166,7 +166,13 @@ export interface ProductSnapshot {
     }>;
     basePrice: number;
     membershipPrice?: number;
+    /** 일반 고객 수량 구간가 */
     tieredPrices?: Array<{
+      minQuantity: number;
+      price: number;
+    }>;
+    /** 멤버십 회원 수량 구간가(멤버십가 기준) */
+    membershipTieredPrices?: Array<{
       minQuantity: number;
       price: number;
     }>;
@@ -203,6 +209,13 @@ export interface ProductSnapshot {
   isGiftcard: boolean;
   discountable: boolean;
   purchaseConstraint?: ProductPurchaseConstraintSnapshot;
+  /** 수량 할인 적용 기간(UTC ISO). 상시면 둘 다 null, 구간표가 없거나 꺼져 있으면 null. */
+  quantityDiscount?: ProductQuantityDiscountSnapshot | null;
+}
+
+export interface ProductQuantityDiscountSnapshot {
+  startsAt: string | null;
+  endsAt: string | null;
 }
 
 export interface ProductMasterDeletedPayload {
@@ -348,6 +361,14 @@ const ProductSnapshotVariantSchema = z.object({
       }),
     )
     .optional(),
+  membershipTieredPrices: z
+    .array(
+      z.object({
+        minQuantity: z.number(),
+        price: z.number(),
+      }),
+    )
+    .optional(),
   weight: z.number().optional(),
   length: z.number().optional(),
   width: z.number().optional(),
@@ -408,6 +429,13 @@ const ProductSnapshotSchema = z.object({
   isGiftcard: z.boolean(),
   discountable: z.boolean(),
   purchaseConstraint: ProductPurchaseConstraintSnapshotSchema.optional(),
+  quantityDiscount: z
+    .object({
+      startsAt: z.string().nullable(),
+      endsAt: z.string().nullable(),
+    })
+    .nullable()
+    .optional(),
 });
 
 const ProductMasterActiveVersionChangedSchema = z.object({

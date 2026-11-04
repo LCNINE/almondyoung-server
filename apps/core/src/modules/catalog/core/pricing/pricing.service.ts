@@ -8,6 +8,7 @@ import { ReplacePricingRulesDto, PricingRulesResponseDto, PricingRuleResponseDto
 import { PricingMapper } from './mappers';
 import { PricingValidatorService } from './pricing-validator.service';
 import { PricingCalculatorService } from './pricing-calculator.service';
+import { QuantityDiscountManager } from './quantity-discount.manager';
 import { v7 as uuidv7 } from 'uuid';
 import { deleteEntitiesIfUnmapped } from '../version-isolation/delete-if-unmapped';
 
@@ -20,6 +21,7 @@ export class PricingService {
     private readonly dbService: DbService<typeof pimSchema>,
     private readonly validatorService: PricingValidatorService,
     private readonly calculatorService: PricingCalculatorService,
+    private readonly quantityDiscounts: QuantityDiscountManager,
   ) {}
 
   async getVersionRules(versionId: string, tx?: DbTransaction): Promise<PricingRulesResponseDto> {
@@ -168,6 +170,8 @@ export class PricingService {
         .update(productMasterVersions)
         .set({ updatedAt: new Date() })
         .where(eq(productMasterVersions.id, versionId));
+
+      await this.quantityDiscounts.assertCompatibleWithPrices(version.masterId, versionId, trx);
 
       return this.getVersionRules(versionId, trx);
     }, tx);

@@ -15,6 +15,7 @@ import {
   foreignKey,
   primaryKey,
   pgEnum,
+  date,
 } from 'drizzle-orm/pg-core';
 import { eq, sql } from 'drizzle-orm';
 
@@ -428,6 +429,48 @@ export const productMasterPurchaseConstraints = pgTable(
   ],
 );
 
+export type QuantityDiscountTier = {
+  minQuantity: number;
+  regularRateBp: number;
+  membershipRateBp: number;
+};
+
+// 수량 할인 구간표. 버전에 조인으로 붙고, 공유 중인 행을 고치면 새 행으로 갈라진다(구매 제한과 같은 방식).
+export const productQuantityDiscounts = pgTable('product_quantity_discounts', {
+  id: uuid('id')
+    .primaryKey()
+    .$defaultFn(() => uuidv7()),
+  enabled: boolean('enabled').default(true).notNull(),
+  startsOn: date('starts_on', { mode: 'string' }),
+  endsOn: date('ends_on', { mode: 'string' }),
+  tiers: jsonb('tiers').$type<QuantityDiscountTier[]>().notNull(),
+  createdAt: timestamp('created_at').defaultNow().notNull(),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
+export const productMasterQuantityDiscounts = pgTable(
+  'product_master_quantity_discounts',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => uuidv7()),
+    masterId: uuid('master_id')
+      .notNull()
+      .references(() => productMasters.id, { onDelete: 'cascade' }),
+    versionId: uuid('version_id')
+      .notNull()
+      .references(() => productMasterVersions.id, { onDelete: 'cascade' }),
+    quantityDiscountId: uuid('quantity_discount_id')
+      .notNull()
+      .references(() => productQuantityDiscounts.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (table) => [
+    index('idx_master_quantity_discounts_discount').on(table.quantityDiscountId),
+    uniqueIndex('unique_master_quantity_discount_version').on(table.masterId, table.versionId),
+  ],
+);
+
 // ===== 2.6. PRODUCT OPTION GROUP DISPLAYS (버전별/언어별 표시 정보) =====
 export const productOptionGroupDisplays = pgTable(
   'product_option_group_displays',
@@ -653,6 +696,10 @@ export const productVariantPriceCache = pgTable(
     basePrice: bigint('base_price', { mode: 'number' }).notNull(),
     membershipPrice: bigint('membership_price', { mode: 'number' }).notNull(),
     tieredPrices: jsonb('tiered_prices')
+      .$type<Array<{ minQuantity: number; price: number }>>()
+      .notNull()
+      .default(sql`'[]'::jsonb`),
+    membershipTieredPrices: jsonb('membership_tiered_prices')
       .$type<Array<{ minQuantity: number; price: number }>>()
       .notNull()
       .default(sql`'[]'::jsonb`),
@@ -1371,6 +1418,8 @@ export const catalogSchema = {
   productMasterPricingRules,
   productPurchaseConstraints,
   productMasterPurchaseConstraints,
+  productQuantityDiscounts,
+  productMasterQuantityDiscounts,
   productOptionGroupDisplays,
   productOptionValueDisplays,
   productOptionGroups,
