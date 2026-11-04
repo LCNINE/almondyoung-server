@@ -107,6 +107,26 @@ describe('sanitizeProductForNonMember', () => {
     expect(result.variants?.[0]?.id).toBe('variant_1');
   });
 
+  it('removes the member quantity-tier prices but keeps the regular tiers', () => {
+    const product = makeProduct({
+      metadata: { hideMembershipPriceForNonMembers: true },
+      variants: [
+        {
+          id: 'variant_1',
+          metadata: {
+            membershipPrice: 8000,
+            tieredPrices: [{ minQuantity: 3, price: 9500 }],
+            membershipTieredPrices: [{ minQuantity: 3, price: 7200 }],
+          },
+        },
+      ],
+    });
+
+    const result = sanitizeProductForNonMember(product);
+
+    expect(result.variants?.[0]?.metadata).toEqual({ tieredPrices: [{ minQuantity: 3, price: 9500 }] });
+  });
+
   it('숨김 대상이 아닌 상품은 그대로 반환한다', () => {
     const product = makeProduct();
     expect(sanitizeProductForNonMember(product)).toBe(product);
