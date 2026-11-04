@@ -9,6 +9,8 @@ import {
   productMasterVersions,
   productMasterOptionGroups,
   productMasterVariants,
+  productMasterPricingRules,
+  pricingRules,
   pimSchema,
 } from '../../schema/catalog.schema';
 import { DbTransaction } from '../../catalog.types';
@@ -46,6 +48,7 @@ export class PricingValidatorService {
         });
       }
 
+      await this.rejectTieredRuleChanges(versionId, parseResult.data.tieredPriceRules, trx);
       const validatedRules = await this.dropStaleVariantTargets(versionId, parseResult.data, trx);
 
       await this.validateScopeTargets(masterId, versionId, validatedRules, trx);
@@ -53,6 +56,57 @@ export class PricingValidatorService {
 
       return validatedRules;
     }, tx);
+  }
+
+  /**
+   * 수량별 가격 규칙(tiered_price)은 수량 할인 표로 대체됐다. 이미 저장된 규칙을 그대로 되보내는 것
+   * (규칙 편집기·AI 가격 도구가 저장할 때 하는 일)과 비우는 것만 받고, 추가·수정은 거부한다.
+   */
+  private async rejectTieredRuleChanges(
+    versionId: string,
+    incoming: PricingRuleInput[],
+    tx: DbTransaction,
+  ): Promise<void> {
+    if (incoming.length === 0) return;
+
+    const stored = await tx
+      .select({
+        minQuantity: pricingRules.minQuantity,
+        scopeType: pricingRules.scopeType,
+        scopeTargetIds: pricingRules.scopeTargetIds,
+        operationType: pricingRules.operationType,
+        operationValue: pricingRules.operationValue,
+      })
+      .from(productMasterPricingRules)
+      .innerJoin(pricingRules, eq(pricingRules.id, productMasterPricingRules.pricingRuleId))
+      .where(and(eq(productMasterPricingRules.versionId, versionId), eq(pricingRules.layer, 'tiered_price')));
+
+    const signature = (rule: {
+      minQuantity?: number | null;
+      scopeType: string;
+      scopeTargetIds?: string[] | null;
+      operationType: string;
+      operationValue: number;
+    }) =>
+      [
+        rule.minQuantity ?? '',
+        rule.scopeType,
+        [...(rule.scopeTargetIds ?? [])].sort().join(','),
+        rule.operationType,
+        rule.operationValue,
+      ].join('|');
+
+    const storedSignatures = stored.map(signature).sort();
+    const incomingSignatures = incoming.map(signature).sort();
+    const unchanged =
+      storedSignatures.length === incomingSignatures.length &&
+      storedSignatures.every((value, index) => value === incomingSignatures[index]);
+
+    if (!unchanged) {
+      throw new BadRequestException(
+        '수량별 가격 규칙은 더 이상 추가하거나 바꿀 수 없습니다. 수량 할인 표를 사용해 주세요.',
+      );
+    }
   }
 
   private async validateScopeTargets(

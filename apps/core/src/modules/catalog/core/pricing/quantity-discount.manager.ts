@@ -2,9 +2,11 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
 import { DbService } from '@app/db';
 import { BadRequestError, NotFoundError } from '@app/shared';
-import { eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import {
   pimSchema,
+  pricingRules,
+  productMasterPricingRules,
   productMasterQuantityDiscounts,
   productMasterVersions,
   productQuantityDiscounts,
@@ -82,6 +84,7 @@ export class QuantityDiscountManager {
         }
       }
 
+      await this.removeTieredRules(versionId, trx);
       await this.touchVersion(versionId, trx);
       return this.reader.findForVersion(masterId, versionId, trx);
     }, tx);
@@ -128,6 +131,33 @@ export class QuantityDiscountManager {
         junctionFkColumn: productMasterQuantityDiscounts.quantityDiscountId,
       },
       quantityDiscountIds,
+    );
+  }
+
+  /** 표가 생기면 계산기는 이 버전의 수량별 규칙(tiered_price)을 더 보지 않으므로 함께 지운다. */
+  private async removeTieredRules(versionId: string, tx: DbTransaction): Promise<void> {
+    const tiered = await tx
+      .select({ mappingId: productMasterPricingRules.id, ruleId: productMasterPricingRules.pricingRuleId })
+      .from(productMasterPricingRules)
+      .innerJoin(pricingRules, eq(pricingRules.id, productMasterPricingRules.pricingRuleId))
+      .where(and(eq(productMasterPricingRules.versionId, versionId), eq(pricingRules.layer, 'tiered_price')));
+    if (tiered.length === 0) return;
+
+    await tx.delete(productMasterPricingRules).where(
+      inArray(
+        productMasterPricingRules.id,
+        tiered.map((t) => t.mappingId),
+      ),
+    );
+    await deleteEntitiesIfUnmapped(
+      tx,
+      {
+        entityTable: pricingRules,
+        entityIdColumn: pricingRules.id,
+        junctionTable: productMasterPricingRules,
+        junctionFkColumn: productMasterPricingRules.pricingRuleId,
+      },
+      tiered.map((t) => t.ruleId),
     );
   }
 
