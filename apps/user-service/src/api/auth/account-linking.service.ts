@@ -11,6 +11,7 @@ import {
 import { and, eq } from 'drizzle-orm';
 import { randomBytes } from 'crypto';
 import { DbTransaction, ProviderType } from '../../commons/types';
+import { accountTenantOf } from '../../tenancy/account-owned-row-tenant';
 import { LinkedIdentityDto, LinkedIdentitiesResponseDto } from './dto/identity-list.dto';
 import { LinkingStatePayload } from './dto/link-identity.dto';
 
@@ -152,6 +153,7 @@ export class AccountLinkingService {
           name: socialProfile.name,
           email: socialProfile.email,
         },
+        tenantId: accountTenantOf(userId),
       });
 
       this.logger.log(`Social account linked for user: ${userId}, provider: ${provider}`);

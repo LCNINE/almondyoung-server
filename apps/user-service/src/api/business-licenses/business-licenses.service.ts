@@ -20,6 +20,7 @@ import {
 } from './dto/business-license.dto';
 import { BusinessLicenseResponseDto } from './dto/business-license.response.dto';
 import { BusinessLicenseException } from './exceptions/business.exceptions';
+import { accountTenantOf } from '../../tenancy/account-owned-row-tenant';
 
 // 국세청 상태조회 (data.go.kr) — 사업자번호만으로 계속/휴업/폐업/미등록 여부를 확인한다.
 const NTS_STATUS_URL = 'https://api.odcloud.kr/api/nts-businessman/v1/status';
@@ -218,6 +219,7 @@ export class BusinessLicensesService {
           status: 'under_review',
           fileUrl: data.fileUrl,
           metadata: null,
+          tenantId: accountTenantOf(userId),
         });
         return;
       }
@@ -234,6 +236,7 @@ export class BusinessLicensesService {
         status: this.deriveStatus(verification),
         fileUrl: null,
         metadata: { ntsValidate: verification },
+        tenantId: accountTenantOf(userId),
       });
       return;
     } catch (error) {

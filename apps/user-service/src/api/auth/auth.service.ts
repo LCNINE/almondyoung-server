@@ -643,6 +643,7 @@ export class AuthService {
         name: socialUser.name,
         email: socialUser.email,
       },
+      tenantId: newUser.tenantId,
     });
 
     // 기본 역할 설정
