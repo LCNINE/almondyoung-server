@@ -60,11 +60,23 @@ export function parseServerError(
   };
 }
 
+const UNDER_RESERVED_MESSAGE =
+  '재고가 부족해 예약되지 않은 상품이 있어요. 입고하거나 재고를 조정하면 자동으로 예약돼요.';
+
+const CONFLICT_MESSAGES: Record<string, string> = {
+  SHIPMENT_NOT_FULLY_RESERVED: UNDER_RESERVED_MESSAGE,
+  SHIPMENT_NOT_FULLY_RESERVED_PHYSICAL: UNDER_RESERVED_MESSAGE,
+};
+
 export function getServerDenyMessage(
   error: unknown,
   fallback = '작업에 실패했습니다.'
 ): string {
   const parsed = parseServerError(error, fallback);
+  const known = parsed.code ? CONFLICT_MESSAGES[parsed.code] : undefined;
+
+  if (known) return known;
+
   if (parsed.denied) {
     return `권한이 없어 서버가 작업을 거부했습니다. ${parsed.message}`;
   }
