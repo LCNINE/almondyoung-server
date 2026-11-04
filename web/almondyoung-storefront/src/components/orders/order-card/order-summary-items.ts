@@ -1,4 +1,5 @@
 import type { HttpTypes } from "@medusajs/types"
+import { orderLineQuantityDiscount } from "@/lib/utils/quantity-discount"
 import type { CustomerReturn } from "@/lib/types/ui/returns"
 import { isDigitalItem } from "@/lib/api/medusa/shipping-method-policy"
 import {
@@ -17,6 +18,8 @@ export interface OrderSummaryItem {
   thumbnail: string
   href?: string
   price: string
+  /** 주문 때 받은 수량 할인(같은 옵션 N개 이상) 안내 */
+  discountNote?: string
   options?: string[]
   variantId?: string
   isDigital?: boolean
@@ -78,6 +81,7 @@ export function mapOrderSummaryItems(
       : typeof item.total === "number"
         ? item.total
         : (item.unit_price ?? 0) * (item.quantity ?? 0)
+    const quantityDiscount = orderLineQuantityDiscount(item)
     const returnText = returnStatus
       ? returnStatusText(returnStatus, item.quantity ?? 0, tList)
       : null
@@ -94,6 +98,9 @@ export function mapOrderSummaryItems(
         "https://placehold.co/80x80",
       href: handle ? `/products/${handle}` : undefined,
       price: `${lineTotal.toLocaleString()}원 · ${tList("itemQuantity", { count: item.quantity ?? 0 })}`,
+      ...(quantityDiscount > 0
+        ? { discountNote: tList("quantityDiscount", { amount: quantityDiscount.toLocaleString() }) }
+        : {}),
       options:
         item.variant?.title && item.variant.title !== "Default"
           ? [item.variant.title]

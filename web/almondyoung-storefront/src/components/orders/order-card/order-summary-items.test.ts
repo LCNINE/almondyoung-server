@@ -94,3 +94,27 @@ describe("mapOrderSummaryItems", () => {
     expect(items[0].returnLinks).toBeUndefined()
   })
 })
+
+describe("mapOrderSummaryItems quantity discount", () => {
+  it("notes the quantity discount recorded on the order line", () => {
+    const tiered = {
+      id: "order-qd",
+      items: [
+        {
+          id: "t",
+          title: "구간 상품",
+          quantity: 3,
+          unit_price: 9500,
+          total: 28500,
+          metadata: { price_breakdown: { base_unit: 10000, before_tier_unit: 10000, tier_discount_unit: 500 } },
+        },
+        { id: "p", title: "일반 상품", quantity: 1, unit_price: 2000, total: 2000 },
+      ],
+    } as unknown as HttpTypes.StoreOrder
+
+    const [withTier, plain] = mapOrderSummaryItems(tiered, [], t)
+
+    expect(withTier.discountNote).toBe("수량 할인 -1,500원")
+    expect(plain.discountNote).toBeUndefined()
+  })
+})

@@ -253,7 +253,8 @@
       "claimAndApplyFailed": "クーポンの発行に失敗しました。しばらくしてから再度お試しください。",
       "claimSuccessApplyFailed": "クーポンは発行されましたが、現在のカートに適用できませんでした。クーポン一覧でご確認のうえご利用ください。"
     },
-    "maxCap": "最大{amount}ウォン"
+    "maxCap": "最大{amount}ウォン",
+    "quantityDiscount": "まとめ買い割引"
   },
   "paymentTotal": {
     "title": "決済情報",
@@ -263,7 +264,8 @@
     "membershipDiscount": "メンバーシップ割引",
     "discount": "割引",
     "couponEtc": "(クーポン・その他)",
-    "totalAmount": "注文金額合計"
+    "totalAmount": "注文金額合計",
+    "quantityDiscount": "まとめ買い割引"
   },
   "mobileSummary": {
     "title": "注文概要",

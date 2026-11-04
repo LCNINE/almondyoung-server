@@ -529,7 +529,8 @@
       "orderDate": "주문일",
       "orderDateSuffix": "{date} 주문",
       "items": "상품 {count}건",
-      "notFound": "주문 정보를 찾을 수 없습니다."
+      "notFound": "주문 정보를 찾을 수 없습니다.",
+      "quantityDiscount": "수량 할인"
     },
     "list": {
       "title": "주문 목록",
@@ -562,7 +563,8 @@
         "refundedOn": "{date} 환불",
         "viewReturnDetail": "반품 상세 보기",
         "viewExchangeDetail": "교환 상세 보기"
-      }
+      },
+      "quantityDiscount": "수량 할인 -{amount}원"
     },
     "filter": {
       "label": "필터",

@@ -529,7 +529,8 @@
       "orderDate": "注文日",
       "orderDateSuffix": "{date} 注文",
       "items": "商品 {count}件",
-      "notFound": "注文情報が見つかりません。"
+      "notFound": "注文情報が見つかりません。",
+      "quantityDiscount": "まとめ買い割引"
     },
     "list": {
       "title": "注文一覧",
@@ -562,7 +563,8 @@
         "refundedOn": "{date} 返金",
         "viewReturnDetail": "返品の詳細",
         "viewExchangeDetail": "交換の詳細"
-      }
+      },
+      "quantityDiscount": "まとめ買い割引 -{amount}ウォン"
     },
     "filter": {
       "label": "フィルター",

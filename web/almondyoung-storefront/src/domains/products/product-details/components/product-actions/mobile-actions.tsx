@@ -13,6 +13,7 @@ import { AlmondDesignNotice } from "./almond-design-notice"
 import SelectedItemRow from "./selected-item-row"
 import { RestockNotice, hasStockNotice } from "./restock-notice"
 import { SelectedItem } from "./types"
+import type { ItemQuantityPricing } from "./quantity-pricing"
 import { CustomOrderNotice } from "@/domains/almond-template/components/custom-order-notice"
 import LocalizedClientLink from "@/components/shared/localized-client-link"
 
@@ -26,6 +27,7 @@ type MobileActionsProps = {
   selectedValuesMap: Record<string, Set<string>>
   totalQuantity: number
   totalPrice: number
+  pricingOf: (item: SelectedItem) => ItemQuantityPricing
   isSimple: boolean
   isWelcomeMembership: boolean
   membersOnlyPurchase: boolean
@@ -52,6 +54,7 @@ const MobileActions: React.FC<MobileActionsProps> = ({
   selectedValuesMap,
   totalQuantity,
   totalPrice,
+  pricingOf,
   isSimple,
   isWelcomeMembership,
   membersOnlyPurchase,
@@ -229,6 +232,8 @@ const MobileActions: React.FC<MobileActionsProps> = ({
                       updateQuantity(item.variantId, 1 - item.quantity)
                     }
                     onRemove={() => removeItem(item.variantId)}
+                    pricing={pricingOf(item)}
+                    onAddQuantity={(count) => updateQuantity(item.variantId, count)}
                   />
                 ))}
               </div>

@@ -238,5 +238,19 @@
     "modelAlt": "3D model of {name}",
     "loading": "Loading the 3D model…",
     "error": "The 3D model could not be loaded. Close the viewer and try again."
+  },
+  "quantityDiscount": {
+    "title": "Quantity discount",
+    "basis": "Per quantity of the same option",
+    "basisOption": "{option} · same option",
+    "minQuantity": "{count}+ items",
+    "unitPrice": "{amount} KRW each",
+    "percent": "{percent}% off",
+    "memberOnly": "Members only: {amount} KRW each",
+    "more": "More ({count})",
+    "less": "Less",
+    "applied": "{percent}% quantity discount applied",
+    "nudge": "Add {count} more for {amount} KRW each ({percent}% off)",
+    "nudgeAction": "Add {count}"
   }
 }

@@ -45,12 +45,17 @@
     "overStockHint": "在庫が残り{max}個です。{max}個以下に調整してください。",
     "quantityAdjustedToMax": "在庫が{max}個のため、{max}個に調整しました。",
     "timeSaleBadge": "タイムセール",
-    "timeSaleMembershipBadge": "タイムセール会員特価"
+    "timeSaleMembershipBadge": "タイムセール会員特価",
+    "quantityDiscount": "まとめ買い割引 -{amount}ウォン",
+    "quantityNudge": "あと{count}個で1個あたり{amount}ウォン（{percent}%割引）",
+    "quantityNudgeAction": "{count}個追加"
   },
   "summary": {
     "title": "ご注文金額",
     "subtotal": "商品合計",
     "membershipDiscount": "メンバーシップ割引",
+    "productDiscount": "商品割引",
+    "quantityDiscount": "まとめ買い割引",
     "couponDiscount": "クーポン・プロモーション",
     "shipping": "送料",
     "totalPayment": "お支払い合計",

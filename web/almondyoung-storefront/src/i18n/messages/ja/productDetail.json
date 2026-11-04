@@ -238,5 +238,19 @@
     "modelAlt": "{name}の3Dモデル",
     "loading": "3Dモデルを読み込んでいます…",
     "error": "3Dモデルを読み込めませんでした。一度閉じてから、もう一度お試しください。"
+  },
+  "quantityDiscount": {
+    "title": "まとめ買い割引",
+    "basis": "同じオプションの数量が対象",
+    "basisOption": "{option}・同じオプションが対象",
+    "minQuantity": "{count}個以上",
+    "unitPrice": "1個あたり{amount}ウォン",
+    "percent": "{percent}%割引",
+    "memberOnly": "メンバーシップ会員限定 1個あたり{amount}ウォン",
+    "more": "もっと見る ({count})",
+    "less": "閉じる",
+    "applied": "まとめ買い割引{percent}%適用",
+    "nudge": "あと{count}個で1個あたり{amount}ウォン（{percent}%割引）",
+    "nudgeAction": "{count}個追加"
   }
 }

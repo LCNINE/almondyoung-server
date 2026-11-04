@@ -1,5 +1,6 @@
 "use client"
 
+import { orderLineQuantityDiscount } from "@/lib/utils/quantity-discount"
 import { cartRequiresShipping } from "@/lib/api/medusa/shipping-method-policy"
 import { buildAddressLine } from "@/lib/utils/address-line"
 import {
@@ -93,7 +94,15 @@ export const OrderDetailsMobile = ({
   // 해외직구 주문만 채워짐(체크아웃에서 shipping_address.metadata 에 저장).
   const personalCustomsCode =
     (address?.metadata?.personalCustomsCode as string) || ""
-  const membershipDiscount = calculateMembershipDiscount(order.items ?? [])
+  // 정가 − 단가 중 주문 때 기록된 수량 할인 몫은 따로 보인다(기록이 없는 옛 주문은 전처럼 한 줄).
+  const quantityDiscount = (order.items ?? []).reduce(
+    (sum, item) => sum + orderLineQuantityDiscount(item),
+    0
+  )
+  const membershipDiscount = Math.max(
+    0,
+    calculateMembershipDiscount(order.items ?? []) - quantityDiscount
+  )
   const pointsUsed = getOrderPointsUsed(order.metadata)
   // 디지털 단독 주문이면 배송 정보를 숨긴다.
   const requiresShipping = cartRequiresShipping(order.items)
@@ -219,6 +228,16 @@ export const OrderDetailsMobile = ({
                 </OrderInfoCardRowItem>
                 <OrderInfoCardRowItem className="text-right text-gray-800">
                   -{formatAmount(membershipDiscount)}
+                </OrderInfoCardRowItem>
+              </OrderInfoCardRow>
+            )}
+            {quantityDiscount > 0 && (
+              <OrderInfoCardRow className="mb-2">
+                <OrderInfoCardRowItem className="text-gray-500">
+                  {tLabels("quantityDiscount")}
+                </OrderInfoCardRowItem>
+                <OrderInfoCardRowItem className="text-right text-gray-800">
+                  -{formatAmount(quantityDiscount)}
                 </OrderInfoCardRowItem>
               </OrderInfoCardRow>
             )}
