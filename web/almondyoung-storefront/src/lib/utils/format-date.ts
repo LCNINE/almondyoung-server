@@ -15,6 +15,8 @@ export const DATE_FORMATS = {
   KO_DOT_TIME: "yyyy.MM.dd HH:mm",
   /** 2024년 6월 14일 (금) */
   KO_LONG_WEEKDAY: "yyyy년 M월 d일 (E)",
+  /** 6월 14일(금) */
+  KO_MONTH_DAY_WEEKDAY: "M월 d일(E)",
 } as const
 
 export type DateFormatPreset = (typeof DATE_FORMATS)[keyof typeof DATE_FORMATS]

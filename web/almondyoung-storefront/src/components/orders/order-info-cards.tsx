@@ -10,35 +10,6 @@ import {
 import { CustomButton } from "../shared/custom-buttons/custom-button"
 
 /**
- * 배송지 정보 카드 컴포넌트
- */
-export const OrderInfoCardShipping = () => {
-  return (
-    <OrderInfoCardRoot>
-      <OrderInfoCardTitle>이연정</OrderInfoCardTitle>
-      <OrderInfoCardRow>
-        <OrderInfoCardRowItem>받는분</OrderInfoCardRowItem>
-        <OrderInfoCardRowItem>이연정</OrderInfoCardRowItem>
-      </OrderInfoCardRow>
-      <OrderInfoCardRow>
-        <OrderInfoCardRowItem>
-          (10303) 서울특별시 강북구 도봉로 89길 27(수유동) 4층
-        </OrderInfoCardRowItem>
-      </OrderInfoCardRow>
-      <OrderInfoCardRow>
-        <OrderInfoCardRowItem>전화번호</OrderInfoCardRowItem>
-        <OrderInfoCardRowItem>010-0000-0000</OrderInfoCardRowItem>
-      </OrderInfoCardRow>
-      <OrderInfoCardDivider />
-      <OrderInfoCardRow>
-        <OrderInfoCardRowItem>배송요청사항</OrderInfoCardRowItem>
-        <OrderInfoCardRowItem>부재 시 문앞에 두주세요.</OrderInfoCardRowItem>
-      </OrderInfoCardRow>
-    </OrderInfoCardRoot>
-  )
-}
-
-/**
  * 결제 정보 카드 컴포넌트
  */
 export const OrderInfoCardPayment = () => {

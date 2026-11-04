@@ -1,223 +1,257 @@
 import MypageLayout from "@/app/[countryCode]/(mypage)/_components/mypage-layout"
 import { WithHeaderLayout } from "@components/layout"
-import { OrderInfoCardShipping } from "@components/orders/order-info-cards"
-import { ExternalLink } from "lucide-react"
+import LocalizedClientLink from "@/components/shared/localized-client-link"
+import { Check, ChevronDown, ExternalLink } from "lucide-react"
 import { getTranslations } from "next-intl/server"
-import { DeliveryHeader } from "domains/order/track/components"
-import { Accordion } from "./accordion"
-import { getOrderTrackingByMedusaId, type StoreOrderTrackingResponse } from "@/lib/api/orders/store-orders"
+import { getOrder } from "@/lib/api/medusa/orders"
+import { retrieveCustomer } from "@/lib/api/medusa/customer"
+import {
+  getOrderTrackingByMedusaId,
+  type StoreOrderTrackingResponse,
+} from "@/lib/api/orders/store-orders"
+import { ApiAuthError } from "@lib/api/api-error"
+import { buildAddressLine } from "@/lib/utils/address-line"
+import { cn } from "@/lib/utils"
 import { DATE_FORMATS, formatDate } from "@/lib/utils/format-date"
+import { CopyButton } from "./copy-button"
 
 interface OrderTrackPageProps {
   searchParams: Promise<{ orderId?: string }>
 }
 
-function trackingStatusToStep(status: StoreOrderTrackingResponse["status"]): number {
-  switch (status) {
-    case "not_shipped": return 1
-    case "preparing": return 2
-    case "shipping": return 4
-    case "delivered": return 5
-    default: return 1
+const CS_PHONE = "1877-7184"
+const STEP_KEYS = ["paid", "preparing", "shippingStarted", "shipping", "delivered"] as const
+const FAQ_KEYS = ["partial", "notReceived", "return"] as const
+
+function toStep(tracking: StoreOrderTrackingResponse | null): number {
+  switch (tracking?.status) {
+    case "preparing":
+      return 2
+    case "shipping":
+      return tracking.shipments.some((s) => s.trackingEvents.length > 0) ? 4 : 3
+    case "delivered":
+      return 5
+    default:
+      return 1
   }
 }
 
 export default async function OrderTrackPage({ searchParams }: OrderTrackPageProps) {
-  const t = await getTranslations("mypage.page")
-  const tDelivery = await getTranslations("mypage.order.delivery")
-  const tOrderActions = await getTranslations("mypage.order.actions")
+  const t = await getTranslations("mypage.order.delivery")
+  const tPage = await getTranslations("mypage.page")
   const { orderId } = await searchParams
 
-  let tracking: StoreOrderTrackingResponse | null = null
-  if (orderId) {
-    try {
-      tracking = await getOrderTrackingByMedusaId(orderId)
-    } catch {
-      // 배송 정보 조회 실패 시 null로 처리 (페이지는 렌더됨)
-    }
-  }
+  const [rawOrder, customer, tracking] = await Promise.all([
+    orderId ? getOrder(orderId) : Promise.resolve(null),
+    retrieveCustomer(),
+    orderId
+      ? getOrderTrackingByMedusaId(orderId).catch((error: unknown) => {
+          if (error instanceof ApiAuthError) throw error
 
-  const currentStep = tracking ? trackingStatusToStep(tracking.status) : 1
-  const completedDate = tracking?.shipments.find((s) => s.deliveredAt)?.deliveredAt
-  const faqData = [
-    {
-      id: "faq-1",
-      question: "[상품누락] 상품을 구매했는데 일부만 배송되었어요.",
-      answer: (
-        <>
-          <p>
-            상품이 누락되었다면 교환을 통해 상품을 다시 받거나, 반품 후 환불을
-            받을 수 있습니다. 구성품의 일부가 누락된 경우에는 부분 배송이
-            불가하므로 상품 전체를 교환/반품으로 진행해 주시기 바랍니다. 교환 및
-            반품은 아래의 경로를 통해 직접 신청이 가능합니다.
-          </p>
-          <div>
-            <p>
-              <strong className="font-bold">교환/반품 신청하기</strong>
-            </p>
-            <p>
-              • 마이쿠팡 →{" "}
-              <a
-                href="https://mc.coupang.com/ssr/desktop/order/list"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 text-blue-600 underline"
-              >
-                <span>주문목록</span>
-                <ExternalLink className="h-4 w-4" />
-              </a>{" "}
-              → 상품선택 → [교환, 반품 신청] 선택
-            </p>
-            <p>• 이후 각 단계에 해당하는 항목을 선택하여 신청을 완료합니다.</p>
-          </div>
-        </>
-      ),
-    },
-    {
-      id: "faq-2",
-      question: "[환불] 반품 신청을 했는데, 언제 환불되나요?",
-      answer: (
-        <p>
-          환불은 결제수단에 따라 다소 시간이 소요될 수 있습니다. (답변 예시)
-        </p>
-      ),
-    },
-    {
-      id: "faq-3",
-      question: "[배송완료미수령] 상품을 받지 못했는데 배송완료로 확인됩니다.",
-      answer: (
-        <p>
-          배송 기사님께 연락하거나 고객센터로 문의해 주시기 바랍니다. (답변
-          예시)
-        </p>
-      ),
-    },
-    {
-      id: "faq-4",
-      question: "[교환/반품] 상품을 교환/반품하고 싶어요.",
-      answer: (
-        <p>
-          마이쿠팡 {">"} 주문목록에서 직접 신청하실 수 있습니다. (답변 예시)
-        </p>
-      ),
-    },
-  ]
+          return null
+        })
+      : Promise.resolve(null),
+  ])
+
+  // /store/orders/:id 는 주인을 가리지 않으므로 남의 주문이면 받는 분을 그리지 않는다
+  const order =
+    rawOrder?.customer_id && customer?.id === rawOrder.customer_id ? rawOrder : null
+  const address = order?.shipping_address
+  const shipments = tracking?.shipments ?? []
+  const step = toStep(tracking)
+  const eta = shipments.find((s) => s.eta)?.eta
+  const deliveredAt = shipments.find((s) => s.deliveredAt)?.deliveredAt
+  const heroDate = (value: string) => formatDate(value, DATE_FORMATS.KO_MONTH_DAY_WEEKDAY)
+
+  const hero =
+    step === 5
+      ? { title: deliveredAt ? t("deliveredTitle", { date: heroDate(deliveredAt) }) : t("deliveredTitleNoDate") }
+      : step >= 3
+        ? {
+            title: t("shippingTitle"),
+            description: eta ? t("shippingEta", { date: heroDate(eta) }) : t("shippingDescription"),
+          }
+        : { title: t(step === 2 ? "preparingTitle" : "paidTitle"), description: t("waitingDescription") }
+
   return (
     <WithHeaderLayout
       config={{
         showDesktopHeader: true,
         showMobileHeader: false,
         showMobileSubBackHeader: true,
-        mobileSubBackHeaderTitle: t("trackDelivery"),
+        mobileSubBackHeaderTitle: tPage("trackDelivery"),
       }}
     >
       <MypageLayout>
-        <div className="bg-gray min-h-screen py-4">
-          <DeliveryHeader
-            currentStep={currentStep}
-            completedDate={completedDate ? formatDate(completedDate, DATE_FORMATS.KO_DOT) : undefined}
-          />
+        <div className="bg-muted min-h-screen md:bg-transparent">
+          <section className="border-secondary border-b bg-white px-4 pt-6 pb-5 md:rounded-lg md:border">
+            <h2 className="text-xl font-bold">{hero.title}</h2>
+            {hero.description && (
+              <p className="text-muted-foreground mt-1 text-sm">{hero.description}</p>
+            )}
+            <ol className="mt-6 flex items-start">
+              {STEP_KEYS.map((key, index) => {
+                const id = index + 1
+                const done = id < step
+                const current = id === step
 
-          <div className="px-3 md:px-0">
-            {/* 주문목록으로 돌아가기 */}
-            <section className="mt-4">
-              <a
-                href="/mypage/order/list"
-                className="flex items-center gap-1 text-sm text-[#ffa500] hover:underline"
-              >
-                {tOrderActions("backToList")}
-              </a>
-            </section>
-
-            {/* 배송 정보 */}
-            <section className="mt-10">
-              <h3 className="mb-3 px-3 text-sm font-bold text-gray-800">
-                {tDelivery("trackingInfo")}
-              </h3>
-              {tracking && tracking.shipments.length > 0 ? (
-                <div className="space-y-3">
-                  {tracking.shipments.map((shipment, idx) => (
-                    <div key={idx} className="rounded-xl bg-white p-4 shadow-sm">
-                      <div className="space-y-2 text-sm">
-                        <div className="flex justify-between">
-                          <span className="text-gray-500">{tDelivery("carrierLabel")}</span>
-                          <span className="font-medium">
-                            {shipment.carrierName && shipment.carrierName !== 'UNKNOWN'
-                              ? shipment.carrierName
-                              : tDelivery("unknownCarrier")}
-                          </span>
-                        </div>
-                        {shipment.trackingNumber && (
-                          <div className="flex justify-between">
-                            <span className="text-gray-500">{tDelivery("trackingNumberLabel")}</span>
-                            <span className="font-mono">{shipment.trackingNumber}</span>
-                          </div>
+                return (
+                  <li key={key} className={cn("flex items-start", index > 0 && "flex-1")}>
+                    {index > 0 && (
+                      <div className={cn("mt-3 h-0.5 flex-1", done || current ? "bg-foreground" : "bg-secondary")} />
+                    )}
+                    <div className="flex w-12 flex-col items-center gap-2">
+                      <span
+                        className={cn(
+                          "flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold",
+                          done && "bg-foreground text-white",
+                          current && "bg-primary text-white ring-4 ring-[#fff7e5]",
+                          !done && !current && "bg-secondary text-[#b0b3ba]"
                         )}
-                        {shipment.shippedAt && (
-                          <div className="flex justify-between">
-                            <span className="text-gray-500">{tDelivery("shippedAtLabel")}</span>
-                            <span>{formatDate(shipment.shippedAt, DATE_FORMATS.KO_DOT)}</span>
-                          </div>
+                      >
+                        {done ? <Check className="h-3.5 w-3.5" /> : id}
+                      </span>
+                      <span
+                        className={cn(
+                          "text-center text-xs break-keep",
+                          current ? "font-bold" : done ? "text-foreground" : "text-muted-foreground"
                         )}
-                      </div>
-                      {shipment.trackingUrl && (
-                        <a
-                          href={shipment.trackingUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="mt-3 flex items-center justify-center gap-1.5 rounded-md border border-gray-300 py-2 text-sm text-gray-700 hover:bg-gray-50"
-                        >
-                          {tDelivery("viewTracking")}
-                          <ExternalLink className="h-3.5 w-3.5" />
-                        </a>
-                      )}
-                      {shipment.trackingEvents.length > 0 && (
-                        <div className="mt-3 border-t pt-3">
-                          <div className="space-y-2">
-                            {shipment.trackingEvents.slice(0, 5).map((evt, i) => (
-                              <div key={i} className="flex gap-3 text-xs text-gray-600">
-                                <span className="w-32 shrink-0 text-gray-400">
-                                  {formatDate(evt.timestamp, "MM.dd HH:mm")}
-                                </span>
-                                <span>{evt.location ?? evt.status}</span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
+                      >
+                        {t(key)}
+                      </span>
                     </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="rounded-xl bg-white p-4 text-center text-sm text-gray-500 shadow-sm">
-                  {tDelivery("noTrackingInfo")}
-                </div>
-              )}
-            </section>
+                  </li>
+                )
+              })}
+            </ol>
+          </section>
 
-            <section className="mt-6">
-              <OrderInfoCardShipping />
-            </section>
+          <div className="flex flex-col gap-3 p-4 md:px-0">
+            <h3 className="mt-2 text-base font-bold">{t("trackingInfo")}</h3>
+            {shipments.length > 0 ? (
+              shipments.map((shipment) => (
+                <div key={shipment.fulfillmentOrderId} className="border-border rounded-lg border bg-white p-4 text-sm">
+                  <dl className="space-y-2">
+                    <div className="flex justify-between gap-3">
+                      <dt className="text-muted-foreground">{t("carrierLabel")}</dt>
+                      <dd>
+                        {shipment.carrierName && shipment.carrierName !== "UNKNOWN"
+                          ? shipment.carrierName
+                          : t("unknownCarrier")}
+                      </dd>
+                    </div>
+                    {shipment.trackingNumber && (
+                      <div className="flex items-center justify-between gap-3">
+                        <dt className="text-muted-foreground">{t("trackingNumberLabel")}</dt>
+                        <dd className="flex items-center tabular-nums">
+                          {shipment.trackingNumber}
+                          <CopyButton value={shipment.trackingNumber} />
+                        </dd>
+                      </div>
+                    )}
+                    {shipment.shippedAt && (
+                      <div className="flex justify-between gap-3">
+                        <dt className="text-muted-foreground">{t("shippedAtLabel")}</dt>
+                        <dd>{formatDate(shipment.shippedAt, DATE_FORMATS.KO_DOT)}</dd>
+                      </div>
+                    )}
+                  </dl>
 
-            <section className="mt-10 bg-white">
-              <div className="p-3">
-                <h3 className="mb-4 text-xl font-bold">
-                  배송에 대해 궁금한 점이 있으십니까?
-                </h3>
-                <Accordion.Root defaultValue="faq-1">
-                  {faqData.map((faq) => (
-                    <Accordion.Item key={faq.id} value={faq.id}>
-                      <Accordion.Trigger value={faq.id}>
-                        {faq.question}
-                      </Accordion.Trigger>
-                      <Accordion.Content value={faq.id}>
-                        {faq.answer}
-                      </Accordion.Content>
-                    </Accordion.Item>
-                  ))}
-                </Accordion.Root>
+                  {shipment.trackingEvents.length > 0 && (
+                    <ol className="border-secondary mt-4 border-t pt-4">
+                      {shipment.trackingEvents.slice(0, 5).map((event, index) => (
+                        <li key={index} className="relative flex gap-3 pb-4 pl-5 last:pb-0">
+                          <span
+                            className={cn(
+                              "absolute top-1.5 left-1 h-2 w-2 rounded-full",
+                              index === 0 ? "bg-foreground" : "bg-border"
+                            )}
+                          />
+                          <span className="text-muted-foreground w-20 shrink-0 text-[13px]">
+                            {formatDate(event.timestamp, "MM.dd HH:mm")}
+                          </span>
+                          <span className={cn(index === 0 && "font-bold")}>
+                            {event.location ?? event.status}
+                          </span>
+                        </li>
+                      ))}
+                    </ol>
+                  )}
+
+                  {shipment.trackingUrl && (
+                    <a
+                      href={shipment.trackingUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="border-border active:bg-secondary mt-4 flex h-11 items-center justify-center gap-1.5 rounded-lg border font-medium"
+                    >
+                      {t("viewTracking")}
+                      <ExternalLink className="h-3.5 w-3.5" />
+                    </a>
+                  )}
+                </div>
+              ))
+            ) : (
+              <div className="border-border rounded-lg border bg-white px-4 py-6 text-center text-sm">
+                <p className="font-medium">{t("emptyTitle")}</p>
+                <p className="text-muted-foreground mt-1">{t("emptyDescription")}</p>
               </div>
-            </section>
+            )}
+
+            {address && (
+              <>
+                <h3 className="mt-2 text-base font-bold">{t("receiver")}</h3>
+                <dl className="border-border space-y-2 rounded-lg border bg-white p-4 text-sm">
+                  <div className="flex justify-between gap-3">
+                    <dt className="text-muted-foreground shrink-0">{t("receiverName")}</dt>
+                    <dd>{[address.first_name, address.last_name].filter(Boolean).join(" ") || "-"}</dd>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <dt className="text-muted-foreground shrink-0">{t("receiverPhone")}</dt>
+                    <dd>{address.phone || "-"}</dd>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <dt className="text-muted-foreground shrink-0">{t("receiverAddress")}</dt>
+                    <dd className="text-right">
+                      {buildAddressLine({
+                        province: address.province,
+                        city: address.city,
+                        address1: address.address_1,
+                        address2: address.address_2,
+                      }) || "-"}
+                    </dd>
+                  </div>
+                </dl>
+              </>
+            )}
+
+            <h3 className="mt-2 text-base font-bold">{t("faqTitle")}</h3>
+            <div className="border-border rounded-lg border bg-white px-4 text-sm">
+              {FAQ_KEYS.map((key) => (
+                <details key={key} className="group border-secondary border-t first:border-t-0">
+                  <summary className="flex cursor-pointer list-none items-center justify-between gap-3 py-4 font-medium [&::-webkit-details-marker]:hidden">
+                    {t(`faq.${key}Q`)}
+                    <ChevronDown className="text-muted-foreground h-4 w-4 shrink-0 transition-transform group-open:rotate-180" />
+                  </summary>
+                  <p className="bg-muted mb-4 rounded-lg p-3 leading-relaxed">{t(`faq.${key}A`)}</p>
+                </details>
+              ))}
+            </div>
+
+            <div className="flex gap-2">
+              <LocalizedClientLink
+                href="/cs?tab=inquiry"
+                className="border-border active:bg-secondary flex h-11 flex-1 items-center justify-center rounded-lg border bg-white text-sm font-medium"
+              >
+                {t("inquiry")}
+              </LocalizedClientLink>
+              <a
+                href={`tel:${CS_PHONE.replaceAll("-", "")}`}
+                className="border-border active:bg-secondary flex h-11 flex-1 items-center justify-center rounded-lg border bg-white text-sm font-medium"
+              >
+                {t("csCall", { phone: CS_PHONE })}
+              </a>
+            </div>
           </div>
         </div>
       </MypageLayout>

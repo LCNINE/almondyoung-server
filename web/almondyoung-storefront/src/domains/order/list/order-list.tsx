@@ -22,6 +22,8 @@ import {
   X,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { cartRequiresShipping } from "@/lib/api/medusa/shipping-method-policy"
+import { showTrackLink } from "@/lib/orders/core-order-view"
 import { getOrderPointsUsed } from "@/lib/utils/price-utils"
 import type { CustomerReturn } from "@/lib/types/ui/returns"
 import { mapOrderSummaryItems } from "@/components/orders/order-card/order-summary-items"
@@ -95,6 +97,8 @@ interface OrderItem {
   originalPrice?: string
   showInquiry: boolean
   bankTransferStatus?: string
+  requiresShipping: boolean
+  medusaFulfillmentStatus?: string | null
 }
 
 interface OrderListProps {
@@ -203,6 +207,8 @@ const mapStoreOrderToOrderItem = (
       ? { originalPrice: `${orderTotal.toLocaleString()}원` }
       : {}),
     showInquiry: order.fulfillment_status === "fulfilled",
+    requiresShipping: cartRequiresShipping(order.items),
+    medusaFulfillmentStatus: order.fulfillment_status,
     bankTransferStatus:
       ((order.metadata as Record<string, unknown> | null)
         ?.bank_transfer_status as string | undefined) ?? undefined,
@@ -460,6 +466,16 @@ export function OrderList({
                   bankTransferStatus={order.bankTransferStatus}
                   refundRequestStatus={refund}
                   hasReturns={order.items.some((item) => item.statusLabel)}
+                  trackingHref={
+                    showTrackLink({
+                      requiresShipping: order.requiresShipping,
+                      canTrack: actions?.availableActions.includes("track") ?? false,
+                      medusaFulfillmentStatus: order.medusaFulfillmentStatus,
+                      actions,
+                    })
+                      ? `/mypage/order/track?orderId=${encodeURIComponent(order.orderId)}`
+                      : undefined
+                  }
                 >
                   {(actions) => (
                     <OrderSummaryCard

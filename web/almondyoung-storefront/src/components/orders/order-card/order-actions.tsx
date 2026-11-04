@@ -173,9 +173,7 @@ export default function OrderActions({
   // 반품·교환이 걸린 주문은 이미 출고된 주문이다. 데이터가 어긋나도 이중 환불이 나지 않게 취소를 막는다
   const canCancel =
     !hasReturns && (availableActions?.includes("cancel") ?? false)
-  const canTrack = isDetails
-    ? Boolean(trackingHref)
-    : (availableActions?.includes("track") ?? false)
+  const canTrack = Boolean(trackingHref)
   const canReturn = availableActions?.includes("return") ?? false
   const canExchange = availableActions?.includes("exchange") ?? false
   const cancelTooltip = cancelUnavailableReason
@@ -201,10 +199,6 @@ export default function OrderActions({
       router.refresh()
     })
   }
-
-  // TODO(물류 API 연동): 실제 택배사 트래킹 화면으로 연결. 현재는 데이터 소스가 없어 안내 토스트.
-  const handleTrack = () =>
-    toast.info("배송 조회는 준비 중이에요. 고객센터로 문의해 주세요.")
 
   const handleCancelConfirm = () => runCancel(false)
 
@@ -255,7 +249,7 @@ export default function OrderActions({
       key: "track",
       label: "배송 조회",
       icon: Package,
-      ...(trackingHref ? { href: trackingHref } : { onClick: handleTrack }),
+      href: trackingHref,
     })
   if (canReturn)
     actions.push({
