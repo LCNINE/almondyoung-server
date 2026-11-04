@@ -15,6 +15,7 @@ import {
   type CartLineItemClassification,
 } from "@lib/utils/cart-availability"
 import { withCartConflictRetry } from "./cart-conflict"
+import { findMergeableLine } from "./cart-merge"
 import { getIsMembershipCustomer } from "@lib/data/membership"
 import { createRefreshThrottle } from "@lib/utils/refresh-throttle"
 import { HttpTypes } from "@medusajs/types"
@@ -317,11 +318,14 @@ export async function addToCart({
   }
 
   try {
-    const added = await sdk.store.cart.createLineItem(
-      cart.id,
-      { variant_id: variantId, quantity, metadata },
-      {},
-      headers
+    // 코어 담기 대신 쓴다 — 기존 라인에 합쳐지면 합친 수량으로 다시 가격을 매겨야 수량 할인가가 붙는다.
+    const added = await sdk.client.fetch<{ cart: HttpTypes.StoreCart }>(
+      `/store/carts/${cart.id}/add-line-item`,
+      {
+        method: "POST",
+        body: { variant_id: variantId, quantity, metadata },
+        headers,
+      }
     )
 
     const cartCacheTag = await getCacheTag("carts")
@@ -330,7 +334,7 @@ export async function addToCart({
     revalidateTag(fulfillmentCacheTag)
 
     // 화면이 보여준 가격과 대조하려면 실제로 담긴 단가가 필요하다. 세일이 방금 끝났으면 다르다.
-    const line = added?.cart?.items?.find((item) => item.variant_id === variantId)
+    const line = findMergeableLine(added?.cart?.items, variantId, metadata)
 
     return { cartId: cart.id, unitPrice: line?.unit_price ?? null }
   } catch (err: any) {
