@@ -17,7 +17,7 @@ import {
   nextSendableAt,
   nhnRequestDateIfQuiet,
 } from './billing-notice.format';
-import { MEMBERSHIP_STREAM } from '@packages/event-contracts/streams/membership.stream';
+import { MEMBERSHIP_NON_PAYMENT_REASON, MEMBERSHIP_STREAM } from '@packages/event-contracts/streams/membership.stream';
 import { EventPayloadOf, EnvelopeOf } from '@packages/event-contracts/types';
 import { billingFailedNoticeKey, terminatedNoticeKey } from './membership-notice-keys';
 
@@ -163,7 +163,9 @@ export class MembershipEventConsumer {
         : payload.status === 'RECURRING_CANCELLED'
           ? 'MEMBERSHIP_CANCEL_SCHEDULED'
           : payload.status === 'CANCELLED'
-            ? 'MEMBERSHIP_CANCELLED'
+            ? payload.reasonCode === MEMBERSHIP_NON_PAYMENT_REASON
+              ? 'MEMBERSHIP_TERMINATED_UNPAID'
+              : 'MEMBERSHIP_CANCELLED'
             : null;
     if (!eventKey) return;
 
@@ -176,6 +178,9 @@ export class MembershipEventConsumer {
       variables: (contact) => ({
         name: contact.username || '고객',
         endsAt: payload.periodEndsAt ? formatDate(payload.periodEndsAt) : '',
+        arrearsNotice: payload.arrearsAmount
+          ? `이용하신 기간의 요금 ${formatAmount(payload.arrearsAmount)}원이 미납으로 남아 있어요. 멤버십 화면에서 결제하실 수 있어요.`
+          : '',
       }),
     });
   }

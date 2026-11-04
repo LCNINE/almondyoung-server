@@ -300,3 +300,36 @@ describe('WalletEventConsumer 재전달 (#1073)', () => {
     expect(second).toBe(first);
   });
 });
+
+describe('WalletEventConsumer — 무통장 입금 안내', () => {
+  async function templateKeyFor(metadata: { type: string } | undefined) {
+    const { consumer, dispatcher } = makeConsumer();
+    await consumer.onIntentAwaitingDeposit(
+      { correlationId: 'corr-1', messageId: 'm-1' } as never,
+      {
+        intentId: 'pi-1',
+        userId: 'user-1',
+        status: 'AWAITING_DEPOSIT',
+        payableAmount: 4990,
+        currency: 'KRW',
+        email: 'a@b.com',
+        bankName: '국민은행',
+        accountNumber: '123',
+        accountHolder: '주식회사 엘씨나인',
+        dueDate: '2026-11-08T01:27:03.938Z',
+        ...(metadata && { metadata }),
+        occurredAt: '2026-11-01T01:27:03.938Z',
+      } as never,
+    );
+
+    return dispatcher.send.mock.calls[0][0].templateKey;
+  }
+
+  it('멤버십 요금이면 주문 문구가 아닌 회비 입금 안내를 보낸다', async () => {
+    expect(await templateKeyFor({ type: 'MEMBERSHIP_FEE' })).toBe('BANK_TRANSFER_ISSUED_MEMBERSHIP_EMAIL');
+  });
+
+  it('상품 주문이면 이벤트에 매핑된 주문 입금 안내를 보낸다', async () => {
+    expect(await templateKeyFor(undefined)).toBe('CMS_MEMBER_REJECTED_EMAIL');
+  });
+});

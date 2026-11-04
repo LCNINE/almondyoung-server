@@ -640,6 +640,21 @@ const MEMBER_TEMPLATES = [
     NAME_ONLY,
   ),
   csTemplate(
+    FIXED_UUIDS.TEMPLATE_MEMBERSHIP_TERMINATED_UNPAID,
+    'MEMBERSHIP_TERMINATED_UNPAID_EMAIL',
+    '멤버십 미납 해지',
+    '[아몬드영] 요금이 결제되지 않아 멤버십이 해지됐어요',
+    [
+      '멤버십 요금이 결제되지 않아 멤버십이 해지됐어요.',
+      '오늘부터 멤버십 혜택이 적용되지 않아요.',
+      '',
+      '{{arrearsNotice}}',
+      '',
+      '[멤버십 화면 열기](https://almondyoung.com/kr/mypage/membership)',
+    ],
+    { name: { type: 'string', required: true }, arrearsNotice: { type: 'string', required: false } },
+  ),
+  csTemplate(
     FIXED_UUIDS.TEMPLATE_COUPON_EXPIRING,
     'COUPON_EXPIRING_EMAIL',
     '쿠폰 만료예정',
@@ -671,6 +686,12 @@ const MEMBER_EVENTS = [
     'MEMBERSHIP_CANCEL_SCHEDULED_EMAIL',
   ),
   csEvent('MEMBERSHIP_CANCELLED', '멤버십 회원 해지', '멤버십 이용이 바로 끝나면', 'MEMBERSHIP_CANCELLED_EMAIL'),
+  csEvent(
+    'MEMBERSHIP_TERMINATED_UNPAID',
+    '멤버십 미납 해지',
+    '요금을 못 걷어 멤버십이 해지되면 (본인 해지 메일 대신)',
+    'MEMBERSHIP_TERMINATED_UNPAID_EMAIL',
+  ),
   csEvent('COUPON_EXPIRING', '쿠폰 만료예정', '보유한 쿠폰이 3일 안에 만료되면', 'COUPON_EXPIRING_EMAIL'),
 ];
 

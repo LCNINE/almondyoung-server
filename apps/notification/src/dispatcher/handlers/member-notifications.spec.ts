@@ -109,6 +109,33 @@ describe('멤버십 가입·해지 알림', () => {
     expect(dto.variables.endsAt).toBe('2026년 10월 22일');
   });
 
+  it('요금을 못 걷어 해지되면 감사 인사 대신 미납 해지 메일을 보내고 미납 금액을 싣는다', async () => {
+    const d = deps('member@example.com');
+    const consumer = new MembershipEventConsumer(...(d.args as [never, never, never]));
+
+    await consumer.onStatusChanged(envelope, {
+      ...change,
+      status: 'CANCELLED',
+      reasonCode: 'NON_PAYMENT',
+      arrearsAmount: 4990,
+    } as never);
+
+    const [dto] = d.send.mock.calls[0];
+    expect(dto.eventKey).toBe('MEMBERSHIP_TERMINATED_UNPAID');
+    expect(dto.variables.arrearsNotice).toContain('4,990원이 미납으로 남아 있어요');
+  });
+
+  it('미납이 기록되지 않은 미납 해지는 미납 안내 문장을 비운다', async () => {
+    const d = deps('member@example.com');
+    const consumer = new MembershipEventConsumer(...(d.args as [never, never, never]));
+
+    await consumer.onStatusChanged(envelope, { ...change, status: 'CANCELLED', reasonCode: 'NON_PAYMENT' } as never);
+
+    const [dto] = d.send.mock.calls[0];
+    expect(dto.eventKey).toBe('MEMBERSHIP_TERMINATED_UNPAID');
+    expect(dto.variables.arrearsNotice).toBe('');
+  });
+
   it('갱신 성공·해지 취소(사유 없는 ACTIVE)와 만료는 보내지 않는다', async () => {
     const d = deps('member@example.com');
     const consumer = new MembershipEventConsumer(...(d.args as [never, never, never]));

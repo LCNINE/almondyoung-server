@@ -137,6 +137,36 @@ const TEMPLATES = [
     ),
   },
   {
+    // 멤버십 요금을 무통장으로 낼 때. 주문 문구(주문 확정·자동 취소)가 나가면 고객이 상품 주문으로 오해한다.
+    key: 'BANK_TRANSFER_ISSUED_MEMBERSHIP_EMAIL',
+    name: '무통장 입금 안내 (멤버십 요금)',
+    subject: '[아몬드영] 멤버십 요금 입금 안내 - {{bankName}} {{accountNumber}}',
+    vars: {
+      name: 'string',
+      bankName: 'string',
+      accountNumber: 'string',
+      accountHolder: 'string',
+      amount: 'number',
+      dueDate: 'string',
+    },
+    body: md(
+      '## 멤버십 요금 입금 안내',
+      '',
+      '{{name}}님, 안녕하세요.',
+      '아래 계좌로 입금해 주시면 멤버십 요금 결제가 끝나요.',
+      '',
+      infoBox([
+        ['은행', '{{bankName}}'],
+        ['계좌번호', '{{accountNumber}}'],
+        ['예금주', '{{accountHolder}}'],
+        ['입금기한', '{{dueDate}}'],
+        ['입금금액', '{{amount}}원'],
+      ]),
+      '',
+      '입금기한이 지나면 이 계좌로는 입금할 수 없어요. 입금이 확인되면 다시 알려드릴게요.',
+    ),
+  },
+  {
     // 거절 메일(CMS_MEMBER_REJECTED_EMAIL)과 짝. 승인만 조용하면 고객은 「된 건가?」 하고
     // 결제수단 화면을 다시 열거나 문의한다.
     key: 'CMS_MEMBER_REGISTERED_EMAIL',

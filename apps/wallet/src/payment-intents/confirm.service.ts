@@ -553,6 +553,8 @@ export class ConfirmService {
                   ...(this.resolveNotifyEmail(phase1.metadata)
                     ? { email: this.resolveNotifyEmail(phase1.metadata) }
                     : {}),
+                  // notification 이 멤버십 요금이면 주문 문구가 아닌 회비 입금 안내를 고른다.
+                  ...(phase1.metadata?.type ? { metadata: { type: phase1.metadata.type } } : {}),
                   ...(phase1.metadata?.customerName ? { customerName: phase1.metadata.customerName } : {}),
                 },
               }),

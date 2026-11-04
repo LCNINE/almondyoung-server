@@ -8,6 +8,7 @@ import { ContractEventManager } from '../subscription/contract-event.manager';
 
 import { lockMembershipUser, lockMembershipUserOfContract } from '../subscription/membership-user-lock';
 import { MembershipEventPublisher } from '../membership-event.publisher';
+import { MEMBERSHIP_NON_PAYMENT_REASON } from '@packages/event-contracts/streams/membership.stream';
 import { DrizzleTransaction } from '../../shared/schemas/types';
 
 const DUNNING_MAX_ATTEMPTS = 3;
@@ -286,6 +287,7 @@ export class BillingOutcomeHandler {
           status: 'CANCELLED',
           occurredAt: new Date().toISOString(),
           contractId,
+          reasonCode: MEMBERSHIP_NON_PAYMENT_REASON,
         })
         .catch((e: unknown) => this.logger.warn(`Kafka 발행 실패 (CANCELLED/dunning): ${e instanceof Error ? e.message : String(e)}`));
     }
@@ -469,6 +471,7 @@ export class BillingOutcomeHandler {
           status: 'CANCELLED',
           occurredAt: new Date().toISOString(),
           contractId,
+          reasonCode: MEMBERSHIP_NON_PAYMENT_REASON,
         })
         .catch((e: unknown) =>
           this.logger.warn(`Kafka 발행 실패 (CANCELLED/cancel-max): ${e instanceof Error ? e.message : String(e)}`),

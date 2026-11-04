@@ -20,6 +20,9 @@ export const MembershipStatusSchema = z.enum([
 
 export type MembershipStatus = z.infer<typeof MembershipStatusSchema>;
 
+/** 요금을 못 걷어 해지된 CANCELLED 의 reasonCode. 해지 안내 메일이 본인 해지와 문구를 가른다. */
+export const MEMBERSHIP_NON_PAYMENT_REASON = 'NON_PAYMENT';
+
 export interface MembershipStatusChangedPayload {
   userId: string;
   email?: string;
@@ -36,6 +39,8 @@ export interface MembershipStatusChangedPayload {
   refundAmount?: number;
   /** 환불 처리 상태. PENDING 은 계좌 송금 대기(효성 CMS 등)로 안내 문구가 달라진다. */
   refundStatus?: 'COMPLETED' | 'PENDING' | 'FAILED' | 'NOT_APPLICABLE';
+  /** reasonCode 가 NON_PAYMENT 일 때 원장에 적힌 미납 요금(원). 적히지 않았으면 없다. */
+  arrearsAmount?: number;
 }
 
 /**
@@ -163,6 +168,7 @@ const MembershipStatusChangedSchema = z.object({
   periodEndsAt: z.string().min(1).optional(),
   refundAmount: z.number().nonnegative().optional(),
   refundStatus: z.enum(['COMPLETED', 'PENDING', 'FAILED', 'NOT_APPLICABLE']).optional(),
+  arrearsAmount: z.number().nonnegative().optional(),
 });
 
 const MembershipRenewalUpcomingSchema = z.object({

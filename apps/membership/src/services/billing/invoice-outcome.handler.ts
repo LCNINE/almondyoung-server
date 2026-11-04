@@ -14,7 +14,10 @@ import { BenefitReader } from '../benefit/benefit.reader';
 import { TermsRulesReader } from '../terms/terms-rules.reader';
 import { isWithdrawalEligible } from '../subscription/refund-policy.service';
 import { ArrearsOutcome, BillingNoticeManager } from './billing-notice.manager';
-import type { MembershipArrearsSkippedReason } from '@packages/event-contracts/streams/membership.stream';
+import {
+  MEMBERSHIP_NON_PAYMENT_REASON,
+  type MembershipArrearsSkippedReason,
+} from '@packages/event-contracts/streams/membership.stream';
 
 /** 인보이스가 실어 보낸 청구 정보. mandate.rejected 는 인보이스 행 없이 올 수 있어 전부 선택이다. */
 export interface BilledPeriod {
@@ -330,6 +333,7 @@ export class InvoiceOutcomeHandler {
     const notifies = arrears != null;
     const contact = notifies ? await this.billingNoticeManager.lookupContactForContract(contractId) : null;
 
+    const recordedArrears: { amount?: number } = {};
     const terminatedUserId = await this.dbService.db.transaction(async (tx) => {
       await lockMembershipUserOfContract(tx, contractId);
       const contract = await this.getContract(tx, contractId);
@@ -401,6 +405,10 @@ export class InvoiceOutcomeHandler {
           arrears,
           heldEntitlement ?? null,
         );
+        if ('recordedAmount' in outcome) {
+          recordedArrears.amount = outcome.recordedAmount;
+        }
+
         if (notifies && contact) {
           await this.billingNoticeManager.queueTerminatedForNonPayment(tx, {
             contact,
@@ -430,6 +438,8 @@ export class InvoiceOutcomeHandler {
           status: 'CANCELLED',
           occurredAt: new Date().toISOString(),
           contractId,
+          ...(arrears && { reasonCode: MEMBERSHIP_NON_PAYMENT_REASON }),
+          ...(recordedArrears.amount != null && { arrearsAmount: recordedArrears.amount }),
         })
         .catch((e: unknown) =>
           this.logger.warn(`Kafka 발행 실패 (CANCELLED/invoice): ${e instanceof Error ? e.message : String(e)}`),

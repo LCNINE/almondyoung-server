@@ -392,7 +392,10 @@ export class WalletEventConsumer {
         userId: payload.userId,
         channels: eventMapping.defaultChannels as any,
         category: eventMapping.category as NotificationCategory,
-        templateKey: eventMapping.templateKey,
+        templateKey:
+          payload.metadata?.type === 'MEMBERSHIP_FEE'
+            ? 'BANK_TRANSFER_ISSUED_MEMBERSHIP_EMAIL'
+            : eventMapping.templateKey,
         eventKey: eventMapping.eventKey,
         payload: payload,
         correlationId: envelope.correlationId,
