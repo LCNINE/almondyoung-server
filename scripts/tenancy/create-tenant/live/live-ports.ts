@@ -276,6 +276,7 @@ function checkMasterToken(ctx: LiveContext, secret: LiveCheckAccountSecret): () 
       },
       ctx.plan.checkAccount.loginId,
       password,
+      ctx.plan.id,
     );
     cached = { token, at: Date.now() };
     return token;

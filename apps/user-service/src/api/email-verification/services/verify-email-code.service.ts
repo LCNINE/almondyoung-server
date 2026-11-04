@@ -15,7 +15,7 @@ export class VerifyEmailCodeService {
     const table = userServiceSchema.emailVerifications;
 
     const [user] = await this.dbService.db
-      .select({ email: userServiceSchema.users.email })
+      .select({ email: userServiceSchema.users.email, tenantId: userServiceSchema.users.tenantId })
       .from(userServiceSchema.users)
       .where(eq(userServiceSchema.users.id, userId))
       .limit(1);
@@ -27,6 +27,8 @@ export class VerifyEmailCodeService {
       .from(table)
       .where(
         and(
+          // 인증 기록은 계정의 테넌트를 든다 — 같은 이메일의 다른 테넌트 계정이 받은 코드는 이 계정의 것이 아니다(ADR-0056).
+          eq(table.tenantId, user.tenantId),
           eq(table.email, user.email),
           eq(table.purpose, purpose),
           eq(table.isVerified, false),

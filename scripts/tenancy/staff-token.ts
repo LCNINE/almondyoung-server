@@ -78,11 +78,24 @@ export function signInAtSite(
   });
 }
 
-/** 비밀번호로 로그인한 뒤(auth-web 의 signin 과 같은 호출) 그 계정의 직원 토큰을 받는다. */
-export async function signInStaff(client: StaffClient, loginId: string, password: string): Promise<string> {
+/**
+ * 비밀번호로 로그인한 뒤(auth-web 의 signin 과 같은 호출) 그 계정의 직원 토큰을 받는다. 계정은 한 테넌트의 것이고 아이디는 테넌트 안에서만
+ * unique 라(ADR-0056) 로그인은 `accountTenantId` 화면에서 한다 — auth-web 처럼 보증 헤더로 싣는다. 토큰의 테넌트는 그와 따로 `redirectUri` 가 정한다
+ * (다른 테넌트 주소면 코드 발급이 거절된다).
+ */
+export async function signInStaff(
+  client: StaffClient,
+  loginId: string,
+  password: string,
+  accountTenantId: string,
+): Promise<string> {
   const signin = await fetch(`${client.baseUrl}/auth/signin`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
+    headers: {
+      'content-type': 'application/json',
+      'x-tenant-id': accountTenantId,
+      'x-internal-secret': client.internalSecret,
+    },
     body: JSON.stringify({ loginId, password }),
   });
   if (!signin.ok) throw new TokenRefused('signin', signin.status, await signin.text());

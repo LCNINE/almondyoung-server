@@ -5,7 +5,7 @@ import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
 import { Logger } from '../shared/logger';
 import { FIXED_UUIDS } from '../constants/uuids';
-import { tenantOneBackfillStatements } from '../../seeding/lib/tenant-one-backfill';
+import { TENANT_ONE_ID, tenantOneBackfillStatements } from '../../seeding/lib/tenant-one-backfill';
 
 const logger = new Logger('User Service Seeder');
 
@@ -100,7 +100,7 @@ export async function seedUserService(
 
     await db.execute(sql`
       INSERT INTO users (
-        id, login_id, username, nickname, email, password, is_email_verified
+        id, login_id, username, nickname, email, password, is_email_verified, tenant_id
       )
       VALUES (
         ${adminUser.id},
@@ -109,7 +109,8 @@ export async function seedUserService(
         ${adminUser.nickname},
         ${adminUser.email},
         ${adminUser.password},
-        ${adminUser.isEmailVerified}
+        ${adminUser.isEmailVerified},
+        ${TENANT_ONE_ID}
       )
       ON CONFLICT (id) DO NOTHING
     `);

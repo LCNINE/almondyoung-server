@@ -56,8 +56,9 @@ import { getCookieOptions, getDomain, logCookieDebugInfo } from './utils/cookies
 import { generateSocialNickname } from './utils/generate-social-nickname';
 import { isSamePhoneNumber } from '../../commons/utils/phone-number';
 import { SERVED_TENANT_ID } from '../../tenancy/served-tenant';
+import { NotFoundError } from '@app/shared';
 import { inAccountTenant } from '../../tenancy/account-event-tenant';
-import { globalUniqueFieldOf } from '../users/global-unique-field';
+import { accountUniqueFieldOf } from '../users/account-unique-field';
 
 const INVALID_CREDENTIALS_MESSAGE = '아이디 또는 비밀번호가 올바르지 않습니다';
 const NO_MATCHING_ACCOUNT_MESSAGE = '입력하신 정보와 일치하는 계정이 없습니다';
@@ -267,8 +268,8 @@ export class AuthService {
       if (error instanceof ConflictException || error instanceof BadRequestException) {
         throw error;
       }
-      const globalDuplicate = globalUniqueFieldOf(error);
-      if (globalDuplicate) throw new ConflictException(SIGN_UP_DUPLICATE_MESSAGE[globalDuplicate]);
+      const duplicate = accountUniqueFieldOf(error);
+      if (duplicate) throw new ConflictException(SIGN_UP_DUPLICATE_MESSAGE[duplicate]);
       console.error('회원가입 중 오류:', error);
       throw new InternalServerErrorException('회원가입 중 오류가 발생했습니다.');
     }
@@ -399,7 +400,8 @@ export class AuthService {
 
   // 이메일 재전송
   async resendVerificationEmail(email: string, redirectTo?: string) {
-    const user = await this.usersService.findUserByEmail(email);
+    // 이메일은 테넌트 안에서만 unique 다 — 이 재전송은 쇼핑몰(T)의 가입 흐름이다.
+    const user = await this.usersService.findUserByEmailInTenant(this.servedTenantId, email);
     if (!user) throw new NotFoundException('존재하지 않는 이메일입니다');
 
     const expiresIn = JWT_EMAIL_VERIFICATION_ACCESS_TOKEN_EXPIRATION;
@@ -438,17 +440,16 @@ export class AuthService {
   }
 
   /**
-   * @param siteTenantId 로그인 화면의 테넌트(auth-web 이 보증 헤더로 싣는다). 오면 그 테넌트의 계정만 찾는다 — 다른 테넌트의
-   *   계정은 «없는 아이디»와 같다(ADR-0056). 아직 필수가 아니다: 안 오면 지금처럼 전체에서 찾는다(읽기 전환 기간).
+   * @param siteTenantId 로그인 화면의 테넌트(auth-web 이 보증 헤더로 싣는다). 안 오면 쇼핑몰이 직접 부르는 로그인이라 앱 설정 T 다.
+   *   어느 쪽이든 그 테넌트의 계정만 찾는다 — 다른 테넌트의 계정은 «없는 아이디»와 같다(ADR-0056). 전체에서 찾는 길은 없다:
+   *   아이디는 테넌트 안에서만 unique 라 전체에서 찾으면 남의 테넌트 계정이 나올 수 있다.
    */
   async signIn(
     signInDto: SignInDto,
     reply: FastifyReply,
     siteTenantId?: string,
   ): Promise<void | { accessToken: string; refreshToken: string }> {
-    const user = siteTenantId
-      ? await this.usersService.findUserByLoginIdInTenant(siteTenantId, signInDto.loginId)
-      : await this.usersService.findUserByLoginId(signInDto.loginId);
+    const user = await this.usersService.findUserByLoginIdInTenant(siteTenantId ?? this.servedTenantId, signInDto.loginId);
 
     // 아이디 없음과 비밀번호 틀림을 구분해 알려주면 계정 존재 여부가 새고, 사용자는
     // "존재하지 않는 사용자" 를 "내 정보가 사라졌다" 로 읽는다. 두 경우를 한 문구로 묶는다(다른 테넌트의 계정도 같다).
@@ -615,7 +616,7 @@ export class AuthService {
 
     const nickname = generateSocialNickname();
 
-    // 새 사용자 생성 — 다른 테넌트 계정이 가진 이메일·아이디(`<provider>_<id>`)면 전역 unique 에 걸린다. DB 오류 원문엔
+    // 새 사용자 생성 — 같은 이메일·아이디(`<provider>_<id>`)의 동시 가입이면 (테넌트, …) unique 에 걸린다. DB 오류 원문엔
     // 질의 파라미터(이메일·이름)가 들어 있어 그대로 던지면 콜백 리디렉트 주소로 나간다.
     const [newUser] = await tx
       .insert(userServiceSchema.users)
@@ -630,7 +631,7 @@ export class AuthService {
       })
       .returning()
       .catch((error: unknown) => {
-        if (globalUniqueFieldOf(error)) throw new Error(SOCIAL_SIGN_UP_DUPLICATE_MESSAGE);
+        if (accountUniqueFieldOf(error)) throw new Error(SOCIAL_SIGN_UP_DUPLICATE_MESSAGE);
         throw error;
       });
 
@@ -1069,18 +1070,19 @@ export class AuthService {
         .from(userServiceSchema.users)
         .where(eq(userServiceSchema.users.id, userId))
         .limit(1);
+      if (!before) throw new NotFoundError('사용자를 찾을 수 없습니다.');
 
       await this.anonymizeIdentity(userId, tx);
 
       // 탈퇴는 계정의 테넌트 일이다 — 요청 화면의 테넌트가 아니다(ADR-0056)
-      await inAccountTenant(before?.tenantId, () =>
+      await inAccountTenant(before.tenantId, () =>
         this.eventPublisher.publishEvent({
           eventType: 'UserDeleted',
           aggregateId: userId,
           payload: {
             userId,
-            ...(before?.email?.includes('@') ? { email: before.email } : {}),
-            ...(before?.username ? { name: before.username } : {}),
+            ...(before.email.includes('@') ? { email: before.email } : {}),
+            ...(before.username ? { name: before.username } : {}),
           },
         }),
       );

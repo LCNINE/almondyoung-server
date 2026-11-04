@@ -24,7 +24,7 @@ const userRow = (id: string) => ({ id, marketingConsent: null });
 
 function setup(holders: readonly string[] | null) {
   const cache = { rolesHolding: jest.fn().mockReturnValue(holders) };
-  const service = new UsersService({} as never, cache);
+  const service = new UsersService({} as never, cache, '1');
   // count, users, roles, staffRoles
   const fake = fakeClient([
     [{ count: 2 }],

@@ -92,7 +92,7 @@ export class PlatformRepository {
     await tx.update(tenants).set({ status, updatedAt: new Date() }).where(eq(tenants.id, tenantId));
   }
 
-  /** 소속·부여·세션·도메인은 FK cascade 로 함께 지워진다. */
+  /** 부여·세션·도메인은 FK cascade 로 함께 지워진다. */
   async deleteTenant(tenantId: string, tx: UserServiceTx): Promise<void> {
     await tx.delete(tenants).where(eq(tenants.id, tenantId));
   }

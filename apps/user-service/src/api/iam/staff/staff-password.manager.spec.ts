@@ -27,7 +27,7 @@ const GRANTS: Record<string, string[]> = {
 
 describe('StaffPasswordManager — 테넌트 master 가 자기 직원의 비밀번호를 초기화한다', () => {
   const roles = { findUser: jest.fn(), activeRoleNamesOf: jest.fn(), hasLiveStaffRole: jest.fn() };
-  const tenancy = { tenantsOf: jest.fn(), isOperator: jest.fn() };
+  const tenancy = { accountTenantOf: jest.fn(), isOperator: jest.fn() };
   const platform = { setPassword: jest.fn(), revokeUserSessions: jest.fn() };
   const audit = { record: jest.fn() };
   const myPermissions = { forRoles: jest.fn() };

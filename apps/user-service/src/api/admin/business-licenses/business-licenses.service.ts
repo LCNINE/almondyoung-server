@@ -1,6 +1,6 @@
 import { DbService, InjectDb } from '@app/db';
 import { InjectPublisher, PublisherFor } from '@app/events';
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { USER_STREAM } from '@packages/event-contracts';
 import { userServiceSchema, type UserServiceSchema } from 'apps/user-service/database/drizzle/schema';
 import { and, asc, count, desc, eq, getTableColumns, gte, inArray, isNotNull, lte, sql } from 'drizzle-orm';
@@ -9,6 +9,7 @@ import * as schema from '../../../../database/drizzle/schema';
 import { BusinessLicenseResponseDto } from '../../business-licenses/dto/business-license.response.dto';
 import { UsersService } from '../../users/users.service';
 import { accountTenantOf } from '../../../tenancy/account-owned-row-tenant';
+import { SERVED_TENANT_ID } from '../../../tenancy/served-tenant';
 import { BusinessAdminUpdateDto } from './dto/business-updeta.dto';
 import { BusinessAdminUpsertDto } from './dto/business-upsert.dto';
 import { BusinessLicenseQueryDto } from './dto/pagination-query-dto';
@@ -23,6 +24,8 @@ export class BusinessLicensesService {
     private readonly eventPublisher: PublisherFor<typeof USER_STREAM>,
 
     private readonly usersService: UsersService,
+    // 사업자 등록 목록은 T 의 것이다(컨트롤러가 @ServedTenantData) — 사업자번호는 테넌트 안에서만 unique 다(ADR-0056).
+    @Inject(SERVED_TENANT_ID) private readonly servedTenantId: string,
   ) {}
 
   async getBusinessLicensesByUserId(userId: string): Promise<BusinessLicenseResponseDto | null> {
@@ -120,7 +123,7 @@ export class BusinessLicensesService {
     const limit = Math.min(businessLicenseQueryDto.limit || 20, 100);
     const offset = (page - 1) * limit;
 
-    const whereConditions: any[] = [];
+    const whereConditions: any[] = [eq(schema.businessLicenses.tenantId, this.servedTenantId)];
 
     try {
       if (search) {

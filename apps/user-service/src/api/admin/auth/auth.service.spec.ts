@@ -276,11 +276,11 @@ describe('AuthService.createAccount — 운영자가 대행해 만드는 직원 
     });
 
     it('answers the same 409 when another tenant holds the value and the unique is still global', async () => {
-      insertFails = uniqueViolation('users_login_id_unique');
+      insertFails = uniqueViolation('users_tenant_id_login_id_unique');
       await expect(service.createAccount(dto, actor)).rejects.toThrow(
         new ConflictError('이미 존재하는 로그인 ID 입니다.'),
       );
-      insertFails = uniqueViolation('users_email_unique');
+      insertFails = uniqueViolation('users_tenant_id_email_unique');
       await expect(service.createAccount(dto, actor)).rejects.toThrow(new ConflictError('이미 존재하는 이메일 입니다.'));
       expect(roleAssignments.assignOnCreate).not.toHaveBeenCalled();
     });

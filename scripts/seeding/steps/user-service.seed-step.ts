@@ -4,7 +4,7 @@ import * as crypto from 'crypto';
 import { SeedStep } from './base-seed-step';
 import { SeedCheckResult, SeedApplyResult } from '../lib/types';
 import { FIXED_UUIDS } from '../constants/uuids';
-import { tenantOneBackfillStatements } from '../lib/tenant-one-backfill';
+import { TENANT_ONE_ID, tenantOneBackfillStatements } from '../lib/tenant-one-backfill';
 
 /**
  * OAuth RP 시드 정의. 새 RP 가 추가되면 여기 항목을 늘리고 orchestrator 의 collectConfig 에
@@ -257,10 +257,10 @@ export class UserServiceSeedStep extends SeedStep {
       this.logger.step(2, 4, 'Creating admin user');
       const hashedPassword = await bcrypt.hash(this.adminPassword, 10);
       await this.db.execute(sql`
-        INSERT INTO users (id, login_id, username, nickname, email, password, is_email_verified)
+        INSERT INTO users (id, login_id, username, nickname, email, password, is_email_verified, tenant_id)
         VALUES (
           ${FIXED_UUIDS.USER_ADMIN}, ${'admin'}, ${'Admin User'}, ${'관리자'},
-          ${'admin@almondyoung.com'}, ${hashedPassword}, ${true}
+          ${'admin@almondyoung.com'}, ${hashedPassword}, ${true}, ${TENANT_ONE_ID}
         )
         ON CONFLICT (id) DO NOTHING
       `);

@@ -118,23 +118,6 @@ export class UsersService {
     }
   }
 
-  // 이메일로 사용자 찾기
-  async findUserByEmail(email: string, tx?: DbTransaction): Promise<schema.UserWithoutPassword | null> {
-    const client = this.getClient(tx);
-    try {
-      const [users] = await client
-        .select(userWithoutPasswordColumns)
-        .from(schema.users)
-        .where(eq(schema.users.email, email))
-        .limit(1);
-
-      return users ?? null;
-    } catch (error) {
-      console.log('error:', error);
-      throw new InternalServerErrorException('이메일로 사용자 조회 중 오류가 발생했습니다.');
-    }
-  }
-
   /**
    * userId 묶음 → 알림 발송용 연락처. 서버 간(internal) 호출 전용이다.
    *
@@ -309,19 +292,10 @@ export class UsersService {
     }
   }
 
-  // 로그인 ID로 사용자 찾기
-  async findUserByLoginId(id: string, tx?: DbTransaction): Promise<schema.User | null> {
-    const client = this.getClient(tx);
-    try {
-      const [users] = await client.select().from(schema.users).where(eq(schema.users.loginId, id)).limit(1);
-
-      return users;
-    } catch (error) {
-      throw new InternalServerErrorException('로그인 ID로 사용자 조회 중 오류가 발생했습니다.');
-    }
-  }
-
-  /** 그 테넌트의 계정만 찾는다(ADR-0056). 로그인 아이디 unique 가 테넌트 안으로 넓혀진 뒤에도 한 행이다. */
+  /**
+   * 그 테넌트의 계정만 찾는다(ADR-0056). 로그인 아이디·이메일은 테넌트 안에서만 unique 라 전체에서 찾는 메서드는 두지 않는다 —
+   * 그런 조회는 같은 값을 가진 남의 테넌트 계정을 돌려줄 수 있다.
+   */
   async findUserByLoginIdInTenant(tenantId: string, loginId: string, tx?: DbTransaction): Promise<schema.User | null> {
     const client = this.getClient(tx);
     const [user] = await client
@@ -401,10 +375,7 @@ export class UsersService {
     return row?.user ?? null;
   }
 
-  /**
-   * 계정의 테넌트 — 토큰의 `tenant`·역할이 이것으로 정해진다. 비어 있으면 채우기 마이그(…_backfill-account-tenant)가 안 돈
-   * DB 다 — 테넌트 1 로 짐작하지 않고 멈춘다(기본 테넌트 없음).
-   */
+  /** 계정의 테넌트 — 토큰의 `tenant`·역할이 이것으로 정해진다(ADR-0056). */
   async accountTenantOf(userId: string, tx?: DbTransaction): Promise<string> {
     const client = this.getClient(tx);
     const [row] = await client
@@ -413,7 +384,6 @@ export class UsersService {
       .where(eq(schema.users.id, userId))
       .limit(1);
     if (!row) throw new NotFoundError('사용자를 찾을 수 없습니다.');
-    if (!row.tenantId) throw new Error(`account ${userId} has no tenant — run the account tenant backfill migration`);
     return row.tenantId;
   }
 

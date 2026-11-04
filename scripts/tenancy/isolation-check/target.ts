@@ -86,6 +86,8 @@ export interface IsolationTarget {
     readonly medusa: string;
     /** 테넌트 1 admin-web. API 라우트는 주소와 무관하게 토큰 테넌트로 판정한다 */
     readonly adminWeb: string;
+    /** user-service — 직원 계정 만들기·역할 회수·탈퇴(쓰기 부분의 «같은 아이디 두 테넌트») */
+    readonly userService: string;
   };
   /** url null = 이 대상에 그 서비스가 없다(로컬의 extra 앱) */
   readonly sharedServices: readonly { readonly name: SharedServiceName; readonly url: string | null }[];
@@ -98,8 +100,12 @@ export interface IsolationTarget {
      * 응답을 판정한다 — 계정은 한 테넌트의 것이라(ADR-0056) 남의 화면에서는 «아이디 또는 비밀번호 틀림»이어야 한다.
      */
     readonly at: (account: 'tenantOne' | 'tenantTwo', siteTenantId: string) => Promise<Probe>;
-    /** 테넌트 2 점검 계정으로 테넌트 1 관리자 주소의 토큰을 받는다(화면 테넌트 없는 로그인 → 코드 발급). 거절되면 `TokenRefused` */
+    /**
+     * 테넌트 2 점검 계정으로 테넌트 1 관리자 주소의 토큰을 받는다(제 테넌트 화면에서 로그인 → 테넌트 1 주소의 코드 발급). 거절되면 `TokenRefused`
+     */
     readonly tenantTwoAtTenantOneAdmin: () => Promise<string>;
+    /** 아무 계정으로 그 테넌트의 로그인 화면에서 로그인한다(`at` 과 같은 호출) — 쓰기 부분이 방금 만든 계정용. 본문에 내부 세션 토큰이 있다 */
+    readonly asAccount: (loginId: string, password: string, siteTenantId: string) => Promise<Probe>;
   };
   /** 쇼핑몰 클라이언트로 받은 고객 토큰 */
   readonly customerToken: () => Promise<string>;

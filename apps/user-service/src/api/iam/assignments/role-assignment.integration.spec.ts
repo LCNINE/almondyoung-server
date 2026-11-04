@@ -2,7 +2,6 @@ import { DbService } from '@app/db';
 import {
   iamAuditLogs,
   roles,
-  tenantMemberships,
   tenants,
   userRoleAssignments,
   users,
@@ -54,7 +53,7 @@ describeIfDb('role assignments against a real database', () => {
     const [made] = await dbService.db.insert(roles).values({ name }).returning({ id: roles.roleId });
     return made.id;
   };
-  const makeUser = async (suffix: string, isPlatformOperator = false, tenantId?: string) => {
+  const makeUser = async (suffix: string, isPlatformOperator = false, tenantId = '1') => {
     const [row] = await dbService.db
       .insert(users)
       .values({
@@ -63,13 +62,12 @@ describeIfDb('role assignments against a real database', () => {
         nickname: suffix,
         email: `${PREFIX}${suffix}@example.test`,
         isPlatformOperator,
-        ...(tenantId ? { tenantId } : {}),
+        tenantId,
       })
       .returning({ id: users.id });
     return row.id;
   };
   // 테넌트 1 행은 백필 마이그가 만든다.
-  const joinTenantOne = (userId: string) => dbService.db.insert(tenantMemberships).values({ userId, tenantId: '1' });
   const otherSignInOperators = async () => {
     const [row] = await dbService.db
       .select({ n: count() })
@@ -119,7 +117,6 @@ describeIfDb('role assignments against a real database', () => {
       roleRepository,
       audit,
       new GrantAuthority(roleRepository, new MyPermissionsReader(snapshots, iam), snapshots),
-      tenancy,
       operators,
     );
     reader = new RoleAssignmentReader(roleRepository, new ActorTenantReader(tenancy));
@@ -194,8 +191,6 @@ describeIfDb('role assignments against a real database', () => {
   it('keeps the end date and assignment time of a role the save did not change', async () => {
     const boss = await makeUser('boss');
     const target = await makeUser('c');
-    await joinTenantOne(boss);
-    await joinTenantOne(target);
     const intern = await roleId('intern');
     const membership = await roleId('membership');
     const admin = await roleId('admin');

@@ -83,10 +83,10 @@ run('attendance wage against PostgreSQL', () => {
     await database.db.execute(sql`TRUNCATE users, roles, attendance_pay_groups CASCADE`);
 
     await database.db.execute(sql`
-      INSERT INTO users (id, login_id, username, nickname, email) VALUES
-      (${master}, 'master', '관리자', 'master', 'master@example.test'),
-      (${first}, 'first', '근무자하나', 'first', 'first@example.test'),
-      (${second}, 'second', '근무자둘', 'second', 'second@example.test');
+      INSERT INTO users (id, login_id, username, nickname, email, tenant_id) VALUES
+      (${master}, 'master', '관리자', 'master', 'master@example.test', '1'),
+      (${first}, 'first', '근무자하나', 'first', 'first@example.test', '1'),
+      (${second}, 'second', '근무자둘', 'second', 'second@example.test', '1');
     `);
 
     await database.db.execute(sql`INSERT INTO roles (name) VALUES ('admin'), ('master')`);
@@ -190,8 +190,8 @@ run('attendance wage against PostgreSQL', () => {
     const outsider = '00000000-0000-4000-8000-000000000104';
 
     await database.db.execute(sql`
-      INSERT INTO users (id, login_id, username, nickname, email)
-      VALUES (${outsider}, 'outsider', '명단밖', 'outsider', 'outsider@example.test')
+      INSERT INTO users (id, login_id, username, nickname, email, tenant_id)
+      VALUES (${outsider}, 'outsider', '명단밖', 'outsider', 'outsider@example.test', '1')
     `);
     await database.db.execute(sql`
       INSERT INTO user_roles (user_id, role_id) SELECT ${outsider}, role_id FROM roles WHERE name = 'admin'

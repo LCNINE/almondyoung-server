@@ -172,19 +172,23 @@ async function main(): Promise<void> {
       fileService: fileServiceUrl,
       medusa: mustUrl('medusa'),
       adminWeb: mustUrl('admin-web'),
+      userService,
     },
     sharedServices: (Object.keys(SHARED_SERVICE_PROBES) as SharedServiceName[]).map((name) => ({
       name,
       url: url(name),
     })),
     signIn: {
-      tenantOne: () => signInStaff(tenantOneClient, 'admin', adminPassword),
-      tenantTwo: () => signInStaff(tenantTwoClient, checkAccount.loginId, checkAccount.password),
+      tenantOne: () => signInStaff(tenantOneClient, 'admin', adminPassword, tenantOneId),
+      tenantTwo: () => signInStaff(tenantTwoClient, checkAccount.loginId, checkAccount.password, tenantTwoId),
       at: (account, siteTenantId) =>
         signInAtSite(tenantOneClient, accounts[account].loginId, accounts[account].password, siteTenantId),
-      tenantTwoAtTenantOneAdmin: () => signInStaff(tenantOneClient, checkAccount.loginId, checkAccount.password),
+      // 제 테넌트 화면에서 로그인하고(비밀번호는 맞다) 테넌트 1 관리자 주소의 코드를 청한다 — 코드 발급의 계정 테넌트 대조가 거절해야 한다.
+      tenantTwoAtTenantOneAdmin: () =>
+        signInStaff(tenantOneClient, checkAccount.loginId, checkAccount.password, tenantTwoId),
+      asAccount: (loginId, password, siteTenantId) => signInAtSite(tenantOneClient, loginId, password, siteTenantId),
     },
-    customerToken: () => signInStaff(storefrontClient, 'admin', adminPassword),
+    customerToken: () => signInStaff(storefrontClient, 'admin', adminPassword, tenantOneId),
     storePublishableKey: storefrontEnv.NEXT_PUBLIC_MEDUSA_PUBLISHABLE_KEY ?? '',
     tenantOneDigitalFileId: digitalFileId,
     tenantTwoCronRuns: () => observeCronRuns(tenantOneSql, sql),
@@ -208,7 +212,8 @@ async function main(): Promise<void> {
       removeProducts: (ids) =>
         removeProductsAsCheckMaster(
           {
-            signInTenantTwo: () => signInStaff(tenantTwoClient, checkAccount.loginId, checkAccount.password),
+            signInTenantTwo: () =>
+              signInStaff(tenantTwoClient, checkAccount.loginId, checkAccount.password, tenantTwoId),
             deleteProduct: (token, masterId) =>
               probe('DELETE', `${mustUrl('core')}/masters/${masterId}`, { bearer: token }),
           },

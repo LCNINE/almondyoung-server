@@ -2,6 +2,7 @@ import * as bcrypt from 'bcrypt';
 import { SeedStep } from './base-seed-step';
 import { SeedApplyResult, SeedCheckResult } from '../lib/types';
 import { FIXED_UUIDS } from '../constants/uuids';
+import { TENANT_ONE_ID } from '../lib/tenant-one-backfill';
 
 export const DEMO_AUTH_ACCOUNTS = [
   {
@@ -121,8 +122,8 @@ export class DemoLogisticsAuthSeedStep extends SeedStep {
       const tx = transaction as unknown as typeof this.client;
       for (let i = 0; i < DEMO_AUTH_ACCOUNTS.length; i++) {
         const account = DEMO_AUTH_ACCOUNTS[i];
-        await tx`INSERT INTO users (id,login_id,username,nickname,email,password,is_email_verified)
-          VALUES (${account.id},${account.login},${account.name},${account.name},${account.login + '@almondyoung-next.com'},${hashes[i]},true)
+        await tx`INSERT INTO users (id,login_id,username,nickname,email,password,is_email_verified,tenant_id)
+          VALUES (${account.id},${account.login},${account.name},${account.name},${account.login + '@almondyoung-next.com'},${hashes[i]},true,${TENANT_ONE_ID})
           ON CONFLICT (id) DO UPDATE SET login_id=EXCLUDED.login_id`;
         for (const role of account.roles)
           await tx`INSERT INTO user_roles (user_id,role_id) VALUES (${account.id},${role}) ON CONFLICT DO NOTHING`;
