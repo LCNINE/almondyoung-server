@@ -1,3 +1,6 @@
+import { NameMatchManager } from './name-match/name-match.manager';
+import { NameMatchReader } from './name-match/name-match.reader';
+import { NameMatchService } from './name-match/name-match.service';
 import { Module, forwardRef } from '@nestjs/common';
 import { ProductsModule } from '../catalog/core/products/products.module';
 import { SkuCatalogModule } from '../inventory/sku-catalog/sku-catalog.module';
@@ -22,6 +25,9 @@ import { LineCompositionManager } from './line-composition/line-composition.mana
   ],
   controllers: [ProductMatchingController, ProductSkuMappingController],
   providers: [
+    NameMatchService,
+    NameMatchReader,
+    NameMatchManager,
     ProductMatchingService,
     ProductSkuMappingService,
     MatchingLinkResolver,

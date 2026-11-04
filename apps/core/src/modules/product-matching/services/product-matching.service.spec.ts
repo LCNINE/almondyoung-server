@@ -1,3 +1,4 @@
+import { PgDialect } from 'drizzle-orm/pg-core';
 import { createModel3dProjectionStub } from './__fixtures__/model3d-projection.stub';
 import { BadRequestError } from '@app/shared';
 import { ProductMatchingService } from './product-matching.service';
@@ -80,6 +81,7 @@ function makeTx(selectRowsQueue: unknown[][] = [[]]) {
       builder.from = jest.fn(() => builder);
       builder.where = jest.fn(() => builder);
       builder.leftJoin = jest.fn(() => builder);
+      builder.innerJoin = jest.fn(() => builder);
       builder.orderBy = jest.fn(() => builder);
       builder.limit = jest.fn(() => builder);
       builder.offset = jest.fn(() => builder);
@@ -838,4 +840,32 @@ describe('ProductMatchingService links input', () => {
 
     expect(linkResolver.resolve).not.toHaveBeenCalled();
   });
+});
+
+describe('ProductMatchingService shipped order filter', () => {
+  it.each([true, false])(
+    'shares the shipped condition across count and rows when enabled=%s',
+    async (excludeShipped) => {
+      const { service } = makeService();
+      const tx = makeTx([[{ total: 0 }], []]);
+
+      await service.getOrderLines({ excludeShipped }, tx as unknown as DbTx);
+
+      const countWhere = tx.select.mock.results[0].value.where.mock.calls[0][0];
+      const rowsWhere = tx.select.mock.results[1].value.where.mock.calls[0][0];
+
+      expect(rowsWhere).toBe(countWhere);
+
+      if (excludeShipped) {
+        const query = new PgDialect().sqlToQuery(countWhere).sql;
+
+        expect(query).toContain(`"sales_orders"."status" NOT IN ('shipped', 'delivered')`);
+        expect(query).toContain('NOT EXISTS');
+        expect(query).toContain('"fulfillment_orders"."sales_order_id" = "sales_orders"."id"');
+        expect(query).toContain('"fulfillment_orders"."shipped_at" IS NOT NULL');
+      } else {
+        expect(countWhere).toBeUndefined();
+      }
+    },
+  );
 });

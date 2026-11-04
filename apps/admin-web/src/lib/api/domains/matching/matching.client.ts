@@ -6,6 +6,8 @@
 import { ALMONDYOUNG_API_BASE_URL } from '@/const';
 import { client } from '../../client';
 import type {
+  NameMatchPreviewDto,
+  NameMatchApplyDto,
   MatchingsQuery,
   MatchingsResponseDto,
   ResolveMatchingDto,
@@ -31,6 +33,22 @@ import type {
 } from '@/lib/types/dto/matching';
 
 export const matchingClient = {
+  previewNameMatch: async (): Promise<NameMatchPreviewDto> => {
+    const response = await client.get(
+      `${ALMONDYOUNG_API_BASE_URL}/matchings/name-match/preview`
+    );
+
+    return response.data;
+  },
+
+  applyNameMatch: async (): Promise<NameMatchApplyDto> => {
+    const response = await client.post(
+      `${ALMONDYOUNG_API_BASE_URL}/matchings/name-match/apply`
+    );
+
+    return response.data;
+  },
+
   /**
    * 매칭 대기 목록 조회
    * GET /matchings
@@ -82,6 +100,7 @@ export const matchingClient = {
     if (query.matchingStatus)
       params.append('matchingStatus', query.matchingStatus);
     if (query.excludeMatched) params.append('excludeMatched', 'true');
+    if (query.excludeShipped) params.append('excludeShipped', 'true');
     if (query.salesChannel) params.append('salesChannel', query.salesChannel);
     if (query.startDate) params.append('startDate', query.startDate);
     if (query.endDate) params.append('endDate', query.endDate);
