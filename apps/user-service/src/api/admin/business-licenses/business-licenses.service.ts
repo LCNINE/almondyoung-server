@@ -8,6 +8,7 @@ import { buildDailyCountSeries, type DailyCountPoint, kstDayRangeCondition, kstD
 import * as schema from '../../../../database/drizzle/schema';
 import { BusinessLicenseResponseDto } from '../../business-licenses/dto/business-license.response.dto';
 import { UsersService } from '../../users/users.service';
+import { accountTenantOf } from '../../../tenancy/account-owned-row-tenant';
 import { BusinessAdminUpdateDto } from './dto/business-updeta.dto';
 import { BusinessAdminUpsertDto } from './dto/business-upsert.dto';
 import { BusinessLicenseQueryDto } from './dto/pagination-query-dto';
@@ -70,6 +71,7 @@ export class BusinessLicensesService {
           businessNumber: dto.businessNumber,
           representativeName: dto.representativeName,
           status,
+          tenantId: accountTenantOf(userId),
         })
         .returning();
       result = created;
