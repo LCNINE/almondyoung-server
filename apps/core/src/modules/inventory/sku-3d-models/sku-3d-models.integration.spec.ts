@@ -196,7 +196,7 @@ describeWithPostgres('SKU 3D models PostgreSQL integration', () => {
       {} as any,
       {} as any,
       { recalculateAndPublishForVersion: async () => undefined } as any,
-      null,
+      {} as never,
     );
     const readVersion = async (tx: any, condition: ReturnType<typeof sql>) => {
       const [version] = await tx.execute(sql`

@@ -1,12 +1,4 @@
-import {
-  Injectable,
-  Logger,
-  forwardRef,
-  Inject,
-  Optional,
-  NotFoundException,
-  BadRequestException,
-} from '@nestjs/common';
+import { Injectable, Logger, forwardRef, Inject, NotFoundException, BadRequestException } from '@nestjs/common';
 import { DbService, InjectDb } from '@app/db';
 import { ConflictError } from '@app/shared';
 import { InjectPublisher, PublisherFor } from '@app/events';
@@ -152,8 +144,8 @@ export class ProductMastersService {
     private readonly priceCacheService: VariantPriceCacheService,
     private readonly productSellableQuantity: ProductSellableQuantityService,
 
-    @Optional()
-    private readonly productMatchingService: ProductMatchingService | null,
+    @Inject(forwardRef(() => ProductMatchingService))
+    private readonly productMatchingService: ProductMatchingService,
   ) {}
 
   /**
@@ -193,22 +185,19 @@ export class ProductMastersService {
 
     this.logger.log(`📥 Enqueued ProductVariantCreated: ${variant.id} (${version.name})`);
 
-    // Product Matching BC 직접 호출 (Phase 4)
-    if (this.productMatchingService) {
-      try {
-        await this.productMatchingService.handleVariantCreated({
-          masterId: version.masterId,
-          productName: version.name,
-          variantId: variant.id,
-          variantName: variant.variantName ?? undefined,
-          inventoryManagement: true,
-          preStockSellable: false,
-          alwaysSellableZeroStock: false,
-        });
-      } catch (error) {
-        this.logger.error(`❌ Failed to create product matching for variant: ${variant.id}`, error.stack);
-        // 매칭 생성 실패해도 트랜잭션은 커밋 (복원력 보장)
-      }
+    try {
+      await this.productMatchingService.handleVariantCreated({
+        masterId: version.masterId,
+        productName: version.name,
+        variantId: variant.id,
+        variantName: variant.variantName ?? undefined,
+        inventoryManagement: true,
+        preStockSellable: false,
+        alwaysSellableZeroStock: false,
+      });
+    } catch (error) {
+      this.logger.error(`❌ Failed to create product matching for variant: ${variant.id}`, error.stack);
+      // 매칭 생성 실패해도 트랜잭션은 커밋한다.
     }
   }
 
