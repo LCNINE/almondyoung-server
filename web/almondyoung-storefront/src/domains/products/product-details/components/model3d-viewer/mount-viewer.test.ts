@@ -49,6 +49,7 @@ describe("mountViewer", () => {
     const viewer = container.querySelector("model-viewer")!
 
     expect(viewer.hasAttribute("camera-controls")).toBe(true)
+    expect(viewer.getAttribute("camera-orbit")).toBe("0deg 75deg 150%")
     expect(viewer.getAttribute("alt")).toBe("상품")
     expect(loseContext).toHaveBeenCalledTimes(1)
     viewer.dispatchEvent(new Event("load"))

@@ -62,7 +62,7 @@ export async function ProductTemplate({
         <div className="py-2 xl:flex xl:items-start xl:gap-4">
           {/* 메인 콘텐츠 */}
           <main className="w-full min-w-0 flex-1 pb-24 xl:pb-0">
-            <ImageGallery product={product} />
+            <ImageGallery key={product.id} product={product} />
 
             {/* 모바일 상품 정보 */}
             <div className="xl:hidden">

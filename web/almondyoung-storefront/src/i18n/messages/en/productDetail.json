@@ -230,6 +230,8 @@
   },
   "model3d": {
     "modelAlt": "3D model of {name}",
-    "representativeOption": "Based on a representative option. Colors and patterns may differ from your selected option."
+    "representativeOption": "Based on a representative option. Colors and patterns may differ from your selected option.",
+    "zoomIn": "Zoom in",
+    "zoomOut": "Zoom out"
   }
 }

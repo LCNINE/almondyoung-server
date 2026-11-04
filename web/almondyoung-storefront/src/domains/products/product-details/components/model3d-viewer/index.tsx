@@ -1,7 +1,9 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
+import { ZoomIn, ZoomOut } from "lucide-react"
 import { useTranslations } from "next-intl"
+import type { ModelViewerElement } from "@google/model-viewer"
 import { cn } from "@/lib/utils"
 import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
 
@@ -63,10 +65,12 @@ export function ProductModel3dLayer({
   fileId,
   productName,
   visible,
+  onReady,
 }: {
   fileId: unknown
   productName: string
   visible: boolean
+  onReady?: () => void
 }) {
   if (typeof fileId !== "string" || !fileId.trim()) {
     return null
@@ -79,6 +83,7 @@ export function ProductModel3dLayer({
       fileId={fileId}
       productName={productName}
       visible={visible}
+      onReady={onReady}
     />
   )
 }
@@ -87,14 +92,18 @@ function Model3dLayer({
   fileId,
   productName,
   visible,
+  onReady,
 }: {
   fileId: string
   productName: string
   visible: boolean
+  onReady?: () => void
 }) {
   const t = useTranslations("productDetail.model3d")
   const container = useRef<HTMLDivElement>(null)
   const [ready, setReady] = useState(false)
+  const onReadyRef = useRef(onReady)
+  onReadyRef.current = onReady
   const alt = t("modelAlt", { name: productName })
 
   useEffect(() => {
@@ -116,7 +125,10 @@ function Model3dLayer({
           return mountViewer(container.current, {
             src: getThumbnailUrl(fileId),
             alt,
-            onLoad: () => setReady(true),
+            onLoad: () => {
+              setReady(true)
+              onReadyRef.current?.()
+            },
             onError: () => setReady(false),
           })
         })
@@ -140,6 +152,12 @@ function Model3dLayer({
 
   const shown = ready && visible
 
+  const zoom = (steps: number) => {
+    container.current
+      ?.querySelector<ModelViewerElement>("model-viewer")
+      ?.zoom(steps)
+  }
+
   return (
     <div
       aria-hidden={!shown}
@@ -152,6 +170,25 @@ function Model3dLayer({
       <span className="bg-foreground/80 pointer-events-none absolute top-3 left-3 rounded-full px-2.5 py-1 text-xs font-bold text-white">
         3D
       </span>
+      <div className="absolute top-3 right-3 flex flex-col gap-2">
+        {(
+          [
+            ["zoomIn", ZoomIn, 3],
+            ["zoomOut", ZoomOut, -3],
+          ] as const
+        ).map(([key, Icon, steps]) => (
+          <button
+            key={key}
+            type="button"
+            aria-label={t(key)}
+            tabIndex={shown ? 0 : -1}
+            onClick={() => zoom(steps)}
+            className="bg-background/90 border-border text-foreground flex size-9 items-center justify-center rounded-full border shadow-sm"
+          >
+            <Icon className="size-4" aria-hidden="true" />
+          </button>
+        ))}
+      </div>
       <p className="text-muted-foreground pointer-events-none absolute right-3 bottom-3 left-3 text-center text-xs">
         {t("representativeOption")}
       </p>

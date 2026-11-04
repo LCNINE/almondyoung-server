@@ -41,7 +41,12 @@ async function render(
   {
     visible = true,
     locale = "ko",
-  }: { visible?: boolean; locale?: "ko" | "en" | "ja" } = {}
+    onReady,
+  }: {
+    visible?: boolean
+    locale?: "ko" | "en" | "ja"
+    onReady?: () => void
+  } = {}
 ) {
   await act(async () => {
     root.render(
@@ -53,6 +58,7 @@ async function render(
           fileId={fileId}
           productName="테스트 상품"
           visible={visible}
+          onReady={onReady}
         />
       </NextIntlClientProvider>
     )
@@ -113,6 +119,38 @@ describe("ProductModel3dLayer", () => {
 
     expect(layer()?.className).toContain("opacity-100")
     expect(layer()?.textContent).toContain("대표 옵션 기준")
+  })
+
+  it("tells the gallery once the model is ready", async () => {
+    const onReady = vi.fn()
+    await render("model-file", { onReady })
+    await idle()
+
+    expect(onReady).not.toHaveBeenCalled()
+
+    await act(async () => mountViewer.mock.calls[0][1].onLoad())
+
+    expect(onReady).toHaveBeenCalledTimes(1)
+  })
+
+  it("zooms the viewer with the buttons", async () => {
+    const zoom = vi.fn()
+    mountViewer.mockImplementation(async (target: HTMLElement) => {
+      const viewer = document.createElement("model-viewer")
+      Object.assign(viewer, { zoom })
+      target.append(viewer)
+
+      return disposeViewer
+    })
+    await render("model-file")
+    await idle()
+
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('[aria-label="확대"]')!.click()
+      container.querySelector<HTMLButtonElement>('[aria-label="축소"]')!.click()
+    })
+
+    expect(zoom.mock.calls).toEqual([[3], [-3]])
   })
 
   it("uses the locale for the option warning", async () => {

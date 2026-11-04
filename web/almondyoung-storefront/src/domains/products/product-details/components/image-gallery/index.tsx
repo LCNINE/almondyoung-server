@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import { Box } from "lucide-react"
 import { HttpTypes } from "@medusajs/types"
 import Image from "next/image"
 import { useTranslations } from "next-intl"
@@ -25,7 +26,10 @@ export function ImageGallery({ product }: Props) {
       : []
 
   const [selectedIndex, setSelectedIndex] = useState(0)
-  const selectedImage = images[selectedIndex]
+  const [modelReady, setModelReady] = useState(false)
+  // 3D 를 받으면 첫 칸에 3D 를 끼우고 원래 사진들은 한 칸씩 뒤로 민다.
+  const slides = modelReady ? [null, ...images] : images
+  const selectedImage = slides[selectedIndex] ?? images[0]
   const isSoldOut = calculateStockStatus(product).kind === "soldOut"
   const comingSoon = pickComingSoon(product.variants)
 
@@ -40,11 +44,11 @@ export function ImageGallery({ product }: Props) {
   return (
     <section className="mb-8 flex flex-col-reverse gap-3 md:flex-row md:justify-center xl:justify-start xl:px-14">
       {/* 썸네일 목록 */}
-      {images.length > 1 && (
+      {slides.length > 1 && (
         <div className="flex gap-2 md:flex-col">
-          {images.map((image, index) => (
+          {slides.map((image, index) => (
             <button
-              key={image.id ?? index}
+              key={image ? (image.id ?? index) : "model3d"}
               type="button"
               className={cn(
                 "relative size-16 shrink-0 cursor-pointer overflow-hidden rounded-md border-2 transition-colors md:size-20",
@@ -55,17 +59,27 @@ export function ImageGallery({ product }: Props) {
               onMouseEnter={() => setSelectedIndex(index)}
               onClick={() => setSelectedIndex(index)}
             >
-              <Image
-                src={getThumbnailUrl(image.url)}
-                alt={
-                  product.title
-                    ? t("altIndex", { name: product.title, index: index + 1 })
-                    : t("mainAlt")
-                }
-                fill
-                sizes="80px"
-                className="object-cover"
-              />
+              {image ? (
+                <Image
+                  src={getThumbnailUrl(image.url)}
+                  alt={
+                    product.title
+                      ? t("altIndex", {
+                          name: product.title,
+                          index: modelReady ? index : index + 1,
+                        })
+                      : t("mainAlt")
+                  }
+                  fill
+                  sizes="80px"
+                  className="object-cover"
+                />
+              ) : (
+                <span className="bg-muted text-foreground absolute inset-0 flex flex-col items-center justify-center gap-0.5 text-xs font-bold">
+                  <Box className="size-5" aria-hidden="true" />
+                  3D
+                </span>
+              )}
             </button>
           ))}
         </div>
@@ -87,7 +101,11 @@ export function ImageGallery({ product }: Props) {
         <ProductModel3dLayer
           fileId={product.metadata?.model3dFileId}
           productName={product.title ?? ""}
-          visible={selectedIndex === 0}
+          visible={modelReady && selectedIndex === 0}
+          onReady={() => {
+            setModelReady(true)
+            setSelectedIndex((index) => (index === 0 ? 0 : index + 1))
+          }}
         />
         {isSoldOut && comingSoon && (
           <ComingSoonBadge
