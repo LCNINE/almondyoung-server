@@ -37,7 +37,7 @@ describe('ProductMastersService Medusa projection outbox events', () => {
       {} as any,
       {} as any,
       productSellableQuantity as any,
-      null,
+      { handleVariantCreated: jest.fn().mockResolvedValue(undefined) } as never,
     );
 
     return { service, productPublisher, productSellableQuantity };
@@ -141,7 +141,7 @@ describe('ProductMastersService hardDelete purchase constraint cleanup', () => {
       {} as any,
       {} as any,
       productSellableQuantity as any,
-      null,
+      { handleVariantCreated: jest.fn().mockResolvedValue(undefined) } as never,
     );
   }
 
@@ -289,7 +289,7 @@ describe('ProductMastersService.createMaster ownership', () => {
       {} as any,
       {} as any,
       productSellableQuantity as any,
-      null,
+      { handleVariantCreated: jest.fn().mockResolvedValue(undefined) } as never,
     );
 
     return { service, productPublisher, productSellableQuantity };
@@ -370,7 +370,7 @@ describe('ProductMastersService.updateVersion 감사 기록', () => {
       {} as any,
       {} as any,
       {} as any,
-      null,
+      { handleVariantCreated: jest.fn().mockResolvedValue(undefined) } as never,
     );
     const tx: any = {
       update: () => ({ set: () => ({ where: () => ({ returning: () => [{ id: 'v1', masterId: 'm1' }] }) }) }),
@@ -408,7 +408,7 @@ describe('ProductMastersService.updateVersion 감사 기록', () => {
       {} as any,
       {} as any,
       {} as any,
-      null,
+      { handleVariantCreated: jest.fn().mockResolvedValue(undefined) } as never,
     );
     const rows = { orderBy: () => [], then: (resolve: (v: unknown[]) => unknown) => resolve([]) };
     const tx: any = { select: () => ({ from: () => ({ where: () => rows }) }) };

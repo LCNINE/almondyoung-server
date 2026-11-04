@@ -79,7 +79,7 @@ describeIfDb('상품 목록 ↔ 선택 파리티 (실 Postgres)', () => {
       {} as never, // pricingCalculatorService
       priceCache as never,
       sellableQuantity as never,
-      null, // productMatchingService (@Optional)
+      {} as never,
     );
   });
 
