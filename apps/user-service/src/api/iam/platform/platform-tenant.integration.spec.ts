@@ -4,7 +4,6 @@ import {
   oauthClients,
   oauthTokens,
   tenantDomains,
-  tenantMemberships,
   tenants,
   roles,
   userRoleAssignments,
@@ -58,8 +57,8 @@ describeIfDb('platform operator tenant API against a real database', () => {
   let brands: TenantBrandReader;
   let reader: PlatformTenantReader;
 
-  // 테넌트를 주지 않으면 DB 기본값(테넌트 1)의 계정이다 — 기본값은 contract(티켓 10) 가 걷는다.
-  const makeUser = async (suffix: string, isPlatformOperator = false, tenantId?: string) => {
+  // 테넌트를 주지 않으면 테넌트 1 의 계정이다 — DB 기본값은 없다.
+  const makeUser = async (suffix: string, isPlatformOperator = false, tenantId = '1') => {
     const [row] = await dbService.db
       .insert(users)
       .values({
@@ -68,7 +67,7 @@ describeIfDb('platform operator tenant API against a real database', () => {
         nickname: suffix,
         email: `${PREFIX}${suffix}@example.test`,
         isPlatformOperator,
-        ...(tenantId ? { tenantId } : {}),
+        tenantId,
       })
       .returning({ id: users.id });
     return row.id;
@@ -216,7 +215,6 @@ describeIfDb('platform operator tenant API against a real database', () => {
         roleRepository,
         audit,
         new GrantAuthority(roleRepository, new MyPermissionsReader(snapshots, iam), snapshots),
-        tenancy,
         operators,
       ),
     );
@@ -369,12 +367,9 @@ describeIfDb('platform operator tenant API against a real database', () => {
   });
 
   describe('deleting a tenant (undoing the create script)', () => {
-    it('deletes a preparing tenant with its domains and memberships, and strips its addresses from the staff client', async () => {
+    it('deletes a preparing tenant with its domains, and strips its addresses from the staff client', async () => {
       const op = await makeUser('op', true);
-      const staff = await makeUser('staff');
       await manager.createTenant(actor(op), newTenant());
-      // 소속은 contract 까지 남는 옛 표다 — 남아 있으면 테넌트와 함께 걷힌다.
-      await dbService.db.insert(tenantMemberships).values({ userId: staff, tenantId: TENANT });
       const client = await makeClient('staff', null, ['http://localhost:8002/api/auth/callback']);
       await manager.addStaffClientUris(actor(op), TENANT, client, {
         redirectUris: [`https://${HOST}/api/auth/callback`],
@@ -385,9 +380,6 @@ describeIfDb('platform operator tenant API against a real database', () => {
 
       expect(await statusOf(TENANT)).toBeUndefined();
       expect(await dbService.db.select().from(tenantDomains).where(eq(tenantDomains.tenantId, TENANT))).toEqual([]);
-      expect(await dbService.db.select().from(tenantMemberships).where(eq(tenantMemberships.tenantId, TENANT))).toEqual(
-        [],
-      );
       expect(await urisOf(client)).toEqual({ redirect: ['http://localhost:8002/api/auth/callback'], logout: null });
       expect((await auditOf(TENANT)).map((l) => l.action)).toContain('tenant.delete');
     });
@@ -545,11 +537,10 @@ describeIfDb('platform operator tenant API against a real database', () => {
       await expect(manager.resetMasterPassword(actor(op), TENANT, staff)).rejects.toBeInstanceOf(NotFoundError);
     });
 
-    it('refuses an account of another tenant, even one with a membership there', async () => {
+    it('refuses an account of another tenant', async () => {
       const op = await makeOperator();
       const stranger = await makeUser('stranger');
       await manager.createTenant(actor(op), newTenant());
-      await dbService.db.insert(tenantMemberships).values({ userId: stranger, tenantId: TENANT });
 
       await expect(manager.resetMasterPassword(actor(op), TENANT, stranger)).rejects.toBeInstanceOf(
         IamNotAccountTenantError,

@@ -45,6 +45,7 @@ type Params = {
 
 export const MIN_ZOOM = 0.1
 export const MAX_ZOOM = 8
+const DRAG_DEAD_ZONE_PX = 4
 
 export function useCanvasInteraction({
   design,
@@ -315,7 +316,12 @@ export function useCanvasInteraction({
     const p = point(event)
     const { layer, x, y, handle, rotationStart, group, groupBox } =
       dragRef.current
-    if (!dragRef.current.moved && p.x === x && p.y === y) return
+    // 클릭할 때 손이 몇 px 떨린 것은 끌기로 치지 않는다. 손잡이를 찍기만 해도 글자 크기가 줄어들었다
+    if (
+      !dragRef.current.moved &&
+      Math.hypot(p.x - x, p.y - y) < DRAG_DEAD_ZONE_PX / (canvasFit * zoom)
+    )
+      return
     dragRef.current.moved = true
     if (group && handle && groupBox) {
       const fake = {

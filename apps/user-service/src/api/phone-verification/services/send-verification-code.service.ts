@@ -42,7 +42,8 @@ export class SendMessageService {
     const _channel = channel ?? 'SMS';
 
     return this.inTx(async (trx) => {
-      // 0. 이 번호·채널로 최근 1분 내 발송 횟수 확인 (IP 가 아니라 번호 기준 — 위 주석 참고)
+      // 0. 이 번호·채널로 최근 1분 내 발송 횟수 확인 (IP 가 아니라 번호 기준 — 위 주석 참고). 테넌트를 가리지 않는다 —
+      //    받는 휴대폰은 하나라, 문자 폭탄 방어는 번호 단위여야 한다(코드 조회·만료는 테넌트 안이다).
       const recentSends = await trx
         .select({ id: userServiceSchema.phoneVerifications.id })
         .from(userServiceSchema.phoneVerifications)
@@ -73,7 +74,7 @@ export class SendMessageService {
       }
 
       // 2. 기존 미검증 코드 만료 처리
-      await this.expireExistingCodesService.expireExistingCodes(phoneNumber, trx);
+      await this.expireExistingCodesService.expireExistingCodes(this.servedTenantId, phoneNumber, trx);
 
       // 3. 인증 코드 생성
       const code = this.generateCode();

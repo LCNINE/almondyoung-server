@@ -80,7 +80,7 @@ export class IamGrantedElsewhereError extends ConflictError {
   }
 }
 
-/** 요청자가 어느 테넌트에서 일하는지 정할 수 없다 — 토큰 테넌트가 들어오기 전에는 소속이 정확히 하나여야 한다. */
+/** 요청자가 어느 테넌트에서 일하는지 정할 수 없다 — 토큰에 테넌트가 없고 요청자 계정도 찾을 수 없다. */
 export class IamTenantUnresolvedError extends ForbiddenError {
   constructor() {
     super('작업할 테넌트를 정할 수 없습니다.');

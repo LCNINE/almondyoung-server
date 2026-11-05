@@ -1,3 +1,4 @@
+import { NameMatchService } from '../name-match/name-match.service';
 import {
   Controller,
   Get,
@@ -25,7 +26,24 @@ import { NewSkuPermissionGuard } from '../guards/new-sku-permission.guard';
 @ApiTags('Product Matching')
 @Controller('matchings')
 export class ProductMatchingController {
-  constructor(private readonly productMatchingService: ProductMatchingService) {}
+  constructor(
+    private readonly productMatchingService: ProductMatchingService,
+    private readonly nameMatchService: NameMatchService,
+  ) {}
+
+  @RequirePermission('order.order.read')
+  @Get('name-match/preview')
+  @ApiOperation({ summary: '이름 일치 자동 매칭 미리보기' })
+  previewNameMatch() {
+    return this.nameMatchService.preview();
+  }
+
+  @RequirePermission('order.matching.write')
+  @Post('name-match/apply')
+  @ApiOperation({ summary: '이름 일치 자동 매칭 적용' })
+  applyNameMatch() {
+    return this.nameMatchService.apply();
+  }
 
   @RequirePermission('order.order.read')
   @Get()
@@ -74,15 +92,14 @@ export class ProductMatchingController {
       'data[].customerName': 'name',
       'data[].customerPhone': 'phone',
     },
-    subjects: [
-      { path: 'data[].salesOrderId', type: 'sales_order' },
-    ],
+    subjects: [{ path: 'data[].salesOrderId', type: 'sales_order' }],
   })
   @RequirePermission('order.order.read')
   @Get('order-lines')
   @ApiOperation({ summary: '주문 라인별 매칭 현황 조회' })
   @ApiQuery({ name: 'matchingStatus', required: false, enum: [...matchingStatusEnum.enumValues, 'unregistered'] })
   @ApiQuery({ name: 'excludeMatched', required: false, type: Boolean })
+  @ApiQuery({ name: 'excludeShipped', required: false, type: Boolean })
   @ApiQuery({ name: 'salesChannel', required: false, type: String })
   @ApiQuery({ name: 'startDate', required: false, type: String, description: 'ISO 날짜 (YYYY-MM-DD)' })
   @ApiQuery({ name: 'endDate', required: false, type: String, description: 'ISO 날짜 (YYYY-MM-DD)' })
@@ -101,11 +118,13 @@ export class ProductMatchingController {
     @Query('keywordType') keywordType?: 'productName' | 'orderNumber' | 'customerName',
     @Query('limit') limit?: string,
     @Query('offset') offset?: string,
+    @Query('excludeShipped') excludeShipped?: string,
   ) {
     try {
       return await this.productMatchingService.getOrderLines({
         matchingStatus,
         excludeMatched: excludeMatched === 'true',
+        excludeShipped: excludeShipped === 'true',
         salesChannel,
         startDate,
         endDate,

@@ -1,8 +1,9 @@
 'use client';
 
 import { useEffect, useRef, useState, type ChangeEvent } from 'react';
-import { Camera, Loader2, X } from 'lucide-react';
+import { Camera, ChevronLeft, ChevronRight, Loader2, X } from 'lucide-react';
 import { toast } from 'sonner';
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { uploadFileToFileService } from '@/lib/api/domains/files/upload.client';
 import { skuFieldCaptureClient } from '@/lib/api/domains/inventory/sku-field-capture.client';
 import type { FieldCaptureDetailDto, ReferencePhotoDto } from '@/lib/types/dto/inventory';
@@ -31,6 +32,8 @@ export function ReferencePhotoField({ skuId, photos, onDetail, disabled = false 
   const [pending, setPending] = useState<string[]>([]);
   const [removing, setRemoving] = useState<ReadonlySet<string>>(new Set());
   const [cameraOpen, setCameraOpen] = useState(false);
+  const [zoomed, setZoomed] = useState<number | null>(null);
+  const touchX = useRef(0);
   // 화면 안 카메라를 못 쓰면(권한 거부·미지원) 이 화면에선 폰 카메라 앱으로 찍는다
   const [nativeOnly, setNativeOnly] = useState(false);
   // 방금 찍은 사진은 서버에서 다시 받지 않고 찍은 파일로 보여 준다 — 다시 받는 요청이 늦거나 실패하면 엑박이 떴다.
@@ -115,14 +118,23 @@ export function ReferencePhotoField({ skuId, photos, onDetail, disabled = false 
     });
   };
 
+  const srcs = photos.map((p) => localPreviews.current.get(p.fileId) ?? resolvePublicFileUrl(p.fileId) ?? '');
+  // 끝에서 넘기면 처음으로, 처음에서 거꾸로 넘기면 끝으로
+  const step = (d: -1 | 1) => setZoomed((i) => (i === null ? i : (i + d + srcs.length) % srcs.length));
+  const zoomedSrc = zoomed === null ? null : (srcs[zoomed] ?? null);
+
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap gap-2">
-        {photos.map((p) => {
-          const src = localPreviews.current.get(p.fileId) ?? resolvePublicFileUrl(p.fileId);
+        {photos.map((p, i) => {
+          const src = srcs[i];
           return (
             <div key={p.id} className="relative h-20 w-20 overflow-hidden rounded-lg bg-gray-200">
-              {src && <PhotoImg src={src} />}
+              {src && (
+                <button type="button" onClick={() => setZoomed(i)} aria-label="사진 크게 보기" className="h-full w-full">
+                  <PhotoImg src={src} />
+                </button>
+              )}
               <button
                 type="button"
                 onClick={() => void remove(p.id)}
@@ -166,6 +178,52 @@ export function ReferencePhotoField({ skuId, photos, onDetail, disabled = false 
         {photos.length}/{MIN_REFERENCE_PHOTOS}장 이상
         {pending.length > 0 && ` · ${pending.length}장 올리는 중`}
       </p>
+      <Dialog open={zoomedSrc !== null} onOpenChange={(v) => !v && setZoomed(null)}>
+        <DialogContent
+          className="max-w-[calc(100%-1rem)] p-2"
+          onKeyDown={(e) => {
+            if (e.key === 'ArrowLeft') step(-1);
+            if (e.key === 'ArrowRight') step(1);
+          }}
+        >
+          <DialogTitle className="sr-only">사진 크게 보기</DialogTitle>
+          {zoomedSrc && (
+            <div
+              className="relative"
+              onTouchStart={(e) => (touchX.current = e.touches[0]!.clientX)}
+              onTouchEnd={(e) => {
+                const dx = e.changedTouches[0]!.clientX - touchX.current;
+                if (Math.abs(dx) > 40) step(dx < 0 ? 1 : -1);
+              }}
+            >
+              <PhotoImg key={zoomedSrc} src={zoomedSrc} className="max-h-[85vh] w-full rounded-md object-contain" />
+              {srcs.length > 1 && (
+                <>
+                  <button
+                    type="button"
+                    aria-label="이전 사진"
+                    onClick={() => step(-1)}
+                    className="absolute left-1 top-1/2 -translate-y-1/2 rounded-full bg-black/50 p-2 text-white"
+                  >
+                    <ChevronLeft className="h-6 w-6" />
+                  </button>
+                  <button
+                    type="button"
+                    aria-label="다음 사진"
+                    onClick={() => step(1)}
+                    className="absolute right-1 top-1/2 -translate-y-1/2 rounded-full bg-black/50 p-2 text-white"
+                  >
+                    <ChevronRight className="h-6 w-6" />
+                  </button>
+                </>
+              )}
+            </div>
+          )}
+          <p className="text-center text-xs text-gray-500 tabular-nums">
+            {(zoomed ?? 0) + 1} / {srcs.length}
+          </p>
+        </DialogContent>
+      </Dialog>
       {cameraOpen && (
         <PhotoCamera
           count={photos.length + pending.length}
@@ -184,11 +242,11 @@ export function ReferencePhotoField({ skuId, photos, onDetail, disabled = false 
 }
 
 // 서버 사진은 한 번 실패해도 바로 엑박으로 두지 않고 주소를 바꿔 한 번 더 받는다 — 일시 실패가 화면에 남던 것
-function PhotoImg({ src }: { src: string }) {
+function PhotoImg({ src, className = 'h-full w-full object-cover' }: { src: string; className?: string }) {
   const [retried, setRetried] = useState(false);
   const shown = retried && !src.startsWith('blob:') ? `${src}?retry=1` : src;
   return (
     // eslint-disable-next-line @next/next/no-img-element -- file-service 공개 URL·로컬 미리보기, next/image 도메인 설정 밖
-    <img src={shown} alt="" onError={() => setRetried(true)} className="h-full w-full object-cover" />
+    <img src={shown} alt="" onError={() => setRetried(true)} className={className} />
   );
 }

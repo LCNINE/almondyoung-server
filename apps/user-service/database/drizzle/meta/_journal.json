@@ -204,6 +204,41 @@
       "when": 1793669854533,
       "tag": "20261103013734_backfill-account-tenant",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1793767779016,
+      "tag": "20261104044939_add-identity-license-tenant",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1793767785599,
+      "tag": "20261104044945_backfill-identity-license-tenant",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1793769345425,
+      "tag": "20261104051545_add-users-id-tenant-unique",
+      "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1793769382701,
+      "tag": "20261104051622_prepare-account-contract",
+      "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1793769385232,
+      "tag": "20261104051625_contract-account-unique-within-tenant",
+      "breakpoints": true
     }
   ]
 }

@@ -1,5 +1,6 @@
 import { DbService } from '@app/db';
 import {
+  businessLicenses,
   tenants,
   userIdentities,
   users,
@@ -9,6 +10,7 @@ import {
 } from 'apps/user-service/database/drizzle/schema';
 import { like } from 'drizzle-orm';
 import { ProviderType } from '../../commons/types/auth.type';
+import { accountUniqueFieldOf } from './account-unique-field';
 import { UsersService } from './users.service';
 
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -20,6 +22,7 @@ const describeIfDb = DATABASE_URL ? describe : describe.skip;
 const PREFIX = 'zzsu05';
 const HOME = `${PREFIX}a`;
 const OTHER = `${PREFIX}b`;
+const BUSINESS_NUMBER = '1234567890';
 
 class RolledBack extends Error {}
 
@@ -46,7 +49,7 @@ describeIfDb('sign-up and social lookups stay within the tenant (real database)'
       await tx.insert(tenants).values({ id, slug: `${PREFIX}-${id}`, status: 'active', displayName: id });
     }
   };
-  /** OTHER 테넌트의 계정 하나 — 가입 폼이 묻는 세 값과 카카오 신원을 가진다. */
+  /** OTHER 테넌트의 계정 하나 — 가입 폼이 묻는 세 값과 카카오 신원·사업자번호를 가진다. */
   const otherTenantAccount = async (tx: UserServiceTx) => {
     const [account] = await tx
       .insert(users)
@@ -60,7 +63,13 @@ describeIfDb('sign-up and social lookups stay within the tenant (real database)'
       .returning({ id: users.id });
     await tx
       .insert(userIdentities)
-      .values({ userId: account.id, provider: ProviderType.KAKAO, providerId: `${PREFIX}-kakao-1` });
+      .values({ userId: account.id, provider: ProviderType.KAKAO, providerId: `${PREFIX}-kakao-1`, tenantId: OTHER });
+    await tx.insert(businessLicenses).values({
+      userId: account.id,
+      businessNumber: BUSINESS_NUMBER,
+      representativeName: 'o',
+      tenantId: OTHER,
+    });
     return account.id;
   };
 
@@ -123,11 +132,10 @@ describeIfDb('sign-up and social lookups stay within the tenant (real database)'
     });
   });
 
-  // 10(contract)이 unique 를 (테넌트, …) 로 넓힌 뒤에 켠다 — 지금 스키마는 전역 unique 라 두 번째 insert 가 23505 로 실패한다.
-  it.skip('같은 이메일·아이디·소셜 신원의 계정이 두 테넌트에 함께 있을 수 있다 [10 에서 켠다]', async () => {
+  it('같은 아이디·이메일·소셜 신원·사업자번호의 계정이 두 테넌트에 함께 있고, 각 테넌트의 조회는 자기 계정만 본다', async () => {
     await rolledBack(async (tx) => {
       await twoTenants(tx);
-      await otherTenantAccount(tx);
+      const theirs = await otherTenantAccount(tx);
       const [mine] = await tx
         .insert(users)
         .values({
@@ -140,12 +148,94 @@ describeIfDb('sign-up and social lookups stay within the tenant (real database)'
         .returning({ id: users.id });
       await tx
         .insert(userIdentities)
-        .values({ userId: mine.id, provider: ProviderType.KAKAO, providerId: `${PREFIX}-kakao-1` });
+        .values({ userId: mine.id, provider: ProviderType.KAKAO, providerId: `${PREFIX}-kakao-1`, tenantId: HOME });
+      await tx
+        .insert(businessLicenses)
+        .values({ userId: mine.id, businessNumber: BUSINESS_NUMBER, representativeName: 'h', tenantId: HOME });
 
-      await expect(
-        usersService.findSocialAccountInTenant(HOME, ProviderType.KAKAO, `${PREFIX}-kakao-1`, tx),
-      ).resolves.toEqual(expect.objectContaining({ id: mine.id }));
-      await expect(usersService.isEmailAvailable(HOME, `${PREFIX}taken@example.test`, tx)).resolves.toBe(false);
+      for (const [tenantId, id] of [
+        [HOME, mine.id],
+        [OTHER, theirs],
+      ]) {
+        await expect(usersService.findUserByLoginIdInTenant(tenantId, `${PREFIX}taken`, tx)).resolves.toEqual(
+          expect.objectContaining({ id }),
+        );
+        await expect(
+          usersService.findUserByEmailInTenant(tenantId, `${PREFIX}taken@example.test`, tx),
+        ).resolves.toEqual(expect.objectContaining({ id }));
+        await expect(
+          usersService.findSocialAccountInTenant(tenantId, ProviderType.KAKAO, `${PREFIX}-kakao-1`, tx),
+        ).resolves.toEqual(expect.objectContaining({ id }));
+        await expect(usersService.isLoginIdAvailable(tenantId, `${PREFIX}taken`, tx)).resolves.toBe(false);
+      }
     });
+  });
+
+  it('한 테넌트 안에서는 같은 아이디·이메일·소셜 신원·사업자번호가 여전히 하나뿐이다', async () => {
+    const insertTwice = async (second: (tx: UserServiceTx, otherAccount: string) => Promise<unknown>) => {
+      let failure: unknown;
+      await rolledBack(async (tx) => {
+        await twoTenants(tx);
+        await otherTenantAccount(tx);
+        const [sibling] = await tx
+          .insert(users)
+          .values({
+            loginId: `${PREFIX}sib`,
+            username: 's',
+            nickname: 's',
+            email: `${PREFIX}sib@example.test`,
+            tenantId: OTHER,
+          })
+          .returning({ id: users.id });
+        failure = await second(tx, sibling.id).then(
+          () => undefined,
+          (error: unknown) => error,
+        );
+      });
+      return failure;
+    };
+    const uniqueViolation = expect.objectContaining({ cause: expect.objectContaining({ code: '23505' }) });
+
+    // 경합을 409 로 바꾸는 판정이 실제 제약 이름을 알아본다.
+    expect(
+      accountUniqueFieldOf(
+        await insertTwice((tx) =>
+          tx.insert(users).values({
+            loginId: `${PREFIX}taken`,
+            username: 'x',
+            nickname: 'x',
+            email: `${PREFIX}x@example.test`,
+            tenantId: OTHER,
+          }),
+        ),
+      ),
+    ).toBe('loginId');
+    expect(
+      accountUniqueFieldOf(
+        await insertTwice((tx) =>
+          tx.insert(users).values({
+            loginId: `${PREFIX}x`,
+            username: 'x',
+            nickname: 'x',
+            email: `${PREFIX}taken@example.test`,
+            tenantId: OTHER,
+          }),
+        ),
+      ),
+    ).toBe('email');
+    expect(
+      await insertTwice((tx, sibling) =>
+        tx
+          .insert(userIdentities)
+          .values({ userId: sibling, provider: ProviderType.KAKAO, providerId: `${PREFIX}-kakao-1`, tenantId: OTHER }),
+      ),
+    ).toEqual(uniqueViolation);
+    expect(
+      await insertTwice((tx, sibling) =>
+        tx
+          .insert(businessLicenses)
+          .values({ userId: sibling, businessNumber: BUSINESS_NUMBER, representativeName: 's', tenantId: OTHER }),
+      ),
+    ).toEqual(uniqueViolation);
   });
 });

@@ -51,6 +51,18 @@ describe('server error parser', () => {
     });
   });
 
+  it('explains an under-reserved shipment as a stock shortage instead of a state race', () => {
+    const message = getServerDenyMessage({
+      response: {
+        status: 409,
+        data: { code: 'SHIPMENT_NOT_FULLY_RESERVED', message: 'Under-reserved lines: l-1' },
+      },
+    });
+
+    expect(message).toContain('재고가 부족해');
+    expect(message).not.toContain('다른 작업으로 상태가 변경되어');
+  });
+
   it('exposes the unwrapped body details, undefined when absent', () => {
     const details = { boxes: [] };
     expect(

@@ -23,6 +23,7 @@ export class IdentityVerificationService {
       .select({
         email: userServiceSchema.users.email,
         phone: userServiceSchema.profiles.phoneNumber,
+        tenantId: userServiceSchema.users.tenantId,
       })
       .from(userServiceSchema.users)
       .leftJoin(userServiceSchema.profiles, eq(userServiceSchema.users.id, userServiceSchema.profiles.userId))
@@ -38,6 +39,8 @@ export class IdentityVerificationService {
         .from(userServiceSchema.emailVerifications)
         .where(
           and(
+            // 같은 이메일의 다른 테넌트 계정이 받은 인증은 이 계정의 것이 아니다(ADR-0056) — 인증 기록은 계정의 테넌트를 든다.
+            eq(userServiceSchema.emailVerifications.tenantId, me.tenantId),
             eq(userServiceSchema.emailVerifications.email, me.email),
             eq(userServiceSchema.emailVerifications.purpose, purpose),
             eq(userServiceSchema.emailVerifications.isVerified, true),
@@ -56,6 +59,7 @@ export class IdentityVerificationService {
         .from(userServiceSchema.phoneVerifications)
         .where(
           and(
+            eq(userServiceSchema.phoneVerifications.tenantId, me.tenantId),
             eq(userServiceSchema.phoneVerifications.purpose, purpose),
             eq(userServiceSchema.phoneVerifications.isVerified, true),
             gt(userServiceSchema.phoneVerifications.verifiedAt, windowStart),

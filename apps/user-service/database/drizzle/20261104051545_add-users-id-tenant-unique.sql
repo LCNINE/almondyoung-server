@@ -1,0 +1,1 @@
+ALTER TABLE "users" ADD CONSTRAINT "users_id_tenant_id_unique" UNIQUE("id","tenant_id");

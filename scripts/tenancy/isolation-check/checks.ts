@@ -64,6 +64,8 @@ export const INVALID_CREDENTIALS = '아이디 또는 비밀번호가 올바르�
 /** 다른 테넌트 계정에 코드를 내주지 않을 때의 문구 — 그 테넌트에서는 없는 사용자다(apps/user-service/src/api/oauth/oauth.manager.ts). */
 export const NOT_IN_TOKEN_TENANT = 'user not found';
 const STAMP_PREFIX = '[개통 점검]';
+/** «같은 아이디 두 테넌트» 계정에 주는 역할 — 권한이 가장 좁은 직원 역할. 직원은 역할을 거둬야 탈퇴할 수 있다 */
+export const SAME_LOGIN_ROLE = 'intern';
 
 const EVENT_WAIT_MS = 90_000;
 /** 소비 실패가 DLQ 에 닿기까지 — 기본 재시도 정책의 백오프 합에 여유 5초. 핸들러별 정책이 더 길면 그만큼 놓친다 */
@@ -81,6 +83,11 @@ const SUSPEND_WAIT_MS = 45_000;
 /** 원격 저장소 조회는 2초마다 두드리지 않는다 — 지연이 있는 대상은 10초 간격 */
 function metricsPollMs(lagMs: number): number {
   return lagMs > 0 ? 10_000 : 2_000;
+}
+
+/** user-service 응답 봉투(`{ data }`)를 벗긴다. 봉투가 없으면 그대로. */
+function dataOf(body: unknown): unknown {
+  return typeof body === 'object' && body !== null && 'data' in body ? (body as { data: unknown }).data : body;
 }
 
 /** 목록 응답(배열 또는 `{ data }`)의 행 id. 상품 요약은 `masterId` 가 행의 id 다. */
@@ -124,6 +131,8 @@ interface WriteState {
   suspended: boolean;
   /** 지우기가 못 지운 것 — 진입점이 실행 끝에 출력한다. null = 지우기가 아직 안 돌았다 */
   leftovers: string[] | null;
+  /** 테넌트 1 점검 계정과 같은 아이디로 만든 테넌트 2 계정 — 지우기가 역할을 거두고 그 계정으로 탈퇴한다 */
+  sameLoginAccount?: { id: string; loginId: string; roleId: string; password: string };
 }
 
 /**
@@ -143,6 +152,7 @@ export function buildIsolationChecks(t: IsolationTarget): {
   const one = async () => (tokens.one ??= await t.signIn.tenantOne());
   const two = async () => (tokens.two ??= await t.signIn.tenantTwo());
   const core = (path: string) => `${t.urls.core}${path}`;
+  const users = (path: string) => `${t.urls.userService}${path}`;
   const medusaProxy = (path: string) => `${t.urls.adminWeb}/api/proxy/medusa${path}`;
 
   const now = new Date();
@@ -562,6 +572,53 @@ export function buildIsolationChecks(t: IsolationTarget): {
       return delta === 0 ? pass : fail(`Medusa 상품 수가 ${delta} 바뀌었다 — 그 사이 다른 사람이 만들었는지 확인`);
     },
   });
+  add({
+    section: '쓰기 경로',
+    title: '테넌트 1 계정과 같은 아이디로 테넌트 2 계정을 만든다 — 둘 다 제 화면에서 로그인된다',
+    part: 'write',
+    fixedBy:
+      FIXED_BY.accountTenant +
+      ' · 계정 unique 가 (테넌트, …) 인지 — user-service contract 마이그(…_contract-account-unique-within-tenant)가 돌았어야 한다',
+    run: async () => {
+      // 대조: 그 아이디가 지금 테넌트 1 화면에서 테넌트 1 계정으로 로그인된다.
+      const own = control(await t.signIn.at('tenantOne', t.tenantOneId));
+      if (own) return own;
+      const loginId = t.screens.accounts.tenantOne.loginId;
+      const roles = dataOf(await expectOk('GET', users('/admin/roles'), { bearer: await two() }));
+      const role = Array.isArray(roles)
+        ? (roles as { roleId: string; name: string }[]).find((r) => r.name === SAME_LOGIN_ROLE)
+        : undefined;
+      if (!role) return fail(`역할 «${SAME_LOGIN_ROLE}» 가 없다 — 줄 역할이 없어 만들지 못한다`);
+
+      const made = await probe('POST', users('/admin/auth'), {
+        bearer: await two(),
+        json: {
+          loginId,
+          email: `isocheck${Date.now()}@example.com`,
+          username: '개통점검',
+          nickname: `isocheck${Date.now() % 100000}`,
+          roleId: role.roleId,
+        },
+      });
+      if (!isOk(made))
+        return fail(`테넌트 2 에 같은 아이디 계정을 못 만들었다: ${made.status} «${messageOf(made.body)}»`);
+      const { user, initialPassword } = dataOf(made.body) as { user: { id: string }; initialPassword: string };
+      state.sameLoginAccount = { id: user.id, loginId, roleId: role.roleId, password: initialPassword };
+
+      const theirs = await t.signIn.asAccount(loginId, initialPassword, t.tenantTwoId);
+      if (!isOk(theirs))
+        return fail(`새 테넌트 2 계정이 제 화면에서 로그인 안 된다: ${theirs.status} «${messageOf(theirs.body)}»`);
+      // 테넌트 1 화면의 그 아이디는 여전히 테넌트 1 계정이다 — 새 계정의 비밀번호로는 «아이디 또는 비밀번호» 거절.
+      const crossed = await t.signIn.asAccount(loginId, initialPassword, t.tenantOneId);
+      const verdict = refusedAsWrongCredentials(crossed, INVALID_CREDENTIALS);
+      if (!verdict.ok) return verdict;
+      const stillOne = await t.signIn.at('tenantOne', t.tenantOneId);
+      return isOk(stillOne)
+        ? pass
+        : fail(`만든 뒤 테넌트 1 계정이 로그인 안 된다: ${stillOne.status} «${messageOf(stillOne.body)}»`);
+    },
+  });
+
   // ── 화면·주소 교차 (읽기 전용) — 쓰기 부분이 만든 상품·일괄 세션이 지워지기 전에 돈다(동적 화면이 그 행으로 열린다)
   const screens = buildScreenChecks(t, two);
   checks.push(...screens.checks);
@@ -590,6 +647,7 @@ export function buildIsolationChecks(t: IsolationTarget): {
     ...(state.bulkSessionId ? [`일괄 세션 ${state.bulkSessionId}`] : []),
     ...(state.skuId ? [`SKU ${state.skuId}`] : []),
     ...(state.warehouseId ? [warehouseLabel(state.warehouseId)] : []),
+    ...(state.sameLoginAccount ? [`테넌트 2 계정 ${state.sameLoginAccount.id}`] : []),
   ];
 
   async function removeWhatWasMade(): Promise<string[]> {
@@ -615,6 +673,16 @@ export function buildIsolationChecks(t: IsolationTarget): {
     if (state.warehouseId) {
       const r = await probe('DELETE', core(`/inventory/warehouses/${state.warehouseId}`), { bearer: await two() });
       if (!isOk(r)) left.push(`${warehouseLabel(state.warehouseId)} (${r.status} «${messageOf(r.body)}»)`);
+    }
+    if (state.sameLoginAccount) {
+      // 직원은 역할이 남아 있으면 떠날 수 없다 — 역할을 거두고 그 계정으로 탈퇴한다. 탈퇴가 아이디를 치환해 다음 실행이 같은 아이디를 다시 쓴다.
+      const a = state.sameLoginAccount;
+      const label = `테넌트 2 계정 ${a.id}`;
+      const revoked = await probe('DELETE', users(`/admin/roles/${a.roleId}/members/${a.id}`), { bearer: await two() });
+      const session = isOk(revoked) ? await t.signIn.asAccount(a.loginId, a.password, t.tenantTwoId) : revoked;
+      const token = (dataOf(session.body) as { accessToken?: string } | null)?.accessToken;
+      const gone = isOk(session) && token ? await probe('DELETE', users('/auth'), { bearer: token }) : session;
+      if (!isOk(gone)) left.push(`${label} (${gone.status} «${messageOf(gone.body)}» — 역할 회수·탈퇴 중)`);
     }
     return left;
   }

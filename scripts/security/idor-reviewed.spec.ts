@@ -1682,7 +1682,7 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'user-service PATCH /users/me': {
     verdict: 'SAFE',
-    evidence: 'apps/user-service/src/api/users/users.service.ts:451',
+    evidence: 'apps/user-service/src/api/users/users.service.ts:422',
     predicate: '.where(eq(schema.users.id, userId))',
     note: '본인 프로필 수정. 핸들러가 @CurrentUser() user.id(서명 검증된 토큰)만 넘기고 경로·바디로 대상 회원을 받지 않는다. 옛 스코프 가드를 걷어 내며 대상에 들어왔다.',
   },

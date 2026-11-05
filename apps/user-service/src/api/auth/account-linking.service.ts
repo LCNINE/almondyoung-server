@@ -11,6 +11,7 @@ import {
 import { and, eq } from 'drizzle-orm';
 import { randomBytes } from 'crypto';
 import { DbTransaction, ProviderType } from '../../commons/types';
+import { accountTenantOf } from '../../tenancy/account-owned-row-tenant';
 import { LinkedIdentityDto, LinkedIdentitiesResponseDto } from './dto/identity-list.dto';
 import { LinkingStatePayload } from './dto/link-identity.dto';
 
@@ -90,7 +91,8 @@ export class AccountLinkingService {
     tx?: DbTransaction,
   ): Promise<void> {
     return this.inTx(async (trx) => {
-      // 1. 해당 providerId가 이미 다른 사용자에게 연결되어 있는지 확인 (계정 탈취 방지)
+      // 1. 해당 providerId가 이미 다른 사용자에게 연결되어 있는지 확인 (계정 탈취 방지) — 이 계정의 테넌트 안에서만이다.
+      //    다른 테넌트에서 같은 소셜 계정으로 가입한 계정은 남이다(ADR-0056, unique 도 (테넌트, provider, provider_id)).
       const existingIdentity = await trx
         .select({
           id: userServiceSchema.userIdentities.id,
@@ -99,6 +101,7 @@ export class AccountLinkingService {
         .from(userServiceSchema.userIdentities)
         .where(
           and(
+            eq(userServiceSchema.userIdentities.tenantId, accountTenantOf(userId)),
             eq(userServiceSchema.userIdentities.provider, provider),
             eq(userServiceSchema.userIdentities.providerId, socialProfile.providerId),
           ),
@@ -152,6 +155,7 @@ export class AccountLinkingService {
           name: socialProfile.name,
           email: socialProfile.email,
         },
+        tenantId: accountTenantOf(userId),
       });
 
       this.logger.log(`Social account linked for user: ${userId}, provider: ${provider}`);

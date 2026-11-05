@@ -599,7 +599,7 @@ function MotionPhoto({ layer, source }: { layer: Layer; source: string }) {
 function LayerGraphicView({ layer }: { layer: Layer }) {
   const imageSrc = useImageSrc()
   // 올린 글꼴은 늦게 도착하므로, 도착하면 잰 폭을 버리고 이 레이어를 다시 그린다
-  useUploadedFont(layer.fontFamily, () => measured.clear())
+  const hydrated = useUploadedFont(layer.fontFamily, () => measured.clear())
   if (layer.visible === false) return null
   // 곱하기 그림자는 아래 그림과 섞여야 해서 레이어 묶음 밖에 따로 그린다
   const shadowApart = !!layer.shadow && !!layer.shadowMultiply
@@ -837,7 +837,7 @@ function LayerGraphicView({ layer }: { layer: Layer }) {
     </>
   )
   return (
-    <>
+    <Fragment key={hydrated || !layer.text ? "client" : "server"}>
       {shadowApart && (
         <g
           transform={transform}
@@ -897,7 +897,7 @@ function LayerGraphicView({ layer }: { layer: Layer }) {
           </g>
         </g>
       </g>
-    </>
+    </Fragment>
   )
 }
 

@@ -56,6 +56,33 @@ const CONTRACT_RULES: readonly Rule[] = [
 ];
 
 /**
+ * 유니크 제약을 더하는데, 같은 파일에서 지운 유니크를 «칸을 더해 넓힌» 것이 아닌 것이 있나.
+ * 넓히기(`UNIQUE(b)` → `UNIQUE(t, b)`, ADR-0056 의 테넌트 안 unique)는 제약을 풀기만 한다 — 새 코드가 기댈 새 엄격함이 없고, 깨지는 건
+ * 옛 코드의 `ON CONFLICT (b)` 뿐이라 contract(`유니크 제거`)로 센다. 지운 유니크의 칸은 drizzle 이름(`<표>_<칸…>_unique`)으로만 안다 —
+ * 손으로 지은 이름이면 넓히기로 알아보지 못하고 expand 로 센다(보수적).
+ */
+function addsUniqueThatIsNotAWidening(sql: string): boolean {
+  const dropped = new Set(
+    [...sql.matchAll(/\bALTER\s+TABLE\s+"?([\w.]+?)"?\s+DROP\s+CONSTRAINT\s+(?:IF\s+EXISTS\s+)?"?(\w+)"?/gi)].map(
+      (m) => `${m[1].split('.').pop()}|${m[2]}`,
+    ),
+  );
+  const added = [
+    ...sql.matchAll(/\bALTER\s+TABLE\s+"?([\w.]+?)"?\s+ADD\s+CONSTRAINT\s+"?[^"\s]+"?\s+UNIQUE\s*\(([^)]*)\)/gi),
+  ].map((m) => ({ table: m[1].split('.').pop() ?? m[1], columns: m[2].split(',').map((c) => c.trim().replace(/"/g, '')) }));
+  const widens = ({ table, columns }: { table: string; columns: string[] }) =>
+    // 더한 칸 중 하나 이상을 뺀 순서 있는 부분열 = 지운 유니크의 칸
+    subsequences(columns)
+      .filter((sub) => sub.length > 0 && sub.length < columns.length)
+      .some((sub) => dropped.has(`${table}|${table}_${sub.join('_')}_unique`));
+  return added.some((u) => !widens(u));
+}
+
+function subsequences<T>(items: readonly T[]): T[][] {
+  return items.reduce<T[][]>((acc, item) => [...acc, ...acc.map((s) => [...s, item])], [[]]);
+}
+
+/**
  * 새 코드가 새 schema 를 기대한다 — 옛 코드는 무시하므로 `migrate → deploy` 다.
  * 평범한 인덱스와 CHECK·FK 는 넣지 않는다: contract 마이그도 남은 칸에 인덱스를 다시 걸고(#724 PR-C) 좁힌 타입에 CHECK 를 단다.
  * 유니크는 넣는다 — 새 코드의 `ON CONFLICT` 가 기댈 수 있다.
@@ -64,7 +91,7 @@ const EXPAND_RULES: readonly Rule[] = [
   re('CREATE TABLE', /\bCREATE\s+TABLE\b/i),
   re('ADD COLUMN', /\bADD\s+COLUMN\b/i),
   re('유니크 인덱스', /\bCREATE\s+UNIQUE\s+INDEX\b/i),
-  re('유니크 제약', /\bADD\s+CONSTRAINT\s+"?[^"\s]+"?\s+UNIQUE\b/i),
+  { label: '유니크 제약', test: addsUniqueThatIsNotAWidening },
   re('enum 값 추가', /\bALTER\s+TYPE\b[^;]*\bADD\s+VALUE\b/i),
   re('CREATE SCHEMA·SEQUENCE', /\bCREATE\s+(SCHEMA|SEQUENCE)\b/i),
   { label: 'CREATE VIEW', test: (sql) => viewDelta(sql).created.length > 0 },

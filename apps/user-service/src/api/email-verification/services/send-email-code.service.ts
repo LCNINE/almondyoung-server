@@ -35,7 +35,7 @@ export class SendEmailCodeService {
     }
 
     // 기존 미검증 코드 만료 처리
-    await this.expireEmailCodesService.expireExistingCodes(user.email);
+    await this.expireEmailCodesService.expireExistingCodes(user.tenantId, user.email);
 
     const code = this.generateCode().toString();
     await this.dbService.db.insert(userServiceSchema.emailVerifications).values({

@@ -77,7 +77,13 @@ describeIfDb('token tenant queries against a real database', () => {
       await tenant(tx, `${PREFIX}b`, 'active');
       const [person] = await tx
         .insert(users)
-        .values({ loginId: `${PREFIX}both`, username: 'b', nickname: `${PREFIX}b`, email: `${PREFIX}b@example.test` })
+        .values({
+          loginId: `${PREFIX}both`,
+          username: 'b',
+          nickname: `${PREFIX}b`,
+          email: `${PREFIX}b@example.test`,
+          tenantId: '1',
+        })
         .returning({ id: users.id });
       await grant(tx, person.id, 'user', '1');
       await grant(tx, person.id, 'admin', '1');
@@ -94,7 +100,13 @@ describeIfDb('token tenant queries against a real database', () => {
       await tenant(tx, `${PREFIX}t`, 'active');
       const [one] = await tx
         .insert(users)
-        .values({ loginId: `${PREFIX}one`, username: 'o', nickname: `${PREFIX}o`, email: `${PREFIX}o@example.test` })
+        .values({
+          loginId: `${PREFIX}one`,
+          username: 'o',
+          nickname: `${PREFIX}o`,
+          email: `${PREFIX}o@example.test`,
+          tenantId: '1',
+        })
         .returning({ id: users.id });
       const [two] = await tx
         .insert(users)
@@ -128,23 +140,6 @@ describeIfDb('token tenant queries against a real database', () => {
         expect.objectContaining({ loginId: `${PREFIX}staff` }),
       );
       await expect(issuer.findUserByLoginIdInTenant('1', `${PREFIX}staff`, tx)).resolves.toBeNull();
-    });
-  });
-
-  it('테넌트가 빈 계정에는 테넌트를 짐작하지 않는다(채우기 마이그 전 DB)', async () => {
-    await rolledBack(async (tx) => {
-      const [loose] = await tx
-        .insert(users)
-        .values({
-          loginId: `${PREFIX}loose`,
-          username: 'l',
-          nickname: `${PREFIX}l`,
-          email: `${PREFIX}l@example.test`,
-          tenantId: null,
-        })
-        .returning({ id: users.id });
-
-      await expect(issuer.accountTenantOf(loose.id, tx)).rejects.toThrow(/has no tenant/);
     });
   });
 

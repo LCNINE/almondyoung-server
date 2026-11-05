@@ -1,11 +1,12 @@
 import { DbService, InjectDb } from '@app/db';
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { userServiceSchema, UserServiceSchema } from 'apps/user-service/database/drizzle/schema';
 import { DbTransaction } from 'apps/user-service/src/commons/types';
 import { and, desc, eq, gt } from 'drizzle-orm';
 import { VerifyCodeDto } from '../dto/verify-code.dto';
 import { PhoneVerificationException } from '../exceptions/phone-verification.exceptions';
 import { HttpStatus } from '@nestjs/common';
+import { SERVED_TENANT_ID } from '../../../tenancy/served-tenant';
 
 /**
  * 사용자가 입력한 인증번호를 검증하는 서비스
@@ -13,7 +14,11 @@ import { HttpStatus } from '@nestjs/common';
  */
 @Injectable()
 export class VerifyCodeService {
-  constructor(@InjectDb() private readonly dbService: DbService<UserServiceSchema>) {}
+  constructor(
+    @InjectDb() private readonly dbService: DbService<UserServiceSchema>,
+    // 휴대폰 인증은 쇼핑몰(T) 화면의 일이고 기록도 T 로 남는다 — 같은 번호로 다른 테넌트에서 진행 중인 인증과 엉키지 않게 T 안에서만 찾는다.
+    @Inject(SERVED_TENANT_ID) private readonly servedTenantId: string,
+  ) {}
 
   private getClient(tx?: DbTransaction) {
     return tx ?? this.dbService.db;
@@ -88,6 +93,7 @@ export class VerifyCodeService {
       .from(userServiceSchema.phoneVerifications)
       .where(
         and(
+          eq(userServiceSchema.phoneVerifications.tenantId, this.servedTenantId),
           eq(userServiceSchema.phoneVerifications.phoneNumber, phoneNumber),
           eq(userServiceSchema.phoneVerifications.code, code),
           eq(userServiceSchema.phoneVerifications.isVerified, true),
@@ -110,6 +116,7 @@ export class VerifyCodeService {
       .from(userServiceSchema.phoneVerifications)
       .where(
         and(
+          eq(userServiceSchema.phoneVerifications.tenantId, this.servedTenantId),
           eq(userServiceSchema.phoneVerifications.phoneNumber, phoneNumber),
           eq(userServiceSchema.phoneVerifications.isVerified, false),
           gt(userServiceSchema.phoneVerifications.expiresAt, new Date()),

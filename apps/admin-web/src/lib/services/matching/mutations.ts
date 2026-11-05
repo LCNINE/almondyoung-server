@@ -36,7 +36,9 @@ export const useResolveMatching = () => {
     },
   });
 };
-useResolveMatching.permission = ['order.matching.write'] as const satisfies PermissionRequirement;
+useResolveMatching.permission = [
+  'order.matching.write',
+] as const satisfies PermissionRequirement;
 
 export const useResolveLegacyIgnoredMatching = () => {
   const queryClient = useQueryClient();
@@ -66,7 +68,9 @@ export const useResolveLegacyIgnoredMatching = () => {
     },
   });
 };
-useResolveLegacyIgnoredMatching.permission = ['order.matching.write'] as const satisfies PermissionRequirement;
+useResolveLegacyIgnoredMatching.permission = [
+  'order.matching.write',
+] as const satisfies PermissionRequirement;
 
 export const useSetMatchingPriority = () => {
   const queryClient = useQueryClient();
@@ -81,7 +85,9 @@ export const useSetMatchingPriority = () => {
     },
   });
 };
-useSetMatchingPriority.permission = ['order.matching.write'] as const satisfies PermissionRequirement;
+useSetMatchingPriority.permission = [
+  'order.matching.write',
+] as const satisfies PermissionRequirement;
 
 export const useChangeMatchingStrategy = () => {
   const queryClient = useQueryClient();
@@ -99,7 +105,9 @@ export const useChangeMatchingStrategy = () => {
     },
   });
 };
-useChangeMatchingStrategy.permission = ['order.matching.write'] as const satisfies PermissionRequirement;
+useChangeMatchingStrategy.permission = [
+  'order.matching.write',
+] as const satisfies PermissionRequirement;
 
 export const useUpdateMatchingStockPolicy = () => {
   const queryClient = useQueryClient();
@@ -117,7 +125,9 @@ export const useUpdateMatchingStockPolicy = () => {
     },
   });
 };
-useUpdateMatchingStockPolicy.permission = ['order.matching.write'] as const satisfies PermissionRequirement;
+useUpdateMatchingStockPolicy.permission = [
+  'order.matching.write',
+] as const satisfies PermissionRequirement;
 
 export const useUpdateVariantStockPolicy = () => {
   const queryClient = useQueryClient();
@@ -142,11 +152,15 @@ export const useUpdateVariantStockPolicy = () => {
       queryClient.invalidateQueries({
         queryKey: matchingQueryKeys.orderLineLists(),
       });
-      queryClient.invalidateQueries({ queryKey: productQueryKeys.mastersSummaryLists() });
+      queryClient.invalidateQueries({
+        queryKey: productQueryKeys.mastersSummaryLists(),
+      });
     },
   });
 };
-useUpdateVariantStockPolicy.permission = ['order.matching.write'] as const satisfies PermissionRequirement;
+useUpdateVariantStockPolicy.permission = [
+  'order.matching.write',
+] as const satisfies PermissionRequirement;
 
 export const useUpdateVariantMatching = () => {
   const queryClient = useQueryClient();
@@ -170,7 +184,9 @@ export const useUpdateVariantMatching = () => {
     },
   });
 };
-useUpdateVariantMatching.permission = ['order.matching.write'] as const satisfies PermissionRequirement;
+useUpdateVariantMatching.permission = [
+  'order.matching.write',
+] as const satisfies PermissionRequirement;
 
 export const useUpsertVariantMatching = () => {
   const queryClient = useQueryClient();
@@ -197,11 +213,15 @@ export const useUpsertVariantMatching = () => {
         queryKey: matchingQueryKeys.orderLineLists(),
       });
       queryClient.invalidateQueries({ queryKey: matchingQueryKeys.all });
-      queryClient.invalidateQueries({ queryKey: productQueryKeys.mastersSummaryLists() });
+      queryClient.invalidateQueries({
+        queryKey: productQueryKeys.mastersSummaryLists(),
+      });
     },
   });
 };
-useUpsertVariantMatching.permission = ['order.matching.write'] as const satisfies PermissionRequirement;
+useUpsertVariantMatching.permission = [
+  'order.matching.write',
+] as const satisfies PermissionRequirement;
 
 export const useIgnoreMatching = () => {
   const resolveMatching = useResolveMatching();
@@ -228,7 +248,9 @@ export const useIgnoreMatching = () => {
       }),
   });
 };
-useIgnoreMatching.permission = ['order.matching.write'] as const satisfies PermissionRequirement;
+useIgnoreMatching.permission = [
+  'order.matching.write',
+] as const satisfies PermissionRequirement;
 
 export const useCompleteMatching = () => {
   const resolveMatching = useResolveMatching();
@@ -262,4 +284,19 @@ export const useCompleteMatching = () => {
       }),
   });
 };
-useCompleteMatching.permission = ['order.matching.write'] as const satisfies PermissionRequirement;
+useCompleteMatching.permission = [
+  'order.matching.write',
+] as const satisfies PermissionRequirement;
+
+export const useApplyNameMatch = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: () => matchingClient.applyNameMatch(),
+    onSuccess: () =>
+      queryClient.invalidateQueries({ queryKey: matchingQueryKeys.all }),
+  });
+};
+useApplyNameMatch.permission = [
+  'order.matching.write',
+] as const satisfies PermissionRequirement;

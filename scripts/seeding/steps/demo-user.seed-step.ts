@@ -10,6 +10,7 @@
  *    DEMO_PASSWORD_DEFAULT와 일치)
  */
 import { sql } from 'drizzle-orm';
+import { TENANT_ONE_ID } from '../lib/tenant-one-backfill';
 import * as bcrypt from 'bcrypt';
 import { SeedStep } from './base-seed-step';
 import { SeedCheckResult, SeedApplyResult } from '../lib/types';
@@ -105,11 +106,11 @@ export class DemoUserSeedStep extends SeedStep {
       this.logger.step(1, 2, 'Upserting demo user');
       const hashed = await bcrypt.hash(this.demoPassword, 10);
       await this.db.execute(sql`
-        INSERT INTO users (id, login_id, username, nickname, email, password, is_email_verified)
+        INSERT INTO users (id, login_id, username, nickname, email, password, is_email_verified, tenant_id)
         VALUES (
           ${DEMO_USER.id}, ${DEMO_USER.loginId}, ${DEMO_USER.username},
           ${DEMO_USER.nickname}, ${DEMO_USER.email}, ${hashed},
-          ${DEMO_USER.isEmailVerified}
+          ${DEMO_USER.isEmailVerified}, ${TENANT_ONE_ID}
         )
         ON CONFLICT (id) DO UPDATE SET
           login_id = EXCLUDED.login_id,

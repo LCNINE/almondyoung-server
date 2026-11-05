@@ -1,7 +1,10 @@
 // src/lib/types/dto/matching.ts
 // 상품 매칭 관련 DTO 타입 정의
 
-import type { CompositionItemView, CompositionSource } from './line-composition';
+import type {
+  CompositionItemView,
+  CompositionSource,
+} from './line-composition';
 
 export type MatchingStatus = 'pending' | 'matched' | 'ignored';
 export type MatchingStrategy = 'void' | 'variant';
@@ -208,6 +211,7 @@ export interface OrderLinesResponseDto {
 export interface OrderLinesQuery {
   matchingStatus?: MatchingStatus | 'unregistered';
   excludeMatched?: boolean;
+  excludeShipped?: boolean;
   salesChannel?: string;
   startDate?: string;
   endDate?: string;
@@ -313,4 +317,22 @@ export interface MasterMatchingStatsDto {
   pendingVariants: number;
   ignoredVariants: number;
   matchingRate: number;
+}
+
+export interface NameMatchPreviewDto {
+  candidates: number;
+  waitingOrderCandidates: number;
+  sample: {
+    matchingId: string;
+    productName: string;
+    optionName: string;
+    skuId: string;
+    skuName: string;
+  }[];
+}
+
+export interface NameMatchApplyDto {
+  resolved: number;
+  skipped: number;
+  failed: { matchingId: string; reason: string }[];
 }

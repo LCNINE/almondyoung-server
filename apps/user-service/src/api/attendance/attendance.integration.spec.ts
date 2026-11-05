@@ -102,10 +102,10 @@ run('attendance PostgreSQL transactions', () => {
     await database.db.execute(sql`TRUNCATE users, roles, attendance_worksites CASCADE`);
 
     await database.db.execute(sql`
-      INSERT INTO users (id, login_id, username, nickname, email) VALUES
-      (${owner}, 'owner', '직원하나', 'owner', 'owner@example.test'),
-      (${other}, 'other', '직원둘', 'other', 'other@example.test'),
-      (${master}, 'master', '마스터', 'master', 'master@example.test');
+      INSERT INTO users (id, login_id, username, nickname, email, tenant_id) VALUES
+      (${owner}, 'owner', '직원하나', 'owner', 'owner@example.test', '1'),
+      (${other}, 'other', '직원둘', 'other', 'other@example.test', '1'),
+      (${master}, 'master', '마스터', 'master', 'master@example.test', '1');
     `);
 
     await database.db.execute(sql`INSERT INTO roles (name) VALUES ('admin'), ('master'), ('intern')`);
@@ -137,10 +137,10 @@ run('attendance PostgreSQL transactions', () => {
     const dormant = '00000000-0000-4000-8000-000000000013';
 
     await database.db.execute(sql`
-      INSERT INTO users (id, login_id, username, nickname, email, dormant_at) VALUES
-      (${intern}, 'intern', '인턴', 'intern', 'intern@example.test', NULL),
-      (${expired}, 'expired', '만료', 'expired', 'expired@example.test', NULL),
-      (${dormant}, 'dormant', '휴면', 'dormant', 'dormant@example.test', now())
+      INSERT INTO users (id, login_id, username, nickname, email, dormant_at, tenant_id) VALUES
+      (${intern}, 'intern', '인턴', 'intern', 'intern@example.test', NULL, '1'),
+      (${expired}, 'expired', '만료', 'expired', 'expired@example.test', NULL, '1'),
+      (${dormant}, 'dormant', '휴면', 'dormant', 'dormant@example.test', now(), '1')
     `);
 
     await database.db.execute(sql`
@@ -179,8 +179,8 @@ run('attendance PostgreSQL transactions', () => {
     const intern = '00000000-0000-4000-8000-000000000011';
 
     await database.db.execute(sql`
-      INSERT INTO users (id, login_id, username, nickname, email)
-      VALUES (${intern}, 'intern', '인턴', 'intern', 'intern@example.test')
+      INSERT INTO users (id, login_id, username, nickname, email, tenant_id)
+      VALUES (${intern}, 'intern', '인턴', 'intern', 'intern@example.test', '1')
     `);
     await database.db.execute(sql`
       INSERT INTO user_roles (user_id, role_id) SELECT ${intern}, role_id FROM roles WHERE name = 'intern'

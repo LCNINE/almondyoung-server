@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { config } from 'dotenv';
 import { drizzle, type PostgresJsDatabase, type PostgresJsTransaction } from 'drizzle-orm/postgres-js';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import * as postgres from 'postgres';
 import * as bcrypt from 'bcrypt';
 import * as schema from '../../apps/user-service/database/drizzle/schema';
@@ -313,8 +313,10 @@ async function resolveRoleId(
   return role.roleId;
 }
 
+// 계정은 한 테넌트의 것이고 아이디·이메일은 테넌트 안에서만 unique 다(ADR-0056) — 찾기도 만들기도 그 테넌트 안에서.
 async function upsertUser(
   db: DbClient,
+  tenantId: string,
   input: NormalizedUser,
   hashedPassword: string,
 ): Promise<{ userId: string; existed: boolean }> {
@@ -325,7 +327,7 @@ async function upsertUser(
       loginId: schema.users.loginId,
     })
     .from(schema.users)
-    .where(eq(schema.users.email, input.email))
+    .where(and(eq(schema.users.tenantId, tenantId), eq(schema.users.email, input.email)))
     .limit(1)
     .then((rows) => rows[0]);
 
@@ -336,7 +338,7 @@ async function upsertUser(
       loginId: schema.users.loginId,
     })
     .from(schema.users)
-    .where(eq(schema.users.loginId, input.loginId))
+    .where(and(eq(schema.users.tenantId, tenantId), eq(schema.users.loginId, input.loginId)))
     .limit(1)
     .then((rows) => rows[0]);
 
@@ -379,6 +381,7 @@ async function upsertUser(
       nickname: input.nickname,
       password: hashedPassword,
       isEmailVerified: input.isEmailVerified,
+      tenantId,
     })
     .returning({ id: schema.users.id });
 
@@ -440,17 +443,19 @@ async function upsertConsents(
 
 async function assignRole(
   db: DbClient,
+  tenantId: string,
   userId: string,
   roleId: string,
 ): Promise<void> {
   await db
     .insert(schema.userRoleAssignments)
-    .values({ userId, roleId })
+    .values({ userId, roleId, tenantId })
     .onConflictDoNothing();
 }
 
 async function insertPhoneVerification(
   db: DbClient,
+  tenantId: string,
   phoneNumber: string,
 ): Promise<void> {
   const now = new Date();
@@ -458,6 +463,7 @@ async function insertPhoneVerification(
 
   await db.insert(schema.phoneVerifications).values({
     phoneNumber,
+    tenantId,
     code: '000000',
     purpose: 'phone_verify',
     isVerified: true,
@@ -482,6 +488,11 @@ async function main() {
     throw new Error(
       'DATABASE_URL is missing. Set it in apps/user-service/.env or pass via environment.',
     );
+  }
+  // 테스트 고객은 user-service 가 섬기는 쇼핑몰 테넌트(T)의 계정이다. 기본 테넌트는 없다.
+  const tenantId = process.env.SERVED_TENANT_ID;
+  if (!tenantId) {
+    throw new Error('SERVED_TENANT_ID is missing. Set it in apps/user-service/.env or pass via environment.');
   }
 
   const { users, defaults } = cli.file
@@ -513,7 +524,7 @@ async function main() {
         const normalized = normalizeUser(users[index], index, cli, defaults);
 
         const hashedPassword = await bcrypt.hash(normalized.password, 10);
-        const { userId, existed } = await upsertUser(tx, normalized, hashedPassword);
+        const { userId, existed } = await upsertUser(tx, tenantId, normalized, hashedPassword);
 
         await upsertProfile(tx, userId, normalized);
         await upsertConsents(tx, userId, normalized.consents ?? DEFAULT_CONSENTS);
@@ -521,10 +532,10 @@ async function main() {
         const roleId = normalized.roleId
           ? normalized.roleId
           : await resolveRoleId(tx, normalized.roleName, roleCache);
-        await assignRole(tx, userId, roleId);
+        await assignRole(tx, tenantId, userId, roleId);
 
         if (normalized.verifyPhone) {
-          await insertPhoneVerification(tx, normalized.phoneNumber);
+          await insertPhoneVerification(tx, tenantId, normalized.phoneNumber);
         }
 
         results.push({

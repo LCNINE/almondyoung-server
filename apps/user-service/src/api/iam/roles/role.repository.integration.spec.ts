@@ -36,6 +36,7 @@ describeIfDb('RoleRepository.hasLiveStaffRole against a real database', () => {
         username: suffix,
         nickname: suffix,
         email: `${PREFIX}${suffix}@example.test`,
+        tenantId: '1',
       })
       .returning({ id: users.id });
     return u.id;

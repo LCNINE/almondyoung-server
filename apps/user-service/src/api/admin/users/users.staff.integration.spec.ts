@@ -1,5 +1,6 @@
 import { DbService } from '@app/db';
 import {
+  tenants,
   roles,
   userRoleAssignments,
   users,
@@ -36,6 +37,7 @@ describeIfDb('admin user list — staff filter against a real database', () => {
         username: suffix,
         nickname: suffix,
         email: `${PREFIX}${suffix}@example.test`,
+        tenantId: '1',
       })
       .returning({ id: users.id });
     await dbService.db.insert(userRoleAssignments).values({ userId: u.id, roleId: await roleId(roleName), expiresAt });
@@ -44,7 +46,7 @@ describeIfDb('admin user list — staff filter against a real database', () => {
 
   beforeAll(async () => {
     dbService = new DbService({ connectionString: DATABASE_URL ?? '' }, userServiceSchema);
-    service = new UsersService(dbService, { rolesHolding: () => [] } as never);
+    service = new UsersService(dbService, { rolesHolding: () => [] } as never, '1');
     await cleanup();
     await makeUser('a', 'intern', null);
     await makeUser('b', 'admin', new Date(Date.now() + DAY));
@@ -72,5 +74,27 @@ describeIfDb('admin user list — staff filter against a real database', () => {
     const result = await service.getUsers({ q: PREFIX, page: 1, limit: 100 });
     expect(result.data).toHaveLength(4);
     expect(result.data.every((u) => u.staffRoles === undefined)).toBe(true);
+  });
+
+  it('lists only accounts of the tenant it serves — the same login id in another tenant is someone else', async () => {
+    const other = `${PREFIX}-acme`;
+    await dbService.db.insert(tenants).values({ id: other, slug: other, displayName: 'acme', status: 'active' });
+    try {
+      await dbService.db
+        .insert(users)
+        .values({
+          loginId: `${PREFIX}a`,
+          username: 'x',
+          nickname: 'x',
+          email: `${PREFIX}a@example.test`,
+          tenantId: other,
+        });
+      const result = await service.getUsers({ q: PREFIX, page: 1, limit: 100 });
+      expect(result.data).toHaveLength(4);
+      expect(result.total).toBe(4);
+    } finally {
+      await dbService.db.delete(users).where(eq(users.tenantId, other));
+      await dbService.db.delete(tenants).where(eq(tenants.id, other));
+    }
   });
 });
