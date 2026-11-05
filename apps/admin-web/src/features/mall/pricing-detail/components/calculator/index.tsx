@@ -16,7 +16,6 @@ import {
 const LAYER_LABEL: Record<PricingLayer, string> = {
   base_price: '기준가',
   membership_price: '멤버십가',
-  tiered_price: '수량별',
 };
 
 interface Props {

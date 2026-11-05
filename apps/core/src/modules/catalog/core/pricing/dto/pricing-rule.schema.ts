@@ -6,13 +6,12 @@ import { z } from 'zod';
 
 const basePricingRuleSchema = z
   .object({
-    layer: z.enum(['base_price', 'membership_price', 'tiered_price']),
+    layer: z.enum(['base_price', 'membership_price']),
     order: z.number().int().min(1),
     scopeType: z.enum(['all_variants', 'with_option', 'variants']),
     scopeTargetIds: z.array(z.string().uuid()).optional(),
     operationType: z.enum(['offset', 'scale', 'override']),
     operationValue: z.number().int(),
-    minQuantity: z.number().int().positive().optional(),
   })
   .superRefine((data, ctx) => {
     // Scope 검증: all_variants는 scopeTargetIds 불필요
@@ -51,25 +50,6 @@ const basePricingRuleSchema = z
         path: ['operationValue'],
       });
     }
-
-    // Layer별 minQuantity 검증
-    if (data.layer === 'tiered_price') {
-      if (!data.minQuantity || data.minQuantity <= 0) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: 'tiered_price layer requires positive minQuantity',
-          path: ['minQuantity'],
-        });
-      }
-    } else {
-      if (data.minQuantity !== undefined) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: `${data.layer} layer should not have minQuantity`,
-          path: ['minQuantity'],
-        });
-      }
-    }
   });
 
 // Layer별 스키마 (타입 추론을 위해 분리)
@@ -81,10 +61,6 @@ export const membershipPriceRuleSchema = basePricingRuleSchema.refine((data) => 
   message: 'Must be membership_price layer',
 });
 
-export const tieredPriceRuleSchema = basePricingRuleSchema.refine((data) => data.layer === 'tiered_price', {
-  message: 'Must be tiered_price layer',
-});
-
 // 전체 규칙 union
 export const pricingRuleSchema = basePricingRuleSchema;
 
@@ -93,8 +69,6 @@ export const pricingRulesSetSchema = z
   .object({
     basePriceRules: z.array(basePriceRuleSchema),
     membershipPriceRules: z.array(membershipPriceRuleSchema),
-    // 수량별 규칙은 구간표로 대체됐다. 이 키를 되보내는 옛 클라이언트를 위해 받기만 하고, 비어 있어야 한다.
-    tieredPriceRules: z.array(tieredPriceRuleSchema).optional().default([]),
   })
   // 모든 variant 가 base_price 를 하나 이상 받아야 한다 (안 그러면 계산기가 0 원을 낸다).
   // 실제 커버리지 검사는 variant 목록을 알아야 하므로 PricingValidatorService 가 DB 를 보고 한다.
@@ -109,11 +83,7 @@ export const pricingRulesSetSchema = z
         const orders = rules.map((r) => r.order);
         return orders.length === new Set(orders).size;
       };
-      return (
-        checkDuplicates(data.basePriceRules) &&
-        checkDuplicates(data.membershipPriceRules) &&
-        checkDuplicates(data.tieredPriceRules)
-      );
+      return checkDuplicates(data.basePriceRules) && checkDuplicates(data.membershipPriceRules);
     },
     {
       message: 'Duplicate order values found within a layer',
@@ -130,7 +100,6 @@ type PricingRuleBase = z.infer<typeof basePricingRuleSchema>;
 // Zod 검증된 타입 그대로 export (런타임 검증과 일치)
 export type BasePriceRule = PricingRuleBase;
 export type MembershipPriceRule = PricingRuleBase;
-export type TieredPriceRule = PricingRuleBase;
 export type PricingRuleInput = PricingRuleBase;
 
 // 규칙 세트 타입 (Zod infer와 일치)
@@ -176,21 +145,12 @@ export type OverrideOperation = {
 export type NarrowedBasePriceRule = {
   layer: 'base_price';
   order: number;
-  minQuantity?: undefined;
 } & (AllVariantsScope | WithOptionScope | VariantsScope) &
   (OffsetOperation | ScaleOperation | OverrideOperation);
 
 export type NarrowedMembershipPriceRule = {
   layer: 'membership_price';
   order: number;
-  minQuantity?: undefined;
-} & (AllVariantsScope | WithOptionScope | VariantsScope) &
-  (OffsetOperation | ScaleOperation | OverrideOperation);
-
-export type NarrowedTieredPriceRule = {
-  layer: 'tiered_price';
-  order: number;
-  minQuantity: number;
 } & (AllVariantsScope | WithOptionScope | VariantsScope) &
   (OffsetOperation | ScaleOperation | OverrideOperation);
 
@@ -205,10 +165,6 @@ export function isBasePriceRule(rule: PricingRuleInput): rule is NarrowedBasePri
 
 export function isMembershipPriceRule(rule: PricingRuleInput): rule is NarrowedMembershipPriceRule {
   return rule.layer === 'membership_price';
-}
-
-export function isTieredPriceRule(rule: PricingRuleInput): rule is NarrowedTieredPriceRule {
-  return rule.layer === 'tiered_price';
 }
 
 // Scope type guards

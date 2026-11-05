@@ -217,7 +217,7 @@ export type ProductVariantPriceCache = InferSelectModel<typeof productVariantPri
 export type NewProductVariantPriceCache = InferInsertModel<typeof productVariantPriceCache>;
 
 // 가격 레이어 타입
-export type PriceLayer = 'base_price' | 'membership_price' | 'tiered_price';
+export type PriceLayer = 'base_price' | 'membership_price';
 
 // 스코프 타입
 export type ScopeType = 'all_variants' | 'with_option' | 'variants';

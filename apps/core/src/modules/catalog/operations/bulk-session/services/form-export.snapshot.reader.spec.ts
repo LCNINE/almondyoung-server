@@ -20,7 +20,7 @@ import { FormExportSnapshotReader } from './form-export.snapshot.reader';
  * 던지는 상황을 만든다.
  */
 describe('FormExportSnapshotReader — getActiveVersion 에러 처리 (단위)', () => {
-  const emptyRules: PricingRulesResponseDto = { basePriceRules: [], membershipPriceRules: [], tieredPriceRules: [] };
+  const emptyRules: PricingRulesResponseDto = { basePriceRules: [], membershipPriceRules: [] };
   const emptyTree: CategoryTreeResponseDto = { categories: [], totalCount: 0, maxDepth: 0 };
   // DbTransaction 은 실제 트랜잭션 핸들이 커야 하지만 이 스위트의 모든 협력자가 목이라
   // 실제로 쓰이지 않는다 — 인자 자리 채우기용.
@@ -98,7 +98,7 @@ describe('FormExportSnapshotReader — getActiveVersion 에러 처리 (단위)',
  * 본다. skuMapping 을 목으로 넣어 배치 응답을 통제한다.
  */
 describe('FormExportSnapshotReader — renderMaster 판매정책 프리필', () => {
-  const emptyRules: PricingRulesResponseDto = { basePriceRules: [], membershipPriceRules: [], tieredPriceRules: [] };
+  const emptyRules: PricingRulesResponseDto = { basePriceRules: [], membershipPriceRules: [] };
   const tx = {} as unknown as DbTransaction;
 
   let reader: FormExportSnapshotReader;

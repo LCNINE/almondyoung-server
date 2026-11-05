@@ -109,14 +109,6 @@ describeIfDb('수량 할인 구간표 저장 (실 Postgres)', () => {
     return { masterId, versionId: version.id, variantId };
   }
 
-  async function addLegacyTieredRule(tx: DbTransaction, masterId: string, versionId: string, minQuantity: number, amount: number) {
-    const [rule] = await tx
-      .insert(pricingRules)
-      .values({ layer: 'tiered_price', order: minQuantity, scopeType: 'all_variants', operationType: 'override', operationValue: amount, minQuantity })
-      .returning({ id: pricingRules.id });
-    await tx.insert(productMasterPricingRules).values({ masterId, versionId, pricingRuleId: rule.id });
-  }
-
   async function addVersionSharing(tx: DbTransaction, masterId: string, fromVersionId: string): Promise<string> {
     const [version] = await tx
       .insert(productMasterVersions)
@@ -269,7 +261,6 @@ describeIfDb('수량 할인 구간표 저장 (실 Postgres)', () => {
           {
             basePriceRules: [rule(PricingLayer.BASE_PRICE, 10000)],
             membershipPriceRules: [rule(PricingLayer.MEMBERSHIP_PRICE, 9000)],
-            tieredPriceRules: [],
           } as never,
           tx,
         ),
@@ -355,7 +346,6 @@ describeIfDb('수량 할인 구간표 저장 (실 Postgres)', () => {
       await inRollbackTx(async (tx) => {
         const { masterId, versionId, variantId } = await seedVersion(tx);
         await manager.upsertForDraft(masterId, versionId, input([tier(3, 5, 10)], { enabled: false }), tx);
-        await addLegacyTieredRule(tx, masterId, versionId, 2, 7000);
 
         const one = await calculator.calculateVariantPriceSet(versionId, variantId, tx);
 
@@ -364,28 +354,10 @@ describeIfDb('수량 할인 구간표 저장 (실 Postgres)', () => {
       });
     });
 
-    it('gives no tier prices to a version that only has old tiered rules', async () => {
-      await inRollbackTx(async (tx) => {
-        const { masterId, versionId, variantId } = await seedVersion(tx, { basePrice: 15900, membershipPrice: 15900 });
-        await addLegacyTieredRule(tx, masterId, versionId, 2, 13000);
-
-        const one = await calculator.calculateVariantPriceSet(versionId, variantId, tx);
-        const [many] = await calculator.calculateVariantPriceSetMany(versionId, [variantId], tx);
-        const price = async (type: 'regular' | 'membership') =>
-          (await calculator.calculateVariantPriceByVersion(versionId, variantId, 2, type, tx)).price;
-
-        const expected = { basePrice: 15900, membershipPrice: 15900, tieredPrices: [], membershipTieredPrices: [] };
-        expect(one).toEqual(expected);
-        expect(many).toEqual(expected);
-        expect([await price('regular'), await price('membership')]).toEqual([15900, 15900]);
-      });
-    });
-
     it('prices a quantity with the table for both customer types, the same as the price set', async () => {
       await inRollbackTx(async (tx) => {
         const { masterId, versionId, variantId } = await seedVersion(tx, { basePrice: 10000, membershipPrice: 8000 });
         await manager.upsertForDraft(masterId, versionId, input([tier(3, 5, 10), tier(5, 10, 15)]), tx);
-        await addLegacyTieredRule(tx, masterId, versionId, 2, 7000);
 
         const price = async (quantity: number, type: 'regular' | 'membership') =>
           (await calculator.calculateVariantPriceByVersion(versionId, variantId, quantity, type, tx)).price;
@@ -396,11 +368,10 @@ describeIfDb('수량 할인 구간표 저장 (실 Postgres)', () => {
       });
     });
 
-    it('prices a quantity with no tier while the table is off, ignoring old tiered rules', async () => {
+    it('prices a quantity with no tier while the table is off', async () => {
       await inRollbackTx(async (tx) => {
         const { masterId, versionId, variantId } = await seedVersion(tx, { basePrice: 10000, membershipPrice: 8000 });
         await manager.upsertForDraft(masterId, versionId, input([tier(3, 5, 10)], { enabled: false }), tx);
-        await addLegacyTieredRule(tx, masterId, versionId, 2, 7000);
 
         const result = await calculator.calculateVariantPriceByVersion(versionId, variantId, 3, 'membership', tx);
 
@@ -408,67 +379,29 @@ describeIfDb('수량 할인 구간표 저장 (실 Postgres)', () => {
       });
     });
   });
-  describe('old tiered rules', () => {
-    const rule = (layer: PricingLayer, amount: number, order = 1, minQuantity?: number) => ({
-      layer,
-      order,
-      scopeType: PricingScopeType.ALL_VARIANTS,
-      operationType: PricingOperationType.OVERRIDE,
-      operationValue: amount,
-      ...(minQuantity === undefined ? {} : { minQuantity }),
-    });
-    const baseRules = {
-      basePriceRules: [rule(PricingLayer.BASE_PRICE, 15900)],
-      membershipPriceRules: [rule(PricingLayer.MEMBERSHIP_PRICE, 15900)],
-    };
-    const ruleSet = (tiered?: ReturnType<typeof rule>[]) =>
-      (tiered === undefined ? baseRules : { ...baseRules, tieredPriceRules: tiered }) as never;
-
-    async function storedTieredMappings(tx: DbTransaction, versionId: string) {
-      const rows = await tx
-        .select({ layer: pricingRules.layer })
-        .from(productMasterPricingRules)
-        .innerJoin(pricingRules, eq(pricingRules.id, productMasterPricingRules.pricingRuleId))
-        .where(eq(productMasterPricingRules.versionId, versionId));
-      return rows.filter((r) => r.layer === 'tiered_price').length;
-    }
-
-    it('lists no tiered rules even while old ones are still mapped to the version', async () => {
-      await inRollbackTx(async (tx) => {
-        const { masterId, versionId } = await seedVersion(tx, { basePrice: 15900, membershipPrice: 15900 });
-        await addLegacyTieredRule(tx, masterId, versionId, 2, 13000);
-
-        const rules = await pricing.getVersionRules(versionId, tx);
-
-        expect(rules.tieredPriceRules).toEqual([]);
-        expect(rules.basePriceRules).toHaveLength(1);
+  it('ignores a tieredPriceRules key that an older client still sends', async () => {
+    await inRollbackTx(async (tx) => {
+      const { versionId } = await seedVersion(tx, { basePrice: 15900, membershipPrice: 15900 });
+      const rule = (layer: PricingLayer, amount: number) => ({
+        layer,
+        order: 1,
+        scopeType: PricingScopeType.ALL_VARIANTS,
+        operationType: PricingOperationType.OVERRIDE,
+        operationValue: amount,
       });
-    });
 
-    it('rejects a save that carries a tiered rule, even one already stored', async () => {
-      await inRollbackTx(async (tx) => {
-        const { masterId, versionId } = await seedVersion(tx, { basePrice: 15900, membershipPrice: 15900 });
-        await addLegacyTieredRule(tx, masterId, versionId, 2, 13000);
+      const saved = await pricing.replaceVersionRules(
+        versionId,
+        {
+          basePriceRules: [rule(PricingLayer.BASE_PRICE, 16900)],
+          membershipPriceRules: [rule(PricingLayer.MEMBERSHIP_PRICE, 15900)],
+          tieredPriceRules: [],
+        } as never,
+        tx,
+      );
 
-        await expect(
-          pricing.replaceVersionRules(versionId, ruleSet([rule(PricingLayer.TIERED_PRICE, 13000, 1, 2)]), tx),
-        ).rejects.toThrow(BadRequestException);
-      });
-    });
-
-    it.each([
-      ['without the tiered list', undefined],
-      ['with an empty tiered list', []],
-    ])('saves %s and drops old tiered rules left on the version', async (_label, tiered) => {
-      await inRollbackTx(async (tx) => {
-        const { masterId, versionId } = await seedVersion(tx, { basePrice: 15900, membershipPrice: 15900 });
-        await addLegacyTieredRule(tx, masterId, versionId, 2, 13000);
-
-        await pricing.replaceVersionRules(versionId, ruleSet(tiered), tx);
-
-        expect(await storedTieredMappings(tx, versionId)).toBe(0);
-        expect((await pricing.getVersionRules(versionId, tx)).basePriceRules).toHaveLength(1);
-      });
+      expect(saved.basePriceRules.map((r) => r.operationValue)).toEqual([16900]);
+      expect(saved).not.toHaveProperty('tieredPriceRules');
     });
   });
 });

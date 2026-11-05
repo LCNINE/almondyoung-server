@@ -6,9 +6,9 @@ export class PricingRuleResponseDto {
 
   @ApiProperty({
     description: 'Layer',
-    enum: ['base_price', 'membership_price', 'tiered_price'],
+    enum: ['base_price', 'membership_price'],
   })
-  layer: 'base_price' | 'membership_price' | 'tiered_price';
+  layer: 'base_price' | 'membership_price';
 
   @ApiProperty({ description: 'Order within layer', minimum: 1 })
   order: number;
@@ -36,13 +36,6 @@ export class PricingRuleResponseDto {
   @ApiProperty({ description: 'Operation value' })
   operationValue: number;
 
-  @ApiProperty({
-    description: 'Minimum quantity',
-    required: false,
-    nullable: true,
-  })
-  minQuantity: number | null;
-
   @ApiProperty({ description: 'Created at (ISO 8601)', example: '2025-12-05T10:30:00.000Z' })
   createdAt: string;
 
@@ -62,10 +55,4 @@ export class PricingRulesResponseDto {
     type: [PricingRuleResponseDto],
   })
   membershipPriceRules: PricingRuleResponseDto[];
-
-  @ApiProperty({
-    description: 'Tiered price rules',
-    type: [PricingRuleResponseDto],
-  })
-  tieredPriceRules: PricingRuleResponseDto[];
 }

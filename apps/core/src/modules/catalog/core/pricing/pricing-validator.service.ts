@@ -46,11 +46,6 @@ export class PricingValidatorService {
         });
       }
 
-      if (parseResult.data.tieredPriceRules.length > 0) {
-        throw new BadRequestException(
-          '수량별 가격 규칙은 더 이상 저장할 수 없습니다. 수량 할인 표를 사용해 주세요.',
-        );
-      }
       const validatedRules = await this.dropStaleVariantTargets(versionId, parseResult.data, trx);
 
       await this.validateScopeTargets(masterId, versionId, validatedRules, trx);
@@ -112,7 +107,6 @@ export class PricingValidatorService {
     const cleaned = {
       basePriceRules: clean(rulesSet.basePriceRules),
       membershipPriceRules: clean(rulesSet.membershipPriceRules),
-      tieredPriceRules: [],
     };
 
     if (dropped > 0) {

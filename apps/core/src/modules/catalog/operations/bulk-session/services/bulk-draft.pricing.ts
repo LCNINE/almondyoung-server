@@ -145,5 +145,5 @@ export function toReplaceDto(prices: SimplePrices): ReplacePricingRulesDto {
     }
   }
 
-  return { basePriceRules, membershipPriceRules, tieredPriceRules: [] };
+  return { basePriceRules, membershipPriceRules };
 }

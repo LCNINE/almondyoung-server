@@ -428,7 +428,6 @@ export class ProductVariantsService {
         scopeTargetIds: pricingRules.scopeTargetIds,
         operationType: pricingRules.operationType,
         operationValue: pricingRules.operationValue,
-        minQuantity: pricingRules.minQuantity,
       })
       .from(productMasterPricingRules)
       .innerJoin(pricingRules, eq(productMasterPricingRules.pricingRuleId, pricingRules.id))
@@ -467,7 +466,6 @@ export class ProductVariantsService {
           scopeTargetIds: newTargets,
           operationType: rule.operationType,
           operationValue: rule.operationValue,
-          minQuantity: rule.minQuantity,
         });
 
         await tx

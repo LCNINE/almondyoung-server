@@ -48,7 +48,6 @@ export class PricingService {
           scopeTargetIds: pricingRules.scopeTargetIds,
           operationType: pricingRules.operationType,
           operationValue: pricingRules.operationValue,
-          minQuantity: pricingRules.minQuantity,
           createdAt: pricingRules.createdAt,
           updatedAt: pricingRules.updatedAt,
         })
@@ -62,8 +61,6 @@ export class PricingService {
         membershipPriceRules: allRules
           .filter((r) => r.layer === 'membership_price')
           .map((r) => PricingMapper.toRuleDto(r)),
-        // 수량별 규칙은 구간표로 대체됐다. 이 키를 읽어 되보내는 화면·도구가 있어 빈 목록으로 남겨 둔다.
-        tieredPriceRules: [],
       };
     }, tx);
   }
@@ -132,7 +129,6 @@ export class PricingService {
             rule.scopeType === 'all_variants' ? null : 'scopeTargetIds' in rule ? rule.scopeTargetIds : null,
           operationType: rule.operationType,
           operationValue: rule.operationValue,
-          minQuantity: null,
         });
       }
 
@@ -145,7 +141,6 @@ export class PricingService {
             rule.scopeType === 'all_variants' ? null : 'scopeTargetIds' in rule ? rule.scopeTargetIds : null,
           operationType: rule.operationType,
           operationValue: rule.operationValue,
-          minQuantity: null,
         });
       }
 

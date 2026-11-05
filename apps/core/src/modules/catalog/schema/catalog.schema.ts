@@ -662,20 +662,19 @@ export const salesChannels = pgTable(
 );
 
 // ===== 10. PRICING RULES (규칙 기반 가격 정책) =====
-export const pricingRuleLayerEnum = pgEnum('pricing_rule_layer', ['base_price', 'membership_price', 'tiered_price']);
+export const pricingRuleLayerEnum = pgEnum('pricing_rule_layer', ['base_price', 'membership_price']);
 export const pricingRuleScopeTypeEnum = pgEnum('pricing_rule_scope_type', ['all_variants', 'with_option', 'variants']);
 export const pricingRuleOperationTypeEnum = pgEnum('pricing_rule_operation_type', ['offset', 'scale', 'override']);
 export const pricingRules = pgTable('pricing_rules', {
   id: uuid('id')
     .primaryKey()
     .$defaultFn(() => uuidv7()),
-  layer: pricingRuleLayerEnum('layer').notNull(), // 'base_price', 'membership_price', 'tiered_price'
+  layer: pricingRuleLayerEnum('layer').notNull(), // 'base_price', 'membership_price'
   order: integer('order').notNull(), // 레이어 내 순서 (1부터 시작)
   scopeType: pricingRuleScopeTypeEnum('scope_type').notNull(), // 'all_variants', 'with_option', 'variants'
   scopeTargetIds: uuid('scope_target_ids').array(), // option_value_ids 또는 variant_ids
   operationType: pricingRuleOperationTypeEnum('operation_type').notNull(), // 'offset', 'scale', 'override'
   operationValue: bigint('operation_value', { mode: 'number' }).notNull(), // 원 단위 (scale은 1000배)
-  minQuantity: integer('min_quantity'), // tiered_price 레이어에서만 사용
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });

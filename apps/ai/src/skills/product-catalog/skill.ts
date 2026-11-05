@@ -587,8 +587,6 @@ const setPrice: SkillTool = {
       body: JSON.stringify({
         basePriceRules: nextBase,
         membershipPriceRules: nextMember,
-        // 수량별 규칙은 구간표로 대체됐다. 이 키를 필수로 받는 이전 core 를 위해 빈 목록만 싣는다.
-        tieredPriceRules: [],
       }),
     });
   },

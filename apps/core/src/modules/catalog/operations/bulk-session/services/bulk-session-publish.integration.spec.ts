@@ -317,7 +317,6 @@ describeIfDb('일괄 세션 발행·제외·정리 레인 (실 Postgres + 실 Ne
         },
       ],
       membershipPriceRules: [],
-      tieredPriceRules: [],
     });
 
     await versions.publishVersion(draft.id, randomUUID());

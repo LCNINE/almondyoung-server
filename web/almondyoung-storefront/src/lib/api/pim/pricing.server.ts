@@ -13,7 +13,7 @@ export interface CalculatePriceRequest {
 
 export interface PriceRuleApplication {
   ruleId: string
-  layer: "base_price" | "membership_price" | "tiered_price"
+  layer: "base_price" | "membership_price"
   order: number
   scopeType: "all_variants" | "with_option" | "variants"
   operationType: "offset" | "scale" | "override"
