@@ -19,6 +19,7 @@ export const TENANT_SHELL_SCREENS = [
   '/mall/products-list',
   '/mall/products-list/[masterId]',
   '/mall/products-list/[masterId]/versions',
+  '/mall/pricing/[masterId]',
   '/mall/product-registration',
   '/mall/my-drafts',
   '/mall/bulk-sessions',
@@ -28,6 +29,14 @@ export const TENANT_SHELL_SCREENS = [
 ] as const;
 
 export type TenantShellScreen = (typeof TENANT_SHELL_SCREENS)[number];
+
+/**
+ * 메뉴 화면 아래 경로가 아닌데 목록에 있는 화면 → 그 화면으로 들어가는 목록의 화면. 메뉴에서 바로 못 가는 화면이 목록에 있으려면
+ * 들어가는 길이 목록 안에 있어야 한다(게이트가 잰다). 가격 관리는 상품 목록의 «가격 관리» 버튼과 상품 상세의 초안 체크리스트로 들어간다.
+ */
+export const TENANT_SHELL_ENTERED_FROM: Readonly<Partial<Record<TenantShellScreen, TenantShellScreen>>> = {
+  '/mall/pricing/[masterId]': '/mall/products-list/[masterId]',
+};
 
 export interface TenantShellMenuGroup {
   readonly title: string;
