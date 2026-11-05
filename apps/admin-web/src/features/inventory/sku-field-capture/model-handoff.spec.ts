@@ -103,7 +103,9 @@ SKU: SKU-1
 4. 사진 방향은 실제 사진을 보고 판단해.
    라벨과 표면은 원본 사진을 상품 표면에 맞게 입히고,
    글자·로고·바코드를 다시 그리거나 수정하지 마.
-5. 텍스처를 GLB 안에 포함하고 파일은 5MB 이하로 만들어.
+5. 텍스처를 GLB 안에 포함하고, 저장하기 전에
+   npx -y @gltf-transform/cli@4.2.1 optimize 원본.glb 결과.glb --compress meshopt --texture-compress webp
+   로 압축해. 압축한 파일은 2MB 이하여야 해.
 6. 치수, 글자 방향, 표면 겹침과 파일 오류를 확인해.
    사진만으로 추정한 세부 형상은 간단히 밝혀.
 7. 결과는 이 폴더에 SKU-1.glb 와 Python 원본으로 저장하고,
@@ -174,13 +176,13 @@ SKU: SKU-1
       'GLB 파일만 올릴 수 있어요'
     );
     expect(glbFileProblem({ name: 'a.glb', size: GLB_MAX_BYTES + 1 })).toBe(
-      '20MB 이하 파일만 올릴 수 있어요'
+      '2MB 이하 파일만 올릴 수 있어요. 압축한 GLB 를 올려 주세요'
     );
   });
 
-  it('accepts exactly 20 MiB and checks the extension first', () => {
+  it('accepts exactly 2 MiB and checks the extension first', () => {
     expect(
-      glbFileProblem({ name: 'a.glb', size: 20 * 1024 * 1024 })
+      glbFileProblem({ name: 'a.glb', size: 2 * 1024 * 1024 })
     ).toBeNull();
     expect(glbFileProblem({ name: 'a.glb.zip', size: GLB_MAX_BYTES + 1 })).toBe(
       'GLB 파일만 올릴 수 있어요'
