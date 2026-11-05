@@ -30,10 +30,10 @@
 | 최소구매수량 | `minQuantity` |  |  |
 | 최대구매수량 | `maxQuantity` |  |  |
 | 판매처 | `seller` |  |  |
-| 해외직구 | `isOverseas` |  |  |
-| 멤버십회원전용노출 | `isVisibleToMembersOnly` |  |  |
-| 비회원에게멤버십가숨김 | `hideMembershipPriceForNonMembers` |  |  |
-| 도매전용 | `isWholesaleOnly` |  |  |
+| 해외직구 | `isOverseas` |  | Y 또는 N. |
+| 멤버십회원전용노출 | `isVisibleToMembersOnly` |  | Y 또는 N. |
+| 비회원에게멤버십가숨김 | `hideMembershipPriceForNonMembers` |  | Y 또는 N. |
+| 도매전용 | `isWholesaleOnly` |  | Y 또는 N. |
 | SEO제목 | `seoTitle` |  |  |
 | SEO설명 | `seoDescription` |  |  |
 | SEO키워드 | `seoKeywords` |  |  |
@@ -74,14 +74,14 @@
 |---|---|---|---|
 | **상품키** | `rowKey` | O |  |
 | **카테고리경로** | `categoryPath` | O |  |
-| **대표여부** | `isPrimary` | O |  |
+| **대표여부** | `isPrimary` | O | 상품마다 대표 카테고리 한 행에만 Y, 나머지 행은 N 또는 빈칸. |
 
 ## 구매제약
 
 | 열 | 내부 키 | 필수 | 설명 |
 |---|---|---|---|
 | **상품키** | `rowKey` | O |  |
-| 멤버십필요 | `requiresMembership` |  |  |
+| 멤버십필요 | `requiresMembership` |  | Y 또는 N. |
 | 평생구매한도 | `lifetimeQuantityLimit` |  |  |
 
 ## 이미지

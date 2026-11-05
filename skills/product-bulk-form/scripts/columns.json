@@ -142,25 +142,25 @@
         "key": "isOverseas",
         "label": "해외직구",
         "required": false,
-        "note": null
+        "note": "Y 또는 N."
       },
       {
         "key": "isVisibleToMembersOnly",
         "label": "멤버십회원전용노출",
         "required": false,
-        "note": null
+        "note": "Y 또는 N."
       },
       {
         "key": "hideMembershipPriceForNonMembers",
         "label": "비회원에게멤버십가숨김",
         "required": false,
-        "note": null
+        "note": "Y 또는 N."
       },
       {
         "key": "isWholesaleOnly",
         "label": "도매전용",
         "required": false,
-        "note": null
+        "note": "Y 또는 N."
       },
       {
         "key": "seoTitle",
@@ -322,7 +322,7 @@
         "key": "isPrimary",
         "label": "대표여부",
         "required": true,
-        "note": null
+        "note": "상품마다 대표 카테고리 한 행에만 Y, 나머지 행은 N 또는 빈칸."
       }
     ],
     "구매제약": [
@@ -336,7 +336,7 @@
         "key": "requiresMembership",
         "label": "멤버십필요",
         "required": false,
-        "note": null
+        "note": "Y 또는 N."
       },
       {
         "key": "lifetimeQuantityLimit",
