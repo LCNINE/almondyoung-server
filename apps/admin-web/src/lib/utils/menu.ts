@@ -392,6 +392,11 @@ const allMenus: MainMenu[] = [
         path: '/inventory/sku-field-capture',
       },
       {
+        id: 'inventory-sku-3d-models',
+        title: '3D 업로드 현황',
+        path: '/inventory/sku-3d-models',
+      },
+      {
         id: 'inventory-holders',
         title: '재고 소유자 관리',
         path: '/inventory/holders',

@@ -125,6 +125,15 @@ export function Sku3dActions({
   });
 
   const { publishedVersion, nextVersion } = modelSummary(models.data ?? []);
+  const latestVersion = nextVersion - 1;
+  const draftLabel =
+    latestVersion > (publishedVersion ?? 0) ? `v${latestVersion} 비공개` : null;
+  const statusLabel =
+    publishedVersion !== null
+      ? [`3D 공개 중 · v${publishedVersion}`, draftLabel]
+          .filter(Boolean)
+          .join(' · ')
+      : (draftLabel ?? '3D 없음');
   const writeAllowed = canWrite.status === 'ready' && canWrite.allowed;
   const missingMeasurements = [
     dims.packageWidthMm,
@@ -133,7 +142,7 @@ export function Sku3dActions({
     dims.packageWeightG,
   ].some((value) => value === null || value === 0);
 
-  const publish = useMutation({
+  const upload = useMutation({
     mutationFn: async (selected: File) => {
       const uploaded = await uploadFileToFileService(asGlbFile(selected), {
         contextId: SKU_3D_MODEL_CONTEXT_ID,
@@ -149,10 +158,10 @@ export function Sku3dActions({
       await queryClient.invalidateQueries({
         queryKey: ['sku-3d-models', skuId],
       });
-      toast.success(`v${model.version} 을 공개했어요`);
+      toast.success(`v${model.version}를 비공개로 올렸어요`);
     },
     onError: (error) =>
-      toast.error(errorMessageOf(error, '3D 모델을 공개하지 못했어요')),
+      toast.error(errorMessageOf(error, '3D 모델을 올리지 못했어요')),
   });
 
   const handoff = async () => {
@@ -204,11 +213,7 @@ export function Sku3dActions({
   return (
     <div className="flex flex-wrap items-center gap-2">
       {models.data && (
-        <span className="text-xs text-muted-foreground">
-          {publishedVersion !== null
-            ? `3D 공개 중 · v${publishedVersion}`
-            : '3D 없음'}
-        </span>
+        <span className="text-xs text-muted-foreground">{statusLabel}</span>
       )}
       <Tooltip>
         <TooltipTrigger asChild>
@@ -217,7 +222,7 @@ export function Sku3dActions({
               type="button"
               disabled={missingMeasurements || handingOff}
               onClick={() => void handoff()}
-              className="rounded border px-2 py-1 text-xs disabled:opacity-50"
+              className="cursor-pointer rounded border px-2 py-1 text-xs hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
             >
               지피티로 가기
             </button>
@@ -229,9 +234,9 @@ export function Sku3dActions({
       </Tooltip>
       <button
         type="button"
-        disabled={!writeAllowed || publish.isPending}
+        disabled={!writeAllowed || upload.isPending}
         onClick={() => inputRef.current?.click()}
-        className="rounded border px-2 py-1 text-xs disabled:opacity-50"
+        className="cursor-pointer rounded border px-2 py-1 text-xs hover:bg-muted disabled:cursor-not-allowed disabled:opacity-50"
       >
         {publishedVersion !== null ? 'GLB 다시 올리기' : 'GLB 업로드'}
       </button>
@@ -264,7 +269,7 @@ export function Sku3dActions({
         href={`/inventory/skus?code=${encodeURIComponent(code)}`}
         target="_blank"
         rel="noreferrer"
-        className="rounded border px-2 py-1 text-xs"
+        className="cursor-pointer rounded border px-2 py-1 text-xs hover:bg-muted"
       >
         상세
       </a>
@@ -275,9 +280,10 @@ export function Sku3dActions({
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>3D 모델을 공개할까요?</AlertDialogTitle>
+            <AlertDialogTitle>3D 모델을 올릴까요?</AlertDialogTitle>
             <AlertDialogDescription>
-              공개하면 판매 중인 상품 상세에 3D로 보기가 생겨요
+              비공개로 올라가요. 상품 상세에 보이게 하려면 3D 업로드 현황에서
+              공개해 주세요
             </AlertDialogDescription>
           </AlertDialogHeader>
           {file && (
@@ -286,28 +292,24 @@ export function Sku3dActions({
               <p className="break-all">
                 {file.name} · {(file.size / 1024 / 1024).toFixed(1)}MB
               </p>
-              <p>
-                {publishedVersion !== null
-                  ? `v${publishedVersion} → v${nextVersion}`
-                  : `v${nextVersion}`}
-              </p>
+              <p>v{nextVersion} 비공개</p>
             </div>
           )}
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={publish.isPending}>
+            <AlertDialogCancel disabled={upload.isPending}>
               취소
             </AlertDialogCancel>
             <AlertDialogAction
-              disabled={!writeAllowed || publish.isPending || !file}
+              disabled={!writeAllowed || upload.isPending || !file}
               onClick={(event) => {
                 event.preventDefault();
 
-                if (file && writeAllowed && !publish.isPending) {
-                  publish.mutate(file);
+                if (file && writeAllowed && !upload.isPending) {
+                  upload.mutate(file);
                 }
               }}
             >
-              공개하기
+              올리기
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
