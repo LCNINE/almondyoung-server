@@ -110,10 +110,6 @@ export const productQueryKeys = {
     [...productQueryKeys.tagGroups, 'list', query] as const,
   tagGroup: (id: string) => [...productQueryKeys.tagGroups, id] as const,
 
-  // 태그 값 관련
-  tagValues: (groupId: string) =>
-    [...productQueryKeys.tagGroup(groupId), 'values'] as const,
-
   // 가격 관리 관련
   pricingVersion: (versionId: string) =>
     ['pricing', 'versions', versionId] as const,

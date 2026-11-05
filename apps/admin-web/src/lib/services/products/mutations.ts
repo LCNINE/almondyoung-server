@@ -485,7 +485,8 @@ export const useCreateTagValue = () => {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: productQueryKeys.tagGroups });
       queryClient.invalidateQueries({
-        queryKey: productQueryKeys.tagValues(data.groupId),
+        // 값 화면은 그룹 상세(`tagGroup(id)`)로 그리고, 그룹 목록도 값 개수를 보인다 — 둘 다 이 루트 아래다.
+        queryKey: productQueryKeys.tagGroups,
       });
     },
   });
@@ -507,7 +508,8 @@ export const useUpdateTagValue = () => {
       products.tags.updateValue(id, dto).then((res) => ({ ...res, groupId })),
     onSuccess: (data) => {
       queryClient.invalidateQueries({
-        queryKey: productQueryKeys.tagValues(data.groupId),
+        // 값 화면은 그룹 상세(`tagGroup(id)`)로 그리고, 그룹 목록도 값 개수를 보인다 — 둘 다 이 루트 아래다.
+        queryKey: productQueryKeys.tagGroups,
       });
     },
   });
@@ -522,7 +524,8 @@ export const useDeleteTagValue = () => {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: productQueryKeys.tagGroups });
       queryClient.invalidateQueries({
-        queryKey: productQueryKeys.tagValues(data.groupId),
+        // 값 화면은 그룹 상세(`tagGroup(id)`)로 그리고, 그룹 목록도 값 개수를 보인다 — 둘 다 이 루트 아래다.
+        queryKey: productQueryKeys.tagGroups,
       });
     },
   });
