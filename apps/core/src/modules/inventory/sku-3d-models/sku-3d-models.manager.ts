@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { DbService, InjectTypedDb } from '@app/db';
 import { BadRequestError, NotFoundError } from '@app/shared';
-import { and, desc, eq, inArray, isNull, max } from 'drizzle-orm';
+import { and, desc, eq, inArray, isNull, max, ne } from 'drizzle-orm';
 import { productMasters, productMasterVariants, productMasterVersions } from '../../catalog/schema/catalog.schema';
 import { DbTransaction } from '../../catalog/catalog.types';
 import { ProductModel3dProjection } from '../../catalog/core/products/services/product-model3d-projection';
@@ -39,7 +39,7 @@ export class Sku3dModelsManager {
     return this.db.db.select().from(sku3dModels).where(eq(sku3dModels.skuId, skuId)).orderBy(desc(sku3dModels.version));
   }
 
-  async register(skuId: string, input: RegisterModelInput, actorId: string) {
+  async register(skuId: string, input: RegisterModelInput, actorId: string, actorLabel?: string) {
     return this.db.run(async (tx) => {
       // 같은 SKU의 재생성·검수를 줄 세워 MAX(version) + 1이 중복되지 않게 한다.
       await this.modelProjection.lockSkus(this.catalogTx(tx), [skuId]);
@@ -61,6 +61,8 @@ export class Sku3dModelsManager {
           glbFileId: input.glbFileId ?? null,
           status: input.status,
           notes: input.notes ?? {},
+          uploadedById: actorId,
+          uploadedByLabel: actorLabel ?? null,
         })
         .returning();
 
@@ -68,6 +70,46 @@ export class Sku3dModelsManager {
 
       return model;
     });
+  }
+
+  async publish(id: string, actorId: string) {
+    return this.db.run(async (tx) => {
+      const [model] = await tx.select().from(sku3dModels).where(eq(sku3dModels.id, id));
+
+      if (!model) {
+        throw new NotFoundError('SKU 3D model not found');
+      }
+
+      await this.validateFile('approved', model.glbFileId, actorId);
+
+      // 한 SKU 에 공개 버전은 하나만 둔다
+      return this.withProjection(tx, model.skuId, async () => {
+        await tx
+          .update(sku3dModels)
+          .set({ status: 'draft' })
+          .where(and(eq(sku3dModels.skuId, model.skuId), eq(sku3dModels.status, 'approved'), ne(sku3dModels.id, id)));
+
+        const [published] = await tx
+          .update(sku3dModels)
+          .set({ status: 'approved' })
+          .where(eq(sku3dModels.id, id))
+          .returning();
+
+        return published;
+      });
+    });
+  }
+
+  async unpublish(skuId: string) {
+    return this.db.run(async (tx) =>
+      this.withProjection(tx, skuId, () =>
+        tx
+          .update(sku3dModels)
+          .set({ status: 'draft' })
+          .where(and(eq(sku3dModels.skuId, skuId), eq(sku3dModels.status, 'approved')))
+          .returning(),
+      ),
+    );
   }
 
   async review(id: string, input: ModelReviewInput, actorId: string) {
@@ -116,6 +158,18 @@ export class Sku3dModelsManager {
 
       return updated;
     });
+  }
+
+  private async withProjection<T>(tx: DbTx, skuId: string, change: () => Promise<T>): Promise<T> {
+    await this.modelProjection.lockSkus(this.catalogTx(tx), [skuId]);
+
+    const targets = await this.lockTargets(tx, [skuId]);
+    const before = await this.modelProjection.capture(this.catalogTx(tx), targets);
+    const result = await change();
+
+    await this.modelProjection.refresh(this.catalogTx(tx), targets, before);
+
+    return result;
   }
 
   private async validateFile(status: Sku3dModelStatus, fileId: string | null | undefined, actorId: string) {

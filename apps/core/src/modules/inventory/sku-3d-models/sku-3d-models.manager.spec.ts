@@ -29,15 +29,17 @@ function fixture(options: { before?: string; after?: string; metadata?: object; 
       },
     }),
     update: () => ({
-      set: (value: any) => ({
-        where: () => ({
-          returning: async () => {
-            writes.push(value);
+      set: (value: any) => {
+        writes.push(value);
 
-            return [{ id: 'model', skuId: 'sku', version: 1, glbFileId: 'file', ...value }];
-          },
-        }),
-      }),
+        return {
+          where: () => ({
+            returning: async () => {
+              return [{ id: 'model', skuId: 'sku', version: 1, glbFileId: 'file', ...value }];
+            },
+          }),
+        };
+      },
     }),
   };
   let rolledBack = false;
@@ -83,8 +85,18 @@ function fixture(options: { before?: string; after?: string; metadata?: object; 
     reads.push([existing], [{ id: 'sku', isDeleted: false }], targets, [{ id: 'master' }], targets, [existing]);
   }
 
+  function visibilityReads(model?: object) {
+    if (model) {
+      reads.push([model]);
+    }
+
+    reads.push([{ id: 'sku', isDeleted: false }], targets, [{ id: 'master' }], targets);
+  }
+
   return {
     manager,
+    existing,
+    visibilityReads,
     reads,
     writes,
     trace,
@@ -187,5 +199,52 @@ describe('Sku3dModelsManager', () => {
 
     await expect(f.manager.register('sku', { status: 'approved' }, 'actor')).rejects.toThrow('GLB file is required');
     expect(f.writes).toEqual([]);
+  });
+
+  it('records who uploaded the version', async () => {
+    const f = fixture();
+    f.reads.push([{ id: 'sku', isDeleted: false }], [{ version: 1 }]);
+
+    await f.manager.register('sku', { status: 'draft', glbFileId: 'file' }, 'actor', '권우재');
+
+    expect(f.writes[0]).toEqual(
+      expect.objectContaining({ status: 'draft', uploadedById: 'actor', uploadedByLabel: '권우재' }),
+    );
+  });
+
+  it('publishes one version and demotes the other public versions of the SKU', async () => {
+    const f = fixture({ after: 'file' });
+    f.visibilityReads({ ...f.existing, status: 'draft' });
+
+    const row = await f.manager.publish('model', 'actor');
+
+    expect(f.files.fetchMetadata).toHaveBeenCalledWith('file', 'actor');
+    expect(f.writes).toEqual([{ status: 'draft' }, { status: 'approved' }]);
+    expect(row.status).toBe('approved');
+    expect(f.publisher.enqueue).toHaveBeenCalledTimes(1);
+  });
+
+  it('refuses to publish an invalid GLB', async () => {
+    const f = fixture({ metadata: { isPublic: false } });
+    f.visibilityReads({ ...f.existing, status: 'draft' });
+
+    await expect(f.manager.publish('model', 'actor')).rejects.toThrow('completed public sku-3d-model GLB');
+    expect(f.writes).toEqual([]);
+  });
+
+  it('rejects publishing a missing version', async () => {
+    const f = fixture();
+
+    await expect(f.manager.publish('missing', 'actor')).rejects.toThrow('SKU 3D model not found');
+  });
+
+  it('unpublishes every public version of the SKU and withdraws the product model', async () => {
+    const f = fixture({ before: 'file' });
+    f.visibilityReads();
+
+    await f.manager.unpublish('sku');
+
+    expect(f.writes).toEqual([{ status: 'draft' }]);
+    expect(f.publisher.enqueue).toHaveBeenCalledTimes(1);
   });
 });

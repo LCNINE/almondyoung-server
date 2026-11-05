@@ -4,10 +4,11 @@ import { ProductsModule } from '../../catalog/core/products/products.module';
 import { FileServiceClient } from '../../library/clients/file-service.client';
 import { Sku3dModelsController } from './sku-3d-models.controller';
 import { Sku3dModelsManager } from './sku-3d-models.manager';
+import { Sku3dModelsReader } from './sku-3d-models.reader';
 
 @Module({
   imports: [ProductsModule, EventsModule],
   controllers: [Sku3dModelsController],
-  providers: [Sku3dModelsManager, FileServiceClient],
+  providers: [Sku3dModelsManager, Sku3dModelsReader, FileServiceClient],
 })
 export class Sku3dModelsModule {}

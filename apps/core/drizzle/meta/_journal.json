@@ -1023,6 +1023,13 @@
       "when": 1793773579702,
       "tag": "20261104062619_add-product-quantity-discounts",
       "breakpoints": true
+    },
+    {
+      "idx": 146,
+      "version": "7",
+      "when": 1793844009205,
+      "tag": "20261105020009_sku-3d-model-draft-and-uploader",
+      "breakpoints": true
     }
   ]
 }
