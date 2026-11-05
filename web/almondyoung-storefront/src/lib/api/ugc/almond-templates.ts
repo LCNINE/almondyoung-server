@@ -6,6 +6,7 @@ import {
   AdminAlmondTemplateDetailDto,
   AdminAlmondTemplateSummaryDto,
   AlmondTemplateDetailDto,
+  AlmondTemplateCategoryDto,
   AlmondTemplateStatus,
   AlmondTemplateSummaryDto,
   UpsertAlmondTemplateDto,
@@ -38,6 +39,16 @@ export const listAlmondTemplates = async (): Promise<
     thumbnail: almondTemplateThumbnailUrl(item.id, item.updatedAt),
   }))
 }
+
+// 어드민(admin-web)에서 고치면 여기 태그를 비울 수 없어 짧게 다시 받는다
+export const listAlmondTemplateCategories = async (): Promise<
+  AlmondTemplateCategoryDto[]
+> =>
+  await api("ugc", `/almond-template-categories`, {
+    method: "GET",
+    withAuth: false,
+    next: { revalidate: 60 },
+  })
 
 export const getAlmondTemplate = async (
   id: string
