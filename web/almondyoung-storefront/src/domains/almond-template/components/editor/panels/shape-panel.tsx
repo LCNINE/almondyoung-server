@@ -101,6 +101,31 @@ export function ShapePanel({
           >
             + 자유도형 (선을 눌러 꼭짓점 추가)
           </button>
+          <button
+            type="button"
+            className="mb-4 w-full rounded-md border border-[#dce0e5] py-2 text-sm hover:bg-[#f6f7f9]"
+            onClick={() =>
+              editPointsOf(
+                add("path", {
+                  ...square("path"),
+                  name: "곡선",
+                  fill: "none",
+                  stroke: "#111111",
+                  strokeWidth: 1,
+                  strokeRound: true,
+                  pathClosed: false,
+                  // 물결 모양으로 넣어 핸들이 바로 보이게 한다. 점·핸들을 끌어 원하는 곡선으로 바꾼다
+                  pathPoints: [
+                    { x: 0, y: 0.5, ox: 0.17, oy: 0 },
+                    { x: 0.5, y: 0.5, ix: 0.33, iy: 1, ox: 0.67, oy: 0 },
+                    { x: 1, y: 0.5, ix: 0.83, iy: 1 },
+                  ],
+                })
+              )
+            }
+          >
+            + 곡선 (점·핸들을 끌어 둥글게)
+          </button>
           <div
             className={`grid gap-2 border-t pt-5 ${shapeColumns === 1 ? "grid-cols-1 group-data-[wide]/panel:grid-cols-2" : "grid-cols-2 group-data-[wide]/panel:grid-cols-4"}`}
           >
