@@ -18,7 +18,6 @@ const rule = (over: Partial<Rule>): Rule =>
 const rules = (over: Partial<PricingRulesResponseDto> = {}): PricingRulesResponseDto => ({
   basePriceRules: [],
   membershipPriceRules: [],
-  tieredPriceRules: [],
   ...over,
 });
 

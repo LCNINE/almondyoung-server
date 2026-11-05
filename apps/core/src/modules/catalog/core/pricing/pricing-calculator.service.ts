@@ -289,7 +289,6 @@ export class PricingCalculatorService {
           scopeTargetIds: pricingRules.scopeTargetIds,
           operationType: pricingRules.operationType,
           operationValue: pricingRules.operationValue,
-          minQuantity: pricingRules.minQuantity,
           createdAt: pricingRules.createdAt,
           updatedAt: pricingRules.updatedAt,
         })

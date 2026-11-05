@@ -114,7 +114,7 @@ function makeApplier(overrides: Overrides = {}) {
     ...overrides.optionLoader,
   };
   const pricing = {
-    getVersionRules: () => Promise.resolve({ basePriceRules: [], membershipPriceRules: [], tieredPriceRules: [] }),
+    getVersionRules: () => Promise.resolve({ basePriceRules: [], membershipPriceRules: [] }),
     replaceVersionRules: (...args: unknown[]) => {
       calls.replaceVersionRules.push(args);
       return Promise.resolve({});
@@ -384,7 +384,6 @@ describe('BulkDraftApplier — 수정 경로', () => {
               },
             ],
             membershipPriceRules: [],
-            tieredPriceRules: [],
           }),
       },
     });

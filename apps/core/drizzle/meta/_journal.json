@@ -1030,6 +1030,20 @@
       "when": 1793844009205,
       "tag": "20261105020009_sku-3d-model-draft-and-uploader",
       "breakpoints": true
+    },
+    {
+      "idx": 147,
+      "version": "7",
+      "when": 1793850978744,
+      "tag": "20261105035618_delete-legacy-tiered-price-rules",
+      "breakpoints": true
+    },
+    {
+      "idx": 148,
+      "version": "7",
+      "when": 1793850981775,
+      "tag": "20261105035621_drop-tiered-price-layer",
+      "breakpoints": true
     }
   ]
 }

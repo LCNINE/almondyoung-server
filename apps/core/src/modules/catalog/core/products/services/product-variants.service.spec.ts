@@ -134,7 +134,6 @@ describe('ProductVariantsService variant→pricing cascade CoW (docs/adr/0004)',
     scopeTargetIds: ['old-variant', 'keep-variant'],
     operationType: 'fixed',
     operationValue: '1000',
-    minQuantity: null,
   };
 
   it('clones and repoints a pricing rule shared with another version', async () => {
@@ -151,7 +150,6 @@ describe('ProductVariantsService variant→pricing cascade CoW (docs/adr/0004)',
         scopeTargetIds: ['new-variant', 'keep-variant'],
         operationType: 'fixed',
         operationValue: '1000',
-        minQuantity: null,
       }),
     ]);
     expect(repointed).toHaveLength(1);

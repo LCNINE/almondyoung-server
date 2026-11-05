@@ -26,7 +26,6 @@ const realWorldRules = {
       operationValue: 100000,
     },
   ],
-  tieredPriceRules: [],
 };
 
 describe('pricingRulesSetSchema', () => {

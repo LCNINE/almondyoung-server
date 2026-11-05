@@ -325,7 +325,6 @@ describeIfDb('일괄 세션 drafting 레인 (실 Postgres + 실 Nest DI)', () =>
         },
       ],
       membershipPriceRules: [],
-      tieredPriceRules: [],
     });
 
     await versions.publishVersion(draft.id, randomUUID());

@@ -207,7 +207,6 @@ describeIfDb('상품 목록 품목 미리보기 (실 Postgres)', () => {
                 operationValue: opts.membershipPrice,
               },
             ],
-      tieredPriceRules: [],
     });
 
     await versions.publishVersion(draft.id, randomUUID());
