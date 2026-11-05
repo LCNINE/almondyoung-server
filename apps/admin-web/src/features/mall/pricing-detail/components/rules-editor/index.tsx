@@ -27,7 +27,6 @@ function rulesFromResponse(rules: PricingRulesResponseDto): {
     scopeTargetIds: r.scopeTargetIds ?? undefined,
     operationType: r.operationType,
     operationValue: r.operationValue,
-    minQuantity: r.minQuantity ?? undefined,
   });
   return {
     base: rules.basePriceRules.map(mapRule),
@@ -130,8 +129,6 @@ export function RulesEditor({
     onSave({
       basePriceRules: reorder(base),
       membershipPriceRules: reorder(membership),
-      // 수량별 규칙은 구간표로 대체됐다. 이 키를 필수로 받는 이전 core 를 위해 빈 목록만 싣는다.
-      tieredPriceRules: [],
     });
   };
 

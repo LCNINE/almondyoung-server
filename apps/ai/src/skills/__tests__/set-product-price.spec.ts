@@ -3,7 +3,7 @@ import type { SkillContext } from '../types';
 
 const setPrice = productCatalogSkill.tools.find((tool) => tool.definition.name === 'set_product_price')!;
 
-function fakeCtx(basePriceRules: unknown[], tieredPriceRules: unknown[] = []) {
+function fakeCtx(basePriceRules: unknown[]) {
   const puts: unknown[] = [];
 
   global.fetch = ((_url: string | URL, init?: RequestInit): Promise<Response> => {
@@ -16,7 +16,6 @@ function fakeCtx(basePriceRules: unknown[], tieredPriceRules: unknown[] = []) {
         JSON.stringify({
           basePriceRules,
           membershipPriceRules: [],
-          tieredPriceRules,
         }),
         { status: 200 },
       ),
@@ -69,15 +68,5 @@ describe('set_product_price 검증', () => {
       basePriceRules: [expect.objectContaining({ operationValue: 20000 })],
       membershipPriceRules: [expect.objectContaining({ operationValue: 9000 })],
     });
-  });
-
-  it('수량별 규칙은 읽어 온 값이 있어도 빈 목록으로 보낸다', async () => {
-    const tiered = { ...baseRule, layer: 'tiered_price', minQuantity: 2, operationValue: 9000 };
-    const { ctx, puts } = fakeCtx([baseRule], [tiered]);
-
-    await setPrice.execute({ versionId: 'v1', salePrice: 21000 }, ctx);
-
-    expect(puts).toHaveLength(1);
-    expect(puts[0]).toMatchObject({ tieredPriceRules: [] });
   });
 });

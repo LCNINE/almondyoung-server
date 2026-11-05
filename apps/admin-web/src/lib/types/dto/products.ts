@@ -995,7 +995,7 @@ export interface TagValueDto {
 
 // ===== 가격 관리 (Pricing) =====
 
-export type PricingLayer = 'base_price' | 'membership_price' | 'tiered_price';
+export type PricingLayer = 'base_price' | 'membership_price';
 export type PricingScopeType = 'all_variants' | 'with_option' | 'variants';
 export type PricingOperationType = 'offset' | 'scale' | 'override';
 export type CustomerType = 'regular' | 'membership';
@@ -1008,7 +1008,6 @@ export interface PricingRuleResponseDto {
   scopeTargetIds: string[] | null;
   operationType: PricingOperationType;
   operationValue: number;
-  minQuantity: number | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -1016,7 +1015,6 @@ export interface PricingRuleResponseDto {
 export interface PricingRulesResponseDto {
   basePriceRules: PricingRuleResponseDto[];
   membershipPriceRules: PricingRuleResponseDto[];
-  tieredPriceRules: PricingRuleResponseDto[];
 }
 
 export interface PricingRuleInput {
@@ -1026,13 +1024,11 @@ export interface PricingRuleInput {
   scopeTargetIds?: string[];
   operationType: PricingOperationType;
   operationValue: number;
-  minQuantity?: number;
 }
 
 export interface ReplacePricingRulesDto {
   basePriceRules: PricingRuleInput[];
   membershipPriceRules: PricingRuleInput[];
-  tieredPriceRules: PricingRuleInput[];
 }
 
 export interface CalculatePriceRequestDto {

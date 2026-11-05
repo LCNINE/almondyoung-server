@@ -146,13 +146,12 @@ export interface VariantWithPriceDto extends VariantListItemDto {
 // 가격 규칙 DTO
 export interface PricingRuleDto {
   ruleId: string
-  layer: "base_price" | "membership_price" | "tiered_price"
+  layer: "base_price" | "membership_price"
   order: number
   scopeType: "all_variants" | "with_option" | "variants"
   scopeTargetIds: string[]
   operationType: "offset" | "scale" | "override"
   operationValue: number
-  minQuantity?: number | null
   description?: string | null
 }
 
