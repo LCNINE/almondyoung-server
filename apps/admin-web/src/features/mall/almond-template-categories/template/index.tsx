@@ -1,7 +1,22 @@
 'use client';
 
 import { useState } from 'react';
-import { ArrowDown, ArrowUp, ImageIcon, Plus } from 'lucide-react';
+import {
+  DndContext,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  arrayMove,
+  rectSortingStrategy,
+  useSortable,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
+import { ImageIcon, Plus } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   AlertDialog,
@@ -23,11 +38,97 @@ import {
   useSaveAlmondTemplateCategory,
 } from '@/lib/services/products';
 import type { AlmondTemplateCategoryDto } from '@/lib/types/dto/products';
+import { cn } from '@/lib/utils';
 import { resolvePublicFileUrl } from '@/lib/utils/file-url';
 import { almondTemplateKindLabel } from '../../almond-templates/lib/almond-template-rules';
 import { CategoryDialog } from '../components/category-dialog';
 
 type Editing = { category: AlmondTemplateCategoryDto | null } | null;
+
+type CardProps = {
+  category: AlmondTemplateCategoryDto;
+  sortable: boolean;
+  onEdit?: () => void;
+  onDelete?: () => void;
+};
+
+// 스토어프론트 랜딩 카드와 같은 모양으로 그린다
+function PreviewCard({ category, sortable, onEdit, onDelete }: CardProps) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: category.id, disabled: !sortable });
+  const src = resolvePublicFileUrl(category.imageFileId);
+
+  return (
+    <li
+      ref={setNodeRef}
+      style={{ transform: CSS.Transform.toString(transform), transition }}
+      className={cn(
+        'group relative text-center',
+        isDragging && 'z-10 opacity-80',
+        !category.isVisible && 'opacity-50'
+      )}
+    >
+      <div
+        {...attributes}
+        {...listeners}
+        className={cn(
+          'relative flex aspect-square w-full items-center justify-center overflow-hidden bg-[#f3f4f5]',
+          sortable && 'cursor-grab active:cursor-grabbing'
+        )}
+      >
+        {src ? (
+          /* eslint-disable-next-line @next/next/no-img-element */
+          <img
+            src={src}
+            alt=""
+            draggable={false}
+            className="h-full w-full object-cover"
+          />
+        ) : (
+          <ImageIcon className="h-6 w-6 text-[#c6c6ca]" />
+        )}
+        {!category.isVisible && (
+          <Badge variant="secondary" className="absolute top-2 left-2">
+            숨김
+          </Badge>
+        )}
+      </div>
+
+      <p className="mt-4 text-[16px] font-medium text-[#656565]">
+        {category.name}
+      </p>
+      {category.description && (
+        <p className="text-[13px] font-light text-[#656565]">
+          {category.description}
+        </p>
+      )}
+      <p className="text-muted-foreground mt-1 text-[11px]">
+        {almondTemplateKindLabel(category.kind)}
+      </p>
+
+      {(onEdit || onDelete) && (
+        <div className="absolute top-2 right-2 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+          {onEdit && (
+            <Button size="sm" variant="secondary" onClick={onEdit}>
+              수정
+            </Button>
+          )}
+          {onDelete && (
+            <Button size="sm" variant="secondary" onClick={onDelete}>
+              삭제
+            </Button>
+          )}
+        </div>
+      )}
+    </li>
+  );
+}
 
 export default function AlmondTemplateCategoriesTemplate() {
   const { data, isLoading, isError, isFetching, refetch } =
@@ -38,20 +139,38 @@ export default function AlmondTemplateCategoriesTemplate() {
   const [editing, setEditing] = useState<Editing>(null);
   const [deleteTarget, setDeleteTarget] =
     useState<AlmondTemplateCategoryDto | null>(null);
+  // 놓자마자 새 순서로 보여 주고, 서버 목록을 다시 받으면 비운다
+  const [draftIds, setDraftIds] = useState<string[] | null>(null);
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
+  );
 
-  const categories = data ?? [];
+  const fetched = data ?? [];
+  const categories = draftIds
+    ? draftIds.flatMap((id) => fetched.filter((c) => c.id === id))
+    : fetched;
   const canWrite = canRun(useSaveAlmondTemplateCategory);
-  const canReorder = canRun(useReorderAlmondTemplateCategories);
   const canDelete = canRun(useDeleteAlmondTemplateCategory);
+  const sortable =
+    canRun(useReorderAlmondTemplateCategories) &&
+    !reorder.isPending &&
+    !isFetching;
 
-  const move = (index: number, offset: -1 | 1) => {
+  const handleDragEnd = ({ active, over }: DragEndEvent) => {
+    if (!over || active.id === over.id) return;
+
     const ids = categories.map((category) => category.id);
-    const target = index + offset;
-    [ids[index], ids[target]] = [ids[target], ids[index]];
+    const next = arrayMove(
+      ids,
+      ids.indexOf(String(active.id)),
+      ids.indexOf(String(over.id))
+    );
+    setDraftIds(next);
 
-    reorder.mutate(ids, {
+    reorder.mutate(next, {
       onError: (e) =>
         toast.error(e instanceof Error ? e.message : '순서를 바꾸지 못했어요.'),
+      onSettled: () => setDraftIds(null),
     });
   };
 
@@ -72,7 +191,8 @@ export default function AlmondTemplateCategoriesTemplate() {
         <div>
           <h1 className="text-[20px] font-semibold">아몬드템플릿 카테고리</h1>
           <p className="text-muted-foreground text-[13px]">
-            아몬드템플릿 랜딩에 보이는 카드예요. 위에서부터 이 순서대로 보여요.
+            랜딩에 보이는 그대로예요. 카드를 끌어다 놓으면 순서가 바뀌고, 카드에
+            마우스를 올리면 수정·삭제할 수 있어요.
           </p>
         </div>
         {canWrite && (
@@ -103,92 +223,36 @@ export default function AlmondTemplateCategoriesTemplate() {
         </p>
       )}
 
-      <ul className="grid gap-2">
-        {categories.map((category, index) => {
-          const src = resolvePublicFileUrl(category.imageFileId);
-
-          return (
-            <li
-              key={category.id}
-              className="flex items-center gap-4 rounded-lg border bg-white p-3"
+      {categories.length > 0 && (
+        <div className="rounded-lg border bg-white px-6 pt-2 pb-10">
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={handleDragEnd}
+          >
+            <SortableContext
+              items={categories.map((category) => category.id)}
+              strategy={rectSortingStrategy}
             >
-              <div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded bg-[#f4f4f5]">
-                {src ? (
-                  /* eslint-disable-next-line @next/next/no-img-element */
-                  <img
-                    src={src}
-                    alt=""
-                    className="h-full w-full object-cover"
-                  />
-                ) : (
-                  <ImageIcon className="h-5 w-5 text-[#c6c6ca]" />
-                )}
-              </div>
-
-              <div className="min-w-0 flex-1">
-                <div className="flex items-center gap-2">
-                  <p className="font-medium">{category.name}</p>
-                  {!category.isVisible && (
-                    <Badge variant="secondary">숨김</Badge>
-                  )}
-                </div>
-                <p className="text-muted-foreground truncate text-[13px]">
-                  {category.description ?? '설명 없음'}
-                </p>
-                <p className="text-muted-foreground text-[12px]">
-                  {almondTemplateKindLabel(category.kind)}
-                </p>
-              </div>
-
-              {canReorder && (
-                <div className="flex flex-col gap-1">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label="위로"
-                    disabled={index === 0 || reorder.isPending || isFetching}
-                    onClick={() => move(index, -1)}
-                  >
-                    <ArrowUp className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label="아래로"
-                    disabled={
-                      index === categories.length - 1 ||
-                      reorder.isPending ||
-                      isFetching
+              <ul className="mx-auto grid max-w-[1200px] grid-cols-2 gap-x-4 gap-y-8 pt-6 md:grid-cols-4 md:gap-x-10">
+                {categories.map((category) => (
+                  <PreviewCard
+                    key={category.id}
+                    category={category}
+                    sortable={sortable}
+                    onEdit={
+                      canWrite ? () => setEditing({ category }) : undefined
                     }
-                    onClick={() => move(index, 1)}
-                  >
-                    <ArrowDown className="h-4 w-4" />
-                  </Button>
-                </div>
-              )}
-
-              {canWrite && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setEditing({ category })}
-                >
-                  수정
-                </Button>
-              )}
-              {canDelete && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setDeleteTarget(category)}
-                >
-                  삭제
-                </Button>
-              )}
-            </li>
-          );
-        })}
-      </ul>
+                    onDelete={
+                      canDelete ? () => setDeleteTarget(category) : undefined
+                    }
+                  />
+                ))}
+              </ul>
+            </SortableContext>
+          </DndContext>
+        </div>
+      )}
 
       {editing && (
         <CategoryDialog
@@ -214,9 +278,7 @@ export default function AlmondTemplateCategoriesTemplate() {
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>취소</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmDelete}>
-              지우기
-            </AlertDialogAction>
+            <AlertDialogAction onClick={confirmDelete}>지우기</AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

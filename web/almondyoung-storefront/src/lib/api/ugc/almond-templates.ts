@@ -40,14 +40,14 @@ export const listAlmondTemplates = async (): Promise<
   }))
 }
 
-// 어드민(admin-web)에서 고치면 여기 태그를 비울 수 없어 짧게 다시 받는다
+// 어드민(admin-web)에서 고쳐도 여기 캐시를 비울 수 없어 매번 받는다. 몇 줄짜리 목록이다
 export const listAlmondTemplateCategories = async (): Promise<
   AlmondTemplateCategoryDto[]
 > =>
   await api("ugc", `/almond-template-categories`, {
     method: "GET",
     withAuth: false,
-    next: { revalidate: 60 },
+    cache: "no-store",
   })
 
 export const getAlmondTemplate = async (
