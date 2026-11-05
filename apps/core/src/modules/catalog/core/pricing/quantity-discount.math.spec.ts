@@ -2,6 +2,7 @@ import {
   buildTierPrices,
   discountedPrice,
   floor10,
+  quantityDiscountErrorMessage,
   sortTiers,
   validateQuantityDiscount,
 } from './quantity-discount.math';
@@ -129,5 +130,29 @@ describe('quantity discount math', () => {
     it('rejects an empty table', () => {
       expect(codes([])).toEqual(['EMPTY_TIERS']);
     });
+  });
+});
+
+describe('quantityDiscountErrorMessage', () => {
+  const tiers = [tier(5, 10, 15), tier(3, 30, 10)];
+
+  it('names the tier and both prices when members would pay more', () => {
+    expect(
+      quantityDiscountErrorMessage(
+        [{ code: 'MEMBER_PRICE_ABOVE_REGULAR', tierIndex: 0, variantId: 'v1', regularPrice: 7000, membershipPrice: 7200 }],
+        tiers,
+      ),
+    ).toBe(
+      '수량 할인 표와 맞지 않습니다: 3개 이상 구간에서 멤버십 회원가 7,200원이 일반가 7,000원보다 비쌉니다. 멤버십 %를 올리거나 정가·멤버십가를 확인해 주세요.',
+    );
+  });
+
+  it('shows the first reason and counts the rest', () => {
+    expect(
+      quantityDiscountErrorMessage(
+        [{ code: 'RATE_NOT_INCREASING', tierIndex: 1 }, { code: 'PERIOD_REVERSED' }],
+        tiers,
+      ),
+    ).toBe('수량 할인 표와 맞지 않습니다: 5개 이상 구간의 %가 앞 구간보다 커야 합니다. (외 1건)');
   });
 });

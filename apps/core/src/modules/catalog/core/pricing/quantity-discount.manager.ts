@@ -14,7 +14,12 @@ import { deleteEntitiesIfUnmapped } from '../version-isolation/delete-if-unmappe
 import { lockProductMasters } from '../products/services/product-master-lock';
 import { PricingCalculatorService } from './pricing-calculator.service';
 import { QuantityDiscountReader, QuantityDiscountReadModel } from './quantity-discount.reader';
-import { QuantityDiscountViolation, sortTiers, validateQuantityDiscount } from './quantity-discount.math';
+import {
+  QuantityDiscountViolation,
+  quantityDiscountErrorMessage,
+  sortTiers,
+  validateQuantityDiscount,
+} from './quantity-discount.math';
 
 export interface QuantityDiscountInput {
   enabled: boolean;
@@ -50,7 +55,7 @@ export class QuantityDiscountManager {
       }
 
       const basis = await this.calculator.calculatePriceBasis(versionId, trx);
-      this.throwIfInvalid(validateQuantityDiscount(input, basis));
+      this.throwIfInvalid(validateQuantityDiscount(input, basis), input.tiers);
 
       const values = {
         enabled: input.enabled,
@@ -113,7 +118,7 @@ export class QuantityDiscountManager {
       if (!saved) return;
 
       const basis = await this.calculator.calculatePriceBasis(versionId, trx);
-      this.throwIfInvalid(validateQuantityDiscount(saved, basis));
+      this.throwIfInvalid(validateQuantityDiscount(saved, basis), saved.tiers);
     }, tx);
   }
 
@@ -131,9 +136,9 @@ export class QuantityDiscountManager {
     );
   }
 
-  private throwIfInvalid(violations: QuantityDiscountViolation[]): void {
+  private throwIfInvalid(violations: QuantityDiscountViolation[], tiers: QuantityDiscountTier[]): void {
     if (violations.length === 0) return;
-    throw new BadRequestException({ message: 'Invalid quantity discount table', errors: violations });
+    throw new BadRequestException({ message: quantityDiscountErrorMessage(violations, tiers), errors: violations });
   }
 
   private async assertDraftVersion(masterId: string, versionId: string, tx: DbTransaction): Promise<void> {

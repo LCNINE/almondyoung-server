@@ -121,3 +121,40 @@ export function validateQuantityDiscount(
 
   return violations;
 }
+
+const won = (n: number | undefined) => `${(n ?? 0).toLocaleString('ko-KR')}원`;
+
+function describeViolation(v: QuantityDiscountViolation, sortedTiers: QuantityDiscountTier[]): string {
+  const at = v.tierIndex === undefined ? undefined : sortedTiers[v.tierIndex]?.minQuantity;
+  const tierLabel = at === undefined ? '한 구간' : `${at}개 이상 구간`;
+  switch (v.code) {
+    case 'EMPTY_TIERS':
+      return '구간을 하나 이상 넣어 주세요.';
+    case 'TOO_MANY_TIERS':
+      return `구간은 최대 ${MAX_QUANTITY_DISCOUNT_TIERS}개까지 넣을 수 있습니다.`;
+    case 'MIN_QUANTITY_INVALID':
+      return '최소 수량은 2 이상 정수로 넣어 주세요.';
+    case 'MIN_QUANTITY_DUPLICATE':
+      return '같은 최소 수량이 두 번 있습니다.';
+    case 'RATE_OUT_OF_RANGE':
+      return `${tierLabel}의 할인율은 1~99 사이 정수 %로 넣어 주세요.`;
+    case 'RATE_NOT_INCREASING':
+      return `${tierLabel}의 %가 앞 구간보다 커야 합니다.`;
+    case 'MEMBER_PRICE_ABOVE_REGULAR':
+      return `${tierLabel}에서 멤버십 회원가 ${won(v.membershipPrice)}이 일반가 ${won(v.regularPrice)}보다 비쌉니다. 멤버십 %를 올리거나 정가·멤버십가를 확인해 주세요.`;
+    case 'PERIOD_REVERSED':
+      return '시작일이 종료일보다 늦습니다.';
+    case 'PERIOD_INVALID_DATE':
+      return '달력에 없는 날짜입니다.';
+  }
+}
+
+/** 관리자 화면·일괄 발행 결과에 그대로 보여 줄 한 문장. 첫 이유를 쓰고 나머지는 건수로 붙인다. */
+export function quantityDiscountErrorMessage(
+  violations: QuantityDiscountViolation[],
+  tiers: QuantityDiscountTier[],
+): string {
+  const [first, ...rest] = violations;
+  const head = `수량 할인 표와 맞지 않습니다: ${describeViolation(first, sortTiers(tiers))}`;
+  return rest.length > 0 ? `${head} (외 ${rest.length}건)` : head;
+}

@@ -273,7 +273,7 @@ describeIfDb('수량 할인 구간표 저장 (실 Postgres)', () => {
           } as never,
           tx,
         ),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow('3개 이상 구간에서 멤버십 회원가 8,550원이 일반가 8,000원보다 비쌉니다');
     });
   });
   it('refuses a save that waited behind a publish of the same version, instead of editing the now-active version', async () => {
