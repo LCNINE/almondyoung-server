@@ -101,6 +101,8 @@ export function transformPimToMedusa(
     isOverseas: snapshot.isOverseas ?? false,
     productType: snapshot.productType,
     pimPurchaseConstraint: snapshot.purchaseConstraint ?? null,
+    // 수량 할인 기간. 화면이 가격표 기간과 같은 창으로 구간표를 거른다.
+    quantityDiscount: snapshot.quantityDiscount ?? null,
     fulfillmentKind,
     requiresShipping,
     shippingGroupCode,
@@ -367,6 +369,7 @@ function transformVariants(
         // Price List 동기화를 위해 원본 가격 정보 보존
         membershipPrice: variant.membershipPrice,
         tieredPrices: variant.tieredPrices,
+        membershipTieredPrices: variant.membershipTieredPrices ?? [],
       },
     };
   });

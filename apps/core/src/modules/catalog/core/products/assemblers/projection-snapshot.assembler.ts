@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
-import type { ProductSnapshot } from '@packages/event-contracts';
+import type { ProductQuantityDiscountSnapshot, ProductSnapshot } from '@packages/event-contracts';
 import { VariantPriceCacheService } from '../../pricing/variant-price-cache.service';
+import { QuantityDiscountReader, QuantityDiscountReadModel } from '../../pricing/quantity-discount.reader';
 import { DbTransaction, OptionGroupReadModel, VariantOptionValueReadModel } from '../../../catalog.types';
 import { OptionReadLoader } from '../loaders/option-read.loader';
 import { ProductVersionReadLoader } from '../loaders/product-version-read.loader';
@@ -25,6 +26,7 @@ export class ProjectionSnapshotAssembler {
     private readonly tagReadLoader: TagReadLoader,
     private readonly priceCacheService: VariantPriceCacheService,
     private readonly model3dLoader: ProductModel3dLoader,
+    private readonly quantityDiscountReader: QuantityDiscountReader,
   ) {}
 
   async assembleActiveVersionSnapshot(
@@ -44,8 +46,17 @@ export class ProjectionSnapshotAssembler {
       throw new BadRequestException(`Cannot assemble projection snapshot for non-active version ${versionId}`);
     }
 
-    const [categories, variants, images, tags, purchaseConstraint, cachedPrices, optionGroups, model3dFileId] =
-      await Promise.all([
+    const [
+      categories,
+      variants,
+      images,
+      tags,
+      purchaseConstraint,
+      cachedPrices,
+      optionGroups,
+      model3dFileId,
+      quantityDiscount,
+    ] = await Promise.all([
         this.versionReadLoader.getCategories(tx, masterId, versionId),
         this.versionReadLoader.getVariants(tx, masterId, versionId),
         this.versionReadLoader.getImages(tx, versionId),
@@ -54,6 +65,7 @@ export class ProjectionSnapshotAssembler {
         this.priceCacheService.getCachedPriceSetsByVersion(versionId, tx),
         this.optionReadLoader.getOptionGroups(tx, masterId, versionId, locale),
         this.model3dLoader.getFileId(tx, masterId, versionId),
+        this.quantityDiscountReader.findForVersion(masterId, versionId, tx),
       ]);
 
     const primaryCategories = categories.filter((category) => category.isPrimary);
@@ -131,6 +143,7 @@ export class ProjectionSnapshotAssembler {
           basePrice: price.basePrice,
           membershipPrice: price.membershipPrice,
           tieredPrices: price.tieredPrices ?? [],
+          membershipTieredPrices: price.membershipTieredPrices ?? [],
         };
       }),
       status: 'active',
@@ -146,6 +159,7 @@ export class ProjectionSnapshotAssembler {
             lifetimeQuantityLimit: purchaseConstraint.lifetimeQuantityLimit,
           }
         : undefined,
+      quantityDiscount: toQuantityDiscountSnapshot(quantityDiscount),
     };
 
     return {
@@ -261,4 +275,15 @@ export class ProjectionSnapshotAssembler {
       }
     }
   }
+}
+
+// 기간은 KST 날짜다 — 시작일 00:00 부터 종료일이 끝날 때까지.
+const KST_OFFSET = '+09:00';
+
+function toQuantityDiscountSnapshot(discount: QuantityDiscountReadModel | null): ProductQuantityDiscountSnapshot | null {
+  if (!discount?.enabled) return null;
+  return {
+    startsAt: discount.startsOn ? new Date(`${discount.startsOn}T00:00:00.000${KST_OFFSET}`).toISOString() : null,
+    endsAt: discount.endsOn ? new Date(`${discount.endsOn}T23:59:59.999${KST_OFFSET}`).toISOString() : null,
+  };
 }

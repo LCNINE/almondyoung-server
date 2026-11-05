@@ -63,6 +63,7 @@ interface DiscountSectionProps {
   cartId: string
   isMembership: boolean
   membershipDiscount: number
+  quantityDiscount?: number
   itemSubtotal: number
   cartDiscountTotal?: number
   shipping: ShippingInfo
@@ -75,6 +76,7 @@ export const DiscountSection = ({
   cartId,
   isMembership = false,
   membershipDiscount,
+  quantityDiscount = 0,
   cartDiscountTotal,
   shipping,
   promotions,
@@ -154,8 +156,8 @@ export const DiscountSection = ({
   // 쿠폰은 붙었으나 서버 할인이 0 = 룰 미충족(최소구매액 등) → 정직 표기
   const couponNotApplied = !!selectedCoupon && couponDiscount === 0
 
-  // 총 할인 금액 = 멤버십 할인 + 쿠폰 할인
-  const totalDiscount = membershipDiscount + couponDiscount
+  // 총 할인 금액 = 멤버십 할인 + 수량 할인 + 쿠폰 할인
+  const totalDiscount = membershipDiscount + quantityDiscount + couponDiscount
 
   // 어드민이 붙인 쿠폰 이름 (#789). 없으면 null 이고 화면은 할인 라벨로 폴백한다.
   const promoName = (promo: Promotion) => couponName(promo.name)
@@ -190,6 +192,7 @@ export const DiscountSection = ({
           isMembership={isMembership}
           totalDiscount={totalDiscount}
           membershipDiscount={membershipDiscount}
+          quantityDiscount={quantityDiscount}
           couponDiscount={couponDiscount}
           shipping={shipping}
         />
@@ -313,6 +316,7 @@ interface DiscountRowProps {
   isMembership: boolean
   totalDiscount: number
   membershipDiscount: number
+  quantityDiscount: number
   couponDiscount: number
   shipping: ShippingInfo
 }
@@ -322,6 +326,7 @@ const DiscountRow = ({
   isMembership,
   totalDiscount,
   membershipDiscount,
+  quantityDiscount,
   couponDiscount,
 }: DiscountRowProps) => {
   const t = useTranslations("checkout.discount")
@@ -355,6 +360,17 @@ const DiscountRow = ({
           </PriceRow.Label>
           <PriceRow.Value size="xs" tone="membership" weight="medium">
             {t("amountMinusWon", { amount: formatPrice(membershipDiscount) })}
+          </PriceRow.Value>
+        </PriceRow>
+      )}
+
+      {quantityDiscount > 0 && (
+        <PriceRow>
+          <PriceRow.Label size="xs" weight="medium">
+            {t("quantityDiscount")}
+          </PriceRow.Label>
+          <PriceRow.Value size="xs" tone="discount" weight="medium">
+            {t("amountMinusWon", { amount: formatPrice(quantityDiscount) })}
           </PriceRow.Value>
         </PriceRow>
       )}

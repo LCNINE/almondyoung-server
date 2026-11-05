@@ -14,17 +14,26 @@ import {
   useVariantsByMaster,
   useVersionDetail,
   useVersionPricingRules,
+  useVersionQuantityDiscount,
 } from '@/lib/services/products/queries';
 import {
   useReplaceVersionPricingRules,
   useDeleteVersionPricingRules,
   useCreateMasterDraftVersion,
+  useSaveQuantityDiscount,
 } from '@/lib/services/products/mutations';
 import { VersionSelector } from '../components/version-selector';
 import { CreateDraftDialog } from '../components/create-draft-dialog';
 import { RulesEditor } from '../components/rules-editor';
 import { Calculator } from '../components/calculator';
 import { PriceSetTable } from '../components/price-set-table';
+import { QuantityDiscountPanel, type PreviewVariant } from '../components/quantity-discount-panel';
+import { useVariantPriceSets } from '../use-variant-price-sets';
+import {
+  serverViolations,
+  type QuantityDiscountViolation,
+  type UpsertQuantityDiscountDto,
+} from '@/lib/pricing/quantity-discount';
 import type { ReplacePricingRulesDto } from '@/lib/types/dto/products';
 import { toast } from 'sonner';
 import {
@@ -94,6 +103,24 @@ export default function PricingDetailTemplate({ masterId }: Props) {
     selectedVersionId ?? '',
   );
 
+  const { data: quantityDiscount, isLoading: quantityDiscountLoading } = useVersionQuantityDiscount(
+    masterId,
+    selectedVersionId ?? '',
+  );
+  const priceSets = useVariantPriceSets(variants, selectedVersionId, masterId);
+  const previewVariants = useMemo<PreviewVariant[]>(
+    () =>
+      variants.flatMap((v, i) => {
+        const data = priceSets[i]?.data;
+        return data
+          ? [{ variantId: v.id, name: v.name, basePrice: data.basePrice, membershipPrice: data.membershipPrice }]
+          : [];
+      }),
+    [variants, priceSets],
+  );
+  const saveQuantityDiscount = useSaveQuantityDiscount();
+  const [quantityDiscountErrors, setQuantityDiscountErrors] = useState<QuantityDiscountViolation[]>([]);
+
   const replaceRules = useReplaceVersionPricingRules();
   const deleteRules = useDeleteVersionPricingRules();
   const createDraft = useCreateMasterDraftVersion();
@@ -110,6 +137,37 @@ export default function PricingDetailTemplate({ masterId }: Props) {
         onError: (e: any) => {
           const detail = e?.response?.data?.message;
           toast.error(typeof detail === 'string' ? detail : '저장에 실패했습니다.');
+        },
+      },
+    );
+  };
+
+  const handleSaveQuantityDiscount = (dto: UpsertQuantityDiscountDto) => {
+    if (!selectedVersionId) return;
+    setQuantityDiscountErrors([]);
+    saveQuantityDiscount.mutate(
+      { masterId, versionId: selectedVersionId, dto },
+      {
+        onSuccess: () =>
+          toast.success(
+            dto.tiers.length === 0
+              ? '수량 할인 구간표를 지웠습니다.'
+              : '수량 할인을 저장했습니다. 버전을 발행하면 쇼핑몰에 반영됩니다.',
+          ),
+        onError: (e: unknown) => {
+          const violations = serverViolations(e);
+          setQuantityDiscountErrors(violations);
+          const detail =
+            typeof e === 'object' && e !== null && 'response' in e
+              ? (e as { response?: { data?: { message?: unknown } } }).response?.data?.message
+              : undefined;
+          toast.error(
+            violations.length > 0
+              ? '구간표에 맞지 않는 값이 있습니다. 표시된 행을 고쳐 주세요.'
+              : typeof detail === 'string'
+                ? detail
+                : '저장에 실패했습니다.',
+          );
         },
       },
     );
@@ -207,6 +265,26 @@ export default function PricingDetailTemplate({ masterId }: Props) {
                   onDelete={
                     canRun(useDeleteVersionPricingRules) ? handleDelete : undefined
                   }
+                />
+              </PermissionReadOnly>
+            )}
+          </Container>
+
+          <Container>
+            {quantityDiscountLoading ? (
+              <p className="p-6 text-center text-sm text-muted-foreground">수량 할인 로딩 중...</p>
+            ) : (
+              <PermissionReadOnly run={useSaveQuantityDiscount}>
+                <QuantityDiscountPanel
+                  key={selectedVersionId}
+                  saved={quantityDiscount}
+                  variants={previewVariants}
+                  legacyTieredRules={rules?.tieredPriceRules ?? []}
+                  readonly={isReadonly}
+                  canSave={canRun(useSaveQuantityDiscount)}
+                  isSaving={saveQuantityDiscount.isPending}
+                  serverViolations={quantityDiscountErrors}
+                  onSave={handleSaveQuantityDiscount}
                 />
               </PermissionReadOnly>
             )}

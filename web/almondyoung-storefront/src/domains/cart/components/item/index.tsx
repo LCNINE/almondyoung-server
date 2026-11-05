@@ -30,6 +30,7 @@ import { toast } from "sonner"
 
 import { useTimeSaleForLine } from "@/components/providers/time-sale-provider"
 import { ShippingGroupNotice } from "../shipping-group-notice"
+import { QuantityDiscountNote } from "./quantity-discount-note"
 
 /**
  * 구매 불가 사유. 상품이 통째로 내려간 것(`product`)과 그 옵션만 없어진 것(`option`)은
@@ -333,6 +334,14 @@ function DesktopItem({
           </p>
         )}
         <ShippingGroupNotice item={item} className="mt-1" />
+        {type === "full" && (
+          <QuantityDiscountNote
+            item={item}
+            onChangeQuantity={changeQuantity}
+            disabled={isPending || isUnavailable}
+            className="mt-1 flex flex-col items-start gap-0.5"
+          />
+        )}
         {isUnavailable && (
           <p className="mt-1 text-xs text-red-600">
             {t(unavailableHintKey(unavailableReason))}
@@ -612,6 +621,12 @@ function MobileItem({
               </p>
             )}
             <ShippingGroupNotice item={item} className="mt-0.5" />
+            <QuantityDiscountNote
+              item={item}
+              onChangeQuantity={changeQuantity}
+              disabled={isPending || isUnavailable}
+              className="mt-0.5 flex flex-col items-start gap-0.5"
+            />
             {isUnavailable && (
               <p className="mt-0.5 text-xs text-red-600">
                 {t(unavailableHintKey(unavailableReason))}

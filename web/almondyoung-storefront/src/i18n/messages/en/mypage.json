@@ -529,7 +529,8 @@
       "orderDate": "Order Date",
       "orderDateSuffix": "Ordered on {date}",
       "items": "{count} items",
-      "notFound": "Order not found."
+      "notFound": "Order not found.",
+      "quantityDiscount": "Quantity discount"
     },
     "list": {
       "title": "Order List",
@@ -562,7 +563,8 @@
         "refundedOn": "Refunded {date}",
         "viewReturnDetail": "View return",
         "viewExchangeDetail": "View exchange"
-      }
+      },
+      "quantityDiscount": "Quantity discount -{amount} KRW"
     },
     "filter": {
       "label": "Filter",

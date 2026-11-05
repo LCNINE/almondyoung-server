@@ -79,7 +79,7 @@ describe('PricingValidatorService.validateBasePriceCoverage', () => {
     const dbService = { run: jest.fn((fn: (trx: unknown) => unknown) => fn(tx)) };
 
     // 스코프 판정은 실제 계산기 로직을 쓴다 — 검증과 계산이 갈라지지 않는지가 이 테스트의 요점.
-    const calculator = new PricingCalculatorService(dbService as never);
+    const calculator = new PricingCalculatorService(dbService as never, { findForVersion: async () => null } as never);
 
     return new PricingValidatorService(dbService as never, calculator);
   }

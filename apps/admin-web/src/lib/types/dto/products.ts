@@ -1056,6 +1056,7 @@ export interface VariantPriceSetDto {
   basePrice: number;
   membershipPrice: number;
   tieredPrices: TieredPriceDto[];
+  membershipTieredPrices?: TieredPriceDto[];
 }
 
 // ===== 버전 관련 =====

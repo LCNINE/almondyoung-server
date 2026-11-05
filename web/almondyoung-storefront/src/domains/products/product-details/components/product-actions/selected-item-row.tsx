@@ -2,7 +2,9 @@ import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { HttpTypes } from "@medusajs/types"
 import { X } from "lucide-react"
+import { useTranslations } from "next-intl"
 import ProductPrice from "../product-price"
+import type { ItemQuantityPricing } from "./quantity-pricing"
 import QuantityStepper from "./quantity-stepper"
 import { SelectedItem } from "./types"
 
@@ -36,6 +38,9 @@ type SelectedItemRowProps = {
   onInvalidBlur: () => void
   onEmptyInput?: () => void
   onRemove: () => void
+  pricing?: ItemQuantityPricing
+  /** 다음 수량 할인 구간까지 더 담기 */
+  onAddQuantity?: (count: number) => void
 }
 
 export default function SelectedItemRow({
@@ -52,8 +57,12 @@ export default function SelectedItemRow({
   onInvalidBlur,
   onEmptyInput,
   onRemove,
+  pricing,
+  onAddQuantity,
 }: SelectedItemRowProps) {
   const s = SIZE_STYLES[size]
+  const t = useTranslations("productDetail.quantityDiscount")
+  const next = pricing?.next
 
   return (
     <div
@@ -76,6 +85,28 @@ export default function SelectedItemRow({
           incrementDisabled={incrementDisabled}
           directInputDisabled={directInputDisabled}
         />
+
+        {pricing?.appliedPercent != null && (
+          <span className="text-xs font-medium text-destructive">
+            {t("applied", { percent: pricing.appliedPercent })}
+          </span>
+        )}
+        {next && !incrementDisabled && (
+          <button
+            type="button"
+            className="self-start text-left text-xs text-muted-foreground underline-offset-2 hover:underline"
+            onClick={() => onAddQuantity?.(next.addQuantity)}
+          >
+            {t("nudge", {
+              count: next.addQuantity,
+              amount: next.unitPrice.toLocaleString(),
+              percent: next.percent,
+            })}{" "}
+            <span className="font-medium text-foreground">
+              {t("nudgeAction", { count: next.addQuantity })}
+            </span>
+          </button>
+        )}
       </div>
 
       <div className={cn("flex gap-2", s.right)}>
@@ -83,6 +114,7 @@ export default function SelectedItemRow({
           product={product}
           variant={item.variant}
           quantity={item.quantity}
+          unitPrice={pricing?.unitPrice}
         />
 
         {showRemove && (

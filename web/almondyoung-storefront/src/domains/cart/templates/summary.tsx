@@ -2,6 +2,7 @@
 
 import { Button } from "@/components/ui/button"
 import { HttpTypes } from "@medusajs/types"
+import { isMembershipGroup, type CustomerGroupRef } from "@/lib/utils/membership-group"
 import CartTotals from "@/components/shared/cart-totals"
 import Divider from "@/components/shared/divider"
 import { buildCartSummaryTotals } from "@/domains/cart/utils/build-cart-summary-totals"
@@ -10,11 +11,13 @@ import { useTranslations } from "next-intl"
 import { useMemo } from "react"
 
 import PriceErrorNotice from "../components/price-error-notice"
+import { useCartDiscountContext } from "../hooks/use-cart-discount-context"
 import { FreeShippingProgress } from "../components/free-shipping-progress"
 
 type SummaryProps = {
   cart: HttpTypes.StoreCart & {
     promotions: HttpTypes.StorePromotion[]
+    customer?: { groups?: CustomerGroupRef[] } | null
   }
   selectedIds: Set<string>
   onCheckout: () => void
@@ -28,6 +31,7 @@ export default function Summary({
   isPendingCheckout,
 }: SummaryProps) {
   const t = useTranslations("cart.summary")
+  const discountContext = useCartDiscountContext(isMembershipGroup(cart.customer?.groups), cart.items)
   const selectedCount = selectedIds.size
   const totalsPreview = useMemo(
     () => buildCartSummaryTotals(cart, selectedIds),
@@ -53,7 +57,7 @@ export default function Summary({
       )}
 
       <Divider />
-      <CartTotals totals={totalsPreview} />
+      <CartTotals totals={totalsPreview} discountContext={discountContext} />
 
       {hasError && <PriceErrorNotice />}
 

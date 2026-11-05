@@ -1047,6 +1047,92 @@ describe('MedusaClient.removeProductFromPriceList', () => {
   });
 });
 
+describe('MedusaClient.ensurePriceList', () => {
+  const logger = { log: jest.fn(), warn: jest.fn(), debug: jest.fn(), error: jest.fn() };
+  const payload = (name: string) => ({
+    name,
+    description: 'd',
+    type: 'sale' as const,
+    status: 'active' as const,
+    rules: { region_id: ['reg_kr'] },
+  });
+
+  function makeClient(existing: Array<{ id: string; title: string }>) {
+    const priceList = {
+      list: jest.fn(async ({ limit }: { limit?: number }) => ({ price_lists: existing.slice(0, limit ?? 50) })),
+      update: jest.fn().mockResolvedValue({}),
+      create: jest.fn().mockResolvedValue({ price_list: { id: 'pl_created' } }),
+    };
+    const client = Object.create(MedusaClient.prototype) as MedusaClient;
+    (client as any).sdk = { admin: { priceList } };
+    (client as any).logger = logger;
+    return { client, priceList };
+  }
+
+  it('does not reuse a list whose title only shares a prefix', async () => {
+    const { client, priceList } = makeClient([{ id: 'pl_20', title: 'Tiered Prices - Min 20' }]);
+
+    const id = await client.ensurePriceList(payload('Tiered Prices - Min 2'));
+
+    expect(id).toBe('pl_created');
+    expect(priceList.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('finds the exact title even when it is not the first search hit', async () => {
+    const { client, priceList } = makeClient([
+      { id: 'pl_20', title: 'Tiered Prices - Min 20' },
+      { id: 'pl_2', title: 'Tiered Prices - Min 2' },
+    ]);
+
+    const id = await client.ensurePriceList(payload('Tiered Prices - Min 2'));
+
+    expect(id).toBe('pl_2');
+    expect(priceList.create).not.toHaveBeenCalled();
+  });
+
+  it('returns the cached id without listing again', async () => {
+    const { client, priceList } = makeClient([{ id: 'pl_2', title: 'Tiered Prices - Min 2' }]);
+
+    await client.ensurePriceList(payload('Tiered Prices - Min 2'));
+    const id = await client.ensurePriceList(payload('Tiered Prices - Min 2'));
+
+    expect(id).toBe('pl_2');
+    expect(priceList.list).toHaveBeenCalledTimes(1);
+    expect(priceList.update).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('MedusaClient.syncProductQuantityDiscount', () => {
+  function makeClient(fetch: jest.Mock) {
+    const client = Object.create(MedusaClient.prototype) as MedusaClient;
+    (client as any).sdk = { client: { fetch } };
+    (client as any).logger = { log: jest.fn(), warn: jest.fn(), debug: jest.fn(), error: jest.fn() };
+    return client;
+  }
+
+  it('replaces the product tier prices with one request and returns the lists holding them', async () => {
+    const fetch = jest.fn().mockResolvedValue({ price_list_ids: ['pl_g3', 'pl_m3'] });
+    const client = makeClient(fetch);
+    const body = {
+      period: null,
+      general: [{ variant_id: 'variant_1', min_quantity: 3, amount: 9500 }],
+      membership: [{ variant_id: 'variant_1', min_quantity: 3, amount: 7200 }],
+    };
+
+    await expect(client.syncProductQuantityDiscount('prod_1', body)).resolves.toEqual(['pl_g3', 'pl_m3']);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(fetch).toHaveBeenCalledWith('/admin/quantity-discounts/products/prod_1', { method: 'post', body });
+  });
+
+  it('fails loudly so the sync is recorded as failed and retried', async () => {
+    const client = makeClient(jest.fn().mockRejectedValue(new Error('boom')));
+
+    await expect(
+      client.syncProductQuantityDiscount('prod_1', { period: null, general: [], membership: [] }),
+    ).rejects.toThrow('syncProductQuantityDiscount');
+  });
+});
+
 describe('MedusaClient.addCustomerToGroup', () => {
   const GROUP = 'cusgroup_membership';
 

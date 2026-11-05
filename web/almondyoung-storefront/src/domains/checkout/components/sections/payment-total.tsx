@@ -20,6 +20,7 @@ export const PaymentTotalSection = ({ totals }: PaymentTotalSectionProps) => {
     shipping,
     shippingBreakdown,
     membershipDiscount,
+    quantityDiscount,
     totalDiscount,
     finalTotal,
   } = totals
@@ -89,6 +90,22 @@ export const PaymentTotalSection = ({ totals }: PaymentTotalSectionProps) => {
                 data-value={membershipDiscount}
               >
                 - {formatAmount(membershipDiscount)}
+              </PriceRow.Value>
+            </PriceRow>
+          )}
+
+          {quantityDiscount > 0 && (
+            <PriceRow>
+              <PriceRow.Label size="xs" weight="medium">
+                {t("quantityDiscount")}
+              </PriceRow.Label>
+              <PriceRow.Value
+                tone="discount"
+                className="text-[14px] lg:text-sm"
+                data-testid="checkout-quantity-discount"
+                data-value={quantityDiscount}
+              >
+                - {formatAmount(quantityDiscount)}
               </PriceRow.Value>
             </PriceRow>
           )}

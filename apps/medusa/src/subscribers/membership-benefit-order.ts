@@ -1,6 +1,7 @@
 import { ContainerRegistrationKeys, Modules } from '@medusajs/framework/utils';
 import { type SubscriberConfig, type SubscriberArgs } from '@medusajs/medusa';
 import { servedTenantHeaders } from '../utils/served-tenant-headers';
+import { calculatePricesByQuantity, priceKey } from '../utils/prices-by-quantity';
 
 const MEMBERSHIP_SERVICE_URL = process.env.MEMBERSHIP_SERVICE_URL || 'http://localhost:3040';
 
@@ -143,41 +144,21 @@ export async function resolveMembershipDiscount(
 
     // 수량 할인(Tiered Prices)은 price.min_quantity 로 걸러진다 — 컨텍스트에 quantity 가 없으면
     // pricing 모듈이 `min_quantity <= 1` 만 남겨 수량 할인가를 통째로 빼버린다. 그러면 비회원가가
-    // 정가로 나와 수량 할인분까지 멤버십 귀속으로 잡힌다(= 고치려던 그 버그).
-    // quantity 는 라인마다 다르므로 수량별로 묶어 각각 조회한다.
-    const priceSetsByQuantity = new Map<number, Set<string>>();
-    for (const item of items) {
+    // 정가로 나와 수량 할인분까지 멤버십 귀속으로 잡힌다. 수량별 조회는 calculatePricesByQuantity 가 한다.
+    const requests = items.flatMap((item) => {
       const priceSetId = item.variant_id ? variantToPriceSet.get(item.variant_id) : undefined;
-      if (!priceSetId) continue;
       const quantity = resolveQuantity(item);
-      if (!Number.isFinite(quantity)) continue;
-      const bucket = priceSetsByQuantity.get(quantity) ?? new Set<string>();
-      bucket.add(priceSetId);
-      priceSetsByQuantity.set(quantity, bucket);
-    }
-    if (priceSetsByQuantity.size === 0) return compareAtDiscount;
+      return priceSetId && Number.isFinite(quantity) ? [{ priceSetId, quantity }] : [];
+    });
+    if (requests.length === 0) return compareAtDiscount;
 
     // 멤버십 그룹을 뺀 컨텍스트 = "이 고객이 회원이 아니었다면 냈을 가격".
     // 빈 groups 배열은 pricing 모듈이 컨텍스트에서 걸러내므로 멤버십 price list 규칙이 매칭되지 않는다.
-    const amountByQuantityAndPriceSet = new Map<string, number>();
-    for (const [quantity, priceSetIdSet] of priceSetsByQuantity) {
-      const nonMemberPrices = await pricingModule.calculatePrices(
-        { id: [...priceSetIdSet] },
-        {
-          context: {
-            currency_code: pricingContext.currency_code ?? 'krw',
-            region_id: pricingContext.region_id ?? undefined,
-            quantity,
-            customer: { groups: [] },
-          },
-        },
-      );
-      for (const cp of nonMemberPrices ?? []) {
-        if (cp.calculated_amount != null) {
-          amountByQuantityAndPriceSet.set(`${quantity}:${cp.id}`, Number(cp.calculated_amount));
-        }
-      }
-    }
+    const nonMemberPrices = await calculatePricesByQuantity(pricingModule, requests, {
+      currency_code: pricingContext.currency_code ?? 'krw',
+      region_id: pricingContext.region_id ?? undefined,
+      customer: { groups: [] },
+    });
 
     let membershipDiscount = 0;
     // 할인이 걸린 품목 중 비회원가를 못 구한 게 하나라도 있으면 결과를 신뢰할 수 없다.
@@ -189,7 +170,7 @@ export async function resolveMembershipDiscount(
       const quantity = resolveQuantity(item);
       const nonMemberPrice =
         priceSetId && Number.isFinite(quantity)
-          ? amountByQuantityAndPriceSet.get(`${quantity}:${priceSetId}`)
+          ? nonMemberPrices.get(priceKey(quantity, priceSetId))?.calculated
           : undefined;
 
       if (nonMemberPrice == null) {

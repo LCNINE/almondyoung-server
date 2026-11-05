@@ -113,6 +113,13 @@
       "when": 1793244083733,
       "tag": "20261029032123_drop-legacy-scope-tables",
       "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1793767923936,
+      "tag": "20261104045203_add-synced-price-list-ids",
+      "breakpoints": true
     }
   ]
 }

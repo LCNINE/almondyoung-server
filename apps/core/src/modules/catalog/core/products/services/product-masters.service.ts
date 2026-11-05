@@ -33,6 +33,8 @@ import {
   productMasterPricingRules,
   productMasterPurchaseConstraints,
   productPurchaseConstraints,
+  productMasterQuantityDiscounts,
+  productQuantityDiscounts,
   productTagValues,
   tagValues,
   tagGroups,
@@ -1452,11 +1454,26 @@ export class ProductMastersService {
           ),
         );
 
+      const quantityDiscountMappings = await tx
+        .select({ quantityDiscountId: productMasterQuantityDiscounts.quantityDiscountId })
+        .from(productMasterQuantityDiscounts)
+        .where(eq(productMasterQuantityDiscounts.versionId, id));
+
       await tx.delete(productMasterVersions).where(eq(productMasterVersions.id, id));
 
       await this._cleanupOrphanedPurchaseConstraints(
         purchaseConstraintMappings.map((mapping) => mapping.purchaseConstraintId),
         tx,
+      );
+      await deleteEntitiesIfUnmapped(
+        tx,
+        {
+          entityTable: productQuantityDiscounts,
+          entityIdColumn: productQuantityDiscounts.id,
+          junctionTable: productMasterQuantityDiscounts,
+          junctionFkColumn: productMasterQuantityDiscounts.quantityDiscountId,
+        },
+        quantityDiscountMappings.map((mapping) => mapping.quantityDiscountId),
       );
 
       return { deleted: true };

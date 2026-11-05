@@ -253,7 +253,8 @@
       "claimAndApplyFailed": "쿠폰 발급에 실패했습니다. 잠시 후 다시 시도해주세요.",
       "claimSuccessApplyFailed": "쿠폰이 발급됐지만 현재 장바구니에 적용할 수 없습니다. 쿠폰함에서 확인 후 사용해 주세요."
     },
-    "maxCap": "최대 {amount}원"
+    "maxCap": "최대 {amount}원",
+    "quantityDiscount": "수량 할인"
   },
   "paymentTotal": {
     "title": "결제 정보",
@@ -263,7 +264,8 @@
     "membershipDiscount": "멤버십 할인",
     "discount": "할인",
     "couponEtc": "(쿠폰·기타)",
-    "totalAmount": "총 주문 금액"
+    "totalAmount": "총 주문 금액",
+    "quantityDiscount": "수량 할인"
   },
   "mobileSummary": {
     "title": "주문 요약",

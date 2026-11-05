@@ -34,6 +34,7 @@ import { ProductModel3dLoader } from '../../../core/products/loaders/product-mod
 import { PricingService } from '../../../core/pricing/pricing.service';
 import { PricingValidatorService } from '../../../core/pricing/pricing-validator.service';
 import { PricingCalculatorService } from '../../../core/pricing/pricing-calculator.service';
+import { QuantityDiscountReader } from '../../../core/pricing/quantity-discount.reader';
 import { VariantPriceCacheService } from '../../../core/pricing/variant-price-cache.service';
 import { ProductCategoriesService } from '../../../core/categories/categories.service';
 import { OutboxPublisher, StreamPublisher } from '@app/events';
@@ -87,9 +88,9 @@ describeIfDb('FormExportSnapshotReader (실 Postgres)', () => {
         tx ? fn(tx) : db.transaction((t) => fn(t)),
     } as unknown as DbService<PimSchema>;
 
-    const calculator = new PricingCalculatorService(dbService);
+    const calculator = new PricingCalculatorService(dbService, new QuantityDiscountReader(dbService));
     const validator = new PricingValidatorService(dbService, calculator);
-    const pricing = new PricingService(dbService, validator, calculator);
+    const pricing = new PricingService(dbService, validator, calculator, { assertCompatibleWithPrices: async () => undefined } as never);
 
     const priceCache = new VariantPriceCacheService(dbService, calculator);
     const versionLoader = new ProductVersionReadLoader();
@@ -104,6 +105,7 @@ describeIfDb('FormExportSnapshotReader (실 Postgres)', () => {
       tagLoader,
       priceCache,
       new ProductModel3dLoader(),
+      new QuantityDiscountReader(dbService),
     );
     // OutboxPublisher 는 스키마 제네릭을 받지 않는(기본값 Record<string, never>) DbService 를
     // 받는다 — 우리 dbService 의 실제 동작(db/run)엔 무관하고 순수 타입 불일치라 캐스팅한다.

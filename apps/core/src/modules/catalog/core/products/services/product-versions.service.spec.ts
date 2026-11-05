@@ -68,6 +68,7 @@ describe('ProductVersionsService Medusa projection outbox events', () => {
       {} as any,
       productSellableQuantity as any,
       purchaseConstraints as any,
+      { copyMapping: async () => undefined, deleteForVersion: async () => undefined, assertCompatibleWithPrices: async () => undefined } as any,
     );
     jest.spyOn(service, 'compareVersions').mockResolvedValue([]);
 
@@ -794,6 +795,7 @@ describe('ProductVersionsService copy mappings', () => {
       {} as any,
       {} as any,
       {} as any,
+      { copyMapping: async () => undefined, deleteForVersion: async () => undefined, assertCompatibleWithPrices: async () => undefined } as any,
     );
   }
 
@@ -875,6 +877,7 @@ describe('ProductVersionsService productCode publish validation', () => {
       {} as any,
       {} as any,
       {} as any, // purchaseConstraints
+      { copyMapping: async () => undefined, deleteForVersion: async () => undefined, assertCompatibleWithPrices: async () => undefined } as any,
     );
   }
 
@@ -919,6 +922,7 @@ describe('ProductVersionsService digital asset-link publish guard', () => {
       variantAssetLinkService,
       {} as any,
       {} as any, // purchaseConstraints
+      { copyMapping: async () => undefined, deleteForVersion: async () => undefined, assertCompatibleWithPrices: async () => undefined } as any,
     );
   }
 
@@ -1004,6 +1008,7 @@ describe('ProductVersionsService deleteDraftVersion purchase constraint cleanup'
       {} as any,
       {} as any,
       {} as any,
+      { copyMapping: async () => undefined, deleteForVersion: async () => undefined, assertCompatibleWithPrices: async () => undefined } as any,
     );
   }
 
@@ -1202,6 +1207,7 @@ describe('ProductVersionsService.getMyDraftVersions', () => {
       {} as any,
       {} as any,
       {} as any, // purchaseConstraints
+      { copyMapping: async () => undefined, deleteForVersion: async () => undefined, assertCompatibleWithPrices: async () => undefined } as any,
     );
   }
 

@@ -49,6 +49,7 @@ import type {
   UpdateProductVariantDto,
 } from './products-detail.types';
 import type { PermissionRequirement } from '@/lib/auth/mutation-permission';
+import type { UpsertQuantityDiscountDto } from '@/lib/pricing/quantity-discount';
 
 // ===== 카테고리 관련 뮤테이션 =====
 
@@ -781,6 +782,26 @@ export const useDeleteVersionPricingRules = () => {
   });
 };
 useDeleteVersionPricingRules.permission = ['catalog.price.write'] as const satisfies PermissionRequirement;
+
+// 구간표를 저장하면 서버가 이 버전의 옛 수량별 규칙을 지우므로 규칙·옵션별 가격도 함께 무효화한다(같은 pricingVersion 키 아래).
+export const useSaveQuantityDiscount = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      masterId,
+      versionId,
+      dto,
+    }: {
+      masterId: string;
+      versionId: string;
+      dto: UpsertQuantityDiscountDto;
+    }) => products.pricing.versions.saveQuantityDiscount(masterId, versionId, dto),
+    onSuccess: (_, variables) => {
+      invalidatePricingRulesQueries(queryClient, variables.masterId, variables.versionId);
+    },
+  });
+};
+useSaveQuantityDiscount.permission = ['catalog.price.write'] as const satisfies PermissionRequirement;
 
 export const useCalculateVersionPrice = () => {
   return useMutation({

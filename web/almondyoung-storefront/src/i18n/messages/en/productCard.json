@@ -24,5 +24,6 @@
   "quickAddSelect": "Please select options",
   "quickAddError": "Could not load product options.",
   "membersOnly": "Members only",
-  "discountBadge": "{percent}% OFF"
+  "discountBadge": "{percent}% OFF",
+  "quantityDiscountBadge": "{count}+ {percent}% off"
 }

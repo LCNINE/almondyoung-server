@@ -645,6 +645,7 @@ export interface PimProductSnapshot {
     basePrice?: number;
     membershipPrice?: number;
     tieredPrices?: Array<{ minQuantity: number; price: number }>;
+    membershipTieredPrices?: Array<{ minQuantity: number; price: number }>;
 
     // 물리적 속성 (Optional)
     weight?: number;
@@ -666,6 +667,8 @@ export interface PimProductSnapshot {
   /** @deprecated use hideMembershipPriceForNonMembers */
   isMembershipOnly?: boolean;
   purchaseConstraint?: PimPurchaseConstraint;
+  /** 수량 할인 적용 기간(UTC ISO). 구간표가 없거나 꺼져 있으면 null */
+  quantityDiscount?: { startsAt: string | null; endsAt: string | null } | null;
   isGiftcard?: boolean;
   discountable?: boolean;
 }
@@ -722,6 +725,7 @@ export interface MedusaProductPayload {
       pimOptionRanks?: Record<string, number>;
       membershipPrice?: number;
       tieredPrices?: Array<{ minQuantity: number; price: number }>;
+      membershipTieredPrices?: Array<{ minQuantity: number; price: number }>;
     };
   }>;
 
@@ -751,6 +755,7 @@ export interface MedusaProductPayload {
     /** @deprecated use hideMembershipPriceForNonMembers */
     isMembershipOnly?: boolean;
     pimPurchaseConstraint?: PimPurchaseConstraint | null;
+    quantityDiscount?: { startsAt: string | null; endsAt: string | null } | null;
     productType?: string;
     fulfillmentKind: PimFulfillmentKind;
     requiresShipping: boolean;

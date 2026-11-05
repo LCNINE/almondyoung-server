@@ -186,6 +186,7 @@ describeWithPostgres('SKU 3D models PostgreSQL integration', () => {
       {} as any,
       { recalculateAndPublishForVariants: async () => undefined } as any,
       {} as any,
+      { copyMapping: async () => undefined, deleteForVersion: async () => undefined, assertCompatibleWithPrices: async () => undefined } as any,
     );
     categories = new ProductCategoriesService(dbService as any, assembler as any, publisher as any);
     masters = new ProductMastersService(

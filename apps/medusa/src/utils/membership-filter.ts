@@ -122,11 +122,12 @@ const sanitizeMembershipPriceMetadata = (metadata: Record<string, unknown>) => {
   delete next.membershipPrice;
   delete next.membership_price;
   delete next.membershipprice;
+  delete next.membershipTieredPrices;
   return next;
 };
 
 /**
- * 비멤버 응답에서 variant.metadata의 멤버십가 숫자만 제거한다.
+ * 비멤버 응답에서 variant.metadata의 멤버십가 숫자(회원 수량 구간가 포함)만 제거한다.
  * 상품 자체(id, variants, 그 외 metadata)는 그대로 유지된다.
  */
 export const sanitizeProductForNonMember = (product: MembershipProduct): MembershipProduct => {

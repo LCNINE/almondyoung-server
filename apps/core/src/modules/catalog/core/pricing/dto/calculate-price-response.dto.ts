@@ -97,8 +97,11 @@ export class VariantPriceSetDto {
   membershipPrice: number;
 
   @ApiProperty({
-    description: 'Tiered prices for bulk purchases',
+    description: 'Tiered prices for bulk purchases (regular customers)',
     type: [TieredPriceDto],
   })
   tieredPrices: TieredPriceDto[];
+
+  @ApiProperty({ description: 'Tiered prices for membership customers', type: [TieredPriceDto] })
+  membershipTieredPrices: TieredPriceDto[];
 }

@@ -7,7 +7,9 @@ import { DbTransaction, PricingRule, VariantPriceSet } from '../../catalog.types
 import { ReplacePricingRulesDto, PricingRulesResponseDto, PricingRuleResponseDto } from './dto';
 import { PricingMapper } from './mappers';
 import { PricingValidatorService } from './pricing-validator.service';
+import { lockProductMasters } from '../products/services/product-master-lock';
 import { PricingCalculatorService } from './pricing-calculator.service';
+import { QuantityDiscountManager } from './quantity-discount.manager';
 import { v7 as uuidv7 } from 'uuid';
 import { deleteEntitiesIfUnmapped } from '../version-isolation/delete-if-unmapped';
 
@@ -20,6 +22,7 @@ export class PricingService {
     private readonly dbService: DbService<typeof pimSchema>,
     private readonly validatorService: PricingValidatorService,
     private readonly calculatorService: PricingCalculatorService,
+    private readonly quantityDiscounts: QuantityDiscountManager,
   ) {}
 
   async getVersionRules(versionId: string, tx?: DbTransaction): Promise<PricingRulesResponseDto> {
@@ -84,7 +87,16 @@ export class PricingService {
         throw new NotFoundException(`Version ${versionId} not found`);
       }
 
-      if (version.status !== 'draft') {
+      // 발행·구간표 저장과 같은 잠금을 잡고 상태를 다시 읽는다 — 아니면 검증(옛 수량별 규칙 대조)과 교체 사이에
+      // 다른 저장이 끼어 지운 규칙을 되살리거나 방금 발행된 버전을 고친다.
+      await lockProductMasters(trx, [version.masterId]);
+      const [locked] = await trx
+        .select({ status: productMasterVersions.status })
+        .from(productMasterVersions)
+        .where(eq(productMasterVersions.id, versionId))
+        .limit(1);
+
+      if (version.status !== 'draft' || locked?.status !== 'draft') {
         throw new BadRequestException('Only draft versions can be modified');
       }
 
@@ -168,6 +180,8 @@ export class PricingService {
         .update(productMasterVersions)
         .set({ updatedAt: new Date() })
         .where(eq(productMasterVersions.id, versionId));
+
+      await this.quantityDiscounts.assertCompatibleWithPrices(version.masterId, versionId, trx);
 
       return this.getVersionRules(versionId, trx);
     }, tx);

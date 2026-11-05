@@ -125,6 +125,8 @@ export const productQueryKeys = {
       'price-set',
       variantId,
     ] as const,
+  pricingVersionQuantityDiscount: (versionId: string) =>
+    [...productQueryKeys.pricingVersion(versionId), 'quantity-discount'] as const,
   pricingMasterRules: (masterId: string) =>
     ['pricing', 'masters', masterId, 'rules'] as const,
   pricingMasterPriceSet: (masterId: string, variantId: string) =>

@@ -45,12 +45,17 @@
     "overStockHint": "재고가 {max}개 남았어요. {max}개 이하로 조정해주세요.",
     "quantityAdjustedToMax": "재고가 {max}개라 {max}개로 맞췄어요.",
     "timeSaleBadge": "타임세일",
-    "timeSaleMembershipBadge": "타임세일 멤버십 특가"
+    "timeSaleMembershipBadge": "타임세일 멤버십 특가",
+    "quantityDiscount": "수량 할인 -{amount}원",
+    "quantityNudge": "{count}개 더 담으면 개당 {amount}원 ({percent}% 할인)",
+    "quantityNudgeAction": "+{count}개 담기"
   },
   "summary": {
     "title": "주문 예상 금액",
     "subtotal": "총 상품 가격",
     "membershipDiscount": "멤버십 할인",
+    "productDiscount": "상품 할인",
+    "quantityDiscount": "수량 할인",
     "couponDiscount": "쿠폰/프로모션 할인",
     "shipping": "배송비",
     "totalPayment": "총 결제 금액",
