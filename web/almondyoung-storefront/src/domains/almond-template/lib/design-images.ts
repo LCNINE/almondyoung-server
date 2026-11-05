@@ -1,4 +1,5 @@
 import type { Design, Layer } from "./document"
+import { embeddedFontCss, firstFamily } from "./fonts"
 import {
   ALMOND_TEMPLATE_IMAGE_CONTEXT_ID,
   fileImageRef,
@@ -125,6 +126,21 @@ export async function rasterThumbnail(
     })
   )
   const root = svg.documentElement
+  const css = await embeddedFontCss(
+    Array.from(svg.querySelectorAll("[font-family]"), (node) =>
+      firstFamily(node.getAttribute("font-family") ?? "")
+    ),
+    Array.from(
+      svg.querySelectorAll("text"),
+      (node) => node.textContent ?? ""
+    ).join("")
+  )
+  if (css) {
+    const style = svg.createElementNS("http://www.w3.org/2000/svg", "style")
+    style.textContent = css
+    root.prepend(style)
+  }
+
   const [, , viewWidth, viewHeight] = (root.getAttribute("viewBox") ?? "")
     .split(/[\s,]+/)
     .map(Number)
