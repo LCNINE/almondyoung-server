@@ -26,8 +26,8 @@
 
 ### 고객 배송비 그룹
 
-어드민 `몰 > 배송비 그룹` 에서 `print-card`(`flat`), `print-mini`(`flat`), `print-sign`(`per_quantity`), `print-board`(`per_quantity`) 네 그룹을 만들고 상품 일괄 정책 지정으로 인쇄 상품 master 를 종류별로 지정한다. 금액·근거·절차는 스펙 §7 이 정본이다.
-사인제품(현수막·배너) 선불택배 가능 여부는 미확인이다. `prod_info` 의 `deliverinfo.dlvyprepay` 로 확정하기 전까지 `print-mini`·`print-sign`·`print-board` 는 설정만 하고 해당 상품 판매를 열지 않는다.
+어드민 `몰 > 배송비 그룹` 에서 `print-card`(`flat`), `print-mini`(`flat`), `print-sign`(`flat`), `print-board`(`per_quantity`) 네 그룹을 만들고 상품 일괄 정책 지정으로 인쇄 상품 master 를 종류별로 지정한다. 금액·근거·절차는 스펙 §7 이 정본이다.
+사인제품(현수막·배너)은 스펙 §7.1 의 부자재 조합이면 선불택배로 보낼 수 있다. 표에 없는 부자재(현수막 로프 40111 등)는 `WOWPRESS_PRODUCTS` 에 넣지 않는다. 미니 투명배너 40162 가 같은 기준인지는 테스트 계정 주문으로 확정한다.
 
 ## 상태
 
