@@ -523,6 +523,11 @@ export default function ProductActions({
             product={product}
             focusVariant={focusItem?.variant}
             quantity={focusItem?.quantity}
+            onSelectQuantity={
+              focusItem && !isWelcomeMembership
+                ? (q) => setItemQuantity(focusItem.variantId, q)
+                : undefined
+            }
           />
           <ProductShippingNotice product={product} className="pb-2" />
 
@@ -705,6 +710,7 @@ export default function ProductActions({
         totalQuantity={totalQuantity}
         totalPrice={totalPrice}
         pricingOf={pricingOf}
+        pricingContext={pricingContext}
         isSimple={isSimple}
         isWelcomeMembership={isWelcomeMembership}
         membersOnlyPurchase={membersOnlyPurchase}

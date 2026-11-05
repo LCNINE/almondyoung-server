@@ -2,7 +2,7 @@
 
 import { useQuantityDiscountNow } from "@/hooks/use-quantity-discount-now"
 import { useCallback, useMemo } from "react"
-import { lineTimeSale, useTimeSale } from "@/components/providers/time-sale-provider"
+import { isTimeSaleVariant, lineTimeSale, useTimeSale } from "@/components/providers/time-sale-provider"
 import type { CartDiscountContext } from "../utils/calculate-discount"
 
 type Line = Parameters<typeof lineTimeSale>[1] & {
@@ -17,6 +17,7 @@ export function useCartDiscountContext<T extends Line>(
 ): CartDiscountContext<T> {
   const { sales } = useTimeSale()
   const now = useQuantityDiscountNow((items ?? []).map((item) => item.product?.metadata))
-  const isTimeSaleLine = useCallback((item: T) => lineTimeSale(sales, item) !== null, [sales])
+  // 세일이 걸린 옵션은 «구간 적용 전 가격»(세일가일 수 있다)을 알 수 없어 수량 할인을 나누지 않는다 — 크게 보이느니 안 나눈다.
+  const isTimeSaleLine = useCallback((item: T) => isTimeSaleVariant(sales, item), [sales])
   return useMemo(() => ({ isMember, isTimeSaleLine, now }), [isMember, isTimeSaleLine, now])
 }

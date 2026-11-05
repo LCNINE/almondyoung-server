@@ -10,6 +10,8 @@ import {
 import { TimeSaleCountdown } from "@/components/shared/time-sale-countdown"
 import { refreshCartPrices } from "@/lib/api/medusa/cart"
 import { formatPrice } from "@/lib/utils/price-utils"
+import { useCart } from "@/contexts/cart-context"
+import { isMembershipGroup } from "@/lib/utils/membership-group"
 
 /**
  * 카트·체크아웃의 타임세일 마감 안내. 종료되면 가격 재계산을 건 뒤 변경 안내로 바뀐다.
@@ -25,14 +27,16 @@ export function TimeSaleNotice({
 }) {
   const t = useTranslations("cart")
   const { sales } = useTimeSale()
+  const { cart } = useCart()
+  const isMember = isMembershipGroup(cart?.customer?.groups)
   // 라인별로 세일을 가른다 — 비회원이 정가로 담은 멤버십 전용 특가 옵션은 마감 안내 대상이 아니다.
   const endsAt = useMemo(
     () =>
       items.reduce<string | null>((earliest, item) => {
-        const end = lineTimeSale(sales, item)?.sale.endsAt
+        const end = lineTimeSale(sales, item, isMember)?.sale.endsAt
         return end && (!earliest || end < earliest) ? end : earliest
       }, null),
-    [items, sales]
+    [items, sales, isMember]
   )
 
   // 배송비는 세일과 무관하다.

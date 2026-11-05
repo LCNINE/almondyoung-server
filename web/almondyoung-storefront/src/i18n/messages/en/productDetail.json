@@ -251,6 +251,14 @@
     "less": "Less",
     "applied": "{percent}% quantity discount applied",
     "nudge": "Add {count} more for {amount} KRW each ({percent}% off)",
-    "nudgeAction": "Add {count}"
+    "nudgeAction": "Add {count}",
+    "bundleTitle": "Choose a bundle",
+    "single": "1 item",
+    "bundle": "Bundle of {count}",
+    "total": "{amount} KRW",
+    "saving": "Save {amount} KRW",
+    "best": "Best deal",
+    "memberHint": "Members: {items}",
+    "memberHintItem": "{count} at {amount} KRW each"
   }
 }

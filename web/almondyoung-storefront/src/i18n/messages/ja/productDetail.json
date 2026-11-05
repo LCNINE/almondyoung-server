@@ -251,6 +251,14 @@
     "less": "閉じる",
     "applied": "まとめ買い割引{percent}%適用",
     "nudge": "あと{count}個で1個あたり{amount}ウォン（{percent}%割引）",
-    "nudgeAction": "{count}個追加"
+    "nudgeAction": "{count}個追加",
+    "bundleTitle": "まとめ買いを選ぶ",
+    "single": "1個",
+    "bundle": "{count}個セット",
+    "total": "{amount}ウォン",
+    "saving": "{amount}ウォンお得",
+    "best": "最大割引",
+    "memberHint": "メンバーシップ会員は {items}",
+    "memberHintItem": "{count}個 1個あたり{amount}ウォン"
   }
 }

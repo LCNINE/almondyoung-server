@@ -18,14 +18,16 @@ import { HttpTypes } from "@medusajs/types"
 import { Lock } from "lucide-react"
 import { useTranslations } from "next-intl"
 import { variantTierRows } from "../product-actions/quantity-pricing"
-import QuantityDiscountTable from "../quantity-discount-table"
+import QuantityBundlePicker from "../quantity-bundle-picker"
 
 interface Props {
   hasMembership: boolean
   product: HttpTypes.StoreProduct
-  /** 고른 옵션 — 수량 할인 표를 그 옵션 가격으로 보이고 수량이 닿은 구간을 강조한다 */
+  /** 고른 옵션 — 묶음 카드를 그 옵션 가격으로 보이고 고른 수량의 카드를 선택 상태로 둔다 */
   focusVariant?: HttpTypes.StoreProductVariant
   quantity?: number
+  /** 묶음 카드를 누르면 고른 옵션의 수량을 바꾼다. 없으면 카드는 보여주기만 한다 */
+  onSelectQuantity?: (quantity: number) => void
 }
 
 export default function ProductPreviewPrice({
@@ -33,29 +35,34 @@ export default function ProductPreviewPrice({
   product,
   focusVariant,
   quantity,
+  onSelectQuantity,
 }: Props) {
   const { cheapestVariant } = getProductPrice({ product })
   const variant = focusVariant ?? cheapestVariant
   const isMultiOption = (product.variants?.length ?? 0) > 1
   // 기간 경계는 클라이언트 현재 시각으로 한 번 더 거른다(페이지 캐시가 경계를 넘겨도 약속하지 않게).
   const now = useQuantityDiscountNow([product.metadata])
-  const { rows } = variant
+  const { rows, currentPrice } = variant
     ? variantTierRows(variant, product, {
         isMember: hasMembership,
         hideMemberPrices: getHideMembershipPriceForNonMembers(product),
         now,
       })
-    : { rows: [] }
+    : { rows: [], currentPrice: null }
 
   return (
     <>
       <PriceSummary hasMembership={hasMembership} product={product} />
-      <QuantityDiscountTable
-        rows={rows}
-        quantity={quantity}
-        optionLabel={isMultiOption && variant ? (variant.title ?? undefined) : undefined}
-        className="mb-2"
-      />
+      {currentPrice !== null && (
+        <QuantityBundlePicker
+          rows={rows}
+          currentPrice={currentPrice}
+          quantity={quantity}
+          onSelect={onSelectQuantity}
+          optionLabel={isMultiOption && variant ? (variant.title ?? undefined) : undefined}
+          className="mb-2"
+        />
+      )}
     </>
   )
 }

@@ -4,7 +4,7 @@ import { useQuantityDiscountNow } from "@/hooks/use-quantity-discount-now"
 import { useTranslations } from "next-intl"
 import type { HttpTypes } from "@medusajs/types"
 import { useCart } from "@/contexts/cart-context"
-import { useTimeSaleForLine } from "@/components/providers/time-sale-provider"
+import { isTimeSaleVariant, useTimeSale } from "@/components/providers/time-sale-provider"
 import { formatPrice } from "@/lib/utils/price-utils"
 import { isMembershipGroup } from "@/lib/utils/membership-group"
 import { cartLineTierInfo } from "@/lib/utils/quantity-discount"
@@ -21,12 +21,12 @@ type QuantityDiscountNoteProps = {
 export function QuantityDiscountNote({ item, onChangeQuantity, disabled, className }: QuantityDiscountNoteProps) {
   const t = useTranslations("cart.items")
   const { cart } = useCart()
-  const lineSale = useTimeSaleForLine(item)
+  const { sales } = useTimeSale()
   const now = useQuantityDiscountNow([item.product?.metadata])
 
   const { quantityDiscount, next } = cartLineTierInfo(item, {
     isMember: isMembershipGroup(cart?.customer?.groups),
-    isTimeSale: lineSale !== null,
+    isTimeSale: isTimeSaleVariant(sales, item),
     now,
   })
   if (quantityDiscount <= 0 && !next) return null

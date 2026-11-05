@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import type { TimeSale } from "@/lib/api/medusa/time-sale"
-import { lineTimeSale } from "./time-sale-provider"
+import { isTimeSaleVariant, lineTimeSale } from "./time-sale-provider"
 
 const sale: TimeSale = {
   id: "ts_1",
@@ -29,11 +29,11 @@ const line = (
 
 describe("lineTimeSale", () => {
   it("같은 상품이라도 세일에 없는 옵션은 세일이 아니다", () => {
-    expect(lineTimeSale([sale], line("v_other", 10000, null))).toBeNull()
+    expect(lineTimeSale([sale], line("v_other", 10000, null), false)).toBeNull()
   })
 
   it("일반 세일 옵션은 세일이다", () => {
-    expect(lineTimeSale([sale], line("v_general", 9000, 10000))).toEqual({
+    expect(lineTimeSale([sale], line("v_general", 9000, 10000), false)).toEqual({
       sale,
       membershipOnly: false,
     })
@@ -41,31 +41,67 @@ describe("lineTimeSale", () => {
 
   // 세일가가 정가 이상으로 저장됐으면(경고 후 적용) Medusa 가 정가를 고른다.
   it("일반 세일 옵션도 정가보다 싸게 담겼을 때만 세일이다", () => {
-    expect(lineTimeSale([sale], line("v_general", 10000, null))).toBeNull()
-    expect(lineTimeSale([sale], line("v_general", 10000, 10000))).toBeNull()
+    expect(lineTimeSale([sale], line("v_general", 10000, null), false)).toBeNull()
+    expect(lineTimeSale([sale], line("v_general", 10000, 10000), false)).toBeNull()
   })
 
   it("멤버십 전용 옵션을 비회원이 정가로 담으면 세일이 아니다", () => {
     expect(
-      lineTimeSale([sale], line("v_member", 18000, null, 11900))
+      lineTimeSale([sale], line("v_member", 18000, null, 11900), false)
     ).toBeNull()
   })
 
   it("멤버십 전용 옵션이 상시 멤버십가보다 싸게 담겼을 때만 특가다", () => {
-    expect(lineTimeSale([sale], line("v_member", 9900, 18000, 11900))).toEqual({
+    expect(lineTimeSale([sale], line("v_member", 9900, 18000, 11900), true)).toEqual({
       sale,
       membershipOnly: true,
     })
     // 상시 멤버십가가 더 싸 그쪽이 적용됐으면 기간 특가가 아니다.
     expect(
-      lineTimeSale([sale], line("v_member", 11900, 18000, 11900))
+      lineTimeSale([sale], line("v_member", 11900, 18000, 11900), true)
     ).toBeNull()
   })
 
   it("옛 응답(variantIds 없음)은 상품 단위로 가른다", () => {
     const old = { ...sale, variantIds: undefined }
     expect(
-      lineTimeSale([old], line("v_other", 9000, 10000))?.membershipOnly
+      lineTimeSale([old], line("v_other", 9000, 10000), false)?.membershipOnly
     ).toBe(false)
+  })
+})
+
+describe("quantity-tier lines on a sale product", () => {
+  const tierLine = (unit: number, quantity: number) => ({
+    product_id: "prod_1",
+    variant_id: "v_general",
+    unit_price: unit,
+    compare_at_unit_price: 10000,
+    quantity,
+    variant: {
+      metadata: {
+        membershipPrice: 8000,
+        tieredPrices: [{ minQuantity: 3, price: 9500 }],
+        membershipTieredPrices: [{ minQuantity: 3, price: 7200 }],
+      },
+    },
+    product: { metadata: {} },
+  })
+
+  it("does not call a line priced at its quantity tier a sale", () => {
+    expect(lineTimeSale([sale], tierLine(9500, 3), false)).toBeNull()
+    expect(lineTimeSale([sale], tierLine(7200, 3), true)).toBeNull()
+  })
+
+  it("ignores the member tier for a non-member line", () => {
+    expect(lineTimeSale([sale], tierLine(7200, 3), false)?.sale.id).toBe("ts_1")
+  })
+
+  it("still calls a line priced at the sale a sale", () => {
+    expect(lineTimeSale([sale], tierLine(9600, 1), false)?.sale.id).toBe("ts_1")
+  })
+
+  it("knows the variant is under a sale whatever the line price", () => {
+    expect(isTimeSaleVariant([sale], tierLine(9500, 3))).toBe(true)
+    expect(isTimeSaleVariant([sale], { ...tierLine(9500, 3), variant_id: "v_other" })).toBe(false)
   })
 })

@@ -251,6 +251,14 @@
     "less": "접기",
     "applied": "수량 할인 {percent}% 적용",
     "nudge": "{count}개 더 담으면 개당 {amount}원 ({percent}% 할인)",
-    "nudgeAction": "+{count}개 담기"
+    "nudgeAction": "+{count}개 담기",
+    "bundleTitle": "묶음 선택",
+    "single": "1개",
+    "bundle": "{count}개 묶음",
+    "total": "{amount}원",
+    "saving": "{amount}원 절약",
+    "best": "최대 할인",
+    "memberHint": "멤버십 회원은 {items}",
+    "memberHintItem": "{count}개 개당 {amount}원"
   }
 }

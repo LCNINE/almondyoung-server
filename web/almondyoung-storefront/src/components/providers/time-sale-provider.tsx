@@ -2,6 +2,9 @@
 
 import { createContext, useContext, useMemo, type ReactNode } from "react"
 import type { TimeSale } from "@/lib/api/medusa/time-sale"
+import { readTiers } from "@/lib/utils/quantity-discount"
+import { useCart } from "@/contexts/cart-context"
+import { isMembershipGroup } from "@/lib/utils/membership-group"
 
 type TimeSaleContextValue = {
   sales: TimeSale[]
@@ -118,7 +121,36 @@ type LineLike = {
   variant_id?: string | null
   unit_price?: number | null
   compare_at_unit_price?: number | null
+  quantity?: number | null
   variant?: { metadata?: Record<string, unknown> | null } | null
+  product?: { metadata?: Record<string, unknown> | null } | null
+}
+
+function saleOfLine(sales: TimeSale[], line: LineLike): TimeSale | undefined {
+  const variantId = line.variant_id ?? ""
+  const productId = line.product_id ?? ""
+  return sales.find((s) =>
+    s.variantIds ? s.variantIds.includes(variantId) : s.productIds.includes(productId)
+  )
+}
+
+/**
+ * 라인 단가가 그 수량의 구간가와 같으면 세일가가 아니라 수량 할인가로 결제된 라인이다.
+ * 회원 구간가는 회원에게만 걸리므로 비회원 라인은 일반 구간가하고만 비교한다.
+ */
+function isPricedAtQuantityTier(line: LineLike, isMember: boolean): boolean {
+  const unit = line.unit_price ?? 0
+  const quantity = line.quantity ?? 0
+  const tiers = readTiers(line.variant?.metadata, line.product?.metadata, new Date())
+  const applicable = isMember ? [...tiers.regular, ...tiers.membership] : tiers.regular
+  return applicable.some(
+    (t) => t.minQuantity <= quantity && t.price === unit
+  )
+}
+
+/** 이 라인의 옵션에 진행 중인 세일이 걸려 있는가(라인 가격과 무관). */
+export function isTimeSaleVariant(sales: TimeSale[], line: LineLike | null | undefined): boolean {
+  return !!line?.product_id && saleOfLine(sales, line) !== undefined
 }
 
 /**
@@ -131,21 +163,18 @@ type LineLike = {
  */
 export function lineTimeSale(
   sales: TimeSale[],
-  line: LineLike | null | undefined
+  line: LineLike | null | undefined,
+  isMember: boolean
 ): { sale: TimeSale; membershipOnly: boolean } | null {
   if (!line?.product_id) return null
 
   const variantId = line.variant_id ?? ""
-  const productId = line.product_id
-  const sale = sales.find((s) =>
-    s.variantIds
-      ? s.variantIds.includes(variantId)
-      : s.productIds.includes(productId)
-  )
+  const sale = saleOfLine(sales, line)
   if (!sale) return null
 
   const unit = line.unit_price ?? 0
   if (!(unit < (line.compare_at_unit_price ?? 0))) return null
+  if (isPricedAtQuantityTier(line, isMember)) return null
   if (!sale.membershipOnlyVariantIds?.includes(variantId))
     return { sale, membershipOnly: false }
 
@@ -157,5 +186,6 @@ export function lineTimeSale(
 
 export function useTimeSaleForLine(line: LineLike | null | undefined) {
   const { sales } = useTimeSale()
-  return lineTimeSale(sales, line)
+  const { cart } = useCart()
+  return lineTimeSale(sales, line, isMembershipGroup(cart?.customer?.groups))
 }
