@@ -31,13 +31,15 @@ import { QuantityDiscountPanel, type PreviewVariant } from '../components/quanti
 import { useVariantPriceSets } from '../use-variant-price-sets';
 import {
   serverViolations,
-  type QuantityDiscountViolation,
   type UpsertQuantityDiscountDto,
 } from '@/lib/pricing/quantity-discount';
 import type { ReplacePricingRulesDto } from '@/lib/types/dto/products';
 import { toast } from 'sonner';
 import {
+  saveErrorMessage,
   selectPricingVariants,
+  violationsForVersion,
+  type RejectedQuantityDiscountSave,
   toPricingVariantsFromMaster,
   toPricingVariantsFromVersion,
 } from '../pricing-detail-model';
@@ -119,7 +121,7 @@ export default function PricingDetailTemplate({ masterId }: Props) {
     [variants, priceSets],
   );
   const saveQuantityDiscount = useSaveQuantityDiscount();
-  const [quantityDiscountErrors, setQuantityDiscountErrors] = useState<QuantityDiscountViolation[]>([]);
+  const [rejectedQuantityDiscount, setRejectedQuantityDiscount] = useState<RejectedQuantityDiscountSave | null>(null);
 
   const replaceRules = useReplaceVersionPricingRules();
   const deleteRules = useDeleteVersionPricingRules();
@@ -134,17 +136,15 @@ export default function PricingDetailTemplate({ masterId }: Props) {
       { masterId, versionId: selectedVersionId, dto },
       {
         onSuccess: () => toast.success('가격 룰이 저장되었습니다.'),
-        onError: (e: any) => {
-          const detail = e?.response?.data?.message;
-          toast.error(typeof detail === 'string' ? detail : '저장에 실패했습니다.');
-        },
+        onError: (e: unknown) => toast.error(saveErrorMessage(e)),
       },
     );
   };
 
   const handleSaveQuantityDiscount = (dto: UpsertQuantityDiscountDto) => {
     if (!selectedVersionId) return;
-    setQuantityDiscountErrors([]);
+    const versionId = selectedVersionId;
+    setRejectedQuantityDiscount(null);
     saveQuantityDiscount.mutate(
       { masterId, versionId: selectedVersionId, dto },
       {
@@ -156,17 +156,9 @@ export default function PricingDetailTemplate({ masterId }: Props) {
           ),
         onError: (e: unknown) => {
           const violations = serverViolations(e);
-          setQuantityDiscountErrors(violations);
-          const detail =
-            typeof e === 'object' && e !== null && 'response' in e
-              ? (e as { response?: { data?: { message?: unknown } } }).response?.data?.message
-              : undefined;
+          setRejectedQuantityDiscount({ versionId, violations });
           toast.error(
-            violations.length > 0
-              ? '구간표에 맞지 않는 값이 있습니다. 표시된 행을 고쳐 주세요.'
-              : typeof detail === 'string'
-                ? detail
-                : '저장에 실패했습니다.',
+            violations.length > 0 ? '구간표에 맞지 않는 값이 있습니다. 표시된 행을 고쳐 주세요.' : saveErrorMessage(e),
           );
         },
       },
@@ -282,7 +274,7 @@ export default function PricingDetailTemplate({ masterId }: Props) {
                   readonly={isReadonly}
                   canSave={canRun(useSaveQuantityDiscount)}
                   isSaving={saveQuantityDiscount.isPending}
-                  serverViolations={quantityDiscountErrors}
+                  serverViolations={violationsForVersion(rejectedQuantityDiscount, selectedVersionId)}
                   onSave={handleSaveQuantityDiscount}
                 />
               </PermissionReadOnly>

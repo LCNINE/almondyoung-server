@@ -256,9 +256,12 @@ function isViolation(value: unknown): value is QuantityDiscountViolation {
   return isRecord(value) && typeof value.code === 'string' && VIOLATION_CODES.has(value.code);
 }
 
-/** 저장 400 응답의 `errors` 에서 구간표 위반만 꺼낸다(다른 오류면 빈 배열). */
+/**
+ * 저장 400 의 `errors` 에서 구간표 위반만 꺼낸다(다른 오류면 빈 배열). API 클라이언트는 4xx 를
+ * 응답 본문을 `response` 에 실은 오류로 바꿔 던진다.
+ */
 export function serverViolations(error: unknown): QuantityDiscountViolation[] {
-  if (!isRecord(error) || !isRecord(error.response) || !isRecord(error.response.data)) return [];
-  const errors = error.response.data.errors;
+  if (!isRecord(error) || !isRecord(error.response)) return [];
+  const errors = error.response.errors;
   return Array.isArray(errors) ? errors.filter(isViolation) : [];
 }

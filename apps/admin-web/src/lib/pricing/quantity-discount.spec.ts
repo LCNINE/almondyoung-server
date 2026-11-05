@@ -1,3 +1,4 @@
+import { CustomError } from '@/lib/api/customError';
 import {
   buildTierPrices,
   emptyQuantityDiscountForm,
@@ -140,19 +141,15 @@ describe('violation messages', () => {
     }
   });
 
-  it('reads violations from a 400 response body', () => {
-    const error = {
-      response: {
-        status: 400,
-        data: { message: 'Invalid quantity discount table', errors: [{ code: 'RATE_NOT_INCREASING', tierIndex: 1 }] },
-      },
-    };
+  it('reads violations from the error the API client throws for a 400', () => {
+    const body = { message: '수량 할인 표와 맞지 않습니다: …', errors: [{ code: 'RATE_NOT_INCREASING', tierIndex: 1 }] };
+    const error = new CustomError({ message: body.message, statusCode: 400, response: body });
     expect(serverViolations(error)).toEqual([{ code: 'RATE_NOT_INCREASING', tierIndex: 1 }]);
   });
 
   it('returns no violations for other errors', () => {
     expect(serverViolations(new Error('network'))).toEqual([]);
-    expect(serverViolations({ response: { status: 400, data: { message: 'Only draft versions' } } })).toEqual([]);
-    expect(serverViolations({ response: { status: 400, data: { errors: [{ path: ['x'] }] } } })).toEqual([]);
+    expect(serverViolations(new CustomError({ message: 'Only draft versions', statusCode: 400, response: { message: 'Only draft versions' } }))).toEqual([]);
+    expect(serverViolations(new CustomError({ message: 'x', statusCode: 400, response: { errors: [{ path: ['x'] }] } }))).toEqual([]);
   });
 });

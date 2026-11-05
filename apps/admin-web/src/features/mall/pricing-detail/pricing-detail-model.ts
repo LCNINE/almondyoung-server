@@ -1,3 +1,4 @@
+import type { QuantityDiscountViolation } from '@/lib/pricing/quantity-discount';
 import type { PricingRuleInput, VariantDto } from '@/lib/types/dto/products';
 
 export type PricingVariant = {
@@ -64,4 +65,22 @@ export function hasRuleMissingScopeTarget(rules: PricingRuleInput[]): boolean {
       (rule.scopeType === 'with_option' || rule.scopeType === 'variants') &&
       (rule.scopeTargetIds === undefined || rule.scopeTargetIds.length === 0)
   );
+}
+
+/** 저장 실패 토스트 문구. API 클라이언트가 서버 문장을 오류 메시지에 담아 던진다. */
+export function saveErrorMessage(error: unknown): string {
+  return error instanceof Error && error.message ? error.message : '저장에 실패했습니다.';
+}
+
+export interface RejectedQuantityDiscountSave {
+  versionId: string;
+  violations: QuantityDiscountViolation[];
+}
+
+/** 거부된 저장의 위반은 그 저장을 한 버전에서만 보인다. 다른 버전으로 옮기면 붙이지 않는다. */
+export function violationsForVersion(
+  rejected: RejectedQuantityDiscountSave | null,
+  versionId: string | null,
+): QuantityDiscountViolation[] {
+  return rejected && rejected.versionId === versionId ? rejected.violations : [];
 }
