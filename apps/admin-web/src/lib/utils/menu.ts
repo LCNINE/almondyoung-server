@@ -676,6 +676,11 @@ const allMenus: MainMenu[] = [
             title: '아몬드템플릿',
             path: '/mall/almond-templates',
           },
+          {
+            id: 'almond-template-categories',
+            title: '아몬드템플릿 카테고리',
+            path: '/mall/almond-template-categories',
+          },
           { id: 'deposit', title: '예치금' },
         ],
       },

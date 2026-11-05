@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { PrintFileClient } from './clients/print-file.client';
 import { PublicFileClient } from './clients/public-file.client';
 import { AlmondFontsController } from './controllers/almond-fonts.controller';
+import { AlmondTemplateCategoriesController } from './controllers/almond-template-categories.controller';
 import { AdminAlmondDesignsController } from './controllers/admin-almond-designs.controller';
 import { InternalAlmondDesignsController } from './controllers/internal-almond-designs.controller';
 import { AdminAlmondTemplatesController } from './controllers/admin-almond-templates.controller';
@@ -13,6 +14,9 @@ import { AlmondPrintRenderer } from './print/almond-print.renderer';
 import { AlmondFontManager } from './services/almond-font.manager';
 import { AlmondFontReader } from './services/almond-font.reader';
 import { AlmondFontsService } from './services/almond-fonts.service';
+import { AlmondTemplateCategoriesService } from './services/almond-template-categories.service';
+import { AlmondTemplateCategoryManager } from './services/almond-template-category.manager';
+import { AlmondTemplateCategoryReader } from './services/almond-template-category.reader';
 import { AlmondDesignManager } from './services/almond-design.manager';
 import { AlmondDesignPrinter } from './services/almond-design.printer';
 import { AlmondDesignReader } from './services/almond-design.reader';
@@ -35,6 +39,7 @@ import { AlmondTemplatesService } from './services/almond-templates.service';
     AlmondSavedDesignsController,
     AlmondSavedDesignWithdrawalConsumer,
     AlmondFontsController,
+    AlmondTemplateCategoriesController,
   ],
   providers: [
     AlmondTemplatesService,
@@ -54,6 +59,9 @@ import { AlmondTemplatesService } from './services/almond-templates.service';
     AlmondFontsService,
     AlmondFontReader,
     AlmondFontManager,
+    AlmondTemplateCategoriesService,
+    AlmondTemplateCategoryReader,
+    AlmondTemplateCategoryManager,
   ],
 })
 export class AlmondTemplateModule {}

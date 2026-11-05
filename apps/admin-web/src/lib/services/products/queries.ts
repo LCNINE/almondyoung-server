@@ -566,6 +566,14 @@ export const useAlmondTemplates = () => {
   });
 };
 
+export const useAlmondTemplateCategories = () => {
+  return useQuery({
+    queryKey: productQueryKeys.almondTemplateCategories,
+    queryFn: () => products.almondTemplateCategories.list(),
+    staleTime: 30 * 1000,
+  });
+};
+
 export const useShopListing = (id: string) => {
   return useQuery({
     queryKey: productQueryKeys.shopListing(id),

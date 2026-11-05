@@ -149,6 +149,7 @@ export const SCREEN_ACCESS: Readonly<Record<string, ScreenAccess>> = {
   '/mall/shop-listings': any('cs.review.read'),
   '/mall/shop-listings/new': any('marketing.shop_listing.write'),
   '/mall/almond-templates': any('marketing.almond_template.read'),
+  '/mall/almond-template-categories': any('marketing.almond_template.read'),
   '/mall/shipping-groups': any('system.shipping_profile.read'),
   '/mall/regions': any('system.region.read'),
   '/messages': any('messaging.message.read'),

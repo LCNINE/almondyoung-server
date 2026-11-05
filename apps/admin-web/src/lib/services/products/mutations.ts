@@ -23,6 +23,7 @@ import type {
   CreateNoticeDto,
   AdminShopListingPayload,
   AlmondTemplateStatus,
+  UpsertAlmondTemplateCategoryDto,
   UpdateNoticeDto,
   CreateSitePopupDto,
   UpdateSitePopupDto,
@@ -1062,6 +1063,40 @@ export const useDeleteAlmondTemplate = () => {
   });
 };
 useDeleteAlmondTemplate.permission = ['marketing.almond_template.write'] as const satisfies PermissionRequirement;
+
+const useInvalidateAlmondTemplateCategories = () => {
+  const queryClient = useQueryClient();
+  return () => queryClient.invalidateQueries({ queryKey: productQueryKeys.almondTemplateCategories });
+};
+
+export const useSaveAlmondTemplateCategory = () => {
+  const invalidate = useInvalidateAlmondTemplateCategories();
+  return useMutation({
+    mutationFn: ({ id, body }: { id?: string; body: UpsertAlmondTemplateCategoryDto }) =>
+      id ? products.almondTemplateCategories.update(id, body) : products.almondTemplateCategories.create(body),
+    onSuccess: () => invalidate(),
+  });
+};
+useSaveAlmondTemplateCategory.permission = ['marketing.almond_template.write'] as const satisfies PermissionRequirement;
+
+export const useDeleteAlmondTemplateCategory = () => {
+  const invalidate = useInvalidateAlmondTemplateCategories();
+  return useMutation({
+    mutationFn: (id: string) => products.almondTemplateCategories.remove(id),
+    onSuccess: () => invalidate(),
+  });
+};
+useDeleteAlmondTemplateCategory.permission = ['marketing.almond_template.write'] as const satisfies PermissionRequirement;
+
+export const useReorderAlmondTemplateCategories = () => {
+  const invalidate = useInvalidateAlmondTemplateCategories();
+  return useMutation({
+    mutationFn: (ids: string[]) => products.almondTemplateCategories.reorder(ids),
+    // 새 목록을 받을 때까지 pending 으로 둬야 다음 정렬이 옛 목록으로 계산되지 않는다
+    onSettled: () => invalidate(),
+  });
+};
+useReorderAlmondTemplateCategories.permission = ['marketing.almond_template.write'] as const satisfies PermissionRequirement;
 
 // ===== 샵매매 뮤테이션 =====
 

@@ -134,6 +134,13 @@
       "when": 1793244087712,
       "tag": "20261029032127_drop-legacy-scope-tables",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1793851785604,
+      "tag": "20261105040945_add-almond-template-categories",
+      "breakpoints": true
     }
   ]
 }

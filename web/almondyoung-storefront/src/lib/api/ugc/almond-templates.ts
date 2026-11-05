@@ -6,6 +6,7 @@ import {
   AdminAlmondTemplateDetailDto,
   AdminAlmondTemplateSummaryDto,
   AlmondTemplateDetailDto,
+  AlmondTemplateCategoryDto,
   AlmondTemplateStatus,
   AlmondTemplateSummaryDto,
   UpsertAlmondTemplateDto,
@@ -38,6 +39,16 @@ export const listAlmondTemplates = async (): Promise<
     thumbnail: almondTemplateThumbnailUrl(item.id, item.updatedAt),
   }))
 }
+
+// 어드민(admin-web)에서 고쳐도 여기 캐시를 비울 수 없어 매번 받는다. 몇 줄짜리 목록이다
+export const listAlmondTemplateCategories = async (): Promise<
+  AlmondTemplateCategoryDto[]
+> =>
+  await api("ugc", `/almond-template-categories`, {
+    method: "GET",
+    withAuth: false,
+    cache: "no-store",
+  })
 
 export const getAlmondTemplate = async (
   id: string

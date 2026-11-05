@@ -917,6 +917,26 @@ export interface AdminAlmondTemplateDto {
   updatedAt: string;
 }
 
+/** ugc `GET /admin/almond-template-categories` 한 줄 */
+export interface AlmondTemplateCategoryDto {
+  id: string;
+  name: string;
+  description: string | null;
+  imageFileId: string;
+  kind: string;
+  sortOrder: number;
+  isVisible: boolean;
+  updatedAt: string;
+}
+
+export interface UpsertAlmondTemplateCategoryDto {
+  name: string;
+  description: string | null;
+  imageFileId: string;
+  kind: string;
+  isVisible: boolean;
+}
+
 // ===== 태그 그룹 관련 =====
 
 export interface CreateTagGroupDto {

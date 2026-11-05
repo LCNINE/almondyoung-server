@@ -704,6 +704,25 @@ export const almondFonts = pgTable(
   ],
 );
 
+export const almondTemplateCategories = pgTable(
+  'almond_template_categories',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    name: varchar('name', { length: 40 }).notNull(),
+    description: varchar('description', { length: 80 }),
+    imageFileId: uuid('image_file_id').notNull(),
+    kind: varchar('kind', { length: 20 }).notNull(),
+    sortOrder: integer('sort_order').notNull().default(0),
+    isVisible: boolean('is_visible').notNull().default(true),
+    createdBy: uuid('created_by').notNull(),
+    updatedBy: uuid('updated_by'),
+    deletedAt: timestamp('deleted_at'),
+    deletedBy: uuid('deleted_by'),
+    ...timestampColumns,
+  },
+  (table) => [index('almond_template_categories_sort').on(table.sortOrder)],
+);
+
 export const purchaseSatisfactions = pgTable(
   'purchase_satisfactions',
   {

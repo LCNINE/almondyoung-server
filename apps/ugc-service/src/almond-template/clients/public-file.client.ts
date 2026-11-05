@@ -33,6 +33,19 @@ export class PublicFileClient {
     return `data:${mime};base64,${bytes.toString('base64')}`;
   }
 
+  // 카드 이미지로 쓸 수 없는 파일이면 null 이다
+  async fetchImageMime(fileId: string): Promise<string | null> {
+    const bytes = await this.fetchPublic(
+      fileId,
+      ['이미지를', '이미지가'],
+      ALMOND_PRINT_MAX_IMAGE_BYTES,
+      ALMOND_PRINT_IMAGE_FETCH_TIMEOUT_MS,
+    );
+    const mime = sniffImageMime(bytes);
+
+    return mime === 'image/svg+xml' ? null : mime;
+  }
+
   // 글꼴이 아니면 format 이 null 이다. 등록은 400, 인쇄는 실패로 다르게 다룬다
   async fetchFont(fileId: string): Promise<{ bytes: Buffer; format: AlmondFontFormat | null }> {
     const bytes = await this.fetchPublic(

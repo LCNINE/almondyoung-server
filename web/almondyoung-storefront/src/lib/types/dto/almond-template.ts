@@ -15,6 +15,17 @@ export interface AlmondTemplateSummaryDto {
   updatedAt: string
 }
 
+export interface AlmondTemplateCategoryDto {
+  id: string
+  name: string
+  description: string | null
+  imageFileId: string
+  kind: string
+  sortOrder: number
+  isVisible: boolean
+  updatedAt: string
+}
+
 export interface AlmondTemplateDetailDto extends AlmondTemplateSummaryDto {
   design: AlmondTemplateDesignDto
 }
