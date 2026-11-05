@@ -28,10 +28,14 @@ import {
   usePublishProductVersion,
 } from '@/lib/services/products/mutations';
 import { productQueryKeys } from '@/lib/services/products/query-keys';
+import { useVersionPricingRules } from '@/lib/services/products/queries';
+import { ShellLink } from '@/components/layout/tenant-shell/shell-link';
 import { useProductDetailSuspense } from '@/lib/services/products/use-product-detail';
 import {
   formatVersionLifecycleError,
+  getPublishGaps,
   getVersionLifecycleActions,
+  PUBLISH_GAP_LABELS,
   getVersionLifecycleDeleteSuccessHref,
   type VersionLifecycleError,
 } from './version-lifecycle-actions-model';
@@ -50,10 +54,19 @@ export function VersionLifecycleActions({ masterId, versionId }: Props) {
   const deleteDraft = useDeleteDraftProductVersion();
   const [error, setError] = useState<VersionLifecycleError | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
+  const [gapsOpen, setGapsOpen] = useState(false);
   const { canRun } = usePermissionCheck();
   const showPublish = actions.canPublish && canRun(usePublishProductVersion);
   const showDeleteDraft =
     actions.canDeleteDraft && canRun(useDeleteDraftProductVersion);
+  // 발행 전 «빠진 것» — 막지는 않고 한 번 확인받는다. 규칙을 못 읽었으면 «확인 못 함»으로 보인다.
+  const pricingRules = useVersionPricingRules(showPublish ? (data.versionId ?? '') : '');
+  const publishGaps = getPublishGaps({
+    basePriceRuleCount: pricingRules.isSuccess
+      ? pricingRules.data.basePriceRules.length
+      : null,
+    images: data.images,
+  });
 
   // 세션 API 는 소유자 스코프라 남의 세션은 404/403 이다. 링크를 무조건 걸어놓고
   // 눌렀을 때 404 로 보내는 것보다, 조회해 보고 없으면 링크를 안 거는 편이 정직하다.
@@ -80,8 +93,14 @@ export function VersionLifecycleActions({ masterId, versionId }: Props) {
 
   const isBusy = publish.isPending || deleteDraft.isPending;
 
+  const requestPublish = () => {
+    if (publishGaps.length > 0) setGapsOpen(true);
+    else handlePublish();
+  };
+
   const handlePublish = () => {
     if (!data.versionId || publish.isPending) return;
+    setGapsOpen(false);
     setError(null);
     publish.mutate(
       { masterId, versionId: data.versionId },
@@ -167,14 +186,54 @@ export function VersionLifecycleActions({ masterId, versionId }: Props) {
 
         <div className="flex flex-wrap items-center gap-2">
           {showPublish && (
-            <Button onClick={handlePublish} disabled={isBusy}>
-              {publish.isPending ? (
-                <Spinner size="sm" data-icon="inline-start" />
-              ) : (
-                <Rocket data-icon="inline-start" />
-              )}
-              Version 발행
-            </Button>
+            <AlertDialog open={gapsOpen} onOpenChange={setGapsOpen}>
+              <Button
+                onClick={requestPublish}
+                disabled={isBusy || pricingRules.isLoading}
+              >
+                {publish.isPending ? (
+                  <Spinner size="sm" data-icon="inline-start" />
+                ) : (
+                  <Rocket data-icon="inline-start" />
+                )}
+                Version 발행
+              </Button>
+              <AlertDialogContent>
+                <AlertDialogHeader>
+                  <AlertDialogTitle>빠진 것이 있습니다. 그래도 발행할까요?</AlertDialogTitle>
+                  <AlertDialogDescription asChild>
+                    <div className="flex flex-col gap-2">
+                      <ul className="flex list-disc flex-col gap-1 pl-4">
+                        {publishGaps.map((gap) => (
+                          <li key={gap}>{PUBLISH_GAP_LABELS[gap]}</li>
+                        ))}
+                      </ul>
+                      {publishGaps.some((gap) => gap !== 'image') && data.versionId && (
+                        <ShellLink
+                          href={`/mall/pricing/${masterId}?versionId=${data.versionId}`}
+                          className="underline"
+                        >
+                          가격 관리에서 판매가 정하기
+                        </ShellLink>
+                      )}
+                    </div>
+                  </AlertDialogDescription>
+                </AlertDialogHeader>
+                <AlertDialogFooter>
+                  <AlertDialogCancel disabled={publish.isPending}>취소</AlertDialogCancel>
+                  <AlertDialogAction
+                    disabled={publish.isPending}
+                    onClick={(event) => {
+                      event.preventDefault();
+                      handlePublish();
+                    }}
+                  >
+                    {publish.isPending && <Spinner size="sm" />}
+                    그래도 발행
+                  </AlertDialogAction>
+                </AlertDialogFooter>
+              </AlertDialogContent>
+            </AlertDialog>
           )}
 
           {showDeleteDraft && (
