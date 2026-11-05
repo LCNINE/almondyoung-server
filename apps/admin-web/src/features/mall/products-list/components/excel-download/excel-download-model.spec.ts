@@ -26,6 +26,13 @@ describe('엑셀 내보내기 모델', () => {
       });
     });
 
+    it('목록이 URL 에 남긴 기간(createdAt JSON)을 KST 하루 경계 시각으로 옮긴다 — 화면과 파일의 기간이 같다', () => {
+      const createdAt = encodeURIComponent(JSON.stringify({ $gte: '2026-11-03', $lte: '2026-11-03' }));
+      const f = toExportFilters(params(`createdAt=${createdAt}`));
+      expect(f.createdFrom).toBe('2026-11-03T00:00:00.000+09:00');
+      expect(f.createdTo).toBe('2026-11-03T23:59:59.999+09:00');
+    });
+
     it('supplierId 콤마 문자열을 배열로 바꾼다', () => {
       expect(toExportFilters(params('supplierId=a,b,c')).supplierId).toEqual([
         'a',
