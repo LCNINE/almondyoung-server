@@ -1,7 +1,10 @@
 // src/lib/api/domains/products/index.ts
 // Products 도메인 통합 클라이언트
 
-import { almondTemplatesClient } from './almond-templates.client';
+import {
+  almondTemplateCategoriesClient,
+  almondTemplatesClient,
+} from './almond-templates.client';
 import { auditClient } from './audit.client';
 import { bannerGroupsClient } from './banner-groups.client';
 import { bannersClient } from './banners.client';
@@ -29,6 +32,7 @@ export const products = {
   notices: noticesClient,
   shopListings: shopListingsClient,
   almondTemplates: almondTemplatesClient,
+  almondTemplateCategories: almondTemplateCategoriesClient,
   sitePopups: sitePopupsClient,
   tags: tagsClient,
   pricing: pricingClient,

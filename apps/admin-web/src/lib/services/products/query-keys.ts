@@ -98,6 +98,7 @@ export const productQueryKeys = {
   shopListing: (id: string) => [...productQueryKeys.shopListings, id] as const,
 
   almondTemplates: ['almond-templates'] as const,
+  almondTemplateCategories: ['almond-template-categories'] as const,
 
   sitePopups: ['site-popups'] as const,
   sitePopupsList: <T extends object>(query: T) =>
