@@ -1,5 +1,3 @@
-export const ALMOND_TEMPLATES_TAG = "almond-templates"
-
 export type AlmondTemplateStatus = "draft" | "published"
 
 export type AlmondTemplateDesignDto = Record<string, unknown>
