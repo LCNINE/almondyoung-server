@@ -8,7 +8,7 @@ import {
   type SetStateAction,
 } from "react"
 import { updateLayer, type Design, type Layer } from "../lib/document"
-import { makeLayer, mm, pxUnit } from "../lib/layer"
+import { makeLayer, MIN_LAYER_MM, mm, pxUnit } from "../lib/layer"
 import { lineFromPoints } from "../lib/line-shape"
 import { DRAW_ART } from "../lib/draw-art"
 import {
@@ -314,7 +314,7 @@ export function usePenTool({
       const height = dragged
         ? hand
           ? square
-          : Math.max(1, Math.abs(to.y - from.y))
+          : Math.max(MIN_LAYER_MM, Math.abs(to.y - from.y))
         : fallback
       const layer: Layer = {
         ...makeLayer("rect", design),
@@ -327,8 +327,8 @@ export function usePenTool({
         opacity: shapeSetting.opacity / 100,
         x: mm(dragged ? Math.min(from.x, to.x) : from.x - width / 2),
         y: mm(dragged ? Math.min(from.y, to.y) : from.y - height / 2),
-        width: mm(Math.min(maxW, Math.max(1, width))),
-        height: mm(Math.min(maxH, height)),
+        width: mm(Math.min(maxW, Math.max(MIN_LAYER_MM, width))),
+        height: mm(Math.min(maxH, Math.max(MIN_LAYER_MM, height))),
       }
       change({ ...design, [side]: [...design[side], layer] })
       return setSelectedId(layer.id)
@@ -371,8 +371,8 @@ export function usePenTool({
             text: undefined,
             x: mm(Math.min(from.x, to.x)),
             y: mm(Math.min(from.y, to.y)),
-            width: mm(Math.abs(to.x - from.x)),
-            height: mm(Math.abs(to.y - from.y)),
+            width: mm(Math.max(MIN_LAYER_MM, Math.abs(to.x - from.x))),
+            height: mm(Math.max(MIN_LAYER_MM, Math.abs(to.y - from.y))),
           }
     change({ ...design, [side]: [...design[side], layer] })
     setSelectedId(layer.id)

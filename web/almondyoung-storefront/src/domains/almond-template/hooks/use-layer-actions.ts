@@ -4,6 +4,7 @@ import { newDesign, type Design, type Layer } from "../lib/document"
 import {
   isAutoTextName,
   makeLayer,
+  MIN_LAYER_MM,
   mm,
   replaceEverywhere,
   textLayerName,
@@ -242,12 +243,14 @@ export function useLayerActions({
   }
   const setGeometry = (field: "x" | "y" | "width" | "height", raw: number) => {
     if (!selected || !Number.isFinite(raw)) return
+
     const limit =
       field === "x" || field === "width" ? design.widthMm : design.heightMm
     const value = Math.max(
-      field === "width" || field === "height" ? 1 : -limit,
+      field === "width" || field === "height" ? MIN_LAYER_MM : -limit,
       Math.min(raw, limit * 2)
     )
+
     if (field === "x" || field === "y")
       return patch(selected.id, { [field]: value })
 

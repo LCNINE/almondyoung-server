@@ -19,6 +19,8 @@ import {
   cropToBox,
   layerBounds,
   panCrop,
+  panPhoto,
+  photoEditOffsets,
   scaleIntoBox,
   snapBox,
   unionBounds,
@@ -37,6 +39,7 @@ type Params = {
   setSelectedId: (id: string | null) => void
   groupIds: string[]
   setGroupIds: (ids: string[]) => void
+  photoEditId: string | null
   cropId: string | null
   selectedId: string | null
   // 빈 곳을 눌렀다 뗐을 때(끌지 않고). 종이 안이면 true
@@ -58,6 +61,7 @@ export function useCanvasInteraction({
   groupIds,
   setGroupIds,
   cropId,
+  photoEditId,
   selectedId,
   onPaperClick,
 }: Params) {
@@ -70,6 +74,7 @@ export function useCanvasInteraction({
     x: number
     y: number
     layer: Layer
+    photo?: boolean
     handle?: string
     rotationStart?: number
     moved?: boolean
@@ -197,6 +202,13 @@ export function useCanvasInteraction({
   }
   const startDrag = (event: React.PointerEvent<SVGGElement>, layer: Layer) => {
     event.stopPropagation()
+    if (photoEditId === layer.id && movable(layer)) {
+      dragRef.current = { ...point(event), layer, photo: true }
+      svgRef.current?.setPointerCapture(event.pointerId)
+
+      return
+    }
+
     if (event.shiftKey) {
       // Shift+클릭으로 하나씩 더하거나 뺀다
       const base = groupIds.length ? groupIds : selectedId ? [selectedId] : []
@@ -323,6 +335,22 @@ export function useCanvasInteraction({
     )
       return
     dragRef.current.moved = true
+    if (dragRef.current.photo) {
+      // 옛 배치의 전환도 첫 드래그에 묶고, undo에는 변환 전 레이어를 남긴다.
+      const offsets = layer.crop
+        ? { imageOffsetMode: "cover" as const }
+        : photoEditOffsets(layer)
+
+      setDesign((old) =>
+        updateLayer(old, side, layer.id, {
+          ...offsets,
+          ...panPhoto({ ...layer, ...offsets }, p.x - x, p.y - y),
+        })
+      )
+
+      return
+    }
+
     if (group && handle && groupBox) {
       const fake = {
         ...layer,
@@ -582,6 +610,12 @@ export function useCanvasInteraction({
       ),
     })
   }
+  useEffect(() => {
+    if (dragRef.current?.photo && dragRef.current.layer.id !== photoEditId) {
+      endDrag()
+    }
+  }, [photoEditId])
+
   const canvasFit = Math.max(
     0.01,
     Math.min(

@@ -31,6 +31,7 @@ import type { PropertyPanelState } from "../../hooks/use-property-panel"
 import { LayerStyleControls } from "./layer-style-controls"
 import { ObjectPropertiesMore } from "./object-properties-more"
 import { shapeOutline } from "../../lib/path-shape"
+import { scalePhoto } from "../../lib/canvas-math"
 import {
   FontSelect,
   StarControls,
@@ -98,8 +99,17 @@ function ShapePhoto({
   editor: AlmondEditor
   selected: Layer
 }) {
-  const { patch, editable, imageFile } = editor
+  const {
+    patch,
+    editable,
+    imageFile,
+    photoEditId,
+    startPhotoEdit,
+    setPhotoEditId,
+  } = editor
+  const photoEditing = photoEditId === selected.id
   const fileRef = useRef<HTMLInputElement>(null)
+
   return (
     <PropSection className="space-y-[15px] py-5">
       <div className="flex gap-[10px]">
@@ -113,11 +123,22 @@ function ShapePhoto({
           <GrayButton
             disabled={!editable}
             onClick={() =>
+              photoEditing ? setPhotoEditId(null) : startPhotoEdit()
+            }
+          >
+            {photoEditing ? "완료" : "사진 수정"}
+          </GrayButton>
+        )}
+        {selected.image && (
+          <GrayButton
+            disabled={!editable}
+            onClick={() =>
               patch(selected.id, {
                 image: undefined,
                 pixelWidth: undefined,
                 pixelHeight: undefined,
                 originalImage: undefined,
+                imageOffsetMode: undefined,
                 imageScale: undefined,
                 imageOffsetX: undefined,
                 imageOffsetY: undefined,
@@ -139,27 +160,24 @@ function ShapePhoto({
           if (file) void imageFile(file, "frame")
         }}
       />
-      {selected.image &&
-        (
-          [
-            ["imageScale", "사진 확대", 100, 300, 1],
-            ["imageOffsetX", "가로 위치", 0, 100, 1],
-            ["imageOffsetY", "세로 위치", 0, 100, 1],
-          ] as const
-        ).map(([field, label, min, max, step]) => (
-          <PropSlider
-            key={field}
-            label={label}
-            min={min}
-            max={max}
-            step={step}
-            value={Math.round(
-              (selected[field] ?? (field === "imageScale" ? 1 : 0.5)) * 100
-            )}
-            disabled={!editable}
-            onValue={(value) => patch(selected.id, { [field]: value / 100 })}
-          />
-        ))}
+      {photoEditing && (
+        <p role="status" className="text-muted-foreground text-xs">
+          사진을 끌어서 위치를 옮기세요. 더 옮기려면 확대를 올리세요.
+        </p>
+      )}
+      {selected.image && (
+        <PropSlider
+          label="사진 확대"
+          min={100}
+          max={300}
+          step={1}
+          value={Math.round((selected.imageScale ?? 1) * 100)}
+          disabled={!editable}
+          onValue={(value) =>
+            patch(selected.id, scalePhoto(selected, value / 100))
+          }
+        />
+      )}
     </PropSection>
   )
 }

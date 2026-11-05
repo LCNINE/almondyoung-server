@@ -3,6 +3,7 @@ import { PhotoEffectControls } from "./photo-effect-controls"
 import { useRef } from "react"
 import { Link, Unlink, Crop, Eraser } from "lucide-react"
 import type { Layer } from "../../lib/document"
+import { MIN_LAYER_MM } from "../../lib/layer"
 import { GrayButton } from "./object-properties"
 import { PrintColorPicker } from "../color-picker"
 import {
@@ -74,8 +75,8 @@ export function ImageProperties({
         <NumberBox
           label="너비"
           value={selected.width}
-          step={0.5}
-          min={1}
+          step={0.1}
+          min={MIN_LAYER_MM}
           width={82}
           disabled={disabled}
           onValue={(value) => setImageSize("width", value)}
@@ -92,8 +93,8 @@ export function ImageProperties({
         <NumberBox
           label="높이"
           value={selected.height}
-          step={0.5}
-          min={1}
+          step={0.1}
+          min={MIN_LAYER_MM}
           width={82}
           disabled={disabled}
           onValue={(value) => setImageSize("height", value)}

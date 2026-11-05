@@ -4,6 +4,7 @@ import type { AlmondEditor } from "../../hooks/use-almond-editor"
 import type { RefObject } from "react"
 import type { PropertyPanelState } from "../../hooks/use-property-panel"
 import { useImageSrc } from "../../lib/image-previews"
+import { scalePhoto } from "../../lib/canvas-math"
 
 export function FrameOptions({
   editor,
@@ -18,7 +19,9 @@ export function FrameOptions({
 }) {
   const imageSrc = useImageSrc()
   const { setMessage, patch, editable, imageFile, applyImageFilter } = editor
+  const photoEditing = editor.photoEditId === selected.id
   const { brightnessOpen, setBrightnessOpen, brightness, setBrightness } = panel
+
   return (
     <>
       {selected.type === "frame" && (
@@ -72,31 +75,41 @@ export function FrameOptions({
       {selected.type === "frame" && selected.image && (
         <div className="space-y-2 border-t pt-3">
           <p className="font-semibold">자르기</p>
-          {(
-            [
-              ["imageScale", "확대", 1, 3, 0.1],
-              ["imageOffsetX", "가로 위치", 0, 1, 0.05],
-              ["imageOffsetY", "세로 위치", 0, 1, 0.05],
-            ] as const
-          ).map(([field, label, min, max, step]) => (
-            <label key={field} className="block">
-              {label}
-              <input
-                type="range"
-                min={min}
-                max={max}
-                step={step}
-                className="w-full"
-                value={selected[field] ?? (field === "imageScale" ? 1 : 0.5)}
-                disabled={!editable}
-                onChange={(e) =>
-                  patch(selected.id, {
-                    [field]: Number(e.target.value),
-                  })
-                }
-              />
-            </label>
-          ))}
+          <button
+            type="button"
+            disabled={!editable}
+            className="border-border w-full rounded-lg border p-2 disabled:opacity-40"
+            onClick={() =>
+              photoEditing
+                ? editor.setPhotoEditId(null)
+                : editor.startPhotoEdit()
+            }
+          >
+            {photoEditing ? "완료" : "사진 수정"}
+          </button>
+          {photoEditing && (
+            <p role="status" className="text-muted-foreground text-xs">
+              사진을 끌어서 위치를 옮기세요. 더 옮기려면 확대를 올리세요.
+            </p>
+          )}
+          <label className="block">
+            확대
+            <input
+              type="range"
+              min={1}
+              max={3}
+              step={0.1}
+              className="w-full"
+              value={selected.imageScale ?? 1}
+              disabled={!editable}
+              onChange={(event) =>
+                patch(
+                  selected.id,
+                  scalePhoto(selected, Number(event.target.value))
+                )
+              }
+            />
+          </label>
         </div>
       )}
       {selected.type === "frame" && selected.image && (

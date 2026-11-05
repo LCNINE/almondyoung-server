@@ -3,6 +3,7 @@ import { PrintColorPicker } from "../../color-picker"
 import type { AlmondEditor } from "../../../hooks/use-almond-editor"
 import { sideBackground, withSideBackground } from "../../../lib/document"
 import { GrayButton } from "../object-properties"
+import { PropSlider } from "../prop-sections"
 import { ColorFilterFields } from "../layer-style-controls"
 
 export function BackgroundPanel({ editor }: { editor: AlmondEditor }) {
@@ -16,6 +17,7 @@ export function BackgroundPanel({ editor }: { editor: AlmondEditor }) {
   } = editor
   const bg = sideBackground(design, side)
   const backgroundInputRef = useRef<HTMLInputElement>(null)
+
   return (
     <>
       <PrintColorPicker
@@ -55,6 +57,21 @@ export function BackgroundPanel({ editor }: { editor: AlmondEditor }) {
             onChange={(backgroundFilter) =>
               change(
                 withSideBackground(design, side, { ...bg, backgroundFilter })
+              )
+            }
+          />
+          <PropSlider
+            label="블러"
+            min={0}
+            max={100}
+            value={bg.backgroundBlur ?? 0}
+            disabled={false}
+            onValue={(backgroundBlur) =>
+              change(
+                withSideBackground(design, side, {
+                  ...bg,
+                  backgroundBlur: backgroundBlur || undefined,
+                })
               )
             }
           />

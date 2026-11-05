@@ -1,5 +1,5 @@
 import type { Layer } from "./document"
-import { mm } from "./layer"
+import { MIN_LAYER_MM, mm } from "./layer"
 import { photoBox } from "../components/graphic"
 
 export type Box = { x0: number; y0: number; x1: number; y1: number }
@@ -89,11 +89,93 @@ export function snapBox(
 export function scaleIntoBox(layer: Layer, from: Box, to: Box) {
   const sx = (to.x1 - to.x0) / Math.max(from.x1 - from.x0, 1e-6)
   const sy = (to.y1 - to.y0) / Math.max(from.y1 - from.y0, 1e-6)
+
   return {
     x: mm(to.x0 + (layer.x - from.x0) * sx),
     y: mm(to.y0 + (layer.y - from.y0) * sy),
-    width: Math.max(1, mm(layer.width * sx)),
-    height: Math.max(1, mm(layer.height * sy)),
+    width: Math.max(MIN_LAYER_MM, mm(layer.width * sx)),
+    height: Math.max(MIN_LAYER_MM, mm(layer.height * sy)),
+  }
+}
+
+// 옛 SVG의 slice 내부에서 잘린 여백까지 offset에 반영해, 첫 수정 때 사진 위치를 보존한다.
+export function photoEditOffsets(layer: Layer) {
+  const before = photoBox(layer)
+  const full = photoBox({ ...layer, imageOffsetMode: "cover" })
+  const offset = (
+    value: number,
+    shift: number,
+    extra: number,
+    overflow: number
+  ) =>
+    layer.imageOffsetMode === "cover" || overflow <= 1e-6
+      ? value
+      : Math.max(0, Math.min(1, (shift + extra / 2) / overflow))
+
+  return {
+    imageOffsetMode: "cover" as const,
+    imageOffsetX: offset(
+      layer.imageOffsetX ?? 0.5,
+      layer.x - before.x,
+      full.width - before.width,
+      full.width - layer.width
+    ),
+    imageOffsetY: offset(
+      layer.imageOffsetY ?? 0.5,
+      layer.y - before.y,
+      full.height - before.height,
+      full.height - layer.height
+    ),
+  }
+}
+
+export function panPhoto(layer: Layer, dx: number, dy: number): Partial<Layer> {
+  const photo = photoBox(layer)
+  const rad = ((layer.rotation ?? 0) * Math.PI) / 180
+  const localDx =
+    (dx * Math.cos(rad) + dy * Math.sin(rad)) * (layer.flipX ? -1 : 1)
+  const localDy =
+    (-dx * Math.sin(rad) + dy * Math.cos(rad)) * (layer.flipY ? -1 : 1)
+
+  if (layer.crop) return panCrop(layer, localDx, localDy)
+
+  const offset = (value: number, delta: number, overflow: number) =>
+    overflow > 1e-6 ? Math.max(0, Math.min(1, value - delta / overflow)) : value
+
+  return {
+    imageOffsetX: offset(
+      layer.imageOffsetX ?? 0.5,
+      localDx,
+      photo.width - layer.width
+    ),
+    imageOffsetY: offset(
+      layer.imageOffsetY ?? 0.5,
+      localDy,
+      photo.height - layer.height
+    ),
+  }
+}
+
+export function scalePhoto(layer: Layer, imageScale: number): Partial<Layer> {
+  if (!layer.crop) return { ...photoEditOffsets(layer), imageScale }
+
+  const crop = layer.crop
+  const ratio = Math.min(
+    (layer.imageScale ?? 1) / imageScale,
+    1 / Math.max(crop.w, crop.h)
+  )
+  const w = crop.w * ratio
+  const h = crop.h * ratio
+
+  return {
+    imageOffsetMode: "cover",
+    imageScale,
+    crop: {
+      x: Math.max(0, Math.min(1 - w, crop.x + (crop.w - w) / 2)),
+      y: Math.max(0, Math.min(1 - h, crop.y + (crop.h - h) / 2)),
+      w,
+      h,
+    },
   }
 }
 
@@ -138,7 +220,10 @@ export function cropToBox(
     Math.floor(
       Math.min(box.y + box.height, photo.y + photo.height) * 10 + 1e-6
     ) / 10
-  if (right - left < 1 || bottom - top < 1) return {}
+  if (mm(right - left) < MIN_LAYER_MM || mm(bottom - top) < MIN_LAYER_MM) {
+    return {}
+  }
+
   return {
     x: left,
     y: top,

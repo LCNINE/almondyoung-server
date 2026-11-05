@@ -15,11 +15,53 @@ import {
   resizeLayerFromHandle,
   sideBackground,
   updateLayer,
+  unfiltered,
   withProduct,
   withSideBackground,
 } from "./document"
 
 const CARD_PRODUCT = "6c2b7437-7c72-4685-a72c-0cd18f9d7bfb"
+
+describe("질감 설정 저장", () => {
+  const design = newDesign("card")
+  const layer = { ...makeLayer("rect", design), texture: true }
+
+  it("새 필드가 없는 옛 문서를 그대로 읽는다", () => {
+    const legacy = { ...design, front: [layer] }
+
+    expect(parseDesign(legacy)).toEqual(legacy)
+  })
+
+  it.each(["grain", "paper"])(
+    "%s 종류와 강도를 양면에 저장한다",
+    (textureKind) => {
+      for (const textureAmount of [1, 40, 100]) {
+        const textured = { ...layer, textureKind, textureAmount }
+        const saved = { ...design, front: [textured], back: [textured] }
+
+        expect(parseDesign(JSON.parse(JSON.stringify(saved)))).toEqual(saved)
+      }
+    }
+  )
+
+  it.each([
+    { textureKind: "noise" },
+    { textureKind: null },
+    { textureKind: 1 },
+    ...[0, -1, 101, NaN, Infinity, "40", null].map((textureAmount) => ({
+      textureAmount,
+    })),
+  ])("잘못된 질감 설정 %j는 꺼져 있어도 거부한다", (patch) => {
+    for (const side of ["front", "back"]) {
+      expect(() =>
+        parseDesign({
+          ...design,
+          [side]: [{ ...layer, texture: false, ...patch }],
+        })
+      ).toThrow()
+    }
+  })
+})
 
 describe("작업 상품 지정", () => {
   it("상품을 고르지 않은 새 시안은 저장 대상 상품이 없다", () => {
@@ -214,6 +256,101 @@ describe("아몬드템플릿", () => {
     expect(printWarnings(design).join("\n")).toContain(
       "권장 350dpi보다 낮아 흐리게 인쇄될 수 있습니다."
     )
+  })
+
+  it.each([
+    [0.3, 0.3],
+    [0.05, 0.1],
+  ])("모든 손잡이에서 %smm 축소를 %smm로 제한한다", (size, expected) => {
+    const layer = {
+      ...makeLayer("rect", newDesign("card")),
+      x: 10,
+      y: 10,
+      width: 1,
+      height: 1,
+    }
+
+    for (const keepRatio of [false, true]) {
+      for (const handle of ["n", "ne", "e", "se", "s", "sw", "w", "nw"]) {
+        const dx = handle.includes("w") ? 1 - size : size - 1
+        const dy = handle.includes("n") ? 1 - size : size - 1
+        const resized = resizeLayerFromHandle(
+          layer,
+          handle,
+          dx,
+          dy,
+          90,
+          50,
+          keepRatio
+        )
+
+        expect(resized.width).toBe(
+          keepRatio || handle.includes("e") || handle.includes("w")
+            ? expected
+            : 1
+        )
+        expect(resized.height).toBe(
+          keepRatio || handle.includes("n") || handle.includes("s")
+            ? expected
+            : 1
+        )
+
+        if (handle.includes("w")) {
+          expect(resized.x! + resized.width!).toBeCloseTo(11)
+        }
+
+        if (handle.includes("n")) {
+          expect(resized.y! + resized.height!).toBeCloseTo(11)
+        }
+      }
+    }
+  })
+
+  it.each(["e", "w", "n", "s"])(
+    "기존 작은 레이어의 %s 손잡이를 움직여도 양 축이 저장 가능한 크기다",
+    (handle) => {
+      const design = newDesign("card")
+      const layer = {
+        ...makeLayer("rect", design),
+        x: 10,
+        y: 10,
+        width: 0.01,
+        height: 0.01,
+      }
+      const loaded = parseDesign({ ...design, front: [layer] })
+
+      expect(loaded.front[0]).toMatchObject({ width: 0.01, height: 0.01 })
+
+      const resized = resizeLayerFromHandle(
+        loaded.front[0],
+        handle,
+        handle === "w" ? -1 : handle === "e" ? 1 : 0,
+        handle === "n" ? -1 : handle === "s" ? 1 : 0,
+        design.widthMm,
+        design.heightMm
+      )
+      const next = { ...loaded, front: [{ ...layer, ...resized }] }
+      const horizontal = handle === "e" || handle === "w"
+
+      expect(resized).toMatchObject({
+        width: horizontal ? 1 : 0.1,
+        height: horizontal ? 0.1 : 1,
+      })
+      expect(parseDesign(next)).toEqual(next)
+    }
+  )
+
+  it("규격 축소 시 작은 레이어가 0mm가 되지 않고 저장된다", () => {
+    const design = newDesign("pet")
+    const layer = { ...makeLayer("rect", design), width: 0.1, height: 0.1 }
+    design.front = [layer]
+    design.back = [{ ...layer, id: "back" }]
+
+    const resized = resizeDesign(design, 150, 300)
+
+    expect(resized.front[0]).toMatchObject({ width: 0.1, height: 0.1 })
+    expect(resized.back[0]).toMatchObject({ width: 0.1, height: 0.1 })
+    expect(parseDesign(resized)).toEqual(resized)
   })
 
   it("서쪽·북쪽 핸들로 크기를 바꿀 때 반대쪽 모서리를 고정한다", () => {
@@ -458,4 +595,139 @@ describe("색 입히기", () => {
       })
     ).toThrow()
   })
+})
+
+describe("독립 블러", () => {
+  it.each([0, 50, 100])(
+    "옛 블러 강도 %s를 양면 레이어와 배경에서 옮긴다",
+    (amount) => {
+      const base = newDesign("card")
+      const layer = makeLayer("rect", base)
+      const legacy = {
+        ...base,
+        backgroundFilter: { kind: "blur", amount },
+        backBackground: {
+          background: "#112233",
+          backgroundFilter: { kind: "blur", amount },
+        },
+        front: [{ ...layer, colorFilter: { kind: "blur", amount } }],
+        back: [{ ...layer, colorFilter: { kind: "blur", amount } }],
+      }
+      const loaded = parseDesign(legacy)
+
+      for (const side of ["front", "back"] as const) {
+        expect(loaded[side][0].blur).toBe(amount)
+        expect(loaded[side][0].colorFilter).toBeUndefined()
+        expect(sideBackground(loaded, side).backgroundBlur).toBe(amount)
+        expect(sideBackground(loaded, side).backgroundFilter).toBeUndefined()
+      }
+
+      expect(legacy.front[0].colorFilter.kind).toBe("blur")
+      expect(parseDesign(loaded)).toEqual(loaded)
+    }
+  )
+
+  it.each([0, 35, 100])("블러 %s와 색 필터를 함께 저장한다", (blur) => {
+    const base = newDesign("card")
+    const colorFilter = { kind: "grayscale" as const, amount: 70 }
+    const layer = { ...makeLayer("rect", base), colorFilter, blur }
+    const design = {
+      ...base,
+      backgroundFilter: colorFilter,
+      backgroundBlur: blur,
+      backBackground: {
+        background: "#ffffff",
+        backgroundFilter: colorFilter,
+        backgroundBlur: blur,
+      },
+      front: [layer],
+      back: [layer],
+    }
+
+    expect(parseDesign(JSON.parse(JSON.stringify(design)))).toEqual(design)
+  })
+
+  it.each([-1, 101, NaN, Infinity, "50", null])(
+    "잘못된 블러 %s를 거절한다",
+    (blur) => {
+      const base = newDesign("card")
+      const layer = makeLayer("rect", base)
+
+      for (const side of ["front", "back"] as const) {
+        expect(() =>
+          parseDesign({ ...base, [side]: [{ ...layer, blur }] })
+        ).toThrow()
+      }
+
+      expect(() => parseDesign({ ...base, backgroundBlur: blur })).toThrow()
+      expect(() =>
+        parseDesign({
+          ...base,
+          backBackground: { background: "#ffffff", backgroundBlur: blur },
+        })
+      ).toThrow()
+      expect(() =>
+        parseDesign({
+          ...base,
+          front: [{ ...layer, colorFilter: { kind: "blur", amount: blur } }],
+        })
+      ).toThrow()
+      expect(() =>
+        parseDesign({
+          ...base,
+          backgroundFilter: { kind: "blur", amount: blur },
+        })
+      ).toThrow()
+    }
+  )
+
+  it("면별 복사와 배경 초기화 및 필터 무효화에 블러를 포함한다", () => {
+    const design = {
+      ...newDesign("card"),
+      backgroundFilter: { kind: "grayscale" as const, amount: 60 },
+      backgroundBlur: 40,
+      backBackground: undefined,
+    }
+    const front = sideBackground(design, "front")
+    const back = withSideBackground(design, "back", {
+      ...front,
+      backgroundBlur: 80,
+    })
+
+    expect(sideBackground(design, "back").backgroundBlur).toBe(40)
+    expect(sideBackground(back, "front").backgroundBlur).toBe(40)
+    expect(sideBackground(back, "back").backgroundBlur).toBe(80)
+    expect(unfiltered(front).backgroundFilter).toBeUndefined()
+    expect(unfiltered(front).backgroundBlur).toBeUndefined()
+    expect(
+      withSideBackground(design, "front", { background: "#ffffff" })
+        .backgroundBlur
+    ).toBeUndefined()
+  })
+})
+
+describe("사진 위치 모드 저장", () => {
+  const design = newDesign("card")
+  const frame = makeLayer("frame", design)
+
+  it.each([undefined, "cover"])(
+    "%s 모드는 기존 문서와 함께 읽는다",
+    (imageOffsetMode) => {
+      const loaded = parseDesign({
+        ...design,
+        front: [{ ...frame, imageOffsetMode }],
+      })
+
+      expect(loaded.front[0].imageOffsetMode).toBe(imageOffsetMode)
+    }
+  )
+
+  it.each([null, "invalid", 1, true])(
+    "잘못된 모드 %s는 거부한다",
+    (imageOffsetMode) => {
+      expect(() =>
+        parseDesign({ ...design, front: [{ ...frame, imageOffsetMode }] })
+      ).toThrow()
+    }
+  )
 })

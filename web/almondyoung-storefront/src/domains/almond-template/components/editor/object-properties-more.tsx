@@ -1,6 +1,7 @@
 import { NumberInput } from "./number-input"
 import { RotateCcw } from "lucide-react"
 import type { Layer } from "../../lib/document"
+import { MIN_LAYER_MM } from "../../lib/layer"
 import type { AlmondEditor } from "../../hooks/use-almond-editor"
 import type { RefObject } from "react"
 import type { PropertyPanelState } from "../../hooks/use-property-panel"
@@ -113,7 +114,7 @@ export function ObjectPropertiesMore({
               className="mt-1 w-full rounded border p-2"
               min={
                 field === "width" || field === "height"
-                  ? 1
+                  ? MIN_LAYER_MM
                   : field === "x"
                     ? -design.widthMm
                     : -design.heightMm

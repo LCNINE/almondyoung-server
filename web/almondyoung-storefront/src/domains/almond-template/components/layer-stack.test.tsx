@@ -76,6 +76,29 @@ describe("레이어 꾸미기", () => {
     expect(html).toContain('mode="overlay"')
   })
 
+  it("블러만 있는 사진도 필터를 건다", () => {
+    const html = render([
+      { ...rect, type: "image", image: "data:image/png;base64,AA==", blur: 50 },
+    ])
+
+    expect(html).toContain('filter="url(#cf-box)"')
+    expect(html).toContain('<feGaussianBlur stdDeviation="2.25"')
+    expect(html).not.toContain("window-box")
+  })
+
+  it("도형 창에 블러와 흑백을 함께 건다", () => {
+    const html = render([
+      text,
+      { ...rect, blur: 50, colorFilter: { kind: "grayscale", amount: 100 } },
+    ])
+
+    expect(html).toContain('filter="url(#cf-window-box)"')
+    expect(html).toMatch(
+      /<filter id="cf-window-box"[^>]*><feGaussianBlur[^]*<feColorMatrix/
+    )
+    expect(html).not.toContain('filter="url(#cf-box)"')
+  })
+
   it("강도 0 필터는 필터를 걸지 않는다", () => {
     const html = render([
       { ...rect, colorFilter: { kind: "grayscale", amount: 0 } },
@@ -104,11 +127,7 @@ describe("레이어 꾸미기", () => {
     expect(() =>
       parseDesign(design({ ...rect, blendMode: "bogus" as never }))
     ).toThrow()
-    expect(() =>
-      parseDesign(
-        design({ ...rect, colorFilter: { kind: "blur", amount: 101 } })
-      )
-    ).toThrow()
+    expect(() => parseDesign(design({ ...rect, blur: 101 }))).toThrow()
     expect(() =>
       parseDesign(
         design({
@@ -124,8 +143,12 @@ describe("레이어 꾸미기", () => {
       <svg>
         <LayerStack
           layers={[
-            { ...text, colorFilter: { kind: "grayscale", amount: 100 } },
-            { ...top, id: "win", filterBypass: true },
+            {
+              ...text,
+              colorFilter: { kind: "grayscale", amount: 100 },
+              blur: 60,
+            },
+            { ...top, id: "win", filterBypass: true, blur: 80 },
           ]}
           backdrop={(filtered) => (
             <rect id={filtered ? "shown-bg" : "raw-bg"} />
@@ -138,6 +161,7 @@ describe("레이어 꾸미기", () => {
     expect(html).toContain('<mask id="bypass-win"')
     expect(window).toContain('id="raw-bg"')
     expect(window.indexOf("cf-word")).toBe(-1)
+    expect(window).not.toContain("feGaussianBlur")
     expect(html).toContain('filter="url(#cf-word)"')
   })
 
@@ -146,10 +170,7 @@ describe("레이어 꾸미기", () => {
     const html = renderToStaticMarkup(
       <svg>
         <LayerStack
-          layers={[
-            photo,
-            { ...top, id: "lens", colorFilter: { kind: "blur", amount: 80 } },
-          ]}
+          layers={[photo, { ...top, id: "lens", blur: 80 }]}
           backdrop={(filtered) => (
             <rect id={filtered ? "shown-bg" : "raw-bg"} />
           )}
@@ -186,7 +207,7 @@ describe("레이어 꾸미기", () => {
     const html = render([
       rect,
       { ...text, id: "a", knockout: true },
-      { ...top, id: "lens", colorFilter: { kind: "blur", amount: 50 } },
+      { ...top, id: "lens", blur: 50 },
       { ...text, id: "b", knockout: true },
     ])
 

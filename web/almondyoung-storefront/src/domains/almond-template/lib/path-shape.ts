@@ -1,4 +1,5 @@
 import type { Layer } from "./document"
+import { MIN_LAYER_MM } from "./layer"
 
 // 펜으로 그린 점. 좌표는 상자 기준 0~1 이라 상자를 늘리고 뒤집어도 그대로 따라온다.
 // ix/iy 는 이 점으로 들어오는 핸들, ox/oy 는 나가는 핸들 (핸들도 같은 좌표계)
@@ -371,13 +372,11 @@ function curveExtent(points: PathPoint[], closed: boolean) {
   }
 }
 
-export const MIN_PATH_BOX = 1
-
 // 실제 좌표의 점들을 곡선에 꼭 맞는 상자와 그 상자 기준 좌표로 바꾼다
 export function fitPath(points: PathPoint[], closed: boolean) {
   const e = curveExtent(points, closed)
-  const width = Math.max(MIN_PATH_BOX, e.x1 - e.x0)
-  const height = Math.max(MIN_PATH_BOX, e.y1 - e.y0)
+  const width = Math.max(MIN_LAYER_MM, e.x1 - e.x0)
+  const height = Math.max(MIN_LAYER_MM, e.y1 - e.y0)
   // 일직선처럼 폭이 거의 없는 쪽은 최소 상자 가운데에 놓는다
   const x = (e.x0 + e.x1) / 2 - width / 2
   const y = (e.y0 + e.y1) / 2 - height / 2

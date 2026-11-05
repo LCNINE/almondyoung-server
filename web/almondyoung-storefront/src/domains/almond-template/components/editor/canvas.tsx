@@ -423,6 +423,7 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
   } = editor
   const replaceImageRef = useRef<HTMLInputElement>(null)
   const cropping = !!selected && cropId === selected.id
+  const photoEditing = !!selected && editor.photoEditId === selected.id
   const cropFrameRef = useRef<SVGRectElement>(null)
   const groupBox = group.length > 1 ? unionBounds(group) : null
   const handles = [
@@ -550,11 +551,13 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
             onPointerUp={endDrag}
             onPointerCancel={endDrag}
             onDoubleClick={() =>
-              selected?.type === "image"
-                ? startCrop()
-                : selected?.type === "path"
-                  ? startPointEdit()
-                  : startTextEdit()
+              photoEditing
+                ? undefined
+                : selected?.type === "image"
+                  ? startCrop()
+                  : selected?.type === "path"
+                    ? startPointEdit()
+                    : startTextEdit()
             }
           >
             <defs>
@@ -577,6 +580,13 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
                   <g
                     key={layer.id}
                     onPointerDown={(event) => {
+                      if (photoEditing && layer.id === selected.id) {
+                        event.stopPropagation()
+                        startMarquee(event)
+
+                        return
+                      }
+
                       if (!eraserActive) return startDrag(event, layer)
                       // 지우개는 펜·형광펜으로 그린 획만 통째로 지운다
                       event.stopPropagation()
@@ -644,6 +654,25 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
                 id="selection-outline"
                 transform={`translate(${selected.x + selected.width / 2} ${selected.y + selected.height / 2}) rotate(${selected.rotation ?? 0}) scale(${selected.flipX ? -1 : 1} ${selected.flipY ? -1 : 1}) translate(${-selected.x - selected.width / 2} ${-selected.y - selected.height / 2})`}
               >
+                {photoEditing && selected.image && (
+                  <>
+                    <image
+                      href={imageSrc(selected.image)}
+                      {...photoBox(selected)}
+                      opacity={0.3}
+                      pointerEvents="none"
+                    />
+                    <rect
+                      x={selected.x}
+                      y={selected.y}
+                      width={selected.width}
+                      height={selected.height}
+                      fill="transparent"
+                      className="cursor-move"
+                      onPointerDown={(event) => startDrag(event, selected)}
+                    />
+                  </>
+                )}
                 {cropping &&
                   selected.image &&
                   (() => {
@@ -679,6 +708,7 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
                     )
                   })()}
                 {!cropping &&
+                  !photoEditing &&
                   editor.pinnedId === selected.id &&
                   selected.type !== "line" && (
                     // 레이어 패널에서 고른 레이어는 위에 겹친 레이어가 있어도 상자 안을 끌면 이 레이어가 움직인다
@@ -712,7 +742,7 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
                     pointerEvents="none"
                   />
                 )}
-                {(selected.type === "line" ? [] : handles).map(
+                {(selected.type === "line" || photoEditing ? [] : handles).map(
                   ([handle, rx, ry]) => (
                     <SelectionHandle
                       key={handle}
@@ -728,7 +758,7 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
                     />
                   )
                 )}
-                {!cropping && (
+                {!cropping && !photoEditing && (
                   <RotateHandle
                     x={selected.x + selected.width / 2}
                     y={selected.y}
@@ -903,7 +933,8 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
                 (mode === "designer" || selected.editable !== false))) &&
             !editing &&
             !pointEditLayer &&
-            !cropping && (
+            !cropping &&
+            !photoEditing && (
               <div
                 role="toolbar"
                 aria-label="선택 요소 빠른 작업"

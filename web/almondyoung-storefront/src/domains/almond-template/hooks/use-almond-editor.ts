@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react"
 import { PRINT_PRODUCTS, PRINT_SPECS } from "../lib/catalog"
 import {
   layerImageDpi,
+  SHAPE_TEXT_TYPES,
   updateLayer,
   newDesign,
   printIssues,
@@ -189,7 +190,9 @@ export function useAlmondEditor({
     !!selected?.image && layerImageDpi(design.kind, selected) < spec.minImageDpi
   const selectedPrintWarning = selectedOverPrintArea || selectedLowDpi
 
+  const [photoEditId, setPhotoEditId] = useState<string | null>(null)
   const [cropId, setCropId] = useState<string | null>(null)
+
   // ✕(취소)로 자르기 전 모습으로 되돌리려고, 자르기를 시작할 때의 자리·크기·자른 범위를 둔다
   const [cropBefore, setCropBefore] = useState<Pick<
     Layer,
@@ -292,6 +295,7 @@ export function useAlmondEditor({
     groupIds,
     setGroupIds,
     cropId,
+    photoEditId,
     selectedId,
     onPaperClick: (onPaper) => {
       const picked = onPaper && !!sideBackground(design, side).backgroundImage
@@ -352,6 +356,52 @@ export function useAlmondEditor({
     svgRef: canvas.svgRef,
     handleSize: canvas.handleSize,
   })
+
+  useEffect(() => {
+    if (
+      photoEditId &&
+      (selected?.id !== photoEditId ||
+        !selected.image ||
+        !actions.editable ||
+        selected.visible === false ||
+        pen.drawMode ||
+        pen.pointEditId)
+    ) {
+      setPhotoEditId(null)
+    }
+  }, [photoEditId, selected, actions.editable, pen.drawMode, pen.pointEditId])
+
+  useEffect(() => {
+    if (!photoEditId) return
+
+    const finish = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return
+
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      setPhotoEditId(null)
+    }
+
+    window.addEventListener("keydown", finish, true)
+
+    return () => window.removeEventListener("keydown", finish, true)
+  }, [photoEditId])
+
+  const startPhotoEdit = () => {
+    if (
+      !selected?.image ||
+      !actions.editable ||
+      (selected.type !== "frame" && !SHAPE_TEXT_TYPES.has(selected.type))
+    )
+      return
+
+    pen.stopDrawing()
+    pen.finishPointEdit()
+    setCropId(null)
+    setMoveMode(false)
+    setPhotoEditId(selected.id)
+  }
+
   const flipSelected = (axis: "x" | "y") =>
     actions.flipLayers(
       group.length > 1 ? group : selected ? [selected] : [],
@@ -540,6 +590,9 @@ export function useAlmondEditor({
     complete,
     warnings,
     openPreview,
+    photoEditId,
+    setPhotoEditId,
+    startPhotoEdit,
     cropId,
     setCropId,
     cancelCrop,

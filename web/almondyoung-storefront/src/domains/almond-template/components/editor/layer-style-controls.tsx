@@ -4,6 +4,7 @@ import {
   BLEND_MODES,
   COLORED_FILTERS,
   COLOR_FILTERS,
+  DEFAULT_DOT_SIZE,
   DEFAULT_FILTER_COLOR,
   DEFAULT_GRADIENT,
   type BlendMode,
@@ -57,7 +58,15 @@ export function LayerStyleControls({
         disabled={disabled}
         onChange={(colorFilter) => patch({ colorFilter })}
       />
-      {filter &&
+      <PropSlider
+        label="블러"
+        min={0}
+        max={100}
+        value={selected.blur ?? 0}
+        disabled={disabled}
+        onValue={(blur) => patch({ blur: blur || undefined })}
+      />
+      {(filter || (selected.blur ?? 0) > 0) &&
         SHAPE_TEXT_TYPES.has(selected.type) &&
         !selected.filterBypass && (
           <p className="text-[13px] leading-[19px] text-[#70777F]">
@@ -269,6 +278,16 @@ export function ColorFilterFields({
             disabled={disabled}
             onValue={(amount) => onChange({ ...value, amount })}
           />
+          {value.kind === "tone" && (
+            <PropSlider
+              label="망점 크기"
+              min={1}
+              max={100}
+              value={value.dotSize ?? DEFAULT_DOT_SIZE}
+              disabled={disabled}
+              onValue={(dotSize) => onChange({ ...value, dotSize })}
+            />
+          )}
           {COLORED_FILTERS.has(value.kind) && (
             <PrintColorPicker
               label="필터 색상"

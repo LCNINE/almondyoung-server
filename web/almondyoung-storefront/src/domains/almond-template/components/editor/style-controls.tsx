@@ -312,6 +312,35 @@ function BevelFields({ target }: { target: StyleTarget }) {
   )
 }
 
+export function TextureFields({ target }: { target: StyleTarget }) {
+  const { layers, apply, disabled } = target
+
+  return (
+    <div className="space-y-3">
+      <Segmented
+        label="종류"
+        options={
+          [
+            ["grain", "그레인"],
+            ["paper", "종이"],
+          ] as const
+        }
+        value={common(layers, (layer) => layer.textureKind ?? "grain")}
+        disabled={disabled}
+        onPick={(textureKind) => apply({ textureKind })}
+      />
+      <PropSlider
+        label="강도"
+        min={1}
+        max={100}
+        value={common(layers, (layer) => layer.textureAmount ?? 40) ?? 40}
+        disabled={disabled}
+        onValue={(textureAmount) => apply({ textureAmount })}
+      />
+    </div>
+  )
+}
+
 export function EffectControls({ target }: { target: StyleTarget }) {
   const { layers, apply, disabled } = target
   const on = (field: "shadow" | "bevel" | "texture") =>
@@ -341,6 +370,7 @@ export function EffectControls({ target }: { target: StyleTarget }) {
       </div>
       {on("shadow") && <ShadowFields target={target} />}
       {on("bevel") && <BevelFields target={target} />}
+      {on("texture") && <TextureFields target={target} />}
     </div>
   )
 }
