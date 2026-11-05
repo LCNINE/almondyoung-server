@@ -62,7 +62,8 @@ export class PricingService {
         membershipPriceRules: allRules
           .filter((r) => r.layer === 'membership_price')
           .map((r) => PricingMapper.toRuleDto(r)),
-        tieredPriceRules: allRules.filter((r) => r.layer === 'tiered_price').map((r) => PricingMapper.toRuleDto(r)),
+        // 수량별 규칙은 구간표로 대체됐다. 이 키를 읽어 되보내는 화면·도구가 있어 빈 목록으로 남겨 둔다.
+        tieredPriceRules: [],
       };
     }, tx);
   }
@@ -87,8 +88,8 @@ export class PricingService {
         throw new NotFoundException(`Version ${versionId} not found`);
       }
 
-      // 발행·구간표 저장과 같은 잠금을 잡고 상태를 다시 읽는다 — 아니면 검증(옛 수량별 규칙 대조)과 교체 사이에
-      // 다른 저장이 끼어 지운 규칙을 되살리거나 방금 발행된 버전을 고친다.
+      // 발행·구간표 저장과 같은 잠금을 잡고 상태를 다시 읽는다 — 아니면 검증과 교체 사이에 발행이 끼어
+      // 방금 발행된 버전을 고친다.
       await lockProductMasters(trx, [version.masterId]);
       const [locked] = await trx
         .select({ status: productMasterVersions.status })
@@ -145,19 +146,6 @@ export class PricingService {
           operationType: rule.operationType,
           operationValue: rule.operationValue,
           minQuantity: null,
-        });
-      }
-
-      for (const rule of validatedRules.tieredPriceRules) {
-        rulesToInsert.push({
-          layer: 'tiered_price',
-          order: rule.order,
-          scopeType: rule.scopeType,
-          scopeTargetIds:
-            rule.scopeType === 'all_variants' ? null : 'scopeTargetIds' in rule ? rule.scopeTargetIds : null,
-          operationType: rule.operationType,
-          operationValue: rule.operationValue,
-          minQuantity: rule.minQuantity,
         });
       }
 

@@ -94,13 +94,15 @@ export class ReplacePricingRulesDto {
   membershipPriceRules: MembershipPriceRule[];
 
   @ApiProperty({
-    description: 'Tiered price rules',
+    description: '더 이상 쓰지 않는다. 보낸다면 빈 배열이어야 한다(수량 할인 표를 쓴다)',
     type: [PricingRuleDto],
+    required: false,
   })
+  @IsOptional()
   @IsArray()
   @ValidateNested({ each: true })
   @Type(() => PricingRuleDto)
-  tieredPriceRules: TieredPriceRule[];
+  tieredPriceRules?: TieredPriceRule[];
 }
 
 // Zod validation을 위한 헬퍼 타입

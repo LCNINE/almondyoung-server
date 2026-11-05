@@ -2,11 +2,9 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
 import { DbService } from '@app/db';
 import { BadRequestError, NotFoundError } from '@app/shared';
-import { and, eq, inArray } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import {
   pimSchema,
-  pricingRules,
-  productMasterPricingRules,
   productMasterQuantityDiscounts,
   productMasterVersions,
   productQuantityDiscounts,
@@ -16,7 +14,12 @@ import { deleteEntitiesIfUnmapped } from '../version-isolation/delete-if-unmappe
 import { lockProductMasters } from '../products/services/product-master-lock';
 import { PricingCalculatorService } from './pricing-calculator.service';
 import { QuantityDiscountReader, QuantityDiscountReadModel } from './quantity-discount.reader';
-import { QuantityDiscountViolation, sortTiers, validateQuantityDiscount } from './quantity-discount.math';
+import {
+  QuantityDiscountViolation,
+  quantityDiscountErrorMessage,
+  sortTiers,
+  validateQuantityDiscount,
+} from './quantity-discount.math';
 
 export interface QuantityDiscountInput {
   enabled: boolean;
@@ -52,7 +55,7 @@ export class QuantityDiscountManager {
       }
 
       const basis = await this.calculator.calculatePriceBasis(versionId, trx);
-      this.throwIfInvalid(validateQuantityDiscount(input, basis));
+      this.throwIfInvalid(validateQuantityDiscount(input, basis), input.tiers);
 
       const values = {
         enabled: input.enabled,
@@ -84,7 +87,6 @@ export class QuantityDiscountManager {
         }
       }
 
-      await this.removeTieredRules(versionId, trx);
       await this.touchVersion(versionId, trx);
       return this.reader.findForVersion(masterId, versionId, trx);
     }, tx);
@@ -116,7 +118,7 @@ export class QuantityDiscountManager {
       if (!saved) return;
 
       const basis = await this.calculator.calculatePriceBasis(versionId, trx);
-      this.throwIfInvalid(validateQuantityDiscount(saved, basis));
+      this.throwIfInvalid(validateQuantityDiscount(saved, basis), saved.tiers);
     }, tx);
   }
 
@@ -134,36 +136,9 @@ export class QuantityDiscountManager {
     );
   }
 
-  /** 표가 생기면 계산기는 이 버전의 수량별 규칙(tiered_price)을 더 보지 않으므로 함께 지운다. */
-  private async removeTieredRules(versionId: string, tx: DbTransaction): Promise<void> {
-    const tiered = await tx
-      .select({ mappingId: productMasterPricingRules.id, ruleId: productMasterPricingRules.pricingRuleId })
-      .from(productMasterPricingRules)
-      .innerJoin(pricingRules, eq(pricingRules.id, productMasterPricingRules.pricingRuleId))
-      .where(and(eq(productMasterPricingRules.versionId, versionId), eq(pricingRules.layer, 'tiered_price')));
-    if (tiered.length === 0) return;
-
-    await tx.delete(productMasterPricingRules).where(
-      inArray(
-        productMasterPricingRules.id,
-        tiered.map((t) => t.mappingId),
-      ),
-    );
-    await deleteEntitiesIfUnmapped(
-      tx,
-      {
-        entityTable: pricingRules,
-        entityIdColumn: pricingRules.id,
-        junctionTable: productMasterPricingRules,
-        junctionFkColumn: productMasterPricingRules.pricingRuleId,
-      },
-      tiered.map((t) => t.ruleId),
-    );
-  }
-
-  private throwIfInvalid(violations: QuantityDiscountViolation[]): void {
+  private throwIfInvalid(violations: QuantityDiscountViolation[], tiers: QuantityDiscountTier[]): void {
     if (violations.length === 0) return;
-    throw new BadRequestException({ message: 'Invalid quantity discount table', errors: violations });
+    throw new BadRequestException({ message: quantityDiscountErrorMessage(violations, tiers), errors: violations });
   }
 
   private async assertDraftVersion(masterId: string, versionId: string, tx: DbTransaction): Promise<void> {

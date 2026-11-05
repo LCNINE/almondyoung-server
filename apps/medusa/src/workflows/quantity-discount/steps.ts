@@ -13,9 +13,6 @@ import {
   type QuantityDiscountSyncPlan,
 } from './rules';
 
-// 이 모듈 전에 channel-adapter 가 이름으로 만들던 상시 일반 리스트의 제목. 처음 한 번 입양하는 데만 쓴다.
-const LEGACY_TITLE = /^Tiered Prices - Min \d+$/;
-
 type ListGraphRow = {
   id: string;
   audience: QuantityDiscountListRow['audience'];
@@ -98,23 +95,16 @@ export const prepareQuantityDiscountSyncStep = createStep(
     }
 
     const query = container.resolve(ContainerRegistrationKeys.QUERY);
-    const [{ data: regions }, rows, { rows: legacyRows }] = await Promise.all([
+    const [{ data: regions }, rows] = await Promise.all([
       query.graph({ entity: 'region', fields: ['id'] }),
       loadRows(container),
-      knex.raw(`select id, title from price_list where deleted_at is null and title like 'Tiered Prices - Min %'`),
     ]);
     const regionIds = (regions as Array<{ id: string }>).map((r) => r.id);
     if (regionIds.length === 0 && data.input.general.length > 0) {
       throw new MedusaError(MedusaError.Types.INVALID_DATA, '리전이 없어 수량 할인 가격 규칙을 만들 수 없습니다.');
     }
 
-    const linked = new Set(rows.map((r) => r.price_list_id));
-    const adoptable: Record<string, string[]> = {};
-    for (const row of legacyRows as Array<{ id: string; title: string }>) {
-      if (!linked.has(row.id) && LEGACY_TITLE.test(row.title)) adoptable[row.title] = [...(adoptable[row.title] ?? []), row.id];
-    }
-
-    const listIds = [...linked, ...Object.values(adoptable).flat()];
+    const listIds = [...new Set(rows.map((r) => r.price_list_id))];
     const listStates = await loadListStates(container, listIds);
     const priceSetIds = variants.map((v) => v.price_set_id);
     let current: CurrentTierPrice[] = [];
@@ -142,7 +132,6 @@ export const prepareQuantityDiscountSyncStep = createStep(
       const plan = planQuantityDiscountSync({
         input: data.input,
         rows,
-        adoptable,
         listStates,
         current,
         regionIds,

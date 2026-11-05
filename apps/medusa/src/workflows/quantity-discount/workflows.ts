@@ -42,10 +42,7 @@ export const syncProductQuantityDiscountWorkflow = createWorkflow(
     const { plan } = prepareQuantityDiscountSyncStep({ product_id: input.product_id, input: syncInput });
 
     const rows = createQuantityDiscountRowsStep(
-      transform({ plan }, ({ plan }) => [
-        ...plan.listsToCreate.map(({ key, row }) => ({ key, row })),
-        ...plan.adopt.map(({ key, row }) => ({ key, row })),
-      ]),
+      transform({ plan }, ({ plan }) => plan.listsToCreate.map(({ key, row }) => ({ key, row }))),
     );
     const createdLists = createPriceListsWorkflow.runAsStep({
       input: {
@@ -58,14 +55,11 @@ export const syncProductQuantityDiscountWorkflow = createWorkflow(
       plan.listsToCreate.forEach(({ key }, i) => {
         byKey[key] = (createdLists as Array<{ id: string }>)[i].id;
       });
-      plan.adopt.forEach(({ key, price_list_id }) => {
-        byKey[key] = price_list_id;
-      });
       const links = rows.map((row) => linkOf(row.id, byKey[row.key]));
       return { byKey, links };
     });
     createRemoteLinkStep(transform({ newListIdByKey }, ({ newListIdByKey }) => newListIdByKey.links));
-    // 이번에 쓰는 기존·입양 리스트를 기대하는 상태·기간·룰로 되돌린다(리전 추가 등). 맞으면 빈 배열이다.
+    // 이번에 쓰는 기존 리스트를 기대하는 상태·기간·룰로 되돌린다(리전 추가 등). 맞으면 빈 배열이다.
     updatePriceListsWorkflow.runAsStep({
       input: { price_lists_data: transform({ plan }, ({ plan }) => plan.listUpdates) },
     });

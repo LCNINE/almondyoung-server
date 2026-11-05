@@ -273,7 +273,7 @@ describeIfDb('수량 할인 구간표 저장 (실 Postgres)', () => {
           } as never,
           tx,
         ),
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow('3개 이상 구간에서 멤버십 회원가 8,550원이 일반가 8,000원보다 비쌉니다');
     });
   });
   it('refuses a save that waited behind a publish of the same version, instead of editing the now-active version', async () => {
@@ -364,26 +364,20 @@ describeIfDb('수량 할인 구간표 저장 (실 Postgres)', () => {
       });
     });
 
-    it('keeps the old tiered rules exactly as before when the version has no table', async () => {
+    it('gives no tier prices to a version that only has old tiered rules', async () => {
       await inRollbackTx(async (tx) => {
         const { masterId, versionId, variantId } = await seedVersion(tx, { basePrice: 15900, membershipPrice: 15900 });
         await addLegacyTieredRule(tx, masterId, versionId, 2, 13000);
-        await addLegacyTieredRule(tx, masterId, versionId, 3, 26000);
 
         const one = await calculator.calculateVariantPriceSet(versionId, variantId, tx);
         const [many] = await calculator.calculateVariantPriceSetMany(versionId, [variantId], tx);
+        const price = async (type: 'regular' | 'membership') =>
+          (await calculator.calculateVariantPriceByVersion(versionId, variantId, 2, type, tx)).price;
 
-        const expected = {
-          basePrice: 15900,
-          membershipPrice: 15900,
-          tieredPrices: [
-            { minQuantity: 2, price: 13000 },
-            { minQuantity: 3, price: 26000 },
-          ],
-          membershipTieredPrices: [],
-        };
+        const expected = { basePrice: 15900, membershipPrice: 15900, tieredPrices: [], membershipTieredPrices: [] };
         expect(one).toEqual(expected);
         expect(many).toEqual(expected);
+        expect([await price('regular'), await price('membership')]).toEqual([15900, 15900]);
       });
     });
 
@@ -423,163 +417,57 @@ describeIfDb('수량 할인 구간표 저장 (실 Postgres)', () => {
       operationValue: amount,
       ...(minQuantity === undefined ? {} : { minQuantity }),
     });
-    const ruleSet = (tiered: ReturnType<typeof rule>[]) =>
-      ({
-        basePriceRules: [rule(PricingLayer.BASE_PRICE, 15900)],
-        membershipPriceRules: [rule(PricingLayer.MEMBERSHIP_PRICE, 15900)],
-        tieredPriceRules: tiered,
-      }) as never;
+    const baseRules = {
+      basePriceRules: [rule(PricingLayer.BASE_PRICE, 15900)],
+      membershipPriceRules: [rule(PricingLayer.MEMBERSHIP_PRICE, 15900)],
+    };
+    const ruleSet = (tiered?: ReturnType<typeof rule>[]) =>
+      (tiered === undefined ? baseRules : { ...baseRules, tieredPriceRules: tiered }) as never;
 
-    async function tieredRulesOf(tx: DbTransaction, versionId: string) {
-      const rules = await pricing.getVersionRules(versionId, tx);
-      return rules.tieredPriceRules.map((r) => ({ minQuantity: r.minQuantity, operationValue: r.operationValue }));
+    async function storedTieredMappings(tx: DbTransaction, versionId: string) {
+      const rows = await tx
+        .select({ layer: pricingRules.layer })
+        .from(productMasterPricingRules)
+        .innerJoin(pricingRules, eq(pricingRules.id, productMasterPricingRules.pricingRuleId))
+        .where(eq(productMasterPricingRules.versionId, versionId));
+      return rows.filter((r) => r.layer === 'tiered_price').length;
     }
 
-    it('rejects adding a tiered rule', async () => {
+    it('lists no tiered rules even while old ones are still mapped to the version', async () => {
       await inRollbackTx(async (tx) => {
-        const { versionId } = await seedVersion(tx, { basePrice: 15900, membershipPrice: 15900 });
+        const { masterId, versionId } = await seedVersion(tx, { basePrice: 15900, membershipPrice: 15900 });
+        await addLegacyTieredRule(tx, masterId, versionId, 2, 13000);
 
-        await expect(
-          pricing.replaceVersionRules(versionId, ruleSet([rule(PricingLayer.TIERED_PRICE, 13000, 2, 2)]), tx),
-        ).rejects.toThrow(BadRequestException);
+        const rules = await pricing.getVersionRules(versionId, tx);
+
+        expect(rules.tieredPriceRules).toEqual([]);
+        expect(rules.basePriceRules).toHaveLength(1);
       });
     });
 
-    it('rejects changing the value of a stored tiered rule', async () => {
+    it('rejects a save that carries a tiered rule, even one already stored', async () => {
       await inRollbackTx(async (tx) => {
         const { masterId, versionId } = await seedVersion(tx, { basePrice: 15900, membershipPrice: 15900 });
         await addLegacyTieredRule(tx, masterId, versionId, 2, 13000);
 
         await expect(
-          pricing.replaceVersionRules(versionId, ruleSet([rule(PricingLayer.TIERED_PRICE, 12000, 2, 2)]), tx),
+          pricing.replaceVersionRules(versionId, ruleSet([rule(PricingLayer.TIERED_PRICE, 13000, 1, 2)]), tx),
         ).rejects.toThrow(BadRequestException);
       });
     });
 
-    it('accepts the stored tiered rules sent back unchanged', async () => {
-      await inRollbackTx(async (tx) => {
-        const { masterId, versionId } = await seedVersion(tx, { basePrice: 15900, membershipPrice: 15900 });
-        await addLegacyTieredRule(tx, masterId, versionId, 2, 13000);
-        await addLegacyTieredRule(tx, masterId, versionId, 3, 26000);
-
-        await pricing.replaceVersionRules(
-          versionId,
-          ruleSet([rule(PricingLayer.TIERED_PRICE, 26000, 1, 3), rule(PricingLayer.TIERED_PRICE, 13000, 2, 2)]),
-          tx,
-        );
-
-        expect(await tieredRulesOf(tx, versionId)).toEqual(
-          expect.arrayContaining([
-            { minQuantity: 2, operationValue: 13000 },
-            { minQuantity: 3, operationValue: 26000 },
-          ]),
-        );
-      });
-    });
-
-    it('accepts an empty tiered list, removing the stored rules', async () => {
+    it.each([
+      ['without the tiered list', undefined],
+      ['with an empty tiered list', []],
+    ])('saves %s and drops old tiered rules left on the version', async (_label, tiered) => {
       await inRollbackTx(async (tx) => {
         const { masterId, versionId } = await seedVersion(tx, { basePrice: 15900, membershipPrice: 15900 });
         await addLegacyTieredRule(tx, masterId, versionId, 2, 13000);
 
-        await pricing.replaceVersionRules(versionId, ruleSet([]), tx);
+        await pricing.replaceVersionRules(versionId, ruleSet(tiered), tx);
 
-        expect(await tieredRulesOf(tx, versionId)).toEqual([]);
-      });
-    });
-
-    it("saving a table removes this version's tiered rules but keeps another version's", async () => {
-      await inRollbackTx(async (tx) => {
-        const { masterId, versionId } = await seedVersion(tx, { basePrice: 15900, membershipPrice: 15900 });
-        await addLegacyTieredRule(tx, masterId, versionId, 2, 13000);
-        const [other] = await tx
-          .insert(productMasterVersions)
-          .values({ masterId, name: '이전 버전', status: 'inactive', version: 2 })
-          .returning({ id: productMasterVersions.id });
-        const sharedRuleIds = await tx
-          .select({ pricingRuleId: productMasterPricingRules.pricingRuleId })
-          .from(productMasterPricingRules)
-          .where(eq(productMasterPricingRules.versionId, versionId));
-        await tx
-          .insert(productMasterPricingRules)
-          .values(sharedRuleIds.map((r) => ({ masterId, versionId: other.id, pricingRuleId: r.pricingRuleId })));
-
-        await manager.upsertForDraft(masterId, versionId, input([tier(3, 15, 15)]), tx);
-
-        expect(await tieredRulesOf(tx, versionId)).toEqual([]);
-        expect(await tieredRulesOf(tx, other.id)).toEqual([{ minQuantity: 2, operationValue: 13000 }]);
+        expect(await storedTieredMappings(tx, versionId)).toBe(0);
         expect((await pricing.getVersionRules(versionId, tx)).basePriceRules).toHaveLength(1);
-      });
-    });
-
-    it('does not bring back tiered rules that a table save removed while a rule save waited', async () => {
-      let fixture: { masterId: string; versionId: string } | undefined;
-      let seededRuleIds: string[] = [];
-      await db.run(async (tx) => {
-        fixture = await seedVersion(tx, { basePrice: 15900, membershipPrice: 15900 });
-        await addLegacyTieredRule(tx, fixture.masterId, fixture.versionId, 2, 13000);
-        seededRuleIds = (
-          await tx
-            .select({ id: productMasterPricingRules.pricingRuleId })
-            .from(productMasterPricingRules)
-            .where(eq(productMasterPricingRules.versionId, fixture.versionId))
-        ).map((r) => r.id);
-      });
-      const { masterId, versionId } = fixture as { masterId: string; versionId: string };
-      const tableSaver = postgres(DATABASE_URL as string, { max: 1 });
-      try {
-        // 구간표 저장처럼: 마스터를 잠그고 이 버전의 tiered 매핑을 지운 채 잠깐 버틴 뒤 커밋한다.
-        let finishTableSave!: () => void;
-        const started = new Promise<void>((resolveStarted) => {
-          void tableSaver.begin(async (t) => {
-            await t.unsafe('select id from product_masters where id = $1 for update', [masterId]);
-            await t.unsafe(
-              `delete from product_master_pricing_rules m using pricing_rules r
-                where m.pricing_rule_id = r.id and m.version_id = $1 and r.layer = 'tiered_price'`,
-              [versionId],
-            );
-            resolveStarted();
-            await new Promise<void>((r) => (finishTableSave = r));
-          });
-        });
-        await started;
-
-        const saving = pricing
-          .replaceVersionRules(versionId, ruleSet([rule(PricingLayer.TIERED_PRICE, 13000, 1, 2)]))
-          .then(
-            () => 'saved',
-            (e: unknown) => e,
-          );
-        await new Promise((r) => setTimeout(r, 200));
-        finishTableSave();
-
-        expect(await saving).toBeInstanceOf(BadRequestException);
-        await db.run(async (tx) => {
-          expect(await tieredRulesOf(tx, versionId)).toEqual([]);
-        });
-      } finally {
-        await tableSaver.end();
-        await db.run(async (tx) => {
-          const ruleIds = await tx
-            .select({ id: productMasterPricingRules.pricingRuleId })
-            .from(productMasterPricingRules)
-            .where(eq(productMasterPricingRules.masterId, masterId));
-          await tx.delete(productMasters).where(eq(productMasters.id, masterId));
-          for (const id of new Set([...ruleIds.map((r) => r.id), ...seededRuleIds])) {
-            await tx.delete(pricingRules).where(eq(pricingRules.id, id));
-          }
-        });
-      }
-    });
-
-    it('keeps the tiered rules when the table is cleared', async () => {
-      await inRollbackTx(async (tx) => {
-        const { masterId, versionId } = await seedVersion(tx, { basePrice: 15900, membershipPrice: 15900 });
-        await addLegacyTieredRule(tx, masterId, versionId, 2, 13000);
-
-        await manager.upsertForDraft(masterId, versionId, input([]), tx);
-
-        expect(await tieredRulesOf(tx, versionId)).toEqual([{ minQuantity: 2, operationValue: 13000 }]);
       });
     });
   });

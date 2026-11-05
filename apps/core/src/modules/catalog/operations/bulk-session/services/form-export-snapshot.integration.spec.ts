@@ -345,7 +345,7 @@ describeIfDb('FormExportSnapshotReader (실 Postgres)', () => {
     };
   }
 
-  async function createTieredProduct(tx: DbTransaction): Promise<{ masterId: string; versionId: string }> {
+  async function createComplexPricedProduct(tx: DbTransaction): Promise<{ masterId: string; versionId: string }> {
     const masterId = randomUUID();
     const versionId = randomUUID();
     await tx.insert(productMasters).values({ id: masterId });
@@ -353,17 +353,16 @@ describeIfDb('FormExportSnapshotReader (실 Postgres)', () => {
       .insert(productMasterVersions)
       .values({ id: versionId, masterId, version: 1, status: 'active', name: '도매 전용 니트' });
 
-    const tieredRuleId = randomUUID();
+    const offsetRuleId = randomUUID();
     await tx.insert(pricingRules).values({
-      id: tieredRuleId,
-      layer: 'tiered_price',
+      id: offsetRuleId,
+      layer: 'base_price',
       order: 1,
       scopeType: 'all_variants',
-      operationType: 'override',
+      operationType: 'offset',
       operationValue: 20000,
-      minQuantity: 10,
     });
-    await tx.insert(productMasterPricingRules).values({ masterId, versionId, pricingRuleId: tieredRuleId });
+    await tx.insert(productMasterPricingRules).values({ masterId, versionId, pricingRuleId: offsetRuleId });
 
     return { masterId, versionId };
   }
@@ -557,10 +556,10 @@ describeIfDb('FormExportSnapshotReader (실 Postgres)', () => {
     expect(out.data.constraints[0].lifetimeQuantityLimit).toBe('2');
   });
 
-  it('복합 가격규칙(tiered) 상품은 가격 칸이 센티넬이고 pricingEditable 이 false 다', async () => {
+  it('복합 가격규칙(offset) 상품은 가격 칸이 센티넬이고 pricingEditable 이 false 다', async () => {
     const out = await inRollbackTx(async (tx) => {
-      const fx = await createTieredProduct(tx);
-      return reader.buildPrefill(tx, [fx.masterId], 'exp-tiered');
+      const fx = await createComplexPricedProduct(tx);
+      return reader.buildPrefill(tx, [fx.masterId], 'exp-offset');
     });
 
     expect(out.data.products[0].basePrice).toBe(PRICING_SENTINEL);

@@ -56,7 +56,7 @@ export type QuantityDiscountListCreateData = {
 
 export type QuantityDiscountSyncPlan = {
   listsToCreate: Array<{ key: string; row: NewListRow; data: QuantityDiscountListCreateData }>;
-  /** 이번에 쓰는 기존·입양 리스트 중 상태·기간·룰이 기대와 다른 것. 리전이 늘었거나 누가 고친 경우를 되돌린다. */
+  /** 이번에 쓰는 기존 리스트 중 상태·기간·룰이 기대와 다른 것. 리전이 늘었거나 누가 고친 경우를 되돌린다. */
   listUpdates: Array<{
     id: string;
     status: 'active';
@@ -64,14 +64,12 @@ export type QuantityDiscountSyncPlan = {
     ends_at: string | null;
     rules: Record<string, string[]>;
   }>;
-  /** 행·링크 없이 이미 있던 같은 제목의 상시 일반 리스트. 새로 만들지 않고 행만 붙인다. */
-  adopt: Array<{ key: string; row: NewListRow; price_list_id: string }>;
   pricesToCreate: Array<{ key: string } & TierPriceInput>;
   priceIdsToDelete: string[];
   /** 동기화 뒤 이 상품의 가격이 들어 있는 리스트(아직 없는 리스트는 key 로 워크플로가 채운다). */
   resultListIds: string[];
   resultKeys: string[];
-  /** 이미 리스트가 있는 키(기존 행 + 입양) → price list id. 새로 만들 키는 없다. */
+  /** 이미 리스트가 있는 키 → price list id. 새로 만들 키는 없다. */
   knownListIdByKey: Record<string, string>;
 };
 
@@ -116,16 +114,14 @@ const priceSignature = (listId: string, p: TierPriceInput) => `${listId}|${p.var
 export function planQuantityDiscountSync(params: {
   input: QuantityDiscountSyncInput;
   rows: QuantityDiscountListRow[];
-  /** 링크가 없는 price list 의 제목 → id 들. 상시 일반 리스트 입양에만 쓴다(후보가 하나일 때만). */
-  adoptable: Record<string, string[]>;
-  /** 기존 행·입양 후보 리스트의 현재 상태. 모르는 리스트는 기대값으로 갱신한다. */
+  /** 기존 행 리스트의 현재 상태. 모르는 리스트는 기대값으로 갱신한다. */
   listStates: Record<string, PriceListState>;
-  /** 이 상품의 가격 중 모듈 리스트와 입양 후보 리스트에 걸린 것 전부. */
+  /** 이 상품의 가격 중 모듈 리스트에 걸린 것 전부. */
   current: CurrentTierPrice[];
   regionIds: string[];
   membershipGroupId: string;
 }): QuantityDiscountSyncPlan {
-  const { input, rows, adoptable, listStates, current, regionIds, membershipGroupId } = params;
+  const { input, rows, listStates, current, regionIds, membershipGroupId } = params;
   if (input.membership.length > 0 && !membershipGroupId) {
     throw new Error('멤버십 고객그룹 id(MEDUSA_MEMBERSHIP_GROUP_ID)가 없어 회원 구간가를 저장할 수 없습니다.');
   }
@@ -143,7 +139,6 @@ export function planQuantityDiscountSync(params: {
   ];
 
   const listsToCreate: QuantityDiscountSyncPlan['listsToCreate'] = [];
-  const adopt: QuantityDiscountSyncPlan['adopt'] = [];
   const seenKeys = new Set<string>();
   for (const p of desired) {
     if (seenKeys.has(p.key) || listIdByKey.has(p.key)) {
@@ -158,20 +153,11 @@ export function planQuantityDiscountSync(params: {
       starts_at: input.period?.starts_at ?? null,
       ends_at: input.period?.ends_at ?? null,
     };
-    const title = listTitle(p.audience, p.min_quantity, pKey);
-    const candidates = p.audience === 'general' && pKey === ALWAYS ? (adoptable[title] ?? []) : [];
-    // 같은 제목이 여럿이면 어느 쪽이 맞는지 모른다 — 고르지 않고 새로 만든다(이 상품 가격은 모든 후보에서 지운다).
-    const legacyId = candidates.length === 1 ? candidates[0] : undefined;
-    if (legacyId) {
-      adopt.push({ key: p.key, row, price_list_id: legacyId });
-      listIdByKey.set(p.key, legacyId);
-      continue;
-    }
     listsToCreate.push({
       key: p.key,
       row,
       data: {
-        title,
+        title: listTitle(p.audience, p.min_quantity, pKey),
         description:
           p.audience === 'membership'
             ? `Membership bulk discount for quantity ${p.min_quantity}+`
@@ -237,7 +223,6 @@ export function planQuantityDiscountSync(params: {
 
   return {
     listsToCreate,
-    adopt,
     listUpdates,
     pricesToCreate,
     priceIdsToDelete,
