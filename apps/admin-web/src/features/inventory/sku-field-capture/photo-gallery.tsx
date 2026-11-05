@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import { useInfiniteQuery } from '@tanstack/react-query';
+import { useSearchParams } from 'next/navigation';
 import { ChevronLeft, ChevronRight, Search } from 'lucide-react';
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { skuFieldCaptureClient } from '@/lib/api/domains/inventory/sku-field-capture.client';
@@ -25,9 +26,14 @@ const PERIODS: { value: HistoryPeriod; label: string }[] = [
 ];
 
 export function FieldCapturePhotoGallery() {
-  const [period, setPeriod] = useState<HistoryPeriod>('today');
-  const [text, setText] = useState('');
-  const [q, setQ] = useState('');
+  const initialQ = useSearchParams().get('q')?.trim() ?? '';
+  const [period, setPeriod] = useState<HistoryPeriod>(
+    initialQ ? 'all' : 'today'
+  );
+  const [text, setText] = useState(initialQ);
+  const [q, setQ] = useState(initialQ);
+  const sectionRef = useRef<HTMLElement>(null);
+  const scrolledRef = useRef(false);
   const [openId, setOpenId] = useState<string | null>(null);
   const { from, to } = periodRange(
     period,
@@ -55,6 +61,18 @@ export function FieldCapturePhotoGallery() {
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (last) => last.nextCursor ?? undefined,
   });
+
+  const loaded = data !== undefined;
+
+  // 3D 업로드 현황에서 상품을 눌러 왔으면 사진이 그려진 뒤 그 카드로 내려간다
+  useEffect(() => {
+    if (!initialQ || !loaded || scrolledRef.current) {
+      return;
+    }
+
+    scrolledRef.current = true;
+    sectionRef.current?.scrollIntoView({ block: 'start' });
+  }, [initialQ, loaded]);
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
@@ -84,7 +102,7 @@ export function FieldCapturePhotoGallery() {
   };
 
   return (
-    <section className="flex flex-col gap-3">
+    <section ref={sectionRef} className="flex scroll-mt-16 flex-col gap-3">
       <div className="flex flex-wrap items-center gap-2">
         <h2 className="mr-auto text-base font-semibold">
           찍은 사진

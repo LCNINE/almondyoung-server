@@ -1,18 +1,25 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   ArrayMinSize,
   ArrayUnique,
   IsArray,
   IsIn,
+  IsInt,
   IsObject,
   IsOptional,
+  IsString,
   IsUUID,
+  Max,
+  MaxLength,
+  Min,
   ValidateIf,
 } from 'class-validator';
 import type { Sku3dModelStatus } from '../schema/inventory.schema';
+import type { Sku3dModelVisibility } from './sku-3d-models.reader';
 
-const MODEL_STATUSES: Sku3dModelStatus[] = ['approved', 'needs_revision', 'needs_more_photos', 'failed'];
+const MODEL_STATUSES: Sku3dModelStatus[] = ['draft', 'approved', 'needs_revision', 'needs_more_photos', 'failed'];
 
 export class ReviewSku3dModelDto {
   @ApiProperty({ enum: MODEL_STATUSES })
@@ -40,4 +47,40 @@ export class BatchReviewSku3dModelsDto extends ReviewSku3dModelDto {
   @ArrayUnique()
   @IsUUID('all', { each: true })
   ids!: string[];
+}
+
+const VISIBILITIES: Sku3dModelVisibility[] = ['public', 'private'];
+
+export class ListSku3dModelUploadsQueryDto {
+  @ApiPropertyOptional({ description: 'SKU 이름·코드 부분일치' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  q?: string;
+
+  @ApiPropertyOptional({ description: '올린 사람 이름 부분일치' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(100)
+  uploader?: string;
+
+  @ApiPropertyOptional({ enum: VISIBILITIES })
+  @IsOptional()
+  @IsIn(VISIBILITIES)
+  visibility?: Sku3dModelVisibility;
+
+  @ApiPropertyOptional({ default: 1 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  page?: number;
+
+  @ApiPropertyOptional({ default: 50, maximum: 100 })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  limit?: number;
 }

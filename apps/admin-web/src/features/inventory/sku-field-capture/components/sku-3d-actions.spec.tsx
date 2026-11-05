@@ -177,7 +177,7 @@ it('does not upload before confirmation or after cancellation, and resets reject
   expect(sku3dModelsClient.register).not.toHaveBeenCalled();
 });
 
-it('publishes the normalized GLB only on confirmation and refreshes the models', async () => {
+it('uploads the normalized GLB as a private draft only on confirmation and refreshes the models', async () => {
   jest
     .mocked(sku3dModelsClient.list)
     .mockResolvedValue([{ ...model, version: 1 }]);
@@ -186,11 +186,14 @@ it('publishes the normalized GLB only on confirmation and refreshes the models',
   expect(screen.getByRole('button', { name: 'GLB 다시 올리기' })).toBeTruthy();
 
   chooseFile(new File(['glb'], 'model.GLB'));
-  expect(screen.getByText('v1 → v2')).toBeTruthy();
-  jest.mocked(sku3dModelsClient.list).mockResolvedValue([model]);
-  fireEvent.click(screen.getByRole('button', { name: '공개하기' }));
+  expect(screen.getByText('v2 비공개')).toBeTruthy();
+  jest.mocked(sku3dModelsClient.list).mockResolvedValue([
+    { ...model, version: 1 },
+    { ...model, status: 'draft' },
+  ]);
+  fireEvent.click(screen.getByRole('button', { name: '올리기' }));
 
-  await screen.findByText('3D 공개 중 · v2');
+  await screen.findByText('3D 공개 중 · v1 · v2 비공개');
   const uploaded = jest.mocked(uploadFileToFileService).mock.calls[0];
 
   expect(uploaded?.[0].name).toBe('model.GLB');
@@ -201,10 +204,10 @@ it('publishes the normalized GLB only on confirmation and refreshes the models',
     compress: false,
   });
   expect(sku3dModelsClient.register).toHaveBeenCalledWith('sku-1', 'glb-2');
-  expect(toast.success).toHaveBeenCalledWith('v2 을 공개했어요');
+  expect(toast.success).toHaveBeenCalledWith('v2를 비공개로 올렸어요');
 });
 
-it('shows the server error and keeps the selected file available after a rejected publication', async () => {
+it('shows the server error and keeps the selected file available after a rejected upload', async () => {
   jest.mocked(sku3dModelsClient.register).mockRejectedValueOnce(
     new CustomError({
       message: '등록이 거절됐어요',
@@ -214,11 +217,11 @@ it('shows the server error and keeps the selected file available after a rejecte
   renderActions();
   await screen.findByText('3D 없음');
   chooseFile(new File(['glb'], 'model.GLB'));
-  fireEvent.click(screen.getByRole('button', { name: '공개하기' }));
+  fireEvent.click(screen.getByRole('button', { name: '올리기' }));
 
   await waitFor(() =>
     expect(toast.error).toHaveBeenCalledWith(
-      '3D 모델을 공개하지 못했어요 (등록이 거절됐어요)'
+      '3D 모델을 올리지 못했어요 (등록이 거절됐어요)'
     )
   );
   expect(screen.getByRole('alertdialog')).toBeTruthy();

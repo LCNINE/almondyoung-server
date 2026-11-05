@@ -38,12 +38,15 @@ curl -sSI -L -H 'Origin: https://YOUR_STOREFRONT' \
 업로드가 완료되고 파일 상태가 `active`가 된 뒤 모델에 연결한다.
 모델 API의 읽기 권한은 `inventory.master.read`, 쓰기 권한은 `inventory.master.write`다.
 
-| 요청 | 경로                                    | 용도                           |
-| ---- | --------------------------------------- | ------------------------------ |
-| GET  | `/inventory/sku-3d-models/skus/:skuId`  | 최신 버전부터 이력 조회        |
-| POST | `/inventory/sku-3d-models/skus/:skuId`  | 새 생성 버전 등록              |
-| PUT  | `/inventory/sku-3d-models/:id/review`   | 검수 상태 및 메모 변경         |
-| PUT  | `/inventory/sku-3d-models/batch-review` | 일괄 검수, 대량 처리 레인 사용 |
+| 요청 | 경로                                             | 용도                                                    |
+| ---- | ------------------------------------------------ | ------------------------------------------------------- |
+| GET  | `/inventory/sku-3d-models`                       | 업로드 현황. `q`·`uploader`·`visibility`·`page`·`limit` |
+| GET  | `/inventory/sku-3d-models/skus/:skuId`           | 최신 버전부터 이력 조회                                 |
+| POST | `/inventory/sku-3d-models/skus/:skuId`           | 새 생성 버전 등록, 올린 사람을 함께 기록                |
+| PUT  | `/inventory/sku-3d-models/:id/publish`           | 이 버전만 공개, 같은 SKU 의 다른 공개 버전은 `draft`    |
+| PUT  | `/inventory/sku-3d-models/skus/:skuId/unpublish` | 그 SKU 의 공개 버전을 전부 `draft` 로                   |
+| PUT  | `/inventory/sku-3d-models/:id/review`            | 검수 상태 및 메모 변경                                  |
+| PUT  | `/inventory/sku-3d-models/batch-review`          | 일괄 검수, 대량 처리 레인 사용                          |
 
 등록 예시:
 
@@ -69,6 +72,7 @@ curl -sSI -L -H 'Origin: https://YOUR_STOREFRONT' \
 
 | 상태                | 의미                      |
 | ------------------- | ------------------------- |
+| `draft`             | 올렸지만 비공개           |
 | `approved`          | 검수 통과, 고객 노출 후보 |
 | `needs_revision`    | 수정 필요                 |
 | `needs_more_photos` | 추가 사진 필요            |
@@ -78,6 +82,10 @@ curl -sSI -L -H 'Origin: https://YOUR_STOREFRONT' \
 일괄 요청에는 `ids` 배열을 함께 보낸다.
 승인에는 완료된 공개 GLB가 필수다.
 실패·추가 사진 필요 상태는 파일 없이 기록할 수 있다.
+
+어드민 실측 화면의 GLB 업로드는 `draft` 로 등록한다. 공개·비공개는 어드민 `3D 업로드 현황`(`/inventory/sku-3d-models`)에서 바꾼다.
+공개 API 는 한 SKU 에 통과 버전을 하나만 남긴다. `draft` 여도 GLB 는 공개 버킷에 있으므로 주소를 아는 사람은 받을 수 있다.
+`uploaded_by_*` 는 이 컬럼이 생기기 전에 등록한 버전엔 비어 있다.
 
 SKU별 최신 **통과 버전**을 쓴다.
 최신 생성 버전이 수정 중이어도 이전 통과 버전이 유지된다.
