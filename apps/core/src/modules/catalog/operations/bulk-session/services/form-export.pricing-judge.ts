@@ -19,8 +19,6 @@ export interface SimplePrices {
  * 그래서 밖이면 워크북에 센티넬을 넣어 수정을 막는다.
  */
 export function isPricingEditable(rules: PricingRulesResponseDto): boolean {
-  if (rules.tieredPriceRules.length > 0) return false;
-
   const flat = [...rules.basePriceRules, ...rules.membershipPriceRules];
   return flat.every(
     (r) => r.operationType === 'override' && (r.scopeType === 'all_variants' || r.scopeType === 'variants'),

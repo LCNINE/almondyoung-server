@@ -93,7 +93,8 @@ export const pricingRulesSetSchema = z
   .object({
     basePriceRules: z.array(basePriceRuleSchema),
     membershipPriceRules: z.array(membershipPriceRuleSchema),
-    tieredPriceRules: z.array(tieredPriceRuleSchema),
+    // 수량별 규칙은 구간표로 대체됐다. 이 키를 되보내는 옛 클라이언트를 위해 받기만 하고, 비어 있어야 한다.
+    tieredPriceRules: z.array(tieredPriceRuleSchema).optional().default([]),
   })
   // 모든 variant 가 base_price 를 하나 이상 받아야 한다 (안 그러면 계산기가 0 원을 낸다).
   // 실제 커버리지 검사는 variant 목록을 알아야 하므로 PricingValidatorService 가 DB 를 보고 한다.

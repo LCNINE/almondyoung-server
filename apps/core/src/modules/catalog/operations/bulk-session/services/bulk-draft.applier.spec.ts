@@ -411,7 +411,7 @@ describe('BulkDraftApplier — 수정 경로', () => {
   });
 
   it('pricingEditable=false 면 가격 칸을 건드려도 replaceVersionRules 를 부르지 않는다', async () => {
-    // _copyMappings 가 복사한 복합 룰(tiered·scale 등)이 그대로 살아 있어야 한다. 부르는 순간
+    // _copyMappings 가 복사한 복합 룰(scale·offset 등)이 그대로 살아 있어야 한다. 부르는 순간
     // replace 가 그것을 단순 override 로 뭉갠다(F9).
     //
     // **가격 칸을 실제로 건드리는 입력이어야 한다** — 위 테스트가 이미 "안 건드리면 안 부른다"를
