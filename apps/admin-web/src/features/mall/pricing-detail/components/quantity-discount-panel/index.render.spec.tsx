@@ -27,7 +27,6 @@ function renderPanel(overrides: Partial<QuantityDiscountPanelProps> = {}) {
     <QuantityDiscountPanel
       saved={saved}
       variants={variants}
-      legacyTieredRules={[]}
       readonly={false}
       canSave
       isSaving={false}
@@ -131,13 +130,6 @@ describe('QuantityDiscountPanel', () => {
     expect(cell(1, '최소 수량').disabled).toBe(true);
     expect(screen.getByText('활성 버전은 읽기 전용입니다.')).toBeTruthy();
   });
-
-  it('warns that saving the table removes the old quantity price rules', () => {
-    renderPanel({ legacyTieredRules: [{ minQuantity: 2, operationType: 'override', operationValue: 13000 }] });
-
-    expect(screen.getByText(/2개 이상 13,000원/)).toBeTruthy();
-    expect(screen.getByText(/수량 할인 표를 저장하면 이 규칙은 지워집니다/)).toBeTruthy();
-  });
 });
 
 describe('QuantityDiscountPanel server errors', () => {
@@ -146,8 +138,7 @@ describe('QuantityDiscountPanel server errors', () => {
       <QuantityDiscountPanel
         saved={saved}
         variants={variants}
-        legacyTieredRules={[]}
-        readonly={false}
+          readonly={false}
         canSave
         isSaving={false}
         serverViolations={[{ code: 'PERIOD_REVERSED' }]}

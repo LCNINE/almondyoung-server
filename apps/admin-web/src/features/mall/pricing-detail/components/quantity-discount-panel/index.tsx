@@ -21,7 +21,6 @@ import {
   type UpsertQuantityDiscountDto,
 } from '@/lib/pricing/quantity-discount';
 import { fromServerScalePercent } from '@/lib/services/products/transformers';
-import type { PricingOperationType } from '@/lib/types/dto/products';
 
 export interface PreviewVariant {
   variantId: string;
@@ -30,16 +29,9 @@ export interface PreviewVariant {
   membershipPrice: number;
 }
 
-export interface LegacyTieredRule {
-  minQuantity: number | null;
-  operationType: PricingOperationType;
-  operationValue: number;
-}
-
 export interface QuantityDiscountPanelProps {
   saved: QuantityDiscountDto | null | undefined;
   variants: PreviewVariant[];
-  legacyTieredRules: LegacyTieredRule[];
   /** 버전 상태(draft 아님) 때문에 편집할 수 없다. */
   readonly: boolean;
   canSave: boolean;
@@ -49,18 +41,6 @@ export interface QuantityDiscountPanelProps {
 }
 
 const won = (n: number) => `${n.toLocaleString('ko-KR')}원`;
-
-function legacyRuleText(rule: LegacyTieredRule): string {
-  const head = `${rule.minQuantity ?? '?'}개 이상`;
-  switch (rule.operationType) {
-    case 'override':
-      return `${head} ${won(rule.operationValue)}`;
-    case 'offset':
-      return `${head} ${rule.operationValue >= 0 ? '+' : ''}${won(rule.operationValue)}`;
-    case 'scale':
-      return `${head} ${fromServerScalePercent(rule.operationValue)}%`;
-  }
-}
 
 function sortedRowIndexes(tiers: TierForm[]): number[] {
   const key = (t: TierForm) => {
@@ -83,7 +63,6 @@ const emptyTier = (): TierForm => ({ minQuantity: '', regularPercent: '', member
 export function QuantityDiscountPanel({
   saved,
   variants,
-  legacyTieredRules,
   readonly,
   canSave,
   isSaving,
@@ -186,15 +165,6 @@ export function QuantityDiscountPanel({
       </div>
 
       <div className="flex flex-col gap-4 px-4 pb-4">
-        {legacyTieredRules.length > 0 && (
-          <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-            <p className="font-medium">
-              이전 방식의 수량별 가격 규칙이 있습니다: {legacyTieredRules.map(legacyRuleText).join(', ')}
-            </p>
-            <p>수량 할인 표를 저장하면 이 규칙은 지워집니다. 같은 혜택을 % 로 다시 넣어 주세요.</p>
-          </div>
-        )}
-
         <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
           <label className="flex items-center gap-2 text-sm">
             <Switch

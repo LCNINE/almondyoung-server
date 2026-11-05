@@ -19,7 +19,6 @@ import { hasRuleMissingScopeTarget } from '../../pricing-detail-model';
 function rulesFromResponse(rules: PricingRulesResponseDto): {
   base: PricingRuleInput[];
   membership: PricingRuleInput[];
-  tiered: PricingRuleInput[];
 } {
   const mapRule = (r: PricingRulesResponseDto['basePriceRules'][number]): PricingRuleInput => ({
     order: r.order,
@@ -33,7 +32,6 @@ function rulesFromResponse(rules: PricingRulesResponseDto): {
   return {
     base: rules.basePriceRules.map(mapRule),
     membership: rules.membershipPriceRules.map(mapRule),
-    tiered: rules.tieredPriceRules.map(mapRule),
   };
 }
 
@@ -75,8 +73,6 @@ export function RulesEditor({
 }: Props) {
   const [base, setBase] = useState<PricingRuleInput[]>([]);
   const [membership, setMembership] = useState<PricingRuleInput[]>([]);
-  // 수량별 규칙은 수량 할인 표로 대체됐다. 편집하지 않고, 저장 때 서버가 준 그대로 되보낸다(서버는 바뀐 규칙을 거부한다).
-  const [tiered, setTiered] = useState<PricingRuleInput[]>([]);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const editable = !readonly && canSave;
 
@@ -85,7 +81,6 @@ export function RulesEditor({
     const parsed = rulesFromResponse(rules);
     setBase(parsed.base);
     setMembership(parsed.membership);
-    setTiered(parsed.tiered);
   }, [rules]);
 
   const reorder = (arr: PricingRuleInput[]): PricingRuleInput[] =>
@@ -126,7 +121,7 @@ export function RulesEditor({
   const mm = makeMutators(membership, setMembership, 'membership_price');
 
   const handleSave = () => {
-    if (hasRuleMissingScopeTarget([...base, ...membership, ...tiered])) {
+    if (hasRuleMissingScopeTarget([...base, ...membership])) {
       toast.error('옵션값·옵션조합 범위의 룰은 적용 대상을 1개 이상 선택해주세요.');
       return;
     }
@@ -135,7 +130,8 @@ export function RulesEditor({
     onSave({
       basePriceRules: reorder(base),
       membershipPriceRules: reorder(membership),
-      tieredPriceRules: tiered,
+      // 수량별 규칙은 구간표로 대체됐다. 이 키를 필수로 받는 이전 core 를 위해 빈 목록만 싣는다.
+      tieredPriceRules: [],
     });
   };
 

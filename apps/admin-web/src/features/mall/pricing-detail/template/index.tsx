@@ -279,7 +279,6 @@ export default function PricingDetailTemplate({ masterId }: Props) {
                   key={selectedVersionId}
                   saved={quantityDiscount}
                   variants={previewVariants}
-                  legacyTieredRules={rules?.tieredPriceRules ?? []}
                   readonly={isReadonly}
                   canSave={canRun(useSaveQuantityDiscount)}
                   isSaving={saveQuantityDiscount.isPending}
