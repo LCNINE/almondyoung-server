@@ -78,3 +78,18 @@ export const WOWPRESS_CANCELLABLE = (d: WowpressOrderDetail): boolean =>
   d.ordstat === 0 || d.ordstat === 1 || d.jobstat === 109;
 
 export const WOWPRESS_CARRIER: Record<number, 'LOTTE' | 'CJ'> = { 109: 'LOTTE', 156: 'CJ' };
+
+// prod_info 응답에서 쓰는 필드만. 안쪽 구조는 쓰는 곳에서 좁혀 읽는다
+export interface WowpressProdInfo {
+  prodno: number;
+  prodname: string;
+  filetype: string | null;
+  sizeinfo?: unknown;
+  paperinfo?: unknown;
+  colorinfo?: unknown;
+  ordqty?: unknown;
+  prsjobinfo?: unknown;
+  awkjobinfo?: unknown;
+  dlvyprepay: boolean | null;
+  dlvygrpno: number | null;
+}

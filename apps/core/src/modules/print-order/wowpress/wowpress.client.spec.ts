@@ -44,6 +44,18 @@ const ok =
   (extra: Record<string, unknown> = {}): Handler =>
   () => ({ status: 200, body: { resultCode: '200', ...extra } });
 const tokenOk = (token: string): Handler => ok({ token });
+const jobcostOk = (jobqty: number) =>
+  ok({
+    resultMap: {
+      cjson_jobcost: {
+        status: 200,
+        ordcost_sup: 4100,
+        ordcost_bill: 4510,
+        prsjob: [{ status: 200, jobqty, cost: 3000, jobcostno: 7 }],
+        awkjob: [{ status: 200, jobcostno: 12, cost: 1100 }],
+      },
+    },
+  });
 const orderOk = ok({ resultMap: { cjson_order: { ordinfo: [{ ordnum: 'WP_SAMPLE_0001' }] } } });
 const orderOkTwo = ok({
   resultMap: {
@@ -210,7 +222,7 @@ describe('WowpressClient', () => {
   it('reissues the token once on 401 then retries a quote', async () => {
     const { client, calls } = makeClient({
       [`${API}/api/login/issue`]: [tokenOk('old'), tokenOk('new')],
-      [`${API}/api/v1/ord/cjson_jobcost`]: [() => ({ status: 401, body: {} }), ok({ resultMap: {} })],
+      [`${API}/api/v1/ord/cjson_jobcost`]: [() => ({ status: 401, body: {} }), jobcostOk(200)],
     });
 
     await client.quote(SPEC, 2);
@@ -279,7 +291,7 @@ describe('WowpressClient', () => {
   it('quotes via cjson_jobcost', async () => {
     const { client, calls } = makeClient({
       [`${API}/api/login/issue`]: [tokenOk('tok')],
-      [`${API}/api/v1/ord/cjson_jobcost`]: [ok({ resultMap: {} })],
+      [`${API}/api/v1/ord/cjson_jobcost`]: [jobcostOk(300)],
     });
 
     await client.quote(SPEC, 3);
@@ -291,6 +303,38 @@ describe('WowpressClient', () => {
       prsjob: [{ jobno: 1, jobqty: 300 }],
       awkjob: [{ jobno: 2, jobqty: 300 }],
     });
+  });
+
+  it('throws from quote when the vendor did not apply the sent quantity', async () => {
+    const { client } = makeClient({
+      [`${API}/api/login/issue`]: [tokenOk('tok')],
+      [`${API}/api/v1/ord/cjson_jobcost`]: [jobcostOk(100)],
+    });
+
+    await expect(client.quote(SPEC, 3)).rejects.toThrow(WowpressApiError);
+  });
+
+  it('returns the verdict from jobcost', async () => {
+    const { client } = makeClient({
+      [`${API}/api/login/issue`]: [tokenOk('tok')],
+      [`${API}/api/v1/ord/cjson_jobcost`]: [jobcostOk(300)],
+    });
+
+    await expect(client.jobcost(SPEC, 3)).resolves.toEqual({ ok: true, supply: 4100, bill: 4510 });
+  });
+
+  it('reads resultMap.prod_info via GET', async () => {
+    const { client, calls } = makeClient({
+      [`${API}/api/login/issue`]: [tokenOk('tok')],
+      [`${API}/api/v1/std/prod_info/40073`]: [
+        ok({ resultMap: { prod_info: { prodno: 40073.0, prodname: '일반명함', dlvyprepay: true, dlvygrpno: 1.0 } } }),
+      ],
+    });
+
+    const info = await client.prodInfo(40073);
+
+    expect(info).toMatchObject({ prodno: 40073, prodname: '일반명함', dlvyprepay: true, dlvygrpno: 1 });
+    expect(calls.find((c) => c.url.endsWith('/prod_info/40073'))?.method).toBe('GET');
   });
 
   it('sends one ordreq element per item with its own ordkey and ordbody', async () => {
