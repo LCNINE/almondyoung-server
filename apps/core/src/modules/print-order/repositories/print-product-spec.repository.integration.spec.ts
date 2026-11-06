@@ -149,4 +149,20 @@ describeIfDb('PrintProductSpecRepository (실 Postgres)', () => {
       masterId: first,
     });
   });
+
+  it('assignClaimedMaster replaces the placeholder master of a claim', async () => {
+    const templateId = randomUUID();
+    templateIds.push(templateId);
+    const real = randomUUID();
+
+    await inTx(async (tx) => {
+      await repo.claimTemplate(templateId, randomUUID(), tx);
+      await repo.assignClaimedMaster(templateId, real, tx);
+    });
+
+    expect(await inTx((tx) => repo.claimTemplate(templateId, randomUUID(), tx))).toEqual({
+      claimed: false,
+      masterId: real,
+    });
+  });
 });

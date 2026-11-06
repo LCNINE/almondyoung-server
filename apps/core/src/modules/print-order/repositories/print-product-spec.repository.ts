@@ -89,6 +89,15 @@ export class PrintProductSpecRepository {
     }, tx as DbTx);
   }
 
+  async assignClaimedMaster(templateId: string, masterId: string, tx: AnyTx): Promise<void> {
+    const t = wmsTables.printTemplateProducts;
+
+    // 게시 트랜잭션이 여러 BC 에 걸치므로 AnyTx 로 받아 여기서 한 번만 좁힌다
+    await this.dbService.run(async (trx) => {
+      await trx.update(t).set({ masterId }).where(eq(t.templateId, templateId));
+    }, tx as DbTx);
+  }
+
   confirmVariant(variantId: string, actorId: string, tx?: DbTx): Promise<void> {
     const t = wmsTables.printProductSpecs;
 
