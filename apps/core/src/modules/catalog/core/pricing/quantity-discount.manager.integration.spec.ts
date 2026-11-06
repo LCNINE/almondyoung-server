@@ -342,6 +342,25 @@ describeIfDb('수량 할인 구간표 저장 (실 Postgres)', () => {
       });
     });
 
+    it('saves a members-only table and prices only members by quantity', async () => {
+      await inRollbackTx(async (tx) => {
+        const { masterId, versionId, variantId } = await seedVersion(tx, { basePrice: 10000, membershipPrice: 9000 });
+        await manager.upsertForDraft(masterId, versionId, input([tier(3, 0, 10), tier(6, 0, 20)]), tx);
+
+        const set = await calculator.calculateVariantPriceSet(versionId, variantId, tx);
+        expect(set.tieredPrices).toEqual([]);
+        expect(set.membershipTieredPrices).toEqual([
+          { minQuantity: 3, price: 8100 },
+          { minQuantity: 6, price: 7200 },
+        ]);
+
+        const regular = await calculator.calculateVariantPriceByVersion(versionId, variantId, 6, 'regular', tx);
+        const member = await calculator.calculateVariantPriceByVersion(versionId, variantId, 6, 'membership', tx);
+        expect(regular.price).toBe(10000);
+        expect(member.price).toBe(7200);
+      });
+    });
+
     it('sends no tier prices while the table is switched off', async () => {
       await inRollbackTx(async (tx) => {
         const { masterId, versionId, variantId } = await seedVersion(tx);

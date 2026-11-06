@@ -10,6 +10,7 @@ export type QuantityDiscountViolationCode =
   | 'MIN_QUANTITY_INVALID'
   | 'MIN_QUANTITY_DUPLICATE'
   | 'RATE_OUT_OF_RANGE'
+  | 'RATE_BOTH_ZERO'
   | 'RATE_NOT_INCREASING'
   | 'MEMBER_PRICE_ABOVE_REGULAR'
   | 'PERIOD_REVERSED'
@@ -56,6 +57,20 @@ export function buildTierPrices(input: {
   };
 }
 
+/** 쇼핑몰에 내보낼 구간가. 0% 인 대상은 그 구간가를 만들지 않는다 — 한쪽 대상만 할인하는 구간이다. */
+export function buildSaleTierPrices(input: {
+  basePrice: number;
+  membershipPrice: number;
+  tiers: QuantityDiscountTier[];
+}): { regular: TieredPriceInfo[]; membership: TieredPriceInfo[] } {
+  const regular = input.tiers.filter((t) => t.regularRateBp > 0);
+  const membership = input.tiers.filter((t) => t.membershipRateBp > 0);
+  return {
+    regular: buildTierPrices({ ...input, tiers: regular }).regular,
+    membership: buildTierPrices({ ...input, tiers: membership }).membership,
+  };
+}
+
 /** YYYY-MM-DD 이고 달력에 실제로 있는 날인가(2월 30일·13월 거부, 윤년 2월 29일 허용). */
 function isCalendarDate(day: string): boolean {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day);
@@ -66,7 +81,14 @@ function isCalendarDate(day: string): boolean {
 }
 
 function isWholePercentRate(bp: number): boolean {
-  return Number.isInteger(bp) && bp % BP_PER_PERCENT === 0 && bp > 0 && bp < BP_WHOLE;
+  return Number.isInteger(bp) && bp % BP_PER_PERCENT === 0 && bp >= 0 && bp < BP_WHOLE;
+}
+
+/** 열 하나에서 0 이 아닌 값은 앞의 0 이 아닌 값보다 커야 한다. 0 은 첫 양수 앞에만 올 수 있다. */
+function breaksIncrease(previous: number[], current: number): boolean {
+  const lastPositive = [...previous].reverse().find((r) => r > 0);
+  if (lastPositive === undefined) return false;
+  return current <= lastPositive;
 }
 
 export function validateQuantityDiscount(
@@ -93,12 +115,15 @@ export function validateQuantityDiscount(
     }
     if (!isWholePercentRate(t.regularRateBp) || !isWholePercentRate(t.membershipRateBp)) {
       violations.push({ code: 'RATE_OUT_OF_RANGE', tierIndex });
+    } else if (t.regularRateBp === 0 && t.membershipRateBp === 0) {
+      violations.push({ code: 'RATE_BOTH_ZERO', tierIndex });
     }
-    if (tierIndex > 0) {
-      const prev = tiers[tierIndex - 1];
-      if (t.regularRateBp <= prev.regularRateBp || t.membershipRateBp <= prev.membershipRateBp) {
-        violations.push({ code: 'RATE_NOT_INCREASING', tierIndex });
-      }
+    const before = tiers.slice(0, tierIndex);
+    if (
+      breaksIncrease(before.map((p) => p.regularRateBp), t.regularRateBp) ||
+      breaksIncrease(before.map((p) => p.membershipRateBp), t.membershipRateBp)
+    ) {
+      violations.push({ code: 'RATE_NOT_INCREASING', tierIndex });
     }
   });
 
@@ -137,7 +162,9 @@ function describeViolation(v: QuantityDiscountViolation, sortedTiers: QuantityDi
     case 'MIN_QUANTITY_DUPLICATE':
       return '같은 최소 수량이 두 번 있습니다.';
     case 'RATE_OUT_OF_RANGE':
-      return `${tierLabel}의 할인율은 1~99 사이 정수 %로 넣어 주세요.`;
+      return `${tierLabel}의 할인율은 0~99 사이 정수 %로 넣어 주세요.`;
+    case 'RATE_BOTH_ZERO':
+      return `${tierLabel}은 일반·멤버십 중 하나는 할인율이 있어야 합니다.`;
     case 'RATE_NOT_INCREASING':
       return `${tierLabel}의 %가 앞 구간보다 커야 합니다.`;
     case 'MEMBER_PRICE_ABOVE_REGULAR':

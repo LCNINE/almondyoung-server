@@ -28,6 +28,15 @@ describe('admin preview matches the server calculation', () => {
     ],
     [{ minQuantity: 1, regularRateBp: 150, membershipRateBp: 10000 }],
     Array.from({ length: 6 }, (_, i) => ({ minQuantity: i + 2, regularRateBp: (i + 1) * 100, membershipRateBp: (i + 1) * 100 })),
+    [
+      { minQuantity: 3, regularRateBp: 0, membershipRateBp: 1000 },
+      { minQuantity: 6, regularRateBp: 500, membershipRateBp: 2000 },
+    ],
+    [{ minQuantity: 3, regularRateBp: 0, membershipRateBp: 0 }],
+    [
+      { minQuantity: 3, regularRateBp: 500, membershipRateBp: 1000 },
+      { minQuantity: 6, regularRateBp: 0, membershipRateBp: 2000 },
+    ],
     [],
   ];
   const periods: Array<[string | null, string | null]> = [

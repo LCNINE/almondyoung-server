@@ -1,4 +1,5 @@
 import {
+  buildSaleTierPrices,
   buildTierPrices,
   discountedPrice,
   floor10,
@@ -82,11 +83,10 @@ describe('quantity discount math', () => {
     });
 
     it.each([
-      [{ minQuantity: 3, regularRateBp: 0, membershipRateBp: 1000 }],
       [{ minQuantity: 3, regularRateBp: 10000, membershipRateBp: 1000 }],
       [{ minQuantity: 3, regularRateBp: 550, membershipRateBp: 1000 }],
       [{ minQuantity: 3, regularRateBp: 500, membershipRateBp: -100 }],
-    ])('rejects a rate outside whole percents between 0 and 100 exclusive: %p', (t) => {
+    ])('rejects a rate outside whole percents from 0 to 99: %p', (t) => {
       expect(codes([t])).toContain('RATE_OUT_OF_RANGE');
     });
 
@@ -154,5 +154,50 @@ describe('quantityDiscountErrorMessage', () => {
         tiers,
       ),
     ).toBe('수량 할인 표와 맞지 않습니다: 5개 이상 구간의 %가 앞 구간보다 커야 합니다. (외 1건)');
+  });
+});
+
+describe('one audience only', () => {
+  const v = [{ variantId: 'v1', basePrice: 10000, membershipPrice: 9000 }];
+  const check = (tiers: ReturnType<typeof tier>[]) =>
+    validateQuantityDiscount({ tiers, startsOn: null, endsOn: null }, v).map((x) => x.code);
+
+  it('accepts a members-only table and sells no regular tier price', () => {
+    const tiers = [tier(3, 0, 10), tier(6, 0, 20)];
+    expect(check(tiers)).toEqual([]);
+    expect(buildSaleTierPrices({ basePrice: 10000, membershipPrice: 9000, tiers })).toEqual({
+      regular: [],
+      membership: [
+        { minQuantity: 3, price: 8100 },
+        { minQuantity: 6, price: 7200 },
+      ],
+    });
+  });
+
+  it('keeps one preview row per tier so the admin table lines up', () => {
+    const result = buildTierPrices({ basePrice: 10000, membershipPrice: 9000, tiers: [tier(3, 0, 10)] });
+    expect(result.regular).toEqual([{ minQuantity: 3, price: 10000 }]);
+  });
+
+  it('lets one audience start later than the other', () => {
+    expect(check([tier(3, 0, 10), tier(6, 5, 20)])).toEqual([]);
+  });
+
+  it('rejects a tier where both rates are zero', () => {
+    expect(check([tier(3, 0, 0)])).toEqual(['RATE_BOTH_ZERO']);
+  });
+
+  it('rejects a zero after a positive rate in the same column', () => {
+    expect(check([tier(3, 5, 10), tier(6, 0, 20)])).toEqual(['RATE_NOT_INCREASING']);
+  });
+
+  it('still rejects members paying more than everyone else', () => {
+    expect(check([tier(3, 20, 0)])).toEqual(['MEMBER_PRICE_ABOVE_REGULAR']);
+  });
+
+  it('explains a tier with no rate in plain words', () => {
+    expect(quantityDiscountErrorMessage([{ code: 'RATE_BOTH_ZERO', tierIndex: 0 }], [tier(3, 0, 0)])).toBe(
+      '수량 할인 표와 맞지 않습니다: 3개 이상 구간은 일반·멤버십 중 하나는 할인율이 있어야 합니다.',
+    );
   });
 });

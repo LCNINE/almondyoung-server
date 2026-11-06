@@ -20,7 +20,7 @@ import {
   VariantPriceSet,
 } from '../../catalog.types';
 import { PricingRuleEntity } from '../../schema/catalog.schema.types';
-import { buildTierPrices, discountedPrice, sortTiers, type VariantPriceBasis } from './quantity-discount.math';
+import { buildSaleTierPrices, discountedPrice, sortTiers, type VariantPriceBasis } from './quantity-discount.math';
 import { QuantityDiscountReader, QuantityDiscountReadModel } from './quantity-discount.reader';
 
 @Injectable()
@@ -119,16 +119,15 @@ export class PricingCalculatorService {
       const tierQuantity = quantity ?? 0;
       const discount =
         tierQuantity > 1 ? await this.quantityDiscounts.findForVersion(version.masterId, versionId, trx) : null;
+      const rateOf = (t: { regularRateBp: number; membershipRateBp: number }) =>
+        customerType === 'membership' ? t.membershipRateBp : t.regularRateBp;
       const tier = discount?.enabled
         ? sortTiers(discount.tiers)
-            .filter((t) => t.minQuantity <= tierQuantity)
+            .filter((t) => t.minQuantity <= tierQuantity && rateOf(t) > 0)
             .pop()
         : undefined;
       if (tier) {
-        currentPrice = discountedPrice(
-          currentPrice,
-          customerType === 'membership' ? tier.membershipRateBp : tier.regularRateBp,
-        );
+        currentPrice = discountedPrice(currentPrice, rateOf(tier));
         breakdown.afterTieredPrice = currentPrice;
       }
 
@@ -229,7 +228,7 @@ export class PricingCalculatorService {
       .price;
 
     const tiers = discount?.enabled
-      ? buildTierPrices({ basePrice, membershipPrice, tiers: discount.tiers })
+      ? buildSaleTierPrices({ basePrice, membershipPrice, tiers: discount.tiers })
       : { regular: [], membership: [] };
     return { basePrice, membershipPrice, tieredPrices: tiers.regular, membershipTieredPrices: tiers.membership };
   }
