@@ -10,6 +10,8 @@ import {
 } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { toast } from 'sonner';
+import { permissionLabel } from '@/lib/auth/permission-labels';
+import { useOutboundPreparationSummary } from '@/lib/services/orders';
 import type {
   OutboundPreparationSummary,
   PreparationBucket,
@@ -34,17 +36,18 @@ const mockSplit = jest.fn();
 const mockRefetch = jest.fn();
 let mockKeyCounter = 0;
 let mockAllowed = true;
+let mockShipmentReadAllowed = true;
 let mockConsolidationAllowed = true;
 let mockSummary: OutboundPreparationSummary;
 let mockError = false;
 
 jest.mock('@/lib/services/orders', () => ({
-  useOutboundPreparationSummary: () => ({
+  useOutboundPreparationSummary: jest.fn(() => ({
     data: mockSummary,
     isError: mockError,
     isLoading: false,
     refetch: mockRefetch,
-  }),
+  })),
   useRunOutboundPreparation: Object.assign(
     () => ({ mutateAsync: mockRun, isPending: false }),
     { permission: ['fulfillment.warehouse.operate'] }
@@ -76,6 +79,7 @@ jest.mock('@/lib/services/inventory/queries', () => ({
 }));
 
 jest.mock('@/hooks/use-permission', () => ({
+  useCan: () => ({ status: 'ready', allowed: mockShipmentReadAllowed }),
   useCanRun: (action: { permission: readonly string[] }) => ({
     status: 'ready',
     allowed:
@@ -161,6 +165,7 @@ beforeEach(() => {
   mockRun.mockReset();
   mockKeyCounter = 0;
   mockAllowed = true;
+  mockShipmentReadAllowed = true;
   mockConsolidationAllowed = true;
   mockError = false;
   mockSummary = {
@@ -193,6 +198,21 @@ beforeEach(() => {
 });
 
 describe('OutboundPreparationTemplate', () => {
+  it('상자 조회 권한이 없으면 안내를 보여 주고 summary 조회를 끈다', () => {
+    mockShipmentReadAllowed = false;
+
+    render(<OutboundPreparationTemplate />);
+
+    expect(
+      screen.getByText(
+        `상자 목록은 ${permissionLabel('fulfillment.shipment.read')} 권한이 있어야 보여요.`
+      )
+    ).toBeTruthy();
+    expect(useOutboundPreparationSummary).toHaveBeenCalledWith('w1', false);
+    expect(screen.queryByRole('table')).toBeNull();
+    expect(screen.queryByRole('button', { name: '다시 불러오기' })).toBeNull();
+  });
+
   it('분류 순서와 35장, 단일 7 / 합포 28을 보여 주고 출고불가 내역은 끈다', () => {
     render(<OutboundPreparationTemplate />);
 

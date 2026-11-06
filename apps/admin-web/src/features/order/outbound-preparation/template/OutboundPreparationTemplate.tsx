@@ -15,7 +15,8 @@ import {
 import { ConsolidationSheet } from '@/features/order/fulfillments/detail/consolidation-sheet';
 import { defaultWarehouseId } from '@/features/order/consolidation/board-model';
 import { parseServerError } from '@/lib/api/server-error';
-import { usePermissionCheck } from '@/hooks/use-permission';
+import { useCan, usePermissionCheck } from '@/hooks/use-permission';
+import { permissionLabel } from '@/lib/auth/permission-labels';
 import { useWarehouses } from '@/lib/services/inventory/queries';
 import {
   createIdempotentCommand,
@@ -62,7 +63,10 @@ function PreparationWarehouse({
   warehouses: NonNullable<ReturnType<typeof useWarehouses>['data']>;
   onWarehouseChange: (id: string) => void;
 }) {
-  const summary = useOutboundPreparationSummary(warehouseId);
+  const shipmentRead = useCan(['fulfillment.shipment.read']);
+  const canRead = shipmentRead.status === 'ready' && shipmentRead.allowed;
+
+  const summary = useOutboundPreparationSummary(warehouseId, canRead);
   const split = useSplitUnreservedMany();
   const { canRun } = usePermissionCheck();
 
@@ -295,12 +299,19 @@ function PreparationWarehouse({
       {!warehouseId && (
         <p className="text-sm text-muted-foreground">창고를 골라 주세요.</p>
       )}
-      {warehouseId && summary.isLoading && (
+      {canRead && warehouseId && summary.isLoading && (
         <p role="status" className="text-sm text-muted-foreground">
           출고 준비 내역을 불러오고 있어요.
         </p>
       )}
-      {summary.isError ? (
+      {!canRead ? (
+        shipmentRead.status === 'ready' && (
+          <p className="text-sm text-muted-foreground">
+            상자 목록은 {permissionLabel('fulfillment.shipment.read')} 권한이
+            있어야 보여요.
+          </p>
+        )
+      ) : summary.isError ? (
         <div role="alert" className="space-y-2">
           <p className="text-sm">출고 준비 내역을 불러오지 못했어요.</p>
           <Button variant="outline" onClick={() => void summary.refetch()}>
