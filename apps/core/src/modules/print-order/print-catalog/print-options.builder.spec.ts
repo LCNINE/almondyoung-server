@@ -78,4 +78,13 @@ describe('buildPrintOptions', () => {
 
     expect(() => buildPrintOptions(unresolvable, { sizeno: 5670 })).toThrow('prs jobno');
   });
+
+  it('작업 번호 0 은 없는 것으로 보고 다음 출처로 넘어간다', () => {
+    const colorinfo = [{ pagelist: [{ colorlist: [{ colorno: 302, colorname: '단면 칼라', req_prsjob: [{ jobno: 0 }] }] }] }];
+    const withFallback: WowpressProdInfo = { ...pet, colorinfo };
+    const allZero: WowpressProdInfo = { ...pet, colorinfo, prsjobinfo: [{ prsjoblist: [{ jobno: 0, req_color: null }] }] };
+
+    expect(buildPrintOptions(withFallback, { sizeno: 5670 }).colors[0].jobno).toBe(30);
+    expect(() => buildPrintOptions(allZero, { sizeno: 5670 })).toThrow('prs jobno');
+  });
 });

@@ -133,12 +133,12 @@ export function buildPrintOptions(
 
   // 색상 자체의 인쇄 작업 → req_color 가 그 색상을 가리키는 작업 → 작업이 하나뿐이면 그것
   const resolvePrsJobno = (colorno: number, own: number | undefined): number => {
-    if (own !== undefined) return own;
+    if (own !== undefined && own > 0) return own;
 
-    const byColor = prsJobs.find((j) => j.req_color?.some((c) => c.colorno === colorno));
+    const byColor = prsJobs.find((j) => j.jobno > 0 && j.req_color?.some((c) => c.colorno === colorno));
     if (byColor) return byColor.jobno;
 
-    if (prsJobs.length === 1) return prsJobs[0].jobno;
+    if (prsJobs.length === 1 && prsJobs[0].jobno > 0) return prsJobs[0].jobno;
 
     throw new Error(`prs jobno not resolvable for color ${colorno} in prod ${prodInfo.prodno}`);
   };
