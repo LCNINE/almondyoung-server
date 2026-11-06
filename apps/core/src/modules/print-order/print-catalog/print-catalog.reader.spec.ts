@@ -4,6 +4,7 @@ import { BadRequestError } from '@app/shared';
 import { WowpressClient } from '../wowpress/wowpress.client';
 import { WowpressProdInfo } from '../wowpress/wowpress.types';
 import { PrintCatalogReader, PrintCombo } from './print-catalog.reader';
+import { PRINT_KIND_PRODUCTS } from './print-kind-products';
 
 const card: WowpressProdInfo = JSON.parse(
   readFileSync(join(__dirname, '__fixtures__', 'prod-info-40073.json'), 'utf8'),
@@ -68,6 +69,37 @@ describe('PrintCatalogReader', () => {
 
     expect(view.prodno).toBe(40073);
     expect(view.bleedMatches).toBe(true);
+  });
+
+  it('options: 와우프레스 재단 여유가 편집기 메뉴판 재단 여유 3mm 와 다르면 bleedMatches 가 false', async () => {
+    const menuInfo = (cutsize: number) => ({
+      ...card,
+      sizeinfo: [{ sizelist: [{ sizeno: 5678, sizename: 'A4(국8절)', width: 210, height: 297, cutsize }] }],
+    });
+
+    const viewWith = (cutsize: number) =>
+      new PrintCatalogReader({
+        prodInfo: jest.fn().mockResolvedValue(menuInfo(cutsize)),
+        jobcost,
+      } as unknown as WowpressClient).options('menu', { width: 210, height: 297 });
+
+    expect((await viewWith(0)).bleedMatches).toBe(false);
+    expect((await viewWith(6)).bleedMatches).toBe(true);
+  });
+
+  it('편집기 재단 여유는 종류마다 스토어프론트 PRINT_SPECS 의 bleedMm 과 같다', () => {
+    const catalog = readFileSync(
+      join(__dirname, '../../../../../../web/almondyoung-storefront/src/domains/almond-template/lib/catalog.ts'),
+      'utf8',
+    );
+    const specs = catalog.slice(catalog.indexOf('export const PRINT_SPECS'));
+    const editorBleed = new Map(
+      [...specs.matchAll(/^ {2}(\w+): \{[\s\S]*?bleedMm: ([\d.]+),/gm)].map((m) => [m[1], Number(m[2])]),
+    );
+
+    for (const [kind, products] of Object.entries(PRINT_KIND_PRODUCTS)) {
+      for (const product of products) expect([kind, product.bleedMm]).toEqual([kind, editorBleed.get(kind)]);
+    }
   });
 
   it('quotes: 조합마다 순차로 jobcost(qty 1)를 한 번씩 부르고 실패는 다른 조합을 막지 않는다', async () => {

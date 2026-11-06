@@ -10,6 +10,7 @@ export interface PrintKindProduct {
   fileDpi: number;
 }
 
+// bleedMm 은 스토어프론트 편집기(PRINT_SPECS)의 재단 여유와 같아야 bleedMatches 가 실제 편집기를 반영한다
 export const PRINT_KIND_PRODUCTS: Record<PrintKind, PrintKindProduct[]> = {
   card: [{ prodno: 40073, sizeno: 5458, bleedMm: 1, fileFormat: 'pdf', fileDpi: 300 }],
   bizcard: [{ prodno: 40073, sizeno: 5458, bleedMm: 1, fileFormat: 'pdf', fileDpi: 300 }],
@@ -29,8 +30,8 @@ export const PRINT_KIND_PRODUCTS: Record<PrintKind, PrintKindProduct[]> = {
     fileDpi: 700,
   })),
   menu: [
-    { prodno: 40164, sizeno: 5678, bleedMm: 0, fileFormat: 'jpg', fileDpi: 300 },
-    { prodno: 40164, sizeno: 5677, bleedMm: 0, fileFormat: 'jpg', fileDpi: 300 },
-    { prodno: 40164, sizeno: 5679, bleedMm: 0, fileFormat: 'jpg', fileDpi: 300 },
+    { prodno: 40164, sizeno: 5678, bleedMm: 3, fileFormat: 'jpg', fileDpi: 300 },
+    { prodno: 40164, sizeno: 5677, bleedMm: 3, fileFormat: 'jpg', fileDpi: 300 },
+    { prodno: 40164, sizeno: 5679, bleedMm: 3, fileFormat: 'jpg', fileDpi: 300 },
   ],
 };
