@@ -732,7 +732,7 @@ export function setup(infra: SharedInfra) {
       UGC_SERVICE_URL: url('ugc'),
       UGC_INTERNAL_KEY: ugcInternalKey.value,
       // 켜기 전엔 print_orders 행만 쌓이고 와우프레스로 보내지 않는다. 첫 품목 검증 뒤 'true'.
-      PRINT_ORDER_SUBMIT_ENABLED: 'false',
+      PRINT_ORDER_SUBMIT_ENABLED: 'true',
     },
   });
 

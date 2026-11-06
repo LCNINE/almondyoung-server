@@ -158,11 +158,11 @@ export class PrintOrderSubmitManager {
       await lane.owned({ status: 'failed', lastError: DESIGN_OWNER_MISMATCH_ERROR });
       return null;
     }
-    if (
-      design.productId !== spec.design.productId ||
-      design.widthMm !== spec.design.widthMm ||
-      design.heightMm !== spec.design.heightMm
-    ) {
+    // 세로 시안(50×90)도 같은 종이를 돌려 찍는 것이라 가로·세로를 가리지 않는다
+    const sameSize =
+      (design.widthMm === spec.design.widthMm && design.heightMm === spec.design.heightMm) ||
+      (design.widthMm === spec.design.heightMm && design.heightMm === spec.design.widthMm);
+    if (design.productId !== spec.design.productId || !sameSize) {
       await lane.owned({ status: 'failed', lastError: DESIGN_SPEC_MISMATCH_ERROR });
       return null;
     }

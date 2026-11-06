@@ -343,6 +343,15 @@ describe('PrintOrderSubmitManager', () => {
     expect(wowpress.order).not.toHaveBeenCalled();
   });
 
+  it('orders a portrait design of the same size', async () => {
+    const { repo, wowpress, ugc, manager } = setup(CONFIRMED_VARIANT);
+    ugc.design.mockResolvedValue({ userId: CUSTOMER_ID, productId: 'p', widthMm: 50, heightMm: 90, hasBack: false });
+
+    await manager.submit(repo.get('po-1'));
+
+    expect(wowpress.order).toHaveBeenCalled();
+  });
+
   it('fails without ordering when the design belongs to another customer', async () => {
     const { repo, wowpress, ugc, manager } = setup(CONFIRMED_VARIANT);
     ugc.design.mockResolvedValue({ userId: 'someone-else', productId: 'p', widthMm: 90, heightMm: 50, hasBack: false });
