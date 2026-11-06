@@ -14,11 +14,13 @@ import {
   usePublishPrintProduct,
 } from '@/lib/services/products';
 import type { AdminAlmondTemplateDto } from '@/lib/types/dto/products';
-import type { PrintKind, PublishPrintComboDto } from '@/lib/types/dto/print-catalog';
+import type { PrintComboDto, PrintKind, PublishPrintComboDto } from '@/lib/types/dto/print-catalog';
 import { cn } from '@/lib/utils/ui';
 import { almondTemplateKindLabel } from '../lib/almond-template-rules';
 import {
   COMBO_LIMIT,
+  gridSize,
+  quoteId,
   applyTimes,
   blockers,
   clearDraft,
@@ -31,6 +33,7 @@ import {
   qtyChoices,
   qtyLabel,
   saveDraft,
+  type ComboLabels,
   type DiscountPct,
   type PickedAxes,
   type PublishDraft,
@@ -136,29 +139,44 @@ export function PublishDialog({ template, kind, onClose }: PublishDialogProps) {
   useEffect(() => {
     if (step < 2 || list.length === 0) return;
 
-    const missing = list.filter((c) => !requested.current.has(c.key));
+    const size = { width, height };
+    const missing = list.filter((c) => !requested.current.has(quoteId(c, size)));
     if (missing.length === 0) return;
 
-    for (const c of missing) requested.current.add(c.key);
+    // 응답은 보낸 입력의 견적 id 로 저장해, 그 사이 후가공이 바뀌면 지금 행이 옛 견적을 읽지 않게 한다
+    const sentIds = new Map(missing.map((c) => [c.key, quoteId(c, size)]));
+    for (const id of sentIds.values()) requested.current.add(id);
     quotes
       .mutateAsync({ kind, body: { width, height, combos: missing } })
       .then((result) =>
-        setCosts((prev) => ({
-          ...prev,
-          ...Object.fromEntries(result.map((r) => [r.key, r.verdict.ok ? r.verdict.supply : null])),
-        }))
+        setCosts((prev) => {
+          const next = { ...prev };
+          for (const r of result) {
+            const id = sentIds.get(r.key);
+            if (id) next[id] = r.verdict.ok ? r.verdict.supply : null;
+          }
+
+          return next;
+        })
       )
-      .catch(() => setCosts((prev) => ({ ...prev, ...Object.fromEntries(missing.map((c) => [c.key, null])) })));
+      .catch(() =>
+        setCosts((prev) => ({ ...prev, ...Object.fromEntries([...sentIds.values()].map((id) => [id, null])) }))
+      );
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step, listSignature, retryTick]);
 
   const paperLabel = new Map(options?.papers.map((p) => [p.paperno, p.label]));
   const colorLabel = new Map(options?.colors.map((c) => [c.colorno, c.label]));
   const off = new Set(draft.off);
+  const labelsOf = (c: PrintComboDto): ComboLabels => ({
+    paper: paperLabel.get(c.paperno) ?? String(c.paperno),
+    side: colorLabel.get(c.colorno) ?? String(c.colorno),
+    qty: qtyLabel(kind, c.qty),
+  });
 
   const knownCosts: Record<string, number> = {};
   for (const c of list) {
-    const cost = costs[c.key];
+    const cost = costs[quoteId(c, { width, height })];
     if (typeof cost === 'number') knownCosts[c.key] = cost;
   }
   const prices = applyTimes(draft.edited, new Set(Object.keys(draft.edited)), knownCosts, times);
@@ -166,16 +184,12 @@ export function PublishDialog({ template, kind, onClose }: PublishDialogProps) {
   const rows: (OptionRow & { combo: PublishPrintComboDto })[] = list.map((c) => {
     const price = prices[c.key] ?? 0;
     const memberPrice = discountPct ? memberPriceFor(price, discountPct) : null;
-    const optionLabels = {
-      paper: paperLabel.get(c.paperno) ?? String(c.paperno),
-      side: colorLabel.get(c.colorno) ?? String(c.colorno),
-      qty: qtyLabel(kind, c.qty),
-    };
+    const optionLabels = labelsOf(c);
 
     return {
       key: c.key,
       label: `${optionLabels.paper} · ${optionLabels.side} · ${optionLabels.qty}`,
-      cost: c.key in costs ? costs[c.key] : undefined,
+      cost: quoteId(c, { width, height }) in costs ? costs[quoteId(c, { width, height })] : undefined,
       price,
       memberPrice,
       on: !off.has(c.key),
@@ -185,7 +199,7 @@ export function PublishDialog({ template, kind, onClose }: PublishDialogProps) {
   });
 
   const problems = blockers(
-    rows.map((r) => ({ key: r.key, cost: r.cost ?? null, price: r.price, memberPrice: r.memberPrice, on: r.on })),
+    rows.map((r) => ({ key: r.key, cost: r.cost ?? null, price: r.price, memberPrice: r.memberPrice, on: r.on, labels: r.combo.optionLabels })),
     options?.bleedMatches ?? false
   );
   const pending = rows.filter((r) => r.on && r.cost === undefined).length;
@@ -201,7 +215,12 @@ export function PublishDialog({ template, kind, onClose }: PublishDialogProps) {
     }
 
     const next = { ...picked, [axis]: [...current, value].sort((a, b) => a - b) };
-    if (options && combos(next, awk, (p, c, q) => qtyAllowed(options.quantities, p, c, q)).length > COMBO_LIMIT) {
+    const nextLabels = options
+      ? combos(next, awk, (p, c, q) => qtyAllowed(options.quantities, p, c, q))
+          .filter((c) => !off.has(c.key))
+          .map((c) => labelsOf(c))
+      : [];
+    if (gridSize(nextLabels) > COMBO_LIMIT) {
       toast.error(`조합은 ${COMBO_LIMIT}개까지 만들 수 있어요.`);
 
       return;

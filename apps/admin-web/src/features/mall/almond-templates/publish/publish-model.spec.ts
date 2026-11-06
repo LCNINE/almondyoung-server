@@ -6,6 +6,8 @@ import {
   combos,
   defaultAwk,
   draftKey,
+  gridSize,
+  quoteId,
   loadDraft,
   memberPriceFor,
   parseTemplateSize,
@@ -13,9 +15,10 @@ import {
   qtyAllowed,
   saveDraft,
   type PublishDraft,
+  type PublishRow,
 } from './publish-model';
 
-const row = (over: Partial<{ key: string; cost: number | null; price: number; memberPrice: number | null; on: boolean }>) => ({
+const row = (over: Partial<PublishRow>): PublishRow => ({
   key: 'k1',
   cost: 3100,
   price: 7800,
@@ -133,6 +136,37 @@ describe('blockers', () => {
   });
 });
 
+describe('price integrity', () => {
+  it('blocks a price the core rejects as not a positive integer', () => {
+    expect(blockers([row({ price: 7800.5 })], true)).toEqual([expect.stringContaining('정수')]);
+    expect(blockers([row({ memberPrice: 7000.5 })], true)).toEqual([expect.stringContaining('정수')]);
+  });
+});
+
+describe('grid size', () => {
+  const labels = (i: number) => ({ paper: `p${i}`, side: '양면', qty: `${i}매` });
+
+  it('multiplies the distinct labels of each axis like the core', () => {
+    expect(gridSize([labels(1), labels(2)])).toBe(4);
+    expect(gridSize([])).toBe(0);
+  });
+
+  it('blocks a grid over the cap even with few rows', () => {
+    const rows = Array.from({ length: 15 }, (_, i) => row({ key: `k${i}`, labels: labels(i) }));
+
+    expect(blockers(rows, true)).toEqual([expect.stringContaining(`${COMBO_LIMIT}개`)]);
+  });
+});
+
+describe('quoteId', () => {
+  it('changes when the post-processing changes', () => {
+    const combo = { key: '1-2-500', paperno: 1, colorno: 2, qty: 500, awk: [7] };
+    const size = { width: 90, height: 50 };
+
+    expect(quoteId(combo, size)).not.toBe(quoteId({ ...combo, awk: [8] }, size));
+  });
+});
+
 describe('parseTemplateSize', () => {
   it('reads widthxheight', () => {
     expect(parseTemplateSize('90x50')).toEqual({ width: 90, height: 50 });
@@ -160,6 +194,15 @@ describe('draft storage', () => {
     expect(window.localStorage.getItem(draftKey('t1'))).not.toBeNull();
     expect(draftKey('t1')).toBe('almond-publish-draft:t1');
     expect(loadDraft('t1')).toEqual(draft);
+  });
+
+  it('drops restored prices the core would reject', () => {
+    window.localStorage.setItem(
+      draftKey('t1'),
+      JSON.stringify({ ...draft, edited: { a: 7800.5, b: 0, c: -100, d: '9000', e: 9000 } }),
+    );
+
+    expect(loadDraft('t1')?.edited).toEqual({ e: 9000 });
   });
 
   it('ignores a broken draft', () => {

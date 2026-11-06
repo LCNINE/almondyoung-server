@@ -13,13 +13,37 @@ export interface PickedAxes {
   qtys: number[];
 }
 
+export interface ComboLabels {
+  paper: string;
+  side: string;
+  qty: string;
+}
+
 export interface PublishRow {
   key: string;
   cost: number | null;
   price: number;
   memberPrice: number | null;
   on: boolean;
+  labels?: ComboLabels;
 }
+
+// core 게시와 같이 축마다 서로 다른 표시 수를 곱한 격자 크기
+export function gridSize(labels: ComboLabels[]): number {
+  if (labels.length === 0) return 0;
+
+  return (
+    new Set(labels.map((l) => l.paper)).size *
+    new Set(labels.map((l) => l.side)).size *
+    new Set(labels.map((l) => l.qty)).size
+  );
+}
+
+export const isValidPrice = (price: number): boolean => Number.isSafeInteger(price) && price >= 1;
+
+// 견적 입력 전체(조합·후가공·크기)가 같을 때만 같은 견적으로 본다
+export const quoteId = (combo: PrintComboDto, size: { width: number; height: number }): string =>
+  `${combo.key}|awk:${combo.awk.join('.')}|${size.width}x${size.height}`;
 
 export function isPrintKind(kind: string | null): kind is PrintKind {
   return PRINT_KINDS.some((k) => k === kind);
@@ -136,7 +160,14 @@ export function blockers(rows: PublishRow[], bleedMatches: boolean): string[] {
     return out;
   }
 
-  if (on.length > COMBO_LIMIT) out.push(`조합은 ${COMBO_LIMIT}개까지 만들 수 있어요`);
+  const labelled = on.flatMap((r) => (r.labels ? [r.labels] : []));
+  const grid = labelled.length === on.length ? gridSize(labelled) : on.length;
+  if (grid > COMBO_LIMIT) out.push(`조합은 ${COMBO_LIMIT}개까지 만들 수 있어요`);
+
+  const badPrice = on.filter(
+    (r) => r.cost !== null && (!isValidPrice(r.price) || (r.memberPrice !== null && !isValidPrice(r.memberPrice)))
+  ).length;
+  if (badPrice > 0) out.push(`가격을 1원 이상 정수로 적지 않은 조합이 ${badPrice}개 있어요`);
 
   const failed = on.filter((r) => r.cost === null).length;
   if (failed > 0) out.push(`견적을 불러오지 못한 조합이 ${failed}개 있어요`);
@@ -157,11 +188,11 @@ const draftSchema = z.object({
   picked: z.object({ papers: z.array(z.number()), colors: z.array(z.number()), qtys: z.array(z.number()) }),
   times: z.number().min(1),
   discountPct: z.union([z.literal(0), z.literal(5), z.literal(10)]),
-  edited: z.record(z.string(), z.number()),
+  edited: z.record(z.string(), z.unknown()),
   off: z.array(z.string()),
 });
 
-export type PublishDraft = z.infer<typeof draftSchema>;
+export type PublishDraft = Omit<z.infer<typeof draftSchema>, 'edited'> & { edited: Record<string, number> };
 
 export const draftKey = (templateId: string): string => `almond-publish-draft:${templateId}`;
 
@@ -172,7 +203,15 @@ export function loadDraft(templateId: string): PublishDraft | null {
 
     const parsed = draftSchema.safeParse(JSON.parse(raw));
 
-    return parsed.success ? parsed.data : null;
+    if (!parsed.success) return null;
+
+    // 직접 고친 가격 중 core 가 받지 않는 값(소수·0 이하)은 버린다
+    const edited: Record<string, number> = {};
+    for (const [key, value] of Object.entries(parsed.data.edited)) {
+      if (typeof value === 'number' && isValidPrice(value)) edited[key] = value;
+    }
+
+    return { ...parsed.data, edited };
   } catch {
     return null;
   }
