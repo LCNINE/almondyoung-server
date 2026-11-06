@@ -259,6 +259,15 @@ describe('PrintOrderAdminManager', () => {
       expect(repo.confirmTest).toHaveBeenCalledWith(r.id, ACTOR, '출력 가능', tx);
     });
 
+    it('throws without confirming the variant when the line context is missing', async () => {
+      const { manager, add, specs, repo } = setup();
+      const r = add({ status: 'submitted', testMemo: true });
+      repo.findLineContext.mockResolvedValueOnce(null);
+
+      await expect(manager.confirmTest(r.id, ACTOR, '출력 가능')).rejects.toBeInstanceOf(NotFoundError);
+      expect(specs.confirmVariant).not.toHaveBeenCalled();
+    });
+
     it('is idempotent and keeps the first confirmation', async () => {
       const { manager, add, specs } = setup();
       const r = add({ status: 'submitted', testMemo: true });

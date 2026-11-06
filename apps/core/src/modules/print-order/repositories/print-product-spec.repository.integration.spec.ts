@@ -126,6 +126,18 @@ describeIfDb('PrintProductSpecRepository (실 Postgres)', () => {
     expect(row?.confirmedBy).toBe('actor-1');
   });
 
+  it('confirmVariant on a variant without a row succeeds and creates no row', async () => {
+    const variantId = newVariant();
+
+    await expect(repo.confirmVariant(variantId, 'actor-1')).resolves.toBeUndefined();
+
+    const rows = await dbService.db
+      .select()
+      .from(wmsTables.printProductSpecs)
+      .where(eq(wmsTables.printProductSpecs.variantId, variantId));
+    expect(rows).toHaveLength(0);
+  });
+
   it('claimTemplate claims once and reports the original master afterwards', async () => {
     const templateId = randomUUID();
     templateIds.push(templateId);

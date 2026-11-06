@@ -84,8 +84,11 @@ export class PrintOrderAdminManager {
     const stamped = await this.dbService.run(async (trx) => {
       if (!(await this.repository.confirmTest(id, actorId, text, trx))) return false;
 
+      // 라인을 못 찾으면 던져 행 표시도 되돌린다. 남기면 재시도가 variant 확정을 건너뛴다
       const ctx = await this.repository.findLineContext(row.salesOrderLineId, trx);
-      if (ctx) await this.specs.confirmVariant(ctx.line.variantId, actorId, trx);
+      if (!ctx) throw new NotFoundError(`Sales order line not found for print order: ${id}`);
+
+      await this.specs.confirmVariant(ctx.line.variantId, actorId, trx);
 
       return true;
     });
