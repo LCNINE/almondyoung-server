@@ -17,6 +17,7 @@ import { isTransientMedusaError } from './transient-error';
 import type { PimActiveVersionChangedEvent, ChannelAdapterSchema } from '../../types';
 import type {
   CategoryChangedPayload,
+  ProductBundleOffersChangedPayload,
   ProductMasterDeletedPayload,
   ProductPublishOrigin,
 } from '@packages/event-contracts/streams/product.stream';
@@ -35,6 +36,7 @@ const INBOX_WORKER_EVENT_TYPES = [
   'ProductMasterActiveVersionChanged',
   'ProductMasterDeleted',
   'CategoryChanged',
+  'ProductBundleOffersChanged',
   'ProductSellableQuantityChanged',
   'MembershipStatusChanged',
   'Cafe24Linked',
@@ -430,6 +432,12 @@ export class InboxWorkerService implements OnModuleInit, OnModuleDestroy {
           await this.syncService.handleCategoryChanged(categoryPayload);
           break;
 
+        case 'ProductBundleOffersChanged': {
+          const bundlePayload: ProductBundleOffersChangedPayload = event.payload;
+          await this.syncService.syncBundleOffers(bundlePayload.masterId, bundlePayload.offers, bundlePayload.changedAt);
+          break;
+        }
+
         case 'ProductSellableQuantityChanged':
           const sellableQuantityPayload: ProductSellableQuantityChangedPayload = event.payload;
           await this.syncService.handleProductSellableQuantityChanged(sellableQuantityPayload);
@@ -595,7 +603,8 @@ export class InboxWorkerService implements OnModuleInit, OnModuleDestroy {
   }
 
   private getSupersedingStatuses(eventType: string): string[] {
-    if (isProductMasterLifecycleEvent(eventType)) {
+    // 목록 전체 교체라 이미 끝난 새 이벤트가 있어도 옛 이벤트는 쓸모가 없다(Medusa 도 리비전으로 한 번 더 막는다)
+    if (isProductMasterLifecycleEvent(eventType) || eventType === 'ProductBundleOffersChanged') {
       return ['pending', 'processing', 'published', 'failed'];
     }
 

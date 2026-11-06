@@ -9,9 +9,13 @@ import { QuantityDiscountReader } from './quantity-discount.reader';
 import { QuantityDiscountManager } from './quantity-discount.manager';
 import { QuantityDiscountService } from './quantity-discount.service';
 import { QuantityDiscountController } from './quantity-discount.controller';
+import { BundleOfferReader } from './bundle-offer.reader';
+import { BundleOfferManager } from './bundle-offer.manager';
+import { BundleOfferService } from './bundle-offer.service';
+import { BundleOfferController } from './bundle-offer.controller';
 
 @Module({
-  controllers: [VersionPricingController, MasterPricingController, QuantityDiscountController],
+  controllers: [VersionPricingController, MasterPricingController, QuantityDiscountController, BundleOfferController],
   providers: [
     PricingService,
     PricingCalculatorService,
@@ -20,6 +24,9 @@ import { QuantityDiscountController } from './quantity-discount.controller';
     QuantityDiscountReader,
     QuantityDiscountManager,
     QuantityDiscountService,
+    BundleOfferReader,
+    BundleOfferManager,
+    BundleOfferService,
   ],
   exports: [
     PricingService,
@@ -28,6 +35,8 @@ import { QuantityDiscountController } from './quantity-discount.controller';
     VariantPriceCacheService,
     QuantityDiscountReader,
     QuantityDiscountManager,
+    BundleOfferReader,
+    BundleOfferManager,
   ],
 })
 export class PricingModule {}

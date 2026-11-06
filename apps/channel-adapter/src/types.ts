@@ -1,5 +1,6 @@
 // apps/channel-adapter/src/types.ts
 import { InferSelectModel, InferInsertModel } from 'drizzle-orm';
+import type { ProductBundleOfferSnapshot } from '@packages/event-contracts/streams/product.stream';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import {
   channelAdapterSchema,
@@ -669,6 +670,10 @@ export interface PimProductSnapshot {
   purchaseConstraint?: PimPurchaseConstraint;
   /** 수량 할인 적용 기간(UTC ISO). 구간표가 없거나 꺼져 있으면 null */
   quantityDiscount?: { startsAt: string | null; endsAt: string | null } | null;
+  /** 함께 구매 구성품. 있는 상품만 키가 실린다. */
+  bundleOffers?: ProductBundleOfferSnapshot[];
+  /** 위 목록을 마지막으로 바꾼 core 저장 시각 */
+  bundleOffersChangedAt?: string;
   isGiftcard?: boolean;
   discountable?: boolean;
 }

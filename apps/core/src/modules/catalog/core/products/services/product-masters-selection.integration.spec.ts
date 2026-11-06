@@ -80,6 +80,7 @@ describeIfDb('상품 목록 ↔ 선택 파리티 (실 Postgres)', () => {
       priceCache as never,
       sellableQuantity as never,
       {} as never,
+      {} as never, // bundleOffers
     );
   });
 

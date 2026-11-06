@@ -51,6 +51,7 @@ import { ProductModel3dLoader } from '../../../core/products/loaders/product-mod
 import { PricingService } from '../../../core/pricing/pricing.service';
 import { PricingValidatorService } from '../../../core/pricing/pricing-validator.service';
 import { PricingCalculatorService } from '../../../core/pricing/pricing-calculator.service';
+import { BundleOfferReader } from '../../../core/pricing/bundle-offer.reader';
 import { QuantityDiscountReader } from '../../../core/pricing/quantity-discount.reader';
 import { VariantPriceCacheService } from '../../../core/pricing/variant-price-cache.service';
 import { ProductCategoriesService } from '../../../core/categories/categories.service';
@@ -151,6 +152,7 @@ describeIfDb('일괄 세션 병합 시나리오 (실 Postgres)', () => {
       priceCache,
       new ProductModel3dLoader(),
       new QuantityDiscountReader(dbService),
+      new BundleOfferReader(dbService, calculator),
     );
     // OutboxPublisher 는 스키마 제네릭을 받지 않는(기본값 Record<string, never>) DbService 를
     // 받는다 — 우리 dbService 의 실제 동작(db/run)엔 무관하고 순수 타입 불일치라 캐스팅한다.

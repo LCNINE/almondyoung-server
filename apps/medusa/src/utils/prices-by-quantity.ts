@@ -6,7 +6,7 @@ import type { IPricingModuleService } from '@medusajs/framework/types';
 
 type PricingModuleLike = Pick<IPricingModuleService, 'calculatePrices'>;
 
-export type QuantityPrice = { calculated: number; original: number };
+export type QuantityPrice = { calculated: number; original: number; /** 할인(sale) 가격표가 정한 단가 */ sale?: boolean };
 
 export const priceKey = (quantity: number, priceSetId: string) => `${quantity}:${priceSetId}`;
 
@@ -34,7 +34,11 @@ export async function calculatePricesByQuantity(
       const amount = Number(cp.calculated_amount);
       if (!Number.isFinite(amount)) continue;
       const original = cp.original_amount == null ? amount : Number(cp.original_amount);
-      prices.set(priceKey(quantity, cp.id), { calculated: amount, original: Number.isFinite(original) ? original : amount });
+      prices.set(priceKey(quantity, cp.id), {
+        calculated: amount,
+        original: Number.isFinite(original) ? original : amount,
+        ...(cp.calculated_price?.price_list_type === 'sale' ? { sale: true } : {}),
+      });
     }
   }
   return prices;

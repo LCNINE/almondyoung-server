@@ -750,3 +750,142 @@ describe('PimMedusaSyncService.handleCategoryChanged — 조상 재보장 메모
     expect(ensuredIds()).toEqual(['p1', 'c1', 'p1', 'c2']);
   });
 });
+
+describe('PimMedusaSyncService.syncBundleOffers', () => {
+  const offer = {
+    addonMasterId: 'master-b',
+    sort: 0,
+    allowedVariantIds: ['pim-variant-1'],
+    regularRateBp: 1000,
+    membershipRateBp: 1500,
+    enabled: true,
+    startsOn: '2026-06-01',
+    endsOn: '2026-06-30',
+    label: '같이 쓰면 좋아요',
+  };
+
+  function makeService(mapping: Record<string, unknown> | null) {
+    const medusaClient = { syncProductBundleOffers: jest.fn().mockResolvedValue({ skipped: [] }) };
+    const mappingRepo = { findByPimMasterId: jest.fn().mockResolvedValue(mapping) };
+    const storefrontRevalidate = { revalidateProduct: jest.fn().mockResolvedValue(undefined) };
+    const service = new PimMedusaSyncService(
+      medusaClient as any,
+      mappingRepo as any,
+      storefrontRevalidate as any,
+      {} as any,
+      new CategoryEnsureMemoService({ get: () => undefined } as never),
+    );
+    return { service, medusaClient, storefrontRevalidate };
+  }
+
+  it('sends the whole list once for the mapped product, with KST days as UTC instants, and refreshes its page', async () => {
+    const { service, medusaClient, storefrontRevalidate } = makeService({ medusaProductId: 'prod_a', medusaHandle: 'master-a' });
+
+    await service.syncBundleOffers('master-a', [offer], '2026-06-15T03:00:00.000Z');
+
+    expect(medusaClient.syncProductBundleOffers).toHaveBeenCalledTimes(1);
+    expect(medusaClient.syncProductBundleOffers).toHaveBeenCalledWith('prod_a', {
+      pim_master_id: 'master-a',
+      changed_at: '2026-06-15T03:00:00.000Z',
+      offers: [
+        {
+          addon_pim_master_id: 'master-b',
+          allowed_pim_variant_ids: ['pim-variant-1'],
+          regular_rate_bp: 1000,
+          membership_rate_bp: 1500,
+          enabled: true,
+          starts_at: '2026-05-31T15:00:00.000Z',
+          ends_at: '2026-06-30T14:59:59.999Z',
+          label: '같이 쓰면 좋아요',
+          sort: 0,
+        },
+      ],
+    });
+    expect(storefrontRevalidate.revalidateProduct).toHaveBeenCalledWith('master-a');
+  });
+
+  it('sends an empty list to clear offers', async () => {
+    const { service, medusaClient } = makeService({ medusaProductId: 'prod_a', medusaHandle: 'master-a' });
+    await service.syncBundleOffers('master-a', [], '2026-06-15T03:00:00.000Z');
+    expect(medusaClient.syncProductBundleOffers).toHaveBeenCalledWith('prod_a', {
+      pim_master_id: 'master-a',
+      changed_at: '2026-06-15T03:00:00.000Z',
+      offers: [],
+    });
+  });
+
+  it('fails while the product is not in the store yet, so the event is retried after the product sync', async () => {
+    const { service, medusaClient } = makeService(null);
+    await expect(service.syncBundleOffers('master-a', [offer], '2026-06-15T03:00:00.000Z')).rejects.toThrow(/master-a/);
+    expect(medusaClient.syncProductBundleOffers).not.toHaveBeenCalled();
+  });
+});
+
+describe('PimMedusaSyncService.syncFromSnapshot 의 함께 구매 맞추기', () => {
+  const snapshot: PimProductSnapshot = {
+    masterId: 'master-a',
+    versionId: 'version-1',
+    version: 1,
+    name: '본품',
+    variants: [{ id: 'pim-var-1', isDefault: true, status: 'active', basePrice: 10000 }],
+    status: 'active',
+  };
+
+  function makeService() {
+    const medusaClient = {
+      ensureProductType: jest.fn().mockResolvedValue('ptype_1'),
+      getDefaultSalesChannel: jest.fn().mockResolvedValue('sc_1'),
+      getShippingProfileIdForGroup: jest.fn().mockResolvedValue('ship_1'),
+      upsertProduct: jest.fn().mockResolvedValue({
+        product: { id: 'prod_a', variants: [{ id: 'variant_m1', metadata: { pimVariantId: 'pim-var-1' } }] },
+        action: 'updated',
+      }),
+      syncProductBundleOffers: jest.fn().mockResolvedValue({ skipped: [] }),
+    };
+    const mappingRepo = {
+      findByPimMasterId: jest.fn().mockResolvedValue({ syncedPriceListIds: [] }),
+      recordSuccess: jest.fn().mockResolvedValue(undefined),
+    };
+    const service = new PimMedusaSyncService(
+      medusaClient as any,
+      mappingRepo as any,
+      { revalidateProduct: jest.fn() } as any,
+      { enqueue: jest.fn() } as any,
+      new CategoryEnsureMemoService({ get: () => undefined } as never),
+    );
+    return { service, medusaClient };
+  }
+
+  it('re-sends the offers carried by the snapshot once, so a lost offers event heals on the next publish', async () => {
+    const { service, medusaClient } = makeService();
+    const bundleOffers = [
+      {
+        addonMasterId: 'master-b',
+        sort: 0,
+        allowedVariantIds: null,
+        regularRateBp: 1000,
+        membershipRateBp: 1000,
+        enabled: true,
+        startsOn: null,
+        endsOn: null,
+        label: null,
+      },
+    ];
+
+    await service.syncFromSnapshot({ ...snapshot, bundleOffers, bundleOffersChangedAt: '2026-06-15T03:00:00.000Z' } as PimProductSnapshot, {
+      skipCategorySync: true,
+    });
+
+    expect(medusaClient.syncProductBundleOffers).toHaveBeenCalledTimes(1);
+    expect(medusaClient.syncProductBundleOffers.mock.calls[0][0]).toBe('prod_a');
+    expect(medusaClient.syncProductBundleOffers.mock.calls[0][1].offers).toHaveLength(1);
+    // 스냅샷이 늦게 와도 그 뒤의 교체를 덮지 않게 같은 리비전을 넘긴다
+    expect(medusaClient.syncProductBundleOffers.mock.calls[0][1].changed_at).toBe('2026-06-15T03:00:00.000Z');
+  });
+
+  it('adds no call for a product without offers', async () => {
+    const { service, medusaClient } = makeService();
+    await service.syncFromSnapshot(snapshot, { skipCategorySync: true });
+    expect(medusaClient.syncProductBundleOffers).not.toHaveBeenCalled();
+  });
+});

@@ -5,6 +5,7 @@ import { EventPayload, EventEnvelope, On } from '@app/events';
 import { EventTypeGuard } from '@app/events/guards/event-type.guard';
 import { DomainEvent, EventPayloadOf, EnvelopeOf } from '@packages/event-contracts/types';
 import {
+  ProductBundleOffersChangedPayload,
   ProductMasterActiveVersionChangedPayload,
   ProductMasterDeletedPayload,
   ProductPublishOrigin,
@@ -21,6 +22,9 @@ import { createHash } from 'crypto';
 const PRODUCT_TOPIC = PRODUCT_STREAM.topic.topic;
 const ACTIVE_VERSION_CHANGED = 'ProductMasterActiveVersionChanged';
 const MASTER_DELETED = 'ProductMasterDeleted';
+const BUNDLE_OFFERS_CHANGED = 'ProductBundleOffersChanged';
+type ProductInboxEventType = typeof ACTIVE_VERSION_CHANGED | typeof MASTER_DELETED | typeof BUNDLE_OFFERS_CHANGED;
+type ProductInboxPayload = ProductMasterActiveVersionChangedPayload | ProductMasterDeletedPayload | ProductBundleOffersChangedPayload;
 
 /**
  * PIM Product Event Consumer
@@ -40,7 +44,7 @@ export class PimProductEventConsumer {
   }
 
   private buildEventInstanceIdempotency(
-    eventType: typeof ACTIVE_VERSION_CHANGED | typeof MASTER_DELETED,
+    eventType: ProductInboxEventType,
     envelope: Pick<DomainEvent<unknown>, 'messageId'>,
     fallbackParts: string[],
   ): { idempotencyKey: string; eventVersion: string } {
@@ -60,10 +64,10 @@ export class PimProductEventConsumer {
   }
 
   private async saveToInboxOnce(params: {
-    eventType: typeof ACTIVE_VERSION_CHANGED | typeof MASTER_DELETED;
+    eventType: ProductInboxEventType;
     masterId: string;
-    payload: ProductMasterActiveVersionChangedPayload | ProductMasterDeletedPayload;
-    envelope: DomainEvent<ProductMasterActiveVersionChangedPayload> | DomainEvent<ProductMasterDeletedPayload>;
+    payload: ProductInboxPayload;
+    envelope: DomainEvent<ProductInboxPayload>;
     idempotencyKey: string;
     eventVersion: string;
     eventOccurredAt: Date;
@@ -150,14 +154,11 @@ export class PimProductEventConsumer {
   }
 
   private resolveEventOccurredAt(
-    eventType: typeof ACTIVE_VERSION_CHANGED | typeof MASTER_DELETED,
-    envelope: DomainEvent<ProductMasterActiveVersionChangedPayload> | DomainEvent<ProductMasterDeletedPayload>,
-    payload: ProductMasterActiveVersionChangedPayload | ProductMasterDeletedPayload,
+    eventType: ProductInboxEventType,
+    envelope: DomainEvent<ProductInboxPayload>,
+    payload: ProductInboxPayload,
   ): Date {
-    const payloadOccurredAt =
-      eventType === ACTIVE_VERSION_CHANGED
-        ? (payload as ProductMasterActiveVersionChangedPayload).changedAt
-        : (payload as ProductMasterDeletedPayload).deletedAt;
+    const payloadOccurredAt = 'deletedAt' in payload ? payload.deletedAt : payload.changedAt;
     const value = envelope.occurredAt ?? envelope.timestamp ?? payloadOccurredAt;
     const date = new Date(value);
 
@@ -265,6 +266,30 @@ export class PimProductEventConsumer {
       });
       throw error;
     }
+  }
+
+  /** 함께 구매 구성품 전체. 같은 상품의 더 새 이벤트가 오면 InboxWorker 가 옛 것을 건너뛴다(전체 교체라 마지막 것만 맞다). */
+  @On(PRODUCT_STREAM, 'ProductBundleOffersChanged')
+  async onProductBundleOffersChanged(
+    @EventEnvelope() envelope: EnvelopeOf<typeof PRODUCT_STREAM, 'ProductBundleOffersChanged'>,
+    @EventPayload() payload: EventPayloadOf<typeof PRODUCT_STREAM, 'ProductBundleOffersChanged'>,
+  ): Promise<void> {
+    const { masterId } = payload;
+    const { idempotencyKey, eventVersion } = this.buildEventInstanceIdempotency(BUNDLE_OFFERS_CHANGED, envelope, [
+      masterId,
+      'bundle-offers',
+      payload.changedAt,
+    ]);
+    const saved = await this.saveToInboxOnce({
+      eventType: BUNDLE_OFFERS_CHANGED,
+      masterId,
+      payload,
+      envelope,
+      idempotencyKey,
+      eventVersion,
+      eventOccurredAt: this.resolveEventOccurredAt(BUNDLE_OFFERS_CHANGED, envelope, payload),
+    });
+    if (saved) this.logger.log(`[PIM] Bundle offers inbox 저장: ${masterId} (${payload.offers.length}개)`);
   }
 
   /**

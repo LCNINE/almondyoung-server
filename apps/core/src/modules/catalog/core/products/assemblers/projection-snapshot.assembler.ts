@@ -2,6 +2,7 @@ import { BadRequestException, Injectable } from '@nestjs/common';
 import type { ProductQuantityDiscountSnapshot, ProductSnapshot } from '@packages/event-contracts';
 import { VariantPriceCacheService } from '../../pricing/variant-price-cache.service';
 import { QuantityDiscountReader, QuantityDiscountReadModel } from '../../pricing/quantity-discount.reader';
+import { BundleOfferReader, toBundleOfferSnapshots } from '../../pricing/bundle-offer.reader';
 import { DbTransaction, OptionGroupReadModel, VariantOptionValueReadModel } from '../../../catalog.types';
 import { OptionReadLoader } from '../loaders/option-read.loader';
 import { ProductVersionReadLoader } from '../loaders/product-version-read.loader';
@@ -27,6 +28,7 @@ export class ProjectionSnapshotAssembler {
     private readonly priceCacheService: VariantPriceCacheService,
     private readonly model3dLoader: ProductModel3dLoader,
     private readonly quantityDiscountReader: QuantityDiscountReader,
+    private readonly bundleOfferReader: BundleOfferReader,
   ) {}
 
   async assembleActiveVersionSnapshot(
@@ -56,6 +58,7 @@ export class ProjectionSnapshotAssembler {
       optionGroups,
       model3dFileId,
       quantityDiscount,
+      bundleOffers,
     ] = await Promise.all([
         this.versionReadLoader.getCategories(tx, masterId, versionId),
         this.versionReadLoader.getVariants(tx, masterId, versionId),
@@ -66,7 +69,9 @@ export class ProjectionSnapshotAssembler {
         this.optionReadLoader.getOptionGroups(tx, masterId, versionId, locale),
         this.model3dLoader.getFileId(tx, masterId, versionId),
         this.quantityDiscountReader.findForVersion(masterId, versionId, tx),
+        this.bundleOfferReader.findForMaster(masterId, tx),
       ]);
+    const bundleOffersChangedAt = bundleOffers.length > 0 ? await this.bundleOfferReader.revisionFor(masterId, tx) : null;
 
     const primaryCategories = categories.filter((category) => category.isPrimary);
     if (primaryCategories.length > 1) {
@@ -160,6 +165,8 @@ export class ProjectionSnapshotAssembler {
           }
         : undefined,
       quantityDiscount: toQuantityDiscountSnapshot(quantityDiscount),
+      ...(bundleOffers.length > 0 ? { bundleOffers: toBundleOfferSnapshots(bundleOffers) } : {}),
+      ...(bundleOffersChangedAt ? { bundleOffersChangedAt: bundleOffersChangedAt.toISOString() } : {}),
     };
 
     return {
