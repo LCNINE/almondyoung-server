@@ -31,6 +31,7 @@ import { ConsolidationService } from './services/consolidation.service';
 import { PlannedShipmentsReader } from './services/planned-shipments.reader';
 import { ConsolidationBoardReader } from './services/consolidation-board.reader';
 import { OutboundPreparationController } from './outbound-preparation/outbound-preparation.controller';
+import { OutboundPreparationManager } from './outbound-preparation/outbound-preparation.manager';
 import { OutboundPreparationReader } from './outbound-preparation/outbound-preparation.reader';
 import { OutboundPreparationService } from './outbound-preparation/outbound-preparation.service';
 import { ConsolidationOptionsReader } from './services/consolidation-options.reader';
@@ -180,6 +181,7 @@ import { ShipmentRecallController, ShipmentRecallOperationController } from './c
     ConsolidationService,
     ConsolidationBoardReader,
     OutboundPreparationReader,
+    OutboundPreparationManager,
     OutboundPreparationService,
     PlannedShipmentsReader,
     ConsolidationOptionsReader,

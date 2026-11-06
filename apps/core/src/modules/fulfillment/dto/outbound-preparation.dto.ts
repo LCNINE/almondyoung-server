@@ -1,9 +1,17 @@
-import { IsUUID } from 'class-validator';
+import { ArrayMaxSize, ArrayMinSize, IsArray, IsUUID } from 'class-validator';
 import { PreparationBucket } from '../outbound-preparation/outbound-preparation-classify';
 
 export class OutboundPreparationQueryDto {
   @IsUUID()
   warehouseId: string;
+}
+
+export class BulkShipmentIdsDto {
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(100)
+  @IsUUID('4', { each: true })
+  shipmentIds: string[];
 }
 
 export class PreparationShipmentDto {
