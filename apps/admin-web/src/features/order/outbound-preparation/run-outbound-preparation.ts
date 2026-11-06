@@ -50,7 +50,11 @@ export interface PreparationDeps {
   ): Promise<BulkShipmentResult>;
   sleep(ms: number): Promise<void>;
   newKey(): string;
-  waybillKeys: Map<string, string>;
+  waybillKeys: {
+    get(shipmentId: string): string | undefined;
+    set(shipmentId: string, key: string): void;
+    delete(shipmentId: string): void;
+  };
 }
 
 export interface PreparationInput {

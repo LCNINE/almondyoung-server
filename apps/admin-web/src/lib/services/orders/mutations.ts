@@ -6,6 +6,7 @@ import { toast } from 'sonner';
 import { orderQueryKeys } from './query-keys';
 import {
   runOutboundPreparation,
+  type PreparationDeps,
   type PreparationInput,
   type PreparationProgress,
 } from '../../../features/order/outbound-preparation/run-outbound-preparation';
@@ -565,7 +566,34 @@ useSplitUnreservedMany.permission = [
   'fulfillment.warehouse.operate',
 ] as const satisfies PermissionRequirement;
 
-const preparationWaybillKeys = new Map<string, string>();
+const WAYBILL_KEYS_STORAGE_KEY = 'outbound-preparation-waybill-keys';
+
+function readWaybillKeys(): Record<string, string> {
+  try {
+    return JSON.parse(localStorage.getItem(WAYBILL_KEYS_STORAGE_KEY) ?? '{}');
+  } catch {
+    return {};
+  }
+}
+
+function writeWaybillKeys(keys: Record<string, string>) {
+  try {
+    localStorage.setItem(WAYBILL_KEYS_STORAGE_KEY, JSON.stringify(keys));
+  } catch {
+    return;
+  }
+}
+
+const preparationWaybillKeys: PreparationDeps['waybillKeys'] = {
+  get: (shipmentId) => readWaybillKeys()[shipmentId],
+  set: (shipmentId, key) =>
+    writeWaybillKeys({ ...readWaybillKeys(), [shipmentId]: key }),
+  delete: (shipmentId) => {
+    const { [shipmentId]: _, ...rest } = readWaybillKeys();
+
+    writeWaybillKeys(rest);
+  },
+};
 
 export const useRunOutboundPreparation = () => {
   const queryClient = useQueryClient();

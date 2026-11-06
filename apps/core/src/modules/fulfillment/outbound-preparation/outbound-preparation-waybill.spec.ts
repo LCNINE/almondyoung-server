@@ -157,6 +157,7 @@ describe('outbound preparation with WaybillManager', () => {
       sleep,
       createBatch,
       newKey: () => `key-${++key}`,
+      waybillKeys: new Map(),
     };
   });
 
