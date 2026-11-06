@@ -50,6 +50,7 @@ export interface PreparationDeps {
   ): Promise<BulkShipmentResult>;
   sleep(ms: number): Promise<void>;
   newKey(): string;
+  waybillKeys: Map<string, string>;
 }
 
 export interface PreparationInput {
@@ -227,7 +228,30 @@ export async function runOutboundPreparation(
   }
 
   const waybilled = await runStage('waybill', planned, async (ids, key) => {
-    const results = await deps.issueWaybills(ids, key);
+    const groups = new Map<string, string[]>();
+
+    for (const id of ids) {
+      const groupKey = deps.waybillKeys.get(id) ?? key;
+
+      deps.waybillKeys.set(id, groupKey);
+      groups.set(groupKey, [...(groups.get(groupKey) ?? []), id]);
+    }
+
+    const results: PreparationWaybillResult[] = [];
+
+    for (const [groupKey, groupIds] of groups) {
+      results.push(...(await deps.issueWaybills(groupIds, groupKey)));
+    }
+
+    for (const result of results) {
+      const unresolved =
+        isWaybillPendingIssue(result.status) ||
+        (!isWaybillIssued(result.status) && result.transient);
+
+      if (!unresolved) {
+        deps.waybillKeys.delete(result.shipmentId);
+      }
+    }
 
     return results.map(
       (result): StageResult => ({

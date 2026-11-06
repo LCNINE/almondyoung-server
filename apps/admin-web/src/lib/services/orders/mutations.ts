@@ -482,6 +482,7 @@ function invalidateShipment(
   });
   queryClient.invalidateQueries({ queryKey: orderQueryKeys.fulfillments });
   queryClient.invalidateQueries({ queryKey: orderQueryKeys.outboundBatches });
+  queryClient.invalidateQueries({ queryKey: ['outbound-preparation'] });
 }
 
 export const useSplitShipment = () => {
@@ -564,6 +565,8 @@ useSplitUnreservedMany.permission = [
   'fulfillment.warehouse.operate',
 ] as const satisfies PermissionRequirement;
 
+const preparationWaybillKeys = new Map<string, string>();
+
 export const useRunOutboundPreparation = () => {
   const queryClient = useQueryClient();
 
@@ -622,15 +625,22 @@ export const useRunOutboundPreparation = () => {
             assertActive?.();
           },
           newKey: commandKey,
+          waybillKeys: preparationWaybillKeys,
         },
         input,
         onProgress
       );
     },
-    onSettled: (_, __, { warehouseId }) =>
+    onSettled: (_, __, { warehouseId }) => {
       queryClient.invalidateQueries({
         queryKey: ['outbound-preparation', warehouseId],
-      }),
+      });
+      queryClient.invalidateQueries({
+        queryKey: orderQueryKeys.outboundBatches,
+      });
+      queryClient.invalidateQueries({ queryKey: ['shipments'] });
+      queryClient.invalidateQueries({ queryKey: orderQueryKeys.fulfillments });
+    },
   });
 };
 useRunOutboundPreparation.permission = [

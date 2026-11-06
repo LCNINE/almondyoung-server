@@ -67,6 +67,7 @@ function makeDeps() {
       >()
       .mockResolvedValue(undefined),
     newKey: jest.fn(() => `key-${++key}`),
+    waybillKeys: new Map<string, string>(),
   } satisfies PreparationDeps;
 }
 
@@ -374,6 +375,34 @@ describe('runOutboundPreparation', () => {
       [['s1'], 'key-2'],
     ]);
     expect(result).toMatchObject({ waybilled: 1, joined: 1, failures: [] });
+  });
+
+  it('reuses the original waybill key on a manual retry until the waybill resolves', async () => {
+    const deps = makeDeps();
+    deps.issueWaybills.mockResolvedValue([waybill('s1', 'allocated')]);
+
+    await runOutboundPreparation(
+      deps,
+      { ...input, shipmentIds: ['s1'] },
+      jest.fn()
+    );
+
+    deps.issueWaybills.mockReset();
+    deps.issueWaybills.mockImplementation(async (ids) =>
+      ids.map((id) => waybill(id))
+    );
+
+    await runOutboundPreparation(
+      deps,
+      { ...input, shipmentIds: ['s1', 's2'] },
+      jest.fn()
+    );
+
+    expect(deps.issueWaybills.mock.calls).toEqual([
+      [['s1'], 'key-2'],
+      [['s2'], 'key-4'],
+    ]);
+    expect(deps.waybillKeys.size).toBe(0);
   });
 
   it('does not treat omitted results or allocated waybills as success', async () => {
