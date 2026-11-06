@@ -408,6 +408,29 @@ describe('runOutboundPreparation', () => {
     expect(deps.waybillKeys.size).toBe(0);
   });
 
+  it('keeps successful waybill groups when another key group is rejected', async () => {
+    const deps = makeDeps();
+    deps.waybillKeys.set('s2', 'old-key');
+    deps.issueWaybills.mockImplementation(async (ids, key) => {
+      if (key === 'old-key') {
+        throw { statusCode: 400, message: '거절' };
+      }
+
+      return ids.map((id) => waybill(id));
+    });
+
+    const result = await runOutboundPreparation(
+      deps,
+      { ...input, shipmentIds: ['s1', 's2'] },
+      jest.fn()
+    );
+
+    expect(result).toMatchObject({ waybilled: 1, joined: 1 });
+    expect(result.failures).toEqual([
+      expect.objectContaining({ shipmentId: 's2', stage: 'waybill' }),
+    ]);
+  });
+
   it('does not treat omitted results or allocated waybills as success', async () => {
     const deps = makeDeps();
     deps.planMany.mockResolvedValue({ succeeded: ['s1', 's2'], failed: [] });

@@ -653,19 +653,21 @@ export const useRunOutboundPreparation = () => {
               PENDING_BATCH_STORAGE_KEY,
               null
             );
-            const { key, shipmentIds: _, ...request } =
+            const pending =
               stored?.warehouseId === data.warehouseId &&
               stored.pickingMethod === data.pickingMethod &&
               stored.cartCapacity === data.cartCapacity &&
               stored.shipmentIds.some((id) => shipmentIds.includes(id))
-                ? stored
+                ? {
+                    ...stored,
+                    shipmentIds: [
+                      ...new Set([...stored.shipmentIds, ...shipmentIds]),
+                    ],
+                  }
                 : { ...data, key: batchKey, shipmentIds };
+            const { key, shipmentIds: _, ...request } = pending;
 
-            writeStored(PENDING_BATCH_STORAGE_KEY, {
-              ...request,
-              key,
-              shipmentIds,
-            });
+            writeStored(PENDING_BATCH_STORAGE_KEY, pending);
 
             try {
               const { batchId } = await orders.outboundBatches.createV2(

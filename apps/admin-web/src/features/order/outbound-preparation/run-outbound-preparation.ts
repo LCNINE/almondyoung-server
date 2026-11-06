@@ -247,7 +247,25 @@ export async function runOutboundPreparation(
     const results: PreparationWaybillResult[] = [];
 
     for (const [groupKey, groupIds] of groups) {
-      results.push(...(await deps.issueWaybills(groupIds, groupKey)));
+      try {
+        results.push(...(await deps.issueWaybills(groupIds, groupKey)));
+      } catch (error) {
+        const { status, message } = parseServerError(
+          error,
+          '송장을 발급하지 못했어요.'
+        );
+
+        results.push(
+          ...groupIds.map((shipmentId) => ({
+            shipmentId,
+            status: 'failed',
+            trackingNo: null,
+            reason: message,
+            nextAttemptAt: null,
+            transient: status === null || status >= 500,
+          }))
+        );
+      }
     }
 
     for (const result of results) {
