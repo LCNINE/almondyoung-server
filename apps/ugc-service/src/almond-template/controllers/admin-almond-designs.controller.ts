@@ -13,7 +13,7 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiParam, ApiProduces, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { PiiResponse, RequirePermission, type Permission } from '@app/authorization';
+import { PiiResponse, RequirePermission, type Permission, type PiiResponseSpec } from '@app/authorization';
 import { NotFoundError } from '@app/shared';
 import {
   ALMOND_PRINT_DEFAULT_DPI,
@@ -27,6 +27,13 @@ import { type AlmondPrintFormat } from '../types/almond-design.types';
 
 // 출력 담당자가 와우프레스 발주를 넣으려면 원문 시안이 필요하다 — 주문 조회 권한으로 열고 열람은 접속기록에 남긴다
 const DESIGN_OPENS_WITH: readonly Permission[] = ['customer.pii.read', 'order.order.read'];
+
+const DESIGN_FILE_PII = {
+  fields: { file: 'text' },
+  subjects: [{ param: 'id', type: 'almond_design' }],
+  rawWith: DESIGN_OPENS_WITH,
+  binary: true,
+} satisfies PiiResponseSpec;
 
 @ApiTags('Almond Designs (admin)')
 @ApiBearerAuth()
@@ -52,6 +59,7 @@ export class AdminAlmondDesignsController {
     return this.service.getForAdmin(id);
   }
 
+  @PiiResponse(DESIGN_FILE_PII)
   @RequirePermission('order.order.read')
   @Get(':id/preview/:side')
   @ApiParam({ name: 'id', format: 'uuid' })
@@ -110,6 +118,7 @@ export class AdminAlmondDesignsController {
     return this.service.printLink(id, parsed.format, parsed.dpi, accessToken);
   }
 
+  @PiiResponse(DESIGN_FILE_PII)
   @RequirePermission('order.order.read')
   @Get(':id/print.eps')
   @ApiParam({ name: 'id', format: 'uuid' })
@@ -123,6 +132,7 @@ export class AdminAlmondDesignsController {
     return this.sendPrintFile(id, 'eps', reply);
   }
 
+  @PiiResponse(DESIGN_FILE_PII)
   @RequirePermission('order.order.read')
   @Get(':id/print.pdf')
   @ApiParam({ name: 'id', format: 'uuid' })
@@ -136,6 +146,7 @@ export class AdminAlmondDesignsController {
     return this.sendPrintFile(id, 'pdf', reply);
   }
 
+  @PiiResponse(DESIGN_FILE_PII)
   @RequirePermission('order.order.read')
   @Get(':id/print.jpg')
   @ApiParam({ name: 'id', format: 'uuid' })

@@ -57,6 +57,17 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+interface FileFacts {
+  readonly facts: RequestFacts;
+  readonly revealed: boolean;
+}
+
+const FILE_HEADERS: readonly string[] = ['content-type', 'content-disposition'];
+
+function hasRemoveHeader(value: unknown): value is { removeHeader(name: string): unknown } {
+  return isRecord(value) && typeof value.removeHeader === 'function';
+}
+
 function factsOf(request: unknown): RequestFacts {
   const record = isRecord(request) ? request : {};
   const user = isRecord(record.user) ? record.user : {};
@@ -112,6 +123,10 @@ export class PiiMaskingInterceptor implements NestInterceptor {
     const http = context.switchToHttp();
     const request = http.getRequest<unknown>();
     const response = http.getResponse<unknown>();
+    if (spec.binary === true) {
+      const opening = this.assertCanReceiveFile(spec, request);
+      return next.handle().pipe(mergeMap((body) => from(this.recordFile(spec, exporting, opening, request, response, body))));
+    }
     return next.handle().pipe(mergeMap((body) => from(this.apply(spec, exporting, request, response, body))));
   }
 
@@ -134,6 +149,45 @@ export class PiiMaskingInterceptor implements NestInterceptor {
     if (permissions === null) throw new ServiceUnavailableException('Permission data is not loaded yet');
     if (rawWith.some((permission) => permissions.has(permission))) return;
     throw new ForbiddenException({ message: 'Permission required', requiredPermissions: rawWith });
+  }
+
+  /** 파일은 가릴 수 없다 — 원문을 받을 수 없는 직원에게는 핸들러를 부르지 않는다. */
+  private assertCanReceiveFile(spec: PiiResponseSpec, request: unknown): FileFacts {
+    const facts = factsOf(request);
+    const rawWith = spec.rawWith ?? DEFAULT_PII_RAW_WITH;
+    const permissions = facts.userId === null || facts.roles === undefined ? undefined : this.cache.permissionsFor(facts.roles);
+    if (permissions === null) throw new ServiceUnavailableException('Permission data is not loaded yet');
+    const opening = rawWith.filter((key) => permissions?.has(key) === true);
+    const revealAsked = facts.header('x-pii-reveal') === '1';
+    const onlyPiiRead = opening.every((key) => key === PII_READ);
+    if (opening.length === 0 || (this.options.revealRequired && onlyPiiRead && !revealAsked)) {
+      throw new ForbiddenException({ message: 'Permission required', requiredPermissions: rawWith });
+    }
+
+    return { facts, revealed: this.options.revealRequired && onlyPiiRead };
+  }
+
+  /** 접속기록을 남긴 뒤에만 파일을 보낸다 — 남기지 못하면 오류로 바꾼다. */
+  private async recordFile(
+    spec: PiiResponseSpec,
+    exporting: boolean,
+    { facts, revealed }: FileFacts,
+    request: unknown,
+    response: unknown,
+    body: unknown,
+  ): Promise<unknown> {
+    const reason = exporting ? this.exportReason(facts) : null;
+    const action: PiiAccessAction = exporting ? 'export' : revealed ? 'reveal' : 'view';
+    try {
+      await this.recorder.record(this.recordOf(spec, facts, request, null, spec.fields, action, reason));
+    } catch (error) {
+      this.logger.warn(`pii_access_record_failed route=${facts.route} ${error instanceof Error ? error.message : ''}`);
+      // 핸들러가 붙인 파일 헤더를 걷어 오류 본문이 파일로 읽히지 않게 한다
+      if (hasRemoveHeader(response)) for (const name of FILE_HEADERS) response.removeHeader(name);
+      throw new ServiceUnavailableException('PII access could not be recorded');
+    }
+
+    return body;
   }
 
   private async apply(
