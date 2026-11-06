@@ -12,6 +12,7 @@ import type { PimActiveVersionChangedEvent, PimProductSnapshot, MedusaProduct } 
 // import type { PimCategoryDetail } from './pim.client';
 import type {
   CategoryChangedPayload,
+  ProductBundleOfferSnapshot,
   ProductMasterDeletedPayload,
 } from '@packages/event-contracts/streams/product.stream';
 import type { ProductSellableQuantityChangedPayload } from '@packages/event-contracts/streams/inventory.stream';
@@ -38,6 +39,9 @@ export interface SyncResult {
   action?: 'created' | 'updated' | 'skipped' | 'unpublished';
   error?: string;
 }
+
+const kstDayStart = (day: string) => new Date(`${day}T00:00:00.000+09:00`).toISOString();
+const kstDayEnd = (day: string) => new Date(`${day}T23:59:59.999+09:00`).toISOString();
 
 @Injectable()
 export class PimMedusaSyncService {
@@ -421,6 +425,11 @@ export class PimMedusaSyncService {
         touched: touchedPriceListIds,
       });
 
+      // 구성품 이벤트를 놓쳤거나 상품이 다시 만들어졌을 때 발행이 다시 맞춘다. 구성품 없는 상품은 호출 0.
+      if (snapshot.bundleOffers) {
+        await this.pushBundleOffers(masterId, product.id, snapshot.bundleOffers, snapshot.bundleOffersChangedAt);
+      }
+
       await this.mappingRepo.recordSuccess(masterId, {
         pimVersionId: versionId,
         pimVersion: snapshot.version,
@@ -709,6 +718,47 @@ export class PimMedusaSyncService {
     }
 
     return synced;
+  }
+
+  /**
+   * 함께 구매 구성품 전체를 상품(A) 하나에 맞춘다. A 가 아직 쇼핑몰에 없으면 실패시켜 상품 동기화 뒤에 다시 돈다.
+   * 구성품(B)이 쇼핑몰에 없으면 Medusa 가 그 줄만 빼고 알려 준다 — B 가 나중에 생기면 A 의 다음 발행이 다시 맞춘다.
+   */
+  async syncBundleOffers(masterId: string, offers: ProductBundleOfferSnapshot[], changedAt: string): Promise<void> {
+    const mapping = await this.mappingRepo.findByPimMasterId(masterId);
+    if (!mapping?.medusaProductId) {
+      throw new Error(`Bundle offers: product ${masterId} is not synced to Medusa yet`);
+    }
+    await this.pushBundleOffers(masterId, mapping.medusaProductId, offers, changedAt);
+    await this.storefrontRevalidate.revalidateProduct(mapping.medusaHandle ?? masterId);
+  }
+
+  /** changedAt = core 저장 시각. Medusa 는 이보다 늦은 교체를 이미 적용했으면 건너뛴다(재시도·지연 스냅샷이 새 목록을 덮지 않게). */
+  private async pushBundleOffers(
+    masterId: string,
+    medusaProductId: string,
+    offers: ProductBundleOfferSnapshot[],
+    changedAt: string | undefined,
+  ): Promise<void> {
+    const result = await this.medusaClient.syncProductBundleOffers(medusaProductId, {
+      pim_master_id: masterId,
+      ...(changedAt ? { changed_at: changedAt } : {}),
+      offers: offers.map((o) => ({
+        addon_pim_master_id: o.addonMasterId,
+        allowed_pim_variant_ids: o.allowedVariantIds,
+        regular_rate_bp: o.regularRateBp,
+        membership_rate_bp: o.membershipRateBp,
+        enabled: o.enabled,
+        starts_at: o.startsOn ? kstDayStart(o.startsOn) : null,
+        ends_at: o.endsOn ? kstDayEnd(o.endsOn) : null,
+        label: o.label,
+        sort: o.sort,
+      })),
+    });
+    if (result?.stale) this.logger.log(`Bundle offers not applied for ${masterId}: a newer list is already in the store`);
+    for (const s of result?.skipped ?? []) {
+      this.logger.warn(`Bundle offer skipped: ${masterId} → ${s.addon_pim_master_id} (${s.reason})`);
+    }
   }
 
   /**

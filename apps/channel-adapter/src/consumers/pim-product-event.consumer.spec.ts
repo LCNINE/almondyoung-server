@@ -215,6 +215,33 @@ describe('PimProductEventConsumer product event idempotency', () => {
     );
   });
 
+  it('stores ProductBundleOffersChanged in the inbox keyed by the product, with event-instance idempotency', async () => {
+    const state: DbState = { processed: [], inbox: [] };
+    const consumer = new PimProductEventConsumer({ db: makeDb(state) } as any);
+    const envelope = { messageId: 'bundle-msg-1', correlationId: 'corr-1', chainId: 'chain-1' } as any;
+    const payload = { masterId: 'master-1', offers: [], changedAt: '2026-06-07T00:00:00.000Z' } as any;
+
+    await consumer.onProductBundleOffersChanged(envelope, payload);
+    await consumer.onProductBundleOffersChanged(envelope, payload);
+
+    expect(state.processed).toEqual([
+      expect.objectContaining({
+        idempotencyKey: 'products.events.v1:ProductBundleOffersChanged:bundle-msg-1',
+        eventType: 'ProductBundleOffersChanged',
+        resourceId: 'master-1',
+      }),
+    ]);
+    expect(state.inbox).toEqual([
+      expect.objectContaining({
+        eventType: 'ProductBundleOffersChanged',
+        aggregateType: 'Product',
+        aggregateId: 'master-1',
+        partitionKey: 'master-1',
+        payload,
+      }),
+    ]);
+  });
+
   it('rolls back the ProductMasterDeleted processed marker when the inbox row is not durable', async () => {
     const state: DbState = { processed: [], inbox: [] };
     const db = makeDb(state, { failInboxInsert: true });
