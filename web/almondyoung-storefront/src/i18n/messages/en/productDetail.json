@@ -261,6 +261,10 @@
     "saving": "Save {amount} KRW",
     "best": "Best deal",
     "memberHint": "Members: {items}",
-    "memberHintItem": "{count} at {amount} KRW each"
+    "memberHintItem": "{count} at {amount} KRW each",
+    "optionSummary": "Quantity discounts vary by option · up to {percent}% off at {count}+ · pick an option to see them",
+    "optionSummaryMember": "Member quantity discounts vary by option · up to {percent}% off at {count}+ · pick an option to see them",
+    "notEligible": "This option has no quantity discount",
+    "notEligibleOption": "{option} has no quantity discount"
   }
 }

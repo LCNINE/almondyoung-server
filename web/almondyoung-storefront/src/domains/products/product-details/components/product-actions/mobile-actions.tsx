@@ -14,11 +14,14 @@ import SelectedItemRow from "./selected-item-row"
 import { RestockNotice, hasStockNotice } from "./restock-notice"
 import { SelectedItem } from "./types"
 import {
+  productQuantitySummary,
+  quantityOptionNote,
   variantTierRows,
   type ItemQuantityPricing,
   type QuantityPricingContext,
 } from "./quantity-pricing"
 import QuantityBundlePicker from "../quantity-bundle-picker"
+import QuantityOptionNote from "../quantity-option-note"
 import {
   CustomOrderNotice,
   CustomOrderNoticeLine,
@@ -91,6 +94,8 @@ const MobileActions: React.FC<MobileActionsProps> = ({
     ? variantTierRows(focusItem.variant, product, pricingContext)
     : { rows: [], memberHints: [], currentPrice: null }
   const hasBundles = bundle.rows.length > 0 && !isWelcomeMembership
+  const summary = isSimple ? null : productQuantitySummary(product, pricingContext)
+  const note = focusItem ? quantityOptionNote({ chosen: true, ...bundle, summary }) : null
   const instantPurchase = isSimple && !hasBundles
 
   const disabledLabel =
@@ -232,6 +237,15 @@ const MobileActions: React.FC<MobileActionsProps> = ({
                   />
                 ))}
               </div>
+            )}
+
+            {note && summary && (
+              <QuantityOptionNote
+                kind={note}
+                summary={summary}
+                optionLabel={focusItem?.variant.title ?? undefined}
+                className="py-3"
+              />
             )}
 
             {hasBundles && focusItem && bundle.currentPrice !== null && (

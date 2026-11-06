@@ -261,6 +261,10 @@
     "saving": "{amount}ウォンお得",
     "best": "最大割引",
     "memberHint": "メンバーシップ会員は {items}",
-    "memberHintItem": "{count}個 1個あたり{amount}ウォン"
+    "memberHintItem": "{count}個 1個あたり{amount}ウォン",
+    "optionSummary": "オプション別の数量割引 · {count}個以上で最大{percent}% · オプションを選ぶと内容が表示されます",
+    "optionSummaryMember": "メンバー向けオプション別の数量割引 · {count}個以上で最大{percent}% · オプションを選ぶと内容が表示されます",
+    "notEligible": "このオプションは数量割引の対象外です",
+    "notEligibleOption": "{option}は数量割引の対象外です"
   }
 }

@@ -32,13 +32,12 @@ afterEach(() => {
   container.remove()
 })
 
-function renderBadge(productMetadata: Record<string, unknown>, v = variant) {
+function renderBadge(productMetadata: Record<string, unknown>, v = variant, others: unknown[] = []) {
   act(() => {
     root.render(
       <NextIntlClientProvider locale="ko" messages={{ productCard }}>
         <QuantityDiscountBadge
-          product={{ metadata: productMetadata } as never}
-          variant={v}
+          product={{ metadata: productMetadata, variants: [v, ...others] } as never}
           isMembership={false}
         />
       </NextIntlClientProvider>
@@ -86,5 +85,19 @@ describe("QuantityDiscountBadge", () => {
   it("hides for a product without tiers", () => {
     renderBadge({}, { ...(variant as object), metadata: {} } as never)
     expect(container.innerHTML).toBe("")
+  })
+  it("says «최대» when options have different tiers", () => {
+    const deeper = {
+      ...(variant as object),
+      id: "v2",
+      metadata: { tieredPrices: [{ minQuantity: 3, price: 9000 }] },
+    }
+    renderBadge({}, variant, [deeper])
+    expect(container.textContent).toBe("3개↑ 최대 10%")
+  })
+
+  it("says «최대» when some options have no quantity discount", () => {
+    renderBadge({}, variant, [{ ...(variant as object), id: "v2", metadata: {} }])
+    expect(container.textContent).toBe("3개↑ 최대 5%")
   })
 })

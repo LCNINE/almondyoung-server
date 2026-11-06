@@ -5,6 +5,7 @@ import {
   msUntilNextBoundary,
   orderLineQuantityDiscount,
   nextTier,
+  productTierSummary,
   readTiers,
   splitLineDiscount,
   tierRows,
@@ -320,5 +321,51 @@ describe("memberTierHints", () => {
 
   it("falls back to the guest price for the rate when the membership price is unknown", () => {
     expect(memberTierHints(10000, memberOnly, undefined, guest)[0]).toEqual({ minQuantity: 3, unitPrice: 7200, percent: 28 })
+  })
+})
+
+describe("productTierSummary", () => {
+  const row = (minQuantity: number, percent: number) => ({ minQuantity, unitPrice: 0, percent })
+  const view = (rows: ReturnType<typeof row>[], memberHints: ReturnType<typeof row>[] = []) => ({ rows, memberHints })
+
+  it("says the same thing as one option when every option has the same tiers", () => {
+    expect(productTierSummary([view([row(3, 10), row(6, 20)]), view([row(3, 10), row(6, 20)])])).toEqual({
+      minQuantity: 3,
+      percent: 10,
+      varies: false,
+      memberOnly: false,
+    })
+  })
+
+  it("takes the smallest first quantity and the largest percent there when options differ", () => {
+    expect(productTierSummary([view([row(3, 10)]), view([row(3, 5), row(6, 6)]), view([])])).toEqual({
+      minQuantity: 3,
+      percent: 10,
+      varies: true,
+      memberOnly: false,
+    })
+  })
+
+  it("only counts options whose first tier starts at that quantity", () => {
+    expect(productTierSummary([view([row(5, 30)]), view([row(3, 5)])])).toEqual({
+      minQuantity: 3,
+      percent: 5,
+      varies: true,
+      memberOnly: false,
+    })
+  })
+
+  it("falls back to member-only tiers for a visitor", () => {
+    expect(productTierSummary([view([], [row(3, 10)]), view([])])).toEqual({
+      minQuantity: 3,
+      percent: 10,
+      varies: true,
+      memberOnly: true,
+    })
+  })
+
+  it("is null when no option has a quantity discount", () => {
+    expect(productTierSummary([view([]), view([])])).toBeNull()
+    expect(productTierSummary([])).toBeNull()
   })
 })

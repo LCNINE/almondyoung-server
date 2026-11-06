@@ -26,5 +26,7 @@
   "membersOnly": "メンバー限定",
   "discountBadge": "{percent}% 割引",
   "quantityDiscountBadge": "{count}個以上 {percent}%",
-  "quantityDiscountMemberBadge": "メンバー{count}個以上 {percent}%"
+  "quantityDiscountMemberBadge": "メンバー{count}個以上 {percent}%",
+  "quantityDiscountBadgeMax": "{count}個以上 最大{percent}%",
+  "quantityDiscountMemberBadgeMax": "メンバー{count}個以上 最大{percent}%"
 }
