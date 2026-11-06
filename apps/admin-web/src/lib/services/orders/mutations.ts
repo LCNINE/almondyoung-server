@@ -4,7 +4,14 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { orderQueryKeys } from './query-keys';
+import {
+  runOutboundPreparation,
+  type PreparationDeps,
+  type PreparationInput,
+  type PreparationProgress,
+} from '../../../features/order/outbound-preparation/run-outbound-preparation';
 import { orders } from '@/lib/api/domains';
+import { parseServerError } from '@/lib/api/server-error';
 import { isConflict } from '@/lib/api/domains/orders/sales-order-amendments.shape';
 import type {
   CancelSalesOrderDto,
@@ -45,6 +52,7 @@ import type {
   VoidWaybillRequest,
 } from '@/lib/types/dto/fulfillment';
 import type { PermissionRequirement } from '@/lib/auth/mutation-permission';
+import type { IdempotentCommand } from './idempotency';
 
 function commandKey(idempotencyKey?: string): string {
   return idempotencyKey ?? crypto.randomUUID();
@@ -476,6 +484,7 @@ function invalidateShipment(
   });
   queryClient.invalidateQueries({ queryKey: orderQueryKeys.fulfillments });
   queryClient.invalidateQueries({ queryKey: orderQueryKeys.outboundBatches });
+  queryClient.invalidateQueries({ queryKey: ['outbound-preparation'] });
 }
 
 export const useSplitShipment = () => {
@@ -538,6 +547,206 @@ export const useSplitUnreservedShipment = () => {
   });
 };
 useSplitUnreservedShipment.permission = ['fulfillment.warehouse.operate'] as const satisfies PermissionRequirement;
+
+export const useSplitUnreservedMany = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (cmd: IdempotentCommand<{ shipmentIds: string[] }>) =>
+      orders.outboundPreparation.splitManyUnreserved(cmd),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['outbound-preparation'] });
+      queryClient.invalidateQueries({ queryKey: ['shipments'] });
+      queryClient.invalidateQueries({ queryKey: orderQueryKeys.fulfillments });
+      queryClient.invalidateQueries({ queryKey: ['order-progress'] });
+      queryClient.invalidateQueries({ queryKey: orderQueryKeys.orderStats });
+    },
+  });
+};
+useSplitUnreservedMany.permission = [
+  'fulfillment.warehouse.operate',
+] as const satisfies PermissionRequirement;
+
+const WAYBILL_KEYS_STORAGE_KEY = 'outbound-preparation-waybill-keys';
+const PENDING_BATCH_STORAGE_KEY = 'outbound-preparation-pending-batch';
+
+type PendingBatch = Parameters<PreparationDeps['createBatch']>[0] & {
+  key: string;
+  shipmentIds: string[];
+};
+
+function readStored<T>(storageKey: string, fallback: T): T {
+  try {
+    const stored = localStorage.getItem(storageKey);
+
+    return stored === null ? fallback : JSON.parse(stored);
+  } catch {
+    return fallback;
+  }
+}
+
+function writeStored(storageKey: string, value: unknown) {
+  try {
+    if (value === null) {
+      localStorage.removeItem(storageKey);
+    } else {
+      localStorage.setItem(storageKey, JSON.stringify(value));
+    }
+  } catch {
+    return;
+  }
+}
+
+const readWaybillKeys = () =>
+  readStored<Record<string, string>>(WAYBILL_KEYS_STORAGE_KEY, {});
+
+function withWaybillKeysLock<T>(action: () => T): T | Promise<T> {
+  if (typeof navigator !== 'undefined' && navigator.locks) {
+    return navigator.locks.request(WAYBILL_KEYS_STORAGE_KEY, action);
+  }
+
+  return action();
+}
+
+const preparationWaybillKeys: PreparationDeps['waybillKeys'] = {
+  getOrCreate: (shipmentId, key) =>
+    withWaybillKeysLock(() => {
+      const keys = readWaybillKeys();
+      const existing = keys[shipmentId];
+
+      if (existing) {
+        return existing;
+      }
+
+      writeStored(WAYBILL_KEYS_STORAGE_KEY, { ...keys, [shipmentId]: key });
+
+      return key;
+    }),
+  release: (shipmentId, key) =>
+    withWaybillKeysLock(() => {
+      const keys = readWaybillKeys();
+
+      if (keys[shipmentId] !== key) {
+        return;
+      }
+
+      delete keys[shipmentId];
+      writeStored(WAYBILL_KEYS_STORAGE_KEY, keys);
+    }),
+};
+
+export const useRunOutboundPreparation = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      onProgress,
+      assertActive,
+      ...input
+    }: PreparationInput & {
+      onProgress: (progress: PreparationProgress) => void;
+      assertActive?: () => void;
+    }) => {
+      const batchKey = commandKey();
+
+      return runOutboundPreparation(
+        {
+          planMany: (shipmentIds, idempotencyKey) => {
+            assertActive?.();
+
+            return orders.outboundPreparation.planMany({
+              data: { shipmentIds },
+              idempotencyKey,
+            });
+          },
+          issueWaybills: (shipmentIds, idempotencyKey) => {
+            assertActive?.();
+
+            return orders.outboundPreparation.issueWaybills({
+              data: { shipmentIds },
+              idempotencyKey,
+            });
+          },
+          createBatch: async (data, shipmentIds) => {
+            assertActive?.();
+
+            const stored = readStored<PendingBatch | null>(
+              PENDING_BATCH_STORAGE_KEY,
+              null
+            );
+            const pending =
+              stored?.warehouseId === data.warehouseId &&
+              stored.pickingMethod === data.pickingMethod &&
+              stored.cartCapacity === data.cartCapacity &&
+              stored.shipmentIds.some((id) => shipmentIds.includes(id))
+                ? {
+                    ...stored,
+                    shipmentIds: [
+                      ...new Set([...stored.shipmentIds, ...shipmentIds]),
+                    ],
+                  }
+                : { ...data, key: batchKey, shipmentIds };
+            const { key, shipmentIds: _, ...request } = pending;
+
+            writeStored(PENDING_BATCH_STORAGE_KEY, pending);
+
+            try {
+              const { batchId } = await orders.outboundBatches.createV2(
+                request,
+                key
+              );
+
+              writeStored(PENDING_BATCH_STORAGE_KEY, null);
+
+              return { id: batchId, name: request.name };
+            } catch (error) {
+              const { status } = parseServerError(error, '');
+
+              if (status !== null && status < 500) {
+                writeStored(PENDING_BATCH_STORAGE_KEY, null);
+              }
+
+              throw error;
+            }
+          },
+          addManyToBatch: (batchId, shipmentIds, idempotencyKey) => {
+            assertActive?.();
+
+            return orders.outboundPreparation.addManyToBatch(batchId, {
+              data: { shipmentIds },
+              idempotencyKey,
+            });
+          },
+          sleep: async (ms) => {
+            assertActive?.();
+
+            await new Promise((resolve) => setTimeout(resolve, ms));
+
+            assertActive?.();
+          },
+          newKey: commandKey,
+          now: () => new Date(),
+          waybillKeys: preparationWaybillKeys,
+        },
+        input,
+        onProgress
+      );
+    },
+    onSettled: (_, __, { warehouseId }) => {
+      queryClient.invalidateQueries({
+        queryKey: ['outbound-preparation', warehouseId],
+      });
+      queryClient.invalidateQueries({
+        queryKey: orderQueryKeys.outboundBatches,
+      });
+      queryClient.invalidateQueries({ queryKey: ['shipments'] });
+      queryClient.invalidateQueries({ queryKey: orderQueryKeys.fulfillments });
+    },
+  });
+};
+useRunOutboundPreparation.permission = [
+  'fulfillment.warehouse.operate',
+] as const satisfies PermissionRequirement;
 
 export const useReviseShipmentRecipient = () => {
   const queryClient = useQueryClient();
