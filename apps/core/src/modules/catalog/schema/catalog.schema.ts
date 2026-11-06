@@ -478,6 +478,43 @@ export const productMasterQuantityDiscounts = pgTable(
   ],
 );
 
+// 함께 구매 구성품. 상품(A) 상세에서 고객이 함께 담으면 구성품(B)만 할인된다.
+// 버전과 무관하게 마스터에 붙고 저장 즉시 쇼핑몰로 나간다(가격처럼 발행을 기다리지 않는다).
+export const productBundleOffers = pgTable(
+  'product_bundle_offers',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => uuidv7()),
+    masterId: uuid('master_id')
+      .notNull()
+      .references(() => productMasters.id, { onDelete: 'cascade' }),
+    addonMasterId: uuid('addon_master_id')
+      .notNull()
+      .references(() => productMasters.id, { onDelete: 'cascade' }),
+    sort: integer('sort').notNull().default(0),
+    // null 이면 구성품의 모든 옵션
+    allowedVariantIds: uuid('allowed_variant_ids').array(),
+    regularRateBp: integer('regular_rate_bp').notNull(),
+    membershipRateBp: integer('membership_rate_bp').notNull(),
+    enabled: boolean('enabled').notNull().default(true),
+    startsOn: date('starts_on', { mode: 'string' }),
+    endsOn: date('ends_on', { mode: 'string' }),
+    label: varchar('label', { length: 40 }),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex('unique_bundle_offer_master_addon').on(table.masterId, table.addonMasterId),
+    index('idx_bundle_offers_addon').on(table.addonMasterId),
+    check('chk_bundle_offer_not_self', sql`${table.masterId} <> ${table.addonMasterId}`),
+    check(
+      'chk_bundle_offer_rates',
+      sql`${table.regularRateBp} BETWEEN 0 AND 9900 AND ${table.membershipRateBp} BETWEEN 0 AND 9900`,
+    ),
+  ],
+);
+
 // ===== 2.6. PRODUCT OPTION GROUP DISPLAYS (버전별/언어별 표시 정보) =====
 export const productOptionGroupDisplays = pgTable(
   'product_option_group_displays',
@@ -1426,6 +1463,7 @@ export const catalogSchema = {
   productMasterPurchaseConstraints,
   productQuantityDiscounts,
   productMasterQuantityDiscounts,
+  productBundleOffers,
   productOptionGroupDisplays,
   productOptionValueDisplays,
   productOptionGroups,

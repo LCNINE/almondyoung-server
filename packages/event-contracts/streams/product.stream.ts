@@ -211,6 +211,33 @@ export interface ProductSnapshot {
   purchaseConstraint?: ProductPurchaseConstraintSnapshot;
   /** 수량 할인 적용 기간(UTC ISO). 상시면 둘 다 null, 구간표가 없거나 꺼져 있으면 null. */
   quantityDiscount?: ProductQuantityDiscountSnapshot | null;
+  /** 함께 구매 구성품. 구성품이 있는 상품만 키를 싣는다(발행 때 쇼핑몰 쪽 목록을 다시 맞추는 용도). */
+  bundleOffers?: ProductBundleOfferSnapshot[];
+  /** 위 구성품 목록을 마지막으로 바꾼 시각(= 그때 나간 ProductBundleOffersChanged 의 changedAt). 쇼핑몰은 더 늦은 교체를 덮지 않는다. */
+  bundleOffersChangedAt?: string;
+}
+
+/** 상품(A) 상세에서 함께 담으면 할인되는 구성품(B) 하나. % 는 1/100 % 단위(bp). */
+export interface ProductBundleOfferSnapshot {
+  addonMasterId: string;
+  sort: number;
+  /** 할인 대상 구성품 옵션(PIM variant id). null 이면 구성품의 모든 옵션. */
+  allowedVariantIds: string[] | null;
+  regularRateBp: number;
+  membershipRateBp: number;
+  enabled: boolean;
+  /** KST 날짜(YYYY-MM-DD). 둘 다 null 이면 상시. */
+  startsOn: string | null;
+  endsOn: string | null;
+  label: string | null;
+}
+
+/** 상품의 함께 구매 구성품 전체. 빈 배열은 «모두 해제»다. 버전과 무관하게 저장 즉시 나간다. */
+export interface ProductBundleOffersChangedPayload {
+  masterId: string;
+  offers: ProductBundleOfferSnapshot[];
+  /** 저장 시각. 쇼핑몰은 이보다 늦은 교체가 이미 적용됐으면 이 이벤트를 건너뛴다. */
+  changedAt: string;
 }
 
 export interface ProductQuantityDiscountSnapshot {
@@ -396,6 +423,25 @@ const ProductInfoSchema = z.object({
   usage: z.string().optional(),
 });
 
+export const MAX_BUNDLE_OFFERS_PER_PRODUCT = 5;
+
+const RateBpSchema = z.number().int().min(0).max(9900);
+const KstDateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+
+const ProductBundleOfferSnapshotSchema = z.object({
+  addonMasterId: z.string().min(1),
+  sort: z.number().int().min(0),
+  allowedVariantIds: z.array(z.string().min(1)).min(1).nullable(),
+  regularRateBp: RateBpSchema,
+  membershipRateBp: RateBpSchema,
+  enabled: z.boolean(),
+  startsOn: KstDateSchema.nullable(),
+  endsOn: KstDateSchema.nullable(),
+  label: z.string().nullable(),
+});
+
+const ProductBundleOffersSchema = z.array(ProductBundleOfferSnapshotSchema).max(MAX_BUNDLE_OFFERS_PER_PRODUCT);
+
 const ProductSnapshotSchema = z.object({
   masterId: z.string(),
   versionId: z.string(),
@@ -436,6 +482,14 @@ const ProductSnapshotSchema = z.object({
     })
     .nullable()
     .optional(),
+  bundleOffers: ProductBundleOffersSchema.optional(),
+  bundleOffersChangedAt: z.string().datetime().optional(),
+});
+
+const ProductBundleOffersChangedSchema = z.object({
+  masterId: z.string().min(1),
+  offers: ProductBundleOffersSchema,
+  changedAt: z.string().datetime(),
 });
 
 const ProductMasterActiveVersionChangedSchema = z.object({
@@ -526,6 +580,10 @@ export const PRODUCT_STREAM = stream({
       ProductMasterDeletedSchema,
     ),
     CategoryChanged: event<'CategoryChanged', CategoryChangedPayload>('CategoryChanged', CategoryChangedSchema),
+    ProductBundleOffersChanged: event<'ProductBundleOffersChanged', ProductBundleOffersChangedPayload>(
+      'ProductBundleOffersChanged',
+      ProductBundleOffersChangedSchema,
+    ),
   },
 });
 

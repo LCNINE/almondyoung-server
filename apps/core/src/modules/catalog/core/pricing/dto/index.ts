@@ -4,3 +4,4 @@ export * from './pricing-rule-response.dto';
 export * from './calculate-price-request.dto';
 export * from './calculate-price-response.dto';
 export * from './quantity-discount.dto';
+export * from './bundle-offer.dto';
