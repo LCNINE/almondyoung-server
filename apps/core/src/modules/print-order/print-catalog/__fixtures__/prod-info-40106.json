@@ -230,5 +230,19 @@
     }
    ]
   }
+ ],
+ "prsjobinfo": [
+  {
+   "jobpresetno": 30.0,
+   "jobpreset": "분류",
+   "prsjoblist": [
+    {
+     "covercd": 0.0,
+     "jobno": 30.0,
+     "jobname": "분류",
+     "req_color": null
+    }
+   ]
+  }
  ]
 }

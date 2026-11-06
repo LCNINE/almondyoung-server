@@ -66,6 +66,17 @@ const ordqtySchema = z.array(
   }),
 );
 
+const prsjobinfoSchema = z.array(
+  z.object({
+    prsjoblist: z.array(
+      z.object({
+        jobno: z.number(),
+        req_color: z.array(z.object({ colorno: z.number() })).nullish(),
+      }),
+    ),
+  }),
+);
+
 const awkjobinfoSchema = z.array(
   z.object({
     jobgrouplist: z.array(
@@ -118,11 +129,29 @@ export function buildPrintOptions(
     .flatMap((p) => p.paperlist)
     .map((p) => ({ paperno: p.paperno, label: p.papername }));
 
+  const prsJobs = prsjobinfoSchema.parse(prodInfo.prsjobinfo ?? []).flatMap((g) => g.prsjoblist);
+
+  // 색상 자체의 인쇄 작업 → req_color 가 그 색상을 가리키는 작업 → 작업이 하나뿐이면 그것
+  const resolvePrsJobno = (colorno: number, own: number | undefined): number => {
+    if (own !== undefined) return own;
+
+    const byColor = prsJobs.find((j) => j.req_color?.some((c) => c.colorno === colorno));
+    if (byColor) return byColor.jobno;
+
+    if (prsJobs.length === 1) return prsJobs[0].jobno;
+
+    throw new Error(`prs jobno not resolvable for color ${colorno} in prod ${prodInfo.prodno}`);
+  };
+
   const colors = colorinfoSchema
     .parse(prodInfo.colorinfo ?? [])
     .flatMap((c) => c.pagelist)
     .flatMap((p) => p.colorlist)
-    .map((c) => ({ colorno: c.colorno, label: c.colorname, jobno: c.req_prsjob?.[0]?.jobno ?? 0 }));
+    .map((c) => ({
+      colorno: c.colorno,
+      label: c.colorname,
+      jobno: resolvePrsJobno(c.colorno, c.req_prsjob?.[0]?.jobno),
+    }));
 
   const quantities = ordqtySchema
     .parse(prodInfo.ordqty ?? [])

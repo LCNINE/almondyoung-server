@@ -10,7 +10,6 @@ export interface PrintKindProduct {
   fileDpi: number;
 }
 
-// bleedMm 은 스토어프론트 PRINT_SPECS 와 같은 값이다. 어긋나면 게시를 막는 판단에 쓴다.
 export const PRINT_KIND_PRODUCTS: Record<PrintKind, PrintKindProduct[]> = {
   card: [{ prodno: 40073, sizeno: 5458, bleedMm: 1, fileFormat: 'pdf', fileDpi: 300 }],
   bizcard: [{ prodno: 40073, sizeno: 5458, bleedMm: 1, fileFormat: 'pdf', fileDpi: 300 }],

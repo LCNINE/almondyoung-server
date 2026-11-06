@@ -41,7 +41,8 @@ describe('buildPrintOptions', () => {
     const wideJobs = wide.forbiddenAwk.map((f) => f.jobno);
     const narrowJobs = narrow.forbiddenAwk.map((f) => f.jobno);
 
-    expect(narrowJobs.length).toBeGreaterThan(wideJobs.length);
+    expect(narrowJobs).toContain(11347);
+    expect(wideJobs).not.toContain(11347);
   });
 
   it('PET배너: radio 그룹은 필수이고 기본값은 첫 옵션이다', () => {
@@ -54,7 +55,7 @@ describe('buildPrintOptions', () => {
     expect(axes.requiredAwk[0].defaultJobno).toBe(12302);
     expect(axes.requiredAwk[1].defaultJobno).toBe(42101);
     expect(axes.cutsizeHalfMm).toBe(0);
-    expect(axes.colors[0].jobno).toBe(0);
+    expect(axes.colors[0].jobno).toBe(30);
   });
 
   it('수량 조건이 맞지 않는 목록은 거른다', () => {
@@ -70,5 +71,11 @@ describe('buildPrintOptions', () => {
     const axes = buildPrintOptions(conditioned, { sizeno: 5458 });
 
     expect(axes.quantities.flatMap((q) => q.values).sort()).toEqual([100, 300]);
+  });
+
+  it('인쇄 작업 번호를 못 찾으면 던진다', () => {
+    const unresolvable: WowpressProdInfo = { ...pet, prsjobinfo: [] };
+
+    expect(() => buildPrintOptions(unresolvable, { sizeno: 5670 })).toThrow('prs jobno');
   });
 });
