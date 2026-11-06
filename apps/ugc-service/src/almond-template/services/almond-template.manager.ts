@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { BadRequestError, ConflictError, NotFoundError } from '@app/shared';
 import { DbService, InjectDb } from '@app/db';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import { almondTemplates, type UgcServiceSchema, type UgcTx } from '../../db/schema';
 import {
   ALMOND_TEMPLATE_DEFAULT_INDUSTRY,
@@ -183,12 +183,12 @@ export class AlmondTemplateManager {
         if (!current) throw new NotFoundError(`Almond template not found: ${id}`);
         if (current.productId === normalized && current.status === 'published') return current;
 
-        // 행의 product_id 와 시안 JSON 의 productId 를 같이 바꿔 둘이 갈리지 않게 한다
+        // 읽은 design 을 다시 쓰지 않고 SQL 에서 productId 키만 바꿔, 사이에 끼어든 저장을 덮지 않는다
         const [linked] = await trx
           .update(almondTemplates)
           .set({
             productId: normalized,
-            design: { ...current.design, productId: normalized },
+            design: sql`jsonb_set(${almondTemplates.design}, '{productId}', to_jsonb(${normalized}::text))`,
             status: 'published',
             updatedBy: userId,
             updatedAt: new Date(),
