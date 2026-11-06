@@ -35,6 +35,7 @@ import {
   banners,
   notices,
   sitePopups,
+  topNotices,
   type PimSchema,
   type ProductInfoJson,
 } from './schema/catalog.schema';
@@ -453,6 +454,10 @@ export type UpdateNotice = Partial<Omit<NewNotice, 'id' | 'createdAt' | 'updated
 export type SitePopup = InferSelectModel<typeof sitePopups>;
 export type NewSitePopup = InferInsertModel<typeof sitePopups>;
 export type UpdateSitePopup = Partial<Omit<NewSitePopup, 'id' | 'createdAt' | 'updatedAt'>>;
+
+// ===== TOP NOTICES 타입 =====
+export type TopNotice = InferSelectModel<typeof topNotices>;
+export type NewTopNotice = InferInsertModel<typeof topNotices>;
 
 // ===== VERSION MANAGEMENT DTO =====
 

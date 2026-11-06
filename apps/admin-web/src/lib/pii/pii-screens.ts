@@ -124,6 +124,7 @@ export const PII_SCREEN_NOT_SHOWN: Readonly<Record<string, string>> = {
   '/mall/almond-template-categories': '카테고리 이름·이미지만 다루고 개인정보 API 를 부르지 않는다',
   '/mall/products-list/[masterId]': '상품 상세 — 등록자 고르기가 없다',
   '/mall/shop-listings/new': '새로 입력하는 만들기 폼이다',
+  '/mall/top-notices': '띠 문구와 링크만 다루고 개인정보 API 를 부르지 않는다',
   '/order/manual-bulk': '주문 등록만 부르고 주문 목록·상세를 그리지 않는다',
   '/order/outbound-batches':
     '상자를 넣고 빼는 쓰기만 부르고 받는 분 정보를 응답에서 그리지 않는다',

@@ -714,6 +714,47 @@ export interface SitePopupListQuery {
   q?: string;
 }
 
+// ===== 상단 공지 띠 (top_notices) =====
+
+export const TOP_NOTICE_TEXT_MAX_LENGTH = 120;
+
+export interface TopNoticeDto {
+  id: string;
+  text: string;
+  linkUrl: string | null;
+  displayStartAt: string | null;
+  displayEndAt: string | null;
+  isActive: boolean;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateTopNoticeDto {
+  text: string;
+  linkUrl?: string;
+  displayStartAt?: string;
+  displayEndAt?: string;
+  isActive?: boolean;
+  sortOrder?: number;
+}
+
+/** 비우는 필드는 null 을 보낸다. 생략하면 기존 값이 유지된다. */
+export interface UpdateTopNoticeDto {
+  text?: string;
+  linkUrl?: string | null;
+  displayStartAt?: string | null;
+  displayEndAt?: string | null;
+  isActive?: boolean;
+  sortOrder?: number;
+}
+
+export interface TopNoticeListQuery {
+  includeInactive?: boolean;
+  isActive?: boolean;
+  q?: string;
+}
+
 export interface NoticeListQuery {
   category?: string;
   includeInactive?: boolean;

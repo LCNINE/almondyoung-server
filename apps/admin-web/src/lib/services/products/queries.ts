@@ -29,6 +29,7 @@ import type {
   NoticeListQuery,
   AdminShopListingListQuery,
   SitePopupListQuery,
+  TopNoticeListQuery,
 } from '@/lib/types/dto/products';
 import type { BatchVariantInfo } from '@/lib/api/domains/products/variants.client';
 import type {
@@ -599,6 +600,16 @@ export const useSitePopup = (id: string) => {
     queryKey: productQueryKeys.sitePopup(id),
     queryFn: () => products.sitePopups.get(id),
     enabled: !!id,
+    staleTime: 2 * 60 * 1000,
+  });
+};
+
+// ===== 상단 공지 띠 관련 쿼리 =====
+
+export const useTopNotices = (query?: TopNoticeListQuery) => {
+  return useQuery({
+    queryKey: productQueryKeys.topNoticesList(query ?? {}),
+    queryFn: () => products.topNotices.list(query),
     staleTime: 2 * 60 * 1000,
   });
 };
