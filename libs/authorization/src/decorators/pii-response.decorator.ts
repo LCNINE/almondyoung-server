@@ -30,6 +30,7 @@ export type PiiSubjectType =
   | 'qna_question'
   | 'shop_listing'
   | 'print_order'
+  | 'almond_design'
   | 'channel_order'
   | 'event_record'
   | 'medusa_customer'

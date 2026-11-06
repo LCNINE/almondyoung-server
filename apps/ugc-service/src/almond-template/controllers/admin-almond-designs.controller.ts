@@ -13,7 +13,7 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiParam, ApiProduces, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import type { FastifyReply, FastifyRequest } from 'fastify';
-import { RequirePermission } from '@app/authorization';
+import { PiiResponse, RequirePermission, type Permission } from '@app/authorization';
 import { NotFoundError } from '@app/shared';
 import {
   ALMOND_PRINT_DEFAULT_DPI,
@@ -25,13 +25,24 @@ import { parsePrintFormatAndDpi } from './print-link-params';
 import { AlmondDesignsService } from '../services/almond-designs.service';
 import { type AlmondPrintFormat } from '../types/almond-design.types';
 
+// 출력 담당자가 와우프레스 발주를 넣으려면 원문 시안이 필요하다 — 주문 조회 권한으로 열고 열람은 접속기록에 남긴다
+const DESIGN_OPENS_WITH: readonly Permission[] = ['customer.pii.read', 'order.order.read'];
+
 @ApiTags('Almond Designs (admin)')
 @ApiBearerAuth()
 @Controller('admin/almond-designs')
 export class AdminAlmondDesignsController {
   constructor(private readonly service: AlmondDesignsService) {}
 
-  @RequirePermission('marketing.almond_template.read')
+  @PiiResponse({
+    fields: { design: 'redact' },
+    subjects: [
+      { path: 'id', type: 'almond_design' },
+      { path: 'userId', type: 'user' },
+    ],
+    rawWith: DESIGN_OPENS_WITH,
+  })
+  @RequirePermission('order.order.read')
   @Get(':id')
   @ApiParam({ name: 'id', format: 'uuid' })
   @ApiOperation({ summary: '고객 시안 조회' })
@@ -41,7 +52,7 @@ export class AdminAlmondDesignsController {
     return this.service.getForAdmin(id);
   }
 
-  @RequirePermission('marketing.almond_template.read')
+  @RequirePermission('order.order.read')
   @Get(':id/preview/:side')
   @ApiParam({ name: 'id', format: 'uuid' })
   @ApiParam({ name: 'side', enum: ['front.jpg', 'back.jpg'] })
@@ -68,7 +79,12 @@ export class AdminAlmondDesignsController {
     return jpg;
   }
 
-  @RequirePermission('marketing.almond_template.read')
+  @PiiResponse({
+    fields: { url: 'secret' },
+    subjects: [{ param: 'id', type: 'almond_design' }],
+    rawWith: DESIGN_OPENS_WITH,
+  })
+  @RequirePermission('order.order.read')
   @Get(':id/print-link')
   @ApiParam({ name: 'id', format: 'uuid' })
   @ApiQuery({ name: 'format', enum: ['pdf', 'eps', 'jpg'] })
@@ -94,7 +110,7 @@ export class AdminAlmondDesignsController {
     return this.service.printLink(id, parsed.format, parsed.dpi, accessToken);
   }
 
-  @RequirePermission('marketing.almond_template.read')
+  @RequirePermission('order.order.read')
   @Get(':id/print.eps')
   @ApiParam({ name: 'id', format: 'uuid' })
   @ApiOperation({
@@ -107,7 +123,7 @@ export class AdminAlmondDesignsController {
     return this.sendPrintFile(id, 'eps', reply);
   }
 
-  @RequirePermission('marketing.almond_template.read')
+  @RequirePermission('order.order.read')
   @Get(':id/print.pdf')
   @ApiParam({ name: 'id', format: 'uuid' })
   @ApiOperation({
@@ -120,7 +136,7 @@ export class AdminAlmondDesignsController {
     return this.sendPrintFile(id, 'pdf', reply);
   }
 
-  @RequirePermission('marketing.almond_template.read')
+  @RequirePermission('order.order.read')
   @Get(':id/print.jpg')
   @ApiParam({ name: 'id', format: 'uuid' })
   @ApiQuery({ name: 'dpi', required: false, example: ALMOND_PRINT_DEFAULT_DPI })
