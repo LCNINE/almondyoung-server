@@ -221,6 +221,8 @@ const draftSchema = z.object({
   discountPct: z.union([z.literal(0), z.literal(5), z.literal(10)]),
   edited: z.record(z.string(), z.unknown()),
   off: z.array(z.string()),
+  // 상품은 만들었는데 템플릿 연결이 남은 경우, 다시 열면 연결만 다시 시도한다
+  pendingMasterId: z.string().min(1).optional(),
 });
 
 export type PublishDraft = Omit<z.infer<typeof draftSchema>, 'edited'> & { edited: Record<string, number> };

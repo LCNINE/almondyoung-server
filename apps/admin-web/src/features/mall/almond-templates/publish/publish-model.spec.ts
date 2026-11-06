@@ -225,6 +225,16 @@ describe('draft storage', () => {
     expect(loadDraft('t1')).toEqual(draft);
   });
 
+  it('keeps the created product id waiting to be linked', () => {
+    saveDraft('t1', { ...draft, pendingMasterId: 'm1' });
+
+    expect(loadDraft('t1')?.pendingMasterId).toBe('m1');
+
+    saveDraft('t1', { ...draft, pendingMasterId: undefined });
+
+    expect(loadDraft('t1')?.pendingMasterId).toBeUndefined();
+  });
+
   it('drops restored prices the core would reject', () => {
     window.localStorage.setItem(
       draftKey('t1'),

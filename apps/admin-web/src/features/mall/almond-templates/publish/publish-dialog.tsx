@@ -83,7 +83,6 @@ export function PublishDialog({ template, kind, onClose }: PublishDialogProps) {
   const [costs, setCosts] = useState<Record<string, number | null>>({});
   const [retryTick, setRetryTick] = useState(0);
   const [publishing, setPublishing] = useState(false);
-  const [masterId, setMasterId] = useState<string | null>(null);
   const requested = useRef(new Set<string>());
 
   const { width, height } = parseTemplateSize(template.size);
@@ -96,6 +95,7 @@ export function PublishDialog({ template, kind, onClose }: PublishDialogProps) {
 
   const thumbnailUrl = almondTemplatesClient.thumbnailUrl(template.id, template.updatedAt);
   const { step, picked, times, discountPct } = draft;
+  const masterId = draft.pendingMasterId ?? null;
   const update = (patch: Partial<PublishDraft>) => setDraft((prev) => ({ ...prev, ...patch }));
 
   useEffect(() => saveDraft(template.id, draft), [template.id, draft]);
@@ -138,9 +138,9 @@ export function PublishDialog({ template, kind, onClose }: PublishDialogProps) {
   const size = useMemo(() => ({ width, height }), [width, height]);
   const signature = quoteSignature(list, draft.off, size);
 
-  // 옵션 단계부터 판매할 조합 중 아직 부르지 않은 것만 견적한다
+  // 옵션 단계부터 판매할 조합 중 아직 부르지 않은 것만 견적하고, 상품을 이미 만들었으면 연결만 남아 부르지 않는다
   useEffect(() => {
-    if (step < 2) return;
+    if (step < 2 || masterId) return;
 
     for (const batch of quoteBatches(list, draft.off, size, requested.current)) {
       // 응답은 보낸 입력의 견적 id 로 저장해, 그 사이 후가공이 바뀌면 지금 행이 옛 견적을 읽지 않게 한다
@@ -164,7 +164,7 @@ export function PublishDialog({ template, kind, onClose }: PublishDialogProps) {
         );
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step, signature, retryTick]);
+  }, [step, signature, retryTick, masterId]);
 
   const paperLabel = new Map(options?.papers.map((p) => [p.paperno, p.label]));
   const colorLabel = new Map(options?.colors.map((c) => [c.colorno, c.label]));
@@ -264,7 +264,7 @@ export function PublishDialog({ template, kind, onClose }: PublishDialogProps) {
         thumbnailFileId: fileId,
         combos: rows.filter((r) => r.on).map((r) => r.combo),
       });
-      setMasterId(result.masterId);
+      update({ pendingMasterId: result.masterId });
       await finish(result.masterId);
     } catch (error) {
       toast.error(serverMessage(error) ?? '게시하지 못했어요. 잠시 뒤 다시 시도해 주세요.');
@@ -309,7 +309,10 @@ export function PublishDialog({ template, kind, onClose }: PublishDialogProps) {
         </DialogHeader>
 
         <div className="flex-1 overflow-y-auto px-6 py-5">
-          {step === 1 && (
+          {masterId && (
+            <p className="text-[14px]">상품은 이미 만들었어요. 아래 버튼으로 템플릿 연결을 마무리해 주세요.</p>
+          )}
+          {!masterId && step === 1 && (
             <StepProduct
               thumbnailUrl={thumbnailUrl}
               kindLabel={almondTemplateKindLabel(template.kind)}
@@ -325,7 +328,7 @@ export function PublishDialog({ template, kind, onClose }: PublishDialogProps) {
               onRetryOptions={() => void optionsQuery.refetch()}
             />
           )}
-          {step === 2 && options && (
+          {!masterId && step === 2 && options && (
             <StepOptions
               axes={{
                 papers: options.papers.map((p) => ({ value: p.paperno, label: p.label })),
@@ -347,7 +350,7 @@ export function PublishDialog({ template, kind, onClose }: PublishDialogProps) {
               onRetryFailed={handleRetryFailed}
             />
           )}
-          {step === 3 && (
+          {!masterId && step === 3 && (
             <StepConfirm
               thumbnailUrl={thumbnailUrl}
               name={draft.name}
