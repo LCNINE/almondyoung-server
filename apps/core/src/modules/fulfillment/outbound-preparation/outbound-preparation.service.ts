@@ -20,4 +20,21 @@ export class OutboundPreparationService {
   planMany(shipmentIds: string[], idempotencyKey: string, actor: ShipmentPlanningActor): Promise<BulkShipmentResult> {
     return this.manager.planMany(shipmentIds, idempotencyKey, actor);
   }
+
+  addManyToBatch(
+    batchId: string,
+    shipmentIds: string[],
+    idempotencyKey: string,
+    actor: ShipmentPlanningActor,
+  ): Promise<BulkShipmentResult> {
+    return this.manager.addManyToBatch(batchId, shipmentIds, idempotencyKey, actor);
+  }
+
+  splitManyUnreserved(
+    shipmentIds: string[],
+    idempotencyKey: string,
+    actor: ShipmentPlanningActor,
+  ): Promise<BulkShipmentResult> {
+    return this.manager.splitManyUnreserved(shipmentIds, idempotencyKey, actor);
+  }
 }
