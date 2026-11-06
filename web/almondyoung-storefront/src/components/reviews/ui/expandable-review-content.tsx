@@ -37,7 +37,7 @@ export function ExpandableReviewContent({ content }: Props) {
         <button
           type="button"
           onClick={() => setIsExpanded(true)}
-          className="mt-1 text-xs font-medium text-primary"
+          className="mt-1 text-xs font-medium text-mint-deep"
         >
           {t("expandLong")}
         </button>

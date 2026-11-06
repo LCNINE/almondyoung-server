@@ -193,7 +193,7 @@ export function TaxInvoiceModal({
             </Button>
             <Button
               type="submit"
-              className="flex-1 bg-[#ffa500] hover:bg-[#ffa500]/90"
+              className="bg-primary hover:bg-primary/90 flex-1"
               disabled={!isValid || isPending}
             >
               {isPending ? "저장 중..." : "저장"}

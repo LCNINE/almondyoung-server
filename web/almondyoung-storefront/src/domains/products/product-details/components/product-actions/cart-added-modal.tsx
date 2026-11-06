@@ -74,7 +74,7 @@ export default function CartAddedModal({
           ) : (
             <LocalizedClientLink
               href={"/cart"}
-              className="text-primary hover:text-primary/80 text-sm font-medium whitespace-nowrap"
+              className="text-mint-deep hover:text-mint-deep/80 text-sm font-medium whitespace-nowrap"
             >
               {t("goToCart")}
             </LocalizedClientLink>

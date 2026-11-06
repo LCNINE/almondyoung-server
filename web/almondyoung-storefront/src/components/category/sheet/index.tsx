@@ -90,7 +90,7 @@ export function CategorySheet({ trigger }: CategorySheetProps) {
             className="bg-header-background flex h-8 shrink-0 items-center gap-1.5 rounded-full px-3 text-[13px] font-bold text-white"
           >
             {tQuickLinks("beautytop")}
-            <span className="text-primary text-[10px] font-bold">NEW</span>
+            <span className="text-pink-deep text-[10px] font-bold">NEW</span>
           </LocalizedClientLink>
           {EXTERNAL_SHORTCUTS.map((link) => (
             <a

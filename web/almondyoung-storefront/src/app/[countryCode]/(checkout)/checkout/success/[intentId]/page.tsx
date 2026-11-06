@@ -129,7 +129,7 @@ export default async function CheckoutSuccessPage({
       <CheckoutHeader title={t("header.title")} />
 
       <h1 className="text-center text-2xl font-bold text-black">
-        <span className="text-[#ffa500]">
+        <span className="text-mint-deep">
           {t("success.completedHighlight")}
         </span>
         {t("success.completedSuffix")}
@@ -183,7 +183,7 @@ async function OrderSummaryCard({
           </p>
           <Link
             href={`/${countryCode}/mypage/order/list`}
-            className="mt-4 flex h-[60px] w-full items-center justify-center rounded-[5px] bg-[#fff7e5] text-center text-[19px] font-bold text-[#ffa500] transition-colors hover:bg-[#ffedcc]"
+            className="mt-4 flex h-[60px] w-full items-center justify-center rounded-[5px] bg-mint-tint text-center text-[19px] font-bold text-mint-deep transition-colors hover:bg-mint-tint/70"
           >
             {t("noOrder.orderListBtn")}
           </Link>
@@ -306,14 +306,14 @@ async function OrderSummaryCard({
           {hasDigital && (
             <Link
               href={`/${countryCode}/mypage/download`}
-              className="flex h-[60px] w-full items-center justify-center rounded-[5px] bg-[#ffa500] text-center text-[19px] font-bold text-white transition-colors hover:bg-[#e69500]"
+              className="flex h-[60px] w-full items-center justify-center rounded-[5px] bg-primary text-center text-[19px] font-bold text-white transition-colors hover:bg-primary/90"
             >
               {t("downloadBtn")}
             </Link>
           )}
           <Link
             href={`/${countryCode}/mypage/order/details?orderId=${order.id}`}
-            className="flex h-[60px] w-full items-center justify-center rounded-[5px] bg-[#fff7e5] text-center text-[19px] font-bold text-[#ffa500] transition-colors hover:bg-[#ffedcc]"
+            className="flex h-[60px] w-full items-center justify-center rounded-[5px] bg-mint-tint text-center text-[19px] font-bold text-mint-deep transition-colors hover:bg-mint-tint/70"
           >
             {t("orderDetailBtn")}
           </Link>

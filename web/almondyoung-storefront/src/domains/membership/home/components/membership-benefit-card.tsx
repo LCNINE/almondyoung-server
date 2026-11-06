@@ -71,7 +71,7 @@ export default function MembershipPlanCard({
 
         {/* 할인 뱃지 + 혜택 안내 */}
         <div className="flex items-center gap-3.5">
-          <div className="flex items-center justify-center gap-2.5 rounded-full bg-[#ffa500] px-2 py-0.5">
+          <div className="flex items-center justify-center gap-2.5 rounded-full bg-pink px-2 py-0.5">
             <p className="text-sm text-[#2c2c2e]">{discountRate}</p>
           </div>
           {benefitText && <p className="text-sm text-white">{benefitText}</p>}

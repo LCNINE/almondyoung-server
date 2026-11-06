@@ -369,7 +369,7 @@ export function QuickAddDrawer({
                         <div className="flex items-center gap-1.5">
                           {isDiscounted && (
                             <>
-                              <span className="text-xs font-semibold text-primary">
+                              <span className="text-xs font-semibold text-mint-deep">
                                 {item.price.percentage_diff}%
                               </span>
                               <span className="text-xs text-muted-foreground line-through">
@@ -390,7 +390,7 @@ export function QuickAddDrawer({
                               "flex h-7 w-7 items-center justify-center rounded-full border border-border transition-colors",
                               item.quantity <= 1
                                 ? "text-muted-foreground/50"
-                                : "hover:border-primary hover:text-primary"
+                                : "hover:border-mint-deep hover:text-mint-deep"
                             )}
                           >
                             <Minus className="h-3 w-3" />
@@ -406,7 +406,7 @@ export function QuickAddDrawer({
                               isCartPending ||
                               (isWelcomeMembership && item.quantity >= 1)
                             }
-                            className="flex h-7 w-7 items-center justify-center rounded-full border border-border transition-colors hover:border-primary hover:text-primary disabled:text-muted-foreground/50"
+                            className="flex h-7 w-7 items-center justify-center rounded-full border border-border transition-colors hover:border-mint-deep hover:text-mint-deep disabled:text-muted-foreground/50"
                           >
                             <Plus className="h-3 w-3" />
                           </button>

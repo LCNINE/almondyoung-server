@@ -23,7 +23,7 @@ export function MobileHeader({
       <header className="flex items-center justify-between text-white">
         <div className="flex items-center gap-2.5">
           <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white">
-            <User className="text-primary h-5 w-5" />
+            <User className="text-mint-deep h-5 w-5" />
           </div>
           <h1 className="text-xl font-bold">
             {userName} {t("profile.honorific")}
@@ -52,10 +52,10 @@ export function MobileHeader({
             )}
           >
             <span className="flex items-baseline gap-1">
-              <span className="text-lg font-extrabold text-primary">멤버십</span>
+              <span className="text-lg font-extrabold text-purple-deep">멤버십</span>
             </span>
             {isMembership ? (
-              <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-bold text-primary">
+              <span className="inline-flex items-center gap-1 rounded-full bg-purple-tint px-2 py-0.5 text-xs font-bold text-purple-deep">
                 <Crown className="h-3 w-3" />
                 {t("profile.benefitActive")}
               </span>

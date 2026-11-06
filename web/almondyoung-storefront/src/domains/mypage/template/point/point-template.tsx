@@ -114,13 +114,13 @@ export async function PointTemplate({
           role="status"
           className="mt-4 flex items-start gap-2 rounded-xl border border-orange-200 bg-orange-50 px-4 py-3"
         >
-          <AlertCircle className="text-primary mt-0.5 size-4 shrink-0" />
+          <AlertCircle className="text-mint-deep mt-0.5 size-4 shrink-0" />
           <p className="text-gray-90 text-sm leading-relaxed">
             {t.rich("expiring.notice", {
               amount: expiring.amount,
               date: formatDate(expiring.expiresAt, DATE_FORMATS.KO_DOT),
               strong: (chunks) => (
-                <span className="text-primary font-bold">{chunks}</span>
+                <span className="text-mint-deep font-bold">{chunks}</span>
               ),
             })}
           </p>

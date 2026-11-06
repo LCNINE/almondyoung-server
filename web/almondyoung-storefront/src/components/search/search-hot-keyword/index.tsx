@@ -111,7 +111,7 @@ export function SearchHotKeyword() {
                   </span>
                   <div className="flex w-8 shrink-0 justify-end">
                     {item.status === "new" ? (
-                      <span className="rounded-sm bg-orange-100 px-1.5 py-0.5 text-[10px] font-bold text-orange-600">
+                      <span className="bg-pink-tint text-pink-deep rounded-sm px-1.5 py-0.5 text-[10px] font-bold">
                         {t("statusNew")}
                       </span>
                     ) : item.status === "up" ? (

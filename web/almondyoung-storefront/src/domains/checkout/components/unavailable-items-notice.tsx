@@ -42,7 +42,7 @@ export default async function UnavailableItemsNotice({
 
         <LocalizedClientLink
           href="/cart"
-          className="mt-8 w-full rounded-xl bg-[#ffa500] px-10 py-4 text-center text-[15px] font-medium text-white transition-colors hover:bg-[#e69500] sm:text-base"
+          className="bg-primary hover:bg-primary/90 mt-8 w-full rounded-xl px-10 py-4 text-center text-[15px] font-medium text-white transition-colors sm:text-base"
         >
           {t("goToCart")}
         </LocalizedClientLink>

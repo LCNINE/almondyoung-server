@@ -62,7 +62,7 @@ export function CustomsCodeSection({
           href={PERSONAL_CUSTOMS_CODE_URL}
           target="_blank"
           rel="noopener noreferrer"
-          className="text-primary mt-2 inline-block text-[13px] font-medium underline underline-offset-2 lg:text-sm"
+          className="text-mint-deep mt-2 inline-block text-[13px] font-medium underline underline-offset-2 lg:text-sm"
         >
           {t("lookupLink")}
         </a>

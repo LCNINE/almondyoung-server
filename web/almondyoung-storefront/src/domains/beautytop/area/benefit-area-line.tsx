@@ -17,7 +17,7 @@ export function BenefitAreaLine() {
         gugun: filters.gugun,
         category: filters.category,
         count: fmt.full(shops),
-        b: (chunks) => <b className="font-bold text-[#ffa500]">{chunks}</b>,
+        b: (chunks) => <b className="text-mint-deep font-bold">{chunks}</b>,
       })}
     </p>
   )

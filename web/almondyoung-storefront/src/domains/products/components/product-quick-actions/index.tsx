@@ -268,7 +268,7 @@ export function ProductQuickActions({
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="bg-yellow-30 hover:bg-yellow-40 ml-1 h-6 rounded-full px-2 text-xs text-white hover:text-white"
+                  className="bg-primary hover:bg-primary/90 ml-1 h-6 rounded-full px-2 text-xs text-white hover:text-white"
                   onClick={(event) => void handleAddToCart(event)}
                   disabled={isCartLoading}
                 >

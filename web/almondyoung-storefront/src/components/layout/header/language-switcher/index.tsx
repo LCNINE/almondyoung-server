@@ -58,7 +58,7 @@ export function LanguageSwitcher({
       case "header":
         return "flex cursor-pointer items-center gap-1 text-xs text-white/80 transition-colors hover:text-white outline-none"
       case "sheet":
-        return "flex cursor-pointer items-center gap-1 text-sm text-foreground transition-colors hover:text-primary outline-none"
+        return "flex cursor-pointer items-center gap-1 text-sm text-foreground transition-colors hover:text-mint-deep outline-none"
       case "iconButton":
         return "flex cursor-pointer flex-col items-center gap-1 text-white outline-none"
     }
@@ -90,7 +90,7 @@ export function LanguageSwitcher({
             data-active={l === locale}
             className={cn(
               "cursor-pointer",
-              l === locale && "font-semibold text-primary"
+              l === locale && "font-semibold text-mint-deep"
             )}
           >
             {t(l)}

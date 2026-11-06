@@ -14,7 +14,7 @@ type Props = {
    */
   onChange?: (rating: number) => void
   /**
-   * 별점 색상 (기본값: #FFA500)
+   * 별점 색상 (기본값: ink)
    */
   activeColor?: string
   /**
@@ -41,7 +41,7 @@ type Props = {
 export function Rating({
   rating,
   onChange: onRatingChange,
-  activeColor = "#FFA500",
+  activeColor = "var(--ink)",
   inactiveColor = "#D9D9D9",
   size = 24,
   getStarLabel,

@@ -8,7 +8,8 @@ import Image from "next/image"
 import type { OrderItem } from "../../types/mypage-types"
 
 function OrderCard({ item }: { item: OrderItem }) {
-  const statusColor = item.status === "SHIPPING" ? "text-primary" : "text-black"
+  const statusColor =
+    item.status === "SHIPPING" ? "text-mint-deep" : "text-black"
 
   return (
     <LocalizedClientLink
@@ -48,7 +49,7 @@ export default function ShippingStatusCard({
         <h2 className="text-base font-bold text-black">{t("orderTitle")}</h2>
         <LocalizedClientLink
           href="/mypage/order/list"
-          className="text-primary flex items-center gap-0.5 text-xs font-medium"
+          className="text-mint-deep flex items-center gap-0.5 text-xs font-medium"
         >
           {t("viewAll")}
           <ChevronRight className="h-3.5 w-3.5" />

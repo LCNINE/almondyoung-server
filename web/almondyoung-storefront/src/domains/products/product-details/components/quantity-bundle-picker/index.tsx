@@ -82,13 +82,13 @@ export default function QuantityBundlePicker({
                 </span>
               )}
               {option.quantity === lastQuantity && option.quantity > 1 && (
-                <span className="text-primary text-xs font-medium">{t("best")}</span>
+                <span className="text-pink-deep text-xs font-medium">{t("best")}</span>
               )}
             </>
           )
           const cardClass = cn(
             "flex min-h-24 flex-col items-start gap-0.5 rounded-lg border px-3 py-2 text-left",
-            selected ? "border-primary bg-yellow-10" : "border-border bg-background"
+            selected ? "border-mint-deep bg-mint-tint" : "border-border bg-background"
           )
           return onSelect ? (
             <button

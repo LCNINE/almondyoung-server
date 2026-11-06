@@ -8,7 +8,7 @@ import { useTranslations } from "next-intl"
 import { useEffect, useState } from "react"
 
 const payButtonClass =
-  "w-full rounded bg-[#ffa500] py-3.5 text-[15px] font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
+  "w-full rounded bg-primary py-3.5 text-[15px] font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
 
 const SCROLL_NOISE_PX = 4
 
@@ -93,7 +93,7 @@ export const MobileCTA = ({
                 {tCart("won")}
               </span>
             )}
-            <span className="text-lg font-bold text-[#ffa500]">
+            <span className="text-foreground text-lg font-bold">
               {formatPrice(totals.finalTotal)}
               {tCart("won")}
             </span>
@@ -140,7 +140,7 @@ export const PCFixedCTA = ({
             disabled={loading || disabled}
             size="lg"
             color="primary"
-            className="h-14 w-[375px] shrink-0 cursor-pointer rounded-md bg-[#ffa500] text-xl font-bold text-white shadow-[0_2px_4px_0_rgba(0,0,0,0.1)] hover:bg-[#ffa500]/90 disabled:cursor-not-allowed disabled:opacity-50"
+            className="bg-primary hover:bg-primary/90 h-14 w-[375px] shrink-0 cursor-pointer rounded-md text-xl font-bold text-white shadow-[0_2px_4px_0_rgba(0,0,0,0.1)] disabled:cursor-not-allowed disabled:opacity-50"
           >
             {loading
               ? t("processing")

@@ -105,7 +105,7 @@ export default async function OrderTrackPage({ searchParams }: OrderTrackPagePro
                         className={cn(
                           "flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold",
                           done && "bg-foreground text-white",
-                          current && "bg-primary text-white ring-4 ring-[#fff7e5]",
+                          current && "bg-primary text-white ring-4 ring-mint-tint",
                           !done && !current && "bg-secondary text-[#b0b3ba]"
                         )}
                       >
