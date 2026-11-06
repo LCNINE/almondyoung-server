@@ -8,7 +8,7 @@ import { type WowpressLineSpec } from '../wowpress/wowpress.types';
 
 export type ClaimTemplateResult = { claimed: true } | { claimed: false; masterId: string };
 
-function toSpec(row: PrintProductSpecRow): WowpressLineSpec {
+export function rowToSpec(row: PrintProductSpecRow): WowpressLineSpec {
   return {
     prodno: row.prodno,
     jobpresetno: row.jobpresetno,
@@ -21,7 +21,7 @@ function toSpec(row: PrintProductSpecRow): WowpressLineSpec {
   };
 }
 
-function toRow(variantId: string, spec: WowpressLineSpec) {
+export function specToRow(variantId: string, spec: WowpressLineSpec) {
   return {
     variantId,
     prodno: spec.prodno,
@@ -51,7 +51,7 @@ export class PrintProductSpecRepository {
     return this.dbService.run(async (trx) => {
       const [row] = await trx.select().from(t).where(eq(t.variantId, variantId)).limit(1);
 
-      return row ? toSpec(row) : null;
+      return row ? rowToSpec(row) : null;
     }, tx);
   }
 
@@ -59,23 +59,34 @@ export class PrintProductSpecRepository {
     if (rows.length === 0) return;
 
     // 게시 트랜잭션이 여러 BC 에 걸치므로 AnyTx 로 받아 여기서 한 번만 좁힌다
-    await (tx as DbTx).insert(wmsTables.printProductSpecs).values(rows.map((r) => toRow(r.variantId, r.spec)));
+    await this.dbService.run(async (trx) => {
+      await trx.insert(wmsTables.printProductSpecs).values(rows.map((r) => specToRow(r.variantId, r.spec)));
+    }, tx as DbTx);
   }
 
   async claimTemplate(templateId: string, masterId: string, tx: AnyTx): Promise<ClaimTemplateResult> {
     const t = wmsTables.printTemplateProducts;
-    const trx = tx as DbTx;
-    const inserted = await trx
-      .insert(t)
-      .values({ templateId, masterId })
-      .onConflictDoNothing()
-      .returning({ id: t.templateId });
-    if (inserted.length > 0) return { claimed: true };
 
-    const [existing] = await trx.select({ masterId: t.masterId }).from(t).where(eq(t.templateId, templateId)).limit(1);
-    if (!existing) throw new Error(`print template claim vanished: ${templateId}`);
+    // 게시 트랜잭션이 여러 BC 에 걸치므로 AnyTx 로 받아 여기서 한 번만 좁힌다
+    return this.dbService.run(async (trx): Promise<ClaimTemplateResult> => {
+      const inserted = await trx
+        .insert(t)
+        .values({ templateId, masterId })
+        .onConflictDoNothing()
+        .returning({ id: t.templateId });
 
-    return { claimed: false, masterId: existing.masterId };
+      if (inserted.length > 0) return { claimed: true };
+
+      const [existing] = await trx
+        .select({ masterId: t.masterId })
+        .from(t)
+        .where(eq(t.templateId, templateId))
+        .limit(1);
+
+      if (!existing) throw new Error(`print template claim vanished: ${templateId}`);
+
+      return { claimed: false, masterId: existing.masterId };
+    }, tx as DbTx);
   }
 
   confirmVariant(variantId: string, actorId: string, tx?: DbTx): Promise<void> {

@@ -83,7 +83,6 @@ export const printProductSpecs = pgTable('print_product_specs', {
 
 export type PrintProductSpecRow = InferSelectModel<typeof printProductSpecs>;
 
-// 템플릿 하나가 만든 상품 하나. 같은 템플릿을 두 번 게시하면 PK 충돌로 막는다
 export const printTemplateProducts = pgTable('print_template_products', {
   templateId: uuid('template_id').primaryKey(),
   masterId: uuid('master_id').notNull(),
