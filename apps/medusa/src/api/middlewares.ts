@@ -81,6 +81,12 @@ export default defineMiddlewares({
       method: 'GET',
       middlewares: membershipPriceVisibilityMiddlewares,
     },
+    {
+      // 회원 여부로 회원 전용 노출 상품을 목록·개수에서 뺀다. 응답에 상품 본문이 없어 가격 은닉 미들웨어는 필요 없다.
+      matcher: '/store/membership-hall',
+      method: 'GET',
+      middlewares: [authenticate('customer', ['session', 'bearer'], { allowUnauthenticated: true })],
+    },
     // assigned_only/claimable 게이트는 promo_codes 를 받는 모든 카트 경로에 걸어야 한다.
     // 기본 Medusa 의 POST /store/carts(create) 와 POST /store/carts/:id(update) 도
     // body.promo_codes 를 updateCartPromotionsWorkflow 로 적용하므로, /promotions 만
