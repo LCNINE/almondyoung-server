@@ -8,7 +8,8 @@ function card(productId: string, colorno: number): WowpressLineSpec {
   return {
     prodno: 40073,
     jobpresetno: '3110',
-    prsjob: [{ covercd: 0, sizeno: 10732, paperno: 22904, colorno, jobno: 3110 }],
+    // 도수는 colorno0 으로 받는다. colorno 만 보내면 와우프레스가 무시하고 단면으로 계산한다
+    prsjob: [{ covercd: 0, sizeno: 10732, paperno: 22904, colorno0: colorno, colorno, jobno: 3110 }],
     awkjob: [],
     qtyPerUnit: 500,
     file: { format: 'pdf', dpi: 300 },
