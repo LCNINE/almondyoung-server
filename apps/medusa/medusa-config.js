@@ -208,6 +208,9 @@ module.exports = defineConfig({
       resolve: './src/modules/quantity-discount',
     },
     {
+      resolve: './src/modules/bundle-offer',
+    },
+    {
       resolve: '@medusajs/medusa/promotion',
     },
     // 통합테스트(TEST_TYPE)에서는 redis/BullMQ 대신 in-memory 로컬 이벤트 버스 사용

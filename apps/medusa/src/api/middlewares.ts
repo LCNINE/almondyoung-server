@@ -3,6 +3,7 @@ import { createCartLockAwareErrorHandler } from './cart-lock-conflict';
 import { validateAndTransformBody, validateAndTransformQuery } from '@medusajs/framework';
 import { StorePurchaseSatisfactionWrite } from './store/orders/[id]/purchase-satisfaction/validators';
 import { StoreAddLineItem } from './store/carts/[id]/add-line-item/validators';
+import { StoreAddBundleItems } from './store/carts/[id]/bundle-items/validators';
 import { adminRouteMiddlewares } from './admin/middlewares';
 import { defaultReturnWriteMiddlewares } from './reject-default-return-writes';
 import { listTransformQueryConfig as ordersListQueryConfig } from './store/orders-list/query-config';
@@ -105,6 +106,11 @@ export default defineMiddlewares({
       matcher: '/store/carts/:id/add-line-item',
       method: 'POST',
       middlewares: [validateAndTransformBody(StoreAddLineItem)],
+    },
+    {
+      matcher: '/store/carts/:id/bundle-items',
+      method: 'POST',
+      middlewares: [validateAndTransformBody(StoreAddBundleItems)],
     },
     {
       matcher: '/store/carts/:id/promotions',

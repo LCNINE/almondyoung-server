@@ -28,6 +28,14 @@ export type OrderItem = {
   quantity?: number | null;
   /** order_item(버전 조인). 수량의 실제 출처다. */
   detail?: { quantity?: number | null } | null;
+  /** 함께 구매 라인이면 bundle 에 그 단가를 정한 할인율이 있다 */
+  metadata?: Record<string, unknown> | null;
+};
+
+/** 함께 구매 라인의 일반 고객 할인율. 아니면 null */
+const bundleRegularRate = (item: OrderItem): number | null => {
+  const rate = (item.metadata?.bundle as { regular_rate_bp?: unknown } | undefined)?.regular_rate_bp;
+  return typeof rate === 'number' ? rate : null;
 };
 
 /**
@@ -75,6 +83,7 @@ async function getOrderWithPricing(orderId: string, container: any): Promise<Ord
       'items.variant_id',
       'items.unit_price',
       'items.compare_at_unit_price',
+      'items.metadata',
       // 수량은 order_item(=detail)에만 있다. `items.quantity` 는 항상 undefined 로 온다.
       'items.detail.quantity',
     ],
@@ -112,15 +121,31 @@ export function calculateMembershipDiscount(items: OrderItem[]): number {
  * 무료 이용을 허용하는 것보다, 과다 계상돼 환불이 막히는 쪽이 되돌릴 수 있다(관리자 예외 환불).
  */
 export async function resolveMembershipDiscount(
-  items: OrderItem[],
+  allItems: OrderItem[],
   membershipGroupId: string | null,
   container: any,
   logger: { warn: (msg: string) => void },
   /** 주문의 가격 컨텍스트. 실결제가와 같은 조건으로 비교해야 차액이 멤버십 기여분이 된다. */
   pricingContext: { currency_code?: string | null; region_id?: string | null } = {},
 ): Promise<number> {
+  // 함께 구매 라인의 할인 전 가격(compare_at)은 «그 고객의» 가격이라 회원에겐 이미 멤버십가다 — 그 차이를 상한으로
+  // 쓰면 멤버십 몫을 덜 센다. 그래서 따로 «비회원이었다면 낸 번들가 − 실결제가»로 센다(아래).
+  const items = allItems.filter((i) => bundleRegularRate(i) === null);
+  const bundleItems = allItems.filter((i) => bundleRegularRate(i) !== null);
+  const bundleShare = await resolveBundleMembershipShare(bundleItems, container, logger, pricingContext);
   const compareAtDiscount = calculateMembershipDiscount(items);
-  if (compareAtDiscount <= 0) return 0;
+  if (compareAtDiscount <= 0) return bundleShare;
+  return bundleShare + (await resolveNonBundleMembershipDiscount(items, compareAtDiscount, membershipGroupId, container, logger, pricingContext));
+}
+
+async function resolveNonBundleMembershipDiscount(
+  items: OrderItem[],
+  compareAtDiscount: number,
+  membershipGroupId: string | null,
+  container: any,
+  logger: { warn: (msg: string) => void },
+  pricingContext: { currency_code?: string | null; region_id?: string | null },
+): Promise<number> {
   if (!membershipGroupId) return compareAtDiscount;
 
   const variantIds = items.map((i) => i.variant_id).filter((id): id is string => !!id);
@@ -297,3 +322,55 @@ export const config: SubscriberConfig = {
     subscriberId: 'membership-benefit-order-handler',
   },
 };
+
+const floor10 = (n: number) => Math.floor(n / 10) * 10;
+
+/**
+ * 함께 구매 라인의 멤버십 몫 = (비회원이었다면 낸 번들가 − 실결제가) × 수량.
+ * 비회원 번들가 = min(10원 내림(정가 × (1 − 일반%)), 비회원 계산가). 가격을 못 구하면 0 이 아니라
+ * 실결제가와 정가의 차이(상한)로 센다 — 덜 세면 혜택을 쓴 고객이 전액 환불된다(위 함수와 같은 방향).
+ */
+async function resolveBundleMembershipShare(
+  items: OrderItem[],
+  container: any,
+  logger: { warn: (msg: string) => void },
+  pricingContext: { currency_code?: string | null; region_id?: string | null },
+): Promise<number> {
+  if (items.length === 0) return 0;
+  const query = container.resolve(ContainerRegistrationKeys.QUERY);
+  const pricingModule = container.resolve(Modules.PRICING);
+  const { data: variants } = await query.graph({
+    entity: 'variant',
+    fields: ['id', 'price_set.id'],
+    filters: { id: items.map((i) => i.variant_id).filter((id): id is string => !!id) },
+  });
+  const priceSetOf = new Map<string, string>((variants ?? []).filter((v: any) => v.price_set?.id).map((v: any) => [v.id, v.price_set.id]));
+  const requests = items.flatMap((item) => {
+    const priceSetId = item.variant_id ? priceSetOf.get(item.variant_id) : undefined;
+    const quantity = resolveQuantity(item);
+    return priceSetId && Number.isFinite(quantity) ? [{ priceSetId, quantity }, { priceSetId, quantity: 1 }] : [];
+  });
+  const prices = await calculatePricesByQuantity(pricingModule, requests, {
+    currency_code: pricingContext.currency_code ?? 'krw',
+    region_id: pricingContext.region_id ?? undefined,
+    customer: { groups: [] },
+  });
+
+  let share = 0;
+  for (const item of items) {
+    const priceSetId = item.variant_id ? priceSetOf.get(item.variant_id) : undefined;
+    const quantity = resolveQuantity(item);
+    const atQuantity = priceSetId ? prices.get(priceKey(quantity, priceSetId)) : undefined;
+    const atOne = priceSetId ? prices.get(priceKey(1, priceSetId)) : undefined;
+    if (!atQuantity || !atOne) {
+      logger.warn(`[MembershipBenefit] 함께 구매 라인 ${item.id} 의 비회원가를 구하지 못해 정가 차이로 센다`);
+      const fallback = (item.compare_at_unit_price ?? item.unit_price) - item.unit_price;
+      share += Math.max(0, fallback) * quantity;
+      continue;
+    }
+    const rate = bundleRegularRate(item) as number;
+    const guestBundle = Math.min(floor10(Math.floor((atOne.original * (10000 - rate)) / 10000)), atQuantity.calculated);
+    share += Math.max(0, guestBundle - item.unit_price) * quantity;
+  }
+  return share;
+}
