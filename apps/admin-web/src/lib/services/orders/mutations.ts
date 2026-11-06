@@ -4,6 +4,11 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { orderQueryKeys } from './query-keys';
+import {
+  runOutboundPreparation,
+  type PreparationInput,
+  type PreparationProgress,
+} from '../../../features/order/outbound-preparation/run-outbound-preparation';
 import { orders } from '@/lib/api/domains';
 import { isConflict } from '@/lib/api/domains/orders/sales-order-amendments.shape';
 import type {
@@ -556,6 +561,57 @@ export const useSplitUnreservedMany = () => {
   });
 };
 useSplitUnreservedMany.permission = [
+  'fulfillment.warehouse.operate',
+] as const satisfies PermissionRequirement;
+
+export const useRunOutboundPreparation = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      onProgress,
+      ...input
+    }: PreparationInput & {
+      onProgress: (progress: PreparationProgress) => void;
+    }) => {
+      const batchKey = commandKey();
+
+      return runOutboundPreparation(
+        {
+          planMany: (shipmentIds, idempotencyKey) =>
+            orders.outboundPreparation.planMany({
+              data: { shipmentIds },
+              idempotencyKey,
+            }),
+          issueWaybills: (shipmentIds, key) =>
+            orders.waybills.batch({ shipmentIds, carrier: 'HANJIN' }, key),
+          createBatch: async (data) => {
+            const { batchId } = await orders.outboundBatches.createV2(
+              data,
+              batchKey
+            );
+
+            return { id: batchId };
+          },
+          addManyToBatch: (batchId, shipmentIds, idempotencyKey) =>
+            orders.outboundPreparation.addManyToBatch(batchId, {
+              data: { shipmentIds },
+              idempotencyKey,
+            }),
+          sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+          newKey: commandKey,
+        },
+        input,
+        onProgress
+      );
+    },
+    onSettled: (_, __, { warehouseId }) =>
+      queryClient.invalidateQueries({
+        queryKey: ['outbound-preparation', warehouseId],
+      }),
+  });
+};
+useRunOutboundPreparation.permission = [
   'fulfillment.warehouse.operate',
 ] as const satisfies PermissionRequirement;
 

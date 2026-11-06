@@ -82,6 +82,7 @@ export {
   useSplitShipment,
   useSplitUnreservedShipment,
   useSplitUnreservedMany,
+  useRunOutboundPreparation,
   useReviseShipmentRecipient,
   usePlanShipment,
   useRecallShipment,
