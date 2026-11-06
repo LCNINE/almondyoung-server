@@ -165,4 +165,77 @@ describe('AlmondTemplateManager.upsert', () => {
     const { db } = dbReturning([]);
     await expect(new AlmondTemplateManager(db).remove(ID, ADMIN)).rejects.toThrow(NotFoundError);
   });
+  describe('linkProduct', () => {
+    const NEW_PRODUCT = 'B1B2C3D4-2222-4222-8222-222222222222';
+    const NEW_LOWER = NEW_PRODUCT.toLowerCase();
+
+    function linkDb(current: Record<string, unknown> | undefined, uniqueError?: Error) {
+      const sets: Record<string, unknown>[] = [];
+      const trx = {
+        select: () => ({ from: () => ({ where: () => ({ limit: () => Promise.resolve(current ? [current] : []) }) }) }),
+        update: () => ({
+          set: (set: Record<string, unknown>) => {
+            sets.push(set);
+            return {
+              where: () => ({
+                returning: () =>
+                  uniqueError
+                    ? Promise.reject(uniqueError)
+                    : Promise.resolve([{ ...current, ...set, design: { productId: set.productId } }]),
+              }),
+            };
+          },
+        }),
+      };
+      // 모든 메서드를 덮어써 DB 를 쓰지 않는 가짜라 형 변환으로 채운다
+      const db = {
+        run: (work: (t: typeof trx) => Promise<unknown>) => work(trx),
+      } as unknown as DbService<UgcServiceSchema>;
+      return { db, sets };
+    }
+
+    const draft = {
+      id: ID,
+      productId: PRODUCT.toLowerCase(),
+      status: 'draft',
+      design: { title: 'A', productId: PRODUCT.toLowerCase() },
+    };
+
+    it('한 번의 UPDATE 로 productId·status 를 바꾸고 design 은 SQL 로 키만 바꾼다', async () => {
+      const { db, sets } = linkDb(draft);
+      const row = await new AlmondTemplateManager(db).linkProduct(ID, NEW_PRODUCT, ADMIN);
+
+      expect(row).toMatchObject({ productId: NEW_LOWER, status: 'published', updatedBy: ADMIN });
+      expect(sets).toHaveLength(1);
+      expect(sets[0]).toMatchObject({ productId: NEW_LOWER, status: 'published' });
+      expect(sets[0].design).not.toEqual(draft.design);
+    });
+
+    it('같은 값으로 두 번 부르면 두 번째는 첫 결과를 그대로 돌려주고 쓰지 않는다', async () => {
+      const first = linkDb(draft);
+      const linked = await new AlmondTemplateManager(first.db).linkProduct(ID, NEW_PRODUCT, ADMIN);
+      const second = linkDb(linked);
+      const again = await new AlmondTemplateManager(second.db).linkProduct(ID, NEW_PRODUCT, ADMIN);
+
+      expect(first.sets).toHaveLength(1);
+      expect(second.sets).toHaveLength(0);
+      expect(again).toBe(linked);
+      expect(again).toMatchObject({ productId: NEW_LOWER, status: 'published' });
+    });
+
+    it('UUID 가 아니면 400, 없는 시안이면 404', async () => {
+      await expect(new AlmondTemplateManager(linkDb(draft).db).linkProduct(ID, 'x', ADMIN)).rejects.toThrow(
+        BadRequestError,
+      );
+      await expect(new AlmondTemplateManager(linkDb(undefined).db).linkProduct(ID, NEW_PRODUCT, ADMIN)).rejects.toThrow(
+        NotFoundError,
+      );
+    });
+
+    it('unique 충돌은 409', async () => {
+      await expect(
+        new AlmondTemplateManager(linkDb(draft, uniqueViolation).db).linkProduct(ID, NEW_PRODUCT, ADMIN),
+      ).rejects.toThrow(ConflictError);
+    });
+  });
 });

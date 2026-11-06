@@ -59,3 +59,7 @@ export class AdminAlmondTemplateSummaryResponseDto extends AlmondTemplateSummary
 export class AdminAlmondTemplateDetailResponseDto extends AdminAlmondTemplateSummaryResponseDto {
   @ApiProperty({ type: 'object', additionalProperties: true }) design: Record<string, unknown>;
 }
+
+export class AlmondTemplatePreviewImageResponseDto {
+  @ApiProperty({ description: 'file-service 에 올린 미리보기 JPG 의 파일 id' }) fileId: string;
+}

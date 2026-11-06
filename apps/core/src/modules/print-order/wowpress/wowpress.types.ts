@@ -78,3 +78,17 @@ export const WOWPRESS_CANCELLABLE = (d: WowpressOrderDetail): boolean =>
   d.ordstat === 0 || d.ordstat === 1 || d.jobstat === 109;
 
 export const WOWPRESS_CARRIER: Record<number, 'LOTTE' | 'CJ'> = { 109: 'LOTTE', 156: 'CJ' };
+
+export interface WowpressProdInfo {
+  prodno: number;
+  prodname: string;
+  filetype: string | null;
+  sizeinfo?: unknown;
+  paperinfo?: unknown;
+  colorinfo?: unknown;
+  ordqty?: unknown;
+  prsjobinfo?: unknown;
+  awkjobinfo?: unknown;
+  dlvyprepay: boolean | null;
+  dlvygrpno: number | null;
+}

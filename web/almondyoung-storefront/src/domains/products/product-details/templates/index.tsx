@@ -3,7 +3,11 @@ import {
   CustomOrderNotice,
   CUSTOM_ORDER_NOTICE_PAGE_ID,
 } from "@/domains/almond-template/components/custom-order-notice"
-import { PRINT_PRODUCTS } from "@/domains/almond-template/lib/catalog"
+import {
+  needsTemplateList,
+  templateProductOf,
+} from "@/domains/almond-template/lib/template-product"
+import { listAlmondTemplates } from "@/lib/api/ugc/almond-templates"
 import { ErrorBoundary } from "@/components/shared/error-boundary"
 import {
   ProductQnaSkeleton,
@@ -58,7 +62,13 @@ export async function ProductTemplate({
   const pimMasterId = product.metadata?.pimMasterId as string | undefined
   const isDigital = isDigitalProduct(product)
   const isOverseas = getIsOverseas(product)
-  const isCustomOrder = !!pimMasterId && !!PRINT_PRODUCTS[pimMasterId]
+  // null 은 조회 실패 — 빈 목록과 구분해 시안 id 를 구매 요청에 남긴다
+  const templates =
+    pimMasterId && needsTemplateList(pimMasterId)
+      ? await listAlmondTemplates().catch(() => null)
+      : []
+  const isCustomOrder =
+    !!pimMasterId && !!templateProductOf(pimMasterId, templates ?? [])
 
   return (
     <div className="min-h-screen bg-white pt-6">
@@ -163,6 +173,7 @@ export async function ProductTemplate({
                   product={product}
                   region={region}
                   disabled={false}
+                  templates={templates}
                 />
               }
             >
@@ -170,6 +181,7 @@ export async function ProductTemplate({
                 handle={product.handle!}
                 region={region}
                 customer={customer}
+                templates={templates}
               />
             </Suspense>
           </div>

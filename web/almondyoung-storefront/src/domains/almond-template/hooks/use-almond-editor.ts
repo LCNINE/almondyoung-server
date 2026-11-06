@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react"
 import { PRINT_PRODUCTS, PRINT_SPECS } from "../lib/catalog"
+import type { TemplateProduct } from "../lib/template-product"
 import {
   layerImageDpi,
   SHAPE_TEXT_TYPES,
@@ -40,6 +41,7 @@ export type EditorTool =
   | "draw"
 export type AlmondEditorProps = {
   productId?: string
+  templateProduct?: TemplateProduct
   mode?: EditorMode
   variantId?: string
   size?: string
@@ -50,6 +52,7 @@ export type AlmondEditorProps = {
 
 export function useAlmondEditor({
   productId = "",
+  templateProduct,
   mode = "customer",
   variantId = "",
   size = "",
@@ -57,14 +60,16 @@ export function useAlmondEditor({
   savedId = "",
   initialDesign,
 }: AlmondEditorProps) {
-  const product = PRINT_PRODUCTS[productId]
+  // 게시한 상품은 PRINT_PRODUCTS 에 없어 상품 페이지가 찾아 준 인쇄 유형과 시안 크기로 시작한다
+  const kind = templateProduct?.kind ?? PRINT_PRODUCTS[productId]?.kind ?? "pet"
   const { design, setDesign, history, future, change, commit, undo, redo } =
     useDesignHistory(() => {
       if (initialDesign) return initialDesign
-      const initial = newDesign(product?.kind ?? "pet", productId)
-      const matched = PRINT_SPECS[initial.kind].sizes.find(
-        ([w, h]) => `${w}x${h}` === size
-      )
+      const initial = newDesign(kind, productId)
+      const matched =
+        PRINT_SPECS[initial.kind].sizes.find(
+          ([w, h]) => `${w}x${h}` === size
+        ) ?? templateProduct?.size
       if (matched) [initial.widthMm, initial.heightMm] = matched
       return initial
     })

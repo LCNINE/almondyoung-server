@@ -99,6 +99,8 @@ export const productQueryKeys = {
 
   almondTemplates: ['almond-templates'] as const,
   almondTemplateCategories: ['almond-template-categories'] as const,
+  printOptions: (kind: string, width: number, height: number) =>
+    ['print-catalog', 'options', kind, width, height] as const,
 
   sitePopups: ['site-popups'] as const,
   sitePopupsList: <T extends object>(query: T) =>
