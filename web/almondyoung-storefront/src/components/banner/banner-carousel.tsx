@@ -3,21 +3,22 @@
 import { useState, useCallback, useEffect, useRef } from "react"
 import Link from "next/link"
 import Image from "next/image"
-import { ChevronLeft, ChevronRight } from "lucide-react"
-import Autoplay from "embla-carousel-autoplay"
+import { ChevronLeft, ChevronRight, Pause, Play } from "lucide-react"
+import { useTranslations } from "next-intl"
 import Fade from "embla-carousel-fade"
 
 import { trackEvent } from "@/lib/analytics/gtag"
 import { Banner } from "@/lib/types/ui/pim"
 import { getBannerImageUrl } from "@/lib/utils/banner"
-import { cn } from "@lib/utils"
-import { HeroBannerList } from "./hero-banner-list"
 import {
   Carousel,
   CarouselContent,
   CarouselItem,
   type CarouselApi,
 } from "@/components/ui/carousel"
+
+/** 한 장이 머무는 시간. 아래 진행 막대가 이 시간 동안 찬다 */
+const SLIDE_MS = 5000
 
 const promotionOf = (banner: Banner, index: number, creativeName: string) => ({
   promotion_id: banner.id,
@@ -32,91 +33,90 @@ type BannerCarouselProps = {
     pc: { width: number | null; height: number | null }
     mobile: { width: number | null; height: number | null }
   }
-  /** 그룹의 모든 배너에 리스트 정보가 채워졌을 때만 켠다 */
-  showList?: boolean
 }
 
 export function HeroBannerCarousel({
   banners,
   dimensions,
-  showList,
 }: BannerCarouselProps) {
+  const t = useTranslations("home.heroBanner")
   const [api, setApi] = useState<CarouselApi>()
   const [current, setCurrent] = useState(0)
-  const [isHovered, setIsHovered] = useState(false)
-  /**
-   * 이 배너를 자동 롤링으로 보게 됐는지, 리스트에 마우스를 올려 보게 됐는지.
-   * view_promotion 을 쏘고 나면 auto 로 되돌려 다음 전환에 새로 판정한다.
-   */
-  const viewSourceRef = useRef<"auto" | "hover">("auto")
+  const [playing, setPlaying] = useState(true)
+  const [hovered, setHovered] = useState(false)
+  const barRef = useRef<HTMLSpanElement>(null)
+  const elapsedRef = useRef(0)
+  const viewed = useRef<Set<string>>(new Set())
 
+  const multiple = banners.length > 1
   const pcWidth = dimensions.pc.width ?? 1920
-  const pcHeight = dimensions.pc.height ?? 600
-  const mobileWidth = dimensions.mobile.width ?? 750
-  const mobileHeight = dimensions.mobile.height ?? 500
+  const pcHeight = dimensions.pc.height ?? 450
+  const mobileWidth = dimensions.mobile.width ?? 780
+  const mobileHeight = dimensions.mobile.height ?? 360
+
+  const paintProgress = useCallback((ratio: number) => {
+    if (barRef.current) barRef.current.style.transform = `scaleX(${ratio})`
+  }, [])
+
+  // 움직임을 줄이도록 설정한 사람에게는 멈춘 채로 시작한다
+  useEffect(() => {
+    if (matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      setPlaying(false)
+    }
+  }, [])
 
   useEffect(() => {
     if (!api) return
 
-    setCurrent(api.selectedScrollSnap())
-
-    api.on("select", () => {
+    const onSelect = () => {
       setCurrent(api.selectedScrollSnap())
-    })
-  }, [api])
+      elapsedRef.current = 0
+      paintProgress(0)
+    }
+    onSelect()
+    api.on("select", onSelect)
 
-  // 리스트는 배너 위에 얹힌 오버레이라 embla 의 hover 범위 밖이다. 리스트를 포함하는
-  // 바깥 div 의 hover 로 자동 롤링을 멈추고, 벗어나면 그 자리부터 재개한다
+    return () => {
+      api.off("select", onSelect)
+    }
+  }, [api, paintProgress])
+
+  // 멈추거나 마우스를 올린 동안에는 지난 시간을 그대로 두고, 다시 움직이면 그 자리부터 이어 찬다
+  const running = playing && !hovered && multiple
+
   useEffect(() => {
-    const autoplay = api?.plugins()?.autoplay
-    if (!autoplay) return
-    if (isHovered) autoplay.stop()
-    else autoplay.play()
-  }, [api, isHovered])
+    if (!running || !api) return
 
-  const viewed = useRef<Set<string>>(new Set())
+    let frame = 0
+    let last = performance.now()
+
+    const tick = (now: number) => {
+      elapsedRef.current += now - last
+      last = now
+
+      if (elapsedRef.current >= SLIDE_MS) {
+        elapsedRef.current = 0
+        api.scrollNext()
+      }
+
+      paintProgress(elapsedRef.current / SLIDE_MS)
+      frame = requestAnimationFrame(tick)
+    }
+    frame = requestAnimationFrame(tick)
+
+    return () => cancelAnimationFrame(frame)
+  }, [running, api, paintProgress])
 
   useEffect(() => {
     const banner = banners[current]
-    if (!banner) return
-    const source = viewSourceRef.current
-    viewSourceRef.current = "auto"
-    if (viewed.current.has(banner.id)) return
+    if (!banner || viewed.current.has(banner.id)) return
+
     viewed.current.add(banner.id)
-    trackEvent("view_promotion", promotionOf(banner, current, source))
+    trackEvent("view_promotion", promotionOf(banner, current, "auto"))
   }, [banners, current])
 
-  const handleListSelect = useCallback(
-    (index: number, source: "hover" | "click") => {
-      if (source === "click") {
-        trackEvent(
-          "select_promotion",
-          promotionOf(banners[index], index, "list")
-        )
-        return
-      }
-      viewSourceRef.current = "hover"
-      // jump: true — Fade 플러그인의 전환을 건너뛴다. 마우스를 훑으면 페이드가
-      // 겹쳐 배너가 깜빡이는 것처럼 보인다
-      api?.scrollTo(index, true)
-    },
-    [api, banners]
-  )
-
-  const scrollTo = useCallback(
-    (index: number) => {
-      api?.scrollTo(index)
-    },
-    [api]
-  )
-
-  const scrollPrev = useCallback(() => {
-    api?.scrollPrev()
-  }, [api])
-
-  const scrollNext = useCallback(() => {
-    api?.scrollNext()
-  }, [api])
+  const scrollPrev = useCallback(() => api?.scrollPrev(), [api])
+  const scrollNext = useCallback(() => api?.scrollNext(), [api])
 
   const BannerImage = ({
     banner,
@@ -126,16 +126,14 @@ export function HeroBannerCarousel({
     eager: boolean
   }) => (
     <>
-      {/* PC 이미지 - md(768px) 이상에서만 표시 */}
       <Image
         src={getBannerImageUrl(banner.pcImageFileId)}
         alt={banner.title}
         fill
         priority={eager}
-        sizes="(max-width: 767px) 0px, 100vw"
+        sizes="(max-width: 767px) 0px, (max-width: 1280px) 100vw, 1216px"
         className="hidden object-cover md:block"
       />
-      {/* 모바일 이미지 - md(768px) 미만에서만 표시 */}
       <Image
         src={getBannerImageUrl(banner.mobileImageFileId)}
         alt={banner.title}
@@ -148,49 +146,28 @@ export function HeroBannerCarousel({
   )
 
   return (
-    <div
-      className="relative w-full"
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={() => setIsHovered(false)}
+    <section
+      aria-roledescription="carousel"
+      aria-label={t("label")}
+      className="relative w-full overflow-hidden bg-[#0d0d0d]"
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
     >
       <Carousel
         setApi={setApi}
-        opts={{
-          loop: true,
-        }}
-        plugins={[
-          Autoplay({
-            delay: 4000,
-            stopOnInteraction: false,
-            // embla 의 hover 판정 기준은 CarouselContent 안쪽 div 라, 그 위에 얹힌
-            // 리스트에 마우스를 올리면 오히려 mouseleave 로 잡혀 롤링이 재개된다.
-            // 리스트까지 감싸는 isHovered 로 아래에서 직접 멈춘다
-            stopOnMouseEnter: false,
-          }),
-          Fade(),
-        ]}
+        opts={{ loop: true }}
+        plugins={[Fade()]}
         className="w-full"
       >
         <CarouselContent className="ml-0">
           {banners.map((banner, index) => (
             <CarouselItem key={banner.id} className="pl-0">
               <div
-                /*
-                 * 높이 고정은 «리스트 카드가 뜨는 폭에서만» 쓴다 (xl 이상, 쿠팡과 같다).
-                 * 카드는 45+6×60=405px 로 고정이라 배너를 비율로 두면 좁은 화면에서
-                 * 카드가 배너 밖으로 삐져나간다 — 그래서 높이를 고정하고 좌우가
-                 * 잘리는 걸 감수한다.
-                 *
-                 * 카드가 없는 md~xl 에서까지 고정 높이를 끌고 내려가면 감수할 이유가
-                 * 없는 잘림만 남는다. 1134px 에서 좌우 393px 씩 먹혀 배너 카피가
-                 * 잘려 나갔다. 그 구간은 이미지 비율대로 축소한다.
-                 */
-                className="relative aspect-(--mobile-ratio) w-full md:aspect-(--pc-ratio) xl:aspect-auto xl:h-(--pc-height)"
+                className="relative aspect-(--mobile-ratio) w-full md:aspect-(--pc-ratio)"
                 style={
                   {
                     "--mobile-ratio": `${mobileWidth}/${mobileHeight}`,
                     "--pc-ratio": `${pcWidth}/${pcHeight}`,
-                    "--pc-height": `${pcHeight}px`,
                   } as React.CSSProperties
                 }
               >
@@ -222,65 +199,55 @@ export function HeroBannerCarousel({
             </CarouselItem>
           ))}
         </CarouselContent>
-
-        {showList && (
-          <HeroBannerList
-            banners={banners}
-            current={current}
-            onSelect={handleListSelect}
-          />
-        )}
-
-        {/* 좌우 화살표 - 호버 시에만 표시. 리스트가 뜨면 자리가 겹치고 역할도 겹친다 */}
-        {banners.length > 1 && (
-          <div className={cn("hidden lg:block", showList && "xl:hidden")}>
-            <button
-              onClick={scrollPrev}
-              className={cn(
-                "hover:bg-mint absolute top-1/2 left-[15%] z-10 flex h-10 w-10 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full bg-white/80 text-gray-800 shadow-md transition-all duration-300 hover:text-white",
-                isHovered ? "opacity-100" : "opacity-0"
-              )}
-              aria-label="이전 배너"
-            >
-              <ChevronLeft className="h-6 w-6" />
-            </button>
-            <button
-              onClick={scrollNext}
-              className={cn(
-                "hover:bg-mint absolute top-1/2 right-[15%] z-10 flex h-10 w-10 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full bg-white/80 text-gray-800 shadow-md transition-all duration-300 hover:text-white",
-                isHovered ? "opacity-100" : "opacity-0"
-              )}
-              aria-label="다음 배너"
-            >
-              <ChevronRight className="h-6 w-6" />
-            </button>
-          </div>
-        )}
       </Carousel>
 
-      {/* 도트 인디케이터 — 리스트가 뜨는 큰 화면에서는 리스트가 그 역할을 한다 */}
-      {banners.length > 1 && (
-        <div
-          className={cn(
-            "absolute bottom-4 left-1/2 z-10 flex -translate-x-1/2 gap-2",
-            showList && "xl:hidden"
-          )}
-        >
-          {banners.map((_, index) => (
+      {multiple && (
+        <>
+          <div className="bg-ink/72 absolute right-2.5 bottom-2.5 z-10 flex items-center gap-0.5 rounded-full p-0.5 text-xs text-white tabular-nums md:right-4 md:bottom-4">
             <button
-              key={index}
-              onClick={() => scrollTo(index)}
-              className={cn(
-                "h-2 w-2 cursor-pointer rounded-full transition-all duration-300",
-                current === index
-                  ? "w-6 bg-white"
-                  : "bg-white/50 hover:bg-white/80"
+              type="button"
+              onClick={scrollPrev}
+              aria-label={t("prev")}
+              className="grid size-8 cursor-pointer place-items-center rounded-full hover:bg-white/14"
+            >
+              <ChevronLeft className="size-4" aria-hidden />
+            </button>
+            <span aria-live="polite" className="min-w-10 px-1 text-center">
+              {current + 1} / {banners.length}
+            </span>
+            <button
+              type="button"
+              onClick={() => setPlaying((value) => !value)}
+              aria-label={playing ? t("pause") : t("play")}
+              className="grid size-8 cursor-pointer place-items-center rounded-full hover:bg-white/14"
+            >
+              {playing ? (
+                <Pause className="size-3.5" fill="currentColor" aria-hidden />
+              ) : (
+                <Play className="size-3.5" fill="currentColor" aria-hidden />
               )}
-              aria-label={`배너 ${index + 1}로 이동`}
+            </button>
+            <button
+              type="button"
+              onClick={scrollNext}
+              aria-label={t("next")}
+              className="grid size-8 cursor-pointer place-items-center rounded-full hover:bg-white/14"
+            >
+              <ChevronRight className="size-4" aria-hidden />
+            </button>
+          </div>
+
+          <div
+            aria-hidden
+            className="absolute inset-x-0 bottom-0 z-10 h-[3px] bg-white/18"
+          >
+            <span
+              ref={barRef}
+              className="bg-mint block h-full origin-left scale-x-0"
             />
-          ))}
-        </div>
+          </div>
+        </>
       )}
-    </div>
+    </section>
   )
 }

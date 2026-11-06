@@ -6,6 +6,8 @@ import { BeautyTopHomeCard } from "../components/beautytop-home-card"
 import { HomeQuickLinks } from "../components/quick-links"
 import { HomeSection } from "../components/shared/home-section"
 import { BrandShowcaseWrapper } from "./brand-showcase"
+import { DailySuppliesWrapper } from "./daily-supplies"
+import { MemberSavingsWrapper } from "./member-savings"
 import { CategoryBestProductsWrapper } from "./best-categories"
 import { OverseasShowcaseWrapper } from "./overseas-showcase"
 import { ShopTradeWrapper } from "./shop-trade"
@@ -21,6 +23,7 @@ import {
 } from "./showcase-categories"
 // import { WelcomeDealWrapper } from "./welcome-deals" // 웰컴딜 보류로 홈 섹션 숨김
 
+import { MembershipHallSection } from "@/domains/membership-hall/components/membership-hall-section"
 import MembershipBanner from "../components/banner/membership-banner"
 
 /*
@@ -160,7 +163,7 @@ export async function HomeLogoutTemplate({
       {/* 관심 카테고리 슬롯 (선택 배너 또는 선택된 카테고리 베스트) */}
       <HomeSection
         background="muted"
-        className={bannerVisible ? "py-5 lg:py-8" : "md:py-12 lg:py-16"}
+        className={bannerVisible ? "py-9 lg:py-14" : "md:py-12 lg:py-16"}
       >
         <ErrorBoundary
           fallback={<div>관심 카테고리 섹션을 불러오지 못했어요.</div>}
@@ -220,7 +223,14 @@ export async function HomeLogoutTemplate({
         </Suspense>
       </ErrorBoundary>
 
-      {/* 캔바 디자인 / 클래스 — 루트 카테고리 통째로 한 줄씩 */}
+      {/* 머신 회원가 — 멤버십가로 아끼는 돈이 큰 머신 4개 */}
+      <ErrorBoundary fallback={null}>
+        <Suspense fallback={null}>
+          <MemberSavingsWrapper countryCode={countryCode} />
+        </Suspense>
+      </ErrorBoundary>
+
+      {/* 아몬드템플릿 / 원데이 클래스 — 루트 카테고리 통째로 */}
       {SHOWCASE_CATEGORIES.map((c) => (
         <HomeSection key={c.handle} className="border-t-0">
           <ErrorBoundary fallback={null}>
@@ -230,6 +240,13 @@ export async function HomeLogoutTemplate({
           </ErrorBoundary>
         </HomeSection>
       ))}
+
+      {/* 매일 쓰는 샵 소모품 — 일회용품 판매량순 6개 */}
+      <ErrorBoundary fallback={null}>
+        <Suspense fallback={null}>
+          <DailySuppliesWrapper countryCode={countryCode} />
+        </Suspense>
+      </ErrorBoundary>
 
       {/* 샵매매 — 최신 매물 캐러셀 */}
       <ErrorBoundary fallback={null}>
@@ -241,6 +258,12 @@ export async function HomeLogoutTemplate({
           }
         >
           <ShopTradeWrapper />
+        </Suspense>
+      </ErrorBoundary>
+
+      <ErrorBoundary fallback={null}>
+        <Suspense fallback={null}>
+          <MembershipHallSection countryCode={countryCode} />
         </Suspense>
       </ErrorBoundary>
 

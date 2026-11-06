@@ -1,72 +1,100 @@
 import { getCategoryThumbnail } from "@/domains/category/utils/category-thumbnail"
+import { retrieveCustomer } from "@/lib/api/medusa/customer"
+import { listProductsSorted } from "@/lib/api/medusa/products"
 import { BRAND_CATEGORY_HANDLE } from "@/lib/constants/brand"
 import { listRootCategoriesCached } from "@/lib/data/category"
 import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
 import { getTranslations } from "next-intl/server"
-import { Header, MoreButton, Title } from "../../components/header"
+import { SectionHead } from "../../components/header"
 import { HomeSection } from "../../components/shared/home-section"
-import { BrandStrip, type BrandStripGroup } from "./brand-strip"
+import { BrandHall, type BrandHallBrand } from "./brand-hall"
+import {
+  collectBrandCategoryIds,
+  flattenBrandTiles,
+  pickTopBrandProducts,
+} from "./brand-hall-data"
 import { selectBrandTiles } from "./select-brand-tiles"
 
-// 그룹당 스트립에 올리는 최대 타일 수. 넘치면 더보기(브랜드관)로 보낸다.
-const MAX_BRAND_TILES = 16
+// 6칸 2줄. 넘치면 더보기(브랜드관)로 보낸다. 브랜드마다 상품 요청이 하나씩 나가므로 상한이 곧 요청 수다.
+const MAX_BRANDS = 12
+const FEATURED_PER_BRAND = 3
+// 회원 전용 노출·품절을 걷어내고도 3개를 채우려고 조금 더 받는다.
+const FETCH_PER_BRAND = 8
 
 /**
- * 홈 브랜드 섹션. 데이터는 "브랜드" 루트 카테고리의 자손들 — 헤더 메가메뉴가
- * 이미 요청 단위로 캐시한 listRootCategoriesCached 를 그대로 재사용하므로
- * Medusa 왕복이 추가로 늘지 않는다. 정렬(rank)·비활성/회원전용 필터도 그 경로에서 끝난 상태.
- * 브랜드관이 중간 그룹을 갖는 트리로 재편되면 자동으로 그룹 탭 UI 로 전환된다.
+ * 홈 브랜드관 섹션. 브랜드 = 브랜드관 카테고리 아래 브랜드 노드(헤더 메가메뉴와 같은
+ * listRootCategoriesCached 를 재사용). 브랜드마다 판매량순 상위 상품을 병렬로 받아
+ * 클라이언트 카드에 넘긴다. 상품 요청은 listProductsSorted 의 1시간 캐시를 탄다.
  */
 export async function BrandShowcaseWrapper() {
-  const [rootCategories, t] = await Promise.all([
-    listRootCategoriesCached(),
+  const [rootCategories, customer, t] = await Promise.all([
+    listRootCategoriesCached().catch(() => null),
+    retrieveCustomer().catch(() => null),
     getTranslations("home.brands"),
   ])
 
-  const { groups, hasGroups } = selectBrandTiles(
+  if (!rootCategories) return null
+
+  const { groups } = selectBrandTiles(
     rootCategories,
     BRAND_CATEGORY_HANDLE,
-    MAX_BRAND_TILES
+    MAX_BRANDS
   )
+  const tiles = flattenBrandTiles(groups, MAX_BRANDS)
 
   // 브랜드 카테고리가 없거나 비었으면 섹션 자체를 렌더링하지 않는다.
-  if (groups.length === 0) return null
+  if (tiles.length === 0) return null
 
-  const stripGroups: BrandStripGroup[] = groups.map((group) => ({
-    id: group.category?.id ?? "direct",
-    name: group.category?.name ?? null,
-    brands: group.brands.map(({ category, handlePath }) => {
-      const thumbnail = getCategoryThumbnail(category)
+  const isMembership =
+    customer?.groups?.some(
+      (group) => group.id === process.env.NEXT_PUBLIC_MEDUSA_MEMBERSHIP_GROUP_ID
+    ) ?? false
+
+  const productLists = await Promise.all(
+    tiles.map(({ category }) =>
+      listProductsSorted({
+        categoryId: collectBrandCategoryIds(category),
+        sortBy: "sales_count",
+        order: "desc",
+        limit: FETCH_PER_BRAND,
+      })
+        .then(({ response }) => response.products)
+        .catch(() => [])
+    )
+  )
+
+  const brands: BrandHallBrand[] = tiles.map(
+    ({ category, handlePath }, index) => {
+      const logo = getCategoryThumbnail(category)
+
       return {
         id: category.id,
         name: category.name,
         href: `/category/${handlePath.join("/")}`,
-        thumbnailUrl: thumbnail ? getThumbnailUrl(thumbnail) : null,
+        logoUrl: logo ? getThumbnailUrl(logo) : null,
+        products: pickTopBrandProducts(
+          productLists[index],
+          isMembership,
+          FEATURED_PER_BRAND
+        ).map((product) => ({
+          ...product,
+          thumbnail: product.thumbnail
+            ? getThumbnailUrl(product.thumbnail)
+            : null,
+        })),
       }
-    }),
-  }))
+    }
+  )
 
   return (
     <HomeSection className="lg:py-16">
-      <Header className="mb-5">
-        <Title>{t("title")}</Title>
-        <MoreButton
-          showOnDesktop
-          href={`/category/${BRAND_CATEGORY_HANDLE}`}
-          className="md:absolute md:right-0"
-        />
-      </Header>
-
-      <BrandStrip
-        groups={stripGroups}
-        showTabs={hasGroups}
-        labels={{
-          prev: t("prev"),
-          next: t("next"),
-          ariaLabel: t("ariaLabel"),
-          all: t("all"),
-        }}
+      <SectionHead
+        title={t("title")}
+        subtitle={t("subtitle")}
+        moreHref={`/category/${BRAND_CATEGORY_HANDLE}`}
       />
+
+      <BrandHall brands={brands} />
     </HomeSection>
   )
 }

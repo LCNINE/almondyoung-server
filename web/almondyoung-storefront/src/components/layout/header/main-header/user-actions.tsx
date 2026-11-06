@@ -1,132 +1,89 @@
 "use client"
 
 import { LanguageSwitcher } from "@/components/layout/header/language-switcher"
+import LocalizedClientLink from "@/components/shared/localized-client-link"
 import { useCart } from "@/contexts/cart-context"
 import { useUser } from "@/contexts/user-context"
-import { cn } from "@/lib/utils"
-import { ShoppingCart, User } from "lucide-react"
+import { ClipboardList, ShoppingBag, User } from "lucide-react"
 import { useTranslations } from "next-intl"
-import Link from "next/link"
-import { useParams } from "next/navigation"
-// import { Bell } from "lucide-react"
 
-export function AccountMenu({ tone = "light" }: { tone?: "light" | "dark" }) {
-  const { countryCode } = useParams()
+const ICON_CLASS_NAME = "h-6 w-6"
+
+export function AccountMenu() {
   const { user } = useUser()
   const { itemCount: cartItemCount } = useCart()
   const t = useTranslations("account")
-  // todo: 알림 기능 활성화 시 복구
-  // const hasNotification = true
+  const tUtility = useTranslations("header.utility")
+  const cartBadge =
+    cartItemCount > 0 ? (cartItemCount > 99 ? "99+" : cartItemCount) : null
 
   return (
-    <div className="flex items-center gap-[clamp(0.5px,2vw,1.5rem)]">
-      {/* 모바일 언어 스위치 */}
-      <div className="flex md:hidden">
-        <LanguageSwitcher variant="iconButton" />
-      </div>
+    <nav
+      aria-label={tUtility("menuAriaLabel")}
+      className="flex items-center xl:gap-1"
+    >
+      {/* 서비스 줄이 숨는 모바일에서만 언어 전환을 헤더에 둔다 */}
+      <LanguageSwitcher variant="iconButton" className="xl:hidden" />
 
-      {/* 장바구니 */}
       <AccountMenuItem
-        href={`/${countryCode}/cart`}
-        icon={<ShoppingCart className="h-6 w-6 md:h-8 md:w-8" />}
-        label={t("cart")}
-        badgeCount={cartItemCount}
-        tone={tone}
+        href={user ? "/mypage" : "/login"}
+        icon={<User className={ICON_CLASS_NAME} strokeWidth={1.8} />}
+        label={user ? t("myPage") : t("login")}
       />
 
-      {/* 로그인 / 마이페이지 */}
-      <div className="hidden md:flex">
-        <AccountMenuItem
-          href={user ? `/${countryCode}/mypage` : `/${countryCode}/login`}
-          icon={<User className="h-6 w-6 md:h-8 md:w-8" />}
-          label={user ? t("myPage") : t("login")}
-          tone={tone}
-        />
-      </div>
+      <AccountMenuItem
+        href="/mypage/order/list"
+        icon={<ClipboardList className={ICON_CLASS_NAME} strokeWidth={1.8} />}
+        label={tUtility("orderLookup")}
+      />
 
-      {/* todo: 알림 기능 미연결로 임시 비활성화 */}
-      {/* <AccountMenuItem
-        onClick={() => console.log("알림 열기")}
-        icon={<Bell className="h-6 w-6 md:h-8 md:w-8" color="white" />}
-        label="알림"
-        showDot={hasNotification}
-      /> */}
-    </div>
+      <AccountMenuItem
+        href="/cart"
+        icon={<ShoppingBag className={ICON_CLASS_NAME} strokeWidth={1.8} />}
+        label={t("cart")}
+        ariaLabel={
+          cartBadge
+            ? tUtility("cartWithCount", { count: cartItemCount })
+            : undefined
+        }
+        badge={cartBadge}
+      />
+    </nav>
   )
 }
 
 interface AccountMenuItemProps {
-  href?: string
+  href: string
   icon: React.ReactNode
   label: string
-  badgeCount?: number
-  showDot?: boolean // 알림용 점 표시 여부 추가
-  onClick?: () => void
-  tone?: "light" | "dark"
+  ariaLabel?: string
+  badge?: number | string | null
 }
 
 function AccountMenuItem({
   href,
   icon,
   label,
-  badgeCount,
-  showDot,
-  onClick,
-  tone = "light",
+  ariaLabel,
+  badge,
 }: AccountMenuItemProps) {
-  const displayBadge =
-    badgeCount && badgeCount > 0 ? (badgeCount > 99 ? "99+" : badgeCount) : null
+  return (
+    <LocalizedClientLink
+      href={href}
+      aria-label={ariaLabel ?? label}
+      className="hover:text-foreground relative flex min-w-9 flex-col items-center gap-0.5 px-0.5 py-1.5 text-xs text-gray-700 transition-colors xl:min-w-14 xl:px-1"
+    >
+      {icon}
 
-  const content = (
-    <>
-      <div className="relative">
-        {icon}
-
-        {/*  숫자가 있는 배지 (장바구니 등) */}
-        {displayBadge && (
-          <span className="bg-pink text-ink absolute -top-2 -right-2 flex h-4 w-4 items-center justify-center rounded-full text-xs font-bold md:h-5 md:w-5">
-            {displayBadge}
-          </span>
-        )}
-
-        {/*  숫자 없이 점만 있는 배지 (알림 등) */}
-        {showDot && !displayBadge && (
-          <span className="bg-pink absolute -top-1 -right-1 h-2 w-2 rounded-full md:h-2.5 md:w-2.5" />
-        )}
-      </div>
-
-      <span className="hidden text-[clamp(0.625rem,1.2vw,0.75rem)] leading-none font-medium whitespace-nowrap md:block">
+      <span className="hidden leading-none whitespace-nowrap xl:block">
         {label}
       </span>
-    </>
+
+      {badge && (
+        <span className="bg-pink text-ink absolute top-0 right-0 grid h-[18px] min-w-[18px] place-items-center rounded-full px-[5px] text-[11px] leading-none font-bold xl:right-2">
+          {badge}
+        </span>
+      )}
+    </LocalizedClientLink>
   )
-
-  switch (Boolean(href)) {
-    case true:
-      return (
-        <Link
-          href={href ?? ""}
-          className={cn(
-            "flex flex-col items-center gap-1",
-            tone === "dark" ? "text-gray-700" : "text-white"
-          )}
-        >
-          {content}
-        </Link>
-      )
-
-    default:
-      return (
-        <button
-          onClick={onClick}
-          className={cn(
-            "flex cursor-pointer flex-col items-center gap-1",
-            tone === "dark" ? "text-gray-700" : "text-white"
-          )}
-          type="button"
-        >
-          {content}
-        </button>
-      )
-  }
 }

@@ -11,7 +11,8 @@
     "selectPrompt": "분야를 골라주세요",
     "save": "{count}개 분야 적용하기",
     "saving": "저장 중...",
-    "needAtLeastOne": "1개 이상 선택해주세요"
+    "needAtLeastOne": "1개 이상 선택해주세요",
+    "previewSelected": "고른 분야 · {names}"
   },
   "interestEdit": {
     "trigger": "편집",
@@ -31,11 +32,15 @@
   },
   "showcase": {
     "overseas": "해외 직구",
-    "canva": "캔바 디자인",
-    "class": "클래스",
-    "newArrivals": "NEW 새로 들어왔어요",
+    "canva": "아몬드템플릿",
+    "class": "원데이 클래스",
+    "newArrivals": "새로 들어온 상품",
     "overseasDescription": "해외에서만 만나는 상품",
-    "viewAll": "전체보기"
+    "viewAll": "전체보기",
+    "newArrivalsDescription": "이번 주에 입고된 재료예요",
+    "canvaDescription": "캔바에서 바로 고쳐 쓰는 교재·동의서·피드 템플릿",
+    "classDescription": "현직 원장님이 직접 가르치는 수강 과정",
+    "newTag": "신상"
   },
   "cafe24Link": {
     "mobileText": "기존 아몬드영 계정을 연결해보세요",
@@ -60,11 +65,21 @@
     "ariaLabel": "브랜드 목록",
     "prev": "이전 브랜드 보기",
     "next": "다음 브랜드 보기",
-    "all": "전체"
+    "all": "전체",
+    "subtitle": "원장님들이 믿고 쓰는 브랜드를 한곳에서 만나 보세요",
+    "featuredCaption": "원장님들이 많이 찾은 상품",
+    "emptyCaption": "브랜드관에서 전체 상품을 볼 수 있어요",
+    "goToBrand": "{name} 브랜드관 가기",
+    "membershipPrice": "멤버십가"
   },
   "heroBanner": {
     "listPrev": "이전 목록 보기",
-    "listNext": "다음 목록 보기"
+    "listNext": "다음 목록 보기",
+    "label": "이벤트 배너",
+    "prev": "이전 배너",
+    "next": "다음 배너",
+    "pause": "자동 넘김 멈추기",
+    "play": "자동 넘김 다시 시작"
   },
   "timeSale": {
     "titleFirst": "타임",
@@ -108,5 +123,35 @@
   "comingSoon": {
     "title": "아몬드템플릿은 준비 중이에요",
     "description": "조금만 기다려 주세요"
+  },
+  "sectionHead": {
+    "more": "더보기",
+    "viewAll": "전체 보기"
+  },
+  "v1Card": {
+    "membership": "멤버십할인가"
+  },
+  "classList": {
+    "regionLabel": "지역",
+    "showMore": "클래스 더보기",
+    "regions": {
+      "all": "전체",
+      "seoul": "서울",
+      "capital": "경기·인천",
+      "chungcheong": "충청",
+      "gyeongsang": "경상"
+    }
+  },
+  "memberSavings": {
+    "titleLine1": "머신은 회원가로",
+    "titleLine2": "사면 차이가 커요",
+    "description": "멤버십 회원이면 모든 상품이 회원가로 계산돼요.",
+    "join": "멤버십 가입하기",
+    "myMembership": "내 멤버십 보기",
+    "saving": "{amount}원 아껴요"
+  },
+  "dailySupplies": {
+    "title": "매일 쓰는 샵 소모품",
+    "subtitle": "떨어지기 전에 미리 채워 두세요"
   }
 }

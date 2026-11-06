@@ -130,7 +130,7 @@ export default async function ShopTradePage({ searchParams }: PageProps) {
   const isList = listParams.view === "list"
 
   return (
-    <div className="container mx-auto max-w-[1360px] px-3.5 py-6 xl:px-[40px]">
+    <div className="container mx-auto max-w-[1280px] px-3.5 py-6 xl:px-[32px]">
       <SiteBreadcrumb className="mb-4" items={[{ label: t("title") }]} />
 
       <div className="mb-6 flex items-center justify-between gap-3">

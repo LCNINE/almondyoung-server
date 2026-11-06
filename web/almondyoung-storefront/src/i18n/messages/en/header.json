@@ -1,10 +1,12 @@
 {
   "utility": {
-    "shipping": "Orders & Shipping",
     "support": "Support",
     "almondTemplate": "Almond Template",
     "login": "Log in",
-    "signup": "Sign up"
+    "signup": "Sign up",
+    "orderLookup": "Orders",
+    "cartWithCount": "Cart, {count} items",
+    "menuAriaLabel": "My menu"
   },
   "userInfo": {
     "logout": "Log out"
@@ -14,12 +16,27 @@
     "shopTrade": "Shop Trade",
     "brandHall": "Brand Hall",
     "viewAll": "View all",
-    "viewMore": "View more"
+    "viewMore": "View more",
+    "allCategories": "All Categories"
   },
   "quickLinks": {
     "ariaLabel": "Quick links",
     "prev": "Previous items",
     "next": "More items",
     "beautytop": "BeautyTop"
+  },
+  "serviceBar": {
+    "almondYoungPlay": "Almondyoung Play",
+    "dabeau": "Booking App",
+    "beautyExam": "Beauty License Exam",
+    "new": "NEW"
+  },
+  "categoryNav": {
+    "ariaLabel": "Categories",
+    "membershipHall": "Membership Hall"
+  },
+  "topNotice": {
+    "more": "Learn more",
+    "ariaLabel": "Announcements"
   }
 }

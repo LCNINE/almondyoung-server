@@ -30,7 +30,7 @@ export default async function CartLayout(props: {
         <MobileBackHeader title={t("title")} fallbackHref={`/${countryCode}`} />
       </div>
 
-      <div className="container mx-auto pt-16 md:max-w-[1360px] md:px-[40px] md:py-8 md:pt-8">
+      <div className="container mx-auto pt-16 md:max-w-[1280px] md:px-[32px] md:py-8 md:pt-8">
         {props.children}
       </div>
     </div>
