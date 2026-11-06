@@ -1,12 +1,8 @@
-jest.mock(
-  '@tanstack/react-query',
-  () => ({
-    useQuery: jest.fn(),
-    useMutation: jest.fn(),
-    useQueryClient: jest.fn(),
-  }),
-  { virtual: true }
-);
+jest.mock('@tanstack/react-query', () => ({
+  useQuery: jest.fn(),
+  useMutation: jest.fn(),
+  useQueryClient: jest.fn(),
+}));
 jest.mock(
   '@/lib/api/domains',
   () => ({
