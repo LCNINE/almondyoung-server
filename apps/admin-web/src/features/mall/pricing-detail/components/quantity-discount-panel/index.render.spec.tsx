@@ -17,8 +17,8 @@ const saved: QuantityDiscountDto = {
 };
 
 const variants = [
-  { variantId: 'v-red', name: '빨강', basePrice: 10000, membershipPrice: 8000 },
-  { variantId: 'v-blue', name: '파랑', basePrice: 12000, membershipPrice: 11500 },
+  { variantId: 'v-red', name: '빨강', basePrice: 10000, membershipPrice: 8000, combination: 'ov-red' },
+  { variantId: 'v-blue', name: '파랑', basePrice: 12000, membershipPrice: 11500, combination: 'ov-blue' },
 ];
 
 function renderPanel(overrides: Partial<QuantityDiscountPanelProps> = {}) {
@@ -72,6 +72,7 @@ describe('QuantityDiscountPanel', () => {
         { minQuantity: 3, regularRateBp: 500, membershipRateBp: 1000 },
         { minQuantity: 5, regularRateBp: 1000, membershipRateBp: 1500 },
       ],
+      variantOverrides: [],
     });
   });
 
@@ -96,6 +97,7 @@ describe('QuantityDiscountPanel', () => {
         { minQuantity: 3, regularRateBp: 0, membershipRateBp: 1000 },
         { minQuantity: 6, regularRateBp: 0, membershipRateBp: 2000 },
       ],
+      variantOverrides: [],
     });
   });
 
@@ -147,7 +149,7 @@ describe('QuantityDiscountPanel', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '구간표 삭제' }));
 
-    expect(onSave).toHaveBeenCalledWith({ enabled: true, startsOn: null, endsOn: null, tiers: [] });
+    expect(onSave).toHaveBeenCalledWith({ enabled: true, startsOn: null, endsOn: null, tiers: [], variantOverrides: [] });
   });
 
   it('stops adding tiers at five', () => {
@@ -173,7 +175,7 @@ describe('QuantityDiscountPanel server errors', () => {
       <QuantityDiscountPanel
         saved={saved}
         variants={variants}
-          readonly={false}
+        readonly={false}
         canSave
         isSaving={false}
         serverViolations={[{ code: 'PERIOD_REVERSED' }]}
@@ -185,5 +187,142 @@ describe('QuantityDiscountPanel server errors', () => {
     fireEvent.change(cell(1, '일반 할인'), { target: { value: '6' } });
 
     expect(screen.queryByText('시작일이 종료일보다 늦습니다.')).toBeNull();
+  });
+});
+
+describe('QuantityDiscountPanel option overrides', () => {
+  const three = [
+    ...variants,
+    { variantId: 'v-pink', name: '분홍', basePrice: 10000, membershipPrice: 9000, combination: 'ov-pink' },
+  ];
+  const overrideCell = (card: number, tier: number, column: '최소 수량' | '일반 할인' | '멤버십 할인') =>
+    screen.getByLabelText(`예외 ${card} · ${tier}구간 ${column}`) as HTMLInputElement;
+
+  it('hides the exception area for a product with a single option', () => {
+    renderPanel({ variants: [variants[0]] });
+
+    expect(screen.queryByText('옵션별 예외')).toBeNull();
+    expect(screen.queryByRole('button', { name: '예외 추가' })).toBeNull();
+  });
+
+  it('saves picked options with no discount and the rest on the default table', () => {
+    const { onSave } = renderPanel({ variants: three });
+
+    fireEvent.click(screen.getByRole('button', { name: '예외 추가' }));
+    const card = screen.getByTestId('override-card-1');
+    fireEvent.click(within(card).getByLabelText('파랑'));
+    fireEvent.click(within(card).getByLabelText('분홍'));
+    fireEvent.click(within(card).getByLabelText('할인 없음'));
+    fireEvent.click(screen.getByRole('button', { name: '저장' }));
+
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        variantOverrides: [
+          { combination: 'ov-blue', tiers: [] },
+          { combination: 'ov-pink', tiers: [] },
+        ],
+      }),
+    );
+  });
+
+  it('saves a different table for the picked option', () => {
+    const { onSave } = renderPanel({ variants: three });
+
+    fireEvent.click(screen.getByRole('button', { name: '예외 추가' }));
+    const card = screen.getByTestId('override-card-1');
+    fireEvent.click(within(card).getByLabelText('분홍'));
+    fireEvent.click(within(card).getByRole('button', { name: '예외 1 · 구간 추가' }));
+    fireEvent.change(overrideCell(1, 1, '최소 수량'), { target: { value: '4' } });
+    fireEvent.change(overrideCell(1, 1, '일반 할인'), { target: { value: '7' } });
+    fireEvent.change(overrideCell(1, 1, '멤버십 할인'), { target: { value: '8' } });
+
+    expect(within(card).getByText('9,300원')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '저장' }));
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        variantOverrides: [{ combination: 'ov-pink', tiers: [{ minQuantity: 4, regularRateBp: 700, membershipRateBp: 800 }] }],
+      }),
+    );
+  });
+
+  it('blocks saving an exception with no option picked', () => {
+    const { onSave } = renderPanel({ variants: three });
+
+    fireEvent.click(screen.getByRole('button', { name: '예외 추가' }));
+
+    expect(screen.getByText('이 예외를 적용할 옵션을 하나 이상 골라 주세요.')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '저장' }));
+    expect(onSave).not.toHaveBeenCalled();
+  });
+
+  it('does not let two exceptions pick the same option', () => {
+    renderPanel({ variants: three });
+
+    fireEvent.click(screen.getByRole('button', { name: '예외 추가' }));
+    fireEvent.click(within(screen.getByTestId('override-card-1')).getByLabelText('파랑'));
+    fireEvent.click(screen.getByRole('button', { name: '예외 추가' }));
+
+    const second = screen.getByTestId('override-card-2');
+    expect(within(second).getByRole('checkbox', { name: /파랑/ }).hasAttribute('disabled')).toBe(true);
+    expect(within(second).getByText(/다른 예외/)).toBeTruthy();
+  });
+
+  it('says only the picked options are discounted when the default table is empty', () => {
+    const { onSave } = renderPanel({
+      variants: three,
+      saved: { ...saved, tiers: [], variantOverrides: [{ combination: 'ov-red', tiers: saved.tiers }] },
+    });
+
+    expect(screen.getByText('기본: 할인 없음 — 예외로 고른 옵션만 할인됩니다.')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '저장' }));
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({ tiers: [], variantOverrides: [{ combination: 'ov-red', tiers: saved.tiers }] }),
+    );
+  });
+
+  it('shows a member price problem inside the exception that causes it', () => {
+    renderPanel({
+      variants: three,
+      saved: {
+        ...saved,
+        variantOverrides: [{ combination: 'ov-pink', tiers: [{ minQuantity: 3, regularRateBp: 2000, membershipRateBp: 500 }] }],
+      },
+    });
+
+    const card = screen.getByTestId('override-card-1');
+    expect(within(card).getByText(/분홍: 멤버십 회원가 8,550원이 일반가 8,000원보다 비쌉니다/)).toBeTruthy();
+    expect((screen.getByRole('button', { name: '저장' }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('lists which table each option uses in the option results', () => {
+    renderPanel({
+      variants: three,
+      saved: { ...saved, variantOverrides: [{ combination: 'ov-blue', tiers: [] }] },
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /옵션별 결과 펼치기/ }));
+    expect(within(screen.getByTestId('option-result-v-red')).getByText('기본')).toBeTruthy();
+    expect(within(screen.getByTestId('option-result-v-blue')).getByText('예외 1')).toBeTruthy();
+    expect(within(screen.getByTestId('option-result-v-blue')).getByText('할인 없음')).toBeTruthy();
+  });
+
+  it('notes exceptions for options this version no longer has', () => {
+    renderPanel({
+      variants: three,
+      saved: { ...saved, variantOverrides: [{ combination: 'ov-gone', tiers: [] }] },
+    });
+
+    expect(screen.getByText('이 버전에 없는 옵션 1개의 예외는 저장할 때 지워집니다.')).toBeTruthy();
+  });
+});
+
+describe('QuantityDiscountPanel max quantity', () => {
+  it('warns about a tier above the max purchase quantity but still saves', () => {
+    const { onSave } = renderPanel({ maxQuantity: 4 });
+
+    expect(within(screen.getByTestId('tier-row-1')).getByText('최대구매수량(4개)보다 커서 적용되지 않는 구간입니다.')).toBeTruthy();
+    expect(within(screen.getByTestId('tier-row-0')).queryByText(/최대구매수량/)).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: '저장' }));
+    expect(onSave).toHaveBeenCalled();
   });
 });

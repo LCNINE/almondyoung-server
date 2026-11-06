@@ -30,6 +30,7 @@ import { PriceSetTable } from '../components/price-set-table';
 import { QuantityDiscountPanel, type PreviewVariant } from '../components/quantity-discount-panel';
 import { useVariantPriceSets } from '../use-variant-price-sets';
 import {
+  combinationOf,
   serverViolations,
   type UpsertQuantityDiscountDto,
 } from '@/lib/pricing/quantity-discount';
@@ -110,15 +111,33 @@ export default function PricingDetailTemplate({ masterId }: Props) {
     selectedVersionId ?? '',
   );
   const priceSets = useVariantPriceSets(variants, selectedVersionId, masterId);
+  const combinationByVariant = useMemo(
+    () =>
+      new Map(
+        (selectedVersionDetail?.variants ?? []).map((v) => [
+          v.id,
+          combinationOf((v.optionValues ?? []).map((o) => o.id)),
+        ]),
+      ),
+    [selectedVersionDetail?.variants],
+  );
   const previewVariants = useMemo<PreviewVariant[]>(
     () =>
       variants.flatMap((v, i) => {
         const data = priceSets[i]?.data;
         return data
-          ? [{ variantId: v.id, name: v.name, basePrice: data.basePrice, membershipPrice: data.membershipPrice }]
+          ? [
+              {
+                variantId: v.id,
+                name: v.name,
+                basePrice: data.basePrice,
+                membershipPrice: data.membershipPrice,
+                combination: combinationByVariant.get(v.id) ?? '',
+              },
+            ]
           : [];
       }),
-    [variants, priceSets],
+    [variants, priceSets, combinationByVariant],
   );
   const saveQuantityDiscount = useSaveQuantityDiscount();
   const [rejectedQuantityDiscount, setRejectedQuantityDiscount] = useState<RejectedQuantityDiscountSave | null>(null);
@@ -150,7 +169,7 @@ export default function PricingDetailTemplate({ masterId }: Props) {
       {
         onSuccess: () =>
           toast.success(
-            dto.tiers.length === 0
+            dto.tiers.length === 0 && dto.variantOverrides.length === 0
               ? '수량 할인 구간표를 지웠습니다.'
               : '수량 할인을 저장했습니다. 버전을 발행하면 쇼핑몰에 반영됩니다.',
           ),
@@ -271,6 +290,7 @@ export default function PricingDetailTemplate({ masterId }: Props) {
                   key={selectedVersionId}
                   saved={quantityDiscount}
                   variants={previewVariants}
+                  maxQuantity={selectedVersionDetail?.maxQuantity ?? null}
                   readonly={isReadonly}
                   canSave={canRun(useSaveQuantityDiscount)}
                   isSaving={saveQuantityDiscount.isPending}
