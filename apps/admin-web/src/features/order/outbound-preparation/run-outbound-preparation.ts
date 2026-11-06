@@ -252,8 +252,9 @@ export async function runOutboundPreparation(
 
         for (const result of issued) {
           const terminal =
-            result.transient === undefined &&
-            !isWaybillPendingIssue(result.status);
+            result.code === 'FULFILLMENT_IDEMPOTENCY_MISMATCH' ||
+            (result.transient === undefined &&
+              !isWaybillPendingIssue(result.status));
 
           if (terminal) {
             deps.waybillKeys.delete(result.shipmentId);

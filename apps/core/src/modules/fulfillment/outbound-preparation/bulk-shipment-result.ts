@@ -4,6 +4,7 @@ import { HttpException } from '@nestjs/common';
 
 export interface PreparationWaybillResult extends BatchResultItem {
   transient?: boolean;
+  code?: string;
 }
 
 export interface BulkShipmentFailure {

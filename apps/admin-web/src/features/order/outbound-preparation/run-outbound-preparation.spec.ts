@@ -433,16 +433,23 @@ describe('runOutboundPreparation', () => {
     expect(deps.waybillKeys.has('s1')).toBe(false);
   });
 
-  it('keeps the waybill key when the command itself is rejected and drops it on a real failed waybill', async () => {
+  it('keeps the waybill key on request rejections and drops it on terminal waybills or a stale command', async () => {
     const deps = makeDeps();
     deps.waybillKeys.set('s1', 'old-key');
     deps.waybillKeys.set('s2', 'old-key');
     deps.waybillKeys.set('s3', 'old-key');
     deps.waybillKeys.set('s4', 'old-key');
+    deps.waybillKeys.set('s5', 'old-key');
     deps.issueWaybills.mockResolvedValue([
       {
-        ...waybill('s1', 'failed', 'FULFILLMENT_IDEMPOTENCY_MISMATCH'),
+        ...waybill('s1', 'failed', '권한이 없어요'),
         transient: false,
+        code: 'FORBIDDEN',
+      },
+      {
+        ...waybill('s5', 'failed', '처리하지 못했어요'),
+        transient: false,
+        code: 'FULFILLMENT_IDEMPOTENCY_MISMATCH',
       },
       waybill('s2', 'failed', 'definitive_rejection'),
       waybill('s3', 'voided'),
@@ -451,7 +458,7 @@ describe('runOutboundPreparation', () => {
 
     await runOutboundPreparation(
       deps,
-      { ...input, shipmentIds: ['s1', 's2', 's3', 's4'] },
+      { ...input, shipmentIds: ['s1', 's2', 's3', 's4', 's5'] },
       jest.fn()
     );
 
@@ -459,6 +466,7 @@ describe('runOutboundPreparation', () => {
     expect(deps.waybillKeys.has('s2')).toBe(false);
     expect(deps.waybillKeys.has('s3')).toBe(false);
     expect(deps.waybillKeys.get('s4')).toBe('old-key');
+    expect(deps.waybillKeys.has('s5')).toBe(false);
   });
 
   it('does not treat omitted results or allocated waybills as success', async () => {

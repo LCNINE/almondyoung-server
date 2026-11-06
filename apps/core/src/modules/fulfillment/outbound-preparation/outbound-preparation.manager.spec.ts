@@ -94,6 +94,14 @@ describe('OutboundPreparationManager', () => {
     },
   );
 
+  it('carries the error code so the client can release a stale issuance key', async () => {
+    issueForShipment.mockRejectedValue(new ConflictException({ code: 'FULFILLMENT_IDEMPOTENCY_MISMATCH' }));
+
+    expect(await manager.issueWaybills(['s1'], 'old-key', actor)).toEqual([
+      expect.objectContaining({ status: 'failed', transient: false, code: 'FULFILLMENT_IDEMPOTENCY_MISMATCH' }),
+    ]);
+  });
+
   it('preserves item-level transient errors and continues other shipments', async () => {
     issueForShipment.mockRejectedValueOnce(new Error('private database details'));
 

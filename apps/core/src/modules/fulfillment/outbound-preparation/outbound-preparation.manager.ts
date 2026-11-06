@@ -143,6 +143,7 @@ export class OutboundPreparationManager {
               reason: failure.message,
               nextAttemptAt: null,
               transient: failure.transient,
+              code: failure.code,
             };
           }
         }
