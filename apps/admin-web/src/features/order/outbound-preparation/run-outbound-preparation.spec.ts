@@ -437,22 +437,28 @@ describe('runOutboundPreparation', () => {
     const deps = makeDeps();
     deps.waybillKeys.set('s1', 'old-key');
     deps.waybillKeys.set('s2', 'old-key');
+    deps.waybillKeys.set('s3', 'old-key');
+    deps.waybillKeys.set('s4', 'old-key');
     deps.issueWaybills.mockResolvedValue([
       {
         ...waybill('s1', 'failed', 'FULFILLMENT_IDEMPOTENCY_MISMATCH'),
         transient: false,
       },
       waybill('s2', 'failed', 'definitive_rejection'),
+      waybill('s3', 'voided'),
+      waybill('s4', 'allocated'),
     ]);
 
     await runOutboundPreparation(
       deps,
-      { ...input, shipmentIds: ['s1', 's2'] },
+      { ...input, shipmentIds: ['s1', 's2', 's3', 's4'] },
       jest.fn()
     );
 
     expect(deps.waybillKeys.get('s1')).toBe('old-key');
     expect(deps.waybillKeys.has('s2')).toBe(false);
+    expect(deps.waybillKeys.has('s3')).toBe(false);
+    expect(deps.waybillKeys.get('s4')).toBe('old-key');
   });
 
   it('does not treat omitted results or allocated waybills as success', async () => {
