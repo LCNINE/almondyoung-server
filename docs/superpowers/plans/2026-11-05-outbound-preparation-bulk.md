@@ -95,7 +95,7 @@ Expected: FAIL. 모듈이 없다.
 
 **Files:**
 - Create: `apps/core/src/modules/fulfillment/outbound-preparation/outbound-preparation.reader.ts`
-- Create: `apps/core/src/modules/fulfillment/outbound-preparation/outbound-preparation.dto.ts`
+- Create: `apps/core/src/modules/fulfillment/dto/outbound-preparation.dto.ts`
 - Create: `apps/core/src/modules/fulfillment/outbound-preparation/outbound-preparation.service.ts`
 - Create: `apps/core/src/modules/fulfillment/outbound-preparation/outbound-preparation.controller.ts`
 - Modify: `apps/core/src/modules/fulfillment/fulfillment.module.ts` (controller, providers 등록)
@@ -105,7 +105,7 @@ Expected: FAIL. 모듈이 없다.
 - Consumes: Task 1 `classifyPreparation`, `resolvePlanProfileId`, `isSingleItem`. `ConsolidationBoardReader.findBoard(warehouseId, trx)` 의 `groups[].shipments[].shipmentId` 로 `inConsolidationGroup` 을 정한다. `loadShipmentLines(trx, ids)` (`services/consolidation-shipment-reads.ts`) 로 주문번호와 수량을 얻는다.
 - Produces:
 ```ts
-// outbound-preparation.dto.ts
+// dto/outbound-preparation.dto.ts
 export class PreparationShipmentDto {
   shipmentId: string; orderNos: string[]; itemSummary: string; totalQty: number;
   single: boolean; reason: string | null;           // needs_info 사유 한국어
@@ -157,7 +157,7 @@ Expected: FAIL.
 **Files:**
 - Create: `apps/core/src/modules/fulfillment/outbound-preparation/bulk-shipment-result.ts`
 - Create: `apps/core/src/modules/fulfillment/outbound-preparation/outbound-preparation.manager.ts`
-- Modify: `outbound-preparation.service.ts`, `outbound-preparation.controller.ts`, `outbound-preparation.dto.ts`
+- Modify: `outbound-preparation.service.ts`, `outbound-preparation.controller.ts`, `dto/outbound-preparation.dto.ts`
 - Test: `apps/core/src/modules/fulfillment/outbound-preparation/bulk-shipment-result.spec.ts`
 - Test: `apps/core/src/modules/fulfillment/outbound-preparation/outbound-preparation.manager.spec.ts`
 
@@ -221,7 +221,7 @@ Expected: FAIL.
 ### Task 4: 배치 담기 일괄과 부분출고 나누기 일괄
 
 **Files:**
-- Modify: `outbound-preparation.manager.ts`, `outbound-preparation.service.ts`, `outbound-preparation.controller.ts`, `outbound-preparation.dto.ts`
+- Modify: `outbound-preparation.manager.ts`, `outbound-preparation.service.ts`, `outbound-preparation.controller.ts`, `dto/outbound-preparation.dto.ts`
 - Test: `outbound-preparation.manager.spec.ts` (케이스 추가)
 
 **Interfaces:**
