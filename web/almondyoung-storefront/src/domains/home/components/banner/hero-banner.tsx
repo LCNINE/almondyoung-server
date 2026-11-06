@@ -1,11 +1,7 @@
 import { HeroBannerCarousel } from "@/components/banner/banner-carousel"
 import { getBannerGroupByCode } from "@/lib/api/pim/banner"
 import type { BannerGroup } from "@/lib/types/ui/pim"
-import {
-  getActiveBanners,
-  isBannerGroupVisible,
-  isHeroListReady,
-} from "@/lib/utils/banner"
+import { getActiveBanners, isBannerGroupVisible } from "@/lib/utils/banner"
 import liveMainHero from "./live-main-hero.json"
 
 export async function HeroBanner() {
@@ -24,10 +20,9 @@ export async function HeroBanner() {
   }
 
   return (
-    <div>
+    <div className="container mx-auto max-w-[1280px] px-4 pt-3 md:px-[32px] md:pt-6">
       <HeroBannerCarousel
         banners={activeBanners}
-        showList={isHeroListReady(activeBanners)}
         dimensions={{
           pc: { width: bannerGroup.pcWidth, height: bannerGroup.pcHeight },
           mobile: {

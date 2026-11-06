@@ -40,9 +40,9 @@ export function ScrollTopButton({
     <button
       onClick={scrollToTop}
       aria-label="맨 위로 가기"
-      className={`border-border-primary flex h-12 w-12 items-center justify-center rounded-full border bg-white text-black shadow-md transition-opacity hover:opacity-80 ${className} `}
+      className={`text-ink flex h-11 w-11 items-center justify-center rounded-full bg-white shadow-[0_4px_14px_rgba(20,22,23,0.2)] transition-opacity hover:opacity-80 md:h-[52px] md:w-[52px] ${className}`}
     >
-      <ArrowUp size={24} />
+      <ArrowUp className="h-5 w-5 md:h-6 md:w-6" />
     </button>
   )
 }

@@ -148,9 +148,9 @@ export function ProductSection<T extends TabItem>({
 
   return (
     <div className="w-full">
-      <Header className="mb-6">
-        <Title className={cn("flex-1 md:text-center", titleClassName)}>{title}</Title>
-        <div className="flex items-center gap-1 md:absolute md:right-0">
+      <Header className="mb-5">
+        <Title className={cn("min-w-0", titleClassName)}>{title}</Title>
+        <div className="flex items-center gap-2">
           {moreHref && <MoreButton href={moreHref} showOnDesktop />}
           {headerExtra}
         </div>

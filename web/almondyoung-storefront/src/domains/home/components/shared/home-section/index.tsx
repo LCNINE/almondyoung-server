@@ -35,7 +35,7 @@ HomeSection.Inner = function Inner({
   return (
     <div
       className={cn(
-        "container mx-auto max-w-[1360px] px-4 md:px-[40px]",
+        "container mx-auto max-w-[1280px] px-4 md:px-[32px]",
         className
       )}
     >

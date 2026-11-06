@@ -8,24 +8,12 @@ import { notifyAppLogout } from "@/lib/app-context/notify-app"
 import { useTranslations } from "next-intl"
 import { useTransition } from "react"
 
-export function MobileAuthLinks() {
-  const { user } = useUser()
-  const t = useTranslations("header.utility")
-
-  if (user) return <UserInfo />
-
-  return (
-    <>
-      <LocalizedClientLink href="/login">{t("login")}</LocalizedClientLink>
-      <LocalizedClientLink href="/signup">{t("signup")}</LocalizedClientLink>
-    </>
-  )
-}
+const LINK_CLASS_NAME = "hover:text-foreground transition-colors"
 
 export function UserInfo() {
   const [isPending, startTransition] = useTransition()
   const { user, setUser } = useUser()
-  const t = useTranslations("header.userInfo")
+  const t = useTranslations("header")
 
   const handleLogout = () => {
     startTransition(async () => {
@@ -35,7 +23,18 @@ export function UserInfo() {
     })
   }
 
-  if (!user) return null
+  if (!user) {
+    return (
+      <>
+        <LocalizedClientLink href="/login" className={LINK_CLASS_NAME}>
+          {t("utility.login")}
+        </LocalizedClientLink>
+        <LocalizedClientLink href="/signup" className={LINK_CLASS_NAME}>
+          {t("utility.signup")}
+        </LocalizedClientLink>
+      </>
+    )
+  }
 
   const nickname = user.nickname
   const displayName =
@@ -43,15 +42,15 @@ export function UserInfo() {
 
   return (
     <div className="flex items-center gap-2">
-      <strong className="text-sm">{displayName}</strong>
+      <strong className="text-foreground font-semibold">{displayName}</strong>
 
       <button
         type="button"
         onClick={handleLogout}
         disabled={isPending}
-        className="cursor-pointer disabled:opacity-50"
+        className={`${LINK_CLASS_NAME} cursor-pointer disabled:opacity-50`}
       >
-        {isPending ? <Spinner size="sm" color="gray" /> : t("logout")}
+        {isPending ? <Spinner size="sm" color="gray" /> : t("userInfo.logout")}
       </button>
     </div>
   )

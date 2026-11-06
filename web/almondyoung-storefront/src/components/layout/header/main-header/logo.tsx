@@ -1,22 +1,14 @@
-"use client"
-
 import { BrandLogo } from "@/components/shared/brand-logo"
-import Link from "next/link"
-import { useParams } from "next/navigation"
+import LocalizedClientLink from "@/components/shared/localized-client-link"
 
 export function Logo() {
-  const { countryCode } = useParams()
-
   return (
-    <Link
-      href={`/${countryCode}`}
-      className="flex h-10 shrink-0 items-center lg:h-[45px]"
-    >
+    <LocalizedClientLink href="" className="flex shrink-0 items-center">
       <BrandLogo
-        appearance="header"
-        className="block w-[160px] md:w-[184px]"
+        appearance="light"
+        className="h-7 w-auto xl:h-[38px]"
         priority
       />
-    </Link>
+    </LocalizedClientLink>
   )
 }

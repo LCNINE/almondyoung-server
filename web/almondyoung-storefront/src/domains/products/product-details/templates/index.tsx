@@ -62,7 +62,7 @@ export async function ProductTemplate({
 
   return (
     <div className="min-h-screen bg-white pt-6">
-      <div className="mx-auto max-w-[1360px] px-[15px] xl:px-[40px]">
+      <div className="mx-auto max-w-[1280px] px-[15px] xl:px-[32px]">
         <ProductBreadcrumb product={product} />
 
         <div className="py-2 xl:flex xl:items-start xl:gap-4">

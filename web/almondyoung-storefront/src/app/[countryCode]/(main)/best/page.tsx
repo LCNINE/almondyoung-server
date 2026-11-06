@@ -18,7 +18,7 @@ export default async function BestPage({
 
   return (
     <div className="w-full">
-      <div className="container mx-auto max-w-[1360px] px-4 pt-6 md:px-[40px]">
+      <div className="container mx-auto max-w-[1280px] px-4 pt-6 md:px-[32px]">
         <SiteBreadcrumb items={[{ label: "베스트" }]} />
       </div>
 

@@ -3,12 +3,27 @@
 import { Menu } from "lucide-react"
 import { useTranslations } from "next-intl"
 
+export type CategoryDropdownVariant =
+  | "header"
+  | "quickLink"
+  | "headerTile"
+  | "allCategories"
+
 export function CategoryDropdownTrigger({
   variant = "header",
 }: {
-  variant?: "header" | "quickLink" | "headerTile"
+  variant?: CategoryDropdownVariant
 }) {
   const t = useTranslations("header.categoryDropdown")
+
+  if (variant === "allCategories") {
+    return (
+      <>
+        <Menu className="h-[18px] w-[18px]" strokeWidth={2.2} aria-hidden />
+        <span>{t("allCategories")}</span>
+      </>
+    )
+  }
 
   if (variant === "headerTile") {
     return (
