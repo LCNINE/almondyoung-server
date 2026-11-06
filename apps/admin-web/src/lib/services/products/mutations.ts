@@ -49,6 +49,7 @@ import type {
   UpdateMasterVersionDto,
   UpdateProductVariantDto,
 } from './products-detail.types';
+import type { PrintKind, PrintQuotesBodyDto, PublishPrintProductDto } from '@/lib/types/dto/print-catalog';
 import type { PermissionRequirement } from '@/lib/auth/mutation-permission';
 import type { UpsertQuantityDiscountDto } from '@/lib/pricing/quantity-discount';
 
@@ -1054,6 +1055,35 @@ export const useUpdateAlmondTemplateStatus = () => {
   });
 };
 useUpdateAlmondTemplateStatus.permission = ['marketing.almond_template.write'] as const satisfies PermissionRequirement;
+
+export const useLinkAlmondTemplateProduct = () => {
+  const invalidate = useInvalidateAlmondTemplates();
+  return useMutation({
+    mutationFn: ({ id, productId }: { id: string; productId: string }) =>
+      products.almondTemplates.linkProduct(id, productId),
+    onSuccess: () => invalidate(),
+  });
+};
+useLinkAlmondTemplateProduct.permission = ['marketing.almond_template.write'] as const satisfies PermissionRequirement;
+
+export const usePrintQuotes = () => {
+  return useMutation({
+    mutationFn: ({ kind, body }: { kind: PrintKind; body: PrintQuotesBodyDto }) =>
+      products.printCatalog.quotes(kind, body),
+  });
+};
+usePrintQuotes.permission = ['marketing.almond_template.write'] as const satisfies PermissionRequirement;
+
+export const usePublishPrintProduct = () => {
+  const invalidate = useInvalidateAlmondTemplates();
+  return useMutation({
+    mutationFn: (body: PublishPrintProductDto) => products.printCatalog.publish(body),
+    onSuccess: () => invalidate(),
+  });
+};
+usePublishPrintProduct.permission = {
+  allOf: [['catalog.product.write'], ['catalog.price.write'], ['marketing.almond_template.write']],
+} as const satisfies PermissionRequirement;
 
 export const useDeleteAlmondTemplate = () => {
   const invalidate = useInvalidateAlmondTemplates();

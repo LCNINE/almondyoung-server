@@ -30,6 +30,7 @@ import type {
   AdminShopListingListQuery,
   SitePopupListQuery,
 } from '@/lib/types/dto/products';
+import type { PrintKind } from '@/lib/types/dto/print-catalog';
 import type { BatchVariantInfo } from '@/lib/api/domains/products/variants.client';
 import type {
   MasterVersionDetailDto,
@@ -563,6 +564,15 @@ export const useAlmondTemplates = () => {
     queryKey: productQueryKeys.almondTemplates,
     queryFn: () => products.almondTemplates.list(),
     staleTime: 30 * 1000,
+  });
+};
+
+export const usePrintOptions = (kind: PrintKind, width: number, height: number) => {
+  return useQuery({
+    queryKey: productQueryKeys.printOptions(kind, width, height),
+    queryFn: () => products.printCatalog.options(kind, width, height),
+    enabled: width > 0 && height > 0,
+    staleTime: 5 * 60 * 1000,
   });
 };
 
