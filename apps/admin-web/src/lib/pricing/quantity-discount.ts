@@ -32,6 +32,7 @@ export type QuantityDiscountViolationCode =
   | 'MIN_QUANTITY_INVALID'
   | 'MIN_QUANTITY_DUPLICATE'
   | 'RATE_OUT_OF_RANGE'
+  | 'RATE_BOTH_ZERO'
   | 'RATE_NOT_INCREASING'
   | 'MEMBER_PRICE_ABOVE_REGULAR'
   | 'PERIOD_REVERSED'
@@ -106,7 +107,13 @@ function isCalendarDate(day: string): boolean {
 }
 
 function isWholePercentRate(bp: number): boolean {
-  return Number.isInteger(bp) && bp % BP_PER_PERCENT === 0 && bp > 0 && bp < BP_WHOLE;
+  return Number.isInteger(bp) && bp % BP_PER_PERCENT === 0 && bp >= 0 && bp < BP_WHOLE;
+}
+
+function breaksIncrease(previous: number[], current: number): boolean {
+  const lastPositive = [...previous].reverse().find((r) => r > 0);
+  if (lastPositive === undefined) return false;
+  return current <= lastPositive;
 }
 
 export function validateQuantityDiscount(
@@ -133,12 +140,15 @@ export function validateQuantityDiscount(
     }
     if (!isWholePercentRate(t.regularRateBp) || !isWholePercentRate(t.membershipRateBp)) {
       violations.push({ code: 'RATE_OUT_OF_RANGE', tierIndex });
+    } else if (t.regularRateBp === 0 && t.membershipRateBp === 0) {
+      violations.push({ code: 'RATE_BOTH_ZERO', tierIndex });
     }
-    if (tierIndex > 0) {
-      const prev = tiers[tierIndex - 1];
-      if (t.regularRateBp <= prev.regularRateBp || t.membershipRateBp <= prev.membershipRateBp) {
-        violations.push({ code: 'RATE_NOT_INCREASING', tierIndex });
-      }
+    const before = tiers.slice(0, tierIndex);
+    if (
+      breaksIncrease(before.map((p) => p.regularRateBp), t.regularRateBp) ||
+      breaksIncrease(before.map((p) => p.membershipRateBp), t.membershipRateBp)
+    ) {
+      violations.push({ code: 'RATE_NOT_INCREASING', tierIndex });
     }
   });
 
@@ -187,6 +197,11 @@ function toNumber(cell: string): number {
   return trimmed === '' ? Number.NaN : Number(trimmed);
 }
 
+// 할인율 빈칸은 0 — 그 대상은 이 구간 할인이 없다(한쪽 대상만 할인하는 구간).
+function toRate(cell: string): number {
+  return cell.trim() === '' ? 0 : Number(cell.trim());
+}
+
 // 빈 최소 수량(NaN)은 뒤로 — 비교 결과가 NaN 이면 정렬 순서가 정해지지 않는다.
 function byMinQuantityBlankLast(a: QuantityDiscountTier, b: QuantityDiscountTier): number {
   const aBlank = Number.isNaN(a.minQuantity);
@@ -204,8 +219,8 @@ export function formToPayload(form: QuantityDiscountForm): UpsertQuantityDiscoun
     tiers: form.tiers
       .map((t) => ({
         minQuantity: toNumber(t.minQuantity),
-        regularRateBp: toNumber(t.regularPercent) * BP_PER_PERCENT,
-        membershipRateBp: toNumber(t.membershipPercent) * BP_PER_PERCENT,
+        regularRateBp: toRate(t.regularPercent) * BP_PER_PERCENT,
+        membershipRateBp: toRate(t.membershipPercent) * BP_PER_PERCENT,
       }))
       .sort(byMinQuantityBlankLast),
   };
@@ -224,9 +239,11 @@ export function violationMessage(v: QuantityDiscountViolation, variantName?: str
     case 'MIN_QUANTITY_DUPLICATE':
       return '같은 최소 수량이 두 번 있습니다.';
     case 'RATE_OUT_OF_RANGE':
-      return '할인율은 1~99 사이 정수 %로 넣어 주세요.';
+      return '할인율은 0~99 사이 정수 %로 넣어 주세요. 비우면 0(그 대상은 할인 없음)입니다.';
+    case 'RATE_BOTH_ZERO':
+      return '일반 할인과 멤버십 할인이 모두 0 인 구간이 있습니다. 둘 중 하나는 넣어 주세요.';
     case 'RATE_NOT_INCREASING':
-      return '수량이 많은 구간일수록 일반 %와 멤버십 %가 모두 커야 합니다.';
+      return '수량이 많은 구간일수록 할인율이 커야 합니다. 0(할인 없음)은 앞쪽 구간에만 둘 수 있습니다.';
     case 'MEMBER_PRICE_ABOVE_REGULAR':
       return `${variantName ?? v.variantId ?? '옵션'}: 멤버십 회원가 ${won(v.membershipPrice)}이 일반가 ${won(v.regularPrice)}보다 비쌉니다. 멤버십 %를 올려 주세요.`;
     case 'PERIOD_REVERSED':
@@ -242,6 +259,7 @@ const VIOLATION_CODES: ReadonlySet<string> = new Set<QuantityDiscountViolationCo
   'MIN_QUANTITY_INVALID',
   'MIN_QUANTITY_DUPLICATE',
   'RATE_OUT_OF_RANGE',
+  'RATE_BOTH_ZERO',
   'RATE_NOT_INCREASING',
   'MEMBER_PRICE_ABOVE_REGULAR',
   'PERIOD_REVERSED',

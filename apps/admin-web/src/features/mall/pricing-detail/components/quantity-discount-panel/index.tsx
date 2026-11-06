@@ -138,7 +138,8 @@ export function QuantityDiscountPanel({
         <div>
           <span className="text-sm font-semibold">수량 할인</span>
           <p className="text-xs text-muted-foreground">
-            같은 옵션을 정한 수량 이상 담으면 개당 할인합니다. 버전을 발행해야 쇼핑몰에 반영됩니다.
+            같은 옵션을 정한 수량 이상 담으면 개당 할인합니다. 한쪽 대상만 할인하려면 다른 쪽 칸을 비워 두세요(0%).
+            버전을 발행해야 쇼핑몰에 반영됩니다.
           </p>
         </div>
         {editable && (
@@ -243,6 +244,7 @@ export function QuantityDiscountPanel({
                   const position = sortedPositionOf.get(index) ?? index;
                   const regular = representative?.prices.regular[position];
                   const membership = representative?.prices.membership[position];
+                  const sortedTier = payload.tiers[position];
                   const messages = uniqueMessages(tierViolations(position));
                   const label = index + 1;
                   return (
@@ -268,8 +270,9 @@ export function QuantityDiscountPanel({
                           <Input
                             type="number"
                             inputMode="numeric"
-                            min={1}
+                            min={0}
                             max={99}
+                            placeholder="0"
                             aria-label={`${label}구간 일반 할인`}
                             className="h-8 w-20"
                             value={tier.regularPercent}
@@ -284,8 +287,9 @@ export function QuantityDiscountPanel({
                           <Input
                             type="number"
                             inputMode="numeric"
-                            min={1}
+                            min={0}
                             max={99}
+                            placeholder="0"
                             aria-label={`${label}구간 멤버십 할인`}
                             className="h-8 w-20"
                             value={tier.membershipPercent}
@@ -299,10 +303,10 @@ export function QuantityDiscountPanel({
                         {regular && membership && Number.isFinite(regular.price) && Number.isFinite(membership.price) ? (
                           <div className="flex flex-col items-end">
                             <span>
-                              일반 <span>{won(regular.price)}</span>
+                              일반 <span>{sortedTier?.regularRateBp === 0 ? '할인 없음' : won(regular.price)}</span>
                             </span>
                             <span className="text-xs text-muted-foreground">
-                              멤버십 <span>{won(membership.price)}</span>
+                              멤버십 <span>{sortedTier?.membershipRateBp === 0 ? '할인 없음' : won(membership.price)}</span>
                             </span>
                           </div>
                         ) : (

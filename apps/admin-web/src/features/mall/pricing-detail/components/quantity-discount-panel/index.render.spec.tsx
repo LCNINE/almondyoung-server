@@ -75,6 +75,41 @@ describe('QuantityDiscountPanel', () => {
     });
   });
 
+  it('saves a members-only table when the regular rate is left blank', () => {
+    const { onSave } = renderPanel({ saved: null });
+
+    fireEvent.click(screen.getByRole('button', { name: '구간 추가' }));
+    fireEvent.click(screen.getByRole('button', { name: '구간 추가' }));
+    fireEvent.change(cell(1, '최소 수량'), { target: { value: '3' } });
+    fireEvent.change(cell(1, '멤버십 할인'), { target: { value: '10' } });
+    fireEvent.change(cell(2, '최소 수량'), { target: { value: '6' } });
+    fireEvent.change(cell(2, '멤버십 할인'), { target: { value: '20' } });
+
+    expect(within(screen.getByTestId('tier-row-0')).getByText('할인 없음')).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: '저장' }));
+
+    expect(onSave).toHaveBeenCalledWith({
+      enabled: true,
+      startsOn: null,
+      endsOn: null,
+      tiers: [
+        { minQuantity: 3, regularRateBp: 0, membershipRateBp: 1000 },
+        { minQuantity: 6, regularRateBp: 0, membershipRateBp: 2000 },
+      ],
+    });
+  });
+
+  it('blocks a tier with no rate on either side', () => {
+    const { onSave } = renderPanel({ saved: null });
+
+    fireEvent.click(screen.getByRole('button', { name: '구간 추가' }));
+    fireEvent.change(cell(1, '최소 수량'), { target: { value: '3' } });
+
+    expect(screen.getAllByText('일반 할인과 멤버십 할인이 모두 0 인 구간이 있습니다. 둘 중 하나는 넣어 주세요.').length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole('button', { name: '저장' }));
+    expect(onSave).not.toHaveBeenCalled();
+  });
+
   it('blocks saving and names the option when members would pay more', () => {
     const { onSave } = renderPanel();
 
@@ -92,7 +127,7 @@ describe('QuantityDiscountPanel', () => {
     renderPanel({ serverViolations: [{ code: 'RATE_NOT_INCREASING', tierIndex: 1 }] });
 
     expect(
-      within(screen.getByTestId('tier-row-1')).getByText('수량이 많은 구간일수록 일반 %와 멤버십 %가 모두 커야 합니다.'),
+      within(screen.getByTestId('tier-row-1')).getByText('수량이 많은 구간일수록 할인율이 커야 합니다. 0(할인 없음)은 앞쪽 구간에만 둘 수 있습니다.'),
     ).toBeTruthy();
   });
 

@@ -49,10 +49,13 @@ export function PriceSetTable({ variants, versionId, masterId }: Props) {
                     <td className="px-3 py-2 text-right">{data.basePrice.toLocaleString()}원</td>
                     <td className="px-3 py-2 text-right">{data.membershipPrice.toLocaleString()}원</td>
                     <td className="px-3 py-2 text-xs">
-                      {data.tieredPrices.length > 0 ? (
+                      {data.tieredPrices.length > 0 || (data.membershipTieredPrices ?? []).length > 0 ? (
                         <>
                           <span className="block">
-                            일반 {data.tieredPrices.map((t) => `${t.minQuantity}개↑ ${t.price.toLocaleString()}원`).join(' / ')}
+                            일반{' '}
+                            {data.tieredPrices.length > 0
+                              ? data.tieredPrices.map((t) => `${t.minQuantity}개↑ ${t.price.toLocaleString()}원`).join(' / ')
+                              : '할인 없음'}
                           </span>
                           {(data.membershipTieredPrices ?? []).length > 0 && (
                             <span className="block text-muted-foreground">
