@@ -47,9 +47,9 @@ describe("custom order notice", () => {
 
     const plain = renderToStaticMarkup(createElement(CustomOrderNotice))
     expect(plain).not.toContain('type="checkbox"')
-    expect(plain).toContain(
-      '<strong class="font-bold text-gray-900">productDetail.customOrderNotice.body2</strong>'
-    )
-    expect(plain).toContain("productDetail.customOrderNotice.body4")
+    expect(plain).toContain("productDetail.customOrderNotice.headline")
+    expect(plain).toContain("productDetail.customOrderNotice.step2Title")
+    expect(plain).toContain("productDetail.customOrderNotice.step3Body")
+    expect(plain).toContain("productDetail.customOrderNotice.otherItems")
   })
 })

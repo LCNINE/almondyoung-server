@@ -1,4 +1,9 @@
 import { FEATURES } from "@/lib/config/features"
+import {
+  CustomOrderNotice,
+  CUSTOM_ORDER_NOTICE_PAGE_ID,
+} from "@/domains/almond-template/components/custom-order-notice"
+import { PRINT_PRODUCTS } from "@/domains/almond-template/lib/catalog"
 import { ErrorBoundary } from "@/components/shared/error-boundary"
 import {
   ProductQnaSkeleton,
@@ -53,6 +58,7 @@ export async function ProductTemplate({
   const pimMasterId = product.metadata?.pimMasterId as string | undefined
   const isDigital = isDigitalProduct(product)
   const isOverseas = getIsOverseas(product)
+  const isCustomOrder = !!pimMasterId && !!PRINT_PRODUCTS[pimMasterId]
 
   return (
     <div className="min-h-screen bg-white pt-6">
@@ -83,6 +89,12 @@ export async function ProductTemplate({
                 />
                 <ProductShippingNotice product={product} />
               </ProductSummary>
+              {isCustomOrder && (
+                <CustomOrderNotice
+                  id={CUSTOM_ORDER_NOTICE_PAGE_ID}
+                  className="mt-5"
+                />
+              )}
             </div>
 
             <Suspense fallback={null}>

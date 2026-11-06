@@ -611,11 +611,13 @@ export default function ProductActions({
               </div>
             </>
           )}
+
+          {hasAlmondTemplate && <CustomOrderNotice className="my-2" />}
         </div>
 
         {/* 하단 고정 액션 버튼 (스크롤 영역 밖) */}
         <div
-          className="flex w-full flex-col gap-2 border-t border-gray-200 bg-white p-4"
+          className="flex w-full flex-col gap-2 border-t border-gray-200 bg-white py-4"
           data-testid="mobile-actions"
         >
           {templateHref && (
@@ -625,7 +627,6 @@ export default function ProductActions({
               </Button>
             </LocalizedClientLink>
           )}
-          {hasAlmondTemplate && <CustomOrderNotice />}
           <div className="flex w-full gap-x-3">
             {/* TODO: 재입고 알림 기능 추가 후 활성화
           {!allInStock && selectedItems.length > 0 ? (

@@ -19,7 +19,11 @@ import {
   type QuantityPricingContext,
 } from "./quantity-pricing"
 import QuantityBundlePicker from "../quantity-bundle-picker"
-import { CustomOrderNotice } from "@/domains/almond-template/components/custom-order-notice"
+import {
+  CustomOrderNotice,
+  CustomOrderNoticeLine,
+  CUSTOM_ORDER_NOTICE_PAGE_ID,
+} from "@/domains/almond-template/components/custom-order-notice"
 import LocalizedClientLink from "@/components/shared/localized-client-link"
 
 type MobileActionsProps = {
@@ -49,6 +53,8 @@ type MobileActionsProps = {
   blockedLabel?: string
   showCustomOrderNotice?: boolean
 }
+
+const SHEET_NOTICE_ID = "custom-order-notice-sheet"
 
 const MobileActions: React.FC<MobileActionsProps> = ({
   product,
@@ -123,7 +129,9 @@ const MobileActions: React.FC<MobileActionsProps> = ({
               hint={almondDesignHint}
             />
           )}
-          {showCustomOrderNotice && <CustomOrderNotice />}
+          {showCustomOrderNotice && (
+            <CustomOrderNoticeLine targetId={CUSTOM_ORDER_NOTICE_PAGE_ID} />
+          )}
           <div className="flex w-full gap-x-3">
             {/* TODO: 재입고 알림 기능 추가 후 활성화
           {isSimple && !inStock ? (
@@ -264,6 +272,10 @@ const MobileActions: React.FC<MobileActionsProps> = ({
                 ))}
               </div>
             )}
+
+            {showCustomOrderNotice && (
+              <CustomOrderNotice id={SHEET_NOTICE_ID} className="mb-3" />
+            )}
           </div>
 
           {/* 요약 + 액션 버튼 */}
@@ -293,7 +305,7 @@ const MobileActions: React.FC<MobileActionsProps> = ({
             )}
             {showCustomOrderNotice && (
               <div className="mb-2">
-                <CustomOrderNotice />
+                <CustomOrderNoticeLine targetId={SHEET_NOTICE_ID} />
               </div>
             )}
             <div className="flex gap-x-3">
