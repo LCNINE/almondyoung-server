@@ -662,6 +662,7 @@ const allMenus: MainMenu[] = [
             path: '/mall/banner-groups',
           },
           { id: 'popups', title: '팝업', path: '/mall/popups' },
+          { id: 'top-notices', title: '상단 공지 띠', path: '/mall/top-notices' },
           { id: 'points', title: '적립금', path: '/mall/marketing/points' },
           { id: 'coupons', title: '쿠폰', path: '/mall/marketing/coupons' },
           {

@@ -27,6 +27,8 @@ import type {
   UpdateNoticeDto,
   CreateSitePopupDto,
   UpdateSitePopupDto,
+  CreateTopNoticeDto,
+  UpdateTopNoticeDto,
   CreateTagGroupDto,
   UpdateTagGroupDto,
   CreateTagValueDto,
@@ -1265,6 +1267,42 @@ export const useDeleteSitePopup = () => {
   });
 };
 useDeleteSitePopup.permission = ['marketing.display.write'] as const satisfies PermissionRequirement;
+
+// ===== 상단 공지 띠 뮤테이션 =====
+
+export const useCreateTopNotice = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (dto: CreateTopNoticeDto) => products.topNotices.create(dto),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: productQueryKeys.topNotices });
+    },
+  });
+};
+useCreateTopNotice.permission = ['marketing.display.write'] as const satisfies PermissionRequirement;
+
+export const useUpdateTopNotice = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, dto }: { id: string; dto: UpdateTopNoticeDto }) =>
+      products.topNotices.update(id, dto),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: productQueryKeys.topNotices });
+    },
+  });
+};
+useUpdateTopNotice.permission = ['marketing.display.write'] as const satisfies PermissionRequirement;
+
+export const useDeleteTopNotice = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => products.topNotices.remove(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: productQueryKeys.topNotices });
+    },
+  });
+};
+useDeleteTopNotice.permission = ['marketing.display.write'] as const satisfies PermissionRequirement;
 
 /**
  * 필터 결과 전체 선택. 버튼을 누른 순간에만 도는 일회성 조회라 useQuery 가 아니라
