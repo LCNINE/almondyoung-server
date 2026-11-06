@@ -17,6 +17,16 @@ import {
 } from './wowpress.types';
 
 const API_BASE = 'https://api.wowpress.co.kr';
+
+// 와우프레스는 수량을 ordqty 가 아니라 각 작업의 jobqty 로 계산한다. 빠지면 최소 수량 값으로 견적·발주된다
+function withJobqty(spec: WowpressLineSpec, qty: number) {
+  const jobqty = spec.qtyPerUnit * qty;
+
+  return {
+    prsjob: spec.prsjob.map((job) => ({ ...job, jobqty })),
+    awkjob: spec.awkjob.map((job) => ({ ...job, jobqty })),
+  };
+}
 const FILE_BASE = 'https://file.wowpress.co.kr';
 export const WOWPRESS_TRANSPORT = Symbol('WOWPRESS_TRANSPORT');
 
@@ -137,8 +147,7 @@ export class WowpressClient {
           ordqty: String(spec.qtyPerUnit * qty),
           ordcnt: '1',
           ordtitle: 'quote',
-          prsjob: spec.prsjob,
-          awkjob: spec.awkjob,
+          ...withJobqty(spec, qty),
         },
       },
       true,
@@ -162,8 +171,7 @@ export class WowpressClient {
               ordbody,
               ordkey,
               jobpresetno: spec.jobpresetno,
-              prsjob: spec.prsjob,
-              awkjob: spec.awkjob,
+              ...withJobqty(spec, qty),
             },
           ]),
           dlvymcd: '4',

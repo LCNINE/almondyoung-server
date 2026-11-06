@@ -145,8 +145,8 @@ describe('WowpressClient', () => {
           ordbody: '테스트 시안입니다. 혹시 이 시안대로 출력이 되나요?',
           ordkey: '0190f1d2-0000-7000-8000-000000000001',
           jobpresetno: '3',
-          prsjob: [{ jobno: 1 }],
-          awkjob: [{ jobno: 2 }],
+          prsjob: [{ jobno: 1, jobqty: 200 }],
+          awkjob: [{ jobno: 2, jobqty: 200 }],
         },
       ],
     ]);
@@ -288,8 +288,8 @@ describe('WowpressClient', () => {
       prodno: 40026,
       ordqty: '300',
       ordcnt: '1',
-      prsjob: [{ jobno: 1 }],
-      awkjob: [{ jobno: 2 }],
+      prsjob: [{ jobno: 1, jobqty: 300 }],
+      awkjob: [{ jobno: 2, jobqty: 300 }],
     });
   });
 
