@@ -165,4 +165,59 @@ describe('AlmondTemplateManager.upsert', () => {
     const { db } = dbReturning([]);
     await expect(new AlmondTemplateManager(db).remove(ID, ADMIN)).rejects.toThrow(NotFoundError);
   });
+  describe('linkProduct', () => {
+    const NEW_PRODUCT = 'B1B2C3D4-2222-4222-8222-222222222222';
+
+    function linkDb(current: Record<string, unknown> | undefined, uniqueError?: Error) {
+      const sets: unknown[] = [];
+      const trx = {
+        select: () => ({ from: () => ({ where: () => ({ limit: () => Promise.resolve(current ? [current] : []) }) }) }),
+        update: () => ({
+          set: (set: Record<string, unknown>) => {
+            sets.push(set);
+            return {
+              where: () => ({
+                returning: () => (uniqueError ? Promise.reject(uniqueError) : Promise.resolve([{ ...current, ...set }])),
+              }),
+            };
+          },
+        }),
+      };
+      const db = { run: (work: (t: typeof trx) => Promise<unknown>) => work(trx) } as unknown as DbService<UgcServiceSchema>;
+      return { db, sets };
+    }
+
+    const draft = { id: ID, productId: PRODUCT.toLowerCase(), status: 'draft', design: { title: 'A', productId: PRODUCT.toLowerCase() } };
+
+    it('행 productId 와 design.productId 를 같이 바꾸고 게시한다', async () => {
+      const { db } = linkDb(draft);
+      const row = await new AlmondTemplateManager(db).linkProduct(ID, NEW_PRODUCT, ADMIN);
+
+      expect(row).toMatchObject({ productId: NEW_PRODUCT.toLowerCase(), status: 'published', updatedBy: ADMIN });
+      expect(row.design).toEqual({ title: 'A', productId: NEW_PRODUCT.toLowerCase() });
+    });
+
+    it('같은 값으로 두 번째 호출해도 성공하고 쓰지 않는다', async () => {
+      const published = { ...draft, productId: NEW_PRODUCT.toLowerCase(), status: 'published' };
+      const { db, sets } = linkDb(published);
+
+      await expect(new AlmondTemplateManager(db).linkProduct(ID, NEW_PRODUCT, ADMIN)).resolves.toBe(published);
+      expect(sets).toHaveLength(0);
+    });
+
+    it('UUID 가 아니면 400, 없는 시안이면 404', async () => {
+      await expect(new AlmondTemplateManager(linkDb(draft).db).linkProduct(ID, 'x', ADMIN)).rejects.toThrow(
+        BadRequestError,
+      );
+      await expect(new AlmondTemplateManager(linkDb(undefined).db).linkProduct(ID, NEW_PRODUCT, ADMIN)).rejects.toThrow(
+        NotFoundError,
+      );
+    });
+
+    it('unique 충돌은 409', async () => {
+      await expect(
+        new AlmondTemplateManager(linkDb(draft, uniqueViolation).db).linkProduct(ID, NEW_PRODUCT, ADMIN),
+      ).rejects.toThrow(ConflictError);
+    });
+  });
 });

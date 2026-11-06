@@ -169,6 +169,43 @@ export class AlmondTemplateManager {
     }, tx);
   }
 
+  async linkProduct(id: string, productId: string, userId: string, tx?: UgcTx): Promise<AlmondTemplateEntity> {
+    if (!UUID.test(productId)) throw new BadRequestError('상품 ID 가 올바르지 않습니다.');
+    const normalized = productId.toLowerCase();
+
+    try {
+      return await this.db.run(async (trx) => {
+        const [current] = await trx
+          .select()
+          .from(almondTemplates)
+          .where(and(eq(almondTemplates.id, id), isNull(almondTemplates.deletedAt)))
+          .limit(1);
+        if (!current) throw new NotFoundError(`Almond template not found: ${id}`);
+        if (current.productId === normalized && current.status === 'published') return current;
+
+        // 행의 product_id 와 시안 JSON 의 productId 를 같이 바꿔 둘이 갈리지 않게 한다
+        const [linked] = await trx
+          .update(almondTemplates)
+          .set({
+            productId: normalized,
+            design: { ...current.design, productId: normalized },
+            status: 'published',
+            updatedBy: userId,
+            updatedAt: new Date(),
+          })
+          .where(and(eq(almondTemplates.id, id), isNull(almondTemplates.deletedAt)))
+          .returning();
+        if (!linked) throw new NotFoundError(`Almond template not found: ${id}`);
+        return linked;
+      }, tx);
+    } catch (error) {
+      if (isUniqueViolation(error, TITLE_UNIQUE_CONSTRAINT)) {
+        throw new ConflictError('연결하려는 상품에 같은 크기·이름의 시안이 이미 있습니다.');
+      }
+      throw error;
+    }
+  }
+
   async remove(id: string, userId: string, tx?: UgcTx): Promise<void> {
     await this.db.run(async (trx) => {
       const deleted = await trx

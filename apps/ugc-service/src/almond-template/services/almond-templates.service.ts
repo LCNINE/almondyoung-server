@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { type AlmondTemplateStatus } from '../constants/almond-template.constants';
 import { AlmondTemplateManager } from './almond-template.manager';
+import { AlmondTemplatePreviewManager } from './almond-template-preview.manager';
 import { AlmondTemplateReader } from './almond-template.reader';
 import {
   type AdminAlmondTemplateDetailResponseDto,
@@ -16,6 +17,7 @@ export class AlmondTemplatesService {
   constructor(
     private readonly reader: AlmondTemplateReader,
     private readonly manager: AlmondTemplateManager,
+    private readonly preview: AlmondTemplatePreviewManager,
   ) {}
 
   async listPublished(): Promise<AlmondTemplateSummaryResponseDto[]> {
@@ -48,6 +50,12 @@ export class AlmondTemplatesService {
     userId: string,
   ): Promise<AdminAlmondTemplateSummaryResponseDto> {
     return AlmondTemplateMapper.toAdminSummaryFromEntity(await this.manager.updateStatus(id, status, userId));
+  }
+  async linkProduct(id: string, productId: string, userId: string): Promise<AdminAlmondTemplateSummaryResponseDto> {
+    return AlmondTemplateMapper.toAdminSummaryFromEntity(await this.manager.linkProduct(id, productId, userId));
+  }
+  uploadPreviewImage(id: string, accessToken: string): Promise<string> {
+    return this.preview.upload(id, accessToken);
   }
   remove(id: string, userId: string): Promise<void> {
     return this.manager.remove(id, userId);
