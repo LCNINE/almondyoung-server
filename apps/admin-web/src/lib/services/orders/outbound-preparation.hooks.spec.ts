@@ -264,6 +264,33 @@ describe('outbound preparation hooks', () => {
       expect(firstCall[0].name).toBe('11/05 토탈피킹 09:30');
       expect(firstCall[1]).toBe(failedKey);
       expect(storage.has('outbound-preparation-pending-batch')).toBe(false);
+
+      jest
+        .mocked(orders.outboundBatches.createV2)
+        .mockRejectedValueOnce({ statusCode: 503 })
+        .mockRejectedValueOnce({ statusCode: 503 })
+        .mockRejectedValueOnce({ statusCode: 503 })
+        .mockRejectedValueOnce({ statusCode: 503 });
+
+      const third = options.mutationFn!(
+        { ...variables, now: new Date('2026-11-05T02:00:00Z') },
+        context
+      );
+      await jest.advanceTimersByTimeAsync(17000);
+      await third;
+
+      const fourth = await options.mutationFn!(
+        {
+          ...variables,
+          shipmentIds: ['s2'],
+          now: new Date('2026-11-05T02:00:00Z'),
+        },
+        context
+      );
+      const calls = jest.mocked(orders.outboundBatches.createV2).mock.calls;
+
+      expect(fourth).toMatchObject({ batchId: 'b1', joined: 1 });
+      expect(calls.at(-1)?.[1]).not.toBe(calls[1][1]);
     } finally {
       jest.useRealTimers();
       Reflect.deleteProperty(globalThis, 'localStorage');

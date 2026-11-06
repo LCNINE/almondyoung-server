@@ -37,12 +37,15 @@ export interface PreparationDeps {
     ids: string[],
     key: string
   ): Promise<PreparationWaybillResult[]>;
-  createBatch(input: {
-    warehouseId: string;
-    pickingMethod: PickingMethod;
-    cartCapacity?: number;
-    name: string;
-  }): Promise<{ id: string; name: string }>;
+  createBatch(
+    input: {
+      warehouseId: string;
+      pickingMethod: PickingMethod;
+      cartCapacity?: number;
+      name: string;
+    },
+    shipmentIds: string[]
+  ): Promise<{ id: string; name: string }>;
   addManyToBatch(
     batchId: string,
     ids: string[],
@@ -282,12 +285,15 @@ export async function runOutboundPreparation(
     const name = batchNameFor(input.now, input.pickingMethod);
 
     await runStage('batch', waybilled, async (ids) => {
-      const batch = await deps.createBatch({
-        warehouseId: input.warehouseId,
-        pickingMethod: input.pickingMethod,
-        cartCapacity: input.cartCapacity,
-        name,
-      });
+      const batch = await deps.createBatch(
+        {
+          warehouseId: input.warehouseId,
+          pickingMethod: input.pickingMethod,
+          cartCapacity: input.cartCapacity,
+          name,
+        },
+        ids
+      );
 
       batchId = batch.id;
       report({ batchId, batchName: batch.name });

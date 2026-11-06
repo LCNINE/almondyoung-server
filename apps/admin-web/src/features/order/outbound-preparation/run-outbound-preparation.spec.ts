@@ -91,11 +91,14 @@ describe('runOutboundPreparation', () => {
       failures: [],
     });
     expect(deps.createBatch).toHaveBeenCalledTimes(1);
-    expect(deps.createBatch).toHaveBeenCalledWith({
-      warehouseId: 'w1',
-      pickingMethod: 'total_picking',
-      name: '11/05 토탈피킹 09:30',
-    });
+    expect(deps.createBatch).toHaveBeenCalledWith(
+      {
+        warehouseId: 'w1',
+        pickingMethod: 'total_picking',
+        name: '11/05 토탈피킹 09:30',
+      },
+      ['s1', 's2', 's3']
+    );
     expect(progress[0]).toMatchObject({ stage: 'plan', planned: 0, joined: 0 });
     expect(progress.at(-1)).toEqual(result);
     expect([...new Set(progress.map((p) => p.stage))]).toEqual([

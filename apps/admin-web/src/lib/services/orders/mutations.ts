@@ -572,6 +572,7 @@ const PENDING_BATCH_STORAGE_KEY = 'outbound-preparation-pending-batch';
 
 type PendingBatch = Parameters<PreparationDeps['createBatch']>[0] & {
   key: string;
+  shipmentIds: string[];
 };
 
 function readStored<T>(storageKey: string, fallback: T): T {
@@ -645,21 +646,26 @@ export const useRunOutboundPreparation = () => {
               idempotencyKey,
             });
           },
-          createBatch: async (data) => {
+          createBatch: async (data, shipmentIds) => {
             assertActive?.();
 
             const stored = readStored<PendingBatch | null>(
               PENDING_BATCH_STORAGE_KEY,
               null
             );
-            const { key, ...request } =
+            const { key, shipmentIds: _, ...request } =
               stored?.warehouseId === data.warehouseId &&
               stored.pickingMethod === data.pickingMethod &&
-              stored.cartCapacity === data.cartCapacity
+              stored.cartCapacity === data.cartCapacity &&
+              stored.shipmentIds.some((id) => shipmentIds.includes(id))
                 ? stored
-                : { ...data, key: batchKey };
+                : { ...data, key: batchKey, shipmentIds };
 
-            writeStored(PENDING_BATCH_STORAGE_KEY, { ...request, key });
+            writeStored(PENDING_BATCH_STORAGE_KEY, {
+              ...request,
+              key,
+              shipmentIds,
+            });
 
             try {
               const { batchId } = await orders.outboundBatches.createV2(
