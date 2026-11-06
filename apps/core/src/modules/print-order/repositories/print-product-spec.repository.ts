@@ -64,6 +64,16 @@ export class PrintProductSpecRepository {
     }, tx as DbTx);
   }
 
+  findClaimedMaster(templateId: string, tx?: DbTx): Promise<string | null> {
+    const t = wmsTables.printTemplateProducts;
+
+    return this.dbService.run(async (trx) => {
+      const [row] = await trx.select({ masterId: t.masterId }).from(t).where(eq(t.templateId, templateId)).limit(1);
+
+      return row?.masterId ?? null;
+    }, tx);
+  }
+
   async claimTemplate(templateId: string, masterId: string, tx: AnyTx): Promise<ClaimTemplateResult> {
     const t = wmsTables.printTemplateProducts;
 

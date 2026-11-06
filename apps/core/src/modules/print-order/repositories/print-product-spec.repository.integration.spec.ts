@@ -150,6 +150,18 @@ describeIfDb('PrintProductSpecRepository (실 Postgres)', () => {
     });
   });
 
+  it('findClaimedMaster reads the claimed master without claiming', async () => {
+    const templateId = randomUUID();
+    templateIds.push(templateId);
+    const master = randomUUID();
+
+    expect(await repo.findClaimedMaster(templateId)).toBeNull();
+
+    await inTx((tx) => repo.claimTemplate(templateId, master, tx));
+
+    expect(await repo.findClaimedMaster(templateId)).toBe(master);
+  });
+
   it('assignClaimedMaster replaces the placeholder master of a claim', async () => {
     const templateId = randomUUID();
     templateIds.push(templateId);

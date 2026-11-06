@@ -7,6 +7,7 @@ import type { ProductVariantsService } from '../../catalog/core/products/service
 import type { PricingService } from '../../catalog/core/pricing/pricing.service';
 import type { OptionReadLoader } from '../../catalog/core/products/loaders/option-read.loader';
 import type { BulkSessionComboResolver } from '../../catalog/operations/bulk-session/services/bulk-session.combos';
+import type { ProductMatchingService } from '../../product-matching/services/product-matching.service';
 import type { PrintProductSpecRepository } from '../repositories/print-product-spec.repository';
 import type { WowpressLineSpec } from '../wowpress/wowpress.types';
 import type { PrintCatalogReader } from './print-catalog.reader';
@@ -66,7 +67,9 @@ describe('PrintProductPublisher', () => {
   const run = jest.fn();
   const quotes = jest.fn();
   const specFor = jest.fn();
+  const findClaimedMaster = jest.fn();
   const claimTemplate = jest.fn();
+  const handleVariantDeletion = jest.fn();
   const assignClaimedMaster = jest.fn();
   const insertSpecs = jest.fn();
   const createMaster = jest.fn();
@@ -80,13 +83,14 @@ describe('PrintProductPublisher', () => {
   const publisher = new PrintProductPublisher(
     { run } as unknown as DbService<MergedSchema>,
     { quotes, specFor } as unknown as PrintCatalogReader,
-    { claimTemplate, assignClaimedMaster, insertSpecs } as unknown as PrintProductSpecRepository,
+    { findClaimedMaster, claimTemplate, assignClaimedMaster, insertSpecs } as unknown as PrintProductSpecRepository,
     { createMaster, updateVersion } as unknown as ProductMastersService,
     { publishVersion } as unknown as ProductVersionsService,
     { bulkUpdateVariantsInDraft } as unknown as ProductVariantsService,
     { replaceVersionRules } as unknown as PricingService,
     { getOptionGroups } as unknown as OptionReadLoader,
     { resolveExisting } as unknown as BulkSessionComboResolver,
+    { handleVariantDeletion } as unknown as ProductMatchingService,
   );
 
   const groups = [
@@ -112,9 +116,11 @@ describe('PrintProductPublisher', () => {
     specFor.mockImplementation((_kind: string, _size: unknown, combo: { qty: number }) =>
       Promise.resolve(baseSpec(combo.qty)),
     );
+    findClaimedMaster.mockResolvedValue(null);
     claimTemplate.mockResolvedValue({ claimed: true });
     createMaster.mockResolvedValue({ id: VERSION, masterId: MASTER });
     getOptionGroups.mockResolvedValue(groups);
+    resolveExisting.mockResolvedValueOnce(new Map([['', 'var-default']]));
     resolveExisting.mockResolvedValue(
       new Map([
         [idKey('pv1', 'sv1', 'qv1'), 'var-a'],
@@ -134,6 +140,9 @@ describe('PrintProductPublisher', () => {
     expect(updateVersion.mock.calls[0][3]).toBe(TX);
     expect(getOptionGroups.mock.calls[0][0]).toBe(TX);
     expect(resolveExisting.mock.calls[0][2]).toBe(TX);
+    expect(resolveExisting.mock.calls[1][2]).toBe(TX);
+    expect(handleVariantDeletion).toHaveBeenCalledWith('var-default', TX);
+    expect(handleVariantDeletion.mock.invocationCallOrder[0]).toBeLessThan(updateVersion.mock.invocationCallOrder[0]);
     expect(replaceVersionRules.mock.calls[0][2]).toBe(TX);
     expect(insertSpecs.mock.calls[0][1]).toBe(TX);
     expect(publishVersion).toHaveBeenCalledWith(VERSION, 'admin-1', TX);
@@ -177,6 +186,28 @@ describe('PrintProductPublisher', () => {
     expect(createMaster).not.toHaveBeenCalled();
     expect(insertSpecs).not.toHaveBeenCalled();
     expect(publishVersion).not.toHaveBeenCalled();
+  });
+
+  it('returns an already claimed template before calling Wowpress', async () => {
+    findClaimedMaster.mockResolvedValue('m-1');
+
+    await expect(publisher.publish(input(), 'admin-1')).resolves.toEqual({ masterId: 'm-1', created: false });
+
+    expect(quotes).not.toHaveBeenCalled();
+    expect(specFor).not.toHaveBeenCalled();
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it('rejects when the option grid would exceed the variant cap', async () => {
+    const combos = Array.from({ length: 6 }, (_, i) => ({
+      ...input().combos[0],
+      key: `k${i}`,
+      optionLabels: { paper: `용지${i}`, side: `면${i}`, qty: `${i}00매` },
+    }));
+
+    await expect(publisher.publish(input({ combos }), 'admin-1')).rejects.toThrow(BadRequestError);
+
+    expect(quotes).not.toHaveBeenCalled();
   });
 
   it('rejects a price at or below the quoted cost', async () => {

@@ -4,9 +4,11 @@ import {
   ArrayMaxSize,
   ArrayMinSize,
   IsArray,
+  IsDefined,
   IsIn,
   IsInt,
   IsNumber,
+  IsObject,
   IsString,
   IsUUID,
   Max,
@@ -107,6 +109,8 @@ export class PublishPrintComboDto extends PrintComboDto {
   memberPrice!: number | null;
 
   @ApiProperty({ type: PrintOptionLabelsDto })
+  @IsDefined()
+  @IsObject()
   @ValidateNested()
   @Type(() => PrintOptionLabelsDto)
   optionLabels!: PrintOptionLabelsDto;

@@ -11,6 +11,7 @@ import { ProductMastersService } from '../../catalog/core/products/services/prod
 import { ProductVariantsService } from '../../catalog/core/products/services/product-variants.service';
 import { ProductVersionsService } from '../../catalog/core/products/services/product-versions.service';
 import { BulkSessionComboResolver } from '../../catalog/operations/bulk-session/services/bulk-session.combos';
+import { ProductMatchingService } from '../../product-matching/services/product-matching.service';
 import { PrintProductSpecRepository } from '../repositories/print-product-spec.repository';
 import type { WowpressLineSpec } from '../wowpress/wowpress.types';
 import { PrintCatalogReader, type PrintCombo } from './print-catalog.reader';
@@ -48,6 +49,8 @@ type MergedTx = TxFor<MergedSchema>;
 
 const LOCALE = 'ko-KR';
 
+const MAX_VARIANT_GRID = 200;
+
 const OPTION_AXES: readonly { group: string; label: (labels: PrintOptionLabels) => string }[] = [
   { group: '용지', label: (labels) => labels.paper },
   { group: '면', label: (labels) => labels.side },
@@ -58,13 +61,7 @@ const pairKey = (group: string, value: string): string => [group, value].join('\
 
 const labelsKey = (labels: PrintOptionLabels): string => OPTION_AXES.map((axis) => axis.label(labels)).join('\u0000');
 
-/**
- * 아몬드템플릿 인쇄 상품 게시. 상품(catalog)과 발주 매핑·연결표(print-order)를 한 트랜잭션에 쓰는 cross-BC seam 이라
- * DbService<MergedSchema> 를 선언한다. 가격 검증용 재견적과 사양 조회는 외부 호출이라 트랜잭션 밖에서 끝낸다.
- *
- * 템플릿 자리는 상품보다 먼저 임시 masterId 로 잡는다. 같은 템플릿의 동시 게시는 PK 에서 기다렸다가 먼저 커밋한 쪽의
- * 실제 masterId 를 보고, 먼저 잡은 쪽이 롤백되면 자리도 함께 사라져 아무것도 남지 않는다.
- */
+// 상품(catalog)과 발주 사양·연결표(print-order)를 한 트랜잭션에 쓰는 cross-BC seam
 @Injectable()
 export class PrintProductPublisher {
   constructor(
@@ -78,59 +75,72 @@ export class PrintProductPublisher {
     private readonly pricing: PricingService,
     private readonly optionLoader: OptionReadLoader,
     private readonly combos: BulkSessionComboResolver,
+    private readonly matching: ProductMatchingService,
   ) {}
 
   async publish(input: PublishPrintProductInput, userId: string, tx?: AnyTx): Promise<PublishPrintProductResult> {
-    this.assertDistinctCombos(input.combos);
+    // 게시 트랜잭션이 catalog 와 print-order 에 걸치므로 AnyTx 를 여기서 한 번만 좁힌다
+    const mergedTx = tx as MergedTx | undefined;
+
+    // 다시 게시하는 요청은 와우프레스를 부르기 전에 기존 상품을 돌려준다
+    const existing = await this.specs.findClaimedMaster(input.templateId, mergedTx);
+    if (existing) {
+      return { masterId: existing, created: false };
+    }
+
+    this.assertCombos(input.combos);
     await this.assertPricesAboveCost(input);
     const lineSpecs = await this.buildSpecs(input);
 
-    // 게시 트랜잭션이 catalog 와 print-order 에 걸치므로 AnyTx 를 여기서 한 번만 좁힌다
-    return this.dbService.run(
-      async (trx): Promise<PublishPrintProductResult> => {
-        const claim = await this.specs.claimTemplate(input.templateId, randomUUID(), trx);
-        if (!claim.claimed) {
-          return { masterId: claim.masterId, created: false };
-        }
+    return this.dbService.run(async (trx): Promise<PublishPrintProductResult> => {
+      // 동시 게시가 PK 에서 기다리도록 상품보다 먼저 임시 masterId 로 자리를 잡고, 롤백되면 자리도 사라진다
+      const claim = await this.specs.claimTemplate(input.templateId, randomUUID(), trx);
+      if (!claim.claimed) {
+        return { masterId: claim.masterId, created: false };
+      }
 
-        const version = await this.masters.createMaster(userId, trx);
-        await this.specs.assignClaimedMaster(input.templateId, version.masterId, trx);
+      const version = await this.masters.createMaster(userId, trx);
+      await this.specs.assignClaimedMaster(input.templateId, version.masterId, trx);
 
-        await this.masters.updateVersion(
-          version.id,
-          {
-            name: input.name,
-            description: input.description,
-            thumbnailFileId: input.thumbnailFileId,
-            optionDiff: { add: buildOptionGroups(input.combos) },
+      // 옵션을 붙이면 기본 variant 가 지워지므로 그 매칭도 같은 트랜잭션에서 지운다
+      const defaultVariants = await this.combos.resolveExisting(version.masterId, version.id, trx);
+      for (const defaultVariantId of defaultVariants.values()) {
+        await this.matching.handleVariantDeletion(defaultVariantId, trx);
+      }
+
+      await this.masters.updateVersion(
+        version.id,
+        {
+          name: input.name,
+          description: input.description,
+          thumbnailFileId: input.thumbnailFileId,
+          optionDiff: { add: buildOptionGroups(input.combos) },
+        },
+        userId,
+        trx,
+      );
+
+      const variantIds = await this.resolveVariants(version.masterId, version.id, input.combos, trx);
+      await this.pricing.replaceVersionRules(version.id, buildPriceRules(input.combos, variantIds), trx);
+
+      await this.specs.insertSpecs(
+        variantIds.map((variantId, i) => ({
+          variantId,
+          spec: {
+            ...lineSpecs[i],
+            design: { productId: version.masterId, widthMm: input.width, heightMm: input.height },
           },
-          userId,
-          trx,
-        );
+        })),
+        trx,
+      );
 
-        const variantIds = await this.resolveVariants(version.masterId, version.id, input.combos, trx);
-        await this.pricing.replaceVersionRules(version.id, buildPriceRules(input.combos, variantIds), trx);
+      await this.versions.publishVersion(version.id, userId, trx);
 
-        await this.specs.insertSpecs(
-          variantIds.map((variantId, i) => ({
-            variantId,
-            spec: {
-              ...lineSpecs[i],
-              design: { productId: version.masterId, widthMm: input.width, heightMm: input.height },
-            },
-          })),
-          trx,
-        );
-
-        await this.versions.publishVersion(version.id, userId, trx);
-
-        return { masterId: version.masterId, created: true };
-      },
-      tx as MergedTx | undefined,
-    );
+      return { masterId: version.masterId, created: true };
+    }, mergedTx);
   }
 
-  private assertDistinctCombos(combos: PublishPrintCombo[]): void {
+  private assertCombos(combos: PublishPrintCombo[]): void {
     if (combos.length === 0) {
       throw new BadRequestError('게시할 옵션 조합이 없습니다.');
     }
@@ -143,6 +153,15 @@ export class PrintProductPublisher {
     const labels = new Set(combos.map((combo) => labelsKey(combo.optionLabels)));
     if (labels.size !== combos.length) {
       throw new BadRequestError('용지·면·수량 표시가 같은 조합이 두 개 있습니다. 표시를 다르게 해 주세요.');
+    }
+
+    // variant 는 축마다 고른 값의 전체 격자로 생기므로 격자 크기를 막는다
+    const gridSize = OPTION_AXES.reduce(
+      (size, axis) => size * new Set(combos.map((combo) => axis.label(combo.optionLabels))).size,
+      1,
+    );
+    if (gridSize > MAX_VARIANT_GRID) {
+      throw new BadRequestError(`용지·면·수량 조합 격자가 ${MAX_VARIANT_GRID}개를 넘습니다(${gridSize}개).`);
     }
   }
 
