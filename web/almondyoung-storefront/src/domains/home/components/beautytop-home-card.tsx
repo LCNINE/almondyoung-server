@@ -1,5 +1,5 @@
 import LocalizedClientLink from "@/components/shared/localized-client-link"
-import { ChartNoAxesColumn } from "lucide-react"
+import { ChevronRight } from "lucide-react"
 import { getTranslations } from "next-intl/server"
 
 // Copy only — the home page is the busiest page, so this card reads no BeautyTop data.
@@ -7,36 +7,36 @@ export async function BeautyTopHomeCard() {
   const t = await getTranslations("home.beautytop")
 
   return (
-    <div className="container mx-auto max-w-[1280px] px-4 pt-4 md:px-[32px] md:pt-7">
+    <div className="container mx-auto max-w-[1280px] px-4 py-5 md:px-[32px] md:py-8">
       <LocalizedClientLink
         href="/beautytop"
-        className="bg-ink flex flex-wrap items-center gap-2.5 overflow-hidden rounded-xl p-[18px] text-white md:flex-nowrap md:gap-5 md:px-7 md:py-[22px]"
+        className="text-ink flex items-center gap-3.5 rounded-2xl border border-gray-200 bg-white p-4 transition-colors hover:bg-gray-50 md:gap-4 md:px-6 md:py-5"
       >
-        <span className="flex shrink-0 items-center gap-1.5 text-[13px] text-white/75">
-          <ChartNoAxesColumn className="size-4" aria-hidden />
-          {t("title")}
-          <span className="bg-pink text-ink inline-grid h-[18px] place-items-center rounded-full px-2 text-[10px] font-bold">
-            NEW
-          </span>
+        <span
+          aria-hidden
+          className="bg-mint-tint flex size-11 shrink-0 items-end justify-center gap-[3px] rounded-xl pb-3 md:size-12"
+        >
+          <i className="bg-purple h-2 w-[5px] rounded-[2px]" />
+          <i className="bg-pink h-3.5 w-[5px] rounded-[2px]" />
+          <i className="bg-mint h-5 w-[5px] rounded-[2px]" />
         </span>
-        <span className="flex min-w-0 basis-full flex-col md:basis-auto">
-          <span className="text-[17px] font-bold tracking-[-0.02em] break-keep md:text-xl">
+        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <span className="flex items-center gap-1.5 text-[13px] font-medium text-gray-500">
+            {t("title")}
+            <span className="bg-pink-tint text-pink-deep rounded-[4px] px-1.5 py-px text-[10px] font-bold">
+              NEW
+            </span>
+          </span>
+          <span className="text-base font-bold tracking-[-0.02em] break-keep md:text-[17px]">
             {t("headline")}
           </span>
-          <span className="text-[13px] break-keep text-white/70">
+          <span className="hidden text-[13px] break-keep text-gray-500 md:block">
             {t("body")}
           </span>
         </span>
-        <span
-          aria-hidden
-          className="hidden h-7 shrink-0 items-end gap-1 md:flex"
-        >
-          <i className="bg-purple h-[40%] w-1.5 rounded-[2px]" />
-          <i className="bg-pink h-[70%] w-1.5 rounded-[2px]" />
-          <i className="bg-mint h-full w-1.5 rounded-[2px]" />
-        </span>
-        <span className="text-ink flex h-10 shrink-0 items-center rounded-full bg-white px-[18px] text-sm font-bold md:ml-auto">
-          {t("cta")}
+        <span className="flex shrink-0 items-center gap-0.5 text-sm font-semibold text-gray-500">
+          <span className="hidden md:inline">{t("cta")}</span>
+          <ChevronRight className="size-5" aria-hidden />
         </span>
       </LocalizedClientLink>
     </div>
