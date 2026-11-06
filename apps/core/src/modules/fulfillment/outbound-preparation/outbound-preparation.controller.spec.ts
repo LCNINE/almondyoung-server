@@ -1,3 +1,7 @@
+import 'reflect-metadata';
+import { plainToInstance } from 'class-transformer';
+import { validate } from 'class-validator';
+import { OutboundPreparationQueryDto } from '../dto/outbound-preparation.dto';
 import { REQUIRED_PERMISSIONS_KEY } from '@app/authorization';
 import { BadRequestException, ParseUUIDPipe, UnauthorizedException } from '@nestjs/common';
 import { METHOD_METADATA, PATH_METADATA, ROUTE_ARGS_METADATA } from '@nestjs/common/constants';
@@ -92,7 +96,29 @@ describe('OutboundPreparationController', () => {
       buckets: [],
       awaitingMatchingCount: 0,
     });
-    expect(summarize).toHaveBeenCalledWith('w1', undefined);
+    expect(summarize).toHaveBeenCalledWith('w1', { bucket: undefined, offset: undefined }, undefined);
+  });
+
+  it('delegates bucket pagination through the existing read permission', async () => {
+    await controller.summarize({ warehouseId: 'w1', bucket: 'ready', offset: 200 });
+
+    expect(summarize).toHaveBeenCalledWith('w1', { bucket: 'ready', offset: 200 }, undefined);
+    expect(Reflect.getMetadata(REQUIRED_PERMISSIONS_KEY, controller.summarize)).toEqual(['fulfillment.shipment.read']);
+  });
+
+  it.each([
+    [{ bucket: 'ready', offset: '200' }, true],
+    [{ bucket: 'invalid', offset: '200' }, false],
+    [{ bucket: 'ready', offset: '-1' }, false],
+    [{ bucket: 'ready', offset: '1.5' }, false],
+    [{ bucket: 'ready', offset: 'NaN' }, false],
+  ])('validates pagination query %j', async (page, valid) => {
+    const query = plainToInstance(OutboundPreparationQueryDto, {
+      warehouseId: '11111111-1111-4111-8111-111111111111',
+      ...page,
+    });
+
+    expect((await validate(query)).length === 0).toBe(valid);
   });
 
   describe.each([

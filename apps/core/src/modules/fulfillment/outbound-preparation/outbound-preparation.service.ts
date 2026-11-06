@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { DbTx } from '../../inventory/schema/inventory.schema';
-import { OutboundPreparationSummaryDto } from '../dto/outbound-preparation.dto';
+import { OutboundPreparationQueryDto, OutboundPreparationSummaryDto } from '../dto/outbound-preparation.dto';
 import { ShipmentPlanningActor } from '../dto/shipment-planning.dto';
 import { BulkShipmentResult, PreparationWaybillResult } from './bulk-shipment-result';
 import { OutboundPreparationManager } from './outbound-preparation.manager';
@@ -13,8 +13,12 @@ export class OutboundPreparationService {
     private readonly manager: OutboundPreparationManager,
   ) {}
 
-  summarize(warehouseId: string, tx?: DbTx): Promise<OutboundPreparationSummaryDto> {
-    return this.reader.summarize(warehouseId, tx);
+  summarize(
+    warehouseId: string,
+    page?: Pick<OutboundPreparationQueryDto, 'bucket' | 'offset'>,
+    tx?: DbTx,
+  ): Promise<OutboundPreparationSummaryDto> {
+    return this.reader.summarize(warehouseId, page, tx);
   }
 
   planMany(shipmentIds: string[], idempotencyKey: string, actor: ShipmentPlanningActor): Promise<BulkShipmentResult> {

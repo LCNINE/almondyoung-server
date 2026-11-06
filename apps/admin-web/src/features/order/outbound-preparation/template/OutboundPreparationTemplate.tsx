@@ -2,6 +2,16 @@
 
 import { useRef, useState } from 'react';
 import { toast } from 'sonner';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -70,7 +80,7 @@ function PreparationWarehouse({
   const split = useSplitUnreservedMany();
   const { canRun } = usePermissionCheck();
 
-  const [pickingMethod, setPickingMethod] =
+  const [pickedMethod, setPickingMethod] =
     useState<PickingMethod>('total_picking');
   const [cartCapacity, setCartCapacity] = useState('');
   const [activeBucket, setActiveBucket] = useState<PreparationBucket | null>(
@@ -86,6 +96,7 @@ function PreparationWarehouse({
     source: 'ready' | 'resume' | 'mergeable';
   } | null>(null);
   const [splitting, setSplitting] = useState(false);
+  const [confirmingSplit, setConfirmingSplit] = useState(false);
   const splitRunning = useRef(false);
   const splitCommand = useRef<ReturnType<
     typeof createIdempotentCommand<{ shipmentIds: string[] }>
@@ -95,6 +106,10 @@ function PreparationWarehouse({
     warehouses.find((warehouse) => warehouse.id === warehouseId)
       ?.supportedPickingStrategies ?? []
   );
+  const pickingMethod =
+    !methods.includes(pickedMethod) && methods.length === 1
+      ? methods[0]
+      : pickedMethod;
   const validCapacity =
     pickingMethod !== 'multi_order' ||
     (Number.isInteger(Number(cartCapacity)) && Number(cartCapacity) >= 1);
@@ -334,7 +349,7 @@ function PreparationWarehouse({
               selectedCount={(key) => selectedIds(key).length}
               onView={setActiveBucket}
               onPrepare={prepare}
-              onSplit={() => void splitSelected()}
+              onSplit={() => setConfirmingSplit(true)}
             />
             {bucket && (
               <BucketList
@@ -350,6 +365,25 @@ function PreparationWarehouse({
           </>
         )
       )}
+      <AlertDialog open={confirmingSplit} onOpenChange={setConfirmingSplit}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              부분출고 {selectedIds('partial').length}건을 나눌까요?
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              재고가 있는 만큼은 지금 보낼 상자로, 모자란 만큼은 출고불가 상자로
+              나눠요.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>취소</AlertDialogCancel>
+            <AlertDialogAction onClick={() => void splitSelected()}>
+              나누기
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       {preparation && (
         <PrepareDialog {...preparation} onClose={() => setPreparation(null)} />
       )}

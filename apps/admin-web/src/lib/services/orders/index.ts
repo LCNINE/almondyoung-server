@@ -24,6 +24,7 @@ export {
   // 출고 배치 (D2)
   useOutboundBatchesV2,
   useOutboundPreparationSummary,
+  useLoadMoreOutboundPreparation,
   useOutboundBatchV2,
   useOutboundBatchEligibleShipments,
   useOutboundBatchWorkItems,

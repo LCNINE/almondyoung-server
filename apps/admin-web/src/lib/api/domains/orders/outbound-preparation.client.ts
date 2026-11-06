@@ -7,13 +7,17 @@ import type {
   BulkShipmentResult,
   PreparationWaybillResult,
   OutboundPreparationSummary,
+  PreparationBucket,
 } from '@/lib/types/dto/fulfillment';
 
 const BASE = `${ALMONDYOUNG_API_BASE_URL}/outbound-preparation`;
 
 export const outboundPreparationClient = {
-  summary: async (warehouseId: string): Promise<OutboundPreparationSummary> => {
-    const res = await client.get(BASE, { params: { warehouseId } });
+  summary: async (
+    warehouseId: string,
+    page?: { bucket: PreparationBucket; offset: number }
+  ): Promise<OutboundPreparationSummary> => {
+    const res = await client.get(BASE, { params: { warehouseId, ...page } });
 
     return res.data;
   },

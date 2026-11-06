@@ -600,18 +600,39 @@ function writeStored(storageKey: string, value: unknown) {
 const readWaybillKeys = () =>
   readStored<Record<string, string>>(WAYBILL_KEYS_STORAGE_KEY, {});
 
-const preparationWaybillKeys: PreparationDeps['waybillKeys'] = {
-  get: (shipmentId) => readWaybillKeys()[shipmentId],
-  set: (shipmentId, key) =>
-    writeStored(WAYBILL_KEYS_STORAGE_KEY, {
-      ...readWaybillKeys(),
-      [shipmentId]: key,
-    }),
-  delete: (shipmentId) => {
-    const { [shipmentId]: _, ...rest } = readWaybillKeys();
+function withWaybillKeysLock<T>(action: () => T): T | Promise<T> {
+  if (typeof navigator !== 'undefined' && navigator.locks) {
+    return navigator.locks.request(WAYBILL_KEYS_STORAGE_KEY, action);
+  }
 
-    writeStored(WAYBILL_KEYS_STORAGE_KEY, rest);
-  },
+  return action();
+}
+
+const preparationWaybillKeys: PreparationDeps['waybillKeys'] = {
+  getOrCreate: (shipmentId, key) =>
+    withWaybillKeysLock(() => {
+      const keys = readWaybillKeys();
+      const existing = keys[shipmentId];
+
+      if (existing) {
+        return existing;
+      }
+
+      writeStored(WAYBILL_KEYS_STORAGE_KEY, { ...keys, [shipmentId]: key });
+
+      return key;
+    }),
+  release: (shipmentId, key) =>
+    withWaybillKeysLock(() => {
+      const keys = readWaybillKeys();
+
+      if (keys[shipmentId] !== key) {
+        return;
+      }
+
+      delete keys[shipmentId];
+      writeStored(WAYBILL_KEYS_STORAGE_KEY, keys);
+    }),
 };
 
 export const useRunOutboundPreparation = () => {
@@ -704,6 +725,7 @@ export const useRunOutboundPreparation = () => {
             assertActive?.();
           },
           newKey: commandKey,
+          now: () => new Date(),
           waybillKeys: preparationWaybillKeys,
         },
         input,

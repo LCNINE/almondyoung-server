@@ -24,6 +24,8 @@ import type {
   ShipmentConsolidationCandidateQuery,
   OutboundBatchV2ListQuery,
   SupplierQueueStage,
+  OutboundPreparationSummary,
+  PreparationBucket,
 } from '@/lib/types/dto/fulfillment';
 import type { PermissionRequirement } from '@/lib/auth/mutation-permission';
 
@@ -63,6 +65,66 @@ export const useOutboundPreparationSummary = (
     enabled: !!warehouseId && enabled,
   });
 };
+
+export const useLoadMoreOutboundPreparation = (warehouseId: string) => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (bucket: PreparationBucket) => {
+      const queryKey = ['outbound-preparation', warehouseId];
+      const summary =
+        queryClient.getQueryData<OutboundPreparationSummary>(queryKey);
+      const current = summary?.buckets.find((entry) => entry.bucket === bucket);
+
+      if (!current || current.shipments.length >= current.count) {
+        return;
+      }
+
+      const page = await orders.outboundPreparation.summary(warehouseId, {
+        bucket,
+        offset: current.shipments.length,
+      });
+      const next = page.buckets.find((entry) => entry.bucket === bucket);
+
+      if (!next) {
+        return;
+      }
+
+      const existingIds = new Set(
+        current.shipments.map((shipment) => shipment.shipmentId)
+      );
+
+      queryClient.setQueryData<OutboundPreparationSummary>(
+        queryKey,
+        (latest) => {
+          if (!latest || latest !== summary) {
+            return latest;
+          }
+
+          return {
+            ...latest,
+            buckets: latest.buckets.map((entry) =>
+              entry.bucket === bucket
+                ? {
+                    ...next,
+                    shipments: [
+                      ...current.shipments,
+                      ...next.shipments.filter(
+                        (shipment) => !existingIds.has(shipment.shipmentId)
+                      ),
+                    ],
+                  }
+                : entry
+            ),
+          };
+        }
+      );
+    },
+  });
+};
+useLoadMoreOutboundPreparation.permission = [
+  'fulfillment.shipment.read',
+] satisfies PermissionRequirement;
 
 export const useOutboundBatchesV2 = (query: OutboundBatchV2ListQuery = {}) => {
   return useQuery({

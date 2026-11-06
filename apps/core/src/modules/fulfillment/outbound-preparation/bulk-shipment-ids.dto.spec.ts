@@ -1,3 +1,4 @@
+import 'reflect-metadata';
 import { plainToInstance } from 'class-transformer';
 import { validateSync } from 'class-validator';
 import { BulkShipmentIdsDto } from '../dto/outbound-preparation.dto';

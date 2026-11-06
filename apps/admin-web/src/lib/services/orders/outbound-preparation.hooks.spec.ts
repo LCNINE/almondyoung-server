@@ -1,3 +1,4 @@
+import type { OutboundPreparationSummary } from '@/lib/types/dto/fulfillment';
 jest.mock('@tanstack/react-query', () => ({
   ...jest.requireActual<typeof import('@tanstack/react-query')>(
     '@tanstack/react-query'
@@ -31,7 +32,10 @@ import {
 } from '@tanstack/react-query';
 import { orders } from '@/lib/api/domains';
 import { createIdempotentCommand } from './idempotency';
-import { useOutboundPreparationSummary } from './queries';
+import {
+  useLoadMoreOutboundPreparation,
+  useOutboundPreparationSummary,
+} from './queries';
 import { useRunOutboundPreparation, useSplitUnreservedMany } from './mutations';
 
 describe('outbound preparation hooks', () => {
@@ -69,6 +73,126 @@ describe('outbound preparation hooks', () => {
     }
   );
 
+  it('appends only the requested bucket and advances its offset across pages', async () => {
+    const queryClient = useQueryClient();
+    const shipment = (shipmentId: string) => ({
+      shipmentId,
+      orderNos: [],
+      itemSummary: '',
+      totalQty: 1,
+      single: true,
+      reason: null,
+    });
+    const summary: OutboundPreparationSummary = {
+      warehouseId: 'w1',
+      awaitingMatchingCount: 0,
+      buckets: [
+        {
+          bucket: 'ready',
+          count: 401,
+          singleCount: 401,
+          multiCount: 0,
+          shipments: Array.from({ length: 200 }, (_, index) =>
+            shipment(`s${index}`)
+          ),
+        },
+        {
+          bucket: 'partial',
+          count: 1,
+          singleCount: 1,
+          multiCount: 0,
+          shipments: [shipment('partial')],
+        },
+      ],
+    };
+    queryClient.setQueryData(['outbound-preparation', 'w1'], summary);
+    jest
+      .mocked(orders.outboundPreparation.summary)
+      .mockImplementation(async (_, page) => ({
+        ...summary,
+        buckets: [
+          {
+            ...summary.buckets[0],
+            shipments: Array.from(
+              { length: Math.min(200, 401 - page!.offset) },
+              (_, index) => shipment(`s${page!.offset + index}`)
+            ),
+          },
+        ],
+      }));
+    useLoadMoreOutboundPreparation('w1');
+
+    const options = jest.mocked(useMutation).mock.calls[0][0];
+    const context = { client: queryClient, meta: undefined };
+
+    await options.mutationFn!('ready', context);
+    await options.mutationFn!('ready', context);
+    await options.mutationFn!('ready', context);
+
+    expect(jest.mocked(orders.outboundPreparation.summary).mock.calls).toEqual([
+      ['w1', { bucket: 'ready', offset: 200 }],
+      ['w1', { bucket: 'ready', offset: 400 }],
+    ]);
+    const updated = queryClient.getQueryData<OutboundPreparationSummary>([
+      'outbound-preparation',
+      'w1',
+    ])!;
+
+    expect(updated.buckets[0].shipments.map((item) => item.shipmentId)).toEqual(
+      Array.from({ length: 401 }, (_, index) => `s${index}`)
+    );
+    expect(updated.buckets[1]).toEqual(summary.buckets[1]);
+    expect(useLoadMoreOutboundPreparation.permission).toEqual([
+      'fulfillment.shipment.read',
+    ]);
+  });
+
+  it('preserves cached rows on failure and ignores pages from a replaced summary', async () => {
+    const queryClient = useQueryClient();
+    const summary: OutboundPreparationSummary = {
+      warehouseId: 'w1',
+      awaitingMatchingCount: 0,
+      buckets: [
+        {
+          bucket: 'ready',
+          count: 201,
+          singleCount: 201,
+          multiCount: 0,
+          shipments: [],
+        },
+      ],
+    };
+    queryClient.setQueryData(['outbound-preparation', 'w1'], summary);
+    useLoadMoreOutboundPreparation('w1');
+
+    const options = jest.mocked(useMutation).mock.calls[0][0];
+    const context = { client: queryClient, meta: undefined };
+    jest
+      .mocked(orders.outboundPreparation.summary)
+      .mockRejectedValueOnce(new Error('network'));
+
+    await expect(options.mutationFn!('ready', context)).rejects.toThrow(
+      'network'
+    );
+    expect(queryClient.getQueryData(['outbound-preparation', 'w1'])).toEqual(
+      summary
+    );
+
+    const refreshed = { ...summary, awaitingMatchingCount: 2 };
+    jest
+      .mocked(orders.outboundPreparation.summary)
+      .mockImplementationOnce(async () => {
+        queryClient.setQueryData(['outbound-preparation', 'w1'], refreshed);
+
+        return summary;
+      });
+    await options.mutationFn!('ready', context);
+
+    expect(queryClient.getQueryData(['outbound-preparation', 'w1'])).toEqual(
+      refreshed
+    );
+  });
+
   it('passes the caller-owned command unchanged and declares warehouse permission', async () => {
     const command = createIdempotentCommand(
       { shipmentIds: ['s-1'] },
@@ -99,7 +223,7 @@ describe('outbound preparation hooks', () => {
   });
 
   it('wires runner dependencies, preserves the batch retry key, declares permission and refreshes the warehouse', async () => {
-    jest.useFakeTimers();
+    jest.useFakeTimers({ now: new Date('2026-11-05T00:30:00Z') });
     jest
       .mocked(orders.outboundPreparation.planMany)
       .mockResolvedValue({ succeeded: ['s1'], failed: [] });
@@ -164,7 +288,7 @@ describe('outbound preparation hooks', () => {
           warehouseId: 'w1',
           pickingMethod: 'total_picking',
           cartCapacity: 4,
-          name: '11/05 토탈피킹 09:30',
+          name: '11/05 토탈피킹 09:30:00',
         },
         expect.any(String),
       ]);
@@ -183,6 +307,88 @@ describe('outbound preparation hooks', () => {
     }
   });
 
+  it('shares the first stored waybill key between concurrent tabs under the browser lock', async () => {
+    const storage = new Map<string, string>();
+    const storageDescriptor = Object.getOwnPropertyDescriptor(
+      globalThis,
+      'localStorage'
+    );
+    const navigatorDescriptor = Object.getOwnPropertyDescriptor(
+      globalThis,
+      'navigator'
+    );
+    const request = jest.fn(async (_name: string, action: () => unknown) =>
+      action()
+    );
+    Object.defineProperty(globalThis, 'localStorage', {
+      configurable: true,
+      value: {
+        getItem: (key: string) => storage.get(key) ?? null,
+        setItem: (key: string, value: string) => storage.set(key, value),
+        removeItem: (key: string) => storage.delete(key),
+      },
+    });
+    Object.defineProperty(globalThis, 'navigator', {
+      configurable: true,
+      value: { locks: { request } },
+    });
+    jest.useFakeTimers();
+    jest
+      .mocked(orders.outboundPreparation.planMany)
+      .mockResolvedValue({ succeeded: ['s1'], failed: [] });
+    jest.mocked(orders.outboundPreparation.issueWaybills).mockResolvedValue([
+      {
+        shipmentId: 's1',
+        status: 'allocated',
+        trackingNo: null,
+        reason: null,
+        nextAttemptAt: null,
+      },
+    ]);
+    useRunOutboundPreparation();
+
+    const options = jest.mocked(useMutation).mock.calls[0][0];
+    const context = { client: useQueryClient(), meta: undefined };
+    const variables = {
+      warehouseId: 'w1',
+      shipmentIds: ['s1'],
+      pickingMethod: 'individual',
+      now: new Date(),
+      onProgress: jest.fn(),
+    };
+
+    try {
+      const first = options.mutationFn!(variables, context);
+      const second = options.mutationFn!(variables, context);
+      await jest.runAllTimersAsync();
+      await Promise.all([first, second]);
+
+      const calls = jest.mocked(orders.outboundPreparation.issueWaybills).mock
+        .calls;
+
+      expect(calls).toHaveLength(8);
+      expect(
+        new Set(calls.map(([command]) => command.idempotencyKey)).size
+      ).toBe(1);
+      expect(request).toHaveBeenCalledTimes(2);
+      expect(
+        JSON.parse(storage.get('outbound-preparation-waybill-keys')!)
+      ).toEqual({ s1: calls[0][0].idempotencyKey });
+    } finally {
+      jest.useRealTimers();
+      for (const [name, descriptor] of [
+        ['localStorage', storageDescriptor],
+        ['navigator', navigatorDescriptor],
+      ] as const) {
+        if (descriptor) {
+          Object.defineProperty(globalThis, name, descriptor);
+        } else {
+          Reflect.deleteProperty(globalThis, name);
+        }
+      }
+    }
+  });
+
   it('reuses the unresolved batch creation command on a manual retry', async () => {
     const storage = new Map<string, string>();
 
@@ -194,7 +400,7 @@ describe('outbound preparation hooks', () => {
         removeItem: (key: string) => storage.delete(key),
       },
     });
-    jest.useFakeTimers();
+    jest.useFakeTimers({ now: new Date('2026-11-05T00:30:00Z') });
     jest
       .mocked(orders.outboundPreparation.planMany)
       .mockImplementation(async ({ data }) => ({
@@ -258,10 +464,10 @@ describe('outbound preparation hooks', () => {
 
       expect(second).toMatchObject({
         batchId: 'b1',
-        batchName: '11/05 토탈피킹 09:30',
+        batchName: '11/05 토탈피킹 09:30:00',
         joined: 1,
       });
-      expect(firstCall[0].name).toBe('11/05 토탈피킹 09:30');
+      expect(firstCall[0].name).toBe('11/05 토탈피킹 09:30:00');
       expect(firstCall[1]).toBe(failedKey);
       expect(storage.has('outbound-preparation-pending-batch')).toBe(false);
 
@@ -329,7 +535,7 @@ describe('outbound preparation hooks', () => {
   ] as const)(
     'stops subsequent dependencies when unmounted during %s',
     async (stage, counts) => {
-      jest.useFakeTimers();
+      jest.useFakeTimers({ now: new Date('2026-11-05T00:30:00Z') });
       let unmounted = stage === 'before';
       let release!: () => void;
       const blocked = new Promise<void>((resolve) => {

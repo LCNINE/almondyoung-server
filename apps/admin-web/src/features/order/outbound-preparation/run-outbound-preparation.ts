@@ -17,6 +17,7 @@ export interface PreparationFailure {
   shipmentId: string;
   stage: PreparationStage;
   message: string;
+  retryable: boolean;
 }
 
 export interface PreparationProgress {
@@ -53,10 +54,10 @@ export interface PreparationDeps {
   ): Promise<BulkShipmentResult>;
   sleep(ms: number): Promise<void>;
   newKey(): string;
+  now(): Date;
   waybillKeys: {
-    get(shipmentId: string): string | undefined;
-    set(shipmentId: string, key: string): void;
-    delete(shipmentId: string): void;
+    getOrCreate(shipmentId: string, key: string): string | Promise<string>;
+    release(shipmentId: string, key: string): void | Promise<void>;
   };
 }
 
@@ -97,6 +98,7 @@ export function batchNameFor(now: Date, pickingMethod: PickingMethod): string {
     day: '2-digit',
     hour: '2-digit',
     minute: '2-digit',
+    second: '2-digit',
     hourCycle: 'h23',
   }).formatToParts(now);
   const part = (type: Intl.DateTimeFormatPartTypes) =>
@@ -107,7 +109,7 @@ export function batchNameFor(now: Date, pickingMethod: PickingMethod): string {
     multi_order: '멀티오더',
   };
 
-  return `${part('month')}/${part('day')} ${labels[pickingMethod]} ${part('hour')}:${part('minute')}`;
+  return `${part('month')}/${part('day')} ${labels[pickingMethod]} ${part('hour')}:${part('minute')}:${part('second')}`;
 }
 
 export async function runOutboundPreparation(
@@ -181,7 +183,7 @@ export async function runOutboundPreparation(
         } else if (result?.outcome === 'retry') {
           delayed.set(shipmentId, message);
         } else {
-          failures.push({ shipmentId, stage, message });
+          failures.push({ shipmentId, stage, message, retryable: false });
         }
       }
 
@@ -211,6 +213,7 @@ export async function runOutboundPreparation(
               shipmentId,
               stage,
               message,
+              retryable: true,
             })),
           ],
         });
@@ -234,13 +237,19 @@ export async function runOutboundPreparation(
     return progress;
   }
 
+  const waybillKeys = new Map<string, string>();
+
   const waybilled = await runStage('waybill', planned, async (ids, key) => {
     const groups = new Map<string, string[]>();
 
     for (const id of ids) {
-      const groupKey = deps.waybillKeys.get(id) ?? key;
+      let groupKey = waybillKeys.get(id);
 
-      deps.waybillKeys.set(id, groupKey);
+      if (!groupKey) {
+        groupKey = await deps.waybillKeys.getOrCreate(id, key);
+        waybillKeys.set(id, groupKey);
+      }
+
       groups.set(groupKey, [...(groups.get(groupKey) ?? []), id]);
     }
 
@@ -257,7 +266,7 @@ export async function runOutboundPreparation(
               !isWaybillPendingIssue(result.status));
 
           if (terminal) {
-            deps.waybillKeys.delete(result.shipmentId);
+            await deps.waybillKeys.release(result.shipmentId, groupKey);
           }
         }
 
@@ -275,7 +284,7 @@ export async function runOutboundPreparation(
             trackingNo: null,
             reason: message,
             nextAttemptAt: null,
-            transient: status === null || status >= 500,
+            transient: status === null || (status >= 500 && status < 600),
           }))
         );
       }
@@ -286,11 +295,13 @@ export async function runOutboundPreparation(
         shipmentId: result.shipmentId,
         outcome: isWaybillIssued(result.status)
           ? 'success'
-          : result.reason === 'time-budget-exceeded'
-            ? 'immediate'
-            : isWaybillPendingIssue(result.status) || result.transient
-              ? 'retry'
-              : 'failed',
+          : result.transient === false
+            ? 'failed'
+            : result.reason === 'time-budget-exceeded'
+              ? 'immediate'
+              : isWaybillPendingIssue(result.status) || result.transient
+                ? 'retry'
+                : 'failed',
         message: result.reason ?? '송장을 발급하지 못했어요.',
       })
     );
@@ -303,7 +314,7 @@ export async function runOutboundPreparation(
   let batchId = input.existingBatchId;
 
   if (!batchId) {
-    const name = batchNameFor(input.now, input.pickingMethod);
+    const name = batchNameFor(deps.now(), input.pickingMethod);
 
     await runStage('batch', waybilled, async (ids) => {
       const batch = await deps.createBatch(

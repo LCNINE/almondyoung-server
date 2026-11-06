@@ -28,7 +28,7 @@ export class OutboundPreparationController {
   @RequirePermission('fulfillment.shipment.read')
   @Get('outbound-preparation')
   summarize(@Query() query: OutboundPreparationQueryDto): Promise<OutboundPreparationSummaryDto> {
-    return this.service.summarize(query.warehouseId);
+    return this.service.summarize(query.warehouseId, { bucket: query.bucket, offset: query.offset });
   }
 
   @RequirePermission('fulfillment.warehouse.operate')

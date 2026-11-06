@@ -12,7 +12,11 @@ import {
   PreparationFacts,
   resolvePlanProfileId,
 } from './outbound-preparation-classify';
-import { OutboundPreparationSummaryDto, PreparationBucketDto } from '../dto/outbound-preparation.dto';
+import {
+  OutboundPreparationQueryDto,
+  OutboundPreparationSummaryDto,
+  PreparationBucketDto,
+} from '../dto/outbound-preparation.dto';
 
 @Injectable()
 export class OutboundPreparationReader {
@@ -22,7 +26,11 @@ export class OutboundPreparationReader {
     private readonly consolidationBoard: ConsolidationBoardReader,
   ) {}
 
-  async summarize(warehouseId: string, tx?: DbTx): Promise<OutboundPreparationSummaryDto> {
+  async summarize(
+    warehouseId: string,
+    page?: Pick<OutboundPreparationQueryDto, 'bucket' | 'offset'>,
+    tx?: DbTx,
+  ): Promise<OutboundPreparationSummaryDto> {
     return this.dbService.run(async (trx) => {
       const bucketNames: PreparationBucket[] = ['ready', 'partial', 'unavailable', 'mergeable', 'resume', 'needs_info'];
       const buckets: PreparationBucketDto[] = bucketNames.map((bucket) => ({
@@ -147,7 +155,11 @@ export class OutboundPreparationReader {
         bucket.singleCount += single ? 1 : 0;
         bucket.multiCount += single ? 0 : 1;
 
-        if (bucket.shipments.length >= 200) {
+        if (
+          (page?.bucket && bucketName !== page.bucket) ||
+          bucket.count <= (page?.offset ?? 0) ||
+          bucket.shipments.length >= 200
+        ) {
           continue;
         }
 

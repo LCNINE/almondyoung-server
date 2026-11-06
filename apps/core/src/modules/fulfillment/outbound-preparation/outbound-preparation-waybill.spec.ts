@@ -150,6 +150,8 @@ describe('outbound preparation with WaybillManager', () => {
 
     manager = module.get(OutboundPreparationManager);
     waybillManager = module.get(WaybillManager);
+    const waybillKeys = new Map<string, string>();
+
     deps = {
       planMany: (ids, key) => manager.planMany(ids, key, actor),
       issueWaybills: (ids, key) => manager.issueWaybills(ids, key, actor),
@@ -157,7 +159,21 @@ describe('outbound preparation with WaybillManager', () => {
       sleep,
       createBatch,
       newKey: () => `key-${++key}`,
-      waybillKeys: new Map(),
+      now: () => new Date('2026-11-06T00:00:00Z'),
+      waybillKeys: {
+        getOrCreate: (id, key) => {
+          const existing = waybillKeys.get(id) ?? key;
+
+          waybillKeys.set(id, existing);
+
+          return existing;
+        },
+        release: (id, key) => {
+          if (waybillKeys.get(id) === key) {
+            waybillKeys.delete(id);
+          }
+        },
+      },
     };
   });
 

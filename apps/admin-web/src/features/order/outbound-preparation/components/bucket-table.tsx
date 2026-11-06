@@ -13,6 +13,7 @@ import {
 } from '@/components/ui/table';
 import {
   useRunOutboundPreparation,
+  useLoadMoreOutboundPreparation,
   useSplitUnreservedMany,
 } from '@/lib/services/orders';
 import type {
@@ -56,6 +57,8 @@ export function BucketTable({
   onPrepare: (bucket: 'ready' | 'resume') => void;
   onSplit: () => void;
 }) {
+  const loadMore = useLoadMoreOutboundPreparation(summary.warehouseId);
+
   return (
     <div className="rounded-md border">
       <Table>
@@ -143,6 +146,30 @@ export function BucketTable({
                       >
                         내역보기
                       </Button>
+                    )}
+                    {bucket && bucket.shipments.length < bucket.count && (
+                      <Can run={useLoadMoreOutboundPreparation}>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={busy || loadMore.isPending}
+                          onClick={() =>
+                            loadMore.mutate(bucket.bucket, {
+                              onSuccess: () => onView(bucket.bucket),
+                            })
+                          }
+                        >
+                          {loadMore.isPending &&
+                          loadMore.variables === bucket.bucket
+                            ? '불러오는 중…'
+                            : '더 보기'}
+                        </Button>
+                      </Can>
+                    )}
+                    {loadMore.isError && loadMore.variables === key && (
+                      <span role="alert" className="text-sm text-destructive">
+                        목록을 불러오지 못했어요. 다시 시도해 주세요.
+                      </span>
                     )}
                   </div>
                 </TableCell>

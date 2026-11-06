@@ -2,8 +2,10 @@
 
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import { Check, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Can } from '@/components/auth/can';
+import { cn } from '@/lib/utils/ui';
 import { Button } from '@/components/ui/button';
 import {
   Dialog,
@@ -21,7 +23,6 @@ import type { PreparationShipmentDto } from '@/lib/types/dto/fulfillment';
 import { PICKING_METHOD_LABELS } from '@/lib/utils/picking-method';
 import { plannedOrderText } from '../../waybill-issue/waybill-issue-model';
 import {
-  RETRY_DELAYS_MS,
   type PreparationFailure,
   type PreparationInput,
   type PreparationProgress,
@@ -161,46 +162,64 @@ export function PrepareDialog({
       >
         <DialogHeader>
           <DialogTitle>
-            {progress
-              ? '출고 준비 진행 상황'
-              : source === 'mergeable'
+            {!progress
+              ? source === 'mergeable'
                 ? `합칠 수 있는 ${shipments.length}건을 따로 출고 준비할까요?`
-                : `${source === 'resume' ? '이어서 처리' : '완전출고'} ${shipments.length}건을 출고 준비할까요?`}
+                : `${source === 'resume' ? '이어서 처리' : '완전출고'} ${shipments.length}건을 출고 준비할까요?`
+              : busy
+                ? '출고 준비 중이에요'
+                : progress.joined === progress.total
+                  ? `${progress.total}상자 출고 준비를 마쳤어요`
+                  : `${progress.total}상자 중 ${progress.joined}상자를 준비했어요`}
           </DialogTitle>
           <DialogDescription>
-            계획 확정 → 한진 송장 발급 → 배치 생성까지 한 번에 해요.
+            {!progress
+              ? '상자 확정, 송장 발급, 출고 배치에 담기까지 한 번에 해요.'
+              : busy
+                ? '상자가 많으면 1분 가까이 걸릴 수 있어요. 창을 닫지 말아 주세요.'
+                : progress.batchId && progress.joined > 0
+                  ? `송장 ${progress.waybilled}장을 발급했고, 출고 배치 "${progress.batchName}"에 담았어요. 이제 이 배치로 피킹을 시작하면 돼요.`
+                  : '출고 배치에 담은 상자가 없어요.'}
           </DialogDescription>
         </DialogHeader>
         {progress ? (
           <div className="space-y-3">
-            <div
-              className="space-y-2 text-sm font-semibold text-foreground"
+            <ul
+              className="space-y-1.5 text-sm"
               role="status"
               aria-live="polite"
             >
-              <p>
-                계획 확정 {progress.planned} / {progress.total}
-              </p>
-              <p>
-                송장 발급 {progress.waybilled} / {progress.total}
-              </p>
-              {progress.batchId && (
-                <p>
-                  배치 "{progress.batchName}" 생성, {progress.joined}건 담음
-                </p>
-              )}
-              {progress.retrying && <p>재시도 중이에요</p>}
-            </div>
+              <Step
+                label="상자 확정"
+                count={progress.planned}
+                total={progress.total}
+                active={busy && progress.stage === 'plan'}
+              />
+              <Step
+                label="송장 발급"
+                count={progress.waybilled}
+                total={progress.total}
+                active={busy && progress.stage === 'waybill'}
+              />
+              <Step
+                label="출고 배치에 담기"
+                count={progress.joined}
+                total={progress.total}
+                active={
+                  busy &&
+                  (progress.stage === 'batch' || progress.stage === 'join')
+                }
+              />
+            </ul>
             {progress.retrying && (
               <p className="text-xs text-muted-foreground">
-                잠시 뒤 다시 확인해요. 재시도 간격:{' '}
-                {RETRY_DELAYS_MS.map((delay) => `${delay / 1000}초`).join(', ')}
+                연결이 잠깐 끊겨서 다시 시도하고 있어요.
               </p>
             )}
             {progress.failures.length > 0 && (
               <div className="max-h-64 space-y-2 overflow-y-auto rounded-md border p-3">
                 <p className="text-sm font-semibold">
-                  실패 {progress.failures.length}건
+                  {progress.failures.length}상자는 준비하지 못했어요
                 </p>
                 {progress.failures.map((failure) => {
                   const shipment = shipments.find(
@@ -225,16 +244,26 @@ export function PrepareDialog({
                           {failure.message}
                         </p>
                       </div>
-                      <Can run={useRunOutboundPreparation}>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={busy}
-                          onClick={() => void run(failure)}
-                        >
-                          다시 시도
+                      {failure.retryable ? (
+                        <Can run={useRunOutboundPreparation}>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={busy}
+                            onClick={() => void run(failure)}
+                          >
+                            다시 시도
+                          </Button>
+                        </Can>
+                      ) : (
+                        <Button size="sm" variant="outline" asChild>
+                          <Link
+                            href={`/order/fulfillments?shipmentId=${encodeURIComponent(failure.shipmentId)}`}
+                          >
+                            상자 보기
+                          </Link>
                         </Button>
-                      </Can>
+                      )}
                     </div>
                   );
                 })}
@@ -264,12 +293,46 @@ export function PrepareDialog({
               <Link
                 href={`/order/outbound-batches?batchId=${encodeURIComponent(progress.batchId)}`}
               >
-                배치로 가기
+                출고 배치 열기
               </Link>
             </Button>
           )}
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  );
+}
+
+function Step({
+  label,
+  count,
+  total,
+  active,
+}: {
+  label: string;
+  count: number;
+  total: number;
+  active: boolean;
+}) {
+  const done = count === total;
+
+  return (
+    <li
+      className={cn(
+        'flex items-center gap-1.5',
+        done || active
+          ? 'font-semibold text-foreground'
+          : 'text-muted-foreground'
+      )}
+    >
+      {done ? (
+        <Check className="size-4" aria-hidden />
+      ) : active ? (
+        <Loader2 className="size-4 animate-spin" aria-hidden />
+      ) : (
+        <span className="size-4" aria-hidden />
+      )}
+      {label} {count}/{total}
+    </li>
   );
 }

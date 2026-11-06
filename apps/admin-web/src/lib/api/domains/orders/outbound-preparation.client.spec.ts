@@ -66,6 +66,19 @@ describe('outboundPreparationClient', () => {
     });
   });
 
+  it('passes bucket and offset through the existing summary route', async () => {
+    mocked.get.mockResolvedValue({ data: { buckets: [] } });
+
+    await outboundPreparationClient.summary('warehouse-1', {
+      bucket: 'ready',
+      offset: 200,
+    });
+
+    expect(mocked.get).toHaveBeenCalledWith('/core/outbound-preparation', {
+      params: { warehouseId: 'warehouse-1', bucket: 'ready', offset: 200 },
+    });
+  });
+
   const mutations = [
     {
       name: 'planMany',

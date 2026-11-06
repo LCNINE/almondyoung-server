@@ -42,6 +42,10 @@ let mockSummary: OutboundPreparationSummary;
 let mockError = false;
 
 jest.mock('@/lib/services/orders', () => ({
+  useLoadMoreOutboundPreparation: Object.assign(
+    () => ({ mutate: jest.fn(), isPending: false, isError: false }),
+    { permission: ['fulfillment.shipment.read'] }
+  ),
   useOutboundPreparationSummary: jest.fn(() => ({
     data: mockSummary,
     isError: mockError,
@@ -64,6 +68,8 @@ jest.mock('@/lib/services/orders', () => ({
     idempotencyKey: `split-${++mockKeyCounter}`,
   }),
   getServerDenyMessage: (_error: unknown, fallback: string) => fallback,
+  parseServerError: jest.requireActual('@/lib/api/server-error')
+    .parseServerError,
 }));
 
 jest.mock('@/lib/services/inventory/queries', () => ({
@@ -253,7 +259,7 @@ describe('OutboundPreparationTemplate', () => {
     expect(screen.getByText('완전출고 35건을 출고 준비할까요?')).toBeTruthy();
     expect(
       screen.getByText(
-        '계획 확정 → 한진 송장 발급 → 배치 생성까지 한 번에 해요.'
+        '상자 확정, 송장 발급, 출고 배치에 담기까지 한 번에 해요.'
       )
     ).toBeTruthy();
     await userEvent.click(screen.getByRole('button', { name: '시작' }));
@@ -264,13 +270,11 @@ describe('OutboundPreparationTemplate', () => {
       pickingMethod: 'total_picking',
     });
     expect(mockRun.mock.calls[0][0].shipmentIds).toHaveLength(35);
-    expect(screen.getByText('계획 확정 35 / 35')).toBeTruthy();
-    expect(screen.getByText('송장 발급 35 / 35')).toBeTruthy();
+    expect(screen.getByText(/상자 확정 35\/35/)).toBeTruthy();
+    expect(screen.getByText(/송장 발급 35\/35/)).toBeTruthy();
+    expect(screen.getByText(/출고 배치에 담기 35\/35/)).toBeTruthy();
     expect(
-      screen.getByText('배치 "11/05 토탈피킹 #1" 생성, 35건 담음')
-    ).toBeTruthy();
-    expect(
-      screen.getByRole('link', { name: '배치로 가기' }).getAttribute('href')
+      screen.getByRole('link', { name: '출고 배치 열기' }).getAttribute('href')
     ).toBe('/order/outbound-batches?batchId=batch-1');
   });
 
@@ -284,6 +288,7 @@ describe('OutboundPreparationTemplate', () => {
             shipmentId: 'ready-1',
             stage: 'waybill',
             message: '한진 주소 확인 불가',
+            retryable: true,
           },
         ],
       })
@@ -305,11 +310,9 @@ describe('OutboundPreparationTemplate', () => {
       shipmentIds: ['ready-1'],
       existingBatchId: 'batch-1',
     });
-    expect(screen.getByText('계획 확정 35 / 35')).toBeTruthy();
-    expect(screen.getByText('송장 발급 35 / 35')).toBeTruthy();
-    expect(
-      screen.getByText('배치 "11/05 토탈피킹 #1" 생성, 35건 담음')
-    ).toBeTruthy();
+    expect(screen.getByText(/상자 확정 35\/35/)).toBeTruthy();
+    expect(screen.getByText(/송장 발급 35\/35/)).toBeTruthy();
+    expect(screen.getByText(/출고 배치에 담기 35\/35/)).toBeTruthy();
     expect(screen.queryByRole('button', { name: '다시 시도' })).toBeNull();
   });
 
@@ -364,6 +367,7 @@ describe('OutboundPreparationTemplate', () => {
     await userEvent.click(
       screen.getByRole('button', { name: '있는 것만 먼저 보내기' })
     );
+    await userEvent.click(screen.getByRole('button', { name: '나누기' }));
 
     await waitFor(() => expect(mockSplit).toHaveBeenCalledTimes(1));
     expect(mockSplit.mock.calls[0][0].data.shipmentIds).toHaveLength(32);
@@ -400,6 +404,7 @@ describe('OutboundPreparationTemplate', () => {
     await userEvent.click(
       screen.getByRole('button', { name: '있는 것만 먼저 보내기' })
     );
+    await userEvent.click(screen.getByRole('button', { name: '나누기' }));
     await waitFor(() => expect(row('완전출고').getByText('1장')).toBeTruthy());
     await start();
 
@@ -510,12 +515,14 @@ describe('OutboundPreparationTemplate', () => {
     render(<OutboundPreparationTemplate />);
     await start();
 
-    expect(screen.getByText('재시도 중이에요')).toBeTruthy();
+    expect(
+      screen.getByText('연결이 잠깐 끊겨서 다시 시도하고 있어요.')
+    ).toBeTruthy();
     expect(screen.queryByRole('button', { name: '시작' })).toBeNull();
     await userEvent.keyboard('{Escape}');
     expect(screen.getByRole('dialog')).toBeTruthy();
     finish(result());
-    await screen.findByRole('link', { name: '배치로 가기' });
+    await screen.findByRole('link', { name: '출고 배치 열기' });
   });
 
   it.each(['success', 'error'])(
@@ -578,7 +585,7 @@ describe('OutboundPreparationTemplate', () => {
         }
 
         expect(toast.error).not.toHaveBeenCalled();
-        expect(screen.getByText('계획 확정 35 / 35')).toBeTruthy();
+        expect(screen.getByText(/상자 확정 35\/35/)).toBeTruthy();
         expect(mockRun).toHaveBeenCalledTimes(2);
       } finally {
         stateSpy.mockRestore();
@@ -606,8 +613,18 @@ describe('OutboundPreparationTemplate', () => {
         waybilled: 33,
         joined: 33,
         failures: [
-          { shipmentId: 'ready-1', stage: 'plan', message: '계획 실패' },
-          { shipmentId: 'ready-2', stage: 'waybill', message: '송장 실패' },
+          {
+            shipmentId: 'ready-1',
+            stage: 'plan',
+            message: '계획 실패',
+            retryable: true,
+          },
+          {
+            shipmentId: 'ready-2',
+            stage: 'waybill',
+            message: '송장 실패',
+            retryable: true,
+          },
         ],
       })
     );
@@ -630,11 +647,9 @@ describe('OutboundPreparationTemplate', () => {
     );
     expect(screen.getByText('#AY-ready-2')).toBeTruthy();
     expect(screen.getByText('송장 실패')).toBeTruthy();
-    expect(screen.getByText('계획 확정 35 / 35')).toBeTruthy();
-    expect(screen.getByText('송장 발급 34 / 35')).toBeTruthy();
-    expect(
-      screen.getByText('배치 "11/05 토탈피킹 #1" 생성, 34건 담음')
-    ).toBeTruthy();
+    expect(screen.getByText(/상자 확정 35\/35/)).toBeTruthy();
+    expect(screen.getByText(/송장 발급 34\/35/)).toBeTruthy();
+    expect(screen.getByText(/출고 배치에 담기 34\/35/)).toBeTruthy();
   });
 
   it('모든 분류가 0건이면 기능 버튼을 끈다', () => {
@@ -670,6 +685,7 @@ describe('OutboundPreparationTemplate', () => {
     await userEvent.click(
       screen.getByRole('button', { name: '있는 것만 먼저 보내기' })
     );
+    await userEvent.click(screen.getByRole('button', { name: '나누기' }));
 
     await waitFor(() =>
       expect(toast.error).toHaveBeenCalledWith('상자를 나누지 못했어요.')
@@ -677,6 +693,7 @@ describe('OutboundPreparationTemplate', () => {
     await userEvent.click(
       screen.getByRole('button', { name: '있는 것만 먼저 보내기' })
     );
+    await userEvent.click(screen.getByRole('button', { name: '나누기' }));
 
     expect(mockSplit).toHaveBeenCalledTimes(2);
     expect(mockSplit.mock.calls[1][0]).toEqual(mockSplit.mock.calls[0][0]);
@@ -688,7 +705,12 @@ describe('OutboundPreparationTemplate', () => {
         waybilled: 34,
         joined: 34,
         failures: [
-          { shipmentId: 'ready-1', stage: 'waybill', message: '송장 실패' },
+          {
+            shipmentId: 'ready-1',
+            stage: 'waybill',
+            message: '송장 실패',
+            retryable: true,
+          },
         ],
       })
     );
@@ -700,7 +722,12 @@ describe('OutboundPreparationTemplate', () => {
         total: 1,
         batchName: null,
         failures: [
-          { shipmentId: 'ready-1', stage: 'plan', message: '계획 재확인 실패' },
+          {
+            shipmentId: 'ready-1',
+            stage: 'plan',
+            message: '계획 재확인 실패',
+            retryable: true,
+          },
         ],
       })
     );
@@ -714,8 +741,8 @@ describe('OutboundPreparationTemplate', () => {
     await userEvent.click(screen.getByRole('button', { name: '다시 시도' }));
 
     await waitFor(() => expect(mockRun).toHaveBeenCalledTimes(3));
-    expect(screen.getByText('계획 확정 35 / 35')).toBeTruthy();
-    expect(screen.getByText('송장 발급 35 / 35')).toBeTruthy();
+    expect(screen.getByText(/상자 확정 35\/35/)).toBeTruthy();
+    expect(screen.getByText(/송장 발급 35\/35/)).toBeTruthy();
   });
 
   it('분할 요청이 확정 거절되면 같은 선택에도 새 멱등 키를 쓴다', async () => {
@@ -724,12 +751,14 @@ describe('OutboundPreparationTemplate', () => {
     await userEvent.click(
       screen.getByRole('button', { name: '있는 것만 먼저 보내기' })
     );
+    await userEvent.click(screen.getByRole('button', { name: '나누기' }));
     await waitFor(() =>
       expect(toast.error).toHaveBeenCalledWith('상자를 나누지 못했어요.')
     );
     await userEvent.click(
       screen.getByRole('button', { name: '있는 것만 먼저 보내기' })
     );
+    await userEvent.click(screen.getByRole('button', { name: '나누기' }));
 
     expect(mockSplit.mock.calls[1][0].idempotencyKey).not.toBe(
       mockSplit.mock.calls[0][0].idempotencyKey

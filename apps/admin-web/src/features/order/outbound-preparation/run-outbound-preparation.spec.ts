@@ -34,6 +34,7 @@ function failure(shipmentId: string, transient: boolean) {
 
 function makeDeps() {
   let key = 0;
+  const waybillKeys = new Map<string, string>();
 
   return {
     planMany: jest
@@ -67,7 +68,21 @@ function makeDeps() {
       >()
       .mockResolvedValue(undefined),
     newKey: jest.fn(() => `key-${++key}`),
-    waybillKeys: new Map<string, string>(),
+    now: jest.fn(() => input.now),
+    waybillKeys: Object.assign(waybillKeys, {
+      getOrCreate(shipmentId: string, key: string) {
+        const existing = waybillKeys.get(shipmentId) ?? key;
+
+        waybillKeys.set(shipmentId, existing);
+
+        return existing;
+      },
+      release(shipmentId: string, key: string) {
+        if (waybillKeys.get(shipmentId) === key) {
+          waybillKeys.delete(shipmentId);
+        }
+      },
+    }),
   } satisfies PreparationDeps;
 }
 
@@ -87,7 +102,7 @@ describe('runOutboundPreparation', () => {
       joined: 3,
       total: 3,
       batchId: 'b1',
-      batchName: '11/05 토탈피킹 09:30',
+      batchName: '11/05 토탈피킹 09:30:00',
       failures: [],
     });
     expect(deps.createBatch).toHaveBeenCalledTimes(1);
@@ -95,7 +110,7 @@ describe('runOutboundPreparation', () => {
       {
         warehouseId: 'w1',
         pickingMethod: 'total_picking',
-        name: '11/05 토탈피킹 09:30',
+        name: '11/05 토탈피킹 09:30:00',
       },
       ['s1', 's2', 's3']
     );
@@ -129,7 +144,12 @@ describe('runOutboundPreparation', () => {
       expect.any(String)
     );
     expect(result.failures).toEqual([
-      { shipmentId: 's3', stage: 'plan', message: '처리하지 못했어요.' },
+      {
+        shipmentId: 's3',
+        stage: 'plan',
+        message: '처리하지 못했어요.',
+        retryable: false,
+      },
     ]);
     expect(result.joined).toBe(2);
   });
@@ -234,6 +254,7 @@ describe('runOutboundPreparation', () => {
     expect(deps.planMany).toHaveBeenCalledTimes(4);
     expect(deps.issueWaybills).not.toHaveBeenCalled();
     expect(result.failures).toHaveLength(3);
+    expect(result.failures.every((failure) => failure.retryable)).toBe(true);
     expect(result.retrying).toBe(false);
   });
 
@@ -277,6 +298,7 @@ describe('runOutboundPreparation', () => {
         shipmentId,
         stage: 'batch',
         message: '권한이 없어요.',
+        retryable: false,
       }))
     );
   });
@@ -296,7 +318,12 @@ describe('runOutboundPreparation', () => {
     ]);
     expect(result).toMatchObject({ batchId: 'b1', joined: 2 });
     expect(result.failures).toEqual([
-      { shipmentId: 's2', stage: 'join', message: '처리하지 못했어요.' },
+      {
+        shipmentId: 's2',
+        stage: 'join',
+        message: '처리하지 못했어요.',
+        retryable: false,
+      },
     ]);
   });
 
@@ -334,7 +361,7 @@ describe('runOutboundPreparation', () => {
     expect(deps.sleep.mock.calls).toEqual([[2000], [5000], [10000]]);
     expect(result).toMatchObject({ waybilled: 2, joined: 2 });
     expect(result.failures).toEqual([
-      { shipmentId: 's2', stage: 'waybill', message: 'busy' },
+      { shipmentId: 's2', stage: 'waybill', message: 'busy', retryable: true },
     ]);
   });
 
@@ -486,6 +513,119 @@ describe('runOutboundPreparation', () => {
     expect(deps.createBatch).not.toHaveBeenCalled();
   });
 
+  it('uses the clock after waybill retries and distinguishes runs in the same minute', async () => {
+    const deps = makeDeps();
+    deps.issueWaybills.mockResolvedValueOnce([waybill('s1', 'allocated')]);
+    deps.sleep.mockImplementation(async () => {
+      deps.now.mockReturnValue(new Date('2026-11-06T08:07:12Z'));
+    });
+
+    await runOutboundPreparation(
+      deps,
+      { ...input, shipmentIds: ['s1'] },
+      jest.fn()
+    );
+    deps.now.mockReturnValue(new Date('2026-11-06T08:07:13Z'));
+    await runOutboundPreparation(
+      deps,
+      { ...input, shipmentIds: ['s2'] },
+      jest.fn()
+    );
+
+    expect(deps.createBatch.mock.calls.map(([data]) => data.name)).toEqual([
+      '11/06 토탈피킹 17:07:12',
+      '11/06 토탈피킹 17:07:13',
+    ]);
+  });
+
+  it('pins the first tab key while another tab changes storage during its retry', async () => {
+    const first = makeDeps();
+    const second = makeDeps();
+    second.waybillKeys = first.waybillKeys;
+    second.newKey.mockReturnValue('second-tab');
+    first.issueWaybills.mockResolvedValueOnce([waybill('s1', 'allocated')]);
+    second.issueWaybills.mockResolvedValue([waybill('s1', 'allocated')]);
+    first.sleep.mockImplementationOnce(async () => {
+      await runOutboundPreparation(
+        second,
+        { ...input, shipmentIds: ['s1'] },
+        jest.fn()
+      );
+      first.waybillKeys.set('s1', 'other-command');
+    });
+
+    const result = await runOutboundPreparation(
+      first,
+      { ...input, shipmentIds: ['s1'] },
+      jest.fn()
+    );
+
+    expect(result).toMatchObject({ joined: 1, failures: [] });
+    expect(first.issueWaybills.mock.calls.map(([, key]) => key)).toEqual([
+      'key-2',
+      'key-2',
+    ]);
+    expect(second.issueWaybills.mock.calls.map(([, key]) => key)).toEqual(
+      Array(4).fill('key-2')
+    );
+    expect(first.waybillKeys.get('s1')).toBe('other-command');
+  });
+
+  it.each([
+    'planMany',
+    'issueWaybills',
+    'createBatch',
+    'addManyToBatch',
+  ] as const)(
+    'marks exhausted network/5xx failures retryable and 4xx failures permanent in %s',
+    async (method) => {
+      for (const [error, retryable] of [
+        [new TypeError('network'), true],
+        [{ statusCode: 503 }, true],
+        [{ statusCode: 400 }, false],
+      ] as const) {
+        const deps = makeDeps();
+        deps[method].mockRejectedValue(error);
+
+        const result = await runOutboundPreparation(deps, input, jest.fn());
+
+        expect(result.failures).toHaveLength(3);
+        expect(
+          result.failures.every((failure) => failure.retryable === retryable)
+        ).toBe(true);
+        expect(deps[method]).toHaveBeenCalledTimes(retryable ? 4 : 1);
+      }
+    }
+  );
+
+  it('honors explicit permanent waybill failures even with pending status or continuation reason', async () => {
+    const deps = makeDeps();
+    deps.issueWaybills.mockResolvedValue([
+      { ...waybill('s1', 'pending', 'time-budget-exceeded'), transient: false },
+      { ...waybill('s2', 'allocated'), transient: false },
+      { ...waybill('s3', 'failed'), transient: true },
+    ]);
+
+    const result = await runOutboundPreparation(deps, input, jest.fn());
+
+    expect(
+      result.failures.map(({ shipmentId, retryable }) => ({
+        shipmentId,
+        retryable,
+      }))
+    ).toEqual([
+      { shipmentId: 's1', retryable: false },
+      { shipmentId: 's2', retryable: false },
+      { shipmentId: 's3', retryable: true },
+    ]);
+    expect(deps.issueWaybills.mock.calls.map(([ids]) => ids)).toEqual([
+      ['s1', 's2', 's3'],
+      ['s3'],
+      ['s3'],
+      ['s3'],
+    ]);
+  });
+
   it('makes no requests for empty input', async () => {
     const deps = makeDeps();
     const result = await runOutboundPreparation(
@@ -511,9 +651,9 @@ describe('batchNameFor', () => {
     ['individual', '개별피킹'],
     ['multi_order', '멀티오더'],
   ] as const)('formats %s in Asia/Seoul', (method, label) => {
-    expect(batchNameFor(input.now, method)).toBe(`11/05 ${label} 09:30`);
+    expect(batchNameFor(input.now, method)).toBe(`11/05 ${label} 09:30:00`);
     expect(batchNameFor(new Date('2026-12-31T15:05:00Z'), method)).toBe(
-      `01/01 ${label} 00:05`
+      `01/01 ${label} 00:05:00`
     );
   });
 });

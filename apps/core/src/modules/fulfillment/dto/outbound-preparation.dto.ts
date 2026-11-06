@@ -1,9 +1,20 @@
-import { ArrayMaxSize, ArrayMinSize, IsArray, IsUUID } from 'class-validator';
+import { Type } from 'class-transformer';
+import { ArrayMaxSize, ArrayMinSize, IsArray, IsIn, IsInt, IsOptional, IsUUID, Min } from 'class-validator';
 import { PreparationBucket } from '../outbound-preparation/outbound-preparation-classify';
 
 export class OutboundPreparationQueryDto {
   @IsUUID()
   warehouseId: string;
+
+  @IsOptional()
+  @IsIn(['ready', 'partial', 'unavailable', 'mergeable', 'resume', 'needs_info'])
+  bucket?: PreparationBucket;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  offset?: number;
 }
 
 export class BulkShipmentIdsDto {

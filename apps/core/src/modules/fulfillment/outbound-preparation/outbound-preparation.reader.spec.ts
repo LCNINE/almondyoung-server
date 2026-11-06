@@ -93,4 +93,47 @@ describe('OutboundPreparationReader consolidation reservations', () => {
     ).toContain('original');
     expect(JSON.stringify(summary)).not.toContain('recipientSnapshot');
   });
+  it('pages beyond 200 within a bucket while preserving totals and stable order', async () => {
+    const ids = Array.from({ length: 401 }, (_, index) => `s${index}`);
+    const select = jest.fn();
+    const db = { select };
+    const module = await Test.createTestingModule({
+      providers: [
+        OutboundPreparationReader,
+        { provide: DbService, useValue: { run: (fn: (tx: typeof db) => unknown) => fn(db) } },
+        { provide: ConsolidationBoardReader, useValue: { findBoard: async () => ({ groups: [] }) } },
+      ],
+    }).compile();
+    const reader = module.get(OutboundPreparationReader);
+    jest.mocked(loadShipmentLines).mockResolvedValue([]);
+
+    for (const offset of [0, 200, 400, 401]) {
+      select
+        .mockReturnValueOnce(query([{ count: 3 }]))
+        .mockReturnValueOnce(
+          query(
+            ids.flatMap((id) => [
+              { id: `resume-${id}`, status: 'planned', recipientSnapshot: {} },
+              { id, status: 'draft', recipientSnapshot: {} },
+            ]),
+          ),
+        )
+        .mockReturnValueOnce(query([]))
+        .mockReturnValueOnce(query([]))
+        .mockReturnValueOnce(query([]));
+
+      const summary = await reader.summarize('warehouse', { bucket: 'unavailable', offset });
+      const bucket = summary.buckets.find((entry) => entry.bucket === 'unavailable');
+
+      expect(bucket).toMatchObject({ count: 401, singleCount: 0, multiCount: 401 });
+      expect(bucket?.shipments.map((shipment) => shipment.shipmentId)).toEqual(ids.slice(offset, offset + 200));
+      expect(
+        summary.buckets
+          .filter((entry) => entry.bucket !== 'unavailable')
+          .every((entry) => entry.shipments.length === 0),
+      ).toBe(true);
+      expect(summary.buckets.find((entry) => entry.bucket === 'resume')?.count).toBe(401);
+      expect(summary.awaitingMatchingCount).toBe(3);
+    }
+  });
 });

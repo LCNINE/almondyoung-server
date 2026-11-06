@@ -130,7 +130,7 @@ describeIfDb('OutboundPreparationReader (DB integration)', () => {
         });
       }
 
-      const summary = await reader.summarize(base.warehouseId, tx);
+      const summary = await reader.summarize(base.warehouseId, undefined, tx);
 
       expect(summary.warehouseId).toBe(base.warehouseId);
       expect(summary.buckets.map(({ bucket, count }) => [bucket, count])).toEqual([
@@ -178,7 +178,7 @@ describeIfDb('OutboundPreparationReader (DB integration)', () => {
       const base = await consolidationBase(tx, 1);
       const source = await createConsolidationSource(tx, wired, base, { quantity: 2, customerId: randomUUID() });
       const actor = { id: randomUUID(), roles: ['master'] };
-      const beforeSplit = await reader.summarize(base.warehouseId, tx);
+      const beforeSplit = await reader.summarize(base.warehouseId, undefined, tx);
 
       expect(beforeSplit.buckets.find((bucket) => bucket.bucket === 'partial')?.shipments).toEqual(
         expect.arrayContaining([expect.objectContaining({ shipmentId: source.shipment.id })]),
@@ -198,7 +198,7 @@ describeIfDb('OutboundPreparationReader (DB integration)', () => {
       expect(split.source.lines).toMatchObject([{ id: source.line.id, qty: 1, reservedQty: 1 }]);
       expect(split.target.lines).toMatchObject([{ qty: 1, reservedQty: 0 }]);
 
-      const summary = await reader.summarize(base.warehouseId, tx);
+      const summary = await reader.summarize(base.warehouseId, undefined, tx);
       const [original] = await tx
         .select()
         .from(wmsTables.shipments)
@@ -246,7 +246,7 @@ describeIfDb('OutboundPreparationReader (DB integration)', () => {
         .select({ count: count() })
         .from(wmsTables.fulfillmentOrderCreationBacklogs)
         .where(eq(wmsTables.fulfillmentOrderCreationBacklogs.status, 'awaiting_matching'));
-      const summary = await reader.summarize(randomUUID(), tx);
+      const summary = await reader.summarize(randomUUID(), undefined, tx);
 
       expect(summary.buckets.map(({ bucket }) => bucket)).toEqual([
         'ready',
@@ -277,7 +277,7 @@ describeIfDb('OutboundPreparationReader (DB integration)', () => {
 
       await tx.insert(wmsTables.shipments).values([...shipments].reverse());
 
-      const summary = await reader.summarize(base.warehouseId, tx);
+      const summary = await reader.summarize(base.warehouseId, undefined, tx);
       const unavailable = summary.buckets.find(({ bucket }) => bucket === 'unavailable');
 
       expect(unavailable).toMatchObject({ count: 201, singleCount: 0, multiCount: 201 });
@@ -297,7 +297,7 @@ describeIfDb('OutboundPreparationReader (DB integration)', () => {
         .set({ recipientSnapshot: {} })
         .where(eq(wmsTables.shipments.id, source.shipment.id));
 
-      const missingRecipient = await reader.summarize(base.warehouseId, tx);
+      const missingRecipient = await reader.summarize(base.warehouseId, undefined, tx);
 
       expect(missingRecipient.buckets.find(({ bucket }) => bucket === 'needs_info')?.shipments[0].reason).toBe(
         '수령인 정보가 비어 있어요',
@@ -305,7 +305,7 @@ describeIfDb('OutboundPreparationReader (DB integration)', () => {
 
       await tx.update(wmsTables.skus).set({ deliveryProfileId: null }).where(eq(wmsTables.skus.id, base.skuId));
 
-      const missingProfile = await reader.summarize(base.warehouseId, tx);
+      const missingProfile = await reader.summarize(base.warehouseId, undefined, tx);
 
       expect(missingProfile.buckets.find(({ bucket }) => bucket === 'needs_info')?.shipments[0].reason).toBe(
         '배송 프로필이 없는 상품이 있어요',
