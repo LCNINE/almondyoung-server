@@ -52,7 +52,9 @@ export function BottomNavigation() {
             : (pathname?.startsWith(item.href) ?? false)
         const commonClassName = cn(
           "flex flex-1 flex-col items-center justify-center gap-1 transition-colors cursor-pointer bg-transparent border-none outline-none",
-          isActive ? "text-primary" : "text-muted-foreground hover:text-primary"
+          isActive
+            ? "text-mint-deep"
+            : "text-muted-foreground hover:text-mint-deep"
         )
 
         // (Sheet 타입)

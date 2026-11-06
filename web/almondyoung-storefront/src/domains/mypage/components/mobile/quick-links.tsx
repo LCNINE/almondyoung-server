@@ -35,22 +35,22 @@ export function QuickLinks() {
     >
       <QuickMenuItem
         label={t("orderList")}
-        icon={<Package size={27} className="text-primary" />}
+        icon={<Package size={27} className="text-mint-deep" />}
         href="/mypage/order/list"
       />
       <QuickMenuItem
         label={t("wish")}
-        icon={<Heart size={27} className="text-primary" />}
+        icon={<Heart size={27} className="text-mint-deep" />}
         href="/mypage/wish"
       />
       <QuickMenuItem
         label={t("recent")}
-        icon={<Eye size={27} className="text-primary" />}
+        icon={<Eye size={27} className="text-mint-deep" />}
         href="/mypage/recent"
       />
       <QuickMenuItem
         label={t("allMenu")}
-        icon={<LayoutGrid size={27} className="text-primary" />}
+        icon={<LayoutGrid size={27} className="text-mint-deep" />}
         href="/mypage/menu"
       />
     </nav>

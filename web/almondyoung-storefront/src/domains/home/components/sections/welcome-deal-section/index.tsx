@@ -39,7 +39,7 @@ export function WelcomeDealSection({
     <div className="w-full">
       <Header className="mb-6">
         <Title className="md:flex-1">
-          웰컴딜 전체 제품 <span className="text-yellow-30">100원</span>
+          웰컴딜 전체 제품 <span className="text-pink-deep">100원</span>
         </Title>
         {moreHref && (
           <MoreButton

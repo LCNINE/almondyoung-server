@@ -70,7 +70,9 @@ function StatusCard({
           <h3 className="text-base font-bold md:text-lg">
             <span
               className={
-                group.status.includes("배송") ? "text-primary" : "text-gray-900"
+                group.status.includes("배송")
+                  ? "text-mint-deep"
+                  : "text-gray-900"
               }
             >
               {group.status}

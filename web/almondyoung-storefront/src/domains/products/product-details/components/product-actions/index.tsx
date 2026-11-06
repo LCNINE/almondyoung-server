@@ -672,7 +672,7 @@ export default function ProductActions({
                   variant="outline"
                   onClick={handleAddToCart}
                   disabled={!!disabledLabel || !!disabled || isPending}
-                  className="border-yellow-30 text-yellow-30 hover:text-primary h-12 w-full flex-1 cursor-pointer text-base hover:bg-transparent"
+                  className="border-primary text-primary hover:text-primary/80 h-12 w-full flex-1 cursor-pointer text-base hover:bg-transparent"
                   data-testid="add-product-button"
                 >
                   {isPending ? (

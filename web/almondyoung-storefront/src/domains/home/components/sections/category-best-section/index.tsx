@@ -54,7 +54,7 @@ export function CategoryBestSection({
     <ProductSection
       title={
         <>
-          {t("titleFirst")} <span className="text-yellow-30">{t("titleSecond")}</span>
+          {t("titleFirst")} <span className="text-mint-deep">{t("titleSecond")}</span>
         </>
       }
       tabs={categories}

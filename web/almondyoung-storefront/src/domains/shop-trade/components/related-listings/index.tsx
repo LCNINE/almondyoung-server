@@ -62,7 +62,7 @@ export async function RelatedListings({
               className="hover:bg-muted/60 flex items-center gap-2 py-2.5 transition-colors"
             >
               {listing.region && (
-                <span className="text-primary shrink-0 text-xs">
+                <span className="text-mint-deep shrink-0 text-xs">
                   [{t(`regions.${listing.region}`)}]
                 </span>
               )}

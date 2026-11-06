@@ -127,10 +127,10 @@ function NavItem({
           "outline-none select-none",
           isActive
             ? isInterest
-              ? "text-yellow-30"
+              ? "text-mint-deep"
               : "text-white"
             : isInterest
-              ? "text-yellow-30/80 hover:text-yellow-30"
+              ? "text-mint-deep/80 hover:text-mint-deep"
               : "text-white/50 hover:text-white"
         )}
       >
@@ -142,7 +142,7 @@ function NavItem({
           layoutId="active-underline"
           className={cn(
             "absolute right-0 bottom-0 left-0 h-[2px]",
-            isInterest ? "bg-yellow-30" : "bg-white"
+            isInterest ? "bg-mint" : "bg-white"
           )}
           transition={{ type: "spring", bounce: 0.2, duration: 0.5 }}
         />

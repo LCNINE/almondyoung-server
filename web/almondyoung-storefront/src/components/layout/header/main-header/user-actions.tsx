@@ -84,14 +84,14 @@ function AccountMenuItem({
 
         {/*  숫자가 있는 배지 (장바구니 등) */}
         {displayBadge && (
-          <span className="bg-yellow-30 absolute -top-2 -right-2 flex h-4 w-4 items-center justify-center rounded-full text-xs font-bold text-white md:h-5 md:w-5">
+          <span className="bg-pink text-ink absolute -top-2 -right-2 flex h-4 w-4 items-center justify-center rounded-full text-xs font-bold md:h-5 md:w-5">
             {displayBadge}
           </span>
         )}
 
         {/*  숫자 없이 점만 있는 배지 (알림 등) */}
         {showDot && !displayBadge && (
-          <span className="bg-yellow-30 absolute -top-1 -right-1 h-2 w-2 rounded-full md:h-2.5 md:w-2.5" />
+          <span className="bg-pink absolute -top-1 -right-1 h-2 w-2 rounded-full md:h-2.5 md:w-2.5" />
         )}
       </div>
 

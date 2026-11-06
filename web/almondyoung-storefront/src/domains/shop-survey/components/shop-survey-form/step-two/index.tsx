@@ -97,10 +97,7 @@ function ShopTypeSection({
                   "font-['Pretendard'] text-xs leading-none font-normal",
                   "tracking-[-0.01em] whitespace-nowrap text-[#757575]",
                   "cursor-pointer transition-all duration-200 select-none",
-                  value === shopValue && [
-                    "outline-[#FFA500]",
-                    "bg-[#FFA500] text-white",
-                  ]
+                  value === shopValue && ["outline-mint", "bg-mint text-ink"]
                 )}
               >
                 {label}
@@ -165,8 +162,8 @@ function TargetCustomersSection({
                     "transition-colors duration-200 ease-in-out",
                     "cursor-pointer select-none",
                     isTargetSelected
-                      ? "bg-[#ffa500] text-white"
-                      : "text-black hover:bg-[#ffa500] hover:text-white"
+                      ? "bg-mint text-ink"
+                      : "hover:bg-mint hover:text-ink text-black"
                   )}
                 >
                   {target}
@@ -231,8 +228,8 @@ function OpenDaysSection({
                     "font-['Pretendard'] text-xs leading-none font-normal",
                     "cursor-pointer transition-all duration-200 select-none",
                     isDaySelected
-                      ? "bg-[#FFA500] text-white outline-[#FFA500]"
-                      : "text-[#757575] outline-[#D9D9D9] hover:bg-[#FFF5E6] hover:outline-[#FFA500]"
+                      ? "bg-mint text-ink outline-mint"
+                      : "hover:bg-mint-tint hover:outline-mint text-[#757575] outline-[#D9D9D9]"
                   )}
                 >
                   {day}

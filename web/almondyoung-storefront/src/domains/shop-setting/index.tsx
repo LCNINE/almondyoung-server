@@ -359,7 +359,7 @@ export function ShopSettingTemplate({
             <button
               type="submit"
               disabled={isSubmitting}
-              className="rounded-[4px] bg-[#FFA500] px-6 py-3 text-white transition-colors hover:bg-[#e69500] disabled:bg-gray-300"
+              className="bg-primary hover:bg-primary/90 rounded-[4px] px-6 py-3 text-white transition-colors disabled:bg-gray-300"
             >
               {isSubmitting ? t("saving") : t("save")}
             </button>

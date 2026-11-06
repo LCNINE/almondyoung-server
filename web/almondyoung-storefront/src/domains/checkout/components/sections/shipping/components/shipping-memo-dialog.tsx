@@ -76,7 +76,7 @@ export function ShippingMemoDialog({
           <Button
             type="button"
             onClick={handleSubmit}
-            className="h-12 w-full rounded bg-[#ffa500] text-[15px] font-bold text-white hover:bg-[#ffa500]/90"
+            className="bg-primary hover:bg-primary/90 h-12 w-full rounded text-[15px] font-bold text-white"
           >
             {t("submit")}
           </Button>

@@ -45,7 +45,7 @@ export function FreeShippingProgress({
         <div key={entry.groupCode} className="flex flex-col gap-1.5">
           <div className="flex items-center justify-between text-xs">
             {entry.reached ? (
-              <span className="font-medium text-primary">
+              <span className="font-medium text-mint-deep">
                 {showGroupName
                   ? t("reachedInGroup", { group: entry.groupName })
                   : t("reached")}

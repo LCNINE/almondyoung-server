@@ -59,25 +59,25 @@ const buttonVariants = cva(
         variant: "fill",
         color: "primary",
         className:
-          "bg-yellow-30 text-white hover:bg-yellow-40 active:bg-yellow-50",
+          "bg-primary text-primary-foreground hover:bg-primary/90 active:bg-primary/80",
       },
       {
         variant: "fill",
         color: "destructive",
         className:
-          "bg-destructive text-white hover:bg-red-40 hover:border-yellow-20 disabled:bg-transparent disabled:text-muted-foreground disabled:shadow-none",
+          "bg-destructive text-white hover:bg-red-40 disabled:bg-transparent disabled:text-muted-foreground disabled:shadow-none",
       },
       {
         variant: "fill",
         color: "secondary",
         className:
-          "bg-background text-secondary-foreground border-border hover:bg-secondary/80 disabled:border-muted disabled:text-muted-foreground active:bg-yellow-10",
+          "bg-background text-secondary-foreground border-border hover:bg-secondary/80 disabled:border-muted disabled:text-muted-foreground active:bg-secondary",
       },
       {
         variant: "outline",
         color: "primary",
         className:
-          "border-yellow-30 text-yellow-30 hover:border-yellow-40 hover:text-yellow-40 active:bg-yellow-10 active:text-yellow-40 active:border-yellow-40 disabled:text-muted-foreground disabled:border-muted",
+          "border-primary text-primary hover:bg-secondary active:bg-secondary disabled:text-muted-foreground disabled:border-muted",
       },
       {
         variant: "outline",
@@ -89,7 +89,7 @@ const buttonVariants = cva(
         variant: "link",
         color: "primary",
         className:
-          "text-primary hover:text-yellow-40 disabled:text-muted-foreground disabled:no-underline",
+          "text-mint-deep hover:text-mint-deep/80 disabled:text-muted-foreground disabled:no-underline",
       },
     ],
     // [Default] 기본값

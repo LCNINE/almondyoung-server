@@ -70,7 +70,7 @@ export async function OverseasShowcaseWrapper({
         <div className="mb-6 flex items-end justify-between">
           <div>
             <Title>
-              {head} <span className="text-yellow-30">{tail.join(" ")}</span>
+              {head} <span className="text-mint-deep">{tail.join(" ")}</span>
             </Title>
             <p className="text-muted-foreground mt-1 text-sm">
               {t("overseasDescription")}
@@ -78,7 +78,7 @@ export async function OverseasShowcaseWrapper({
           </div>
           <LocalizedClientLink
             href={`/category/${HANDLE}`}
-            className="text-primary inline-flex items-center gap-1 text-sm font-semibold"
+            className="text-mint-deep inline-flex items-center gap-1 text-sm font-semibold"
           >
             {t("viewAll")} <ArrowRight className="h-4 w-4" />
           </LocalizedClientLink>

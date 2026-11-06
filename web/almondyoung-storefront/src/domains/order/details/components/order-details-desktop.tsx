@@ -142,7 +142,7 @@ export const OrderDetailsDesktop = ({
         <h1 className="text-2xl font-bold text-black">{tLabels("title")}</h1>
         <LocalizedClientLink
           href="/mypage/order/list"
-          className="text-primary text-sm"
+          className="text-mint-deep text-sm"
         >
           주문 목록
         </LocalizedClientLink>

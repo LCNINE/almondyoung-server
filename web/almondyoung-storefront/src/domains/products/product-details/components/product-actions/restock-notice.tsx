@@ -26,7 +26,7 @@ export function RestockNotice({ variants }: Props) {
 
   if (comingSoon) {
     return (
-      <div className="bg-yellow-30 flex h-12 w-full items-center justify-center gap-2 rounded-lg px-4">
+      <div className="bg-primary flex h-12 w-full items-center justify-center gap-2 rounded-lg px-4">
         <Calendar className="h-5 w-5 shrink-0 text-white" aria-hidden="true" />
         <span className="text-[15px] font-bold text-white">
           {comingSoon.date
@@ -47,7 +47,7 @@ export function RestockNotice({ variants }: Props) {
       <span className="text-[15px] font-bold text-gray-800">
         {t("soldOutTemporary")}
       </span>
-      <div className="bg-yellow-30 flex h-12 w-full items-center justify-center gap-2 rounded-lg px-4">
+      <div className="bg-primary flex h-12 w-full items-center justify-center gap-2 rounded-lg px-4">
         <Calendar className="h-5 w-5 shrink-0 text-white" aria-hidden="true" />
         <span className="text-[15px] font-bold text-white">
           {t("restockExpected", {
