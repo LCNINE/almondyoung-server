@@ -1,4 +1,5 @@
 import {
+  isWaybillFailed,
   isWaybillIssued,
   isWaybillPendingIssue,
 } from '../../../lib/services/orders/waybill-policy';
@@ -251,11 +252,11 @@ export async function runOutboundPreparation(
         const issued = await deps.issueWaybills(groupIds, groupKey);
 
         for (const result of issued) {
-          const unresolved =
-            isWaybillPendingIssue(result.status) ||
-            (!isWaybillIssued(result.status) && result.transient);
+          const terminal =
+            isWaybillIssued(result.status) ||
+            (isWaybillFailed(result.status) && result.transient === undefined);
 
-          if (!unresolved) {
+          if (terminal) {
             deps.waybillKeys.delete(result.shipmentId);
           }
         }

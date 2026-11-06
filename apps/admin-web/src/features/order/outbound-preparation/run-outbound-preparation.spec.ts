@@ -433,6 +433,28 @@ describe('runOutboundPreparation', () => {
     expect(deps.waybillKeys.has('s1')).toBe(false);
   });
 
+  it('keeps the waybill key when the command itself is rejected and drops it on a real failed waybill', async () => {
+    const deps = makeDeps();
+    deps.waybillKeys.set('s1', 'old-key');
+    deps.waybillKeys.set('s2', 'old-key');
+    deps.issueWaybills.mockResolvedValue([
+      {
+        ...waybill('s1', 'failed', 'FULFILLMENT_IDEMPOTENCY_MISMATCH'),
+        transient: false,
+      },
+      waybill('s2', 'failed', 'definitive_rejection'),
+    ]);
+
+    await runOutboundPreparation(
+      deps,
+      { ...input, shipmentIds: ['s1', 's2'] },
+      jest.fn()
+    );
+
+    expect(deps.waybillKeys.get('s1')).toBe('old-key');
+    expect(deps.waybillKeys.has('s2')).toBe(false);
+  });
+
   it('does not treat omitted results or allocated waybills as success', async () => {
     const deps = makeDeps();
     deps.planMany.mockResolvedValue({ succeeded: ['s1', 's2'], failed: [] });
