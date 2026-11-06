@@ -22,8 +22,8 @@ export interface PrintSize {
 
 export type PrintOptionsView = PrintOptionAxes & { bleedMatches: boolean };
 
-const sizeNamesSchema = z.array(
-  z.object({ sizelist: z.array(z.object({ sizeno: z.number(), sizename: z.string().nullish() })) }),
+const sizeDimsSchema = z.array(
+  z.object({ sizelist: z.array(z.object({ sizeno: z.number(), width: z.number(), height: z.number() })) }),
 );
 
 const PROD_INFO_TTL_MS = 5 * 60 * 1000;
@@ -116,19 +116,19 @@ export class PrintCatalogReader {
   }
 
   private selectProduct(kind: PrintKind, size: PrintSize, prodInfo: WowpressProdInfo): PrintKindProduct {
-    const names = new Map(
-      sizeNamesSchema
+    const dims = new Map(
+      sizeDimsSchema
         .parse(prodInfo.sizeinfo ?? [])
         .flatMap((g) => g.sizelist)
-        .map((s) => [s.sizeno, s.sizename ?? ''] as const),
+        .map((s) => [s.sizeno, s] as const),
     );
 
     const entry = PRINT_KIND_PRODUCTS[kind].find((p) => {
       if (p.wsize !== undefined && p.hsize !== undefined) return sameSize(size, p.wsize, p.hsize);
 
-      const match = /^(\d+(?:\.\d+)?)x(\d+(?:\.\d+)?)$/.exec(names.get(p.sizeno) ?? '');
+      const dim = dims.get(p.sizeno);
 
-      return match !== null && sameSize(size, Number(match[1]), Number(match[2]));
+      return dim !== undefined && sameSize(size, dim.width, dim.height);
     });
     if (!entry) throw new BadRequestError(`Unsupported size for ${kind}: ${size.width}x${size.height}`);
 

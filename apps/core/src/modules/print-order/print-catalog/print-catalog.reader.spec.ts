@@ -49,6 +49,20 @@ describe('PrintCatalogReader', () => {
     expect(() => reader.toSpec('bizcard', { width: 10, height: 10 }, combo('k'), card)).toThrow(BadRequestError);
   });
 
+  it('toSpec: 이름이 WxH 가 아닌 표준 크기도 width/height 로 맞춘다', () => {
+    const menuInfo = {
+      ...card,
+      sizeinfo: [{ sizelist: [{ sizeno: 5678, sizename: 'A4(국8절)', width: 210, height: 297 }] }],
+    };
+
+    for (const size of [
+      { width: 210, height: 297 },
+      { width: 297, height: 210 },
+    ]) {
+      expect(reader.toSpec('menu', size, combo('k'), menuInfo).prsjob[0]).toMatchObject({ sizeno: 5678 });
+    }
+  });
+
   it('options: 크기에 맞는 축과 bleedMatches 를 돌려준다', async () => {
     const view = await reader.options('bizcard', { width: 90, height: 50 });
 
@@ -56,25 +70,34 @@ describe('PrintCatalogReader', () => {
     expect(view.bleedMatches).toBe(true);
   });
 
-  it('quotes: 조합마다 순차로 jobcost 를 한 번씩 부르고 실패는 다른 조합을 막지 않는다', async () => {
-    const order: string[] = [];
-    jobcost.mockImplementation(async (spec: { qtyPerUnit: number }) => {
-      order.push(String(spec.qtyPerUnit));
-      if (spec.qtyPerUnit === 1000) throw new Error('boom');
+  it('quotes: 조합마다 순차로 jobcost(qty 1)를 한 번씩 부르고 실패는 다른 조합을 막지 않는다', async () => {
+    let release: (v: unknown) => void = () => undefined;
+    jobcost
+      .mockImplementationOnce(() => new Promise((resolve) => (release = resolve)))
+      .mockRejectedValueOnce(new Error('boom'))
+      .mockResolvedValueOnce({ ok: true, supply: 3, bill: 4 });
 
-      return { ok: true, supply: 1, bill: 2 };
-    });
-
-    const result = await reader.quotes('bizcard', { width: 90, height: 50 }, [
+    const pending = reader.quotes('bizcard', { width: 90, height: 50 }, [
       combo('a', 500),
       combo('b', 1000),
       combo('c', 2000),
     ]);
+    await new Promise((r) => setImmediate(r));
 
-    expect(order).toEqual(['500', '1000', '2000']);
-    expect(result.map((r) => r.key)).toEqual(['a', 'b', 'c']);
-    expect(result[0].verdict).toEqual({ ok: true, supply: 1, bill: 2 });
-    expect(result[1].verdict).toEqual({ ok: false, reason: 'boom' });
-    expect(result[2].verdict.ok).toBe(true);
+    expect(jobcost).toHaveBeenCalledTimes(1);
+
+    release({ ok: true, supply: 1, bill: 2 });
+    const result = await pending;
+
+    expect(jobcost.mock.calls.map(([spec, qty]) => [spec.qtyPerUnit, qty])).toEqual([
+      [500, 1],
+      [1000, 1],
+      [2000, 1],
+    ]);
+    expect(result).toEqual([
+      { key: 'a', verdict: { ok: true, supply: 1, bill: 2 } },
+      { key: 'b', verdict: { ok: false, reason: 'boom' } },
+      { key: 'c', verdict: { ok: true, supply: 3, bill: 4 } },
+    ]);
   });
 });

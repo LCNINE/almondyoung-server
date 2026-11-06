@@ -5,7 +5,6 @@ import { PrintCatalogController } from './print-catalog/print-catalog.controller
 import { PrintCatalogReader } from './print-catalog/print-catalog.reader';
 import { PrintCatalogService } from './print-catalog/print-catalog.service';
 import { PrintOrderModule } from './print-order.module';
-import { WowpressClient } from './wowpress/wowpress.client';
 import { PrintCancelRemainingReader } from './services/print-cancel-remaining.reader';
 import { PrintOrdersService } from './services/print-orders.service';
 
@@ -13,6 +12,6 @@ import { PrintOrdersService } from './services/print-orders.service';
 @Module({
   imports: [PrintOrderModule, SalesOrderModule],
   controllers: [AdminPrintOrdersController, PrintCatalogController],
-  providers: [PrintOrdersService, PrintCancelRemainingReader, PrintCatalogReader, PrintCatalogService, WowpressClient],
+  providers: [PrintOrdersService, PrintCancelRemainingReader, PrintCatalogReader, PrintCatalogService],
 })
 export class PrintOrderAdminModule {}

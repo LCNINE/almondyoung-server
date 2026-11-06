@@ -25,6 +25,6 @@ import { PrintOrderTrackingWorker } from './workers/print-order-tracking.worker'
     WowpressClient,
     UgcAlmondDesignClient,
   ],
-  exports: [PrintOrderReader, PrintOrderCancellationManager, PrintOrderAdminManager],
+  exports: [WowpressClient, PrintOrderReader, PrintOrderCancellationManager, PrintOrderAdminManager],
 })
 export class PrintOrderModule {}
