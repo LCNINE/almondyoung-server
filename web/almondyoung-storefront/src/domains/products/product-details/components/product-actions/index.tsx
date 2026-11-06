@@ -65,7 +65,7 @@ type ProductActionsProps = {
   product: HttpTypes.StoreProduct
   region: HttpTypes.StoreRegion
   disabled?: boolean
-  templates: AlmondTemplateSummary[]
+  templates: AlmondTemplateSummary[] | null
 }
 
 const optionsAsKeymap = (
@@ -106,7 +106,7 @@ export default function ProductActions({
   const countryCode = useParams().countryCode as string
   const printProductId = product.metadata?.pimMasterId as string | undefined
   const templateProduct = printProductId
-    ? templateProductOf(printProductId, templates)
+    ? templateProductOf(printProductId, templates ?? [])
     : undefined
   const hasAlmondTemplate = !!templateProduct
 
@@ -347,7 +347,7 @@ export default function ProductActions({
     : undefined
   const almondDesignMetadata =
     !almondSizeMismatch &&
-    hasAlmondTemplate &&
+    (hasAlmondTemplate || templates === null) &&
     templateVariant &&
     almondDesignId &&
     /^[0-9a-f-]{36}$/.test(almondDesignId)

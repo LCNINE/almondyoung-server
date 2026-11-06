@@ -1,6 +1,6 @@
 import { expect, it } from "vitest"
 import { PRINT_PRODUCTS } from "./catalog"
-import { templateProductOf } from "./template-product"
+import { needsTemplateList, templateProductOf } from "./template-product"
 
 it("고정 상품은 PRINT_PRODUCTS 값을 그대로 돌려준다", () => {
   const [id, item] = Object.entries(PRINT_PRODUCTS)[0]
@@ -26,4 +26,9 @@ it("어느 쪽에도 없거나 kind 가 올바르지 않으면 undefined", () =>
   expect(
     templateProductOf("new", [{ productId: "new", kind: "zzz", title: "x" }])
   ).toBeUndefined()
+})
+
+it("고정 상품만 템플릿 목록 조회를 건너뛴다", () => {
+  expect(needsTemplateList(Object.keys(PRINT_PRODUCTS)[0])).toBe(false)
+  expect(needsTemplateList("new")).toBe(true)
 })

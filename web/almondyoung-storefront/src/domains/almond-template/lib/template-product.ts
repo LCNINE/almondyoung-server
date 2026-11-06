@@ -12,6 +12,11 @@ function printKindOf(value?: string | null): PrintKind | undefined {
   )
 }
 
+// 고정 상품이면 공개 템플릿 목록 없이도 판단이 끝난다
+export function needsTemplateList(productId: string) {
+  return !PRINT_PRODUCTS[productId]
+}
+
 // 고정 상품이 먼저, 없으면 공개 템플릿이 가리키는 상품(아몬드템플릿에서 게시한 상품)
 export function templateProductOf(
   productId: string,
