@@ -1,34 +1,34 @@
 jest.mock('@tanstack/react-query', () => ({
+  ...jest.requireActual<typeof import('@tanstack/react-query')>(
+    '@tanstack/react-query'
+  ),
   useQuery: jest.fn(),
   useMutation: jest.fn(),
   useQueryClient: jest.fn(),
 }));
-jest.mock(
-  '@/lib/api/domains',
-  () => ({
-    orders: {
-      picking: {},
-      waybills: { batch: jest.fn() },
-      outboundBatches: { createV2: jest.fn() },
-      outboundPreparation: {
-        summary: jest.fn(),
-        planMany: jest.fn(),
-        addManyToBatch: jest.fn(),
-        splitManyUnreserved: jest.fn(),
-      },
+jest.mock('@/lib/api/domains', () => ({
+  orders: {
+    picking: {},
+    outboundBatches: { createV2: jest.fn() },
+    outboundPreparation: {
+      summary: jest.fn(),
+      planMany: jest.fn(),
+      issueWaybills: jest.fn(),
+      addManyToBatch: jest.fn(),
+      splitManyUnreserved: jest.fn(),
     },
-  }),
-  { virtual: true }
-);
-jest.mock('sonner', () => ({ toast: {} }), { virtual: true });
-jest.mock('@/lib/api/domains/orders/daily-status.shape', () => ({}), {
-  virtual: true,
-});
-jest.mock('@/lib/api/domains/orders/sales-order-amendments.shape', () => ({}), {
-  virtual: true,
-});
+  },
+}));
+jest.mock('sonner', () => ({ toast: {} }));
+jest.mock('@/lib/api/domains/orders/daily-status.shape', () => ({}));
+jest.mock('@/lib/api/domains/orders/sales-order-amendments.shape', () => ({}));
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import {
+  QueryClient,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from '@tanstack/react-query';
 import { orders } from '@/lib/api/domains';
 import { createIdempotentCommand } from './idempotency';
 import { useOutboundPreparationSummary } from './queries';
@@ -39,7 +39,9 @@ describe('outbound preparation hooks', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
-    (useQueryClient as jest.Mock).mockReturnValue({ invalidateQueries });
+    const queryClient = new QueryClient();
+    queryClient.invalidateQueries = invalidateQueries;
+    jest.mocked(useQueryClient).mockReturnValue(queryClient);
   });
 
   it.each(['warehouse-1', 'warehouse-2', ''])(
@@ -47,11 +49,20 @@ describe('outbound preparation hooks', () => {
     (warehouseId) => {
       useOutboundPreparationSummary(warehouseId);
 
-      const options = (useQuery as jest.Mock).mock.calls[0][0];
+      const options = jest.mocked(useQuery).mock.calls[0][0];
 
       expect(options.queryKey).toEqual(['outbound-preparation', warehouseId]);
       expect(options.enabled).toBe(Boolean(warehouseId));
-      options.queryFn();
+      if (typeof options.queryFn !== 'function') {
+        throw new Error('Missing query function');
+      }
+
+      options.queryFn({
+        client: useQueryClient(),
+        queryKey: options.queryKey,
+        signal: new AbortController().signal,
+        meta: undefined,
+      });
       expect(orders.outboundPreparation.summary).toHaveBeenCalledWith(
         warehouseId
       );
@@ -65,10 +76,16 @@ describe('outbound preparation hooks', () => {
     );
     useSplitUnreservedMany();
 
-    const options = (useMutation as jest.Mock).mock.calls[0][0];
+    const options = jest.mocked(useMutation).mock.calls[0][0];
 
-    await options.mutationFn(command);
-    await options.mutationFn(command);
+    await options.mutationFn!(command, {
+      client: useQueryClient(),
+      meta: undefined,
+    });
+    await options.mutationFn!(command, {
+      client: useQueryClient(),
+      meta: undefined,
+    });
 
     expect(
       orders.outboundPreparation.splitManyUnreserved
@@ -86,7 +103,7 @@ describe('outbound preparation hooks', () => {
     jest
       .mocked(orders.outboundPreparation.planMany)
       .mockResolvedValue({ succeeded: ['s1'], failed: [] });
-    jest.mocked(orders.waybills.batch).mockResolvedValue([
+    jest.mocked(orders.outboundPreparation.issueWaybills).mockResolvedValue([
       {
         shipmentId: 's1',
         status: 'registered',
@@ -133,10 +150,10 @@ describe('outbound preparation hooks', () => {
         data: { shipmentIds: ['s1'] },
         idempotencyKey: expect.any(String),
       });
-      expect(orders.waybills.batch).toHaveBeenCalledWith(
-        { shipmentIds: ['s1'], carrier: 'HANJIN' },
-        expect.any(String)
-      );
+      expect(orders.outboundPreparation.issueWaybills).toHaveBeenCalledWith({
+        data: { shipmentIds: ['s1'] },
+        idempotencyKey: expect.any(String),
+      });
       expect(orders.outboundBatches.createV2).toHaveBeenCalledTimes(2);
       const createCalls = jest.mocked(orders.outboundBatches.createV2).mock
         .calls;
@@ -169,9 +186,12 @@ describe('outbound preparation hooks', () => {
   it('refreshes preparation and affected shipment views after success or failure', () => {
     useSplitUnreservedMany();
 
-    const options = (useMutation as jest.Mock).mock.calls[0][0];
+    const options = jest.mocked(useMutation).mock.calls[0][0];
 
-    options.onSettled();
+    options.onSettled!(undefined, null, undefined, undefined, {
+      client: useQueryClient(),
+      meta: undefined,
+    });
 
     expect(
       invalidateQueries.mock.calls.map(([options]) => options.queryKey)
@@ -202,7 +222,7 @@ describe('outbound preparation hooks', () => {
         release = resolve;
       });
       const plan = jest.mocked(orders.outboundPreparation.planMany);
-      const waybill = jest.mocked(orders.waybills.batch);
+      const waybill = jest.mocked(orders.outboundPreparation.issueWaybills);
       const batch = jest.mocked(orders.outboundBatches.createV2);
       const join = jest.mocked(orders.outboundPreparation.addManyToBatch);
 

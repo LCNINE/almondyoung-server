@@ -30,12 +30,12 @@ import {
 export function PrepareDialog({
   input,
   shipments,
-  resume,
+  source,
   onClose,
 }: {
   input: PreparationInput;
   shipments: PreparationShipmentDto[];
-  resume: boolean;
+  source: 'ready' | 'resume' | 'mergeable';
   onClose: () => void;
 }) {
   const mutation = useRunOutboundPreparation();
@@ -163,7 +163,9 @@ export function PrepareDialog({
           <DialogTitle>
             {progress
               ? '출고 준비 진행 상황'
-              : `${resume ? '이어서 처리' : '완전출고'} ${shipments.length}건을 출고 준비할까요?`}
+              : source === 'mergeable'
+                ? `합칠 수 있는 ${shipments.length}건을 따로 출고 준비할까요?`
+                : `${source === 'resume' ? '이어서 처리' : '완전출고'} ${shipments.length}건을 출고 준비할까요?`}
           </DialogTitle>
           <DialogDescription>
             계획 확정 → 한진 송장 발급 → 배치 생성까지 한 번에 해요.

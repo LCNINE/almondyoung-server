@@ -91,8 +91,10 @@ export class OutboundPreparationReader {
           ),
         );
       const board = await this.consolidationBoard.findBoard(warehouseId, trx);
-      const groupedIds = new Set(
-        board.groups.flatMap((group) => group.shipments.map((shipment) => shipment.shipmentId)),
+      const groupByShipment = new Map(
+        board.groups.flatMap((group) =>
+          group.shipments.map((shipment) => [shipment.shipmentId, group] satisfies [string, typeof group]),
+        ),
       );
       const activeIds = new Set(workItems.map((item) => item.shipmentId));
       const confirmedByLine = new Map(reservations.map((reservation) => [reservation.lineId, reservation.quantity]));
@@ -114,7 +116,9 @@ export class OutboundPreparationReader {
       }
 
       for (const shipment of shipments) {
-        if (shipment.status !== 'draft' && shipment.status !== 'planned') continue;
+        if (shipment.status !== 'draft' && shipment.status !== 'planned') {
+          continue;
+        }
 
         const shipmentLines = linesByShipment.get(shipment.id) ?? [];
         const quantities = quantitiesByShipment.get(shipment.id) ?? [];
@@ -125,11 +129,17 @@ export class OutboundPreparationReader {
           lines: quantities,
           profileIds,
           recipientComplete: isRecipientComplete(shipment.recipientSnapshot),
-          inConsolidationGroup: groupedIds.has(shipment.id),
+          consolidationPeerLines: (groupByShipment.get(shipment.id)?.shipments ?? [])
+            .filter(
+              (peer) => peer.shipmentId !== shipment.id && peer.status === 'draft' && !activeIds.has(peer.shipmentId),
+            )
+            .map((peer) => quantitiesByShipment.get(peer.shipmentId) ?? []),
         });
         const bucket = buckets.find((entry) => entry.bucket === bucketName);
 
-        if (!bucket) continue;
+        if (!bucket) {
+          continue;
+        }
 
         const single = isSingleItem(quantities);
 
@@ -137,7 +147,9 @@ export class OutboundPreparationReader {
         bucket.singleCount += single ? 1 : 0;
         bucket.multiCount += single ? 0 : 1;
 
-        if (bucket.shipments.length >= 200) continue;
+        if (bucket.shipments.length >= 200) {
+          continue;
+        }
 
         let reason: string | null = null;
 

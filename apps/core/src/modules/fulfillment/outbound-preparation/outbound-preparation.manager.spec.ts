@@ -1,3 +1,5 @@
+import { ConflictError } from '@app/shared';
+import { WaybillService } from '../waybill/waybill.service';
 import { DbService } from '@app/db';
 import { ConflictException } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
@@ -14,6 +16,9 @@ jest.mock('../services/consolidation-shipment-reads', () => ({ loadShipmentLines
 describe('OutboundPreparationManager', () => {
   const actor = { id: 'u1', roles: ['warehouse'] };
   const plan = jest.fn();
+  const getActiveWaybill = jest.fn();
+  const assertDispatchable = jest.fn();
+  const issueForShipment = jest.fn();
   const addShipment = jest.fn();
   const splitUnreserved = jest.fn();
   const limit = jest.fn();
@@ -26,6 +31,11 @@ describe('OutboundPreparationManager', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    getActiveWaybill.mockReset().mockResolvedValue(null);
+    assertDispatchable.mockReset().mockResolvedValue({ status: 'registered', trackingNo: '123' });
+    issueForShipment
+      .mockReset()
+      .mockResolvedValue({ status: 'registered', trackingNo: '123', lastError: null, nextAttemptAt: null });
     plan.mockReset().mockResolvedValue({});
     addShipment.mockReset().mockResolvedValue({});
     splitUnreserved.mockReset().mockResolvedValue({});
@@ -36,6 +46,7 @@ describe('OutboundPreparationManager', () => {
     const module = await Test.createTestingModule({
       providers: [
         OutboundPreparationManager,
+        { provide: WaybillService, useValue: { getActiveWaybill, assertDispatchable, issueForShipment } },
         { provide: DbService, useValue: { db } },
         { provide: ShipmentPlanningService, useValue: { plan, splitUnreserved } },
         { provide: OutboundBatchOrchestrator, useValue: { addShipment } },
@@ -43,6 +54,102 @@ describe('OutboundPreparationManager', () => {
     }).compile();
 
     manager = module.get(OutboundPreparationManager);
+  });
+
+  it.each(['registered', 'used'])('reuses a dispatchable %s waybill without issuing again', async (status) => {
+    getActiveWaybill.mockResolvedValue({ status });
+    assertDispatchable.mockResolvedValue({ status, trackingNo: '123', lastError: null, nextAttemptAt: null });
+
+    const result = await manager.issueWaybills(['s1'], 'new-key', actor);
+
+    expect(result).toEqual([expect.objectContaining({ shipmentId: 's1', status, trackingNo: '123' })]);
+    expect(assertDispatchable).toHaveBeenCalledWith('s1');
+    expect(issueForShipment).not.toHaveBeenCalled();
+  });
+
+  it('rejects a stale registered waybill without issuing another', async () => {
+    getActiveWaybill.mockResolvedValue({ status: 'registered' });
+    assertDispatchable.mockRejectedValue(new ConflictError('WAYBILL_STALE: private details'));
+
+    expect(await manager.issueWaybills(['s1'], 'k', actor)).toEqual([
+      expect.objectContaining({ status: 'failed', transient: false }),
+    ]);
+    expect(issueForShipment).not.toHaveBeenCalled();
+  });
+
+  it.each(['pending', 'allocated'])(
+    'keeps lost-key %s issuance transient without counting it as success',
+    async (status) => {
+      getActiveWaybill.mockResolvedValue({ status });
+      issueForShipment.mockRejectedValue(new ConflictError('WAYBILL_ACTIVE_EXISTS: s1'));
+
+      expect(await manager.issueWaybills(['s1'], 'new-key', actor)).toEqual([
+        expect.objectContaining({
+          status: 'failed',
+          transient: true,
+          reason: '진행 중인 송장 발급 결과를 확인해 주세요',
+        }),
+      ]);
+      expect(issueForShipment).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it('preserves item-level transient errors and continues other shipments', async () => {
+    issueForShipment.mockRejectedValueOnce(new Error('private database details'));
+
+    const result = await manager.issueWaybills(['s1', 's2'], 'k', actor);
+
+    expect(result).toEqual([
+      expect.objectContaining({ shipmentId: 's1', status: 'failed', transient: true, reason: '처리하지 못했어요' }),
+      expect.objectContaining({ shipmentId: 's2', status: 'registered' }),
+    ]);
+    expect(issueForShipment).toHaveBeenCalledWith(
+      's2',
+      { carrier: 'HANJIN', expectedManifestVersion: 3 },
+      'k:s2',
+      actor,
+    );
+  });
+
+  it('bounds waybill concurrency and preserves input order', async () => {
+    let running = 0;
+    let maximum = 0;
+    getActiveWaybill.mockImplementation(async () => {
+      running++;
+      maximum = Math.max(maximum, running);
+      await Promise.resolve();
+      running--;
+
+      return null;
+    });
+    const ids = Array.from({ length: 17 }, (_, index) => `s${index}`);
+
+    const result = await manager.issueWaybills(ids, 'k', actor);
+
+    expect(maximum).toBe(8);
+    expect(result.map((item) => item.shipmentId)).toEqual(ids);
+    expect(result.every((item) => item.status === 'registered')).toBe(true);
+  });
+
+  it('returns unstarted shipments when the waybill time budget expires', async () => {
+    const clock = jest.spyOn(Date, 'now').mockReturnValue(0);
+    getActiveWaybill.mockImplementation(async () => {
+      clock.mockReturnValue(45000);
+
+      return null;
+    });
+
+    try {
+      const result = await manager.issueWaybills(['s1', 's2'], 'k', actor);
+
+      expect(result).toEqual([
+        expect.objectContaining({ shipmentId: 's1', status: 'registered' }),
+        expect.objectContaining({ shipmentId: 's2', status: 'pending', reason: 'time-budget-exceeded' }),
+      ]);
+      expect(issueForShipment).toHaveBeenCalledTimes(1);
+    } finally {
+      clock.mockRestore();
+    }
   });
 
   function setProfiles(profiles: (string | null)[]) {

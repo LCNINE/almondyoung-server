@@ -1,6 +1,4 @@
-jest.mock('@/const', () => ({ ALMONDYOUNG_API_BASE_URL: '/core' }), {
-  virtual: true,
-});
+jest.mock('@/const', () => ({ ALMONDYOUNG_API_BASE_URL: '/core' }));
 jest.mock('../../client', () => ({
   client: { get: jest.fn(), post: jest.fn() },
 }));
@@ -15,7 +13,7 @@ import { outboundPreparationClient } from './outbound-preparation.client';
 
 const KEY = '4e8e3b7f-37df-41fb-a084-47915ba7b6cf';
 const command = createIdempotentCommand({ shipmentIds: ['s-1', 's-2'] }, KEY);
-const mocked = client as unknown as { get: jest.Mock; post: jest.Mock };
+const mocked = jest.mocked(client);
 const result: BulkShipmentResult = {
   succeeded: ['s-1'],
   failed: [
@@ -73,6 +71,11 @@ describe('outboundPreparationClient', () => {
       name: 'planMany',
       run: () => outboundPreparationClient.planMany(command),
       path: '/core/outbound-preparation/plans',
+    },
+    {
+      name: 'issueWaybills',
+      run: () => outboundPreparationClient.issueWaybills(command),
+      path: '/core/outbound-preparation/waybills',
     },
     {
       name: 'addManyToBatch',

@@ -1,3 +1,4 @@
+import { ConflictError, UpstreamUnavailableError } from '@app/shared';
 import { ConflictException, HttpException } from '@nestjs/common';
 import { isTransientError, runPerShipment } from './bulk-shipment-result';
 
@@ -25,6 +26,8 @@ describe('runPerShipment', () => {
 
   it.each([
     [new Error('boom'), 'UNKNOWN', true],
+    [new ConflictError('private conflict details'), 'CONFLICT', false],
+    [new UpstreamUnavailableError('private upstream details'), 'UPSTREAM_UNAVAILABLE', true],
     [new ConflictException({ code: 'FULFILLMENT_COMMAND_IN_PROGRESS' }), 'FULFILLMENT_COMMAND_IN_PROGRESS', true],
     [new HttpException('bad request', 400), 'UNKNOWN', false],
     [new HttpException({ code: 123 }, 500), 'UNKNOWN', true],

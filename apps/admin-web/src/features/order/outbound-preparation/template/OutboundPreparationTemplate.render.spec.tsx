@@ -34,6 +34,7 @@ const mockSplit = jest.fn();
 const mockRefetch = jest.fn();
 let mockKeyCounter = 0;
 let mockAllowed = true;
+let mockConsolidationAllowed = true;
 let mockSummary: OutboundPreparationSummary;
 let mockError = false;
 
@@ -53,7 +54,7 @@ jest.mock('@/lib/services/orders', () => ({
     { permission: ['fulfillment.warehouse.operate'] }
   ),
   useCreateShipmentConsolidation: Object.assign(jest.fn(), {
-    permission: ['fulfillment.warehouse.operate'],
+    permission: ['fulfillment.shipment.consolidate'],
   }),
   createIdempotentCommand: (data: unknown) => ({
     data,
@@ -75,7 +76,13 @@ jest.mock('@/lib/services/inventory/queries', () => ({
 }));
 
 jest.mock('@/hooks/use-permission', () => ({
-  useCanRun: () => ({ status: 'ready', allowed: mockAllowed }),
+  useCanRun: (action: { permission: readonly string[] }) => ({
+    status: 'ready',
+    allowed:
+      mockAllowed &&
+      (!action.permission.includes('fulfillment.shipment.consolidate') ||
+        mockConsolidationAllowed),
+  }),
   usePermissionCheck: () => ({ canRun: () => mockAllowed }),
 }));
 
@@ -154,6 +161,7 @@ beforeEach(() => {
   mockRun.mockReset();
   mockKeyCounter = 0;
   mockAllowed = true;
+  mockConsolidationAllowed = true;
   mockError = false;
   mockSummary = {
     warehouseId: 'w1',
@@ -344,6 +352,72 @@ describe('OutboundPreparationTemplate', () => {
     );
     expect(toast.success).toHaveBeenCalledWith('1건을 나눴어요');
     expect(toast.error).toHaveBeenCalledWith('1건은 나누지 못했어요');
+  });
+
+  it('분할 뒤 새 요약의 완전출고 원본으로 출고 준비를 시작한다', async () => {
+    mockSummary.buckets[0] = {
+      ...mockSummary.buckets[0],
+      count: 0,
+      shipments: [],
+    };
+    mockSplit.mockImplementationOnce(async () => {
+      mockSummary = {
+        ...mockSummary,
+        buckets: mockSummary.buckets.map((bucket) =>
+          bucket.bucket === 'ready'
+            ? {
+                ...bucket,
+                count: 1,
+                shipments: shipments('partial', 1),
+              }
+            : bucket
+        ),
+      };
+
+      return { succeeded: ['partial-1'], failed: [] };
+    });
+    render(<OutboundPreparationTemplate />);
+    await userEvent.click(
+      screen.getByRole('button', { name: '있는 것만 먼저 보내기' })
+    );
+    await waitFor(() => expect(row('완전출고').getByText('1장')).toBeTruthy());
+    await start();
+
+    expect(mockRun.mock.calls[0][0].shipmentIds).toEqual(['partial-1']);
+  });
+
+  it('합치기 권한 없이도 체크한 상자를 확인 후 따로 출고 준비한다', async () => {
+    mockConsolidationAllowed = false;
+    render(<OutboundPreparationTemplate />);
+    await userEvent.click(
+      row('합칠 주문 있음').getByRole('button', { name: '내역보기' })
+    );
+    await userEvent.click(screen.getAllByRole('checkbox')[0]);
+    expect(screen.queryByRole('button', { name: '합치기' })).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: '따로 보내기' }));
+
+    expect(
+      screen.getByText('합칠 수 있는 3건을 따로 출고 준비할까요?')
+    ).toBeTruthy();
+    expect(mockRun).not.toHaveBeenCalled();
+    await userEvent.click(screen.getByRole('button', { name: '시작' }));
+
+    expect(mockRun.mock.calls[0][0]).toMatchObject({
+      shipmentIds: ['mergeable-2', 'mergeable-3', 'mergeable-4'],
+      pickingMethod: 'total_picking',
+      warehouseId: 'w1',
+    });
+  });
+
+  it('출고 권한이 없으면 따로 보내기를 숨긴다', async () => {
+    mockAllowed = false;
+    render(<OutboundPreparationTemplate />);
+    await userEvent.click(
+      row('합칠 주문 있음').getByRole('button', { name: '내역보기' })
+    );
+
+    expect(screen.queryByRole('button', { name: '따로 보내기' })).toBeNull();
+    expect(mockRun).not.toHaveBeenCalled();
   });
 
   it('합칠 주문의 각 줄에서 합포장 시트를 연다', async () => {

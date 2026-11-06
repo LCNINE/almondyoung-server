@@ -8,7 +8,7 @@ export interface PreparationFacts {
   lines: { qty: number; confirmedQty: number }[];
   profileIds: (string | null)[];
   recipientComplete: boolean;
-  inConsolidationGroup: boolean;
+  consolidationPeerLines: PreparationFacts['lines'][];
 }
 
 export function classifyPreparation(f: PreparationFacts): PreparationBucket | null {
@@ -32,7 +32,9 @@ export function classifyPreparation(f: PreparationFacts): PreparationBucket | nu
     return 'needs_info';
   }
 
-  if (f.inConsolidationGroup) {
+  if (
+    f.consolidationPeerLines.some((lines) => lines.length > 0 && lines.every((line) => line.confirmedQty === line.qty))
+  ) {
     return 'mergeable';
   }
 

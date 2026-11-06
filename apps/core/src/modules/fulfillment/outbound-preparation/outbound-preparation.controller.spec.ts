@@ -9,6 +9,7 @@ import { OutboundPreparationReader } from './outbound-preparation.reader';
 import { OutboundPreparationService } from './outbound-preparation.service';
 
 describe('OutboundPreparationController', () => {
+  const issueWaybills = jest.fn().mockResolvedValue([]);
   const planMany = jest.fn().mockResolvedValue({ succeeded: ['s1'], failed: [] });
   const addManyToBatch = jest.fn().mockResolvedValue({ succeeded: ['s1'], failed: [] });
   const splitManyUnreserved = jest.fn().mockResolvedValue({ succeeded: ['s1'], failed: [] });
@@ -22,7 +23,10 @@ describe('OutboundPreparationController', () => {
       controllers: [OutboundPreparationController],
       providers: [
         OutboundPreparationService,
-        { provide: OutboundPreparationManager, useValue: { planMany, addManyToBatch, splitManyUnreserved } },
+        {
+          provide: OutboundPreparationManager,
+          useValue: { planMany, addManyToBatch, splitManyUnreserved, issueWaybills },
+        },
         { provide: OutboundPreparationReader, useValue: { summarize } },
       ],
     }).compile();
@@ -59,6 +63,27 @@ describe('OutboundPreparationController', () => {
     expect(Reflect.getMetadata(PATH_METADATA, method)).toBe('outbound-preparation/plans');
     expect(Reflect.getMetadata(METHOD_METADATA, method)).toBe(RequestMethod.POST);
     expect(Reflect.getMetadata(REQUIRED_PERMISSIONS_KEY, method)).toEqual(['fulfillment.warehouse.operate']);
+  });
+
+  it('delegates the waybill route with the existing issue permission', async () => {
+    await expect(controller.issueWaybills({ shipmentIds: ['s1'] }, 'k', { id: 'u1' })).resolves.toEqual([]);
+    expect(issueWaybills).toHaveBeenCalledWith(['s1'], 'k', { id: 'u1', roles: [] });
+
+    const method = OutboundPreparationController.prototype.issueWaybills;
+
+    expect(Reflect.getMetadata(PATH_METADATA, method)).toBe('outbound-preparation/waybills');
+    expect(Reflect.getMetadata(METHOD_METADATA, method)).toBe(RequestMethod.POST);
+    expect(Reflect.getMetadata(REQUIRED_PERMISSIONS_KEY, method)).toEqual(['fulfillment.warehouse.operate']);
+  });
+
+  it.each([undefined, '', '   '])('rejects a blank waybill key: %p', (key) => {
+    expect(() => controller.issueWaybills({ shipmentIds: ['s1'] }, key, { id: 'u1' })).toThrow(BadRequestException);
+    expect(issueWaybills).not.toHaveBeenCalled();
+  });
+
+  it('rejects waybill issuance without an actor', () => {
+    expect(() => controller.issueWaybills({ shipmentIds: ['s1'] }, 'k', undefined)).toThrow(UnauthorizedException);
+    expect(issueWaybills).not.toHaveBeenCalled();
   });
 
   it('preserves summary delegation', async () => {

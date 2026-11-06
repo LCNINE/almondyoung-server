@@ -16,7 +16,7 @@ import {
   OutboundPreparationQueryDto,
   OutboundPreparationSummaryDto,
 } from '../dto/outbound-preparation.dto';
-import { BulkShipmentResult } from './bulk-shipment-result';
+import { BulkShipmentResult, PreparationWaybillResult } from './bulk-shipment-result';
 import { OutboundPreparationService } from './outbound-preparation.service';
 
 type AuthenticatedUser = { id?: string; userId?: string; sub?: string; roles?: string[] } | undefined;
@@ -52,6 +52,32 @@ export class OutboundPreparationController {
     }
 
     return this.service.planMany(dto.shipmentIds, idempotencyKey, {
+      id,
+      roles: Array.isArray(user?.roles) ? user.roles : [],
+    });
+  }
+
+  @RequirePermission('fulfillment.warehouse.operate')
+  @Post('outbound-preparation/waybills')
+  issueWaybills(
+    @Body() dto: BulkShipmentIdsDto,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @User() user: AuthenticatedUser,
+  ): Promise<PreparationWaybillResult[]> {
+    if (!idempotencyKey?.trim()) {
+      throw new BadRequestException({
+        code: 'FULFILLMENT_IDEMPOTENCY_KEY_REQUIRED',
+        message: 'Idempotency-Key 헤더가 필요해요',
+      });
+    }
+
+    const id = user?.userId ?? user?.id ?? user?.sub;
+
+    if (!id) {
+      throw new UnauthorizedException('로그인이 필요해요');
+    }
+
+    return this.service.issueWaybills(dto.shipmentIds, idempotencyKey, {
       id,
       roles: Array.isArray(user?.roles) ? user.roles : [],
     });

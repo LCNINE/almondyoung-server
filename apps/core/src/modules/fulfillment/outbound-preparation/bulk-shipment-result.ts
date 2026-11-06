@@ -1,4 +1,10 @@
+import { ApplicationException } from '@app/shared';
+import type { BatchResultItem } from '../waybill/waybill.types';
 import { HttpException } from '@nestjs/common';
+
+export interface PreparationWaybillResult extends BatchResultItem {
+  transient?: boolean;
+}
 
 export interface BulkShipmentFailure {
   shipmentId: string;
@@ -13,6 +19,7 @@ export interface BulkShipmentResult {
 }
 
 const messages = new Map([
+  ['WAYBILL_ISSUE_IN_PROGRESS', '진행 중인 송장 발급 결과를 확인해 주세요'],
   ['SHIPMENT_NOT_DRAFT', '상자 상태가 바뀌었어요'],
   ['SHIPMENT_NOT_FULLY_RESERVED', '재고 예약이 모자라요'],
   ['SHIPMENT_PROFILE_INCOMPATIBLE', '배송 프로필을 정할 수 없어요'],
@@ -21,6 +28,10 @@ const messages = new Map([
 ]);
 
 function errorCode(e: unknown): string {
+  if (e instanceof ApplicationException) {
+    return e.getErrorCode();
+  }
+
   const response = e instanceof HttpException ? e.getResponse() : undefined;
 
   return typeof response === 'object' && response !== null && 'code' in response && typeof response.code === 'string'
@@ -29,11 +40,26 @@ function errorCode(e: unknown): string {
 }
 
 export function isTransientError(e: unknown): boolean {
+  if (e instanceof ApplicationException) {
+    return e.getHttpStatus() >= 500;
+  }
+
   if (!(e instanceof HttpException) || errorCode(e) === 'FULFILLMENT_COMMAND_IN_PROGRESS') {
     return true;
   }
 
   return e.getStatus() < 400 || e.getStatus() >= 500;
+}
+
+export function bulkShipmentFailure(shipmentId: string, error: unknown): BulkShipmentFailure {
+  const code = errorCode(error);
+
+  return {
+    shipmentId,
+    code,
+    message: messages.get(code) ?? '처리하지 못했어요',
+    transient: isTransientError(error),
+  };
 }
 
 export async function runPerShipment(
@@ -47,14 +73,7 @@ export async function runPerShipment(
       await run(shipmentId);
       result.succeeded.push(shipmentId);
     } catch (error) {
-      const code = errorCode(error);
-
-      result.failed.push({
-        shipmentId,
-        code,
-        message: messages.get(code) ?? '처리하지 못했어요',
-        transient: isTransientError(error),
-      });
+      result.failed.push(bulkShipmentFailure(shipmentId, error));
     }
   }
 

@@ -334,6 +334,48 @@ describe('runOutboundPreparation', () => {
     ]);
   });
 
+  it('retries only transient item-level waybill exceptions', async () => {
+    const deps = makeDeps();
+    deps.issueWaybills.mockResolvedValueOnce([
+      { ...waybill('s1', 'failed'), transient: true },
+      { ...waybill('s2', 'failed'), transient: false },
+      waybill('s3'),
+    ]);
+
+    const result = await runOutboundPreparation(deps, input, jest.fn());
+
+    expect(deps.sleep.mock.calls).toEqual([[2000]]);
+    expect(deps.issueWaybills.mock.calls).toEqual([
+      [input.shipmentIds, 'key-2'],
+      [['s1'], 'key-2'],
+    ]);
+    expect(result).toMatchObject({
+      joined: 2,
+      failures: [{ shipmentId: 's2', stage: 'waybill' }],
+    });
+  });
+
+  it('retries allocated twice with the same key before accepting registered', async () => {
+    const deps = makeDeps();
+    deps.issueWaybills
+      .mockResolvedValueOnce([waybill('s1', 'allocated')])
+      .mockResolvedValueOnce([waybill('s1', 'allocated')]);
+
+    const result = await runOutboundPreparation(
+      deps,
+      { ...input, shipmentIds: ['s1'] },
+      jest.fn()
+    );
+
+    expect(deps.sleep.mock.calls).toEqual([[2000], [5000]]);
+    expect(deps.issueWaybills.mock.calls).toEqual([
+      [['s1'], 'key-2'],
+      [['s1'], 'key-2'],
+      [['s1'], 'key-2'],
+    ]);
+    expect(result).toMatchObject({ waybilled: 1, joined: 1, failures: [] });
+  });
+
   it('does not treat omitted results or allocated waybills as success', async () => {
     const deps = makeDeps();
     deps.planMany.mockResolvedValue({ succeeded: ['s1', 's2'], failed: [] });
@@ -345,8 +387,8 @@ describe('runOutboundPreparation', () => {
       result.failures.map(({ shipmentId, stage }) => ({ shipmentId, stage }))
     ).toEqual([
       { shipmentId: 's3', stage: 'plan' },
-      { shipmentId: 's1', stage: 'waybill' },
       { shipmentId: 's2', stage: 'waybill' },
+      { shipmentId: 's1', stage: 'waybill' },
     ]);
     expect(deps.createBatch).not.toHaveBeenCalled();
   });

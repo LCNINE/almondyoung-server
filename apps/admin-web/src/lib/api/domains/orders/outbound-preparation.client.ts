@@ -5,6 +5,7 @@ import { client } from '../../client';
 import type { IdempotentCommand } from '@/lib/services/orders/idempotency';
 import type {
   BulkShipmentResult,
+  PreparationWaybillResult,
   OutboundPreparationSummary,
 } from '@/lib/types/dto/fulfillment';
 
@@ -21,6 +22,16 @@ export const outboundPreparationClient = {
     cmd: IdempotentCommand<{ shipmentIds: string[] }>
   ): Promise<BulkShipmentResult> => {
     const res = await client.post(`${BASE}/plans`, cmd.data, {
+      headers: { 'Idempotency-Key': cmd.idempotencyKey },
+    });
+
+    return res.data;
+  },
+
+  issueWaybills: async (
+    cmd: IdempotentCommand<{ shipmentIds: string[] }>
+  ): Promise<PreparationWaybillResult[]> => {
+    const res = await client.post(`${BASE}/waybills`, cmd.data, {
       headers: { 'Idempotency-Key': cmd.idempotencyKey },
     });
 

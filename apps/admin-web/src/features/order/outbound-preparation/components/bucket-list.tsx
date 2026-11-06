@@ -12,7 +12,10 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { useCreateShipmentConsolidation } from '@/lib/services/orders';
+import {
+  useCreateShipmentConsolidation,
+  useRunOutboundPreparation,
+} from '@/lib/services/orders';
 import type { PreparationBucketDto } from '@/lib/types/dto/fulfillment';
 import {
   BATCH_ISSUE_LIMIT,
@@ -26,12 +29,16 @@ export function BucketList({
   busy,
   onToggle,
   onMerge,
+  canPrepare,
+  onPrepareSeparately,
 }: {
   bucket: PreparationBucketDto;
   selectedIds: string[];
   busy: boolean;
   onToggle: (id: string, checked: boolean) => void;
   onMerge: (id: string) => void;
+  canPrepare: boolean;
+  onPrepareSeparately: () => void;
 }) {
   return (
     <section
@@ -41,6 +48,17 @@ export function BucketList({
       <h2 className="text-sm font-semibold">
         {BUCKET_LABELS[bucket.bucket]} 내역 · {selectedIds.length}건 선택
       </h2>
+      {bucket.bucket === 'mergeable' && (
+        <Can run={useRunOutboundPreparation}>
+          <Button
+            size="sm"
+            disabled={busy || !canPrepare || selectedIds.length === 0}
+            onClick={onPrepareSeparately}
+          >
+            따로 보내기
+          </Button>
+        </Can>
+      )}
       {bucket.count > BATCH_ISSUE_LIMIT && (
         <p className="text-sm font-semibold text-foreground">
           한 번에 100건까지 처리해요

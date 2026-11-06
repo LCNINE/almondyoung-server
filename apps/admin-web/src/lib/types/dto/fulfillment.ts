@@ -1016,6 +1016,10 @@ export interface BulkShipmentFailure {
   transient: boolean;
 }
 
+export interface PreparationWaybillResult extends BatchResultItem {
+  transient?: boolean;
+}
+
 export interface BulkShipmentResult {
   succeeded: string[];
   failed: BulkShipmentFailure[];

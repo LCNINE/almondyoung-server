@@ -13,12 +13,25 @@ describe('classifyPreparation', () => {
     lines: [{ qty: 2, confirmedQty: 2 }],
     profileIds: ['p1'],
     recipientComplete: true,
-    inConsolidationGroup: false,
+    consolidationPeerLines: [],
   };
+
+  it('분할 직후 미예약 상자만 같은 그룹에 남으면 원래 상자는 ready다', () => {
+    expect(
+      classifyPreparation({
+        ...readyFacts,
+        consolidationPeerLines: [[{ qty: 1, confirmedQty: 0 }]],
+      }),
+    ).toBe('ready');
+  });
 
   it.each<{ name: string; facts: Partial<PreparationFacts>; expected: PreparationBucket | null }>([
     { name: '전량 예약되고 정보가 완전하면 ready', facts: {}, expected: 'ready' },
-    { name: '준비 완료된 합포장 그룹이면 mergeable', facts: { inConsolidationGroup: true }, expected: 'mergeable' },
+    {
+      name: '준비 완료된 합포장 그룹이면 mergeable',
+      facts: { consolidationPeerLines: [[{ qty: 1, confirmedQty: 1 }]] },
+      expected: 'mergeable',
+    },
     {
       name: '한 라인만 전량 예약되면 partial',
       facts: {
@@ -68,7 +81,7 @@ describe('classifyPreparation', () => {
         lines: [{ qty: 1, confirmedQty: 0 }],
         profileIds: [null],
         recipientComplete: false,
-        inConsolidationGroup: true,
+        consolidationPeerLines: [[{ qty: 1, confirmedQty: 1 }]],
       },
       expected: 'resume',
     },
@@ -78,7 +91,7 @@ describe('classifyPreparation', () => {
         lines: [{ qty: 1, confirmedQty: 0 }],
         profileIds: [null],
         recipientComplete: false,
-        inConsolidationGroup: true,
+        consolidationPeerLines: [[{ qty: 1, confirmedQty: 1 }]],
       },
       expected: 'unavailable',
     },
@@ -88,13 +101,13 @@ describe('classifyPreparation', () => {
         lines: [{ qty: 2, confirmedQty: 1 }],
         profileIds: [null],
         recipientComplete: false,
-        inConsolidationGroup: true,
+        consolidationPeerLines: [[{ qty: 1, confirmedQty: 1 }]],
       },
       expected: 'partial',
     },
     {
       name: '정보가 부족하면 합포장 그룹보다 needs_info가 우선',
-      facts: { recipientComplete: false, inConsolidationGroup: true },
+      facts: { recipientComplete: false, consolidationPeerLines: [[{ qty: 1, confirmedQty: 1 }]] },
       expected: 'needs_info',
     },
     { name: '라인이 없으면 unavailable', facts: { lines: [] }, expected: 'unavailable' },

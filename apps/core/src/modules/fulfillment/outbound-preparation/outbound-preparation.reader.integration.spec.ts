@@ -1,3 +1,9 @@
+import { createCheckpointsForTesting } from '@app/authorization';
+import { AuditService } from '../../inventory/shared/services/audit.service';
+import { FulfillmentCommandService } from '../services/fulfillment-command.service';
+import { FulfillmentInvariantService } from '../services/fulfillment-invariant.service';
+import { ShipmentPlanningService } from '../services/shipment-planning.service';
+import { assembleBoxWithdrawal } from '../services/__support__/box-withdrawal-wiring';
 import { randomUUID } from 'crypto';
 import { count, eq } from 'drizzle-orm';
 import * as postgres from 'postgres';
@@ -25,6 +31,7 @@ describeIfDb('OutboundPreparationReader (DB integration)', () => {
   let db: PostgresJsDatabase<typeof wmsSchema>;
   let wired: Wired;
   let reader: OutboundPreparationReader;
+  let planning: ShipmentPlanningService;
 
   beforeAll(() => {
     if (!DATABASE_URL) throw new Error('DATABASE_URL is required');
@@ -33,6 +40,16 @@ describeIfDb('OutboundPreparationReader (DB integration)', () => {
     const dbService = makeDbService(db);
 
     wired = wireLogistics(dbService, 'v2');
+    planning = new ShipmentPlanningService(
+      dbService,
+      new FulfillmentCommandService(dbService),
+      wired.shipmentReservations,
+      new FulfillmentInvariantService(),
+      new AuditService(dbService),
+      wired.workflowGate,
+      assembleBoxWithdrawal(dbService),
+      createCheckpointsForTesting(),
+    );
     reader = new OutboundPreparationReader(dbService, new ConsolidationBoardReader(dbService));
   });
 
@@ -153,6 +170,73 @@ describeIfDb('OutboundPreparationReader (DB integration)', () => {
       expect(
         readyShipments?.every(({ orderNos, itemSummary }) => orderNos.length === 1 && itemSummary.length > 0),
       ).toBe(true);
+    });
+  });
+
+  it('실제 분할 후 요약에서 원본을 완전출고로 읽고 계획을 확정한다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const base = await consolidationBase(tx, 1);
+      const source = await createConsolidationSource(tx, wired, base, { quantity: 2, customerId: randomUUID() });
+      const actor = { id: randomUUID(), roles: ['master'] };
+      const beforeSplit = await reader.summarize(base.warehouseId, tx);
+
+      expect(beforeSplit.buckets.find((bucket) => bucket.bucket === 'partial')?.shipments).toEqual(
+        expect.arrayContaining([expect.objectContaining({ shipmentId: source.shipment.id })]),
+      );
+
+      const split = await planning.splitUnreserved(
+        source.shipment.id,
+        {
+          reason: '있는 것만 먼저 보내기',
+          expectedManifestVersion: source.shipment.manifestVersion,
+        },
+        randomUUID(),
+        actor,
+        tx,
+      );
+
+      expect(split.source.lines).toMatchObject([{ id: source.line.id, qty: 1, reservedQty: 1 }]);
+      expect(split.target.lines).toMatchObject([{ qty: 1, reservedQty: 0 }]);
+
+      const summary = await reader.summarize(base.warehouseId, tx);
+      const [original] = await tx
+        .select()
+        .from(wmsTables.shipments)
+        .where(eq(wmsTables.shipments.id, source.shipment.id));
+
+      expect(
+        summary.buckets.find((bucket) => bucket.bucket === 'ready')?.shipments.map((shipment) => shipment.shipmentId),
+      ).toContain(source.shipment.id);
+      expect(summary.buckets.find((bucket) => bucket.bucket === 'mergeable')?.count).toBe(0);
+
+      await tx
+        .update(wmsTables.deliveryProfiles)
+        .set({
+          senderSnapshot: { name: 'Sender' },
+          originAddressSnapshot: { address: 'Origin' },
+          returnAddressSnapshot: { address: 'Return' },
+          carrierAccountRef: 'carrier-account-1',
+        })
+        .where(eq(wmsTables.deliveryProfiles.id, base.profileId));
+
+      await planning.plan(
+        source.shipment.id,
+        {
+          shippingProfileId: base.profileId,
+          expectedManifestVersion: original.manifestVersion,
+          expectedReservationVersion: original.reservationVersion,
+        },
+        randomUUID(),
+        actor,
+        tx,
+      );
+
+      const [planned] = await tx
+        .select()
+        .from(wmsTables.shipments)
+        .where(eq(wmsTables.shipments.id, source.shipment.id));
+
+      expect(planned.status).toBe('planned');
     });
   });
 

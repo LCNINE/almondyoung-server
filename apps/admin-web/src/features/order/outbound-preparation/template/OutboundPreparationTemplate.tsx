@@ -79,7 +79,7 @@ function PreparationWarehouse({
   const [preparation, setPreparation] = useState<{
     input: PreparationInput;
     shipments: PreparationShipmentDto[];
-    resume: boolean;
+    source: 'ready' | 'resume' | 'mergeable';
   } | null>(null);
   const [splitting, setSplitting] = useState(false);
   const splitRunning = useRef(false);
@@ -136,7 +136,7 @@ function PreparationWarehouse({
     }));
   };
 
-  const prepare = (key: 'ready' | 'resume') => {
+  const prepare = (key: 'ready' | 'resume' | 'mergeable') => {
     const ids = selectedIds(key);
 
     if (!canPrepare || busy || ids.length === 0) {
@@ -157,7 +157,7 @@ function PreparationWarehouse({
           .find((entry) => entry.bucket === key)
           ?.shipments.filter((shipment) => ids.includes(shipment.shipmentId)) ??
         [],
-      resume: key === 'resume',
+      source: key,
     });
   };
 
@@ -326,6 +326,8 @@ function PreparationWarehouse({
                 busy={busy}
                 onToggle={toggle}
                 onMerge={setSheetShipmentId}
+                canPrepare={canPrepare}
+                onPrepareSeparately={() => prepare('mergeable')}
               />
             )}
           </>

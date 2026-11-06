@@ -1,6 +1,10 @@
+import {
+  isWaybillIssued,
+  isWaybillPendingIssue,
+} from '../../../lib/services/orders/waybill-policy';
 import { parseServerError } from '../../../lib/api/server-error';
 import type {
-  BatchResultItem,
+  PreparationWaybillResult,
   BulkShipmentResult,
   PickingMethod,
 } from '../../../lib/types/dto/fulfillment';
@@ -29,7 +33,10 @@ export interface PreparationProgress {
 
 export interface PreparationDeps {
   planMany(ids: string[], key: string): Promise<BulkShipmentResult>;
-  issueWaybills(ids: string[], key: string): Promise<BatchResultItem[]>;
+  issueWaybills(
+    ids: string[],
+    key: string
+  ): Promise<PreparationWaybillResult[]>;
   createBatch(input: {
     warehouseId: string;
     pickingMethod: PickingMethod;
@@ -225,14 +232,13 @@ export async function runOutboundPreparation(
     return results.map(
       (result): StageResult => ({
         shipmentId: result.shipmentId,
-        outcome:
-          result.status === 'registered' || result.status === 'used'
-            ? 'success'
-            : result.reason === 'time-budget-exceeded'
-              ? 'immediate'
-              : result.status === 'pending'
-                ? 'retry'
-                : 'failed',
+        outcome: isWaybillIssued(result.status)
+          ? 'success'
+          : result.reason === 'time-budget-exceeded'
+            ? 'immediate'
+            : isWaybillPendingIssue(result.status) || result.transient
+              ? 'retry'
+              : 'failed',
         message: result.reason ?? '송장을 발급하지 못했어요.',
       })
     );

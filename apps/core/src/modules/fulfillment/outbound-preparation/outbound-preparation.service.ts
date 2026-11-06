@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { DbTx } from '../../inventory/schema/inventory.schema';
 import { OutboundPreparationSummaryDto } from '../dto/outbound-preparation.dto';
 import { ShipmentPlanningActor } from '../dto/shipment-planning.dto';
-import { BulkShipmentResult } from './bulk-shipment-result';
+import { BulkShipmentResult, PreparationWaybillResult } from './bulk-shipment-result';
 import { OutboundPreparationManager } from './outbound-preparation.manager';
 import { OutboundPreparationReader } from './outbound-preparation.reader';
 
@@ -19,6 +19,14 @@ export class OutboundPreparationService {
 
   planMany(shipmentIds: string[], idempotencyKey: string, actor: ShipmentPlanningActor): Promise<BulkShipmentResult> {
     return this.manager.planMany(shipmentIds, idempotencyKey, actor);
+  }
+
+  issueWaybills(
+    shipmentIds: string[],
+    idempotencyKey: string,
+    actor: ShipmentPlanningActor,
+  ): Promise<PreparationWaybillResult[]> {
+    return this.manager.issueWaybills(shipmentIds, idempotencyKey, actor);
   }
 
   addManyToBatch(

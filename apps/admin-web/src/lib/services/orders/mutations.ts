@@ -588,13 +588,13 @@ export const useRunOutboundPreparation = () => {
               idempotencyKey,
             });
           },
-          issueWaybills: (shipmentIds, key) => {
+          issueWaybills: (shipmentIds, idempotencyKey) => {
             assertActive?.();
 
-            return orders.waybills.batch(
-              { shipmentIds, carrier: 'HANJIN' },
-              key
-            );
+            return orders.outboundPreparation.issueWaybills({
+              data: { shipmentIds },
+              idempotencyKey,
+            });
           },
           createBatch: async (data) => {
             assertActive?.();
