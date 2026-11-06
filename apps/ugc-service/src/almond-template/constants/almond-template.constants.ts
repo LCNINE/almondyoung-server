@@ -2,7 +2,7 @@ export const ALMOND_TEMPLATE_STATUSES = ['draft', 'published'] as const;
 export type AlmondTemplateStatus = (typeof ALMOND_TEMPLATE_STATUSES)[number];
 
 // 스토어프론트 PRINT_SPECS 의 PrintKind 와 같아야 한다
-export const ALMOND_TEMPLATE_KINDS = ['pet', 'mini', 'card', 'window', 'menu', 'diploma', 'nail'] as const;
+export const ALMOND_TEMPLATE_KINDS = ['pet', 'mini', 'card', 'bizcard', 'window', 'menu', 'diploma', 'nail'] as const;
 export const ALMOND_TEMPLATE_CATEGORY_MAX_NAME_LENGTH = 40;
 export const ALMOND_TEMPLATE_CATEGORY_MAX_DESCRIPTION_LENGTH = 80;
 

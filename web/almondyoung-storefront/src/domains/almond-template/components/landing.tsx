@@ -11,10 +11,19 @@ const TABS: { id: string; label: string; kinds: PrintKind[] }[] = [
   {
     id: "all",
     label: "전체보기",
-    kinds: ["pet", "mini", "window", "card", "nail", "menu", "diploma"],
+    kinds: [
+      "pet",
+      "mini",
+      "window",
+      "card",
+      "bizcard",
+      "nail",
+      "menu",
+      "diploma",
+    ],
   },
   { id: "sign", label: "배너·현수막", kinds: ["pet", "mini", "window"] },
-  { id: "paper", label: "카드·인쇄물", kinds: ["card", "nail"] },
+  { id: "paper", label: "카드·인쇄물", kinds: ["card", "bizcard", "nail"] },
   { id: "board", label: "메뉴판·수료증", kinds: ["menu", "diploma"] },
 ]
 

@@ -9,6 +9,7 @@ export const ALMOND_TEMPLATE_KIND_LABELS: Record<string, string> = {
   pet: 'PET 입간판·X배너',
   mini: '테이블 미니배너',
   card: '시술 후 주의사항 카드',
+  bizcard: '명함',
   window: '유리창 부착 현수막',
   menu: '메뉴판·가격표',
   diploma: '디플로마·수료증',
