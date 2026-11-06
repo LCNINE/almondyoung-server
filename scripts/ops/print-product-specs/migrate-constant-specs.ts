@@ -1,12 +1,18 @@
 import postgres, { Sql } from 'postgres';
 import { WOWPRESS_PRODUCTS } from '../../../apps/core/src/modules/print-order/wowpress/wowpress-products';
 import { createServiceConnection } from '../../seeding/lib/db-connection';
-import { resolveRegistry } from '../../seeding/lib/tenant-registry';
+import { resolveRegistry, sstShellStage } from '../../seeding/lib/tenant-registry';
 
 function argValue(args: string[], name: string): string | undefined {
   const i = args.indexOf(name);
 
-  return i >= 0 ? args[i + 1] : undefined;
+  if (i < 0) return undefined;
+
+  const value = args[i + 1];
+
+  if (value === undefined || value.startsWith('--')) throw new Error(`${name} 에 값이 없다`);
+
+  return value;
 }
 
 // 상수 한 줄을 print_product_specs 컬럼 값으로 편다
@@ -67,6 +73,13 @@ function openConnections(stage: string, tenant: string | undefined): { label: st
     if (!url) throw new Error('local 은 DATABASE_URL 이 필요하다 (dotenv -e apps/core/.env -- ...)');
 
     return [{ label: 'local', sql: postgres(url, { max: 1, connect_timeout: 10 }) }];
+  }
+
+  // 요청한 stage 와 sst shell 의 stage 가 다르면 엉뚱한 stage 에 쓰게 되므로 거절한다
+  const shellStage = sstShellStage(process.env);
+
+  if (shellStage !== stage) {
+    throw new Error(`--stage ${stage} 가 sst shell 의 stage(${shellStage ?? '없음'})와 다르다`);
   }
 
   return resolveRegistry({ deployment: 'lcnine-services', tenant })
