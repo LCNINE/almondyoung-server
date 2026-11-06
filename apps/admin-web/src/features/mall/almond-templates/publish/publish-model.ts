@@ -121,6 +121,37 @@ export function defaultAwk(
   return out;
 }
 
+const onCombos = (list: PrintComboDto[], off: readonly string[]): PrintComboDto[] => {
+  const offSet = new Set(off);
+
+  return list.filter((c) => !offSet.has(c.key));
+};
+
+// 판매할 조합의 견적 입력 전체가 바뀌면 달라지는 값이라 견적 요청의 계기가 된다
+export function quoteSignature(
+  list: PrintComboDto[],
+  off: readonly string[],
+  size: { width: number; height: number }
+): string {
+  return onCombos(list, off)
+    .map((c) => quoteId(c, size))
+    .join(',');
+}
+
+// 판매할 조합 중 아직 부르지 않은 것만, core 가 받는 크기로 나눠 요청한다
+export function quoteBatches(
+  list: PrintComboDto[],
+  off: readonly string[],
+  size: { width: number; height: number },
+  requested: ReadonlySet<string>
+): PrintComboDto[][] {
+  const missing = onCombos(list, off).filter((c) => !requested.has(quoteId(c, size)));
+  const batches: PrintComboDto[][] = [];
+  for (let i = 0; i < missing.length; i += COMBO_LIMIT) batches.push(missing.slice(i, i + COMBO_LIMIT));
+
+  return batches;
+}
+
 export function priceFor(cost: number, times: number): number {
   const raw = Math.round(cost * times * 1000) / 1000;
 

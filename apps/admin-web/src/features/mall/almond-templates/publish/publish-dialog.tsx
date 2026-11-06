@@ -20,7 +20,9 @@ import { almondTemplateKindLabel } from '../lib/almond-template-rules';
 import {
   COMBO_LIMIT,
   gridSize,
+  quoteBatches,
   quoteId,
+  quoteSignature,
   applyTimes,
   blockers,
   clearDraft,
@@ -133,37 +135,36 @@ export function PublishDialog({ template, kind, onClose }: PublishDialogProps) {
 
     return combos(current, awk, (p, c, q) => qtyAllowed(options.quantities, p, c, q));
   }, [options, picked, awk]);
-  const listSignature = list.map((c) => c.key).join(',');
+  const size = useMemo(() => ({ width, height }), [width, height]);
+  const signature = quoteSignature(list, draft.off, size);
 
-  // 옵션 단계부터 아직 부르지 않은 조합만 견적한다
+  // 옵션 단계부터 판매할 조합 중 아직 부르지 않은 것만 견적한다
   useEffect(() => {
-    if (step < 2 || list.length === 0) return;
+    if (step < 2) return;
 
-    const size = { width, height };
-    const missing = list.filter((c) => !requested.current.has(quoteId(c, size)));
-    if (missing.length === 0) return;
+    for (const batch of quoteBatches(list, draft.off, size, requested.current)) {
+      // 응답은 보낸 입력의 견적 id 로 저장해, 그 사이 후가공이 바뀌면 지금 행이 옛 견적을 읽지 않게 한다
+      const sentIds = new Map(batch.map((c) => [c.key, quoteId(c, size)]));
+      for (const id of sentIds.values()) requested.current.add(id);
+      quotes
+        .mutateAsync({ kind, body: { width, height, combos: batch } })
+        .then((result) =>
+          setCosts((prev) => {
+            const next = { ...prev };
+            for (const r of result) {
+              const id = sentIds.get(r.key);
+              if (id) next[id] = r.verdict.ok ? r.verdict.supply : null;
+            }
 
-    // 응답은 보낸 입력의 견적 id 로 저장해, 그 사이 후가공이 바뀌면 지금 행이 옛 견적을 읽지 않게 한다
-    const sentIds = new Map(missing.map((c) => [c.key, quoteId(c, size)]));
-    for (const id of sentIds.values()) requested.current.add(id);
-    quotes
-      .mutateAsync({ kind, body: { width, height, combos: missing } })
-      .then((result) =>
-        setCosts((prev) => {
-          const next = { ...prev };
-          for (const r of result) {
-            const id = sentIds.get(r.key);
-            if (id) next[id] = r.verdict.ok ? r.verdict.supply : null;
-          }
-
-          return next;
-        })
-      )
-      .catch(() =>
-        setCosts((prev) => ({ ...prev, ...Object.fromEntries([...sentIds.values()].map((id) => [id, null])) }))
-      );
+            return next;
+          })
+        )
+        .catch(() =>
+          setCosts((prev) => ({ ...prev, ...Object.fromEntries([...sentIds.values()].map((id) => [id, null])) }))
+        );
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [step, listSignature, retryTick]);
+  }, [step, signature, retryTick]);
 
   const paperLabel = new Map(options?.papers.map((p) => [p.paperno, p.label]));
   const colorLabel = new Map(options?.colors.map((c) => [c.colorno, c.label]));
@@ -176,7 +177,7 @@ export function PublishDialog({ template, kind, onClose }: PublishDialogProps) {
 
   const knownCosts: Record<string, number> = {};
   for (const c of list) {
-    const cost = costs[quoteId(c, { width, height })];
+    const cost = costs[quoteId(c, size)];
     if (typeof cost === 'number') knownCosts[c.key] = cost;
   }
   const prices = applyTimes(draft.edited, new Set(Object.keys(draft.edited)), knownCosts, times);
@@ -189,7 +190,7 @@ export function PublishDialog({ template, kind, onClose }: PublishDialogProps) {
     return {
       key: c.key,
       label: `${optionLabels.paper} · ${optionLabels.side} · ${optionLabels.qty}`,
-      cost: quoteId(c, { width, height }) in costs ? costs[quoteId(c, { width, height })] : undefined,
+      cost: quoteId(c, size) in costs ? costs[quoteId(c, size)] : undefined,
       price,
       memberPrice,
       on: !off.has(c.key),

@@ -7,7 +7,9 @@ import {
   defaultAwk,
   draftKey,
   gridSize,
+  quoteBatches,
   quoteId,
+  quoteSignature,
   loadDraft,
   memberPriceFor,
   parseTemplateSize,
@@ -164,6 +166,33 @@ describe('quoteId', () => {
     const size = { width: 90, height: 50 };
 
     expect(quoteId(combo, size)).not.toBe(quoteId({ ...combo, awk: [8] }, size));
+  });
+});
+
+describe('quote requests', () => {
+  const size = { width: 90, height: 50 };
+  const make = (i: number, awk: number[] = [7]) => ({ key: `k${i}`, paperno: i, colorno: 1, qty: 500, awk });
+
+  it('changes the signature when only the post-processing changes', () => {
+    expect(quoteSignature([make(1)], [], size)).not.toBe(quoteSignature([make(1, [8])], [], size));
+  });
+
+  it('leaves combos that are off out of the signature and the request', () => {
+    expect(quoteSignature([make(1), make(2)], ['k2'], size)).toBe(quoteSignature([make(1)], [], size));
+    expect(quoteBatches([make(1), make(2)], ['k2'], size, new Set()).flat().map((c) => c.key)).toEqual(['k1']);
+  });
+
+  it('skips combos already requested with the same input', () => {
+    const requested = new Set([quoteId(make(1), size)]);
+
+    expect(quoteBatches([make(1), make(2)], [], size, requested).flat().map((c) => c.key)).toEqual(['k2']);
+    expect(quoteBatches([make(1, [8])], [], size, requested).flat().map((c) => c.key)).toEqual(['k1']);
+  });
+
+  it('splits a request into batches the core accepts', () => {
+    const list = Array.from({ length: COMBO_LIMIT * 2 + 1 }, (_, i) => make(i));
+
+    expect(quoteBatches(list, [], size, new Set()).map((b) => b.length)).toEqual([COMBO_LIMIT, COMBO_LIMIT, 1]);
   });
 });
 
