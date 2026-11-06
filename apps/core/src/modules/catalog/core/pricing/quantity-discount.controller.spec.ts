@@ -36,6 +36,7 @@ describe('QuantityDiscountController', () => {
       startsOn: null,
       endsOn: null,
       tiers: saved.tiers,
+      variantOverrides: [],
     });
   });
 });

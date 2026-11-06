@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
 import { DbService } from '@app/db';
-import { eq, and, asc, SQL } from 'drizzle-orm';
+import { eq, and, asc, inArray, SQL } from 'drizzle-orm';
 import {
   pricingRules,
   productMasterPricingRules,
@@ -20,7 +20,13 @@ import {
   VariantPriceSet,
 } from '../../catalog.types';
 import { PricingRuleEntity } from '../../schema/catalog.schema.types';
-import { buildSaleTierPrices, discountedPrice, sortTiers, type VariantPriceBasis } from './quantity-discount.math';
+import {
+  buildSaleTierPrices,
+  discountedPrice,
+  sortTiers,
+  tiersForCombination,
+  type VariantPriceBasis,
+} from './quantity-discount.math';
 import { QuantityDiscountReader, QuantityDiscountReadModel } from './quantity-discount.reader';
 
 @Injectable()
@@ -121,8 +127,12 @@ export class PricingCalculatorService {
         tierQuantity > 1 ? await this.quantityDiscounts.findForVersion(version.masterId, versionId, trx) : null;
       const rateOf = (t: { regularRateBp: number; membershipRateBp: number }) =>
         customerType === 'membership' ? t.membershipRateBp : t.regularRateBp;
+      const combination =
+        discount && discount.variantOverrides.length > 0
+          ? (await this.combinationsByVariant([variantId], trx)).get(variantId)
+          : undefined;
       const tier = discount?.enabled
-        ? sortTiers(discount.tiers)
+        ? sortTiers(tiersForCombination(discount, combination))
             .filter((t) => t.minQuantity <= tierQuantity && rateOf(t) > 0)
             .pop()
         : undefined;
@@ -173,7 +183,11 @@ export class PricingCalculatorService {
       }
 
       const discount = await this.quantityDiscounts.findForVersion(version.masterId, versionId, trx);
-      return this.priceSetFor(versionId, variantId, discount, trx);
+      const combination =
+        discount && discount.variantOverrides.length > 0
+          ? (await this.combinationsByVariant([variantId], trx)).get(variantId)
+          : undefined;
+      return this.priceSetFor(versionId, variantId, discount, combination, trx);
     }, tx);
   }
 
@@ -201,6 +215,10 @@ export class PricingCalculatorService {
 
       const validVariantIds = new Set(mappings.map((m) => m.variantId));
       const discount = await this.quantityDiscounts.findForVersion(version.masterId, versionId, trx);
+      const combinations =
+        discount && discount.variantOverrides.length > 0
+          ? await this.combinationsByVariant([...validVariantIds], trx)
+          : new Map<string, string>();
 
       const results: VariantPriceSet[] = [];
 
@@ -209,18 +227,19 @@ export class PricingCalculatorService {
           continue;
         }
 
-        results.push(await this.priceSetFor(versionId, variantId, discount, trx));
+        results.push(await this.priceSetFor(versionId, variantId, discount, combinations.get(variantId), trx));
       }
 
       return results;
     }, tx);
   }
 
-  /** 구간가는 버전의 구간표로만 만든다. 표가 없거나 꺼져 있으면 구간가가 없다. */
+  /** 구간가는 버전의 구간표로만 만든다(그 옵션의 예외가 있으면 예외). 표가 없거나 꺼져 있으면 구간가가 없다. */
   private async priceSetFor(
     versionId: string,
     variantId: string,
     discount: QuantityDiscountReadModel | null,
+    combination: string | undefined,
     trx: DbTransaction,
   ): Promise<VariantPriceSet> {
     const basePrice = (await this.calculateVariantPriceByVersion(versionId, variantId, 1, 'regular', trx)).price;
@@ -228,7 +247,7 @@ export class PricingCalculatorService {
       .price;
 
     const tiers = discount?.enabled
-      ? buildSaleTierPrices({ basePrice, membershipPrice, tiers: discount.tiers })
+      ? buildSaleTierPrices({ basePrice, membershipPrice, tiers: tiersForCombination(discount, combination) })
       : { regular: [], membership: [] };
     return { basePrice, membershipPrice, tieredPrices: tiers.regular, membershipTieredPrices: tiers.membership };
   }
@@ -241,14 +260,40 @@ export class PricingCalculatorService {
         .from(productMasterVariants)
         .where(eq(productMasterVariants.versionId, versionId));
 
+      const combinations = await this.combinationsByVariant(
+        variants.map((v) => v.variantId),
+        trx,
+      );
       const result: VariantPriceBasis[] = [];
       for (const { variantId } of variants) {
         const base = await this.calculateVariantPriceByVersion(versionId, variantId, 1, 'regular', trx);
         const membership = await this.calculateVariantPriceByVersion(versionId, variantId, 1, 'membership', trx);
-        result.push({ variantId, basePrice: base.price, membershipPrice: membership.price });
+        result.push({
+          variantId,
+          basePrice: base.price,
+          membershipPrice: membership.price,
+          combination: combinations.get(variantId) ?? '',
+        });
       }
       return result;
     }, tx);
+  }
+
+  /**
+   * 옵션의 조합 키 = 옵션값 id 를 정렬해 «+» 로 이은 값(엑셀 양식의 «조합» 칸과 같은 식).
+   * 옵션 수정으로 variant 행이 새로 생겨도 옵션값은 같으므로 키가 바뀌지 않는다. 옵션 없는 상품은 ''.
+   */
+  private async combinationsByVariant(variantIds: string[], trx: DbTransaction): Promise<Map<string, string>> {
+    const out = new Map<string, string>(variantIds.map((id) => [id, '']));
+    if (variantIds.length === 0) return out;
+    const rows = await trx
+      .select({ variantId: variantOptionValues.variantId, optionValueId: variantOptionValues.optionValueId })
+      .from(variantOptionValues)
+      .where(inArray(variantOptionValues.variantId, variantIds));
+    const grouped = new Map<string, string[]>();
+    for (const row of rows) grouped.set(row.variantId, [...(grouped.get(row.variantId) ?? []), row.optionValueId]);
+    for (const [variantId, ids] of grouped) out.set(variantId, [...ids].sort().join('+'));
+    return out;
   }
 
   applyRule(currentPrice: number, rule: PricingRuleEntity): number {

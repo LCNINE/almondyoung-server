@@ -1,3 +1,4 @@
+import { QuantityDiscountReader } from '../../../core/pricing/quantity-discount.reader';
 import { NotFoundException } from '@nestjs/common';
 import { CategoryTreeResponseDto } from '../../../core/categories/dto';
 import { ProductCategoriesService } from '../../../core/categories/categories.service';
@@ -51,8 +52,9 @@ describe('FormExportSnapshotReader — getActiveVersion 에러 처리 (단위)',
     // 이 스위트는 variantId 를 안 만드니(getVariants 가 늘 []) skuMapping 은 절대 안 불린다 —
     // 생성자 인자 수만 맞추면 되는 자리 채우기용.
     const skuMapping = { getVariantMatchingBatch: jest.fn() } as unknown as ProductSkuMappingService;
+    const quantityDiscounts = { findForVersion: jest.fn().mockResolvedValue(null) } as unknown as QuantityDiscountReader;
 
-    return new FormExportSnapshotReader(versionLoader, optionLoader, pricing, categories, skuMapping);
+    return new FormExportSnapshotReader(versionLoader, optionLoader, pricing, categories, skuMapping, quantityDiscounts);
   }
 
   it('NotFoundException 은 해당 masterId 만 건너뛰고 나머지는 정상 처리한다', async () => {
@@ -160,6 +162,7 @@ describe('FormExportSnapshotReader — renderMaster 판매정책 프리필', () 
       pricing,
       categories,
       skuMapping as unknown as ProductSkuMappingService,
+      { findForVersion: jest.fn().mockResolvedValue(null) } as unknown as QuantityDiscountReader,
     );
     allocator = createImageKeyAllocator();
   });

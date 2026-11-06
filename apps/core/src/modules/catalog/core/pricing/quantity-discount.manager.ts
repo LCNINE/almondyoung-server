@@ -9,12 +9,14 @@ import {
   productMasterVersions,
   productQuantityDiscounts,
 } from '../../schema/catalog.schema';
-import { DbTransaction, QuantityDiscountTier } from '../../catalog.types';
+import { DbTransaction, QuantityDiscountOverride, QuantityDiscountTier } from '../../catalog.types';
 import { deleteEntitiesIfUnmapped } from '../version-isolation/delete-if-unmapped';
 import { lockProductMasters } from '../products/services/product-master-lock';
 import { PricingCalculatorService } from './pricing-calculator.service';
 import { QuantityDiscountReader, QuantityDiscountReadModel } from './quantity-discount.reader';
 import {
+  isEmptyQuantityDiscount,
+  QuantityDiscountTable,
   QuantityDiscountViolation,
   quantityDiscountErrorMessage,
   sortTiers,
@@ -26,6 +28,8 @@ export interface QuantityDiscountInput {
   startsOn: string | null;
   endsOn: string | null;
   tiers: QuantityDiscountTier[];
+  /** 옵션별 예외. 버전에 없는 조합은 저장할 때 빠진다. */
+  variantOverrides: QuantityDiscountOverride[];
 }
 
 @Injectable()
@@ -48,20 +52,27 @@ export class QuantityDiscountManager {
       await lockProductMasters(trx, [masterId]);
       await this.assertDraftVersion(masterId, versionId, trx);
 
-      if (input.tiers.length === 0) {
+      const basis = await this.calculator.calculatePriceBasis(versionId, trx);
+      const live = new Set(basis.map((b) => b.combination));
+      const table = {
+        ...input,
+        variantOverrides: input.variantOverrides.filter((o) => live.has(o.combination)),
+      };
+
+      if (isEmptyQuantityDiscount(table)) {
         await this.deleteForVersion(masterId, versionId, trx);
         await this.touchVersion(versionId, trx);
         return null;
       }
 
-      const basis = await this.calculator.calculatePriceBasis(versionId, trx);
-      this.throwIfInvalid(validateQuantityDiscount(input, basis), input.tiers);
+      await this.throwIfInvalid(masterId, versionId, validateQuantityDiscount(table, basis), table, trx);
 
       const values = {
-        enabled: input.enabled,
-        startsOn: input.startsOn,
-        endsOn: input.endsOn,
-        tiers: sortTiers(input.tiers),
+        enabled: table.enabled,
+        startsOn: table.startsOn,
+        endsOn: table.endsOn,
+        tiers: sortTiers(table.tiers),
+        variantOverrides: table.variantOverrides.map((o) => ({ combination: o.combination, tiers: sortTiers(o.tiers) })),
         updatedAt: new Date(),
       };
       const mapping = await this.reader.findMapping(masterId, versionId, trx);
@@ -118,7 +129,7 @@ export class QuantityDiscountManager {
       if (!saved) return;
 
       const basis = await this.calculator.calculatePriceBasis(versionId, trx);
-      this.throwIfInvalid(validateQuantityDiscount(saved, basis), saved.tiers);
+      await this.throwIfInvalid(masterId, versionId, validateQuantityDiscount(saved, basis), saved, trx);
     }, tx);
   }
 
@@ -136,9 +147,19 @@ export class QuantityDiscountManager {
     );
   }
 
-  private throwIfInvalid(violations: QuantityDiscountViolation[], tiers: QuantityDiscountTier[]): void {
+  /** 위반이 옵션 예외에서 났으면 그 버전의 옵션 이름을 붙인다(위반이 있을 때만 조회). */
+  private async throwIfInvalid(
+    masterId: string,
+    versionId: string,
+    violations: QuantityDiscountViolation[],
+    table: QuantityDiscountTable,
+    tx: DbTransaction,
+  ): Promise<void> {
     if (violations.length === 0) return;
-    throw new BadRequestException({ message: quantityDiscountErrorMessage(violations, tiers), errors: violations });
+    const combinations = violations.flatMap((v) => (v.combination === undefined ? [] : [v.combination]));
+    const names = await this.reader.optionNames(masterId, versionId, combinations, tx);
+    const message = quantityDiscountErrorMessage(violations, table, (c) => names.get(c) ?? '옵션 예외');
+    throw new BadRequestException({ message, errors: violations });
   }
 
   private async assertDraftVersion(masterId: string, versionId: string, tx: DbTransaction): Promise<void> {

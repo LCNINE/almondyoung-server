@@ -175,7 +175,7 @@ describeIfDb('일괄 세션 병합 시나리오 (실 Postgres)', () => {
     const skuMapping = {
       getVariantMatchingBatch: () => Promise.resolve({ data: [] }),
     } as unknown as ProductSkuMappingService;
-    reader = new FormExportSnapshotReader(versionLoader, optionLoader, pricing, categories, skuMapping);
+    reader = new FormExportSnapshotReader(versionLoader, optionLoader, pricing, categories, skuMapping, new QuantityDiscountReader(dbService));
 
     // `ProductBulkService.bulkUpdate` 의 brand/seller 경로(§F1 회귀 잠금)는 dto.status 가
     // 없으면 productVersionsService/productMastersService 를 **한 번도** 부르지 않는다

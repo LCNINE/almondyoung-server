@@ -146,8 +146,8 @@ function toBaseSnapshot(base: ExportBase): unknown {
 /** 합성 아이템·형식 불일치 행이 쓰는 최소 `input`. `isBulkItemInput` 을 만족해야 되읽기가 죽지 않는다. */
 function emptyInput(errors: RowError[]): BulkItemInput {
   return {
-    bundle: { product: {}, options: [], variants: [], categories: [], constraint: null },
-    present: { products: [], options: [], variants: [], categories: [], constraints: [] },
+    bundle: { product: {}, options: [], variants: [], categories: [], constraint: null, quantityDiscounts: [] },
+    present: { products: [], options: [], variants: [], categories: [], constraints: [], quantityDiscounts: [] },
     errors,
   };
 }
@@ -379,6 +379,7 @@ export class BulkSessionJobManager {
       variants: [...parsed.present.variants],
       categories: [...parsed.present.categories],
       constraints: [...parsed.present.constraints],
+      quantityDiscounts: [...(parsed.present.quantityDiscounts ?? [])],
     };
 
     // row_key 는 (session_id, row_key) UNIQUE 이고 varchar(100) 이다. 상품키 누락·중복은

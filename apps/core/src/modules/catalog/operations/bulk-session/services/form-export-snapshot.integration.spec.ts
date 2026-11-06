@@ -130,7 +130,7 @@ describeIfDb('FormExportSnapshotReader (실 Postgres)', () => {
       getVariantMatchingBatch: () => Promise.resolve({ data: [] }),
     } as unknown as ProductSkuMappingService;
 
-    reader = new FormExportSnapshotReader(versionLoader, optionLoader, pricing, categories, skuMapping);
+    reader = new FormExportSnapshotReader(versionLoader, optionLoader, pricing, categories, skuMapping, new QuantityDiscountReader(dbService));
   });
 
   afterAll(async () => {

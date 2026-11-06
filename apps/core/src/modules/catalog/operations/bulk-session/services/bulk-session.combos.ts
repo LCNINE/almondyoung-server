@@ -90,6 +90,31 @@ export class BulkSessionComboResolver {
     return result;
   }
 
+  /**
+   * 신규 행의 워크북 조합키 → 옵션값 id 조합키(수량할인 예외 저장용). 풀 수 없는 키는 결과에 없다.
+   * `resolveCreated` 와 같은 이름→id 변환을 쓰되 variant 를 찾지 않는다 — 예외는 variant 가 아니라 조합에 걸린다.
+   */
+  async resolveCreatedIdKeys(
+    masterId: string,
+    versionId: string,
+    combos: string[],
+    plan: OptionPlan,
+    tx: DbTransaction,
+  ): Promise<Map<string, string>> {
+    const result = new Map<string, string>();
+    if (combos.length === 0) return result;
+    const groups = await this.optionLoader.getOptionGroups(tx, masterId, versionId, LOCALE);
+    const idByNamePair = new Map<string, string>();
+    for (const group of groups) {
+      for (const value of group.values) idByNamePair.set(namePairKey(group.displayName, value.displayName), value.id);
+    }
+    for (const combo of combos) {
+      const idKey = this.workbookComboToIdKey(combo, plan.valueNameByKey, idByNamePair);
+      if (idKey !== undefined && idKey !== '') result.set(combo, idKey);
+    }
+    return result;
+  }
+
   /** 워크북 조합키(옵션값키들의 `+` 결합) → 실제 optionValueId 들의 정렬 조인. 풀 수 없으면 undefined. */
   private workbookComboToIdKey(
     combo: string,
