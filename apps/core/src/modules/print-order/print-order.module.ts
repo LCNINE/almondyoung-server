@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { UgcAlmondDesignClient } from './clients/ugc-almond-design.client';
+import { PrintProductSpecRepository } from './repositories/print-product-spec.repository';
 import { PrintOrderAdminManager } from './services/print-order-admin.manager';
 import { PrintOrderCancellationManager } from './services/print-order-cancellation.manager';
 import { PrintOrderSubmitManager } from './services/print-order-submit.manager';
@@ -13,6 +14,7 @@ import { PrintOrderTrackingWorker } from './workers/print-order-tracking.worker'
 @Module({
   providers: [
     PrintOrderRepository,
+    PrintProductSpecRepository,
     PrintOrderSubmitManager,
     PrintOrderSubmitWorker,
     PrintOrderTrackingManager,

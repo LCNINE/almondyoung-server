@@ -1051,6 +1051,13 @@
       "when": 1793866446490,
       "tag": "20261105081406_add-quantity-discount-variant-overrides",
       "breakpoints": true
+    },
+    {
+      "idx": 150,
+      "version": "7",
+      "when": 1793942857582,
+      "tag": "20261106052737_add-print-product-specs",
+      "breakpoints": true
     }
   ]
 }

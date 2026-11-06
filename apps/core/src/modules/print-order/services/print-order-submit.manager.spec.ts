@@ -8,6 +8,7 @@ import {
   type UgcAlmondDesignInfo,
   type UgcPrintLink,
 } from '../clients/ugc-almond-design.client';
+import { PrintProductSpecRepository } from '../repositories/print-product-spec.repository';
 import { type PrintOrderRow } from '../schema/print-order.schema';
 import { WowpressApiError, WowpressClient, WowpressDuplicateOrdersError } from '../wowpress/wowpress.client';
 import {
@@ -98,6 +99,13 @@ class FakeUgc extends UgcAlmondDesignClient {
 
 // 메서드를 전부 덮어써 DB 를 쓰지 않는 가짜라 DbService 자리는 형 변환으로 채운다
 const unusedDb = {} as unknown as DbService<typeof wmsSchema>;
+
+class FakeSpecs extends PrintProductSpecRepository {
+  findSpec = jest.fn<Promise<WowpressLineSpec | null>, [string]>(() => Promise.resolve(null));
+  constructor() {
+    super(unusedDb);
+  }
+}
 
 // 조건부 쓰기의 WHERE 를 그대로 흉내 내는 메모리 저장소
 class FakeRepo extends PrintOrderRepository {
@@ -277,17 +285,36 @@ function context(variantId: string): PrintOrderLineContext {
   };
 }
 
-function setup(variantId: string, row: PrintOrderRow = makeRow()) {
+function setup(variantId: string, row: PrintOrderRow = makeRow(), specs = new FakeSpecs()) {
   const repo = new FakeRepo();
   repo.rows.set(row.id, row);
   repo.context = context(variantId);
   const wowpress = new FakeWowpress();
   const ugc = new FakeUgc();
-  const manager = new PrintOrderSubmitManager(repo, wowpress, ugc);
+  const manager = new PrintOrderSubmitManager(repo, wowpress, ugc, specs);
   return { repo, wowpress, ugc, manager };
 }
 
 describe('PrintOrderSubmitManager', () => {
+  it('uses the spec table before the constant', async () => {
+    const specs = new FakeSpecs();
+    specs.findSpec.mockResolvedValue({ ...mockSpec(true), prodno: 77777 });
+    const { repo, wowpress, manager } = setup(CONFIRMED_VARIANT, makeRow(), specs);
+
+    await manager.submit(repo.get('po-1'));
+
+    expect(specs.findSpec).toHaveBeenCalledWith(CONFIRMED_VARIANT);
+    expect(wowpress.order.mock.calls[0]?.[0].items[0]?.spec.prodno).toBe(77777);
+  });
+
+  it('falls back to WOWPRESS_PRODUCTS when the table has no row', async () => {
+    const { repo, wowpress, manager } = setup(CONFIRMED_VARIANT);
+
+    await manager.submit(repo.get('po-1'));
+
+    expect(wowpress.order.mock.calls[0]?.[0].items[0]?.spec.prodno).toBe(40001);
+  });
+
   it('submits a confirmed spec without memo and marks submitted', async () => {
     const { repo, wowpress, ugc, manager } = setup(CONFIRMED_VARIANT);
 
@@ -743,7 +770,7 @@ describe('PrintOrderSubmitManager.submitBatch', () => {
     });
     const wowpress = new FakeWowpress();
     const ugc = new FakeUgc();
-    const manager = new PrintOrderSubmitManager(repo, wowpress, ugc);
+    const manager = new PrintOrderSubmitManager(repo, wowpress, ugc, new FakeSpecs());
     const claimed = () => [...repo.rows.keys()].map((id) => repo.get(id));
     const listed = (map: Record<string, string>, dboxnum: string | null = null) =>
       wowpress.findByOrdkey.mockImplementation((ordkey) =>
@@ -1402,6 +1429,7 @@ describe('abnormal ord_list through the real WowpressClient', () => {
       repo,
       new WowpressClient(new ConfigService(ENV), transport),
       new FakeUgc(),
+      new FakeSpecs(),
     );
     return { repo, manager, urls };
   }
@@ -1491,8 +1519,16 @@ describe('PrintOrderSubmitWorker', () => {
       repo.rows.set('po-1', makeRow({ status: 'pending', submittingAt: null }));
       const wowA = new FakeWowpress('W-A');
       const wowB = new FakeWowpress('W-B');
-      const workerA = new PrintOrderSubmitWorker(enabled, repo, new PrintOrderSubmitManager(repo, wowA, new FakeUgc()));
-      const workerB = new PrintOrderSubmitWorker(enabled, repo, new PrintOrderSubmitManager(repo, wowB, new FakeUgc()));
+      const workerA = new PrintOrderSubmitWorker(
+        enabled,
+        repo,
+        new PrintOrderSubmitManager(repo, wowA, new FakeUgc(), new FakeSpecs()),
+      );
+      const workerB = new PrintOrderSubmitWorker(
+        enabled,
+        repo,
+        new PrintOrderSubmitManager(repo, wowB, new FakeUgc(), new FakeSpecs()),
+      );
       let bRun!: Promise<void>;
       const bStarted = new Promise<void>((resolve) => {
         wowA.order.mockImplementationOnce(() => {
@@ -1523,8 +1559,16 @@ describe('PrintOrderSubmitWorker', () => {
       const wowB = new FakeWowpress('W-B');
       const ugcA = new FakeUgc();
       const ugcB = new FakeUgc();
-      const workerA = new PrintOrderSubmitWorker(enabled, repo, new PrintOrderSubmitManager(repo, wowA, ugcA));
-      const workerB = new PrintOrderSubmitWorker(enabled, repo, new PrintOrderSubmitManager(repo, wowB, ugcB));
+      const workerA = new PrintOrderSubmitWorker(
+        enabled,
+        repo,
+        new PrintOrderSubmitManager(repo, wowA, ugcA, new FakeSpecs()),
+      );
+      const workerB = new PrintOrderSubmitWorker(
+        enabled,
+        repo,
+        new PrintOrderSubmitManager(repo, wowB, ugcB, new FakeSpecs()),
+      );
       ugcA.printLink.mockImplementationOnce(async () => {
         jest.setSystemTime(Date.now() + PRINT_ORDER_STALE_MS + 60_000);
         await workerB.runOnce();

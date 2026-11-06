@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { z } from 'zod';
 import { UgcAlmondDesignClient, type UgcPrintLink } from '../clients/ugc-almond-design.client';
+import { PrintProductSpecRepository } from '../repositories/print-product-spec.repository';
 import { type PrintOrderRow } from '../schema/print-order.schema';
 import { WowpressClient, WowpressDuplicateOrdersError } from '../wowpress/wowpress.client';
 import { WOWPRESS_PRODUCTS } from '../wowpress/wowpress-products';
@@ -75,6 +76,7 @@ export class PrintOrderSubmitManager {
     private readonly repository: PrintOrderRepository,
     private readonly wowpress: WowpressClient,
     private readonly ugc: UgcAlmondDesignClient,
+    private readonly specs: PrintProductSpecRepository,
   ) {}
 
   async submit(row: PrintOrderRow): Promise<void> {
@@ -138,7 +140,7 @@ export class PrintOrderSubmitManager {
     const ctx = await this.repository.findLineContext(lane.row.salesOrderLineId);
     if (!ctx) throw new Error(`sales order line not found: ${lane.row.salesOrderLineId}`);
 
-    const spec = WOWPRESS_PRODUCTS[ctx.line.variantId];
+    const spec = (await this.specs.findSpec(ctx.line.variantId)) ?? WOWPRESS_PRODUCTS[ctx.line.variantId];
     if (!spec) {
       await lane.owned({ status: 'unsupported', lastError: `no wowpress spec for variant ${ctx.line.variantId}` });
       return null;
