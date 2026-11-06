@@ -1,3 +1,4 @@
+import type { PrefillRow } from './form-export.types';
 import { buildFormWorkbook } from './form-export.workbook';
 import { parseUploadWorkbook, MAX_UPLOAD_PRODUCT_ROWS } from './bulk-upload.parser';
 import * as ExcelJS from 'exceljs';
@@ -144,5 +145,59 @@ describe('parseUploadWorkbook', () => {
     ws.addRow(['A', '새 상품', '1000', '메모1', '메모2']);
     const parsed = await parseUploadWorkbook(Buffer.from(await wb.xlsx.writeBuffer()));
     expect(parsed.sheets.products[0].cells).toEqual({ rowKey: 'A', name: '새 상품', basePrice: '1000' });
+  });
+});
+
+describe('parseUploadWorkbook — 수량할인 시트', () => {
+  const qdRows: PrefillRow[] = [
+    { rowKey: 'P-000001', combination: '', combinationLabel: '', tier1MinQuantity: '3', tier1RegularRate: '5', tier1MembershipRate: '10' },
+    { rowKey: 'P-000001', combination: 'ov-red', combinationLabel: '색상=빨강' },
+  ];
+
+  const withoutColumn = async (label: string) => {
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load((await workbook({ quantityDiscounts: qdRows })) as never);
+    const ws = wb.getWorksheet('수량할인')!;
+    const header = ws.getRow(1).values as unknown[];
+    ws.spliceColumns(header.indexOf(label), 1);
+    return Buffer.from(await wb.xlsx.writeBuffer());
+  };
+
+  it('상품 하나의 여러 행을 그대로 읽는다', async () => {
+    const parsed = await parseUploadWorkbook(await workbook({ quantityDiscounts: qdRows }));
+    expect(parsed.sheets.quantityDiscounts?.map((r) => r.cells.combination)).toEqual(['', 'ov-red']);
+    expect(parsed.sheets.quantityDiscounts?.[0].cells.tier1MinQuantity).toBe('3');
+  });
+
+  it('구간 열이 하나라도 빠진 시트는 파일 오류다 — 그 칸이 조용히 지워지지 않게', async () => {
+    await expect(parseUploadWorkbook(await withoutColumn('구간3수량'))).rejects.toThrow(
+      '"수량할인" 시트에 열이 빠졌습니다: 구간3수량. 양식을 다시 받아 주세요.',
+    );
+  });
+
+  it('참고용 조합명 열은 지워도 된다', async () => {
+    const parsed = await parseUploadWorkbook(await withoutColumn('조합명(참고용)'));
+    expect(parsed.sheets.quantityDiscounts).toHaveLength(2);
+  });
+
+  it('백분율 서식 칸(값 0.05)을 보이는 그대로 «5%»로 읽는다', async () => {
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load((await workbook({ quantityDiscounts: qdRows })) as never);
+    const ws = wb.getWorksheet('수량할인')!;
+    const col = (ws.getRow(1).values as unknown[]).indexOf('구간1일반%');
+    const cell = ws.getRow(2).getCell(col);
+    cell.value = 0.05;
+    cell.numFmt = '0%';
+    const parsed = await parseUploadWorkbook(Buffer.from(await wb.xlsx.writeBuffer()));
+    expect(parsed.sheets.quantityDiscounts?.[0].cells.tier1RegularRate).toBe('5%');
+  });
+
+  it('시트가 없는 옛 양식은 수량할인 행이 없다', async () => {
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load((await workbook()) as never);
+    wb.removeWorksheet(wb.getWorksheet('수량할인')!.id);
+    const parsed = await parseUploadWorkbook(Buffer.from(await wb.xlsx.writeBuffer()));
+    expect(parsed.sheets.quantityDiscounts).toEqual([]);
+    expect(parsed.present.quantityDiscounts?.size ?? 0).toBe(0);
   });
 });

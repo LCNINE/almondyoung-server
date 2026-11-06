@@ -1,6 +1,7 @@
-import { buildTierPrices, validateQuantityDiscount } from './quantity-discount.math';
+import { buildTierPrices, tiersForCombination, validateQuantityDiscount } from './quantity-discount.math';
 import {
   buildTierPrices as previewTierPrices,
+  tiersForCombination as previewTiersFor,
   validateQuantityDiscount as previewValidate,
 } from '../../../../../../admin-web/src/lib/pricing/quantity-discount';
 
@@ -60,6 +61,27 @@ describe('admin preview matches the server calculation', () => {
       for (const [startsOn, endsOn] of periods) {
         const input = { tiers, startsOn, endsOn };
         expect(previewValidate(input, variants)).toEqual(validateQuantityDiscount(input, variants));
+      }
+    }
+  });
+
+  it('picks the same table and finds the same violations with option overrides', () => {
+    const variants = prices.map((p, i) => ({ variantId: `v${i}`, combination: `ov-${i % 3}`, ...p }));
+    const overrideSets = [
+      [],
+      [{ combination: 'ov-1', tiers: [] }],
+      [{ combination: 'ov-1', tiers: tierSets[0] }, { combination: 'ov-2', tiers: tierSets[2] }],
+      [{ combination: 'ov-0', tiers: tierSets[6] }, { combination: 'ov-0', tiers: [] }],
+      [{ combination: 'ov-9', tiers: tierSets[1] }],
+      [{ combination: 'ov-2', tiers: tierSets[5] }],
+    ];
+    for (const tiers of [tierSets[0], tierSets[3], []]) {
+      for (const variantOverrides of overrideSets) {
+        const input = { tiers, variantOverrides, startsOn: null, endsOn: null };
+        expect(previewValidate(input, variants)).toEqual(validateQuantityDiscount(input, variants));
+        for (const v of variants) {
+          expect(previewTiersFor(input, v.combination)).toEqual(tiersForCombination(input, v.combination));
+        }
       }
     }
   });

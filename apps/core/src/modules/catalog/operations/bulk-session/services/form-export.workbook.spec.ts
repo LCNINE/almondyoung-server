@@ -23,7 +23,7 @@ async function load(buf: Buffer): Promise<ExcelJS.Workbook> {
 }
 
 describe('buildFormWorkbook', () => {
-  it('시트 8개를 순서대로 만든다 (보이는 7개 + 숨은 메타 1개)', async () => {
+  it('시트 9개를 순서대로 만든다 (보이는 8개 + 숨은 메타 1개)', async () => {
     const wb = await load(await buildFormWorkbook(data));
     expect(wb.worksheets.map((w) => w.name)).toEqual([
       SHEET_NAMES.products,
@@ -31,6 +31,7 @@ describe('buildFormWorkbook', () => {
       SHEET_NAMES.variants,
       SHEET_NAMES.categories,
       SHEET_NAMES.constraints,
+      SHEET_NAMES.quantityDiscounts,
       SHEET_NAMES.images,
       SHEET_NAMES.categoryReference,
       SHEET_NAMES.meta,
@@ -105,7 +106,7 @@ describe('buildFormWorkbook — 빈 양식 (exportId 없음)', () => {
     categoryPaths: ['여성패션', '여성패션>니트'],
   };
 
-  it('메타 시트를 만들지 않는다 — 보이는 7개뿐이다', async () => {
+  it('메타 시트를 만들지 않는다 — 보이는 8개뿐이다', async () => {
     const wb = await load(await buildFormWorkbook(blank));
     expect(wb.worksheets.map((w) => w.name)).toEqual([
       SHEET_NAMES.products,
@@ -113,6 +114,7 @@ describe('buildFormWorkbook — 빈 양식 (exportId 없음)', () => {
       SHEET_NAMES.variants,
       SHEET_NAMES.categories,
       SHEET_NAMES.constraints,
+      SHEET_NAMES.quantityDiscounts,
       SHEET_NAMES.images,
       SHEET_NAMES.categoryReference,
     ]);

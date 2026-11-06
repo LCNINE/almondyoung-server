@@ -1,3 +1,4 @@
+import type { PrefillRow } from './bulk-session.types';
 import { flattenBundle, fieldLabel, parseFieldPath } from './bulk-session.fields';
 import { computeChanges } from './bulk-session.diff';
 
@@ -238,5 +239,41 @@ describe('fieldLabel', () => {
 
   it('모르는 경로는 경로를 그대로 돌려준다 (라벨이 없다고 죽지 않는다)', () => {
     expect(fieldLabel('mystery.field')).toBe('mystery.field');
+  });
+});
+
+describe('flattenBundle — 수량할인 행 묶음', () => {
+  const present = {
+    products: new Set(['name']),
+    options: new Set<string>(),
+    variants: new Set<string>(),
+    categories: new Set<string>(),
+    constraints: new Set<string>(),
+    quantityDiscounts: new Set(['rowKey', 'combination', 'tier1MinQuantity']),
+  };
+  const rows: PrefillRow[] = [
+    { combination: '', tier1MinQuantity: '3', tier1RegularRate: '5', tier1MembershipRate: '10' },
+    { combination: 'ov2', combinationLabel: '색상=파랑' },
+  ];
+
+  it('상품의 행 묶음 전체를 필드 하나로 접는다', () => {
+    expect(flattenBundle({ ...bundle(), quantityDiscounts: rows }, present).quantityDiscount).toBe('Y|||3:5:10|ov2=');
+  });
+
+  it('시트가 없던 양식이나 그 상품 행이 없으면 필드를 담지 않는다 — 변경 없음이다', () => {
+    expect('quantityDiscount' in flattenBundle({ ...bundle(), quantityDiscounts: rows }, { ...present, quantityDiscounts: undefined })).toBe(false);
+    expect('quantityDiscount' in flattenBundle({ ...bundle(), quantityDiscounts: [] }, present)).toBe(false);
+  });
+
+  it('표 없는 상품의 빈 행은 옛 스냅샷(필드 없음)과 같은 빈 값이라 변경분이 아니다', () => {
+    const base = flattenBundle(bundle());
+    const mine = flattenBundle({ ...bundle(), quantityDiscounts: [{ combination: '', enabled: '' }] }, present);
+    expect(computeChanges(base, mine)).not.toHaveProperty('quantityDiscount');
+  });
+
+  it('구간을 바꾸면 변경분이다', () => {
+    const base = flattenBundle({ ...bundle(), quantityDiscounts: rows });
+    const mine = flattenBundle({ ...bundle(), quantityDiscounts: [{ ...rows[0], tier1RegularRate: '7' }, rows[1]] }, present);
+    expect(computeChanges(base, mine).quantityDiscount).toBe('Y|||3:7:10|ov2=');
   });
 });

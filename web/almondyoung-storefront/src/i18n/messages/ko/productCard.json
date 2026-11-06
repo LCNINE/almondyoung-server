@@ -26,5 +26,7 @@
   "membersOnly": "멤버십 전용",
   "discountBadge": "{percent}% 할인",
   "quantityDiscountBadge": "{count}개↑ {percent}%",
-  "quantityDiscountMemberBadge": "멤버십 {count}개↑ {percent}%"
+  "quantityDiscountMemberBadge": "멤버십 {count}개↑ {percent}%",
+  "quantityDiscountBadgeMax": "{count}개↑ 최대 {percent}%",
+  "quantityDiscountMemberBadgeMax": "멤버십 {count}개↑ 최대 {percent}%"
 }

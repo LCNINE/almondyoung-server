@@ -43,6 +43,7 @@ export class QuantityDiscountController {
       startsOn: body.startsOn ?? null,
       endsOn: body.endsOn ?? null,
       tiers: body.tiers,
+      variantOverrides: body.variantOverrides ?? [],
     });
   }
 }

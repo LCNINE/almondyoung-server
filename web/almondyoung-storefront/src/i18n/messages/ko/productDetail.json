@@ -261,6 +261,10 @@
     "saving": "{amount}원 절약",
     "best": "최대 할인",
     "memberHint": "멤버십 회원은 {items}",
-    "memberHintItem": "{count}개 개당 {amount}원"
+    "memberHintItem": "{count}개 개당 {amount}원",
+    "optionSummary": "옵션별 수량 할인 · {count}개↑ 최대 {percent}% · 옵션을 고르면 구간이 보여요",
+    "optionSummaryMember": "멤버십 회원 옵션별 수량 할인 · {count}개↑ 최대 {percent}% · 옵션을 고르면 구간이 보여요",
+    "notEligible": "이 옵션은 수량 할인 대상이 아닙니다",
+    "notEligibleOption": "{option} 옵션은 수량 할인 대상이 아닙니다"
   }
 }

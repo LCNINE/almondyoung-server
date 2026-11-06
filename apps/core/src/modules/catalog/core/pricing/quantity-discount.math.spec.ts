@@ -5,6 +5,7 @@ import {
   floor10,
   quantityDiscountErrorMessage,
   sortTiers,
+  tiersForCombination,
   validateQuantityDiscount,
 } from './quantity-discount.math';
 
@@ -140,7 +141,7 @@ describe('quantityDiscountErrorMessage', () => {
     expect(
       quantityDiscountErrorMessage(
         [{ code: 'MEMBER_PRICE_ABOVE_REGULAR', tierIndex: 0, variantId: 'v1', regularPrice: 7000, membershipPrice: 7200 }],
-        tiers,
+        { tiers },
       ),
     ).toBe(
       '수량 할인 표와 맞지 않습니다: 3개 이상 구간에서 멤버십 회원가 7,200원이 일반가 7,000원보다 비쌉니다. 멤버십 %를 올리거나 정가·멤버십가를 확인해 주세요.',
@@ -151,7 +152,7 @@ describe('quantityDiscountErrorMessage', () => {
     expect(
       quantityDiscountErrorMessage(
         [{ code: 'RATE_NOT_INCREASING', tierIndex: 1 }, { code: 'PERIOD_REVERSED' }],
-        tiers,
+        { tiers },
       ),
     ).toBe('수량 할인 표와 맞지 않습니다: 5개 이상 구간의 %가 앞 구간보다 커야 합니다. (외 1건)');
   });
@@ -196,8 +197,61 @@ describe('one audience only', () => {
   });
 
   it('explains a tier with no rate in plain words', () => {
-    expect(quantityDiscountErrorMessage([{ code: 'RATE_BOTH_ZERO', tierIndex: 0 }], [tier(3, 0, 0)])).toBe(
+    expect(quantityDiscountErrorMessage([{ code: 'RATE_BOTH_ZERO', tierIndex: 0 }], { tiers: [tier(3, 0, 0)] })).toBe(
       '수량 할인 표와 맞지 않습니다: 3개 이상 구간은 일반·멤버십 중 하나는 할인율이 있어야 합니다.',
     );
+  });
+});
+
+describe('option overrides', () => {
+  const red = { variantId: 'red', basePrice: 10000, membershipPrice: 9000, combination: 'ov-red' };
+  const blue = { variantId: 'blue', basePrice: 10000, membershipPrice: 9000, combination: 'ov-blue' };
+  const rules = (over: Partial<Parameters<typeof validateQuantityDiscount>[0]>) => ({
+    tiers: [tier(3, 10, 15)],
+    startsOn: null,
+    endsOn: null,
+    ...over,
+  });
+
+  it('uses the override for its option and the default table for the rest', () => {
+    const table = rules({ variantOverrides: [{ combination: 'ov-blue', tiers: [tier(3, 5, 6)] }, { combination: 'ov-red', tiers: [] }] });
+    expect(tiersForCombination(table, 'ov-blue')).toEqual([tier(3, 5, 6)]);
+    expect(tiersForCombination(table, 'ov-red')).toEqual([]);
+    expect(tiersForCombination(table, 'ov-yellow')).toEqual([tier(3, 10, 15)]);
+    expect(tiersForCombination(table, undefined)).toEqual([tier(3, 10, 15)]);
+  });
+
+  it('accepts overrides without a default table', () => {
+    const table = rules({ tiers: [], variantOverrides: [{ combination: 'ov-red', tiers: [tier(3, 10, 15)] }] });
+    expect(validateQuantityDiscount(table, [red, blue])).toEqual([]);
+  });
+
+  it('treats a table whose overrides all mean no discount as empty', () => {
+    const table = rules({ tiers: [], variantOverrides: [{ combination: 'ov-red', tiers: [] }] });
+    expect(validateQuantityDiscount(table, [red]).map((x) => x.code)).toEqual(['EMPTY_TIERS']);
+  });
+
+  it('rejects the same option twice', () => {
+    const table = rules({ variantOverrides: [{ combination: 'ov-red', tiers: [] }, { combination: 'ov-red', tiers: [tier(3, 5, 6)] }] });
+    expect(validateQuantityDiscount(table, [red])).toContainEqual({ code: 'OVERRIDE_DUPLICATE', combination: 'ov-red' });
+  });
+
+  it('checks each override table and names its option', () => {
+    const table = rules({ variantOverrides: [{ combination: 'ov-blue', tiers: [tier(3, 5, 6), tier(6, 5, 7)] }] });
+    expect(validateQuantityDiscount(table, [red, blue])).toEqual([{ code: 'RATE_NOT_INCREASING', tierIndex: 1, combination: 'ov-blue' }]);
+  });
+
+  it('checks member prices with the table each option actually uses', () => {
+    const table = rules({ variantOverrides: [{ combination: 'ov-blue', tiers: [tier(3, 20, 5)] }] });
+    expect(validateQuantityDiscount(table, [red, blue])).toEqual([
+      { code: 'MEMBER_PRICE_ABOVE_REGULAR', tierIndex: 0, variantId: 'blue', combination: 'ov-blue', regularPrice: 8000, membershipPrice: 8550 },
+    ]);
+  });
+
+  it('prefixes the option name in the message', () => {
+    const table = { tiers: [tier(3, 10, 15)], variantOverrides: [{ combination: 'ov-blue', tiers: [tier(3, 5, 6), tier(6, 5, 7)] }] };
+    expect(
+      quantityDiscountErrorMessage([{ code: 'RATE_NOT_INCREASING', tierIndex: 1, combination: 'ov-blue' }], table, () => '파랑'),
+    ).toBe('수량 할인 표와 맞지 않습니다: 파랑: 6개 이상 구간의 %가 앞 구간보다 커야 합니다.');
   });
 });
