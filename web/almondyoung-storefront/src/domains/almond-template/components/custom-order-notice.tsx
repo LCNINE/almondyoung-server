@@ -48,7 +48,7 @@ export function CustomOrderNotice({
     <div
       id={id}
       className={cn(
-        "overflow-hidden rounded-2xl border bg-white transition-colors",
+        "shrink-0 overflow-hidden rounded-2xl border bg-white transition-colors",
         withAgreement && agreed ? "border-foreground" : "border-border",
         className
       )}
