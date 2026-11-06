@@ -87,8 +87,7 @@ type CardProps = { designId: string; lineId?: string };
 export function AlmondDesignPrintCard(props: CardProps) {
   const can = useCan(['order.order.read']);
 
-  if (can.status === 'loading') return null;
-  if (can.status === 'ready' && !can.allowed) return null;
+  if (can.status !== 'ready' || !can.allowed) return null;
 
   return <DesignPrintCard {...props} />;
 }

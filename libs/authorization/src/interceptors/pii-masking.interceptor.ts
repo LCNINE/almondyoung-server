@@ -176,6 +176,8 @@ export class PiiMaskingInterceptor implements NestInterceptor {
     response: unknown,
     body: unknown,
   ): Promise<unknown> {
+    // 파일로 선언했는데 다른 본문이 오면 가리지 못한 채 나가므로 보내지 않는다
+    if (!Buffer.isBuffer(body)) throw new Error(`PiiResponse binary route returned a non-file body: ${facts.route}`);
     const reason = exporting ? this.exportReason(facts) : null;
     const action: PiiAccessAction = exporting ? 'export' : revealed ? 'reveal' : 'view';
     try {

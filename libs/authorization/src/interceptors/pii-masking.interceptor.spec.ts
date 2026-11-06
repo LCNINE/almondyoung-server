@@ -387,6 +387,12 @@ describe('PiiMaskingInterceptor', () => {
       expect(recorder.records).toHaveLength(0);
     });
 
+    it('does not send a non-file body from a route declared as a file', async () => {
+      const { interceptor, recorder } = setup({ permissions: ['order.order.read'] });
+      await expect(call(interceptor, { ...designFile, body: { name: '홍길동' } })).rejects.toThrow('non-file body');
+      expect(recorder.records).toHaveLength(0);
+    });
+
     it('refuses while permission data is not loaded', async () => {
       const { interceptor } = setup({ permissions: null });
       await expect(call(interceptor, designFile)).rejects.toBeInstanceOf(ServiceUnavailableException);
