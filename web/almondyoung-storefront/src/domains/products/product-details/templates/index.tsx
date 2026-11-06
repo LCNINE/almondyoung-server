@@ -3,7 +3,8 @@ import {
   CustomOrderNotice,
   CUSTOM_ORDER_NOTICE_PAGE_ID,
 } from "@/domains/almond-template/components/custom-order-notice"
-import { PRINT_PRODUCTS } from "@/domains/almond-template/lib/catalog"
+import { templateProductOf } from "@/domains/almond-template/lib/template-product"
+import { listAlmondTemplates } from "@/lib/api/ugc/almond-templates"
 import { ErrorBoundary } from "@/components/shared/error-boundary"
 import {
   ProductQnaSkeleton,
@@ -58,7 +59,11 @@ export async function ProductTemplate({
   const pimMasterId = product.metadata?.pimMasterId as string | undefined
   const isDigital = isDigitalProduct(product)
   const isOverseas = getIsOverseas(product)
-  const isCustomOrder = !!pimMasterId && !!PRINT_PRODUCTS[pimMasterId]
+  const templates = pimMasterId
+    ? await listAlmondTemplates().catch(() => [])
+    : []
+  const isCustomOrder =
+    !!pimMasterId && !!templateProductOf(pimMasterId, templates)
 
   return (
     <div className="min-h-screen bg-white pt-6">

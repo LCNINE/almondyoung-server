@@ -1,4 +1,5 @@
-import { PRINT_PRODUCTS } from "@/domains/almond-template/lib/catalog"
+import { templateProductOf } from "@/domains/almond-template/lib/template-product"
+import { listAlmondTemplates } from "@/lib/api/ugc/almond-templates"
 import { AlmondTemplateEditor } from "@/domains/almond-template/components/editor"
 import { notFound } from "next/navigation"
 
@@ -22,7 +23,9 @@ export default async function EditAlmondTemplatePage({ searchParams }: Props) {
     template = "",
     saved = "",
   } = await searchParams
-  if (!product || !PRINT_PRODUCTS[product]) notFound()
+  if (!product) notFound()
+  const templates = await listAlmondTemplates().catch(() => [])
+  if (!templateProductOf(product, templates)) notFound()
   return (
     <AlmondTemplateEditor
       productId={product}

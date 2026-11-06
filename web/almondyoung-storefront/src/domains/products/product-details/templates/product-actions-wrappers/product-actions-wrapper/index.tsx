@@ -1,6 +1,7 @@
 import { listProducts } from "@/lib/api/medusa/products"
 import { Customer } from "@/lib/types/ui/medusa"
 import { HttpTypes } from "@medusajs/types"
+import { listAlmondTemplates } from "@/lib/api/ugc/almond-templates"
 import ProductActions from "../../../components/product-actions"
 
 export default async function ProductActionsWrapper({
@@ -20,11 +21,18 @@ export default async function ProductActionsWrapper({
     regionId: region.id,
   }).then(({ response }) => response.products[0])
 
+  const templates = await listAlmondTemplates().catch(() => [])
+
   if (!product) {
     return null
   }
 
   return (
-    <ProductActions product={product} region={region} customer={customer} />
+    <ProductActions
+      product={product}
+      region={region}
+      customer={customer}
+      templates={templates}
+    />
   )
 }
