@@ -131,7 +131,7 @@ export function HeroBannerCarousel({
         alt={banner.title}
         fill
         priority={eager}
-        sizes="(max-width: 767px) 0px, (max-width: 1280px) 100vw, 1216px"
+        sizes="(max-width: 767px) 0px, 100vw"
         className="hidden object-cover md:block"
       />
       <Image
