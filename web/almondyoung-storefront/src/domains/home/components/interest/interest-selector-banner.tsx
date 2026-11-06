@@ -19,6 +19,10 @@ import { InterestKeyChips } from "./interest-key-chips"
 import { mergeBestProducts } from "./merge-best-products"
 
 const PREVIEW_LIMIT = 15
+const STAGGER_MS = 50
+const STAGGER_MAX = 5
+const REVEAL =
+  "animate-in fade-in slide-in-from-bottom-3 fill-mode-both duration-[350ms] ease-[cubic-bezier(0,0,.2,1)] motion-reduce:animate-none"
 
 interface InterestSelectorBannerProps {
   initialKeys: string[]
@@ -113,28 +117,38 @@ export function InterestSelectorBanner({
         onChange={handleChange}
       />
 
-      <div className="mt-7">
+      <div
+        key={selected.join(",")}
+        className="animate-in fade-in fill-mode-both mt-10 duration-[250ms] motion-reduce:animate-none"
+      >
         {selected.length === 0 ? (
           <p className="text-muted-foreground border-border rounded-[14px] border border-dashed bg-white p-7 text-center text-sm">
             {t("selectPrompt")}
           </p>
         ) : (
           <>
-            <h3 className="text-ink mb-4 text-base font-bold break-keep">
+            <h3 className="text-ink mb-5 text-base font-bold break-keep">
               <span className="text-mint-deep">{selectedNames}</span>{" "}
               {t("previewSuffix")}
             </h3>
 
-            <HomeRail key={selected.join(",")}>
-              {products.map((product) => (
-                <ProductCard
+            <HomeRail>
+              {products.map((product, index) => (
+                <div
                   key={product.id}
-                  product={product}
-                  isMembership={isMembership}
-                  isMembershipOnly={getIsMembershipOnly(product)}
-                  isWishlisted={wishlisted.has(product.id ?? "")}
-                  enablePhotoSwipe={false}
-                />
+                  className={REVEAL}
+                  style={{
+                    animationDelay: `${Math.min(index, STAGGER_MAX) * STAGGER_MS}ms`,
+                  }}
+                >
+                  <ProductCard
+                    product={product}
+                    isMembership={isMembership}
+                    isMembershipOnly={getIsMembershipOnly(product)}
+                    isWishlisted={wishlisted.has(product.id ?? "")}
+                    enablePhotoSwipe={false}
+                  />
+                </div>
               ))}
             </HomeRail>
           </>
