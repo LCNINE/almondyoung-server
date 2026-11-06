@@ -248,7 +248,19 @@ export async function runOutboundPreparation(
 
     for (const [groupKey, groupIds] of groups) {
       try {
-        results.push(...(await deps.issueWaybills(groupIds, groupKey)));
+        const issued = await deps.issueWaybills(groupIds, groupKey);
+
+        for (const result of issued) {
+          const unresolved =
+            isWaybillPendingIssue(result.status) ||
+            (!isWaybillIssued(result.status) && result.transient);
+
+          if (!unresolved) {
+            deps.waybillKeys.delete(result.shipmentId);
+          }
+        }
+
+        results.push(...issued);
       } catch (error) {
         const { status, message } = parseServerError(
           error,
@@ -265,16 +277,6 @@ export async function runOutboundPreparation(
             transient: status === null || status >= 500,
           }))
         );
-      }
-    }
-
-    for (const result of results) {
-      const unresolved =
-        isWaybillPendingIssue(result.status) ||
-        (!isWaybillIssued(result.status) && result.transient);
-
-      if (!unresolved) {
-        deps.waybillKeys.delete(result.shipmentId);
       }
     }
 

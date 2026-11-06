@@ -429,6 +429,8 @@ describe('runOutboundPreparation', () => {
     expect(result.failures).toEqual([
       expect.objectContaining({ shipmentId: 's2', stage: 'waybill' }),
     ]);
+    expect(deps.waybillKeys.get('s2')).toBe('old-key');
+    expect(deps.waybillKeys.has('s1')).toBe(false);
   });
 
   it('does not treat omitted results or allocated waybills as success', async () => {
