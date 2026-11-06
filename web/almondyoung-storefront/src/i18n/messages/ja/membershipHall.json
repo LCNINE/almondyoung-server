@@ -1,0 +1,33 @@
+{
+  "title": "メンバーシップ館",
+  "description": "メンバーシップ会員だけの価格を一か所に集めました。メンバーシップ特価は会員にのみ価格が公開されます。",
+  "join": "メンバーシップに加入する",
+  "myMembership": "マイメンバーシップを見る",
+  "tabsLabel": "メンバーシップ商品の種類",
+  "tabs": {
+    "all": "すべて",
+    "sale": "メンバーシップ特価",
+    "discount": "メンバーシップ割引価格"
+  },
+  "count": "商品 {count}件",
+  "sortLabel": "並び替え",
+  "sorts": {
+    "sales": "売れている順",
+    "discount": "割引率順",
+    "newest": "新着順"
+  },
+  "fieldsLabel": "分野",
+  "allFields": "すべて",
+  "emptyTitle": "まだ商品がありません",
+  "emptyDescription": "別のタブや分野を選んでください。",
+  "section": {
+    "viewAll": "すべて見る",
+    "guestTitle": "メンバーシップに加入して会員価格で購入しましょう",
+    "guestDescription": "メンバーシップ割引価格と会員限定特価をすぐに受けられます",
+    "guestCta": "加入する",
+    "memberTitle": "メンバーシップ会員です",
+    "memberDescription": "すべての商品がメンバーシップ価格で計算されています",
+    "memberCta": "マイメンバーシップを見る",
+    "subtitle": "メンバー限定価格を一か所に集めました"
+  }
+}

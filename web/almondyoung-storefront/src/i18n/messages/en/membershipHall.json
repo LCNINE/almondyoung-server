@@ -1,0 +1,33 @@
+{
+  "title": "Membership Hall",
+  "description": "All member-only prices in one place. Member deal prices are shown to members only.",
+  "join": "Join membership",
+  "myMembership": "View my membership",
+  "tabsLabel": "Membership product types",
+  "tabs": {
+    "all": "All",
+    "sale": "Member deals",
+    "discount": "Member prices"
+  },
+  "count": "{count} products",
+  "sortLabel": "Sort",
+  "sorts": {
+    "sales": "Best selling",
+    "discount": "Biggest discount",
+    "newest": "Newest"
+  },
+  "fieldsLabel": "Field",
+  "allFields": "All",
+  "emptyTitle": "No products here yet",
+  "emptyDescription": "Try another tab or field.",
+  "section": {
+    "viewAll": "View all",
+    "guestTitle": "Join membership and shop at member prices",
+    "guestDescription": "Get member prices and member-only deals right away",
+    "guestCta": "Join",
+    "memberTitle": "You're a member",
+    "memberDescription": "Every product is priced at the member price",
+    "memberCta": "View my membership",
+    "subtitle": "Member-only prices, all in one place"
+  }
+}
