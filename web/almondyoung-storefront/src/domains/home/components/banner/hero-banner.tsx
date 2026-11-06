@@ -20,7 +20,7 @@ export async function HeroBanner() {
   }
 
   return (
-    <div className="container mx-auto max-w-[1280px] px-4 pt-3 md:px-[32px] md:pt-6">
+    <div className="w-full">
       <HeroBannerCarousel
         banners={activeBanners}
         dimensions={{
