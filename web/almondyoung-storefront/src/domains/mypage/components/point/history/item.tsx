@@ -19,19 +19,19 @@ export function PointHistoryItem({ event }: PointHistoryItemProps) {
   const statusToneClass = {
     success: "bg-green-40/10 text-green-40",
     danger: "bg-red-30/10 text-red-30",
-    info: "bg-orange-600/10 text-orange-600",
+    info: "bg-mint-tint text-mint-deep",
     neutral: "border border-gray-20 bg-white text-gray-60",
   }[meta.status.tone]
 
   const statusDotClass = {
     success: "bg-green-40",
     danger: "bg-red-30",
-    info: "bg-orange-600",
+    info: "bg-mint-deep",
     neutral: "bg-gray-40",
   }[meta.status.tone]
 
   const iconWrapClass = {
-    earn: "bg-yellow-10 text-primary",
+    earn: "bg-mint-tint text-mint-deep",
     redeem: "bg-gray-10 text-gray-90",
     cancel: "bg-gray-10 text-gray-60",
   }[meta.iconTone]
@@ -57,7 +57,7 @@ export function PointHistoryItem({ event }: PointHistoryItemProps) {
         <span
           className={cn(
             "text-base font-bold tabular-nums",
-            isPositive && "text-primary",
+            isPositive && "text-mint-deep",
             isNegative && "text-gray-90",
             !isPositive && !isNegative && "text-gray-60"
           )}

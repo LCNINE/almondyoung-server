@@ -35,10 +35,10 @@ export function ShowcaseSection({
       title={
         tail.length ? (
           <>
-            {head} <span className="text-yellow-30">{tail.join(" ")}</span>
+            {head} <span className="text-mint-deep">{tail.join(" ")}</span>
           </>
         ) : (
-          <span className="text-yellow-30">{title}</span>
+          <span className="text-mint-deep">{title}</span>
         )
       }
       tabs={[tab]}

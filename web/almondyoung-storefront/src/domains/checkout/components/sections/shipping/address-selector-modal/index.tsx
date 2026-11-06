@@ -272,7 +272,7 @@ export function ShippingAddressSelectorModal({
               type="button"
               onClick={handleSelect}
               disabled={isSelectDisabled}
-              className="h-12 w-full rounded bg-[#ffa500] text-[15px] font-bold text-white hover:bg-[#ffa500]/90"
+              className="bg-primary hover:bg-primary/90 h-12 w-full rounded text-[15px] font-bold text-white"
             >
               {isSubmitting ? t("changing") : t("selectDone")}
             </Button>

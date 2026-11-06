@@ -45,8 +45,8 @@ function CategoryLink({
           className={cn(
             "flex-1 py-1 font-['Pretendard'] text-base",
             isActive
-              ? "text-primary font-bold"
-              : "hover:text-primary font-medium text-stone-900"
+              ? "text-mint-deep font-bold"
+              : "hover:text-mint-deep font-medium text-stone-900"
           )}
         >
           {category.name}

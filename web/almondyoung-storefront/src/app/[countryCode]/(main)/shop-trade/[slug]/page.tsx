@@ -92,7 +92,7 @@ export default async function ShopTradeDetailPage({ params }: PageProps) {
       {regionLabel && (
         <LocalizedClientLink
           href={`/shop-trade?region=${listing.region}`}
-          className="text-primary text-sm font-medium"
+          className="text-mint-deep text-sm font-medium"
         >
           {regionLabel}
         </LocalizedClientLink>

@@ -35,7 +35,7 @@ export async function ShopTradeWrapper() {
           </div>
           <LocalizedClientLink
             href="/shop-trade"
-            className="text-primary inline-flex items-center gap-1 text-sm font-semibold"
+            className="text-mint-deep inline-flex items-center gap-1 text-sm font-semibold"
           >
             {t("viewAll")} <ArrowRight className="h-4 w-4" />
           </LocalizedClientLink>

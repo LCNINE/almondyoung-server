@@ -44,7 +44,7 @@ const SurveyRadioLabel: React.FC<SurveyRadioLabelProps> = ({
       "rounded-[10px] border border-[#D9D9D9]",
       "bg-white text-sm font-medium shadow-md",
       "cursor-pointer transition-all duration-200 select-none",
-      isChecked && ["border-[#FFA500]", "bg-[#FFA500] text-white"]
+      isChecked && ["border-mint", "bg-mint text-ink"]
     )}
   >
     {children}
@@ -69,7 +69,7 @@ const CategoryCheckboxLabel: React.FC<CategoryCheckboxLabelProps> = ({
       "rounded-[10px] border border-[#D9D9D9] bg-white shadow-md",
       "cursor-pointer text-sm font-medium tracking-tight",
       "transition-all duration-200 select-none",
-      isChecked && "border-[#FFA500] bg-[#FFA500] text-white"
+      isChecked && "border-mint bg-mint text-ink"
     )}
   >
     {children}
@@ -106,7 +106,7 @@ export function StepOne({ onNextStep }: StepOneProps) {
         </h2>
         <p className="mt-5 text-xs -tracking-wide">
           최상의 경험을 위한 정보를 등록하세요 아몬드영이
-          <span className="text-yellow-30"> 빠른 구매</span>를 도와드릴게요!
+          <span className="text-mint-deep"> 빠른 구매</span>를 도와드릴게요!
         </p>
       </header>
 

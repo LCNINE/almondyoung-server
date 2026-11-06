@@ -109,7 +109,7 @@ export function AddressCard({
 
         <div className="flex items-center gap-1">
           {isSelected ? (
-            <Check className="text-primary absolute top-0 right-6 h-5 w-5 shrink-0" />
+            <Check className="text-mint-deep absolute top-0 right-6 h-5 w-5 shrink-0" />
           ) : null}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>

@@ -55,9 +55,7 @@ export const ReviewCardWritten = async ({ review }: ReviewCardWrittenProps) => {
                     <Star
                       key={index}
                       className={`h-5 w-5 ${
-                        isFilled
-                          ? "fill-[#ffa500] text-[#ffa500]"
-                          : "text-gray-300"
+                        isFilled ? "fill-ink text-ink" : "text-gray-300"
                       }`}
                     />
                   )

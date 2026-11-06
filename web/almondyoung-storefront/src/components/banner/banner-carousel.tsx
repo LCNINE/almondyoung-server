@@ -237,7 +237,7 @@ export function HeroBannerCarousel({
             <button
               onClick={scrollPrev}
               className={cn(
-                "hover:bg-yellow-30 absolute top-1/2 left-[15%] z-10 flex h-10 w-10 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full bg-white/80 text-gray-800 shadow-md transition-all duration-300 hover:text-white",
+                "hover:bg-mint absolute top-1/2 left-[15%] z-10 flex h-10 w-10 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full bg-white/80 text-gray-800 shadow-md transition-all duration-300 hover:text-white",
                 isHovered ? "opacity-100" : "opacity-0"
               )}
               aria-label="이전 배너"
@@ -247,7 +247,7 @@ export function HeroBannerCarousel({
             <button
               onClick={scrollNext}
               className={cn(
-                "hover:bg-yellow-30 absolute top-1/2 right-[15%] z-10 flex h-10 w-10 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full bg-white/80 text-gray-800 shadow-md transition-all duration-300 hover:text-white",
+                "hover:bg-mint absolute top-1/2 right-[15%] z-10 flex h-10 w-10 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full bg-white/80 text-gray-800 shadow-md transition-all duration-300 hover:text-white",
                 isHovered ? "opacity-100" : "opacity-0"
               )}
               aria-label="다음 배너"

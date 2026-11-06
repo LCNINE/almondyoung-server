@@ -7,8 +7,8 @@
 
 ## 1. 원칙 (가장 중요)
 
-1. **오렌지는 아껴 쓴다.** `#FFA500`(= `--primary`, 피그마 `yellow light 30`)은 Primary CTA·활성 상태·브랜드 순간에만. 배경/테두리 장식으로 뿌리지 않는다. 한 화면(주요 플로우)에 오렌지 강조는 사실상 하나.
-2. **한 액센트, 한 시스템.** 두 번째 브랜드 색을 만들지 않는다. 성공/에러/정보는 시맨틱 색(아래)이지 브랜드가 아니다.
+1. **색은 역할로 고른다.** 로고의 잉크·민트·핑크·퍼플을 아래 2장 표의 역할대로만 쓴다. 기본 버튼은 잉크(`--primary`), 활성·링크는 민트, 할인·NEW 는 핑크, 멤버십은 퍼플이다. 역할 밖에서 장식으로 뿌리지 않는다.
+2. **흰 바탕 위 글자는 `*-deep` 만.** 원색(mint/pink/purple)은 흰 글자 대비가 4.5:1 에 못 미쳐 면(배경·배지·막대)에만 쓰고, 원색 면 위 글자는 흰색이 아니라 ink 다. 성공/에러/정보는 시맨틱 색(아래)이지 브랜드가 아니다.
 3. **4px 그리드.** 모든 padding/gap/height 는 `{4,8,12,16,20,24,32,40,48,56,64}` 중 하나. 벗어나면 이유를 주석으로.
 4. **차분함 = 신뢰.** 경고 아이콘/빨강/배지 남발 금지. 빨강·경고 아이콘은 실제 에러에만.
 5. **콘텐츠 우선, 크롬은 가볍게.** 커스텀 웹폰트 X (Pretendard/시스템폰트). 헤딩은 display face 대신 weight 700.
@@ -18,20 +18,29 @@
 
 | 역할 | HEX | 유틸 클래스 | 비고 |
 |---|---|---|---|
-| Primary / 브랜드 | `#FFA500` | `bg-primary` `text-primary` `border-primary` | 피그마 `yellow light 30`, CTA·활성 |
-| Primary hover | `#e69500` | `hover:bg-primary/90` 또는 `#e69500` | 기본색에서 어둡게 조정 |
+| Primary / ink | `#141617` | `bg-primary` `text-foreground` `bg-ink` | 기본 버튼, 글자, 공지 띠 바탕. 로고 워드마크 색 |
+| Primary hover | ink 90% | `hover:bg-primary/90` | |
+| mint | `#36C2B3` | `bg-mint` `border-mint` | 브랜드 강조 면: 선택 칩, 신상 태그, 활성 밑줄, 진행 막대, 1~3위 배지 |
+| mint-deep | `#0B7366` | `text-mint-deep` | 흰 바탕 위 활성·링크·안내 글자, 선택 표시(라디오·테두리) |
+| mint-tint | `#E7F7F4` | `bg-mint-tint` | 옅은 브랜드 면(옛 `bg-yellow-10` 자리) |
+| pink | `#F779AC` | `bg-pink` | 장바구니 개수, NEW 배지 면 |
+| pink-deep | `#C2306C` | `text-pink-deep` `bg-pink-deep` | 할인율·할인액, 타임세일 시간 배지, "○원 아껴요" |
+| pink-tint | `#FDECF3` | `bg-pink-tint` | |
+| purple | `#9C7FCB` | `bg-purple` | 장식. 어두운 바탕 위 멤버십 글자 |
+| purple-deep | `#5B3F96` | `text-purple-deep` `bg-purple-deep` | 멤버십 가격·라벨·버튼 전부 |
+| purple-tint | `#F2EEFA` | `bg-purple-tint` | 멤버십 영역 바탕 |
 | 배경(캔버스) | `#ffffff` | `bg-background` | |
-| 헤딩/본문 진한 | `#000000` | `text-foreground` | 피그마 버튼 기본 텍스트 |
+| 헤딩/본문 진한 | `#141617` | `text-foreground` | 순수 검정 대신 ink |
 | 본문 보조·캡션 | `#757575` | `text-muted-foreground` | 피그마 버튼 보조 텍스트·메타 |
 | placeholder | `#b0b3ba` | `placeholder:text-[#b0b3ba]` | |
 | surface(옅은 면) | `#f7f8f9` | `bg-muted` | 입력 배경·본문 캔버스 |
 | surface-fill | `#f3f4f5` | `bg-secondary` `bg-accent` | 뉴트럴 버튼·칩·비활성 |
 | hairline(보더) | `#d9d9d9` | `border-border` `border` | 피그마 버튼 중립 테두리 |
-| 브랜드 틴트 | `#fff7e5` | `bg-yellow-10` | 아주 옅은 오렌지 배경 |
 | error | `#fa342c` | `text-destructive` `bg-destructive` | |
 | info | `#217cf9` | `text-[#217cf9]` | 링크·정보 |
 | success | `#079171` | `text-[#079171]` | 완료 |
-| focus ring | `#5e98fe` | `focus-visible:ring-ring` | 키보드 포커스 |
+| focus ring | `#0b7366` | `focus-visible:ring-ring` | 키보드 포커스 (mint-deep) |
+| 별점 | ink | `fill-ink text-ink` | 노란 별 쓰지 않음 |
 
 ## 3. 타이포 (시스템폰트, weight는 400/500/700만)
 
@@ -50,12 +59,13 @@
 
 ## 4. 컴포넌트 규격
 
-- **Primary CTA**: `bg-primary text-white`, 높이 52px(`h-[52px]`), radius 12px(`rounded-xl`), 16px/700. pressed `#e69500`. disabled `bg-[#f3f4f5] text-[#d1d3d8]`.
+- **Primary CTA**: `bg-primary text-primary-foreground`(ink 바탕 흰 글자), 높이 52px(`h-[52px]`), radius 12px(`rounded-xl`), 16px/700. hover `bg-primary/90`, pressed `bg-primary/80`.
+- **멤버십 버튼**: `bg-purple-deep text-white`. 여러 곳에 반복되면 `components/ui/button` 은 두고 `components/shared` 래퍼에서 `className` 으로 확장. disabled `bg-[#f3f4f5] text-[#d1d3d8]`.
 - **Neutral 버튼**: `bg-secondary text-foreground`(`#f3f4f5`), radius 8px(`rounded-lg`).
 - **Outline 버튼**: `bg-transparent text-foreground border border-border`, radius 8px.
 - **Critical 버튼**: `bg-destructive text-white`, radius 8px. 삭제/신고 등.
 - **카드**: `bg-white border border-border rounded-lg`(8px) 또는 shadow-s2, featured는 `rounded-xl`(12px).
-- **칩/태그**: `bg-secondary text-foreground rounded-full h-8 px-3`, 13px/500. 선택 시 `bg-foreground text-white`.
+- **칩/태그**: `bg-secondary text-foreground rounded-full h-8 px-3`, 13px/500. 선택 시 `bg-mint text-ink`.
 - **입력**: `bg-muted border border-border rounded-lg`, focus `ring-2 ring-ring`, error `border-destructive`.
 
 ## 5. 레이아웃 / 뎁스 / 라운드
@@ -72,8 +82,8 @@
 
 ## 7. Do / Don't
 
-- DO: 시맨틱 유틸(`bg-primary`, `text-foreground`, `border-border`) 사용, 4px 그리드, 오렌지는 CTA에만, Pretendard.
-- DON'T: 하드코딩 hex(특히 옛 `#ff6600`·`#f29219`), 두 번째 브랜드색, 26px 초과, s3보다 강한 그림자, 스프링 모션.
+- DO: 시맨틱·로고 토큰 유틸(`bg-primary`, `text-mint-deep`, `text-purple-deep` …) 사용, 색은 2장 역할대로, 4px 그리드, Pretendard.
+- DON'T: 하드코딩 hex(특히 옛 주황 `#ffa500`·`#ff6600`·`#f29219`, `yellow-*` 유틸), 흰 바탕 위 원색 글자, 강조 글자에 `text-primary`(이제 검정이다), 26px 초과, s3보다 강한 그림자, 스프링 모션.
 
 ## 8. Voice & Tone (마이크로카피)
 

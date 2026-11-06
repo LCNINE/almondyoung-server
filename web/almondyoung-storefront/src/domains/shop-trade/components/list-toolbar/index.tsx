@@ -31,7 +31,7 @@ export async function ListToolbar({
     cn(
       "flex h-9 w-9 items-center justify-center rounded-lg border transition-colors",
       active
-        ? "border-primary text-primary"
+        ? "border-mint-deep text-mint-deep"
         : "border-border text-muted-foreground hover:text-foreground"
     )
 
