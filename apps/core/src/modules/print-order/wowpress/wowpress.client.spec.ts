@@ -52,7 +52,7 @@ const jobcostOk = (jobqty: number) =>
         ordcost_sup: 4100,
         ordcost_bill: 4510,
         prsjob: [{ status: 200, jobqty, cost: 3000, jobcostno: 7 }],
-        awkjob: [{ status: 200, jobcostno: 12, cost: 1100 }],
+        awkjob: [{ status: 200, jobqty, jobcostno: 12, cost: 1100 }],
       },
     },
   });

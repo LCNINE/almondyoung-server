@@ -36,7 +36,7 @@ function recordList(v: unknown): Record<string, unknown>[] | null {
   return rows.every((r): r is Record<string, unknown> => r !== null) ? rows : null;
 }
 
-// 와우프레스는 수량을 ordqty 가 아니라 각 작업의 jobqty 로 계산한다. 양면(colorno)도 colorno0 이 없으면 단면으로 계산된다
+// 벤더는 jobqty·colorno0 이 없으면 최소 수량·단면으로 계산한다
 export function buildJobs(spec: Pick<WowpressLineSpec, 'prsjob' | 'awkjob' | 'qtyPerUnit'>, qty: number): WowpressJobs {
   const jobqty = spec.qtyPerUnit * qty;
 
@@ -48,6 +48,18 @@ export function buildJobs(spec: Pick<WowpressLineSpec, 'prsjob' | 'awkjob' | 'qt
     })),
     awkjob: spec.awkjob.map((job) => ({ ...job, jobqty })),
   };
+}
+
+// 보낸 필드만 비교한다. 어느 쪽이든 숫자로 바꾸지 못하면 불일치다
+function firstMismatch(sentJob: Record<string, unknown>, echo: Record<string, unknown>, keys: string[]): string | null {
+  for (const key of keys) {
+    if (sentJob[key] === undefined) continue;
+    const want = toNumber(sentJob[key]);
+    const got = toNumber(echo[key]);
+    if (want === null || got === null || want !== got) return key;
+  }
+
+  return null;
 }
 
 function fail(reason: string): JobcostVerdict {
@@ -67,7 +79,7 @@ export function judgeJobcost(sent: WowpressJobs, response: unknown): JobcostVerd
   }
 
   const prsjob = recordList(body.prsjob);
-  const awkjob = recordList(body.awkjob);
+  const awkjob = body.awkjob === undefined && sent.awkjob.length === 0 ? [] : recordList(body.awkjob);
   if (!prsjob || prsjob.length !== sent.prsjob.length) return fail('견적 응답의 인쇄 작업 수가 보낸 값과 다릅니다');
   if (!awkjob || awkjob.length !== sent.awkjob.length) return fail('견적 응답의 후가공 작업 수가 보낸 값과 다릅니다');
 
@@ -75,14 +87,8 @@ export function judgeJobcost(sent: WowpressJobs, response: unknown): JobcostVerd
     const echo = prsjob[i];
     if (toNumber(echo.status) !== 200) return fail(`인쇄 작업 ${i + 1} 견적 실패`);
 
-    for (const key of ['jobqty', 'colorno0', 'wsize', 'hsize']) {
-      if (job[key] === undefined) continue;
-      if (toNumber(echo[key]) !== toNumber(job[key])) {
-        return fail(
-          `인쇄 작업 ${i + 1} 의 ${key} 가 반영되지 않았습니다 (보냄 ${String(job[key])}, 응답 ${String(echo[key])})`,
-        );
-      }
-    }
+    const mismatch = firstMismatch(job, echo, ['jobqty', 'colorno0', 'wsize', 'hsize']);
+    if (mismatch) return fail(`인쇄 작업 ${i + 1} 의 ${mismatch} 가 반영되지 않았습니다`);
   }
 
   for (const [i, job] of sent.awkjob.entries()) {
@@ -91,6 +97,9 @@ export function judgeJobcost(sent: WowpressJobs, response: unknown): JobcostVerd
     if (toNumber(echo.status) !== 200 || costno === null || costno <= 0) {
       return fail(`후가공 ${String(job.jobno)} 가 존재하지 않거나 견적에 반영되지 않았습니다`);
     }
+
+    const mismatch = firstMismatch(job, echo, ['jobqty', 'wsize', 'hsize']);
+    if (mismatch) return fail(`후가공 ${String(job.jobno)} 의 ${mismatch} 가 반영되지 않았습니다`);
   }
 
   const supply = toNumber(body.ordcost_sup);

@@ -79,7 +79,6 @@ export const WOWPRESS_CANCELLABLE = (d: WowpressOrderDetail): boolean =>
 
 export const WOWPRESS_CARRIER: Record<number, 'LOTTE' | 'CJ'> = { 109: 'LOTTE', 156: 'CJ' };
 
-// prod_info 응답에서 쓰는 필드만. 안쪽 구조는 쓰는 곳에서 좁혀 읽는다
 export interface WowpressProdInfo {
   prodno: number;
   prodname: string;
