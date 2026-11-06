@@ -42,13 +42,13 @@ export default function ProductPreviewPrice({
   const isMultiOption = (product.variants?.length ?? 0) > 1
   // 기간 경계는 클라이언트 현재 시각으로 한 번 더 거른다(페이지 캐시가 경계를 넘겨도 약속하지 않게).
   const now = useQuantityDiscountNow([product.metadata])
-  const { rows, currentPrice } = variant
+  const { rows, memberHints, currentPrice } = variant
     ? variantTierRows(variant, product, {
         isMember: hasMembership,
         hideMemberPrices: getHideMembershipPriceForNonMembers(product),
         now,
       })
-    : { rows: [], currentPrice: null }
+    : { rows: [], memberHints: [], currentPrice: null }
 
   return (
     <>
@@ -56,6 +56,7 @@ export default function ProductPreviewPrice({
       {currentPrice !== null && (
         <QuantityBundlePicker
           rows={rows}
+          memberHints={memberHints}
           currentPrice={currentPrice}
           quantity={quantity}
           onSelect={onSelectQuantity}

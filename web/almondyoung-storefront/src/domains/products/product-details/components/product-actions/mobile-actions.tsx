@@ -89,7 +89,7 @@ const MobileActions: React.FC<MobileActionsProps> = ({
   const focusItem = selectedItems[selectedItems.length - 1]
   const bundle = focusItem
     ? variantTierRows(focusItem.variant, product, pricingContext)
-    : { rows: [], currentPrice: null }
+    : { rows: [], memberHints: [], currentPrice: null }
   const hasBundles = bundle.rows.length > 0 && !isWelcomeMembership
   const instantPurchase = isSimple && !hasBundles
 
@@ -237,6 +237,7 @@ const MobileActions: React.FC<MobileActionsProps> = ({
             {hasBundles && focusItem && bundle.currentPrice !== null && (
               <QuantityBundlePicker
                 rows={bundle.rows}
+                memberHints={bundle.memberHints}
                 currentPrice={bundle.currentPrice}
                 quantity={focusItem.quantity}
                 onSelect={(q) => updateQuantity(focusItem.variantId, q - focusItem.quantity)}

@@ -25,5 +25,6 @@
   "quickAddError": "オプション情報を読み込めませんでした。",
   "membersOnly": "メンバー限定",
   "discountBadge": "{percent}% 割引",
-  "quantityDiscountBadge": "{count}個以上 {percent}%"
+  "quantityDiscountBadge": "{count}個以上 {percent}%",
+  "quantityDiscountMemberBadge": "メンバー{count}個以上 {percent}%"
 }

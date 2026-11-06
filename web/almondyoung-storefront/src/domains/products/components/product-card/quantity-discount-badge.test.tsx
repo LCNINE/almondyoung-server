@@ -57,6 +57,32 @@ describe("QuantityDiscountBadge", () => {
     expect(container.innerHTML).toBe("")
   })
 
+  it("tells a guest about a members-only bundle discount with its condition", () => {
+    const membersOnly = {
+      ...(variant as object),
+      calculated_price: { calculated_amount: 12000, original_amount: 12000, currency_code: "krw" },
+      metadata: {
+        membershipPrice: 8000,
+        tieredPrices: [],
+        membershipTieredPrices: [
+          { minQuantity: 3, price: 7200 },
+          { minQuantity: 6, price: 6400 },
+        ],
+      },
+    } as never
+    renderBadge({}, membersOnly)
+    expect(container.textContent).toBe("멤버십 3개↑ 10%")
+  })
+
+  it("hides a members-only discount when the product keeps member prices hidden", () => {
+    const membersOnly = {
+      ...(variant as object),
+      metadata: { membershipPrice: 8000, tieredPrices: [], membershipTieredPrices: [{ minQuantity: 3, price: 7200 }] },
+    } as never
+    renderBadge({ hideMembershipPriceForNonMembers: true }, membersOnly)
+    expect(container.innerHTML).toBe("")
+  })
+
   it("hides for a product without tiers", () => {
     renderBadge({}, { ...(variant as object), metadata: {} } as never)
     expect(container.innerHTML).toBe("")

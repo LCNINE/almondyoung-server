@@ -2,10 +2,12 @@
 
 import { useTranslations } from "next-intl"
 import { cn } from "@/lib/utils"
-import type { TierRow } from "@/lib/utils/quantity-discount"
+import type { MemberTierHint, TierRow } from "@/lib/utils/quantity-discount"
 
 type QuantityBundlePickerProps = {
   rows: TierRow[]
+  /** 비회원에게 알릴 회원 전용 구간(회원·멤버십가 숨김 상품은 빈 배열) */
+  memberHints?: MemberTierHint[]
   /** 1개 기준 지금 가격 */
   currentPrice: number
   /** 고른 수량 — 같은 수량의 카드를 선택 상태로 보인다 */
@@ -20,6 +22,7 @@ type QuantityBundlePickerProps = {
 /** «1개 / N개 묶음» 카드. 기본 선택은 1개이고, 카드를 누르면 그 묶음 수량으로 바꾼다. */
 export default function QuantityBundlePicker({
   rows,
+  memberHints = [],
   currentPrice,
   quantity = 1,
   onSelect,
@@ -27,14 +30,27 @@ export default function QuantityBundlePicker({
   className,
 }: QuantityBundlePickerProps) {
   const t = useTranslations("productDetail.quantityDiscount")
-  if (rows.length === 0) return null
+  if (rows.length === 0 && memberHints.length === 0) return null
+
+  const memberHintLine = memberHints.length > 0 && (
+    <p className="text-muted-foreground text-xs">
+      {t("memberHint", {
+        items: memberHints
+          .map((hint) => t("memberHintItem", { count: hint.minQuantity, amount: hint.unitPrice.toLocaleString() }))
+          .join(" · "),
+      })}
+    </p>
+  )
+
+  if (rows.length === 0) {
+    return <div className={cn("flex flex-col gap-1", className)}>{memberHintLine}</div>
+  }
 
   const options = [
     { quantity: 1, unitPrice: currentPrice, percent: 0 },
     ...rows.map((row) => ({ quantity: row.minQuantity, unitPrice: row.unitPrice, percent: row.percent })),
   ]
   const lastQuantity = options[options.length - 1].quantity
-  const memberRows = rows.filter((row) => row.memberUnitPrice !== undefined)
 
   return (
     <section className={cn("flex flex-col gap-2", className)} aria-label={t("bundleTitle")}>
@@ -92,17 +108,7 @@ export default function QuantityBundlePicker({
           )
         })}
       </div>
-      {memberRows.length > 0 && (
-        <p className="text-muted-foreground text-xs">
-          {t("memberHint", {
-            items: memberRows
-              .map((row) =>
-                t("memberHintItem", { count: row.minQuantity, amount: (row.memberUnitPrice ?? 0).toLocaleString() })
-              )
-              .join(" · "),
-          })}
-        </p>
-      )}
+      {memberHintLine}
     </section>
   )
 }

@@ -2,10 +2,12 @@ import type { HttpTypes } from "@medusajs/types"
 import { getPricesForVariant } from "@/lib/utils/get-product-price"
 import {
   currentTierIndex,
+  memberTierHints,
   nextTier,
   readTiers,
   tierRows,
   unitPriceFor,
+  type MemberTierHint,
   type TierRow,
 } from "@/lib/utils/quantity-discount"
 
@@ -29,11 +31,20 @@ export function variantTierRows(
   variant: HttpTypes.StoreProductVariant,
   product: Pick<HttpTypes.StoreProduct, "metadata">,
   context: QuantityPricingContext
-): { currentPrice: number | null; rows: TierRow[] } {
+): { currentPrice: number | null; rows: TierRow[]; memberHints: MemberTierHint[] } {
   const currentPrice = getPricesForVariant(variant)?.calculated_price_number ?? null
-  if (currentPrice === null) return { currentPrice, rows: [] }
+  if (currentPrice === null) return { currentPrice, rows: [], memberHints: [] }
   const tiers = readTiers(variant.metadata, product.metadata, context.now)
-  return { currentPrice, rows: tierRows(currentPrice, tiers, context) }
+  return {
+    currentPrice,
+    rows: tierRows(currentPrice, tiers, context),
+    memberHints: memberTierHints(currentPrice, tiers, metadataNumber(variant.metadata?.membershipPrice), context),
+  }
+}
+
+function metadataNumber(raw: unknown): number | undefined {
+  const n = typeof raw === "string" ? Number(raw) : raw
+  return typeof n === "number" && Number.isFinite(n) ? n : undefined
 }
 
 export function itemQuantityPricing(
