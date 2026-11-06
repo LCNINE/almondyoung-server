@@ -25,8 +25,6 @@ export type ShowcaseCategory = {
   layout: "grid5" | "grid4" | "classes"
   limit: number
   order?: string
-  /** 썸네일 위 mint 신상 태그 */
-  newTag?: boolean
   /** 이 자식 카테고리 상품을 섹션 앞쪽에 먼저 깐다 (마진 좋은 상품 우선 노출) */
   priorityHandle?: string
 }
@@ -50,7 +48,6 @@ export const NEW_ARRIVALS_CATEGORY: ShowcaseCategory = {
   order: "-created_at",
   layout: "grid5",
   limit: 10,
-  newTag: true,
 }
 
 // 앞쪽 몇 칸만 우선 카테고리로 채우고 나머지는 기존 정렬 유지.
@@ -66,7 +63,6 @@ export async function ShowcaseCategoryWrapper({
   limit,
   priorityHandle,
   order,
-  newTag,
 }: {
   countryCode: string
 } & ShowcaseCategory) {
@@ -156,7 +152,7 @@ export async function ShowcaseCategoryWrapper({
       >
         {items.map((item) => (
           <li key={item.id}>
-            <V1ProductCard item={item} tag={newTag ? t("newTag") : undefined} />
+            <V1ProductCard item={item} />
           </li>
         ))}
       </V1CardGrid>
