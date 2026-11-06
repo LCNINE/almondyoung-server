@@ -1,9 +1,22 @@
 import MypageLayout from "@/app/[countryCode]/(mypage)/_components/mypage-layout"
 import { MyAlmondDesigns } from "@/domains/almond-template/components/my-designs"
+import { listAdminAlmondTemplates } from "@/lib/api/ugc/almond-templates"
 import { WithHeaderLayout } from "@components/layout"
 import { getTranslations } from "next-intl/server"
+import { redirect } from "next/navigation"
 
-export default async function MyAlmondTemplatesPage() {
+export default async function MyAlmondTemplatesPage({
+  params,
+}: {
+  params: Promise<{ countryCode: string }>
+}) {
+  const { countryCode } = await params
+  const canDesign = await listAdminAlmondTemplates().then(
+    () => true,
+    () => false
+  )
+  if (!canDesign) redirect(`/${countryCode}?comingSoon=almond-template`)
+
   const t = await getTranslations("mypage.almondTemplates")
   return (
     <WithHeaderLayout
