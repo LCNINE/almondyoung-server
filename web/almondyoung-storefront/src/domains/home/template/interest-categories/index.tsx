@@ -1,41 +1,60 @@
+import { getBestProductsByCategory } from "@/domains/home/actions"
 import { InterestSelectorBanner } from "@/domains/home/components/interest/interest-selector-banner"
+import { retrieveCustomer } from "@/lib/api/medusa/customer"
+import { getRegion } from "@/lib/api/medusa/regions"
+import { getWishlist } from "@/lib/api/users/wishlist"
+import { INTEREST_CANDIDATE_CATEGORIES } from "@/lib/constants/categories"
 import {
   getInterestBannerDismissed,
   getInterestCategoryKeys,
 } from "@lib/data/cookies"
-import { InterestProductsList } from "./interest-products-list"
 
 interface InterestCategoriesSlotProps {
   countryCode: string
 }
 
 export async function isInterestBannerVisible(): Promise<boolean> {
-  const selectedKeys = await getInterestCategoryKeys()
-  if (selectedKeys.length > 0) return false
   return !(await getInterestBannerDismissed())
 }
 
 /*───────────────────────────
- * 홈 상단 슬롯 — 쿠키 분기로 다음 셋 중 하나를 렌더:
- *  1. 미선택 + dismiss 안됨  → InterestSelectorBanner
- *  2. 미선택 + dismiss 됨    → null (1주일 동안 안 보임)
- *  3. 선택값 1~3개 있음      → InterestProductsList (해당 카테고리 베스트 섹션들)
+ * 홈 관심 분야 슬롯. 1주일 보지 않기를 눌렀으면 비운다.
+ * 후보 분야 베스트를 한 번에 받아 두고, 고르는 즉시 화면에서 섞어 보여준다.
  *──────────────────────────*/
 export async function InterestCategoriesSlot({
   countryCode,
 }: InterestCategoriesSlotProps) {
-  const selectedKeys = await getInterestCategoryKeys()
+  if (await getInterestBannerDismissed()) return null
 
-  if (selectedKeys.length === 0) {
-    const dismissed = await getInterestBannerDismissed()
-    if (dismissed) return null
-    return <InterestSelectorBanner />
-  }
+  const [selectedKeys, region, customer] = await Promise.all([
+    getInterestCategoryKeys(),
+    getRegion(countryCode),
+    retrieveCustomer(),
+  ])
+
+  const [wishlist, bestLists] = await Promise.all([
+    customer ? getWishlist().catch(() => []) : Promise.resolve([]),
+    Promise.all(
+      INTEREST_CANDIDATE_CATEGORIES.map((cat) =>
+        getBestProductsByCategory({
+          handle: cat.handle,
+          regionId: region?.id,
+          limit: 10,
+        }).catch(() => [])
+      )
+    ),
+  ])
+
+  const bestByKey = Object.fromEntries(
+    INTEREST_CANDIDATE_CATEGORIES.map((cat, i) => [cat.key, bestLists[i]])
+  )
 
   return (
-    <InterestProductsList
-      countryCode={countryCode}
-      selectedKeys={selectedKeys}
+    <InterestSelectorBanner
+      initialKeys={selectedKeys}
+      bestByKey={bestByKey}
+      customer={customer}
+      wishlistIds={wishlist.map((item) => item.productId)}
     />
   )
 }

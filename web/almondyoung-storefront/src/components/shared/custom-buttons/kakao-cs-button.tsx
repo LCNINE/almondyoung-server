@@ -21,7 +21,7 @@ export function KakaoCsButton({ className = "" }: KakaoCsButtonProps) {
             target="_blank"
             rel="noopener noreferrer"
             aria-label="카카오톡 상담"
-            className={`bg-mint text-ink flex h-11 w-11 items-center justify-center rounded-full shadow-[0_4px_14px_rgba(20,22,23,0.2)] transition-opacity hover:opacity-80 md:h-[52px] md:w-[52px] ${className}`}
+            className={`flex h-11 w-11 bg-[#FEE500] items-center justify-center rounded-full shadow-[0_4px_14px_rgba(20,22,23,0.2)] transition-opacity hover:opacity-80 md:h-[52px] md:w-[52px] ${className}`}
           >
             <svg
               className="h-5 w-5 md:h-6 md:w-6"
@@ -31,7 +31,7 @@ export function KakaoCsButton({ className = "" }: KakaoCsButtonProps) {
             >
               <path
                 d="M128 36C70.562 36 24 72.713 24 118c0 29.279 19.466 54.97 48.748 69.477-1.593 5.494-10.237 35.344-10.581 37.689 0 0-.207 1.762.934 2.434 1.14.672 2.479.156 2.479.156 3.267-.457 37.843-24.926 43.854-29.18A163.3 163.3 0 00128 200c57.438 0 104-36.712 104-82S185.438 36 128 36z"
-                fill="currentColor"
+                fill="#3C1E1E"
               />
             </svg>
           </a>
