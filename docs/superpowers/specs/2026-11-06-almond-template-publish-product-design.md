@@ -26,9 +26,9 @@
 ## 4. 데이터 흐름
 
 ```
-admin 모달 ─①─▶ core GET  /print-catalog/:kind/options      (와우프레스 prod_info → 축·제약·기본값)
-          ─①─▶ core POST /print-catalog/:kind/quotes       (조합별 견적, 엄격 판정)
-          ─②─▶ core POST /print-catalog/publish            (한 트랜잭션: 상품·가격·매핑·공개)
+admin 모달 ─①─▶ core GET  /admin/print-catalog/:kind/options     (와우프레스 prod_info → 축·제약·기본값)
+          ─①─▶ core POST /admin/print-catalog/:kind/quotes     (조합별 견적, 엄격 판정)
+          ─②─▶ core POST /admin/print-catalog/publish     (한 트랜잭션: 상품·가격·매핑·공개)
           ─③─▶ ugc  PUT  /admin/almond-templates/:id/product (템플릿에 상품 연결 + 공개, 멱등)
 ```
 
@@ -44,7 +44,7 @@ admin 모달 ─①─▶ core GET  /print-catalog/:kind/options      (와우프
 | menu | 40164 포맥스보드 또는 40044 소량전단 | 템플릿 크기·재질로 고른다. 40044 는 A5 없음, 4매 단위 |
 | diploma | 없음 | 모달 대상에서 뺀다. 수동 처리 |
 
-재단 여유는 이 표가 아니라 prod_info 의 `cutsize ÷ 2` 로 정한다.
+편집기 재단 여유는 지금처럼 종류별 `PRINT_SPECS[kind].bleedMm` 이다. 모달은 그 값과 prod_info 의 `cutsize ÷ 2` 가 다르면 게시를 막고 이유를 보여 준다(파일 크기가 와우프레스 작업 크기와 어긋나면 발주가 안 된다).
 
 ### 4.2 와우프레스 요청 바디 규칙 (2026-11-06 실측)
 
@@ -56,13 +56,17 @@ admin 모달 ─①─▶ core GET  /print-catalog/:kind/options      (와우프
 
 ### 4.3 게시 (core, 한 요청)
 
-- 새 경로 `POST /print-catalog/publish` 가 기존 상품 생성 로직(마스터·버전·옵션·가격·공개)을 한 `dbService.run` 안에서 재사용한다. 어드민이 기존 상품 API 를 여러 번 순차로 부르지 않는다.
+- 새 경로 `POST /admin/print-catalog/publish` 가 기존 상품 생성 로직을 한 `dbService.run` 안에서 재사용한다: `ProductMastersService.createMaster` → `updateVersion`(이름·설명·썸네일·optionDiff) → 조합→variant 해석 → `PricingService.replaceVersionRules` → `ProductVersionsService.publishVersion`. 선례는 `BulkDraftApplier.applyCreate`. 어드민이 기존 상품 API 를 여러 번 순차로 부르지 않는다.
+- 상품과 발주 매핑 테이블을 함께 쓰므로 게시 서비스는 `DbService<MergedSchema>` seam 이다(ADR-0025).
+- 서버는 받은 조합을 다시 견적해 판매가·멤버십가가 원가보다 큰지 확인한다. 화면 검사만 믿지 않는다.
 - 옵션 그룹은 고른 축(용지·면·수량 등)으로 만들고 variant 는 조합마다 하나.
-- 멤버십가는 기존 가격 저장 경로로 쓴다(가격표·variant metadata 가 함께 갱신되는 경로).
-- 상품 metadata 에 `almondTemplateId`, `printKind` 를 싣는다. Medusa 동기화가 그대로 옮긴다.
+- 판매가·멤버십가는 버전 가격 룰로 쓴다: order 1 `all_variants` override(최저 판매가) + variant 마다 `variants` override, 멤버십은 `membership_price` 레이어. 공개 때 가격 캐시와 Medusa variant metadata(`membershipPrice`)가 함께 갱신된다.
+- 대표 이미지: ugc 가 템플릿 미리보기 JPG 를 file-service 에 올려 받은 fileId 를 `thumbnailFileId` 로 쓴다.
+- 상품에 템플릿 정보를 싣지 않는다. 버전에 임의 metadata 칸이 없고 Medusa 동기화 경로 다섯 곳을 고쳐야 하기 때문이다. 템플릿↔상품 연결은 ugc 템플릿의 `product_id` 하나가 정본이다.
+- 같은 템플릿으로 두 번 게시하지 않도록 core 에 `print_template_products(template_id PK, master_id)` 를 두고 같은 트랜잭션에서 쓴다.
 - 자동 발주 매핑을 새 테이블에 조합마다 한 줄 저장한다(4.4).
-- 같은 템플릿으로 이미 만든 상품이 있으면 409. 템플릿 하나에 상품 하나.
-- 권한: `catalog.product.write`, `catalog.price.write`, `marketing.almond_template.write` 를 모두 요구한다(상품 쓰기 권한은 가격을 포함하지 않는다).
+- 같은 템플릿으로 이미 만든 상품이 있으면 새로 만들지 않고 그 master id 를 `created:false` 로 돌려준다(③만 다시 하면 된다).
+- 권한: 라우트는 `@RequirePermission('catalog.product.write')`, 나머지 `catalog.price.write`·`marketing.almond_template.write` 는 `PermissionCheckpoints.check` 로 확인한다(데코레이터는 한 키만 받는다).
 
 ### 4.4 자동 발주 매핑 테이블 (core, additive)
 
@@ -73,18 +77,18 @@ admin 모달 ─①─▶ core GET  /print-catalog/:kind/options      (와우프
 - `confirmed` boolean (처음엔 false), `confirmed_at`, `confirmed_by`
 - `created_at`, `updated_at`
 
-`PrintOrderSubmitManager` 는 이 테이블을 먼저 보고, 없으면 기존 상수 `WOWPRESS_PRODUCTS` 를 본다. 상수의 22줄은 배포 때 테이블로 옮기고 다음 PR 에서 상수를 지운다(expand → contract). 어드민 와우프레스 보드의 테스트 확인대기 "확인 완료"가 해당 variant 들의 `confirmed` 를 true 로 바꾼다.
+`PrintOrderSubmitManager` 는 이 테이블을 먼저 보고, 없으면 기존 상수 `WOWPRESS_PRODUCTS` 를 본다. 상수의 22개 variant 는 배포 때 테이블로 옮기고 다음 PR 에서 상수를 지운다(expand → contract). 어드민 와우프레스 보드의 테스트 확인대기 "확인 완료"가 그 주문 라인의 variant 행 `confirmed` 를 true 로 바꾼다(지금은 print_orders 행만 표시한다).
 
 ### 4.5 템플릿 연결 (ugc)
 
-- `PUT /admin/almond-templates/:id/product { productId }` 가 템플릿의 `product_id` 를 바꾸고 `published` 로 만든다. 같은 값으로 다시 불러도 결과가 같다.
+- `PUT /admin/almond-templates/:id/product { productId }` 가 `product_id` 컬럼과 `design.productId` 를 함께 바꾸고 `published` 로 만든다. 같은 값으로 다시 불러도 결과가 같다. unique(product_id, 크기, 제목) 충돌은 409.
+- `POST /admin/almond-templates/:id/preview-image` 가 미리보기 JPG 를 file-service 에 올리고 fileId 를 돌려준다(게시 ② 전에 부른다).
 - 게시 ②는 성공했는데 ③이 실패하면 모달에 "게시 마무리 다시 시도"를 보여 준다. 상품은 만들어졌지만 템플릿이 안 걸린 상태라 고객 갤러리에는 아직 안 보인다.
 
 ### 4.6 스토어프론트
 
-- 상품이 템플릿 상품인지는 `PRINT_PRODUCTS` 대신 상품 metadata `almondTemplateId`·`printKind` 로 판단한다. 기존 6종 카드처럼 metadata 가 없는 상품은 `PRINT_PRODUCTS` 로 계속 판단한다.
+- 상품이 템플릿 상품인지는 `PRINT_PRODUCTS` 에 더해, ugc 공개 템플릿 목록에 그 상품(masterId)을 가진 템플릿이 있는지로 판단한다. 종류는 템플릿의 `kind` 다. 상품 상세·편집기 진입·고객 갤러리 필터가 모두 이 판단 하나를 쓴다.
 - 템플릿 편집기의 주문하기는 그 템플릿의 상품 상세로 간다.
-- 재단 여유가 종류 고정값이 아니라 상품(와우프레스 제품)별 값이 되므로, 편집기는 상품 metadata 의 재단 여유가 있으면 그것을 쓴다.
 
 ## 5. 오류 처리
 
@@ -97,7 +101,7 @@ admin 모달 ─①─▶ core GET  /print-catalog/:kind/options      (와우프
 - core: 바디 생성 규칙(colorno0·jobqty·비규격), 견적 판정(무시 필드·jobcostno -1·status 900), 제약 해석(radio·rst·req), 게시 트랜잭션(중간 실패 시 아무것도 안 남음, 중복 409), 매핑 테이블 우선·상수 대체.
 - ugc: 연결 경로 멱등.
 - admin-web: 모달 상태(배수 변경 시 직접 고친 칸 유지, 멤버십가 계산, 게시 막힘 조건).
-- storefront: metadata 기반 판단과 기존 `PRINT_PRODUCTS` 대체.
+- storefront: 템플릿 목록 기반 판단(새 상품·기존 6종 모두), 갤러리·편집기 진입.
 
 ## 7. 하지 않는 것
 
@@ -107,7 +111,7 @@ admin 모달 ─①─▶ core GET  /print-catalog/:kind/options      (와우프
 
 ## 8. 배포 순서
 
-모두 additive 라 expand 순서다: core 마이그(`print_product_specs`) → core·ugc 배포 → 22줄 옮기기(배포 때 라이브 데이터 삽입) → admin-web → storefront.
+모두 additive 라 expand 순서다: core 마이그(`print_product_specs`, `print_template_products`) → core·ugc 배포 → 22개 variant 옮기기(배포 때 라이브 데이터 삽입) → admin-web → storefront.
 
 ## 9. 열린 질문
 
