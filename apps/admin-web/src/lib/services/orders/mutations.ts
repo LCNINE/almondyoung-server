@@ -570,22 +570,35 @@ export const useRunOutboundPreparation = () => {
   return useMutation({
     mutationFn: ({
       onProgress,
+      assertActive,
       ...input
     }: PreparationInput & {
       onProgress: (progress: PreparationProgress) => void;
+      assertActive?: () => void;
     }) => {
       const batchKey = commandKey();
 
       return runOutboundPreparation(
         {
-          planMany: (shipmentIds, idempotencyKey) =>
-            orders.outboundPreparation.planMany({
+          planMany: (shipmentIds, idempotencyKey) => {
+            assertActive?.();
+
+            return orders.outboundPreparation.planMany({
               data: { shipmentIds },
               idempotencyKey,
-            }),
-          issueWaybills: (shipmentIds, key) =>
-            orders.waybills.batch({ shipmentIds, carrier: 'HANJIN' }, key),
+            });
+          },
+          issueWaybills: (shipmentIds, key) => {
+            assertActive?.();
+
+            return orders.waybills.batch(
+              { shipmentIds, carrier: 'HANJIN' },
+              key
+            );
+          },
           createBatch: async (data) => {
+            assertActive?.();
+
             const { batchId } = await orders.outboundBatches.createV2(
               data,
               batchKey
@@ -593,12 +606,21 @@ export const useRunOutboundPreparation = () => {
 
             return { id: batchId };
           },
-          addManyToBatch: (batchId, shipmentIds, idempotencyKey) =>
-            orders.outboundPreparation.addManyToBatch(batchId, {
+          addManyToBatch: (batchId, shipmentIds, idempotencyKey) => {
+            assertActive?.();
+
+            return orders.outboundPreparation.addManyToBatch(batchId, {
               data: { shipmentIds },
               idempotencyKey,
-            }),
-          sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+            });
+          },
+          sleep: async (ms) => {
+            assertActive?.();
+
+            await new Promise((resolve) => setTimeout(resolve, ms));
+
+            assertActive?.();
+          },
           newKey: commandKey,
         },
         input,

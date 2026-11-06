@@ -221,7 +221,7 @@ const allMenus: MainMenu[] = [
           },
           {
             id: 'waybill-issue',
-            title: '운송장 발급',
+            title: '출고 준비',
             path: '/order/waybill-issue',
           },
           {

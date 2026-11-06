@@ -189,4 +189,98 @@ describe('outbound preparation hooks', () => {
       ])
     );
   });
+
+  it.each([
+    ['before', [0, 0, 0, 0]],
+    ['plan', [1, 0, 0, 0]],
+    ['waybill', [1, 1, 0, 0]],
+    ['batch', [1, 1, 1, 0]],
+    ['sleep', [1, 0, 0, 0]],
+  ] as const)(
+    'stops subsequent dependencies when unmounted during %s',
+    async (stage, counts) => {
+      jest.useFakeTimers();
+      let unmounted = stage === 'before';
+      let release!: () => void;
+      const blocked = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const plan = jest.mocked(orders.outboundPreparation.planMany);
+      const waybill = jest.mocked(orders.waybills.batch);
+      const batch = jest.mocked(orders.outboundBatches.createV2);
+      const join = jest.mocked(orders.outboundPreparation.addManyToBatch);
+
+      plan.mockImplementation(async () => {
+        if (stage === 'plan') {
+          await blocked;
+        }
+
+        if (stage === 'sleep') {
+          throw new Error('network');
+        }
+
+        return { succeeded: ['s1'], failed: [] };
+      });
+      waybill.mockImplementation(async () => {
+        if (stage === 'waybill') {
+          await blocked;
+        }
+
+        return [
+          {
+            shipmentId: 's1',
+            status: 'registered',
+            trackingNo: null,
+            reason: null,
+            nextAttemptAt: null,
+          },
+        ];
+      });
+      batch.mockImplementation(async () => {
+        if (stage === 'batch') {
+          await blocked;
+        }
+
+        return { batchId: 'b1', operationId: 'op1' };
+      });
+      join.mockResolvedValue({ succeeded: ['s1'], failed: [] });
+      useRunOutboundPreparation();
+
+      const options = jest.mocked(useMutation).mock.calls[0][0];
+      const stopped = new Error('unmounted');
+
+      try {
+        const pending = options.mutationFn!(
+          {
+            warehouseId: 'w1',
+            shipmentIds: ['s1'],
+            pickingMethod: 'total_picking',
+            now: new Date('2026-11-05T00:30:00Z'),
+            onProgress: jest.fn(),
+            assertActive: () => {
+              if (unmounted) {
+                throw stopped;
+              }
+            },
+          },
+          { client: useQueryClient(), meta: undefined }
+        );
+        const rejection = expect(pending).rejects.toBe(stopped);
+        await jest.advanceTimersByTimeAsync(0);
+
+        expect(jest.getTimerCount()).toBe(stage === 'sleep' ? 1 : 0);
+        unmounted = true;
+        release();
+        await jest.runAllTimersAsync();
+        await rejection;
+
+        [plan, waybill, batch, join].forEach((request, index) => {
+          expect(request).toHaveBeenCalledTimes(counts[index]);
+        });
+        expect(jest.getTimerCount()).toBe(0);
+      } finally {
+        jest.useRealTimers();
+      }
+    }
+  );
 });
