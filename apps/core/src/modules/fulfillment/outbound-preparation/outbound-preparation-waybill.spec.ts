@@ -93,7 +93,7 @@ describe('outbound preparation with WaybillManager', () => {
 
     addShipment.mockReset().mockResolvedValue({});
     sleep.mockReset().mockResolvedValue(undefined);
-    createBatch.mockReset().mockResolvedValue({ id: 'batch' });
+    createBatch.mockReset().mockResolvedValue({ id: 'batch', name: 'batch' });
     insertPending.mockReset().mockImplementation(async () => {
       active = waybill('pending');
 

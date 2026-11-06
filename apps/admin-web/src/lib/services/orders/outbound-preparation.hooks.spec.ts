@@ -183,6 +183,93 @@ describe('outbound preparation hooks', () => {
     }
   });
 
+  it('reuses the unresolved batch creation command on a manual retry', async () => {
+    const storage = new Map<string, string>();
+
+    Object.defineProperty(globalThis, 'localStorage', {
+      configurable: true,
+      value: {
+        getItem: (key: string) => storage.get(key) ?? null,
+        setItem: (key: string, value: string) => storage.set(key, value),
+        removeItem: (key: string) => storage.delete(key),
+      },
+    });
+    jest.useFakeTimers();
+    jest
+      .mocked(orders.outboundPreparation.planMany)
+      .mockImplementation(async ({ data }) => ({
+        succeeded: data.shipmentIds,
+        failed: [],
+      }));
+    jest
+      .mocked(orders.outboundPreparation.issueWaybills)
+      .mockImplementation(async ({ data }) =>
+        data.shipmentIds.map((shipmentId) => ({
+          shipmentId,
+          status: 'registered',
+          trackingNo: null,
+          reason: null,
+          nextAttemptAt: null,
+        }))
+      );
+    jest
+      .mocked(orders.outboundPreparation.addManyToBatch)
+      .mockImplementation(async (_, { data }) => ({
+        succeeded: data.shipmentIds,
+        failed: [],
+      }));
+    jest
+      .mocked(orders.outboundBatches.createV2)
+      .mockRejectedValue({ statusCode: 503 });
+    useRunOutboundPreparation();
+
+    const options = jest.mocked(useMutation).mock.calls[0][0];
+    const context = { client: useQueryClient(), meta: undefined };
+    const variables = {
+      warehouseId: 'w1',
+      shipmentIds: ['s1'],
+      pickingMethod: 'total_picking' as const,
+      onProgress: jest.fn(),
+    };
+
+    try {
+      const first = options.mutationFn!(
+        { ...variables, now: new Date('2026-11-05T00:30:00Z') },
+        context
+      );
+      await jest.advanceTimersByTimeAsync(17000);
+
+      expect(await first).toMatchObject({ batchId: null });
+
+      const [, failedKey] = jest.mocked(orders.outboundBatches.createV2).mock
+        .calls[0];
+
+      jest
+        .mocked(orders.outboundBatches.createV2)
+        .mockReset()
+        .mockResolvedValue({ batchId: 'b1', operationId: 'op1' });
+
+      const second = await options.mutationFn!(
+        { ...variables, now: new Date('2026-11-05T01:00:00Z') },
+        context
+      );
+      const [firstCall] = jest.mocked(orders.outboundBatches.createV2).mock
+        .calls;
+
+      expect(second).toMatchObject({
+        batchId: 'b1',
+        batchName: '11/05 토탈피킹 09:30',
+        joined: 1,
+      });
+      expect(firstCall[0].name).toBe('11/05 토탈피킹 09:30');
+      expect(firstCall[1]).toBe(failedKey);
+      expect(storage.has('outbound-preparation-pending-batch')).toBe(false);
+    } finally {
+      jest.useRealTimers();
+      Reflect.deleteProperty(globalThis, 'localStorage');
+    }
+  });
+
   it('refreshes preparation and affected shipment views after success or failure', () => {
     useSplitUnreservedMany();
 

@@ -147,6 +147,12 @@ function PreparationWarehouse({
       return;
     }
 
+    if (pickingMethod === 'multi_order' && ids.length > Number(cartCapacity)) {
+      toast.error(`카트 용량 ${cartCapacity}건까지만 고를 수 있어요`);
+
+      return;
+    }
+
     setPreparation({
       input: {
         warehouseId,

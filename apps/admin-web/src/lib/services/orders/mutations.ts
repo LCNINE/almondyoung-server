@@ -11,6 +11,7 @@ import {
   type PreparationProgress,
 } from '../../../features/order/outbound-preparation/run-outbound-preparation';
 import { orders } from '@/lib/api/domains';
+import { parseServerError } from '@/lib/api/server-error';
 import { isConflict } from '@/lib/api/domains/orders/sales-order-amendments.shape';
 import type {
   CancelSalesOrderDto,
@@ -567,31 +568,48 @@ useSplitUnreservedMany.permission = [
 ] as const satisfies PermissionRequirement;
 
 const WAYBILL_KEYS_STORAGE_KEY = 'outbound-preparation-waybill-keys';
+const PENDING_BATCH_STORAGE_KEY = 'outbound-preparation-pending-batch';
 
-function readWaybillKeys(): Record<string, string> {
+type PendingBatch = Parameters<PreparationDeps['createBatch']>[0] & {
+  key: string;
+};
+
+function readStored<T>(storageKey: string, fallback: T): T {
   try {
-    return JSON.parse(localStorage.getItem(WAYBILL_KEYS_STORAGE_KEY) ?? '{}');
+    const stored = localStorage.getItem(storageKey);
+
+    return stored === null ? fallback : JSON.parse(stored);
   } catch {
-    return {};
+    return fallback;
   }
 }
 
-function writeWaybillKeys(keys: Record<string, string>) {
+function writeStored(storageKey: string, value: unknown) {
   try {
-    localStorage.setItem(WAYBILL_KEYS_STORAGE_KEY, JSON.stringify(keys));
+    if (value === null) {
+      localStorage.removeItem(storageKey);
+    } else {
+      localStorage.setItem(storageKey, JSON.stringify(value));
+    }
   } catch {
     return;
   }
 }
 
+const readWaybillKeys = () =>
+  readStored<Record<string, string>>(WAYBILL_KEYS_STORAGE_KEY, {});
+
 const preparationWaybillKeys: PreparationDeps['waybillKeys'] = {
   get: (shipmentId) => readWaybillKeys()[shipmentId],
   set: (shipmentId, key) =>
-    writeWaybillKeys({ ...readWaybillKeys(), [shipmentId]: key }),
+    writeStored(WAYBILL_KEYS_STORAGE_KEY, {
+      ...readWaybillKeys(),
+      [shipmentId]: key,
+    }),
   delete: (shipmentId) => {
     const { [shipmentId]: _, ...rest } = readWaybillKeys();
 
-    writeWaybillKeys(rest);
+    writeStored(WAYBILL_KEYS_STORAGE_KEY, rest);
   },
 };
 
@@ -630,12 +648,37 @@ export const useRunOutboundPreparation = () => {
           createBatch: async (data) => {
             assertActive?.();
 
-            const { batchId } = await orders.outboundBatches.createV2(
-              data,
-              batchKey
+            const stored = readStored<PendingBatch | null>(
+              PENDING_BATCH_STORAGE_KEY,
+              null
             );
+            const { key, ...request } =
+              stored?.warehouseId === data.warehouseId &&
+              stored.pickingMethod === data.pickingMethod &&
+              stored.cartCapacity === data.cartCapacity
+                ? stored
+                : { ...data, key: batchKey };
 
-            return { id: batchId };
+            writeStored(PENDING_BATCH_STORAGE_KEY, { ...request, key });
+
+            try {
+              const { batchId } = await orders.outboundBatches.createV2(
+                request,
+                key
+              );
+
+              writeStored(PENDING_BATCH_STORAGE_KEY, null);
+
+              return { id: batchId, name: request.name };
+            } catch (error) {
+              const { status } = parseServerError(error, '');
+
+              if (status !== null && status < 500) {
+                writeStored(PENDING_BATCH_STORAGE_KEY, null);
+              }
+
+              throw error;
+            }
           },
           addManyToBatch: (batchId, shipmentIds, idempotencyKey) => {
             assertActive?.();

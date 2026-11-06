@@ -53,7 +53,7 @@ function makeDeps() {
         ReturnType<PreparationDeps['createBatch']>,
         Parameters<PreparationDeps['createBatch']>
       >()
-      .mockResolvedValue({ id: 'b1' }),
+      .mockImplementation(async (data) => ({ id: 'b1', name: data.name })),
     addManyToBatch: jest
       .fn<
         ReturnType<PreparationDeps['addManyToBatch']>,

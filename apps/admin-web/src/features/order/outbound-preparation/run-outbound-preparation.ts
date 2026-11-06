@@ -42,7 +42,7 @@ export interface PreparationDeps {
     pickingMethod: PickingMethod;
     cartCapacity?: number;
     name: string;
-  }): Promise<{ id: string }>;
+  }): Promise<{ id: string; name: string }>;
   addManyToBatch(
     batchId: string,
     ids: string[],
@@ -290,7 +290,7 @@ export async function runOutboundPreparation(
       });
 
       batchId = batch.id;
-      report({ batchId, batchName: name });
+      report({ batchId, batchName: batch.name });
 
       return ids.map((shipmentId) => ({ shipmentId, outcome: 'success' }));
     });
