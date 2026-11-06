@@ -45,6 +45,7 @@ import type {
   VoidWaybillRequest,
 } from '@/lib/types/dto/fulfillment';
 import type { PermissionRequirement } from '@/lib/auth/mutation-permission';
+import type { IdempotentCommand } from './idempotency';
 
 function commandKey(idempotencyKey?: string): string {
   return idempotencyKey ?? crypto.randomUUID();
@@ -538,6 +539,25 @@ export const useSplitUnreservedShipment = () => {
   });
 };
 useSplitUnreservedShipment.permission = ['fulfillment.warehouse.operate'] as const satisfies PermissionRequirement;
+
+export const useSplitUnreservedMany = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (cmd: IdempotentCommand<{ shipmentIds: string[] }>) =>
+      orders.outboundPreparation.splitManyUnreserved(cmd),
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['outbound-preparation'] });
+      queryClient.invalidateQueries({ queryKey: ['shipments'] });
+      queryClient.invalidateQueries({ queryKey: orderQueryKeys.fulfillments });
+      queryClient.invalidateQueries({ queryKey: ['order-progress'] });
+      queryClient.invalidateQueries({ queryKey: orderQueryKeys.orderStats });
+    },
+  });
+};
+useSplitUnreservedMany.permission = [
+  'fulfillment.warehouse.operate',
+] as const satisfies PermissionRequirement;
 
 export const useReviseShipmentRecipient = () => {
   const queryClient = useQueryClient();

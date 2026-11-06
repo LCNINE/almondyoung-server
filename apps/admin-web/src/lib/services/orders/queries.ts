@@ -53,6 +53,14 @@ export const useSalesOrderItems = (orderId: string) => {
 
 // ===== 출고 배치 관련 쿼리 (D2) =====
 
+export const useOutboundPreparationSummary = (warehouseId: string) => {
+  return useQuery({
+    queryKey: ['outbound-preparation', warehouseId],
+    queryFn: () => orders.outboundPreparation.summary(warehouseId),
+    enabled: !!warehouseId,
+  });
+};
+
 export const useOutboundBatchesV2 = (query: OutboundBatchV2ListQuery = {}) => {
   return useQuery({
     queryKey: orderQueryKeys.outboundBatchesV2(query),
