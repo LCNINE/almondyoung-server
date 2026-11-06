@@ -106,7 +106,7 @@ export function CategoryBestSection({
       <div
         role="tablist"
         aria-label={t("titleFirst")}
-        className="-mx-4 mb-5 flex gap-1.5 overflow-x-auto px-4 [scrollbar-width:none] md:mx-0 md:mb-6 md:flex-wrap md:justify-center md:px-0 [&::-webkit-scrollbar]:hidden"
+        className="-mx-4 mt-1 mb-6 flex gap-1.5 overflow-x-auto px-4 [scrollbar-width:none] md:mx-0 md:mt-2 md:mb-10 md:flex-wrap md:justify-center md:px-0 [&::-webkit-scrollbar]:hidden"
       >
         {categories.map((category) => {
           const isActive = category.id === activeTab.id
@@ -122,7 +122,7 @@ export function CategoryBestSection({
               className={cn(
                 "flex h-[38px] flex-none items-center gap-1.5 rounded-full border px-4 text-[14px] font-semibold transition-colors",
                 isActive
-                  ? "border-ink bg-ink text-white"
+                  ? "border-ink text-ink bg-white font-bold shadow-[inset_0_0_0_1px_var(--ink)]"
                   : "border-border-muted text-ink/80 hover:text-ink bg-white"
               )}
             >

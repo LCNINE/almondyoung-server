@@ -4,15 +4,11 @@
     "title": "See only your fields?",
     "description": "Pick up to {max} and your home switches to their best sellers.",
     "dismiss": "Hide for a week",
-    "saved": "Your home page now leads with your {count} chosen fields",
     "saveFail": "Failed to save. Please try again.",
     "dismissFail": "Failed to process",
     "maxSelectable": "You can select up to {max}",
     "selectPrompt": "Pick your fields",
-    "save": "Apply {count} fields",
-    "saving": "Saving...",
-    "needAtLeastOne": "Please select at least one",
-    "previewSelected": "Selected · {names}"
+    "previewSuffix": "Best"
   },
   "interestEdit": {
     "trigger": "Edit",

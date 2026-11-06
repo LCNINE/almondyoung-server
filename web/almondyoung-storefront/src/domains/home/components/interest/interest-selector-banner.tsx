@@ -1,36 +1,57 @@
 "use client"
 
 import { Button } from "@/components/ui/button"
-import { CustomButton } from "@/components/shared/custom-buttons"
 import {
   dismissInterestBanner7Days,
   updateInterestCategories,
 } from "@/domains/home/interest-categories-actions"
-import {
-  INTEREST_CANDIDATE_CATEGORIES,
-  MAX_INTEREST_CATEGORIES,
-} from "@/lib/constants/categories"
+import ProductCard from "@/domains/products/components/product-card"
+import { MAX_INTEREST_CATEGORIES } from "@/lib/constants/categories"
+import type { CustomerGroup } from "@/lib/types/dto/medusa"
+import type { StoreCustomerWithGroups } from "@/lib/types/ui/medusa"
+import { getIsMembershipOnly } from "@/lib/utils/product-card"
+import type { HttpTypes } from "@medusajs/types"
 import { useState, useTransition } from "react"
 import { toast } from "sonner"
 import { useTranslations } from "next-intl"
+import { HomeRail } from "../shared/home-rail"
 import { InterestKeyChips } from "./interest-key-chips"
+import { mergeBestProducts } from "./merge-best-products"
 
-export function InterestSelectorBanner() {
+const PREVIEW_LIMIT = 15
+
+interface InterestSelectorBannerProps {
+  initialKeys: string[]
+  bestByKey: Record<string, HttpTypes.StoreProduct[]>
+  customer: StoreCustomerWithGroups | null
+  wishlistIds: string[]
+}
+
+export function InterestSelectorBanner({
+  initialKeys,
+  bestByKey,
+  customer,
+  wishlistIds,
+}: InterestSelectorBannerProps) {
   const t = useTranslations("home.interestBanner")
   const tCat = useTranslations("categories")
-  const [selected, setSelected] = useState<string[]>([])
-  const [isPending, startTransition] = useTransition()
+  const [selected, setSelected] = useState<string[]>(initialKeys)
+  const [, startSave] = useTransition()
+  const [isDismissing, startDismiss] = useTransition()
 
-  const handleSave = () => {
-    if (selected.length === 0) {
-      toast.message(t("needAtLeastOne"))
-      return
-    }
+  const isMembership =
+    customer?.groups?.some(
+      (group: CustomerGroup) =>
+        group.id === process.env.NEXT_PUBLIC_MEDUSA_MEMBERSHIP_GROUP_ID
+    ) ?? false
+  const wishlisted = new Set(wishlistIds)
 
-    startTransition(async () => {
+  const handleChange = (next: string[]) => {
+    setSelected(next)
+
+    startSave(async () => {
       try {
-        await updateInterestCategories(selected)
-        toast.success(t("saved", { count: selected.length }))
+        await updateInterestCategories(next)
       } catch (error: unknown) {
         const err = error as Error & { digest?: string }
         if (err.digest === "UNAUTHORIZED" || err.message === "UNAUTHORIZED") {
@@ -42,7 +63,7 @@ export function InterestSelectorBanner() {
   }
 
   const handleDismiss = () => {
-    startTransition(async () => {
+    startDismiss(async () => {
       try {
         await dismissInterestBanner7Days()
       } catch {
@@ -51,15 +72,13 @@ export function InterestSelectorBanner() {
     })
   }
 
-  const saveLabel = isPending
-    ? t("saving")
-    : t("save", { count: selected.length })
-
-  const selectedNames = INTEREST_CANDIDATE_CATEGORIES.filter((cat) =>
-    selected.includes(cat.key)
+  const selectedNames = selected
+    .map((key) => tCat(key as "lash-perm"))
+    .join(" · ")
+  const products = mergeBestProducts(
+    selected.map((key) => bestByKey[key] ?? []),
+    PREVIEW_LIMIT
   )
-    .map((cat) => tCat(cat.key as "lash-perm"))
-    .join(", ")
 
   return (
     <section aria-labelledby="interest-selector-title">
@@ -81,7 +100,7 @@ export function InterestSelectorBanner() {
           variant="link"
           size="sm"
           onClick={handleDismiss}
-          disabled={isPending}
+          disabled={isDismissing}
           className="text-muted-foreground hover:text-foreground h-auto shrink-0 p-0 text-[13px] font-normal underline underline-offset-4"
         >
           {t("dismiss")}
@@ -91,8 +110,7 @@ export function InterestSelectorBanner() {
       <InterestKeyChips
         variant="card"
         selectedKeys={selected}
-        onChange={setSelected}
-        disabled={isPending}
+        onChange={handleChange}
       />
 
       <div className="mt-7">
@@ -101,19 +119,25 @@ export function InterestSelectorBanner() {
             {t("selectPrompt")}
           </p>
         ) : (
-          <div className="flex flex-col items-stretch gap-3 rounded-[14px] bg-white p-5 md:flex-row md:items-center md:justify-between">
-            <p className="text-foreground text-[15px] font-bold break-keep">
-              {t("previewSelected", { names: selectedNames })}
-            </p>
-            <CustomButton
-              type="button"
-              onClick={handleSave}
-              disabled={isPending}
-              className="h-11 w-full rounded-xl px-6 text-sm font-bold whitespace-nowrap md:w-auto md:min-w-[180px]"
-            >
-              {saveLabel}
-            </CustomButton>
-          </div>
+          <>
+            <h3 className="text-ink mb-4 text-base font-bold break-keep">
+              <span className="text-mint-deep">{selectedNames}</span>{" "}
+              {t("previewSuffix")}
+            </h3>
+
+            <HomeRail key={selected.join(",")}>
+              {products.map((product) => (
+                <ProductCard
+                  key={product.id}
+                  product={product}
+                  isMembership={isMembership}
+                  isMembershipOnly={getIsMembershipOnly(product)}
+                  isWishlisted={wishlisted.has(product.id ?? "")}
+                  enablePhotoSwipe={false}
+                />
+              ))}
+            </HomeRail>
+          </>
         )}
       </div>
     </section>

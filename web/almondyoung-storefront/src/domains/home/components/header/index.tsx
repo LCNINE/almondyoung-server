@@ -111,7 +111,7 @@ export function SectionHead({
   className?: string
 }) {
   return (
-    <Header className={cn("mb-5 flex-wrap md:flex-nowrap", className)}>
+    <Header className={cn("mb-6 flex-wrap md:mb-8 md:flex-nowrap", className)}>
       <div className="min-w-0">
         <Title id={id}>{title}</Title>
         {subtitle && <Subtitle>{subtitle}</Subtitle>}
