@@ -1066,6 +1066,13 @@ export const useLinkAlmondTemplateProduct = () => {
 };
 useLinkAlmondTemplateProduct.permission = ['marketing.almond_template.write'] as const satisfies PermissionRequirement;
 
+export const usePreviewAlmondTemplateImage = () => {
+  return useMutation({
+    mutationFn: (id: string) => products.almondTemplates.previewImage(id),
+  });
+};
+usePreviewAlmondTemplateImage.permission = ['marketing.almond_template.write'] as const satisfies PermissionRequirement;
+
 export const usePrintQuotes = () => {
   return useMutation({
     mutationFn: ({ kind, body }: { kind: PrintKind; body: PrintQuotesBodyDto }) =>
