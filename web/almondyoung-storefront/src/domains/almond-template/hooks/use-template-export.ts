@@ -1,5 +1,8 @@
 import type { RefObject } from "react"
+import { rasterPng } from "../lib/design-images"
 import type { Design } from "../lib/document"
+
+const PNG_LONG_SIDE_PX = 3000
 
 function download(name: string, content: BlobPart, type: string) {
   const url = URL.createObjectURL(new Blob([content], { type }))
@@ -66,6 +69,25 @@ export function useTemplateExport({
       "SVG는 편집·검토용입니다. 와우프레스 AI/EPS 접수 적합성은 별도 검증이 필요합니다."
     )
   }
+  const exportPng = async () => {
+    const source = preview
+      ? (document.querySelector("#almond-proof") as SVGSVGElement | null)
+      : svgRef.current
+    if (!source) return
+
+    try {
+      const png = await rasterPng(svgMarkup(source, design), PNG_LONG_SIDE_PX)
+      if (!png) throw new Error("PNG 변환 실패")
+
+      download(
+        `almond-${productId || design.kind}-${preview ? previewSide : side}.png`,
+        png,
+        "image/png"
+      )
+    } catch {
+      setMessage("시안 이미지를 만들지 못했습니다. 잠시 후 다시 시도해 주세요.")
+    }
+  }
   const printProof = () => {
     const svg = document.querySelector("#almond-proof") as SVGSVGElement | null
     if (!svg) return
@@ -84,5 +106,5 @@ export function useTemplateExport({
     setTimeout(() => page.print(), 100)
   }
 
-  return { exportJson, exportSvg, printProof }
+  return { exportJson, exportSvg, exportPng, printProof }
 }
