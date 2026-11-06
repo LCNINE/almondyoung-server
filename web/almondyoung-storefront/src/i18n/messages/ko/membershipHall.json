@@ -1,0 +1,33 @@
+{
+  "title": "멤버십관",
+  "description": "멤버십 회원만 받는 가격을 한곳에 모았어요. 멤버십 특가는 회원에게만 가격이 공개돼요.",
+  "join": "멤버십 가입하기",
+  "myMembership": "내 멤버십 보기",
+  "tabsLabel": "멤버십 상품 종류",
+  "tabs": {
+    "all": "전체",
+    "sale": "멤버십 특가",
+    "discount": "멤버십할인가"
+  },
+  "count": "상품 {count}개",
+  "sortLabel": "정렬",
+  "sorts": {
+    "sales": "판매량순",
+    "discount": "할인율순",
+    "newest": "최신순"
+  },
+  "fieldsLabel": "분야",
+  "allFields": "전체",
+  "emptyTitle": "아직 여기에 담긴 상품이 없어요",
+  "emptyDescription": "다른 탭이나 분야를 골라 보세요.",
+  "section": {
+    "viewAll": "전체보기",
+    "guestTitle": "멤버십 가입하고 회원가로 사세요",
+    "guestDescription": "멤버십할인가와 회원 전용 특가를 바로 받을 수 있어요",
+    "guestCta": "가입하기",
+    "memberTitle": "멤버십 회원이에요",
+    "memberDescription": "모든 상품이 멤버십 가격으로 계산되고 있어요",
+    "memberCta": "내 멤버십 보기",
+    "subtitle": "멤버십 회원만 받는 가격, 한곳에 모았어요"
+  }
+}
