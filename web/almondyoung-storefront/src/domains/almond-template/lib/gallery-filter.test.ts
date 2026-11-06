@@ -85,3 +85,33 @@ it("카탈로그에 없는 상품이나 잘못된 규격은 게시 목록에서 
   expect(published({ ...item, productId: "unknown" })).toBe(false)
   expect(published({ ...item, size: "90x50x1" })).toBe(false)
 })
+
+it("시안의 인쇄 유형이 상품 종류보다 먼저다", () => {
+  const card = Object.keys(PRINT_PRODUCTS).find(
+    (id) => PRINT_PRODUCTS[id].kind === "card"
+  )!
+  const bizcard: PublishedTemplate = {
+    id: "biz",
+    title: "양면 명함",
+    productId: card,
+    size: "90x50",
+    kind: "bizcard",
+    thumbnail: "https://ugc.test/biz.svg",
+    updatedAt: "2026-11-06T00:00:00.000Z",
+    colors: [],
+    industry: null,
+    purpose: null,
+  }
+  const filters = {
+    productId: "",
+    availableKinds: ["card", "bizcard"] as const,
+    size: "",
+    keyword: "",
+    colors: [],
+    industry: "",
+    purpose: "",
+  }
+
+  expect(filterTemplates([bizcard], { ...filters, kind: "bizcard" })).toHaveLength(1)
+  expect(filterTemplates([bizcard], { ...filters, kind: "card" })).toHaveLength(0)
+})

@@ -1,5 +1,5 @@
 import type { AlmondTemplateSummary } from "@/lib/types/ui/almond-template"
-import { PRINT_PRODUCTS, type PrintKind } from "./catalog"
+import { PRINT_PRODUCTS, templateKind, type PrintKind } from "./catalog"
 
 export type PublishedTemplate = AlmondTemplateSummary
 
@@ -72,7 +72,7 @@ export function filterTemplates(
   }
 ) {
   return items.filter((item) => {
-    const itemKind = PRINT_PRODUCTS[item.productId]?.kind
+    const itemKind = templateKind(item)
     if (filters.productId && item.productId !== filters.productId) return false
     if (!itemKind || !filters.availableKinds.includes(itemKind)) return false
     if (filters.kind && itemKind !== filters.kind) return false

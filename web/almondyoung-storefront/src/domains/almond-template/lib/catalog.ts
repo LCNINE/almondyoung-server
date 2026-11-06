@@ -330,3 +330,13 @@ export function sizeFromOption(
       value.includes(`${w}x${h}`) || value.includes(`${w / 10}x${h / 10}`)
   )
 }
+
+// 시안 자체의 인쇄 유형이 우선이다. 같은 상품으로 주문하는 명함처럼 상품 종류와 다른 시안이 있다
+export function templateKind(item: {
+  productId: string
+  kind?: string | null
+}): PrintKind | undefined {
+  if (item.kind && item.kind in PRINT_SPECS) return item.kind as PrintKind
+
+  return PRINT_PRODUCTS[item.productId]?.kind
+}

@@ -3,8 +3,8 @@ import {
   type LandingCard,
 } from "@/domains/almond-template/components/landing"
 import {
-  PRINT_PRODUCTS,
   PRINT_SPECS,
+  templateKind,
   type PrintKind,
 } from "@/domains/almond-template/lib/catalog"
 import { published } from "@/domains/almond-template/lib/gallery-filter"
@@ -50,8 +50,8 @@ async function fallbackCards(): Promise<LandingCard[]> {
   const thumbnails: Partial<Record<PrintKind, string>> = {}
 
   for (const item of templates.filter(published)) {
-    const kind = PRINT_PRODUCTS[item.productId].kind
-    thumbnails[kind] ??= item.thumbnail
+    const kind = templateKind(item)
+    if (kind) thumbnails[kind] ??= item.thumbnail
   }
 
   return FALLBACK_ORDER.map((kind) => ({

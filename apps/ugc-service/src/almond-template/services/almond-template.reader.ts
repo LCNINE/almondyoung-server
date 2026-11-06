@@ -23,16 +23,12 @@ const summaryColumns = {
   updatedBy: almondTemplates.updatedBy,
   createdAt: almondTemplates.createdAt,
   updatedAt: almondTemplates.updatedAt,
-};
-
-const notDeleted = isNull(almondTemplates.deletedAt);
-
-const adminSummaryColumns = {
-  ...summaryColumns,
   kind: sql<
     string | null
   >`case when jsonb_typeof(${almondTemplates.design}->'kind') = 'string' then ${almondTemplates.design}->>'kind' end`,
 };
+
+const notDeleted = isNull(almondTemplates.deletedAt);
 
 @Injectable()
 export class AlmondTemplateReader {
@@ -54,7 +50,7 @@ export class AlmondTemplateReader {
     return this.db.run(
       (trx) =>
         trx
-          .select(adminSummaryColumns)
+          .select(summaryColumns)
           .from(almondTemplates)
           .where(notDeleted)
           .orderBy(desc(almondTemplates.updatedAt), desc(almondTemplates.id)),
