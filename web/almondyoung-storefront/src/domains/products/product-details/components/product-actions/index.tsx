@@ -324,8 +324,10 @@ export default function ProductActions({
   const printKind = templateProduct?.kind
   const optionLabel =
     templateVariant?.options?.map((option) => option.value).join(" ") ?? ""
+  // 게시한 상품은 옵션에 크기가 없어 시안 크기를 쓴다
   const printSize = printKind
-    ? (sizeFromOption(printKind, optionLabel) ??
+    ? (templateProduct?.size ??
+      sizeFromOption(printKind, optionLabel) ??
       PRINT_SPECS[printKind].sizes[0])
     : undefined
   const almondDesignId = searchParams.get("almond_design")

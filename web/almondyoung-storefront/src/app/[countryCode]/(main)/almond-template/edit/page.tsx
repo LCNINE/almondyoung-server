@@ -25,10 +25,12 @@ export default async function EditAlmondTemplatePage({ searchParams }: Props) {
   } = await searchParams
   if (!product) notFound()
   const templates = await listAlmondTemplates().catch(() => [])
-  if (!templateProductOf(product, templates)) notFound()
+  const templateProduct = templateProductOf(product, templates)
+  if (!templateProduct) notFound()
   return (
     <AlmondTemplateEditor
       productId={product}
+      templateProduct={templateProduct}
       variantId={variant}
       size={size}
       templateId={template}
