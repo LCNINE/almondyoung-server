@@ -12,11 +12,11 @@ import {
 import type { AlmondEditor } from "../../hooks/use-almond-editor"
 import { layerBounds } from "../../lib/canvas-math"
 import type { Layer } from "../../lib/document"
-import { mm } from "../../lib/layer"
+import { MIN_LAYER_MM, mm } from "../../lib/layer"
 import { OrderIcon } from "./order-icon"
 import { PrintColorPicker } from "../color-picker"
 import { bevelOf, shadowOf } from "../graphic"
-import { common, type StyleTarget } from "./style-controls"
+import { common, TextureFields, type StyleTarget } from "./style-controls"
 
 // 망고보드 속성 패널 부품. 섹션은 아래 1px #e6e7ea 선으로 나뉜다
 
@@ -284,14 +284,16 @@ export function SizeSection({
       <NumberBox
         label="너비"
         value={layer.width}
-        step={0.5}
+        min={MIN_LAYER_MM}
+        step={0.1}
         disabled={!editable}
         onValue={(value) => setGeometry("width", value)}
       />
       <NumberBox
         label="높이"
         value={layer.height}
-        step={0.5}
+        min={MIN_LAYER_MM}
+        step={0.1}
         disabled={!editable || heightLocked}
         onValue={(value) => setGeometry("height", value)}
       />
@@ -578,6 +580,15 @@ export function PrintEffectRows({ target }: { target: StyleTarget }) {
         disabled={disabled}
         onChange={(checked) => apply({ texture: checked })}
       />
+      {on("texture") && (
+        <SettingBox
+          title="질감 설정"
+          disabled={disabled}
+          onClear={() => apply({ texture: false })}
+        >
+          <TextureFields target={target} />
+        </SettingBox>
+      )}
     </>
   )
 }

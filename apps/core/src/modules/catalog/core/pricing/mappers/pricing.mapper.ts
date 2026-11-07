@@ -19,7 +19,6 @@ export class PricingMapper {
       scopeTargetIds: entity.scopeTargetIds,
       operationType: entity.operationType,
       operationValue: entity.operationValue,
-      minQuantity: entity.minQuantity,
       createdAt: DateMapper.toNotNullString(entity.createdAt),
       updatedAt: DateMapper.toNotNullString(entity.updatedAt),
     };

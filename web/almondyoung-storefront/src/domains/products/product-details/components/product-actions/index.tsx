@@ -1,11 +1,16 @@
 "use client"
 
+import { useQuantityDiscountNow } from "@/hooks/use-quantity-discount-now"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
 import { useIntersection } from "@/hooks/use-intersection"
 import { addToCart, createBuyNowCart } from "@/lib/api/medusa/cart"
 import { getPricesForVariant } from "@/lib/utils/get-product-price"
-import { getRequiresMembershipToPurchase } from "@/lib/utils/product-card"
+import {
+  getHideMembershipPriceForNonMembers,
+  getRequiresMembershipToPurchase,
+} from "@/lib/utils/product-card"
+import { addedPriceChange, itemQuantityPricing } from "./quantity-pricing"
 import LocalizedClientLink from "@/components/shared/localized-client-link"
 import {
   CustomerGroupRef,
@@ -43,10 +48,11 @@ import { SelectedItem } from "./types"
 import { RestockNotice, hasStockNotice } from "./restock-notice"
 import { isWelcomeMembershipProduct } from "@/lib/utils/welcome-membership"
 import {
-  PRINT_PRODUCTS,
   PRINT_SPECS,
   sizeFromOption,
 } from "@/domains/almond-template/lib/catalog"
+import { templateProductOf } from "@/domains/almond-template/lib/template-product"
+import type { AlmondTemplateSummary } from "@/lib/types/ui/almond-template"
 import {
   describeStockShortage,
   getAvailableQuantity,
@@ -59,6 +65,7 @@ type ProductActionsProps = {
   product: HttpTypes.StoreProduct
   region: HttpTypes.StoreRegion
   disabled?: boolean
+  templates: AlmondTemplateSummary[] | null
 }
 
 const optionsAsKeymap = (
@@ -89,6 +96,7 @@ export default function ProductActions({
   product,
   disabled,
   customer,
+  templates,
 }: ProductActionsProps) {
   const t = useTranslations("productDetail.options")
   const [isPending, startTransition] = useTransition()
@@ -97,7 +105,10 @@ export default function ProductActions({
   const searchParams = useSearchParams()
   const countryCode = useParams().countryCode as string
   const printProductId = product.metadata?.pimMasterId as string | undefined
-  const hasAlmondTemplate = !!printProductId && !!PRINT_PRODUCTS[printProductId]
+  const templateProduct = printProductId
+    ? templateProductOf(printProductId, templates ?? [])
+    : undefined
+  const hasAlmondTemplate = !!templateProduct
 
   const [options, setOptions] = useState<Record<string, string | undefined>>({})
   const [selectedItems, setSelectedItems] = useState<SelectedItem[]>([])
@@ -281,24 +292,42 @@ export default function ProductActions({
     [stockLimitMessage]
   )
 
+  // 수량 할인: 옵션별 수량으로 장바구니와 같은 개당 가격을 계산한다(표시가 = 결제가).
+  const isMember = isMembershipGroup(customer?.groups)
+  const pricingNow = useQuantityDiscountNow([product.metadata])
+  const pricingContext = useMemo(
+    () => ({
+      isMember,
+      hideMemberPrices: getHideMembershipPriceForNonMembers(product),
+      now: pricingNow,
+    }),
+    [isMember, product, pricingNow]
+  )
+  const pricingOf = useCallback(
+    (item: SelectedItem) =>
+      itemQuantityPricing(item.variant, product, item.quantity, pricingContext),
+    [product, pricingContext]
+  )
+  const focusItem = selectedItems[selectedItems.length - 1]
+
   // 총 수량 & 총 가격
   const totalQuantity = selectedItems.reduce(
     (sum, item) => sum + item.quantity,
     0
   )
   const totalPrice = selectedItems.reduce(
-    (sum, item) => sum + item.price.calculated_price_number * item.quantity,
+    (sum, item) => sum + pricingOf(item).unitPrice * item.quantity,
     0
   )
   const templateVariant =
     selectedItems.length === 1 ? selectedItems[0].variant : undefined
-  const printKind = printProductId
-    ? PRINT_PRODUCTS[printProductId]?.kind
-    : undefined
+  const printKind = templateProduct?.kind
   const optionLabel =
     templateVariant?.options?.map((option) => option.value).join(" ") ?? ""
+  // 게시한 상품은 옵션에 크기가 없어 시안 크기를 쓴다
   const printSize = printKind
-    ? (sizeFromOption(printKind, optionLabel) ??
+    ? (templateProduct?.size ??
+      sizeFromOption(printKind, optionLabel) ??
       PRINT_SPECS[printKind].sizes[0])
     : undefined
   const almondDesignId = searchParams.get("almond_design")
@@ -320,7 +349,7 @@ export default function ProductActions({
     : undefined
   const almondDesignMetadata =
     !almondSizeMismatch &&
-    hasAlmondTemplate &&
+    (hasAlmondTemplate || templates === null) &&
     templateVariant &&
     almondDesignId &&
     /^[0-9a-f-]{36}$/.test(almondDesignId)
@@ -386,14 +415,14 @@ export default function ProductActions({
     trackEvent("add_to_cart", {
       currency: toGaCurrency(items[0]?.price.currency_code),
       value: items.reduce(
-        (sum, i) => sum + i.price.calculated_price_number * i.quantity,
+        (sum, i) => sum + pricingOf(i).unitPrice * i.quantity,
         0
       ),
       items: items.map((i) => ({
         item_id: product.id,
         item_name: product.title,
         item_variant: i.label,
-        price: i.price.calculated_price_number,
+        price: pricingOf(i).unitPrice,
         quantity: i.quantity,
       })),
     })
@@ -417,14 +446,13 @@ export default function ProductActions({
           })
           // 세일이 방금 끝났으면 화면이 보여준 가격과 담긴 가격이 다르다. 조용히 넘기면
           // "4,491원인 줄 알고 담았는데 4,990원" 이 된다.
-          const shown = item.price?.calculated_price_number
-          if (
-            result.unitPrice != null &&
-            shown != null &&
-            result.unitPrice !== shown
-          ) {
-            setPriceChange({ from: shown, to: result.unitPrice })
-          }
+          const pricing = pricingOf(item)
+          const change = addedPriceChange({
+            shown: pricing.unitPrice,
+            added: result.unitPrice,
+            hasTiers: pricing.appliedPercent !== null || pricing.next !== null,
+          })
+          if (change) setPriceChange(change)
           if (result.error) {
             setShowCartModal(false)
             // 담기 직전에 상한을 이미 걸러주므로, 여기까지 온 재고부족은 "이 옵션이 품절" 이 아니라
@@ -497,8 +525,15 @@ export default function ProductActions({
         {/* 스크롤 영역: 옵션/선택목록이 길어져도 구매 버튼은 하단에 고정됨 */}
         <div className="flex min-h-0 flex-1 flex-col gap-y-2 overflow-y-auto pb-2">
           <ProductPreviewPrice
-            hasMembership={isMembershipGroup(customer?.groups)}
+            hasMembership={isMember}
             product={product}
+            focusVariant={focusItem?.variant}
+            quantity={focusItem?.quantity}
+            onSelectQuantity={
+              focusItem && !isWelcomeMembership
+                ? (q) => setItemQuantity(focusItem.variantId, q)
+                : undefined
+            }
           />
           <ProductShippingNotice product={product} className="pb-2" />
 
@@ -560,6 +595,8 @@ export default function ProductActions({
                       toast.info(t("minQtyOne"))
                     }}
                     onRemove={() => removeItem(item.variantId)}
+                    pricing={pricingOf(item)}
+                    onAddQuantity={(count) => updateQuantity(item.variantId, count)}
                   />
                 ))}
               </div>
@@ -580,11 +617,13 @@ export default function ProductActions({
               </div>
             </>
           )}
+
+          {hasAlmondTemplate && <CustomOrderNotice className="my-2" />}
         </div>
 
         {/* 하단 고정 액션 버튼 (스크롤 영역 밖) */}
         <div
-          className="flex w-full flex-col gap-2 border-t border-gray-200 bg-white p-4"
+          className="flex w-full flex-col gap-2 border-t border-gray-200 bg-white py-4"
           data-testid="mobile-actions"
         >
           {templateHref && (
@@ -594,7 +633,6 @@ export default function ProductActions({
               </Button>
             </LocalizedClientLink>
           )}
-          {hasAlmondTemplate && <CustomOrderNotice />}
           <div className="flex w-full gap-x-3">
             {/* TODO: 재입고 알림 기능 추가 후 활성화
           {!allInStock && selectedItems.length > 0 ? (
@@ -678,6 +716,8 @@ export default function ProductActions({
         selectedValuesMap={selectedValuesMap}
         totalQuantity={totalQuantity}
         totalPrice={totalPrice}
+        pricingOf={pricingOf}
+        pricingContext={pricingContext}
         isSimple={isSimple}
         isWelcomeMembership={isWelcomeMembership}
         membersOnlyPurchase={membersOnlyPurchase}

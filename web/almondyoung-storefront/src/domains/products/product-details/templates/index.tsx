@@ -1,4 +1,13 @@
 import { FEATURES } from "@/lib/config/features"
+import {
+  CustomOrderNotice,
+  CUSTOM_ORDER_NOTICE_PAGE_ID,
+} from "@/domains/almond-template/components/custom-order-notice"
+import {
+  needsTemplateList,
+  templateProductOf,
+} from "@/domains/almond-template/lib/template-product"
+import { listAlmondTemplates } from "@/lib/api/ugc/almond-templates"
 import { ErrorBoundary } from "@/components/shared/error-boundary"
 import {
   ProductQnaSkeleton,
@@ -13,7 +22,6 @@ import { HttpTypes } from "@medusajs/types"
 import { notFound } from "next/navigation"
 import { getTranslations } from "next-intl/server"
 import { Suspense } from "react"
-import { ProductModel3dViewer } from "../components/model3d-viewer"
 import { ImageGallery } from "../components/image-gallery"
 import { ProductBreadcrumb } from "../components/breadcrumb"
 import ProductActions from "../components/product-actions"
@@ -54,6 +62,13 @@ export async function ProductTemplate({
   const pimMasterId = product.metadata?.pimMasterId as string | undefined
   const isDigital = isDigitalProduct(product)
   const isOverseas = getIsOverseas(product)
+  // null 은 조회 실패 — 빈 목록과 구분해 시안 id 를 구매 요청에 남긴다
+  const templates =
+    pimMasterId && needsTemplateList(pimMasterId)
+      ? await listAlmondTemplates().catch(() => null)
+      : []
+  const isCustomOrder =
+    !!pimMasterId && !!templateProductOf(pimMasterId, templates ?? [])
 
   return (
     <div className="min-h-screen bg-white pt-6">
@@ -63,11 +78,7 @@ export async function ProductTemplate({
         <div className="py-2 xl:flex xl:items-start xl:gap-4">
           {/* 메인 콘텐츠 */}
           <main className="w-full min-w-0 flex-1 pb-24 xl:pb-0">
-            <ImageGallery product={product} />
-            <ProductModel3dViewer
-              fileId={product.metadata?.model3dFileId}
-              productName={product.title ?? "상품"}
-            />
+            <ImageGallery key={product.id} product={product} />
 
             {/* 모바일 상품 정보 */}
             <div className="xl:hidden">
@@ -88,6 +99,12 @@ export async function ProductTemplate({
                 />
                 <ProductShippingNotice product={product} />
               </ProductSummary>
+              {isCustomOrder && (
+                <CustomOrderNotice
+                  id={CUSTOM_ORDER_NOTICE_PAGE_ID}
+                  className="mt-5"
+                />
+              )}
             </div>
 
             <Suspense fallback={null}>
@@ -156,6 +173,7 @@ export async function ProductTemplate({
                   product={product}
                   region={region}
                   disabled={false}
+                  templates={templates}
                 />
               }
             >
@@ -163,6 +181,7 @@ export async function ProductTemplate({
                 handle={product.handle!}
                 region={region}
                 customer={customer}
+                templates={templates}
               />
             </Suspense>
           </div>

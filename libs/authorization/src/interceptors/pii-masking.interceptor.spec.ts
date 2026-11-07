@@ -1,4 +1,4 @@
-import { BadRequestException, Logger } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Logger, ServiceUnavailableException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { ExecutionContextHost } from '@nestjs/core/helpers/execution-context-host';
 import { IncomingMessage, ServerResponse } from 'node:http';
@@ -54,6 +54,14 @@ class Probe {
   })
   campaign(): void {}
 
+  @PiiResponse({
+    fields: { file: 'text' },
+    subjects: [{ param: 'id', type: 'almond_design' }],
+    rawWith: ['customer.pii.read', 'order.order.read'],
+    binary: true,
+  })
+  designFile(): void {}
+
   plain(): void {}
 }
 
@@ -97,7 +105,7 @@ interface Call {
   params?: Record<string, string>;
 }
 
-async function call(interceptor: PiiMaskingInterceptor, c: Call) {
+async function call(interceptor: PiiMaskingInterceptor, c: Call, response = new ServerResponse(new IncomingMessage(new Socket()))) {
   const request = {
     user: c.user === undefined ? { id: 'staff-1', login_id: 'kim', roles: ['admin'] } : c.user ?? undefined,
     headers: { 'user-agent': 'jest', 'x-request-id': 'req-1', ...(c.headers ?? {}) },
@@ -107,7 +115,6 @@ async function call(interceptor: PiiMaskingInterceptor, c: Call) {
     ip: '10.0.0.5',
     route: { path: '/sales-orders/:id' },
   };
-  const response = new ServerResponse(new IncomingMessage(new Socket()));
   const context = new ExecutionContextHost([request, response], Probe, Probe.prototype[c.handler]);
   context.setType('http');
   const body = await lastValueFrom(interceptor.intercept(context, { handle: () => of(c.body) }));
@@ -346,5 +353,49 @@ describe('PiiMaskingInterceptor', () => {
       body: { success: true, data: { data: [{ id: 'a', customerName: '홍길동' }] } },
     });
     expect(out.body).toEqual({ success: true, data: { data: [{ id: 'a', customerName: '홍*동' }] } });
+  });
+  describe('binary file body', () => {
+    const file = Buffer.from('%PDF-1.7');
+    const designFile: Call = { handler: 'designFile', body: file, params: { id: 'd-1' } };
+
+    it('sends the file untouched and records one view per response before it goes out', async () => {
+      const { interceptor, recorder } = setup({ permissions: ['order.order.read'] });
+      const out = await call(interceptor, designFile);
+      expect(out.body).toBe(file);
+      expect(recorder.records).toHaveLength(1);
+      expect(recorder.records[0]).toMatchObject({
+        action: 'view',
+        subjects: [{ type: 'almond_design', id: 'd-1' }],
+        subjectCount: 1,
+        kinds: ['text'],
+      });
+    });
+
+    it('does not send the file when the access cannot be recorded', async () => {
+      const { interceptor, recorder } = setup({ permissions: ['order.order.read'] });
+      recorder.fail = true;
+      jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      const response = new ServerResponse(new IncomingMessage(new Socket()));
+      response.setHeader('content-type', 'application/pdf');
+      await expect(call(interceptor, designFile, response)).rejects.toBeInstanceOf(ServiceUnavailableException);
+      expect(response.getHeader('content-type')).toBeUndefined();
+    });
+
+    it('refuses before the handler runs when the viewer cannot receive the original', async () => {
+      const { interceptor, recorder } = setup({ permissions: ['marketing.almond_template.read'] });
+      await expect(call(interceptor, designFile)).rejects.toBeInstanceOf(ForbiddenException);
+      expect(recorder.records).toHaveLength(0);
+    });
+
+    it('does not send a non-file body from a route declared as a file', async () => {
+      const { interceptor, recorder } = setup({ permissions: ['order.order.read'] });
+      await expect(call(interceptor, { ...designFile, body: { name: '홍길동' } })).rejects.toThrow('non-file body');
+      expect(recorder.records).toHaveLength(0);
+    });
+
+    it('refuses while permission data is not loaded', async () => {
+      const { interceptor } = setup({ permissions: null });
+      await expect(call(interceptor, designFile)).rejects.toBeInstanceOf(ServiceUnavailableException);
+    });
   });
 });

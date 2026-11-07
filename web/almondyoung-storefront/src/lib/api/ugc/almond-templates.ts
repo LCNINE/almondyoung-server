@@ -1,11 +1,10 @@
 "use server"
 
-import { revalidateTag } from "next/cache"
 import {
-  ALMOND_TEMPLATES_TAG,
   AdminAlmondTemplateDetailDto,
   AdminAlmondTemplateSummaryDto,
   AlmondTemplateDetailDto,
+  AlmondTemplateCategoryDto,
   AlmondTemplateStatus,
   AlmondTemplateSummaryDto,
   UpsertAlmondTemplateDto,
@@ -21,6 +20,7 @@ import { getAccessToken } from "@lib/data/cookies"
 import { api } from "../api"
 import { HttpApiError } from "../api-error"
 
+// 어드민(admin-web)에서 게시·수정해도 여기 캐시를 비울 수 없어 템플릿·카테고리 모두 매번 받는다
 export const listAlmondTemplates = async (): Promise<
   AlmondTemplateSummary[]
 > => {
@@ -30,7 +30,7 @@ export const listAlmondTemplates = async (): Promise<
     {
       method: "GET",
       withAuth: false,
-      next: { tags: [ALMOND_TEMPLATES_TAG], revalidate: 300 },
+      cache: "no-store",
     }
   )
   return items.map((item) => ({
@@ -39,13 +39,22 @@ export const listAlmondTemplates = async (): Promise<
   }))
 }
 
+export const listAlmondTemplateCategories = async (): Promise<
+  AlmondTemplateCategoryDto[]
+> =>
+  await api("ugc", `/almond-template-categories`, {
+    method: "GET",
+    withAuth: false,
+    cache: "no-store",
+  })
+
 export const getAlmondTemplate = async (
   id: string
 ): Promise<AlmondTemplateDetailDto> =>
   await api("ugc", `/almond-templates/${id}`, {
     method: "GET",
     withAuth: false,
-    next: { tags: [ALMOND_TEMPLATES_TAG], revalidate: 300 },
+    cache: "no-store",
   })
 
 export const listAdminAlmondTemplates = async (): Promise<
@@ -81,7 +90,6 @@ export const upsertAlmondTemplate = async (
       `/admin/almond-templates`,
       { method: "PUT", body: dto, withAuth: true }
     )
-    revalidateTag(ALMOND_TEMPLATES_TAG)
     return data
   } catch (error) {
     // 서버액션 경계를 넘으면 에러 클래스가 사라져 409 를 값으로 돌려준다
@@ -100,7 +108,6 @@ export const updateAlmondTemplateStatus = async (
     `/admin/almond-templates/${id}/status`,
     { method: "PATCH", body: { status }, withAuth: true }
   )
-  revalidateTag(ALMOND_TEMPLATES_TAG)
   return data
 }
 
@@ -109,5 +116,4 @@ export const deleteAlmondTemplate = async (id: string): Promise<void> => {
     method: "DELETE",
     withAuth: true,
   })
-  revalidateTag(ALMOND_TEMPLATES_TAG)
 }

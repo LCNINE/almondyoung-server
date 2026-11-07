@@ -10,6 +10,10 @@ import {
   type AlmondTemplateSummary,
 } from '../types/almond-template.types';
 
+function kindOf(design: Record<string, unknown>): string | null {
+  return typeof design.kind === 'string' ? design.kind : null;
+}
+
 export class AlmondTemplateMapper {
   static toSummary(row: AlmondTemplateSummary): AlmondTemplateSummaryResponseDto {
     return {
@@ -20,18 +24,18 @@ export class AlmondTemplateMapper {
       colors: row.colors,
       industry: row.industry,
       purpose: row.purpose,
+      kind: row.kind,
       updatedAt: row.updatedAt.toISOString(),
     };
   }
 
   static toDetail(row: AlmondTemplateEntity): AlmondTemplateDetailResponseDto {
-    return { ...this.toSummary(row), design: row.design };
+    return { ...this.toSummary({ ...row, kind: kindOf(row.design) }), design: row.design };
   }
 
   static toAdminSummary(row: AdminAlmondTemplateSummary): AdminAlmondTemplateSummaryResponseDto {
     return {
       ...this.toSummary(row),
-      kind: row.kind,
       status: row.status,
       createdBy: row.createdBy,
       updatedBy: row.updatedBy,
@@ -40,8 +44,7 @@ export class AlmondTemplateMapper {
   }
 
   static toAdminSummaryFromEntity(row: AlmondTemplateEntity): AdminAlmondTemplateSummaryResponseDto {
-    const kind = row.design.kind;
-    return this.toAdminSummary({ ...row, kind: typeof kind === 'string' ? kind : null });
+    return this.toAdminSummary({ ...row, kind: kindOf(row.design) });
   }
 
   static toAdminDetail(row: AlmondTemplateEntity): AdminAlmondTemplateDetailResponseDto {

@@ -8,7 +8,7 @@ import {
   type SetStateAction,
 } from "react"
 import { updateLayer, type Design, type Layer } from "../lib/document"
-import { makeLayer, mm, pxUnit } from "../lib/layer"
+import { makeLayer, MIN_LAYER_MM, mm, pxUnit } from "../lib/layer"
 import { lineFromPoints } from "../lib/line-shape"
 import { DRAW_ART } from "../lib/draw-art"
 import {
@@ -195,6 +195,11 @@ export function usePenTool({
   } | null>(null)
   const editing =
     pointEditId && selected?.id === pointEditId ? selected : undefined
+  // 취소하면 되돌릴 편집 전 모습. 도형을 점 편집용 선으로 바꾸기 전 것을 들고 있는다
+  const original = useRef<Layer | null>(null)
+  useEffect(() => {
+    if (editing && !original.current) original.current = editing
+  }, [editing])
   useEffect(() => {
     if (!pointEditId || selected?.id === pointEditId) return
     // 점 편집은 완료로만 끝난다. 빈 곳을 눌러 선택이 풀려도 편집하던 도형을 다시 고른다
@@ -314,7 +319,7 @@ export function usePenTool({
       const height = dragged
         ? hand
           ? square
-          : Math.max(1, Math.abs(to.y - from.y))
+          : Math.max(MIN_LAYER_MM, Math.abs(to.y - from.y))
         : fallback
       const layer: Layer = {
         ...makeLayer("rect", design),
@@ -327,8 +332,8 @@ export function usePenTool({
         opacity: shapeSetting.opacity / 100,
         x: mm(dragged ? Math.min(from.x, to.x) : from.x - width / 2),
         y: mm(dragged ? Math.min(from.y, to.y) : from.y - height / 2),
-        width: mm(Math.min(maxW, Math.max(1, width))),
-        height: mm(Math.min(maxH, height)),
+        width: mm(Math.min(maxW, Math.max(MIN_LAYER_MM, width))),
+        height: mm(Math.min(maxH, Math.max(MIN_LAYER_MM, height))),
       }
       change({ ...design, [side]: [...design[side], layer] })
       return setSelectedId(layer.id)
@@ -371,8 +376,8 @@ export function usePenTool({
             text: undefined,
             x: mm(Math.min(from.x, to.x)),
             y: mm(Math.min(from.y, to.y)),
-            width: mm(Math.abs(to.x - from.x)),
-            height: mm(Math.abs(to.y - from.y)),
+            width: mm(Math.max(MIN_LAYER_MM, Math.abs(to.x - from.x))),
+            height: mm(Math.max(MIN_LAYER_MM, Math.abs(to.y - from.y))),
           }
     change({ ...design, [side]: [...design[side], layer] })
     setSelectedId(layer.id)
@@ -546,21 +551,35 @@ export function usePenTool({
     }
     stopDrawing()
     setActivePoint(null)
+    original.current = selected
     setPointEditId(selected.id)
   }
   // 방금 넣은 도형처럼 아직 선택 상태에 반영되지 않은 레이어도 바로 점 편집에 들어간다
   const editPointsOf = (id: string) => {
     stopDrawing()
     setActivePoint(null)
+    original.current = null
     setPointEditId(id)
   }
   const finishPointEdit = () => {
     const layer = editing
     setPointEditId(null)
     setActivePoint(null)
+    original.current = null
     if (!layer) return
     // 점을 상자 밖으로 끌었을 수 있으니 상자를 곡선에 다시 맞춘다
     setDesign((old) => updateLayer(old, side, layer.id, refitPathLayer(layer)))
+  }
+  const cancelPointEdit = () => {
+    const layer = original.current
+    original.current = null
+    setPointEditId(null)
+    setActivePoint(null)
+    if (!layer) return
+    change({
+      ...design,
+      [side]: design[side].map((item) => (item.id === layer.id ? layer : item)),
+    })
   }
 
   const localPoint = (event: PointerEvent, layer: Layer) =>
@@ -776,6 +795,7 @@ export function usePenTool({
     startPointEdit,
     editPointsOf,
     finishPointEdit,
+    cancelPointEdit,
     insertPoint,
     editDown,
     editMove,

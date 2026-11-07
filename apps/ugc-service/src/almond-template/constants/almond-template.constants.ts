@@ -1,6 +1,11 @@
 export const ALMOND_TEMPLATE_STATUSES = ['draft', 'published'] as const;
 export type AlmondTemplateStatus = (typeof ALMOND_TEMPLATE_STATUSES)[number];
 
+// 스토어프론트 PRINT_SPECS 의 PrintKind 와 같아야 한다
+export const ALMOND_TEMPLATE_KINDS = ['pet', 'mini', 'card', 'bizcard', 'window', 'menu', 'diploma', 'nail'] as const;
+export const ALMOND_TEMPLATE_CATEGORY_MAX_NAME_LENGTH = 40;
+export const ALMOND_TEMPLATE_CATEGORY_MAX_DESCRIPTION_LENGTH = 80;
+
 export const ALMOND_TEMPLATE_MAX_LAYERS_PER_SIDE = 150;
 export const ALMOND_TEMPLATE_MIN_SIZE_MM = 35;
 export const ALMOND_TEMPLATE_MAX_TITLE_LENGTH = 80;
@@ -28,6 +33,8 @@ export const ALMOND_SAVED_DESIGN_UPSERT_ROUTE = { method: 'PUT', url: '/me/almon
 export const ALMOND_SAVED_DESIGN_UPSERT_BODY_LIMIT = 20 * 1024 * 1024;
 
 export const ALMOND_PRINT_FILE_CONTEXT_ID = 'almond-print-file';
+// 미리보기 JPG 는 상품 이미지로 쓰이므로 공개 컨텍스트에 올린다
+export const ALMOND_TEMPLATE_IMAGE_CONTEXT_ID = 'almond-template-image';
 export const ALMOND_PRINT_LINK_EXPIRES_SEC = 300;
 
 export const ALMOND_PRINT_SIDE_GAP_MM = 10;

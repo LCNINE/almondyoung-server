@@ -51,6 +51,7 @@ import { ProductModel3dLoader } from '../../../core/products/loaders/product-mod
 import { PricingService } from '../../../core/pricing/pricing.service';
 import { PricingValidatorService } from '../../../core/pricing/pricing-validator.service';
 import { PricingCalculatorService } from '../../../core/pricing/pricing-calculator.service';
+import { QuantityDiscountReader } from '../../../core/pricing/quantity-discount.reader';
 import { VariantPriceCacheService } from '../../../core/pricing/variant-price-cache.service';
 import { ProductCategoriesService } from '../../../core/categories/categories.service';
 import { ProductBulkService } from '../../bulk/product-bulk.service';
@@ -136,9 +137,9 @@ describeIfDb('일괄 세션 병합 시나리오 (실 Postgres)', () => {
       },
     } as unknown as DbService<PimSchema>;
 
-    const calculator = new PricingCalculatorService(dbService);
+    const calculator = new PricingCalculatorService(dbService, new QuantityDiscountReader(dbService));
     const validator = new PricingValidatorService(dbService, calculator);
-    const pricing = new PricingService(dbService, validator, calculator);
+    const pricing = new PricingService(dbService, validator, calculator, { assertCompatibleWithPrices: async () => undefined } as never);
     const priceCache = new VariantPriceCacheService(dbService, calculator);
     const versionLoader = new ProductVersionReadLoader();
     const optionLoader = new OptionReadLoader();
@@ -149,6 +150,7 @@ describeIfDb('일괄 세션 병합 시나리오 (실 Postgres)', () => {
       tagLoader,
       priceCache,
       new ProductModel3dLoader(),
+      new QuantityDiscountReader(dbService),
     );
     // OutboxPublisher 는 스키마 제네릭을 받지 않는(기본값 Record<string, never>) DbService 를
     // 받는다 — 우리 dbService 의 실제 동작(db/run)엔 무관하고 순수 타입 불일치라 캐스팅한다.
@@ -173,7 +175,7 @@ describeIfDb('일괄 세션 병합 시나리오 (실 Postgres)', () => {
     const skuMapping = {
       getVariantMatchingBatch: () => Promise.resolve({ data: [] }),
     } as unknown as ProductSkuMappingService;
-    reader = new FormExportSnapshotReader(versionLoader, optionLoader, pricing, categories, skuMapping);
+    reader = new FormExportSnapshotReader(versionLoader, optionLoader, pricing, categories, skuMapping, new QuantityDiscountReader(dbService));
 
     // `ProductBulkService.bulkUpdate` 의 brand/seller 경로(§F1 회귀 잠금)는 dto.status 가
     // 없으면 productVersionsService/productMastersService 를 **한 번도** 부르지 않는다

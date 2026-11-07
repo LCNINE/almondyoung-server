@@ -1,4 +1,5 @@
 import type { Layer } from "./document"
+import { MIN_LAYER_MM } from "./layer"
 
 export type Point = { x: number; y: number }
 
@@ -97,7 +98,7 @@ export function lineFromPoints(
   const u1 = Math.max(...local.map((p) => p.u))
   const vMin = Math.min(...local.map((p) => p.v))
   const vMax = Math.max(...local.map((p) => p.v))
-  const width = Math.max(0.1, u1 - u0)
+  const width = Math.max(MIN_LAYER_MM, u1 - u0)
   const height = Math.max(minHeight, vMax - vMin)
   const v0 = (vMin + vMax) / 2 - height / 2
   const mid = { u: u0 + width / 2, v: v0 + height / 2 }

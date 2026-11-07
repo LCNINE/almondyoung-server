@@ -5,12 +5,16 @@ import {
   PRODUCT_COLUMNS,
   VARIANT_COLUMNS,
 } from './form-export.sheets';
+import { canonicalQuantityDiscount, formatQuantityDiscount } from './bulk-quantity-discount';
 import type { FlatFields, PresentColumns, UploadedBundle } from './bulk-session.types';
 
 /** 옵션 시트에서 그룹 스코프에 속한 열. 정체성 키는 제외한다. */
 const OPTION_GROUP_KEYS = new Set(['optionName', 'optionSortOrder']);
 /** 옵션 시트에서 값 스코프에 속한 열. 정체성 키는 제외한다. 나머지는 모두 여기로 흘러간다. */
 const OPTION_IDENTITY_KEYS = new Set(['rowKey', 'optionKey', 'optionValueKey']);
+
+/** 수량할인 시트의 한 상품 행 묶음을 접은 필드. 값은 `canonicalQuantityDiscount` 의 정규형이다. */
+export const QUANTITY_DISCOUNT_FIELD = 'quantityDiscount';
 
 const has = (present: Set<string> | undefined, key: string): boolean => present === undefined || present.has(key);
 
@@ -90,6 +94,13 @@ export function flattenBundle(bundle: UploadedBundle, present?: PresentColumns):
     }
   }
 
+  // 수량할인은 상품의 행 묶음 전체가 필드 하나다 — 구간표 검사가 표 전체에 걸리므로 칸 단위로 섞으면 위반 표가
+  // 생길 수 있다. 행이 없으면 변경 없음. 업로드는 시트가 있을 때만(옛 양식은 시트가 없다).
+  const quantityDiscountRows = bundle.quantityDiscounts ?? [];
+  if (quantityDiscountRows.length > 0 && (present === undefined || (present.quantityDiscounts?.size ?? 0) > 0)) {
+    out[QUANTITY_DISCOUNT_FIELD] = canonicalQuantityDiscount(quantityDiscountRows);
+  }
+
   return out;
 }
 
@@ -100,7 +111,34 @@ const LABEL_BY_KEY = new Map<string, string>([
   ...CATEGORY_COLUMNS.map((c) => [c.key, c.label] as const),
   ...CONSTRAINT_COLUMNS.map((c) => [`constraint.${c.key}`, c.label] as const),
   ['category.set', '카테고리'],
+  [QUANTITY_DISCOUNT_FIELD, '수량할인'],
 ]);
+
+/**
+ * 미리보기·충돌 화면에 보일 값. 대부분은 셀 문자열 그대로이고, 한 줄로 접은 필드만 풀어 쓴다.
+ * `optionName` 은 수량할인 예외의 조합 → 사람이 읽는 옵션 이름(없으면 «옵션»).
+ */
+export function formatFieldValue(
+  path: string,
+  value: string,
+  optionName: (combination: string) => string | undefined = () => undefined,
+): string {
+  if (path === QUANTITY_DISCOUNT_FIELD) return formatQuantityDiscount(value, optionName);
+  return value;
+}
+
+/** 수량할인 행·조합 행에서 조합 → 조합명(참고용). 미리보기 문장에 옵션 이름을 붙일 때 쓴다. */
+export function combinationLabels(...bundles: Array<Partial<UploadedBundle> | null | undefined>): Map<string, string> {
+  const labels = new Map<string, string>();
+  for (const bundle of bundles) {
+    for (const row of [...(bundle?.variants ?? []), ...(bundle?.quantityDiscounts ?? [])]) {
+      const combination = (row.combination ?? '').trim();
+      const label = (row.combinationLabel ?? '').trim();
+      if (combination !== '' && label !== '' && !labels.has(combination)) labels.set(combination, label);
+    }
+  }
+  return labels;
+}
 
 /** 스코프가 붙는 필드경로의 세 조각. `product.*`·`constraint.*`·`category.set` 은 스코프가 없다. */
 export interface ParsedFieldPath {

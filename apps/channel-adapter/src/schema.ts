@@ -524,6 +524,10 @@ export const pimMedusaMappings = pgTable(
     syncErrorCount: integer('sync_error_count').notNull().default(0),
     lastSyncError: text('last_sync_error'),
 
+    // 이 상품의 가격을 넣어 둔 Medusa price list id. 재동기화가 여기서도 상품을 빼야 옛 가격이 남지 않는다.
+    // null 은 기록 이전 행이다.
+    syncedPriceListIds: text('synced_price_list_ids').array(),
+
     // 타임스탬프
     createdAt: timestamp('created_at').notNull().defaultNow(),
     updatedAt: timestamp('updated_at').notNull().defaultNow(),

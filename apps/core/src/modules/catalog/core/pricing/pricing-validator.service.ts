@@ -107,7 +107,6 @@ export class PricingValidatorService {
     const cleaned = {
       basePriceRules: clean(rulesSet.basePriceRules),
       membershipPriceRules: clean(rulesSet.membershipPriceRules),
-      tieredPriceRules: clean(rulesSet.tieredPriceRules),
     };
 
     if (dropped > 0) {
@@ -151,7 +150,7 @@ export class PricingValidatorService {
   }
 
   private collectAllRules(rulesSet: ValidatedPricingRulesSet): PricingRuleInput[] {
-    return [...rulesSet.basePriceRules, ...rulesSet.membershipPriceRules, ...rulesSet.tieredPriceRules];
+    return [...rulesSet.basePriceRules, ...rulesSet.membershipPriceRules];
   }
 
   private collectTargetIds(rules: PricingRuleInput[], scopeGuard: (rule: PricingRuleInput) => boolean): string[] {

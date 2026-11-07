@@ -172,6 +172,8 @@ export type MasterVersionDetailDto = {
   isOverseas?: boolean | null;
   hideMembershipPriceForNonMembers?: boolean | null;
   isVisibleToMembersOnly?: boolean | null;
+  /** 한 번에 살 수 있는 최대 수량. null 이면 제한 없음. */
+  maxQuantity?: number | null;
   /** 멤버십 전용 구매 제약. null 이면 제약 없음. */
   purchaseConstraint?: {
     requiresMembership: boolean;

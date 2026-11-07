@@ -4,6 +4,8 @@ import { BadRequestError } from '@app/shared';
 import {
   CATEGORY_COLUMNS,
   CONSTRAINT_COLUMNS,
+  QUANTITY_DISCOUNT_COLUMNS,
+  QUANTITY_DISCOUNT_REQUIRED_KEYS,
   ColumnDef,
   IMAGE_COLUMNS,
   OPTION_COLUMNS,
@@ -26,6 +28,8 @@ export const MAX_UPLOAD_OPTION_ROWS = 20_000;
 export const MAX_UPLOAD_VARIANT_ROWS = 20_000;
 export const MAX_UPLOAD_CATEGORY_ROWS = 5_000;
 export const MAX_UPLOAD_CONSTRAINT_ROWS = MAX_UPLOAD_PRODUCT_ROWS;
+/** 상품마다 기본 행 하나 + 옵션마다 예외 행 하나까지. */
+export const MAX_UPLOAD_QUANTITY_DISCOUNT_ROWS = MAX_UPLOAD_PRODUCT_ROWS + MAX_UPLOAD_VARIANT_ROWS;
 export const MAX_UPLOAD_IMAGE_ROWS = 10_000;
 
 export interface RawSheetRow {
@@ -43,6 +47,8 @@ export interface ParsedUpload {
     variants: RawSheetRow[];
     categories: RawSheetRow[];
     constraints: RawSheetRow[];
+    /** 시트가 없던 옛 양식·옛 테스트 입력에는 없다. */
+    quantityDiscounts?: RawSheetRow[];
     images: RawSheetRow[];
   };
   present: PresentColumns;
@@ -108,7 +114,9 @@ function readSheet(
             ? cell.value
               ? 'Y'
               : 'N'
-            : String(cell.text ?? '').trim();
+            : typeof cell.value === 'number' && (cell.numFmt ?? '').includes('%')
+              ? percentCellText(cell.value)
+              : String(cell.text ?? '').trim();
       cells[key] = value;
       if (value !== '') hasValue = true;
     });
@@ -131,6 +139,11 @@ function capped(rows: RawSheetRow[], max: number, sheetName: string): RawSheetRo
  * "카테고리 참조" 시트는 아예 읽지 않는다 — 상수이고, 작업자가 고쳐도 반영되지 않는 것이
  * 설계다(스펙 §3.4).
  */
+/** 엑셀에서 «5%»로 입력한 백분율 서식 칸은 값이 0.05 다. 보이는 그대로 «5%»로 읽는다. */
+function percentCellText(value: number): string {
+  return `${Number((value * 100).toFixed(6))}%`;
+}
+
 export async function parseUploadWorkbook(buffer: Buffer): Promise<ParsedUpload> {
   const wb = new ExcelJS.Workbook();
   try {
@@ -163,12 +176,33 @@ export async function parseUploadWorkbook(buffer: Buffer): Promise<ParsedUpload>
   const variants = readSheet(wb.getWorksheet(SHEET_NAMES.variants), VARIANT_COLUMNS, SHEET_NAMES.variants);
   const categories = readSheet(wb.getWorksheet(SHEET_NAMES.categories), CATEGORY_COLUMNS, SHEET_NAMES.categories);
   const constraints = readSheet(wb.getWorksheet(SHEET_NAMES.constraints), CONSTRAINT_COLUMNS, SHEET_NAMES.constraints);
+  const quantityDiscounts = readSheet(
+    wb.getWorksheet(SHEET_NAMES.quantityDiscounts),
+    QUANTITY_DISCOUNT_COLUMNS,
+    SHEET_NAMES.quantityDiscounts,
+  );
   const images = readSheet(wb.getWorksheet(SHEET_NAMES.images), IMAGE_COLUMNS, SHEET_NAMES.images);
+
+  // 수량할인 행은 표 전체가 한 값이라, 열 하나가 빠진 시트를 «그 칸만 비움»으로 읽으면 기간이나
+  // 구간이 조용히 지워진다. 시트를 쓸 거면 열이 다 있어야 한다.
+  if (wb.getWorksheet(SHEET_NAMES.quantityDiscounts)) {
+    const missingQuantityDiscount = QUANTITY_DISCOUNT_COLUMNS.filter(
+      (c) => QUANTITY_DISCOUNT_REQUIRED_KEYS.includes(c.key) && !quantityDiscounts.present.has(c.key),
+    );
+    if (missingQuantityDiscount.length > 0) {
+      throw new BadRequestError(
+        `"${SHEET_NAMES.quantityDiscounts}" 시트에 열이 빠졌습니다: ${missingQuantityDiscount
+          .map((c) => c.label)
+          .join(', ')}. 양식을 다시 받아 주세요.`,
+      );
+    }
+  }
 
   capped(options.rows, MAX_UPLOAD_OPTION_ROWS, SHEET_NAMES.options);
   capped(variants.rows, MAX_UPLOAD_VARIANT_ROWS, SHEET_NAMES.variants);
   capped(categories.rows, MAX_UPLOAD_CATEGORY_ROWS, SHEET_NAMES.categories);
   capped(constraints.rows, MAX_UPLOAD_CONSTRAINT_ROWS, SHEET_NAMES.constraints);
+  capped(quantityDiscounts.rows, MAX_UPLOAD_QUANTITY_DISCOUNT_ROWS, SHEET_NAMES.quantityDiscounts);
   capped(images.rows, MAX_UPLOAD_IMAGE_ROWS, SHEET_NAMES.images);
 
   return {
@@ -182,6 +216,7 @@ export async function parseUploadWorkbook(buffer: Buffer): Promise<ParsedUpload>
       variants: variants.rows,
       categories: categories.rows,
       constraints: constraints.rows,
+      quantityDiscounts: quantityDiscounts.rows,
       images: images.rows,
     },
     present: {
@@ -190,6 +225,7 @@ export async function parseUploadWorkbook(buffer: Buffer): Promise<ParsedUpload>
       variants: variants.present,
       categories: categories.present,
       constraints: constraints.present,
+      quantityDiscounts: quantityDiscounts.present,
     },
   };
 }

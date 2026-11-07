@@ -37,6 +37,7 @@ function makeCacheTx(callbacks: { onConflictDoUpdate: jest.Mock; onConflictDoNot
               basePrice: 12000,
               membershipPrice: 10000,
               tieredPrices: [{ minQuantity: 10, price: 9000 }],
+              membershipTieredPrices: [{ minQuantity: 10, price: 8000 }],
             }),
           ]);
           return {
@@ -59,6 +60,7 @@ describe('VariantPriceCacheService', () => {
         basePrice: 12000,
         membershipPrice: 10000,
         tieredPrices: [{ minQuantity: 10, price: 9000 }],
+        membershipTieredPrices: [{ minQuantity: 10, price: 8000 }],
       }),
     };
     const service = new VariantPriceCacheService(
@@ -76,6 +78,7 @@ describe('VariantPriceCacheService', () => {
           basePrice: expect.anything(),
           membershipPrice: expect.anything(),
           tieredPrices: expect.anything(),
+          membershipTieredPrices: expect.anything(),
           createdAt: expect.anything(),
         }),
       }),

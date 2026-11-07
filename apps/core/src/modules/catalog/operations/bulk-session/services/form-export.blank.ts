@@ -30,6 +30,7 @@ export class FormExportBlankBuilder {
       variants: [],
       categories: [],
       constraints: [],
+      quantityDiscounts: [],
       images: [],
       categoryPaths,
     });

@@ -64,7 +64,6 @@ describe('toReplaceDto', () => {
       },
     ]);
     expect(dto.membershipPriceRules).toHaveLength(1);
-    expect(dto.tieredPriceRules).toEqual([]);
   });
 
   it('상품 판매가가 없으면 조합 룰만으로 DTO 를 만들지 않는다', () => {

@@ -85,3 +85,58 @@ it("카탈로그에 없는 상품이나 잘못된 규격은 게시 목록에서 
   expect(published({ ...item, productId: "unknown" })).toBe(false)
   expect(published({ ...item, size: "90x50x1" })).toBe(false)
 })
+
+it("시안의 인쇄 유형이 상품 종류보다 먼저다", () => {
+  const card = Object.keys(PRINT_PRODUCTS).find(
+    (id) => PRINT_PRODUCTS[id].kind === "card"
+  )!
+  const bizcard: PublishedTemplate = {
+    id: "biz",
+    title: "양면 명함",
+    productId: card,
+    size: "90x50",
+    kind: "bizcard",
+    thumbnail: "https://ugc.test/biz.svg",
+    updatedAt: "2026-11-06T00:00:00.000Z",
+    colors: [],
+    industry: null,
+    purpose: null,
+  }
+  const filters = {
+    productId: "",
+    availableKinds: ["card", "bizcard"] as const,
+    size: "",
+    keyword: "",
+    colors: [],
+    industry: "",
+    purpose: "",
+  }
+
+  expect(filterTemplates([bizcard], { ...filters, kind: "bizcard" })).toHaveLength(1)
+  expect(filterTemplates([bizcard], { ...filters, kind: "card" })).toHaveLength(0)
+})
+
+it("PRINT_PRODUCTS 에 없는 상품이라도 kind 가 있으면 남기고 검색어는 시안 제목으로 찾는다", () => {
+  const item: PublishedTemplate = {
+    id: "new",
+    title: "새 명함",
+    productId: "new-product",
+    kind: "bizcard",
+    size: "90x50",
+    thumbnail: "https://ugc.test/new.svg",
+    updatedAt: "2026-09-30T00:00:00.000Z",
+  }
+  const filters = {
+    productId: "",
+    availableKinds: ["bizcard"] as const,
+    kind: "" as const,
+    size: "",
+    keyword: "명함",
+    colors: [],
+    industry: "",
+    purpose: "",
+  }
+
+  expect(published(item)).toBe(true)
+  expect(filterTemplates([item], filters)).toEqual([item])
+})

@@ -23,6 +23,7 @@ import type {
   CreateNoticeDto,
   AdminShopListingPayload,
   AlmondTemplateStatus,
+  UpsertAlmondTemplateCategoryDto,
   UpdateNoticeDto,
   CreateSitePopupDto,
   UpdateSitePopupDto,
@@ -48,7 +49,9 @@ import type {
   UpdateMasterVersionDto,
   UpdateProductVariantDto,
 } from './products-detail.types';
+import type { PrintKind, PrintQuotesBodyDto, PublishPrintProductDto } from '@/lib/types/dto/print-catalog';
 import type { PermissionRequirement } from '@/lib/auth/mutation-permission';
+import type { UpsertQuantityDiscountDto } from '@/lib/pricing/quantity-discount';
 
 // ===== 카테고리 관련 뮤테이션 =====
 
@@ -785,6 +788,26 @@ export const useDeleteVersionPricingRules = () => {
 };
 useDeleteVersionPricingRules.permission = ['catalog.price.write'] as const satisfies PermissionRequirement;
 
+// 구간표를 저장하면 서버가 이 버전의 옛 수량별 규칙을 지우므로 규칙·옵션별 가격도 함께 무효화한다(같은 pricingVersion 키 아래).
+export const useSaveQuantityDiscount = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      masterId,
+      versionId,
+      dto,
+    }: {
+      masterId: string;
+      versionId: string;
+      dto: UpsertQuantityDiscountDto;
+    }) => products.pricing.versions.saveQuantityDiscount(masterId, versionId, dto),
+    onSuccess: (_, variables) => {
+      invalidatePricingRulesQueries(queryClient, variables.masterId, variables.versionId);
+    },
+  });
+};
+useSaveQuantityDiscount.permission = ['catalog.price.write'] as const satisfies PermissionRequirement;
+
 export const useCalculateVersionPrice = () => {
   return useMutation({
     mutationFn: ({
@@ -1036,6 +1059,42 @@ export const useUpdateAlmondTemplateStatus = () => {
 };
 useUpdateAlmondTemplateStatus.permission = ['marketing.almond_template.write'] as const satisfies PermissionRequirement;
 
+export const useLinkAlmondTemplateProduct = () => {
+  const invalidate = useInvalidateAlmondTemplates();
+  return useMutation({
+    mutationFn: ({ id, productId }: { id: string; productId: string }) =>
+      products.almondTemplates.linkProduct(id, productId),
+    onSuccess: () => invalidate(),
+  });
+};
+useLinkAlmondTemplateProduct.permission = ['marketing.almond_template.write'] as const satisfies PermissionRequirement;
+
+export const usePreviewAlmondTemplateImage = () => {
+  return useMutation({
+    mutationFn: (id: string) => products.almondTemplates.previewImage(id),
+  });
+};
+usePreviewAlmondTemplateImage.permission = ['marketing.almond_template.write'] as const satisfies PermissionRequirement;
+
+export const usePrintQuotes = () => {
+  return useMutation({
+    mutationFn: ({ kind, body }: { kind: PrintKind; body: PrintQuotesBodyDto }) =>
+      products.printCatalog.quotes(kind, body),
+  });
+};
+usePrintQuotes.permission = ['marketing.almond_template.write'] as const satisfies PermissionRequirement;
+
+export const usePublishPrintProduct = () => {
+  const invalidate = useInvalidateAlmondTemplates();
+  return useMutation({
+    mutationFn: (body: PublishPrintProductDto) => products.printCatalog.publish(body),
+    onSuccess: () => invalidate(),
+  });
+};
+usePublishPrintProduct.permission = {
+  allOf: [['catalog.product.write'], ['catalog.price.write'], ['marketing.almond_template.write']],
+} as const satisfies PermissionRequirement;
+
 export const useDeleteAlmondTemplate = () => {
   const invalidate = useInvalidateAlmondTemplates();
   return useMutation({
@@ -1044,6 +1103,40 @@ export const useDeleteAlmondTemplate = () => {
   });
 };
 useDeleteAlmondTemplate.permission = ['marketing.almond_template.write'] as const satisfies PermissionRequirement;
+
+const useInvalidateAlmondTemplateCategories = () => {
+  const queryClient = useQueryClient();
+  return () => queryClient.invalidateQueries({ queryKey: productQueryKeys.almondTemplateCategories });
+};
+
+export const useSaveAlmondTemplateCategory = () => {
+  const invalidate = useInvalidateAlmondTemplateCategories();
+  return useMutation({
+    mutationFn: ({ id, body }: { id?: string; body: UpsertAlmondTemplateCategoryDto }) =>
+      id ? products.almondTemplateCategories.update(id, body) : products.almondTemplateCategories.create(body),
+    onSuccess: () => invalidate(),
+  });
+};
+useSaveAlmondTemplateCategory.permission = ['marketing.almond_template.write'] as const satisfies PermissionRequirement;
+
+export const useDeleteAlmondTemplateCategory = () => {
+  const invalidate = useInvalidateAlmondTemplateCategories();
+  return useMutation({
+    mutationFn: (id: string) => products.almondTemplateCategories.remove(id),
+    onSuccess: () => invalidate(),
+  });
+};
+useDeleteAlmondTemplateCategory.permission = ['marketing.almond_template.write'] as const satisfies PermissionRequirement;
+
+export const useReorderAlmondTemplateCategories = () => {
+  const invalidate = useInvalidateAlmondTemplateCategories();
+  return useMutation({
+    mutationFn: (ids: string[]) => products.almondTemplateCategories.reorder(ids),
+    // 새 목록을 받을 때까지 pending 으로 둬야 다음 정렬이 옛 목록으로 계산되지 않는다
+    onSettled: () => invalidate(),
+  });
+};
+useReorderAlmondTemplateCategories.permission = ['marketing.almond_template.write'] as const satisfies PermissionRequirement;
 
 // ===== 샵매매 뮤테이션 =====
 

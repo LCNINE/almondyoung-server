@@ -1,4 +1,4 @@
-import { pgTable, uuid, varchar, text, boolean, integer, timestamp, index, unique } from 'drizzle-orm/pg-core';
+import { pgTable, uuid, varchar, text, boolean, integer, timestamp, index, unique, jsonb } from 'drizzle-orm/pg-core';
 import { type InferSelectModel } from 'drizzle-orm';
 import { v7 as uuidv7 } from 'uuid';
 
@@ -59,4 +59,34 @@ export const printOrders = pgTable(
 
 export type PrintOrderRow = InferSelectModel<typeof printOrders>;
 
-export const printOrderSchema = { printOrders } as const;
+export type PrintFileFormat = 'jpg' | 'pdf' | 'eps';
+
+// 변형(variant)별 와우프레스 발주 사양. 없으면 코드 상수 WOWPRESS_PRODUCTS 로 떨어진다
+export const printProductSpecs = pgTable('print_product_specs', {
+  variantId: uuid('variant_id').primaryKey(),
+  prodno: integer('prodno').notNull(),
+  jobpresetno: text('jobpresetno').notNull(),
+  prsjob: jsonb('prsjob').$type<Record<string, unknown>[]>().notNull(),
+  awkjob: jsonb('awkjob').$type<Record<string, unknown>[]>().notNull(),
+  qtyPerUnit: integer('qty_per_unit').notNull(),
+  fileFormat: text('file_format').$type<PrintFileFormat>().notNull(),
+  fileDpi: integer('file_dpi').notNull(),
+  designProductId: varchar('design_product_id', { length: 36 }).notNull(),
+  designWidthMm: integer('design_width_mm').notNull(),
+  designHeightMm: integer('design_height_mm').notNull(),
+  confirmed: boolean('confirmed').notNull().default(false),
+  confirmedAt: timestamp('confirmed_at', { withTimezone: true }),
+  confirmedBy: text('confirmed_by'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export type PrintProductSpecRow = InferSelectModel<typeof printProductSpecs>;
+
+export const printTemplateProducts = pgTable('print_template_products', {
+  templateId: uuid('template_id').primaryKey(),
+  masterId: uuid('master_id').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const printOrderSchema = { printOrders, printProductSpecs, printTemplateProducts } as const;

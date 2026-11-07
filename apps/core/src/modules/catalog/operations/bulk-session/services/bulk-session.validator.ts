@@ -1,5 +1,6 @@
 import type { AssembledRow } from './bulk-upload.assembler';
 import type { PrefillRow, RowError } from './bulk-session.types';
+import { readQuantityDiscountRows } from './bulk-quantity-discount';
 import {
   CONSTRAINT_COLUMNS,
   ColumnDef,
@@ -427,6 +428,18 @@ export function validateFields(row: AssembledRow, ctx: { pricingEditable: boolea
       POSTGRES_INTEGER_MAX,
       pushConstraint,
     );
+  }
+
+  const quantityDiscountRows = row.bundle.quantityDiscounts ?? [];
+  if (quantityDiscountRows.length > 0) {
+    // 조합 시트에 이 상품 행이 있으면 거기 없는 조합을 여기서 막는다. 없으면 적용기가 버전의 실제 조합과 대조한다.
+    const known =
+      row.bundle.variants.length > 0
+        ? new Set(row.bundle.variants.map((v) => (v.combination ?? '').trim()))
+        : undefined;
+    for (const message of readQuantityDiscountRows(quantityDiscountRows, known).errors) {
+      errors.push({ sheet: '수량할인', rowNumber: 0, message: `${row.rowKey}: ${message}` });
+    }
   }
 
   return errors;

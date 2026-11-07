@@ -24,11 +24,12 @@ import { cartRequiresShipping } from "@/lib/api/medusa/shipping-method-policy"
 import { mintPaymentHandoffToken } from "@/lib/api/users/auth/payment-handoff"
 import { CartResponseDto } from "@/lib/types/dto/medusa"
 import type { CartTotals, ShippingInfo } from "@/lib/types/ui/cart"
+import { calculateCartDiscount } from "@/domains/cart/utils/calculate-discount"
+import { useCartDiscountContext } from "@/domains/cart/hooks/use-cart-discount-context"
 import type { Promotion } from "@/lib/types/ui/promotion"
 import { buildPaymentItems } from "@/lib/utils/build-payment-items"
 import { setCheckoutCartByIntent } from "@/lib/utils/checkout-intent-map"
 import {
-  calculateMembershipDiscount,
   getCartTotals,
 } from "@/lib/utils/price-utils"
 import {
@@ -100,6 +101,7 @@ export default function CheckoutTemplate({
   const countryCode = params.countryCode as string
 
   const cartItems = useMemo(() => cart.items ?? [], [cart.items])
+  const discountContext = useCartDiscountContext(isMembership, cartItems)
 
   // 배송 필요 여부 — 전체 카트 기준. 디지털 단독 카트면 false → 배송지/배송메모 강제와 배송비를 모두 생략한다.
   // 판별은 line item requires_shipping 우선, 없으면 product_type 폴백(shipping-method-policy).
@@ -110,13 +112,13 @@ export default function CheckoutTemplate({
     const { currency_code, item_subtotal, discount_subtotal, total } =
       getCartTotals(cart)
 
-    const membershipDiscount =
-      isMembership && cartItems.length > 0
-        ? calculateMembershipDiscount(cartItems)
-        : 0
+    // 정가 − 단가를 수량 할인과 나머지(멤버십가)로 나눈다. 비회원의 나머지는 전처럼 보이지 않는다.
+    const split = calculateCartDiscount(cartItems, discountContext)
+    const membershipDiscount = isMembership ? split.membershipDiscount : 0
+    const quantityDiscount = split.quantityDiscount
 
     // 할인 전 정가 기준 상품 금액 (compare_at_unit_price 기준)
-    const original_item_subtotal = item_subtotal + membershipDiscount
+    const original_item_subtotal = item_subtotal + membershipDiscount + quantityDiscount
 
     // 배송 불필요(디지털 단독)면 배송비 0
     const effectiveShipping = requiresShipping ? shipping.amount : 0
@@ -144,11 +146,12 @@ export default function CheckoutTemplate({
       shippingBreakdown,
       discount_subtotal,
       membershipDiscount,
+      quantityDiscount,
       pointsUsed: 0,
       totalDiscount,
       finalTotal,
     }
-  }, [cart, cartItems, shipping, isMembership, requiresShipping])
+  }, [cart, cartItems, shipping, isMembership, requiresShipping, discountContext])
 
   const gaEcommerce = useMemo(
     () => ({
@@ -436,6 +439,7 @@ export default function CheckoutTemplate({
               cartId={cart.id}
               isMembership={isMembership}
               membershipDiscount={cartTotals.membershipDiscount}
+              quantityDiscount={cartTotals.quantityDiscount}
               itemSubtotal={cartTotals.item_subtotal}
               cartDiscountTotal={cartTotals.discount_subtotal}
               shipping={shipping}

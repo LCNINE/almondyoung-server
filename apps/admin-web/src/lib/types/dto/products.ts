@@ -917,6 +917,26 @@ export interface AdminAlmondTemplateDto {
   updatedAt: string;
 }
 
+/** ugc `GET /admin/almond-template-categories` 한 줄 */
+export interface AlmondTemplateCategoryDto {
+  id: string;
+  name: string;
+  description: string | null;
+  imageFileId: string;
+  kind: string;
+  sortOrder: number;
+  isVisible: boolean;
+  updatedAt: string;
+}
+
+export interface UpsertAlmondTemplateCategoryDto {
+  name: string;
+  description: string | null;
+  imageFileId: string;
+  kind: string;
+  isVisible: boolean;
+}
+
 // ===== 태그 그룹 관련 =====
 
 export interface CreateTagGroupDto {
@@ -975,7 +995,7 @@ export interface TagValueDto {
 
 // ===== 가격 관리 (Pricing) =====
 
-export type PricingLayer = 'base_price' | 'membership_price' | 'tiered_price';
+export type PricingLayer = 'base_price' | 'membership_price';
 export type PricingScopeType = 'all_variants' | 'with_option' | 'variants';
 export type PricingOperationType = 'offset' | 'scale' | 'override';
 export type CustomerType = 'regular' | 'membership';
@@ -988,7 +1008,6 @@ export interface PricingRuleResponseDto {
   scopeTargetIds: string[] | null;
   operationType: PricingOperationType;
   operationValue: number;
-  minQuantity: number | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -996,7 +1015,6 @@ export interface PricingRuleResponseDto {
 export interface PricingRulesResponseDto {
   basePriceRules: PricingRuleResponseDto[];
   membershipPriceRules: PricingRuleResponseDto[];
-  tieredPriceRules: PricingRuleResponseDto[];
 }
 
 export interface PricingRuleInput {
@@ -1006,13 +1024,11 @@ export interface PricingRuleInput {
   scopeTargetIds?: string[];
   operationType: PricingOperationType;
   operationValue: number;
-  minQuantity?: number;
 }
 
 export interface ReplacePricingRulesDto {
   basePriceRules: PricingRuleInput[];
   membershipPriceRules: PricingRuleInput[];
-  tieredPriceRules: PricingRuleInput[];
 }
 
 export interface CalculatePriceRequestDto {
@@ -1056,6 +1072,7 @@ export interface VariantPriceSetDto {
   basePrice: number;
   membershipPrice: number;
   tieredPrices: TieredPriceDto[];
+  membershipTieredPrices?: TieredPriceDto[];
 }
 
 // ===== 버전 관련 =====
@@ -1306,6 +1323,6 @@ export interface AdminAlmondDesignDto {
   userId: string;
   hasBack: boolean;
   templateId: string | null;
-  design: Record<string, unknown>;
+  design: Record<string, unknown> | null;
   createdAt: string;
 }

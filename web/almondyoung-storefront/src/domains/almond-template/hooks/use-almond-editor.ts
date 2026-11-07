@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from "react"
 import { PRINT_PRODUCTS, PRINT_SPECS } from "../lib/catalog"
+import type { TemplateProduct } from "../lib/template-product"
 import {
   layerImageDpi,
+  SHAPE_TEXT_TYPES,
   updateLayer,
   newDesign,
   printIssues,
@@ -39,6 +41,7 @@ export type EditorTool =
   | "draw"
 export type AlmondEditorProps = {
   productId?: string
+  templateProduct?: TemplateProduct
   mode?: EditorMode
   variantId?: string
   size?: string
@@ -49,6 +52,7 @@ export type AlmondEditorProps = {
 
 export function useAlmondEditor({
   productId = "",
+  templateProduct,
   mode = "customer",
   variantId = "",
   size = "",
@@ -56,14 +60,16 @@ export function useAlmondEditor({
   savedId = "",
   initialDesign,
 }: AlmondEditorProps) {
-  const product = PRINT_PRODUCTS[productId]
+  // 게시한 상품은 PRINT_PRODUCTS 에 없어 상품 페이지가 찾아 준 인쇄 유형과 시안 크기로 시작한다
+  const kind = templateProduct?.kind ?? PRINT_PRODUCTS[productId]?.kind ?? "pet"
   const { design, setDesign, history, future, change, commit, undo, redo } =
     useDesignHistory(() => {
       if (initialDesign) return initialDesign
-      const initial = newDesign(product?.kind ?? "pet", productId)
-      const matched = PRINT_SPECS[initial.kind].sizes.find(
-        ([w, h]) => `${w}x${h}` === size
-      )
+      const initial = newDesign(kind, productId)
+      const matched =
+        PRINT_SPECS[initial.kind].sizes.find(
+          ([w, h]) => `${w}x${h}` === size
+        ) ?? templateProduct?.size
       if (matched) [initial.widthMm, initial.heightMm] = matched
       return initial
     })
@@ -189,7 +195,9 @@ export function useAlmondEditor({
     !!selected?.image && layerImageDpi(design.kind, selected) < spec.minImageDpi
   const selectedPrintWarning = selectedOverPrintArea || selectedLowDpi
 
+  const [photoEditId, setPhotoEditId] = useState<string | null>(null)
   const [cropId, setCropId] = useState<string | null>(null)
+
   // ✕(취소)로 자르기 전 모습으로 되돌리려고, 자르기를 시작할 때의 자리·크기·자른 범위를 둔다
   const [cropBefore, setCropBefore] = useState<Pick<
     Layer,
@@ -292,6 +300,7 @@ export function useAlmondEditor({
     groupIds,
     setGroupIds,
     cropId,
+    photoEditId,
     selectedId,
     onPaperClick: (onPaper) => {
       const picked = onPaper && !!sideBackground(design, side).backgroundImage
@@ -352,6 +361,52 @@ export function useAlmondEditor({
     svgRef: canvas.svgRef,
     handleSize: canvas.handleSize,
   })
+
+  useEffect(() => {
+    if (
+      photoEditId &&
+      (selected?.id !== photoEditId ||
+        !selected.image ||
+        !actions.editable ||
+        selected.visible === false ||
+        pen.drawMode ||
+        pen.pointEditId)
+    ) {
+      setPhotoEditId(null)
+    }
+  }, [photoEditId, selected, actions.editable, pen.drawMode, pen.pointEditId])
+
+  useEffect(() => {
+    if (!photoEditId) return
+
+    const finish = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return
+
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      setPhotoEditId(null)
+    }
+
+    window.addEventListener("keydown", finish, true)
+
+    return () => window.removeEventListener("keydown", finish, true)
+  }, [photoEditId])
+
+  const startPhotoEdit = () => {
+    if (
+      !selected?.image ||
+      !actions.editable ||
+      (selected.type !== "frame" && !SHAPE_TEXT_TYPES.has(selected.type))
+    )
+      return
+
+    pen.stopDrawing()
+    pen.finishPointEdit()
+    setCropId(null)
+    setMoveMode(false)
+    setPhotoEditId(selected.id)
+  }
+
   const flipSelected = (axis: "x" | "y") =>
     actions.flipLayers(
       group.length > 1 ? group : selected ? [selected] : [],
@@ -540,6 +595,9 @@ export function useAlmondEditor({
     complete,
     warnings,
     openPreview,
+    photoEditId,
+    setPhotoEditId,
+    startPhotoEdit,
     cropId,
     setCropId,
     cancelCrop,

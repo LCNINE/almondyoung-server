@@ -14,6 +14,7 @@ import { useVariantTimeSale } from "@/components/providers/time-sale-provider"
 import Thumbnail, { listPhotoUrls } from "../thumbnail"
 import { Quantity } from "./quantity"
 import { TimeSaleBadge } from "./time-sale-badge"
+import QuantityDiscountBadge from "./quantity-discount-badge"
 import { calculateStockStatus } from "./quantity/stock-status"
 import { SoldOutOverlay } from "@/components/products/sold-out-overlay"
 import { OverseasBadge } from "@/components/shared/badges/overseas-badge"
@@ -276,6 +277,8 @@ export default function ProductCard({
                 isMembershipOnlySale={isMembershipOnlySale}
               />
             )}
+
+            <QuantityDiscountBadge product={product} isMembership={isMembership} />
 
             {!isSoldOut && <Quantity product={product} />}
 

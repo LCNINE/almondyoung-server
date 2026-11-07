@@ -1,12 +1,11 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { PricingRulesSetInput, BasePriceRule, MembershipPriceRule, TieredPriceRule } from './pricing-rule.schema';
+import { PricingRulesSetInput, BasePriceRule, MembershipPriceRule } from './pricing-rule.schema';
 import { IsArray, IsInt, Min, IsEnum, IsOptional, IsUUID, ValidateNested } from 'class-validator';
 
 export enum PricingLayer {
   BASE_PRICE = 'base_price',
   MEMBERSHIP_PRICE = 'membership_price',
-  TIERED_PRICE = 'tiered_price',
 }
 
 export enum PricingScopeType {
@@ -64,14 +63,6 @@ export class PricingRuleDto {
   @IsInt()
   operationValue: number;
 
-  @ApiProperty({
-    description: 'Minimum quantity (tiered_price only)',
-    required: false,
-  })
-  @IsOptional()
-  @IsInt()
-  @Min(1)
-  minQuantity?: number;
 }
 
 export class ReplacePricingRulesDto {
@@ -92,15 +83,6 @@ export class ReplacePricingRulesDto {
   @ValidateNested({ each: true })
   @Type(() => PricingRuleDto)
   membershipPriceRules: MembershipPriceRule[];
-
-  @ApiProperty({
-    description: 'Tiered price rules',
-    type: [PricingRuleDto],
-  })
-  @IsArray()
-  @ValidateNested({ each: true })
-  @Type(() => PricingRuleDto)
-  tieredPriceRules: TieredPriceRule[];
 }
 
 // Zod validation을 위한 헬퍼 타입

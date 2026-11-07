@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import {
+  imageBox,
   isAutoTextName,
   makeLayer,
   replaceEverywhere,
@@ -7,6 +8,29 @@ import {
   textLayerName,
 } from "./layer"
 import { newDesign, parseDesign, type Layer } from "./document"
+
+describe("이미지 초기 크기", () => {
+  it.each([
+    [1000, 1, 45, 0.1],
+    [1, 1000, 0.1, 25],
+  ])(
+    "%s×%spx 이미지도 최소 크기로 저장된다",
+    (pixelWidth, pixelHeight, width, height) => {
+      const design = { ...newDesign("card"), widthMm: 90, heightMm: 50 }
+      const layer = {
+        ...makeLayer("image", design),
+        ...imageBox(design, pixelWidth, pixelHeight),
+        image: "data:image/png;base64,AA==",
+        pixelWidth,
+        pixelHeight,
+      }
+      const next = { ...design, front: [layer] }
+
+      expect(layer).toMatchObject({ width, height })
+      expect(parseDesign(next)).toEqual(next)
+    }
+  )
+})
 
 describe("텍스트 레이어 이름", () => {
   it("문구 첫 줄을 30자까지 쓰고, 비면 '텍스트'", () => {

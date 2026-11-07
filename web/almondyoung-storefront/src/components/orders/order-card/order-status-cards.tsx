@@ -109,6 +109,9 @@ function StatusCard({
                 <div className="flex items-end justify-between gap-2">
                   <div className="text-xs text-gray-500 md:text-sm">
                     <p>{item.price}</p>
+                    {item.discountNote && (
+                      <p className="text-destructive">{item.discountNote}</p>
+                    )}
                     {item.options?.map((option, index) => (
                       <p key={index}>- {option}</p>
                     ))}

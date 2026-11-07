@@ -98,6 +98,9 @@ export const productQueryKeys = {
   shopListing: (id: string) => [...productQueryKeys.shopListings, id] as const,
 
   almondTemplates: ['almond-templates'] as const,
+  almondTemplateCategories: ['almond-template-categories'] as const,
+  printOptions: (kind: string, width: number, height: number) =>
+    ['print-catalog', 'options', kind, width, height] as const,
 
   sitePopups: ['site-popups'] as const,
   sitePopupsList: <T extends object>(query: T) =>
@@ -121,6 +124,8 @@ export const productQueryKeys = {
       'price-set',
       variantId,
     ] as const,
+  pricingVersionQuantityDiscount: (versionId: string) =>
+    [...productQueryKeys.pricingVersion(versionId), 'quantity-discount'] as const,
   pricingMasterRules: (masterId: string) =>
     ['pricing', 'masters', masterId, 'rules'] as const,
   pricingMasterPriceSet: (masterId: string, variantId: string) =>

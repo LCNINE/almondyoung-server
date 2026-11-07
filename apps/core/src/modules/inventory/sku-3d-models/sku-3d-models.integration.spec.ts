@@ -15,6 +15,7 @@ import { drizzle } from 'drizzle-orm/postgres-js';
 import { ProductModel3dLoader } from '../../catalog/core/products/loaders/product-model3d.loader';
 import { wmsSchema } from '../schema/inventory.schema';
 import { Sku3dModelsManager } from './sku-3d-models.manager';
+import { Sku3dModelsReader } from './sku-3d-models.reader';
 import { ProductSkuMappingService } from '../../product-matching/services/product-sku-mapping.service';
 import { ProductMatchingService } from '../../product-matching/services/product-matching.service';
 import { MatchingLinkResolver } from '../../product-matching/services/matching-link-resolver';
@@ -29,6 +30,7 @@ describeWithPostgres('SKU 3D models PostgreSQL integration', () => {
   let container: StartedPostgreSqlContainer;
   let client: postgres.Sql;
   let manager: Sku3dModelsManager;
+  let reader: Sku3dModelsReader;
   let mappings: ProductSkuMappingService;
   let matchingService: ProductMatchingService;
   let failPublication: boolean;
@@ -75,6 +77,7 @@ describeWithPostgres('SKU 3D models PostgreSQL integration', () => {
       CREATE TABLE test_projection_events (sequence serial, file_id text, origin text, reason text, version_id uuid, category_ids jsonb);
     `);
     await client.unsafe(readFileSync('apps/core/drizzle/20261029005659_add-sku-3d-models.sql', 'utf8'));
+    await client.unsafe(readFileSync('apps/core/drizzle/20261105020009_sku-3d-model-draft-and-uploader.sql', 'utf8'));
     // 실제 deleteVersion RETURNING과 카테고리 SELECT가 쓰는 열을 migration snapshot에서 구성한다.
     const snapshot = JSON.parse(readFileSync('apps/core/drizzle/meta/20261029005659_snapshot.json', 'utf8'));
 
@@ -161,6 +164,7 @@ describeWithPostgres('SKU 3D models PostgreSQL integration', () => {
     };
     const modelProjection = new ProductModel3dProjection(loader, assembler as any, publisher as any);
     manager = new Sku3dModelsManager(dbService as any, files as any, modelProjection);
+    reader = new Sku3dModelsReader(dbService as any);
     mappings = new ProductSkuMappingService(
       dbService as any,
       { recalculateAndPublishForVariant: async () => undefined } as any,
@@ -186,6 +190,7 @@ describeWithPostgres('SKU 3D models PostgreSQL integration', () => {
       {} as any,
       { recalculateAndPublishForVariants: async () => undefined } as any,
       {} as any,
+      { copyMapping: async () => undefined, deleteForVersion: async () => undefined, assertCompatibleWithPrices: async () => undefined } as any,
     );
     categories = new ProductCategoriesService(dbService as any, assembler as any, publisher as any);
     masters = new ProductMastersService(
@@ -260,7 +265,7 @@ describeWithPostgres('SKU 3D models PostgreSQL integration', () => {
     for (const [order, skuId] of [firstSkuId, secondSkuId].entries()) {
       const variantId = randomUUID();
       const matchingId = randomUUID();
-      await client`INSERT INTO skus (id, is_deleted) VALUES (${skuId}, false)`;
+      await client`INSERT INTO skus (id, is_deleted, name, code) VALUES (${skuId}, false, ${`상품 ${order}`}, ${`SKU-${order}`})`;
       await client`INSERT INTO product_variants VALUES (${variantId}, ${order}, 'active')`;
       await client`INSERT INTO product_master_variants VALUES (${masterId}, ${versionId}, ${variantId})`;
       await client`INSERT INTO product_matchings (id, variant_id) VALUES (${matchingId}, ${variantId})`;
@@ -277,6 +282,58 @@ describeWithPostgres('SKU 3D models PostgreSQL integration', () => {
 
     return variant.id as string;
   }
+
+  it('keeps a draft upload private until it is published, then demotes the older public version', async () => {
+    const oldFile = randomUUID();
+    const newFile = randomUUID();
+    const old = await manager.register(firstSkuId, { status: 'approved', glbFileId: oldFile }, actorId, '홍길동');
+    const draft = await manager.register(firstSkuId, { status: 'draft', glbFileId: newFile }, actorId, '권우재');
+    await client`TRUNCATE test_projection_events`;
+
+    expect(await selection()).toBe(oldFile);
+
+    await manager.publish(draft.id, actorId);
+
+    expect(await selection()).toBe(newFile);
+    expect(await client`SELECT version, status FROM sku_3d_models WHERE sku_id = ${firstSkuId} ORDER BY version`).toEqual([
+      { version: old.version, status: 'draft' },
+      { version: draft.version, status: 'approved' },
+    ]);
+    expect(await client`SELECT file_id FROM test_projection_events`).toEqual([{ file_id: newFile }]);
+  });
+
+  it('unpublishes every public version of the SKU and falls back to the next option', async () => {
+    const firstFile = randomUUID();
+    const secondFile = randomUUID();
+    await manager.register(firstSkuId, { status: 'approved', glbFileId: firstFile }, actorId);
+    await manager.register(firstSkuId, { status: 'approved', glbFileId: randomUUID() }, actorId);
+    await manager.register(secondSkuId, { status: 'approved', glbFileId: secondFile }, actorId);
+
+    await manager.unpublish(firstSkuId);
+
+    expect(await client`SELECT count(*)::int AS n FROM sku_3d_models WHERE sku_id = ${firstSkuId} AND status = 'approved'`).toEqual([
+      { n: 0 },
+    ]);
+    expect(await selection()).toBe(secondFile);
+  });
+
+  it('lists uploads filtered by product, uploader and visibility', async () => {
+    await manager.register(firstSkuId, { status: 'approved', glbFileId: randomUUID() }, actorId, '권우재');
+    await manager.register(firstSkuId, { status: 'draft', glbFileId: randomUUID() }, actorId, '정가은');
+    await manager.register(secondSkuId, { status: 'draft', glbFileId: randomUUID() }, actorId, '권우재');
+
+    const all = await reader.listUploads({ page: 1, limit: 50 });
+    const byProduct = await reader.listUploads({ q: 'SKU-1', page: 1, limit: 50 });
+    const byUploader = await reader.listUploads({ uploader: '우재', page: 1, limit: 50 });
+    const privateOnes = await reader.listUploads({ visibility: 'private', uploader: '권우재', page: 1, limit: 50 });
+    const paged = await reader.listUploads({ page: 2, limit: 2 });
+
+    expect(all.total).toBe(3);
+    expect(byProduct.items.map((row) => row.skuName)).toEqual(['상품 1']);
+    expect(byUploader.items.map((row) => row.uploadedByLabel)).toEqual(['권우재', '권우재']);
+    expect(privateOnes.items.map((row) => row.skuCode)).toEqual(['SKU-1']);
+    expect(paged).toEqual(expect.objectContaining({ total: 3, items: [expect.objectContaining({ skuCode: 'SKU-0' })] }));
+  });
 
   it('replaces a disconnected model when a live variant is remapped', async () => {
     const firstFile = randomUUID();

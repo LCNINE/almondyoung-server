@@ -25,6 +25,21 @@ function world(layer: Layer, p: { x: number; y: number }) {
 }
 
 describe("펜 도형", () => {
+  it.each([
+    [0.3, 0.3],
+    [0.05, 0.1],
+  ])("펜 도형의 %smm 상자를 %smm로 제한한다", (size, expected) => {
+    const fitted = fitPath(
+      [
+        { x: 0, y: 0 },
+        { x: size, y: size },
+      ],
+      false
+    )
+
+    expect(fitted).toMatchObject({ width: expected, height: expected })
+  })
+
   it("그린 점을 곡선에 맞는 상자와 0~1 좌표로 바꾼다", () => {
     const fitted = fitPath(
       [
@@ -50,7 +65,7 @@ describe("펜 도형", () => {
       ],
       false
     )
-    expect(fitted.height).toBe(1)
+    expect(fitted.height).toBe(0.1)
     expect(fitted.pathPoints.map((p) => p.y)).toEqual([0.5, 0.5])
   })
 

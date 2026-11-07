@@ -49,6 +49,7 @@ const READ_VIA_WRITE_VERB: Record<string, string> = {
 
 /** 조회 동사지만 조회 아닌 권한을 요구하는 라우트. 값은 이유. */
 const NON_READ_GET: Record<string, string> = {
+  'core GET /admin/print-catalog/:kind/options': '게시 모달이 고르는 와우프레스 옵션 — 게시(쓰기)와 같은 문이다',
   'core GET /direct-ship/handoffs/:handoffId/sheet': '내보내기다 — 입점사 시트 다시 받기',
   'core GET /shipment-recall-operations/:operationId': '회수 작업 상태 — 회수 권한자의 작업 화면',
   'core GET /admin/customer-return-receiving':

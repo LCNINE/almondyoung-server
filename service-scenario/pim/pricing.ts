@@ -1,7 +1,6 @@
 import { z } from 'zod';
 import type { Scenario } from '../types.ts';
 
-
 export const pricingScenarios: Scenario[] = [
   // ========================================
   // Group 1: 기본 CRUD 테스트 (PRICE-001 ~ PRICE-003)
@@ -33,17 +32,11 @@ export const pricingScenarios: Scenario[] = [
             add: [
               {
                 displayName: 'Color',
-                values: [
-                  { displayName: 'Red' },
-                  { displayName: 'Blue' },
-                ],
+                values: [{ displayName: 'Red' }, { displayName: 'Blue' }],
               },
               {
                 displayName: 'Size',
-                values: [
-                  { displayName: 'S' },
-                  { displayName: 'M' },
-                ],
+                values: [{ displayName: 'S' }, { displayName: 'M' }],
               },
             ],
           },
@@ -67,7 +60,6 @@ export const pricingScenarios: Scenario[] = [
             },
           ],
           membershipPriceRules: [],
-          tieredPriceRules: [],
         },
         expectedStatus: 200,
         description: 'Base price 규칙 생성 (10,000원)',
@@ -83,7 +75,6 @@ export const pricingScenarios: Scenario[] = [
             }),
           ),
           membershipPriceRules: z.array(z.any()),
-          tieredPriceRules: z.array(z.any()),
         }),
       },
       {
@@ -115,7 +106,6 @@ export const pricingScenarios: Scenario[] = [
         responseSchema: z.object({
           basePriceRules: z.array(z.any()).length(0),
           membershipPriceRules: z.array(z.any()).length(0),
-          tieredPriceRules: z.array(z.any()).length(0),
         }),
       },
     ],
@@ -123,7 +113,7 @@ export const pricingScenarios: Scenario[] = [
 
   {
     id: 'PRICE-002',
-    name: '다층 가격 규칙 생성 (base + membership + tiered)',
+    name: '다층 가격 규칙 생성 (base + membership)',
     category: 'PIM > Pricing',
     validation: '3개 레이어 모두 사용, 순차 적용 확인',
     steps: [
@@ -148,17 +138,11 @@ export const pricingScenarios: Scenario[] = [
             add: [
               {
                 displayName: 'Color',
-                values: [
-                  { displayName: 'Red' },
-                  { displayName: 'Blue' },
-                ],
+                values: [{ displayName: 'Red' }, { displayName: 'Blue' }],
               },
               {
                 displayName: 'Size',
-                values: [
-                  { displayName: 'S' },
-                  { displayName: 'M' },
-                ],
+                values: [{ displayName: 'S' }, { displayName: 'M' }],
               },
             ],
           },
@@ -201,24 +185,6 @@ export const pricingScenarios: Scenario[] = [
               operationValue: -100,
             },
           ],
-          tieredPriceRules: [
-            {
-              order: 1,
-              layer: 'tiered_price',
-              scopeType: 'all_variants',
-              operationType: 'scale',
-              operationValue: -50,
-              minQuantity: 10,
-            },
-            {
-              order: 2,
-              layer: 'tiered_price',
-              scopeType: 'all_variants',
-              operationType: 'scale',
-              operationValue: -100,
-              minQuantity: 50,
-            },
-          ],
         },
         expectedStatus: 200,
         description: '다층 가격 규칙 설정',
@@ -233,7 +199,6 @@ export const pricingScenarios: Scenario[] = [
         responseSchema: z.object({
           basePriceRules: z.array(z.any()).min(2),
           membershipPriceRules: z.array(z.any()).min(1),
-          tieredPriceRules: z.array(z.any()).min(2),
         }),
       },
     ],
@@ -290,7 +255,6 @@ export const pricingScenarios: Scenario[] = [
             },
           ],
           membershipPriceRules: [],
-          tieredPriceRules: [],
         },
         expectedStatus: 200,
         description: '초기 가격 규칙 설정 (15,000원)',
@@ -337,7 +301,6 @@ export const pricingScenarios: Scenario[] = [
               operationValue: -3000,
             },
           ],
-          tieredPriceRules: [],
         },
         expectedStatus: 200,
         description: '가격 규칙 교체 (25,000원 + 멤버십 할인)',
@@ -398,10 +361,7 @@ export const pricingScenarios: Scenario[] = [
             add: [
               {
                 displayName: 'Color',
-                values: [
-                  { displayName: 'Red' },
-                  { displayName: 'Blue' },
-                ],
+                values: [{ displayName: 'Red' }, { displayName: 'Blue' }],
               },
             ],
           },
@@ -428,7 +388,6 @@ export const pricingScenarios: Scenario[] = [
             },
           ],
           membershipPriceRules: [],
-          tieredPriceRules: [],
         },
         expectedStatus: 200,
         description: 'Base price 설정 (10,000원)',
@@ -527,7 +486,6 @@ export const pricingScenarios: Scenario[] = [
               operationValue: -3000,
             },
           ],
-          tieredPriceRules: [],
         },
         expectedStatus: 200,
         description: 'Base 20,000원 + Membership -3,000원',
@@ -566,149 +524,6 @@ export const pricingScenarios: Scenario[] = [
   },
 
   {
-    id: 'PRICE-006',
-    name: '대량 구매 계층 가격 계산',
-    category: 'PIM > Pricing',
-    validation: 'Tiered price 적용 확인',
-    steps: [
-      {
-        id: 'create-master',
-        method: 'POST',
-        path: '/masters',
-        service: 'pim',
-        body: {},
-        expectedStatus: 201,
-        description: '상품 마스터 생성',
-        extractFromResponse: { masterId: 'masterId', versionId: 'id' },
-      },
-      {
-        id: 'add-options',
-        method: 'PUT',
-        path: '/masters/{{masterId}}/versions/{{versionId}}',
-        service: 'pim',
-        body: {
-          name: 'Tiered Pricing {{timestamp}}',
-          optionDiff: {
-            add: [
-              {
-                displayName: 'Color',
-                values: [{ displayName: 'Red' }],
-              },
-            ],
-          },
-        },
-        expectedStatus: 200,
-        description: '옵션 추가',
-        extractFromResponse: {
-          variantId: 'variants.0.id',
-        },
-      },
-      {
-        id: 'set-tiered-pricing',
-        method: 'PUT',
-        path: '/versions/{{versionId}}/pricing/rules',
-        service: 'pim',
-        body: {
-          basePriceRules: [
-            {
-              order: 1,
-              layer: 'base_price',
-              scopeType: 'all_variants',
-              operationType: 'override',
-              operationValue: 50000,
-            },
-          ],
-          membershipPriceRules: [
-            {
-              order: 1,
-              layer: 'membership_price',
-              scopeType: 'all_variants',
-              operationType: 'scale',
-              operationValue: -100,
-            },
-          ],
-          tieredPriceRules: [
-            {
-              order: 1,
-              layer: 'tiered_price',
-              scopeType: 'all_variants',
-              operationType: 'scale',
-              operationValue: -50,
-              minQuantity: 10,
-            },
-            {
-              order: 2,
-              layer: 'tiered_price',
-              scopeType: 'all_variants',
-              operationType: 'scale',
-              operationValue: -100,
-              minQuantity: 100,
-            },
-          ],
-        },
-        expectedStatus: 200,
-        description: 'Tiered pricing 설정 (10개/100개 단위)',
-      },
-      {
-        id: 'publish-version',
-        method: 'PATCH',
-        path: '/masters/{{masterId}}/versions/{{versionId}}/publish',
-        service: 'pim',
-        expectedStatus: 200,
-        description: '버전 Publish',
-      },
-      {
-        id: 'calculate-qty-5',
-        method: 'POST',
-        path: '/masters/{{masterId}}/pricing/calculate',
-        service: 'pim',
-        body: {
-          variantId: '{{variantId}}',
-          customerType: 'membership',
-          quantity: 5,
-        },
-        expectedStatus: 200,
-        description: '5개 구매 (tiered 미적용, active 버전 사용)',
-        responseSchema: z.object({
-          price: z.literal(45000),
-        }),
-      },
-      {
-        id: 'calculate-qty-15',
-        method: 'POST',
-        path: '/masters/{{masterId}}/pricing/calculate',
-        service: 'pim',
-        body: {
-          variantId: '{{variantId}}',
-          customerType: 'membership',
-          quantity: 15,
-        },
-        expectedStatus: 200,
-        description: '15개 구매 (10개 이상 5% 추가 할인, active 버전 사용)',
-        responseSchema: z.object({
-          price: z.literal(42750),
-        }),
-      },
-      {
-        id: 'calculate-qty-120',
-        method: 'POST',
-        path: '/masters/{{masterId}}/pricing/calculate',
-        service: 'pim',
-        body: {
-          variantId: '{{variantId}}',
-          customerType: 'membership',
-          quantity: 120,
-        },
-        expectedStatus: 200,
-        description: '120개 구매 (100개 이상 10% 추가 할인, active 버전 사용)',
-        responseSchema: z.object({
-          price: z.literal(40500),
-        }),
-      },
-    ],
-  },
-
-  {
     id: 'PRICE-007',
     name: 'Scope 타입별 가격 차등 적용',
     category: 'PIM > Pricing',
@@ -735,18 +550,11 @@ export const pricingScenarios: Scenario[] = [
             add: [
               {
                 displayName: 'Color',
-                values: [
-                  { displayName: 'Red' },
-                  { displayName: 'Blue' },
-                  { displayName: 'Green' },
-                ],
+                values: [{ displayName: 'Red' }, { displayName: 'Blue' }, { displayName: 'Green' }],
               },
               {
                 displayName: 'Size',
-                values: [
-                  { displayName: 'S' },
-                  { displayName: 'M' },
-                ],
+                values: [{ displayName: 'S' }, { displayName: 'M' }],
               },
             ],
           },
@@ -792,7 +600,6 @@ export const pricingScenarios: Scenario[] = [
             },
           ],
           membershipPriceRules: [],
-          tieredPriceRules: [],
         },
         expectedStatus: 200,
         description: '3가지 scope type 규칙 설정',
@@ -860,7 +667,7 @@ export const pricingScenarios: Scenario[] = [
     id: 'PRICE-008',
     name: '전체 가격표 조회 (Price Set)',
     category: 'PIM > Pricing',
-    validation: '한 번에 base/membership/tiered 가격 모두 조회',
+    validation: '한 번에 base/membership 가격과 구간가 조회',
     steps: [
       {
         id: 'create-master',
@@ -918,24 +725,6 @@ export const pricingScenarios: Scenario[] = [
               operationValue: -5000,
             },
           ],
-          tieredPriceRules: [
-            {
-              order: 1,
-              layer: 'tiered_price',
-              scopeType: 'all_variants',
-              operationType: 'offset',
-              operationValue: -3000,
-              minQuantity: 10,
-            },
-            {
-              order: 2,
-              layer: 'tiered_price',
-              scopeType: 'all_variants',
-              operationType: 'offset',
-              operationValue: -7000,
-              minQuantity: 50,
-            },
-          ],
         },
         expectedStatus: 200,
         description: '다층 가격 설정',
@@ -961,12 +750,14 @@ export const pricingScenarios: Scenario[] = [
         responseSchema: z.object({
           basePrice: z.literal(30000),
           membershipPrice: z.literal(25000),
-          tieredPrices: z.array(
-            z.object({
-              minQuantity: z.number(),
-              price: z.number(),
-            }),
-          ).length(2),
+          tieredPrices: z
+            .array(
+              z.object({
+                minQuantity: z.number(),
+                price: z.number(),
+              }),
+            )
+            .length(2),
         }),
       },
     ],
@@ -1026,7 +817,6 @@ export const pricingScenarios: Scenario[] = [
             },
           ],
           membershipPriceRules: [],
-          tieredPriceRules: [],
         },
         expectedStatus: 200,
         description: 'Version 1 가격 설정 (10,000원)',
@@ -1067,7 +857,6 @@ export const pricingScenarios: Scenario[] = [
             },
           ],
           membershipPriceRules: [],
-          tieredPriceRules: [],
         },
         expectedStatus: 200,
         description: 'Version 2 가격 설정 (20,000원)',
@@ -1141,10 +930,7 @@ export const pricingScenarios: Scenario[] = [
             add: [
               {
                 displayName: 'Color',
-                values: [
-                  { displayName: 'Red' },
-                  { displayName: 'Blue' },
-                ],
+                values: [{ displayName: 'Red' }, { displayName: 'Blue' }],
               },
             ],
           },
@@ -1187,19 +973,9 @@ export const pricingScenarios: Scenario[] = [
               operationValue: -1000,
             },
           ],
-          tieredPriceRules: [
-            {
-              order: 1,
-              layer: 'tiered_price',
-              scopeType: 'all_variants',
-              operationType: 'offset',
-              operationValue: -500,
-              minQuantity: 10,
-            },
-          ],
         },
         expectedStatus: 200,
-        description: 'base/membership/tiered 규칙 설정',
+        description: 'base/membership 규칙 설정',
       },
       {
         id: 'publish-version',
@@ -1222,7 +998,7 @@ export const pricingScenarios: Scenario[] = [
             maxBasePrice: z.literal(12000),
             minMembershipPrice: z.literal(9000),
             maxMembershipPrice: z.literal(11000),
-            hasTieredPrices: z.literal(true),
+            hasTieredPrices: z.literal(false),
           }),
         }),
       },
@@ -1284,7 +1060,6 @@ export const pricingScenarios: Scenario[] = [
             },
           ],
           membershipPriceRules: [],
-          tieredPriceRules: [],
         },
         expectedStatus: 400,
         description: '첫 base_price 규칙이 all_variants가 아님',
@@ -1312,61 +1087,9 @@ export const pricingScenarios: Scenario[] = [
             },
           ],
           membershipPriceRules: [],
-          tieredPriceRules: [],
         },
         expectedStatus: 400,
         description: '동일 레이어 내 중복 order',
-      },
-      {
-        id: 'error-tiered-without-minQuantity',
-        method: 'PUT',
-        path: '/versions/{{versionId}}/pricing/rules',
-        service: 'pim',
-        body: {
-          basePriceRules: [
-            {
-              order: 1,
-              layer: 'base_price',
-              scopeType: 'all_variants',
-              operationType: 'override',
-              operationValue: 10000,
-            },
-          ],
-          membershipPriceRules: [],
-          tieredPriceRules: [
-            {
-              order: 1,
-              layer: 'tiered_price',
-              scopeType: 'all_variants',
-              operationType: 'offset',
-              operationValue: -1000,
-            },
-          ],
-        },
-        expectedStatus: 400,
-        description: 'tiered_price에 minQuantity 누락',
-      },
-      {
-        id: 'error-base-with-minQuantity',
-        method: 'PUT',
-        path: '/versions/{{versionId}}/pricing/rules',
-        service: 'pim',
-        body: {
-          basePriceRules: [
-            {
-              order: 1,
-              layer: 'base_price',
-              scopeType: 'all_variants',
-              operationType: 'override',
-              operationValue: 10000,
-              minQuantity: 10,
-            },
-          ],
-          membershipPriceRules: [],
-          tieredPriceRules: [],
-        },
-        expectedStatus: 400,
-        description: 'base_price에 minQuantity 설정',
       },
     ],
   },
@@ -1430,7 +1153,6 @@ export const pricingScenarios: Scenario[] = [
             },
           ],
           membershipPriceRules: [],
-          tieredPriceRules: [],
         },
         expectedStatus: 400,
         description: 'Active 버전 수정 시도 (실패)',
@@ -1471,7 +1193,6 @@ export const pricingScenarios: Scenario[] = [
             },
           ],
           membershipPriceRules: [],
-          tieredPriceRules: [],
         },
         expectedStatus: 200,
         description: 'Draft 버전 수정 성공',
@@ -1500,7 +1221,6 @@ export const pricingScenarios: Scenario[] = [
             },
           ],
           membershipPriceRules: [],
-          tieredPriceRules: [],
         },
         expectedStatus: 400,
         description: 'Inactive 버전 수정 시도 (실패)',
@@ -1535,26 +1255,15 @@ export const pricingScenarios: Scenario[] = [
             add: [
               {
                 displayName: 'Color',
-                values: [
-                  { displayName: 'Red' },
-                  { displayName: 'Blue' },
-                  { displayName: 'Green' },
-                ],
+                values: [{ displayName: 'Red' }, { displayName: 'Blue' }, { displayName: 'Green' }],
               },
               {
                 displayName: 'Size',
-                values: [
-                  { displayName: 'S' },
-                  { displayName: 'M' },
-                  { displayName: 'L' },
-                ],
+                values: [{ displayName: 'S' }, { displayName: 'M' }, { displayName: 'L' }],
               },
               {
                 displayName: 'Material',
-                values: [
-                  { displayName: 'Cotton' },
-                  { displayName: 'Polyester' },
-                ],
+                values: [{ displayName: 'Cotton' }, { displayName: 'Polyester' }],
               },
             ],
           },
@@ -1600,24 +1309,6 @@ export const pricingScenarios: Scenario[] = [
               operationValue: -150,
             },
           ],
-          tieredPriceRules: [
-            {
-              order: 1,
-              layer: 'tiered_price',
-              scopeType: 'all_variants',
-              operationType: 'scale',
-              operationValue: -50,
-              minQuantity: 20,
-            },
-            {
-              order: 2,
-              layer: 'tiered_price',
-              scopeType: 'all_variants',
-              operationType: 'scale',
-              operationValue: -100,
-              minQuantity: 100,
-            },
-          ],
         },
         expectedStatus: 200,
         description: '복잡한 다층 가격 규칙 설정',
@@ -1632,7 +1323,6 @@ export const pricingScenarios: Scenario[] = [
         responseSchema: z.object({
           basePriceRules: z.array(z.any()).length(2),
           membershipPriceRules: z.array(z.any()).length(1),
-          tieredPriceRules: z.array(z.any()).length(2),
         }),
       },
       {
@@ -1676,22 +1366,6 @@ export const pricingScenarios: Scenario[] = [
         }),
       },
       {
-        id: 'calculate-membership-red-tiered',
-        method: 'POST',
-        path: '/masters/{{masterId}}/pricing/calculate',
-        service: 'pim',
-        body: {
-          variantId: '{{redSCottonVariantId}}',
-          customerType: 'membership',
-          quantity: 25,
-        },
-        expectedStatus: 200,
-        description: 'Membership 고객, Red variant, qty 25 (active 버전 사용)',
-        responseSchema: z.object({
-          price: z.literal(88825),
-        }),
-      },
-      {
         id: 'calculate-blue-variant',
         method: 'POST',
         path: '/masters/{{masterId}}/pricing/calculate',
@@ -1720,7 +1394,6 @@ export const pricingScenarios: Scenario[] = [
         responseSchema: z.object({
           basePrice: z.literal(110000),
           membershipPrice: z.literal(93500),
-          tieredPrices: z.array(z.any()).min(1),
         }),
       },
       {

@@ -3,6 +3,7 @@ import {
   CATEGORY_COLUMNS,
   CATEGORY_REFERENCE_COLUMNS,
   CONSTRAINT_COLUMNS,
+  QUANTITY_DISCOUNT_COLUMNS,
   ColumnDef,
   IMAGE_COLUMNS,
   OPTION_COLUMNS,
@@ -63,6 +64,7 @@ export async function buildFormWorkbook(data: PrefillWorkbookData): Promise<Buff
   addSheet(wb, SHEET_NAMES.variants, VARIANT_COLUMNS, data.variants);
   addSheet(wb, SHEET_NAMES.categories, CATEGORY_COLUMNS, data.categories);
   addSheet(wb, SHEET_NAMES.constraints, CONSTRAINT_COLUMNS, data.constraints);
+  addSheet(wb, SHEET_NAMES.quantityDiscounts, QUANTITY_DISCOUNT_COLUMNS, data.quantityDiscounts ?? []);
   addSheet(wb, SHEET_NAMES.images, IMAGE_COLUMNS, data.images);
 
   // 카테고리 참조는 **상수**다. 작업자가 고쳐도 파서가 읽지 않으므로 반영되지 않는다.

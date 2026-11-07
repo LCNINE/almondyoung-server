@@ -7,15 +7,18 @@ import { useTranslations } from "next-intl"
 
 import { Button } from "@/components/ui/button"
 import { HttpTypes } from "@medusajs/types"
+import { isMembershipGroup, type CustomerGroupRef } from "@/lib/utils/membership-group"
 import { formatPrice } from "@/lib/utils/price-utils"
 
 import PriceErrorNotice from "../price-error-notice"
 import { calculateCartDiscount } from "../../utils/calculate-discount"
+import { useCartDiscountContext } from "../../hooks/use-cart-discount-context"
 import { FreeShippingProgress } from "../free-shipping-progress"
 
 type MobileCheckoutBarProps = {
   cart: HttpTypes.StoreCart & {
     promotions: HttpTypes.StorePromotion[]
+    customer?: { groups?: CustomerGroupRef[] } | null
   }
   selectedIds: Set<string>
   onCheckout: () => void
@@ -41,8 +44,14 @@ export default function MobileCheckoutBar({
   // 선택된 아이템만으로 할인 계산
   const selectedItems =
     cart.items?.filter((item) => selectedIds.has(item.id)) ?? []
-  const { originalTotal, membershipDiscount } =
-    calculateCartDiscount(selectedItems)
+  const discountContext = useCartDiscountContext(isMembershipGroup(cart.customer?.groups), cart.items)
+  const {
+    originalTotal,
+    membershipDiscount: otherDiscount,
+    quantityDiscount,
+  } = calculateCartDiscount(selectedItems, discountContext)
+  // 할인 합계(펼침 버튼·취소선)는 전과 같고, 펼친 상세에서만 수량 할인을 따로 보인다.
+  const membershipDiscount = otherDiscount + quantityDiscount
 
   // 선택된 아이템의 합계 계산
   const selectedTotal = selectedItems.reduce(
@@ -94,12 +103,26 @@ export default function MobileCheckoutBar({
             className="overflow-hidden bg-white shadow-inner"
           >
             <div className="px-4 py-3 text-sm">
-              <div className="flex justify-between">
-                <span className="text-gray-600">{tSummary("membershipDiscount")}</span>
-                <span className="text-destructive">
-                  -{formatPrice(membershipDiscount)}{t("won")}
-                </span>
-              </div>
+              {otherDiscount > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-gray-600">
+                    {discountContext.isMember
+                      ? tSummary("membershipDiscount")
+                      : tSummary("productDiscount")}
+                  </span>
+                  <span className="text-destructive">
+                    -{formatPrice(otherDiscount)}{t("won")}
+                  </span>
+                </div>
+              )}
+              {quantityDiscount > 0 && (
+                <div className="mt-1 flex justify-between">
+                  <span className="text-gray-600">{tSummary("quantityDiscount")}</span>
+                  <span className="text-destructive">
+                    -{formatPrice(quantityDiscount)}{t("won")}
+                  </span>
+                </div>
+              )}
               {(cart.discount_total ?? 0) > 0 && (
                 <div className="mt-1 flex justify-between">
                   <span className="text-gray-600">{tSummary("couponDiscount")}</span>

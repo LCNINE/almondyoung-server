@@ -119,6 +119,7 @@ export class ProductReadAssembler {
                       basePrice: priceSet.basePrice,
                       membershipPrice: priceSet.membershipPrice,
                       tieredPrices: priceSet.tieredPrices,
+                      membershipTieredPrices: priceSet.membershipTieredPrices,
                     }
                   : undefined,
               };

@@ -1,6 +1,9 @@
+import { CustomError } from '@/lib/api/customError';
 import {
   getValidPricingVariantId,
   hasRuleMissingScopeTarget,
+  saveErrorMessage,
+  violationsForVersion,
   selectPricingVariants,
   toPricingVariantsFromMaster,
   toPricingVariantsFromVersion,
@@ -105,5 +108,27 @@ describe('hasRuleMissingScopeTarget', () => {
     expect(
       hasRuleMissingScopeTarget([rule({ scopeType: 'variants', scopeTargetIds: undefined })]),
     ).toBe(true);
+  });
+});
+
+describe('saveErrorMessage', () => {
+  it('shows the sentence the server sent', () => {
+    const error = new CustomError({ message: '수량 할인 표와 맞지 않습니다: 3개 이상 구간…', statusCode: 400, response: {} });
+    expect(saveErrorMessage(error)).toBe('수량 할인 표와 맞지 않습니다: 3개 이상 구간…');
+  });
+
+  it('falls back when there is nothing to show', () => {
+    expect(saveErrorMessage(undefined)).toBe('저장에 실패했습니다.');
+    expect(saveErrorMessage(new Error(''))).toBe('저장에 실패했습니다.');
+  });
+});
+
+describe('violationsForVersion', () => {
+  const rejected = { versionId: 'draft-a', violations: [{ code: 'RATE_NOT_INCREASING' as const, tierIndex: 1 }] };
+
+  it('shows a rejected save only on the version it was made for', () => {
+    expect(violationsForVersion(rejected, 'draft-a')).toEqual(rejected.violations);
+    expect(violationsForVersion(rejected, 'draft-b')).toEqual([]);
+    expect(violationsForVersion(null, 'draft-a')).toEqual([]);
   });
 });

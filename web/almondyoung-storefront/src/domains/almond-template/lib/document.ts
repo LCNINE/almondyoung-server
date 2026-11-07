@@ -19,7 +19,7 @@ import { FILE_IMAGE_REF } from "./image-ref"
 import type { PathPoint } from "./path-shape"
 import { LINE_CAPS, type LineCap } from "./line-shape"
 import { fittedFontSize } from "../components/graphic"
-import { isAutoTextName, textLayerName } from "./layer"
+import { isAutoTextName, MIN_LAYER_MM, textLayerName } from "./layer"
 
 export type Layer = {
   id: string
@@ -57,6 +57,7 @@ export type Layer = {
   imageTint?: string
   pixelWidth?: number
   pixelHeight?: number
+  imageOffsetMode?: "cover"
   imageScale?: number
   imageOffsetX?: number
   imageOffsetY?: number
@@ -94,6 +95,8 @@ export type Layer = {
   // 그림자를 아래 그림과 곱하기로 섞는다
   shadowMultiply?: boolean
   texture?: boolean
+  textureKind?: "grain" | "paper"
+  textureAmount?: number
   bevel?: boolean
   bevelSize?: number
   bevelDepth?: number
@@ -116,6 +119,7 @@ export type Layer = {
   lineCurved?: boolean
   blendMode?: BlendMode
   colorFilter?: ColorFilter
+  blur?: number
   gradient?: Gradient
   // 글자 모양대로 아래 레이어를 모두 뚫어 배경이 보이게 한다
   knockout?: boolean
@@ -145,6 +149,7 @@ export type Design = {
   backgroundPixelWidth?: number
   backgroundPixelHeight?: number
   backgroundFilter?: ColorFilter
+  backgroundBlur?: number
   backBackground?: SideBackground
   // 원본 file: 참조 → 편집 화면용 축소본 file: 참조
   imagePreviews?: Record<string, string>
@@ -159,6 +164,7 @@ export type SideBackground = Pick<
   | "backgroundPixelWidth"
   | "backgroundPixelHeight"
   | "backgroundFilter"
+  | "backgroundBlur"
 >
 
 export function sideBackground(
@@ -172,11 +178,12 @@ export function sideBackground(
     backgroundPixelWidth: design.backgroundPixelWidth,
     backgroundPixelHeight: design.backgroundPixelHeight,
     backgroundFilter: design.backgroundFilter,
+    backgroundBlur: design.backgroundBlur,
   }
 }
 
 export function unfiltered(value: SideBackground): SideBackground {
-  return { ...value, backgroundFilter: undefined }
+  return { ...value, backgroundFilter: undefined, backgroundBlur: undefined }
 }
 
 export function printsBack(design: Design): boolean {
@@ -200,6 +207,7 @@ export function withSideBackground(
     backgroundPixelWidth: undefined,
     backgroundPixelHeight: undefined,
     backgroundFilter: undefined,
+    backgroundBlur: undefined,
     ...value,
   }
 }
@@ -339,6 +347,8 @@ export function parseDesign(value: unknown): Design {
         (!Number.isFinite(layer.pixelWidth) || layer.pixelWidth < 1)) ||
       (layer.pixelHeight !== undefined &&
         (!Number.isFinite(layer.pixelHeight) || layer.pixelHeight < 1)) ||
+      (layer.imageOffsetMode !== undefined &&
+        layer.imageOffsetMode !== "cover") ||
       (layer.imageScale !== undefined &&
         (!Number.isFinite(layer.imageScale) ||
           layer.imageScale < 1 ||
@@ -365,6 +375,7 @@ export function parseDesign(value: unknown): Design {
       !validPhotoEffects(layer.photoEffects) ||
       !validBlendMode(layer.blendMode) ||
       !validColorFilter(layer.colorFilter) ||
+      (layer.blur !== undefined && !within(layer.blur, 0, 100)) ||
       !validGradient(layer.gradient) ||
       (layer.knockout !== undefined &&
         (typeof layer.knockout !== "boolean" ||
@@ -413,12 +424,18 @@ export function parseDesign(value: unknown): Design {
   }
   checkBackgroundImage(data)
   const design = data as Design
-  const named = (layers: Layer[]) =>
-    layers.map((layer) =>
-      isAutoTextName(layer)
-        ? { ...layer, name: textLayerName(layer.text) }
-        : layer
-    )
+
+  const normalized = (layers: Layer[]) =>
+    layers.map((layer) => {
+      const blur = legacyBlurAmount(layer.colorFilter)
+      const next =
+        blur === undefined ? layer : { ...layer, colorFilter: undefined, blur }
+
+      return isAutoTextName(next)
+        ? { ...next, name: textLayerName(next.text) }
+        : next
+    })
+
   const imagePreviews =
     design.imagePreviews && typeof design.imagePreviews === "object"
       ? Object.fromEntries(
@@ -430,12 +447,30 @@ export function parseDesign(value: unknown): Design {
           )
         )
       : undefined
+
   return {
-    ...design,
+    ...normalizeBackgroundBlur(design),
+    backBackground: design.backBackground
+      ? normalizeBackgroundBlur(design.backBackground)
+      : undefined,
     imagePreviews,
-    front: named(design.front),
-    back: named(design.back),
+    front: normalized(design.front),
+    back: normalized(design.back),
   }
+}
+
+function legacyBlurAmount(
+  filter: ColorFilter | { kind: "blur"; amount: number } | undefined
+) {
+  return filter?.kind === "blur" ? filter.amount : undefined
+}
+
+function normalizeBackgroundBlur<T extends SideBackground>(background: T): T {
+  const blur = legacyBlurAmount(background.backgroundFilter)
+
+  return blur === undefined
+    ? background
+    : { ...background, backgroundFilter: undefined, backgroundBlur: blur }
 }
 
 function checkBackgroundImage(data: Partial<SideBackground>) {
@@ -456,6 +491,9 @@ function checkBackgroundImage(data: Partial<SideBackground>) {
     throw new Error("배경 이미지 해상도가 올바르지 않습니다.")
   if (!validColorFilter(data.backgroundFilter))
     throw new Error("배경 필터가 올바르지 않습니다.")
+
+  if (data.backgroundBlur !== undefined && !within(data.backgroundBlur, 0, 100))
+    throw new Error("배경 블러가 올바르지 않습니다.")
 }
 
 export function updateLayer(
@@ -500,8 +538,8 @@ export function resizeDesign(
       ...layer,
       x,
       y,
-      width: Math.round(layer.width * sx * 10) / 10,
-      height: Math.round(layer.height * sy * 10) / 10,
+      width: Math.max(MIN_LAYER_MM, Math.round(layer.width * sx * 10) / 10),
+      height: Math.max(MIN_LAYER_MM, Math.round(layer.height * sy * 10) / 10),
       fontSize:
         layer.fontSize === undefined
           ? undefined
@@ -581,6 +619,9 @@ function validEffects(layer: Layer) {
     ) &&
     optional(layer.shadowOpacity, (v) => within(v, 0, 1)) &&
     optional(layer.shadowMultiply, isBool) &&
+    optional(layer.texture, isBool) &&
+    optional(layer.textureKind, (v) => v === "grain" || v === "paper") &&
+    optional(layer.textureAmount, (v) => within(v, 1, 100)) &&
     optional(layer.bevel, isBool) &&
     optional(layer.bevelSize, (v) => within(v, 0.05, 20)) &&
     optional(layer.bevelDepth, (v) => within(v, 0, 100)) &&
@@ -679,6 +720,7 @@ export function resizeLayerFromHandle(
   keepRatio = false
 ): Partial<Layer> {
   const round = (value: number) => Math.round(value * 10) / 10
+
   if (keepRatio) {
     const corner = handle.length === 2
     const sx = (layer.width + (handle.includes("w") ? -dx : dx)) / layer.width
@@ -689,7 +731,7 @@ export function resizeLayerFromHandle(
         ? sx
         : sy
     const s = Math.max(
-      2 / Math.min(layer.width, layer.height),
+      MIN_LAYER_MM / Math.min(layer.width, layer.height),
       Math.min(
         wanted,
         (canvasWidth * 2) / layer.width,
@@ -708,6 +750,7 @@ export function resizeLayerFromHandle(
       : handle.includes("s")
         ? layer.y
         : layer.y + (layer.height - height) / 2
+
     return {
       x: round(x),
       y: round(y),
@@ -715,32 +758,38 @@ export function resizeLayerFromHandle(
       height: round(height),
     }
   }
+
   let { x, y, width, height } = layer
+
   if (handle.includes("w")) {
     x = Math.max(
       -canvasWidth,
       layer.x + layer.width - canvasWidth * 2,
-      Math.min(layer.x + layer.width - 2, layer.x + dx)
+      Math.min(layer.x + layer.width - MIN_LAYER_MM, layer.x + dx)
     )
     width = layer.x + layer.width - x
   }
   if (handle.includes("e"))
-    width = Math.max(2, Math.min(canvasWidth * 2, layer.width + dx))
+    width = Math.max(MIN_LAYER_MM, Math.min(canvasWidth * 2, layer.width + dx))
   if (handle.includes("n")) {
     y = Math.max(
       -canvasHeight,
       layer.y + layer.height - canvasHeight * 2,
-      Math.min(layer.y + layer.height - 2, layer.y + dy)
+      Math.min(layer.y + layer.height - MIN_LAYER_MM, layer.y + dy)
     )
     height = layer.y + layer.height - y
   }
   if (handle.includes("s"))
-    height = Math.max(2, Math.min(canvasHeight * 2, layer.height + dy))
+    height = Math.max(
+      MIN_LAYER_MM,
+      Math.min(canvasHeight * 2, layer.height + dy)
+    )
+
   return {
     x: round(x),
     y: round(y),
-    width: round(width),
-    height: round(height),
+    width: Math.max(MIN_LAYER_MM, round(width)),
+    height: Math.max(MIN_LAYER_MM, round(height)),
   }
 }
 

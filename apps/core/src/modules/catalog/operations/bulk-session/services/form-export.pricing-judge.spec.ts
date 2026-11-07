@@ -18,7 +18,6 @@ const rule = (over: Partial<Rule>): Rule =>
 const rules = (over: Partial<PricingRulesResponseDto> = {}): PricingRulesResponseDto => ({
   basePriceRules: [],
   membershipPriceRules: [],
-  tieredPriceRules: [],
   ...over,
 });
 
@@ -36,10 +35,6 @@ describe('isPricingEditable', () => {
       basePriceRules: [rule({}), rule({ id: 'r2', order: 2, scopeType: 'variants', scopeTargetIds: ['v1'] })],
     });
     expect(isPricingEditable(r)).toBe(true);
-  });
-
-  it('tiered_price 룰이 있으면 표현 불가다', () => {
-    expect(isPricingEditable(rules({ tieredPriceRules: [rule({ layer: 'tiered_price' })] }))).toBe(false);
   });
 
   it('with_option 스코프가 있으면 표현 불가다', () => {

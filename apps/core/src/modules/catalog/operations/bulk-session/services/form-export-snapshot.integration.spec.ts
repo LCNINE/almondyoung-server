@@ -34,6 +34,7 @@ import { ProductModel3dLoader } from '../../../core/products/loaders/product-mod
 import { PricingService } from '../../../core/pricing/pricing.service';
 import { PricingValidatorService } from '../../../core/pricing/pricing-validator.service';
 import { PricingCalculatorService } from '../../../core/pricing/pricing-calculator.service';
+import { QuantityDiscountReader } from '../../../core/pricing/quantity-discount.reader';
 import { VariantPriceCacheService } from '../../../core/pricing/variant-price-cache.service';
 import { ProductCategoriesService } from '../../../core/categories/categories.service';
 import { OutboxPublisher, StreamPublisher } from '@app/events';
@@ -87,9 +88,9 @@ describeIfDb('FormExportSnapshotReader (실 Postgres)', () => {
         tx ? fn(tx) : db.transaction((t) => fn(t)),
     } as unknown as DbService<PimSchema>;
 
-    const calculator = new PricingCalculatorService(dbService);
+    const calculator = new PricingCalculatorService(dbService, new QuantityDiscountReader(dbService));
     const validator = new PricingValidatorService(dbService, calculator);
-    const pricing = new PricingService(dbService, validator, calculator);
+    const pricing = new PricingService(dbService, validator, calculator, { assertCompatibleWithPrices: async () => undefined } as never);
 
     const priceCache = new VariantPriceCacheService(dbService, calculator);
     const versionLoader = new ProductVersionReadLoader();
@@ -104,6 +105,7 @@ describeIfDb('FormExportSnapshotReader (실 Postgres)', () => {
       tagLoader,
       priceCache,
       new ProductModel3dLoader(),
+      new QuantityDiscountReader(dbService),
     );
     // OutboxPublisher 는 스키마 제네릭을 받지 않는(기본값 Record<string, never>) DbService 를
     // 받는다 — 우리 dbService 의 실제 동작(db/run)엔 무관하고 순수 타입 불일치라 캐스팅한다.
@@ -128,7 +130,7 @@ describeIfDb('FormExportSnapshotReader (실 Postgres)', () => {
       getVariantMatchingBatch: () => Promise.resolve({ data: [] }),
     } as unknown as ProductSkuMappingService;
 
-    reader = new FormExportSnapshotReader(versionLoader, optionLoader, pricing, categories, skuMapping);
+    reader = new FormExportSnapshotReader(versionLoader, optionLoader, pricing, categories, skuMapping, new QuantityDiscountReader(dbService));
   });
 
   afterAll(async () => {
@@ -343,7 +345,7 @@ describeIfDb('FormExportSnapshotReader (실 Postgres)', () => {
     };
   }
 
-  async function createTieredProduct(tx: DbTransaction): Promise<{ masterId: string; versionId: string }> {
+  async function createComplexPricedProduct(tx: DbTransaction): Promise<{ masterId: string; versionId: string }> {
     const masterId = randomUUID();
     const versionId = randomUUID();
     await tx.insert(productMasters).values({ id: masterId });
@@ -351,17 +353,16 @@ describeIfDb('FormExportSnapshotReader (실 Postgres)', () => {
       .insert(productMasterVersions)
       .values({ id: versionId, masterId, version: 1, status: 'active', name: '도매 전용 니트' });
 
-    const tieredRuleId = randomUUID();
+    const offsetRuleId = randomUUID();
     await tx.insert(pricingRules).values({
-      id: tieredRuleId,
-      layer: 'tiered_price',
+      id: offsetRuleId,
+      layer: 'base_price',
       order: 1,
       scopeType: 'all_variants',
-      operationType: 'override',
+      operationType: 'offset',
       operationValue: 20000,
-      minQuantity: 10,
     });
-    await tx.insert(productMasterPricingRules).values({ masterId, versionId, pricingRuleId: tieredRuleId });
+    await tx.insert(productMasterPricingRules).values({ masterId, versionId, pricingRuleId: offsetRuleId });
 
     return { masterId, versionId };
   }
@@ -555,10 +556,10 @@ describeIfDb('FormExportSnapshotReader (실 Postgres)', () => {
     expect(out.data.constraints[0].lifetimeQuantityLimit).toBe('2');
   });
 
-  it('복합 가격규칙(tiered) 상품은 가격 칸이 센티넬이고 pricingEditable 이 false 다', async () => {
+  it('복합 가격규칙(offset) 상품은 가격 칸이 센티넬이고 pricingEditable 이 false 다', async () => {
     const out = await inRollbackTx(async (tx) => {
-      const fx = await createTieredProduct(tx);
-      return reader.buildPrefill(tx, [fx.masterId], 'exp-tiered');
+      const fx = await createComplexPricedProduct(tx);
+      return reader.buildPrefill(tx, [fx.masterId], 'exp-offset');
     });
 
     expect(out.data.products[0].basePrice).toBe(PRICING_SENTINEL);

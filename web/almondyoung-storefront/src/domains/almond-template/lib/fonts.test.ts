@@ -1,6 +1,7 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it, vi } from "vitest"
 import {
   SANS_FONT,
+  embeddedFontCss,
   fontStack,
   repairMaxZones,
   uploadedFontValue,
@@ -64,5 +65,37 @@ describe("repairMaxZones", () => {
     expect(() =>
       repairMaxZones(sfnt(0x00010000, 0x00010000, 4).slice(0, MAXP_AT))
     ).not.toThrow()
+  })
+})
+
+describe("embeddedFontCss", () => {
+  it("쓰인 글자만 요청하고 글꼴 파일을 data URL 로 넣는다", async () => {
+    const requested: string[] = []
+    vi.stubGlobal("fetch", async (url: string) => {
+      requested.push(url)
+      if (url.startsWith("https://fonts.googleapis.com"))
+        return new Response(
+          "@font-face{font-family:'Jua';src:url(https://fonts.gstatic.com/j.woff2) format('woff2')}"
+        )
+      return new Response(
+        new Blob([new Uint8Array([1, 2, 3])], { type: "font/woff2" })
+      )
+    })
+
+    const css = await embeddedFontCss(["Jua", "Jua", "Unknown"], "가가나")
+
+    expect(requested[0]).toContain(
+      `family=Jua&text=${encodeURIComponent("가나")}`
+    )
+    expect(css).toContain("url(data:font/woff2;base64,AQID)")
+    expect(css).not.toContain("gstatic")
+    vi.unstubAllGlobals()
+  })
+
+  it("글꼴을 못 받아도 던지지 않고 빈 문자열이다", async () => {
+    vi.stubGlobal("fetch", async () => new Response("", { status: 500 }))
+
+    await expect(embeddedFontCss(["Jua"], "가")).resolves.toBe("")
+    vi.unstubAllGlobals()
   })
 })

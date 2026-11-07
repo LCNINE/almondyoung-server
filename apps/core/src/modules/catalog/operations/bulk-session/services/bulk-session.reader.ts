@@ -9,7 +9,7 @@ import {
   productBulkImages,
 } from '../../../schema/catalog.schema';
 import { DbTransaction } from '../../../catalog.types';
-import { flattenBundle, fieldLabel } from './bulk-session.fields';
+import { combinationLabels, flattenBundle, fieldLabel, formatFieldValue } from './bulk-session.fields';
 import { isBulkItemPayload, isPrefillBundle } from './bulk-session.types';
 import { BULK_IMAGE_CONTEXT_BY_USAGE, collectReferencedImageRefs, imageRefKey } from './bulk-session.images';
 import { hasUndecided, toConflictDecisionMap, toConflictMap, type ConflictFilter } from './bulk-session.conflicts';
@@ -324,6 +324,9 @@ export class BulkSessionReader {
     // update 행만 기준값이 있다 — create 행은 비교 대상이 없으므로 before 는 항상 빈 문자열이다.
     const baseFields =
       row.kind === 'update' && isPrefillBundle(row.baseSnapshot) ? flattenBundle(row.baseSnapshot) : {};
+    // 수량할인 예외의 조합은 수정 행이면 옵션값 id 라 스냅샷의 조합명으로 바꿔 보이고, 신규 행이면 작업자가 지은 키 그대로다.
+    const labels = combinationLabels(isPrefillBundle(row.baseSnapshot) ? row.baseSnapshot : null);
+    const optionName = (combination: string) => labels.get(combination) ?? (row.kind === 'create' ? combination : undefined);
 
     const changes = Object.entries(fields)
       .map(([field, after]) => ({
@@ -333,7 +336,12 @@ export class BulkSessionReader {
         after,
       }))
       // create 행의 손대지 않은 선택 필드(빈 문자열)는 "바꾼 것"이 아니다.
-      .filter((change) => change.before !== change.after);
+      .filter((change) => change.before !== change.after)
+      .map((change) => ({
+        ...change,
+        before: formatFieldValue(change.field, change.before, optionName),
+        after: formatFieldValue(change.field, change.after, optionName),
+      }));
 
     // productName: 검토 목록에 보여줄 표시용 이름. `changes` 는 before!==after 인 필드만
     // 남기므로(위 filter), 이름을 건드리지 않은 update 행에는 'product.name' 이 아예 없을 수
@@ -353,9 +361,9 @@ export class BulkSessionReader {
     const conflicts = Object.entries(conflictMap).map(([field, entry]) => ({
       field,
       label: fieldLabel(field),
-      base: entry.base,
-      mine: entry.mine,
-      current: entry.current,
+      base: formatFieldValue(field, entry.base, optionName),
+      mine: formatFieldValue(field, entry.mine, optionName),
+      current: formatFieldValue(field, entry.current, optionName),
       decision: decisionMap[field] ?? null,
     }));
 

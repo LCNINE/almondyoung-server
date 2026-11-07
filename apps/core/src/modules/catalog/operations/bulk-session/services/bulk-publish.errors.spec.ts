@@ -1,3 +1,4 @@
+import { BadRequestException } from '@nestjs/common';
 import { classifyPublishError } from './bulk-publish.errors';
 
 describe('classifyPublishError', () => {
@@ -68,5 +69,14 @@ describe('classifyPublishError', () => {
   it("action 으로 '생성' 을 넘기면 폴백 문구가 '생성에 실패했습니다' 로 바뀐다", () => {
     const error = new Error('boom');
     expect(classifyPublishError(error, '생성')).toBe('생성에 실패했습니다. (원인: boom)');
+  });
+
+  it('passes the quantity discount table reason through as written', () => {
+    const error = new BadRequestException({
+      message: '수량 할인 표와 맞지 않습니다: 3개 이상 구간의 %가 앞 구간보다 커야 합니다.',
+      errors: [{ code: 'RATE_NOT_INCREASING', tierIndex: 0 }],
+    });
+
+    expect(classifyPublishError(error)).toBe('수량 할인 표와 맞지 않습니다: 3개 이상 구간의 %가 앞 구간보다 커야 합니다.');
   });
 });

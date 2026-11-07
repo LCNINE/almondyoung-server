@@ -392,6 +392,11 @@ const allMenus: MainMenu[] = [
         path: '/inventory/sku-field-capture',
       },
       {
+        id: 'inventory-sku-3d-models',
+        title: '3D 업로드 현황',
+        path: '/inventory/sku-3d-models',
+      },
+      {
         id: 'inventory-holders',
         title: '재고 소유자 관리',
         path: '/inventory/holders',
@@ -670,6 +675,11 @@ const allMenus: MainMenu[] = [
             id: 'almond-templates',
             title: '아몬드템플릿',
             path: '/mall/almond-templates',
+          },
+          {
+            id: 'almond-template-categories',
+            title: '아몬드템플릿 카테고리',
+            path: '/mall/almond-template-categories',
           },
           { id: 'deposit', title: '예치금' },
         ],

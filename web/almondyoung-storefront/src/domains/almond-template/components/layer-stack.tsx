@@ -81,6 +81,7 @@ function silhouette(layer: Layer, fill: string): Layer {
     stroke: stroked ? fill : layer.stroke,
     gradient: undefined,
     colorFilter: undefined,
+    blur: undefined,
     blendMode: undefined,
     shadow: false,
     bevel: false,
@@ -93,8 +94,7 @@ export function isFilterWindow(layer: Layer) {
   return (
     SHAPE_TEXT_TYPES.has(layer.type) &&
     !layer.filterBypass &&
-    !!layer.colorFilter &&
-    layer.colorFilter.amount > 0
+    ((layer.colorFilter?.amount ?? 0) > 0 || (layer.blur ?? 0) > 0)
   )
 }
 
@@ -130,6 +130,8 @@ function LayerWindow({
           <ColorFilterDef
             id={filterId}
             filter={layer.colorFilter}
+            blur={layer.blur}
+            preserveAlpha
             size={Math.min(layer.width, layer.height)}
           />
         )}
@@ -143,7 +145,7 @@ function LayerWindow({
               .map((item) => (
                 <LayerGraphic
                   key={item.id}
-                  layer={{ ...item, colorFilter: undefined }}
+                  layer={{ ...item, colorFilter: undefined, blur: undefined }}
                 />
               ))}
           </>
@@ -161,7 +163,12 @@ function LayerWindow({
       </g>
       <g opacity={0}>
         <LayerGraphic
-          layer={{ ...layer, filterBypass: false, colorFilter: undefined }}
+          layer={{
+            ...layer,
+            filterBypass: false,
+            colorFilter: undefined,
+            blur: undefined,
+          }}
         />
       </g>
     </>

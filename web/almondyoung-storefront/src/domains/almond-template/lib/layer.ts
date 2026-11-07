@@ -2,6 +2,8 @@ import { SHAPE_TEXT_TYPES, type Design, type Layer } from "./document"
 import { shapeTextColor } from "../components/graphic"
 import { SANS_FONT } from "./fonts"
 
+export const MIN_LAYER_MM = 0.1
+
 export const mm = (value: number) => Math.round(value * 10) / 10
 
 // 망고보드 수치(1080px 캔버스 기준 px)를 규격 짧은 변에 비례한 mm 로 바꾸는 배율
@@ -90,11 +92,12 @@ export function imageBox(
   )
   const width = pixelWidth * scale
   const height = pixelHeight * scale
+
   return {
     x: mm((design.widthMm - width) / 2),
     y: mm((design.heightMm - height) / 2),
-    width: mm(width),
-    height: mm(height),
+    width: Math.max(MIN_LAYER_MM, mm(width)),
+    height: Math.max(MIN_LAYER_MM, mm(height)),
   }
 }
 

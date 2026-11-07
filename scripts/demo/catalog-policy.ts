@@ -386,7 +386,6 @@ export const CATALOG_TABLES: readonly CatalogTablePolicy[] = [
       c('scope_target_ids', 'uuid[]'),
       c('operation_type', 'pricing_rule_operation_type'),
       c('operation_value', 'bigint'),
-      c('min_quantity', 'integer'),
       c('created_at', 'timestamp'),
       c('updated_at', 'timestamp'),
     ],

@@ -1,5 +1,5 @@
 import { useState, type CSSProperties, type PointerEvent } from "react"
-import { mm } from "../lib/layer"
+import { MIN_LAYER_MM, mm } from "../lib/layer"
 import type { AlmondEditor } from "./use-almond-editor"
 
 export function usePropertyPanel({
@@ -47,15 +47,17 @@ export function usePropertyPanel({
   const setImageSize = (field: "width" | "height", raw: number) => {
     if (!selected || !Number.isFinite(raw) || raw <= 0) return
     if (!imageSizeLinked) return setGeometry(field, raw)
+
     const current = selected[field]
     const scale = Math.min(
       raw / current,
       (design.widthMm * 2) / selected.width,
       (design.heightMm * 2) / selected.height
     )
+
     patch(selected.id, {
-      width: mm(Math.max(1, selected.width * scale)),
-      height: mm(Math.max(1, selected.height * scale)),
+      width: mm(Math.max(MIN_LAYER_MM, selected.width * scale)),
+      height: mm(Math.max(MIN_LAYER_MM, selected.height * scale)),
     })
   }
 

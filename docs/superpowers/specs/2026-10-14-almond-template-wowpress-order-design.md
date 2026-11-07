@@ -52,7 +52,7 @@
 | 목록 | `POST /api/v1/ord/ord_list`(§6.12) — `ordkey`·`ordnum`·`dboxnum`·기간 검색, 최대 100행. 행 = 주문 단위(`ordnum`, `ordkey`, `dboxnum`, `dlvyno`, `shipnum`, `ordstat`) |
 | 상세 | `GET /api/v1/ord/order/{ordnum}`(§6.13) — 상태 `ordinfo.ordstat`/`jobstat`(주문 단위), 우리가 보낸 ordkey 는 `ordinfo.userordkey`. 택배 등 직배송이 아닌 주문은 출고완료(80)에서 끝난다(84·85 는 와우프레스 직배송만, §9.3). 배송은 **박스 단위** `ordinfo.dlvybox` `{dboxnum, dlvyname(택배사 이름), dlvystat, costdlvy, ordnum[], shipnum(송장)}`. `dlvyinvc`/`dlvycomp`/`dlvyno` 키는 **상세에 없다** |
 | 묶음배송 | 같은 묶음배송 그룹(`dlvygrpno`, 명함·스티커) 제품끼리만 자동 묶음(§7.8). 책자·봉투·자석·현수막·부자재 등은 묶음 불가 → 박스·택배비 따로. 다른 요청끼리는 자동으로 묶이지 않는다(수동 `POST /api/v1/dlvy/bdle {ordnum, dboxnum}`, 접수 전만) |
-| 선불택배 불가 | §7.6·§7.7 "사인제품은 선불택배불가", "대상은 현수막, 배너 제품 등". 배송 안내 페이지의 사인제품 선불 요금표와 어긋나므로 제품별 `prod_info.deliverinfo.dlvyprepay` 로 확인한다. devshop 배송방법 목록은 제품과 무관한 공통 목록이라 근거가 못 된다 |
+| 선불택배 불가 | §7.6·§7.7 "사인제품은 선불택배불가". 2026-11 와우프레스 1:1 문의 답변으로 정해진 부자재 조합이면 선불택배가 된다고 확인했다. 기준표는 `2026-10-15-wowpress-bundled-order-design.md` §7.1 |
 | 배송방법 | `dlvymcd`(§9.4): 0 방문, 1 배쑝와쑝, 2 대리배송, 3 착불택배, 4 선불택배, 5 화물, 6 착불퀵, 7 선불퀵, 8 고속버스, 9 항공, 10 선박. 선불택배 택배사는 주소로 자동(`dlvyno` 109 롯데, 156 CJ). 선불택배 가능 여부는 제품상세 `deliverinfo.dlvyprepay`(§7.6) |
 | 콜백 | 상태 변경 시 등록 URL 로 POST, 10초 간격 최대 10회. 주문 단위로 `dlvyno`, `dlvynum`, `dlvyinvc`, `dlvycomp` 를 준다. **이번엔 쓰지 않는다**(§8) |
 

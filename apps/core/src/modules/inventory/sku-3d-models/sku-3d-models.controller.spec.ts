@@ -8,7 +8,7 @@ describe('Sku3dModelsController authenticated actor', () => {
     review: jest.fn(),
     reviewBatch: jest.fn(),
   };
-  const controller = new Sku3dModelsController(manager as any);
+  const controller = new Sku3dModelsController(manager as any, {} as any);
 
   beforeEach(() => jest.clearAllMocks());
 
@@ -19,11 +19,22 @@ describe('Sku3dModelsController authenticated actor', () => {
       controller.review('model', { status: 'approved' }, user as any);
       controller.reviewBatch({ ids: ['model'], status: 'approved' }, user as any);
 
-      expect(manager.register).toHaveBeenCalledWith('sku', expect.anything(), 'authenticated-user');
+      expect(manager.register).toHaveBeenCalledWith(
+        'sku',
+        expect.anything(),
+        'authenticated-user',
+        'authenticated-user',
+      );
       expect(manager.review).toHaveBeenCalledWith('model', expect.anything(), 'authenticated-user');
       expect(manager.reviewBatch).toHaveBeenCalledWith(['model'], expect.anything(), 'authenticated-user');
     },
   );
+
+  it('labels the uploader with the token name', () => {
+    controller.register('sku', { status: 'draft', glbFileId: 'file' }, { userId: 'u1', name: '권우재' } as any);
+
+    expect(manager.register).toHaveBeenCalledWith('sku', expect.anything(), 'u1', '권우재');
+  });
 
   it('rejects missing subjects before file-service delegation', () => {
     expect(() => controller.review('model', { status: 'approved' }, {} as any)).toThrow(UnauthorizedException);

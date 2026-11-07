@@ -6,9 +6,9 @@ export class AppliedRuleDto {
 
   @ApiProperty({
     description: 'Layer',
-    enum: ['base_price', 'membership_price', 'tiered_price'],
+    enum: ['base_price', 'membership_price'],
   })
-  layer: 'base_price' | 'membership_price' | 'tiered_price';
+  layer: 'base_price' | 'membership_price';
 
   @ApiProperty({ description: 'Order' })
   order: number;
@@ -49,7 +49,7 @@ export class PriceBreakdownDto {
   afterMembershipPrice?: number;
 
   @ApiProperty({
-    description: 'Price after tiered_price layer',
+    description: 'Price after the quantity discount table',
     required: false,
   })
   afterTieredPrice?: number;
@@ -97,8 +97,11 @@ export class VariantPriceSetDto {
   membershipPrice: number;
 
   @ApiProperty({
-    description: 'Tiered prices for bulk purchases',
+    description: 'Tiered prices for bulk purchases (regular customers)',
     type: [TieredPriceDto],
   })
   tieredPrices: TieredPriceDto[];
+
+  @ApiProperty({ description: 'Tiered prices for membership customers', type: [TieredPriceDto] })
+  membershipTieredPrices: TieredPriceDto[];
 }

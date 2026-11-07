@@ -36,6 +36,9 @@ interface Calls {
   upsertForDraft: unknown[][];
   bulkUpdateVariantsInDraft: unknown[][];
   locked: Array<{ versionId: string; sessionId: string | null }>;
+  /** 수량할인·가격 쓰기가 일어난 순서. */
+  order: string[];
+  quantityDiscountSaved: unknown[];
 }
 
 /**
@@ -62,6 +65,8 @@ function makeApplier(overrides: Overrides = {}) {
     upsertForDraft: [],
     bulkUpdateVariantsInDraft: [],
     locked: [],
+    order: [],
+    quantityDiscountSaved: [],
   };
 
   // 잠금 UPDATE 는 applier 가 직접 쓰는 유일한 무조건 DB 문장이다. drizzle 빌더를 흉내 내는
@@ -114,9 +119,10 @@ function makeApplier(overrides: Overrides = {}) {
     ...overrides.optionLoader,
   };
   const pricing = {
-    getVersionRules: () => Promise.resolve({ basePriceRules: [], membershipPriceRules: [], tieredPriceRules: [] }),
+    getVersionRules: () => Promise.resolve({ basePriceRules: [], membershipPriceRules: [] }),
     replaceVersionRules: (...args: unknown[]) => {
       calls.replaceVersionRules.push(args);
+      calls.order.push('prices');
       return Promise.resolve({});
     },
     ...overrides.pricing,
@@ -130,6 +136,17 @@ function makeApplier(overrides: Overrides = {}) {
   };
 
   const combos = new BulkSessionComboResolver(optionLoader as never);
+  const quantityDiscounts = {
+    deleteForVersion: () => {
+      calls.order.push('delete table');
+      return Promise.resolve();
+    },
+    upsertForDraft: (_masterId: string, _versionId: string, input: unknown) => {
+      calls.order.push('save table');
+      calls.quantityDiscountSaved.push(input);
+      return Promise.resolve(null);
+    },
+  };
 
   const applier = new BulkDraftApplier(
     db as never,
@@ -140,6 +157,7 @@ function makeApplier(overrides: Overrides = {}) {
     pricing as never,
     constraints as never,
     combos,
+    quantityDiscounts as never,
   );
   return { applier, calls, trx };
 }
@@ -384,7 +402,6 @@ describe('BulkDraftApplier — 수정 경로', () => {
               },
             ],
             membershipPriceRules: [],
-            tieredPriceRules: [],
           }),
       },
     });
@@ -411,7 +428,7 @@ describe('BulkDraftApplier — 수정 경로', () => {
   });
 
   it('pricingEditable=false 면 가격 칸을 건드려도 replaceVersionRules 를 부르지 않는다', async () => {
-    // _copyMappings 가 복사한 복합 룰(tiered·scale 등)이 그대로 살아 있어야 한다. 부르는 순간
+    // _copyMappings 가 복사한 복합 룰(scale·offset 등)이 그대로 살아 있어야 한다. 부르는 순간
     // replace 가 그것을 단순 override 로 뭉갠다(F9).
     //
     // **가격 칸을 실제로 건드리는 입력이어야 한다** — 위 테스트가 이미 "안 건드리면 안 부른다"를
@@ -552,5 +569,124 @@ describe('BulkDraftApplier — 수정 경로', () => {
     // 키 자체에 '.'이 들어 있어 문자열 경로를 쓰면 Jest 가 중첩 경로로 오해해 항상
     // "없음"으로 (거짓으로) 통과한다 — 배열 형태로 줘야 리터럴 키 하나로 비교된다.
     expect(passedFields).not.toHaveProperty(['variant:.preStockSellable']);
+  });
+});
+
+describe('BulkDraftApplier — 수량할인', () => {
+  const tier = (minQuantity: number, regular: number, membership: number) => ({
+    minQuantity,
+    regularRateBp: regular * 100,
+    membershipRateBp: membership * 100,
+  });
+
+  it('가격과 표를 함께 바꾼 수정 행은 옛 표를 지우고 가격을 바꾼 뒤 새 표를 저장한다', async () => {
+    const { applier, calls, trx } = makeApplier({
+      optionLoader: { getVariantOptionValues: () => Promise.resolve([{ id: 'ov-red' }]) },
+    });
+
+    await applier.apply(
+      updateInput({ 'product.basePrice': '12000', quantityDiscount: 'Y|||3:5:10|ov-red=' }),
+      trx as never,
+    );
+
+    expect(calls.order).toEqual(['delete table', 'prices', 'save table']);
+    expect(calls.quantityDiscountSaved).toEqual([
+      {
+        enabled: true,
+        startsOn: null,
+        endsOn: null,
+        tiers: [tier(3, 5, 10)],
+        variantOverrides: [{ combination: 'ov-red', tiers: [] }],
+      },
+    ]);
+  });
+
+  it('표를 비운 수정 행은 지우기만 한다', async () => {
+    const { applier, calls, trx } = makeApplier();
+
+    await applier.apply(updateInput({ quantityDiscount: '' }), trx as never);
+
+    expect(calls.order).toEqual(['delete table']);
+  });
+
+  it('수량할인을 안 건드린 수정 행은 표에 손대지 않는다', async () => {
+    const { applier, calls, trx } = makeApplier();
+
+    await applier.apply(updateInput({ 'product.basePrice': '12000' }), trx as never);
+
+    expect(calls.order).toEqual(['prices']);
+  });
+
+  it('이 버전에 없는 조합의 예외는 조용히 버리지 않고 행을 실패시킨다', async () => {
+    const { applier, calls, trx } = makeApplier();
+
+    await expect(
+      applier.apply(updateInput({ quantityDiscount: 'Y|||3:5:10|ov-gone=' }), trx as never),
+    ).rejects.toThrow('수량할인의 조합이 이 상품에 없습니다: ov-gone');
+    expect(calls.order).toEqual(['delete table']);
+  });
+
+  it('신규 행은 가격 뒤에 표를 저장하고 작업자가 지은 조합 키를 옵션값 id 조합으로 바꾼다', async () => {
+    const { applier, calls, trx } = makeApplier({
+      optionLoader: {
+        getOptionGroups: () =>
+          Promise.resolve([{ displayName: '색상', values: [{ id: 'ov-red-id', displayName: '빨강' }] }]),
+        getVariantOptionValues: () => Promise.resolve([{ id: 'ov-red-id' }]),
+      },
+    });
+
+    await applier.apply(
+      {
+        ...createInput({
+          'product.name': 'T',
+          'product.basePrice': '10000',
+          'optionGroup:og.optionName': '색상',
+          'optionValue:red.optionValueName': '빨강',
+          quantityDiscount: 'Y|||3:5:10|red=4:6:7',
+        }),
+        optionRows: [{ optionKey: 'og', optionName: '색상', optionValueKey: 'red', optionValueName: '빨강' }],
+      },
+      trx as never,
+    );
+
+    expect(calls.order).toEqual(['prices', 'save table']);
+    expect(calls.quantityDiscountSaved[0]).toMatchObject({
+      variantOverrides: [{ combination: 'ov-red-id', tiers: [tier(4, 6, 7)] }],
+    });
+  });
+
+  it('신규 행의 조합이 옵션값으로는 풀려도 그런 품목이 없으면 행을 실패시킨다', async () => {
+    const { applier, calls, trx } = makeApplier({
+      optionLoader: {
+        getOptionGroups: () =>
+          Promise.resolve([
+            { displayName: '색상', values: [{ id: 'ov-red-id', displayName: '빨강' }] },
+            { displayName: '사이즈', values: [{ id: 'ov-s-id', displayName: 'S' }] },
+          ]),
+        getVariantOptionValues: () => Promise.resolve([{ id: 'ov-red-id' }, { id: 'ov-s-id' }]),
+      },
+    });
+
+    await expect(
+      applier.apply(
+        {
+          ...createInput({
+            'product.name': 'T',
+            'product.basePrice': '10000',
+            'optionGroup:og.optionName': '색상',
+            'optionValue:red.optionValueName': '빨강',
+            'optionGroup:sz.optionName': '사이즈',
+            'optionValue:s.optionValueName': 'S',
+            quantityDiscount: 'Y|||3:5:10|red=',
+          }),
+          optionRows: [
+            { optionKey: 'og', optionName: '색상', optionValueKey: 'red', optionValueName: '빨강' },
+            { optionKey: 'sz', optionName: '사이즈', optionValueKey: 's', optionValueName: 'S' },
+          ],
+        },
+        trx as never,
+      ),
+    ).rejects.toThrow('수량할인의 조합이 이 상품에 없습니다: red');
+    expect(calls.quantityDiscountSaved).toEqual([]);
   });
 });

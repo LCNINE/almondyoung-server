@@ -58,7 +58,6 @@ function fakeCtx(options: { abortDuringGet?: boolean } = {}) {
             },
           ],
           membershipPriceRules: [],
-          tieredPriceRules: [],
         }),
         { status: 200 },
       ),

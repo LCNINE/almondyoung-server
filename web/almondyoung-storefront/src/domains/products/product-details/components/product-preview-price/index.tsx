@@ -1,5 +1,6 @@
 "use client"
 
+import { useQuantityDiscountNow } from "@/hooks/use-quantity-discount-now"
 import { ProductMembershipBadge } from "@/components/shared/badges/product-membership-badge"
 import { TimeSaleBadge } from "@/components/shared/badges/time-sale-badge"
 import { TimeSaleCountdown } from "@/components/shared/time-sale-countdown"
@@ -9,19 +10,76 @@ import {
   getProductPrice,
 } from "@/lib/utils/get-product-price"
 import {
+  getHideMembershipPriceForNonMembers,
   getIsMembershipOnly,
   getRequiresMembershipToPurchase,
 } from "@/lib/utils/product-card"
 import { HttpTypes } from "@medusajs/types"
 import { Lock } from "lucide-react"
 import { useTranslations } from "next-intl"
+import { productQuantitySummary, quantityOptionNote, variantTierRows } from "../product-actions/quantity-pricing"
+import QuantityBundlePicker from "../quantity-bundle-picker"
+import QuantityOptionNote from "../quantity-option-note"
 
 interface Props {
   hasMembership: boolean
   product: HttpTypes.StoreProduct
+  /** 고른 옵션 — 묶음 카드를 그 옵션 가격으로 보이고 고른 수량의 카드를 선택 상태로 둔다 */
+  focusVariant?: HttpTypes.StoreProductVariant
+  quantity?: number
+  /** 묶음 카드를 누르면 고른 옵션의 수량을 바꾼다. 없으면 카드는 보여주기만 한다 */
+  onSelectQuantity?: (quantity: number) => void
 }
 
-export default function ProductPreviewPrice({ hasMembership, product }: Props) {
+export default function ProductPreviewPrice({
+  hasMembership,
+  product,
+  focusVariant,
+  quantity,
+  onSelectQuantity,
+}: Props) {
+  const { cheapestVariant } = getProductPrice({ product })
+  const variant = focusVariant ?? cheapestVariant
+  const isMultiOption = (product.variants?.length ?? 0) > 1
+  // 기간 경계는 클라이언트 현재 시각으로 한 번 더 거른다(페이지 캐시가 경계를 넘겨도 약속하지 않게).
+  const now = useQuantityDiscountNow([product.metadata])
+  const pricingContext = {
+    isMember: hasMembership,
+    hideMemberPrices: getHideMembershipPriceForNonMembers(product),
+    now,
+  }
+  const { rows, memberHints, currentPrice } = variant
+    ? variantTierRows(variant, product, pricingContext)
+    : { rows: [], memberHints: [], currentPrice: null }
+  const summary = isMultiOption ? productQuantitySummary(product, pricingContext) : null
+  const note = quantityOptionNote({ chosen: focusVariant !== undefined, rows, memberHints, summary })
+
+  return (
+    <>
+      <PriceSummary hasMembership={hasMembership} product={product} />
+      {note && summary ? (
+        <QuantityOptionNote
+          kind={note}
+          summary={summary}
+          optionLabel={variant?.title ?? undefined}
+          className="mb-2"
+        />
+      ) : currentPrice !== null && (
+        <QuantityBundlePicker
+          rows={rows}
+          memberHints={memberHints}
+          currentPrice={currentPrice}
+          quantity={quantity}
+          onSelect={onSelectQuantity}
+          optionLabel={isMultiOption && variant ? (variant.title ?? undefined) : undefined}
+          className="mb-2"
+        />
+      )}
+    </>
+  )
+}
+
+function PriceSummary({ hasMembership, product }: Pick<Props, "hasMembership" | "product">) {
   const t = useTranslations("productDetail.price")
   const tSale = useTranslations("home.timeSale")
   const { cheapestPrice, cheapestVariant } = getProductPrice({ product })

@@ -248,6 +248,44 @@ describe('validateFields — Y/N 형식', () => {
   });
 });
 
+describe('수량할인 칸', () => {
+  it('수량은 있는데 두 % 가 다 비면 수량할인 시트 오류다', () => {
+    const r = row({ name: 'x', basePrice: '10000' });
+    r.bundle = { ...r.bundle, quantityDiscounts: [{ combination: '', tier1MinQuantity: '3' }] };
+    const errors = validateFields(r, { pricingEditable: true });
+    expect(errors).toEqual([
+      { sheet: '수량할인', rowNumber: 0, message: 'P-1: 구간1: 일반%·멤버십% 중 하나는 넣어 주세요.' },
+    ]);
+  });
+
+  it('바른 표와 구간 없는 행은 오류가 없다', () => {
+    const ok = row({ name: 'x', basePrice: '10000' });
+    ok.bundle = {
+      ...ok.bundle,
+      quantityDiscounts: [{ combination: '', tier1MinQuantity: '3', tier1MembershipRate: '5' }],
+    };
+    const empty = row({ name: 'x', basePrice: '10000' });
+    empty.bundle = { ...empty.bundle, quantityDiscounts: [{ combination: '', enabled: '' }] };
+    expect(validateFields(ok, { pricingEditable: true })).toEqual([]);
+    expect(validateFields(empty, { pricingEditable: true })).toEqual([]);
+  });
+
+  it('그 상품의 조합 시트에 없는 조합은 오류다', () => {
+    const r = rowWithVariant({ name: 'x', basePrice: '10000' }, {});
+    r.bundle = {
+      ...r.bundle,
+      quantityDiscounts: [{ combination: 'nope', combinationLabel: '색상=분홍', tier1MinQuantity: '3', tier1RegularRate: '5' }],
+    };
+    expect(validateFields(r, { pricingEditable: true })).toEqual([
+      {
+        sheet: '수량할인',
+        rowNumber: 0,
+        message: 'P-1: 색상=분홍: 조합 시트에 없는 조합입니다. 조합 시트의 «조합» 값을 그대로 붙여 넣어 주세요.',
+      },
+    ]);
+  });
+});
+
 describe('판매정책 칸', () => {
   it("판매상태재정의가 '품절'·'출시예정'·빈칸 외면 오류다", () => {
     const r = rowWithVariant({ name: 'x', basePrice: '10000' }, { availabilityOverride: '단종' });

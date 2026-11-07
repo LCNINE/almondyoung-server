@@ -65,6 +65,7 @@ export class PimMedusaMappingRepository {
       medusaProductId: string;
       medusaHandle: string;
       action: 'created' | 'updated';
+      syncedPriceListIds?: string[];
     },
   ): Promise<void> {
     const existing = await this.findByPimMasterId(pimMasterId);
@@ -81,6 +82,7 @@ export class PimMedusaMappingRepository {
         lastSyncAction: data.action,
         syncErrorCount: 0,
         lastSyncError: null,
+        ...(data.syncedPriceListIds ? { syncedPriceListIds: data.syncedPriceListIds } : {}),
       });
     } else {
       // 업데이트
@@ -94,6 +96,7 @@ export class PimMedusaMappingRepository {
         lastSyncAction: data.action,
         syncErrorCount: 0, // 성공 시 에러 카운트 리셋
         lastSyncError: null,
+        ...(data.syncedPriceListIds ? { syncedPriceListIds: data.syncedPriceListIds } : {}),
       });
     }
   }
@@ -105,6 +108,7 @@ export class PimMedusaMappingRepository {
       pimVersionId: string;
       pimVersion: number;
       error: string;
+      syncedPriceListIds?: string[];
     },
   ): Promise<void> {
     const existing = await this.findByPimMasterId(pimMasterId);
@@ -120,6 +124,7 @@ export class PimMedusaMappingRepository {
         syncStatus: 'failed',
         syncErrorCount: 1,
         lastSyncError: data.error,
+        ...(data.syncedPriceListIds ? { syncedPriceListIds: data.syncedPriceListIds } : {}),
       });
     } else {
       // 업데이트(에러 카운트 증가)
@@ -130,6 +135,7 @@ export class PimMedusaMappingRepository {
         lastSyncedAt: new Date(),
         syncErrorCount: (existing.syncErrorCount || 0) + 1,
         lastSyncError: data.error,
+        ...(data.syncedPriceListIds ? { syncedPriceListIds: data.syncedPriceListIds } : {}),
       });
     }
   }

@@ -1,5 +1,3 @@
-export const ALMOND_TEMPLATES_TAG = "almond-templates"
-
 export type AlmondTemplateStatus = "draft" | "published"
 
 export type AlmondTemplateDesignDto = Record<string, unknown>
@@ -12,6 +10,18 @@ export interface AlmondTemplateSummaryDto {
   colors: string[]
   industry: string | null
   purpose: string | null
+  kind?: string | null
+  updatedAt: string
+}
+
+export interface AlmondTemplateCategoryDto {
+  id: string
+  name: string
+  description: string | null
+  imageFileId: string
+  kind: string
+  sortOrder: number
+  isVisible: boolean
   updatedAt: string
 }
 

@@ -39,6 +39,7 @@ export class AlmondTemplateSummaryResponseDto {
   @ApiProperty({ type: [String], example: ['#ffffff', '#00aa00'] }) colors: string[];
   @ApiProperty({ nullable: true, type: String }) industry: string | null;
   @ApiProperty({ nullable: true, type: String }) purpose: string | null;
+  @ApiProperty({ nullable: true, type: String, example: 'pet', description: 'design.kind' }) kind: string | null;
   @ApiProperty() updatedAt: string;
 }
 
@@ -47,7 +48,6 @@ export class AlmondTemplateDetailResponseDto extends AlmondTemplateSummaryRespon
 }
 
 export class AdminAlmondTemplateSummaryResponseDto extends AlmondTemplateSummaryResponseDto {
-  @ApiProperty({ nullable: true, type: String, example: 'pet', description: 'design.kind' }) kind: string | null;
   @ApiProperty({ enum: ALMOND_TEMPLATE_STATUSES }) status: AlmondTemplateStatus;
   @ApiProperty() createdBy: string;
   @ApiProperty({ nullable: true, type: String, description: '마지막으로 저장·게시 상태를 바꾼 사람' }) updatedBy:
@@ -58,4 +58,8 @@ export class AdminAlmondTemplateSummaryResponseDto extends AlmondTemplateSummary
 
 export class AdminAlmondTemplateDetailResponseDto extends AdminAlmondTemplateSummaryResponseDto {
   @ApiProperty({ type: 'object', additionalProperties: true }) design: Record<string, unknown>;
+}
+
+export class AlmondTemplatePreviewImageResponseDto {
+  @ApiProperty({ description: 'file-service 에 올린 미리보기 JPG 의 파일 id' }) fileId: string;
 }

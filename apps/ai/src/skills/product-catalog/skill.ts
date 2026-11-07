@@ -541,18 +541,16 @@ const setPrice: SkillTool = {
     }
 
     // PUT 은 전체 교체다. 기존 규칙을 읽어 지정하지 않은 레이어를 그대로 실어야
-    // 멤버십 가격·수량별 할인이 조용히 사라지지 않는다.
+    // 멤버십 가격이 조용히 사라지지 않는다. 수량 할인은 별도 구간표라 이 PUT 과 무관하다.
     const current = await core(ctx, `/versions/${versionId}/pricing/rules`);
     if ((current as { ok?: boolean })?.ok === false) return current;
 
     const cur = current as {
       basePriceRules?: PricingRule[];
       membershipPriceRules?: PricingRule[];
-      tieredPriceRules?: PricingRule[];
     };
     const baseNow = cur.basePriceRules ?? [];
     const memberNow = cur.membershipPriceRules ?? [];
-    const tieredNow = cur.tieredPriceRules ?? [];
 
     if (salePrice !== undefined && !isSimpleOverride(baseNow)) {
       return toolError(
@@ -589,8 +587,6 @@ const setPrice: SkillTool = {
       body: JSON.stringify({
         basePriceRules: nextBase,
         membershipPriceRules: nextMember,
-        // 수량별 할인은 이 도구가 다루지 않는다 — 항상 원래대로 되싣는다.
-        tieredPriceRules: tieredNow.map(toRuleInput),
       }),
     });
   },

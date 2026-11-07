@@ -247,6 +247,79 @@ function BevelPrimitives({ layer }: { layer: Layer }) {
   )
 }
 
+function TexturePrimitives({ layer }: { layer: Layer }) {
+  const size = Math.max(effectSize(layer), 1)
+  const paper = layer.textureKind === "paper"
+  const amplitude = ((layer.textureAmount ?? 40) / 100) * (paper ? 0.2 : 0.16)
+
+  return (
+    <>
+      <feTurbulence
+        type="fractalNoise"
+        baseFrequency={paper ? `${120 / size} ${40 / size}` : 60 / size}
+        numOctaves="2"
+        seed="3"
+        result="textureFine"
+        colorInterpolationFilters="sRGB"
+      />
+      {paper && (
+        <>
+          <feTurbulence
+            type="fractalNoise"
+            baseFrequency={4 / size}
+            numOctaves="2"
+            seed="7"
+            result="textureCoarse"
+            colorInterpolationFilters="sRGB"
+          />
+          <feComposite
+            in="textureFine"
+            in2="textureCoarse"
+            operator="arithmetic"
+            k2={0.7}
+            k3={0.3}
+            result="textureNoise"
+            colorInterpolationFilters="sRGB"
+          />
+        </>
+      )}
+      <feColorMatrix
+        in={paper ? "textureNoise" : "textureFine"}
+        type="matrix"
+        values="0.2126 0.7152 0.0722 0 0  0.2126 0.7152 0.0722 0 0  0.2126 0.7152 0.0722 0 0  0 0 0 0 1"
+        result="textureMono"
+        colorInterpolationFilters="sRGB"
+      />
+      {/* 알파는 마지막에 한 번만 곱해 반투명 채우기와 가장자리를 보존한다. */}
+      <feComponentTransfer
+        in="SourceGraphic"
+        result="textureSource"
+        colorInterpolationFilters="sRGB"
+      >
+        <feFuncA type="table" tableValues="1 1" />
+      </feComponentTransfer>
+      {/* 0.5 중심의 작은 밝기 차이만 더하므로 흰색에도 어두운 결이 남는다. */}
+      <feComposite
+        in="textureSource"
+        in2="textureMono"
+        operator="arithmetic"
+        k2={1}
+        k3={amplitude}
+        k4={-amplitude / 2}
+        result="textureColor"
+        colorInterpolationFilters="sRGB"
+      />
+      <feComposite
+        in="textureColor"
+        in2="SourceAlpha"
+        operator="in"
+        result="textured"
+        colorInterpolationFilters="sRGB"
+      />
+    </>
+  )
+}
+
 function EffectFilter({
   layer,
   id,
@@ -260,6 +333,7 @@ function EffectFilter({
   const shadow = shadowOf(layer)
   const offset = toLayerSpace(layer, shadow.x, shadow.y)
   const bevel = bevelOf(layer)
+  const texture = layer.texture && (layer.textureAmount ?? 40) > 0
   // 그림자를 멀리 밀어도 잘리지 않게 필터 영역을 실제 좌표로 넉넉히 잡는다
   const pad =
     (layer.shadow
@@ -286,35 +360,14 @@ function EffectFilter({
         </>
       )}
       {layer.bevel && <BevelPrimitives layer={layer} />}
-      {layer.texture && (
-        <>
-          <feTurbulence
-            type="fractalNoise"
-            baseFrequency={Math.max(0.05, 60 / Math.max(size, 1)) / 4}
-            numOctaves="2"
-            seed="3"
-            result="noise"
-          />
-          <feColorMatrix
-            in="noise"
-            type="matrix"
-            values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 -1.6 1.1"
-            result="speckle"
-          />
-          <feComposite
-            in="speckle"
-            in2="SourceGraphic"
-            operator="in"
-            result="grain"
-          />
-        </>
-      )}
+      {texture && <TexturePrimitives layer={layer} />}
       <feMerge>
         {layer.shadow && <feMergeNode in="shadow" />}
-        {!shadowOnly && <feMergeNode in="SourceGraphic" />}
+        {!shadowOnly && (
+          <feMergeNode in={texture ? "textured" : "SourceGraphic"} />
+        )}
         {layer.bevel && <feMergeNode in="bevelSh" />}
         {layer.bevel && <feMergeNode in="bevelHi" />}
-        {layer.texture && <feMergeNode in="grain" />}
       </feMerge>
     </filter>
   )
@@ -501,8 +554,17 @@ export function photoBox(layer: Layer) {
     }
   }
   const scale = layer.imageScale ?? 1
-  const width = layer.width * scale
-  const height = layer.height * scale
+  const shapePhoto =
+    layer.imageOffsetMode === "cover" &&
+    (layer.type === "frame" || SHAPE_TEXT_TYPES.has(layer.type))
+  // shortcut: 원본 크기가 없는 옛 사진은 상자 비율을 쓴다. 전체 이동 범위가 필요하면 원본 크기를 복구한다.
+  const aspect =
+    shapePhoto && layer.pixelWidth && layer.pixelHeight
+      ? layer.pixelWidth / layer.pixelHeight
+      : layer.width / layer.height
+  const width = Math.max(layer.width, layer.height * aspect) * scale
+  const height = Math.max(layer.height, layer.width / aspect) * scale
+
   return {
     x: layer.x - (width - layer.width) * (layer.imageOffsetX ?? 0.5),
     y: layer.y - (height - layer.height) * (layer.imageOffsetY ?? 0.5),
@@ -615,7 +677,7 @@ function LayerGraphicView({ layer }: { layer: Layer }) {
     cy = layer.y + layer.height / 2
   const transform = `translate(${cx} ${cy}) rotate(${layer.rotation ?? 0}) scale(${layer.flipX ? -1 : 1} ${layer.flipY ? -1 : 1}) translate(${-cx} ${-cy})`
   const fill = layer.gradient ? `url(#${gradientId(layer)})` : layer.fill
-  const filtered = !!layer.colorFilter && layer.colorFilter.amount > 0
+  const filtered = (layer.colorFilter?.amount ?? 0) > 0 || (layer.blur ?? 0) > 0
   const paint = {
     fill: layer.fill === "none" ? "none" : fill,
     stroke: layer.stroke ?? "none",
@@ -718,7 +780,19 @@ function LayerGraphicView({ layer }: { layer: Layer }) {
       {layer.type === "frame" && (
         <>
           <defs>
-            <clipPath id={`clip-${layer.id}`} clipPathUnits="objectBoundingBox">
+            <clipPath
+              id={`clip-${layer.id}`}
+              clipPathUnits={
+                layer.imageOffsetMode === "cover"
+                  ? "userSpaceOnUse"
+                  : "objectBoundingBox"
+              }
+              transform={
+                layer.imageOffsetMode === "cover"
+                  ? `translate(${layer.x} ${layer.y}) scale(${layer.width} ${layer.height})`
+                  : undefined
+              }
+            >
               {shape === "ellipse" ? (
                 <ellipse cx=".5" cy=".5" rx=".5" ry=".5" />
               ) : FRAME_PATHS[shape] ? (
@@ -875,6 +949,8 @@ function LayerGraphicView({ layer }: { layer: Layer }) {
           <ColorFilterDef
             id={colorFilterId(layer)}
             filter={layer.colorFilter}
+            blur={layer.blur}
+            preserveAlpha={layer.type === "image" || layer.type === "frame"}
             size={Math.min(layer.width, layer.height)}
           />
           {edgeBlur > 0 && (
@@ -914,7 +990,9 @@ export function Backdrop({
 }) {
   const imageSrc = useImageSrc()
   const filterId = `bg-cf-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`
-  const filtered = !!value.backgroundFilter && value.backgroundFilter.amount > 0
+  const filtered =
+    (value.backgroundFilter?.amount ?? 0) > 0 || (value.backgroundBlur ?? 0) > 0
+
   return (
     <>
       <rect width={width} height={height} fill={value.background} />
@@ -925,6 +1003,8 @@ export function Backdrop({
             <ColorFilterDef
               id={filterId}
               filter={value.backgroundFilter}
+              blur={value.backgroundBlur}
+              preserveAlpha
               size={50}
             />
           </defs>

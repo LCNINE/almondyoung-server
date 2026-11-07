@@ -46,6 +46,7 @@ import {
 import { productVariantDigitalAssetLinks } from '../../../../library/schema/library.schema';
 import { ProductSellableQuantityService } from '../../../../inventory/product-sellable-quantity/services/product-sellable-quantity.service';
 import { ProductPurchaseConstraintsService } from './product-purchase-constraints.service';
+import { QuantityDiscountManager } from '../../pricing/quantity-discount.manager';
 import { eq, and, sql, max as drizzleMax, isNull, inArray, asc, desc, count } from 'drizzle-orm';
 import { isExternalMarketplaceSite } from '../../channels/marketplace-site';
 import { comboKey, planChannelListingReconciliation, type VariantOptionCombo } from './channel-listing-reconciliation';
@@ -80,6 +81,7 @@ export class ProductVersionsService {
     private readonly variantAssetLinkService: VariantAssetLinkService,
     private readonly productSellableQuantity: ProductSellableQuantityService,
     private readonly purchaseConstraints: ProductPurchaseConstraintsService,
+    private readonly quantityDiscounts: QuantityDiscountManager,
   ) {}
 
   async getVersionTree(masterId: string, tx?: DbTransaction): Promise<VersionTreeNode[]> {
@@ -335,6 +337,7 @@ export class ProductVersionsService {
 
       // 가격 검증 및 캐시 생성은 active 상태 변경 전에 완료되어야 한다.
       await this.pricingValidator.validateCalculatedPrices(versionId, tx);
+      await this.quantityDiscounts.assertCompatibleWithPrices(version.masterId, versionId, tx);
       await this.priceCacheService.cachePricesForVersion(versionId, tx);
 
       // 기존 active를 inactive로
@@ -420,8 +423,8 @@ export class ProductVersionsService {
     const priceKey = (sets: typeof newPrices) =>
       JSON.stringify(
         sets
-          .map(({ variantId, basePrice, membershipPrice, tieredPrices }) =>
-            JSON.stringify([comboOf.get(variantId), basePrice, membershipPrice, tieredPrices]),
+          .map(({ variantId, basePrice, membershipPrice, tieredPrices, membershipTieredPrices }) =>
+            JSON.stringify([comboOf.get(variantId), basePrice, membershipPrice, tieredPrices, membershipTieredPrices]),
           )
           .sort(),
       );
@@ -1568,6 +1571,8 @@ export class ProductVersionsService {
       );
     }
 
+    await this.quantityDiscounts.copyMapping(masterId, fromVersionId, toVersionId, tx);
+
     const tagValueMappings = await tx
       .select({
         tagValueId: productTagValues.tagValueId,
@@ -1735,6 +1740,8 @@ export class ProductVersionsService {
             eq(productMasterPurchaseConstraints.versionId, version.id),
           ),
         );
+
+      await this.quantityDiscounts.deleteForVersion(version.masterId, version.id, tx);
 
       // 4. 버전 자체 삭제
       await tx.delete(productMasterVersions).where(eq(productMasterVersions.id, versionId));

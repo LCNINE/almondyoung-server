@@ -1,10 +1,10 @@
 import { AlmondTemplateEditor } from "@/domains/almond-template/components/editor"
 import { AlmondTemplateGallery } from "@/domains/almond-template/components/gallery"
 import {
-  PRINT_PRODUCTS,
   PRINT_SPECS,
   type PrintKind,
 } from "@/domains/almond-template/lib/catalog"
+import { templateProductOf } from "@/domains/almond-template/lib/template-product"
 import { ApiAuthError, HttpApiError } from "@/lib/api/api-error"
 import { parseDesign } from "@/domains/almond-template/lib/document"
 import {
@@ -41,7 +41,10 @@ export default async function AlmondTemplatePage({
     size = "",
     template = "",
   } = await searchParams
-  if (product && !PRINT_PRODUCTS[product]) notFound()
+  if (product) {
+    const known = await listAlmondTemplates().catch(() => [])
+    if (!templateProductOf(product, known)) notFound()
+  }
   if (mode !== "designer") {
     const [templates, canDesign] = await Promise.all([
       listAlmondTemplates().catch(() => null),

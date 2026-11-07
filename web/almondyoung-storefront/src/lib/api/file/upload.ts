@@ -13,6 +13,11 @@ export const uploadFile = async (formData: FormData): Promise<FilesDto> => {
   forwardData.append("file", file, file.name)
   forwardData.append("contextId", contextId)
 
+  const isPublic = formData.get("isPublic")
+  if (typeof isPublic === "string") {
+    forwardData.append("isPublic", isPublic)
+  }
+
   const data = await api<FilesDto>("fs", `/files/upload`, {
     method: "POST",
     body: forwardData,

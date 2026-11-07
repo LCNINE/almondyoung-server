@@ -1,4 +1,5 @@
 import type { Design, Layer } from "./document"
+import { embeddedFontCss, firstFamily } from "./fonts"
 import {
   ALMOND_TEMPLATE_IMAGE_CONTEXT_ID,
   fileImageRef,
@@ -94,12 +95,9 @@ export async function uploadDesignImages(
   }
 }
 
-async function downscaled(blob: Blob) {
+async function downscaled(blob: Blob, maxPx: number) {
   const bitmap = await createImageBitmap(blob)
-  const scale = Math.min(
-    1,
-    THUMBNAIL_MAX_PX / Math.max(bitmap.width, bitmap.height)
-  )
+  const scale = Math.min(1, maxPx / Math.max(bitmap.width, bitmap.height))
   const canvas = document.createElement("canvas")
   canvas.width = Math.max(1, Math.round(bitmap.width * scale))
   canvas.height = Math.max(1, Math.round(bitmap.height * scale))
@@ -107,9 +105,10 @@ async function downscaled(blob: Blob) {
   return canvas.toDataURL("image/webp", 0.85)
 }
 
-export async function rasterThumbnail(
+async function rasterize(
   markup: string,
-  previews: Readonly<Record<string, string>> = {}
+  previews: Readonly<Record<string, string>>,
+  maxPx: number
 ) {
   const svg = new DOMParser().parseFromString(markup, "image/svg+xml")
   await Promise.all(
@@ -120,15 +119,30 @@ export async function rasterThumbnail(
       if (!source.startsWith("data:") && !fileId) return node.remove()
       node.setAttribute(
         "href",
-        await downscaled(await imageBlob(previewOf(source, previews)))
+        await downscaled(await imageBlob(previewOf(source, previews)), maxPx)
       )
     })
   )
   const root = svg.documentElement
+  const css = await embeddedFontCss(
+    Array.from(svg.querySelectorAll("[font-family]"), (node) =>
+      firstFamily(node.getAttribute("font-family") ?? "")
+    ),
+    Array.from(
+      svg.querySelectorAll("text"),
+      (node) => node.textContent ?? ""
+    ).join("")
+  )
+  if (css) {
+    const style = svg.createElementNS("http://www.w3.org/2000/svg", "style")
+    style.textContent = css
+    root.prepend(style)
+  }
+
   const [, , viewWidth, viewHeight] = (root.getAttribute("viewBox") ?? "")
     .split(/[\s,]+/)
     .map(Number)
-  const scale = THUMBNAIL_MAX_PX / Math.max(viewWidth, viewHeight)
+  const scale = maxPx / Math.max(viewWidth, viewHeight)
   const width = Math.max(1, Math.round(viewWidth * scale))
   const height = Math.max(1, Math.round(viewHeight * scale))
   root.setAttribute("width", String(width))
@@ -140,6 +154,22 @@ export async function rasterThumbnail(
   canvas.width = width
   canvas.height = height
   canvas.getContext("2d")!.drawImage(image, 0, 0, width, height)
+  return canvas
+}
+
+export async function rasterThumbnail(
+  markup: string,
+  previews: Readonly<Record<string, string>> = {}
+) {
+  const canvas = await rasterize(markup, previews, THUMBNAIL_MAX_PX)
+  const { width, height } = canvas
   const raster = canvas.toDataURL("image/webp", 0.85)
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><image href="${raster}" width="${width}" height="${height}"/></svg>`
+}
+
+export async function rasterPng(markup: string, maxPx: number) {
+  const canvas = await rasterize(markup, {}, maxPx)
+  return new Promise<Blob | null>((resolve) =>
+    canvas.toBlob(resolve, "image/png")
+  )
 }

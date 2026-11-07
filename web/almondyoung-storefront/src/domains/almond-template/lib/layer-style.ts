@@ -18,7 +18,6 @@ export type BlendMode = (typeof BLEND_MODES)[number][0]
 
 export const COLOR_FILTERS = [
   ["grayscale", "흑백"],
-  ["blur", "블러"],
   ["tone", "톤"],
   ["retro", "레트로"],
   ["overlay", "오버레이"],
@@ -29,11 +28,18 @@ export const COLOR_FILTERS = [
 
 export type ColorFilterKind = (typeof COLOR_FILTERS)[number][0]
 
-// amount 는 0~100. color 는 오버레이·발광 닷지·색상 번·곱하기에서 덮는 색이다
+// amount 는 0~100. dotSize 는 톤 망점 간격 1~100. color 는 오버레이·발광 닷지·색상 번·곱하기에서 덮는 색이다
 export type ColorFilter = {
   kind: ColorFilterKind
   amount: number
   color?: string
+  dotSize?: number
+}
+
+export const DEFAULT_DOT_SIZE = 40
+
+export function toneTileSize(size: number, dotSize = DEFAULT_DOT_SIZE) {
+  return Math.max(size, 1) * (0.005 + dotSize * 0.0005)
 }
 
 export const COLORED_FILTERS: ReadonlySet<ColorFilterKind> =
@@ -41,7 +47,6 @@ export const COLORED_FILTERS: ReadonlySet<ColorFilterKind> =
 
 export const DEFAULT_FILTER_COLOR: Record<ColorFilterKind, string> = {
   grayscale: "#000000",
-  blur: "#000000",
   tone: "#000000",
   retro: "#000000",
   overlay: "#ff7a3d",
@@ -87,8 +92,10 @@ export function validColorFilter(value: unknown) {
   if (!isObject(value)) return false
 
   return (
-    COLOR_FILTERS.some(([key]) => key === value.kind) &&
+    (value.kind === "blur" ||
+      COLOR_FILTERS.some(([key]) => key === value.kind)) &&
     within(value.amount, 0, 100) &&
+    (value.dotSize === undefined || within(value.dotSize, 1, 100)) &&
     (value.color === undefined ||
       (typeof value.color === "string" && color.test(value.color)))
   )

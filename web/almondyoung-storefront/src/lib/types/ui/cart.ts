@@ -33,6 +33,8 @@ interface CartTotals {
   shippingBreakdown?: { id: string; name: string; amount: number }[]
   discount_subtotal: number
   membershipDiscount: number
+  /** 같은 옵션 N개 이상 구간가로 받은 할인(멤버십 할인과 따로 보인다) */
+  quantityDiscount: number
   pointsUsed: number
   totalDiscount: number
   finalTotal: number

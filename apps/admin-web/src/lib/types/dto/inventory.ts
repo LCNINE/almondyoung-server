@@ -1956,6 +1956,40 @@ export type Sku3dModelDto = {
   skuId: string;
   version: number;
   glbFileId: string | null;
-  status: 'approved' | 'needs_revision' | 'needs_more_photos' | 'failed';
+  status: Sku3dModelStatus;
   createdAt: string;
+};
+
+export type Sku3dModelStatus =
+  | 'draft'
+  | 'approved'
+  | 'needs_revision'
+  | 'needs_more_photos'
+  | 'failed';
+
+export type Sku3dModelVisibility = 'public' | 'private';
+
+export type Sku3dModelUploadQuery = {
+  q?: string;
+  uploader?: string;
+  visibility?: Sku3dModelVisibility;
+  page?: number;
+  limit?: number;
+};
+
+export type Sku3dModelUploadDto = {
+  id: string;
+  skuId: string;
+  skuCode: string;
+  skuName: string;
+  version: number;
+  status: Sku3dModelStatus;
+  glbFileId: string | null;
+  uploadedByLabel: string | null;
+  createdAt: string;
+};
+
+export type Sku3dModelUploadListDto = {
+  items: Sku3dModelUploadDto[];
+  total: number;
 };

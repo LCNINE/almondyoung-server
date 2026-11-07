@@ -1,5 +1,6 @@
 "use client"
 
+import { orderLineQuantityDiscount } from "@/lib/utils/quantity-discount"
 import { buildAddressLine } from "@/lib/utils/address-line"
 import { cartRequiresShipping } from "@/lib/api/medusa/shipping-method-policy"
 import {
@@ -85,7 +86,15 @@ export const OrderDetailsDesktop = ({
   // 해외직구 주문만 채워짐(체크아웃에서 shipping_address.metadata 에 저장).
   const personalCustomsCode =
     (address?.metadata?.personalCustomsCode as string) || ""
-  const membershipDiscount = calculateMembershipDiscount(order.items ?? [])
+  // 정가 − 단가 중 주문 때 기록된 수량 할인 몫은 따로 보인다(기록이 없는 옛 주문은 전처럼 한 줄).
+  const quantityDiscount = (order.items ?? []).reduce(
+    (sum, item) => sum + orderLineQuantityDiscount(item),
+    0
+  )
+  const membershipDiscount = Math.max(
+    0,
+    calculateMembershipDiscount(order.items ?? []) - quantityDiscount
+  )
   const pointsUsed = getOrderPointsUsed(order.metadata)
   // 디지털 단독 주문이면 배송 정보를 숨긴다(배송이 필요한 라인이 하나도 없음).
   const requiresShipping = cartRequiresShipping(order.items)
@@ -290,6 +299,16 @@ export const OrderDetailsDesktop = ({
                   </dt>
                   <dd className="text-base text-black">
                     -{formatAmount(membershipDiscount)}
+                  </dd>
+                </div>
+              )}
+              {quantityDiscount > 0 && (
+                <div className="flex items-center justify-between">
+                  <dt className="text-base text-black">
+                    {tLabels("quantityDiscount")}
+                  </dt>
+                  <dd className="text-base text-black">
+                    -{formatAmount(quantityDiscount)}
                   </dd>
                 </div>
               )}

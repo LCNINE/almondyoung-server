@@ -1,0 +1,1 @@
+ALTER TABLE "product_quantity_discounts" ADD COLUMN "variant_overrides" jsonb DEFAULT '[]'::jsonb NOT NULL;

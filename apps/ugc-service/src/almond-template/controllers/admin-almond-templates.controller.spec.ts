@@ -1,5 +1,6 @@
 import { FastifyAdapter, type NestFastifyApplication } from '@nestjs/platform-fastify';
 import { Test } from '@nestjs/testing';
+import { REQUIRED_PERMISSIONS_KEY } from '@app/authorization';
 import { GlobalExceptionFilter, NotFoundError } from '@app/shared';
 import { AlmondTemplatesService } from '../services/almond-templates.service';
 import { AdminAlmondTemplatesController } from './admin-almond-templates.controller';
@@ -54,5 +55,13 @@ describe('관리자 아몬드템플릿 썸네일 응답', () => {
 
     expect(res.statusCode).toBe(404);
     expect(res.headers['content-type']).toContain('application/json');
+  });
+});
+
+describe('관리자 아몬드템플릿 상품 연결·미리보기 권한', () => {
+  it.each(['linkProduct', 'previewImage'] as const)('%s 는 marketing.almond_template.write 를 요구한다', (method) => {
+    expect(Reflect.getMetadata(REQUIRED_PERMISSIONS_KEY, AdminAlmondTemplatesController.prototype[method])).toEqual([
+      'marketing.almond_template.write',
+    ]);
   });
 });

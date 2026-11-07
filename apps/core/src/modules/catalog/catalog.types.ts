@@ -12,6 +12,7 @@ import {
   productMasterPricingRules,
   productPurchaseConstraints,
   productMasterPurchaseConstraints,
+  productQuantityDiscounts,
   productOptionGroupDisplays,
   productOptionValueDisplays,
   productOptionGroups,
@@ -107,6 +108,10 @@ export type PurchaseConstraintReadModel = {
   requiresMembership: boolean;
   lifetimeQuantityLimit: number | null;
 };
+
+export type { QuantityDiscountTier, QuantityDiscountOverride } from './schema/catalog.schema';
+export type ProductQuantityDiscount = InferSelectModel<typeof productQuantityDiscounts>;
+export type NewProductQuantityDiscount = InferInsertModel<typeof productQuantityDiscounts>;
 
 // ===== PRODUCT OPTION GROUP DISPLAYS 타입 =====
 export type ProductOptionGroupDisplay = InferSelectModel<typeof productOptionGroupDisplays>;
@@ -212,7 +217,7 @@ export type ProductVariantPriceCache = InferSelectModel<typeof productVariantPri
 export type NewProductVariantPriceCache = InferInsertModel<typeof productVariantPriceCache>;
 
 // 가격 레이어 타입
-export type PriceLayer = 'base_price' | 'membership_price' | 'tiered_price';
+export type PriceLayer = 'base_price' | 'membership_price';
 
 // 스코프 타입
 export type ScopeType = 'all_variants' | 'with_option' | 'variants';
@@ -405,7 +410,10 @@ export interface TieredPriceInfo {
 export interface VariantPriceSet {
   basePrice: number;
   membershipPrice: number;
+  /** 일반 고객 구간가 */
   tieredPrices: TieredPriceInfo[];
+  /** 멤버십 회원 구간가(멤버십가 기준) */
+  membershipTieredPrices: TieredPriceInfo[];
 }
 
 // ===== TAG GROUPS 타입 =====

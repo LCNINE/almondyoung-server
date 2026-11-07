@@ -13,7 +13,20 @@ import { AlmondDesignNotice } from "./almond-design-notice"
 import SelectedItemRow from "./selected-item-row"
 import { RestockNotice, hasStockNotice } from "./restock-notice"
 import { SelectedItem } from "./types"
-import { CustomOrderNotice } from "@/domains/almond-template/components/custom-order-notice"
+import {
+  productQuantitySummary,
+  quantityOptionNote,
+  variantTierRows,
+  type ItemQuantityPricing,
+  type QuantityPricingContext,
+} from "./quantity-pricing"
+import QuantityBundlePicker from "../quantity-bundle-picker"
+import QuantityOptionNote from "../quantity-option-note"
+import {
+  CustomOrderNotice,
+  CustomOrderNoticeLine,
+  CUSTOM_ORDER_NOTICE_PAGE_ID,
+} from "@/domains/almond-template/components/custom-order-notice"
 import LocalizedClientLink from "@/components/shared/localized-client-link"
 
 type MobileActionsProps = {
@@ -26,6 +39,8 @@ type MobileActionsProps = {
   selectedValuesMap: Record<string, Set<string>>
   totalQuantity: number
   totalPrice: number
+  pricingOf: (item: SelectedItem) => ItemQuantityPricing
+  pricingContext: QuantityPricingContext
   isSimple: boolean
   isWelcomeMembership: boolean
   membersOnlyPurchase: boolean
@@ -42,6 +57,8 @@ type MobileActionsProps = {
   showCustomOrderNotice?: boolean
 }
 
+const SHEET_NOTICE_ID = "custom-order-notice-sheet"
+
 const MobileActions: React.FC<MobileActionsProps> = ({
   product,
   options,
@@ -52,6 +69,8 @@ const MobileActions: React.FC<MobileActionsProps> = ({
   selectedValuesMap,
   totalQuantity,
   totalPrice,
+  pricingOf,
+  pricingContext,
   isSimple,
   isWelcomeMembership,
   membersOnlyPurchase,
@@ -69,6 +88,15 @@ const MobileActions: React.FC<MobileActionsProps> = ({
 }) => {
   const t = useTranslations("productDetail.options")
   const [open, setOpen] = useState(false)
+  // 묶음 할인이 있는 상품은 바로 담지 않고 시트를 열어 묶음을 고르게 한다(옵션이 하나여도).
+  const focusItem = selectedItems[selectedItems.length - 1]
+  const bundle = focusItem
+    ? variantTierRows(focusItem.variant, product, pricingContext)
+    : { rows: [], memberHints: [], currentPrice: null }
+  const hasBundles = bundle.rows.length > 0 && !isWelcomeMembership
+  const summary = isSimple ? null : productQuantitySummary(product, pricingContext)
+  const note = focusItem ? quantityOptionNote({ chosen: true, ...bundle, summary }) : null
+  const instantPurchase = isSimple && !hasBundles
 
   const disabledLabel =
     selectedItems.length === 0
@@ -106,7 +134,9 @@ const MobileActions: React.FC<MobileActionsProps> = ({
               hint={almondDesignHint}
             />
           )}
-          {showCustomOrderNotice && <CustomOrderNotice />}
+          {showCustomOrderNotice && (
+            <CustomOrderNoticeLine targetId={CUSTOM_ORDER_NOTICE_PAGE_ID} />
+          )}
           <div className="flex w-full gap-x-3">
             {/* TODO: 재입고 알림 기능 추가 후 활성화
           {isSimple && !inStock ? (
@@ -151,7 +181,7 @@ const MobileActions: React.FC<MobileActionsProps> = ({
                 <Button
                   variant="outline"
                   onClick={() => {
-                    if (isSimple && selectedItems.length > 0) {
+                    if (instantPurchase && selectedItems.length > 0) {
                       handleAddToCart()
                     } else {
                       setOpen(true)
@@ -164,7 +194,7 @@ const MobileActions: React.FC<MobileActionsProps> = ({
                 </Button>
                 <Button
                   onClick={() => {
-                    if (isSimple && selectedItems.length > 0) {
+                    if (instantPurchase && selectedItems.length > 0) {
                       handleBuyNow()
                     } else {
                       setOpen(true)
@@ -209,8 +239,29 @@ const MobileActions: React.FC<MobileActionsProps> = ({
               </div>
             )}
 
+            {note && summary && (
+              <QuantityOptionNote
+                kind={note}
+                summary={summary}
+                optionLabel={focusItem?.variant.title ?? undefined}
+                className="py-3"
+              />
+            )}
+
+            {hasBundles && focusItem && bundle.currentPrice !== null && (
+              <QuantityBundlePicker
+                rows={bundle.rows}
+                memberHints={bundle.memberHints}
+                currentPrice={bundle.currentPrice}
+                quantity={focusItem.quantity}
+                onSelect={(q) => updateQuantity(focusItem.variantId, q - focusItem.quantity)}
+                optionLabel={isSimple ? undefined : (focusItem.variant.title ?? undefined)}
+                className="py-3"
+              />
+            )}
+
             {/* 선택된 항목 리스트 */}
-            {!isSimple && selectedItems.length > 0 && (
+            {(!isSimple || hasBundles) && selectedItems.length > 0 && (
               <div className="flex flex-col gap-2 py-3">
                 <Separator />
                 {selectedItems.map((item) => (
@@ -229,9 +280,16 @@ const MobileActions: React.FC<MobileActionsProps> = ({
                       updateQuantity(item.variantId, 1 - item.quantity)
                     }
                     onRemove={() => removeItem(item.variantId)}
+                    showRemove={!isSimple}
+                    pricing={pricingOf(item)}
+                    onAddQuantity={(count) => updateQuantity(item.variantId, count)}
                   />
                 ))}
               </div>
+            )}
+
+            {showCustomOrderNotice && (
+              <CustomOrderNotice id={SHEET_NOTICE_ID} className="mb-3" />
             )}
           </div>
 
@@ -262,7 +320,7 @@ const MobileActions: React.FC<MobileActionsProps> = ({
             )}
             {showCustomOrderNotice && (
               <div className="mb-2">
-                <CustomOrderNotice />
+                <CustomOrderNoticeLine targetId={SHEET_NOTICE_ID} />
               </div>
             )}
             <div className="flex gap-x-3">

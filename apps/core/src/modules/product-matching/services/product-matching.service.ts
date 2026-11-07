@@ -4,7 +4,7 @@ import { lockProductVariants } from '../../inventory/product-sellable-quantity/s
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
 import { wmsTables, wmsSchema, DbTx } from '../../inventory/schema/inventory.schema';
-import { DbService } from '@app/db';
+import { type AnyTx, DbService } from '@app/db';
 import { and, eq, desc, count, inArray, isNull, gte, lte, ilike, SQL, sql } from 'drizzle-orm';
 import { ResolveLegacyIgnoredMatchingDto, ResolveMatchingDto, StockPolicyDto } from '../dto/resolve-matching.dto';
 import { MatchingStrategy, MatchingContext, SkuQuantityMapping } from '../strategies/matching-strategy.interface';
@@ -202,47 +202,59 @@ export class ProductMatchingService {
    * variant 생성 이벤트 핸들러 — Catalog BC에서 직접 호출
    * (기존 ProductEventConsumer.onProductVariantCreated 로직)
    */
-  async handleVariantCreated(payload: {
-    masterId: string;
-    productName: string;
-    variantId: string;
-    variantName?: string;
-    inventoryManagement: boolean;
-    preStockSellable?: boolean;
-    alwaysSellableZeroStock?: boolean;
-  }): Promise<void> {
+  async handleVariantCreated(
+    payload: {
+      masterId: string;
+      productName: string;
+      variantId: string;
+      variantName?: string;
+      inventoryManagement: boolean;
+      preStockSellable?: boolean;
+      alwaysSellableZeroStock?: boolean;
+    },
+    tx?: AnyTx,
+  ): Promise<void> {
+    // 상품 생성(catalog) 트랜잭션을 그대로 받으므로 AnyTx 로 받아 여기서 한 번만 좁힌다
+    const matchingTx = tx as DbTx | undefined;
+
     try {
       if (!payload.inventoryManagement) {
-        const result = await this.handleAutomaticMatchingRequest({
-          masterId: payload.masterId,
-          name: payload.productName,
-          variants: [
-            {
-              id: payload.variantId,
-              name: payload.variantName ?? '',
-              inventoryManagement: false,
-              components: [],
-            },
-          ],
-        });
+        const result = await this.handleAutomaticMatchingRequest(
+          {
+            masterId: payload.masterId,
+            name: payload.productName,
+            variants: [
+              {
+                id: payload.variantId,
+                name: payload.variantName ?? '',
+                inventoryManagement: false,
+                components: [],
+              },
+            ],
+          },
+          matchingTx,
+        );
         this.logger.log(
           `Created auto-void matching for ${payload.variantId}: ${result.created} created, ${result.skipped} skipped`,
         );
       } else {
-        const result = await this.handleManualMatchingRequest({
-          masterId: payload.masterId,
-          name: payload.productName,
-          variants: [
-            {
-              id: payload.variantId,
-              name: payload.variantName ?? '',
-              inventoryManagement: true,
-              preStockSellable: payload.preStockSellable ?? false,
-              alwaysSellableZeroStock: payload.alwaysSellableZeroStock ?? false,
-              components: [],
-            },
-          ],
-        });
+        const result = await this.handleManualMatchingRequest(
+          {
+            masterId: payload.masterId,
+            name: payload.productName,
+            variants: [
+              {
+                id: payload.variantId,
+                name: payload.variantName ?? '',
+                inventoryManagement: true,
+                preStockSellable: payload.preStockSellable ?? false,
+                alwaysSellableZeroStock: payload.alwaysSellableZeroStock ?? false,
+                components: [],
+              },
+            ],
+          },
+          matchingTx,
+        );
 
         if (result.skipped > 0) {
           this.logger.log(`Matching already exists for ${payload.variantId} (likely created by orchestrator)`);
@@ -746,6 +758,7 @@ export class ProductMatchingService {
     params: {
       matchingStatus?: 'pending' | 'matched' | 'ignored' | 'unregistered';
       excludeMatched?: boolean;
+      excludeShipped?: boolean;
       salesChannel?: string;
       startDate?: string;
       endDate?: string;
@@ -773,6 +786,15 @@ export class ProductMatchingService {
         // «해결된 라인 제외» 판정은 라인 구성 판정의 SQL 짝 하나로 한다(#1063) — 1회 지정·void 로 풀린 라인도 빠진다
         conditions.push(sql`NOT ${lineResolvedSql()}`);
         conditions.push(isNull(salesOrderLines.almondDesignId));
+      }
+
+      if (params.excludeShipped) {
+        conditions.push(sql`${salesOrders.status} NOT IN ('shipped', 'delivered')`);
+        conditions.push(sql`NOT EXISTS (
+          SELECT 1 FROM ${wmsTables.fulfillmentOrders}
+          WHERE ${wmsTables.fulfillmentOrders.salesOrderId} = ${salesOrders.id}
+            AND ${wmsTables.fulfillmentOrders.shippedAt} IS NOT NULL
+        )`);
       }
 
       if (salesChannel) {

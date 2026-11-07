@@ -16,7 +16,6 @@ function fakeCtx(basePriceRules: unknown[]) {
         JSON.stringify({
           basePriceRules,
           membershipPriceRules: [],
-          tieredPriceRules: [],
         }),
         { status: 200 },
       ),

@@ -1,3 +1,4 @@
+import { QuantityDiscountReader } from '../../../core/pricing/quantity-discount.reader';
 import { NotFoundException } from '@nestjs/common';
 import { CategoryTreeResponseDto } from '../../../core/categories/dto';
 import { ProductCategoriesService } from '../../../core/categories/categories.service';
@@ -20,7 +21,7 @@ import { FormExportSnapshotReader } from './form-export.snapshot.reader';
  * 던지는 상황을 만든다.
  */
 describe('FormExportSnapshotReader — getActiveVersion 에러 처리 (단위)', () => {
-  const emptyRules: PricingRulesResponseDto = { basePriceRules: [], membershipPriceRules: [], tieredPriceRules: [] };
+  const emptyRules: PricingRulesResponseDto = { basePriceRules: [], membershipPriceRules: [] };
   const emptyTree: CategoryTreeResponseDto = { categories: [], totalCount: 0, maxDepth: 0 };
   // DbTransaction 은 실제 트랜잭션 핸들이 커야 하지만 이 스위트의 모든 협력자가 목이라
   // 실제로 쓰이지 않는다 — 인자 자리 채우기용.
@@ -51,8 +52,9 @@ describe('FormExportSnapshotReader — getActiveVersion 에러 처리 (단위)',
     // 이 스위트는 variantId 를 안 만드니(getVariants 가 늘 []) skuMapping 은 절대 안 불린다 —
     // 생성자 인자 수만 맞추면 되는 자리 채우기용.
     const skuMapping = { getVariantMatchingBatch: jest.fn() } as unknown as ProductSkuMappingService;
+    const quantityDiscounts = { findForVersion: jest.fn().mockResolvedValue(null) } as unknown as QuantityDiscountReader;
 
-    return new FormExportSnapshotReader(versionLoader, optionLoader, pricing, categories, skuMapping);
+    return new FormExportSnapshotReader(versionLoader, optionLoader, pricing, categories, skuMapping, quantityDiscounts);
   }
 
   it('NotFoundException 은 해당 masterId 만 건너뛰고 나머지는 정상 처리한다', async () => {
@@ -98,7 +100,7 @@ describe('FormExportSnapshotReader — getActiveVersion 에러 처리 (단위)',
  * 본다. skuMapping 을 목으로 넣어 배치 응답을 통제한다.
  */
 describe('FormExportSnapshotReader — renderMaster 판매정책 프리필', () => {
-  const emptyRules: PricingRulesResponseDto = { basePriceRules: [], membershipPriceRules: [], tieredPriceRules: [] };
+  const emptyRules: PricingRulesResponseDto = { basePriceRules: [], membershipPriceRules: [] };
   const tx = {} as unknown as DbTransaction;
 
   let reader: FormExportSnapshotReader;
@@ -160,6 +162,7 @@ describe('FormExportSnapshotReader — renderMaster 판매정책 프리필', () 
       pricing,
       categories,
       skuMapping as unknown as ProductSkuMappingService,
+      { findForVersion: jest.fn().mockResolvedValue(null) } as unknown as QuantityDiscountReader,
     );
     allocator = createImageKeyAllocator();
   });

@@ -33,6 +33,7 @@ type AssemblerFixtures = {
   tags?: Array<Record<string, unknown>>;
   purchaseConstraint?: Record<string, unknown> | null;
   prices?: Array<Record<string, unknown>>;
+  quantityDiscount?: Record<string, unknown> | null;
   optionGroups?: Array<
     Record<string, unknown> & { id: string; values: Array<Record<string, unknown> & { id: string }> }
   >;
@@ -128,6 +129,7 @@ function makeAssembler(fixtures: AssemblerFixtures = {}) {
   const tagReadLoader = { getTags: jest.fn().mockResolvedValue(tags) };
   const priceCacheService = { getCachedPriceSetsByVersion: jest.fn().mockResolvedValue(prices) };
   const model3dLoader = { getFileId: jest.fn().mockResolvedValue(fixtures.model3dFileId) };
+  const quantityDiscountReader = { findForVersion: jest.fn().mockResolvedValue(fixtures.quantityDiscount ?? null) };
 
   return {
     assembler: new ProjectionSnapshotAssembler(
@@ -136,6 +138,7 @@ function makeAssembler(fixtures: AssemblerFixtures = {}) {
       tagReadLoader as any,
       priceCacheService as any,
       model3dLoader as any,
+      quantityDiscountReader as any,
     ),
     optionReadLoader,
   };
@@ -163,6 +166,71 @@ describe('ProjectionSnapshotAssembler', () => {
         snapshot,
       }).snapshot?.model3dFileId,
     ).toBe('file-glb');
+  });
+
+  describe('quantity discount', () => {
+    const parseSnapshot = (snapshot: unknown) =>
+      PRODUCT_STREAM.events.ProductMasterActiveVersionChanged.schema!.parse({
+        masterId: 'master-1',
+        versionId: 'version-1',
+        previousActiveVersionId: null,
+        name: 'Lip Tint',
+        changeReason: 'published',
+        changedAt: new Date().toISOString(),
+        snapshot,
+      }).snapshot;
+
+    const pricesWithTiers = [
+      {
+        variantId: 'variant-1',
+        basePrice: 10000,
+        membershipPrice: 8000,
+        tieredPrices: [{ minQuantity: 3, price: 9500 }],
+        membershipTieredPrices: [{ minQuantity: 3, price: 7200 }],
+      },
+    ];
+    const table = (extra: Record<string, unknown> = {}) => ({
+      id: 'qd1',
+      enabled: true,
+      startsOn: null,
+      endsOn: null,
+      tiers: [{ minQuantity: 3, regularRateBp: 500, membershipRateBp: 1000 }],
+      ...extra,
+    });
+
+    it('carries member tier prices and survives the event schema', async () => {
+      const { assembler } = makeAssembler({ prices: pricesWithTiers, quantityDiscount: table() });
+
+      const { snapshot } = await assembler.assembleActiveVersionSnapshot('master-1', 'version-1', {} as any);
+      const parsed = parseSnapshot(snapshot);
+
+      expect(parsed?.variants[0].membershipTieredPrices).toEqual([{ minQuantity: 3, price: 7200 }]);
+      expect(parsed?.quantityDiscount).toEqual({ startsAt: null, endsAt: null });
+    });
+
+    it('turns KST dates into the start of the first day and the end of the last day', async () => {
+      const { assembler } = makeAssembler({
+        prices: pricesWithTiers,
+        quantityDiscount: table({ startsOn: '2026-11-10', endsOn: '2026-11-12' }),
+      });
+
+      const { snapshot } = await assembler.assembleActiveVersionSnapshot('master-1', 'version-1', {} as any);
+
+      expect(snapshot.quantityDiscount).toEqual({
+        startsAt: '2026-11-09T15:00:00.000Z',
+        endsAt: '2026-11-12T14:59:59.999Z',
+      });
+    });
+
+    it('sends no period when the version has no table or the table is off', async () => {
+      for (const quantityDiscount of [null, table({ enabled: false })]) {
+        const { assembler } = makeAssembler({ quantityDiscount });
+        const { snapshot } = await assembler.assembleActiveVersionSnapshot('master-1', 'version-1', {} as any);
+
+        expect(snapshot.quantityDiscount).toBeNull();
+        expect(snapshot.variants[0].membershipTieredPrices).toEqual([]);
+      }
+    });
   });
 
   it('fails when the version is not DB-visible active', async () => {

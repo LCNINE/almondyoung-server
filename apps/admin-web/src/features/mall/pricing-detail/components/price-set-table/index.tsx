@@ -1,8 +1,6 @@
 'use client';
 
-import { useQueries } from '@tanstack/react-query';
-import { products } from '@/lib/api/domains';
-import { productQueryKeys } from '@/lib/services/products/query-keys';
+import { useVariantPriceSets } from '../../use-variant-price-sets';
 import type { PricingVariant } from '../../pricing-detail-model';
 
 interface Props {
@@ -12,24 +10,7 @@ interface Props {
 }
 
 export function PriceSetTable({ variants, versionId, masterId }: Props) {
-  const usesVersionPricing = Boolean(versionId);
-  const queries = useQueries({
-    queries: variants.map((v) => ({
-      queryKey: usesVersionPricing && versionId
-        ? productQueryKeys.pricingVersionPriceSet(versionId, v.id)
-        : productQueryKeys.pricingMasterPriceSet(masterId, v.id),
-      queryFn: () =>
-        usesVersionPricing && versionId
-          ? products.pricing.versions.getPriceSet(versionId, v.id)
-          : products.pricing.masters.getPriceSet(masterId, v.id),
-      enabled: usesVersionPricing ? !!versionId : !!masterId,
-      staleTime: 30 * 1000,
-      retry: (count: number, error: any) => {
-        if (error?.response?.status === 404) return false;
-        return count < 2;
-      },
-    })),
-  });
+  const queries = useVariantPriceSets(variants, versionId, masterId);
 
   if (variants.length === 0) {
     return (
@@ -45,7 +26,7 @@ export function PriceSetTable({ variants, versionId, masterId }: Props) {
             <th className="px-3 py-2 text-left">옵션</th>
             <th className="px-3 py-2 text-right">정상가</th>
             <th className="px-3 py-2 text-right">멤버십가</th>
-            <th className="px-3 py-2 text-left">수량별</th>
+            <th className="px-3 py-2 text-left">수량 할인</th>
           </tr>
         </thead>
         <tbody>
@@ -68,11 +49,26 @@ export function PriceSetTable({ variants, versionId, masterId }: Props) {
                     <td className="px-3 py-2 text-right">{data.basePrice.toLocaleString()}원</td>
                     <td className="px-3 py-2 text-right">{data.membershipPrice.toLocaleString()}원</td>
                     <td className="px-3 py-2 text-xs">
-                      {data.tieredPrices.length > 0
-                        ? data.tieredPrices
-                            .map((t) => `${t.minQuantity}개↑ ${t.price.toLocaleString()}원`)
-                            .join(' / ')
-                        : '-'}
+                      {data.tieredPrices.length > 0 || (data.membershipTieredPrices ?? []).length > 0 ? (
+                        <>
+                          <span className="block">
+                            일반{' '}
+                            {data.tieredPrices.length > 0
+                              ? data.tieredPrices.map((t) => `${t.minQuantity}개↑ ${t.price.toLocaleString()}원`).join(' / ')
+                              : '할인 없음'}
+                          </span>
+                          {(data.membershipTieredPrices ?? []).length > 0 && (
+                            <span className="block text-muted-foreground">
+                              멤버십{' '}
+                              {(data.membershipTieredPrices ?? [])
+                                .map((t) => `${t.minQuantity}개↑ ${t.price.toLocaleString()}원`)
+                                .join(' / ')}
+                            </span>
+                          )}
+                        </>
+                      ) : (
+                        '-'
+                      )}
                     </td>
                   </>
                 ) : null}

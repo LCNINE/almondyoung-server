@@ -186,6 +186,9 @@ export function canDecodeFont(bytes: ArrayBuffer) {
 
 const loading = new Map<string, Promise<void>>()
 
+const uploadedFileId = (hex: string) =>
+  `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+
 async function fetchUploadedFont(family: string, fileId: string) {
   const response = await fetch(`/api/almond-template/font/${fileId}`)
   if (!response.ok) throw new Error(`글꼴 다운로드 실패 (${response.status})`)
@@ -204,8 +207,7 @@ export function loadUploadedFont(value: string | undefined) {
   const [, family, hex] = match
   let pending = loading.get(family)
   if (!pending) {
-    const fileId = `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
-    pending = fetchUploadedFont(family, fileId).catch(() => {
+    pending = fetchUploadedFont(family, uploadedFileId(hex)).catch(() => {
       loading.delete(family)
     })
     loading.set(family, pending)
@@ -223,4 +225,83 @@ export function fontStack(family: string | undefined) {
   return family && /serif/i.test(family) && !/sans-serif/i.test(family)
     ? SERIF_FONT
     : SANS_FONT
+}
+
+const GOOGLE_QUERIES = new Map<string, string>([
+  ["Noto Sans KR", "Noto+Sans+KR:wght@400;700"],
+  ["Noto Serif KR", "Noto+Serif+KR:wght@400;700"],
+  ...GOOGLE_FONTS.map(([, family, query]) => [family, query] as const),
+])
+
+export const firstFamily = (stack: string) =>
+  stack.split(",")[0].trim().replace(/^'|'$/g, "")
+
+async function dataUrl(blob: Blob) {
+  const bytes = new Uint8Array(await blob.arrayBuffer())
+  let binary = ""
+  for (let at = 0; at < bytes.length; at += 0x8000)
+    binary += String.fromCharCode.apply(
+      null,
+      Array.from(bytes.subarray(at, at + 0x8000))
+    )
+
+  return `data:${blob.type || "font/ttf"};base64,${btoa(binary)}`
+}
+
+async function fetchOk(url: string) {
+  const response = await fetch(url)
+  if (!response.ok) throw new Error(`글꼴 다운로드 실패 (${response.status})`)
+
+  return response
+}
+
+async function inlinedFace(family: string, text: string) {
+  const hex = family.match(/^AF([0-9a-f]{32})$/)?.[1]
+  if (hex) {
+    const response = await fetchOk(
+      `/api/almond-template/font/${uploadedFileId(hex)}`
+    )
+    const bytes = await response.arrayBuffer()
+    repairMaxZones(bytes)
+
+    return `@font-face{font-family:'${family}';src:url(${await dataUrl(new Blob([bytes]))})}`
+  }
+
+  const query = GOOGLE_QUERIES.get(family)
+  if (!query) return ""
+
+  const css = await (
+    await fetchOk(
+      `https://fonts.googleapis.com/css2?family=${query}&text=${encodeURIComponent(text)}`
+    )
+  ).text()
+  const urls = Array.from(new Set(css.match(/https:\/\/[^)'"\s]+/g) ?? []))
+  const inlined = await Promise.all(
+    urls.map(
+      async (url) =>
+        [url, await dataUrl(await (await fetchOk(url)).blob())] as const
+    )
+  )
+
+  return inlined.reduce(
+    (sheet, [url, data]) => sheet.replaceAll(url, data),
+    css
+  )
+}
+
+// SVG 를 이미지로 구우면 페이지에 받아 둔 글꼴을 못 쓴다. 쓰인 글자만큼 받아 SVG 안에 넣는다
+export async function embeddedFontCss(
+  families: Iterable<string>,
+  text: string
+) {
+  const glyphs = Array.from(new Set(text)).join("")
+  if (!glyphs.trim()) return ""
+
+  const sheets = await Promise.all(
+    Array.from(new Set(families)).map((family) =>
+      inlinedFace(family, glyphs).catch(() => "")
+    )
+  )
+
+  return sheets.filter(Boolean).join("\n")
 }

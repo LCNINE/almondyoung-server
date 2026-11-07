@@ -24,7 +24,7 @@ import {
   foreignKey,
   AnyPgColumn,
 } from 'drizzle-orm/pg-core';
-import { printOrders } from '../../print-order/schema/print-order.schema';
+import { printOrders, printProductSpecs, printTemplateProducts } from '../../print-order/schema/print-order.schema';
 // 타입만 가져온다(런타임 import 없음) — jsonb 칸의 모양은 반품 타입 파일이 정본이다
 import type {
   CustomerReturnCsResolution,
@@ -797,7 +797,7 @@ export const skuReferencePhotos = pgTable(
   }),
 );
 
-export type Sku3dModelStatus = 'approved' | 'needs_revision' | 'needs_more_photos' | 'failed';
+export type Sku3dModelStatus = 'draft' | 'approved' | 'needs_revision' | 'needs_more_photos' | 'failed';
 
 export const sku3dModels = pgTable(
   'sku_3d_models',
@@ -810,6 +810,8 @@ export const sku3dModels = pgTable(
     glbFileId: uuid('glb_file_id'),
     status: varchar('status', { length: 32 }).$type<Sku3dModelStatus>().notNull(),
     notes: jsonb('notes').$type<Record<string, unknown>>().notNull().default({}),
+    uploadedById: uuid('uploaded_by_id'),
+    uploadedByLabel: varchar('uploaded_by_label', { length: 255 }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => ({
@@ -817,7 +819,7 @@ export const sku3dModels = pgTable(
     validVersion: check('ck_sku_3d_models_version', sql`${t.version} > 0`),
     validStatus: check(
       'ck_sku_3d_models_status',
-      sql`${t.status} IN ('approved', 'needs_revision', 'needs_more_photos', 'failed')`,
+      sql`${t.status} IN ('draft', 'approved', 'needs_revision', 'needs_more_photos', 'failed')`,
     ),
     approvedFile: check('ck_sku_3d_models_approved_file', sql`${t.status} <> 'approved' OR ${t.glbFileId} IS NOT NULL`),
   }),
@@ -3962,6 +3964,8 @@ export const dispatchAttemptSources = pgTable(
  *──────────────────────────*/
 export const wmsTables = {
   printOrders,
+  printProductSpecs,
+  printTemplateProducts,
   suppliers,
   supplierCategories,
   supplierCategoryMappings,

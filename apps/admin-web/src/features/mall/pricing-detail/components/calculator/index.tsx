@@ -16,7 +16,6 @@ import {
 const LAYER_LABEL: Record<PricingLayer, string> = {
   base_price: '기준가',
   membership_price: '멤버십가',
-  tiered_price: '수량별',
 };
 
 interface Props {
@@ -120,7 +119,7 @@ export function Calculator({ variants, versionId, masterId }: Props) {
                 <Step label="멤버십가 적용 후" value={result.priceBreakdown.afterMembershipPrice} />
               )}
               {result.priceBreakdown.afterTieredPrice !== undefined && (
-                <Step label="수량별 가격 적용 후" value={result.priceBreakdown.afterTieredPrice} />
+                <Step label="수량 할인 적용 후" value={result.priceBreakdown.afterTieredPrice} />
               )}
             </div>
           </div>

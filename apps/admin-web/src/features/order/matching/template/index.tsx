@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 'use client';
 
 import React, { useEffect, useMemo, useState } from 'react';
@@ -10,6 +9,7 @@ import { FilterProvider } from '../contexts/filter.context';
 import { useOrderLines } from '@/lib/services/matching';
 import { FilterBox } from '../components/filter-box';
 import { MatchingTable } from '../components/table';
+import { NameMatchButton } from '../components/name-match-button';
 
 const CATEGORY_TO_CHANNEL: Record<string, string> = {
   medusa: 'medusa',
@@ -20,7 +20,10 @@ const CATEGORY_TO_CHANNEL: Record<string, string> = {
   phone_order: '3pl',
 };
 
-const KEYWORD_TYPE_MAP: Record<string, 'productName' | 'orderNumber' | 'customerName'> = {
+const KEYWORD_TYPE_MAP: Record<
+  string,
+  'productName' | 'orderNumber' | 'customerName'
+> = {
   sellerProductName: 'productName',
   orderNumber: 'orderNumber',
   customerName: 'customerName',
@@ -39,7 +42,8 @@ function MatchingContent() {
   const serverQuery = useMemo(() => {
     const salesChannel =
       appliedFilters.sellerCategory && appliedFilters.sellerCategory !== 'all'
-        ? CATEGORY_TO_CHANNEL[appliedFilters.sellerCategory] ?? appliedFilters.sellerCategory
+        ? (CATEGORY_TO_CHANNEL[appliedFilters.sellerCategory] ??
+          appliedFilters.sellerCategory)
         : undefined;
 
     let startDate: string | undefined;
@@ -56,6 +60,7 @@ function MatchingContent() {
 
     return {
       excludeMatched: appliedFilters.excludeMatched || undefined,
+      excludeShipped: appliedFilters.excludeShipped || undefined,
       salesChannel,
       startDate,
       endDate,
@@ -71,9 +76,6 @@ function MatchingContent() {
   const { data: response, isLoading, error } = useOrderLines(serverQuery);
 
   const lines = response?.data ?? [];
-  const pendingCount = lines.filter(
-    (l) => !l.matchingStatus || l.matchingStatus === 'pending',
-  ).length;
 
   return (
     <div>
@@ -81,11 +83,12 @@ function MatchingContent() {
 
       <div className="px-4 py-3">
         <p className="text-sm font-semibold text-muted-foreground">
-          매칭대기 {response ? pendingCount : '-'}건
+          {appliedFilters.excludeMatched ? '매칭대기' : '주문 줄'}{' '}
+          {response?.total ?? '-'}건
         </p>
       </div>
 
-      <MatchingTable data={lines} isLoading={isLoading} error={error as Error | null} />
+      <MatchingTable data={lines} isLoading={isLoading} error={error} />
 
       {response && response.total > LIMIT && (
         <div className="flex items-center justify-center gap-2 p-4">
@@ -98,7 +101,8 @@ function MatchingContent() {
             이전
           </Button>
           <span className="text-sm text-muted-foreground">
-            {Math.floor(offset / LIMIT) + 1} / {Math.ceil(response.total / LIMIT)}
+            {Math.floor(offset / LIMIT) + 1} /{' '}
+            {Math.ceil(response.total / LIMIT)}
           </span>
           <Button
             variant="outline"
@@ -118,14 +122,7 @@ export default function MatchingTemplate() {
   return (
     <FilterProvider>
       <Container>
-        <Header
-          title="매칭체크"
-          right={
-            <Button variant="default" size="sm" className="bg-orange-500 hover:bg-orange-600">
-              전부 새로 매칭하기
-            </Button>
-          }
-        />
+        <Header title="매칭체크" right={<NameMatchButton />} />
         <MatchingContent />
       </Container>
     </FilterProvider>

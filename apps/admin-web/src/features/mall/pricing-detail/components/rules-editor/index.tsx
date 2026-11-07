@@ -19,7 +19,6 @@ import { hasRuleMissingScopeTarget } from '../../pricing-detail-model';
 function rulesFromResponse(rules: PricingRulesResponseDto): {
   base: PricingRuleInput[];
   membership: PricingRuleInput[];
-  tiered: PricingRuleInput[];
 } {
   const mapRule = (r: PricingRulesResponseDto['basePriceRules'][number]): PricingRuleInput => ({
     order: r.order,
@@ -28,12 +27,10 @@ function rulesFromResponse(rules: PricingRulesResponseDto): {
     scopeTargetIds: r.scopeTargetIds ?? undefined,
     operationType: r.operationType,
     operationValue: r.operationValue,
-    minQuantity: r.minQuantity ?? undefined,
   });
   return {
     base: rules.basePriceRules.map(mapRule),
     membership: rules.membershipPriceRules.map(mapRule),
-    tiered: rules.tieredPriceRules.map(mapRule),
   };
 }
 
@@ -44,7 +41,6 @@ function makeNewRule(layer: PricingLayer, order: number): PricingRuleInput {
     scopeType: 'all_variants',
     operationType: layer === 'base_price' ? 'override' : 'offset',
     operationValue: layer === 'base_price' ? 0 : 0,
-    minQuantity: layer === 'tiered_price' ? 1 : undefined,
   };
 }
 
@@ -76,7 +72,6 @@ export function RulesEditor({
 }: Props) {
   const [base, setBase] = useState<PricingRuleInput[]>([]);
   const [membership, setMembership] = useState<PricingRuleInput[]>([]);
-  const [tiered, setTiered] = useState<PricingRuleInput[]>([]);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const editable = !readonly && canSave;
 
@@ -85,7 +80,6 @@ export function RulesEditor({
     const parsed = rulesFromResponse(rules);
     setBase(parsed.base);
     setMembership(parsed.membership);
-    setTiered(parsed.tiered);
   }, [rules]);
 
   const reorder = (arr: PricingRuleInput[]): PricingRuleInput[] =>
@@ -124,10 +118,9 @@ export function RulesEditor({
 
   const bm = makeMutators(base, setBase, 'base_price');
   const mm = makeMutators(membership, setMembership, 'membership_price');
-  const tm = makeMutators(tiered, setTiered, 'tiered_price');
 
   const handleSave = () => {
-    if (hasRuleMissingScopeTarget([...base, ...membership, ...tiered])) {
+    if (hasRuleMissingScopeTarget([...base, ...membership])) {
       toast.error('옵션값·옵션조합 범위의 룰은 적용 대상을 1개 이상 선택해주세요.');
       return;
     }
@@ -136,7 +129,6 @@ export function RulesEditor({
     onSave({
       basePriceRules: reorder(base),
       membershipPriceRules: reorder(membership),
-      tieredPriceRules: reorder(tiered),
     });
   };
 
@@ -156,7 +148,6 @@ export function RulesEditor({
               <th className="px-3 py-2 text-left">적용 범위</th>
               <th className="px-3 py-2 text-left">연산</th>
               <th className="px-3 py-2 text-left">값</th>
-              {layer === 'tiered_price' && <th className="px-3 py-2 text-left">최소 수량</th>}
               <th className="px-3 py-2 text-left">작업</th>
             </tr>
           </thead>
@@ -167,7 +158,6 @@ export function RulesEditor({
                 rule={rule}
                 index={i}
                 total={arr.length}
-                layer={layer}
                 readonly={!editable}
                 optionGroups={optionGroups}
                 variantOptions={variantOptions}
@@ -230,10 +220,6 @@ export function RulesEditor({
         <section>
           <h3 className="mb-2 text-sm font-semibold">멤버십가</h3>
           {renderTable(membership, 'membership_price', mm)}
-        </section>
-        <section>
-          <h3 className="mb-2 text-sm font-semibold">수량별 가격</h3>
-          {renderTable(tiered, 'tiered_price', tm)}
         </section>
       </div>
 

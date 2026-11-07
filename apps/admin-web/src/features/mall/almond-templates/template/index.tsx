@@ -29,6 +29,10 @@ import { almondTemplatesClient } from '@/lib/api/domains/products/almond-templat
 import {
   useAlmondTemplates,
   useDeleteAlmondTemplate,
+  useLinkAlmondTemplateProduct,
+  usePreviewAlmondTemplateImage,
+  usePrintQuotes,
+  usePublishPrintProduct,
   useUpdateAlmondTemplateStatus,
 } from '@/lib/services/products';
 import { useOptionalAdminUser } from '@/lib/services/users';
@@ -46,6 +50,8 @@ import {
   kindFilterOptions,
   type AlmondTemplateTab,
 } from '../lib/almond-template-rules';
+import { PublishDialog } from '../publish/publish-dialog';
+import { isPrintKind } from '../publish/publish-model';
 
 const PER_PAGE = 20;
 const STOREFRONT_URL = process.env.NEXT_PUBLIC_STOREFRONT_URL ?? '';
@@ -67,6 +73,8 @@ export default function AlmondTemplatesTemplate() {
   const [q, setQ] = useState('');
   const [page, setPage] = useState(1);
   const [deleteTarget, setDeleteTarget] =
+    useState<AdminAlmondTemplateDto | null>(null);
+  const [publishTarget, setPublishTarget] =
     useState<AdminAlmondTemplateDto | null>(null);
 
   const { data, isLoading, isError, refetch } = useAlmondTemplates();
@@ -94,7 +102,19 @@ export default function AlmondTemplatesTemplate() {
     DEFAULT_COUNTRY
   );
 
+  const canPublishProduct = canRun(
+    usePreviewAlmondTemplateImage,
+    usePrintQuotes,
+    usePublishPrintProduct,
+    useLinkAlmondTemplateProduct
+  );
+
   const handleToggleStatus = async (template: AdminAlmondTemplateDto) => {
+    if (template.status === 'draft' && isPrintKind(template.kind)) {
+      setPublishTarget(template);
+      return;
+    }
+
     const next = template.status === 'published' ? 'draft' : 'published';
     try {
       await statusMutation.mutateAsync({ id: template.id, status: next });
@@ -311,7 +331,9 @@ export default function AlmondTemplatesTemplate() {
               </div>
 
               <div className="flex shrink-0 gap-2">
-                {canRun(useUpdateAlmondTemplateStatus) && (
+                {(template.status === 'draft' && isPrintKind(template.kind)
+                  ? canPublishProduct
+                  : canRun(useUpdateAlmondTemplateStatus)) && (
                   <Button
                     variant={
                       template.status === 'published' ? 'outline' : 'default'
@@ -356,6 +378,15 @@ export default function AlmondTemplatesTemplate() {
           totalItems={filtered.length}
           itemsPerPage={PER_PAGE}
           onPageChange={setPage}
+        />
+      )}
+
+      {publishTarget && isPrintKind(publishTarget.kind) && (
+        <PublishDialog
+          key={publishTarget.id}
+          template={publishTarget}
+          kind={publishTarget.kind}
+          onClose={() => setPublishTarget(null)}
         />
       )}
 

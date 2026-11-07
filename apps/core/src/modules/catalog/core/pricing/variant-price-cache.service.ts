@@ -18,6 +18,7 @@ type CachedPriceSet = {
   basePrice: number;
   membershipPrice: number;
   tieredPrices: Array<{ minQuantity: number; price: number }>;
+  membershipTieredPrices: Array<{ minQuantity: number; price: number }>;
 };
 
 @Injectable()
@@ -59,6 +60,7 @@ export class VariantPriceCacheService {
           basePrice: priceSet.basePrice,
           membershipPrice: priceSet.membershipPrice,
           tieredPrices: priceSet.tieredPrices,
+          membershipTieredPrices: priceSet.membershipTieredPrices,
           createdAt: new Date(),
         });
       }
@@ -72,6 +74,7 @@ export class VariantPriceCacheService {
             basePrice: sql`excluded.base_price`,
             membershipPrice: sql`excluded.membership_price`,
             tieredPrices: sql`excluded.tiered_prices`,
+            membershipTieredPrices: sql`excluded.membership_tiered_prices`,
             createdAt: sql`excluded.created_at`,
           },
         });
@@ -88,6 +91,7 @@ export class VariantPriceCacheService {
           basePrice: productVariantPriceCache.basePrice,
           membershipPrice: productVariantPriceCache.membershipPrice,
           tieredPrices: productVariantPriceCache.tieredPrices,
+          membershipTieredPrices: productVariantPriceCache.membershipTieredPrices,
         })
         .from(productVariantPriceCache)
         .where(eq(productVariantPriceCache.versionId, versionId));
