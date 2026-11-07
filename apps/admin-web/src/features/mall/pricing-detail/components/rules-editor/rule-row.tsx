@@ -20,7 +20,7 @@ import type { ProductOptionGroup } from '@/lib/services/products/products-detail
 import {
   fromServerScalePercent,
   toServerScalePercent,
-} from '@/lib/services/products/transformers';
+} from '@/lib/services/products/pricing-scale';
 import { RuleScopeTarget, type ScopeTargetVariant } from './rule-scope-target';
 
 const SCOPE_LABELS: Record<PricingScopeType, string> = {

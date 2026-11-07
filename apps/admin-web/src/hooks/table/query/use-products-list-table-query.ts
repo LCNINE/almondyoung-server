@@ -1,6 +1,6 @@
 import type { MastersQuery } from '@/lib/types/dto/products';
 import { useQueryParams } from '../../use-query-params';
-import { parseDateRangeParam } from './date-range-param';
+import { parseDateRangeParam, toDayBoundInstants } from './date-range-param';
 import {
   parsePageSize,
   DEFAULT_PAGE_SIZE,
@@ -48,7 +48,7 @@ export const useProductsListTableQuery = ({
     size,
   } = queryObject;
 
-  const { from: createdFrom, to: createdTo } = parseDateRangeParam(createdAt);
+  const { from: createdFrom, to: createdTo } = toDayBoundInstants(parseDateRangeParam(createdAt));
 
   const pageSize = size ? parsePageSize(size) : fallbackPageSize;
 
