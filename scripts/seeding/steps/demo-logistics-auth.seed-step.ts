@@ -126,7 +126,7 @@ export class DemoLogisticsAuthSeedStep extends SeedStep {
           VALUES (${account.id},${account.login},${account.name},${account.name},${account.login + '@almondyoung-next.com'},${hashes[i]},true,${TENANT_ONE_ID})
           ON CONFLICT (id) DO UPDATE SET login_id=EXCLUDED.login_id`;
         for (const role of account.roles)
-          await tx`INSERT INTO user_roles (user_id,role_id) VALUES (${account.id},${role}) ON CONFLICT DO NOTHING`;
+          await tx`INSERT INTO user_roles (user_id,role_id,tenant_id) VALUES (${account.id},${role},${TENANT_ONE_ID}) ON CONFLICT DO NOTHING`;
       }
       await tx`DELETE FROM user_roles WHERE user_id=${DEMO_AUTH_ACCOUNTS[1].id} AND role_id <> ${FIXED_UUIDS.ROLE_LOGISTICS_WORKER}`;
       const scopes = JSON.stringify(['openid', 'profile', 'email', 'offline_access']);

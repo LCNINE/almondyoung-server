@@ -53,7 +53,7 @@ const PNG = Buffer.from(
 const PORT = '3999';
 const INTERNAL_KEY = 'test-internal-key';
 
-/** uploads 표 자리. 테넌트를 모르는 쓰기는 DB 기본값이 테넌트 1 로 채운다(backfill-upload-tenant-one 마이그). */
+/** uploads 표 자리. 테넌트는 NOT NULL 이고 기본값이 없다 — 쓰는 쪽이 늘 요청 테넌트를 적는다. */
 class MemoryFiles {
   readonly rows = new Map<string, Upload>();
 
@@ -70,7 +70,6 @@ class MemoryFiles {
       activatedAt: null,
       ...data,
       id: data.id ?? `${this.rows.size}`,
-      tenantId: data.tenantId ?? '1',
     };
     this.rows.set(row.id, row);
     return Promise.resolve(row);
@@ -233,15 +232,9 @@ describe('file-service 테넌트 축 — 행의 테넌트, 테넌트 버킷', ()
       expect(row.tenantId).toBe('1');
     });
 
-    it('① 에서 테넌트 없는 토큰의 업로드는 통과한다 — 테넌트 전 위치에, 행은 DB 기본값', async () => {
-      const res = await upload(warn, staff(undefined), 'product-image').expect(200);
-      const row = files.rows.get(field(res, 'id'))!;
-
-      expect(field(res, 'url')).toBe(`http://localhost:${PORT}/files/local/${row.filePath}`);
-      expect(row.tenantId).toBe('1');
-    });
-
-    it('② 에서 테넌트 없는 토큰의 업로드는 403 이다', async () => {
+    // 행의 테넌트는 NOT NULL 이고 기본 테넌트·테넌트 전 버킷은 없다 — 테넌트를 모르는 쓰기는 둘 곳이 없어 모드와 무관하게 거절한다.
+    it('테넌트 없는 토큰의 업로드는 두 모드 모두 403 이다', async () => {
+      await upload(warn, staff(undefined), 'product-image').expect(403);
       await upload(reject, staff(undefined), 'product-image').expect(403);
     });
 
@@ -323,10 +316,10 @@ describe('file-service 테넌트 축 — 행의 테넌트, 테넌트 버킷', ()
       await internal(reject, id, '2').expect(404);
     });
 
-    it('헤더 없는 호출은 ① 통과, ② 403', async () => {
+    it('헤더 없는 호출은 두 모드 모두 403 이다', async () => {
       const id = field(await upload(reject, staff('1'), 'product-image').expect(200), 'id');
 
-      await internal(warn, id).expect(200);
+      await internal(warn, id).expect(403);
       await internal(reject, id).expect(403);
     });
   });

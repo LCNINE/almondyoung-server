@@ -40,7 +40,7 @@ export class TenantDto {
   @ApiProperty() displayName!: string;
   @ApiProperty({ nullable: true, type: String }) logoUrl!: string | null;
   @ApiProperty({ type: [TenantDomainDto], description: '테넌트 도메인. app 이 null 이면 앱 칸 전에 들어온 행이다' })
-  domains!: { host: string; app: TenantDomainApp | null }[];
+  domains!: { host: string; app: TenantDomainApp }[];
   @ApiProperty() createdAt!: Date;
   @ApiProperty() updatedAt!: Date;
 }

@@ -206,26 +206,14 @@ describeIfDb('ai 테넌트 축 — 대화는 (계정, 테넌트)로 갈린다 (�
     });
   });
 
-  describe('옛 대화(마이그 전 행)', () => {
-    let legacy: string;
-
-    beforeAll(async () => {
-      // 테넌트를 싣지 않는 쓰기 = 옛 코드의 INSERT. DB 기본값이 테넌트 1 로 채운다.
-      const [row] = await probe<{ id: string }[]>`
-        INSERT INTO assistant_chat_sessions (user_id, title) VALUES (${ACCOUNT}, '옛 대화') RETURNING id`;
-      if (!row) throw new Error('옛 대화 INSERT 가 행을 돌려주지 않았다');
-      legacy = row.id;
-    });
-
-    it('테넌트 1 토큰에는 지금처럼 보이고 열린다', async () => {
-      expect(await tenantOf(legacy)).toBe('1');
-      expect(await list(reject, token('1'))).toContain(legacy);
-      const res = await call(reject, { method: 'GET', url: `/assistant/sessions/${legacy}/messages`, user: token('1') });
-      expect(res.statusCode).toBe(200);
-    });
-
-    it('테넌트 2 토큰에는 안 보인다', async () => {
-      expect(await list(reject, token('2'))).not.toContain(legacy);
+  describe('테넌트 칸(contract 뒤)', () => {
+    it('테넌트를 싣지 않는 INSERT 는 DB 가 거절한다 — NOT NULL 이고 기본 테넌트는 없다', async () => {
+      await expect(
+        probe`INSERT INTO assistant_chat_sessions (user_id, title) VALUES (${ACCOUNT}, '테넌트 없는 대화')`,
+      ).rejects.toMatchObject({ code: '23502' });
+      await expect(
+        probe`INSERT INTO assistant_uploaded_files (file_id, context_id) VALUES ('00000000-0000-4000-8000-0000000000f9', 'product-image')`,
+      ).rejects.toMatchObject({ code: '23502' });
     });
   });
 
@@ -251,16 +239,11 @@ describeIfDb('ai 테넌트 축 — 대화는 (계정, 테넌트)로 갈린다 (�
       expect([inWarn.statusCode, inReject.statusCode]).toEqual([403, 403]);
     });
 
-    it('② 에서 테넌트 없는 토큰은 403', async () => {
-      const res = await call(reject, { method: 'GET', url: '/assistant/sessions', user: token(undefined) });
-      expect(res.statusCode).toBe(403);
-    });
-
-    it('① 에서 테넌트 없는 토큰은 지금처럼 통과한다 — 쓰기는 DB 기본값, 목록은 테넌트로 거르지 않는다', async () => {
-      const made = await create(warn, token(undefined), '클레임 전 토큰');
-
-      expect(await tenantOf(made)).toBe('1');
-      expect(await list(warn, token(undefined))).toEqual(expect.arrayContaining([made]));
+    it('테넌트 없는 토큰은 두 모드 모두 403 — 그 요청이 쓸 테넌트가 없다', async () => {
+      for (const app of [warn, reject]) {
+        const res = await call(app, { method: 'GET', url: '/assistant/sessions', user: token(undefined) });
+        expect(res.statusCode).toBe(403);
+      }
     });
   });
 
@@ -282,22 +265,17 @@ describeIfDb('ai 테넌트 축 — 대화는 (계정, 테넌트)로 갈린다 (�
   });
 
   describe('업로드 추적', () => {
-    it('수거 후보는 그 테넌트의 행만이고, 테넌트 모르는 기록(①)은 테넌트 1 이다', async () => {
+    it('수거 후보는 그 테넌트의 행만이다', async () => {
       const files = reject.get(UploadedFileRepository);
-      const [one, two, untenanted] = [
-        '00000000-0000-4000-8000-0000000000f1',
-        '00000000-0000-4000-8000-0000000000f2',
-        '00000000-0000-4000-8000-0000000000f3',
-      ];
+      const [one, two] = ['00000000-0000-4000-8000-0000000000f1', '00000000-0000-4000-8000-0000000000f2'];
       await files.record(one, 'product-image', null, '1');
       await files.record(two, 'product-image', null, '2');
-      await files.record(untenanted, 'product-image', null, null);
       const later = new Date(Date.now() + 1000);
 
       const ofOne = (await files.findUnchecked('1', later, 100)).map((r) => r.fileId);
       const ofTwo = (await files.findUnchecked('2', later, 100)).map((r) => r.fileId);
 
-      expect(ofOne.sort()).toEqual([one, untenanted].sort());
+      expect(ofOne).toEqual([one]);
       expect(ofTwo).toEqual([two]);
 
       await files.markReleased([two]);
