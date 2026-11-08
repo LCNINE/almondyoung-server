@@ -23,6 +23,8 @@ export {
   useSalesOrderItems,
   // 출고 배치 (D2)
   useOutboundBatchesV2,
+  useOutboundPreparationSummary,
+  useLoadMoreOutboundPreparation,
   useOutboundBatchV2,
   useOutboundBatchEligibleShipments,
   useOutboundBatchWorkItems,
@@ -80,6 +82,8 @@ export {
   // 출고주문(FO) 액션
   useSplitShipment,
   useSplitUnreservedShipment,
+  useSplitUnreservedMany,
+  useRunOutboundPreparation,
   useReviseShipmentRecipient,
   usePlanShipment,
   useRecallShipment,

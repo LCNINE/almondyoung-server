@@ -24,6 +24,8 @@ import type {
   ShipmentConsolidationCandidateQuery,
   OutboundBatchV2ListQuery,
   SupplierQueueStage,
+  OutboundPreparationSummary,
+  PreparationBucket,
 } from '@/lib/types/dto/fulfillment';
 import type { PermissionRequirement } from '@/lib/auth/mutation-permission';
 
@@ -52,6 +54,77 @@ export const useSalesOrderItems = (orderId: string) => {
 };
 
 // ===== 출고 배치 관련 쿼리 (D2) =====
+
+export const useOutboundPreparationSummary = (
+  warehouseId: string,
+  enabled = true
+) => {
+  return useQuery({
+    queryKey: orderQueryKeys.outboundPreparationSummary(warehouseId),
+    queryFn: () => orders.outboundPreparation.summary(warehouseId),
+    enabled: !!warehouseId && enabled,
+  });
+};
+
+export const useLoadMoreOutboundPreparation = (warehouseId: string) => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (bucket: PreparationBucket) => {
+      const queryKey = orderQueryKeys.outboundPreparationSummary(warehouseId);
+      const summary =
+        queryClient.getQueryData<OutboundPreparationSummary>(queryKey);
+      const current = summary?.buckets.find((entry) => entry.bucket === bucket);
+
+      if (!current || current.shipments.length >= current.count) {
+        return;
+      }
+
+      const page = await orders.outboundPreparation.summary(warehouseId, {
+        bucket,
+        offset: current.shipments.length,
+      });
+      const next = page.buckets.find((entry) => entry.bucket === bucket);
+
+      if (!next) {
+        return;
+      }
+
+      const existingIds = new Set(
+        current.shipments.map((shipment) => shipment.shipmentId)
+      );
+
+      queryClient.setQueryData<OutboundPreparationSummary>(
+        queryKey,
+        (latest) => {
+          if (!latest || latest !== summary) {
+            return latest;
+          }
+
+          return {
+            ...latest,
+            buckets: latest.buckets.map((entry) =>
+              entry.bucket === bucket
+                ? {
+                    ...next,
+                    shipments: [
+                      ...current.shipments,
+                      ...next.shipments.filter(
+                        (shipment) => !existingIds.has(shipment.shipmentId)
+                      ),
+                    ],
+                  }
+                : entry
+            ),
+          };
+        }
+      );
+    },
+  });
+};
+useLoadMoreOutboundPreparation.permission = [
+  'fulfillment.shipment.read',
+] satisfies PermissionRequirement;
 
 export const useOutboundBatchesV2 = (query: OutboundBatchV2ListQuery = {}) => {
   return useQuery({
@@ -100,8 +173,12 @@ export const useSupplierShipments = (
   stage: SupplierQueueStage
 ) => {
   return useQuery({
-    queryKey: orderQueryKeys.directShipSupplierShipments(supplierId ?? '', stage),
-    queryFn: () => orders.directShip.getSupplierShipments(supplierId ?? '', stage),
+    queryKey: orderQueryKeys.directShipSupplierShipments(
+      supplierId ?? '',
+      stage
+    ),
+    queryFn: () =>
+      orders.directShip.getSupplierShipments(supplierId ?? '', stage),
     enabled: !!supplierId,
   });
 };
@@ -258,7 +335,10 @@ export const useFulfillmentOutboxEvents = (id: string) => {
   });
 };
 
-export const useFulfillmentShipments = (id: string, options?: { enabled?: boolean }) => {
+export const useFulfillmentShipments = (
+  id: string,
+  options?: { enabled?: boolean }
+) => {
   return useQuery({
     queryKey: orderQueryKeys.fulfillmentShipments(id),
     queryFn: () => orders.fulfillmentOrder.getShipments(id),
@@ -397,7 +477,11 @@ export const useFulfillmentMetrics = () => {
   });
 };
 
-export const useDailyOrderStatus = (from: string, to: string, options: { enabled?: boolean } = {}) => {
+export const useDailyOrderStatus = (
+  from: string,
+  to: string,
+  options: { enabled?: boolean } = {}
+) => {
   return useQuery({
     enabled: options.enabled ?? true,
     queryKey: orderQueryKeys.dailyOrderStatus(from, to),
@@ -428,7 +512,9 @@ export const useConfirmSalesOrder = () => {
     },
   });
 };
-useConfirmSalesOrder.permission = ['order.order.write'] as const satisfies PermissionRequirement;
+useConfirmSalesOrder.permission = [
+  'order.order.write',
+] as const satisfies PermissionRequirement;
 
 // ===== 매칭 관련 쿼리 (WMS API 스펙 기반) =====
 

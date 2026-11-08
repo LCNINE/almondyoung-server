@@ -1,13 +1,12 @@
 /** @format */
 
 import RouteGuard from '@/components/layout/route-guard';
-import WaybillIssueTemplate from '@/features/order/waybill-issue/template/WaybillIssueTemplate';
+import OutboundPreparationTemplate from '@/features/order/outbound-preparation/template/OutboundPreparationTemplate';
 
-// 운송장 일괄 발급 페이지
 export default function OrderWaybillIssuePage() {
   return (
     <RouteGuard screen="/order/waybill-issue">
-      <WaybillIssueTemplate />
+      <OutboundPreparationTemplate />
     </RouteGuard>
   );
 }
