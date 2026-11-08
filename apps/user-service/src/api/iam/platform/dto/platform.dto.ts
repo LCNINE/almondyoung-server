@@ -39,7 +39,7 @@ export class TenantDto {
   @ApiProperty({ enum: ['preparing', 'active', 'suspended'] }) status!: 'preparing' | 'active' | 'suspended';
   @ApiProperty() displayName!: string;
   @ApiProperty({ nullable: true, type: String }) logoUrl!: string | null;
-  @ApiProperty({ type: [TenantDomainDto], description: '테넌트 도메인. app 이 null 이면 앱 칸 전에 들어온 행이다' })
+  @ApiProperty({ type: [TenantDomainDto], description: '테넌트 도메인과 그 주소의 앱' })
   domains!: { host: string; app: TenantDomainApp }[];
   @ApiProperty() createdAt!: Date;
   @ApiProperty() updatedAt!: Date;

@@ -41,7 +41,6 @@ export interface TenantDomain {
 }
 
 export interface OperatorApi {
-  /** 도메인의 app 이 null 이면 앱 칸 전에 붙인 도메인이다 */
   getTenant(
     id: string,
   ): Promise<{ slug: string; status: TenantStatus; domains: { host: string; app: TenantDomainApp }[] } | null>;
