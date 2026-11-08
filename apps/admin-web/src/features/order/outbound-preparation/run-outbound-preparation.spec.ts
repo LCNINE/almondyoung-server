@@ -34,7 +34,6 @@ function failure(shipmentId: string, transient: boolean) {
 
 function makeDeps() {
   let key = 0;
-  const waybillKeys = new Map<string, string>();
 
   return {
     planMany: jest
@@ -69,20 +68,6 @@ function makeDeps() {
       .mockResolvedValue(undefined),
     newKey: jest.fn(() => `key-${++key}`),
     now: jest.fn(() => input.now),
-    waybillKeys: Object.assign(waybillKeys, {
-      getOrCreate(shipmentId: string, key: string) {
-        const existing = waybillKeys.get(shipmentId) ?? key;
-
-        waybillKeys.set(shipmentId, existing);
-
-        return existing;
-      },
-      release(shipmentId: string, key: string) {
-        if (waybillKeys.get(shipmentId) === key) {
-          waybillKeys.delete(shipmentId);
-        }
-      },
-    }),
   } satisfies PreparationDeps;
 }
 
@@ -407,95 +392,6 @@ describe('runOutboundPreparation', () => {
     expect(result).toMatchObject({ waybilled: 1, joined: 1, failures: [] });
   });
 
-  it('reuses the original waybill key on a manual retry until the waybill resolves', async () => {
-    const deps = makeDeps();
-    deps.issueWaybills.mockResolvedValue([waybill('s1', 'allocated')]);
-
-    await runOutboundPreparation(
-      deps,
-      { ...input, shipmentIds: ['s1'] },
-      jest.fn()
-    );
-
-    deps.issueWaybills.mockReset();
-    deps.issueWaybills.mockImplementation(async (ids) =>
-      ids.map((id) => waybill(id))
-    );
-
-    await runOutboundPreparation(
-      deps,
-      { ...input, shipmentIds: ['s1', 's2'] },
-      jest.fn()
-    );
-
-    expect(deps.issueWaybills.mock.calls).toEqual([
-      [['s1'], 'key-2'],
-      [['s2'], 'key-4'],
-    ]);
-    expect(deps.waybillKeys.size).toBe(0);
-  });
-
-  it('keeps successful waybill groups when another key group is rejected', async () => {
-    const deps = makeDeps();
-    deps.waybillKeys.set('s2', 'old-key');
-    deps.issueWaybills.mockImplementation(async (ids, key) => {
-      if (key === 'old-key') {
-        throw { statusCode: 400, message: '거절' };
-      }
-
-      return ids.map((id) => waybill(id));
-    });
-
-    const result = await runOutboundPreparation(
-      deps,
-      { ...input, shipmentIds: ['s1', 's2'] },
-      jest.fn()
-    );
-
-    expect(result).toMatchObject({ waybilled: 1, joined: 1 });
-    expect(result.failures).toEqual([
-      expect.objectContaining({ shipmentId: 's2', stage: 'waybill' }),
-    ]);
-    expect(deps.waybillKeys.get('s2')).toBe('old-key');
-    expect(deps.waybillKeys.has('s1')).toBe(false);
-  });
-
-  it('keeps the waybill key on request rejections and drops it on terminal waybills or a stale command', async () => {
-    const deps = makeDeps();
-    deps.waybillKeys.set('s1', 'old-key');
-    deps.waybillKeys.set('s2', 'old-key');
-    deps.waybillKeys.set('s3', 'old-key');
-    deps.waybillKeys.set('s4', 'old-key');
-    deps.waybillKeys.set('s5', 'old-key');
-    deps.issueWaybills.mockResolvedValue([
-      {
-        ...waybill('s1', 'failed', '권한이 없어요'),
-        transient: false,
-        code: 'FORBIDDEN',
-      },
-      {
-        ...waybill('s5', 'failed', '처리하지 못했어요'),
-        transient: false,
-        code: 'FULFILLMENT_IDEMPOTENCY_MISMATCH',
-      },
-      waybill('s2', 'failed', 'definitive_rejection'),
-      waybill('s3', 'voided'),
-      waybill('s4', 'allocated'),
-    ]);
-
-    await runOutboundPreparation(
-      deps,
-      { ...input, shipmentIds: ['s1', 's2', 's3', 's4', 's5'] },
-      jest.fn()
-    );
-
-    expect(deps.waybillKeys.get('s1')).toBe('old-key');
-    expect(deps.waybillKeys.has('s2')).toBe(false);
-    expect(deps.waybillKeys.has('s3')).toBe(false);
-    expect(deps.waybillKeys.get('s4')).toBe('old-key');
-    expect(deps.waybillKeys.has('s5')).toBe(false);
-  });
-
   it('does not treat omitted results or allocated waybills as success', async () => {
     const deps = makeDeps();
     deps.planMany.mockResolvedValue({ succeeded: ['s1', 's2'], failed: [] });
@@ -536,39 +432,6 @@ describe('runOutboundPreparation', () => {
       '11/06 토탈피킹 17:07:12',
       '11/06 토탈피킹 17:07:13',
     ]);
-  });
-
-  it('pins the first tab key while another tab changes storage during its retry', async () => {
-    const first = makeDeps();
-    const second = makeDeps();
-    second.waybillKeys = first.waybillKeys;
-    second.newKey.mockReturnValue('second-tab');
-    first.issueWaybills.mockResolvedValueOnce([waybill('s1', 'allocated')]);
-    second.issueWaybills.mockResolvedValue([waybill('s1', 'allocated')]);
-    first.sleep.mockImplementationOnce(async () => {
-      await runOutboundPreparation(
-        second,
-        { ...input, shipmentIds: ['s1'] },
-        jest.fn()
-      );
-      first.waybillKeys.set('s1', 'other-command');
-    });
-
-    const result = await runOutboundPreparation(
-      first,
-      { ...input, shipmentIds: ['s1'] },
-      jest.fn()
-    );
-
-    expect(result).toMatchObject({ joined: 1, failures: [] });
-    expect(first.issueWaybills.mock.calls.map(([, key]) => key)).toEqual([
-      'key-2',
-      'key-2',
-    ]);
-    expect(second.issueWaybills.mock.calls.map(([, key]) => key)).toEqual(
-      Array(4).fill('key-2')
-    );
-    expect(first.waybillKeys.get('s1')).toBe('other-command');
   });
 
   it.each([

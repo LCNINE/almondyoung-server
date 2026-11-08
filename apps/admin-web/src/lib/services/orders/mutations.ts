@@ -567,7 +567,6 @@ useSplitUnreservedMany.permission = [
   'fulfillment.warehouse.operate',
 ] as const satisfies PermissionRequirement;
 
-const WAYBILL_KEYS_STORAGE_KEY = 'outbound-preparation-waybill-keys';
 const PENDING_BATCH_STORAGE_KEY = 'outbound-preparation-pending-batch';
 
 type PendingBatch = Parameters<PreparationDeps['createBatch']>[0] & {
@@ -596,44 +595,6 @@ function writeStored(storageKey: string, value: unknown) {
     return;
   }
 }
-
-const readWaybillKeys = () =>
-  readStored<Record<string, string>>(WAYBILL_KEYS_STORAGE_KEY, {});
-
-function withWaybillKeysLock<T>(action: () => T): T | Promise<T> {
-  if (typeof navigator !== 'undefined' && navigator.locks) {
-    return navigator.locks.request(WAYBILL_KEYS_STORAGE_KEY, action);
-  }
-
-  return action();
-}
-
-const preparationWaybillKeys: PreparationDeps['waybillKeys'] = {
-  getOrCreate: (shipmentId, key) =>
-    withWaybillKeysLock(() => {
-      const keys = readWaybillKeys();
-      const existing = keys[shipmentId];
-
-      if (existing) {
-        return existing;
-      }
-
-      writeStored(WAYBILL_KEYS_STORAGE_KEY, { ...keys, [shipmentId]: key });
-
-      return key;
-    }),
-  release: (shipmentId, key) =>
-    withWaybillKeysLock(() => {
-      const keys = readWaybillKeys();
-
-      if (keys[shipmentId] !== key) {
-        return;
-      }
-
-      delete keys[shipmentId];
-      writeStored(WAYBILL_KEYS_STORAGE_KEY, keys);
-    }),
-};
 
 export const useRunOutboundPreparation = () => {
   const queryClient = useQueryClient();
@@ -726,7 +687,6 @@ export const useRunOutboundPreparation = () => {
           },
           newKey: commandKey,
           now: () => new Date(),
-          waybillKeys: preparationWaybillKeys,
         },
         input,
         onProgress

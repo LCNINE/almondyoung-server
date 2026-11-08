@@ -19,6 +19,7 @@ describe('OutboundPreparationManager', () => {
   const getActiveWaybill = jest.fn();
   const assertDispatchable = jest.fn();
   const issueForShipment = jest.fn();
+  const resumeActive = jest.fn();
   const addShipment = jest.fn();
   const splitUnreserved = jest.fn();
   const limit = jest.fn();
@@ -36,6 +37,7 @@ describe('OutboundPreparationManager', () => {
     issueForShipment
       .mockReset()
       .mockResolvedValue({ status: 'registered', trackingNo: '123', lastError: null, nextAttemptAt: null });
+    resumeActive.mockReset().mockResolvedValue(null);
     plan.mockReset().mockResolvedValue({});
     addShipment.mockReset().mockResolvedValue({});
     splitUnreserved.mockReset().mockResolvedValue({});
@@ -46,7 +48,7 @@ describe('OutboundPreparationManager', () => {
     const module = await Test.createTestingModule({
       providers: [
         OutboundPreparationManager,
-        { provide: WaybillService, useValue: { getActiveWaybill, assertDispatchable, issueForShipment } },
+        { provide: WaybillService, useValue: { getActiveWaybill, assertDispatchable, issueForShipment, resumeActive } },
         { provide: DbService, useValue: { db } },
         { provide: ShipmentPlanningService, useValue: { plan, splitUnreserved } },
         { provide: OutboundBatchOrchestrator, useValue: { addShipment } },
@@ -77,24 +79,50 @@ describe('OutboundPreparationManager', () => {
     expect(issueForShipment).not.toHaveBeenCalled();
   });
 
-  it.each(['pending', 'allocated'])(
-    'keeps lost-key %s issuance transient without counting it as success',
-    async (status) => {
-      getActiveWaybill.mockResolvedValue({ status });
-      issueForShipment.mockRejectedValue(new ConflictError('WAYBILL_ACTIVE_EXISTS: s1'));
+  it.each(['pending', 'allocated'])('resumes a stuck %s waybill instead of issuing with the new key', async (status) => {
+    getActiveWaybill.mockResolvedValue({ status });
+    resumeActive.mockResolvedValue({ status: 'registered', trackingNo: '123', lastError: null, nextAttemptAt: null });
 
-      expect(await manager.issueWaybills(['s1'], 'new-key', actor)).toEqual([
-        expect.objectContaining({
-          status: 'failed',
-          transient: true,
-          reason: '진행 중인 송장 발급 결과를 확인해 주세요',
-        }),
-      ]);
-      expect(issueForShipment).toHaveBeenCalledTimes(1);
-    },
-  );
+    expect(await manager.issueWaybills(['s1'], 'new-key', actor)).toEqual([
+      expect.objectContaining({ shipmentId: 's1', status: 'registered', trackingNo: '123' }),
+    ]);
+    expect(resumeActive).toHaveBeenCalledWith('s1', { carrier: 'HANJIN', expectedManifestVersion: 3 });
+    expect(issueForShipment).not.toHaveBeenCalled();
+  });
 
-  it('carries the error code so the client can release a stale issuance key', async () => {
+  it('hands a stuck waybill with stale contents to the operator without retrying', async () => {
+    getActiveWaybill.mockResolvedValue({ status: 'allocated' });
+    resumeActive.mockRejectedValue(new ConflictError('WAYBILL_NEEDS_REVIEW: w1'));
+
+    expect(await manager.issueWaybills(['s1'], 'k', actor)).toEqual([
+      expect.objectContaining({
+        status: 'failed',
+        transient: false,
+        code: 'WAYBILL_NEEDS_REVIEW',
+        reason: '송장 발급 결과를 확인해야 해요',
+      }),
+    ]);
+    expect(issueForShipment).not.toHaveBeenCalled();
+  });
+
+  it('resumes the row another call created between the read and the issue', async () => {
+    issueForShipment.mockRejectedValue(new ConflictError('WAYBILL_ACTIVE_EXISTS: s1'));
+    resumeActive.mockResolvedValue({ status: 'allocated', trackingNo: '123', lastError: null, nextAttemptAt: null });
+
+    expect(await manager.issueWaybills(['s1'], 'k', actor)).toEqual([
+      expect.objectContaining({ status: 'allocated', trackingNo: '123' }),
+    ]);
+  });
+
+  it('retries later when the raced row ended before it could be resumed', async () => {
+    issueForShipment.mockRejectedValue(new ConflictError('WAYBILL_ACTIVE_EXISTS: s1'));
+
+    expect(await manager.issueWaybills(['s1'], 'k', actor)).toEqual([
+      expect.objectContaining({ status: 'failed', transient: true, code: 'WAYBILL_ISSUE_RACED' }),
+    ]);
+  });
+
+  it('carries the error code of a rejected single command', async () => {
     issueForShipment.mockRejectedValue(new ConflictException({ code: 'FULFILLMENT_IDEMPOTENCY_MISMATCH' }));
 
     expect(await manager.issueWaybills(['s1'], 'old-key', actor)).toEqual([
@@ -238,7 +266,7 @@ describe('OutboundPreparationManager', () => {
 
     await expect(manager.planMany(['s1'], 'k', actor)).resolves.toEqual({
       succeeded: [],
-      failed: [{ shipmentId: 's1', code: 'UNKNOWN', message: '처리하지 못했어요', transient: false }],
+      failed: [{ shipmentId: 's1', code: 'SHIPMENT_NOT_FOUND', message: '상자를 찾을 수 없어요', transient: false }],
     });
     expect(plan).not.toHaveBeenCalled();
   });
@@ -335,7 +363,7 @@ describe('OutboundPreparationManager', () => {
     await expect(manager.splitManyUnreserved(['s1', 's2', 's3'], 'k', actor)).resolves.toEqual({
       succeeded: ['s3'],
       failed: [
-        { shipmentId: 's1', code: 'UNKNOWN', message: '처리하지 못했어요', transient: false },
+        { shipmentId: 's1', code: 'SHIPMENT_NOT_FOUND', message: '상자를 찾을 수 없어요', transient: false },
         { shipmentId: 's2', code: 'UNKNOWN', message: '처리하지 못했어요', transient: true },
       ],
     });

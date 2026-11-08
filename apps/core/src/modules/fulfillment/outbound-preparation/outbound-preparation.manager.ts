@@ -1,5 +1,5 @@
-import { ConflictError } from '@app/shared';
-import { ConflictException, Injectable, NotFoundException, ServiceUnavailableException } from '@nestjs/common';
+import { ConflictError, NotFoundError, ServiceUnavailableError } from '@app/shared';
+import { Injectable } from '@nestjs/common';
 import { DbService, InjectTypedDb } from '@app/db';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
@@ -10,6 +10,7 @@ import { ShipmentPlanningService } from '../services/shipment-planning.service';
 import { ACTIVE_WORK_ITEM_STATUSES } from '../services/work-item-status';
 import { WAYBILL, WAYBILL_DISPATCHABLE_STATUSES } from '../waybill/waybill.constants';
 import { toView, WaybillService } from '../waybill/waybill.service';
+import type { WaybillView } from '../waybill/waybill.types';
 import {
   bulkShipmentFailure,
   BulkShipmentResult,
@@ -42,7 +43,7 @@ export class OutboundPreparationManager {
         .limit(1);
 
       if (!shipment) {
-        throw new NotFoundException('상자를 찾을 수 없어요');
+        throw new NotFoundError(`SHIPMENT_NOT_FOUND: ${shipmentId}`);
       }
 
       if (shipment.status === 'planned') {
@@ -53,7 +54,7 @@ export class OutboundPreparationManager {
       const shippingProfileId = resolvePlanProfileId(lines.map((line) => line.skuProfileId));
 
       if (shippingProfileId === null) {
-        throw new ConflictException({ code: 'SHIPMENT_PROFILE_INCOMPATIBLE' });
+        throw new ConflictError(`SHIPMENT_PROFILE_INCOMPATIBLE: ${shipmentId}`);
       }
 
       await this.planning.plan(
@@ -95,36 +96,7 @@ export class OutboundPreparationManager {
           }
 
           try {
-            let waybill = await this.waybills.getActiveWaybill(shipmentId);
-
-            if (waybill && WAYBILL_DISPATCHABLE_STATUSES.some((status) => status === waybill?.status)) {
-              waybill = toView(await this.waybills.assertDispatchable(shipmentId));
-            } else {
-              const [shipment] = await this.dbService.db
-                .select({ manifestVersion: wmsTables.shipments.manifestVersion })
-                .from(wmsTables.shipments)
-                .where(eq(wmsTables.shipments.id, shipmentId))
-                .limit(1);
-
-              if (!shipment) {
-                throw new NotFoundException('상자를 찾을 수 없어요');
-              }
-
-              try {
-                waybill = await this.waybills.issueForShipment(
-                  shipmentId,
-                  { carrier: 'HANJIN', expectedManifestVersion: shipment.manifestVersion },
-                  `${idempotencyKey}:${shipmentId}`,
-                  actor,
-                );
-              } catch (error) {
-                if (error instanceof ConflictError && error.message.startsWith(`${WAYBILL.ERROR.ACTIVE_EXISTS}:`)) {
-                  throw new ServiceUnavailableException({ code: 'WAYBILL_ISSUE_IN_PROGRESS' });
-                }
-
-                throw error;
-              }
-            }
+            const waybill = await this.issueOrResume(shipmentId, idempotencyKey, actor);
 
             results[index] = {
               shipmentId,
@@ -151,6 +123,58 @@ export class OutboundPreparationManager {
     );
 
     return results;
+  }
+
+  // 디스패치 가능한 송장은 그대로 쓰고, 멈춘 송장(pending/allocated)은 키와 상관없이 그 행을 이어 가며,
+  // 활성 송장이 없을 때만 새로 발급한다. 원래 키를 브라우저가 들고 있지 않아도 어느 PC 에서든 같은 결과가 된다.
+  private async issueOrResume(
+    shipmentId: string,
+    idempotencyKey: string,
+    actor: ShipmentPlanningActor,
+  ): Promise<WaybillView> {
+    const active = await this.waybills.getActiveWaybill(shipmentId);
+
+    if (active && WAYBILL_DISPATCHABLE_STATUSES.some((status) => status === active.status)) {
+      return toView(await this.waybills.assertDispatchable(shipmentId));
+    }
+
+    const opts = { carrier: 'HANJIN' as const, expectedManifestVersion: await this.manifestVersionOf(shipmentId) };
+    const resumed = active ? await this.waybills.resumeActive(shipmentId, opts) : null;
+
+    if (resumed) {
+      return resumed;
+    }
+
+    try {
+      return await this.waybills.issueForShipment(shipmentId, opts, `${idempotencyKey}:${shipmentId}`, actor);
+    } catch (error) {
+      if (!(error instanceof ConflictError && error.message.startsWith(`${WAYBILL.ERROR.ACTIVE_EXISTS}:`))) {
+        throw error;
+      }
+
+      // 읽은 뒤 다른 호출이 행을 만들었다 — 그 행을 이어 간다. 그새 끝났으면 다음 재시도가 새로 발급한다.
+      const raced = await this.waybills.resumeActive(shipmentId, opts);
+
+      if (!raced) {
+        throw new ServiceUnavailableError(`WAYBILL_ISSUE_RACED: ${shipmentId}`);
+      }
+
+      return raced;
+    }
+  }
+
+  private async manifestVersionOf(shipmentId: string): Promise<number> {
+    const [shipment] = await this.dbService.db
+      .select({ manifestVersion: wmsTables.shipments.manifestVersion })
+      .from(wmsTables.shipments)
+      .where(eq(wmsTables.shipments.id, shipmentId))
+      .limit(1);
+
+    if (!shipment) {
+      throw new NotFoundError(`SHIPMENT_NOT_FOUND: ${shipmentId}`);
+    }
+
+    return shipment.manifestVersion;
   }
 
   addManyToBatch(
@@ -191,15 +215,7 @@ export class OutboundPreparationManager {
     actor: ShipmentPlanningActor,
   ): Promise<BulkShipmentResult> {
     return runPerShipment(shipmentIds, async (shipmentId) => {
-      const [shipment] = await this.dbService.db
-        .select({ manifestVersion: wmsTables.shipments.manifestVersion })
-        .from(wmsTables.shipments)
-        .where(eq(wmsTables.shipments.id, shipmentId))
-        .limit(1);
-
-      if (!shipment) {
-        throw new NotFoundException('상자를 찾을 수 없어요');
-      }
+      const manifestVersion = await this.manifestVersionOf(shipmentId);
 
       const lines = await this.dbService.db
         .select({
@@ -224,7 +240,7 @@ export class OutboundPreparationManager {
 
       await this.planning.splitUnreserved(
         shipmentId,
-        { reason: '출고 준비: 있는 것만 먼저 보내기', expectedManifestVersion: shipment.manifestVersion },
+        { reason: '출고 준비: 있는 것만 먼저 보내기', expectedManifestVersion: manifestVersion },
         `${idempotencyKey}:${shipmentId}`,
         actor,
       );

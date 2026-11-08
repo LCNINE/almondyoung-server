@@ -55,10 +55,6 @@ export interface PreparationDeps {
   sleep(ms: number): Promise<void>;
   newKey(): string;
   now(): Date;
-  waybillKeys: {
-    getOrCreate(shipmentId: string, key: string): string | Promise<string>;
-    release(shipmentId: string, key: string): void | Promise<void>;
-  };
 }
 
 export interface PreparationInput {
@@ -237,58 +233,11 @@ export async function runOutboundPreparation(
     return progress;
   }
 
-  const waybillKeys = new Map<string, string>();
-
+  // 송장 키는 단계마다 새로 만든다. 원래 키를 잃어도(다른 PC·새로고침) 서버가 상자의 활성 송장 행을
+  // 이어 가므로 키를 브라우저에 붙들 필요가 없다.
   const waybilled = await runStage('waybill', planned, async (ids, key) => {
-    const groups = new Map<string, string[]>();
-
-    for (const id of ids) {
-      let groupKey = waybillKeys.get(id);
-
-      if (!groupKey) {
-        groupKey = await deps.waybillKeys.getOrCreate(id, key);
-        waybillKeys.set(id, groupKey);
-      }
-
-      groups.set(groupKey, [...(groups.get(groupKey) ?? []), id]);
-    }
-
-    const results: PreparationWaybillResult[] = [];
-
-    for (const [groupKey, groupIds] of groups) {
-      try {
-        const issued = await deps.issueWaybills(groupIds, groupKey);
-
-        for (const result of issued) {
-          const terminal =
-            result.code === 'FULFILLMENT_IDEMPOTENCY_MISMATCH' ||
-            (result.transient === undefined &&
-              !isWaybillPendingIssue(result.status));
-
-          if (terminal) {
-            await deps.waybillKeys.release(result.shipmentId, groupKey);
-          }
-        }
-
-        results.push(...issued);
-      } catch (error) {
-        const { status, message } = parseServerError(
-          error,
-          '송장을 발급하지 못했어요.'
-        );
-
-        results.push(
-          ...groupIds.map((shipmentId) => ({
-            shipmentId,
-            status: 'failed',
-            trackingNo: null,
-            reason: message,
-            nextAttemptAt: null,
-            transient: status === null || (status >= 500 && status < 600),
-          }))
-        );
-      }
-    }
+    // 요청 자체가 던지면 runStage 가 상태 코드로 재시도 여부를 정한다.
+    const results = await deps.issueWaybills(ids, key);
 
     return results.map(
       (result): StageResult => ({

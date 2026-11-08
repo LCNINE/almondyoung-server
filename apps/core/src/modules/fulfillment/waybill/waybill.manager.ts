@@ -124,6 +124,51 @@ export class WaybillManager {
     return this.machine.drive(waybillId, request);
   }
 
+  // 원래 멱등 키를 잃은 호출자(다른 PC·저장소 삭제)가 멈춘 활성 행(pending/allocated)을 이어 간다.
+  // 같은 키 replay 와 같은 일이다 — replay 도 저장된 행을 drive 로 다시 태운다. drive 는 CAS 전이라 겹쳐 돌아도
+  // 이중 등록은 없다(이 성질은 같은 키로 두 탭이 동시에 부를 때도 이미 기대고 있다).
+  // 행이 지금 상자 내용과 다르면 이어 가는 순간 옛 주소로 등록된다 — 그때는 운영자에게 넘긴다(abandon 후 재발급).
+  // 활성 행이 없으면 null — 호출자가 새로 발급한다. carrier HTTP 때문에 tx? 를 받지 않는다.
+  async resumeActive(shipmentId: string, opts: IssueOpts): Promise<WaybillRow | null> {
+    const gateway = this.registry.get(opts.carrier);
+    if (!gateway || !gateway.isConfigured()) {
+      throw new ConflictError(`${WAYBILL.ERROR.CARRIER_NOT_CONFIGURED}: ${opts.carrier}`);
+    }
+
+    const { ctx, active } = await this.dbService.run(async (trx) => ({
+      ctx: await this.reader.loadIssueContext(trx, shipmentId),
+      active: await this.reader.getActiveWaybill(trx, shipmentId),
+    }));
+    if (ctx.status !== 'planned') {
+      throw new ConflictError(`${WAYBILL.ERROR.NOT_DISPATCHABLE}: shipment ${ctx.status}`);
+    }
+    if (ctx.manifestVersion !== opts.expectedManifestVersion) {
+      throw new ConflictError(
+        `${WAYBILL.ERROR.STALE_MANIFEST_VERSION}: ${ctx.manifestVersion} != ${opts.expectedManifestVersion}`,
+      );
+    }
+    if (!active || (active.status !== 'pending' && active.status !== 'allocated')) {
+      return active ?? null;
+    }
+    if (
+      active.manifestVersion !== ctx.manifestVersion ||
+      active.recipientHash !== this.reader.recipientHashOf(ctx.recipientSnapshot)
+    ) {
+      throw new ConflictError(`${WAYBILL.ERROR.NEEDS_REVIEW}: ${active.id}`);
+    }
+    if (active.status === 'pending' && active.nextAttemptAt && active.nextAttemptAt > new Date()) {
+      return active;
+    }
+    const request = assembleWaybillRequest({
+      shipmentId,
+      recipientSnapshot: ctx.recipientSnapshot,
+      lines: ctx.lines,
+      config: this.config,
+      entrancePassword: ctx.entrancePassword,
+    });
+    return this.machine.drive(active.id, request);
+  }
+
   // 교착된 발급(pending/allocated)을 운영자가 강제 종료해 활성 슬롯을 푼다(#914 문제 2).
   // 이게 없으면 `WAYBILL_ABANDON_NOT_ALLOWED` 메시지가 «존재하지 않는 기능»을 가리킨다.
   // allocated 를 버리면 한진에 채번된 wblNo 하나가 미사용으로 남는다 — 그래서 사유를 필수로 받아 남긴다.

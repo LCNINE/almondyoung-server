@@ -20,7 +20,9 @@ export interface BulkShipmentResult {
 }
 
 const messages = new Map([
-  ['WAYBILL_ISSUE_IN_PROGRESS', '진행 중인 송장 발급 결과를 확인해 주세요'],
+  ['SHIPMENT_NOT_FOUND', '상자를 찾을 수 없어요'],
+  ['WAYBILL_NEEDS_REVIEW', '송장 발급 결과를 확인해야 해요'],
+  ['WAYBILL_ISSUE_RACED', '다른 송장 발급과 겹쳤어요'],
   ['SHIPMENT_NOT_DRAFT', '상자 상태가 바뀌었어요'],
   ['SHIPMENT_NOT_FULLY_RESERVED', '재고 예약이 모자라요'],
   ['SHIPMENT_PROFILE_INCOMPATIBLE', '배송 프로필을 정할 수 없어요'],
@@ -28,9 +30,13 @@ const messages = new Map([
   ['SHIPMENT_ACTIVE_WORK_ITEM', '이미 다른 배치에 들어 있어요'],
 ]);
 
+// 도메인 예외는 종류별 코드(CONFLICT 등)만 가지므로 waybill 모듈처럼 메시지 앞 `CODE:` 로 세부 코드를 싣는다.
+// 다시 쓰는 단건 명령들(계획 확정·배치 담기)은 `HttpException({ code })` 로 던지므로 그 모양도 읽는다.
+const MESSAGE_CODE = /^([A-Z][A-Z0-9_]*):/;
+
 function errorCode(e: unknown): string {
   if (e instanceof ApplicationException) {
-    return e.getErrorCode();
+    return MESSAGE_CODE.exec(e.message)?.[1] ?? e.getErrorCode();
   }
 
   const response = e instanceof HttpException ? e.getResponse() : undefined;

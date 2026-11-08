@@ -150,7 +150,6 @@ describe('outbound preparation with WaybillManager', () => {
 
     manager = module.get(OutboundPreparationManager);
     waybillManager = module.get(WaybillManager);
-    const waybillKeys = new Map<string, string>();
 
     deps = {
       planMany: (ids, key) => manager.planMany(ids, key, actor),
@@ -160,20 +159,6 @@ describe('outbound preparation with WaybillManager', () => {
       createBatch,
       newKey: () => `key-${++key}`,
       now: () => new Date('2026-11-06T00:00:00Z'),
-      waybillKeys: {
-        getOrCreate: (id, key) => {
-          const existing = waybillKeys.get(id) ?? key;
-
-          waybillKeys.set(id, existing);
-
-          return existing;
-        },
-        release: (id, key) => {
-          if (waybillKeys.get(id) === key) {
-            waybillKeys.delete(id);
-          }
-        },
-      },
     };
   });
 
@@ -233,15 +218,32 @@ describe('outbound preparation with WaybillManager', () => {
     expect(drive.mock.calls.map(([id]) => id)).toEqual(['waybill', 'waybill', 'waybill']);
   });
 
-  it.each<WaybillRow['status']>(['pending', 'allocated'])('does not replace lost-key %s issuance', async (status) => {
+  // 원래 키를 잃은 호출(다른 PC·저장소 삭제)도 같은 키 replay 처럼 그 행을 끝까지 몰아간다 — 새 행은 만들지 않는다.
+  it.each<WaybillRow['status']>(['pending', 'allocated'])('resumes lost-key %s issuance on the same row', async (status) => {
     active = waybill(status);
 
     expect(await runOutboundPreparation(deps, input, jest.fn())).toMatchObject({
-      waybilled: 0,
-      joined: 0,
-      failures: [{ shipmentId, stage: 'waybill', message: '진행 중인 송장 발급 결과를 확인해 주세요' }],
+      waybilled: 1,
+      joined: 1,
+      failures: [],
     });
-    expect(sleep.mock.calls).toEqual([[2000], [5000], [10000]]);
+    expect(sleep).not.toHaveBeenCalled();
+    expect(insertPending).not.toHaveBeenCalled();
+    expect(drive.mock.calls.map(([id]) => id)).toEqual(['waybill']);
+  });
+
+  // 행이 옛 내용으로 채번됐으면 이어 가면 옛 주소로 등록된다 — 재시도하지 않고 운영자에게 넘긴다.
+  it.each<[string, Partial<WaybillRow>]>([
+    ['manifest', { manifestVersion: 2 }],
+    ['recipient', { recipientHash: 'old-hash' }],
+  ])('stops for review when the stuck row has a stale %s', async (_, stale) => {
+    active = { ...waybill('allocated'), ...stale };
+
+    expect(await runOutboundPreparation(deps, input, jest.fn())).toMatchObject({
+      waybilled: 0,
+      failures: [{ shipmentId, stage: 'waybill', retryable: false, message: '송장 발급 결과를 확인해야 해요' }],
+    });
+    expect(sleep).not.toHaveBeenCalled();
     expect(insertPending).not.toHaveBeenCalled();
     expect(drive).not.toHaveBeenCalled();
     expect(createBatch).not.toHaveBeenCalled();
