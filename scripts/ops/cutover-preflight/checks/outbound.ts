@@ -162,7 +162,7 @@ export async function checkOutbound(tx: Sql, r: Report): Promise<void> {
       'admin-web /order/matching 에서 SKU 매칭',
     );
   else r.ok('아직 안 나간 주문의 매칭 대기 0');
-  if (matching.done) r.info(`이미 끝난 주문의 매칭 대기 ${matching.done}건 — 출고할 게 아니라 닫는다 (#1243)`);
+  if (matching.done) r.dayOf(`이미 끝난 주문의 매칭 대기 ${matching.done}건`, '출고할 게 아니라 닫는다 (#1243)');
   const failed = await tx`
     select coalesce(failure_reason, '(null)') as failure_reason, count(*)::int
     from fulfillment_order_creation_backlogs where status = 'failed' group by 1 order by 2 desc limit 10`;
@@ -191,11 +191,18 @@ export async function checkOutbound(tx: Sql, r: Report): Promise<void> {
   );
   const [journals] = await tx`select count(*)::int as n from stock_journals`;
   r.info(`stock_journals ${journals.n}행 (정식 원장 경로는 journal 을 먼저 꽂는다)`);
-  const [sellmate] = await tx`
+  const [sellmate] = await tx<{ last_at: Date | null; n: number }[]>`
     select max(occurred_at) as last_at, count(*)::int as n from stock_events where reason = 'sellmate-sync'`;
   r.info(
-    `셀메이트 재고 sync 마지막 실행 ${sellmate.last_at ?? '없음'} (누적 ${sellmate.n}건) — 컷오버 후엔 이 값이 멈춰야 한다`,
+    `셀메이트 재고 sync 마지막 실행 ${sellmate.last_at?.toISOString() ?? '없음'} (누적 ${sellmate.n}건) — 컷오버 후엔 이 값이 멈춰야 한다`,
   );
+  // sync-stock 은 절대값 수렴이라 컷오버 뒤 한 번만 돌아도 우리 원장(SHIP·RECEIVE)을 되돌린다.
+  if (r.cutoverAt && sellmate.last_at && sellmate.last_at > r.cutoverAt)
+    r.bad(
+      `셀메이트 재고 sync 가 컷오버 시각 뒤(${sellmate.last_at.toISOString()})에 돌았다 — 원장이 셀메이트 값으로 덮였다`,
+      '즉시 sync 를 멈추고, 그 뒤의 앱 출고·입고분을 원장과 대조한다 (#1251 런북)',
+    );
+  else if (r.cutoverAt) r.ok('컷오버 시각 뒤 셀메이트 재고 sync 없음');
   const [scriptShipped] = await tx`
     select count(*)::int as n from fulfillment_orders fo
     where fo.status = 'shipped' and not exists (

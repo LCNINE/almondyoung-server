@@ -23,7 +23,7 @@ export async function checkInbound(tx: Sql, r: Report): Promise<void> {
     where po.audit_notes like ${CSV_TAG} and pol.closed_at is null`;
   if (csv.lines === 0) r.ok('셀메이트 CSV 발주의 열린 라인 0');
   else
-    r.bad(
+    r.dayOf(
       `셀메이트 CSV 발주의 열린 라인 ${csv.lines}줄(예정일 지남 ${csv.eta_past}줄)`,
       '컷오버 직전에 닫는다 (#1243). 그 전까지는 스토어프론트 입고예정일의 원천이라 그대로 둔다',
     );

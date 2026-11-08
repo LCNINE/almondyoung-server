@@ -16,6 +16,11 @@
  * core 는 테넌트마다 논리 DB 가 따로다. 기본은 `core`(테넌트 1)이고 CORE_DB_NAME 으로 바꾼다.
  * 로컬 검증: CORE_DATABASE_URL / CHANNEL_ADAPTER_DATABASE_URL / MEDUSA_DATABASE_URL / USER_SERVICE_DATABASE_URL.
  *
+ * ◆ 「당일 처리」는 일부러 컷오버 당일에 고치는 항목이다(마지막 sync 직후 재고 이동, CSV 발주 닫기 등).
+ * 컷오버 전(기본)에는 실패로 세지 않는다. 컷오버 뒤에는 `--after-cutover=<시각 T, ISO>` 를 붙인다 —
+ * 당일 처리 항목이 남아 있으면 ✗ 가 되고, 셀메이트 재고 sync 가 T 뒤에 돌았는지도 본다.
+ *   … index.ts --after-cutover=2026-11-20T09:00:00+09:00
+ *
  * 종료 코드: ✗ 가 하나라도 있으면 1, DB 에 못 닿으면 2.
  */
 import { connect, linkedResource, readOnly, type Sql } from './db';
@@ -29,8 +34,20 @@ import { checkPeople } from './checks/people';
 import { checkWiring } from './checks/wiring';
 import { Report } from './report';
 
+function parsePhase(args: readonly string[]): Report {
+  const flag = args.find((a) => a === '--after-cutover' || a.startsWith('--after-cutover='));
+  if (!flag) return new Report('before');
+  const value = flag.includes('=') ? flag.slice(flag.indexOf('=') + 1) : '';
+  const at = value ? new Date(value) : null;
+  if (at && Number.isNaN(at.getTime())) {
+    console.error(`--after-cutover 시각을 읽지 못했다: ${value} (ISO, 예: 2026-11-20T09:00:00+09:00)`);
+    process.exit(2);
+  }
+  return new Report('after', at);
+}
+
 async function main(): Promise<void> {
-  const r = new Report();
+  const r = parsePhase(process.argv.slice(2));
   checkWiring(r);
 
   const db = await linkedResource('Db');
@@ -65,7 +82,7 @@ async function main(): Promise<void> {
     await Promise.all(all.flatMap((s) => (s ? [s.end()] : [])));
   }
 
-  console.log(r.failures ? `\n\x1b[31m✗ ${r.failures}건\x1b[0m` : '\n\x1b[32m✓ 전부 통과\x1b[0m');
+  console.log(r.summary());
   process.exit(r.failures ? 1 : 0);
 }
 

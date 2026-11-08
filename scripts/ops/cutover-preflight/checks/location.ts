@@ -44,7 +44,7 @@ export async function checkLocation(tx: Sql, r: Report): Promise<void> {
     where sl.stock_state = 'ON_HAND' and sl.qty > 0`;
   if (single.skus === 0) r.ok('위치가 하나인 SKU 의 재고가 시스템 로케이션에 남아 있지 않다');
   else
-    r.bad(
+    r.dayOf(
       `위치가 하나인 SKU ${single.skus}개(${single.qty}개)가 아직 시스템 로케이션에 있다`,
       '마지막 셀메이트 sync 직후 실제 로케이션으로 MOVE (#1236)',
     );
