@@ -3,14 +3,16 @@
 import Link from 'next/link';
 import { AlertCircle } from 'lucide-react';
 import { useVersionDetailSuspense } from '@/lib/services/products/queries';
+import { toLocalDateString } from '@/lib/utils/date';
 
 type Props = {
   masterId: string;
   versionId: string;
 };
 
+// 서버 시각(UTC ISO)을 그대로 자르면 KST 00~09시가 전날로 보인다 — 목록처럼 브라우저 시간대로.
 function formatDate(iso: string): string {
-  return iso.slice(0, 10);
+  return toLocalDateString(new Date(iso));
 }
 
 export function InactiveVersionBanner({ masterId, versionId }: Props) {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { addedPriceChange, itemQuantityPricing } from "./quantity-pricing"
+import { addedPriceChange, itemQuantityPricing, quantityOptionNote } from "./quantity-pricing"
 
 const NOW = new Date("2026-11-10T03:00:00.000Z")
 
@@ -83,5 +83,28 @@ describe("addedPriceChange", () => {
 
   it("ignores missing prices", () => {
     expect(addedPriceChange({ shown: 9500, added: null, hasTiers: true })).toBeNull()
+  })
+})
+
+describe("quantityOptionNote", () => {
+  const summary = { minQuantity: 3, percent: 10, varies: true, memberOnly: false }
+  const tier = { minQuantity: 3, unitPrice: 9000, percent: 10 }
+
+  it("sums up option-specific discounts before an option is chosen", () => {
+    expect(quantityOptionNote({ chosen: false, rows: [tier], memberHints: [], summary })).toBe("summary")
+  })
+
+  it("keeps the usual bundle cards when every option has the same tiers", () => {
+    expect(quantityOptionNote({ chosen: false, rows: [tier], memberHints: [], summary: { ...summary, varies: false } })).toBeNull()
+  })
+
+  it("says the chosen option has no quantity discount when others do", () => {
+    expect(quantityOptionNote({ chosen: true, rows: [], memberHints: [], summary })).toBe("notEligible")
+  })
+
+  it("stays quiet for a chosen option with tiers or a product without any", () => {
+    expect(quantityOptionNote({ chosen: true, rows: [tier], memberHints: [], summary })).toBeNull()
+    expect(quantityOptionNote({ chosen: true, rows: [], memberHints: [tier], summary })).toBeNull()
+    expect(quantityOptionNote({ chosen: true, rows: [], memberHints: [], summary: null })).toBeNull()
   })
 })

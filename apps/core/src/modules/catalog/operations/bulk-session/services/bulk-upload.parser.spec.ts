@@ -1,3 +1,4 @@
+import type { PrefillRow } from './form-export.types';
 import { buildFormWorkbook } from './form-export.workbook';
 import { parseUploadWorkbook, MAX_UPLOAD_PRODUCT_ROWS } from './bulk-upload.parser';
 import * as ExcelJS from 'exceljs';
@@ -110,6 +111,43 @@ describe('parseUploadWorkbook', () => {
     expect(parsed.sheets.products[0].cells.salesStartDate).toBe('2026-08-01 09:00');
   });
 
+  it('불리언 셀(TRUE/FALSE)은 Y/N 으로 읽는다 — 다른 도구가 대표여부를 불리언으로 저장해도 같은 뜻이다', async () => {
+    const wb = new ExcelJS.Workbook();
+    wb.addWorksheet('상품').addRow(['상품키', '상품명', '판매가']);
+    wb.getWorksheet('상품')!.addRow(['A', 'x', '1000']);
+    const cats = wb.addWorksheet('카테고리');
+    cats.addRow(['상품키', '카테고리경로', '대표여부']);
+    cats.addRow(['A', '여성패션>니트', true]);
+    cats.addRow(['A', '기획전>겨울신상', false]);
+    const parsed = await parseUploadWorkbook(Buffer.from(await wb.xlsx.writeBuffer()));
+    expect(parsed.sheets.categories.map((r) => r.cells.isPrimary)).toEqual(['Y', 'N']);
+  });
+
+  // 11-08 재확인: LibreOffice 로 다시 저장하면 불리언이 =TRUE()·=FALSE() 수식이 된다. 수식 셀은 계산 결과로 읽는다.
+  it('결과가 불리언인 수식 셀(=TRUE())도 Y/N 으로 읽는다 — LibreOffice 가 불리언을 수식으로 저장한다', async () => {
+    const wb = new ExcelJS.Workbook();
+    wb.addWorksheet('상품').addRow(['상품키', '상품명', '판매가', '해외직구']);
+    wb.getWorksheet('상품')!.addRow(['A', 'x', '1000', { formula: 'FALSE()', result: false }]);
+    const cats = wb.addWorksheet('카테고리');
+    cats.addRow(['상품키', '카테고리경로', '대표여부']);
+    cats.addRow(['A', '여성패션>니트', { formula: 'TRUE()', result: true }]);
+    const parsed = await parseUploadWorkbook(Buffer.from(await wb.xlsx.writeBuffer()));
+    expect(parsed.sheets.products[0].cells.isOverseas).toBe('N');
+    expect(parsed.sheets.categories[0].cells.isPrimary).toBe('Y');
+  });
+
+  it('글자 TRUE 는 그대로 둔다 — 검증기가 «Y 또는 N» 형식 오류로 보인다', async () => {
+    const wb = new ExcelJS.Workbook();
+    wb.addWorksheet('상품').addRow(['상품키', '상품명', '판매가', '해외직구']);
+    wb.getWorksheet('상품')!.addRow(['A', 'x', '1000', 'TRUE']);
+    const parsed = await parseUploadWorkbook(Buffer.from(await wb.xlsx.writeBuffer()));
+    expect(parsed.sheets.products[0].cells.isOverseas).toBe('TRUE');
+  });
+
+  it('엑셀로 못 읽는 파일은 다시 저장해 보라고 안내한다', async () => {
+    await expect(parseUploadWorkbook(Buffer.from('not a zip'))).rejects.toThrow('Excel 에서 다시 저장');
+  });
+
   it('카테고리 참조 시트는 읽지 않는다', async () => {
     const parsed = await parseUploadWorkbook(await workbook());
     expect('categoryReference' in parsed.sheets).toBe(false);
@@ -144,5 +182,59 @@ describe('parseUploadWorkbook', () => {
     ws.addRow(['A', '새 상품', '1000', '메모1', '메모2']);
     const parsed = await parseUploadWorkbook(Buffer.from(await wb.xlsx.writeBuffer()));
     expect(parsed.sheets.products[0].cells).toEqual({ rowKey: 'A', name: '새 상품', basePrice: '1000' });
+  });
+});
+
+describe('parseUploadWorkbook — 수량할인 시트', () => {
+  const qdRows: PrefillRow[] = [
+    { rowKey: 'P-000001', combination: '', combinationLabel: '', tier1MinQuantity: '3', tier1RegularRate: '5', tier1MembershipRate: '10' },
+    { rowKey: 'P-000001', combination: 'ov-red', combinationLabel: '색상=빨강' },
+  ];
+
+  const withoutColumn = async (label: string) => {
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load((await workbook({ quantityDiscounts: qdRows })) as never);
+    const ws = wb.getWorksheet('수량할인')!;
+    const header = ws.getRow(1).values as unknown[];
+    ws.spliceColumns(header.indexOf(label), 1);
+    return Buffer.from(await wb.xlsx.writeBuffer());
+  };
+
+  it('상품 하나의 여러 행을 그대로 읽는다', async () => {
+    const parsed = await parseUploadWorkbook(await workbook({ quantityDiscounts: qdRows }));
+    expect(parsed.sheets.quantityDiscounts?.map((r) => r.cells.combination)).toEqual(['', 'ov-red']);
+    expect(parsed.sheets.quantityDiscounts?.[0].cells.tier1MinQuantity).toBe('3');
+  });
+
+  it('구간 열이 하나라도 빠진 시트는 파일 오류다 — 그 칸이 조용히 지워지지 않게', async () => {
+    await expect(parseUploadWorkbook(await withoutColumn('구간3수량'))).rejects.toThrow(
+      '"수량할인" 시트에 열이 빠졌습니다: 구간3수량. 양식을 다시 받아 주세요.',
+    );
+  });
+
+  it('참고용 조합명 열은 지워도 된다', async () => {
+    const parsed = await parseUploadWorkbook(await withoutColumn('조합명(참고용)'));
+    expect(parsed.sheets.quantityDiscounts).toHaveLength(2);
+  });
+
+  it('백분율 서식 칸(값 0.05)을 보이는 그대로 «5%»로 읽는다', async () => {
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load((await workbook({ quantityDiscounts: qdRows })) as never);
+    const ws = wb.getWorksheet('수량할인')!;
+    const col = (ws.getRow(1).values as unknown[]).indexOf('구간1일반%');
+    const cell = ws.getRow(2).getCell(col);
+    cell.value = 0.05;
+    cell.numFmt = '0%';
+    const parsed = await parseUploadWorkbook(Buffer.from(await wb.xlsx.writeBuffer()));
+    expect(parsed.sheets.quantityDiscounts?.[0].cells.tier1RegularRate).toBe('5%');
+  });
+
+  it('시트가 없는 옛 양식은 수량할인 행이 없다', async () => {
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load((await workbook()) as never);
+    wb.removeWorksheet(wb.getWorksheet('수량할인')!.id);
+    const parsed = await parseUploadWorkbook(Buffer.from(await wb.xlsx.writeBuffer()));
+    expect(parsed.sheets.quantityDiscounts).toEqual([]);
+    expect(parsed.present.quantityDiscounts?.size ?? 0).toBe(0);
   });
 });

@@ -197,9 +197,9 @@ describeIfDb('role assignments against a real database', () => {
     const end = new Date(Date.now() + 10 * 24 * 60 * 60 * 1000);
     await dbService.db.insert(userRoleAssignments).values([
       // 권한 상승 방지는 토큰이 아니라 DB 의 지금 부여를 본다 — 요청자가 정말 master 여야 admin 을 준다.
-      { userId: boss, roleId: await roleId(SYSTEM_ROLE_NAME) },
-      { userId: target, roleId: intern, expiresAt: end },
-      { userId: target, roleId: membership },
+      { userId: boss, roleId: await roleId(SYSTEM_ROLE_NAME), tenantId: '1' },
+      { userId: target, roleId: intern, expiresAt: end, tenantId: '1' },
+      { userId: target, roleId: membership, tenantId: '1' },
     ]);
     const [before] = await dbService.db
       .select({ assignedAt: userRoleAssignments.assignedAt, expiresAt: userRoleAssignments.expiresAt })

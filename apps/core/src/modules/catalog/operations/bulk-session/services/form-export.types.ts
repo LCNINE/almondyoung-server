@@ -15,6 +15,8 @@ export interface PrefillWorkbookData {
   variants: PrefillRow[];
   categories: PrefillRow[];
   constraints: PrefillRow[];
+  /** 이 시트가 생기기 전 호출부는 넣지 않는다(없으면 빈 시트). */
+  quantityDiscounts?: PrefillRow[];
   images: PrefillRow[];
   /** 카테고리 참조 시트용. '여성패션>니트' 형태의 전체 경로 목록. */
   categoryPaths: string[];
@@ -34,6 +36,8 @@ export interface PrefillBundle {
   categories: PrefillRow[];
   /** 구매제약은 상품당 최대 1행이다. 없으면 null. */
   constraint: PrefillRow | null;
+  /** 수량할인 시트의 이 상품 행들(상품키 제외, 기본 행 + 옵션별 예외 행). 이 필드가 생기기 전에 저장된 스냅샷에는 없다. */
+  quantityDiscounts?: PrefillRow[];
   /** 이 상품이 참조하는 imageKey → fileId. 2단계가 '현재' 렌더의 키 할당을 여기에 맞춘다. */
   images: Record<string, string>;
 }

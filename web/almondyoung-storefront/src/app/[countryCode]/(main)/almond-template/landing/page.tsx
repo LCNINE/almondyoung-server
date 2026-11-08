@@ -3,8 +3,8 @@ import {
   type LandingCard,
 } from "@/domains/almond-template/components/landing"
 import {
-  PRINT_PRODUCTS,
   PRINT_SPECS,
+  templateKind,
   type PrintKind,
 } from "@/domains/almond-template/lib/catalog"
 import { published } from "@/domains/almond-template/lib/gallery-filter"
@@ -25,6 +25,7 @@ const FALLBACK_DESCRIPTIONS: Record<PrintKind, string> = {
   mini: "카운터·테이블 위 작은 홍보 배너",
   window: "유리창에 붙여 지나가는 손님에게",
   card: "시술 후 관리법을 한 장으로 안내",
+  bizcard: "샵 이름과 연락처를 담은 명함",
   nail: "네일팁을 붙여 보여주는 디스플레이",
   menu: "시술 메뉴와 가격을 깔끔하게",
   diploma: "교육 수료를 증명하는 디플로마",
@@ -35,6 +36,7 @@ const FALLBACK_ORDER: PrintKind[] = [
   "mini",
   "window",
   "card",
+  "bizcard",
   "nail",
   "menu",
   "diploma",
@@ -48,8 +50,8 @@ async function fallbackCards(): Promise<LandingCard[]> {
   const thumbnails: Partial<Record<PrintKind, string>> = {}
 
   for (const item of templates.filter(published)) {
-    const kind = PRINT_PRODUCTS[item.productId].kind
-    thumbnails[kind] ??= item.thumbnail
+    const kind = templateKind(item)
+    if (kind) thumbnails[kind] ??= item.thumbnail
   }
 
   return FALLBACK_ORDER.map((kind) => ({

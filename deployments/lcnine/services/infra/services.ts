@@ -732,7 +732,7 @@ export function setup(infra: SharedInfra) {
       UGC_SERVICE_URL: url('ugc'),
       UGC_INTERNAL_KEY: ugcInternalKey.value,
       // 켜기 전엔 print_orders 행만 쌓이고 와우프레스로 보내지 않는다. 첫 품목 검증 뒤 'true'.
-      PRINT_ORDER_SUBMIT_ENABLED: 'false',
+      PRINT_ORDER_SUBMIT_ENABLED: 'true',
     },
   });
 
@@ -813,8 +813,7 @@ export function setup(infra: SharedInfra) {
       AWS_ACCESS_KEY_ID: awsS3AccessKeyId.value,
       AWS_SECRET_ACCESS_KEY: awsS3SecretAccessKey.value,
       AWS_REGION: 'ap-northeast-2',
-      AWS_S3_PUBLIC_BUCKET: 'almondyoung-demo',
-      AWS_S3_PRIVATE_BUCKET: 'almondyoung-demo',
+      // 버킷은 env 가 아니라 테넌트 목록(tenancyEnv 의 TENANT_LIST)의 그 테넌트 항목이다.
       STORAGE_PROVIDER: 'S3',
       // ai 의 고아 파일 수거 크론이 /internal/files/* 를 부를 때 쓰는 키.
       FILE_SERVICE_INTERNAL_KEY: fileServiceInternalKey.value,

@@ -1,37 +1,46 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { ChevronDown, ChevronUp, Plus, Save, Trash2, X } from 'lucide-react';
+import { ChevronDown, ChevronUp, Plus, Save, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Switch } from '@/components/ui/switch';
 import {
-  MAX_QUANTITY_DISCOUNT_TIERS,
-  buildTierPrices,
   formFromResponse,
   formToPayload,
+  isEmptyQuantityDiscount,
+  newOverrideKey,
+  overrideProblems,
+  sortTiers,
+  tiersForCombination,
   validateQuantityDiscount,
   violationMessage,
+  type OverrideForm,
   type QuantityDiscountDto,
   type QuantityDiscountForm,
   type QuantityDiscountViolation,
-  type TierForm,
   type UpsertQuantityDiscountDto,
 } from '@/lib/pricing/quantity-discount';
-import { fromServerScalePercent } from '@/lib/services/products/transformers';
+import { TierTable } from './tier-table';
+import { OverrideCard } from './override-card';
+import { OptionResults, type OptionResultRow } from './option-results';
 
 export interface PreviewVariant {
   variantId: string;
   name: string;
   basePrice: number;
   membershipPrice: number;
+  /** 옵션값 id 정렬 «+» 결합. 옵션 없는 상품은 ''. */
+  combination: string;
 }
 
 export interface QuantityDiscountPanelProps {
   saved: QuantityDiscountDto | null | undefined;
   variants: PreviewVariant[];
+  /** 버전의 최대구매수량. 없으면 null. */
+  maxQuantity?: number | null;
   /** 버전 상태(draft 아님) 때문에 편집할 수 없다. */
   readonly: boolean;
   canSave: boolean;
@@ -40,29 +49,12 @@ export interface QuantityDiscountPanelProps {
   onSave: (dto: UpsertQuantityDiscountDto) => void;
 }
 
-const won = (n: number) => `${n.toLocaleString('ko-KR')}원`;
-
-function sortedRowIndexes(tiers: TierForm[]): number[] {
-  const key = (t: TierForm) => {
-    const trimmed = t.minQuantity.trim();
-    return trimmed === '' ? Number.NaN : Number(trimmed);
-  };
-  return tiers
-    .map((t, index) => ({ index, key: key(t) }))
-    .sort((a, b) => {
-      if (Number.isNaN(a.key) || Number.isNaN(b.key)) {
-        return Number.isNaN(a.key) === Number.isNaN(b.key) ? a.index - b.index : Number.isNaN(a.key) ? 1 : -1;
-      }
-      return a.key - b.key || a.index - b.index;
-    })
-    .map((x) => x.index);
-}
-
-const emptyTier = (): TierForm => ({ minQuantity: '', regularPercent: '', membershipPercent: '' });
+const uniq = (list: string[]) => [...new Set(list)];
 
 export function QuantityDiscountPanel({
   saved,
   variants,
+  maxQuantity = null,
   readonly,
   canSave,
   isSaving,
@@ -77,60 +69,56 @@ export function QuantityDiscountPanel({
   useEffect(() => {
     setEditedSinceServerCheck(false);
   }, [serverViolations]);
-  const editable = !readonly && canSave;
-
   useEffect(() => {
     setForm(formFromResponse(saved));
   }, [saved]);
 
+  const editable = !readonly && canSave;
   const payload = useMemo(() => formToPayload(form), [form]);
-  const violations = useMemo(() => {
-    if (form.tiers.length === 0) return [];
-    return validateQuantityDiscount(payload, variants);
-  }, [form.tiers.length, payload, variants]);
-
-  // 검증·미리보기는 최소 수량 순으로 매긴다. 행은 입력 순서 그대로 두고(입력 중 자리가 바뀌지 않게)
-  // 각 행이 그 순서에서 몇 번째인지로 결과·위반을 붙이며, 최소 수량 칸을 떠날 때 행을 정렬한다.
-  const sortedPositionOf = useMemo(() => {
-    const order = sortedRowIndexes(form.tiers);
-    const position = new Map<number, number>();
-    order.forEach((rowIndex, sortedIndex) => position.set(rowIndex, sortedIndex));
-    return position;
-  }, [form.tiers]);
-
-  const previews = useMemo(
-    () =>
-      variants.map((v) => ({
-        variant: v,
-        prices: buildTierPrices({ basePrice: v.basePrice, membershipPrice: v.membershipPrice, tiers: payload.tiers }),
-      })),
-    [variants, payload.tiers],
+  const empty = isEmptyQuantityDiscount(payload);
+  const violations = useMemo(
+    () => (empty ? [] : validateQuantityDiscount(payload, variants)),
+    [empty, payload, variants],
   );
-
-  const variantName = (id?: string) => variants.find((v) => v.variantId === id)?.name;
+  const problems = useMemo(() => overrideProblems(form), [form]);
   const allViolations = editedSinceServerCheck ? violations : [...violations, ...serverViolations];
-  const tierViolations = (sortedIndex: number) => allViolations.filter((v) => v.tierIndex === sortedIndex);
-  const tableViolations = allViolations.filter((v) => v.tierIndex === undefined);
-  const uniqueMessages = (list: QuantityDiscountViolation[]) => [
-    ...new Set(list.map((v) => violationMessage(v, variantName(v.variantId)))),
-  ];
+
+  const cardOf = (combination: string | undefined) =>
+    combination === undefined ? undefined : form.overrides.find((c) => c.combinations.includes(combination));
+  const variantName = (id?: string) => variants.find((v) => v.variantId === id)?.name;
+  const messages = (list: QuantityDiscountViolation[]) =>
+    uniq(list.map((v) => violationMessage(v, variantName(v.variantId))));
+  const violationsOf = (card: OverrideForm | undefined) =>
+    allViolations.filter((v) => cardOf(v.combination)?.key === card?.key);
+  const rowMessages = (card: OverrideForm | undefined) => (sortedIndex: number) =>
+    messages(violationsOf(card).filter((v) => v.tierIndex === sortedIndex));
+  const tableMessages = messages(allViolations.filter((v) => v.tierIndex === undefined && v.combination === undefined));
 
   const update = (patch: Partial<QuantityDiscountForm>) => {
     setEditedSinceServerCheck(true);
     setForm((prev) => ({ ...prev, ...patch }));
   };
-  const updateTier = (index: number, patch: Partial<TierForm>) => {
-    setEditedSinceServerCheck(true);
-    setForm((prev) => ({
-      ...prev,
-      tiers: prev.tiers.map((t, i) => (i === index ? { ...t, ...patch } : t)),
-    }));
-  };
+  const updateCard = (card: OverrideForm) =>
+    update({ overrides: form.overrides.map((c) => (c.key === card.key ? card : c)) });
 
-  const canSubmit = editable && !isSaving && form.tiers.length > 0 && violations.length === 0;
-  const representative = previews[0];
-  const violatingVariant = (variantId: string) =>
-    allViolations.some((v) => v.code === 'MEMBER_PRICE_ABOVE_REGULAR' && v.variantId === variantId);
+  const hasOptions = variants.length > 1;
+  const live = new Set(variants.map((v) => v.combination));
+  const staleCount = variants.length === 0 ? 0 : uniq(form.overrides.flatMap((c) => c.combinations)).filter((c) => !live.has(c)).length;
+  const basePreview = variants.find((v) => !cardOf(v.combination)) ?? null;
+  const options = variants.map((v) => ({ combination: v.combination, name: v.name }));
+
+  const optionRows: OptionResultRow[] = variants.map((v) => {
+    const card = cardOf(v.combination);
+    const number = card ? form.overrides.indexOf(card) + 1 : 0;
+    return {
+      ...v,
+      source: card ? `예외 ${number}` : '기본',
+      tiers: sortTiers(tiersForCombination(payload, v.combination)),
+      violating: allViolations.some((x) => x.code === 'MEMBER_PRICE_ABOVE_REGULAR' && x.variantId === v.variantId),
+    };
+  });
+
+  const canSubmit = editable && !isSaving && !empty && violations.length === 0 && problems.length === 0;
 
   return (
     <div>
@@ -138,7 +126,8 @@ export function QuantityDiscountPanel({
         <div>
           <span className="text-sm font-semibold">수량 할인</span>
           <p className="text-xs text-muted-foreground">
-            같은 옵션을 정한 수량 이상 담으면 개당 할인합니다. 버전을 발행해야 쇼핑몰에 반영됩니다.
+            같은 옵션을 정한 수량 이상 담으면 개당 할인합니다. 한쪽 대상만 할인하려면 다른 쪽 칸을 비워 두세요(0%).
+            버전을 발행해야 쇼핑몰에 반영됩니다.
           </p>
         </div>
         {editable && (
@@ -149,7 +138,7 @@ export function QuantityDiscountPanel({
                 variant="outline"
                 className="text-destructive hover:text-destructive"
                 disabled={isSaving}
-                onClick={() => onSave({ ...formToPayload(form), tiers: [] })}
+                onClick={() => onSave({ ...payload, tiers: [], variantOverrides: [] })}
               >
                 <Trash2 className="mr-1 h-3 w-3" />
                 구간표 삭제
@@ -222,178 +211,94 @@ export function QuantityDiscountPanel({
           )}
         </div>
 
-        <div className="overflow-x-auto">
-          {form.tiers.length === 0 ? (
-            <p className="py-6 text-center text-sm text-muted-foreground">구간이 없습니다.</p>
-          ) : (
-            <table className="w-full">
-              <thead>
-                <tr className="border-b text-xs text-muted-foreground">
-                  <th className="px-3 py-2 text-left">최소 수량</th>
-                  <th className="px-3 py-2 text-left">일반 할인</th>
-                  <th className="px-3 py-2 text-left">멤버십 할인</th>
-                  <th className="px-3 py-2 text-right">
-                    결과 가격{representative && variants.length > 1 ? ` (${representative.variant.name})` : ''}
-                  </th>
-                  <th className="px-3 py-2" />
-                </tr>
-              </thead>
-              <tbody>
-                {form.tiers.map((tier, index) => {
-                  const position = sortedPositionOf.get(index) ?? index;
-                  const regular = representative?.prices.regular[position];
-                  const membership = representative?.prices.membership[position];
-                  const messages = uniqueMessages(tierViolations(position));
-                  const label = index + 1;
-                  return (
-                    <tr key={index} data-testid={`tier-row-${position}`} className="border-b align-top">
-                      <td className="px-3 py-2">
-                        <div className="flex items-center gap-1 text-sm">
-                          <Input
-                            type="number"
-                            inputMode="numeric"
-                            min={2}
-                            aria-label={`${label}구간 최소 수량`}
-                            className="h-8 w-20"
-                            value={tier.minQuantity}
-                            onChange={(e) => updateTier(index, { minQuantity: e.target.value })}
-                            onBlur={() => setForm((prev) => ({ ...prev, tiers: sortedRowIndexes(prev.tiers).map((i) => prev.tiers[i]) }))}
-                            disabled={!editable}
-                          />
-                          개 이상
-                        </div>
-                      </td>
-                      <td className="px-3 py-2">
-                        <div className="flex items-center gap-1 text-sm">
-                          <Input
-                            type="number"
-                            inputMode="numeric"
-                            min={1}
-                            max={99}
-                            aria-label={`${label}구간 일반 할인`}
-                            className="h-8 w-20"
-                            value={tier.regularPercent}
-                            onChange={(e) => updateTier(index, { regularPercent: e.target.value })}
-                            disabled={!editable}
-                          />
-                          %
-                        </div>
-                      </td>
-                      <td className="px-3 py-2">
-                        <div className="flex items-center gap-1 text-sm">
-                          <Input
-                            type="number"
-                            inputMode="numeric"
-                            min={1}
-                            max={99}
-                            aria-label={`${label}구간 멤버십 할인`}
-                            className="h-8 w-20"
-                            value={tier.membershipPercent}
-                            onChange={(e) => updateTier(index, { membershipPercent: e.target.value })}
-                            disabled={!editable}
-                          />
-                          %
-                        </div>
-                      </td>
-                      <td className="px-3 py-2 text-right text-sm tabular-nums">
-                        {regular && membership && Number.isFinite(regular.price) && Number.isFinite(membership.price) ? (
-                          <div className="flex flex-col items-end">
-                            <span>
-                              일반 <span>{won(regular.price)}</span>
-                            </span>
-                            <span className="text-xs text-muted-foreground">
-                              멤버십 <span>{won(membership.price)}</span>
-                            </span>
-                          </div>
-                        ) : (
-                          <span className="text-muted-foreground">-</span>
-                        )}
-                        {messages.map((m) => (
-                          <p key={m} className="mt-1 text-left text-xs text-destructive">
-                            {m}
-                          </p>
-                        ))}
-                      </td>
-                      <td className="px-3 py-2 text-right">
-                        {editable && (
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            aria-label={`${label}구간 삭제`}
-                            onClick={() => update({ tiers: form.tiers.filter((_, i) => i !== index) })}
-                          >
-                            <X className="h-3 w-3" />
-                          </Button>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          )}
-          {editable && (
-            <div className="mt-2 px-3">
-              <Button
-                size="sm"
-                variant="ghost"
-                disabled={form.tiers.length >= MAX_QUANTITY_DISCOUNT_TIERS}
-                onClick={() => update({ tiers: [...form.tiers, emptyTier()] })}
-              >
-                <Plus className="mr-1 h-3 w-3" />
-                구간 추가
-              </Button>
-              <span className="text-xs text-muted-foreground">최대 {MAX_QUANTITY_DISCOUNT_TIERS}개</span>
+        <div>
+          {hasOptions && (
+            <div className="mb-1">
+              <span className="text-sm font-medium">기본 구간</span>
+              <p className="text-xs text-muted-foreground">
+                {form.tiers.length === 0 && form.overrides.length > 0
+                  ? '기본: 할인 없음 — 예외로 고른 옵션만 할인됩니다.'
+                  : '아래 예외로 고르지 않은 옵션 전부에 적용됩니다.'}
+              </p>
             </div>
           )}
+          <TierTable
+            rows={form.tiers}
+            onChange={(tiers) => update({ tiers })}
+            editable={editable}
+            preview={basePreview}
+            namePreview={hasOptions}
+            messagesAt={rowMessages(undefined)}
+            maxQuantity={maxQuantity}
+          />
         </div>
 
-        {uniqueMessages(tableViolations).map((m) => (
+        {tableMessages.map((m) => (
           <p key={m} className="text-xs text-destructive">
             {m}
           </p>
         ))}
 
-        {variants.length > 1 && payload.tiers.length > 0 && (
+        {(hasOptions || form.overrides.length > 0) && (
+          <div className="flex flex-col gap-2">
+            <div>
+              <span className="text-sm font-medium">옵션별 예외</span>
+              <p className="text-xs text-muted-foreground">
+                고른 옵션만 다른 구간을 쓰거나 할인하지 않습니다. 사용·기간은 모든 옵션이 같습니다.
+              </p>
+            </div>
+            {form.overrides.map((card, i) => (
+              <OverrideCard
+                key={card.key}
+                card={card}
+                number={i + 1}
+                options={options}
+                takenElsewhere={
+                  new Set(form.overrides.filter((c) => c.key !== card.key).flatMap((c) => c.combinations))
+                }
+                editable={editable}
+                preview={variants.find((v) => card.combinations.includes(v.combination)) ?? null}
+                messagesAt={rowMessages(card)}
+                cardMessages={[
+                  ...problems.filter((p) => p.key === card.key).map((p) => p.message),
+                  ...messages(violationsOf(card).filter((v) => v.tierIndex === undefined)),
+                ]}
+                maxQuantity={maxQuantity}
+                onChange={updateCard}
+                onRemove={() => update({ overrides: form.overrides.filter((c) => c.key !== card.key) })}
+              />
+            ))}
+            {staleCount > 0 && (
+              <p className="text-xs text-muted-foreground">
+                이 버전에 없는 옵션 {staleCount}개의 예외는 저장할 때 지워집니다.
+              </p>
+            )}
+            {editable && hasOptions && (
+              <div>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() =>
+                    update({
+                      overrides: [...form.overrides, { key: newOverrideKey(), combinations: [], mode: 'tiers', tiers: [] }],
+                    })
+                  }
+                >
+                  <Plus className="mr-1 h-3 w-3" />
+                  예외 추가
+                </Button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {hasOptions && !empty && (
           <div>
             <Button size="sm" variant="ghost" onClick={() => setShowAllOptions((v) => !v)}>
               {showAllOptions ? <ChevronUp className="mr-1 h-3 w-3" /> : <ChevronDown className="mr-1 h-3 w-3" />}
               옵션별 결과 {showAllOptions ? '접기' : `펼치기 (${variants.length}개)`}
             </Button>
-            {showAllOptions && (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b text-xs text-muted-foreground">
-                      <th className="px-3 py-2 text-left">옵션</th>
-                      {payload.tiers.map((t, i) => (
-                        <th key={i} className="px-3 py-2 text-right">
-                          {Number.isFinite(t.minQuantity) ? `${t.minQuantity}개 이상` : '-'}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {previews.map(({ variant, prices }) => (
-                      <tr
-                        key={variant.variantId}
-                        className={`border-b ${violatingVariant(variant.variantId) ? 'bg-destructive/10' : ''}`}
-                      >
-                        <td className="px-3 py-2">{variant.name}</td>
-                        {prices.regular.map((r, i) => (
-                          <td key={i} className="px-3 py-2 text-right tabular-nums">
-                            {Number.isFinite(r.price) ? won(r.price) : '-'}
-                            <span className="block text-xs text-muted-foreground">
-                              {Number.isFinite(prices.membership[i].price) ? won(prices.membership[i].price) : '-'}
-                            </span>
-                          </td>
-                        ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
+            {showAllOptions && <OptionResults rows={optionRows} />}
           </div>
         )}
       </div>

@@ -39,7 +39,14 @@ export function assembleUpload(parsed: ParsedUpload, knownRowKeys: Set<string>):
       rowNumber: raw.rowNumber,
       rowKey,
       kind: knownRowKeys.has(rowKey) ? 'update' : 'create',
-      bundle: { product: raw.cells, options: [], variants: [], categories: [], constraint: null },
+      bundle: {
+        product: raw.cells,
+        options: [],
+        variants: [],
+        categories: [],
+        constraint: null,
+        quantityDiscounts: [],
+      },
       errors: [],
     };
     if (rowKey === '') {
@@ -103,6 +110,10 @@ export function assembleUpload(parsed: ParsedUpload, knownRowKeys: Set<string>):
       return;
     }
     t.bundle.constraint = raw.cells;
+  });
+  // 한 상품의 행 묶음이 표 하나다(기본 행 + 옵션별 예외 행). 행 단위 규칙은 검증기가 묶음째 본다.
+  attach('수량할인', parsed.sheets.quantityDiscounts ?? [], (t, raw) => {
+    t.bundle.quantityDiscounts = [...(t.bundle.quantityDiscounts ?? []), raw.cells];
   });
 
   const images = new Map<string, { rowNumber: number; sourceValue: string }>();

@@ -10,6 +10,7 @@ export interface AlmondTemplateSummaryDto {
   colors: string[]
   industry: string | null
   purpose: string | null
+  kind?: string | null
   updatedAt: string
 }
 

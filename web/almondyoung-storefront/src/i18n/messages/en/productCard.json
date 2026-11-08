@@ -25,5 +25,8 @@
   "quickAddError": "Could not load product options.",
   "membersOnly": "Members only",
   "discountBadge": "{percent}% OFF",
-  "quantityDiscountBadge": "{count}+ {percent}% off"
+  "quantityDiscountBadge": "{count}+ {percent}% off",
+  "quantityDiscountMemberBadge": "Members {count}+ {percent}% off",
+  "quantityDiscountBadgeMax": "{count}+ up to {percent}% off",
+  "quantityDiscountMemberBadgeMax": "Members {count}+ up to {percent}% off"
 }

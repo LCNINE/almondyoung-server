@@ -4,6 +4,7 @@ import { Handle, Position, type NodeProps } from '@xyflow/react';
 import { cn } from '@/lib/utils/cn';
 import { Badge } from '@/components/ui/badge';
 import type { VersionStatus } from '@/lib/types/dto/products';
+import { toLocalDateString } from '@/lib/utils/date';
 
 export type VersionNodeData = {
   version: number;
@@ -38,8 +39,9 @@ const STATUS_META = {
   }
 >;
 
+// 서버 시각(UTC ISO)을 그대로 자르면 KST 00~09시가 전날로 보인다 — 목록처럼 브라우저 시간대로.
 function formatDate(iso: string): string {
-  return iso.slice(0, 10);
+  return toLocalDateString(new Date(iso));
 }
 
 export function VersionNode({ data }: NodeProps & { data: VersionNodeData }) {

@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils"
 import { ArrowLeft, Info, Palette, Search, SquarePlus } from "lucide-react"
 import { useMemo, useRef, useState } from "react"
 import { PRINT_PRODUCTS, PRINT_SPECS, type PrintKind } from "../lib/catalog"
+import { templateProductOf } from "../lib/template-product"
 import {
   COLORS,
   INDUSTRIES,
@@ -27,10 +28,19 @@ const GROUPS = [
   {
     id: "all",
     label: "전체품목",
-    kinds: ["pet", "mini", "card", "window", "menu", "diploma", "nail"],
+    kinds: [
+      "pet",
+      "mini",
+      "card",
+      "bizcard",
+      "window",
+      "menu",
+      "diploma",
+      "nail",
+    ],
   },
   { id: "sign", label: "배너·현수막", kinds: ["pet", "mini", "window"] },
-  { id: "paper", label: "카드·인쇄물", kinds: ["card", "nail"] },
+  { id: "paper", label: "카드·인쇄물", kinds: ["card", "bizcard", "nail"] },
   { id: "board", label: "메뉴판·수료증", kinds: ["menu", "diploma"] },
 ] as const
 
@@ -50,6 +60,7 @@ const COLUMNS: Record<PrintKind | "default", string> = {
   mini: "grid-cols-2 px-[14px] md:grid-cols-6 md:px-0",
   window: "grid-cols-1 md:grid-cols-2",
   card: "grid-cols-1 md:grid-cols-4",
+  bizcard: "grid-cols-1 md:grid-cols-4",
   nail: "grid-cols-1 md:grid-cols-4",
   menu: "grid-cols-1 md:grid-cols-4",
   diploma: "grid-cols-1 md:grid-cols-4",
@@ -61,6 +72,7 @@ const SHORT_NAMES: Record<PrintKind, string> = {
   mini: "미니배너",
   window: "현수막",
   card: "카드",
+  bizcard: "명함",
   nail: "네일팁 종이",
   menu: "메뉴판",
   diploma: "수료증",
@@ -84,7 +96,7 @@ export function AlmondTemplateGallery({
   canDesign,
   templates,
 }: Props) {
-  const product = PRINT_PRODUCTS[productId]
+  const product = templateProductOf(productId, templates ?? [])
   const startKind = product?.kind ?? initialKind
   const failed = templates === null
   const items = useMemo(() => (templates ?? []).filter(published), [templates])

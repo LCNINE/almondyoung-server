@@ -2,10 +2,14 @@ import type { HttpTypes } from "@medusajs/types"
 import { getPricesForVariant } from "@/lib/utils/get-product-price"
 import {
   currentTierIndex,
+  memberTierHints,
   nextTier,
+  productTierSummary,
   readTiers,
   tierRows,
   unitPriceFor,
+  type MemberTierHint,
+  type ProductTierSummary,
   type TierRow,
 } from "@/lib/utils/quantity-discount"
 
@@ -29,11 +33,44 @@ export function variantTierRows(
   variant: HttpTypes.StoreProductVariant,
   product: Pick<HttpTypes.StoreProduct, "metadata">,
   context: QuantityPricingContext
-): { currentPrice: number | null; rows: TierRow[] } {
+): { currentPrice: number | null; rows: TierRow[]; memberHints: MemberTierHint[] } {
   const currentPrice = getPricesForVariant(variant)?.calculated_price_number ?? null
-  if (currentPrice === null) return { currentPrice, rows: [] }
+  if (currentPrice === null) return { currentPrice, rows: [], memberHints: [] }
   const tiers = readTiers(variant.metadata, product.metadata, context.now)
-  return { currentPrice, rows: tierRows(currentPrice, tiers, context) }
+  return {
+    currentPrice,
+    rows: tierRows(currentPrice, tiers, context),
+    memberHints: memberTierHints(currentPrice, tiers, metadataNumber(variant.metadata?.membershipPrice), context),
+  }
+}
+
+/** 모든 옵션을 본 상품 요약(목록 배지·옵션 고르기 전 상세). 수량 할인이 없으면 null. */
+export function productQuantitySummary(
+  product: Pick<HttpTypes.StoreProduct, "metadata" | "variants">,
+  context: QuantityPricingContext
+): ProductTierSummary | null {
+  return productTierSummary((product.variants ?? []).map((v) => variantTierRows(v, product, context)))
+}
+
+/**
+ * 묶음 카드 대신 보일 한 줄. 옵션을 고르기 전이고 옵션마다 구간이 다르면 요약(«옵션을 고르면 구간이 보여요»),
+ * 고른 옵션에 수량 할인이 없는데 다른 옵션엔 있으면 «이 옵션은 대상이 아닙니다».
+ */
+export function quantityOptionNote(input: {
+  chosen: boolean
+  rows: TierRow[]
+  memberHints: MemberTierHint[]
+  summary: ProductTierSummary | null
+}): "summary" | "notEligible" | null {
+  const { chosen, rows, memberHints, summary } = input
+  if (!summary) return null
+  if (!chosen) return summary.varies ? "summary" : null
+  return rows.length === 0 && memberHints.length === 0 ? "notEligible" : null
+}
+
+function metadataNumber(raw: unknown): number | undefined {
+  const n = typeof raw === "string" ? Number(raw) : raw
+  return typeof n === "number" && Number.isFinite(n) ? n : undefined
 }
 
 export function itemQuantityPricing(

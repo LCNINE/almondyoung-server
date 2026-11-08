@@ -14,6 +14,7 @@ export function PreviewDialog({ editor }: { editor: AlmondEditor }) {
     setPreview,
     exportJson,
     exportSvg,
+    exportPng,
     printProof,
     ordering,
     orderDesign,
@@ -92,9 +93,14 @@ export function PreviewDialog({ editor }: { editor: AlmondEditor }) {
           화면과 실제 인쇄 색상은 다를 수 있습니다. 문구·안전영역·해상도를
           확인하세요.
         </p>
-        <button className="rounded border px-4 py-2" onClick={exportSvg}>
-          시안 SVG 다운로드
+        <button className="rounded border px-4 py-2" onClick={exportPng}>
+          시안 다운로드
         </button>
+        {mode === "designer" && (
+          <button className="rounded border px-4 py-2" onClick={exportSvg}>
+            시안 SVG 다운로드
+          </button>
+        )}
         <button className="rounded border px-4 py-2" onClick={printProof}>
           시안출력
         </button>

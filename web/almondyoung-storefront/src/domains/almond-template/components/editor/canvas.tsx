@@ -27,7 +27,12 @@ import {
   layerBounds as boxOf,
   unionBounds,
 } from "../../lib/canvas-math"
-import { layerPathData } from "../../lib/path-shape"
+import {
+  layerPathData,
+  pathData,
+  shapeOutline,
+  toAbsolute,
+} from "../../lib/path-shape"
 import { lineLocalPoints } from "../../lib/line-shape"
 import type { AlmondEditor } from "../../hooks/use-almond-editor"
 import { CanvasGuides } from "./canvas-guides"
@@ -368,6 +373,15 @@ function seeThrough(layer: Layer) {
   )
 }
 
+function insideOf(layer: Layer) {
+  if (layer.type === "path") return layerPathData(layer)
+
+  const outline = shapeOutline(layer)
+  if (outline) return pathData(toAbsolute(outline, layer), true)
+
+  return `M${layer.x} ${layer.y}h${layer.width}v${layer.height}h${-layer.width}Z`
+}
+
 export function Canvas({ editor }: { editor: AlmondEditor }) {
   const imageSrc = useImageSrc()
   const {
@@ -417,12 +431,14 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
     change,
     pointEditLayer,
     finishPointEdit,
+    cancelPointEdit,
     startPointEdit,
     duplicateSelected,
     imageFile,
   } = editor
   const replaceImageRef = useRef<HTMLInputElement>(null)
   const cropping = !!selected && cropId === selected.id
+  const pointEditBox = pointEditLayer && boxOf(pointEditLayer)
   const photoEditing = !!selected && editor.photoEditId === selected.id
   const cropFrameRef = useRef<SVGRectElement>(null)
   const groupBox = group.length > 1 ? unionBounds(group) : null
@@ -632,6 +648,14 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
                         )}
                         strokeLinecap="round"
                         strokeLinejoin="round"
+                      />
+                    )}
+                    {seeThrough(layer) && layer.id === selected?.id && (
+                      // 고른 속 빈 도형은 얇은 선을 조준하지 않아도 안쪽을 눌러 옮길 수 있다
+                      <path
+                        d={insideOf(layer)}
+                        transform={layerTransform(layer)}
+                        fill="transparent"
                       />
                     )}
                     {!seeThrough(layer) && (
@@ -1046,18 +1070,35 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
             </div>
           )}
           {penActive && <DrawToolbar editor={editor} />}
-          {pointEditLayer && (
-            <div className="absolute -top-11 left-1/2 z-30 flex -translate-x-1/2 items-center gap-2 rounded bg-[#303030] px-3 py-1.5 text-xs whitespace-nowrap text-white shadow">
-              점·핸들을 끌어 모양을 바꾸세요 · 선 클릭: 점 추가 · 점 두 번 클릭:
-              곡선↔꺾기 · Alt+끌기: 핸들 따로 · Delete: 점 지우기 · 끝내려면
-              완료
-              <button
-                type="button"
-                onClick={finishPointEdit}
-                className="flex items-center gap-1 rounded bg-white px-2 py-0.5 font-semibold text-[#303030]"
-              >
-                <Check size={12} /> 완료
-              </button>
+          {pointEditBox && (
+            // 끝내는 버튼은 고치던 도형 바로 아래에 둔다. 위쪽 안내문까지 눈을 옮기지 않아도 된다
+            <div
+              className="absolute z-30 flex -translate-x-1/2 flex-col items-center gap-1.5"
+              style={{
+                left: `${((pointEditBox.x0 + pointEditBox.x1) / 2) * scale}px`,
+                top: `${pointEditBox.y1 * scale + 16}px`,
+              }}
+            >
+              <div className="flex gap-1.5">
+                <button
+                  type="button"
+                  onClick={cancelPointEdit}
+                  className="rounded-[6px] border border-[#dcdee3] bg-white px-3 py-1.5 text-xs font-semibold text-[#303030] shadow"
+                >
+                  취소
+                </button>
+                <button
+                  type="button"
+                  onClick={finishPointEdit}
+                  className="flex items-center gap-1 rounded-[6px] bg-[#303030] px-3 py-1.5 text-xs font-semibold text-white shadow"
+                >
+                  <Check size={12} /> 완료
+                </button>
+              </div>
+              <p className="rounded bg-[rgba(28,29,31,0.85)] px-2 py-1 text-[11px] whitespace-nowrap text-white">
+                점·핸들 끌기 · 선 클릭: 점 추가 · 점 두 번 클릭: 곡선↔꺾기 ·
+                Delete: 점 지우기
+              </p>
             </div>
           )}
           {cropping && (

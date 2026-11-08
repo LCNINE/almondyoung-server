@@ -1,6 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsArray, IsBoolean, IsInt, IsOptional, Matches, ValidateIf, ValidateNested } from 'class-validator';
+import { IsArray, IsBoolean, IsInt, IsOptional, IsString, Matches, ValidateIf, ValidateNested } from 'class-validator';
 
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -9,13 +9,25 @@ export class QuantityDiscountTierDto {
   @IsInt()
   minQuantity: number;
 
-  @ApiProperty({ description: '일반 고객 할인율, 1/100 % 단위(10% = 1000). 정수 % 만 허용', example: 500 })
+  @ApiProperty({ description: '일반 고객 할인율, 1/100 % 단위(10% = 1000). 정수 % 만 허용, 0 이면 일반 고객은 이 구간 할인 없음', example: 500 })
   @IsInt()
   regularRateBp: number;
 
-  @ApiProperty({ description: '멤버십 회원 할인율(멤버십가 기준), 1/100 % 단위', example: 1000 })
+  @ApiProperty({ description: '멤버십 회원 할인율(멤버십가 기준), 1/100 % 단위, 0 이면 회원은 이 구간 할인 없음', example: 1000 })
   @IsInt()
   membershipRateBp: number;
+}
+
+export class QuantityDiscountOverrideDto {
+  @ApiProperty({ description: '옵션 조합 키 — 그 옵션의 옵션값 id 를 정렬해 «+» 로 이은 값' })
+  @IsString()
+  combination: string;
+
+  @ApiProperty({ type: [QuantityDiscountTierDto], description: '이 옵션만 쓰는 구간. 빈 배열이면 이 옵션은 할인 없음' })
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => QuantityDiscountTierDto)
+  tiers: QuantityDiscountTierDto[];
 }
 
 export class UpsertQuantityDiscountDto {
@@ -40,6 +52,13 @@ export class UpsertQuantityDiscountDto {
   @ValidateNested({ each: true })
   @Type(() => QuantityDiscountTierDto)
   tiers: QuantityDiscountTierDto[];
+
+  @ApiProperty({ type: [QuantityDiscountOverrideDto], required: false, description: '옵션별 예외. 없으면 모든 옵션이 기본 표' })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => QuantityDiscountOverrideDto)
+  variantOverrides?: QuantityDiscountOverrideDto[];
 }
 
 export class QuantityDiscountResponseDto {
@@ -57,4 +76,7 @@ export class QuantityDiscountResponseDto {
 
   @ApiProperty({ type: [QuantityDiscountTierDto] })
   tiers: QuantityDiscountTierDto[];
+
+  @ApiProperty({ type: [QuantityDiscountOverrideDto] })
+  variantOverrides: QuantityDiscountOverrideDto[];
 }

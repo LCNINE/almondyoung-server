@@ -62,10 +62,4 @@ describe('attendance evidence lookup', () => {
 
     expect(sent.map((h) => h.get(TENANT_HEADER))).toEqual(['1']);
   });
-
-  it('sends no tenant header when the caller tenant is unknown (transition step one)', async () => {
-    await expect(new AttendanceReviewService().review(input, null)).rejects.toThrow();
-
-    expect(sent.map((h) => h.has(TENANT_HEADER))).toEqual([false]);
-  });
 });

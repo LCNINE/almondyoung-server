@@ -10,6 +10,7 @@ import { ProductVariantsService } from '../../../core/products/services/product-
 import { OptionReadLoader } from '../../../core/products/loaders/option-read.loader';
 import { PricingService } from '../../../core/pricing/pricing.service';
 import { ProductPurchaseConstraintsService } from '../../../core/products/services/product-purchase-constraints.service';
+import { QuantityDiscountManager, type QuantityDiscountInput } from '../../../core/pricing/quantity-discount.manager';
 import { UpdateProductVariantDto } from '../../../core/products/dto';
 import { UpsertPurchaseConstraintDto } from '../../../core/products/dto/purchase-constraints';
 import { type ModifyOptionDisplayDto } from '../../../catalog.types';
@@ -18,7 +19,8 @@ import { buildOptionAdd, buildOptionModify, checkCreateStructure } from './bulk-
 import { applyPriceChanges, toReplaceDto } from './bulk-draft.pricing';
 import { extractSimplePrices } from './form-export.pricing-judge';
 import { applyDecisions } from './bulk-session.diff';
-import { parseFieldPath } from './bulk-session.fields';
+import { parseFieldPath, QUANTITY_DISCOUNT_FIELD } from './bulk-session.fields';
+import { parseCanonicalQuantityDiscount } from './bulk-quantity-discount';
 import { stripPolicyFields } from './bulk-session.policy';
 import { BulkSessionComboResolver } from './bulk-session.combos';
 import {
@@ -77,6 +79,7 @@ export class BulkDraftApplier {
     private readonly pricing: PricingService,
     private readonly constraints: ProductPurchaseConstraintsService,
     private readonly combos: BulkSessionComboResolver,
+    private readonly quantityDiscounts: QuantityDiscountManager,
   ) {}
 
   /**
@@ -159,6 +162,11 @@ export class BulkDraftApplier {
     //       부르면 같은 룰을 지웠다 다시 만드는 왕복일 뿐이고, 더 나쁘게는 all_variants 판매가
     //       룰이 없는 상품에서 `toReplaceDto` 가 throw 해 가격과 무관한 수정(브랜드만 바꾼 행)이
     //       실패한다(Task 5 리뷰 — toReplaceDto 는 basePrice 가 null 이면 항상 throw 한다).
+    // 수량할인을 바꾼 행은 복사된 옛 표를 먼저 지운다. 가격 교체(replaceVersionRules)가 저장된 표를 새 가격으로
+    // 다시 검사하므로, 가격과 표를 함께 바꾼 행이 «옛 표 × 새 가격»으로 잘못 거부되지 않게 한다. 새 표는 가격 뒤에 새 가격으로 검사된다.
+    const quantityDiscount = this.readQuantityDiscount(versionFields);
+    if (quantityDiscount !== undefined) await this.quantityDiscounts.deleteForVersion(masterId, draft.id, tx);
+
     const touchesPrice = Object.keys(versionFields).some(
       (path) =>
         path === 'product.basePrice' ||
@@ -172,6 +180,12 @@ export class BulkDraftApplier {
       const { prices, errors: priceErrors } = applyPriceChanges(current, versionFields, cowMap);
       if (priceErrors.length > 0) throw new BadRequestError(formatRowErrors(priceErrors));
       await this.pricing.replaceVersionRules(draft.id, toReplaceDto(prices), tx);
+    }
+
+    if (quantityDiscount) {
+      // 수정 행의 조합은 내보낼 때 쓴 옵션값 id 조합이다. 이 버전에 없는 조합은 조용히 버리지 않고 행을 실패시킨다.
+      const live = new Set((await this.combos.resolveExisting(masterId, draft.id, tx)).keys());
+      await this.saveQuantityDiscount(masterId, draft.id, quantityDiscount, (combo) => (live.has(combo) ? combo : undefined), tx);
     }
 
     await this.applyConstraintUpdate(masterId, draft.id, versionFields, tx);
@@ -228,6 +242,30 @@ export class BulkDraftApplier {
     //    "requiresMembership=false + limit=null" 을 삭제로 읽으므로 신규엔 왕복만 는다
     //    (v3 product-import.manager.ts:190-197 과 같은 근거).
     await this.applyConstraint(version.masterId, version.id, fields, tx);
+
+    // ⑧ 수량할인. 신규 행의 조합은 작업자가 지은 키라 옵션값 id 조합으로 바꿔 저장한다(가격 뒤라 새 가격으로 검사된다).
+    const quantityDiscount = this.readQuantityDiscount(fields);
+    if (quantityDiscount) {
+      const idKeys = await this.combos.resolveCreatedIdKeys(
+        version.masterId,
+        version.id,
+        quantityDiscount.variantOverrides.map((o) => o.combination),
+        plan,
+        tx,
+      );
+      // 옵션값마다 풀려도 그 조합의 품목이 실제로 있어야 한다(색상×사이즈 상품에 «빨강»만 적으면 맞는 품목이 없다).
+      const live = new Set((await this.combos.resolveExisting(version.masterId, version.id, tx)).keys());
+      await this.saveQuantityDiscount(
+        version.masterId,
+        version.id,
+        quantityDiscount,
+        (combo) => {
+          const idKey = idKeys.get(combo);
+          return idKey !== undefined && live.has(idKey) ? idKey : undefined;
+        },
+        tx,
+      );
+    }
 
     await this.lockDraft(version.id, input.sessionId, tx);
     return { draftVersionId: version.id, masterId: version.masterId };
@@ -381,6 +419,27 @@ export class BulkDraftApplier {
 
     const dto: UpsertPurchaseConstraintDto = { requiresMembership, lifetimeQuantityLimit };
     await this.constraints.upsertForDraft(masterId, versionId, dto, tx);
+  }
+
+  /** 이 행이 수량할인을 건드리지 않았으면 undefined, 표를 지우면 null, 새 표면 그 입력. */
+  private readQuantityDiscount(fields: FlatFields): QuantityDiscountInput | null | undefined {
+    if (!(QUANTITY_DISCOUNT_FIELD in fields)) return undefined;
+    return parseCanonicalQuantityDiscount(fields[QUANTITY_DISCOUNT_FIELD] ?? '');
+  }
+
+  private async saveQuantityDiscount(
+    masterId: string,
+    versionId: string,
+    input: QuantityDiscountInput,
+    toIdKey: (combo: string) => string | undefined,
+    tx: DbTransaction,
+  ): Promise<void> {
+    const missing = input.variantOverrides.filter((o) => toIdKey(o.combination) === undefined).map((o) => o.combination);
+    if (missing.length > 0) {
+      throw new BadRequestError(`수량할인의 조합이 이 상품에 없습니다: ${missing.join(', ')}. 조합 시트의 «조합» 값을 그대로 붙여 넣어 주세요.`);
+    }
+    const variantOverrides = input.variantOverrides.map((o) => ({ ...o, combination: toIdKey(o.combination) ?? o.combination }));
+    await this.quantityDiscounts.upsertForDraft(masterId, versionId, { ...input, variantOverrides }, tx);
   }
 
   private async lockDraft(versionId: string, sessionId: string, tx: DbTransaction): Promise<void> {

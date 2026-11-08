@@ -278,11 +278,7 @@ export default function ProductCard({
               />
             )}
 
-            <QuantityDiscountBadge
-              product={product}
-              variant={cheapestVariant}
-              isMembership={isMembership}
-            />
+            <QuantityDiscountBadge product={product} isMembership={isMembership} />
 
             {!isSoldOut && <Quantity product={product} />}
 

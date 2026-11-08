@@ -64,18 +64,24 @@ export function GroupProperties({
     placement: "left",
   })
   const painted = layers.filter(
-    (layer) =>
-      layer.type !== "image" &&
-      layer.type !== "clipart" &&
-      layer.type !== "line"
+    (layer) => layer.type !== "image" && layer.type !== "clipart"
   )
   const stroked = layers.filter(STROKED)
   const texts = layers.filter((layer) => layer.type === "text")
-  const fill = common(painted, (layer) => layer.fill)
+  // 선의 색은 stroke 라서 색상을 고르면 선은 stroke 를, 나머지는 fill 을 바꾼다
+  const fill = common(painted, (layer) =>
+    layer.type === "line" ? (layer.stroke ?? layer.fill) : layer.fill
+  )
   const stroke = common(stroked, (layer) =>
     !layer.strokeWidth ? "none" : (layer.stroke ?? "none")
   )
   const strokeWidth = common(stroked, (layer) => layer.strokeWidth ?? 0)
+  // 선은 테두리가 곧 선이라 지우면 사라진다. 테두리 없음은 선을 건너뛴다
+  const clearStroke = () =>
+    targetOf(stroked.filter((layer) => layer.type !== "line")).apply({
+      stroke: "none",
+      strokeWidth: 0,
+    })
   const opacity = common(layers, (layer) => layer.opacity ?? 1)
   const fontSize = common(texts, (layer) => layer.fontSize ?? 10)
   const disabled = !layers.length
@@ -132,7 +138,13 @@ export function GroupProperties({
               label="색상"
               value={fill ?? ""}
               disabled={disabled}
-              onApply={(color) => targetOf(painted).apply({ fill: color })}
+              onApply={(color) =>
+                patchLayers(
+                  painted.map((layer) => layer.id),
+                  (layer) =>
+                    layer.type === "line" ? { stroke: color } : { fill: color }
+                )
+              }
             />
           )}
           {stroked.length > 0 && (
@@ -141,9 +153,7 @@ export function GroupProperties({
                 label="테두리"
                 value={stroke ?? ""}
                 disabled={disabled}
-                onClear={() =>
-                  targetOf(stroked).apply({ stroke: "none", strokeWidth: 0 })
-                }
+                onClear={clearStroke}
                 onApply={(color) =>
                   patchLayers(
                     stroked.map((layer) => layer.id),
@@ -158,9 +168,7 @@ export function GroupProperties({
                 <SettingBox
                   title="테두리 설정"
                   disabled={disabled}
-                  onClear={() =>
-                    targetOf(stroked).apply({ stroke: "none", strokeWidth: 0 })
-                  }
+                  onClear={clearStroke}
                 >
                   <PropSlider
                     label="테두리 두께"

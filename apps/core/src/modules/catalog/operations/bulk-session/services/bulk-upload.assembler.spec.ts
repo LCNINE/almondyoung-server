@@ -80,6 +80,20 @@ describe('assembleUpload', () => {
     expect(assembleUpload(p, new Set()).rows[0].errors[0].message).toContain('한 행');
   });
 
+  it('수량할인 행은 상품마다 묶는다 — 기본 행과 옵션별 예외 행이 한 표다', () => {
+    const { rows } = assembleUpload(
+      parsed({
+        quantityDiscounts: [
+          { rowNumber: 2, cells: { rowKey: 'P-1', combination: '', tier1MinQuantity: '3' } },
+          { rowNumber: 3, cells: { rowKey: 'P-1', combination: 'ov-red' } },
+        ],
+      }),
+      new Set(['P-1']),
+    );
+    expect(rows[0].bundle.quantityDiscounts?.map((r) => r.combination)).toEqual(['', 'ov-red']);
+    expect(rows[0].errors).toEqual([]);
+  });
+
   it('이미지 시트를 키 사전으로 만든다', () => {
     const p = parsed({ images: [{ rowNumber: 1, cells: { imageKey: 'IMG-1', sourceValue: 'a.jpg' } }] });
     expect(assembleUpload(p, new Set()).images.get('IMG-1')?.sourceValue).toBe('a.jpg');

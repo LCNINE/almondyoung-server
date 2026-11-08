@@ -121,14 +121,14 @@ export async function seedUserService(
     logger.step(3, 4, 'Assigning master and admin roles to admin user');
 
     await db.execute(sql`
-      INSERT INTO user_roles (user_id, role_id)
-      VALUES (${FIXED_UUIDS.USER_ADMIN}, ${FIXED_UUIDS.ROLE_MASTER})
+      INSERT INTO user_roles (user_id, role_id, tenant_id)
+      VALUES (${FIXED_UUIDS.USER_ADMIN}, ${FIXED_UUIDS.ROLE_MASTER}, ${TENANT_ONE_ID})
       ON CONFLICT DO NOTHING
     `);
 
     await db.execute(sql`
-      INSERT INTO user_roles (user_id, role_id)
-      VALUES (${FIXED_UUIDS.USER_ADMIN}, ${FIXED_UUIDS.ROLE_ADMIN})
+      INSERT INTO user_roles (user_id, role_id, tenant_id)
+      VALUES (${FIXED_UUIDS.USER_ADMIN}, ${FIXED_UUIDS.ROLE_ADMIN}, ${TENANT_ONE_ID})
       ON CONFLICT DO NOTHING
     `);
 
@@ -138,8 +138,8 @@ export async function seedUserService(
     logger.step(4, 4, 'Assigning user role to existing users without roles');
 
     await db.execute(sql`
-      INSERT INTO user_roles (user_id, role_id)
-      SELECT u.id, r.role_id
+      INSERT INTO user_roles (user_id, role_id, tenant_id)
+      SELECT u.id, r.role_id, u.tenant_id
       FROM users u
         CROSS JOIN roles r
       WHERE r.name = 'user'

@@ -14,14 +14,19 @@ export interface PresentColumns {
   variants: Set<string>;
   categories: Set<string>;
   constraints: Set<string>;
+  /** 수량할인 시트가 있었으면 그 열 집합. 시트가 없었으면(옛 양식 포함) 비었거나 없다. */
+  quantityDiscounts?: Set<string>;
 }
 
 /** 상품 하나가 워크북에서 차지하는 행 전량. 업로드 쪽 shape 은 PrefillBundle 에서 images 만 뺀 것이다. */
-export type UploadedBundle = Pick<PrefillBundle, 'product' | 'options' | 'variants' | 'categories' | 'constraint'>;
+export type UploadedBundle = Pick<
+  PrefillBundle,
+  'product' | 'options' | 'variants' | 'categories' | 'constraint' | 'quantityDiscounts'
+>;
 
 /** 행 오류 하나. 어느 시트 몇 행인지까지 보여줘야 작업자가 파일에서 그 자리를 찾는다. */
 export interface RowError {
-  sheet: '상품' | '옵션' | '조합' | '카테고리' | '구매제약' | '이미지';
+  sheet: '상품' | '옵션' | '조합' | '카테고리' | '구매제약' | '수량할인' | '이미지';
   rowNumber: number;
   message: string;
 }
@@ -42,6 +47,8 @@ export interface BulkItemInput {
     variants: string[];
     categories: string[];
     constraints: string[];
+    /** 이 필드가 생기기 전에 저장된 입력에는 없다. */
+    quantityDiscounts?: string[];
   };
   /** 접합 단계에서 이미 붙은 행 오류(상품키 누락·중복, 구매제약 2행 등). */
   errors: RowError[];
@@ -54,6 +61,7 @@ export function toPresentColumns(present: BulkItemInput['present']): PresentColu
     variants: new Set(present.variants),
     categories: new Set(present.categories),
     constraints: new Set(present.constraints),
+    quantityDiscounts: new Set(present.quantityDiscounts ?? []),
   };
 }
 

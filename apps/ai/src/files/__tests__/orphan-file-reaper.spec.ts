@@ -227,7 +227,7 @@ describe('고아 파일 수거', () => {
     });
 
     it('목록 밖 테넌트의 행은 건드리지 않는다', async () => {
-      const { service, calls } = setup({ unchecked: [row('stray', { tenantId: '9' }), row('legacy', { tenantId: null })] });
+      const { service, calls } = setup({ unchecked: [row('stray', { tenantId: '9' })] });
 
       await service.reap();
 

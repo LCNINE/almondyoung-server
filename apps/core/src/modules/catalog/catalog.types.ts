@@ -109,7 +109,7 @@ export type PurchaseConstraintReadModel = {
   lifetimeQuantityLimit: number | null;
 };
 
-export type { QuantityDiscountTier } from './schema/catalog.schema';
+export type { QuantityDiscountTier, QuantityDiscountOverride } from './schema/catalog.schema';
 export type ProductQuantityDiscount = InferSelectModel<typeof productQuantityDiscounts>;
 export type NewProductQuantityDiscount = InferInsertModel<typeof productQuantityDiscounts>;
 

@@ -126,6 +126,39 @@ describe('classifyMigration', () => {
   });
 });
 
+// impl-b 28: 테넌트 칸을 조이는 마이그는 contract(deploy → migrate)여야 한다 — 준비(NULL 검사·기본값 걷기)는 neutral 이고,
+// 둘이 한 배치에 있으면 배포는 contract 다. expand 로 세면 migrate 를 먼저 돌려 옛 태스크의 테넌트 없는 쓰기가 깨진다.
+describe('테넌트 칸 contract 마이그(impl-b 28)', () => {
+  const files = [
+    ['user-service', 'apps/user-service/database/drizzle', '20261108065055_prepare-tenant-columns-contract', 'neutral'],
+    ['user-service', 'apps/user-service/database/drizzle', '20261108065057_contract-tenant-columns-not-null', 'contract'],
+    ['file-service', 'apps/file-service/drizzle', '20261108065124_prepare-upload-tenant-contract', 'neutral'],
+    ['file-service', 'apps/file-service/drizzle', '20261108065127_contract-upload-tenant-not-null', 'contract'],
+    ['ai', 'apps/ai/src/db', '20261108065129_prepare-tenant-contract', 'neutral'],
+    ['ai', 'apps/ai/src/db', '20261108065131_contract-tenant-not-null', 'contract'],
+  ] as const;
+
+  it.each(files)('%s — %s/%s.sql 는 %s', (_service, dir, tag, kind) => {
+    expect(classifyMigration(repoSql(`${dir}/${tag}.sql`)).kind).toBe(kind);
+  });
+
+  it('조이는 마이그는 NOT NULL 만 바꾼다', () => {
+    for (const [, dir, tag, kind] of files) {
+      if (kind !== 'contract') continue;
+      expect(classifyMigration(repoSql(`${dir}/${tag}.sql`)).contract).toEqual(['SET NOT NULL']);
+    }
+  });
+
+  it('한 배치에 함께 있으면 배포는 contract 다', () => {
+    const pending: PendingMigration[] = files.map(([service, dir, tag]) => ({
+      service,
+      tag,
+      ...classifyMigration(repoSql(`${dir}/${tag}.sql`)),
+    }));
+    expect(judgeDeployment(pending)).toEqual({ kind: 'contract' });
+  });
+});
+
 describe('migrationStatus', () => {
   const entries = [
     { idx: 0, when: 100, tag: 'a' },

@@ -331,6 +331,7 @@ export function PointEditOverlay({ editor }: { editor: AlmondEditor }) {
     handleSize,
     canvasFit,
     zoom,
+    startDrag,
   } = editor
   if (!layer) return null
   const stroke = 1 / (canvasFit * zoom)
@@ -348,6 +349,16 @@ export function PointEditOverlay({ editor }: { editor: AlmondEditor }) {
         height={design.heightMm * 7}
         fill="transparent"
         onPointerDown={(event) => event.stopPropagation()}
+      />
+      {/* 점 편집 중에도 도형 상자 안을 끌면 통째로 옮긴다. 선 위는 점 추가, 점·핸들은 모양 바꾸기 */}
+      <rect
+        x={layer.x}
+        y={layer.y}
+        width={layer.width}
+        height={layer.height}
+        fill="transparent"
+        className="cursor-move"
+        onPointerDown={(event) => startDrag(event, layer)}
       />
       <path
         d={pathData(editPoints, !!layer.pathClosed)}

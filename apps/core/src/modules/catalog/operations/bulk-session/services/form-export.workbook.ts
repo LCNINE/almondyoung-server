@@ -3,6 +3,7 @@ import {
   CATEGORY_COLUMNS,
   CATEGORY_REFERENCE_COLUMNS,
   CONSTRAINT_COLUMNS,
+  QUANTITY_DISCOUNT_COLUMNS,
   ColumnDef,
   IMAGE_COLUMNS,
   OPTION_COLUMNS,
@@ -14,6 +15,8 @@ import {
 import type { PrefillRow, PrefillWorkbookData } from './form-export.types';
 
 const META_CELL = 'B1';
+/** 드롭다운을 거는 마지막 행(최소). 빈 양식에 상품을 채울 자리. */
+const CHOICE_ROWS = 500;
 
 function addSheet(wb: ExcelJS.Workbook, name: string, columns: ColumnDef[], rows: PrefillRow[]): ExcelJS.Worksheet {
   const ws = wb.addWorksheet(name);
@@ -26,6 +29,23 @@ function addSheet(wb: ExcelJS.Workbook, name: string, columns: ColumnDef[], rows
   for (const row of rows) {
     ws.addRow(columns.map((col) => row[col.key] ?? ''));
   }
+
+  // 헤더 메모·드롭다운 — 작업자가 허용값(대표여부 Y 등)을 양식 안에서 본다. 드롭다운은 프리필 행 아래로도
+  // 넉넉히 건다(새 행을 채우는 신규 등록). 값 검사는 여전히 서버 검증기가 한다 — 이건 안내다.
+  const lastRow = Math.max(rows.length + 1, CHOICE_ROWS);
+  columns.forEach((col, i) => {
+    if (col.note) header.getCell(i + 1).note = col.note;
+    if (!col.choices) return;
+    const validation: ExcelJS.DataValidation = {
+      type: 'list',
+      allowBlank: true,
+      formulae: [`"${col.choices.join(',')}"`],
+      showErrorMessage: true,
+      errorTitle: col.label,
+      error: `${col.choices.join(' 또는 ')} 중에서 고르세요.`,
+    };
+    for (let r = 2; r <= lastRow; r++) ws.getCell(r, i + 1).dataValidation = validation;
+  });
 
   // 헤더가 항상 보이게 고정한다. 수십 열짜리 시트에서 작업자가 어느 칸인지 잃지 않는다.
   ws.views = [{ state: 'frozen', ySplit: 1 }];
@@ -44,6 +64,7 @@ export async function buildFormWorkbook(data: PrefillWorkbookData): Promise<Buff
   addSheet(wb, SHEET_NAMES.variants, VARIANT_COLUMNS, data.variants);
   addSheet(wb, SHEET_NAMES.categories, CATEGORY_COLUMNS, data.categories);
   addSheet(wb, SHEET_NAMES.constraints, CONSTRAINT_COLUMNS, data.constraints);
+  addSheet(wb, SHEET_NAMES.quantityDiscounts, QUANTITY_DISCOUNT_COLUMNS, data.quantityDiscounts ?? []);
   addSheet(wb, SHEET_NAMES.images, IMAGE_COLUMNS, data.images);
 
   // 카테고리 참조는 **상수**다. 작업자가 고쳐도 파서가 읽지 않으므로 반영되지 않는다.

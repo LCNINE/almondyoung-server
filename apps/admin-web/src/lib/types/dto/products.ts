@@ -1323,6 +1323,6 @@ export interface AdminAlmondDesignDto {
   userId: string;
   hasBack: boolean;
   templateId: string | null;
-  design: Record<string, unknown>;
+  design: Record<string, unknown> | null;
   createdAt: string;
 }

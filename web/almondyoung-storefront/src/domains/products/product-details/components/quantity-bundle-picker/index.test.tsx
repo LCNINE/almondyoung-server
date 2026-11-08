@@ -8,8 +8,12 @@ import productDetail from "@/i18n/messages/ko/productDetail.json"
 import QuantityBundlePicker from "./index"
 
 const rows = [
-  { minQuantity: 3, unitPrice: 9500, percent: 5, memberUnitPrice: 7200 },
-  { minQuantity: 5, unitPrice: 9000, percent: 10, memberUnitPrice: 6800 },
+  { minQuantity: 3, unitPrice: 9500, percent: 5 },
+  { minQuantity: 5, unitPrice: 9000, percent: 10 },
+]
+const memberHints = [
+  { minQuantity: 3, unitPrice: 7200, percent: 10 },
+  { minQuantity: 5, unitPrice: 6800, percent: 15 },
 ]
 
 let container: HTMLDivElement
@@ -72,7 +76,13 @@ describe("QuantityBundlePicker", () => {
   })
 
   it("shows member bundle prices to a non-member on one line", () => {
-    renderPicker()
+    renderPicker({ memberHints })
+    expect(container.textContent).toContain("멤버십 회원은 3개 개당 7,200원 · 5개 개당 6,800원")
+  })
+
+  it("shows only the member line when the bundle discount is for members only", () => {
+    renderPicker({ rows: [], memberHints })
+    expect(cards()).toHaveLength(0)
     expect(container.textContent).toContain("멤버십 회원은 3개 개당 7,200원 · 5개 개당 6,800원")
   })
 

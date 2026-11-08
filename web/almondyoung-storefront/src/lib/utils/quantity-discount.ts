@@ -2,6 +2,7 @@
 // variant.metadata.tieredPrices(일반 구간가)·membershipTieredPrices(회원 구간가),
 // product.metadata.quantityDiscount({ startsAt, endsAt } | null — 없으면 상시).
 // 단가는 Medusa 가격 엔진과 같은 «가장 싼 가격»: 회원은 회원·일반 구간 모두, 비회원은 일반 구간만.
+// 비회원에게 보일 회원 구간은 `memberTierHints` 가 따로 만든다.
 
 export type QuantityTier = { minQuantity: number; price: number }
 export type QuantityTiers = { regular: QuantityTier[]; membership: QuantityTier[] }
@@ -11,8 +12,6 @@ export type TierRow = {
   unitPrice: number
   /** 지금 가격 대비 개당 할인율(정수 %, 내림) */
   percent: number
-  /** 비회원 화면에서 같은 줄에 보일 «멤버십 회원 전용» 개당 가격 */
-  memberUnitPrice?: number
 }
 
 type Metadata = Record<string, unknown> | null | undefined
@@ -102,7 +101,7 @@ function percentOff(from: number, to: number): number {
 export function tierRows(
   currentPrice: number,
   tiers: QuantityTiers,
-  options: { isMember: boolean; hideMemberPrices: boolean }
+  options: { isMember: boolean }
 ): TierRow[] {
   const quantities = [
     ...Array.from(new Set([...tiers.regular, ...(options.isMember ? tiers.membership : [])].map((t) => t.minQuantity))),
@@ -114,14 +113,29 @@ export function tierRows(
     const unitPrice = unitPriceFor(minQuantity, currentPrice, tiers, options.isMember)
     if (unitPrice >= previous) continue
     previous = unitPrice
-    const row: TierRow = { minQuantity, unitPrice, percent: percentOff(currentPrice, unitPrice) }
-    if (!options.isMember && !options.hideMemberPrices) {
-      const member = bestTierPrice(tiers.membership, minQuantity)
-      if (member !== null && member < unitPrice) row.memberUnitPrice = member
-    }
-    rows.push(row)
+    rows.push({ minQuantity, unitPrice, percent: percentOff(currentPrice, unitPrice) })
   }
   return rows
+}
+
+export type MemberTierHint = { minQuantity: number; unitPrice: number; percent: number }
+
+/**
+ * 비회원 화면에 «멤버십 회원은 …»으로 알릴 회원 구간. 비회원이 그 수량에 내는 값보다 싼 것만.
+ * % 는 멤버십가 기준(관리자가 넣은 회원 %와 같은 기준)이고, 멤버십가를 모르면 지금 가격 기준이다.
+ */
+export function memberTierHints(
+  currentPrice: number,
+  tiers: QuantityTiers,
+  membershipPrice: number | undefined,
+  options: { isMember: boolean; hideMemberPrices: boolean }
+): MemberTierHint[] {
+  if (options.isMember || options.hideMemberPrices) return []
+  const basis = membershipPrice && membershipPrice > 0 ? membershipPrice : currentPrice
+  return [...tiers.membership]
+    .sort((a, b) => a.minQuantity - b.minQuantity)
+    .filter((t) => t.price < unitPriceFor(t.minQuantity, currentPrice, tiers, false))
+    .map((t) => ({ minQuantity: t.minQuantity, unitPrice: t.price, percent: percentOff(basis, t.price) }))
 }
 
 export function currentTierIndex(quantity: number, rows: TierRow[]): number {
@@ -205,7 +219,7 @@ export function cartLineTierInfo(
       ? Math.min(compareAt, membershipPrice)
       : compareAt
   const tiers = readTiers(line.variant?.metadata, line.product?.metadata, context.now)
-  const rows = tierRows(beforeTier, tiers, { isMember: context.isMember, hideMemberPrices: true })
+  const rows = tierRows(beforeTier, tiers, { isMember: context.isMember })
   const next = nextTier(line.quantity ?? 0, rows)
   return { quantityDiscount, next: next && next.unitPrice < unit ? next : null }
 }
@@ -241,4 +255,35 @@ export function msUntilNextBoundary(productMetadatas: Metadata[], now: Date): nu
     }
   }
   return next === null ? null : Math.min(next - t, MAX_TIMER_MS)
+}
+
+export type ProductTierSummary = {
+  /** 옵션들의 첫 구간 중 가장 작은 수량 */
+  minQuantity: number
+  /** 그 수량에서 시작하는 옵션들 중 가장 큰 할인율 */
+  percent: number
+  /** 옵션마다 구간이 다르거나 할인 없는 옵션이 섞였으면 true(«최대»로 알린다) */
+  varies: boolean
+  /** 보는 사람에게 일반 구간이 없고 회원 전용 구간만 있다 */
+  memberOnly: boolean
+}
+
+type TierView = { rows: { minQuantity: number; percent: number }[]; memberHints: { minQuantity: number; percent: number }[] }
+
+/** 상품 전체(모든 옵션)의 수량 할인을 한 줄로 줄인다 — 목록 배지와 옵션 고르기 전 요약에 쓴다. */
+export function productTierSummary(views: TierView[]): ProductTierSummary | null {
+  const pick = views.some((v) => v.rows.length > 0)
+    ? { lists: views.map((v) => v.rows), memberOnly: false }
+    : views.some((v) => v.memberHints.length > 0)
+      ? { lists: views.map((v) => v.memberHints), memberOnly: true }
+      : null
+  if (!pick) return null
+
+  const firsts = pick.lists.flatMap((list) => (list.length > 0 ? [list[0]] : []))
+  const minQuantity = Math.min(...firsts.map((f) => f.minQuantity))
+  const percent = Math.max(...firsts.filter((f) => f.minQuantity === minQuantity).map((f) => f.percent))
+  const signature = (list: { minQuantity: number; percent: number }[]) =>
+    list.map((t) => `${t.minQuantity}:${t.percent}`).join(",")
+  const varies = new Set(pick.lists.map(signature)).size > 1
+  return { minQuantity, percent, varies, memberOnly: pick.memberOnly }
 }

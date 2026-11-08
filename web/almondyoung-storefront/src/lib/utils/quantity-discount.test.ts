@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest"
 import {
   cartLineTierInfo,
+  memberTierHints,
   msUntilNextBoundary,
   orderLineQuantityDiscount,
   nextTier,
+  productTierSummary,
   readTiers,
   splitLineDiscount,
   tierRows,
@@ -104,19 +106,21 @@ describe("tierRows", () => {
   const tiers = readTiers(variantMeta, always, NOW)
 
   it("lists each tier with its unit price and whole-percent saving for a non-member", () => {
-    expect(tierRows(10000, tiers, { isMember: false, hideMemberPrices: false })).toEqual([
-      { minQuantity: 3, unitPrice: 9500, percent: 5, memberUnitPrice: 7200 },
-      { minQuantity: 5, unitPrice: 9000, percent: 10, memberUnitPrice: 6800 },
+    expect(tierRows(10000, tiers, { isMember: false })).toEqual([
+      { minQuantity: 3, unitPrice: 9500, percent: 5 },
+      { minQuantity: 5, unitPrice: 9000, percent: 10 },
     ])
   })
 
-  it("hides member prices when the product keeps them for members", () => {
-    const rows = tierRows(10000, tiers, { isMember: false, hideMemberPrices: true })
-    expect(rows.every((r) => r.memberUnitPrice === undefined)).toBe(true)
+  it("tells a guest the member prices of the same tiers", () => {
+    expect(memberTierHints(10000, tiers, 8000, { isMember: false, hideMemberPrices: false })).toEqual([
+      { minQuantity: 3, unitPrice: 7200, percent: 10 },
+      { minQuantity: 5, unitPrice: 6800, percent: 15 },
+    ])
   })
 
   it("shows a member their own tier prices against the member price", () => {
-    expect(tierRows(8000, tiers, { isMember: true, hideMemberPrices: false })).toEqual([
+    expect(tierRows(8000, tiers, { isMember: true })).toEqual([
       { minQuantity: 3, unitPrice: 7200, percent: 10 },
       { minQuantity: 5, unitPrice: 6800, percent: 15 },
     ])
@@ -133,17 +137,14 @@ describe("tierRows", () => {
       always,
       NOW
     )
-    expect(tierRows(15900, legacy, { isMember: false, hideMemberPrices: false })).toEqual([
+    expect(tierRows(15900, legacy, { isMember: false })).toEqual([
       { minQuantity: 2, unitPrice: 13000, percent: 18 },
     ])
   })
 })
 
 describe("nextTier", () => {
-  const rows = tierRows(10000, readTiers(variantMeta, always, NOW), {
-    isMember: false,
-    hideMemberPrices: false,
-  })
+  const rows = tierRows(10000, readTiers(variantMeta, always, NOW), { isMember: false })
 
   it("tells how many more reach the next tier", () => {
     expect(nextTier(1, rows)).toEqual({ addQuantity: 2, unitPrice: 9500, percent: 5 })
@@ -288,5 +289,83 @@ describe("msUntilNextBoundary", () => {
 
   it("caps far-away boundaries to what a timer can hold", () => {
     expect(msUntilNextBoundary([meta("2099-01-01T00:00:00.000Z", null)], NOW)).toBe(2_147_483_647)
+  })
+})
+
+describe("memberTierHints", () => {
+  const memberOnly = {
+    regular: [],
+    membership: [
+      { minQuantity: 3, price: 7200 },
+      { minQuantity: 6, price: 6400 },
+    ],
+  }
+  const guest = { isMember: false, hideMemberPrices: false }
+
+  it("shows a members-only table to guests with the rate taken from the membership price", () => {
+    expect(memberTierHints(10000, memberOnly, 8000, guest)).toEqual([
+      { minQuantity: 3, unitPrice: 7200, percent: 10 },
+      { minQuantity: 6, unitPrice: 6400, percent: 20 },
+    ])
+  })
+
+  it("keeps only member tiers cheaper than what a guest pays at that quantity", () => {
+    const tiers = { regular: [{ minQuantity: 3, price: 7000 }], membership: [{ minQuantity: 3, price: 7200 }, { minQuantity: 6, price: 6400 }] }
+    expect(memberTierHints(10000, tiers, 8000, guest)).toEqual([{ minQuantity: 6, unitPrice: 6400, percent: 20 }])
+  })
+
+  it("shows nothing to members or when the membership price is hidden", () => {
+    expect(memberTierHints(10000, memberOnly, 8000, { isMember: true, hideMemberPrices: false })).toEqual([])
+    expect(memberTierHints(10000, memberOnly, 8000, { isMember: false, hideMemberPrices: true })).toEqual([])
+  })
+
+  it("falls back to the guest price for the rate when the membership price is unknown", () => {
+    expect(memberTierHints(10000, memberOnly, undefined, guest)[0]).toEqual({ minQuantity: 3, unitPrice: 7200, percent: 28 })
+  })
+})
+
+describe("productTierSummary", () => {
+  const row = (minQuantity: number, percent: number) => ({ minQuantity, unitPrice: 0, percent })
+  const view = (rows: ReturnType<typeof row>[], memberHints: ReturnType<typeof row>[] = []) => ({ rows, memberHints })
+
+  it("says the same thing as one option when every option has the same tiers", () => {
+    expect(productTierSummary([view([row(3, 10), row(6, 20)]), view([row(3, 10), row(6, 20)])])).toEqual({
+      minQuantity: 3,
+      percent: 10,
+      varies: false,
+      memberOnly: false,
+    })
+  })
+
+  it("takes the smallest first quantity and the largest percent there when options differ", () => {
+    expect(productTierSummary([view([row(3, 10)]), view([row(3, 5), row(6, 6)]), view([])])).toEqual({
+      minQuantity: 3,
+      percent: 10,
+      varies: true,
+      memberOnly: false,
+    })
+  })
+
+  it("only counts options whose first tier starts at that quantity", () => {
+    expect(productTierSummary([view([row(5, 30)]), view([row(3, 5)])])).toEqual({
+      minQuantity: 3,
+      percent: 5,
+      varies: true,
+      memberOnly: false,
+    })
+  })
+
+  it("falls back to member-only tiers for a visitor", () => {
+    expect(productTierSummary([view([], [row(3, 10)]), view([])])).toEqual({
+      minQuantity: 3,
+      percent: 10,
+      varies: true,
+      memberOnly: true,
+    })
+  })
+
+  it("is null when no option has a quantity discount", () => {
+    expect(productTierSummary([view([]), view([])])).toBeNull()
+    expect(productTierSummary([])).toBeNull()
   })
 })

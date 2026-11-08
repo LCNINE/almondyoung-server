@@ -5,10 +5,12 @@ import { ProductCategoriesService } from '../../../core/categories/categories.se
 import { OptionReadLoader } from '../../../core/products/loaders/option-read.loader';
 import { ProductVersionReadLoader } from '../../../core/products/loaders/product-version-read.loader';
 import { PricingService } from '../../../core/pricing/pricing.service';
+import { QuantityDiscountReader } from '../../../core/pricing/quantity-discount.reader';
 import { ProductSkuMappingService } from '../../../../product-matching/services/product-sku-mapping.service';
 import type { VariantStockPolicyDto } from '../../../../product-matching/dto/variant-matching-batch.dto';
 import { extractSimplePrices, isPricingEditable, SimplePrices } from './form-export.pricing-judge';
 import { PRICING_SENTINEL } from './form-export.sheets';
+import { quantityDiscountPrefillRows } from './bulk-quantity-discount';
 import {
   createImageKeyAllocator,
   type ImageKeyAllocator,
@@ -87,6 +89,7 @@ export class FormExportSnapshotReader {
     private readonly pricing: PricingService,
     private readonly categories: ProductCategoriesService,
     private readonly skuMapping: ProductSkuMappingService,
+    private readonly quantityDiscounts: QuantityDiscountReader,
   ) {}
 
   /**
@@ -109,6 +112,7 @@ export class FormExportSnapshotReader {
     const variants: PrefillRow[] = [];
     const categories: PrefillRow[] = [];
     const constraints: PrefillRow[] = [];
+    const quantityDiscounts: PrefillRow[] = [];
     const images: PrefillRow[] = [];
     const items: SnapshotItem[] = [];
 
@@ -142,6 +146,7 @@ export class FormExportSnapshotReader {
       for (const row of bundle.variants) variants.push({ rowKey, ...row });
       for (const row of bundle.categories) categories.push({ rowKey, ...row });
       if (bundle.constraint) constraints.push({ rowKey, ...bundle.constraint });
+      for (const row of bundle.quantityDiscounts ?? []) quantityDiscounts.push({ rowKey, ...row });
 
       // pricingEditable 은 번들의 판매가 셀이 센티넬인지로 되읽는다 — 판정 로직을 두 벌
       // 두지 않기 위해서다(리더 안에서 이미 한 번 판정했다).
@@ -153,7 +158,7 @@ export class FormExportSnapshotReader {
     for (const { imageKey, fileId } of allocator.entries()) images.push({ imageKey, sourceValue: fileId });
 
     return {
-      data: { exportId, products, options, variants, categories, constraints, images, categoryPaths },
+      data: { exportId, products, options, variants, categories, constraints, quantityDiscounts, images, categoryPaths },
       items,
     };
   }
@@ -316,6 +321,11 @@ export class FormExportSnapshotReader {
       });
     }
 
+    // 표가 없는 상품도 빈 기본 행 하나를 내보낸다 — 채우면 새 표가 되고, 그대로 두면 변경이 없다.
+    const savedQuantityDiscount = await this.quantityDiscounts.findForVersion(masterId, version.id, tx);
+    const labels = new Map(variantsOut.map((v) => [v.combination ?? '', v.combinationLabel ?? '']));
+    const quantityDiscountsOut = quantityDiscountPrefillRows(savedQuantityDiscount, labels);
+
     let constraint: PrefillRow | null = null;
     const rawConstraint = await this.versionLoader.getPurchaseConstraint(tx, masterId, version.id);
     if (rawConstraint) {
@@ -332,6 +342,7 @@ export class FormExportSnapshotReader {
       variants: variantsOut,
       categories: categoriesOut,
       constraint,
+      quantityDiscounts: quantityDiscountsOut,
       images: usedImages,
     };
   }

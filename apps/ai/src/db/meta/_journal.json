@@ -57,6 +57,20 @@
       "when": 1793465020155,
       "tag": "20261031164340_backfill-tenant-one",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1794120689606,
+      "tag": "20261108065129_prepare-tenant-contract",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1794120691983,
+      "tag": "20261108065131_contract-tenant-not-null",
+      "breakpoints": true
     }
   ]
 }

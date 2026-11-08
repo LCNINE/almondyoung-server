@@ -435,6 +435,12 @@ export type QuantityDiscountTier = {
   membershipRateBp: number;
 };
 
+/** 한 옵션(조합 키 = 옵션값 id 정렬 «+» 결합)만 기본 표 대신 쓰는 구간. tiers 가 비면 그 옵션은 할인 없음. */
+export type QuantityDiscountOverride = {
+  combination: string;
+  tiers: QuantityDiscountTier[];
+};
+
 // 수량 할인 구간표. 버전에 조인으로 붙고, 공유 중인 행을 고치면 새 행으로 갈라진다(구매 제한과 같은 방식).
 export const productQuantityDiscounts = pgTable('product_quantity_discounts', {
   id: uuid('id')
@@ -444,6 +450,7 @@ export const productQuantityDiscounts = pgTable('product_quantity_discounts', {
   startsOn: date('starts_on', { mode: 'string' }),
   endsOn: date('ends_on', { mode: 'string' }),
   tiers: jsonb('tiers').$type<QuantityDiscountTier[]>().notNull(),
+  variantOverrides: jsonb('variant_overrides').$type<QuantityDiscountOverride[]>().notNull().default([]),
   createdAt: timestamp('created_at').defaultNow().notNull(),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });

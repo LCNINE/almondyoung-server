@@ -2,6 +2,7 @@ export type PrintKind =
   | "pet"
   | "mini"
   | "card"
+  | "bizcard"
   | "window"
   | "menu"
   | "diploma"
@@ -243,7 +244,7 @@ export const PRINT_SPECS: Record<
       [180, 420],
     ],
     safetyMm: 15,
-    bleedMm: 0,
+    bleedMm: 1.5,
     fileScale: 1,
     minImageDpi: 350,
     duplex: false,
@@ -258,6 +259,16 @@ export const PRINT_SPECS: Record<
     minImageDpi: 300,
     duplex: true,
     note: "이지템플릿 명함 90×50mm와 규격 대조. 스노우지 250g·500매, 양면은 앞/뒷면 작업.",
+  },
+  bizcard: {
+    label: "명함",
+    sizes: [[90, 50]],
+    safetyMm: 1.5,
+    bleedMm: 1,
+    fileScale: 1,
+    minImageDpi: 300,
+    duplex: true,
+    note: "이지템플릿 명함 90×50mm 규격. 양면은 앞/뒷면 작업.",
   },
   window: {
     label: "유리창 부착 현수막",
@@ -301,7 +312,7 @@ export const PRINT_SPECS: Record<
     label: "네일팁 종이",
     sizes: [[90, 90]],
     safetyMm: 1.5,
-    bleedMm: 1.5,
+    bleedMm: 1,
     fileScale: 1,
     minImageDpi: 300,
     duplex: true,
@@ -318,4 +329,14 @@ export function sizeFromOption(
     ([w, h]) =>
       value.includes(`${w}x${h}`) || value.includes(`${w / 10}x${h / 10}`)
   )
+}
+
+// 시안 자체의 인쇄 유형이 우선이다. 같은 상품으로 주문하는 명함처럼 상품 종류와 다른 시안이 있다
+export function templateKind(item: {
+  productId: string
+  kind?: string | null
+}): PrintKind | undefined {
+  if (item.kind && item.kind in PRINT_SPECS) return item.kind as PrintKind
+
+  return PRINT_PRODUCTS[item.productId]?.kind
 }

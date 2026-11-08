@@ -16,11 +16,10 @@ export type NewMessage = {
 };
 
 /**
- * 대화의 테넌트 조건. 테넌트를 모르면(①) 거르지 않는다 — 지금처럼 계정 하나의 대화 전부다.
- * 탈퇴 감추기·파기는 이 조건을 쓰지 않는다: 계정 이벤트라 그 계정의 모든 테넌트 대화가 대상이다.
+ * 대화의 테넌트 조건. 탈퇴 감추기·파기는 이 조건을 쓰지 않는다: 그 계정의 대화 전부가 대상이다.
  */
 function sameTenant(tenant: RequestTenantId) {
-  return tenant === null ? undefined : eq(assistantChatSessions.tenantId, tenant);
+  return eq(assistantChatSessions.tenantId, tenant);
 }
 
 /**
@@ -33,11 +32,10 @@ function sameTenant(tenant: RequestTenantId) {
 export class AssistantChatRepository {
   constructor(@InjectTypedDb<AiSchema>() private readonly dbService: DbService<AiSchema>) {}
 
-  /** 테넌트를 모르면(①) 싣지 않는다 — DB 기본값이 채운다. */
   async insertSession(userId: string, tenant: RequestTenantId, title: string | null): Promise<SessionRow> {
     const [session] = await this.dbService.db
       .insert(assistantChatSessions)
-      .values({ userId, title, ...(tenant === null ? {} : { tenantId: tenant }) })
+      .values({ userId, title, tenantId: tenant })
       .returning();
 
     if (!session) throw new Error('세션 생성 후 결과가 비어 있다');
