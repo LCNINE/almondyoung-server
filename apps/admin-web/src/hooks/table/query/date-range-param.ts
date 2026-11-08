@@ -27,16 +27,20 @@ export function parseDateRangeParam(raw?: string): {
 const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
 
 /**
- * 날짜만 적힌 범위(`yyyy-MM-dd`, 필터 상자가 URL 에 남기는 꼴)를 KST 하루 경계 시각으로 바꾼다.
+ * 날짜만 적힌 범위(`yyyy-MM-dd`, 필터 상자가 URL 에 남기는 꼴)를 KST 하루 경계 시각(UTC ISO, `…Z`)으로 바꾼다.
  * 백엔드는 이 값을 `new Date()` 로 읽어 시각으로 비교하므로, 날짜만 보내면 UTC 자정이 되어
  * 「오늘」(from = to)이 길이 0 인 구간이 되고 다른 기간도 끝 날이 빠진다. 이미 시각이면 그대로 둔다.
+ *
+ * `+09:00` 꼴로 보내지 않는다 — 쿼리 값의 `+` 가 admin-web 앞단(CloudFront·OpenNext)을 지나며 인코딩이 풀려 core 에 공백으로
+ * 닿았다(11-08 라이브, @IsDateString 400 → 목록 0건). 그래서 `+` 가 없는 UTC 시각으로 보낸다.
  */
 export function toDayBoundInstants(range: { from?: string; to?: string }): {
   from?: string;
   to?: string;
 } {
+  const kst = (date: string, time: string) => new Date(`${date}T${time}+09:00`).toISOString();
   return {
-    from: range.from && DATE_ONLY.test(range.from) ? `${range.from}T00:00:00.000+09:00` : range.from,
-    to: range.to && DATE_ONLY.test(range.to) ? `${range.to}T23:59:59.999+09:00` : range.to,
+    from: range.from && DATE_ONLY.test(range.from) ? kst(range.from, '00:00:00.000') : range.from,
+    to: range.to && DATE_ONLY.test(range.to) ? kst(range.to, '23:59:59.999') : range.to,
   };
 }

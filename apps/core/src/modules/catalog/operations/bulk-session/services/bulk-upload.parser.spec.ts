@@ -123,6 +123,19 @@ describe('parseUploadWorkbook', () => {
     expect(parsed.sheets.categories.map((r) => r.cells.isPrimary)).toEqual(['Y', 'N']);
   });
 
+  // 11-08 재확인: LibreOffice 로 다시 저장하면 불리언이 =TRUE()·=FALSE() 수식이 된다. 수식 셀은 계산 결과로 읽는다.
+  it('결과가 불리언인 수식 셀(=TRUE())도 Y/N 으로 읽는다 — LibreOffice 가 불리언을 수식으로 저장한다', async () => {
+    const wb = new ExcelJS.Workbook();
+    wb.addWorksheet('상품').addRow(['상품키', '상품명', '판매가', '해외직구']);
+    wb.getWorksheet('상품')!.addRow(['A', 'x', '1000', { formula: 'FALSE()', result: false }]);
+    const cats = wb.addWorksheet('카테고리');
+    cats.addRow(['상품키', '카테고리경로', '대표여부']);
+    cats.addRow(['A', '여성패션>니트', { formula: 'TRUE()', result: true }]);
+    const parsed = await parseUploadWorkbook(Buffer.from(await wb.xlsx.writeBuffer()));
+    expect(parsed.sheets.products[0].cells.isOverseas).toBe('N');
+    expect(parsed.sheets.categories[0].cells.isPrimary).toBe('Y');
+  });
+
   it('글자 TRUE 는 그대로 둔다 — 검증기가 «Y 또는 N» 형식 오류로 보인다', async () => {
     const wb = new ExcelJS.Workbook();
     wb.addWorksheet('상품').addRow(['상품키', '상품명', '판매가', '해외직구']);

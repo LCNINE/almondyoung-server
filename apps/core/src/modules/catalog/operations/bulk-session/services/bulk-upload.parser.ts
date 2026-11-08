@@ -106,12 +106,14 @@ function readSheet(
       const cell = row.getCell(col);
       // 날짜 셀만 가로챈다. 수식 셀의 value 는 {formula, result} 객체라 instanceof 가 걸리지 않는다.
       // 불리언 셀(TRUE/FALSE)은 Y/N 칸의 같은 뜻이다 — 다른 도구가 대표여부를 불리언으로 저장한다(11-04).
+      // 결과가 불리언인 수식 셀(=TRUE())도 같다 — LibreOffice 가 불리언을 수식으로 다시 저장한다(11-08).
       // 글자 'TRUE' 는 그대로 두어 검증기가 형식 오류로 보인다.
+      const booleanValue = typeof cell.value === 'boolean' ? cell.value : booleanFormulaResult(cell.value);
       const value =
         cell.value instanceof Date
           ? formatWorkbookDateCell(cell.value)
-          : typeof cell.value === 'boolean'
-            ? cell.value
+          : booleanValue !== undefined
+            ? booleanValue
               ? 'Y'
               : 'N'
             : typeof cell.value === 'number' && (cell.numFmt ?? '').includes('%')
@@ -124,6 +126,19 @@ function readSheet(
     rows.push({ rowNumber: r, cells });
   }
   return { rows, present };
+}
+
+/**
+ * 수식 셀(`{ formula, result }`)의 결과가 불리언이면 그 값. 계산값이 저장되지 않은 파일도 있어 수식이 정확히
+ * `TRUE()`·`FALSE()` 이면 그 뜻으로 읽는다. 그 밖은 undefined.
+ */
+function booleanFormulaResult(value: unknown): boolean | undefined {
+  if (typeof value !== 'object' || value === null || !('formula' in value)) return undefined;
+  const result: unknown = Reflect.get(value, 'result');
+  if (typeof result === 'boolean') return result;
+  const formula: unknown = Reflect.get(value, 'formula');
+  const literal = typeof formula === 'string' ? /^\s*(TRUE|FALSE)\s*\(\s*\)\s*$/i.exec(formula) : null;
+  return literal ? literal[1].toUpperCase() === 'TRUE' : undefined;
 }
 
 function capped(rows: RawSheetRow[], max: number, sheetName: string): RawSheetRow[] {

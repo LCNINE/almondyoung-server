@@ -34,9 +34,16 @@ describe('parseDateRangeParam', () => {
 describe('toDayBoundInstants', () => {
   it('turns a date-only range into the whole KST days — 「오늘」 is the full day, not an empty instant', () => {
     expect(toDayBoundInstants({ from: '2026-11-03', to: '2026-11-03' })).toEqual({
-      from: '2026-11-03T00:00:00.000+09:00',
-      to: '2026-11-03T23:59:59.999+09:00',
+      from: '2026-11-02T15:00:00.000Z',
+      to: '2026-11-03T14:59:59.999Z',
     });
+  });
+
+  // 11-08 라이브: `…+09:00` 의 `+` 가 admin-web 앞단을 지나며 날것으로 core 에 닿아 공백이 됐다 → @IsDateString 400 → 목록 0건.
+  // 쿼리에 실리는 값이라 `+` 를 아예 싣지 않는다.
+  it('never puts a plus sign in the value — it reached core as a space and the list showed 0 rows', () => {
+    const { from, to } = toDayBoundInstants({ from: '2026-11-08', to: '2026-11-09' });
+    expect(`${from}${to}`).not.toContain('+');
   });
 
   it('covers a product created at 04:06 KST (19:06 UTC the day before)', () => {
