@@ -111,6 +111,30 @@ describe('parseUploadWorkbook', () => {
     expect(parsed.sheets.products[0].cells.salesStartDate).toBe('2026-08-01 09:00');
   });
 
+  it('불리언 셀(TRUE/FALSE)은 Y/N 으로 읽는다 — 다른 도구가 대표여부를 불리언으로 저장해도 같은 뜻이다', async () => {
+    const wb = new ExcelJS.Workbook();
+    wb.addWorksheet('상품').addRow(['상품키', '상품명', '판매가']);
+    wb.getWorksheet('상품')!.addRow(['A', 'x', '1000']);
+    const cats = wb.addWorksheet('카테고리');
+    cats.addRow(['상품키', '카테고리경로', '대표여부']);
+    cats.addRow(['A', '여성패션>니트', true]);
+    cats.addRow(['A', '기획전>겨울신상', false]);
+    const parsed = await parseUploadWorkbook(Buffer.from(await wb.xlsx.writeBuffer()));
+    expect(parsed.sheets.categories.map((r) => r.cells.isPrimary)).toEqual(['Y', 'N']);
+  });
+
+  it('글자 TRUE 는 그대로 둔다 — 검증기가 «Y 또는 N» 형식 오류로 보인다', async () => {
+    const wb = new ExcelJS.Workbook();
+    wb.addWorksheet('상품').addRow(['상품키', '상품명', '판매가', '해외직구']);
+    wb.getWorksheet('상품')!.addRow(['A', 'x', '1000', 'TRUE']);
+    const parsed = await parseUploadWorkbook(Buffer.from(await wb.xlsx.writeBuffer()));
+    expect(parsed.sheets.products[0].cells.isOverseas).toBe('TRUE');
+  });
+
+  it('엑셀로 못 읽는 파일은 다시 저장해 보라고 안내한다', async () => {
+    await expect(parseUploadWorkbook(Buffer.from('not a zip'))).rejects.toThrow('Excel 에서 다시 저장');
+  });
+
   it('카테고리 참조 시트는 읽지 않는다', async () => {
     const parsed = await parseUploadWorkbook(await workbook());
     expect('categoryReference' in parsed.sheets).toBe(false);

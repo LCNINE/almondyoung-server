@@ -7,8 +7,10 @@ export interface ColumnDef {
   key: string;
   label: string;
   required: boolean;
-  /** 허용값·빈칸 의미. 스킬이 읽는 열 문서에 그대로 실린다(form-export.columns-doc.ts). */
+  /** 허용값·빈칸 의미. 스킬이 읽는 열 문서에 그대로 실리고, 양식의 헤더 칸 메모로도 달린다. */
   note?: string;
+  /** 고를 수 있는 값. 양식의 데이터 행에 드롭다운으로 걸린다(빈칸은 늘 허용 — 빈칸의 뜻은 열마다 다르다). */
+  choices?: readonly string[];
 }
 
 /** 가격 룰이 임포트 표현 집합 밖을 때 판매가 칸에 넣는 값. 그대로면 "가격 변경 없음"이다. */
@@ -30,6 +32,9 @@ export const SHEET_NAMES = {
 
 const req = (key: string, label: string, note?: string): ColumnDef => ({ key, label, required: true, note });
 const opt = (key: string, label: string, note?: string): ColumnDef => ({ key, label, required: false, note });
+const YES_NO = ['Y', 'N'] as const;
+/** Y/N 칸 — 대문자 Y·N 만 받는다(검증기). 엑셀의 TRUE/FALSE 불리언 셀은 파서가 Y/N 으로 읽는다. */
+const yn = (column: ColumnDef): ColumnDef => ({ ...column, note: column.note ?? 'Y 또는 N.', choices: YES_NO });
 
 export const PRODUCT_COLUMNS: ColumnDef[] = [
   req('rowKey', '상품키'),
@@ -53,10 +58,10 @@ export const PRODUCT_COLUMNS: ColumnDef[] = [
   opt('minQuantity', '최소구매수량'),
   opt('maxQuantity', '최대구매수량'),
   opt('seller', '판매처'),
-  opt('isOverseas', '해외직구'),
-  opt('isVisibleToMembersOnly', '멤버십회원전용노출'),
-  opt('hideMembershipPriceForNonMembers', '비회원에게멤버십가숨김'),
-  opt('isWholesaleOnly', '도매전용'),
+  yn(opt('isOverseas', '해외직구')),
+  yn(opt('isVisibleToMembersOnly', '멤버십회원전용노출')),
+  yn(opt('hideMembershipPriceForNonMembers', '비회원에게멤버십가숨김')),
+  yn(opt('isWholesaleOnly', '도매전용')),
   opt('seoTitle', 'SEO제목'),
   opt('seoDescription', 'SEO설명'),
   opt('seoKeywords', 'SEO키워드'),
@@ -93,19 +98,19 @@ export const VARIANT_COLUMNS: ColumnDef[] = [
     '출시예정일',
     "YYYY-MM-DD. 같은 행의 판매상태재정의가 '출시예정'일 때만 쓸 수 있다. 표시 전용이며 판매를 열지 않는다.",
   ),
-  opt('preStockSellable', '선판매', 'Y 또는 N. 비우면 변경 없음(해제가 아니다).'),
-  opt('alwaysSellableZeroStock', '항상판매', 'Y 또는 N. 비우면 변경 없음(해제가 아니다).'),
+  yn(opt('preStockSellable', '선판매', 'Y 또는 N. 비우면 변경 없음(해제가 아니다).')),
+  yn(opt('alwaysSellableZeroStock', '항상판매', 'Y 또는 N. 비우면 변경 없음(해제가 아니다).')),
 ];
 
 export const CATEGORY_COLUMNS: ColumnDef[] = [
   req('rowKey', '상품키'),
   req('categoryPath', '카테고리경로'),
-  req('isPrimary', '대표여부'),
+  yn(req('isPrimary', '대표여부', '상품마다 대표 카테고리 한 행에만 Y, 나머지 행은 N 또는 빈칸.')),
 ];
 
 export const CONSTRAINT_COLUMNS: ColumnDef[] = [
   req('rowKey', '상품키'),
-  opt('requiresMembership', '멤버십필요'),
+  yn(opt('requiresMembership', '멤버십필요')),
   opt('lifetimeQuantityLimit', '평생구매한도'),
 ];
 
@@ -131,7 +136,7 @@ export const QUANTITY_DISCOUNT_COLUMNS: ColumnDef[] = [
     '비우면 기본 구간(예외로 고르지 않은 옵션 전부). 옵션마다 다르게 하려면 «조합» 시트의 조합 값을 그대로 붙여 넣는다. 조합 행의 구간 칸을 모두 비우면 그 옵션은 할인 없음.',
   ),
   opt('combinationLabel', '조합명(참고용)', '읽지 않는다. 어느 옵션인지 보이려고 채워 둔다.'),
-  opt('enabled', '사용', 'Y 또는 N. 비우면 Y. 조합이 빈 행에만 넣는다.'),
+  yn(opt('enabled', '사용', 'Y 또는 N. 비우면 Y. 조합이 빈 행에만 넣는다.')),
   opt('startsOn', '시작일', 'YYYY-MM-DD. 한국 시간 그날 0시부터. 비우면 바로 시작. 조합이 빈 행에만 넣는다.'),
   opt('endsOn', '종료일', 'YYYY-MM-DD. 한국 시간 그날 끝까지. 비우면 계속. 조합이 빈 행에만 넣는다.'),
   ...QUANTITY_DISCOUNT_TIER_SLOTS.flatMap((slot) => {

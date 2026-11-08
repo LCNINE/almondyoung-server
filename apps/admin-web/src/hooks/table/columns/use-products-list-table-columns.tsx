@@ -99,7 +99,8 @@ export function useProductsListTableColumns({
             <p>브랜드 명</p>
           </>
         ),
-        meta: { align: 'left' },
+        // 폭을 정하지 않은 유일한 글 열이라 좁은 화면(~900px)에서 한 글자 폭까지 눌렸다 — 최소 폭을 두고 표가 가로로 스크롤되게.
+        meta: { align: 'left', minWidth: 200 },
         cell: ({ row }) => (
           <div className="flex flex-col gap-1 text-left">
             <p className="text-base font-medium text-[#1e40ae] underline break-words">

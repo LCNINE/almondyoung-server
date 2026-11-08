@@ -136,4 +136,19 @@ describe('buildFormWorkbook — 빈 양식 (exportId 없음)', () => {
     expect(ws.getRow(2).getCell(1).text).toBe('여성패션');
     expect(ws.getRow(3).getCell(1).text).toBe('여성패션>니트');
   });
+
+  it('Y/N 칸은 데이터 행에 Y·N 드롭다운이 걸린다 — 작업자가 허용값을 양식에서 본다', async () => {
+    const wb = await load(await buildFormWorkbook(data));
+    const ws = wb.getWorksheet(SHEET_NAMES.categories)!;
+    const col = (ws.getRow(1).values as unknown[]).indexOf('대표여부');
+    expect(ws.getCell(2, col).dataValidation).toMatchObject({ type: 'list', formulae: ['"Y,N"'] });
+    expect(ws.getCell(500, col).dataValidation).toMatchObject({ type: 'list' });
+  });
+
+  it('설명이 있는 열은 헤더 칸에 메모로 단다', async () => {
+    const wb = await load(await buildFormWorkbook(data));
+    const ws = wb.getWorksheet(SHEET_NAMES.categories)!;
+    const col = (ws.getRow(1).values as unknown[]).indexOf('대표여부');
+    expect(JSON.stringify(ws.getCell(1, col).note)).toContain('Y');
+  });
 });
