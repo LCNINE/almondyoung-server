@@ -87,6 +87,55 @@ function bulkResults(result: BulkShipmentResult): StageResult[] {
   ];
 }
 
+function isTransientStatus(status: number | null): boolean {
+  return status === null || (status >= 500 && status < 600);
+}
+
+/**
+ * 상자별 결과를 돌려주는 일괄 명령(부분출고 나누기 등)을 진행 창과 같은 규칙으로 다시 부른다(스펙 §5.1).
+ * 일시 실패한 상자만 같은 키로 2/5/10초 뒤 다시 부르고, 확정 실패는 그대로 남긴다. 요청 자체가 거절(4xx)되면
+ * 바로 던지고, 서버·네트워크 오류는 재시도하다 마지막에 던진다.
+ */
+export async function retryTransientBulk(
+  run: (shipmentIds: string[]) => Promise<BulkShipmentResult>,
+  shipmentIds: string[],
+  sleep: (ms: number) => Promise<void>
+): Promise<BulkShipmentResult> {
+  const succeeded: string[] = [];
+  const permanent: BulkShipmentResult['failed'] = [];
+  let remaining = shipmentIds;
+
+  for (let retries = 0; ; retries++) {
+    let result: BulkShipmentResult;
+
+    try {
+      result = await run(remaining);
+    } catch (error) {
+      if (
+        retries === RETRY_DELAYS_MS.length ||
+        !isTransientStatus(parseServerError(error, '').status)
+      ) {
+        throw error;
+      }
+
+      await sleep(RETRY_DELAYS_MS[retries]);
+      continue;
+    }
+
+    const transient = result.failed.filter((failure) => failure.transient);
+
+    succeeded.push(...result.succeeded);
+    permanent.push(...result.failed.filter((failure) => !failure.transient));
+
+    if (transient.length === 0 || retries === RETRY_DELAYS_MS.length) {
+      return { succeeded, failed: [...permanent, ...transient] };
+    }
+
+    remaining = transient.map((failure) => failure.shipmentId);
+    await sleep(RETRY_DELAYS_MS[retries]);
+  }
+}
+
 export function batchNameFor(now: Date, pickingMethod: PickingMethod): string {
   const parts = new Intl.DateTimeFormat('en-US', {
     timeZone: 'Asia/Seoul',
@@ -153,7 +202,7 @@ export async function runOutboundPreparation(
           error,
           '출고 준비를 처리하지 못했어요.'
         );
-        const transient = status === null || (status >= 500 && status < 600);
+        const transient = isTransientStatus(status);
 
         results = remaining.map((shipmentId) => ({
           shipmentId,

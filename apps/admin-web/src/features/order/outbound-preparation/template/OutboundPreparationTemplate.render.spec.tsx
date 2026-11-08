@@ -316,6 +316,33 @@ describe('OutboundPreparationTemplate', () => {
     expect(screen.queryByRole('button', { name: '다시 시도' })).toBeNull();
   });
 
+  it('확정 오류는 상자 보기와 다시 시도를 함께 남긴다', async () => {
+    mockRun.mockResolvedValueOnce(
+      result({
+        waybilled: 34,
+        joined: 34,
+        failures: [
+          {
+            shipmentId: 'ready-1',
+            stage: 'waybill',
+            message: '송장 발급 결과를 확인해야 해요',
+            retryable: false,
+          },
+        ],
+      })
+    );
+    render(<OutboundPreparationTemplate />);
+    await start();
+
+    expect(
+      await screen.findByText('송장 발급 결과를 확인해야 해요')
+    ).toBeTruthy();
+    expect(
+      screen.getByRole('link', { name: '상자 보기' }).getAttribute('href')
+    ).toBe('/order/fulfillments?shipmentId=ready-1');
+    expect(screen.getByRole('button', { name: '다시 시도' })).toBeTruthy();
+  });
+
   it('권한이 없으면 쓰기 버튼을 보여 주지 않는다', () => {
     mockAllowed = false;
     render(<OutboundPreparationTemplate />);
@@ -679,26 +706,31 @@ describe('OutboundPreparationTemplate', () => {
     expect(mockRun).not.toHaveBeenCalled();
   });
 
-  it('분할 통신 실패는 알리고 같은 선택 재시도에 같은 멱등 키를 쓴다', async () => {
-    mockSplit.mockRejectedValueOnce(new Error('network'));
-    render(<OutboundPreparationTemplate />);
-    await userEvent.click(
-      screen.getByRole('button', { name: '있는 것만 먼저 보내기' })
-    );
-    await userEvent.click(screen.getByRole('button', { name: '나누기' }));
+  it('분할 통신 실패는 같은 멱등 키로 자동 재시도한다', async () => {
+    jest.useFakeTimers();
+    const user = userEvent.setup({ advanceTimers: jest.advanceTimersByTime });
 
-    await waitFor(() =>
-      expect(toast.error).toHaveBeenCalledWith('상자를 나누지 못했어요.')
-    );
-    await userEvent.click(
-      screen.getByRole('button', { name: '있는 것만 먼저 보내기' })
-    );
-    await userEvent.click(screen.getByRole('button', { name: '나누기' }));
+    try {
+      mockSplit.mockRejectedValueOnce(new Error('network'));
+      render(<OutboundPreparationTemplate />);
+      await user.click(
+        screen.getByRole('button', { name: '있는 것만 먼저 보내기' })
+      );
+      await user.click(screen.getByRole('button', { name: '나누기' }));
+      await act(() => jest.advanceTimersByTimeAsync(2000));
 
-    expect(mockSplit).toHaveBeenCalledTimes(2);
-    expect(mockSplit.mock.calls[1][0]).toEqual(mockSplit.mock.calls[0][0]);
-    expect(mockKeyCounter).toBe(1);
+      await waitFor(() =>
+        expect(toast.success).toHaveBeenCalledWith('1건을 나눴어요')
+      );
+      expect(mockSplit).toHaveBeenCalledTimes(2);
+      expect(mockSplit.mock.calls[1][0]).toEqual(mockSplit.mock.calls[0][0]);
+      expect(mockKeyCounter).toBe(1);
+      expect(toast.error).not.toHaveBeenCalled();
+    } finally {
+      jest.useRealTimers();
+    }
   });
+
   it('송장 실패 상자가 재시도 중 계획 단계에서 실패해도 완료 건수를 중복 합산하지 않는다', async () => {
     mockRun.mockResolvedValueOnce(
       result({

@@ -244,7 +244,17 @@ export function PrepareDialog({
                           {failure.message}
                         </p>
                       </div>
-                      {failure.retryable ? (
+                      {/* 확정 오류도 [다시 시도]를 남긴다(스펙 §5.1) — 상자에서 고친 뒤 이 창에서 이어 간다. */}
+                      <div className="flex shrink-0 gap-2">
+                        {!failure.retryable && (
+                          <Button size="sm" variant="outline" asChild>
+                            <Link
+                              href={`/order/fulfillments?shipmentId=${encodeURIComponent(failure.shipmentId)}`}
+                            >
+                              상자 보기
+                            </Link>
+                          </Button>
+                        )}
                         <Can run={useRunOutboundPreparation}>
                           <Button
                             size="sm"
@@ -255,15 +265,7 @@ export function PrepareDialog({
                             다시 시도
                           </Button>
                         </Can>
-                      ) : (
-                        <Button size="sm" variant="outline" asChild>
-                          <Link
-                            href={`/order/fulfillments?shipmentId=${encodeURIComponent(failure.shipmentId)}`}
-                          >
-                            상자 보기
-                          </Link>
-                        </Button>
-                      )}
+                      </div>
                     </div>
                   );
                 })}

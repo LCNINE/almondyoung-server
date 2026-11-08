@@ -47,7 +47,10 @@ import { BATCH_ISSUE_LIMIT } from '../../waybill-issue/waybill-issue-model';
 import { BucketTable } from '../components/bucket-table';
 import { BucketList } from '../components/bucket-list';
 import { PrepareDialog } from '../components/prepare-dialog';
-import type { PreparationInput } from '../run-outbound-preparation';
+import {
+  retryTransientBulk,
+  type PreparationInput,
+} from '../run-outbound-preparation';
 
 export default function OutboundPreparationTemplate() {
   const { data: warehouses = [] } = useWarehouses();
@@ -208,7 +211,12 @@ function PreparationWarehouse({
     }
 
     try {
-      const result = await split.mutateAsync(splitCommand.current);
+      const command = splitCommand.current;
+      const result = await retryTransientBulk(
+        (ids) => split.mutateAsync({ ...command, data: { shipmentIds: ids } }),
+        shipmentIds,
+        (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+      );
 
       splitCommand.current = null;
       toast.success(`${result.succeeded.length}건을 나눴어요`);

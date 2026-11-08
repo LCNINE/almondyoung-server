@@ -1,12 +1,16 @@
 import {
   batchNameFor,
   RETRY_DELAYS_MS,
+  retryTransientBulk,
   runOutboundPreparation,
   type PreparationDeps,
   type PreparationInput,
   type PreparationProgress,
 } from './run-outbound-preparation';
-import type { BatchResultItem } from '../../../lib/types/dto/fulfillment';
+import type {
+  BatchResultItem,
+  BulkShipmentResult,
+} from '../../../lib/types/dto/fulfillment';
 
 const input: PreparationInput = {
   warehouseId: 'w1',
@@ -518,5 +522,54 @@ describe('batchNameFor', () => {
     expect(batchNameFor(new Date('2026-12-31T15:05:00Z'), method)).toBe(
       `01/01 ${label} 00:05:00`
     );
+  });
+});
+
+describe('retryTransientBulk', () => {
+  const sleep = jest.fn(async (_ms: number) => undefined);
+
+  beforeEach(() => sleep.mockClear());
+
+  it('retries only transient item failures with the same subset rule and keeps permanent ones', async () => {
+    const run = jest
+      .fn<Promise<BulkShipmentResult>, [string[]]>()
+      .mockResolvedValueOnce({
+        succeeded: ['s1'],
+        failed: [
+          { shipmentId: 's2', code: 'UNKNOWN', message: '잠깐', transient: true },
+          { shipmentId: 's3', code: 'SHIPMENT_NOT_DRAFT', message: '바뀜', transient: false },
+        ],
+      })
+      .mockResolvedValueOnce({ succeeded: ['s2'], failed: [] });
+
+    await expect(retryTransientBulk(run, ['s1', 's2', 's3'], sleep)).resolves.toEqual({
+      succeeded: ['s1', 's2'],
+      failed: [{ shipmentId: 's3', code: 'SHIPMENT_NOT_DRAFT', message: '바뀜', transient: false }],
+    });
+    expect(run.mock.calls).toEqual([[['s1', 's2', 's3']], [['s2']]]);
+    expect(sleep.mock.calls).toEqual([[2000]]);
+  });
+
+  it('gives up after three retries and reports the still-transient failure', async () => {
+    const failure = { shipmentId: 's1', code: 'UNKNOWN', message: '잠깐', transient: true };
+    const run = jest.fn(async () => ({ succeeded: [], failed: [failure] }));
+
+    await expect(retryTransientBulk(run, ['s1'], sleep)).resolves.toEqual({ succeeded: [], failed: [failure] });
+    expect(run).toHaveBeenCalledTimes(4);
+    expect(sleep.mock.calls).toEqual([[2000], [5000], [10000]]);
+  });
+
+  it('retries a request that failed with a server or network error, and rethrows a rejection at once', async () => {
+    const run = jest
+      .fn<Promise<BulkShipmentResult>, [string[]]>()
+      .mockRejectedValueOnce({ statusCode: 503, message: '잠깐' })
+      .mockResolvedValueOnce({ succeeded: ['s1'], failed: [] });
+
+    await expect(retryTransientBulk(run, ['s1'], sleep)).resolves.toEqual({ succeeded: ['s1'], failed: [] });
+
+    const rejected = jest.fn().mockRejectedValue({ statusCode: 403, message: '권한' });
+
+    await expect(retryTransientBulk(rejected, ['s1'], sleep)).rejects.toEqual({ statusCode: 403, message: '권한' });
+    expect(rejected).toHaveBeenCalledTimes(1);
   });
 });
