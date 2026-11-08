@@ -10,6 +10,7 @@ import {
   type Table as TanstackTable,
 } from '@tanstack/react-table';
 import { useRouter } from 'next/navigation';
+import { tableMinWidth } from './table-min-width';
 
 type DataTableRootProps<TData extends RowData> = {
   table: TanstackTable<TData>;
@@ -64,7 +65,7 @@ export function DataTableRoot<TData extends RowData>({
 
   return (
     <div>
-      <Table variant={variant}>
+      <Table variant={variant} style={minWidthStyle(table)}>
         <Table.Header>
           {table.getHeaderGroups().map((headerGroup) => (
             <Table.Row key={headerGroup.id}>
@@ -160,6 +161,12 @@ export function DataTableRoot<TData extends RowData>({
       />
     </div>
   );
+}
+
+// 셀의 min-width 는 table-fixed 표에서 무시된다 — 최소 폭은 표에 건다(`tableMinWidth`).
+function minWidthStyle<TData>(table: TanstackTable<TData>): React.CSSProperties | undefined {
+  const minWidth = tableMinWidth(table.getVisibleLeafColumns().map((column) => column.columnDef.meta));
+  return minWidth === undefined ? undefined : { minWidth };
 }
 
 // max-width:0 + width:100% — auto 레이아웃 표에서 이 열만 남은 폭을 갖고, 안쪽 truncate 가 실제로 자르게 한다
