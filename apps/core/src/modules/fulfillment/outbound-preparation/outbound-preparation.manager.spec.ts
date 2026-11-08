@@ -10,6 +10,7 @@ import { loadShipmentLines } from '../services/consolidation-shipment-reads';
 import { OutboundBatchOrchestrator } from '../services/outbound-batch-orchestrator.service';
 import { ShipmentPlanningService } from '../services/shipment-planning.service';
 import { OutboundPreparationManager } from './outbound-preparation.manager';
+import { OutboundPreparationReader } from './outbound-preparation.reader';
 
 jest.mock('../services/consolidation-shipment-reads', () => ({ loadShipmentLines: jest.fn() }));
 
@@ -23,10 +24,10 @@ describe('OutboundPreparationManager', () => {
   const addShipment = jest.fn();
   const splitUnreserved = jest.fn();
   const limit = jest.fn();
-  const groupBy = jest.fn();
-  const where = jest.fn((_condition: SQL) => ({ limit, groupBy }));
-  const leftJoin = jest.fn(() => ({ where }));
-  const from = jest.fn(() => ({ where, leftJoin }));
+  // 상자 하나의 라인 수량·예약 합 — Reader.lineQuantities 가 돌려주는 값.
+  const splitLines = jest.fn();
+  const where = jest.fn((_condition: SQL) => ({ limit }));
+  const from = jest.fn(() => ({ where }));
   const db = { select: jest.fn(() => ({ from })) };
   let manager: OutboundPreparationManager;
 
@@ -42,7 +43,7 @@ describe('OutboundPreparationManager', () => {
     addShipment.mockReset().mockResolvedValue({});
     splitUnreserved.mockReset().mockResolvedValue({});
     limit.mockReset().mockResolvedValue([{ status: 'draft', manifestVersion: 3, reservationVersion: 7 }]);
-    groupBy.mockReset().mockResolvedValue([{ qty: 3, confirmedQty: 1 }]);
+    splitLines.mockReset().mockResolvedValue([{ qty: 3, confirmedQty: 1 }]);
     setProfiles(['p1']);
 
     const module = await Test.createTestingModule({
@@ -52,6 +53,10 @@ describe('OutboundPreparationManager', () => {
         { provide: DbService, useValue: { db } },
         { provide: ShipmentPlanningService, useValue: { plan, splitUnreserved } },
         { provide: OutboundBatchOrchestrator, useValue: { addShipment } },
+        {
+          provide: OutboundPreparationReader,
+          useValue: { lineQuantities: async ([id]: string[]) => new Map([[id, await splitLines()]]) },
+        },
       ],
     }).compile();
 
@@ -79,16 +84,19 @@ describe('OutboundPreparationManager', () => {
     expect(issueForShipment).not.toHaveBeenCalled();
   });
 
-  it.each(['pending', 'allocated'])('resumes a stuck %s waybill instead of issuing with the new key', async (status) => {
-    getActiveWaybill.mockResolvedValue({ status });
-    resumeActive.mockResolvedValue({ status: 'registered', trackingNo: '123', lastError: null, nextAttemptAt: null });
+  it.each(['pending', 'allocated'])(
+    'resumes a stuck %s waybill instead of issuing with the new key',
+    async (status) => {
+      getActiveWaybill.mockResolvedValue({ status });
+      resumeActive.mockResolvedValue({ status: 'registered', trackingNo: '123', lastError: null, nextAttemptAt: null });
 
-    expect(await manager.issueWaybills(['s1'], 'new-key', actor)).toEqual([
-      expect.objectContaining({ shipmentId: 's1', status: 'registered', trackingNo: '123' }),
-    ]);
-    expect(resumeActive).toHaveBeenCalledWith('s1', { carrier: 'HANJIN', expectedManifestVersion: 3 });
-    expect(issueForShipment).not.toHaveBeenCalled();
-  });
+      expect(await manager.issueWaybills(['s1'], 'new-key', actor)).toEqual([
+        expect.objectContaining({ shipmentId: 's1', status: 'registered', trackingNo: '123' }),
+      ]);
+      expect(resumeActive).toHaveBeenCalledWith('s1', { carrier: 'HANJIN', expectedManifestVersion: 3 });
+      expect(issueForShipment).not.toHaveBeenCalled();
+    },
+  );
 
   it('hands a stuck waybill with stale contents to the operator without retrying', async () => {
     getActiveWaybill.mockResolvedValue({ status: 'allocated' });
@@ -315,7 +323,7 @@ describe('OutboundPreparationManager', () => {
     },
     { lines: [] },
   ])('counts shipments with no unreserved quantity as succeeded without splitting: $lines', async ({ lines }) => {
-    groupBy.mockResolvedValue(lines);
+    splitLines.mockResolvedValue(lines);
 
     await expect(manager.splitManyUnreserved(['s1'], 'k', actor)).resolves.toEqual({
       succeeded: ['s1'],
@@ -326,7 +334,9 @@ describe('OutboundPreparationManager', () => {
 
   it('succeeds on a same-key retry after splitting removes the unreserved quantity', async () => {
     limit.mockResolvedValueOnce([{ manifestVersion: 3 }]).mockResolvedValueOnce([{ manifestVersion: 4 }]);
-    groupBy.mockResolvedValueOnce([{ qty: 3, confirmedQty: 1 }]).mockResolvedValueOnce([{ qty: 1, confirmedQty: 1 }]);
+    splitLines
+      .mockResolvedValueOnce([{ qty: 3, confirmedQty: 1 }])
+      .mockResolvedValueOnce([{ qty: 1, confirmedQty: 1 }]);
 
     await expect(manager.splitManyUnreserved(['s1'], 'k', actor)).resolves.toEqual({ succeeded: ['s1'], failed: [] });
     await expect(manager.splitManyUnreserved(['s1'], 'k', actor)).resolves.toEqual({ succeeded: ['s1'], failed: [] });

@@ -1,13 +1,10 @@
-import {
-  isWaybillIssued,
-  isWaybillPendingIssue,
-} from '../../../lib/services/orders/waybill-policy';
-import { parseServerError } from '../../../lib/api/server-error';
+import { isWaybillIssued, isWaybillPendingIssue } from './waybill-policy';
+import { parseServerError } from '../../api/server-error';
 import type {
   PreparationWaybillResult,
   BulkShipmentResult,
   PickingMethod,
-} from '../../../lib/types/dto/fulfillment';
+} from '../../types/dto/fulfillment';
 
 export const RETRY_DELAYS_MS = [2000, 5000, 10000] as const;
 

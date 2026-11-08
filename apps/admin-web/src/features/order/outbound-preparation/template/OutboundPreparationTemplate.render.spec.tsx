@@ -20,7 +20,7 @@ import type {
 import type {
   PreparationInput,
   PreparationProgress,
-} from '../run-outbound-preparation';
+} from '@/lib/services/orders/outbound-preparation-runner';
 import OutboundPreparationTemplate from './OutboundPreparationTemplate';
 
 const mockRun = jest.fn<

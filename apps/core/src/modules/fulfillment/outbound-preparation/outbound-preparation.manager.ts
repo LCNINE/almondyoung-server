@@ -1,7 +1,7 @@
 import { ConflictError, NotFoundError, ServiceUnavailableError } from '@app/shared';
 import { Injectable } from '@nestjs/common';
 import { DbService, InjectTypedDb } from '@app/db';
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import { ShipmentPlanningActor } from '../dto/shipment-planning.dto';
 import { loadShipmentLines } from '../services/consolidation-shipment-reads';
@@ -17,8 +17,12 @@ import {
   PreparationWaybillResult,
   runPerShipment,
 } from './bulk-shipment-result';
-import { resolvePlanProfileId } from './outbound-preparation-classify';
+import { compatibleShippingProfileId } from '../services/shipping-profile';
+import { OutboundPreparationReader } from './outbound-preparation.reader';
 
+// 공개 메서드가 tx?: DbTx 를 받지 않는 것은 의도다(ADR-0025 예외). 상자마다 기존 단건 명령을 «자기 트랜잭션»으로
+// 불러야 한 상자의 실패가 다른 상자를 되돌리지 않고, 송장 발급은 carrier HTTP 를 트랜잭션 안에 넣을 수 없다.
+// 그래서 명령 앞의 읽기(상태·버전·라인)도 트랜잭션 밖이다 — 그 사이 바뀐 값은 단건 명령의 expected*Version 검사가 막는다.
 @Injectable()
 export class OutboundPreparationManager {
   constructor(
@@ -27,6 +31,7 @@ export class OutboundPreparationManager {
     private readonly planning: ShipmentPlanningService,
     private readonly batches: OutboundBatchOrchestrator,
     private readonly waybills: WaybillService,
+    private readonly reader: OutboundPreparationReader,
   ) {}
 
   planMany(shipmentIds: string[], idempotencyKey: string, actor: ShipmentPlanningActor): Promise<BulkShipmentResult> {
@@ -51,7 +56,7 @@ export class OutboundPreparationManager {
       }
 
       const lines = await loadShipmentLines(db, [shipmentId]);
-      const shippingProfileId = resolvePlanProfileId(lines.map((line) => line.skuProfileId));
+      const shippingProfileId = compatibleShippingProfileId(lines.map((line) => line.skuProfileId));
 
       if (shippingProfileId === null) {
         throw new ConflictError(`SHIPMENT_PROFILE_INCOMPATIBLE: ${shipmentId}`);
@@ -217,22 +222,7 @@ export class OutboundPreparationManager {
     return runPerShipment(shipmentIds, async (shipmentId) => {
       const manifestVersion = await this.manifestVersionOf(shipmentId);
 
-      const lines = await this.dbService.db
-        .select({
-          qty: wmsTables.shipmentLines.qty,
-          confirmedQty: sql`coalesce(sum(${wmsTables.stockReservations.quantity}), 0)`.mapWith(Number),
-        })
-        .from(wmsTables.shipmentLines)
-        .leftJoin(
-          wmsTables.stockReservations,
-          and(
-            eq(wmsTables.stockReservations.targetId, wmsTables.shipmentLines.id),
-            eq(wmsTables.stockReservations.targetType, 'SHIPMENT_LINE'),
-            eq(wmsTables.stockReservations.status, 'confirmed'),
-          ),
-        )
-        .where(eq(wmsTables.shipmentLines.shipmentId, shipmentId))
-        .groupBy(wmsTables.shipmentLines.id, wmsTables.shipmentLines.qty);
+      const lines = (await this.reader.lineQuantities([shipmentId])).get(shipmentId) ?? [];
 
       if (!lines.some((line) => line.confirmedQty < line.qty)) {
         return 'already';

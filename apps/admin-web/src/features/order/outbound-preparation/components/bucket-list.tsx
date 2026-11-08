@@ -18,9 +18,9 @@ import {
 } from '@/lib/services/orders';
 import type { PreparationBucketDto } from '@/lib/types/dto/fulfillment';
 import {
-  BATCH_ISSUE_LIMIT,
+  PREPARATION_BATCH_LIMIT,
   plannedOrderText,
-} from '../../waybill-issue/waybill-issue-model';
+} from '../preparation-model';
 import { BUCKET_LABELS } from './bucket-table';
 
 export function BucketList({
@@ -59,7 +59,7 @@ export function BucketList({
           </Button>
         </Can>
       )}
-      {bucket.count > BATCH_ISSUE_LIMIT && (
+      {bucket.count > PREPARATION_BATCH_LIMIT && (
         <p className="text-sm font-semibold text-foreground">
           한 번에 100건까지 처리해요
         </p>

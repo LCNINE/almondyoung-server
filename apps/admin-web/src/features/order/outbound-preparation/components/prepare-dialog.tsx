@@ -21,12 +21,12 @@ import {
 } from '@/lib/services/orders';
 import type { PreparationShipmentDto } from '@/lib/types/dto/fulfillment';
 import { PICKING_METHOD_LABELS } from '@/lib/utils/picking-method';
-import { plannedOrderText } from '../../waybill-issue/waybill-issue-model';
+import { plannedOrderText } from '../preparation-model';
 import {
   type PreparationFailure,
   type PreparationInput,
   type PreparationProgress,
-} from '../run-outbound-preparation';
+} from '@/lib/services/orders/outbound-preparation-runner';
 
 export function PrepareDialog({
   input,

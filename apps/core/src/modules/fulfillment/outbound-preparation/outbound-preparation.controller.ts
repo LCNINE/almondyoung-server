@@ -16,6 +16,7 @@ import {
   OutboundPreparationQueryDto,
   OutboundPreparationSummaryDto,
 } from '../dto/outbound-preparation.dto';
+import { ShipmentPlanningActor } from '../dto/shipment-planning.dto';
 import { BulkShipmentResult, PreparationWaybillResult } from './bulk-shipment-result';
 import { OutboundPreparationService } from './outbound-preparation.service';
 
@@ -38,23 +39,9 @@ export class OutboundPreparationController {
     @Headers('idempotency-key') idempotencyKey: string | undefined,
     @User() user: AuthenticatedUser,
   ): Promise<BulkShipmentResult> {
-    if (!idempotencyKey?.trim()) {
-      throw new BadRequestException({
-        code: 'FULFILLMENT_IDEMPOTENCY_KEY_REQUIRED',
-        message: 'Idempotency-Key 헤더가 필요해요',
-      });
-    }
+    const { key, actor } = this.command(idempotencyKey, user);
 
-    const id = user?.userId ?? user?.id ?? user?.sub;
-
-    if (!id) {
-      throw new UnauthorizedException('로그인이 필요해요');
-    }
-
-    return this.service.planMany(dto.shipmentIds, idempotencyKey, {
-      id,
-      roles: Array.isArray(user?.roles) ? user.roles : [],
-    });
+    return this.service.planMany(dto.shipmentIds, key, actor);
   }
 
   @RequirePermission('fulfillment.warehouse.operate')
@@ -64,23 +51,9 @@ export class OutboundPreparationController {
     @Headers('idempotency-key') idempotencyKey: string | undefined,
     @User() user: AuthenticatedUser,
   ): Promise<PreparationWaybillResult[]> {
-    if (!idempotencyKey?.trim()) {
-      throw new BadRequestException({
-        code: 'FULFILLMENT_IDEMPOTENCY_KEY_REQUIRED',
-        message: 'Idempotency-Key 헤더가 필요해요',
-      });
-    }
+    const { key, actor } = this.command(idempotencyKey, user);
 
-    const id = user?.userId ?? user?.id ?? user?.sub;
-
-    if (!id) {
-      throw new UnauthorizedException('로그인이 필요해요');
-    }
-
-    return this.service.issueWaybills(dto.shipmentIds, idempotencyKey, {
-      id,
-      roles: Array.isArray(user?.roles) ? user.roles : [],
-    });
+    return this.service.issueWaybills(dto.shipmentIds, key, actor);
   }
 
   @RequirePermission('fulfillment.warehouse.operate')
@@ -91,23 +64,9 @@ export class OutboundPreparationController {
     @Headers('idempotency-key') idempotencyKey: string | undefined,
     @User() user: AuthenticatedUser,
   ): Promise<BulkShipmentResult> {
-    if (!idempotencyKey?.trim()) {
-      throw new BadRequestException({
-        code: 'FULFILLMENT_IDEMPOTENCY_KEY_REQUIRED',
-        message: 'Idempotency-Key 헤더가 필요해요',
-      });
-    }
+    const { key, actor } = this.command(idempotencyKey, user);
 
-    const id = user?.userId ?? user?.id ?? user?.sub;
-
-    if (!id) {
-      throw new UnauthorizedException('로그인이 필요해요');
-    }
-
-    return this.service.addManyToBatch(batchId, dto.shipmentIds, idempotencyKey, {
-      id,
-      roles: Array.isArray(user?.roles) ? user.roles : [],
-    });
+    return this.service.addManyToBatch(batchId, dto.shipmentIds, key, actor);
   }
 
   @RequirePermission('fulfillment.warehouse.operate')
@@ -117,6 +76,16 @@ export class OutboundPreparationController {
     @Headers('idempotency-key') idempotencyKey: string | undefined,
     @User() user: AuthenticatedUser,
   ): Promise<BulkShipmentResult> {
+    const { key, actor } = this.command(idempotencyKey, user);
+
+    return this.service.splitManyUnreserved(dto.shipmentIds, key, actor);
+  }
+
+  // 경계 검사(헤더·로그인)는 네 쓰기 라우트가 같다 — 상자별 키는 Manager 가 `<key>:<shipmentId>` 로 만든다.
+  private command(
+    idempotencyKey: string | undefined,
+    user: AuthenticatedUser,
+  ): { key: string; actor: ShipmentPlanningActor } {
     if (!idempotencyKey?.trim()) {
       throw new BadRequestException({
         code: 'FULFILLMENT_IDEMPOTENCY_KEY_REQUIRED',
@@ -130,9 +99,6 @@ export class OutboundPreparationController {
       throw new UnauthorizedException('로그인이 필요해요');
     }
 
-    return this.service.splitManyUnreserved(dto.shipmentIds, idempotencyKey, {
-      id,
-      roles: Array.isArray(user?.roles) ? user.roles : [],
-    });
+    return { key: idempotencyKey, actor: { id, roles: Array.isArray(user?.roles) ? user.roles : [] } };
   }
 }

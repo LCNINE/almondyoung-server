@@ -43,14 +43,14 @@ import {
   PICKING_METHOD_LABELS,
   type PickingMethod,
 } from '@/lib/utils/picking-method';
-import { BATCH_ISSUE_LIMIT } from '../../waybill-issue/waybill-issue-model';
+import { PREPARATION_BATCH_LIMIT } from '../preparation-model';
 import { BucketTable } from '../components/bucket-table';
 import { BucketList } from '../components/bucket-list';
 import { PrepareDialog } from '../components/prepare-dialog';
 import {
   retryTransientBulk,
   type PreparationInput,
-} from '../run-outbound-preparation';
+} from '@/lib/services/orders/outbound-preparation-runner';
 
 export default function OutboundPreparationTemplate() {
   const { data: warehouses = [] } = useWarehouses();
@@ -130,7 +130,7 @@ function PreparationWarehouse({
 
     return selected === undefined
       ? shipments
-          .slice(0, BATCH_ISSUE_LIMIT)
+          .slice(0, PREPARATION_BATCH_LIMIT)
           .map((shipment) => shipment.shipmentId)
       : shipments
           .filter((shipment) => selected.includes(shipment.shipmentId))
@@ -144,7 +144,7 @@ function PreparationWarehouse({
 
     const ids = selectedIds(activeBucket);
 
-    if (checked && ids.length >= BATCH_ISSUE_LIMIT) {
+    if (checked && ids.length >= PREPARATION_BATCH_LIMIT) {
       toast.error('한 번에 100건까지 처리해요');
 
       return;

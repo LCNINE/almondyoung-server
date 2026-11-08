@@ -1,6 +1,7 @@
 import type { PlannedShipment } from '@/lib/types/dto/fulfillment';
 
-export const BATCH_ISSUE_LIMIT = 100;
+// 한 번에 출고 준비하는 상자 수 상한. 서버 BulkShipmentIdsDto 의 ArrayMaxSize(100) 과 같아야 한다.
+export const PREPARATION_BATCH_LIMIT = 100;
 
 export function plannedOrderText(
   shipment: Pick<PlannedShipment, 'shipmentId' | 'orderNos'>

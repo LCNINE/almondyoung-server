@@ -3,7 +3,6 @@ import {
   isSingleItem,
   PreparationBucket,
   PreparationFacts,
-  resolvePlanProfileId,
 } from './outbound-preparation-classify';
 
 describe('classifyPreparation', () => {
@@ -113,20 +112,6 @@ describe('classifyPreparation', () => {
     { name: '라인이 없으면 unavailable', facts: { lines: [] }, expected: 'unavailable' },
   ])('$name', ({ facts, expected }) => {
     expect(classifyPreparation({ ...readyFacts, ...facts })).toBe(expected);
-  });
-});
-
-describe('resolvePlanProfileId', () => {
-  it.each<{ profileIds: (string | null)[]; expected: string | null }>([
-    { profileIds: ['p1'], expected: 'p1' },
-    { profileIds: ['p1', 'p1'], expected: 'p1' },
-    { profileIds: ['p1', 'p2'], expected: null },
-    { profileIds: ['p1', null], expected: null },
-    { profileIds: [null, 'p1'], expected: null },
-    { profileIds: [null], expected: null },
-    { profileIds: [], expected: null },
-  ])('$profileIds → $expected', ({ profileIds, expected }) => {
-    expect(resolvePlanProfileId(profileIds)).toBe(expected);
   });
 });
 

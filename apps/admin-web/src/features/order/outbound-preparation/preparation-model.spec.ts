@@ -1,4 +1,4 @@
-import { plannedOrderText } from './waybill-issue-model';
+import { plannedOrderText } from './preparation-model';
 
 const rows = [
   { shipmentId: 'a1111111-0000', orderNos: ['6321'] },

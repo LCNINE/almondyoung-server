@@ -6,11 +6,11 @@ import {
   type PreparationDeps,
   type PreparationInput,
   type PreparationProgress,
-} from './run-outbound-preparation';
+} from './outbound-preparation-runner';
 import type {
   BatchResultItem,
   BulkShipmentResult,
-} from '../../../lib/types/dto/fulfillment';
+} from '../../types/dto/fulfillment';
 
 const input: PreparationInput = {
   warehouseId: 'w1',
@@ -536,25 +536,52 @@ describe('retryTransientBulk', () => {
       .mockResolvedValueOnce({
         succeeded: ['s1'],
         failed: [
-          { shipmentId: 's2', code: 'UNKNOWN', message: '잠깐', transient: true },
-          { shipmentId: 's3', code: 'SHIPMENT_NOT_DRAFT', message: '바뀜', transient: false },
+          {
+            shipmentId: 's2',
+            code: 'UNKNOWN',
+            message: '잠깐',
+            transient: true,
+          },
+          {
+            shipmentId: 's3',
+            code: 'SHIPMENT_NOT_DRAFT',
+            message: '바뀜',
+            transient: false,
+          },
         ],
       })
       .mockResolvedValueOnce({ succeeded: ['s2'], failed: [] });
 
-    await expect(retryTransientBulk(run, ['s1', 's2', 's3'], sleep)).resolves.toEqual({
+    await expect(
+      retryTransientBulk(run, ['s1', 's2', 's3'], sleep)
+    ).resolves.toEqual({
       succeeded: ['s1', 's2'],
-      failed: [{ shipmentId: 's3', code: 'SHIPMENT_NOT_DRAFT', message: '바뀜', transient: false }],
+      failed: [
+        {
+          shipmentId: 's3',
+          code: 'SHIPMENT_NOT_DRAFT',
+          message: '바뀜',
+          transient: false,
+        },
+      ],
     });
     expect(run.mock.calls).toEqual([[['s1', 's2', 's3']], [['s2']]]);
     expect(sleep.mock.calls).toEqual([[2000]]);
   });
 
   it('gives up after three retries and reports the still-transient failure', async () => {
-    const failure = { shipmentId: 's1', code: 'UNKNOWN', message: '잠깐', transient: true };
+    const failure = {
+      shipmentId: 's1',
+      code: 'UNKNOWN',
+      message: '잠깐',
+      transient: true,
+    };
     const run = jest.fn(async () => ({ succeeded: [], failed: [failure] }));
 
-    await expect(retryTransientBulk(run, ['s1'], sleep)).resolves.toEqual({ succeeded: [], failed: [failure] });
+    await expect(retryTransientBulk(run, ['s1'], sleep)).resolves.toEqual({
+      succeeded: [],
+      failed: [failure],
+    });
     expect(run).toHaveBeenCalledTimes(4);
     expect(sleep.mock.calls).toEqual([[2000], [5000], [10000]]);
   });
@@ -565,11 +592,19 @@ describe('retryTransientBulk', () => {
       .mockRejectedValueOnce({ statusCode: 503, message: '잠깐' })
       .mockResolvedValueOnce({ succeeded: ['s1'], failed: [] });
 
-    await expect(retryTransientBulk(run, ['s1'], sleep)).resolves.toEqual({ succeeded: ['s1'], failed: [] });
+    await expect(retryTransientBulk(run, ['s1'], sleep)).resolves.toEqual({
+      succeeded: ['s1'],
+      failed: [],
+    });
 
-    const rejected = jest.fn().mockRejectedValue({ statusCode: 403, message: '권한' });
+    const rejected = jest
+      .fn()
+      .mockRejectedValue({ statusCode: 403, message: '권한' });
 
-    await expect(retryTransientBulk(rejected, ['s1'], sleep)).rejects.toEqual({ statusCode: 403, message: '권한' });
+    await expect(retryTransientBulk(rejected, ['s1'], sleep)).rejects.toEqual({
+      statusCode: 403,
+      message: '권한',
+    });
     expect(rejected).toHaveBeenCalledTimes(1);
   });
 });

@@ -1,13 +1,13 @@
 import { Type } from 'class-transformer';
 import { ArrayMaxSize, ArrayMinSize, IsArray, IsIn, IsInt, IsOptional, IsUUID, Min } from 'class-validator';
-import { PreparationBucket } from '../outbound-preparation/outbound-preparation-classify';
+import { PREPARATION_BUCKETS, PreparationBucket } from '../outbound-preparation/outbound-preparation-classify';
 
 export class OutboundPreparationQueryDto {
   @IsUUID()
   warehouseId: string;
 
   @IsOptional()
-  @IsIn(['ready', 'partial', 'unavailable', 'mergeable', 'resume', 'needs_info'])
+  @IsIn(PREPARATION_BUCKETS)
   bucket?: PreparationBucket;
 
   @IsOptional()

@@ -26,6 +26,11 @@ export const orderQueryKeys = {
   outboundBatchWorkItems: (id: string) =>
     ['outbound-batches', 'v2', id, 'work-items'] as const,
 
+  // 출고 준비
+  outboundPreparation: ['outbound-preparation'] as const,
+  outboundPreparationSummary: (warehouseId: string) =>
+    ['outbound-preparation', warehouseId] as const,
+
   // 이행 관련
   fulfillments: ['fulfillments'] as const,
   fulfillmentsList: (params?: object) =>
@@ -82,8 +87,10 @@ export const orderQueryKeys = {
   // 직배 운영 (입점사 상자, K3) — 뮤테이션 성공 시 ['direct-ship'] 를 통째로 무효화한다
   directShipCancelNotices: ['direct-ship', 'cancel-notices'] as const,
   directShipSupplierQueue: ['direct-ship', 'supplier-queue'] as const,
-  directShipSupplierShipments: (supplierId: string, stage: 'pending' | 'forwarded') =>
-    ['direct-ship', 'supplier-queue', supplierId, stage] as const,
+  directShipSupplierShipments: (
+    supplierId: string,
+    stage: 'pending' | 'forwarded'
+  ) => ['direct-ship', 'supplier-queue', supplierId, stage] as const,
   directShipSupplierHandoffs: (supplierId: string) =>
     ['direct-ship', 'handoffs', supplierId] as const,
 

@@ -1,6 +1,8 @@
 import { compatibleShippingProfileId } from '../services/shipping-profile';
 
-export type PreparationBucket = 'ready' | 'partial' | 'unavailable' | 'mergeable' | 'resume' | 'needs_info';
+// 분류 이름의 정본. 응답 순서·쿼리 검증·타입이 모두 여기서 나온다.
+export const PREPARATION_BUCKETS = ['ready', 'partial', 'unavailable', 'mergeable', 'resume', 'needs_info'] as const;
+export type PreparationBucket = (typeof PREPARATION_BUCKETS)[number];
 
 export interface PreparationFacts {
   status: 'draft' | 'planned';
@@ -20,6 +22,7 @@ export function classifyPreparation(f: PreparationFacts): PreparationBucket | nu
     return 'resume';
   }
 
+  // 라인이 0개인 상자도 여기 걸린다 — 보낼 것이 없으니 출고불가가 맞다.
   if (f.lines.every((line) => line.confirmedQty === 0)) {
     return 'unavailable';
   }
@@ -28,7 +31,7 @@ export function classifyPreparation(f: PreparationFacts): PreparationBucket | nu
     return 'partial';
   }
 
-  if (resolvePlanProfileId(f.profileIds) === null || !f.recipientComplete) {
+  if (compatibleShippingProfileId(f.profileIds) === null || !f.recipientComplete) {
     return 'needs_info';
   }
 
@@ -39,10 +42,6 @@ export function classifyPreparation(f: PreparationFacts): PreparationBucket | nu
   }
 
   return 'ready';
-}
-
-export function resolvePlanProfileId(profileIds: (string | null)[]): string | null {
-  return compatibleShippingProfileId(profileIds);
 }
 
 export function isSingleItem(lines: { qty: number }[]): boolean {

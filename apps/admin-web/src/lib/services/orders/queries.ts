@@ -60,7 +60,7 @@ export const useOutboundPreparationSummary = (
   enabled = true
 ) => {
   return useQuery({
-    queryKey: ['outbound-preparation', warehouseId],
+    queryKey: orderQueryKeys.outboundPreparationSummary(warehouseId),
     queryFn: () => orders.outboundPreparation.summary(warehouseId),
     enabled: !!warehouseId && enabled,
   });
@@ -71,7 +71,7 @@ export const useLoadMoreOutboundPreparation = (warehouseId: string) => {
 
   return useMutation({
     mutationFn: async (bucket: PreparationBucket) => {
-      const queryKey = ['outbound-preparation', warehouseId];
+      const queryKey = orderQueryKeys.outboundPreparationSummary(warehouseId);
       const summary =
         queryClient.getQueryData<OutboundPreparationSummary>(queryKey);
       const current = summary?.buckets.find((entry) => entry.bucket === bucket);
@@ -173,8 +173,12 @@ export const useSupplierShipments = (
   stage: SupplierQueueStage
 ) => {
   return useQuery({
-    queryKey: orderQueryKeys.directShipSupplierShipments(supplierId ?? '', stage),
-    queryFn: () => orders.directShip.getSupplierShipments(supplierId ?? '', stage),
+    queryKey: orderQueryKeys.directShipSupplierShipments(
+      supplierId ?? '',
+      stage
+    ),
+    queryFn: () =>
+      orders.directShip.getSupplierShipments(supplierId ?? '', stage),
     enabled: !!supplierId,
   });
 };
@@ -331,7 +335,10 @@ export const useFulfillmentOutboxEvents = (id: string) => {
   });
 };
 
-export const useFulfillmentShipments = (id: string, options?: { enabled?: boolean }) => {
+export const useFulfillmentShipments = (
+  id: string,
+  options?: { enabled?: boolean }
+) => {
   return useQuery({
     queryKey: orderQueryKeys.fulfillmentShipments(id),
     queryFn: () => orders.fulfillmentOrder.getShipments(id),
@@ -470,7 +477,11 @@ export const useFulfillmentMetrics = () => {
   });
 };
 
-export const useDailyOrderStatus = (from: string, to: string, options: { enabled?: boolean } = {}) => {
+export const useDailyOrderStatus = (
+  from: string,
+  to: string,
+  options: { enabled?: boolean } = {}
+) => {
   return useQuery({
     enabled: options.enabled ?? true,
     queryKey: orderQueryKeys.dailyOrderStatus(from, to),
@@ -501,7 +512,9 @@ export const useConfirmSalesOrder = () => {
     },
   });
 };
-useConfirmSalesOrder.permission = ['order.order.write'] as const satisfies PermissionRequirement;
+useConfirmSalesOrder.permission = [
+  'order.order.write',
+] as const satisfies PermissionRequirement;
 
 // ===== 매칭 관련 쿼리 (WMS API 스펙 기반) =====
 

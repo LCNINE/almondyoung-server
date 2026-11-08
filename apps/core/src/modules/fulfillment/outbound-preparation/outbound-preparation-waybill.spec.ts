@@ -5,7 +5,7 @@ import {
   runOutboundPreparation,
   PreparationDeps,
   PreparationInput,
-} from 'apps/admin-web/src/features/order/outbound-preparation/run-outbound-preparation';
+} from 'apps/admin-web/src/lib/services/orders/outbound-preparation-runner';
 import { wmsTables } from '../../inventory/schema/inventory.schema';
 import { FulfillmentCommandService } from '../services/fulfillment-command.service';
 import { OutboundBatchOrchestrator } from '../services/outbound-batch-orchestrator.service';
@@ -20,6 +20,7 @@ import { WaybillService } from '../waybill/waybill.service';
 import { HANJIN_CONFIG } from '../waybill/waybill.tokens';
 import { WaybillRow } from '../waybill/waybill.types';
 import { OutboundPreparationManager } from './outbound-preparation.manager';
+import { OutboundPreparationReader } from './outbound-preparation.reader';
 
 const shipmentId = '00000000-0000-4000-8000-000000000001';
 const actor = { id: 'operator', roles: [] };
@@ -112,6 +113,7 @@ describe('outbound preparation with WaybillManager', () => {
         WaybillService,
         { provide: DbService, useValue: { db, run: (fn: (tx: typeof db) => unknown) => fn(db) } },
         { provide: ShipmentPlanningService, useValue: {} },
+        { provide: OutboundPreparationReader, useValue: {} },
         { provide: OutboundBatchOrchestrator, useValue: { addShipment } },
         {
           provide: WaybillReader,
@@ -219,18 +221,21 @@ describe('outbound preparation with WaybillManager', () => {
   });
 
   // 원래 키를 잃은 호출(다른 PC·저장소 삭제)도 같은 키 replay 처럼 그 행을 끝까지 몰아간다 — 새 행은 만들지 않는다.
-  it.each<WaybillRow['status']>(['pending', 'allocated'])('resumes lost-key %s issuance on the same row', async (status) => {
-    active = waybill(status);
+  it.each<WaybillRow['status']>(['pending', 'allocated'])(
+    'resumes lost-key %s issuance on the same row',
+    async (status) => {
+      active = waybill(status);
 
-    expect(await runOutboundPreparation(deps, input, jest.fn())).toMatchObject({
-      waybilled: 1,
-      joined: 1,
-      failures: [],
-    });
-    expect(sleep).not.toHaveBeenCalled();
-    expect(insertPending).not.toHaveBeenCalled();
-    expect(drive.mock.calls.map(([id]) => id)).toEqual(['waybill']);
-  });
+      expect(await runOutboundPreparation(deps, input, jest.fn())).toMatchObject({
+        waybilled: 1,
+        joined: 1,
+        failures: [],
+      });
+      expect(sleep).not.toHaveBeenCalled();
+      expect(insertPending).not.toHaveBeenCalled();
+      expect(drive.mock.calls.map(([id]) => id)).toEqual(['waybill']);
+    },
+  );
 
   // 행이 옛 내용으로 채번됐으면 이어 가면 옛 주소로 등록된다 — 재시도하지 않고 운영자에게 넘긴다.
   it.each<[string, Partial<WaybillRow>]>([
