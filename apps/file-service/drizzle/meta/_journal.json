@@ -64,6 +64,20 @@
       "when": 1793462290966,
       "tag": "20261031155810_backfill-upload-tenant-one",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1794120684797,
+      "tag": "20261108065124_prepare-upload-tenant-contract",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1794120687206,
+      "tag": "20261108065127_contract-upload-tenant-not-null",
+      "breakpoints": true
     }
   ]
 }

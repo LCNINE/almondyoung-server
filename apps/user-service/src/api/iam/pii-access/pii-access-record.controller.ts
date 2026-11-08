@@ -1,4 +1,4 @@
-import { RequirePermission } from '@app/authorization';
+import { RequirePermission, ServiceKeyRoute } from '@app/authorization';
 import { SkipResponseEnvelope } from '@app/shared';
 import { Body, Controller, HttpCode, Post, UseGuards } from '@nestjs/common';
 import { ApiExcludeEndpoint } from '@nestjs/swagger';
@@ -43,10 +43,12 @@ export class PiiAccessRecordController {
     });
   }
 
+  // 기록의 테넌트는 호출자가 실은 `x-tenant-id` — 서비스 키 라우트라 요청 문이 그 헤더를 맥락에 세우고, 없으면 적재가 실패한다.
   @ApiExcludeEndpoint()
   @Post('internal/iam/pii-access-logs')
   @HttpCode(204)
   @Public()
+  @ServiceKeyRoute()
   @UseGuards(InternalApiKeyGuard)
   @SkipResponseEnvelope()
   recordInternal(@Body() body: InternalPiiAccessRecordDto): Promise<void> {

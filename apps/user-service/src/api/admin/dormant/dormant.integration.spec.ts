@@ -49,7 +49,7 @@ describeIfDb('dormant candidates against a real database', () => {
     for (const r of roleNames) {
       await dbService.db
         .insert(userRoleAssignments)
-        .values({ userId: row.id, roleId: await roleId(r.name), expiresAt: r.expiresAt ?? null });
+        .values({ userId: row.id, roleId: await roleId(r.name), expiresAt: r.expiresAt ?? null, tenantId: '1' });
     }
     return row.id;
   };

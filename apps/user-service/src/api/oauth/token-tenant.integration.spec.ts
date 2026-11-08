@@ -146,7 +146,7 @@ describeIfDb('token tenant queries against a real database', () => {
   it('주소는 그 주소를 테넌트 도메인으로 가진 테넌트와 그 상태를 돌려준다. 모르는 주소는 null', async () => {
     await rolledBack(async (tx) => {
       await tenant(tx, `${PREFIX}s`, 'suspended');
-      await tx.insert(tenantDomains).values({ host: `admin.${PREFIX}.test:8443`, tenantId: `${PREFIX}s` });
+      await tx.insert(tenantDomains).values({ host: `admin.${PREFIX}.test:8443`, tenantId: `${PREFIX}s`, app: 'admin-web' });
 
       expect(await repo.findTenantByHost(`admin.${PREFIX}.test:8443`, tx)).toEqual({
         id: `${PREFIX}s`,
@@ -168,7 +168,7 @@ describeIfDb('token tenant queries against a real database', () => {
     await rolledBack(async (tx) => {
       await tx
         .insert(tenantDomains)
-        .values({ host: `staff.${PREFIX}.test`, tenantId: '1' })
+        .values({ host: `staff.${PREFIX}.test`, tenantId: '1', app: 'admin-web' })
         .onConflictDoNothing();
       const client = (clientId: string, redirectUris: string[]) =>
         tx.insert(oauthClients).values({ clientId, clientSecretHash: 'x', redirectUris, tenantId: null });

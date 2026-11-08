@@ -1,3 +1,4 @@
+import { IS_SERVICE_KEY_ROUTE_KEY } from '@app/authorization';
 import { ConfigService } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import type { IamActor } from '../iam-actor';
@@ -90,5 +91,10 @@ describe('PiiAccessRecordController', () => {
     expect(service.record).toHaveBeenCalledWith(
       expect.objectContaining({ actorUserId: '0192f3a4-0000-7000-8000-000000000004', sourceService: 'notification' }),
     );
+  });
+
+  // 내부 키 기록의 테넌트 = 호출자의 테넌트 헤더. 서비스 키 라우트여야 요청 문이 그 헤더를 맥락에 세운다(접속기록이 그 테넌트로 남는다).
+  it('marks the internal record route as a service key route so the caller tenant header becomes the context', () => {
+    expect(Reflect.getMetadata(IS_SERVICE_KEY_ROUTE_KEY, PiiAccessRecordController.prototype.recordInternal)).toBe(true);
   });
 });

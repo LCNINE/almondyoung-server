@@ -48,9 +48,8 @@ export const uploads = pgTable(
 
     uploadedBy: uuid('uploaded_by').notNull(),
     isPublic: boolean('is_public').default(false).notNull(),
-    // 파일이 속한 테넌트(올린 요청의 테넌트). 버킷도 이 테넌트의 것이다. expand 기간엔 nullable —
-    // 테넌트를 모르는 쓰기는 DB 기본값이 채운다(마이그 SQL 에만 있다), NOT NULL 은 contract 에서.
-    tenantId: varchar('tenant_id', { length: 64 }),
+    // 파일이 속한 테넌트(올린 요청의 테넌트). 버킷도 이 테넌트의 것이다. 기본값은 없다 — 올린 요청이 정한다.
+    tenantId: varchar('tenant_id', { length: 64 }).notNull(),
 
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
