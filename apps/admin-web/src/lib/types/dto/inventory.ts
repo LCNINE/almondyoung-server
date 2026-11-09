@@ -279,6 +279,8 @@ export interface LocationRackDto {
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
+  /** 랙 수정 응답에만 — 끝 번호를 따라 칸을 맞춘 결과 (로케이션 코드) */
+  binChanges?: { created: string[]; deleted: string[]; keptInUse: string[] };
 }
 
 export interface BinRangeRequest {
