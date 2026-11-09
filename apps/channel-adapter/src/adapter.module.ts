@@ -95,6 +95,10 @@ import { LineReservationStateConsumer } from './consumers/line-reservation-state
 import { ReservationCutoverRepository } from './services/reservation-projection/reservation-cutover.repository';
 import { ReservationProjectionService } from './services/reservation-projection/reservation-projection.service';
 import { ReservationProjectionWorker } from './services/reservation-projection/reservation-projection.worker';
+import { ReservationReconcileJob } from './services/reservation-projection/reservation-reconcile.job';
+import { ReservationReconcileRunRepository } from './services/reservation-projection/reservation-reconcile-run.repository';
+import { ReservationReconcileService } from './services/reservation-projection/reservation-reconcile.service';
+import { CoreLineReservationStateClient } from './services/clients/core-line-reservation-state.client';
 import { SellableSettleGate } from './services/reservation-projection/sellable-settle-gate';
 import { MembershipEventConsumer } from './consumers/membership-event.consumer';
 import { PimMedusaMappingRepository } from './adapters/medusa/pim-medusa-mapping.repository';
@@ -362,6 +366,10 @@ const NO_KAFKA_PUBLISHER_STREAMS: StreamConfig[] = [
           SellableSettleGate,
           ReservationProjectionService,
           ReservationProjectionWorker,
+          ReservationReconcileJob,
+          ReservationReconcileRunRepository,
+          ReservationReconcileService,
+          CoreLineReservationStateClient,
           ChannelOrderCancelRepository,
           ChannelOrderCancelManager,
           ChannelReturnSettleManager,

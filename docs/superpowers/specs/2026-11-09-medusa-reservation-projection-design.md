@@ -162,6 +162,7 @@ channel-adapter 크론 (하루 한 번)
   - 고칠 줄 수 > 한도 → 고치지 않고 «멈춘 회차»로 기록(예시 몇 줄 포함).
   - core 조회 실패 → 아무것도 고치지 않고 «건너뜀»으로 기록.
   - 한도는 설정값. 기본값은 빌더가 라이브의 하루 Medusa 주문 줄 수를 재서 정하고 근거를 스펙에 남긴다. *(Claude 판단)*
+  - **기본값 «미실측, 200»** (`MEDUSA_RESERVATION_RECONCILE_MAX_FIXES`, 미설정·잘못된 값은 200). 터널 없이 정했다. 나중에 재는 읽기 전용 쿼리(라이브 `medusa` DB): `SELECT date_trunc('day', o.created_at) d, count(*) FROM order_line_item oli JOIN "order" o ON o.id = oli.order_id WHERE o.created_at > now() - interval '30 days' GROUP BY 1 ORDER BY 1;` — 일 최대치의 약 2배를 한도로 한다.
 - **기록과 화면 API**: 회차 기록은 새 테이블(회차당 한 행: 시각·상태 `applied|halted|skipped`·수치·예시·처리자). 
   `order_reconcile_findings` 는 «주문 하나의 불일치» 모양이라 회차 단위 기록을 억지로 넣지 않는다. *(Claude 판단)*
   `adapter/order-reconcile-findings` 옆에 목록·요약을 더해 같은 화면이 읽게 한다.
