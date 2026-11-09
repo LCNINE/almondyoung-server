@@ -10,7 +10,7 @@ const row = (over: Partial<ReconcileRunRow> = {}): ReconcileRunRow =>
 const setup = (found: ReconcileRunRow | null) => {
   const started = row({ id: 'new', status: 'running' });
   const runs = {
-    findById: jest.fn(async (id: string) => (id === 'new' ? started : found)),
+    findById: jest.fn((id: string) => Promise.resolve(id === 'new' ? started : found)),
     listOpenHalted: jest.fn().mockResolvedValue([]),
     latest: jest.fn().mockResolvedValue(null),
     closeOpenHalted: jest.fn().mockResolvedValue(true),
@@ -42,7 +42,9 @@ describe('ReservationReconcileRunsController', () => {
     expect(reconcile.startForced).toHaveBeenCalledWith('u1');
     expect(res).toEqual({ data: started });
     expect(runs.closeOpenHalted).not.toHaveBeenCalled(); // 아직 도는 중
-    expect(Reflect.getMetadata('__httpCode__', ReservationReconcileRunsController.prototype.apply)).toBe(202);
+    const applyHandler = Object.getOwnPropertyDescriptor(ReservationReconcileRunsController.prototype, 'apply')
+      ?.value as unknown;
+    expect(Reflect.getMetadata('__httpCode__', applyHandler as object)).toBe(202);
   });
 
   it('뒤의 강제 회차가 applied 로 끝나면 원래 회차를 forced 로 닫는다', async () => {
