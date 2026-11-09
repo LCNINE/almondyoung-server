@@ -118,6 +118,8 @@ it('위험을 읽고 사유를 적어 중단한 뒤 같은 대화상자에서 �
   expect(mockAbandon).not.toHaveBeenCalled();
 
   await user.type(screen.getByLabelText('중단 사유'), '한진 응답 없음');
+  // 적기 시작하면 «사유를 적어 주세요»는 사라진다.
+  expect(screen.queryByRole('alert')).toBeNull();
   await user.click(screen.getByRole('button', { name: '발급 중단' }));
   expect(mockAbandon).toHaveBeenCalledWith({
     waybillId: 'wb-1',

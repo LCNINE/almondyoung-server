@@ -170,7 +170,10 @@ export function StuckWaybillPanel({
                 <Input
                   id="abandon-reason"
                   value={reason}
-                  onChange={(e) => setReason(e.target.value)}
+                  onChange={(e) => {
+                    setReason(e.target.value);
+                    setError(null);
+                  }}
                 />
               </div>
             </div>

@@ -397,6 +397,26 @@ describe('합포장 중 기존 무효화 버튼', () => {
     ).toBeTruthy();
   });
 
+  it('멈춘 송장은 무효화가 아니라 «중단하고 다시 발급»으로 푼다(#1241)', () => {
+    mockDetail.mockImplementation((id) => {
+      const base = detail(id, 'planned');
+      return loaded({
+        ...base,
+        waybills: base.waybills.map((w) => ({ ...w, status: 'allocated' })),
+      });
+    });
+
+    renderTab();
+
+    expect(screen.getByText('송장 발급이 멈춰 있어요')).toBeTruthy();
+    expect(
+      screen.getByRole('button', { name: '중단하고 다시 발급' })
+    ).toBeTruthy();
+    expect(
+      screen.getByRole('button', { name: '무효화' }).hasAttribute('disabled')
+    ).toBe(true);
+  });
+
   it('진행 상태를 불러오는 중이면 무효화·재발급을 열지 않는다', () => {
     mockProgress.mockReturnValue({
       data: undefined,
