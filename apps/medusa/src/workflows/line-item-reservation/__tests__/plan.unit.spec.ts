@@ -3,6 +3,7 @@ import {
   planReservationBatch,
   resolveManaged,
   resultsAfterWriteFailure,
+  writeFailureMessage,
   type LineItemContext,
 } from '../plan';
 
@@ -307,5 +308,15 @@ describe('resultsAfterWriteFailure', () => {
     const [result] = resultsAfterWriteFailure(replan, 'boom');
     expect(result.outcome).toBe('error');
     expect(result.message).not.toBe('boom');
+  });
+});
+
+describe('writeFailureMessage', () => {
+  it('Error·{message} 객체·문자열·그 밖의 값에서 읽을 문장을 꺼낸다', () => {
+    expect(writeFailureMessage(new Error('boom'))).toBe('boom');
+    expect(writeFailureMessage({ message: 'workflow boom', name: 'x' })).toBe('workflow boom');
+    expect(writeFailureMessage('plain')).toBe('plain');
+    expect(writeFailureMessage({ code: 1 })).toBe('{"code":1}');
+    expect(writeFailureMessage(undefined)).toBe('undefined');
   });
 });

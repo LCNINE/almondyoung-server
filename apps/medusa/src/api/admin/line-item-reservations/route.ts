@@ -1,6 +1,6 @@
 import type { MedusaRequest, MedusaResponse } from '@medusajs/framework/http';
 import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
-import { resultsAfterWriteFailure } from '../../../workflows/line-item-reservation/plan';
+import { resultsAfterWriteFailure, writeFailureMessage } from '../../../workflows/line-item-reservation/plan';
 import { readReservationBatchPlan } from '../../../workflows/line-item-reservation/steps';
 import { setLineItemReservationsWorkflow } from '../../../workflows/line-item-reservation/workflows';
 import type { AdminListLineItemReservationsType, AdminSetLineItemReservationsType } from './validators';
@@ -23,7 +23,7 @@ export async function POST(req: MedusaRequest<AdminSetLineItemReservationsType>,
     const { result } = await setLineItemReservationsWorkflow(req.scope).run({ input: { items } });
     return res.json({ results: result });
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = writeFailureMessage(error);
     const logger = req.scope.resolve(ContainerRegistrationKeys.LOGGER);
     logger.warn(`[line-item-reservations] 묶음 ${items.length}줄 쓰기 실패(되감김): ${message}`);
     const replan = await readReservationBatchPlan(req.scope, items);

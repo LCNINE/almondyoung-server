@@ -226,6 +226,21 @@ export function planReservationBatch(
  * 나머지 줄(`unchanged`·`deferred`·`not_managed`·`not_found`·`error`)은 원래 쓰기가 없었으니 다시 읽은 결과 그대로다.
  * 모든 줄을 `error`·0 으로 덮으면 고칠 필요 없는 줄까지 실패로 세고, 0 이 «Medusa 가 0 을 잡고 있다»와 구별되지 않는다.
  */
+/**
+ * 워크플로가 던진 것의 사람이 읽을 문장. 워크플로 실패는 `Error` 가 아니라 `{ message, … }` 객체로 올 때가 있어
+ * `String(error)` 로 두면 «[object Object]» 가 결과·로그에 남는다(실 Medusa 통합 테스트에서 확인).
+ */
+export function writeFailureMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (error && typeof error === 'object' && 'message' in error && typeof error.message === 'string') return error.message;
+  if (typeof error === 'string') return error;
+  try {
+    return JSON.stringify(error) ?? String(error);
+  } catch {
+    return String(error);
+  }
+}
+
 export function resultsAfterWriteFailure(replan: ReservationBatchPlan, message: string): LineItemReservationResult[] {
   return replan.results.map((result) =>
     result.outcome === 'set'
