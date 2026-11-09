@@ -9,6 +9,11 @@ import type {
   ReconcileFindingDto,
 } from '@/lib/api/domains/channel/order-reconcile-findings.shape';
 
+import type {
+  ReconcileRunDto,
+  ReconcileRunExample,
+} from '@/lib/api/domains/channel/reservation-reconcile-runs.shape';
+
 import { actionErrorText } from '@/features/events/failures/display';
 
 // 409 문구 그대로·504 는 «처리 중» — 이벤트 실패 화면과 같은 규칙이다
@@ -105,10 +110,16 @@ export function redeliverOutcome(result: string): {
   return { tone: 'error', text: `보내지 않음 — ${lastResultText(result)}` };
 }
 
-export function memoError(memo: string): string | null {
+/** 예약 대사 종결 사유 상한 — 서버 `CloseReconcileRunDto` 의 `@MaxLength(200)` */
+export const RUN_REASON_MAX = 200;
+
+export function memoError(
+  memo: string,
+  max: number = MEMO_MAX
+): string | null {
   const trimmed = memo.trim();
   if (!trimmed) return '메모를 입력하세요';
-  if (trimmed.length > MEMO_MAX) return `${MEMO_MAX}자 이내로 입력하세요`;
+  if (trimmed.length > max) return `${max}자 이내로 입력하세요`;
   return null;
 }
 
@@ -136,4 +147,66 @@ export function mismatchActionError(error: unknown): {
   if (statusCodeOf(error) === 404)
     return { text: '이미 해소·종결된 행입니다', gone: true };
   return { text: actionErrorText(error), gone: false };
+}
+
+// ── Medusa 예약 대사 회차 (#1247) ─────────────────────────────────────────────
+
+const RUN_TIME = new Intl.DateTimeFormat('en-GB', {
+  timeZone: 'Asia/Seoul',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false,
+});
+
+/** `MM-DD HH:mm` (KST) */
+export function runTimeText(iso: string): string {
+  const p = Object.fromEntries(
+    RUN_TIME.formatToParts(new Date(iso)).map((x) => [x.type, x.value])
+  );
+  return `${p.month}-${p.day} ${p.hour === '24' ? '00' : p.hour}:${p.minute}`;
+}
+
+export function haltedRunText(run: ReconcileRunDto): string {
+  return `Medusa 예약 대사가 멈췄어요 · 고칠 줄 ${run.candidates} · ${runTimeText(run.startedAt)}`;
+}
+
+/** 열린 회차가 없을 때 보이는 한 줄. 회차가 한 번도 없으면 null (아무것도 그리지 않는다) */
+export function latestRunText(run: ReconcileRunDto | null): string | null {
+  if (!run) return null;
+  const at = runTimeText(run.startedAt);
+  if (run.status === 'applied') return `${at} 고침 ${run.fixes}줄`;
+  if (run.status === 'skipped')
+    return run.error ? `${at} 건너뜀 — ${run.error}` : `${at} 건너뜀`;
+  if (run.status === 'running') return `${at} 도는 중`;
+  return `${at} 멈춤`;
+}
+
+export function unknownText(run: ReconcileRunDto, now: Date): string | null {
+  if (run.unknown <= 0) return null;
+  const base = `core 가 모르는 예약 ${run.unknown}줄`;
+  if (!run.oldestUnknownAt) return base;
+  const days = Math.max(
+    0,
+    Math.floor((now.getTime() - new Date(run.oldestUnknownAt).getTime()) / 86_400_000)
+  );
+  return `${base} · 가장 오래된 것 ${days}일`;
+}
+
+export function exampleText(e: ReconcileRunExample): string {
+  return `${e.lineItemId} · ${e.current} → ${e.target}`;
+}
+
+/** 고치기 응답. skipped·halted 면 원래 회차는 열려 있다 — 성공처럼 보이면 운영자가 떠난다 */
+export function applyOutcome(run: ReconcileRunDto): {
+  tone: 'success' | 'error';
+  text: string;
+} {
+  if (run.status === 'applied')
+    return { tone: 'success', text: `고쳤습니다 (${run.fixes}줄)` };
+  return {
+    tone: 'error',
+    text: `고치지 못했습니다${run.error ? ` — ${run.error}` : ''}`,
+  };
 }

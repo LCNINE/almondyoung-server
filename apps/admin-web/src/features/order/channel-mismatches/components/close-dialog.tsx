@@ -17,6 +17,8 @@ export interface CloseTarget {
   id: string;
   /** 무엇을 종결하는지 한 줄 — 주문번호 · 종류 */
   label: string;
+  /** 입력 상한. 없으면 MEMO_MAX */
+  maxLength?: number;
 }
 
 interface CloseDialogProps {
@@ -63,7 +65,8 @@ function CloseForm({
 }) {
   const [memo, setMemo] = useState('');
   const [touched, setTouched] = useState(false);
-  const error = memoError(memo);
+  const max = target.maxLength ?? MEMO_MAX;
+  const error = memoError(memo, max);
 
   return (
     <>
@@ -73,7 +76,7 @@ function CloseForm({
       </DialogHeader>
       <Textarea
         value={memo}
-        maxLength={MEMO_MAX}
+        maxLength={max}
         placeholder="메모"
         onChange={(e) => setMemo(e.target.value)}
         onBlur={() => setTouched(true)}
@@ -82,7 +85,7 @@ function CloseForm({
       <div className="flex justify-between text-xs text-muted-foreground">
         <span className="text-red-600">{touched ? error : null}</span>
         <span>
-          {memo.length}/{MEMO_MAX}
+          {memo.length}/{max}
         </span>
       </div>
       <DialogFooter>

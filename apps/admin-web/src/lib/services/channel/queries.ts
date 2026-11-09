@@ -10,6 +10,7 @@ import {
   orderCollectionFailuresClient,
 } from '@/lib/api/domains/channel/order-collection-failures.client';
 import { orderReconcileFindingsClient } from '@/lib/api/domains/channel/order-reconcile-findings.client';
+import { reservationReconcileRunsClient } from '@/lib/api/domains/channel/reservation-reconcile-runs.client';
 import type { MismatchListScope } from '@/lib/api/domains/channel/order-reconcile-findings.shape';
 
 /**
@@ -65,6 +66,15 @@ export function useMismatches(scope: MismatchListScope) {
   return useQuery({
     queryKey: channelQueryKeys.mismatchList(scope),
     queryFn: () => orderReconcileFindingsClient.list(scope),
+    refetchInterval: 60_000,
+  });
+}
+
+/** «Medusa 예약 대사가 멈췄어요»(#1247) — 열린 멈춘 회차와 마지막 회차. 대사 주기가 따라잡도록 60초로 다시 읽는다. */
+export function useReservationReconcileRuns() {
+  return useQuery({
+    queryKey: channelQueryKeys.reservationRuns,
+    queryFn: () => reservationReconcileRunsClient.overview(),
     refetchInterval: 60_000,
   });
 }
