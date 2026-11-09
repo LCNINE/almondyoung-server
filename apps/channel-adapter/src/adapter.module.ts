@@ -91,6 +91,11 @@ import { CustomerLifecycleMedusaSyncService } from './adapters/medusa/customer-l
 import { PimProductEventConsumer } from './consumers/pim-product-event.consumer';
 import { PimCategoryConsumer } from './consumers/pim-category.consumer';
 import { ProductSellableQuantityConsumer } from './consumers/product-sellable-quantity.consumer';
+import { LineReservationStateConsumer } from './consumers/line-reservation-state.consumer';
+import { ReservationCutoverRepository } from './services/reservation-projection/reservation-cutover.repository';
+import { ReservationProjectionService } from './services/reservation-projection/reservation-projection.service';
+import { ReservationProjectionWorker } from './services/reservation-projection/reservation-projection.worker';
+import { SellableSettleGate } from './services/reservation-projection/sellable-settle-gate';
 import { MembershipEventConsumer } from './consumers/membership-event.consumer';
 import { PimMedusaMappingRepository } from './adapters/medusa/pim-medusa-mapping.repository';
 import { InboxWorkerService } from './adapters/medusa/inbox-worker.service';
@@ -282,6 +287,7 @@ const NO_KAFKA_PUBLISHER_STREAMS: StreamConfig[] = [
           PimProductEventConsumer,
           PimCategoryConsumer,
           ProductSellableQuantityConsumer,
+          LineReservationStateConsumer,
           MembershipEventConsumer,
           UserEventConsumer,
           PaymentEventsConsumer,
@@ -352,6 +358,10 @@ const NO_KAFKA_PUBLISHER_STREAMS: StreamConfig[] = [
           DeferredRevalidateService,
           CategoryEnsureMemoService,
           InboxWorkerService,
+          ReservationCutoverRepository,
+          SellableSettleGate,
+          ReservationProjectionService,
+          ReservationProjectionWorker,
           ChannelOrderCancelRepository,
           ChannelOrderCancelManager,
           ChannelReturnSettleManager,
