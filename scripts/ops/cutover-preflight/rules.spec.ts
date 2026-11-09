@@ -6,8 +6,11 @@ import {
   isPlaceholderEnv,
   missingGrants,
   orderSourceWired,
+  reservationAxisFindings,
+  reservationMismatches,
   shelfCodeLinks,
 } from './rules';
+import { reservationTarget } from '../../../apps/channel-adapter/src/services/reservation-projection/reservation-target';
 
 const repo = join(__dirname, '../../..');
 const read = (path: string) => readFileSync(join(repo, path), 'utf8');
@@ -68,5 +71,49 @@ describe('cutover preflight rules', () => {
       unlinked: ['A-01-02'],
       exceptions: ['외부창고'],
     });
+  });
+});
+
+describe('Medusa 예약 투영 축 (#1247)', () => {
+  const now = new Date('2026-11-21T00:00:00Z');
+  const base = {
+    phase: 'after' as const,
+    cutoverAt: new Date('2026-11-20T00:00:00Z'),
+    openHalted: 0,
+    lastFinishedAt: new Date('2026-11-20T18:00:00Z'),
+    lastRunning: false,
+    now,
+    mismatches: 0,
+  };
+  const bads = (i: Parameters<typeof reservationAxisFindings>[0]) =>
+    reservationAxisFindings(i).filter((f) => f.level === 'bad');
+
+  it('정상이면 ✗ 가 없다', () => expect(bads(base)).toEqual([]));
+  it('--after-cutover 인데 T 없음 → ✗', () => {
+    const [f] = bads({ ...base, cutoverAt: null });
+    expect(f.fix).toContain('set-reservation-cutover');
+  });
+  it('컷오버 전 T 없음은 실패가 아니다', () => expect(bads({ ...base, phase: 'before', cutoverAt: null })).toEqual([]));
+  it('열린 halted 회차 → ✗', () => {
+    const [f] = bads({ ...base, openHalted: 1 });
+    expect(f.fix).toContain('/order/channel-mismatches');
+  });
+  it('마지막 회차가 26시간보다 오래 → ✗, 26시간 이내는 통과', () => {
+    expect(bads({ ...base, lastFinishedAt: new Date('2026-11-19T21:00:00Z') })).toHaveLength(1);
+    expect(bads({ ...base, lastFinishedAt: new Date('2026-11-19T23:00:00Z') })).toHaveLength(0);
+  });
+  it('회차가 없으면 ✗, 도는 중이면 아니다', () => {
+    expect(bads({ ...base, lastFinishedAt: null })).toHaveLength(1);
+    expect(bads({ ...base, lastFinishedAt: null, lastRunning: true })).toHaveLength(0);
+  });
+  it('재계산 어긋남 ≠ 0 → ✗', () => expect(bads({ ...base, mismatches: 2 })).toHaveLength(1));
+
+  it('reservationMismatches 는 주입한 reservationTarget 으로 센다', () => {
+    const lines = [
+      { lineItemId: 'a', ordered: 3, canceledBeforeShipment: 1, current: 2 }, // 목표 2 — 일치
+      { lineItemId: 'b', ordered: 3, canceledBeforeShipment: 0, current: 1 }, // 목표 3 — 어긋남
+      { lineItemId: 'c', ordered: 2, canceledBeforeShipment: 2, current: 1 }, // 목표 0 — 어긋남
+    ];
+    expect(reservationMismatches(lines, reservationTarget).map((l) => l.lineItemId)).toEqual(['b', 'c']);
   });
 });
