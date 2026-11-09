@@ -28,6 +28,7 @@ describe('ProductMastersService Medusa projection outbox events', () => {
     const productSellableQuantity = {
       recalculateAndPublishForMaster: jest.fn().mockResolvedValue([]),
     };
+    const bundleOffers = { detachMaster: jest.fn().mockResolvedValue(undefined) };
 
     const service = new ProductMastersService(
       { run: (fn: any, t?: any) => (t ? fn(t) : fn(undefined)) } as any,
@@ -38,13 +39,14 @@ describe('ProductMastersService Medusa projection outbox events', () => {
       {} as any,
       productSellableQuantity as any,
       { handleVariantCreated: jest.fn().mockResolvedValue(undefined) } as never,
+      bundleOffers as never,
     );
 
-    return { service, productPublisher, productSellableQuantity };
+    return { service, productPublisher, productSellableQuantity, bundleOffers };
   }
 
-  it('passes the delete transaction to the ProductMasterDeleted outbox enqueue', async () => {
-    const { service } = makeService();
+  it('passes the delete transaction to the ProductMasterDeleted outbox enqueue and detaches its bundle offers', async () => {
+    const { service, bundleOffers } = makeService();
     const tx: any = {
       select: jest.fn(() => ({
         from: (table: unknown) => ({
@@ -81,6 +83,7 @@ describe('ProductMastersService Medusa projection outbox events', () => {
     await service.deleteMaster('master-1', 'user-1', tx);
 
     expect((service as any)._emitMasterDeletedEvent).toHaveBeenCalledWith('master-1', tx);
+    expect(bundleOffers.detachMaster).toHaveBeenCalledWith('master-1', tx);
   });
 
   it('enqueues ProductMasterDeleted through the transactional outbox and does not publish directly to Kafka', async () => {
@@ -142,6 +145,7 @@ describe('ProductMastersService hardDelete purchase constraint cleanup', () => {
       {} as any,
       productSellableQuantity as any,
       { handleVariantCreated: jest.fn().mockResolvedValue(undefined) } as never,
+      {} as never, // bundleOffers
     );
   }
 
@@ -280,6 +284,7 @@ describe('ProductMastersService.createMaster ownership', () => {
     const productSellableQuantity = {
       recalculateAndPublishForMaster: jest.fn().mockResolvedValue([]),
     };
+    const bundleOffers = { detachMaster: jest.fn().mockResolvedValue(undefined) };
 
     const service = new ProductMastersService(
       { run: (fn: any, t?: any) => (t ? fn(t) : fn(undefined)) } as any,
@@ -290,9 +295,10 @@ describe('ProductMastersService.createMaster ownership', () => {
       {} as any,
       productSellableQuantity as any,
       productMatching as never,
+      bundleOffers as never,
     );
 
-    return { service, productPublisher, productSellableQuantity, productMatching };
+    return { service, productPublisher, productSellableQuantity, productMatching, bundleOffers };
   }
 
   const productMatching = { handleVariantCreated: jest.fn() };
@@ -409,6 +415,7 @@ describe('ProductMastersService.updateVersion 감사 기록', () => {
       {} as any,
       {} as any,
       { handleVariantCreated: jest.fn().mockResolvedValue(undefined) } as never,
+      {} as never, // bundleOffers
     );
     const tx: any = {
       update: () => ({ set: () => ({ where: () => ({ returning: () => [{ id: 'v1', masterId: 'm1' }] }) }) }),
@@ -447,6 +454,7 @@ describe('ProductMastersService.updateVersion 감사 기록', () => {
       {} as any,
       {} as any,
       { handleVariantCreated: jest.fn().mockResolvedValue(undefined) } as never,
+      {} as never, // bundleOffers
     );
     const rows = { orderBy: () => [], then: (resolve: (v: unknown[]) => unknown) => resolve([]) };
     const tx: any = { select: () => ({ from: () => ({ where: () => rows }) }) };

@@ -3,6 +3,7 @@ import { adminOrderRoutesMiddlewares } from './orders/middlewares';
 import { adminPaymentRoutesMiddlewares } from './payments/middlewares';
 import { adminTimeSaleRoutesMiddlewares } from './time-sales/middlewares';
 import { adminQuantityDiscountRoutesMiddlewares } from './quantity-discounts/middlewares';
+import { adminBundleOfferRoutesMiddlewares } from './bundle-offers/middlewares';
 import { logHeadersMiddleware } from '../log-headers';
 
 export const adminRouteMiddlewares: MiddlewareRoute[] = [
@@ -25,4 +26,5 @@ export const adminRouteMiddlewares: MiddlewareRoute[] = [
   ...adminPaymentRoutesMiddlewares,
   ...adminTimeSaleRoutesMiddlewares,
   ...adminQuantityDiscountRoutesMiddlewares,
+  ...adminBundleOfferRoutesMiddlewares,
 ];

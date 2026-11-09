@@ -489,6 +489,34 @@ describe('InboxWorkerService ProductSellableQuantityChanged handling', () => {
     ]);
   });
 
+  it('skips an older bundle offers event once a newer one for the same product has already been applied', async () => {
+    const { service, dbMock, syncService } = createService({
+      newerEvents: (condition) => (collectValues(condition).includes('published') ? [{ id: 'bundle-event-2' }] : []),
+    });
+    (syncService as any).syncBundleOffers = jest.fn();
+    const event = {
+      id: 'bundle-event-1',
+      eventType: 'ProductBundleOffersChanged',
+      aggregateId: 'master-1',
+      payload: { masterId: 'master-1', offers: [], changedAt: '2026-05-26T00:00:00.000Z' },
+      attempts: 2,
+      eventOccurredAt: new Date('2026-05-26T00:00:00.000Z'),
+      createdAt: new Date('2026-05-26T00:00:00.000Z'),
+      metadata: { messageId: 'bundle-msg-1', chainId: 'chain-1' },
+    };
+
+    await (service as any).doProcessInboxEvent(event);
+
+    expect((syncService as any).syncBundleOffers).not.toHaveBeenCalled();
+    expect(dbMock.updates).toEqual([
+      {
+        status: 'published',
+        publishedAt: new Date('2026-05-27T00:00:00.000Z'),
+        errorMessage: 'Superseded by newer event (aggregateId: master-1)',
+      },
+    ]);
+  });
+
   // ⚠️ 단위테스트의 한계: DB 를 mock 하므로 비교의 실제 결과는 검증할 수 없고
   // "어떤 컬럼으로 비교하는가" 까지만 단정한다. 발생시각 기준 supersede 가
   // 실제로 동작하는지는 실제 DB 통합테스트가 필요하다 (#550).

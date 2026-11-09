@@ -1058,6 +1058,13 @@
       "when": 1793942857582,
       "tag": "20261106052737_add-print-product-specs",
       "breakpoints": true
+    },
+    {
+      "idx": 151,
+      "version": "7",
+      "when": 1794182523604,
+      "tag": "20261109000203_add-product-bundle-offers",
+      "breakpoints": true
     }
   ]
 }

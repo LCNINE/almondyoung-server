@@ -126,6 +126,39 @@ describe('resolveMembershipDiscount - 멤버십 귀속 할인 분리', () => {
 
   beforeEach(() => logger.warn.mockClear());
 
+  it('함께 구매 라인은 «비회원 번들가 − 실결제가»를 센다 — 할인 전 가격이 회원가라 그 차이만으로는 덜 센다', async () => {
+    // 정가 10,000 · 멤버십가 8,000. 번들 일반 10% / 멤버십 20% → 회원 결제 6,400, 비회원이었다면 9,000.
+    const items = [
+      item({
+        variant_id: 'v1',
+        unit_price: 6400,
+        compare_at_unit_price: 8000,
+        quantity: 2,
+        metadata: { bundle: { offer_product_id: 'prod_a', regular_rate_bp: 1000, membership_rate_bp: 2000 } },
+      }),
+    ];
+
+    const discount = await resolveMembershipDiscount(items, 'grp_membership', containerWith({ v1: 10000 }), logger);
+
+    expect(discount).toBe((9000 - 6400) * 2);
+  });
+
+  it('함께 구매 라인과 일반 라인이 섞이면 각자 방식으로 더한다', async () => {
+    const items = [
+      item({
+        variant_id: 'v1',
+        unit_price: 6400,
+        compare_at_unit_price: 8000,
+        metadata: { bundle: { offer_product_id: 'prod_a', regular_rate_bp: 1000, membership_rate_bp: 2000 } },
+      }),
+      item({ variant_id: 'v2', unit_price: 8000, compare_at_unit_price: 10000 }),
+    ];
+
+    const discount = await resolveMembershipDiscount(items, 'grp_membership', containerWith({ v1: 10000, v2: 10000 }), logger);
+
+    expect(discount).toBe(2600 + 2000);
+  });
+
   it('수량 할인만 받은 주문은 멤버십 귀속 0 → 혜택 미기록', async () => {
     // 정가 10000, 수량 할인가 8000. 회원도 비회원도 8000 이므로 멤버십이 깎아준 몫은 없다.
     const items = [item({ variant_id: 'v1', unit_price: 8000, compare_at_unit_price: 10000, quantity: 2 })];

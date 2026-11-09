@@ -2463,6 +2463,20 @@ export class MedusaClient {
     }
   }
 
+  /** 상품의 함께 구매 구성품 전체 교체. 구성품·옵션은 PIM id 로 보내고 Medusa 가 handle·pimVariantId 로 찾는다. */
+  async syncProductBundleOffers(productId: string, body: BundleOfferSyncBody): Promise<BundleOfferSyncResult> {
+    try {
+      return await this.sdk.client.fetch<BundleOfferSyncResult>(`/admin/bundle-offers/products/${productId}`, {
+        method: 'post',
+        body,
+      });
+    } catch (error) {
+      const fetchError = error as FetchError;
+      this.logger.error(`Failed to sync bundle offers of product ${productId}: ${fetchError.message}`);
+      throw new Error(`Medusa syncProductBundleOffers failed: ${fetchError.message}`, { cause: fetchError });
+    }
+  }
+
   // ===== Customers & Groups =====
   async findCustomerByEmail(email: string): Promise<HttpTypes.AdminCustomer | null> {
     try {
@@ -2905,3 +2919,18 @@ export type QuantityDiscountSyncBody = {
   general: QuantityDiscountTierPrice[];
   membership: QuantityDiscountTierPrice[];
 };
+
+export type BundleOfferSyncItem = {
+  addon_pim_master_id: string;
+  allowed_pim_variant_ids: string[] | null;
+  regular_rate_bp: number;
+  membership_rate_bp: number;
+  enabled: boolean;
+  starts_at: string | null;
+  ends_at: string | null;
+  label: string | null;
+  sort: number;
+};
+export type BundleOfferSyncBody = { pim_master_id: string; changed_at?: string; offers: BundleOfferSyncItem[] };
+/** skipped: 쇼핑몰에 없어서 빠진 구성품(PIM master id)과 이유 */
+export type BundleOfferSyncResult = { skipped: Array<{ addon_pim_master_id: string; reason: string }>; stale?: boolean };

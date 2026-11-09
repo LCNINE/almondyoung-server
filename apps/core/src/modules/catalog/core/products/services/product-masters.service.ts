@@ -46,6 +46,7 @@ import { ProductVersionsService } from './product-versions.service';
 import { resolveMasterSort } from './product-masters-sort.util';
 import { resolveMasterListPaging } from './product-masters-paging.util';
 import { PricingCalculatorService } from '../../pricing/pricing-calculator.service';
+import { BundleOfferManager } from '../../pricing/bundle-offer.manager';
 import { VariantPriceCacheService } from '../../pricing/variant-price-cache.service';
 import { v7 as uuidv7 } from 'uuid';
 import { deleteEntitiesIfUnmapped } from '../../version-isolation/delete-if-unmapped';
@@ -148,6 +149,8 @@ export class ProductMastersService {
 
     @Inject(forwardRef(() => ProductMatchingService))
     private readonly productMatchingService: ProductMatchingService,
+
+    private readonly bundleOffers: BundleOfferManager,
   ) {}
 
   /**
@@ -1320,6 +1323,10 @@ export class ProductMastersService {
         .from(productMasterVersions)
         .where(and(eq(productMasterVersions.masterId, masterId), eq(productMasterVersions.status, 'active')))
         .limit(1);
+
+      // 함께 구매: 다른 상품의 구성품 목록에서 빼고 그 목록을 다시 알린다(soft delete 라 FK cascade 가 돌지 않는다).
+      // 이 상품 행을 바꾸기 전에 — 이 상품과 부모 상품을 한 번에 같은 순서로 잠근다.
+      await this.bundleOffers.detachMaster(masterId, tx);
 
       // 3. Master soft delete
       const [deletedMaster] = await tx

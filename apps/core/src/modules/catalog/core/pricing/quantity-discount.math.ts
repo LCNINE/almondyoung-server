@@ -95,7 +95,7 @@ export function buildSaleTierPrices(input: {
 }
 
 /** YYYY-MM-DD 이고 달력에 실제로 있는 날인가(2월 30일·13월 거부, 윤년 2월 29일 허용). */
-function isCalendarDate(day: string): boolean {
+export function isCalendarDate(day: string): boolean {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(day);
   if (!match) return false;
   const [y, m, d] = [Number(match[1]), Number(match[2]), Number(match[3])];

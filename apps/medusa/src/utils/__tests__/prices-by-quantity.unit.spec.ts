@@ -40,4 +40,13 @@ describe('calculatePricesByQuantity', () => {
     const prices = await calculatePricesByQuantity(pricingModule as never, [{ priceSetId: 'ps-a', quantity: 2 }], {});
     expect(prices.size).toBe(0);
   });
+
+  it('marks prices that come from a sale price list', async () => {
+    const pricingModule = {
+      calculatePrices: async (filters: { id: string[] }) =>
+        filters.id.map((id) => ({ id, calculated_amount: 800, original_amount: 1000, calculated_price: { price_list_type: 'sale' } })),
+    };
+    const prices = await calculatePricesByQuantity(pricingModule as never, [{ priceSetId: 'ps-a', quantity: 1 }], {});
+    expect(prices.get(priceKey(1, 'ps-a'))).toEqual({ calculated: 800, original: 1000, sale: true });
+  });
 });

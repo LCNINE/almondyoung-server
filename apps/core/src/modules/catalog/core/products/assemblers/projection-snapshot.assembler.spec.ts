@@ -34,6 +34,7 @@ type AssemblerFixtures = {
   purchaseConstraint?: Record<string, unknown> | null;
   prices?: Array<Record<string, unknown>>;
   quantityDiscount?: Record<string, unknown> | null;
+  bundleOffers?: Array<Record<string, unknown>>;
   optionGroups?: Array<
     Record<string, unknown> & { id: string; values: Array<Record<string, unknown> & { id: string }> }
   >;
@@ -130,6 +131,10 @@ function makeAssembler(fixtures: AssemblerFixtures = {}) {
   const priceCacheService = { getCachedPriceSetsByVersion: jest.fn().mockResolvedValue(prices) };
   const model3dLoader = { getFileId: jest.fn().mockResolvedValue(fixtures.model3dFileId) };
   const quantityDiscountReader = { findForVersion: jest.fn().mockResolvedValue(fixtures.quantityDiscount ?? null) };
+  const bundleOfferReader = {
+    findForMaster: jest.fn().mockResolvedValue(fixtures.bundleOffers ?? []),
+    revisionFor: jest.fn().mockResolvedValue(fixtures.bundleOffers?.length ? new Date('2026-06-15T03:00:00.000Z') : null),
+  };
 
   return {
     assembler: new ProjectionSnapshotAssembler(
@@ -139,10 +144,22 @@ function makeAssembler(fixtures: AssemblerFixtures = {}) {
       priceCacheService as any,
       model3dLoader as any,
       quantityDiscountReader as any,
+      bundleOfferReader as any,
     ),
     optionReadLoader,
   };
 }
+
+const parseSnapshot = (snapshot: unknown) =>
+  PRODUCT_STREAM.events.ProductMasterActiveVersionChanged.schema!.parse({
+    masterId: 'master-1',
+    versionId: 'version-1',
+    previousActiveVersionId: null,
+    name: 'Lip Tint',
+    changeReason: 'published',
+    changedAt: new Date().toISOString(),
+    snapshot,
+  }).snapshot;
 
 describe('ProjectionSnapshotAssembler', () => {
   it('includes representative GLB without changing the existing thumbnail', async () => {
@@ -169,17 +186,6 @@ describe('ProjectionSnapshotAssembler', () => {
   });
 
   describe('quantity discount', () => {
-    const parseSnapshot = (snapshot: unknown) =>
-      PRODUCT_STREAM.events.ProductMasterActiveVersionChanged.schema!.parse({
-        masterId: 'master-1',
-        versionId: 'version-1',
-        previousActiveVersionId: null,
-        name: 'Lip Tint',
-        changeReason: 'published',
-        changedAt: new Date().toISOString(),
-        snapshot,
-      }).snapshot;
-
     const pricesWithTiers = [
       {
         variantId: 'variant-1',
@@ -230,6 +236,38 @@ describe('ProjectionSnapshotAssembler', () => {
         expect(snapshot.quantityDiscount).toBeNull();
         expect(snapshot.variants[0].membershipTieredPrices).toEqual([]);
       }
+    });
+  });
+
+  describe('bundle offers', () => {
+    const readModel = {
+      addonMasterId: 'master-b',
+      addonName: '구성품',
+      sort: 0,
+      allowedVariantIds: null,
+      regularRateBp: 1000,
+      membershipRateBp: 1500,
+      enabled: true,
+      startsOn: null,
+      endsOn: null,
+      label: null,
+    };
+
+    it('carries the current offers without the display-only name and survives the event schema', async () => {
+      const { assembler } = makeAssembler({ bundleOffers: [readModel] });
+      const { snapshot } = await assembler.assembleActiveVersionSnapshot('master-1', 'version-1', {} as any);
+
+      const { addonName: _name, ...expected } = readModel;
+      expect(parseSnapshot(snapshot)?.bundleOffers).toEqual([expected]);
+      expect(parseSnapshot(snapshot)?.bundleOffersChangedAt).toBe('2026-06-15T03:00:00.000Z');
+    });
+
+    it('leaves the key out for a product without offers', async () => {
+      const { assembler } = makeAssembler({});
+      const { snapshot } = await assembler.assembleActiveVersionSnapshot('master-1', 'version-1', {} as any);
+
+      expect(snapshot).not.toHaveProperty('bundleOffers');
+      expect(snapshot).not.toHaveProperty('bundleOffersChangedAt');
     });
   });
 
