@@ -72,8 +72,8 @@ Medusa 예약이 core 상태와 맞는다**(완료 조건, 판정 스크립트 `
 ## 4. 흐름
 
 ```
-core  (예약 확정·해제 / 출고 / 취소 / 전달 트랜잭션)
-  └─ outbox: SalesOrderLineReservationState  (주문 단위 스냅샷 + 버전)
+core  (예약 확정·해제 / 출고 / 취소 / 전달 트랜잭션 — 주문에 «더러움» 표시 = 버전 +1)
+  └─ 1분 폴러 → outbox: SalesOrderLineReservationState  (주문 단위 스냅샷 + 버전)
         ↓ Kafka
 channel-adapter consumer → inbox_events (빠른 ACK)
         ↓ InboxWorkerService (eventType allowlist)
@@ -102,16 +102,17 @@ channel-adapter 크론 (하루 한 번)
   «구성 SKU 가 전부 예약·출고된 판매 단위»만 core 가 잡은 것으로 센다(구성마다 `floor(수량/qtyPerUnit)` 의 최솟값).
   일부만 잡힌 단위는 Medusa 가 계속 잡고 있게 둔다 — 반목표 «어긋날 거면 이중 차감 쪽»에 맞는 방향이다. *(Claude 판단)*
 - **이벤트 `SalesOrderLineReservationState`** — 주문 단위 스냅샷. 그 판매주문의 모든 줄을 담는다:
-  `salesOrderId`, `channel`, `channelOrderId`, `version`, 줄마다 `{ channelOrderItemId, ordered, canceledBeforeShipment, coreReserved, shipped, forwarded }` (판매 단위).
-  `forwarded`(직배 전달)를 싣는 이유는 §7 의 빌더 확인 항목 참고.
+  `salesOrderId`, `salesChannel`, `channelOrderId`, `orderedAt`, `version`, `asOf`, 줄마다 `{ salesOrderLineId, channelOrderItemId, variantId, ordered, canceledBeforeShipment, demand, heldUnits }`.
+  `heldUnits` = 구성 SKU 마다 `floor((예약 + 출고 + 전달) / qtyPerUnit)` 의 최솟값 — 예약·출고·전달을 따로 세어 더하면 섞여 갖춰진 세트를 놓친다. *(계획 단계 Claude 판단)*
   스트림은 판매주문 사실이 나가는 기존 스트림 중에서 고른다(빌더 판단, zod 계약은 `packages/event-contracts`).
 - **버전이 필요하다.** 11-08 본문은 «현재 상태라 순서가 바뀌어도 결과가 같다»고 했지만, 옛 스냅샷이 늦게 도착하면 새 값을 덮어쓴다.
   inbox worker 는 동시에 처리하므로 순서가 보장되지 않는다. 그래서 주문마다 단조 증가하는 버전을 싣는다.
   권장: `sales_orders` 에 카운터 열을 더하고 enqueue 하는 트랜잭션에서 `UPDATE … SET v = v + 1 RETURNING v` 로 올린다
   (행 잠금이 같은 주문의 동시 트랜잭션을 줄 세운다). additive 마이그 → **migrate → deploy**. *(Claude 판단)*
-- **enqueue 지점**: 예약 확정·해제(`ShipmentReservationService` 계열), 출고(dispatch → SHIP), 취소(`recordSalesOrderCancellation`),
-  직배 전달. 한 트랜잭션에서 여러 번 불려도 주문당 한 번만 enqueue 되게 모은다(빌더 판단). 지점을 하나 빠뜨려도 대사가 다음 날 잡지만,
-  빠뜨린 지점은 테스트로 고정한다.
+- **표시 지점과 폴러** *(계획 단계 Claude 판단)*: 상태를 바꾸는 트랜잭션은 enqueue 대신 주문에 «더러움» 표시(`line_state_version + 1`)만 한다.
+  표시 지점은 둘 — 예약·출고·전달·FO 수량 변화가 전부 지나는 `reprojectFulfillmentOrders`, 그리고 `recordSalesOrderCancellation`.
+  1분 `@CronOnce` 폴러가 더러운 주문의 스냅샷을 읽어 outbox 로 낸다. 표시가 같은 트랜잭션이라 유실이 없고, 한 트랜잭션의 여러 변화가 한 이벤트로 모이며,
+  버전 열이 곧 표시라 따로 카운터가 필요 없다. 대가는 최대 1분 지연. 두 표시 지점은 가드 스펙이 지킨다.
 - **내부 읽기 API** (대사용, `@InternalOnly`, `CORE_INTERNAL_KEY` + 테넌트 헤더):
   - 줄 상태 묶음 조회: `channelOrderItemId[]` → 위 스냅샷과 같은 모양(같은 리더를 탄다).
   - core 쪽 후보: «채널 `medusa`, 주문 생성 ≥ T, `demand − coreReserved − shipped − forwarded > 0`» 인 줄 목록(커서).
@@ -137,9 +138,10 @@ channel-adapter 크론 (하루 한 번)
   대사는 돌지 않는다. *(Claude 판단)*
 - **소비자**: 기존 inbox 패턴(Kafka → `inbox_events` → `InboxWorkerService` allowlist). 처리 시
   ① T 가 없거나 주문이 T 이전이면 건너뜀 ② 이미 적용한 버전보다 낮거나 같으면 건너뜀 ③ 줄마다 목표 수량 계산
-  ④ 목표가 지금 Medusa 예약보다 **작은** 줄의 variant 에 처리되지 않은 `ProductSellableQuantityChanged` inbox 행이 남아 있으면 그 이벤트를 나중으로 미룸
-  (inbox 재시도, 줄 일부만 먼저 쓰지 않는다 — 주문 단위로 미룬다) ⑤ Medusa 쓰기 라우트 ⑥ 적용 버전 기록.
-  «처리되지 않은 판매가능수량 행»을 어떻게 찾을지(inbox 행의 variant 식별, 인덱스)는 빌더가 정하되 대사와 같은 함수를 쓴다.
+  ④ variant 에 처리되지 않은 `ProductSellableQuantityChanged` inbox 행이 남았거나 스냅샷이 정착 지연(기본 5분)보다 젊으면 그 줄은 «감소 금지»로 표시
+  ⑤ Medusa 쓰기 라우트 — 감소 금지 줄의 감소는 라우트가 실제 현재값과 비교해 `deferred` 로 돌려준다 ⑥ `deferred` 가 있으면 1분 뒤 다시(재시도 횟수에 안 셈), 없으면 적용 버전 기록.
+  정착 지연은 판매가능수량 이벤트가 아직 inbox 에 도착하지도 않은 경우(토픽이 달라 도착 순서가 보장되지 않는다)를 덮는다. *(계획 단계 Claude 판단)*
+  워커는 `InboxWorkerService` 레인(10초 간격)과 따로 둔다.
   적용 버전은 channel-adapter 의 새 테이블(주문당 한 행)에 둔다. Medusa 주문 생성 시각은 `wms_order_mappings` 또는 수집 시점 기록에서 찾는다(빌더 판단).
 - **계산 함수 하나**: `target = max(0, demand − coreReserved − shipped − forwarded)`, `demand = ordered − canceledBeforeShipment`.
   순수 함수, 소비자와 대사가 공유. **11-08 공식의 «− 취소»를 고쳤다**: 출고 후 취소(`after_shipment`)는 이미 출고된 단위의 취소라
