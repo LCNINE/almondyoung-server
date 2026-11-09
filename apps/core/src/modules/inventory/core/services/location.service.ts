@@ -14,6 +14,7 @@ import { UpdateLocationDto, UpdateColumnDto, UpdateRackDto } from '../dto/locati
 import { LocationQueryDto } from '../dto/location-query.dto';
 import { SystemLocationRole } from '../types';
 import { SYSTEM_LOCATION_DEFAULTS } from '../constants/warehouse.constants';
+import { autoBinIdentifier, rackBinLocationCode } from '../location-code';
 
 @Injectable()
 export class LocationService {
@@ -198,8 +199,8 @@ export class LocationService {
       if (dto.binSettings.autoGenerate && dto.binSettings.standardBins) {
         const locations: Array<typeof wmsTables.locations.$inferInsert> = [];
         for (let binNum = binStart; binNum <= binEnd; binNum++) {
-          const binIdentifier = binNum.toString().padStart(2, '0');
-          const locationCode = `${dto.columnName}-${dto.rackNumber.toString().padStart(2, '0')}-${binIdentifier}`;
+          const binIdentifier = autoBinIdentifier(binNum);
+          const locationCode = rackBinLocationCode(dto.columnName, dto.rackNumber, binIdentifier);
 
           locations.push({
             warehouseId,
@@ -222,7 +223,7 @@ export class LocationService {
       if (dto.binSettings.customBins && dto.binSettings.customBins.length > 0) {
         const customLocations: Array<typeof wmsTables.locations.$inferInsert> = dto.binSettings.customBins.map(
           (customBinName) => {
-            const locationCode = `${dto.columnName}-${dto.rackNumber.toString().padStart(2, '0')}-${customBinName}`;
+            const locationCode = rackBinLocationCode(dto.columnName, dto.rackNumber, customBinName);
             createdLocationCodes.push(locationCode);
 
             return {
@@ -508,7 +509,7 @@ export class LocationService {
         throw new BadRequestException(`Rack ${dto.columnName}-${dto.rackNumber} not found`);
       }
 
-      const locationCode = `${dto.columnName}-${dto.rackNumber.toString().padStart(2, '0')}-${dto.customBinName}`;
+      const locationCode = rackBinLocationCode(dto.columnName, dto.rackNumber, dto.customBinName);
 
       const existing = await tx
         .select()
