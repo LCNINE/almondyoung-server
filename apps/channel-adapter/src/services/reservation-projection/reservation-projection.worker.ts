@@ -7,6 +7,7 @@ import { MedusaClient } from '../../adapters/medusa/medusa.client';
 import { inboxEvents, medusaReservationProjectionVersions } from '../../schema';
 import type { ChannelAdapterSchema } from '../../types';
 import { CHANNEL_CAPABILITIES } from '../channel-capabilities';
+import { withMedusaOrderProjectionLock } from '../medusa-order-projection-lock';
 import { ReservationCutoverRepository } from './reservation-cutover.repository';
 import { ReservationProjectionService } from './reservation-projection.service';
 
@@ -69,17 +70,18 @@ export class ReservationProjectionWorker {
         .set({ status: 'published', publishedAt: new Date(), errorMessage: null })
         .where(eq(inboxEvents.id, event.id));
     } else if (verdict.kind === 'defer') {
-      // 기다림은 실패가 아니다 — attempts 를 올리지 않는다(claim 도 올리지 않는다).
+      // 기다림은 실패가 아니다 — claim 이 올린 attempts 를 되돌린다(크래시·멈춤은 되돌려지지 않아 센다).
       await this.dbService.db
         .update(inboxEvents)
         .set({
           status: 'pending',
+          attempts: Math.max(0, event.attempts - 1),
           nextAttemptAt: new Date(Date.now() + DEFER_MS),
           errorMessage: 'deferred: 재고 정착 대기',
         })
         .where(eq(inboxEvents.id, event.id));
     } else {
-      const attempts = event.attempts + 1;
+      const attempts = event.attempts; // claim 이 이미 올렸다
       const exhausted = attempts >= this.maxRetries();
       await this.dbService.db
         .update(inboxEvents)
@@ -108,6 +110,14 @@ export class ReservationProjectionWorker {
       return { kind: 'done' };
     }
 
+    // 같은 주문의 두 버전이 다른 태스크에서 겹쳐 순서가 뒤집히지 않게 주문 단위로 직렬화한다.
+    // 키는 Medusa 주문 metadata 투영(`orderId` 그대로)과 겹치지 않게 접두사를 단다.
+    return withMedusaOrderProjectionLock(this.dbService, `reservation:${payload.salesOrderId}`, () =>
+      this.applyLocked(payload),
+    );
+  }
+
+  private async applyLocked(payload: SalesOrderLineReservationStatePayload): Promise<Verdict> {
     const [applied] = await this.dbService.db
       .select({ appliedVersion: medusaReservationProjectionVersions.appliedVersion })
       .from(medusaReservationProjectionVersions)
@@ -133,7 +143,7 @@ export class ReservationProjectionWorker {
   }
 
   /** 더 큰 버전일 때만 올린다 — 겹친 옛 쓰기가 앞선 버전을 되돌리지 못하게. */
-  private async bumpVersion(salesOrderId: string, version: number): Promise<void> {
+  async bumpVersion(salesOrderId: string, version: number): Promise<void> {
     const appliedAt = new Date();
     await this.dbService.db
       .insert(medusaReservationProjectionVersions)
@@ -154,11 +164,13 @@ export class ReservationProjectionWorker {
     return Math.min(5_000 * 2 ** (attempts - 1), 5 * 60_000);
   }
 
-  private async claimNext(): Promise<ClaimedReservationEvent | null> {
+  /** 통합 스펙이 구동한다. attempts 를 올려 크래시·멈춤 루프가 상한에 닿게 한다. */
+  async claimNext(): Promise<ClaimedReservationEvent | null> {
     const rows = await this.dbService.db.execute<ClaimedReservationEvent>(sql`
       UPDATE ${inboxEvents}
       SET
         status = 'processing',
+        attempts = attempts + 1,
         next_attempt_at = NOW() + (${LEASE_MS}::integer * interval '1 millisecond'),
         error_message = NULL
       WHERE id = (
