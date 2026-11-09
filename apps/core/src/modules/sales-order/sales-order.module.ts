@@ -49,6 +49,7 @@ import { INTERNAL_KEY_ENV } from '@app/authorization';
 import { SalesOrdersInternalController } from './internal/sales-orders-internal.controller';
 import { ReturnEligibilityReader } from './internal/return-eligibility.reader';
 import { ReturnEligibilityService } from './internal/return-eligibility.service';
+import { LineReservationStateService } from './internal/line-reservation-state.service';
 import { SalesOrderLookupReader } from './internal/sales-order-lookup.reader';
 import { SalesOrderLookupService } from './internal/sales-order-lookup.service';
 
@@ -159,6 +160,7 @@ import { SalesOrderLookupService } from './internal/sales-order-lookup.service';
     SalesOrderLookupService,
     ReturnEligibilityReader,
     ReturnEligibilityService,
+    LineReservationStateService,
     // `SalesOrdersInternalController` 의 InternalKeyGuard 가 읽을 env 이름. core 로 들어오는 서비스 간 호출은 이 키 하나를 쓴다.
     { provide: INTERNAL_KEY_ENV, useValue: 'CORE_INTERNAL_KEY' },
 

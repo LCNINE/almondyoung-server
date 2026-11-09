@@ -1494,6 +1494,11 @@ export const salesOrders = pgTable(
     confirmedAt: timestamp('confirmed_at', { withTimezone: true }),
     processedAt: timestamp('processed_at', { withTimezone: true }),
 
+    // #1247: 줄 예약 상태(수요·잡은 단위)가 바뀔 때마다 오르는 주문별 버전, 그리고 마지막으로 이벤트를 낸 버전.
+    // version > published 인 주문이 «낼 것이 남은» 주문이다(부분 인덱스).
+    lineStateVersion: integer('line_state_version').notNull().default(0),
+    lineStatePublishedVersion: integer('line_state_published_version').notNull().default(0),
+
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -1502,6 +1507,9 @@ export const salesOrders = pgTable(
     idxOrderDate: index('idx_sales_orders_order_date').on(t.orderDate), // 주문내역/통계의 주 기간필터
     // 주문번호 검색은 기간 조건을 빼고 도는 등호 조회다 — 인덱스가 없으면 전체 스캔이 된다.
     idxDisplayOrderNo: index('idx_sales_orders_display_order_no').on(t.displayOrderNo),
+    idxLineStateDirty: index('idx_sales_orders_line_state_dirty')
+      .on(t.id)
+      .where(sql`${t.lineStateVersion} > ${t.lineStatePublishedVersion}`),
   }),
 );
 
