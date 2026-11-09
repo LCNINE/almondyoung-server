@@ -296,7 +296,7 @@ export interface SalesOrderLineReservationStatePayload {
 - [ ] **Step 1: 판정 규칙 테스트(순수 함수로 뺀다)** — `--after-cutover` 인데 T 없음 → ✗ / 열린 halted 회차 → ✗ / 마지막 회차 `finished_at` 이 26시간보다 오래 → ✗ / T 이후 주문의 «Medusa 예약 ≠ 목표» 재계산(같은 `reservationTarget` 을 import) ≠ 0 → ✗. 기존 «core 가 끝낸 줄에 남은 예약» 검사는 T 이후 주문으로 범위를 좁혀 남긴다.
 - [ ] **Step 2: clear-reservations 가드 테스트** — `--apply` 이고 channel_adapter `cutover_at` 이 있으면 종료 코드 1·메시지 «T 가 설정돼 있다 — 이 스크립트는 더 돌리지 않는다(#1247)». channel_adapter 접속 실패도 `--apply` 거부(fail-closed). dry-run 은 막지 않는다. 접속은 `run.sh` 가 만드는 URL 에서 DB 이름만 `channel_adapter` 로 바꾼다 — `scripts/sellmate/run.sh` 를 먼저 읽고 같은 클러스터인지 확인한다.
 - [ ] **Step 3: 실패 확인 → 구현 → PASS**
-- [ ] **Step 4: 런북 두 줄** — 당일 순서 2번 «clear-reservations 마지막 실행 → 그 뒤 set-reservation-cutover `--at T --apply`», 6번 «첫 저녁 `/order/channel-mismatches` 와 판정 스크립트 Medusa 축».
+- [ ] **Step 4: 런북 두 줄** — 당일 순서 2번 «clear-reservations 마지막 실행 → 그 뒤 set-reservation-cutover `--at T --apply`», 6번 «다음 날 아침(04:30 KST 대사 뒤) `/order/channel-mismatches` 와 판정 스크립트 Medusa 축».
 - [ ] **Step 5: Commit**
 - [ ] **Step 6: 이슈** — #1247 본문의 공식을 `demand − heldUnits` 로 고치고 스펙·계획 경로를 적는다. #832 본문에 «Medusa 쪽 절반은 #1247 이 대체, core 03:05 크론은 여기 남김» 한 줄. (코드 수치 적지 않기)
 
