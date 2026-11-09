@@ -1,4 +1,5 @@
 import type { CancelRequestView } from '../channel-cancel-request/channel-cancel-request.types';
+import type { SalesChannelName } from './channel-cancellation-capability';
 
 /** 취소할 줄과 수량. 없으면(요청에 `lines` 가 없으면) 전체취소다 */
 export type CancelLine = { salesOrderLineId: string; quantity: number };
@@ -83,3 +84,27 @@ export type ChannelDecreaseNotice = {
 };
 
 export type DecreaseOutcome = { applied: true } | { applied: false; refusal: string };
+
+/**
+ * 마켓 고객 취소요청 (스펙 §5.2) — 마켓이 «고객이 이 줄들을 이 수량만큼 취소해 달라»고 알렸다. 한 건 = 마켓의 승인 단위 하나.
+ * `channelRequestRef`(승인 명령이 돌려줄 참조)·`channelRequestKey`(그 요청 하나의 중복 판정 식별자)는 core 가 해석하지 않는다.
+ */
+export type ChannelCustomerCancelRequest = {
+  salesChannel: SalesChannelName;
+  externalOrderId: string;
+  channelRequestRef: string;
+  channelRequestKey: string;
+  needsApproval: boolean;
+  /** quantity = 이번 요청 수량 */
+  items: Array<{ channelOrderItemId: string; quantity: number }>;
+};
+
+/**
+ * 마켓 고객 취소요청의 결과. `stopped` — 요청 수량 전부를 core 가 멈췄고 승인 명령을 냈다. `replayed` — 같은 요청을 이미 받았다.
+ * `not_stoppable` — 요청 수량 전부를 멈출 수 없어 아무것도 하지 않았다(행·명령 없음, 판매자센터 몫). `order_unknown` — core 에 없는 주문.
+ */
+export type ChannelCustomerCancelOutcome =
+  | { kind: 'stopped'; view: CancelRequestView }
+  | { kind: 'replayed'; view: CancelRequestView }
+  | { kind: 'not_stoppable'; reason: string }
+  | { kind: 'order_unknown' };

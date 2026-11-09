@@ -496,3 +496,34 @@ describe('CORE_ORDER_STREAM SalesOrderLineReservationState', () => {
     ).toThrow();
   });
 });
+
+describe('ChannelCancelRequested', () => {
+  const schema = ORDER_STREAM.events.ChannelCancelRequested.schema!;
+  const payload = {
+    orderId: 'wms-order-1',
+    salesChannel: 'naver',
+    externalOrderId: 'ord-1',
+    channelRequestRef: 'po-1',
+    channelRequestKey: 'po-1:claim-1',
+    needsApproval: true,
+    requestedAt: '2026-11-10T01:00:00.000Z',
+    items: [{ channelOrderItemId: 'po-1', quantity: 1 }],
+  };
+
+  it('정상 payload 를 통과시킨다', () => {
+    expect(() => schema.parse(payload)).not.toThrow();
+    expect(() => schema.parse({ ...payload, needsApproval: false })).not.toThrow();
+  });
+
+  it('items 가 비면 거절한다', () => {
+    expect(() => schema.parse({ ...payload, items: [] })).toThrow();
+  });
+
+  it.each([0, -1, 1.5])('quantity %p 는 거절한다', (quantity) => {
+    expect(() => schema.parse({ ...payload, items: [{ channelOrderItemId: 'po-1', quantity }] })).toThrow();
+  });
+
+  it.each(['channelRequestRef', 'channelRequestKey'])('%s 가 빈 문자열이면 거절한다', (key) => {
+    expect(() => schema.parse({ ...payload, [key]: '' })).toThrow();
+  });
+});

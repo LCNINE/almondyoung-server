@@ -1,6 +1,7 @@
 // apps/channel-adapter/src/services/order-cancel/channel-order-cancel.manager.spec.ts
 import type { CancelChannelOrderPayload } from '@packages/event-contracts/streams';
 import { Logger } from '@nestjs/common';
+import { CustomerCancelApprover } from './customer-cancel-approver';
 import { ChannelOrderCancelManager } from './channel-order-cancel.manager';
 
 const full: CancelChannelOrderPayload = {
@@ -26,8 +27,9 @@ function setup(opts: { mapped?: boolean } = {}) {
   };
   const medusa = { cancelOrder: jest.fn(), partialCancelOrder: jest.fn() };
   const poller = { syncOrder: jest.fn().mockResolvedValue({ outcome: 'emitted' }) };
-  const manager = new ChannelOrderCancelManager(repository as never, medusa as never, poller as never);
-  return { manager, repository, medusa, poller };
+  const approver = { approve: jest.fn() };
+  const manager = new ChannelOrderCancelManager(repository as never, medusa as never, poller as never, approver as never);
+  return { manager, repository, medusa, poller, approver };
 }
 
 /** recordSettlementFailure 의 [사실, 전달 id] */
@@ -46,6 +48,84 @@ describe('ChannelOrderCancelManager (#1016 35번 PR-B · 36번 재설계 PR 3)',
     jest.spyOn(Logger.prototype, 'log').mockImplementation();
   });
   afterEach(() => jest.restoreAllMocks());
+
+  describe('마켓 취소요청 승인 (answers)', () => {
+    const asked: CancelChannelOrderPayload = {
+      ...full,
+      salesChannel: 'naver',
+      requestedBy: 'channel-customer',
+      answers: { channelRequestRef: 'po-1', needsApproval: true },
+    };
+
+    it('command with answers goes to the approver, not the Medusa executor', async () => {
+      const { manager, repository, medusa, poller, approver } = setup();
+      approver.approve.mockResolvedValue({ kind: 'approved' });
+      await manager.execute(asked, 'd1');
+      expect(approver.approve).toHaveBeenCalledWith(asked);
+      expect(medusa.cancelOrder).not.toHaveBeenCalled();
+      expect(repository.recordSettlementFailure).not.toHaveBeenCalled();
+      expect(poller.syncOrder).toHaveBeenCalledWith('naver', 'order_1', { force: true });
+    });
+
+    it('coupang approval done → no immediate resync (not syncable) and no throw — the next poll collects', async () => {
+      const { manager, repository, poller, approver } = setup();
+      approver.approve.mockResolvedValue({ kind: 'approved' });
+      await expect(
+        manager.execute({ ...asked, salesChannel: 'coupang', answers: { channelRequestRef: '123', needsApproval: true } }, 'd1'),
+      ).resolves.toBeUndefined();
+      expect(poller.syncOrder).not.toHaveBeenCalled();
+      expect(repository.recordSettlementFailure).not.toHaveBeenCalled();
+    });
+
+    it('naver approval done but resync throws → warn, no throw (a redelivery would send the approval again)', async () => {
+      const { manager, repository, poller, approver } = setup();
+      approver.approve.mockResolvedValue({ kind: 'approved' });
+      poller.syncOrder.mockRejectedValue(new Error('naver fetch failed'));
+      await expect(manager.execute(asked, 'd1')).resolves.toBeUndefined();
+      expect(approver.approve).toHaveBeenCalledTimes(1);
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('재수집 실패'));
+      expect(repository.recordSettlementFailure).not.toHaveBeenCalled();
+    });
+
+    it('failed approval is recorded as a settlement failure', async () => {
+      const { manager, repository, poller, approver } = setup();
+      approver.approve.mockResolvedValue({ kind: 'failed', retryable: false, failureCode: 'approval_observe_mode', message: 'm' });
+      await manager.execute(asked, 'd1');
+      const { fact } = recorded(repository);
+      expect(fact).toMatchObject({ salesChannel: 'naver', retryable: false, failureCode: 'approval_observe_mode' });
+      expect(poller.syncOrder).not.toHaveBeenCalled();
+    });
+
+    it('observe mode with the real approver records a permanent settlement failure and calls no market', async () => {
+      const prev = process.env.CHANNEL_CANCEL_APPROVAL_MODE;
+      delete process.env.CHANNEL_CANCEL_APPROVAL_MODE;
+      try {
+        const { repository, medusa, poller } = setup();
+        const naver = { approveCancel: jest.fn() };
+        const coupang = { stoppedShipment: jest.fn() };
+        const manager = new ChannelOrderCancelManager(
+          repository as never,
+          medusa as never,
+          poller as never,
+          new CustomerCancelApprover(naver as never, coupang as never),
+        );
+        await manager.execute(asked, 'd1');
+        expect(recorded(repository).fact).toMatchObject({ salesChannel: 'naver', retryable: false, failureCode: 'approval_observe_mode' });
+        expect(naver.approveCancel).not.toHaveBeenCalled();
+        expect(coupang.stoppedShipment).not.toHaveBeenCalled();
+        expect(poller.syncOrder).not.toHaveBeenCalled();
+      } finally {
+        if (prev !== undefined) process.env.CHANNEL_CANCEL_APPROVAL_MODE = prev;
+      }
+    });
+
+    it('uncollected order stops before the approver', async () => {
+      const { manager, repository, approver } = setup({ mapped: false });
+      await manager.execute(asked, 'd1');
+      expect(recorded(repository).fact).toMatchObject({ failureCode: 'order_not_collected' });
+      expect(approver.approve).not.toHaveBeenCalled();
+    });
+  });
 
   describe('사전검사', () => {
     it.each(['naver', 'coupang', '3pl', 'cafe24'])(

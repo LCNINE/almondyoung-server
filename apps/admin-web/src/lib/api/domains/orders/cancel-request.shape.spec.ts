@@ -110,6 +110,7 @@ describe('정산(#1016 36번 재설계)', () => {
     confirmedAt: '2026-10-12T01:00:00.000Z',
     deadlineAt: '2026-10-15T01:00:00.000Z',
     lastFailure: { code: 'wallet_refund_refused:REFUND_NOT_AUTOMATABLE', message: '자동 환불할 수 없는 결제수단입니다', retryable: false, at: '2026-10-12T01:00:05.000Z' },
+    marketRequest: false,
     ...over,
   });
 
@@ -239,6 +240,47 @@ describe('정산(#1016 36번 재설계)', () => {
     expect(settlementActionsOf(settlement({ phase: 'delayed' }))).toEqual({ retry: true, manualRefund: true });
     expect(settlementActionsOf(settlement({ mode: 'manual' }))).toEqual({ retry: true, manualRefund: false });
     expect(settlementActionsOf(null)).toEqual({ retry: false, manualRefund: false });
+  });
+
+  describe('마켓 고객 취소요청 행(marketRequest) — 환불은 마켓이 하고 core 는 승인만 보낸다', () => {
+    const observe = { code: 'approval_observe_mode', message: '관찰 모드 — 판매자센터에서 취소를 승인하세요.', retryable: false, at: 'x' };
+    const market = (over: Partial<SettlementView> = {}) => settlement({ marketRequest: true, lastFailure: observe, ...over });
+
+    it('core 응답의 marketRequest 를 읽는다 — 옛 응답(칸 없음)은 false', () => {
+      expect(toSettlementView({ ...settlement(), marketRequest: true })?.marketRequest).toBe(true);
+      const { marketRequest: _omit, ...old } = settlement();
+      expect(toSettlementView(old)?.marketRequest).toBe(false);
+    });
+
+    it('관찰 모드 거절은 «판매자센터 승인 필요» — «환불 거절»·«개발 확인»이 아니다', () => {
+      expect(settlementLabel(market())).toBe('판매자센터 승인 필요');
+      expect(settlementReason(market())).toBe('판매자센터 승인 필요 · 관찰 모드 — 판매자센터에서 취소를 승인하세요.');
+      const v = toCancelRequestView({ id: 'r1', status: 'settling', scope: 'full', settlement: market() });
+      expect(cancelRequestLine(v!)).toBe('전체취소 확정 · 판매자센터 승인 필요');
+    });
+
+    it('승인 실행부의 다른 재시도 불가 실패(쿠팡 출고중지 실패·4xx 등)도 같은 말이다', () => {
+      const stop = { code: 'coupang_stop_shipment_failed', message: '이미 출고됨', retryable: false, at: 'x' };
+      expect(settlementLabel(market({ lastFailure: stop }))).toBe('판매자센터 승인 필요');
+      expect(settlementReason(market({ lastFailure: { ...stop, code: 'http_400', message: '' } }))).toBe('판매자센터 승인 필요 · http_400');
+    });
+
+    it('조치 — [다시 시도]만, [계좌 송금으로 환불]은 없다(core 가 거절한다)', () => {
+      expect(settlementActionsOf(market())).toEqual({ retry: true, manualRefund: false });
+      expect(settlementActionsOf(market({ phase: 'delayed', lastFailure: null }))).toEqual({ retry: true, manualRefund: false });
+      expect(settlementActionsOf(market({ phase: 'in_progress' }))).toEqual({ retry: false, manualRefund: false });
+    });
+
+    it('거절이 아니면 기존 이름 그대로 — 진행 중·지연', () => {
+      expect(settlementLabel(market({ phase: 'in_progress' }))).toBe('환불 처리 중');
+      expect(settlementReason(market({ phase: 'in_progress' }))).toBeNull();
+      expect(settlementLabel(market({ phase: 'delayed' }))).toBe('환불 지연');
+    });
+
+    it('Medusa 행은 그대로 — 같은 실패 코드여도 «환불 거절»·계좌 송금 있음', () => {
+      expect(settlementLabel(settlement({ lastFailure: observe }))).toBe('환불 거절');
+      expect(settlementActionsOf(settlement())).toEqual({ retry: true, manualRefund: true });
+    });
   });
 
   it('경과·기한 — 기한은 한국 날짜', () => {

@@ -36,6 +36,11 @@ export interface FulfillmentCapability {
   partialQuantityDispatch: boolean;
   automatedRecall: boolean;
   automatedCancellation: boolean;
+  /**
+   * 마켓 고객이 낸 취소요청에 «승인»을 보낼 수 있는가(네이버 발송처리 거부·쿠팡 취소요청 승인).
+   * core 쪽 사본은 `answersCustomerCancelRequest` — parity spec 이 지킨다.
+   */
+  approvesCustomerCancelRequest: boolean;
 }
 
 /**
@@ -87,6 +92,7 @@ export const CHANNEL_CAPABILITIES: Record<SalesChannel, ChannelCapabilities> = {
       partialQuantityDispatch: true,
       automatedRecall: true,
       automatedCancellation: true,
+      approvesCustomerCancelRequest: false,
     },
   },
   naver: {
@@ -105,6 +111,7 @@ export const CHANNEL_CAPABILITIES: Record<SalesChannel, ChannelCapabilities> = {
       partialQuantityDispatch: false,
       automatedRecall: false,
       automatedCancellation: false,
+      approvesCustomerCancelRequest: true,
     },
   },
   coupang: {
@@ -121,6 +128,7 @@ export const CHANNEL_CAPABILITIES: Record<SalesChannel, ChannelCapabilities> = {
       partialQuantityDispatch: false,
       automatedRecall: false,
       automatedCancellation: false,
+      approvesCustomerCancelRequest: true,
     },
   },
   '3pl': {
@@ -131,6 +139,7 @@ export const CHANNEL_CAPABILITIES: Record<SalesChannel, ChannelCapabilities> = {
       partialQuantityDispatch: false,
       automatedRecall: false,
       automatedCancellation: false,
+      approvesCustomerCancelRequest: false,
     },
   },
 };

@@ -17,7 +17,7 @@ import { REFUND_REQUESTED, type RefundPolicy } from '../cancellation-refund/canc
 import { ChannelCancelRequestService } from '../channel-cancel-request/channel-cancel-request.service';
 import { ChannelCancelSettler } from '../channel-cancel-request/channel-cancel-settler';
 import type { CancelRequestView } from '../channel-cancel-request/channel-cancel-request.types';
-import { errorDetail, isDomainRefusal } from '../channel-order-change/channel-change-blockers';
+import { errorDetail, isBadRequestRefusal, isDomainRefusal } from '../channel-order-change/channel-change-blockers';
 import { cancellationCapabilityOf, sellerCenterMessage } from './channel-cancellation-capability';
 import { OrderCancellationReader } from './order-cancellation.reader';
 import type {
@@ -27,6 +27,8 @@ import type {
   CancellationRequest,
   ChannelCancellationReceipt,
   ChannelCancelledNotice,
+  ChannelCustomerCancelOutcome,
+  ChannelCustomerCancelRequest,
   ChannelDecreaseNotice,
   DecreaseOutcome,
   WalletApprovalNotice,
@@ -46,6 +48,11 @@ class Refused extends Error {
   }
 }
 
+/** 인쇄 gate 의 «멈출 수 없다» — 제작 중·출고됨. 바빠서 못 물었다(409 재시도·503)는 거절이 아니라 던진다 */
+function isPrintRefusal(error: unknown): boolean {
+  return error instanceof PrintInProductionError || error instanceof PrintShippedError;
+}
+
 // 요청자 종류는 requester 안에 있어 TS 가 바깥 합집합을 좁히지 못한다 — 판정을 한 곳에 둔다
 function isOperatorRequest(intent: CancellationRequest): intent is OperatorRequest {
   return intent.requester.kind === 'operator';
@@ -57,6 +64,27 @@ function isOperatorRequest(intent: CancellationRequest): intent is OperatorReque
  */
 function refundPolicyOf(requester: CancellationRequest['requester']): RefundPolicy {
   return requester.kind === 'customer' ? 'immediate' : 'decide_later';
+}
+
+/** 채널 줄 취소의 목표(누적 수량)를 줄별로 — 같은 줄이 둘이면 큰 쪽이 더 나중 상태다(합하지 않는다) */
+function latestTargets(lines: CancelLine[]): Map<string, number> {
+  const targets = new Map<string, number>();
+  for (const line of lines) {
+    targets.set(line.salesOrderLineId, Math.max(targets.get(line.salesOrderLineId) ?? 0, line.quantity));
+  }
+  return targets;
+}
+
+/** 수집된 채널 취소를 판매주문 취소에 넘기는 칸. `lines` 가 없으면 전체취소 */
+function channelCancelOptions(intent: ChannelCancelledNotice, lines: CancelLine[] | undefined) {
+  return {
+    reasonCode: intent.reasonCode,
+    reasonDetail: intent.reasonDetail,
+    cancelledBy: intent.cancelledBy,
+    occurredAt: intent.occurredAt,
+    ...(lines ? { lines } : {}),
+    metadata: intent.metadata,
+  };
 }
 
 /** 환불 효과 metadata 는 jsonb 로 남는 레코드다 — 결과에 실을 두 칸만 형을 보고 꺼낸다 */
@@ -258,23 +286,218 @@ export class OrderCancellation {
     });
   }
 
+  /**
+   * 수집된 채널 취소 (스펙 §5.4). 줄 취소의 수량은 «이번에 N개 더»가 아니라 «이 줄의 채널 누적 취소 수량»이다 —
+   * 요청 순간 core 가 이미 취소했으면(마켓 고객 취소요청 문) 같은 취소가 수집으로 다시 와도 할 일이 없고, 모자라면 그 차이만 취소한다.
+   * 전체취소는 모든 줄이 이미 전량 취소돼 있으면 취소하지 않는다(줄마다 따로 취소된 주문). 어느 쪽이든 요청 행은 닫는다.
+   */
   private async cancelForChannel(intent: ChannelCancelledNotice, tx: DbTx): Promise<void> {
     const { salesOrderId, lines } = intent;
-    await this.salesOrders.cancel(
+    const order = await this.reader.lockOrderLines(salesOrderId, tx);
+    if (!order) throw new NotFoundError(`Sales order ${salesOrderId} not found`);
+    const cancelled = await this.salesOrders.cancelledQuantities(
       salesOrderId,
-      {
-        reasonCode: intent.reasonCode,
-        reasonDetail: intent.reasonDetail,
-        cancelledBy: intent.cancelledBy,
-        occurredAt: intent.occurredAt,
-        ...(lines ? { lines } : {}),
-        metadata: intent.metadata,
-      },
+      order.lines.map((line) => line.id),
       tx,
     );
+    const alreadyCancelled = (lineId: string): number => {
+      const quantity = cancelled.get(lineId);
+      if (quantity === undefined) throw new Error(`Cancelled quantity is missing SalesOrder line ${lineId}`);
+      return quantity;
+    };
+    const targets = lines ? latestTargets(lines) : undefined;
+    // 전체취소면 채널은 모든 줄을 전량 취소했다 — 줄마다 남은 몫이 목표다(전체취소가 거절되면 이 줄들로 멈출 수 있는 몫만 취소한다)
+    const remainder = this.remainderToCancel(
+      salesOrderId,
+      targets ?? new Map(order.lines.map((line) => [line.id, line.quantity])),
+      alreadyCancelled,
+    );
+    if (remainder.length > 0) {
+      await this.applyChannelCancel(intent, targets ? remainder : undefined, remainder, order.salesChannel, tx);
+    } else if (!lines) {
+      // 줄마다 따로 전량 취소된 주문 — 다시 취소하지 않고 상태만 맞춘다(부분취소는 판매주문 상태를 바꾸지 않는다)
+      await this.salesOrders.markCancelledAfterLineCancellations(salesOrderId, tx);
+    }
     await this.printCancellation.holdUnsent(salesOrderId, lines, tx);
-    // 우리가 낸 취소 요청을 닫는다 — 정산 중 행(확정 때 적용, 위 cancel() 은 이미 취소된 주문이라 아무것도 안 했다). 줄 단위 취소(마켓)는 요청과 무관하다.
+    // 마켓 고객 취소요청 행을 채널 누적 수량으로 닫는다. 전체취소면 채널은 모든 줄을 전량 취소했다.
+    // 전체취소 종결(settleCancelled)보다 먼저다 — 거기서는 부분 요청이 «덮였다»(superseded)로 닫혀 요청의 결과를 잃는다
+    const channelLines = targets
+      ? order.lines.flatMap((line) => {
+          const target = targets.get(line.id);
+          return line.channelOrderItemId && target !== undefined
+            ? [{ channelOrderItemId: line.channelOrderItemId, quantity: target }]
+            : [];
+        })
+      : order.lines.flatMap((line) =>
+          line.channelOrderItemId ? [{ channelOrderItemId: line.channelOrderItemId, quantity: line.quantity }] : [],
+        );
+    await this.settler.settleLinesCancelled(salesOrderId, channelLines, tx);
+    // 우리가 낸 취소 요청을 닫는다 — 정산 중 행은 확정 때 이미 적용됐다(위에서 취소할 게 없었거나 cancel() 이 이미 취소된 주문에 아무것도 안 했다)
     if (!lines) await this.settler.settleCancelled(salesOrderId, tx);
+  }
+
+  /** 줄마다 «목표(채널 누적) − 이미 취소». 0 이하인 줄은 뺀다 — core 가 채널보다 많이 취소했으면 갈림이라 남긴다 */
+  private remainderToCancel(
+    salesOrderId: string,
+    targets: Map<string, number>,
+    alreadyCancelled: (lineId: string) => number,
+  ): CancelLine[] {
+    const remainder: CancelLine[] = [];
+    for (const [salesOrderLineId, target] of targets) {
+      const already = alreadyCancelled(salesOrderLineId);
+      if (already > target) {
+        // 대사(#1016 45번)가 볼 갈림이다 — 채널을 따라 취소를 되돌리지 않는다
+        this.logger.warn(
+          `[OrderCancellation] SO ${salesOrderId} line ${salesOrderLineId}: core cancelled ${already}, channel says ${target}`,
+        );
+      }
+      if (target > already) remainder.push({ salesOrderLineId, quantity: target - already });
+    }
+    return remainder;
+  }
+
+  /**
+   * 채널 취소를 판매주문에 적용한다. `lines` 가 없으면 전체취소, `wanted` 는 줄마다 취소하려는 몫(전체취소면 줄마다 남은 몫).
+   * 판매자센터가 취소를 확정하는 채널(마켓)은 core 가 거절해도 취소가 되돌아가지 않는다 — 400 거절(이미 나간 수량 등)을 던지면
+   * 재시도가 이길 수 없는 DLQ 가 될 뿐이라(스펙 반목표), savepoint 를 되돌리고 줄마다 core 가 아직 취소할 수 있는 몫으로 줄여
+   * 다시 취소한다 — 한 단위가 나갔다고 멈출 수 있는 나머지까지 나가지 않게. 줄일 수 없는 몫(나간 단위)만 경고로 남기고,
+   * 그건 회수·반품 같은 출고 뒤 후속 효과의 몫이다. 400 이 아닌 거절(409 데이터 어긋남 등)·예외는 그대로 던진다.
+   * 우리가 명령으로 취소하는 채널(Medusa)의 거절은 지금처럼 던진다.
+   */
+  private async applyChannelCancel(
+    intent: ChannelCancelledNotice,
+    lines: CancelLine[] | undefined,
+    wanted: CancelLine[],
+    salesChannel: string,
+    tx: DbTx,
+  ): Promise<void> {
+    const salesOrderId = intent.salesOrderId;
+    if (cancellationCapabilityOf(salesChannel).cancel !== 'seller_center') {
+      await this.salesOrders.cancel(salesOrderId, channelCancelOptions(intent, lines), tx);
+      return;
+    }
+    const first = await this.cancelInSavepoint(intent, lines, tx);
+    if (!first) return;
+
+    const cancellable = await this.salesOrders.cancellableQuantities(
+      salesOrderId,
+      wanted.map((line) => line.salesOrderLineId),
+      tx,
+    );
+    const clamped: CancelLine[] = [];
+    for (const line of wanted) {
+      const can = cancellable.get(line.salesOrderLineId);
+      if (can === undefined)
+        throw new Error(`Cancellable quantity is missing SalesOrder line ${line.salesOrderLineId}`);
+      const quantity = Math.min(line.quantity, can);
+      if (quantity > 0) clamped.push({ salesOrderLineId: line.salesOrderLineId, quantity });
+      if (line.quantity > quantity) {
+        this.logger.warn(
+          `[OrderCancellation] ${salesChannel} SO ${salesOrderId} line ${line.salesOrderLineId}: ` +
+            `${line.quantity - quantity} of ${line.quantity} not cancellable (${errorDetail(first.refusal)})`,
+        );
+      }
+    }
+    if (clamped.length === 0) return;
+    const second = await this.cancelInSavepoint(intent, clamped, tx);
+    if (second) {
+      this.logger.warn(
+        `[OrderCancellation] ${salesChannel} cancel for SO ${salesOrderId} not applied: ${errorDetail(second.refusal)}`,
+      );
+    }
+  }
+
+  /** savepoint 안에서 취소한다. 400 거절이면 savepoint 를 되돌리고 그 거절을 돌려준다. 그 밖은 던진다 */
+  private async cancelInSavepoint(
+    intent: ChannelCancelledNotice,
+    lines: CancelLine[] | undefined,
+    tx: DbTx,
+  ): Promise<{ refusal: unknown } | null> {
+    try {
+      await tx.transaction((sp) =>
+        this.salesOrders.cancel(intent.salesOrderId, channelCancelOptions(intent, lines), sp),
+      );
+      return null;
+    } catch (error) {
+      if (!isBadRequestRefusal(error)) throw error;
+      return { refusal: error };
+    }
+  }
+
+  /**
+   * 마켓 고객 취소요청 (스펙 §5.2). 마켓이 «고객이 이 줄들을 취소해 달라»고 알렸다 — 멈출 수 있으면 요청 순간 core 가 그 줄·수량을
+   * 취소하고, 채널 취소 요청 행(정산 중)과 승인 명령(`CancelChannelOrder.answers`)을 남긴다. 그 뒤는 기존 정산 수명주기다.
+   * 판정은 운영자 문과 같은 순서다: 사전검사 → 인쇄 gate(물을 고객이 없어 «인쇄 빼고»를 묻지 않고, 거절은 인쇄 보드에 남긴다) → 확정.
+   * 요청 수량 전부를 멈출 수 없으면 아무것도 하지 않는다(일부만 취소하고 승인하는 갈래는 없다) — 행·명령 없이 경고만 남기고,
+   * 판매자센터 몫이다(네이버는 우리 발송처리가 곧 거부다). 400 거절·인쇄 거절만 «못 멈춤»이고 409 같은 데이터 어긋남은 던진다.
+   */
+  async receiveChannelCustomerRequest(req: ChannelCustomerCancelRequest): Promise<ChannelCustomerCancelOutcome> {
+    const order = await this.db.run((tx) => this.reader.channelOrder(req.salesChannel, req.externalOrderId, tx));
+    if (!order) {
+      // 컷오버 전 주문(셀메이트 몫) 등 — 실패가 아니다(스펙 §5.2)
+      this.logger.log(
+        `[OrderCancellation] ${req.salesChannel} cancel request ${req.channelRequestKey}: order ${req.externalOrderId} not in core, ignored`,
+      );
+      return { kind: 'order_unknown' };
+    }
+    if (!cancellationCapabilityOf(order.salesChannel).answersCustomerCancelRequest) {
+      throw new Error(`Sales channel ${order.salesChannel} does not answer customer cancel requests`);
+    }
+    const sourceKey = `channel-request:${req.channelRequestKey}`;
+    const replay = await this.cancelRequests.findBySourceKey(order.id, sourceKey);
+    if (replay) return { kind: 'replayed', view: replay };
+
+    const lineIdByItem = new Map(
+      order.lines.flatMap((line) => (line.channelOrderItemId ? [[line.channelOrderItemId, line.id] as const] : [])),
+    );
+    const lines: CancelLine[] = [];
+    const unknownItems: string[] = [];
+    for (const item of req.items) {
+      const salesOrderLineId = lineIdByItem.get(item.channelOrderItemId);
+      if (salesOrderLineId) lines.push({ salesOrderLineId, quantity: item.quantity });
+      else unknownItems.push(item.channelOrderItemId);
+    }
+    if (unknownItems.length > 0) {
+      return this.notStoppable(req, order.id, `channel lines not in the sales order: ${unknownItems.join(', ')}`);
+    }
+
+    try {
+      await this.cancelRequests.precheck(order.id, lines);
+      const printed = await this.printCancellation.cancelForOrder(order.id, 'gate', lines);
+      const view = await this.afterPrintCancel(printed, () =>
+        this.db.run((tx) =>
+          this.cancelRequests.request(
+            {
+              salesOrderId: order.id,
+              lines,
+              requester: {
+                kind: 'channel-customer',
+                channelRequestRef: req.channelRequestRef,
+                channelRequestKey: req.channelRequestKey,
+                needsApproval: req.needsApproval,
+              },
+              sourceKey,
+            },
+            tx,
+          ),
+        ),
+      );
+      return { kind: 'stopped', view };
+    } catch (error) {
+      if (!isBadRequestRefusal(error) && !isPrintRefusal(error)) throw error;
+      return this.notStoppable(req, order.id, errorDetail(error));
+    }
+  }
+
+  private notStoppable(
+    req: ChannelCustomerCancelRequest,
+    salesOrderId: string,
+    reason: string,
+  ): ChannelCustomerCancelOutcome {
+    this.logger.warn(
+      `[OrderCancellation] ${req.salesChannel} cancel request ${req.channelRequestKey} on SO ${salesOrderId} not stoppable — seller center: ${reason}`,
+    );
+    return { kind: 'not_stoppable', reason };
   }
 
   /**
