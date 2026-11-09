@@ -1,5 +1,6 @@
 import { randomUUID } from 'crypto';
-import { and, eq } from 'drizzle-orm';
+import { ConflictException } from '@nestjs/common';
+import { and, eq, inArray } from 'drizzle-orm';
 import type { CancelChannelOrderPayload } from '@packages/event-contracts/streams';
 import { ORDER_STREAM, type OrderCancelledPayload } from '@packages/event-contracts/streams/orders.stream';
 import type { EnvelopeOf } from '@packages/event-contracts/types';
@@ -125,6 +126,70 @@ async function seedSettlingRequest(
   return id;
 }
 
+/**
+ * 줄의 판매 단위 `units` 개만 나간 모양 — 활성 박스 줄에서 그만큼 떼어 출고된 박스로 옮기고 출고 수량·예약을 맞춘다.
+ * `shipLineOut` 의 일부 버전이다(FOI 비율 1 이라 판매 단위 = 물리 수량).
+ */
+async function shipUnitsOut(tx: DbTx, salesOrderLineId: string, units: number): Promise<void> {
+  const [item] = await tx
+    .select({ id: wmsTables.fulfillmentOrderItems.id, skuId: wmsTables.fulfillmentOrderItems.skuId })
+    .from(wmsTables.fulfillmentOrderItems)
+    .where(eq(wmsTables.fulfillmentOrderItems.salesOrderLineId, salesOrderLineId));
+  const [active] = await tx
+    .select({
+      id: wmsTables.shipmentLines.id,
+      qty: wmsTables.shipmentLines.qty,
+      reservedQty: wmsTables.shipmentLines.reservedQty,
+      warehouseId: wmsTables.shipments.warehouseId,
+    })
+    .from(wmsTables.shipmentLines)
+    .innerJoin(wmsTables.shipments, eq(wmsTables.shipments.id, wmsTables.shipmentLines.shipmentId))
+    .where(
+      and(
+        eq(wmsTables.shipmentLines.fulfillmentOrderItemId, item.id),
+        inArray(wmsTables.shipments.status, ['draft', 'planned']),
+      ),
+    );
+  const [shipped] = await tx
+    .insert(wmsTables.shipments)
+    .values({ warehouseId: active.warehouseId, status: 'shipped', shippedAt: new Date() })
+    .returning();
+  await tx
+    .insert(wmsTables.shipmentLines)
+    .values({ shipmentId: shipped.id, fulfillmentOrderItemId: item.id, skuId: item.skuId, qty: units });
+  await tx
+    .update(wmsTables.shipmentLines)
+    .set({ qty: active.qty - units, reservedQty: Math.min(active.reservedQty, active.qty - units) })
+    .where(eq(wmsTables.shipmentLines.id, active.id));
+  const reservations = await tx
+    .select({ id: wmsTables.stockReservations.id, quantity: wmsTables.stockReservations.quantity })
+    .from(wmsTables.stockReservations)
+    .where(
+      and(
+        eq(wmsTables.stockReservations.shipmentLineId, active.id),
+        eq(wmsTables.stockReservations.status, 'confirmed'),
+      ),
+    );
+  for (const reservation of reservations) {
+    await tx
+      .update(wmsTables.stockReservations)
+      .set({ quantity: reservation.quantity - units })
+      .where(eq(wmsTables.stockReservations.id, reservation.id));
+  }
+  await tx
+    .update(wmsTables.fulfillmentOrderItems)
+    .set({ shippedQty: units })
+    .where(eq(wmsTables.fulfillmentOrderItems.id, item.id));
+}
+
+async function salesOrderStatus(tx: DbTx, salesOrderId: string): Promise<string | undefined> {
+  const [row] = await tx
+    .select({ status: wmsTables.salesOrders.status })
+    .from(wmsTables.salesOrders)
+    .where(eq(wmsTables.salesOrders.id, salesOrderId));
+  return row?.status;
+}
+
 async function requestStatus(tx: DbTx, id: string): Promise<string | undefined> {
   const [row] = await tx
     .select({ status: wmsTables.salesOrderAmendments.status })
@@ -203,11 +268,15 @@ describeIfDb('마켓 채널 취소 수집 — 줄 취소는 누적 수량 상태
       await coreCancels(w, tx, seed.salesOrderId, [[lineB, 2]]);
       const before = await cancellationCount(tx, seed.salesOrderId);
 
+      expect(await salesOrderStatus(tx, seed.salesOrderId)).not.toBe('cancelled');
+
       await consumer.handleOrderCancelled(orderCancelled(seed), envelope());
 
       expect(await cancellationCount(tx, seed.salesOrderId)).toBe(before);
       expect(await cancelledOf(tx, seed.salesOrderId, lineA)).toBe(3);
       expect(await cancelledOf(tx, seed.salesOrderId, lineB)).toBe(2);
+      // 다시 취소하지 않아도 상태는 맞춘다 — 수량 0 인 주문이 확정 상태로 남지 않는다
+      expect(await salesOrderStatus(tx, seed.salesOrderId)).toBe('cancelled');
     });
   });
 
@@ -246,6 +315,60 @@ describeIfDb('마켓 채널 취소 수집 — 줄 취소는 누적 수량 상태
       );
 
       expect(await requestStatus(tx, requestId)).toBe('settling');
+    });
+  });
+
+  it('two sequential partial requests on the same line — the first collected cancel closes only the first row', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { w, seed, consumer, lineA, itemA } = await naverOrder(tx);
+      await coreCancels(w, tx, seed.salesOrderId, [[lineA, 1]]);
+      const first = await seedSettlingRequest(tx, seed, `channel-customer:${itemA}:c1`, [
+        { type: 'cancel_line', salesOrderLineId: lineA, channelOrderItemId: itemA, quantity: 1, cancelledBefore: 0 },
+      ]);
+      await coreCancels(w, tx, seed.salesOrderId, [[lineA, 1]]);
+      const second = await seedSettlingRequest(tx, seed, `channel-customer:${itemA}:c2`, [
+        { type: 'cancel_line', salesOrderLineId: lineA, channelOrderItemId: itemA, quantity: 1, cancelledBefore: 1 },
+      ]);
+
+      await consumer.handleOrderCancelled(
+        orderCancelled(seed, [{ channelOrderItemId: itemA, quantity: 1 }]),
+        envelope(),
+      );
+      expect(await requestStatus(tx, first)).toBe('applied');
+      expect(await requestStatus(tx, second)).toBe('settling');
+
+      await consumer.handleOrderCancelled(
+        orderCancelled(seed, [{ channelOrderItemId: itemA, quantity: 2 }]),
+        envelope(),
+      );
+      expect(await requestStatus(tx, second)).toBe('applied');
+      expect(await cancelledOf(tx, seed.salesOrderId, lineA)).toBe(2);
+    });
+  });
+
+  it('a two-line market request row closes after both lines arrive in separate events', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { w, seed, consumer, lineA, lineB, itemA, itemB } = await naverOrder(tx);
+      await coreCancels(w, tx, seed.salesOrderId, [
+        [lineA, 3],
+        [lineB, 2],
+      ]);
+      const requestId = await seedSettlingRequest(tx, seed, `channel-customer:${itemA}:na`, [
+        { type: 'cancel_line', salesOrderLineId: lineA, channelOrderItemId: itemA, quantity: 3, cancelledBefore: 0 },
+        { type: 'cancel_line', salesOrderLineId: lineB, channelOrderItemId: itemB, quantity: 2, cancelledBefore: 0 },
+      ]);
+
+      await consumer.handleOrderCancelled(
+        orderCancelled(seed, [{ channelOrderItemId: itemA, quantity: 3 }]),
+        envelope(),
+      );
+      expect(await requestStatus(tx, requestId)).toBe('settling');
+
+      await consumer.handleOrderCancelled(
+        orderCancelled(seed, [{ channelOrderItemId: itemB, quantity: 2 }]),
+        envelope(),
+      );
+      expect(await requestStatus(tx, requestId)).toBe('applied');
     });
   });
 
@@ -291,6 +414,34 @@ describeIfDb('마켓 채널 취소 수집 — 줄 취소는 누적 수량 상태
       ).resolves.toBeUndefined();
       // 나간 줄은 취소되지 않는다 — 출고 뒤 후속 효과(회수·반품)의 몫
       expect(await cancelledOf(tx, seed.salesOrderId, lineA)).toBe(0);
+    });
+  });
+
+  it('market OrderCancelled on a partially dispatched line cancels the outstanding units', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { seed, consumer, lineA, lineB, itemA } = await naverOrder(tx);
+      await shipUnitsOut(tx, lineA, 1);
+
+      await consumer.handleOrderCancelled(
+        orderCancelled(seed, [{ channelOrderItemId: itemA, quantity: 3 }]),
+        envelope(),
+      );
+
+      // 나간 1 단위만 남고 멈출 수 있는 2 단위는 취소된다
+      expect(await cancelledOf(tx, seed.salesOrderId, lineA)).toBe(2);
+      expect(await cancelledOf(tx, seed.salesOrderId, lineB)).toBe(0);
+    });
+  });
+
+  it('a ConflictException on the market path still throws', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { w, seed, consumer, itemA } = await naverOrder(tx);
+      jest.spyOn(w.salesOrders, 'cancel').mockRejectedValueOnce(new ConflictException('composition not frozen'));
+
+      // 409 는 데이터가 어긋났다는 뜻이다 — 삼키지 않고 재시도·DLQ 로 보낸다(커널의 수신 savepoint 가 되돌린다)
+      await expect(
+        consumer.handleOrderCancelled(orderCancelled(seed, [{ channelOrderItemId: itemA, quantity: 3 }]), envelope()),
+      ).rejects.toThrow('composition not frozen');
     });
   });
 });

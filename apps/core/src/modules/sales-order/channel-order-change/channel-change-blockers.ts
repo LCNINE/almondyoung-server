@@ -1,5 +1,5 @@
-import { HttpException } from '@nestjs/common';
-import { ApplicationException } from '@app/shared';
+import { BadRequestException, HttpException } from '@nestjs/common';
+import { ApplicationException, BadRequestError } from '@app/shared';
 import type { ChannelBlocker, ChannelBlockerCode } from './channel-order-change.types';
 
 const ADDRESS_BLOCKER_BY_CODE: Record<string, ChannelBlockerCode> = {
@@ -27,6 +27,14 @@ function responseField(error: unknown, field: 'code' | 'message'): string | unde
  */
 export function isDomainRefusal(error: unknown): boolean {
   return error instanceof HttpException || error instanceof ApplicationException;
+}
+
+/**
+ * «이 요청은 지금 상태로는 받을 수 없다»(400) — 이미 나간 수량·남은 수량 초과 같은 판정 거절만. 409(구성이 굳지 않음·구성 밖 항목처럼
+ * 데이터가 어긋난 것)·503 은 여기 들지 않는다 — 삼키면 데이터 결함이 재시도·DLQ 없이 사라진다
+ */
+export function isBadRequestRefusal(error: unknown): boolean {
+  return error instanceof BadRequestException || error instanceof BadRequestError;
 }
 
 export function errorDetail(error: unknown): string {

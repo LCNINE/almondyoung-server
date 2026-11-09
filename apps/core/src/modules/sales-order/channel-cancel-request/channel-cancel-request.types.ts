@@ -20,6 +20,11 @@ export interface CancelRequestLine {
   salesOrderLineId: string;
   channelOrderItemId: string | null;
   quantity: number;
+  /**
+   * 마켓 고객 취소요청 행만. 요청을 적용하기 직전 그 판매 줄의 취소 수량(core) — 채널 누적 취소 수량이
+   * `cancelledBefore + quantity` 에 닿아야 이 요청이 채널에서 끝난 것이다(같은 줄의 앞선 요청과 가른다). 없으면 0.
+   */
+  cancelledBefore?: number;
 }
 
 const CancelRequestLineSchema = z.object({
@@ -27,6 +32,7 @@ const CancelRequestLineSchema = z.object({
   salesOrderLineId: z.string().min(1),
   channelOrderItemId: z.string().min(1).nullable(),
   quantity: z.number().int().positive(),
+  cancelledBefore: z.number().int().nonnegative().optional(),
 });
 
 const SettlementFailureSchema = z.object({
@@ -76,6 +82,11 @@ const CancelRequestMetadataSchema = z.object({
     .optional(),
   supersededReason: z.string().optional(),
   settlement: SettlementSchema.optional(),
+  /**
+   * 마켓 고객 취소요청 행만. 수집된 채널 줄 취소가 이미 덮은 채널 줄 번호 — 줄마다 다른 사실로 올 수 있어 쌓아 두고,
+   * 모든 줄이 덮이면 행을 닫는다(스펙 §5.4)
+   */
+  confirmedChannelLines: z.array(z.string().min(1)).optional(),
 });
 
 export type CancelRequestMetadata = z.infer<typeof CancelRequestMetadataSchema>;

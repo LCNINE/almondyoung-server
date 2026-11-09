@@ -17,6 +17,7 @@ import {
   inArray,
   notInArray,
   desc,
+  ne,
   and,
   or,
   gte,
@@ -2179,6 +2180,42 @@ export class SalesOrdersService {
         return [lineId, line.canceled];
       }),
     );
+  }
+
+  /**
+   * 줄별로 지금 부분취소가 받을 수 있는 최대 수량 — `cancel` 이 거절하지 않는 상한(취소 상한 `cancelableOf`, 상자 후면 거기에
+   * «아직 아무 구성품도 나가지 않은 판매 단위» `cancellableSalesUnits` 까지). 판매자센터가 취소를 확정한 채널(마켓)의 수집 취소가
+   * 거절될 때 커널이 멈출 수 있는 몫만 취소하려고 읽는다(스펙 §5.4). 구성이 어긋난 데이터는 그 문이 409 로 던진다 — 삼키지 않는다.
+   * 부르는 쪽이 판매주문을 잠근 트랜잭션에서 부른다.
+   */
+  async cancellableQuantities(salesOrderId: string, lineIds: string[], tx: DbTx): Promise<Map<string, number>> {
+    const quantities = await readLineQuantities(tx, salesOrderId);
+    const prior = await this.loadPriorCancellationContext(salesOrderId, tx, quantities);
+    const boxed = await this.hasBoxedFulfillment(salesOrderId, tx);
+    return new Map(
+      lineIds.map((lineId) => {
+        const line = quantities.get(lineId);
+        if (!line) throw new Error(`Line quantities are missing SalesOrder line ${lineId}`);
+        const cancelable = Math.max(0, cancelableOf(prior, lineId));
+        // 상자 후 창고 줄은 박스에서 빼낼 수 있는 몫까지만(planAfterBoxing 의 physicalCancellationByItem 거절과 같은 경계).
+        // FOI 가 없는 줄(인쇄 외주·디지털)은 SKU 층이 비어 취소 상한만 본다
+        const units = boxed && line.skus.length > 0 ? cancellableSalesUnits(line) : cancelable;
+        return [lineId, Math.min(cancelable, units)];
+      }),
+    );
+  }
+
+  /**
+   * 이미 줄마다 전량 취소된 주문에 채널 전체취소가 오면 취소를 다시 하지 않고 상태만 맞춘다 — 상자 전 전체취소의 재수신 경로
+   * (`cancelBeforeBoxingFull` 의 기존 전체취소 갈래)와 같이 상태를 `cancelled` 로 두고 열린 FO 생성 대기를 닫는다.
+   * 부분취소는 판매주문 상태를 바꾸지 않으므로 이게 없으면 수량 0 인 주문이 확정 상태로 남는다.
+   */
+  async markCancelledAfterLineCancellations(salesOrderId: string, tx: DbTx): Promise<void> {
+    await tx
+      .update(wmsTables.salesOrders)
+      .set({ status: 'cancelled', updatedAt: new Date() })
+      .where(and(eq(wmsTables.salesOrders.id, salesOrderId), ne(wmsTables.salesOrders.status, 'cancelled')));
+    await this.closeOpenFulfillmentBacklogEffects(salesOrderId, tx);
   }
 
   /** 이 취소 뒤 남는 수량(남은 수량 − 이번 취소)이 모든 줄에서 0 인가. 디지털 줄도 센다. 이번 요청을 빼는 건 판정이다. */

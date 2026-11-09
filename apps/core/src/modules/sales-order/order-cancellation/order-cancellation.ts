@@ -17,7 +17,7 @@ import { REFUND_REQUESTED, type RefundPolicy } from '../cancellation-refund/canc
 import { ChannelCancelRequestService } from '../channel-cancel-request/channel-cancel-request.service';
 import { ChannelCancelSettler } from '../channel-cancel-request/channel-cancel-settler';
 import type { CancelRequestView } from '../channel-cancel-request/channel-cancel-request.types';
-import { errorDetail, isDomainRefusal } from '../channel-order-change/channel-change-blockers';
+import { errorDetail, isBadRequestRefusal, isDomainRefusal } from '../channel-order-change/channel-change-blockers';
 import { cancellationCapabilityOf, sellerCenterMessage } from './channel-cancellation-capability';
 import { OrderCancellationReader } from './order-cancellation.reader';
 import type {
@@ -66,6 +66,18 @@ function latestTargets(lines: CancelLine[]): Map<string, number> {
     targets.set(line.salesOrderLineId, Math.max(targets.get(line.salesOrderLineId) ?? 0, line.quantity));
   }
   return targets;
+}
+
+/** 수집된 채널 취소를 판매주문 취소에 넘기는 칸. `lines` 가 없으면 전체취소 */
+function channelCancelOptions(intent: ChannelCancelledNotice, lines: CancelLine[] | undefined) {
+  return {
+    reasonCode: intent.reasonCode,
+    reasonDetail: intent.reasonDetail,
+    cancelledBy: intent.cancelledBy,
+    occurredAt: intent.occurredAt,
+    ...(lines ? { lines } : {}),
+    metadata: intent.metadata,
+  };
 }
 
 /** 환불 효과 metadata 는 jsonb 로 남는 레코드다 — 결과에 실을 두 칸만 형을 보고 꺼낸다 */
@@ -287,11 +299,18 @@ export class OrderCancellation {
       return quantity;
     };
     const targets = lines ? latestTargets(lines) : undefined;
-    const remainder = targets ? this.remainderToCancel(salesOrderId, targets, alreadyCancelled) : undefined;
-    const nothingToCancel = remainder
-      ? remainder.length === 0
-      : order.lines.every((line) => alreadyCancelled(line.id) >= line.quantity);
-    if (!nothingToCancel) await this.applyChannelCancel(intent, remainder, order.salesChannel, tx);
+    // 전체취소면 채널은 모든 줄을 전량 취소했다 — 줄마다 남은 몫이 목표다(전체취소가 거절되면 이 줄들로 멈출 수 있는 몫만 취소한다)
+    const remainder = this.remainderToCancel(
+      salesOrderId,
+      targets ?? new Map(order.lines.map((line) => [line.id, line.quantity])),
+      alreadyCancelled,
+    );
+    if (remainder.length > 0) {
+      await this.applyChannelCancel(intent, targets ? remainder : undefined, remainder, order.salesChannel, tx);
+    } else if (!lines) {
+      // 줄마다 따로 전량 취소된 주문 — 다시 취소하지 않고 상태만 맞춘다(부분취소는 판매주문 상태를 바꾸지 않는다)
+      await this.salesOrders.markCancelledAfterLineCancellations(salesOrderId, tx);
+    }
     await this.printCancellation.holdUnsent(salesOrderId, lines, tx);
     // 마켓 고객 취소요청 행을 채널 누적 수량으로 닫는다. 전체취소면 채널은 모든 줄을 전량 취소했다.
     // 전체취소 종결(settleCancelled)보다 먼저다 — 거기서는 부분 요청이 «덮였다»(superseded)로 닫혀 요청의 결과를 잃는다
@@ -331,36 +350,70 @@ export class OrderCancellation {
   }
 
   /**
-   * 채널 취소를 판매주문에 적용한다. 판매자센터가 취소를 확정하는 채널(마켓)은 core 가 거절해도 취소가 되돌아가지 않는다 —
-   * 거절(이미 나간 줄 등)을 던지면 재시도가 이길 수 없는 DLQ 가 될 뿐이라(스펙 반목표), savepoint 를 되돌리고 경고로 남긴다.
-   * 나간 줄은 회수·반품 같은 출고 뒤 후속 효과의 몫이다. 도메인 거절이 아닌 예외(교착·버그)는 그대로 던진다.
+   * 채널 취소를 판매주문에 적용한다. `lines` 가 없으면 전체취소, `wanted` 는 줄마다 취소하려는 몫(전체취소면 줄마다 남은 몫).
+   * 판매자센터가 취소를 확정하는 채널(마켓)은 core 가 거절해도 취소가 되돌아가지 않는다 — 400 거절(이미 나간 수량 등)을 던지면
+   * 재시도가 이길 수 없는 DLQ 가 될 뿐이라(스펙 반목표), savepoint 를 되돌리고 줄마다 core 가 아직 취소할 수 있는 몫으로 줄여
+   * 다시 취소한다 — 한 단위가 나갔다고 멈출 수 있는 나머지까지 나가지 않게. 줄일 수 없는 몫(나간 단위)만 경고로 남기고,
+   * 그건 회수·반품 같은 출고 뒤 후속 효과의 몫이다. 400 이 아닌 거절(409 데이터 어긋남 등)·예외는 그대로 던진다.
    * 우리가 명령으로 취소하는 채널(Medusa)의 거절은 지금처럼 던진다.
    */
   private async applyChannelCancel(
     intent: ChannelCancelledNotice,
     lines: CancelLine[] | undefined,
+    wanted: CancelLine[],
     salesChannel: string,
     tx: DbTx,
   ): Promise<void> {
-    const options = {
-      reasonCode: intent.reasonCode,
-      reasonDetail: intent.reasonDetail,
-      cancelledBy: intent.cancelledBy,
-      occurredAt: intent.occurredAt,
-      ...(lines ? { lines } : {}),
-      metadata: intent.metadata,
-    };
+    const salesOrderId = intent.salesOrderId;
     if (cancellationCapabilityOf(salesChannel).cancel !== 'seller_center') {
-      await this.salesOrders.cancel(intent.salesOrderId, options, tx);
+      await this.salesOrders.cancel(salesOrderId, channelCancelOptions(intent, lines), tx);
       return;
     }
-    try {
-      await tx.transaction((sp) => this.salesOrders.cancel(intent.salesOrderId, options, sp));
-    } catch (error) {
-      if (!isDomainRefusal(error)) throw error;
+    const first = await this.cancelInSavepoint(intent, lines, tx);
+    if (!first) return;
+
+    const cancellable = await this.salesOrders.cancellableQuantities(
+      salesOrderId,
+      wanted.map((line) => line.salesOrderLineId),
+      tx,
+    );
+    const clamped: CancelLine[] = [];
+    for (const line of wanted) {
+      const can = cancellable.get(line.salesOrderLineId);
+      if (can === undefined)
+        throw new Error(`Cancellable quantity is missing SalesOrder line ${line.salesOrderLineId}`);
+      const quantity = Math.min(line.quantity, can);
+      if (quantity > 0) clamped.push({ salesOrderLineId: line.salesOrderLineId, quantity });
+      if (line.quantity > quantity) {
+        this.logger.warn(
+          `[OrderCancellation] ${salesChannel} SO ${salesOrderId} line ${line.salesOrderLineId}: ` +
+            `${line.quantity - quantity} of ${line.quantity} not cancellable (${errorDetail(first.refusal)})`,
+        );
+      }
+    }
+    if (clamped.length === 0) return;
+    const second = await this.cancelInSavepoint(intent, clamped, tx);
+    if (second) {
       this.logger.warn(
-        `[OrderCancellation] ${salesChannel} cancel for SO ${intent.salesOrderId} not applied: ${errorDetail(error)}`,
+        `[OrderCancellation] ${salesChannel} cancel for SO ${salesOrderId} not applied: ${errorDetail(second.refusal)}`,
       );
+    }
+  }
+
+  /** savepoint 안에서 취소한다. 400 거절이면 savepoint 를 되돌리고 그 거절을 돌려준다. 그 밖은 던진다 */
+  private async cancelInSavepoint(
+    intent: ChannelCancelledNotice,
+    lines: CancelLine[] | undefined,
+    tx: DbTx,
+  ): Promise<{ refusal: unknown } | null> {
+    try {
+      await tx.transaction((sp) =>
+        this.salesOrders.cancel(intent.salesOrderId, channelCancelOptions(intent, lines), sp),
+      );
+      return null;
+    } catch (error) {
+      if (!isBadRequestRefusal(error)) throw error;
+      return { refusal: error };
     }
   }
 

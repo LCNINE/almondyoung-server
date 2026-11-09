@@ -19,17 +19,19 @@ type AmendmentRow = typeof wmsTables.salesOrderAmendments.$inferSelect;
 const MARKET_CUSTOMER_REQUESTER_PREFIX = 'channel-customer:';
 
 /**
- * 요청 행의 모든 줄이 채널 누적 취소 수량으로 덮였나. 채널 줄 번호가 없는 줄은 채널이 말할 수 없으니 덮이지 않는다.
- * 한 행에 같은 채널 줄이 여럿이면 그 합이 요청 수량이다.
+ * 요청 행의 채널 줄마다 «채널 누적 취소 수량이 여기에 닿으면 이 요청이 끝났다»는 수량 = 요청 직전 취소(`cancelledBefore`, 없으면 0)
+ * + 요청 수량. 한 행에 같은 채널 줄이 여럿이면 요청 수량을 합한다(같은 판매 줄이라 직전 취소는 같다).
+ * 채널 줄 번호가 없는 줄이 있거나 줄이 없으면 null — 채널이 그 행을 덮을 수 없다.
  */
-function coveredBy(lines: CancelRequestLine[], cancelledByItem: Map<string, number>): boolean {
-  if (lines.length === 0) return false;
-  const requested = new Map<string, number>();
+function requiredCumulative(lines: CancelRequestLine[]): Map<string, number> | null {
+  if (lines.length === 0) return null;
+  const required = new Map<string, number>();
   for (const line of lines) {
-    if (line.channelOrderItemId === null) return false;
-    requested.set(line.channelOrderItemId, (requested.get(line.channelOrderItemId) ?? 0) + line.quantity);
+    if (line.channelOrderItemId === null) return null;
+    const sofar = required.get(line.channelOrderItemId) ?? line.cancelledBefore ?? 0;
+    required.set(line.channelOrderItemId, sofar + line.quantity);
   }
-  return [...requested].every(([item, quantity]) => (cancelledByItem.get(item) ?? 0) >= quantity);
+  return required;
 }
 
 /**
@@ -88,7 +90,8 @@ export class ChannelCancelSettler {
   /**
    * 수집된 채널 줄 취소(누적 수량 상태)로 마켓 고객 취소요청 행을 닫는다(스펙 §5.4). `channelLines` 는 채널 줄 번호별
    * «지금까지 채널이 취소한 수량»이다. 정산 중 행 중 마켓 고객이 낸 것(`requestedBy` 가 `channel-customer:`)만 보고,
-   * 행의 모든 줄이 그 수량으로 덮였으면 `applied` 로 닫는다. 닫은 행 수를 돌려준다.
+   * 줄마다 «요청 직전 취소 + 요청 수량»에 닿으면 덮인 것으로 행에 적어 두고(줄은 다른 사실로 따로 올 수 있다),
+   * 모든 줄이 덮이면 `applied` 로 닫는다. 닫은 행 수를 돌려준다.
    * 운영자·고객·wallet 요청 행은 건드리지 않는다 — 그 행은 우리가 낸 명령의 정산(전체취소·`OrderModified`)이 닫는다.
    */
   async settleLinesCancelled(
@@ -108,9 +111,22 @@ export class ChannelCancelSettler {
     for (const row of await this.reader.findSettling(salesOrderId, tx, { lock: true })) {
       const meta = readCancelRequestMetadata(row.metadata);
       if (!meta.request.requestedBy.startsWith(MARKET_CUSTOMER_REQUESTER_PREFIX)) continue;
-      if (!coveredBy(readCancelRequestLines(row.deltas), cancelledByItem)) continue;
-      await this.write(row.id, 'applied', settled(meta), tx);
-      closed += 1;
+      const required = requiredCumulative(readCancelRequestLines(row.deltas));
+      if (!required) continue;
+      // 줄마다 다른 사실로 올 수 있다 — 이번 사실이 덮은 줄을 앞서 덮인 줄에 더해 둔다
+      const before = new Set(meta.confirmedChannelLines ?? []);
+      const confirmed = new Set(before);
+      for (const [item, quantity] of required) {
+        // 채널이 이번에 말하지 않은 줄은 «아직 모름» — 0 으로 읽어 덮이지 않는다
+        if ((cancelledByItem.get(item) ?? 0) >= quantity) confirmed.add(item);
+      }
+      const next: CancelRequestMetadata = { ...meta, confirmedChannelLines: [...confirmed].sort() };
+      if ([...required.keys()].every((item) => confirmed.has(item))) {
+        await this.write(row.id, 'applied', settled(next), tx);
+        closed += 1;
+      } else if (confirmed.size > before.size) {
+        await this.write(row.id, 'settling', next, tx);
+      }
     }
     return closed;
   }
@@ -136,7 +152,7 @@ export class ChannelCancelSettler {
 
   private async write(
     id: string,
-    status: 'applied' | 'superseded',
+    status: 'settling' | 'applied' | 'superseded',
     metadata: CancelRequestMetadata,
     tx: DbTx,
   ): Promise<void> {
