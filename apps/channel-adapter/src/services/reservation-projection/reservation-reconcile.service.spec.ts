@@ -6,6 +6,7 @@ import type { ReservationReconcileRunRepository } from './reservation-reconcile-
 import type { ConfigService } from '@nestjs/config';
 import { ReservationReconcileService } from './reservation-reconcile.service';
 import { parseMaxFixes } from './reservation-reconcile.job';
+import { reservationTarget } from './reservation-target';
 
 class TestableService extends ReservationReconcileService {
   clock = new Date('2026-11-09T04:30:00Z');
@@ -42,18 +43,25 @@ function build(opts: { cutover?: Date | null; blocked?: string[]; settle?: strin
   };
   const dryAsSet = async (items: { lineItemId: string; quantity: number }[]) =>
     items.map((it) => ({ lineItemId: it.lineItemId, outcome: 'set', quantityBefore: 0, quantityAfter: it.quantity }));
-  medusa.setLineItemReservations.mockImplementation(async (items: { lineItemId: string; quantity: number }[]) => dryAsSet(items));
+  medusa.setLineItemReservations.mockImplementation(async (items: { lineItemId: string; quantity: number }[]) =>
+    dryAsSet(items),
+  );
   const core = { candidates: jest.fn(), states: jest.fn() };
   const runs = { start: jest.fn().mockResolvedValue('run1'), finish: jest.fn().mockResolvedValue(undefined) };
   const projection = {
-    toWrites: jest.fn(async (lines: { channelOrderItemId: string | null; demand: number; variantId: string }[], _asOf?: Date, _now?: Date) =>
-      lines
-        .filter((l) => l.channelOrderItemId !== null)
-        .map((l) => ({
-          lineItemId: l.channelOrderItemId as string,
-          quantity: l.demand,
-          allowDecrease: !(opts.blocked ?? []).includes(l.variantId),
-        })),
+    toWrites: jest.fn(
+      async (
+        lines: { channelOrderItemId: string | null; demand: number; heldUnits: number; variantId: string }[],
+        _asOf?: Date,
+        _now?: Date,
+      ) =>
+        lines
+          .filter((l) => l.channelOrderItemId !== null)
+          .map((l) => ({
+            lineItemId: l.channelOrderItemId as string,
+            quantity: reservationTarget(l),
+            allowDecrease: !(opts.blocked ?? []).includes(l.variantId),
+          })),
     ),
   };
   const cutover = { get: jest.fn().mockResolvedValue(opts.cutover === undefined ? T : opts.cutover) };
@@ -140,7 +148,12 @@ describe('ReservationReconcileService', () => {
 
   type Item = { lineItemId: string; quantity: number };
   type Res = { lineItemId: string; outcome: string; quantityBefore: number; quantityAfter: number };
-  const res = (it: Item, outcome: string, before = 1): Res => ({ lineItemId: it.lineItemId, outcome, quantityBefore: before, quantityAfter: it.quantity });
+  const res = (it: Item, outcome: string, before = 1): Res => ({
+    lineItemId: it.lineItemId,
+    outcome,
+    quantityBefore: before,
+    quantityAfter: it.quantity,
+  });
   /** dry: 계획 결과, write: 실제 쓰기 결과(없으면 모두 set). */
   function mockMedusa(
     medusa: { setLineItemReservations: jest.Mock },
@@ -207,15 +220,23 @@ describe('ReservationReconcileService', () => {
 
   it('쓰기 묶음이 던지면 그 묶음을 실패로 세고 다음 묶음을 계속한다', async () => {
     const t = build();
-    seed(t, Array.from({ length: 250 }, (_, i) => `i${i}`));
-    mockMedusa(t.medusa, { write: (items, call) => (call === 0 ? new Error('timeout') : items.map((it) => res(it, 'set'))) });
+    seed(
+      t,
+      Array.from({ length: 250 }, (_, i) => `i${i}`),
+    );
+    mockMedusa(t.medusa, {
+      write: (items, call) => (call === 0 ? new Error('timeout') : items.map((it) => res(it, 'set'))),
+    });
     const rec = await t.service.run({ limit: 1000 });
     expect(rec).toMatchObject({ status: 'applied', fixes: 50, fixFailures: 200 });
   });
 
   it('고칠 줄 > 한도 → halted, 실제 쓰기 0, 예시 최대 10줄', async () => {
     const t = build();
-    seed(t, Array.from({ length: 15 }, (_, i) => `i${i}`));
+    seed(
+      t,
+      Array.from({ length: 15 }, (_, i) => `i${i}`),
+    );
     mockMedusa(t.medusa);
     const rec = await t.service.run({ limit: 5 });
     expect(rec.status).toBe('halted');
@@ -230,18 +251,33 @@ describe('ReservationReconcileService', () => {
     mockMedusa(t.medusa, {
       dry: (items) =>
         items.map((it) =>
-          res(it, it.lineItemId.startsWith('m') ? 'not_managed' : it.lineItemId === 'd1' ? 'deferred' : it.lineItemId === 'u1' ? 'unchanged' : 'set'),
+          res(
+            it,
+            it.lineItemId.startsWith('m')
+              ? 'not_managed'
+              : it.lineItemId === 'd1'
+                ? 'deferred'
+                : it.lineItemId === 'u1'
+                  ? 'unchanged'
+                  : 'set',
+          ),
         ),
     });
     const rec = await t.service.run({ limit: 1 });
     expect(rec.status).toBe('applied');
-    expect(writeCalls(t.medusa)[0][0].map((i: Item) => i.lineItemId).sort()).toEqual(['d1', 'ok']);
+    expect(
+      writeCalls(t.medusa)[0][0]
+        .map((i: Item) => i.lineItemId)
+        .sort(),
+    ).toEqual(['d1', 'ok']);
   });
 
   it('dry run 이 not_found 라고 한 줄은 보내지 않고 fix_failures 로 센다', async () => {
     const t = build();
     seed(t, ['gone', 'ok']);
-    mockMedusa(t.medusa, { dry: (items) => items.map((it) => res(it, it.lineItemId === 'gone' ? 'not_found' : 'set')) });
+    mockMedusa(t.medusa, {
+      dry: (items) => items.map((it) => res(it, it.lineItemId === 'gone' ? 'not_found' : 'set')),
+    });
     const rec = await t.service.run({ limit: 10 });
     expect(writeCalls(t.medusa)[0][0].map((i: Item) => i.lineItemId)).toEqual(['ok']);
     expect(rec).toMatchObject({ status: 'applied', fixes: 1, fixFailures: 1 });
@@ -253,6 +289,67 @@ describe('ReservationReconcileService', () => {
     mockMedusa(t.medusa, { dry: (items) => items.map((it) => res(it, 'set', it.lineItemId === 'moved' ? 7 : 1)) });
     const rec = await t.service.run({ limit: 10 });
     expect(writeCalls(t.medusa)[0][0].map((i: Item) => i.lineItemId)).toEqual(['ok']);
+    expect(rec).toMatchObject({ status: 'applied', fixes: 1, deferred: 1 });
+  });
+
+  it('기다리는 사이 core 가 예약을 풀어 목표가 올랐으면(held 1→0, 목표 1→2) Medusa 2 를 1 로 줄이지 않는다', async () => {
+    const t = build();
+    t.medusa.listLineItemReservations.mockResolvedValue({
+      reservations: [mres('a', 2), mres('ok', 1)],
+      nextAfterId: null,
+    });
+    t.core.candidates.mockResolvedValue([]);
+    let released = false;
+    t.core.states.mockImplementation(async (_c: string, req: string[]) => ({
+      lines: [
+        { ...line('a', 2), heldUnits: released ? 0 : 1 }, // 처음 읽을 땐 목표 1, 다시 읽으면 2
+        line('ok', 2),
+      ].filter((l) => req.includes(l.channelOrderItemId as string)),
+      unknown: [],
+    }));
+    const realSleep = t.service['sleep'].bind(t.service);
+    t.service['sleep'] = async (ms: number) => {
+      await realSleep(ms);
+      released = true; // 정착 대기 중에 core 가 예약을 풀었다
+    };
+    mockMedusa(t.medusa, { dry: (items) => items.map((it) => res(it, 'set', it.lineItemId === 'a' ? 2 : 1)) });
+    const rec = await t.service.run({ limit: 10 });
+    const sent = t.medusa.setLineItemReservations.mock.calls.flatMap((c) => c[0] as Item[]);
+    expect(sent.find((i) => i.lineItemId === 'a')).toBeUndefined(); // dry run 에도 실제 쓰기에도 없다
+    expect(writeCalls(t.medusa)[0][0].map((i: Item) => i.lineItemId)).toEqual(['ok']);
+    expect(rec).toMatchObject({ status: 'applied', fixes: 1, deferred: 1 });
+    // 다시 읽기는 고칠 줄(diff)만, 정착 대기 뒤에
+    expect(t.core.states.mock.calls[1][1].sort()).toEqual(['a', 'ok']);
+  });
+
+  it('기다린 뒤 core 다시 읽기가 던지면 skipped·쓰기 0', async () => {
+    const t = build();
+    seed(t, ['a']);
+    const first = t.core.states.getMockImplementation() as (c: string, req: string[]) => Promise<unknown>;
+    t.core.states.mockImplementationOnce(first).mockRejectedValueOnce(new Error('core 재조회 실패'));
+    mockMedusa(t.medusa);
+    const rec = await t.service.run({ limit: 10 });
+    expect(rec.status).toBe('skipped');
+    expect(rec.error).toContain('core 재조회 실패');
+    expect(t.medusa.setLineItemReservations).not.toHaveBeenCalled();
+  });
+
+  it('다시 읽을 때 core 가 모르게 된 줄은 쓰지 않고 deferred 로 센다', async () => {
+    const t = build();
+    seed(t, ['a', 'b']);
+    let calls = 0;
+    const first = t.core.states.getMockImplementation() as (
+      c: string,
+      req: string[],
+    ) => Promise<{ lines: { channelOrderItemId: string | null }[]; unknown: string[] }>;
+    t.core.states.mockImplementation(async (c: string, req: string[]) => {
+      const out = await first(c, req);
+      calls += 1;
+      return calls === 1 ? out : { lines: out.lines.filter((l) => l.channelOrderItemId !== 'b'), unknown: ['b'] };
+    });
+    mockMedusa(t.medusa);
+    const rec = await t.service.run({ limit: 10 });
+    expect(writeCalls(t.medusa)[0][0].map((i: Item) => i.lineItemId)).toEqual(['a']);
     expect(rec).toMatchObject({ status: 'applied', fixes: 1, deferred: 1 });
   });
 
@@ -287,7 +384,10 @@ describe('ReservationReconcileService', () => {
 
   it('limit null(강제) → 한도 무시, forced_by 기록', async () => {
     const t = build();
-    seed(t, Array.from({ length: 15 }, (_, i) => `i${i}`));
+    seed(
+      t,
+      Array.from({ length: 15 }, (_, i) => `i${i}`),
+    );
     mockMedusa(t.medusa);
     const rec = await t.service.run({ limit: null, forcedBy: 'admin-1' });
     expect(rec.status).toBe('applied');

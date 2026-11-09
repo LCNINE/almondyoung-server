@@ -7,6 +7,7 @@ import type { CoreLineReservationState } from '../clients/core-line-reservation-
 import { ReservationCutoverRepository } from './reservation-cutover.repository';
 import { ReservationProjectionService } from './reservation-projection.service';
 import { ReservationReconcileRunRepository } from './reservation-reconcile-run.repository';
+import { reservationTarget } from './reservation-target';
 import type { ReconcileExample, ReconcileRunResult } from './reservation-reconcile-run.repository';
 
 const CHANNEL = 'medusa' as const;
@@ -31,7 +32,9 @@ export class ReservationReconcileService {
     configService: ConfigService,
   ) {
     // 게이트(SellableSettleGate)와 같은 설정·같은 무효값 규칙.
-    const configured = Number(configService.get<string | number>('RESERVATION_PROJECTION_SETTLE_MS', DEFAULT_SETTLE_MS));
+    const configured = Number(
+      configService.get<string | number>('RESERVATION_PROJECTION_SETTLE_MS', DEFAULT_SETTLE_MS),
+    );
     this.settleMs = Number.isFinite(configured) && configured > 0 ? configured : DEFAULT_SETTLE_MS;
   }
 
@@ -112,9 +115,21 @@ export class ReservationReconcileService {
     const readAt = this.now();
     if (eligible.length > 0) await this.sleep(this.settleMs + 1000); // 타이머가 1ms 일찍 깨도 «정착 지연보다 젊다» 로 전부 막히지 않게
     const writes = await this.projection.toWrites(eligible, readAt, this.now());
-    const diffs = writes
+    const firstDiffs = writes
       .map((w) => ({ ...w, current: medusaQty.get(w.lineItemId) ?? 0 }))
       .filter((w) => w.quantity !== w.current);
+
+    // 1-b) 기다리는 사이 core 가 바뀌었을 수 있다(예: 예약을 풀어 목표가 올랐다) — 고칠 줄만 core 를 다시 읽는다.
+    //      목표가 처음 읽은 값과 다르면 이번 회차에서 빼고 deferred 로 센다. 새 목표로 쓰지 않는 이유: 새 목표는
+    //      방금 읽은 스냅샷이라 정착 지연을 지나지 않았다(감소 게이트가 열리지 않는다). 그 변화는 이벤트 경로가 이미 맡았다.
+    //      다시 읽기가 던지면 처음 읽기 실패와 같다(던짐 → skipped, 쓰기 0).
+    const freshTargets = await this.readTargets(firstDiffs.map((w) => w.lineItemId));
+    let deferred = 0;
+    const diffs = firstDiffs.filter((w) => {
+      if (freshTargets.get(w.lineItemId) === w.quantity) return true;
+      deferred += 1;
+      return false;
+    });
 
     // 2) 한도 판정 — Medusa 에 쓰지 않고 계획만 받아(dry run) 실제로 «set» 이 될 줄만 센다.
     //    관리 대상이 아닌 줄(not_managed)·막힌 감소(deferred)·이미 같은 줄이 한도를 오염시키지 않게. 실패하면 읽기 실패와 같다(던짐 → skipped).
@@ -130,7 +145,6 @@ export class ReservationReconcileService {
       if (!dry.has(w.lineItemId)) throw new Error(`Medusa dry run 응답에 ${w.lineItemId} 가 없다`);
     }
     let fixFailures = 0;
-    let deferred = 0;
     const toSend: typeof diffs = [];
     const counted: typeof diffs = [];
     for (const w of diffs) {
@@ -155,7 +169,7 @@ export class ReservationReconcileService {
         current: (dry.get(w.lineItemId) as LineItemReservationResult).quantityBefore,
         target: w.quantity,
       }));
-      return { ...emptyResult('halted'), ...base, examples };
+      return { ...emptyResult('halted'), ...base, deferred, examples };
     }
 
     // 3) 쓰기 — 묶음이 던지면 그 묶음 줄을 실패로 세고 다음 묶음으로.
@@ -179,6 +193,18 @@ export class ReservationReconcileService {
       }
     }
     return { ...emptyResult('applied'), ...base, fixes, fixFailures, deferred };
+  }
+
+  /** 줄 → 지금 core 목표(판매 단위). core 가 모르게 된 줄은 맵에 없다 — 호출부가 «바뀜»으로 다룬다. 실패는 던진다. */
+  private async readTargets(lineItemIds: string[]): Promise<Map<string, number>> {
+    const targets = new Map<string, number>();
+    for (let i = 0; i < lineItemIds.length; i += CORE_LINE_STATE_BATCH) {
+      const res = await this.coreClient.states(CHANNEL, lineItemIds.slice(i, i + CORE_LINE_STATE_BATCH));
+      for (const l of res.lines) {
+        if (l.channelOrderItemId !== null) targets.set(l.channelOrderItemId, reservationTarget(l));
+      }
+    }
+    return targets;
   }
 }
 
