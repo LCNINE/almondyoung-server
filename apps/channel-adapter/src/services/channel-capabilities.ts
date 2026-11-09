@@ -63,6 +63,11 @@ export type ChannelCapabilities =
       productOwnership: 'ours' | 'theirs';
       productProjection: ChannelRoute;
       inventory: ChannelRoute;
+      /**
+       * 주문 줄의 재고 예약을 채널 쪽에 어떻게 반영하는가. `none` = 그 채널엔 예약 개념이 없다(설계상
+       * 비대상 — 네이버·쿠팡은 채널이 자기 재고를 쥔다). Medusa 만 `projection`(core 판매주문 줄 → Medusa 예약).
+       */
+      reservation: ChannelRoute;
       lineIdentity: ChannelLineIdentityKind;
       orderCollection: 'source';
     };
@@ -73,6 +78,7 @@ export const CHANNEL_CAPABILITIES: Record<SalesChannel, ChannelCapabilities> = {
     productOwnership: 'ours',
     productProjection: { kind: 'projection' },
     inventory: { kind: 'projection' },
+    reservation: { kind: 'projection' },
     lineIdentity: 'embedded',
     orderCollection: 'source',
     fulfillment: {
@@ -90,6 +96,7 @@ export const CHANNEL_CAPABILITIES: Record<SalesChannel, ChannelCapabilities> = {
     // 네이버는 `updateOptionStock` 이 구현돼 있으나 배선되지 않았다 — 그래서 `none` 이 아니라
     // `manual` 이고, 배선하면 `adapter` 로 승격된다.
     inventory: { kind: 'manual', reason: '네이버 재고 반영은 아직 배선되지 않아 운영자가 직접 처리한다.' },
+    reservation: { kind: 'none' },
     lineIdentity: 'mapped',
     orderCollection: 'source',
     fulfillment: {
@@ -105,6 +112,7 @@ export const CHANNEL_CAPABILITIES: Record<SalesChannel, ChannelCapabilities> = {
     productOwnership: 'theirs',
     productProjection: { kind: 'none' },
     inventory: { kind: 'manual', reason: '쿠팡 재고 반영은 미구현이라 운영자가 WING 에서 직접 처리한다.' },
+    reservation: { kind: 'none' },
     lineIdentity: 'mapped',
     orderCollection: 'source',
     fulfillment: {

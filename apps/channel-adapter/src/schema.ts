@@ -307,6 +307,53 @@ export const orderReconcileFindings = pgTable(
   ],
 );
 
+/**
+ * Medusa 예약 투영(#1247). T(cutover_at) 가 비어 있으면 이벤트 소비·대사 모두 아무 것도 쓰지 않는다.
+ * 행은 `id = 'singleton'` 하나뿐이다.
+ */
+export const reservationProjectionSettings = pgTable('reservation_projection_settings', {
+  id: text('id').primaryKey(),
+  cutoverAt: timestamp('cutover_at', { withTimezone: true }),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedBy: text('updated_by'),
+});
+
+/** 주문별로 Medusa 에 마지막으로 반영한 core 줄 상태 버전. */
+export const medusaReservationProjectionVersions = pgTable('medusa_reservation_projection_versions', {
+  salesOrderId: varchar('sales_order_id').primaryKey(),
+  appliedVersion: integer('applied_version').notNull(),
+  appliedAt: timestamp('applied_at', { withTimezone: true }).notNull(),
+});
+
+/** 예약 대사 회차 기록. */
+export const medusaReservationReconcileRuns = pgTable(
+  'medusa_reservation_reconcile_runs',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => uuidv7()),
+    startedAt: timestamp('started_at', { withTimezone: true }).notNull().defaultNow(),
+    finishedAt: timestamp('finished_at', { withTimezone: true }),
+    status: text('status').notNull(),
+    candidates: integer('candidates').notNull().default(0),
+    fixes: integer('fixes').notNull().default(0),
+    fixFailures: integer('fix_failures').notNull().default(0),
+    deferred: integer('deferred').notNull().default(0),
+    unknown: integer('unknown').notNull().default(0),
+    oldestUnknownAt: timestamp('oldest_unknown_at', { withTimezone: true }),
+    examples: jsonb('examples').notNull().default(sql`'[]'::jsonb`),
+    error: text('error'),
+    closedAt: timestamp('closed_at', { withTimezone: true }),
+    closedBy: text('closed_by'),
+    closeReason: text('close_reason'),
+    forcedBy: text('forced_by'),
+  },
+  (table) => [
+    check('medusa_reservation_reconcile_runs_status_check', sql`${table.status} in ('applied','halted','skipped','running')`),
+    index('medusa_reservation_reconcile_runs_started_idx').on(table.startedAt),
+  ],
+);
+
 // ⚠️ IMPORTANT: This is the INBOX pattern (event reception/processing)
 // NOT to be confused with the shared Outbox pattern (libs/events/src/outbox/)
 //
@@ -669,6 +716,9 @@ export const channelAdapterSchema = {
   pendingOrders,
   orderCollectionFailures,
   orderReconcileFindings,
+  reservationProjectionSettings,
+  medusaReservationProjectionVersions,
+  medusaReservationReconcileRuns,
   inboxEvents,
   channelDispatchOperations,
   demoRuns,

@@ -120,6 +120,13 @@
       "when": 1793767923936,
       "tag": "20261104045203_add-synced-price-list-ids",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1794227078561,
+      "tag": "20261109122438_add-medusa-reservation-projection",
+      "breakpoints": true
     }
   ]
 }
