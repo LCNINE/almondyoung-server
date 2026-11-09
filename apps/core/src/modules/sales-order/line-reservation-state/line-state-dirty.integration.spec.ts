@@ -89,6 +89,42 @@ describeIfDb('줄 상태 더러움 표시 지점 (#1247)', () => {
     });
   });
 
+  it('관리자 예약 해제(UnifiedReservationService.releaseReservation) → 그 상자 라인의 주문에 표시가 더해진다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const wired = wireLogistics(ambientDbService(tx));
+      const { warehouseId, locationId } = await seedWarehouseWithZone(tx);
+      const { holderId } = await seedHolder(tx);
+      const { skuId } = await seedSku(tx, holderId);
+      await tx.insert(wmsTables.stockLedgers).values({ skuId, warehouseId, locationId, stockState: 'ON_HAND', qty: 6 });
+      const variantId = randomUUID();
+      const { salesOrderId } = await seedSalesOrder(tx, { lines: [{ variantId, quantity: 4 }] });
+      await seedMatching(tx, { variantId, skuId });
+      await wired.fulfillments.create({ salesOrderId, warehouseId }, tx);
+
+      const [reservation] = await tx
+        .select({ id: wmsTables.stockReservations.id })
+        .from(wmsTables.stockReservations)
+        .innerJoin(wmsTables.shipmentLines, eq(wmsTables.shipmentLines.id, wmsTables.stockReservations.shipmentLineId))
+        .innerJoin(
+          wmsTables.fulfillmentOrderItems,
+          eq(wmsTables.fulfillmentOrderItems.id, wmsTables.shipmentLines.fulfillmentOrderItemId),
+        )
+        .where(
+          and(
+            eq(wmsTables.fulfillmentOrderItems.salesOrderId, salesOrderId),
+            eq(wmsTables.stockReservations.status, 'confirmed'),
+          ),
+        );
+      expect(reservation).toBeDefined(); // FO 생성이 상자 라인 예약을 잡았다
+      const before = await marksOf(tx, salesOrderId);
+
+      await wired.unified.releaseReservation(reservation.id, tx);
+
+      expect(await marksOf(tx, salesOrderId)).toBe(before + 1);
+      expect(await versionOf(tx, salesOrderId)).toBe(0); // 버전은 폴러만 올린다
+    });
+  });
+
   it('출고 전 취소 기록 → 표시가 더해진다', async () => {
     await inRollbackTx(db, async (tx) => {
       const w = wireCancellation(tx);

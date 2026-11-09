@@ -37,3 +37,26 @@ export async function markLineStateDirtyForFulfillmentOrders(
     ORDER BY 1
   `);
 }
+
+/**
+ * 상자 라인들의 판매주문에 표시한다 — 상자 라인 → FOI → FO → 판매주문을 `INSERT … SELECT` 한 문으로.
+ * `reprojectFulfillmentOrders` 를 지나지 않고 확정 예약 행을 바꾸는 경로(관리자 예약 해제)가 부른다.
+ * 그 경로가 표시를 빠뜨리면 core 는 예약을 풀었는데 Medusa 예약은 낮은 채로 남아 과판매로 간다.
+ */
+export async function markLineStateDirtyForShipmentLines(tx: DbTx, shipmentLineIds: readonly string[]): Promise<void> {
+  const ids = [...new Set(shipmentLineIds)].sort();
+  if (ids.length === 0) return;
+  const marks = wmsTables.salesOrderLineStateMarks;
+  const sl = wmsTables.shipmentLines;
+  const foi = wmsTables.fulfillmentOrderItems;
+  const fo = wmsTables.fulfillmentOrders;
+  await tx.execute(sql`
+    INSERT INTO ${marks} (${sql.identifier(marks.salesOrderId.name)})
+    SELECT DISTINCT ${fo.salesOrderId}
+    FROM ${sl}
+    INNER JOIN ${foi} ON ${foi.id} = ${sl.fulfillmentOrderItemId}
+    INNER JOIN ${fo} ON ${fo.id} = ${foi.fulfillmentOrderId}
+    WHERE ${and(inArray(sl.id, ids), isNotNull(fo.salesOrderId))}
+    ORDER BY 1
+  `);
+}
