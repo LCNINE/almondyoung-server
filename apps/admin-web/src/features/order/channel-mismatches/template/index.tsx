@@ -188,9 +188,12 @@ export default function ChannelMismatchesTemplate() {
         })
       ) : (
         latestLine && (
-          <p className="text-xs text-muted-foreground">
-            Medusa 예약 대사 · {latestLine}
-          </p>
+          <div className="flex flex-col gap-0.5 text-xs text-muted-foreground">
+            <p>Medusa 예약 대사 · {latestLine}</p>
+            {runs.data?.latest && unknownText(runs.data.latest, now) && (
+              <p>{unknownText(runs.data.latest, now)}</p>
+            )}
+          </div>
         )
       )}
 
