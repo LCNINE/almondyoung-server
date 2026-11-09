@@ -1,4 +1,4 @@
-import { Logger } from '@nestjs/common';
+import { BadRequestException, Logger } from '@nestjs/common';
 import type { CancelChannelOrderPayload } from '@packages/event-contracts/streams';
 import { CustomerCancelApprover, NAVER_ALREADY_APPROVED_CODE } from './customer-cancel-approver';
 
@@ -22,7 +22,8 @@ function setup() {
 }
 
 const ok = { timestamp: 't', traceId: 'x', data: { successProductOrderIds: ['po-1'], failProductOrderInfos: [] } };
-const axiosError = (status?: number) => Object.assign(new Error('boom'), { isAxiosError: true, response: status ? { status } : undefined });
+const axiosError = (status?: number) =>
+  Object.assign(new Error('boom'), { isAxiosError: true, response: status ? { status } : undefined });
 
 describe('CustomerCancelApprover', () => {
   const prev = process.env.CHANNEL_CANCEL_APPROVAL_MODE;
@@ -62,7 +63,10 @@ describe('CustomerCancelApprover', () => {
     const { approver, naver } = setup();
     naver.approveCancel.mockResolvedValue({
       ...ok,
-      data: { successProductOrderIds: [], failProductOrderInfos: [{ productOrderId: 'po-1', code: NAVER_ALREADY_APPROVED_CODE, message: 'm' }] },
+      data: {
+        successProductOrderIds: [],
+        failProductOrderInfos: [{ productOrderId: 'po-1', code: NAVER_ALREADY_APPROVED_CODE, message: 'm' }],
+      },
     });
     expect(await approver.approve(base)).toEqual({ kind: 'approved' });
   });
@@ -71,7 +75,10 @@ describe('CustomerCancelApprover', () => {
     const { approver, naver } = setup();
     naver.approveCancel.mockResolvedValue({
       ...ok,
-      data: { successProductOrderIds: [], failProductOrderInfos: [{ productOrderId: 'po-1', code: 'X', message: 'no' }] },
+      data: {
+        successProductOrderIds: [],
+        failProductOrderInfos: [{ productOrderId: 'po-1', code: 'X', message: 'no' }],
+      },
     });
     expect(await approver.approve(base)).toMatchObject({ kind: 'failed', retryable: false, failureCode: 'X' });
   });
@@ -121,8 +128,51 @@ describe('CustomerCancelApprover', () => {
 
   it('coupang without a known cancel count fails permanently', async () => {
     const { approver, coupang } = setup();
-    const result = await approver.approve({ ...base, salesChannel: 'coupang', answers: { channelRequestRef: '12345', needsApproval: true } });
+    const result = await approver.approve({
+      ...base,
+      salesChannel: 'coupang',
+      answers: { channelRequestRef: '12345', needsApproval: true },
+    });
     expect(result).toMatchObject({ kind: 'failed', retryable: false, failureCode: 'coupang_cancel_count_unknown' });
     expect(coupang.stoppedShipment).not.toHaveBeenCalled();
+  });
+
+  describe('coupang error classification', () => {
+    const lines = [{ channelOrderItemId: 'l1', quantity: 1 }];
+    const coupangCmd: Command = {
+      ...base,
+      salesChannel: 'coupang',
+      scope: 'partial',
+      lines,
+      answers: { channelRequestRef: '12345', needsApproval: true },
+    };
+    const withStatus = (status?: number) => Object.assign(new Error('쿠팡 실패'), { status });
+
+    it.each([
+      [500, true],
+      [429, true],
+      [undefined, true],
+      [400, false],
+      [404, false],
+    ])('coupang http %s -> retryable %s', async (status, retryable) => {
+      const { approver, coupang } = setup();
+      process.env.COUPANG_VENDOR_ID = 'vendor-1';
+      coupang.stoppedShipment.mockRejectedValue(withStatus(status));
+      expect(await approver.approve(coupangCmd)).toMatchObject({ kind: 'failed', retryable });
+    });
+
+    it('coupang zod BadRequestException is permanent', async () => {
+      const { approver, coupang } = setup();
+      process.env.COUPANG_VENDOR_ID = 'vendor-1';
+      coupang.stoppedShipment.mockRejectedValue(new BadRequestException('bad'));
+      expect(await approver.approve(coupangCmd)).toMatchObject({ kind: 'failed', retryable: false });
+    });
+
+    it('coupang resultCode FAIL is permanent', async () => {
+      const { approver, coupang } = setup();
+      process.env.COUPANG_VENDOR_ID = 'vendor-1';
+      coupang.stoppedShipment.mockResolvedValue({ data: { resultCode: 'FAIL', resultMessage: 'no' } });
+      expect(await approver.approve(coupangCmd)).toMatchObject({ kind: 'failed', retryable: false });
+    });
   });
 });

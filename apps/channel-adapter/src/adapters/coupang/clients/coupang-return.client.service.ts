@@ -208,7 +208,11 @@ export class CoupangReturnClient extends CoupangBaseClient {
         this.logger.error(`❌ 쿠팡 출고중지완료 처리 실패: ${error.message}`);
       }
       this.logger.error('❌ 쿠팡 출고중지완료 처리 실패', error);
-      throw new Error(`쿠팡 출고중지완료 처리 실패: ${error.message}`);
+      // HTTP 상태를 잃지 않게 싣는다 — 호출자가 4xx(다시 해도 같다)와 5xx·네트워크(재시도)를 가른다
+      throw Object.assign(new Error(`쿠팡 출고중지완료 처리 실패: ${error.message}`), {
+        status: error.response?.status as number | undefined,
+        cause: error,
+      });
     }
   }
 

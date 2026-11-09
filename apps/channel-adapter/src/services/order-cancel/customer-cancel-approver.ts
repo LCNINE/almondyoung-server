@@ -1,5 +1,5 @@
 // apps/channel-adapter/src/services/order-cancel/customer-cancel-approver.ts
-import { Injectable, Logger, Optional } from '@nestjs/common';
+import { HttpException, Injectable, Logger, Optional } from '@nestjs/common';
 import type { CancelChannelOrderPayload } from '@packages/event-contracts/streams';
 import { CoupangReturnClient } from '../../adapters/coupang/clients/coupang-return.client.service';
 import { NaverClaimClient } from '../../adapters/naver/clients/naver-claim.client';
@@ -81,6 +81,7 @@ export class CustomerCancelApprover {
     if (!Number.isInteger(receiptId) || receiptId <= 0) {
       return failed(false, 'invalid_request_ref', `쿠팡 접수번호가 올바르지 않습니다: ${command.answers.channelRequestRef}`);
     }
+    // 🔴 act 전 막음: 전체 범위 명령엔 줄이 없어 cancelCount 를 모른다 — #1245 source 가 수량을 명령까지 실어야 한다
     // 명령에 줄이 있어야 취소 수량을 안다. 전체 취소(줄 없음)의 수량을 추측해 보내지 않는다.
     const cancelCount = (command.lines ?? []).reduce((sum, line) => sum + line.quantity, 0);
     if (cancelCount <= 0) {
@@ -105,9 +106,18 @@ function failed(retryable: boolean, failureCode: string, message: string): Appro
 /** 4xx(429 제외)는 다시 해도 같다. 5xx·429·응답 없음(네트워크)·알 수 없는 오류는 재시도한다. */
 function classifyThrown(error: unknown): ApprovalResult {
   const message = error instanceof Error ? error.message : String(error);
-  const status = (error as { response?: { status?: number } } | null)?.response?.status;
+  const status = statusOf(error);
   if (status !== undefined && status >= 400 && status < 500 && status !== 429) {
     return failed(false, `http_${status}`, message);
   }
   return failed(true, status !== undefined ? `http_${status}` : 'transient', message);
+}
+
+/** axios(`response.status`) · Nest `HttpException`(`getStatus()`) · 쿠팡 클라이언트가 싣는 `status` 에서 HTTP 상태를 읽는다 */
+function statusOf(error: unknown): number | undefined {
+  if (error instanceof HttpException) return error.getStatus();
+  if (typeof error !== 'object' || error === null) return undefined;
+  const { response, status } = error as { response?: { status?: unknown }; status?: unknown };
+  if (typeof response?.status === 'number') return response.status;
+  return typeof status === 'number' ? status : undefined;
 }

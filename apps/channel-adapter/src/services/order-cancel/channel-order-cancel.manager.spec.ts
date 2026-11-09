@@ -1,6 +1,7 @@
 // apps/channel-adapter/src/services/order-cancel/channel-order-cancel.manager.spec.ts
 import type { CancelChannelOrderPayload } from '@packages/event-contracts/streams';
 import { Logger } from '@nestjs/common';
+import { CustomerCancelApprover } from './customer-cancel-approver';
 import { ChannelOrderCancelManager } from './channel-order-cancel.manager';
 
 const full: CancelChannelOrderPayload = {
@@ -73,6 +74,29 @@ describe('ChannelOrderCancelManager (#1016 35번 PR-B · 36번 재설계 PR 3)',
       const { fact } = recorded(repository);
       expect(fact).toMatchObject({ salesChannel: 'naver', retryable: false, failureCode: 'approval_observe_mode' });
       expect(poller.syncOrder).not.toHaveBeenCalled();
+    });
+
+    it('observe mode with the real approver records a permanent settlement failure and calls no market', async () => {
+      const prev = process.env.CHANNEL_CANCEL_APPROVAL_MODE;
+      delete process.env.CHANNEL_CANCEL_APPROVAL_MODE;
+      try {
+        const { repository, medusa, poller } = setup();
+        const naver = { approveCancel: jest.fn() };
+        const coupang = { stoppedShipment: jest.fn() };
+        const manager = new ChannelOrderCancelManager(
+          repository as never,
+          medusa as never,
+          poller as never,
+          new CustomerCancelApprover(naver as never, coupang as never),
+        );
+        await manager.execute(asked, 'd1');
+        expect(recorded(repository).fact).toMatchObject({ salesChannel: 'naver', retryable: false, failureCode: 'approval_observe_mode' });
+        expect(naver.approveCancel).not.toHaveBeenCalled();
+        expect(coupang.stoppedShipment).not.toHaveBeenCalled();
+        expect(poller.syncOrder).not.toHaveBeenCalled();
+      } finally {
+        if (prev !== undefined) process.env.CHANNEL_CANCEL_APPROVAL_MODE = prev;
+      }
     });
 
     it('uncollected order stops before the approver', async () => {
