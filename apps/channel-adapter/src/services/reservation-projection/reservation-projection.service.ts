@@ -11,6 +11,11 @@ export type ReservationWrite = { lineItemId: string; quantity: number; allowDecr
 export class ReservationProjectionService {
   constructor(private readonly gate: SellableSettleGate) {}
 
+  /** 감소 게이트의 정착 지연(ms) — 스냅샷이 이만큼 지나야 감소가 열린다. */
+  get settleMs(): number {
+    return this.gate.settleMs;
+  }
+
   async toWrites(lines: LineState[], asOf: Date, now: Date): Promise<ReservationWrite[]> {
     const managed = lines.filter(
       (line): line is LineState & { channelOrderItemId: string } => line.channelOrderItemId !== null,

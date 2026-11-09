@@ -20,13 +20,15 @@ function payload(over: Partial<SalesOrderLineReservationStatePayload> = {}): Sal
   };
 }
 
-
 type Setup = {
   cutover?: Date | null;
   applied?: number | null;
   writes?: Write[];
   results?: LineItemReservationResult[];
   throws?: Error;
+  /** inbox 에 대기 중인 같은 주문의 더 큰 버전(없으면 null) */
+  newer?: number | null;
+  settleMs?: number;
 };
 type InboxUpdate = Record<string, unknown> & { nextAttemptAt?: Date };
 
@@ -34,10 +36,14 @@ function setup(opts: Setup) {
   const inboxUpdates: InboxUpdate[] = [];
   const upserts: { v: { salesOrderId: string; appliedVersion: number } }[] = [];
   const db = {
-    transaction: async <R>(cb: (trx: { execute: () => Promise<void> }) => Promise<R>) => cb({ execute: async () => undefined }),
+    transaction: async <R>(cb: (trx: { execute: () => Promise<void> }) => Promise<R>) =>
+      cb({ execute: async () => undefined }),
     select: () => ({
-      from: () => ({
-        where: () => ({ limit: async () => (opts.applied == null ? [] : [{ appliedVersion: opts.applied }]) }),
+      from: (table: unknown) => ({
+        where: () =>
+          table === inboxEvents
+            ? Promise.resolve([{ version: opts.newer ?? null }])
+            : { limit: async () => (opts.applied == null ? [] : [{ appliedVersion: opts.applied }]) },
       }),
     }),
     update: (table: unknown) => ({
@@ -56,7 +62,10 @@ function setup(opts: Setup) {
     }),
   };
   const cutover = { get: jest.fn().mockResolvedValue(opts.cutover === undefined ? T : opts.cutover) };
-  const projection = { toWrites: jest.fn().mockResolvedValue(opts.writes ?? [{ lineItemId: 'li', quantity: 1, allowDecrease: true }]) };
+  const projection = {
+    settleMs: opts.settleMs ?? 300_000,
+    toWrites: jest.fn().mockResolvedValue(opts.writes ?? [{ lineItemId: 'li', quantity: 1, allowDecrease: true }]),
+  };
   const medusa = {
     setLineItemReservations: jest.fn().mockImplementation(async () => {
       if (opts.throws) throw opts.throws;
@@ -73,7 +82,11 @@ function setup(opts: Setup) {
   return { worker, inboxUpdates, upserts, medusa, projection };
 }
 
-const claim = (over: Partial<SalesOrderLineReservationStatePayload> = {}, attempts = 1) => ({ id: 'e1', attempts, payload: payload(over) });
+const claim = (over: Partial<SalesOrderLineReservationStatePayload> = {}, attempts = 1) => ({
+  id: 'e1',
+  attempts,
+  payload: payload(over),
+});
 
 describe('ReservationProjectionWorker', () => {
   afterEach(() => delete process.env.RESERVATION_PROJECTION_MAX_RETRIES);
@@ -119,15 +132,36 @@ describe('ReservationProjectionWorker', () => {
     expect(inboxUpdates[0]).toMatchObject({ status: 'published' });
   });
 
-  it('deferred — 버전 유지, 60초 뒤 재시도, attempts 불변', async () => {
+  it('deferred — 버전 유지, 오래된 스냅샷이면 60초 뒤 재시도, attempts 불변', async () => {
     const { worker, inboxUpdates, upserts } = setup({
       results: [{ lineItemId: 'li', outcome: 'deferred', quantityBefore: 2, quantityAfter: 2 }],
     });
     const before = Date.now();
-    await worker.processClaimed(claim({}, 4)); // claim 이 3 → 4 로 올린 뒤
+    await worker.processClaimed(claim({}, 4)); // claim 이 3 → 4 로 올린 뒤 (asOf 는 오래전)
+    const after = Date.now();
     expect(upserts).toHaveLength(0);
     expect(inboxUpdates[0]).toMatchObject({ status: 'pending', attempts: 3 });
-    expect(inboxUpdates[0].nextAttemptAt!.getTime() - before).toBeGreaterThanOrEqual(59_000);
+    expect(inboxUpdates[0].nextAttemptAt!.getTime()).toBeGreaterThanOrEqual(before + 60_000);
+    expect(inboxUpdates[0].nextAttemptAt!.getTime()).toBeLessThanOrEqual(after + 60_000);
+  });
+
+  it('deferred — 스냅샷이 막 나왔으면 정착 지연이 끝나는 시각(asOf + settleMs)까지 미룬다', async () => {
+    const { worker, inboxUpdates } = setup({
+      settleMs: 300_000,
+      results: [{ lineItemId: 'li', outcome: 'deferred', quantityBefore: 2, quantityAfter: 2 }],
+    });
+    const asOf = new Date(Date.now() - 10_000); // 10초 전 스냅샷 → 290초 뒤에야 감소가 열린다
+    await worker.processClaimed(claim({ asOf: asOf.toISOString() }, 1));
+    expect(inboxUpdates[0].nextAttemptAt!.getTime()).toBe(asOf.getTime() + 300_000);
+  });
+
+  it('같은 주문의 더 큰 버전이 대기 중이면 쓰지 않고 superseded 로 닫는다', async () => {
+    const { worker, inboxUpdates, upserts, medusa, projection } = setup({ applied: 4, newer: 7 });
+    await worker.processClaimed(claim());
+    expect(projection.toWrites).not.toHaveBeenCalled();
+    expect(medusa.setLineItemReservations).not.toHaveBeenCalled();
+    expect(upserts).toHaveLength(0);
+    expect(inboxUpdates[0]).toMatchObject({ status: 'published', errorMessage: 'superseded: v7 대기 중' });
   });
 
   it('error 결과 — attempts+1 로 재시도, 버전 유지', async () => {
@@ -151,7 +185,11 @@ describe('ReservationProjectionWorker', () => {
   });
 
   it('200줄 넘는 쓰기는 여러 번에 나눠 부른다', async () => {
-    const writes: Write[] = Array.from({ length: 450 }, (_, i) => ({ lineItemId: `li${i}`, quantity: 1, allowDecrease: true }));
+    const writes: Write[] = Array.from({ length: 450 }, (_, i) => ({
+      lineItemId: `li${i}`,
+      quantity: 1,
+      allowDecrease: true,
+    }));
     const { worker, medusa, upserts } = setup({ writes, results: [] });
     await worker.processClaimed(claim());
     expect(medusa.setLineItemReservations).toHaveBeenCalledTimes(3);

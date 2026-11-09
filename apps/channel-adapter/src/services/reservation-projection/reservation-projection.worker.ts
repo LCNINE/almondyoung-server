@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Interval } from '@nestjs/schedule';
 import { DbService } from '@app/db';
 import type { SalesOrderLineReservationStatePayload } from '@packages/event-contracts/streams/orders.stream';
-import { eq, lt, sql } from 'drizzle-orm';
+import { and, eq, inArray, lt, sql } from 'drizzle-orm';
 import { MedusaClient } from '../../adapters/medusa/medusa.client';
 import { inboxEvents, medusaReservationProjectionVersions } from '../../schema';
 import type { ChannelAdapterSchema } from '../../types';
@@ -24,7 +24,11 @@ export type ClaimedReservationEvent = {
   payload: SalesOrderLineReservationStatePayload;
 };
 
-type Verdict = { kind: 'done' } | { kind: 'defer' } | { kind: 'error'; message: string };
+type Verdict =
+  | { kind: 'done' }
+  | { kind: 'superseded'; by: number }
+  | { kind: 'defer'; retryAt: Date }
+  | { kind: 'error'; message: string };
 
 /**
  * `SalesOrderLineReservationState` 를 Medusa 예약에 반영하는 전용 inbox 워커(#1247).
@@ -69,6 +73,12 @@ export class ReservationProjectionWorker {
         .update(inboxEvents)
         .set({ status: 'published', publishedAt: new Date(), errorMessage: null })
         .where(eq(inboxEvents.id, event.id));
+    } else if (verdict.kind === 'superseded') {
+      // 더 새 버전이 대기 중이다 — 옛 스냅샷은 쓰지 않고 닫는다(새 버전이 줄 전부를 다시 맞춘다).
+      await this.dbService.db
+        .update(inboxEvents)
+        .set({ status: 'published', publishedAt: new Date(), errorMessage: `superseded: v${verdict.by} 대기 중` })
+        .where(eq(inboxEvents.id, event.id));
     } else if (verdict.kind === 'defer') {
       // 기다림은 실패가 아니다 — claim 이 올린 attempts 를 되돌린다(크래시·멈춤은 되돌려지지 않아 센다).
       await this.dbService.db
@@ -76,7 +86,7 @@ export class ReservationProjectionWorker {
         .set({
           status: 'pending',
           attempts: Math.max(0, event.attempts - 1),
-          nextAttemptAt: new Date(Date.now() + DEFER_MS),
+          nextAttemptAt: verdict.retryAt,
           errorMessage: 'deferred: 재고 정착 대기',
         })
         .where(eq(inboxEvents.id, event.id));
@@ -124,6 +134,10 @@ export class ReservationProjectionWorker {
       .where(eq(medusaReservationProjectionVersions.salesOrderId, payload.salesOrderId))
       .limit(1);
     if (applied && payload.version <= applied.appliedVersion) return { kind: 'done' };
+    // 같은 주문의 더 새 버전이 inbox 에 대기 중이면 옛 스냅샷을 쓰지 않는다 — 쓰면 잠깐이나마 예약을 옛 값으로 되돌린다
+    // (감소 방향이면 과판매). 잠금 안에서 보므로 그 새 버전은 이 다음에 처리된다.
+    const newer = await this.newerPendingVersion(payload);
+    if (newer !== null) return { kind: 'superseded', by: newer };
 
     const writes = await this.projection.toWrites(payload.lines, new Date(payload.asOf), new Date());
     let deferred = false;
@@ -136,10 +150,37 @@ export class ReservationProjectionWorker {
       }
     }
     if (errors.length > 0) return { kind: 'error', message: errors.slice(0, 5).join('; ') };
-    if (deferred) return { kind: 'defer' };
+    if (deferred) return { kind: 'defer', retryAt: this.deferUntil(payload.asOf) };
 
     await this.bumpVersion(payload.salesOrderId, payload.version);
     return { kind: 'done' };
+  }
+
+  /**
+   * 감소가 막혀 미룬 행을 다시 볼 시각 = max(지금 + 60초, 스냅샷 시각 + 정착 지연). 정착 지연이 지나기 전에 다시 보면
+   * 게이트가 또 막아 시도만 늘어난다. 스냅샷 시각을 읽을 수 없으면 60초 뒤.
+   */
+  private deferUntil(asOf: string): Date {
+    const soonest = Date.now() + DEFER_MS;
+    const settled = new Date(asOf).getTime() + this.projection.settleMs;
+    return new Date(Number.isFinite(settled) ? Math.max(soonest, settled) : soonest);
+  }
+
+  /** 같은 주문의 처리 전(pending·processing) 더 큰 버전 중 가장 큰 것, 없으면 null. */
+  private async newerPendingVersion(payload: SalesOrderLineReservationStatePayload): Promise<number | null> {
+    const version = sql<number | null>`max((${inboxEvents.payload} ->> 'version')::int)`;
+    const [row] = await this.dbService.db
+      .select({ version })
+      .from(inboxEvents)
+      .where(
+        and(
+          eq(inboxEvents.eventType, RESERVATION_STATE_EVENT_TYPE),
+          eq(inboxEvents.aggregateId, payload.salesOrderId),
+          inArray(inboxEvents.status, ['pending', 'processing']),
+          sql`(${inboxEvents.payload} ->> 'version')::int > ${payload.version}`,
+        ),
+      );
+    return row?.version === null || row?.version === undefined ? null : Number(row.version);
   }
 
   /** 더 큰 버전일 때만 올린다 — 겹친 옛 쓰기가 앞선 버전을 되돌리지 못하게. */

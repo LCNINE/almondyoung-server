@@ -13,14 +13,17 @@ const DEFAULT_SETTLE_MS = 300000;
  */
 @Injectable()
 export class SellableSettleGate {
-  private readonly settleMs: number;
+  /** 정착 지연(ms). 워커가 감소를 미룰 때 «언제 다시 볼지»를 이 값으로 정한다. */
+  readonly settleMs: number;
 
   constructor(
     private readonly dbService: DbService<typeof channelAdapterSchema>,
     configService: ConfigService,
   ) {
     // 비었거나 숫자가 아니거나 0 이하면 기본값 — 게이트가 «지연 0»으로 열리면 안 된다.
-    const configured = Number(configService.get<string | number>('RESERVATION_PROJECTION_SETTLE_MS', DEFAULT_SETTLE_MS));
+    const configured = Number(
+      configService.get<string | number>('RESERVATION_PROJECTION_SETTLE_MS', DEFAULT_SETTLE_MS),
+    );
     this.settleMs = Number.isFinite(configured) && configured > 0 ? configured : DEFAULT_SETTLE_MS;
   }
 
