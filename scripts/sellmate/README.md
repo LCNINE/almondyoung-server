@@ -100,3 +100,17 @@ bash scripts/sellmate/run.sh live import-demand-history apps/core/tmp/ --core-si
 DRY_RUN=1 npx tsx scripts/sellmate/load-shelf-positions.ts ~/다운로드/01_현재고_전체_YYYYMMDD.csv   # 먼저 통계만
 DATABASE_URL=postgres://... npx tsx scripts/sellmate/load-shelf-positions.ts <csv>                 # 반영 (마이그 적용 뒤)
 ```
+
+## 로케이션 마스터 만들기 (`build-location-master.ts`, #1235)
+
+`sku_shelf_positions` 의 선반 코드로 판매 창고에 열·랙·칸(standard 로케이션)을 만든다. 창고 자석 라벨의 바코드 값이
+셀메이트 위치 코드와 같아서, 만든 로케이션을 적치 화면이 스캔으로 바로 잡는다.
+
+- 기본은 dry-run(실제로 만들어 보고 되돌림). `--apply` 로 반영. 늘리기만 하고 지우지 않으며 다시 돌려도 안전하다.
+- 랙은 데이터에 나온 것만, 칸은 1번부터 그 랙의 가장 큰 칸까지 전부. 모자란 칸은 `PUT /inventory/locations/racks/:rackId` 로 끝 번호를 올리면 생긴다.
+- `CC-4-1`·`O21-30-` 같은 텍스트는 바른 코드로 고쳐 읽고(`apps/core/src/modules/inventory/core/shelf-code-reading.ts`), 꼴에 안 맞는 텍스트는 «사람이 정할 예외»로 찍기만 한다.
+
+```bash
+bash scripts/sellmate/run.sh live build-location-master            # dry-run
+bash scripts/sellmate/run.sh live build-location-master --apply    # 반영
+```
