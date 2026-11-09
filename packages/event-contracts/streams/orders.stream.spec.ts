@@ -459,6 +459,7 @@ describe('channel-return 교환 칸 (K8 PR11)', () => {
 
 describe('CORE_ORDER_STREAM SalesOrderLineReservationState', () => {
   const schema = CORE_ORDER_STREAM.events.SalesOrderLineReservationState.schema;
+  if (!schema) throw new Error('SalesOrderLineReservationState schema missing');
   const line = {
     salesOrderLineId: 'line-1',
     channelOrderItemId: null,
@@ -487,7 +488,11 @@ describe('CORE_ORDER_STREAM SalesOrderLineReservationState', () => {
   });
 
   it('lines[].heldUnits 누락은 거절한다', () => {
-    const { heldUnits: _h, ...rest } = line;
-    expect(() => schema.parse({ ...valid, lines: [rest] })).toThrow();
+    expect(() =>
+      schema.parse({
+        ...valid,
+        lines: [{ ...line, heldUnits: undefined }],
+      }),
+    ).toThrow();
   });
 });
