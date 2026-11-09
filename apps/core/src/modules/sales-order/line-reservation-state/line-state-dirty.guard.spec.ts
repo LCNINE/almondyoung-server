@@ -24,7 +24,7 @@ describe('줄 상태 더러움 표시 지점 (#1247)', () => {
       'reprojectFulfillmentOrders',
     ],
     ['apps/core/src/modules/sales-order/cancellation-record/record-cancellation.ts', 'recordSalesOrderCancellation'],
-  ])('%s 의 %s 본문이 markLineStateDirty 를 부른다', (path, name) => {
-    expect(functionBody(path, name)).toMatch(/\bmarkLineStateDirty\(\s*(tx|trx)\b/);
+  ])('%s 의 %s 본문이 markLineStateDirty(ForFulfillmentOrders) 를 부른다', (path, name) => {
+    expect(functionBody(path, name)).toMatch(/\bmarkLineStateDirty(ForFulfillmentOrders)?\(\s*(tx|trx)\b/);
   });
 });

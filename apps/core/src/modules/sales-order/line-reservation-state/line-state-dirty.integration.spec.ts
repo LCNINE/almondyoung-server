@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto';
-import { and, eq } from 'drizzle-orm';
+import { and, count, eq } from 'drizzle-orm';
 import { outbox_events } from '@app/events';
 import { CORE_ORDER_STREAM } from '@packages/event-contracts/streams';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
@@ -17,20 +17,25 @@ import {
 } from '../../fulfillment/services/__support__';
 import { seedCancellableOrder, wireCancellation } from '../cancellation-record/__support__/cancellation-scenarios';
 import { markLineStateDirty } from './line-state-dirty';
-import { publishDirtyLineStates } from './line-state.publisher';
+import { publishLineStateOf } from './line-state.publisher';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
 
-async function versionsOf(tx: DbTx, salesOrderId: string) {
+async function versionOf(tx: DbTx, salesOrderId: string) {
   const [row] = await tx
-    .select({
-      version: wmsTables.salesOrders.lineStateVersion,
-      published: wmsTables.salesOrders.lineStatePublishedVersion,
-    })
+    .select({ version: wmsTables.salesOrders.lineStateVersion })
     .from(wmsTables.salesOrders)
     .where(eq(wmsTables.salesOrders.id, salesOrderId));
-  return row;
+  return row.version;
+}
+
+async function marksOf(tx: DbTx, salesOrderId: string) {
+  const [row] = await tx
+    .select({ n: count() })
+    .from(wmsTables.salesOrderLineStateMarks)
+    .where(eq(wmsTables.salesOrderLineStateMarks.salesOrderId, salesOrderId));
+  return row.n;
 }
 
 async function lineStateEventsOf(tx: DbTx, salesOrderId: string) {
@@ -49,7 +54,7 @@ describeIfDb('줄 상태 더러움 표시 지점 (#1247)', () => {
     await client.end();
   });
 
-  it('reservePartial 한 번 → 그 주문의 line_state_version 이 1 오른다', async () => {
+  it('reservePartial 한 번 → 그 주문에 표시가 하나 더해지고 판매주문 행은 건드리지 않는다', async () => {
     await inRollbackTx(db, async (tx) => {
       const wired = wireLogistics(ambientDbService(tx));
       const { warehouseId, locationId } = await seedWarehouseWithZone(tx);
@@ -73,21 +78,22 @@ describeIfDb('줄 상태 더러움 표시 지점 (#1247)', () => {
         .update(wmsTables.stockLedgers)
         .set({ qty: 8 })
         .where(and(eq(wmsTables.stockLedgers.skuId, skuId), eq(wmsTables.stockLedgers.warehouseId, warehouseId)));
-      const before = await versionsOf(tx, salesOrderId);
-      expect(before.version).toBeGreaterThan(0); // FO 생성의 첫 예약도 같은 문을 지났다
+      const before = await marksOf(tx, salesOrderId);
+      expect(before).toBeGreaterThan(0); // FO 생성의 첫 예약도 같은 문을 지났다
 
       const result = await wired.shipmentReservations.reservePartial(line.id, 10, tx);
 
       expect(result.mutated).toBe(true);
-      expect((await versionsOf(tx, salesOrderId)).version).toBe(before.version + 1);
+      expect(await marksOf(tx, salesOrderId)).toBe(before + 1);
+      expect(await versionOf(tx, salesOrderId)).toBe(0); // 버전은 폴러만 올린다
     });
   });
 
-  it('출고 전 취소 기록 → line_state_version 이 오른다', async () => {
+  it('출고 전 취소 기록 → 표시가 더해진다', async () => {
     await inRollbackTx(db, async (tx) => {
       const w = wireCancellation(tx);
       const o = await seedCancellableOrder(tx, w, 3);
-      const before = await versionsOf(tx, o.salesOrderId);
+      const before = await marksOf(tx, o.salesOrderId);
 
       await w.salesOrders.cancel(
         o.salesOrderId,
@@ -95,24 +101,28 @@ describeIfDb('줄 상태 더러움 표시 지점 (#1247)', () => {
         tx,
       );
 
-      expect((await versionsOf(tx, o.salesOrderId)).version).toBeGreaterThan(before.version);
+      expect(await marksOf(tx, o.salesOrderId)).toBeGreaterThan(before);
     });
   });
 
-  it('한 트랜잭션에서 두 번 표시 → 폴러는 최신 버전 하나로 이벤트 하나만 낸다', async () => {
+  it('한 트랜잭션에서 두 번 표시 → 폴러는 버전 하나로 이벤트 하나만 내고 표시를 다 지운다', async () => {
     await inRollbackTx(db, async (tx) => {
       const { salesOrderId } = await seedSalesOrder(tx, { lines: [{ variantId: randomUUID(), quantity: 2 }] });
       await markLineStateDirty(tx, [salesOrderId]);
-      await markLineStateDirty(tx, [salesOrderId, salesOrderId]); // 중복 id 는 한 번만 오른다
-      expect(await versionsOf(tx, salesOrderId)).toEqual({ version: 2, published: 0 });
+      await markLineStateDirty(tx, [salesOrderId, salesOrderId]); // 중복 id 는 한 행만
+      expect(await marksOf(tx, salesOrderId)).toBe(2);
 
       const publisher = outboxPublisherFor(CORE_ORDER_STREAM, ambientDbService(tx));
-      await publishDirtyLineStates(tx, publisher, { limit: 10_000, asOf: new Date() });
+      await expect(publishLineStateOf(tx, publisher, salesOrderId, new Date())).resolves.toBe('published');
 
       expect(await lineStateEventsOf(tx, salesOrderId)).toEqual([
-        { idempotencyKey: `so-line-state:${salesOrderId}:2`, partitionKey: salesOrderId },
+        { idempotencyKey: `so-line-state:${salesOrderId}:1`, partitionKey: salesOrderId },
       ]);
-      expect(await versionsOf(tx, salesOrderId)).toEqual({ version: 2, published: 2 });
+      expect(await versionOf(tx, salesOrderId)).toBe(1);
+      expect(await marksOf(tx, salesOrderId)).toBe(0);
+      // 표시가 없으면 다시 불러도 버전도 이벤트도 그대로다
+      await expect(publishLineStateOf(tx, publisher, salesOrderId, new Date())).resolves.toBe('clean');
+      expect(await versionOf(tx, salesOrderId)).toBe(1);
     });
   });
 });

@@ -1,5 +1,5 @@
 {
-  "id": "8a8c9510-f500-43c8-ba96-b5b728d971fe",
+  "id": "ef5cd80f-811e-4050-aebc-b9b60e44536e",
   "prevId": "dfc32746-1ace-402c-b2ea-9cd18def08de",
   "version": "7",
   "dialect": "postgresql",
@@ -15360,6 +15360,54 @@
       },
       "isRLSEnabled": false
     },
+    "public.sales_order_line_state_marks": {
+      "name": "sales_order_line_state_marks",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "bigserial",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "sales_order_id": {
+          "name": "sales_order_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "marked_at": {
+          "name": "marked_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "idx_sales_order_line_state_marks_sales_order": {
+          "name": "idx_sales_order_line_state_marks_sales_order",
+          "columns": [
+            {
+              "expression": "sales_order_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.sales_order_lines": {
       "name": "sales_order_lines",
       "schema": "",
@@ -15764,13 +15812,6 @@
           "notNull": true,
           "default": 0
         },
-        "line_state_published_version": {
-          "name": "line_state_published_version",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -15813,22 +15854,6 @@
             }
           ],
           "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_sales_orders_line_state_dirty": {
-          "name": "idx_sales_orders_line_state_dirty",
-          "columns": [
-            {
-              "expression": "id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"sales_orders\".\"line_state_version\" > \"sales_orders\".\"line_state_published_version\"",
           "concurrently": false,
           "method": "btree",
           "with": {}

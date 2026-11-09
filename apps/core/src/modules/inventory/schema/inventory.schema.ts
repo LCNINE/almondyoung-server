@@ -8,6 +8,7 @@ import {
   boolean,
   integer,
   bigint,
+  bigserial,
   doublePrecision,
   timestamp,
   json,
@@ -1494,10 +1495,9 @@ export const salesOrders = pgTable(
     confirmedAt: timestamp('confirmed_at', { withTimezone: true }),
     processedAt: timestamp('processed_at', { withTimezone: true }),
 
-    // #1247: 줄 예약 상태(수요·잡은 단위)가 바뀔 때마다 오르는 주문별 버전, 그리고 마지막으로 이벤트를 낸 버전.
-    // version > published 인 주문이 «낼 것이 남은» 주문이다(부분 인덱스).
+    // #1247: 줄 예약 상태 스냅샷(`SalesOrderLineReservationState`)을 낼 때마다 오르는 주문별 버전.
+    // 쓰는 곳은 발행 폴러(`LineStatePublisher`) 하나다 — 바뀐 쪽은 `sales_order_line_state_marks` 에 표시만 한다.
     lineStateVersion: integer('line_state_version').notNull().default(0),
-    lineStatePublishedVersion: integer('line_state_published_version').notNull().default(0),
 
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
@@ -1507,9 +1507,24 @@ export const salesOrders = pgTable(
     idxOrderDate: index('idx_sales_orders_order_date').on(t.orderDate), // 주문내역/통계의 주 기간필터
     // 주문번호 검색은 기간 조건을 빼고 도는 등호 조회다 — 인덱스가 없으면 전체 스캔이 된다.
     idxDisplayOrderNo: index('idx_sales_orders_display_order_no').on(t.displayOrderNo),
-    idxLineStateDirty: index('idx_sales_orders_line_state_dirty')
-      .on(t.id)
-      .where(sql`${t.lineStateVersion} > ${t.lineStatePublishedVersion}`),
+  }),
+);
+
+/**
+ * 줄 상태가 바뀐 판매주문 표시 (#1247). 예약·출고·전달·취소 트랜잭션이 행 하나를 INSERT 만 한다 —
+ * `sales_orders` 행을 잠그지 않아, FO 를 먼저 잠근 경로와 판매주문을 먼저 잠근 경로(취소) 사이에 잠금 순서가 뒤집히지 않는다.
+ * 같은 이유로 `sales_orders` 에 FK 를 걸지 않는다(FK 검사가 그 행에 KEY SHARE 잠금을 잡아 `FOR UPDATE` 와 부딪힌다).
+ * 발행 폴러가 주문의 표시를 모아 버전을 올리고 스냅샷을 낸 뒤, 그때 본 표시까지만 지운다.
+ */
+export const salesOrderLineStateMarks = pgTable(
+  'sales_order_line_state_marks',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    salesOrderId: uuid('sales_order_id').notNull(),
+    markedAt: timestamp('marked_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    idxSalesOrder: index('idx_sales_order_line_state_marks_sales_order').on(t.salesOrderId),
   }),
 );
 
@@ -4019,6 +4034,7 @@ export const wmsTables = {
   shipmentReconcileState,
   salesOrderCancellations,
   salesOrderCancellationLines,
+  salesOrderLineStateMarks,
   mergeGroups,
   stockReservations,
   fulfillmentOrders,

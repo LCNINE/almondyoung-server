@@ -1,3 +1,0 @@
-ALTER TABLE "sales_orders" ADD COLUMN "line_state_version" integer DEFAULT 0 NOT NULL;--> statement-breakpoint
-ALTER TABLE "sales_orders" ADD COLUMN "line_state_published_version" integer DEFAULT 0 NOT NULL;--> statement-breakpoint
-CREATE INDEX "idx_sales_orders_line_state_dirty" ON "sales_orders" USING btree ("id") WHERE "sales_orders"."line_state_version" > "sales_orders"."line_state_published_version";
