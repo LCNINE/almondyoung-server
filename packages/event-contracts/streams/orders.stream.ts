@@ -187,6 +187,7 @@ export interface OrderCancelledPayload {
    * `CancelSalesOrderDto.lines` 유무 규칙과 같은 축이다 (`sales-orders.service.ts:440`).
    * 값은 채널이 소유한 라인 식별자이고, Core 가 `sales_order_lines.channel_order_item_id`
    * 로 자기 PK 를 찾는다. 선택 필드라 이 필드를 모르는 옛 메시지도 계속 통과한다.
+   * `quantity` 는 그 줄의 채널 누적 취소 수량(상태)이다 — 이번에 취소한 증분이 아니다.
    */
   cancelledLines?: Array<{ channelOrderItemId: string; quantity: number }>;
 
@@ -250,6 +251,26 @@ export interface ChannelReturnRequestedPayload {
   items: Array<{ channelOrderItemId: string; quantity: number }>;
   /** 반품/교환 (K8 PR11). 없으면 `return` */
   kind?: CustomerReturnKind;
+}
+
+/**
+ * 마켓 고객 취소요청 사실. channel-adapter 가 마켓(네이버·쿠팡)에서 관측해 낸다.
+ * `orderId` 는 `ChannelReturnRequestedPayload.orderId` 와 같은 축(channel-adapter wmsOrderId)이다.
+ */
+export interface ChannelCancelRequestedPayload {
+  orderId: string;
+  salesChannel: SalesChannel;
+  externalOrderId: string;
+  /** 마켓의 승인 단위 참조(API 대상). core 는 해석하지 않는다. 네이버=productOrderId, 쿠팡=receiptId */
+  channelRequestRef: string;
+  /** 마켓 요청 하나의 중복 판정 식별자. 네이버=`${productOrderId}:${claimId ?? 'na'}`. core 의 sourceKey 근거 */
+  channelRequestKey: string;
+  /** 마켓이 판매자 승인을 기다리는가. false = 이미 승인돼 처리 중(네이버 CANCELING 등) */
+  needsApproval: boolean;
+  /** ISO 8601 */
+  requestedAt: string;
+  /** quantity = 이번 요청 수량, 양수 */
+  items: Array<{ channelOrderItemId: string; quantity: number }>;
 }
 
 /**
@@ -427,6 +448,24 @@ const OrderPaymentCompletedSchema = z.object({
   amount: z.number().nonnegative(),
   currency: z.string().min(1),
   capturedAt: z.string().datetime(),
+});
+
+const ChannelCancelRequestedSchema = z.object({
+  orderId: z.string().min(1),
+  salesChannel: SalesChannelSchema,
+  externalOrderId: z.string().min(1),
+  channelRequestRef: z.string().min(1),
+  channelRequestKey: z.string().min(1),
+  needsApproval: z.boolean(),
+  requestedAt: z.string().datetime(),
+  items: z
+    .array(
+      z.object({
+        channelOrderItemId: z.string().min(1),
+        quantity: z.number().int().positive(),
+      }),
+    )
+    .min(1),
 });
 
 const ChannelReturnRequestedSchema = z.object({
@@ -911,6 +950,10 @@ export const ORDER_STREAM = stream({
     ChannelReturnRequested: event<'ChannelReturnRequested', ChannelReturnRequestedPayload>(
       'ChannelReturnRequested',
       ChannelReturnRequestedSchema,
+    ),
+    ChannelCancelRequested: event<'ChannelCancelRequested', ChannelCancelRequestedPayload>(
+      'ChannelCancelRequested',
+      ChannelCancelRequestedSchema,
     ),
     ChannelReturnCancelled: event<'ChannelReturnCancelled', ChannelReturnCancelledPayload>(
       'ChannelReturnCancelled',
