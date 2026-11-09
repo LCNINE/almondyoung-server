@@ -2083,3 +2083,60 @@ describe('MedusaClient 취소 (#1016 35번 PR-B · 36번 재설계 PR 3)', () =>
     });
   });
 });
+
+describe('MedusaClient line-item reservations (#1247)', () => {
+  function makeClient() {
+    const client = Object.create(MedusaClient.prototype) as MedusaClient;
+    Object.defineProperties(client, {
+      apiUrl: { value: 'http://medusa.test' },
+      apiKey: { value: 'sk_x' },
+    });
+    return client;
+  }
+  afterEach(() => jest.restoreAllMocks());
+
+  it('setLineItemReservations: snake_case 본문, 120초 타임아웃, 결과를 camelCase 로', async () => {
+    const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({ results: [{ line_item_id: 'li1', outcome: 'deferred', quantity_before: 3, quantity_after: 3, message: 'm' }] }),
+        { status: 200 },
+      ),
+    );
+    const out = await makeClient().setLineItemReservations([{ lineItemId: 'li1', quantity: 1, allowDecrease: false }]);
+    const [url, init] = fetchSpy.mock.calls[0];
+    expect(url).toBe('http://medusa.test/admin/line-item-reservations');
+    expect(JSON.parse(String(init?.body))).toEqual({ items: [{ line_item_id: 'li1', quantity: 1, allow_decrease: false }] });
+    expect(init?.signal).toBeDefined();
+    expect(out).toEqual([{ lineItemId: 'li1', outcome: 'deferred', quantityBefore: 3, quantityAfter: 3, message: 'm' }]);
+  });
+
+  it('setLineItemReservations: 5xx 는 던진다', async () => {
+    jest.spyOn(global, 'fetch').mockResolvedValue(new Response('{}', { status: 502 }));
+    await expect(makeClient().setLineItemReservations([])).rejects.toThrow(/status=502/);
+  });
+
+  it('listLineItemReservations: 쿼리를 만들고 camelCase 로 돌려준다', async () => {
+    const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          reservations: [{ id: 'r1', line_item_id: 'li1', quantity: 2, order_created_at: '2026-11-10T00:00:00.000Z' }],
+          next_after_id: 'r1',
+        }),
+        { status: 200 },
+      ),
+    );
+    const out = await makeClient().listLineItemReservations({
+      orderCreatedFrom: new Date('2026-11-09T00:00:00Z'),
+      afterId: 'r0',
+      limit: 500,
+    });
+    const url = String(fetchSpy.mock.calls[0][0]);
+    expect(url).toContain('order_created_from=2026-11-09T00%3A00%3A00.000Z');
+    expect(url).toContain('after_id=r0');
+    expect(url).toContain('limit=500');
+    expect(out).toEqual({
+      reservations: [{ id: 'r1', lineItemId: 'li1', quantity: 2, orderCreatedAt: new Date('2026-11-10T00:00:00Z') }],
+      nextAfterId: 'r1',
+    });
+  });
+});

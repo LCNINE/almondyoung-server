@@ -2870,12 +2870,75 @@ export class MedusaClient {
   }
 
   /**
+   * 줄 예약을 판매 단위 N 으로 설정한다(#1247, Medusa `POST /admin/line-item-reservations`). 줄마다 결과를 돌려준다.
+   * Medusa 쪽 락을 최대 30초 기다리므로 HTTP 타임아웃은 120초다(SDK 의 fetch 는 호출별 타임아웃이 없어 네이티브 fetch 를 쓴다).
+   * 한 번에 200줄까지 — 나누는 건 호출자의 일. HTTP 오류·연결 실패는 던진다(호출자가 회차를 다시 시도한다).
+   */
+  async setLineItemReservations(
+    items: { lineItemId: string; quantity: number; allowDecrease: boolean }[],
+  ): Promise<LineItemReservationResult[]> {
+    const path = '/admin/line-item-reservations';
+    const { status, body } = await this.postAdmin(
+      path,
+      {
+        items: items.map((item) => ({
+          line_item_id: item.lineItemId,
+          quantity: item.quantity,
+          allow_decrease: item.allowDecrease,
+        })),
+      },
+      { timeoutMs: LINE_ITEM_RESERVATION_TIMEOUT_MS },
+    );
+    if (status < 200 || status >= 300 || !Array.isArray(body.results)) {
+      const message = typeof body.message === 'string' ? body.message : `status ${status}`;
+      throw new Error(`Medusa setLineItemReservations failed (status=${status}): ${message}`);
+    }
+    return (body.results as Record<string, unknown>[]).map((row) => ({
+      lineItemId: String(row.line_item_id),
+      outcome: row.outcome as LineItemReservationOutcome,
+      quantityBefore: Number(row.quantity_before),
+      quantityAfter: Number(row.quantity_after),
+      ...(typeof row.message === 'string' ? { message: row.message } : {}),
+    }));
+  }
+
+  /** 주문 생성 시각이 `orderCreatedFrom` 이후인 줄의 살아 있는 Medusa 예약(판매 단위), 예약 id 커서. 하루 대사의 Medusa 쪽 후보. */
+  async listLineItemReservations(q: { orderCreatedFrom: Date; afterId?: string; limit: number }): Promise<{
+    reservations: { id: string; lineItemId: string; quantity: number; orderCreatedAt: Date }[];
+    nextAfterId: string | null;
+  }> {
+    const params = new URLSearchParams({ order_created_from: q.orderCreatedFrom.toISOString(), limit: String(q.limit) });
+    if (q.afterId) params.set('after_id', q.afterId);
+    const path = `/admin/line-item-reservations?${params.toString()}`;
+    const encodedKey = Buffer.from(`${this.apiKey}:`).toString('base64');
+    const res = await fetch(`${this.apiUrl}${path}`, {
+      headers: { Authorization: `Basic ${encodedKey}`, Accept: 'application/json' },
+      signal: AbortSignal.timeout(LINE_ITEM_RESERVATION_TIMEOUT_MS),
+    });
+    const parsed: unknown = await res.json().catch(() => undefined);
+    const body = isJsonObject(parsed) ? parsed : {};
+    if (!res.ok || !Array.isArray(body.reservations)) {
+      throw new Error(`Medusa listLineItemReservations failed (status=${res.status})`);
+    }
+    return {
+      reservations: (body.reservations as Record<string, unknown>[]).map((row) => ({
+        id: String(row.id),
+        lineItemId: String(row.line_item_id),
+        quantity: Number(row.quantity),
+        orderCreatedAt: new Date(String(row.order_created_at)),
+      })),
+      nextAfterId: typeof body.next_after_id === 'string' ? body.next_after_id : null,
+    };
+  }
+
+  /**
    * 관리자 POST 를 네이티브 fetch 로 보낸다. SDK 의 FetchError 는 본문에서 message 만 남기고 type·code 를 버리는데, 취소 응답은
    * 그 둘로 갈린다. HTTP 상태로는 던지지 않는다(분류는 호출부의 일). 연결 실패는 원래 오류를 cause 로 달아 던진다.
    */
   private async postAdmin(
     path: string,
     body?: Record<string, unknown>,
+    options?: { timeoutMs?: number },
   ): Promise<{ status: number; body: Record<string, unknown> }> {
     const encodedKey = Buffer.from(`${this.apiKey}:`).toString('base64');
     let res: Response;
@@ -2888,6 +2951,7 @@ export class MedusaClient {
           Accept: 'application/json',
         },
         body: JSON.stringify(body ?? {}),
+        ...(options?.timeoutMs !== undefined ? { signal: AbortSignal.timeout(options.timeoutMs) } : {}),
       });
     } catch (error) {
       throw new Error(`Medusa POST ${path} 연결 실패: ${error instanceof Error ? error.message : String(error)}`, {
@@ -2898,6 +2962,17 @@ export class MedusaClient {
     return { status: res.status, body: isJsonObject(parsed) ? parsed : {} };
   }
 }
+
+const LINE_ITEM_RESERVATION_TIMEOUT_MS = 120_000;
+
+export type LineItemReservationOutcome = 'set' | 'unchanged' | 'deferred' | 'not_managed' | 'not_found' | 'error';
+export type LineItemReservationResult = {
+  lineItemId: string;
+  outcome: LineItemReservationOutcome;
+  quantityBefore: number;
+  quantityAfter: number;
+  message?: string;
+};
 
 export type QuantityDiscountTierPrice = { variant_id: string; min_quantity: number; amount: number };
 export type QuantityDiscountSyncBody = {
