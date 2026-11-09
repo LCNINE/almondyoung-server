@@ -27,8 +27,15 @@ export async function findLocationIdsInUse(tx: DbTx, ids: string[]): Promise<Set
     JOIN pg_class t ON t.oid = c.conrelid
     JOIN pg_namespace n ON n.oid = t.relnamespace
     JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = c.conkey[1]
-    WHERE c.contype = 'f' AND c.confrelid = to_regclass('locations')
+    WHERE c.contype = 'f' AND c.confrelid = 'locations'::regclass
   `)) as unknown as ForeignKeyColumn[];
+
+  // 0개면 카탈로그 해석이 빗나간 것이다(스키마엔 locations 를 가리키는 외래키가 여럿 있다). 그대로 두면 후보 칸이
+  // 전부 «안 씀»으로 지워지고 SET NULL 이력이 NULL 이 되므로 열지 않고 멈춘다. ::regclass 는 앱의 다른 쿼리와
+  // 같은 search_path 로 풀리고, 못 찾으면 NULL 이 아니라 에러를 낸다(to_regclass 와 다르다).
+  if (fks.length === 0) {
+    throw new Error('locations 를 가리키는 외래키를 카탈로그에서 하나도 못 찾았다 — 사용 중 판정을 할 수 없어 멈춘다');
+  }
 
   const multi = fks.filter((fk) => Number(fk.columns) !== 1);
   if (multi.length > 0) {

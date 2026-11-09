@@ -469,7 +469,7 @@ export class LocationService {
   }
 
   /**
-   * 랙 수정. 자동 생성 랙이면 칸이 끝 번호를 따라 늘고, 안 쓰는 칸만 줄어든다(#1235, rack-bin-sync).
+   * 랙 수정. 칸 범위·자동 생성을 바꾸면, 자동 생성 랙의 칸이 끝 번호를 따라 늘고 안 쓰는 칸만 줄어든다(#1235, rack-bin-sync).
    */
   async updateRack(
     rackId: string,
@@ -495,7 +495,12 @@ export class LocationService {
         .set({ ...dto, updatedAt: new Date() })
         .where(eq(wmsTables.locationRacks.id, rackId))
         .returning();
-      const binChanges = await syncRackBins(trx, rackId);
+      // 칸 범위·자동 생성을 건드린 수정일 때만 맞춘다 — 메모만 고쳤는데 칸이 생기거나 지워지면 안 된다.
+      const touchesBins =
+        dto.defaultBinStart !== undefined || dto.defaultBinEnd !== undefined || dto.autoGenerateBins !== undefined;
+      const binChanges: RackBinChanges = touchesBins
+        ? await syncRackBins(trx, rackId)
+        : { created: [], deleted: [], keptInUse: [] };
       return { ...updated, binChanges };
     }, tx);
   }

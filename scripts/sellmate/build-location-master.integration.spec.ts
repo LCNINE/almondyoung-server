@@ -51,7 +51,7 @@ describeIfDb('applyLocationMaster (DB integration)', () => {
       expect(report.columnsCreated).toEqual(['A', 'M']);
       expect(report.racksCreated).toEqual(['A-01', 'M-07']);
       expect(report.binsCreated).toBe(6);
-      expect(report.conflicts).toEqual([]);
+      expect(report.racksSkipped).toEqual([]);
     });
   });
 
@@ -63,7 +63,7 @@ describeIfDb('applyLocationMaster (DB integration)', () => {
 
       const again = await applyLocationMaster(trx, warehouseId, p);
 
-      expect(again).toEqual({ columnsCreated: [], racksCreated: [], racksExtended: [], binsCreated: 0, conflicts: [] });
+      expect(again).toEqual({ columnsCreated: [], racksCreated: [], racksExtended: [], binsCreated: 0, racksSkipped: [] });
     });
   });
 
@@ -100,9 +100,23 @@ describeIfDb('applyLocationMaster (DB integration)', () => {
 
       const report = await applyLocationMaster(trx, warehouseId, plan('B-01-01', 'A-01-01'));
 
-      expect(report.conflicts).toEqual([{ code: 'B-01-01', reason: expect.stringContaining('zone') }]);
+      expect(report.racksSkipped).toEqual([{ rack: 'B-01', reason: expect.stringContaining('zone'), codes: ['B-01-01'] }]);
       expect(await warehouseCodes(trx, warehouseId)).toEqual(['A-01-01']);
       expect(report.racksCreated).toEqual(['A-01']);
+    });
+  });
+
+  it('칸이 여럿인 랙에서 한 칸만 충돌해도 그 랙 전체를 건너뛰었다고 보고한다', async () => {
+    await inRollbackTx(db, async (trx) => {
+      const { warehouseId } = await seedWarehouseWithZone(trx);
+      await trx.insert(wmsTables.locations).values({ warehouseId, code: 'B-01-02', locationType: 'zone' });
+
+      const report = await applyLocationMaster(trx, warehouseId, plan('B-01-03'));
+
+      expect(report.racksSkipped).toEqual([
+        { rack: 'B-01', reason: expect.stringContaining('랙 전체를 만들지 않음'), codes: ['B-01-02'] },
+      ]);
+      expect(await warehouseCodes(trx, warehouseId)).toEqual([]);
     });
   });
 
@@ -116,7 +130,7 @@ describeIfDb('applyLocationMaster (DB integration)', () => {
 
       const report = await applyLocationMaster(trx, warehouseId, plan('C-01-03'));
 
-      expect(report.conflicts).toEqual([{ code: 'C-01', reason: expect.stringContaining('수동 랙') }]);
+      expect(report.racksSkipped).toEqual([{ rack: 'C-01', reason: expect.stringContaining('수동 랙'), codes: [] }]);
       expect(await warehouseCodes(trx, warehouseId)).toEqual([]);
     });
   });

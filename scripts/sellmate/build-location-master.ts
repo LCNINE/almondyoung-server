@@ -31,7 +31,8 @@ export type ApplyReport = {
   racksCreated: string[];
   racksExtended: { rack: string; from: number; to: number }[];
   binsCreated: number;
-  conflicts: { code: string; reason: string }[];
+  /** 만들지 않은 랙 — 칸 하나만 겹쳐도 랙째 건너뛴다. codes 는 겹친 코드. */
+  racksSkipped: { rack: string; reason: string; codes: string[] }[];
 };
 
 const rackLabel = (r: RackPlan) => `${r.column}-${String(r.rackNumber).padStart(2, '0')}`;
@@ -45,7 +46,7 @@ function desiredCodes(r: RackPlan, end: number): string[] {
 }
 
 export async function applyLocationMaster(tx: DbTx, warehouseId: string, plan: LocationMasterPlan): Promise<ApplyReport> {
-  const report: ApplyReport = { columnsCreated: [], racksCreated: [], racksExtended: [], binsCreated: 0, conflicts: [] };
+  const report: ApplyReport = { columnsCreated: [], racksCreated: [], racksExtended: [], binsCreated: 0, racksSkipped: [] };
   const columnIds = new Map<string, string>();
 
   for (const r of plan.racks) {
@@ -62,7 +63,7 @@ export async function applyLocationMaster(tx: DbTx, warehouseId: string, plan: L
       : [];
 
     if (rack && !rack.autoGenerateBins && r.binEnd !== null) {
-      report.conflicts.push({ code: label, reason: '수동 랙(자동 생성 꺼짐) — 칸은 사람이 API 로 더한다' });
+      report.racksSkipped.push({ rack: label, reason: '수동 랙(자동 생성 꺼짐) — 칸은 사람이 API 로 더한다', codes: [] });
       continue;
     }
 
@@ -74,9 +75,12 @@ export async function applyLocationMaster(tx: DbTx, warehouseId: string, plan: L
       .where(and(eq(wmsTables.locations.warehouseId, warehouseId), inArray(wmsTables.locations.code, desiredCodes(r, end))));
     const foreign = taken.filter((t) => !rack || t.rackId !== rack.id);
     if (foreign.length > 0) {
-      for (const t of foreign) {
-        report.conflicts.push({ code: t.code, reason: t.rackId ? '다른 랙의 칸이 같은 코드' : `같은 코드의 ${t.type} 로케이션` });
-      }
+      const kinds = [...new Set(foreign.map((t) => (t.rackId ? '다른 랙의 칸' : `${t.type} 로케이션`)))].join('·');
+      report.racksSkipped.push({
+        rack: label,
+        reason: `같은 코드의 ${kinds}이 있어 랙 전체를 만들지 않음`,
+        codes: foreign.map((t) => t.code).sort(),
+      });
       continue;
     }
 
@@ -143,9 +147,25 @@ export async function applyLocationMaster(tx: DbTx, warehouseId: string, plan: L
 
 class DryRunRollback extends Error {}
 
-function flagValue(name: string): string | undefined {
-  const i = process.argv.indexOf(name);
-  return i >= 0 ? process.argv[i + 1] : undefined;
+/**
+ * CLI 인자. run.sh 는 DRY_RUN 이 있으면 화면에 [DRY_RUN] 을 찍으므로, DRY_RUN 과 --apply 가 함께 오면 거절한다
+ * (화면은 dry-run 이라는데 실제로는 반영되는 일을 막는다).
+ */
+export function parseCliArgs(
+  argv: readonly string[],
+  env: Readonly<Record<string, string | undefined>>,
+): { apply: boolean; warehouseId: string | undefined } {
+  const dryRunEnv = env.DRY_RUN === '1' || env.DRY_RUN === 'true';
+  const apply = argv.includes('--apply');
+  if (dryRunEnv && apply) throw new Error('DRY_RUN 과 --apply 를 함께 줄 수 없습니다 — 하나만 고르세요');
+
+  let warehouseId: string | undefined;
+  const i = argv.indexOf('--warehouse-id');
+  if (i >= 0) {
+    warehouseId = argv[i + 1];
+    if (!warehouseId || warehouseId.startsWith('--')) throw new Error('--warehouse-id 에 창고 id 가 필요합니다');
+  }
+  return { apply, warehouseId };
 }
 
 async function main(): Promise<void> {
@@ -154,7 +174,7 @@ async function main(): Promise<void> {
     console.error('DATABASE_URL 환경변수가 필요합니다 (core 논리 DB). 라이브는 scripts/sellmate/run.sh live build-location-master');
     process.exit(1);
   }
-  const apply = process.argv.includes('--apply');
+  const { apply, warehouseId: warehouseArg } = parseCliArgs(process.argv.slice(2), process.env);
   const client = postgres(url, { max: 1, onnotice: () => undefined });
   const db = drizzle(client, { schema: wmsSchema });
   try {
@@ -162,7 +182,7 @@ async function main(): Promise<void> {
       .select({ id: wmsTables.warehouses.id, name: wmsTables.warehouses.name })
       .from(wmsTables.warehouses)
       .where(eq(wmsTables.warehouses.isSellable, true));
-    const warehouseId = flagValue('--warehouse-id') ?? (sellable.length === 1 ? sellable[0].id : undefined);
+    const warehouseId = warehouseArg ?? (sellable.length === 1 ? sellable[0].id : undefined);
     if (!warehouseId) {
       console.error(`판매 창고가 ${sellable.length}개입니다. --warehouse-id 로 고르세요:`);
       for (const w of sellable) console.error(`  ${w.id}  ${w.name}`);
@@ -191,7 +211,9 @@ async function main(): Promise<void> {
         console.log(`\n${apply ? '✅ 적용' : '🧪 DRY-RUN (되돌림)'}`);
         console.log(`   열 생성 ${report.columnsCreated.length} · 랙 생성 ${report.racksCreated.length} · 칸 생성 ${report.binsCreated}`);
         for (const e of report.racksExtended) console.log(`   랙 늘림 ${e.rack}: ${e.from} → ${e.to}`);
-        for (const c of report.conflicts) console.log(`   ⚠️  충돌 ${c.code}: ${c.reason}`);
+        for (const k of report.racksSkipped) {
+          console.log(`   ⚠️  랙 ${k.rack} 건너뜀: ${k.reason}${k.codes.length ? ` (${k.codes.join(', ')})` : ''}`);
+        }
 
         const codes = new Set(
           (

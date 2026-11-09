@@ -163,6 +163,20 @@ describeIfDb('syncRackBins · PUT /racks/:rackId (DB integration)', () => {
     });
   });
 
+  it('칸과 무관한 필드(메모)만 바꾸면 칸을 맞추지 않는다', async () => {
+    await inRollbackTx(db, async (trx) => {
+      const { warehouseId } = await seedWarehouseWithZone(trx);
+      // 25 는 addCustomBin 으로 단 숫자 커스텀 칸 — 범위(1..3) 밖이지만 메모 수정이 지우면 안 된다.
+      const { rackId } = await seedRack(trx, warehouseId, { column: 'A', rack: 1, bins: ['01', '02', '03', '25'], auto: true, end: 3 });
+
+      const result = await buildService(db, trx).updateRack(rackId, { notes: '메모' }, trx);
+
+      expect(result.binChanges).toEqual({ created: [], deleted: [], keptInUse: [] });
+      expect(result.notes).toBe('메모');
+      expect(await rackCodes(trx, rackId)).toEqual(['A-01-01', 'A-01-02', 'A-01-03', 'A-01-25']);
+    });
+  });
+
   it('start > end 면 400 이고 아무것도 안 바뀐다', async () => {
     await inRollbackTx(db, async (trx) => {
       const { warehouseId } = await seedWarehouseWithZone(trx);
