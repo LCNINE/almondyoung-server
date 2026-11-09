@@ -1,6 +1,13 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { catalogGrantsFor, channelInventoryIsManual, isPlaceholderEnv, missingGrants, orderSourceWired } from './rules';
+import {
+  catalogGrantsFor,
+  channelInventoryIsManual,
+  isPlaceholderEnv,
+  missingGrants,
+  orderSourceWired,
+  shelfCodeLinks,
+} from './rules';
 
 const repo = join(__dirname, '../../..');
 const read = (path: string) => readFileSync(join(repo, path), 'utf8');
@@ -53,5 +60,13 @@ describe('cutover preflight rules', () => {
     const text = read('apps/channel-adapter/src/adapter.module.ts');
     expect(orderSourceWired(text, 'MedusaOrderSource')).toBe(true);
     expect(orderSourceWired(text, 'NoSuchOrderSource')).toBe(false);
+  });
+
+  it('선반 텍스트를 고쳐 읽은 코드로 로케이션과 잇고, 예외는 따로 센다 (#1235)', () => {
+    expect(shelfCodeLinks(['CC-4-1', 'A-01-01', 'A-01-02', '외부창고'], ['CC-04-01', 'A-01-01'])).toEqual({
+      linked: 2,
+      unlinked: ['A-01-02'],
+      exceptions: ['외부창고'],
+    });
   });
 });

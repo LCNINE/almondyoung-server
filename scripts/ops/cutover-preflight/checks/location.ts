@@ -1,6 +1,7 @@
 // 로케이션 축 (core) — 적치 목적지가 있나, 재고가 실제 선반에 있나, 셀메이트 위치 텍스트와 이어지나.
 import type { Sql } from '../db';
 import type { Report } from '../report';
+import { shelfCodeLinks } from '../rules';
 
 export async function checkLocation(tx: Sql, r: Report): Promise<void> {
   r.section('로케이션 1. 판매 창고의 적치 목적지');
@@ -54,18 +55,22 @@ export async function checkLocation(tx: Sql, r: Report): Promise<void> {
   r.info(`셀메이트 위치가 둘 이상인 SKU ${multi.skus}개 — 옮기지 않고 컷오버 뒤 실사 대상`);
 
   r.section('로케이션 3. 셀메이트 선반 위치 텍스트(sku_shelf_positions)와 로케이션의 연결');
-  const [shelf] = await tx<{ rows: number; codes: number; matched_codes: number; last_upd: Date | null }[]>`
-    select count(*)::int as rows, count(distinct p.position_code)::int as codes,
-           count(distinct p.position_code) filter (where exists (
-             select 1 from locations l join warehouses w on w.id = l.warehouse_id and w.is_sellable
-             where l.code = p.position_code))::int as matched_codes,
-           max(p.updated_at) as last_upd
-    from sku_shelf_positions p`;
-  r.info(`선반 위치 ${shelf.rows}행 · 고유 코드 ${shelf.codes}개 · 로케이션과 같은 코드 ${shelf.matched_codes}개`);
+  const [shelf] = await tx<{ rows: number; last_upd: Date | null }[]>`
+    select count(*)::int as rows, max(updated_at) as last_upd from sku_shelf_positions`;
+  const shelfCodes = await tx<{ code: string }[]>`select distinct position_code as code from sku_shelf_positions`;
+  const locationCodes = await tx<{ code: string }[]>`
+    select l.code from locations l join warehouses w on w.id = l.warehouse_id and w.is_sellable`;
+  // 고쳐 읽기(CC-4-1 → CC-04-01)는 로케이션 만들기 스크립트와 같은 함수다 — rules.ts shelfCodeLinks.
+  const links = shelfCodeLinks(
+    shelfCodes.map((c) => c.code),
+    locationCodes.map((c) => c.code),
+  );
+  r.info(`선반 위치 ${shelf.rows}행 · 고유 코드 ${shelfCodes.length}개 · 로케이션과 이어진 코드 ${links.linked}개`);
   r.info(`선반 위치 마지막 적재 ${shelf.last_upd?.toISOString() ?? '없음'} — 셀메이트 sync(Ⓔ)가 멈추면 굳는다(#1237)`);
-  if (shelf.codes > 0 && shelf.matched_codes < shelf.codes)
+  if (links.exceptions.length > 0) r.info(`꼴에 안 맞아 사람이 정할 선반 텍스트 ${links.exceptions.length}개 (만들기 스크립트 dry-run 이 목록을 보여 준다)`);
+  if (links.unlinked.length > 0)
     r.bad(
-      `로케이션이 없는 선반 코드 ${shelf.codes - shelf.matched_codes}개`,
-      '로케이션 마스터 생성 (#1235). 꼴에 안 맞는 자유 텍스트는 사람이 정한다',
+      `로케이션이 없는 선반 코드 ${links.unlinked.length}개`,
+      '로케이션 마스터 생성 (#1235): bash scripts/sellmate/run.sh live build-location-master --apply',
     );
 }
