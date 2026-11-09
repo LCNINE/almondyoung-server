@@ -20,12 +20,12 @@ function fakeDb() {
 
 describe('ReservationCutoverRepository', () => {
   it('행이 없으면 null', async () => {
-    const repo = new ReservationCutoverRepository(fakeDb() as never);
+    const repo = new ReservationCutoverRepository(fakeDb());
     await expect(repo.get()).resolves.toBeNull();
   });
 
   it('set 을 두 번 하면 마지막 값, clear 는 null', async () => {
-    const repo = new ReservationCutoverRepository(fakeDb() as never);
+    const repo = new ReservationCutoverRepository(fakeDb());
     await repo.set(new Date('2026-11-10T00:00:00Z'), 'a');
     await repo.set(new Date('2026-11-11T00:00:00Z'), 'b');
     await expect(repo.get()).resolves.toEqual(new Date('2026-11-11T00:00:00Z'));

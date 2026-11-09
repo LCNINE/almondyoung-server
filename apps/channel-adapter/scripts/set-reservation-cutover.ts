@@ -34,6 +34,10 @@ export function parseArgs(args: string[]): Args {
   if (clear === (atRaw !== undefined)) throw new Error('--at <ISO> 또는 --clear 중 정확히 하나를 준다.');
   let at: Date | null = null;
   if (atRaw !== undefined) {
+    // 오프셋 없는 시각은 UTC 로 읽혀 9시간 어긋난 전환이 된다 — 반드시 Z 또는 ±hh:mm 을 요구한다.
+    if (!/(Z|[+-]\d{2}(:?\d{2})?)$/i.test(atRaw) || !atRaw.includes('T')) {
+      throw new Error(`--at 은 시간대(Z 또는 +09:00 같은 오프셋)가 있는 ISO 시각이어야 한다: ${atRaw}`);
+    }
     at = new Date(atRaw);
     if (Number.isNaN(at.getTime())) throw new Error(`--at 을 시각으로 읽을 수 없다: ${atRaw}`);
   }
@@ -46,7 +50,7 @@ async function main() {
   const client = postgres(process.env.DATABASE_URL, { max: 1 });
   try {
     const db = drizzle(client, { schema: channelAdapterSchema });
-    const repo = new ReservationCutoverRepository({ db } as never);
+    const repo = new ReservationCutoverRepository({ db });
     const current = await repo.get();
     const show = (d: Date | null) => (d ? d.toISOString() : '(비어 있음)');
     console.log(`현재 T: ${show(current)}`);

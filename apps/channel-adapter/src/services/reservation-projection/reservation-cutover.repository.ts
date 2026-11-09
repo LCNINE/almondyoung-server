@@ -3,6 +3,9 @@ import { eq } from 'drizzle-orm';
 import { DbService } from '@app/db';
 import { channelAdapterSchema, reservationProjectionSettings } from '../../schema';
 
+/** 이 저장소가 쓰는 DbService 의 부분. 스크립트·스펙이 `{ db }` 만 넘길 수 있게 좁혔다(Nest DI 는 DbService 를 그대로 주입). */
+export type CutoverDb = Pick<DbService<typeof channelAdapterSchema>, 'db'>;
+
 const SINGLETON_ID = 'singleton';
 
 /**
@@ -11,7 +14,7 @@ const SINGLETON_ID = 'singleton';
  */
 @Injectable()
 export class ReservationCutoverRepository {
-  constructor(private readonly dbService: DbService<typeof channelAdapterSchema>) {}
+  constructor(private readonly dbService: CutoverDb) {}
 
   async get(): Promise<Date | null> {
     const [row] = await this.dbService.db
