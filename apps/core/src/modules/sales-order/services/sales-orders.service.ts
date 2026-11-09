@@ -2165,6 +2165,22 @@ export class SalesOrdersService {
     };
   }
 
+  /**
+   * 줄별로 지금까지 취소된 수량(갈래·scope 무관 — 라인 수량 문의 `canceled`, 전체취소도 센다).
+   * 채널이 줄 취소를 «이 줄의 누적 취소 수량»으로 알릴 때 커널이 그 차이만 취소하려고 읽는다(스펙 §5.4).
+   * 다른 주문의 줄이면 던진다 — `remainingOf` 와 같이 `?? 0` 으로 덮지 않는다. 부르는 쪽이 판매주문을 잠근 트랜잭션에서 부른다.
+   */
+  async cancelledQuantities(salesOrderId: string, lineIds: string[], tx: DbTx): Promise<Map<string, number>> {
+    const quantities = await readLineQuantities(tx, salesOrderId);
+    return new Map(
+      lineIds.map((lineId) => {
+        const line = quantities.get(lineId);
+        if (!line) throw new Error(`Line quantities are missing SalesOrder line ${lineId}`);
+        return [lineId, line.canceled];
+      }),
+    );
+  }
+
   /** 이 취소 뒤 남는 수량(남은 수량 − 이번 취소)이 모든 줄에서 0 인가. 디지털 줄도 센다. 이번 요청을 빼는 건 판정이다. */
   private leavesNothing(
     salesOrderLines: Array<{ id: string; quantity: number }>,

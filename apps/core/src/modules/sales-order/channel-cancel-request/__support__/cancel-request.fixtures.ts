@@ -42,17 +42,26 @@ export const ADDRESS = {
   detailAddress: '101',
 };
 
-/** 판매주문(채널 라인 2개 — 수량 2·1) → 선택적으로 FO(→ draft 박스). channel-order-change 스펙의 seedOrder 와 같은 모양. */
+/**
+ * 판매주문(채널 라인 2개 — 기본 수량 2·1, `quantities` 로 바꾼다) → 선택적으로 FO(→ draft 박스).
+ * channel-order-change 스펙의 seedOrder 와 같은 모양.
+ */
 export async function seedChannelOrder(
   tx: DbTx,
   w: { logistics: ReturnType<typeof wireLogistics> },
-  opts: { withFo: boolean; salesChannel?: 'medusa' | 'naver' | 'coupang' | '3pl'; noChannelItemIds?: boolean },
+  opts: {
+    withFo: boolean;
+    salesChannel?: 'medusa' | 'naver' | 'coupang' | '3pl';
+    noChannelItemIds?: boolean;
+    quantities?: [number, number];
+  },
 ) {
   const { warehouseId, locationId } = await seedWarehouseWithZone(tx);
   const { holderId } = await seedHolder(tx);
+  const [qtyA, qtyB] = opts.quantities ?? [2, 1];
   const lines = [
-    { item: `ci-${randomUUID().slice(0, 6)}`, qty: 2 },
-    { item: `ci-${randomUUID().slice(0, 6)}`, qty: 1 },
+    { item: `ci-${randomUUID().slice(0, 6)}`, qty: qtyA },
+    { item: `ci-${randomUUID().slice(0, 6)}`, qty: qtyB },
   ];
   const [so] = await tx
     .insert(wmsTables.salesOrders)

@@ -59,6 +59,15 @@ function refundPolicyOf(requester: CancellationRequest['requester']): RefundPoli
   return requester.kind === 'customer' ? 'immediate' : 'decide_later';
 }
 
+/** 채널 줄 취소의 목표(누적 수량)를 줄별로 — 같은 줄이 둘이면 큰 쪽이 더 나중 상태다(합하지 않는다) */
+function latestTargets(lines: CancelLine[]): Map<string, number> {
+  const targets = new Map<string, number>();
+  for (const line of lines) {
+    targets.set(line.salesOrderLineId, Math.max(targets.get(line.salesOrderLineId) ?? 0, line.quantity));
+  }
+  return targets;
+}
+
 /** 환불 효과 metadata 는 jsonb 로 남는 레코드다 — 결과에 실을 두 칸만 형을 보고 꺼낸다 */
 function refundResultOf(refundStatus: string, metadata: Record<string, unknown> | undefined): CancellationRefundResult {
   const estimate = metadata?.refundEstimateAmount;
@@ -258,23 +267,101 @@ export class OrderCancellation {
     });
   }
 
+  /**
+   * 수집된 채널 취소 (스펙 §5.4). 줄 취소의 수량은 «이번에 N개 더»가 아니라 «이 줄의 채널 누적 취소 수량»이다 —
+   * 요청 순간 core 가 이미 취소했으면(마켓 고객 취소요청 문) 같은 취소가 수집으로 다시 와도 할 일이 없고, 모자라면 그 차이만 취소한다.
+   * 전체취소는 모든 줄이 이미 전량 취소돼 있으면 취소하지 않는다(줄마다 따로 취소된 주문). 어느 쪽이든 요청 행은 닫는다.
+   */
   private async cancelForChannel(intent: ChannelCancelledNotice, tx: DbTx): Promise<void> {
     const { salesOrderId, lines } = intent;
-    await this.salesOrders.cancel(
+    const order = await this.reader.lockOrderLines(salesOrderId, tx);
+    if (!order) throw new NotFoundError(`Sales order ${salesOrderId} not found`);
+    const cancelled = await this.salesOrders.cancelledQuantities(
       salesOrderId,
-      {
-        reasonCode: intent.reasonCode,
-        reasonDetail: intent.reasonDetail,
-        cancelledBy: intent.cancelledBy,
-        occurredAt: intent.occurredAt,
-        ...(lines ? { lines } : {}),
-        metadata: intent.metadata,
-      },
+      order.lines.map((line) => line.id),
       tx,
     );
+    const alreadyCancelled = (lineId: string): number => {
+      const quantity = cancelled.get(lineId);
+      if (quantity === undefined) throw new Error(`Cancelled quantity is missing SalesOrder line ${lineId}`);
+      return quantity;
+    };
+    const targets = lines ? latestTargets(lines) : undefined;
+    const remainder = targets ? this.remainderToCancel(salesOrderId, targets, alreadyCancelled) : undefined;
+    const nothingToCancel = remainder
+      ? remainder.length === 0
+      : order.lines.every((line) => alreadyCancelled(line.id) >= line.quantity);
+    if (!nothingToCancel) await this.applyChannelCancel(intent, remainder, order.salesChannel, tx);
     await this.printCancellation.holdUnsent(salesOrderId, lines, tx);
-    // 우리가 낸 취소 요청을 닫는다 — 정산 중 행(확정 때 적용, 위 cancel() 은 이미 취소된 주문이라 아무것도 안 했다). 줄 단위 취소(마켓)는 요청과 무관하다.
+    // 마켓 고객 취소요청 행을 채널 누적 수량으로 닫는다. 전체취소면 채널은 모든 줄을 전량 취소했다.
+    // 전체취소 종결(settleCancelled)보다 먼저다 — 거기서는 부분 요청이 «덮였다»(superseded)로 닫혀 요청의 결과를 잃는다
+    const channelLines = targets
+      ? order.lines.flatMap((line) => {
+          const target = targets.get(line.id);
+          return line.channelOrderItemId && target !== undefined
+            ? [{ channelOrderItemId: line.channelOrderItemId, quantity: target }]
+            : [];
+        })
+      : order.lines.flatMap((line) =>
+          line.channelOrderItemId ? [{ channelOrderItemId: line.channelOrderItemId, quantity: line.quantity }] : [],
+        );
+    await this.settler.settleLinesCancelled(salesOrderId, channelLines, tx);
+    // 우리가 낸 취소 요청을 닫는다 — 정산 중 행은 확정 때 이미 적용됐다(위에서 취소할 게 없었거나 cancel() 이 이미 취소된 주문에 아무것도 안 했다)
     if (!lines) await this.settler.settleCancelled(salesOrderId, tx);
+  }
+
+  /** 줄마다 «목표(채널 누적) − 이미 취소». 0 이하인 줄은 뺀다 — core 가 채널보다 많이 취소했으면 갈림이라 남긴다 */
+  private remainderToCancel(
+    salesOrderId: string,
+    targets: Map<string, number>,
+    alreadyCancelled: (lineId: string) => number,
+  ): CancelLine[] {
+    const remainder: CancelLine[] = [];
+    for (const [salesOrderLineId, target] of targets) {
+      const already = alreadyCancelled(salesOrderLineId);
+      if (already > target) {
+        // 대사(#1016 45번)가 볼 갈림이다 — 채널을 따라 취소를 되돌리지 않는다
+        this.logger.warn(
+          `[OrderCancellation] SO ${salesOrderId} line ${salesOrderLineId}: core cancelled ${already}, channel says ${target}`,
+        );
+      }
+      if (target > already) remainder.push({ salesOrderLineId, quantity: target - already });
+    }
+    return remainder;
+  }
+
+  /**
+   * 채널 취소를 판매주문에 적용한다. 판매자센터가 취소를 확정하는 채널(마켓)은 core 가 거절해도 취소가 되돌아가지 않는다 —
+   * 거절(이미 나간 줄 등)을 던지면 재시도가 이길 수 없는 DLQ 가 될 뿐이라(스펙 반목표), savepoint 를 되돌리고 경고로 남긴다.
+   * 나간 줄은 회수·반품 같은 출고 뒤 후속 효과의 몫이다. 도메인 거절이 아닌 예외(교착·버그)는 그대로 던진다.
+   * 우리가 명령으로 취소하는 채널(Medusa)의 거절은 지금처럼 던진다.
+   */
+  private async applyChannelCancel(
+    intent: ChannelCancelledNotice,
+    lines: CancelLine[] | undefined,
+    salesChannel: string,
+    tx: DbTx,
+  ): Promise<void> {
+    const options = {
+      reasonCode: intent.reasonCode,
+      reasonDetail: intent.reasonDetail,
+      cancelledBy: intent.cancelledBy,
+      occurredAt: intent.occurredAt,
+      ...(lines ? { lines } : {}),
+      metadata: intent.metadata,
+    };
+    if (cancellationCapabilityOf(salesChannel).cancel !== 'seller_center') {
+      await this.salesOrders.cancel(intent.salesOrderId, options, tx);
+      return;
+    }
+    try {
+      await tx.transaction((sp) => this.salesOrders.cancel(intent.salesOrderId, options, sp));
+    } catch (error) {
+      if (!isDomainRefusal(error)) throw error;
+      this.logger.warn(
+        `[OrderCancellation] ${salesChannel} cancel for SO ${intent.salesOrderId} not applied: ${errorDetail(error)}`,
+      );
+    }
   }
 
   /**

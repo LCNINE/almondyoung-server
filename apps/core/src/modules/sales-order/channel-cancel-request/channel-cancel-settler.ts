@@ -15,6 +15,23 @@ import {
 
 type AmendmentRow = typeof wmsTables.salesOrderAmendments.$inferSelect;
 
+/** 마켓 고객 취소요청 행의 `requestedBy` 머리 — 요청 문(`requesterLabel`)이 `channel-customer:<요청 키>` 로 적는다 */
+const MARKET_CUSTOMER_REQUESTER_PREFIX = 'channel-customer:';
+
+/**
+ * 요청 행의 모든 줄이 채널 누적 취소 수량으로 덮였나. 채널 줄 번호가 없는 줄은 채널이 말할 수 없으니 덮이지 않는다.
+ * 한 행에 같은 채널 줄이 여럿이면 그 합이 요청 수량이다.
+ */
+function coveredBy(lines: CancelRequestLine[], cancelledByItem: Map<string, number>): boolean {
+  if (lines.length === 0) return false;
+  const requested = new Map<string, number>();
+  for (const line of lines) {
+    if (line.channelOrderItemId === null) return false;
+    requested.set(line.channelOrderItemId, (requested.get(line.channelOrderItemId) ?? 0) + line.quantity);
+  }
+  return [...requested].every(([item, quantity]) => (cancelledByItem.get(item) ?? 0) >= quantity);
+}
+
 /**
  * 채널 취소 확정 (#1016 35번, 스펙 §5.4). 성공 사실은 따로 오지 않는다 — 재수집된 `OrderCancelled`/`OrderModified` 가 곧 사실이다.
  * 부분취소는 채널의 진행 기록(`snapshot.cancelRequests`)으로 «수정됨 · 환불 미완»과 «끝남»을 가른다(계획 단계 발견 1).
@@ -66,6 +83,36 @@ export class ChannelCancelSettler {
   /** 수집된 전체취소(`OrderCancelled`) — 정산 중 전체 요청은 끝났고, 부분 요청은 덮였다(스펙 §7.3) */
   async settleCancelled(salesOrderId: string, tx: DbTx): Promise<void> {
     await this.closeSettlingByFullCancel(salesOrderId, tx);
+  }
+
+  /**
+   * 수집된 채널 줄 취소(누적 수량 상태)로 마켓 고객 취소요청 행을 닫는다(스펙 §5.4). `channelLines` 는 채널 줄 번호별
+   * «지금까지 채널이 취소한 수량»이다. 정산 중 행 중 마켓 고객이 낸 것(`requestedBy` 가 `channel-customer:`)만 보고,
+   * 행의 모든 줄이 그 수량으로 덮였으면 `applied` 로 닫는다. 닫은 행 수를 돌려준다.
+   * 운영자·고객·wallet 요청 행은 건드리지 않는다 — 그 행은 우리가 낸 명령의 정산(전체취소·`OrderModified`)이 닫는다.
+   */
+  async settleLinesCancelled(
+    salesOrderId: string,
+    channelLines: Array<{ channelOrderItemId: string; quantity: number }>,
+    tx: DbTx,
+  ): Promise<number> {
+    const cancelledByItem = new Map<string, number>();
+    for (const line of channelLines) {
+      // 누적 수량은 상태다 — 같은 줄이 둘이면 큰 쪽이 더 나중 상태다(합하지 않는다)
+      cancelledByItem.set(
+        line.channelOrderItemId,
+        Math.max(cancelledByItem.get(line.channelOrderItemId) ?? 0, line.quantity),
+      );
+    }
+    let closed = 0;
+    for (const row of await this.reader.findSettling(salesOrderId, tx, { lock: true })) {
+      const meta = readCancelRequestMetadata(row.metadata);
+      if (!meta.request.requestedBy.startsWith(MARKET_CUSTOMER_REQUESTER_PREFIX)) continue;
+      if (!coveredBy(readCancelRequestLines(row.deltas), cancelledByItem)) continue;
+      await this.write(row.id, 'applied', settled(meta), tx);
+      closed += 1;
+    }
+    return closed;
   }
 
   /** 정산 중 — 전체는 끝났고, 부분은 전체취소가 «캡처 − 환불»을 다 돌려줘 덮였다(스펙 §7.3) */

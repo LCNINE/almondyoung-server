@@ -1,6 +1,6 @@
 import { OrderEventsConsumer } from './order-events.consumer';
 import { OrderCancellation } from '../order-cancellation/order-cancellation';
-import { OrderCancellationReader } from '../order-cancellation/order-cancellation.reader';
+import type { OrderCancellationReader } from '../order-cancellation/order-cancellation.reader';
 import type { SalesOrdersService } from '../services/sales-orders.service';
 import type { LibraryService } from '../../library/services/library.service';
 import type { FulfillmentOrderCreationBacklogService } from '../../fulfillment/backlog/fulfillment-order-creation-backlog.service';
@@ -31,7 +31,12 @@ describe('OrderEventsConsumer', () => {
     salesOrders: jest.Mocked<
       Pick<
         SalesOrdersService,
-        'findByChannelOrderId' | 'createFromEvent' | 'getOne' | 'cancel' | 'findLineIdsByChannelOrderItemIds'
+        | 'findByChannelOrderId'
+        | 'createFromEvent'
+        | 'getOne'
+        | 'cancel'
+        | 'findLineIdsByChannelOrderItemIds'
+        | 'cancelledQuantities'
       >
     >;
     library: jest.Mocked<Pick<LibraryService, 'grantOwnershipsForOrder' | 'revokeOwnershipsForOrder'>>;
@@ -40,7 +45,9 @@ describe('OrderEventsConsumer', () => {
     >;
     workflowGate: jest.Mocked<Pick<FulfillmentWorkflowGate, 'shouldEnqueueFo'>>;
     channelOrderChanges: jest.Mocked<Pick<ChannelOrderChangeService, 'handle'>>;
-    cancelSettler: { settleCancelled: jest.Mock };
+    cancelSettler: { settleCancelled: jest.Mock; settleLinesCancelled: jest.Mock };
+    /** 커널이 채널 취소 수신에서 잠그고 읽는 판매주문 줄 — 이 스펙의 줄 id 를 모두 담는다(이미 취소된 수량은 0) */
+    cancellationReader: { lockOrderLines: jest.Mock };
     cancelRequests: { recordSettlementFailure: jest.Mock };
     printCancel: { cancelForOrder: jest.Mock; holdUnsent: jest.Mock };
     customerReturns: { recordRequested: jest.Mock; recordCancelled: jest.Mock };
@@ -85,6 +92,9 @@ describe('OrderEventsConsumer', () => {
         getOne: jest.fn(),
         cancel: jest.fn(),
         findLineIdsByChannelOrderItemIds: jest.fn(),
+        cancelledQuantities: jest.fn((_id: string, lineIds: string[]) =>
+          Promise.resolve(new Map(lineIds.map((id) => [id, 0]))),
+        ),
       } as any,
       library: {
         grantOwnershipsForOrder: jest.fn().mockResolvedValue(0),
@@ -98,7 +108,19 @@ describe('OrderEventsConsumer', () => {
         shouldEnqueueFo: jest.fn().mockReturnValue(true),
       },
       channelOrderChanges: { handle: jest.fn().mockResolvedValue(undefined) },
-      cancelSettler: { settleCancelled: jest.fn().mockResolvedValue(undefined) },
+      cancelSettler: {
+        settleCancelled: jest.fn().mockResolvedValue(undefined),
+        settleLinesCancelled: jest.fn().mockResolvedValue(0),
+      },
+      cancellationReader: {
+        lockOrderLines: jest.fn().mockResolvedValue({
+          salesChannel: 'medusa',
+          lines: [
+            { id: 'sol-1', quantity: 5, channelOrderItemId: '2026081900001' },
+            { id: 'line-1', quantity: 5, channelOrderItemId: 'ci-1' },
+          ],
+        }),
+      },
       cancelRequests: { recordSettlementFailure: jest.fn().mockResolvedValue(undefined) },
       printCancel: {
         cancelForOrder: jest.fn().mockResolvedValue(undefined),
@@ -131,7 +153,7 @@ describe('OrderEventsConsumer', () => {
         {} as any,
         mocks.printCancel as any,
         mocks.cancelSettler as any,
-        new OrderCancellationReader(),
+        mocks.cancellationReader as unknown as OrderCancellationReader,
         {} as never,
       ),
       mocks.customerReturns as any,
@@ -550,7 +572,7 @@ describe('OrderEventsConsumer', () => {
     expect(mocks.cancelSettler.settleCancelled).toHaveBeenCalledWith('so-1', mocks.fakeTx);
   });
 
-  it('줄 단위 OrderCancelled 는 요청을 건드리지 않는다', async () => {
+  it('줄 단위 OrderCancelled 는 전체 정산을 닫지 않고 줄 정산(마켓 요청 행)만 간다', async () => {
     const mocks = makeMocks();
     const consumer = makeConsumer(mocks);
     mocks.salesOrders.findByChannelOrderId.mockResolvedValue({ id: 'so-1' } as any);
@@ -569,6 +591,11 @@ describe('OrderEventsConsumer', () => {
       { messageId: 'msg-l', correlationId: 'c' } as any,
     );
     expect(mocks.cancelSettler.settleCancelled).not.toHaveBeenCalled();
+    expect(mocks.cancelSettler.settleLinesCancelled).toHaveBeenCalledWith(
+      'so-1',
+      [{ channelOrderItemId: 'ci-1', quantity: 1 }],
+      mocks.fakeTx,
+    );
   });
 
   it('cancelledLines 가 없으면 lines 를 넘기지 않는다 (전체 취소)', async () => {

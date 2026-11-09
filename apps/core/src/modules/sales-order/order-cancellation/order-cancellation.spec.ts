@@ -37,6 +37,9 @@ function makeKernel(
     coreReplay?: boolean;
     /** 커밋 뒤 즉시 환불 실행 결과. Error 면 던진다 */
     executeResult?: string | null | Error;
+    /** 채널 취소 수신 — 판매주문 줄(기본 line-1 수량 2)과 줄별 이미 취소된 수량(기본 0) */
+    orderLines?: Array<{ id: string; quantity: number; channelOrderItemId: string | null }>;
+    cancelledQuantities?: Record<string, number>;
   } = {},
 ) {
   const callOrder: string[] = [];
@@ -51,6 +54,9 @@ function makeKernel(
       return options.cancelError ? Promise.reject(options.cancelError) : Promise.resolve(undefined);
     }),
     validateCancellationReplay: jest.fn().mockResolvedValue(options.coreReplay ?? false),
+    cancelledQuantities: jest.fn((_id: string, lineIds: string[]) =>
+      Promise.resolve(new Map(lineIds.map((id) => [id, options.cancelledQuantities?.[id] ?? 0]))),
+    ),
   };
   // 결제 쪽 매니저 — 방침별 기록은 매니저 spec 이 소유한다. 여기서는 «무엇을 넘기고 언제 실행하나»만 본다
   const refunds = {
@@ -98,12 +104,18 @@ function makeKernel(
       callOrder.push('settleCancelled');
       return Promise.resolve(undefined);
     }),
+    settleLinesCancelled: jest.fn(() => {
+      callOrder.push('settleLinesCancelled');
+      return Promise.resolve(0);
+    }),
   };
+  const orderLines = options.orderLines ?? [{ id: 'line-1', quantity: 2, channelOrderItemId: 'ci-1' }];
   const reader = {
     salesOrder: jest.fn().mockResolvedValue(options.noSalesOrder ? undefined : so),
     digitalLineIds: jest.fn().mockResolvedValue(new Set<string>()),
     hasActivePrintOrder: jest.fn().mockResolvedValue(options.activePrint ?? false),
     cancellationNeedsFollowUp: jest.fn().mockResolvedValue(options.followUp ?? null),
+    lockOrderLines: jest.fn().mockResolvedValue({ salesChannel: so.salesChannel, lines: orderLines }),
   };
   const k = new OrderCancellation(
     db as never,
@@ -480,7 +492,7 @@ describe('OrderCancellation 통보 — 채널 취소·무통장 승인·채널 �
   const t = new Date('2026-10-07T00:00:01.000Z');
   const view = VIEW;
 
-  it('새 전체취소 — 한 트랜잭션에서 cancel → holdUnsent → settle, 커밋 뒤 record', async () => {
+  it('새 전체취소 — 한 트랜잭션에서 cancel → holdUnsent → 줄 정산 → 전체 정산, 커밋 뒤 record', async () => {
     const { k, db, tx, salesOrders, holdUnsent, settler, printCancel, callOrder } = makeKernel();
     const receive = jest.fn().mockResolvedValue({
       notice: { salesOrderId: 'so', lines: undefined, metadata: { sourceEventId: 'e' } },
@@ -488,26 +500,85 @@ describe('OrderCancellation 통보 — 채널 취소·무통장 승인·채널 �
     await k.receiveChannelCancellation(receive);
     expect(db.run).toHaveBeenCalledTimes(1);
     expect(receive).toHaveBeenCalledWith(tx);
-    expect(callOrder).toEqual(['cancel', 'holdUnsent', 'settleCancelled', 'record']);
+    expect(callOrder).toEqual(['cancel', 'holdUnsent', 'settleLinesCancelled', 'settleCancelled', 'record']);
     expect(salesOrders.cancel).toHaveBeenCalledWith('so', { metadata: { sourceEventId: 'e' } }, tx);
     expect(holdUnsent).toHaveBeenCalledWith('so', undefined, tx);
+    // 전체취소면 채널은 모든 줄을 전량 취소했다
+    expect(settler.settleLinesCancelled).toHaveBeenCalledWith('so', [{ channelOrderItemId: 'ci-1', quantity: 2 }], tx);
     expect(settler.settleCancelled).toHaveBeenCalledWith('so', tx);
     expect(printCancel).toHaveBeenCalledWith('so', 'record', undefined, { redeliveredSince: undefined });
   });
 
-  it('새 부분취소는 정산을 닫지 않고 그 줄만 record', async () => {
+  it('새 부분취소는 전체 정산을 닫지 않고 줄 정산(채널 누적 수량)만, 그 줄만 record', async () => {
     const { k, tx, salesOrders, settler, printCancel, callOrder } = makeKernel();
     await k.receiveChannelCancellation(async () => ({
       notice: { salesOrderId: 'so', lines, reasonCode: 'CUSTOMER_REQUEST', metadata: {} },
     }));
-    expect(callOrder).toEqual(['cancel', 'holdUnsent', 'record']);
+    expect(callOrder).toEqual(['cancel', 'holdUnsent', 'settleLinesCancelled', 'record']);
     expect(settler.settleCancelled).not.toHaveBeenCalled();
+    expect(settler.settleLinesCancelled).toHaveBeenCalledWith('so', [{ channelOrderItemId: 'ci-1', quantity: 1 }], tx);
     expect(salesOrders.cancel).toHaveBeenCalledWith(
       'so',
       expect.objectContaining({ lines, reasonCode: 'CUSTOMER_REQUEST' }),
       tx,
     );
     expect(printCancel).toHaveBeenCalledWith('so', 'record', lines, { redeliveredSince: undefined });
+  });
+
+  it('부분취소 수량은 누적 상태 — 이미 취소된 만큼 빼고 그 차이만 취소한다', async () => {
+    const { k, tx, salesOrders } = makeKernel({
+      orderLines: [{ id: 'line-1', quantity: 3, channelOrderItemId: 'ci-1' }],
+      cancelledQuantities: { 'line-1': 1 },
+    });
+    await k.receiveChannelCancellation(async () => ({
+      notice: { salesOrderId: 'so', lines: [{ salesOrderLineId: 'line-1', quantity: 3 }], metadata: {} },
+    }));
+    expect(salesOrders.cancel).toHaveBeenCalledWith(
+      'so',
+      expect.objectContaining({ lines: [{ salesOrderLineId: 'line-1', quantity: 2 }] }),
+      tx,
+    );
+  });
+
+  it('이미 그만큼 취소된 줄이면 취소하지 않고 줄 정산·record 만 한다', async () => {
+    const { k, salesOrders, settler, callOrder } = makeKernel({ cancelledQuantities: { 'line-1': 1 } });
+    await k.receiveChannelCancellation(async () => ({ notice: { salesOrderId: 'so', lines, metadata: {} } }));
+    expect(salesOrders.cancel).not.toHaveBeenCalled();
+    expect(settler.settleLinesCancelled).toHaveBeenCalled();
+    expect(callOrder).toEqual(['holdUnsent', 'settleLinesCancelled', 'record']);
+  });
+
+  it('전체취소인데 모든 줄이 이미 전량 취소됐으면 취소하지 않고 정산만 닫는다', async () => {
+    const { k, salesOrders, callOrder } = makeKernel({ cancelledQuantities: { 'line-1': 2 } });
+    await k.receiveChannelCancellation(async () => ({
+      notice: { salesOrderId: 'so', lines: undefined, metadata: {} },
+    }));
+    expect(salesOrders.cancel).not.toHaveBeenCalled();
+    expect(callOrder).toEqual(['holdUnsent', 'settleLinesCancelled', 'settleCancelled', 'record']);
+  });
+
+  it('판매자센터 채널(마켓)의 도메인 거절은 savepoint 를 되돌리고 던지지 않는다 — 정산은 그대로', async () => {
+    const { k, tx, settler } = makeKernel({ salesChannel: 'naver', cancelError: new BadRequestError('나간 줄') });
+    await expect(
+      k.receiveChannelCancellation(async () => ({ notice: { salesOrderId: 'so', lines, metadata: {} } })),
+    ).resolves.toBeUndefined();
+    expect(tx.transaction).toHaveBeenCalledTimes(1);
+    expect(settler.settleLinesCancelled).toHaveBeenCalled();
+  });
+
+  it('판매자센터 채널이어도 도메인 거절이 아닌 예외는 던진다', async () => {
+    const { k } = makeKernel({ salesChannel: 'naver', cancelError: new Error('deadlock') });
+    await expect(
+      k.receiveChannelCancellation(async () => ({ notice: { salesOrderId: 'so', lines, metadata: {} } })),
+    ).rejects.toThrow('deadlock');
+  });
+
+  it('명령으로 취소하는 채널(Medusa)의 거절은 지금처럼 던진다', async () => {
+    const { k, tx } = makeKernel({ cancelError: new BadRequestError('거절') });
+    await expect(
+      k.receiveChannelCancellation(async () => ({ notice: { salesOrderId: 'so', lines, metadata: {} } })),
+    ).rejects.toThrow('거절');
+    expect(tx.transaction).not.toHaveBeenCalled();
   });
 
   it('재수신은 취소하지 않고 record 에 처음 기록 시각을 넘긴다', async () => {

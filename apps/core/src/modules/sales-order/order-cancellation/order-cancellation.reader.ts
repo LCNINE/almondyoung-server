@@ -11,6 +11,32 @@ export class OrderCancellationReader {
     return rows[0];
   }
 
+  /**
+   * 채널 취소 수신이 판정에 쓰는 판매주문과 그 줄. 판매주문을 잠그고 읽는다 — 이미 취소된 수량을 읽고 그 차이를 취소하는
+   * 사이에 다른 취소가 끼지 않게. 취소 확정(`SalesOrdersService.cancel`)의 첫 잠금과 같은 행이라 잠금 순서가 바뀌지 않는다
+   */
+  async lockOrderLines(
+    salesOrderId: string,
+    tx: DbTx,
+  ): Promise<
+    | { salesChannel: string; lines: Array<{ id: string; quantity: number; channelOrderItemId: string | null }> }
+    | undefined
+  > {
+    const [so] = await tx
+      .select({ salesChannel: wmsTables.salesOrders.salesChannel })
+      .from(wmsTables.salesOrders)
+      .where(eq(wmsTables.salesOrders.id, salesOrderId))
+      .for('update');
+    if (!so) return undefined;
+    const t = wmsTables.salesOrderLines;
+    const lines = await tx
+      .select({ id: t.id, quantity: t.quantity, channelOrderItemId: t.channelOrderItemId })
+      .from(t)
+      .where(eq(t.salesOrderId, salesOrderId))
+      .orderBy(t.id);
+    return { salesChannel: so.salesChannel, lines };
+  }
+
   /** 디지털 이용권 줄 id — 부분 취소는 디지털을 회수하지 않으므로 호출자가 제외한다 */
   async digitalLineIds(salesOrderId: string, tx: DbTx): Promise<Set<string>> {
     const t = wmsTables.salesOrderLines;
