@@ -42,6 +42,8 @@ import { ClaimStatusSchema, ProductOrderStatusSchema } from '../../zods/naver/na
  * - (b) 일부 수량 취소 뒤 `productOrder.quantity` 가 **원래** 수량인가 **남은** 수량인가. 남은 수량이면
  *   OrderCreated 의 줄 수량과 기존 `CANCELED` 관측(줄 전량 = 누적으로 보낸다)의 뜻이 함께 틀어진다.
  * - (c) 클레임 칸 이름·위치 자체(`productOrder.claimId`·`productOrder.claimType`·최상위 `currentClaim`).
+ * - (d) productOrder 가 CANCELING/CANCEL_DONE 일 때 approve 를 다시 부르면 네이버가 무엇을 돌려주는가 — 리컨실러 재발행이 이 경로를 탄다
+ *   (`customer-cancel-approver.ts` 의 `NAVER_ALREADY_APPROVED_CODE` 가 «이미 승인됨»을 성공으로 읽는 추정값이다).
  */
 const OrderSchema = z.looseObject({
   orderId: z.string().min(1),

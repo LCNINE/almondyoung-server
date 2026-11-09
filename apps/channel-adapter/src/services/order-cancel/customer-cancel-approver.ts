@@ -117,7 +117,11 @@ function classifyThrown(error: unknown): ApprovalResult {
 function statusOf(error: unknown): number | undefined {
   if (error instanceof HttpException) return error.getStatus();
   if (typeof error !== 'object' || error === null) return undefined;
-  const { response, status } = error as { response?: { status?: unknown }; status?: unknown };
-  if (typeof response?.status === 'number') return response.status;
-  return typeof status === 'number' ? status : undefined;
+  if ('response' in error) {
+    const { response } = error;
+    if (typeof response === 'object' && response !== null && 'status' in response && typeof response.status === 'number') {
+      return response.status;
+    }
+  }
+  return 'status' in error && typeof error.status === 'number' ? error.status : undefined;
 }

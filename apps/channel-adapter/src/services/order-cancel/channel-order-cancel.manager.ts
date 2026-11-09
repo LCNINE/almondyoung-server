@@ -4,6 +4,7 @@ import type { CancelChannelOrderPayload } from '@packages/event-contracts/stream
 import { MedusaClient } from '../../adapters/medusa/medusa.client';
 import { getChannelFulfillmentCapabilities } from '../channel-capabilities';
 import { OrderPollerOrchestrator } from '../order-collection/order-poller.orchestrator';
+import { isSyncableChannel } from '../order-collection/syncable-channels';
 import { CustomerCancelApprover } from './customer-cancel-approver';
 import { ChannelOrderCancelRepository } from './channel-order-cancel.repository';
 
@@ -78,8 +79,20 @@ export class ChannelOrderCancelManager {
         message: result.message,
       });
     }
-    const { outcome } = await this.orderPoller.syncOrder(salesChannel, externalOrderId, { force: true });
-    this.logger.log(`[CANCEL] ${requestId} ${salesChannel}:${externalOrderId} 마켓 취소요청 승인 완료 → 재수집 ${outcome}`);
+    // 승인은 끝났다 — 여기서 던지면 명령이 재배달돼 승인을 또 보낸다. 재수집은 덤이라 실패해도 로그만 남기고,
+    // 즉시 끌어오기가 없는 채널(쿠팡)은 건너뛴다. 어느 쪽이든 다음 폴링이 취소를 수집한다
+    const approved = `[CANCEL] ${requestId} ${salesChannel}:${externalOrderId} 마켓 취소요청 승인 완료`;
+    if (!isSyncableChannel(salesChannel)) {
+      this.logger.log(`${approved} → 즉시 재수집 없음(다음 폴링이 수집)`);
+      return;
+    }
+    try {
+      const { outcome } = await this.orderPoller.syncOrder(salesChannel, externalOrderId, { force: true });
+      this.logger.log(`${approved} → 재수집 ${outcome}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(`${approved} → 재수집 실패(다음 폴링이 수집): ${message}`);
+    }
   }
 
   /** 우리가 수집하지 않은 주문 id 로 채널을 건드리지 않는다 */

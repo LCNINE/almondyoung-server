@@ -210,7 +210,7 @@ export class CoupangReturnClient extends CoupangBaseClient {
       this.logger.error('❌ 쿠팡 출고중지완료 처리 실패', error);
       // HTTP 상태를 잃지 않게 싣는다 — 호출자가 4xx(다시 해도 같다)와 5xx·네트워크(재시도)를 가른다
       throw Object.assign(new Error(`쿠팡 출고중지완료 처리 실패: ${error.message}`), {
-        status: error.response?.status as number | undefined,
+        status: responseStatusOf(error),
         cause: error,
       });
     }
@@ -537,4 +537,12 @@ export class CoupangReturnClient extends CoupangBaseClient {
       throw new Error(`쿠팡 회수송장 등록 실패: ${error.message}`);
     }
   }
+}
+
+/** axios 오류의 `response.status` — 응답이 없거나(네트워크) 숫자가 아니면 undefined */
+function responseStatusOf(error: unknown): number | undefined {
+  if (typeof error !== 'object' || error === null || !('response' in error)) return undefined;
+  const { response } = error;
+  if (typeof response !== 'object' || response === null || !('status' in response)) return undefined;
+  return typeof response.status === 'number' ? response.status : undefined;
 }

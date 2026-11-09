@@ -463,6 +463,17 @@ Medusa 반품의 확정·취소 관측
 
 ---
 
+#### 3.4a `ChannelCancelRequested` (마켓 고객 취소요청)
+
+마켓(네이버·쿠팡) 고객이 낸 취소요청의 관측. 줄의 `quantity` 는 이번 요청 수량이고, `channelRequestKey` 가 요청 하나의 중복 판정 식별자, `channelRequestRef` 가 승인 API 대상(네이버 productOrderId, 쿠팡 receiptId)이다. `needsApproval=false` 는 마켓이 이미 승인해 처리 중이라는 뜻이다
+
+**발행자**: **Channel Adapter** (네이버 클레임 관측. 쿠팡은 #1245 의 source 가 낸다)
+
+**구독자**:
+- **Core**: 요청 순간 멈출 수 있는 몫을 취소하고 요청 행을 남긴 뒤, 멈췄고 승인이 필요하면 `CancelChannelOrder`(`answers` 칸)로 승인을 시킨다. 요청 행은 뒤에 수집된 `OrderCancelled`/줄 취소가 덮으면 닫힌다
+
+---
+
 #### 3.5 `OrderRefundCreated`
 
 환불 생성

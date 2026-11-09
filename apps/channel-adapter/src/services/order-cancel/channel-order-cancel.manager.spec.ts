@@ -67,6 +67,26 @@ describe('ChannelOrderCancelManager (#1016 35번 PR-B · 36번 재설계 PR 3)',
       expect(poller.syncOrder).toHaveBeenCalledWith('naver', 'order_1', { force: true });
     });
 
+    it('coupang approval done → no immediate resync (not syncable) and no throw — the next poll collects', async () => {
+      const { manager, repository, poller, approver } = setup();
+      approver.approve.mockResolvedValue({ kind: 'approved' });
+      await expect(
+        manager.execute({ ...asked, salesChannel: 'coupang', answers: { channelRequestRef: '123', needsApproval: true } }, 'd1'),
+      ).resolves.toBeUndefined();
+      expect(poller.syncOrder).not.toHaveBeenCalled();
+      expect(repository.recordSettlementFailure).not.toHaveBeenCalled();
+    });
+
+    it('naver approval done but resync throws → warn, no throw (a redelivery would send the approval again)', async () => {
+      const { manager, repository, poller, approver } = setup();
+      approver.approve.mockResolvedValue({ kind: 'approved' });
+      poller.syncOrder.mockRejectedValue(new Error('naver fetch failed'));
+      await expect(manager.execute(asked, 'd1')).resolves.toBeUndefined();
+      expect(approver.approve).toHaveBeenCalledTimes(1);
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining('재수집 실패'));
+      expect(repository.recordSettlementFailure).not.toHaveBeenCalled();
+    });
+
     it('failed approval is recorded as a settlement failure', async () => {
       const { manager, repository, poller, approver } = setup();
       approver.approve.mockResolvedValue({ kind: 'failed', retryable: false, failureCode: 'approval_observe_mode', message: 'm' });
