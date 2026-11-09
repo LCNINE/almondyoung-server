@@ -336,6 +336,8 @@ export const medusaReservationReconcileRuns = pgTable(
     finishedAt: timestamp('finished_at', { withTimezone: true }),
     status: text('status').notNull(),
     candidates: integer('candidates').notNull().default(0),
+    // 한도 판정에 센 «고칠 줄»(dry run 이 set 이라 한 줄) — 멈춘 회차가 화면에 보이는 숫자다. 후보(candidates)와 다르다.
+    plannedFixes: integer('planned_fixes').notNull().default(0),
     fixes: integer('fixes').notNull().default(0),
     fixFailures: integer('fix_failures').notNull().default(0),
     deferred: integer('deferred').notNull().default(0),

@@ -1,5 +1,5 @@
 {
-  "id": "7d8a4125-3e0b-4159-bcac-0fcb0732ac7a",
+  "id": "a32f25ea-f246-4787-9280-af2ed3984abc",
   "prevId": "f8cba92b-89f8-4799-b24b-71a42d8bc848",
   "version": "7",
   "dialect": "postgresql",
@@ -1077,6 +1077,13 @@
         },
         "candidates": {
           "name": "candidates",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "planned_fixes": {
+          "name": "planned_fixes",
           "type": "integer",
           "primaryKey": false,
           "notNull": true,

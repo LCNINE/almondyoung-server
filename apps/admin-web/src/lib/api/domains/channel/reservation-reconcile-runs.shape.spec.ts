@@ -8,7 +8,8 @@ const run = {
   startedAt: '2026-11-09T01:00:00.000Z',
   finishedAt: '2026-11-09T01:00:05.000Z',
   status: 'halted',
-  candidates: 12,
+  candidates: 40,
+  plannedFixes: 12,
   fixes: 0,
   fixFailures: 0,
   deferred: 0,
@@ -25,6 +26,7 @@ describe('toReconcileRunsOverview', () => {
     expect(toReconcileRunsOverview(inner)?.open).toHaveLength(1);
     const wrapped = toReconcileRunsOverview({ data: inner });
     expect(wrapped?.latest?.id).toBe('r1');
+    expect(wrapped?.latest).toMatchObject({ candidates: 40, plannedFixes: 12 });
     expect(wrapped?.open[0].examples).toEqual([
       { lineItemId: 'li_1', current: 2, target: 1 },
     ]);

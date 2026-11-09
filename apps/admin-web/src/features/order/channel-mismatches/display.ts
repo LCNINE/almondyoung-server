@@ -169,7 +169,7 @@ export function runTimeText(iso: string): string {
 }
 
 export function haltedRunText(run: ReconcileRunDto): string {
-  return `Medusa 예약 대사가 멈췄어요 · 고칠 줄 ${run.candidates} · ${runTimeText(run.startedAt)}`;
+  return `Medusa 예약 대사가 멈췄어요 · 고칠 줄 ${run.plannedFixes} · ${runTimeText(run.startedAt)}`;
 }
 
 /** 열린 회차가 없을 때 보이는 한 줄. 회차가 한 번도 없으면 null (아무것도 그리지 않는다) */

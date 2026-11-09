@@ -8,6 +8,8 @@ export type ReconcileExample = { lineItemId: string; current: number; target: nu
 export type ReconcileRunResult = {
   status: Exclude<ReconcileRunStatus, 'running'>;
   candidates: number;
+  /** 한도 판정에 센 고칠 줄(dry run 이 set 이라 한 줄). 멈춘 회차가 화면에 보이는 숫자다. */
+  plannedFixes: number;
   fixes: number;
   fixFailures: number;
   deferred: number;

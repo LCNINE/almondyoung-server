@@ -19,6 +19,8 @@ export interface ReconcileRunDto {
   finishedAt: string | null;
   status: ReconcileRunStatus;
   candidates: number;
+  /** 한도 판정에 센 고칠 줄 — 멈춘 회차가 보이는 숫자. 후보(candidates)와 다르다 */
+  plannedFixes: number;
   fixes: number;
   fixFailures: number;
   deferred: number;
@@ -86,6 +88,7 @@ function toRun(raw: unknown): ReconcileRunDto | null {
     finishedAt: nullableString(v.finishedAt),
     status: v.status as ReconcileRunStatus,
     candidates: num(v.candidates),
+    plannedFixes: num(v.plannedFixes),
     fixes: num(v.fixes),
     fixFailures: num(v.fixFailures),
     deferred: num(v.deferred),

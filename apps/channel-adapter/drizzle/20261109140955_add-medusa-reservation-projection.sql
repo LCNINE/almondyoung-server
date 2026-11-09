@@ -10,6 +10,7 @@ CREATE TABLE "medusa_reservation_reconcile_runs" (
 	"finished_at" timestamp with time zone,
 	"status" text NOT NULL,
 	"candidates" integer DEFAULT 0 NOT NULL,
+	"planned_fixes" integer DEFAULT 0 NOT NULL,
 	"fixes" integer DEFAULT 0 NOT NULL,
 	"fix_failures" integer DEFAULT 0 NOT NULL,
 	"deferred" integer DEFAULT 0 NOT NULL,

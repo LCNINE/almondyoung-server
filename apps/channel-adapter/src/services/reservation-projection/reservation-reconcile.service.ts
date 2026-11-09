@@ -162,7 +162,12 @@ export class ReservationReconcileService {
       toSend.push(w);
       if (plan.outcome === 'set') counted.push(w);
     }
-    const base = { candidates: candidateIds.length, unknown: unknownIds.size, oldestUnknownAt };
+    const base = {
+      candidates: candidateIds.length,
+      plannedFixes: counted.length,
+      unknown: unknownIds.size,
+      oldestUnknownAt,
+    };
     if (limit !== null && counted.length > limit) {
       const examples: ReconcileExample[] = counted.slice(0, EXAMPLE_LIMIT).map((w) => ({
         lineItemId: w.lineItemId,
@@ -216,6 +221,7 @@ function emptyResult(status: ReconcileRunResult['status']): ReconcileRunResult {
   return {
     status,
     candidates: 0,
+    plannedFixes: 0,
     fixes: 0,
     fixFailures: 0,
     deferred: 0,

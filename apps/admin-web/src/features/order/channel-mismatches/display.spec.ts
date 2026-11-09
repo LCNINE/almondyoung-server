@@ -227,7 +227,8 @@ describe('예약 대사 회차 표시', () => {
     startedAt: '2026-11-09T01:05:00.000Z',
     finishedAt: null,
     status: 'halted',
-    candidates: 12,
+    candidates: 40,
+    plannedFixes: 12,
     fixes: 0,
     fixFailures: 0,
     deferred: 0,
@@ -238,7 +239,7 @@ describe('예약 대사 회차 표시', () => {
     closedAt: null,
   };
 
-  it('멈춘 회차 문구 (KST)', () => {
+  it('멈춘 회차 문구 (KST) — 고칠 줄은 후보 수가 아니라 plannedFixes', () => {
     expect(haltedRunText(run)).toBe(
       'Medusa 예약 대사가 멈췄어요 · 고칠 줄 12 · 11-09 10:05'
     );
@@ -246,7 +247,7 @@ describe('예약 대사 회차 표시', () => {
 
   it('정상 latest 는 한 줄', () => {
     expect(
-      latestRunText({ ...run, status: 'applied', fixes: 4, candidates: 4 })
+      latestRunText({ ...run, status: 'applied', fixes: 4, plannedFixes: 4 })
     ).toBe('11-09 10:05 고침 4줄');
     expect(latestRunText(null)).toBeNull();
   });

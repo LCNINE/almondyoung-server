@@ -240,6 +240,7 @@ describe('ReservationReconcileService', () => {
     mockMedusa(t.medusa);
     const rec = await t.service.run({ limit: 5 });
     expect(rec.status).toBe('halted');
+    expect(rec.plannedFixes).toBe(15); // 화면의 «고칠 줄» — 후보 수가 아니라 한도에 센 줄
     expect(writeCalls(t.medusa)).toHaveLength(0);
     expect(rec.examples).toHaveLength(10);
     expect(rec.examples[0]).toEqual({ lineItemId: 'i0', current: 1, target: 2 });
@@ -265,6 +266,7 @@ describe('ReservationReconcileService', () => {
     });
     const rec = await t.service.run({ limit: 1 });
     expect(rec.status).toBe('applied');
+    expect(rec).toMatchObject({ candidates: 5, plannedFixes: 1 }); // 고칠 줄은 set 하나뿐 — 후보 5 와 다르다
     expect(
       writeCalls(t.medusa)[0][0]
         .map((i: Item) => i.lineItemId)
