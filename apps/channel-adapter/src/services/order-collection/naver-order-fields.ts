@@ -30,9 +30,18 @@ import { ClaimStatusSchema, ProductOrderStatusSchema } from '../../zods/naver/na
  * - 이름·위치의 근거는 공식 Q&A 뿐이다(https://github.com/commerce-api-naver/commerce-api/discussions/1773 —
  *   `quantityClaimCompatibility=true` 로 조회하면 상품주문 하나 안의 일부 수량 클레임이 `currentClaim` 에 온다).
  *   실 응답으로 아직 확인하지 않았다. 틀렸으면 **여기만** 고친다.
- * - 없어도 throw 하지 않는다 — 클레임이 없는 상품주문이 대부분이고, 수량이 없을 때 무엇을 할지는
- *   source(`naver-order.source.ts` 의 `buildLifecycle`)가 정한다. 있는데 모양이 틀리면 throw 한다 —
- *   틀린 수량으로 조용히 취소하지 않는다.
+ * - 없어도 throw 하지 않는다 — **`null` 도 없는 것으로 본다**(`.nullish()`). 이 플래그를 모든 조회에 싣으므로
+ *   `currentClaim: null` 이 흔할 수 있고, 그걸로 상품주문 파싱이 터지면 네이버 주문 전부가 처리 실패로 돈다.
+ *   수량이 없을 때 무엇을 할지는 source(`naver-order.source.ts` 의 `buildLifecycle`)가 정한다.
+ *   있는데 모양이 틀리면(예: 수량이 문자열) throw 한다 — 틀린 수량으로 조용히 취소하지 않는다.
+ *
+ * **🔴 shadow 점검 전 확정 필수 (네이버 켜기 전 막음)** — 아래가 답해지기 전에 네이버 수집을 켜지 않는다:
+ * - (a) `currentClaim.cancel.requestQuantity` 가 그 상품주문의 **누적** 취소 수량인가, **이번 클레임** 수량인가.
+ *   클레임별이면 누적은 어디 있는가(예: 완료 클레임 목록). source 는 지금 «누적»으로 가정하고 core 에 줄의
+ *   누적 채널 취소 수량(상태)으로 보낸다 — 클레임별이면 두 번째 일부 취소부터 덜 취소된다.
+ * - (b) 일부 수량 취소 뒤 `productOrder.quantity` 가 **원래** 수량인가 **남은** 수량인가. 남은 수량이면
+ *   OrderCreated 의 줄 수량과 기존 `CANCELED` 관측(줄 전량 = 누적으로 보낸다)의 뜻이 함께 틀어진다.
+ * - (c) 클레임 칸 이름·위치 자체(`productOrder.claimId`·`productOrder.claimType`·최상위 `currentClaim`).
  */
 const OrderSchema = z.looseObject({
   orderId: z.string().min(1),
@@ -61,24 +70,24 @@ const ProductOrderSchema = z.looseObject({
   deliveryFeeAmount: z.number().nonnegative().optional(),
   shippingAddress: ShippingAddressSchema.optional(),
   /** 🔴 shadow 점검 전 추정 (discussions/1773). 숫자로 와도 식별자로만 쓰므로 문자열로 받는다(`productId` 와 같다). */
-  claimId: z.union([z.string().min(1), z.number()]).optional(),
+  claimId: z.union([z.string().min(1), z.number()]).nullish(),
   /** 🔴 shadow 점검 전 추정 (discussions/1773). 예: `CANCEL`. */
-  claimType: z.string().min(1).optional(),
+  claimType: z.string().min(1).nullish(),
 });
 
 /** 🔴 shadow 점검 전 추정 (discussions/1773). `quantityClaimCompatibility=true` 일 때만 온다. */
 const CurrentClaimSchema = z.looseObject({
   cancel: z
     .looseObject({
-      requestQuantity: z.number().int().nonnegative().optional(),
+      requestQuantity: z.number().int().nonnegative().nullish(),
     })
-    .optional(),
+    .nullish(),
 });
 
 const ProductOrderInfoSchema = z.looseObject({
   order: OrderSchema,
   productOrder: ProductOrderSchema,
-  currentClaim: CurrentClaimSchema.optional(),
+  currentClaim: CurrentClaimSchema.nullish(),
 });
 
 export interface NaverProductOrderInfo {
@@ -115,7 +124,7 @@ export function parseNaverProductOrderInfo(raw: unknown): NaverProductOrderInfo 
     productOrderStatus: productOrder.productOrderStatus,
     ...(productOrder.claimStatus ? { claimStatus: productOrder.claimStatus } : {}),
     ...(productOrder.claimId != null ? { claimId: String(productOrder.claimId) } : {}),
-    ...(productOrder.claimType ? { claimType: productOrder.claimType } : {}),
+    ...(productOrder.claimType != null ? { claimType: productOrder.claimType } : {}),
     ...(cancelClaimQuantity != null ? { cancelClaimQuantity } : {}),
     ...(productOrder.productId != null ? { channelProductId: String(productOrder.productId) } : {}),
     productName: productOrder.productName ?? productOrder.productOrderId,

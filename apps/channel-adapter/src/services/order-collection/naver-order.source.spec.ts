@@ -585,14 +585,20 @@ describe('NaverOrderSource', () => {
       });
     });
 
-    it('requestQuantity 가 없으면 줄 전량을 요청 수량으로 싣는다', async () => {
-      const snapshot = await fetchOne(
-        detail('po-1', 'ord-1', { claimStatus: 'CANCEL_REQUEST', quantity: 3, totalPaymentAmount: 30000 }),
-      );
+    it('requestQuantity 가 없으면 warn 하고 줄 전량을 요청 수량으로 싣는다', async () => {
+      const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      try {
+        const snapshot = await fetchOne(
+          detail('po-1', 'ord-1', { claimStatus: 'CANCEL_REQUEST', quantity: 3, totalPaymentAmount: 30000 }),
+        );
 
-      expect(snapshot.lifecycle[0]).toMatchObject({
-        payload: { items: [{ channelOrderItemId: 'po-1', quantity: 3 }] },
-      });
+        expect(snapshot.lifecycle[0]).toMatchObject({
+          payload: { items: [{ channelOrderItemId: 'po-1', quantity: 3 }] },
+        });
+        expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('줄 전량 3'));
+      } finally {
+        warnSpy.mockRestore();
+      }
     });
 
     it('취소요청 주문은 처음 수집 때 판매주문 후보가 아니다 — 기존 동작 그대로', async () => {
@@ -626,8 +632,8 @@ describe('NaverOrderSource', () => {
       expect(snapshot.lifecycle).toHaveLength(1);
       expect(snapshot.lifecycle[0]).toMatchObject({
         eventType: 'OrderCancelled',
-        // 수량이 키에 들어간다 — 같은 수량의 재관측은 한 번, 수량이 바뀌면 새 관측이다.
-        eventKey: 'cancelled:po-2:2',
+        // 클레임 식별과 수량이 키에 들어간다 — 같은 클레임의 재관측은 한 번, 다른 클레임은 새 관측이다.
+        eventKey: 'cancelled:po-2:cl-1:2',
         payload: {
           reason: 'CUSTOMER_REQUEST',
           cancelledBy: 'naver',
@@ -645,9 +651,24 @@ describe('NaverOrderSource', () => {
 
       expect(snapshot.lifecycle[0]).toMatchObject({
         eventType: 'OrderCancelled',
-        eventKey: 'cancelled:po-1:1',
+        eventKey: 'cancelled:po-1:na:1',
         payload: { cancelledLines: [{ channelOrderItemId: 'po-1', quantity: 1 }] },
       });
+    });
+
+    // 수량이 클레임별일 수도 있다(shadow 전 미확정). 그때 같은 수량의 두 번째 클레임이 키 충돌로 사라지지 않게 한다.
+    it('같은 수량의 다른 클레임은 서로 다른 eventKey 다 — 두 번째 일부 취소가 중복으로 걸러지지 않는다', async () => {
+      const first = await fetchOne({
+        ...detail('po-1', 'ord-1', { claimStatus: 'CANCEL_DONE', claimId: 'cl-1', quantity: 3 }),
+        currentClaim: { cancel: { requestQuantity: 1 } },
+      });
+      const second = await fetchOne({
+        ...detail('po-1', 'ord-1', { claimStatus: 'CANCEL_DONE', claimId: 'cl-2', quantity: 3 }),
+        currentClaim: { cancel: { requestQuantity: 1 } },
+      });
+
+      expect(first.lifecycle[0].eventKey).toBe('cancelled:po-1:cl-1:1');
+      expect(second.lifecycle[0].eventKey).toBe('cancelled:po-1:cl-2:1');
     });
 
     it('PAYED with CANCEL_DONE 인데 수량을 모르면 warn 하고 내지 않는다 — 줄 전량으로 짐작하지 않는다', async () => {

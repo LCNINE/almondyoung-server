@@ -325,6 +325,13 @@ export class NaverOrderSource implements ReplayableChannelOrderSource, WindowedC
   private buildCancelRequests(live: NaverProductOrderInfo[], requestedAt: string): LifecycleObservation[] {
     return live.flatMap((info): LifecycleObservation[] => {
       if (!info.claimStatus || !CANCEL_IN_FLIGHT_CLAIMS.has(info.claimStatus)) return [];
+      if (info.cancelClaimQuantity == null) {
+        // 클레임 수량을 못 읽었다(칸 이름 추정이 틀렸거나 `currentClaim` 이 비었다) — 줄 전량으로 요청한다.
+        // 전량은 과다 취소일 수 있으니 흔적을 남긴다.
+        this.logger.warn(
+          `[naver] 상품주문 ${info.productOrderId} 의 취소요청(${info.claimStatus}) 수량을 못 읽었다 — 줄 전량 ${info.quantity} 로 요청한다.`,
+        );
+      }
       const quantity = info.cancelClaimQuantity ?? info.quantity;
       if (quantity <= 0) {
         this.logger.warn(
@@ -355,9 +362,13 @@ export class NaverOrderSource implements ReplayableChannelOrderSource, WindowedC
   }
 
   /**
-   * `PAYED` + 취소완료 클레임 = 일부 수량 취소 → 줄 단위 `OrderCancelled`. 싣는 수량은 core 가 **그 줄의 채널 취소
-   * 수량(상태)** 으로 받는다(스펙 §5.4) — 같은 수량의 재관측은 core 에서도 no-op 이고, 키에 수량을 넣어
-   * 수량이 바뀐 관측만 새로 낸다.
+   * `PAYED` + 취소완료 클레임 = 일부 수량 취소 → 줄 단위 `OrderCancelled`. core 는 싣는 수량을 **그 줄의 누적
+   * 채널 취소 수량(상태)** 으로 받는다(스펙 §5.4).
+   *
+   * 🔴 `currentClaim.cancel.requestQuantity` 가 누적이라는 것은 **가정**이다(shadow 점검 전, `naver-order-fields.ts`
+   * 머리의 «확정 필수» (a)). 클레임별 수량이면 두 번째 일부 취소부터 core 가 덜 취소한다 — 누적을 여기서
+   * 지어내 계산하지 않는다. 키에 클레임 식별과 수량을 함께 넣어, 같은 클레임의 재관측은 한 번만 내고
+   * 다른 클레임(수량이 같아도)은 새 관측으로 낸다.
    *
    * 수량을 모르면 내지 않는다. 줄 전량으로 짐작하면 고객이 남긴 수량까지 취소된다.
    */
@@ -378,7 +389,7 @@ export class NaverOrderSource implements ReplayableChannelOrderSource, WindowedC
       return [
         {
           eventType: 'OrderCancelled',
-          eventKey: `cancelled:${info.productOrderId}:${quantity}`,
+          eventKey: `cancelled:${info.productOrderId}:${info.claimId ?? 'na'}:${quantity}`,
           payload: {
             reason: 'CUSTOMER_REQUEST',
             reasonDetail: '네이버 상품주문 일부 수량 취소 수집',
