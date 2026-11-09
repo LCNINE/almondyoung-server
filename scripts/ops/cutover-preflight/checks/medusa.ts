@@ -43,15 +43,24 @@ async function checkProjectionAxis(
     select count(*)::int as n from medusa_reservation_reconcile_runs where status = 'halted' and closed_at is null`;
   const [last] = await adapter<{ finished_at: Date | null; status: string }[]>`
     select finished_at, status from medusa_reservation_reconcile_runs order by started_at desc limit 1`;
+  // 신선도는 끝까지 돈 회차로 본다 — 매일 skipped(core·Medusa 읽기 실패)면 크론은 돌아도 아무것도 맞추지 않았다.
   const lastFinished = await adapter<{ finished_at: Date }[]>`
     select finished_at from medusa_reservation_reconcile_runs
-    where finished_at is not null order by started_at desc limit 1`;
+    where finished_at is not null and status in ('applied', 'halted') order by started_at desc limit 1`;
 
   let mismatches = 0;
   if (cutoverAt) {
+    // reservation_item.quantity 는 재고 단위다. 목표는 판매 단위라 variant 재고 연결의 required_quantity 로 나눈다
+    // (Medusa 조회 라우트 GET /admin/line-item-reservations 와 같은 환산).
     const reserved = await medusa<{ line_item_id: string; quantity: number }[]>`
-      select line_item_id, sum(quantity)::int as quantity from reservation_item
-      where deleted_at is null and line_item_id is not null group by line_item_id`;
+      select r.line_item_id,
+             sum(r.quantity / coalesce(nullif(pvii.required_quantity, 0), 1))::int as quantity
+      from reservation_item r
+      join order_line_item li on li.id = r.line_item_id
+      left join product_variant_inventory_item pvii
+        on pvii.variant_id = li.variant_id and pvii.inventory_item_id = r.inventory_item_id and pvii.deleted_at is null
+      where r.deleted_at is null and r.line_item_id is not null
+      group by r.line_item_id`;
     const rows = reserved.length
       ? await core<{ channel_order_item_id: string; ordered: number; canceled: number }[]>`
           select sol.channel_order_item_id, sol.quantity::int as ordered,
@@ -73,6 +82,10 @@ async function checkProjectionAxis(
     const bad = reservationMismatches(lines, reservationTarget);
     mismatches = bad.length;
     r.info(`재계산 범위: T 이후·출고 시작 전 ${lines.length}줄 (출고가 시작된 줄은 앱 대사가 본다)`);
+    r.info('예약 수량은 required_quantity 로 나눠 판매 단위로 맞춰 비교한다');
+    r.info(
+      '이 재계산은 Medusa 예약이 살아 있는 줄만 본다 — «목표 > 0 인데 예약이 없음»(과판매 방향)은 못 잡는다. 그 방향은 앱 대사의 core 후보 쪽이 본다',
+    );
     for (const l of bad.slice(0, 5)) r.info(`  어긋남 예: ${l.lineItemId} 현재 ${l.current} / 주문 ${l.ordered} − 취소 ${l.canceledBeforeShipment}`);
   }
   for (const f of reservationAxisFindings({

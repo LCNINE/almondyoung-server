@@ -106,7 +106,16 @@ describe('Medusa 예약 투영 축 (#1247)', () => {
     expect(bads({ ...base, lastFinishedAt: null })).toHaveLength(1);
     expect(bads({ ...base, lastFinishedAt: null, lastRunning: true })).toHaveLength(0);
   });
-  it('재계산 어긋남 ≠ 0 → ✗', () => expect(bads({ ...base, mismatches: 2 })).toHaveLength(1));
+  it('재계산 어긋남 ≠ 0 → ✗, 고치는 길은 화면에 있는 것만 적는다', () => {
+    const found = bads({ ...base, mismatches: 2 });
+    expect(found).toHaveLength(1);
+    expect(found[0].fix).toContain('확인했으니 고치기');
+    expect(found[0].fix).not.toContain('강제 재실행');
+  });
+  it('오래된 회차의 고치는 길은 화면에 없는 버튼을 가리키지 않는다', () => {
+    const [f] = bads({ ...base, lastFinishedAt: new Date('2026-11-19T21:00:00Z') });
+    expect(f.fix).not.toMatch(/에서 강제 재실행/);
+  });
 
   it('reservationMismatches 는 주입한 reservationTarget 으로 센다', () => {
     const lines = [
