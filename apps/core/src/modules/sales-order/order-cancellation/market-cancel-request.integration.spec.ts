@@ -170,6 +170,7 @@ async function asNaverOrder(tx: DbTx, box: PickableShipmentFixture) {
   return {
     order: { salesChannel: 'naver' as const, externalOrderId: so.channelOrderId },
     salesOrderId: so.id,
+    salesOrderLineId: row.salesOrderLineId,
     channelOrderItemId: line.channelOrderItemId,
   };
 }
@@ -364,6 +365,41 @@ describeIfDb('마켓 고객 취소요청 문 (DB integration, rollback-only, 스
       const commands = await commandsOf(tx, box.order);
       expect(commands).toHaveLength(1);
       expect(commands[0].payload.payload).toMatchObject({ scope: 'partial', requestedBy: 'channel-customer' });
+    });
+  });
+
+  it('started batch, part of the box requested, then the collected cancel of the same cumulative quantity is a no-op and closes the row', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = wireCancelRequest(tx);
+      const { first } = await seedTwoBoxBatch(tx, 1, 10);
+      await w.outbound.picking.start(
+        { batchId: first.batchId, actorId: first.actorId, idempotencyKey: `s-${randomUUID()}` },
+        tx,
+      );
+      const box = await asNaverOrder(tx, first); // 첫 상자는 수량 2
+      const consumer = consumerOf(w);
+      const req = marketRequest(box.order, [{ channelOrderItemId: box.channelOrderItemId, quantity: 1 }]);
+
+      await consumer.handleChannelCancelRequested(requestedFact(req), envelope<'ChannelCancelRequested'>());
+      const waiting = { status: 'recovery_required', recoveryCode: 'CANCEL_REPLAN_PENDING' };
+      expect(await shipmentOf(tx, first.shipmentId)).toMatchObject(waiting);
+      expect(await cancelledOf(tx, box.salesOrderId, box.salesOrderLineId)).toBe(1);
+      const cancellationsBefore = await cancellationsOf(tx, box.salesOrderId);
+      expect(cancellationsBefore).toHaveLength(1);
+      const commandsBefore = await commandsOf(tx, box.order);
+
+      // 승인 뒤 다음 수집: 그 줄의 채널 누적 취소 수량 1 — core 가 이미 취소한 몫과 같다
+      await consumer.handleOrderCancelled(
+        orderCancelled(box.order, [{ channelOrderItemId: box.channelOrderItemId, quantity: 1 }]),
+        envelope<'OrderCancelled'>(),
+      );
+
+      const [closed] = await requestsOf(tx, box.salesOrderId);
+      expect(closed.status).toBe('applied');
+      expect(await cancelledOf(tx, box.salesOrderId, box.salesOrderLineId)).toBe(1);
+      expect(await cancellationsOf(tx, box.salesOrderId)).toHaveLength(cancellationsBefore.length);
+      expect(await shipmentOf(tx, first.shipmentId)).toMatchObject(waiting);
+      expect(await commandsOf(tx, box.order)).toHaveLength(commandsBefore.length);
     });
   });
 

@@ -130,6 +130,11 @@ export interface SettlementView {
   startedAt: string;
   deadlineAt: string;
   lastFailure: SettlementFailure | null;
+  /**
+   * 마켓 고객 취소요청 행(isMarketCustomerRequest). 환불은 마켓이 하고 core 는 승인만 보낸다 — 화면은 거절을
+   * «판매자센터 승인 필요»로 읽고 [계좌 송금으로 환불]을 내지 않는다(core 가 거절한다)
+   */
+  marketRequest: boolean;
 }
 
 /** jsonb 는 쓰는 쪽(이 폴더의 manager·settler)만 채운다 — 모양이 어긋나면 버그라 던진다. */
@@ -175,7 +180,8 @@ export function toSettlementView(
   now: Date,
 ): SettlementView | null {
   if (row.status !== 'settling') return null;
-  const settlement = readCancelRequestMetadata(row.metadata).settlement;
+  const meta = readCancelRequestMetadata(row.metadata);
+  const settlement = meta.settlement;
   if (!settlement) throw new Error(`Settling request ${row.id} has no settlement`);
   return {
     requestId: row.id,
@@ -185,6 +191,7 @@ export function toSettlementView(
     startedAt: settlement.since,
     deadlineAt: settlementDeadline(row.createdAt).toISOString(),
     lastFailure: settlement.lastFailure ?? null,
+    marketRequest: isMarketCustomerRequest(meta),
   };
 }
 
