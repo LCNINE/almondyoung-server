@@ -24,6 +24,11 @@ export interface ChannelCancellationCapability {
   customerSelfCancel: boolean;
   /** 무통장 환불 승인(wallet)이 wallet intent 로 이 채널의 주문을 찾아 취소하는가(= 우리 스토어프론트 주문) */
   cancelledByWalletRefundApproval: boolean;
+  /**
+   * 마켓 고객이 낸 취소요청(`ChannelCancelRequested`)에 우리가 «승인»으로 답할 수 있는가.
+   * channel-adapter 능력 벡터의 `approvesCustomerCancelRequest` 의 core 쪽 사본 — parity spec 이 지킨다.
+   */
+  answersCustomerCancelRequest: boolean;
   /** 판매자센터 안내 문구에 쓰는 이름 */
   sellerCenterLabel: string | null;
 }
@@ -35,6 +40,7 @@ export const CHANNEL_CANCELLATION_CAPABILITIES: Readonly<Record<SalesChannelName
     acceptsAlreadyRefundedOffset: true,
     customerSelfCancel: true,
     cancelledByWalletRefundApproval: true,
+    answersCustomerCancelRequest: false,
     sellerCenterLabel: null,
   },
   naver: {
@@ -43,6 +49,7 @@ export const CHANNEL_CANCELLATION_CAPABILITIES: Readonly<Record<SalesChannelName
     acceptsAlreadyRefundedOffset: false,
     customerSelfCancel: false,
     cancelledByWalletRefundApproval: false,
+    answersCustomerCancelRequest: true,
     sellerCenterLabel: '네이버',
   },
   coupang: {
@@ -51,6 +58,7 @@ export const CHANNEL_CANCELLATION_CAPABILITIES: Readonly<Record<SalesChannelName
     acceptsAlreadyRefundedOffset: false,
     customerSelfCancel: false,
     cancelledByWalletRefundApproval: false,
+    answersCustomerCancelRequest: true,
     sellerCenterLabel: '쿠팡',
   },
   '3pl': {
@@ -59,6 +67,7 @@ export const CHANNEL_CANCELLATION_CAPABILITIES: Readonly<Record<SalesChannelName
     acceptsAlreadyRefundedOffset: false,
     customerSelfCancel: false,
     cancelledByWalletRefundApproval: false,
+    answersCustomerCancelRequest: false,
     sellerCenterLabel: null,
   },
 };
