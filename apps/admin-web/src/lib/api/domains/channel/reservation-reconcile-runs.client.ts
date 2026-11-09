@@ -28,9 +28,14 @@ export const reservationReconcileRunsClient = {
     return required(toReconcileRunsOverview(response.data), '예약 대사 회차');
   },
 
-  /** 한도 없이 다시 돈 새 회차를 돌려준다 — `status` 가 applied 일 때만 원래 회차가 닫힌다 */
+  /**
+   * 202 — 한도 없이 도는 새 회차를 뒤에서 시작하고 그 회차(running)를 돌려준다(회차는 정착 대기만 5분이라
+   * 끝까지 기다리면 프록시 30초에 끊긴다). 새 회차가 applied 로 끝날 때만 원래 회차가 닫힌다. 도는 회차가 있으면 409.
+   */
   apply: async (id: string): Promise<ReconcileRunDto> => {
-    const response = await client.post(`${BASE}/${encodeURIComponent(id)}/apply`);
+    const response = await client.post(
+      `${BASE}/${encodeURIComponent(id)}/apply`
+    );
     return required(toReconcileRun(response.data), '예약 대사 고치기');
   },
 

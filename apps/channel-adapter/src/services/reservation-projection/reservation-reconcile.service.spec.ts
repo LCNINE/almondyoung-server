@@ -47,7 +47,11 @@ function build(opts: { cutover?: Date | null; blocked?: string[]; settle?: strin
     dryAsSet(items),
   );
   const core = { candidates: jest.fn(), states: jest.fn() };
-  const runs = { start: jest.fn().mockResolvedValue('run1'), finish: jest.fn().mockResolvedValue(undefined) };
+  const runs = {
+    start: jest.fn().mockResolvedValue('run1'),
+    startIfIdle: jest.fn().mockResolvedValue('forced1'),
+    finish: jest.fn().mockResolvedValue(undefined),
+  };
   const projection = {
     toWrites: jest.fn(
       async (
@@ -429,6 +433,86 @@ describe('ReservationReconcileService', () => {
     await t.service.run({ limit: 10 });
     expect(t.projection.toWrites).toHaveBeenCalledWith([], expect.any(Date), expect.any(Date));
     expect(t.medusa.setLineItemReservations).not.toHaveBeenCalled();
+  });
+});
+
+describe('startForced — «확인했으니 고치기» 는 시작만 하고 돌려준다', () => {
+  it('T 없음 → not_ready, 회차 행 없음', async () => {
+    const t = build({ cutover: null });
+    await expect(t.service.startForced('admin-1')).resolves.toEqual({ kind: 'not_ready' });
+    expect(t.runs.startIfIdle).not.toHaveBeenCalled();
+  });
+
+  it('도는 회차가 있으면(startIfIdle null) busy, 읽기·쓰기 0', async () => {
+    const t = build();
+    t.runs.startIfIdle.mockResolvedValue(null);
+    await expect(t.service.startForced('admin-1')).resolves.toEqual({ kind: 'busy' });
+    expect(t.medusa.listLineItemReservations).not.toHaveBeenCalled();
+  });
+
+  it('도는 회차 판정은 시작 시각 − 2시간 이후의 running 만 본다', async () => {
+    const t = build();
+    t.medusa.listLineItemReservations.mockResolvedValue({ reservations: [], nextAfterId: null });
+    t.core.candidates.mockResolvedValue([]);
+    await t.service.startForced('admin-1');
+    const [startedAt, forcedBy, staleBefore] = t.runs.startIfIdle.mock.calls[0] as [Date, string, Date];
+    expect(forcedBy).toBe('admin-1');
+    expect(startedAt.getTime() - staleBefore.getTime()).toBe(2 * 3600 * 1000);
+  });
+
+  it('회차가 끝나기 전에 id 를 돌려주고, 끝나면 한도 없이 돈 결과가 done 으로 온다', async () => {
+    const t = build();
+    let release: () => void = () => undefined;
+    const blocked = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    t.medusa.listLineItemReservations.mockImplementation(async () => {
+      await blocked; // 대사가 아직 도는 중
+      return { reservations: Array.from({ length: 300 }, (_, i) => mres(`i${i}`, 1)), nextAfterId: null };
+    });
+    t.core.candidates.mockResolvedValue([]);
+    t.core.states.mockImplementation(async (_c: string, req: string[]) => ({
+      lines: req.map((id) => line(id, 2)),
+      unknown: [],
+    }));
+    t.medusa.setLineItemReservations.mockImplementation(async (items: { lineItemId: string; quantity: number }[]) =>
+      items.map((it) => ({ lineItemId: it.lineItemId, outcome: 'set', quantityBefore: 1, quantityAfter: it.quantity })),
+    );
+    const start = await t.service.startForced('admin-1');
+    expect(start.kind).toBe('started');
+    if (start.kind !== 'started') return;
+    expect(start.id).toBe('forced1');
+    expect(t.runs.finish).not.toHaveBeenCalled(); // HTTP 는 여기서 돌아간다
+    release();
+    const record = await start.done;
+    expect(record).toMatchObject({ id: 'forced1', status: 'applied', fixes: 300 }); // 한도(200) 없이 300줄
+    expect(t.runs.finish).toHaveBeenCalledWith('forced1', expect.objectContaining({ status: 'applied' }));
+  });
+
+  it('대사가 던지면 done 은 skipped(오류 포함) 이고 회차 행에 남는다', async () => {
+    const t = build();
+    t.medusa.listLineItemReservations.mockRejectedValue(new Error('medusa down'));
+    const start = await t.service.startForced('admin-1');
+    if (start.kind !== 'started') throw new Error('started 여야 한다');
+    await expect(start.done).resolves.toMatchObject({ status: 'skipped', error: 'medusa down' });
+    expect(t.runs.finish).toHaveBeenCalledWith(
+      'forced1',
+      expect.objectContaining({ status: 'skipped', error: 'medusa down' }),
+    );
+  });
+
+  it('결과 기록이 던져도 done 은 던지지 않고(null) 실패를 한 번 더 기록해 본다', async () => {
+    const t = build();
+    t.medusa.listLineItemReservations.mockResolvedValue({ reservations: [], nextAfterId: null });
+    t.core.candidates.mockResolvedValue([]);
+    t.runs.finish.mockRejectedValueOnce(new Error('db gone')).mockResolvedValueOnce(undefined);
+    const start = await t.service.startForced('admin-1');
+    if (start.kind !== 'started') throw new Error('started 여야 한다');
+    await expect(start.done).resolves.toBeNull();
+    expect(t.runs.finish).toHaveBeenLastCalledWith(
+      'forced1',
+      expect.objectContaining({ status: 'skipped', error: 'db gone' }),
+    );
   });
 });
 

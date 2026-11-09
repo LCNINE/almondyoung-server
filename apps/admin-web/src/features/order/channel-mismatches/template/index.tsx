@@ -21,6 +21,7 @@ import {
   canAct,
   exampleText,
   haltedRunText,
+  isRunInProgress,
   latestRunText,
   unknownText,
   emptyText,
@@ -88,6 +89,9 @@ export default function ChannelMismatchesTemplate() {
 
   const openRuns = runs.data?.open ?? [];
   const latestLine = latestRunText(runs.data?.latest ?? null);
+  // 고치기는 뒤에서 돈다 — 그동안 버튼을 막고, 멈춘 회차 아래에도 마지막 회차(도는 중·건너뜀 등)를 보인다
+  const runInProgress = isRunInProgress(runs.data);
+  const latestIsOpen = openRuns.some((r) => r.id === runs.data?.latest?.id);
 
   // 결과 토스트는 mutateAsync 의 promise 에 건다 — mutate() 쪽 콜백은 다음 호출·언마운트로 유실된다
   const onRedeliver = (id: string) =>
@@ -148,7 +152,8 @@ export default function ChannelMismatchesTemplate() {
                       size="sm"
                       variant="outline"
                       disabled={
-                        applyRun.isPending && applyRun.variables === run.id
+                        runInProgress ||
+                        (applyRun.isPending && applyRun.variables === run.id)
                       }
                       onClick={() => void onApplyRun(run.id)}
                     >
@@ -172,6 +177,11 @@ export default function ChannelMismatchesTemplate() {
               </div>
               {run.error && (
                 <p className="text-xs text-muted-foreground">{run.error}</p>
+              )}
+              {latestLine && !latestIsOpen && (
+                <p className="text-xs text-muted-foreground">
+                  마지막 회차 · {latestLine}
+                </p>
               )}
               {unknown && (
                 <p className="text-xs text-muted-foreground">{unknown}</p>

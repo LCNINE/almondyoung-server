@@ -17,7 +17,16 @@ const EXAMPLE_LIMIT = 10;
 const CORE_WINDOW_MS = 30 * 24 * 3600 * 1000;
 const DEFAULT_SETTLE_MS = 300000;
 
+/** 프로세스가 죽어 `running` 으로 남은 회차를 «도는 중»으로 보지 않는 나이. 한 회차는 정착 대기 5분 + 읽기·쓰기 몇 분이다. */
+export const RUNNING_STALE_MS = 2 * 3600 * 1000;
+
 export type ReconcileRunRecord = ReconcileRunResult & { id: string | null };
+
+/** 강제 회차 시작 결과. `done` 은 던지지 않는다 — 실패는 회차 행(skipped·error)과 로그에 남는다. */
+export type ForcedRunStart =
+  | { kind: 'started'; id: string; done: Promise<ReconcileRunRecord | null> }
+  | { kind: 'not_ready' }
+  | { kind: 'busy' };
 
 @Injectable()
 export class ReservationReconcileService {
@@ -49,18 +58,52 @@ export class ReservationReconcileService {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
-  /** `limit: null` 은 «확인했으니 고치기» — 한도를 무시하고 처리자를 남긴다. */
+  /** `limit: null` 은 «확인했으니 고치기» — 한도를 무시하고 처리자를 남긴다. 끝날 때까지 기다린다(크론). */
   async run(opts: { limit: number | null; forcedBy?: string }): Promise<ReconcileRunRecord> {
-    const cutoverAt = await this.cutover.get();
-    const capability = CHANNEL_CAPABILITIES[CHANNEL];
-    if (!cutoverAt || capability?.integration !== 'api' || capability.reservation.kind !== 'projection') {
-      return { id: null, ...emptyResult('skipped') };
-    }
+    const cutoverAt = await this.readyCutover();
+    if (!cutoverAt) return { id: null, ...emptyResult('skipped') };
     const now = this.now();
     const id = await this.runs.start(now, opts.forcedBy ?? null);
+    return this.execute(id, cutoverAt, now, opts.limit);
+  }
+
+  /**
+   * «확인했으니 고치기» — 한도 없이 도는 회차를 시작만 하고 바로 돌려준다(≥5분 정착 대기를 HTTP 가 기다리지 않게).
+   * 도는(`running`, {@link RUNNING_STALE_MS} 이내) 회차가 있으면 시작하지 않는다(busy).
+   */
+  async startForced(forcedBy: string): Promise<ForcedRunStart> {
+    const cutoverAt = await this.readyCutover();
+    if (!cutoverAt) return { kind: 'not_ready' };
+    const now = this.now();
+    const id = await this.runs.startIfIdle(now, forcedBy, new Date(now.getTime() - RUNNING_STALE_MS));
+    if (!id) return { kind: 'busy' };
+    const done = this.execute(id, cutoverAt, now, null).catch(async (error: unknown) => {
+      // 회차 결과 기록(finish)이 던졌다 — 행이 running 으로 남지 않게 한 번 더 남겨 보고, 그것도 안 되면 로그만.
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.error(`강제 예약 대사 ${id} 기록 실패: ${message}`);
+      try {
+        await this.runs.finish(id, { ...emptyResult('skipped'), error: message.slice(0, 1000) });
+      } catch (again) {
+        this.logger.error(
+          `강제 예약 대사 ${id} 실패 기록도 실패: ${again instanceof Error ? again.message : String(again)}`,
+        );
+      }
+      return null;
+    });
+    return { kind: 'started', id, done };
+  }
+
+  private async readyCutover(): Promise<Date | null> {
+    const cutoverAt = await this.cutover.get();
+    const capability = CHANNEL_CAPABILITIES[CHANNEL];
+    if (!cutoverAt || capability?.integration !== 'api' || capability.reservation.kind !== 'projection') return null;
+    return cutoverAt;
+  }
+
+  private async execute(id: string, cutoverAt: Date, now: Date, limit: number | null): Promise<ReconcileRunRecord> {
     let result: ReconcileRunResult;
     try {
-      result = await this.reconcile(cutoverAt, now, opts.limit);
+      result = await this.reconcile(cutoverAt, now, limit);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.logger.error(`예약 대사 건너뜀: ${message}`);

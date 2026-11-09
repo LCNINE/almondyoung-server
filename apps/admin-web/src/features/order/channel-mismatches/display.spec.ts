@@ -3,6 +3,8 @@ import type { ReconcileRunDto } from '@/lib/api/domains/channel/reservation-reco
 import {
   MEMO_MAX,
   applyOutcome,
+  isRunInProgress,
+  reservationRunsRefetchInterval,
   exampleText,
   haltedRunText,
   latestRunText,
@@ -253,9 +255,9 @@ describe('예약 대사 회차 표시', () => {
   });
 
   it('latest 가 skipped 면 오류를 붙인다', () => {
-    expect(latestRunText({ ...run, status: 'skipped', error: 'core down' })).toBe(
-      '11-09 10:05 건너뜀 — core down'
-    );
+    expect(
+      latestRunText({ ...run, status: 'skipped', error: 'core down' })
+    ).toBe('11-09 10:05 건너뜀 — core down');
   });
 
   it('unknown 문구', () => {
@@ -284,5 +286,27 @@ describe('예약 대사 회차 표시', () => {
       tone: 'error',
       text: '고치지 못했습니다 — x',
     });
+  });
+
+  it('고치기 응답은 202 의 running 회차 — 고치는 중 토스트', () => {
+    expect(applyOutcome({ ...run, status: 'running' })).toEqual({
+      tone: 'success',
+      text: '고치는 중이에요',
+    });
+  });
+
+  it('마지막 회차가 도는 중이면 고치기를 막고 10초마다, 아니면 1분마다 다시 읽는다', () => {
+    const running = {
+      open: [run],
+      latest: { ...run, id: 'r2', status: 'running' as const },
+    };
+    const idle = { open: [run], latest: run };
+    expect(isRunInProgress(running)).toBe(true);
+    expect(reservationRunsRefetchInterval(running)).toBe(10_000);
+    expect(isRunInProgress(idle)).toBe(false);
+    expect(reservationRunsRefetchInterval(idle)).toBe(60_000);
+    expect(isRunInProgress(undefined)).toBe(false);
+    expect(reservationRunsRefetchInterval(undefined)).toBe(60_000);
+    expect(isRunInProgress({ open: [], latest: null })).toBe(false);
   });
 });

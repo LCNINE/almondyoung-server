@@ -12,6 +12,7 @@ import type {
 import type {
   ReconcileRunDto,
   ReconcileRunExample,
+  ReconcileRunsOverview,
 } from '@/lib/api/domains/channel/reservation-reconcile-runs.shape';
 
 import { actionErrorText } from '@/features/events/failures/display';
@@ -198,15 +199,34 @@ export function exampleText(e: ReconcileRunExample): string {
   return `${e.lineItemId} · ${e.current} → ${e.target}`;
 }
 
-/** 고치기 응답. skipped·halted 면 원래 회차는 열려 있다 — 성공처럼 보이면 운영자가 떠난다 */
+/**
+ * 고치기 응답(202). 서버는 회차를 뒤에서 시작만 하고 그 회차(running)를 돌려준다 — 결과는 목록이 다시 읽어 보인다.
+ * 원래 회차는 새 회차가 applied 로 끝날 때만 닫힌다.
+ */
 export function applyOutcome(run: ReconcileRunDto): {
   tone: 'success' | 'error';
   text: string;
 } {
+  if (run.status === 'running')
+    return { tone: 'success', text: '고치는 중이에요' };
   if (run.status === 'applied')
     return { tone: 'success', text: `고쳤습니다 (${run.fixes}줄)` };
   return {
     tone: 'error',
     text: `고치지 못했습니다${run.error ? ` — ${run.error}` : ''}`,
   };
+}
+
+/** 마지막 회차가 도는 중이면 고치기를 막는다 — 서버도 409 로 거절한다 */
+export function isRunInProgress(
+  overview: ReconcileRunsOverview | undefined
+): boolean {
+  return overview?.latest?.status === 'running';
+}
+
+/** 회차가 도는 중이면 10초마다, 아니면 1분마다 다시 읽는다 — 고치기 뒤 결과가 곧 보이게 */
+export function reservationRunsRefetchInterval(
+  overview: ReconcileRunsOverview | undefined
+): number {
+  return isRunInProgress(overview) ? 10_000 : 60_000;
 }

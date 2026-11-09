@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
-import { and, desc, eq, isNull } from 'drizzle-orm';
+import { and, desc, eq, gt, isNull, sql } from 'drizzle-orm';
+import { v7 as uuidv7 } from 'uuid';
 import { DbService } from '@app/db';
 import { channelAdapterSchema, medusaReservationReconcileRuns } from '../../schema';
 
@@ -33,6 +34,25 @@ export class ReservationReconcileRunRepository {
       .returning({ id: medusaReservationReconcileRuns.id });
     if (!row) throw new Error('대사 회차 행을 만들지 못했다');
     return row.id;
+  }
+
+  /**
+   * «확인했으니 고치기» 용 시작 — `staleBefore` 이후에 시작해 아직 `running` 인 회차가 없을 때만 행을 넣는다(한 문).
+   * 있으면 null. `staleBefore` 보다 오래된 `running` 은 프로세스가 죽어 남은 행으로 보고 막지 않는다 —
+   * 막으면 그런 행 하나가 고치기를 영영 잠근다. raw sql 의 Date 파라미터는 postgres.js 가 직렬화하지 못해 ISO 문자열로 넘긴다
+   * (열 비교 `gt(t.startedAt, …)` 는 drizzle 이 열 타입으로 바꿔 준다).
+   */
+  async startIfIdle(startedAt: Date, forcedBy: string, staleBefore: Date): Promise<string | null> {
+    const t = medusaReservationReconcileRuns;
+    const rows = await this.dbService.db.execute<{ id: string }>(sql`
+      INSERT INTO ${t} (${sql.identifier(t.id.name)}, ${sql.identifier(t.startedAt.name)}, ${sql.identifier(t.status.name)}, ${sql.identifier(t.forcedBy.name)})
+      SELECT ${uuidv7()}::uuid, ${startedAt.toISOString()}::timestamptz, 'running', ${forcedBy}::text
+      WHERE NOT EXISTS (
+        SELECT 1 FROM ${t} WHERE ${and(eq(t.status, 'running'), gt(t.startedAt, staleBefore))}
+      )
+      RETURNING ${t.id}
+    `);
+    return rows[0]?.id ?? null;
   }
 
   async finish(id: string, result: ReconcileRunResult): Promise<void> {

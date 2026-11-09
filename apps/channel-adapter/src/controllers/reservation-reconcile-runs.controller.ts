@@ -31,8 +31,11 @@ export class ReservationReconcileRunsController {
 
   @RequirePermission('order.order.write')
   @Post(':id/apply')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: '확인했으니 고치기 — 한도 없이 다시 돌리고 원래 회차를 닫는다' })
+  @HttpCode(HttpStatus.ACCEPTED)
+  @ApiOperation({
+    summary: '확인했으니 고치기 — 한도 없이 도는 회차를 뒤에서 시작하고 그 회차(running)를 202 로 돌려준다',
+    description: '도는 회차가 있으면 409. 새 회차가 applied 로 끝나면 원래 회차를 닫는다.',
+  })
   async apply(@Param('id', ParseUUIDPipe) id: string, @User() user: unknown) {
     return { data: await this.service.apply(id, actorIdOf(user) ?? 'unknown') };
   }
