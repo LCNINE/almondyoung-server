@@ -72,7 +72,7 @@ Medusa 예약이 core 상태와 맞는다**(완료 조건, 판정 스크립트 `
 ## 4. 흐름
 
 ```
-core  (예약 확정·해제 / 출고 / 취소 / 전달 트랜잭션 — 주문에 «더러움» 표시 = 버전 +1)
+core  (예약 확정·해제 / 출고 / 취소 / 전달 트랜잭션 — 표시 테이블에 한 줄 INSERT)
   └─ 1분 폴러 → outbox: SalesOrderLineReservationState  (주문 단위 스냅샷 + 버전)
         ↓ Kafka
 channel-adapter consumer → inbox_events (빠른 ACK)
@@ -109,10 +109,12 @@ channel-adapter 크론 (하루 한 번)
   inbox worker 는 동시에 처리하므로 순서가 보장되지 않는다. 그래서 주문마다 단조 증가하는 버전을 싣는다.
   권장: `sales_orders` 에 카운터 열을 더하고 enqueue 하는 트랜잭션에서 `UPDATE … SET v = v + 1 RETURNING v` 로 올린다
   (행 잠금이 같은 주문의 동시 트랜잭션을 줄 세운다). additive 마이그 → **migrate → deploy**. *(Claude 판단)*
-- **표시 지점과 폴러** *(계획 단계 Claude 판단)*: 상태를 바꾸는 트랜잭션은 enqueue 대신 주문에 «더러움» 표시(`line_state_version + 1`)만 한다.
+- **표시 지점과 폴러** *(계획·구현 단계 Claude 판단)*: 상태를 바꾸는 트랜잭션은 enqueue 대신 표시 테이블 `sales_order_line_state_marks` 에
+  한 줄 INSERT 만 한다(판매주문 행을 잠그지 않는다 — 예약 경로는 FO→SO, 취소는 SO→FO 순서로 잠가 교착이 생기므로. FK 도 같은 이유로 두지 않는다).
   표시 지점은 둘 — 예약·출고·전달·FO 수량 변화가 전부 지나는 `reprojectFulfillmentOrders`, 그리고 `recordSalesOrderCancellation`.
-  1분 `@CronOnce` 폴러가 더러운 주문의 스냅샷을 읽어 outbox 로 낸다. 표시가 같은 트랜잭션이라 유실이 없고, 한 트랜잭션의 여러 변화가 한 이벤트로 모이며,
-  버전 열이 곧 표시라 따로 카운터가 필요 없다. 대가는 최대 1분 지연. 두 표시 지점은 가드 스펙이 지킨다.
+  1분 `@CronOnce` 폴러가 주문마다 짧은 트랜잭션에서 `sales_orders` 행을 `FOR UPDATE SKIP LOCKED` 로 잡고(기다리지 않는다), 그 주문의 보이는 표시를
+  `DELETE … RETURNING` 으로 가져간 뒤 `line_state_version` 을 올리고 스냅샷을 읽어 outbox 로 낸다. 버전을 올리는 건 폴러뿐이다.
+  그 뒤에 커밋된 표시는 남아 다음 틱에 새 버전을 만든다. 유실이 없고, 여러 변화가 한 이벤트로 모인다. 대가는 최대 1분 지연. 두 표시 지점은 가드 스펙이 지킨다.
 - **내부 읽기 API** (대사용, `@InternalOnly`, `CORE_INTERNAL_KEY` + 테넌트 헤더):
   - 줄 상태 묶음 조회: `channelOrderItemId[]` → 위 스냅샷과 같은 모양(같은 리더를 탄다).
   - core 쪽 후보: «채널 `medusa`, 주문 생성 ≥ T, `demand − coreReserved − shipped − forwarded > 0`» 인 줄 목록(커서).
@@ -191,7 +193,7 @@ channel-adapter 크론 (하루 한 번)
 ## 6. 배포
 
 - 이벤트 계약 규칙: **소비자 먼저.** SST 한 스택엔 배포 순서가 없으므로 배포를 둘로 나눈다.
-  1. **Medusa 라우트 + channel-adapter(소비자·대사·기록·T 설정, T 비어 있음) + core 읽기 API·마이그(버전 열)** — 이 배포에선 core 가 아직 이벤트를 내지 않는다.
+  1. **Medusa 라우트 + channel-adapter(소비자·대사·기록·T 설정, T 비어 있음) + core 읽기 API·마이그(버전 열·표시 테이블)** — 이 배포에선 core 가 아직 이벤트를 내지 않는다.
      core 마이그는 additive 라 `migrate → deploy`.
   2. **core 생산자(enqueue 지점)** — 소비자가 라이브인 걸 확인한 뒤.
 - 두 배포 모두 T 가 비어 있으면 동작 변화가 없다. 컷오버 전에 언제든 실을 수 있다.
