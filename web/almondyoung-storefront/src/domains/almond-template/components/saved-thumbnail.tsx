@@ -2,27 +2,33 @@
 
 import { useEffect, useState } from "react"
 import { getMyAlmondSavedDesignThumbnail } from "@/lib/api/ugc/almond-saved-designs"
+import { getAdminAlmondTemplateThumbnail } from "@/lib/api/ugc/almond-templates"
 import { cn } from "@/lib/utils"
 
 export function SavedThumbnail({
   id,
   version,
   className,
+  designer = false,
 }: {
   id: string
   version?: string
   className?: string
+  designer?: boolean
 }) {
   const [svg, setSvg] = useState<string | null>(null)
   useEffect(() => {
     let cancelled = false
-    getMyAlmondSavedDesignThumbnail(id)
+    ;(designer
+      ? getAdminAlmondTemplateThumbnail(id)
+      : getMyAlmondSavedDesignThumbnail(id)
+    )
       .then((value) => !cancelled && setSvg(value))
       .catch(() => undefined)
     return () => {
       cancelled = true
     }
-  }, [id, version])
+  }, [id, version, designer])
   return (
     <span
       className={cn(

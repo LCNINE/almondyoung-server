@@ -212,6 +212,20 @@ export function withSideBackground(
   }
 }
 
+// 배경 사진만 갈아 끼운다. 흑백·블러 같은 효과는 시안의 설정이라 사진을 바꾸거나 지워도 남긴다
+export function withBackgroundImage(
+  design: Design,
+  side: "front" | "back",
+  image?: { src: string; pixelWidth: number; pixelHeight: number }
+): Design {
+  return withSideBackground(design, side, {
+    ...sideBackground(design, side),
+    backgroundImage: image?.src,
+    backgroundPixelWidth: image?.pixelWidth,
+    backgroundPixelHeight: image?.pixelHeight,
+  })
+}
+
 export function newDesign(kind: PrintKind, productId = ""): Design {
   const [widthMm, heightMm] = PRINT_SPECS[kind].sizes[0]
   return {

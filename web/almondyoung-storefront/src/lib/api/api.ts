@@ -23,6 +23,7 @@ type RequestOptions = Omit<RequestInit, "body"> & {
   params?: Record<string, string>
   withAuth?: boolean // 인증이 필요한 요청인지 여부
   timeout?: number // 타임아웃(ms), 기본값 5초
+  responseType?: "json" | "text" // 성공 응답 본문 해석 방식, 기본값 json
   next?: {
     revalidate?: number | false
     tags?: string[]
@@ -39,6 +40,7 @@ export async function api<T>(
     params,
     withAuth = true,
     timeout = 5000,
+    responseType = "json",
     next,
     ...init
   } = options
@@ -112,6 +114,8 @@ export async function api<T>(
     if (response.status === 204) {
       return undefined as T
     }
+
+    if (responseType === "text") return (await response.text()) as T
 
     const json = await response.json()
 

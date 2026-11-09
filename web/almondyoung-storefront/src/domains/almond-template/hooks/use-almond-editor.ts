@@ -10,7 +10,7 @@ import {
   printWarnings,
   printsBack,
   sideBackground,
-  withSideBackground,
+  withBackgroundImage,
   type Design,
   type Layer,
 } from "../lib/document"
@@ -314,7 +314,7 @@ export function useAlmondEditor({
   const removeBackgroundImage = () => {
     const bg = sideBackground(design, side)
     if (!bg.backgroundImage) return
-    change(withSideBackground(design, side, { background: bg.background }))
+    change(withBackgroundImage(design, side))
     setBackgroundSelected(false)
     setMessage("배경 이미지를 지웠습니다. 되돌리려면 Ctrl+Z")
   }

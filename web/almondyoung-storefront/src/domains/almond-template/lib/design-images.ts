@@ -48,7 +48,12 @@ export async function uploadDesignImages(
     const session = sessionPreview(value)
     if (!session) return undefined
     shareSessionPreview(value, ref)
-    return uploadBlob(await imageBlob(session))
+    // 축소본은 화면을 빠르게 하는 보조물이라, 못 올리면 원본만으로 저장한다
+    try {
+      return await uploadBlob(await imageBlob(session))
+    } catch {
+      return undefined
+    }
   }
   const refs = new Map<string, Promise<string>>()
   const store = (value: string | undefined) => {
@@ -108,7 +113,8 @@ async function downscaled(blob: Blob, maxPx: number) {
 async function rasterize(
   markup: string,
   previews: Readonly<Record<string, string>>,
-  maxPx: number
+  maxPx: number,
+  { lenient = false } = {}
 ) {
   const svg = new DOMParser().parseFromString(markup, "image/svg+xml")
   await Promise.all(
@@ -117,10 +123,16 @@ async function rasterize(
       const fileId = href.match(/\/files\/public\/([0-9a-f-]{36})/)?.[1]
       const source = fileId ? fileImageRef(fileId) : href
       if (!source.startsWith("data:") && !fileId) return node.remove()
-      node.setAttribute(
-        "href",
-        await downscaled(await imageBlob(previewOf(source, previews)), maxPx)
-      )
+      try {
+        node.setAttribute(
+          "href",
+          await downscaled(await imageBlob(previewOf(source, previews)), maxPx)
+        )
+      } catch (error) {
+        // 썸네일은 사진 하나를 못 읽어도 나머지로 그린다(인쇄용 PNG 는 빠지면 안 되므로 그대로 실패)
+        if (!lenient) throw error
+        node.remove()
+      }
     })
   )
   const root = svg.documentElement
@@ -157,14 +169,33 @@ async function rasterize(
   return canvas
 }
 
+const THUMBNAIL_MAX_CHARS = 2_000_000
+
 export async function rasterThumbnail(
   markup: string,
   previews: Readonly<Record<string, string>> = {}
 ) {
-  const canvas = await rasterize(markup, previews, THUMBNAIL_MAX_PX)
+  const canvas = await rasterize(markup, previews, THUMBNAIL_MAX_PX, {
+    lenient: true,
+  })
   const { width, height } = canvas
-  const raster = canvas.toDataURL("image/webp", 0.85)
+  let raster = canvas.toDataURL("image/webp", 0.85)
+  if (raster.length > THUMBNAIL_MAX_CHARS)
+    raster = canvas.toDataURL("image/webp", 0.5)
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><image href="${raster}" width="${width}" height="${height}"/></svg>`
+}
+
+// 썸네일은 목록 카드용이라 못 그려도 저장을 막지 않는다. 그리기에 실패하면 바탕색만 칠한 카드로 저장한다
+export function placeholderThumbnail(
+  widthMm: number,
+  heightMm: number,
+  background = "#ffffff"
+) {
+  const scale = THUMBNAIL_MAX_PX / Math.max(widthMm, heightMm, 1)
+  const width = Math.max(1, Math.round(widthMm * scale))
+  const height = Math.max(1, Math.round(heightMm * scale))
+  const fill = /^#[0-9a-f]{3,8}$/i.test(background) ? background : "#ffffff"
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><rect width="${width}" height="${height}" fill="${fill}"/></svg>`
 }
 
 export async function rasterPng(markup: string, maxPx: number) {

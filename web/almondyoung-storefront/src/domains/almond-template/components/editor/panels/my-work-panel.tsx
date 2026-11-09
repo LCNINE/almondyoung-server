@@ -173,6 +173,7 @@ export function MyWorkPanel({ editor }: { editor: AlmondEditor }) {
               <SavedThumbnail
                 id={item.id}
                 version={item.updatedAt}
+                designer={designer}
                 className="size-full bg-white"
               />
               <span className="pointer-events-none absolute inset-0 hidden bg-black/15 group-hover/card:block" />

@@ -18,6 +18,8 @@ import {
   unfiltered,
   withProduct,
   withSideBackground,
+  withBackgroundImage,
+  type Design,
 } from "./document"
 
 const CARD_PRODUCT = "6c2b7437-7c72-4685-a72c-0cd18f9d7bfb"
@@ -730,4 +732,64 @@ describe("사진 위치 모드 저장", () => {
       ).toThrow()
     }
   )
+})
+
+describe("withBackgroundImage", () => {
+  const filtered = {
+    ...newDesign("card"),
+    background: "#ffeecc",
+    backgroundImage: "file:old",
+    backgroundPixelWidth: 100,
+    backgroundPixelHeight: 50,
+    backgroundFilter: { kind: "grayscale", amount: 80 },
+    backgroundBlur: 30,
+  } as Design
+
+  it("사진을 바꿔도 흑백·블러 효과와 바탕색은 그대로 둔다", () => {
+    const next = withBackgroundImage(filtered, "front", {
+      src: "data:image/png;base64,AA",
+      pixelWidth: 300,
+      pixelHeight: 200,
+    })
+
+    expect(next.backgroundImage).toBe("data:image/png;base64,AA")
+    expect(next.backgroundPixelWidth).toBe(300)
+    expect(next.backgroundFilter).toEqual(filtered.backgroundFilter)
+    expect(next.backgroundBlur).toBe(30)
+    expect(next.background).toBe("#ffeecc")
+  })
+
+  it("사진을 지운 뒤 새로 올려도 효과가 이어진다", () => {
+    const removed = withBackgroundImage(filtered, "front")
+    expect(removed.backgroundImage).toBeUndefined()
+
+    const next = withBackgroundImage(removed, "front", {
+      src: "file:new",
+      pixelWidth: 10,
+      pixelHeight: 10,
+    })
+    expect(next.backgroundFilter).toEqual(filtered.backgroundFilter)
+    expect(next.backgroundBlur).toBe(30)
+  })
+
+  it("뒷면 배경도 같은 규칙을 따른다", () => {
+    const design = {
+      ...filtered,
+      backBackground: { background: "#000000", backgroundBlur: 40 },
+    } as Design
+
+    const next = withBackgroundImage(design, "back", {
+      src: "file:back",
+      pixelWidth: 10,
+      pixelHeight: 10,
+    })
+    expect(next.backBackground).toEqual({
+      background: "#000000",
+      backgroundBlur: 40,
+      backgroundImage: "file:back",
+      backgroundPixelWidth: 10,
+      backgroundPixelHeight: 10,
+    })
+    expect(next.backgroundImage).toBe("file:old")
+  })
 })

@@ -1,5 +1,6 @@
 import { unstable_isUnrecognizedActionError } from "next/navigation"
 import { useEffect, useRef, useState } from "react"
+import { createBrowserLogger } from "@packages/web-observability/browser"
 
 export const AUTH_CHANNEL = "almond-template-auth"
 
@@ -53,7 +54,56 @@ export function failureMessage(error: unknown, failure: string) {
   return failure
 }
 
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+// 네트워크가 잠깐 끊기거나 서버가 순간 응답하지 못한 실패는 다시 보내면 대개 성공한다.
+// 로그인 만료·배포 전 탭은 다시 보내도 같으므로 바로 넘긴다
+export async function retryTransient<T>(run: () => Promise<T>, attempts = 3) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await run()
+    } catch (error) {
+      if (
+        attempt >= attempts ||
+        isUnauthorized(error) ||
+        unstable_isUnrecognizedActionError(error)
+      )
+        throw error
+      await wait(600 * attempt)
+    }
+  }
+}
+
 type Task = () => Promise<void>
+
+const logger = createBrowserLogger({ component: "almond-template.editor" })
+const failureContext = new WeakMap<object, Record<string, unknown>>()
+
+// 화면에는 묶음 문구만 보이므로, 어느 단계에서 무엇이 실패했는지는 로그로만 남는다
+export function withFailureContext(
+  error: unknown,
+  context: Record<string, unknown>
+) {
+  if (error && typeof error === "object" && !failureContext.has(error))
+    failureContext.set(error, context)
+  return error
+}
+
+export function reportThumbnailFallback(error: unknown) {
+  logger.warn("almond_template.thumbnail_fallback", { error })
+}
+
+function reportFailure(error: unknown, failure: string) {
+  logger.error("almond_template.task_failed", {
+    error,
+    attributes: {
+      failure,
+      ...(error && typeof error === "object"
+        ? failureContext.get(error)
+        : undefined),
+    },
+  })
+}
 
 export function useAuthRetry(setMessage: (message: string) => void) {
   const [authRequired, setAuthRequired] = useState(false)
@@ -83,6 +133,7 @@ export function useAuthRetry(setMessage: (message: string) => void) {
       pending.current = { task, failure }
       setAuthRequired(true)
     } catch (error) {
+      reportFailure(error, failure)
       setMessage(failureMessage(error, failure))
     }
   }
@@ -98,6 +149,7 @@ export function useAuthRetry(setMessage: (message: string) => void) {
     } catch (error) {
       pending.current = null
       setAuthRequired(false)
+      reportFailure(error, current.failure)
       setMessage(failureMessage(error, current.failure))
     }
   }
