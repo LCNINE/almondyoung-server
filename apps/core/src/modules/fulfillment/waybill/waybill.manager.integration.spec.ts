@@ -98,7 +98,7 @@ describeIfDb('WaybillManager.issueForShipment (DB integration)', () => {
     );
     expect(wb.status).toBe('failed');
     const [row] = await db.select().from(wmsTables.waybills).where(eq(wmsTables.waybills.id, wb.id));
-    expect(row.lastError).toContain('ERROR-05');
+    expect(row.lastError).toContain('ERROR-04');
   });
 
   it('rejects a stale manifest version', async () => {
@@ -264,6 +264,88 @@ describeIfDb('WaybillManager.issueForShipment (DB integration)', () => {
           actor,
         ),
       ).rejects.toThrow(/WAYBILL_ALREADY_DISPATCHED/);
+    });
+  });
+
+  // 상자 상세의 «중단하고 다시 발급»(#1241)이 부르는 순서 그대로: 멈춤 → abandon → 새 키로 issue.
+  describe('운영자 abandon 뒤 재발급', () => {
+    const stuckGateway = () =>
+      fakeCarrierGateway({
+        register: () => {
+          throw new CarrierError('timeout', 'unknown_outcome', {});
+        },
+      });
+
+    async function stuckAllocated() {
+      const seed = await db.transaction((tx) => seedPlannedShipmentForWaybill(tx as never, deps));
+      const stuck = await manager(new CarrierGatewayRegistry([stuckGateway()])).issueForShipment(
+        seed.shipmentId,
+        { carrier: 'HANJIN', expectedManifestVersion: seed.manifestVersion },
+        `idem-${randomUUID()}`,
+        actor,
+      );
+      expect(stuck.status).toBe('allocated');
+      return { seed, stuck };
+    }
+
+    it('멈춘 allocated 를 끊으면 슬롯이 풀려 새 번호로 발급된다', async () => {
+      const { seed, stuck } = await stuckAllocated();
+      const mgr = manager(new CarrierGatewayRegistry([fakeCarrierGateway()]));
+
+      const abandoned = await mgr.abandon(stuck.id, { reason: '한진 응답 없음' }, `idem-${randomUUID()}`, actor);
+      expect(abandoned.status).toBe('abandoned');
+      expect(abandoned.lastError).toBe('abandoned by operator: 한진 응답 없음');
+
+      const fresh = await mgr.issueForShipment(
+        seed.shipmentId,
+        { carrier: 'HANJIN', expectedManifestVersion: seed.manifestVersion },
+        `idem-${randomUUID()}`,
+        actor,
+      );
+      expect(fresh.id).not.toBe(stuck.id);
+      expect(fresh.status).toBe('registered');
+      expect(fresh.trackingNo).not.toBe(stuck.trackingNo);
+    });
+
+    it('상자 내용이 바뀌어 이어 갈 수 없는 행(NEEDS_REVIEW)도 끊고 지금 내용으로 발급한다', async () => {
+      const { seed, stuck } = await stuckAllocated();
+      const next = seed.manifestVersion + 1;
+      await db
+        .update(wmsTables.shipments)
+        .set({ manifestVersion: next })
+        .where(eq(wmsTables.shipments.id, seed.shipmentId));
+      const mgr = manager(new CarrierGatewayRegistry([fakeCarrierGateway()]));
+      await expect(
+        mgr.resumeActive(seed.shipmentId, { carrier: 'HANJIN', expectedManifestVersion: next }),
+      ).rejects.toThrow(/WAYBILL_NEEDS_REVIEW/);
+
+      await mgr.abandon(stuck.id, { reason: '내용 변경' }, `idem-${randomUUID()}`, actor);
+      // 출고 준비 화면의 «다시 시도»가 가는 길 — 활성 행이 없으면 null 을 받고 새로 발급한다.
+      await expect(
+        mgr.resumeActive(seed.shipmentId, { carrier: 'HANJIN', expectedManifestVersion: next }),
+      ).resolves.toBeNull();
+      const fresh = await mgr.issueForShipment(
+        seed.shipmentId,
+        { carrier: 'HANJIN', expectedManifestVersion: next },
+        `idem-${randomUUID()}`,
+        actor,
+      );
+      expect(fresh.status).toBe('registered');
+      expect(fresh.manifestVersion).toBe(next);
+    });
+
+    it('그 사이 등록이 끝난 행은 끊지 않는다', async () => {
+      const seed = await db.transaction((tx) => seedPlannedShipmentForWaybill(tx as never, deps));
+      const mgr = manager(new CarrierGatewayRegistry([fakeCarrierGateway()]));
+      const wb = await mgr.issueForShipment(
+        seed.shipmentId,
+        { carrier: 'HANJIN', expectedManifestVersion: seed.manifestVersion },
+        `idem-${randomUUID()}`,
+        actor,
+      );
+      await expect(mgr.abandon(wb.id, { reason: 'x' }, `idem-${randomUUID()}`, actor)).rejects.toThrow(
+        /WAYBILL_ABANDON_NOT_ALLOWED: .* is registered/,
+      );
     });
   });
 

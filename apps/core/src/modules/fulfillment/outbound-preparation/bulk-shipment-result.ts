@@ -21,7 +21,7 @@ export interface BulkShipmentResult {
 
 const messages = new Map([
   ['SHIPMENT_NOT_FOUND', '상자를 찾을 수 없어요'],
-  ['WAYBILL_NEEDS_REVIEW', '송장 발급 결과를 확인해야 해요'],
+  ['WAYBILL_NEEDS_REVIEW', '멈춘 송장이 있어요 — 상자 보기에서 중단하고 다시 발급해요'],
   ['WAYBILL_ISSUE_RACED', '다른 송장 발급과 겹쳤어요'],
   ['SHIPMENT_NOT_DRAFT', '상자 상태가 바뀌었어요'],
   ['SHIPMENT_NOT_FULLY_RESERVED', '재고 예약이 모자라요'],

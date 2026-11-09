@@ -49,6 +49,7 @@ import {
   showsWaybillActions,
 } from './shipment-owner';
 import { WaybillActions } from './waybill-actions';
+import { StuckWaybillPanel } from './stuck-waybill-panel';
 
 const STATUS_VARIANT = (
   status: string
@@ -244,10 +245,13 @@ function ShipmentDetailView({
             운송장 이력 ({waybills.length})
           </h3>
           {showsWaybillActions(shipment) && (
-            <WaybillActions
-              shipment={shipment}
-              voidLockedReason={voidLockedReason}
-            />
+            <div className="mb-3 space-y-3">
+              <StuckWaybillPanel shipment={shipment} />
+              <WaybillActions
+                shipment={shipment}
+                voidLockedReason={voidLockedReason}
+              />
+            </div>
           )}
           {waybills.length === 0 ? (
             <p className="text-sm text-muted-foreground">

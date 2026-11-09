@@ -12,6 +12,7 @@ import type {
   RegisterManualWaybillRequest,
   IssueBatchWaybillRequest,
   VoidWaybillRequest,
+  AbandonWaybillRequest,
 } from '@/lib/types/dto/fulfillment';
 
 const BASE = ALMONDYOUNG_API_BASE_URL;
@@ -78,6 +79,20 @@ export const waybillsClient = {
   ): Promise<WaybillResponse> => {
     const res = await client.post(
       `${BASE}/waybills/${encodeURIComponent(waybillId)}/void`,
+      data,
+      idem(idempotencyKey)
+    );
+    return res.data;
+  },
+
+  // 멈춘 발급(pending/allocated)을 종료시켜 활성 슬롯을 푼다 — 그래야 다시 발급할 수 있다.
+  abandon: async (
+    waybillId: string,
+    data: AbandonWaybillRequest,
+    idempotencyKey: string
+  ): Promise<WaybillResponse> => {
+    const res = await client.post(
+      `${BASE}/waybills/${encodeURIComponent(waybillId)}/abandon`,
       data,
       idem(idempotencyKey)
     );

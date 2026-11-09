@@ -23,7 +23,6 @@ import {
 import { usePermissionCheck } from '@/hooks/use-permission';
 import {
   createIdempotentCommand,
-  getServerDenyMessage,
   isWaybillIssued,
   isWaybillPendingIssue,
   useIssueWaybill,
@@ -38,6 +37,7 @@ import type {
   ShipmentAdminDetail,
   ShipmentWaybillHistory,
 } from '@/lib/types/dto/fulfillment';
+import { waybillErrorMessage } from './stuck-waybill';
 
 type Action = 'issue' | 'manual' | 'reissue' | 'void';
 
@@ -51,8 +51,9 @@ const ACTION_TITLE: Record<Action, string> = {
 function activeVoidableWaybill(
   waybills: ShipmentWaybillHistory[]
 ): ShipmentWaybillHistory | undefined {
-  // 발송 전(voidedAt 없음)만 무효화 대상.
-  return waybills.find((w) => !w.voidedAt && w.status !== 'voided');
+  // 서버가 무효화를 받는 건 발송 전 registered 뿐이다. 멈춘(pending/allocated)·끝난(abandoned/failed) 행에
+  // 버튼을 켜 두면 거절만 받는다 — 멈춘 발급은 위의 «중단하고 다시 발급»으로 푼다(#1241).
+  return waybills.find((w) => w.status === 'registered');
 }
 
 export function WaybillActions({
@@ -138,7 +139,7 @@ export function WaybillActions({
       reflectStatus(result.status);
     } catch (error) {
       toast.error(
-        getServerDenyMessage(error, `${ACTION_TITLE[kind === 'issue' ? 'issue' : 'reissue']} 요청 실패`)
+        waybillErrorMessage(error, `${ACTION_TITLE[kind === 'issue' ? 'issue' : 'reissue']} 요청 실패`)
       );
     }
   };
@@ -169,7 +170,7 @@ export function WaybillActions({
       });
       reflectStatus(result.status);
     } catch (error) {
-      toast.error(getServerDenyMessage(error, '수동 등록 요청 실패'));
+      toast.error(waybillErrorMessage(error, '수동 등록 요청 실패'));
     }
   };
 
@@ -197,7 +198,7 @@ export function WaybillActions({
       toast.success('운송장을 무효화했습니다.');
       setAction(null);
     } catch (error) {
-      toast.error(getServerDenyMessage(error, '무효화 요청 실패'));
+      toast.error(waybillErrorMessage(error, '무효화 요청 실패'));
     }
   };
 

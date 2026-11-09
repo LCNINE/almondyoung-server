@@ -303,6 +303,10 @@ describe('OutboundPreparationTemplate', () => {
       await screen.findByText('AY-ready-1', { exact: false })
     ).toBeTruthy();
     expect(screen.getByText('한진 주소 확인 불가')).toBeTruthy();
+    // 다시 시도로 안 풀리는 멈춘 송장은 상자 상세에서 끊는다(#1241).
+    expect(
+      screen.getByRole('link', { name: '상자 보기' }).getAttribute('href')
+    ).toBe('/order/fulfillments?shipmentId=ready-1');
     await userEvent.click(screen.getByRole('button', { name: '다시 시도' }));
     await waitFor(() => expect(mockRun).toHaveBeenCalledTimes(2));
 

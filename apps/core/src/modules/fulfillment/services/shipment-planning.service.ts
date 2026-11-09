@@ -1083,6 +1083,8 @@ export class ShipmentPlanningService {
             manifestVersion: wmsTables.waybills.manifestVersion,
             issuedAt: wmsTables.waybills.issuedAt,
             voidedAt: wmsTables.waybills.voidedAt,
+            lastError: wmsTables.waybills.lastError,
+            nextAttemptAt: wmsTables.waybills.nextAttemptAt,
           })
           .from(wmsTables.waybills)
           .where(eq(wmsTables.waybills.shipmentId, shipmentId))

@@ -246,7 +246,10 @@ export function PrepareDialog({
                       </div>
                       {/* 확정 오류도 [다시 시도]를 남긴다(스펙 §5.1) — 상자에서 고친 뒤 이 창에서 이어 간다. */}
                       <div className="flex shrink-0 gap-2">
-                        {!failure.retryable && (
+                        {/* 송장 단계 실패는 다시 시도할 수 있어도 상자로 보낸다 — 한진 결과를 모르는 채 멈춘 송장은
+                            다시 시도로 영영 안 풀릴 수 있고, 끊는 곳은 상자 상세다(#1241). */}
+                        {(!failure.retryable ||
+                          failure.stage === 'waybill') && (
                           <Button size="sm" variant="outline" asChild>
                             <Link
                               href={`/order/fulfillments?shipmentId=${encodeURIComponent(failure.shipmentId)}`}

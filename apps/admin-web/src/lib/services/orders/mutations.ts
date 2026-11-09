@@ -50,6 +50,7 @@ import type {
   RegisterManualWaybillRequest,
   IssueBatchWaybillRequest,
   VoidWaybillRequest,
+  AbandonWaybillRequest,
 } from '@/lib/types/dto/fulfillment';
 import type { PermissionRequirement } from '@/lib/auth/mutation-permission';
 import type { IdempotentCommand } from './idempotency';
@@ -1312,6 +1313,30 @@ export const useVoidWaybill = () => {
 };
 useVoidWaybill.permission = [
   'fulfillment.shipment.reopen',
+] as const satisfies PermissionRequirement;
+
+// 멈춘 발급을 운영자가 끊는다. 서버 스코프가 void(shipment.reopen)보다 넓은 warehouse.operate 인 것은 의도다(#914) —
+// 현장에서 막혔을 때 관리자를 기다리지 않고 풀어야 한다.
+export const useAbandonWaybill = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({
+      waybillId,
+      data,
+      idempotencyKey,
+    }: {
+      waybillId: string;
+      shipmentId: string;
+      data: AbandonWaybillRequest;
+      idempotencyKey?: string;
+    }) => orders.waybills.abandon(waybillId, data, commandKey(idempotencyKey)),
+    // 실패(409 — 그 사이 등록됐거나 이미 끝남)여도 지금 상태가 답이라 다시 읽는다.
+    onSettled: (_, __, vars) =>
+      invalidateShipment(queryClient, vars.shipmentId),
+  });
+};
+useAbandonWaybill.permission = [
+  'fulfillment.warehouse.operate',
 ] as const satisfies PermissionRequirement;
 
 export const useBatchIssueWaybills = () =>
