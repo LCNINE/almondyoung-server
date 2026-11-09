@@ -140,7 +140,7 @@ describe('ReservationReconcileService', () => {
 
   type Item = { lineItemId: string; quantity: number };
   type Res = { lineItemId: string; outcome: string; quantityBefore: number; quantityAfter: number };
-  const res = (it: Item, outcome: string): Res => ({ lineItemId: it.lineItemId, outcome, quantityBefore: 1, quantityAfter: it.quantity });
+  const res = (it: Item, outcome: string, before = 1): Res => ({ lineItemId: it.lineItemId, outcome, quantityBefore: before, quantityAfter: it.quantity });
   /** dry: 계획 결과, write: 실제 쓰기 결과(없으면 모두 set). */
   function mockMedusa(
     medusa: { setLineItemReservations: jest.Mock },
@@ -238,6 +238,43 @@ describe('ReservationReconcileService', () => {
     expect(writeCalls(t.medusa)[0][0].map((i: Item) => i.lineItemId).sort()).toEqual(['d1', 'ok']);
   });
 
+  it('dry run 이 not_found 라고 한 줄은 보내지 않고 fix_failures 로 센다', async () => {
+    const t = build();
+    seed(t, ['gone', 'ok']);
+    mockMedusa(t.medusa, { dry: (items) => items.map((it) => res(it, it.lineItemId === 'gone' ? 'not_found' : 'set')) });
+    const rec = await t.service.run({ limit: 10 });
+    expect(writeCalls(t.medusa)[0][0].map((i: Item) => i.lineItemId)).toEqual(['ok']);
+    expect(rec).toMatchObject({ status: 'applied', fixes: 1, fixFailures: 1 });
+  });
+
+  it('기다리는 사이 다른 쓰기가 줄을 바꿨으면(dry quantityBefore ≠ 처음 읽은 값) 보내지 않고 deferred 로 센다', async () => {
+    const t = build();
+    seed(t, ['moved', 'ok']);
+    mockMedusa(t.medusa, { dry: (items) => items.map((it) => res(it, 'set', it.lineItemId === 'moved' ? 7 : 1)) });
+    const rec = await t.service.run({ limit: 10 });
+    expect(writeCalls(t.medusa)[0][0].map((i: Item) => i.lineItemId)).toEqual(['ok']);
+    expect(rec).toMatchObject({ status: 'applied', fixes: 1, deferred: 1 });
+  });
+
+  it('dry run 응답에 줄이 빠졌으면 skipped·쓰기 0', async () => {
+    const t = build();
+    seed(t, ['a', 'b']);
+    mockMedusa(t.medusa, { dry: (items) => items.slice(0, 1).map((it) => res(it, 'set')) });
+    const rec = await t.service.run({ limit: 10 });
+    expect(rec.status).toBe('skipped');
+    expect(rec.error).toContain('dry run');
+    expect(writeCalls(t.medusa)).toHaveLength(0);
+  });
+
+  it('halted 예시의 current 는 dry run 이 본 실제 값', async () => {
+    const t = build();
+    seed(t, ['a', 'b']);
+    mockMedusa(t.medusa, { dry: (items) => items.map((it) => res(it, 'set', 1)) });
+    const rec = await t.service.run({ limit: 1 });
+    expect(rec.status).toBe('halted');
+    expect(rec.examples[0]).toEqual({ lineItemId: 'a', current: 1, target: 2 });
+  });
+
   it('dry run 이 던지면 skipped·실제 쓰기 0', async () => {
     const t = build();
     seed(t, ['a']);
@@ -263,10 +300,10 @@ describe('ReservationReconcileService', () => {
     mockMedusa(t.medusa);
     const start = t.service.clock.getTime();
     await t.service.run({ limit: 10 });
-    expect(t.service.sleeps).toEqual([300000]);
+    expect(t.service.sleeps).toEqual([301000]);
     const [, asOf, now] = t.projection.toWrites.mock.calls[0] as [unknown, Date, Date];
     expect(asOf.getTime()).toBe(start);
-    expect(now.getTime()).toBe(start + 300000);
+    expect(now.getTime()).toBe(start + 301000);
   });
 
   it('RESERVATION_PROJECTION_SETTLE_MS 설정을 따르고 무효값은 기본값', async () => {
@@ -274,12 +311,12 @@ describe('ReservationReconcileService', () => {
     seed(a, ['a']);
     mockMedusa(a.medusa);
     await a.service.run({ limit: 10 });
-    expect(a.service.sleeps).toEqual([1000]);
+    expect(a.service.sleeps).toEqual([2000]);
     const b = build({ settle: '0' });
     seed(b, ['a']);
     mockMedusa(b.medusa);
     await b.service.run({ limit: 10 });
-    expect(b.service.sleeps).toEqual([300000]);
+    expect(b.service.sleeps).toEqual([301000]);
   });
 
   it('T 이전 주문 줄은 건드리지 않는다', async () => {

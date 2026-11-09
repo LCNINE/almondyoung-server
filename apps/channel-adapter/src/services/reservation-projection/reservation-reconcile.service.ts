@@ -110,7 +110,7 @@ export class ReservationReconcileService {
     // 이벤트 소비자와 같은 규칙: 스냅샷을 읽은 시각(readAt)에서 정착 지연만큼 기다린 뒤 게이트를 연다.
     // 읽기 직전 core 변경의 가용재고 이벤트가 아직 Kafka 에 있을 수 있어서다.
     const readAt = this.now();
-    if (eligible.length > 0) await this.sleep(this.settleMs);
+    if (eligible.length > 0) await this.sleep(this.settleMs + 1000); // 타이머가 1ms 일찍 깨도 «정착 지연보다 젊다» 로 전부 막히지 않게
     const writes = await this.projection.toWrites(eligible, readAt, this.now());
     const diffs = writes
       .map((w) => ({ ...w, current: medusaQty.get(w.lineItemId) ?? 0 }))
@@ -125,23 +125,41 @@ export class ReservationReconcileService {
         dry.set(r.lineItemId, r);
       }
     }
-    const counted = diffs.filter((w) => dry.get(w.lineItemId)?.outcome === 'set');
+    // 응답에 없는 줄은 Medusa 응답이 깨진 것이다 — 한도 브레이크 밖으로 무제한 보내지 않고 회차를 건너뛴다.
+    for (const w of diffs) {
+      if (!dry.has(w.lineItemId)) throw new Error(`Medusa dry run 응답에 ${w.lineItemId} 가 없다`);
+    }
+    let fixFailures = 0;
+    let deferred = 0;
+    const toSend: typeof diffs = [];
+    const counted: typeof diffs = [];
+    for (const w of diffs) {
+      const plan = dry.get(w.lineItemId) as LineItemReservationResult;
+      if (plan.outcome === 'not_found') {
+        fixFailures += 1; // core 는 알고 Medusa 에는 줄이 없다 — 사람이 봐야 한다
+        continue;
+      }
+      if (plan.outcome !== 'set' && plan.outcome !== 'deferred' && plan.outcome !== 'error') continue; // unchanged·not_managed
+      // 정착 지연을 기다리는 사이 이벤트 워커가 같은 줄을 먼저 썼다 — 옛 목표로 덮어쓰지 않고 다음 회차로 미룬다.
+      if (plan.quantityBefore !== w.current) {
+        deferred += 1;
+        continue;
+      }
+      toSend.push(w);
+      if (plan.outcome === 'set') counted.push(w);
+    }
     const base = { candidates: candidateIds.length, unknown: unknownIds.size, oldestUnknownAt };
     if (limit !== null && counted.length > limit) {
-      const examples: ReconcileExample[] = counted
-        .slice(0, EXAMPLE_LIMIT)
-        .map((w) => ({ lineItemId: w.lineItemId, current: w.current, target: w.quantity }));
+      const examples: ReconcileExample[] = counted.slice(0, EXAMPLE_LIMIT).map((w) => ({
+        lineItemId: w.lineItemId,
+        current: (dry.get(w.lineItemId) as LineItemReservationResult).quantityBefore,
+        target: w.quantity,
+      }));
       return { ...emptyResult('halted'), ...base, examples };
     }
 
-    // 3) 쓰기 — 계획상 바뀌지 않거나 관리 대상이 아닌 줄은 보내지 않는다. 묶음이 던지면 그 묶음 줄을 실패로 세고 다음 묶음으로.
-    const toSend = diffs.filter((w) => {
-      const outcome = dry.get(w.lineItemId)?.outcome;
-      return outcome === undefined || outcome === 'set' || outcome === 'deferred' || outcome === 'error';
-    });
+    // 3) 쓰기 — 묶음이 던지면 그 묶음 줄을 실패로 세고 다음 묶음으로.
     let fixes = 0;
-    let fixFailures = 0;
-    let deferred = 0;
     for (let i = 0; i < toSend.length; i += WRITE_CHUNK) {
       const chunk = toSend.slice(i, i + WRITE_CHUNK);
       try {
