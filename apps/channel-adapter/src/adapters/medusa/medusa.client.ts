@@ -2876,12 +2876,14 @@ export class MedusaClient {
    */
   async setLineItemReservations(
     items: { lineItemId: string; quantity: number; allowDecrease: boolean }[],
+    options?: { dryRun?: boolean },
   ): Promise<LineItemReservationResult[]> {
     if (items.length === 0) return []; // 라우트 검증이 min 1 이다
     const path = '/admin/line-item-reservations';
     const { status, body } = await this.postAdmin(
       path,
       {
+        ...(options?.dryRun ? { dry_run: true } : {}),
         items: items.map((item) => ({
           line_item_id: item.lineItemId,
           quantity: item.quantity,

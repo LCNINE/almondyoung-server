@@ -10,25 +10,29 @@ export const DEFAULT_RECONCILE_MAX_FIXES = 200;
 export class ReservationReconcileJob {
   private readonly logger = new Logger(ReservationReconcileJob.name);
 
+  private readonly limit: number;
+
   constructor(
     private readonly service: ReservationReconcileService,
-    private readonly configService: ConfigService,
-  ) {}
+    configService: ConfigService,
+  ) {
+    this.limit = parseMaxFixes(configService.get<string | number>('MEDUSA_RESERVATION_RECONCILE_MAX_FIXES'));
+  }
 
   @CronOnce('30 4 * * *', { name: 'medusa-reservation-reconcile', timeZone: 'Asia/Seoul' })
   async run(): Promise<void> {
-    const raw = Number(this.configService.get<string | number>('MEDUSA_RESERVATION_RECONCILE_MAX_FIXES'));
-    const limit = Number.isInteger(raw) && raw >= 0 && this.configured() ? raw : DEFAULT_RECONCILE_MAX_FIXES;
     try {
-      const record = await this.service.run({ limit });
+      const record = await this.service.run({ limit: this.limit });
       this.logger.log(`예약 대사 ${record.status}: 후보 ${record.candidates}, 고침 ${record.fixes}, 실패 ${record.fixFailures}`);
     } catch (error) {
       this.logger.error(`예약 대사 실패: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
+}
 
-  private configured(): boolean {
-    const v = this.configService.get<string | number>('MEDUSA_RESERVATION_RECONCILE_MAX_FIXES');
-    return v !== undefined && v !== null && String(v).trim() !== '';
-  }
+/** 비었거나 숫자가 아니거나 정수가 아니거나 0 이하면 기본값 — 한도 0 은 «전부 멈춤» 이라 오타로 켜질 수 있다. */
+export function parseMaxFixes(raw: string | number | undefined | null): number {
+  if (raw === undefined || raw === null || String(raw).trim() === '') return DEFAULT_RECONCILE_MAX_FIXES;
+  const n = Number(raw);
+  return Number.isInteger(n) && n > 0 ? n : DEFAULT_RECONCILE_MAX_FIXES;
 }

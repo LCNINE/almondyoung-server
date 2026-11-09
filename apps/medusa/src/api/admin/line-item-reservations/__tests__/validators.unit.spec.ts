@@ -40,3 +40,10 @@ describe('AdminListLineItemReservations', () => {
     expect(AdminListLineItemReservations.safeParse({ order_created_from: 'yesterday' }).success).toBe(false);
   });
 });
+
+describe('AdminSetLineItemReservations dry_run', () => {
+  it('dry_run 이 없으면 false, 있으면 그 값', () => {
+    expect(AdminSetLineItemReservations.parse({ items: [item('li_1')] }).dry_run).toBe(false);
+    expect(AdminSetLineItemReservations.parse({ items: [item('li_1')], dry_run: true }).dry_run).toBe(true);
+  });
+});

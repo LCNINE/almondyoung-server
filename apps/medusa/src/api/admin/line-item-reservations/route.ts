@@ -14,7 +14,11 @@ import type { AdminListLineItemReservationsType, AdminSetLineItemReservationsTyp
  * 다시 읽기마저 실패하면 줄마다 지어낸 값을 주지 않고 그 오류가 그대로 5xx 로 나간다 — 호출 전체 실패다.
  */
 export async function POST(req: MedusaRequest<AdminSetLineItemReservationsType>, res: MedusaResponse) {
-  const { items } = req.validatedBody;
+  const { items, dry_run } = req.validatedBody;
+  if (dry_run) {
+    const plan = await readReservationBatchPlan(req.scope, items);
+    return res.json({ results: plan.results });
+  }
   try {
     const { result } = await setLineItemReservationsWorkflow(req.scope).run({ input: { items } });
     return res.json({ results: result });

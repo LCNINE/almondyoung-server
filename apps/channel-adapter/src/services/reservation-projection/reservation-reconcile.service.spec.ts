@@ -3,7 +3,23 @@ import type { CoreLineReservationStateClient } from '../clients/core-line-reserv
 import type { ReservationCutoverRepository } from './reservation-cutover.repository';
 import type { ReservationProjectionService } from './reservation-projection.service';
 import type { ReservationReconcileRunRepository } from './reservation-reconcile-run.repository';
+import type { ConfigService } from '@nestjs/config';
 import { ReservationReconcileService } from './reservation-reconcile.service';
+import { parseMaxFixes } from './reservation-reconcile.job';
+
+class TestableService extends ReservationReconcileService {
+  clock = new Date('2026-11-09T04:30:00Z');
+  sleeps: number[] = [];
+  order: string[] = [];
+  protected now(): Date {
+    return new Date(this.clock);
+  }
+  protected async sleep(ms: number): Promise<void> {
+    this.sleeps.push(ms);
+    this.order.push('sleep');
+    this.clock = new Date(this.clock.getTime() + ms);
+  }
+}
 
 const T = new Date('2026-11-01T00:00:00Z');
 
@@ -19,15 +35,18 @@ const line = (id: string | null, demand: number, variantId = 'v1') => ({
   orderedAt: '2026-11-05T00:00:00Z',
 });
 
-function build(opts: { cutover?: Date | null; blocked?: string[] } = {}) {
+function build(opts: { cutover?: Date | null; blocked?: string[]; settle?: string } = {}) {
   const medusa = {
     listLineItemReservations: jest.fn(),
     setLineItemReservations: jest.fn(),
   };
+  const dryAsSet = async (items: { lineItemId: string; quantity: number }[]) =>
+    items.map((it) => ({ lineItemId: it.lineItemId, outcome: 'set', quantityBefore: 0, quantityAfter: it.quantity }));
+  medusa.setLineItemReservations.mockImplementation(async (items: { lineItemId: string; quantity: number }[]) => dryAsSet(items));
   const core = { candidates: jest.fn(), states: jest.fn() };
   const runs = { start: jest.fn().mockResolvedValue('run1'), finish: jest.fn().mockResolvedValue(undefined) };
   const projection = {
-    toWrites: jest.fn(async (lines: { channelOrderItemId: string | null; demand: number; variantId: string }[]) =>
+    toWrites: jest.fn(async (lines: { channelOrderItemId: string | null; demand: number; variantId: string }[], _asOf?: Date, _now?: Date) =>
       lines
         .filter((l) => l.channelOrderItemId !== null)
         .map((l) => ({
@@ -38,12 +57,13 @@ function build(opts: { cutover?: Date | null; blocked?: string[] } = {}) {
     ),
   };
   const cutover = { get: jest.fn().mockResolvedValue(opts.cutover === undefined ? T : opts.cutover) };
-  const service = new ReservationReconcileService(
+  const service = new TestableService(
     cutover as unknown as ReservationCutoverRepository,
     medusa as unknown as MedusaClient,
     core as unknown as CoreLineReservationStateClient,
     projection as unknown as ReservationProjectionService,
     runs as unknown as ReservationReconcileRunRepository,
+    { get: (_k: string, d?: unknown) => opts.settle ?? d } as unknown as ConfigService,
   );
   return { service, medusa, core, runs, projection };
 }
@@ -118,105 +138,194 @@ describe('ReservationReconcileService', () => {
     expect(rec.oldestUnknownAt).toEqual(new Date('2026-11-02T00:00:00Z'));
   });
 
-  it('고칠 줄 ≤ 한도 → 200줄씩 쓰고 set/error/deferred 를 센다, 같은 줄은 안 보냄', async () => {
-    const { service, medusa, core } = build();
-    const ids = Array.from({ length: 250 }, (_, i) => `i${i}`);
-    medusa.listLineItemReservations.mockResolvedValue({
-      reservations: [...ids.map((id) => mres(id, 1)), mres('same', 5)],
+  type Item = { lineItemId: string; quantity: number };
+  type Res = { lineItemId: string; outcome: string; quantityBefore: number; quantityAfter: number };
+  const res = (it: Item, outcome: string): Res => ({ lineItemId: it.lineItemId, outcome, quantityBefore: 1, quantityAfter: it.quantity });
+  /** dry: 계획 결과, write: 실제 쓰기 결과(없으면 모두 set). */
+  function mockMedusa(
+    medusa: { setLineItemReservations: jest.Mock },
+    fns: { dry?: (items: Item[]) => Res[]; write?: (items: Item[], call: number) => Res[] | Error } = {},
+  ) {
+    let writeCall = 0;
+    medusa.setLineItemReservations.mockImplementation(async (items: Item[], opts?: { dryRun?: boolean }) => {
+      if (opts?.dryRun) return (fns.dry ?? ((x: Item[]) => x.map((it) => res(it, 'set'))))(items);
+      const out = (fns.write ?? ((x: Item[]) => x.map((it) => res(it, 'set'))))(items, writeCall++);
+      if (out instanceof Error) throw out;
+      return out;
+    });
+  }
+  const writeCalls = (medusa: { setLineItemReservations: jest.Mock }) =>
+    medusa.setLineItemReservations.mock.calls.filter((c) => !c[1]?.dryRun);
+  const dryCalls = (medusa: { setLineItemReservations: jest.Mock }) =>
+    medusa.setLineItemReservations.mock.calls.filter((c) => c[1]?.dryRun);
+
+  function seed(
+    t: ReturnType<typeof build>,
+    ids: string[],
+    opts: { current?: number; target?: number; extraLines?: ReturnType<typeof line>[] } = {},
+  ) {
+    t.medusa.listLineItemReservations.mockResolvedValue({
+      reservations: ids.map((id) => mres(id, opts.current ?? 1)),
       nextAfterId: null,
     });
-    core.candidates.mockResolvedValue([]);
-    core.states.mockImplementation(async (_c: string, req: string[]) => ({
-      lines: [...ids.map((id) => line(id, 2)), line('same', 5)].filter((l) => req.includes(l.channelOrderItemId as string)),
+    t.core.candidates.mockResolvedValue([]);
+    t.core.states.mockImplementation(async (_c: string, req: string[]) => ({
+      lines: [...ids.map((id) => line(id, opts.target ?? 2)), ...(opts.extraLines ?? [])].filter((l) =>
+        req.includes(l.channelOrderItemId as string),
+      ),
       unknown: [],
     }));
-    medusa.setLineItemReservations.mockImplementation(async (items: { lineItemId: string }[]) =>
-      items.map((it, idx) => ({
-        lineItemId: it.lineItemId,
-        outcome: idx === 0 ? 'error' : idx === 1 ? 'deferred' : idx === 2 ? 'not_managed' : 'set',
-        quantityBefore: 1,
-        quantityAfter: 2,
-      })),
-    );
-    const rec = await service.run({ limit: 1000 });
-    expect(medusa.setLineItemReservations).toHaveBeenCalledTimes(2);
-    expect(medusa.setLineItemReservations.mock.calls[0][0]).toHaveLength(200);
-    expect(medusa.setLineItemReservations.mock.calls[1][0]).toHaveLength(50);
-    expect(rec).toMatchObject({ status: 'applied', fixes: 244, fixFailures: 2, deferred: 2 });
+  }
+
+  it('고칠 줄 ≤ 한도 → 200줄씩 쓰고 set/error/deferred/not_found 를 센다, 같은 줄은 안 보냄', async () => {
+    const t = build();
+    const ids = Array.from({ length: 250 }, (_, i) => `i${i}`);
+    seed(t, [...ids, 'same'], { current: 1 });
+    // same: 현재 1 목표 2 가 되지 않게 따로 맞춘다
+    t.medusa.listLineItemReservations.mockResolvedValue({
+      reservations: [...ids.map((id) => mres(id, 1)), mres('same', 2)],
+      nextAfterId: null,
+    });
+    mockMedusa(t.medusa, {
+      write: (items) =>
+        items.map((it, idx) => res(it, idx === 0 ? 'error' : idx === 1 ? 'deferred' : idx === 2 ? 'not_found' : 'set')),
+    });
+    const rec = await t.service.run({ limit: 1000 });
+    expect(writeCalls(t.medusa).map((c) => c[0].length)).toEqual([200, 50]);
+    expect(dryCalls(t.medusa).map((c) => c[0].length)).toEqual([200, 50]);
+    // 첫 묶음: error1 deferred1 not_found1 set197, 둘째 묶음 같은 규칙: set47
+    expect(rec).toMatchObject({ status: 'applied', fixes: 244, fixFailures: 4, deferred: 2 });
+  });
+
+  it('쓰기 결과에서 빠진 줄은 실패로 센다', async () => {
+    const t = build();
+    seed(t, ['a', 'b', 'c']);
+    mockMedusa(t.medusa, { write: (items) => items.slice(0, 1).map((it) => res(it, 'set')) });
+    const rec = await t.service.run({ limit: 10 });
+    expect(rec).toMatchObject({ fixes: 1, fixFailures: 2 });
   });
 
   it('쓰기 묶음이 던지면 그 묶음을 실패로 세고 다음 묶음을 계속한다', async () => {
-    const { service, medusa, core } = build();
-    const ids = Array.from({ length: 250 }, (_, i) => `i${i}`);
-    medusa.listLineItemReservations.mockResolvedValue({ reservations: ids.map((id) => mres(id, 1)), nextAfterId: null });
-    core.candidates.mockResolvedValue([]);
-    core.states.mockImplementation(async (_c: string, req: string[]) => ({
-      lines: ids.filter((id) => req.includes(id)).map((id) => line(id, 2)),
-      unknown: [],
-    }));
-    medusa.setLineItemReservations
-      .mockRejectedValueOnce(new Error('timeout'))
-      .mockImplementationOnce(async (items: { lineItemId: string }[]) =>
-        items.map((it) => ({ lineItemId: it.lineItemId, outcome: 'set', quantityBefore: 1, quantityAfter: 2 })),
-      );
-    const rec = await service.run({ limit: 1000 });
+    const t = build();
+    seed(t, Array.from({ length: 250 }, (_, i) => `i${i}`));
+    mockMedusa(t.medusa, { write: (items, call) => (call === 0 ? new Error('timeout') : items.map((it) => res(it, 'set'))) });
+    const rec = await t.service.run({ limit: 1000 });
     expect(rec).toMatchObject({ status: 'applied', fixes: 50, fixFailures: 200 });
   });
 
-  it('고칠 줄 > 한도 → halted, 쓰기 0, 예시 최대 10줄', async () => {
-    const { service, medusa, core } = build();
-    const ids = Array.from({ length: 15 }, (_, i) => `i${i}`);
-    medusa.listLineItemReservations.mockResolvedValue({ reservations: ids.map((id) => mres(id, 1)), nextAfterId: null });
-    core.candidates.mockResolvedValue([]);
-    core.states.mockResolvedValue({ lines: ids.map((id) => line(id, 2)), unknown: [] });
-    const rec = await service.run({ limit: 5 });
+  it('고칠 줄 > 한도 → halted, 실제 쓰기 0, 예시 최대 10줄', async () => {
+    const t = build();
+    seed(t, Array.from({ length: 15 }, (_, i) => `i${i}`));
+    mockMedusa(t.medusa);
+    const rec = await t.service.run({ limit: 5 });
     expect(rec.status).toBe('halted');
-    expect(medusa.setLineItemReservations).not.toHaveBeenCalled();
+    expect(writeCalls(t.medusa)).toHaveLength(0);
     expect(rec.examples).toHaveLength(10);
     expect(rec.examples[0]).toEqual({ lineItemId: 'i0', current: 1, target: 2 });
   });
 
-  it('limit null(강제) → 한도 무시, forced_by 기록', async () => {
-    const { service, medusa, core, runs } = build();
-    const ids = Array.from({ length: 15 }, (_, i) => `i${i}`);
-    medusa.listLineItemReservations.mockResolvedValue({ reservations: ids.map((id) => mres(id, 1)), nextAfterId: null });
-    core.candidates.mockResolvedValue([]);
-    core.states.mockResolvedValue({ lines: ids.map((id) => line(id, 2)), unknown: [] });
-    medusa.setLineItemReservations.mockImplementation(async (items: { lineItemId: string }[]) =>
-      items.map((it) => ({ lineItemId: it.lineItemId, outcome: 'set', quantityBefore: 1, quantityAfter: 2 })),
-    );
-    const rec = await service.run({ limit: null, forcedBy: 'admin-1' });
+  it('dry run 이 set 이 아니라고 한 줄(not_managed·deferred·unchanged)은 한도에 세지 않고 not_managed 는 보내지 않는다', async () => {
+    const t = build();
+    seed(t, ['m1', 'm2', 'd1', 'u1', 'ok']);
+    mockMedusa(t.medusa, {
+      dry: (items) =>
+        items.map((it) =>
+          res(it, it.lineItemId.startsWith('m') ? 'not_managed' : it.lineItemId === 'd1' ? 'deferred' : it.lineItemId === 'u1' ? 'unchanged' : 'set'),
+        ),
+    });
+    const rec = await t.service.run({ limit: 1 });
     expect(rec.status).toBe('applied');
-    expect(runs.start).toHaveBeenCalledWith(expect.any(Date), 'admin-1');
+    expect(writeCalls(t.medusa)[0][0].map((i: Item) => i.lineItemId).sort()).toEqual(['d1', 'ok']);
   });
 
-  it('막혀서 deferred 될 감소 줄은 한도에 넣지 않지만 쓰기에는 보낸다', async () => {
-    const { service, medusa, core } = build({ blocked: ['vb'] });
-    medusa.listLineItemReservations.mockResolvedValue({
-      reservations: [mres('d1', 5), mres('d2', 5), mres('up', 1)],
-      nextAfterId: null,
-    });
-    core.candidates.mockResolvedValue([]);
-    core.states.mockResolvedValue({ lines: [line('d1', 1, 'vb'), line('d2', 1, 'vb'), line('up', 2)], unknown: [] });
-    medusa.setLineItemReservations.mockImplementation(async (items: { lineItemId: string }[]) =>
-      items.map((it) => ({
-        lineItemId: it.lineItemId,
-        outcome: it.lineItemId === 'up' ? 'set' : 'deferred',
-        quantityBefore: 1,
-        quantityAfter: 1,
-      })),
-    );
-    const rec = await service.run({ limit: 1 });
-    expect(rec).toMatchObject({ status: 'applied', fixes: 1, deferred: 2 });
+  it('dry run 이 던지면 skipped·실제 쓰기 0', async () => {
+    const t = build();
+    seed(t, ['a']);
+    t.medusa.setLineItemReservations.mockRejectedValue(new Error('dry down'));
+    const rec = await t.service.run({ limit: 10 });
+    expect(rec.status).toBe('skipped');
+    expect(rec.error).toContain('dry down');
+    expect(writeCalls(t.medusa)).toHaveLength(0);
+  });
+
+  it('limit null(강제) → 한도 무시, forced_by 기록', async () => {
+    const t = build();
+    seed(t, Array.from({ length: 15 }, (_, i) => `i${i}`));
+    mockMedusa(t.medusa);
+    const rec = await t.service.run({ limit: null, forcedBy: 'admin-1' });
+    expect(rec.status).toBe('applied');
+    expect(t.runs.start).toHaveBeenCalledWith(expect.any(Date), 'admin-1');
+  });
+
+  it('감소 게이트: 읽은 시각 readAt 에서 정착 지연만큼 기다린 뒤 실제 시계로 toWrites', async () => {
+    const t = build();
+    seed(t, ['a']);
+    mockMedusa(t.medusa);
+    const start = t.service.clock.getTime();
+    await t.service.run({ limit: 10 });
+    expect(t.service.sleeps).toEqual([300000]);
+    const [, asOf, now] = t.projection.toWrites.mock.calls[0] as [unknown, Date, Date];
+    expect(asOf.getTime()).toBe(start);
+    expect(now.getTime()).toBe(start + 300000);
+  });
+
+  it('RESERVATION_PROJECTION_SETTLE_MS 설정을 따르고 무효값은 기본값', async () => {
+    const a = build({ settle: '1000' });
+    seed(a, ['a']);
+    mockMedusa(a.medusa);
+    await a.service.run({ limit: 10 });
+    expect(a.service.sleeps).toEqual([1000]);
+    const b = build({ settle: '0' });
+    seed(b, ['a']);
+    mockMedusa(b.medusa);
+    await b.service.run({ limit: 10 });
+    expect(b.service.sleeps).toEqual([300000]);
   });
 
   it('T 이전 주문 줄은 건드리지 않는다', async () => {
-    const { service, medusa, core, projection } = build();
-    medusa.listLineItemReservations.mockResolvedValue({ reservations: [mres('old', 1)], nextAfterId: null });
-    core.candidates.mockResolvedValue([]);
-    core.states.mockResolvedValue({ lines: [{ ...line('old', 3), orderedAt: '2026-10-01T00:00:00Z' }], unknown: [] });
-    await service.run({ limit: 10 });
-    expect(projection.toWrites).toHaveBeenCalledWith([], expect.any(Date), expect.any(Date));
-    expect(medusa.setLineItemReservations).not.toHaveBeenCalled();
+    const t = build();
+    t.medusa.listLineItemReservations.mockResolvedValue({ reservations: [mres('old', 1)], nextAfterId: null });
+    t.core.candidates.mockResolvedValue([]);
+    t.core.states.mockResolvedValue({ lines: [{ ...line('old', 3), orderedAt: '2026-10-01T00:00:00Z' }], unknown: [] });
+    await t.service.run({ limit: 10 });
+    expect(t.projection.toWrites).toHaveBeenCalledWith([], expect.any(Date), expect.any(Date));
+    expect(t.medusa.setLineItemReservations).not.toHaveBeenCalled();
+  });
+});
+
+describe('core 후보 시작 시각 = max(T, now − 30일)', () => {
+  it('now − 30일 이 T 보다 이르면 T', async () => {
+    const t = build(); // clock 11-09, T 11-01
+    t.medusa.listLineItemReservations.mockResolvedValue({ reservations: [], nextAfterId: null });
+    t.core.candidates.mockResolvedValue([]);
+    t.core.states.mockResolvedValue({ lines: [], unknown: [] });
+    await t.service.run({ limit: 10 });
+    expect(t.core.candidates.mock.calls[0][1]).toEqual(T);
+  });
+
+  it('now − 30일 이 T 보다 늦으면 now − 30일', async () => {
+    const t = build();
+    t.service.clock = new Date('2026-12-15T04:30:00Z');
+    t.medusa.listLineItemReservations.mockResolvedValue({ reservations: [], nextAfterId: null });
+    t.core.candidates.mockResolvedValue([]);
+    t.core.states.mockResolvedValue({ lines: [], unknown: [] });
+    await t.service.run({ limit: 10 });
+    expect(t.core.candidates.mock.calls[0][1]).toEqual(new Date('2026-11-15T04:30:00Z'));
+    expect(t.medusa.listLineItemReservations.mock.calls[0][0].orderCreatedFrom).toEqual(T);
+  });
+});
+
+describe('parseMaxFixes', () => {
+  it.each([
+    [undefined, 200],
+    ['', 200],
+    ['abc', 200],
+    ['0', 200],
+    ['-5', 200],
+    ['1.5', 200],
+    ['50', 50],
+    [75, 75],
+  ])('%p → %p', (raw, expected) => {
+    expect(parseMaxFixes(raw as string | number | undefined)).toBe(expected);
   });
 });

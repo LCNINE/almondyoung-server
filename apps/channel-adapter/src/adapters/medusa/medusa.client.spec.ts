@@ -2110,6 +2110,12 @@ describe('MedusaClient line-item reservations (#1247)', () => {
     expect(out).toEqual([{ lineItemId: 'li1', outcome: 'deferred', quantityBefore: 3, quantityAfter: 3, message: 'm' }]);
   });
 
+  it('setLineItemReservations: dryRun 이면 본문에 dry_run: true', async () => {
+    const fetchSpy = jest.spyOn(global, 'fetch').mockResolvedValue(new Response(JSON.stringify({ results: [] }), { status: 200 }));
+    await makeClient().setLineItemReservations([{ lineItemId: 'li1', quantity: 1, allowDecrease: true }], { dryRun: true });
+    expect(JSON.parse(String(fetchSpy.mock.calls[0][1]?.body))).toMatchObject({ dry_run: true });
+  });
+
   it('setLineItemReservations: 빈 배열은 Medusa 를 부르지 않는다', async () => {
     const fetchSpy = jest.spyOn(global, 'fetch');
     await expect(makeClient().setLineItemReservations([])).resolves.toEqual([]);

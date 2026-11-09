@@ -4,6 +4,8 @@ import { z } from 'zod';
 export const MAX_LINE_ITEM_RESERVATION_ITEMS = 200;
 
 export const AdminSetLineItemReservations = z.object({
+  /** true 면 계획된 결과만 돌려주고 아무것도 쓰지 않는다(락도 없다). 하루 대사가 «실제로 고칠 줄»을 세는 데 쓴다. */
+  dry_run: z.boolean().default(false),
   items: z
     .array(
       z.object({

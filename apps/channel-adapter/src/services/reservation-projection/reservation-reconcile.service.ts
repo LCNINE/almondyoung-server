@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { MedusaClient } from '../../adapters/medusa/medusa.client';
+import { ConfigService } from '@nestjs/config';
+import { MedusaClient, type LineItemReservationResult } from '../../adapters/medusa/medusa.client';
 import { CHANNEL_CAPABILITIES } from '../channel-capabilities';
 import { CORE_LINE_STATE_BATCH, CoreLineReservationStateClient } from '../clients/core-line-reservation-state.client';
 import type { CoreLineReservationState } from '../clients/core-line-reservation-state.client';
@@ -13,11 +14,7 @@ const MEDUSA_PAGE = 500;
 const WRITE_CHUNK = 200;
 const EXAMPLE_LIMIT = 10;
 const CORE_WINDOW_MS = 30 * 24 * 3600 * 1000;
-/**
- * 대사는 방금 읽은 상태를 그 자리에서 쓴다 — 이벤트 소비자처럼 스냅샷 나이로 «정착 지연» 을 판정하면 감소가 영영 막힌다.
- * 그래서 asOf 를 충분히 옛값으로 주고 «처리 전 ProductSellableQuantityChanged inbox 행» 검사만 쓴다.
- */
-const GATE_AS_OF_LAG_MS = 3600 * 1000;
+const DEFAULT_SETTLE_MS = 300000;
 
 export type ReconcileRunRecord = ReconcileRunResult & { id: string | null };
 
@@ -31,7 +28,23 @@ export class ReservationReconcileService {
     private readonly coreClient: CoreLineReservationStateClient,
     private readonly projection: ReservationProjectionService,
     private readonly runs: ReservationReconcileRunRepository,
-  ) {}
+    configService: ConfigService,
+  ) {
+    // 게이트(SellableSettleGate)와 같은 설정·같은 무효값 규칙.
+    const configured = Number(configService.get<string | number>('RESERVATION_PROJECTION_SETTLE_MS', DEFAULT_SETTLE_MS));
+    this.settleMs = Number.isFinite(configured) && configured > 0 ? configured : DEFAULT_SETTLE_MS;
+  }
+
+  private readonly settleMs: number;
+
+  /** 시계·대기는 테스트가 갈아끼운다. */
+  protected now(): Date {
+    return new Date();
+  }
+
+  protected sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
 
   /** `limit: null` 은 «확인했으니 고치기» — 한도를 무시하고 처리자를 남긴다. */
   async run(opts: { limit: number | null; forcedBy?: string }): Promise<ReconcileRunRecord> {
@@ -40,7 +53,7 @@ export class ReservationReconcileService {
     if (!cutoverAt || capability?.integration !== 'api' || capability.reservation.kind !== 'projection') {
       return { id: null, ...emptyResult('skipped') };
     }
-    const now = new Date();
+    const now = this.now();
     const id = await this.runs.start(now, opts.forcedBy ?? null);
     let result: ReconcileRunResult;
     try {
@@ -94,13 +107,25 @@ export class ReservationReconcileService {
 
     // T 이전 주문은 끝까지 건드리지 않는다.
     const eligible = lines.filter((l) => new Date(l.orderedAt).getTime() >= cutoverAt.getTime());
-    const writes = await this.projection.toWrites(eligible, new Date(now.getTime() - GATE_AS_OF_LAG_MS), now);
+    // 이벤트 소비자와 같은 규칙: 스냅샷을 읽은 시각(readAt)에서 정착 지연만큼 기다린 뒤 게이트를 연다.
+    // 읽기 직전 core 변경의 가용재고 이벤트가 아직 Kafka 에 있을 수 있어서다.
+    const readAt = this.now();
+    if (eligible.length > 0) await this.sleep(this.settleMs);
+    const writes = await this.projection.toWrites(eligible, readAt, this.now());
     const diffs = writes
       .map((w) => ({ ...w, current: medusaQty.get(w.lineItemId) ?? 0 }))
       .filter((w) => w.quantity !== w.current);
 
-    // 2) 한도 판정 — 어차피 deferred 될 줄(목표 < 현재, 게이트가 막음)은 세지 않는다.
-    const counted = diffs.filter((w) => !(w.quantity < w.current && !w.allowDecrease));
+    // 2) 한도 판정 — Medusa 에 쓰지 않고 계획만 받아(dry run) 실제로 «set» 이 될 줄만 센다.
+    //    관리 대상이 아닌 줄(not_managed)·막힌 감소(deferred)·이미 같은 줄이 한도를 오염시키지 않게. 실패하면 읽기 실패와 같다(던짐 → skipped).
+    const dry = new Map<string, LineItemReservationResult>();
+    for (let i = 0; i < diffs.length; i += WRITE_CHUNK) {
+      const chunk = diffs.slice(i, i + WRITE_CHUNK);
+      for (const r of await this.medusaClient.setLineItemReservations(toRequest(chunk), { dryRun: true })) {
+        dry.set(r.lineItemId, r);
+      }
+    }
+    const counted = diffs.filter((w) => dry.get(w.lineItemId)?.outcome === 'set');
     const base = { candidates: candidateIds.length, unknown: unknownIds.size, oldestUnknownAt };
     if (limit !== null && counted.length > limit) {
       const examples: ReconcileExample[] = counted
@@ -109,21 +134,27 @@ export class ReservationReconcileService {
       return { ...emptyResult('halted'), ...base, examples };
     }
 
-    // 3) 쓰기 — 묶음이 던지면 그 묶음 줄을 실패로 세고 다음 묶음으로.
+    // 3) 쓰기 — 계획상 바뀌지 않거나 관리 대상이 아닌 줄은 보내지 않는다. 묶음이 던지면 그 묶음 줄을 실패로 세고 다음 묶음으로.
+    const toSend = diffs.filter((w) => {
+      const outcome = dry.get(w.lineItemId)?.outcome;
+      return outcome === undefined || outcome === 'set' || outcome === 'deferred' || outcome === 'error';
+    });
     let fixes = 0;
     let fixFailures = 0;
     let deferred = 0;
-    for (let i = 0; i < diffs.length; i += WRITE_CHUNK) {
-      const chunk = diffs.slice(i, i + WRITE_CHUNK);
+    for (let i = 0; i < toSend.length; i += WRITE_CHUNK) {
+      const chunk = toSend.slice(i, i + WRITE_CHUNK);
       try {
-        const results = await this.medusaClient.setLineItemReservations(
-          chunk.map(({ lineItemId, quantity, allowDecrease }) => ({ lineItemId, quantity, allowDecrease })),
-        );
+        const results = await this.medusaClient.setLineItemReservations(toRequest(chunk));
+        const seen = new Set<string>();
         for (const r of results) {
+          seen.add(r.lineItemId);
           if (r.outcome === 'set') fixes += 1;
-          else if (r.outcome === 'error') fixFailures += 1;
+          else if (r.outcome === 'error' || r.outcome === 'not_found') fixFailures += 1;
           else if (r.outcome === 'deferred') deferred += 1;
         }
+        // 결과에 없는 줄은 어떻게 됐는지 모른다 — 실패로 센다.
+        fixFailures += chunk.filter((w) => !seen.has(w.lineItemId)).length;
       } catch (error) {
         fixFailures += chunk.length;
         this.logger.warn(`예약 대사 쓰기 묶음 실패: ${error instanceof Error ? error.message : String(error)}`);
@@ -131,6 +162,10 @@ export class ReservationReconcileService {
     }
     return { ...emptyResult('applied'), ...base, fixes, fixFailures, deferred };
   }
+}
+
+function toRequest(chunk: { lineItemId: string; quantity: number; allowDecrease: boolean }[]) {
+  return chunk.map(({ lineItemId, quantity, allowDecrease }) => ({ lineItemId, quantity, allowDecrease }));
 }
 
 function emptyResult(status: ReconcileRunResult['status']): ReconcileRunResult {
