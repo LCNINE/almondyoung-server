@@ -1,4 +1,10 @@
-import { planLineItemReservation, planReservationBatch, resolveManaged, type LineItemContext } from '../plan';
+import {
+  planLineItemReservation,
+  planReservationBatch,
+  resolveManaged,
+  resultsAfterWriteFailure,
+  type LineItemContext,
+} from '../plan';
 
 const managed = { inventoryItemId: 'iitem_1', locationId: 'sloc_1' };
 
@@ -259,5 +265,47 @@ describe('planReservationBatch', () => {
     );
     expect(batch.results[0]).toMatchObject({ outcome: 'error', quantity_before: 2, quantity_after: 2 });
     expect(batch.deletes).toEqual([]);
+  });
+});
+
+describe('resultsAfterWriteFailure', () => {
+  it('쓰기가 계획됐던 줄만 error 이고, 수량은 다시 읽은 지금 값이다', () => {
+    const contexts = new Map<string, LineItemContext>([
+      ['li_set', ctx({ lineItemId: 'li_set', existing: [{ id: 'r1', quantity: 1 }] })],
+      ['li_same', ctx({ lineItemId: 'li_same', existing: [{ id: 'r2', quantity: 2 }] })],
+      ['li_wait', ctx({ lineItemId: 'li_wait', existing: [{ id: 'r3', quantity: 3 }] })],
+      ['li_exchange', ctx({ lineItemId: 'li_exchange', variantId: null, inventoryItems: [] })],
+    ]);
+    const replan = planReservationBatch(
+      [
+        { line_item_id: 'li_set', quantity: 4, allow_decrease: true },
+        { line_item_id: 'li_same', quantity: 2, allow_decrease: true },
+        { line_item_id: 'li_wait', quantity: 1, allow_decrease: false },
+        { line_item_id: 'li_exchange', quantity: 0, allow_decrease: true },
+        { line_item_id: 'li_missing', quantity: 1, allow_decrease: true },
+      ],
+      contexts,
+      new Set(['iitem_1:sloc_1']),
+    );
+
+    expect(resultsAfterWriteFailure(replan, 'boom')).toEqual([
+      { line_item_id: 'li_set', outcome: 'error', quantity_before: 1, quantity_after: 1, message: 'boom' },
+      { line_item_id: 'li_same', outcome: 'unchanged', quantity_before: 2, quantity_after: 2 },
+      { line_item_id: 'li_wait', outcome: 'deferred', quantity_before: 3, quantity_after: 3 },
+      { line_item_id: 'li_exchange', outcome: 'not_managed', quantity_before: 0, quantity_after: 0 },
+      { line_item_id: 'li_missing', outcome: 'not_found', quantity_before: 0, quantity_after: 0 },
+    ]);
+  });
+
+  it('계획 단계에서 이미 error 였던 줄은 원래 메시지를 지킨다', () => {
+    const contexts = new Map([['li_1', ctx({ locationIds: [] })]]);
+    const replan = planReservationBatch(
+      [{ line_item_id: 'li_1', quantity: 1, allow_decrease: true }],
+      contexts,
+      new Set(),
+    );
+    const [result] = resultsAfterWriteFailure(replan, 'boom');
+    expect(result.outcome).toBe('error');
+    expect(result.message).not.toBe('boom');
   });
 });

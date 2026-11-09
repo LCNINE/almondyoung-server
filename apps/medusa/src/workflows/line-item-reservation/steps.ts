@@ -123,10 +123,22 @@ export async function loadStockedPairs(
  */
 export const planLineItemReservationsStep = createStep(
   'plan-line-item-reservations',
-  async (input: { items: LineItemReservationRequest[] }, { container }) => {
-    const lineItemIds = input.items.map((item) => item.line_item_id);
-    const contexts = await loadLineItemContexts(container, lineItemIds);
-    const stocked = await loadStockedPairs(container, contexts);
-    return new StepResponse<ReservationBatchPlan>(planReservationBatch(input.items, contexts, stocked));
-  },
+  async (input: { items: LineItemReservationRequest[] }, { container }) =>
+    new StepResponse<ReservationBatchPlan>(await readReservationBatchPlan(container, input.items)),
 );
+
+/**
+ * Medusa 에서 지금 값을 읽어 계획한다(읽기만). 워크플로의 계획 스텝과, 묶음 쓰기가 되감긴 뒤 라우트가
+ * 줄마다 결과를 다시 매길 때 같이 쓴다 — 두 곳이 서로 다른 규칙으로 읽지 않게.
+ */
+export async function readReservationBatchPlan(
+  container: MedusaContainer,
+  items: LineItemReservationRequest[],
+): Promise<ReservationBatchPlan> {
+  const contexts = await loadLineItemContexts(
+    container,
+    items.map((item) => item.line_item_id),
+  );
+  const stocked = await loadStockedPairs(container, contexts);
+  return planReservationBatch(items, contexts, stocked);
+}

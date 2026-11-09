@@ -1,15 +1,17 @@
 import type { MedusaRequest, MedusaResponse } from '@medusajs/framework/http';
 import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
-import type { LineItemReservationResult } from '../../../workflows/line-item-reservation/plan';
+import { resultsAfterWriteFailure } from '../../../workflows/line-item-reservation/plan';
+import { readReservationBatchPlan } from '../../../workflows/line-item-reservation/steps';
 import { setLineItemReservationsWorkflow } from '../../../workflows/line-item-reservation/workflows';
 import type { AdminListLineItemReservationsType, AdminSetLineItemReservationsType } from './validators';
 
 /**
  * 줄마다 예약을 판매 단위 N 으로 설정한다 (#1247). 호출자는 channel-adapter 의 예약 투영(이벤트 워커·하루 대사).
  *
- * 응답은 언제나 200 + 줄마다 결과다(ADR-0040 배치 수신: 검증 + 워크플로 한 번 + 건별 결과). 묶음 쓰기가
- * 되감기면 어느 줄도 쓰이지 않았으므로 모든 줄을 `error` 로 돌려준다 — 호출자는 `error` 를 다시 시도한다.
- * 그때 지금 값은 모르므로 quantity_before·after 는 0 이다(`error` 줄의 수량은 읽지 않는다).
+ * 응답은 200 + 줄마다 결과다(ADR-0040 배치 수신: 검증 + 워크플로 한 번 + 건별 결과). 쓰기는 묶음 단위로 원자적이라
+ * 묶음 쓰기가 되감기면 어느 줄도 쓰이지 않았다. 그때는 계획을 다시 읽어 쓰기가 계획됐던 줄만 `error` 로,
+ * 나머지 줄은 다시 읽은 결과 그대로 돌려준다(`resultsAfterWriteFailure`). 호출자는 `error` 를 다시 시도한다.
+ * 다시 읽기마저 실패하면 줄마다 지어낸 값을 주지 않고 그 오류가 그대로 5xx 로 나간다 — 호출 전체 실패다.
  */
 export async function POST(req: MedusaRequest<AdminSetLineItemReservationsType>, res: MedusaResponse) {
   const { items } = req.validatedBody;
@@ -19,15 +21,9 @@ export async function POST(req: MedusaRequest<AdminSetLineItemReservationsType>,
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const logger = req.scope.resolve(ContainerRegistrationKeys.LOGGER);
-    logger.warn(`[line-item-reservations] 묶음 ${items.length}줄 쓰기 실패: ${message}`);
-    const results: LineItemReservationResult[] = items.map((item) => ({
-      line_item_id: item.line_item_id,
-      outcome: 'error',
-      quantity_before: 0,
-      quantity_after: 0,
-      message,
-    }));
-    return res.json({ results });
+    logger.warn(`[line-item-reservations] 묶음 ${items.length}줄 쓰기 실패(되감김): ${message}`);
+    const replan = await readReservationBatchPlan(req.scope, items);
+    return res.json({ results: resultsAfterWriteFailure(replan, message) });
   }
 }
 

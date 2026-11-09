@@ -219,6 +219,21 @@ export function planReservationBatch(
   return plan;
 }
 
+/**
+ * 묶음 쓰기가 되감긴 뒤의 줄별 결과. `replan` 은 되감긴 뒤 다시 읽은 계획이다.
+ *
+ * 쓰기가 계획됐던 줄(`set`)만 `error` 다 — 그 줄은 쓰이지 않았으므로 수량은 다시 읽은 지금 값(before = after)이다.
+ * 나머지 줄(`unchanged`·`deferred`·`not_managed`·`not_found`·`error`)은 원래 쓰기가 없었으니 다시 읽은 결과 그대로다.
+ * 모든 줄을 `error`·0 으로 덮으면 고칠 필요 없는 줄까지 실패로 세고, 0 이 «Medusa 가 0 을 잡고 있다»와 구별되지 않는다.
+ */
+export function resultsAfterWriteFailure(replan: ReservationBatchPlan, message: string): LineItemReservationResult[] {
+  return replan.results.map((result) =>
+    result.outcome === 'set'
+      ? { ...result, outcome: 'error' as const, quantity_after: result.quantity_before, message }
+      : result,
+  );
+}
+
 function unwritten(
   lineItemId: string,
   outcome: ReservationOutcome,
