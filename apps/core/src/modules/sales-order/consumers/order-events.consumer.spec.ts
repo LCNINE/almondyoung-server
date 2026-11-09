@@ -869,7 +869,7 @@ describe('OrderEventsConsumer poison classification (작업 13)', () => {
     expect(policy?.nonRetryableErrors).toEqual([NotFoundException]);
   });
 
-  it('classifies ChannelReturnRequested/Cancelled domain NotFound·BadRequest as non-retryable, Conflict stays retryable', () => {
+  it('classifies ChannelReturn*·ChannelCancelRequested domain NotFound·BadRequest as non-retryable, Conflict stays retryable', () => {
     for (const handler of [
       proto.handleChannelReturnRequested,
       proto.handleChannelReturnCancelled,
@@ -877,6 +877,7 @@ describe('OrderEventsConsumer poison classification (작업 13)', () => {
       proto.handleChannelReturnSettlementFailed,
       proto.handleChannelReturnPrepaid,
       proto.handleChannelReturnPrepayFailed,
+      proto.handleChannelCancelRequested,
     ]) {
       expect(retryPolicyOf(handler)?.nonRetryableErrors).toEqual([NotFoundError, BadRequestError]);
     }
@@ -953,5 +954,43 @@ describe('OrderEventsConsumer — 채널 반품 사실 위임 (K8 PR5)', () => {
     const payload = { requestId: 'cr-1', returnId: 'ret-1', failureCode: 'http_502', retryable: true };
     await consumer.handleChannelReturnPrepayFailed(payload as never, envelope as never);
     expect(customerReturns.recordPrepayFailed).toHaveBeenCalledWith(payload);
+  });
+});
+
+describe('OrderEventsConsumer — 마켓 고객 취소요청 위임 (스펙 §5.2)', () => {
+  it('ChannelCancelRequested 를 커널의 문에 넘긴다 — order_events 에 적지 않는다', async () => {
+    const cancellation = { receiveChannelCustomerRequest: jest.fn().mockResolvedValue({ kind: 'order_unknown' }) };
+    const dbService = { run: jest.fn() };
+    const consumer = new OrderEventsConsumer(
+      {} as never,
+      {} as never,
+      {} as never,
+      {} as never,
+      dbService as never,
+      {} as never,
+      {} as never,
+      cancellation as never,
+      {} as never,
+    );
+    const payload = {
+      orderId: 'wms-1',
+      salesChannel: 'naver',
+      externalOrderId: 'ord-1',
+      channelRequestRef: 'po-1',
+      channelRequestKey: 'po-1:c1',
+      needsApproval: true,
+      requestedAt: '2026-11-10T00:00:00.000Z',
+      items: [{ channelOrderItemId: 'po-1', quantity: 1 }],
+    };
+    await consumer.handleChannelCancelRequested(payload as never, { messageId: 'm', correlationId: 'c' } as never);
+    expect(cancellation.receiveChannelCustomerRequest).toHaveBeenCalledWith({
+      salesChannel: 'naver',
+      externalOrderId: 'ord-1',
+      channelRequestRef: 'po-1',
+      channelRequestKey: 'po-1:c1',
+      needsApproval: true,
+      items: [{ channelOrderItemId: 'po-1', quantity: 1 }],
+    });
+    expect(dbService.run).not.toHaveBeenCalled();
   });
 });

@@ -131,6 +131,11 @@ function makeKernel(
     hasActivePrintOrder: jest.fn().mockResolvedValue(options.activePrint ?? false),
     cancellationNeedsFollowUp: jest.fn().mockResolvedValue(options.followUp ?? null),
     lockOrderLines: jest.fn().mockResolvedValue({ salesChannel: so.salesChannel, lines: orderLines }),
+    channelOrder: jest
+      .fn()
+      .mockResolvedValue(
+        options.noSalesOrder ? undefined : { id: so.id, salesChannel: so.salesChannel, lines: orderLines },
+      ),
   };
   const k = new OrderCancellation(
     db as never,
@@ -820,5 +825,98 @@ describe('OrderCancellation 통보 — 채널 취소·무통장 승인·채널 �
       const { tx } = makeTx();
       await expect(k.noticeChannelDecrease(decrease, tx as never)).rejects.toBe(boom);
     });
+  });
+});
+
+describe('OrderCancellation.receiveChannelCustomerRequest — 마켓 고객 취소요청 (스펙 §5.2)', () => {
+  const req = {
+    salesChannel: 'naver' as const,
+    externalOrderId: 'ord-1',
+    channelRequestRef: 'po-1',
+    channelRequestKey: 'po-1:c1',
+    needsApproval: true,
+    items: [{ channelOrderItemId: 'ci-1', quantity: 1 }],
+  };
+
+  it('precheck → gate(거절을 보드에 남긴다) → request 순서로, 마켓 요청자와 요청 키로 확정한다', async () => {
+    const { k, cancelRequests, printCancel, callOrder } = makeKernel({ salesChannel: 'naver' });
+    expect(await k.receiveChannelCustomerRequest(req)).toEqual({ kind: 'stopped', view: VIEW });
+    expect(callOrder).toEqual(['precheck', 'gate', 'request']);
+    expect(cancelRequests.findBySourceKey).toHaveBeenCalledWith('so', 'channel-request:po-1:c1');
+    expect(printCancel).toHaveBeenCalledWith('so', 'gate', lines);
+    expect(cancelRequests.request).toHaveBeenCalledWith(
+      {
+        salesOrderId: 'so',
+        lines,
+        requester: {
+          kind: 'channel-customer',
+          channelRequestRef: 'po-1',
+          channelRequestKey: 'po-1:c1',
+          needsApproval: true,
+        },
+        sourceKey: 'channel-request:po-1:c1',
+      },
+      expect.anything(),
+    );
+  });
+
+  it('같은 요청 키의 행이 있으면 replayed — 판정·인쇄를 다시 하지 않는다', async () => {
+    const view = { ...VIEW, id: 'req-0' };
+    const { k, cancelRequests, printCancel } = makeKernel({ salesChannel: 'naver', replayView: view });
+    expect(await k.receiveChannelCustomerRequest(req)).toEqual({ kind: 'replayed', view });
+    expect(cancelRequests.precheck).not.toHaveBeenCalled();
+    expect(printCancel).not.toHaveBeenCalled();
+  });
+
+  it('core 에 없는 주문은 order_unknown', async () => {
+    const { k, cancelRequests } = makeKernel({ salesChannel: 'naver', noSalesOrder: true });
+    expect(await k.receiveChannelCustomerRequest(req)).toEqual({ kind: 'order_unknown' });
+    expect(cancelRequests.findBySourceKey).not.toHaveBeenCalled();
+  });
+
+  it('승인으로 답하지 않는 채널이면 결함으로 던진다', async () => {
+    const { k } = makeKernel({ salesChannel: 'medusa' });
+    await expect(k.receiveChannelCustomerRequest({ ...req, salesChannel: 'medusa' })).rejects.toThrow(
+      'does not answer customer cancel requests',
+    );
+  });
+
+  it('400 거절은 not_stoppable — 확정하지 않는다', async () => {
+    const { k, cancelRequests } = makeKernel({ salesChannel: 'naver' });
+    cancelRequests.precheck.mockRejectedValueOnce(new BadRequestError('이미 나간 수량'));
+    expect(await k.receiveChannelCustomerRequest(req)).toEqual({ kind: 'not_stoppable', reason: '이미 나간 수량' });
+    expect(cancelRequests.request).not.toHaveBeenCalled();
+  });
+
+  it('인쇄 제작 중이면 not_stoppable — 고객 문처럼 «인쇄 빼고»를 묻지 않는다', async () => {
+    const printCancel = jest.fn().mockRejectedValue(new PrintInProductionError());
+    const { k, cancelRequests } = makeKernel({ salesChannel: 'naver', printCancel });
+    expect(await k.receiveChannelCustomerRequest(req)).toMatchObject({ kind: 'not_stoppable' });
+    expect(printCancel).toHaveBeenCalledWith('so', 'gate', lines);
+    expect(cancelRequests.request).not.toHaveBeenCalled();
+  });
+
+  it('확정이 400 으로 거절되면 인쇄 행에 남기고 not_stoppable', async () => {
+    const { k, cancelRequests, printNote } = makeKernel({ salesChannel: 'naver' });
+    const refusal = new BadRequestError('적용 거절');
+    cancelRequests.request.mockRejectedValueOnce(refusal);
+    expect(await k.receiveChannelCustomerRequest(req)).toMatchObject({ kind: 'not_stoppable' });
+    expect(printNote).toHaveBeenCalledWith(PRINTED, refusal);
+  });
+
+  it('409 같은 데이터 어긋남은 삼키지 않고 던진다', async () => {
+    const { k, cancelRequests } = makeKernel({ salesChannel: 'naver' });
+    cancelRequests.precheck.mockRejectedValueOnce(new ConflictException('composition not frozen'));
+    await expect(k.receiveChannelCustomerRequest(req)).rejects.toThrow('composition not frozen');
+  });
+
+  it('판매주문에 없는 채널 줄이 하나라도 있으면 not_stoppable — 판정하지 않는다', async () => {
+    const { k, cancelRequests } = makeKernel({ salesChannel: 'naver' });
+    const outcome = await k.receiveChannelCustomerRequest({
+      ...req,
+      items: [...req.items, { channelOrderItemId: 'ci-x', quantity: 1 }],
+    });
+    expect(outcome).toEqual({ kind: 'not_stoppable', reason: 'channel lines not in the sales order: ci-x' });
+    expect(cancelRequests.precheck).not.toHaveBeenCalled();
   });
 });

@@ -12,7 +12,19 @@ export type CancelRequestStatus = 'requested' | 'settling' | 'applied' | 'reject
 export type CancelRequester =
   | { kind: 'operator'; actorId: string }
   | { kind: 'customer'; customerId: string }
-  | { kind: 'wallet-refund-approval'; intentId: string };
+  | { kind: 'wallet-refund-approval'; intentId: string }
+  /**
+   * 마켓 고객 취소요청(스펙 §5.2). `channelRequestRef` 는 승인 명령이 그대로 돌려줄 마켓 참조, `channelRequestKey` 는 그 요청 하나의
+   * 중복 판정 식별자다 — core 는 둘 다 해석하지 않는다
+   */
+  | { kind: 'channel-customer'; channelRequestRef: string; channelRequestKey: string; needsApproval: boolean };
+
+/** 마켓 고객 취소요청 행의 `requestedBy` 머리 — 요청 문이 `channel-customer:<요청 키>` 로 적고, 정산(settler)·환불 조치가 이걸로 가린다 */
+export const MARKET_CUSTOMER_REQUESTER_PREFIX = 'channel-customer:';
+
+export function isMarketCustomerRequest(meta: Pick<CancelRequestMetadata, 'request'>): boolean {
+  return meta.request.requestedBy.startsWith(MARKET_CUSTOMER_REQUESTER_PREFIX);
+}
 
 /** 요청 행 `deltas` 의 원소. 전체취소는 «그때 남은 몫»을 기록용으로 담는다. */
 export interface CancelRequestLine {

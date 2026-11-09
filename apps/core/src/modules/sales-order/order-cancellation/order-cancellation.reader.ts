@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { and, eq, ne, sql } from 'drizzle-orm';
 import { DbTx, SalesOrder, wmsTables } from '../../inventory/schema/inventory.schema';
 import { isDigitalFulfillmentLine } from '../../product-matching/line-composition/line-composition';
+import type { SalesChannelName } from './channel-cancellation-capability';
 
 /** 커널이 취소를 시도하기 전·후에 읽는 것. 의존성이 없다 — 호출자의 트랜잭션으로 읽는다 */
 @Injectable()
@@ -35,6 +36,34 @@ export class OrderCancellationReader {
       .where(eq(t.salesOrderId, salesOrderId))
       .orderBy(t.id);
     return { salesChannel: so.salesChannel, lines };
+  }
+
+  /** 채널 키로 찾은 판매주문과 그 줄의 채널 줄 번호 — 마켓 고객 취소요청 문이 판정 전에 읽는다(잠그지 않는다) */
+  async channelOrder(
+    salesChannel: SalesChannelName,
+    externalOrderId: string,
+    tx: DbTx,
+  ): Promise<
+    { id: string; salesChannel: string; lines: Array<{ id: string; channelOrderItemId: string | null }> } | undefined
+  > {
+    const [so] = await tx
+      .select({ id: wmsTables.salesOrders.id, salesChannel: wmsTables.salesOrders.salesChannel })
+      .from(wmsTables.salesOrders)
+      .where(
+        and(
+          eq(wmsTables.salesOrders.salesChannel, salesChannel),
+          eq(wmsTables.salesOrders.channelOrderId, externalOrderId),
+        ),
+      )
+      .limit(1);
+    if (!so) return undefined;
+    const t = wmsTables.salesOrderLines;
+    const lines = await tx
+      .select({ id: t.id, channelOrderItemId: t.channelOrderItemId })
+      .from(t)
+      .where(eq(t.salesOrderId, so.id))
+      .orderBy(t.id);
+    return { ...so, lines };
   }
 
   /** 디지털 이용권 줄 id — 부분 취소는 디지털을 회수하지 않으므로 호출자가 제외한다 */

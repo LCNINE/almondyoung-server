@@ -9,14 +9,12 @@ import {
   CancelRequestLine,
   CancelRequestMetadata,
   Settlement,
+  isMarketCustomerRequest,
   readCancelRequestLines,
   readCancelRequestMetadata,
 } from './channel-cancel-request.types';
 
 type AmendmentRow = typeof wmsTables.salesOrderAmendments.$inferSelect;
-
-/** 마켓 고객 취소요청 행의 `requestedBy` 머리 — 요청 문(`requesterLabel`)이 `channel-customer:<요청 키>` 로 적는다 */
-const MARKET_CUSTOMER_REQUESTER_PREFIX = 'channel-customer:';
 
 /**
  * 요청 행의 채널 줄마다 «채널 누적 취소 수량이 여기에 닿으면 이 요청이 끝났다»는 수량 = 요청 직전 취소(`cancelledBefore`, 없으면 0)
@@ -110,7 +108,7 @@ export class ChannelCancelSettler {
     let closed = 0;
     for (const row of await this.reader.findSettling(salesOrderId, tx, { lock: true })) {
       const meta = readCancelRequestMetadata(row.metadata);
-      if (!meta.request.requestedBy.startsWith(MARKET_CUSTOMER_REQUESTER_PREFIX)) continue;
+      if (!isMarketCustomerRequest(meta)) continue;
       const required = requiredCumulative(readCancelRequestLines(row.deltas));
       if (!required) continue;
       // 줄마다 다른 사실로 올 수 있다 — 이번 사실이 덮은 줄을 앞서 덮인 줄에 더해 둔다

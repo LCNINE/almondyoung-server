@@ -323,6 +323,31 @@ export class OrderEventsConsumer {
   }
 
   /**
+   * 마켓 고객 취소요청 (스펙 §5.2). 판정·취소·요청 행·승인 명령은 커널이 한다. 같은 요청의 재관측은 요청 키로 커널이 거른다.
+   * order_events 에 적지 않는다(`ChannelReturnRequested` 와 같은 이유 — 판매주문 생애가 아니다).
+   */
+  @On(ORDER_STREAM, 'ChannelCancelRequested')
+  @RetryPolicy({ nonRetryableErrors: [NotFoundError, BadRequestError] })
+  async handleChannelCancelRequested(
+    @EventPayload() payload: EventPayloadOf<typeof ORDER_STREAM, 'ChannelCancelRequested'>,
+    @EventEnvelope() envelope: EnvelopeOf<typeof ORDER_STREAM, 'ChannelCancelRequested'>,
+  ) {
+    this.logger.log(
+      `[ChannelCancelRequested] ${payload.salesChannel}/${payload.externalOrderId} request=${payload.channelRequestKey}`,
+      { correlationId: envelope.correlationId },
+    );
+    const outcome = await this.cancellation.receiveChannelCustomerRequest({
+      salesChannel: payload.salesChannel,
+      externalOrderId: payload.externalOrderId,
+      channelRequestRef: payload.channelRequestRef,
+      channelRequestKey: payload.channelRequestKey,
+      needsApproval: payload.needsApproval,
+      items: payload.items,
+    });
+    this.logger.log(`[ChannelCancelRequested] ${payload.channelRequestKey} → ${outcome.kind}`);
+  }
+
+  /**
    * 채널 반품 확정·취소 (K8 PR5). «반품 예정» 기록과 고객 «반품 접수» 이벤트는 서비스가 한 트랜잭션에서 쓴다.
    * order_events 에 적지 않는다(정산 실패 핸들러와 같은 이유 — 판매주문 생애가 아니다).
    */

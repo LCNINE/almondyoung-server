@@ -27,6 +27,8 @@ import type {
   CancellationRequest,
   ChannelCancellationReceipt,
   ChannelCancelledNotice,
+  ChannelCustomerCancelOutcome,
+  ChannelCustomerCancelRequest,
   ChannelDecreaseNotice,
   DecreaseOutcome,
   WalletApprovalNotice,
@@ -44,6 +46,11 @@ class Refused extends Error {
   constructor(readonly refusal: string) {
     super(refusal);
   }
+}
+
+/** 인쇄 gate 의 «멈출 수 없다» — 제작 중·출고됨. 바빠서 못 물었다(409 재시도·503)는 거절이 아니라 던진다 */
+function isPrintRefusal(error: unknown): boolean {
+  return error instanceof PrintInProductionError || error instanceof PrintShippedError;
 }
 
 // 요청자 종류는 requester 안에 있어 TS 가 바깥 합집합을 좁히지 못한다 — 판정을 한 곳에 둔다
@@ -415,6 +422,82 @@ export class OrderCancellation {
       if (!isBadRequestRefusal(error)) throw error;
       return { refusal: error };
     }
+  }
+
+  /**
+   * 마켓 고객 취소요청 (스펙 §5.2). 마켓이 «고객이 이 줄들을 취소해 달라»고 알렸다 — 멈출 수 있으면 요청 순간 core 가 그 줄·수량을
+   * 취소하고, 채널 취소 요청 행(정산 중)과 승인 명령(`CancelChannelOrder.answers`)을 남긴다. 그 뒤는 기존 정산 수명주기다.
+   * 판정은 운영자 문과 같은 순서다: 사전검사 → 인쇄 gate(물을 고객이 없어 «인쇄 빼고»를 묻지 않고, 거절은 인쇄 보드에 남긴다) → 확정.
+   * 요청 수량 전부를 멈출 수 없으면 아무것도 하지 않는다(일부만 취소하고 승인하는 갈래는 없다) — 행·명령 없이 경고만 남기고,
+   * 판매자센터 몫이다(네이버는 우리 발송처리가 곧 거부다). 400 거절·인쇄 거절만 «못 멈춤»이고 409 같은 데이터 어긋남은 던진다.
+   */
+  async receiveChannelCustomerRequest(req: ChannelCustomerCancelRequest): Promise<ChannelCustomerCancelOutcome> {
+    const order = await this.db.run((tx) => this.reader.channelOrder(req.salesChannel, req.externalOrderId, tx));
+    if (!order) {
+      // 컷오버 전 주문(셀메이트 몫) 등 — 실패가 아니다(스펙 §5.2)
+      this.logger.log(
+        `[OrderCancellation] ${req.salesChannel} cancel request ${req.channelRequestKey}: order ${req.externalOrderId} not in core, ignored`,
+      );
+      return { kind: 'order_unknown' };
+    }
+    if (!cancellationCapabilityOf(order.salesChannel).answersCustomerCancelRequest) {
+      throw new Error(`Sales channel ${order.salesChannel} does not answer customer cancel requests`);
+    }
+    const sourceKey = `channel-request:${req.channelRequestKey}`;
+    const replay = await this.cancelRequests.findBySourceKey(order.id, sourceKey);
+    if (replay) return { kind: 'replayed', view: replay };
+
+    const lineIdByItem = new Map(
+      order.lines.flatMap((line) => (line.channelOrderItemId ? [[line.channelOrderItemId, line.id] as const] : [])),
+    );
+    const lines: CancelLine[] = [];
+    const unknownItems: string[] = [];
+    for (const item of req.items) {
+      const salesOrderLineId = lineIdByItem.get(item.channelOrderItemId);
+      if (salesOrderLineId) lines.push({ salesOrderLineId, quantity: item.quantity });
+      else unknownItems.push(item.channelOrderItemId);
+    }
+    if (unknownItems.length > 0) {
+      return this.notStoppable(req, order.id, `channel lines not in the sales order: ${unknownItems.join(', ')}`);
+    }
+
+    try {
+      await this.cancelRequests.precheck(order.id, lines);
+      const printed = await this.printCancellation.cancelForOrder(order.id, 'gate', lines);
+      const view = await this.afterPrintCancel(printed, () =>
+        this.db.run((tx) =>
+          this.cancelRequests.request(
+            {
+              salesOrderId: order.id,
+              lines,
+              requester: {
+                kind: 'channel-customer',
+                channelRequestRef: req.channelRequestRef,
+                channelRequestKey: req.channelRequestKey,
+                needsApproval: req.needsApproval,
+              },
+              sourceKey,
+            },
+            tx,
+          ),
+        ),
+      );
+      return { kind: 'stopped', view };
+    } catch (error) {
+      if (!isBadRequestRefusal(error) && !isPrintRefusal(error)) throw error;
+      return this.notStoppable(req, order.id, errorDetail(error));
+    }
+  }
+
+  private notStoppable(
+    req: ChannelCustomerCancelRequest,
+    salesOrderId: string,
+    reason: string,
+  ): ChannelCustomerCancelOutcome {
+    this.logger.warn(
+      `[OrderCancellation] ${req.salesChannel} cancel request ${req.channelRequestKey} on SO ${salesOrderId} not stoppable — seller center: ${reason}`,
+    );
+    return { kind: 'not_stoppable', reason };
   }
 
   /**
