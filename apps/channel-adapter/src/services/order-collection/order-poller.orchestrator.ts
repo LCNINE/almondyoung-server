@@ -4,6 +4,7 @@ import { eq, and, inArray } from 'drizzle-orm';
 import { DbService } from '@app/db';
 import { InjectPublisher, PublisherFor } from '@app/events';
 import {
+  ChannelCancelRequestedPayload,
   ChannelReturnCancelledPayload,
   ChannelReturnRequestedPayload,
   ChannelReturnPrepaidPayload,
@@ -311,7 +312,9 @@ export class OrderPollerOrchestrator {
               // longer eligible) must close that quarantine — otherwise it is left open for a
               // replay that can never collect it, and the terminal signal is durably lost. Closing
               // it records the terminal outcome, so the watermark can safely advance.
-              if (!result.recorded) {
+              // 취소요청은 종결이 아니다 — 고객 철회·우리 발송(=거부)이면 주문은 다시 수집 대상이 된다.
+              // 미수집 주문의 열린 격리를 그것으로 닫지 않는다(낼 곳이 없을 뿐이라 워터마크는 지나간다).
+              if (!result.recorded && orderedItem.item.eventType !== 'ChannelCancelRequested') {
                 await this.resolveOrphanedQuarantine(provider.channel, orderedItem.item);
               }
               advanceWatermark(orderedItem.item.sourceUpdatedAt);
@@ -862,6 +865,18 @@ export class OrderPollerOrchestrator {
         case 'OrderRefundCreated': {
           const refunded: OrderRefundCreatedPayload = { orderId: wmsOrderId, ...channelKey, ...item.payload };
           await this.ordersPublisher.enqueue({ eventType: 'OrderRefundCreated', payload: refunded, ...common }, tx);
+          break;
+        }
+        case 'ChannelCancelRequested': {
+          const cancelRequested: ChannelCancelRequestedPayload = {
+            orderId: wmsOrderId,
+            ...channelKey,
+            ...item.payload,
+          };
+          await this.ordersPublisher.enqueue(
+            { eventType: 'ChannelCancelRequested', payload: cancelRequested, ...common },
+            tx,
+          );
           break;
         }
         case 'ChannelReturnRequested': {

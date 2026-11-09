@@ -510,4 +510,156 @@ describe('NaverOrderSource', () => {
     const to = new Date(secondCall.lastChangedTo).getTime();
     expect(to - from).toBe(24 * 60 * 60 * 1000);
   });
+  // 이미 core 에 들어간 주문에 나중에 붙은 취소요청 (스펙 §5.1). 오케스트레이터는 매핑이 있을 때만 낸다.
+  describe('취소요청·일부 수량 취소 관측', () => {
+    const fetchOne = async (...details: Array<ReturnType<typeof detail> & { currentClaim?: unknown }>) => {
+      client.getLastChangedStatuses.mockResolvedValue({
+        data: { count: 1, lastChangeStatuses: [changed(details[0].productOrder.productOrderId, 'ord-1')] },
+      });
+      client.getProductOrderIdsByOrderId.mockResolvedValue({
+        data: details.map((d) => d.productOrder.productOrderId),
+      });
+      client.getOrderDetails.mockResolvedValue({ data: details });
+      const [snapshot] = await source.fetchOrders(new Date('2026-08-19T00:00:00.000Z'));
+      return snapshot;
+    };
+
+    it('CANCEL_REQUEST on a collected productOrder emits ChannelCancelRequested with needsApproval true', async () => {
+      const snapshot = await fetchOne(
+        detail('po-1', 'ord-1'),
+        detail('po-2', 'ord-1', { claimStatus: 'CANCEL_REQUEST', claimType: 'CANCEL', claimId: 'cl-1' }),
+      );
+
+      expect(snapshot.lifecycle).toEqual([
+        {
+          eventType: 'ChannelCancelRequested',
+          eventKey: 'cancel-request:po-2:cl-1',
+          payload: {
+            channelRequestRef: 'po-2',
+            channelRequestKey: 'po-2:cl-1',
+            needsApproval: true,
+            // 네이버 시각(+09:00)은 계약(`z.string().datetime()`)을 못 통과한다 — UTC ISO 로 옮겨 싣는다.
+            requestedAt: '2026-08-18T16:00:00.000Z',
+            items: [{ channelOrderItemId: 'po-2', quantity: 1 }],
+          },
+          rawEvent: { productOrderId: 'po-2', claimId: 'cl-1', claimStatus: 'CANCEL_REQUEST' },
+        },
+      ]);
+    });
+
+    it('CANCELING emits ChannelCancelRequested with needsApproval false', async () => {
+      const snapshot = await fetchOne(detail('po-1', 'ord-1', { claimStatus: 'CANCELING' }));
+
+      expect(snapshot.lifecycle).toHaveLength(1);
+      expect(snapshot.lifecycle[0]).toMatchObject({
+        eventType: 'ChannelCancelRequested',
+        // claimId 가 없으면 `na` — 같은 상품주문의 재관측이 같은 키가 된다.
+        eventKey: 'cancel-request:po-1:na',
+        payload: { channelRequestRef: 'po-1', channelRequestKey: 'po-1:na', needsApproval: false },
+      });
+    });
+
+    it('ADMIN_CANCELING emits ChannelCancelRequested with needsApproval false', async () => {
+      const snapshot = await fetchOne(detail('po-1', 'ord-1', { claimStatus: 'ADMIN_CANCELING', claimId: 'cl-9' }));
+
+      expect(snapshot.lifecycle[0]).toMatchObject({
+        eventType: 'ChannelCancelRequested',
+        payload: { needsApproval: false, channelRequestKey: 'po-1:cl-9' },
+      });
+    });
+
+    it('request quantity comes from currentClaim when present', async () => {
+      const snapshot = await fetchOne({
+        ...detail('po-1', 'ord-1', {
+          claimStatus: 'CANCEL_REQUEST',
+          claimId: 'cl-1',
+          quantity: 3,
+          totalPaymentAmount: 30000,
+        }),
+        currentClaim: { cancel: { requestQuantity: 1 } },
+      });
+
+      expect(snapshot.lifecycle[0]).toMatchObject({
+        eventType: 'ChannelCancelRequested',
+        payload: { items: [{ channelOrderItemId: 'po-1', quantity: 1 }] },
+      });
+    });
+
+    it('requestQuantity 가 없으면 줄 전량을 요청 수량으로 싣는다', async () => {
+      const snapshot = await fetchOne(
+        detail('po-1', 'ord-1', { claimStatus: 'CANCEL_REQUEST', quantity: 3, totalPaymentAmount: 30000 }),
+      );
+
+      expect(snapshot.lifecycle[0]).toMatchObject({
+        payload: { items: [{ channelOrderItemId: 'po-1', quantity: 3 }] },
+      });
+    });
+
+    it('취소요청 주문은 처음 수집 때 판매주문 후보가 아니다 — 기존 동작 그대로', async () => {
+      const snapshot = await fetchOne(detail('po-1', 'ord-1', { claimStatus: 'CANCEL_REQUEST' }));
+      expect(snapshot.paymentState).toBe('pending');
+    });
+
+    it('계약에서 빠진 상품주문(CANCELED)에 남은 취소 클레임은 취소요청으로 내지 않는다', async () => {
+      const snapshot = await fetchOne(
+        detail('po-1', 'ord-1'),
+        detail('po-2', 'ord-1', { productOrderStatus: 'CANCELED', claimStatus: 'CANCELING' }),
+      );
+
+      expect(snapshot.lifecycle.map((o) => o.eventType)).toEqual(['OrderCancelled']);
+    });
+
+    it('PAYED with CANCEL_DONE emits a partial OrderCancelled with the claimed quantity', async () => {
+      const snapshot = await fetchOne(detail('po-1', 'ord-1'), {
+        ...detail('po-2', 'ord-1', {
+          claimStatus: 'CANCEL_DONE',
+          claimId: 'cl-1',
+          quantity: 3,
+          totalPaymentAmount: 30000,
+        }),
+        currentClaim: { cancel: { requestQuantity: 2 } },
+      });
+
+      expect(snapshot.paymentState).toBe('accepted');
+      // 줄은 계약에 남는다 — 상품주문 상태가 PAYED 다.
+      expect(snapshot.lines.find((l) => l.channelOrderItemId === 'po-2')?.cancelled).toBeUndefined();
+      expect(snapshot.lifecycle).toHaveLength(1);
+      expect(snapshot.lifecycle[0]).toMatchObject({
+        eventType: 'OrderCancelled',
+        // 수량이 키에 들어간다 — 같은 수량의 재관측은 한 번, 수량이 바뀌면 새 관측이다.
+        eventKey: 'cancelled:po-2:2',
+        payload: {
+          reason: 'CUSTOMER_REQUEST',
+          cancelledBy: 'naver',
+          refundRequired: false,
+          cancelledLines: [{ channelOrderItemId: 'po-2', quantity: 2 }],
+        },
+      });
+    });
+
+    it('PAYED with ADMIN_CANCEL_DONE 도 일부 수량 취소로 낸다', async () => {
+      const snapshot = await fetchOne({
+        ...detail('po-1', 'ord-1', { claimStatus: 'ADMIN_CANCEL_DONE', quantity: 3, totalPaymentAmount: 30000 }),
+        currentClaim: { cancel: { requestQuantity: 1 } },
+      });
+
+      expect(snapshot.lifecycle[0]).toMatchObject({
+        eventType: 'OrderCancelled',
+        eventKey: 'cancelled:po-1:1',
+        payload: { cancelledLines: [{ channelOrderItemId: 'po-1', quantity: 1 }] },
+      });
+    });
+
+    it('PAYED with CANCEL_DONE 인데 수량을 모르면 warn 하고 내지 않는다 — 줄 전량으로 짐작하지 않는다', async () => {
+      const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+      try {
+        const snapshot = await fetchOne(detail('po-1', 'ord-1', { claimStatus: 'CANCEL_DONE', quantity: 3 }));
+
+        expect(snapshot.lifecycle).toEqual([]);
+        expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('po-1'));
+      } finally {
+        warnSpy.mockRestore();
+      }
+    });
+  });
 });

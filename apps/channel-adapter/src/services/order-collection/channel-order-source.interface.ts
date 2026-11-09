@@ -1,4 +1,5 @@
 import {
+  ChannelCancelRequestedPayload,
   ChannelReturnCancelledPayload,
   ChannelReturnRequestedPayload,
   ChannelReturnPrepaidPayload,
@@ -62,6 +63,15 @@ export interface ChannelOrderLineSnapshot {
 /** 반품 관측 payload — 채널 키(`orderId`·`salesChannel`·`externalOrderId`)는 오케스트레이터가 붙인다. */
 export type ReturnObservationPayload<P> = Omit<P, 'orderId' | 'salesChannel' | 'externalOrderId'>;
 
+/**
+ * 마켓 고객 취소요청 관측 payload — 반품 관측과 같이 채널 키는 오케스트레이터가 붙인다.
+ * `channelRequestRef`(승인 API 대상)·`channelRequestKey`(요청 하나의 중복 판정 식별)는 source 가 채운다.
+ */
+export type CancelRequestObservationPayload = Omit<
+  ChannelCancelRequestedPayload,
+  'orderId' | 'salesChannel' | 'externalOrderId'
+>;
+
 interface LifecycleObservationBase {
   /** 같은 관측을 두 번 세지 않기 위한 채널 내 안정 키. 예: `cancelled`, `refund:<refundId>`. */
   eventKey: string;
@@ -78,6 +88,7 @@ export type LifecycleObservation = LifecycleObservationBase &
   (
     | { eventType: 'OrderCancelled'; payload: Omit<OrderCancelledPayload, 'orderId'> }
     | { eventType: 'OrderRefundCreated'; payload: Omit<OrderRefundCreatedPayload, 'orderId'> }
+    | { eventType: 'ChannelCancelRequested'; payload: CancelRequestObservationPayload }
     | { eventType: 'ChannelReturnRequested'; payload: ReturnObservationPayload<ChannelReturnRequestedPayload> }
     | { eventType: 'ChannelReturnCancelled'; payload: ReturnObservationPayload<ChannelReturnCancelledPayload> }
     | { eventType: 'ChannelReturnPrepaid'; payload: ReturnObservationPayload<ChannelReturnPrepaidPayload> }

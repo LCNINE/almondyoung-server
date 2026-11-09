@@ -13,6 +13,9 @@ import {
   OrderProcessingFailureItem,
 } from './channel-order-provider.interface';
 import { OrderProcessingStageError } from './order-processing-stage.error';
+import { NaverOrderSource } from './naver-order.source';
+import { ChannelOrderTranslator } from './channel-order.translator';
+import { TranslatingOrderProvider } from './translating-order.provider';
 
 describe('OrderPollerOrchestrator', () => {
   it('ingests a virtual provider through the transactional mapping and typed outbox path without polling Core', async () => {
@@ -2327,6 +2330,180 @@ describe('OrderPollerOrchestrator.syncOrder — 즉시 끌어오기 (#1016 5번 
     });
     expect(provider.fetchOrderForSync).not.toHaveBeenCalled();
     expect(outbox.enqueue).not.toHaveBeenCalled();
+  });
+});
+
+describe('OrderPollerOrchestrator — 네이버 취소요청 관측 (마켓 고객 취소요청 승인)', () => {
+  const naverDetail = (overrides: Record<string, unknown> = {}) => ({
+    // 결제 시각을 UTC 로 둔다 — 네이버 +09:00 `createdAt` 이 OrderCreated 계약을 못 통과하는 것은 별건이다(위 «네이버 +09:00 시각» 스펙).
+    order: { orderId: 'ord-1', paymentDate: '2026-08-18T15:00:00.000Z', ordererName: '홍길동' },
+    productOrder: {
+      productOrderId: 'po-1',
+      productOrderStatus: 'PAYED',
+      productId: 'prd-1',
+      productName: '세럼',
+      quantity: 2,
+      unitPrice: 10000,
+      totalPaymentAmount: 20000,
+      shippingAddress: { name: '홍길동', tel1: '010', zipCode: '06236', baseAddress: '서울', detailedAddress: '1층' },
+      ...overrides,
+    },
+  });
+
+  /** 실제 네이버 source + 번역기 + 오케스트레이터. 줄 식별만 목이다. */
+  function setupNaver(details: Array<ReturnType<typeof naverDetail> & { currentClaim?: unknown }>) {
+    let current = details[0];
+    const client = {
+      getLastChangedStatuses: jest.fn().mockImplementation(async () => ({
+        data: {
+          count: 1,
+          lastChangeStatuses: [
+            {
+              orderId: 'ord-1',
+              productOrderId: 'po-1',
+              lastChangedType: 'PAYED',
+              lastChangedDate: '2026-08-19T01:00:00.000+09:00',
+              productOrderStatus: 'PAYED',
+            },
+          ],
+        },
+      })),
+      getProductOrderIdsByOrderId: jest.fn().mockResolvedValue({ data: ['po-1'] }),
+      getOrderDetails: jest.fn().mockImplementation(async () => ({ data: [current] })),
+    };
+    const resolver = {
+      resolve: jest.fn().mockResolvedValue({
+        identified: true,
+        identity: { variantId: 'var-1', masterId: 'mst-1', versionId: 'ver-1' },
+      }),
+    };
+    const provider = new TranslatingOrderProvider(
+      new NaverOrderSource(client as any),
+      new ChannelOrderTranslator(resolver as any),
+    );
+    const enqueued: Array<{ eventType: string; payload: Record<string, unknown> }> = [];
+    const outbox = {
+      // 실제 발행기처럼 적재 시점에 계약으로 파싱한다 — 네이버 +09:00 시각이 계약을 못 통과하면 여기서 터진다.
+      enqueue: jest.fn(async (event: { eventType: keyof typeof ORDER_STREAM.events; payload: Record<string, unknown> }) => {
+        ORDER_STREAM.events[event.eventType].schema?.parse(event.payload);
+        enqueued.push(event);
+      }),
+    };
+    const db = makeDb();
+    const failures = makeFailureService();
+    const orchestrator = new OrderPollerOrchestrator(
+      [provider],
+      makeSyncStatus() as any,
+      outbox as any,
+      makeHashService() as any,
+      failures as any,
+      db as any,
+      makeSalesChannelClient(['naver']) as any,
+    );
+    return {
+      orchestrator,
+      failures,
+      enqueued,
+      next: (index: number) => {
+        current = details[index];
+      },
+    };
+  }
+
+  it('collected order that gains a cancel claim emits ChannelCancelRequested and is not quarantined', async () => {
+    const { orchestrator, failures, enqueued, next } = setupNaver([
+      naverDetail(),
+      {
+        ...naverDetail({ claimStatus: 'CANCEL_REQUEST', claimType: 'CANCEL', claimId: 'cl-1' }),
+        currentClaim: { cancel: { requestQuantity: 1 } },
+      },
+    ]);
+
+    await orchestrator.poll();
+    next(1);
+    await orchestrator.poll();
+    // 같은 요청의 재관측은 다시 내지 않는다(eventKey 선점).
+    await orchestrator.poll();
+
+    expect(enqueued.map((event) => event.eventType)).toEqual(['OrderCreated', 'ChannelCancelRequested']);
+    const created = enqueued[0].payload;
+    expect(enqueued[1].payload).toEqual({
+      orderId: created.orderId,
+      salesChannel: 'naver',
+      externalOrderId: 'ord-1',
+      channelRequestRef: 'po-1',
+      channelRequestKey: 'po-1:cl-1',
+      needsApproval: true,
+      requestedAt: '2026-08-18T16:00:00.000Z',
+      items: [{ channelOrderItemId: 'po-1', quantity: 1 }],
+    });
+    // 스냅샷이 `pending` 이 돼도 수집된 주문의 변경 판정·격리로 가지 않는다.
+    expect(failures.recordFailure).not.toHaveBeenCalled();
+    expect(failures.recordProcessingFailure).not.toHaveBeenCalled();
+  });
+
+  it('PAYED + CANCEL_DONE 일부 수량 취소는 수집된 주문에 줄 누적 수량 OrderCancelled 로 나간다', async () => {
+    const { orchestrator, failures, enqueued, next } = setupNaver([
+      naverDetail(),
+      { ...naverDetail({ claimStatus: 'CANCEL_DONE', claimId: 'cl-1' }), currentClaim: { cancel: { requestQuantity: 1 } } },
+    ]);
+
+    await orchestrator.poll();
+    next(1);
+    await orchestrator.poll();
+
+    expect(enqueued.map((event) => event.eventType)).toEqual(['OrderCreated', 'OrderCancelled']);
+    expect(enqueued[1].payload).toMatchObject({
+      salesChannel: 'naver',
+      externalOrderId: 'ord-1',
+      cancelledLines: [{ channelOrderItemId: 'po-1', quantity: 1 }],
+    });
+    expect(failures.recordFailure).not.toHaveBeenCalled();
+    expect(failures.recordProcessingFailure).not.toHaveBeenCalled();
+  });
+
+  // 취소요청은 종결이 아니다 — 고객이 철회하거나 우리가 발송(=거부)하면 주문은 다시 수집 대상이 된다.
+  // 미수집 주문의 열린 격리를 «종결 관측»으로 닫으면 그 행이 사라진다.
+  it('미수집 주문의 취소요청은 열린 격리를 종결로 닫지 않는다', async () => {
+    const db = makeDb();
+    const requested: OrderLifecycleEventItem = {
+      externalOrderId: 'ord-q',
+      sourceUpdatedAt: '2026-08-19T00:00:00.000Z',
+      eventType: 'ChannelCancelRequested',
+      eventKey: 'cancel-request:po-q:na',
+      payload: {
+        channelRequestRef: 'po-q',
+        channelRequestKey: 'po-q:na',
+        needsApproval: true,
+        requestedAt: '2026-08-19T00:00:00.000Z',
+        items: [{ channelOrderItemId: 'po-q', quantity: 1 }],
+      },
+      rawEvent: { productOrderId: 'po-q' },
+    };
+    const provider: ChannelOrderProvider = {
+      channel: 'naver',
+      fetchOrders: jest.fn().mockResolvedValue({ orders: [], failures: [], lifecycleEvents: [requested] }),
+    };
+    const syncStatus = makeSyncStatus();
+    const outbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
+    const failures = makeFailureService();
+    failures.findAllOpenByExternalOrderId.mockResolvedValue([{ id: 'failure_q', externalOrderId: 'ord-q' }]);
+    const orchestrator = new OrderPollerOrchestrator(
+      [provider],
+      syncStatus as any,
+      outbox as any,
+      makeHashService() as any,
+      failures as any,
+      db as any,
+      makeSalesChannelClient(['naver']) as any,
+    );
+
+    await orchestrator.poll();
+
+    expect(outbox.enqueue).not.toHaveBeenCalled();
+    expect(failures.closeAsTerminalLifecycle).not.toHaveBeenCalled();
+    // 낼 것이 없을 뿐 막힌 것은 아니다 — 워터마크는 지나간다(지금의 pending 스냅샷과 같다).
+    expect(syncStatus.lastSyncAt()).toEqual(new Date('2026-08-19T00:00:00.000Z'));
   });
 });
 

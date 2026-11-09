@@ -39,3 +39,31 @@ describe('NaverOrderClient.getLastChangedStatuses', () => {
     expect('moreSequence' in config.params).toBe(false);
   });
 });
+
+describe('NaverOrderClient — 수량 클레임 호환 조회', () => {
+  const http = { get: jest.fn(), post: jest.fn() } as any;
+  const auth = { getAccessToken: jest.fn().mockResolvedValue('token') } as any;
+  const client = new NaverOrderClient(http, auth);
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    http.post.mockReturnValue(of({ data: { timestamp: '', traceId: 't', data: [] } }));
+    http.get.mockReturnValue(of({ data: { timestamp: '', traceId: 't', data: [] } }));
+  });
+
+  // 2024-10-10 부터 상품주문 하나 안에서 일부 수량만 취소할 수 있다. 이 플래그 없이 조회하면
+  // `currentClaim` 이 오지 않아 일부 수량 취소를 못 보고 원래 수량 그대로 출고한다 (discussions/1773).
+  it('상세 조회 요청 본문에 quantityClaimCompatibility: true 를 싣는다', async () => {
+    await client.getOrderDetails(['po-1']);
+
+    const [, body] = http.post.mock.calls[0];
+    expect(body).toEqual({ productOrderIds: ['po-1'], quantityClaimCompatibility: true });
+  });
+
+  it('조건 조회 요청에도 quantityClaimCompatibility: true 를 싣는다', async () => {
+    await client.queryProductOrders({ from: '2026-08-19T00:00:00.000Z', rangeType: 'PAYED_DATETIME' });
+
+    const [, config] = http.get.mock.calls[0];
+    expect(config.params).toMatchObject({ from: '2026-08-19T00:00:00.000Z', quantityClaimCompatibility: true });
+  });
+});
