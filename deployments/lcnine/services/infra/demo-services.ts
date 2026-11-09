@@ -165,8 +165,6 @@ export function setup(infra: DemoSharedInfra) {
       OIDC_ISSUER_URL: idpUserServiceUrl,
       ALLOWED_AUDIENCES: 'admin-web,warehouse-app',
       AWS_REGION: 'ap-northeast-2',
-      AWS_S3_PUBLIC_BUCKET: publicFiles.name,
-      AWS_S3_PRIVATE_BUCKET: privateFiles.name,
       STORAGE_PROVIDER: 'S3',
     },
   });

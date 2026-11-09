@@ -139,7 +139,7 @@ export const PERMISSION_CATALOG = [
 
   // 주문
   permission('order.order.read', '주문 조회', '주문 목록·상세·정체 보드를 본다', {
-    owners: ['core', 'admin-web'],
+    owners: ['core', 'ugc-service', 'admin-web'],
     grant: ADMIN_INTERN,
   }),
   permission('order.order.write', '주문 입력·수정', '주문을 수동 입력하고 상태를 바꾼다', {

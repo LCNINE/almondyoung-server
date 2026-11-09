@@ -195,6 +195,11 @@ const allMenus: MainMenu[] = [
         title: '출고',
         children: [
           {
+            id: 'waybill-issue',
+            title: '출고 준비',
+            path: '/order/waybill-issue',
+          },
+          {
             id: 'fulfillments',
             title: '출고주문',
             path: '/order/fulfillments',
@@ -218,11 +223,6 @@ const allMenus: MainMenu[] = [
             id: 'picking-list',
             title: '피킹리스트',
             path: '/order/picking-list',
-          },
-          {
-            id: 'waybill-issue',
-            title: '운송장 발급',
-            path: '/order/waybill-issue',
           },
           {
             id: 'inspection-dispatch',

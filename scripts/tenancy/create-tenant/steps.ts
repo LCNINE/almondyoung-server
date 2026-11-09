@@ -41,10 +41,9 @@ export interface TenantDomain {
 }
 
 export interface OperatorApi {
-  /** 도메인의 app 이 null 이면 앱 칸 전에 붙인 도메인이다 */
   getTenant(
     id: string,
-  ): Promise<{ slug: string; status: TenantStatus; domains: { host: string; app: TenantDomainApp | null }[] } | null>;
+  ): Promise<{ slug: string; status: TenantStatus; domains: { host: string; app: TenantDomainApp }[] } | null>;
   createTenant(input: { id: string; slug: string; displayName: string; domains: TenantDomain[] }): Promise<void>;
   /** 준비 상태이고 그 테넌트의 계정이 없을 때만 지워진다(부여·도메인·리디렉트 주소는 user-service 가 함께 걷는다) */
   deleteTenant(id: string): Promise<void>;
@@ -75,7 +74,7 @@ export interface OperatorApi {
   resetMasterPassword(tenantId: string, userId: string, forcePasswordChange: boolean): Promise<string>;
 }
 
-const hasDomain = (mine: readonly { host: string; app: TenantDomainApp | null }[], d: TenantDomain) =>
+const hasDomain = (mine: readonly { host: string; app: TenantDomainApp }[], d: TenantDomain) =>
   mine.some((m) => m.host === d.host.toLowerCase() && m.app === d.app);
 
 export interface CoreDatabases {

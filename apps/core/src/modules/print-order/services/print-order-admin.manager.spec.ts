@@ -4,6 +4,7 @@ import { wmsSchema } from '../../inventory/schema/inventory.schema';
 import { type PrintOrderRow } from '../schema/print-order.schema';
 import { CANCEL_CLAIM_STALE_MS } from './print-order-cancellation.manager';
 import { ORDER_UNCONFIRMED_ERROR, PRINT_ORDER_STALE_MS, unsavedOrdnumError } from './print-order-submit.manager';
+import { PrintProductSpecRepository } from '../repositories/print-product-spec.repository';
 import { PrintOrderAdminManager } from './print-order-admin.manager';
 import { PrintOrderReader, type PrintSalesLineState } from './print-order.reader';
 import {
@@ -11,6 +12,7 @@ import {
   isPreservedLastError,
   lateOrdnumError,
   PrintOrderRepository,
+  type PrintOrderLineContext,
 } from './print-order.repository';
 
 // 모든 메서드를 덮어써 DB 를 쓰지 않는 가짜라 DbService 자리는 형 변환으로 채운다
@@ -58,16 +60,31 @@ class FakeRepo extends PrintOrderRepository {
     if (same) this.store.put({ ...cur, ...patch, updatedAt: new Date(cur.updatedAt.getTime() + 1) });
     return Promise.resolve(same);
   });
-  confirmTest = jest.fn((id: string, actorId: string, note: string) => {
+  confirmTest = jest.fn<Promise<boolean>, [string, string, string, unknown?]>((id, actorId, note) => {
     const cur = this.store.get(id);
     if (cur.testConfirmedAt) return Promise.resolve(false);
     this.store.put({ ...cur, testConfirmedAt: new Date(), testConfirmedBy: actorId, testNote: note });
     return Promise.resolve(true);
   });
+  findLineContext = jest.fn<Promise<PrintOrderLineContext | null>, [string, unknown?]>((lineId) =>
+    Promise.resolve({
+      line: { id: lineId, variantId: LINE_VARIANT, quantity: 1 },
+      order: { channelOrderId: 'c', customerId: null, shippingAddress: null },
+    }),
+  );
   update = jest.fn((id: string, patch: Partial<PrintOrderRow>) => {
     this.store.put({ ...this.store.get(id), ...patch });
     return Promise.resolve();
   });
+}
+
+const LINE_VARIANT = '0190f1d2-0000-7000-8000-00000000a001';
+
+class FakeSpecs extends PrintProductSpecRepository {
+  confirmVariant = jest.fn<Promise<void>, [string, string, unknown?]>(() => Promise.resolve());
+  constructor() {
+    super(noDb);
+  }
 }
 
 class FakeReader extends PrintOrderReader {
@@ -119,14 +136,20 @@ function setup() {
   const store = new Store();
   const repo = new FakeRepo(store);
   const reader = new FakeReader(store);
-  const manager = new PrintOrderAdminManager(repo, reader);
+  const specs = new FakeSpecs();
+  // 트랜잭션 러너만 흉내 낸다. 받은 tx 를 그대로 콜백에 넘긴다
+  const tx = {};
+  const db = { run: (fn: (t: unknown) => unknown, t?: unknown) => fn(t ?? tx) } as unknown as DbService<
+    typeof wmsSchema
+  >;
+  const manager = new PrintOrderAdminManager(repo, reader, specs, db);
   const add = (overrides: Partial<PrintOrderRow> = {}) => {
     const r = row(overrides);
     store.put(r);
     store.lines.set(r.salesOrderLineId, { salesOrderStatus: 'confirmed', quantity: 2 });
     return r;
   };
-  return { store, repo, manager, add };
+  return { store, repo, specs, tx, manager, add };
 }
 
 describe('PrintOrderAdminManager', () => {
@@ -227,11 +250,30 @@ describe('PrintOrderAdminManager', () => {
       expect(out.testConfirmedAt).toBeInstanceOf(Date);
     });
 
+    it('confirms the variant spec with the test', async () => {
+      const { manager, add, specs, repo, tx } = setup();
+      const r = add({ status: 'submitted', testMemo: true });
+      await manager.confirmTest(r.id, ACTOR, '출력 가능');
+      expect(specs.confirmVariant).toHaveBeenCalledTimes(1);
+      expect(specs.confirmVariant).toHaveBeenCalledWith(LINE_VARIANT, ACTOR, tx);
+      expect(repo.confirmTest).toHaveBeenCalledWith(r.id, ACTOR, '출력 가능', tx);
+    });
+
+    it('throws without confirming the variant when the line context is missing', async () => {
+      const { manager, add, specs, repo } = setup();
+      const r = add({ status: 'submitted', testMemo: true });
+      repo.findLineContext.mockResolvedValueOnce(null);
+
+      await expect(manager.confirmTest(r.id, ACTOR, '출력 가능')).rejects.toBeInstanceOf(NotFoundError);
+      expect(specs.confirmVariant).not.toHaveBeenCalled();
+    });
+
     it('is idempotent and keeps the first confirmation', async () => {
-      const { manager, add } = setup();
+      const { manager, add, specs } = setup();
       const r = add({ status: 'submitted', testMemo: true });
       const first = await manager.confirmTest(r.id, ACTOR, '출력 가능');
       const second = await manager.confirmTest(r.id, 'someone-else', '수정 필요');
+      expect(specs.confirmVariant).toHaveBeenCalledTimes(1);
       expect(second).toMatchObject({ testConfirmedBy: ACTOR, testNote: '출력 가능' });
       expect(second.testConfirmedAt).toEqual(first.testConfirmedAt);
     });

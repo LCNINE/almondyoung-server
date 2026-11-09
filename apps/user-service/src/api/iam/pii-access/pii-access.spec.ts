@@ -3,6 +3,8 @@ import { BadRequestError, ForbiddenError } from '@app/shared';
 import { DbService } from '@app/db';
 import { ConfigService } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
+import { TENANT_CONTEXT_KEY } from '@app/tenancy';
+import { ClsService } from 'nestjs-cls';
 import { decodeAuditCursor } from '../audit/iam-audit.reader';
 import { IamAuditCreator } from '../audit/iam-audit.creator';
 import type { IamActor } from '../iam-actor';
@@ -45,12 +47,23 @@ const record = {
 };
 
 describe('PiiAccessCreator', () => {
-  it('maps a record to a row and keeps the subjects as identifiers only', async () => {
+  // 접속기록의 테넌트 = 열람이 일어난 맥락의 테넌트(요청 문·이벤트 문이 CLS 에 세운다). 기본 테넌트는 없다.
+  const creatorWith = async (contextTenant: string | undefined) => {
     const repository = { insert: jest.fn().mockResolvedValue(undefined) };
+    const cls = { isActive: () => true, get: jest.fn(() => contextTenant) };
     const module = await Test.createTestingModule({
-      providers: [PiiAccessCreator, { provide: PiiAccessRepository, useValue: repository }],
+      providers: [
+        PiiAccessCreator,
+        { provide: PiiAccessRepository, useValue: repository },
+        { provide: ClsService, useValue: cls },
+      ],
     }).compile();
-    await module.get(PiiAccessCreator).record(record);
+    return { creator: module.get(PiiAccessCreator), repository, cls };
+  };
+
+  it('maps a record to a row and keeps the subjects as identifiers only', async () => {
+    const { creator, repository } = await creatorWith('2');
+    await creator.record(record);
     expect(repository.insert).toHaveBeenCalledWith(
       expect.objectContaining({
         eventId: record.eventId,
@@ -62,6 +75,19 @@ describe('PiiAccessCreator', () => {
         occurredAt: record.occurredAt,
       }),
     );
+  });
+
+  it('stamps the row with the tenant of the current context', async () => {
+    const { creator, repository, cls } = await creatorWith('2');
+    await creator.record(record);
+    expect(cls.get).toHaveBeenCalledWith(TENANT_CONTEXT_KEY);
+    expect(repository.insert).toHaveBeenCalledWith(expect.objectContaining({ tenantId: '2' }));
+  });
+
+  it('refuses to record without a context tenant so the raw value is masked instead', async () => {
+    const { creator, repository } = await creatorWith(undefined);
+    await expect(creator.record(record)).rejects.toThrow(/테넌트/);
+    expect(repository.insert).not.toHaveBeenCalled();
   });
 });
 

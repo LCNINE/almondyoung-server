@@ -17,7 +17,7 @@ export class HttpOperatorApi implements OperatorApi {
     const t = await this.call<{
       slug: string;
       status: TenantStatus;
-      domains: { host: string; app: TenantDomainApp | null }[];
+      domains: { host: string; app: TenantDomainApp }[];
     }>('GET', `/admin/platform/tenants/${encodeURIComponent(id)}`, undefined, { allow404: true });
     return t ?? null;
   }

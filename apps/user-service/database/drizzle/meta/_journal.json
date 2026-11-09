@@ -239,6 +239,20 @@
       "when": 1793769385232,
       "tag": "20261104051625_contract-account-unique-within-tenant",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1794120655221,
+      "tag": "20261108065055_prepare-tenant-columns-contract",
+      "breakpoints": true
+    },
+    {
+      "idx": 35,
+      "version": "7",
+      "when": 1794120657734,
+      "tag": "20261108065057_contract-tenant-columns-not-null",
+      "breakpoints": true
     }
   ]
 }

@@ -100,7 +100,7 @@ export class UploadService {
       uploadedBy: userId,
       storageProvider: uploadResult.provider.toLowerCase(),
       isPublic,
-      ...tenantColumn(tenant),
+      tenantId: tenant,
       metadata: dto.metadata,
       activatedAt: new Date(),
     });
@@ -161,7 +161,7 @@ export class UploadService {
       uploadedBy: userId,
       storageProvider: directUpload.provider.toLowerCase(),
       isPublic,
-      ...tenantColumn(tenant),
+      tenantId: tenant,
       metadata: dto.metadata,
     });
 
@@ -282,12 +282,4 @@ export class UploadService {
     const parts = filename.split('.');
     return parts.length > 1 ? parts.pop() || '' : '';
   }
-}
-
-/**
- * 행에 적을 테넌트. 테넌트를 모르는 쓰기(① 만)는 칸을 비워 보내 DB 기본값(테넌트 1)이 채운다 — `null` 을 적으면
- * 기본값을 덮는다. 그 쓰기의 버킷은 테넌트 전 버킷 env 이고, 라이브에선 테넌트 1 의 버킷과 같다.
- */
-function tenantColumn(tenant: RequestTenantId): { tenantId?: string } {
-  return tenant === null ? {} : { tenantId: tenant };
 }

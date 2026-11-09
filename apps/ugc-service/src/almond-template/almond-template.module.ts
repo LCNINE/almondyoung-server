@@ -25,6 +25,7 @@ import { AlmondPrintFileManager } from './services/almond-print-file.manager';
 import { AlmondSavedDesignManager } from './services/almond-saved-design.manager';
 import { AlmondSavedDesignReader } from './services/almond-saved-design.reader';
 import { AlmondSavedDesignsService } from './services/almond-saved-designs.service';
+import { AlmondTemplatePreviewManager } from './services/almond-template-preview.manager';
 import { AlmondTemplateManager } from './services/almond-template.manager';
 import { AlmondTemplateReader } from './services/almond-template.reader';
 import { AlmondTemplatesService } from './services/almond-templates.service';
@@ -45,6 +46,7 @@ import { AlmondTemplatesService } from './services/almond-templates.service';
     AlmondTemplatesService,
     AlmondTemplateReader,
     AlmondTemplateManager,
+    AlmondTemplatePreviewManager,
     AlmondDesignsService,
     AlmondDesignReader,
     AlmondDesignManager,

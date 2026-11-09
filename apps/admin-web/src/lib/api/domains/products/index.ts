@@ -18,6 +18,7 @@ import { channelsClient } from './channels.client';
 import { formExportClient } from './form-export.client';
 import { mastersClient } from './masters.client';
 import { pricingClient } from './pricing.client';
+import { printCatalogClient } from './print-catalog.client';
 import { tagsClient } from './tags.client';
 import { variantsClient } from './variants.client';
 import { versionsClient } from './versions.client';
@@ -36,6 +37,7 @@ export const products = {
   sitePopups: sitePopupsClient,
   tags: tagsClient,
   pricing: pricingClient,
+  printCatalog: printCatalogClient,
   versions: versionsClient,
   bulk: bulkClient,
   bulkSession: bulkSessionClient,
@@ -55,6 +57,7 @@ export { almondTemplatesClient } from './almond-templates.client';
 export { sitePopupsClient } from './site-popups.client';
 export { tagsClient } from './tags.client';
 export { pricingClient } from './pricing.client';
+export { printCatalogClient } from './print-catalog.client';
 export { versionsClient } from './versions.client';
 export { bulkClient } from './bulk.client';
 export { bulkSessionClient } from './bulk-session.client';

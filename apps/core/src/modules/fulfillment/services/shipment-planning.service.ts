@@ -67,7 +67,7 @@ import {
 } from './shipment-aggregate';
 import { shrinkDraftLines } from './draft-line-shrink';
 import { shipmentOwnerOf, warehouseIdOf } from '../shipment/shipment-owner';
-import { REQUIRED_RECIPIENT_FIELDS } from '../waybill/waybill-request.assembler';
+import { missingRecipientFields } from './recipient-completeness';
 
 const TRUSTED_CHANNELS = new Set(['medusa', 'naver', 'coupang']);
 
@@ -1895,10 +1895,8 @@ export class ShipmentPlanningService {
   }
 
   private assertRecipientComplete(value: unknown): void {
-    const recipient = (value ?? {}) as Record<string, unknown>;
-    const missing = REQUIRED_RECIPIENT_FIELDS.filter(
-      (key) => typeof recipient[key] !== 'string' || !recipient[key].trim(),
-    );
+    const missing = missingRecipientFields(value);
+
     if (missing.length) {
       throw this.conflict('SHIPMENT_RECIPIENT_INCOMPLETE', `Missing recipient fields: ${missing.join(',')}`);
     }

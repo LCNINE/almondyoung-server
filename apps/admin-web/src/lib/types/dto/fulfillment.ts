@@ -978,6 +978,54 @@ export interface ConsolidationBoardGroup {
   shipments: ConsolidationBoardShipment[];
 }
 
+export type PreparationBucket =
+  | 'ready'
+  | 'partial'
+  | 'unavailable'
+  | 'mergeable'
+  | 'resume'
+  | 'needs_info';
+
+export interface PreparationShipmentDto {
+  shipmentId: string;
+  orderNos: string[];
+  itemSummary: string;
+  totalQty: number;
+  single: boolean;
+  reason: string | null;
+}
+
+export interface PreparationBucketDto {
+  bucket: PreparationBucket;
+  count: number;
+  singleCount: number;
+  multiCount: number;
+  shipments: PreparationShipmentDto[];
+}
+
+export interface OutboundPreparationSummary {
+  warehouseId: string;
+  buckets: PreparationBucketDto[];
+  awaitingMatchingCount: number;
+}
+
+export interface BulkShipmentFailure {
+  shipmentId: string;
+  code: string;
+  message: string;
+  transient: boolean;
+}
+
+export interface PreparationWaybillResult extends BatchResultItem {
+  transient?: boolean;
+  code?: string;
+}
+
+export interface BulkShipmentResult {
+  succeeded: string[];
+  failed: BulkShipmentFailure[];
+}
+
 export interface PlannedShipment {
   shipmentId: string;
   orderNos: string[];

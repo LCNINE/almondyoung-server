@@ -1,5 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { DbService } from '@app/db';
+import { InjectTypedDb } from '@app/db/decorators';
 import { BadRequestError, ConflictError, NotFoundError } from '@app/shared';
+import { wmsSchema } from '../../inventory/schema/inventory.schema';
+import { PrintProductSpecRepository } from '../repositories/print-product-spec.repository';
 import { type PrintOrderRow } from '../schema/print-order.schema';
 import { awaitsCancelResolution, orderMayBeInFlight, shippedAfterCancel } from './print-order-board.rules';
 import { PrintOrderReader } from './print-order.reader';
@@ -32,6 +36,9 @@ export class PrintOrderAdminManager {
   constructor(
     private readonly repository: PrintOrderRepository,
     private readonly reader: PrintOrderReader,
+    private readonly specs: PrintProductSpecRepository,
+    @InjectTypedDb<typeof wmsSchema>()
+    private readonly dbService: DbService<typeof wmsSchema>,
   ) {}
 
   async retry(id: string, actorId: string, confirmNoWowpressOrder: boolean): Promise<PrintOrderRow> {
@@ -73,9 +80,19 @@ export class PrintOrderAdminManager {
     if (!text) throw new BadRequestError('note is required');
     const row = await this.load(id);
     if (!row.testMemo) throw new BadRequestError('This print order was not sent as a test');
-    if (await this.repository.confirmTest(id, actorId, text)) {
-      this.logger.log(`print order ${id} test confirmed by ${actorId}`);
-    }
+    // 행 표시와 variant 확정은 한 트랜잭션이다. 이미 확인된 행이면 variant 도 건드리지 않는다
+    const stamped = await this.dbService.run(async (trx) => {
+      if (!(await this.repository.confirmTest(id, actorId, text, trx))) return false;
+
+      // 라인을 못 찾으면 던져 행 표시도 되돌린다. 남기면 재시도가 variant 확정을 건너뛴다
+      const ctx = await this.repository.findLineContext(row.salesOrderLineId, trx);
+      if (!ctx) throw new NotFoundError(`Sales order line not found for print order: ${id}`);
+
+      await this.specs.confirmVariant(ctx.line.variantId, actorId, trx);
+
+      return true;
+    });
+    if (stamped) this.logger.log(`print order ${id} test confirmed by ${actorId}`);
     return this.load(id);
   }
 

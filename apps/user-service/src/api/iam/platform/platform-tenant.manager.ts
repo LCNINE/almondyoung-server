@@ -193,8 +193,8 @@ export class PlatformTenantManager {
 
   /**
    * 이미 있는 테넌트에 도메인을 더한다 — admin-web 과 auth-web 이 테넌트마다 다른 주소라(CloudFront 배포가 둘) auth-web 주소도
-   * 테넌트 도메인이다. 이미 이 테넌트의 것이고 앱이 같으면 아무것도 안 한다. 앱 칸 전에 들어와 앱이 빈 이 테넌트의 도메인이면 앱만
-   * 채운다. 앱을 바꾸지는 않는다(그 주소의 CloudFront 배포가 다른 앱을 부른다). 상태는 묻지 않는다(활성 테넌트에도 붙인다).
+   * 테넌트 도메인이다. 이미 이 테넌트의 것이고 앱이 같으면 아무것도 안 한다. 앱을 바꾸지는 않는다(그 주소의 CloudFront 배포가
+   * 다른 앱을 부른다). 상태는 묻지 않는다(활성 테넌트에도 붙인다).
    */
   async addDomain(actor: IamActor, tenantId: string, input: NewTenantDomain): Promise<void> {
     const domain = input.host.toLowerCase();
@@ -204,15 +204,12 @@ export class PlatformTenantManager {
       const mine = await this.platform.domainEntriesOf(tenantId, tx);
       const existing = mine.find((d) => d.host === domain);
       if (existing?.app === input.app) return;
-      if (existing && existing.app !== null) {
-        throw new TenantDomainTakenError(`이미 ${existing.app} 주소인 도메인입니다: ${domain}`);
-      }
-      if (!existing && (await this.platform.takenHosts([domain], tx)).length > 0) {
+      if (existing) throw new TenantDomainTakenError(`이미 ${existing.app} 주소인 도메인입니다: ${domain}`);
+      if ((await this.platform.takenHosts([domain], tx)).length > 0) {
         throw new TenantDomainTakenError(`다른 테넌트의 도메인입니다: ${domain}`);
       }
 
-      if (existing) await this.platform.setDomainApp(domain, input.app, tx);
-      else await this.platform.insertDomains(tenantId, [{ host: domain, app: input.app }], tx);
+      await this.platform.insertDomains(tenantId, [{ host: domain, app: input.app }], tx);
       const hosts = mine.map((d) => d.host);
       await this.audit.record(tx, actor, {
         tenantId,
@@ -220,7 +217,7 @@ export class PlatformTenantManager {
         targetType: 'tenant',
         targetId: tenantId,
         targetLabel: row.displayName,
-        before: { domains: hosts, ...(existing ? { app: null } : {}) },
+        before: { domains: hosts },
         after: { host: domain, app: input.app, domains: [...new Set([...hosts, domain])].sort() },
       });
     });

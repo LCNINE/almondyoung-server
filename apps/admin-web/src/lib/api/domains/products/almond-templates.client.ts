@@ -26,6 +26,16 @@ export const almondTemplatesClient = {
     return response.data;
   },
 
+  linkProduct: async (id: string, productId: string): Promise<AdminAlmondTemplateDto> => {
+    const response = await client.put(`${BASE}/${id}/product`, { productId });
+    return response.data;
+  },
+
+  previewImage: async (id: string): Promise<{ fileId: string }> => {
+    const response = await client.post(`${BASE}/${id}/preview-image`, undefined, { timeout: 60000 });
+    return response.data;
+  },
+
   remove: async (id: string): Promise<void> => {
     await client.delete(`${BASE}/${id}`);
   },

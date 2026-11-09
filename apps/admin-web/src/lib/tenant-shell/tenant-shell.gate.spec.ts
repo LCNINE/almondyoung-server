@@ -1,5 +1,5 @@
 import { resolveScreenAccess } from '../auth/screen-access';
-import { TENANT_SHELL_MENU, TENANT_SHELL_SCREENS } from './allowlist';
+import { TENANT_SHELL_ENTERED_FROM, TENANT_SHELL_MENU, TENANT_SHELL_SCREENS, tenantShellScreenOf } from './allowlist';
 import type { TenantOneOnlyUpstream } from './shell-brand';
 import { codeOf, pageFileOf, reachableFrom } from './tenant-shell-reach';
 
@@ -77,6 +77,7 @@ const SHELL_FILES = [
   'components/pii/pii-masked-banner.tsx',
   'lib/tenant-shell/neutral-page.ts',
   'lib/tenant-shell/allowlist.ts',
+  'components/layout/tenant-shell/shell-link.tsx',
 ];
 
 const pages = TENANT_SHELL_SCREENS.map((screen) => ({ screen, page: pageFileOf(screen) }));
@@ -100,12 +101,15 @@ describe('테넌트 셸 허용 목록 게이트', () => {
     expect(TENANT_SHELL_SCREENS.filter((s) => resolveScreenAccess(s)?.kind !== 'permission')).toEqual([]);
   });
 
-  it('메뉴는 목록의 화면만 가리키고, 메뉴에 없는 화면은 메뉴 화면 아래 경로다(상세·만들기)', () => {
+  it('메뉴는 목록의 화면만 가리키고, 메뉴에 없는 화면은 메뉴 화면 아래 경로거나 들어가는 화면이 적혀 있다', () => {
     const inMenu = TENANT_SHELL_MENU.flatMap((g) => g.items.map((i) => i.path as string));
+    const underMenu = (s: string) => inMenu.includes(s) || inMenu.some((m) => s.startsWith(`${m}/`));
     expect(inMenu.filter((p) => !(TENANT_SHELL_SCREENS as readonly string[]).includes(p))).toEqual([]);
-    expect(
-      TENANT_SHELL_SCREENS.filter((s) => !inMenu.includes(s) && !inMenu.some((m) => s.startsWith(`${m}/`))),
-    ).toEqual([]);
+    expect(TENANT_SHELL_SCREENS.filter((s) => !underMenu(s) && !TENANT_SHELL_ENTERED_FROM[s])).toEqual([]);
+    // 적어 둔 입구는 메뉴에서 닿는 화면이어야 하고, 이미 메뉴 아래인 화면에는 적지 않는다(적으면 지울 것).
+    const entries = Object.entries(TENANT_SHELL_ENTERED_FROM) as [string, string][];
+    expect(entries.filter(([, from]) => !underMenu(from))).toEqual([]);
+    expect(entries.filter(([s]) => underMenu(s))).toEqual([]);
   });
 
   it('셸이 숨기는 블록을 그리는 파일은 목록의 화면에 닿고, 그 업스트림의 셸 신호를 본다', () => {
@@ -128,6 +132,18 @@ describe('테넌트 셸 허용 목록 게이트', () => {
     const found = hits(BRAND);
     expect(found.filter((f) => !Object.hasOwn(BRAND_LEDGER, f))).toEqual([]);
     expect(Object.keys(BRAND_LEDGER).filter((f) => !found.includes(f))).toEqual([]);
+  });
+
+  it('목록의 화면이 싣는 코드의 화면 이동은 목록 안 화면으로 간다 — 목록 밖은 ShellLink(테넌트 셸에선 글자만)', () => {
+    // `<Link href>`·`router.push/replace`·`redirect` 의 리터럴 경로만 잰다. `${…}` 는 한 세그먼트로 보고, 닫히지 않은 꼬리(쿼리 조립)는 버린다.
+    const NAV = /(?:<Link\b[^>]*?\bhref=\{?|\b(?:push|replace|redirect)\()\s*[`'"](\/[^`'"?#\s]*)/g;
+    const outside = [...reached.keys()].flatMap((f) =>
+      [...codeOf(f).matchAll(NAV)]
+        .map((m) => m[1].replace(/\$\{[^}]*\}/g, 'X').replace(/\$\{[^}]*$/, ''))
+        .filter((path) => path !== '/' && path !== '/login' && !tenantShellScreenOf(path))
+        .map((path) => `${f}: ${path}`),
+    );
+    expect(outside).toEqual([]);
   });
 
   it('테넌트 셸 자신의 파일에는 브랜드 흔적이 없다(코드 이름의 almond 도, 주석은 빼고)', () => {

@@ -30,6 +30,7 @@ export type PiiSubjectType =
   | 'qna_question'
   | 'shop_listing'
   | 'print_order'
+  | 'almond_design'
   | 'channel_order'
   | 'event_record'
   | 'medusa_customer'
@@ -57,6 +58,8 @@ export interface PiiResponseSpec {
   readonly rawWith?: readonly Permission[];
   /** 필드별 예외(출고 화면의 수령인 정보처럼). 키는 `fields` 에 선언된 경로여야 한다. */
   readonly rawWithByField?: Readonly<Record<PiiPath, readonly Permission[]>>;
+  /** 응답이 파일이라 가릴 수 없다 — `fields` 는 파일에 든 종류이고, 원문을 못 받거나 기록하지 못하면 파일 대신 오류를 보낸다. */
+  readonly binary?: true;
 }
 
 export const DEFAULT_PII_RAW_WITH: readonly Permission[] = ['customer.pii.read'];
@@ -71,6 +74,9 @@ function assertSpec(spec: PiiResponseSpec): void {
       throw new Error('PiiResponse subject needs exactly one of path or param');
     }
     if (subject.path !== undefined) parsePiiPath(subject.path);
+  }
+  if (spec.binary === true && (spec.reveal === true || spec.rawWithByField !== undefined)) {
+    throw new Error('PiiResponse binary cannot reveal or open per field');
   }
   for (const path of Object.keys(spec.rawWithByField ?? {})) {
     if (!(path in spec.fields)) throw new Error(`PiiResponse rawWithByField path is not a declared field: ${path}`);

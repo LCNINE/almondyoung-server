@@ -596,15 +596,10 @@ describeIfDb('platform operator tenant API against a real database', () => {
       );
     });
 
-    it('fills the app of its own domain that has none (a row from before the app column), and refuses changing it', async () => {
+    it('refuses changing the app of its own domain', async () => {
       const op = await makeUser('op', true);
       await manager.createTenant(actor(op), newTenant());
-      await dbService.db.insert(tenantDomains).values({ host: `auth.${HOST}`, tenantId: TENANT });
 
-      await manager.addDomain(actor(op), TENANT, { host: `auth.${HOST}`, app: 'auth-web' });
-
-      const [row] = await dbService.db.select().from(tenantDomains).where(eq(tenantDomains.host, `auth.${HOST}`));
-      expect(row.app).toBe('auth-web');
       await expect(manager.addDomain(actor(op), TENANT, { host: HOST, app: 'auth-web' })).rejects.toBeInstanceOf(
         TenantDomainTakenError,
       );
@@ -675,7 +670,7 @@ describeIfDb('platform operator tenant API against a real database', () => {
       expect(await brands.adminSiteByHost(HOST)).toMatchObject({ tenantId: TENANT, authHost: null });
     });
 
-    it('does not know an auth-web address, an address without app, or an unknown address', async () => {
+    it('does not know an auth-web address or an unknown address', async () => {
       const op = await makeUser('op', true);
       await manager.createTenant(actor(op), {
         ...newTenant(),
@@ -684,10 +679,8 @@ describeIfDb('platform operator tenant API against a real database', () => {
           { host: `auth.${HOST}`, app: 'auth-web' },
         ],
       });
-      await dbService.db.insert(tenantDomains).values({ host: `old.${HOST}`, tenantId: TENANT });
 
       await expect(brands.adminSiteByHost(`auth.${HOST}`)).rejects.toBeInstanceOf(NotFoundError);
-      await expect(brands.adminSiteByHost(`old.${HOST}`)).rejects.toBeInstanceOf(NotFoundError);
       await expect(brands.adminSiteByHost(`unknown.${HOST}`)).rejects.toBeInstanceOf(NotFoundError);
     });
   });

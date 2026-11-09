@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { z } from 'zod';
 import { splitKoreanAddress } from './korean-address';
+import { buildJobs, judgeJobcost, type JobcostVerdict } from './wowpress-body';
 import { httpsWowpressTransport } from './wowpress.transport';
 import {
   type WowpressLineSpec,
@@ -10,6 +11,7 @@ import {
   type WowpressOrderInput,
   type WowpressOrderResult,
   type WowpressPlacedOrder,
+  type WowpressProdInfo,
   type WowpressRequest,
   type WowpressResponse,
   type WowpressTransport,
@@ -18,15 +20,6 @@ import {
 
 const API_BASE = 'https://api.wowpress.co.kr';
 
-// 와우프레스는 수량을 ordqty 가 아니라 각 작업의 jobqty 로 계산한다. 빠지면 최소 수량 값으로 견적·발주된다
-function withJobqty(spec: WowpressLineSpec, qty: number) {
-  const jobqty = spec.qtyPerUnit * qty;
-
-  return {
-    prsjob: spec.prsjob.map((job) => ({ ...job, jobqty })),
-    awkjob: spec.awkjob.map((job) => ({ ...job, jobqty })),
-  };
-}
 const FILE_BASE = 'https://file.wowpress.co.kr';
 export const WOWPRESS_TRANSPORT = Symbol('WOWPRESS_TRANSPORT');
 
@@ -71,6 +64,26 @@ const numeric = z
       .regex(/^-?\d+(\.\d+)?$/),
   ])
   .transform(Number);
+
+const prodInfoSchema = z.object({
+  prodno: numeric,
+  prodname: z.string(),
+  filetype: z
+    .string()
+    .nullish()
+    .transform((v) => v ?? null),
+  sizeinfo: z.unknown(),
+  paperinfo: z.unknown(),
+  colorinfo: z.unknown(),
+  ordqty: z.unknown(),
+  prsjobinfo: z.unknown(),
+  awkjobinfo: z.unknown(),
+  dlvyprepay: z
+    .boolean()
+    .nullish()
+    .transform((v) => v ?? null),
+  dlvygrpno: numeric.nullish().transform((v) => v ?? null),
+});
 
 function asRecord(v: unknown): Record<string, unknown> | null {
   const r = record.safeParse(v);
@@ -137,21 +150,35 @@ export class WowpressClient {
     this.transport = transport ?? httpsWowpressTransport;
   }
 
-  async quote(spec: WowpressLineSpec, qty: number): Promise<void> {
-    await this.call(
+  async prodInfo(prodno: number): Promise<WowpressProdInfo> {
+    const res = await this.call({ method: 'GET', url: `${API_BASE}/api/v1/std/prod_info/${prodno}` }, true);
+    const parsed = prodInfoSchema.safeParse(asRecord(res.resultMap)?.prod_info);
+    if (!parsed.success) throw new WowpressApiError(`unrecognized prod_info response for ${prodno}`);
+
+    return parsed.data;
+  }
+
+  async jobcost(
+    spec: Pick<WowpressLineSpec, 'prodno' | 'prsjob' | 'awkjob' | 'qtyPerUnit'>,
+    qty: number,
+  ): Promise<JobcostVerdict> {
+    const jobs = buildJobs(spec, qty);
+    const res = await this.call(
       {
         method: 'POST',
         url: `${API_BASE}/api/v1/ord/cjson_jobcost`,
-        json: {
-          prodno: spec.prodno,
-          ordqty: String(spec.qtyPerUnit * qty),
-          ordcnt: '1',
-          ordtitle: 'quote',
-          ...withJobqty(spec, qty),
-        },
+        json: { prodno: spec.prodno, ordqty: String(spec.qtyPerUnit * qty), ordcnt: '1', ordtitle: 'quote', ...jobs },
       },
       true,
     );
+
+    return judgeJobcost(jobs, res);
+  }
+
+  // 발주 전 검증. 견적이 보낸 값을 그대로 반영하지 않았으면 던진다
+  async quote(spec: WowpressLineSpec, qty: number): Promise<void> {
+    const verdict = await this.jobcost(spec, qty);
+    if (!verdict.ok) throw new WowpressApiError(verdict.reason);
   }
 
   async order(input: WowpressOrderInput): Promise<WowpressOrderResult> {
@@ -171,7 +198,7 @@ export class WowpressClient {
               ordbody,
               ordkey,
               jobpresetno: spec.jobpresetno,
-              ...withJobqty(spec, qty),
+              ...buildJobs(spec, qty),
             },
           ]),
           dlvymcd: '4',

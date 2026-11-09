@@ -99,6 +99,8 @@ export const productQueryKeys = {
 
   almondTemplates: ['almond-templates'] as const,
   almondTemplateCategories: ['almond-template-categories'] as const,
+  printOptions: (kind: string, width: number, height: number) =>
+    ['print-catalog', 'options', kind, width, height] as const,
 
   sitePopups: ['site-popups'] as const,
   sitePopupsList: <T extends object>(query: T) =>
@@ -110,10 +112,6 @@ export const productQueryKeys = {
   tagGroupsList: (query: object) =>
     [...productQueryKeys.tagGroups, 'list', query] as const,
   tagGroup: (id: string) => [...productQueryKeys.tagGroups, id] as const,
-
-  // 태그 값 관련
-  tagValues: (groupId: string) =>
-    [...productQueryKeys.tagGroup(groupId), 'values'] as const,
 
   // 가격 관리 관련
   pricingVersion: (versionId: string) =>

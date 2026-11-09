@@ -48,10 +48,11 @@ import { SelectedItem } from "./types"
 import { RestockNotice, hasStockNotice } from "./restock-notice"
 import { isWelcomeMembershipProduct } from "@/lib/utils/welcome-membership"
 import {
-  PRINT_PRODUCTS,
   PRINT_SPECS,
   sizeFromOption,
 } from "@/domains/almond-template/lib/catalog"
+import { templateProductOf } from "@/domains/almond-template/lib/template-product"
+import type { AlmondTemplateSummary } from "@/lib/types/ui/almond-template"
 import {
   describeStockShortage,
   getAvailableQuantity,
@@ -64,6 +65,7 @@ type ProductActionsProps = {
   product: HttpTypes.StoreProduct
   region: HttpTypes.StoreRegion
   disabled?: boolean
+  templates: AlmondTemplateSummary[] | null
 }
 
 const optionsAsKeymap = (
@@ -94,6 +96,7 @@ export default function ProductActions({
   product,
   disabled,
   customer,
+  templates,
 }: ProductActionsProps) {
   const t = useTranslations("productDetail.options")
   const [isPending, startTransition] = useTransition()
@@ -102,7 +105,10 @@ export default function ProductActions({
   const searchParams = useSearchParams()
   const countryCode = useParams().countryCode as string
   const printProductId = product.metadata?.pimMasterId as string | undefined
-  const hasAlmondTemplate = !!printProductId && !!PRINT_PRODUCTS[printProductId]
+  const templateProduct = printProductId
+    ? templateProductOf(printProductId, templates ?? [])
+    : undefined
+  const hasAlmondTemplate = !!templateProduct
 
   const [options, setOptions] = useState<Record<string, string | undefined>>({})
   const [selectedItems, setSelectedItems] = useState<SelectedItem[]>([])
@@ -315,13 +321,13 @@ export default function ProductActions({
   )
   const templateVariant =
     selectedItems.length === 1 ? selectedItems[0].variant : undefined
-  const printKind = printProductId
-    ? PRINT_PRODUCTS[printProductId]?.kind
-    : undefined
+  const printKind = templateProduct?.kind
   const optionLabel =
     templateVariant?.options?.map((option) => option.value).join(" ") ?? ""
+  // 게시한 상품은 옵션에 크기가 없어 시안 크기를 쓴다
   const printSize = printKind
-    ? (sizeFromOption(printKind, optionLabel) ??
+    ? (templateProduct?.size ??
+      sizeFromOption(printKind, optionLabel) ??
       PRINT_SPECS[printKind].sizes[0])
     : undefined
   const almondDesignId = searchParams.get("almond_design")
@@ -343,7 +349,7 @@ export default function ProductActions({
     : undefined
   const almondDesignMetadata =
     !almondSizeMismatch &&
-    hasAlmondTemplate &&
+    (hasAlmondTemplate || templates === null) &&
     templateVariant &&
     almondDesignId &&
     /^[0-9a-f-]{36}$/.test(almondDesignId)

@@ -1,4 +1,7 @@
 import { DbService } from '@app/db';
+import { TENANT_CONTEXT_KEY } from '@app/tenancy';
+import { AsyncLocalStorage } from 'node:async_hooks';
+import { ClsService } from 'nestjs-cls';
 import { piiAccessLogs, userServiceSchema, type UserServiceSchema } from 'apps/user-service/database/drizzle/schema';
 import { randomUUID } from 'crypto';
 import { eq } from 'drizzle-orm';
@@ -15,6 +18,13 @@ describeIfDb('personal data access log against a real database', () => {
   let dbService: DbService<UserServiceSchema>;
   let repository: PiiAccessRepository;
   let creator: PiiAccessCreator;
+  // 접속기록의 테넌트는 맥락(CLS)에서 온다 — 요청 문이 세우는 테넌트 1 맥락 안에서 적재한다.
+  const cls = new ClsService(new AsyncLocalStorage());
+  const record = (stored: Parameters<PiiAccessCreator['record']>[0]) =>
+    cls.run(() => {
+      cls.set(TENANT_CONTEXT_KEY, '1');
+      return creator.record(stored);
+    });
   const actor = randomUUID();
 
   const entry = (eventId: string, occurredAt: Date, subjectId: string) => ({
@@ -41,7 +51,7 @@ describeIfDb('personal data access log against a real database', () => {
   beforeAll(() => {
     dbService = new DbService({ connectionString: DATABASE_URL ?? '' }, userServiceSchema);
     repository = new PiiAccessRepository(dbService);
-    creator = new PiiAccessCreator(repository);
+    creator = new PiiAccessCreator(repository, cls);
   });
 
   afterAll(async () => {
@@ -51,22 +61,22 @@ describeIfDb('personal data access log against a real database', () => {
 
   it('keeps one row when the same event arrives twice', async () => {
     const eventId = randomUUID();
-    await creator.record(entry(eventId, new Date('2026-10-19T00:00:00.000Z'), 'so-dup'));
-    await creator.record(entry(eventId, new Date('2026-10-19T00:00:00.000Z'), 'so-dup'));
+    await record(entry(eventId, new Date('2026-10-19T00:00:00.000Z'), 'so-dup'));
+    await record(entry(eventId, new Date('2026-10-19T00:00:00.000Z'), 'so-dup'));
     const rows = await dbService.db.select().from(piiAccessLogs).where(eq(piiAccessLogs.eventId, eventId));
     expect(rows).toHaveLength(1);
   });
 
   it('finds rows by a subject inside the subjects array', async () => {
-    await creator.record(entry(randomUUID(), new Date('2026-10-19T01:00:00.000Z'), 'so-find'));
+    await record(entry(randomUUID(), new Date('2026-10-19T01:00:00.000Z'), 'so-find'));
     const rows = await repository.page({ actorUserId: actor, subject: { type: 'sales_order', id: 'so-find' } }, 10);
     expect(rows.map((r) => r.subjects)).toEqual([[{ type: 'sales_order', id: 'so-find' }]]);
   });
 
   it('pages rows of the same millisecond without skipping', async () => {
     const at = new Date('2026-10-19T02:00:00.000Z');
-    await creator.record(entry(randomUUID(), at, 'so-ms-1'));
-    await creator.record(entry(randomUUID(), at, 'so-ms-2'));
+    await record(entry(randomUUID(), at, 'so-ms-1'));
+    await record(entry(randomUUID(), at, 'so-ms-2'));
     const first = await repository.page({ actorUserId: actor, from: at }, 1);
     const second = await repository.page({ actorUserId: actor, from: at, before: first[0] }, 5);
     expect(new Set([...first, ...second].map((r) => r.id)).size).toBe(2);
@@ -74,13 +84,13 @@ describeIfDb('personal data access log against a real database', () => {
 
   it('counts after-hours access in Korean time', async () => {
     // 03:00 KST = 전날 18:00 UTC
-    await creator.record(entry(randomUUID(), new Date('2026-10-18T18:00:00.000Z'), 'so-night'));
+    await record(entry(randomUUID(), new Date('2026-10-18T18:00:00.000Z'), 'so-night'));
     const summary = await repository.summary(new Date('2026-10-18T00:00:00.000Z'), new Date('2026-10-19T00:00:00.000Z'));
     expect(summary.find((s) => s.actorUserId === actor)?.afterHoursCount).toBe(1);
   });
 
   it('deletes only rows older than the cutoff', async () => {
-    await creator.record(entry(randomUUID(), new Date('2020-01-01T00:00:00.000Z'), 'so-old'));
+    await record(entry(randomUUID(), new Date('2020-01-01T00:00:00.000Z'), 'so-old'));
     const deleted = await repository.deleteBefore(new Date('2021-01-01T00:00:00.000Z'), 10_000);
     expect(deleted).toBeGreaterThanOrEqual(1);
     const left = await repository.page({ actorUserId: actor, subject: { type: 'sales_order', id: 'so-old' } }, 10);

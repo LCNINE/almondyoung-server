@@ -4,6 +4,7 @@ import { cn } from "@/lib/utils"
 import { ArrowLeft, Info, Palette, Search, SquarePlus } from "lucide-react"
 import { useMemo, useRef, useState } from "react"
 import { PRINT_PRODUCTS, PRINT_SPECS, type PrintKind } from "../lib/catalog"
+import { templateProductOf } from "../lib/template-product"
 import {
   COLORS,
   INDUSTRIES,
@@ -95,7 +96,7 @@ export function AlmondTemplateGallery({
   canDesign,
   templates,
 }: Props) {
-  const product = PRINT_PRODUCTS[productId]
+  const product = templateProductOf(productId, templates ?? [])
   const startKind = product?.kind ?? initialKind
   const failed = templates === null
   const items = useMemo(() => (templates ?? []).filter(published), [templates])

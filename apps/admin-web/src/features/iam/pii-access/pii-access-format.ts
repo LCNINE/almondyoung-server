@@ -18,6 +18,7 @@ const SUBJECT_LABELS: Readonly<Record<string, string>> = {
   review: '리뷰',
   shop_listing: '샵매매',
   print_order: '출력 주문',
+  almond_design: '고객 시안',
   channel_order: '채널 주문',
   event_record: '이벤트 기록',
   medusa_customer: '쇼핑몰 고객',

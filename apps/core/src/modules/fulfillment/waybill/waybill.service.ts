@@ -29,6 +29,11 @@ export class WaybillService {
     return toView(await this.manager.issueForShipment(shipmentId, opts, idemKey, actor));
   }
 
+  async resumeActive(shipmentId: string, opts: IssueOpts): Promise<WaybillView | null> {
+    const row = await this.manager.resumeActive(shipmentId, opts);
+    return row ? toView(row) : null;
+  }
+
   async abandon(
     waybillId: string,
     dto: { reason: string },
