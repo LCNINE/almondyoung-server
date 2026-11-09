@@ -4,6 +4,7 @@ import type { CancelChannelOrderPayload } from '@packages/event-contracts/stream
 import { MedusaClient } from '../../adapters/medusa/medusa.client';
 import { getChannelFulfillmentCapabilities } from '../channel-capabilities';
 import { OrderPollerOrchestrator } from '../order-collection/order-poller.orchestrator';
+import { CustomerCancelApprover } from './customer-cancel-approver';
 import { ChannelOrderCancelRepository } from './channel-order-cancel.repository';
 
 /** 정산이 끝나지 못한 결과 */
@@ -25,11 +26,14 @@ export class ChannelOrderCancelManager {
     private readonly repository: ChannelOrderCancelRepository,
     private readonly medusaClient: MedusaClient,
     private readonly orderPoller: OrderPollerOrchestrator,
+    private readonly approver: CustomerCancelApprover,
   ) {}
 
   /** `deliveryId` 는 명령 봉투의 messageId — 사실의 멱등 키에 쓴다(같은 전달의 재전달은 한 번, 재발행은 새로). */
   async execute(command: CancelChannelOrderPayload, deliveryId: string): Promise<void> {
     const { requestId, salesChannel, externalOrderId } = command;
+    // 마켓 고객 취소요청의 승인 — core 가 이미 멈춘 뒤 보내는 명령이라 Medusa 실행기·scope 와 무관하다
+    if (command.answers) return this.executeApproval({ ...command, answers: command.answers }, deliveryId);
     // 실행기가 Medusa 하나뿐이라 채널 이름을 함께 본다 — 다른 채널이 능력을 켜면 여기에 실행기를 더해야 하고, 그 전엔 거절한다.
     // execute 안에 두는 이유: 이 검사가 salesChannel 을 'medusa' 로 좁혀 아래 재수집에 넘긴다
     if (salesChannel !== 'medusa' || !getChannelFulfillmentCapabilities(salesChannel)?.automatedCancellation) {
@@ -53,6 +57,29 @@ export class ChannelOrderCancelManager {
     } else {
       this.logger.log(done);
     }
+  }
+
+  private async executeApproval(
+    command: CancelChannelOrderPayload & { answers: NonNullable<CancelChannelOrderPayload['answers']> },
+    deliveryId: string,
+  ): Promise<void> {
+    const { requestId, salesChannel, externalOrderId } = command;
+    if (salesChannel !== 'naver' && salesChannel !== 'coupang') {
+      const message = `${salesChannel} 주문은 취소요청 승인을 지원하지 않습니다`;
+      return this.fail(command, deliveryId, { retryable: false, failureCode: 'channel_not_supported', message });
+    }
+    const collected = await this.checkCollected(command);
+    if (collected) return this.fail(command, deliveryId, collected);
+    const result = await this.approver.approve(command);
+    if (result.kind === 'failed') {
+      return this.fail(command, deliveryId, {
+        retryable: result.retryable,
+        failureCode: result.failureCode,
+        message: result.message,
+      });
+    }
+    const { outcome } = await this.orderPoller.syncOrder(salesChannel, externalOrderId, { force: true });
+    this.logger.log(`[CANCEL] ${requestId} ${salesChannel}:${externalOrderId} 마켓 취소요청 승인 완료 → 재수집 ${outcome}`);
   }
 
   /** 우리가 수집하지 않은 주문 id 로 채널을 건드리지 않는다 */

@@ -135,6 +135,7 @@ import { createOrderProvider } from './services/order-collection/translating-ord
 import { OrderCollectionFailureService } from './services/order-collection/order-collection-failure.service';
 import { OrderPollerOrchestrator } from './services/order-collection/order-poller.orchestrator';
 import { ChannelOrderCancelManager } from './services/order-cancel/channel-order-cancel.manager';
+import { CustomerCancelApprover } from './services/order-cancel/customer-cancel-approver';
 import { ChannelReturnSettleManager } from './services/order-cancel/channel-return-settle.manager';
 import { ChannelReturnPrepayManager } from './services/order-cancel/channel-return-prepay.manager';
 import { ChannelOrderCancelRepository } from './services/order-cancel/channel-order-cancel.repository';
@@ -376,6 +377,7 @@ const NO_KAFKA_PUBLISHER_STREAMS: StreamConfig[] = [
           CoreLineReservationStateClient,
           ChannelOrderCancelRepository,
           ChannelOrderCancelManager,
+          CustomerCancelApprover,
           ChannelReturnSettleManager,
           ChannelReturnPrepayManager,
         ]

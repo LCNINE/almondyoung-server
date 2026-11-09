@@ -26,8 +26,9 @@ function setup(opts: { mapped?: boolean } = {}) {
   };
   const medusa = { cancelOrder: jest.fn(), partialCancelOrder: jest.fn() };
   const poller = { syncOrder: jest.fn().mockResolvedValue({ outcome: 'emitted' }) };
-  const manager = new ChannelOrderCancelManager(repository as never, medusa as never, poller as never);
-  return { manager, repository, medusa, poller };
+  const approver = { approve: jest.fn() };
+  const manager = new ChannelOrderCancelManager(repository as never, medusa as never, poller as never, approver as never);
+  return { manager, repository, medusa, poller, approver };
 }
 
 /** recordSettlementFailure 의 [사실, 전달 id] */
@@ -46,6 +47,41 @@ describe('ChannelOrderCancelManager (#1016 35번 PR-B · 36번 재설계 PR 3)',
     jest.spyOn(Logger.prototype, 'log').mockImplementation();
   });
   afterEach(() => jest.restoreAllMocks());
+
+  describe('마켓 취소요청 승인 (answers)', () => {
+    const asked: CancelChannelOrderPayload = {
+      ...full,
+      salesChannel: 'naver',
+      requestedBy: 'channel-customer',
+      answers: { channelRequestRef: 'po-1', needsApproval: true },
+    };
+
+    it('command with answers goes to the approver, not the Medusa executor', async () => {
+      const { manager, repository, medusa, poller, approver } = setup();
+      approver.approve.mockResolvedValue({ kind: 'approved' });
+      await manager.execute(asked, 'd1');
+      expect(approver.approve).toHaveBeenCalledWith(asked);
+      expect(medusa.cancelOrder).not.toHaveBeenCalled();
+      expect(repository.recordSettlementFailure).not.toHaveBeenCalled();
+      expect(poller.syncOrder).toHaveBeenCalledWith('naver', 'order_1', { force: true });
+    });
+
+    it('failed approval is recorded as a settlement failure', async () => {
+      const { manager, repository, poller, approver } = setup();
+      approver.approve.mockResolvedValue({ kind: 'failed', retryable: false, failureCode: 'approval_observe_mode', message: 'm' });
+      await manager.execute(asked, 'd1');
+      const { fact } = recorded(repository);
+      expect(fact).toMatchObject({ salesChannel: 'naver', retryable: false, failureCode: 'approval_observe_mode' });
+      expect(poller.syncOrder).not.toHaveBeenCalled();
+    });
+
+    it('uncollected order stops before the approver', async () => {
+      const { manager, repository, approver } = setup({ mapped: false });
+      await manager.execute(asked, 'd1');
+      expect(recorded(repository).fact).toMatchObject({ failureCode: 'order_not_collected' });
+      expect(approver.approve).not.toHaveBeenCalled();
+    });
+  });
 
   describe('사전검사', () => {
     it.each(['naver', 'coupang', '3pl', 'cafe24'])(
