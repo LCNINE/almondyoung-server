@@ -19,8 +19,8 @@ export class ReservationReconcileRunsService {
   async apply(id: string, actorId: string) {
     await this.requireOpenHalted(id);
     const record = await this.reconcile.run({ limit: null, forcedBy: actorId });
-    // 원래 회차는 «고쳤다» 로 닫는다. 그 사이 다른 사람이 먼저 닫았어도 새 회차는 이미 돌았으므로 결과를 돌려준다.
-    await this.runs.closeOpenHalted(id, actorId, 'forced');
+    // 고쳐졌을 때(applied)만 원래 회차를 닫는다. skipped·halted 면 열어 두고 새 회차(오류 포함)를 그대로 보여 준다.
+    if (record.status === 'applied') await this.runs.closeOpenHalted(id, actorId, 'forced');
     return record;
   }
 

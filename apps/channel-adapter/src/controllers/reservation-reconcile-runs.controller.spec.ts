@@ -29,6 +29,17 @@ describe('ReservationReconcileRunsController', () => {
     expect(res).toEqual({ data: { id: 'new', status: 'applied' } });
   });
 
+  it.each(['skipped', 'halted'])(
+    '강제 회차가 %s 면 원래 회차를 열어 두고 새 회차를 그대로 돌려준다',
+    async (status) => {
+      const { controller, reconcile, runs } = setup(row());
+      reconcile.run.mockResolvedValue({ id: 'new', status, error: 'boom' });
+      const res = await controller.apply('r1', user);
+      expect(runs.closeOpenHalted).not.toHaveBeenCalled();
+      expect(res).toEqual({ data: { id: 'new', status, error: 'boom' } });
+    },
+  );
+
   it('닫힌 회차 apply 는 409, run 은 부르지 않는다', async () => {
     const { controller, reconcile } = setup(row({ closedAt: new Date() }));
     await expect(controller.apply('r1', user)).rejects.toBeInstanceOf(ConflictError);
