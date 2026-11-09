@@ -139,13 +139,15 @@ export class LocationController {
   @ApiBody({ type: UpdateRackDto })
   @ApiResponse({
     status: HttpStatus.OK,
-    description: '랙 정보가 성공적으로 수정되었습니다.',
+    description: '랙 정보가 수정되었습니다. 자동 생성 랙이면 칸이 끝 번호를 따라 늘고, 사용 중이 아닌 칸만 줄어든다(binChanges).',
     type: LocationRackResponseDto,
   })
   @ApiResponse({
     status: HttpStatus.NOT_FOUND,
     description: '랙을 찾을 수 없습니다.',
   })
+  @ApiResponse({ status: HttpStatus.BAD_REQUEST, description: '칸 시작 번호가 끝 번호보다 큽니다.' })
+  @ApiResponse({ status: HttpStatus.CONFLICT, description: '만들 칸 코드의 로케이션이 다른 곳에 이미 있습니다.' })
   @ApiResponse({ status: 403, description: '재고 마스터데이터 관리 권한이 없습니다.' })
   async updateRack(@Param('rackId') rackId: string, @Body() dto: UpdateRackDto) {
     return await this.locationService.updateRack(rackId, dto);

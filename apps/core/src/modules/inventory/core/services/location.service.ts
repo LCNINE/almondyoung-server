@@ -14,6 +14,9 @@ import { UpdateLocationDto, UpdateColumnDto, UpdateRackDto } from '../dto/locati
 import { LocationQueryDto } from '../dto/location-query.dto';
 import { SystemLocationRole } from '../types';
 import { SYSTEM_LOCATION_DEFAULTS } from '../constants/warehouse.constants';
+import { autoBinIdentifier, rackBinLocationCode } from '../location-code';
+import { BadRequestError, NotFoundError } from '@app/shared';
+import { RackBinChanges, syncRackBins } from './rack-bin-sync';
 
 @Injectable()
 export class LocationService {
@@ -198,8 +201,8 @@ export class LocationService {
       if (dto.binSettings.autoGenerate && dto.binSettings.standardBins) {
         const locations: Array<typeof wmsTables.locations.$inferInsert> = [];
         for (let binNum = binStart; binNum <= binEnd; binNum++) {
-          const binIdentifier = binNum.toString().padStart(2, '0');
-          const locationCode = `${dto.columnName}-${dto.rackNumber.toString().padStart(2, '0')}-${binIdentifier}`;
+          const binIdentifier = autoBinIdentifier(binNum);
+          const locationCode = rackBinLocationCode(dto.columnName, dto.rackNumber, binIdentifier);
 
           locations.push({
             warehouseId,
@@ -222,7 +225,7 @@ export class LocationService {
       if (dto.binSettings.customBins && dto.binSettings.customBins.length > 0) {
         const customLocations: Array<typeof wmsTables.locations.$inferInsert> = dto.binSettings.customBins.map(
           (customBinName) => {
-            const locationCode = `${dto.columnName}-${dto.rackNumber.toString().padStart(2, '0')}-${customBinName}`;
+            const locationCode = rackBinLocationCode(dto.columnName, dto.rackNumber, customBinName);
             createdLocationCodes.push(locationCode);
 
             return {
@@ -465,21 +468,41 @@ export class LocationService {
     return updated;
   }
 
-  async updateRack(rackId: string, dto: UpdateRackDto) {
-    const [updated] = await this.db
-      .update(wmsTables.locationRacks)
-      .set({
-        ...dto,
-        updatedAt: new Date(),
-      })
-      .where(eq(wmsTables.locationRacks.id, rackId))
-      .returning();
+  /**
+   * 랙 수정. 칸 범위·자동 생성을 바꾸면, 자동 생성 랙의 칸이 끝 번호를 따라 늘고 안 쓰는 칸만 줄어든다(#1235, rack-bin-sync).
+   */
+  async updateRack(
+    rackId: string,
+    dto: UpdateRackDto,
+    tx?: DbTx,
+  ): Promise<LocationRack & { binChanges: RackBinChanges }> {
+    return this.dbService.run(async (trx) => {
+      const [current] = await trx
+        .select()
+        .from(wmsTables.locationRacks)
+        .where(eq(wmsTables.locationRacks.id, rackId))
+        .for('update');
+      if (!current) throw new NotFoundError(`Rack not found: ${rackId}`);
 
-    if (!updated) {
-      throw new NotFoundException(`Rack with id ${rackId} not found`);
-    }
+      const start = dto.defaultBinStart ?? current.defaultBinStart;
+      const end = dto.defaultBinEnd ?? current.defaultBinEnd;
+      if (start > end) {
+        throw new BadRequestError(`칸 시작 번호(${start})가 끝 번호(${end})보다 큽니다`);
+      }
 
-    return updated;
+      const [updated] = await trx
+        .update(wmsTables.locationRacks)
+        .set({ ...dto, updatedAt: new Date() })
+        .where(eq(wmsTables.locationRacks.id, rackId))
+        .returning();
+      // 칸 범위·자동 생성을 건드린 수정일 때만 맞춘다 — 메모만 고쳤는데 칸이 생기거나 지워지면 안 된다.
+      const touchesBins =
+        dto.defaultBinStart !== undefined || dto.defaultBinEnd !== undefined || dto.autoGenerateBins !== undefined;
+      const binChanges: RackBinChanges = touchesBins
+        ? await syncRackBins(trx, rackId)
+        : { created: [], deleted: [], keptInUse: [] };
+      return { ...updated, binChanges };
+    }, tx);
   }
 
   async addCustomBin(warehouseId: string, dto: AddCustomBinDto) {
@@ -508,7 +531,7 @@ export class LocationService {
         throw new BadRequestException(`Rack ${dto.columnName}-${dto.rackNumber} not found`);
       }
 
-      const locationCode = `${dto.columnName}-${dto.rackNumber.toString().padStart(2, '0')}-${dto.customBinName}`;
+      const locationCode = rackBinLocationCode(dto.columnName, dto.rackNumber, dto.customBinName);
 
       const existing = await tx
         .select()
