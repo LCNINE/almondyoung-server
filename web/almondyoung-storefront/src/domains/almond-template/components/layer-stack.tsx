@@ -84,6 +84,7 @@ function silhouette(layer: Layer, fill: string): Layer {
     blur: undefined,
     blendMode: undefined,
     shadow: false,
+    glow: false,
     bevel: false,
     texture: false,
   }

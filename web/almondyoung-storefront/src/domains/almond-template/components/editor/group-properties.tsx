@@ -15,6 +15,7 @@ import {
   PropSection,
   PropSlider,
   SettingBox,
+  GlowRow,
   ShadowRow,
 } from "./prop-sections"
 import {
@@ -216,6 +217,7 @@ export function GroupProperties({
       {layers.some(EFFECTED) && (
         <PropSection className="space-y-[15px] py-5">
           <ShadowRow target={targetOf(layers.filter(EFFECTED))} unit={unit} />
+          <GlowRow target={targetOf(layers.filter(EFFECTED))} unit={unit} />
           <PrintEffectRows target={targetOf(layers.filter(EFFECTED))} />
         </PropSection>
       )}

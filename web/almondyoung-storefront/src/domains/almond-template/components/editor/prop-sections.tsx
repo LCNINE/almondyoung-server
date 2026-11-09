@@ -15,8 +15,13 @@ import type { Layer } from "../../lib/document"
 import { MIN_LAYER_MM, mm } from "../../lib/layer"
 import { OrderIcon } from "./order-icon"
 import { PrintColorPicker } from "../color-picker"
-import { bevelOf, shadowOf } from "../graphic"
-import { common, TextureFields, type StyleTarget } from "./style-controls"
+import { bevelOf, glowOf, shadowOf } from "../graphic"
+import {
+  common,
+  Segmented,
+  TextureFields,
+  type StyleTarget,
+} from "./style-controls"
 
 // 망고보드 속성 패널 부품. 섹션은 아래 1px #e6e7ea 선으로 나뉜다
 
@@ -518,6 +523,99 @@ export function ShadowRow({
               disabled={disabled}
               onChange={(on) => apply({ shadowMultiply: on || undefined })}
             />
+          </SettingBox>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// 글로우 행: 그림자처럼 색을 고르면 켜진다. 크기는 1080px 화면 기준 px 로 보이고 mm 로 저장한다
+export function GlowRow({
+  target,
+  unit,
+}: {
+  target: StyleTarget
+  unit: number
+}) {
+  const { layers, apply, disabled } = target
+  const on = layers.length > 0 && layers.every((layer) => !!layer.glow)
+  const read = <K extends keyof ReturnType<typeof glowOf>>(key: K) =>
+    common(layers, (layer) => glowOf(layer)[key])
+  const size = read("size")
+  const opacity = read("opacity")
+  const toMm = (px: number) =>
+    Math.max(0, Math.min(20, Math.round(px * unit * 100) / 100))
+  return (
+    <div>
+      <PrintColorPicker
+        label="글로우"
+        value={on ? (read("color") ?? "#ffffff") : "none"}
+        disabled={disabled}
+        onClear={() => apply({ glow: false })}
+        onApply={(color) =>
+          apply(
+            on
+              ? { glowColor: color }
+              : {
+                  glow: true,
+                  glowColor: color,
+                  glowSize: toMm(8),
+                  glowOpacity: 0.8,
+                }
+          )
+        }
+      />
+      <div
+        className={`grid transition-[grid-template-rows] duration-300 ${on ? "grid-rows-[1fr]" : "grid-rows-[0fr]"}`}
+      >
+        <div className="overflow-hidden">
+          <SettingBox
+            title="글로우 설정"
+            disabled={disabled}
+            onClear={() => apply({ glow: false })}
+          >
+            <Segmented
+              label="종류"
+              options={
+                [
+                  ["soft", "부드러운 빛"],
+                  ["neon", "네온"],
+                ] as const
+              }
+              value={read("style")}
+              disabled={disabled}
+              onPick={(glowStyle) => apply({ glowStyle })}
+            />
+            <PropSlider
+              label="번짐 크기 (px)"
+              min={1}
+              max={Math.max(1, Math.min(60, Math.floor(20 / unit)))}
+              value={size === null ? 0 : Math.round(size / unit)}
+              disabled={disabled}
+              onValue={(value) => apply({ glowSize: toMm(value) })}
+            />
+            <PropSlider
+              label="빛 세기"
+              min={0}
+              max={100}
+              value={opacity === null ? 0 : Math.round(opacity * 100)}
+              disabled={disabled}
+              onValue={(value) => apply({ glowOpacity: value / 100 })}
+            />
+            <PropSlider
+              label="퍼짐"
+              min={0}
+              max={100}
+              value={read("spread") ?? 0}
+              disabled={disabled}
+              onValue={(value) => apply({ glowSpread: value || undefined })}
+            />
+            {read("style") === "neon" && (
+              <p className="text-[13px] leading-[19px] text-[#70777F]">
+                네온은 글자·도형 속을 빛 색으로 하얗게 달아오르게 칠합니다.
+              </p>
+            )}
           </SettingBox>
         </div>
       </div>

@@ -12,6 +12,7 @@ import { bevelOf, shadowOf, strokeRounded } from "../graphic"
 import { NumberInput } from "./number-input"
 import { PropSlider } from "./prop-sections"
 import { FontPicker } from "./font-picker"
+import { cornerRadiusOf } from "../../lib/path-shape"
 
 // 하나를 골랐든 여럿을 골랐든 같은 컨트롤을 쓴다. apply 는 고른 요소 모두에 들어간다
 export type StyleTarget = {
@@ -36,7 +37,7 @@ const pressed = (on: boolean) =>
   `border px-2 py-1 ${on ? "border-blue-600 text-blue-600" : ""}`
 
 // 망고보드 세그먼트: 회색 트랙 안에서 고른 칸만 흰 바탕 + 노랑 테두리
-function Segmented<T extends string>({
+export function Segmented<T extends string>({
   label,
   options,
   value,
@@ -443,5 +444,26 @@ export function StarControls({
         }
       />
     </div>
+  )
+}
+
+export function CornerRadiusControl({
+  layer,
+  apply,
+  disabled,
+}: {
+  layer: Layer
+  apply: (value: Partial<Layer>) => void
+  disabled: boolean
+}) {
+  return (
+    <PropSlider
+      label="모서리 둥글기"
+      min={0}
+      max={100}
+      value={cornerRadiusOf(layer)}
+      disabled={disabled}
+      onValue={(value) => apply({ cornerRadius: Math.round(value) })}
+    />
   )
 }

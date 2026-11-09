@@ -75,9 +75,10 @@ export function LayerStyleControls({
         )}
       {gradient && (
         <GradientControls
-          selected={selected}
-          patch={patch}
+          value={selected.gradient}
+          startColor={selected.fill === "none" ? undefined : selected.fill}
           disabled={disabled}
+          onChange={(gradient) => patch({ gradient })}
         />
       )}
       {selected.type === "text" && (
@@ -123,18 +124,19 @@ export function LayerStyleControls({
   )
 }
 
-function GradientControls({
-  selected,
-  patch,
+export function GradientControls({
+  value,
+  startColor,
   disabled,
+  onChange,
 }: {
-  selected: Layer
-  patch: (value: Partial<Layer>) => void
+  value: Gradient | undefined
+  startColor?: string
   disabled: boolean
+  onChange: (value: Gradient | undefined) => void
 }) {
-  const value = selected.gradient
   const set = (change: Partial<Gradient>) =>
-    value && patch({ gradient: { ...value, ...change } })
+    value && onChange({ ...value, ...change })
 
   return (
     <>
@@ -143,24 +145,21 @@ function GradientControls({
         checked={!!value}
         disabled={disabled}
         onChange={(on) =>
-          patch({
-            gradient: on
+          onChange(
+            on
               ? {
                   ...DEFAULT_GRADIENT,
-                  from:
-                    selected.fill === "none"
-                      ? DEFAULT_GRADIENT.from
-                      : selected.fill,
+                  from: startColor ?? DEFAULT_GRADIENT.from,
                 }
-              : undefined,
-          })
+              : undefined
+          )
         }
       />
       {value && (
         <SettingBox
           title="그라데이션 설정"
           disabled={disabled}
-          onClear={() => patch({ gradient: undefined })}
+          onClear={() => onChange(undefined)}
         >
           <label className="block text-[15px] text-[#3F4250]">
             방식

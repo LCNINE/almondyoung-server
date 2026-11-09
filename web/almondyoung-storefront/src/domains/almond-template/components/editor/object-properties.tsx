@@ -23,6 +23,7 @@ import {
   PropSection,
   PropSlider,
   SettingBox,
+  GlowRow,
   ShadowRow,
   SizeSection,
 } from "./prop-sections"
@@ -30,10 +31,11 @@ import type { AlmondEditor } from "../../hooks/use-almond-editor"
 import type { PropertyPanelState } from "../../hooks/use-property-panel"
 import { LayerStyleControls } from "./layer-style-controls"
 import { ObjectPropertiesMore } from "./object-properties-more"
-import { shapeOutline } from "../../lib/path-shape"
+import { roundableRect, shapeOutline } from "../../lib/path-shape"
 import { scalePhoto } from "../../lib/canvas-math"
 import {
   FontSelect,
+  CornerRadiusControl,
   StarControls,
   StrokeLineControls,
   type StyleTarget,
@@ -423,6 +425,7 @@ export function ObjectProperties({
               </div>
             )}
             <ShadowRow target={target} unit={unit} />
+            <GlowRow target={target} unit={unit} />
             <PrintEffectRows target={target} />
           </PropSection>
           <OpacitySection
@@ -439,8 +442,9 @@ export function ObjectProperties({
       ) : selected.type === "line" ? (
         <>
           <LineProperties editor={editor} selected={selected} />
-          <PropSection className="py-5">
+          <PropSection className="space-y-[15px] py-5">
             <ShadowRow target={target} unit={unit} />
+            <GlowRow target={target} unit={unit} />
           </PropSection>
           <OpacitySection
             value={selected.opacity}
@@ -535,6 +539,13 @@ export function ObjectProperties({
                     )}
                   </div>
                 )}
+              {roundableRect(selected) && (
+                <CornerRadiusControl
+                  layer={selected}
+                  apply={target.apply}
+                  disabled={!editable}
+                />
+              )}
               {selected.type === "star" && (
                 <StarControls
                   layer={selected}
@@ -610,7 +621,13 @@ export function ObjectProperties({
           {shapeText && (
             <PropSection className="space-y-[15px] py-5">
               <ShadowRow target={target} unit={unit} />
+              <GlowRow target={target} unit={unit} />
               <PrintEffectRows target={target} />
+            </PropSection>
+          )}
+          {selected.type === "frame" && selected.image && (
+            <PropSection className="space-y-[15px] py-5">
+              <ShadowRow target={target} unit={unit} />
             </PropSection>
           )}
           <OpacitySection

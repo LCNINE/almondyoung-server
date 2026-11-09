@@ -94,6 +94,17 @@ export type Layer = {
   shadowOpacity?: number
   // 그림자를 아래 그림과 곱하기로 섞는다
   shadowMultiply?: boolean
+  // 모양 둘레로 번지는 빛. 크기는 mm, 세기는 0~1
+  glow?: boolean
+  glowColor?: string
+  glowSize?: number
+  glowOpacity?: number
+  // soft 는 둘레로 번지는 빛, neon 은 속까지 하얗게 달아오른 네온관
+  glowStyle?: "soft" | "neon"
+  // 0~100. 빛이 번지기 전에 모양을 얼마나 부풀릴지
+  glowSpread?: number
+  // 사각형 모서리 둥글기 0~100. 100 이면 짧은 변이 반원이 된다
+  cornerRadius?: number
   texture?: boolean
   textureKind?: "grain" | "paper"
   textureAmount?: number
@@ -150,6 +161,7 @@ export type Design = {
   backgroundPixelHeight?: number
   backgroundFilter?: ColorFilter
   backgroundBlur?: number
+  backgroundGradient?: Gradient
   backBackground?: SideBackground
   // 원본 file: 참조 → 편집 화면용 축소본 file: 참조
   imagePreviews?: Record<string, string>
@@ -165,6 +177,7 @@ export type SideBackground = Pick<
   | "backgroundPixelHeight"
   | "backgroundFilter"
   | "backgroundBlur"
+  | "backgroundGradient"
 >
 
 export function sideBackground(
@@ -179,6 +192,7 @@ export function sideBackground(
     backgroundPixelHeight: design.backgroundPixelHeight,
     backgroundFilter: design.backgroundFilter,
     backgroundBlur: design.backgroundBlur,
+    backgroundGradient: design.backgroundGradient,
   }
 }
 
@@ -191,6 +205,7 @@ export function printsBack(design: Design): boolean {
   return (
     design.back.length > 0 ||
     !!bg?.backgroundImage ||
+    !!bg?.backgroundGradient ||
     (!!bg && bg.background.toLowerCase() !== "#ffffff")
   )
 }
@@ -208,6 +223,7 @@ export function withSideBackground(
     backgroundPixelHeight: undefined,
     backgroundFilter: undefined,
     backgroundBlur: undefined,
+    backgroundGradient: undefined,
     ...value,
   }
 }
@@ -508,6 +524,8 @@ function checkBackgroundImage(data: Partial<SideBackground>) {
 
   if (data.backgroundBlur !== undefined && !within(data.backgroundBlur, 0, 100))
     throw new Error("배경 블러가 올바르지 않습니다.")
+  if (!validGradient(data.backgroundGradient))
+    throw new Error("배경 그라데이션이 올바르지 않습니다.")
 }
 
 export function updateLayer(
@@ -633,6 +651,13 @@ function validEffects(layer: Layer) {
     ) &&
     optional(layer.shadowOpacity, (v) => within(v, 0, 1)) &&
     optional(layer.shadowMultiply, isBool) &&
+    optional(layer.glow, isBool) &&
+    optional(layer.glowColor, (v) => typeof v === "string" && color.test(v)) &&
+    optional(layer.glowSize, (v) => within(v, 0, 20)) &&
+    optional(layer.glowOpacity, (v) => within(v, 0, 1)) &&
+    optional(layer.glowStyle, (v) => v === "soft" || v === "neon") &&
+    optional(layer.glowSpread, (v) => within(v, 0, 100)) &&
+    optional(layer.cornerRadius, (v) => within(v, 0, 100)) &&
     optional(layer.texture, isBool) &&
     optional(layer.textureKind, (v) => v === "grain" || v === "paper") &&
     optional(layer.textureAmount, (v) => within(v, 1, 100)) &&
