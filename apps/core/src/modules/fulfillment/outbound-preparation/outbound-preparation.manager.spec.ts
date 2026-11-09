@@ -107,7 +107,7 @@ describe('OutboundPreparationManager', () => {
         status: 'failed',
         transient: false,
         code: 'WAYBILL_NEEDS_REVIEW',
-        reason: '송장 발급 결과를 확인해야 해요',
+        reason: '멈춘 송장이 있어요 — 상자 보기에서 중단하고 다시 발급해요',
       }),
     ]);
     expect(issueForShipment).not.toHaveBeenCalled();

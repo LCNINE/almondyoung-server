@@ -743,6 +743,9 @@ export interface ShipmentWaybillHistory {
   manifestVersion: number;
   issuedAt: string | null;
   voidedAt: string | null;
+  // 옛 core 는 싣지 않는다 — core 가 먼저 배포되지만 없을 때도 화면이 깨지지 않게 선택으로 둔다.
+  lastError?: string | null;
+  nextAttemptAt?: string | null;
 }
 
 export interface ShipmentTrackingEvent {
@@ -1586,6 +1589,10 @@ export interface IssueBatchWaybillRequest {
 }
 
 export interface VoidWaybillRequest {
+  reason: string;
+}
+
+export interface AbandonWaybillRequest {
   reason: string;
 }
 

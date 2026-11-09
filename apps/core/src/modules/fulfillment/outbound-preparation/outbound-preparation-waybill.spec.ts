@@ -246,7 +246,7 @@ describe('outbound preparation with WaybillManager', () => {
 
     expect(await runOutboundPreparation(deps, input, jest.fn())).toMatchObject({
       waybilled: 0,
-      failures: [{ shipmentId, stage: 'waybill', retryable: false, message: '송장 발급 결과를 확인해야 해요' }],
+      failures: [{ shipmentId, stage: 'waybill', retryable: false, message: '멈춘 송장이 있어요 — 상자 보기에서 중단하고 다시 발급해요' }],
     });
     expect(sleep).not.toHaveBeenCalled();
     expect(insertPending).not.toHaveBeenCalled();

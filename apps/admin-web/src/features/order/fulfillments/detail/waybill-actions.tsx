@@ -23,7 +23,6 @@ import {
 import { usePermissionCheck } from '@/hooks/use-permission';
 import {
   createIdempotentCommand,
-  getServerDenyMessage,
   isWaybillIssued,
   isWaybillPendingIssue,
   useIssueWaybill,
@@ -38,6 +37,7 @@ import type {
   ShipmentAdminDetail,
   ShipmentWaybillHistory,
 } from '@/lib/types/dto/fulfillment';
+import { waybillErrorMessage } from './stuck-waybill';
 
 type Action = 'issue' | 'manual' | 'reissue' | 'void';
 
@@ -138,7 +138,7 @@ export function WaybillActions({
       reflectStatus(result.status);
     } catch (error) {
       toast.error(
-        getServerDenyMessage(error, `${ACTION_TITLE[kind === 'issue' ? 'issue' : 'reissue']} 요청 실패`)
+        waybillErrorMessage(error, `${ACTION_TITLE[kind === 'issue' ? 'issue' : 'reissue']} 요청 실패`)
       );
     }
   };
@@ -169,7 +169,7 @@ export function WaybillActions({
       });
       reflectStatus(result.status);
     } catch (error) {
-      toast.error(getServerDenyMessage(error, '수동 등록 요청 실패'));
+      toast.error(waybillErrorMessage(error, '수동 등록 요청 실패'));
     }
   };
 
@@ -197,7 +197,7 @@ export function WaybillActions({
       toast.success('운송장을 무효화했습니다.');
       setAction(null);
     } catch (error) {
-      toast.error(getServerDenyMessage(error, '무효화 요청 실패'));
+      toast.error(waybillErrorMessage(error, '무효화 요청 실패'));
     }
   };
 

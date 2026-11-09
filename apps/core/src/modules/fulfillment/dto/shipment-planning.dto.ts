@@ -219,6 +219,13 @@ export class ShipmentWaybillHistoryResponseDto {
 
   @ApiProperty({ nullable: true })
   voidedAt: Date | null;
+
+  // 멈춘 발급(pending/allocated)을 운영자가 풀지 판단하는 근거다 — 상자 상세의 «발급 중단» 경고가 읽는다(#1241).
+  @ApiProperty({ nullable: true })
+  lastError: string | null;
+
+  @ApiProperty({ nullable: true, description: '일시적 거절로 멈춘 경우 다음 재시도 시각' })
+  nextAttemptAt: Date | null;
 }
 
 export class ShipmentWorkItemHistoryResponseDto {

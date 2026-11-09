@@ -70,6 +70,9 @@ jest.mock('@/lib/services/orders', () => ({
   useVoidWaybill: Object.assign(() => mockMutation(), {
     permission: ['fulfillment.shipment.reopen'],
   }),
+  useAbandonWaybill: Object.assign(() => mockMutation(), {
+    permission: ['fulfillment.warehouse.operate'],
+  }),
   useExcludeShipmentFromBatch: Object.assign(() => mockMutation(), {
     permission: ['fulfillment.warehouse.operate'],
   }),
