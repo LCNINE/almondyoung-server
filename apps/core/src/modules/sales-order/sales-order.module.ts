@@ -41,6 +41,7 @@ import { CustomerExchangeReleaser } from './customer-return/customer-exchange.re
 import { CustomerReturnSettlementRetryCron } from './customer-return/customer-return-settlement-retry.cron';
 import { CustomerReturnPickupManager } from './customer-return/customer-return-pickup.manager';
 import { CustomerReturnPickupCron } from './customer-return/customer-return-pickup.cron';
+import { LineStatePublisher } from './line-reservation-state/line-state.publisher';
 import { CustomerReturnsController } from './customer-return/customer-returns.controller';
 import { CustomerReturnReceivingController } from './customer-return/customer-return-receiving.controller';
 import { OrderCancellation } from './order-cancellation/order-cancellation';
@@ -161,6 +162,8 @@ import { SalesOrderLookupService } from './internal/sales-order-lookup.service';
     ReturnEligibilityReader,
     ReturnEligibilityService,
     LineReservationStateService,
+    // 판매주문 줄 상태 스냅샷 1분 폴러(#1247) — 표시는 `markLineStateDirty`, 발행은 여기
+    LineStatePublisher,
     // `SalesOrdersInternalController` 의 InternalKeyGuard 가 읽을 env 이름. core 로 들어오는 서비스 간 호출은 이 키 하나를 쓴다.
     { provide: INTERNAL_KEY_ENV, useValue: 'CORE_INTERNAL_KEY' },
 

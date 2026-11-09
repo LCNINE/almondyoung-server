@@ -1,5 +1,6 @@
 import { eq, type InferInsertModel } from 'drizzle-orm';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
+import { markLineStateDirty } from '../line-reservation-state/line-state-dirty';
 import { isDigitalFulfillmentLine } from '../../product-matching/line-composition/line-composition';
 import {
   CancellationEffect,
@@ -66,6 +67,8 @@ export async function recordSalesOrderCancellation(
       })),
     );
   }
+  // 취소(출고 전 갈래)는 줄의 demand 를 바꾼다 — 같은 트랜잭션에서 줄 상태 더러움 표시 (#1247). 출고 후 갈래도 표시한다(같은 스냅샷이 한 번 더 나갈 뿐).
+  await markLineStateDirty(trx, [values.salesOrderId]);
   return cancellation;
 }
 
