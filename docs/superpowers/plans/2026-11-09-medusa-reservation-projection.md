@@ -22,7 +22,7 @@
 - 새 라우트는 권한 데코레이터 필수: core 내부는 `@InternalOnly()`, channel-adapter 화면 API 는 읽기 `channel.account.read` · 쓰기 `order.order.write`. 새 권한 키 없음.
 - 크론은 `@CronOnce(expr, { name })`. 요청 밖에서 core DB 에 닿는 코드는 `DbService.forEachDatabase` 안에서.
 - 마이그는 additive 만, `npm run db:generate:<svc> -- --name <kebab>` 로 생성, schema.ts 와 같은 커밋. 배포 순서 `migrate → deploy`.
-- 배포는 둘: **PR A**(Task 1~11, core 마이그 포함) 먼저 라이브 → **PR B**(Task 12, core 생산자). PR A 만으로는 아무 이벤트도 나가지 않는다.
+- 배포는 **한 번**(PR 하나, squash-merge, 2026-11-09 결정): T 전까지 전부 휴면이라 소비자 먼저 나눠 배포해 얻는 것이 없다. 아래 «PR A»·«PR B» 는 작업 순서 묶음으로만 남긴다 — 스펙 §6.
 - 게이트: `npm run type-check` 0, `npx jest --maxWorkers=3` 0 실패. DB 가 필요한 스펙은 `describeIfDb`/`REQUIRE_*_DB=1` 가드, 스펙 안 `dotenv.config()` 금지.
 
 ## Review Focus
@@ -300,11 +300,11 @@ export interface SalesOrderLineReservationStatePayload {
 - [ ] **Step 5: Commit**
 - [ ] **Step 6: 이슈** — #1247 본문의 공식을 `demand − heldUnits` 로 고치고 스펙·계획 경로를 적는다. #832 본문에 «Medusa 쪽 절반은 #1247 이 대체, core 03:05 크론은 여기 남김» 한 줄. (코드 수치 적지 않기)
 
-**PR A 끝:** 전체 게이트(`npm run type-check`, `npx jest --maxWorkers=3`, admin-web·medusa 각 tsc/unit) → PR. 배포는 `migrate → deploy`(core·channel-adapter 마이그 둘). 배포 뒤 T 는 비워 둔다.
+**PR A 끝:** (작업 순서 묶음 — 배포는 Task 12 와 함께 한 번) 전체 게이트(`npm run type-check`, `npx jest --maxWorkers=3`, admin-web·medusa 각 tsc/unit). 배포는 `migrate → deploy`(core·channel-adapter 마이그 둘). 배포 뒤 T 는 비워 둔다.
 
 ---
 
-## PR B (PR A 라이브 확인 뒤)
+## PR B (작업 순서 묶음 — 같은 PR·같은 배포)
 
 ### Task 12: core 생산자 — 더러움 표시와 1분 폴러
 
@@ -325,4 +325,4 @@ export interface SalesOrderLineReservationStatePayload {
 - [ ] **Step 2: 통합 테스트** — 예약 `reservePartial` 한 번 → 그 주문 `line_state_version` 1 증가 / 출고 전 취소 기록 → 증가 / 같은 트랜잭션에서 두 번 표시 → 폴러가 이벤트 하나만 냄(버전은 최신 하나).
 - [ ] **Step 3: 폴러 단위 테스트** — enqueue 의 idempotencyKey·partitionKey / 읽은 뒤 버전이 오른 경우 published 를 읽은 값으로만 올림 / 더러운 주문 0 이면 enqueue 0 / `core-no-direct-publish.spec.ts` PASS
 - [ ] **Step 4: 실패 확인 → 구현 → PASS** + `npx jest libs/cron-once` PASS
-- [ ] **Step 5: Commit** → PR B. 배포 전 `npm run deploy:preflight -- --stage live`, 배포 뒤 Kafka 에 이벤트가 나가고 channel-adapter inbox 행이 T 없음으로 `published`(건너뜀) 되는지 한 건 확인.
+- [ ] **Step 5: Commit** → 같은 PR(배포 한 번). 배포 전 `npm run deploy:preflight -- --stage live`, 배포 뒤 Kafka 에 이벤트가 나가고 channel-adapter inbox 행이 T 없음으로 `published`(건너뜀) 되는지 한 건 확인.
