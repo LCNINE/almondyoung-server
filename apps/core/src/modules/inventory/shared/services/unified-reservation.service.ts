@@ -5,6 +5,7 @@ import { eq, and, sum } from 'drizzle-orm';
 import { ProductSellableQuantityService } from '../../product-sellable-quantity/services/product-sellable-quantity.service';
 import { acquireStockAvailabilityLock } from '../locks/stock-availability-lock';
 import { readWarehouseAvailability } from '../availability/warehouse-availability';
+import { markLineStateDirtyForShipmentLines } from '../../../sales-order/line-reservation-state/line-state-dirty';
 
 export interface ReserveStockDto {
   // Task 25 contract: V2 예약은 shipment-line 단위만 (FO-target 생성 경로는 은퇴). shipmentLineId 필수.
@@ -127,6 +128,12 @@ export class UnifiedReservationService {
 
       if (!updated) {
         throw new BadRequestException(`Reservation ${id} not found`);
+      }
+
+      // 상자 라인 예약을 풀면 그 주문의 «잡은 판매 단위»가 줄어 Medusa 목표가 오른다 — 같은 트랜잭션에서 표시한다 (#1247).
+      // 빠지면 폴러가 이 변화를 영영 내보내지 않고 Medusa 예약이 낮은 채로 남는다(과판매 방향).
+      if (updated.shipmentLineId) {
+        await markLineStateDirtyForShipmentLines(trx, [updated.shipmentLineId]);
       }
 
       await this.productSellableQuantity.recalculateAndPublishForSku(updated.skuId, trx);

@@ -1,6 +1,14 @@
 import type { ReconcileFindingDto } from '@/lib/api/domains/channel/order-reconcile-findings.shape';
+import type { ReconcileRunDto } from '@/lib/api/domains/channel/reservation-reconcile-runs.shape';
 import {
   MEMO_MAX,
+  applyOutcome,
+  isRunInProgress,
+  reservationRunsRefetchInterval,
+  exampleText,
+  haltedRunText,
+  latestRunText,
+  unknownText,
   actionErrorText,
   canAct,
   emptyText,
@@ -212,5 +220,93 @@ describe('mismatchActionError — 조치 실패', () => {
       text: '이 주문의 이벤트가 아직 나가는 중이다',
       gone: false,
     });
+  });
+});
+
+describe('예약 대사 회차 표시', () => {
+  const run: ReconcileRunDto = {
+    id: 'r1',
+    startedAt: '2026-11-09T01:05:00.000Z',
+    finishedAt: null,
+    status: 'halted',
+    candidates: 40,
+    plannedFixes: 12,
+    fixes: 0,
+    fixFailures: 0,
+    deferred: 0,
+    unknown: 0,
+    oldestUnknownAt: null,
+    examples: [],
+    error: null,
+    closedAt: null,
+  };
+
+  it('멈춘 회차 문구 (KST) — 고칠 줄은 후보 수가 아니라 plannedFixes', () => {
+    expect(haltedRunText(run)).toBe(
+      'Medusa 예약 대사가 멈췄어요 · 고칠 줄 12 · 11-09 10:05'
+    );
+  });
+
+  it('정상 latest 는 한 줄', () => {
+    expect(
+      latestRunText({ ...run, status: 'applied', fixes: 4, plannedFixes: 4 })
+    ).toBe('11-09 10:05 고침 4줄');
+    expect(latestRunText(null)).toBeNull();
+  });
+
+  it('latest 가 skipped 면 오류를 붙인다', () => {
+    expect(
+      latestRunText({ ...run, status: 'skipped', error: 'core down' })
+    ).toBe('11-09 10:05 건너뜀 — core down');
+  });
+
+  it('unknown 문구', () => {
+    const now = new Date('2026-11-09T01:05:00.000Z');
+    expect(unknownText({ ...run, unknown: 0 }, now)).toBeNull();
+    expect(
+      unknownText(
+        { ...run, unknown: 3, oldestUnknownAt: '2026-11-05T01:05:00.000Z' },
+        now
+      )
+    ).toBe('core 가 모르는 예약 3줄 · 가장 오래된 것 4일');
+    expect(unknownText({ ...run, unknown: 2 }, now)).toBe(
+      'core 가 모르는 예약 2줄'
+    );
+  });
+
+  it('예시 줄과 apply 결과', () => {
+    expect(exampleText({ lineItemId: 'li_1', current: 2, target: 1 })).toBe(
+      'li_1 · 2 → 1'
+    );
+    expect(applyOutcome({ ...run, status: 'applied', fixes: 5 })).toEqual({
+      tone: 'success',
+      text: '고쳤습니다 (5줄)',
+    });
+    expect(applyOutcome({ ...run, status: 'skipped', error: 'x' })).toEqual({
+      tone: 'error',
+      text: '고치지 못했습니다 — x',
+    });
+  });
+
+  it('고치기 응답은 202 의 running 회차 — 고치는 중 토스트', () => {
+    expect(applyOutcome({ ...run, status: 'running' })).toEqual({
+      tone: 'success',
+      text: '고치는 중이에요',
+    });
+  });
+
+  it('마지막 회차가 도는 중이면 고치기를 막고 10초마다, 아니면 1분마다 다시 읽는다', () => {
+    const running = {
+      open: [run],
+      latest: { ...run, id: 'r2', status: 'running' as const },
+    };
+    const idle = { open: [run], latest: run };
+    expect(isRunInProgress(running)).toBe(true);
+    expect(reservationRunsRefetchInterval(running)).toBe(10_000);
+    expect(isRunInProgress(idle)).toBe(false);
+    expect(reservationRunsRefetchInterval(idle)).toBe(60_000);
+    expect(isRunInProgress(undefined)).toBe(false);
+    expect(reservationRunsRefetchInterval(undefined)).toBe(60_000);
+    expect(isRunInProgress({ open: [], latest: null })).toBe(false);
   });
 });

@@ -169,6 +169,14 @@ akf쌍커풀테이프 7옵션 중 6개는 매칭돼 품절 처리했고, `혼합
 출고는 셀메이트에서 하고 Core `sales_orders.status` 만 직접 UPDATE 하기 때문이다. 그래서 주문 때 잡힌
 예약이 영원히 남는다.
 
+### 컷오버 당일 순서 중 Medusa 예약 두 줄 (#1247)
+
+Medusa 예약은 컷오버 시각 T 부터 channel-adapter 의 예약 투영이 맡는다. 이 스크립트는 T 설정 전까지만 쓴다.
+
+- 당일 순서 2번: `clear-reservations` 마지막 실행 → 그 뒤 `set-reservation-cutover --at T --apply`. T 가 설정되면 `clear-reservations --apply` 는 스스로 거부한다(dry-run 은 그대로).
+  - **T 는 마지막 `clear-reservations` 의 CSV 스냅샷 시각(파일명에서 읽은 기준 시각) 이상이어야 한다.** 그 스크립트는 기준 시각 이전 주문의 예약을 지운다. T 가 그보다 이르면 [T, 기준 시각) 주문은 예약이 지워졌는데 투영 대상이라, 투영이 예약을 다시 만든다 — 이미 셀메이트 재고(`sync-stock`)에서 빠진 미발송분이 한 번 더 빠진다(이중 차감).
+- 당일 순서 6번: **다음 날 아침(04:30 KST 대사 뒤)** 에 `/order/channel-mismatches` 와 판정 스크립트(`cutover-preflight --after-cutover=T`)의 Medusa 축을 본다. 그 전에는 대사 회차가 아직 없어 신선도 줄이 빨갛다.
+
 2026-07-29 live 실측:
 
 |                           |                                                                 |

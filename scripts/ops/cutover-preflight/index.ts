@@ -75,7 +75,12 @@ async function main(): Promise<void> {
         await checkOutboundAdapter(tx, r);
         await checkMarketAdapter(tx, r);
       });
-    if (medusa && core) await readOnly(medusa, (med) => readOnly(core, (tx) => checkMedusaReservations(med, tx, r)));
+    if (medusa && core)
+      await readOnly(medusa, (med) =>
+        readOnly(core, (tx) =>
+          adapter ? readOnly(adapter, (ad) => checkMedusaReservations(med, tx, ad, r)) : checkMedusaReservations(med, tx, null, r),
+        ),
+      );
     if (users) await readOnly(users, (tx) => checkPeople(tx, r));
     else r.info('\nuser_service 건너뜀 — deployments/lcnine/auth 에서 sst shell 로 한 번 더 돌린다');
   } finally {

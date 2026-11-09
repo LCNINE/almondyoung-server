@@ -1,5 +1,5 @@
 import { LineQuantities, LineSkuQuantities } from './line-quantities.reader';
-import { cancellableSalesUnits, completedSetUnits, exactSetUnits } from './line-sales-units';
+import { cancellableSalesUnits, completedSetUnits, exactSetUnits, heldSalesUnits } from './line-sales-units';
 
 /** 판매 단위 환산만 본다 — 라인 칸은 판정에 쓰이지 않으므로 아무 값이나 둔다. 넘긴 SKU 칸이 기본값을 덮는다. */
 function line(
@@ -19,6 +19,7 @@ function line(
       outstanding: 0,
       shipped: 0,
       forwarded: 0,
+      reserved: 0,
       delivered: 0,
       partnerCompleted: 0,
       returnActive: 0,
@@ -165,5 +166,38 @@ describe('completedSetUnits', () => {
     expect(
       completedSetUnits(line([{ skuId: 'a', qtyPerUnit: null, returnConsumed: 3 }]), (sku) => sku.returnConsumed),
     ).toBe(0);
+  });
+});
+
+describe('heldSalesUnits', () => {
+  /** 세트 A×2·B×1. */
+  const PAIR = [
+    { skuId: 'a', qtyPerUnit: 2 },
+    { skuId: 'b', qtyPerUnit: 1 },
+  ];
+  const withPair = (a: Partial<LineSkuQuantities>, b: Partial<LineSkuQuantities>) =>
+    line([
+      { ...PAIR[0], ...a },
+      { ...PAIR[1], ...b },
+    ]);
+
+  it('세트 2단위 A reserved 4 · B reserved 1 → 1', () => {
+    expect(heldSalesUnits(withPair({ reserved: 4 }, { reserved: 1 }))).toBe(1);
+  });
+
+  it('예약과 출고를 합쳐 센다', () => {
+    expect(heldSalesUnits(withPair({ shipped: 2 }, { reserved: 1 }))).toBe(1);
+  });
+
+  it('한 구성품만 예약되면 0', () => {
+    expect(heldSalesUnits(withPair({ reserved: 2 }, {}))).toBe(0);
+  });
+
+  it('단일 SKU 예약·출고·넘김을 합친다', () => {
+    expect(heldSalesUnits(line([{ skuId: 'a', qtyPerUnit: 1, reserved: 1, shipped: 1, forwarded: 1 }]))).toBe(3);
+  });
+
+  it('skus 가 빈 줄은 0', () => {
+    expect(heldSalesUnits(line([]))).toBe(0);
   });
 });

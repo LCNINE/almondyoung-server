@@ -1,5 +1,6 @@
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
+import { markLineStateDirtyForFulfillmentOrders } from '../../sales-order/line-reservation-state/line-state-dirty';
 import {
   FulfillmentOrderItemProgressInput,
   projectFulfillmentOrderItemProgress,
@@ -19,9 +20,14 @@ export async function reprojectFulfillmentOrders(
   fulfillmentOrderIds: readonly string[],
   at: Date = new Date(),
 ): Promise<void> {
-  for (const fulfillmentOrderId of [...new Set(fulfillmentOrderIds)].sort()) {
+  const ids = [...new Set(fulfillmentOrderIds)].sort();
+  if (ids.length === 0) return;
+  for (const fulfillmentOrderId of ids) {
     await reprojectOne(tx, fulfillmentOrderId, at);
   }
+  // 예약·출고·입점사·FO 수량 변화는 전부 이 문을 지난다 — 그 판매주문의 줄 상태가 바뀌었다고 표시한다 (#1247).
+  // INSERT 한 문이다 — 판매주문 행을 잠그지 않는다.
+  await markLineStateDirtyForFulfillmentOrders(tx, ids);
 }
 
 async function reprojectOne(tx: DbTx, fulfillmentOrderId: string, at: Date): Promise<void> {

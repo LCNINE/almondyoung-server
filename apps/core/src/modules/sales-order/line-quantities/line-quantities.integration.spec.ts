@@ -82,6 +82,7 @@ function skuQuantities(
     required,
     shipped,
     forwarded,
+    reserved: 0,
     delivered,
     partnerCompleted,
     outstanding,
@@ -99,6 +100,7 @@ type SkuRow = {
   required: number;
   shipped: number;
   forwarded: number;
+  reserved: number;
   delivered: number;
   partner_completed: number;
   outstanding: number;
@@ -123,6 +125,7 @@ async function readSkusDirectly(tx: DbTx, salesOrderId: string): Promise<Map<str
         required: row.required,
         shipped: row.shipped,
         forwarded: row.forwarded,
+        reserved: row.reserved,
         delivered: row.delivered,
         partnerCompleted: row.partner_completed,
         outstanding: row.outstanding,
@@ -599,6 +602,33 @@ describeIfDb('readLineQuantities — SKU 층 출고·배송 사실 (K6 PR2b)', (
       await setItem(tx, foItemId, { shippedQty: 1 });
 
       expect(await skusOf(tx, o)).toEqual([skuQuantities(w.skuId, 1, [1, 1, 0, 0, 0, 0])]);
+    });
+  });
+
+  it('상자 라인의 confirmed 예약만 reserved 로 센다 (released 는 뺀다)', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = await seedWorld(tx);
+      const o = await seedOrder(tx, { quantity: 5 });
+      const { foItemId } = await seedFo(tx, w, o, { qty: 5 });
+      const { shipmentId, lineIds } = await seedBox(tx, w, [foItemId], { status: 'planned', qty: [5] });
+      for (const [quantity, status] of [
+        [3, 'confirmed'],
+        [2, 'released'],
+      ] as const) {
+        await tx.insert(wmsTables.stockReservations).values({
+          targetType: 'SHIPMENT_LINE',
+          targetId: lineIds[0],
+          shipmentLineId: lineIds[0],
+          skuId: w.skuId,
+          warehouseId: w.warehouseId,
+          quantity,
+          status,
+        });
+      }
+
+      expect(shipmentId).toBeDefined();
+      const [sku] = await skusOf(tx, o);
+      expect(sku.reserved).toBe(3);
     });
   });
 

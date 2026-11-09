@@ -548,6 +548,55 @@ const SalesOrderCancelledSchema = z.object({
 });
 
 /**
+ * Core → channel-adapter 판매주문 줄 예약 상태 이벤트 (#1247)
+ *
+ * core 줄 수량 사실로 «Medusa 예약이 얼마여야 하는가» 를 계산할 재료를 싣는다.
+ * 목표 = max(0, demand − heldUnits). 계산은 소비자가 한다.
+ * `version` 은 주문마다 단조 증가, partitionKey 는 생산자가 `salesOrderId`.
+ * 스트림: core.orders.events.v1
+ */
+export interface SalesOrderLineReservationStatePayload {
+  salesOrderId: string;
+  salesChannel: SalesChannel;
+  channelOrderId: string;
+  /** ISO, core sales_orders.order_date (= Medusa created_at). */
+  orderedAt: string;
+  version: number;
+  /** ISO, 스냅샷을 읽은 시각. */
+  asOf: string;
+  lines: Array<{
+    salesOrderLineId: string;
+    channelOrderItemId: string | null;
+    /** core variant id. */
+    variantId: string;
+    ordered: number;
+    canceledBeforeShipment: number;
+    demand: number;
+    heldUnits: number;
+  }>;
+}
+
+const SalesOrderLineReservationStateSchema = z.object({
+  salesOrderId: z.string().min(1),
+  salesChannel: SalesChannelSchema,
+  channelOrderId: z.string().min(1),
+  orderedAt: z.string().datetime(),
+  version: z.number().int().nonnegative(),
+  asOf: z.string().datetime(),
+  lines: z.array(
+    z.object({
+      salesOrderLineId: z.string().min(1),
+      channelOrderItemId: z.string().min(1).nullable(),
+      variantId: z.string().min(1),
+      ordered: z.number().int().nonnegative(),
+      canceledBeforeShipment: z.number().int().nonnegative(),
+      demand: z.number().int().nonnegative(),
+      heldUnits: z.number().int().nonnegative(),
+    }),
+  ),
+});
+
+/**
  * Core → 하류 반품 완료 이벤트
  *
  * 반품은 지금까지 아웃박스에 아무것도 넣지 않아 어떤 소비자도 알 수 없었다. 리뷰 자격·적립
@@ -908,6 +957,10 @@ export const CORE_ORDER_STREAM = stream({
     SalesOrderCancelled: event<'SalesOrderCancelled', SalesOrderCancelledPayload>(
       'SalesOrderCancelled',
       SalesOrderCancelledSchema,
+    ),
+    SalesOrderLineReservationState: event<'SalesOrderLineReservationState', SalesOrderLineReservationStatePayload>(
+      'SalesOrderLineReservationState',
+      SalesOrderLineReservationStateSchema,
     ),
     SalesOrderReturned: event<'SalesOrderReturned', SalesOrderReturnedPayload>(
       'SalesOrderReturned',

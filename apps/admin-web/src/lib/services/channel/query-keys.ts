@@ -13,6 +13,9 @@ export const channelQueryKeys = {
   // 뮤테이션은 `mismatches` 접두사로 목록·요약을 함께 무효화한다 — 하위 키에 undefined 를 섞지 않는다.
   mismatches: ['order-reconcile-findings'] as const,
   mismatchSummary: ['order-reconcile-findings', 'summary'] as const,
+  // 예약 대사 멈춘 회차(#1247) — 화면 하나, 키 하나
+  reservationRuns: ['reservation-reconcile-runs'] as const,
+
   mismatchList: (scope: MismatchListScope) =>
     ['order-reconcile-findings', 'list', scope] as const,
 };

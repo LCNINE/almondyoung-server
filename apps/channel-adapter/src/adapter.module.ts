@@ -91,6 +91,16 @@ import { CustomerLifecycleMedusaSyncService } from './adapters/medusa/customer-l
 import { PimProductEventConsumer } from './consumers/pim-product-event.consumer';
 import { PimCategoryConsumer } from './consumers/pim-category.consumer';
 import { ProductSellableQuantityConsumer } from './consumers/product-sellable-quantity.consumer';
+import { LineReservationStateConsumer } from './consumers/line-reservation-state.consumer';
+import { ReservationCutoverRepository } from './services/reservation-projection/reservation-cutover.repository';
+import { ReservationProjectionService } from './services/reservation-projection/reservation-projection.service';
+import { ReservationProjectionWorker } from './services/reservation-projection/reservation-projection.worker';
+import { ReservationReconcileJob } from './services/reservation-projection/reservation-reconcile.job';
+import { ReservationReconcileRunRepository } from './services/reservation-projection/reservation-reconcile-run.repository';
+import { ReservationReconcileService } from './services/reservation-projection/reservation-reconcile.service';
+import { ReservationReconcileRunsService } from './services/reservation-projection/reservation-reconcile-runs.service';
+import { CoreLineReservationStateClient } from './services/clients/core-line-reservation-state.client';
+import { SellableSettleGate } from './services/reservation-projection/sellable-settle-gate';
 import { MembershipEventConsumer } from './consumers/membership-event.consumer';
 import { PimMedusaMappingRepository } from './adapters/medusa/pim-medusa-mapping.repository';
 import { InboxWorkerService } from './adapters/medusa/inbox-worker.service';
@@ -105,6 +115,7 @@ import { InternalMembershipController } from './controllers/internal-membership.
 import { OrderCollectionFailuresController } from './controllers/order-collection-failures.controller';
 import { ChannelOrderSyncController } from './controllers/channel-order-sync.controller';
 import { OrderReconcileFindingsController } from './controllers/order-reconcile-findings.controller';
+import { ReservationReconcileRunsController } from './controllers/reservation-reconcile-runs.controller';
 import { OrderReconcileSweepController } from './controllers/order-reconcile-sweep.controller';
 import { CoreSalesOrderLookupClient } from './services/clients/core-sales-order-lookup.client';
 import { OrderReconcileFindingRepository } from './services/order-reconcile/order-reconcile-finding.repository';
@@ -282,12 +293,14 @@ const NO_KAFKA_PUBLISHER_STREAMS: StreamConfig[] = [
           PimProductEventConsumer,
           PimCategoryConsumer,
           ProductSellableQuantityConsumer,
+          LineReservationStateConsumer,
           MembershipEventConsumer,
           UserEventConsumer,
           PaymentEventsConsumer,
           OrderCollectionFailuresController,
           ChannelOrderSyncController,
           OrderReconcileFindingsController,
+          ReservationReconcileRunsController,
           OrderReconcileSweepController,
           ChannelOrdersCommandConsumer,
         ]),
@@ -352,6 +365,15 @@ const NO_KAFKA_PUBLISHER_STREAMS: StreamConfig[] = [
           DeferredRevalidateService,
           CategoryEnsureMemoService,
           InboxWorkerService,
+          ReservationCutoverRepository,
+          SellableSettleGate,
+          ReservationProjectionService,
+          ReservationProjectionWorker,
+          ReservationReconcileJob,
+          ReservationReconcileRunRepository,
+          ReservationReconcileService,
+          ReservationReconcileRunsService,
+          CoreLineReservationStateClient,
           ChannelOrderCancelRepository,
           ChannelOrderCancelManager,
           ChannelReturnSettleManager,
