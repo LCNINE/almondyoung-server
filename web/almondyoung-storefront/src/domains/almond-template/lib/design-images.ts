@@ -1,4 +1,9 @@
 import type { Design, Layer } from "./document"
+import {
+  failureStageOf,
+  retryTransient,
+  withFailureContext,
+} from "../hooks/use-auth-retry"
 import { embeddedFontCss, firstFamily } from "./fonts"
 import {
   ALMOND_TEMPLATE_IMAGE_CONTEXT_ID,
@@ -124,13 +129,17 @@ async function rasterize(
       const source = fileId ? fileImageRef(fileId) : href
       if (!source.startsWith("data:") && !fileId) return node.remove()
       try {
-        node.setAttribute(
-          "href",
-          await downscaled(await imageBlob(previewOf(source, previews)), maxPx)
+        const blob = await retryTransient(() =>
+          imageBlob(previewOf(source, previews))
         )
+        node.setAttribute("href", await downscaled(blob, maxPx))
       } catch (error) {
         // 썸네일은 사진 하나를 못 읽어도 나머지로 그린다(인쇄용 PNG 는 빠지면 안 되므로 그대로 실패)
-        if (!lenient) throw error
+        if (!lenient)
+          throw withFailureContext(error, {
+            stage: "image",
+            image: fileId ? `file:${fileId}` : "inline",
+          })
         node.remove()
       }
     })
@@ -159,9 +168,15 @@ async function rasterize(
   const height = Math.max(1, Math.round(viewHeight * scale))
   root.setAttribute("width", String(width))
   root.setAttribute("height", String(height))
+  const markupText = new XMLSerializer().serializeToString(svg)
   const image = new Image()
-  image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(new XMLSerializer().serializeToString(svg))}`
-  await image.decode()
+  image.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(markupText)}`
+  await image.decode().catch((error: unknown) => {
+    throw withFailureContext(
+      error instanceof Error ? error : new Error("SVG decode failed"),
+      { stage: "decode", maxPx, markupLength: markupText.length }
+    )
+  })
   const canvas = document.createElement("canvas")
   canvas.width = width
   canvas.height = height
@@ -198,9 +213,25 @@ export function placeholderThumbnail(
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><rect width="${width}" height="${height}" fill="${fill}"/></svg>`
 }
 
+// 큰 해상도에서 그리기·인코딩에 실패하는 브라우저가 있어, 사진을 못 읽은 경우가 아니면 해상도를 낮춰 다시 그린다
 export async function rasterPng(markup: string, maxPx: number) {
-  const canvas = await rasterize(markup, {}, maxPx)
-  return new Promise<Blob | null>((resolve) =>
-    canvas.toBlob(resolve, "image/png")
-  )
+  let last: unknown
+  for (const px of [maxPx, Math.round(maxPx * 0.66), Math.round(maxPx * 0.4)]) {
+    try {
+      const canvas = await rasterize(markup, {}, px)
+      const png = await new Promise<Blob | null>((resolve) =>
+        canvas.toBlob(resolve, "image/png")
+      )
+      if (png) return png
+      last = withFailureContext(new Error("PNG encode failed"), {
+        stage: "encode",
+        maxPx: px,
+      })
+    } catch (error) {
+      // 사진을 못 읽은 건 해상도와 상관없다
+      if (failureStageOf(error) === "image") throw error
+      last = error
+    }
+  }
+  throw last
 }

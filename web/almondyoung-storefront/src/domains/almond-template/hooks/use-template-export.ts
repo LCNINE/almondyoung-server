@@ -1,5 +1,6 @@
 import type { RefObject } from "react"
 import { rasterPng } from "../lib/design-images"
+import { failureStageOf, reportFailure } from "./use-auth-retry"
 import type { Design } from "../lib/document"
 
 const PNG_LONG_SIDE_PX = 3000
@@ -77,15 +78,19 @@ export function useTemplateExport({
 
     try {
       const png = await rasterPng(svgMarkup(source, design), PNG_LONG_SIDE_PX)
-      if (!png) throw new Error("PNG 변환 실패")
 
       download(
         `almond-${productId || design.kind}-${preview ? previewSide : side}.png`,
         png,
         "image/png"
       )
-    } catch {
-      setMessage("시안 이미지를 만들지 못했습니다. 잠시 후 다시 시도해 주세요.")
+    } catch (error) {
+      const failure =
+        failureStageOf(error) === "image"
+          ? "시안에 넣은 사진을 불러오지 못해 이미지를 만들지 못했습니다. 잠시 후 다시 시도해 주세요. 급하면 「시안출력」을 이용해 주세요."
+          : "시안 이미지를 만들지 못했습니다. 잠시 후 다시 시도하거나 「시안출력」을 이용해 주세요."
+      reportFailure(error, "png_export")
+      setMessage(failure)
     }
   }
   const printProof = () => {

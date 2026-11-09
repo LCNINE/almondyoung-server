@@ -89,11 +89,19 @@ export function withFailureContext(
   return error
 }
 
+export function failureStageOf(error: unknown) {
+  const stage =
+    error && typeof error === "object"
+      ? failureContext.get(error)?.stage
+      : undefined
+  return typeof stage === "string" ? stage : undefined
+}
+
 export function reportThumbnailFallback(error: unknown) {
   logger.warn("almond_template.thumbnail_fallback", { error })
 }
 
-function reportFailure(error: unknown, failure: string) {
+export function reportFailure(error: unknown, failure: string) {
   logger.error("almond_template.task_failed", {
     error,
     attributes: {
