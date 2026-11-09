@@ -98,6 +98,7 @@ import { ReservationProjectionWorker } from './services/reservation-projection/r
 import { ReservationReconcileJob } from './services/reservation-projection/reservation-reconcile.job';
 import { ReservationReconcileRunRepository } from './services/reservation-projection/reservation-reconcile-run.repository';
 import { ReservationReconcileService } from './services/reservation-projection/reservation-reconcile.service';
+import { ReservationReconcileRunsService } from './services/reservation-projection/reservation-reconcile-runs.service';
 import { CoreLineReservationStateClient } from './services/clients/core-line-reservation-state.client';
 import { SellableSettleGate } from './services/reservation-projection/sellable-settle-gate';
 import { MembershipEventConsumer } from './consumers/membership-event.consumer';
@@ -114,6 +115,7 @@ import { InternalMembershipController } from './controllers/internal-membership.
 import { OrderCollectionFailuresController } from './controllers/order-collection-failures.controller';
 import { ChannelOrderSyncController } from './controllers/channel-order-sync.controller';
 import { OrderReconcileFindingsController } from './controllers/order-reconcile-findings.controller';
+import { ReservationReconcileRunsController } from './controllers/reservation-reconcile-runs.controller';
 import { OrderReconcileSweepController } from './controllers/order-reconcile-sweep.controller';
 import { CoreSalesOrderLookupClient } from './services/clients/core-sales-order-lookup.client';
 import { OrderReconcileFindingRepository } from './services/order-reconcile/order-reconcile-finding.repository';
@@ -298,6 +300,7 @@ const NO_KAFKA_PUBLISHER_STREAMS: StreamConfig[] = [
           OrderCollectionFailuresController,
           ChannelOrderSyncController,
           OrderReconcileFindingsController,
+          ReservationReconcileRunsController,
           OrderReconcileSweepController,
           ChannelOrdersCommandConsumer,
         ]),
@@ -369,6 +372,7 @@ const NO_KAFKA_PUBLISHER_STREAMS: StreamConfig[] = [
           ReservationReconcileJob,
           ReservationReconcileRunRepository,
           ReservationReconcileService,
+          ReservationReconcileRunsService,
           CoreLineReservationStateClient,
           ChannelOrderCancelRepository,
           ChannelOrderCancelManager,
