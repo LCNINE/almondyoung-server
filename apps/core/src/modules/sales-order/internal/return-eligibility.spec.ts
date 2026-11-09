@@ -22,6 +22,7 @@ function line(
         required: 0,
         shipped: 0,
         forwarded: 0,
+        reserved: 0,
         delivered: s.delivered,
         partnerCompleted: 0,
         outstanding: 0,

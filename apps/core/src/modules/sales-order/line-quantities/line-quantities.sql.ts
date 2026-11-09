@@ -1,5 +1,6 @@
 import { sql, type SQL, type SQLWrapper } from 'drizzle-orm';
 import { type CancellationShipmentPhase, wmsTables } from '../../inventory/schema/inventory.schema';
+import { CONFIRMED_LINE_RESERVATION_WHERE } from '../../fulfillment/order-progress/shipment-reservation-totals.sql';
 import { claimTotalsBySkuSql, heldCustomerReturnLinesSql } from './claim-quantities.sql';
 
 /**
@@ -99,7 +100,7 @@ export function deliveredParcelsSql(salesOrderScope: SQL): SQL {
 
 /**
  * 판매 라인 × SKU(구성품) 층의 출고·배송·청구 사실 (K6 PR2b, 청구는 PR3a). 행 = (sales_order_id uuid,
- * sales_order_line_id uuid, sku_id uuid, qty_per_unit int|null, required, shipped, forwarded, delivered, partner_completed,
+ * sales_order_line_id uuid, sku_id uuid, qty_per_unit int|null, required, shipped, forwarded, reserved, delivered, partner_completed,
  * outstanding, return_active, return_consumed, claimable — 전부 int).
  * `salesOrderScope` 는 판매주문 id 한 열을 내는 SELECT.
  *
@@ -118,6 +119,7 @@ export function deliveredParcelsSql(salesOrderScope: SQL): SQL {
  *   outstanding       = qty − shipped_qty − canceled_qty
  *   forwarded         = 그 FOI 의 넘긴 입점사 상자(draft·recovery_required, 넘김 묶음 있음) 라인 수량 합 — 입점사에게
  *                       넘겼을 뿐 출고가 아니다(넘긴 뒤에도 취소된다)
+ *   reserved          = 그 FOI 의 상자 라인에 걸린 확정 예약(`CONFIRMED_LINE_RESERVATION_WHERE`) 수량 합 — 출고도 넘김도 아니다
  *   partner_completed = 그 FOI 의 발송된 입점사 상자(shipped) 라인 수량 합 — 배송완료가 아니다(표시용, 입점사는 배송 추적을 안 준다)
  *   delivered         = 그 FOI 의 배송완료 소포 수량 합(`deliveredParcelsSql`)
  * 입점사 상자 단계(넘김·발송)의 정의는 `fulfillment/shipment/supplier-shipment-stage.ts` 하나다 — 여기 술어는 그것과 같아야 한다.
@@ -148,6 +150,7 @@ export function lineSkuQuantitiesSql(salesOrderScope: SQL): SQL {
            coalesce(item_fact.required, 0)::int as required,
            coalesce(item_fact.shipped, 0)::int as shipped,
            coalesce(item_fact.forwarded, 0)::int as forwarded,
+           coalesce(item_fact.reserved, 0)::int as reserved,
            coalesce(item_fact.delivered, 0)::int as delivered,
            coalesce(item_fact.partner_completed, 0)::int as partner_completed,
            coalesce(item_fact.outstanding, 0)::int as outstanding,
@@ -188,6 +191,7 @@ export function lineSkuQuantitiesSql(salesOrderScope: SQL): SQL {
                sum(foi.shipped_qty)::int as shipped,
                sum(foi.qty - foi.shipped_qty - foi.canceled_qty)::int as outstanding,
                sum(coalesce(item_supplier.forwarded, 0))::int as forwarded,
+               sum(coalesce(item_reserved.qty, 0))::int as reserved,
                sum(coalesce(item_supplier.partner_completed, 0))::int as partner_completed,
                sum(coalesce(item_delivered.qty, 0))::int as delivered
           from ${t.fulfillmentOrders} as fo
@@ -203,6 +207,18 @@ export function lineSkuQuantitiesSql(salesOrderScope: SQL): SQL {
               from (${deliveredParcelsSql(salesOrderScope)}) as delivered_parcel
              group by delivered_parcel.fulfillment_order_item_id
           ) as item_delivered on item_delivered.fulfillment_order_item_id = foi.id
+          left join (
+            -- 확정 예약 수량도 범위 FOI 를 한 번에 묶어 센 뒤 FOI id 로 되붙인다(R15) — 상관 서브쿼리로 세지 않는다.
+            -- 술어는 CONFIRMED_LINE_RESERVATION_WHERE(예약 별칭 r) 하나다. 예약은 상자 라인 단위라 FOI → 상자 라인 → 예약으로 잇는다
+            select reserved_sl.fulfillment_order_item_id, sum(r.quantity)::int as qty
+              from ${t.fulfillmentOrders} as reserved_fo
+              join ${t.fulfillmentOrderItems} as reserved_foi on reserved_foi.fulfillment_order_id = reserved_fo.id
+              join ${t.shipmentLines} as reserved_sl on reserved_sl.fulfillment_order_item_id = reserved_foi.id
+              join ${t.stockReservations} as r on r.shipment_line_id = reserved_sl.id
+             where reserved_fo.sales_order_id in (${salesOrderScope})
+               and ${CONFIRMED_LINE_RESERVATION_WHERE}
+             group by reserved_sl.fulfillment_order_item_id
+          ) as item_reserved on item_reserved.fulfillment_order_item_id = foi.id
           left join (
             -- 입점사 상자 라인 수량도 배송완료와 같은 모양이다 — 범위 FOI 를 한 번에 묶어 센 뒤 FOI id 로 되붙인다(R15).
             -- FOI → 상자 라인은 idx_shipment_lines_fulfillment_order_item 을 탄다. 단계 술어는 supplier-shipment-stage.ts 와 같다:

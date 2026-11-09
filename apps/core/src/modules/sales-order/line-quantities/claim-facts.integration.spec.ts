@@ -27,6 +27,7 @@ type ClaimRow = {
   required: number;
   shipped: number;
   forwarded: number;
+  reserved: number;
   delivered: number;
   partner_completed: number;
   outstanding: number;
@@ -53,6 +54,7 @@ async function skusOf(tx: DbTx, order: { salesOrderId: string; lineId: string })
       required: row.required,
       shipped: row.shipped,
       forwarded: row.forwarded,
+      reserved: row.reserved,
       delivered: row.delivered,
       partnerCompleted: row.partner_completed,
       outstanding: row.outstanding,
