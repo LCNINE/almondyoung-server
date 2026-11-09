@@ -30,10 +30,11 @@ export class CoreLineReservationStateClient {
     this.baseUrl = this.configService.get<string>('PIM_API_URL') || 'http://localhost:3001';
   }
 
+  /** 타임아웃 60초 — 200줄 상태 조회는 주문마다 줄 수량 문을 돌려 수 초~수십 초 걸린다. 끊기면 회차 전체가 건너뛴다. */
   private requestConfig() {
     const internalKey = this.configService.get<string>('CORE_INTERNAL_KEY');
     if (!internalKey) throw new Error('CORE_INTERNAL_KEY 가 설정되지 않아 core 줄 상태를 조회할 수 없다.');
-    return { headers: { Authorization: `Bearer ${internalKey}`, ...this.outboundTenant.headers() }, timeout: 10_000 };
+    return { headers: { Authorization: `Bearer ${internalKey}`, ...this.outboundTenant.headers() }, timeout: 60_000 };
   }
 
   async states(

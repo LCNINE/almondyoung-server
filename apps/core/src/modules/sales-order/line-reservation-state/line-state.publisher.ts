@@ -47,7 +47,7 @@ export async function pickMarkedOrders(
 
 /**
  * 주문 하나의 스냅샷을 낸다 (#1247). 호출자 트랜잭션 하나에서:
- * 1. 판매주문 행 `FOR UPDATE SKIP LOCKED` — 잡혀 있으면 기다리지 않는다. 폴러는 판매주문 행만 잡으므로
+ * 1. 판매주문 행 `FOR NO KEY UPDATE SKIP LOCKED` — 잡혀 있으면 기다리지 않는다. 키를 바꾸지 않으므로 FK 검사(KEY SHARE)는 막지 않는다. 폴러는 판매주문 행만 잡으므로
  *    다른 쓰기와 잠금 순서가 뒤집힐 일이 없다.
  * 2. 그 주문의 표시를 `DELETE … RETURNING` 으로 지운다 — 이 문이 본(커밋된) 표시만 지워진다.
  *    늦게 커밋되는 표시(번호가 더 작아도)는 남아서 다음 틱이 새 버전으로 다시 낸다.
@@ -68,7 +68,7 @@ export async function publishLineStateOf(
     .select({ id: so.id })
     .from(so)
     .where(eq(so.id, salesOrderId))
-    .for('update', { skipLocked: true });
+    .for('no key update', { skipLocked: true });
   if (!locked) {
     const [exists] = await trx.select({ id: so.id }).from(so).where(eq(so.id, salesOrderId));
     if (exists) return 'locked';

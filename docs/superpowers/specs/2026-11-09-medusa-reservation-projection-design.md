@@ -112,7 +112,7 @@ channel-adapter 크론 (하루 한 번)
 - **표시 지점과 폴러** *(계획·구현 단계 Claude 판단)*: 상태를 바꾸는 트랜잭션은 enqueue 대신 표시 테이블 `sales_order_line_state_marks` 에
   한 줄 INSERT 만 한다(판매주문 행을 잠그지 않는다 — 예약 경로는 FO→SO, 취소는 SO→FO 순서로 잠가 교착이 생기므로. FK 도 같은 이유로 두지 않는다).
   표시 지점은 둘 — 예약·출고·전달·FO 수량 변화가 전부 지나는 `reprojectFulfillmentOrders`, 그리고 `recordSalesOrderCancellation`.
-  1분 `@CronOnce` 폴러가 주문마다 짧은 트랜잭션에서 `sales_orders` 행을 `FOR UPDATE SKIP LOCKED` 로 잡고(기다리지 않는다), 그 주문의 보이는 표시를
+  1분 `@CronOnce` 폴러가 주문마다 짧은 트랜잭션에서 `sales_orders` 행을 `FOR NO KEY UPDATE SKIP LOCKED` 로 잡고(기다리지 않는다), 그 주문의 보이는 표시를
   `DELETE … RETURNING` 으로 가져간 뒤 `line_state_version` 을 올리고 스냅샷을 읽어 outbox 로 낸다. 버전을 올리는 건 폴러뿐이다.
   그 뒤에 커밋된 표시는 남아 다음 틱에 새 버전을 만든다. 유실이 없고, 여러 변화가 한 이벤트로 모인다. 대가는 최대 1분 지연. 두 표시 지점은 가드 스펙이 지킨다.
 - **내부 읽기 API** (대사용, `@InternalOnly`, `CORE_INTERNAL_KEY` + 테넌트 헤더):

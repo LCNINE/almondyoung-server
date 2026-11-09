@@ -18,7 +18,7 @@ describe('CoreLineReservationStateClient', () => {
     const res = await make(post).states('medusa', ids);
     expect(post).toHaveBeenCalledTimes(2);
     expect(post.mock.calls[0][0]).toBe('http://core/internal/sales-orders/line-reservation-states');
-    expect(post.mock.calls[0][2]).toMatchObject({ headers: { Authorization: 'Bearer k' } });
+    expect(post.mock.calls[0][2]).toMatchObject({ headers: { Authorization: 'Bearer k' }, timeout: 60_000 });
     expect(res.unknown).toEqual(['i0', 'i200']);
   });
 
