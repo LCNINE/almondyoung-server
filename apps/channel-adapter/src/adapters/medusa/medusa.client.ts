@@ -2877,6 +2877,7 @@ export class MedusaClient {
   async setLineItemReservations(
     items: { lineItemId: string; quantity: number; allowDecrease: boolean }[],
   ): Promise<LineItemReservationResult[]> {
+    if (items.length === 0) return []; // 라우트 검증이 min 1 이다
     const path = '/admin/line-item-reservations';
     const { status, body } = await this.postAdmin(
       path,
@@ -2893,13 +2894,7 @@ export class MedusaClient {
       const message = typeof body.message === 'string' ? body.message : `status ${status}`;
       throw new Error(`Medusa setLineItemReservations failed (status=${status}): ${message}`);
     }
-    return (body.results as Record<string, unknown>[]).map((row) => ({
-      lineItemId: String(row.line_item_id),
-      outcome: row.outcome as LineItemReservationOutcome,
-      quantityBefore: Number(row.quantity_before),
-      quantityAfter: Number(row.quantity_after),
-      ...(typeof row.message === 'string' ? { message: row.message } : {}),
-    }));
+    return body.results.filter(isJsonObject).map(toLineItemReservationResult);
   }
 
   /** 주문 생성 시각이 `orderCreatedFrom` 이후인 줄의 살아 있는 Medusa 예약(판매 단위), 예약 id 커서. 하루 대사의 Medusa 쪽 후보. */
@@ -2921,7 +2916,7 @@ export class MedusaClient {
       throw new Error(`Medusa listLineItemReservations failed (status=${res.status})`);
     }
     return {
-      reservations: (body.reservations as Record<string, unknown>[]).map((row) => ({
+      reservations: body.reservations.filter(isJsonObject).map((row) => ({
         id: String(row.id),
         lineItemId: String(row.line_item_id),
         quantity: Number(row.quantity),
@@ -2965,7 +2960,8 @@ export class MedusaClient {
 
 const LINE_ITEM_RESERVATION_TIMEOUT_MS = 120_000;
 
-export type LineItemReservationOutcome = 'set' | 'unchanged' | 'deferred' | 'not_managed' | 'not_found' | 'error';
+const LINE_ITEM_RESERVATION_OUTCOMES = ['set', 'unchanged', 'deferred', 'not_managed', 'not_found', 'error'] as const;
+export type LineItemReservationOutcome = (typeof LINE_ITEM_RESERVATION_OUTCOMES)[number];
 export type LineItemReservationResult = {
   lineItemId: string;
   outcome: LineItemReservationOutcome;
@@ -2973,6 +2969,21 @@ export type LineItemReservationResult = {
   quantityAfter: number;
   message?: string;
 };
+
+function toLineItemReservationResult(row: Record<string, unknown>): LineItemReservationResult {
+  const lineItemId = String(row.line_item_id);
+  const outcome = LINE_ITEM_RESERVATION_OUTCOMES.find((o) => o === row.outcome);
+  const before = row.quantity_before;
+  const after = row.quantity_after;
+  const message = typeof row.message === 'string' ? row.message : undefined;
+  if (outcome === undefined) {
+    return { lineItemId, outcome: 'error', quantityBefore: 0, quantityAfter: 0, message: `알 수 없는 outcome: ${String(row.outcome)}` };
+  }
+  if (typeof before !== 'number' || !Number.isFinite(before) || typeof after !== 'number' || !Number.isFinite(after)) {
+    return { lineItemId, outcome: 'error', quantityBefore: 0, quantityAfter: 0, message: '수량이 숫자가 아니다' };
+  }
+  return { lineItemId, outcome, quantityBefore: before, quantityAfter: after, ...(message !== undefined ? { message } : {}) };
+}
 
 export type QuantityDiscountTierPrice = { variant_id: string; min_quantity: number; amount: number };
 export type QuantityDiscountSyncBody = {

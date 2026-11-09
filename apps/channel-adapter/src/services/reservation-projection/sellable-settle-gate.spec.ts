@@ -7,6 +7,7 @@ function makeGate(pendingVariantIds: string[]) {
   const where = jest.fn().mockResolvedValue(pendingVariantIds.map((aggregateId) => ({ aggregateId })));
   const db = { select: jest.fn(() => ({ from: jest.fn(() => ({ where })) })) };
   const config = { get: jest.fn().mockReturnValue(settleMs) };
+  // 단위 스펙은 select 체인 스텁만 필요하다 — 실 DbService 대신 `as never` 로 넘긴다
   const gate = new SellableSettleGate({ db } as never, config as never);
   return { gate, db, where };
 }
@@ -31,10 +32,19 @@ describe('SellableSettleGate.blockedVariantIds', () => {
     expect(db.select).not.toHaveBeenCalled();
   });
 
-  it('RESERVATION_PROJECTION_SETTLE_MS 기본값은 300000', () => {
-    const config = { get: jest.fn((_k: string, d: number) => d) };
-    const gate = new SellableSettleGate({ db: {} } as never, config as never);
-    expect(config.get).toHaveBeenCalledWith('RESERVATION_PROJECTION_SETTLE_MS', 300000);
-    expect(gate).toBeDefined();
+  it('asOf 가 Invalid Date 면 DB 를 보지 않고 전부 막는다', async () => {
+    const { gate, db } = makeGate([]);
+    await expect(gate.blockedVariantIds(['v1'], new Date('nope'), now)).resolves.toEqual(new Set(['v1']));
+    expect(db.select).not.toHaveBeenCalled();
+  });
+
+  it.each(['', 'abc', '0', '-5', 0, -1])('설정값 %p 는 기본 300000 으로 되돌린다', async (bad) => {
+    const where = jest.fn().mockResolvedValue([]);
+    const db = { select: jest.fn(() => ({ from: jest.fn(() => ({ where })) })) };
+    const gate = new SellableSettleGate({ db } as never, { get: jest.fn().mockReturnValue(bad) } as never);
+    // 299초 전 스냅샷: 기본 지연(300초) 안이라 막혀야 한다 (지연 0 으로 열리면 DB 를 본다)
+    const asOf = new Date(now.getTime() - 299_000);
+    await expect(gate.blockedVariantIds(['v1'], asOf, now)).resolves.toEqual(new Set(['v1']));
+    expect(db.select).not.toHaveBeenCalled();
   });
 });

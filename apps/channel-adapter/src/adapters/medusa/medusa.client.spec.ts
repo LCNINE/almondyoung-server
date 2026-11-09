@@ -2110,9 +2110,33 @@ describe('MedusaClient line-item reservations (#1247)', () => {
     expect(out).toEqual([{ lineItemId: 'li1', outcome: 'deferred', quantityBefore: 3, quantityAfter: 3, message: 'm' }]);
   });
 
+  it('setLineItemReservations: 빈 배열은 Medusa 를 부르지 않는다', async () => {
+    const fetchSpy = jest.spyOn(global, 'fetch');
+    await expect(makeClient().setLineItemReservations([])).resolves.toEqual([]);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it('setLineItemReservations: 모르는 outcome·숫자 아닌 수량은 error 로', async () => {
+    jest.spyOn(global, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          results: [
+            { line_item_id: 'a', outcome: 'weird', quantity_before: 1, quantity_after: 1 },
+            { line_item_id: 'b', outcome: 'set', quantity_before: 'x', quantity_after: 1 },
+            'junk',
+          ],
+        }),
+        { status: 200 },
+      ),
+    );
+    const out = await makeClient().setLineItemReservations([{ lineItemId: 'a', quantity: 1, allowDecrease: true }]);
+    expect(out.map((r) => [r.lineItemId, r.outcome])).toEqual([['a', 'error'], ['b', 'error']]);
+    expect(out[0].message).toContain('weird');
+  });
+
   it('setLineItemReservations: 5xx 는 던진다', async () => {
     jest.spyOn(global, 'fetch').mockResolvedValue(new Response('{}', { status: 502 }));
-    await expect(makeClient().setLineItemReservations([])).rejects.toThrow(/status=502/);
+    await expect(makeClient().setLineItemReservations([{ lineItemId: 'a', quantity: 1, allowDecrease: true }])).rejects.toThrow(/status=502/);
   });
 
   it('listLineItemReservations: 쿼리를 만들고 camelCase 로 돌려준다', async () => {

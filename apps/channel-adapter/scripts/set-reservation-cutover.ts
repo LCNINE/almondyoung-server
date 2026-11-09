@@ -10,8 +10,7 @@
  *   ... --apply [--by <이름>]   실제로 쓴다. updated_by 기본은 OS 사용자
  */
 import * as os from 'os';
-import postgres = require('postgres');
-import { drizzle } from 'drizzle-orm/postgres-js';
+import { DbService } from '@app/db';
 import { channelAdapterSchema } from '../src/schema';
 import { ReservationCutoverRepository } from '../src/services/reservation-projection/reservation-cutover.repository';
 
@@ -47,10 +46,9 @@ export function parseArgs(args: string[]): Args {
 async function main() {
   const { at, apply, by } = parseArgs(process.argv.slice(2));
   if (!process.env.DATABASE_URL) throw new Error('DATABASE_URL 이 필요하다.');
-  const client = postgres(process.env.DATABASE_URL, { max: 1 });
+  const dbService = new DbService({ connectionString: process.env.DATABASE_URL }, channelAdapterSchema);
   try {
-    const db = drizzle(client, { schema: channelAdapterSchema });
-    const repo = new ReservationCutoverRepository({ db });
+    const repo = new ReservationCutoverRepository(dbService);
     const current = await repo.get();
     const show = (d: Date | null) => (d ? d.toISOString() : '(비어 있음)');
     console.log(`현재 T: ${show(current)}`);
@@ -62,7 +60,7 @@ async function main() {
     await repo.set(at, by);
     console.log(`적용했다. T = ${show(await repo.get())}`);
   } finally {
-    await client.end();
+    await dbService.onApplicationShutdown();
   }
 }
 

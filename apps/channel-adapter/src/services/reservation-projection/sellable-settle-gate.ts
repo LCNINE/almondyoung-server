@@ -4,7 +4,7 @@ import { and, eq, inArray } from 'drizzle-orm';
 import { DbService } from '@app/db';
 import { channelAdapterSchema, inboxEvents } from '../../schema';
 
-export type SettleGateDb = Pick<DbService<typeof channelAdapterSchema>, 'db'>;
+const DEFAULT_SETTLE_MS = 300000;
 
 /**
  * Medusa 예약을 «줄이는» 쓰기의 게이트 (#1247). 가용재고 이벤트(`ProductSellableQuantityChanged`)가 아직 처리 전이면
@@ -16,16 +16,19 @@ export class SellableSettleGate {
   private readonly settleMs: number;
 
   constructor(
-    private readonly dbService: SettleGateDb,
+    private readonly dbService: DbService<typeof channelAdapterSchema>,
     configService: ConfigService,
   ) {
-    this.settleMs = Number(configService.get<number>('RESERVATION_PROJECTION_SETTLE_MS', 300000));
+    // 비었거나 숫자가 아니거나 0 이하면 기본값 — 게이트가 «지연 0»으로 열리면 안 된다.
+    const configured = Number(configService.get<string | number>('RESERVATION_PROJECTION_SETTLE_MS', DEFAULT_SETTLE_MS));
+    this.settleMs = Number.isFinite(configured) && configured > 0 ? configured : DEFAULT_SETTLE_MS;
   }
 
   async blockedVariantIds(variantIds: string[], asOf: Date, now: Date): Promise<Set<string>> {
     const unique = [...new Set(variantIds)];
     if (unique.length === 0) return new Set();
-    if (now.getTime() - asOf.getTime() < this.settleMs) return new Set(unique);
+    // asOf 를 읽을 수 없으면 얼마나 오래됐는지 모른다 — 전부 막는다.
+    if (Number.isNaN(asOf.getTime()) || now.getTime() - asOf.getTime() < this.settleMs) return new Set(unique);
 
     const rows = await this.dbService.db
       .select({ aggregateId: inboxEvents.aggregateId })

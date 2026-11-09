@@ -1,6 +1,4 @@
-// eslint-disable-next-line @typescript-eslint/no-require-imports -- postgres publishes `export =`; Jest compiles CJS.
-import postgres = require('postgres');
-import { drizzle } from 'drizzle-orm/postgres-js';
+import { DbService } from '@app/db';
 import { channelAdapterSchema, reservationProjectionSettings } from '../../schema';
 import { ReservationCutoverRepository } from './reservation-cutover.repository';
 
@@ -12,24 +10,24 @@ const describeIfDb = DATABASE_URL ? describe : describe.skip;
 
 describeIfDb('ReservationCutoverRepository (PostgreSQL integration)', () => {
   jest.setTimeout(60_000);
-  let client: ReturnType<typeof postgres>;
-  let db: ReturnType<typeof drizzle<typeof channelAdapterSchema>>;
+  let dbService: DbService<typeof channelAdapterSchema>;
+  let original: Date | null;
   let repo: ReservationCutoverRepository;
 
-  beforeAll(() => {
-    client = postgres(DATABASE_URL as string, { max: 2, prepare: false });
-    db = drizzle(client, { schema: channelAdapterSchema });
-    repo = new ReservationCutoverRepository({ db });
+  beforeAll(async () => {
+    dbService = new DbService({ connectionString: DATABASE_URL as string }, channelAdapterSchema);
+    repo = new ReservationCutoverRepository(dbService);
+    original = await repo.get(); // 싱글톤 행 — 지우지 않고 끝나면 원래 값으로 되돌린다
   });
   beforeEach(async () => {
-    await db.delete(reservationProjectionSettings);
+    await repo.set(null, 'spec');
   });
   afterAll(async () => {
-    await db.delete(reservationProjectionSettings);
-    await client.end();
+    await repo.set(original, 'spec-restore');
+    await dbService.onApplicationShutdown();
   });
 
-  it('행이 없으면 null', async () => {
+  it('비어 있으면 null', async () => {
     await expect(repo.get()).resolves.toBeNull();
   });
 
@@ -42,7 +40,7 @@ describeIfDb('ReservationCutoverRepository (PostgreSQL integration)', () => {
     await repo.set(new Date('2026-11-10T00:00:00Z'), 'a');
     await repo.set(new Date('2026-11-11T00:00:00Z'), 'b');
     await expect(repo.get()).resolves.toEqual(new Date('2026-11-11T00:00:00Z'));
-    const rows = await db.select().from(reservationProjectionSettings);
+    const rows = await dbService.db.select().from(reservationProjectionSettings);
     expect(rows).toHaveLength(1);
     expect(rows[0].updatedBy).toBe('b');
   });
