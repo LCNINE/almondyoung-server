@@ -1,6 +1,10 @@
 import { useRef, useState, useSyncExternalStore } from "react"
 import { ChevronDown, FlipHorizontal, FlipVertical } from "lucide-react"
-import type { Layer } from "../../lib/document"
+import {
+  TEXTURE_SCALE_MAX,
+  TEXTURE_SCALE_MIN,
+  type Layer,
+} from "../../lib/document"
 import {
   fontOptions,
   fontStack,
@@ -313,9 +317,22 @@ function BevelFields({ target }: { target: StyleTarget }) {
   )
 }
 
-export function TextureFields({ target }: { target: StyleTarget }) {
-  const { layers, apply, disabled } = target
+type TextureValue = {
+  textureKind?: "grain" | "paper" | null
+  textureAmount?: number | null
+  textureScale?: number | null
+}
 
+// 레이어 질감과 배경 질감이 같은 칸을 쓴다. 여러 개를 골라 값이 다르면 null 이다
+export function TextureSettingFields({
+  value,
+  disabled,
+  onChange,
+}: {
+  value: TextureValue
+  disabled: boolean
+  onChange: (patch: Partial<Layer>) => void
+}) {
   return (
     <div className="space-y-3">
       <Segmented
@@ -326,19 +343,65 @@ export function TextureFields({ target }: { target: StyleTarget }) {
             ["paper", "종이"],
           ] as const
         }
-        value={common(layers, (layer) => layer.textureKind ?? "grain")}
+        value={value.textureKind ?? null}
         disabled={disabled}
-        onPick={(textureKind) => apply({ textureKind })}
+        onPick={(textureKind) => onChange({ textureKind })}
       />
       <PropSlider
         label="강도"
         min={1}
         max={100}
-        value={common(layers, (layer) => layer.textureAmount ?? 40) ?? 40}
+        value={value.textureAmount ?? 40}
         disabled={disabled}
-        onValue={(textureAmount) => apply({ textureAmount })}
+        onValue={(textureAmount) => onChange({ textureAmount })}
+      />
+      <GrainScaleSlider
+        value={value.textureScale}
+        disabled={disabled}
+        onValue={(textureScale) => onChange({ textureScale })}
       />
     </div>
+  )
+}
+
+// 100% 는 값을 비워 둔다. 옛 시안과 같은 문서가 된다
+export function GrainScaleSlider({
+  label = "입자 크기 (%)",
+  value,
+  disabled,
+  onValue,
+}: {
+  label?: string
+  value: number | null | undefined
+  disabled: boolean
+  onValue: (value: number | undefined) => void
+}) {
+  return (
+    <PropSlider
+      label={label}
+      min={TEXTURE_SCALE_MIN}
+      max={TEXTURE_SCALE_MAX}
+      step={5}
+      value={value ?? 100}
+      disabled={disabled}
+      onValue={(next) => onValue(next === 100 ? undefined : next)}
+    />
+  )
+}
+
+export function TextureFields({ target }: { target: StyleTarget }) {
+  const { layers, apply, disabled } = target
+
+  return (
+    <TextureSettingFields
+      value={{
+        textureKind: common(layers, (layer) => layer.textureKind ?? "grain"),
+        textureAmount: common(layers, (layer) => layer.textureAmount ?? 40),
+        textureScale: common(layers, (layer) => layer.textureScale ?? 100),
+      }}
+      disabled={disabled}
+      onChange={apply}
+    />
   )
 }
 

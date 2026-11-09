@@ -1,6 +1,7 @@
 import { MotionMaskGraphic } from "./motion-mask"
 import { EffectLayerGraphic } from "./effect-layer"
 import { PhotoEffectsGraphic } from "./photo-effects"
+import { FilmGrainNoise, PaperNoise } from "./texture-noise"
 import {
   ColorFilterDef,
   GradientDef,
@@ -276,49 +277,31 @@ function BevelPrimitives({ layer }: { layer: Layer }) {
   )
 }
 
-function TexturePrimitives({ layer }: { layer: Layer }) {
-  const size = Math.max(effectSize(layer), 1)
-  const paper = layer.textureKind === "paper"
-  const amplitude = ((layer.textureAmount ?? 40) / 100) * (paper ? 0.2 : 0.16)
+export type TextureSetting = Pick<
+  Layer,
+  "textureKind" | "textureAmount" | "textureScale"
+>
+
+// 입자 크기는 결의 주파수를 나눈다. 200% 면 알갱이가 두 배로 굵어진다
+function TexturePrimitives({
+  texture,
+  basis,
+}: {
+  texture: TextureSetting
+  basis: number
+}) {
+  const size = Math.max(basis, 1) * ((texture.textureScale ?? 100) / 100)
+  const paper = texture.textureKind === "paper"
+  const amplitude =
+    ((texture.textureAmount ?? 40) / 100) * (paper ? 0.13 : 0.075)
 
   return (
     <>
-      <feTurbulence
-        type="fractalNoise"
-        baseFrequency={paper ? `${120 / size} ${40 / size}` : 60 / size}
-        numOctaves="2"
-        seed="3"
-        result="textureFine"
-        colorInterpolationFilters="sRGB"
-      />
-      {paper && (
-        <>
-          <feTurbulence
-            type="fractalNoise"
-            baseFrequency={4 / size}
-            numOctaves="2"
-            seed="7"
-            result="textureCoarse"
-            colorInterpolationFilters="sRGB"
-          />
-          <feComposite
-            in="textureFine"
-            in2="textureCoarse"
-            operator="arithmetic"
-            k2={0.7}
-            k3={0.3}
-            result="textureNoise"
-            colorInterpolationFilters="sRGB"
-          />
-        </>
+      {paper ? (
+        <PaperNoise size={size} />
+      ) : (
+        <FilmGrainNoise size={size} scale={texture.textureScale} />
       )}
-      <feColorMatrix
-        in={paper ? "textureNoise" : "textureFine"}
-        type="matrix"
-        values="0.2126 0.7152 0.0722 0 0  0.2126 0.7152 0.0722 0 0  0.2126 0.7152 0.0722 0 0  0 0 0 0 1"
-        result="textureMono"
-        colorInterpolationFilters="sRGB"
-      />
       {/* 알파는 마지막에 한 번만 곱해 반투명 채우기와 가장자리를 보존한다. */}
       <feComponentTransfer
         in="SourceGraphic"
@@ -461,7 +444,9 @@ function EffectFilter({
       )}
       {layer.glow && <GlowPrimitives glow={glow} />}
       {layer.bevel && <BevelPrimitives layer={layer} />}
-      {texture && <TexturePrimitives layer={layer} />}
+      {texture && (
+        <TexturePrimitives texture={layer} basis={effectSize(layer)} />
+      )}
       <feMerge>
         {layer.shadow && <feMergeNode in="shadow" />}
         {layer.glow && <feMergeNode in="glow" />}
@@ -1094,8 +1079,46 @@ export function Backdrop({
   width?: number | string
   height?: number | string
 }) {
-  const imageSrc = useImageSrc()
   const uid = useId().replace(/[^a-zA-Z0-9_-]/g, "")
+  const texture = value.backgroundTexture
+  const textureId = `bg-tx-${uid}`
+
+  return (
+    <>
+      {texture && (
+        <defs>
+          {/* ponytail: 배경 크기를 모르는 곳이 많아 결의 기준을 50mm 로 고정한다. 굵기는 입자 크기로 맞춘다 */}
+          <filter
+            id={textureId}
+            x="-10%"
+            y="-10%"
+            width="120%"
+            height="120%"
+            colorInterpolationFilters="sRGB"
+          >
+            <TexturePrimitives texture={texture} basis={50} />
+          </filter>
+        </defs>
+      )}
+      <g filter={texture ? `url(#${textureId})` : undefined}>
+        <BackdropFill value={value} width={width} height={height} uid={uid} />
+      </g>
+    </>
+  )
+}
+
+function BackdropFill({
+  value,
+  width,
+  height,
+  uid,
+}: {
+  value: SideBackground
+  width: number | string
+  height: number | string
+  uid: string
+}) {
+  const imageSrc = useImageSrc()
   const filterId = `bg-cf-${uid}`
   const gradientFill = `bg-grad-${uid}`
   const filtered =

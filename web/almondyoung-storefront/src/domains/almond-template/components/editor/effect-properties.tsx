@@ -11,6 +11,7 @@ import {
   OpacitySection,
 } from "./prop-sections"
 import { PrintColorPicker } from "../color-picker"
+import { GrainScaleSlider } from "./style-controls"
 
 export function EffectProperties({
   editor,
@@ -74,6 +75,15 @@ export function EffectProperties({
             onValue={(effectDensity) =>
               editor.patch(selected.id, { effectDensity })
             }
+          />
+        </PropSection>
+      )}
+      {selected.effectKind === "grain" && (
+        <PropSection className="py-4">
+          <GrainScaleSlider
+            value={selected.grainScale}
+            disabled={!editor.editable}
+            onValue={(grainScale) => editor.patch(selected.id, { grainScale })}
           />
         </PropSection>
       )}

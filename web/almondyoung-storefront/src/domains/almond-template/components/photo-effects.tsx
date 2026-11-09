@@ -1,5 +1,6 @@
 import type { ReactNode } from "react"
 import type { Layer } from "../lib/document"
+import { FilmGrainNoise } from "./texture-noise"
 
 export function PhotoEffectsGraphic({
   layer,
@@ -91,13 +92,29 @@ export function PhotoEffectsGraphic({
             height="100%"
             colorInterpolationFilters="sRGB"
           >
-            <feTurbulence
-              type="fractalNoise"
-              baseFrequency={75 / layer.width}
-              numOctaves="2"
-              seed="7"
+            <FilmGrainNoise
+              size={(layer.width * 0.8 * (layer.grainScale ?? 100)) / 100}
+              scale={layer.grainScale}
+              softness={0.6}
+              result="grainMono"
             />
-            <feColorMatrix type="saturate" values="0" />
+            {/* 0.5 보다 어두운 알갱이는 검게, 밝은 알갱이는 희게 얹는다. 회색 막이 덮이지 않아 사진 평균 밝기가 그대로다 */}
+            <feColorMatrix
+              in="grainMono"
+              type="matrix"
+              values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  -2 0 0 0 1"
+              result="grainDark"
+            />
+            <feColorMatrix
+              in="grainMono"
+              type="matrix"
+              values="0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  2 0 0 0 -1"
+              result="grainLight"
+            />
+            <feMerge>
+              <feMergeNode in="grainDark" />
+              <feMergeNode in="grainLight" />
+            </feMerge>
           </filter>
         )}
         {shimmer > 0 && (
@@ -157,7 +174,7 @@ export function PhotoEffectsGraphic({
         <rect {...bounds} fill={`url(#${id}-prism)`} opacity={prism} />
       )}
       {grain > 0 && (
-        <rect {...bounds} filter={`url(#${id}-grain)`} opacity={grain * 0.2} />
+        <rect {...bounds} filter={`url(#${id}-grain)`} opacity={grain * 0.18} />
       )}
       {shimmer > 0 && (
         <rect {...bounds} fill={`url(#${id}-shimmer)`} opacity={shimmer} />

@@ -108,6 +108,10 @@ export type Layer = {
   texture?: boolean
   textureKind?: "grain" | "paper"
   textureAmount?: number
+  // 입자 크기 %. 비우면 100
+  textureScale?: number
+  // 사진 그레인·필름 그레인 효과의 입자 크기 %. 비우면 100
+  grainScale?: number
   bevel?: boolean
   bevelSize?: number
   bevelDepth?: number
@@ -162,6 +166,7 @@ export type Design = {
   backgroundFilter?: ColorFilter
   backgroundBlur?: number
   backgroundGradient?: Gradient
+  backgroundTexture?: BackgroundTexture
   backBackground?: SideBackground
   // 원본 file: 참조 → 편집 화면용 축소본 file: 참조
   imagePreviews?: Record<string, string>
@@ -178,7 +183,14 @@ export type SideBackground = Pick<
   | "backgroundFilter"
   | "backgroundBlur"
   | "backgroundGradient"
+  | "backgroundTexture"
 >
+
+export type BackgroundTexture = {
+  textureKind?: "grain" | "paper"
+  textureAmount?: number
+  textureScale?: number
+}
 
 export function sideBackground(
   design: Design,
@@ -193,6 +205,7 @@ export function sideBackground(
     backgroundFilter: design.backgroundFilter,
     backgroundBlur: design.backgroundBlur,
     backgroundGradient: design.backgroundGradient,
+    backgroundTexture: design.backgroundTexture,
   }
 }
 
@@ -206,6 +219,7 @@ export function printsBack(design: Design): boolean {
     design.back.length > 0 ||
     !!bg?.backgroundImage ||
     !!bg?.backgroundGradient ||
+    !!bg?.backgroundTexture ||
     (!!bg && bg.background.toLowerCase() !== "#ffffff")
   )
 }
@@ -224,6 +238,7 @@ export function withSideBackground(
     backgroundFilter: undefined,
     backgroundBlur: undefined,
     backgroundGradient: undefined,
+    backgroundTexture: undefined,
     ...value,
   }
 }
@@ -489,6 +504,25 @@ export function parseDesign(value: unknown): Design {
   }
 }
 
+export const TEXTURE_SCALE_MIN = 50
+export const TEXTURE_SCALE_MAX = 400
+
+function validBackgroundTexture(value: unknown) {
+  if (value === undefined) return true
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false
+  const texture = value as Record<string, unknown>
+  return (
+    Object.keys(texture).every((key) =>
+      ["textureKind", "textureAmount", "textureScale"].includes(key)
+    ) &&
+    optional(texture.textureKind, (v) => v === "grain" || v === "paper") &&
+    optional(texture.textureAmount, (v) => within(v, 1, 100)) &&
+    optional(texture.textureScale, (v) =>
+      within(v, TEXTURE_SCALE_MIN, TEXTURE_SCALE_MAX)
+    )
+  )
+}
+
 function legacyBlurAmount(
   filter: ColorFilter | { kind: "blur"; amount: number } | undefined
 ) {
@@ -526,6 +560,8 @@ function checkBackgroundImage(data: Partial<SideBackground>) {
     throw new Error("배경 블러가 올바르지 않습니다.")
   if (!validGradient(data.backgroundGradient))
     throw new Error("배경 그라데이션이 올바르지 않습니다.")
+  if (!validBackgroundTexture(data.backgroundTexture))
+    throw new Error("배경 질감이 올바르지 않습니다.")
 }
 
 export function updateLayer(
@@ -661,6 +697,12 @@ function validEffects(layer: Layer) {
     optional(layer.texture, isBool) &&
     optional(layer.textureKind, (v) => v === "grain" || v === "paper") &&
     optional(layer.textureAmount, (v) => within(v, 1, 100)) &&
+    optional(layer.grainScale, (v) =>
+      within(v, TEXTURE_SCALE_MIN, TEXTURE_SCALE_MAX)
+    ) &&
+    optional(layer.textureScale, (v) =>
+      within(v, TEXTURE_SCALE_MIN, TEXTURE_SCALE_MAX)
+    ) &&
     optional(layer.bevel, isBool) &&
     optional(layer.bevelSize, (v) => within(v, 0.05, 20)) &&
     optional(layer.bevelDepth, (v) => within(v, 0, 100)) &&
