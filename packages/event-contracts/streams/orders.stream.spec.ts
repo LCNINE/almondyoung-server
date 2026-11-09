@@ -1,4 +1,5 @@
 import {
+  CORE_ORDER_STREAM,
   CUSTOMER_RETURN_KINDS,
   CUSTOMER_RETURN_REASONS,
   ORDER_STREAM,
@@ -453,5 +454,40 @@ describe('channel-return 교환 칸 (K8 PR11)', () => {
 
   it('exchangeItems 없는 옛 settled 는 통과한다', () => {
     expect(() => settled.parse(settledPayload)).not.toThrow();
+  });
+});
+
+describe('CORE_ORDER_STREAM SalesOrderLineReservationState', () => {
+  const schema = CORE_ORDER_STREAM.events.SalesOrderLineReservationState.schema;
+  const line = {
+    salesOrderLineId: 'line-1',
+    channelOrderItemId: null,
+    variantId: 'variant-1',
+    ordered: 3,
+    canceledBeforeShipment: 1,
+    demand: 2,
+    heldUnits: 1,
+  };
+  const valid = {
+    salesOrderId: 'so-1',
+    salesChannel: 'medusa',
+    channelOrderId: 'order_01',
+    orderedAt: '2026-11-09T01:00:00.000Z',
+    version: 3,
+    asOf: '2026-11-09T01:00:05.000Z',
+    lines: [line],
+  };
+
+  it('정상 payload 를 통과시킨다', () => {
+    expect(schema.parse(valid)).toMatchObject({ version: 3, lines: [line] });
+  });
+
+  it('version 음수는 거절한다', () => {
+    expect(() => schema.parse({ ...valid, version: -1 })).toThrow();
+  });
+
+  it('lines[].heldUnits 누락은 거절한다', () => {
+    const { heldUnits: _h, ...rest } = line;
+    expect(() => schema.parse({ ...valid, lines: [rest] })).toThrow();
   });
 });
