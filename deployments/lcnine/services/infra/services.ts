@@ -947,6 +947,8 @@ export function setup(infra: SharedInfra) {
   // 갈리는 것은 env(MEDUSA_WORKER_MODE 등) 뿐이다. medusaCommon 의 buildArgs 를 바꾸면 둘이 함께 바뀐다.
   createService('MedusaAdmin', {
     ...medusaCommon,
+    // 한시 조치: 상품 수정 때 캐시 무효화가 몰려 2 GB 에서 OOM 재시작. Medusa 업그레이드 후 2 GB 로 되돌린다.
+    memory: '4 GB',
     image: imageOf(medusa),
     priority: 205,
     pathPattern: '/admin/*',
