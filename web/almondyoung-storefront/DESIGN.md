@@ -1,6 +1,7 @@
 # DESIGN.md — 아몬드영 스토어프론트 디자인 시스템 (Karrot / Seed Design 기반)
 
 > UI(컴포넌트/화면/스타일)를 만들거나 수정할 때 **항상 이 문서를 따른다.**
+> auth-web(로그인·회원가입)과 wallet-web(결제)도 이 문서를 정본으로 따른다. admin-web 은 대상이 아니다.
 > 기본 토큰은 Karrot(당근) Seed Design System (https://seed-design.io)을 사용하고, 브랜드 색은 [스토어 UI 피그마](https://www.figma.com/design/VDeCQFDnT05Hxrc8c78KAd/AlmondYoung_Store-Admin_UI?node-id=2-4528)를 따른다.
 > 컬러/라운드/보더/포커스링은 `src/styles/globals.css` 의 CSS 변수로 이미 이 값에 매핑돼 있으니,
 > **하드코딩 hex 대신 시맨틱 유틸(`bg-primary`, `text-foreground`, `border-border`, `bg-muted` …)을 써라.**
