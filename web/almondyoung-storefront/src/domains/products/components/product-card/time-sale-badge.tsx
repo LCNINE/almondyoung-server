@@ -29,7 +29,7 @@ export function TimeSaleBadge({
   if (view?.kind === "ended") return null
 
   return (
-    <span className="bg-pink-deep inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px] font-medium text-white tabular-nums">
+    <span className="bg-red-30 inline-flex items-center gap-1 rounded px-2 py-0.5 text-[11px] font-medium text-white tabular-nums">
       <Clock className="size-3" aria-hidden />
       {t(membershipOnly ? "membershipBadge" : "badge")}
       {view && ` · ${formatCountdown(view, t("dayUnit"))}`}

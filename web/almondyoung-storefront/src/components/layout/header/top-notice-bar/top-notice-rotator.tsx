@@ -1,5 +1,6 @@
 "use client"
 
+import { ChevronRight } from "lucide-react"
 import LocalizedClientLink from "@/components/shared/localized-client-link"
 import type { TopNotice } from "@/lib/types/ui/top-notice"
 import { cn } from "@/lib/utils"
@@ -22,7 +23,8 @@ const STATE_CLASS_NAME: Record<TopNoticeItemState, string> = {
   enter: "translate-y-full opacity-0",
 }
 
-const LINK_CLASS_NAME = "text-mint flex-none font-semibold hover:underline"
+const LINK_CLASS_NAME =
+  "text-mint flex flex-none items-center font-semibold hover:underline"
 
 type Props = {
   notices: TopNotice[]
@@ -78,7 +80,7 @@ export function TopNoticeRotator({ notices, moreLabel }: Props) {
             key={notice.id}
             aria-hidden={state !== "current"}
             className={cn(
-              "absolute inset-0 flex items-center justify-center gap-2 px-7 whitespace-nowrap md:gap-3 md:px-10",
+              "absolute inset-0 flex items-center justify-center gap-1 px-4 whitespace-nowrap md:gap-3 md:px-10",
               STATE_CLASS_NAME[state]
             )}
           >
@@ -113,8 +115,13 @@ function NoticeLink({
 
   if (isExternalNoticeLink(href)) {
     return (
-      <a href={href.trim()} className={LINK_CLASS_NAME} tabIndex={tabIndex}>
-        {label}
+      <a
+        href={href.trim()}
+        className={LINK_CLASS_NAME}
+        tabIndex={tabIndex}
+        aria-label={label}
+      >
+        <LinkContent label={label} />
       </a>
     )
   }
@@ -126,8 +133,23 @@ function NoticeLink({
       href={path}
       className={LINK_CLASS_NAME}
       tabIndex={tabIndex}
+      aria-label={label}
     >
-      {label}
+      <LinkContent label={label} />
     </LocalizedClientLink>
+  )
+}
+
+// 모바일은 폭이 좁아 글자 대신 화살표만 둔다. 공지 문구가 잘리지 않게 하려는 것
+function LinkContent({ label }: { label: string }) {
+  return (
+    <>
+      <span className="hidden md:inline">{label}</span>
+      <ChevronRight
+        className="size-4 md:hidden"
+        strokeWidth={2.4}
+        aria-hidden
+      />
+    </>
   )
 }

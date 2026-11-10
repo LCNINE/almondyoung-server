@@ -188,6 +188,7 @@ input[type="search"]::-webkit-search-results-decoration {
   --color-yellow-30: var(--yellow-30);
   --color-yellow-40: var(--yellow-40);
   --color-yellow-50: var(--yellow-50);
+  --color-orange-600: var(--orange-600);
   --color-red-30: var(--red-30);
   --color-red-40: var(--red-40);
   --color-red-50: var(--red-50);
@@ -213,49 +214,49 @@ input[type="search"]::-webkit-search-results-decoration {
   --pdp-section-offset: 160px;
   /* Seed Design 중립색 + 스토어 UI 피그마 브랜드색 (light) */
   --background: #ffffff;
-  --foreground: #141617;
+  --foreground: #000000;
   --card: #ffffff;
-  --card-foreground: #141617;
+  --card-foreground: #000000;
   --popover: #ffffff;
-  --popover-foreground: #141617;
-  --primary: #141617;
+  --popover-foreground: #000000;
+  --primary: #ffa500;
   --primary-foreground: #ffffff;
   --secondary: #f3f4f5;
-  --secondary-foreground: #141617;
+  --secondary-foreground: #000000;
   --muted: #f7f8f9;
   --muted-foreground: #757575;
   --accent: #f3f4f5;
-  --accent-foreground: #141617;
+  --accent-foreground: #000000;
   --destructive: #fa342c;
   --border: #d9d9d9;
   --input: #d9d9d9;
-  --ring: #0b7366;
-  --chart-1: #36c2b3;
-  --chart-2: #f779ac;
-  --chart-3: #9c7fcb;
-  --chart-4: #141617;
-  --chart-5: #9a9fa6;
+  --ring: #5e98fe;
+  --chart-1: oklch(0.646 0.222 41.116);
+  --chart-2: oklch(0.6 0.118 184.704);
+  --chart-3: oklch(0.398 0.07 227.392);
+  --chart-4: oklch(0.828 0.189 84.429);
+  --chart-5: oklch(0.769 0.188 70.08);
   --radius: 0.75rem;
   --sidebar: #ffffff;
-  --sidebar-foreground: #141617;
-  --sidebar-primary: #141617;
+  --sidebar-foreground: #000000;
+  --sidebar-primary: #000000;
   --sidebar-primary-foreground: #ffffff;
   --sidebar-accent: #f3f4f5;
-  --sidebar-accent-foreground: #141617;
+  --sidebar-accent-foreground: #000000;
   --sidebar-border: #d9d9d9;
-  --sidebar-ring: #0b7366;
+  --sidebar-ring: #5e98fe;
 
-  /* 로고 토큰: 원색은 면(배경·배지·막대)에만 쓰고 그 위 글자는 ink, deep 은 흰 바탕 위 글자, tint 는 넓은 바탕 면 */
-  --ink: #141617;
-  --mint: #36c2b3;
-  --mint-deep: #0b7366;
-  --mint-tint: #e7f7f4;
-  --pink: #f779ac;
-  --pink-deep: #c2306c;
-  --pink-tint: #fdecf3;
-  --purple: #9c7fcb;
-  --purple-deep: #5b3f96;
-  --purple-tint: #f2eefa;
+  /* 역할 토큰: 라이브 팔레트에 맞춘 값. mint=강조(주황), pink=할인·경고(빨강), purple=멤버십(라이브처럼 주황). deep 은 흰 바탕 위 글자, tint 는 옅은 바탕 */
+  --ink: #20232a;
+  --mint: #ffa500;
+  --mint-deep: #a86200;
+  --mint-tint: #fff7e5;
+  --pink: #fa342c;
+  --pink-deep: #c7321f;
+  --pink-tint: #feeceb;
+  --purple: #ffa500;
+  --purple-deep: #ffa500;
+  --purple-tint: #fff7e5;
 
   /* 폰트 및 컬러 팔레트 */
   --font-geist-sans: "Pretendard", sans-serif;
@@ -273,15 +274,15 @@ input[type="search"]::-webkit-search-results-decoration {
   --gray-70: #363639;
   --gray-80: #2c2c2e;
   --gray-90: #1c1c1e;
-  /* components/ui/input-otp 만 쓴다(ui 소스는 고치지 않으므로 값만 민트로 돌린다). 새 코드는 mint 토큰을 쓸 것 */
-  --yellow-10: var(--mint-tint);
-  --yellow-20: var(--mint-tint);
-  --yellow-30: var(--mint-deep);
-  --yellow-40: var(--mint-deep);
-  --yellow-50: var(--mint-deep);
+  --yellow-10: #fff7e5;
+  --yellow-20: #ffe8b3;
+  --yellow-30: #ffa500;
+  --yellow-40: #e69500;
+  --yellow-50: #a86200;
   --red-30: #f54527;
   --red-40: #c7321f;
   --red-50: #981c14;
+  --orange-600: #ffa500;
   --green-30: #34c759;
   --green-40: #22a343;
 
@@ -315,8 +316,8 @@ input[type="search"]::-webkit-search-results-decoration {
   --card-foreground: oklch(0.985 0 0);
   --popover: oklch(0.205 0 0);
   --popover-foreground: oklch(0.985 0 0);
-  --primary: #36c2b3;
-  --primary-foreground: #141617;
+  --primary: #ffa500;
+  --primary-foreground: #ffffff;
   --secondary: #2c2c2e;
   --secondary-foreground: #ffffff;
   --muted: oklch(0.269 0 0);
@@ -326,33 +327,32 @@ input[type="search"]::-webkit-search-results-decoration {
   --destructive: oklch(0.704 0.191 22.216);
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
-  --ring: #36c2b3;
-  --chart-1: #36c2b3;
-  --chart-2: #f779ac;
-  --chart-3: #9c7fcb;
-  --chart-4: oklch(0.985 0 0);
-  --chart-5: #9a9fa6;
+  --ring: oklch(0.556 0 0);
+  --chart-1: oklch(0.488 0.243 264.376);
+  --chart-2: oklch(0.696 0.17 162.48);
+  --chart-3: oklch(0.769 0.188 70.08);
+  --chart-4: oklch(0.627 0.265 303.9);
+  --chart-5: oklch(0.645 0.246 16.439);
   --sidebar: oklch(0.205 0 0);
   --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: #36c2b3;
-  --sidebar-primary-foreground: #141617;
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
   --sidebar-accent: oklch(0.269 0 0);
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: #36c2b3;
+  --sidebar-ring: oklch(0.556 0 0);
   --gray-50: #1f2937;
 
-  /* 어두운 바탕에서는 원색이 충분히 읽혀 deep 자리에도 원색을 쓴다 */
-  --ink: #141617;
-  --mint: #36c2b3;
-  --mint-deep: #36c2b3;
-  --mint-tint: oklch(0.269 0.03 180);
-  --pink: #f779ac;
-  --pink-deep: #f779ac;
-  --pink-tint: oklch(0.269 0.03 350);
-  --purple: #9c7fcb;
-  --purple-deep: #9c7fcb;
-  --purple-tint: oklch(0.269 0.03 300);
+  --ink: #20232a;
+  --mint: #ffa500;
+  --mint-deep: #ffb733;
+  --mint-tint: oklch(0.269 0.03 70);
+  --pink: #fa342c;
+  --pink-deep: #ff6b5f;
+  --pink-tint: oklch(0.269 0.03 25);
+  --purple: #ffa500;
+  --purple-deep: #ffb733;
+  --purple-tint: oklch(0.269 0.03 70);
 }
 
 /* 블랙프라이데이 테마 */

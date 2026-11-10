@@ -1,5 +1,6 @@
 import LocalizedClientLink from "@/components/shared/localized-client-link"
 import ThumbnailImage from "@/domains/products/components/thumbnail/thumbnail-image"
+import { ProductMembershipBadge } from "@/components/shared/badges/product-membership-badge"
 import { cn } from "@/lib/utils"
 import { formatPrice } from "@/lib/utils/price-utils"
 import { useTranslations } from "next-intl"
@@ -34,31 +35,27 @@ export function V1ProductCard({ item, tag, compact }: V1ProductCardProps) {
         )}
       </div>
 
+      {/* 글자 규격은 라이브 상품 카드(prodcut-card/parts/product-info)와 같게 둔다 */}
       <p
         className={cn(
-          "text-ink line-clamp-2 leading-[1.4] font-normal",
-          compact ? "min-h-9 text-[13px]" : "min-h-10 text-sm"
+          "line-clamp-1 leading-tight text-gray-600",
+          compact ? "text-[13px]" : "text-[14px]"
         )}
       >
         {item.title}
       </p>
 
-      <p
-        className={cn(
-          "text-ink leading-normal font-bold tabular-nums",
-          compact ? "text-[15px]" : "text-base"
-        )}
-      >
+      <p className="text-[16px] leading-none font-bold text-black tabular-nums">
         {formatPrice(item.price)}원
       </p>
 
       {item.membershipPrice !== null && (
-        <p className="text-purple-deep text-[13px] font-bold tabular-nums">
-          <span className="bg-purple-tint mr-0.5 inline-block h-5 rounded-[5px] px-1.5 text-[11px] leading-5">
-            {t("membership")}
+        <div className="text-primary flex flex-col gap-0.5">
+          <ProductMembershipBadge size="sm" label={t("membership")} />
+          <span className="text-[15px] font-bold tabular-nums">
+            {formatPrice(item.membershipPrice)}원
           </span>
-          {formatPrice(item.membershipPrice)}원
-        </p>
+        </div>
       )}
     </LocalizedClientLink>
   )

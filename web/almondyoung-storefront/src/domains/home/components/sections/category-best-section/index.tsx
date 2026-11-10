@@ -1,10 +1,8 @@
 "use client"
 
-import Image from "next/image"
 import { getBestProductsByCategory } from "@/domains/home/actions"
 import ProductCard from "@/domains/products/components/product-card"
 import RankBadge from "@/domains/products/components/rank-badge"
-import { CATEGORY_ICON_URLS } from "@/components/layout/header/header-links"
 import { FIXED_CATEGORIES } from "@/lib/constants/categories"
 import { CustomerGroup } from "@/lib/types/dto/medusa"
 import { StoreCustomerWithGroups } from "@/lib/types/ui/medusa"
@@ -100,17 +98,18 @@ export function CategoryBestSection({
     <div className="w-full">
       <SectionHead
         title={`${t("titleFirst")} ${t("titleSecond")}`}
+        accent={t("titleSecond")}
+        centered
         moreHref={`/category/${activeTab.handle}`}
       />
 
       <div
         role="tablist"
         aria-label={t("titleFirst")}
-        className="-mx-4 mt-1 mb-6 flex gap-1.5 overflow-x-auto px-4 [scrollbar-width:none] md:mx-0 md:mt-2 md:mb-10 md:flex-wrap md:justify-center md:px-0 [&::-webkit-scrollbar]:hidden"
+        className="-mx-4 mt-1 mb-6 flex gap-2 overflow-x-auto px-4 [scrollbar-width:none] md:mx-0 md:mt-2 md:mb-10 md:flex-wrap md:justify-center md:gap-2 md:px-0 [&::-webkit-scrollbar]:hidden"
       >
         {categories.map((category) => {
           const isActive = category.id === activeTab.id
-          const icon = CATEGORY_ICON_URLS[category.key]
 
           return (
             <button
@@ -120,21 +119,13 @@ export function CategoryBestSection({
               aria-selected={isActive}
               onClick={() => !isActive && handleTabChange(category)}
               className={cn(
-                "flex h-[38px] flex-none items-center gap-1.5 rounded-full border px-4 text-[14px] font-semibold transition-colors",
+                // 라이브 탭 규격: 14px/500, 위아래 4px·좌우 8px, 고른 탭만 검정 글자와 주황 밑줄
+                "flex-none border-b-2 px-2 py-1 text-sm font-medium transition-colors",
                 isActive
-                  ? "border-ink text-ink bg-white font-bold shadow-[inset_0_0_0_1px_var(--ink)]"
-                  : "border-border-muted text-ink/80 hover:text-ink bg-white"
+                  ? "border-primary text-black"
+                  : "text-muted-foreground border-transparent hover:text-black"
               )}
             >
-              {icon && (
-                <Image
-                  src={icon}
-                  alt=""
-                  width={20}
-                  height={20}
-                  className="size-5 object-contain"
-                />
-              )}
               {category.name}
             </button>
           )

@@ -56,11 +56,11 @@ export function LanguageSwitcher({
   const triggerClassName = (() => {
     switch (variant) {
       case "header":
-        return "flex cursor-pointer items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground outline-none"
+        return "flex cursor-pointer items-center gap-1 text-xs text-white/80 transition-colors hover:text-white outline-none"
       case "sheet":
-        return "flex cursor-pointer items-center gap-1 text-sm text-foreground transition-colors hover:text-mint-deep outline-none"
+        return "flex cursor-pointer items-center gap-1 text-sm text-foreground transition-colors hover:text-primary outline-none"
       case "iconButton":
-        return "flex min-w-9 cursor-pointer items-center justify-center px-0.5 py-1.5 text-gray-700 transition-colors hover:text-foreground outline-none"
+        return "flex cursor-pointer flex-col items-center gap-1 text-white outline-none"
     }
   })()
 
@@ -73,7 +73,7 @@ export function LanguageSwitcher({
         className={cn(triggerClassName, className)}
       >
         {isIconButton ? (
-          <Globe className="h-6 w-6" strokeWidth={1.8} />
+          <Globe className="h-6 w-6 md:h-8 md:w-8" />
         ) : (
           <>
             <Globe className="h-3.5 w-3.5" />
@@ -90,7 +90,7 @@ export function LanguageSwitcher({
             data-active={l === locale}
             className={cn(
               "cursor-pointer",
-              l === locale && "text-mint-deep font-semibold"
+              l === locale && "text-primary font-semibold"
             )}
           >
             {t(l)}

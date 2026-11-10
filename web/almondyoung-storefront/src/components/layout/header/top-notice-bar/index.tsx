@@ -19,7 +19,7 @@ export async function TopNoticeBar() {
   return (
     <section
       aria-label={t("ariaLabel")}
-      className="bg-ink text-xs text-white md:text-[13px]"
+      className="bg-header-border text-xs text-white md:text-[13px]"
     >
       <TopNoticeRotator notices={notices} moreLabel={t("more")} />
     </section>

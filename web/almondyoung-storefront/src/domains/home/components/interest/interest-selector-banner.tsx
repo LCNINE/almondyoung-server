@@ -14,6 +14,7 @@ import type { HttpTypes } from "@medusajs/types"
 import { useState, useTransition } from "react"
 import { toast } from "sonner"
 import { useTranslations } from "next-intl"
+import { ArrowLeftRight, X } from "lucide-react"
 import { HomeRail } from "../shared/home-rail"
 import { InterestKeyChips } from "./interest-key-chips"
 import { mergeBestProducts } from "./merge-best-products"
@@ -40,6 +41,8 @@ export function InterestSelectorBanner({
   const t = useTranslations("home.interestBanner")
   const tCat = useTranslations("categories")
   const [selected, setSelected] = useState<string[]>(initialKeys)
+  // 한 번 고르면 칩을 접고 바꾸기를 누를 때만 다시 펼친다
+  const [isPicking, setIsPicking] = useState(initialKeys.length === 0)
   const [, startSave] = useTransition()
   const [isDismissing, startDismiss] = useTransition()
 
@@ -86,11 +89,11 @@ export function InterestSelectorBanner({
 
   return (
     <section aria-labelledby="interest-selector-title">
-      <div className="mb-5 flex flex-col items-start gap-3 md:flex-row md:items-end md:justify-between md:gap-4">
-        <div>
+      <div className="relative mb-5 flex flex-col items-start gap-3 md:flex-row md:items-end md:justify-between md:gap-4">
+        <div className="w-full md:w-auto">
           <h2
             id="interest-selector-title"
-            className="text-foreground text-xl font-bold tracking-[-0.01em] break-keep md:text-[22px]"
+            className="pr-9 text-[20px] leading-[1.3] font-bold break-keep text-black md:pr-0 md:text-[26px] md:leading-[1.11]"
           >
             {t("title")}
           </h2>
@@ -105,55 +108,78 @@ export function InterestSelectorBanner({
           size="sm"
           onClick={handleDismiss}
           disabled={isDismissing}
-          className="text-muted-foreground hover:text-foreground h-auto shrink-0 p-0 text-[13px] font-normal underline underline-offset-4"
+          aria-label={t("dismiss")}
+          className="text-muted-foreground hover:text-foreground absolute -top-1 -right-2 size-9 p-0 md:static md:size-auto md:shrink-0 md:text-[13px] md:font-normal md:underline md:underline-offset-4"
         >
-          {t("dismiss")}
+          <X className="size-5 md:hidden" strokeWidth={1.8} aria-hidden />
+          <span className="hidden md:inline">{t("dismiss")}</span>
         </Button>
       </div>
 
-      <InterestKeyChips
-        variant="card"
-        selectedKeys={selected}
-        onChange={handleChange}
-      />
+      {isPicking ? (
+        <>
+          <InterestKeyChips
+            variant="card"
+            selectedKeys={selected}
+            onChange={handleChange}
+          />
 
-      <div
-        key={selected.join(",")}
-        className="animate-in fade-in fill-mode-both mt-10 duration-[250ms] motion-reduce:animate-none"
-      >
-        {selected.length === 0 ? (
-          <p className="text-muted-foreground border-border rounded-[14px] border border-dashed bg-white p-7 text-center text-sm">
-            {t("selectPrompt")}
-          </p>
-        ) : (
-          <>
-            <h3 className="text-ink mb-5 text-base font-bold break-keep">
-              <span className="text-mint-deep">{selectedNames}</span>{" "}
-              {t("previewSuffix")}
+          <Button
+            type="button"
+            onClick={() => setIsPicking(false)}
+            disabled={selected.length === 0}
+            className="mt-4 h-12 w-full rounded-xl text-[15px] font-bold disabled:bg-gray-100 disabled:text-gray-400 disabled:opacity-100 md:w-auto md:px-6"
+          >
+            {selected.length === 0
+              ? t("selectPrompt")
+              : t("showBest", { count: selected.length })}
+          </Button>
+        </>
+      ) : (
+        <div
+          key={selected.join(",")}
+          className="animate-in fade-in fill-mode-both duration-[250ms] motion-reduce:animate-none"
+        >
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <h3 className="text-base font-bold break-keep text-black">
+              {selectedNames}{" "}
+              <span className="text-mint">{t("previewSuffix")}</span>
             </h3>
+            <button
+              type="button"
+              onClick={() => setIsPicking(true)}
+              className="border-border inline-flex h-8 shrink-0 items-center gap-1 rounded-full border bg-white px-3 text-[13px] font-bold text-gray-700 transition-colors hover:border-gray-400"
+            >
+              <ArrowLeftRight
+                className="size-3.5"
+                strokeWidth={2.2}
+                aria-hidden
+              />
+              {t("change")}
+            </button>
+          </div>
 
-            <HomeRail>
-              {products.map((product, index) => (
-                <div
-                  key={product.id}
-                  className={REVEAL}
-                  style={{
-                    animationDelay: `${Math.min(index, STAGGER_MAX) * STAGGER_MS}ms`,
-                  }}
-                >
-                  <ProductCard
-                    product={product}
-                    isMembership={isMembership}
-                    isMembershipOnly={getIsMembershipOnly(product)}
-                    isWishlisted={wishlisted.has(product.id ?? "")}
-                    enablePhotoSwipe={false}
-                  />
-                </div>
-              ))}
-            </HomeRail>
-          </>
-        )}
-      </div>
+          <HomeRail>
+            {products.map((product, index) => (
+              <div
+                key={product.id}
+                className={REVEAL}
+                style={{
+                  animationDelay: `${Math.min(index, STAGGER_MAX) * STAGGER_MS}ms`,
+                }}
+              >
+                <ProductCard
+                  product={product}
+                  isMembership={isMembership}
+                  isMembershipOnly={getIsMembershipOnly(product)}
+                  isWishlisted={wishlisted.has(product.id ?? "")}
+                  enablePhotoSwipe={false}
+                />
+              </div>
+            ))}
+          </HomeRail>
+        </div>
+      )}
     </section>
   )
 }

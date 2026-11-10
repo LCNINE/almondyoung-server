@@ -6,7 +6,8 @@
     "signup": "회원가입",
     "orderLookup": "주문조회",
     "cartWithCount": "장바구니 {count}개",
-    "menuAriaLabel": "내 메뉴"
+    "menuAriaLabel": "내 메뉴",
+    "shipping": "주문배송"
   },
   "userInfo": {
     "logout": "로그아웃"

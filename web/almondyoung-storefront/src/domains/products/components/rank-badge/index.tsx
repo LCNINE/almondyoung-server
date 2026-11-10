@@ -5,8 +5,6 @@ type RankBadgeProps = {
   variant?: "top-left" | "bottom-left"
 }
 
-const TOP_RANK = 3
-
 export default function RankBadge({
   rank,
   variant = "top-left",
@@ -14,8 +12,7 @@ export default function RankBadge({
   return (
     <div
       className={cn(
-        "absolute left-0 z-[1] grid size-7 place-items-center text-[14px] font-bold tabular-nums",
-        rank <= TOP_RANK ? "bg-mint text-ink" : "bg-ink text-white",
+        "absolute left-0 bg-black px-2.5 py-1 text-[12px] font-bold text-white",
         {
           "top-0": variant === "top-left",
           "bottom-0": variant === "bottom-left",

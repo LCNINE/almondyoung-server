@@ -10,7 +10,7 @@ export function OverseasBadge({ className }: { className?: string }) {
   return (
     <span
       className={cn(
-        "mr-1 inline-flex shrink-0 items-center rounded-[3px] bg-ink px-1.5 py-px align-middle text-[11px] font-semibold leading-[1.4] text-white",
+        "mr-1 inline-flex shrink-0 items-center rounded bg-[#2f6cd4] px-1 py-px align-middle text-[11px] leading-[1.4] font-medium text-white",
         className
       )}
     >

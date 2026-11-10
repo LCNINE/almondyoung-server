@@ -51,8 +51,8 @@ export async function HallToolbar({
                 className={cn(
                   "relative flex h-11 items-center px-0.5 text-[15px]",
                   active
-                    ? "text-ink after:bg-mint font-bold after:absolute after:inset-x-0 after:-bottom-px after:h-0.5"
-                    : "text-muted-foreground font-medium"
+                    ? "after:bg-mint font-bold text-black after:absolute after:inset-x-0 after:-bottom-px after:h-[3px]"
+                    : "font-medium text-gray-500"
                 )}
               >
                 {t(`tabs.${tab}`)}

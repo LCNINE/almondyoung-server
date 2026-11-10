@@ -6,7 +6,8 @@
     "signup": "Sign up",
     "orderLookup": "Orders",
     "cartWithCount": "Cart, {count} items",
-    "menuAriaLabel": "My menu"
+    "menuAriaLabel": "My menu",
+    "shipping": "Orders & Shipping"
   },
   "userInfo": {
     "logout": "Log out"

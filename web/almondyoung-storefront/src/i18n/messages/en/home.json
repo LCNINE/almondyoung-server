@@ -2,13 +2,15 @@
   "pageTitle": "Almondyoung - Beauty Supply MRO Store",
   "interestBanner": {
     "title": "See only your fields?",
-    "description": "Pick up to {max} and your home switches to their best sellers.",
+    "description": "Pick up to {max} and we'll gather their best sellers here",
     "dismiss": "Hide for a week",
     "saveFail": "Failed to save. Please try again.",
     "dismissFail": "Failed to process",
     "maxSelectable": "You can select up to {max}",
     "selectPrompt": "Pick your fields",
-    "previewSuffix": "Best"
+    "previewSuffix": "Best",
+    "showBest": "See best of {count} fields",
+    "change": "Change"
   },
   "interestEdit": {
     "trigger": "Edit",
@@ -28,14 +30,17 @@
   },
   "showcase": {
     "overseas": "Overseas Direct Purchase",
-    "canva": "Almond Templates",
+    "canva": "Canva Designs",
     "class": "One-day Classes",
     "newArrivals": "New Arrivals",
     "overseasDescription": "Products you can only find abroad",
     "viewAll": "View all",
     "newArrivalsDescription": "Supplies that arrived this week",
     "canvaDescription": "Ready-to-edit Canva templates for manuals, consent forms and feeds",
-    "classDescription": "Courses taught by working salon owners"
+    "classDescription": "Courses taught by working salon owners",
+    "canvaAccent": "Designs",
+    "classAccent": "Classes",
+    "overseasAccent": "Purchase"
   },
   "cafe24Link": {
     "mobileText": "Connect your existing Almondyoung account",
@@ -65,7 +70,8 @@
     "featuredCaption": "Most popular with pros",
     "emptyCaption": "See all products in the brand hall",
     "goToBrand": "Go to {name}",
-    "membershipPrice": "Member"
+    "membershipPrice": "Member",
+    "allBrands": "All brands"
   },
   "heroBanner": {
     "listPrev": "Show previous items",
@@ -147,6 +153,7 @@
   },
   "dailySupplies": {
     "title": "Everyday shop supplies",
-    "subtitle": "Restock before you run out"
+    "subtitle": "Restock before you run out",
+    "titleAccent": "supplies"
   }
 }

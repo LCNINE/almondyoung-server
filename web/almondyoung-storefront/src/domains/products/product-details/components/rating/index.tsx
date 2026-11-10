@@ -30,7 +30,7 @@ export function Rating({ rating, reviewCount }: Props) {
         {Array.from({ length: fullStars }).map((_, i) => (
           <Star
             key={`full-${i}`}
-            className="fill-ink text-ink h-4 w-4"
+            className="fill-primary text-primary h-4 w-4"
             aria-hidden="true"
           />
         ))}
@@ -46,7 +46,7 @@ export function Rating({ rating, reviewCount }: Props) {
               style={{ width: `${partialFill}%` }}
             >
               <Star
-                className="fill-ink text-ink h-4 w-4"
+                className="fill-primary text-primary h-4 w-4"
                 aria-hidden="true"
               />
             </div>
@@ -78,7 +78,8 @@ export function Rating({ rating, reviewCount }: Props) {
           )
         }}
       >
-        {t("reviewCount", { count: reviewCount.toLocaleString() })}<span className="ml-0.5">+</span>
+        {t("reviewCount", { count: reviewCount.toLocaleString() })}
+        <span className="ml-0.5">+</span>
       </button>
     </div>
   )

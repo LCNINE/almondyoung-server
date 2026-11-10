@@ -14,11 +14,18 @@ import {
   type ClassRow,
 } from "../../components/class-list/class-list-data"
 import { SectionHead } from "../../components/header"
+import { HomeRail } from "../../components/shared/home-rail"
 import { V1ProductCard } from "../../components/v1-card"
 import { toV1CardItems } from "../../components/v1-card/v1-card-data"
 import { V1CardGrid } from "../../components/v1-card/v1-card-grid"
 
-export type ShowcaseCategory = {
+export // 라이브처럼 제목 끝 낱말을 주황으로 칠하는 섹션만 둔다
+const ACCENT_KEYS: Partial<Record<ShowcaseCategory["titleKey"], string>> = {
+  canva: "canvaAccent",
+  class: "classAccent",
+}
+
+type ShowcaseCategory = {
   titleKey: "canva" | "class" | "newArrivals"
   handle: string
   /** grid5: 5칸 2줄(모바일 2줄 캐러셀) / grid4: 4칸(모바일 한 줄) / classes: 지역 탭 2단 목록 */
@@ -36,7 +43,7 @@ export const SHOWCASE_CATEGORIES: readonly ShowcaseCategory[] = [
     handle: "cafe24-cat-345",
     priorityHandle: "cafe24-cat-523",
     layout: "grid4",
-    limit: 8,
+    limit: 10,
   },
   // 클래스 (지역별 자식 카테고리)
   { titleKey: "class", handle: "cafe24-cat-86", layout: "classes", limit: 12 },
@@ -127,13 +134,22 @@ export async function ShowcaseCategoryWrapper({
 
   const title = t(titleKey)
   const subtitle = t(`${titleKey}Description`)
+  const accentKey = ACCENT_KEYS[titleKey]
+  const accent = accentKey ? t(accentKey) : undefined
 
   if (layout === "classes") {
     const rows = sectionProducts
       .map((product) => toClassRow(product, isMember))
       .filter((row): row is ClassRow => row !== null)
 
-    return <ClassListSection title={title} subtitle={subtitle} rows={rows} />
+    return (
+      <ClassListSection
+        title={title}
+        subtitle={subtitle}
+        accent={accent}
+        rows={rows}
+      />
+    )
   }
 
   const items = toV1CardItems(sectionProducts, isMember)
@@ -143,19 +159,26 @@ export async function ShowcaseCategoryWrapper({
       <SectionHead
         title={title}
         subtitle={subtitle}
+        accent={accent}
         moreHref={`/category/${handle}`}
         moreVariant="viewAll"
       />
-      <V1CardGrid
-        columns={layout === "grid5" ? 5 : 4}
-        mobileRows={layout === "grid5" ? 2 : 1}
-      >
-        {items.map((item) => (
-          <li key={item.id}>
-            <V1ProductCard item={item} />
-          </li>
-        ))}
-      </V1CardGrid>
+      {layout === "grid4" ? (
+        // 캔바 디자인은 4칸 캐러셀로 넘겨 본다
+        <HomeRail columns="four">
+          {items.map((item) => (
+            <V1ProductCard key={item.id} item={item} />
+          ))}
+        </HomeRail>
+      ) : (
+        <V1CardGrid columns={5} mobileRows={2}>
+          {items.map((item) => (
+            <li key={item.id}>
+              <V1ProductCard item={item} />
+            </li>
+          ))}
+        </V1CardGrid>
+      )}
     </div>
   )
 }

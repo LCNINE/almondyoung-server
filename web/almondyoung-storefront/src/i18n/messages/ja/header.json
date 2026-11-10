@@ -6,7 +6,8 @@
     "signup": "会員登録",
     "orderLookup": "注文照会",
     "cartWithCount": "カート {count}点",
-    "menuAriaLabel": "マイメニュー"
+    "menuAriaLabel": "マイメニュー",
+    "shipping": "注文・配送"
   },
   "userInfo": {
     "logout": "ログアウト"

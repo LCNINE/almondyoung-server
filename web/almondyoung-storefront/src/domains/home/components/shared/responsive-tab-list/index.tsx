@@ -53,12 +53,11 @@ export function ResponsiveTabList({
 
       {/* 데스크톱: TabsList */}
       <TabsList variant="line" className="mx-auto hidden w-fit gap-2 md:flex">
-        {" "}
         {items.map((item) => (
           <TabsTrigger
             key={item.id}
             value={item.id}
-            className="data-[state=active]:after:bg-primary"
+            className="text-muted-foreground data-[state=active]:after:bg-primary px-2 py-1 text-sm font-medium data-[state=active]:text-black"
           >
             {item.name}
           </TabsTrigger>
@@ -82,10 +81,10 @@ function TabButton({
       type="button"
       onClick={onClick}
       className={cn(
-        "relative px-3 py-2 text-sm font-medium transition-all",
+        "relative px-2 py-1 text-sm font-medium transition-colors",
         isActive
-          ? "text-foreground after:bg-primary after:absolute after:inset-x-0 after:bottom-0 after:h-0.5"
-          : "text-foreground/60"
+          ? "after:bg-primary text-black after:absolute after:inset-x-0 after:bottom-0 after:h-0.5"
+          : "text-muted-foreground"
       )}
     >
       {children}

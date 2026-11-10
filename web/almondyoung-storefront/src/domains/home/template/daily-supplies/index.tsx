@@ -56,6 +56,7 @@ export async function DailySuppliesWrapper({
       <div className="w-full">
         <SectionHead
           title={t("title")}
+          accent={t("titleAccent")}
           subtitle={t("subtitle")}
           moreHref={`/category/${DAILY_SUPPLIES_CATEGORY_HANDLES[0]}`}
           moreVariant="viewAll"

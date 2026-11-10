@@ -23,7 +23,7 @@ export function StarRating({
       {[...Array(fullStars)].map((_, i) => (
         <StarIcon
           key={`full-${i}`}
-          className={`${size} text-ink`}
+          className={`${size} text-orange-400`}
           fill="currentColor"
         />
       ))}

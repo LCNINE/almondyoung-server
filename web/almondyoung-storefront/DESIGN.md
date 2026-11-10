@@ -8,8 +8,8 @@
 
 ## 1. 원칙 (가장 중요)
 
-1. **색은 역할로 고른다.** 로고의 잉크·민트·핑크·퍼플을 아래 2장 표의 역할대로만 쓴다. 기본 버튼은 잉크(`--primary`), 활성·링크는 민트, 할인·NEW 는 핑크, 멤버십은 퍼플이다. 역할 밖에서 장식으로 뿌리지 않는다.
-2. **흰 바탕 위 글자는 `*-deep` 만.** 원색(mint/pink/purple)은 흰 글자 대비가 4.5:1 에 못 미쳐 면(배경·배지·막대)에만 쓰고, 원색 면 위 글자는 흰색이 아니라 ink 다. 성공/에러/정보는 시맨틱 색(아래)이지 브랜드가 아니다.
+1. **색은 라이브 팔레트를 역할로 쓴다.** 기본 버튼·강조는 주황(`--primary` = `#ffa500`), 헤더·공지 띠는 스톤, 할인·타임세일은 빨강이다. `mint`·`pink`·`purple`·`ink` 토큰 이름은 역할 이름으로 남아 있고 값은 라이브 색이다(아래 2장 표). 역할 밖에서 장식으로 뿌리지 않는다.
+2. **주황 글자는 아껴 쓴다.** 흰 바탕 위 긴 글자는 대비가 낮아 `text-mint-deep`(`#a86200`)을 쓰고, 순 주황 글자는 가격·강조 낱말처럼 짧은 곳에만 쓴다. 성공/에러/정보는 시맨틱 색(아래)이지 브랜드가 아니다.
 3. **4px 그리드.** 모든 padding/gap/height 는 `{4,8,12,16,20,24,32,40,48,56,64}` 중 하나(28·36·44·52 처럼 4의 배수면 된다). 작은 컨트롤 안의 2px 보정, 진행 막대 같은 3px 선은 예외. `px-[5px]`·`py-[7px]`·`h-[39px]` 같은 홀수 값은 가까운 4의 배수로 맞춘다. 벗어나면 이유를 주석으로.
 4. **차분함 = 신뢰.** 경고 아이콘/빨강/배지 남발 금지. 빨강·경고 아이콘은 실제 에러에만.
 5. **콘텐츠 우선, 크롬은 가볍게.** 커스텀 웹폰트 X (Pretendard/시스템폰트). 헤딩은 display face 대신 weight 700.
@@ -19,19 +19,21 @@
 
 | 역할 | HEX | 유틸 클래스 | 비고 |
 |---|---|---|---|
-| Primary / ink | `#141617` | `bg-primary` `text-foreground` `bg-ink` | 기본 버튼, 글자, 공지 띠 바탕. 로고 워드마크 색 |
-| Primary hover | ink 90% | `hover:bg-primary/90` | |
-| mint | `#36C2B3` | `bg-mint` `border-mint` | 브랜드 강조 면: 선택 칩, 신상 태그, 활성 밑줄, 진행 막대, 1~3위 배지 |
-| mint-deep | `#0B7366` | `text-mint-deep` | 흰 바탕 위 활성·링크·안내 글자, 선택 표시(라디오·테두리) |
-| mint-tint | `#E7F7F4` | `bg-mint-tint` | 옅은 브랜드 면(옛 `bg-yellow-10` 자리) |
-| pink | `#F779AC` | `bg-pink` | 장바구니 개수, NEW 배지 면 |
-| pink-deep | `#C2306C` | `text-pink-deep` `bg-pink-deep` | 할인율·할인액, 타임세일 시간 배지, "○원 아껴요" |
-| pink-tint | `#FDECF3` | `bg-pink-tint` | |
-| purple | `#9C7FCB` | `bg-purple` | 장식. 어두운 바탕 위 멤버십 글자 |
-| purple-deep | `#5B3F96` | `text-purple-deep` `bg-purple-deep` | 멤버십 가격·라벨·버튼 전부 |
-| purple-tint | `#F2EEFA` | `bg-purple-tint` | 멤버십 영역 바탕 |
+| Primary | `#ffa500` | `bg-primary` `text-primary` | 기본 버튼, 강조, 카테고리 타일 |
+| Primary hover | 주황 90% | `hover:bg-primary/90` | |
+| header-background | `#57534e` | `bg-header-background` | 헤더 바탕(스톤) |
+| header-border | `#44403c` | `bg-header-border` | 공지 띠 바탕 |
+| ink | `#20232a` | `text-ink` `bg-ink` | 진한 글자, 고른 칩 바탕 |
+| mint (=강조) | `#ffa500` | `bg-mint` `text-mint` | 섹션 제목 강조 낱말, 활성 탭 밑줄, 진행 막대, 고른 로고 링 |
+| mint-deep | `#a86200` | `text-mint-deep` | 흰 바탕 위 긴 강조 글자 |
+| mint-tint | `#fff7e5` | `bg-mint-tint` | 옅은 강조 바탕 |
+| pink (=할인) | `#fa342c` | `bg-pink` | 할인·경고 면 |
+| pink-deep | `#c7321f` | `text-pink-deep` `bg-pink-deep` | 할인액, "○원 아껴요" |
+| pink-tint | `#feeceb` | `bg-pink-tint` | |
+| purple (=멤버십) | `#ffa500` | `bg-purple` `text-purple-deep` | 멤버십 가격·라벨은 라이브처럼 주황 |
+| purple-tint | `#fff7e5` | `bg-purple-tint` | 멤버십 영역 바탕 |
 | 배경(캔버스) | `#ffffff` | `bg-background` | |
-| 헤딩/본문 진한 | `#141617` | `text-foreground` | 순수 검정 대신 ink |
+| 헤딩/본문 진한 | `#000000` | `text-foreground` | 라이브와 같은 검정. 섹션 제목도 검정 |
 | 본문 보조·캡션 | `#757575` | `text-muted-foreground` | 피그마 버튼 보조 텍스트·메타 |
 | placeholder | `#b0b3ba` | `placeholder:text-[#b0b3ba]` | |
 | surface(옅은 면) | `#f7f8f9` | `bg-muted` | 입력 배경·본문 캔버스 |
@@ -40,8 +42,8 @@
 | error | `#fa342c` | `text-destructive` `bg-destructive` | |
 | info | `#217cf9` | `text-[#217cf9]` | 링크·정보 |
 | success | `#079171` | `text-[#079171]` | 완료 |
-| focus ring | `#0b7366` | `focus-visible:ring-ring` | 키보드 포커스 (mint-deep) |
-| 별점 | ink | `fill-ink text-ink` | 노란 별 쓰지 않음 |
+| focus ring | `#5e98fe` | `focus-visible:ring-ring` | 키보드 포커스 |
+| 별점 | `#ffa500` | 라이브 별점 컴포넌트 그대로 | |
 
 ## 3. 타이포 (시스템폰트, weight는 400/500/700만)
 
@@ -61,13 +63,13 @@
 
 ## 4. 컴포넌트 규격
 
-- **Primary CTA**: `bg-primary text-primary-foreground`(ink 바탕 흰 글자), 높이 52px(`h-[52px]`), radius 12px(`rounded-xl`), 16px/700. hover `bg-primary/90`, pressed `bg-primary/80`.
-- **멤버십 버튼**: `bg-purple-deep text-white`. 여러 곳에 반복되면 `components/ui/button` 은 두고 `components/shared` 래퍼에서 `className` 으로 확장. disabled `bg-[#f3f4f5] text-[#d1d3d8]`.
+- **Primary CTA**: `bg-primary text-primary-foreground`(주황 바탕 흰 글자), 높이 52px(`h-[52px]`), radius 12px(`rounded-xl`), 16px/700. hover `bg-primary/90`, pressed `bg-primary/80`.
+- **멤버십 버튼**: `bg-primary text-white`(라이브처럼 주황). 여러 곳에 반복되면 `components/ui/button` 은 두고 `components/shared` 래퍼에서 `className` 으로 확장. disabled `bg-[#f3f4f5] text-[#d1d3d8]`.
 - **Neutral 버튼**: `bg-secondary text-foreground`(`#f3f4f5`), radius 8px(`rounded-lg`).
 - **Outline 버튼**: `bg-transparent text-foreground border border-border`, radius 8px.
 - **Critical 버튼**: `bg-destructive text-white`, radius 8px. 삭제/신고 등.
 - **카드**: `bg-white border border-border rounded-lg`(8px) 또는 shadow-s2, featured는 `rounded-xl`(12px).
-- **칩/태그**: `bg-secondary text-foreground rounded-full h-8 px-3`, 13px/500. 선택 시 `bg-mint text-ink`.
+- **칩/태그**: `bg-secondary text-foreground rounded-full h-8 px-3`, 13px/500. 선택 시 `bg-ink text-white`.
 - **입력**: `bg-muted border border-border rounded-lg`, focus `ring-2 ring-ring`, error `border-destructive`.
 
 ## 5. 레이아웃 / 뎁스 / 라운드
@@ -84,48 +86,24 @@
 
 ## 7. Do / Don't
 
-- DO: 시맨틱·로고 토큰 유틸(`bg-primary`, `text-mint-deep`, `text-purple-deep` …) 사용, 색은 2장 역할대로, 4px 그리드, Pretendard.
-- DON'T: 하드코딩 hex(특히 옛 주황 `#ffa500`·`#ff6600`·`#f29219`, `yellow-*` 유틸), 흰 바탕 위 원색 글자, 강조 글자에 `text-primary`(이제 검정이다), 26px 초과, s3보다 강한 그림자, 스프링 모션.
+- DO: 시맨틱·역할 토큰 유틸(`bg-primary`, `text-mint`, `text-mint-deep`, `bg-header-background` …) 사용, 색은 2장 역할대로, 4px 그리드, Pretendard.
+- DON'T: 하드코딩 hex(옛 `#ff6600`·`#f29219` 포함), 긴 본문을 순 주황 글자로, 26px 초과, s3보다 강한 그림자, 스프링 모션.
 
-## 8. 홈 리브랜딩 다듬기 — 코드에 아직 반영 안 된 것
+## 8. 홈 화면 규격 (라이브 색 시안 기준)
 
-홈 시안을 3장 타이포·1장 4px 그리드 기준으로 다듬었다(제목 800→700, 제목 자간 -0.03em→-0.01em, 홀수 간격을 4의 배수로, 화면 문구 끝 느낌표 제거). 색·레이아웃·글꼴·이미지는 그대로다. 같은 수정을 아래 코드에 넣어야 시안과 화면이 맞는다.
+헤더와 색은 라이브 그대로 두고, 공지 띠와 섹션 모양만 새 시안을 따른다.
 
-**굵기 800 → 700** (`font-extrabold`·`font-black` → `font-bold`)
-- `components/layout/header/main-header/service-bar.tsx` — NEW 배지
-- `components/layout/footer/index.tsx` — 고객센터 전화번호 등
-- `components/search/search-hot-keyword/index.tsx`
-- `domains/home/template/brand-showcase/brand-hall.tsx`
-- `domains/home/template/shop-trade/shop-trade-card.tsx`
-- `domains/membership-hall/components/hall-header.tsx`
-- `domains/mypage/components/desktop/user-profile-section.tsx`, `domains/mypage/components/mobile/mobile-header.tsx`
-
-**제목 자간 → `tracking-[-0.01em]`**
-- `domains/home/components/header/index.tsx` — 홈 섹션 제목
-- `domains/home/components/interest/interest-selector-banner.tsx`
-- `domains/home/template/member-savings/index.tsx`
-- `domains/membership-hall/components/hall-header.tsx`
-- `components/layout/footer/index.tsx` — 전화번호(-0.02em)
-
-**홈·헤더의 홀수 간격 → 4의 배수**
-- `components/layout/header/main-header/service-bar.tsx`, `user-actions.tsx` — `px-[5px]` → `px-1`
-- `components/layout/header/main-header/category-nav.tsx` — `px-[9px]` → `px-2`
-- `domains/home/components/interest/interest-key-chips.tsx` — 선택 칩이 2px 테두리만큼 `px-[5px] pt-[13px] pb-[11px]` 로 여백을 깎던 것을, 테두리는 1px 그대로 두고 `ring-1 ring-inset` 으로 두껍게 보이게 바꾼다. 여백 보정이 사라져 선택해도 내용이 흔들리지 않는다
-- `domains/home/template/shop-trade/shop-trade-card.tsx` — `px-[7px]` → `px-2`
-- `domains/home/components/v1-card/index.tsx` — `h-[39px]` → `h-10`
-- `domains/home/components/class-list/index.tsx`, `domains/home/components/quick-links/index.tsx` — `py-[3px]` → `py-1`
-
-**문구**
-- 멤버십 띠배너 이름 끝 느낌표 제거(`추가혜택 받으세요!` → `추가혜택 받으세요`). 코드가 아니라 어드민 배너 이름이라 어드민에서 고친다. 이 이름이 이미지 대체 텍스트로 나간다
-
-남은 곳은 아래 명령으로 다시 뽑는다. 체크아웃·마이페이지·설문 화면의 홀수 간격은 이번 홈 범위 밖이라 그 화면을 고칠 때 같이 맞춘다.
-
-```bash
-cd web/almondyoung-storefront/src
-grep -rn -E 'font-(extrabold|black)|font-\[(800|900)\]' --include='*.tsx' . | grep -v '/ui/'
-grep -rn -E 'tracking-tight|tracking-\[-0\.0[2-9]em\]' --include='*.tsx' . | grep -v '/ui/'
-grep -rn -o -E '\b(p|px|py|pt|pb|pl|pr|m[xytblr]?|gap(-[xy])?|h|w)-\[(1|3|5|7|9|11|13|15|17|19|21|23|25|27|29|31|33|35|37|39)px\]' --include='*.tsx' domains/home components/layout
-```
+- **헤더**: 라이브 헤더(스톤 바탕, 주황 카테고리 타일, 흰 검색창). 그 위에 3색 줄(주황 5 : 연노랑 3 : 스톤 2, 3px)과 공지 띠(`bg-header-border`). 모바일 공지 띠는 "자세히 보기" 글자 대신 화살표만 둔다. 모바일 헤더는 사람·장바구니 아이콘만.
+- **섹션 제목** (`domains/home/components/header`): 26px/700 검정(모바일 20px), 강조 낱말만 `text-mint`(`accent` prop). 더보기는 14px 회색 밑줄, 모바일은 제목 줄 오른쪽 위.
+- **분류 탭**: 글자만 있는 밑줄 탭. 고른 탭은 700 검정에 3px 주황 밑줄, 나머지 500 회색. 모바일은 한 줄 가로 스크롤.
+- **상품 카드 글자**: 라이브 카드(`prodcut-card/parts/product-info`)와 같다. 이름 14px 회색 한 줄, 판매가 16px 굵은 검정, 멤버십할인가는 주황 배지 + 15px 굵은 주황. 홈 v1 카드도 같은 규격.
+- **순위 배지**: 라이브 그대로(검정 바탕, 12px 굵게, 모서리 없음, 모든 순위 같은 색).
+- **내 분야**: 처음엔 알약 칩(모바일은 글자만)에서 고르고 "N개 분야 베스트 보기"를 누르면 접힌다. 접힌 뒤엔 "OO · OO 베스트" 제목 줄에 바꾸기 버튼. 1주일간 보지 않기는 모바일에서 × 버튼.
+- **브랜드관**: 흰 카드(얇은 테두리)에 인기 상품 3개를 구분선 목록으로. 고른 로고는 흰 틈 + 주황 링. 모바일은 로고 줄을 위, 카드를 아래.
+- **멤버십관**: 흰 바탕, 멤버십 상품 판매량순. PC 는 멤버십 띠배너를 섹션 안 상품 위에 두고 맨 아래 띠배너는 뺀다. 모바일은 가입 안내 없이 상품만.
+- **캔바 디자인**: 4칸 캐러셀.
+- **머신 회원가**: 스톤 옅은 바탕. 모바일은 화면 끝까지 꽉 찬 띠, 제목 22px, 작은 가입 버튼.
+- **카카오톡·맨 위로 버튼**: 같은 크기(모바일 44px, PC 52px). 카카오톡은 `#FEE500` 바탕.
 
 ## 9. Voice & Tone (마이크로카피)
 

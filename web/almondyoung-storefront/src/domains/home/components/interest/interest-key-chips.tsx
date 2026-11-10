@@ -52,12 +52,7 @@ export function InterestKeyChips({
 
   if (variant === "card") {
     return (
-      <div
-        className={cn(
-          "grid grid-cols-4 gap-2 lg:grid-cols-8 lg:gap-2.5",
-          className
-        )}
-      >
+      <div className={cn("flex flex-wrap gap-2", className)}>
         {INTEREST_CANDIDATE_CATEGORIES.map((cat) => {
           const isSelected = selectedKeys.includes(cat.key)
           const isDimmed = !isSelected && isAtMax
@@ -70,26 +65,29 @@ export function InterestKeyChips({
               aria-pressed={isSelected}
               disabled={disabled}
               className={cn(
-                "text-foreground relative flex flex-col items-center gap-2 rounded-[14px] border bg-white px-1.5 pt-3.5 pb-3 text-[13px] font-medium break-keep transition-colors disabled:cursor-not-allowed md:text-sm",
+                "flex h-10 items-center gap-2 rounded-full border px-4 text-sm whitespace-nowrap transition-colors disabled:cursor-not-allowed md:h-11 md:pl-1.5",
                 isSelected
-                  ? "border-ink ring-ink ring-1 ring-inset"
-                  : "border-border hover:border-muted-foreground",
+                  ? "border-ink bg-ink font-bold text-white"
+                  : "border-border bg-white font-medium text-gray-700 hover:border-gray-400",
                 isDimmed && "opacity-50"
               )}
             >
-              <Image
-                src={CATEGORY_ICON[cat.key]}
-                alt=""
-                width={44}
-                height={44}
-                className="size-9 shrink-0 object-contain md:size-11"
-              />
+              {/* 모바일은 아이콘 8개가 한꺼번에 보이면 어지러워 글자만 둔다 */}
+              <span
+                className={cn(
+                  "hidden size-8 shrink-0 place-items-center rounded-full md:grid",
+                  isSelected ? "bg-white" : "bg-muted"
+                )}
+              >
+                <Image
+                  src={CATEGORY_ICON[cat.key]}
+                  alt=""
+                  width={26}
+                  height={26}
+                  className="size-[26px] object-contain"
+                />
+              </span>
               {tCat(cat.key as "lash-perm")}
-              {isSelected && (
-                <span className="bg-ink absolute top-2 right-2 grid size-5 place-items-center rounded-full">
-                  <Check className="size-3 text-white" strokeWidth={3} />
-                </span>
-              )}
             </button>
           )
         })}

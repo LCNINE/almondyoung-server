@@ -30,7 +30,7 @@ function MembershipSalePrice({
       <span className="text-foreground text-[15px] font-bold whitespace-nowrap">
         {original.toLocaleString()}원
       </span>
-      <div className="text-purple-deep flex flex-col gap-0.5">
+      <div className="flex flex-col gap-0.5 text-[#ffa500]">
         <ProductMembershipBadge size="sm" label={t("membershipBadge")} />
         <span className="text-[15px] font-bold whitespace-nowrap">
           {sale.toLocaleString()}원
@@ -125,7 +125,7 @@ export default function ProductPrice({
             {price.original_price_number.toLocaleString()}원
           </span>
         )}
-        <div className="text-purple-deep flex flex-col gap-0.5">
+        <div className="flex flex-col gap-0.5 text-[#ffa500]">
           <ProductMembershipBadge size="sm" label="멤버십할인가" />
           <span className="text-[15px] font-bold">멤버십 회원 공개</span>
         </div>
@@ -182,7 +182,7 @@ export default function ProductPrice({
           </span>
         </div>
         {membershipStillCheaper && (
-          <div className="text-purple-deep flex flex-col gap-0.5">
+          <div className="flex flex-col gap-0.5 text-[#ffa500]">
             <ProductMembershipBadge size="sm" label="멤버십할인가" />
             <span className="text-[15px] font-bold whitespace-nowrap">
               {membershipPrice.toLocaleString()}원
@@ -257,7 +257,7 @@ export default function ProductPrice({
             {price.original_price_number.toLocaleString()}원
           </span>
         </div>
-        <div className="text-purple-deep flex flex-col gap-0.5">
+        <div className="flex flex-col gap-0.5 text-[#ffa500]">
           <ProductMembershipBadge size="sm" label="멤버십할인가" />
           <span className="text-[15px] font-bold whitespace-nowrap">
             {membershipPrice.toLocaleString()}원

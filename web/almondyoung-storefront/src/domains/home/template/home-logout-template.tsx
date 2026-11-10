@@ -260,12 +260,12 @@ export async function HomeLogoutTemplate({
 
       <ErrorBoundary fallback={null}>
         <Suspense fallback={null}>
-          <MembershipHallSection countryCode={countryCode} />
+          <MembershipHallSection
+            countryCode={countryCode}
+            banner={<MembershipBanner />}
+          />
         </Suspense>
       </ErrorBoundary>
-
-      {/* 멤버쉽 배너 */}
-      <MembershipBanner />
 
       {/* 웰컴 딜 섹션 - 웰컴딜 보류로 숨김 (재개 시 주석 해제) */}
       {/* <HomeSection>

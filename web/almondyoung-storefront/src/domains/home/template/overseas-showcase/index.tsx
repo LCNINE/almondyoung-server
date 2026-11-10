@@ -58,6 +58,7 @@ export async function OverseasShowcaseWrapper({
     <HomeSection background="muted" className="border-t-0">
       <SectionHead
         title={t("overseas")}
+        accent={t("overseasAccent")}
         subtitle={t("overseasDescription")}
         moreHref={`/category/${HANDLE}`}
         moreLabel={t("viewAll")}

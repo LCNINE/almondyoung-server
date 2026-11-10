@@ -2,13 +2,15 @@
   "pageTitle": "아몬드영 - 최저가 미용재료 MRO 쇼핑몰",
   "interestBanner": {
     "title": "내 분야 상품만 모아볼까요?",
-    "description": "최대 {max}개까지 고르면 홈이 그 분야 베스트로 바뀝니다.",
+    "description": "{max}개까지 고르면 그 분야 베스트만 모아 보여드려요",
     "dismiss": "1주일간 보지 않기",
     "saveFail": "저장에 실패했어요. 다시 시도해주세요.",
     "dismissFail": "처리에 실패했어요",
     "maxSelectable": "최대 {max}개까지 선택할 수 있어요",
     "selectPrompt": "분야를 골라주세요",
-    "previewSuffix": "베스트"
+    "previewSuffix": "베스트",
+    "showBest": "{count}개 분야 베스트 보기",
+    "change": "바꾸기"
   },
   "interestEdit": {
     "trigger": "편집",
@@ -28,14 +30,17 @@
   },
   "showcase": {
     "overseas": "해외 직구",
-    "canva": "아몬드템플릿",
+    "canva": "캔바 디자인",
     "class": "원데이 클래스",
     "newArrivals": "새로 들어온 상품",
     "overseasDescription": "해외에서만 만나는 상품",
     "viewAll": "전체보기",
     "newArrivalsDescription": "이번 주에 입고된 재료예요",
     "canvaDescription": "캔바에서 바로 고쳐 쓰는 교재·동의서·피드 템플릿",
-    "classDescription": "현직 원장님이 직접 가르치는 수강 과정"
+    "classDescription": "현직 원장님이 직접 가르치는 수강 과정",
+    "canvaAccent": "디자인",
+    "classAccent": "클래스",
+    "overseasAccent": "직구"
   },
   "cafe24Link": {
     "mobileText": "기존 아몬드영 계정을 연결해보세요",
@@ -65,7 +70,8 @@
     "featuredCaption": "원장님들이 많이 찾은 상품",
     "emptyCaption": "브랜드관에서 전체 상품을 볼 수 있어요",
     "goToBrand": "{name} 브랜드관 가기",
-    "membershipPrice": "멤버십가"
+    "membershipPrice": "멤버십가",
+    "allBrands": "전체 브랜드"
   },
   "heroBanner": {
     "listPrev": "이전 목록 보기",
@@ -147,6 +153,7 @@
   },
   "dailySupplies": {
     "title": "매일 쓰는 샵 소모품",
-    "subtitle": "떨어지기 전에 미리 채워 두세요"
+    "subtitle": "떨어지기 전에 미리 채워 두세요",
+    "titleAccent": "소모품"
   }
 }

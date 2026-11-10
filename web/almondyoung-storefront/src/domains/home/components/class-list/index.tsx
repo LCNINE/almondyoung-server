@@ -18,12 +18,14 @@ const MOBILE_VISIBLE = 4
 interface ClassListSectionProps {
   title: string
   subtitle?: string
+  accent?: string
   rows: ClassRow[]
 }
 
 export function ClassListSection({
   title,
   subtitle,
+  accent,
   rows,
 }: ClassListSectionProps) {
   const t = useTranslations("home.classList")
@@ -44,12 +46,13 @@ export function ClassListSection({
       <SectionHead
         title={title}
         subtitle={subtitle}
+        accent={accent}
         extra={
           tabs.length > 1 && (
             <div
               role="group"
               aria-label={t("regionLabel")}
-              className="flex flex-wrap gap-2"
+              className="-mx-4 flex w-[calc(100%+2rem)] gap-2 overflow-x-auto px-4 [scrollbar-width:none] md:mx-0 md:w-auto md:flex-wrap md:overflow-visible md:px-0 [&::-webkit-scrollbar]:hidden"
             >
               {tabs.map((key) => (
                 <button
@@ -58,7 +61,7 @@ export function ClassListSection({
                   aria-pressed={active === key}
                   onClick={() => setActive(key)}
                   className={cn(
-                    "h-9 rounded-full border px-3.5 text-[13px] font-semibold transition-colors",
+                    "h-9 shrink-0 rounded-full border px-3.5 text-[13px] font-semibold transition-colors",
                     active === key
                       ? "border-ink bg-ink text-white"
                       : "border-border text-ink bg-white"

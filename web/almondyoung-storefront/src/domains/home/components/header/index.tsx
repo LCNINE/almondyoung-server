@@ -23,21 +23,43 @@ export function Title({
   children,
   className,
   id,
+  accent,
 }: {
   children: React.ReactNode
   className?: string
   id?: string
+  /** 제목 끝의 이 낱말만 주황으로 칠한다 (라이브 섹션 제목 규칙) */
+  accent?: string
 }) {
   return (
     <h2
       id={id}
       className={cn(
-        "text-ink flex items-center gap-2 text-[20px] leading-[1.3] font-bold tracking-[-0.01em] md:text-[24px]",
+        "flex items-center gap-2 text-[20px] leading-[1.3] font-bold text-black md:text-[26px] md:leading-[1.11]",
         className
       )}
     >
-      {children}
+      <AccentText text={children} accent={accent} />
     </h2>
+  )
+}
+
+function AccentText({
+  text,
+  accent,
+}: {
+  text: React.ReactNode
+  accent?: string
+}) {
+  if (typeof text !== "string" || !accent || !text.endsWith(accent)) {
+    return <>{text}</>
+  }
+
+  return (
+    <span>
+      {text.slice(0, text.length - accent.length)}
+      <span className="text-mint">{accent}</span>
+    </span>
   )
 }
 
@@ -67,7 +89,7 @@ export function MoreButton({
   className?: string
   href: string
   label?: string
-  /** more: 13px 회색 밑줄 "더보기" / viewAll: 14px 굵게 밑줄 없는 "전체 보기" */
+  /** more: "더보기" / viewAll: "전체 보기". 모양은 같고 문구만 다르다 */
   variant?: "more" | "viewAll"
 }) {
   const t = useTranslations("home.sectionHead")
@@ -76,10 +98,7 @@ export function MoreButton({
     <LocalizedClientLink
       href={href}
       className={cn(
-        "hover:text-ink whitespace-nowrap",
-        variant === "more"
-          ? "text-muted-foreground text-[13px] underline underline-offset-4"
-          : "text-ink/80 text-sm font-semibold",
+        "text-gray-40 hover:text-ink text-sm whitespace-nowrap underline underline-offset-[3px]",
         !showOnDesktop && "md:hidden",
         className
       )}
@@ -99,8 +118,13 @@ export function SectionHead({
   extra,
   id,
   className,
+  accent,
+  centered = false,
 }: {
   title: React.ReactNode
+  accent?: string
+  /** PC 에서 제목을 가운데에 두고 더보기만 오른쪽 끝에 붙인다 (라이브 카테고리 베스트) */
+  centered?: boolean
   subtitle?: React.ReactNode
   moreHref?: string
   moreVariant?: "more" | "viewAll"
@@ -111,25 +135,43 @@ export function SectionHead({
   className?: string
 }) {
   return (
-    <Header className={cn("mb-6 flex-wrap md:mb-8 md:flex-nowrap", className)}>
-      <div className="min-w-0">
-        <Title id={id}>{title}</Title>
-        {subtitle && <Subtitle>{subtitle}</Subtitle>}
+    <Header
+      className={cn(
+        "mb-6 flex-wrap md:mb-8 md:flex-nowrap",
+        centered && "md:justify-center",
+        className
+      )}
+    >
+      <div
+        className={cn(
+          "w-full min-w-0 md:w-auto",
+          centered && "md:flex md:flex-col md:items-center md:text-center"
+        )}
+      >
+        <Title
+          id={id}
+          accent={accent}
+          className={cn(moreHref && "pr-16 md:pr-0")}
+        >
+          {title}
+        </Title>
+        {subtitle && <Subtitle className="break-keep">{subtitle}</Subtitle>}
       </div>
 
-      {(moreHref || extra) && (
-        <div className="flex items-center gap-2">
-          {moreHref && (
-            <MoreButton
-              href={moreHref}
-              variant={moreVariant}
-              label={moreLabel}
-              showOnDesktop
-            />
+      {moreHref && (
+        // 모바일은 더보기를 제목 줄 오른쪽 위에 붙여 설명문이 한 줄을 다 쓰게 한다
+        <MoreButton
+          href={moreHref}
+          variant={moreVariant}
+          label={moreLabel}
+          showOnDesktop
+          className={cn(
+            "absolute top-1 right-0",
+            centered ? "md:top-auto md:bottom-1" : "md:static"
           )}
-          {extra}
-        </div>
+        />
       )}
+      {extra}
     </Header>
   )
 }

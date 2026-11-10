@@ -12,11 +12,11 @@ export const ALMOND_TEMPLATE_HREF = "/almond-template/landing"
 export const ALMOND_TEMPLATE_IMAGE_URL = "/images/almond-template-palette.png"
 export const MEMBERSHIP_HALL_HREF = "/membership-hall"
 
-// 로고 색으로 다시 칠한 아이콘(public/images/category-icons). 바꾸면 버전을 올려 캐시를 끊는다
-export const CATEGORY_ICON_VERSION = "20261106-1"
+// 라이브와 같은 원래 색 아이콘. 바꾸면 버전을 올려 캐시를 끊는다
+export const CATEGORY_ICON_VERSION = "20260720-2"
 
 const categoryIcon = (key: string) =>
-  `/images/category-icons/${key}.png?v=${CATEGORY_ICON_VERSION}`
+  `${PUBLIC_ASSET_BASE_URL}/category-icons/${key}.png?v=${CATEGORY_ICON_VERSION}`
 
 export const CATEGORY_ICON_URLS: Record<string, string> = {
   "lash-perm": categoryIcon("lash-perm"),

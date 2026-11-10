@@ -31,14 +31,14 @@ export function ProductMembershipBadge({
   return (
     <span
       className={cn(
-        "text-purple-deep inline-flex items-center gap-0.5 font-bold whitespace-nowrap",
+        "inline-flex items-center gap-0.5 font-bold whitespace-nowrap text-[#ffa500]",
         styles.text,
         className
       )}
     >
       <span
         className={cn(
-          "bg-purple-deep flex items-center justify-center rounded-full text-white",
+          "flex items-center justify-center rounded-full bg-[#ffa500] text-white",
           styles.dot,
           dotClassName
         )}
