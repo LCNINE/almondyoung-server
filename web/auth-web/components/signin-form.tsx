@@ -51,6 +51,18 @@ export function SignInForm({
 
   const onSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
+    // 브라우저 말풍선 대신 아래 오류 줄에 사유를 보인다.
+    const invalid = Array.from(e.currentTarget.elements).find(
+      (el): el is HTMLInputElement =>
+        el instanceof HTMLInputElement && !el.validity.valid
+    )
+    if (invalid) {
+      setError(formatError(invalid))
+      invalid.focus()
+
+      return
+    }
+
     const formData = new FormData(e.currentTarget)
     // 여기서 setError(null) 하지 않는다 — 결과가 오면 덮어쓴다. 미리 지우면 에러 줄이 사라지며
     // 버튼이 위로 튀었다가 다시 내려온다 (성공하면 어차피 화면을 떠난다).
@@ -61,7 +73,7 @@ export function SignInForm({
   }
 
   return (
-    <form onSubmit={onSubmit} className="flex flex-1 flex-col gap-4">
+    <form noValidate onSubmit={onSubmit} className="flex flex-1 flex-col gap-4">
       <input type="hidden" name="redirectTo" value={redirectTo} />
       <input type="hidden" name="reauthUserId" value={reauthUserId} />
       {hasPrefilledLoginId ? (
@@ -148,4 +160,17 @@ export function SignInForm({
       )}
     </form>
   )
+}
+
+function formatError(input: HTMLInputElement) {
+  const missing = input.validity.valueMissing
+  if (input.name === "password") {
+    return missing
+      ? "비밀번호를 입력해주세요."
+      : "비밀번호는 8~20자로 입력해주세요."
+  }
+
+  return missing
+    ? "아이디를 입력해주세요."
+    : "아이디는 영문 소문자와 숫자만, 4~20자로 입력해주세요."
 }
