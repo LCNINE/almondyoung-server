@@ -320,6 +320,49 @@ for (const path of [
   });
 }
 
+it('권한 부족으로 거절된 작업은 요구 권한을 저장하고 확인 화면에 그대로 넘긴다', async () => {
+  const store = createOperationStore(crypto.randomUUID());
+  const runner = createOperationRunner({
+    store,
+    getScope: async () => 'a',
+    wait: async () => {},
+    api: {
+      request: async () => {
+        throw new ApiError(
+          'POST /inventory/stocks/adjust → 403',
+          403,
+          'FORBIDDEN',
+          undefined,
+          undefined,
+          ['inventory.stock.adjust']
+        );
+      },
+    },
+  });
+  void runner
+    .request({
+      method: 'POST',
+      path: '/inventory/stocks/adjust',
+      body: { skuId: 's', delta: 1 },
+      idempotencyKey: 'denied',
+    })
+    .catch(() => {});
+  await vi.waitFor(async () =>
+    expect(await store.get('denied')).toMatchObject({
+      status: 'uncertain',
+      errorCode: 'FORBIDDEN',
+      requiredPermissions: ['inventory.stock.adjust'],
+    })
+  );
+  await vi.waitFor(() =>
+    expect(runner.getSnapshot()).toEqual([
+      expect.objectContaining({
+        requiredPermissions: ['inventory.stock.adjust'],
+      }),
+    ])
+  );
+});
+
 describe('location force resolution', () => {
   const path = '/shipments/s/location-outbound-forces';
   const resolutionPath = '/shipments/s/location-outbound-force-resolutions';

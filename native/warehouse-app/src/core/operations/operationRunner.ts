@@ -179,7 +179,8 @@ export function createOperationRunner(deps: {
               ? failure.code
               : undefined,
           ownership,
-          failure instanceof ApiError ? failure.preparation : undefined
+          failure instanceof ApiError ? failure.preparation : undefined,
+          failure instanceof ApiError ? failure.requiredPermissions : undefined
         );
         const saved = (await deps.store.get(input.id))!;
         recordDiagnostic(saved);

@@ -303,3 +303,37 @@ describe('서버 도달 기록(상태바 «서버»)', () => {
     expect(currentServerReach()).toBe('up');
   });
 });
+
+it('403 본문의 요구 권한을 오류에 싣고, 결과를 모르는 분류는 그대로 둔다', async () => {
+  const client = createApiClient({
+    baseUrl: 'https://api.test',
+    getToken: async () => 'TOK',
+    authMode: 'bearer',
+    doFetch: async () =>
+      jsonResponse(403, {
+        code: 'FORBIDDEN',
+        message: 'Permission required',
+        requiredPermissions: ['inventory.stock.adjust', 7],
+      }),
+  });
+  const error = await client
+    .request({ method: 'POST', path: '/inventory/stocks/adjust' })
+    .catch((e: unknown) => e);
+  if (!(error instanceof ApiError)) throw new Error('Expected ApiError');
+  expect(error.status).toBe(403);
+  expect(error.requiredPermissions).toEqual(['inventory.stock.adjust']);
+  expect(error.outcome).toBe('uncertain');
+});
+
+it('403 이 아닌 응답의 requiredPermissions 는 읽지 않는다', async () => {
+  const client = createApiClient({
+    baseUrl: 'https://api.test',
+    getToken: async () => 'TOK',
+    authMode: 'bearer',
+    doFetch: async () =>
+      jsonResponse(400, { requiredPermissions: ['inventory.stock.adjust'] }),
+  });
+  const error = await client.request({ path: '/x' }).catch((e: unknown) => e);
+  if (!(error instanceof ApiError)) throw new Error('Expected ApiError');
+  expect(error.requiredPermissions).toBeUndefined();
+});

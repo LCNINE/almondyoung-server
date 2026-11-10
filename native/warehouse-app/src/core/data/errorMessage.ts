@@ -1,3 +1,4 @@
+import { permissionNames } from '../auth/permissionNames';
 import { ApiError, ConflictError } from './httpClient';
 
 /** 같은 상태 코드라도 화면 문맥에 따라 현장에 필요한 문구가 다르다. */
@@ -219,14 +220,20 @@ export function errorMessage(error: unknown, context?: ErrorContext): string {
   if (error instanceof Error) {
     const match = /→\s*(\d{3})/.exec(error.message);
     const status = match ? Number(match[1]) : undefined;
-    // 문맥 문구가 일반 문구보다 먼저다 — 403 을 "다시 로그인" 으로 뭉개면
-    // 강제출고 권한 부족이 로그인 문제로 오인된다.
+    // 문맥 문구가 일반 문구보다 먼저다 — 강제출고 권한 부족처럼 화면이 더 정확히 안다.
     if (status !== undefined && context) {
       const specific = CONTEXTUAL[context][status];
       if (specific) return specific;
     }
-    if (status === 401 || status === 403)
-      return '권한이 없어요. 다시 로그인해 주세요.';
+    // 권한 부족은 다시 로그인해도 풀리지 않는다 — 만료(401)와 나눠 안내한다.
+    if (status === 401) return '로그인이 만료됐어요. 다시 로그인해 주세요.';
+    if (status === 403) {
+      const required =
+        error instanceof ApiError ? (error.requiredPermissions ?? []) : [];
+      return required.length
+        ? `이 작업에는 ${permissionNames(required)} 권한이 필요해요. 관리자에게 권한을 요청해 주세요.`
+        : '이 작업을 할 권한이 없어요. 관리자에게 확인해 주세요.';
+    }
     if (status !== undefined && status >= 500) {
       return '서버에 문제가 있어요. 잠시 후 다시 시도해 주세요.';
     }
