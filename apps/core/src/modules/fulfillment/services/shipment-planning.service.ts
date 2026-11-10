@@ -242,7 +242,7 @@ export class ShipmentPlanningService {
               selected.map((entry) => entry.line.id),
               tx,
             );
-            const reservationTargets = new Map<string, number>();
+            const reservationTargets = new Map<string, { source: number; target: number }>();
             for (const { move, line } of selected) {
               const confirmed = confirmedByLine.get(line.id) ?? 0;
               const unreserved = line.qty - confirmed;
@@ -254,7 +254,7 @@ export class ShipmentPlanningService {
                   `targetReservedQty for line ${line.id} must be between ${minimum} and ${maximum}`,
                 );
               }
-              reservationTargets.set(line.id, requested);
+              reservationTargets.set(line.id, { source: confirmed - requested, target: requested });
             }
 
             return this.applySplit(tx, writer, {
@@ -345,7 +345,9 @@ export class ShipmentPlanningService {
                 move: { shipmentLineId: line.id, expectedLineVersion: line.lineVersion, qty: unreservedOf(line) },
                 line,
               }));
-            const reservationTargets = new Map(selected.map(({ line }) => [line.id, 0]));
+            const reservationTargets = new Map(
+              selected.map(({ line }) => [line.id, { source: confirmedByLine.get(line.id) ?? 0, target: 0 }]),
+            );
             return this.applySplit(tx, writer, {
               aggregate: locked,
               selected,
@@ -1580,7 +1582,7 @@ export class ShipmentPlanningService {
     args: {
       aggregate: ShipmentAggregate;
       selected: Array<{ move: ShipmentSplitMoveDto; line: ShipmentAggregate['lines'][number] }>;
-      reservationTargets: Map<string, number>;
+      reservationTargets: Map<string, { source: number; target: number }>;
       actor: ShipmentPlanningActor;
       meta: ShipmentCommandReasonDto;
       idempotencyKey: string;
@@ -1618,7 +1620,10 @@ export class ShipmentPlanningService {
 
     let wholeLineReservationMove = false;
     for (const { move, line } of selected) {
-      const targetReservedQty = reservationTargets.get(line.id) ?? 0;
+      const allocation = reservationTargets.get(line.id);
+      if (!allocation) throw new Error(`Missing reservation allocation for shipment line ${line.id}`);
+
+      const targetReservedQty = allocation.target;
       if (move.qty === line.qty) {
         await writer.moveLine(line.id, shipmentId, target.id);
         wholeLineReservationMove ||= targetReservedQty > 0;
@@ -1628,7 +1633,7 @@ export class ShipmentPlanningService {
       // 원래 라인의 재고 대기 순번은 예약을 옮기기 «전에» 읽는다 — 새 라인이 «지금» 으로
       // 줄 맨 뒤에 서면, 나눠 보낸 것 때문에 이 주문이 뒤에 온 주문보다 늦게 재고를 받는다.
       const demandRequestedAt = await loadReservationQueueKey(tx, line.id);
-      await writer.setLineQty(line.id, shipmentId, line.qty - move.qty);
+      await writer.setLineQty(line.id, shipmentId, line.qty - move.qty, allocation.source);
       const targetLine = await writer.addLine(target.id, {
         fulfillmentOrderItemId: line.fulfillmentOrderItemId,
         skuId: line.skuId,

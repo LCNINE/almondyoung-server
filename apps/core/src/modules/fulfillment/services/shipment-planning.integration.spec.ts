@@ -251,6 +251,150 @@ describeIfDb('ShipmentPlanningService (DB integration)', () => {
     });
   });
 
+  it.each([
+    {
+      name: 'fully reserved',
+      onHand: 8,
+      moveQty: 3,
+      targetReservedQty: undefined,
+      sourceQty: 5,
+      sourceReserved: 5,
+      targetReserved: 3,
+    },
+    {
+      name: 'partially reserved',
+      onHand: 6,
+      moveQty: 4,
+      targetReservedQty: undefined,
+      sourceQty: 4,
+      sourceReserved: 4,
+      targetReserved: 2,
+    },
+    {
+      name: 'explicit reservation allocation',
+      onHand: 6,
+      moveQty: 3,
+      targetReservedQty: 3,
+      sourceQty: 5,
+      sourceReserved: 3,
+      targetReserved: 3,
+    },
+  ])('splits a $name line without losing reservations on replay', async (scenario) => {
+    await inRollbackTx(db, async (tx) => {
+      const fixture = await physicalFixture(tx, 8, scenario.onHand);
+      const [originalReservation] = await tx
+        .select()
+        .from(wmsTables.stockReservations)
+        .where(eq(wmsTables.stockReservations.shipmentLineId, fixture.line.id));
+      const key = `split-${randomUUID()}`;
+      const request = {
+        expectedManifestVersion: fixture.shipment.manifestVersion,
+        reason: 'separate shipment',
+        moves: [
+          {
+            shipmentLineId: fixture.line.id,
+            expectedLineVersion: fixture.line.lineVersion,
+            qty: scenario.moveQty,
+            targetReservedQty: scenario.targetReservedQty,
+          },
+        ],
+      };
+
+      const result = await planning.split(fixture.shipment.id, request, key, actor, tx);
+
+      expect(result.source.lines).toEqual([
+        expect.objectContaining({ id: fixture.line.id, qty: scenario.sourceQty, reservedQty: scenario.sourceReserved }),
+      ]);
+      expect(result.target.lines).toEqual([
+        expect.objectContaining({ qty: scenario.moveQty, reservedQty: scenario.targetReserved }),
+      ]);
+      expect(await planning.split(fixture.shipment.id, request, key, actor, tx)).toEqual(result);
+
+      const lines = await tx
+        .select()
+        .from(wmsTables.shipmentLines)
+        .where(eq(wmsTables.shipmentLines.fulfillmentOrderItemId, fixture.item.id));
+      const reservations = await tx
+        .select()
+        .from(wmsTables.stockReservations)
+        .where(
+          and(
+            inArray(
+              wmsTables.stockReservations.shipmentLineId,
+              lines.map((line) => line.id),
+            ),
+            eq(wmsTables.stockReservations.status, 'confirmed'),
+          ),
+        );
+
+      expect(lines).toHaveLength(2);
+      expect(lines.reduce((sum, line) => sum + line.qty, 0)).toBe(8);
+      expect(reservations.reduce((sum, row) => sum + row.quantity, 0)).toBe(scenario.onHand);
+      expect(
+        reservations.every((row) => row.requestedAt?.getTime() === originalReservation.requestedAt?.getTime()),
+      ).toBe(true);
+      expect(await confirmedQty(tx, fixture.line.id)).toBe(scenario.sourceReserved);
+      expect(await confirmedQty(tx, result.target.lines[0].id)).toBe(scenario.targetReserved);
+    });
+  });
+
+  it('rolls back a split when its required audit fails and accepts the same key afterward', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const fixture = await physicalFixture(tx, 8, 8);
+      const key = `split-${randomUUID()}`;
+      const request = {
+        expectedManifestVersion: fixture.shipment.manifestVersion,
+        reason: 'separate shipment',
+        moves: [{ shipmentLineId: fixture.line.id, expectedLineVersion: fixture.line.lineVersion, qty: 3 }],
+      };
+      const reservationsBefore = await tx
+        .select()
+        .from(wmsTables.stockReservations)
+        .where(eq(wmsTables.stockReservations.shipmentLineId, fixture.line.id));
+      const failure = new Error('split audit interrupted');
+      const spy = jest.spyOn(AuditService.prototype, 'logUserActionRequired').mockRejectedValueOnce(failure);
+
+      try {
+        await expect(
+          tx.transaction((nestedTx) => planning.split(fixture.shipment.id, request, key, actor, nestedTx)),
+        ).rejects.toThrow(failure);
+      } finally {
+        spy.mockRestore();
+      }
+
+      expect(await shipmentRow(tx, fixture.shipment.id)).toEqual(fixture.shipment);
+      expect(
+        await tx
+          .select()
+          .from(wmsTables.shipmentLines)
+          .where(eq(wmsTables.shipmentLines.fulfillmentOrderItemId, fixture.item.id)),
+      ).toEqual([fixture.line]);
+      expect(
+        await tx
+          .select()
+          .from(wmsTables.stockReservations)
+          .where(eq(wmsTables.stockReservations.shipmentLineId, fixture.line.id)),
+      ).toEqual(reservationsBefore);
+      expect(
+        await tx
+          .select()
+          .from(wmsTables.shipmentOperations)
+          .where(eq(wmsTables.shipmentOperations.idempotencyKey, key)),
+      ).toEqual([]);
+      expect(
+        await tx
+          .select()
+          .from(wmsTables.fulfillmentCommandRequests)
+          .where(eq(wmsTables.fulfillmentCommandRequests.idempotencyKey, key)),
+      ).toEqual([]);
+
+      const result = await planning.split(fixture.shipment.id, request, key, actor, tx);
+
+      expect(result.source.lines).toEqual([expect.objectContaining({ qty: 5, reservedQty: 5 })]);
+      expect(result.target.lines).toEqual([expect.objectContaining({ qty: 3, reservedQty: 3 })]);
+    });
+  });
+
   it('carries the entrance password onto the split target — a split box faces the same door', async () => {
     await inRollbackTx(db, async (tx) => {
       const fixture = await physicalFixture(tx, 10, 6);
@@ -455,11 +599,12 @@ describeIfDb('ShipmentPlanningService (DB integration)', () => {
         .update(wmsTables.shipments)
         .set({ entrancePassword: '#1234' })
         .where(eq(wmsTables.shipments.id, fixture.shipment.id));
+      const secondItem = await op.seedFo(tx, fixture, await op.seedOrder(tx, { quantity: 2 }), { qty: 2 });
       const [second] = await tx
         .insert(wmsTables.shipmentLines)
         .values({
           shipmentId: fixture.shipment.id,
-          fulfillmentOrderItemId: fixture.item.id,
+          fulfillmentOrderItemId: secondItem.foItemId,
           skuId: fixture.skuId,
           qty: 2,
         })
@@ -485,7 +630,8 @@ describeIfDb('ShipmentPlanningService (DB integration)', () => {
           and(eq(wmsTables.shipments.warehouseId, fixture.warehouseId), eq(wmsTables.shipments.status, 'canceled')),
         );
       // 묘비는 송장을 발행하지 않는다 — 비번을 실으면 배송 완료 파기가 못 닿는 사본만 는다.
-      expect(tombstone?.entrancePassword ?? null).toBeNull();
+      expect(tombstone).toBeDefined();
+      expect(tombstone.entrancePassword).toBeNull();
     });
   });
 
