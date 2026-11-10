@@ -128,6 +128,9 @@ async function rasterize(
       const fileId = href.match(/\/files\/public\/([0-9a-f-]{36})/)?.[1]
       const source = fileId ? fileImageRef(fileId) : href
       if (!source.startsWith("data:") && !fileId) return node.remove()
+      // 클립아트 SVG 는 createImageBitmap 이 디코딩하지 못하고, 자체 완결이라 그대로 그려도 된다
+      if (source.startsWith("data:image/svg+xml")) return
+
       try {
         const blob = await retryTransient(() =>
           imageBlob(previewOf(source, previews))
