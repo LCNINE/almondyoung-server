@@ -82,6 +82,18 @@ export function scaleSvgSizeMm(svg: string, factor: number): string {
   );
 }
 
+// 편집기 썸네일은 px 크기로 그린 래스터라, 렌더러가 읽는 mm 크기를 템플릿 규격으로 붙인다
+export function withRootSizeMm(svg: string, widthMm: number, heightMm: number): string {
+  if (readSvgSizeMm(svg)) return svg;
+
+  return svg.replace(ROOT_SVG_TAG, (root) =>
+    root
+      .replace(/\swidth\s*=\s*["'][^"']*["']/i, '')
+      .replace(/\sheight\s*=\s*["'][^"']*["']/i, '')
+      .replace(/^<svg\b/i, `<svg width="${formatMm(widthMm)}mm" height="${formatMm(heightMm)}mm"`),
+  );
+}
+
 export function toFileScale(svg: string, designWidthMm: number, fileScale: number): string {
   const size = readSvgSizeMm(svg);
   return fileScale < 1 && size && size.width >= designWidthMm ? scaleSvgSizeMm(svg, fileScale) : svg;

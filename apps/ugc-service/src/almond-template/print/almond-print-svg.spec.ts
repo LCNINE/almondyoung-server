@@ -8,6 +8,7 @@ import {
   readSvgSizeMm,
   sniffImageMime,
   toFileScale,
+  withRootSizeMm,
 } from './almond-print-svg';
 
 const FILE_A = '11111111-1111-4111-8111-111111111111';
@@ -151,5 +152,23 @@ describe('sniffImageMime', () => {
     ['html', Buffer.from('<html></html>'), null],
   ])('%s', (_, bytes, expected) => {
     expect(sniffImageMime(bytes)).toBe(expected);
+  });
+});
+
+describe('withRootSizeMm', () => {
+  it('stamps the template size in mm onto a px thumbnail root', () => {
+    const thumbnail = svg(`<image href="${PNG_DATA}"/>`, 'width="800" height="444" viewBox="0 0 800 444"');
+
+    const sized = withRootSizeMm(thumbnail, 90, 50);
+
+    expect(readSvgSizeMm(sized)).toEqual({ width: 90, height: 50 });
+    expect(sized).toContain('viewBox="0 0 800 444"');
+    expect(sized).toContain(`<image href="${PNG_DATA}"/>`);
+  });
+
+  it('keeps an svg that already has an mm size', () => {
+    const design = svg('');
+
+    expect(withRootSizeMm(design, 90, 50)).toBe(design);
   });
 });
