@@ -15,6 +15,11 @@
     "moduleDetection": "force",
     "noEmit": true,
     "jsx": "react-jsx",
+    "paths": {
+      "@permission-catalog": [
+        "../../libs/authorization/src/permissions/index.ts"
+      ]
+    },
 
     /* Linting */
     "noUnusedLocals": true,

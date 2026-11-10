@@ -1,9 +1,9 @@
 import {
   INITIAL_GRANT_ROLES,
-  OwnerService,
+  type OwnerService,
   PERMISSION_DOMAINS,
-  InitialGrantRole,
-  PermissionDefinition,
+  type InitialGrantRole,
+  type PermissionDefinition,
 } from './permission.types';
 
 export { INITIAL_GRANT_ROLES, PERMISSION_DOMAINS };

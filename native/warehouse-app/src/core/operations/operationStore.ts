@@ -1,5 +1,6 @@
 import {
   parsePreparationRejection,
+  readRequiredPermissions,
   type PreparationRejection,
 } from '../data/httpClient';
 export type OperationStatus =
@@ -21,6 +22,7 @@ export interface StoredOperation extends OperationInput {
   result?: unknown;
   errorCode?: string;
   preparation?: PreparationRejection;
+  requiredPermissions?: string[];
 }
 const unresolved = (o: StoredOperation) =>
   !['confirmed', 'rejected'].includes(o.status);
@@ -146,7 +148,8 @@ export function createOperationStore(name = 'almondwms-work-v2') {
     result?: unknown,
     errorCode?: string,
     ownership?: { scope: string; ownerId: string },
-    preparation?: PreparationRejection
+    preparation?: PreparationRejection,
+    requiredPermissions?: readonly string[]
   ) =>
     transaction<void>('readwrite', (s, done) => {
       const r = s.get(id);
@@ -172,6 +175,9 @@ export function createOperationStore(name = 'almondwms-work-v2') {
               errorCode === 'SIMPLE_OUTBOUND_PLAN_INVALIDATED'
                 ? parsePreparationRejection(preparation)
                 : undefined,
+            requiredPermissions: requiredPermissions?.length
+              ? readRequiredPermissions(requiredPermissions)
+              : undefined,
             attempts: r.result.attempts + (status === 'sending' ? 1 : 0),
           });
         done();

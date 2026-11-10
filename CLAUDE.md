@@ -356,7 +356,7 @@ Cross-BC **seam** services (those that legitimately span schemas, e.g. `ProductS
 `apps/admin-web/src/lib/auth/screen-access.ts` 에 경로 권한을 적는다(없으면 `screen-access.gate.spec.ts` 가 빨갛다).
 Medusa 를 새로 부르면 `medusa-permissions.ts` 에 경로를 더한다(`medusa-coverage.spec.ts`). 새 뮤테이션 훅은
 `useX.permission` 을 선언하고, 그 동작을 부르는 화면은 `run={useX}` 로 판정한다(없으면 `mutation-guard.gate.spec.ts` 가
-빨갛다). admin-web 은 권한 목록을 `@permission-catalog` 별칭으로 원본 그대로 가져오므로 `libs/authorization/src/permissions` 는 폴더 밖을 import 하지 않는다.
+빨갛다). admin-web 과 물류앱은 권한 목록을 `@permission-catalog` 별칭으로 원본 그대로 가져오므로 `libs/authorization/src/permissions` 는 폴더 밖을 import 하지 않는다(물류앱 403 안내가 권한 이름을 여기서 찾는다).
 
 고객 개인정보(이름·연락처·이메일·주소·계좌)를 응답하는 새 관리자 라우트는 `@PiiResponse` 로 가릴 경로와 대상 식별자 경로를
 선언하고 `scripts/security/pii-routes.ts` 에 한 줄 더한다(없으면 `pii-routes.spec.ts` 가 빨갛다). 선언을 처음 다는 앱은 루트 모듈의

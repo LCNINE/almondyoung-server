@@ -43,6 +43,11 @@ export function parsePreparationRejection(
   return { reasonCode, recovery: value.recovery };
 }
 
+export function readRequiredPermissions(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((key): key is string => typeof key === 'string');
+}
+
 export class ApiError extends Error {
   readonly outcome: 'rejected' | 'uncertain';
   readonly retryable: boolean;
@@ -51,17 +56,22 @@ export class ApiError extends Error {
   readonly preparation?: PreparationRejection;
   /** 409 본문의 `errors` 그대로(배치 시작 차단 목록 등). */
   readonly errors?: unknown;
+  /** 403 본문이 알려 준 요구 권한 키(어느 하나면 된다). */
+  readonly requiredPermissions?: readonly string[];
   constructor(
     message: string,
     status: number,
     code?: string,
     preparation?: PreparationRejection,
-    errors?: unknown
+    errors?: unknown,
+    requiredPermissions?: readonly string[]
   ) {
     super(message);
     this.status = status;
     this.errors = errors;
     this.code = code;
+    if (requiredPermissions?.length)
+      this.requiredPermissions = [...requiredPermissions];
     const rejected =
       !!code &&
       ([
@@ -228,11 +238,17 @@ export function createApiClient(deps: {
         const body = (await res.json().catch(() => ({}))) as {
           code?: string;
           error?: string;
+          requiredPermissions?: unknown;
         };
         throw new ApiError(
           `${method} ${o.path} → ${res.status}`,
           res.status,
-          body.code ?? body.error
+          body.code ?? body.error,
+          undefined,
+          undefined,
+          res.status === 403
+            ? readRequiredPermissions(body.requiredPermissions)
+            : undefined
         );
       }
       if (res.status === 204) return undefined as T;
