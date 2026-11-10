@@ -7,7 +7,7 @@ import {
   Optional,
 } from '@nestjs/common';
 import { DbService } from '@app/db';
-import { BadRequestError } from '@app/shared';
+import { BadRequestError, ConflictError, ServiceUnavailableError } from '@app/shared';
 import { InjectTypedDb } from '@app/db/decorators';
 import { wmsTables, wmsSchema, DbTx } from '../../inventory/schema/inventory.schema';
 import {
@@ -38,6 +38,11 @@ import { lineMatchingBadgeResolvedSql } from '../../product-matching/line-compos
 import { isDigitalFulfillmentLine, isOutsourcedLine } from '../../product-matching/line-composition/line-composition';
 import { selectFrozenCompositions } from '../../product-matching/line-composition/frozen-compositions';
 import { physicalCancellationByItem } from './boxed-cancellation-units';
+import {
+  MANUAL_ORDER_SALES_CHANNEL,
+  isChannelOrderNumberConflict,
+  manualOrderNumberConflictMessage,
+} from './manual-sales-order';
 import { lineSkuQuantitiesSql } from '../line-quantities/line-quantities.sql';
 import { LineQuantities, readLineQuantities } from '../line-quantities/line-quantities.reader';
 import { cancellableSalesUnits } from '../line-quantities/line-sales-units';
@@ -319,6 +324,7 @@ export class SalesOrdersService {
             shippingFee: dto.shippingFee ?? 0,
             mergeGroupId: dto.mergeGroupId ?? null,
             isMerged: false,
+            memo: dto.memo ?? null,
             walletIntentId: dto.walletIntentId ?? null,
             orderDate,
             // 최초 insert 경로라 기존 값을 덮어쓸 걱정이 없다 (existing row 없음).
@@ -421,6 +427,49 @@ export class SalesOrdersService {
         timer?.();
         this.metrics?.incrementErrorCounter('order', 'create_failed', 'high');
         this.metrics?.incrementBusinessOperation('order', 'create', 'failure');
+        throw error;
+      });
+  }
+
+  // 관리자가 입력하는 주문은 이미 받은 주문이라 저장과 함께 출고 대기열에 넣는다(채널 수집의 결제 확인 주문과 같은 자리)
+  async createManual(dto: CreateSalesOrderDto) {
+    if (dto.salesChannel !== MANUAL_ORDER_SALES_CHANNEL) {
+      throw new BadRequestError('직접 입력한 주문은 수기·기타 채널로만 저장할 수 있습니다.');
+    }
+    // 금액·수량 칸은 정수 컬럼이다 — 소수는 DB 오류(500)가 되기 전에 입력 오류로 돌려보낸다
+    const fractional = [
+      dto.totalAmount,
+      dto.shippingFee,
+      ...dto.lines.flatMap((l) => [l.quantity, l.unitPrice, l.totalPrice]),
+    ]
+      .filter((value): value is number => value !== undefined)
+      .some((value) => !Number.isInteger(value));
+    if (fractional) {
+      throw new BadRequestError('수량과 금액은 원 단위 정수로 입력해 주세요.');
+    }
+    return this.db
+      .run(async (trx) => {
+        if (await this.findByChannelOrderId(MANUAL_ORDER_SALES_CHANNEL, dto.channelOrderId, trx)) {
+          throw new ConflictError(manualOrderNumberConflictMessage(dto.channelOrderId));
+        }
+        const order = await this.create(dto, trx, { paymentConfirmed: true });
+        const queued = await this.fulfillmentBacklog.enqueueForSalesOrder(
+          order.id,
+          { eventOccurredAt: order.orderDate, isNewSalesOrder: true },
+          trx,
+        );
+        // 출고로 넘어가지 못한 주문을 남기면 같은 번호로 다시 저장할 수도 없다 — 통째로 되돌린다
+        if (!queued) {
+          throw new ServiceUnavailableError(
+            '지금은 출고 작업을 받을 수 없어 주문을 저장하지 않았습니다. 잠시 뒤 다시 저장해 주세요.',
+          );
+        }
+        return order;
+      })
+      .catch((error: unknown) => {
+        if (isChannelOrderNumberConflict(error)) {
+          throw new ConflictError(manualOrderNumberConflictMessage(dto.channelOrderId));
+        }
         throw error;
       });
   }
