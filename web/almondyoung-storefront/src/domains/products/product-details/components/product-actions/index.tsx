@@ -1,5 +1,6 @@
 "use client"
 
+import Image from "next/image"
 import { useQuantityDiscountNow } from "@/hooks/use-quantity-discount-now"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
@@ -629,6 +630,12 @@ export default function ProductActions({
           {templateHref && (
             <LocalizedClientLink href={templateHref} className="w-full">
               <Button variant="outline" className="h-12 w-full">
+                <Image
+                  src="/images/almond-template-palette.png"
+                  alt=""
+                  width={20}
+                  height={20}
+                />
                 아몬드템플릿으로 디자인
               </Button>
             </LocalizedClientLink>

@@ -1,5 +1,6 @@
 "use client"
 
+import Image from "next/image"
 import { Button } from "@/components/ui/button"
 import { Drawer, DrawerContent, DrawerTitle } from "@/components/ui/drawer"
 import { Separator } from "@/components/ui/separator"
@@ -123,6 +124,12 @@ const MobileActions: React.FC<MobileActionsProps> = ({
           {templateHref && (
             <LocalizedClientLink href={templateHref} className="w-full">
               <Button variant="outline" className="h-12 w-full">
+                <Image
+                  src="/images/almond-template-palette.png"
+                  alt=""
+                  width={20}
+                  height={20}
+                />
                 아몬드템플릿으로 디자인
               </Button>
             </LocalizedClientLink>
@@ -309,6 +316,12 @@ const MobileActions: React.FC<MobileActionsProps> = ({
                 className="mb-2 block w-full"
               >
                 <Button variant="outline" className="h-12 w-full">
+                  <Image
+                    src="/images/almond-template-palette.png"
+                    alt=""
+                    width={20}
+                    height={20}
+                  />
                   아몬드템플릿으로 디자인
                 </Button>
               </LocalizedClientLink>
