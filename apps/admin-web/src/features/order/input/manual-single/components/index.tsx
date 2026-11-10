@@ -1,28 +1,15 @@
 // src/features/order/input/manual-single/components/index.tsx
 'use client';
 
-import { useSkuSearch, useWarehouses } from '@/lib/services/inventory';
+import { useWarehouses } from '@/lib/services/inventory';
 import { useCreateSalesOrder } from '@/lib/services/orders';
-import {
-  useActiveChannels,
-  useMasters,
-  useVariantsByMaster,
-} from '@/lib/services/products';
+import { useActiveChannels } from '@/lib/services/products';
 import { useRouter } from 'next/navigation';
 import React, { useMemo, useState } from 'react';
-import { useDebounced } from '@/hooks/use-debounced';
 
 import { AddressSearchDialog } from '@/components/common/address-search-dialog';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
@@ -41,11 +28,14 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { X } from 'lucide-react';
 import { toast } from 'sonner';
 import { CustomerSearchDialog } from './CustomerSearchDialog';
+import {
+  ProductSearchDialog,
+  type ProductSearchPick,
+} from './product-search-dialog';
 
 // -------------------------
 type OrderLine = {
@@ -54,9 +44,11 @@ type OrderLine = {
   refId: string;
   name: string;
   optionText?: string;
+  variantId?: string;
   skuId?: string;
   quantity: number;
-  price: number;
+  /** 가격을 모르는 상품은 null — 작업자가 단가를 입력한다. */
+  price: number | null;
 };
 
 type Customer = {
@@ -76,8 +68,25 @@ type Address = {
 };
 
 // -------------------------
-/** 상품검색 모달이 한 번에 받는 건수. */
-const SEARCH_LIMIT = 20;
+const toOrderLine = (p: ProductSearchPick): Omit<OrderLine, 'id'> =>
+  p.type === 'product'
+    ? {
+        type: 'product',
+        refId: p.masterId,
+        name: p.name,
+        optionText: p.optionText,
+        variantId: p.variantId,
+        quantity: 1,
+        price: p.price,
+      }
+    : {
+        type: 'sku',
+        refId: p.skuId,
+        name: p.name,
+        skuId: p.skuId,
+        quantity: 1,
+        price: p.price,
+      };
 
 const seq = { n: 1 };
 const genOrderNo = () => {
@@ -138,6 +147,8 @@ export default function ManualSingleOrderPage() {
       ),
     [lines]
   );
+
+  const unpricedCount = lines.filter((l) => l.price == null).length;
 
   const addLine = (l: Omit<OrderLine, 'id'>) =>
     setLines((prev) => [{ ...l, id: crypto.randomUUID() }, ...prev]);
@@ -435,9 +446,12 @@ export default function ManualSingleOrderPage() {
       {/* 주문상품 */}
       <Section title="주문상품 정보입력">
         <div className="flex items-center justify-between">
-          <ProductSearch addLine={addLine} />
+          <ProductSearchDialog onPick={(p) => addLine(toOrderLine(p))} />
           <div className="text-sm text-muted-foreground">
             총 {totalQty}개 / 합계 {totalAmt.toLocaleString()} 원
+            {unpricedCount > 0
+              ? ` (단가 미입력 ${unpricedCount}개 제외)`
+              : ''}
           </div>
         </div>
 
@@ -488,9 +502,15 @@ export default function ManualSingleOrderPage() {
                     <Input
                       type="number"
                       min={0}
-                      value={l.price}
+                      placeholder="단가 입력"
+                      value={l.price ?? ''}
                       onChange={(e) =>
-                        updateLine(l.id, { price: Number(e.target.value) })
+                        updateLine(l.id, {
+                          price:
+                            e.target.value === ''
+                              ? null
+                              : Number(e.target.value),
+                        })
                       }
                     />
                   </TableCell>
@@ -579,215 +599,4 @@ function Field({
       {children}
     </div>
   );
-}
-
-// -------------------------
-// 상품 검색 모달
-// -------------------------
-function ProductSearch({
-  addLine,
-}: {
-  addLine: (l: Omit<OrderLine, 'id'>) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const [tab, setTab] = useState<'product' | 'sku'>('product');
-  const [q, setQ] = useState('');
-
-  // 검색은 서버가 한다 — 전부 받아 브라우저에서 거르던 시절엔 이 화면이 뜰 때마다
-  // 상품·SKU 전량을 불러 core 를 위험하게 했다. 한 쪽(SEARCH_LIMIT)만 받는다.
-  const keyword = useDebounced(q.trim());
-  const { data: masters } = useMasters({
-    q: keyword || undefined,
-    page: 1,
-    limit: SEARCH_LIMIT,
-  });
-  // 재고상품은 검색어를 넣어야 부른다(빈 검색어면 요청하지 않는다).
-  const { data: skuResult } = useSkuSearch(keyword, 1, SEARCH_LIMIT);
-  const skus = (skuResult?.items ?? []) as any[];
-
-  const onSelectSku = (row: any) => {
-    addLine({
-      type: 'sku',
-      refId: row.id,
-      skuId: row.id,
-      name: row.name || row.id,
-      quantity: 1,
-      price: typeof row.price === 'number' ? row.price : 0,
-    });
-    setOpen(false);
-  };
-
-  return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button variant="outline">상품명 검색</Button>
-      </DialogTrigger>
-      <DialogContent className="max-w-5xl">
-        <DialogHeader>
-          <DialogTitle>상품검색</DialogTitle>
-        </DialogHeader>
-
-        <Tabs value={tab} onValueChange={(v) => setTab(v as 'product' | 'sku')}>
-          <TabsList>
-            <TabsTrigger value="product">판매상품</TabsTrigger>
-            <TabsTrigger value="sku">재고상품</TabsTrigger>
-          </TabsList>
-
-          {/* 검색바 */}
-          <div className="flex gap-2 my-3">
-            <Input
-              placeholder="상품명/코드 검색"
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-            />
-          </div>
-
-          {/* 판매상품 탭 */}
-          <TabsContent value="product" className="space-y-3">
-            <div className="overflow-hidden border rounded-md">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>상품명</TableHead>
-                    <TableHead className="text-right w-36">옵션선택</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {(Array.isArray(masters)
-                    ? masters
-                    : Array.isArray((masters as any)?.data)
-                      ? (masters as any).data
-                      : []
-                  ).map((m: any) => (
-                    <MasterRow
-                      key={m.id}
-                      master={m}
-                      onChoose={(v) => {
-                        // 옵션 라벨
-                        const optionText = buildOptionText(v);
-                        addLine({
-                          type: 'product',
-                          refId: m.id,
-                          name: m.name,
-                          optionText,
-                          skuId: v.skuId ?? v.id,
-                          quantity: 1,
-                          price:
-                            typeof v.price === 'number'
-                              ? v.price
-                              : (m.basePrice ?? 0),
-                        });
-                        setOpen(false);
-                      }}
-                    />
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          </TabsContent>
-
-          {/* 재고상품 탭 */}
-          <TabsContent value="sku" className="space-y-3">
-            <div className="overflow-hidden border rounded-md">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>SKU</TableHead>
-                    <TableHead>이름</TableHead>
-                    <TableHead className="text-right w-28">선택</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {!keyword && (
-                    <TableRow>
-                      <TableCell colSpan={3} className="text-center text-muted-foreground">
-                        SKU 이름이나 코드를 입력하세요
-                      </TableCell>
-                    </TableRow>
-                  )}
-                  {skus.map((s: any) => (
-                    <TableRow key={s.id}>
-                      <TableCell className="font-mono">{s.id}</TableCell>
-                      <TableCell>{s.name || '-'}</TableCell>
-                      <TableCell className="text-right">
-                        <Button size="sm" onClick={() => onSelectSku(s)}>
-                          선택
-                        </Button>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          </TabsContent>
-        </Tabs>
-
-        <DialogFooter>
-          <Button variant="outline" onClick={() => setOpen(false)}>
-            닫기
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-// 개별 마스터(판매상품) 행: 변형(옵션) 로딩 & 옵션/가격 버튼
-function MasterRow({
-  master,
-  onChoose,
-}: {
-  master: any;
-  onChoose: (variant: any) => void;
-}) {
-  const { data: variants, isLoading } = useVariantsByMaster(master.id);
-  const toArray = (v: any): any[] => (Array.isArray(v) ? v : (v?.data ?? []));
-  const variantList = toArray(variants);
-
-  return (
-    <TableRow>
-      <TableCell>
-        <div className="font-medium">{master.name}</div>
-        <div className="text-xs text-muted-foreground">
-          {isLoading ? '옵션 불러오는 중...' : `${variantList.length}개 옵션`}
-        </div>
-        <div className="grid grid-cols-1 gap-2 mt-3 md:grid-cols-2 lg:grid-cols-3">
-          {variantList.map((v: any) => (
-            <Button
-              key={v.id}
-              variant="secondary"
-              size="sm"
-              onClick={() => onChoose(v)}
-              className="justify-between"
-              title={buildOptionText(v)}
-            >
-              <span className="truncate">{buildOptionText(v)}</span>
-              <span className="text-xs text-muted-foreground">
-                {(Number.isFinite(v.price)
-                  ? Number(v.price)
-                  : (master.basePrice ?? 0)
-                ).toLocaleString()}
-                원
-              </span>
-            </Button>
-          ))}
-        </div>
-      </TableCell>
-      <TableCell className="text-right align-top" />
-    </TableRow>
-  );
-}
-
-// 옵션 라벨 조립 유틸: v.options[] 또는 v.attributes[] 또는 name/title
-function buildOptionText(v: any) {
-  const pairs: string[] = Array.isArray(v?.options)
-    ? v.options.map(
-        (o: any) => `${o.optionName ?? o.name}:${o.optionValue ?? o.value}`
-      )
-    : Array.isArray(v?.attributes)
-      ? v.attributes.map((o: any) => `${o.name}:${o.value}`)
-      : [];
-
-  const text = pairs.filter(Boolean).join(' / ');
-  return text || v.name || v.title || v.optionText || v.id;
 }
