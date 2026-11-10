@@ -9,7 +9,7 @@
 
 1. **색은 역할로 고른다.** 로고의 잉크·민트·핑크·퍼플을 아래 2장 표의 역할대로만 쓴다. 기본 버튼은 잉크(`--primary`), 활성·링크는 민트, 할인·NEW 는 핑크, 멤버십은 퍼플이다. 역할 밖에서 장식으로 뿌리지 않는다.
 2. **흰 바탕 위 글자는 `*-deep` 만.** 원색(mint/pink/purple)은 흰 글자 대비가 4.5:1 에 못 미쳐 면(배경·배지·막대)에만 쓰고, 원색 면 위 글자는 흰색이 아니라 ink 다. 성공/에러/정보는 시맨틱 색(아래)이지 브랜드가 아니다.
-3. **4px 그리드.** 모든 padding/gap/height 는 `{4,8,12,16,20,24,32,40,48,56,64}` 중 하나. 벗어나면 이유를 주석으로.
+3. **4px 그리드.** 모든 padding/gap/height 는 `{4,8,12,16,20,24,32,40,48,56,64}` 중 하나(28·36·44·52 처럼 4의 배수면 된다). 작은 컨트롤 안의 2px 보정, 진행 막대 같은 3px 선은 예외. `px-[5px]`·`py-[7px]`·`h-[39px]` 같은 홀수 값은 가까운 4의 배수로 맞춘다. 벗어나면 이유를 주석으로.
 4. **차분함 = 신뢰.** 경고 아이콘/빨강/배지 남발 금지. 빨강·경고 아이콘은 실제 에러에만.
 5. **콘텐츠 우선, 크롬은 가볍게.** 커스텀 웹폰트 X (Pretendard/시스템폰트). 헤딩은 display face 대신 weight 700.
 6. **모바일 우선.** 375px 기준으로 먼저, 16px 좌우 거터.
@@ -55,7 +55,8 @@
 | body-small | 13 | 400 | 18 | 보조·메타 |
 | caption | 12 | 400 | 16 | 라벨 |
 
-- 최대 26px, 그 이상 금지. Light/ExtraBold 금지.
+- 최대 26px, 그 이상 금지. Light/ExtraBold 금지. `font-extrabold`·`font-black`·`font-[800]` 은 쓰지 않는다. 제목도 700 이 끝이다.
+- 자간: 16px 미만 글자는 0. 18~28px 제목은 `tracking-[-0.01em]` 까지만. `-0.02em` 이상 좁히는 건 40px 이상 큰 글자에만 쓴다(이 문서 기준으론 쓸 일이 없다). `tracking-tight` 도 같은 이유로 쓰지 않는다.
 
 ## 4. 컴포넌트 규격
 
@@ -85,7 +86,47 @@
 - DO: 시맨틱·로고 토큰 유틸(`bg-primary`, `text-mint-deep`, `text-purple-deep` …) 사용, 색은 2장 역할대로, 4px 그리드, Pretendard.
 - DON'T: 하드코딩 hex(특히 옛 주황 `#ffa500`·`#ff6600`·`#f29219`, `yellow-*` 유틸), 흰 바탕 위 원색 글자, 강조 글자에 `text-primary`(이제 검정이다), 26px 초과, s3보다 강한 그림자, 스프링 모션.
 
-## 8. Voice & Tone (마이크로카피)
+## 8. 홈 리브랜딩 다듬기 — 코드에 아직 반영 안 된 것
+
+홈 시안을 3장 타이포·1장 4px 그리드 기준으로 다듬었다(제목 800→700, 제목 자간 -0.03em→-0.01em, 홀수 간격을 4의 배수로, 화면 문구 끝 느낌표 제거). 색·레이아웃·글꼴·이미지는 그대로다. 같은 수정을 아래 코드에 넣어야 시안과 화면이 맞는다.
+
+**굵기 800 → 700** (`font-extrabold`·`font-black` → `font-bold`)
+- `components/layout/header/main-header/service-bar.tsx` — NEW 배지
+- `components/layout/footer/index.tsx` — 고객센터 전화번호 등
+- `components/search/search-hot-keyword/index.tsx`
+- `domains/home/template/brand-showcase/brand-hall.tsx`
+- `domains/home/template/shop-trade/shop-trade-card.tsx`
+- `domains/membership-hall/components/hall-header.tsx`
+- `domains/mypage/components/desktop/user-profile-section.tsx`, `domains/mypage/components/mobile/mobile-header.tsx`
+
+**제목 자간 → `tracking-[-0.01em]`**
+- `domains/home/components/header/index.tsx` — 홈 섹션 제목
+- `domains/home/components/interest/interest-selector-banner.tsx`
+- `domains/home/template/member-savings/index.tsx`
+- `domains/membership-hall/components/hall-header.tsx`
+- `components/layout/footer/index.tsx` — 전화번호(-0.02em)
+
+**홈·헤더의 홀수 간격 → 4의 배수**
+- `components/layout/header/main-header/service-bar.tsx`, `user-actions.tsx` — `px-[5px]` → `px-1`
+- `components/layout/header/main-header/category-nav.tsx` — `px-[9px]` → `px-2`
+- `domains/home/components/interest/interest-key-chips.tsx` — `px-[5px] pt-[13px] pb-[11px]` → `px-1 py-3`
+- `domains/home/template/shop-trade/shop-trade-card.tsx` — `px-[7px]` → `px-2`
+- `domains/home/components/v1-card/index.tsx` — `h-[39px]` → `h-10`
+- `domains/home/components/class-list/index.tsx`, `domains/home/components/quick-links/index.tsx` — `py-[3px]` → `py-1`
+
+**문구**
+- 멤버십 띠배너 이름 끝 느낌표 제거(`추가혜택 받으세요!` → `추가혜택 받으세요`). 코드가 아니라 어드민 배너 이름이라 어드민에서 고친다. 이 이름이 이미지 대체 텍스트로 나간다
+
+남은 곳은 아래 명령으로 다시 뽑는다. 체크아웃·마이페이지·설문 화면의 홀수 간격은 이번 홈 범위 밖이라 그 화면을 고칠 때 같이 맞춘다.
+
+```bash
+cd web/almondyoung-storefront/src
+grep -rn -E 'font-(extrabold|black)|font-\[(800|900)\]' --include='*.tsx' . | grep -v '/ui/'
+grep -rn -E 'tracking-tight|tracking-\[-0\.0[2-9]em\]' --include='*.tsx' . | grep -v '/ui/'
+grep -rn -o -E '\b(p|px|py|pt|pb|pl|pr|m[xytblr]?|gap(-[xy])?|h|w)-\[(1|3|5|7|9|11|13|15|17|19|21|23|25|27|29|31|33|35|37|39)px\]' --include='*.tsx' domains/home components/layout
+```
+
+## 9. Voice & Tone (마이크로카피)
 
 - 따뜻하고 담백하게. 존댓말이되 과한 사과/마케팅 어투 금지.
 - 금지: `불편을 드려 죄송합니다`, `데이터가 없습니다`, `오류가 발생했습니다`, `혁신적인`, `Oops, something went wrong`.
