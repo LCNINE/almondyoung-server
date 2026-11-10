@@ -3,7 +3,7 @@ import { wmsTables, type DbTx } from '../../inventory/schema/inventory.schema';
 import { inRollbackTx, makeDb, makeDbService } from '../../fulfillment/services/__support__';
 import { type PrintOrderRow } from '../schema/print-order.schema';
 import { CANCEL_CLAIM_STALE_MS } from './print-order-cancellation.manager';
-import { phoneDigits, PrintOrderReader, storedPhoneDigits } from './print-order.reader';
+import { phoneDigits, PrintOrderReader, storedPhoneDigits, type PrintOrderTab } from './print-order.reader';
 import { eq, sql } from 'drizzle-orm';
 import { PrintOrderRepository } from './print-order.repository';
 import { recordSalesOrderCancellation } from '../../sales-order/cancellation-record/record-cancellation';
@@ -99,20 +99,26 @@ describeIfDb('PrintOrderReader board (tabs, summary)', () => {
         updatedAt: new Date(now - CANCEL_CLAIM_STALE_MS - 60_000),
       });
       await seedPrint(tx, `${tag}-c`, { status: 'cancelling', vendorOrderNumber: 'WP-8', updatedAt: new Date(now) });
-      const test = await seedPrint(tx, `${tag}-d`, { status: 'submitted', testMemo: true });
+      const test = await seedPrint(tx, `${tag}-d`, {
+        status: 'submitted',
+        testMemo: true,
+        vendorAwaitingPayment: true,
+      });
+      const awaiting = await seedPrint(tx, `${tag}-j`, { status: 'submitted', vendorAwaitingPayment: true });
       const cancelledTest = await seedPrint(tx, `${tag}-e`, { status: 'cancelled', testMemo: true });
       const notRefunded = await seedPrint(tx, `${tag}-i`, { status: 'cancelled' });
       const failed = await seedPrint(tx, `${tag}-f`, { status: 'failed' });
       const unsupported = await seedPrint(tx, `${tag}-g`, { status: 'unsupported' });
 
-      const ids = async (tab: 'cancel_refused' | 'test_pending' | 'failed' | 'unsupported' | 'all') =>
+      const ids = async (tab: PrintOrderTab) =>
         (await reader.list({ tab, q: tag, page: 1, pageSize: 50 }, staleBefore, tx)).items.map((i) => i.id).sort();
 
       expect(await ids('cancel_refused')).toEqual([refused, stale, cancelledTest, notRefunded].sort());
+      expect(await ids('awaiting_payment')).toEqual([awaiting]);
       expect(await ids('test_pending')).toEqual([test]);
       expect(await ids('failed')).toEqual([failed]);
       expect(await ids('unsupported')).toEqual([unsupported]);
-      expect(await ids('all')).toHaveLength(8);
+      expect(await ids('all')).toHaveLength(9);
 
       const listed = await reader.list({ tab: 'failed', q: tag, page: 1, pageSize: 50 }, staleBefore, tx);
       expect(listed.total).toBe(1);
@@ -121,10 +127,11 @@ describeIfDb('PrintOrderReader board (tabs, summary)', () => {
       const after = await reader.summary(staleBefore, tx);
       expect(after).toEqual({
         cancelRefused: before.cancelRefused + 4,
+        awaitingPayment: before.awaitingPayment + 1,
         testPending: before.testPending + 1,
         failed: before.failed + 1,
         unsupported: before.unsupported + 1,
-        total: before.total + 8,
+        total: before.total + 9,
       });
 
       await repo.confirmTest(test, randomUUID(), '출력 가능', tx);

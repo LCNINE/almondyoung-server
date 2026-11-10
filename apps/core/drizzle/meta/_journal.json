@@ -1065,6 +1065,13 @@
       "when": 1794231321035,
       "tag": "20261109133521_add-sales-order-line-state",
       "breakpoints": true
+    },
+    {
+      "idx": 152,
+      "version": "7",
+      "when": 1794278916379,
+      "tag": "20261110024836_add-print-order-vendor-awaiting-payment",
+      "breakpoints": true
     }
   ]
 }

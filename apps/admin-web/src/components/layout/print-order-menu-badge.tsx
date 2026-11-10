@@ -8,7 +8,11 @@ export function PrintOrderMenuBadge() {
   if (isLoading || !data) return null;
 
   const count =
-    data.cancelRefused + data.testPending + data.failed + data.unsupported;
+    data.cancelRefused +
+    data.awaitingPayment +
+    data.testPending +
+    data.failed +
+    data.unsupported;
   if (count === 0) return null;
 
   return (

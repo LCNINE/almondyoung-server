@@ -17,7 +17,9 @@ function validate<T>(metatype: new () => T, value: unknown, type: ArgumentMetada
 
 function setup() {
   const service = {
-    summary: jest.fn().mockResolvedValue({ cancelRefused: 0, testPending: 0, failed: 0, unsupported: 0, total: 0 }),
+    summary: jest
+      .fn()
+      .mockResolvedValue({ cancelRefused: 0, awaitingPayment: 0, testPending: 0, failed: 0, unsupported: 0, total: 0 }),
     list: jest.fn().mockResolvedValue({ items: [], total: 0 }),
     byLine: jest.fn().mockResolvedValue({ id: 'po-1' }),
     byDesign: jest.fn().mockResolvedValue([]),

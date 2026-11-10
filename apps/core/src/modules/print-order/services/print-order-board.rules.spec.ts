@@ -36,6 +36,7 @@ function row(overrides: Partial<PrintOrderListItem> = {}): PrintOrderListItem {
     cancelResolvedBy: null,
     salesCancelFailedAt: null,
     fileDeliveredAt: null,
+    vendorAwaitingPayment: false,
     createdAt: LONG_AGO,
     updatedAt: LONG_AGO,
     channelOrderId: 'order_1',

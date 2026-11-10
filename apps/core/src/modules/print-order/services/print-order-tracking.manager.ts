@@ -1,7 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { type PrintOrderRow } from '../schema/print-order.schema';
 import { WowpressClient } from '../wowpress/wowpress.client';
-import { WOWPRESS_CARRIER, type WowpressOrderDetail } from '../wowpress/wowpress.types';
+import {
+  WOWPRESS_CARRIER,
+  WOWPRESS_STATUS_AWAITING_PAYMENT,
+  type WowpressOrderDetail,
+} from '../wowpress/wowpress.types';
 import { PrintOrderRepository } from './print-order.repository';
 
 export const WOWPRESS_STATUS_DELIVERED = 85;
@@ -31,6 +35,7 @@ export class PrintOrderTrackingManager {
     }
 
     await this.fillVendorBox(row, detail.boxNumber);
+    await this.markAwaitingPayment(row, detail.ordstat === WOWPRESS_STATUS_AWAITING_PAYMENT);
 
     const now = new Date();
     const invoice = detail.trackingNumber;
@@ -60,6 +65,13 @@ export class PrintOrderTrackingManager {
     });
     if (!written)
       this.logger.log(`print order ${row.id} left tracking (now cancelling or cancelled); invoice not written`);
+  }
+
+  // 선입금이 모자라면 와우프레스가 입금대기에서 생산을 멈춘다. 보드 입금대기 탭이 이 값을 본다
+  private async markAwaitingPayment(row: PrintOrderRow, awaiting: boolean): Promise<void> {
+    if (row.vendorAwaitingPayment === awaiting) return;
+
+    await this.repository.updateTracked(row.id, { vendorAwaitingPayment: awaiting });
   }
 
   private async fillVendorBox(row: PrintOrderRow, boxNumber: string | null): Promise<void> {

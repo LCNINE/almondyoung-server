@@ -69,6 +69,7 @@ const snapshot: PrintOrderRow = {
   cancelResolvedBy: null,
   salesCancelFailedAt: null,
   fileDeliveredAt: null,
+  vendorAwaitingPayment: false,
   createdAt: new Date(),
   updatedAt: new Date(),
 };

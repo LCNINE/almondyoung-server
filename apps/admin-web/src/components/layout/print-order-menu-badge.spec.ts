@@ -12,6 +12,7 @@ const render = () => renderToStaticMarkup(createElement(PrintOrderMenuBadge));
 const summary = (over: Record<string, number>) => ({
   data: {
     cancelRefused: 0,
+    awaitingPayment: 0,
     testPending: 0,
     failed: 0,
     unsupported: 0,

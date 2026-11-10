@@ -29,7 +29,7 @@ class FakeReader extends PrintOrderReader {
     super(noDb);
   }
   summary = jest.fn<Promise<PrintOrderSummary>, [Date]>(() =>
-    Promise.resolve({ cancelRefused: 1, testPending: 0, failed: 0, unsupported: 0, total: 1 }),
+    Promise.resolve({ cancelRefused: 1, awaitingPayment: 0, testPending: 0, failed: 0, unsupported: 0, total: 1 }),
   );
   byLine = jest.fn<Promise<PrintOrderListItem | null>, [string]>(() => Promise.resolve(null));
   byDesign = jest.fn<Promise<PrintOrderListItem[]>, [string]>(() => Promise.resolve([]));
@@ -123,6 +123,7 @@ const resolvedRow: PrintOrderRow = {
   cancelResolvedBy: 'admin-1',
   salesCancelFailedAt: null,
   fileDeliveredAt: null,
+  vendorAwaitingPayment: false,
   createdAt: new Date(),
   updatedAt: new Date(),
 };

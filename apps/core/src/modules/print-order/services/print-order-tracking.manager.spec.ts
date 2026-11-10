@@ -60,6 +60,7 @@ function row(overrides: Partial<PrintOrderRow> = {}): PrintOrderRow {
     cancelResolvedBy: null,
     salesCancelFailedAt: null,
     fileDeliveredAt: null,
+    vendorAwaitingPayment: false,
     createdAt: new Date(),
     updatedAt: new Date(),
     ...overrides,
@@ -275,6 +276,52 @@ describe('PrintOrderTrackingManager', () => {
     wowpress.detail.mockRejectedValue(new Error('timeout'));
 
     await expect(manager.refresh(row())).resolves.toBeUndefined();
+    expect(repo.updateTracked).not.toHaveBeenCalled();
+    expect(repo.touch).toHaveBeenCalledWith('po-1');
+  });
+
+  it('flags a row the vendor holds in awaiting payment', async () => {
+    const { repo, wowpress, manager } = setup();
+    wowpress.detail.mockResolvedValue({
+      ordstat: 0,
+      jobstat: null,
+      carrierCode: null,
+      trackingNumber: null,
+      boxNumber: null,
+    });
+
+    await manager.refresh(row());
+
+    expect(repo.updateTracked).toHaveBeenCalledWith('po-1', { vendorAwaitingPayment: true });
+  });
+
+  it('clears the flag once payment settles', async () => {
+    const { repo, wowpress, manager } = setup();
+    wowpress.detail.mockResolvedValue({
+      ordstat: 10,
+      jobstat: null,
+      carrierCode: null,
+      trackingNumber: null,
+      boxNumber: null,
+    });
+
+    await manager.refresh(row({ vendorAwaitingPayment: true }));
+
+    expect(repo.updateTracked).toHaveBeenCalledWith('po-1', { vendorAwaitingPayment: false });
+  });
+
+  it('does not rewrite an unchanged awaiting payment flag', async () => {
+    const { repo, wowpress, manager } = setup();
+    wowpress.detail.mockResolvedValue({
+      ordstat: 0,
+      jobstat: null,
+      carrierCode: null,
+      trackingNumber: null,
+      boxNumber: null,
+    });
+
+    await manager.refresh(row({ vendorAwaitingPayment: true }));
+
     expect(repo.updateTracked).not.toHaveBeenCalled();
     expect(repo.touch).toHaveBeenCalledWith('po-1');
   });

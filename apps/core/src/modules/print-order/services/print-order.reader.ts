@@ -21,7 +21,14 @@ import { wmsSchema, wmsTables, type DbTx } from '../../inventory/schema/inventor
 import { type PrintOrderRow } from '../schema/print-order.schema';
 import { lineCanceledQuantitySql } from '../../sales-order/line-quantities/line-quantities.sql';
 
-export const PRINT_ORDER_TABS = ['cancel_refused', 'test_pending', 'failed', 'unsupported', 'all'] as const;
+export const PRINT_ORDER_TABS = [
+  'cancel_refused',
+  'awaiting_payment',
+  'test_pending',
+  'failed',
+  'unsupported',
+  'all',
+] as const;
 export type PrintOrderTab = (typeof PRINT_ORDER_TABS)[number];
 export const PRINT_ORDER_PAGE_SIZE = 50;
 export const PRINT_ORDER_MAX_PAGE_SIZE = 100;
@@ -29,6 +36,7 @@ export const PRINT_ORDER_MAX_PAGE = 10_000;
 
 export interface PrintOrderSummary {
   cancelRefused: number;
+  awaitingPayment: number;
   testPending: number;
   failed: number;
   unsupported: number;
@@ -121,6 +129,7 @@ export class PrintOrderReader {
         trx
           .select({
             cancelRefused: count(this.tabWhere('cancel_refused', staleCancellingBefore)),
+            awaitingPayment: count(this.tabWhere('awaiting_payment', staleCancellingBefore)),
             testPending: count(this.tabWhere('test_pending', staleCancellingBefore)),
             failed: count(this.tabWhere('failed', staleCancellingBefore)),
             unsupported: count(this.tabWhere('unsupported', staleCancellingBefore)),
@@ -133,6 +142,7 @@ export class PrintOrderReader {
     );
     return {
       cancelRefused: row?.cancelRefused ?? 0,
+      awaitingPayment: row?.awaitingPayment ?? 0,
       testPending: row?.testPending ?? 0,
       failed: row?.failed ?? 0,
       unsupported: row?.unsupported ?? 0,
@@ -244,6 +254,9 @@ export class PrintOrderReader {
           refundNotOpenedSql(),
           and(inArray(t.status, ['shipped', 'delivered']), isNotNull(t.cancelRefusedAt), isNull(t.cancelResolvedAt)),
         );
+      case 'awaiting_payment':
+        // 테스트 주문은 일부러 입금대기에 두므로 테스트 확인대기 탭에서만 본다
+        return and(eq(t.status, 'submitted'), eq(t.vendorAwaitingPayment, true), eq(t.testMemo, false));
       case 'test_pending':
         return and(eq(t.testMemo, true), isNull(t.testConfirmedAt), ne(t.status, 'cancelled'));
       case 'failed':

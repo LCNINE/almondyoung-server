@@ -72,6 +72,7 @@ export interface WowpressResponse {
 
 export type WowpressTransport = (req: WowpressRequest) => Promise<WowpressResponse>;
 
+export const WOWPRESS_STATUS_AWAITING_PAYMENT = 0;
 export const WOWPRESS_STATUS_CANCELLED = 90;
 
 export const WOWPRESS_CANCELLABLE = (d: WowpressOrderDetail): boolean =>
