@@ -253,10 +253,10 @@ describe('수동 주문 상품 검색', () => {
     );
     mockVariantRows.mockImplementation((_id, opts) => {
       const { page } = opts as { page: number };
+      // 범위 표시는 total 로 계산하므로 페이지마다 두 줄만 둔다.
       const start = (page - 1) * 100;
-      const count = page === 1 ? 100 : 50;
       return ok({
-        data: Array.from({ length: count }, (_, i) => ({
+        data: Array.from({ length: 2 }, (_, i) => ({
           id: `variant-${start + i + 1}`,
           variantName: `옵션 ${start + i + 1}`,
           price: 500,
@@ -290,7 +290,7 @@ describe('수동 주문 상품 검색', () => {
       ).disabled
     ).toBe(true);
 
-    expect(within(dialog).getByText('옵션 150')).toBeTruthy();
+    expect(within(dialog).getByText('옵션 101')).toBeTruthy();
 
     await user.click(within(dialog).getByRole('button', { name: '이전 옵션' }));
     expect(within(dialog).getByText('1–100 / 150')).toBeTruthy();
@@ -413,7 +413,7 @@ describe('수동 주문 상품 검색', () => {
     mockVariantRows.mockImplementation((_id, opts) => {
       const { page } = opts as { page: number };
       const total = shrunk ? 90 : 150;
-      const count = Math.max(0, Math.min(100, total - (page - 1) * 100));
+      const count = total > (page - 1) * 100 ? 2 : 0;
       return ok({
         data: Array.from({ length: count }, (_, i) => ({
           id: `variant-${page}-${i}`,
@@ -461,7 +461,7 @@ describe('수동 주문 상품 검색', () => {
         };
       }
       return ok({
-        data: Array.from({ length: 100 }, (_, i) => ({
+        data: Array.from({ length: 2 }, (_, i) => ({
           id: `variant-${i}`,
           variantName: `옵션 ${i}`,
           price: 500,
