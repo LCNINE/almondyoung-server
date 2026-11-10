@@ -156,6 +156,17 @@ input[type="search"]::-webkit-search-results-decoration {
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
 
+  --color-ink: var(--ink);
+  --color-mint: var(--mint);
+  --color-mint-deep: var(--mint-deep);
+  --color-mint-tint: var(--mint-tint);
+  --color-pink: var(--pink);
+  --color-pink-deep: var(--pink-deep);
+  --color-pink-tint: var(--pink-tint);
+  --color-purple: var(--purple);
+  --color-purple-deep: var(--purple-deep);
+  --color-purple-tint: var(--purple-tint);
+
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -234,6 +245,18 @@ input[type="search"]::-webkit-search-results-decoration {
   --sidebar-accent-foreground: #000000;
   --sidebar-border: #d9d9d9;
   --sidebar-ring: #5e98fe;
+
+  /* 역할 토큰: 라이브 팔레트에 맞춘 값. mint=강조(주황), pink=할인·경고(빨강), purple=멤버십(라이브처럼 주황). deep 은 흰 바탕 위 글자, tint 는 옅은 바탕 */
+  --ink: #20232a;
+  --mint: #ffa500;
+  --mint-deep: #a86200;
+  --mint-tint: #fff7e5;
+  --pink: #fa342c;
+  --pink-deep: #c7321f;
+  --pink-tint: #feeceb;
+  --purple: #ffa500;
+  --purple-deep: #ffa500;
+  --purple-tint: #fff7e5;
 
   /* 폰트 및 컬러 팔레트 */
   --font-geist-sans: "Pretendard", sans-serif;
@@ -319,6 +342,17 @@ input[type="search"]::-webkit-search-results-decoration {
   --sidebar-border: oklch(1 0 0 / 10%);
   --sidebar-ring: oklch(0.556 0 0);
   --gray-50: #1f2937;
+
+  --ink: #20232a;
+  --mint: #ffa500;
+  --mint-deep: #ffb733;
+  --mint-tint: oklch(0.269 0.03 70);
+  --pink: #fa342c;
+  --pink-deep: #ff6b5f;
+  --pink-tint: oklch(0.269 0.03 25);
+  --purple: #ffa500;
+  --purple-deep: #ffb733;
+  --purple-tint: oklch(0.269 0.03 70);
 }
 
 /* 블랙프라이데이 테마 */

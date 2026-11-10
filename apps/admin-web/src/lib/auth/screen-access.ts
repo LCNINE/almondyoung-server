@@ -138,6 +138,7 @@ export const SCREEN_ACCESS: Readonly<Record<string, ScreenAccess>> = {
   '/mall/marketing/messages': any('messaging.message.read'),
   '/mall/banner-groups': any('marketing.display.read'),
   '/mall/popups': any('marketing.display.read'),
+  '/mall/top-notices': any('marketing.display.read'),
   '/mall/notices': any('marketing.display.read'),
   '/mall/marketing/points': any('payment.payment.read'),
   '/mall/marketing/coupons': any('marketing.promotion.read'),

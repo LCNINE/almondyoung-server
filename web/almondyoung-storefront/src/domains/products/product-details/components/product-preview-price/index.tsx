@@ -166,7 +166,7 @@ function PriceSummary({ hasMembership, product }: Pick<Props, "hasMembership" | 
               endsAt={endsAt}
               compact
               refreshOnEnd
-              className="text-primary text-[17px] leading-none font-bold tabular-nums"
+              className="text-purple-deep text-[17px] leading-none font-bold tabular-nums"
             />
           </div>
         )}
@@ -176,13 +176,13 @@ function PriceSummary({ hasMembership, product }: Pick<Props, "hasMembership" | 
         </span>
         <div className="flex items-center gap-2">
           <ProductMembershipBadge size="md" label={tSale("membershipBadge")} />
-          <span className="text-primary text-lg font-bold">
+          <span className="text-purple-deep text-lg font-bold">
             {cheapestPrice.calculated_price_number.toLocaleString()}
             {t("won")}
             {hasPriceRange && t("priceFrom")}
           </span>
         </div>
-        <p className="text-primary text-xs font-medium">
+        <p className="text-purple-deep text-xs font-medium">
           {tSale("membershipSavings", {
             amount: (
               cheapestPrice.original_price_number -
@@ -216,7 +216,7 @@ function PriceSummary({ hasMembership, product }: Pick<Props, "hasMembership" | 
             endsAt={endsAt}
             compact
             refreshOnEnd
-            className="text-primary text-[17px] leading-none font-bold tabular-nums"
+            className="text-purple-deep text-[17px] leading-none font-bold tabular-nums"
           />
         </div>
       )}
@@ -268,7 +268,7 @@ function PriceSummary({ hasMembership, product }: Pick<Props, "hasMembership" | 
               size="md"
               label={t("membershipBadgeLabel")}
             />
-            <span className="text-primary text-lg font-bold">
+            <span className="text-purple-deep text-lg font-bold">
               {t("membershipOnlyPrice")}
             </span>
           </div>
@@ -283,15 +283,15 @@ function PriceSummary({ hasMembership, product }: Pick<Props, "hasMembership" | 
                 size="md"
                 label={t("membershipBadgeLabel")}
               />
-              <span className="text-primary text-sm font-semibold">
+              <span className="text-purple-deep text-sm font-semibold">
                 {membershipDiscountRate}% OFF
               </span>
-              <span className="text-primary text-lg font-bold">
+              <span className="text-purple-deep text-lg font-bold">
                 {membershipPrice.toLocaleString()}
                 {t("won")}
               </span>
             </div>
-            <p className="text-primary text-xs font-medium">
+            <p className="text-purple-deep text-xs font-medium">
               {t("memberSavings", {
                 amount: membershipSavings.toLocaleString(),
               })}

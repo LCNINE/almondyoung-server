@@ -381,8 +381,8 @@ export function OrderList({
             className={cn(
               "shrink-0 rounded-full border px-3.5 py-1 text-sm font-medium whitespace-nowrap transition-colors",
               period === "recent"
-                ? "border-primary bg-primary text-white"
-                : "hover:border-primary border-gray-200 text-gray-600"
+                ? "border-mint-deep bg-primary text-white"
+                : "hover:border-mint-deep border-gray-200 text-gray-600"
             )}
           >
             {tList("recent6m")}
@@ -395,8 +395,8 @@ export function OrderList({
               className={cn(
                 "shrink-0 rounded-full border px-3.5 py-1 text-sm font-medium whitespace-nowrap transition-colors",
                 period === String(y)
-                  ? "border-primary bg-primary text-white"
-                  : "hover:border-primary border-gray-200 text-gray-600"
+                  ? "border-mint-deep bg-primary text-white"
+                  : "hover:border-mint-deep border-gray-200 text-gray-600"
               )}
             >
               {y}
@@ -412,7 +412,7 @@ export function OrderList({
             <button
               type="button"
               onClick={() => navigate({ page: 1, q: "" })}
-              className="hover:border-primary hover:text-primary flex cursor-pointer items-center gap-1 rounded-full border border-gray-300 px-2.5 py-1 text-xs text-gray-600 transition-colors"
+              className="hover:border-mint-deep hover:text-mint-deep flex cursor-pointer items-center gap-1 rounded-full border border-gray-300 px-2.5 py-1 text-xs text-gray-600 transition-colors"
             >
               <X className="h-3 w-3" />
               {tList("clearSearch")}

@@ -125,7 +125,7 @@ export function ReviewDetailCardList({
               htmlFor="photo-only"
               className={cn(
                 "cursor-pointer select-none text-sm transition-colors",
-                photoOnly ? "font-medium text-primary" : "text-muted-foreground"
+                photoOnly ? "font-medium text-mint-deep" : "text-muted-foreground"
               )}
             >
               {t("filterPhotoOnly")}

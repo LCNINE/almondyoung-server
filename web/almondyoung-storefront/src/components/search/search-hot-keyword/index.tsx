@@ -103,7 +103,7 @@ export function SearchHotKeyword() {
                   className="flex min-w-0 cursor-pointer items-center gap-3 py-1 transition-opacity hover:opacity-70 sm:py-0"
                   onClick={() => handleHotKeywordClick(item.keyword)}
                 >
-                  <span className="w-5 shrink-0 text-center font-black text-green-700 italic">
+                  <span className="w-5 shrink-0 text-center font-bold text-green-700 italic">
                     {overallIdx + 1}
                   </span>
                   <span className="min-w-0 flex-1 truncate text-[15px] font-medium text-gray-800">
@@ -111,7 +111,7 @@ export function SearchHotKeyword() {
                   </span>
                   <div className="flex w-8 shrink-0 justify-end">
                     {item.status === "new" ? (
-                      <span className="rounded-sm bg-orange-100 px-1.5 py-0.5 text-[10px] font-bold text-orange-600">
+                      <span className="bg-pink-tint text-pink-deep rounded-sm px-1.5 py-0.5 text-[10px] font-bold">
                         {t("statusNew")}
                       </span>
                     ) : item.status === "up" ? (

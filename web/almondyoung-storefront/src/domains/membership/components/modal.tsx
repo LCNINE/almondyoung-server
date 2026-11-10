@@ -215,7 +215,7 @@ export function MembershipCancelModal({
                 className={cn(
                   "flex cursor-pointer items-start gap-2.5 rounded-xl border p-3.5 transition-colors",
                   mode === "AT_PERIOD_END"
-                    ? "border-primary bg-yellow-10"
+                    ? "border-purple-deep bg-purple-tint"
                     : "border-border hover:bg-muted"
                 )}
               >
@@ -250,7 +250,7 @@ export function MembershipCancelModal({
                 className={cn(
                   "flex cursor-pointer items-start gap-2.5 rounded-xl border p-3.5 transition-colors",
                   mode === "IMMEDIATE_REFUND"
-                    ? "border-primary bg-yellow-10"
+                    ? "border-purple-deep bg-purple-tint"
                     : "border-border hover:bg-muted"
                 )}
               >
@@ -274,14 +274,14 @@ export function MembershipCancelModal({
                   </span>
                   {/* 왜 환불이 되는지를 알려준다 — 금액만 보여주면 고객은 근거를 알 수 없다. */}
                   {immediate?.refundKind === "WITHDRAWAL_FULL" && (
-                    <span className="text-primary text-xs leading-4">
+                    <span className="text-purple-deep text-xs leading-4">
                       {t("whyWithdrawal", {
                         days: preview?.withdrawalWindowDays ?? 7,
                       })}
                     </span>
                   )}
                   {immediate?.refundKind === "ANNUAL_PRORATION" && (
-                    <span className="text-primary text-xs leading-4">
+                    <span className="text-purple-deep text-xs leading-4">
                       {t("whyAnnual")}
                     </span>
                   )}
@@ -372,7 +372,7 @@ export function MembershipCancelModal({
                     htmlFor={reason.code}
                     className={cn(
                       "flex cursor-pointer items-center gap-2.5 rounded-lg px-3 py-2.5 transition-colors",
-                      active ? "bg-yellow-10" : "hover:bg-muted"
+                      active ? "bg-purple-tint" : "hover:bg-muted"
                     )}
                   >
                     <RadioGroupItem

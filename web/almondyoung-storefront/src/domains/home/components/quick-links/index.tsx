@@ -11,31 +11,18 @@ import { ChartNoAxesColumn } from "lucide-react"
 import { getTranslations } from "next-intl/server"
 import Image from "next/image"
 import {
+  ALMOND_YOUNG_PLAY_IMAGE_URL,
+  ALMOND_YOUNG_PLAY_URL,
+  BEAUTY_EXAM_IMAGE_URL,
+  BEAUTY_EXAM_URL,
+  CATEGORY_ICON_URLS,
+  DABEAU_IMAGE_URL,
+  DABEAU_URL,
+} from "@/components/layout/header/header-links"
+import {
   MobileQuickLinks,
   type MobileQuickLinkItem,
 } from "./mobile-quick-links"
-
-const DABEAU_IMAGE_URL =
-  "https://almondyoung-public.s3.ap-northeast-2.amazonaws.com/storefront/quick-links/dabeau-2.png"
-const ALMOND_YOUNG_PLAY_IMAGE_URL =
-  "https://almondyoung-public.s3.ap-northeast-2.amazonaws.com/storefront/quick-links/amdp-logo-white.png"
-const CATEGORY_ICON_BASE_URL =
-  "https://almondyoung-public.s3.ap-northeast-2.amazonaws.com/storefront/category-icons"
-const CATEGORY_ICON_VERSION = "20260720-2"
-
-const CATEGORY_ICON_URLS: Record<string, string> = {
-  "lash-perm": `${CATEGORY_ICON_BASE_URL}/lash-perm.png?v=${CATEGORY_ICON_VERSION}`,
-  "lash-extension": `${CATEGORY_ICON_BASE_URL}/lash-extension.png?v=${CATEGORY_ICON_VERSION}`,
-  "semi-permanent": `${CATEGORY_ICON_BASE_URL}/semi-permanent.png?v=${CATEGORY_ICON_VERSION}`,
-  nail: `${CATEGORY_ICON_BASE_URL}/nail.png?v=${CATEGORY_ICON_VERSION}`,
-  tattoo: `${CATEGORY_ICON_BASE_URL}/tattoo.png?v=${CATEGORY_ICON_VERSION}`,
-  skincare: `${CATEGORY_ICON_BASE_URL}/skincare.png?v=${CATEGORY_ICON_VERSION}`,
-  hair: `${CATEGORY_ICON_BASE_URL}/hair.png?v=${CATEGORY_ICON_VERSION}`,
-  waxing: `${CATEGORY_ICON_BASE_URL}/waxing.png?v=${CATEGORY_ICON_VERSION}`,
-  nomond: `${CATEGORY_ICON_BASE_URL}/nomond.png?v=${CATEGORY_ICON_VERSION}`,
-  "shop-meal": `${CATEGORY_ICON_BASE_URL}/shop-meal.png?v=${CATEGORY_ICON_VERSION}`,
-  "shop-trade": `${CATEGORY_ICON_BASE_URL}/shop-trade.png?v=${CATEGORY_ICON_VERSION}`,
-}
 
 type QuickLink = {
   label: string
@@ -88,7 +75,7 @@ export async function HomeQuickLinks({
     {
       label: "아몬드영 플레이",
       displayLabel: "아몬드영\n플레이",
-      href: "https://www.almondyoungplay.com/",
+      href: ALMOND_YOUNG_PLAY_URL,
       imageUrl: ALMOND_YOUNG_PLAY_IMAGE_URL,
       external: true,
       imageClassName: "object-contain p-2.5",
@@ -97,7 +84,7 @@ export async function HomeQuickLinks({
     {
       label: "예약관리어플",
       displayLabel: "예약관리어플",
-      href: "https://dabeau.kr",
+      href: DABEAU_URL,
       imageUrl: DABEAU_IMAGE_URL,
       external: true,
       imageClassName: "object-contain p-2.5",
@@ -106,8 +93,8 @@ export async function HomeQuickLinks({
     {
       label: "미용필기시험",
       displayLabel: "미용필기시험",
-      href: "https://www.xn--ok0b94xilff7df2wpza.com/",
-      imageUrl: "/images/miyong-pilgi-logo.png",
+      href: BEAUTY_EXAM_URL,
+      imageUrl: BEAUTY_EXAM_IMAGE_URL,
       external: true,
       imageClassName: "object-contain p-2.5",
       imageWrapClassName: "bg-white",
@@ -198,7 +185,7 @@ export async function HomeQuickLinks({
 
   return (
     <section className="w-full border-b border-gray-100 bg-white xl:bg-[#fbfaf8]">
-      <div className="container mx-auto max-w-[1360px] px-3.5 py-4 xl:px-[40px] xl:py-5">
+      <div className="container mx-auto max-w-[1280px] px-3.5 py-4 xl:px-[32px] xl:py-5">
         <div className="relative">
           <MobileQuickLinks items={mobileItems} />
 
@@ -310,7 +297,7 @@ export function NewBadge({ compact = false }: { compact?: boolean }) {
         "bg-primary absolute rounded-full leading-none font-bold text-white",
         compact
           ? "-top-1.5 -right-2.5 px-1 py-[2px] text-[8px]"
-          : "-top-1.5 -right-1.5 px-1.5 py-[3px] text-[9px]"
+          : "-top-1.5 -right-1.5 px-1.5 py-1 text-[9px]"
       )}
     >
       NEW

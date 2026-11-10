@@ -1,17 +1,9 @@
-import LocalizedClientLink from "@/components/shared/localized-client-link"
-import {
-  Carousel,
-  CarouselContent,
-  CarouselItem,
-  CarouselNext,
-  CarouselPrevious,
-} from "@/components/ui/carousel"
-import { ListingCard } from "@/domains/shop-trade/components/listing-card"
 import { listPublicShopListings } from "@/lib/api/ugc/shop-listings"
-import { ArrowRight } from "lucide-react"
 import { getTranslations } from "next-intl/server"
-import { Title } from "../../components/header"
+import { SectionHead } from "../../components/header"
+import { HomeRail } from "../../components/shared/home-rail"
 import { HomeSection } from "../../components/shared/home-section"
+import { ShopTradeCard } from "./shop-trade-card"
 
 const SECTION_LIMIT = 8
 
@@ -25,38 +17,17 @@ export async function ShopTradeWrapper() {
 
   return (
     <HomeSection background="muted" className="border-t-0">
-      <Carousel opts={{ align: "start" }} className="group/carousel w-full">
-        <div className="mb-6 flex items-end justify-between">
-          <div>
-            <Title>{t("title")}</Title>
-            <p className="text-muted-foreground mt-1 text-sm">
-              {t("homeDescription")}
-            </p>
-          </div>
-          <LocalizedClientLink
-            href="/shop-trade"
-            className="text-primary inline-flex items-center gap-1 text-sm font-semibold"
-          >
-            {t("viewAll")} <ArrowRight className="h-4 w-4" />
-          </LocalizedClientLink>
-        </div>
-        <CarouselContent className="-ml-2 py-2 sm:-ml-4">
-          {listings.slice(0, SECTION_LIMIT).map((listing) => (
-            <CarouselItem
-              key={listing.id}
-              className="basis-[45%] pl-2 sm:basis-[38%] sm:pl-4 lg:basis-[25%]"
-            >
-              <ListingCard
-                listing={listing}
-                variant="grid"
-                enablePhotoSwipe={false}
-              />
-            </CarouselItem>
-          ))}
-        </CarouselContent>
-        <CarouselPrevious className="left-2 hidden size-10 bg-white/90 opacity-0 shadow-md transition-opacity group-hover/carousel:opacity-100 disabled:opacity-0 md:inline-flex" />
-        <CarouselNext className="right-2 hidden size-10 bg-white/90 opacity-0 shadow-md transition-opacity group-hover/carousel:opacity-100 disabled:opacity-0 md:inline-flex" />
-      </Carousel>
+      <SectionHead
+        title={t("title")}
+        subtitle={t("homeDescription")}
+        moreHref="/shop-trade"
+        moreLabel={t("viewAll")}
+      />
+      <HomeRail columns="four" thumbRatio={3 / 4}>
+        {listings.slice(0, SECTION_LIMIT).map((listing) => (
+          <ShopTradeCard key={listing.id} listing={listing} />
+        ))}
+      </HomeRail>
     </HomeSection>
   )
 }

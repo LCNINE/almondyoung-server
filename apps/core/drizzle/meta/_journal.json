@@ -1072,6 +1072,13 @@
       "when": 1794278916379,
       "tag": "20261110024836_add-print-order-vendor-awaiting-payment",
       "breakpoints": true
+    },
+    {
+      "idx": 153,
+      "version": "7",
+      "when": 1794296145049,
+      "tag": "20261110073545_add-top-notices",
+      "breakpoints": true
     }
   ]
 }

@@ -1,32 +1,64 @@
 "use client"
 
 import { Button } from "@/components/ui/button"
-import { CustomButton } from "@/components/shared/custom-buttons"
 import {
   dismissInterestBanner7Days,
   updateInterestCategories,
 } from "@/domains/home/interest-categories-actions"
+import ProductCard from "@/domains/products/components/product-card"
 import { MAX_INTEREST_CATEGORIES } from "@/lib/constants/categories"
+import type { CustomerGroup } from "@/lib/types/dto/medusa"
+import type { StoreCustomerWithGroups } from "@/lib/types/ui/medusa"
+import { getIsMembershipOnly } from "@/lib/utils/product-card"
+import type { HttpTypes } from "@medusajs/types"
 import { useState, useTransition } from "react"
 import { toast } from "sonner"
 import { useTranslations } from "next-intl"
+import { ArrowLeftRight, X } from "lucide-react"
+import { HomeRail } from "../shared/home-rail"
 import { InterestKeyChips } from "./interest-key-chips"
+import { mergeBestProducts } from "./merge-best-products"
 
-export function InterestSelectorBanner() {
+const PREVIEW_LIMIT = 15
+const STAGGER_MS = 50
+const STAGGER_MAX = 5
+const REVEAL =
+  "animate-in fade-in slide-in-from-bottom-3 fill-mode-both duration-[350ms] ease-[cubic-bezier(0,0,.2,1)] motion-reduce:animate-none"
+
+interface InterestSelectorBannerProps {
+  initialKeys: string[]
+  bestByKey: Record<string, HttpTypes.StoreProduct[]>
+  customer: StoreCustomerWithGroups | null
+  wishlistIds: string[]
+}
+
+export function InterestSelectorBanner({
+  initialKeys,
+  bestByKey,
+  customer,
+  wishlistIds,
+}: InterestSelectorBannerProps) {
   const t = useTranslations("home.interestBanner")
-  const [selected, setSelected] = useState<string[]>([])
-  const [isPending, startTransition] = useTransition()
+  const tCat = useTranslations("categories")
+  const [selected, setSelected] = useState<string[]>(initialKeys)
+  // 한 번 고르면 칩을 접고 바꾸기를 누를 때만 다시 펼친다
+  const [isPicking, setIsPicking] = useState(initialKeys.length === 0)
+  const [, startSave] = useTransition()
+  const [isDismissing, startDismiss] = useTransition()
 
-  const handleSave = () => {
-    if (selected.length === 0) {
-      toast.message(t("needAtLeastOne"))
-      return
-    }
+  const isMembership =
+    customer?.groups?.some(
+      (group: CustomerGroup) =>
+        group.id === process.env.NEXT_PUBLIC_MEDUSA_MEMBERSHIP_GROUP_ID
+    ) ?? false
+  const wishlisted = new Set(wishlistIds)
 
-    startTransition(async () => {
+  const handleChange = (next: string[]) => {
+    setSelected(next)
+
+    startSave(async () => {
       try {
-        await updateInterestCategories(selected)
-        toast.success(t("saved", { count: selected.length }))
+        await updateInterestCategories(next)
       } catch (error: unknown) {
         const err = error as Error & { digest?: string }
         if (err.digest === "UNAUTHORIZED" || err.message === "UNAUTHORIZED") {
@@ -38,7 +70,7 @@ export function InterestSelectorBanner() {
   }
 
   const handleDismiss = () => {
-    startTransition(async () => {
+    startDismiss(async () => {
       try {
         await dismissInterestBanner7Days()
       } catch {
@@ -47,53 +79,107 @@ export function InterestSelectorBanner() {
     })
   }
 
-  const saveLabel = isPending
-    ? t("saving")
-    : selected.length === 0
-      ? t("selectPrompt")
-      : t("save", { count: selected.length })
+  const selectedNames = selected
+    .map((key) => tCat(key as "lash-perm"))
+    .join(" · ")
+  const products = mergeBestProducts(
+    selected.map((key) => bestByKey[key] ?? []),
+    PREVIEW_LIMIT
+  )
 
   return (
-    <section className="flex flex-col gap-4 text-center lg:flex-row lg:items-center lg:gap-8 lg:text-left">
-      <div className="shrink-0 space-y-1 lg:max-w-[280px]">
-        <h3 className="text-foreground text-base font-bold tracking-tight break-keep md:text-lg">
-          {t("title")}
-        </h3>
-        <p className="text-muted-foreground text-xs break-keep md:text-sm">
-          {t("description", { max: MAX_INTEREST_CATEGORIES })}
-        </p>
+    <section aria-labelledby="interest-selector-title">
+      <div className="relative mb-5 flex flex-col items-start gap-3 md:flex-row md:items-end md:justify-between md:gap-4">
+        <div className="w-full md:w-auto">
+          <h2
+            id="interest-selector-title"
+            className="pr-9 text-[20px] leading-[1.3] font-bold break-keep text-black md:pr-0 md:text-[26px] md:leading-[1.11]"
+          >
+            {t("title")}
+          </h2>
+          <p className="text-muted-foreground mt-1 text-sm break-keep">
+            {t("description", { max: MAX_INTEREST_CATEGORIES })}
+          </p>
+        </div>
+
+        <Button
+          type="button"
+          variant="link"
+          size="sm"
+          onClick={handleDismiss}
+          disabled={isDismissing}
+          aria-label={t("dismiss")}
+          className="text-muted-foreground hover:text-foreground absolute -top-1 -right-2 size-9 p-0 md:static md:size-auto md:shrink-0 md:text-[13px] md:font-normal md:underline md:underline-offset-4"
+        >
+          <X className="size-5 md:hidden" strokeWidth={1.8} aria-hidden />
+          <span className="hidden md:inline">{t("dismiss")}</span>
+        </Button>
       </div>
 
-      <div className="flex flex-1 flex-col items-center gap-3 lg:items-end">
-        <InterestKeyChips
-          selectedKeys={selected}
-          onChange={setSelected}
-          disabled={isPending}
-          className="flex w-full flex-wrap justify-center gap-1.5 lg:w-auto lg:justify-end [&_button]:gap-1 [&_button]:px-2 [&_button]:text-xs [&_button]:shadow-[1px_1px_0.5px_rgba(0,0,0,0.1)] [&_img]:size-4"
-        />
+      {isPicking ? (
+        <>
+          <InterestKeyChips
+            variant="card"
+            selectedKeys={selected}
+            onChange={handleChange}
+          />
 
-        <div className="flex w-full flex-col-reverse items-center gap-2 lg:w-auto lg:flex-row lg:gap-4">
           <Button
             type="button"
-            variant="link"
-            size="sm"
-            onClick={handleDismiss}
-            disabled={isPending}
-            className="text-muted-foreground hover:text-foreground h-auto p-0 text-xs font-normal"
+            onClick={() => setIsPicking(false)}
+            disabled={selected.length === 0}
+            className="mt-4 h-12 w-full rounded-xl text-[15px] font-bold disabled:bg-gray-100 disabled:text-gray-400 disabled:opacity-100 md:w-auto md:px-6"
           >
-            {t("dismiss")}
+            {selected.length === 0
+              ? t("selectPrompt")
+              : t("showBest", { count: selected.length })}
           </Button>
+        </>
+      ) : (
+        <div
+          key={selected.join(",")}
+          className="animate-in fade-in fill-mode-both duration-[250ms] motion-reduce:animate-none"
+        >
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <h3 className="text-base font-bold break-keep text-black">
+              {selectedNames}{" "}
+              <span className="text-mint">{t("previewSuffix")}</span>
+            </h3>
+            <button
+              type="button"
+              onClick={() => setIsPicking(true)}
+              className="border-border inline-flex h-8 shrink-0 items-center gap-1 rounded-full border bg-white px-3 text-[13px] font-bold text-gray-700 transition-colors hover:border-gray-400"
+            >
+              <ArrowLeftRight
+                className="size-3.5"
+                strokeWidth={2.2}
+                aria-hidden
+              />
+              {t("change")}
+            </button>
+          </div>
 
-          <CustomButton
-            type="button"
-            onClick={handleSave}
-            disabled={isPending}
-            className="disabled:text-muted-foreground disabled:bg-secondary h-10 w-full max-w-[280px] rounded-xl text-sm font-bold whitespace-nowrap disabled:opacity-100 lg:w-auto lg:min-w-[180px] lg:px-6"
-          >
-            {saveLabel}
-          </CustomButton>
+          <HomeRail>
+            {products.map((product, index) => (
+              <div
+                key={product.id}
+                className={REVEAL}
+                style={{
+                  animationDelay: `${Math.min(index, STAGGER_MAX) * STAGGER_MS}ms`,
+                }}
+              >
+                <ProductCard
+                  product={product}
+                  isMembership={isMembership}
+                  isMembershipOnly={getIsMembershipOnly(product)}
+                  isWishlisted={wishlisted.has(product.id ?? "")}
+                  enablePhotoSwipe={false}
+                />
+              </div>
+            ))}
+          </HomeRail>
         </div>
-      </div>
+      )}
     </section>
   )
 }

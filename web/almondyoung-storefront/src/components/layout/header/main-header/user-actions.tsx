@@ -1,6 +1,5 @@
 "use client"
 
-import { LanguageSwitcher } from "@/components/layout/header/language-switcher"
 import { useCart } from "@/contexts/cart-context"
 import { useUser } from "@/contexts/user-context"
 import { cn } from "@/lib/utils"
@@ -19,10 +18,15 @@ export function AccountMenu({ tone = "light" }: { tone?: "light" | "dark" }) {
   // const hasNotification = true
 
   return (
-    <div className="flex items-center gap-[clamp(0.5px,2vw,1.5rem)]">
-      {/* 모바일 언어 스위치 */}
-      <div className="flex md:hidden">
-        <LanguageSwitcher variant="iconButton" />
+    <div className="flex items-center gap-4 md:gap-[clamp(0.5px,2vw,1.5rem)]">
+      {/* 모바일은 로그인 줄을 없앴으므로 사람 아이콘을 장바구니 앞에 둔다 */}
+      <div className="md:order-last">
+        <AccountMenuItem
+          href={user ? `/${countryCode}/mypage` : `/${countryCode}/login`}
+          icon={<User className="h-6 w-6 md:h-8 md:w-8" />}
+          label={user ? t("myPage") : t("login")}
+          tone={tone}
+        />
       </div>
 
       {/* 장바구니 */}
@@ -33,16 +37,6 @@ export function AccountMenu({ tone = "light" }: { tone?: "light" | "dark" }) {
         badgeCount={cartItemCount}
         tone={tone}
       />
-
-      {/* 로그인 / 마이페이지 */}
-      <div className="hidden md:flex">
-        <AccountMenuItem
-          href={user ? `/${countryCode}/mypage` : `/${countryCode}/login`}
-          icon={<User className="h-6 w-6 md:h-8 md:w-8" />}
-          label={user ? t("myPage") : t("login")}
-          tone={tone}
-        />
-      </div>
 
       {/* todo: 알림 기능 미연결로 임시 비활성화 */}
       {/* <AccountMenuItem

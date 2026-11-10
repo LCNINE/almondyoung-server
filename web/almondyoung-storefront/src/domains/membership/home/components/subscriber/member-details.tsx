@@ -118,7 +118,7 @@ export default function MemberDetails({
         </figcaption>
       ) : isInTrial ? (
         <figcaption className="flex flex-col items-center gap-1.5 font-['Pretendard']">
-          <span className="bg-primary/10 text-primary inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold">
+          <span className="bg-purple-tint text-purple-deep inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold">
             {t("subscription.freeTrialRemaining", { days: trialDaysRemaining })}
           </span>
           <p className="text-center text-sm text-gray-600">
@@ -149,7 +149,7 @@ export default function MemberDetails({
         </figcaption>
       )}
       <div className="flex items-center gap-1.5">
-        <span className="bg-primary/10 text-primary rounded-md px-2 py-1 text-xs font-bold">
+        <span className="bg-purple-tint text-purple-deep rounded-md px-2 py-1 text-xs font-bold">
           {tierName}
         </span>
         <span className="bg-secondary text-muted-foreground rounded-md px-2 py-1 text-xs font-bold">

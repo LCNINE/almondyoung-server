@@ -78,7 +78,8 @@ export function Rating({ rating, reviewCount }: Props) {
           )
         }}
       >
-        {t("reviewCount", { count: reviewCount.toLocaleString() })}<span className="ml-0.5">+</span>
+        {t("reviewCount", { count: reviewCount.toLocaleString() })}
+        <span className="ml-0.5">+</span>
       </button>
     </div>
   )

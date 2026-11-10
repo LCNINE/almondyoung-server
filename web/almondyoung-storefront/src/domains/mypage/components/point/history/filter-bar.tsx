@@ -176,7 +176,7 @@ export function PointHistoryFilterBar() {
             <CalendarRange
               className={cn(
                 "size-4 shrink-0",
-                view.isDefault ? "text-gray-40" : "text-primary"
+                view.isDefault ? "text-gray-40" : "text-mint-deep"
               )}
             />
             <span className="text-gray-90 truncate text-sm font-semibold tabular-nums">
@@ -228,7 +228,7 @@ export function PointHistoryFilterBar() {
           aria-label={t("selectPeriod")}
           className={cn(
             "text-gray-70 hover:bg-gray-5 inline-flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-full transition-colors",
-            isRangeMode && !view.isDefault && "text-primary"
+            isRangeMode && !view.isDefault && "text-mint-deep"
           )}
         >
           <CalendarRange className="size-5" />

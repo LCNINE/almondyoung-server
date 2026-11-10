@@ -74,7 +74,7 @@ export default function SavingsSection({ overview }: SavingsSectionProps) {
           {t("stats.cycleSavings")}
         </h3>
         <div className="flex items-end justify-center gap-1">
-          <span className="text-primary text-3xl font-bold">0</span>
+          <span className="text-purple-deep text-3xl font-bold">0</span>
           <span className="text-muted-foreground pb-1 text-sm">
             {t("stats.unitWon")}
           </span>
@@ -90,7 +90,7 @@ export default function SavingsSection({ overview }: SavingsSectionProps) {
           {t("stats.cycleSavings")}
         </h3>
         <div className="flex items-end justify-center gap-1">
-          <span className="text-primary text-3xl font-bold">
+          <span className="text-purple-deep text-3xl font-bold">
             {(selected?.totalSavings ?? 0).toLocaleString()}
           </span>
           <span className="text-muted-foreground pb-1 text-sm">
