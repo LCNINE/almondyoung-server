@@ -2,7 +2,7 @@
  * @jest-environment jsdom
  */
 import { randomUUID } from 'node:crypto';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type {
   MasterSummaryDto,
@@ -30,19 +30,18 @@ type BatchState = {
 const mockVariantsBatch = jest.fn<BatchState, [string[]]>(() => ({
   data: undefined,
 }));
-const mockSkuSearch = jest.fn<QueryState<unknown>, [string]>(() => ({
-  data: undefined,
-  isPending: false,
-  isError: false,
-  refetch: jest.fn(),
-}));
+const mockPush = jest.fn();
+type MutateOptions = {
+  onSuccess: () => void;
+  onError: (err: unknown) => void;
+};
+const mockMutate = jest.fn<void, [unknown, MutateOptions]>();
 
 jest.mock('next/navigation', () => ({
-  useRouter: () => ({ push: jest.fn() }),
+  useRouter: () => ({ push: mockPush }),
 }));
 
 jest.mock('@/lib/services/products', () => ({
-  useActiveChannels: () => ({ data: [] }),
   useMastersSummary: (q: unknown) => mockMasters(q),
   useVariantRowsByMaster: (masterId: string, opts: unknown) =>
     mockVariantRows(masterId, opts),
@@ -53,13 +52,8 @@ jest.mock('@/lib/services/products', () => ({
     mockVariantRows(q.masterId, q),
 }));
 
-jest.mock('@/lib/services/inventory', () => ({
-  useWarehouses: () => ({ data: [] }),
-  useSkuSearch: (keyword: string) => mockSkuSearch(keyword),
-}));
-
 jest.mock('@/lib/services/orders', () => ({
-  useCreateSalesOrder: () => ({ mutate: jest.fn(), isPending: false }),
+  useCreateSalesOrder: () => ({ mutate: mockMutate, isPending: false }),
 }));
 
 jest.mock('@/components/common/address-search-dialog', () => ({
@@ -70,6 +64,7 @@ jest.mock('./CustomerSearchDialog', () => ({
   CustomerSearchDialog: () => null,
 }));
 
+import { CustomError } from '@/lib/api/customError';
 import ManualSingleOrderPage from './index';
 
 const preview = (
@@ -131,6 +126,8 @@ beforeEach(() => {
   mockMasters.mockReset();
   mockVariantRows.mockReset();
   mockVariantsBatch.mockReset();
+  mockMutate.mockReset();
+  mockPush.mockReset();
   mockVariantsBatch.mockReturnValue({ data: undefined });
   mockVariantRows.mockReturnValue(
     ok({ data: [], total: 0, page: 1, limit: 100 })
@@ -507,23 +504,94 @@ describe('수동 주문 상품 검색', () => {
     expect((recipient as HTMLInputElement).value).toBe('받는분');
   });
 
-  it('판매상품 탭에서 검색할 때는 재고상품 검색을 부르지 않는다', async () => {
+  it('주문 줄은 판매상품 옵션으로만 담는다', async () => {
     mockMasters.mockReturnValue(ok({ data: [master({})], total: 1 }));
-    const { user } = await fillRecipientAndOpenSearch();
+    await fillRecipientAndOpenSearch();
 
     const dialog = await screen.findByRole('dialog');
-    await user.type(
-      within(dialog).getByPlaceholderText('상품명/코드 검색'),
-      '젤'
-    );
-    await waitFor(() =>
-      expect(mockMasters).toHaveBeenLastCalledWith(
-        expect.objectContaining({ q: '젤' })
-      )
-    );
-    expect(mockSkuSearch).not.toHaveBeenCalledWith('젤');
+    expect(within(dialog).queryByRole('tab')).toBeNull();
+  });
+});
 
-    await user.click(within(dialog).getByRole('tab', { name: '재고상품' }));
-    expect(mockSkuSearch).toHaveBeenLastCalledWith('젤');
+const VARIANT = '44444444-4444-4444-8444-444444444444';
+
+function fieldInput(label: string, index = 0) {
+  const field = screen.getAllByText(label)[index].parentElement;
+  return within(field as HTMLElement).getByRole('textbox');
+}
+
+async function fillOrder() {
+  mockMasters.mockReturnValue(
+    ok({
+      data: [master({ variantPreviews: [preview(VARIANT, '빨강', 1000)] })],
+      total: 1,
+    })
+  );
+  const { user } = await fillRecipientAndOpenSearch();
+  const dialog = await screen.findByRole('dialog');
+  await user.click(within(dialog).getByRole('button', { name: /빨강/ }));
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  for (const [label, value, index] of [
+    ['핸드폰', '010', 1],
+    ['우편번호', '00000', 0],
+    ['주소', '도로명', 0],
+    ['상세주소', '1호', 0],
+  ] as const) {
+    await user.click(fieldInput(label, index));
+    await user.paste(value);
+  }
+  return user;
+}
+
+describe('수동 주문 저장', () => {
+  it('Core 주문 계약으로 저장하고 주문내역으로 간다', async () => {
+    const user = await fillOrder();
+    await user.click(screen.getByRole('button', { name: '저장' }));
+
+    expect(mockMutate).toHaveBeenCalledTimes(1);
+    const [payload, options] = mockMutate.mock.calls[0];
+    expect(payload).toMatchObject({
+      channelOrderId: expect.stringMatching(/^SO-\d{8}-[A-Z0-9]{6}$/),
+      salesChannel: '3pl',
+      shippingAddress: {
+        recipientName: '받는분',
+        phone: '010',
+        postalCode: '00000',
+        roadAddress: '도로명',
+        detailAddress: '1호',
+      },
+      lines: [{ variantId: VARIANT, quantity: 1, unitPrice: 1000 }],
+      totalAmount: 1000,
+    });
+    options.onSuccess();
+    expect(mockPush).toHaveBeenCalledWith('/order/history');
+  });
+
+  it('빠진 칸을 알려 주고 저장 요청을 보내지 않는다', async () => {
+    mockMasters.mockReturnValue(ok({ data: [], total: 0 }));
+    const user = userEvent.setup();
+    render(<ManualSingleOrderPage />);
+    const recipient = fieldInput('수취인 성명');
+    await user.type(recipient, '받는분');
+    await user.click(screen.getByRole('button', { name: '저장' }));
+
+    const alert = screen.getByRole('alert');
+    expect(within(alert).getByText('받는 분 연락처를 입력해 주세요.')).toBeTruthy();
+    expect(within(alert).getByText('주문상품을 1개 이상 담아 주세요.')).toBeTruthy();
+    expect(mockMutate).not.toHaveBeenCalled();
+    expect((recipient as HTMLInputElement).value).toBe('받는분');
+  });
+
+  it('같은 주문번호가 이미 있으면 서버 안내를 보여 주고 입력을 남긴다', async () => {
+    const user = await fillOrder();
+    await user.click(screen.getByRole('button', { name: '저장' }));
+    const [, options] = mockMutate.mock.calls[0];
+    const message = '주문번호 SO-1 로 저장된 주문이 이미 있습니다.';
+
+    act(() => options.onError(new CustomError({ message, statusCode: 409 })));
+
+    expect(within(screen.getByRole('alert')).getByText(message)).toBeTruthy();
+    expect(mockPush).not.toHaveBeenCalled();
+    expect((fieldInput('상세주소') as HTMLInputElement).value).toBe('1호');
   });
 });

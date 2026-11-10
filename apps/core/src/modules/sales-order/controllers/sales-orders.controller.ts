@@ -62,11 +62,12 @@ export class SalesOrdersController {
   })
   @RequirePermission('order.order.write')
   @Post()
-  @ApiOperation({ summary: '판매 주문 생성' })
+  @ApiOperation({ summary: '관리자가 입력한 주문 생성 (수기·기타 채널, 저장과 함께 출고 대기)' })
   @ApiResponse({ status: 201, description: '판매 주문 생성 성공' })
   @ApiResponse({ status: 400, description: '잘못된 요청 데이터' })
+  @ApiResponse({ status: 409, description: '같은 주문번호로 저장된 주문이 있음' })
   create(@Body() dto: CreateSalesOrderDto) {
-    return this.service.create(dto);
+    return this.service.createManual(dto);
   }
 
   @PiiResponse({

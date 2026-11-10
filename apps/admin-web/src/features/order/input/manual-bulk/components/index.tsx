@@ -1,5 +1,4 @@
 // src/features/order/input/manual-bulk/components/index.tsx
-/* eslint-disable @typescript-eslint/no-explicit-any */
 'use client';
 
 import { Button } from '@/components/ui/button';
@@ -13,242 +12,121 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { useCreateSalesOrder } from '@/lib/services/orders';
+import { useVariantsBatch } from '@/lib/services/products';
 import { Download, UploadCloud } from 'lucide-react';
-import { useRouter } from 'next/navigation';
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { toast } from 'sonner';
+import {
+  BULK_ORDER_COLUMNS,
+  CSV_BOM,
+  groupBulkOrders,
+  readBulkOrderCsv,
+  toCsv,
+  variantIdsOf,
+  type BulkOrder,
+  type BulkRow,
+  type VariantLookup,
+} from '../../lib/bulk-order-csv';
+import { describeSaveError } from '../../lib/manual-order';
 
-type CsvRow = {
-  orderNo: string;
-  customerId: string;
-  warehouseId: string;
-  channelType?: 'linked' | 'unsupported' | '';
-  channelId?: string;
-  phoneOrderOwner?: string;
-  recipientName?: string;
-  recipientPhone?: string;
-  zip?: string;
-  addr1?: string;
-  addr2?: string;
-  msg?: string;
-  skuId: string;
-  quantity: string | number;
-  unitPrice: string | number;
-  memo?: string;
-};
+type SaveResult =
+  | { status: 'saved' }
+  | { status: 'duplicate'; message: string }
+  | { status: 'failed'; message: string };
 
-type OrderPayload = {
-  orderNo: string;
-  body: {
-    customerId: string;
-    warehouseId: string;
-    items: { skuId: string; quantity: number; unitPrice: number }[];
-    memo: string;
-  };
-};
-
-const CSV_HEADER = [
-  'orderNo',
-  'customerId',
-  'warehouseId',
-  'channelType',
-  'channelId',
-  'phoneOrderOwner',
-  'recipientName',
-  'recipientPhone',
-  'zip',
-  'addr1',
-  'addr2',
-  'msg',
-  'skuId',
-  'quantity',
-  'unitPrice',
-  'memo',
-].join(',');
-
-const CSV_SAMPLE = [
+const SAMPLE_ROWS = [
   [
-    'SO-20251001-0001',
-    '33333333-3333-4333-8333-cccccccccccc',
-    'WH-001',
-    'linked',
-    'shop-001',
+    'SO-20260101-0001',
     '',
-    '홍길동',
-    '010-1234-5678',
-    '04524',
-    '서울특별시 중구 세종대로 110',
-    '지하1층',
-    '부재시 문앞',
-    'SKU-RED-M',
-    2,
-    15000,
-    '첫 구매 고객',
-  ].join(','),
-  [
-    'SO-20251001-0001',
-    '33333333-3333-4333-8333-cccccccccccc',
-    'WH-001',
-    'linked',
-    'shop-001',
+    '주문자',
+    '010-0000-0000',
     '',
-    '홍길동',
-    '010-1234-5678',
-    '04524',
-    '서울특별시 중구 세종대로 110',
-    '지하1층',
-    '부재시 문앞',
-    'SKU-BLUE-L',
+    '받는 분',
+    '010-0000-0000',
+    '00000',
+    '도로명 주소',
+    '101호',
+    '문 앞',
+    '옵션 ID 를 붙여 넣으세요',
     1,
-    17000,
-    '',
-  ].join(','),
-  [
-    'SO-20251001-0002',
-    '99999999-9999-4999-8999-333333333333',
-    'WH-002',
-    'unsupported',
-    '',
-    '김담당',
-    '신사임당',
-    '010-9999-0000',
-    '',
-    '부산광역시 해운대구...',
-    '',
-    '',
-    'SKU-ETC-01',
-    3,
-    12000,
-    '전화주문',
-  ].join(','),
-].join('\n');
+    1000,
+    '전화 접수',
+  ],
+];
 
-function parseNumber(v: unknown, def = 0): number {
-  const n = Number(v);
-  return Number.isFinite(n) ? n : def;
-}
+const COLUMN_GUIDE: { column: string; note: string }[] = [
+  {
+    column: 'orderNo *',
+    note: '주문번호. 같은 번호의 행은 한 주문으로 묶이고, 한 번만 저장됩니다.',
+  },
+  { column: 'customerId', note: '회원이면 고객 ID, 아니면 비워 둡니다.' },
+  { column: 'buyerName · buyerPhone · buyerEmail', note: '주문자 정보 (선택)' },
+  { column: 'recipientName · recipientPhone *', note: '받는 분 이름·연락처' },
+  {
+    column: 'zip · addr1 · addr2 *',
+    note: "우편번호·주소·상세 주소. 상세 주소가 없으면 '없음'",
+  },
+  { column: 'msg', note: '배송 메모 (선택)' },
+  {
+    column: 'variantId *',
+    note: '판매상품 옵션 ID. 업로드하면 상품 이름으로 바로 확인됩니다.',
+  },
+  {
+    column: 'quantity · unitPrice *',
+    note: '수량(1 이상 정수)·단가(원, 무상이면 0)',
+  },
+  { column: 'memo', note: '주문 메모 (선택)' },
+];
 
-function safeTrim(v: unknown): string {
-  return (typeof v === 'string' ? v : v == null ? '' : String(v)).trim();
-}
+const variantLabel = (v: {
+  masterName: string;
+  optionLabel?: string;
+  variantName?: string;
+}) => {
+  const option = v.optionLabel || v.variantName;
+  return option && option !== v.masterName
+    ? `${v.masterName} / ${option}`
+    : v.masterName;
+};
 
 export default function ManualBulkOrderPage() {
-  const router = useRouter();
   const createOrder = useCreateSalesOrder();
 
-  const [fileName, setFileName] = useState<string>('');
-  const [rows, setRows] = useState<CsvRow[]>([]);
-  const [parsing, setParsing] = useState(false);
-
-  // 제출 진행상태
+  const [fileName, setFileName] = useState('');
+  const [rows, setRows] = useState<BulkRow[]>([]);
+  const [fileIssues, setFileIssues] = useState<string[]>([]);
   const [submitting, setSubmitting] = useState(false);
-  const [progress, setProgress] = useState<{
-    total: number;
-    done: number;
-    ok: number;
-    fail: number;
-  }>({
-    total: 0,
-    done: 0,
-    ok: 0,
-    fail: 0,
-  });
-  const [results, setResults] = useState<
-    { orderNo: string; status: 'ok' | 'fail'; message?: string }[]
-  >([]);
+  const [results, setResults] = useState<Record<string, SaveResult>>({});
+  const loadRef = useRef(0);
 
-  const grouped = useMemo(() => {
-    // orderNo 기준 그룹핑 → 주문 payload 생성
-    const map = new Map<string, CsvRow[]>();
-    rows.forEach((r) => {
-      const k = safeTrim(r.orderNo);
-      if (!k) return;
-      if (!map.has(k)) map.set(k, []);
-      map.get(k)!.push(r);
-    });
+  const ids = useMemo(() => variantIdsOf(rows), [rows]);
+  const variantsQuery = useVariantsBatch(ids);
+  const lookup: VariantLookup | null = useMemo(() => {
+    if (ids.length === 0) return new Map();
+    if (!variantsQuery.data) return null;
+    const map: VariantLookup = new Map();
+    variantsQuery.data.forEach((v, id) =>
+      map.set(id, { label: variantLabel(v) })
+    );
+    return map;
+  }, [ids.length, variantsQuery.data]);
 
-    const orders: OrderPayload[] = [];
-    for (const [orderNo, lines] of map.entries()) {
-      const first = lines[0];
-      const channelType =
-        (safeTrim(first.channelType) as 'linked' | 'unsupported' | '') || '';
-      const channelNote =
-        channelType === 'linked'
-          ? `CHANNEL_ID=${safeTrim(first.channelId)}`
-          : channelType === 'unsupported'
-          ? `PHONE_OWNER=${safeTrim(first.phoneOrderOwner)}`
-          : '';
-
-      const shipNoteParts = [
-        safeTrim(first.addr1) || safeTrim(first.addr2)
-          ? `SHIP_TO=${[safeTrim(first.addr1), safeTrim(first.addr2)]
-              .filter(Boolean)
-              .join(' / ')}`
-          : '',
-        safeTrim(first.zip) ? `ZIP=${safeTrim(first.zip)}` : '',
-        safeTrim(first.msg) ? `REQ=${safeTrim(first.msg)}` : '',
-      ].filter(Boolean);
-
-      const items = lines.map((l) => ({
-        skuId: safeTrim(l.skuId),
-        quantity: parseNumber(l.quantity, 0),
-        unitPrice: parseNumber(l.unitPrice, 0),
-      }));
-
-      const memo = [
-        `ORDER_NO=${orderNo}`,
-        channelNote,
-        ...shipNoteParts,
-        `QTY=${items.reduce(
-          (a, b) => a + Number(b.quantity || 0),
-          0
-        )}, AMT=${items.reduce(
-          (a, b) => a + Number(b.quantity || 0) * Number(b.unitPrice || 0),
-          0
-        )}`,
-        safeTrim(first.memo) ? `MEMO=${safeTrim(first.memo)}` : '',
-      ]
-        .filter(Boolean)
-        .join(' | ');
-
-      orders.push({
-        orderNo,
-        body: {
-          customerId: safeTrim(first.customerId),
-          warehouseId: safeTrim(first.warehouseId),
-          items,
-          memo,
-        },
-      });
-    }
-    return orders;
-  }, [rows]);
-
-  const validation = useMemo(() => {
-    const errs: string[] = [];
-    if (rows.length === 0)
-      return { ok: false, errors: ['CSV를 업로드하세요.'] };
-
-    rows.forEach((r, i) => {
-      const lineNo = i + 2; // 헤더 다음부터 2행
-      if (!safeTrim(r.orderNo)) errs.push(`[${lineNo}행] orderNo 필수`);
-      if (!safeTrim(r.customerId)) errs.push(`[${lineNo}행] customerId 필수`);
-      if (!safeTrim(r.warehouseId)) errs.push(`[${lineNo}행] warehouseId 필수`);
-      if (!safeTrim(r.skuId)) errs.push(`[${lineNo}행] skuId 필수`);
-      if (parseNumber(r.quantity) <= 0)
-        errs.push(`[${lineNo}행] quantity는 1 이상`);
-      if (parseNumber(r.unitPrice) < 0)
-        errs.push(`[${lineNo}행] unitPrice는 0 이상`);
-    });
-
-    return { ok: errs.length === 0, errors: errs };
-  }, [rows]);
+  const orders = useMemo(() => groupBulkOrders(rows, lookup), [rows, lookup]);
+  const issues = orders.flatMap((o) => o.issues);
+  const checking = ids.length > 0 && variantsQuery.isPending;
+  const ready = rows.length > 0 && issues.length === 0 && lookup !== null;
+  const pendingOrders = orders.filter(
+    (o) =>
+      o.payload &&
+      results[o.orderNo]?.status !== 'saved' &&
+      results[o.orderNo]?.status !== 'duplicate'
+  );
 
   const handleDownloadTemplate = () => {
-    const blob = new Blob([CSV_HEADER + '\n' + CSV_SAMPLE], {
-      type: 'text/csv;charset=utf-8;',
-    });
-    const url = URL.createObjectURL(blob);
+    const csv = CSV_BOM + toCsv([[...BULK_ORDER_COLUMNS], ...SAMPLE_ROWS]);
+    const url = URL.createObjectURL(
+      new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+    );
     const a = document.createElement('a');
     a.href = url;
     a.download = 'bulk-order-template.csv';
@@ -256,126 +134,91 @@ export default function ManualBulkOrderPage() {
     URL.revokeObjectURL(url);
   };
 
-  const normalizeRow = (o: any): CsvRow => ({
-    orderNo: safeTrim(o.orderNo),
-    customerId: safeTrim(o.customerId),
-    warehouseId: safeTrim(o.warehouseId),
-    channelType:
-      (safeTrim(o.channelType) as 'linked' | 'unsupported' | '') || '',
-    channelId: safeTrim(o.channelId),
-    phoneOrderOwner: safeTrim(o.phoneOrderOwner),
-    recipientName: safeTrim(o.recipientName),
-    recipientPhone: safeTrim(o.recipientPhone),
-    zip: safeTrim(o.zip),
-    addr1: safeTrim(o.addr1),
-    addr2: safeTrim(o.addr2),
-    msg: safeTrim(o.msg),
-    skuId: safeTrim(o.skuId),
-    quantity: o.quantity,
-    unitPrice: o.unitPrice,
-    memo: safeTrim(o.memo),
-  });
-
   const handleFile = async (file: File) => {
+    // 저장 중에 파일을 바꾸면 진행 중인 결과가 새 파일의 주문에 붙는다
+    if (submitting) return;
+    // 읽는 동안 이전 파일로 저장을 시작하지 못하게 미리보기를 먼저 비운다
+    const load = ++loadRef.current;
     setFileName(file.name);
-    setParsing(true);
+    setResults({});
+    setRows([]);
+    setFileIssues([]);
+    const read = readBulkOrderCsv(await file.text());
+    if (load !== loadRef.current) return;
+    setRows(read.rows);
+    setFileIssues(read.fileIssues);
+  };
+
+  const saveOne = async (order: BulkOrder): Promise<SaveResult> => {
+    if (!order.payload)
+      return { status: 'failed', message: '검증되지 않은 주문입니다.' };
     try {
-      const text = await file.text();
-
-      // dynamic import (클라 전용)
-      let parsed: CsvRow[] = [];
-      try {
-        // papaparse 대신 간단한 CSV 파싱 사용
-        const [headerLine, ...lines] = text.trim().split(/\r?\n/);
-        const headers = headerLine.split(',').map((h) => h.trim());
-        parsed = lines.filter(Boolean).map((line) => {
-          const cols = line.split(',');
-          const obj: any = {};
-          headers.forEach((h, idx) => (obj[h] = cols[idx]));
-          return normalizeRow(obj);
-        });
-      } catch (e) {
-        // fallback: 아주 단순 CSV(쉼표만, 따옴표 미지원)
-        const [headerLine, ...lines] = text.trim().split(/\r?\n/);
-        const headers = headerLine.split(',').map((h) => h.trim());
-        parsed = lines.filter(Boolean).map((line) => {
-          const cols = line.split(',');
-          const obj: any = {};
-          headers.forEach((h, idx) => (obj[h] = cols[idx]));
-          return normalizeRow(obj);
-        });
-      }
-
-      setRows(parsed);
-      toast.success(`${parsed.length}행 읽음`);
-    } catch (e: any) {
-      toast.error(e?.message || '파일을 확인하세요.');
-      setRows([]);
-    } finally {
-      setParsing(false);
+      await createOrder.mutateAsync(order.payload);
+      return { status: 'saved' };
+    } catch (err) {
+      const { kind, message } = describeSaveError(err);
+      return kind === 'duplicate'
+        ? { status: 'duplicate', message }
+        : { status: 'failed', message };
     }
   };
 
-  const handleSubmitAll = async () => {
-    if (!validation.ok) {
-      toast.error('오류 목록을 확인하세요.');
-      return;
-    }
+  // 한 건씩 차례로 저장한다. 실패해도 멈추지 않고, 이미 저장된 번호는 다시 만들지 않는다.
+  const handleSave = async () => {
+    if (!ready || pendingOrders.length === 0) return;
     setSubmitting(true);
-    setResults([]);
-    setProgress({ total: grouped.length, done: 0, ok: 0, fail: 0 });
-
-    for (const ord of grouped) {
-      try {
-        await createOrder.mutateAsync(ord.body);
-        setResults((r) => [{ orderNo: ord.orderNo, status: 'ok' }, ...r]);
-        setProgress((p) => ({ ...p, done: p.done + 1, ok: p.ok + 1 }));
-      } catch (e: any) {
-        setResults((r) => [
-          { orderNo: ord.orderNo, status: 'fail', message: e?.message },
-          ...r,
-        ]);
-        setProgress((p) => ({ ...p, done: p.done + 1, fail: p.fail + 1 }));
-      }
+    let saved = 0;
+    let failed = 0;
+    const load = loadRef.current;
+    for (const order of pendingOrders) {
+      if (load !== loadRef.current) break;
+      const result = await saveOne(order);
+      if (result.status === 'saved') saved += 1;
+      if (result.status === 'failed') failed += 1;
+      setResults((prev) => ({ ...prev, [order.orderNo]: result }));
     }
-
     setSubmitting(false);
-
-    toast(
-      `성공 ${progress.ok + (grouped.length - progress.done)}건 / 실패 ${
-        progress.fail
-      }건`
-    );
+    if (failed > 0)
+      toast.error(
+        `저장 ${saved}건, 실패 ${failed}건. 실패한 주문만 다시 저장할 수 있습니다.`
+      );
+    else toast.success(`${saved}건을 저장했습니다. 출고 준비로 넘어갑니다.`);
   };
+
+  const failedCount = Object.values(results).filter(
+    (r) => r.status === 'failed'
+  ).length;
+  const savedOnce = Object.keys(results).length > 0;
 
   return (
     <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold">주문입력(수동/대량)</h1>
           <p className="text-sm text-muted-foreground">
-            CSV 양식으로 여러 건의 주문을 한 번에 생성합니다.
+            CSV 로 여러 주문을 한 번에 저장합니다. 수기·기타 채널로 저장되고,
+            저장하면 바로 출고 준비로 넘어갑니다.
           </p>
         </div>
-
         <div className="flex gap-2">
           <Button variant="outline" onClick={handleDownloadTemplate}>
             <Download className="w-4 h-4 mr-2" />
-            샘플 CSV 다운로드
+            양식 내려받기
           </Button>
           <label className="inline-flex items-center">
             <input
               type="file"
               accept=".csv,text/csv"
               className="hidden"
+              disabled={submitting}
               onChange={(e) => {
                 const f = e.target.files?.[0];
-                if (f) handleFile(f);
+                if (f) void handleFile(f);
                 e.currentTarget.value = '';
               }}
             />
-            <Button asChild variant="default">
-              <span>
+            <Button asChild variant="default" disabled={submitting}>
+              <span aria-disabled={submitting}>
                 <UploadCloud className="w-4 h-4 mr-2" />
                 CSV 업로드
               </span>
@@ -384,207 +227,159 @@ export default function ManualBulkOrderPage() {
         </div>
       </div>
 
-      {/* 업로드 정보 */}
-      <Card className="p-4 space-y-2">
+      <Card className="p-4 space-y-3">
         <div className="text-sm">
           <span className="font-medium">선택된 파일:</span>{' '}
           {fileName ? (
-            <span className="font-mono">{fileName}</span>
+            <span className="font-mono break-all">{fileName}</span>
           ) : (
             <span className="text-muted-foreground">없음</span>
           )}
         </div>
-        <div className="text-xs text-muted-foreground">
-          필수 컬럼:{' '}
-          <code>
-            orderNo, customerId, warehouseId, skuId, quantity, unitPrice
-          </code>{' '}
-          — 같은 <code>orderNo</code>는 한 주문으로 묶입니다.
-        </div>
+        <ul className="space-y-1 text-xs text-muted-foreground">
+          {COLUMN_GUIDE.map((g) => (
+            <li key={g.column}>
+              <code className="text-foreground">{g.column}</code> — {g.note}
+            </li>
+          ))}
+        </ul>
+        <p className="text-xs text-muted-foreground">* 는 필수 열입니다.</p>
       </Card>
 
-      {/* 검증 결과 */}
-      {!parsing && rows.length > 0 && (
-        <Card className="p-4">
-          <h2 className="text-lg font-semibold mb-3">검증</h2>
-          {validation.ok ? (
-            <div className="text-sm text-green-600">
-              문제 없음. 총 {rows.length}행, 묶인 주문 {grouped.length}건
-            </div>
-          ) : (
-            <ul className="list-disc pl-5 text-sm text-red-600 space-y-1">
-              {validation.errors.map((e, idx) => (
-                <li key={idx}>{e}</li>
+      {(fileIssues.length > 0 || rows.length > 0) && (
+        <Card className="p-4 space-y-2">
+          <h2 className="text-lg font-semibold">검증</h2>
+          {fileIssues.length > 0 ? (
+            <ul
+              role="alert"
+              className="pl-5 space-y-1 text-sm list-disc text-destructive"
+            >
+              {fileIssues.map((e) => (
+                <li key={e}>{e}</li>
               ))}
             </ul>
+          ) : checking ? (
+            <p className="text-sm text-muted-foreground">
+              상품을 확인하는 중...
+            </p>
+          ) : variantsQuery.isError ? (
+            <p role="alert" className="text-sm text-destructive">
+              상품 정보를 확인하지 못했습니다.{' '}
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => variantsQuery.refetch()}
+              >
+                다시 확인
+              </Button>
+            </p>
+          ) : issues.length > 0 ? (
+            <>
+              <p className="text-sm text-destructive">
+                고칠 곳 {issues.length}개. 파일을 고친 뒤 다시 올려 주세요.
+                문제가 있는 파일은 한 건도 저장하지 않습니다.
+              </p>
+              <ul
+                role="alert"
+                className="pl-5 space-y-1 text-sm list-disc text-destructive"
+              >
+                {issues.map((e, i) => (
+                  <li key={i}>{e}</li>
+                ))}
+              </ul>
+            </>
+          ) : (
+            <p className="text-sm text-green-700">
+              문제 없음. 총 {rows.length}행, 주문 {orders.length}건
+            </p>
           )}
         </Card>
       )}
 
-      {/* 미리보기 (그룹 요약) */}
-      {rows.length > 0 && (
+      {fileIssues.length === 0 && orders.length > 0 && (
         <Card className="p-0 overflow-hidden">
           <div className="p-4">
-            <h2 className="text-lg font-semibold">그룹 요약</h2>
-            <p className="text-xs text-muted-foreground">
-              주문별 묶음 미리보기 (표는 각 주문의 첫 라인을 대표로 보여줍니다)
-            </p>
+            <h2 className="text-lg font-semibold">주문 미리보기</h2>
           </div>
-          <div className="border-t">
+          <div className="overflow-x-auto border-t">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>orderNo</TableHead>
-                  <TableHead>customerId</TableHead>
-                  <TableHead>warehouseId</TableHead>
-                  <TableHead className="text-right">items</TableHead>
-                  <TableHead className="text-right">총수량</TableHead>
+                  <TableHead>주문번호</TableHead>
+                  <TableHead>받는 분</TableHead>
+                  <TableHead>상품</TableHead>
                   <TableHead className="text-right">합계</TableHead>
+                  <TableHead>저장</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {grouped.map((g) => {
-                  const qty = g.body.items.reduce((a, b) => a + b.quantity, 0);
-                  const amt = g.body.items.reduce(
-                    (a, b) => a + b.quantity * b.unitPrice,
-                    0
-                  );
-                  return (
-                    <TableRow key={g.orderNo}>
-                      <TableCell className="font-mono">{g.orderNo}</TableCell>
-                      <TableCell className="font-mono">
-                        {g.body.customerId}
-                      </TableCell>
-                      <TableCell className="font-mono">
-                        {g.body.warehouseId}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {g.body.items.length}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {qty.toLocaleString()}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {amt.toLocaleString()}
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-                {grouped.length === 0 && (
-                  <TableRow>
-                    <TableCell
-                      colSpan={6}
-                      className="text-center text-muted-foreground py-8"
-                    >
-                      데이터 없음
+                {orders.map((o) => (
+                  <TableRow key={o.orderNo || 'missing'}>
+                    <TableCell className="font-mono whitespace-nowrap">
+                      {o.orderNo || '(주문번호 없음)'}
+                      <div className="text-xs text-muted-foreground">
+                        {o.lineNos.join(', ')}행
+                      </div>
                     </TableCell>
-                  </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </div>
-        </Card>
-      )}
-
-      {/* 원본행 미리보기 */}
-      {rows.length > 0 && (
-        <Card className="p-0 overflow-auto">
-          <div className="p-4">
-            <h2 className="text-lg font-semibold">원본 행 미리보기</h2>
-          </div>
-          <div className="border-t">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>orderNo</TableHead>
-                  <TableHead>customerId</TableHead>
-                  <TableHead>warehouseId</TableHead>
-                  <TableHead>skuId</TableHead>
-                  <TableHead className="text-right">quantity</TableHead>
-                  <TableHead className="text-right">unitPrice</TableHead>
-                  <TableHead>memo</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {rows.slice(0, 200).map((r, i) => (
-                  <TableRow key={i}>
-                    <TableCell className="font-mono">{r.orderNo}</TableCell>
-                    <TableCell className="font-mono">{r.customerId}</TableCell>
-                    <TableCell className="font-mono">{r.warehouseId}</TableCell>
-                    <TableCell className="font-mono">{r.skuId}</TableCell>
-                    <TableCell className="text-right">
-                      {parseNumber(r.quantity).toLocaleString()}
+                    <TableCell>
+                      {o.payload?.shippingAddress.recipientName ?? '-'}
                     </TableCell>
-                    <TableCell className="text-right">
-                      {parseNumber(r.unitPrice).toLocaleString()}
+                    <TableCell>
+                      {o.payload ? (
+                        <ul className="text-sm">
+                          {o.payload.lines.map((l, i) => (
+                            <li key={i}>
+                              {l.productName} × {l.quantity}
+                            </li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <span className="text-sm text-destructive">
+                          검증 필요
+                        </span>
+                      )}
                     </TableCell>
-                    <TableCell className="truncate max-w-[280px]">
-                      {r.memo}
+                    <TableCell className="text-right whitespace-nowrap">
+                      {o.payload
+                        ? `${(o.payload.totalAmount ?? 0).toLocaleString('ko-KR')}원`
+                        : '-'}
+                    </TableCell>
+                    <TableCell className="min-w-[10rem] whitespace-normal text-sm">
+                      <ResultCell result={results[o.orderNo]} />
                     </TableCell>
                   </TableRow>
                 ))}
-                {rows.length > 200 && (
-                  <TableRow>
-                    <TableCell
-                      colSpan={7}
-                      className="text-center text-muted-foreground py-3"
-                    >
-                      …외 {rows.length - 200}행 더 있음
-                    </TableCell>
-                  </TableRow>
-                )}
               </TableBody>
             </Table>
           </div>
         </Card>
       )}
 
-      {/* 제출 영역 */}
-      <div className="flex items-center justify-between">
-        <div className="text-sm text-muted-foreground">
+      <div className="flex justify-end">
+        <Button
+          onClick={handleSave}
+          disabled={!ready || submitting || pendingOrders.length === 0}
+        >
           {submitting
-            ? `진행 ${progress.done}/${progress.total} — 성공 ${progress.ok}, 실패 ${progress.fail}`
-            : rows.length > 0
-            ? `총 ${grouped.length}건 주문 생성 준비`
-            : 'CSV를 업로드하면 여기서 진행상황을 볼 수 있어요.'}
-        </div>
-        <div className="flex gap-2">
-          <Button
-            variant="outline"
-            onClick={() => router.push('/order/history')}
-          >
-            주문내역으로
-          </Button>
-          <Button
-            disabled={
-              parsing || submitting || rows.length === 0 || !validation.ok
-            }
-            onClick={handleSubmitAll}
-          >
-            {submitting ? '생성 중…' : `일괄 생성 (${grouped.length}건)`}
-          </Button>
-        </div>
+            ? '저장 중...'
+            : savedOnce && failedCount > 0
+              ? `실패한 ${pendingOrders.length}건 다시 저장`
+              : `${pendingOrders.length}건 저장`}
+        </Button>
       </div>
-
-      {/* 결과 로그 */}
-      {results.length > 0 && (
-        <Card className="p-4">
-          <h2 className="text-lg font-semibold mb-3">결과</h2>
-          <div className="max-h-64 overflow-auto text-sm font-mono space-y-1">
-            {results.map((r, idx) => (
-              <div
-                key={idx}
-                className={
-                  r.status === 'ok' ? 'text-green-700' : 'text-red-700'
-                }
-              >
-                [{r.status.toUpperCase()}] {r.orderNo}{' '}
-                {r.message ? `- ${r.message}` : ''}
-              </div>
-            ))}
-          </div>
-        </Card>
-      )}
     </div>
   );
+}
+
+function ResultCell({ result }: { result?: SaveResult }) {
+  if (!result) return <span className="text-muted-foreground">저장 전</span>;
+  if (result.status === 'saved')
+    return <span className="text-green-700">저장됨</span>;
+  if (result.status === 'duplicate')
+    return (
+      <span className="text-muted-foreground" title={result.message}>
+        이미 저장된 주문번호 — 다시 만들지 않음
+      </span>
+    );
+  return <span className="text-destructive">실패 — {result.message}</span>;
 }

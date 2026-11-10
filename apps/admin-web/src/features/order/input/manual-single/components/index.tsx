@@ -1,25 +1,14 @@
 // src/features/order/input/manual-single/components/index.tsx
 'use client';
 
-import { useWarehouses } from '@/lib/services/inventory';
 import { useCreateSalesOrder } from '@/lib/services/orders';
-import { useActiveChannels } from '@/lib/services/products';
 import { useRouter } from 'next/navigation';
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 
 import { AddressSearchDialog } from '@/components/common/address-search-dialog';
 import { Button } from '@/components/ui/button';
-import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import {
   Table,
   TableBody,
@@ -36,16 +25,20 @@ import {
   ProductSearchDialog,
   type ProductSearchPick,
 } from './product-search-dialog';
+import {
+  buildManualOrder,
+  describeSaveError,
+  generateManualOrderNo,
+  type ManualOrderField,
+} from '../../lib/manual-order';
 
 // -------------------------
 type OrderLine = {
   id: string;
-  type: 'product' | 'sku';
   refId: string;
   name: string;
   optionText?: string;
-  variantId?: string;
-  skuId?: string;
+  variantId: string;
   quantity: number;
   /** 가격을 모르는 상품은 null — 작업자가 단가를 입력한다. */
   price: number | null;
@@ -63,56 +56,33 @@ type Address = {
   zip?: string;
   addr1?: string;
   addr2?: string;
-  isGift?: boolean;
   msg?: string;
 };
 
 // -------------------------
-const toOrderLine = (p: ProductSearchPick): Omit<OrderLine, 'id'> =>
-  p.type === 'product'
-    ? {
-        type: 'product',
-        refId: p.masterId,
-        name: p.name,
-        optionText: p.optionText,
-        variantId: p.variantId,
-        quantity: 1,
-        price: p.price,
-      }
-    : {
-        type: 'sku',
-        refId: p.skuId,
-        name: p.name,
-        skuId: p.skuId,
-        quantity: 1,
-        price: p.price,
-      };
-
-const seq = { n: 1 };
-const genOrderNo = () => {
-  const d = new Date();
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  const s = String(seq.n++).padStart(4, '0');
-  return `SO-${y}${m}${day}-${s}`;
-};
+const toOrderLine = (p: ProductSearchPick): Omit<OrderLine, 'id'> => ({
+  refId: p.masterId,
+  name: p.name,
+  optionText: p.optionText,
+  variantId: p.variantId,
+  quantity: 1,
+  price: p.price,
+});
 
 // -------------------------
 export default function ManualSingleOrderPage() {
   const router = useRouter();
-  const { data: channels } = useActiveChannels();
-  const { data: warehouses } = useWarehouses();
   const createOrder = useCreateSalesOrder();
 
-  // 쇼핑몰/주문
-  const [channelType, setChannelType] = useState<'linked' | 'unsupported'>(
-    'linked'
-  );
-  const [channelId, setChannelId] = useState<string | undefined>();
-  const [phoneOrderOwner, setPhoneOrderOwner] = useState('');
-  const [orderNo, setOrderNo] = useState(genOrderNo);
-  const [warehouseId, setWarehouseId] = useState<string | undefined>();
+  // 임의 번호라 서버 렌더와 어긋나지 않게 브라우저에서 만든다
+  const [orderNo, setOrderNo] = useState('');
+  useEffect(() => {
+    setOrderNo((current) => current || generateManualOrderNo());
+  }, []);
+  // 저장 전 검증·저장 실패 안내. 입력값은 지우지 않는다.
+  const [issues, setIssues] = useState<
+    { field: ManualOrderField | 'save'; message: string }[]
+  >([]);
 
   // 고객/배송지
   const [customerId, setCustomerId] = useState<string | undefined>();
@@ -124,7 +94,6 @@ export default function ManualSingleOrderPage() {
   const [recipient, setRecipient] = useState<Address>({
     name: '',
     phone: '',
-    isGift: true,
     msg: '',
   });
   const [addrDialogOpen, setAddrDialogOpen] = useState(false);
@@ -157,61 +126,47 @@ export default function ManualSingleOrderPage() {
   const removeLine = (id: string) =>
     setLines((prev) => prev.filter((l) => l.id !== id));
 
-  // 주문 저장 → 실제 API 호출
   const handleSubmit = () => {
-    if (!customerId) {
-      toast('유저검색 버튼으로 고객을 선택하세요.');
-      return;
-    }
-    if (!warehouseId) {
-      toast('출고 창고를 선택하세요.');
-      return;
-    }
-    if (lines.length === 0) {
-      toast('주문상품을 1개 이상 추가하세요.');
-      return;
-    }
-    const invalid = lines.find((l) => !l.skuId);
-    if (invalid) {
-      toast(`${invalid.name}의 SKU가 없습니다.`);
-      return;
-    }
-
-    const payload = {
+    const built = buildManualOrder({
+      orderNo,
       customerId,
-      warehouseId,
-      items: lines.map((l) => ({
-        skuId: String(l.skuId),
+      buyer,
+      recipient: {
+        name: recipient.name,
+        phone: recipient.phone,
+        postalCode: recipient.zip ?? '',
+        roadAddress: recipient.addr1 ?? '',
+        detailAddress: recipient.addr2 ?? '',
+        deliveryNote: recipient.msg,
+      },
+      lines: lines.map((l) => ({
+        variantId: l.variantId,
+        label:
+          l.optionText && l.optionText !== l.name
+            ? `${l.name} / ${l.optionText}`
+            : l.name,
         quantity: Number(l.quantity),
-        unitPrice: Number(l.price),
+        unitPrice: l.price,
       })),
-      memo: [
-        `ORDER_NO=${orderNo}`,
-        channelType === 'linked'
-          ? `CHANNEL_ID=${channelId ?? ''}`
-          : `PHONE_OWNER=${phoneOrderOwner ?? ''}`,
-        recipient.addr1 || recipient.addr2
-          ? `SHIP_TO=${[recipient.addr1, recipient.addr2]
-              .filter(Boolean)
-              .join(' / ')}`
-          : '',
-        recipient.zip ? `ZIP=${recipient.zip}` : '',
-        recipient.msg ? `REQ=${recipient.msg}` : '',
-        `QTY=${totalQty}, AMT=${totalAmt}`,
-        memo?.trim() ? `MEMO=${memo.trim()}` : '',
-      ]
-        .filter(Boolean)
-        .join(' | '),
-    } as const;
-
-    createOrder.mutate(payload, {
-      onSuccess: (res) => {
-        toast(`주문 ID: ${res.id}`);
-        // 생성 성공 후 주문내역으로 이동
+      memo,
+    });
+    if (!built.payload) {
+      setIssues(built.issues);
+      toast.error('저장하기 전에 아래 항목을 확인해 주세요.');
+      return;
+    }
+    setIssues([]);
+    createOrder.mutate(built.payload, {
+      onSuccess: () => {
+        toast.success(
+          `주문 ${built.payload.channelOrderId} 을 저장했습니다. 출고 준비로 넘어갑니다.`
+        );
         router.push('/order/history');
       },
-      onError: (err: any) => {
-        toast(err?.message || '잠시 후 다시 시도해주세요.');
+      onError: (err: unknown) => {
+        const { message } = describeSaveError(err);
+        setIssues([{ field: 'save', message }]);
+        toast.error(message);
       },
     });
   };
@@ -223,92 +178,37 @@ export default function ManualSingleOrderPage() {
         주문건을 수동으로 입력하는 페이지
       </p>
 
-      {/* 쇼핑몰/주문 기본 */}
-      <Section title="쇼핑몰 정보">
+      <Section title="주문 정보">
         <div className="grid gap-4 md:grid-cols-2">
           <div className="space-y-2">
-            <Label>판매채널 선택</Label>
-            <RadioGroup
-              value={channelType}
-              onValueChange={(v) =>
-                setChannelType(v as 'linked' | 'unsupported')
-              }
-              className="flex gap-4"
-            >
-              <div className="flex items-center space-x-2">
-                <RadioGroupItem id="linked" value="linked" />
-                <Label htmlFor="linked">쇼핑몰 (연동)</Label>
-              </div>
-              <div className="flex items-center space-x-2">
-                <RadioGroupItem id="unsupported" value="unsupported" />
-                <Label htmlFor="unsupported">쇼핑몰 (미지원)</Label>
-              </div>
-            </RadioGroup>
+            <Label>판매채널</Label>
+            <p className="text-sm">수기·기타</p>
+            <p className="text-xs text-muted-foreground">
+              전화·방문·미연동 쇼핑몰 주문을 입력합니다. 자사몰·스마트스토어·쿠팡
+              주문은 자동으로 들어오니 여기서 다시 입력하지 마세요. 저장하면
+              바로 출고 준비로 넘어가고, 출고 창고는 출고 준비에서 정해집니다.
+            </p>
           </div>
 
           <div className="space-y-2">
-            <Label>주문번호</Label>
+            <Label htmlFor="manual-order-no">주문번호</Label>
             <div className="flex gap-2">
               <Input
+                id="manual-order-no"
                 value={orderNo}
                 onChange={(e) => setOrderNo(e.target.value)}
               />
               <Button
                 type="button"
                 variant="outline"
-                onClick={() => setOrderNo(genOrderNo())}
+                onClick={() => setOrderNo(generateManualOrderNo())}
               >
                 자동생성
               </Button>
             </div>
-          </div>
-
-          {channelType === 'linked' && (
-            <div className="space-y-2">
-              <Label>연동 쇼핑몰</Label>
-              <Select
-                value={channelId || ''}
-                onValueChange={(v) => setChannelId(v)}
-              >
-                <SelectTrigger className="px-2 border ">
-                  <SelectValue placeholder="자사몰 / 스마트스토어 / 쿠팡 ..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {(channels || []).map((c) => (
-                    <SelectItem key={c.id} value={c.id}>
-                      {c.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          )}
-
-          {channelType === 'unsupported' && (
-            <div className="space-y-2">
-              <Label>전화주문(담당자 이름)</Label>
-              <Input
-                placeholder="예: 홍길동"
-                value={phoneOrderOwner}
-                onChange={(e) => setPhoneOrderOwner(e.target.value)}
-              />
-            </div>
-          )}
-
-          <div className="space-y-2">
-            <Label>출고 창고</Label>
-            <Select value={warehouseId || ''} onValueChange={setWarehouseId}>
-              <SelectTrigger className="px-2 border ">
-                <SelectValue placeholder="창고 선택" />
-              </SelectTrigger>
-              <SelectContent>
-                {(warehouses || []).map((w: any) => (
-                  <SelectItem key={w.id} value={w.id}>
-                    {w.name || w.id}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <p className="text-xs text-muted-foreground">
+              같은 주문번호로는 한 번만 저장됩니다.
+            </p>
           </div>
         </div>
       </Section>
@@ -316,7 +216,7 @@ export default function ManualSingleOrderPage() {
       {/* 고객 / 주문자 */}
       <Section title="고객/주문자">
         <div className="grid gap-4 md:grid-cols-3">
-          <Field label="고객 선택">
+          <Field label="고객 선택 (회원이면)">
             <div className="flex gap-2">
               <Button
                 type="button"
@@ -372,19 +272,6 @@ export default function ManualSingleOrderPage() {
               }
             />
           </Field>
-          <Field label="배송유형" className="flex items-center gap-4">
-            <div className="flex items-center gap-2">
-              <Checkbox
-                checked={!!recipient.isGift}
-                onCheckedChange={(v) =>
-                  setRecipient({ ...recipient, isGift: !!v })
-                }
-                id="gift"
-              />
-              <Label htmlFor="gift">선물</Label>
-            </div>
-          </Field>
-
           <Field label="우편번호">
             <div className="flex gap-2">
               <Input
@@ -414,7 +301,7 @@ export default function ManualSingleOrderPage() {
           </Field>
           <Field label="상세주소">
             <Input
-              placeholder="주소 2"
+              placeholder="없으면 '없음'"
               value={recipient.addr2 || ''}
               onChange={(e) =>
                 setRecipient({ ...recipient, addr2: e.target.value })
@@ -460,7 +347,7 @@ export default function ManualSingleOrderPage() {
             <TableHeader>
               <TableRow>
                 <TableHead className="w-[40%]">상품명</TableHead>
-                <TableHead>옵션/SKU</TableHead>
+                <TableHead>옵션</TableHead>
                 <TableHead className="w-24 text-right">수량</TableHead>
                 <TableHead className="w-32 text-right">단가(원)</TableHead>
                 <TableHead className="w-20" />
@@ -481,12 +368,9 @@ export default function ManualSingleOrderPage() {
                 <TableRow key={l.id}>
                   <TableCell className="align-top">
                     <div className="font-medium">{l.name}</div>
-                    <div className="text-xs text-muted-foreground">
-                      {l.type === 'product' ? '판매상품' : '재고상품'}
-                    </div>
                   </TableCell>
                   <TableCell className="align-top">
-                    <div className="text-sm">{l.optionText || l.skuId}</div>
+                    <div className="text-sm">{l.optionText}</div>
                   </TableCell>
                   <TableCell className="text-right">
                     <Input
@@ -534,11 +418,22 @@ export default function ManualSingleOrderPage() {
       {/* 기타 메모 */}
       <Section title="기타">
         <Textarea
-          placeholder="기타메모"
+          placeholder="예: 전화 접수, 담당 홍길동"
           value={memo}
           onChange={(e) => setMemo(e.target.value)}
         />
       </Section>
+
+      {issues.length > 0 && (
+        <div
+          role="alert"
+          className="p-4 space-y-1 text-sm border rounded-lg border-destructive/40 bg-destructive/5 text-destructive"
+        >
+          {issues.map((issue, i) => (
+            <p key={i}>{issue.message}</p>
+          ))}
+        </div>
+      )}
 
       <div className="flex justify-center">
         <Button
