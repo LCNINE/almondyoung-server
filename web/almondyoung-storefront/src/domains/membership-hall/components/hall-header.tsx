@@ -18,7 +18,7 @@ export async function HallHeader({ isMember }: { isMember: boolean }) {
         className="size-11 flex-none object-contain md:size-14"
       />
       <div className="min-w-0 flex-1">
-        <h1 className="text-ink text-[22px] font-extrabold tracking-[-0.03em] md:text-[28px]">
+        <h1 className="text-ink text-[22px] font-bold tracking-[-0.01em] md:text-[28px]">
           {t("title")}
         </h1>
         <p className="text-muted-foreground mt-1 text-sm">{t("description")}</p>

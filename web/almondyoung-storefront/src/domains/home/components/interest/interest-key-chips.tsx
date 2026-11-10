@@ -70,10 +70,10 @@ export function InterestKeyChips({
               aria-pressed={isSelected}
               disabled={disabled}
               className={cn(
-                "text-foreground relative flex flex-col items-center gap-2 rounded-[14px] bg-white text-[13px] font-medium break-keep transition-colors disabled:cursor-not-allowed md:text-sm",
+                "text-foreground relative flex flex-col items-center gap-2 rounded-[14px] border bg-white px-1.5 pt-3.5 pb-3 text-[13px] font-medium break-keep transition-colors disabled:cursor-not-allowed md:text-sm",
                 isSelected
-                  ? "border-ink border-2 px-[5px] pt-[13px] pb-[11px]"
-                  : "border-border hover:border-muted-foreground border px-1.5 pt-3.5 pb-3",
+                  ? "border-ink ring-ink ring-1 ring-inset"
+                  : "border-border hover:border-muted-foreground",
                 isDimmed && "opacity-50"
               )}
             >

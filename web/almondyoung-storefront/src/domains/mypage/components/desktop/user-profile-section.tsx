@@ -48,7 +48,7 @@ export function UserProfileSection({
           }
         >
           <span className="ring-primary/15 inline-flex shrink-0 items-center gap-1.5 rounded-full bg-white px-3 py-1 whitespace-nowrap shadow-sm ring-1 transition-colors hover:bg-gray-50">
-            <span className="text-purple-deep text-base font-extrabold">멤버십</span>
+            <span className="text-purple-deep text-base font-bold">멤버십</span>
             {isMembership ? (
               <span className="text-purple-deep flex items-center gap-0.5 text-sm font-bold">
                 <Crown className="size-3.5" aria-hidden />

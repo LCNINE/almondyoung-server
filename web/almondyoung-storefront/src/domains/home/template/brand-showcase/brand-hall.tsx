@@ -51,7 +51,7 @@ export function BrandHall({ brands }: BrandHallProps) {
             sizes="64px"
           />
           <div className="min-w-0">
-            <h3 className="truncate text-xl font-extrabold">{active.name}</h3>
+            <h3 className="truncate text-xl font-bold">{active.name}</h3>
             <p className="text-[13px] text-white/70">
               {active.products.length > 0
                 ? t("featuredCaption")
@@ -83,7 +83,7 @@ export function BrandHall({ brands }: BrandHallProps) {
                     {product.title}
                   </span>
                   <span className="flex flex-col items-end gap-0.5 whitespace-nowrap tabular-nums">
-                    <span className="font-extrabold">
+                    <span className="font-bold">
                       {product.price.toLocaleString()}원
                     </span>
                     {product.membershipPrice !== null && (
@@ -101,7 +101,7 @@ export function BrandHall({ brands }: BrandHallProps) {
 
         <LocalizedClientLink
           href={active.href}
-          className="bg-mint text-ink relative z-[1] mt-auto flex h-11 items-center justify-center rounded-[10px] font-extrabold"
+          className="bg-mint text-ink relative z-[1] mt-auto flex h-11 items-center justify-center rounded-[10px] font-bold"
         >
           {t("goToBrand", { name: active.name })}
         </LocalizedClientLink>

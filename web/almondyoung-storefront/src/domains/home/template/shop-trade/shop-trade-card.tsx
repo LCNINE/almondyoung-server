@@ -55,7 +55,7 @@ export async function ShopTradeCard({ listing }: { listing: ShopListingItem }) {
           {listing.dealType && (
             <span
               className={cn(
-                "rounded-[5px] px-[7px] py-0.5 text-[11px] font-extrabold",
+                "rounded-[5px] px-2 py-0.5 text-[11px] font-bold",
                 listing.dealType === "lease"
                   ? "bg-purple-tint text-purple-deep"
                   : "bg-mint-tint text-mint-deep"
@@ -65,7 +65,7 @@ export async function ShopTradeCard({ listing }: { listing: ShopListingItem }) {
             </span>
           )}
           {listing.status === "closed" && (
-            <span className="bg-secondary text-foreground rounded-[5px] px-[7px] py-0.5 text-[11px] font-extrabold">
+            <span className="bg-secondary text-foreground rounded-[5px] px-2 py-0.5 text-[11px] font-bold">
               {t("closed")}
             </span>
           )}

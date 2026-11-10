@@ -90,7 +90,7 @@ export function ClassListSection({
                 )}
               </span>
               {row.region ? (
-                <span className="text-mint-deep bg-mint-tint justify-self-start rounded-md px-2 py-[3px] text-xs font-bold whitespace-nowrap">
+                <span className="text-mint-deep bg-mint-tint justify-self-start rounded-md px-2 py-1 text-xs font-bold whitespace-nowrap">
                   {row.region}
                 </span>
               ) : (

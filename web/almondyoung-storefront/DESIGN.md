@@ -109,7 +109,7 @@
 **홈·헤더의 홀수 간격 → 4의 배수**
 - `components/layout/header/main-header/service-bar.tsx`, `user-actions.tsx` — `px-[5px]` → `px-1`
 - `components/layout/header/main-header/category-nav.tsx` — `px-[9px]` → `px-2`
-- `domains/home/components/interest/interest-key-chips.tsx` — `px-[5px] pt-[13px] pb-[11px]` → `px-1 py-3`
+- `domains/home/components/interest/interest-key-chips.tsx` — 선택 칩이 2px 테두리만큼 `px-[5px] pt-[13px] pb-[11px]` 로 여백을 깎던 것을, 테두리는 1px 그대로 두고 `ring-1 ring-inset` 으로 두껍게 보이게 바꾼다. 여백 보정이 사라져 선택해도 내용이 흔들리지 않는다
 - `domains/home/template/shop-trade/shop-trade-card.tsx` — `px-[7px]` → `px-2`
 - `domains/home/components/v1-card/index.tsx` — `h-[39px]` → `h-10`
 - `domains/home/components/class-list/index.tsx`, `domains/home/components/quick-links/index.tsx` — `py-[3px]` → `py-1`

@@ -37,7 +37,7 @@ export function V1ProductCard({ item, tag, compact }: V1ProductCardProps) {
       <p
         className={cn(
           "text-ink line-clamp-2 leading-[1.4] font-normal",
-          compact ? "min-h-9 text-[13px]" : "min-h-[39px] text-sm"
+          compact ? "min-h-9 text-[13px]" : "min-h-10 text-sm"
         )}
       >
         {item.title}

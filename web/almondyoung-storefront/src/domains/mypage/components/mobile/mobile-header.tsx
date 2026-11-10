@@ -52,7 +52,7 @@ export function MobileHeader({
             )}
           >
             <span className="flex items-baseline gap-1">
-              <span className="text-lg font-extrabold text-purple-deep">멤버십</span>
+              <span className="text-lg font-bold text-purple-deep">멤버십</span>
             </span>
             {isMembership ? (
               <span className="inline-flex items-center gap-1 rounded-full bg-purple-tint px-2 py-0.5 text-xs font-bold text-purple-deep">

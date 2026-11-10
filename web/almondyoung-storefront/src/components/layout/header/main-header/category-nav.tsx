@@ -40,7 +40,7 @@ export async function CategoryNav({
               <li key={category.key} className="shrink-0">
                 <LocalizedClientLink
                   href={`/category/${category.handle}`}
-                  className="hover:bg-muted hover:text-mint-deep flex h-10 items-center gap-1.5 rounded-[10px] px-[9px] text-[15px] font-semibold whitespace-nowrap transition-colors"
+                  className="hover:bg-muted hover:text-mint-deep flex h-10 items-center gap-1.5 rounded-[10px] px-2 text-[15px] font-semibold whitespace-nowrap transition-colors"
                 >
                   {iconUrl && (
                     <Image

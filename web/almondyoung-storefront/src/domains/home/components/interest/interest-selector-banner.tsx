@@ -90,7 +90,7 @@ export function InterestSelectorBanner({
         <div>
           <h2
             id="interest-selector-title"
-            className="text-foreground text-xl font-bold tracking-[-0.03em] break-keep md:text-[22px]"
+            className="text-foreground text-xl font-bold tracking-[-0.01em] break-keep md:text-[22px]"
           >
             {t("title")}
           </h2>

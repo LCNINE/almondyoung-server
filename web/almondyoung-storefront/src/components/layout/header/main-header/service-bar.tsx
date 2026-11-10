@@ -81,7 +81,7 @@ export async function ServiceBar() {
               <ServiceIcon link={link} />
               {link.label}
               {link.isNew && (
-                <span className="bg-pink text-ink h-3.5 rounded-full px-[5px] text-[9px] leading-[14px] font-extrabold">
+                <span className="bg-pink text-ink h-3.5 rounded-full px-1 text-[9px] leading-[14px] font-bold">
                   {t("serviceBar.new")}
                 </span>
               )}
@@ -145,7 +145,7 @@ function ServiceIcon({ link }: { link: ServiceLink }) {
           alt=""
           fill
           sizes={link.wide ? "48px" : "20px"}
-          className={link.wide ? "object-contain px-[5px]" : "object-cover"}
+          className={link.wide ? "object-contain px-1" : "object-cover"}
         />
       ) : (
         <ChartNoAxesColumn aria-hidden className="h-3 w-3 text-white" />

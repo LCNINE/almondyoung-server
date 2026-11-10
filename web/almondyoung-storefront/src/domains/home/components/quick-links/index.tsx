@@ -297,7 +297,7 @@ export function NewBadge({ compact = false }: { compact?: boolean }) {
         "bg-primary absolute rounded-full leading-none font-bold text-white",
         compact
           ? "-top-1.5 -right-2.5 px-1 py-[2px] text-[8px]"
-          : "-top-1.5 -right-1.5 px-1.5 py-[3px] text-[9px]"
+          : "-top-1.5 -right-1.5 px-1.5 py-1 text-[9px]"
       )}
     >
       NEW

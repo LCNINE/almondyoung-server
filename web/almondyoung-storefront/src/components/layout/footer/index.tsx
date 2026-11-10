@@ -41,7 +41,7 @@ export default async function Footer({ className }: { className?: string }) {
             </LocalizedClientLink>
             <LocalizedClientLink
               href="/privacy"
-              className={cn(linkClassName, "font-extrabold")}
+              className={cn(linkClassName, "font-bold")}
             >
               {t("privacy")}
             </LocalizedClientLink>
@@ -76,7 +76,7 @@ export default async function Footer({ className }: { className?: string }) {
           <p className="text-muted-foreground text-[13px]">{t("csLabel")}</p>
           <Link
             href={CS_PHONE_LINK}
-            className="text-ink block text-[26px] font-extrabold tracking-[-0.02em]"
+            className="text-ink block text-[26px] font-bold tracking-[-0.01em]"
           >
             {CS_PHONE}
           </Link>

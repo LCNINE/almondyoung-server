@@ -32,7 +32,7 @@ export function Title({
     <h2
       id={id}
       className={cn(
-        "text-ink flex items-center gap-2 text-[20px] leading-[1.3] font-bold tracking-[-0.03em] md:text-[24px]",
+        "text-ink flex items-center gap-2 text-[20px] leading-[1.3] font-bold tracking-[-0.01em] md:text-[24px]",
         className
       )}
     >

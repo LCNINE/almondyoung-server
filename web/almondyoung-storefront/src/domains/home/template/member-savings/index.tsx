@@ -76,7 +76,7 @@ export async function MemberSavingsWrapper({
         </svg>
 
         <div className="relative z-1 flex flex-col gap-3.5">
-          <h2 className="text-ink text-[24px] leading-[1.3] font-bold tracking-[-0.03em] md:text-[28px]">
+          <h2 className="text-ink text-[24px] leading-[1.3] font-bold tracking-[-0.01em] md:text-[28px]">
             {t("titleLine1")}
             <br />
             {t("titleLine2")}

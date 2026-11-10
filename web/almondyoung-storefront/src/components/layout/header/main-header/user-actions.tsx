@@ -80,7 +80,7 @@ function AccountMenuItem({
       </span>
 
       {badge && (
-        <span className="bg-pink text-ink absolute top-0 right-0 grid h-[18px] min-w-[18px] place-items-center rounded-full px-[5px] text-[11px] leading-none font-bold xl:right-2">
+        <span className="bg-pink text-ink absolute top-0 right-0 grid h-[18px] min-w-[18px] place-items-center rounded-full px-1 text-[11px] leading-none font-bold xl:right-2">
           {badge}
         </span>
       )}
