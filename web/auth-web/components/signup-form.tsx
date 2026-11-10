@@ -103,7 +103,7 @@ function Stepper({ current }: { current: number }) {
           <span
             key={label}
             className={`h-1 flex-1 rounded-full transition-colors ${
-              i <= current ? "bg-primary" : "bg-secondary"
+              i <= current ? "bg-mint" : "bg-secondary"
             }`}
           />
         ))}

@@ -39,6 +39,10 @@
   --color-card: var(--card);
   --color-foreground: var(--foreground);
   --color-background: var(--background);
+  --color-ink: var(--ink);
+  --color-mint: var(--mint);
+  --color-mint-deep: var(--mint-deep);
+  --color-mint-tint: var(--mint-tint);
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -51,23 +55,27 @@
 :root {
   --font-sans: "Pretendard", system-ui, sans-serif;
   --background: #ffffff;
-  --foreground: #000000;
+  --foreground: #141617;
   --card: #ffffff;
-  --card-foreground: #000000;
+  --card-foreground: #141617;
   --popover: #ffffff;
-  --popover-foreground: #000000;
-  --primary: #ffa500;
+  --popover-foreground: #141617;
+  --primary: #141617;
   --primary-foreground: #ffffff;
   --secondary: #f3f4f5;
-  --secondary-foreground: #000000;
+  --secondary-foreground: #141617;
   --muted: #f7f8f9;
   --muted-foreground: #757575;
   --accent: #f3f4f5;
-  --accent-foreground: #000000;
+  --accent-foreground: #141617;
   --destructive: #fa342c;
   --border: #d9d9d9;
   --input: #d9d9d9;
-  --ring: #5e98fe;
+  --ring: #0b7366;
+  --ink: #141617;
+  --mint: #36c2b3;
+  --mint-deep: #0b7366;
+  --mint-tint: #e7f7f4;
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);
@@ -91,9 +99,9 @@
   --card-foreground: oklch(0.985 0 0);
   --popover: oklch(0.205 0 0);
   --popover-foreground: oklch(0.985 0 0);
-  /* 다크에서도 브랜드 오렌지는 유지 (나머지 뉴트럴은 shadcn 기본값 그대로) */
-  --primary: #ffa500;
-  --primary-foreground: #ffffff;
+  /* 다크에서는 잉크가 바탕에 묻히므로 스토어프론트처럼 민트를 기본 버튼에 쓴다 */
+  --primary: #36c2b3;
+  --primary-foreground: #141617;
   --secondary: oklch(0.269 0 0);
   --secondary-foreground: oklch(0.985 0 0);
   --muted: oklch(0.269 0 0);
@@ -103,7 +111,11 @@
   --destructive: oklch(0.704 0.191 22.216);
   --border: oklch(1 0 0 / 10%);
   --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
+  --ring: #36c2b3;
+  --ink: #141617;
+  --mint: #36c2b3;
+  --mint-deep: #36c2b3;
+  --mint-tint: oklch(0.269 0.03 180);
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);
