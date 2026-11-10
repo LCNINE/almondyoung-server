@@ -219,6 +219,9 @@ export function useCanvasInteraction({
       if (next.length > 1) setGroupIds(next)
       return
     }
+    // 그룹 안 요소를 더블클릭했거나 이미 그 요소 하나만 골라 둔 상태면 그룹을 건너뛰고 그 요소를 다룬다
+    const enterGroup =
+      !!layer.groupId && (event.detail >= 2 || selectedId === layer.id)
     const merged = layer.groupId
       ? design[side].filter(
           (item) => item.groupId === layer.groupId && item.visible !== false
@@ -228,7 +231,11 @@ export function useCanvasInteraction({
       merged.length > 1 && !groupIds.includes(layer.id)
         ? merged
         : design[side].filter((item) => groupIds.includes(item.id))
-    if (group.length > 1 && group.some((item) => item.id === layer.id)) {
+    if (
+      !enterGroup &&
+      group.length > 1 &&
+      group.some((item) => item.id === layer.id)
+    ) {
       if (!groupIds.includes(layer.id)) {
         setSelectedId(null)
         setGroupIds(group.map((item) => item.id))
