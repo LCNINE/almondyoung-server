@@ -141,6 +141,14 @@ describe('AlmondTemplateManager.upsert', () => {
     expect(calls[0].set).not.toHaveProperty('status');
   });
 
+  it('갱신은 보낸 productId 로 연결 상품을 바꾸지 않는다', async () => {
+    const { db, calls } = dbReturning([{ id: ID }]);
+    await new AlmondTemplateManager(db).upsert(design(), SVG, 'draft', ADMIN, ID);
+    const set = calls[0].set as { productId: unknown; design: unknown };
+    expect(typeof set.productId).not.toBe('string');
+    expect(set.design).not.toEqual(expect.objectContaining({ productId: PRODUCT.toLowerCase() }));
+  });
+
   it('없는 id 는 404', async () => {
     const { db } = dbReturning([]);
     await expect(new AlmondTemplateManager(db).upsert(design(), SVG, 'draft', ADMIN, ID)).rejects.toThrow(

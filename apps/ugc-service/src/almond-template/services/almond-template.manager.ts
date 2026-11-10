@@ -136,9 +136,16 @@ export class AlmondTemplateManager {
             .returning();
           return created;
         }
+        // 연결 상품은 linkProduct 만 바꾼다. 게시 전에 열어 둔 편집기가 옛 productId 를 실어 저장해도 연결이 되돌아가지 않게 행의 값을 유지한다
         const [updated] = await trx
           .update(almondTemplates)
-          .set({ ...record, updatedBy: userId, updatedAt: new Date() })
+          .set({
+            ...record,
+            productId: sql`${almondTemplates.productId}`,
+            design: sql`jsonb_set(${JSON.stringify(record.design)}::jsonb, '{productId}', to_jsonb(${almondTemplates.productId}))`,
+            updatedBy: userId,
+            updatedAt: new Date(),
+          })
           .where(and(eq(almondTemplates.id, id), isNull(almondTemplates.deletedAt)))
           .returning();
         if (!updated) throw new NotFoundError(`Almond template not found: ${id}`);
