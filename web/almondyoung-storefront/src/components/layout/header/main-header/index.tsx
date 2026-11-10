@@ -27,10 +27,9 @@ export async function MainHeader() {
 
   return (
     <>
-      <div aria-hidden className="grid h-[3px] grid-cols-[5fr_3fr_2fr]">
+      <div aria-hidden className="grid h-[3px] grid-cols-[5fr_3fr]">
         <i className="bg-mint" />
         <i className="bg-yellow-20" />
-        <i className="bg-header-background" />
       </div>
 
       <TopNoticeBar />

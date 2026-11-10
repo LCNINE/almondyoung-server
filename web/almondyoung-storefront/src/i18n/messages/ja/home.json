@@ -71,7 +71,9 @@
     "emptyCaption": "ブランド館で全商品をご覧いただけます",
     "goToBrand": "{name}ブランド館へ",
     "membershipPrice": "メンバー価格",
-    "allBrands": "すべてのブランド"
+    "allBrands": "すべてのブランド",
+    "bannerTitle": "指先が知っているブランド",
+    "bannerCaption": "施術の仕上がりで選んだブランドだけを集めました"
   },
   "heroBanner": {
     "listPrev": "前の一覧を見る",

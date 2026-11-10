@@ -3,11 +3,18 @@
 import LocalizedClientLink from "@/components/shared/localized-client-link"
 import { cn } from "@/lib/utils"
 import { useTranslations } from "next-intl"
+import { Noto_Serif_KR } from "next/font/google"
 import Image from "next/image"
 import { Skeleton } from "@/components/ui/skeleton"
 import { useState, useTransition } from "react"
 import { loadBrandFeaturedProducts } from "./brand-hall-actions"
 import type { BrandHallProduct } from "./brand-hall-data"
+
+const bannerSerif = Noto_Serif_KR({
+  weight: "500",
+  subsets: ["latin"],
+  display: "swap",
+})
 
 export interface BrandHallBrand {
   id: string
@@ -134,54 +141,78 @@ export function BrandHall({
         </LocalizedClientLink>
       </div>
 
-      <div
-        role="group"
-        aria-label={t("ariaLabel")}
-        className="scrollbar-hide -order-1 -mx-4 grid auto-cols-[68px] grid-flow-col content-center gap-x-1 gap-y-2 overflow-x-auto px-4 py-1 [scrollbar-width:none] lg:order-none lg:mx-0 lg:-mt-3 lg:auto-cols-auto lg:grid-flow-row lg:grid-cols-4 lg:grid-rows-none lg:content-start lg:overflow-visible lg:px-0 xl:grid-cols-6 [&::-webkit-scrollbar]:hidden"
-      >
-        {brands.map((brand) => {
-          const selected = brand.id === active.id
+      <div className="-order-1 flex min-w-0 flex-col gap-4 lg:order-none">
+        <div
+          role="group"
+          aria-label={t("ariaLabel")}
+          className="scrollbar-hide -mx-4 grid auto-cols-[68px] grid-flow-col content-center gap-x-1 gap-y-2 overflow-x-auto px-4 py-1 [scrollbar-width:none] lg:order-none lg:mx-0 lg:-mt-3 lg:auto-cols-auto lg:grid-flow-row lg:grid-cols-4 lg:grid-rows-none lg:content-start lg:overflow-visible lg:px-0 xl:grid-cols-6 [&::-webkit-scrollbar]:hidden"
+        >
+          {brands.map((brand) => {
+            const selected = brand.id === active.id
 
-          return (
-            <button
-              key={brand.id}
-              type="button"
-              aria-pressed={selected}
-              onClick={() => handleSelect(brand)}
+            return (
+              <button
+                key={brand.id}
+                type="button"
+                aria-pressed={selected}
+                onClick={() => handleSelect(brand)}
+                className={cn(
+                  "flex flex-col items-center gap-1.5 rounded-[14px] px-0.5 py-1.5 text-center text-xs leading-[1.3] break-keep transition-colors lg:gap-2 lg:px-1.5 lg:py-3 lg:text-[13px]",
+                  selected
+                    ? "font-bold text-black"
+                    : "text-muted-foreground lg:hover:bg-muted font-semibold"
+                )}
+              >
+                <BrandLogo
+                  name={brand.name}
+                  logoUrl={brand.logoUrl}
+                  className={cn(
+                    "size-14 rounded-2xl lg:size-[72px] lg:rounded-[18px]",
+                    // 고른 브랜드는 로고 둘레에 흰 틈 + 주황 링
+                    selected &&
+                      "border-transparent shadow-[0_0_0_2px_#fff,0_0_0_4px_var(--mint)]"
+                  )}
+                  sizes="72px"
+                />
+                <span className="line-clamp-2 w-full">{brand.name}</span>
+              </button>
+            )
+          })}
+
+          {moreCount > 0 && (
+            <LocalizedClientLink
+              href={allBrandsHref}
+              className="text-muted-foreground lg:hover:bg-muted flex flex-col items-center gap-1.5 rounded-[14px] px-0.5 py-1.5 text-center text-xs leading-[1.3] font-semibold break-keep transition-colors lg:gap-2 lg:px-1.5 lg:py-3 lg:text-[13px]"
+            >
+              <span className="border-border grid size-14 shrink-0 place-items-center rounded-2xl border bg-white text-base font-bold text-black tabular-nums lg:size-[72px] lg:rounded-[18px] lg:text-lg">
+                +{moreCount}
+              </span>
+              {t("allBrands")}
+            </LocalizedClientLink>
+          )}
+        </div>
+        <div className="relative hidden min-h-[160px] flex-1 overflow-hidden rounded-2xl lg:block">
+          <Image
+            src="/images/brand-hall-mood.png"
+            alt=""
+            fill
+            sizes="(min-width: 1280px) 830px, 60vw"
+            className="object-cover object-right"
+          />
+          <div className="relative flex h-full flex-col justify-center gap-2.5 pl-10">
+            <p
               className={cn(
-                "flex flex-col items-center gap-1.5 rounded-[14px] px-0.5 py-1.5 text-center text-xs leading-[1.3] break-keep transition-colors lg:gap-2 lg:px-1.5 lg:py-3 lg:text-[13px]",
-                selected
-                  ? "font-bold text-black"
-                  : "text-muted-foreground lg:hover:bg-muted font-semibold"
+                bannerSerif.className,
+                "text-[26px] leading-none tracking-[-0.03em] text-[#3b2f24]"
               )}
             >
-              <BrandLogo
-                name={brand.name}
-                logoUrl={brand.logoUrl}
-                className={cn(
-                  "size-14 rounded-2xl lg:size-[72px] lg:rounded-[18px]",
-                  // 고른 브랜드는 로고 둘레에 흰 틈 + 주황 링
-                  selected &&
-                    "border-transparent shadow-[0_0_0_2px_#fff,0_0_0_4px_var(--mint)]"
-                )}
-                sizes="72px"
-              />
-              <span className="line-clamp-2 w-full">{brand.name}</span>
-            </button>
-          )
-        })}
-
-        {moreCount > 0 && (
-          <LocalizedClientLink
-            href={allBrandsHref}
-            className="text-muted-foreground lg:hover:bg-muted flex flex-col items-center gap-1.5 rounded-[14px] px-0.5 py-1.5 text-center text-xs leading-[1.3] font-semibold break-keep transition-colors lg:gap-2 lg:px-1.5 lg:py-3 lg:text-[13px]"
-          >
-            <span className="border-border grid size-14 shrink-0 place-items-center rounded-2xl border bg-white text-base font-bold text-black tabular-nums lg:size-[72px] lg:rounded-[18px] lg:text-lg">
-              +{moreCount}
-            </span>
-            {t("allBrands")}
-          </LocalizedClientLink>
-        )}
+              {t("bannerTitle")}
+            </p>
+            <p className="text-[13px] tracking-[-0.01em] text-[#3b2f24]/65">
+              {t("bannerCaption")}
+            </p>
+          </div>
+        </div>
       </div>
     </div>
   )

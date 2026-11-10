@@ -71,7 +71,9 @@
     "emptyCaption": "See all products in the brand hall",
     "goToBrand": "Go to {name}",
     "membershipPrice": "Member",
-    "allBrands": "All brands"
+    "allBrands": "All brands",
+    "bannerTitle": "Brands your hands know",
+    "bannerCaption": "Picked only for the results they deliver"
   },
   "heroBanner": {
     "listPrev": "Show previous items",

@@ -71,7 +71,9 @@
     "emptyCaption": "브랜드관에서 전체 상품을 볼 수 있어요",
     "goToBrand": "{name} 브랜드관 가기",
     "membershipPrice": "멤버십가",
-    "allBrands": "전체 브랜드"
+    "allBrands": "전체 브랜드",
+    "bannerTitle": "손끝이 아는 브랜드",
+    "bannerCaption": "시술 결과로 고른 브랜드만 모았어요"
   },
   "heroBanner": {
     "listPrev": "이전 목록 보기",
