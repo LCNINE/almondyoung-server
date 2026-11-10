@@ -670,6 +670,50 @@ export function PrintEffectRows({ target }: { target: StyleTarget }) {
             disabled={disabled}
             onValue={(value) => apply({ bevelAngle: value })}
           />
+          <PrintColorPicker
+            label="빛 색"
+            value={common(layers, (layer) => bevelOf(layer).lightColor) ?? ""}
+            compact
+            disabled={disabled}
+            onApply={(color) => apply({ bevelLightColor: color })}
+          />
+          <Segmented
+            label="빛 혼합"
+            options={
+              [
+                ["normal", "표준"],
+                ["dodge", "발광 닷지"],
+              ] as const
+            }
+            value={common(layers, (layer) => bevelOf(layer).lightMode)}
+            disabled={disabled}
+            onPick={(mode) =>
+              apply({ bevelLightMode: mode === "dodge" ? mode : undefined })
+            }
+          />
+          <PrintColorPicker
+            label="그림자 색"
+            value={common(layers, (layer) => bevelOf(layer).shadowColor) ?? ""}
+            compact
+            disabled={disabled}
+            onApply={(color) => apply({ bevelShadowColor: color })}
+          />
+          <Segmented
+            label="그림자 혼합"
+            options={
+              [
+                ["normal", "표준"],
+                ["multiply", "곱하기"],
+              ] as const
+            }
+            value={common(layers, (layer) => bevelOf(layer).shadowMode)}
+            disabled={disabled}
+            onPick={(mode) =>
+              apply({
+                bevelShadowMode: mode === "multiply" ? mode : undefined,
+              })
+            }
+          />
         </SettingBox>
       )}
       <Toggle

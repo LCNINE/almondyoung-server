@@ -225,6 +225,10 @@ export function bevelOf(layer: Layer) {
       Math.round(Math.max(0.2, effectSize(layer) * 0.05) * 10) / 10,
     depth: layer.bevelDepth ?? 60,
     angle: layer.bevelAngle ?? 135,
+    lightColor: layer.bevelLightColor ?? "#ffffff",
+    shadowColor: layer.bevelShadowColor ?? "#000000",
+    lightMode: layer.bevelLightMode ?? "normal",
+    shadowMode: layer.bevelShadowMode ?? "normal",
   }
 }
 
@@ -240,7 +244,7 @@ function toLayerSpace(layer: Layer, dx: number, dy: number) {
 // 입체는 조명 필터 대신 흐린 윤곽을 빛 쪽·반대쪽으로 민 차이로 만든다.
 // 조명 필터는 화면 픽셀 단위로 기울기를 재서 확대율·인쇄 해상도마다 세기가 달라진다
 function BevelPrimitives({ layer }: { layer: Layer }) {
-  const { size, depth, angle } = bevelOf(layer)
+  const { size, depth, angle, lightColor, shadowColor } = bevelOf(layer)
   const rad = (angle * Math.PI) / 180
   const { dx: lx, dy: ly } = toLayerSpace(
     layer,
@@ -255,8 +259,8 @@ function BevelPrimitives({ layer }: { layer: Layer }) {
       <feOffset in="bevelBlur" dx={-lx} dy={-ly} result="bevelDark" />
       {(
         [
-          ["bevelLit", "bevelDark", "#ffffff", "bevelHi"],
-          ["bevelDark", "bevelLit", "#000000", "bevelSh"],
+          ["bevelLit", "bevelDark", lightColor, "bevelHi"],
+          ["bevelDark", "bevelLit", shadowColor, "bevelSh"],
         ] as const
       ).map(([a, b, tone, result]) => (
         <Fragment key={result}>
@@ -273,6 +277,48 @@ function BevelPrimitives({ layer }: { layer: Layer }) {
           <feComposite in2="SourceAlpha" operator="in" result={result} />
         </Fragment>
       ))}
+    </>
+  )
+}
+
+// 곱하기는 그림자 색을 아래 색에 곱한다. 둘 다 포토샵처럼 sRGB 로 섞는다. 선형 색공간이면 중간 톤에서 닷지가 거의 안 보인다
+// 발광 닷지는 빛을 검정 위에 불투명하게 깐 뒤 색상 닷지로 섞는다. 반투명 빛도 아래 색을 그 세기만큼 나눠 달아오르게 한다
+function BevelBlend({ layer }: { layer: Layer }) {
+  const { lightMode, shadowMode } = bevelOf(layer)
+
+  return (
+    <>
+      {shadowMode === "multiply" ? (
+        <feBlend
+          in="bevelSh"
+          in2="fxBase"
+          mode="multiply"
+          result="fxShaded"
+          colorInterpolationFilters="sRGB"
+        />
+      ) : (
+        <feComposite
+          in="bevelSh"
+          in2="fxBase"
+          operator="over"
+          result="fxShaded"
+        />
+      )}
+      {lightMode === "dodge" ? (
+        <>
+          <feFlood floodColor="#000000" />
+          <feComposite in2="SourceAlpha" operator="in" />
+          <feComposite in="bevelHi" operator="over" result="bevelHiSolid" />
+          <feBlend
+            in="bevelHiSolid"
+            in2="fxShaded"
+            mode="color-dodge"
+            colorInterpolationFilters="sRGB"
+          />
+        </>
+      ) : (
+        <feComposite in="bevelHi" in2="fxShaded" operator="over" />
+      )}
     </>
   )
 }
@@ -447,7 +493,7 @@ function EffectFilter({
       {texture && (
         <TexturePrimitives texture={layer} basis={effectSize(layer)} />
       )}
-      <feMerge>
+      <feMerge result="fxBase">
         {layer.shadow && <feMergeNode in="shadow" />}
         {layer.glow && <feMergeNode in="glow" />}
         {!shadowOnly && (
@@ -461,9 +507,8 @@ function EffectFilter({
             }
           />
         )}
-        {layer.bevel && <feMergeNode in="bevelSh" />}
-        {layer.bevel && <feMergeNode in="bevelHi" />}
       </feMerge>
+      {layer.bevel && <BevelBlend layer={layer} />}
     </filter>
   )
 }
@@ -769,6 +814,8 @@ function LayerGraphicView({ layer }: { layer: Layer }) {
   const transform = `translate(${cx} ${cy}) rotate(${layer.rotation ?? 0}) scale(${layer.flipX ? -1 : 1} ${layer.flipY ? -1 : 1}) translate(${-cx} ${-cy})`
   const fill = layer.gradient ? `url(#${gradientId(layer)})` : layer.fill
   const filtered = (layer.colorFilter?.amount ?? 0) > 0 || (layer.blur ?? 0) > 0
+  // 사진을 넣은 도형은 필터를 도형 색·테두리가 아니라 사진에만 건다
+  const photoInShape = SHAPE_TEXT_TYPES.has(layer.type) && !!layer.image
   const paint = {
     fill: layer.fill === "none" ? "none" : fill,
     stroke: layer.stroke ?? "none",
@@ -803,6 +850,7 @@ function LayerGraphicView({ layer }: { layer: Layer }) {
             href={imageSrc(layer.image)}
             {...photoBox(layer)}
             clipPath={`url(#clip-${layer.id})`}
+            filter={filtered ? `url(#${colorFilterId(layer)})` : undefined}
           />
           {paint.stroke !== "none" && paint.strokeWidth > 0 && (
             <ShapeBody layer={layer} paint={{ ...paint, fill: "none" }} />
@@ -1041,7 +1089,9 @@ function LayerGraphicView({ layer }: { layer: Layer }) {
             id={colorFilterId(layer)}
             filter={layer.colorFilter}
             blur={layer.blur}
-            preserveAlpha={layer.type === "image" || layer.type === "frame"}
+            preserveAlpha={
+              layer.type === "image" || layer.type === "frame" || photoInShape
+            }
             size={Math.min(layer.width, layer.height)}
           />
           {edgeBlur > 0 && (
@@ -1059,7 +1109,13 @@ function LayerGraphicView({ layer }: { layer: Layer }) {
           )}
         </defs>
         <g filter={edgeBlur > 0 ? `url(#edge-${layer.id})` : undefined}>
-          <g filter={filtered ? `url(#${colorFilterId(layer)})` : undefined}>
+          <g
+            filter={
+              filtered && !photoInShape
+                ? `url(#${colorFilterId(layer)})`
+                : undefined
+            }
+          >
             <g filter={filterId ? `url(#${filterId})` : undefined}>{body}</g>
           </g>
         </g>

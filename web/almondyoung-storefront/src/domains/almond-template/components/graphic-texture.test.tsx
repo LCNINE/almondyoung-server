@@ -135,7 +135,24 @@ describe("질감 SVG", () => {
     const svg = render({ shadow: true, bevel: true })
 
     expect(svg).toContain(
-      '<feMerge><feMergeNode in="shadow"></feMergeNode><feMergeNode in="textured"></feMergeNode><feMergeNode in="bevelSh"></feMergeNode><feMergeNode in="bevelHi"></feMergeNode></feMerge>'
+      '<feMerge result="fxBase"><feMergeNode in="shadow"></feMergeNode><feMergeNode in="textured"></feMergeNode></feMerge><feComposite in="bevelSh" in2="fxBase" operator="over" result="fxShaded"></feComposite><feComposite in="bevelHi" in2="fxShaded" operator="over"></feComposite>'
+    )
+  })
+
+  it("입체 그림자는 곱하기, 빛은 발광 닷지로 고른 색을 섞는다", () => {
+    const svg = render({
+      bevel: true,
+      bevelLightColor: "#ffcc00",
+      bevelShadowColor: "#3300aa",
+      bevelLightMode: "dodge",
+      bevelShadowMode: "multiply",
+    })
+
+    expect(svg).toContain('flood-color="#ffcc00"')
+    expect(svg).toContain('flood-color="#3300aa"')
+    expect(svg).toContain('<feBlend in="bevelSh" in2="fxBase" mode="multiply"')
+    expect(svg).toContain(
+      '<feBlend in="bevelHiSolid" in2="fxShaded" mode="color-dodge"'
     )
   })
 })

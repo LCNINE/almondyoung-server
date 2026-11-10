@@ -68,7 +68,8 @@ export function LayerStyleControls({
       />
       {(filter || (selected.blur ?? 0) > 0) &&
         SHAPE_TEXT_TYPES.has(selected.type) &&
-        !selected.filterBypass && (
+        !selected.filterBypass &&
+        !selected.image && (
           <p className="text-[13px] leading-[19px] text-[#70777F]">
             도형 색 대신 이 모양 안의 배경 사진과 아래 레이어에 필터가 걸립니다.
           </p>

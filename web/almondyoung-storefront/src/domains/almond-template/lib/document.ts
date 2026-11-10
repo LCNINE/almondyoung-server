@@ -116,6 +116,11 @@ export type Layer = {
   bevelSize?: number
   bevelDepth?: number
   bevelAngle?: number
+  bevelLightColor?: string
+  bevelShadowColor?: string
+  // 비우면 표준. dodge 는 발광 닷지로 아래 색을 밝힌다
+  bevelLightMode?: "dodge"
+  bevelShadowMode?: "multiply"
   starPoints?: number
   starRatio?: number
   pathPoints?: PathPoint[]
@@ -707,6 +712,16 @@ function validEffects(layer: Layer) {
     optional(layer.bevelSize, (v) => within(v, 0.05, 20)) &&
     optional(layer.bevelDepth, (v) => within(v, 0, 100)) &&
     optional(layer.bevelAngle, (v) => within(v, -360, 360)) &&
+    optional(
+      layer.bevelLightColor,
+      (v) => typeof v === "string" && color.test(v)
+    ) &&
+    optional(
+      layer.bevelShadowColor,
+      (v) => typeof v === "string" && color.test(v)
+    ) &&
+    optional(layer.bevelLightMode, (v) => v === "dodge") &&
+    optional(layer.bevelShadowMode, (v) => v === "multiply") &&
     optional(
       layer.starPoints,
       (v) => Number.isInteger(v) && within(v, 3, 20)

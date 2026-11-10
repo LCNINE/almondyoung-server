@@ -90,11 +90,12 @@ function silhouette(layer: Layer, fill: string): Layer {
   }
 }
 
-// 필터를 건 도형은 자기 색을 버리고 그 모양 안의 배경 사진과 아래 레이어에 필터를 건다
+// 필터를 건 도형은 자기 색을 버리고 그 모양 안의 배경 사진과 아래 레이어에 필터를 건다. 사진을 넣은 도형은 그 사진에만 건다
 export function isFilterWindow(layer: Layer) {
   return (
     SHAPE_TEXT_TYPES.has(layer.type) &&
     !layer.filterBypass &&
+    !layer.image &&
     ((layer.colorFilter?.amount ?? 0) > 0 || (layer.blur ?? 0) > 0)
   )
 }

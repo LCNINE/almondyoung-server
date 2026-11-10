@@ -46,6 +46,43 @@ function toRows(layers: Layer[], collapsed: ReadonlySet<string>): Row[] {
   return rows
 }
 
+// 끈 묶음을 놓은 줄 자리로 옮긴다. 그룹 안 줄에 놓으면 그 그룹에 들어가고, 밖에 놓으면 빠진다
+// 그룹째 옮길 때 다른 그룹 안에 놓으면 그 그룹이 둘로 쪼개지므로 그 그룹 바깥 끝에 붙인다
+export function moveLayers(
+  layers: Layer[],
+  ids: string[],
+  targetId: string,
+  keepGroup: boolean
+) {
+  const target = layers.find((layer) => layer.id === targetId)
+  if (!ids.length || ids.includes(targetId) || !target) return null
+  const moving = layers
+    .filter((layer) => ids.includes(layer.id))
+    .map((layer) =>
+      keepGroup
+        ? layer
+        : { ...layer, groupId: target.groupId, groupName: target.groupName }
+    )
+  const rest = layers.filter((layer) => !ids.includes(layer.id))
+  const below =
+    layers.findIndex((layer) => ids.includes(layer.id)) <
+    layers.indexOf(target)
+  const splits =
+    keepGroup && !!target.groupId && moving[0].groupId !== target.groupId
+  const siblings = splits
+    ? rest.flatMap((layer, index) =>
+        layer.groupId === target.groupId ? [index] : []
+      )
+    : []
+  const at = splits
+    ? below
+      ? siblings[siblings.length - 1] + 1
+      : siblings[0]
+    : rest.indexOf(target) + (below ? 1 : 0)
+
+  return [...rest.slice(0, at), ...moving, ...rest.slice(at)]
+}
+
 export function LayersPanel({ editor }: { editor: AlmondEditor }) {
   const {
     design,
@@ -104,7 +141,6 @@ export function LayersPanel({ editor }: { editor: AlmondEditor }) {
     setLayerInspect(true)
   }
 
-  // 끈 묶음을 놓은 줄 자리로 옮긴다. 그룹 안 줄에 놓으면 그 그룹에 들어가고, 밖에 놓으면 빠진다
   // 그룹 머리줄을 끌면 그룹째 옮기고 그룹은 그대로 둔다
   const drop = (event: DragEvent, targetId: string) => {
     event.preventDefault()
@@ -114,29 +150,10 @@ export function LayersPanel({ editor }: { editor: AlmondEditor }) {
       ids: string[]
       keepGroup: boolean
     }
-    if (!ids.length || ids.includes(targetId)) return
-    const target = layers.find((layer) => layer.id === targetId)
-    if (!target) return
-    const moving = layers
-      .filter((layer) => ids.includes(layer.id))
-      .map((layer) =>
-        keepGroup
-          ? layer
-          : {
-              ...layer,
-              groupId: target.groupId,
-              groupName: target.groupName,
-            }
-      )
-    const rest = layers.filter((layer) => !ids.includes(layer.id))
-    const below =
-      layers.findIndex((layer) => ids.includes(layer.id)) <
-      layers.indexOf(target)
-    const at = rest.indexOf(target) + (below ? 1 : 0)
-    change({
-      ...design,
-      [side]: [...rest.slice(0, at), ...moving, ...rest.slice(at)],
-    })
+    const next = moveLayers(layers, ids, targetId, keepGroup)
+    if (!next) return
+
+    change({ ...design, [side]: next })
     selectLayers(ids)
   }
   const startDrag = (event: DragEvent, ids: string[], keepGroup = false) => {
@@ -207,14 +224,14 @@ export function LayersPanel({ editor }: { editor: AlmondEditor }) {
           </button>
         </div>
       )}
-      {rows.map((row) => {
+      {rows.map((row, index) => {
         if (row.kind === "group") {
           const ids = row.members.map((layer) => layer.id)
           const open = !collapsed.has(row.groupId)
           const picked = ids.every((id) => selection.includes(id))
           return (
             <div
-              key={`group-${row.groupId}`}
+              key={`group-${row.groupId}-${index}`}
               draggable={renamingId !== row.groupId}
               onDragStart={(event) => startDrag(event, ids, true)}
               onDragOver={(event) => event.preventDefault()}
