@@ -240,6 +240,28 @@ export const useVariantsByMasterSuspense = (
   });
 };
 
+/**
+ * 마스터별 제품 변형 조회. 응답 모양은 useVariantsByMasterSuspense 와 같다.
+ * 필요할 때만 부르도록 enabled 로 지연할 수 있다.
+ */
+export const useVariantRowsByMaster = (
+  masterId: string,
+  { page = 1, limit = 100, enabled = true } = {}
+) => {
+  const query = { masterId, page, limit };
+  return useQuery({
+    queryKey: productQueryKeys.variantsByMaster(masterId, query),
+    queryFn: async () =>
+      (await products.variants.getByMaster(
+        masterId,
+        query
+      )) as unknown as ProductVariantsResponse,
+    enabled: enabled && !!masterId,
+    staleTime: 30 * 1000,
+    gcTime: 5 * 60 * 1000,
+  });
+};
+
 export const useVariantsByMasterVersionSuspense = (
   masterId: string,
   versionId: string,
