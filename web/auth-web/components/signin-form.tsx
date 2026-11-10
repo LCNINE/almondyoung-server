@@ -139,7 +139,7 @@ export function SignInForm({
         <div className="flex items-center justify-center text-sm">
           <Link
             href={findAccountHref}
-            className="flex min-h-11 items-center rounded-md px-2 py-2 text-foreground transition-colors hover:text-mint-deep focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+            className="flex min-h-11 items-center rounded-md px-2 py-2 text-foreground transition-colors hover:text-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
           >
             아이디·비밀번호 찾기
           </Link>

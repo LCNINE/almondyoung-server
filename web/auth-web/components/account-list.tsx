@@ -80,7 +80,7 @@ export function AccountList({
                 {isActive && (
                   <Badge
                     variant="secondary"
-                    className="bg-mint-tint text-mint-deep"
+                    className="bg-[#fff7e5] text-primary"
                   >
                     현재 로그인
                   </Badge>

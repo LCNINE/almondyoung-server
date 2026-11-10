@@ -14,9 +14,10 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { agreements, type Agreement } from "@/lib/data/agreements"
 import type { StepValues } from "@/components/signup/types"
+import { cn } from "@/lib/utils"
 
 const CHECK_CLASS =
-  "size-5 rounded-full text-mint-deep data-[state=checked]:border-transparent data-[state=checked]:bg-transparent data-[state=checked]:text-mint-deep"
+  "size-5 rounded-full text-primary data-[state=checked]:border-transparent data-[state=checked]:bg-transparent data-[state=checked]:text-primary"
 
 export function AgreementsStep({
   defaultValues,
@@ -50,55 +51,59 @@ export function AgreementsStep({
   return (
     <div className="flex flex-1 flex-col gap-6">
       <ul className="flex flex-col">
-        {agreements.map((agreement) => (
+        {agreements.map((agreement, i) => (
           <AgreementRow
             key={agreement.id}
             agreement={agreement}
+            // 필수와 선택 사이만 띄워 두 묶음으로 읽히게 한다
+            startsGroup={
+              i > 0 && agreements[i - 1].required !== agreement.required
+            }
             checked={!!checked[agreement.id]}
             onCheckedChange={(v) => setOne(agreement.id, v)}
           />
         ))}
       </ul>
 
-      <div className="mt-auto flex flex-col gap-4 pt-4">
-        <label className="flex min-h-11 cursor-pointer items-center gap-3">
-          <Checkbox
-            checked={allChecked}
-            onCheckedChange={(v) => setAll(v === true)}
-            className={CHECK_CLASS}
-            aria-label="전체 동의"
-          />
-          <span className="text-base font-bold">
-            아래 내용을 모두 확인하였으며, 모두 동의합니다
-          </span>
-        </label>
+      <label className="flex min-h-11 cursor-pointer items-center gap-3 border-t border-border pt-4">
+        <Checkbox
+          checked={allChecked}
+          onCheckedChange={(v) => setAll(v === true)}
+          className={CHECK_CLASS}
+          aria-label="전체 동의"
+        />
+        <span className="text-base font-bold">
+          위 내용을 모두 확인했으며, 모두 동의해요
+        </span>
+      </label>
 
-        <Button
-          type="button"
-          onClick={submit}
-          disabled={!requiredOk}
-          className="h-13 rounded-xl text-base font-bold"
-        >
-          다음
-        </Button>
-      </div>
+      <Button
+        type="button"
+        onClick={submit}
+        disabled={!requiredOk}
+        className="mt-auto h-13 rounded-lg text-base font-bold"
+      >
+        다음
+      </Button>
     </div>
   )
 }
 
 function AgreementRow({
   agreement,
+  startsGroup,
   checked,
   onCheckedChange,
 }: {
   agreement: Agreement
+  startsGroup: boolean
   checked: boolean
   onCheckedChange: (checked: boolean) => void
 }) {
   const [open, setOpen] = React.useState(false)
 
   return (
-    <li className="flex items-center gap-3 py-3.5">
+    <li className={cn("flex items-center gap-3 py-1", startsGroup && "mt-4")}>
       <label className="flex min-h-11 min-w-0 flex-1 cursor-pointer items-center gap-3">
         <Checkbox
           checked={checked}
@@ -114,7 +119,7 @@ function AgreementRow({
             type="button"
             variant="ghost"
             size="sm"
-            className="h-11 min-w-11 shrink-0 px-2 text-sm text-muted-foreground underline underline-offset-4"
+            className="-mr-2 h-11 min-w-11 shrink-0 px-2 text-sm text-muted-foreground underline underline-offset-4"
             onClick={() => setOpen(true)}
           >
             보기

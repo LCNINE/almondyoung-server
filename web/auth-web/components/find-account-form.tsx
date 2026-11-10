@@ -370,7 +370,7 @@ export function FindAccountForm({ redirectTo }: { redirectTo: string }) {
       <div className="flex items-center justify-center text-sm">
         <Link
           href={signinHref(redirectTo)}
-          className="flex min-h-11 min-w-11 items-center justify-center rounded-md px-2 py-2 text-foreground transition-colors hover:text-mint-deep focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+          className="flex min-h-11 min-w-11 items-center justify-center rounded-md px-2 py-2 text-foreground transition-colors hover:text-primary focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
         >
           로그인
         </Link>

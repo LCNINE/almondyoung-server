@@ -98,12 +98,12 @@ export function SignUpForm({ redirectTo }: { redirectTo: string }) {
 function Stepper({ current }: { current: number }) {
   return (
     <div className="flex flex-col gap-2">
-      <div className="flex gap-1.5" aria-hidden>
+      <div className="flex gap-1" aria-hidden>
         {STEPS.map((label, i) => (
           <span
             key={label}
             className={`h-1 flex-1 rounded-full transition-colors ${
-              i <= current ? "bg-mint" : "bg-secondary"
+              i <= current ? "bg-primary" : "bg-secondary"
             }`}
           />
         ))}
