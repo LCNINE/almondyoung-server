@@ -2,13 +2,11 @@
 
 import { useEffect, useState, type PropsWithChildren } from 'react';
 import { useDebounced } from '@/hooks/use-debounced';
-import { useSkuSearch } from '@/lib/services/inventory';
 import {
   useMastersSummary,
   useVariantRowsByMaster,
   useVariantsBatch,
 } from '@/lib/services/products';
-import type { SkuResponseDto } from '@/lib/types/dto/inventory';
 import type { MasterSummaryDto } from '@/lib/types/dto/products';
 
 import { Button } from '@/components/ui/button';
@@ -29,29 +27,21 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 /** 상품검색 창이 한 번에 받는 건수. */
 const SEARCH_LIMIT = 20;
 /** 미리보기에 다 담기지 않은 옵션을 펼칠 때 받는 건수. */
 const ALL_OPTIONS_LIMIT = 100;
 
-export type ProductSearchPick =
-  | {
-      type: 'product';
-      masterId: string;
-      variantId: string;
-      name: string;
-      optionText: string;
-      /** 가격 캐시가 없는 옵션은 null — 단가는 작업자가 입력한다. */
-      price: number | null;
-    }
-  | {
-      type: 'sku';
-      skuId: string;
-      name: string;
-      price: null;
-    };
+/** 주문 줄은 판매상품 옵션 기준이다 — 재고상품(SKU)만으로는 주문을 저장할 수 없다. */
+export type ProductSearchPick = {
+  masterId: string;
+  variantId: string;
+  name: string;
+  optionText: string;
+  /** 가격 캐시가 없는 옵션은 null — 단가는 작업자가 입력한다. */
+  price: number | null;
+};
 
 type OptionChoice = {
   variantId: string;
@@ -68,7 +58,6 @@ export function ProductSearchDialog({
   onPick: (pick: ProductSearchPick) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const [tab, setTab] = useState<'product' | 'sku'>('product');
   const [q, setQ] = useState('');
 
   // 검색은 서버가 한다. 한 쪽(SEARCH_LIMIT)만 받고, 옵션은 요약 응답의 미리보기를 쓴다.
@@ -78,8 +67,6 @@ export function ProductSearchDialog({
     page: 1,
     limit: SEARCH_LIMIT,
   });
-  // 재고상품은 그 탭에서 검색어를 넣어야 부른다(빈 검색어면 요청하지 않는다).
-  const skuSearch = useSkuSearch(tab === 'sku' ? keyword : '', 1, SEARCH_LIMIT);
 
   const pick = (p: ProductSearchPick) => {
     onPick(p);
@@ -96,126 +83,62 @@ export function ProductSearchDialog({
           <DialogTitle>상품검색</DialogTitle>
         </DialogHeader>
 
-        <Tabs value={tab} onValueChange={(v) => setTab(v as 'product' | 'sku')}>
-          <TabsList>
-            <TabsTrigger value="product">판매상품</TabsTrigger>
-            <TabsTrigger value="sku">재고상품</TabsTrigger>
-          </TabsList>
+        <div className="my-3 flex gap-2">
+          <Input
+            placeholder="상품명/코드 검색"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+          />
+        </div>
 
-          <div className="my-3 flex gap-2">
-            <Input
-              placeholder="상품명/코드 검색"
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-            />
-          </div>
-
-          <TabsContent value="product" className="space-y-3">
-            <div className="max-h-[60vh] overflow-auto rounded-md border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>상품명 · 옵션 선택</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {masters.isError ? (
-                    <MessageRow colSpan={1}>
-                      상품 목록을 불러오지 못했습니다. 입력한 주문 내용은 그대로
-                      있습니다.{' '}
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => masters.refetch()}
-                      >
-                        다시 시도
-                      </Button>
-                    </MessageRow>
-                  ) : masters.isPending ? (
-                    <MessageRow colSpan={1}>상품을 불러오는 중...</MessageRow>
-                  ) : (masters.data?.data.length ?? 0) === 0 ? (
-                    <MessageRow colSpan={1}>
-                      {keyword
-                        ? `'${keyword}'에 맞는 판매상품이 없습니다.`
-                        : '판매상품이 없습니다.'}
-                    </MessageRow>
-                  ) : (
-                    masters.data?.data.map((m) => (
-                      <MasterRow
-                        key={m.masterId}
-                        master={m}
-                        onChoose={(o) =>
-                          pick({
-                            type: 'product',
-                            masterId: m.masterId,
-                            variantId: o.variantId,
-                            name: m.name,
-                            optionText: o.name,
-                            price: o.price,
-                          })
-                        }
-                      />
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </div>
-          </TabsContent>
-
-          <TabsContent value="sku" className="space-y-3">
-            <div className="max-h-[60vh] overflow-auto rounded-md border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>SKU</TableHead>
-                    <TableHead>이름</TableHead>
-                    <TableHead className="w-28 text-right">선택</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {!keyword ? (
-                    <MessageRow colSpan={3}>
-                      SKU 이름이나 코드를 입력하세요
-                    </MessageRow>
-                  ) : skuSearch.isError ? (
-                    <MessageRow colSpan={3}>
-                      SKU를 불러오지 못했습니다.{' '}
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => skuSearch.refetch()}
-                      >
-                        다시 시도
-                      </Button>
-                    </MessageRow>
-                  ) : (
-                    (skuSearch.data?.items ?? []).map((s: SkuResponseDto) => (
-                      <TableRow key={s.id}>
-                        <TableCell className="font-mono">{s.id}</TableCell>
-                        <TableCell>{s.name || '-'}</TableCell>
-                        <TableCell className="text-right">
-                          <Button
-                            size="sm"
-                            onClick={() =>
-                              pick({
-                                type: 'sku',
-                                skuId: s.id,
-                                name: s.name || s.id,
-                                price: null,
-                              })
-                            }
-                          >
-                            선택
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    ))
-                  )}
-                </TableBody>
-              </Table>
-            </div>
-          </TabsContent>
-        </Tabs>
+        <div className="max-h-[60vh] overflow-auto rounded-md border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>상품명 · 옵션 선택</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {masters.isError ? (
+                <MessageRow colSpan={1}>
+                  상품 목록을 불러오지 못했습니다. 입력한 주문 내용은 그대로
+                  있습니다.{' '}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => masters.refetch()}
+                  >
+                    다시 시도
+                  </Button>
+                </MessageRow>
+              ) : masters.isPending ? (
+                <MessageRow colSpan={1}>상품을 불러오는 중...</MessageRow>
+              ) : (masters.data?.data.length ?? 0) === 0 ? (
+                <MessageRow colSpan={1}>
+                  {keyword
+                    ? `'${keyword}'에 맞는 판매상품이 없습니다.`
+                    : '판매상품이 없습니다.'}
+                </MessageRow>
+              ) : (
+                masters.data?.data.map((m) => (
+                  <MasterRow
+                    key={m.masterId}
+                    master={m}
+                    onChoose={(o) =>
+                      pick({
+                        masterId: m.masterId,
+                        variantId: o.variantId,
+                        name: m.name,
+                        optionText: o.name,
+                        price: o.price,
+                      })
+                    }
+                  />
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </div>
 
         <DialogFooter>
           <Button variant="outline" onClick={() => setOpen(false)}>

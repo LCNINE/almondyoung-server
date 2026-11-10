@@ -430,7 +430,7 @@ function ChannelBadge({ channel }: { channel: string }) {
   if (channel === '3pl')
     return (
       <span className="inline-flex rounded bg-gray-200 text-gray-700 text-[10px] font-medium px-1.5 py-0.5">
-        3PL
+        수기·기타
       </span>
     );
   return (

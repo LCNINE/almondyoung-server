@@ -2,6 +2,7 @@
 // 주문 관련 DTO 타입 정의
 
 import type { UUID } from './common';
+import type { SalesChannelSite } from '@/lib/api/domains/sales-channel/vocabulary';
 
 // ===== 매칭 타입 re-export (lib/types/dto/matching.ts로 이전됨) =====
 export type {
@@ -54,22 +55,38 @@ export type LegacyPurchaseOrderStatus =
 export type InvoiceStatus = 'created' | 'shipped' | 'canceled';
 
 // ===== 판매 주문 =====
-export interface SalesOrderItemDto {
-  skuId: string;
+/** core `CreateSalesOrderDto` 중 관리자 입력이 쓰는 칸 */
+export interface CreateSalesOrderLineDto {
+  variantId: string;
+  productName?: string;
   quantity: number;
-  unitPrice: number;
+  unitPrice?: number;
+  totalPrice?: number;
 }
 
 export interface CreateSalesOrderDto {
-  customerId: string;
-  warehouseId: string;
-  items: SalesOrderItemDto[];
+  channelOrderId: string;
+  salesChannel: SalesChannelSite;
+  displayOrderNo?: string;
+  customer?: { id?: string; name?: string; email?: string; phone?: string };
+  shippingAddress: {
+    recipientName: string;
+    phone: string;
+    postalCode: string;
+    roadAddress: string;
+    detailAddress: string;
+    deliveryNote?: string;
+  };
+  lines: CreateSalesOrderLineDto[];
+  totalAmount?: number;
+  shippingFee?: number;
   memo?: string;
 }
 
 export interface CreateSalesOrderResponseDto {
   id: string;
-  status: 'created';
+  channelOrderId: string;
+  status: string;
 }
 
 export interface SalesOrderDto {

@@ -18,7 +18,7 @@ const SALES_CHANNEL_OPTIONS = [
   { value: 'medusa', label: '자사몰 (Medusa)' },
   { value: 'naver', label: '네이버 스마트스토어' },
   { value: 'coupang', label: '쿠팡' },
-  { value: '3pl', label: '3PL' },
+  { value: '3pl', label: '수기·기타' },
 ];
 
 const KEYWORD_TYPE_OPTIONS = [
