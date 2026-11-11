@@ -99,12 +99,8 @@ export class CoupangReturnClient extends CoupangBaseClient {
       const path = `/v2/providers/openapi/apis/api/v6/vendors/${config.vendorId}/returnRequests/${receiptId}`;
       const body = await this.send<GetSingleReturnRequestResponse>('GET', path);
 
-      // 간단한 응답 체크
-      if (body.code !== 200) {
-        throw new Error(`쿠팡 API 오류: ${body.code} - ${body.message}`);
-      }
-
-      this.logger.log(`✅ 쿠팡 반품/취소 단건 조회 성공: ${receiptId}`);
+      // body.code 판정은 호출자(출고중지 승인)의 몫이다 — 던지면 상태 없는 오류가 되어 재시도로 오분류된다
+      this.logger.log(`✅ 쿠팡 반품/취소 단건 조회 응답: ${receiptId} (code=${body.code})`);
       return body;
     } catch (error) {
       if (error.response) {
@@ -115,7 +111,11 @@ export class CoupangReturnClient extends CoupangBaseClient {
         this.logger.error(`❌ 쿠팡 반품/취소 단건 조회 실패: ${error.message}`);
       }
 
-      throw new Error(`쿠팡 반품/취소 단건 조회 실패: ${error.message}`);
+      // HTTP 상태를 잃지 않게 싣는다 — 호출자가 4xx(다시 해도 같다)와 5xx·네트워크(재시도)를 가른다
+      throw Object.assign(new Error(`쿠팡 반품/취소 단건 조회 실패: ${error.message}`), {
+        status: responseStatusOf(error),
+        cause: error,
+      });
     }
   }
 

@@ -106,10 +106,10 @@ export class CustomerCancelApprover {
   }
 }
 
-/** 단건 조회 봉투에서 총 취소수량을 읽는다. code 가 200 이 아니거나 data 가 비었거나 수량이 양의 정수가 아니면 undefined. */
+/** 단건 조회 봉투에서 총 취소수량을 읽는다. code 가 200 이 아니거나 data 가 없거나 수량이 양의 정수가 아니면 undefined. */
 function cancelCountOf(body: { code?: number; data?: unknown }): number | undefined {
   if (body.code !== undefined && body.code !== 200) return undefined;
-  const record: unknown = Array.isArray(body.data) ? body.data[0] : body.data;
+  const record = body.data;
   if (typeof record !== 'object' || record === null || !('cancelCountSum' in record)) return undefined;
   const sum = record.cancelCountSum;
   return typeof sum === 'number' && Number.isInteger(sum) && sum > 0 ? sum : undefined;

@@ -151,7 +151,7 @@ describe('CustomerCancelApprover', () => {
   it('쿠팡 act 는 접수 단건 조회의 cancelCountSum 으로 출고중지완료를 부른다', async () => {
     const { approver, coupang } = setup();
     process.env.COUPANG_VENDOR_ID = 'vendor-1';
-    coupang.getSingleReturnRequest.mockResolvedValue({ code: 200, data: [{ receiptId: '555', cancelCountSum: 3 }] });
+    coupang.getSingleReturnRequest.mockResolvedValue({ code: 200, data: { receiptId: '555', cancelCountSum: 3 } });
     coupang.stoppedShipment.mockResolvedValue({ data: { resultCode: 'SUCCESS', resultMessage: '' } });
     const result = await approver.approve({ ...coupangBase, lines: [{ channelOrderItemId: 'l1', quantity: 1 }] });
     expect(result).toEqual({ kind: 'approved' });
@@ -159,20 +159,11 @@ describe('CustomerCancelApprover', () => {
     expect(coupang.stoppedShipment).toHaveBeenCalledWith({ vendorId: 'vendor-1', receiptId: '555', cancelCount: 3 });
   });
 
-  it('단건 조회 data 가 객체여도 읽는다', async () => {
-    const { approver, coupang } = setup();
-    process.env.COUPANG_VENDOR_ID = 'vendor-1';
-    coupang.getSingleReturnRequest.mockResolvedValue({ code: 200, data: { receiptId: '555', cancelCountSum: 2 } });
-    coupang.stoppedShipment.mockResolvedValue({ data: { resultCode: 'SUCCESS', resultMessage: '' } });
-    await approver.approve(coupangBase);
-    expect(coupang.stoppedShipment).toHaveBeenCalledWith({ vendorId: 'vendor-1', receiptId: '555', cancelCount: 2 });
-  });
-
   it.each([
-    ['cancelCountSum 0', { code: 200, data: [{ cancelCountSum: 0 }] }],
-    ['빈 data', { code: 200, data: [] }],
+    ['cancelCountSum 0', { code: 200, data: { cancelCountSum: 0 } }],
+    ['빈 data', { code: 200, data: {} }],
     ['data 없음', { code: 200 }],
-    ['code 500', { code: 500, data: [{ cancelCountSum: 3 }] }],
+    ['code 500', { code: 500, data: { cancelCountSum: 3 } }],
   ])('쿠팡 수량을 모르면(%s) 영구 실패', async (_name, response) => {
     const { approver, coupang } = setup();
     process.env.COUPANG_VENDOR_ID = 'vendor-1';
@@ -182,11 +173,19 @@ describe('CustomerCancelApprover', () => {
     expect(coupang.stoppedShipment).not.toHaveBeenCalled();
   });
 
-  it('단건 조회가 던지면 분류한다(500 은 재시도)', async () => {
+  it.each([
+    [404, false],
+    [400, false],
+    [429, true],
+    [500, true],
+    [undefined, true],
+  ])('단건 조회 http %s -> retryable %s', async (status, retryable) => {
     const { approver, coupang } = setup();
     process.env.COUPANG_VENDOR_ID = 'vendor-1';
-    coupang.getSingleReturnRequest.mockRejectedValue(Object.assign(new Error('x'), { status: 500 }));
-    expect(await approver.approve(coupangBase)).toMatchObject({ kind: 'failed', retryable: true });
+    coupang.getSingleReturnRequest.mockRejectedValue(Object.assign(new Error('x'), { status }));
+    const result = await approver.approve(coupangBase);
+    expect(result).toMatchObject({ kind: 'failed', retryable });
+    expect(coupang.stoppedShipment).not.toHaveBeenCalled();
   });
 
   describe('coupang error classification', () => {
@@ -209,7 +208,7 @@ describe('CustomerCancelApprover', () => {
     ])('coupang http %s -> retryable %s', async (status, retryable) => {
       const { approver, coupang } = setup();
       process.env.COUPANG_VENDOR_ID = 'vendor-1';
-      coupang.getSingleReturnRequest.mockResolvedValue({ code: 200, data: [{ cancelCountSum: 1 }] });
+      coupang.getSingleReturnRequest.mockResolvedValue({ code: 200, data: { cancelCountSum: 1 } });
       coupang.stoppedShipment.mockRejectedValue(withStatus(status));
       expect(await approver.approve(coupangCmd)).toMatchObject({ kind: 'failed', retryable });
     });
@@ -217,7 +216,7 @@ describe('CustomerCancelApprover', () => {
     it('coupang zod BadRequestException is permanent', async () => {
       const { approver, coupang } = setup();
       process.env.COUPANG_VENDOR_ID = 'vendor-1';
-      coupang.getSingleReturnRequest.mockResolvedValue({ code: 200, data: [{ cancelCountSum: 1 }] });
+      coupang.getSingleReturnRequest.mockResolvedValue({ code: 200, data: { cancelCountSum: 1 } });
       coupang.stoppedShipment.mockRejectedValue(new BadRequestException('bad'));
       expect(await approver.approve(coupangCmd)).toMatchObject({ kind: 'failed', retryable: false });
     });
@@ -225,7 +224,7 @@ describe('CustomerCancelApprover', () => {
     it('coupang resultCode FAIL is permanent', async () => {
       const { approver, coupang } = setup();
       process.env.COUPANG_VENDOR_ID = 'vendor-1';
-      coupang.getSingleReturnRequest.mockResolvedValue({ code: 200, data: [{ cancelCountSum: 1 }] });
+      coupang.getSingleReturnRequest.mockResolvedValue({ code: 200, data: { cancelCountSum: 1 } });
       coupang.stoppedShipment.mockResolvedValue({ data: { resultCode: 'FAIL', resultMessage: 'no' } });
       expect(await approver.approve(coupangCmd)).toMatchObject({ kind: 'failed', retryable: false });
     });
