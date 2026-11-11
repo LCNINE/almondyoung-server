@@ -83,6 +83,7 @@ export function useCanvasInteraction({
     groupBox?: Box
   } | null>(null)
   const marqueeStart = useRef<{ x: number; y: number } | null>(null)
+  const lastPress = useRef<{ id: string; at: number } | null>(null)
   const [marquee, setMarquee] = useState<Box | null>(null)
   const [panReady, setPanReady] = useState(false)
   const panning = moveMode || panReady
@@ -219,9 +220,14 @@ export function useCanvasInteraction({
       if (next.length > 1) setGroupIds(next)
       return
     }
-    // 그룹 안 요소를 더블클릭했거나 이미 그 요소 하나만 골라 둔 상태면 그룹을 건너뛰고 그 요소를 다룬다
+    // 그룹 안 요소를 더블클릭했거나 이미 그 요소 하나만 골라 둔 상태면 그룹을 건너뛰고 그 요소를 다룬다.
+    // pointerdown 의 event.detail 은 크롬에서 늘 0 이라 두 번 누른 간격으로 직접 잰다
+    const pressedTwice =
+      lastPress.current?.id === layer.id &&
+      event.timeStamp - lastPress.current.at < 400
+    lastPress.current = { id: layer.id, at: event.timeStamp }
     const enterGroup =
-      !!layer.groupId && (event.detail >= 2 || selectedId === layer.id)
+      !!layer.groupId && (pressedTwice || selectedId === layer.id)
     const merged = layer.groupId
       ? design[side].filter(
           (item) => item.groupId === layer.groupId && item.visible !== false
