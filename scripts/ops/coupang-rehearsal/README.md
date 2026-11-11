@@ -13,7 +13,7 @@
 ## 순서
 
 1. 쿠팡 WING 의 API 허용 IP 에 이 PC 의 공인 IP 를 추가한다.
-2. 자격증명을 환경변수로 넘겨 실행한다.
+2. 자격증명을 환경변수로 넘겨 **레포 루트에서** 실행한다.
    ```bash
    COUPANG_VENDOR_ID=… COUPANG_ACCESS_KEY=… COUPANG_SECRET_KEY=… \
      npx tsx scripts/ops/coupang-rehearsal/index.ts --out=<레포 밖 디렉터리>
