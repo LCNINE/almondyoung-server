@@ -1,0 +1,26 @@
+version: 0.2
+env:
+  shell: bash
+  variables:
+    CI: 'true'
+    NODE_OPTIONS: '--max-old-space-size=8192'
+    NEXT_TELEMETRY_DISABLED: '1'
+phases:
+  install:
+    runtime-versions:
+      nodejs: 22
+  build:
+    commands:
+      - |
+        set -euo pipefail
+        case "$CODEBUILD_BUILD_ID" in
+          almondyoung-deploy-dev:*) stage=dev ;;
+          almondyoung-deploy-demo:*) stage=demo ;;
+          almondyoung-deploy-live:*) stage=live ;;
+          *) echo 'Unexpected CodeBuild project'; exit 1 ;;
+        esac
+        git clone --depth 1 --single-branch --branch develop https://github.com/LCNINE/almondyoung-server.git /tmp/almondyoung-source
+        cd /tmp/almondyoung-source
+        corepack enable
+        corepack prepare yarn@1.22.22 --activate
+        python3 scripts/deployment/pipeline.py --stage "$stage"

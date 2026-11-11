@@ -1,0 +1,53 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Private cache and per-stage successful deployment records. Runner role only.
+Parameters:
+  RunnerRoleName:
+    Type: String
+    Default: AlmondyoungFixedDeployRunner
+Resources:
+  Storage:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      VersioningConfiguration:
+        Status: Enabled
+      LifecycleConfiguration:
+        Rules:
+          - Id: CacheExpiry
+            Status: Enabled
+            Prefix: cache/
+            ExpirationInDays: 30
+            NoncurrentVersionExpiration:
+              NoncurrentDays: 7
+  RunnerStorageAccess:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: AlmondyoungDeploymentCacheAndSuccess
+      Roles: [!Ref RunnerRoleName]
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action: s3:ListBucket
+            Resource: !GetAtt Storage.Arn
+          - Effect: Allow
+            Action: [s3:GetObject, s3:PutObject]
+            Resource:
+              - !Sub '${Storage.Arn}/cache/*'
+              - !Sub '${Storage.Arn}/success/*'
+Outputs:
+  BucketName:
+    Value: !Ref Storage

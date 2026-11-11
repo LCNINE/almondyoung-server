@@ -9,11 +9,19 @@
 - 소스: `LCNINE/almondyoung-server`의 `develop` 브랜치
 - 환경: `dev`, `demo`, `live`
 - 실행 경로: 스크립트 → `almondyoung-deploy-control` Lambda → 환경별 CodeBuild
-- 배포 순서: `lcnine-auth` → `lcnine-services`
+- v2 배포 순서: 캐시 복원 → 미적용 Drizzle 마이그레이션 검사·실행 → 필요한 `lcnine-auth` → 필요한 `lcnine-services` → 캐시 저장
 
 CodeBuild가 실행 시점의 `develop` 코드를 가져옵니다. 로컬 작업 파일을 업로드하지 않으며, 임의 브랜치·커밋·명령·환경변수로 빌드를 덮어쓰는 기능은 없습니다. 배포할 변경은 먼저 GitHub 쓰기 권한이 있는 사람이 `develop`에 반영해야 합니다. GitHub Read 권한만 있는 계정은 clone·pull은 가능하지만 push는 할 수 없습니다.
 
-이 고정 작업에는 플랫폼 배포나 별도 유지보수·마이그레이션 실행이 포함되지 않습니다.
+**v2 코드가 develop에 있는 것과 AWS에 연결된 것은 별개입니다.** `check`에서 `pipelineVersion: 2`, `ready: true`가 확인돼야 아래 자동 마이그레이션/선택 배포가 적용됩니다. 기존 v1 작업은 두 스택을 매번 실행하고 Drizzle 마이그레이션은 포함하지 않습니다. 새 스크립트는 v1 또는 준비되지 않은 환경에서 배포를 시작하지 않습니다. 관리자는 [v2 연결 절차](../../deployments/ci/README.md)를 적용합니다.
+
+플랫폼 최초 구성, DB bootstrap/seed, 파괴적 변경을 포함한 유지보수는 자동 배포에 포함되지 않습니다.
+
+## 작업 컴퓨터 구분
+
+- **GitHub 쓰기 권한이 있는 Mac:** 별도 작업 브랜치/폴더에서 코드·배포 스크립트·런북 수정 및 관련 검증 → develop 반영 → push. VS Code에서 다른 작업 중인 브랜치나 변경사항은 건드리지 않습니다.
+- **GitHub Read인 원격 Windows VS Code:** develop을 pull하고 고정 배포 스크립트 실행·결과 조회만 합니다. 원격에서 구현·커밋·push를 지시하지 않습니다.
+- **AWS 관리자:** CodeBuild/Lambda 실행 설정, 배포 역할의 필요한 권한, DB 내부망 연결을 적용합니다. 공용 사용자에게 관리자 권한을 추가하지 않습니다.
 
 ## 최초 설정
 
@@ -40,11 +48,13 @@ aws configure --profile almondyoung
 python scripts/almondyoung-deploy.py check live --profile almondyoung
 ```
 
-이 명령은 배포를 시작하지 않습니다. Lambda 호출과 지정된 환경 연결만 확인하며, 실제 SST 배포에 필요한 모든 권한이나 배포 성공을 검증하지는 않습니다.
+이 명령은 배포를 시작하지 않습니다. Lambda 연결 및 v2 준비 표시를 확인합니다. `pipelineVersion: 2`, `ready: true`도 실제 DB 접속·마이그레이션 성공·모든 SST 권한을 검증한 결과는 아닙니다. AWS 설정이 아직 v1이면 종료 코드 1과 관리자 적용 안내가 나옵니다.
 
 ## 배포 실행
 
 테스트한 변경이 원격 `develop`에 반영됐는지 먼저 확인합니다. 원하는 환경 하나를 선택하며, **`live`는 실제 운영 서버를 변경합니다.**
+
+원격 작업 트리가 깨끗하고 현재 브랜치가 develop인지 확인한 뒤 `git pull --ff-only origin develop`로 스크립트/문서도 최신화합니다. 로컬 변경이 있으면 reset/clean으로 지우지 말고 보존한 채 원인을 확인합니다. 환경의 기존 빌드가 실행 중인지 먼저 확인합니다.
 
 ```sh
 python scripts/almondyoung-deploy.py deploy live --profile almondyoung
@@ -52,7 +62,30 @@ python scripts/almondyoung-deploy.py deploy live --profile almondyoung
 
 개발 또는 시연 환경은 `live`를 각각 `dev`, `demo`로 바꿉니다. 출력된 `buildId`를 보관합니다. 명령이 반환됐다는 사실만으로 배포가 끝난 것은 아닙니다.
 
-매번 `deploy`를 실행하면 새로운 배포 요청이 만들어집니다. 응답이 늦거나 연결이 끊겼다면 바로 재실행하지 말고 기존 빌드의 상태를 먼저 확인합니다. `buildId`를 받지 못한 경우에는 관리자에게 진행 중인 빌드 확인을 요청합니다.
+매번 `deploy`를 실행하면 새로운 배포 요청이 만들어집니다. 응답이 늦거나 연결이 끊겼다면 바로 재실행하지 말고 기존 빌드의 상태를 먼저 확인합니다. `buildId`를 받지 못한 경우에는 아래 목록 조회로 확인합니다.
+
+```sh
+aws codebuild list-builds-for-project --project-name almondyoung-deploy-live --sort-order DESCENDING --profile almondyoung --region ap-northeast-2
+```
+
+목록의 ID를 `status`로 조회해 진행 중인 작업을 확인합니다. 목록 권한은 지정된 세 배포 프로젝트에만 있으며 상세 로그 조회 권한과는 다릅니다.
+
+## 자동 마이그레이션·변경 감지·캐시
+
+v2 연결 후에는 별도로 “마이그도 해줘”라고 요청하지 않습니다.
+
+- **Drizzle:** 앱 변경과 무관하게 두 스택의 DB를 확인합니다. SST 링크 및 해당 환경 테넌트 목록을 사용하고 Core는 모든 등록 테넌트를 포함합니다. 미적용 SQL만 순서대로 실행하며, DB별 잠금으로 같은 실행기의 중복을 막습니다. 이력 불일치·기존 DB의 이력 누락·위험한 SQL·접속 실패 시 후속 앱 배포를 시작하지 않습니다. 이미 성공한 다른 DB 변경을 자동으로 되돌리지는 않습니다.
+- **Medusa:** 기존 Admin 컨테이너 시작 시 마이그레이션을 실행하고 store는 생략합니다. 별도 사전 실행을 추가하지 않습니다. 따라서 Medusa 실패 시 services 일부 리소스는 이미 바뀌었을 수 있습니다.
+- **선택 배포:** 각 스택의 마지막 성공 커밋과 비교합니다. auth 변경/공용 코드/의존성/공통 배포 설정은 필요한 양쪽에 반영합니다. 판정 기준이 없으면 전체 배포합니다. services 내부 앱별 빌드 생략은 아직 구현하지 않았습니다.
+- **캐시:** npm/Yarn 다운로드 및 각 Next.js `.next/cache`를 전용 S3에 환경·도구 버전·의존성별로 저장·복원합니다. Docker는 기존 ECR 캐시를 유지합니다. 복원 로그만으로 컴파일러의 실제 hit를 단정하지 않습니다.
+
+Git 밖의 Secret·SSM·AWS 설정 변경을 반영하거나 전체 재배포가 필요하면 아래 명령을 사용합니다. 마이그레이션 검사를 건너뛰는 옵션은 없습니다.
+
+```sh
+python scripts/almondyoung-deploy.py deploy live --force-full --profile almondyoung
+```
+
+마이그레이션이 차단되면 임의로 `db:setup`, `drizzle-kit push`, reset, 과거 SQL 수정, 이력 테이블 수정을 실행하지 않습니다. 환경·buildId·DB/서비스 이름·실패 단계로 관리자에게 확인합니다. 정당한 컬럼 삭제/이름 변경 등은 ADR-0005의 별도 유지보수 순서를 따릅니다.
 
 ## 완료 상태 확인
 
@@ -63,7 +96,7 @@ python scripts/almondyoung-deploy.py status live "almondyoung-deploy-live:반환
 ```
 
 - `IN_PROGRESS`: 진행 중. 같은 `buildId`로 상태를 다시 확인합니다.
-- `SUCCEEDED`: 빌드·배포 작업 성공.
+- `SUCCEEDED`: 작업 성공. v2에서는 선택된 앱 배포와 Drizzle 사전 단계가 성공한 것입니다. 서비스 응답/변경된 프런트 버전도 확인합니다.
 - `FAILED`, `FAULT`, `TIMED_OUT`, `STOPPED`: 실패 또는 중단. 관리자에게 환경과 `buildId`, 반환된 상태를 전달합니다.
 
 `status` 명령의 종료 코드가 0이어도 배포 성공을 뜻하지는 않습니다. 출력된 빌드 상태를 확인해야 합니다. 상세 CodeBuild 로그는 관리자가 확인합니다.
@@ -74,7 +107,7 @@ python scripts/almondyoung-deploy.py status live "almondyoung-deploy-live:반환
 
 `s3:GetObject`로 SST 배포 상태를 읽다가 403이 발생하거나, SST 비밀값·ECS 상세 정보 조회가 거부될 수 있습니다. `lcnine-public`에는 이러한 직접 접근 권한이 없습니다. 이 프로필로 로컬 `sst deploy`를 계속 재시도하지 말고 위 스크립트로 고정 배포 작업을 호출합니다.
 
-사용자에게 허용된 직접 권한은 지정 Lambda 호출, `/sst/bootstrap`에 대한 `ssm:GetParameter`, 서울 리전의 `ecs:ListClusters`입니다. 일부 조회가 된다고 해서 로컬 SST 직접 배포까지 허용된 것은 아닙니다. IAM·결제 관리나 빌드 역할 직접 사용 권한도 없습니다.
+사용자에게 허용된 직접 권한은 지정 Lambda 호출, 지정된 세 프로젝트의 `codebuild:ListBuildsForProject`, `/sst/bootstrap`에 대한 `ssm:GetParameter`, 서울 리전의 `ecs:ListClusters`입니다. 일부 조회가 된다고 해서 로컬 SST 직접 배포까지 허용된 것은 아닙니다. IAM·결제 관리나 빌드 역할 직접 사용 권한도 없습니다.
 
 ### Lambda 호출이 거부됨
 
@@ -97,17 +130,14 @@ aws sts get-caller-identity --profile almondyoung
 - 환경별 CodeBuild 프로젝트: `almondyoung-deploy-dev`, `almondyoung-deploy-demo`, `almondyoung-deploy-live`
 - 환경별 동시 빌드: 1개, 빌드 제한 시간: 120분
 - 실행 시 CodeBuild 및 관련 AWS 사용료가 발생합니다.
-- 2026-11-11 기준 연결 확인과 일부 조회 권한은 검증했지만, 이 구성으로 실제 서버 배포를 완료한 것은 아닙니다. 테스트 통과와 연결 확인만으로 배포 성공을 보고하지 않습니다.
+- 2026-11-11 기존 v1 라이브 작업의 배포 성공과 서비스 HTTP 응답을 확인했습니다. 이 사실은 **이번 v2의 AWS 연결·캐시 적중·운영 DB 마이그레이션 검증을 뜻하지 않습니다.** 소스 반영, AWS 적용, 실제 배포 결과를 구분해 보고합니다.
 
 ## 다음에 배포를 요청할 때
 
 이 안내와 스크립트가 원격 저장소에 반영된 뒤, 다음 문구를 사용합니다. 개발·시연 배포라면 `live`를 원하는 환경으로 바꿉니다.
 
 ```text
-docs/runbooks/lcnine-public-deployment.md를 먼저 읽어 줘.
-테스트한 변경이 origin/develop에 반영됐는지 확인한 뒤,
-AWS 프로필 almondyoung과 scripts/almondyoung-deploy.py로 live에 배포해 줘.
-check → deploy → status 순서로 진행하고 최종 성공 또는 실패까지 확인해 줘.
-lcnine-public으로 직접 sst deploy하거나 권한을 임의로 늘리지 말고,
-실패하면 환경·buildId·오류를 알려 줘.
+런북 읽고 최신 develop을 pull한 다음 live 배포해줘.
 ```
+
+원격 에이전트는 작업 트리 확인 → pull → 기존 빌드 확인 → `check` → `deploy` → 같은 buildId의 `status` → 서비스 확인 순서로 진행합니다. v2 미연결이면 기존 배포를 대신 실행하지 말고 관리자 연결 작업을 알립니다. 실패하면 환경·커밋·buildId·비밀값을 뺀 오류·부분 반영 여부를 보고합니다. “배포 성공”과 “마이그레이션 확인 불가”를 섞어 완료로 보고하지 않습니다.
