@@ -15,9 +15,28 @@ export function missingGrants(expected: readonly string[], granted: readonly str
   return expected.filter((key) => !have.has(key));
 }
 
+/** 자리표시 값인가 — 없음·빈 값·'1'·dummy 포함. 정의는 여기 한 곳이다. */
+export function isPlaceholderValue(value: string | undefined): boolean {
+  return value === undefined || value === '' || value === '1' || value.includes('dummy');
+}
+
 /** IaC 파일에서 `KEY: '1'` 같은 자리표시 값을 찾는다. */
 export function isPlaceholderEnv(iacText: string, key: string): boolean {
-  return new RegExp(`${key}:\\s*'(1|[^']*dummy[^']*)'`).test(iacText);
+  const quoted = new RegExp(`${key}:\\s*'([^']*)'`).exec(iacText);
+  return quoted !== null && isPlaceholderValue(quoted[1]);
+}
+
+/**
+ * sst shell 이 링크한 Secret 의 값. `SST_RESOURCE_<name>` 가 없으면 null(shell 밖이라 못 잰다).
+ * 값 JSON 의 `value` 필드를 읽는다 — SST_RESOURCE_Db 사용례에서 추정한 모양이고 라이브 실측 전이다.
+ */
+export function linkedSecretValue(name: string, env: NodeJS.ProcessEnv = process.env): string | null | undefined {
+  const raw = env[`SST_RESOURCE_${name}`];
+  if (!raw) return null;
+  const parsed: unknown = JSON.parse(raw);
+  if (typeof parsed === 'object' && parsed !== null && 'value' in parsed && typeof parsed.value === 'string')
+    return parsed.value;
+  return undefined;
 }
 
 /**

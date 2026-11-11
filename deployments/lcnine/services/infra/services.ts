@@ -89,6 +89,11 @@ export function setup(infra: SharedInfra) {
   // Channel Adapter
   const channelAdapterInternalKey = new sst.Secret('ChannelAdapterInternalKey');
   const medusaApiKey = new sst.Secret('MedusaApiKey');
+  // 쿠팡 OpenAPI 자격증명. 기본값 '1' 은 자리표시다 — 값을 넣지 않은 stage 의 배포가 멈추지 않게 하고(빈 값은 env.validation 이 기동 거부),
+  // 쿠팡 판매채널 행이 비활성이라 휴면이다. 실제 값은 `npx sst secret set` 으로 넣는다(#1245).
+  const coupangAccessKey = new sst.Secret('CoupangAccessKey', '1');
+  const coupangSecretKey = new sst.Secret('CoupangSecretKey', '1');
+  const coupangVendorId = new sst.Secret('CoupangVendorId', '1');
 
   // Membership — 서버 간(internal) 라우트 인증 키 (channel-adapter/medusa → membership)
   const membershipInternalKey = new sst.Secret('MembershipInternalKey');
@@ -428,9 +433,11 @@ export function setup(infra: SharedInfra) {
     NAVER_API_ENDPOINT: 'https://dummy.com',
     NAVER_CLIENT_ID: '1',
     NAVER_CLIENT_SECRET: '1',
-    COUPANG_ACCESS_KEY: '1',
-    COUPANG_SECRET_KEY: '1',
-    COUPANG_VENDOR_ID: '1',
+    COUPANG_ACCESS_KEY: coupangAccessKey.value,
+    COUPANG_SECRET_KEY: coupangSecretKey.value,
+    COUPANG_VENDOR_ID: coupangVendorId.value,
+    // 고객 취소요청 자동 승인을 켜는 채널(쉼표 목록). 네이버는 #1244 가 정한다.
+    CHANNEL_CANCEL_APPROVAL_ACT_CHANNELS: 'coupang',
     SKIP_VARIANTS_WITHOUT_PRICE: 'true',
     INBOX_MAX_CONCURRENT_HANDLERS: '2',
     INBOX_HANDLER_START_INTERVAL_MS: '3000',

@@ -16,6 +16,7 @@ import { OrderProcessingStageError } from './order-processing-stage.error';
 import { NaverOrderSource } from './naver-order.source';
 import { ChannelOrderTranslator } from './channel-order.translator';
 import { TranslatingOrderProvider } from './translating-order.provider';
+import { coupangRateLimiter } from '../../adapters/coupang/clients/coupang-rate-limiter';
 
 describe('OrderPollerOrchestrator', () => {
   it('ingests a virtual provider through the transactional mapping and typed outbox path without polling Core', async () => {
@@ -158,8 +159,14 @@ describe('OrderPollerOrchestrator', () => {
       fetchOrders: jest
         .fn()
         .mockResolvedValueOnce({ orders: [makeOrder('2026-05-26T01:00:00.000Z')], failures: [] })
-        .mockResolvedValueOnce({ orders: [makeOrder('2026-05-26T01:10:00.000Z', { totalAmount: 12000 })], failures: [] })
-        .mockResolvedValueOnce({ orders: [makeOrder('2026-05-26T01:10:00.000Z', { totalAmount: 12000 })], failures: [] }),
+        .mockResolvedValueOnce({
+          orders: [makeOrder('2026-05-26T01:10:00.000Z', { totalAmount: 12000 })],
+          failures: [],
+        })
+        .mockResolvedValueOnce({
+          orders: [makeOrder('2026-05-26T01:10:00.000Z', { totalAmount: 12000 })],
+          failures: [],
+        }),
     };
     const outbox = { enqueue: jest.fn().mockResolvedValue(undefined) };
     const failures = makeFailureService();
@@ -262,7 +269,11 @@ describe('OrderPollerOrchestrator', () => {
 
   it.each([
     ['ChannelReturnRequested', 'return:ret_1:requested', { returnId: 'ret_1', requestId: 'req_1' }],
-    ['ChannelReturnCancelled', 'return:ret_1:cancelled', { returnId: 'ret_1', cancelledAt: '2026-05-26T01:10:00.000Z' }],
+    [
+      'ChannelReturnCancelled',
+      'return:ret_1:cancelled',
+      { returnId: 'ret_1', cancelledAt: '2026-05-26T01:10:00.000Z' },
+    ],
     ['ChannelReturnPrepaid', 'return:ret_1:prepaid', { returnId: 'ret_1', requestId: 'req_1', amount: 8000 }],
     ['ChannelReturnSettled', 'return:ret_1:settled', { returnId: 'ret_1', requestId: 'req_1', refundAmount: 24000 }],
   ] as const)('%s 관측은 채널 키를 붙여 한 번만 적재한다', async (eventType, eventKey, expected) => {
@@ -2213,8 +2224,14 @@ describe('OrderPollerOrchestrator.syncOrder — 즉시 끌어오기 (#1016 5번 
   it('처음 보는 주문은 created, 같은 내용은 unchanged, 바뀐 내용은 emitted(OrderModified)', async () => {
     const { orchestrator, provider, syncStatus, eventTypes } = setup();
     provider.fetchOrderForSync
-      .mockResolvedValueOnce({ outcome: { kind: 'order', order: makeOrder('2026-10-05T01:00:00.000Z') }, lifecycle: [] })
-      .mockResolvedValueOnce({ outcome: { kind: 'order', order: makeOrder('2026-10-05T01:00:00.000Z') }, lifecycle: [] })
+      .mockResolvedValueOnce({
+        outcome: { kind: 'order', order: makeOrder('2026-10-05T01:00:00.000Z') },
+        lifecycle: [],
+      })
+      .mockResolvedValueOnce({
+        outcome: { kind: 'order', order: makeOrder('2026-10-05T01:00:00.000Z') },
+        lifecycle: [],
+      })
       .mockResolvedValueOnce({
         outcome: { kind: 'order', order: makeOrder('2026-10-05T01:10:00.000Z', { totalAmount: 12000 }) },
         lifecycle: [],
@@ -2319,7 +2336,11 @@ describe('OrderPollerOrchestrator.syncOrder — 즉시 끌어오기 (#1016 5번 
       'medusa_order_1',
       CHANNEL_PRODUCT_IDENTIFICATION_FAILED,
     );
-    expect(failures.closeAsAlreadyCollected).toHaveBeenCalledWith('failure_1', expect.any(String), 'wms_medusa_order_1');
+    expect(failures.closeAsAlreadyCollected).toHaveBeenCalledWith(
+      'failure_1',
+      expect.any(String),
+      'wms_medusa_order_1',
+    );
   });
 
   it('비활성 채널이면 채널을 부르지 않고 channel_inactive', async () => {
@@ -2384,10 +2405,12 @@ describe('OrderPollerOrchestrator — 네이버 취소요청 관측 (마켓 고�
     const enqueued: Array<{ eventType: string; payload: Record<string, unknown> }> = [];
     const outbox = {
       // 실제 발행기처럼 적재 시점에 계약으로 파싱한다 — 네이버 +09:00 시각이 계약을 못 통과하면 여기서 터진다.
-      enqueue: jest.fn(async (event: { eventType: keyof typeof ORDER_STREAM.events; payload: Record<string, unknown> }) => {
-        ORDER_STREAM.events[event.eventType].schema?.parse(event.payload);
-        enqueued.push(event);
-      }),
+      enqueue: jest.fn(
+        async (event: { eventType: keyof typeof ORDER_STREAM.events; payload: Record<string, unknown> }) => {
+          ORDER_STREAM.events[event.eventType].schema?.parse(event.payload);
+          enqueued.push(event);
+        },
+      ),
     };
     const db = makeDb();
     const failures = makeFailureService();
@@ -2445,7 +2468,10 @@ describe('OrderPollerOrchestrator — 네이버 취소요청 관측 (마켓 고�
   it('PAYED + CANCEL_DONE 일부 수량 취소는 수집된 주문에 줄 누적 수량 OrderCancelled 로 나간다', async () => {
     const { orchestrator, failures, enqueued, next } = setupNaver([
       naverDetail(),
-      { ...naverDetail({ claimStatus: 'CANCEL_DONE', claimId: 'cl-1' }), currentClaim: { cancel: { requestQuantity: 1 } } },
+      {
+        ...naverDetail({ claimStatus: 'CANCEL_DONE', claimId: 'cl-1' }),
+        currentClaim: { cancel: { requestQuantity: 1 } },
+      },
     ]);
 
     await orchestrator.poll();
@@ -2504,6 +2530,257 @@ describe('OrderPollerOrchestrator — 네이버 취소요청 관측 (마켓 고�
     expect(failures.closeAsTerminalLifecycle).not.toHaveBeenCalled();
     // 낼 것이 없을 뿐 막힌 것은 아니다 — 워터마크는 지나간다(지금의 pending 스냅샷과 같다).
     expect(syncStatus.lastSyncAt()).toEqual(new Date('2026-08-19T00:00:00.000Z'));
+  });
+});
+
+describe('OrderPollerOrchestrator — 수집 커밋 뒤 acknowledgeCollected 훅 (#1245)', () => {
+  const ids = {
+    A: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    B: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+    C: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+  } as const;
+  const order = (key: keyof typeof ids, minute: string, overrides: { eligibleForOrderCreation?: boolean } = {}) =>
+    makeOrder(`2026-10-07T01:${minute}:00.000Z`, { externalOrderId: key, orderId: ids[key], ...overrides });
+
+  function fetchOrdersMock(fetchResult: object | object[]): jest.Mock {
+    const mock = jest.fn();
+    if (Array.isArray(fetchResult)) for (const result of fetchResult) mock.mockResolvedValueOnce(result);
+    else mock.mockResolvedValue(fetchResult);
+    return mock;
+  }
+
+  function setup(fetchResult: object | object[], options: { acknowledge?: jest.Mock | null; failOnEnqueueFor?: string } = {}) {
+    const acknowledge =
+      options.acknowledge === undefined ? jest.fn().mockResolvedValue(undefined) : options.acknowledge;
+    const provider: ChannelOrderProvider = {
+      channel: 'medusa',
+      fetchOrders: fetchOrdersMock(fetchResult),
+      ...(acknowledge ? { acknowledgeCollected: acknowledge } : {}),
+    };
+    const syncStatus = makeSyncStatus();
+    const failures = makeFailureService();
+    const outbox = {
+      enqueue: jest.fn(async (event: { payload: { externalOrderId?: string } }) => {
+        if (event.payload.externalOrderId === options.failOnEnqueueFor) throw new Error('contract violation');
+      }),
+    };
+    const orchestrator = new OrderPollerOrchestrator(
+      [provider],
+      syncStatus as any,
+      outbox as any,
+      makeHashService() as any,
+      failures as any,
+      makeDb() as any,
+      makeSalesChannelClient(['medusa']) as any,
+    );
+    return { orchestrator, syncStatus, acknowledge };
+  }
+
+  it('새로 만든 주문과 이미 수집된 accepted 주문을 acknowledgeCollected 로 넘긴다', async () => {
+    const { orchestrator, acknowledge } = setup({
+      orders: [order('A', '00'), order('B', '01')],
+      failures: [],
+      lifecycleEvents: [],
+    });
+
+    await orchestrator.poll();
+    expect(acknowledge).toHaveBeenLastCalledWith(['A', 'B']);
+
+    // 둘째 주기: 이미 수집된 주문(매핑 있음)도 다시 넘긴다 — 첫 시도가 실패했어도 따라잡는다.
+    await orchestrator.poll();
+    expect(acknowledge).toHaveBeenCalledTimes(2);
+    expect(acknowledge).toHaveBeenLastCalledWith(['A', 'B']);
+  });
+
+  it('같은 주문이 항목으로 두 번 와도 한 번만 넘긴다', async () => {
+    const { orchestrator, acknowledge } = setup({
+      orders: [order('A', '00'), order('A', '01')],
+      failures: [],
+      lifecycleEvents: [],
+    });
+
+    await orchestrator.poll();
+
+    expect(acknowledge).toHaveBeenCalledTimes(1);
+    expect(acknowledge).toHaveBeenCalledWith(['A']);
+  });
+
+  it('eligibleForOrderCreation=false 주문(셀메이트 몫 포함)은 넘기지 않는다', async () => {
+    // B 는 첫 주기에 수집돼 매핑(wmsOrderId)이 있다. 둘째 주기에 셀메이트 몫으로 바뀌어 와도 넘기지 않는다.
+    const { orchestrator, acknowledge } = setup([
+      { orders: [order('A', '00'), order('B', '01')], failures: [], lifecycleEvents: [] },
+      {
+        orders: [order('A', '02'), order('B', '03', { eligibleForOrderCreation: false })],
+        failures: [],
+        lifecycleEvents: [],
+      },
+    ]);
+
+    await orchestrator.poll();
+    await orchestrator.poll();
+
+    expect(acknowledge).toHaveBeenCalledTimes(2);
+    expect(acknowledge).toHaveBeenLastCalledWith(['A']);
+  });
+
+  it('처리 실패·격리된 주문은 넘기지 않는다', async () => {
+    const { orchestrator, acknowledge } = setup(
+      {
+        orders: [order('A', '00'), order('B', '01')],
+        failures: [makeFailure('2026-10-07T01:02:00.000Z')],
+        lifecycleEvents: [],
+      },
+      { failOnEnqueueFor: 'B' },
+    );
+
+    await orchestrator.poll();
+
+    expect(acknowledge).toHaveBeenCalledWith(['A']);
+  });
+
+  it('넘길 주문이 없으면 부르지 않는다', async () => {
+    const { orchestrator, acknowledge } = setup({ orders: [], failures: [], lifecycleEvents: [] });
+
+    await orchestrator.poll();
+
+    expect(acknowledge).not.toHaveBeenCalled();
+  });
+
+  it('acknowledgeCollected 가 throw 해도 주기는 성공으로 끝난다', async () => {
+    jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    const { orchestrator, syncStatus } = setup(
+      { orders: [order('A', '00')], failures: [], lifecycleEvents: [] },
+      { acknowledge: jest.fn().mockRejectedValue(new Error('coupang down')) },
+    );
+
+    await orchestrator.poll();
+
+    expect(syncStatus.recordSyncFailure).not.toHaveBeenCalled();
+    expect(syncStatus.recordSyncComplete).toHaveBeenCalledTimes(1);
+    expect(syncStatus.lastSyncAt()).toEqual(new Date('2026-10-07T01:00:00.000Z'));
+    jest.restoreAllMocks();
+  });
+
+  it('훅이 없는 provider(Medusa·Naver)는 전과 같다', async () => {
+    const { orchestrator, syncStatus } = setup(
+      { orders: [order('A', '00')], failures: [], lifecycleEvents: [] },
+      { acknowledge: null },
+    );
+
+    await orchestrator.poll();
+
+    expect(syncStatus.recordSyncComplete).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('OrderPollerOrchestrator — 겹친 주기 막기·주기 로그 (#1245)', () => {
+  const empty = { orders: [], failures: [] };
+
+  function deferred<T>() {
+    let resolve: (value: T) => void = () => undefined;
+    const promise = new Promise<T>((r) => (resolve = r));
+    return { promise, resolve };
+  }
+
+  /** 앞 주기가 fetchOrders 에서 멈출 때까지 이벤트 루프를 돌린다. */
+  async function until(condition: () => boolean) {
+    for (let i = 0; i < 50 && !condition(); i++) await new Promise((r) => setImmediate(r));
+    expect(condition()).toBe(true);
+  }
+
+  function build(providers: ChannelOrderProvider[], syncStatus = makeSyncStatus()) {
+    return new OrderPollerOrchestrator(
+      providers,
+      syncStatus as any,
+      { enqueue: jest.fn().mockResolvedValue(undefined) } as any,
+      makeHashService() as any,
+      makeFailureService() as any,
+      makeDb() as any,
+      makeSalesChannelClient(['coupang', 'medusa']) as any,
+    );
+  }
+
+  afterEach(() => jest.restoreAllMocks());
+
+  it('같은 채널의 앞 주기가 아직 돌면 이번 주기는 그 채널을 건너뛰고 warn 한다', async () => {
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const gate = deferred<typeof empty>();
+    const slow: ChannelOrderProvider = {
+      channel: 'coupang',
+      fetchOrders: jest.fn().mockReturnValueOnce(gate.promise).mockResolvedValue(empty),
+    };
+    const orchestrator = build([slow]);
+
+    const first = orchestrator.poll();
+    await until(() => (slow.fetchOrders as jest.Mock).mock.calls.length === 1);
+    await orchestrator.poll();
+
+    expect(slow.fetchOrders).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledWith(expect.stringMatching(/\[coupang\] 앞 주기가 아직 돈다 \(\d+ms 째\)/));
+
+    gate.resolve(empty);
+    await first;
+    await orchestrator.poll();
+    expect(slow.fetchOrders).toHaveBeenCalledTimes(2);
+  });
+
+  it('다른 채널은 막지 않는다', async () => {
+    jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const gate = deferred<typeof empty>();
+    const slow: ChannelOrderProvider = {
+      channel: 'coupang',
+      fetchOrders: jest.fn().mockReturnValueOnce(gate.promise).mockResolvedValue(empty),
+    };
+    const other: ChannelOrderProvider = { channel: 'medusa', fetchOrders: jest.fn().mockResolvedValue(empty) };
+    const orchestrator = build([slow, other]);
+
+    const first = orchestrator.poll();
+    await until(() => (slow.fetchOrders as jest.Mock).mock.calls.length === 1);
+    await orchestrator.poll();
+
+    expect(slow.fetchOrders).toHaveBeenCalledTimes(1);
+    expect(other.fetchOrders).toHaveBeenCalledTimes(1);
+
+    gate.resolve(empty);
+    await first;
+    expect(other.fetchOrders).toHaveBeenCalledTimes(2);
+  });
+
+  it('주기가 throw 해도 막기를 푼다', async () => {
+    jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    const syncStatus = makeSyncStatus();
+    syncStatus.recordSyncFailure.mockRejectedValueOnce(new Error('db down'));
+    const provider: ChannelOrderProvider = {
+      channel: 'coupang',
+      fetchOrders: jest.fn().mockRejectedValueOnce(new Error('쿠팡 500')).mockResolvedValue(empty),
+    };
+    const orchestrator = build([provider], syncStatus);
+
+    await expect(orchestrator.poll()).rejects.toThrow('db down');
+    await orchestrator.poll();
+
+    expect(provider.fetchOrders).toHaveBeenCalledTimes(2);
+  });
+
+  it('주기마다 걸린 시간과 쿠팡 호출 수를 한 줄로 남긴다', async () => {
+    const log = jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+    const provider: ChannelOrderProvider = {
+      channel: 'coupang',
+      fetchOrders: jest.fn().mockImplementation(async () => {
+        await coupangRateLimiter.acquire();
+        await coupangRateLimiter.acquire();
+        return empty;
+      }),
+    };
+    const other: ChannelOrderProvider = { channel: 'medusa', fetchOrders: jest.fn().mockResolvedValue(empty) };
+
+    await build([provider, other]).poll();
+
+    const cycleLines = log.mock.calls.map(([line]) => String(line)).filter((line) => line.includes('주기 끝'));
+    expect(cycleLines).toEqual([
+      expect.stringMatching(/^\[coupang\] 주기 끝 — \d+ms, 쿠팡 호출 2회$/),
+      expect.stringMatching(/^\[medusa\] 주기 끝 — \d+ms$/),
+    ]);
   });
 });
 
@@ -2576,7 +2853,15 @@ function makeOrder(
     },
     modifiedAt: sourceUpdatedAt,
     modification: {
-      lines: [{ channelOrderItemId: 'item_1', channelProductId: 'variant_1', quantity: 1, unitPrice: 10000, cancelled: false }],
+      lines: [
+        {
+          channelOrderItemId: 'item_1',
+          channelProductId: 'variant_1',
+          quantity: 1,
+          unitPrice: 10000,
+          cancelled: false,
+        },
+      ],
       shippingAddress,
     },
   };
@@ -2637,8 +2922,20 @@ function makeOrderWithCancelledLine(sourceUpdatedAt: string): OrderFetchItem {
     modifiedAt: sourceUpdatedAt,
     modification: {
       lines: [
-        { channelOrderItemId: 'po-1', channelProductId: 'naver_product_1', quantity: 1, unitPrice: 10000, cancelled: false },
-        { channelOrderItemId: 'po-2', channelProductId: 'naver_product_1', quantity: 1, unitPrice: 3000, cancelled: true },
+        {
+          channelOrderItemId: 'po-1',
+          channelProductId: 'naver_product_1',
+          quantity: 1,
+          unitPrice: 10000,
+          cancelled: false,
+        },
+        {
+          channelOrderItemId: 'po-2',
+          channelProductId: 'naver_product_1',
+          quantity: 1,
+          unitPrice: 3000,
+          cancelled: true,
+        },
       ],
       shippingAddress,
     },

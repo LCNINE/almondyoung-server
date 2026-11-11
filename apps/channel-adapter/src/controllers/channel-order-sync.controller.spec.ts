@@ -38,9 +38,17 @@ describe('ChannelOrderSyncController', () => {
     expect(orderPoller.syncOrder).not.toHaveBeenCalled();
   });
 
-  it('medusa·naver 밖의 채널은 400', async () => {
+  it('쿠팡도 즉시 끌어오기 대상이다', async () => {
+    const { controller, orderPoller } = makeController('emitted');
+    await expect(controller.sync('Bearer internal-secret', 'coupang', 'order_1', {})).resolves.toEqual({
+      outcome: 'emitted',
+    });
+    expect(orderPoller.syncOrder).toHaveBeenCalledWith('coupang', 'order_1', { force: false });
+  });
+
+  it('medusa·naver·coupang 밖의 채널은 400', async () => {
     const { controller, orderPoller } = makeController();
-    await expect(controller.sync('Bearer internal-secret', 'coupang', 'order_1', {})).rejects.toBeInstanceOf(
+    await expect(controller.sync('Bearer internal-secret', 'gmarket', 'order_1', {})).rejects.toBeInstanceOf(
       BadRequestException,
     );
     expect(orderPoller.syncOrder).not.toHaveBeenCalled();

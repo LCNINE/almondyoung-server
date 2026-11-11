@@ -1,4 +1,4 @@
-import { CHANNEL_CAPABILITIES } from './channel-capabilities';
+import { CHANNEL_CAPABILITIES, getChannelFulfillmentCapabilities } from './channel-capabilities';
 
 describe('CHANNEL_CAPABILITIES.reservation', () => {
   const reservationKind = (channel: 'medusa' | 'naver' | 'coupang') => {
@@ -11,5 +11,11 @@ describe('CHANNEL_CAPABILITIES.reservation', () => {
     expect(reservationKind('medusa')).toBe('projection');
     expect(reservationKind('naver')).toBe('none');
     expect(reservationKind('coupang')).toBe('none');
+  });
+});
+
+describe('쿠팡 fulfillment', () => {
+  it('쿠팡은 한 주문에 송장 여럿을 받지 않는다', () => {
+    expect(getChannelFulfillmentCapabilities('coupang')?.multipleTrackingNumbers).toBe(false);
   });
 });

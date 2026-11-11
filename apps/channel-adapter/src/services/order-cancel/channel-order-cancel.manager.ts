@@ -80,7 +80,7 @@ export class ChannelOrderCancelManager {
       });
     }
     // 승인은 끝났다 — 여기서 던지면 명령이 재배달돼 승인을 또 보낸다. 재수집은 덤이라 실패해도 로그만 남기고,
-    // 즉시 끌어오기가 없는 채널(쿠팡)은 건너뛴다. 어느 쪽이든 다음 폴링이 취소를 수집한다
+    // 즉시 끌어오기가 없는 채널(`SYNCABLE_CHANNELS` 밖)은 건너뛴다 — 지금은 medusa·naver·coupang 모두 재수집한다. 어느 쪽이든 다음 폴링이 취소를 수집한다
     const approved = `[CANCEL] ${requestId} ${salesChannel}:${externalOrderId} 마켓 취소요청 승인 완료`;
     if (!isSyncableChannel(salesChannel)) {
       this.logger.log(`${approved} → 즉시 재수집 없음(다음 폴링이 수집)`);

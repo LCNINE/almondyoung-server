@@ -26,7 +26,7 @@
 import { connect, linkedResource, readOnly, type Sql } from './db';
 import { checkInbound } from './checks/inbound';
 import { checkLocation } from './checks/location';
-import { checkMarketAdapter, checkMarketCore } from './checks/market';
+import { checkCoupangCollectedHasCoreOrder, checkMarketAdapter, checkMarketCore } from './checks/market';
 import { checkMatching } from './checks/matching';
 import { checkMedusaReservations } from './checks/medusa';
 import { checkOutbound, checkOutboundAdapter } from './checks/outbound';
@@ -81,6 +81,8 @@ async function main(): Promise<void> {
           adapter ? readOnly(adapter, (ad) => checkMedusaReservations(med, tx, ad, r)) : checkMedusaReservations(med, tx, null, r),
         ),
       );
+    if (r.phase === 'after' && core && adapter)
+      await readOnly(core, (tx) => readOnly(adapter, (ad) => checkCoupangCollectedHasCoreOrder(tx, ad, r)));
     if (users) await readOnly(users, (tx) => checkPeople(tx, r));
     else r.info('\nuser_service 건너뜀 — deployments/lcnine/auth 에서 sst shell 로 한 번 더 돌린다');
   } finally {

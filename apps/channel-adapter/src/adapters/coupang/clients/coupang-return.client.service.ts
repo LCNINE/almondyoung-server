@@ -1,6 +1,5 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
-import { firstValueFrom } from 'rxjs';
 import { CoupangBaseClient } from './coupang-base.client.service';
 import {
   CoupangStoppedShipmentRequest,
@@ -76,28 +75,9 @@ export class CoupangReturnClient extends CoupangBaseClient {
 
       const path = `/v2/providers/openapi/apis/api/v6/vendors/${config.vendorId}/returnRequests`;
       const queryParams = new URLSearchParams(query);
+      this.logger.log(`📡 쿠팡 반품/취소 목록 조회: ${path}`);
 
-      const authorization = this.generateAuthHeader(
-        config.accessKey,
-        config.secretKey,
-        'GET',
-        path,
-        queryParams.toString(),
-      );
-
-      const url = `${config.apiEndpoint}${path}?${queryParams.toString()}`;
-      this.logger.log(`📡 쿠팡 반품/취소 목록 조회: ${url}`);
-
-      const response = await firstValueFrom(
-        this.http.get(url, {
-          headers: {
-            Authorization: authorization,
-            'Content-Type': 'application/json',
-          },
-        }),
-      );
-
-      const validatedResponse = response.data;
+      const validatedResponse = await this.send<GetReturnRequestsResponse>('GET', path, { query: queryParams });
       this.logger.log(`✅ 반품/취소 목록 조회 성공: ${validatedResponse.data?.length || 0}건`);
       return validatedResponse;
     } catch (error) {
@@ -111,32 +91,17 @@ export class CoupangReturnClient extends CoupangBaseClient {
    * @param receiptId 취소(반품)접수번호
    * @returns API 응답 데이터
    */
-  async getSingleReturnRequest(receiptId: number): Promise<GetSingleReturnRequestResponse> {
+  async getSingleReturnRequest(receiptId: string): Promise<GetSingleReturnRequestResponse> {
     try {
       const config = this.getApiConfig();
       this.logger.log(`🔍 쿠팡 반품/취소 단건 조회 (receiptId): ${receiptId}`);
 
       const path = `/v2/providers/openapi/apis/api/v6/vendors/${config.vendorId}/returnRequests/${receiptId}`;
-      const authorization = this.generateAuthHeader(config.accessKey, config.secretKey, 'GET', path);
-      const url = `${config.apiEndpoint}${path}`;
-      this.logger.log(`📡 쿠팡 반품/취소 단건 조회 API 호출: ${url}`);
+      const body = await this.send<GetSingleReturnRequestResponse>('GET', path);
 
-      const response = await firstValueFrom(
-        this.http.get<GetSingleReturnRequestResponse>(url, {
-          headers: {
-            Authorization: authorization,
-            'Content-Type': 'application/json',
-          },
-        }),
-      );
-
-      // 간단한 응답 체크
-      if (response.data.code !== 200) {
-        throw new Error(`쿠팡 API 오류: ${response.data.code} - ${response.data.message}`);
-      }
-
-      this.logger.log(`✅ 쿠팡 반품/취소 단건 조회 성공: ${receiptId}`);
-      return response.data;
+      // body.code 판정은 호출자(출고중지 승인)의 몫이다 — 던지면 상태 없는 오류가 되어 재시도로 오분류된다
+      this.logger.log(`✅ 쿠팡 반품/취소 단건 조회 응답: ${receiptId} (code=${body.code})`);
+      return body;
     } catch (error) {
       if (error.response) {
         this.logger.error(
@@ -146,7 +111,11 @@ export class CoupangReturnClient extends CoupangBaseClient {
         this.logger.error(`❌ 쿠팡 반품/취소 단건 조회 실패: ${error.message}`);
       }
 
-      throw new Error(`쿠팡 반품/취소 단건 조회 실패: ${error.message}`);
+      // HTTP 상태를 잃지 않게 싣는다 — 호출자가 4xx(다시 해도 같다)와 5xx·네트워크(재시도)를 가른다
+      throw Object.assign(new Error(`쿠팡 반품/취소 단건 조회 실패: ${error.message}`), {
+        status: responseStatusOf(error),
+        cause: error,
+      });
     }
   }
 
@@ -174,31 +143,16 @@ export class CoupangReturnClient extends CoupangBaseClient {
     );
 
     const path = `/v2/providers/openapi/apis/api/v4/vendors/${config.vendorId}/returnRequests/${receiptId}/stoppedShipment`;
-    const authorization = this.generateAuthHeader(config.accessKey, config.secretKey, 'PATCH', path);
-    const url = `${config.apiEndpoint}${path}`;
 
     try {
-      const response = await firstValueFrom(
-        this.http.patch<CoupangStoppedShipmentResponse>(
-          url,
-          {
-            vendorId,
-            receiptId,
-            cancelCount,
-          },
-          {
-            headers: {
-              Authorization: authorization,
-              'Content-Type': 'application/json',
-            },
-          },
-        ),
-      );
+      const response = await this.send<CoupangStoppedShipmentResponse>('PATCH', path, {
+        body: { vendorId, receiptId, cancelCount },
+      });
 
       this.logger.log(
-        `✅ 출고중지완료 처리 결과: ${response.data.data.resultCode} - ${response.data.data.resultMessage}`,
+        `✅ 출고중지완료 처리 결과: ${response.data.resultCode} - ${response.data.resultMessage}`,
       );
-      return response.data;
+      return response;
     } catch (error) {
       if (error.response) {
         this.logger.error(
@@ -240,30 +194,14 @@ export class CoupangReturnClient extends CoupangBaseClient {
     );
 
     const path = `/v2/providers/openapi/apis/api/v4/vendors/${config.vendorId}/returnRequests/${receiptId}/completedShipment`;
-    const authorization = this.generateAuthHeader(config.accessKey, config.secretKey, 'PATCH', path);
-    const url = `${config.apiEndpoint}${path}`;
 
     try {
-      const response = await firstValueFrom(
-        this.http.patch<CoupangCompletedShipmentResponse>(
-          url,
-          {
-            vendorId,
-            receiptId,
-            deliveryCompanyCode,
-            invoiceNumber,
-          },
-          {
-            headers: {
-              Authorization: authorization,
-              'Content-Type': 'application/json',
-            },
-          },
-        ),
-      );
+      const response = await this.send<CoupangCompletedShipmentResponse>('PATCH', path, {
+        body: { vendorId, receiptId, deliveryCompanyCode, invoiceNumber },
+      });
 
-      this.logger.log(`✅ 이미출고처리 결과: ${response.data.data.resultCode} - ${response.data.data.resultMessage}`);
-      return response.data;
+      this.logger.log(`✅ 이미출고처리 결과: ${response.data.resultCode} - ${response.data.resultMessage}`);
+      return response;
     } catch (error) {
       if (error.response) {
         this.logger.error(
@@ -303,20 +241,12 @@ export class CoupangReturnClient extends CoupangBaseClient {
       this.logger.log(`✅ 쿠팡 반품상품 입고확인 처리 요청: ${receiptId}`);
 
       const path = `/v2/providers/openapi/apis/api/v4/vendors/${config.vendorId}/returnRequests/${receiptId}/receiveConfirmation`;
-      const authorization = this.generateAuthHeader(config.accessKey, config.secretKey, 'PATCH', path);
-      const url = `${config.apiEndpoint}${path}`;
+      const response = await this.send<CoupangConfirmReturnReceiptResponse>('PATCH', path, {
+        body: parsedReq.data,
+      });
 
-      const response = await firstValueFrom(
-        this.http.patch<CoupangConfirmReturnReceiptResponse>(url, parsedReq.data, {
-          headers: {
-            Authorization: authorization,
-            'Content-Type': 'application/json',
-          },
-        }),
-      );
-
-      this.logger.log(`👍 반품상품 입고확인 처리 성공: ${receiptId} - ${response.data.data.resultMessage}`);
-      return response.data;
+      this.logger.log(`👍 반품상품 입고확인 처리 성공: ${receiptId} - ${response.data.resultMessage}`);
+      return response;
     } catch (error) {
       if (error.response) {
         this.logger.error(
@@ -354,20 +284,10 @@ export class CoupangReturnClient extends CoupangBaseClient {
       this.logger.log(`✅ 쿠팡 반품요청 승인 처리 요청: ${receiptId}`);
 
       const path = `/v2/providers/openapi/apis/api/v4/vendors/${config.vendorId}/returnRequests/${receiptId}/approval`;
-      const authorization = this.generateAuthHeader(config.accessKey, config.secretKey, 'PATCH', path);
-      const url = `${config.apiEndpoint}${path}`;
+      const response = await this.send<CoupangApproveReturnResponse>('PATCH', path, { body: parsedReq.data });
 
-      const response = await firstValueFrom(
-        this.http.patch<CoupangApproveReturnResponse>(url, parsedReq.data, {
-          headers: {
-            Authorization: authorization,
-            'Content-Type': 'application/json',
-          },
-        }),
-      );
-
-      this.logger.log(`👍 반품요청 승인 처리 성공: ${receiptId} - ${response.data.message}`);
-      return response.data;
+      this.logger.log(`👍 반품요청 승인 처리 성공: ${receiptId} - ${response.message}`);
+      return response;
     } catch (error) {
       if (error.response) {
         this.logger.error(
@@ -406,25 +326,15 @@ export class CoupangReturnClient extends CoupangBaseClient {
         dateTo: parsedParams.data.dateTo,
         pageIndex: String(parsedParams.data.pageIndex),
         sizePerPage: String(parsedParams.data.sizePerPage),
-      }).toString();
+      });
 
-      this.logger.log(`🔍 쿠팡 반품 철회 이력 조회 요청: ${query}`);
+      this.logger.log(`🔍 쿠팡 반품 철회 이력 조회 요청: ${query.toString()}`);
 
       const path = `/v2/providers/openapi/apis/api/v4/vendors/${config.vendorId}/returnWithdrawRequests`;
-      const authorization = this.generateAuthHeader(config.accessKey, config.secretKey, 'GET', path, query);
-      const url = `${config.apiEndpoint}${path}?${query}`;
+      const response = await this.send<GetReturnWithdrawalHistoryResponse>('GET', path, { query });
 
-      const response = await firstValueFrom(
-        this.http.get<GetReturnWithdrawalHistoryResponse>(url, {
-          headers: {
-            Authorization: authorization,
-            'Content-Type': 'application/json',
-          },
-        }),
-      );
-
-      this.logger.log(`👍 반품 철회 이력 조회 성공: ${response.data.data.length}건`);
-      return response.data;
+      this.logger.log(`👍 반품 철회 이력 조회 성공: ${response.data.length}건`);
+      return response;
     } catch (error) {
       if (error.response) {
         this.logger.error(
@@ -462,20 +372,12 @@ export class CoupangReturnClient extends CoupangBaseClient {
       this.logger.log(`🔍 쿠팡 반품 철회 이력(ID) 조회 요청: ${cancelIds.length}건`);
 
       const path = `/v2/providers/openapi/apis/api/v4/vendors/${config.vendorId}/returnWithdrawList`;
-      const authorization = this.generateAuthHeader(config.accessKey, config.secretKey, 'POST', path);
-      const url = `${config.apiEndpoint}${path}`;
+      const response = await this.send<GetReturnWithdrawalHistoryByIdsResponse>('POST', path, {
+        body: parsedReq.data,
+      });
 
-      const response = await firstValueFrom(
-        this.http.post<GetReturnWithdrawalHistoryByIdsResponse>(url, parsedReq.data, {
-          headers: {
-            Authorization: authorization,
-            'Content-Type': 'application/json',
-          },
-        }),
-      );
-
-      this.logger.log(`👍 반품 철회 이력(ID) 조회 성공: ${response.data.data.length}건`);
-      return response.data;
+      this.logger.log(`👍 반품 철회 이력(ID) 조회 성공: ${response.data.length}건`);
+      return response;
     } catch (error) {
       if (error.response) {
         this.logger.error(
@@ -512,20 +414,12 @@ export class CoupangReturnClient extends CoupangBaseClient {
       this.logger.log(`🚚 쿠팡 회수송장 등록 요청: receiptId=${parsedReq.data.receiptId}`);
 
       const path = `/v2/providers/openapi/apis/api/v4/vendors/${config.vendorId}/return-exchange-invoices/manual`;
-      const authorization = this.generateAuthHeader(config.accessKey, config.secretKey, 'POST', path);
-      const url = `${config.apiEndpoint}${path}`;
+      const response = await this.send<CoupangRegisterReturnInvoiceResponse>('POST', path, {
+        body: parsedReq.data,
+      });
 
-      const response = await firstValueFrom(
-        this.http.post<CoupangRegisterReturnInvoiceResponse>(url, parsedReq.data, {
-          headers: {
-            Authorization: authorization,
-            'Content-Type': 'application/json',
-          },
-        }),
-      );
-
-      this.logger.log(`👍 회수송장 등록 성공: receiptId=${response.data.data.receiptId}`);
-      return response.data;
+      this.logger.log(`👍 회수송장 등록 성공: receiptId=${response.data.receiptId}`);
+      return response;
     } catch (error) {
       if (error.response) {
         this.logger.error(
@@ -541,6 +435,9 @@ export class CoupangReturnClient extends CoupangBaseClient {
 
 /** axios 오류의 `response.status` — 응답이 없거나(네트워크) 숫자가 아니면 undefined */
 function responseStatusOf(error: unknown): number | undefined {
+  if (typeof error === 'object' && error !== null && 'status' in error && typeof error.status === 'number') {
+    return error.status; // CoupangBaseClient.send 가 실어 둔 상태 코드
+  }
   if (typeof error !== 'object' || error === null || !('response' in error)) return undefined;
   const { response } = error;
   if (typeof response !== 'object' || response === null || !('status' in response)) return undefined;

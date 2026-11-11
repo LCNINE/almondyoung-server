@@ -212,7 +212,6 @@ npm run test:admin-web            # admin-web 전용
 npm run test:user-service         # user-service 전용 config
 npm run test:membership           # itdoc (전용 config)
 npm run test:membership:integration  # 실 membership DB (--runInBand 고정)
-npm run test:coupang:integration  # 실 DB + adapter-mock 필요
 npm run test:core:integration:local
 scripts/local/run-medusa-integration.sh            # medusa HTTP 통합 (실 DB+redis)
 scripts/local/run-medusa-integration.sh --modules  # medusa 모듈 통합

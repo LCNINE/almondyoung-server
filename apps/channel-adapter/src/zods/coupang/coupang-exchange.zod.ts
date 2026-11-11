@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { CoupangDeliveryCompanyCodeSchema } from './coupang-common.zod';
+import { CoupangDeliveryCompanyCodeSchema, CoupangLongIdSchema } from './coupang-common.zod';
 
 /**
  * 쿠팡 교환 관련 Zod 스키마
@@ -30,7 +30,7 @@ export const GetExchangeRequestsParamsSchema = z
       })
       .transform((val) => val),
     status: z.enum(['RECEIPT', 'PROGRESS', 'SUCCESS', 'REJECT', 'CANCEL']).optional(),
-    orderId: z.union([z.string().regex(/^\d+$/).transform(Number), z.number()]).optional(),
+    orderId: CoupangLongIdSchema.optional(),
     nextToken: z.string().optional(),
     maxPerPage: z
       .union([z.number(), z.string().transform(Number)])
@@ -96,9 +96,9 @@ export const DeliveryInvoiceDtoSchema = z.object({
 });
 
 export const DeliveryInvoiceGroupDtoSchema = z.object({
-  shipmentBoxId: z.number(),
+  shipmentBoxId: CoupangLongIdSchema,
   boxPrice: z.number(),
-  orderId: z.number(),
+  orderId: CoupangLongIdSchema,
   orderType: z.string(),
   customerType: z.string(),
   bundleType: z.string(),
@@ -135,9 +135,9 @@ export const ReturnDeliveryDestinationDtoSchema = z.object({
   safetyNumber: z.string(),
   returnDeliveryId: z.number(),
   returnCenterCode: z.string(),
-  receiptId: z.number(),
+  receiptId: CoupangLongIdSchema,
   orderedByMobile: z.string(),
-  orderId: z.number(),
+  orderId: CoupangLongIdSchema,
   message: z.string(),
   customerZipCode: z.string(),
   customerPhone: z.string(),
@@ -184,7 +184,7 @@ export const ExchangeItemDtoSchema = z.object({
 // --- 교환요청 목록의 각 아이템에 대한 메인 스키마 ---
 export const CoupangExchangeRequestSchema = z.object({
   exchangeId: z.number(),
-  orderId: z.number(),
+  orderId: CoupangLongIdSchema,
   vendorId: z.string(),
   orderDeliveryStatusCode: z.string(),
   exchangeStatus: z.string(),
@@ -265,7 +265,7 @@ export const CoupangUploadExchangeInvoiceItemSchema = z.object({
   // API 예시에는 string으로 되어 있어 union 타입으로 처리
   exchangeId: z.union([z.number().int().positive(), z.string()]),
   vendorId: z.string().min(1),
-  shipmentBoxId: z.union([z.number().int().positive(), z.string()]),
+  shipmentBoxId: CoupangLongIdSchema,
   goodsDeliveryCode: CoupangDeliveryCompanyCodeSchema,
   invoiceNumber: z.string().min(1),
 });

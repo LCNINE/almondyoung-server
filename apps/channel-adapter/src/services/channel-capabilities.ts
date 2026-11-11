@@ -124,7 +124,7 @@ export const CHANNEL_CAPABILITIES: Record<SalesChannel, ChannelCapabilities> = {
     orderCollection: 'source',
     fulfillment: {
       route: { kind: 'adapter', adapter: 'coupang' },
-      multipleTrackingNumbers: true,
+      multipleTrackingNumbers: false,
       partialQuantityDispatch: false,
       automatedRecall: false,
       automatedCancellation: false,
