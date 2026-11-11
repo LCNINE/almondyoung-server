@@ -989,6 +989,12 @@ export type PreparationBucket =
   | 'resume'
   | 'needs_info';
 
+export interface PreparationLineDto {
+  name: string;
+  qty: number;
+  reservedQty: number;
+}
+
 export interface PreparationShipmentDto {
   shipmentId: string;
   orderNos: string[];
@@ -996,6 +1002,8 @@ export interface PreparationShipmentDto {
   totalQty: number;
   single: boolean;
   reason: string | null;
+  // 서버가 품목별 수량을 주기 전 응답에는 없다.
+  lines?: PreparationLineDto[];
 }
 
 export interface PreparationBucketDto {

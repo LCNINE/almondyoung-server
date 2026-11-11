@@ -38,7 +38,9 @@ describe('OutboundPreparationReader consolidation reservations', () => {
       .fn()
       .mockReturnValueOnce(query([{ count: 0 }]))
       .mockReturnValueOnce(query(['original', 'split'].map((id) => ({ id, status: 'draft', recipientSnapshot }))))
-      .mockReturnValueOnce(query(['original', 'split'].map((id) => ({ id: `${id}-line`, shipmentId: id, qty: 1 }))))
+      .mockReturnValueOnce(
+        query(['original', 'split'].map((id) => ({ id: `${id}-line`, shipmentId: id, qty: 1, name: `${id} 상품` }))),
+      )
       .mockReturnValueOnce(
         query([
           { lineId: 'original-line', quantity: 1 },
@@ -92,6 +94,67 @@ describe('OutboundPreparationReader consolidation reservations', () => {
       summary.buckets.find((bucket) => bucket.bucket === expected)?.shipments.map((shipment) => shipment.shipmentId),
     ).toContain('original');
     expect(JSON.stringify(summary)).not.toContain('recipientSnapshot');
+  });
+
+  it('returns ordered and reserved quantities per item so a partial box shows what ships now', async () => {
+    const recipientSnapshot = {
+      recipientName: '테스트',
+      phone: '01000000000',
+      postalCode: '00000',
+      roadAddress: '테스트 주소',
+    };
+    const select = jest
+      .fn()
+      .mockReturnValueOnce(query([{ count: 0 }]))
+      .mockReturnValueOnce(query([{ id: 'box', status: 'draft', recipientSnapshot }]))
+      .mockReturnValueOnce(
+        query([
+          { id: 'line-a', shipmentId: 'box', qty: 5, name: '상품 A' },
+          { id: 'line-b', shipmentId: 'box', qty: 1, name: '상품 B' },
+        ]),
+      )
+      .mockReturnValueOnce(
+        query([
+          { lineId: 'line-a', quantity: 2 },
+          { lineId: 'line-b', quantity: 1 },
+        ]),
+      )
+      .mockReturnValueOnce(query([]));
+    const db = { select };
+
+    jest.mocked(loadShipmentLines).mockResolvedValue(
+      [5, 1].map((qty, index) => ({
+        shipmentId: 'box',
+        qty,
+        skuProfileId: 'profile',
+        skuName: index === 0 ? '상품 A' : '상품 B',
+        fulfillmentMode: 'in_house',
+        skuStockType: 'stocked',
+        salesOrderId: 'order',
+        customerId: 'customer',
+        customerName: null,
+        customerPhone: null,
+        displayOrderNo: 'order',
+        channelOrderId: null,
+        salesChannel: null,
+        salesOrderCreatedAt: null,
+      })),
+    );
+
+    const module = await Test.createTestingModule({
+      providers: [
+        OutboundPreparationReader,
+        { provide: DbService, useValue: { run: (fn: (tx: typeof db) => unknown) => fn(db) } },
+        { provide: ConsolidationBoardReader, useValue: { findBoard: async () => ({ groups: [] }) } },
+      ],
+    }).compile();
+
+    const summary = await module.get(OutboundPreparationReader).summarize('warehouse');
+
+    expect(summary.buckets.find((bucket) => bucket.bucket === 'partial')?.shipments[0].lines).toEqual([
+      { name: '상품 A', qty: 5, reservedQty: 2 },
+      { name: '상품 B', qty: 1, reservedQty: 1 },
+    ]);
   });
   it('pages beyond 200 within a bucket while preserving totals and stable order', async () => {
     const ids = Array.from({ length: 401 }, (_, index) => `s${index}`);

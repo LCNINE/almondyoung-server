@@ -18,6 +18,7 @@ import {
 } from '@/lib/services/orders';
 import type { PreparationBucketDto } from '@/lib/types/dto/fulfillment';
 import {
+  lineSplitText,
   PREPARATION_BATCH_LIMIT,
   plannedOrderText,
 } from '../preparation-model';
@@ -115,7 +116,22 @@ export function BucketList({
                 <TableCell className="tabular-nums">
                   {plannedOrderText(shipment)}
                 </TableCell>
-                <TableCell>{shipment.itemSummary}</TableCell>
+                <TableCell>
+                  {bucket.bucket === 'partial' && shipment.lines?.length ? (
+                    <ul role="list" className="space-y-1 whitespace-normal">
+                      {shipment.lines.map((line, index) => (
+                        <li key={index}>
+                          <span className="block">{line.name}</span>
+                          <span className="block whitespace-nowrap text-xs tabular-nums text-muted-foreground">
+                            {lineSplitText(line)}
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    shipment.itemSummary
+                  )}
+                </TableCell>
                 <TableCell className="tabular-nums">
                   {shipment.totalQty}
                 </TableCell>

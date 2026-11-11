@@ -43,10 +43,11 @@ import {
   PICKING_METHOD_LABELS,
   type PickingMethod,
 } from '@/lib/utils/picking-method';
-import { PREPARATION_BATCH_LIMIT } from '../preparation-model';
+import { PREPARATION_BATCH_LIMIT, splitQuantities } from '../preparation-model';
 import { BucketTable } from '../components/bucket-table';
 import { BucketList } from '../components/bucket-list';
 import { PrepareDialog } from '../components/prepare-dialog';
+import { SplitResultDialog } from '../components/split-result-dialog';
 import {
   retryTransientBulk,
   type PreparationInput,
@@ -100,6 +101,10 @@ function PreparationWarehouse({
   } | null>(null);
   const [splitting, setSplitting] = useState(false);
   const [confirmingSplit, setConfirmingSplit] = useState(false);
+  const [splitDone, setSplitDone] = useState<{
+    shipments: PreparationShipmentDto[];
+    failedCount: number;
+  } | null>(null);
   const splitRunning = useRef(false);
   const splitCommand = useRef<ReturnType<
     typeof createIdempotentCommand<{ shipmentIds: string[] }>
@@ -173,8 +178,18 @@ function PreparationWarehouse({
     }));
   };
 
-  const prepare = (key: 'ready' | 'resume' | 'mergeable') => {
-    const ids = selectedIds(key);
+  const shipmentsOf = (key: PreparationBucket, ids: string[]) =>
+    summary.data?.buckets
+      .find((entry) => entry.bucket === key)
+      ?.shipments.filter((shipment) => ids.includes(shipment.shipmentId)) ?? [];
+
+  const prepare = (
+    key: 'ready' | 'resume' | 'mergeable',
+    chosen?: PreparationShipmentDto[]
+  ) => {
+    const ids = chosen
+      ? chosen.map((shipment) => shipment.shipmentId)
+      : selectedIds(key);
 
     if (!canPrepare || busy || ids.length === 0) {
       return;
@@ -195,14 +210,31 @@ function PreparationWarehouse({
           pickingMethod === 'multi_order' ? Number(cartCapacity) : undefined,
         now: new Date(),
       },
-      shipments:
-        summary.data?.buckets
-          .find((entry) => entry.bucket === key)
-          ?.shipments.filter((shipment) => ids.includes(shipment.shipmentId)) ??
-        [],
+      shipments: chosen ?? shipmentsOf(key, ids),
       source: key,
     });
   };
+
+  // 나누면 원본 상자에 예약분이 남아 같은 id 로 완전출고가 된다. 상태는 출고 준비가 상자마다 다시 검사하므로
+  // 새 요약을 기다리지 않고 나눈 상자 그대로 확인 창을 연다(목록 첫 페이지 밖에 있어도 빠지지 않는다).
+  const prepareSplit = () => {
+    if (!splitDone) {
+      return;
+    }
+
+    const ids = splitDone.shipments.map((shipment) => shipment.shipmentId);
+
+    setSplitDone(null);
+    setActiveBucket('ready');
+    setSelections((previous) => ({ ...previous, ready: ids }));
+    prepare('ready', splitDone.shipments);
+  };
+
+  const confirmSplitTotals = splitQuantities(
+    shipmentsOf('partial', selectedIds('partial')).flatMap(
+      (shipment) => shipment.lines ?? []
+    )
+  );
 
   const splitSelected = async () => {
     const shipmentIds = selectedIds('partial');
@@ -217,6 +249,8 @@ function PreparationWarehouse({
 
     splitRunning.current = true;
     setSplitting(true);
+
+    const before = shipmentsOf('partial', shipmentIds);
 
     if (
       !splitCommand.current ||
@@ -234,11 +268,12 @@ function PreparationWarehouse({
       );
 
       splitCommand.current = null;
-      toast.success(`${result.succeeded.length}건을 나눴어요`);
-
-      if (result.failed.length > 0) {
-        toast.error(`${result.failed.length}건은 나누지 못했어요`);
-      }
+      setSplitDone({
+        shipments: before.filter((shipment) =>
+          result.succeeded.includes(shipment.shipmentId)
+        ),
+        failedCount: result.failed.length,
+      });
 
       setSelections((previous) => ({
         ...previous,
@@ -399,6 +434,12 @@ function PreparationWarehouse({
               재고가 있는 만큼은 지금 보낼 상자로, 모자란 만큼은 출고불가 상자로
               나눠요.
             </AlertDialogDescription>
+            {confirmSplitTotals.now + confirmSplitTotals.wait > 0 && (
+              <p className="text-sm font-semibold text-foreground">
+                지금 보낼 상품 {confirmSplitTotals.now}개, 기다릴 상품{' '}
+                {confirmSplitTotals.wait}개
+              </p>
+            )}
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>취소</AlertDialogCancel>
@@ -408,6 +449,19 @@ function PreparationWarehouse({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      {splitDone && (
+        <SplitResultDialog
+          shipments={splitDone.shipments}
+          failedCount={splitDone.failedCount}
+          canPrepare={canPrepare}
+          onPrepare={prepareSplit}
+          onShowWaiting={() => {
+            setSplitDone(null);
+            setActiveBucket('unavailable');
+          }}
+          onClose={() => setSplitDone(null)}
+        />
+      )}
       {preparation && (
         <PrepareDialog {...preparation} onClose={() => setPreparation(null)} />
       )}

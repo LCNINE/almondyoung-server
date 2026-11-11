@@ -181,7 +181,12 @@ describeIfDb('OutboundPreparationReader (DB integration)', () => {
       const beforeSplit = await reader.summarize(base.warehouseId, undefined, tx);
 
       expect(beforeSplit.buckets.find((bucket) => bucket.bucket === 'partial')?.shipments).toEqual(
-        expect.arrayContaining([expect.objectContaining({ shipmentId: source.shipment.id })]),
+        expect.arrayContaining([
+          expect.objectContaining({
+            shipmentId: source.shipment.id,
+            lines: [expect.objectContaining({ qty: 2, reservedQty: 1 })],
+          }),
+        ]),
       );
 
       const split = await planning.splitUnreserved(
