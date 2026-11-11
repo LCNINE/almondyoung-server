@@ -20,7 +20,7 @@ describe('renderHanjinNlLabel', () => {
 
   it('NL 출력은 여러 쪽 배관 리팩터 전과 같다 (svg + 바코드 배치 해시 고정)', () => {
     const digest = createHash('sha256').update(spec.svg).update(JSON.stringify(spec.barcodes)).digest('hex');
-    expect(digest).toBe('aaa8c7ff7ea0b834a0bfdcadc93965f667c361fcca751d812b7f9118e0c4fd11');
+    expect(digest).toBe('e242c05cd30d8501b9394ce703a5fd4076a560f467a62c2b10116d4a814d62f7');
   });
 
   it('NL 은 가로 100 × 세로 102mm 이고 돌리지 않는다(폭 100mm 가 인쇄폭 108mm 안)', () => {
@@ -110,7 +110,7 @@ describe('renderHanjinNlLabel', () => {
     expect(block(s.svg, 'delivery-slip')).toContain('공동현관 #1234');
   });
 
-  it('분류코드·터미널명·운임·권역·출고번호를 찍는다', () => {
+  it('분류코드·터미널명·운임·권역·주문번호를 찍는다', () => {
     for (const s of [
       'NX',
       '150',
@@ -129,7 +129,7 @@ describe('renderHanjinNlLabel', () => {
       '2026년 09월 28일',
       '수량: 1',
       '운임Type:A',
-      '출고번호: AY0123456789ABCDEFGHJKMNPQRS',
+      '주문번호: 20261027-6009 외 1건',
       '4527-1697-8431',
       'P. 1',
       '토익 Speaking 외 1건',
@@ -158,7 +158,7 @@ describe('renderHanjinNlLabel', () => {
     expect(s.svg).toContain('A&amp;B &quot;펜&quot;');
   });
 
-  it('출고번호 칸은 ITF quiet zone 앞에서 끝난다', () => {
+  it('주문번호 칸은 ITF quiet zone 앞에서 끝난다', () => {
     expect(NL_CUST_ORD_NO_X_MM + NL_CUST_ORD_NO_MAX_WIDTH_MM).toBeCloseTo(NL_ITF_X_MM - NL_ITF_QUIET_ZONE_MM, 9);
   });
 

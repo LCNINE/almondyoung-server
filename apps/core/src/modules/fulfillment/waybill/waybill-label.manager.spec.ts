@@ -105,6 +105,7 @@ describe('WaybillLabelManager.render — labelType 배선', () => {
     },
     lines: [{ productName: '토익 Speaking', skuName: '토익 Speaking', quantity: 1, skuId: 'k1' }],
     entrancePassword: '#1234',
+    orderNos: [],
   };
 
   const CONFIG_BASE: Omit<HanjinConfig, 'labelType'> = {

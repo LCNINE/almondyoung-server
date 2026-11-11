@@ -42,6 +42,7 @@ const CTX: IssueContext = {
     { productName: '펜', skuName: '볼펜 흑색', quantity: 2, skuId: 'k2' },
   ],
   entrancePassword: '#1234',
+  orderNos: ['20261027-6009'],
 };
 
 const LABEL_DATA = {
@@ -171,6 +172,14 @@ describe('buildHanjinLabelContent', () => {
   it('박스 1/1, 운임Type·출고번호', () => {
     const d = buildHanjinLabelContent(input());
     expect([d.boxIndex, d.boxCount, d.boxType, d.custOrdNo]).toEqual([1, 1, 'A', 'AY0123456789ABCDEFGHJKMNPQRS']);
+  });
+
+  it.each([
+    [['20261027-6009'], '20261027-6009'],
+    [['20261027-6009', '20261028-6010', '20261028-6011'], '20261027-6009 외 2건'],
+    [[], 'AY0123456789ABCDEFGHJKMNPQRS'],
+  ])('주문번호 줄: %j → %s (주문을 못 찾으면 상관키)', (orderNos, expected) => {
+    expect(buildHanjinLabelContent(input({ ctx: { ...CTX, orderNos } })).orderNo).toBe(expected);
   });
 
   it('labelData 의 숫자 값은 문자열로, 없는 키는 빈 문자열로', () => {

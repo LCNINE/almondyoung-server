@@ -29,6 +29,8 @@ export interface IssueContext {
   lines: ManifestLineLite[];
   // 송장 조립 시점에만 message 에 합성한다(recipientSnapshot 밖 — 해시 대상 아님). shipments.entrance_password.
   entrancePassword: string | null;
+  /** 상자에 담긴 주문의 번호(`20261027-6009`) — 라벨이 찍는다. 합포장이면 여럿, 줄 순서대로 */
+  orderNos: string[];
 }
 
 // WaybillManager.issueBatch 개별 결과. status 는 issueForShipment 가 반환한 WaybillRow.status(registered/failed 등)

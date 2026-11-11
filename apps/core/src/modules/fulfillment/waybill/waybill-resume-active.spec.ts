@@ -32,7 +32,7 @@ function row(overrides: Partial<WaybillRow>): WaybillRow {
 
 function makeManager(ctx: { status: string; manifestVersion: number }, active: WaybillRow | null) {
   const reader = {
-    loadIssueContext: jest.fn().mockResolvedValue({ ...ctx, recipientSnapshot: recipient, lines: [], entrancePassword: null }),
+    loadIssueContext: jest.fn().mockResolvedValue({ ...ctx, recipientSnapshot: recipient, lines: [], entrancePassword: null, orderNos: [] }),
     getActiveWaybill: jest.fn().mockResolvedValue(active),
     recipientHashOf: () => 'hash',
   };
