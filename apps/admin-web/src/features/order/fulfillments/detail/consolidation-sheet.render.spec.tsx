@@ -545,3 +545,56 @@ describe('합포장 요청 뒤 배치 제외', () => {
     ).toBeNull();
   });
 });
+
+describe('같은 주문을 나눈 상자', () => {
+  const splitSource = shipment('src', {
+    salesOrderNos: ['SO-1'],
+    split: { boxQty: 2, orderQty: 3, boxNo: 1, boxCount: 2 },
+  });
+  const splitPeer = option('peer', 'ok', {
+    salesOrderNos: ['SO-1'],
+    split: { boxQty: 1, orderQty: 3, boxNo: 2, boxCount: 2 },
+  });
+
+  beforeEach(() => {
+    mockUseConsolidationOptions.mockReturnValue({
+      data: { source: splitSource, options: [splitPeer] },
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch,
+    });
+    mutateAsync.mockResolvedValue({
+      ...completed,
+      sourceShipmentIds: ['src', 'peer'],
+    });
+  });
+
+  it('상자마다 몫을 보여 주고 확인과 결과에서 두 상자를 구분한다', async () => {
+    const user = userEvent.setup();
+
+    renderSheet();
+
+    expect(screen.getByText('나눈 상자 1/2 · 주문 3개 중 2개')).toBeTruthy();
+    expect(screen.getByText('나눈 상자 2/2 · 주문 3개 중 1개')).toBeTruthy();
+    expect(screen.getByText(/같은 주문을 나눈 상자예요/)).toBeTruthy();
+
+    await user.click(card('SO-1'));
+    await user.click(screen.getByRole('button', { name: '다음' }));
+
+    expect(
+      screen.getByText(
+        '주문 #SO-1 상자 1/2(2개), #SO-1 상자 2/2(1개) → 상자 1개, 송장 1장'
+      )
+    ).toBeTruthy();
+
+    await user.type(screen.getByLabelText('작업 사유'), '다시 합치기');
+    await user.click(requestButton());
+
+    await waitFor(() =>
+      expect(jest.mocked(toast.success)).toHaveBeenCalledWith(
+        '나눈 상자 2개를 다시 한 상자로 합쳤어요: #SO-1'
+      )
+    );
+  });
+});

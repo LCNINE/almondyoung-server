@@ -101,6 +101,17 @@ export class ConsolidationRecipientSnapshotDto {
   personalCustomsCode?: string;
 }
 
+export class ShipmentSplitShareDto {
+  @ApiProperty({ description: '이 상자에 담긴 수량' })
+  boxQty: number;
+  @ApiProperty({ description: '나누기로 이어진 상자들(이미 나간 상자 포함)의 수량 합' })
+  orderQty: number;
+  @ApiProperty({ description: '묶음 안에서 만든 순서로 매긴 이 상자의 번호(1부터)' })
+  boxNo: number;
+  @ApiProperty({ description: '묶음의 살아 있는 상자 수' })
+  boxCount: number;
+}
+
 export class ConsolidationOptionShipmentDto {
   shipmentId: string;
   status: string;
@@ -118,6 +129,12 @@ export class ConsolidationOptionShipmentDto {
   manifestVersion: number;
   reservationVersion: number;
   createdAt: Date;
+  @ApiProperty({
+    type: ShipmentSplitShareDto,
+    nullable: true,
+    description: '나누기로 다른 상자와 이어져 있으면 그 몫. 아니면 null',
+  })
+  split: ShipmentSplitShareDto | null;
 }
 
 export class ConsolidationBoardShipmentDto extends OmitType(ConsolidationOptionShipmentDto, [

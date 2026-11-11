@@ -32,7 +32,10 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { ConsolidationSheet } from '@/features/order/fulfillments/detail/consolidation-sheet';
-import type { PendingCommand } from '@/features/order/fulfillments/detail/consolidation-sheet-model';
+import {
+  splitShareText,
+  type PendingCommand,
+} from '@/features/order/fulfillments/detail/consolidation-sheet-model';
 import { usePermissionCheck } from '@/hooks/use-permission';
 import { useWarehouses } from '@/lib/services/inventory/queries';
 import {
@@ -404,6 +407,11 @@ function GroupRows({
               <span className="text-xs text-muted-foreground">
                 {shipment.salesChannels.join(', ')}
               </span>
+              {shipment.split && (
+                <div className="text-xs font-medium text-foreground">
+                  {splitShareText(shipment.split)}
+                </div>
+              )}
             </TableCell>
             <TableCell className="text-xs">
               {orderedAtText(shipment.orderedAt)}

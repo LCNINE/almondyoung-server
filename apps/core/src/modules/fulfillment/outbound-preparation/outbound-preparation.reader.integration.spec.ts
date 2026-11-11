@@ -20,6 +20,7 @@ import {
   Wired,
 } from '../services/__support__';
 import { ConsolidationBoardReader } from '../services/consolidation-board.reader';
+import { loadSplitShares } from '../services/consolidation-shipment-reads';
 import { OutboundPreparationReader } from './outbound-preparation.reader';
 
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -173,6 +174,53 @@ describeIfDb('OutboundPreparationReader (DB integration)', () => {
     });
   });
 
+  it('나눈 상자를 다시 나눠도 마지막 상자에서 처음 주문 수량과 순번을 읽는다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const base = await consolidationBase(tx, 1);
+      const source = await createConsolidationSource(tx, wired, base, { quantity: 3, customerId: randomUUID() });
+      const actor = { id: randomUUID(), roles: ['master'] };
+      const first = await planning.splitUnreserved(
+        source.shipment.id,
+        { reason: '있는 것만 먼저 보내기', expectedManifestVersion: source.shipment.manifestVersion },
+        randomUUID(),
+        actor,
+        tx,
+      );
+      const [waitingLine] = await tx
+        .select()
+        .from(wmsTables.shipmentLines)
+        .where(eq(wmsTables.shipmentLines.shipmentId, first.target.shipmentId));
+      const [waiting] = await tx
+        .select()
+        .from(wmsTables.shipments)
+        .where(eq(wmsTables.shipments.id, first.target.shipmentId));
+
+      expect(waitingLine.qty).toBeGreaterThanOrEqual(2);
+
+      const second = await planning.split(
+        waiting.id,
+        {
+          reason: '한 개 먼저',
+          expectedManifestVersion: waiting.manifestVersion,
+          moves: [{ shipmentLineId: waitingLine.id, expectedLineVersion: waitingLine.lineVersion, qty: 1 }],
+        },
+        randomUUID(),
+        actor,
+        tx,
+      );
+
+      const last = await loadSplitShares(tx, [second.target.shipmentId]);
+
+      expect(last.get(second.target.shipmentId)).toEqual(
+        expect.objectContaining({ boxQty: 1, orderQty: 3, boxCount: 3 }),
+      );
+
+      const all = await loadSplitShares(tx, [source.shipment.id, first.target.shipmentId, second.target.shipmentId]);
+
+      expect([...all.values()].map((share) => share.boxNo).sort()).toEqual([1, 2, 3]);
+    });
+  });
+
   it('실제 분할 후 요약에서 원본을 완전출고로 읽고 계획을 확정한다', async () => {
     await inRollbackTx(db, async (tx) => {
       const base = await consolidationBase(tx, 1);
@@ -185,6 +233,7 @@ describeIfDb('OutboundPreparationReader (DB integration)', () => {
           expect.objectContaining({
             shipmentId: source.shipment.id,
             lines: [expect.objectContaining({ qty: 2, reservedQty: 1 })],
+            split: null,
           }),
         ]),
       );
@@ -213,6 +262,19 @@ describeIfDb('OutboundPreparationReader (DB integration)', () => {
         summary.buckets.find((bucket) => bucket.bucket === 'ready')?.shipments.map((shipment) => shipment.shipmentId),
       ).toContain(source.shipment.id);
       expect(summary.buckets.find((bucket) => bucket.bucket === 'mergeable')?.count).toBe(0);
+
+      const shipmentsAfter = summary.buckets.flatMap((bucket) => bucket.shipments);
+
+      // 한 트랜잭션 안에서 만든 상자는 만든 시각이 같아 번호 순서는 id 로 갈린다 — 번호가 겹치지 않는지만 본다.
+      const pair = [source.shipment.id, split.target.shipmentId].map(
+        (id) => shipmentsAfter.find((shipment) => shipment.shipmentId === id)?.split,
+      );
+
+      expect(pair).toEqual([
+        expect.objectContaining({ boxQty: 1, orderQty: 2, boxCount: 2 }),
+        expect.objectContaining({ boxQty: 1, orderQty: 2, boxCount: 2 }),
+      ]);
+      expect(pair.map((share) => share?.boxNo).sort()).toEqual([1, 2]);
 
       await tx
         .update(wmsTables.deliveryProfiles)

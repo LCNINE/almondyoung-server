@@ -1,6 +1,6 @@
 import { ConsolidationBoardShipmentDto } from '../dto/consolidation.dto';
 import { assembleConsolidationBoard, BoardRow, groupConsolidationBoard } from './consolidation-board.reader';
-import { OptionLine, ShipmentProgress, ShipmentRow } from './consolidation-shipment-reads';
+import { OptionLine, ShipmentProgress, ShipmentRow, splitSharesOf } from './consolidation-shipment-reads';
 
 const address = {
   recipientName: '김알몬',
@@ -34,6 +34,7 @@ function row(
       createdAt: new Date('2026-11-01T00:00:00Z'),
       orderedAt: null,
       salesChannels: [],
+      split: null,
       ...patch,
     },
   };
@@ -184,7 +185,11 @@ function optionLine(shipmentId: string, patch: Partial<OptionLine> = {}): Option
 }
 
 const inHouse = new Set(['p1']);
-const noProgress: ShipmentProgress = { batchByShipment: new Map(), trackingByShipment: new Map() };
+const noProgress: ShipmentProgress = {
+  batchByShipment: new Map(),
+  trackingByShipment: new Map(),
+  splitByShipment: new Map(),
+};
 
 describe('assembleConsolidationBoard', () => {
   it('공급사 상자와 in_house 아닌 라인, drop_shipped 라인이 있는 상자를 뺀다', () => {
@@ -215,6 +220,7 @@ describe('assembleConsolidationBoard', () => {
     const progress: ShipmentProgress = {
       batchByShipment: new Map([['b', 'batch-1']]),
       trackingByShipment: new Map([['a', '1234']]),
+      splitByShipment: new Map(),
     };
     const [group] = assembleConsolidationBoard(
       [shipmentRow('a'), shipmentRow('b')],
@@ -228,6 +234,20 @@ describe('assembleConsolidationBoard', () => {
       ['batch-1', null],
     ]);
     expect(group.canMergeNow).toBe(false);
+  });
+
+  it('나눈 상자의 몫을 상자마다 싣는다', () => {
+    const [group] = assembleConsolidationBoard(
+      [shipmentRow('a'), shipmentRow('b')],
+      [optionLine('a'), optionLine('b')],
+      { ...noProgress, splitByShipment: new Map([['b', { boxQty: 1, orderQty: 3, boxNo: 2, boxCount: 2 }]]) },
+      inHouse,
+    );
+
+    expect(group.shipments.map((shipment) => shipment.split)).toEqual([
+      null,
+      { boxQty: 1, orderQty: 3, boxNo: 2, boxCount: 2 },
+    ]);
   });
 
   it('가장 이른 주문 시각과 판매채널을 모은다', () => {
@@ -272,5 +292,64 @@ describe('assembleConsolidationBoard', () => {
       ),
     ).toEqual([]);
     expect(assembleConsolidationBoard(shipments, lines, noProgress, new Set())).toEqual([]);
+  });
+});
+
+describe('splitSharesOf', () => {
+  it('나누기로 이어진 상자끼리 같은 묶음 수량과 만든 순서 번호를 쓰고 나뉜 적 없는 상자는 뺀다', () => {
+    const shares = splitSharesOf(
+      [
+        { operationId: 'op1', shipmentId: 'kept' },
+        { operationId: 'op1', shipmentId: 'moved' },
+      ],
+      [
+        { shipmentId: 'kept', qty: 1 },
+        { shipmentId: 'alone', qty: 2 },
+        { shipmentId: 'moved', qty: 4 },
+      ],
+      ['kept', 'moved', 'alone', 'missing'],
+    );
+
+    expect([...shares]).toEqual([
+      ['kept', { boxQty: 1, orderQty: 5, boxNo: 1, boxCount: 2 }],
+      ['moved', { boxQty: 4, orderQty: 5, boxNo: 2, boxCount: 2 }],
+    ]);
+  });
+
+  it('여러 번 나눈 상자와 이미 나간 상자도 한 묶음으로 세고 합쳐져 사라진 상자는 뺀다', () => {
+    const shares = splitSharesOf(
+      [
+        { operationId: 'op1', shipmentId: 'shipped' },
+        { operationId: 'op1', shipmentId: 'second' },
+        { operationId: 'op2', shipmentId: 'second' },
+        { operationId: 'op2', shipmentId: 'third' },
+        { operationId: 'op3', shipmentId: 'third' },
+        { operationId: 'op3', shipmentId: 'merged-away' },
+      ],
+      [
+        { shipmentId: 'shipped', qty: 2 },
+        { shipmentId: 'second', qty: 1 },
+        { shipmentId: 'third', qty: 3 },
+      ],
+      ['second', 'third'],
+    );
+
+    expect([...shares]).toEqual([
+      ['second', { boxQty: 1, orderQty: 6, boxNo: 2, boxCount: 3 }],
+      ['third', { boxQty: 3, orderQty: 6, boxNo: 3, boxCount: 3 }],
+    ]);
+  });
+
+  it('살아 있는 짝이 없으면 나눈 상자로 보지 않는다', () => {
+    const shares = splitSharesOf(
+      [
+        { operationId: 'op1', shipmentId: 'left' },
+        { operationId: 'op1', shipmentId: 'merged-away' },
+      ],
+      [{ shipmentId: 'left', qty: 2 }],
+      ['left'],
+    );
+
+    expect(shares.size).toBe(0);
   });
 });

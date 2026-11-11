@@ -32,8 +32,10 @@ import type {
 } from '@/lib/types/dto/fulfillment';
 import { buildConsolidationRequest, memoChoices } from './consolidation-model';
 import {
+  boxNoText,
   freshCommand,
   isStaleVersionConflict,
+  mergedToastText,
   keptAfterFailure,
   needsReopenPermission,
   needsUnwindSteps,
@@ -41,6 +43,8 @@ import {
   orderNoText,
   progressLabel,
   recipientView,
+  sharesSplitOrder,
+  splitShareText,
   step2Blocker,
   togglePick,
   type OptionCard,
@@ -108,6 +112,18 @@ function RecipientRows({
   );
 }
 
+function SplitShare({
+  shipment,
+}: {
+  shipment: Pick<ConsolidationOptionShipment, 'split'>;
+}) {
+  const text = splitShareText(shipment.split);
+
+  return text ? (
+    <span className="text-[13px] font-medium text-foreground">{text}</span>
+  ) : null;
+}
+
 function OptionCheckCard({
   option,
   card,
@@ -156,6 +172,7 @@ function OptionCheckCard({
           <span className="text-sm text-zinc-700 dark:text-zinc-300">
             {option.itemSummary}
           </span>
+          <SplitShare shipment={option} />
           <RecipientRows
             shipment={option}
             addressMark={card.addressMark}
@@ -224,7 +241,7 @@ export function ConsolidationSheet({
     memoFrom,
     reason,
   });
-  const pickedNos = pickedOptions.map(orderNoText).join(', ');
+  const pickedNos = pickedOptions.map(boxNoText).join(', ');
   const needsUnwind =
     source && [source, ...pickedOptions].some(needsUnwindSteps);
 
@@ -252,7 +269,13 @@ export function ConsolidationSheet({
       setLostCommand(null);
 
       if (result.operationStatus === 'completed') {
-        toast.success('합포장했어요.');
+        toast.success(
+          mergedToastText(
+            (source ? [source, ...allOptions] : allOptions).filter((shipment) =>
+              result.sourceShipmentIds.includes(shipment.shipmentId)
+            )
+          )
+        );
       } else {
         if (canExclude) {
           const sources = source ? [source, ...allOptions] : allOptions;
@@ -333,6 +356,7 @@ export function ConsolidationSheet({
   };
 
   const sourceNo = source ? orderNoText(source) : '';
+  const sourceBoxNo = source ? boxNoText(source) : '';
   const sourceView = source ? recipientView(source.recipientSnapshot) : null;
 
   return (
@@ -407,6 +431,7 @@ export function ConsolidationSheet({
                   <span className="text-sm text-zinc-700 dark:text-zinc-300">
                     {source.itemSummary}
                   </span>
+                  <SplitShare shipment={source} />
                   <RecipientRows shipment={source} />
                 </div>
               </div>
@@ -416,9 +441,12 @@ export function ConsolidationSheet({
                   이 주문과 같이 보낼 주문을 골라 주세요
                 </div>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  같은 고객의 다른 주문이에요. 고른 주문은 위 주문과 한 상자,
-                  송장 한 장으로 나가요. 배송지가 같은 주문만 고를 수 있어요.
-                  배송 메모가 다르면 다음 단계에서 하나를 골라요.
+                  {sharesSplitOrder(source, allOptions)
+                    ? '같은 고객의 다른 주문이나 같은 주문을 나눈 상자예요.'
+                    : '같은 고객의 다른 주문이에요.'}{' '}
+                  고른 주문은 위 주문과 한 상자, 송장 한 장으로 나가요. 배송지가
+                  같은 주문만 고를 수 있어요. 배송 메모가 다르면 다음 단계에서
+                  하나를 골라요.
                 </p>
               </div>
 
@@ -472,7 +500,7 @@ export function ConsolidationSheet({
                   요청 전에 확인해 주세요
                 </div>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  주문 {sourceNo}, {pickedNos} → 상자 1개, 송장 1장
+                  주문 {sourceBoxNo}, {pickedNos} → 상자 1개, 송장 1장
                 </p>
               </div>
 

@@ -5,13 +5,17 @@ import type {
 } from '@/lib/types/dto/fulfillment';
 import { buildConsolidationRequest } from './consolidation-model';
 import {
+  boxNoText,
   freshCommand,
   isStaleVersionConflict,
   keptAfterFailure,
+  mergedToastText,
   needsReopenPermission,
   needsUnwindSteps,
   optionCard,
+  sharesSplitOrder,
   showsConsolidationButton,
+  splitShareText,
   step2Blocker,
   togglePick,
   type SheetPermissions,
@@ -383,5 +387,53 @@ describe('요청', () => {
     expect(
       keptAfterFailure(sent, { statusCode: 403, message: 'x' })
     ).toBeNull();
+  });
+});
+
+describe('나눈 상자 표시', () => {
+  const left = shipment('a', {
+    salesOrderNos: ['SO-1'],
+    split: { boxQty: 2, orderQty: 5, boxNo: 1, boxCount: 2 },
+  });
+  const right = shipment('b', {
+    salesOrderNos: ['SO-1'],
+    split: { boxQty: 3, orderQty: 5, boxNo: 2, boxCount: 2 },
+  });
+  const other = shipment('c', { salesOrderNos: ['SO-2'] });
+
+  it('몫이 없거나 옛 응답이면 문구를 만들지 않는다', () => {
+    expect(splitShareText(left.split)).toBe('나눈 상자 1/2 · 주문 5개 중 2개');
+    expect(splitShareText(null)).toBeNull();
+    expect(splitShareText(undefined)).toBeNull();
+    expect(boxNoText(left)).toBe('#SO-1 상자 1/2(2개)');
+    expect(boxNoText(other)).toBe('#SO-2');
+  });
+
+  it('수량이 같은 상자도 번호로 구분한다', () => {
+    const one = shipment('x', {
+      salesOrderNos: ['SO-1'],
+      split: { boxQty: 1, orderQty: 2, boxNo: 1, boxCount: 2 },
+    });
+    const two = shipment('y', {
+      salesOrderNos: ['SO-1'],
+      split: { boxQty: 1, orderQty: 2, boxNo: 2, boxCount: 2 },
+    });
+
+    expect(boxNoText(one)).not.toBe(boxNoText(two));
+    expect(splitShareText(one.split)).not.toBe(splitShareText(two.split));
+  });
+
+  it('같은 주문의 나눈 상자가 후보에 있을 때만 알린다', () => {
+    expect(sharesSplitOrder(left, [right, other])).toBe(true);
+    expect(sharesSplitOrder(left, [other])).toBe(false);
+    expect(sharesSplitOrder(other, [right])).toBe(false);
+  });
+
+  it('같은 주문을 나눈 상자끼리 합쳤을 때만 다시 합쳤다고 알린다', () => {
+    expect(mergedToastText([left, right])).toBe(
+      '나눈 상자 2개를 다시 한 상자로 합쳤어요: #SO-1'
+    );
+    expect(mergedToastText([left, other])).toBe('합포장했어요.');
+    expect(mergedToastText([])).toBe('합포장했어요.');
   });
 });

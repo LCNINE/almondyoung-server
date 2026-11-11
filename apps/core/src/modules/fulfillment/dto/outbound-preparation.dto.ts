@@ -1,6 +1,7 @@
 import { Type } from 'class-transformer';
 import { ArrayMaxSize, ArrayMinSize, IsArray, IsIn, IsInt, IsOptional, IsUUID, Min } from 'class-validator';
 import { PREPARATION_BUCKETS, PreparationBucket } from '../outbound-preparation/outbound-preparation-classify';
+import { ShipmentSplitShareDto } from './consolidation.dto';
 
 export class OutboundPreparationQueryDto {
   @IsUUID()
@@ -40,6 +41,7 @@ export class PreparationShipmentDto {
   single: boolean;
   reason: string | null;
   lines: PreparationLineDto[];
+  split: ShipmentSplitShareDto | null;
 }
 
 export class PreparationBucketDto {

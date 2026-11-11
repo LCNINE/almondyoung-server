@@ -614,6 +614,58 @@ describe('OutboundPreparationTemplate', () => {
     });
   });
 
+  it('같은 주문을 나눈 상자는 몫을 보여 주고 따로 보낸 결과에서도 구분한다', async () => {
+    const mergeable = mockSummary.buckets.find(
+      (bucket) => bucket.bucket === 'mergeable'
+    );
+
+    if (!mergeable) {
+      throw new Error('Missing mergeable bucket');
+    }
+
+    mergeable.count = 2;
+    mergeable.shipments = ['split-a', 'split-b'].map((id, index) => ({
+      shipmentId: id,
+      orderNos: ['AY-SPLIT'],
+      itemSummary: '상품',
+      totalQty: 1,
+      single: true,
+      reason: null,
+      split: { boxQty: 1, orderQty: 2, boxNo: index + 1, boxCount: 2 },
+    }));
+    mockRun.mockResolvedValueOnce(
+      result({
+        planned: 2,
+        waybilled: 1,
+        joined: 1,
+        total: 2,
+        failures: [
+          {
+            shipmentId: 'split-b',
+            stage: 'waybill',
+            message: '한진 주소 확인 불가',
+            retryable: true,
+          },
+        ],
+      })
+    );
+    render(<OutboundPreparationTemplate />);
+    await userEvent.click(
+      row('합칠 주문 있음').getByRole('button', { name: '내역보기' })
+    );
+
+    expect(screen.getByText('나눈 상자 1/2 · 주문 2개 중 1개')).toBeTruthy();
+    expect(screen.getByText('나눈 상자 2/2 · 주문 2개 중 1개')).toBeTruthy();
+
+    await userEvent.click(screen.getByRole('button', { name: '따로 보내기' }));
+    await userEvent.click(screen.getByRole('button', { name: '시작' }));
+
+    const failure = (await screen.findByText('한진 주소 확인 불가'))
+      .parentElement;
+
+    expect(failure?.textContent).toContain('나눈 상자 2/2 · 주문 2개 중 1개');
+  });
+
   it('출고 권한이 없으면 따로 보내기를 숨긴다', async () => {
     mockAllowed = false;
     render(<OutboundPreparationTemplate />);

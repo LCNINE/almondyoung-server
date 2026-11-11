@@ -1,7 +1,11 @@
-import { and, asc, desc, eq, inArray, notInArray } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, notInArray, sql } from 'drizzle-orm';
 import { DbService } from '@app/db';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
-import { ConsolidationOptionShipmentDto, ConsolidationRecipientSnapshotDto } from '../dto/consolidation.dto';
+import {
+  ConsolidationOptionShipmentDto,
+  ConsolidationRecipientSnapshotDto,
+  ShipmentSplitShareDto,
+} from '../dto/consolidation.dto';
 import { supportsInHouse } from './consolidation-eligibility';
 import { WAYBILL_TERMINAL_STATUSES } from '../waybill/waybill.constants';
 
@@ -28,10 +32,12 @@ export interface OptionLine {
 export interface ShipmentProgress {
   batchByShipment: Map<string, string>;
   trackingByShipment: Map<string, string>;
+  splitByShipment: Map<string, ShipmentSplitShareDto>;
 }
 
 export const OPTION_STATUSES: ShipmentRow['status'][] = ['draft', 'planned'];
 const CLOSED_WORK_ITEM_STATUSES = ['excluded', 'completed'] as const;
+const RETIRED_SHIPMENT_STATUSES: ShipmentRow['status'][] = ['canceled', 'superseded'];
 
 export function asRecipient(value: unknown): ConsolidationRecipientSnapshotDto {
   return value !== null && typeof value === 'object' && !Array.isArray(value) ? { ...value } : {};
@@ -126,7 +132,126 @@ export async function loadShipmentProgress(trx: ReadDb, shipmentIds: string[]): 
     }
   }
 
-  return { batchByShipment, trackingByShipment };
+  return { batchByShipment, trackingByShipment, splitByShipment: await loadSplitShares(trx, shipmentIds) };
+}
+
+// «나누기»로 이어진 상자들을 한 묶음으로 보고, 상자마다 «묶음 전체 수량 중 이 상자 몫»과 묶음 안 순번을 준다.
+// 이미 나간 상자도 묶음에 넣는다. 나뉜 적 없는 상자는 맵에 없다.
+export async function loadSplitShares(trx: ReadDb, shipmentIds: string[]): Promise<Map<string, ShipmentSplitShareDto>> {
+  if (shipmentIds.length === 0) return new Map();
+
+  const members = wmsTables.shipmentOperationMembers;
+  const operations = wmsTables.shipmentOperations;
+  const links: SplitLink[] = [];
+  const seen = new Set(shipmentIds);
+  let frontier = shipmentIds;
+
+  // 나눈 상자를 다시 나누면 작업이 이어진다. 새 상자가 더 나오지 않을 때까지 따라간다.
+  while (frontier.length > 0) {
+    const found = await trx
+      .select({ operationId: members.operationId, shipmentId: members.shipmentId })
+      .from(members)
+      .where(
+        inArray(
+          members.operationId,
+          trx
+            .select({ operationId: members.operationId })
+            .from(members)
+            .innerJoin(operations, eq(operations.id, members.operationId))
+            .where(
+              and(
+                inArray(members.shipmentId, frontier),
+                eq(operations.type, 'split'),
+                eq(operations.status, 'completed'),
+              ),
+            ),
+        ),
+      );
+
+    links.push(...found);
+    frontier = uniqueInOrder(found.map((link) => link.shipmentId)).filter((id) => !seen.has(id));
+    frontier.forEach((id) => seen.add(id));
+  }
+
+  if (links.length === 0) return new Map();
+
+  const boxes = await trx
+    .select({
+      shipmentId: wmsTables.shipmentLines.shipmentId,
+      createdAt: wmsTables.shipments.createdAt,
+      qty: sql<number>`sum(${wmsTables.shipmentLines.qty})`.mapWith(Number),
+    })
+    .from(wmsTables.shipmentLines)
+    .innerJoin(wmsTables.shipments, eq(wmsTables.shipments.id, wmsTables.shipmentLines.shipmentId))
+    .where(
+      and(
+        inArray(wmsTables.shipmentLines.shipmentId, [...seen]),
+        notInArray(wmsTables.shipments.status, RETIRED_SHIPMENT_STATUSES),
+      ),
+    )
+    .groupBy(wmsTables.shipmentLines.shipmentId, wmsTables.shipments.createdAt)
+    .orderBy(asc(wmsTables.shipments.createdAt), asc(wmsTables.shipmentLines.shipmentId));
+
+  return splitSharesOf(links, boxes, shipmentIds);
+}
+
+type SplitLink = { operationId: string; shipmentId: string };
+
+// liveBoxes 는 만든 순서대로 온다 — 그 순서가 상자 번호가 된다.
+export function splitSharesOf(
+  links: readonly SplitLink[],
+  liveBoxes: ReadonlyArray<{ shipmentId: string; qty: number }>,
+  shipmentIds: readonly string[],
+): Map<string, ShipmentSplitShareDto> {
+  const parent = new Map<string, string>();
+  const root = (id: string): string => {
+    const up = parent.get(id) ?? id;
+
+    if (up === id) return id;
+
+    const top = root(up);
+
+    parent.set(id, top);
+
+    return top;
+  };
+  const firstBoxByOperation = new Map<string, string>();
+
+  for (const link of links) {
+    const first = firstBoxByOperation.get(link.operationId);
+
+    if (first === undefined) {
+      firstBoxByOperation.set(link.operationId, link.shipmentId);
+    } else if (root(link.shipmentId) !== root(first)) {
+      parent.set(root(link.shipmentId), root(first));
+    }
+  }
+
+  const groups = new Map<string, Array<{ shipmentId: string; qty: number }>>();
+
+  for (const box of liveBoxes) {
+    const group = root(box.shipmentId);
+
+    groups.set(group, [...(groups.get(group) ?? []), box]);
+  }
+
+  const shares = new Map<string, ShipmentSplitShareDto>();
+
+  for (const shipmentId of shipmentIds) {
+    const group = groups.get(root(shipmentId)) ?? [];
+    const index = group.findIndex((box) => box.shipmentId === shipmentId);
+
+    if (index < 0 || group.length < 2) continue;
+
+    shares.set(shipmentId, {
+      boxQty: group[index].qty,
+      orderQty: group.reduce((total, box) => total + box.qty, 0),
+      boxNo: index + 1,
+      boxCount: group.length,
+    });
+  }
+
+  return shares;
 }
 
 export type ShipmentSummaryWithoutRecipient = Omit<ConsolidationOptionShipmentDto, 'recipientSnapshot'>;
@@ -155,6 +280,7 @@ export function summarizeShipmentWithoutRecipient(
     manifestVersion: shipment.manifestVersion,
     reservationVersion: shipment.reservationVersion,
     createdAt: shipment.createdAt,
+    split: progress.splitByShipment.get(shipment.id) ?? null,
   };
 }
 

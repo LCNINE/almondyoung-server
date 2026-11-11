@@ -3,7 +3,12 @@ import { DbService, InjectTypedDb } from '@app/db';
 import { and, asc, count, eq, inArray, isNull, notInArray, sql } from 'drizzle-orm';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import { ConsolidationBoardReader } from '../services/consolidation-board.reader';
-import { loadShipmentLines, OptionLine, uniqueInOrder } from '../services/consolidation-shipment-reads';
+import {
+  loadShipmentLines,
+  loadSplitShares,
+  OptionLine,
+  uniqueInOrder,
+} from '../services/consolidation-shipment-reads';
 import { isRecipientComplete } from '../services/recipient-completeness';
 import {
   classifyPreparation,
@@ -71,6 +76,7 @@ export class OutboundPreparationReader {
 
       const lines = await loadShipmentLines(trx, ids);
       const quantitiesByShipment = await this.lineQuantities(ids, trx);
+      const splits = await loadSplitShares(trx, ids);
       const workItems = await trx
         .select({ shipmentId: wmsTables.outboundBatchWorkItems.shipmentId })
         .from(wmsTables.outboundBatchWorkItems)
@@ -163,6 +169,7 @@ export class OutboundPreparationReader {
             qty: line.qty,
             reservedQty: Math.min(line.qty, line.confirmedQty),
           })),
+          split: splits.get(shipment.id) ?? null,
         });
       }
 

@@ -939,6 +939,14 @@ export type ConsolidationOptionReason =
   | 'incomplete_recipient'
   | 'unknown_customer';
 
+// 주문 품목이 다른 상자와 나뉘어 있을 때 이 상자 몫. 서버가 주기 전 응답에는 없다.
+export interface ShipmentSplitShare {
+  boxQty: number;
+  orderQty: number;
+  boxNo: number;
+  boxCount: number;
+}
+
 export interface ConsolidationOptionShipment {
   shipmentId: string;
   status: string;
@@ -951,6 +959,7 @@ export interface ConsolidationOptionShipment {
   manifestVersion: number;
   reservationVersion: number;
   createdAt: string;
+  split?: ShipmentSplitShare | null;
 }
 
 export interface ConsolidationOption extends ConsolidationOptionShipment {
@@ -971,6 +980,7 @@ export interface ConsolidationBoardShipment {
   createdAt: string;
   orderedAt: string | null;
   salesChannels: string[];
+  split?: ShipmentSplitShare | null;
 }
 
 export interface ConsolidationBoardGroup {
@@ -1004,6 +1014,7 @@ export interface PreparationShipmentDto {
   reason: string | null;
   // 서버가 품목별 수량을 주기 전 응답에는 없다.
   lines?: PreparationLineDto[];
+  split?: ShipmentSplitShare | null;
 }
 
 export interface PreparationBucketDto {

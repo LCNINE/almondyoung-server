@@ -21,6 +21,7 @@ import {
 } from '@/lib/services/orders';
 import type { PreparationShipmentDto } from '@/lib/types/dto/fulfillment';
 import { PICKING_METHOD_LABELS } from '@/lib/utils/picking-method';
+import { splitShareText } from '@/features/order/fulfillments/detail/consolidation-sheet-model';
 import { plannedOrderText } from '../preparation-model';
 import {
   type PreparationFailure,
@@ -240,6 +241,11 @@ export function PrepareDialog({
                             }
                           )}
                         </p>
+                        {shipment?.split && (
+                          <p className="text-xs">
+                            {splitShareText(shipment.split)}
+                          </p>
+                        )}
                         <p className="text-muted-foreground">
                           {failure.message}
                         </p>
