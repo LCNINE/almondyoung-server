@@ -109,7 +109,10 @@ describe("mobile quantity discount entry", () => {
     expect(container.querySelector('[data-testid="drawer"]')).toBeNull()
     openOffers()
     expect(container.querySelector('[data-testid="drawer"]')).not.toBeNull()
-    expect(container.textContent).toContain("옵션을 먼저 골라 주세요")
+    expect(container.textContent).toContain("멤버십 회원은 이렇게 할인받아요")
+    expect(
+      container.querySelectorAll("[data-member-bundle-quantity]")
+    ).toHaveLength(2)
     expect(
       container.querySelector('a[href="/kr/mypage/membership"]')
     ).not.toBeNull()

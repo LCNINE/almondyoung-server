@@ -91,7 +91,7 @@ describe("QuantityBundlePicker", () => {
 
   it("shows member prices as a separate offer with membership navigation", () => {
     renderPicker({ memberHints })
-    expect(container.textContent).toContain("멤버십 회원 수량할인 혜택")
+    expect(container.textContent).toContain("멤버십 회원은 이렇게 할인받아요")
     expect(container.textContent).toContain("개당 7,200원")
     expect(container.textContent).toContain("3개 총 21,600원")
     expect(container.querySelector("a")?.getAttribute("href")).toBe(
@@ -105,9 +105,9 @@ describe("QuantityBundlePicker", () => {
     expect(cards()).toHaveLength(0)
     expect(container.querySelector("section")).not.toBeNull()
     expect(container.textContent).toContain(
-      "멤버십 회원이라면 묶음 구매로 더 절약하세요"
+      "같은 옵션을 묶음으로 구매하면 회원가에서 더 할인돼요"
     )
-    expect(container.textContent).toContain("가입 후")
+    expect(container.textContent).toContain("멤버십 가입 후 적용되는 묶음 가격")
     expect(container.querySelector("button")).toBeNull()
     expect(onSelect).not.toHaveBeenCalled()
   })
@@ -123,7 +123,9 @@ describe("QuantityBundlePicker", () => {
 
   it("explains how to unlock bundle selection before choosing an option", () => {
     renderPicker()
-    expect(container.textContent).toContain("옵션을 먼저 골라 주세요")
+    expect(container.textContent).toContain(
+      "미리보기는 구매 옵션을 바꾸지 않아요"
+    )
   })
 
   it("does not mark a preset quantity when the customer selected a different quantity", () => {

@@ -16,13 +16,11 @@ import { RestockNotice, hasStockNotice } from "./restock-notice"
 import { SelectedItem } from "./types"
 import {
   productQuantitySummary,
-  quantityOptionNote,
   variantTierRows,
   type ItemQuantityPricing,
   type QuantityPricingContext,
 } from "./quantity-pricing"
-import QuantityBundlePicker from "../quantity-bundle-picker"
-import QuantityOptionNote from "../quantity-option-note"
+import QuantityDiscountOffer from "../quantity-discount-offer"
 import {
   CustomOrderNotice,
   CustomOrderNoticeLine,
@@ -107,10 +105,6 @@ const MobileActions: React.FC<MobileActionsProps> = ({
       !!bundle.hiddenMemberQuantity) &&
     !isWelcomeMembership
   const summary = productQuantitySummary(product, pricingContext)
-  const note =
-    !focusItem && summary
-      ? "summary"
-      : quantityOptionNote({ chosen: !!focusItem, ...bundle, summary })
   const instantPurchase = isSimple && !hasBundles
 
   const disabledLabel =
@@ -279,27 +273,20 @@ const MobileActions: React.FC<MobileActionsProps> = ({
               </div>
             )}
 
-            {note && summary && (
-              <QuantityOptionNote
-                kind={note}
-                summary={summary}
-                optionLabel={focusItem?.variant.title ?? undefined}
-                className="py-3"
-              />
-            )}
-
-            {hasBundles && focusItem && bundle.currentPrice !== null && (
-              <QuantityBundlePicker
-                rows={bundle.rows}
-                memberHints={bundle.memberHints}
-                hiddenMemberQuantity={bundle.hiddenMemberQuantity}
-                currentPrice={bundle.currentPrice}
-                quantity={focusItem.quantity}
-                onSelect={(q) =>
-                  updateQuantity(focusItem.variantId, q - focusItem.quantity)
-                }
-                optionLabel={
-                  isSimple ? undefined : (focusItem.variant.title ?? undefined)
+            {!isWelcomeMembership && (
+              <QuantityDiscountOffer
+                product={product}
+                context={pricingContext}
+                focusVariant={focusItem?.variant}
+                quantity={focusItem?.quantity}
+                onSelect={
+                  focusItem
+                    ? (q) =>
+                        updateQuantity(
+                          focusItem.variantId,
+                          q - focusItem.quantity
+                        )
+                    : undefined
                 }
                 className="py-3"
               />

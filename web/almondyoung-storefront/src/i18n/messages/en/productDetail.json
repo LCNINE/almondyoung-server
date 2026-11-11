@@ -267,9 +267,9 @@
     "notEligible": "This option has no quantity discount",
     "notEligibleOption": "{option} has no quantity discount",
     "headline": "Quantity discounts from {count} items · up to {percent}% off",
-    "memberHeadline": "Members save more when buying in bulk",
-    "memberBundleTitle": "Member quantity discounts",
-    "memberCondition": "Join the membership and buy at least the listed quantity of the same option.",
+    "memberHeadline": "Buy the same option in bulk for extra member savings",
+    "memberBundleTitle": "Here is what members save",
+    "memberCondition": "These prices apply to members buying at least the listed quantity of the same option.",
     "bundleTotal": "{count} items total: ₩{amount}",
     "joinForBundle": "Join to unlock quantity discounts",
     "selected": "Selected",
@@ -279,6 +279,10 @@
     "sticky": "Buy {count}+ · up to {percent}% off",
     "stickyMember": "Members: buy {count}+ · up to {percent}% off",
     "viewBundles": "View offers →",
-    "hiddenMemberOffer": "Member quantity discounts from {count} items · prices available to members"
+    "hiddenMemberOffer": "Member quantity discounts from {count} items · prices available to members",
+    "memberPricePreview": "Bundle prices available after joining the membership",
+    "previewOptions": "Preview discounts by option",
+    "previewDescription": "Compare bundle prices for eligible options before choosing what to buy.",
+    "previewPurchaseHint": "This preview does not change your purchase selection. Choose the option and quantity below."
   }
 }

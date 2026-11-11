@@ -267,9 +267,9 @@
     "notEligible": "このオプションは数量割引の対象外です",
     "notEligibleOption": "{option}は数量割引の対象外です",
     "headline": "{count}個から数量割引 · 最大{percent}%OFF",
-    "memberHeadline": "メンバーならまとめ買いでさらにお得に",
-    "memberBundleTitle": "メンバー向け数量割引",
-    "memberCondition": "メンバー登録後、同じオプションを表示数量以上購入すると適用されます。",
+    "memberHeadline": "同じオプションのまとめ買いでメンバー価格からさらにお得に",
+    "memberBundleTitle": "メンバーならこの価格でまとめ買い",
+    "memberCondition": "この価格はメンバー向けです。同じオプションを表示数量以上選んでください。",
     "bundleTotal": "{count}個の合計 {amount}ウォン",
     "joinForBundle": "メンバー登録して数量割引を利用",
     "selected": "選択中",
@@ -279,6 +279,10 @@
     "sticky": "{count}個から最大{percent}%OFF",
     "stickyMember": "メンバーは{count}個から最大{percent}%OFF",
     "viewBundles": "特典を見る →",
-    "hiddenMemberOffer": "メンバーは{count}個から数量割引 · 割引価格はメンバー限定公開"
+    "hiddenMemberOffer": "メンバーは{count}個から数量割引 · 割引価格はメンバー限定公開",
+    "memberPricePreview": "メンバー登録後に適用されるまとめ買い価格です",
+    "previewOptions": "オプション別の割引プレビュー",
+    "previewDescription": "購入するオプションを選ぶ前に、対象オプションのまとめ買い価格を比較できます。",
+    "previewPurchaseHint": "プレビューでは購入オプションは変更されません。購入するオプションと数量は下で選んでください。"
   }
 }
