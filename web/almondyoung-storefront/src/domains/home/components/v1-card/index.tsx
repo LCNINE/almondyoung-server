@@ -1,5 +1,6 @@
 import LocalizedClientLink from "@/components/shared/localized-client-link"
 import ThumbnailImage from "@/domains/products/components/thumbnail/thumbnail-image"
+import { SoldOutOverlay } from "@/components/products/sold-out-overlay"
 import { ProductMembershipBadge } from "@/components/shared/badges/product-membership-badge"
 import { cn } from "@/lib/utils"
 import { formatPrice } from "@/lib/utils/price-utils"
@@ -28,6 +29,7 @@ export function V1ProductCard({ item, tag, compact }: V1ProductCardProps) {
         {item.imageSrc && (
           <ThumbnailImage image={item.imageSrc} size="square" />
         )}
+        {item.comingSoon && <SoldOutOverlay comingSoon={item.comingSoon} />}
         {tag && (
           <span className="bg-mint text-ink absolute top-2.5 left-2.5 grid h-6 place-items-center rounded-[7px] px-2 text-xs font-bold">
             {tag}

@@ -34,6 +34,8 @@ type ShowcaseCategory = {
   order?: string
   /** 이 자식 카테고리 상품을 섹션 앞쪽에 먼저 깐다 (마진 좋은 상품 우선 노출) */
   priorityHandle?: string
+  /** 재고가 없어도 출시예정 상품은 남긴다 */
+  keepComingSoon?: boolean
 }
 
 // 홈에 통째로 노출하는 루트 카테고리. handle 은 Medusa product_category.handle.
@@ -55,6 +57,7 @@ export const NEW_ARRIVALS_CATEGORY: ShowcaseCategory = {
   order: "-created_at",
   layout: "grid5",
   limit: 10,
+  keepComingSoon: true,
 }
 
 // 앞쪽 몇 칸만 우선 카테고리로 채우고 나머지는 기존 정렬 유지.
@@ -70,6 +73,7 @@ export async function ShowcaseCategoryWrapper({
   limit,
   priorityHandle,
   order,
+  keepComingSoon,
 }: {
   countryCode: string
 } & ShowcaseCategory) {
@@ -124,7 +128,9 @@ export async function ShowcaseCategoryWrapper({
   const sectionProducts = filterProductsByMembershipVisibility(
     [
       ...priorityProducts,
-      ...filterSoldOut(products).filter((p) => !priorityIds.has(p.id)),
+      ...filterSoldOut(products, { keepComingSoon }).filter(
+        (p) => !priorityIds.has(p.id)
+      ),
     ],
     isMember
   ).slice(0, limit)

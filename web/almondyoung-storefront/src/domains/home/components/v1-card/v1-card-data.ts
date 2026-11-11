@@ -2,6 +2,7 @@ import {
   getHideMembershipPriceForNonMembers,
   mapStoreProductToCardProps,
 } from "@/lib/utils/product-card"
+import { pickComingSoon } from "@/domains/products/product-details/components/product-actions/coming-soon"
 import type { StoreProduct } from "@medusajs/types"
 
 export type V1CardItem = {
@@ -15,6 +16,7 @@ export type V1CardItem = {
   regularPrice: number
   /** 정가보다 싼 멤버십가. 없거나 비회원에게 숨긴 상품이면 null */
   membershipPrice: number | null
+  comingSoon: { date: string | null } | null
 }
 
 export function toV1CardItem(
@@ -36,6 +38,7 @@ export function toV1CardItem(
     regularPrice: props.originalPrice,
     membershipPrice:
       rawMembershipPrice > 0 && !hidden ? rawMembershipPrice : null,
+    comingSoon: pickComingSoon(product.variants),
   }
 }
 
