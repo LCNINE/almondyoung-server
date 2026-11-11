@@ -110,7 +110,7 @@ describe('WithdrawBoxScreen', () => {
   it('바구니를 지정하지 않았으면 스캔을 보내지 않고 설정으로 안내한다', async () => {
     const calls: unknown[] = [];
     const { user } = mount({ prefs: prefsWith(null), request: async (o) => { calls.push(o); return {}; } });
-    expect(await screen.findByRole('alert')).toHaveTextContent('설정에서 이 기기의 되돌림 바구니를 먼저 지정해 주세요.');
+    expect(await screen.findByRole('alert')).toHaveTextContent('꺼낸 상품을 넣을 되돌림 바구니가 정해지지 않았어요. 앱 설정에서 바구니 바코드(RB-)를 찍어 주세요.');
     await user.click(screen.getByRole('button', { name: '스캔:880' }));
     expect(calls).toEqual([]);
   });

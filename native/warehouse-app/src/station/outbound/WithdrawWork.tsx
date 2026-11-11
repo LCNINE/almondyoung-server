@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type RefObject } from 'react';
+import { Link } from '@tanstack/react-router';
 import { useApiClient } from '../../core/data/ApiClientProvider';
 import type { DevicePrefs } from '../../core/data/devicePrefs';
 import { errorMessage } from '../../core/data/errorMessage';
@@ -15,7 +16,8 @@ import type { RecentEntry } from './recent';
 import { INTAKE_BLOCKED_MESSAGE } from './useInspectionBox';
 
 const ALREADY_EXITED_MESSAGE = '이미 다 뺀 박스예요 — 이 상품은 바구니에 넣지 마세요.';
-const NO_BIN_MESSAGE = '설정에서 이 기기의 되돌림 바구니를 먼저 지정해 주세요.';
+const NO_BIN_MESSAGE =
+  '꺼낸 상품을 넣을 되돌림 바구니가 정해지지 않았어요. 앱 설정에서 바구니 바코드(RB-)를 찍어 주세요.';
 
 /**
  * 뺄 상품(스펙 §6.2 withdrawing) — 담은 상품을 찍어 되돌림 바구니로. 다 빼면 «빠진 박스».
@@ -117,7 +119,10 @@ export function WithdrawWork({
           <BarcodeInput label="상품 바코드 직접 입력" disabled={!bin} onSubmit={take} />
           {!bin ? (
             <p role="alert" className="shrink-0 rounded-[10px] border-2 border-[#C8202F] bg-[#FDE8EA] p-3 font-semibold text-[#9E1320]">
-              {NO_BIN_MESSAGE}
+              {NO_BIN_MESSAGE}{' '}
+              <Link to="/settings" className="underline">
+                설정 열기
+              </Link>
             </p>
           ) : null}
           {queue.error() ? (

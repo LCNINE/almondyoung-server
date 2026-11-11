@@ -61,6 +61,16 @@ const order = (
 });
 
 describe('출고주문 상세 정보 블록', () => {
+  it('상자 링크로 들어오면 배송 탭을 연다', () => {
+    mockOrder.mockReturnValue({ data: order(null), isLoading: false });
+
+    render(<FulfillmentDetail id="fo-1" shipmentId="src" />);
+
+    expect(
+      screen.getByRole('tab', { name: '배송' }).getAttribute('aria-selected')
+    ).toBe('true');
+  });
+
   it('합친 주문이면 상자 줄에 같이 담긴 주문을 보인다', () => {
     mockOrder.mockReturnValue({
       data: order({ state: 'merged', partnerOrderNos: ['6275'] }),

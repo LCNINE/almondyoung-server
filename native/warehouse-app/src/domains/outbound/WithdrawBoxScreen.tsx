@@ -116,7 +116,8 @@ function WithdrawBoxContent({
       </section>
       {!bin && (
         <p role="alert">
-          설정에서 이 기기의 되돌림 바구니를 먼저 지정해 주세요. <Link to="/settings">설정 열기</Link>
+          꺼낸 상품을 넣을 되돌림 바구니가 정해지지 않았어요. 앱 설정에서 바구니 바코드(RB-)를 찍어 주세요.{' '}
+          <Link to="/settings">설정 열기</Link>
         </p>
       )}
       {done ? (

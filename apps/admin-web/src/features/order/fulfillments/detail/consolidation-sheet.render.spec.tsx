@@ -34,25 +34,38 @@ type CreateState = {
 const mockUseConsolidationOptions = jest.fn<OptionsState, [string, boolean]>();
 const mockUseCreateShipmentConsolidation = jest.fn<CreateState, []>();
 const mockCan = jest.fn<boolean, [readonly string[]]>();
+const mockCanRun = jest.fn<boolean, []>();
+const mockExclude = jest.fn<
+  Promise<void>,
+  [{ batchId: string; shipmentId: string; reason: string }]
+>();
+const mockPush = jest.fn();
+
+jest.mock('next/navigation', () => ({
+  useRouter: () => ({ push: mockPush }),
+}));
 
 jest.mock('@/lib/services/orders/queries', () => ({
   useConsolidationOptions: (shipmentId: string, enabled: boolean) =>
     mockUseConsolidationOptions(shipmentId, enabled),
 }));
 
-// 배럴 전체를 끌어오지 않도록 Sheet 가 쓰는 두 개만 둔다.
 jest.mock('@/lib/services/orders', () => ({
   getServerDenyMessage: jest.requireActual<
     typeof import('@/lib/api/server-error')
   >('@/lib/api/server-error').getServerDenyMessage,
   useCreateShipmentConsolidation: () => mockUseCreateShipmentConsolidation(),
+  useExcludeShipmentFromBatch: () => ({
+    mutateAsync: mockExclude,
+    isPending: false,
+  }),
 }));
 
 jest.mock('@/hooks/use-permission', () => ({
   usePermissionCheck: () => ({
     can: (anyOf: readonly string[]) => mockCan(anyOf),
     isPermissionLoading: false,
-    canRun: () => true,
+    canRun: () => mockCanRun(),
     blockedReason: () => null,
   }),
 }));
@@ -169,6 +182,8 @@ const fillMemoRequest = async (user: ReturnType<typeof userEvent.setup>) => {
 beforeEach(() => {
   jest.clearAllMocks();
   mockCan.mockReturnValue(true);
+  mockCanRun.mockReturnValue(true);
+  mockExclude.mockResolvedValue(undefined);
   refetch.mockResolvedValue(undefined);
   mutateAsync.mockResolvedValue(completed);
   mockUseConsolidationOptions.mockReturnValue({
@@ -410,5 +425,123 @@ describe('합포장 Sheet 2단계', () => {
 
     await waitFor(() => expect(mutateAsync).toHaveBeenCalledTimes(2));
     expect(mutateAsync.mock.calls[1][0]).toEqual(mutateAsync.mock.calls[0][0]);
+  });
+});
+
+describe('합포장 요청 뒤 배치 제외', () => {
+  const pending: ShipmentConsolidationResponse = {
+    operationId: 'op-pending',
+    operationStatus: 'pending',
+    sourceShipmentIds: ['src', 'ok1', 'memo1'],
+    targetShipmentId: null,
+  };
+
+  beforeEach(() => {
+    mockUseConsolidationOptions.mockReturnValue({
+      data: {
+        source: shipment('src', { batchId: 'batch-src', status: 'planned' }),
+        options: [
+          okOption,
+          { ...memoOption, batchId: 'batch-memo', status: 'planned' },
+          option('unselected', 'ok', { batchId: 'batch-other' }),
+        ],
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch,
+    });
+    mutateAsync.mockResolvedValue(pending);
+  });
+
+  const submit = async () => {
+    const user = userEvent.setup();
+
+    await user.click(card('SO-ok1'));
+    await fillMemoRequest(user);
+    await user.click(requestButton());
+
+    return user;
+  };
+
+  it('대기 중이면 합칠 상자 중 배치에 든 상자를 모두 빼고 진행 링크를 보인다', async () => {
+    const sheet = renderSheet();
+
+    const user = await submit();
+
+    await waitFor(() => expect(mockExclude).toHaveBeenCalledTimes(2));
+    expect(mockExclude.mock.calls).toEqual([
+      [{ batchId: 'batch-src', shipmentId: 'src', reason: '합포장' }],
+      [{ batchId: 'batch-memo', shipmentId: 'memo1', reason: '합포장' }],
+    ]);
+
+    const action = jest.mocked(toast.success).mock.calls[0][1]?.action;
+
+    if (!action || typeof action !== 'object' || !('onClick' in action)) {
+      throw new Error('Missing progress action');
+    }
+
+    expect(action.label).toBe('진행 보기');
+    sheet.unmount();
+    render(<button onClick={action.onClick}>진행 보기</button>);
+    await user.click(screen.getByRole('button', { name: '진행 보기' }));
+
+    expect(mockPush).toHaveBeenCalledWith('/order/fulfillments?shipmentId=src');
+  });
+
+  it('완료된 합포장은 배치에서 빼지 않는다', async () => {
+    mutateAsync.mockResolvedValue({
+      ...pending,
+      operationStatus: 'completed',
+      targetShipmentId: 'target',
+    });
+    renderSheet();
+    await submit();
+
+    expect(toast.success).toHaveBeenCalledWith('합포장했어요.');
+    expect(mockExclude).not.toHaveBeenCalled();
+  });
+
+  it('배치 제외 권한이 없으면 대기 요청만 유지한다', async () => {
+    mockCanRun.mockReturnValue(false);
+    renderSheet();
+    await submit();
+
+    expect(mockExclude).not.toHaveBeenCalled();
+    expect(toast.success).toHaveBeenCalledWith(
+      '합포장을 요청했어요.',
+      expect.objectContaining({ action: expect.any(Object) })
+    );
+  });
+
+  it('한 상자의 제외가 거절되어도 나머지를 처리하고 대기 요청을 유지한다', async () => {
+    mockExclude.mockRejectedValueOnce(
+      new CustomError({
+        message: '발송 시도가 있어 배치에서 뺄 수 없어요.',
+        statusCode: 409,
+      })
+    );
+    const onRequested = jest.fn();
+    const onOpenChange = jest.fn();
+
+    render(
+      <ConsolidationSheet
+        shipmentId="src"
+        open
+        onOpenChange={onOpenChange}
+        onRequested={onRequested}
+      />
+    );
+    await submit();
+
+    await waitFor(() => expect(onRequested).toHaveBeenCalledWith(pending));
+    expect(mockExclude).toHaveBeenCalledTimes(2);
+    expect(toast.error).toHaveBeenCalledWith(
+      expect.stringContaining('발송 시도가 있어 배치에서 뺄 수 없어요.')
+    );
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+    expect(
+      screen.queryByRole('button', { name: '같은 요청 다시 보내기' })
+    ).toBeNull();
   });
 });

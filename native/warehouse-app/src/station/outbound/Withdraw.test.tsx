@@ -60,7 +60,9 @@ describe('뺄 상품(스펙 §6.2 withdrawing)', () => {
   it('되돌림 바구니가 없으면 알리고 상품을 받지 않는다', async () => {
     const { server } = await setupInspection({ boxes: [WITHDRAWING] });
     scan('421033881907');
-    expect(await screen.findByText('설정에서 이 기기의 되돌림 바구니를 먼저 지정해 주세요.')).toBeInTheDocument();
+    expect(await screen.findByText('꺼낸 상품을 넣을 되돌림 바구니가 정해지지 않았어요. 앱 설정에서 바구니 바코드(RB-)를 찍어 주세요.')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: '설정 열기' })).toHaveAttribute('href', '/settings');
+
     scan('8801002');
     expect(flash()).toBe('error');
     expect(server.requests.some((r) => r.path.endsWith('/return-bin-removals'))).toBe(false);
