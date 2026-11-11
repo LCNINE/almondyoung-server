@@ -114,19 +114,22 @@ export const CoupangUploadInvoiceRequestSchema = z.object({
   orderSheetInvoiceApplyDtos: z.array(OrderSheetInvoiceApplyDtoSchema).min(1).max(100), // 송장 업로드 대상 목록 (최대 100개)
 });
 
-export const CoupangUploadInvoiceResponseSchema = createCoupangApiResponseSchema(
-  z.object({
-    responseCode: z.number(), // 전체 처리 결과 코드
-    responseList: z.array(
-      z.object({
-        shipmentBoxId: CoupangLongIdSchema,
-        succeed: z.boolean(),
-        resultCode: z.string(),
-        resultMessage: z.string(),
-      }),
-    ),
-  }),
-);
+// 업로드·수정 응답의 `data` 는 같은 모양이다. 클라이언트는 봉투를 벗기고 이것만 돌려준다.
+export const CoupangInvoiceResultSchema = z.object({
+  responseCode: z.number(), // 전체 처리 결과 코드 (0 = 전부 성공)
+  responseList: z.array(
+    z.object({
+      shipmentBoxId: CoupangLongIdSchema,
+      succeed: z.boolean(),
+      resultCode: z.string(),
+      retryRequired: z.boolean().default(false),
+      resultMessage: z.string(),
+    }),
+  ),
+});
+export type CoupangInvoiceResult = z.infer<typeof CoupangInvoiceResultSchema>;
+
+export const CoupangUploadInvoiceResponseSchema = createCoupangApiResponseSchema(CoupangInvoiceResultSchema);
 
 // =================================================================
 // == 송장 업데이트 스키마 (Update Invoice)
@@ -145,20 +148,7 @@ export const CoupangUpdateInvoiceRequestSchema = z.object({
   orderSheetInvoiceApplyDtos: z.array(OrderSheetUpdateInvoiceDtoSchema).min(1), // 송장 업데이트 대상 목록
 });
 
-export const CoupangUpdateInvoiceResponseSchema = createCoupangApiResponseSchema(
-  z.object({
-    responseCode: z.number(), // 전체 처리 결과 코드
-    responseList: z.array(
-      z.object({
-        shipmentBoxId: CoupangLongIdSchema,
-        succeed: z.boolean(),
-        resultCode: z.string(),
-        resultMessage: z.string(),
-        retryRequired: z.boolean(),
-      }),
-    ),
-  }),
-);
+export const CoupangUpdateInvoiceResponseSchema = createCoupangApiResponseSchema(CoupangInvoiceResultSchema);
 
 // =================================================================
 // == 배송 히스토리 스키마 (Delivery History)

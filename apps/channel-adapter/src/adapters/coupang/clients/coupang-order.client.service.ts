@@ -263,7 +263,7 @@ export class CoupangOrderClient extends CoupangBaseClient {
    * 송장 업데이트 처리 API
    * (잘못 등록한 운송장을 변경, 배송상태는 배송지시로 변경)
    */
-  async updateInvoices(payload: CoupangUpdateInvoiceRequest): Promise<CoupangUpdateInvoiceResponse> {
+  async updateInvoices(payload: CoupangUpdateInvoiceRequest): Promise<CoupangUpdateInvoiceResponse['data']> {
     // 요청 파라미터 검증
     const parsedReq = CoupangUpdateInvoiceRequestSchema.safeParse(payload);
     if (!parsedReq.success) {
@@ -296,7 +296,7 @@ export class CoupangOrderClient extends CoupangBaseClient {
       }
 
       this.logger.log(`✅ 송장 업데이트 처리 완료 (전체 상태 코드=${response.data.responseCode})`);
-      return response;
+      return response.data;
     } catch (error) {
       if (error.response) {
         this.logger.error(

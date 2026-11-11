@@ -189,6 +189,17 @@ describe('ShipmentDispatchInboxWorker routing', () => {
       expect(factory.getAdapter).not.toHaveBeenCalled();
     });
 
+    it('쿠팡 isPartial 주문은 manual 로 간다', async () => {
+      const { worker, factory } = makeWorker();
+
+      const result = await (worker as any).executeOperation(
+        operationFor(SHIPPED, makeOrder('coupang', { isPartial: true })),
+      );
+
+      expect(result).toEqual(expect.objectContaining({ manual: true, reason: expect.stringContaining('multiple') }));
+      expect(factory.getAdapter).not.toHaveBeenCalled();
+    });
+
     it('routes a carrier outside the adapter tables to manual', async () => {
       const { worker, factory } = makeWorker();
 

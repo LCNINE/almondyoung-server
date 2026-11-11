@@ -8,6 +8,7 @@ import {
   CoupangOrderSheet,
   CoupangDeliveryHistoryResponse,
   CoupangExchangeRequest,
+  CoupangInvoiceResult,
   validateCoupangDateRange,
   mapCoupangStatusToInternal,
 } from '../../zods/coupang';
@@ -431,7 +432,7 @@ export class CoupangAdapter implements ChannelAdapter {
         shipmentBoxIds,
       });
 
-      return this.transformCoupangResponseToSyncResult(response, 'order.prepare');
+      return this.transformCoupangEnvelopeToSyncResult(response, 'order.prepare');
     } catch (error) {
       console.error('❌ 쿠팡 주문 준비 처리 실패:', error);
       return {
@@ -564,7 +565,7 @@ export class CoupangAdapter implements ChannelAdapter {
         receiptId: coupangClaimInfo.receiptId,
       });
 
-      return this.transformCoupangResponseToSyncResult(response, 'return.confirm_receipt');
+      return this.transformCoupangEnvelopeToSyncResult(response, 'return.confirm_receipt');
     } catch (error) {
       console.error('❌ 쿠팡 반품상품 입고확인 실패:', error);
       return {
@@ -594,7 +595,7 @@ export class CoupangAdapter implements ChannelAdapter {
         cancelCount: coupangClaimInfo.cancelCount,
       });
 
-      return this.transformCoupangResponseToSyncResult(response, 'return.process_shipment_stop');
+      return this.transformCoupangEnvelopeToSyncResult(response, 'return.process_shipment_stop');
     } catch (error) {
       console.error('❌ 쿠팡 출고중지 처리 실패:', error);
       return {
@@ -619,7 +620,7 @@ export class CoupangAdapter implements ChannelAdapter {
         invoiceNumber: command.invoiceNumber,
       });
 
-      return this.transformCoupangResponseToSyncResult(response, 'return.completed_shipment');
+      return this.transformCoupangEnvelopeToSyncResult(response, 'return.completed_shipment');
     } catch (error) {
       console.error('❌ 쿠팡 이미출고처리 실패:', error);
       return {
@@ -645,7 +646,7 @@ export class CoupangAdapter implements ChannelAdapter {
         regNumber: command.regNumber,
       });
 
-      return this.transformCoupangResponseToSyncResult(response, 'return.register_invoice');
+      return this.transformCoupangEnvelopeToSyncResult(response, 'return.register_invoice');
     } catch (error) {
       console.error('❌ 쿠팡 회수송장 등록 실패:', error);
       return {
@@ -1333,7 +1334,7 @@ export class CoupangAdapter implements ChannelAdapter {
     orderId: string,
     tracking: { companyCode: string; number: string },
     items?: Array<{ orderItemId: string; channelProductId?: string; quantity: number }>,
-  ): Promise<any[]> {
+  ) {
     if (!/^\d+$/.test(orderId)) {
       throw new Error(`쿠팡 외부 orderId가 필요합니다: ${orderId}`);
     }
@@ -1354,39 +1355,55 @@ export class CoupangAdapter implements ChannelAdapter {
         return Number(channelProductId);
       }),
     );
+    const liveDtos = await this.buildLiveInvoiceDtos(orderId, tracking);
+    const liveIds = new Set(liveDtos.map(({ vendorItemId }) => vendorItemId));
+    const sameSet =
+      liveIds.size === requestedVendorItemIds.size && [...liveIds].every((id) => requestedVendorItemIds.has(id));
+    if (!sameSet) {
+      throw new Error(
+        `쿠팡 주문은 나눠 보내지 않는다: 주문 ${orderId}의 살아 있는 품목 [${[...liveIds].join(',')}] 중 [${[...requestedVendorItemIds].join(',')}] 만 보내려 했다. 나눠 보내기는 지원하지 않는다`,
+      );
+    }
+    return liveDtos;
+  }
+
+  /**
+   * 주문의 «살아 있는» 품목(shippingCount − cancelCount − holdCountForCancel > 0) 전부로 송장 DTO 를 만든다.
+   * 쿠팡 주문은 나눠 보내지 않으므로 splitShipping 은 늘 false 다.
+   */
+  private async buildLiveInvoiceDtos(orderId: string, tracking: { companyCode: string; number: string }) {
     const response = await this.coupangOrderClient.getSingleOrderSheetByOrderId(orderId);
-    const matched = response.data.flatMap((orderSheet) =>
+    const deliveryCompanyCode = this.mapDeliveryCompanyCode(tracking.companyCode);
+    const dtos = response.data.flatMap((orderSheet) =>
       orderSheet.orderItems
-        .filter((item) => requestedVendorItemIds.has(item.vendorItemId))
+        .filter((item) => item.shippingCount - item.cancelCount - item.holdCountForCancel > 0)
         .map((item) => ({
           shipmentBoxId: orderSheet.shipmentBoxId,
           orderId: orderSheet.orderId,
           vendorItemId: item.vendorItemId,
-          deliveryCompanyCode: this.mapDeliveryCompanyCode(tracking.companyCode),
+          deliveryCompanyCode,
           invoiceNumber: tracking.number,
-          splitShipping: orderSheet.orderItems.length !== requestedVendorItemIds.size,
+          splitShipping: false,
           preSplitShipped: false,
         })),
     );
-
-    if (matched.length !== requestedVendorItemIds.size) {
-      const matchedIds = new Set(matched.map(({ vendorItemId }) => vendorItemId));
-      const missing = [...requestedVendorItemIds].filter((itemId) => !matchedIds.has(itemId));
-      throw new Error(`쿠팡 주문 ${orderId}에서 vendorItemId를 찾을 수 없습니다: ${missing.join(',')}`);
+    if (dtos.length === 0) {
+      throw new Error(`쿠팡 주문 ${orderId}에 보낼 수 있는 품목이 없다`);
     }
-
-    return matched;
+    return dtos;
   }
 
   /**
-   * 🔄 송장 업데이트용 DTO 번역
+   * 🔄 송장 업데이트용 DTO 번역 — 주문의 살아 있는 품목 전부
    */
   private async translateOrderToUpdateInvoiceDtos(
     orderId: string,
     tracking: { companyCode: string; number: string },
-  ): Promise<any[]> {
-    // 기본 송장 DTO와 유사하지만 업데이트용 필드 구조
-    return await this.translateOrderToInvoiceDtos(orderId, tracking);
+  ) {
+    if (!/^\d+$/.test(orderId)) {
+      throw new Error(`쿠팡 외부 orderId가 필요합니다: ${orderId}`);
+    }
+    return await this.buildLiveInvoiceDtos(orderId, tracking);
   }
 
   /**
@@ -1547,9 +1564,37 @@ export class CoupangAdapter implements ChannelAdapter {
   }
 
   /**
+   * 송장 업로드·수정 결과를 SyncResult 로 변환한다.
+   * 성공은 responseCode 가 0 이고 succeed:false 가 하나도 없을 때뿐이다.
+   */
+  private transformCoupangResponseToSyncResult(result: CoupangInvoiceResult, commandType: string): SyncResult {
+    const failedItems = result.responseList.filter((item) => !item.succeed);
+    const successCount = result.responseList.length - failedItems.length;
+    const errors = failedItems.map((item) => ({
+      id: item.shipmentBoxId,
+      message: `${item.resultCode}: ${item.resultMessage || '알 수 없는 오류'}${item.retryRequired ? ' (재시도 필요)' : ''}`,
+    }));
+    if (result.responseCode !== 0 && errors.length === 0) {
+      errors.push({ id: 'unknown', message: `쿠팡 응답 코드 ${result.responseCode}` });
+    }
+
+    return {
+      success: result.responseCode === 0 && failedItems.length === 0,
+      processedCount: successCount,
+      failedCount: Math.max(failedItems.length, errors.length),
+      errors,
+      data: {
+        commandType,
+        timestamp: new Date().toISOString(),
+        coupangResponse: result,
+      },
+    };
+  }
+
+  /**
    * 쿠팡 API 응답을 SyncResult로 변환하는 헬퍼 메서드
    */
-  private transformCoupangResponseToSyncResult(coupangResponse: any, commandType: string): SyncResult {
+  private transformCoupangEnvelopeToSyncResult(coupangResponse: any, commandType: string): SyncResult {
     const responseList = coupangResponse.data?.responseList || [];
     const successCount = responseList.filter((item: any) => item.succeed === true).length;
     const failedItems = responseList.filter((item: any) => item.succeed === false);
