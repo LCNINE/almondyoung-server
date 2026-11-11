@@ -4,6 +4,7 @@ import type {
   ConsolidationOption,
   ConsolidationOptionShipment,
   CreateShipmentConsolidationRequest,
+  ShipmentSplitShare,
 } from '@/lib/types/dto/fulfillment';
 
 // 서버 consolidate 가 원본으로 받지 않는 상태와 복구 중인 상자
@@ -278,4 +279,51 @@ export function orderNoText(
   }
 
   return shipment.salesOrderNos.map((no) => `#${no}`).join(', ');
+}
+
+export function splitShareText(
+  split?: ShipmentSplitShare | null
+): string | null {
+  return split
+    ? `나눈 상자 ${split.boxNo}/${split.boxCount} · 주문 ${split.orderQty}개 중 ${split.boxQty}개`
+    : null;
+}
+
+// 같은 주문을 나눈 상자는 주문번호가 같으므로 상자 번호와 수량을 붙여 구분한다.
+export function boxNoText(
+  shipment: Pick<
+    ConsolidationOptionShipment,
+    'shipmentId' | 'salesOrderNos' | 'split'
+  >
+): string {
+  const no = orderNoText(shipment);
+
+  return shipment.split
+    ? `${no} 상자 ${shipment.split.boxNo}/${shipment.split.boxCount}(${shipment.split.boxQty}개)`
+    : no;
+}
+
+export function sharesSplitOrder(
+  source: Pick<ConsolidationOptionShipment, 'salesOrderNos'>,
+  others: ReadonlyArray<
+    Pick<ConsolidationOptionShipment, 'salesOrderNos' | 'split'>
+  >
+): boolean {
+  return others.some(
+    (other) =>
+      other.split &&
+      other.salesOrderNos.some((no) => source.salesOrderNos.includes(no))
+  );
+}
+
+export function mergedToastText(
+  sources: ReadonlyArray<
+    Pick<ConsolidationOptionShipment, 'shipmentId' | 'salesOrderNos' | 'split'>
+  >
+): string {
+  const nos = new Set(sources.map(orderNoText));
+
+  return nos.size === 1 && sources.every((source) => source.split)
+    ? `나눈 상자 ${sources.length}개를 다시 한 상자로 합쳤어요: ${[...nos][0]}`
+    : '합포장했어요.';
 }

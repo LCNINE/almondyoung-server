@@ -1,7 +1,7 @@
 import { DbService } from '@app/db';
 import { Test } from '@nestjs/testing';
 import { ConsolidationBoardReader } from '../services/consolidation-board.reader';
-import { loadShipmentLines } from '../services/consolidation-shipment-reads';
+import { loadShipmentLines, loadSplitShares } from '../services/consolidation-shipment-reads';
 import { OutboundPreparationReader } from './outbound-preparation.reader';
 
 jest.mock('../services/consolidation-shipment-reads', () => ({
@@ -9,6 +9,7 @@ jest.mock('../services/consolidation-shipment-reads', () => ({
     '../services/consolidation-shipment-reads',
   ),
   loadShipmentLines: jest.fn(),
+  loadSplitShares: jest.fn(async () => new Map()),
 }));
 
 function query(rows: unknown[]) {
@@ -149,8 +150,18 @@ describe('OutboundPreparationReader consolidation reservations', () => {
       ],
     }).compile();
 
+    jest
+      .mocked(loadSplitShares)
+      .mockResolvedValueOnce(new Map([['box', { boxQty: 6, orderQty: 9, boxNo: 1, boxCount: 2 }]]));
+
     const summary = await module.get(OutboundPreparationReader).summarize('warehouse');
 
+    expect(summary.buckets.find((bucket) => bucket.bucket === 'partial')?.shipments[0].split).toEqual({
+      boxQty: 6,
+      orderQty: 9,
+      boxNo: 1,
+      boxCount: 2,
+    });
     expect(summary.buckets.find((bucket) => bucket.bucket === 'partial')?.shipments[0].lines).toEqual([
       { name: '상품 A', qty: 5, reservedQty: 2 },
       { name: '상품 B', qty: 1, reservedQty: 1 },

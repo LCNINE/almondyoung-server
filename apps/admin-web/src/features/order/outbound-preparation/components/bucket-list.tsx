@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { Can } from '@/components/auth/can';
+import { splitShareText } from '@/features/order/fulfillments/detail/consolidation-sheet-model';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
@@ -115,6 +116,11 @@ export function BucketList({
                 </TableCell>
                 <TableCell className="tabular-nums">
                   {plannedOrderText(shipment)}
+                  {shipment.split && (
+                    <span className="block text-xs font-medium text-foreground">
+                      {splitShareText(shipment.split)}
+                    </span>
+                  )}
                 </TableCell>
                 <TableCell>
                   {bucket.bucket === 'partial' && shipment.lines?.length ? (

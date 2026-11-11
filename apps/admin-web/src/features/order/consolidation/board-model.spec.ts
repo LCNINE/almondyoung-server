@@ -10,6 +10,7 @@ import {
   buildBoardRequest,
   defaultWarehouseId,
   filterBoardGroups,
+  groupOrderNos,
   isBulkSelectable,
   pickableForMerge,
   replaceResult,
@@ -205,6 +206,26 @@ describe('texts', () => {
         group('z', [shipment('a'), shipment('b'), shipment('c')]),
       ])
     ).toBe('1묶음 · 주문 3건');
+  });
+
+  it('같은 주문을 나눈 상자는 상자 수량으로 구분한다', () => {
+    const split = group('s', [
+      shipment('a', {
+        salesOrderNos: ['SO-1'],
+        split: { boxQty: 2, orderQty: 5, boxNo: 1, boxCount: 2 },
+      }),
+      shipment('b', {
+        salesOrderNos: ['SO-1'],
+        split: { boxQty: 3, orderQty: 5, boxNo: 2, boxCount: 2 },
+      }),
+    ]);
+
+    expect(groupOrderNos(split)).toBe(
+      '#SO-1 상자 1/2(2개), #SO-1 상자 2/2(3개)'
+    );
+    expect(groupOrderNos(group('x', [shipment('a'), shipment('b')]))).toBe(
+      '#SO-a, #SO-b'
+    );
   });
 });
 

@@ -217,6 +217,7 @@ describe('ConsolidationService command boundary', () => {
         manifestVersion: 1,
         reservationVersion: 1,
         createdAt: new Date(0),
+        split: null,
       },
       options: [],
     };

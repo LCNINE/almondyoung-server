@@ -1,8 +1,8 @@
 import {
+  boxNoText,
   freshCommand,
   keptAfterFailure,
   needsUnwindSteps,
-  orderNoText,
   progressLabel,
   type PendingCommand,
 } from '@/features/order/fulfillments/detail/consolidation-sheet-model';
@@ -113,7 +113,7 @@ export function boardFooterText(
 }
 
 export function groupOrderNos(group: ConsolidationBoardGroup): string {
-  return group.shipments.map(orderNoText).join(', ');
+  return group.shipments.map(boxNoText).join(', ');
 }
 
 function text(value: unknown): string {
