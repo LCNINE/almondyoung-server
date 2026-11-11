@@ -143,6 +143,9 @@ export class ShipmentLineOriginResponseDto {
   @ApiProperty()
   channelOrderId: string;
 
+  @ApiProperty({ nullable: true, description: '고객이 아는 주문번호(판매주문 display_order_no)' })
+  displayOrderNo: string | null;
+
   @ApiProperty({ nullable: true })
   channelOrderItemId: string | null;
 
@@ -176,6 +179,9 @@ export class ShipmentLineDetailResponseDto {
 
   @ApiProperty()
   skuId: string;
+
+  @ApiProperty({ nullable: true, description: '상품명(옵션 포함)' })
+  skuName: string | null;
 
   @ApiProperty()
   qty: number;

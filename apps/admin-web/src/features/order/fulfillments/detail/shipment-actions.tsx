@@ -54,6 +54,11 @@ import {
 import { ConsolidationSheet } from './consolidation-sheet';
 import { showsConsolidationButton } from './consolidation-sheet-model';
 import {
+  splitLineLabel,
+  splitLineName,
+  splitPreview,
+} from './shipment-split-model';
+import {
   recallConfirmText,
   shipmentActionsFor,
   type ShipmentAction,
@@ -70,7 +75,7 @@ type RetryState = {
 };
 
 const ACTION_TITLE: Record<Action, string> = {
-  split: 'shipment 분할',
+  split: '상자 분할',
   recipient: '수령인 변경',
   plan: 'shipment 계획 확정',
   recall: '출고 recall',
@@ -140,6 +145,10 @@ export function ShipmentActions({
   const operation = useFulfillmentOperation(retry?.operationId ?? '');
 
   const line = shipment.lines.find((entry) => entry.id === lineId);
+  const preview = splitPreview(line, qty, shipment.lines);
+  const boxTotal = shipment.lines.reduce((sum, entry) => sum + entry.qty, 0);
+  const maxMove = line ? Math.min(line.qty, boxTotal - 1) : 0;
+  const lineName = line ? splitLineName(line) : '';
   const dispatchedAttempts = useMemo(
     () =>
       shipment.dispatchAttempts.filter(
@@ -427,29 +436,60 @@ export function ShipmentActions({
           {action === 'split' && (
             <div className="grid grid-cols-2 gap-3">
               <div className="col-span-2 space-y-1.5">
-                <Label>shipment line</Label>
+                <Label htmlFor="split-line">나눌 상품</Label>
                 <Select value={lineId} onValueChange={setLineId}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="라인 선택" />
+                  <SelectTrigger id="split-line" className="w-full">
+                    <SelectValue placeholder="상품 선택" />
                   </SelectTrigger>
                   <SelectContent>
                     {shipment.lines.map((entry) => (
                       <SelectItem key={entry.id} value={entry.id}>
-                        {shortId(entry.id)} · {entry.qty}개 · line v
-                        {entry.lineVersion}
+                        {splitLineLabel(entry)}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-1.5">
-                <Label>수량</Label>
+                <Label htmlFor="split-qty">새 상자로 보낼 수량</Label>
                 <Input
+                  id="split-qty"
                   type="number"
                   min={1}
+                  max={Math.max(maxMove, 1)}
                   value={qty}
                   onChange={(event) => setQty(event.target.value)}
                 />
+              </div>
+              <div className="col-span-2">
+                {preview ? (
+                  <dl
+                    role="status"
+                    className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 rounded-md bg-muted/50 p-3 text-sm"
+                  >
+                    <dt className="text-muted-foreground">
+                      이번 상자에 남을 수량
+                    </dt>
+                    <dd>
+                      {lineName} {preview.lineStays}개 · 상자 전체{' '}
+                      {preview.boxStays}개
+                    </dd>
+                    <dt className="text-muted-foreground">
+                      새 상자로 보낼 수량
+                    </dt>
+                    <dd>
+                      {lineName} {preview.moves}개
+                    </dd>
+                  </dl>
+                ) : (
+                  <p className="text-sm text-destructive">
+                    {!line
+                      ? '나눌 상품을 고르세요.'
+                      : maxMove < 1
+                        ? `이 상자에는 상품이 ${boxTotal}개뿐이라 나눌 수 없어요.`
+                        : `1개부터 ${maxMove}개까지 보낼 수 있어요.`}
+                  </p>
+                )}
               </div>
             </div>
           )}
@@ -571,8 +611,9 @@ export function ShipmentActions({
 
           {action !== 'plan' && action !== 'recall' && (
             <div className="space-y-1.5">
-              <Label>작업 사유 (필수)</Label>
+              <Label htmlFor="shipment-action-reason">작업 사유 (필수)</Label>
               <Input
+                id="shipment-action-reason"
                 value={reason}
                 onChange={(event) => setReason(event.target.value)}
               />
@@ -608,10 +649,15 @@ export function ShipmentActions({
               onClick={() => submit()}
               disabled={
                 pending ||
+                (action === 'split' && !preview) ||
                 (action === 'recall' && (!attemptId || !physicalRecovery))
               }
             >
-              {pending ? '요청 중...' : '서버에 요청'}
+              {pending
+                ? '요청 중...'
+                : action === 'split'
+                  ? '분할하기'
+                  : '서버에 요청'}
             </Button>
           </DialogFooter>
         </DialogContent>

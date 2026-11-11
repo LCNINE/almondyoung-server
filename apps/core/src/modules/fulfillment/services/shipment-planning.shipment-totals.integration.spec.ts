@@ -182,4 +182,27 @@ describeIfDb('ShipmentPlanningService.getFulfillmentShipments (DB integration)',
       ]);
     });
   });
+
+  it('상자 상세의 줄마다 상품명과 고객이 아는 주문번호를 싣는다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const base = await consolidationBase(tx);
+      const customerId = randomUUID();
+      const a = await createConsolidationSource(tx, wired, base, { quantity: 1, customerId });
+      const b = await createConsolidationSource(tx, wired, base, { quantity: 2, customerId });
+
+      await tx.update(wmsTables.skus).set({ name: '샘플 상품 (빨강)' }).where(eq(wmsTables.skus.id, base.skuId));
+      await tx
+        .update(wmsTables.salesOrders)
+        .set({ displayOrderNo: 'ORDER-A' })
+        .where(eq(wmsTables.salesOrders.id, a.salesOrderId));
+
+      const boxId = await mergedBox(tx, a, b);
+      const detail = await planning.getShipmentDetail(boxId, tx);
+      const byQty = new Map(detail.lines.map((line) => [line.qty, line]));
+
+      expect(detail.lines).toHaveLength(2);
+      expect(byQty.get(1)).toMatchObject({ skuName: '샘플 상품 (빨강)', origin: { displayOrderNo: 'ORDER-A' } });
+      expect(byQty.get(2)).toMatchObject({ skuName: '샘플 상품 (빨강)', origin: { displayOrderNo: null } });
+    });
+  });
 });
