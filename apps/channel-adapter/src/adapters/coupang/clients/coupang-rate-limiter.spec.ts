@@ -34,17 +34,17 @@ describe('CoupangRateLimiter', () => {
     expect(sleeps[0]).toBeLessThanOrEqual(60_000);
   });
 
-  it('5초 안에 recordError 20번이면 10분 멈춘다', async () => {
+  it('5초 안에 recordError 8번이면 10분 멈춘다', async () => {
     const { limiter, sleeps } = make();
-    for (let i = 0; i < 20; i++) limiter.recordError();
+    for (let i = 0; i < 8; i++) limiter.recordError();
     await limiter.acquire();
     expect(sleeps[0]).toBeGreaterThan(599_000);
     expect(sleeps[0]).toBeLessThanOrEqual(600_000);
   });
 
-  it('recordError 19번 뒤 recordSuccess 는 멈추지 않는다', async () => {
+  it('recordError 7번 뒤 recordSuccess 는 멈추지 않는다', async () => {
     const { limiter, sleeps } = make();
-    for (let i = 0; i < 19; i++) limiter.recordError();
+    for (let i = 0; i < 7; i++) limiter.recordError();
     limiter.recordSuccess();
     await limiter.acquire();
     expect(sleeps).toEqual([]);
@@ -52,10 +52,19 @@ describe('CoupangRateLimiter', () => {
 
   it('5초가 지난 에러는 세지 않는다', async () => {
     const { limiter, sleeps, advance } = make();
-    for (let i = 0; i < 19; i++) limiter.recordError();
+    for (let i = 0; i < 7; i++) limiter.recordError();
     advance(6000);
     limiter.recordError();
     await limiter.acquire();
     expect(sleeps).toEqual([]);
+  });
+
+  it('429 도 에러 폭주에 센다 — 7번의 에러와 429 한 번이면 10분 멈춘다', async () => {
+    const { limiter, sleeps } = make();
+    for (let i = 0; i < 7; i++) limiter.recordError();
+    limiter.recordRateLimited();
+    await limiter.acquire();
+    expect(sleeps[0]).toBeGreaterThan(599_000);
+    expect(sleeps[0]).toBeLessThanOrEqual(600_000);
   });
 });

@@ -81,6 +81,7 @@
 - `dispatch.update_tracking` 이 items 없이 변환을 불러 늘 실패한다 — 고친다.
 - **쿠팡 능력 `multipleTrackingNumbers` 를 `false` 로**(`services/channel-capabilities.ts`, 6번 결정). 나뉜 상자의 출고는 inbox worker 가 manual 로 돌리고(`shipment-dispatch-inbox.worker.ts` 의 `isPartial` 분기), 사람이 WING 에서 처리한다. 운영 규칙 «쿠팡 주문은 정체 보드에서 나눠 보내지 않는다»는 런북 #1251 에. 나눠 보내기 버튼 자체를 쿠팡 주문에서 막는 건 core·admin-web 일이라 이 작업 밖이다. 지금 코드가 `splitShipping` 을 세우는 갈래(`translateOrderToInvoiceDtos`)는 이 능력이 막으므로 그대로 두되, 테스트로 «쿠팡 나뉜 상자는 업로드하지 않는다»를 고정한다.
 - 클라이언트에 속도 제한(초당 5회, 판매자 ID 단위 — 프로세스가 둘이어도 넘지 않게)과 429·연속 에러 물러남을 넣는다. 지금은 timeout·재시도도 없다.
+  - 물러남 수치: 429 면 60초, 에러 응답(429 포함)이 **5초 안에 8건**이면 10분 멈춘다. 쿠팡 권고(5초 20건)보다 낮게 둔다 — 태스크 둘이 겹쳐도 합이 쿠팡의 5초 20건 IP 차단에 닿기 전에 멈춰야 하고, 프로세스당 초당 2회면 5초에 많아야 10회라 20건 기준은 한 프로세스에서 영영 울리지 않는다.
 
 ### 4.5 취소 관찰 (#1283 의 쿠팡 몫)
 
