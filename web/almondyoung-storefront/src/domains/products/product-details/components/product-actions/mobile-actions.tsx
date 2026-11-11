@@ -88,15 +88,29 @@ const MobileActions: React.FC<MobileActionsProps> = ({
   showCustomOrderNotice = false,
 }) => {
   const t = useTranslations("productDetail.options")
+  const tQuantity = useTranslations("productDetail.quantityDiscount")
   const [open, setOpen] = useState(false)
+
   // 묶음 할인이 있는 상품은 바로 담지 않고 시트를 열어 묶음을 고르게 한다(옵션이 하나여도).
   const focusItem = selectedItems[selectedItems.length - 1]
   const bundle = focusItem
     ? variantTierRows(focusItem.variant, product, pricingContext)
-    : { rows: [], memberHints: [], currentPrice: null }
-  const hasBundles = bundle.rows.length > 0 && !isWelcomeMembership
-  const summary = isSimple ? null : productQuantitySummary(product, pricingContext)
-  const note = focusItem ? quantityOptionNote({ chosen: true, ...bundle, summary }) : null
+    : {
+        rows: [],
+        memberHints: [],
+        currentPrice: null,
+        hiddenMemberQuantity: null,
+      }
+  const hasBundles =
+    (bundle.rows.length > 0 ||
+      bundle.memberHints.length > 0 ||
+      !!bundle.hiddenMemberQuantity) &&
+    !isWelcomeMembership
+  const summary = productQuantitySummary(product, pricingContext)
+  const note =
+    !focusItem && summary
+      ? "summary"
+      : quantityOptionNote({ chosen: !!focusItem, ...bundle, summary })
   const instantPurchase = isSimple && !hasBundles
 
   const disabledLabel =
@@ -121,6 +135,25 @@ const MobileActions: React.FC<MobileActionsProps> = ({
           className="flex w-full flex-col gap-2 border-t border-gray-200 bg-white p-4"
           data-testid="mobile-actions"
         >
+          {summary && !isWelcomeMembership && (
+            <button
+              type="button"
+              onClick={() => setOpen(true)}
+              className="border-mint-deep/30 bg-mint-tint text-foreground flex min-h-11 w-full flex-wrap items-center justify-between gap-x-2 gap-y-1 rounded-xl border px-3 py-2 text-left text-sm font-bold"
+            >
+              <span>
+                {tQuantity(
+                  summary.pricesHidden
+                    ? "hiddenMemberOffer"
+                    : summary.memberOnly
+                      ? "stickyMember"
+                      : "sticky",
+                  { count: summary.minQuantity, percent: summary.percent }
+                )}
+              </span>
+              <span className="text-mint-deep">{tQuantity("viewBundles")}</span>
+            </button>
+          )}
           {templateHref && (
             <LocalizedClientLink href={templateHref} className="w-full">
               <Button variant="outline" className="h-12 w-full">
@@ -259,10 +292,15 @@ const MobileActions: React.FC<MobileActionsProps> = ({
               <QuantityBundlePicker
                 rows={bundle.rows}
                 memberHints={bundle.memberHints}
+                hiddenMemberQuantity={bundle.hiddenMemberQuantity}
                 currentPrice={bundle.currentPrice}
                 quantity={focusItem.quantity}
-                onSelect={(q) => updateQuantity(focusItem.variantId, q - focusItem.quantity)}
-                optionLabel={isSimple ? undefined : (focusItem.variant.title ?? undefined)}
+                onSelect={(q) =>
+                  updateQuantity(focusItem.variantId, q - focusItem.quantity)
+                }
+                optionLabel={
+                  isSimple ? undefined : (focusItem.variant.title ?? undefined)
+                }
                 className="py-3"
               />
             )}
@@ -289,7 +327,9 @@ const MobileActions: React.FC<MobileActionsProps> = ({
                     onRemove={() => removeItem(item.variantId)}
                     showRemove={!isSimple}
                     pricing={pricingOf(item)}
-                    onAddQuantity={(count) => updateQuantity(item.variantId, count)}
+                    onAddQuantity={(count) =>
+                      updateQuantity(item.variantId, count)
+                    }
                   />
                 ))}
               </div>

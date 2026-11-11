@@ -254,7 +254,7 @@
     "applied": "수량 할인 {percent}% 적용",
     "nudge": "{count}개 더 담으면 개당 {amount}원 ({percent}% 할인)",
     "nudgeAction": "+{count}개 담기",
-    "bundleTitle": "묶음 선택",
+    "bundleTitle": "많이 담을수록 더 저렴해요",
     "single": "1개",
     "bundle": "{count}개 묶음",
     "total": "{amount}원",
@@ -265,6 +265,20 @@
     "optionSummary": "옵션별 수량 할인 · {count}개↑ 최대 {percent}% · 옵션을 고르면 구간이 보여요",
     "optionSummaryMember": "멤버십 회원 옵션별 수량 할인 · {count}개↑ 최대 {percent}% · 옵션을 고르면 구간이 보여요",
     "notEligible": "이 옵션은 수량 할인 대상이 아닙니다",
-    "notEligibleOption": "{option} 옵션은 수량 할인 대상이 아닙니다"
+    "notEligibleOption": "{option} 옵션은 수량 할인 대상이 아닙니다",
+    "headline": "{count}개부터 수량 할인 · 최대 {percent}% 할인",
+    "memberHeadline": "멤버십 회원이라면 묶음 구매로 더 절약하세요",
+    "memberBundleTitle": "멤버십 회원 수량할인 혜택",
+    "memberCondition": "멤버십 가입 후, 같은 옵션을 위 수량 이상 구매하면 적용돼요.",
+    "bundleTotal": "{count}개 총 {amount}원",
+    "joinForBundle": "멤버십 가입하고 수량할인 받기",
+    "selected": "선택됨",
+    "selectBundle": "이 수량 선택",
+    "automaticDiscount": "같은 옵션을 기준 수량 이상 담으면 개당 할인가가 자동 적용돼요.",
+    "chooseOptionFirst": "옵션을 먼저 골라 주세요. 해당 옵션의 묶음 가격과 할인 수량을 확인할 수 있어요.",
+    "sticky": "수량 할인 · {count}개부터 최대 {percent}%",
+    "stickyMember": "멤버십 수량 할인 · {count}개부터 최대 {percent}%",
+    "viewBundles": "혜택 보기 →",
+    "hiddenMemberOffer": "멤버십 회원은 {count}개부터 수량 할인 · 할인가 회원 공개"
   }
 }

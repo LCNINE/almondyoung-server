@@ -17,7 +17,11 @@ import {
 import { HttpTypes } from "@medusajs/types"
 import { Lock } from "lucide-react"
 import { useTranslations } from "next-intl"
-import { productQuantitySummary, quantityOptionNote, variantTierRows } from "../product-actions/quantity-pricing"
+import {
+  productQuantitySummary,
+  quantityOptionNote,
+  variantTierRows,
+} from "../product-actions/quantity-pricing"
 import QuantityBundlePicker from "../quantity-bundle-picker"
 import QuantityOptionNote from "../quantity-option-note"
 
@@ -48,11 +52,24 @@ export default function ProductPreviewPrice({
     hideMemberPrices: getHideMembershipPriceForNonMembers(product),
     now,
   }
-  const { rows, memberHints, currentPrice } = variant
+  const { rows, memberHints, currentPrice, hiddenMemberQuantity } = variant
     ? variantTierRows(variant, product, pricingContext)
-    : { rows: [], memberHints: [], currentPrice: null }
-  const summary = isMultiOption ? productQuantitySummary(product, pricingContext) : null
-  const note = quantityOptionNote({ chosen: focusVariant !== undefined, rows, memberHints, summary })
+    : {
+        rows: [],
+        memberHints: [],
+        currentPrice: null,
+        hiddenMemberQuantity: null,
+      }
+  const summary = isMultiOption
+    ? productQuantitySummary(product, pricingContext)
+    : null
+  const note = quantityOptionNote({
+    chosen: focusVariant !== undefined,
+    rows,
+    memberHints,
+    summary,
+    hiddenMemberQuantity,
+  })
 
   return (
     <>
@@ -64,22 +81,32 @@ export default function ProductPreviewPrice({
           optionLabel={variant?.title ?? undefined}
           className="mb-2"
         />
-      ) : currentPrice !== null && (
-        <QuantityBundlePicker
-          rows={rows}
-          memberHints={memberHints}
-          currentPrice={currentPrice}
-          quantity={quantity}
-          onSelect={onSelectQuantity}
-          optionLabel={isMultiOption && variant ? (variant.title ?? undefined) : undefined}
-          className="mb-2"
-        />
+      ) : (
+        currentPrice !== null && (
+          <QuantityBundlePicker
+            rows={rows}
+            memberHints={memberHints}
+            hiddenMemberQuantity={hiddenMemberQuantity}
+            currentPrice={currentPrice}
+            quantity={quantity}
+            onSelect={onSelectQuantity}
+            optionLabel={
+              isMultiOption && variant
+                ? (variant.title ?? undefined)
+                : undefined
+            }
+            className="mb-2"
+          />
+        )
       )}
     </>
   )
 }
 
-function PriceSummary({ hasMembership, product }: Pick<Props, "hasMembership" | "product">) {
+function PriceSummary({
+  hasMembership,
+  product,
+}: Pick<Props, "hasMembership" | "product">) {
   const t = useTranslations("productDetail.price")
   const tSale = useTranslations("home.timeSale")
   const { cheapestPrice, cheapestVariant } = getProductPrice({ product })

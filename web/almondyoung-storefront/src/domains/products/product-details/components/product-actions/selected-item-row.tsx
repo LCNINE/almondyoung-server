@@ -67,7 +67,7 @@ export default function SelectedItemRow({
   return (
     <div
       className={cn(
-        "flex items-center justify-between rounded-lg",
+        "flex flex-wrap items-center justify-between rounded-lg",
         s.container
       )}
     >
@@ -87,26 +87,29 @@ export default function SelectedItemRow({
         />
 
         {pricing?.appliedPercent != null && (
-          <span className="text-xs font-medium text-destructive">
+          <span className="bg-mint-tint text-mint-deep self-start rounded-md px-2 py-1 text-sm font-bold">
             {t("applied", { percent: pricing.appliedPercent })}
           </span>
         )}
-        {next && !incrementDisabled && (
-          <button
-            type="button"
-            className="self-start text-left text-xs text-muted-foreground underline-offset-2 hover:underline"
-            onClick={() => onAddQuantity?.(next.addQuantity)}
-          >
-            {t("nudge", {
-              count: next.addQuantity,
-              amount: next.unitPrice.toLocaleString(),
-              percent: next.percent,
-            })}{" "}
-            <span className="font-medium text-foreground">
-              {t("nudgeAction", { count: next.addQuantity })}
-            </span>
-          </button>
-        )}
+        {next &&
+          onAddQuantity &&
+          !incrementDisabled &&
+          !directInputDisabled && (
+            <button
+              type="button"
+              className="border-mint-deep/30 bg-mint-tint/60 text-foreground hover:bg-mint-tint min-h-11 self-start rounded-lg border px-3 py-2 text-left text-sm leading-relaxed focus-visible:outline-2 focus-visible:outline-offset-2"
+              onClick={() => onAddQuantity?.(next.addQuantity)}
+            >
+              {t("nudge", {
+                count: next.addQuantity,
+                amount: next.unitPrice.toLocaleString(),
+                percent: next.percent,
+              })}{" "}
+              <span className="text-foreground font-medium">
+                {t("nudgeAction", { count: next.addQuantity })}
+              </span>
+            </button>
+          )}
       </div>
 
       <div className={cn("flex gap-2", s.right)}>

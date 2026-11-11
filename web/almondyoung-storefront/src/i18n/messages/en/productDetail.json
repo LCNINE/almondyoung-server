@@ -254,7 +254,7 @@
     "applied": "{percent}% quantity discount applied",
     "nudge": "Add {count} more for {amount} KRW each ({percent}% off)",
     "nudgeAction": "Add {count}",
-    "bundleTitle": "Choose a bundle",
+    "bundleTitle": "Buy more, save more",
     "single": "1 item",
     "bundle": "Bundle of {count}",
     "total": "{amount} KRW",
@@ -265,6 +265,20 @@
     "optionSummary": "Quantity discounts vary by option · up to {percent}% off at {count}+ · pick an option to see them",
     "optionSummaryMember": "Member quantity discounts vary by option · up to {percent}% off at {count}+ · pick an option to see them",
     "notEligible": "This option has no quantity discount",
-    "notEligibleOption": "{option} has no quantity discount"
+    "notEligibleOption": "{option} has no quantity discount",
+    "headline": "Quantity discounts from {count} items · up to {percent}% off",
+    "memberHeadline": "Members save more when buying in bulk",
+    "memberBundleTitle": "Member quantity discounts",
+    "memberCondition": "Join the membership and buy at least the listed quantity of the same option.",
+    "bundleTotal": "{count} items total: ₩{amount}",
+    "joinForBundle": "Join to unlock quantity discounts",
+    "selected": "Selected",
+    "selectBundle": "Choose quantity",
+    "automaticDiscount": "Discounted unit prices apply automatically when you reach the quantity for the same option.",
+    "chooseOptionFirst": "Choose an option to see its bundle prices and discount quantities.",
+    "sticky": "Buy {count}+ · up to {percent}% off",
+    "stickyMember": "Members: buy {count}+ · up to {percent}% off",
+    "viewBundles": "View offers →",
+    "hiddenMemberOffer": "Member quantity discounts from {count} items · prices available to members"
   }
 }

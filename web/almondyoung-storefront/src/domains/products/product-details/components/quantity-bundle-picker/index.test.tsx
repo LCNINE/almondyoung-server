@@ -7,6 +7,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import productDetail from "@/i18n/messages/ko/productDetail.json"
 import QuantityBundlePicker from "./index"
 
+vi.mock("next/navigation", () => ({ useParams: () => ({ countryCode: "kr" }) }))
+
 const rows = [
   { minQuantity: 3, unitPrice: 9500, percent: 5 },
   { minQuantity: 5, unitPrice: 9000, percent: 10 },
@@ -30,22 +32,34 @@ afterEach(() => {
   container.remove()
 })
 
-function renderPicker(props: Partial<Parameters<typeof QuantityBundlePicker>[0]> = {}) {
+function renderPicker(
+  props: Partial<Parameters<typeof QuantityBundlePicker>[0]> = {}
+) {
   act(() => {
     root.render(
       <NextIntlClientProvider locale="ko" messages={{ productDetail }}>
-        <QuantityBundlePicker rows={rows} currentPrice={10000} quantity={1} {...props} />
+        <QuantityBundlePicker
+          rows={rows}
+          currentPrice={10000}
+          quantity={1}
+          {...props}
+        />
       </NextIntlClientProvider>
     )
   })
 }
 
-const cards = () => Array.from(container.querySelectorAll("[data-bundle-quantity]"))
+const cards = () =>
+  Array.from(container.querySelectorAll("[data-bundle-quantity]"))
 
 describe("QuantityBundlePicker", () => {
   it("offers one item and each bundle with total, unit price and saving", () => {
     renderPicker()
-    expect(cards().map((c) => c.getAttribute("data-bundle-quantity"))).toEqual(["1", "3", "5"])
+    expect(cards().map((c) => c.getAttribute("data-bundle-quantity"))).toEqual([
+      "1",
+      "3",
+      "5",
+    ])
     const three = cards()[1].textContent ?? ""
     expect(three).toContain("3개 묶음")
     expect(three).toContain("28,500원")
@@ -75,15 +89,47 @@ describe("QuantityBundlePicker", () => {
     expect(container.querySelector("[aria-pressed]")).toBeNull()
   })
 
-  it("shows member bundle prices to a non-member on one line", () => {
+  it("shows member prices as a separate offer with membership navigation", () => {
     renderPicker({ memberHints })
-    expect(container.textContent).toContain("멤버십 회원은 3개 개당 7,200원 · 5개 개당 6,800원")
+    expect(container.textContent).toContain("멤버십 회원 수량할인 혜택")
+    expect(container.textContent).toContain("개당 7,200원")
+    expect(container.textContent).toContain("3개 총 21,600원")
+    expect(container.querySelector("a")?.getAttribute("href")).toBe(
+      "/kr/mypage/membership"
+    )
   })
 
-  it("shows only the member line when the bundle discount is for members only", () => {
-    renderPicker({ rows: [], memberHints })
+  it("keeps a prominent offer for guests when only members get quantity discounts", () => {
+    const onSelect = vi.fn()
+    renderPicker({ rows: [], memberHints, onSelect })
     expect(cards()).toHaveLength(0)
-    expect(container.textContent).toContain("멤버십 회원은 3개 개당 7,200원 · 5개 개당 6,800원")
+    expect(container.querySelector("section")).not.toBeNull()
+    expect(container.textContent).toContain(
+      "멤버십 회원이라면 묶음 구매로 더 절약하세요"
+    )
+    expect(container.textContent).toContain("가입 후")
+    expect(container.querySelector("button")).toBeNull()
+    expect(onSelect).not.toHaveBeenCalled()
+  })
+
+  it("shows the offer without leaking hidden member prices or percentages", () => {
+    renderPicker({ rows: [], hiddenMemberQuantity: 3 })
+    expect(container.textContent).toContain("3개부터 수량 할인")
+    expect(container.textContent).toContain("할인가 회원 공개")
+    expect(container.textContent).not.toContain("7,200")
+    expect(container.textContent).not.toContain("%")
+    expect(container.querySelector("a")).not.toBeNull()
+  })
+
+  it("explains how to unlock bundle selection before choosing an option", () => {
+    renderPicker()
+    expect(container.textContent).toContain("옵션을 먼저 골라 주세요")
+  })
+
+  it("does not mark a preset quantity when the customer selected a different quantity", () => {
+    renderPicker({ quantity: 4, onSelect: vi.fn() })
+    expect(cards()[1].getAttribute("aria-pressed")).toBe("false")
+    expect(cards()[2].getAttribute("aria-pressed")).toBe("false")
   })
 
   it("renders nothing without bundles", () => {

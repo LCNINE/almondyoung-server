@@ -254,7 +254,7 @@
     "applied": "まとめ買い割引{percent}%適用",
     "nudge": "あと{count}個で1個あたり{amount}ウォン（{percent}%割引）",
     "nudgeAction": "{count}個追加",
-    "bundleTitle": "まとめ買いを選ぶ",
+    "bundleTitle": "まとめ買いでもっとお得に",
     "single": "1個",
     "bundle": "{count}個セット",
     "total": "{amount}ウォン",
@@ -265,6 +265,20 @@
     "optionSummary": "オプション別の数量割引 · {count}個以上で最大{percent}% · オプションを選ぶと内容が表示されます",
     "optionSummaryMember": "メンバー向けオプション別の数量割引 · {count}個以上で最大{percent}% · オプションを選ぶと内容が表示されます",
     "notEligible": "このオプションは数量割引の対象外です",
-    "notEligibleOption": "{option}は数量割引の対象外です"
+    "notEligibleOption": "{option}は数量割引の対象外です",
+    "headline": "{count}個から数量割引 · 最大{percent}%OFF",
+    "memberHeadline": "メンバーならまとめ買いでさらにお得に",
+    "memberBundleTitle": "メンバー向け数量割引",
+    "memberCondition": "メンバー登録後、同じオプションを表示数量以上購入すると適用されます。",
+    "bundleTotal": "{count}個の合計 {amount}ウォン",
+    "joinForBundle": "メンバー登録して数量割引を利用",
+    "selected": "選択中",
+    "selectBundle": "この数量を選ぶ",
+    "automaticDiscount": "同じオプションを対象数量以上選ぶと、割引単価が自動適用されます。",
+    "chooseOptionFirst": "オプションを選ぶと、まとめ買い価格と割引数量を確認できます。",
+    "sticky": "{count}個から最大{percent}%OFF",
+    "stickyMember": "メンバーは{count}個から最大{percent}%OFF",
+    "viewBundles": "特典を見る →",
+    "hiddenMemberOffer": "メンバーは{count}個から数量割引 · 割引価格はメンバー限定公開"
   }
 }

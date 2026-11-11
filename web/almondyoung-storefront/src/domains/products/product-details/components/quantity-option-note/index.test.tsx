@@ -3,9 +3,11 @@
 import { act } from "react"
 import { createRoot, type Root } from "react-dom/client"
 import { NextIntlClientProvider } from "next-intl"
-import { afterEach, beforeEach, describe, expect, it } from "vitest"
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import productDetail from "@/i18n/messages/ko/productDetail.json"
 import QuantityOptionNote from "./index"
+
+vi.mock("next/navigation", () => ({ useParams: () => ({ countryCode: "kr" }) }))
 
 const summary = { minQuantity: 3, percent: 10, varies: true, memberOnly: false }
 
@@ -36,12 +38,24 @@ function renderNote(props: Partial<Parameters<typeof QuantityOptionNote>[0]>) {
 describe("QuantityOptionNote", () => {
   it("sums up option-specific discounts with the condition", () => {
     renderNote({})
-    expect(container.textContent).toBe("옵션별 수량 할인 · 3개↑ 최대 10% · 옵션을 고르면 구간이 보여요")
+    expect(container.textContent).toContain("옵션별 수량 할인 · 3개↑ 최대 10%")
+    expect(container.querySelector("section")).not.toBeNull()
   })
 
   it("says members-only when only member tiers exist", () => {
     renderNote({ summary: { ...summary, memberOnly: true } })
     expect(container.textContent).toContain("멤버십 회원 옵션별 수량 할인")
+  })
+
+  it("keeps hidden member benefits visible without publishing the discount", () => {
+    renderNote({
+      summary: { ...summary, memberOnly: true, pricesHidden: true },
+    })
+    expect(container.textContent).toContain("할인가 회원 공개")
+    expect(container.textContent).not.toContain("10%")
+    expect(container.querySelector("a")?.getAttribute("href")).toBe(
+      "/kr/mypage/membership"
+    )
   })
 
   it("names the chosen option that has no quantity discount", () => {
