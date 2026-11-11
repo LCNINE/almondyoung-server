@@ -4,6 +4,8 @@ import {
   catalogGrantsFor,
   channelInventoryIsManual,
   isPlaceholderEnv,
+  isPlaceholderValue,
+  linkedSecretValue,
   missingGrants,
   orderSourceWired,
   reservationAxisFindings,
@@ -31,6 +33,16 @@ describe('cutover preflight rules', () => {
     expect(isPlaceholderEnv(`  NAVER_CLIENT_ID: '1',`, 'NAVER_CLIENT_ID')).toBe(true);
     expect(isPlaceholderEnv(`  NAVER_API_ENDPOINT: 'https://dummy.com',`, 'NAVER_API_ENDPOINT')).toBe(true);
     expect(isPlaceholderEnv(`  NAVER_CLIENT_ID: naverClientId.value,`, 'NAVER_CLIENT_ID')).toBe(false);
+  });
+
+  it('자리표시 값 판정', () => {
+    for (const v of [undefined, '', '1', 'https://dummy.com']) expect(isPlaceholderValue(v)).toBe(true);
+    expect(isPlaceholderValue('abc-real-looking')).toBe(false);
+  });
+
+  it('linkedSecretValue 는 SST_RESOURCE_<name> 의 value 를 읽고 없으면 null', () => {
+    expect(linkedSecretValue('X', {})).toBeNull();
+    expect(linkedSecretValue('X', { SST_RESOURCE_X: '{"value":"1"}' })).toBe('1');
   });
 
   it('채널 블록 단위로 inventory manual 여부를 본다', () => {

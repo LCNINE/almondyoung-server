@@ -2541,14 +2541,19 @@ describe('OrderPollerOrchestrator — 수집 커밋 뒤 acknowledgeCollected 훅
   const order = (key: keyof typeof ids, minute: string, overrides: { eligibleForOrderCreation?: boolean } = {}) =>
     makeOrder(`2026-10-07T01:${minute}:00.000Z`, { externalOrderId: key, orderId: ids[key], ...overrides });
 
+  function fetchOrdersMock(fetchResult: object | object[]): jest.Mock {
+    const mock = jest.fn();
+    if (Array.isArray(fetchResult)) for (const result of fetchResult) mock.mockResolvedValueOnce(result);
+    else mock.mockResolvedValue(fetchResult);
+    return mock;
+  }
+
   function setup(fetchResult: object | object[], options: { acknowledge?: jest.Mock | null; failOnEnqueueFor?: string } = {}) {
     const acknowledge =
       options.acknowledge === undefined ? jest.fn().mockResolvedValue(undefined) : options.acknowledge;
     const provider: ChannelOrderProvider = {
       channel: 'medusa',
-      fetchOrders: Array.isArray(fetchResult)
-        ? fetchResult.reduce((mock, result) => mock.mockResolvedValueOnce(result), jest.fn())
-        : jest.fn().mockResolvedValue(fetchResult),
+      fetchOrders: fetchOrdersMock(fetchResult),
       ...(acknowledge ? { acknowledgeCollected: acknowledge } : {}),
     };
     const syncStatus = makeSyncStatus();

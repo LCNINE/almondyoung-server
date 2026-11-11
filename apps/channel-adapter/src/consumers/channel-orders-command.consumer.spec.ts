@@ -27,7 +27,7 @@ describe('ChannelOrdersCommandConsumer — ResyncChannelOrder (#1016 6번 행)',
     expect(syncOrder).toHaveBeenCalledWith('medusa', 'order_1', { force: true });
   });
 
-  it.each(['3pl', 'coupang', 'unknown'])('지원하지 않는 채널(%s)은 부르지도 던지지도 않는다', async (salesChannel) => {
+  it.each(['3pl', 'unknown'])('지원하지 않는 채널(%s)은 부르지도 던지지도 않는다', async (salesChannel) => {
     const syncOrder = jest.fn();
     await expect(
       consumerWith(syncOrder).handleResync({ salesChannel, externalOrderId: 'o', requestedAt: '2026-10-06T00:00:00.000Z' }, envelope),

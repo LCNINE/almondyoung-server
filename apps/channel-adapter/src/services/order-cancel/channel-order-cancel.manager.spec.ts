@@ -67,13 +67,13 @@ describe('ChannelOrderCancelManager (#1016 35번 PR-B · 36번 재설계 PR 3)',
       expect(poller.syncOrder).toHaveBeenCalledWith('naver', 'order_1', { force: true });
     });
 
-    it('coupang approval done → no immediate resync (not syncable) and no throw — the next poll collects', async () => {
+    it('coupang approval done → immediate resync (syncable since #1245) and no throw', async () => {
       const { manager, repository, poller, approver } = setup();
       approver.approve.mockResolvedValue({ kind: 'approved' });
       await expect(
         manager.execute({ ...asked, salesChannel: 'coupang', answers: { channelRequestRef: '123', needsApproval: true } }, 'd1'),
       ).resolves.toBeUndefined();
-      expect(poller.syncOrder).not.toHaveBeenCalled();
+      expect(poller.syncOrder).toHaveBeenCalledWith('coupang', 'order_1', { force: true });
       expect(repository.recordSettlementFailure).not.toHaveBeenCalled();
     });
 
