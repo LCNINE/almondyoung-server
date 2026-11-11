@@ -38,6 +38,14 @@ export class WowpressDuplicateOrdersError extends WowpressApiError {
   }
 }
 
+// 와우프레스가 주문을 만들지 않았다고 답한 경우. resultCode 는 200 이고 사유는 resultMap.cjson_order 의 status·errmsg 에 온다
+export class WowpressOrderRejectedError extends WowpressApiError {
+  constructor(readonly reason: string) {
+    super(`wowpress rejected the order: ${reason}`);
+    this.name = 'WowpressOrderRejectedError';
+  }
+}
+
 export class WowpressUnauthorizedError extends WowpressApiError {
   constructor() {
     super('unauthorized');
@@ -225,6 +233,10 @@ export class WowpressClient {
       throw new WowpressApiError('cjson_order is not an object in cjson_order response');
 
     const container = nested ?? resultMap;
+    const status = container?.status;
+    if (status !== undefined && Number(status) !== 200 && collectOrdnums(resultMap).length === 0) {
+      throw new WowpressOrderRejectedError(nonEmptyString(container?.errmsg) ?? `status ${String(status)}`);
+    }
     const ordinfo = recordArray.safeParse(container?.ordinfo);
     if (!ordinfo.success || ordinfo.data.length !== items.length) {
       throw new WowpressApiError('ordinfo count does not match items in cjson_order response');
@@ -276,10 +288,9 @@ export class WowpressClient {
       true,
       { name: 'ord_list', ordkey },
     );
-    // ponytail: 목록 배열의 키는 문서 예시가 없어 ord_list·list 둘 다 받고, 둘 다 아니면 실패시킨다
+    // 문서(§6.12) 샘플의 목록 키는 ordlist 다. 모르는 모양이면 실패시킨다
     const resultMap = asRecord(res.resultMap);
-    const ordList = recordArray.safeParse(resultMap?.ord_list);
-    const list = ordList.success ? ordList : recordArray.safeParse(resultMap?.list);
+    const list = recordArray.safeParse(resultMap?.ordlist);
     // 모르는 모양을 null 로 보면 재주문(중복 결제)으로 이어지므로, 배열을 읽은 경우만 '없음' 으로 본다
     if (!list.success) throw new WowpressApiError('unrecognized ord_list response');
     // 행을 모두 먼저 검사한다. ordkey 칸이 없는 행을 '불일치' 로 넘기면 같은 이유로 재주문이 된다

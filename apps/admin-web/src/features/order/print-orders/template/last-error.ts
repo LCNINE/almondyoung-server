@@ -54,9 +54,13 @@ const REASONS: [prefix: string, korean: string][] = [
   ],
 ];
 
+const REJECTED = 'wowpress rejected the order: ';
+
 // 여러 기록이 ' | ' 로 이어 붙을 수 있다. 모르는 문구는 원문 그대로 둔다
 export function describeLastError(raw: string): string[] {
   return raw.split(' | ').map((part) => {
+    if (part.startsWith(REJECTED))
+      return `와우프레스가 주문을 받지 않았습니다. 사유: ${part.slice(REJECTED.length)}`;
     const found = REASONS.find(([prefix]) => part.startsWith(prefix));
 
     return found ? found[1] : part;

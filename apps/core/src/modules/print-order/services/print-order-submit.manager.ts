@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { UgcAlmondDesignClient, type UgcPrintLink } from '../clients/ugc-almond-design.client';
 import { PrintProductSpecRepository } from '../repositories/print-product-spec.repository';
 import { type PrintOrderRow } from '../schema/print-order.schema';
-import { WowpressClient, WowpressDuplicateOrdersError } from '../wowpress/wowpress.client';
+import { WowpressClient, WowpressDuplicateOrdersError, WowpressOrderRejectedError } from '../wowpress/wowpress.client';
 import { WOWPRESS_PRODUCTS } from '../wowpress/wowpress-products';
 import { type WowpressLineSpec, type WowpressOrderResult } from '../wowpress/wowpress.types';
 import {
@@ -21,7 +21,8 @@ export const ORDER_UNCONFIRMED_ERROR = 'order sent but not confirmed — verify 
 export const ORDER_LOOKUP_PENDING_ERROR = 'order sent but response lost — looking up by ordkey before giving up';
 export const ORDER_LOOKUP_DELAY_MS = 5 * 60_000;
 export const DESIGN_OWNER_MISMATCH_ERROR = 'almond design does not belong to the ordering customer — not ordered';
-export const DESIGN_SPEC_MISMATCH_ERROR = 'almond design does not match the purchased print product or size — not ordered';
+export const DESIGN_SPEC_MISMATCH_ERROR =
+  'almond design does not match the purchased print product or size — not ordered';
 const TEST_MEMO = '테스트 시안입니다. 혹시 이 시안대로 출력이 되나요?';
 
 const shippingAddress = z.object({
@@ -316,6 +317,13 @@ export class PrintOrderSubmitManager {
     if (error instanceof AlreadyRecorded) return;
     if (error instanceof WowpressDuplicateOrdersError) {
       await this.recordTerminal(row, duplicateOrdersError(error));
+      return;
+    }
+    if (error instanceof WowpressOrderRejectedError) {
+      // 와우프레스가 주문을 만들지 않았다고 답했다. 주문권을 돌려줘 운영자가 고친 뒤 재전송하거나 바로 취소할 수 있게 한다
+      this.logger.warn(`print order ${row.id}: ${error.message}`);
+      const patch: Partial<PrintOrderRow> = { status: 'failed', lastError: error.message, orderAttemptedAt: null };
+      if (!(await write(patch))) this.logger.warn(`print order ${row.id} was reclaimed; rejection not recorded`);
       return;
     }
     if (state.orderSent && !state.ordnum) {

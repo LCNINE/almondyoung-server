@@ -11,4 +11,12 @@ describe('describeLastError', () => {
       'quote down',
     ]);
   });
+
+  it('와우프레스 거절은 와우프레스가 준 사유를 그대로 붙인다', () => {
+    expect(
+      describeLastError('wowpress rejected the order: 주소를 확인해 주세요.')
+    ).toEqual([
+      '와우프레스가 주문을 받지 않았습니다. 사유: 주소를 확인해 주세요.',
+    ]);
+  });
 });

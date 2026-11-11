@@ -10,7 +10,12 @@ import {
 } from '../clients/ugc-almond-design.client';
 import { PrintProductSpecRepository } from '../repositories/print-product-spec.repository';
 import { type PrintOrderRow } from '../schema/print-order.schema';
-import { WowpressApiError, WowpressClient, WowpressDuplicateOrdersError } from '../wowpress/wowpress.client';
+import {
+  WowpressApiError,
+  WowpressClient,
+  WowpressDuplicateOrdersError,
+  WowpressOrderRejectedError,
+} from '../wowpress/wowpress.client';
 import {
   type WowpressLineSpec,
   type WowpressOrderInput,
@@ -545,6 +550,19 @@ describe('PrintOrderSubmitManager', () => {
     expect(wowpress.order).toHaveBeenCalledTimes(1);
     expect(repo.takeOrderRight).toHaveBeenCalledTimes(1);
     expect(repo.get('po-1').orderAttemptedAt).not.toBeNull();
+  });
+
+  it('fails with the vendor reason and returns the order right when WowPress rejects the order', async () => {
+    const { repo, wowpress, manager } = setup(CONFIRMED_VARIANT);
+    wowpress.order.mockRejectedValueOnce(new WowpressOrderRejectedError('주소를 확인해 주세요.'));
+
+    await manager.submit(repo.get('po-1'));
+
+    expect(repo.get('po-1')).toMatchObject({
+      status: 'failed',
+      lastError: 'wowpress rejected the order: 주소를 확인해 주세요.',
+      orderAttemptedAt: null,
+    });
   });
 
   it('defers a lookup instead of failing when order() throws after the right was taken', async () => {
@@ -1437,7 +1455,7 @@ describe('abnormal ord_list through the real WowpressClient', () => {
 
   const unreadable: [string, unknown][] = [
     ['unknown list key', { resultCode: '200', resultMap: { rows: [] } }],
-    ['row without ordkey', { resultCode: '200', resultMap: { ord_list: [{ orderKey: LINE_ID, ordnum: 'W-1' }] } }],
+    ['row without ordkey', { resultCode: '200', resultMap: { ordlist: [{ orderKey: LINE_ID, ordnum: 'W-1' }] } }],
   ];
 
   it.each(unreadable)('never sends cjson_order on a retry when ord_list is unreadable (%s)', async (_label, body) => {

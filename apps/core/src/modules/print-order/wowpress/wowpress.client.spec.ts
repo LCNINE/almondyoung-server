@@ -1,6 +1,6 @@
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { WowpressApiError, WowpressClient } from './wowpress.client';
+import { WowpressApiError, WowpressClient, WowpressOrderRejectedError } from './wowpress.client';
 import { type WowpressLineSpec, type WowpressRequest, type WowpressResponse } from './wowpress.types';
 
 const API = 'https://api.wowpress.co.kr';
@@ -383,6 +383,19 @@ describe('WowpressClient', () => {
     await expect(client.order(BUNDLE_INPUT)).rejects.toBeInstanceOf(WowpressApiError);
   });
 
+  it('throws WowpressOrderRejectedError with errmsg when cjson_order status is not 200 and no ordnum came back', async () => {
+    const { client } = makeClient({
+      [`${API}/api/login/issue`]: [tokenOk('tok')],
+      [`${API}/api/v1/ord/cjson_order`]: [
+        ok({ resultMap: { cjson_order: { status: 400.0, errmsg: '주소를 확인해 주세요.' } } }),
+      ],
+    });
+
+    const error = await client.order(BUNDLE_INPUT).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(WowpressOrderRejectedError);
+    expect((error as WowpressOrderRejectedError).reason).toBe('주소를 확인해 주세요.');
+  });
+
   it('does not fall back to root ordinfo when cjson_order lacks ordinfo', async () => {
     const { client } = makeClient({
       [`${API}/api/login/issue`]: [tokenOk('tok')],
@@ -425,7 +438,7 @@ describe('WowpressClient', () => {
       [`${API}/api/v1/ord/ord_list`]: [
         ok({
           resultMap: {
-            ord_list: [
+            ordlist: [
               { ordkey: 'other', ordnum: 'WP0' },
               { ordkey: 'k1', ordnum: 'WP1' },
             ],
@@ -450,7 +463,7 @@ describe('WowpressClient', () => {
     const { client } = makeClient({
       [`${API}/api/login/issue`]: [tokenOk('tok')],
       [`${API}/api/v1/ord/ord_list`]: [
-        ok({ resultMap: { ord_list: [{ ordkey: 'line-a', ordnum: 'WP1', dboxnum: '4-156-9410333' }] } }),
+        ok({ resultMap: { ordlist: [{ ordkey: 'line-a', ordnum: 'WP1', dboxnum: '4-156-9410333' }] } }),
       ],
     });
 
@@ -463,7 +476,7 @@ describe('WowpressClient', () => {
   it('throws instead of returning null when the matching row has no readable ordnum', async () => {
     const { client } = makeClient({
       [`${API}/api/login/issue`]: [tokenOk('tok')],
-      [`${API}/api/v1/ord/ord_list`]: [ok({ resultMap: { ord_list: [{ ordkey: 'k1', ordnum: '' }] } })],
+      [`${API}/api/v1/ord/ord_list`]: [ok({ resultMap: { ordlist: [{ ordkey: 'k1', ordnum: '' }] } })],
     });
 
     await expect(client.findByOrdkey('k1', new Date())).rejects.toThrow('ordnum missing for matching ordkey');
@@ -472,7 +485,7 @@ describe('WowpressClient', () => {
   it('returns null when ord_list has no matching row', async () => {
     const { client } = makeClient({
       [`${API}/api/login/issue`]: [tokenOk('tok')],
-      [`${API}/api/v1/ord/ord_list`]: [ok({ resultMap: { list: [{ ordkey: 'other', ordnum: 'WP0' }] } })],
+      [`${API}/api/v1/ord/ord_list`]: [ok({ resultMap: { ordlist: [{ ordkey: 'other', ordnum: 'WP0' }] } })],
     });
 
     await expect(client.findByOrdkey('k1', new Date())).resolves.toBeNull();
@@ -484,7 +497,7 @@ describe('WowpressClient', () => {
       [`${API}/api/v1/ord/ord_list`]: [
         ok({
           resultMap: {
-            ord_list: [
+            ordlist: [
               { ordkey: null, ordnum: 'WP0' },
               { ordkey: 7, ordnum: 'WP7' },
             ],
@@ -499,7 +512,7 @@ describe('WowpressClient', () => {
   it('returns null for an empty recognized list', async () => {
     const { client } = makeClient({
       [`${API}/api/login/issue`]: [tokenOk('tok')],
-      [`${API}/api/v1/ord/ord_list`]: [ok({ resultMap: { ord_list: [] } })],
+      [`${API}/api/v1/ord/ord_list`]: [ok({ resultMap: { ordlist: [] } })],
     });
 
     await expect(client.findByOrdkey('k1', new Date())).resolves.toBeNull();
@@ -509,13 +522,13 @@ describe('WowpressClient', () => {
     ['no resultMap', {}],
     ['resultMap not an object', { resultMap: 'oops' }],
     ['neither ord_list nor list', { resultMap: { rows: [{ ordkey: 'k1', ordnum: 'WP1' }] } }],
-    ['list not an array', { resultMap: { ord_list: { ordkey: 'k1', ordnum: 'WP1' } } }],
-    ['row not an object', { resultMap: { list: ['k1'] } }],
-    ['row without ordkey', { resultMap: { ord_list: [{ orderKey: 'k1', ordnum: 'WP1' }] } }],
-    ['ordkey of another type', { resultMap: { ord_list: [{ ordkey: { v: 'k1' }, ordnum: 'WP1' }] } }],
+    ['list not an array', { resultMap: { ordlist: { ordkey: 'k1', ordnum: 'WP1' } } }],
+    ['row not an object', { resultMap: { ordlist: ['k1'] } }],
+    ['row without ordkey', { resultMap: { ordlist: [{ orderKey: 'k1', ordnum: 'WP1' }] } }],
+    ['ordkey of another type', { resultMap: { ordlist: [{ ordkey: { v: 'k1' }, ordnum: 'WP1' }] } }],
     [
       'one bad row among good ones',
-      { resultMap: { ord_list: [{ ordkey: 'other', ordnum: 'WP0' }, { ordnum: 'WP1' }] } },
+      { resultMap: { ordlist: [{ ordkey: 'other', ordnum: 'WP0' }, { ordnum: 'WP1' }] } },
     ],
   ])('throws on an unrecognized ord_list shape (%s)', async (_label, body) => {
     const { client } = makeClient({
@@ -538,7 +551,7 @@ describe('WowpressClient', () => {
       const { client } = makeClient({
         [`${API}/api/login/issue`]: [tokenOk('tok')],
         [`${API}/api/v1/ord/ord_list`]: [
-          ok({ resultMap: { ord_list: [{ ordkey: 'k1', ordnum: 'WP-MATCH', name: '홍길동' }, { ordnum: 'WP-BAD' }] } }),
+          ok({ resultMap: { ordlist: [{ ordkey: 'k1', ordnum: 'WP-MATCH', name: '홍길동' }, { ordnum: 'WP-BAD' }] } }),
         ],
       });
 
@@ -555,7 +568,7 @@ describe('WowpressClient', () => {
         [`${API}/api/v1/ord/ord_list`]: [
           ok({
             resultMap: {
-              ord_list: [
+              ordlist: [
                 { ordkey: 'k1', ordnum: 'WP-A' },
                 { ordkey: 'k1', ordnum: 'WP-B' },
               ],
@@ -577,7 +590,7 @@ describe('WowpressClient', () => {
           status: 401,
           body: {
             resultCode: '401',
-            resultMap: { ord_list: [{ ordkey: 'k1', ordnum }], cjson_order: { ordinfo: [{ ordnum }] } },
+            resultMap: { ordlist: [{ ordkey: 'k1', ordnum }], cjson_order: { ordinfo: [{ ordnum }] } },
           },
         });
       const order = makeClient({
@@ -589,7 +602,7 @@ describe('WowpressClient', () => {
 
       const list = makeClient({
         [`${API}/api/login/issue`]: [tokenOk('tok')],
-        [`${API}/api/v1/ord/ord_list`]: [unauthorized('WP-401-FIRST'), ok({ resultMap: { ord_list: [] } })],
+        [`${API}/api/v1/ord/ord_list`]: [unauthorized('WP-401-FIRST'), ok({ resultMap: { ordlist: [] } })],
       });
       await expect(list.client.findByOrdkey('k1', new Date())).resolves.toBeNull();
       expect(logged()).toContain('WP-401-FIRST');
