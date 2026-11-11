@@ -19,8 +19,10 @@ import {
 async function main() {
   const args = parseCommonArgs(process.argv);
   if (
-    !['dev', 'demo', 'live'].includes(args.stage ?? '') ||
-    !['lcnine-auth', 'lcnine-services'].includes(args.deployment ?? '')
+    !args.stage ||
+    !args.deployment ||
+    !['dev', 'demo', 'live'].includes(args.stage) ||
+    !['lcnine-auth', 'lcnine-services'].includes(args.deployment)
   ) {
     throw new Error('Explicit stage and lcnine-auth/lcnine-services deployment are required');
   }
