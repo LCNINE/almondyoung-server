@@ -38,7 +38,7 @@ export function MouseDragScroll() {
 
       if (
         (e.target as Element).closest(
-          "input, textarea, select, [contenteditable]"
+          "input, textarea, select, [contenteditable], [data-no-drag-scroll]"
         )
       ) {
         return
