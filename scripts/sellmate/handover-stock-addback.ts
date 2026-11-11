@@ -14,6 +14,7 @@
  *     FO 항목은 FO 생성이 라인 구성(굳힌 구성/상품매칭)을 SKU 로 푼 결과이고, core 의 예약은 그 항목의 상자 라인에 걸린다 —
  *     core 가 예약할 때 쓰는 해석 그대로다. 같은 식이 K6 의 SKU 층 `required`(line-quantities.sql.ts `lineSkuQuantitiesSql`)다.
  *     FO 항목이 없는 물리 라인(매칭 미해결 등)은 SKU 를 알 수 없으므로 «사람이 확인»으로 내고 `--apply` 를 거절한다.
+ *     단 void 매칭(재고 관리 안 하는 variant) 라인은 core 가 일부러 FO 항목을 안 만드는 풀린 라인이라 건너뛴다(수량 0, 건수만 찍는다).
  *   - 더할 양 = 품목마다 `max(0, 현재재고 − (미발송주문수 − 넘겨받은 수량)) − max(0, 현재재고 − 미발송주문수)` — 0 으로 잘렸던
  *     품목에서 원래 실물보다 많이 넣지 않는다. 넘겨받은 수량이 미발송주문수보다 많으면 입력이 서로 안 맞는 것이라 되돌리지 않고
  *     `--apply` 를 거절한다.
@@ -166,10 +167,55 @@ export function buildAddBackPlan(counts: readonly StockCount[], handedOver: read
   return plan;
 }
 
+/**
+ * FO 항목이 없는 물리 라인. `voidMatched` = 굳힌 구성이 없고 상품매칭이 `matched`·`void`(재고 관리 안 하는 variant) —
+ * core 는 이 라인을 `{ kind: 'void' }` 로 풀고(`line-composition.ts` `compositionFromMatching` → `isVoidMatching`)
+ * FO 항목을 만들지 않는다(`fulfillments.service.ts` `buildItemsFromSalesOrder`). 이미 풀린 라인이라 «SKU 를 모름»이 아니다.
+ */
+export type FoiLessLine = {
+  channelOrderId: string;
+  lineId: string;
+  productName: string;
+  /** 주문 수량 − 출고 전 취소(K6 `lineDemandSql`) */
+  demand: number;
+  voidMatched: boolean;
+};
+
+export type HandoverSummary = {
+  plan: AddBackPlan;
+  /** 수요가 남았는데 SKU 를 모르는 라인 — `--apply` 를 막는다 */
+  unresolved: FoiLessLine[];
+  /** 수요가 남은 void 매칭 라인 수 — 재고를 안 잡으니 되돌릴 것도 없다(수량은 FO 항목에서만 온다) */
+  voidSkipped: number;
+};
+
+/** 넘겨받은 수량은 FO 항목에서만 온다 — FO 항목이 없는 라인은 void 면 건너뛰고, 아니면 SKU 를 모르는 라인으로 낸다 */
+export function summarizeHandover(
+  counts: readonly StockCount[],
+  handedOverSkus: readonly HandedOverSku[],
+  foiLessLines: readonly FoiLessLine[],
+): HandoverSummary {
+  const live = foiLessLines.filter((l) => l.demand > 0);
+  return {
+    plan: buildAddBackPlan(counts, handedOverSkus),
+    unresolved: live.filter((l) => !l.voidMatched),
+    voidSkipped: live.filter((l) => l.voidMatched).length,
+  };
+}
+
+/** --apply 를 막는 이유들. 비면 쓸 수 있다 */
+export function blockers(s: HandoverSummary): string[] {
+  const out: string[] = [];
+  if (s.unresolved.length) out.push(`FO 항목이 없는(SKU 를 모르는) 라인 ${s.unresolved.length}개`);
+  if (s.plan.exceedsUnshipped.length) {
+    out.push(`넘겨받은 수량이 미발송주문수보다 많은 품목 ${s.plan.exceedsUnshipped.length}개`);
+  }
+  return out;
+}
+
 // ── DB ─────────────────────────────────────────────────────────────────────────
 
 type OrderRow = CoupangOrder & { channelOrderId: string };
-type UnresolvedLine = { channelOrderId: string; lineId: string; productName: string; demand: number };
 
 /** 셀메이트 수집보다 늦은 주문도 읽는다 — «15분 넘게 늦음» 건수를 보여 주려고. 키 전환 직후라 쿠팡 주문은 많지 않다 */
 async function readCoupangOrders(db: Sql): Promise<OrderRow[]> {
@@ -211,17 +257,29 @@ async function readHandedOverSkus(db: Sql, orderIds: readonly string[]): Promise
   return [...bySku.values()].filter((s) => s.quantity > 0).sort((a, b) => a.skuCode.localeCompare(b.skuCode));
 }
 
-/** 수요가 남았는데 FO 항목이 없는 물리 라인 — SKU 를 모른다. 수요 = 주문 수량 − 출고 전 취소(K6 `lineDemandSql`) */
-async function readUnresolvedLines(db: Sql, orderIds: readonly string[]): Promise<UnresolvedLine[]> {
-  const out: UnresolvedLine[] = [];
+/**
+ * FO 항목이 없는 물리 라인(디지털·외주 제외)과 그 수요. void 판정은 core `isVoidMatching` 의 SQL 짝이고, 굳힌 구성이 있으면
+ * 상품매칭을 보지 않는 것도 core `resolveLineComposition` 과 같다. `line-resolved.sql.ts` 의 `lineResolvedSql` 은
+ * «풀렸나» 하나만 답해 void 와 variant 를 가르지 못하므로 같은 조건을 여기서 적는다.
+ */
+async function readFoiLessLines(db: Sql, orderIds: readonly string[]): Promise<FoiLessLine[]> {
+  const out: FoiLessLine[] = [];
   for (const part of chunk([...orderIds], 1000)) {
     if (part.length === 0) continue;
-    const rows = await db<{ channel_order_id: string; line_id: string; product_name: string; demand: number }[]>`
+    const rows = await db<
+      { channel_order_id: string; line_id: string; product_name: string; demand: number; void_matched: boolean }[]
+    >`
       SELECT so.channel_order_id, line.id AS line_id, line.product_name,
              (line.quantity - coalesce((
                SELECT sum(cl.quantity) FROM sales_order_cancellation_lines cl
                 WHERE cl.sales_order_line_id = line.id AND cl.shipment_phase = 'before_shipment'
-             ), 0))::int AS demand
+             ), 0))::int AS demand,
+             (line.composition_source IS NULL AND EXISTS (
+               SELECT 1 FROM product_matchings void_pm
+                WHERE void_pm.variant_id = line.variant_id
+                  AND void_pm.status = 'matched'
+                  AND void_pm.strategy = 'void'
+             )) AS void_matched
         FROM sales_order_lines line
         JOIN sales_orders so ON so.id = line.sales_order_id
        WHERE line.sales_order_id IN ${db(part)}
@@ -237,14 +295,13 @@ async function readUnresolvedLines(db: Sql, orderIds: readonly string[]): Promis
        ORDER BY so.channel_order_id, line.id
     `;
     for (const r of rows) {
-      if (r.demand > 0) {
-        out.push({
-          channelOrderId: r.channel_order_id,
-          lineId: r.line_id,
-          productName: r.product_name,
-          demand: r.demand,
-        });
-      }
+      out.push({
+        channelOrderId: r.channel_order_id,
+        lineId: r.line_id,
+        productName: r.product_name,
+        demand: r.demand,
+        voidMatched: r.void_matched,
+      });
     }
   }
   return out;
@@ -257,33 +314,20 @@ async function countHandoverEvents(db: Sql): Promise<number> {
   return row?.n ?? 0;
 }
 
-type Assessment = {
-  orders: ClassifiedOrders<OrderRow>;
-  unresolved: UnresolvedLine[];
-  plan: AddBackPlan;
-};
+type Assessment = HandoverSummary & { orders: ClassifiedOrders<OrderRow> };
 
 async function assess(db: Sql, counts: readonly StockCount[], collectedAt: Date): Promise<Assessment> {
   const orders = classifyCoupangOrders(await readCoupangOrders(db), collectedAt);
   const ids = orders.handedOver.map((o) => o.id);
   const handedOverSkus = await readHandedOverSkus(db, ids);
-  const unresolved = await readUnresolvedLines(db, ids);
-  return { orders, unresolved, plan: buildAddBackPlan(counts, handedOverSkus) };
-}
-
-/** --apply 를 막는 이유들. 비면 쓸 수 있다 */
-function blockers(a: Assessment): string[] {
-  const out: string[] = [];
-  if (a.unresolved.length) out.push(`FO 항목이 없는(SKU 를 모르는) 라인 ${a.unresolved.length}개`);
-  if (a.plan.exceedsUnshipped.length)
-    out.push(`넘겨받은 수량이 미발송주문수보다 많은 품목 ${a.plan.exceedsUnshipped.length}개`);
-  return out;
+  const foiLessLines = await readFoiLessLines(db, ids);
+  return { orders, ...summarizeHandover(counts, handedOverSkus, foiLessLines) };
 }
 
 const kst = (d: Date) => new Date(d.getTime() + 9 * 3_600_000).toISOString().replace('T', ' ').slice(0, 19) + ' KST';
 
 function report(a: Assessment, collectedAt: Date): void {
-  const { orders, unresolved, plan } = a;
+  const { orders, unresolved, voidSkipped, plan } = a;
   console.log(`\n🕘 셀메이트 마지막 수집 ${kst(collectedAt)} (${collectedAt.toISOString()})`);
   console.log(
     `📦 쿠팡 주문: 넘겨받음 ${orders.handedOver.length} · 사람이 확인(±15분) ${orders.ambiguous.length} · ` +
@@ -297,6 +341,9 @@ function report(a: Assessment, collectedAt: Date): void {
     console.log('\n❓ 사람이 확인 — FO 항목이 없어 SKU 를 모르는 라인(매칭을 풀어 FO 가 생긴 뒤 다시 돌린다):');
     for (const l of unresolved)
       console.log(`   주문 ${l.channelOrderId} 라인 ${l.lineId} 수요 ${l.demand} — ${l.productName}`);
+  }
+  if (voidSkipped) {
+    console.log(`\nℹ️  재고 관리 안 하는(void 매칭) 라인 ${voidSkipped}개 — 재고를 잡지 않으니 되돌리지 않는다`);
   }
   if (plan.exceedsUnshipped.length) {
     console.log('\n❓ 사람이 확인 — 넘겨받은 수량이 미발송주문수보다 많다(재고 파일·수집 시각이 맞는지):');

@@ -3,8 +3,10 @@
  * DB 쓰기(applyStockDelta)는 sync-stock 과 같은 코드라 sync-stock 의 경로가 그대로 지킨다.
  */
 import {
+  blockers,
   buildAddBackPlan,
   classifyCoupangOrders,
+  summarizeHandover,
   computeAddBack,
   parseCliArgs,
   parseCollectedAt,
@@ -136,5 +138,41 @@ describe('parseCliArgs', () => {
     expect(() => parseCliArgs(['--stock=a.xls', '--sellmate-collected-at=2026-11-20T00:30:00Z', '--aply'])).toThrow(
       /--aply/,
     );
+  });
+});
+
+describe('summarizeHandover — FO 항목이 없는 라인', () => {
+  const counts = [{ itemCode: 'A', current: 10, unshipped: 4 }];
+  const foi = [{ skuId: 'sku-a', skuCode: 'A', quantity: 3 }];
+  const line = (lineId: string, voidMatched: boolean, demand = 1) => ({
+    channelOrderId: '9000000001',
+    lineId,
+    productName: 'fake',
+    demand,
+    voidMatched,
+  });
+
+  // core 는 void 매칭(재고 관리 안 하는 variant)을 {kind:'void'} 로 풀고 FO 항목을 만들지 않는다 — 이미 풀린 라인이다
+  it('void 매칭 라인은 막지도 않고 수량을 더하지도 않는다 — 건너뛴 수만 센다', () => {
+    const s = summarizeHandover(counts, foi, [line('void-1', true, 2)]);
+    expect(s.unresolved).toEqual([]);
+    expect(s.voidSkipped).toBe(1);
+    expect(s.plan.rows).toEqual([
+      { skuId: 'sku-a', skuCode: 'A', current: 10, unshipped: 4, handedOver: 3, addBack: 3 },
+    ]);
+    expect(blockers(s)).toEqual([]);
+  });
+
+  it('void 가 아닌데 FO 항목이 없는 라인은 SKU 를 모르니 막는다', () => {
+    const s = summarizeHandover(counts, foi, [line('unmatched-1', false)]);
+    expect(s.unresolved.map((l) => l.lineId)).toEqual(['unmatched-1']);
+    expect(s.voidSkipped).toBe(0);
+    expect(blockers(s)).toEqual(['FO 항목이 없는(SKU 를 모르는) 라인 1개']);
+  });
+
+  it('수요가 남지 않은 라인(출고 전 전량 취소)은 어느 쪽에도 세지 않는다', () => {
+    const s = summarizeHandover(counts, foi, [line('canceled', false, 0), line('void-canceled', true, 0)]);
+    expect(s.unresolved).toEqual([]);
+    expect(s.voidSkipped).toBe(0);
   });
 });
