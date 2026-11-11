@@ -3,7 +3,9 @@ import { useQuery } from '@tanstack/react-query';
 import { useWarehouse } from '../../app/warehouse-context';
 import { useApiClient } from '../../core/data/ApiClientProvider';
 import { localStoragePrefs, type DevicePrefs } from '../../core/data/devicePrefs';
+import { loadFailed } from '../../core/data/loadFailed';
 import { Button } from '../../core/design/Button';
+import { LoadFailure } from '../../core/design/LoadFailure';
 import { cn } from '../../core/design/cn';
 import { printRaw, type PrintRaw } from '../../core/hardware/print/labelPrinter';
 import { BatchLabelPrintButton } from '../../domains/outbound/BatchLabelPrintButton';
@@ -47,8 +49,24 @@ function BatchStatus({ warehouseId, prefs, print }: { warehouseId: string; prefs
   const items = useBatchWorkItems(selected?.id ?? null);
   useBatchProgress(selected && items.data ? batchProgressOf(selected.batchNumber, items.data) : null);
 
-  if (picking.isSuccess && created.isSuccess && batches.length === 0)
-    return <p className="p-6 text-lg text-[#535968]">진행 중인 배치가 없어요.</p>;
+  const lists = [picking, created];
+  const failed = lists.filter(loadFailed);
+  const failure =
+    failed.length > 0 ? (
+      <LoadFailure
+        className="shrink-0 text-base"
+        message="배치 목록을 불러오지 못했어요."
+        error={failed[0].error}
+        stale={batches.length > 0}
+        retrying={failed.some((list) => list.isFetching)}
+        onRetry={() => failed.forEach((list) => void list.refetch())}
+      />
+    ) : null;
+
+  if (lists.some((list) => list.isPending && !loadFailed(list)))
+    return <p className="p-6 text-lg text-[#535968]">배치 목록을 불러오고 있어요.</p>;
+  if (failure && batches.length === 0) return <div className="p-6">{failure}</div>;
+  if (!failure && batches.length === 0) return <p className="p-6 text-lg text-[#535968]">진행 중인 배치가 없어요.</p>;
 
   const select = (id: string) => {
     // 인쇄 중엔 바꾸지 않는다 — 인쇄 단추가 고른 배치에 매여 있다(프린터는 한 대)
@@ -60,6 +78,7 @@ function BatchStatus({ warehouseId, prefs, print }: { warehouseId: string; prefs
   return (
     <div className="grid h-full min-h-0 grid-cols-[minmax(0,1fr)_440px] gap-3">
       <section className="flex min-h-0 flex-col gap-3">
+        {failure}
         {selected ? (
           <div className="flex shrink-0 flex-wrap items-start gap-2">
             {selected.startedAt === null ? (
