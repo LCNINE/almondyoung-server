@@ -95,6 +95,15 @@ python scripts/almondyoung-deploy.py deploy live --force-full --profile almondyo
 
 마이그레이션이 차단되면 임의로 `db:setup`, `drizzle-kit push`, reset, 과거 SQL 수정, 이력 테이블 수정을 실행하지 않습니다. 환경·buildId·DB/서비스 이름·실패 단계로 관리자에게 확인합니다. 정당한 컬럼 삭제/이름 변경 등은 ADR-0005의 별도 유지보수 순서를 따릅니다.
 
+### 검토된 데이터 마이그레이션
+
+`UPDATE` 등 데이터 변경은 기본 차단됩니다. 롤링 배포 중 기존 앱과 호환되는 변경을 검토한 경우에만 `scripts/deployment/migration-policy.ts`에 환경·스택·서비스·journal timestamp·SQL SHA-256을 고정한 예외를 추가합니다. SQL이나 적용 범위가 달라지면 다시 검토하며, 배포 요청 옵션으로 검사를 해제할 수 없습니다. 원격 계정은 GitHub Read이므로 수정·검증·develop 반영은 Mac의 별도 쓰기 가능 작업 폴더에서 하고 원격은 pull합니다.
+
+- 2026-11-11 검토: `apps/core/drizzle/20261111055122_bracket-sku-option-names.sql`, timestamp `1794376282138`, SHA-256 `ff67f345c15d9dcaefc675bdd4fc714cf9b4de581655f3bfaf0484e617c5a5f4`.
+- 허용 범위: `live` / `lcnine-services` / `core`의 등록 테넌트 DB. `dev`·`demo`는 이 승인에 포함되지 않습니다.
+- 효과: 비어 있지 않은 `option_key`와 이름의 마지막 ` (옵션)`이 정확히 일치하는 SKU만 ` [옵션]`으로 바꾸고 `updated_at`을 갱신합니다. 이름 길이·SKU ID·code·재고·가격·스키마는 바꾸지 않으며, 변환된 이름은 다시 일치하지 않습니다. 이름에는 unique 제약이 없고 기존 앱도 같은 문자열 컬럼을 읽습니다. 기존 SQL과 이력은 수정하지 않습니다.
+- `sql-review` 차단 로그에는 비밀값 없이 `reason: MAINTENANCE_REVIEW_REQUIRED`와 `migrationTimestamp`가 기록됩니다. 현재 공용 계정의 `status`는 상세 로그를 반환하지 않으므로, 관리자가 해당 실행의 오류를 전달해야 합니다.
+
 ## 완료 상태 확인
 
 아래 `buildId` 자리에는 배포 명령이 반환한 전체 값을 입력합니다. 환경도 배포할 때와 같아야 합니다.

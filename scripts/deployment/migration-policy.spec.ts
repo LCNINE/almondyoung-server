@@ -1,4 +1,12 @@
+import { createHash } from 'node:crypto';
+import { resolve } from 'node:path';
+import { readMigrationFiles } from 'drizzle-orm/migrator';
 import { assertAdditiveMigrations, pendingMigrations } from './migration-policy';
+
+const liveCore = { stage: 'live', deployment: 'lcnine-services', service: 'core' };
+const skuRename = readMigrationFiles({ migrationsFolder: resolve(__dirname, '../../apps/core/drizzle') }).find(
+  (migration) => migration.folderMillis === 1794376282138,
+)!;
 
 const file = (time: number, sql = 'ALTER TABLE orders ADD COLUMN note text;') => ({
   folderMillis: time,
@@ -31,10 +39,46 @@ describe('deployment migration policy', () => {
     ).not.toThrow();
   });
 
+  it('allows the reviewed SKU display-name conversion from the real journal in live Core', () => {
+    expect(skuRename).toBeDefined();
+    expect(() => assertAdditiveMigrations([skuRename], liveCore)).not.toThrow();
+  });
+
+  it.each([
+    undefined,
+    { ...liveCore, stage: 'dev' },
+    { ...liveCore, stage: 'demo' },
+    { ...liveCore, deployment: 'lcnine-auth' },
+    { ...liveCore, service: 'user-service' },
+  ])('does not extend the review to another execution context: %j', (context) => {
+    expect(() => assertAdditiveMigrations([skuRename], context)).toThrow('maintenance review');
+  });
+
+  it('does not approve a changed SQL file or journal timestamp', () => {
+    const changedSql = `${skuRename.sql.join('--> statement-breakpoint')}\nDELETE FROM skus;`;
+    const changed = {
+      ...skuRename,
+      sql: changedSql.split('--> statement-breakpoint'),
+      hash: createHash('sha256').update(changedSql).digest('hex'),
+    };
+
+    expect(() => assertAdditiveMigrations([changed], liveCore)).toThrow('maintenance review');
+    expect(() => assertAdditiveMigrations([{ ...skuRename, folderMillis: 1794376282139 }], liveCore)).toThrow(
+      'maintenance review',
+    );
+  });
+
+  it('still reviews every other pending migration after the approved file', () => {
+    expect(() => assertAdditiveMigrations([skuRename, file(1794376282139, 'DELETE FROM skus;')], liveCore)).toThrow(
+      '1794376282139',
+    );
+  });
+
   it.each([
     'DROP TABLE orders;',
     'TRUNCATE orders;',
     'DELETE FROM orders;',
+    "UPDATE orders SET note = 'changed';",
     'ALTER TABLE orders RENAME COLUMN x TO y;',
     'ALTER TABLE orders ALTER COLUMN x TYPE integer;',
     'ALTER TABLE orders ALTER COLUMN x SET NOT NULL;',
