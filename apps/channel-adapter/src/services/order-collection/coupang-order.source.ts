@@ -33,9 +33,15 @@ export interface CoupangOrderSheetReader {
   getSingleOrderSheetByOrderId(orderId: string): Promise<{ data?: readonly unknown[] | null }>;
 }
 
-/** 취소 접수(출고중지요청·즉시취소) 목록 조회. `CoupangReturnClient` 가 그대로 이 모양을 만족한다. */
+/**
+ * 취소 접수(출고중지요청·즉시취소) 목록 조회. `CoupangReturnClient` 가 그대로 이 모양을 만족한다.
+ * 봉투를 넓게 받는 것이 요점이다 — 클라이언트는 `code` 를 보지 않고 봉투를 그대로 돌려주므로, 오류 `code` 나 `data`
+ * 없는 봉투를 여기서 실패로 보지 않으면 «출고중지요청 0건» 으로 조용히 읽힌다.
+ */
 export interface CoupangCancelReceiptReader {
-  getReturnRequests(params: GetReturnRequestsParams): Promise<{ data?: readonly unknown[] | null; nextToken?: string }>;
+  getReturnRequests(
+    params: GetReturnRequestsParams,
+  ): Promise<{ code?: number; message?: string; data?: unknown; nextToken?: string }>;
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -54,12 +60,19 @@ const MAX_RECEIPT_PAGES = 40;
 const RECEIPTS_PER_PAGE = 50;
 
 /** 우리가 매 주기 통째로 훑는 발주서 상태. 순서가 뜻이 있다 — 뒤 스캔이 같은 상자의 더 늦은 상태다. */
-const SCANNED_SHEET_STATUSES: ReadonlyArray<'ACCEPT' | 'INSTRUCT'> = ['ACCEPT', 'INSTRUCT'];
+const SCANNED_SHEET_STATUSES: ReadonlyArray<ScannedSheetStatus> = ['ACCEPT', 'INSTRUCT'];
 /** 판매자 확인을 기다리는 출고중지요청 — 이것만 `needsApproval`. */
 const RELEASE_STOP_AWAITING_APPROVAL = 'RELEASE_STOP_UNCHECKED';
 
 /** 해석에 실패한 원 응답에서 주문번호만이라도 읽는다 — 읽히면 그 주문만 격리하고, 안 읽히면 주기를 멈춘다. */
 const OrderIdOnlySchema = z.looseObject({ orderId: CoupangLongIdSchema });
+
+type ScannedSheetStatus = 'ACCEPT' | 'INSTRUCT';
+
+interface ScannedSheetRow {
+  scannedAs: ScannedSheetStatus;
+  raw: unknown;
+}
 
 interface ParsedSheet {
   info: CoupangOrderSheetInfo;
@@ -100,6 +113,8 @@ export class CoupangOrderSource implements ReplayableChannelOrderSource, Windowe
    * 주기를 그대로 내면, 두 상태에 걸친 주문이 상자 하나가 빠진 채로 들어와 줄이 사라진 것처럼 보인다. 오케스트레이터가
    * 주기 실패로 기록하고 워터마크를 멈추며, 다음 주기가 통째로 다시 훑는다.
    *
+   * 상품준비중 스캔에 보인 주문은 스캔 행이 아니라 `getSingleOrderSheetByOrderId`(상자 전부)로 싣는다 — 아래 본문 주석.
+   *
    * 주문 단위의 실패(해석 불가·단건 조회 실패·같은 옵션 두 줄)는 그 주문만 `fetchFailures` 로 올린다 — 오케스트레이터가
    * 처리 실패 행으로 기록하고 재시도한다(#1016 1번 행).
    */
@@ -117,11 +132,14 @@ export class CoupangOrderSource implements ReplayableChannelOrderSource, Windowe
     );
     const today = toKstDate(cycleStartedAt);
 
-    const rawSheets: unknown[] = [];
+    const scannedRows: ScannedSheetRow[] = [];
     for (const status of SCANNED_SHEET_STATUSES) {
-      rawSheets.push(
-        ...(await this.orderClient.getAllOrderSheetsByStatus(`${toKstDate(scanFrom)}+09:00`, `${today}+09:00`, status)),
+      const rows = await this.orderClient.getAllOrderSheetsByStatus(
+        `${toKstDate(scanFrom)}+09:00`,
+        `${today}+09:00`,
+        status,
       );
+      scannedRows.push(...rows.map((raw): ScannedSheetRow => ({ scannedAs: status, raw })));
     }
     const rawReleaseStops = await this.collectReceipts({
       status: 'RU',
@@ -147,7 +165,7 @@ export class CoupangOrderSource implements ReplayableChannelOrderSource, Windowe
       this.logger.error(`[coupang] 주문 ${orderId} 수집 실패 — 처리 실패로 올린다: ${message}`);
     };
 
-    const sheetsByOrder = this.groupSheets(rawSheets, recordFailure);
+    const { sheetsByOrder, instructOrderIds } = this.groupSheets(scannedRows, recordFailure);
     const receiptsByOrder = this.groupReceipts(
       [
         ...rawReleaseStops.map((raw): RawReceipt => ({ kind: 'release-stop', raw })),
@@ -155,6 +173,24 @@ export class CoupangOrderSource implements ReplayableChannelOrderSource, Windowe
       ],
       recordFailure,
     );
+
+    // 🔴 상품준비중으로 보인 주문은 스캔 행이 아니라 단건 조회(그 주문의 상자 전부)로 싣는다. 상자 하나가 먼저 출고됐거나
+    // (송장 일부 업로드 실패) 취소 완료로 목록에서 빠지면 스캔에는 남은 상자만 보인다 — 그 줄 집합으로 스냅샷을 만들면
+    // 해시가 바뀌어 `OrderModified` 가 나가고, core 는 빠진 줄을 수량 0 정정으로 읽어 취소를 시도한다. 그리고 그 주문이
+    // 스캔에서 사라지면 아무도 바로잡지 않는다. 단건 조회 실패는 스캔 실패가 아니라 그 주문만의 실패다.
+    // 결제완료로만 보인 주문은 스캔 행 그대로다 — 우리가 아직 손대지 않아 상자가 갈릴 일이 없다.
+    for (const orderId of instructOrderIds) {
+      if (failedOrderIds.has(orderId)) continue;
+      try {
+        const sheets = await this.fetchSheetsByOrderId(orderId);
+        if (sheets.length === 0) {
+          throw new Error(`쿠팡 발주서 단건 조회가 비었다: 상품준비중 목록에 있던 주문 ${orderId}`);
+        }
+        sheetsByOrder.set(orderId, sheets);
+      } catch (error) {
+        recordFailure(orderId, error);
+      }
+    }
 
     // 스캔에 없는 주문의 취소 접수 — 상품준비중을 지나 이미 출고 중이거나(출고중지요청), 즉시취소로 결제완료 목록에서
     // 빠졌다. 단건 조회로 채워야 그 주문의 취소 관측이 나간다.
@@ -186,7 +222,7 @@ export class CoupangOrderSource implements ReplayableChannelOrderSource, Windowe
     }
 
     this.logger.log(
-      `[coupang] 발주서 ${rawSheets.length}상자·출고중지요청 ${rawReleaseStops.length}건·즉시취소 ${rawInstantCancels.length}건 → 주문 ${snapshots.length}건, 수집 실패 ${fetchFailures.length}건`,
+      `[coupang] 발주서 ${scannedRows.length}상자(상품준비중 주문 ${instructOrderIds.size}건 단건 조회)·출고중지요청 ${rawReleaseStops.length}건·즉시취소 ${rawInstantCancels.length}건 → 주문 ${snapshots.length}건, 수집 실패 ${fetchFailures.length}건`,
     );
     // 실패가 있으면 창을 다 봤다고 말하지 않는다 — 네이버와 같은 마지막 방어선(항목이 있으면 이 값은 쓰이지 않는다).
     return { snapshots, fetchFailures, completedWindowEnd: fetchFailures.length > 0 ? null : cycleStartedAt };
@@ -222,11 +258,16 @@ export class CoupangOrderSource implements ReplayableChannelOrderSource, Windowe
     let nextToken: string | undefined;
     for (let page = 0; page < MAX_RECEIPT_PAGES; page++) {
       const response = await this.returnClient.getReturnRequests({ ...params, ...(nextToken ? { nextToken } : {}) });
-      const data = response.data ?? [];
-      if (!isUnknownArray(data)) {
-        throw new Error(`쿠팡 취소 접수 목록 응답이 배열이 아니다 (cancelType=${params.cancelType})`);
+      // 발주서 클라이언트와 같은 기준 — 봉투의 `code` 가 200 이 아니면 실패다. 없으면(봉투를 벗긴 응답) 넘어간다.
+      if (response.code !== undefined && response.code !== 200) {
+        throw new Error(
+          `쿠팡 취소 접수 목록 오류 응답: ${response.code} - ${response.message ?? ''} (cancelType=${params.cancelType})`,
+        );
       }
-      receipts.push(...data);
+      if (!isUnknownArray(response.data)) {
+        throw new Error(`쿠팡 취소 접수 목록 응답의 data 가 배열이 아니다 (cancelType=${params.cancelType})`);
+      }
+      receipts.push(...response.data);
       if (!response.nextToken) return receipts;
       nextToken = response.nextToken;
     }
@@ -239,18 +280,23 @@ export class CoupangOrderSource implements ReplayableChannelOrderSource, Windowe
    * 값 하나만 둔다 — 안 그러면 같은 품목이 두 줄로 보여 그 주문이 «같은 옵션 두 줄» 로 격리된다.
    */
   private groupSheets(
-    rawSheets: unknown[],
+    rows: ScannedSheetRow[],
     recordFailure: (orderId: string, error: unknown) => void,
-  ): Map<string, ParsedSheet[]> {
+  ): { sheetsByOrder: Map<string, ParsedSheet[]>; instructOrderIds: Set<string> } {
     const byOrder = new Map<string, Map<string, ParsedSheet>>();
-    for (const raw of rawSheets) {
+    const instructOrderIds = new Set<string>();
+    for (const { scannedAs, raw } of rows) {
       const info = this.parseOrIsolate(raw, parseCoupangOrderSheet, recordFailure);
       if (!info) continue;
+      if (scannedAs === 'INSTRUCT') instructOrderIds.add(info.orderId);
       const boxes = byOrder.get(info.orderId) ?? new Map<string, ParsedSheet>();
       boxes.set(info.shipmentBoxId, { info, raw });
       byOrder.set(info.orderId, boxes);
     }
-    return new Map([...byOrder].map(([orderId, boxes]) => [orderId, [...boxes.values()]]));
+    return {
+      sheetsByOrder: new Map([...byOrder].map(([orderId, boxes]) => [orderId, [...boxes.values()]])),
+      instructOrderIds,
+    };
   }
 
   private groupReceipts(

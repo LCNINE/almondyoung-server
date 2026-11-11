@@ -64,14 +64,14 @@ const receipt = (
 });
 
 describe('CoupangOrderSource', () => {
-  let sheetsByStatus: Record<string, unknown[]>;
+  let sheetsByStatus: Record<string, Array<ReturnType<typeof sheet>>>;
   let singleSheets: Record<string, unknown[]>;
   let stopRequests: unknown[];
   let instantCancels: unknown[];
   let getAllOrderSheetsByStatus: jest.Mock<Promise<readonly unknown[]>, [string, string, string]>;
   let getSingleOrderSheetByOrderId: jest.Mock<Promise<{ data?: readonly unknown[] | null }>, [string]>;
   let getReturnRequests: jest.Mock<
-    Promise<{ data?: readonly unknown[] | null; nextToken?: string }>,
+    Promise<{ code?: number; message?: string; data?: unknown; nextToken?: string }>,
     [GetReturnRequestsParams]
   >;
   let source: CoupangOrderSource;
@@ -89,7 +89,16 @@ describe('CoupangOrderSource', () => {
     getAllOrderSheetsByStatus = jest.fn((_from: string, _to: string, status: string) =>
       Promise.resolve(sheetsByStatus[status] ?? []),
     );
-    getSingleOrderSheetByOrderId = jest.fn((orderId: string) => Promise.resolve({ data: singleSheets[orderId] ?? [] }));
+    // 단건 조회는 따로 정하지 않으면 스캔에 보인 그 주문의 상자를 그대로 돌려준다(상자가 전부 스캔에 보이는 평범한 경우).
+    getSingleOrderSheetByOrderId = jest.fn((orderId: string) =>
+      Promise.resolve({
+        data:
+          singleSheets[orderId] ??
+          Object.values(sheetsByStatus)
+            .flat()
+            .filter((row) => row.orderId === orderId),
+      }),
+    );
     getReturnRequests = jest.fn((params: GetReturnRequestsParams) =>
       Promise.resolve({ data: params.cancelType === 'CANCEL' ? instantCancels : stopRequests }),
     );
@@ -307,7 +316,9 @@ describe('CoupangOrderSource', () => {
 
     const { snapshots } = await source.fetchOrdersInWindow(null);
 
-    expect(getSingleOrderSheetByOrderId).not.toHaveBeenCalled();
+    // 상품준비중 주문이라 상자 전체를 단건 조회로 한 번 싣는다 — 출고중지요청 때문에 또 부르지는 않는다.
+    expect(getSingleOrderSheetByOrderId).toHaveBeenCalledTimes(1);
+    expect(getSingleOrderSheetByOrderId).toHaveBeenCalledWith(ORDER_A);
     const [snapshot] = snapshots;
     expect(snapshot.lifecycle).toEqual([
       {
@@ -490,6 +501,119 @@ describe('CoupangOrderSource', () => {
     const withOrder = await source.fetchOrdersInWindow(null);
     expect(withOrder.completedWindowEnd).toEqual(NOW);
     expect(withOrder.snapshots[0].sourceUpdatedAt).toBe(NOW.toISOString());
+  });
+
+  describe('상품준비중 주문은 단건 조회로 모든 상자를 싣는다', () => {
+    it('상품준비중 상자 옆의 출고된 상자 줄도 스냅샷에 남는다', async () => {
+      sheetsByStatus.INSTRUCT = [sheet(ORDER_A, BOX_A1, 'INSTRUCT', [item(300000001)])];
+      singleSheets[ORDER_A] = [
+        sheet(ORDER_A, BOX_A1, 'INSTRUCT', [item(300000001)]),
+        sheet(ORDER_A, BOX_A2, 'DEPARTURE', [item(300000002)]),
+      ];
+
+      const { snapshots, fetchFailures } = await source.fetchOrdersInWindow(null);
+
+      expect(fetchFailures).toEqual([]);
+      expect(getSingleOrderSheetByOrderId).toHaveBeenCalledWith(ORDER_A);
+      expect(snapshots[0].lines.map((line) => line.channelOrderItemId)).toEqual([
+        `${ORDER_A}:300000001`,
+        `${ORDER_A}:300000002`,
+      ]);
+      expect(snapshots[0].amounts.shipping).toBe(6000);
+      expect(snapshots[0].raw).toEqual({
+        externalOrderId: ORDER_A,
+        orderSheets: singleSheets[ORDER_A],
+        cancelReceipts: [],
+      });
+    });
+
+    it('결제완료로만 보인 주문은 단건 조회 없이 스캔 행으로 만든다', async () => {
+      sheetsByStatus.ACCEPT = [sheet(ORDER_A, BOX_A1, 'ACCEPT', [item(300000001)])];
+
+      await source.fetchOrdersInWindow(null);
+
+      expect(getSingleOrderSheetByOrderId).not.toHaveBeenCalled();
+    });
+
+    it('단건 조회가 실패하거나 비면 그 주문만 fetchFailures 로 가고 주기는 계속된다', async () => {
+      const ORDER_C = '200000000000000003';
+      sheetsByStatus.INSTRUCT = [
+        sheet(ORDER_A, BOX_A1, 'INSTRUCT', [item(300000001)]),
+        sheet(ORDER_B, BOX_B1, 'INSTRUCT', [item(300000003)]),
+        sheet(ORDER_C, '100000000000000004', 'INSTRUCT', [item(300000004)]),
+      ];
+      singleSheets[ORDER_C] = [];
+      const fallback = getSingleOrderSheetByOrderId.getMockImplementation();
+      getSingleOrderSheetByOrderId.mockImplementation((orderId: string) =>
+        orderId === ORDER_A || !fallback ? Promise.reject(new Error('쿠팡 503')) : fallback(orderId),
+      );
+
+      const { snapshots, fetchFailures, completedWindowEnd } = await source.fetchOrdersInWindow(null);
+
+      expect(snapshots.map((snapshot) => snapshot.externalOrderId)).toEqual([ORDER_B]);
+      expect(fetchFailures).toEqual([
+        { externalOrderId: ORDER_A, changedAt: NOW.toISOString(), error: expect.stringContaining('쿠팡 503') },
+        { externalOrderId: ORDER_C, changedAt: NOW.toISOString(), error: expect.stringContaining('비었다') },
+      ]);
+      expect(completedWindowEnd).toBeNull();
+    });
+
+    it('같은 주문은 주기 스캔으로 보든 fetchOrder 로 보든 같은 스냅샷이다', async () => {
+      sheetsByStatus.INSTRUCT = [sheet(ORDER_A, BOX_A1, 'INSTRUCT', [item(300000001, { cancelCount: 1 })])];
+      singleSheets[ORDER_A] = [
+        sheet(ORDER_A, BOX_A1, 'INSTRUCT', [item(300000001, { cancelCount: 1 })]),
+        sheet(ORDER_A, BOX_A2, 'DEPARTURE', [item(300000002)]),
+      ];
+
+      const { snapshots } = await source.fetchOrdersInWindow(null);
+      const replayed = await source.fetchOrder(ORDER_A);
+
+      expect(replayed?.lines).toEqual(snapshots[0].lines);
+      expect(replayed?.amounts).toEqual(snapshots[0].amounts);
+      expect(replayed?.paymentState).toBe(snapshots[0].paymentState);
+      expect(replayed?.shippingAddress).toEqual(snapshots[0].shippingAddress);
+      expect(replayed?.raw.orderSheets).toEqual(snapshots[0].raw.orderSheets);
+    });
+  });
+
+  describe('취소 접수 목록 오류 응답은 스캔 실패다', () => {
+    it('code 가 200 이 아니면 throw 한다', async () => {
+      getReturnRequests.mockResolvedValue({ code: 500, message: '서버 오류', data: [] });
+
+      await expect(source.fetchOrdersInWindow(null)).rejects.toThrow(/500/);
+    });
+
+    it('data 가 없거나 배열이 아니면 throw 한다', async () => {
+      getReturnRequests.mockResolvedValue({ code: 200, message: 'OK' });
+      await expect(source.fetchOrdersInWindow(null)).rejects.toThrow(/배열/);
+
+      getReturnRequests.mockResolvedValue({ code: 200, message: 'OK', data: { receipts: [] } });
+      await expect(source.fetchOrdersInWindow(null)).rejects.toThrow(/배열/);
+    });
+
+    it('code 200 과 배열이면 그대로 읽는다', async () => {
+      sheetsByStatus.INSTRUCT = [sheet(ORDER_A, BOX_A1, 'INSTRUCT', [item(300000001)])];
+      getReturnRequests.mockImplementation((params: GetReturnRequestsParams) =>
+        Promise.resolve({
+          code: 200,
+          message: 'OK',
+          data:
+            params.cancelType === 'CANCEL'
+              ? []
+              : [
+                  receipt('500000000000000001', ORDER_A, 'RELEASE_STOP_UNCHECKED', [
+                    { vendorItemId: 300000001, cancelCount: 1 },
+                  ]),
+                ],
+        }),
+      );
+
+      const { snapshots } = await source.fetchOrdersInWindow(null);
+
+      expect(snapshots[0].lifecycle.map((observation) => observation.eventKey)).toEqual([
+        'cancel-request:500000000000000001',
+      ]);
+    });
   });
 
   describe('fetchOrder', () => {
