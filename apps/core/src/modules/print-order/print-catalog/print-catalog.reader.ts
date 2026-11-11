@@ -94,7 +94,8 @@ export class PrintCatalogReader {
       qtyPerUnit: combo.qty,
       file: { format: entry.fileFormat, dpi: entry.fileDpi },
       design: { productId: '', widthMm: size.width, heightMm: size.height },
-      confirmed: false,
+      // 게시 모달은 견적이 통과한 조합만 만들므로 테스트 주문 단계 없이 바로 제작으로 보낸다
+      confirmed: true,
     };
   }
 

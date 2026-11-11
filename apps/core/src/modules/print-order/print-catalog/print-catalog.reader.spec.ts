@@ -29,7 +29,7 @@ describe('PrintCatalogReader', () => {
     expect(spec.prsjob).toEqual([{ covercd: 0, sizeno: 5458, paperno: 22904, colorno: 256, jobno: 3110 }]);
     expect(spec.qtyPerUnit).toBe(500);
     expect(spec.file).toEqual({ format: 'pdf', dpi: 300 });
-    expect(spec.confirmed).toBe(false);
+    expect(spec.confirmed).toBe(true);
     expect(spec.jobpresetno).toBe('3110');
   });
 
