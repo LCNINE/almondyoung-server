@@ -1141,10 +1141,6 @@ export class OrderPollerOrchestrator {
   }
 
   /**
-   * 다음 폴링이 우연히 그 주문을 다시 가져와 성공한 경우 열린 처리 실패 행을 닫는다 (스펙 §5.4).
-   * 채널은 주문을 다시 내보낼 때 그 주문의 lifecycle 도 함께 내보내므로 주문 항목의 성공이 곧 그 주문 전체의 성공이다.
-   */
-  /**
    * 수집이 커밋된 주문을 채널에서 접수 상태로 넘긴다 (쿠팡 상품준비중, #1245). 훅이 없는 provider 는 아무것도 안 한다.
    * 실패는 로그만 — 주기 결과·워터마크를 바꾸지 않는다. 그 주문은 채널에 결제완료로 남아 다음 주기가 다시 넘긴다.
    */
@@ -1159,6 +1155,10 @@ export class OrderPollerOrchestrator {
     }
   }
 
+  /**
+   * 다음 폴링이 우연히 그 주문을 다시 가져와 성공한 경우 열린 처리 실패 행을 닫는다 (스펙 §5.4).
+   * 채널은 주문을 다시 내보낼 때 그 주문의 lifecycle 도 함께 내보내므로 주문 항목의 성공이 곧 그 주문 전체의 성공이다.
+   */
   private async closeRecoveredProcessingFailures(
     open: Map<string, OrderCollectionFailure>,
     failed: Set<string>,
