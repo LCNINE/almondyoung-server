@@ -9,7 +9,12 @@ import { buildDatabaseUrl } from '../seeding/lib/db-connection';
 import { ensureInsideSstShell, parseCommonArgs } from '../seeding/lib/sst-shell-relaunch';
 import { resolveRegistry, sstShellStage } from '../seeding/lib/tenant-registry';
 import { serviceLabel } from '../seeding/lib/core-tenants';
-import { assertAdditiveMigrations, pendingMigrations, AppliedMigration } from './migration-policy';
+import {
+  assertAdditiveMigrations,
+  pendingMigrations,
+  AppliedMigration,
+  MigrationReviewRequiredError,
+} from './migration-policy';
 
 async function main() {
   const args = parseCommonArgs(process.argv);
@@ -71,7 +76,7 @@ async function main() {
 
       const pending = pendingMigrations(files, applied);
       phase = 'sql-review';
-      assertAdditiveMigrations(pending);
+      assertAdditiveMigrations(pending, { stage: args.stage, deployment: args.deployment, service: service.name });
       console.log(JSON.stringify({ step: 'migration', service: label, pending: pending.length }));
       phase = 'apply';
       if (pending.length && !checkOnly) await migrate(drizzle(client), options);
@@ -92,6 +97,8 @@ async function main() {
           service: label,
           phase,
           status: 'failed',
+          reason: error instanceof MigrationReviewRequiredError ? error.reason : undefined,
+          migrationTimestamp: error instanceof MigrationReviewRequiredError ? error.migrationTimestamp : undefined,
           sqlState: code && /^[0-9A-Z]{5}$/.test(code) ? code : undefined,
         }),
       );
