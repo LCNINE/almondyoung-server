@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Check, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
@@ -30,6 +30,7 @@ import type {
   ConsolidationOptionShipment,
   ShipmentConsolidationResponse,
 } from '@/lib/types/dto/fulfillment';
+import { ConsolidationItemList, MergedItemsTable } from './consolidation-items';
 import { buildConsolidationRequest, memoChoices } from './consolidation-model';
 import {
   boxNoText,
@@ -37,6 +38,7 @@ import {
   isStaleVersionConflict,
   mergedToastText,
   keptAfterFailure,
+  mergedItems,
   needsReopenPermission,
   needsUnwindSteps,
   optionCard,
@@ -112,6 +114,27 @@ function RecipientRows({
   );
 }
 
+function ShipmentItems({
+  shipment,
+  id,
+}: {
+  shipment: ConsolidationOptionShipment;
+  id?: string;
+}) {
+  return shipment.items ? (
+    <ConsolidationItemList
+      id={id}
+      label={`주문 ${boxNoText(shipment)} 상품`}
+      items={shipment.items}
+      className="text-zinc-700 dark:text-zinc-300"
+    />
+  ) : (
+    <span id={id} className="text-sm text-zinc-700 dark:text-zinc-300">
+      {shipment.itemSummary}
+    </span>
+  );
+}
+
 function SplitShare({
   shipment,
 }: {
@@ -135,6 +158,9 @@ function OptionCheckCard({
   checked: boolean;
   onToggle: () => void;
 }) {
+  // 체크박스 안의 내용은 보조기기에 읽히지 않아서 상품 목록을 설명으로 잇는다.
+  const itemsId = useId();
+
   return (
     <button
       type="button"
@@ -142,6 +168,7 @@ function OptionCheckCard({
       aria-checked={checked}
       aria-disabled={!card.pickable}
       aria-label={`주문 ${orderNoText(option)} 같이 보내기`}
+      aria-describedby={itemsId}
       onClick={onToggle}
       className={cn(
         'block w-full rounded-lg p-4 text-left',
@@ -169,9 +196,7 @@ function OptionCheckCard({
               {createdAtText(option.createdAt)}
             </span>
           </span>
-          <span className="text-sm text-zinc-700 dark:text-zinc-300">
-            {option.itemSummary}
-          </span>
+          <ShipmentItems shipment={option} id={itemsId} />
           <SplitShare shipment={option} />
           <RecipientRows
             shipment={option}
@@ -242,6 +267,7 @@ export function ConsolidationSheet({
     reason,
   });
   const pickedNos = pickedOptions.map(boxNoText).join(', ');
+  const merged = source ? mergedItems([source, ...pickedOptions]) : null;
   const needsUnwind =
     source && [source, ...pickedOptions].some(needsUnwindSteps);
 
@@ -428,9 +454,7 @@ export function ConsolidationSheet({
                       {progressLabel(source)}
                     </Badge>
                   </div>
-                  <span className="text-sm text-zinc-700 dark:text-zinc-300">
-                    {source.itemSummary}
-                  </span>
+                  <ShipmentItems shipment={source} />
                   <SplitShare shipment={source} />
                   <RecipientRows shipment={source} />
                 </div>
@@ -503,6 +527,8 @@ export function ConsolidationSheet({
                   주문 {sourceBoxNo}, {pickedNos} → 상자 1개, 송장 1장
                 </p>
               </div>
+
+              {merged ? <MergedItemsTable items={merged} /> : null}
 
               {needsUnwind && (
                 <>

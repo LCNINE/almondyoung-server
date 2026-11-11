@@ -947,12 +947,20 @@ export interface ShipmentSplitShare {
   boxCount: number;
 }
 
+// 상자에 담긴 상품별 수량. 서버가 주기 전 응답에는 없다.
+export interface ConsolidationItem {
+  skuId: string;
+  name: string;
+  qty: number;
+}
+
 export interface ConsolidationOptionShipment {
   shipmentId: string;
   status: string;
   salesOrderNos: string[];
   itemSummary: string;
   totalQty: number;
+  items?: ConsolidationItem[];
   recipientSnapshot: Record<string, unknown>;
   batchId: string | null;
   waybillTrackingNo: string | null;
@@ -973,6 +981,7 @@ export interface ConsolidationBoardShipment {
   salesOrderNos: string[];
   itemSummary: string;
   totalQty: number;
+  items?: ConsolidationItem[];
   batchId: string | null;
   waybillTrackingNo: string | null;
   manifestVersion: number;

@@ -1,7 +1,7 @@
 'use client';
 
 import { Fragment, useState } from 'react';
-import { AlertTriangle } from 'lucide-react';
+import { AlertTriangle, ChevronDown } from 'lucide-react';
 import { toast } from 'sonner';
 import { Container } from '@/components/admin-ui-experimental/common/container/container';
 import { Header } from '@/components/admin-ui-experimental/common/header/header';
@@ -13,6 +13,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
@@ -31,8 +32,15 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import {
+  ConsolidationItemList,
+  MergedItemsTable,
+} from '@/features/order/fulfillments/detail/consolidation-items';
 import { ConsolidationSheet } from '@/features/order/fulfillments/detail/consolidation-sheet';
 import {
+  boxNoText,
+  itemsTotalText,
+  mergedItems,
   splitShareText,
   type PendingCommand,
 } from '@/features/order/fulfillments/detail/consolidation-sheet-model';
@@ -103,6 +111,9 @@ export default function ConsolidationTemplate() {
   const [results, setResults] = useState<BulkResult[]>([]);
   const [resultsOpen, setResultsOpen] = useState(false);
   const [running, setRunning] = useState(false);
+  const [expanded, setExpanded] = useState<string[]>([]);
+  // 확인 창에 보여 준 묶음 그대로 요청한다. 그사이 목록을 다시 불러와도 바뀌지 않는다.
+  const [confirming, setConfirming] = useState<ConsolidationBoardGroup[]>([]);
 
   const warehouseId = pickedWarehouse || defaultWarehouseId(warehouses);
   const canRead = can(['fulfillment.shipment.read']);
@@ -123,14 +134,22 @@ export default function ConsolidationTemplate() {
       checked ? [...current, key] : current.filter((value) => value !== key)
     );
 
+  const toggleExpanded = (key: string) =>
+    setExpanded((current) =>
+      current.includes(key)
+        ? current.filter((value) => value !== key)
+        : [...current, key]
+    );
+
   const send = (command: PendingCommand) => create.mutateAsync(command);
   const describe = (error: unknown) =>
     getServerDenyMessage(error, '합포장 요청에 실패했어요.');
 
-  const mergeSelected = async () => {
+  const mergeSelected = async (targets: ConsolidationBoardGroup[]) => {
+    setConfirming([]);
     setRunning(true);
 
-    const collected = await runBulkMerge(pickedGroups, send, describe);
+    const collected = await runBulkMerge(targets, send, describe);
 
     setRunning(false);
     setSelected([]);
@@ -239,7 +258,7 @@ export default function ConsolidationTemplate() {
           </div>
           {canCreate && (
             <Button
-              onClick={mergeSelected}
+              onClick={() => setConfirming(pickedGroups)}
               disabled={running || pickedGroups.length === 0}
             >
               {running ? '합치는 중...' : '선택 항목 합치기'}
@@ -277,6 +296,7 @@ export default function ConsolidationTemplate() {
                   <TableHead className="w-10" />
                   <TableHead>주문번호</TableHead>
                   <TableHead>주문시각</TableHead>
+                  <TableHead>합칠 상품</TableHead>
                   <TableHead>받는 분</TableHead>
                   <TableHead>배송지</TableHead>
                   <TableHead>송장번호</TableHead>
@@ -294,6 +314,8 @@ export default function ConsolidationTemplate() {
                     held={held.has(group.key)}
                     checked={selected.includes(group.key)}
                     onCheck={(checked) => toggle(group.key, checked)}
+                    expanded={expanded.includes(group.key)}
+                    onToggleExpanded={() => toggleExpanded(group.key)}
                     onOpen={() =>
                       setSheetShipmentId(group.shipments[0].shipmentId)
                     }
@@ -322,6 +344,50 @@ export default function ConsolidationTemplate() {
           }}
         />
       )}
+
+      <Dialog
+        open={confirming.length > 0}
+        onOpenChange={(open) => {
+          if (!open) {
+            setConfirming([]);
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-[560px]">
+          <DialogHeader>
+            <DialogTitle>선택한 주문 합치기</DialogTitle>
+            <DialogDescription>
+              묶음마다 새 상자 하나, 송장 한 장으로 나가요. 요청하면 취소할 수
+              없어요.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex max-h-[60vh] flex-col gap-4 overflow-y-auto">
+            {confirming.map((group) => {
+              const merged = mergedItems(group.shipments);
+
+              return (
+                <section key={group.key} className="flex flex-col gap-2">
+                  <h3 className="text-sm font-semibold">
+                    {groupOrderNos(group)} → 상자 1개
+                  </h3>
+                  {merged ? <MergedItemsTable items={merged} /> : null}
+                </section>
+              );
+            })}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirming([])}>
+              취소
+            </Button>
+            <Button
+              onClick={() => mergeSelected(confirming)}
+              disabled={running}
+            >
+              {confirming.length}묶음 합치기
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={resultsOpen} onOpenChange={setResultsOpen}>
         <DialogContent>
@@ -369,6 +435,8 @@ function GroupRows({
   held,
   checked,
   onCheck,
+  expanded,
+  onToggleExpanded,
   onOpen,
 }: {
   group: ConsolidationBoardGroup;
@@ -377,6 +445,8 @@ function GroupRows({
   held: boolean;
   checked: boolean;
   onCheck: (checked: boolean) => void;
+  expanded: boolean;
+  onToggleExpanded: () => void;
   onOpen: () => void;
 }) {
   const span = group.shipments.length;
@@ -384,6 +454,7 @@ function GroupRows({
   const action = boardRowAction(group);
   const selectable = isBulkSelectable(group);
   const rowClass = cn(striped && 'bg-muted/40');
+  const merged = mergedItems(group.shipments);
 
   return (
     <Fragment>
@@ -412,10 +483,44 @@ function GroupRows({
                   {splitShareText(shipment.split)}
                 </div>
               )}
+              {expanded && shipment.items ? (
+                <ConsolidationItemList
+                  label={`주문 ${boxNoText(shipment)} 상품`}
+                  items={shipment.items}
+                  className="mt-1 max-w-64 text-xs"
+                />
+              ) : null}
             </TableCell>
             <TableCell className="text-xs">
               {orderedAtText(shipment.orderedAt)}
             </TableCell>
+            {index === 0 && (
+              <TableCell rowSpan={span}>
+                {merged ? (
+                  <>
+                    <div className="font-medium">{itemsTotalText(merged)}</div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="-ml-2 h-7 px-2 text-xs"
+                      aria-expanded={expanded}
+                      aria-label={`${groupOrderNos(group)} 주문별 상품 보기`}
+                      onClick={onToggleExpanded}
+                    >
+                      주문별 상품
+                      <ChevronDown
+                        className={cn(
+                          'size-3.5 transition-transform',
+                          expanded && 'rotate-180'
+                        )}
+                      />
+                    </Button>
+                  </>
+                ) : (
+                  <span className="text-xs text-muted-foreground">-</span>
+                )}
+              </TableCell>
+            )}
             {index === 0 && (
               <>
                 <TableCell rowSpan={span}>
@@ -424,7 +529,10 @@ function GroupRows({
                     전화번호 같음
                   </div>
                 </TableCell>
-                <TableCell rowSpan={span}>
+                <TableCell
+                  rowSpan={span}
+                  className="min-w-40 whitespace-normal"
+                >
                   {recipient.address}
                   <div className="text-xs text-muted-foreground">
                     {recipient.addressNote}

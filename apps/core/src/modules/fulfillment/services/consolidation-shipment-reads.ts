@@ -2,6 +2,7 @@ import { and, asc, desc, eq, inArray, notInArray, sql } from 'drizzle-orm';
 import { DbService } from '@app/db';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import {
+  ConsolidationItemDto,
   ConsolidationOptionShipmentDto,
   ConsolidationRecipientSnapshotDto,
   ShipmentSplitShareDto,
@@ -19,6 +20,7 @@ export interface OptionLine {
   fulfillmentMode: string | null;
   skuStockType: string;
   skuProfileId: string | null;
+  skuId: string;
   skuName: string;
   customerId: string | null;
   customerName: string | null;
@@ -58,6 +60,7 @@ export async function loadShipmentLines(trx: ReadDb, shipmentIds: string[]): Pro
       fulfillmentMode: wmsTables.fulfillmentOrders.fulfillmentMode,
       skuStockType: wmsTables.skus.stockType,
       skuProfileId: wmsTables.skus.deliveryProfileId,
+      skuId: wmsTables.shipmentLines.skuId,
       skuName: wmsTables.skus.name,
       customerId: wmsTables.salesOrders.customerId,
       customerName: wmsTables.salesOrders.customerName,
@@ -254,6 +257,23 @@ export function splitSharesOf(
   return shares;
 }
 
+// 같은 상품이 여러 줄에 나뉘어 있어도 한 줄로 합친다. 순서는 처음 나온 줄을 따른다.
+export function itemsOf(lines: readonly OptionLine[]): ConsolidationItemDto[] {
+  const items = new Map<string, ConsolidationItemDto>();
+
+  for (const line of lines) {
+    const item = items.get(line.skuId);
+
+    if (item) {
+      item.qty += line.qty;
+    } else {
+      items.set(line.skuId, { skuId: line.skuId, name: line.skuName, qty: line.qty });
+    }
+  }
+
+  return [...items.values()];
+}
+
 export type ShipmentSummaryWithoutRecipient = Omit<ConsolidationOptionShipmentDto, 'recipientSnapshot'>;
 
 export function summarizeShipmentWithoutRecipient(
@@ -275,6 +295,7 @@ export function summarizeShipmentWithoutRecipient(
     ),
     itemSummary: names.length > 1 ? `${names[0]} 외 ${names.length - 1}건` : (names[0] ?? ''),
     totalQty: lines.reduce((total, line) => total + line.qty, 0),
+    items: itemsOf(lines),
     batchId: progress.batchByShipment.get(shipment.id) ?? null,
     waybillTrackingNo: progress.trackingByShipment.get(shipment.id) ?? null,
     manifestVersion: shipment.manifestVersion,

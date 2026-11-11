@@ -1,6 +1,7 @@
 import { parseServerError } from '@/lib/api/server-error';
 import { createIdempotentCommand } from '@/lib/services/orders/idempotency';
 import type {
+  ConsolidationItem,
   ConsolidationOption,
   ConsolidationOptionShipment,
   CreateShipmentConsolidationRequest,
@@ -326,4 +327,52 @@ export function mergedToastText(
   return nos.size === 1 && sources.every((source) => source.split)
     ? `나눈 상자 ${sources.length}개를 다시 한 상자로 합쳤어요: ${[...nos][0]}`
     : '합포장했어요.';
+}
+
+type ItemsSource = Pick<
+  ConsolidationOptionShipment,
+  'shipmentId' | 'salesOrderNos' | 'split' | 'items'
+>;
+
+export type MergedItem = ConsolidationItem & {
+  parts: Array<{ label: string; qty: number }>;
+};
+
+// 합치면 한 상자에 들어갈 상품별 수량. 같은 상품은 합산하고 어느 주문에서 몇 개 왔는지 남긴다.
+export function mergedItems(
+  shipments: readonly ItemsSource[]
+): MergedItem[] | null {
+  if (shipments.some((shipment) => !shipment.items)) {
+    return null;
+  }
+
+  const merged = new Map<string, MergedItem>();
+
+  for (const shipment of shipments) {
+    const label = boxNoText(shipment);
+
+    for (const item of shipment.items ?? []) {
+      const entry = merged.get(item.skuId);
+
+      if (entry) {
+        entry.qty += item.qty;
+        entry.parts.push({ label, qty: item.qty });
+      } else {
+        merged.set(item.skuId, {
+          ...item,
+          parts: [{ label, qty: item.qty }],
+        });
+      }
+    }
+  }
+
+  return [...merged.values()];
+}
+
+export function itemsTotalText(
+  items: ReadonlyArray<Pick<ConsolidationItem, 'qty'>>
+): string {
+  const total = items.reduce((sum, item) => sum + item.qty, 0);
+
+  return `${items.length}종 · 총 ${total}개`;
 }

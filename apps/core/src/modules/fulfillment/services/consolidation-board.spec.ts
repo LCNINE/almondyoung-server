@@ -27,6 +27,7 @@ function row(
       salesOrderNos: [],
       itemSummary: '',
       totalQty: 1,
+      items: [],
       batchId: null,
       waybillTrackingNo: null,
       manifestVersion: 1,
@@ -172,6 +173,7 @@ function optionLine(shipmentId: string, patch: Partial<OptionLine> = {}): Option
     fulfillmentMode: 'in_house',
     skuStockType: 'stocked',
     skuProfileId: 'p1',
+    skuId: 'sku-1',
     skuName: '상품',
     customerId: 'c1',
     customerName: '김알몬',
@@ -247,6 +249,28 @@ describe('assembleConsolidationBoard', () => {
     expect(group.shipments.map((shipment) => shipment.split)).toEqual([
       null,
       { boxQty: 1, orderQty: 3, boxNo: 2, boxCount: 2 },
+    ]);
+  });
+
+  it('상자마다 담긴 상품을 같은 상품끼리 합친 수량으로 처음 나온 순서대로 싣는다', () => {
+    const [group] = assembleConsolidationBoard(
+      [shipmentRow('a'), shipmentRow('b')],
+      [
+        optionLine('a', { skuId: 'sku-1', skuName: '립밤', qty: 1 }),
+        optionLine('b', { skuId: 'sku-1', skuName: '립밤', qty: 2 }),
+        optionLine('b', { skuId: 'sku-2', skuName: '핸드크림', qty: 1 }),
+        optionLine('b', { skuId: 'sku-1', skuName: '립밤', qty: 1 }),
+      ],
+      noProgress,
+      inHouse,
+    );
+
+    expect(group.shipments.map((shipment) => shipment.items)).toEqual([
+      [{ skuId: 'sku-1', name: '립밤', qty: 1 }],
+      [
+        { skuId: 'sku-1', name: '립밤', qty: 3 },
+        { skuId: 'sku-2', name: '핸드크림', qty: 1 },
+      ],
     ]);
   });
 
