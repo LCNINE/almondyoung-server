@@ -1022,7 +1022,7 @@ export class CoupangAdapter implements ChannelAdapter {
     dateFrom: string;
     dateTo: string;
     status?: 'RECEIPT' | 'PROGRESS' | 'SUCCESS' | 'REJECT' | 'CANCEL';
-    orderId?: number;
+    orderId?: string;
     pageIndex?: number;
     sizePerPage?: number;
   }): Promise<InternalExchangeEvent[]> {

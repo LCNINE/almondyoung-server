@@ -128,7 +128,7 @@ export class ChannelAdapterController {
       dateFrom,
       dateTo,
       status: status as any,
-      orderId: orderId ? parseInt(orderId) : undefined,
+      orderId: orderId || undefined,
       sizePerPage: pageSize ? parseInt(pageSize) : 10,
     };
 
