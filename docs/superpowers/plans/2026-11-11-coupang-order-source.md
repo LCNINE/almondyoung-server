@@ -271,10 +271,14 @@ it('쿠팡 act 는 접수 단건 조회의 cancelCountSum 으로 출고중지완
 **Files:**
 - Modify: `apps/channel-adapter/src/adapter.module.ts` (`CHANNEL_ORDER_PROVIDER` factory·`inject` 에 `CoupangOrderSource`, providers 배열에 클래스)
 - Modify: `apps/channel-adapter/src/services/order-collection/syncable-channels.ts` (`'coupang'` 추가)
-- Modify: `deployments/lcnine/services/infra/services.ts` — `new sst.Secret('CoupangAccessKey')`·`('CoupangSecretKey')`·`('CoupangVendorId')`, channel-adapter env 의 자리표시 `'1'` 셋을 `.value` 로, `CHANNEL_CANCEL_APPROVAL_ACT_CHANNELS: 'coupang'` 추가
+- Modify: `deployments/lcnine/services/infra/services.ts` — `new sst.Secret('CoupangAccessKey', '1')`·`('CoupangSecretKey', '1')`·`('CoupangVendorId', '1')`, channel-adapter env 의 자리표시 `'1'` 셋을 `.value` 로, `CHANNEL_CANCEL_APPROVAL_ACT_CHANNELS: 'coupang'` 추가. 🔴 기본값 `'1'` 을 빼지 말 것(기본값 없으면 값 안 넣은 stage 의 services 배포 전체가 멈춘다), `''` 로도 하지 말 것(`env.validation.ts` 가 빈 `COUPANG_*` 로 기동 거부) — 스펙 §4.7
+- Modify: `scripts/ops/cutover-preflight/rules.ts` + `checks/wiring.ts` — 쿠팡 자격증명 판정을 IaC 텍스트에서 «실제 Secret 값»으로 옮긴다. `.value` 로 바뀐 뒤엔 `isPlaceholderEnv(iac, 'COUPANG_ACCESS_KEY')` 가 언제나 거짓이라 자리표시가 남아도 ✓ 가 되기 때문이다.
+  - `rules.ts`: `isPlaceholderValue(value: string | undefined): boolean` = 없음·빈 값·`'1'`·`dummy` 포함이면 참. `isPlaceholderEnv` 는 따옴표 안 값을 꺼내 이 함수로 판정하게 바꾼다(정의 한 곳).
+  - `rules.ts`: `linkedSecretValue(name: string, env = process.env): string | null | undefined` — `SST_RESOURCE_<name>` 가 없으면 `null`(`sst shell` 밖이라 못 잰다), 있으면 JSON 의 `value`.
+  - `wiring.ts`: 시장 표에서 `COUPANG_ACCESS_KEY` 줄을 빼고, `CoupangAccessKey`·`CoupangSecretKey`·`CoupangVendorId` 마다 — `null` 이면 `r.info('… 못 잼 — services sst shell 에서 다시')`, 자리표시면 `r.bad('쿠팡 자격증명 <name> 이 자리표시 값이다 — 쿠팡 주문이 들어오지 않는다', 'npx sst secret set <name> <값> --stage live 뒤 services 재배포 (#1245)')`, 아니면 `r.ok`. 값은 출력에 찍지 않는다. 네이버 줄은 그대로 둔다(#1244 가 같은 방식으로 옮긴다).
 - Modify: `scripts/ops/cutover-preflight/checks/market.ts` + `index.ts` — 컷오버 뒤 점검 `checkCoupangCollectedHasCoreOrder(core, adapter, r)`: channel_adapter `wms_order_mappings`(`sales_channel='coupang'`, 30분 지난 행)의 `channel_order_id` 중 core `sales_orders`(`sales_channel='coupang'`, 같은 `channel_order_id`)에 없는 건수. 0 이 아니면 ✗ 와 «DLQ 화면에서 OrderCreated 거절 사유 확인 (#1245)». `checkMedusaReservations` 처럼 두 `readOnly` 를 겹쳐 부른다.
 - Modify: `package.json`(`test:coupang:integration` 삭제), `CLAUDE.md`(그 명령 줄 삭제), `apps/channel-adapter/CLAUDE.md`(«source 는 `MedusaOrderSource` 하나» → 지금 셋)
-- Test: `scripts/ops/cutover-preflight/rules.spec.ts`(필요하면), 기존 `channel-order-sync.controller.spec.ts` 의 «coupang 은 400» 기대를 새 동작으로
+- Test: `scripts/ops/cutover-preflight/rules.spec.ts` — `isPlaceholderValue` 가 `undefined`·`''`·`'1'`·`'https://dummy.com'` 은 참, 실제 같은 값은 거짓 / `linkedSecretValue` 가 `SST_RESOURCE_X` 없으면 `null`, `'{"value":"1"}'` 이면 `'1'` / 기존 `isPlaceholderEnv` 기대 그대로 통과. 기존 `channel-order-sync.controller.spec.ts` 의 «coupang 은 400» 기대를 새 동작으로
 
 - [ ] **Step 1: 고칠 기대부터 바꾼다** — `channel-order-sync.controller.spec.ts` 의 쿠팡 기대를 «즉시 끌어오기 대상»으로 바꾸고 실패 확인
 - [ ] **Step 2: 배선 구현**
@@ -282,7 +286,7 @@ it('쿠팡 act 는 접수 단건 조회의 cancelCountSum 으로 출고중지완
 - [ ] **Step 4: 전체 게이트** — `npm run type-check` → 0, `npx jest --maxWorkers=3` → 실패 0
 - [ ] **Step 5: Commit** — `"[channel-adapter] 쿠팡 source 배선·자격증명 시크릿·컷오버 판정 한 줄 (#1245)"`
 
-🔴 배포 메모(PR 본문에 옮긴다): `sst.Secret` 셋은 값이 없으면 `sst deploy` 가 멈춘다 — 배포 전에 `npx sst secret set CoupangAccessKey <값> --stage live` (키 발급 전이면 자리표시 값으로). 판매채널 쿠팡 행은 비활성으로 두어 배포해도 휴면이다.
+배포 메모(PR 본문에 옮긴다): 배포 전 사람 작업 없음 — Secret 셋은 코드 기본값 `'1'` 로 뜨고, 판매채널 쿠팡 행이 비활성이라 배포해도 휴면이다. 판정은 쿠팡 자격증명 줄 셋을 ✗ 로 보여 주는 게 정상이다. **키를 받은 날** `npx sst secret set CoupangAccessKey|CoupangSecretKey|CoupangVendorId <값> --stage live` → services 재배포 → 판정 ✓ → 판매채널 행 켜기(스펙 §5, 런북 #1251).
 
 ### Task 8: 리허설 명령 — 읽기 전용 수집 · 가짜 값 자료
 

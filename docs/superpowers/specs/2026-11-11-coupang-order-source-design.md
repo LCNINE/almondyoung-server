@@ -96,7 +96,8 @@
 
 ### 4.7 배선·정리
 
-- 자격증명 `COUPANG_ACCESS_KEY`·`COUPANG_SECRET_KEY`·`COUPANG_VENDOR_ID` 를 `sst.Secret` 으로(지금 자리표시 `'1'`). 판정 스크립트가 자리표시를 이미 잡는다.
+- 자격증명 `COUPANG_ACCESS_KEY`·`COUPANG_SECRET_KEY`·`COUPANG_VENDOR_ID` 를 `sst.Secret` 으로(지금 IaC 에 자리표시 `'1'` 이 직접 적혀 있다). **Secret 에는 코드에 자리표시 기본값 `'1'` 을 준다** — 기본값이 없으면 값이 안 들어간 stage 의 `sst deploy` 가 멈추는데, services 는 한 스택이라 키 발급 전에 머지되면 core·wallet 까지 남의 배포가 전부 막힌다. 빈 문자열 기본값도 안 된다 — `env.validation.ts` 가 `COUPANG_*` 이 비면 channel-adapter 기동을 거부한다. (2026-11-11 결정)
+- 그 대가로 IaC 텍스트만 보는 판정(`isPlaceholderEnv`)은 `.value` 로 바뀐 뒤 언제나 ✓ 가 된다 — 판정은 **stage 에 실제로 들어간 Secret 값**을 본다(`sst shell` 이 넣어 주는 `SST_RESOURCE_CoupangAccessKey` 등). 값이 아직 자리표시면 ✗.
 - `CHANNEL_ORDER_PROVIDER` 에 등록, `syncable-channels.ts` 에 쿠팡 추가.
 - 죽은 `test:coupang:integration`(`package.json`, 가리키는 파일은 `21da4557a` 에서 삭제)과 루트 `CLAUDE.md` 의 그 줄, `apps/channel-adapter/CLAUDE.md` 의 «source 는 Medusa 하나» 문장을 고친다.
 - 판매채널 행은 비활성으로 두고 키 전환 때 켠다 — 폴러의 active-sites 게이트가 그 전까지 막는다. **배포해도 휴면이다.**
@@ -121,7 +122,7 @@
 - [ ] WING 에서 API 키 «자체개발»로 발급 준비 — 호출 IP 는 우리 NAT EC2 고정 EIP(`deployments/lcnine/services/infra/shared.ts`, 값은 레포에 적지 않는다).
 - [ ] 리허설 밤: 연동 정보를 자체개발로(호출 IP = NAT EIP + 사무실 PC IP) → 사무실 PC 에서 읽기 전용 실행 → 원본에서 가짜 값 자료 만들고 원본 삭제 → 셀메이트로 되돌림 → 다음 날 아침 셀메이트 수집이 되는지 확인.
 - [ ] 리허설 뒤 쿠팡 등록 IP 에서 사무실 PC IP 를 뺀다(키 전환 때 NAT EIP 만 남긴다).
-- [ ] 마지막 셀메이트 날: 수집한 쿠팡 주문 송장까지 끝내기, 저녁에 키 전환.
+- [ ] 마지막 셀메이트 날: 수집한 쿠팡 주문 송장까지 끝내기, 저녁에 키 전환 — `npx sst secret set CoupangAccessKey …`·`CoupangSecretKey`·`CoupangVendorId` (`--stage live`) 뒤 **services 재배포**(Secret 은 배포해야 태스크에 실린다), 판정의 쿠팡 자격증명 줄 ✓ 확인, 판매채널 쿠팡 행 켜기. 런북 #1251 에 넣는다.
 - [ ] 키 만료 180일 — 재발급 일정을 달력·런북에. 재발급하면 Secret 을 같은 날 바꿔야 한다(옛 키 즉시 무효).
 
 ## 6. 하지 않는 것
