@@ -190,6 +190,52 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
     go({ kind: 'inspect', box: found, seq: ++seq.current });
   };
 
+  const refreshedBatchItem = useRef<{ view: View; updatedAt: number } | null>(
+    null
+  );
+
+  useEffect(() => {
+    const current = viewRef.current;
+    const item = batchItems.data?.find(
+      (entry) =>
+        current.kind === 'inspect' &&
+        entry.shipmentId === current.box.shipmentId
+    );
+
+    if (
+      current.kind !== 'inspect' ||
+      (item?.status !== 'withdrawing' && item?.status !== 'excluded') ||
+      busy.current > 0 ||
+      running ||
+      (refreshedBatchItem.current?.view === current &&
+        refreshedBatchItem.current.updatedAt === batchItems.dataUpdatedAt)
+    ) {
+      return;
+    }
+
+    refreshedBatchItem.current = {
+      view: current,
+      updatedAt: batchItems.dataUpdatedAt,
+    };
+
+    void run(async () => {
+      await settleWork();
+
+      if (viewRef.current !== current) {
+        return;
+      }
+
+      const found = await lookup(current.box.trackingNo);
+
+      if (
+        viewRef.current === current &&
+        (found.labelState === 'withdrawing' || found.labelState === 'withdrawn')
+      ) {
+        await show(found, false, false);
+      }
+    });
+  });
+
   const open = (code: string) => run(async () => show(await lookup(code)));
 
   /** 상품을 든 박스로. 정한 화면의 손잡이가 없으면(새 화면이 아직 안 그려졌다·옛 박스의 손잡이) 받지 않는다 */

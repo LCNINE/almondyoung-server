@@ -287,3 +287,111 @@ describe('F1 출고 검수 — 송장 스캔 즉시 시작, 상품 스캔 = +1, 
     expect(await screen.findByText('B-1002 1/2')).toBeInTheDocument();
   });
 });
+
+describe('열린 검수 상자의 배치 제외 감지', () => {
+  it.each(['withdrawing', 'excluded'])(
+    '%s 상태를 받으면 다시 조회해 화면을 전환한다',
+    async (status) => {
+      const { server, queryClient } = await setupInspection();
+
+      await openBox(BOX1.trackingNo);
+
+      const box = server.box(BOX1.trackingNo);
+
+      if (!box) {
+        throw new Error('Missing box');
+      }
+
+      if (status === 'excluded') {
+        box.withdrawn = true;
+      } else {
+        box.labelState = 'withdrawing';
+      }
+
+      await act(async () => {
+        await queryClient.refetchQueries({
+          queryKey: ['batch-work-items', BOX1.batchId],
+        });
+      });
+
+      expect(
+        await screen.findByText(status === 'excluded' ? '빠진 박스' : '뺄 상품')
+      ).toBeInTheDocument();
+      expect(screen.queryByRole('status', { name: '진행' })).toBeNull();
+      expect(
+        server.requests.filter((request) =>
+          request.path.startsWith('/shipments/by-waybill')
+        )
+      ).toHaveLength(2);
+    }
+  );
+
+  it('진행 중인 상품 스캔을 마친 뒤 뺄 상품으로 전환한다', async () => {
+    const { server, queryClient } = await setupInspection();
+
+    await openBox(BOX1.trackingNo);
+
+    const release = server.holdSends();
+
+    scan('8801002');
+    await waitFor(() => expect(server.scanCalls).toHaveLength(1));
+
+    const box = server.box(BOX1.trackingNo);
+
+    if (!box) {
+      throw new Error('Missing box');
+    }
+
+    box.labelState = 'withdrawing';
+
+    await act(async () => {
+      await queryClient.refetchQueries({
+        queryKey: ['batch-work-items', BOX1.batchId],
+      });
+    });
+
+    expect(progress()).toBeInTheDocument();
+    expect(screen.queryByText('뺄 상품')).toBeNull();
+
+    await act(async () => release());
+
+    expect(await screen.findByText('뺄 상품')).toBeInTheDocument();
+    expect(server.scans).toHaveLength(1);
+  });
+
+  it('재조회가 아직 검수 상태여도 같은 배치 응답으로 반복 조회하지 않는다', async () => {
+    const { server, queryClient } = await setupInspection();
+
+    await openBox(BOX1.trackingNo);
+
+    const box = server.box(BOX1.trackingNo);
+
+    if (!box) {
+      throw new Error('Missing box');
+    }
+
+    box.workItemStatus = 'withdrawing';
+
+    await act(async () => {
+      await queryClient.refetchQueries({
+        queryKey: ['batch-work-items', BOX1.batchId],
+      });
+    });
+
+    await waitFor(() => {
+      expect(
+        server.requests.filter((request) =>
+          request.path.startsWith('/shipments/by-waybill')
+        )
+      ).toHaveLength(2);
+    });
+    await act(async () => {});
+
+    expect(progress()).toBeInTheDocument();
+    expect(
+      server.requests.filter((request) =>
+        request.path.startsWith('/shipments/by-waybill')
+      )
+    ).toHaveLength(2);
+  });
+});

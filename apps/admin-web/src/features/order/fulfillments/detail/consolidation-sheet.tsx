@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Check, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -21,6 +22,7 @@ import { cn } from '@/lib/utils/ui';
 import {
   getServerDenyMessage,
   useCreateShipmentConsolidation,
+  useExcludeShipmentFromBatch,
 } from '@/lib/services/orders';
 import { useConsolidationOptions } from '@/lib/services/orders/queries';
 import type {
@@ -48,13 +50,21 @@ import {
 type Step = 1 | 2;
 
 const UNWIND_STEPS: Array<{ title: string; hint: string; who: string }> = [
-  { title: '배치에서 빼기', hint: '요청한 뒤 이 화면에서 버튼으로', who: '나' },
+  {
+    title: '배치에서 빼기',
+    hint: '권한이 있으면 요청할 때 자동으로 빼요',
+    who: '나',
+  },
   {
     title: '담아 둔 상품 되돌려 놓기',
     hint: '창고에 전할 문구를 화면이 알려 줘요',
     who: '창고',
   },
-  { title: '기존 운송장 취소', hint: '이 화면에서 버튼으로', who: '나' },
+  {
+    title: '기존 운송장 취소',
+    hint: '출고주문 상세의 배송 탭에서 취소해요',
+    who: '나',
+  },
   { title: '자동으로 합쳐짐', hint: '10분 안에. 누를 것 없음', who: '자동' },
 ];
 
@@ -171,13 +181,17 @@ export function ConsolidationSheet({
   onOpenChange: (open: boolean) => void;
   onRequested?: (result: ShipmentConsolidationResponse) => void;
 }) {
-  const { can } = usePermissionCheck();
+  const router = useRouter();
+  const { can, canRun } = usePermissionCheck();
+  const canExclude = canRun(useExcludeShipmentFromBatch);
   const permissions = {
     canOverrideRecipient: can(['fulfillment.shipment.override_recipient']),
     canReopen: can(['fulfillment.shipment.reopen']),
   };
   const options = useConsolidationOptions(shipmentId, open);
   const create = useCreateShipmentConsolidation();
+  const exclude = useExcludeShipmentFromBatch();
+  const [sending, setSending] = useState(false);
   const [step, setStep] = useState<Step>(1);
   const [picked, setPicked] = useState<string[]>([]);
   const [memoChoice, setMemoChoice] = useState('');
@@ -211,6 +225,8 @@ export function ConsolidationSheet({
     reason,
   });
   const pickedNos = pickedOptions.map(orderNoText).join(', ');
+  const needsUnwind =
+    source && [source, ...pickedOptions].some(needsUnwindSteps);
 
   const reset = () => {
     setStep(1);
@@ -228,6 +244,8 @@ export function ConsolidationSheet({
   };
 
   const send = async (command: PendingCommand) => {
+    setSending(true);
+
     try {
       const result = await create.mutateAsync(command);
 
@@ -236,9 +254,38 @@ export function ConsolidationSheet({
       if (result.operationStatus === 'completed') {
         toast.success('합포장했어요.');
       } else {
-        toast.success(
-          '합포장을 요청했어요. 상자 화면에서 다음 할 일을 알려 줘요.'
-        );
+        if (canExclude) {
+          const sources = source ? [source, ...allOptions] : allOptions;
+
+          for (const shipment of sources) {
+            if (
+              !result.sourceShipmentIds.includes(shipment.shipmentId) ||
+              !shipment.batchId
+            ) {
+              continue;
+            }
+
+            try {
+              await exclude.mutateAsync({
+                batchId: shipment.batchId,
+                shipmentId: shipment.shipmentId,
+                reason: '합포장',
+              });
+            } catch (error) {
+              toast.error(getServerDenyMessage(error));
+            }
+          }
+        }
+
+        toast.success('합포장을 요청했어요.', {
+          action: {
+            label: '진행 보기',
+            onClick: () =>
+              router.push(
+                `/order/fulfillments?${new URLSearchParams({ shipmentId })}`
+              ),
+          },
+        });
       }
 
       onRequested?.(result);
@@ -255,6 +302,8 @@ export function ConsolidationSheet({
       }
 
       toast.error(getServerDenyMessage(error, '합포장 요청에 실패했어요.'));
+    } finally {
+      setSending(false);
     }
   };
 
@@ -315,7 +364,7 @@ export function ConsolidationSheet({
                 size="sm"
                 variant="outline"
                 onClick={retryLost}
-                disabled={create.isPending}
+                disabled={sending}
               >
                 같은 요청 다시 보내기
               </Button>
@@ -427,11 +476,14 @@ export function ConsolidationSheet({
                 </p>
               </div>
 
-              {needsUnwindSteps(source) && (
+              {needsUnwind && (
                 <>
                   <p className="text-sm text-zinc-700 dark:text-zinc-300">
-                    지금 보고 있는 주문 {sourceNo} 은 이미 출고 준비가 시작돼
-                    바로 합쳐지지 않아요. 요청하면 이 순서로 진행돼요.
+                    출고 준비가 시작된 상자가 있어 바로 합쳐지지 않아요.{' '}
+                    {canExclude
+                      ? '요청하면 합칠 상자를 배치에서도 빼요.'
+                      : '배치에서 빼기 권한이 있는 담당자가 상자를 빼야 해요.'}{' '}
+                    아래 순서로 진행돼요.
                   </p>
                   <ol className="divide-y rounded-lg border">
                     {UNWIND_STEPS.map((entry, index) => (
@@ -525,17 +577,17 @@ export function ConsolidationSheet({
 
             <div className="flex items-center justify-between gap-2 border-t px-6 py-4">
               <span className="text-[13px] text-muted-foreground">
-                {blocker ?? '요청하면 상자 화면에서 다음 할 일을 알려 줘요'}
+                {blocker ??
+                  (needsUnwind && canExclude
+                    ? '합포장을 요청하고 상자를 배치에서 빼요'
+                    : '요청하면 상자 화면에서 다음 할 일을 알려 줘요')}
               </span>
               <div className="flex gap-2">
                 <Button variant="outline" onClick={() => setStep(1)}>
                   이전
                 </Button>
-                <Button
-                  onClick={submit}
-                  disabled={blocker !== null || create.isPending}
-                >
-                  {create.isPending ? '요청 중...' : '합포장 요청'}
+                <Button onClick={submit} disabled={blocker !== null || sending}>
+                  {sending ? '요청 중...' : '합포장 요청'}
                 </Button>
               </div>
             </div>
