@@ -192,4 +192,31 @@ describe('anonymizeCoupangPayload', () => {
     );
     expect([...unchanged].sort()).toEqual(['items[].vendorItemName', 'status']);
   });
+
+  it('개인정보 칸의 숫자 값과 tel 칸도 가린다', () => {
+    const out = anonymizeCoupangPayload(
+      {
+        zip: 48000,
+        deliveryInvoiceNo: 123456789012,
+        receiverTel: '02-123-4567',
+        ordererTel1: '031-987-6543',
+        requesterPhoneNumber: 1012345678,
+        email: true,
+        shippingCount: 3,
+        orderPrice: { units: 12000 },
+        status: 'ACCEPT',
+      },
+      new Map(),
+    ) as Record<string, unknown>;
+    const json = JSON.stringify(out);
+    for (const secret of ['48000', '123456789012', '02-123-4567', '031-987-6543', '1012345678']) {
+      expect(json).not.toContain(secret);
+    }
+    expect(String(out.deliveryInvoiceNo)).toMatch(/^\d{12}$/);
+    expect(String(out.zip)).toMatch(/^\d{5}$/);
+    expect(out.email).toBeNull();
+    expect(out.shippingCount).toBe(3);
+    expect(out.orderPrice).toEqual({ units: 12000 });
+    expect(out.status).toBe('ACCEPT');
+  });
 });

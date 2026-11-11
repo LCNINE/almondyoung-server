@@ -12,13 +12,27 @@ import { COUPANG_LONG_ID_KEYS } from '../../../apps/channel-adapter/src/adapters
 
 const LONG_ID_KEYS: ReadonlySet<string> = new Set([...COUPANG_LONG_ID_KEYS, 'originalShipmentBoxId', 'paymentId']);
 const PERSON_NAME = /^(name|(orderer|receiver|requester|customer|buyer|recipient|sender|user|member)\w*name)$/i;
-const PHONE = /phone|mobile|^tel|safenumber|receivernumber|orderernumber/i;
+const PHONE = /phone|mobile|tel|safenumber|receivernumber|orderernumber/i;
 const SSN = /ssn|clearancecode/i;
 const ADDRESS = /addr/i;
 const ZIP = /zip|postcode/i;
 const EMAIL = /email/i;
 const INVOICE = /^(invoicenumber|deliveryinvoiceno)$/i;
 const CANCEL_REASON = /^cancelreason(category\d*)?$/i;
+
+function isPiiKey(key: string): boolean {
+  return (
+    PERSON_NAME.test(key) ||
+    PHONE.test(key) ||
+    SSN.test(key) ||
+    EMAIL.test(key) ||
+    ADDRESS.test(key) ||
+    ZIP.test(key) ||
+    INVOICE.test(key) ||
+    CANCEL_REASON.test(key) ||
+    key === 'parcelPrintMessage'
+  );
+}
 
 type Kind = 'name' | 'phone' | 'email' | 'addr' | 'addrDetail' | 'ssn' | 'invoice' | 'id';
 
@@ -53,7 +67,12 @@ function anonymizeScalar(
     const fake = fakeDigits(ids, 'id', String(value));
     return typeof value === 'number' ? Number(fake) : fake;
   }
-  if (typeof value !== 'string') return value;
+  if (value === null || value === undefined) return value;
+  if (typeof value !== 'string') {
+    // 개인정보 칸 아래의 숫자·불리언 등도 새지 않게 한다: 숫자는 자릿수를 지킨 가짜 숫자, 나머지는 null.
+    if (!isPiiKey(key)) return value;
+    return typeof value === 'number' ? Number(fakeDigits(ids, 'invoice', String(Math.abs(value)))) : null;
+  }
   if (PERSON_NAME.test(key)) return counted(ids, 'name', value, (n) => `테스트고객${n}`);
   if (PHONE.test(key)) return counted(ids, 'phone', value, (n) => `050-0000-${String(n).padStart(4, '0')}`);
   if (SSN.test(key)) return counted(ids, 'ssn', value, (n) => `P${String(n).padStart(11, '0')}`);
