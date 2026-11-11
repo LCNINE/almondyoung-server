@@ -7,7 +7,7 @@
 - AWS 계정: LCNINE Dev Team, 리전: `ap-northeast-2` (서울)
 - IAM 사용자: `lcnine-public` (콘솔 로그인 없음)
 - 소스: `LCNINE/almondyoung-server`의 `develop` 브랜치
-- 환경: `dev`, `demo`, `live`
+- 스크립트가 지원하는 환경: `dev`, `demo`, `live`. 실제 사용 가능 여부는 환경별 `check`로 확인합니다.
 - 실행 경로: 스크립트 → `almondyoung-deploy-control` Lambda → 환경별 CodeBuild
 - v2 배포 순서: 캐시 복원 → 미적용 Drizzle 마이그레이션 검사·실행 → 필요한 `lcnine-auth` → 필요한 `lcnine-services` → 캐시 저장
 
@@ -104,7 +104,7 @@ python scripts/almondyoung-deploy.py status live "almondyoung-deploy-live:반환
 ```
 
 - `IN_PROGRESS`: 진행 중. 같은 `buildId`로 상태를 다시 확인합니다.
-- `SUCCEEDED`: 작업 성공. v2에서는 선택된 앱 배포와 Drizzle 사전 단계가 성공한 것입니다. 서비스 응답/변경된 프런트 버전도 확인합니다.
+- `SUCCEEDED`: 요청한 작업 성공. `deploy`였다면 선택된 앱 배포와 Drizzle 사전 단계가 성공한 것입니다. 서비스 응답/변경된 프런트 버전도 확인합니다. `validate`였다면 읽기 검증만 성공했으며 앱 배포나 마이그레이션 SQL은 실행하지 않았습니다.
 - `FAILED`, `FAULT`, `TIMED_OUT`, `STOPPED`: 실패 또는 중단. 관리자에게 환경과 `buildId`, 반환된 상태를 전달합니다.
 
 `status` 명령의 종료 코드가 0이어도 배포 성공을 뜻하지는 않습니다. 출력된 빌드 상태를 확인해야 합니다. 상세 CodeBuild 로그는 관리자가 확인합니다.
@@ -139,6 +139,8 @@ aws sts get-caller-identity --profile almondyoung
 - 환경별 동시 빌드: 1개, 빌드 제한 시간: 120분
 - 실행 시 CodeBuild 및 관련 AWS 사용료가 발생합니다.
 - 2026-11-11 기존 v1 라이브 작업의 배포 성공과 서비스 HTTP 응답을 확인했습니다. 이 사실은 **이번 v2의 AWS 연결·캐시 적중·운영 DB 마이그레이션 검증을 뜻하지 않습니다.** 소스 반영, AWS 적용, 실제 배포 결과를 구분해 보고합니다.
+- 2026-11-11 live에 v2 Lambda/buildspec, 전용 캐시 저장소와 운영 사설망 구성을 적용했습니다. 첫 읽기 검증 `22fa3b7c-dc21-4f03-be6a-43d702262370`은 `QUEUED` 단계에서 `UNAUTHORIZED_OPERATION_DELETE_NETWORK_INTERFACE`로 멈췄습니다. DB 접속·마이그레이션·앱 배포 전 실패이며, 준비 표시(`ready`)는 아직 꺼져 있습니다.
+- 현재 dev·demo용 DB와 기반 VPC는 준비되지 않았으므로 v2 설치/준비 목록에 넣지 않았습니다. 해당 환경 요청을 live DB로 연결하지 않습니다.
 
 ## 다음에 배포를 요청할 때
 
