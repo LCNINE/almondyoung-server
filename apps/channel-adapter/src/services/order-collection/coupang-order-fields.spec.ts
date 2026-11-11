@@ -108,6 +108,10 @@ describe('parseCoupangOrderSheet', () => {
     expect(() => parseCoupangOrderSheet(raw)).toThrow('orderItems[1].shippingCount');
   });
 
+  it('품목이 하나도 없으면 칸 이름을 담아 throw — 빈 목록을 «전 품목 취소»로 읽지 않는다', () => {
+    expect(() => parseCoupangOrderSheet({ ...rawSheet(), orderItems: [] })).toThrow('orderItems');
+  });
+
   it('orderId 가 숫자(긴 ID 를 number 로 들고 있음)면 throw', () => {
     expect(() => parseCoupangOrderSheet({ ...rawSheet(), orderId: 20000000000 })).toThrow('orderId');
   });

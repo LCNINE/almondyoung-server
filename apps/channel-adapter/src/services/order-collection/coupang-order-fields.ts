@@ -49,7 +49,8 @@ const OrderSheetSchema = z.looseObject({
   shippingPrice: MoneySchema.nullish(),
   receiver: ReceiverSchema,
   parcelPrintMessage: z.string().nullish(),
-  orderItems: z.array(OrderItemSchema),
+  // 빈 목록은 받지 않는다 — 품목이 없으면 «전 품목 취소»(every 가 빈 목록에 참)로 읽혀 주문이 종결된다.
+  orderItems: z.array(OrderItemSchema).min(1),
 });
 
 const CancelReceiptSchema = z.looseObject({
