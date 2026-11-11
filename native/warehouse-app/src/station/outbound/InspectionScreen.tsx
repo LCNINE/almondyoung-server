@@ -48,6 +48,8 @@ const SHORT_PICKED_ELSEWHERE_MESSAGE = '앞 박스의 결품이 반영됐어요.
 const REFILLED_ELSEWHERE_MESSAGE = '앞 박스의 결품이 반영돼 새 송장을 출력했어요. 보충 대기예요.';
 const WITHDRAWN_ELSEWHERE_MESSAGE = '박스를 뺐어요. 그 송장을 다시 찍어 주세요.';
 
+const WITHDRAWN_SCAN_MESSAGE = '이미 다 뺀 상자예요. 다음 송장을 찍어 주세요.';
+
 /** 스테이션 F1 출고 검수(스펙 §6) — 송장 스캔 즉시 시작, 상품 스캔 = +1, 마지막 스캔 = 출고, 다음 송장 */
 export function InspectionScreen({ prefs = localStoragePrefs, print = printRaw }: { prefs?: DevicePrefs; print?: PrintRaw }) {
   const { warehouseId } = useWarehouse();
@@ -249,6 +251,17 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
     setManual(null);
     workFor(viewRef.current, work.current)?.disarm();
     const current = viewRef.current;
+    if (current.kind === 'withdrawn') {
+      void run(async () => {
+        try {
+          await show(await lookup(code));
+        } catch (error) {
+          if (!isNotFound(error)) throw error;
+          reject(WITHDRAWN_SCAN_MESSAGE, code);
+        }
+      });
+      return;
+    }
     if (current.kind !== 'inspect' && current.kind !== 'withdraw') {
       void open(code);
       return;
@@ -547,16 +560,17 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
             <>
               <BoxCard trackingNo={view.box.trackingNo} recipient={view.box.recipientMasked} />
               <BigPanel
-                content={
-                  alert
-                    ? { kind: 'alert', ...alert }
-                    : {
-                        kind: 'notice',
-                        title: '빠진 박스',
-                        message: '다 뺐어요. 이 상자는 배치에서 빠졌어요. 송장은 버리고 다음 송장을 찍어 주세요.',
-                      }
-                }
+                content={{
+                  kind: 'notice',
+                  title: '빠진 박스',
+                  message: '다 뺐어요. 이 상자는 배치에서 빠졌어요. 송장은 버리고 다음 송장을 찍어 주세요.',
+                }}
               />
+              {alert ? (
+                <p role="alert" className="shrink-0 rounded-[10px] border-2 border-[#C8202F] bg-[#FDE8EA] p-3 font-semibold text-[#9E1320]">
+                  {alert.message}
+                </p>
+              ) : null}
             </>
           }
           right={<RecentList entries={recent} grow />}

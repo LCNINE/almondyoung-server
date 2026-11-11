@@ -109,6 +109,8 @@ describe('뺄 상품(스펙 §6.2 withdrawing)', () => {
     scan('8801002');
     await waitFor(() => expect(flash()).toBe('error'));
     expect(screen.queryByText('앞 스캔을 확인하고 있어요. 확인이 끝난 뒤 다시 찍어 주세요.')).toBeNull();
+    expect(await screen.findByText('이미 다 뺀 상자예요. 다음 송장을 찍어 주세요.')).toBeInTheDocument();
+    expect(screen.getByText('빠진 박스')).toBeInTheDocument();
     scan('421033881915');
     await waitFor(() => expect(document.querySelector('[data-intake="open"]')).not.toBeNull());
     expect(screen.queryByText('빠진 박스')).toBeNull();
