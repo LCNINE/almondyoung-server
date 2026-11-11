@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { ApiError, ConflictError, createApiClient } from './httpClient';
+import { ApiError, ConflictError, NetworkError, createApiClient } from './httpClient';
 import { currentServerReach } from './serverStatus';
 
 function jsonResponse(status: number, body: unknown): Response {
@@ -297,7 +297,10 @@ describe('서버 도달 기록(상태바 «서버»)', () => {
       authMode: 'bearer',
       doFetch: doFetch as never,
     });
-    await expect(api.request({ path: '/x' })).rejects.toThrow('network');
+    const failure = await api.request({ path: '/x' }).catch((e: unknown) => e);
+    expect(failure).toBeInstanceOf(NetworkError);
+    expect(failure).not.toBeInstanceOf(ApiError);
+    expect((failure as Error).message).toBe('network');
     expect(currentServerReach()).toBe('down');
     await expect(api.request({ path: '/x' })).rejects.toBeInstanceOf(ApiError);
     expect(currentServerReach()).toBe('up');

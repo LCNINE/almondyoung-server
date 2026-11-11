@@ -4,6 +4,7 @@ import { useWarehouse } from '../../app/warehouse-context';
 import { useApiClient } from '../../core/data/ApiClientProvider';
 import { localStoragePrefs, type DevicePrefs } from '../../core/data/devicePrefs';
 import { errorMessage } from '../../core/data/errorMessage';
+import { NetworkError } from '../../core/data/httpClient';
 import { printRaw, readLabelPrinter, type PrintRaw } from '../../core/hardware/print/labelPrinter';
 import { useHumanKeys, useScanEmit, useScanner } from '../../core/hardware/scan/useScanner';
 import { batchProgressOf, useBatchWorkItems } from '../../domains/outbound/batchStatus';
@@ -35,12 +36,13 @@ import { RefillPanel } from './RefillPanel';
 import { printWaybill } from './printWaybill';
 import { pushRecent, type RecentEntry } from './recent';
 import { WithdrawWork } from './WithdrawWork';
-import { INTAKE_BLOCKED_MESSAGE, UNCERTAIN_SCAN_MESSAGE } from './useInspectionBox';
+import { INTAKE_BLOCKED_MESSAGE, ScanWaitingError, UNCERTAIN_SCAN_MESSAGE } from './useInspectionBox';
 
 /** 화면이 스스로 거절한 것 — 문구를 그대로 보인다(서버 오류 문구 변환을 거치지 않는다) */
 class Refusal extends Error {}
 
 const LOOKING_UP_MESSAGE = '송장을 확인하고 있어요. 다시 찍어 주세요.';
+export const SCAN_NOT_SENT_MESSAGE = '연결이 끊겨 이 스캔은 반영하지 않았어요. 연결된 뒤 다시 찍어 주세요.';
 const EXCESS_MESSAGE = '출고가 끝난 박스에 찍은 상품은 반영되지 않았어요. 상품을 확인해 주세요.';
 const SHORT_PICKED_ELSEWHERE_MESSAGE = '앞 박스의 결품이 반영됐어요. 그 송장을 다시 찍어 주세요.';
 const REFILLED_ELSEWHERE_MESSAGE = '앞 박스의 결품이 반영돼 새 송장을 출력했어요. 보충 대기예요.';
@@ -147,8 +149,8 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
   const settleWork = async () => {
     try {
       await work.current?.settle();
-    } catch {
-      throw new Refusal(UNCERTAIN_SCAN_MESSAGE);
+    } catch (error) {
+      throw new Refusal(error instanceof ScanWaitingError ? error.message : UNCERTAIN_SCAN_MESSAGE);
     }
   };
 
@@ -206,11 +208,18 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
   /** 박스를 든 채 찍은 송장(U13) — 앞 상품 스캔을 다 보낸 뒤 내려놓고 연다. 송장이 아니었으면(404) 상품으로 넘긴다 */
   const switchTo = (code: string, kind: 'same-waybill' | 'maybe-waybill', current: ShipmentByWaybill) =>
     run(async () => {
+      // 연결 전엔 어차피 내려놓을 수 없다 — 응답 없는 조회를 기다리지 않는다
+      if (work.current?.waitingForNetwork?.()) await settleWork();
       let found: ShipmentByWaybill | null = null;
       if (kind === 'maybe-waybill') {
         try {
           found = await lookup(code);
         } catch (error) {
+          // 상품 스캔은 아직 큐에 넣지 않았다 — 저장도 전송도 안 된 입력이다
+          if (error instanceof NetworkError) {
+            reject(SCAN_NOT_SENT_MESSAGE, code);
+            return;
+          }
           if (!isNotFound(error)) throw error;
           giveProduct(code);
           return;

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { act, render, screen } from '@testing-library/react';
+import { onlineManager } from '@tanstack/react-query';
 import { createMemoryPrefs } from '../../core/data/devicePrefs';
 import { reportServerReach } from '../../core/data/serverStatus';
 import { LABEL_PRINTER_KEY, writeLabelPrinter } from '../../core/hardware/print/labelPrinter';
@@ -35,6 +36,15 @@ describe('StatusBar', () => {
     act(() => reportServerReach('down'));
     expect(toneOf('서버')).toBe('bad');
     act(() => reportServerReach('up'));
+    expect(toneOf('서버')).toBe('ok');
+  });
+
+  it('서버: 기기가 오프라인이면 마지막 요청과 상관없이 빨강', () => {
+    render(<StatusBar tab="F1" prefs={createMemoryPrefs({ [LABEL_PRINTER_KEY]: 'spooler://P' })} />);
+    act(() => reportServerReach('up'));
+    act(() => onlineManager.setOnline(false));
+    expect(toneOf('서버')).toBe('bad');
+    act(() => onlineManager.setOnline(true));
     expect(toneOf('서버')).toBe('ok');
   });
 

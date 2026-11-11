@@ -2,7 +2,7 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import type { ReactNode } from 'react';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, onlineManager } from '@tanstack/react-query';
 import {
   createRouter,
   createRootRoute,
@@ -14,7 +14,7 @@ import {
 } from '@tanstack/react-router';
 import { SessionProvider } from '../../app/session-context';
 import { ApiClientProvider } from '../../core/data/ApiClientProvider';
-import { ApiError, type ApiClient } from '../../core/data/httpClient';
+import { ApiError, NetworkError, type ApiClient } from '../../core/data/httpClient';
 import type { Session } from '../../core/auth/session';
 import { ScanProvider, useScanBus } from '../../core/hardware/scan/ScanProvider';
 import { InventoryLookupScreen } from './InventoryLookupScreen';
@@ -42,6 +42,7 @@ vi.mock('@tanstack/react-router', async (importOriginal) => {
 });
 
 afterEach(() => {
+  onlineManager.setOnline(true);
   navigateOverride.current = null;
   navigateSpy.mockClear();
 });
@@ -404,6 +405,30 @@ describe('InventoryLookupScreen — 스캔 진입', () => {
     expect(screen.queryByText(/등록되지 않은 바코드/)).toBeNull();
 
     down = false;
+    await userEvent.click(within(alert).getByRole('button', { name: '다시 확인' }));
+    expect(await screen.findByText('상세화면')).toBeInTheDocument();
+  });
+
+  it('연결이 끊긴 채 스캔하면 기다리지 않고 바로 알린다 — 연결된 뒤 다시 확인하면 이어 간다', async () => {
+    onlineManager.setOnline(false);
+    const client: ApiClient = {
+      request: (async (opts: { path: string }) => {
+        if (!onlineManager.isOnline()) throw new NetworkError(new TypeError('Failed to fetch'));
+        if (opts.path.startsWith('/inventory/skus?barcode='))
+          return [{ id: 'sku-1', code: 'CT-001', name: '코튼셔츠', currentStock: 1, safetyStock: 0 }];
+        return { items: [], total: 0 };
+      }) as unknown as ApiClient['request'],
+    };
+    renderWithScan(client);
+
+    await userEvent.click(await screen.findByRole('button', { name: '스캔발사' }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(
+      `바코드를 확인하지 못했어요: ${HIT_BARCODE}. 서버에 연결하지 못했어요. 네트워크를 확인해 주세요.`
+    );
+
+    onlineManager.setOnline(true);
     await userEvent.click(within(alert).getByRole('button', { name: '다시 확인' }));
     expect(await screen.findByText('상세화면')).toBeInTheDocument();
   });

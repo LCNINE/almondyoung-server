@@ -151,6 +151,14 @@ export class ConflictError extends ApiError {
   }
 }
 
+/** 응답을 받지 못했다(연결 실패·15초 시간 초과). 서버가 요청을 받았는지는 알 수 없다. */
+export class NetworkError extends Error {
+  constructor(cause: unknown) {
+    super(cause instanceof Error ? cause.message : String(cause), { cause });
+    this.name = 'NetworkError';
+  }
+}
+
 export interface ApiClient {
   request<T>(opts: {
     method?: string;
@@ -201,7 +209,7 @@ export function createApiClient(deps: {
       return res;
     } catch (error) {
       reportServerReach('down');
-      throw error;
+      throw new NetworkError(error);
     } finally {
       clearTimeout(timeout);
     }

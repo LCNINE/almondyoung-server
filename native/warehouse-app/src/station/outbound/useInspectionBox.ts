@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { onlineManager } from '@tanstack/react-query';
 import { errorMessage } from '../../core/data/errorMessage';
 import { ApiError } from '../../core/data/httpClient';
 import { useWorkScanQueue } from '../../core/hardware/scan/useWorkScanQueue';
@@ -13,6 +14,15 @@ export const STATION_FORCE_REASON = 'station_force_command';
 export const STATION_WITHDRAW_REASON = 'station_withdraw_command';
 export const INTAKE_BLOCKED_MESSAGE = '앞 스캔을 확인하고 있어요. 확인이 끝난 뒤 다시 찍어 주세요.';
 export const UNCERTAIN_SCAN_MESSAGE = '앞 스캔이 처리됐는지 확인하지 못했어요. 같은 상품을 다시 찍지 마세요.';
+// 보낸 뒤 응답을 기다리다 끊긴 스캔도 있다 — «보내지 못했다» 고 단정하지 않는다
+export const WAITING_SCAN_MESSAGE = '앞 스캔이 아직 끝나지 않았어요. 연결된 뒤 다시 해 주세요.';
+
+/** 오프라인이라 앞 스캔이 멈춰 있다 — 연결되면 그대로 보내지므로 «결과 모름» 과 다르다 */
+export class ScanWaitingError extends Error {
+  constructor() {
+    super(WAITING_SCAN_MESSAGE);
+  }
+}
 
 export interface InspectionBoxEvents {
   /** 서버가 반영한 스캔 — 오른 줄(못 찾으면 null)과 수량 */
@@ -80,9 +90,13 @@ export function useInspectionBox(box: ShipmentByWaybill, events: InspectionBoxEv
   // 큐의 drain 이 끝나지 않는다 — 그래서 «비었다» 와 «확인 못 한 것이 생겼다» 를 렌더마다 직접 본다.
   const waiters = useRef<Array<{ resolve: () => void; reject: (error: Error) => void }>>([]);
   const unsettled = !queue.ready || !!queue.error() || areaBlocked;
+  const waitingForNetwork = scan.isPaused ? queue.size() : 0;
+  // 렌더를 기다리지 않는 판정 — 끊긴 직후 찍은 스캔은 아직 멈춤으로 그려지기 전일 수 있다
+  const waitingNow = () => queue.size() > 0 && (scan.isPaused || !onlineManager.isOnline());
   useEffect(() => {
     if (waiters.current.length === 0) return;
     if (unsettled) waiters.current.splice(0).forEach((w) => w.reject(new Error(UNCERTAIN_SCAN_MESSAGE)));
+    else if (waitingForNetwork > 0) waiters.current.splice(0).forEach((w) => w.reject(new ScanWaitingError()));
     else if (queue.size() === 0) waiters.current.splice(0).forEach((w) => w.resolve());
   });
 
@@ -95,6 +109,9 @@ export function useInspectionBox(box: ShipmentByWaybill, events: InspectionBoxEv
     idle: !intakeBlocked && queue.size() === 0,
     forcing: force.isPending,
     queueError: queue.error(),
+    /** 오프라인이라 보내지 못하고 기다리는 상품 스캔 수 — 연결되면 큐가 그대로 보낸다 */
+    waitingForNetwork,
+    waitingNow,
     storageError: queue.storageError(),
     /** 상품 하나(수량 n). 받을 수 없으면 false — 화면이 오류로 알린다 */
     accept(barcode: string, quantity: number): boolean {
@@ -108,6 +125,7 @@ export function useInspectionBox(box: ShipmentByWaybill, events: InspectionBoxEv
      */
     settle(): Promise<void> {
       if (!queue.ready || queue.error() || areaBlocked) return Promise.reject(new Error(UNCERTAIN_SCAN_MESSAGE));
+      if (waitingNow()) return Promise.reject(new ScanWaitingError());
       if (queue.size() === 0) return Promise.resolve();
       return new Promise<void>((resolve, reject) => {
         waiters.current.push({ resolve, reject });

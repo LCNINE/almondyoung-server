@@ -1,4 +1,4 @@
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, type NetworkMode } from '@tanstack/react-query';
 import { useApiClient } from '../../core/data/ApiClientProvider';
 import type { SkuSearchItem } from './types';
 
@@ -13,10 +13,14 @@ import type { SkuSearchItem } from './types';
  * 관측돼 중복 처리될 수 있다 — 둘 다 실제로 확인됨). useMutation 은 스캔마다
  * 독립된 요청을 만들고, 그 결과는 그 mutate 호출의 onSuccess 콜백에서만 정확히
  * 한 번 소비된다 — 캐시 신선도와 무관하다.
+ *
+ * 기본은 오프라인이면 연결될 때까지 멈췄다가 이어서 보낸다(저장된 스캔 큐가 쓰는 동작).
+ * 바로 결과를 보여 줘야 하는 화면은 'always' 로 연결 실패를 즉시 받는다.
  */
-export function useSkuByBarcode() {
+export function useSkuByBarcode(networkMode?: NetworkMode) {
   const api = useApiClient();
   return useMutation({
+    ...(networkMode && { networkMode }),
     mutationFn: (barcode: string) =>
       api.request<SkuSearchItem[]>({
         path: `/inventory/skus?barcode=${encodeURIComponent(barcode)}`,
