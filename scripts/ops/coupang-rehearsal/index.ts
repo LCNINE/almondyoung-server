@@ -18,6 +18,7 @@ import {
 } from '../../../apps/channel-adapter/src/services/order-collection/coupang-order.source';
 import { isInsideRepo, realpathLoose } from './repo-guard';
 import { parseCoupangOrderSheet } from '../../../apps/channel-adapter/src/services/order-collection/coupang-order-fields';
+import { summarizeOrders } from './report';
 
 function argValue(name: string): string | undefined {
   const prefix = `--${name}=`;
@@ -49,6 +50,8 @@ class RawWriter {
 /** 클라이언트 앞에서 응답을 남기는 얇은 포트 구현. 상품준비중 처리는 막는다 — 리허설은 읽기만 한다. */
 class RecordingOrderReader implements CoupangOrderSheetReader {
   readonly scans: Record<string, readonly unknown[]> = {};
+  /** 주문번호 → 단건 조회 응답의 발주서 전부 */
+  readonly singles = new Map<string, readonly unknown[]>();
   constructor(
     private readonly inner: CoupangOrderClient,
     private readonly raw: RawWriter,
@@ -64,6 +67,7 @@ class RecordingOrderReader implements CoupangOrderSheetReader {
   async getSingleOrderSheetByOrderId(orderId: string): Promise<{ data?: readonly unknown[] | null }> {
     const response = await this.inner.getSingleOrderSheetByOrderId(orderId);
     this.raw.write('order-sheet-single', response);
+    this.singles.set(orderId, response.data ?? []);
     return response;
   }
 
@@ -112,8 +116,8 @@ async function main(): Promise<void> {
   const instruct = orders.scans.INSTRUCT ?? [];
   const parseFailures: string[] = [];
   const acceptOrderIds = new Set<string>();
+  const instructOrderIds = new Set<string>();
   const unshipped: string[] = [];
-  const twoLineOrders: string[] = [];
   for (const raw of accept) {
     try {
       acceptOrderIds.add(parseCoupangOrderSheet(raw).orderId);
@@ -124,19 +128,44 @@ async function main(): Promise<void> {
   for (const raw of instruct) {
     try {
       const info = parseCoupangOrderSheet(raw);
+      instructOrderIds.add(info.orderId);
       const row = asRecord(raw);
       if (!row.invoiceNumber) unshipped.push(`${info.orderId}/${info.shipmentBoxId}`);
-      const optionIds = info.items.map((item) => item.vendorItemId);
-      if (new Set(optionIds).size !== optionIds.length) twoLineOrders.push(info.orderId);
     } catch (error) {
       parseFailures.push(error instanceof Error ? error.message : String(error));
     }
   }
+
+  // 결제완료 주문도 단건 조회한다(GET — 목록이 작다). 결제완료 스캔에는 이미 출고된 다른 상자가 안 보인다 —
+  // 그런 주문은 컷오버에서 사람이 처리하므로(런북) 숫자가 보여야 한다. source 가 이미 단건 조회한 주문은 다시 묻지 않는다.
+  const singleFetchFailures: string[] = [];
+  for (const orderId of acceptOrderIds) {
+    if (orders.singles.has(orderId)) continue;
+    try {
+      await orders.getSingleOrderSheetByOrderId(orderId);
+    } catch (error) {
+      singleFetchFailures.push(`${orderId}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+  const sheetsByOrder = new Map<string, readonly unknown[]>();
+  for (const orderId of new Set([...acceptOrderIds, ...instructOrderIds])) {
+    const sheets = orders.singles.get(orderId);
+    if (sheets) sheetsByOrder.set(orderId, sheets);
+  }
+  const report = summarizeOrders({ acceptOrderIds, sheetsByOrder });
+
   console.log(`결제완료 = 넘겨받을 주문 ${acceptOrderIds.size}건: ${[...acceptOrderIds].join(', ')}`);
+  console.log(
+    `결제완료이면서 출고(DEPARTURE 이후)된 상자가 섞인 주문 ${report.acceptWithShippedBox.length}건 (사람이 처리): ${report.acceptWithShippedBox.join(', ')}`,
+  );
   console.log(`상품준비중이면서 송장 없는 상자 ${unshipped.length}건: ${unshipped.join(', ')}`);
-  console.log(`해석 실패 ${parseFailures.length}건`);
-  parseFailures.forEach((message) => console.log(`  - ${message}`));
-  console.log(`같은 옵션 두 줄 주문 ${twoLineOrders.length}건: ${twoLineOrders.join(', ')}`);
+  console.log(`해석 실패 ${parseFailures.length + report.parseFailures.length}건`);
+  [...parseFailures, ...report.parseFailures].forEach((message) => console.log(`  - ${message}`));
+  console.log(`단건 조회 실패 ${singleFetchFailures.length}건 (아래 숫자에서 빠졌다)`);
+  singleFetchFailures.forEach((message) => console.log(`  - ${message}`));
+  console.log(
+    `같은 옵션 두 줄 주문(주문의 상자 전부 기준) ${report.twoLineOrders.length}건: ${report.twoLineOrders.join(', ')}`,
+  );
   console.log(
     `source 결과: 주문 ${result.snapshots.length}건, 수집 실패 ${result.fetchFailures.length}건, 창 끝 ${result.completedWindowEnd?.toISOString() ?? '없음'}`,
   );

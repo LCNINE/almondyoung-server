@@ -18,7 +18,7 @@
    COUPANG_VENDOR_ID=… COUPANG_ACCESS_KEY=… COUPANG_SECRET_KEY=… \
      npx tsx scripts/ops/coupang-rehearsal/index.ts --out=<레포 밖 디렉터리>
    ```
-   화면에 결제완료(넘겨받을 주문 수·번호), 상품준비중이면서 송장 없는 상자, 해석 실패(칸 이름), 같은 옵션 두 줄 주문,
+   화면에 결제완료(넘겨받을 주문 수·번호), 결제완료이면서 출고(DEPARTURE 이후)된 상자가 섞인 주문(컷오버에서 사람이 처리 — 결제완료 주문도 하나씩 단건 조회해 센다), 상품준비중이면서 송장 없는 상자, 해석 실패(칸 이름), 같은 옵션 두 줄 주문(주문의 상자 전부 기준 — source 의 격리 규칙과 같다),
    `CoupangOrderSource.fetchOrdersInWindow(null)` 결과 요약이 나온다. 원 응답은 `<out>/raw/NNN-*.json` (받는 즉시 쓰므로 도중에 실패해도 그때까지 받은 것은 남는다).
    31일 조회 폭이 받아들여지는지도 여기서 본다.
 3. 가짜 값 자료를 만든다.

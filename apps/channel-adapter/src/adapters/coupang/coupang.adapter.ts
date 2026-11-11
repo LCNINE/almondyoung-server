@@ -13,15 +13,11 @@ import {
   validateCoupangDateRange,
   mapCoupangStatusToInternal,
 } from '../../zods/coupang';
-import { CoupangOrderSheetInfo, parseCoupangOrderSheet } from '../../services/order-collection/coupang-order-fields';
-
-/** 이미 송장이 붙어 출고된 상자. 송장 업로드를 다시 보내지 않고, 그 품목은 «보냈다»로 센다. */
-const SHIPPED_BOX_STATUSES: ReadonlySet<CoupangOrderSheetInfo['status']> = new Set([
-  'DEPARTURE',
-  'DELIVERING',
-  'FINAL_DELIVERY',
-  'NONE_TRACKING',
-]);
+import {
+  COUPANG_SHIPPED_BOX_STATUSES,
+  CoupangOrderSheetInfo,
+  parseCoupangOrderSheet,
+} from '../../services/order-collection/coupang-order-fields';
 
 /**
  * 쿠팡 채널 어댑터
@@ -1391,7 +1387,7 @@ export class CoupangAdapter implements ChannelAdapter {
       );
     }
     return this.toInvoiceDtos(
-      boxes.filter(({ sheet }) => !SHIPPED_BOX_STATUSES.has(sheet.status)),
+      boxes.filter(({ sheet }) => !COUPANG_SHIPPED_BOX_STATUSES.has(sheet.status)),
       tracking,
     );
   }

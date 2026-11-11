@@ -102,6 +102,14 @@ export interface CoupangCancelReceiptInfo {
   items: Array<{ vendorItemId: string; cancelCount: number }>;
 }
 
+/** 송장이 붙어 출고된(DEPARTURE 이후) 상자 상태. 송장 업로드가 다시 보내지 않고, 리허설이 «결제완료와 섞인 출고»로 센다. */
+export const COUPANG_SHIPPED_BOX_STATUSES: ReadonlySet<CoupangOrderSheetInfo['status']> = new Set([
+  'DEPARTURE',
+  'DELIVERING',
+  'FINAL_DELIVERY',
+  'NONE_TRACKING',
+]);
+
 const OFFSET = /(?:Z|[+-]\d{2}:?\d{2})$/i;
 
 /** 쿠팡 시각을 계약 시각(UTC ISO)으로. offset 이 없으면 KST. 읽을 수 없는 값은 그대로 둔다 — 계약 파싱이 알린다. */
