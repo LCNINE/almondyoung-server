@@ -5,6 +5,7 @@ import { useAddToCart } from "@hooks/api/use-add-to-cart"
 import { toGaCurrency, trackEvent } from "@/lib/analytics/gtag"
 import { cn } from "@/lib/utils"
 import { showActionToast } from "@/components/shared/action-toast"
+import { showCartAddedToast } from "@/components/shared/cart-added-toast"
 import { AnimatedHeart } from "@/components/shared/animated-heart"
 import { Check, Heart, Minus, Plus, ShoppingCart } from "lucide-react"
 import { useState, useTransition } from "react"
@@ -161,10 +162,7 @@ export function ProductQuickActions({
         ],
       })
       setIsAddedToCart(true)
-      showActionToast({
-        icon: <ShoppingCart className="h-7 w-7" strokeWidth={2.5} />,
-        label: t("addedToast"),
-      })
+      showCartAddedToast({ title: productTitle, thumbnail: productImage })
       // 2초 후 초기화
       setTimeout(() => {
         setShowQuantitySelector(false)

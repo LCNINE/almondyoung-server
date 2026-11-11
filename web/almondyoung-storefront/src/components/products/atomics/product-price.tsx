@@ -60,7 +60,7 @@ export const ProductPrice = ({
           {displayPrice.toLocaleString()}원
         </span>
         <div className="flex items-center gap-1.5 text-[12px] font-semibold text-[#ffa500]">
-          <ProductMembershipBadge size="sm" label="멤버십할인가" />
+          <ProductMembershipBadge size="sm" label="멤버십 할인가" />
           <span className="text-[15px] font-bold text-[#ffa500]">
             멤버십 회원 공개
           </span>
@@ -124,7 +124,7 @@ export const ProductPrice = ({
             {displayPrice.toLocaleString()}원
           </span>
           {showMembershipTag && (
-            <ProductMembershipBadge size="sm" label="멤버십할인가" />
+            <ProductMembershipBadge size="sm" label="멤버십 할인가" />
           )}
         </div>
         {showMembershipHint && membershipSavings != null && (
@@ -138,7 +138,7 @@ export const ProductPrice = ({
           membershipSavings != null && (
             <div className="mt-1 flex flex-col gap-0.5">
               <div className="flex items-center gap-1.5 text-[12px] font-semibold text-[#ffa500]">
-                <ProductMembershipBadge size="sm" label="멤버십할인가" />
+                <ProductMembershipBadge size="sm" label="멤버십 할인가" />
                 <span className="text-[15px] font-bold">
                   {membershipPrice.toLocaleString()}원
                 </span>
@@ -159,7 +159,7 @@ export const ProductPrice = ({
         {displayPrice.toLocaleString()}원
       </span>
       {showMembershipTag && (
-        <ProductMembershipBadge size="sm" label="멤버십할인가" />
+        <ProductMembershipBadge size="sm" label="멤버십 할인가" />
       )}
       {!isMember &&
         membershipPrice != null &&
@@ -167,7 +167,7 @@ export const ProductPrice = ({
         membershipSavings != null && (
           <div className="flex flex-col gap-0.5">
             <div className="flex items-center gap-1.5 text-[12px] font-semibold text-[#ffa500]">
-              <ProductMembershipBadge size="sm" label="멤버십할인가" />
+              <ProductMembershipBadge size="sm" label="멤버십 할인가" />
               <span className="text-[15px] font-bold">
                 {membershipPrice.toLocaleString()}원
               </span>

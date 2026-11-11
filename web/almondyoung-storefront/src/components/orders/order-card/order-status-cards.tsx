@@ -134,7 +134,11 @@ function StatusCard({
                       </LocalizedClientLink>
                     )
                   ) : item.variantId ? (
-                    <OrderItemCartButton variantId={item.variantId} />
+                    <OrderItemCartButton
+                      variantId={item.variantId}
+                      title={item.title}
+                      thumbnail={item.thumbnail}
+                    />
                   ) : null}
                 </div>
               </div>

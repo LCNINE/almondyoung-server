@@ -75,24 +75,24 @@ function ProductCardRating({
         )
 
         return (
-          <span key={index} className="relative h-3.5 w-3.5">
+          <span key={index} className="relative h-3 w-3">
             <Star
-              className="absolute h-3.5 w-3.5 fill-gray-200 text-gray-200"
+              className="absolute h-3 w-3 fill-gray-200 text-gray-200"
               aria-hidden="true"
             />
             {fillPercent > 0 && (
               <span
-                className="absolute block h-3.5 overflow-hidden"
+                className="absolute block h-3 overflow-hidden"
                 style={{ width: `${fillPercent}%` }}
                 aria-hidden="true"
               >
-                <Star className="fill-ink text-ink h-3.5 w-3.5" />
+                <Star className="fill-primary text-primary h-3 w-3" />
               </span>
             )}
           </span>
         )
       })}
-      <span className="ml-0.5 text-[12px] leading-none text-gray-700">
+      <span className="ml-[3px] text-[10px] leading-none font-medium tracking-[-0.1px] text-gray-30">
         ({reviewCount.toLocaleString()})
       </span>
     </div>

@@ -30,13 +30,15 @@ export function AccountMenu({ tone = "light" }: { tone?: "light" | "dark" }) {
       </div>
 
       {/* 장바구니 */}
-      <AccountMenuItem
-        href={`/${countryCode}/cart`}
-        icon={<ShoppingCart className="h-6 w-6 md:h-8 md:w-8" />}
-        label={t("cart")}
-        badgeCount={cartItemCount}
-        tone={tone}
-      />
+      <div data-cart-anchor>
+        <AccountMenuItem
+          href={`/${countryCode}/cart`}
+          icon={<ShoppingCart className="h-6 w-6 md:h-8 md:w-8" />}
+          label={t("cart")}
+          badgeCount={cartItemCount}
+          tone={tone}
+        />
+      </div>
 
       {/* todo: 알림 기능 미연결로 임시 비활성화 */}
       {/* <AccountMenuItem

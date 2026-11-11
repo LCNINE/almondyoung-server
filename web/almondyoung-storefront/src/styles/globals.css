@@ -488,6 +488,15 @@ input[type="search"]::-webkit-search-results-decoration {
   }
 }
 
+@keyframes cart-added-toast-drain {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+
 @keyframes fade-in {
   0% {
     opacity: 0;

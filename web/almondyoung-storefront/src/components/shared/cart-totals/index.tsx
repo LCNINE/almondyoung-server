@@ -113,7 +113,7 @@ const CartTotals: React.FC<CartTotalsProps> = ({ totals, discountContext }) => {
       <div className="text-ui-fg-base txt-medium mb-2 flex items-center justify-between">
         <span>{ts("totalPayment")}</span>
         <span
-          className="txt-xlarge-plus"
+          className="txt-xlarge-plus text-foreground font-bold"
           data-testid="cart-total"
           data-value={total ?? ""}
         >

@@ -90,5 +90,12 @@
   },
   "won": "원",
   "timeSaleEndedOne": "타임세일이 종료되어 {name} 가격이 {from} → {to} 으로 변경되었습니다.",
-  "timeSaleEndedMany": "타임세일이 종료되어 {name} 외 {count}건의 가격이 변경되었습니다. 상품 금액 {from} → {to}"
+  "timeSaleEndedMany": "타임세일이 종료되어 {name} 외 {count}건의 가격이 변경되었습니다. 상품 금액 {from} → {to}",
+  "addedToast": {
+    "title": "담기 완료",
+    "membershipSavings": "멤버십가로 {amount}원 할인받았어요",
+    "freeShippingRemaining": "<b>{amount}원</b> 더 담으면 무료배송",
+    "freeShippingReached": "무료배송이 적용돼요",
+    "goToCart": "장바구니 바로가기"
+  }
 }

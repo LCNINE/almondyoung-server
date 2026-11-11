@@ -27,11 +27,11 @@ import {
   isInsufficientInventoryError,
 } from "@/lib/utils/cart-availability"
 import { isEqual } from "lodash"
-import { Minus, Plus, ShoppingCart, X } from "lucide-react"
+import { Minus, Plus, X } from "lucide-react"
 import Image from "next/image"
 import { useCallback, useEffect, useMemo, useState, useTransition } from "react"
 import { useTranslations } from "next-intl"
-import { showActionToast } from "@/components/shared/action-toast"
+import { showCartAddedToast } from "@/components/shared/cart-added-toast"
 import { toast } from "sonner"
 import OptionSelect from "@/domains/products/product-details/components/product-actions/option-select"
 
@@ -271,10 +271,7 @@ export function QuickAddDrawer({
             quantity: item.quantity,
           })),
         })
-        showActionToast({
-          icon: <ShoppingCart className="h-7 w-7" strokeWidth={2.5} />,
-          label: t("addedToast"),
-        })
+        showCartAddedToast({ title: productTitle, thumbnail: productImage })
         onOpenChange(false)
       } catch (error: unknown) {
         const err = error as Error & { digest?: string }

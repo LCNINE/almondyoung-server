@@ -41,6 +41,8 @@ import { useTranslations } from "next-intl"
 import ProductPreviewPrice from "../product-preview-price"
 import { ProductShippingNotice } from "../product-shipping-notice"
 import CartAddedModal from "./cart-added-modal"
+import { showCartAddedToast } from "@/components/shared/cart-added-toast"
+import { isTimeSaleProduct } from "@/lib/utils/time-sale"
 import MobileActions from "./mobile-actions"
 import OptionSelect from "./option-select"
 import { AlmondDesignNotice } from "./almond-design-notice"
@@ -429,15 +431,28 @@ export default function ProductActions({
     })
   }
 
+  const membershipSavingsOf = (items: SelectedItem[]) => {
+    if (!isMember || isTimeSaleProduct(product)) return 0
+
+    return items.reduce((sum, item) => {
+      const price = item.variant.calculated_price
+      const saved =
+        (price?.original_amount ?? 0) - (price?.calculated_amount ?? 0)
+
+      return sum + Math.max(0, saved) * item.quantity
+    }, 0)
+  }
+
   // 장바구니 담기
   const handleAddToCart = () => {
     if (selectedItems.length === 0 || almondSizeMismatch) return
 
-    setShowCartModal(true)
     setPriceChange(null)
 
     startTransition(async () => {
       try {
+        let priceChanged = false
+
         for (const item of selectedItems) {
           const result = await addToCart({
             variantId: item.variantId,
@@ -453,9 +468,11 @@ export default function ProductActions({
             added: result.unitPrice,
             hasTiers: pricing.appliedPercent !== null || pricing.next !== null,
           })
-          if (change) setPriceChange(change)
+          if (change) {
+            priceChanged = true
+            setPriceChange(change)
+          }
           if (result.error) {
-            setShowCartModal(false)
             // 담기 직전에 상한을 이미 걸러주므로, 여기까지 온 재고부족은 "이 옵션이 품절" 이 아니라
             // 장바구니에 이미 담긴 수량과 합쳐 재고를 넘긴 경우다(또는 방금 재고가 줄었거나).
             toast.error(
@@ -467,9 +484,21 @@ export default function ProductActions({
           }
         }
         trackAddToCart(selectedItems)
+
+        // 담긴 가격이 화면과 다르면 모달로 알리고, 아니면 담기 완료 토스트만 띄운다
+        if (priceChanged) {
+          setShowCartModal(true)
+          return
+        }
+
+        showCartAddedToast({
+          title: product.title ?? "",
+          thumbnail: product.thumbnail || product.images?.[0]?.url,
+          membershipSavings: membershipSavingsOf(selectedItems),
+          productMetadata: product.metadata,
+        })
       } catch (error: unknown) {
         const err = error as Error & { digest?: string }
-        setShowCartModal(false)
         if (err.digest === "UNAUTHORIZED" || err.message === "UNAUTHORIZED") {
           throw error
         }

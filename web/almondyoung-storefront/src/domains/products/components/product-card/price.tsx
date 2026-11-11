@@ -74,7 +74,7 @@ function TimeSalePrice({
       {showMembershipBadge && (
         <ProductMembershipBadge
           size="sm"
-          label="멤버십할인가"
+          label="멤버십 할인가"
           className="mt-1"
         />
       )}
@@ -126,7 +126,7 @@ export default function ProductPrice({
           </span>
         )}
         <div className="flex flex-col gap-0.5 text-[#ffa500]">
-          <ProductMembershipBadge size="sm" label="멤버십할인가" />
+          <ProductMembershipBadge size="sm" label="멤버십 할인가" />
           <span className="text-[15px] font-bold">멤버십 회원 공개</span>
         </div>
       </div>
@@ -183,7 +183,7 @@ export default function ProductPrice({
         </div>
         {membershipStillCheaper && (
           <div className="flex flex-col gap-0.5 text-[#ffa500]">
-            <ProductMembershipBadge size="sm" label="멤버십할인가" />
+            <ProductMembershipBadge size="sm" label="멤버십 할인가" />
             <span className="text-[15px] font-bold whitespace-nowrap">
               {membershipPrice.toLocaleString()}원
             </span>
@@ -229,7 +229,7 @@ export default function ProductPrice({
 
           <ProductMembershipBadge
             size="sm"
-            label="멤버십할인가"
+            label="멤버십 할인가"
             className="shrink-0"
           />
         </div>
@@ -258,7 +258,7 @@ export default function ProductPrice({
           </span>
         </div>
         <div className="flex flex-col gap-0.5 text-[#ffa500]">
-          <ProductMembershipBadge size="sm" label="멤버십할인가" />
+          <ProductMembershipBadge size="sm" label="멤버십 할인가" />
           <span className="text-[15px] font-bold whitespace-nowrap">
             {membershipPrice.toLocaleString()}원
           </span>
