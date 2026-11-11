@@ -14,6 +14,16 @@ export interface AllocatedLabelRow {
   qty: number;
 }
 
+/**
+ * 송장 품목 줄 이름. 옵션은 SKU 이름에 `[옵션]` 으로 이미 들어 있고, 옵션 없는 상품은 `[단일상품]` 을 붙인다.
+ * 옵션 키가 비었는데 이름이 `]` 로 끝나면 옵션이 이름에 들어 있는 것이라 그대로 둔다.
+ */
+export function labelSkuNameOf(skuName: string, optionKey: string | null): string {
+  if (optionKey || skuName.endsWith(']')) return skuName;
+
+  return `${skuName} [단일상품]`;
+}
+
 const codepoint = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 
 /**

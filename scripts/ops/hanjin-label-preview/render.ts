@@ -69,6 +69,7 @@ const SAMPLE: HanjinLabelData = {
   items: [{ locationCode: 'A-01-01', skuId: 'sku-1', name: '토익 Speaking 1권', quantity: 1 }],
   boxType: 'A',
   custOrdNo: 'AY0123456789ABCDEFGHJKMNPQRS',
+  orderNo: '20261027-6009 외 1건',
   printedDate: '2026-09-27',
   revision: 1,
   boxIndex: 1,
@@ -85,7 +86,7 @@ const rasterizer = new SvgRasterizer();
 const SEVEN_ITEMS: HanjinLabelData['items'] = [
   { locationCode: 'A-01-01', skuId: 'sku-1', name: '노몬드 대용량 전처리제 1000ml', quantity: 1 },
   { locationCode: 'A-01-02', skuId: 'sku-2', name: '노몬드 긴 마이크로 브러쉬', quantity: 1 },
-  { locationCode: 'A-01-03', skuId: 'sku-3', name: '실리콘 아이패치 블랙', quantity: 2 },
+  { locationCode: 'A-01-03', skuId: 'sku-3', name: '실리콘 아이패치 [블랙]', quantity: 2 },
   { locationCode: 'A-01-04', skuId: 'sku-4', name: '롤리킹 펌제 1제2제', quantity: 4 },
   { locationCode: 'A-01-05', skuId: 'sku-5', name: '하이드로겔 아이패치 무지 50개입', quantity: 1 },
   { locationCode: 'A-01-06', skuId: 'sku-6', name: '베르사 펌글루 5ml', quantity: 2 },

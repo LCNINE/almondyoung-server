@@ -56,7 +56,7 @@ describe('renderHanjinNsLabel', () => {
 
   it('NS 출력은 NL·FS 추가 리팩터 전과 같다 (svg + 바코드 배치 해시 고정)', () => {
     const digest = createHash('sha256').update(spec.svg).update(JSON.stringify(spec.barcodes)).digest('hex');
-    expect(digest).toBe('872607a6806741c6abcba32a1419a73b7a79d418ebd0644e79bbe8faa958da1c');
+    expect(digest).toBe('649cc6604f5d32c1937a4c8795d62939e39c0a1c477c7b3aac5955c6e144b39a');
   });
 
   it('NS 는 가로 200mm × 세로 102mm, viewBox 도 mm', () => {
@@ -142,7 +142,7 @@ describe('renderHanjinNsLabel', () => {
     expect(spec.svg).not.toContain('010-1234-5678');
   });
 
-  it('분류코드·운임·권역·출고번호를 찍는다', () => {
+  it('분류코드·운임·권역·주문번호를 찍는다', () => {
     for (const s of [
       'NX',
       '150',
@@ -157,7 +157,7 @@ describe('renderHanjinNsLabel', () => {
       '소공동 51 한진빌딩',
       '2026년 09월 28일',
       '운임Type:A',
-      'AY0123456789ABCDEFGHJKMNPQRS',
+      '주문번호: 20261027-6009 외 1건',
       '4527-1697-8431',
       '1/1',
     ]) {
@@ -197,7 +197,7 @@ describe('renderHanjinNsLabel', () => {
   });
 
   it('출고번호는 자르지 않고 글자를 줄인다', () => {
-    expect(spec.svg).toContain('출고번호: AY0123456789ABCDEFGHJKMNPQRS');
+    expect(spec.svg).toContain('주문번호: 20261027-6009 외 1건');
   });
 
   describe('출고번호는 ITF quiet zone(3.75mm) 앞에서 끝난다 (#913 — 잉크가 ITF 안까지 들어갔다)', () => {
@@ -210,8 +210,8 @@ describe('renderHanjinNsLabel', () => {
       expect(CUST_ORD_NO_X_MM + CUST_ORD_NO_MAX_WIDTH_MM).toBeCloseTo(QUIET_ZONE_START, 9);
     });
 
-    // UUID 에서 파생한 실제 모양의 출고번호 500개 — 모델 폭으로 칸 안에 들어가는지 전수 확인.
-    const samples = Array.from({ length: 500 }, (_, i) => `출고번호: ${deriveCustOrdNo(uuidV4Of(i))}`);
+    // 주문을 못 찾으면 상관키로 떨어진다 — UUID 에서 파생한 실제 모양 500개가 가장 긴 경우다. 모델 폭으로 칸 안에 들어가는지 전수 확인.
+    const samples = Array.from({ length: 500 }, (_, i) => `주문번호: ${deriveCustOrdNo(uuidV4Of(i))}`);
     const endMm = (t: string) => CUST_ORD_NO_X_MM + textWidthMm(t, custOrdNoPt(t));
 
     it('UUID 파생 출고번호 500개 모두 최소 4pt 이상으로 quiet zone 앞에서 끝난다(모델 폭)', () => {
@@ -223,9 +223,9 @@ describe('renderHanjinNsLabel', () => {
 
     it('그중 가장 긴 표본과 픽스처 표본은 실제로 그려도 잉크가 quiet zone 앞에서 끝난다', () => {
       const worst = samples.reduce((a, b) => (endMm(b) > endMm(a) ? b : a));
-      for (const custOrdNo of [worst.slice('출고번호: '.length), DATA.custOrdNo]) {
-        const text = `출고번호: ${custOrdNo}`;
-        const label = renderHanjinNsLabel({ ...DATA, custOrdNo });
+      for (const orderNo of [worst.slice('주문번호: '.length), DATA.orderNo]) {
+        const text = `주문번호: ${orderNo}`;
+        const label = renderHanjinNsLabel({ ...DATA, orderNo });
         const el = new RegExp(`<text [^>]*font-size="([\\d.]+)"[^>]*>${text}</text>`).exec(label.svg);
         expect(el?.[1]).toBe((custOrdNoPt(text) * PT_TO_MM).toFixed(2)); // 라벨이 실제로 그 크기로 그린다
         const custEl = textElement(label.svg, (t) => t.includes(`>${text}<`));

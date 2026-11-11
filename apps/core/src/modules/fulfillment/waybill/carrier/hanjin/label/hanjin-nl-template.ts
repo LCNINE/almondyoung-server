@@ -38,7 +38,7 @@ export function renderHanjinNlLabel(d: HanjinLabelData): LabelSpec {
 
   const slipAddress = shrinkThenFit(`${rc.baseAddress} ${rc.detailAddress}`, 89.5, 9); // 배달표 받는분 주소(원본)
   const message = shrinkThenFit(d.deliveryMessage, 84, 9); // ⑭
-  const custText = `출고번호: ${d.custOrdNo}`;
+  const custText = `주문번호: ${d.orderNo}`;
 
   // ── 분류 머리 ───────────────────────────────────────────────────────────
   const sortHead = [

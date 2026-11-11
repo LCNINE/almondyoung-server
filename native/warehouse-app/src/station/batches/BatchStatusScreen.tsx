@@ -14,6 +14,7 @@ import {
   batchProgressOf,
   boxCountsOf,
   boxRowOf,
+  hasCancelPending,
   mergeBatches,
   sortBoxRows,
   useBatchWorkItems,
@@ -201,6 +202,11 @@ function BatchDetail({ batch, items }: { batch: OutboundBatchSummary; items: Bat
           ))}
         </div>
       ) : null}
+      {hasCancelPending(states.data ?? []) ? (
+        <p role="alert" className="shrink-0 rounded-md bg-[#FDECEE] px-3 py-2 text-[15px] font-semibold text-[#9E1320]">
+          취소 대기 박스는 박스 빼기로 빼야 취소가 끝나요.
+        </p>
+      ) : null}
       {rows.length > 0 ? (
         <ol aria-label="박스" className="min-h-0 flex-1 overflow-auto pr-2 [scrollbar-gutter:stable]">
           {/* 스크롤바가 내용 위에 겹치는 웹뷰(리눅스)에서도 오른쪽 상태 칸을 가리지 않게 자리를 잡아 둔다 */}
@@ -209,7 +215,7 @@ function BatchDetail({ batch, items }: { batch: OutboundBatchSummary; items: Bat
               key={row.shipmentId}
               className="grid h-[46px] grid-cols-[160px_minmax(0,1fr)_96px] items-center border-b border-[#EEF0F2] text-[15px]"
             >
-              <span className="font-mono">{formatTrackingNo(row.trackingNo)}</span>
+              <span className="font-mono">{row.trackingNo ? formatTrackingNo(row.trackingNo) : '송장 없음'}</span>
               <span>{row.recipient}</span>
               <span className={cn('text-right font-semibold', ROW_TONE[row.tone])}>{row.status}</span>
             </li>

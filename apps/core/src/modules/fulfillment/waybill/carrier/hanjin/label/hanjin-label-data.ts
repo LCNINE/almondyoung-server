@@ -32,7 +32,8 @@ export interface HanjinLabelContent {
   commodityName: string; // 한진 등록 품명과 같은 값 — NS·NL 이 찍는다
   items: LabelItem[]; // (로케이션, SKU) 배정 행 — FS 가 찍는다
   boxType: string; // 운임Type
-  custOrdNo: string; // 출고번호
+  custOrdNo: string; // 한진 상관키(AY…) — 종이에는 찍지 않는다
+  orderNo: string; // 주문번호 줄. 모든 장에 찍혀 뒷장을 첫 장과 짝 맞추는 단서가 된다
   boxIndex: number; // shipment 하나 = 박스 하나
   boxCount: number;
 }
@@ -139,9 +140,19 @@ export function buildHanjinLabelContent({
     items: [...items],
     boxType: config.boxType,
     custOrdNo,
+    orderNo: labelOrderNoText(ctx.orderNos, custOrdNo),
     boxIndex: 1,
     boxCount: 1,
   };
+}
+
+/** 합포장이면 첫 주문 + 나머지 건수 — 한 줄 칸이라 다 늘어놓지 않는다. 주문을 못 찾으면 상관키로 떨어진다 */
+export function labelOrderNoText(orderNos: readonly string[], custOrdNo: string): string {
+  const [first, ...rest] = orderNos;
+
+  if (!first) return custOrdNo;
+
+  return rest.length > 0 ? `${first} 외 ${rest.length}건` : first;
 }
 
 export function buildHanjinLabelData(input: {

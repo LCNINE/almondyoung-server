@@ -85,7 +85,7 @@ export function renderHanjinNsLabel(d: HanjinLabelData): LabelSpec {
   ];
 
   // ── 우측 하단: 배달표 ───────────────────────────────────────────────────
-  const custText = `출고번호: ${d.custOrdNo}`;
+  const custText = `주문번호: ${d.orderNo}`;
   const deliverySlip = [
     text({ x: R + 6, y: 42.7, pt: 24, bold: true, text: s.routeRank }), // ⑩
     text({ x: R + 26.7, y: 42.7, pt: 22, bold: true, text: s.courierName }), // ⑪

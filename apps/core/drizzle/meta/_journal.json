@@ -1086,6 +1086,13 @@
       "when": 1794372922270,
       "tag": "20261111045522_rename-sku-option-names",
       "breakpoints": true
+    },
+    {
+      "idx": 155,
+      "version": "7",
+      "when": 1794376282138,
+      "tag": "20261111055122_bracket-sku-option-names",
+      "breakpoints": true
     }
   ]
 }

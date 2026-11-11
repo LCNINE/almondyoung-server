@@ -4,9 +4,9 @@ import { sql } from 'drizzle-orm';
 import { wmsSchema } from '../../inventory/schema/inventory.schema';
 import { matchingNameKey, NAME_WHITESPACE, NameMatchCandidate } from './name-match';
 
-// SKU 이름은 "상품명 (옵션)" 으로 저장한다. 주문 쪽 키는 "상품명 옵션" 이라 끝의 괄호를 벗겨 같은 키로 맞춘다.
+// SKU 이름은 "상품명 [옵션]" 으로 저장한다. 주문 쪽 키는 "상품명 옵션" 이라 끝의 괄호를 벗겨 같은 키로 맞춘다.
 const matchingSkuName = sql.raw(
-  `CASE WHEN option_key <> '' AND right(name, length(option_key) + 3) = ' (' || option_key || ')'
+  `CASE WHEN option_key <> '' AND right(name, length(option_key) + 3) = ' [' || option_key || ']'
     THEN left(name, length(name) - length(option_key) - 3) || ' ' || option_key ELSE name END`,
 );
 

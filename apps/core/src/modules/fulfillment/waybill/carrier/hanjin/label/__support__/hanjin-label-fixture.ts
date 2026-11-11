@@ -35,6 +35,7 @@ export const HANJIN_LABEL_FIXTURE: HanjinLabelData = {
   ],
   boxType: 'A',
   custOrdNo: 'AY0123456789ABCDEFGHJKMNPQRS',
+  orderNo: '20261027-6009 외 1건',
   printedDate: '2026-09-28',
   revision: 1,
   boxIndex: 1,
@@ -53,6 +54,8 @@ export const HANJIN_LABEL_LONG_FIXTURE: HanjinLabelData = {
     addressSummary: '가'.repeat(60),
   },
   recipient: { ...HANJIN_LABEL_FIXTURE.recipient, detailAddress: '가'.repeat(80) },
+  // 주문을 못 찾아 상관키로 떨어진 줄이 가장 길다
+  orderNo: HANJIN_LABEL_FIXTURE.custOrdNo,
   deliveryMessage: '가'.repeat(100),
   commodityName: '가'.repeat(100),
   items: [

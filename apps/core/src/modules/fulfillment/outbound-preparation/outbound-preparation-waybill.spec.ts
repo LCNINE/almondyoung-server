@@ -120,7 +120,7 @@ describe('outbound preparation with WaybillManager', () => {
           useValue: {
             getActiveWaybill: async () => active,
             recipientHashOf: () => 'hash',
-            loadIssueContext: async () => ({ ...shipment, shipmentId, lines: [], entrancePassword: null }),
+            loadIssueContext: async () => ({ ...shipment, shipmentId, lines: [], entrancePassword: null, orderNos: [] }),
           },
         },
         { provide: WaybillRepository, useValue: { insertPending, findById: async () => active } },
