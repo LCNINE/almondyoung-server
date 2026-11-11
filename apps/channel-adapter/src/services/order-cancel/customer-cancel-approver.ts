@@ -77,8 +77,8 @@ export class CustomerCancelApprover {
 
   private async approveCoupang(command: ApprovalCommand): Promise<ApprovalResult> {
     if (!this.coupangReturnClient) return failed(false, 'channel_not_supported', '쿠팡 클라이언트를 쓸 수 없습니다');
-    const receiptId = Number(command.answers.channelRequestRef);
-    if (!Number.isInteger(receiptId) || receiptId <= 0) {
+    const receiptId = command.answers.channelRequestRef;
+    if (!/^\d+$/.test(receiptId) || /^0+$/.test(receiptId)) {
       return failed(false, 'invalid_request_ref', `쿠팡 접수번호가 올바르지 않습니다: ${command.answers.channelRequestRef}`);
     }
     // 🔴 act 전 막음: 전체 범위 명령엔 줄이 없어 cancelCount 를 모른다 — #1245 source 가 수량을 명령까지 실어야 한다

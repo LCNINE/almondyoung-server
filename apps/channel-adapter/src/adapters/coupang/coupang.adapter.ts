@@ -31,7 +31,7 @@ export class CoupangAdapter implements ChannelAdapter {
   /**
    * 🔍 쿠팡 발주서 단건 조회 (shipmentBoxId 기준) - findOrders에서 사용
    */
-  private async getSingleOrderSheet(shipmentBoxId: string | number): Promise<InternalOrderEvent> {
+  private async getSingleOrderSheet(shipmentBoxId: string): Promise<InternalOrderEvent> {
     try {
       console.log(`🔍 쿠팡 발주서 단건 조회 시작: ${shipmentBoxId}`);
 
@@ -214,7 +214,7 @@ export class CoupangAdapter implements ChannelAdapter {
   /**
    * 🔍 쿠팡 발주서 단건 조회 (orderId 기준) - findOrders에서 사용
    */
-  private async getSingleOrderSheetByOrderId(orderId: string | number): Promise<InternalOrderEvent[]> {
+  private async getSingleOrderSheetByOrderId(orderId: string): Promise<InternalOrderEvent[]> {
     try {
       console.log(`🔍 쿠팡 발주서 단건 조회 (orderId) 시작: ${orderId}`);
 
@@ -278,7 +278,7 @@ export class CoupangAdapter implements ChannelAdapter {
    * @param shipmentBoxId 발주서 ID
    * @returns 배송상태 변경 히스토리 응답
    */
-  async getDeliveryHistory(shipmentBoxId: string | number): Promise<CoupangDeliveryHistoryResponse> {
+  async getDeliveryHistory(shipmentBoxId: string): Promise<CoupangDeliveryHistoryResponse> {
     try {
       console.log(`📋 쿠팡 배송상태 히스토리 조회 시작: ${shipmentBoxId}`);
 
@@ -765,7 +765,7 @@ export class CoupangAdapter implements ChannelAdapter {
       // 2. API 호출
       const response = await this.coupangReturnClient.completedShipment({
         vendorId: process.env.COUPANG_VENDOR_ID!,
-        receiptId: Number(command.claimId),
+        receiptId: command.claimId,
         deliveryCompanyCode: coupangCompanyCode,
         invoiceNumber: command.tracking.number,
       });
@@ -839,7 +839,7 @@ export class CoupangAdapter implements ChannelAdapter {
       // 2. API 호출
       const response = await this.coupangReturnClient.registerReturnInvoice({
         returnExchangeDeliveryType: command.collectionType,
-        receiptId: Number(command.claimId),
+        receiptId: command.claimId,
         deliveryCompanyCode: coupangCompanyCode,
         invoiceNumber: command.tracking.number,
       });
@@ -1285,7 +1285,7 @@ export class CoupangAdapter implements ChannelAdapter {
    * 실제 구현에서는 클레임 관리 시스템과 연동
    */
   private async translateClaimIdToCoupangInfo(claimId: string): Promise<{
-    receiptId: number;
+    receiptId: string;
     cancelCount: number;
   }> {
     // 🔍 입력 검증
@@ -1298,10 +1298,10 @@ export class CoupangAdapter implements ChannelAdapter {
       console.log('🔄 번역 중: claimId → 쿠팡 클레임 정보', claimId);
 
       // 임시 구현 (실제로는 클레임 DB 조회)
-      const receiptId = parseInt(claimId.replace('CLAIM_', ''), 10);
+      const receiptId = claimId.replace('CLAIM_', '');
 
-      // 🔍 번역 결과 검증
-      if (!receiptId || receiptId <= 0) {
+      // 🔍 번역 결과 검증 (긴 ID 는 문자열로 들고 숫자 모양만 본다)
+      if (!/^\d+$/.test(receiptId) || /^0+$/.test(receiptId)) {
         throw new Error(`클레임 ID를 쿠팡 receiptId로 번역할 수 없습니다: ${claimId}`);
       }
 

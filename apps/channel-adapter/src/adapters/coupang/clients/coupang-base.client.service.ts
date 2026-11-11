@@ -1,6 +1,9 @@
 import { Logger } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
+import { firstValueFrom } from 'rxjs';
 import * as crypto from 'crypto';
+import { parseCoupangJson, stringifyCoupangJson } from './coupang-json';
+import { coupangRateLimiter } from './coupang-rate-limiter';
 
 /**
  * 쿠팡 API 기본 설정 정보
@@ -79,4 +82,80 @@ export abstract class CoupangBaseClient {
 
     return `CEA algorithm=HmacSHA256, access-key=${accessKey}, signed-date=${datetime}, signature=${signature}`;
   }
+
+  /**
+   * 쿠팡 호출의 단일 통로 — 속도 제한 → 읽기 전용 검사 → 서명 → 전송 → 손실 없는 JSON 파싱.
+   *
+   * `COUPANG_READ_ONLY=true` 면 GET 이 아닌 호출은 보내기 전에 throw 한다(호출 시점에 읽는다).
+   * HTTP 오류는 상태 코드를 메시지(`쿠팡 <status>: …`)와 `status` 속성에 싣고 throw 한다.
+   */
+  protected async send<T>(
+    method: 'GET' | 'PATCH' | 'POST' | 'PUT',
+    path: string,
+    options: { query?: URLSearchParams; body?: unknown } = {},
+  ): Promise<T> {
+    await coupangRateLimiter.acquire();
+
+    if (process.env.COUPANG_READ_ONLY === 'true' && method !== 'GET') {
+      throw new Error(`COUPANG_READ_ONLY: ${method} ${path} 차단`);
+    }
+
+    const config = this.getApiConfig();
+    const queryString = options.query?.toString() ?? '';
+    const authorization = this.generateAuthHeader(config.accessKey, config.secretKey, method, path, queryString);
+    const url = `${config.apiEndpoint}${path}${queryString ? `?${queryString}` : ''}`;
+
+    let status: number | undefined;
+    let text: string;
+    try {
+      const response = await firstValueFrom(
+        this.http.request<string>({
+          method,
+          url,
+          data: options.body === undefined ? undefined : stringifyCoupangJson(options.body),
+          responseType: 'text',
+          transformResponse: [(data: string) => data],
+          headers: { Authorization: authorization, 'Content-Type': 'application/json' },
+        }),
+      );
+      status = response.status;
+      text = response.data;
+    } catch (error) {
+      const failedStatus = statusOf(error);
+      if (failedStatus === 429) coupangRateLimiter.recordRateLimited();
+      else coupangRateLimiter.recordError();
+      const detail = failedStatus === undefined ? messageOf(error) : brief(responseTextOf(error));
+      throw Object.assign(new Error(`쿠팡 ${failedStatus ?? '네트워크'}: ${detail}`), {
+        status: failedStatus,
+        cause: error,
+      });
+    }
+
+    coupangRateLimiter.recordSuccess();
+    this.logger.debug?.(`쿠팡 ${method} ${path} → ${status}`);
+    return parseCoupangJson(text) as T;
+  }
+}
+
+function statusOf(error: unknown): number | undefined {
+  if (typeof error !== 'object' || error === null || !('response' in error)) return undefined;
+  const { response } = error;
+  if (typeof response !== 'object' || response === null || !('status' in response)) return undefined;
+  return typeof response.status === 'number' ? response.status : undefined;
+}
+
+function responseTextOf(error: unknown): string {
+  if (typeof error !== 'object' || error === null || !('response' in error)) return '';
+  const { response } = error;
+  if (typeof response !== 'object' || response === null || !('data' in response)) return '';
+  return typeof response.data === 'string' ? response.data : '';
+}
+
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+/** 오류 본문은 길 수 있고 고객 정보가 섞일 수 있어 앞부분만 싣는다 */
+function brief(text: string): string {
+  return text.length > 200 ? `${text.slice(0, 200)}…` : text;
 }

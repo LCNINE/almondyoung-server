@@ -123,7 +123,7 @@ describe('CustomerCancelApprover', () => {
       answers: { channelRequestRef: '12345', needsApproval: true },
     });
     expect(result).toEqual({ kind: 'approved' });
-    expect(coupang.stoppedShipment).toHaveBeenCalledWith({ vendorId: 'vendor-1', receiptId: 12345, cancelCount: 2 });
+    expect(coupang.stoppedShipment).toHaveBeenCalledWith({ vendorId: 'vendor-1', receiptId: '12345', cancelCount: 2 });
   });
 
   it('coupang without a known cancel count fails permanently', async () => {

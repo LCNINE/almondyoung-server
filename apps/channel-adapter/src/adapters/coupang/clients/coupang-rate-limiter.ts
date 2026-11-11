@@ -1,0 +1,67 @@
+/**
+ * 쿠팡 호출 속도 제한 — 프로세스당 초당 N회, 429 면 60초, 에러 폭주면 10분 멈춘다.
+ *
+ * 판매자 ID 한도가 초당 5회라, 롤링 배포로 태스크 둘이 겹쳐도 넘지 않게 프로세스당 2회로 둔다.
+ */
+export interface CoupangRateLimiterOptions {
+  perSecond: number;
+  now?: () => number;
+  sleep?: (ms: number) => Promise<void>;
+}
+
+const WINDOW_MS = 1000;
+const RATE_LIMITED_PAUSE_MS = 60_000;
+const ERROR_WINDOW_MS = 5000;
+const ERROR_BURST = 20;
+const ERROR_BURST_PAUSE_MS = 600_000;
+
+export class CoupangRateLimiter {
+  private readonly perSecond: number;
+  private readonly now: () => number;
+  private readonly sleep: (ms: number) => Promise<void>;
+  private readonly starts: number[] = [];
+  private errors: number[] = [];
+  private pausedUntil = 0;
+
+  constructor(opts: CoupangRateLimiterOptions) {
+    this.perSecond = opts.perSecond;
+    this.now = opts.now ?? Date.now;
+    this.sleep = opts.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
+  }
+
+  async acquire(): Promise<void> {
+    for (;;) {
+      const now = this.now();
+      if (now < this.pausedUntil) {
+        await this.sleep(this.pausedUntil - now);
+        continue;
+      }
+      while (this.starts.length > 0 && this.starts[0] <= now - WINDOW_MS) this.starts.shift();
+      if (this.starts.length < this.perSecond) {
+        this.starts.push(now);
+        return;
+      }
+      await this.sleep(this.starts[0] + WINDOW_MS - now);
+    }
+  }
+
+  recordRateLimited(): void {
+    this.pausedUntil = Math.max(this.pausedUntil, this.now() + RATE_LIMITED_PAUSE_MS);
+  }
+
+  recordError(): void {
+    const now = this.now();
+    this.errors = this.errors.filter((t) => t > now - ERROR_WINDOW_MS);
+    this.errors.push(now);
+    if (this.errors.length >= ERROR_BURST) {
+      this.pausedUntil = Math.max(this.pausedUntil, now + ERROR_BURST_PAUSE_MS);
+      this.errors = [];
+    }
+  }
+
+  recordSuccess(): void {
+    // 에러 폭주 판정은 «5초 안의 건수» 라 성공이 끼어도 지우지 않는다.
+  }
+}
+
+export const coupangRateLimiter = new CoupangRateLimiter({ perSecond: 2 });
