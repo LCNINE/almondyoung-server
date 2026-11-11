@@ -292,6 +292,13 @@ function OutboundQueueContent({
                 <RemoveBoxPanel
                   batchId={batch.id}
                   onClose={() => setPanel(null)}
+                  onWithdrawing={(shipment) =>
+                    void navigate({
+                      to: '/outbound/withdraw/$shipmentId',
+                      params: { shipmentId: shipment.shipmentId },
+                      state: { shipment },
+                    })
+                  }
                 />
               )}
             </li>

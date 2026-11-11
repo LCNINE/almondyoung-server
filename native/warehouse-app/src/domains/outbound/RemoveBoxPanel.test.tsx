@@ -36,7 +36,7 @@ function mount(opts: { request: (o: { method?: string; path: string; body?: unkn
       </WarehouseProvider>
     </SessionProvider>
   );
-  render(<RemoveBoxPanel batchId="b-1" onClose={() => {}} />, { wrapper });
+  render(<RemoveBoxPanel batchId="b-1" onClose={() => {}} onWithdrawing={() => {}} />, { wrapper });
   return { user: userEvent.setup() };
 }
 

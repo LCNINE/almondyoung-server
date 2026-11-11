@@ -32,7 +32,7 @@ describe('뺄 상품(스펙 §6.2 withdrawing)', () => {
   it('빼는 중인 박스 송장이면 뺄 목록 — 상품을 찍으면 바구니로, 다 빼면 «빠진 박스»', async () => {
     const { server } = await setupInspection({ boxes: [WITHDRAWING], prefs: withBin() });
     await openBox('421033881907');
-    expect(await screen.findByText('뺄 상품')).toBeInTheDocument();
+    expect(await screen.findByText('뺄 상품을 찍어 주세요')).toBeInTheDocument();
     expect(within(list()).getByText('[B-11-1] 헤어클립 집게핀')).toBeInTheDocument();
     expect(within(list()).getByText('2')).toBeInTheDocument();
     scan('8801002');
@@ -52,7 +52,7 @@ describe('뺄 상품(스펙 §6.2 withdrawing)', () => {
   it('응답에 뺀 상품 이름이 없으면(옛 core) 바코드를 적는다', async () => {
     await setupInspection({ boxes: [{ ...WITHDRAWING, omitRemovedName: true }], prefs: withBin() });
     await openBox('421033881907');
-    await screen.findByText('뺄 상품');
+    await screen.findByText('뺄 상품을 찍어 주세요');
     scan('8801002');
     await waitFor(() => expect(within(recent()).getByText('8801002')).toBeInTheDocument());
   });
@@ -69,7 +69,7 @@ describe('뺄 상품(스펙 §6.2 withdrawing)', () => {
   it('바구니 바코드를 찍으면 «뺄 상품을 찍어 주세요»', async () => {
     await setupInspection({ boxes: [WITHDRAWING], prefs: withBin() });
     await openBox('421033881907');
-    await screen.findByText('뺄 상품');
+    await screen.findByText('뺄 상품을 찍어 주세요');
     scan('RB-01');
     expect(await screen.findByRole('alert')).toHaveTextContent('바구니 바코드예요');
   });
@@ -82,7 +82,7 @@ describe('뺄 상품(스펙 §6.2 withdrawing)', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: /박스 빼기/ })).toBeInTheDocument());
     press('F11');
     press('F11');
-    await screen.findByText('뺄 상품');
+    await screen.findByText('뺄 상품을 찍어 주세요');
     // 다시 그린 화면이 송장 줄을 한 번 더 남기지 않는다(처음 찍었을 때 한 줄뿐)
     expect(within(recent()).getAllByText('4210-3388-1907')).toHaveLength(1);
     await waitFor(() => expect(document.querySelector('[data-intake="open"]')).not.toBeNull());
@@ -94,7 +94,7 @@ describe('뺄 상품(스펙 §6.2 withdrawing)', () => {
     await setupInspection({ boxes: [WITHDRAWING], prefs: withBin() });
     // 스캔 큐가 준비되고 Esc 가 등록될 때까지 — 준비 전 내려놓기는 «확인 못 한 스캔» 거절이 맞다
     await openBox('421033881907');
-    await screen.findByText('뺄 상품');
+    await screen.findByText('뺄 상품을 찍어 주세요');
     press('Escape');
     expect(await screen.findByText('송장 바코드')).toBeInTheDocument();
   });
@@ -129,7 +129,7 @@ describe('뺄 상품(스펙 §6.2 withdrawing)', () => {
     });
     const { server } = await setupInspection({ boxes: [WITHDRAWING], prefs: withBin(), store });
     scan('421033881907');
-    await screen.findByText('뺄 상품');
+    await screen.findByText('뺄 상품을 찍어 주세요');
     expect(document.querySelector('[data-intake="blocked"]')).not.toBeNull();
     scan('8801002');
     expect(await screen.findByRole('alert')).toHaveTextContent('앞 스캔을 확인하고 있어요');

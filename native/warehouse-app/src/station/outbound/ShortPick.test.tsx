@@ -217,7 +217,7 @@ describe('F9 결품(스펙 §7.1·§7.2)', () => {
     const { server } = await openShortPick();
     server.config.shortPickOutcome = 'withdrawing';
     await typeHuman(['Enter', 'Enter']);
-    expect(await screen.findByText('뺄 상품')).toBeInTheDocument();
+    expect(await screen.findByText('뺄 상품을 찍어 주세요')).toBeInTheDocument();
   });
 
   it('빠짐(exited) — 빠진 박스', async () => {

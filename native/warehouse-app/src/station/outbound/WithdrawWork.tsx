@@ -4,6 +4,7 @@ import type { DevicePrefs } from '../../core/data/devicePrefs';
 import { errorMessage } from '../../core/data/errorMessage';
 import { ApiError } from '../../core/data/httpClient';
 import { cn } from '../../core/design/cn';
+import { BarcodeInput } from '../../core/hardware/scan/BarcodeInput';
 import { useWorkScanQueue } from '../../core/hardware/scan/useWorkScanQueue';
 import type { ShipmentByWaybill, WithdrawalRemoval } from '../../domains/outbound/types';
 import { removeToReturnBin, withdrawalRows } from '../../domains/outbound/withdraw';
@@ -71,20 +72,22 @@ export function WithdrawWork({
   const rows = withdrawalRows(removals);
   const cartOnly = rows.length > 0 && rows.every((row) => row.onCart);
 
+  const take = (code: string) => {
+    if (!bin) return onAlert(NO_BIN_MESSAGE);
+    if (done.current) return onAlert(ALREADY_EXITED_MESSAGE, code);
+    // 앞 스캔의 결과를 모르는 채 같은 상품을 또 찍으면 한 개가 두 번 빠진다
+    if (!queue.ready || queue.error()) return onAlert(INTAKE_BLOCKED_MESSAGE, code);
+    if (isReturnBinCode(code)) return onAlert('바구니 바코드예요 — 뺄 상품을 찍어 주세요.', code);
+    if (cartOnly) return onAlert('박스에서 뺄 상품은 없어요. 카트 몫은 분류대에서 빠져요.', code);
+    queue.enqueue({ barcode: code, returnBinBarcode: bin });
+  };
+
   // 부모가 상품 스캔·내려놓기에 쓰는 손잡이(InspectWork 와 같은 규칙 — 커밋 뒤에 건다)
   useEffect(() => {
     const own: BoxWorkHandle = {
       shipmentId: box.shipmentId,
       seq,
-      accept(code) {
-        if (!bin) return onAlert(NO_BIN_MESSAGE);
-        if (done.current) return onAlert(ALREADY_EXITED_MESSAGE, code);
-        // 앞 스캔의 결과를 모르는 채 같은 상품을 또 찍으면 한 개가 두 번 빠진다
-        if (!queue.ready || queue.error()) return onAlert(INTAKE_BLOCKED_MESSAGE, code);
-        if (isReturnBinCode(code)) return onAlert('바구니 바코드예요 — 뺄 상품을 찍어 주세요.', code);
-        if (cartOnly) return onAlert('박스에서 뺄 상품은 없어요. 카트 몫은 분류대에서 빠져요.', code);
-        queue.enqueue({ barcode: code, returnBinBarcode: bin });
-      },
+      accept: take,
       disarm: () => {},
       settle: () => queue.settle(),
     };
@@ -101,8 +104,17 @@ export function WithdrawWork({
         <>
           <BoxCard trackingNo={box.trackingNo} recipient={box.recipientMasked} deliveryNote={box.deliveryNote} />
           <BigPanel
-            content={alert ? { kind: 'alert', ...alert } : { kind: 'notice', title: '뺄 상품', message: bin ? `바구니 ${bin}` : undefined }}
+            content={
+              alert
+                ? { kind: 'alert', ...alert }
+                : {
+                    kind: 'notice',
+                    title: '뺄 상품을 찍어 주세요',
+                    message: bin ? `꺼낸 상품을 찍으면 바구니 ${bin}에 들어가요.` : undefined,
+                  }
+            }
           />
+          <BarcodeInput label="상품 바코드 직접 입력" disabled={!bin} onSubmit={take} />
           {!bin ? (
             <p role="alert" className="shrink-0 rounded-[10px] border-2 border-[#C8202F] bg-[#FDE8EA] p-3 font-semibold text-[#9E1320]">
               {NO_BIN_MESSAGE}

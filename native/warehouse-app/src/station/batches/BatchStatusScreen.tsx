@@ -1,3 +1,4 @@
+import { useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useWarehouse } from '../../app/warehouse-context';
@@ -22,6 +23,7 @@ import {
 import { formatTrackingNo } from '../../domains/outbound/inspection';
 import { JoinBoxPanel } from '../../domains/outbound/JoinBoxPanel';
 import { useOutboundBatches } from '../../domains/outbound/queries';
+import { writeLastBox } from '../../domains/outbound/lastBox';
 import { RemoveBoxPanel } from '../../domains/outbound/RemoveBoxPanel';
 import { StartBatchButton } from '../../domains/outbound/StartBatchButton';
 import type { OutboundBatchSummary } from '../../domains/outbound/types';
@@ -39,6 +41,7 @@ export function BatchStatusScreen({ prefs = localStoragePrefs, print = printRaw 
 }
 
 function BatchStatus({ warehouseId, prefs, print }: { warehouseId: string; prefs: DevicePrefs; print: PrintRaw }) {
+  const navigate = useNavigate();
   const picking = useOutboundBatches(warehouseId, 'picking');
   const created = useOutboundBatches(warehouseId, 'created');
   const batches = mergeBatches(picking.data, created.data);
@@ -99,7 +102,16 @@ function BatchStatus({ warehouseId, prefs, print }: { warehouseId: string; prefs
         {selected && panel === 'join' ? (
           <JoinBoxPanel batchId={selected.id} prefs={prefs} print={print} labelPrinting onClose={() => setPanel(null)} />
         ) : null}
-        {selected && panel === 'remove' ? <RemoveBoxPanel batchId={selected.id} onClose={() => setPanel(null)} /> : null}
+        {selected && panel === 'remove' ? (
+          <RemoveBoxPanel
+            batchId={selected.id}
+            onClose={() => setPanel(null)}
+            onWithdrawing={(shipment) => {
+              writeLastBox(prefs, shipment);
+              void navigate({ to: '/outbound' });
+            }}
+          />
+        ) : null}
         <div className="min-h-0 flex-1 overflow-auto rounded-[10px] border border-[#D5D8DE] bg-white">
           <table className="w-full border-collapse">
             <thead>

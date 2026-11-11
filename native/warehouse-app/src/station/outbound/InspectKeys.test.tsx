@@ -159,7 +159,7 @@ describe('검수 중 기능키(스펙 §6.3)', () => {
     press('F11');
     press('F11');
     release();
-    expect(await screen.findByText('뺄 상품')).toBeInTheDocument();
+    expect(await screen.findByText('뺄 상품을 찍어 주세요')).toBeInTheDocument();
     expect(server.excludes).toHaveLength(1);
   });
 
@@ -180,7 +180,7 @@ describe('검수 중 기능키(스펙 §6.3)', () => {
     await enabledKey(/박스 빼기 확정/);
     expect(server.excludes).toEqual([]);
     press('F11');
-    expect(await screen.findByText('뺄 상품')).toBeInTheDocument();
+    expect(await screen.findByText('뺄 상품을 찍어 주세요')).toBeInTheDocument();
     expect(server.excludes).toEqual([{ batchId: 'b-1', shipmentId: 's-1', reason: STATION_WITHDRAW_REASON }]);
   });
 
@@ -213,7 +213,7 @@ describe('검수 중 기능키(스펙 §6.3)', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('421033881907');
     expect(flash()).toBe('error');
     expect(screen.getByRole('heading', { name: '4210-3388-1915' })).toBeInTheDocument();
-    expect(screen.queryByText('뺄 상품')).toBeNull();
+    expect(screen.queryByText('뺄 상품을 찍어 주세요')).toBeNull();
     expect(readLastBox(prefs)?.trackingNo).toBe('421033881915');
     // 든 박스의 상품은 그 박스로 간다 — 앞 박스의 되돌림 바구니로 가지 않는다
     scan('8801003');
@@ -246,7 +246,7 @@ describe('검수 중 기능키(스펙 §6.3)', () => {
     expect(server.excludes).toHaveLength(1);
     // 떠 있던 조회가 서버의 지금 상태(빼는 중)로 연다
     await act(async () => releaseLookup());
-    expect(await screen.findByText('뺄 상품')).toBeInTheDocument();
+    expect(await screen.findByText('뺄 상품을 찍어 주세요')).toBeInTheDocument();
     expect(server.excludes).toHaveLength(1);
   });
 

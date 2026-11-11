@@ -547,7 +547,15 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
             <>
               <BoxCard trackingNo={view.box.trackingNo} recipient={view.box.recipientMasked} />
               <BigPanel
-                content={alert ? { kind: 'alert', ...alert } : { kind: 'notice', title: '빠진 박스', message: '송장은 버려 주세요' }}
+                content={
+                  alert
+                    ? { kind: 'alert', ...alert }
+                    : {
+                        kind: 'notice',
+                        title: '빠진 박스',
+                        message: '다 뺐어요. 이 상자는 배치에서 빠졌어요. 송장은 버리고 다음 송장을 찍어 주세요.',
+                      }
+                }
               />
             </>
           }

@@ -5,9 +5,18 @@ import { useApiClient } from '../../core/data/ApiClientProvider';
 import { Button } from '../../core/design/Button';
 import { useScanner } from '../../core/hardware/scan/useScanner';
 import { removeBoxFromBatch, type RemoveOutcome } from './batchRemove';
+import type { ShipmentByWaybill } from './types';
 
 /** 시작된 배치에서 박스를 뺀다(스펙 §8). 송장번호(스캔 가능)와 사유가 둘 다 있어야 보낸다. */
-export function RemoveBoxPanel({ batchId, onClose }: { batchId: string; onClose: () => void }) {
+export function RemoveBoxPanel({
+  batchId,
+  onClose,
+  onWithdrawing,
+}: {
+  batchId: string;
+  onClose: () => void;
+  onWithdrawing: (shipment: ShipmentByWaybill) => void;
+}) {
   const api = useApiClient();
   const queryClient = useQueryClient();
   const { warehouseId } = useWarehouse();
@@ -34,6 +43,8 @@ export function RemoveBoxPanel({ batchId, onClose }: { batchId: string; onClose:
         await queryClient.invalidateQueries({ queryKey: ['outbound-batches'] });
         await queryClient.invalidateQueries({ queryKey: ['waybill-label-states'] });
       }
+
+      if (result.kind === 'withdrawing') onWithdrawing(result.shipment);
     } finally {
       running.current = false;
       setBusy(false);
@@ -43,7 +54,7 @@ export function RemoveBoxPanel({ batchId, onClose }: { batchId: string; onClose:
   return (
     <section className="space-y-2 rounded border border-amber-300 px-3 py-2">
       <p className="font-medium">이 배치에서 박스 빼기</p>
-      <p className="text-sm text-neutral-500">아직 담지 않은 상품은 바로 빠져요. 담은 상품이 있으면 송장을 스캔해 되돌림 바구니로 빼요.</p>
+      <p className="text-sm text-neutral-500">아직 담지 않은 상품은 바로 빠져요. 담은 상품이 있으면 뺄 상품 화면으로 넘어가요.</p>
       <form
         className="space-y-2"
         onSubmit={(e) => {
