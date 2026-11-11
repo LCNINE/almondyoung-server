@@ -1,56 +1,66 @@
 import { AuthenticatedMedusaRequest, MedusaResponse } from '@medusajs/framework/http';
-import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
+import { ContainerRegistrationKeys, Modules } from '@medusajs/framework/utils';
 import { addToCartWorkflow, transferCartCustomerWorkflow } from '@medusajs/medusa/core-flows';
 import { defaultStoreCartFields } from '../../../carts/query-config';
 import { autoFillShipping } from './auto-fill-shipping';
+import { CustomerCartRow, linesToMove, selectCustomerCart } from './select-customer-cart';
 
-/**
- * 고객 카트 조회 헬퍼
- */
-async function getCustomerCart(query: any, customerId: string) {
+async function getCustomerCart(scope: any, customerId: string) {
+  const query = scope.resolve(ContainerRegistrationKeys.QUERY);
+
   const { data: carts } = await query.graph({
     entity: 'cart',
+    fields: ['id', 'completed_at', 'updated_at', 'metadata', 'items.id', 'items.variant_id', 'items.quantity', 'items.metadata'],
+    filters: { customer_id: customerId },
+  });
+
+  const { target, mergeSources } = selectCustomerCart(carts as CustomerCartRow[]);
+
+  if (!target) {
+    return null;
+  }
+
+  for (const source of mergeSources) {
+    await mergeIntoTarget(scope, target, source);
+  }
+
+  const { data: full } = await query.graph({
+    entity: 'cart',
     fields: ['id', 'customer_id', 'completed_at', 'updated_at', 'metadata', ...defaultStoreCartFields],
-    filters: {
-      customer_id: customerId,
-      completed_at: null,
-    },
+    filters: { id: target.id },
   });
 
-  // 결제용 checkout cart / 배송 미리보기 cart 는 일반 장바구니 복구 대상에서 제외.
-  // createCheckoutCartFromLineItems 가 checkout cart 도 고객에게 transfer 하므로, 무통장 입금 대기 (최대 72h) 동안 쿠키가 소실되면 결제용 cart 가 고객 장바구니로 복구되는 레이스가 생긴다.
-  // source_cart_id(원본 참조) / is_shipping_preview metadata 로 파생 cart 를 가려남.
-  const shoppingCarts = (carts || []).filter((cart: any) => {
-    // 안전망: query.graph 의 `completed_at: null` 필터가 환경/버전에 따라 안 걸리는 경우가 있어,
-    // 완료(주문 전환)된 카트를 JS 에서 명시적으로 한 번 더 배제한다. 이게 빠지면 무통장 주문 직후
-    // '방금 완료된 카트'가 복구되어 addToCart 가 'already completed' 로 실패한다.
-    if (cart?.completed_at) return false;
-    const meta = (cart?.metadata ?? {}) as Record<string, unknown>;
-    return !meta.source_cart_id && meta.is_shipping_preview !== true;
-  });
+  return full[0] ?? null;
+}
 
-  // 카트 선택 우선순위:
-  // 1. updated_at 최신 카트 우선
-  // 2. 동시간대면 아이템이 있는 카트를 우선
-  // 3. 그래도 같으면 아이템 수가 많은 카트를 우선
-  const sortedCarts = shoppingCarts.sort((a: any, b: any) => {
-    const dateA = new Date(a.updated_at || 0).getTime();
-    const dateB = new Date(b.updated_at || 0).getTime();
+// 옮긴 카트는 지우지 않고 merged_into 만 찍는다. 원래 라인이 그대로 남아 되돌릴 수 있다.
+// 한 줄이라도 못 옮기면 표시하지 않아 다음 복구 때 다시 시도한다. 이미 옮긴 줄은 linesToMove 가 건너뛴다.
+// ponytail: 동시 복구 두 건이 같은 카트를 옮기면 수량이 두 배가 될 수 있다. 실제로 보이면 카트 잠금으로.
+async function mergeIntoTarget(scope: any, target: CustomerCartRow, source: CustomerCartRow) {
+  let allMoved = true;
 
-    if (dateA !== dateB) {
-      return dateB - dateA;
+  for (const line of linesToMove(target, source)) {
+    try {
+      await addToCartWorkflow(scope).run({
+        input: {
+          cart_id: target.id,
+          items: [{ variant_id: line.variant_id as string, quantity: line.quantity, metadata: line.metadata ?? undefined }],
+        },
+      });
+      target.items = [...(target.items ?? []), line];
+    } catch (error) {
+      allMoved = false;
+      console.error(`[customers/me/cart] merge line ${line.id} from ${source.id} into ${target.id} failed:`, error);
     }
+  }
 
-    const itemsA = a.items?.length ?? 0;
-    const itemsB = b.items?.length ?? 0;
+  if (!allMoved) {
+    return;
+  }
 
-    if (itemsA > 0 && itemsB === 0) return -1;
-    if (itemsB > 0 && itemsA === 0) return 1;
+  const cartModule = scope.resolve(Modules.CART);
 
-    return itemsB - itemsA;
-  });
-
-  return sortedCarts[0] || null;
+  await cartModule.updateCarts([{ id: source.id, metadata: { ...(source.metadata ?? {}), merged_into: target.id } }]);
 }
 
 /**
@@ -66,8 +76,7 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
     });
   }
 
-  const query = req.scope.resolve(ContainerRegistrationKeys.QUERY);
-  let customerCart = await getCustomerCart(query, customerId);
+  let customerCart = await getCustomerCart(req.scope, customerId);
 
   if (!customerCart) {
     return res.status(200).json({
@@ -85,7 +94,7 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
       metadata: customerCart.metadata,
     });
     // 업데이트가 있었을 수 있으므로 카트를 다시 조회
-    customerCart = await getCustomerCart(query, customerId);
+    customerCart = await getCustomerCart(req.scope, customerId);
   } catch (error) {
     console.error('[GET /store/customers/me/cart] autoFillShipping failed:', error);
   }
@@ -117,7 +126,7 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
   const { guestCartId } = req.body as { guestCartId?: string };
   const query = req.scope.resolve(ContainerRegistrationKeys.QUERY);
 
-  let customerCart = await getCustomerCart(query, customerId);
+  let customerCart = await getCustomerCart(req.scope, customerId);
 
   // 게스트 카트 ID가 전달된 경우:
   // 1) 고객 카트가 없으면 게스트 카트를 고객 카트로 이관
@@ -136,22 +145,21 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
 
       const guestCart = guestCarts?.[0];
 
-      if (!customerCart && guestCart?.id) {
-        const isSameCustomerCart = guestCart.customer_id === customerId;
+      // 이미 고객 카트면 복구 정책(getCustomerCart)이 다룬다. 합쳐진·바로구매·옛 카트를 쿠키 id 로 다시 끌어오지 않게 게스트 카트만 받는다.
+      const isGuestCart = Boolean(guestCart?.id) && !guestCart.customer_id;
 
-        if (!guestCart.customer_id || isSameCustomerCart) {
-          await transferCartCustomerWorkflow(req.scope).run({
-            input: {
-              id: guestCart.id,
-              customer_id: customerId,
-            },
-          });
-        }
+      if (!customerCart && isGuestCart) {
+        await transferCartCustomerWorkflow(req.scope).run({
+          input: {
+            id: guestCart.id,
+            customer_id: customerId,
+          },
+        });
 
-        customerCart = await getCustomerCart(query, customerId);
+        customerCart = await getCustomerCart(req.scope, customerId);
       }
 
-      if (customerCart && guestCart?.items?.length > 0) {
+      if (customerCart && isGuestCart && customerCart.id !== guestCart.id && guestCart.items?.length > 0) {
         // 고객 카트에 이미 있는 variant_id 목록
         const existingVariantIds = new Set((customerCart.items || []).map((item: any) => item.variant_id));
 
@@ -173,7 +181,7 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
           });
 
           // 병합 후 카트 다시 조회
-          customerCart = await getCustomerCart(query, customerId);
+          customerCart = await getCustomerCart(req.scope, customerId);
         }
       }
     } catch (error) {
@@ -198,7 +206,7 @@ export async function POST(req: AuthenticatedMedusaRequest, res: MedusaResponse)
       metadata: customerCart.metadata,
     });
     // 업데이트가 있었을 수 있으므로 카트를 다시 조회
-    customerCart = await getCustomerCart(query, customerId);
+    customerCart = await getCustomerCart(req.scope, customerId);
   } catch (error) {
     console.error('[POST /store/customers/me/cart] autoFillShipping failed:', error);
   }
