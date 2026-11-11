@@ -28,6 +28,7 @@ export function BucketList({
   selectedIds,
   busy,
   onToggle,
+  onToggleAll,
   onMerge,
   canPrepare,
   onPrepareSeparately,
@@ -36,10 +37,25 @@ export function BucketList({
   selectedIds: string[];
   busy: boolean;
   onToggle: (id: string, checked: boolean) => void;
+  onToggleAll: (checked: boolean) => void;
   onMerge: (id: string) => void;
   canPrepare: boolean;
   onPrepareSeparately: () => void;
 }) {
+  const selected = new Set(selectedIds);
+  const selectable = bucket.shipments.slice(0, PREPARATION_BATCH_LIMIT);
+  const selectAllLabel =
+    bucket.shipments.length > PREPARATION_BATCH_LIMIT
+      ? `앞 ${PREPARATION_BATCH_LIMIT}건 선택`
+      : '전체 선택';
+  const allChecked =
+    selectable.length > 0 &&
+    selectable.every((shipment) => selected.has(shipment.shipmentId))
+      ? true
+      : selectedIds.length > 0
+        ? 'indeterminate'
+        : false;
+
   return (
     <section
       className="space-y-3"
@@ -68,7 +84,14 @@ export function BucketList({
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="w-10">선택</TableHead>
+              <TableHead className="w-10">
+                <Checkbox
+                  aria-label={selectAllLabel}
+                  checked={allChecked}
+                  disabled={busy || bucket.shipments.length === 0}
+                  onCheckedChange={(checked) => onToggleAll(checked === true)}
+                />
+              </TableHead>
               <TableHead>주문번호</TableHead>
               <TableHead>상품</TableHead>
               <TableHead>수량</TableHead>
@@ -82,7 +105,7 @@ export function BucketList({
                 <TableCell>
                   <Checkbox
                     aria-label={`${plannedOrderText(shipment)} 선택`}
-                    checked={selectedIds.includes(shipment.shipmentId)}
+                    checked={selected.has(shipment.shipmentId)}
                     disabled={busy}
                     onCheckedChange={(checked) =>
                       onToggle(shipment.shipmentId, checked === true)

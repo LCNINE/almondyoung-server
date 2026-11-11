@@ -158,6 +158,21 @@ function PreparationWarehouse({
     }));
   };
 
+  const toggleAll = (checked: boolean) => {
+    if (!activeBucket) {
+      return;
+    }
+
+    setSelections((previous) => ({
+      ...previous,
+      [activeBucket]: checked
+        ? (bucket?.shipments ?? [])
+            .slice(0, PREPARATION_BATCH_LIMIT)
+            .map((shipment) => shipment.shipmentId)
+        : [],
+    }));
+  };
+
   const prepare = (key: 'ready' | 'resume' | 'mergeable') => {
     const ids = selectedIds(key);
 
@@ -365,6 +380,7 @@ function PreparationWarehouse({
                 selectedIds={selectedIds(bucket.bucket)}
                 busy={busy}
                 onToggle={toggle}
+                onToggleAll={toggleAll}
                 onMerge={setSheetShipmentId}
                 canPrepare={canPrepare}
                 onPrepareSeparately={() => prepare('mergeable')}
