@@ -74,6 +74,42 @@ describeIfDb('송장 상태 리더 (DB integration)', () => {
     });
   });
 
+  it('forBatch 는 취소를 기다리는 박스만 cancelPending 으로 싣는다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { first, second } = await seedTwoBoxBatch(tx);
+      await startBatchFor(tx, first);
+      const [operation] = await tx
+        .insert(wmsTables.shipmentOperations)
+        .values({
+          type: 'cancel',
+          operatorId: first.actorId,
+          reason: 'test',
+          idempotencyKey: `cancel-${randomUUID()}`,
+          requestHash: 'hash',
+        })
+        .returning({ id: wmsTables.shipmentOperations.id });
+      await tx
+        .update(wmsTables.outboundBatchWorkItems)
+        .set({ waitingOperationId: operation.id })
+        .where(eq(wmsTables.outboundBatchWorkItems.id, first.workItemId));
+      const labels = assembleLabels(ambientDbService(tx));
+
+      const pending = await labels.states.forBatch(first.batchId, tx);
+
+      expect(pending.find((s) => s.shipmentId === first.shipmentId)?.cancelPending).toBe(true);
+      expect(pending.find((s) => s.shipmentId === second.shipmentId)?.cancelPending).toBe(false);
+
+      await tx
+        .update(wmsTables.shipmentOperations)
+        .set({ status: 'completed', completedAt: new Date() })
+        .where(eq(wmsTables.shipmentOperations.id, operation.id));
+
+      const done = await labels.states.forBatch(first.batchId, tx);
+
+      expect(done.find((s) => s.shipmentId === first.shipmentId)?.cancelPending).toBe(false);
+    });
+  });
+
   it('forBatch 는 박스마다 작업 상태·지금 송장번호·가린 받는 분을 싣는다(배치 현황 박스 목록)', async () => {
     await inRollbackTx(db, async (tx) => {
       const { first, second } = await seedTwoBoxBatch(tx);

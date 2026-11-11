@@ -22,6 +22,8 @@ export type BatchBoxLabelState = LabelStateView & {
   /** 지금 쓰는 송장 번호(무효·종결 송장 제외). 없으면 null */
   trackingNo: string | null;
   recipientMasked: string;
+  /** 시작된 배치에서 일부만 취소돼 이 박스가 배치에서 빠지기를 기다린다. 빼야 취소가 끝난다 */
+  cancelPending: boolean;
 };
 
 /**
@@ -86,13 +88,20 @@ export class WaybillLabelStateReader {
         .limit(1);
       if (!batch) throw new NotFoundException(`Outbound batch ${batchId} not found`);
       const items = await trx
-        .select({ id: WI.id, shipmentId: WI.shipmentId, status: WI.status, createdAt: WI.createdAt })
+        .select({
+          id: WI.id,
+          shipmentId: WI.shipmentId,
+          status: WI.status,
+          createdAt: WI.createdAt,
+          waitingOperationId: WI.waitingOperationId,
+        })
         .from(WI)
         .where(and(eq(WI.batchId, batchId), notInArray(WI.status, ['completed', 'excluded'])))
         .orderBy(asc(WI.shipmentId));
       const shipmentIds = items.map((item) => item.shipmentId);
       const trackingNos = await this.trackingNosOf(trx, shipmentIds);
       const recipients = await this.recipientsOf(trx, shipmentIds);
+      const pendingCancels = await this.pendingCancelsOf(trx, items.map((item) => item.waitingOperationId));
       const views: BatchBoxLabelState[] = [];
       for (const item of items) {
         views.push({
@@ -101,6 +110,7 @@ export class WaybillLabelStateReader {
           workItemStatus: item.status,
           trackingNo: trackingNos.get(item.shipmentId) ?? null,
           recipientMasked: recipients.get(item.shipmentId) ?? '',
+          cancelPending: item.waitingOperationId !== null && pendingCancels.has(item.waitingOperationId),
           ...(item.status === 'withdrawing'
             ? WITHDRAWING
             : await this.stateOf(
@@ -132,6 +142,20 @@ export class WaybillLabelStateReader {
       if (row.trackingNo && !byShipment.has(row.shipmentId)) byShipment.set(row.shipmentId, row.trackingNo);
     }
     return byShipment;
+  }
+
+  private async pendingCancelsOf(trx: DbTx, operationIds: (string | null)[]): Promise<Set<string>> {
+    const ids = operationIds.filter((id): id is string => id !== null);
+
+    if (ids.length === 0) return new Set();
+
+    const SO = wmsTables.shipmentOperations;
+    const rows = await trx
+      .select({ id: SO.id })
+      .from(SO)
+      .where(and(inArray(SO.id, ids), eq(SO.type, 'cancel'), eq(SO.status, 'pending')));
+
+    return new Set(rows.map((row) => row.id));
   }
 
   private async recipientsOf(trx: DbTx, shipmentIds: string[]): Promise<Map<string, string>> {

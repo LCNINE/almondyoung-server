@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { batchProgressOf, boxCountsOf, boxRowOf, mergeBatches, sortBoxRows } from './batchStatus';
+import { batchProgressOf, boxCountsOf, boxRowOf, hasCancelPending, mergeBatches, sortBoxRows } from './batchStatus';
 import type { OutboundBatchSummary } from './types';
 
 const item = (status: string, i = 0) => ({ id: `wi-${status}-${i}`, shipmentId: `s-${status}-${i}`, status });
@@ -67,6 +67,22 @@ describe('배치 현황 박스 줄(스펙 §8 F2)', () => {
   it('송장번호가 없으면(옛 core) 줄을 만들지 않는다 — 현장이 읽을 수 없는 id 를 그리지 않는다', () => {
     expect(boxRowOf(state({ trackingNo: undefined }))).toBeNull();
     expect(boxRowOf(state({ trackingNo: null }))).toBeNull();
+  });
+
+  it('취소 대기 박스는 송장이 없어도 빨간 취소 대기 줄로 그린다', () => {
+    expect(boxRowOf(state({ cancelPending: true, trackingNo: null }))).toEqual({
+      shipmentId: 's',
+      trackingNo: '',
+      recipient: '김*영',
+      status: '취소 대기',
+      tone: 'alert',
+    });
+    expect(boxRowOf(state({ cancelPending: true, state: 'never_printed' }))?.status).toBe('취소 대기');
+  });
+
+  it('취소 대기 박스가 하나라도 있으면 빼기 안내를 띄운다', () => {
+    expect(hasCancelPending([state({}), state({ cancelPending: true })])).toBe(true);
+    expect(hasCancelPending([state({}), state({ cancelPending: false })])).toBe(false);
   });
 
   it('손이 가야 하는 박스(송장·빠지는 중)가 위로, 같은 무리 안에서는 송장번호 순', () => {
