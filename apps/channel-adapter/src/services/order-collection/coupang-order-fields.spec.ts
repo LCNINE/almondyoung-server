@@ -91,6 +91,11 @@ describe('parseCoupangOrderSheet', () => {
     expect(parseCoupangOrderSheet(raw).shippingAddress.phone).toBe('010-0000-0000');
   });
 
+  it('수취인 실번호가 빈 값이면 안심번호를 쓴다', () => {
+    expect(parseCoupangOrderSheet(rawSheet('')).shippingAddress.phone).toBe('050-0000-0000');
+    expect(parseCoupangOrderSheet(rawSheet('  ')).shippingAddress.phone).toBe('050-0000-0000');
+  });
+
   it('vendorItemId 가 없는 품목이면 칸 이름을 담아 throw', () => {
     const raw = rawSheet();
     delete (raw.orderItems[0] as { vendorItemId?: number }).vendorItemId;

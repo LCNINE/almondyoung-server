@@ -127,6 +127,14 @@ function parseOrThrow<T extends z.ZodType>(schema: T, raw: unknown, what: string
   throw new Error(`${what} 해석 실패 — ${detail}`);
 }
 
+/** 비었거나 공백뿐인 값은 없는 것으로 보고 다음 후보를 쓴다. 전부 없으면 ''. */
+function firstNonBlank(...values: Array<string | null | undefined>): string {
+  for (const value of values) {
+    if (value != null && value.trim() !== '') return value;
+  }
+  return '';
+}
+
 export function parseCoupangOrderSheet(raw: unknown): CoupangOrderSheetInfo {
   const sheet = parseOrThrow(OrderSheetSchema, raw, '쿠팡 발주서');
   const { receiver } = sheet;
@@ -139,7 +147,7 @@ export function parseCoupangOrderSheet(raw: unknown): CoupangOrderSheetInfo {
     shippingPrice: sheet.shippingPrice?.units ?? 0,
     shippingAddress: {
       recipientName: receiver.name,
-      phone: receiver.receiverNumber ?? receiver.safeNumber ?? '',
+      phone: firstNonBlank(receiver.receiverNumber, receiver.safeNumber),
       postalCode: receiver.postCode ?? '',
       roadAddress: receiver.addr1,
       detailAddress: receiver.addr2 ?? '',
