@@ -18,6 +18,8 @@ import {
   PreparationBucketDto,
 } from '../dto/outbound-preparation.dto';
 
+type PreparationLineQuantity = PreparationFacts['lines'][number] & { name: string };
+
 // 분류마다 한 번에 돌려주는 상자 수. 나머지는 화면이 `bucket`·`offset` 으로 더 부른다.
 const BUCKET_PAGE_SIZE = 200;
 
@@ -156,6 +158,11 @@ export class OutboundPreparationReader {
           totalQty: shipmentLines.reduce((total, line) => total + line.qty, 0),
           single,
           reason,
+          lines: quantities.map((line) => ({
+            name: line.name,
+            qty: line.qty,
+            reservedQty: Math.min(line.qty, line.confirmedQty),
+          })),
         });
       }
 
@@ -164,16 +171,19 @@ export class OutboundPreparationReader {
   }
 
   // 상자별 라인의 주문 수량과 confirmed 예약 합. 분류와 «있는 것만 먼저 보내기»가 같은 계산을 쓴다.
-  async lineQuantities(shipmentIds: string[], tx?: DbTx): Promise<Map<string, PreparationFacts['lines']>> {
+  async lineQuantities(shipmentIds: string[], tx?: DbTx): Promise<Map<string, PreparationLineQuantity[]>> {
     return this.dbService.run(async (trx) => {
       const quantityLines = await trx
         .select({
           id: wmsTables.shipmentLines.id,
           shipmentId: wmsTables.shipmentLines.shipmentId,
           qty: wmsTables.shipmentLines.qty,
+          name: wmsTables.skus.name,
         })
         .from(wmsTables.shipmentLines)
-        .where(inArray(wmsTables.shipmentLines.shipmentId, shipmentIds));
+        .innerJoin(wmsTables.skus, eq(wmsTables.skus.id, wmsTables.shipmentLines.skuId))
+        .where(inArray(wmsTables.shipmentLines.shipmentId, shipmentIds))
+        .orderBy(asc(wmsTables.shipmentLines.createdAt), asc(wmsTables.shipmentLines.id));
       const reservations = await trx
         .select({
           lineId: wmsTables.stockReservations.targetId,
@@ -190,12 +200,12 @@ export class OutboundPreparationReader {
         )
         .groupBy(wmsTables.stockReservations.targetId);
       const confirmedByLine = new Map(reservations.map((reservation) => [reservation.lineId, reservation.quantity]));
-      const quantitiesByShipment = new Map<string, PreparationFacts['lines']>();
+      const quantitiesByShipment = new Map<string, PreparationLineQuantity[]>();
 
       for (const line of quantityLines) {
         const shipmentLines = quantitiesByShipment.get(line.shipmentId) ?? [];
 
-        shipmentLines.push({ qty: line.qty, confirmedQty: confirmedByLine.get(line.id) ?? 0 });
+        shipmentLines.push({ name: line.name, qty: line.qty, confirmedQty: confirmedByLine.get(line.id) ?? 0 });
         quantitiesByShipment.set(line.shipmentId, shipmentLines);
       }
 

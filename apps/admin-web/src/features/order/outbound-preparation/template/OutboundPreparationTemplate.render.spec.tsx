@@ -129,6 +129,9 @@ function shipments(
     totalQty: 1,
     single: index < 7,
     reason: bucket === 'needs_info' ? '배송 정보가 부족해요' : null,
+    ...(bucket === 'partial' && {
+      lines: [{ name: '상품', qty: 3, reservedQty: 2 }],
+    }),
   }));
 }
 
@@ -439,7 +442,7 @@ describe('OutboundPreparationTemplate', () => {
     expect(mockRun.mock.calls[0][0].shipmentIds).toEqual(['ready-2']);
   });
 
-  it('부분출고에서 체크한 상자만 나누고 성공·실패 건수를 알린다', async () => {
+  it('부분출고에서 체크한 상자만 나누고 성공·실패 건수를 결과 창에 보여 준다', async () => {
     mockSplit.mockResolvedValueOnce({
       succeeded: ['partial-2'],
       failed: [{ shipmentId: 'partial-3', message: '실패' }],
@@ -459,8 +462,99 @@ describe('OutboundPreparationTemplate', () => {
     expect(mockSplit.mock.calls[0][0].data.shipmentIds).not.toContain(
       'partial-1'
     );
-    expect(toast.success).toHaveBeenCalledWith('1건을 나눴어요');
-    expect(toast.error).toHaveBeenCalledWith('1건은 나누지 못했어요');
+
+    const dialog = await screen.findByRole('dialog', {
+      name: '1건을 나눴어요',
+    });
+
+    expect(within(dialog).getByText('1건은 나누지 못했어요')).toBeTruthy();
+    expect(within(dialog).getByText('#AY-partial-2')).toBeTruthy();
+    expect(within(dialog).getByText('지금 보낼 2 · 기다릴 1')).toBeTruthy();
+  });
+
+  it('부분출고 내역과 나누기 확인 창에 품목별 주문·지금 보낼·기다릴 수량을 보여 준다', async () => {
+    render(<OutboundPreparationTemplate />);
+    await userEvent.click(
+      row('부분출고').getByRole('button', { name: '내역보기' })
+    );
+
+    expect(row('#AY-partial-1').getByRole('listitem').textContent).toBe(
+      '상품주문 3 · 지금 보낼 2 · 기다릴 1'
+    );
+
+    await userEvent.click(
+      screen.getByRole('button', { name: '있는 것만 먼저 보내기' })
+    );
+
+    const dialog = screen.getByRole('alertdialog');
+
+    expect(
+      within(dialog).getByText('지금 보낼 상품 66개, 기다릴 상품 33개')
+    ).toBeTruthy();
+  });
+
+  it('나눈 뒤 결과 창에서 나눈 상자만 골라 출고 준비를 이어 간다', async () => {
+    mockSplit.mockResolvedValueOnce({
+      succeeded: ['partial-1', 'partial-2'],
+      failed: [],
+    });
+    render(<OutboundPreparationTemplate />);
+    await userEvent.click(
+      row('부분출고').getByRole('button', { name: '내역보기' })
+    );
+    await userEvent.click(screen.getByLabelText('전체 선택'));
+    await userEvent.click(screen.getByLabelText('#AY-partial-1 선택'));
+    await userEvent.click(screen.getByLabelText('#AY-partial-2 선택'));
+    await userEvent.click(
+      screen.getByRole('button', { name: '있는 것만 먼저 보내기' })
+    );
+    await userEvent.click(screen.getByRole('button', { name: '나누기' }));
+    await userEvent.click(
+      await screen.findByRole('button', { name: '지금 보낼 상자 출고 준비' })
+    );
+
+    expect(screen.getByText('완전출고 2건을 출고 준비할까요?')).toBeTruthy();
+    await userEvent.click(screen.getByRole('button', { name: '시작' }));
+
+    expect(mockRefetch).not.toHaveBeenCalled();
+    expect(mockRun.mock.calls[0][0].shipmentIds).toEqual([
+      'partial-1',
+      'partial-2',
+    ]);
+  });
+
+  it('한 건도 나누지 못하면 이어 갈 단추 없이 실패 건수만 보여 준다', async () => {
+    mockSplit.mockResolvedValueOnce({
+      succeeded: [],
+      failed: [{ shipmentId: 'partial-1', message: '실패' }],
+    });
+    render(<OutboundPreparationTemplate />);
+    await userEvent.click(
+      screen.getByRole('button', { name: '있는 것만 먼저 보내기' })
+    );
+    await userEvent.click(screen.getByRole('button', { name: '나누기' }));
+
+    const dialog = await screen.findByRole('dialog', {
+      name: '상자를 나누지 못했어요',
+    });
+
+    expect(within(dialog).getByText('1건은 나누지 못했어요')).toBeTruthy();
+    expect(
+      within(dialog).queryByRole('button', { name: '지금 보낼 상자 출고 준비' })
+    ).toBeNull();
+  });
+
+  it('나눈 뒤 결과 창에서 기다릴 상자가 있는 출고불가 내역을 연다', async () => {
+    render(<OutboundPreparationTemplate />);
+    await userEvent.click(
+      screen.getByRole('button', { name: '있는 것만 먼저 보내기' })
+    );
+    await userEvent.click(screen.getByRole('button', { name: '나누기' }));
+    await userEvent.click(
+      await screen.findByRole('button', { name: '기다릴 상자 보기' })
+    );
+
+    expect(screen.getByRole('region', { name: '출고불가 내역' })).toBeTruthy();
   });
 
   it('분할 뒤 새 요약의 완전출고 원본으로 출고 준비를 시작한다', async () => {
@@ -490,6 +584,7 @@ describe('OutboundPreparationTemplate', () => {
       screen.getByRole('button', { name: '있는 것만 먼저 보내기' })
     );
     await userEvent.click(screen.getByRole('button', { name: '나누기' }));
+    await userEvent.click(await screen.findByRole('button', { name: '닫기' }));
     await waitFor(() => expect(row('완전출고').getByText('1장')).toBeTruthy());
     await start();
 
@@ -778,7 +873,9 @@ describe('OutboundPreparationTemplate', () => {
       await act(() => jest.advanceTimersByTimeAsync(2000));
 
       await waitFor(() =>
-        expect(toast.success).toHaveBeenCalledWith('1건을 나눴어요')
+        expect(
+          screen.getByRole('dialog', { name: '1건을 나눴어요' })
+        ).toBeTruthy()
       );
       expect(mockSplit).toHaveBeenCalledTimes(2);
       expect(mockSplit.mock.calls[1][0]).toEqual(mockSplit.mock.calls[0][0]);

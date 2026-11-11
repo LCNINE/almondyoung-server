@@ -25,6 +25,13 @@ export class BulkShipmentIdsDto {
   shipmentIds: string[];
 }
 
+export class PreparationLineDto {
+  name: string;
+  qty: number;
+  // 이 줄에 잡힌 예약 수량(주문 수량을 넘지 않는다). 주문 수량과의 차이가 «있는 것만 먼저 보내기»에서 기다릴 몫이다.
+  reservedQty: number;
+}
+
 export class PreparationShipmentDto {
   shipmentId: string;
   orderNos: string[];
@@ -32,6 +39,7 @@ export class PreparationShipmentDto {
   totalQty: number;
   single: boolean;
   reason: string | null;
+  lines: PreparationLineDto[];
 }
 
 export class PreparationBucketDto {
