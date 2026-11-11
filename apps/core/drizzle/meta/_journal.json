@@ -1079,6 +1079,13 @@
       "when": 1794296145049,
       "tag": "20261110073545_add-top-notices",
       "breakpoints": true
+    },
+    {
+      "idx": 154,
+      "version": "7",
+      "when": 1794372922270,
+      "tag": "20261111045522_rename-sku-option-names",
+      "breakpoints": true
     }
   ]
 }

@@ -201,7 +201,7 @@ export function buildPlan(dedupedItems: ParsedItem[]): Plan {
       for (const it of group) {
         skus.push({
           code: it.itemCode,
-          name: it.optionName ? `${productName} ${it.optionName}` : productName,
+          name: it.optionName ? `${productName} (${it.optionName})` : productName,
           optionKey: it.optionName || null,
           groupCode: code,
           barcode: it.barcode,
