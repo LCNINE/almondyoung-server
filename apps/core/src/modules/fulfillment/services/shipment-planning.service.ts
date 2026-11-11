@@ -652,9 +652,20 @@ export class ShipmentPlanningService {
         if (['canceled', 'superseded'].includes(aggregate.shipment.status)) {
           throw this.conflict('SHIPMENT_NOT_ACTIVE', `Shipment ${shipmentId} has no active outstanding demand`);
         }
+
+        let pendingOperationId: string | null = null;
+
         if (aggregate.shipment.status === 'recovery_required') {
-          throw this.conflict('SHIPMENT_RECOVERY_IN_PROGRESS', `Shipment ${shipmentId} is already in recovery`);
+          pendingOperationId =
+            aggregate.shipment.recoveryCode === 'CANCEL_REPLAN_PENDING'
+              ? await this.findPendingCancellationOperationId(shipmentId, tx)
+              : null;
+
+          if (!pendingOperationId) {
+            throw this.conflict('SHIPMENT_RECOVERY_IN_PROGRESS', `Shipment ${shipmentId} is already in recovery`);
+          }
         }
+
         const lineById = new Map(aggregate.lines.map((line) => [line.id, line]));
         const selected = requestedLines.map((request) => {
           const line = lineById.get(request.shipmentLineId);
@@ -668,6 +679,82 @@ export class ShipmentPlanningService {
           return { request, line };
         });
         const before = this.snapshot(aggregate);
+
+        if (pendingOperationId) {
+          this.requirePermission(actor, FULFILLMENT_PERMISSION.SHIPMENT_REOPEN);
+
+          const [operation] = await tx
+            .select()
+            .from(wmsTables.shipmentOperations)
+            .where(eq(wmsTables.shipmentOperations.id, pendingOperationId))
+            .limit(1)
+            .for('update');
+
+          if (!operation || operation.type !== 'cancel' || operation.status !== 'pending') {
+            throw this.conflict('SHIPMENT_RECOVERY_IN_PROGRESS', `Shipment ${shipmentId} is already in recovery`);
+          }
+
+          const pending = this.pendingCancellationIntent(operation.afterManifestSnapshot);
+          const mergedLines = new Map(pending.lines.map((line) => [line.shipmentLineId, line]));
+
+          for (const { request, line } of selected) {
+            const existing = mergedLines.get(line.id);
+            const qty = (existing?.qty ?? 0) + request.qty;
+
+            if (qty > line.qty) {
+              throw new BadRequestException(`Cannot cancel ${qty}; line ${line.id} has ${line.qty}`);
+            }
+
+            mergedLines.set(line.id, { ...(existing ?? request), qty });
+          }
+
+          const pendingIntent: PendingCancellationIntent = {
+            ...pending,
+            lines: [...mergedLines.values()].sort((a, b) => a.shipmentLineId.localeCompare(b.shipmentLineId)),
+          };
+
+          await tx
+            .update(wmsTables.shipmentOperations)
+            .set({ afterManifestSnapshot: { pendingIntent } })
+            .where(eq(wmsTables.shipmentOperations.id, pendingOperationId));
+          await tx
+            .update(wmsTables.shipmentOperationMembers)
+            .set({ afterManifestSnapshot: { pendingIntent } })
+            .where(
+              and(
+                eq(wmsTables.shipmentOperationMembers.operationId, pendingOperationId),
+                eq(wmsTables.shipmentOperationMembers.shipmentId, shipmentId),
+                eq(wmsTables.shipmentOperationMembers.role, 'source'),
+              ),
+            );
+          await this.auditCommand(
+            tx,
+            actor,
+            'shipment.cancel_outstanding.joined_pending',
+            pendingOperationId,
+            dto.reason,
+            {
+              shipmentId,
+              requestedLines,
+              before,
+            },
+          );
+
+          const response: CancelResponse = {
+            operationId: pendingOperationId,
+            operationStatus: 'pending',
+            shipmentId,
+            manifestVersion: before.manifestVersion,
+          };
+
+          return {
+            response,
+            resourceType: 'shipment_operation',
+            resourceId: pendingOperationId,
+            operationId: pendingOperationId,
+          };
+        }
+
         const operation = await this.createOperation(
           tx,
           'cancel',

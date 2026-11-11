@@ -66,6 +66,13 @@ const UNDER_RESERVED_MESSAGE =
 const CONFLICT_MESSAGES: Record<string, string> = {
   SHIPMENT_NOT_FULLY_RESERVED: UNDER_RESERVED_MESSAGE,
   SHIPMENT_NOT_FULLY_RESERVED_PHYSICAL: UNDER_RESERVED_MESSAGE,
+  SHIPMENT_RECOVERY_IN_PROGRESS:
+    '같은 상자의 다른 취소를 처리하고 있어요. 상자가 출고 배치에 있으면 먼저 빼고, 1~2분 뒤 다시 시도해 주세요.',
+  SHIPMENT_ALREADY_DISPATCHED:
+    '이미 출고된 상자예요. 취소 대신 회수나 반품으로 처리해 주세요.',
+  SHIPMENT_NOT_ACTIVE: '이미 취소됐거나 쓰지 않는 상자예요.',
+  SHIPMENT_LINE_STALE_VERSION:
+    '그사이 주문이 바뀌었어요. 새로고침한 뒤 다시 시도해 주세요.',
 };
 
 export function getServerDenyMessage(

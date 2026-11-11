@@ -12,6 +12,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { getServerDenyMessage } from '@/lib/api/server-error';
 import { useAdminCancelSalesOrder } from '@/lib/services/orders';
 import type { OrderLineRow } from '@/features/order/history/hooks/use-order-rows';
 import type { CancelSalesOrderLineDto } from '@/lib/types/dto/orders';
@@ -188,8 +189,7 @@ export function CancelOrderModal({ order, open, onOpenChange }: Props) {
         manualReason: result.manualReason,
       });
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : undefined;
-      toast.error(message ?? '취소 처리 중 오류가 발생했습니다.');
+      toast.error(getServerDenyMessage(err, '취소하지 못했어요.'));
     }
   };
 
