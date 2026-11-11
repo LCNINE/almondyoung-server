@@ -60,9 +60,13 @@ export async function retrieveCart(
   //      응답에 completed_at 이 안 와 완료 감지 실패 → 완료 카트가 반환되어 addToCart 가
   //      'cart is already completed' 로 실패(무통장 주문 직후 장바구니 안 담김 장애).
   // "+" prefix 는 500 을 막고, 공백 제거는 필드가 정상 포함되게 한다.
-  const effectiveFields = fields.includes("completed_at")
+  const withCompletedAt = fields.includes("completed_at")
     ? fields
     : `${fields},+completed_at`
+  // 다른 카트로 합쳐진 카트인지 알려면 카트 metadata 가 필요하다. items.metadata 와 구별해 최상위만 본다.
+  const effectiveFields = /(^|,)\+?metadata(,|$)/.test(withCompletedAt)
+    ? withCompletedAt
+    : `${withCompletedAt},+metadata`
 
   const headers = {
     ...(await getAuthHeaders()),
@@ -86,7 +90,8 @@ export async function retrieveCart(
       // completeCartWorkflow 로 주문 전환된 카트는 더 이상 장바구니가 아니다.
       // 무통장입금처럼 브라우저가 완료 과정에 참여하지 않으면 쿠키가 남아
       // 완료된 카트가 계속 장바구니로 노출. 쿠키를 정리하고 null 을 돌려 상위에서 새 카트 생성/복구로 흐르게
-      if (cart?.completed_at) {
+      // 다른 카트로 합쳐진 카트도 더는 장바구니가 아니다. 여기에 담으면 복구 대상이 아니라 사라진다.
+      if (cart?.completed_at || cart?.metadata?.merged_into) {
         // 쿠키는 '이 완료된 카트를 쿠키가 실제로 가리킬 때'만 정리한다. 명시적 cartId 로 완료된
         // 파생 카트(체크아웃/배송 프리뷰 sub-cart)를 조회하는 경우, 쿠키가 가리키는 별개의 활성
         // source 카트를 지워 남은 장바구니를 유실시키면 안 된다.
@@ -192,7 +197,8 @@ export async function getOrSetCart(countryCode: string) {
   }
 
   // customer_id도 함께 조회해서 연결 여부 확인
-  let cart = await retrieveCart(undefined, "id,region_id,customer_id")
+  // 캐시된 응답이면 그사이 다른 카트로 합쳐진 걸 못 보고 거기에 담는다.
+  let cart = await retrieveCart(undefined, "id,region_id,customer_id", "no-store")
 
   const headers = {
     ...(await getAuthHeaders()),
@@ -222,7 +228,7 @@ export async function getOrSetCart(countryCode: string) {
 
   if (!cart) {
     const cartResp = await sdk.store.cart.create(
-      { region_id: region.id },
+      { region_id: region.id, metadata: { cart_kind: "shopping" } },
       {},
       headers
     )
@@ -376,7 +382,7 @@ export async function createBuyNowCart(params: {
   }
 
   const cartResp = await sdk.store.cart.create(
-    { region_id: region.id },
+    { region_id: region.id, metadata: { cart_kind: "buy_now" } },
     {},
     headers
   )
@@ -488,8 +494,14 @@ export async function createCheckoutCartFromLineItems(params: {
     ...(await getAuthHeaders()),
   }
 
+  // 파생 표시는 만들 때 붙인다. 고객에게 넘긴 뒤에 붙이면 그 사이 복구가 이 카트를 본체로 고른다.
+  const derivedMetadata = {
+    source_cart_id: sourceCart.id,
+    source_line_item_ids: selectedItems.map((item) => item.id),
+  }
+
   const checkoutCartResp = await sdk.store.cart.create(
-    { region_id: regionId },
+    { region_id: regionId, metadata: derivedMetadata },
     {},
     headers
   )
@@ -549,18 +561,6 @@ export async function createCheckoutCartFromLineItems(params: {
     return { error: "ITEMS_UNAVAILABLE", unavailableNames }
   }
 
-  await sdk.store.cart.update(
-    checkoutCart.id,
-    {
-      metadata: {
-        source_cart_id: sourceCart.id,
-        source_line_item_ids: selectedItems.map((item) => item.id),
-      },
-    },
-    {},
-    headers
-  )
-
   const cartCacheTag = await getCacheTag("carts")
   revalidateTag(cartCacheTag)
 
@@ -615,7 +615,14 @@ export async function createShippingPreviewCartFromLineItems(params: {
   }
 
   const previewCartResp = await sdk.store.cart.create(
-    { region_id: regionId },
+    {
+      region_id: regionId,
+      metadata: {
+        is_shipping_preview: true,
+        source_cart_id: sourceCart.id,
+        source_line_item_ids: selectedItems.map((item) => item.id),
+      },
+    },
     {},
     headers
   )
@@ -652,19 +659,6 @@ export async function createShippingPreviewCartFromLineItems(params: {
       headers
     )
   }
-
-  await sdk.store.cart.update(
-    previewCart.id,
-    {
-      metadata: {
-        is_shipping_preview: true,
-        source_cart_id: sourceCart.id,
-        source_line_item_ids: selectedItems.map((item) => item.id),
-      },
-    },
-    {},
-    headers
-  )
 
   return { cartId: previewCart.id }
 }
