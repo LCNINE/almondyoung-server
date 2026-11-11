@@ -39,6 +39,7 @@ const mockExclude = jest.fn<
   Promise<void>,
   [{ batchId: string; shipmentId: string; reason: string }]
 >();
+
 const mockPush = jest.fn();
 
 jest.mock('next/navigation', () => ({
@@ -407,7 +408,7 @@ describe('합포장 Sheet 2단계', () => {
 
     expect(second).toEqual(first);
     expect(second.idempotencyKey).toBe(first.idempotencyKey);
-    expect(jest.mocked(toast.success)).toHaveBeenCalledWith('합포장했어요.');
+    expect(await screen.findByText('합포장했어요.')).toBeTruthy();
   });
 
   it('5xx 도 응답 유실로 보고 같은 요청을 다시 보낸다', async () => {
@@ -467,26 +468,40 @@ describe('합포장 요청 뒤 배치 제외', () => {
   it('대기 중이면 합칠 상자 중 배치에 든 상자를 모두 빼고 진행 링크를 보인다', async () => {
     const sheet = renderSheet();
 
-    const user = await submit();
+    await submit();
 
     await waitFor(() => expect(mockExclude).toHaveBeenCalledTimes(2));
     expect(mockExclude.mock.calls).toEqual([
       [{ batchId: 'batch-src', shipmentId: 'src', reason: '합포장' }],
       [{ batchId: 'batch-memo', shipmentId: 'memo1', reason: '합포장' }],
     ]);
+    expect(
+      screen.getByRole('heading', { name: '합포장을 요청했어요.' })
+    ).toBeTruthy();
+    expect(
+      screen.getByRole('link', { name: '진행 보기' }).getAttribute('href')
+    ).toBe('/order/fulfillments?shipmentId=src');
 
+    // 창이 닫혀도 알림에서 진행을 볼 수 있다
     const action = jest.mocked(toast.success).mock.calls[0][1]?.action;
 
     if (!action || typeof action !== 'object' || !('onClick' in action)) {
       throw new Error('Missing progress action');
     }
 
+    expect(jest.mocked(toast.success).mock.calls[0][0]).toBe(
+      '합포장을 요청했어요.'
+    );
     expect(action.label).toBe('진행 보기');
     sheet.unmount();
-    render(<button onClick={action.onClick}>진행 보기</button>);
-    await user.click(screen.getByRole('button', { name: '진행 보기' }));
-
+    render(<button onClick={action.onClick}>알림의 진행 보기</button>);
+    await userEvent.click(
+      screen.getByRole('button', { name: '알림의 진행 보기' })
+    );
     expect(mockPush).toHaveBeenCalledWith('/order/fulfillments?shipmentId=src');
+    expect(
+      screen.queryByRole('link', { name: '이 상자 출고 준비' })
+    ).toBeNull();
   });
 
   it('완료된 합포장은 배치에서 빼지 않는다', async () => {
@@ -498,6 +513,7 @@ describe('합포장 요청 뒤 배치 제외', () => {
     renderSheet();
     await submit();
 
+    expect(await screen.findByText('합포장했어요.')).toBeTruthy();
     expect(toast.success).toHaveBeenCalledWith('합포장했어요.');
     expect(mockExclude).not.toHaveBeenCalled();
   });
@@ -508,10 +524,8 @@ describe('합포장 요청 뒤 배치 제외', () => {
     await submit();
 
     expect(mockExclude).not.toHaveBeenCalled();
-    expect(toast.success).toHaveBeenCalledWith(
-      '합포장을 요청했어요.',
-      expect.objectContaining({ action: expect.any(Object) })
-    );
+    expect(await screen.findByText('합포장을 요청했어요.')).toBeTruthy();
+    expect(screen.getByRole('link', { name: '진행 보기' })).toBeTruthy();
   });
 
   it('한 상자의 제외가 거절되어도 나머지를 처리하고 대기 요청을 유지한다', async () => {
@@ -539,7 +553,8 @@ describe('합포장 요청 뒤 배치 제외', () => {
     expect(toast.error).toHaveBeenCalledWith(
       expect.stringContaining('발송 시도가 있어 배치에서 뺄 수 없어요.')
     );
-    expect(onOpenChange).toHaveBeenCalledWith(false);
+    expect(onOpenChange).not.toHaveBeenCalled();
+    expect(screen.getByText('합포장을 요청했어요.')).toBeTruthy();
     expect(
       screen.queryByRole('button', { name: '같은 요청 다시 보내기' })
     ).toBeNull();
@@ -591,11 +606,9 @@ describe('같은 주문을 나눈 상자', () => {
     await user.type(screen.getByLabelText('작업 사유'), '다시 합치기');
     await user.click(requestButton());
 
-    await waitFor(() =>
-      expect(jest.mocked(toast.success)).toHaveBeenCalledWith(
-        '나눈 상자 2개를 다시 한 상자로 합쳤어요: #SO-1'
-      )
-    );
+    expect(
+      await screen.findByText('나눈 상자 2개를 다시 한 상자로 합쳤어요: #SO-1')
+    ).toBeTruthy();
   });
 });
 
@@ -649,5 +662,196 @@ describe('합포장 Sheet 상품과 수량', () => {
     expect(screen.getByRole('row', { name: /핸드크림/ }).textContent).toBe(
       '핸드크림#SO-ok1 1개1개'
     );
+  });
+});
+
+describe('합포장 결과에서 이어 가기', () => {
+  beforeEach(() => {
+    mockUseConsolidationOptions.mockReturnValue({
+      data: {
+        source: shipment('src', {
+          items: [{ skuId: 'sku-1', name: '립밤', qty: 1 }],
+        }),
+        options: [
+          option('ok1', 'ok', {
+            items: [{ skuId: 'sku-1', name: '립밤', qty: 2 }],
+          }),
+          memoOption,
+          addressOption,
+        ],
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch,
+    });
+    mutateAsync.mockResolvedValue({
+      ...completed,
+      sourceShipmentIds: ['src', 'ok1'],
+      target: {
+        shipmentId: 'target-1',
+        status: 'draft',
+        warehouseId: 'wh-9',
+        manifestVersion: 1,
+        reservationVersion: 1,
+      },
+    });
+  });
+
+  const request = async (user: ReturnType<typeof userEvent.setup>) => {
+    await user.type(screen.getByLabelText('작업 사유'), '고객 요청');
+    await user.click(requestButton());
+  };
+
+  it('합친 뒤 시트를 닫지 않고 새 상자의 상품과 출고 준비 링크를 보여 준다', async () => {
+    const user = userEvent.setup();
+    const onOpenChange = jest.fn();
+
+    render(
+      <ConsolidationSheet shipmentId="src" open onOpenChange={onOpenChange} />
+    );
+    await user.click(card('SO-ok1'));
+    await user.click(screen.getByRole('button', { name: '다음' }));
+    await request(user);
+
+    expect(await screen.findByRole('heading', { name: '합포장했어요.' })).toBe(
+      document.activeElement
+    );
+    expect(
+      screen.getByText('주문 #SO-src, #SO-ok1 → 새 상자 1개')
+    ).toBeTruthy();
+    expect(
+      screen.getByRole('list', { name: '주문 #SO-src, #SO-ok1 새 상자 상품' })
+        .textContent
+    ).toBe('립밤 3개');
+    expect(
+      screen
+        .getByRole('link', { name: '이 상자 출고 준비' })
+        .getAttribute('href')
+    ).toBe('/order/waybill-issue?warehouseId=wh-9&prepare=target-1');
+    expect(onOpenChange).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole('button', { name: '닫기' }));
+
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it('응답을 못 받은 뒤 목록이 바뀌어도 다시 보낸 결과는 처음 고른 상자로 보여 준다', async () => {
+    mutateAsync.mockRejectedValueOnce(new Error('Network Error'));
+    const user = userEvent.setup();
+    const { rerender } = render(
+      <ConsolidationSheet shipmentId="src" open onOpenChange={jest.fn()} />
+    );
+
+    await user.click(card('SO-ok1'));
+    await user.click(screen.getByRole('button', { name: '다음' }));
+    await request(user);
+    await screen.findByRole('button', { name: '같은 요청 다시 보내기' });
+
+    // 서버는 이미 합쳤고, 다시 읽은 후보에서는 합쳐진 상대 상자가 빠졌다
+    mockUseConsolidationOptions.mockReturnValue({
+      data: {
+        source: shipment('src', {
+          items: [{ skuId: 'sku-1', name: '립밤', qty: 1 }],
+        }),
+        options: [memoOption],
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch,
+    });
+    rerender(
+      <ConsolidationSheet shipmentId="src" open onOpenChange={jest.fn()} />
+    );
+    await user.click(
+      screen.getByRole('button', { name: '같은 요청 다시 보내기' })
+    );
+
+    expect(
+      await screen.findByText('주문 #SO-src, #SO-ok1 → 새 상자 1개')
+    ).toBeTruthy();
+    expect(
+      screen.getByRole('list', { name: '주문 #SO-src, #SO-ok1 새 상자 상품' })
+        .textContent
+    ).toBe('립밤 3개');
+  });
+
+  it('출고 준비 화면 안에서는 링크 대신 그 화면에 상자를 넘긴다', async () => {
+    const user = userEvent.setup();
+    const onPrepare = jest.fn();
+
+    render(
+      <ConsolidationSheet
+        shipmentId="src"
+        open
+        onOpenChange={jest.fn()}
+        onPrepare={onPrepare}
+      />
+    );
+    await user.click(card('SO-ok1'));
+    await user.click(screen.getByRole('button', { name: '다음' }));
+    await request(user);
+    await user.click(
+      await screen.findByRole('button', { name: '이 상자 출고 준비' })
+    );
+
+    expect(onPrepare).toHaveBeenCalledWith('target-1');
+  });
+
+  it('미리 고른 주문이 모두 고를 수 있으면 확인 단계부터 연다', async () => {
+    const user = userEvent.setup();
+
+    render(
+      <ConsolidationSheet
+        shipmentId="src"
+        preselect={['ok1']}
+        open
+        onOpenChange={jest.fn()}
+      />
+    );
+
+    expect(
+      screen.getByText('주문 #SO-src, #SO-ok1 → 상자 1개, 송장 1장')
+    ).toBeTruthy();
+
+    await request(user);
+
+    await waitFor(() => expect(mutateAsync).toHaveBeenCalledTimes(1));
+    expect(
+      mutateAsync.mock.calls[0][0].data.sources.map((entry) => entry.shipmentId)
+    ).toEqual(['src', 'ok1']);
+  });
+
+  it('미리 고른 주문의 메모가 다르면 확인 단계에서 메모를 고르게 한다', () => {
+    render(
+      <ConsolidationSheet
+        shipmentId="src"
+        preselect={['memo1']}
+        open
+        onOpenChange={jest.fn()}
+      />
+    );
+
+    expect(
+      screen.getByText('합친 상자에 붙일 배송 메모를 골라 주세요')
+    ).toBeTruthy();
+    expect(requestButton().hasAttribute('disabled')).toBe(true);
+  });
+
+  it('미리 고른 주문 중 고를 수 없게 된 것이 있으면 고르는 단계에 남는다', () => {
+    render(
+      <ConsolidationSheet
+        shipmentId="src"
+        preselect={['ok1', 'addr1']}
+        open
+        onOpenChange={jest.fn()}
+      />
+    );
+
+    expect(
+      screen.getByText('이 주문과 같이 보낼 주문을 골라 주세요')
+    ).toBeTruthy();
+    expect(card('SO-ok1').getAttribute('aria-checked')).toBe('true');
   });
 });

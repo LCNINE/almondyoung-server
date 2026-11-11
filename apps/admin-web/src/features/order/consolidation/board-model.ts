@@ -1,6 +1,8 @@
+import type { ConsolidationOutcome } from '@/features/order/fulfillments/detail/consolidation-result';
 import {
   boxNoText,
   freshCommand,
+  mergedItems,
   keptAfterFailure,
   needsUnwindSteps,
   progressLabel,
@@ -144,7 +146,15 @@ export type BulkResult = {
   status: BulkStatus;
   message: string;
   command: PendingCommand;
+  // 요청이 받아들여졌을 때만 있다
+  outcome: ConsolidationOutcome | null;
+  base: BulkBase;
 };
+
+type BulkBase = Omit<
+  ConsolidationOutcome,
+  'targetShipmentId' | 'warehouseId'
+> & { warehouseId: string };
 
 export const UNCONFIRMED_MESSAGE = '확인이 필요해요';
 
@@ -152,47 +162,51 @@ type Send = (command: PendingCommand) => Promise<ShipmentConsolidationResponse>;
 
 async function attempt(
   key: string,
-  orderNos: string,
+  base: BulkBase,
   command: PendingCommand,
   send: Send,
   describeError: (error: unknown) => string
 ): Promise<BulkResult> {
+  const result = { key, orderNos: base.orderNos, command, base };
+
   try {
     const response = await send(command);
+    const completed = response.operationStatus === 'completed';
 
     return {
-      key,
-      orderNos,
-      command,
+      ...result,
       status: 'done',
-      message:
-        response.operationStatus === 'completed'
-          ? '합쳤어요.'
-          : '요청했어요. 상자 화면에서 다음 할 일을 알려 줘요.',
+      message: completed
+        ? '합쳤어요.'
+        : '요청했어요. 상자 화면에서 다음 할 일을 알려 줘요.',
+      outcome: {
+        ...base,
+        targetShipmentId: completed ? response.targetShipmentId : null,
+        warehouseId: response.target?.warehouseId ?? base.warehouseId,
+      },
     };
   } catch (error) {
     if (keptAfterFailure(command, error)) {
       return {
-        key,
-        orderNos,
-        command,
+        ...result,
         status: 'unconfirmed',
         message: UNCONFIRMED_MESSAGE,
+        outcome: null,
       };
     }
 
     return {
-      key,
-      orderNos,
-      command,
+      ...result,
       status: 'failed',
       message: describeError(error),
+      outcome: null,
     };
   }
 }
 
 export async function runBulkMerge(
   groups: readonly ConsolidationBoardGroup[],
+  warehouseId: string,
   send: Send,
   describeError: (error: unknown) => string
 ): Promise<BulkResult[]> {
@@ -206,7 +220,12 @@ export async function runBulkMerge(
     results.push(
       await attempt(
         group.key,
-        groupOrderNos(group),
+        {
+          orderNos: groupOrderNos(group),
+          items: mergedItems(group.shipments),
+          progressShipmentId: group.shipments[0].shipmentId,
+          warehouseId,
+        },
         command,
         send,
         describeError
@@ -222,13 +241,7 @@ export async function retryUnconfirmed(
   send: Send,
   describeError: (error: unknown) => string
 ): Promise<BulkResult> {
-  return attempt(
-    result.key,
-    result.orderNos,
-    result.command,
-    send,
-    describeError
-  );
+  return attempt(result.key, result.base, result.command, send, describeError);
 }
 
 export function replaceResult(

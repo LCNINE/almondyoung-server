@@ -917,14 +917,22 @@ export interface CreateShipmentConsolidationRequest extends ShipmentCommandReaso
   recipientSnapshot?: FulfillmentShippingAddress;
 }
 
+export interface ConsolidationManifestSnapshot {
+  shipmentId: string;
+  status: string;
+  warehouseId: string | null;
+  manifestVersion: number;
+  reservationVersion: number;
+}
+
 export interface ShipmentConsolidationResponse {
   operationId: string;
   operationStatus: 'pending' | 'completed';
   sourceShipmentIds: string[];
   targetShipmentId: string | null;
   blockers?: Array<{ shipmentId: string; codes: string[] }>;
-  sources?: ShipmentAdminSummary[];
-  target?: ShipmentAdminSummary;
+  sources?: ConsolidationManifestSnapshot[];
+  target?: ConsolidationManifestSnapshot;
   lineLineage?: Array<{
     targetLineId: string;
     fulfillmentOrderItemId: string;

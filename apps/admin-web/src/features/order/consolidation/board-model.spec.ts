@@ -229,6 +229,13 @@ describe('texts', () => {
   });
 });
 
+const BULK_BASE = {
+  orderNos: '',
+  items: null,
+  progressShipmentId: 'a',
+  warehouseId: 'wh-1',
+};
+
 const networkError = () => Object.assign(new Error('Network Error'), {});
 
 const serverReject = (status: number) =>
@@ -248,7 +255,7 @@ describe('runBulkMerge', () => {
       .mockRejectedValueOnce(serverReject(409))
       .mockRejectedValueOnce(networkError());
 
-    const results = await runBulkMerge(groups, send, () => '막혔어요');
+    const results = await runBulkMerge(groups, 'wh-1', send, () => '막혔어요');
 
     expect(send).toHaveBeenCalledTimes(3);
     expect(send.mock.calls[1][0].data.recipientSourceShipmentId).toBe('c');
@@ -265,7 +272,7 @@ describe('runBulkMerge', () => {
   it('treats a 5xx without a verdict as unconfirmed', async () => {
     const send = jest.fn().mockRejectedValue(serverReject(502));
 
-    const [result] = await runBulkMerge([groups[0]], send, () => 'x');
+    const [result] = await runBulkMerge([groups[0]], 'wh-1', send, () => 'x');
 
     expect(result.status).toBe('unconfirmed');
   });
@@ -276,7 +283,7 @@ describe('runBulkMerge', () => {
       .mockRejectedValueOnce(networkError())
       .mockResolvedValueOnce({ operationStatus: 'completed' });
 
-    const [first] = await runBulkMerge([groups[0]], send, () => 'x');
+    const [first] = await runBulkMerge([groups[0]], 'wh-1', send, () => 'x');
     const second = await retryUnconfirmed(first, send, () => 'x');
 
     expect(second.status).toBe('done');
@@ -289,11 +296,75 @@ describe('runBulkMerge', () => {
   it('keeps the key when a retry is still unconfirmed', async () => {
     const send = jest.fn().mockRejectedValue(networkError());
 
-    const [first] = await runBulkMerge([groups[0]], send, () => 'x');
+    const [first] = await runBulkMerge([groups[0]], 'wh-1', send, () => 'x');
     const second = await retryUnconfirmed(first, send, () => 'x');
 
     expect(second.status).toBe('unconfirmed');
     expect(second.command.idempotencyKey).toBe(first.command.idempotencyKey);
+  });
+
+  it('keeps the new box and its items so the result can lead to preparation', async () => {
+    const send = jest.fn().mockResolvedValueOnce({
+      operationStatus: 'completed',
+      targetShipmentId: 'merged',
+      target: { shipmentId: 'merged', warehouseId: 'wh-2' },
+    });
+    const withItems = group('x', [
+      shipment('a', { items: [{ skuId: 's1', name: '립밤', qty: 1 }] }),
+      shipment('b', {
+        items: [
+          { skuId: 's1', name: '립밤', qty: 2 },
+          { skuId: 's2', name: '핸드크림', qty: 1 },
+        ],
+      }),
+    ]);
+
+    const [result] = await runBulkMerge([withItems], 'wh-1', send, () => 'x');
+
+    expect(result.outcome).toMatchObject({
+      orderNos: '#SO-a, #SO-b',
+      targetShipmentId: 'merged',
+      warehouseId: 'wh-2',
+      progressShipmentId: 'a',
+    });
+    expect(result.outcome?.items?.map((item) => [item.name, item.qty])).toEqual(
+      [
+        ['립밤', 3],
+        ['핸드크림', 1],
+      ]
+    );
+  });
+
+  it('has no new box while the merge waits, and points progress at the first box', async () => {
+    const send = jest.fn().mockResolvedValueOnce({
+      operationStatus: 'pending',
+      targetShipmentId: null,
+    });
+
+    const [result] = await runBulkMerge([groups[0]], 'wh-1', send, () => 'x');
+
+    expect(result.status).toBe('done');
+    expect(result.outcome).toMatchObject({
+      targetShipmentId: null,
+      warehouseId: 'wh-1',
+      progressShipmentId: 'a',
+    });
+  });
+
+  it('has no outcome when the request failed or is unconfirmed', async () => {
+    const send = jest
+      .fn()
+      .mockRejectedValueOnce(serverReject(409))
+      .mockRejectedValueOnce(networkError());
+
+    const results = await runBulkMerge(
+      groups.slice(0, 2),
+      'wh-1',
+      send,
+      () => 'x'
+    );
+
+    expect(results.map((result) => result.outcome)).toEqual([null, null]);
   });
 
   it('replaces only the retried result', () => {
@@ -303,6 +374,8 @@ describe('runBulkMerge', () => {
       status,
       message: '',
       command: { idempotencyKey: key, data: { sources: [], reason: '' } },
+      outcome: null,
+      base: BULK_BASE,
     });
 
     expect(
@@ -321,6 +394,8 @@ describe('summarizeBulk', () => {
     status,
     message: '',
     command: { idempotencyKey: 'k', data: { sources: [], reason: '' } },
+    outcome: null,
+    base: BULK_BASE,
   });
 
   it('reports successes, failures, and unconfirmed groups', () => {
@@ -343,6 +418,8 @@ describe('pickableForMerge', () => {
       status: 'unconfirmed',
       message: '',
       command: { idempotencyKey: 'k', data: { sources: [], reason: '' } },
+      outcome: null,
+      base: BULK_BASE,
     };
 
     expect(

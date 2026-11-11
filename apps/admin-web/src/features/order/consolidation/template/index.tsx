@@ -36,6 +36,7 @@ import {
   ConsolidationItemList,
   MergedItemsTable,
 } from '@/features/order/fulfillments/detail/consolidation-items';
+import { ConsolidationOutcomeView } from '@/features/order/fulfillments/detail/consolidation-result';
 import { ConsolidationSheet } from '@/features/order/fulfillments/detail/consolidation-sheet';
 import {
   boxNoText,
@@ -107,7 +108,11 @@ export default function ConsolidationTemplate() {
   const [todayOnly, setTodayOnly] = useState(false);
   const [beforeWaybillOnly, setBeforeWaybillOnly] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
-  const [sheetShipmentId, setSheetShipmentId] = useState('');
+  // 보드에서 연 합치기는 같은 묶음의 다른 상자를 미리 골라 둔다
+  const [sheet, setSheet] = useState<{
+    shipmentId: string;
+    preselect: string[];
+  } | null>(null);
   const [results, setResults] = useState<BulkResult[]>([]);
   const [resultsOpen, setResultsOpen] = useState(false);
   const [running, setRunning] = useState(false);
@@ -149,7 +154,7 @@ export default function ConsolidationTemplate() {
     setConfirming([]);
     setRunning(true);
 
-    const collected = await runBulkMerge(targets, send, describe);
+    const collected = await runBulkMerge(targets, warehouseId, send, describe);
 
     setRunning(false);
     setSelected([]);
@@ -317,7 +322,12 @@ export default function ConsolidationTemplate() {
                     expanded={expanded.includes(group.key)}
                     onToggleExpanded={() => toggleExpanded(group.key)}
                     onOpen={() =>
-                      setSheetShipmentId(group.shipments[0].shipmentId)
+                      setSheet({
+                        shipmentId: group.shipments[0].shipmentId,
+                        preselect: group.shipments
+                          .slice(1)
+                          .map((shipment) => shipment.shipmentId),
+                      })
                     }
                   />
                 ))}
@@ -330,13 +340,15 @@ export default function ConsolidationTemplate() {
         )}
       </div>
 
-      {sheetShipmentId && (
+      {sheet && (
         <ConsolidationSheet
-          shipmentId={sheetShipmentId}
+          shipmentId={sheet.shipmentId}
+          preselect={sheet.preselect}
+          warehouseId={warehouseId}
           open
           onOpenChange={(open) => {
             if (!open) {
-              setSheetShipmentId('');
+              setSheet(null);
             }
           }}
           onRequested={() => {
@@ -395,30 +407,36 @@ export default function ConsolidationTemplate() {
             <DialogTitle>합치기 결과</DialogTitle>
             <DialogDescription>{summarizeBulk(results)}</DialogDescription>
           </DialogHeader>
-          <ul className="flex flex-col gap-2 text-sm">
+          <ul className="flex max-h-[60vh] flex-col gap-2 overflow-y-auto text-sm">
             {results.map((result) => (
               <li
                 key={result.key}
-                className="flex items-start justify-between gap-3 rounded-md border p-3"
+                aria-label={`${result.orderNos} 결과`}
+                className="flex flex-col gap-2 rounded-md border p-3"
               >
-                <span className="font-medium">{result.orderNos}</span>
-                <span className="text-right">
-                  <Badge variant="outline">{BULK_LABEL[result.status]}</Badge>
-                  <span className="mt-1 block text-muted-foreground">
-                    {result.message}
+                <div className="flex items-start justify-between gap-3">
+                  <span className="font-medium">{result.orderNos}</span>
+                  <span className="text-right">
+                    <Badge variant="outline">{BULK_LABEL[result.status]}</Badge>
+                    <span className="mt-1 block text-muted-foreground">
+                      {result.message}
+                    </span>
+                    {result.status === 'unconfirmed' && canCreate && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="mt-2"
+                        disabled={running}
+                        onClick={() => recheck(result)}
+                      >
+                        다시 확인
+                      </Button>
+                    )}
                   </span>
-                  {result.status === 'unconfirmed' && canCreate && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="mt-2"
-                      disabled={running}
-                      onClick={() => recheck(result)}
-                    >
-                      다시 확인
-                    </Button>
-                  )}
-                </span>
+                </div>
+                {result.outcome ? (
+                  <ConsolidationOutcomeView outcome={result.outcome} />
+                ) : null}
               </li>
             ))}
           </ul>
