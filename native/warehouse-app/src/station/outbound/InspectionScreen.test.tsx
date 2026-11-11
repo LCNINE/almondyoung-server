@@ -402,7 +402,9 @@ describe('열린 검수 상자의 배치 제외 감지', () => {
       });
 
       expect(
-        await screen.findByText(status === 'excluded' ? '빠진 박스' : '뺄 상품')
+        status === 'excluded'
+          ? await screen.findByText('빠진 박스')
+          : await screen.findByRole('list', { name: '뺄 상품' })
       ).toBeInTheDocument();
       expect(screen.queryByRole('status', { name: '진행' })).toBeNull();
       expect(
@@ -438,11 +440,11 @@ describe('열린 검수 상자의 배치 제외 감지', () => {
     });
 
     expect(progress()).toBeInTheDocument();
-    expect(screen.queryByText('뺄 상품')).toBeNull();
+    expect(screen.queryByRole('list', { name: '뺄 상품' })).toBeNull();
 
     await act(async () => release());
 
-    expect(await screen.findByText('뺄 상품')).toBeInTheDocument();
+    expect(await screen.findByRole('list', { name: '뺄 상품' })).toBeInTheDocument();
     expect(server.scans).toHaveLength(1);
   });
 

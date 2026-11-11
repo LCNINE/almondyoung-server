@@ -23,6 +23,7 @@ const WITHDRAWING: FakeBox = {
     },
   ],
 };
+const SLOW = { timeout: 4000 };
 const list = () => screen.getByRole('list', { name: '뺄 상품' });
 const recent = () => screen.getByRole('list', { name: '최근 스캔' });
 const batchReads = (server: { requests: Array<{ path: string }> }) =>
@@ -84,12 +85,13 @@ describe('뺄 상품(스펙 §6.2 withdrawing)', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: /박스 빼기/ })).toBeInTheDocument());
     press('F11');
     press('F11');
-    await screen.findByText('뺄 상품을 찍어 주세요');
+    // F11 두 번 → 빼기 → 송장 재조회 → 뺄 상품, 다시 빼기 → 빠진 박스까지 왕복이 길다. CI 부하에서 기본 1초를 넘긴다
+    await screen.findByText('뺄 상품을 찍어 주세요', undefined, SLOW);
     // 다시 그린 화면이 송장 줄을 한 번 더 남기지 않는다(처음 찍었을 때 한 줄뿐)
     expect(within(recent()).getAllByText('4210-3388-1907')).toHaveLength(1);
     await waitFor(() => expect(document.querySelector('[data-intake="open"]')).not.toBeNull());
     scan('8801002');
-    expect(await screen.findByText('빠진 박스')).toBeInTheDocument();
+    expect(await screen.findByText('빠진 박스', undefined, SLOW)).toBeInTheDocument();
   });
 
   it('Esc 는 뺄 상품을 내려놓는다', async () => {
