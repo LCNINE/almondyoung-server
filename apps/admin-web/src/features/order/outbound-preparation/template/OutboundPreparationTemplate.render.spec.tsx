@@ -159,6 +159,12 @@ function row(label: string) {
   return within(element);
 }
 
+function checkedRows() {
+  return document.querySelectorAll(
+    'tbody [role="checkbox"][aria-checked="true"]'
+  );
+}
+
 async function start() {
   await userEvent.click(
     row('완전출고').getByRole('button', { name: '출고 준비' })
@@ -372,17 +378,64 @@ describe('OutboundPreparationTemplate', () => {
     );
 
     expect(screen.getByText('한 번에 100건까지 처리해요')).toBeTruthy();
-    const boxes = screen.getAllByRole('checkbox');
-    expect(
-      boxes.filter((box) => box.getAttribute('aria-checked') === 'true')
-    ).toHaveLength(100);
-    await userEvent.click(boxes[100]);
-    expect(boxes[100].getAttribute('aria-checked')).toBe('false');
-    await userEvent.click(boxes[0]);
+    const all = screen.getByLabelText('앞 100건 선택');
+    const first = screen.getByLabelText('#AY-ready-1 선택');
+    const last = screen.getByLabelText('#AY-ready-101 선택');
+    expect(checkedRows()).toHaveLength(100);
+    expect(all.getAttribute('aria-checked')).toBe('true');
+    await userEvent.click(last);
+    expect(last.getAttribute('aria-checked')).toBe('false');
+    await userEvent.click(first);
+    expect(all.getAttribute('aria-checked')).toBe('mixed');
+
+    await userEvent.click(all);
+    expect(checkedRows()).toHaveLength(100);
+    expect(first.getAttribute('aria-checked')).toBe('true');
+    expect(last.getAttribute('aria-checked')).toBe('false');
+
+    await userEvent.click(first);
+    await userEvent.click(last);
+    expect(checkedRows()).toHaveLength(100);
+    expect(all.getAttribute('aria-checked')).toBe('mixed');
+    await userEvent.click(all);
+    expect(first.getAttribute('aria-checked')).toBe('true');
+    expect(last.getAttribute('aria-checked')).toBe('false');
+
+    await userEvent.click(first);
     await start();
 
     expect(mockRun.mock.calls[0][0].shipmentIds).toHaveLength(99);
     expect(mockRun.mock.calls[0][0].shipmentIds).not.toContain('ready-1');
+  });
+
+  it('전체 해제한 뒤 고른 상자만 준비하고 건수를 그대로 보여 준다', async () => {
+    render(<OutboundPreparationTemplate />);
+    await userEvent.click(
+      row('완전출고').getByRole('button', { name: '내역보기' })
+    );
+    const all = screen.getByLabelText('전체 선택');
+    expect(all.getAttribute('aria-checked')).toBe('true');
+
+    await userEvent.click(all);
+    expect(checkedRows()).toHaveLength(0);
+    expect(all.getAttribute('aria-checked')).toBe('false');
+    expect(screen.getByText('완전출고 내역 · 0건 선택')).toBeTruthy();
+    expect(
+      row('완전출고')
+        .getByRole('button', { name: '출고 준비' })
+        .hasAttribute('disabled')
+    ).toBe(true);
+
+    await userEvent.click(screen.getByLabelText('#AY-ready-2 선택'));
+    expect(all.getAttribute('aria-checked')).toBe('mixed');
+    expect(screen.getByText('완전출고 내역 · 1건 선택')).toBeTruthy();
+    await userEvent.click(
+      row('완전출고').getByRole('button', { name: '출고 준비' })
+    );
+    expect(screen.getByText('완전출고 1건을 출고 준비할까요?')).toBeTruthy();
+    await userEvent.click(screen.getByRole('button', { name: '시작' }));
+
+    expect(mockRun.mock.calls[0][0].shipmentIds).toEqual(['ready-2']);
   });
 
   it('부분출고에서 체크한 상자만 나누고 성공·실패 건수를 알린다', async () => {
@@ -394,7 +447,7 @@ describe('OutboundPreparationTemplate', () => {
     await userEvent.click(
       row('부분출고').getByRole('button', { name: '내역보기' })
     );
-    await userEvent.click(screen.getAllByRole('checkbox')[0]);
+    await userEvent.click(screen.getByLabelText('#AY-partial-1 선택'));
     await userEvent.click(
       screen.getByRole('button', { name: '있는 것만 먼저 보내기' })
     );
@@ -448,7 +501,7 @@ describe('OutboundPreparationTemplate', () => {
     await userEvent.click(
       row('합칠 주문 있음').getByRole('button', { name: '내역보기' })
     );
-    await userEvent.click(screen.getAllByRole('checkbox')[0]);
+    await userEvent.click(screen.getByLabelText('#AY-mergeable-1 선택'));
     expect(screen.queryByRole('button', { name: '합치기' })).toBeNull();
     await userEvent.click(screen.getByRole('button', { name: '따로 보내기' }));
 
