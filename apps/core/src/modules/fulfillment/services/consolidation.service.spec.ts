@@ -211,6 +211,7 @@ describe('ConsolidationService command boundary', () => {
         salesOrderNos: [],
         itemSummary: '',
         totalQty: 0,
+        items: [],
         recipientSnapshot: {},
         batchId: null,
         waybillTrackingNo: null,

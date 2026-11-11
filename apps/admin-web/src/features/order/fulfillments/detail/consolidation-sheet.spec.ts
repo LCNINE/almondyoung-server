@@ -8,7 +8,9 @@ import {
   boxNoText,
   freshCommand,
   isStaleVersionConflict,
+  itemsTotalText,
   keptAfterFailure,
+  mergedItems,
   mergedToastText,
   needsReopenPermission,
   needsUnwindSteps,
@@ -435,5 +437,67 @@ describe('나눈 상자 표시', () => {
     );
     expect(mergedToastText([left, other])).toBe('합포장했어요.');
     expect(mergedToastText([])).toBe('합포장했어요.');
+  });
+});
+
+describe('합칠 상품과 수량', () => {
+  const lipBalm = { skuId: 'sku-1', name: '립밤', qty: 1 };
+
+  it('같은 상품은 합산하고 주문마다 몇 개씩인지 남긴다', () => {
+    const merged = mergedItems([
+      shipment('a', { items: [lipBalm] }),
+      shipment('b', {
+        items: [
+          { ...lipBalm, qty: 2 },
+          { skuId: 'sku-2', name: '핸드크림', qty: 1 },
+        ],
+      }),
+    ]);
+
+    expect(merged).toEqual([
+      {
+        skuId: 'sku-1',
+        name: '립밤',
+        qty: 3,
+        parts: [
+          { label: '#SO-a', qty: 1 },
+          { label: '#SO-b', qty: 2 },
+        ],
+      },
+      {
+        skuId: 'sku-2',
+        name: '핸드크림',
+        qty: 1,
+        parts: [{ label: '#SO-b', qty: 1 }],
+      },
+    ]);
+    expect(itemsTotalText(merged ?? [])).toBe('2종 · 총 4개');
+  });
+
+  it('같은 주문을 나눈 상자는 상자 번호로 구분한다', () => {
+    const split = { boxQty: 1, orderQty: 2, boxNo: 1, boxCount: 2 };
+    const merged = mergedItems([
+      shipment('a', {
+        salesOrderNos: ['SO-1'],
+        items: [lipBalm],
+        split,
+      }),
+      shipment('b', {
+        salesOrderNos: ['SO-1'],
+        items: [lipBalm],
+        split: { ...split, boxNo: 2 },
+      }),
+    ]);
+
+    expect(merged?.[0].parts.map((part) => part.label)).toEqual([
+      '#SO-1 상자 1/2(1개)',
+      '#SO-1 상자 2/2(1개)',
+    ]);
+  });
+
+  it('상품별 수량을 아직 주지 않는 응답이면 합치지 않는다', () => {
+    expect(
+      mergedItems([shipment('a', { items: [lipBalm] }), shipment('b')])
+    ).toBeNull();
   });
 });

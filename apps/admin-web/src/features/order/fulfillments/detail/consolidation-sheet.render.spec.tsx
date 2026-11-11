@@ -598,3 +598,56 @@ describe('같은 주문을 나눈 상자', () => {
     );
   });
 });
+
+describe('합포장 Sheet 상품과 수량', () => {
+  beforeEach(() => {
+    mockUseConsolidationOptions.mockReturnValue({
+      data: {
+        source: shipment('src', {
+          items: [{ skuId: 'sku-1', name: '립밤', qty: 1 }],
+        }),
+        options: [
+          option('ok1', 'ok', {
+            items: [
+              { skuId: 'sku-1', name: '립밤', qty: 2 },
+              { skuId: 'sku-2', name: '핸드크림', qty: 1 },
+            ],
+          }),
+        ],
+      },
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch,
+    });
+  });
+
+  it('주문마다 상품별 수량을 보여 주고 확인 단계에서 합친 결과를 상품별로 보여 준다', async () => {
+    const user = userEvent.setup();
+
+    renderSheet();
+
+    expect(
+      screen.getByRole('list', { name: '주문 #SO-src 상품' }).textContent
+    ).toBe('립밤 1개');
+    expect(
+      screen.getByRole('checkbox', {
+        name: '주문 #SO-ok1 같이 보내기',
+        description: '립밤 2개 핸드크림 1개',
+      })
+    ).toBeTruthy();
+
+    await user.click(card('SO-ok1'));
+    await user.click(screen.getByRole('button', { name: '다음' }));
+
+    const result = screen.getByRole('table', { name: '합친 상자에 담길 상품' });
+
+    expect(result.textContent).toContain('2종 · 총 4개');
+    expect(screen.getByRole('row', { name: /립밤/ }).textContent).toBe(
+      '립밤#SO-src 1개 + #SO-ok1 2개3개'
+    );
+    expect(screen.getByRole('row', { name: /핸드크림/ }).textContent).toBe(
+      '핸드크림#SO-ok1 1개1개'
+    );
+  });
+});

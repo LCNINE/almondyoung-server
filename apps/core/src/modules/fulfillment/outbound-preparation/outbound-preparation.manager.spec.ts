@@ -203,6 +203,7 @@ describe('OutboundPreparationManager', () => {
         qty: 1,
         salesOrderId: null,
         fulfillmentMode: 'in_house',
+        skuId: 'sku',
         skuStockType: 'stocked',
         skuProfileId,
         skuName: '상품',

@@ -112,6 +112,13 @@ export class ShipmentSplitShareDto {
   boxCount: number;
 }
 
+export class ConsolidationItemDto {
+  skuId: string;
+  name: string;
+  @ApiProperty({ description: '이 상자에 담긴 이 상품의 수량(같은 상품 줄을 합친 값)' })
+  qty: number;
+}
+
 export class ConsolidationOptionShipmentDto {
   shipmentId: string;
   status: string;
@@ -120,6 +127,8 @@ export class ConsolidationOptionShipmentDto {
   @ApiProperty({ description: '첫 상품명 외 N건' })
   itemSummary: string;
   totalQty: number;
+  @ApiProperty({ type: [ConsolidationItemDto], description: '담긴 상품별 수량' })
+  items: ConsolidationItemDto[];
   @ApiProperty({ type: ConsolidationRecipientSnapshotDto, description: '상자의 수령인 스냅샷. 비어 있으면 빈 객체' })
   recipientSnapshot: ConsolidationRecipientSnapshotDto;
   @ApiProperty({ type: String, nullable: true, description: '끝나지 않은 배치 작업 항목의 배치' })
