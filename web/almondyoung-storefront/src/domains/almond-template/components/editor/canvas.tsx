@@ -49,6 +49,7 @@ import {
 } from "./pen-overlay"
 import {
   layerImageDpi,
+  outsideSafeArea,
   SHAPE_TEXT_TYPES,
   sideBackground,
   unfiltered,
@@ -794,6 +795,22 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
                 )}
               </g>
             )}
+            {editor.safetyChecked &&
+              layers
+                .filter((layer) => outsideSafeArea(design, layer))
+                .map((layer) => (
+                  <rect
+                    key={`unsafe-${layer.id}`}
+                    x={layer.x}
+                    y={layer.y}
+                    width={layer.width}
+                    height={layer.height}
+                    fill="rgba(239, 68, 68, 0.08)"
+                    stroke="#ef4444"
+                    strokeWidth={2 / scale}
+                    pointerEvents="none"
+                  />
+                ))}
             {editor.backgroundSelected && (
               <rect
                 id="background-outline"

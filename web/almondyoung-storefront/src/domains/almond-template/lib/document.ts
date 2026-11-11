@@ -928,6 +928,27 @@ export function printWarnings(design: Design): string[] {
   return warnings
 }
 
+// 글자 레이어는 템플릿 때 붙은 이름보다 지금 쓰인 글자가 고객에게 알아보기 쉽다
+function issueLabel(layer: Layer) {
+  const text = (layer.text ?? "").trim().replace(/\s+/g, " ")
+  if (layer.type !== "text" || !text) return layer.name
+
+  return `'${text.length > 12 ? `${text.slice(0, 12)}…` : text}' 글자`
+}
+
+export function outsideSafeArea(design: Design, layer: Layer) {
+  const safety = PRINT_SPECS[design.kind].safetyMm
+
+  return (
+    (layer.type === "text" || layer.type === "qr") &&
+    layer.visible !== false &&
+    (layer.x < safety ||
+      layer.y < safety ||
+      layer.x + layer.width > design.widthMm - safety ||
+      layer.y + layer.height > design.heightMm - safety)
+  )
+}
+
 export function printIssues(design: Design): string[] {
   const issues: string[] = []
   if (!design.front.length) issues.push("앞면에 인쇄할 내용이 없습니다.")
@@ -948,18 +969,12 @@ export function printIssues(design: Design): string[] {
           MIN_PRINT_TEXT_MM
       )
         issues.push(
-          `${side}의 ${layer.name}: 글자가 너무 작아 인쇄 시 뭉개질 수 있습니다. 더 크게 키워 주세요.`
+          `${side}의 ${issueLabel(layer)}: 글자가 너무 작아 인쇄 시 뭉개질 수 있습니다. 더 크게 키워 주세요.`
         )
-      if (
-        (layer.type === "text" || layer.type === "qr") &&
-        (layer.x < PRINT_SPECS[design.kind].safetyMm ||
-          layer.y < PRINT_SPECS[design.kind].safetyMm ||
-          layer.x + layer.width >
-            design.widthMm - PRINT_SPECS[design.kind].safetyMm ||
-          layer.y + layer.height >
-            design.heightMm - PRINT_SPECS[design.kind].safetyMm)
-      )
-        issues.push(`${side}의 ${layer.name}: 안전영역 안으로 옮겨 주세요.`)
+      if (outsideSafeArea(design, layer))
+        issues.push(
+          `${side}의 ${issueLabel(layer)}: 빨간 테두리가 초록 점선 안에 들어오게 옮겨 주세요.`
+        )
     }
   }
   return issues

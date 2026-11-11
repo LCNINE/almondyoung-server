@@ -109,6 +109,8 @@ export function useAlmondEditor({
   const [panelOpen, setPanelOpen] = useState(true)
   const [textDialog, setTextDialog] = useState<string | null>(null)
   const [issues, setIssues] = useState<string[]>([])
+  // 인쇄 전 확인에 한 번 걸리면 그 뒤로 캔버스에 안전영역을 벗어난 상자를 빨갛게 보여준다
+  const [safetyChecked, setSafetyChecked] = useState(false)
   const [helpOpen, setHelpOpen] = useState(false)
   const [helpTab, setHelpTab] = useState<
     "editing" | "shortcuts" | "image" | "print"
@@ -334,6 +336,15 @@ export function useAlmondEditor({
     },
     setSelectedId,
     setMessage,
+    // 디자이너는 편집완료를 거치지 않고 저장·게시하므로 저장할 때 인쇄 검사를 보여준다. 저장은 막지 않는다
+    onSaved: (stored) => {
+      if (mode !== "designer") return
+      const found = printIssues(stored)
+      if (!found.length) return
+      setSafetyChecked(true)
+      setWarnings([])
+      setIssues(found)
+    },
   })
   const actions = useLayerActions({
     design,
@@ -450,7 +461,12 @@ export function useAlmondEditor({
     const found = printIssues(design)
     const warned = printWarnings(design)
     setWarnings(warned)
-    if (found.length) return setIssues(found)
+    if (found.length) {
+      setSafetyChecked(true)
+
+      return setIssues(found)
+    }
+
     if (warned.length) return setIssues(warned)
     openPreview()
   }
@@ -577,6 +593,7 @@ export function useAlmondEditor({
     setTextDialog,
     issues,
     setIssues,
+    safetyChecked,
     helpOpen,
     setHelpOpen,
     helpTab,

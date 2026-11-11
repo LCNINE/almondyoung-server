@@ -249,6 +249,22 @@ describe("아몬드템플릿", () => {
       },
     ]
     expect(printIssues(design)).toContain("앞면의 사진: 사진을 넣어 주세요.")
+    design.front.push({
+      id: "t",
+      type: "text",
+      name: "모노그램 G",
+      text: "J",
+      x: 0,
+      y: 20,
+      width: 20,
+      height: 20,
+      fill: "#000000",
+      fontSize: 40,
+    })
+    expect(printIssues(design)).toContain(
+      "앞면의 'J' 글자: 빨간 테두리가 초록 점선 안에 들어오게 옮겨 주세요."
+    )
+    design.front.pop()
     design.front[0] = {
       ...design.front[0],
       image: "data:image/png;base64,AA==",

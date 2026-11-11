@@ -54,6 +54,7 @@ type Params = {
   setSelectedId: (id: string | null) => void
   setMessage: (message: string) => void
   runAuthed: (task: () => Promise<void>, failure: string) => Promise<void>
+  onSaved?: (design: Design) => void
 }
 
 function saveTarget(design: Design) {
@@ -72,6 +73,7 @@ export function useTemplateStorage({
   setSelectedId,
   setMessage,
   runAuthed,
+  onSaved,
 }: Params) {
   const [saveDialog, setSaveDialog] = useState(false)
   const [loadDialog, setLoadDialog] = useState(false)
@@ -302,6 +304,7 @@ export function useTemplateStorage({
     setSaved({ id: result.id, target: saveTarget(stored) })
     ownerChecked.current = result.id
     setSaveDialog(false)
+    onSaved?.(stored)
     setMessage(
       "status" in result && result.status === "published"
         ? "저장되었습니다. 게시 중인 시안이라 고객 화면에 바로 반영됩니다."
