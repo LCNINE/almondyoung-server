@@ -52,6 +52,14 @@ python scripts/almondyoung-deploy.py check live --profile almondyoung
 
 ## 배포 실행
 
+AWS 연결만 검증하고 배포/DB 변경 없이 기다려야 하면 다음을 사용합니다.
+
+```sh
+python scripts/almondyoung-deploy.py validate live --profile almondyoung
+```
+
+관리자가 v2 buildspec을 연결한 환경에서만 실행됩니다. CodeBuild 비용은 발생하지만 DB는 READ ONLY 트랜잭션으로 연결·이력·미적용 SQL을 검사하며 마이그레이션 SQL, 앱 배포, 성공 기준/캐시 저장은 하지 않습니다. 반환된 buildId를 아래 status로 추적합니다. `SUCCEEDED`여도 실제 배포나 마이그레이션을 완료했다는 뜻은 아닙니다.
+
 테스트한 변경이 원격 `develop`에 반영됐는지 먼저 확인합니다. 원하는 환경 하나를 선택하며, **`live`는 실제 운영 서버를 변경합니다.**
 
 원격 작업 트리가 깨끗하고 현재 브랜치가 develop인지 확인한 뒤 `git pull --ff-only origin develop`로 스크립트/문서도 최신화합니다. 로컬 변경이 있으면 reset/clean으로 지우지 말고 보존한 채 원인을 확인합니다. 환경의 기존 빌드가 실행 중인지 먼저 확인합니다.

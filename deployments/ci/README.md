@@ -25,6 +25,7 @@
 
 - 현재 프로젝트/서비스 역할/소스/환경/로그/네트워크 설정을 먼저 백업·비교합니다. 이 문서의 예시를 기존 CloudFormation 전체 템플릿 대신 덮어쓰지 않습니다.
 - `storage.yml`은 비공개 암호화 S3 버킷과 **AlmondyoungFixedDeployRunner만** 사용할 S3 ListBucket/GetObject/PutObject 정책을 만듭니다. ListBucket은 이 새 전용 버킷에만 적용합니다. 공용 IAM 사용자에게는 붙이지 않습니다. 성공 이력은 만료시키지 않고 캐시는 30일 만료합니다.
+- 같은 템플릿의 VpcId/PrivateSubnetId/DatabaseSecurityGroupId에는 확인된 기존 리소스를 전달합니다. 새 빌드 보안 그룹은 인바운드 없이 HTTPS 및 지정 DB 보안 그룹의 PostgreSQL 포트로만 송신합니다. ENI 생성·삭제는 지정 서브넷에 제한하고 연결 권한은 CodeBuild 서비스에 제한합니다. 기존 DB 보안 그룹의 내부망 허용을 확인해야 하며 이 템플릿은 기존 DB/서브넷/라우팅 규칙을 수정하지 않습니다.
 - CodeBuild를 해당 stage의 기존 platform VPC/private subnet에 연결합니다. 두 RDS DB에 대한 DB 포트 접근과 GitHub/npm/ECR/S3/AWS API로 나갈 NAT 또는 적절한 엔드포인트가 필요합니다. DB를 인터넷에 공개하지 않습니다.
 - CodeBuild VPC ENI에 필요한 EC2 권한은 해당 VPC/subnet 및 CodeBuild 서비스 조건으로 한정해 배포 역할에 추가합니다. 기존 DB security group에는 해당 빌드 security group만 허용합니다. VPC/보안 그룹 ID를 추측해서 적용하지 않습니다.
 - 배포 역할이 기존 SST 링크와 `/lcnine-auth/<stage>/tenant-list`를 읽을 수 있어야 합니다. 공유 사용자에게 DB 비밀값을 전달하지 않습니다. 필요 권한은 실제 거부 리소스를 확인해 역할에만 보완합니다.
@@ -46,7 +47,7 @@
    ```
 
 5. 관리자가 생성된 변경을 검토해 CodeBuild에 적용합니다. bootstrap buildspec은 고정 develop을 clone한 후 저장소의 runner를 실행합니다. public 사용자가 소스/역할/명령을 바꾸는 기능은 없습니다. `--force-full`은 서버에서 고정한 boolean 환경변수 하나로만 전달합니다.
-6. 기존 Lambda 코드를 백업하고 `deploy_control.py`를 `index.py`로 패키징해 배포합니다. 기존 handler `index.handler`, role, timeout, concurrency는 유지합니다. **준비되지 않은 stage는 `PIPELINE_V2_READY_STAGES`에 넣지 않습니다.** 이 값은 관리자가 연결·권한·DB 접근 검증을 완료한 환경 이름의 쉼표 구분 목록입니다.
+6. 기존 Lambda 코드를 백업하고 `deploy_control.py`를 `index.py`로 패키징해 배포합니다. 기존 handler `index.handler`, role, timeout, concurrency는 유지합니다. v2 buildspec/네트워크/스토리지를 설치한 환경만 `PIPELINE_V2_INSTALLED_STAGES`에 등록합니다. 이후 원격의 `validate <stage>`로 앱 배포나 마이그레이션 SQL 실행 없이 READ ONLY 트랜잭션에서 DB 연결·이력을 검사할 수 있습니다. **검증되지 않은 stage는 `PIPELINE_V2_READY_STAGES`에 넣지 않습니다.** 두 값은 각각 환경 이름의 쉼표 구분 목록입니다. 미설치 v1 프로젝트에는 validate를 허용하지 않아 기존 배포가 실행되는 사고를 막습니다.
 7. 승인된 dev 실행으로 마이그레이션/선택 배포/캐시 로그를 검증합니다. 같은 입력의 후속 실행에서 앱 배포가 생략되는지, 마이그레이션 확인은 실행되는지 확인합니다. 캐시 miss 후 다음 실행의 복원도 확인합니다. 실제 DB 변경을 포함하므로 단순 설정 검증으로 운영 실행을 시작하지 않습니다.
 8. 검증된 환경부터 준비 목록에 등록하고, 원격에서 `check` 결과의 `pipelineVersion: 2`, `ready: true`를 확인합니다. live 설정도 해당 환경의 네트워크·권한을 별도로 확인합니다.
 

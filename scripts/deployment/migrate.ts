@@ -25,6 +25,9 @@ async function main() {
   const app = JSON.parse(process.env.SST_RESOURCE_App ?? '{}');
   if (app.name !== args.deployment) throw new Error('SST shell deployment does not match the requested deployment');
   process.env.SST_STAGE = args.stage;
+  // SST relaunches from deployments/lcnine/<unit>; registry paths are repository-relative.
+  process.chdir(resolve(__dirname, '../..'));
+  const checkOnly = process.argv.includes('--check-only');
 
   for (const service of resolveRegistry({ deployment: args.deployment })) {
     if (!service.drizzleConfig) continue; // Medusa keeps its existing container-start migration owner.
@@ -45,6 +48,7 @@ async function main() {
     let phase = 'connect';
     try {
       await client.connect();
+      if (checkOnly) await client.query('BEGIN READ ONLY');
       phase = 'lock';
       locked = (await client.query('SELECT pg_try_advisory_lock(724357, 1) AS locked')).rows[0].locked;
       if (!locked) throw new Error('Another migration is running');
@@ -70,9 +74,14 @@ async function main() {
       assertAdditiveMigrations(pending);
       console.log(JSON.stringify({ step: 'migration', service: label, pending: pending.length }));
       phase = 'apply';
-      if (pending.length) await migrate(drizzle(client), options);
+      if (pending.length && !checkOnly) await migrate(drizzle(client), options);
       console.log(
-        JSON.stringify({ step: 'migration', service: label, status: pending.length ? 'applied' : 'up-to-date' }),
+        JSON.stringify({
+          step: 'migration',
+          service: label,
+          status: checkOnly ? 'validated' : pending.length ? 'applied' : 'up-to-date',
+          pending: pending.length,
+        }),
       );
     } catch (error) {
       // Driver errors can include SQL, hostnames and connection credentials.
@@ -90,6 +99,7 @@ async function main() {
         `Migration blocked or failed for ${label}; application deployment stopped. Check connectivity, history, and pending SQL with an administrator.`,
       );
     } finally {
+      if (checkOnly) await client.query('ROLLBACK').catch(() => undefined);
       if (locked) await client.query('SELECT pg_advisory_unlock(724357, 1)').catch(() => undefined);
       await client.end().catch(() => undefined);
     }

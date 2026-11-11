@@ -35,7 +35,7 @@ def require_pipeline_v2(response):
 
 def main():
     parser = argparse.ArgumentParser(description="almondyoung-server 지정 배포 실행/상태 확인")
-    parser.add_argument("action", choices=("check", "deploy", "status"))
+    parser.add_argument("action", choices=("check", "validate", "deploy", "status"))
     parser.add_argument("stage", choices=("dev", "demo", "live"))
     parser.add_argument("build_id", nargs="?")
     parser.add_argument("--profile", default="lcnine-public")
@@ -48,7 +48,7 @@ def main():
     if args.force_full and args.action != "deploy":
         parser.error("--force-full은 deploy에서만 입력합니다.")
     payload = {"action": args.action, "stage": args.stage}
-    if args.action == "deploy":
+    if args.action in ("deploy", "validate"):
         payload["requestId"] = str(uuid.uuid4())
         if args.force_full:
             payload["forceFull"] = True

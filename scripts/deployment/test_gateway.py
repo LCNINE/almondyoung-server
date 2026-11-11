@@ -40,12 +40,24 @@ class GatewayTest(unittest.TestCase):
         client.start_build.assert_not_called()
 
     def test_only_boolean_force_full_override_is_accepted(self):
-        with patch.dict(os.environ, {'PIPELINE_V2_READY_STAGES': 'live'}):
+        with patch.dict(os.environ, {'PIPELINE_V2_READY_STAGES': 'live', 'PIPELINE_V2_INSTALLED_STAGES': 'live'}):
             gateway.handler({'action': 'deploy', 'stage': 'live', 'requestId': REQUEST, 'forceFull': True}, None)
         values = client.start_build.call_args.kwargs
         self.assertEqual(values['projectName'], 'almondyoung-deploy-live')
         self.assertEqual(values['environmentVariablesOverride'],
-                         [{'name': 'ALMONDYOUNG_FORCE_FULL', 'value': 'true', 'type': 'PLAINTEXT'}])
+                         [{'name': 'ALMONDYOUNG_FORCE_FULL', 'value': 'true', 'type': 'PLAINTEXT'},
+                          {'name': 'ALMONDYOUNG_VALIDATE_ONLY', 'value': 'false', 'type': 'PLAINTEXT'}])
+
+    def test_validation_only_runs_installed_v2_and_never_selects_deploy_mode(self):
+        payload = {'action': 'validate', 'stage': 'live', 'requestId': REQUEST}
+        with patch.dict(os.environ, {'PIPELINE_V2_READY_STAGES': '', 'PIPELINE_V2_INSTALLED_STAGES': ''}):
+            with self.assertRaises(RuntimeError):
+                gateway.handler(payload, None)
+        client.start_build.assert_not_called()
+        with patch.dict(os.environ, {'PIPELINE_V2_READY_STAGES': '', 'PIPELINE_V2_INSTALLED_STAGES': 'live'}):
+            gateway.handler(payload, None)
+        self.assertIn({'name': 'ALMONDYOUNG_VALIDATE_ONLY', 'value': 'true', 'type': 'PLAINTEXT'},
+                      client.start_build.call_args.kwargs['environmentVariablesOverride'])
 
     def test_source_commands_and_arbitrary_environment_overrides_are_rejected(self):
         for extra in ({'sourceVersion': 'other'}, {'buildspecOverride': 'evil'}, {'forceFull': 'true'},

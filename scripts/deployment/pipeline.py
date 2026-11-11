@@ -131,6 +131,7 @@ def main():
     parser.add_argument('--stage', choices=STAGES, required=True)
     args = parser.parse_args()
     stage = args.stage
+    validate_only = os.environ.get('ALMONDYOUNG_VALIDATE_ONLY') == 'true'
     expected = f'almondyoung-deploy-{stage}:'
     if not os.environ.get('CODEBUILD_BUILD_ID', '').startswith(expected):
         raise RuntimeError('This runner is only for the fixed AWS CodeBuild project')
@@ -159,7 +160,7 @@ def main():
             if not isinstance(baselines, dict) or set(baselines) - set(UNITS):
                 raise RuntimeError('Unexpected deployment baseline units')
         units = choose_units(baselines, head, changed_files, os.environ.get('ALMONDYOUNG_FORCE_FULL') == 'true')
-        log('plan', version=2, stage=stage, commit=head, units=units, baselines=baselines)
+        log('plan', version=2, stage=stage, commit=head, units=units, baselines=baselines, validateOnly=validate_only)
         key = cache_key(stage)
         archive = Path(temporary) / 'cache.tar.gz'
         hit = get_object(bucket, key, archive)
@@ -175,8 +176,12 @@ def main():
         for unit in UNITS:
             step_start = time.monotonic()
             run(['node_modules/.bin/tsx', 'scripts/deployment/migrate.ts', '--stage', stage,
-                 '--deployment', f'lcnine-{unit}'])
+                 '--deployment', f'lcnine-{unit}'] + (['--check-only'] if validate_only else []))
             log('migrations', unit=unit, status='succeeded', seconds=round(time.monotonic() - step_start, 1))
+
+        if validate_only:
+            log('validated', commit=head, stage=stage, note='No migration SQL, app deployment, baseline or cache write was performed')
+            return
 
         for unit in units:
             apps = WEB[:1] if unit == 'auth' else (WEB[1:2] if stage == 'demo' else WEB[1:])

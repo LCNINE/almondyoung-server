@@ -17,6 +17,26 @@ C = 'c' * 40
 
 
 class PipelineTest(unittest.TestCase):
+    def test_validation_checks_both_databases_without_deploy_or_storage_write(self):
+        commands = []
+        def run(command, *args, **kwargs):
+            commands.append(command)
+            return A if command[:2] == ['git', 'rev-parse'] else ''
+        with patch.dict(os.environ, {'CODEBUILD_BUILD_ID': 'almondyoung-deploy-live:test',
+                                     'ALMONDYOUNG_DEPLOY_STORAGE_BUCKET': 'test-deployment-storage',
+                                     'ALMONDYOUNG_VALIDATE_ONLY': 'true'}):
+            with patch.object(sys, 'argv', ['pipeline.py', '--stage', 'live']):
+                with patch.object(pipeline, 'run', side_effect=run), \
+                     patch.object(pipeline, 'cache_key', return_value='cache/live/test'), \
+                     patch.object(pipeline, 'get_object', return_value=False), \
+                     patch.object(pipeline, 'put_object') as write:
+                    pipeline.main()
+                    write.assert_not_called()
+        migration_commands = [command for command in commands if 'scripts/deployment/migrate.ts' in command]
+        self.assertEqual(len(migration_commands), 2)
+        self.assertTrue(all(command[-1] == '--check-only' for command in migration_commands))
+        self.assertFalse(any('deploy' in command for command in commands))
+
     def test_storefront_skips_auth(self):
         self.assertEqual(pipeline.choose_units({'auth': A, 'services': A}, B,
                          lambda *_: ['web/almondyoung-storefront/src/page.tsx']), ['services'])

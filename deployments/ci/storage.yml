@@ -4,7 +4,65 @@ Parameters:
   RunnerRoleName:
     Type: String
     Default: AlmondyoungFixedDeployRunner
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+  PrivateSubnetId:
+    Type: AWS::EC2::Subnet::Id
+  DatabaseSecurityGroupId:
+    Type: AWS::EC2::SecurityGroup::Id
 Resources:
+  BuildSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Almondyoung deployment runner - HTTPS and private PostgreSQL only
+      VpcId: !Ref VpcId
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+          Description: Source dependencies images and AWS APIs
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          DestinationSecurityGroupId: !Ref DatabaseSecurityGroupId
+          Description: Existing private application databases
+      Tags:
+        - Key: Name
+          Value: almondyoung-deploy-live
+  RunnerNetworkAccess:
+    Type: AWS::IAM::Policy
+    Properties:
+      PolicyName: AlmondyoungDeploymentVpcAccess
+      Roles: [!Ref RunnerRoleName]
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Action: ec2:DescribeDhcpOptions
+            Resource: '*'
+            Condition:
+              StringEquals:
+                aws:RequestedRegion: !Ref AWS::Region
+          - Effect: Allow
+            Action: ec2:CreateNetworkInterface
+            Resource:
+              - !Sub 'arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:subnet/${PrivateSubnetId}'
+              - !Sub 'arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:security-group/${BuildSecurityGroup.GroupId}'
+          - Effect: Allow
+            Action: [ec2:CreateNetworkInterface, ec2:DeleteNetworkInterface]
+            Resource: !Sub 'arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:network-interface/*'
+            Condition:
+              ArnEquals:
+                ec2:Subnet: !Sub 'arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:subnet/${PrivateSubnetId}'
+          - Effect: Allow
+            Action: ec2:CreateNetworkInterfacePermission
+            Resource: !Sub 'arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:network-interface/*'
+            Condition:
+              StringEquals:
+                ec2:AuthorizedService: codebuild.amazonaws.com
+              ArnEquals:
+                ec2:Subnet: !Sub 'arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:subnet/${PrivateSubnetId}'
   Storage:
     Type: AWS::S3::Bucket
     DeletionPolicy: Retain
@@ -51,3 +109,5 @@ Resources:
 Outputs:
   BucketName:
     Value: !Ref Storage
+  BuildSecurityGroupId:
+    Value: !GetAtt BuildSecurityGroup.GroupId
