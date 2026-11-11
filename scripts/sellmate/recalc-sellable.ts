@@ -4,7 +4,7 @@ import { INVENTORY_STREAM } from '@packages/event-contracts/streams';
  * sync-stock 후속: 매칭된 SKU 의 sellable 프로젝션 재계산 + 이벤트 발행.
  *
  * sync-stock 이 "매칭된 SKU N개의 재고가 바뀌었습니다" 경고를 냈을 때 짝으로 실행한다.
- * 최근 sellmate-sync stock_events 가 건드린 SKU 에 연결된 variant 를 찾아
+ * 최근 sellmate-sync·sellmate-handover(handover-stock-addback) stock_events 가 건드린 SKU 에 연결된 variant 를 찾아
  * 프로덕션 코드(ProductSellableQuantityService.recalculateAndPublishForVariants)를
  * 그대로 호출한다 — 프로젝션 upsert + outbox enqueue 까지 앱과 동일 경로.
  * 발행(outbox → Kafka)은 live core 앱의 outbox 디스패처가 처리하므로 여기선 DB 만 쓴다.
@@ -56,7 +56,7 @@ async function main() {
       FROM stock_events se
       JOIN product_variant_sku_links l ON l.sku_id = se.sku_id
       JOIN product_matchings pm ON pm.id = l.product_matching_id
-      WHERE se.reason = 'sellmate-sync'
+      WHERE se.reason IN ('sellmate-sync', 'sellmate-handover')
         AND se.occurred_at >= now() - make_interval(hours => ${SINCE_HOURS})
       UNION
       SELECT DISTINCT pm.variant_id
