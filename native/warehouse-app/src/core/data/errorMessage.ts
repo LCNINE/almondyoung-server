@@ -1,5 +1,5 @@
 import { permissionNames } from '../auth/permissionNames';
-import { ApiError, ConflictError } from './httpClient';
+import { ApiError, ConflictError, NetworkError } from './httpClient';
 
 /** 같은 상태 코드라도 화면 문맥에 따라 현장에 필요한 문구가 다르다. */
 export type ErrorContext =
@@ -153,7 +153,10 @@ const RETURN_PUTAWAY_MESSAGES: Record<string, string> = {
   SIMPLE_OUTBOUND_BARCODE_UNKNOWN: '등록되지 않은 바코드예요. 상품을 확인해 주세요.',
 };
 
+export const NETWORK_FAILURE_MESSAGE = '서버에 연결하지 못했어요. 네트워크를 확인해 주세요.';
+
 export function errorMessage(error: unknown, context?: ErrorContext): string {
+  if (error instanceof NetworkError) return NETWORK_FAILURE_MESSAGE;
   if (context === 'return-putaway') {
     if (error instanceof ApiError && error.code && RETURN_PUTAWAY_MESSAGES[error.code])
       return RETURN_PUTAWAY_MESSAGES[error.code];

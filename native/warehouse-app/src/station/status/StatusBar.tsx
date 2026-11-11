@@ -1,4 +1,5 @@
 import { useEffect, useState, useSyncExternalStore } from 'react';
+import { onlineManager } from '@tanstack/react-query';
 import { cn } from '../../core/design/cn';
 import { localStoragePrefs, type DevicePrefs } from '../../core/data/devicePrefs';
 import { currentServerReach, subscribeServerReach } from '../../core/data/serverStatus';
@@ -13,6 +14,8 @@ import { statusBarItems, unsentCount, type StatusTone } from './statusBarItems';
 const NO_OPERATIONS: StoredOperation[] = [];
 const noSubscribe = () => () => {};
 const noOperations = () => NO_OPERATIONS;
+const subscribeOnline = (listener: () => void) => onlineManager.subscribe(listener);
+const isOnline = () => onlineManager.isOnline();
 
 function useUnsentCount(): number {
   const runner = useWorkRuntime()?.runner;
@@ -39,7 +42,10 @@ export function StatusBar({ tab, prefs = localStoragePrefs }: { tab: TabKey | nu
   // 판수가 오를 때마다 다시 그려 프린터 설정 여부(prefs)와 마지막 실패를 함께 다시 읽는다
   useSyncExternalStore(subscribePrintOutcome, printerStatusVersion);
   const printFailed = lastPrintFailed();
-  const server = useSyncExternalStore(subscribeServerReach, currentServerReach);
+  const reach = useSyncExternalStore(subscribeServerReach, currentServerReach);
+  // 오프라인이면 조회·스캔이 요청을 보내지 않고 멈춰 있어 마지막 도달 기록이 낡는다
+  const online = useSyncExternalStore(subscribeOnline, isOnline);
+  const server = online ? reach : 'down';
   const unsent = useUnsentCount();
   const batch = useCurrentBatchProgress();
   const items = statusBarItems({

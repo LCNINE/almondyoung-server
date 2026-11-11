@@ -1,6 +1,7 @@
 import 'fake-indexeddb/auto';
 import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { onlineManager } from '@tanstack/react-query';
+import { afterEach, describe, expect, it } from 'vitest';
 import type { DevicePrefs } from '../../core/data/devicePrefs';
 import { writeLastBox } from '../../domains/outbound/lastBox';
 import type { ShipmentByWaybill } from '../../domains/outbound/types';
@@ -133,6 +134,92 @@ describe('F1 출고 검수 — 송장 스캔 즉시 시작, 상품 스캔 = +1, 
     scan('012345678905');
     await waitFor(() => expect(progress()).toHaveTextContent('1 / 2'));
     expect(server.requests.some((r) => r.path.includes('trackingNo=012345678905'))).toBe(true);
+  });
+
+  describe('연결이 끊겼을 때', () => {
+    afterEach(() => onlineManager.setOnline(true));
+    const disconnect = (server: { setOffline(v: boolean): void }, off: boolean) => {
+      server.setOffline(off);
+      act(() => onlineManager.setOnline(!off));
+    };
+
+    it('찍은 상품은 저장해 두고 기다린다고 알린다 — 연결되면 그대로 보낸다', async () => {
+      const { server } = await setupInspection();
+      await openBox('421033881907');
+      disconnect(server, true);
+      scan('8801002');
+      expect(await screen.findByText('연결이 끊겨 상품 스캔 1개를 보내지 못하고 있어요. 연결되면 자동으로 보내요. 같은 상품은 다시 찍지 마세요.')).toBeInTheDocument();
+      expect(progress()).toHaveTextContent('0 / 4');
+      expect(server.scans).toHaveLength(0);
+      disconnect(server, false);
+      await waitFor(() => expect(progress()).toHaveTextContent('1 / 4'));
+      expect(server.scans).toHaveLength(1);
+      expect(screen.queryByText(/연결이 끊겨/)).toBeNull();
+    });
+
+    it('보내지 못한 스캔이 있으면 Esc 는 기다리지 않고 거절한다 — 연결되면 보내고 내려놓을 수 있다', async () => {
+      const { server } = await setupInspection();
+      await openBox('421033881907');
+      disconnect(server, true);
+      scan('8801002');
+      await screen.findByText(/연결이 끊겨 상품 스캔 1개를/);
+      press('Escape');
+      expect(await screen.findByRole('alert')).toHaveTextContent('앞 스캔이 아직 끝나지 않았어요. 연결된 뒤 다시 해 주세요.');
+      expect(heading('4210-3388-1907')).toBeInTheDocument();
+      disconnect(server, false);
+      await waitFor(() => expect(server.scans).toHaveLength(1));
+      expect(screen.queryByText(/처리됐는지 확인하지 못했어요/)).toBeNull();
+      press('Escape');
+      expect(await screen.findByText('송장 바코드')).toBeInTheDocument();
+    });
+
+    it('보내지 못한 스캔이 있으면 다른 송장은 조회하지 않고 바로 거절한다', async () => {
+      const { server } = await setupInspection();
+      await openBox('421033881907');
+      act(() => onlineManager.setOnline(false));
+      scan('8801002');
+      await screen.findByText(/연결이 끊겨 상품 스캔 1개를/);
+      const release = server.holdLookups();
+      scan('421033881915');
+      expect(await screen.findByRole('alert')).toHaveTextContent('앞 스캔이 아직 끝나지 않았어요. 연결된 뒤 다시 해 주세요.');
+      expect(server.requests.some((r) => r.path.includes('trackingNo=421033881915'))).toBe(false);
+      release();
+    });
+
+    it('끊긴 직후 찍은 상품 바로 뒤의 송장도 조회하지 않는다 — 대기 안내가 그려지기 전이어도', async () => {
+      const { server } = await setupInspection();
+      await openBox('421033881907');
+      act(() => onlineManager.setOnline(false));
+      const release = server.holdLookups();
+      // 한 act 안에서 두 번 — 사이에 다시 그리지 않는다
+      act(() => {
+        scan('8801002');
+        scan('421033881915');
+      });
+      expect(await screen.findByRole('alert')).toHaveTextContent('앞 스캔이 아직 끝나지 않았어요. 연결된 뒤 다시 해 주세요.');
+      expect(server.requests.some((r) => r.path.includes('trackingNo=421033881915'))).toBe(false);
+      release();
+    });
+
+    it('송장인지 확인하지 못한 바코드는 반영하지 않았다고 알리고 다시 찍게 한다', async () => {
+      const box: FakeBox = {
+        ...BOX2,
+        lines: [{ id: 'l-9', skuId: 'sku-9', name: '수입 샴푸', qty: 2, barcode: '012345678905', locations: [{ code: 'E-01-1', qty: 2 }] }],
+      };
+      const { server } = await setupInspection({ boxes: [box] });
+      await openBox('421033881915');
+      disconnect(server, true);
+      scan('012345678905');
+      const alert = await screen.findByRole('alert');
+      expect(alert).toHaveTextContent('연결이 끊겨 이 스캔은 반영하지 않았어요. 연결된 뒤 다시 찍어 주세요.');
+      expect(alert).toHaveTextContent('012345678905');
+      expect(alert).not.toHaveTextContent('알 수 없는 오류');
+      expect(server.scans).toHaveLength(0);
+      disconnect(server, false);
+      scan('012345678905');
+      await waitFor(() => expect(progress()).toHaveTextContent('1 / 2'));
+      expect(server.scans).toHaveLength(1);
+    });
   });
 
   const rejections: Array<[string, FakeBox, string, string]> = [

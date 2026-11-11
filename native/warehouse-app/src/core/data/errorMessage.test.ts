@@ -1,10 +1,16 @@
 import { describe, it, expect } from 'vitest';
 import { errorMessage } from './errorMessage';
-import { ApiError, ConflictError } from './httpClient';
+import { ApiError, ConflictError, NetworkError } from './httpClient';
 
 describe('errorMessage', () => {
   it('maps a ConflictError to a retry message', () => {
     expect(errorMessage(new ConflictError('x'))).toMatch(/먼저 변경/);
+  });
+  it('응답을 받지 못한 요청은 연결을 확인하라고 안내한다', () => {
+    for (const context of [undefined, 'barcode', 'outbound'] as const)
+      expect(errorMessage(new NetworkError(new TypeError('Failed to fetch')), context)).toBe(
+        '서버에 연결하지 못했어요. 네트워크를 확인해 주세요.'
+      );
   });
   it('maps a 404 status embedded in the message', () => {
     expect(errorMessage(new Error('GET /x → 404'))).toMatch(/찾을 수 없/);

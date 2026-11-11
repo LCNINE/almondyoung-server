@@ -41,7 +41,8 @@ export function InventoryLookupScreen() {
     error: unknown;
     retry(): void;
   } | null>(null);
-  const byBarcode = useSkuByBarcode();
+  // 오프라인에서 조회를 멈춰 두면 아무 안내 없이 기다리다 연결된 뒤 화면이 저절로 넘어간다
+  const byBarcode = useSkuByBarcode('always');
 
   // 각 화면은 자신이 기대하는 바코드 종류를 안다 — 여기선 상품 바코드다. 스캔은
   // "상태"가 아니라 "이벤트"다 — mutate 호출마다 독립적으로 요청하고, 그 결과는

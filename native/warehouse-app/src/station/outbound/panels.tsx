@@ -349,6 +349,14 @@ export function ManualWaybillInput({
 }
 
 /** 스캔을 저장하지 못했거나 결과를 모를 때 — 같은 상품을 다시 찍지 않게 하고 확인 단추를 준다 */
+export function ScanWaiting({ count }: { count: number }) {
+  return (
+    <p role="status" className="shrink-0 rounded-[10px] border-2 border-[#D99A00] bg-[#FFF1C7] p-3 font-semibold text-[#5E3B00]">
+      연결이 끊겨 상품 스캔 {count}개를 보내지 못하고 있어요. 연결되면 자동으로 보내요. 같은 상품은 다시 찍지 마세요.
+    </p>
+  );
+}
+
 export function QueueTrouble({ storage, onRetry }: { storage: boolean; onRetry(): void }) {
   return (
     <div role="alert" className="shrink-0 space-y-2 rounded-[10px] border-2 border-[#C8202F] bg-[#FDE8EA] p-3 text-[#9E1320]">

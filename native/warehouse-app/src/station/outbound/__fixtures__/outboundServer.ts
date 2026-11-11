@@ -1,6 +1,6 @@
 /* 스테이션 출고 화면 테스트의 가짜 core — 엔드포인트 모양은 실제와 같고 상태는 메모리에 둔다. 테스트 전용 */
 import 'fake-indexeddb/auto';
-import { ApiError, ConflictError, type ApiClient } from '../../../core/data/httpClient';
+import { ApiError, ConflictError, NetworkError, type ApiClient } from '../../../core/data/httpClient';
 import type { WorkPermissions, WorkRuntime } from '../../../core/operations/OperationContext';
 import { createOperationRunner } from '../../../core/operations/operationRunner';
 import { createOperationStore } from '../../../core/operations/operationStore';
@@ -118,6 +118,7 @@ export function createOutboundServer(init: { boxes: FakeBox[] }) {
   let sendGate: Promise<void> | null = null;
   let writeGate: Promise<void> | null = null;
   let losing = false;
+  let offline = false;
 
   const byTracking = (trackingNo: string) => boxes.find((b) => b.trackingNo === trackingNo);
   const byId = (shipmentId: string) => {
@@ -327,6 +328,7 @@ export function createOutboundServer(init: { boxes: FakeBox[] }) {
   }
 
   async function request<T>(o: Req): Promise<T> {
+    if (offline) throw new NetworkError(new TypeError('Failed to fetch'));
     requests.push(o);
     const method = o.method ?? 'GET';
     const [path, query = ''] = o.path.split('?');
@@ -482,6 +484,10 @@ export function createOutboundServer(init: { boxes: FakeBox[] }) {
     },
     loseResponses(value: boolean) {
       losing = value;
+    },
+    /** 응답 없이 실패한다(연결 끊김) — 요청 기록에도 남지 않는다 */
+    setOffline(value: boolean) {
+      offline = value;
     },
     /** 다른 스테이션이 같은 박스를 찍은 것처럼 */
     pick(trackingNo: string, lineId: string, qty: number) {
