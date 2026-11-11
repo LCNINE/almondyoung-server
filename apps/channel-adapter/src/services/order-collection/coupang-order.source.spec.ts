@@ -70,6 +70,10 @@ describe('CoupangOrderSource', () => {
   let instantCancels: unknown[];
   let getAllOrderSheetsByStatus: jest.Mock<Promise<readonly unknown[]>, [string, string, string]>;
   let getSingleOrderSheetByOrderId: jest.Mock<Promise<{ data?: readonly unknown[] | null }>, [string]>;
+  let acknowledgeOrdersheets: jest.Mock<
+    ReturnType<CoupangOrderSheetReader['acknowledgeOrdersheets']>,
+    Parameters<CoupangOrderSheetReader['acknowledgeOrdersheets']>
+  >;
   let getReturnRequests: jest.Mock<
     Promise<{ code?: number; message?: string; data?: unknown; nextToken?: string }>,
     [GetReturnRequestsParams]
@@ -102,12 +106,29 @@ describe('CoupangOrderSource', () => {
     getReturnRequests = jest.fn((params: GetReturnRequestsParams) =>
       Promise.resolve({ data: params.cancelType === 'CANCEL' ? instantCancels : stopRequests }),
     );
-    const orderClient: CoupangOrderSheetReader = { getAllOrderSheetsByStatus, getSingleOrderSheetByOrderId };
+    acknowledgeOrdersheets = jest.fn(({ shipmentBoxIds }) =>
+      Promise.resolve({
+        responseCode: 0,
+        responseList: shipmentBoxIds.map((shipmentBoxId) => ({
+          shipmentBoxId,
+          succeed: true,
+          resultCode: 'SUCCESS',
+          retryRequired: false,
+          resultMessage: '',
+        })),
+      }),
+    );
+    const orderClient: CoupangOrderSheetReader = {
+      getAllOrderSheetsByStatus,
+      getSingleOrderSheetByOrderId,
+      acknowledgeOrdersheets,
+    };
     const returnClient: CoupangCancelReceiptReader = { getReturnRequests };
     source = new CoupangOrderSource(orderClient, returnClient);
   });
 
   afterEach(() => {
+    delete process.env.COUPANG_VENDOR_ID;
     jest.useRealTimers();
     jest.restoreAllMocks();
   });
@@ -639,6 +660,84 @@ describe('CoupangOrderSource', () => {
       ];
 
       await expect(source.fetchOrder(ORDER_A)).rejects.toThrow('같은 옵션 두 줄');
+    });
+  });
+  describe('acknowledgeCollected — 수집이 커밋된 주문을 상품준비중으로', () => {
+    const VENDOR = 'A00000000';
+    const boxId = (n: number) => `1000000000000100${String(n).padStart(2, '0')}`;
+
+    beforeEach(() => {
+      process.env.COUPANG_VENDOR_ID = VENDOR;
+    });
+
+    it('결제완료 상자만 상품준비중으로 넘긴다', async () => {
+      singleSheets[ORDER_A] = [
+        sheet(ORDER_A, BOX_A1, 'ACCEPT', [item(300000001)]),
+        sheet(ORDER_A, BOX_A2, 'INSTRUCT', [item(300000002)]),
+      ];
+
+      await source.acknowledgeCollected([ORDER_A]);
+
+      expect(acknowledgeOrdersheets).toHaveBeenCalledTimes(1);
+      expect(acknowledgeOrdersheets).toHaveBeenCalledWith({ vendorId: VENDOR, shipmentBoxIds: [BOX_A1] });
+    });
+
+    it('결제완료 상자가 없는 주문은 부르지 않는다', async () => {
+      singleSheets[ORDER_A] = [sheet(ORDER_A, BOX_A1, 'INSTRUCT', [item(300000001)])];
+
+      await source.acknowledgeCollected([ORDER_A]);
+
+      expect(acknowledgeOrdersheets).not.toHaveBeenCalled();
+    });
+
+    it('상자를 50개씩 나눠 넘긴다', async () => {
+      singleSheets[ORDER_A] = Array.from({ length: 51 }, (_, n) =>
+        sheet(ORDER_A, boxId(n), 'ACCEPT', [item(300000001 + n)]),
+      );
+
+      await source.acknowledgeCollected([ORDER_A]);
+
+      expect(acknowledgeOrdersheets).toHaveBeenCalledTimes(2);
+      expect(acknowledgeOrdersheets.mock.calls[0][0].shipmentBoxIds).toHaveLength(50);
+      expect(acknowledgeOrdersheets.mock.calls[1][0].shipmentBoxIds).toEqual([boxId(50)]);
+    });
+
+    it('succeed=false 는 resultCode·retryRequired 와 함께 warn 으로 남기고 throw 하지 않는다', async () => {
+      const warn = jest.spyOn(Logger.prototype, 'warn');
+      singleSheets[ORDER_A] = [sheet(ORDER_A, BOX_A1, 'ACCEPT', [item(300000001)])];
+      acknowledgeOrdersheets.mockResolvedValue({
+        responseCode: 1,
+        responseList: [
+          { shipmentBoxId: BOX_A1, succeed: false, resultCode: 'ERROR_X', retryRequired: true, resultMessage: '실패' },
+        ],
+      });
+
+      await expect(source.acknowledgeCollected([ORDER_A])).resolves.toBeUndefined();
+
+      const message = warn.mock.calls.map((call) => String(call[0])).join('\n');
+      expect(message).toContain(BOX_A1);
+      expect(message).toContain('ERROR_X');
+      expect(message).toContain('retryRequired=true');
+    });
+
+    it('판매자 ID 가 없으면 error 로 남기고 아무것도 부르지 않는다', async () => {
+      delete process.env.COUPANG_VENDOR_ID;
+      const error = jest.spyOn(Logger.prototype, 'error');
+
+      await source.acknowledgeCollected([ORDER_A]);
+
+      expect(error).toHaveBeenCalled();
+      expect(getSingleOrderSheetByOrderId).not.toHaveBeenCalled();
+      expect(acknowledgeOrdersheets).not.toHaveBeenCalled();
+    });
+
+    it('한 주문의 조회가 실패해도 다음 주문은 계속 넘기고, 끝에 throw 한다', async () => {
+      singleSheets[ORDER_B] = [sheet(ORDER_B, BOX_B1, 'ACCEPT', [item(300000003)])];
+      getSingleOrderSheetByOrderId.mockImplementationOnce(() => Promise.reject(new Error('boom')));
+
+      await expect(source.acknowledgeCollected([ORDER_A, ORDER_B])).rejects.toThrow('boom');
+
+      expect(acknowledgeOrdersheets).toHaveBeenCalledWith({ vendorId: VENDOR, shipmentBoxIds: [BOX_B1] });
     });
   });
 });

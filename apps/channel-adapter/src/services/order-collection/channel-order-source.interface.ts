@@ -203,3 +203,16 @@ export interface WindowedChannelOrderSource extends ChannelOrderSource {
 export function isWindowedSource(source: ChannelOrderSource): source is WindowedChannelOrderSource {
   return typeof (source as WindowedChannelOrderSource).fetchOrdersInWindow === 'function';
 }
+
+/**
+ * 수집이 커밋된 주문을 채널 쪽에서 «접수됨» 상태로 넘기는 source (쿠팡 결제완료 → 상품준비중, 스펙 §3 결정 1).
+ * 오케스트레이터가 항목 루프 뒤에 한 번 부른다. 실패는 주기를 바꾸지 않는다 — 그 주문은 채널에 결제완료로 남아
+ * 다음 주기가 다시 넘긴다. Medusa·네이버는 구현하지 않는다.
+ */
+export interface AcknowledgingChannelOrderSource extends ChannelOrderSource {
+  acknowledgeCollected(externalOrderIds: string[]): Promise<void>;
+}
+
+export function isAcknowledgingSource(source: ChannelOrderSource): source is AcknowledgingChannelOrderSource {
+  return typeof (source as AcknowledgingChannelOrderSource).acknowledgeCollected === 'function';
+}

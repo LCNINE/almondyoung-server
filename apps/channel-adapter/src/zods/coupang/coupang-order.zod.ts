@@ -89,6 +89,7 @@ export const CoupangAcknowledgeOrdersheetsResponseSchema = createCoupangApiRespo
         shipmentBoxId: CoupangLongIdSchema,
         succeed: z.boolean(),
         resultCode: z.string(),
+        retryRequired: z.boolean().optional(), // 재시도하면 성공할 수 있는 실패인지
         resultMessage: z.string(),
       }),
     ),

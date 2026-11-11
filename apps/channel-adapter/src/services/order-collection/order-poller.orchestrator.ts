@@ -32,6 +32,7 @@ import {
   OrderSyncFetch,
   ReplayableChannelOrderProvider,
   SyncableChannelOrderProvider,
+  isAcknowledgingProvider,
   isSyncableProvider,
 } from './channel-order-provider.interface';
 import { channelAdapterSchema, wmsOrderMappings } from '../../schema';
@@ -194,6 +195,8 @@ export class OrderPollerOrchestrator {
             terminal: terminal || (previous?.terminal ?? false),
           });
         };
+        // 이번 주기에 «주문 후보»가 처리에 성공해 Core 주문이 있는 주문 — 채널 접수 상태로 넘길 후보(`acknowledgeCollected`).
+        const acknowledgeCandidates = new Set<string>();
         let watermark: Date | null = null;
         // An unrecorded lifecycle observation (no Core mapping yet) for an order that is still
         // collectable — currently quarantined and awaiting replay — must NOT let the durable
@@ -345,10 +348,17 @@ export class OrderPollerOrchestrator {
             result.wmsOrderId,
             orderedItem.item.eligibleForOrderCreation === false,
           );
+          if (result.wmsOrderId && orderedItem.item.eligibleForOrderCreation !== false) {
+            acknowledgeCandidates.add(orderedItem.item.externalOrderId);
+          }
           advanceWatermark(orderedItem.item.sourceUpdatedAt);
         }
 
         await this.closeRecoveredProcessingFailures(openProcessingFailures, failedExternalOrderIds, succeededOrders);
+        await this.acknowledgeCollected(
+          provider,
+          [...acknowledgeCandidates].filter((externalOrderId) => !failedExternalOrderIds.has(externalOrderId)),
+        );
 
         // 🔴 조용한 창은 워터마크를 영원히 묶는다. 닫힌 조회 창(`[since, since+24h]`)을 쓰는
         // source 는 그 창에 변경이 하나도 없으면 항목 0건을 낸다 — 그러면 워터마크가 `null` 로
@@ -1109,6 +1119,21 @@ export class OrderPollerOrchestrator {
    * 다음 폴링이 우연히 그 주문을 다시 가져와 성공한 경우 열린 처리 실패 행을 닫는다 (스펙 §5.4).
    * 채널은 주문을 다시 내보낼 때 그 주문의 lifecycle 도 함께 내보내므로 주문 항목의 성공이 곧 그 주문 전체의 성공이다.
    */
+  /**
+   * 수집이 커밋된 주문을 채널에서 접수 상태로 넘긴다 (쿠팡 상품준비중, #1245). 훅이 없는 provider 는 아무것도 안 한다.
+   * 실패는 로그만 — 주기 결과·워터마크를 바꾸지 않는다. 그 주문은 채널에 결제완료로 남아 다음 주기가 다시 넘긴다.
+   */
+  private async acknowledgeCollected(provider: ChannelOrderProvider, externalOrderIds: string[]): Promise<void> {
+    if (!isAcknowledgingProvider(provider) || externalOrderIds.length === 0) return;
+    try {
+      await provider.acknowledgeCollected(externalOrderIds);
+    } catch (error) {
+      this.logger.error(
+        `[${provider.channel}] 수집한 주문 ${externalOrderIds.length}건의 접수 처리에 실패했다 — 다음 주기가 다시 넘긴다: ${errorMessage(error)}`,
+      );
+    }
+  }
+
   private async closeRecoveredProcessingFailures(
     open: Map<string, OrderCollectionFailure>,
     failed: Set<string>,

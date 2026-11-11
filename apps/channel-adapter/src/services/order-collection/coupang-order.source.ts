@@ -11,6 +11,7 @@ import {
   ChannelOrderSnapshot,
   ChannelPaymentState,
   LifecycleObservation,
+  AcknowledgingChannelOrderSource,
   ReplayableChannelOrderSource,
   WindowedChannelOrderSource,
   WindowedFetchResult,
@@ -22,6 +23,7 @@ import {
   parseCoupangCancelReceipt,
   parseCoupangOrderSheet,
 } from './coupang-order-fields';
+import { errorMessage } from './order-processing-stage.error';
 
 /**
  * 이 source 가 부르는 발주서 조회. **응답은 해석 전 원본으로 받는다** — 해석은 `coupang-order-fields.ts` 한 곳이다.
@@ -31,6 +33,17 @@ import {
 export interface CoupangOrderSheetReader {
   getAllOrderSheetsByStatus(createdAtFrom: string, createdAtTo: string, status: string): Promise<readonly unknown[]>;
   getSingleOrderSheetByOrderId(orderId: string): Promise<{ data?: readonly unknown[] | null }>;
+  /** 결제완료 → 상품준비중. 응답은 상자별 결과다 — HTTP 가 성공이어도 `succeed: false` 인 상자가 있을 수 있다. */
+  acknowledgeOrdersheets(payload: { vendorId: string; shipmentBoxIds: string[] }): Promise<{
+    responseCode: number;
+    responseList: ReadonlyArray<{
+      shipmentBoxId: string;
+      succeed: boolean;
+      resultCode: string;
+      retryRequired?: boolean;
+      resultMessage: string;
+    }>;
+  }>;
 }
 
 /**
@@ -58,6 +71,8 @@ const INSTANT_CANCEL_FIRST_RUN_MS = DAY_MS;
 /** 취소 접수 목록 무한 페이징 방어. 50건 × 40쪽 = 2000건으로, 우리 주문량에서 도달할 수 없다. */
 const MAX_RECEIPT_PAGES = 40;
 const RECEIPTS_PER_PAGE = 50;
+/** 상품준비중 처리 한 번에 보낼 수 있는 상자 수(쿠팡 상한). */
+const ACKNOWLEDGE_BOXES_PER_CALL = 50;
 
 /** 우리가 매 주기 통째로 훑는 발주서 상태. 순서가 뜻이 있다 — 뒤 스캔이 같은 상자의 더 늦은 상태다. */
 const SCANNED_SHEET_STATUSES: ReadonlyArray<ScannedSheetStatus> = ['ACCEPT', 'INSTRUCT'];
@@ -91,7 +106,9 @@ interface ParsedReceipt extends RawReceipt {
 }
 
 @Injectable()
-export class CoupangOrderSource implements ReplayableChannelOrderSource, WindowedChannelOrderSource {
+export class CoupangOrderSource
+  implements ReplayableChannelOrderSource, WindowedChannelOrderSource, AcknowledgingChannelOrderSource
+{
   readonly channel: SalesChannel = 'coupang';
   private readonly logger = new Logger(CoupangOrderSource.name);
 
@@ -236,6 +253,56 @@ export class CoupangOrderSource implements ReplayableChannelOrderSource, Windowe
     const sheets = await this.fetchSheetsByOrderId(externalOrderId);
     if (sheets.length === 0) return null;
     return this.buildSnapshot(externalOrderId, sheets, [], new Date().toISOString());
+  }
+
+  /**
+   * 수집이 커밋된 주문의 결제완료(`ACCEPT`) 상자를 상품준비중으로 넘긴다 (스펙 §3 결정 1).
+   *
+   * 주문마다 단건 조회로 **지금의** 상자 상태를 보고 `ACCEPT` 인 것만 보낸다 — 스캔 시점 이후 이미 넘어간 상자를 또 보내지 않는다.
+   * 상자는 주문 경계를 넘어 50개씩 묶는다. 한 주문의 조회가 실패해도 나머지는 계속 처리하고, 마지막에 첫 오류를 던진다
+   * (오케스트레이터는 로그만 남기고 주기를 바꾸지 않는다). 실패한 주문은 결제완료로 남아 다음 주기에 다시 온다.
+   * 배송지 재조회는 하지 않는다: 상품준비중이 되면 배송지가 굳고, 다음 주기 상품준비중 스캔이 그 값을 읽어 해시 경로로 `OrderModified` 를 낸다.
+   */
+  async acknowledgeCollected(externalOrderIds: string[]): Promise<void> {
+    const vendorId = process.env.COUPANG_VENDOR_ID;
+    if (!vendorId) {
+      this.logger.error('[coupang] COUPANG_VENDOR_ID 가 없어 수집한 주문을 상품준비중으로 넘기지 못한다.');
+      return;
+    }
+
+    const shipmentBoxIds: string[] = [];
+    let firstError: unknown;
+    for (const orderId of externalOrderIds) {
+      try {
+        const sheets = await this.fetchSheetsByOrderId(orderId);
+        for (const sheet of sheets) {
+          if (sheet.info.status === 'ACCEPT') shipmentBoxIds.push(sheet.info.shipmentBoxId);
+        }
+      } catch (error) {
+        this.logger.error(
+          `[coupang] 주문 ${orderId} 의 상자를 읽지 못해 이번 주기엔 상품준비중으로 넘기지 않는다: ${errorMessage(error)}`,
+        );
+        firstError ??= error;
+      }
+    }
+
+    for (let offset = 0; offset < shipmentBoxIds.length; offset += ACKNOWLEDGE_BOXES_PER_CALL) {
+      const batch = shipmentBoxIds.slice(offset, offset + ACKNOWLEDGE_BOXES_PER_CALL);
+      try {
+        const result = await this.orderClient.acknowledgeOrdersheets({ vendorId, shipmentBoxIds: batch });
+        for (const entry of result.responseList) {
+          if (entry.succeed) continue;
+          this.logger.warn(
+            `[coupang] 상자 ${entry.shipmentBoxId} 상품준비중 처리 거절: resultCode=${entry.resultCode} retryRequired=${String(entry.retryRequired)} ${entry.resultMessage}`,
+          );
+        }
+      } catch (error) {
+        this.logger.error(`[coupang] 상자 ${batch.length}개 상품준비중 처리 호출 실패: ${errorMessage(error)}`);
+        firstError ??= error;
+      }
+    }
+
+    if (firstError !== undefined) throw firstError;
   }
 
   private async fetchSheetsByOrderId(orderId: string): Promise<ParsedSheet[]> {

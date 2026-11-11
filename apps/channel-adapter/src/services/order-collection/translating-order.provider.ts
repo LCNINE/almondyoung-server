@@ -5,6 +5,7 @@ import {
   ChannelOrderSource,
   ChannelOrderSnapshot,
   ReplayableChannelOrderSource,
+  isAcknowledgingSource,
   isReplayableSource,
   isWindowedSource,
 } from './channel-order-source.interface';
@@ -31,12 +32,17 @@ import { OrderProcessingStageError, errorMessage } from './order-processing-stag
  */
 export class TranslatingOrderProvider implements ChannelOrderProvider {
   readonly channel: SalesChannel;
+  /** source 가 구현할 때만 생긴다 — 없는 채널(Medusa·네이버)에서는 `undefined` 라 오케스트레이터가 부르지 않는다. */
+  readonly acknowledgeCollected?: (externalOrderIds: string[]) => Promise<void>;
 
   constructor(
     protected readonly source: ChannelOrderSource,
     protected readonly translator: ChannelOrderTranslator,
   ) {
     this.channel = source.channel;
+    if (isAcknowledgingSource(source)) {
+      this.acknowledgeCollected = (externalOrderIds) => source.acknowledgeCollected(externalOrderIds);
+    }
   }
 
   async fetchOrders(since: Date | null): Promise<FetchOrdersResult> {
