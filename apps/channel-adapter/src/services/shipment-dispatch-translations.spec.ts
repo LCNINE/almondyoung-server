@@ -66,19 +66,36 @@ describe('shipment dispatch provider translations', () => {
 
   const liveItem = (vendorItemId: number, extra: Record<string, number> = {}) => ({
     vendorItemId,
+    vendorItemName: `테스트 상품 ${vendorItemId}`,
     shippingCount: 1,
     cancelCount: 0,
     holdCountForCancel: 0,
+    salesPrice: { currencyCode: 'KRW', units: 1000, nanos: 0 },
+    orderPrice: { currencyCode: 'KRW', units: 1000, nanos: 0 },
     ...extra,
   });
-  const okResult = (shipmentBoxId: string) => ({
-    responseCode: 0,
-    responseList: [{ shipmentBoxId, succeed: true, resultCode: 'SUCCESS', retryRequired: false, resultMessage: '' }],
+  /** 발송이 읽는 발주서 — 가짜 값만. 해석(`parseCoupangOrderSheet`)이 요구하는 칸을 모두 채운다. */
+  const box = (shipmentBoxId: string, orderItems: unknown[], status = 'INSTRUCT') => ({
+    shipmentBoxId,
+    orderId: '9001',
+    status,
+    orderedAt: '2026-11-11T09:00:00',
+    paidAt: '2026-11-11T09:05:00',
+    receiver: { name: '가짜 수취인', safeNumber: '050-0000-0000', addr1: '테스트시 1' },
+    orderItems,
   });
-  const makeCoupang = (orderItems: unknown[]) => {
-    const getSingleOrderSheetByOrderId = jest.fn().mockResolvedValue({
-      data: [{ shipmentBoxId: '123456789012345678', orderId: '9001', orderItems }],
-    });
+  const okResult = (...shipmentBoxIds: string[]) => ({
+    responseCode: 0,
+    responseList: shipmentBoxIds.map((shipmentBoxId) => ({
+      shipmentBoxId,
+      succeed: true,
+      resultCode: 'SUCCESS',
+      retryRequired: false,
+      resultMessage: '',
+    })),
+  });
+  const makeCoupangBoxes = (boxes: unknown[]) => {
+    const getSingleOrderSheetByOrderId = jest.fn().mockResolvedValue({ code: 200, data: boxes });
     const uploadInvoices = jest.fn().mockResolvedValue(okResult('123456789012345678'));
     const updateInvoices = jest.fn().mockResolvedValue(okResult('123456789012345678'));
     const adapter = new CoupangAdapter(
@@ -88,6 +105,7 @@ describe('shipment dispatch provider translations', () => {
     );
     return { adapter, getSingleOrderSheetByOrderId, uploadInvoices, updateInvoices };
   };
+  const makeCoupang = (orderItems: unknown[]) => makeCoupangBoxes([box('123456789012345678', orderItems)]);
   const shipCommand = {
     type: 'dispatch.ship' as const,
     orderId: '9001',
@@ -172,8 +190,121 @@ describe('shipment dispatch provider translations', () => {
     expect(uploadInvoices).toHaveBeenCalledTimes(1);
   });
 
+  it('쿠팡 거절의 retryRequired 를 오류마다 retryable 로 옮긴다', async () => {
+    const { adapter, uploadInvoices } = makeCoupang([liveItem(3002)]);
+    uploadInvoices.mockResolvedValue({
+      responseCode: 1,
+      responseList: [
+        {
+          shipmentBoxId: '123456789012345678',
+          succeed: false,
+          resultCode: 'INVALID_STATUS',
+          retryRequired: false,
+          resultMessage: '상품준비중이 아님',
+        },
+      ],
+    });
+    expect((await adapter.executeCommand(shipCommand)).errors).toEqual([
+      expect.objectContaining({ id: '123456789012345678', retryable: false }),
+    ]);
+
+    uploadInvoices.mockResolvedValue({
+      responseCode: 1,
+      responseList: [
+        {
+          shipmentBoxId: '123456789012345678',
+          succeed: false,
+          resultCode: 'BUSY',
+          retryRequired: true,
+          resultMessage: '',
+        },
+      ],
+    });
+    expect((await adapter.executeCommand(shipCommand)).errors).toEqual([
+      expect.objectContaining({ id: '123456789012345678', retryable: true }),
+    ]);
+  });
+
+  it('보낸 상자가 응답에 없으면 성공이 아니다 — 그 상자는 재시도할 실패다', async () => {
+    const { adapter, uploadInvoices } = makeCoupangBoxes([
+      box('100000000000000001', [liveItem(3001)]),
+      box('100000000000000002', [liveItem(3002)]),
+    ]);
+    uploadInvoices.mockResolvedValue(okResult('100000000000000001'));
+
+    const result = await adapter.executeCommand({
+      ...shipCommand,
+      items: [
+        { orderItemId: '9001:3001', channelProductId: '3001', quantity: 1 },
+        { orderItemId: '9001:3002', channelProductId: '3002', quantity: 1 },
+      ],
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.processedCount).toBe(1);
+    expect(result.errors).toEqual([expect.objectContaining({ id: '100000000000000002', retryable: true })]);
+  });
+
+  it('일부 상자가 이미 출고됐으면 남은 상자만 보내고, 출고된 상자의 품목은 «다 보냄» 판정에 센다', async () => {
+    const { adapter, uploadInvoices } = makeCoupangBoxes([
+      box('100000000000000001', [liveItem(3001)], 'DEPARTURE'),
+      box('100000000000000002', [liveItem(3002)]),
+    ]);
+    uploadInvoices.mockResolvedValue(okResult('100000000000000002'));
+
+    const result = await adapter.executeCommand({
+      ...shipCommand,
+      items: [
+        { orderItemId: '9001:3001', channelProductId: '3001', quantity: 1 },
+        { orderItemId: '9001:3002', channelProductId: '3002', quantity: 1 },
+      ],
+    });
+
+    expect(result.success).toBe(true);
+    const dtos = uploadInvoices.mock.calls[0][0].orderSheetInvoiceApplyDtos;
+    expect(dtos).toEqual([expect.objectContaining({ shipmentBoxId: '100000000000000002', vendorItemId: 3002 })]);
+  });
+
+  it.each(['DEPARTURE', 'DELIVERING', 'FINAL_DELIVERY', 'NONE_TRACKING'])(
+    '모든 상자가 이미 %s 면 업로드 없이 성공이다(이미 적용됨)',
+    async (status) => {
+      const { adapter, uploadInvoices } = makeCoupangBoxes([
+        box('100000000000000001', [liveItem(3001)], status),
+        box('100000000000000002', [liveItem(3002)], status),
+      ]);
+
+      const result = await adapter.executeCommand({
+        ...shipCommand,
+        items: [
+          { orderItemId: '9001:3001', channelProductId: '3001', quantity: 1 },
+          { orderItemId: '9001:3002', channelProductId: '3002', quantity: 1 },
+        ],
+      });
+
+      expect(result.success).toBe(true);
+      expect(uploadInvoices).not.toHaveBeenCalled();
+    },
+  );
+
+  it('출고된 상자가 있어도 살아 있는 품목 일부만 보내려 하면 업로드하지 않는다', async () => {
+    const { adapter, uploadInvoices } = makeCoupangBoxes([
+      box('100000000000000001', [liveItem(3001)], 'DEPARTURE'),
+      box('100000000000000002', [liveItem(3002)]),
+    ]);
+
+    const result = await adapter.executeCommand(shipCommand);
+
+    expect(result.success).toBe(false);
+    expect(result.errors?.[0].message).toContain('나눠 보내기');
+    expect(uploadInvoices).not.toHaveBeenCalled();
+  });
+
   it('dispatch.update_tracking 은 주문의 살아 있는 품목 전부로 updateInvoices 를 부른다', async () => {
-    const { adapter, updateInvoices } = makeCoupang([liveItem(3001), liveItem(3002), liveItem(3003, { cancelCount: 1 })]);
+    const { adapter, updateInvoices } = makeCoupang([
+      liveItem(3001),
+      liveItem(3002),
+      liveItem(3003, { cancelCount: 1 }),
+    ]);
 
     const result = await adapter.executeCommand({
       type: 'dispatch.update_tracking',
@@ -192,11 +323,7 @@ describe('shipment dispatch provider translations', () => {
   it('does not fabricate a Coupang order or item identifier', async () => {
     const getSingleOrderSheetByOrderId = jest.fn();
     const uploadInvoices = jest.fn();
-    const adapter = new CoupangAdapter(
-      { getSingleOrderSheetByOrderId, uploadInvoices } as any,
-      {} as any,
-      {} as any,
-    );
+    const adapter = new CoupangAdapter({ getSingleOrderSheetByOrderId, uploadInvoices } as any, {} as any, {} as any);
 
     const result = await adapter.executeCommand({
       type: 'dispatch.ship',
@@ -221,11 +348,7 @@ describe('shipment dispatch provider translations', () => {
         },
       ],
     });
-    const adapter = new CoupangAdapter(
-      { getSingleOrderSheetByOrderId } as any,
-      {} as any,
-      {} as any,
-    );
+    const adapter = new CoupangAdapter({ getSingleOrderSheetByOrderId } as any, {} as any, {} as any);
 
     await expect(
       adapter.reconcileCommand({

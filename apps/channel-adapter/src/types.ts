@@ -107,7 +107,11 @@ export interface SyncResult {
   success: boolean;
   processedCount?: number;
   failedCount?: number;
-  errors?: Array<{ id?: string; message: string }>;
+  /**
+   * `retryable: false` 는 채널이 «다시 보내도 안 된다»고 답한 실패다(쿠팡 `retryRequired: false`).
+   * 발송 worker 는 오류가 전부 그러면 재시도 대신 수동 처리로 돌린다. 값이 없으면 재시도한다.
+   */
+  errors?: Array<{ id?: string; message: string; retryable?: boolean }>;
   data?: any; // API 응답 데이터
 }
 

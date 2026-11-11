@@ -533,7 +533,15 @@ export class ShipmentDispatchInboxWorker {
 
     const result = await adapter.executeCommand(command);
     if (!result.success) {
-      throw new Error(result.errors?.map((error) => error.message).join('; ') || `${channel} dispatch failed`);
+      const message = result.errors?.map((error) => error.message).join('; ') || `${channel} dispatch failed`;
+      // 채널이 실패 항목 «전부»에 «다시 보내도 안 된다»(쿠팡 `retryRequired: false`)고 답했으면 5초마다 다시 보내 봐야
+      // 같은 거절이 끝없이 쌓일 뿐이다 — 정체 보드에 보이는 수동 처리로 돌린다. 하나라도 재시도할 항목이거나
+      // 모르는 실패(전송 오류 등, `retryable` 없음)면 지금처럼 실패로 남겨 다시 보낸다.
+      const errors = result.errors ?? [];
+      if (errors.length > 0 && errors.every((error) => error.retryable === false)) {
+        return { manual: true, reason: `${channel} rejected the dispatch as not retryable: ${message}` };
+      }
+      throw new Error(message);
     }
     return { manual: false, result: { providerResult: result.data ?? null } };
   }
