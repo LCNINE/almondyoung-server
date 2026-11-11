@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -18,7 +18,6 @@ import { createMemoryPrefs, type DevicePrefs } from '../../core/data/devicePrefs
 import { ConflictError, type ApiClient } from '../../core/data/httpClient';
 import type { Session } from '../../core/auth/session';
 import { ScanProvider, useScanBus } from '../../core/hardware/scan/ScanProvider';
-import { writeReturnBin } from '../returns/returnBin';
 import type { ShipmentByWaybill } from './types';
 import { WithdrawBoxScreen } from './WithdrawBoxScreen';
 
@@ -60,19 +59,18 @@ function ScanButton({ code }: { code: string }) {
   );
 }
 
-function prefsWith(bin: string | null): DevicePrefs {
+function warehousePrefs(): DevicePrefs {
   const prefs = createMemoryPrefs({ 'almondwms.warehouse': JSON.stringify({ id: 'wh', name: '창고' }) });
-  if (bin) writeReturnBin(prefs, { warehouseId: 'wh', barcode: bin });
   return prefs;
 }
 
 function mount(opts: {
   prefs: DevicePrefs;
-  request: (o: unknown) => Promise<unknown>;
+  request: (o: Parameters<ApiClient['request']>[0]) => Promise<unknown>;
   shipment?: ShipmentByWaybill | null;
 }) {
   const shown = opts.shipment === undefined ? shipment : opts.shipment;
-  const client: ApiClient = { request: opts.request as unknown as ApiClient['request'] };
+  const client: ApiClient = { request: vi.fn().mockImplementation(opts.request) };
   const rootRoute = createRootRoute({ component: () => <Outlet /> });
   const screenRoute = createRoute({
     getParentRoute: () => rootRoute,
@@ -81,7 +79,7 @@ function mount(opts: {
       <>
         <ScanButton code="880" />
         <ScanButton code="RB-9" />
-        <WithdrawBoxScreen shipmentId="s-1" shipment={shown} prefs={opts.prefs} />
+        <WithdrawBoxScreen shipmentId="s-1" shipment={shown} />
       </>
     ),
   });
@@ -93,7 +91,7 @@ function mount(opts: {
   });
   const wrapper = ({ children }: { children: ReactNode }) => (
     <SessionProvider session={session}>
-      <WarehouseProvider prefs={opts.prefs}>
+      <WarehouseProvider>
         <QueryClientProvider client={new QueryClient()}>
           <ApiClientProvider client={client}>
             <ScanProvider>{children}</ScanProvider>
@@ -107,17 +105,27 @@ function mount(opts: {
 }
 
 describe('WithdrawBoxScreen', () => {
-  it('바구니를 지정하지 않았으면 스캔을 보내지 않고 설정으로 안내한다', async () => {
+  it('바구니 설정 없이 상품을 빼고 바코드는 표시하지 않는다', async () => {
     const calls: unknown[] = [];
-    const { user } = mount({ prefs: prefsWith(null), request: async (o) => { calls.push(o); return {}; } });
-    expect(await screen.findByRole('alert')).toHaveTextContent('꺼낸 상품을 넣을 되돌림 바구니가 정해지지 않았어요. 앱 설정에서 바구니 바코드(RB-)를 찍어 주세요.');
+    const { user } = mount({
+      prefs: warehousePrefs(),
+      request: async (o) => {
+        calls.push(o);
+        return { removedQty: 1, exited: false, exitTo: 'draft', removals: shipment.removals };
+      },
+    });
+
+    await screen.findByText('[A-01] 볼펜');
+    expect(screen.queryByText(/바구니:/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: '설정 열기' })).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: '스캔:880' }));
-    expect(calls).toEqual([]);
+    await waitFor(() => expect(calls).toHaveLength(1));
+    expect(calls[0]).toEqual(expect.objectContaining({ body: { barcode: '880', quantity: 1 } }));
   });
 
   it('송장 정보를 잃은 채로는 스캔을 보내지 않는다', async () => {
     const calls: unknown[] = [];
-    const { user } = mount({ prefs: prefsWith('RB-1'), shipment: null, request: async (o) => { calls.push(o); return {}; } });
+    const { user } = mount({ prefs: warehousePrefs(), shipment: null, request: async (o) => { calls.push(o); return {}; } });
     expect(await screen.findByText('송장 정보를 잃었어요. 송장을 다시 스캔해 주세요.')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: '스캔:880' }));
     expect(calls).toEqual([]);
@@ -126,7 +134,7 @@ describe('WithdrawBoxScreen', () => {
 
   it('확정 거절이면 문구를 보이고 줄은 그대로다', async () => {
     const { user } = mount({
-      prefs: prefsWith('RB-1'),
+      prefs: warehousePrefs(),
       request: async () => { throw new ConflictError('m', 'REMOVAL_NOT_PENDING'); },
     });
     await user.click(await screen.findByRole('button', { name: '스캔:880' }));
@@ -136,7 +144,7 @@ describe('WithdrawBoxScreen', () => {
 
   it('일부만 뺀 응답이면 줄을 응답대로 고치고 계속 받는다', async () => {
     const { user } = mount({
-      prefs: prefsWith('RB-1'),
+      prefs: warehousePrefs(),
       request: async () => ({
         removedQty: 1, exited: false, exitTo: 'draft',
         removals: [{ ...shipment.removals[0], skuName: '지우개', boxQty: 3, cartQty: 0 }],
@@ -151,7 +159,7 @@ describe('WithdrawBoxScreen', () => {
 
   it('바구니 바코드를 찍으면 보내지 않고 안내한다', async () => {
     const calls: unknown[] = [];
-    const { user } = mount({ prefs: prefsWith('RB-1'), request: async (o) => { calls.push(o); return {}; } });
+    const { user } = mount({ prefs: warehousePrefs(), request: async (o) => { calls.push(o); return {}; } });
     await user.click(await screen.findByRole('button', { name: '스캔:RB-9' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('바구니 바코드예요');
     expect(calls).toEqual([]);
@@ -160,7 +168,7 @@ describe('WithdrawBoxScreen', () => {
   it('카트 몫만 남았으면 박스 스캔을 받지 않고 분류대로 안내한다', async () => {
     const calls: unknown[] = [];
     const { user } = mount({
-      prefs: prefsWith('RB-1'),
+      prefs: warehousePrefs(),
       shipment: { ...shipment, removals: [{ ...shipment.removals[0], boxQty: 0, cartQty: 2 }] },
       request: async (o) => { calls.push(o); return {}; },
     });
@@ -170,12 +178,12 @@ describe('WithdrawBoxScreen', () => {
   });
 
   it('결과를 모르는 실패 뒤에는 새 스캔을 받지 않고, 처리 내역 확인이 같은 키로 다시 보낸다', async () => {
-    const calls: Array<{ idempotencyKey: string }> = [];
+    const calls: Array<Parameters<ApiClient['request']>[0]> = [];
     let fail = true;
     const { user } = mount({
-      prefs: prefsWith('RB-1'),
+      prefs: warehousePrefs(),
       request: async (o) => {
-        calls.push(o as { idempotencyKey: string });
+        calls.push(o);
         if (fail) { fail = false; throw new Error('network'); }
         return { removedQty: 1, exited: false, exitTo: 'draft', removals: shipment.removals };
       },
@@ -198,7 +206,7 @@ describe('WithdrawBoxScreen', () => {
   it('뺄 상품을 [로케이션] 상품명으로 보이고, 스캔하면 바구니로 빼고, 마지막이면 «송장은 버려 주세요»', async () => {
     const calls: unknown[] = [];
     const { user } = mount({
-      prefs: prefsWith('RB-1'),
+      prefs: warehousePrefs(),
       request: async (o) => {
         calls.push(o);
         return { removedQty: 1, exited: true, exitTo: 'draft', removals: [] };
@@ -211,7 +219,7 @@ describe('WithdrawBoxScreen', () => {
       expect.objectContaining({
         method: 'POST',
         path: '/shipments/s-1/return-bin-removals',
-        body: { barcode: '880', returnBinBarcode: 'RB-1', quantity: 1 },
+        body: { barcode: '880', quantity: 1 },
       }),
     ]);
   });
@@ -219,7 +227,7 @@ describe('WithdrawBoxScreen', () => {
   it('다 뺀 뒤의 스캔은 보내지 않고 바구니에 넣지 말라고 알린다', async () => {
     const calls: unknown[] = [];
     const { user } = mount({
-      prefs: prefsWith('RB-1'),
+      prefs: warehousePrefs(),
       request: async (o) => { calls.push(o); return { removedQty: 1, exited: true, exitTo: 'draft', removals: [] }; },
     });
     await user.click(await screen.findByRole('button', { name: '스캔:880' }));
@@ -236,7 +244,7 @@ describe('WithdrawBoxScreen', () => {
       release = resolve;
     });
     const { user } = mount({
-      prefs: prefsWith('RB-1'),
+      prefs: warehousePrefs(),
       request: async (o) => {
         calls.push(o);
         await first;

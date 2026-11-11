@@ -13,6 +13,7 @@ import {
 import { ApiCreatedResponse, ApiHeader, ApiOkResponse, ApiTags } from '@nestjs/swagger';
 import { User, RequirePermission } from '@app/authorization';
 import {
+  MyReturnBinDto,
   RegisterReturnBinDto,
   ReturnBinContentsDto,
   ReturnBinDto,
@@ -43,6 +44,16 @@ export class ReturnBinController {
   @ApiCreatedResponse({ type: ReturnBinDto })
   register(@Body() dto: RegisterReturnBinDto, @User() user: AuthenticatedUser): Promise<ReturnBinDto> {
     return this.returnBins.register(dto, this.actor(user));
+  }
+
+  @RequirePermission('fulfillment.shipment.read')
+  @Get('return-bins/mine')
+  @ApiOkResponse({ type: MyReturnBinDto })
+  mine(
+    @Query('warehouseId', new ParseUUIDPipe()) warehouseId: string,
+    @User() user: AuthenticatedUser,
+  ): Promise<MyReturnBinDto> {
+    return this.returnBins.mine(this.actor(user).id, warehouseId);
   }
 
   @RequirePermission('fulfillment.shipment.read')

@@ -104,6 +104,75 @@ describeIfDb('되돌림 적치 (스펙 §8, PR 3)', () => {
     });
   });
 
+  it('infers a single location and replays the omitted location request', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const a = await seedPickableShipment(tx, 2);
+      const wiring = assembleOutbound(tx);
+      const bin = await seedReturnBin(tx, a.warehouseId, a.actorId);
+      await intoBin(tx, wiring, a, bin);
+
+      const input = { warehouseId: a.warehouseId, barcode: a.barcode, quantity: 1 };
+      const key = `p-${randomUUID()}`;
+      const result = await wiring.returnBins.putaway(bin.barcode, input, actor, key, tx);
+
+      expect(result).toMatchObject({ putAwayQty: 1, items: [expect.objectContaining({ qty: 1 })] });
+      expect(await wiring.returnBins.putaway(bin.barcode, input, actor, key, tx)).toEqual(result);
+      expect(await wiring.returnBins.lookup(bin.barcode, a.warehouseId, tx)).toMatchObject({
+        items: [expect.objectContaining({ qty: 1 })],
+      });
+    });
+  });
+
+  it('requires a location when the SKU has pending stock at two locations', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const a = await seedPickableShipment(tx, 2);
+      const wiring = assembleOutbound(tx);
+      const bin = await seedReturnBin(tx, a.warehouseId, a.actorId);
+      const sessionId = await intoBin(tx, wiring, a, bin);
+      const [original] = await tx.select().from(wmsTables.locations).where(eq(wmsTables.locations.id, a.locationId));
+      const [other] = await tx
+        .insert(wmsTables.locations)
+        .values({
+          warehouseId: a.warehouseId,
+          code: `OTHER-${randomUUID().slice(0, 8)}`,
+          locationType: 'zone',
+        })
+        .returning();
+      await tx.insert(wmsTables.batchInventorySessionBalances).values({
+        sessionId,
+        skuId: a.skuId,
+        sourceLocationId: other.id,
+        custodyType: 'RETURN_PENDING',
+        custodyRef: bin.barcode,
+        qty: 1,
+      });
+
+      const before = await wiring.returnBins.lookup(bin.barcode, a.warehouseId, tx);
+
+      await expect(
+        tx.transaction((trx) =>
+          wiring.returnBins.putaway(
+            bin.barcode,
+            { warehouseId: a.warehouseId, barcode: a.barcode, quantity: 1 },
+            actor,
+            `p-${randomUUID()}`,
+            trx,
+          ),
+        ),
+      ).rejects.toMatchObject({
+        status: 409,
+        response: {
+          code: 'RETURN_LOCATION_REQUIRED',
+          errors: expect.arrayContaining([
+            { locationCode: original.code, qty: 2 },
+            { locationCode: other.code, qty: 1 },
+          ]),
+        },
+      });
+      expect(await wiring.returnBins.lookup(bin.barcode, a.warehouseId, tx)).toEqual(before);
+    });
+  });
+
   it('원래 로케이션이 아니면 RETURN_LOCATION_MISMATCH 와 원래 로케이션 목록, 바구니에 없으면 RETURN_BIN_ITEM_NOT_FOUND, 많으면 RETURN_BIN_ITEM_SHORT', async () => {
     await inRollbackTx(db, async (tx) => {
       const a = await seedPickableShipment(tx, 2);

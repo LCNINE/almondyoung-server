@@ -1,7 +1,5 @@
 import { useEffect, useRef, useState, type RefObject } from 'react';
-import { Link } from '@tanstack/react-router';
 import { useApiClient } from '../../core/data/ApiClientProvider';
-import type { DevicePrefs } from '../../core/data/devicePrefs';
 import { errorMessage } from '../../core/data/errorMessage';
 import { ApiError } from '../../core/data/httpClient';
 import { cn } from '../../core/design/cn';
@@ -9,26 +7,18 @@ import { BarcodeInput } from '../../core/hardware/scan/BarcodeInput';
 import { useWorkScanQueue } from '../../core/hardware/scan/useWorkScanQueue';
 import type { ShipmentByWaybill, WithdrawalRemoval } from '../../domains/outbound/types';
 import { removeToReturnBin, withdrawalRows } from '../../domains/outbound/withdraw';
-import { isReturnBinCode, readReturnBin } from '../../domains/returns/returnBin';
+import { isReturnBinCode } from '../../domains/returns/returnBin';
 import type { Alert, BoxWorkHandle } from './model';
 import { BigPanel, BoxCard, QueueTrouble, RecentList, WorkGrid } from './panels';
 import type { RecentEntry } from './recent';
 import { INTAKE_BLOCKED_MESSAGE } from './useInspectionBox';
 
 const ALREADY_EXITED_MESSAGE = '이미 다 뺀 박스예요 — 이 상품은 바구니에 넣지 마세요.';
-const NO_BIN_MESSAGE =
-  '꺼낸 상품을 넣을 되돌림 바구니가 정해지지 않았어요. 앱 설정에서 바구니 바코드(RB-)를 찍어 주세요.';
 
-/**
- * 뺄 상품(스펙 §6.2 withdrawing) — 담은 상품을 찍어 되돌림 바구니로. 다 빼면 «빠진 박스».
- * 서버 경로·스캔 한 번 = 하나·멱등 키는 지금의 WithdrawBoxScreen 과 같다. 박스마다 새로 마운트된다(key).
- */
 export function WithdrawWork({
   box,
   seq,
   handleRef,
-  prefs,
-  warehouseId,
   alert,
   recent,
   onAlert,
@@ -39,8 +29,6 @@ export function WithdrawWork({
   /** 부모가 이 화면에 붙인 번호 — 손잡이에 싣는다 */
   seq: number;
   handleRef: RefObject<BoxWorkHandle | null>;
-  prefs: DevicePrefs;
-  warehouseId: string;
   alert: Alert | null;
   recent: readonly RecentEntry[];
   onAlert(message: string, detail?: string): void;
@@ -49,10 +37,9 @@ export function WithdrawWork({
   onDone(box: ShipmentByWaybill): void;
 }) {
   const api = useApiClient();
-  const bin = readReturnBin(prefs, warehouseId);
   const [removals, setRemovals] = useState<WithdrawalRemoval[]>(box.removals);
   const done = useRef(false);
-  const queue = useWorkScanQueue<{ barcode: string; returnBinBarcode: string }>(async (input, id) => {
+  const queue = useWorkScanQueue<{ barcode: string }>(async (input, id) => {
     // 박스를 다 뺀 스캔 뒤에 줄 서 있던 스캔 — 보내지 않되, 손에 든 상품을 바구니에 넣지 않게 알린다
     if (done.current) {
       onAlert(ALREADY_EXITED_MESSAGE, input.barcode);
@@ -75,13 +62,12 @@ export function WithdrawWork({
   const cartOnly = rows.length > 0 && rows.every((row) => row.onCart);
 
   const take = (code: string) => {
-    if (!bin) return onAlert(NO_BIN_MESSAGE);
     if (done.current) return onAlert(ALREADY_EXITED_MESSAGE, code);
     // 앞 스캔의 결과를 모르는 채 같은 상품을 또 찍으면 한 개가 두 번 빠진다
     if (!queue.ready || queue.error()) return onAlert(INTAKE_BLOCKED_MESSAGE, code);
     if (isReturnBinCode(code)) return onAlert('바구니 바코드예요 — 뺄 상품을 찍어 주세요.', code);
     if (cartOnly) return onAlert('박스에서 뺄 상품은 없어요. 카트 몫은 분류대에서 빠져요.', code);
-    queue.enqueue({ barcode: code, returnBinBarcode: bin });
+    queue.enqueue({ barcode: code });
   };
 
   // 부모가 상품 스캔·내려놓기에 쓰는 손잡이(InspectWork 와 같은 규칙 — 커밋 뒤에 건다)
@@ -112,19 +98,11 @@ export function WithdrawWork({
                 : {
                     kind: 'notice',
                     title: '뺄 상품을 찍어 주세요',
-                    message: bin ? `꺼낸 상품을 찍으면 바구니 ${bin}에 들어가요.` : undefined,
+                    message: '꺼낸 상품을 찍고 되돌림 바구니에 넣어 주세요.',
                   }
             }
           />
-          <BarcodeInput label="상품 바코드 직접 입력" disabled={!bin} onSubmit={take} />
-          {!bin ? (
-            <p role="alert" className="shrink-0 rounded-[10px] border-2 border-[#C8202F] bg-[#FDE8EA] p-3 font-semibold text-[#9E1320]">
-              {NO_BIN_MESSAGE}{' '}
-              <Link to="/settings" className="underline">
-                설정 열기
-              </Link>
-            </p>
-          ) : null}
+          <BarcodeInput label="상품 바코드 직접 입력" onSubmit={take} />
           {queue.error() ? (
             <QueueTrouble storage={!!queue.storageError()} onRetry={() => void queue.retryHead().catch(() => {})} />
           ) : null}

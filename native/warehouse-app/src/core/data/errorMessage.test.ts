@@ -345,10 +345,11 @@ describe('이탈·되돌림 문구 (#989)', () => {
   });
 
   it.each([
-    ['RETURN_BIN_UNKNOWN', '등록되지 않았거나 폐기된 되돌림 바구니예요. 설정에서 바구니를 확인해 주세요.'],
+    ['RETURN_BIN_UNKNOWN', '되돌림 바구니를 사용할 수 없어요. 관리자에게 문의해 주세요.'],
     ['RETURN_BIN_WAREHOUSE_MISMATCH', '다른 창고의 되돌림 바구니예요.'],
     ['RETURN_BIN_ITEM_NOT_FOUND', '이 바구니에 없는 상품이에요.'],
     ['RETURN_BIN_ITEM_SHORT', '바구니에 남은 수량보다 많아요.'],
+    ['RETURN_LOCATION_REQUIRED', '원래 로케이션이 여러 곳이에요. 로케이션을 스캔해 주세요.'],
     ['RETURN_LOCATION_MISMATCH', '원래 로케이션이 아니에요. 화면에 보이는 로케이션에 넣어 주세요.'],
   ])('되돌림 %s — 출고·되돌림 화면 둘 다', (code, text) => {
     expect(errorMessage(new ConflictError('m', code), 'returns')).toBe(text);

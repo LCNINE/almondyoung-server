@@ -7,6 +7,7 @@ import { assertFulfillmentInvariantsFor } from './__support__/logistics-assertio
 import { seedPickableShipment } from './__support__/logistics-fixtures';
 import { seedReturnBin, seedTwoBoxBatch } from './__support__/simple-outbound-fixtures';
 import { assembleOutbound } from './__support__/simple-outbound-wiring';
+import { workerReturnBinBarcode } from './return-bin.service';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
@@ -88,10 +89,41 @@ describeIfDb('박스에서 되돌림 바구니로 (스펙 §8, PR 3)', () => {
   const remove = (
     wiring: ReturnType<typeof assembleOutbound>,
     shipmentId: string,
-    input: { barcode: string; returnBinBarcode: string; quantity?: number },
+    input: { barcode: string; returnBinBarcode?: string; quantity?: number },
     tx: DbTx,
     key = `r-${randomUUID()}`,
   ) => wiring.returns.removeToReturnBin(shipmentId, { quantity: 1, ...input }, actor, key, tx);
+
+  it('registers the worker bin on the first removal and reuses it on the second', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { first, wiring } = await withdrawnPicked(tx);
+      const barcode = workerReturnBinBarcode(actor.id, first.warehouseId);
+      const key = `r-${randomUUID()}`;
+
+      expect(await wiring.returnBins.mine(actor.id, first.warehouseId, tx)).toMatchObject({ id: null, items: [] });
+
+      const result = await remove(wiring, first.shipmentId, { barcode: first.barcode }, tx, key);
+      const bin = await wiring.returnBins.mine(actor.id, first.warehouseId, tx);
+
+      expect(result).toMatchObject({ removedQty: 1, exited: false });
+      expect(bin).toMatchObject({ barcode, items: [expect.objectContaining({ skuId: first.skuId, qty: 1 })] });
+      expect(bin.id).not.toBeNull();
+      expect(await remove(wiring, first.shipmentId, { barcode: first.barcode }, tx, key)).toEqual(result);
+      expect(await wiring.returnBins.mine(actor.id, first.warehouseId, tx)).toEqual(bin);
+
+      expect(await remove(wiring, first.shipmentId, { barcode: first.barcode }, tx)).toMatchObject({
+        removedQty: 1,
+        exited: true,
+      });
+      expect(await wiring.returnBins.mine(actor.id, first.warehouseId, tx)).toMatchObject({
+        id: bin.id,
+        items: [expect.objectContaining({ skuId: first.skuId, qty: 2 })],
+      });
+      expect(
+        await tx.select().from(wmsTables.returnBins).where(eq(wmsTables.returnBins.barcode, barcode)),
+      ).toHaveLength(1);
+    });
+  });
 
   it('상품을 스캔할 때마다 1 개씩 바구니로 — 마지막 한 개에서 excluded, 박스는 planned', async () => {
     await inRollbackTx(db, async (tx) => {

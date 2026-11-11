@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { ReactNode } from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -49,7 +49,7 @@ function ScanButton({ code }: { code: string }) {
 type Request = { method?: string; path: string; body?: unknown; idempotencyKey?: string };
 
 function mount(request: (o: Request) => Promise<unknown>, runtime?: ReturnType<typeof createTestWorkRuntime>) {
-  const client: ApiClient = { request: request as unknown as ApiClient['request'] };
+  const client: ApiClient = { request: vi.fn().mockImplementation(request) };
   const prefs = createMemoryPrefs({ 'almondwms.warehouse': JSON.stringify({ id: 'wh', name: '창고' }) });
   const rootRoute = createRootRoute({ component: () => <Outlet /> });
   const screenRoute = createRoute({
@@ -57,11 +57,10 @@ function mount(request: (o: Request) => Promise<unknown>, runtime?: ReturnType<t
     path: '/',
     component: () => (
       <>
-        <ScanButton code="RB-1" />
         <ScanButton code="880" />
         <ScanButton code="A-01" />
+        <ScanButton code="B-02" />
         <ScanButton code="Z-99" />
-        <ScanButton code="RB-2" />
         <ReturnPutawayScreen />
       </>
     ),
@@ -91,155 +90,179 @@ function mount(request: (o: Request) => Promise<unknown>, runtime?: ReturnType<t
   return { user: userEvent.setup() };
 }
 
-const lookups = (o: Request): unknown => {
-  if (o.path === '/return-bins/RB-1?warehouseId=wh') return BIN;
-  if (o.path.startsWith('/inventory/skus?barcode=880')) return [{ id: 's-1', code: 'C1', name: '볼펜' }];
-  return undefined;
+const locations = [
+  { locationCode: 'A-01', qty: 1 },
+  { locationCode: 'B-02', qty: 2 },
+];
+const required = () => new ConflictError('location required', 'RETURN_LOCATION_REQUIRED', undefined, locations);
+const putawayResult = {
+  returnBin: { id: BIN.id, barcode: BIN.barcode, warehouseId: BIN.warehouseId },
+  putAwayQty: 1,
+  items: [],
 };
 
-async function toLocationStep(user: ReturnType<typeof userEvent.setup>) {
-  await user.click(await screen.findByRole('button', { name: '스캔:RB-1' }));
-  await screen.findByText('[A-01] 볼펜 1개');
+async function scanProduct(user: ReturnType<typeof userEvent.setup>) {
+  await screen.findByText('볼펜 1개 → A-01');
   await user.click(screen.getByRole('button', { name: '스캔:880' }));
-  await screen.findByText('A-01 에 넣어 주세요');
 }
 
 describe('ReturnPutawayScreen', () => {
-  it('바구니 → 상품 → 로케이션을 스캔하면 원래 로케이션에 적치한다', async () => {
+  it('loads my bin on open and puts away a product without scanning a bin or location', async () => {
     const calls: Request[] = [];
     const { user } = mount(async (o) => {
       calls.push(o);
-      if (o.method === 'POST' && o.path === '/return-bins/RB-1/putaways') return { putAwayQty: 1, items: [] };
-      const found = lookups(o);
-      if (found !== undefined) return found;
+      if (o.method === 'POST') return putawayResult;
+      if (o.path === '/return-bins/mine?warehouseId=wh') return BIN;
       throw new Error(`unexpected ${o.path}`);
     });
-    await toLocationStep(user);
-    await user.click(screen.getByRole('button', { name: '스캔:A-01' }));
-    expect(await screen.findByRole('status')).toHaveTextContent('바구니가 비었어요. 다음 바구니를 스캔해 주세요.');
-    expect(calls.find((c) => c.method === 'POST')?.body).toEqual({
+    await screen.findByText('볼펜 1개 → A-01');
+    expect(screen.queryByText(/RB-/)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('바구니 바코드')).not.toBeInTheDocument();
+    await scanProduct(user);
+    expect(await screen.findByText('되돌릴 상품이 없어요.')).toBeInTheDocument();
+    expect(calls.filter((c) => c.method === 'POST')).toEqual([
+      expect.objectContaining({
+        path: '/return-bins/RB-1/putaways',
+        body: { warehouseId: 'wh', barcode: '880', quantity: 1 },
+        idempotencyKey: expect.any(String),
+      }),
+    ]);
+  });
+
+  it('shows an empty list for a worker with no registered bin and does not send scans', async () => {
+    const calls: Request[] = [];
+    const { user } = mount(async (o) => {
+      calls.push(o);
+      return { ...BIN, id: null, items: [] };
+    });
+
+    await screen.findByText('되돌릴 상품이 없어요.');
+    await user.click(screen.getByRole('button', { name: '스캔:880' }));
+    expect(calls).toEqual([{ path: '/return-bins/mine?warehouseId=wh' }]);
+    expect(screen.queryByLabelText('상품 바코드')).not.toBeInTheDocument();
+  });
+
+  it('shows server candidates and retries with a scanned location and a new key', async () => {
+    const posts: Request[] = [];
+    const { user } = mount(async (o) => {
+      if (o.method !== 'POST') return BIN;
+      posts.push(o);
+      if (posts.length === 1) throw required();
+      return putawayResult;
+    });
+
+    await scanProduct(user);
+    await screen.findByText('로케이션을 스캔해 주세요.');
+    expect(screen.getByRole('region', { name: '넣을 곳' })).toHaveTextContent('A-01 · 1개');
+    expect(screen.getByRole('region', { name: '넣을 곳' })).toHaveTextContent('B-02 · 2개');
+    expect(await screen.findByRole('alert')).toHaveTextContent('원래 로케이션이 여러 곳이에요.');
+    await user.click(screen.getByRole('button', { name: '스캔:B-02' }));
+    await screen.findByText('되돌릴 상품이 없어요.');
+    expect(posts[1].body).toEqual({
       warehouseId: 'wh',
       barcode: '880',
-      locationCode: 'A-01',
+      locationCode: 'B-02',
       quantity: 1,
     });
+    expect(posts[1].idempotencyKey).not.toBe(posts[0].idempotencyKey);
   });
 
-  it('다른 로케이션을 스캔하면 서버 거절 문구를 보이고 같은 상품을 계속 기다린다', async () => {
+  it('keeps waiting for a location after a mismatch', async () => {
+    let posts = 0;
     const { user } = mount(async (o) => {
-      if (o.method === 'POST') throw new ConflictError('m', 'RETURN_LOCATION_MISMATCH');
-      const found = lookups(o);
-      if (found !== undefined) return found;
-      throw new Error(`unexpected ${o.path}`);
+      if (o.method !== 'POST') return BIN;
+      if (++posts === 1) throw required();
+      throw new ConflictError('m', 'RETURN_LOCATION_MISMATCH', undefined, locations);
     });
-    await toLocationStep(user);
+    await scanProduct(user);
+    await screen.findByRole('region', { name: '넣을 곳' });
     await user.click(screen.getByRole('button', { name: '스캔:Z-99' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('원래 로케이션이 아니에요. 화면에 보이는 로케이션에 넣어 주세요.');
-    expect(screen.getByText('A-01 에 넣어 주세요')).toBeInTheDocument();
+    expect(await screen.findByRole('alert')).toHaveTextContent('원래 로케이션이 아니에요.');
+    expect(screen.getByText('로케이션을 스캔해 주세요.')).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: '넣을 곳' })).toHaveTextContent('A-01 · 1개');
   });
 
-  it('배치 복구 중인 물건이면 복구 때까지 바구니에 둔다고 알린다', async () => {
+  it.each([
+    ['PICKING_SESSION_NOT_ACTIVE', '복구가 끝날 때까지 바구니에 두고 관리자에게 문의해 주세요'],
+    ['RETURN_BIN_ITEM_NOT_FOUND', '이 바구니에 없는 상품이에요.'],
+    ['RETURN_BIN_ITEM_SHORT', '바구니에 남은 수량보다 많아요.'],
+  ])('reloads contents after %s and returns to product scanning', async (code, message) => {
+    let gets = 0;
     const { user } = mount(async (o) => {
-      if (o.method === 'POST') throw new ConflictError('m', 'PICKING_SESSION_NOT_ACTIVE');
-      const found = lookups(o);
-      if (found !== undefined) return found;
-      throw new Error(`unexpected ${o.path}`);
+      if (o.method === 'POST') throw new ConflictError('m', code);
+      gets += 1;
+      return BIN;
     });
-    await toLocationStep(user);
-    await user.click(screen.getByRole('button', { name: '스캔:A-01' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('복구가 끝날 때까지 바구니에 두고 관리자에게 문의해 주세요');
-    // 더 넣을 수 없는 상품이라 위치 단계에 갇히지 않고 상품 단계로 돌아간다.
+
+    await scanProduct(user);
+    expect(await screen.findByRole('alert')).toHaveTextContent(message);
+    expect(screen.getByText('넣을 상품을 스캔해 주세요.')).toBeInTheDocument();
+    expect(gets).toBe(2);
+  });
+
+  it('다른 상품을 누르면 상품 단계로 돌아간다', async () => {
+    const { user } = mount(async (o) => {
+      if (o.method === 'POST') throw required();
+      return BIN;
+    });
+    await scanProduct(user);
+    await user.click(await screen.findByRole('button', { name: '다른 상품' }));
     expect(await screen.findByText('넣을 상품을 스캔해 주세요.')).toBeInTheDocument();
-    expect(screen.queryByText('A-01 에 넣어 주세요')).not.toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: '넣을 곳' })).not.toBeInTheDocument();
   });
 
-  it('상품·위치 단계에서 RB- 바코드를 찍으면 그 바구니로 바꾼다', async () => {
-    const { user } = mount(async (o) => {
-      if (o.path === '/return-bins/RB-2?warehouseId=wh')
-        return { ...BIN, id: 'b2', barcode: 'RB-2', items: [{ ...BIN.items[0], skuName: '노트', qty: 3 }] };
-      const found = lookups(o);
-      if (found !== undefined) return found;
-      throw new Error(`unexpected ${o.path}`);
+  it('retries loading my bin when the initial read fails', async () => {
+    let attempts = 0;
+    const { user } = mount(async () => {
+      if (++attempts === 1) throw new Error('network');
+      return BIN;
     });
-    await toLocationStep(user);
-    await user.click(screen.getByRole('button', { name: '스캔:RB-2' }));
-    expect(await screen.findByText('[A-01] 노트 3개')).toBeInTheDocument();
-    expect(screen.getByText('바구니 RB-2')).toBeInTheDocument();
+
+    await user.click(await screen.findByRole('button', { name: '다시 불러오기' }));
+    expect(await screen.findByText('볼펜 1개 → A-01')).toBeInTheDocument();
+    expect(attempts).toBe(2);
   });
 
-  it('「다른 상품」을 누르면 상품 단계로 돌아간다', async () => {
-    const { user } = mount(async (o) => {
-      const found = lookups(o);
-      if (found !== undefined) return found;
-      throw new Error(`unexpected ${o.path}`);
-    });
-    await toLocationStep(user);
-    await user.click(screen.getByRole('button', { name: '다른 상품' }));
-    expect(await screen.findByText('넣을 상품을 스캔해 주세요.')).toBeInTheDocument();
-  });
-
-  it('재시작 뒤 복원된 적치는 저장된 키로 다시 보내고, 끝나면 바구니에 남은 것을 보인다', async () => {
+  it('재시작 뒤 복원된 적치는 저장된 키로 다시 보내고 남은 상품을 보인다', async () => {
     const posts: Request[] = [];
     const api = async (o: Request): Promise<unknown> => {
       if (o.method === 'POST') {
         posts.push(o);
         return {
-          putAwayQty: 1,
-          returnBin: { id: 'b', barcode: 'RB-1', warehouseId: 'wh' },
+          ...putawayResult,
           items: [{ skuId: 's-2', skuCode: 'C2', skuName: '노트', sourceLocationId: 'l-2', locationCode: 'B-02', qty: 2 }],
         };
       }
-      throw new Error(`unexpected ${o.path}`);
+      return BIN;
     };
-    const runtime = createTestWorkRuntime({ request: api as unknown as ApiClient['request'] });
+    const runtime = createTestWorkRuntime({ request: vi.fn().mockImplementation(api) });
     await runtime.store.draft('fixture:scan:return-putaway', () => [
       { id: 'k-1', data: { binBarcode: 'RB-1', warehouseId: 'wh', productBarcode: '880', locationCode: 'A-01' } },
     ]);
     mount(api, runtime);
-    expect(await screen.findByText('[B-02] 노트 2개')).toBeInTheDocument();
+    expect(await screen.findByText('노트 2개 → B-02')).toBeInTheDocument();
     expect(posts).toHaveLength(1);
     expect(posts[0].idempotencyKey).toBe('k-1');
     expect(posts[0].body).toEqual({ warehouseId: 'wh', barcode: '880', locationCode: 'A-01', quantity: 1 });
-    expect(await runtime.store.draft('fixture:scan:return-putaway')).toEqual([]);
+    await waitFor(async () => expect(await runtime.store.draft('fixture:scan:return-putaway')).toEqual([]));
   });
 
-  it('바구니에 없는 상품이면 알려 주고 상품을 다시 기다린다', async () => {
-    const { user } = mount(async (o) => {
-      if (o.path.startsWith('/inventory/skus?barcode=880')) return [{ id: 's-9', code: 'X', name: '다른 상품' }];
-      const found = lookups(o);
-      if (found !== undefined) return found;
-      throw new Error(`unexpected ${o.path}`);
-    });
-    await user.click(await screen.findByRole('button', { name: '스캔:RB-1' }));
-    await screen.findByText('[A-01] 볼펜 1개');
-    await user.click(screen.getByRole('button', { name: '스캔:880' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('이 바구니에 없는 상품이에요.');
-  });
-
-  it('결과를 모르는 실패 뒤에는 새 적치 스캔을 받지 않고, 처리 내역 확인이 같은 키로 다시 보낸다', async () => {
+  it('blocks new scans after an uncertain failure and retries with the same key', async () => {
     const posts: Request[] = [];
-    let fail = true;
     const { user } = mount(async (o) => {
-      if (o.method === 'POST') {
-        posts.push(o);
-        if (fail) {
-          fail = false;
-          throw new Error('network');
-        }
-        return { putAwayQty: 1, items: [] };
-      }
-      const found = lookups(o);
-      if (found !== undefined) return found;
-      throw new Error(`unexpected ${o.path}`);
+      if (o.method !== 'POST') return BIN;
+      posts.push(o);
+      if (posts.length === 1) throw new Error('network');
+      return putawayResult;
     });
-    await toLocationStep(user);
-    await user.click(screen.getByRole('button', { name: '스캔:A-01' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('「처리 내역 확인」');
-    await user.click(screen.getByRole('button', { name: '스캔:A-01' }));
+    await scanProduct(user);
+    expect(await screen.findByRole('alert')).toHaveTextContent('처리 내역 확인');
+    await user.click(screen.getByRole('button', { name: '스캔:880' }));
     expect(posts).toHaveLength(1);
     await user.click(screen.getByRole('button', { name: '처리 내역 확인' }));
-    await waitFor(() => expect(posts).toHaveLength(2));
+    await screen.findByText('되돌릴 상품이 없어요.');
+    expect(posts).toHaveLength(2);
     expect(posts[1].idempotencyKey).toBe(posts[0].idempotencyKey);
-    expect(await screen.findByRole('status')).toHaveTextContent('바구니가 비었어요');
+    expect(posts[1].body).toEqual(posts[0].body);
   });
 });
