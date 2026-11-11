@@ -711,6 +711,8 @@ export interface ShipmentLineOrigin {
   salesOrderId: string;
   salesChannel: string;
   channelOrderId: string;
+  // 옛 core 는 싣지 않는다
+  displayOrderNo?: string | null;
   channelOrderItemId: string | null;
   channelProductId: string | null;
 }
@@ -727,6 +729,8 @@ export interface ShipmentAdminLine {
   fulfillmentOrderId: string;
   fulfillmentOrderItemId: string;
   skuId: string;
+  // 옛 core 는 싣지 않는다
+  skuName?: string | null;
   qty: number;
   reservedQty: number;
   inspectedQty: number;

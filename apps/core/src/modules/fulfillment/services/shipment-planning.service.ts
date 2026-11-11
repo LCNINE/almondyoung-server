@@ -1155,7 +1155,14 @@ export class ShipmentPlanningService {
     return this.dbService.run(async (trx) => {
       const aggregate = await this.loadAggregate(shipmentId, trx);
       const lineIds = aggregate.lines.map((line) => line.id);
-      const [reservations, waybills, workItems, attempts, origins, operations] = await Promise.all([
+      const skuIds = uniqueSorted(aggregate.lines.map((line) => line.skuId));
+      const skuNamesQuery: Promise<Array<{ id: string; name: string }>> = skuIds.length
+        ? trx
+            .select({ id: wmsTables.skus.id, name: wmsTables.skus.name })
+            .from(wmsTables.skus)
+            .where(inArray(wmsTables.skus.id, skuIds))
+        : Promise.resolve([]);
+      const [reservations, waybills, workItems, attempts, origins, operations, skuNames] = await Promise.all([
         lineIds.length
           ? trx
               .select()
@@ -1205,6 +1212,7 @@ export class ShipmentPlanningService {
           )
           .where(eq(wmsTables.shipmentOperationMembers.shipmentId, shipmentId))
           .orderBy(asc(wmsTables.shipmentOperations.createdAt), asc(wmsTables.shipmentOperations.id)),
+        skuNamesQuery,
       ]);
       const attemptIds = attempts.map((attempt) => attempt.id);
       const attemptSources: Array<typeof wmsTables.dispatchAttemptSources.$inferSelect> = attemptIds.length
@@ -1220,6 +1228,7 @@ export class ShipmentPlanningService {
         .where(eq(wmsTables.shipmentTracking.shipmentId, shipmentId))
         .orderBy(asc(wmsTables.shipmentTracking.timestamp), asc(wmsTables.shipmentTracking.id));
       const originByLineId = new Map(origins.map((origin) => [origin.salesOrderLineId, origin]));
+      const skuNameById = new Map(skuNames.map((sku) => [sku.id, sku.name]));
       const reservationByLine = new Map<string, typeof reservations>();
       for (const reservation of reservations) {
         if (!reservation.shipmentLineId) continue;
@@ -1232,6 +1241,7 @@ export class ShipmentPlanningService {
         ...aggregate.shipment,
         lines: aggregate.lines.map((line) => ({
           ...line,
+          skuName: skuNameById.get(line.skuId) ?? null,
           origin: line.salesOrderLineId ? (originByLineId.get(line.salesOrderLineId) ?? null) : null,
           reservations: reservationByLine.get(line.id) ?? [],
         })),
@@ -1943,6 +1953,7 @@ export class ShipmentPlanningService {
       salesOrderId: string;
       salesChannel: string;
       channelOrderId: string;
+      displayOrderNo: string | null;
       channelOrderItemId: string | null;
       channelProductId: string | null;
       exchangeReturnLineId: string | null;
@@ -1959,6 +1970,7 @@ export class ShipmentPlanningService {
              so.id::text AS "salesOrderId",
              so.sales_channel::text AS "salesChannel",
              so.channel_order_id AS "channelOrderId",
+             so.display_order_no AS "displayOrderNo",
              sol.channel_order_item_id AS "channelOrderItemId",
              sol.channel_product_id AS "channelProductId",
              sol.exchange_return_line_id::text AS "exchangeReturnLineId"
@@ -1972,6 +1984,7 @@ export class ShipmentPlanningService {
       salesOrderId: string;
       salesChannel: string;
       channelOrderId: string;
+      displayOrderNo: string | null;
       channelOrderItemId: string | null;
       channelProductId: string | null;
       exchangeReturnLineId: string | null;
