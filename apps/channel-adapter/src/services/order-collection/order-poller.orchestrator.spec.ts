@@ -2541,12 +2541,14 @@ describe('OrderPollerOrchestrator — 수집 커밋 뒤 acknowledgeCollected 훅
   const order = (key: keyof typeof ids, minute: string, overrides: { eligibleForOrderCreation?: boolean } = {}) =>
     makeOrder(`2026-10-07T01:${minute}:00.000Z`, { externalOrderId: key, orderId: ids[key], ...overrides });
 
-  function setup(fetchResult: object, options: { acknowledge?: jest.Mock | null; failOnEnqueueFor?: string } = {}) {
+  function setup(fetchResult: object | object[], options: { acknowledge?: jest.Mock | null; failOnEnqueueFor?: string } = {}) {
     const acknowledge =
       options.acknowledge === undefined ? jest.fn().mockResolvedValue(undefined) : options.acknowledge;
     const provider: ChannelOrderProvider = {
       channel: 'medusa',
-      fetchOrders: jest.fn().mockResolvedValue(fetchResult),
+      fetchOrders: Array.isArray(fetchResult)
+        ? fetchResult.reduce((mock, result) => mock.mockResolvedValueOnce(result), jest.fn())
+        : jest.fn().mockResolvedValue(fetchResult),
       ...(acknowledge ? { acknowledgeCollected: acknowledge } : {}),
     };
     const syncStatus = makeSyncStatus();
@@ -2598,15 +2600,21 @@ describe('OrderPollerOrchestrator — 수집 커밋 뒤 acknowledgeCollected 훅
   });
 
   it('eligibleForOrderCreation=false 주문(셀메이트 몫 포함)은 넘기지 않는다', async () => {
-    const { orchestrator, acknowledge } = setup({
-      orders: [order('A', '00'), order('B', '01', { eligibleForOrderCreation: false })],
-      failures: [],
-      lifecycleEvents: [],
-    });
+    // B 는 첫 주기에 수집돼 매핑(wmsOrderId)이 있다. 둘째 주기에 셀메이트 몫으로 바뀌어 와도 넘기지 않는다.
+    const { orchestrator, acknowledge } = setup([
+      { orders: [order('A', '00'), order('B', '01')], failures: [], lifecycleEvents: [] },
+      {
+        orders: [order('A', '02'), order('B', '03', { eligibleForOrderCreation: false })],
+        failures: [],
+        lifecycleEvents: [],
+      },
+    ]);
 
     await orchestrator.poll();
+    await orchestrator.poll();
 
-    expect(acknowledge).toHaveBeenCalledWith(['A']);
+    expect(acknowledge).toHaveBeenCalledTimes(2);
+    expect(acknowledge).toHaveBeenLastCalledWith(['A']);
   });
 
   it('처리 실패·격리된 주문은 넘기지 않는다', async () => {

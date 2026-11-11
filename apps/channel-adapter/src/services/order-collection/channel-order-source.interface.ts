@@ -214,5 +214,5 @@ export interface AcknowledgingChannelOrderSource extends ChannelOrderSource {
 }
 
 export function isAcknowledgingSource(source: ChannelOrderSource): source is AcknowledgingChannelOrderSource {
-  return typeof (source as AcknowledgingChannelOrderSource).acknowledgeCollected === 'function';
+  return 'acknowledgeCollected' in source && typeof source.acknowledgeCollected === 'function';
 }
