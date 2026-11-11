@@ -95,6 +95,12 @@ export function BucketTable({
                       {bucket?.multiCount ?? 0}
                     </span>
                   )}
+                  {(key === 'ready' || key === 'partial' || key === 'resume') &&
+                    count > 0 && (
+                      <span className="ml-3 text-sm font-semibold text-foreground">
+                        {selectedCount(key)}건 선택
+                      </span>
+                    )}
                   {key === 'matching' && (
                     <span className="ml-3 text-sm text-muted-foreground">
                       전 창고

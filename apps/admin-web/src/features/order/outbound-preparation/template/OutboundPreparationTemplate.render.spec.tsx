@@ -429,6 +429,7 @@ describe('OutboundPreparationTemplate', () => {
     await userEvent.click(screen.getByLabelText('#AY-ready-2 선택'));
     expect(all.getAttribute('aria-checked')).toBe('mixed');
     expect(screen.getByText('완전출고 내역 · 1건 선택')).toBeTruthy();
+    expect(row('완전출고').getByText('1건 선택')).toBeTruthy();
     await userEvent.click(
       row('완전출고').getByRole('button', { name: '출고 준비' })
     );
