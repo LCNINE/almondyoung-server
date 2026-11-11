@@ -139,7 +139,7 @@ aws sts get-caller-identity --profile almondyoung
 - 환경별 동시 빌드: 1개, 빌드 제한 시간: 120분
 - 실행 시 CodeBuild 및 관련 AWS 사용료가 발생합니다.
 - 2026-11-11 기존 v1 라이브 작업의 배포 성공과 서비스 HTTP 응답을 확인했습니다. 이 사실은 **이번 v2의 AWS 연결·캐시 적중·운영 DB 마이그레이션 검증을 뜻하지 않습니다.** 소스 반영, AWS 적용, 실제 배포 결과를 구분해 보고합니다.
-- 2026-11-11 live에 v2 Lambda/buildspec, 전용 캐시 저장소와 운영 사설망 구성을 적용했습니다. 첫 읽기 검증 `22fa3b7c-dc21-4f03-be6a-43d702262370`은 `QUEUED` 단계에서 `UNAUTHORIZED_OPERATION_DELETE_NETWORK_INTERFACE`로 멈췄습니다. DB 접속·마이그레이션·앱 배포 전 실패이며, 준비 표시(`ready`)는 아직 꺼져 있습니다.
+- 2026-11-11 live에 v2 Lambda/buildspec, 전용 캐시 저장소와 운영 사설망 구성을 적용했습니다. 첫 읽기 검증의 ENI 정리 권한 오류를 배포 역할에서 보완한 뒤, 원격 VS Code에서 요청한 `almondyoung-deploy-live:82216a6b-0156-4ccd-92ee-9c3406550841` 읽기 검증이 `SUCCEEDED`로 종료됐습니다. 검증 커밋 `384db9bf23`에서 user-service, Core 테넌트 2개 및 나머지 서비스 등 총 12개 Drizzle 대상의 이력이 일치했고 미적용 항목은 모두 0개였습니다. 실제 앱 배포·마이그레이션 SQL·캐시/성공 기준 저장은 실행하지 않았습니다. 캐시는 최초 `miss`였으므로 저장·후속 복원·실제 빌드 적중은 배포 후 별도로 확인합니다. 실행 전 `check live`로 현재 준비 표시를 확인합니다.
 - 현재 dev·demo용 DB와 기반 VPC는 준비되지 않았으므로 v2 설치/준비 목록에 넣지 않았습니다. 해당 환경 요청을 live DB로 연결하지 않습니다.
 
 ## 다음에 배포를 요청할 때

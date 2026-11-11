@@ -49,12 +49,13 @@ Resources:
             Resource:
               - !Sub 'arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:subnet/${PrivateSubnetId}'
               - !Sub 'arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:security-group/${BuildSecurityGroup.GroupId}'
+              - !Sub 'arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:network-interface/*'
           - Effect: Allow
-            Action: [ec2:CreateNetworkInterface, ec2:DeleteNetworkInterface]
-            Resource: !Sub 'arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:network-interface/*'
+            Action: ec2:DeleteNetworkInterface
+            Resource: '*'
             Condition:
-              ArnEquals:
-                ec2:Subnet: !Sub 'arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:subnet/${PrivateSubnetId}'
+              StringEquals:
+                aws:RequestedRegion: !Ref AWS::Region
           - Effect: Allow
             Action: ec2:CreateNetworkInterfacePermission
             Resource: !Sub 'arn:${AWS::Partition}:ec2:${AWS::Region}:${AWS::AccountId}:network-interface/*'

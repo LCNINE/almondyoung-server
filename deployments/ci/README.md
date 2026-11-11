@@ -25,9 +25,9 @@
 
 - 현재 프로젝트/서비스 역할/소스/환경/로그/네트워크 설정을 먼저 백업·비교합니다. 이 문서의 예시를 기존 CloudFormation 전체 템플릿 대신 덮어쓰지 않습니다.
 - `storage.yml`은 비공개 암호화 S3 버킷과 **AlmondyoungFixedDeployRunner만** 사용할 S3 ListBucket/GetObject/PutObject 정책을 만듭니다. ListBucket은 이 새 전용 버킷에만 적용합니다. 공용 IAM 사용자에게는 붙이지 않습니다. 성공 이력은 만료시키지 않고 캐시는 30일 만료합니다.
-- 같은 템플릿의 VpcId/PrivateSubnetId/DatabaseSecurityGroupId에는 확인된 기존 리소스를 전달합니다. 새 빌드 보안 그룹은 인바운드 없이 HTTPS 및 지정 DB 보안 그룹의 PostgreSQL 포트로만 송신합니다. ENI 생성·삭제는 지정 서브넷에 제한하고 연결 권한은 CodeBuild 서비스에 제한합니다. 기존 DB 보안 그룹의 내부망 허용을 확인해야 하며 이 템플릿은 기존 DB/서브넷/라우팅 규칙을 수정하지 않습니다.
+- 같은 템플릿의 VpcId/PrivateSubnetId/DatabaseSecurityGroupId에는 확인된 기존 리소스를 전달합니다. 새 빌드 보안 그룹은 인바운드 없이 HTTPS 및 지정 DB 보안 그룹의 PostgreSQL 포트로만 송신합니다. ENI 생성은 지정 서브넷·빌드 보안 그룹에 제한하고 연결 권한은 지정 서브넷과 CodeBuild 서비스에 제한합니다. `DeleteNetworkInterface`는 CodeBuild 시작 시 권한 검사에 맞춰 해당 리전 전체에 허용합니다. 따라서 다른 프로젝트의 연결 해제된 ENI도 삭제할 수 있습니다. 연결을 강제로 떼는 `DetachNetworkInterface` 권한은 부여하지 않습니다. 기존 DB 보안 그룹의 내부망 허용을 확인해야 하며 이 템플릿은 기존 DB/서브넷/라우팅 규칙을 수정하지 않습니다.
 - CodeBuild를 해당 stage의 기존 platform VPC/private subnet에 연결합니다. 두 RDS DB에 대한 DB 포트 접근과 GitHub/npm/ECR/S3/AWS API로 나갈 NAT 또는 적절한 엔드포인트가 필요합니다. DB를 인터넷에 공개하지 않습니다.
-- CodeBuild VPC ENI에 필요한 EC2 권한은 해당 VPC/subnet 및 CodeBuild 서비스 조건으로 한정해 배포 역할에 추가합니다. 기존 DB security group에는 해당 빌드 security group만 허용합니다. VPC/보안 그룹 ID를 추측해서 적용하지 않습니다.
+- CodeBuild VPC ENI 권한은 위 범위를 검토해 배포 역할에만 추가합니다. 새 ENI 리소스에는 `ec2:Subnet` 조건을 붙이지 않고 생성 요청의 서브넷·보안 그룹 ARN으로 범위를 제한합니다. 기존 DB security group이 승인된 내부 연결을 허용하는지 확인하고 임의로 범위를 넓히지 않습니다. VPC/보안 그룹 ID를 추측해서 적용하지 않습니다.
 - 배포 역할이 기존 SST 링크와 `/lcnine-auth/<stage>/tenant-list`를 읽을 수 있어야 합니다. 공유 사용자에게 DB 비밀값을 전달하지 않습니다. 필요 권한은 실제 거부 리소스를 확인해 역할에만 보완합니다.
 
 ## 적용 순서
