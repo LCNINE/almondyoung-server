@@ -5,6 +5,9 @@ import * as crypto from 'crypto';
 import { parseCoupangJson, stringifyCoupangJson } from './coupang-json';
 import { coupangRateLimiter } from './coupang-rate-limiter';
 
+/** 쿠팡 요청 하나의 상한. axios 기본(0)은 영원히 기다려 폴링 주기가 겹쳐 쌓인다. */
+const REQUEST_TIMEOUT_MS = 30_000;
+
 /**
  * 쿠팡 API 기본 설정 정보
  */
@@ -88,6 +91,7 @@ export abstract class CoupangBaseClient {
    *
    * `COUPANG_READ_ONLY=true` 면 GET 이 아닌 호출은 보내기 전에 throw 한다(호출 시점에 읽는다).
    * HTTP 오류는 상태 코드를 메시지(`쿠팡 <status>: …`)와 `status` 속성에 싣고 throw 한다.
+   * 요청은 30초에 끊는다 — timeout 도 에러로 세고(속도 제한의 에러 폭주), 메시지에 메서드·경로를 싣는다.
    */
   protected async send<T>(
     method: 'GET' | 'PATCH' | 'POST' | 'PUT',
@@ -114,6 +118,7 @@ export abstract class CoupangBaseClient {
           url,
           data: options.body === undefined ? undefined : stringifyCoupangJson(options.body),
           responseType: 'text',
+          timeout: REQUEST_TIMEOUT_MS,
           transformResponse: [(data: string) => data],
           headers: { Authorization: authorization, 'Content-Type': 'application/json' },
         }),
@@ -124,8 +129,7 @@ export abstract class CoupangBaseClient {
       const failedStatus = statusOf(error);
       if (failedStatus === 429) coupangRateLimiter.recordRateLimited();
       else coupangRateLimiter.recordError();
-      const detail = failedStatus === undefined ? messageOf(error) : brief(responseTextOf(error));
-      throw Object.assign(new Error(`쿠팡 ${failedStatus ?? '네트워크'}: ${detail}`), {
+      throw Object.assign(new Error(failureMessage(error, failedStatus, `${method} ${path}`)), {
         status: failedStatus,
         cause: error,
       });
@@ -135,6 +139,18 @@ export abstract class CoupangBaseClient {
     this.logger.debug?.(`쿠팡 ${method} ${path} → ${status}`);
     return parseCoupangJson(text) as T;
   }
+}
+
+function failureMessage(error: unknown, status: number | undefined, call: string): string {
+  if (status !== undefined) return `쿠팡 ${status}: ${brief(responseTextOf(error))}`;
+  if (isTimeout(error)) return `쿠팡 시간 초과(${REQUEST_TIMEOUT_MS}ms): ${call}`;
+  return `쿠팡 네트워크: ${call} — ${messageOf(error)}`;
+}
+
+/** axios 는 timeout 을 `ECONNABORTED`(구버전)·`ETIMEDOUT`(transitional.clarifyTimeoutError) 로 낸다 */
+function isTimeout(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null || !('code' in error)) return false;
+  return error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT';
 }
 
 function statusOf(error: unknown): number | undefined {

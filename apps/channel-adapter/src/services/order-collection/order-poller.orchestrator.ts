@@ -44,6 +44,7 @@ import {
 import { OrderProcessingStageError, errorMessage } from './order-processing-stage.error';
 import { OrderCollectionFailure } from '../../types';
 import { SalesChannelClient } from '../clients/sales-channel.client';
+import { coupangRateLimiter } from '../../adapters/coupang/clients/coupang-rate-limiter';
 
 const POLLING_RESOURCE_TYPE_ORDER = 'order';
 const POLLING_RESOURCE_TYPE_ORDER_LIFECYCLE = 'order_lifecycle';
@@ -92,6 +93,12 @@ type ProcessingRetryStatus =
 @Injectable()
 export class OrderPollerOrchestrator {
   private readonly logger = new Logger(OrderPollerOrchestrator.name);
+  /**
+   * 채널별로 지금 도는 주기의 시작 시각. `@CronOnce` 는 주기당 한 번을 선점할 뿐 앞 실행을 기다리지 않아,
+   * 5분을 넘긴 주기(쿠팡 단건 조회가 많거나 응답이 느린 날) 위에 다음 주기가 겹쳐 같은 창을 두 번 돈다.
+   * 프로세스 안에서만 막는다 — 태스크 사이의 겹침은 `cron_runs` 선점이 이미 막는다.
+   */
+  private readonly runningCycles = new Map<SalesChannel, number>();
 
   constructor(
     @Inject(CHANNEL_ORDER_PROVIDER)
@@ -134,6 +141,18 @@ export class OrderPollerOrchestrator {
         this.logger.log(`채널 ${provider.channel} 은 비활성(sales_channels.is_active=false)이라 이번 주기를 건너뛴다.`);
         continue;
       }
+
+      const runningSince = this.runningCycles.get(provider.channel);
+      if (runningSince !== undefined) {
+        // 건너뛰기는 무손실이다 — recordSyncStart 전이라 워터마크가 그대로고, 앞 주기가 끝나면 다음 주기가 이어 받는다.
+        this.logger.warn(
+          `[${provider.channel}] 앞 주기가 아직 돈다 (${Date.now() - runningSince}ms 째) — 이번 주기는 이 채널을 건너뛴다.`,
+        );
+        continue;
+      }
+      const providerCycleStartedAt = Date.now();
+      const coupangCallsBefore = coupangRateLimiter.callCount;
+      this.runningCycles.set(provider.channel, providerCycleStartedAt);
 
       try {
         // 자동 재시도는 이번 주기 **전에** 갱신된 행만 고른다 — 이번 주기에 막 실패한 주문을 같은 주기에 또 치지 않는다 (스펙 §6.1).
@@ -427,6 +446,12 @@ export class OrderPollerOrchestrator {
           message: error.message,
         });
         this.logger.error(`[${provider.channel}] Order polling failed: ${error.message}`);
+      } finally {
+        this.runningCycles.delete(provider.channel);
+        // 쿠팡 호출 수는 프로세스 전체 계수기의 앞뒤 차라, 같은 시간에 돈 송장 업로드 등 다른 쿠팡 호출도 섞인다.
+        const coupangCalls =
+          provider.channel === 'coupang' ? `, 쿠팡 호출 ${coupangRateLimiter.callCount - coupangCallsBefore}회` : '';
+        this.logger.log(`[${provider.channel}] 주기 끝 — ${Date.now() - providerCycleStartedAt}ms${coupangCalls}`);
       }
     }
   }

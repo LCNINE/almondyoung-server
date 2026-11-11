@@ -24,6 +24,7 @@ export class CoupangRateLimiter {
   private readonly starts: number[] = [];
   private errors: number[] = [];
   private pausedUntil = 0;
+  private calls = 0;
 
   constructor(opts: CoupangRateLimiterOptions) {
     this.perSecond = opts.perSecond;
@@ -41,10 +42,16 @@ export class CoupangRateLimiter {
       while (this.starts.length > 0 && this.starts[0] <= now - WINDOW_MS) this.starts.shift();
       if (this.starts.length < this.perSecond) {
         this.starts.push(now);
+        this.calls++;
         return;
       }
       await this.sleep(this.starts[0] + WINDOW_MS - now);
     }
+  }
+
+  /** 이 프로세스에서 acquire 를 통과한(= 쿠팡에 보낸) 호출 수. 앞뒤로 읽어 한 주기의 호출 수를 낸다. */
+  get callCount(): number {
+    return this.calls;
   }
 
   recordRateLimited(): void {

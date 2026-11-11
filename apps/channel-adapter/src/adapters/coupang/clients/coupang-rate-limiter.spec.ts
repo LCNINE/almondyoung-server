@@ -67,4 +67,12 @@ describe('CoupangRateLimiter', () => {
     expect(sleeps[0]).toBeGreaterThan(599_000);
     expect(sleeps[0]).toBeLessThanOrEqual(600_000);
   });
+
+  it('acquire 가 통과한 횟수를 센다 — 주기 로그가 쿠팡 호출 수를 앞뒤로 읽는다', async () => {
+    const { limiter } = make();
+    const before = limiter.callCount;
+    await limiter.acquire();
+    await limiter.acquire();
+    expect(limiter.callCount - before).toBe(2);
+  });
 });

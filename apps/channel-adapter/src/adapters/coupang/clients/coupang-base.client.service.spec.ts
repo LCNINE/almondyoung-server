@@ -47,4 +47,21 @@ describe('CoupangBaseClient.send', () => {
     const client = new TestClient({ request } as unknown as HttpService);
     await expect(client.call('GET', '/x')).rejects.toMatchObject({ message: '쿠팡 400: bad', status: 400 });
   });
+
+  it('요청마다 30초 timeout 을 건다', async () => {
+    const request = jest.fn().mockReturnValue(of({ status: 200, data: '{}' }));
+    const client = new TestClient({ request } as unknown as HttpService);
+    await client.call('GET', '/x');
+    expect(request.mock.calls[0][0].timeout).toBe(30_000);
+  });
+
+  it('timeout 은 메서드·경로를 실은 오류로 throw 한다', async () => {
+    const request = jest
+      .fn()
+      .mockReturnValue(
+        throwError(() => Object.assign(new Error('timeout of 30000ms exceeded'), { code: 'ECONNABORTED' })),
+      );
+    const client = new TestClient({ request } as unknown as HttpService);
+    await expect(client.call('GET', '/v2/slow')).rejects.toThrow('쿠팡 시간 초과(30000ms): GET /v2/slow');
+  });
 });

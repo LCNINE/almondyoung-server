@@ -16,6 +16,7 @@ import { OrderProcessingStageError } from './order-processing-stage.error';
 import { NaverOrderSource } from './naver-order.source';
 import { ChannelOrderTranslator } from './channel-order.translator';
 import { TranslatingOrderProvider } from './translating-order.provider';
+import { coupangRateLimiter } from '../../adapters/coupang/clients/coupang-rate-limiter';
 
 describe('OrderPollerOrchestrator', () => {
   it('ingests a virtual provider through the transactional mapping and typed outbox path without polling Core', async () => {
@@ -2669,6 +2670,117 @@ describe('OrderPollerOrchestrator — 수집 커밋 뒤 acknowledgeCollected 훅
     await orchestrator.poll();
 
     expect(syncStatus.recordSyncComplete).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('OrderPollerOrchestrator — 겹친 주기 막기·주기 로그 (#1245)', () => {
+  const empty = { orders: [], failures: [] };
+
+  function deferred<T>() {
+    let resolve: (value: T) => void = () => undefined;
+    const promise = new Promise<T>((r) => (resolve = r));
+    return { promise, resolve };
+  }
+
+  /** 앞 주기가 fetchOrders 에서 멈출 때까지 이벤트 루프를 돌린다. */
+  async function until(condition: () => boolean) {
+    for (let i = 0; i < 50 && !condition(); i++) await new Promise((r) => setImmediate(r));
+    expect(condition()).toBe(true);
+  }
+
+  function build(providers: ChannelOrderProvider[], syncStatus = makeSyncStatus()) {
+    return new OrderPollerOrchestrator(
+      providers,
+      syncStatus as any,
+      { enqueue: jest.fn().mockResolvedValue(undefined) } as any,
+      makeHashService() as any,
+      makeFailureService() as any,
+      makeDb() as any,
+      makeSalesChannelClient(['coupang', 'medusa']) as any,
+    );
+  }
+
+  afterEach(() => jest.restoreAllMocks());
+
+  it('같은 채널의 앞 주기가 아직 돌면 이번 주기는 그 채널을 건너뛰고 warn 한다', async () => {
+    const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const gate = deferred<typeof empty>();
+    const slow: ChannelOrderProvider = {
+      channel: 'coupang',
+      fetchOrders: jest.fn().mockReturnValueOnce(gate.promise).mockResolvedValue(empty),
+    };
+    const orchestrator = build([slow]);
+
+    const first = orchestrator.poll();
+    await until(() => (slow.fetchOrders as jest.Mock).mock.calls.length === 1);
+    await orchestrator.poll();
+
+    expect(slow.fetchOrders).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledWith(expect.stringMatching(/\[coupang\] 앞 주기가 아직 돈다 \(\d+ms 째\)/));
+
+    gate.resolve(empty);
+    await first;
+    await orchestrator.poll();
+    expect(slow.fetchOrders).toHaveBeenCalledTimes(2);
+  });
+
+  it('다른 채널은 막지 않는다', async () => {
+    jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const gate = deferred<typeof empty>();
+    const slow: ChannelOrderProvider = {
+      channel: 'coupang',
+      fetchOrders: jest.fn().mockReturnValueOnce(gate.promise).mockResolvedValue(empty),
+    };
+    const other: ChannelOrderProvider = { channel: 'medusa', fetchOrders: jest.fn().mockResolvedValue(empty) };
+    const orchestrator = build([slow, other]);
+
+    const first = orchestrator.poll();
+    await until(() => (slow.fetchOrders as jest.Mock).mock.calls.length === 1);
+    await orchestrator.poll();
+
+    expect(slow.fetchOrders).toHaveBeenCalledTimes(1);
+    expect(other.fetchOrders).toHaveBeenCalledTimes(1);
+
+    gate.resolve(empty);
+    await first;
+    expect(other.fetchOrders).toHaveBeenCalledTimes(2);
+  });
+
+  it('주기가 throw 해도 막기를 푼다', async () => {
+    jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    const syncStatus = makeSyncStatus();
+    syncStatus.recordSyncFailure.mockRejectedValueOnce(new Error('db down'));
+    const provider: ChannelOrderProvider = {
+      channel: 'coupang',
+      fetchOrders: jest.fn().mockRejectedValueOnce(new Error('쿠팡 500')).mockResolvedValue(empty),
+    };
+    const orchestrator = build([provider], syncStatus);
+
+    await expect(orchestrator.poll()).rejects.toThrow('db down');
+    await orchestrator.poll();
+
+    expect(provider.fetchOrders).toHaveBeenCalledTimes(2);
+  });
+
+  it('주기마다 걸린 시간과 쿠팡 호출 수를 한 줄로 남긴다', async () => {
+    const log = jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined);
+    const provider: ChannelOrderProvider = {
+      channel: 'coupang',
+      fetchOrders: jest.fn().mockImplementation(async () => {
+        await coupangRateLimiter.acquire();
+        await coupangRateLimiter.acquire();
+        return empty;
+      }),
+    };
+    const other: ChannelOrderProvider = { channel: 'medusa', fetchOrders: jest.fn().mockResolvedValue(empty) };
+
+    await build([provider, other]).poll();
+
+    const cycleLines = log.mock.calls.map(([line]) => String(line)).filter((line) => line.includes('주기 끝'));
+    expect(cycleLines).toEqual([
+      expect.stringMatching(/^\[coupang\] 주기 끝 — \d+ms, 쿠팡 호출 2회$/),
+      expect.stringMatching(/^\[medusa\] 주기 끝 — \d+ms$/),
+    ]);
   });
 });
 
