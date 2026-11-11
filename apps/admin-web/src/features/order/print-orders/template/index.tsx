@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { describeLastError } from './last-error';
 import { Copy } from 'lucide-react';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
@@ -441,7 +442,10 @@ function PrintOrderRow({
             colSpan={7}
             className="p-2 text-xs whitespace-pre-wrap text-gray-700"
           >
-            {row.lastError}
+            {describeLastError(row.lastError).map((reason, i) => (
+              <div key={i}>{reason}</div>
+            ))}
+            <div className="mt-1 text-gray-400">{row.lastError}</div>
           </td>
         </tr>
       )}
