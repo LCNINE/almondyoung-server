@@ -5,6 +5,7 @@ import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.sch
 import { AuditService } from '../../inventory/shared/services/audit.service';
 import { BarcodeService } from '../../inventory/shared/services/barcode.service';
 import {
+  MyReturnBinDto,
   ReturnBinContentsDto,
   ReturnBinDto,
   ReturnBinItemDto,
@@ -27,6 +28,10 @@ export function normalizeReturnBinBarcode(value: string): string {
     );
   }
   return barcode;
+}
+
+export function workerReturnBinBarcode(actorId: string, warehouseId: string): string {
+  return `RB-${actorId}-${warehouseId}`;
 }
 
 function binConflict(code: 'RETURN_BIN_UNKNOWN' | 'RETURN_BIN_WAREHOUSE_MISMATCH', message: string) {
@@ -115,6 +120,28 @@ export class ReturnBinService {
     }, tx);
   }
 
+  async mine(actorId: string, warehouseId: string, tx?: DbTx): Promise<MyReturnBinDto> {
+    const barcode = workerReturnBinBarcode(actorId, warehouseId);
+
+    return this.dbService.run(async (trx) => {
+      const [bin] = await trx
+        .select()
+        .from(wmsTables.returnBins)
+        .where(eq(wmsTables.returnBins.barcode, barcode))
+        .limit(1);
+
+      if (!bin) return { id: null, barcode, warehouseId, items: [] };
+      if (bin.retiredAt) throw binConflict('RETURN_BIN_UNKNOWN', `Return bin ${barcode} is retired`);
+      if (bin.warehouseId !== warehouseId) {
+        throw binConflict('RETURN_BIN_WAREHOUSE_MISMATCH', `Return bin ${barcode} belongs to another warehouse`);
+      }
+
+      const ref = { id: bin.id, barcode: bin.barcode };
+
+      return { ...ref, warehouseId: bin.warehouseId, items: await this.contentsOf(ref, trx) };
+    }, tx);
+  }
+
   /** 명령용 — 오타·엉뚱한 바코드를 거절한다(스펙 §12 `RETURN_BIN_UNKNOWN`). */
   async requireActive(barcodeInput: string, warehouseId: string, trx: DbTx): Promise<ReturnBinRef> {
     const barcode = barcodeInput.trim();
@@ -165,7 +192,7 @@ export class ReturnBinService {
    */
   async putaway(
     returnBinBarcode: string,
-    input: { warehouseId: string; barcode: string; locationCode: string; quantity: number },
+    input: { warehouseId: string; barcode: string; locationCode?: string; quantity: number },
     actor: { id: string },
     idempotencyKey: string,
     tx?: DbTx,
@@ -175,8 +202,10 @@ export class ReturnBinService {
       throw new BadRequestException('quantity must be a positive integer');
     }
     const barcode = input.barcode.trim();
-    const locationCode = input.locationCode.trim();
-    if (!barcode || !locationCode) throw new BadRequestException('barcode and locationCode are required');
+    const requestedLocationCode = input.locationCode?.trim() ?? null;
+
+    if (!barcode || requestedLocationCode === '')
+      throw new BadRequestException('barcode and locationCode are required');
     return this.commands.execute<ReturnBinPutawayResponseDto>(
       {
         commandType: 'return_bin.putaway',
@@ -185,7 +214,7 @@ export class ReturnBinService {
           returnBinBarcode: returnBinBarcode.trim(),
           warehouseId: input.warehouseId,
           barcode,
-          locationCode,
+          locationCode: requestedLocationCode,
           quantity: input.quantity,
           actorId: actor.id,
         },
@@ -226,10 +255,23 @@ export class ReturnBinService {
             message: `Return bin ${bin.barcode} holds no ${barcode}`,
           });
         }
+        const expected = new Map<string, number>();
+
+        for (const row of pending) {
+          expected.set(row.locationCode, (expected.get(row.locationCode) ?? 0) + row.qty);
+        }
+
+        if (requestedLocationCode === null && expected.size > 1) {
+          throw new ConflictException({
+            code: 'RETURN_LOCATION_REQUIRED',
+            message: `${barcode} in return bin ${bin.barcode} spans several locations; locationCode is required`,
+            errors: [...expected].map(([locationCode, qty]) => ({ locationCode, qty })),
+          });
+        }
+
+        const locationCode = requestedLocationCode ?? pending[0].locationCode;
         const atLocation = pending.filter((row) => row.locationCode === locationCode);
         if (!atLocation.length) {
-          const expected = new Map<string, number>();
-          for (const row of pending) expected.set(row.locationCode, (expected.get(row.locationCode) ?? 0) + row.qty);
           throw new ConflictException({
             code: 'RETURN_LOCATION_MISMATCH',
             message: `${barcode} in return bin ${bin.barcode} belongs to ${[...expected.keys()].join(', ')}`,

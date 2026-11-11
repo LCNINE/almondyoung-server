@@ -581,8 +581,6 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
           box={view.box}
           seq={view.seq}
           handleRef={work}
-          prefs={prefs}
-          warehouseId={warehouseId}
           alert={alert}
           recent={recent}
           onAlert={boxAlert(view.box)}

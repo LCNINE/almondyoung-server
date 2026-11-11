@@ -137,17 +137,16 @@ const MOVEMENT_WORKFLOW_MESSAGES: Record<string, string> = {
 
 /** 되돌림 바구니 — «뺄 상품»(출고)과 «되돌림 적치»·설정(returns) 화면이 같은 문구를 쓴다. */
 const RETURN_CONFLICT_MESSAGES: Record<string, string> = {
-  RETURN_BIN_UNKNOWN: '등록되지 않았거나 폐기된 되돌림 바구니예요. 설정에서 바구니를 확인해 주세요.',
+  RETURN_BIN_UNKNOWN: '되돌림 바구니를 사용할 수 없어요. 관리자에게 문의해 주세요.',
   RETURN_BIN_WAREHOUSE_MISMATCH: '다른 창고의 되돌림 바구니예요.',
   RETURN_BIN_ITEM_NOT_FOUND: '이 바구니에 없는 상품이에요.',
   RETURN_BIN_ITEM_SHORT: '바구니에 남은 수량보다 많아요.',
+  RETURN_LOCATION_REQUIRED: '원래 로케이션이 여러 곳이에요. 로케이션을 스캔해 주세요.',
   RETURN_LOCATION_MISMATCH: '원래 로케이션이 아니에요. 화면에 보이는 로케이션에 넣어 주세요.',
 };
 
 /** 되돌림 적치 전용 — 같은 코드의 출고 문구와 뜻이 달라 RETURN_CONFLICT_MESSAGES(출고와 공유)에 못 넣는다. */
 const RETURN_PUTAWAY_MESSAGES: Record<string, string> = {
-  // 작업자가 바구니를 «스캔했다» — 설정 화면을 열라는 안내는 여기선 맞지 않는다.
-  RETURN_BIN_UNKNOWN: '등록되지 않은 되돌림 바구니예요. 바구니 바코드를 확인해 주세요.',
   PICKING_SESSION_NOT_ACTIVE:
     '이 물건의 배치가 복구 중이에요. 복구가 끝날 때까지 바구니에 두고 관리자에게 문의해 주세요.',
   SIMPLE_OUTBOUND_BARCODE_UNKNOWN: '등록되지 않은 바코드예요. 상품을 확인해 주세요.',
