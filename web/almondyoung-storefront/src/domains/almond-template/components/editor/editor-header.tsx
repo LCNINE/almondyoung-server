@@ -94,7 +94,7 @@ export function EditorHeader({ editor }: { editor: AlmondEditor }) {
             click: pasteCopied,
           },
           {
-            label: "이동",
+            label: "화면 이동",
             icon: Hand,
             disabled: false,
             click: () => setMoveMode(!moveMode),
@@ -111,7 +111,7 @@ export function EditorHeader({ editor }: { editor: AlmondEditor }) {
             title={label}
             disabled={disabled}
             onClick={click}
-            className={`flex h-14 min-w-[55px] flex-col items-center justify-center gap-1 rounded text-[11px] hover:bg-slate-100 disabled:opacity-30 ${label === "이동" && moveMode ? "bg-slate-100 text-blue-600" : ""}`}
+            className={`flex h-14 min-w-[55px] flex-col items-center justify-center gap-1 rounded text-[11px] hover:bg-slate-100 disabled:opacity-30 ${label === "화면 이동" && moveMode ? "bg-slate-100 text-blue-600" : ""}`}
           >
             <Icon size={19} />
             {label}

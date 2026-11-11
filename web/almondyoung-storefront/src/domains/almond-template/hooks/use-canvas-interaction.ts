@@ -140,11 +140,15 @@ export function useCanvasInteraction({
     const up = (event: KeyboardEvent) => {
       if (event.code === "Space") setPanReady(false)
     }
+    // 스페이스를 누른 채 창을 벗어나면 keyup 이 오지 않아, 이후 모든 끌기가 화면 이동이 된다
+    const reset = () => setPanReady(false)
     window.addEventListener("keydown", down)
     window.addEventListener("keyup", up)
+    window.addEventListener("blur", reset)
     return () => {
       window.removeEventListener("keydown", down)
       window.removeEventListener("keyup", up)
+      window.removeEventListener("blur", reset)
     }
   }, [])
   useEffect(() => {
@@ -179,10 +183,12 @@ export function useCanvasInteraction({
     area.addEventListener("pointerdown", press, { capture: true })
     area.addEventListener("pointermove", move)
     area.addEventListener("pointerup", release)
+    area.addEventListener("pointercancel", release)
     return () => {
       area.removeEventListener("pointerdown", press, { capture: true })
       area.removeEventListener("pointermove", move)
       area.removeEventListener("pointerup", release)
+      area.removeEventListener("pointercancel", release)
     }
   }, [])
 
