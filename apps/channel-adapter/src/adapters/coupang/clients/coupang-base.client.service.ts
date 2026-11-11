@@ -137,6 +137,8 @@ export abstract class CoupangBaseClient {
 
     coupangRateLimiter.recordSuccess();
     this.logger.debug?.(`쿠팡 ${method} ${path} → ${status}`);
+    // 캐스팅 근거: 여기서는 응답을 런타임 검증하지 않는다 — T 는 부르는 쪽의 선언일 뿐이고, 필드에 따라 행동하는
+    // 쪽은 그 필드를 다시 검사한다(발주서·출고중지요청은 coupang-order-fields 의 zod 파서가 받는다).
     return parseCoupangJson(text) as T;
   }
 }
