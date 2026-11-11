@@ -16,7 +16,7 @@ const BOX3: FakeBox = {
 };
 
 function setupBatches(
-  opts: { boxes?: FakeBox[]; picking?: OutboundBatchSummary[]; created?: OutboundBatchSummary[]; legacy?: boolean } = {}
+  opts: { boxes?: FakeBox[]; picking?: OutboundBatchSummary[]; created?: OutboundBatchSummary[]; legacy?: boolean; fail?: boolean } = {}
 ) {
   const server = createOutboundServer({ boxes: opts.boxes ?? [BOX1, { ...BOX2, shipped: true }, BOX3] });
   server.config.batches.picking = opts.picking ?? [batchSummary({ id: 'b-1', batchNumber: 'B-1002' })];
@@ -24,6 +24,7 @@ function setupBatches(
     batchSummary({ id: 'b-3', batchNumber: 'B-1004', status: 'created', startedAt: null, totalItems: 1 }),
   ];
   server.config.legacyBatchStates = opts.legacy ?? false;
+  server.config.batchesFail = opts.fail ?? false;
   const runtime = createTestRuntime(server);
   const prefs = stationPrefs();
   const print = vi.fn<PrintRaw>(async () => {});
@@ -97,5 +98,40 @@ describe('F2 배치 현황(스펙 §8, 목업 ⑤)', () => {
   it('배치가 없으면 한 줄', async () => {
     setupBatches({ picking: [], created: [] });
     expect(await screen.findByText('진행 중인 배치가 없어요.')).toBeInTheDocument();
+  });
+
+  it('불러오는 동안은 빈 표가 아니라 불러오는 중이라고 보인다', async () => {
+    setupBatches();
+    expect(await screen.findByText('배치 목록을 불러오고 있어요.')).toBeInTheDocument();
+    await screen.findByRole('button', { name: 'B-1002' });
+    expect(screen.queryByText('배치 목록을 불러오고 있어요.')).toBeNull();
+  });
+
+  it('조회가 실패하면 빈 표 대신 실패를 알리고, 다시 확인하면 배치를 보인다', async () => {
+    const { server } = setupBatches({ fail: true });
+    expect(await screen.findByRole('alert')).toHaveTextContent('배치 목록을 불러오지 못했어요.');
+    expect(screen.queryByText('진행 중인 배치가 없어요.')).toBeNull();
+
+    const release = server.holdLists();
+    fireEvent.click(screen.getByRole('button', { name: '다시 확인' }));
+    expect(await screen.findByRole('button', { name: '확인하는 중…' })).toBeDisabled();
+    expect(screen.getByRole('alert')).toHaveTextContent('배치 목록을 불러오지 못했어요.');
+    expect(screen.queryByText('배치 목록을 불러오고 있어요.')).toBeNull();
+
+    server.config.batchesFail = false;
+    release();
+    expect(await screen.findByRole('button', { name: 'B-1002' })).toBeInTheDocument();
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('이미 읽은 배치는 갱신이 실패해도 남기고, 마지막으로 불러온 상태라고 알린다', async () => {
+    const { server, queryClient } = setupBatches();
+    await screen.findByRole('button', { name: 'B-1002' });
+
+    server.config.batchesFail = true;
+    await queryClient.refetchQueries({ queryKey: ['outbound-batches'] });
+    expect(await screen.findByRole('alert')).toHaveTextContent('마지막으로 불러온');
+    expect(screen.getByRole('button', { name: 'B-1002' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'B-1004' })).toBeInTheDocument();
   });
 });

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import type { ReactNode } from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import {
@@ -14,7 +14,7 @@ import {
 } from '@tanstack/react-router';
 import { SessionProvider } from '../../app/session-context';
 import { ApiClientProvider } from '../../core/data/ApiClientProvider';
-import type { ApiClient } from '../../core/data/httpClient';
+import { ApiError, type ApiClient } from '../../core/data/httpClient';
 import type { Session } from '../../core/auth/session';
 import { ScanProvider, useScanBus } from '../../core/hardware/scan/ScanProvider';
 import { InventoryLookupScreen } from './InventoryLookupScreen';
@@ -55,8 +55,10 @@ const session = {
   subscribe: () => () => {},
 } satisfies Session;
 
-function renderWith(client: ApiClient) {
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+function renderWith(
+  client: ApiClient,
+  qc = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+) {
   const rootRoute = createRootRoute({ component: Outlet });
   const index = createRoute({
     getParentRoute: () => rootRoute,
@@ -218,6 +220,87 @@ describe('InventoryLookupScreen', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(/서버/);
     expect(screen.queryByText('결과가 없어요.')).toBeNull();
   });
+
+  it('검색칸 바코드 조회가 실패하면 이름 검색으로 넘기지 않고 알린다 — 다시 확인하면 이어 간다', async () => {
+    let down = true;
+    const request = vi.fn(async (opts: { path: string }) => {
+      if (opts.path.startsWith('/inventory/skus?barcode=')) {
+        if (down) throw new ApiError(`GET ${opts.path} → 503`, 503);
+        return [{ id: 'sku-1', code: 'CT-001', name: '코튼셔츠', currentStock: 1, safetyStock: 0 }];
+      }
+      return { items: [], total: 0 };
+    });
+    const user = userEvent.setup();
+    renderWith({ request: request as ApiClient['request'] });
+    await user.type(await screen.findByPlaceholderText(/검색/), '8801234567890');
+    await user.click(screen.getByRole('button', { name: '검색' }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('검색하지 못했어요: 8801234567890');
+    expect(alert).toHaveTextContent(/서버/);
+    expect(request.mock.calls.some(([o]) => o.path.startsWith('/inventory/skus/search/advanced'))).toBe(false);
+    expect(screen.queryByText('결과가 없어요.')).toBeNull();
+
+    down = false;
+    await user.click(within(alert).getByRole('button', { name: '다시 확인' }));
+    expect(await screen.findByText('상세화면')).toBeInTheDocument();
+  });
+
+  it('이미 읽은 검색 결과는 갱신이 실패해도 남기고 실패를 알린다', async () => {
+    let down = false;
+    const request = vi.fn(async (opts: { path: string }) => {
+      if (opts.path.startsWith('/inventory/skus?barcode=')) return [];
+      if (down) throw new ApiError(`GET ${opts.path} → 503`, 503);
+      return {
+        items: [{ id: '1', code: 'SKU-8891', name: '코튼 티', optionKey: null, currentStock: 5, safetyStock: 1 }],
+        total: 1,
+      };
+    });
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const user = userEvent.setup();
+    renderWith({ request: request as ApiClient['request'] }, qc);
+    await user.type(await screen.findByPlaceholderText(/검색/), '코튼');
+    await user.click(screen.getByRole('button', { name: '검색' }));
+    await screen.findByText('코튼 티');
+
+    down = true;
+    await qc.refetchQueries({ queryKey: ['sku-search'] });
+    expect(await screen.findByRole('alert')).toHaveTextContent('마지막으로 불러온');
+    expect(screen.getByText('코튼 티')).toBeInTheDocument();
+  });
+
+  it('다음 페이지를 못 불러오면 다시 확인하는 동안에도 앞 페이지 행을 그 페이지처럼 보이지 않는다', async () => {
+    let hold: Promise<void> | null = null;
+    const request = vi.fn(async (opts: { path: string }) => {
+      if (opts.path.startsWith('/inventory/skus?barcode=')) return [];
+      if (opts.path.includes('offset=20')) {
+        if (hold) await hold;
+        throw new ApiError(`GET ${opts.path} → 503`, 503);
+      }
+      return {
+        items: [{ id: '1', code: 'SKU-8891', name: '코튼 티', optionKey: null, currentStock: 5, safetyStock: 1 }],
+        total: 40,
+      };
+    });
+    const user = userEvent.setup();
+    renderWith({ request: request as ApiClient['request'] });
+    await user.type(await screen.findByPlaceholderText(/검색/), '코튼');
+    await user.click(screen.getByRole('button', { name: '검색' }));
+    await screen.findByText('코튼 티');
+
+    await user.click(screen.getByRole('button', { name: '다음' }));
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('검색 결과를 불러오지 못했어요.');
+    expect(screen.queryByText('코튼 티')).toBeNull();
+
+    let release!: () => void;
+    hold = new Promise<void>((resolve) => (release = resolve));
+    await user.click(within(alert).getByRole('button', { name: '다시 확인' }));
+    expect(await screen.findByRole('button', { name: '확인하는 중…' })).toBeDisabled();
+    expect(screen.queryByText('코튼 티')).toBeNull();
+    expect(screen.getByRole('alert')).not.toHaveTextContent('마지막으로 불러온');
+    release();
+  });
 });
 
 describe('InventoryLookupScreen — 스캔 진입', () => {
@@ -299,6 +382,30 @@ describe('InventoryLookupScreen — 스캔 진입', () => {
     await userEvent.click(await screen.findByRole('button', { name: '스캔발사' }));
 
     expect(await screen.findByRole('status')).toHaveTextContent('등록되지 않은 바코드예요');
+  });
+
+  it('조회가 서버 오류로 실패하면 미등록 바코드로 안내하지 않는다 — 다시 확인하면 이어 간다', async () => {
+    let down = true;
+    const client: ApiClient = {
+      request: (async (opts: { path: string }) => {
+        if (opts.path.startsWith('/inventory/skus?barcode=')) {
+          if (down) throw new ApiError(`GET ${opts.path} → 503`, 503);
+          return [{ id: 'sku-1', code: 'CT-001', name: '코튼셔츠', currentStock: 1, safetyStock: 0 }];
+        }
+        return { items: [], total: 0 };
+      }) as unknown as ApiClient['request'],
+    };
+    renderWithScan(client);
+
+    await userEvent.click(await screen.findByRole('button', { name: '스캔발사' }));
+
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(`바코드를 확인하지 못했어요: ${HIT_BARCODE}`);
+    expect(screen.queryByText(/등록되지 않은 바코드/)).toBeNull();
+
+    down = false;
+    await userEvent.click(within(alert).getByRole('button', { name: '다시 확인' }));
+    expect(await screen.findByText('상세화면')).toBeInTheDocument();
   });
 
   it('스캔 결과가 여러 건이면 목록으로 보여준다', async () => {

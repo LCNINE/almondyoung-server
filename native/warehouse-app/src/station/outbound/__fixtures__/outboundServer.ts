@@ -60,6 +60,7 @@ export interface OutboundServerConfig {
   refills: unknown[];
   refillsFail: boolean;
   batches: { picking: OutboundBatchSummary[]; created: OutboundBatchSummary[] };
+  batchesFail: boolean;
   /** 배치 박스 목록에 작업 상태·송장번호·받는 분을 싣지 않는 옛 core */
   legacyBatchStates: boolean;
 }
@@ -95,6 +96,7 @@ export function createOutboundServer(init: { boxes: FakeBox[] }) {
     refills: [],
     refillsFail: false,
     batches: { picking: [], created: [] },
+    batchesFail: false,
     legacyBatchStates: false,
   };
   const requests: Req[] = [];
@@ -108,6 +110,7 @@ export function createOutboundServer(init: { boxes: FakeBox[] }) {
   const shortPickReplies = new Map<string, unknown>();
   let loseShortPick = false;
   let lookupGate: Promise<void> | null = null;
+  let listGate: Promise<void> | null = null;
   let shortPickGate: Promise<void> | null = null;
   const excludes: Array<{ batchId: string; shipmentId: string; reason: string }> = [];
   const confirmedPrints: string[] = [];
@@ -372,11 +375,15 @@ export function createOutboundServer(init: { boxes: FakeBox[] }) {
     const removal = /^\/shipments\/([^/]+)\/return-bin-removals$/.exec(path);
     if (removal) return reply(removeToBin(o, removal[1]));
     if (path === '/outbound-refills/pending') {
-      if (config.refillsFail) throw new ApiError(`GET ${o.path} → 404`, 404, 'NOT_FOUND');
+      if (listGate) await listGate;
+      if (config.refillsFail) throw new ApiError(`GET ${o.path} → 503`, 503);
       return reply(config.refills);
     }
-    if (path === '/outbound-batches/v2')
+    if (path === '/outbound-batches/v2') {
+      if (listGate) await listGate;
+      if (config.batchesFail) throw new ApiError(`GET ${o.path} → 503`, 503);
       return reply(params.get('status') === 'created' ? config.batches.created : config.batches.picking);
+    }
     const items = /^\/outbound-batches\/([^/]+)\/work-items$/.exec(path);
     if (items)
       return reply(
@@ -442,6 +449,17 @@ export function createOutboundServer(init: { boxes: FakeBox[] }) {
       lookupGate = new Promise<void>((resolve) => {
         release = () => {
           lookupGate = null;
+          resolve();
+        };
+      });
+      return release;
+    },
+    /** 배치 목록·보충 대기 응답을 붙잡는다 — 돌려받은 함수를 부르면 놓는다 */
+    holdLists(): () => void {
+      let release!: () => void;
+      listGate = new Promise<void>((resolve) => {
+        release = () => {
+          listGate = null;
           resolve();
         };
       });

@@ -8,7 +8,8 @@ import type {
 import { Link, useNavigate } from '@tanstack/react-router';
 import { Button } from '../../core/design/Button';
 import { DataTable } from '../../core/design/DataTable';
-import { errorMessage } from '../../core/data/errorMessage';
+import { loadFailed } from '../../core/data/loadFailed';
+import { LoadFailure } from '../../core/design/LoadFailure';
 import { useScanner } from '../../core/hardware/scan/useScanner';
 import { useSkuSearch } from './useSkuSearch';
 import { useSkuByBarcode } from './useSkuByBarcode';
@@ -34,6 +35,12 @@ export function InventoryLookupScreen() {
   const navigate = useNavigate();
   const [scanNotice, setScanNotice] = useState<string | null>(null);
   const [scanHits, setScanHits] = useState<SkuSearchItem[]>([]);
+  // 조회 실패는 0건과 다르다 — 미등록으로 안내하거나 이름 검색으로 넘기지 않고, 같은 조회를 다시 할 수 있게 둔다
+  const [lookupFailure, setLookupFailure] = useState<{
+    message: string;
+    error: unknown;
+    retry(): void;
+  } | null>(null);
   const byBarcode = useSkuByBarcode();
 
   // 각 화면은 자신이 기대하는 바코드 종류를 안다 — 여기선 상품 바코드다. 스캔은
@@ -45,11 +52,12 @@ export function InventoryLookupScreen() {
   const lookupSeq = useRef(0);
 
   // 한 건이면 상세로, 여러 건이면 고르게 한다. 0건이면 onMiss 가 정한다.
-  const lookupBarcode = (code: string, onMiss: () => void) => {
+  const lookupBarcode = (code: string, onMiss: () => void, failureMessage: string) => {
     const seq = ++lookupSeq.current;
     const latest = () => seq === lookupSeq.current;
     setScanNotice(null);
     setScanHits([]);
+    setLookupFailure(null);
     byBarcode.mutate(code, {
       onSuccess: (hits) => {
         if (!latest()) return;
@@ -61,15 +69,24 @@ export function InventoryLookupScreen() {
           setScanHits(hits);
         }
       },
-      onError: () => {
-        if (latest()) onMiss();
+      onError: (error) => {
+        if (!latest()) return;
+        setLookupFailure({
+          message: failureMessage,
+          error,
+          retry: () => lookupBarcode(code, onMiss, failureMessage),
+        });
       },
     });
   };
 
   useScanner((e) => {
     if (byBarcode.isPending) return; // 응답을 기다리는 동안 겹치는 스캔은 무시한다
-    lookupBarcode(e.code, () => setScanNotice(`등록되지 않은 바코드예요: ${e.code}`));
+    lookupBarcode(
+      e.code,
+      () => setScanNotice(`등록되지 않은 바코드예요: ${e.code}`),
+      `바코드를 확인하지 못했어요: ${e.code}.`
+    );
   });
 
   // 검색칸에 찍힌(친) 바코드는 스캔 버스로 오지 않는다 — 바코드로 먼저 찾고, 없으면 상품명·코드 검색
@@ -81,18 +98,23 @@ export function InventoryLookupScreen() {
     const code = value.trim();
     if (code === '') {
       lookupSeq.current += 1; // 진행 중인 조회는 버린다
+      setLookupFailure(null);
       searchByName();
-    } else lookupBarcode(code, searchByName);
+    } else lookupBarcode(code, searchByName, `검색하지 못했어요: ${code}.`);
   };
 
   const sort = sorting[0];
-  const { data, isLoading, isError, error } = useSkuSearch({
+  const results = useSkuSearch({
     search: query,
     limit: PAGE_SIZE,
     offset: pagination.pageIndex * PAGE_SIZE,
     sortBy: toServerSortBy(sort?.id),
     sortOrder: sort ? (sort.desc ? 'desc' : 'asc') : undefined,
   });
+
+  // 실패한 페이지를 다시 확인하는 동안 끼워 넣는 앞 페이지 결과는 이 페이지의 결과가 아니다
+  const searchFailed = loadFailed(results);
+  const shown = searchFailed && results.isPlaceholderData ? undefined : results.data;
 
   // 정렬이 바뀌면 첫 페이지로.
   const handleSortingChange: OnChangeFn<SortingState> = (updater) => {
@@ -186,22 +208,35 @@ export function InventoryLookupScreen() {
         </section>
       ) : null}
 
-      {isError && (
-        <p role="alert" className="text-sm text-red-600">
-          {errorMessage(error)}
-        </p>
+      {lookupFailure ? (
+        <LoadFailure
+          message={lookupFailure.message}
+          error={lookupFailure.error}
+          retrying={byBarcode.isPending}
+          onRetry={lookupFailure.retry}
+        />
+      ) : null}
+
+      {searchFailed && (
+        <LoadFailure
+          message="검색 결과를 불러오지 못했어요."
+          error={results.error}
+          stale={shown !== undefined}
+          retrying={results.isFetching}
+          onRetry={() => void results.refetch()}
+        />
       )}
 
-      {!isError && query.trim().length > 0 && (
+      {query.trim().length > 0 && (!searchFailed || shown) && (
         <DataTable<SkuSearchItem>
           columns={columns}
-          data={data?.items ?? []}
-          rowCount={data?.total ?? 0}
+          data={shown?.items ?? []}
+          rowCount={shown?.total ?? 0}
           sorting={sorting}
           onSortingChange={handleSortingChange}
           pagination={pagination}
           onPaginationChange={setPagination}
-          isLoading={isLoading}
+          isLoading={results.isLoading}
           emptyMessage="결과가 없어요."
           getRowId={(row) => row.id}
         />
