@@ -40,6 +40,14 @@ let mockShipmentReadAllowed = true;
 let mockConsolidationAllowed = true;
 let mockSummary: OutboundPreparationSummary;
 let mockError = false;
+let mockParams = new URLSearchParams();
+const mockReplace = jest.fn();
+
+jest.mock('next/navigation', () => ({
+  useRouter: () => ({ replace: mockReplace }),
+  usePathname: () => '/order/waybill-issue',
+  useSearchParams: () => mockParams,
+}));
 
 jest.mock('@/lib/services/orders', () => ({
   useLoadMoreOutboundPreparation: Object.assign(
@@ -72,16 +80,20 @@ jest.mock('@/lib/services/orders', () => ({
     .parseServerError,
 }));
 
+const mockWarehouses = [
+  {
+    id: 'w1',
+    name: '부천 물류창고',
+    supportedPickingStrategies: ['pick_to_tote', 'aggregate_then_sort'],
+  },
+];
+let mockWarehousesLoaded = true;
+
 jest.mock('@/lib/services/inventory/queries', () => ({
-  useWarehouses: () => ({
-    data: [
-      {
-        id: 'w1',
-        name: '부천 물류창고',
-        supportedPickingStrategies: ['pick_to_tote', 'aggregate_then_sort'],
-      },
-    ],
-  }),
+  useWarehouses: () =>
+    mockWarehousesLoaded
+      ? { data: mockWarehouses, isSuccess: true }
+      : { data: undefined, isSuccess: false },
 }));
 
 jest.mock('@/hooks/use-permission', () => ({
@@ -97,9 +109,16 @@ jest.mock('@/hooks/use-permission', () => ({
 }));
 
 jest.mock('@/features/order/fulfillments/detail/consolidation-sheet', () => ({
-  ConsolidationSheet: ({ shipmentId }: { shipmentId: string }) => (
+  ConsolidationSheet: ({
+    shipmentId,
+    onPrepare,
+  }: {
+    shipmentId: string;
+    onPrepare?: (id: string) => void;
+  }) => (
     <div role="dialog" aria-label="합포장">
       {shipmentId}
+      <button onClick={() => onPrepare?.('ready-2')}>이 상자 출고 준비</button>
     </div>
   ),
 }));
@@ -183,6 +202,8 @@ beforeEach(() => {
   mockShipmentReadAllowed = true;
   mockConsolidationAllowed = true;
   mockError = false;
+  mockParams = new URLSearchParams();
+  mockWarehousesLoaded = true;
   mockSummary = {
     warehouseId: 'w1',
     awaitingMatchingCount: 12,
@@ -684,9 +705,11 @@ describe('OutboundPreparationTemplate', () => {
     );
     await userEvent.click(screen.getAllByRole('button', { name: '합치기' })[1]);
 
-    expect(screen.getByRole('dialog', { name: '합포장' }).textContent).toBe(
-      'mergeable-2'
-    );
+    expect(
+      within(screen.getByRole('dialog', { name: '합포장' })).getByText(
+        'mergeable-2'
+      )
+    ).toBeTruthy();
   });
 
   it('정보 부족은 사유와 상자 상세 링크를 보여 준다', async () => {
@@ -1002,5 +1025,88 @@ describe('OutboundPreparationTemplate', () => {
     expect(mockSplit.mock.calls[1][0].idempotencyKey).not.toBe(
       mockSplit.mock.calls[0][0].idempotencyKey
     );
+  });
+});
+
+describe('합포장 결과에서 넘어온 상자', () => {
+  it('넘어온 상자 하나만 담은 확인 창을 열고 주소에서 상자를 지운다', async () => {
+    mockParams = new URLSearchParams({ warehouseId: 'w1', prepare: 'ready-5' });
+    render(<OutboundPreparationTemplate />);
+
+    expect(
+      await screen.findByText('완전출고 1건을 출고 준비할까요?')
+    ).toBeTruthy();
+    expect(mockReplace).toHaveBeenCalledWith(
+      '/order/waybill-issue?warehouseId=w1'
+    );
+
+    await userEvent.click(screen.getByRole('button', { name: '시작' }));
+
+    expect(mockRun.mock.calls[0][0].shipmentIds).toEqual(['ready-5']);
+  });
+
+  it('창고 목록보다 요약이 먼저 와도 창고를 읽은 뒤 확인 창을 연다', async () => {
+    mockWarehousesLoaded = false;
+    mockParams = new URLSearchParams({ warehouseId: 'w1', prepare: 'ready-5' });
+    const { rerender } = render(<OutboundPreparationTemplate />);
+
+    expect(screen.queryByText(/피킹 방식을 확인한 뒤/)).toBeNull();
+    expect(screen.queryByText(/출고 준비할까요/)).toBeNull();
+    // 처리하기 전에는 주소의 상자를 지우지 않는다(새로고침하면 다시 찾는다)
+    expect(mockReplace).not.toHaveBeenCalled();
+
+    mockWarehousesLoaded = true;
+    rerender(<OutboundPreparationTemplate />);
+
+    expect(
+      await screen.findByText('완전출고 1건을 출고 준비할까요?')
+    ).toBeTruthy();
+    expect(screen.queryByText(/피킹 방식을 확인한 뒤/)).toBeNull();
+  });
+
+  it('바로 준비할 수 없는 분류면 그 내역에서 상자만 골라 두고 이유를 알린다', async () => {
+    mockParams = new URLSearchParams({ prepare: 'partial-2' });
+    render(<OutboundPreparationTemplate />);
+
+    expect(
+      await screen.findByText(
+        '합친 상자는 «부분출고» 내역에 있어 바로 출고 준비할 수 없어요. 내역에서 이 상자만 골라 두었어요.'
+      )
+    ).toBeTruthy();
+    expect(screen.queryByText(/출고 준비할까요/)).toBeNull();
+    expect(
+      screen.getByLabelText('#AY-partial-2 선택').getAttribute('aria-checked')
+    ).toBe('true');
+    expect(checkedRows()).toHaveLength(1);
+  });
+
+  it('목록에 없는 상자면 찾지 못했다고 알리고 아무것도 열지 않는다', async () => {
+    mockParams = new URLSearchParams({ prepare: 'gone' });
+    render(<OutboundPreparationTemplate />);
+
+    expect(
+      await screen.findByText(/출고 준비 목록에서 합친 상자를 찾지 못했어요/)
+    ).toBeTruthy();
+    expect(screen.queryByText(/출고 준비할까요/)).toBeNull();
+  });
+
+  it('이 화면에서 합친 상자도 시트를 닫고 그 상자만 준비한다', async () => {
+    render(<OutboundPreparationTemplate />);
+    await userEvent.click(
+      row('합칠 주문 있음').getByRole('button', { name: '내역보기' })
+    );
+    await userEvent.click(screen.getAllByRole('button', { name: '합치기' })[0]);
+    await userEvent.click(
+      screen.getByRole('button', { name: '이 상자 출고 준비' })
+    );
+
+    expect(screen.queryByRole('dialog', { name: '합포장' })).toBeNull();
+    expect(
+      await screen.findByText('완전출고 1건을 출고 준비할까요?')
+    ).toBeTruthy();
+
+    await userEvent.click(screen.getByRole('button', { name: '시작' }));
+
+    expect(mockRun.mock.calls[0][0].shipmentIds).toEqual(['ready-2']);
   });
 });

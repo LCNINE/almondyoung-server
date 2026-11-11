@@ -46,8 +46,10 @@ jest.mock('@/hooks/use-permission', () => ({
   }),
 }));
 
+const mockSheet = jest.fn<null, [Record<string, unknown>]>(() => null);
+
 jest.mock('@/features/order/fulfillments/detail/consolidation-sheet', () => ({
-  ConsolidationSheet: () => null,
+  ConsolidationSheet: (props: Record<string, unknown>) => mockSheet(props),
 }));
 
 jest.mock('sonner', () => ({
@@ -211,5 +213,70 @@ describe('합칠 수 있는 주문 상품과 수량', () => {
         (source) => source.shipmentId
       )
     ).toEqual(['a1', 'a2']);
+  });
+});
+
+describe('합포장 결과에서 출고 준비로', () => {
+  it('합친 묶음마다 새 상자의 상품과 그 상자만 출고 준비하는 링크를 남긴다', async () => {
+    const user = userEvent.setup();
+
+    render(<ConsolidationTemplate />);
+
+    await user.click(screen.getByRole('checkbox', { name: '#A1, #A2 선택' }));
+    await user.click(screen.getByRole('button', { name: '선택 항목 합치기' }));
+    await user.click(screen.getByRole('button', { name: '1묶음 합치기' }));
+
+    const result = within(
+      await screen.findByRole('listitem', { name: '#A1, #A2 결과' })
+    );
+
+    expect(result.getByText('주문 #A1, #A2 → 새 상자 1개')).toBeTruthy();
+    expect(
+      result.getByRole('list', { name: '주문 #A1, #A2 새 상자 상품' })
+        .textContent
+    ).toBe('립밤 3개핸드크림 1개');
+    expect(
+      result
+        .getByRole('link', { name: '이 상자 출고 준비' })
+        .getAttribute('href')
+    ).toBe('/order/waybill-issue?warehouseId=wh-1&prepare=t-1');
+  });
+
+  it('실패한 묶음에는 이어 갈 링크를 두지 않는다', async () => {
+    mockMutateAsync.mockRejectedValueOnce(
+      Object.assign(new Error('reject'), {
+        response: { status: 409, data: {} },
+      })
+    );
+    const user = userEvent.setup();
+
+    render(<ConsolidationTemplate />);
+
+    await user.click(screen.getByRole('checkbox', { name: '#A1, #A2 선택' }));
+    await user.click(screen.getByRole('button', { name: '선택 항목 합치기' }));
+    await user.click(screen.getByRole('button', { name: '1묶음 합치기' }));
+
+    const result = within(
+      await screen.findByRole('listitem', { name: '#A1, #A2 결과' })
+    );
+
+    expect(result.getByText('실패')).toBeTruthy();
+    expect(result.queryByRole('link')).toBeNull();
+  });
+
+  it('줄의 합치기는 같은 묶음의 다른 주문을 미리 고른 시트를 연다', async () => {
+    const user = userEvent.setup();
+
+    render(<ConsolidationTemplate />);
+
+    await user.click(screen.getAllByRole('button', { name: '합치기' })[0]);
+
+    expect(mockSheet).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        shipmentId: 'a1',
+        preselect: ['a2'],
+        warehouseId: 'wh-1',
+      })
+    );
   });
 });

@@ -1,6 +1,6 @@
 'use client';
 
-import { useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Check, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
@@ -31,6 +31,11 @@ import type {
   ShipmentConsolidationResponse,
 } from '@/lib/types/dto/fulfillment';
 import { ConsolidationItemList, MergedItemsTable } from './consolidation-items';
+import {
+  ConsolidationOutcomeView,
+  progressHref,
+  type ConsolidationOutcome,
+} from './consolidation-result';
 import { buildConsolidationRequest, memoChoices } from './consolidation-model';
 import {
   boxNoText,
@@ -53,7 +58,7 @@ import {
   type PendingCommand,
 } from './consolidation-sheet-model';
 
-type Step = 1 | 2;
+type Step = 1 | 2 | 3;
 
 const UNWIND_STEPS: Array<{ title: string; hint: string; who: string }> = [
   {
@@ -212,16 +217,38 @@ function OptionCheckCard({
   );
 }
 
+// 요청 단추가 사라지므로 결과 제목으로 초점을 옮겨 결과를 바로 읽게 한다
+function ResultHeading({ text }: { text: string }) {
+  const ref = useRef<HTMLHeadingElement>(null);
+
+  useEffect(() => {
+    ref.current?.focus();
+  }, []);
+
+  return (
+    <h3 ref={ref} tabIndex={-1} className="text-lg font-semibold outline-none">
+      {text}
+    </h3>
+  );
+}
+
 export function ConsolidationSheet({
   shipmentId,
+  preselect = [],
+  warehouseId = null,
   open,
   onOpenChange,
   onRequested,
+  onPrepare,
 }: {
   shipmentId: string;
+  // 이미 묶인 후보에서 열면 같이 보낼 주문을 미리 골라 확인 단계부터 보여 준다
+  preselect?: string[];
+  warehouseId?: string | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onRequested?: (result: ShipmentConsolidationResponse) => void;
+  onPrepare?: (shipmentId: string) => void;
 }) {
   const router = useRouter();
   const { can, canRun } = usePermissionCheck();
@@ -234,11 +261,23 @@ export function ConsolidationSheet({
   const create = useCreateShipmentConsolidation();
   const exclude = useExcludeShipmentFromBatch();
   const [sending, setSending] = useState(false);
-  const [step, setStep] = useState<Step>(1);
-  const [picked, setPicked] = useState<string[]>([]);
+  // null 이면 아직 고르지 않았다 — 미리 고른 주문을 모두 고를 수 있을 때만 확인 단계부터 연다
+  const [chosenStep, setStep] = useState<Step | null>(
+    preselect.length > 0 ? null : 1
+  );
+  const [picked, setPicked] = useState<string[]>(preselect);
+  const [outcome, setOutcome] = useState<{
+    outcome: ConsolidationOutcome;
+    headline: string;
+  } | null>(null);
   const [memoChoice, setMemoChoice] = useState('');
   const [reason, setReason] = useState('');
-  const [lostCommand, setLostCommand] = useState<PendingCommand | null>(null);
+  // 응답을 못 받은 요청은 보낸 그대로 다시 보낸다. 결과도 그때 고른 상자로 보여 준다(목록은 그사이 바뀔 수 있다).
+  const [lost, setLost] = useState<{
+    command: PendingCommand;
+    shipments: ConsolidationOptionShipment[];
+  } | null>(null);
+  const lostCommand = lost?.command ?? null;
 
   const source = options.data?.source ?? null;
   const allOptions = options.data?.options ?? [];
@@ -266,6 +305,9 @@ export function ConsolidationSheet({
     memoFrom,
     reason,
   });
+  const step: Step =
+    chosenStep ??
+    (preselect.length > 0 && pickedOptions.length === preselect.length ? 2 : 1);
   const pickedNos = pickedOptions.map(boxNoText).join(', ');
   const merged = source ? mergedItems([source, ...pickedOptions]) : null;
   const needsUnwind =
@@ -276,6 +318,7 @@ export function ConsolidationSheet({
     setPicked([]);
     setMemoChoice('');
     setReason('');
+    setOutcome(null);
   };
 
   const changeOpen = (next: boolean) => {
@@ -286,61 +329,72 @@ export function ConsolidationSheet({
     onOpenChange(next);
   };
 
-  const send = async (command: PendingCommand) => {
+  const send = async (
+    command: PendingCommand,
+    requested: ConsolidationOptionShipment[]
+  ) => {
     setSending(true);
 
     try {
       const result = await create.mutateAsync(command);
 
-      setLostCommand(null);
+      setLost(null);
 
-      if (result.operationStatus === 'completed') {
-        toast.success(
-          mergedToastText(
-            (source ? [source, ...allOptions] : allOptions).filter((shipment) =>
-              result.sourceShipmentIds.includes(shipment.shipmentId)
-            )
-          )
-        );
-      } else {
-        if (canExclude) {
-          const sources = source ? [source, ...allOptions] : allOptions;
+      const merging = requested.filter((shipment) =>
+        result.sourceShipmentIds.includes(shipment.shipmentId)
+      );
+      const completed = result.operationStatus === 'completed';
 
-          for (const shipment of sources) {
-            if (
-              !result.sourceShipmentIds.includes(shipment.shipmentId) ||
-              !shipment.batchId
-            ) {
-              continue;
-            }
+      if (!completed && canExclude) {
+        for (const shipment of merging) {
+          if (!shipment.batchId) {
+            continue;
+          }
 
-            try {
-              await exclude.mutateAsync({
-                batchId: shipment.batchId,
-                shipmentId: shipment.shipmentId,
-                reason: '합포장',
-              });
-            } catch (error) {
-              toast.error(getServerDenyMessage(error));
-            }
+          try {
+            await exclude.mutateAsync({
+              batchId: shipment.batchId,
+              shipmentId: shipment.shipmentId,
+              reason: '합포장',
+            });
+          } catch (error) {
+            toast.error(getServerDenyMessage(error));
           }
         }
+      }
 
-        toast.success('합포장을 요청했어요.', {
+      const headline = completed
+        ? mergedToastText(merging)
+        : '합포장을 요청했어요.';
+
+      // 상자 화면에서는 합친 뒤 새 상자로 넘어가며 이 창이 닫힌다. 그때도 결과를 알 수 있게 알림을 남긴다
+      if (completed) {
+        toast.success(headline);
+      } else {
+        toast.success(headline, {
           action: {
             label: '진행 보기',
-            onClick: () =>
-              router.push(
-                `/order/fulfillments?${new URLSearchParams({ shipmentId })}`
-              ),
+            onClick: () => router.push(progressHref(shipmentId)),
           },
         });
       }
 
+      setOutcome({
+        headline,
+        outcome: {
+          orderNos: merging.map(boxNoText).join(', '),
+          items: mergedItems(merging),
+          targetShipmentId: completed ? result.targetShipmentId : null,
+          warehouseId: result.target?.warehouseId ?? warehouseId,
+          progressShipmentId: shipmentId,
+        },
+      });
+      setStep(3);
       onRequested?.(result);
-      changeOpen(false);
     } catch (error) {
-      setLostCommand(keptAfterFailure(command, error));
+      const kept = keptAfterFailure(command, error);
+
+      setLost(kept ? { command: kept, shipments: requested } : null);
 
       if (isStaleVersionConflict(error)) {
         toast.info('그사이 상자가 바뀌었어요. 다시 불러올게요');
@@ -369,16 +423,17 @@ export function ConsolidationSheet({
           memoFrom,
           reason: reason.trim(),
         })
-      )
+      ),
+      [source, ...pickedOptions]
     );
   };
 
   const retryLost = async () => {
-    if (!lostCommand) {
+    if (!lost) {
       return;
     }
 
-    await send(lostCommand);
+    await send(lost.command, lost.shipments);
   };
 
   const sourceNo = source ? orderNoText(source) : '';
@@ -397,6 +452,10 @@ export function ConsolidationSheet({
             <span>›</span>
             <span className={cn(step === 2 && 'font-semibold text-blue-700')}>
               2 확인하고 요청
+            </span>
+            <span>›</span>
+            <span className={cn(step === 3 && 'font-semibold text-blue-700')}>
+              3 결과
             </span>
           </SheetDescription>
         </SheetHeader>
@@ -422,13 +481,30 @@ export function ConsolidationSheet({
           </Alert>
         )}
 
-        {options.isLoading && (
+        {outcome && step === 3 ? (
+          <>
+            <div className="flex flex-1 flex-col gap-3 overflow-y-auto px-6 py-5">
+              <ResultHeading text={outcome.headline} />
+              <ConsolidationOutcomeView
+                outcome={outcome.outcome}
+                onPrepare={onPrepare}
+              />
+            </div>
+            <div className="flex justify-end border-t px-6 py-4">
+              <Button variant="outline" onClick={() => changeOpen(false)}>
+                닫기
+              </Button>
+            </div>
+          </>
+        ) : null}
+
+        {!outcome && options.isLoading && (
           <p className="flex-1 px-6 py-8 text-center text-sm text-muted-foreground">
             같은 고객의 주문을 불러오고 있어요.
           </p>
         )}
 
-        {options.isError && (
+        {!outcome && options.isError && (
           <p className="flex-1 px-6 py-8 text-center text-sm text-destructive">
             {getServerDenyMessage(
               options.error,

@@ -1,6 +1,7 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { toast } from 'sonner';
 import {
   AlertDialog,
@@ -43,8 +44,14 @@ import {
   PICKING_METHOD_LABELS,
   type PickingMethod,
 } from '@/lib/utils/picking-method';
-import { PREPARATION_BATCH_LIMIT, splitQuantities } from '../preparation-model';
-import { BucketTable } from '../components/bucket-table';
+import {
+  locatePreparationTarget,
+  PREPARATION_BATCH_LIMIT,
+  preparationAddress,
+  preparationTargetNotice,
+  splitQuantities,
+} from '../preparation-model';
+import { BUCKET_LABELS, BucketTable } from '../components/bucket-table';
 import { BucketList } from '../components/bucket-list';
 import { PrepareDialog } from '../components/prepare-dialog';
 import { SplitResultDialog } from '../components/split-result-dialog';
@@ -54,16 +61,48 @@ import {
 } from '@/lib/services/orders/outbound-preparation-runner';
 
 export default function OutboundPreparationTemplate() {
-  const { data: warehouses = [] } = useWarehouses();
-  const [pickedWarehouse, setPickedWarehouse] = useState('');
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const { data: warehouses = [], isSuccess: warehousesLoaded } =
+    useWarehouses();
+  // 합포장 결과의 «이 상자 출고 준비»는 ?warehouseId=&prepare=<상자> 로 들어온다
+  const [pickedWarehouse, setPickedWarehouse] = useState(
+    () => searchParams.get('warehouseId') ?? ''
+  );
+  const [target, setTarget] = useState(() => searchParams.get('prepare') ?? '');
   const warehouseId = pickedWarehouse || defaultWarehouseId(warehouses);
+
+  // 처리한 뒤에는 새로고침해도 같은 상자로 다시 열리지 않게 상자만 주소에서 지운다
+  const clearTarget = useCallback(
+    (nextWarehouseId?: string) => {
+      setTarget('');
+
+      const next = preparationAddress(
+        pathname,
+        searchParams.toString(),
+        nextWarehouseId
+      );
+
+      if (next) {
+        router.replace(next);
+      }
+    },
+    [pathname, router, searchParams]
+  );
 
   return (
     <PreparationWarehouse
       key={warehouseId}
       warehouseId={warehouseId}
       warehouses={warehouses}
-      onWarehouseChange={setPickedWarehouse}
+      warehousesLoaded={warehousesLoaded}
+      initialTarget={target}
+      onTargetHandled={clearTarget}
+      onWarehouseChange={(id) => {
+        clearTarget(id);
+        setPickedWarehouse(id);
+      }}
     />
   );
 }
@@ -71,10 +110,16 @@ export default function OutboundPreparationTemplate() {
 function PreparationWarehouse({
   warehouseId,
   warehouses,
+  warehousesLoaded,
+  initialTarget,
+  onTargetHandled,
   onWarehouseChange,
 }: {
   warehouseId: string;
   warehouses: NonNullable<ReturnType<typeof useWarehouses>['data']>;
+  warehousesLoaded: boolean;
+  initialTarget: string;
+  onTargetHandled: () => void;
   onWarehouseChange: (id: string) => void;
 }) {
   const shipmentRead = useCan(['fulfillment.shipment.read']);
@@ -94,6 +139,14 @@ function PreparationWarehouse({
     Partial<Record<PreparationBucket, string[]>>
   >({});
   const [sheetShipmentId, setSheetShipmentId] = useState('');
+  const [target, setTarget] = useState(initialTarget);
+  const [targetNotice, setTargetNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (initialTarget && !target) {
+      onTargetHandled();
+    }
+  }, [initialTarget, target, onTargetHandled]);
   const [preparation, setPreparation] = useState<{
     input: PreparationInput;
     shipments: PreparationShipmentDto[];
@@ -126,6 +179,50 @@ function PreparationWarehouse({
   const bucket = summary.data?.buckets.find(
     (entry) => entry.bucket === activeBucket
   );
+
+  // 넘어온 상자는 최신 요약에서 한 번만 찾는다. 바로 준비할 수 있으면 그 상자만 담은 확인 창을 연다.
+  // 피킹 방식은 창고 목록에서 정해지므로 목록이 온 뒤에 판정한다.
+  if (
+    target &&
+    warehousesLoaded &&
+    summary.data &&
+    !summary.isFetching &&
+    !busy
+  ) {
+    const found = locatePreparationTarget(summary.data, target);
+
+    setTarget('');
+    setTargetNotice(
+      preparationTargetNotice(
+        found,
+        found.kind === 'missing' ? '' : BUCKET_LABELS[found.bucket],
+        canPrepare
+      )
+    );
+
+    if (found.kind !== 'missing') {
+      setActiveBucket(found.bucket);
+      setSelections((previous) => ({
+        ...previous,
+        [found.bucket]: [found.shipment.shipmentId],
+      }));
+    }
+
+    if (found.kind === 'prepare' && canPrepare) {
+      setPreparation({
+        input: {
+          warehouseId,
+          shipmentIds: [found.shipment.shipmentId],
+          pickingMethod,
+          cartCapacity:
+            pickingMethod === 'multi_order' ? Number(cartCapacity) : undefined,
+          now: new Date(),
+        },
+        shipments: [found.shipment],
+        source: found.bucket,
+      });
+    }
+  }
 
   const selectedIds = (key: PreparationBucket) => {
     const shipments =
@@ -400,12 +497,23 @@ function PreparationWarehouse({
       ) : (
         summary.data && (
           <>
+            {targetNotice ? (
+              <p
+                role="status"
+                className="text-sm font-semibold text-foreground"
+              >
+                {targetNotice}
+              </p>
+            ) : null}
             <BucketTable
               summary={summary.data}
               busy={busy}
               canPrepare={canPrepare}
               selectedCount={(key) => selectedIds(key).length}
-              onView={setActiveBucket}
+              onView={(key) => {
+                setTargetNotice(null);
+                setActiveBucket(key);
+              }}
               onPrepare={prepare}
               onSplit={() => setConfirmingSplit(true)}
             />
@@ -476,6 +584,10 @@ function PreparationWarehouse({
           }}
           onRequested={() => {
             void summary.refetch();
+          }}
+          onPrepare={(shipmentId) => {
+            setSheetShipmentId('');
+            setTarget(shipmentId);
           }}
         />
       )}
