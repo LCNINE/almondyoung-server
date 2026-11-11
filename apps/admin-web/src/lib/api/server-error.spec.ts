@@ -73,4 +73,14 @@ describe('server error parser', () => {
     ).toBe(details);
     expect(parseServerError({ response: { status: 409, data: { code: 'X' } } }).details).toBeUndefined();
   });
+  it('translates a shipment already in recovery instead of the raw server text', () => {
+    const message = getServerDenyMessage({
+      statusCode: 409,
+      message: 'Shipment s-1 is already in recovery',
+      response: { success: false, code: 'SHIPMENT_RECOVERY_IN_PROGRESS', message: 'Shipment s-1 is already in recovery' },
+    });
+
+    expect(message).toContain('같은 상자의 다른 취소를 처리하고 있어요');
+    expect(message).not.toContain('Shipment s-1');
+  });
 });
