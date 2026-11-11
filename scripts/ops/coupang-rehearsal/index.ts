@@ -6,7 +6,7 @@ process.env.COUPANG_READ_ONLY = 'true';
 
 import { execFileSync } from 'child_process';
 import { mkdirSync, realpathSync, writeFileSync } from 'fs';
-import { dirname, join, relative, resolve, isAbsolute } from 'path';
+import { join, resolve } from 'path';
 import { HttpService } from '@nestjs/axios';
 import axios from 'axios';
 import { CoupangOrderClient } from '../../../apps/channel-adapter/src/adapters/coupang/clients/coupang-order.client.service';
@@ -16,6 +16,7 @@ import {
   CoupangOrderSheetReader,
   CoupangOrderSource,
 } from '../../../apps/channel-adapter/src/services/order-collection/coupang-order.source';
+import { isInsideRepo, realpathLoose } from './repo-guard';
 import { parseCoupangOrderSheet } from '../../../apps/channel-adapter/src/services/order-collection/coupang-order-fields';
 
 function argValue(name: string): string | undefined {
@@ -23,43 +24,46 @@ function argValue(name: string): string | undefined {
   return process.argv.find((arg) => arg.startsWith(prefix))?.slice(prefix.length);
 }
 
-/** 아직 없는 경로도 가장 가까운 존재하는 조상의 realpath 로 풀어 심볼릭 링크로 레포 안에 들어오는 것을 막는다. */
-function realpathLoose(path: string): string {
-  const absolute = resolve(path);
-  try {
-    return realpathSync(absolute);
-  } catch {
-    const parent = dirname(absolute);
-    if (parent === absolute) return absolute;
-    return join(realpathLoose(parent), absolute.slice(parent.length + 1));
-  }
-}
-
 function assertOutsideRepo(out: string): void {
-  const top = realpathSync(execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim());
-  const rel = relative(top, realpathLoose(out));
-  const inside = rel === '' || (!rel.startsWith('..') && !isAbsolute(rel));
-  if (inside) {
+  // 프로세스 cwd 가 아니라 이 스크립트가 있는 디렉터리의 레포를 기준으로 한다.
+  const top = realpathSync(
+    execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd: __dirname, encoding: 'utf8' }).trim(),
+  );
+  if (isInsideRepo(top, realpathLoose(out))) {
     console.error('--out 이 레포 안이다. 원 응답에는 실제 고객 정보가 들어 있어 레포 밖에만 쓴다.');
     process.exit(2);
   }
 }
 
-/** 클라이언트 앞에서 응답을 파일로 남기는 얇은 포트 구현. 상품준비중 처리는 막는다 — 리허설은 읽기만 한다. */
+/** 받은 응답을 바로 파일로 쓴다 — 도중에 throw 해도 그때까지 받은 것은 남는다. */
+class RawWriter {
+  private counter = 0;
+  constructor(private readonly rawDir: string) {}
+  write(name: string, value: unknown): void {
+    this.counter += 1;
+    const file = `${String(this.counter).padStart(3, '0')}-${name}.json`;
+    writeFileSync(join(this.rawDir, file), `${JSON.stringify(value, null, 2)}\n`);
+  }
+}
+
+/** 클라이언트 앞에서 응답을 남기는 얇은 포트 구현. 상품준비중 처리는 막는다 — 리허설은 읽기만 한다. */
 class RecordingOrderReader implements CoupangOrderSheetReader {
-  readonly singles: unknown[] = [];
   readonly scans: Record<string, readonly unknown[]> = {};
-  constructor(private readonly inner: CoupangOrderClient) {}
+  constructor(
+    private readonly inner: CoupangOrderClient,
+    private readonly raw: RawWriter,
+  ) {}
 
   async getAllOrderSheetsByStatus(from: string, to: string, status: string): Promise<readonly unknown[]> {
     const rows = await this.inner.getAllOrderSheetsByStatus(from, to, status);
     this.scans[status] = rows;
+    this.raw.write(`order-sheets-${status}`, rows);
     return rows;
   }
 
   async getSingleOrderSheetByOrderId(orderId: string): Promise<{ data?: readonly unknown[] | null }> {
     const response = await this.inner.getSingleOrderSheetByOrderId(orderId);
-    this.singles.push(response);
+    this.raw.write('order-sheet-single', response);
     return response;
   }
 
@@ -69,18 +73,16 @@ class RecordingOrderReader implements CoupangOrderSheetReader {
 }
 
 class RecordingReceiptReader implements CoupangCancelReceiptReader {
-  readonly pages: unknown[] = [];
-  constructor(private readonly inner: CoupangReturnClient) {}
+  constructor(
+    private readonly inner: CoupangReturnClient,
+    private readonly raw: RawWriter,
+  ) {}
 
   async getReturnRequests(params: Parameters<CoupangCancelReceiptReader['getReturnRequests']>[0]) {
     const response = await this.inner.getReturnRequests(params);
-    this.pages.push({ params, response });
+    this.raw.write('receipts', { params, response });
     return response;
   }
-}
-
-function writeRaw(rawDir: string, name: string, value: unknown): void {
-  writeFileSync(join(rawDir, `${name}.json`), `${JSON.stringify(value, null, 2)}\n`);
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -98,15 +100,12 @@ async function main(): Promise<void> {
   mkdirSync(rawDir, { recursive: true });
 
   const http = new HttpService(axios.create());
-  const orders = new RecordingOrderReader(new CoupangOrderClient(http));
-  const receipts = new RecordingReceiptReader(new CoupangReturnClient(http));
+  const raw = new RawWriter(rawDir);
+  const orders = new RecordingOrderReader(new CoupangOrderClient(http), raw);
+  const receipts = new RecordingReceiptReader(new CoupangReturnClient(http), raw);
   const source = new CoupangOrderSource(orders, receipts);
 
   const result = await source.fetchOrdersInWindow(null);
-
-  for (const [status, rows] of Object.entries(orders.scans)) writeRaw(rawDir, `order-sheets-${status}`, rows);
-  writeRaw(rawDir, 'order-sheets-single', orders.singles);
-  receipts.pages.forEach((page, index) => writeRaw(rawDir, `receipts-${index + 1}`, page));
 
   // 화면 보고. 주문번호는 사무실 화면에만 나온다.
   const accept = orders.scans.ACCEPT ?? [];

@@ -19,7 +19,7 @@
      npx tsx scripts/ops/coupang-rehearsal/index.ts --out=<레포 밖 디렉터리>
    ```
    화면에 결제완료(넘겨받을 주문 수·번호), 상품준비중이면서 송장 없는 상자, 해석 실패(칸 이름), 같은 옵션 두 줄 주문,
-   `CoupangOrderSource.fetchOrdersInWindow(null)` 결과 요약이 나온다. 원 응답은 `<out>/raw/*.json`.
+   `CoupangOrderSource.fetchOrdersInWindow(null)` 결과 요약이 나온다. 원 응답은 `<out>/raw/NNN-*.json` (받는 즉시 쓰므로 도중에 실패해도 그때까지 받은 것은 남는다).
    31일 조회 폭이 받아들여지는지도 여기서 본다.
 3. 가짜 값 자료를 만든다.
    ```bash
@@ -28,7 +28,7 @@
      --to=apps/channel-adapter/src/services/order-collection/__fixtures__/coupang
    ```
    이름·연락처·주소·이메일·배송 메모와 주문/상자/접수 번호(같은 자릿수 가짜 숫자, 같은 원값은 같은 가짜값)만 바뀌고,
-   상태·수량·금액·`vendorItemId` 는 그대로다. 만든 파일을 눈으로 훑어 실제 값이 남지 않았는지 확인한 뒤 커밋한다.
+   상태·수량·금액·`vendorItemId` 는 그대로다. 끝에 «바꾸지 않은 문자열 칸» 의 키 경로 목록이 나온다 — 이름·주소·연락처·메모처럼 보이는 칸이 있으면 `anonymize.ts` 에 규칙을 더해 다시 만든다. 만든 파일도 눈으로 훑어 실제 값이 남지 않았는지 확인한 뒤 커밋한다.
 4. **원본을 지운다.** `<out>` 디렉터리를 통째로 삭제한다.
 5. WING 에서 추가했던 IP 를 뺀다.
 

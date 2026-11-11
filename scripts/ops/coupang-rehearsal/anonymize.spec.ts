@@ -72,7 +72,6 @@ describe('anonymizeCoupangPayload', () => {
     const out = anonymizeCoupangPayload(sampleSheet(), new Map()) as ReturnType<typeof sampleSheet>;
     expect(out.status).toBe('ACCEPT');
     expect(out.orderedAt).toBe('2026-11-10T10:00:00');
-    expect(out.receiver.postCode).toBe('06000');
     expect(out.orderItems).toEqual(sampleSheet().orderItems);
   });
 
@@ -105,5 +104,92 @@ describe('anonymizeCoupangPayload', () => {
     expect(out.unknownKey.a.slice(0, 3)).toEqual([1, 'x', null]);
     expect(JSON.stringify(out)).not.toContain('이영희');
     expect(input.unknownKey.a[3]).toEqual({ receiver: { name: '이영희' } });
+  });
+
+  it('요청자·해외배송 칸까지 가리고 원래 값이 어디에도 남지 않는다', () => {
+    const receipt = {
+      code: 200,
+      data: [
+        {
+          receiptId: 11112222,
+          orderId: 33334444555566,
+          originalShipmentBoxId: 777788889999,
+          paymentId: 444455556666,
+          shipmentBoxIds: [777788889999, 100200300400],
+          receiptStatus: 'RU',
+          cancelReason: '고객이 아파서 환불 원함',
+          cancelReasonCategory1: '직접 입력한 사유',
+          deliveryInvoiceNo: '555566667777',
+          requesterName: '박요청',
+          requesterPhoneNumber: '010-4444-5555',
+          requesterRealPhoneNumber: '010-6666-7777',
+          requesterAddress: '부산광역시 해운대구 센텀로 99',
+          requesterAddressDetail: '센텀빌딩 1203호',
+          requesterZipCode: '48000',
+          overseaShippingInfoDto: {
+            ordererPhoneNumber: '010-8888-0000',
+            ordererSsn: '900101-1234567',
+            personalCustomsClearanceCode: 'P123456789012',
+          },
+          returnItems: [{ vendorItemId: 7000000001, vendorItemName: '비밀상품명', cancelCount: 2 }],
+        },
+      ],
+    };
+    const out = anonymizeCoupangPayload(receipt, new Map()) as typeof receipt;
+    const json = JSON.stringify(out);
+    for (const secret of [
+      '33334444555566',
+      '777788889999',
+      '100200300400',
+      '11112222',
+      '444455556666',
+      '아파서',
+      '직접 입력',
+      '555566667777',
+      '박요청',
+      '010-4444-5555',
+      '010-6666-7777',
+      '해운대',
+      '센텀',
+      '48000',
+      '010-8888-0000',
+      '900101-1234567',
+      'P123456789012',
+    ]) {
+      expect(json).not.toContain(secret);
+    }
+    expect(out.data[0].returnItems[0]).toEqual(receipt.data[0].returnItems[0]);
+    expect(out.data[0].receiptStatus).toBe('RU');
+  });
+
+  it('상품명 칸은 그대로 두고, shipmentBoxIds 배열은 shipmentBoxId 와 같은 가짜값으로 바뀐다', () => {
+    const out = anonymizeCoupangPayload(
+      {
+        shipmentBoxId: 777788889999,
+        shipmentBoxIds: [777788889999, 100200300400],
+        vendorItemName: '튼튼 컵',
+        productName: '튼튼 컵 세트',
+        sellerProductName: '컵',
+        vendorItemPackageName: '컵 패키지',
+      },
+      new Map(),
+    ) as Record<string, unknown>;
+    const ids = out.shipmentBoxIds as number[];
+    expect(ids[0]).toBe(out.shipmentBoxId);
+    expect(String(ids[1])).toMatch(/^\d{12}$/);
+    expect(out.vendorItemName).toBe('튼튼 컵');
+    expect(out.productName).toBe('튼튼 컵 세트');
+    expect(out.sellerProductName).toBe('컵');
+    expect(out.vendorItemPackageName).toBe('컵 패키지');
+  });
+
+  it('바꾸지 않은 문자열 칸을 키 경로로 모은다', () => {
+    const unchanged = new Set<string>();
+    anonymizeCoupangPayload(
+      { status: 'ACCEPT', receiver: { name: '가나다' }, items: [{ vendorItemName: 'x' }] },
+      new Map(),
+      unchanged,
+    );
+    expect([...unchanged].sort()).toEqual(['items[].vendorItemName', 'status']);
   });
 });
