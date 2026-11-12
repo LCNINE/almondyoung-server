@@ -168,6 +168,7 @@ export class SalesOrdersController {
     }
     return this.storeSalesOrders.adminCancelRequest(id, {
       reasonCode: dto.reasonCode,
+      ...(dto.requestChannel ? { requestChannel: dto.requestChannel } : {}),
       reasonDetail: dto.reasonDetail,
       lines: dto.lines,
       alreadyRefundedAmount: dto.alreadyRefundedAmount,

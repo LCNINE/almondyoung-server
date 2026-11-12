@@ -67,6 +67,8 @@ export const REQUEST_CHANNELS: ReadonlyArray<{ code: RequestChannel; label: stri
 export const REQUEST_CHANNEL_CODES: readonly RequestChannel[] = REQUEST_CHANNELS.map((c) => c.code);
 
 const CANCEL_CUSTOMER_REQUEST = 'CUSTOMER_REQUEST';
+/** `shipment_operations.reason_code` 칸 길이 */
+const OPERATION_REASON_CODE_MAX = 64;
 
 /** 주문 취소 창의 사유 코드와 자동 취소 경로가 쓰는 코드. */
 const CANCEL_CODES: ReadonlySet<string> = new Set([
@@ -121,8 +123,15 @@ export function resolveOperationReason(
   if (reasonCode === undefined) return { reason, reasonCode: null, requestChannel: null };
 
   if (type === 'cancel') {
-    const requestChannel = isCustomerRequestReason(type, reasonCode) ? requireChannel(input.requestChannel) : null;
-    return { reason, reasonCode, requestChannel };
+    // 고객·쇼핑몰 수집·옛 화면의 취소는 경로 없이 온다 — 경로는 받되 요구하지 않는다
+    const channel = parseRequestChannel(input.requestChannel);
+    // 작업 기록 칸보다 긴 주문 취소 코드는 코드 없이 남긴다 — 사유 글은 지금처럼 남는다
+    const storedCode = reasonCode.length <= OPERATION_REASON_CODE_MAX ? reasonCode : null;
+    return {
+      reason,
+      reasonCode: storedCode,
+      requestChannel: isCustomerRequestReason(type, reasonCode) ? channel : null,
+    };
   }
 
   if (!isReasonedType(type)) throw new BadRequestError(`Reason code is not accepted for ${type}`);

@@ -194,6 +194,7 @@ export class OrderCancellation {
           so.id,
           {
             reasonCode: intent.reasonCode,
+            ...(isOperatorRequest(intent) && intent.requestChannel ? { requestChannel: intent.requestChannel } : {}),
             reasonDetail: intent.reasonDetail,
             ...(lines ? { lines } : {}),
             cancelledBy: actor.cancelledBy,
@@ -552,6 +553,7 @@ export class OrderCancellation {
         requester: intent.requester,
         sourceKey,
         reasonCode: intent.reasonCode,
+        ...(intent.requestChannel ? { requestChannel: intent.requestChannel } : {}),
         reasonDetail: intent.reasonDetail,
         ...(intent.alreadyRefundedAmount !== undefined ? { alreadyRefundedAmount: intent.alreadyRefundedAmount } : {}),
       }),

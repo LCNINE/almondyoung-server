@@ -4,6 +4,7 @@ import { makeDb } from '../../fulfillment/services/__support__';
 import * as f from '../../fulfillment/order-progress/__support__/order-progress.fixtures';
 import { wireCancelRequest } from './__support__/cancel-request.fixtures';
 
+const OPERATOR = { kind: 'operator' as const, actorId: '7d0a3c6e-0000-4000-8000-0000000000a2' };
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
 class Rollback extends Error {}
@@ -91,7 +92,7 @@ describeIfDb('요청 vs 관문 — 같은 박스 행 잠금으로 직렬화 (DB 
         .transaction(async (raw) => {
           const tx = raw as unknown as DbTx;
           await wireCancelRequest(tx).manager.request(
-            { salesOrderId: seeded.salesOrderId, requester: { kind: 'operator', actorId: 'a' }, sourceKey: 'k' },
+            { salesOrderId: seeded.salesOrderId, requester: OPERATOR, sourceKey: 'k' },
             tx,
           );
           entered();
@@ -141,7 +142,7 @@ describeIfDb('요청 vs 관문 — 같은 박스 행 잠금으로 직렬화 (DB 
         .transaction(async (raw) => {
           const tx = raw as unknown as DbTx;
           await wireCancelRequest(tx).manager.request(
-            { salesOrderId: seeded.salesOrderId, requester: { kind: 'operator', actorId: 'a' }, sourceKey: 'k' },
+            { salesOrderId: seeded.salesOrderId, requester: OPERATOR, sourceKey: 'k' },
             tx,
           );
           throw new Rollback();

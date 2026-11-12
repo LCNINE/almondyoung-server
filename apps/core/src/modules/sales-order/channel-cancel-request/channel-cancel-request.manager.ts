@@ -17,6 +17,7 @@ import {
   SETTLE_DELAYED_AFTER_MS,
 } from '../../fulfillment/order-progress/order-progress.thresholds';
 import { SalesOrdersService } from '../services/sales-orders.service';
+import type { RequestChannel } from '../../fulfillment/shipment/shipment-operation-reasons';
 import { cancellationCapabilityOf, sellerCenterMessage } from '../order-cancellation/channel-cancellation-capability';
 import { ChannelCancelRequestReader } from './channel-cancel-request.reader';
 import {
@@ -41,6 +42,8 @@ export interface CancelRequestInput {
   /** 운영자·고객은 Idempotency-Key, wallet 승인은 `wallet-refund-approval:<intentId>`, 마켓 고객 요청은 `channel-request:<요청 키>` */
   sourceKey: string;
   reasonCode?: string;
+  /** 운영자 요청만. 고객 요청 취소를 받은 경로 */
+  requestChannel?: RequestChannel;
   reasonDetail?: string;
   /** 부분취소만. 이번 취소 품목에 이미 다른 경로로 돌려준 금액(원) — 채널이 상계한다(#1016 37번) */
   alreadyRefundedAmount?: number;
@@ -186,6 +189,13 @@ export class ChannelCancelRequestManager {
           cancelledBy: cancelledByOf(input.requester, so.salesChannel),
           reasonCode: input.reasonCode ?? CHANNEL_CANCEL_REQUEST_REASON,
           ...(input.reasonDetail ? { reasonDetail: input.reasonDetail } : {}),
+          ...(input.requester.kind === 'operator' && input.requestChannel
+            ? { requestChannel: input.requestChannel }
+            : {}),
+          // 상자 취소 작업의 처리자만 관리자로 남긴다 — 출고 명령의 권한 판정은 지금처럼 시스템 행위자다
+          ...(input.requester.kind === 'operator' && input.requester.actorId
+            ? { operatorActorId: input.requester.actorId }
+            : {}),
           occurredAt: at,
           metadata: { sourceEventId: `cancel-request:${id}` },
         },

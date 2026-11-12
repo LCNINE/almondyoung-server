@@ -628,13 +628,16 @@ export class ShipmentPlanningService {
     shipmentId: string,
     dto: CancelShipmentOutstandingDto,
     idempotencyKey: string,
-    actor: ShipmentPlanningActor,
+    // recordedOperatorId — 작업 기록의 처리자만 바꾼다. 권한 판정·요청 해시는 actor 그대로다
+    actor: ShipmentPlanningActor & { recordedOperatorId?: string },
     // 요청 해시에 넣지 않는다 — 매번 새 uuid 라 같은 키 재전송이 불일치로 바뀐다(K3 PR6 N2)
     origin: SalesOrderCancellationOrigin | null,
     tx?: DbTx,
   ) {
     this.workflowGate.assertV2MutationAllowed('shipment.cancel_outstanding');
     this.assertReason(dto.reason);
+    const resolvedReason = resolveOperationReason('cancel', dto);
+    const recordedActor = actor.recordedOperatorId ? { ...actor, id: actor.recordedOperatorId } : actor;
     const requestedLines = [...dto.lines].sort((a, b) => a.shipmentLineId.localeCompare(b.shipmentLineId));
     this.assertNoDuplicateIds(
       requestedLines.map((line) => line.shipmentLineId),
@@ -765,8 +768,8 @@ export class ShipmentPlanningService {
         const operation = await this.createOperation(
           tx,
           'cancel',
-          actor,
-          { reason: dto.reason, reasonCode: null, requestChannel: null },
+          recordedActor,
+          resolvedReason,
           dto.csCaseId,
           dto.note,
           idempotencyKey,

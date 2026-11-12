@@ -74,6 +74,28 @@ describe('resolveOperationReason', () => {
     ).toMatchObject({ requestChannel: 'phone' });
   });
 
+  it('주문 취소의 고객 요청은 경로 없이도 받고, 고객 요청이 아니면 경로를 버린다', () => {
+    expect(resolveOperationReason('cancel', { reason: 'x', reasonCode: 'CUSTOMER_REQUEST' })).toMatchObject({
+      reasonCode: 'CUSTOMER_REQUEST',
+      requestChannel: null,
+    });
+    expect(
+      resolveOperationReason('cancel', { reason: 'x', reasonCode: 'OUT_OF_STOCK', requestChannel: 'phone' }),
+    ).toMatchObject({ requestChannel: null });
+    expect(() =>
+      resolveOperationReason('cancel', { reason: 'x', reasonCode: 'CUSTOMER_REQUEST', requestChannel: 'fax' }),
+    ).toThrow(BadRequestError);
+  });
+
+  it('작업 기록 칸보다 긴 주문 취소 코드는 코드 없이 사유 글만 남긴다', () => {
+    const longCode = 'X'.repeat(70);
+    expect(resolveOperationReason('cancel', { reason: longCode, reasonCode: longCode })).toEqual({
+      reason: longCode,
+      reasonCode: null,
+      requestChannel: null,
+    });
+  });
+
   it('되돌리기·결품은 reason 에 코드 문자열을 유지한다', () => {
     expect(resolveOperationReason('recall', { reason: 'x', reasonCode: 'dispatch_mistake' })).toEqual({
       reason: 'dispatch_mistake',
