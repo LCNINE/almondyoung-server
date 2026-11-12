@@ -3,7 +3,7 @@ import { fetch as tauriFetch } from '@tauri-apps/plugin-http';
 import { onOpenUrl } from '@tauri-apps/plugin-deep-link';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { generatePkce, randomUrlSafe } from './pkce';
-import { discover, buildAuthorizeUrl, parseCallback } from './oidc';
+import { discover, buildAuthorizeUrl, buildEndSessionUrl, parseCallback } from './oidc';
 import { oidcConfig } from '../../app/config';
 import type { TokenSet } from './tokenStore';
 import type { createTokenManager } from './tokenManager';
@@ -12,6 +12,10 @@ async function getJson(url: string): Promise<unknown> {
   const res = await tauriFetch(url);
   if (!res.ok) throw new Error(`GET ${url} → ${res.status}`);
   return res.json();
+}
+
+export async function endBrowserSession(idToken?: string): Promise<void> {
+  await openUrl(buildEndSessionUrl(oidcConfig, idToken));
 }
 
 export async function discoverEndpoints() {

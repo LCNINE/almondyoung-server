@@ -39,6 +39,17 @@ export function buildAuthorizeUrl(
   return url.toString();
 }
 
+export function buildEndSessionUrl(
+  cfg: Pick<OidcConfig, 'authorizationEndpoint' | 'clientId'>,
+  idToken?: string
+): string {
+  const url = new URL('/oauth/end_session', cfg.authorizationEndpoint);
+  url.searchParams.set('client_id', cfg.clientId);
+  if (idToken) url.searchParams.set('id_token_hint', idToken);
+
+  return url.toString();
+}
+
 export function parseCallback(url: string): { code: string; state: string } {
   const u = new URL(url);
   const error = u.searchParams.get('error');

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildAuthorizeUrl, parseCallback, discover } from './oidc';
+import { buildAuthorizeUrl, buildEndSessionUrl, parseCallback, discover } from './oidc';
 
 const cfg = {
   issuer: 'https://auth.example.com',
@@ -55,5 +55,28 @@ describe('discover', () => {
       return endpoints;
     };
     expect(await discover(cfg.issuer, getJson)).toEqual(endpoints);
+  });
+});
+
+describe('buildEndSessionUrl', () => {
+  it('points at end_session on the authorize origin with client and id token hint', () => {
+    const url = new URL(
+      buildEndSessionUrl(
+        { authorizationEndpoint: 'https://auth.example.com/oauth/authorize', clientId: 'warehouse-app' },
+        'ID'
+      )
+    );
+
+    expect(url.origin + url.pathname).toBe('https://auth.example.com/oauth/end_session');
+    expect(url.searchParams.get('client_id')).toBe('warehouse-app');
+    expect(url.searchParams.get('id_token_hint')).toBe('ID');
+  });
+
+  it('omits the hint when there is no id token', () => {
+    const url = new URL(
+      buildEndSessionUrl({ authorizationEndpoint: 'https://auth.example.com/oauth/authorize', clientId: 'warehouse-app' })
+    );
+
+    expect(url.searchParams.has('id_token_hint')).toBe(false);
   });
 });

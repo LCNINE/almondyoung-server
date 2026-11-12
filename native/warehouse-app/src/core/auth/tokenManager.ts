@@ -31,6 +31,7 @@ export function createTokenManager(deps: {
 
   return {
     getAccessToken,
+    getIdToken: async () => (await deps.store.load())?.idToken,
     set: (t: TokenSet) => deps.store.save(t),
     clear: () => deps.store.clear(),
   };

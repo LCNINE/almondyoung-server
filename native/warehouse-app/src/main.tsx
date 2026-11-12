@@ -15,6 +15,7 @@ import { createTokenManager } from './core/auth/tokenManager';
 import { createStrongholdTokenStore } from './core/auth/tokenStore';
 import {
   loginWithLoopback,
+  endBrowserSession,
   refreshTokens,
   discoverEndpoints,
 } from './core/auth/login';
@@ -32,6 +33,7 @@ const manager = createTokenManager({
 const session = createSession({
   manager,
   runLogin: (m, onStep) => loginWithLoopback({ manager: m, onStep }),
+  endBrowserSession,
 });
 const router = createAppRouter(session);
 
