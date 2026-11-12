@@ -5,7 +5,14 @@ import { errorMessage } from '../data/errorMessage';
 import { useWorkRuntime } from './OperationContext';
 import { unsentCount } from '../../station/status/statusBarItems';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import type { Session } from '../auth/session';
@@ -138,6 +145,36 @@ it('unlocks work after an initially signed-out session logs in successfully', as
       '작업 저장소나 서버 연결을 확인하지 못했어요. 연결을 확인해 주세요.'
     )
   ).toBeNull();
+});
+
+it('tells a signed-in account without warehouse permission to switch accounts instead of checking the connection', async () => {
+  authed = true;
+  fetchHandler = async () =>
+    Response.json({ code: 'FORBIDDEN' }, { status: 403 });
+  const signOut = vi.fn(async () => {});
+  session.signOut = signOut;
+  renderBoundary(
+    <WorkArea kind="outbound">
+      <button>출고 실행</button>
+    </WorkArea>
+  );
+
+  expect(
+    await screen.findByText(
+      '이 계정은 물류앱을 쓸 권한이 없어요. 관리자에게 요청하거나 다른 계정으로 로그인해 주세요.'
+    )
+  ).toBeInTheDocument();
+  expect(
+    screen.queryByText(
+      '작업 저장소나 서버 연결을 확인하지 못했어요. 연결을 확인해 주세요.'
+    )
+  ).toBeNull();
+  expect(screen.queryByRole('button', { name: '처리 내역 확인' })).toBeNull();
+
+  fireEvent.click(screen.getByRole('button', { name: '다른 계정으로 로그인' }));
+
+  expect(signOut).toHaveBeenCalledOnce();
+  delete session.signOut;
 });
 
 it('recovers from a transient IndexedDB open failure after scope succeeds', async () => {

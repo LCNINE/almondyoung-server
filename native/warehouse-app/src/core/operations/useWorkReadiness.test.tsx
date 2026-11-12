@@ -9,6 +9,7 @@ import { StrictMode, Suspense, startTransition, useState } from 'react';
 import { expect, it, vi } from 'vitest';
 import { createTestWorkRuntime } from '../../domains/inbound/__fixtures__/workRuntime';
 import { useWorkReadiness } from './useWorkReadiness';
+import { ApiError } from '../data/httpClient';
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -54,6 +55,7 @@ it('scope 확인 실패를 scope 단계 실패로 표시한다', async () => {
       status: 'failed',
       step: 'scope',
       message: 'scope unavailable',
+      denied: false,
     })
   );
   expect(restore).not.toHaveBeenCalled();
@@ -72,6 +74,7 @@ it('복구 실패를 restore 단계 실패로 표시한다', async () => {
       status: 'failed',
       step: 'restore',
       message: 'store unavailable',
+      denied: false,
     })
   );
 });
@@ -90,6 +93,7 @@ it('재확인 중 pending 재시도 실패를 retry 단계 실패로 표시한�
     status: 'failed',
     step: 'retry',
     message: 'retry unavailable',
+    denied: false,
   });
   expect(retry).toHaveBeenCalledTimes(1);
 });
@@ -146,6 +150,7 @@ it('최종 scope가 바뀌면 scope 단계 실패로 남긴다', async () => {
       status: 'failed',
       step: 'scope',
       message: '로그인을 다시 확인해 주세요.',
+      denied: false,
     })
   );
 });
@@ -321,4 +326,20 @@ it('중단된 runtime render는 committed owner의 진행 중 검사를 취소�
   );
   expect(restoreA).toHaveBeenCalledTimes(1);
   expect(scopeB).not.toHaveBeenCalled();
+});
+
+it('403 으로 막힌 scope 확인은 권한 거절로 표시한다', async () => {
+  const runtime = createTestWorkRuntime({ request: vi.fn() });
+  vi.spyOn(runtime, 'getScope').mockRejectedValueOnce(
+    new ApiError('GET /inventory/work-context → 403', 403, 'FORBIDDEN')
+  );
+
+  const { result } = renderHook(() => useWorkReadiness(runtime, true));
+
+  await waitFor(() =>
+    expect(result.current.state).toMatchObject({
+      status: 'failed',
+      denied: true,
+    })
+  );
 });

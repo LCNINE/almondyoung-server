@@ -55,6 +55,8 @@ describe('warehouse v2 HTTP authorization and DTO contract', () => {
             'fulfillment.dispatch.force',
           ],
           custom_force: ['inventory.stock.read', 'inventory.stock.operate', 'fulfillment.dispatch.force'],
+          outbound_only: ['fulfillment.warehouse.operate'],
+          no_warehouse: ['catalog.product.read'],
           mapped_master: FIRST_GRANT_ROLE_PERMISSIONS.master,
         }),
         { provide: LocationOutboundService, useValue: { force: mutation } },
@@ -139,6 +141,16 @@ describe('warehouse v2 HTTP authorization and DTO contract', () => {
       .send({ warehouseId: '00000000-0000-4000-8000-000000000003', reason: 'checked', items: [] })
       .expect(201);
     expect(mutation).toHaveBeenCalledTimes(1);
+  });
+  it('opens work context to an outbound-only worker and refuses an account with no warehouse work', async () => {
+    await request(app.getHttpServer() as Server)
+      .get('/inventory/work-context')
+      .set('x-test-role', 'outbound_only')
+      .expect(200);
+    await request(app.getHttpServer() as Server)
+      .get('/inventory/work-context')
+      .set('x-test-role', 'no_warehouse')
+      .expect(403);
   });
   it('fails closed for anonymous work context and ordinary worker diagnostics', async () => {
     await request(app.getHttpServer() as Server)
