@@ -364,6 +364,8 @@ export interface CancelSalesOrderDto {
   reasonCode?: string;
   reasonDetail?: string;
   cancelledBy?: string;
+  /** 고객 요청 취소일 때 고객이 요청한 경로 */
+  requestChannel?: string;
   alreadyRefundedAmount?: number;
 }
 
