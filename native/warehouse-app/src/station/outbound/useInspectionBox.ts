@@ -31,6 +31,8 @@ export interface InspectionBoxEvents {
   onShipped(): void;
   /** 서버가 거절했거나 결과를 모른다 — 화면이 오류로 알린다 */
   onRejected(message: string, barcode: string | null): void;
+  /** 그 사이 박스가 배치에서 빠져 서버가 상품을 받지 않았다 — 화면이 뺄 상품으로 넘어간다 */
+  onWithdrawn(barcode: string): void;
   /** 출고 뒤에 줄 서 있던 스캔 — 보내지 않았다 */
   onExcess(): void;
 }
@@ -74,7 +76,9 @@ export function useInspectionBox(box: ShipmentByWaybill, events: InspectionBoxEv
       if (!apply(state)) eventsRef.current.onAccepted(line, input.quantity);
     } catch (error) {
       const rejected = error instanceof ApiError && error.outcome === 'rejected';
-      eventsRef.current.onRejected(rejected ? errorMessage(error, 'outbound') : UNCERTAIN_SCAN_MESSAGE, input.barcode);
+
+      if (rejected && error.code === 'SHIPMENT_WITHDRAWN') eventsRef.current.onWithdrawn(input.barcode);
+      else eventsRef.current.onRejected(rejected ? errorMessage(error, 'outbound') : UNCERTAIN_SCAN_MESSAGE, input.barcode);
       // 확정된 거절만 큐에서 뺀다 — 결과를 모르는 스캔은 머리에 남겨 같은 키로 다시 맞춘다
       if (!rejected) throw error;
     }

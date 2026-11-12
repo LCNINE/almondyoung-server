@@ -219,7 +219,10 @@ export function createOutboundServer(init: { boxes: FakeBox[] }) {
     const key = o.idempotencyKey ?? '';
     const body = o.body as { barcode: string; quantity: number };
     scanCalls.push(key);
+    // 빼기보다 먼저 도착한 스캔은 받는다 — 판정은 도착 순간의 상태로
+    const leaving = byId(shipmentId).labelState === 'withdrawing';
     if (sendGate) await sendGate;
+    if (leaving && !applied.has(key)) throw new ConflictError('leaving its batch', 'SHIPMENT_WITHDRAWN');
     if (!applied.has(key)) {
       const box = byId(shipmentId);
       const line = box.lines.find((l) => l.barcode === body.barcode);

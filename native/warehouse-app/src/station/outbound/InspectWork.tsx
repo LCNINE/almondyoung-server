@@ -57,6 +57,7 @@ export function InspectWork({
   onScanned,
   onShipped,
   onExcess,
+  onWithdrawn,
   onPutDown,
   onReopen,
   onReprint,
@@ -77,6 +78,7 @@ export function InspectWork({
   onScanned(name: string, quantity: number): void;
   onShipped(box: ShipmentByWaybill): void;
   onExcess(): void;
+  onWithdrawn(box: ShipmentByWaybill, barcode: string): void;
   onPutDown(): void;
   /** 박스 빼기 뒤 — 송장을 다시 조회해 화면을 정한다(뺄 상품·빠진 박스) */
   onReopen(box: ShipmentByWaybill): void;
@@ -98,6 +100,7 @@ export function InspectWork({
     onAccepted: (lineId, quantity) => onScanned(nameOf(lineId), quantity),
     onShipped: () => onShipped(box),
     onRejected: (message, barcode) => onAlert(message, barcode ?? undefined),
+    onWithdrawn: (barcode) => onWithdrawn(box, barcode),
     onExcess,
   });
 

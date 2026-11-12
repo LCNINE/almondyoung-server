@@ -58,7 +58,7 @@ function mount(runtime: WorkRuntime, found: ShipmentByWaybill, events: Inspectio
   );
 }
 
-const newEvents = () => ({ onAccepted: vi.fn(), onShipped: vi.fn(), onRejected: vi.fn(), onExcess: vi.fn() });
+const newEvents = () => ({ onAccepted: vi.fn(), onShipped: vi.fn(), onRejected: vi.fn(), onExcess: vi.fn(), onWithdrawn: vi.fn() });
 const progress = () => screen.getByTestId('progress').textContent;
 
 async function setup(fake: FakeBox = BOX) {

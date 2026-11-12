@@ -95,6 +95,22 @@ describe('뺄 상품(스펙 §6.2 withdrawing)', () => {
     expect(await screen.findByText('빠진 박스', undefined, SLOW)).toBeInTheDocument();
   });
 
+  it('검수 중에 박스가 배치에서 빠졌으면 상품을 찍는 순간 뺄 상품으로 넘어가고 이유를 알린다', async () => {
+    const { server } = await setupInspection({});
+    await openBox('421033881907');
+    scan('8801002');
+    await waitFor(() => expect(server.scans).toHaveLength(1));
+    const box = server.box('421033881907');
+    if (!box) throw new Error('Missing box');
+    box.labelState = 'withdrawing';
+    box.removals = WITHDRAWING.removals ?? [];
+    await waitFor(() => expect(document.querySelector('[data-intake="open"]')).not.toBeNull());
+    scan('8801002');
+    expect(await screen.findByRole('list', { name: '뺄 상품' }, SLOW)).toBeInTheDocument();
+    expect(await screen.findByText(/방금 찍은 상품은 담지 말고/)).toBeInTheDocument();
+    expect(server.scans).toHaveLength(1);
+  });
+
   it('Esc 는 뺄 상품을 내려놓는다', async () => {
     await setupInspection({ boxes: [WITHDRAWING] });
     // 스캔 큐가 준비되고 Esc 가 등록될 때까지 — 준비 전 내려놓기는 «확인 못 한 스캔» 거절이 맞다

@@ -49,6 +49,7 @@ const REFILLED_ELSEWHERE_MESSAGE = '앞 박스의 결품이 반영돼 새 송장
 const WITHDRAWN_ELSEWHERE_MESSAGE = '박스를 뺐어요. 그 송장을 다시 찍어 주세요.';
 
 const WITHDRAWN_SCAN_MESSAGE = '이미 다 뺀 상자예요. 다음 송장을 찍어 주세요.';
+export const LEFT_BATCH_MESSAGE = '이 상자는 배치에서 빠졌어요. 방금 찍은 상품은 담지 말고, 담아 둔 상품을 꺼내 찍어 주세요.';
 
 /** 스테이션 F1 출고 검수(스펙 §6) — 송장 스캔 즉시 시작, 상품 스캔 = +1, 마지막 스캔 = 출고, 다음 송장 */
 export function InspectionScreen({ prefs = localStoragePrefs, print = printRaw }: { prefs?: DevicePrefs; print?: PrintRaw }) {
@@ -78,6 +79,8 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
   // 결과를 모르는 결품, 박스별 — 박스가 다시 마운트돼도 같은 키로 다시 보내게
   const shortPickRetries = useRef(new Map<string, PendingShortPick>()).current;
   const seq = useRef(0);
+  // 빠진 박스에 찍어 거절된 상품 바코드 — 뺄 상품 화면으로 넘어갈 때 이유를 알린다
+  const leftBatch = useRef<string | null>(null);
   const canPrint = readLabelPrinter(prefs) !== null;
 
   /**
@@ -179,6 +182,14 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
     if (gate.kind === 'withdraw') {
       writeLastBox(prefs, found);
       go({ kind: 'withdraw', box: found, seq: ++seq.current });
+
+      const scanned = leftBatch.current;
+      leftBatch.current = null;
+
+      if (scanned !== null) {
+        reject(LEFT_BATCH_MESSAGE, scanned);
+      }
+
       return;
     }
     if (gate.kind === 'reprint') {
@@ -239,6 +250,44 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
       }
     });
   });
+
+  // 창으로 돌아오면 바로 다시 본다 — 뒤에 있는 동안 10초 확인이 늦거나 멈춰, 빠진 상자가 옛 화면으로 남는다
+  const refetchBatchItems = batchItems.refetch;
+  useEffect(() => {
+    const recheck = () => {
+      if (document.visibilityState === 'visible') void refetchBatchItems();
+    };
+
+    window.addEventListener('focus', recheck);
+    document.addEventListener('visibilitychange', recheck);
+
+    return () => {
+      window.removeEventListener('focus', recheck);
+      document.removeEventListener('visibilitychange', recheck);
+    };
+  }, [refetchBatchItems]);
+
+  /**
+   * 상품을 찍었는데 그 사이 박스가 배치에서 빠졌다 — 다시 조회해 뺄 상품 화면으로 넘기고 이유를 알린다.
+   * 이미 다른 조회가 돌고 있으면(배치 확인이 먼저 알아챘다) 그 조회가 화면을 바꿀 때 이유를 싣는다
+   */
+  const onWithdrawnWhileScanning = (box: ShipmentByWaybill, barcode: string) => {
+    if (!inspecting(box.shipmentId)) {
+      reject(LEFT_BATCH_MESSAGE, barcode);
+      return;
+    }
+
+    leftBatch.current = barcode;
+
+    if (busy.current > 0) {
+      return;
+    }
+
+    void run(async () => {
+      await settleWork();
+      await show(await lookup(box.trackingNo), false, false);
+    });
+  };
 
   const open = (code: string) => run(async () => show(await lookup(code)));
 
@@ -533,6 +582,7 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
           }}
           onShipped={onShipped}
           onExcess={() => reject(EXCESS_MESSAGE)}
+          onWithdrawn={onWithdrawnWhileScanning}
           onPutDown={() => void putDown()}
           canPrint={canPrint}
           onReopen={reopen}
