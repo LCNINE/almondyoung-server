@@ -1734,4 +1734,101 @@ describeIfDb('ShipmentPlanningService (DB integration)', () => {
       });
     });
   });
+
+  describe('작업 사유 코드', () => {
+    async function operationOf(tx: DbTx, id: string) {
+      const [row] = await tx.select().from(wmsTables.shipmentOperations).where(eq(wmsTables.shipmentOperations.id, id));
+      return row;
+    }
+
+    it('분할에 사유 코드와 요청 경로를 보내면 문구와 함께 저장한다', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const fixture = await physicalFixture(tx, 10, 6);
+        const result = await planning.split(
+          fixture.shipment.id,
+          {
+            expectedManifestVersion: fixture.shipment.manifestVersion,
+            reason: '고객 요청',
+            reasonCode: 'customer_ship_first',
+            requestChannel: 'kakao',
+            moves: [{ shipmentLineId: fixture.line.id, expectedLineVersion: fixture.line.lineVersion, qty: 4 }],
+          },
+          `split-${randomUUID()}`,
+          actor,
+          tx,
+        );
+        expect(await operationOf(tx, result.operationId)).toMatchObject({
+          reason: '고객이 일부 먼저 보내 달라고 요청',
+          reasonCode: 'customer_ship_first',
+          requestChannel: 'kakao',
+        });
+      });
+    });
+
+    it('사유 코드 없이 사유 글만 보내면 그대로 저장하고 코드는 비운다', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const fixture = await physicalFixture(tx, 10, 6);
+        const result = await planning.split(
+          fixture.shipment.id,
+          {
+            expectedManifestVersion: fixture.shipment.manifestVersion,
+            reason: '옛 글',
+            moves: [{ shipmentLineId: fixture.line.id, expectedLineVersion: fixture.line.lineVersion, qty: 4 }],
+          },
+          `split-${randomUUID()}`,
+          actor,
+          tx,
+        );
+        expect(await operationOf(tx, result.operationId)).toMatchObject({
+          reason: '옛 글',
+          reasonCode: null,
+          requestChannel: null,
+        });
+      });
+    });
+
+    it('고객 요청 코드에 요청 경로가 없으면 400 이고 상자를 나누지 않는다', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const fixture = await physicalFixture(tx, 10, 6);
+        await expect(
+          planning.split(
+            fixture.shipment.id,
+            {
+              expectedManifestVersion: fixture.shipment.manifestVersion,
+              reason: '요청',
+              reasonCode: 'customer_ship_first',
+              moves: [{ shipmentLineId: fixture.line.id, expectedLineVersion: fixture.line.lineVersion, qty: 4 }],
+            },
+            `split-${randomUUID()}`,
+            actor,
+            tx,
+          ),
+        ).rejects.toThrow('Request channel is required for a customer request');
+      });
+    });
+
+    it('새 칸이 없는 요청도 새 칸을 넣은 요청도 같은 키로 다시 보내면 재생된다', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const fixture = await physicalFixture(tx, 10, 6);
+        const moves = [{ shipmentLineId: fixture.line.id, expectedLineVersion: fixture.line.lineVersion, qty: 4 }];
+        const plain = { expectedManifestVersion: fixture.shipment.manifestVersion, reason: '옛 글', moves };
+        const key = `split-${randomUUID()}`;
+        const first = await planning.split(fixture.shipment.id, plain, key, actor, tx);
+        const replay = await planning.split(fixture.shipment.id, plain, key, actor, tx);
+        expect(replay.operationId).toBe(first.operationId);
+
+        const fixture2 = await physicalFixture(tx, 10, 6);
+        const coded = {
+          expectedManifestVersion: fixture2.shipment.manifestVersion,
+          reason: '상자 크기',
+          reasonCode: 'does_not_fit',
+          moves: [{ shipmentLineId: fixture2.line.id, expectedLineVersion: fixture2.line.lineVersion, qty: 4 }],
+        };
+        const key2 = `split-${randomUUID()}`;
+        const first2 = await planning.split(fixture2.shipment.id, coded, key2, actor, tx);
+        const replay2 = await planning.split(fixture2.shipment.id, coded, key2, actor, tx);
+        expect(replay2.operationId).toBe(first2.operationId);
+      });
+    });
+  });
 });

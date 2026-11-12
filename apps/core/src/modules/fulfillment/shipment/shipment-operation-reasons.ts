@@ -11,6 +11,12 @@ export type ReasonedOperationType =
 
 export type RequestChannel = 'kakao' | 'phone' | 'store_inquiry' | 'marketplace_inquiry' | 'other';
 
+export type ResolvedOperationReason = {
+  reason: string;
+  reasonCode: string | null;
+  requestChannel: RequestChannel | null;
+};
+
 export type OperationReasonOption = { code: string; label: string; customerRequest: boolean };
 
 export const SHIPMENT_OPERATION_REASONS: Record<ReasonedOperationType, ReadonlyArray<OperationReasonOption>> = {
@@ -110,7 +116,7 @@ export function isCustomerRequestReason(type: ShipmentOperationType, code: strin
 export function resolveOperationReason(
   type: ShipmentOperationType,
   input: { reason: string; reasonCode?: string; requestChannel?: string },
-): { reason: string; reasonCode: string | null; requestChannel: RequestChannel | null } {
+): ResolvedOperationReason {
   const { reason, reasonCode } = input;
   if (reasonCode === undefined) return { reason, reasonCode: null, requestChannel: null };
 

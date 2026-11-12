@@ -1,3 +1,4 @@
+import { classifyOperationReason } from '../shipment/shipment-operation-reasons';
 import { ConflictException, Injectable } from '@nestjs/common';
 import { DbService, InjectTypedDb } from '@app/db';
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
@@ -168,6 +169,8 @@ export class DraftBoxAmender {
       type: 'amend',
       actorId: actor.id,
       reason,
+      reasonCode: classifyOperationReason('amend', { reasonCode: null, reason }),
+      requestChannel: null,
       csCaseId: null,
       note: null,
       // manifestVersion 이 amend 마다 오르므로 박스·버전 쌍이 자연 키다
