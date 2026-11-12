@@ -39,6 +39,11 @@ import type {
 } from '@/lib/types/dto/fulfillment';
 import { carrierLabel, waybillStatusLabel } from './fulfillment-labels';
 import { waybillErrorMessage } from './stuck-waybill';
+import {
+  activeBatchId,
+  shownWaybillActions,
+  splitWaybills,
+} from './waybill-view';
 
 type Action = 'issue' | 'manual' | 'reissue' | 'void';
 
@@ -88,6 +93,11 @@ export function WaybillActions({
   const [pendingNotice, setPendingNotice] = useState<string | null>(null);
 
   const voidTarget = activeVoidableWaybill(shipment.waybills ?? []);
+  const shown = shownWaybillActions(
+    shipment.status,
+    splitWaybills(shipment.waybills ?? []).current
+  );
+  const inBatch = !!activeBatchId(shipment.workItems ?? []);
 
   const busy =
     issue.isPending ||
@@ -105,9 +115,16 @@ export function WaybillActions({
     setAction('issue');
   };
 
-  const reflectStatus = (status: string | null | undefined) => {
+  const reflectStatus = (
+    status: string | null | undefined,
+    kind: 'issue' | 'reissue' | 'manual' = 'issue'
+  ) => {
     if (isWaybillIssued(status)) {
-      toast.success('운송장을 발급했어요.');
+      toast.success(
+        kind === 'reissue'
+          ? '새 송장을 받았어요. 붙어 있는 송장은 떼고 새 송장으로 바꿔 붙여 주세요.'
+          : '운송장을 발급했어요.'
+      );
       setPendingNotice(null);
       setAction(null);
     } else if (isWaybillPendingIssue(status)) {
@@ -116,6 +133,13 @@ export function WaybillActions({
         '아직 발급이 끝나지 않았어요. 다시 시도해도 같은 요청으로 보내서 송장이 두 장 나오지 않아요.'
       );
       toast.info('발급을 진행하고 있어요.');
+      setAction(null);
+    } else if (kind === 'reissue') {
+      // 재발급은 기존 송장을 먼저 무효로 하므로, 창에 남기면 바꿀 송장 없는 재발급이 된다
+      toast.error(
+        '기존 송장은 무효가 됐고 새 송장은 받지 못했어요. «운송장 발급»으로 새 송장을 받아 주세요.'
+      );
+      setPendingNotice(null);
       setAction(null);
     } else {
       toast.error(
@@ -150,11 +174,12 @@ export function WaybillActions({
         kind === 'issue'
           ? await issue.mutateAsync({ shipmentId: shipment.id, data, idempotencyKey: key })
           : await reissue.mutateAsync({ shipmentId: shipment.id, data, idempotencyKey: key });
-      reflectStatus(result.status);
+      reflectStatus(result.status, kind);
     } catch (error) {
       toast.error(
         waybillErrorMessage(error, `${ACTION_TITLE[kind === 'issue' ? 'issue' : 'reissue']}에 실패했어요.`)
       );
+      if (kind === 'reissue') setAction(null);
     }
   };
 
@@ -182,7 +207,7 @@ export function WaybillActions({
         },
         idempotencyKey: key,
       });
-      reflectStatus(result.status);
+      reflectStatus(result.status, 'manual');
     } catch (error) {
       toast.error(waybillErrorMessage(error, '수동 등록에 실패했어요.'));
     }
@@ -225,13 +250,13 @@ export function WaybillActions({
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap gap-2">
-        {canRun(useIssueWaybill) && (
+      <div className="flex flex-wrap gap-2 empty:hidden">
+        {shown.includes('issue') && canRun(useIssueWaybill) && (
           <Button size="sm" variant="outline" onClick={openIssue}>
             운송장 발급
           </Button>
         )}
-        {canRun(useRegisterManualWaybill) && (
+        {shown.includes('manual') && canRun(useRegisterManualWaybill) && (
           <Button
             size="sm"
             variant="outline"
@@ -247,7 +272,7 @@ export function WaybillActions({
             수동 등록
           </Button>
         )}
-        {canRun(useReissueWaybill) && (
+        {shown.includes('reissue') && canRun(useReissueWaybill) && (
           <Button
             size="sm"
             variant="outline"
@@ -263,7 +288,7 @@ export function WaybillActions({
             재발급
           </Button>
         )}
-        {canRun(useVoidWaybill) && (
+        {shown.includes('void') && canRun(useVoidWaybill) && (
           <Button
             size="sm"
             variant="destructive"
@@ -278,7 +303,8 @@ export function WaybillActions({
         )}
       </div>
 
-      {(canRun(useVoidWaybill) || canRun(useReissueWaybill)) &&
+      {((shown.includes('void') && canRun(useVoidWaybill)) ||
+        (shown.includes('reissue') && canRun(useReissueWaybill))) &&
         voidLockedReason && (
           <p className="text-xs text-muted-foreground">{voidLockedReason}</p>
         )}
@@ -293,10 +319,10 @@ export function WaybillActions({
               disabled={busy || !lastKey}
               onClick={() => {
                 if (lastKind === 'manual') return runManual(lastKey ?? undefined);
-                return runIssueLike(
-                  lastKind === 'reissue' ? 'reissue' : 'issue',
-                  lastKey ?? undefined
-                );
+                // 재발급은 기존 송장을 이미 무효로 했고, 서버는 발급 단계를 «요청 키:issue»로 실행한다.
+                // 같은 재발급을 다시 보내면 대기 중인 송장 때문에 거절되므로 그 발급 단계를 이어 간다
+                if (lastKind === 'reissue') return runIssueLike('issue', `${lastKey}:issue`);
+                return runIssueLike('issue', lastKey ?? undefined);
               }}
             >
               다시 시도
@@ -358,6 +384,20 @@ export function WaybillActions({
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
               />
+            </div>
+          )}
+
+          {action === 'reissue' && voidTarget && (
+            <div className="space-y-1 rounded-md bg-muted px-3 py-2 text-sm">
+              <p className="font-medium">
+                {`바꿀 송장: ${carrierLabel(voidTarget.carrier)} ${voidTarget.trackingNo ?? '번호 없음'}`}
+              </p>
+              <p className="text-muted-foreground">
+                재발급하면 이 번호는 먼저 무효가 돼요. 새 번호 발급은 늦어지거나 실패할 수 있어요.{' '}
+                {inBatch
+                  ? '새 송장 번호를 확인한 뒤 물류앱에서 «송장 재출력»으로 출력해, 상자에 붙인 송장과 바꿔 붙여 주세요.'
+                  : '새 송장 번호를 확인한 뒤, 출력해 붙인 송장이 있으면 떼고 새 송장으로 바꿔 붙여 주세요.'}
+              </p>
             </div>
           )}
 

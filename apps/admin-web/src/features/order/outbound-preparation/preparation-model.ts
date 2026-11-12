@@ -91,16 +91,16 @@ export function preparationTargetNotice(
   canPrepare: boolean
 ): string | null {
   if (target.kind === 'missing') {
-    return '출고 준비 목록에서 합친 상자를 찾지 못했어요. 이미 출고 준비를 시작했거나 목록에 아직 불러오지 않은 상자일 수 있어요.';
+    return '출고 준비 목록에서 이 상자를 찾지 못했어요. 이미 출고 준비를 시작했거나 목록에 아직 불러오지 않은 상자일 수 있어요.';
   }
 
   if (target.kind === 'review') {
-    return `합친 상자는 «${bucketLabel}» 내역에 있어 바로 출고 준비할 수 없어요. 내역에서 이 상자만 골라 두었어요.`;
+    return `이 상자는 «${bucketLabel}» 내역에 있어 바로 출고 준비할 수 없어요. 내역에서 이 상자만 골라 두었어요.`;
   }
 
   return canPrepare
     ? null
-    : '합친 상자만 골라 두었어요. 피킹 방식을 확인한 뒤 «출고 준비»를 눌러 주세요.';
+    : '이 상자만 골라 두었어요. 피킹 방식을 확인한 뒤 «출고 준비»를 눌러 주세요.';
 }
 
 // 넘어온 상자를 처리했거나 창고를 바꾸면 주소에서 상자를 지운다. 주소에 창고가 있으면 지금 창고로 맞춘다.

@@ -1288,7 +1288,8 @@ export const useReissueWaybill = () => {
       data: IssueWaybillRequest;
       idempotencyKey?: string;
     }) => orders.waybills.reissue(shipmentId, data, commandKey(idempotencyKey)),
-    onSuccess: (_, { shipmentId }) =>
+    // 서버가 기존 송장을 먼저 무효로 한 뒤 발급하므로 실패해도 송장 목록이 바뀌었을 수 있다
+    onSettled: (_, __, { shipmentId }) =>
       invalidateShipment(queryClient, shipmentId),
   });
 };
