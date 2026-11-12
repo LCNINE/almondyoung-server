@@ -10,6 +10,8 @@ import { FulfillmentOrderCreationBacklogModule } from '../fulfillment/backlog/fu
 import { UnboxedDemandModule } from '../fulfillment/unboxed-demand/unboxed-demand.module';
 import { WaybillModule } from '../fulfillment/waybill/waybill.module';
 import { ExchangeShipmentModule } from '../fulfillment/exchange-shipment/exchange-shipment.module';
+import { OrderShipmentOperationsModule } from '../fulfillment/reader/order-shipment-operations.module';
+import { SalesOrderShipmentOperationsService } from './services/sales-order-shipment-operations.service';
 
 import { SalesOrdersController } from './controllers/sales-orders.controller';
 import { SalesOrderAmendmentsController } from './controllers/sales-order-amendments.controller';
@@ -106,6 +108,9 @@ import { SalesOrderLookupService } from './internal/sales-order-lookup.service';
 
     // 교환 상자 열기의 출고 쪽 쓰기(K8 PR11). 소형 모듈이라 FulfillmentModule ↔ SalesOrderModule 순환이 없다
     ExchangeShipmentModule,
+
+    // 주문 이력 창의 상자 작업 조회(읽기)
+    OrderShipmentOperationsModule,
   ],
   controllers: [
     SalesOrdersController,
@@ -121,6 +126,7 @@ import { SalesOrderLookupService } from './internal/sales-order-lookup.service';
   ],
   providers: [
     SalesOrdersService,
+    SalesOrderShipmentOperationsService,
     SalesOrderAmendmentsService,
     SalesOrderQueryService,
     StoreSalesOrdersService,
