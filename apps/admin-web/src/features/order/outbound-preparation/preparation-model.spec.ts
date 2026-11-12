@@ -65,7 +65,7 @@ describe('locatePreparationTarget', () => {
 
     expect(preparationTargetNotice(found, '완전출고', true)).toBeNull();
     expect(preparationTargetNotice(found, '완전출고', false)).toBe(
-      '합친 상자만 골라 두었어요. 피킹 방식을 확인한 뒤 «출고 준비»를 눌러 주세요.'
+      '이 상자만 골라 두었어요. 피킹 방식을 확인한 뒤 «출고 준비»를 눌러 주세요.'
     );
   });
 });

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
 import {
   AlertTriangle,
   ChevronDown,
@@ -67,6 +68,8 @@ import {
 } from './shipment-owner';
 import { usePendingRequests } from './shipment-action-pending';
 import { WaybillActions } from './waybill-actions';
+import { preparationHref } from './consolidation-result';
+import { splitWaybills, waybillNextStep } from './waybill-view';
 import { StuckWaybillPanel } from './stuck-waybill-panel';
 
 const STATUS_VARIANT = (
@@ -123,6 +126,158 @@ function waybillVoidLockReason(
   return isPendingSource
     ? '합포장 진행 중에는 위 진행 안내에서 운송장을 취소해요'
     : null;
+}
+
+const WAYBILL_NEXT_TEXT = {
+  prepare: '다음: 출고 준비 — 배치에 넣으면 물류앱에서 송장을 출력해요.',
+  print: '배치에 들어 있어요. 송장 출력·재출력은 물류앱 출고 배치에서 해요.',
+  shipped: '이 송장으로 출고했어요.',
+  issuing: '송장을 발급하고 있어요.',
+  issue: '운송장을 발급하거나, 출고 준비에서 발급과 배치 넣기를 한 번에 해요.',
+  'issue-in-batch':
+    '배치에 들어 있는 상자예요. 운송장을 발급한 뒤 물류앱 출고 배치에서 출력해요.',
+  'plan-first': '계획을 확정하면 운송장을 발급할 수 있어요.',
+  none: '',
+} as const;
+
+function WaybillSection({
+  shipment,
+  voidLockedReason,
+}: {
+  shipment: ShipmentAdminDetail;
+  voidLockedReason: string | null;
+}) {
+  const [pastOpen, setPastOpen] = useState(false);
+  const waybills = shipment.waybills ?? [];
+  const { current, past } = splitWaybills(waybills);
+  const next = waybillNextStep({
+    status: shipment.status,
+    waybills,
+    workItems: shipment.workItems ?? [],
+  });
+  const nextText = WAYBILL_NEXT_TEXT[next.kind];
+  const isWarehouse = showsWaybillActions(shipment);
+
+  return (
+    <section className="space-y-3">
+      <h3 className="text-sm font-semibold">운송장</h3>
+      <section
+        aria-labelledby={`current-waybill-${shipment.id}`}
+        className="rounded-md border p-3"
+      >
+        <p
+          id={`current-waybill-${shipment.id}`}
+          className="mb-2 text-xs font-medium text-muted-foreground"
+        >
+          지금 쓸 송장
+        </p>
+        {current ? (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+            <span className="font-mono text-base font-semibold">
+              {current.trackingNo || '번호 없음'}
+            </span>
+            <span className="text-sm">{carrierLabel(current.carrier)}</span>
+            <Badge variant={STATUS_VARIANT(current.status)} className="w-fit">
+              {waybillStatusLabel(current.status)}
+            </Badge>
+            <span className="text-xs text-muted-foreground">
+              발급 {when(current.issuedAt)}
+            </span>
+          </div>
+        ) : (
+          <p className="text-sm">지금 쓸 송장이 없어요.</p>
+        )}
+        {isWarehouse && nextText && (
+          <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm text-muted-foreground break-keep">
+              {nextText}
+            </p>
+            {(next.kind === 'prepare' || next.kind === 'issue') && (
+              <Button
+                size="sm"
+                variant={next.kind === 'prepare' ? 'default' : 'outline'}
+                asChild
+              >
+                <Link href={preparationHref(shipment.id, shipment.warehouseId)}>
+                  이 상자 출고 준비
+                </Link>
+              </Button>
+            )}
+            {(next.kind === 'print' || next.kind === 'issue-in-batch') && (
+              <Button size="sm" variant="outline" asChild>
+                <Link
+                  href={`/order/outbound-batches?batchId=${encodeURIComponent(next.batchId)}`}
+                >
+                  배치 보기
+                </Link>
+              </Button>
+            )}
+          </div>
+        )}
+      </section>
+
+      {isWarehouse && (
+        <div className="space-y-3">
+          <StuckWaybillPanel shipment={shipment} />
+          <WaybillActions
+            shipment={shipment}
+            voidLockedReason={voidLockedReason}
+          />
+        </div>
+      )}
+
+      {past.length > 0 && (
+        <div>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 gap-1 px-2 text-xs text-muted-foreground"
+            aria-expanded={pastOpen}
+            onClick={() => setPastOpen((open) => !open)}
+          >
+            {pastOpen ? (
+              <ChevronDown className="h-3.5 w-3.5" />
+            ) : (
+              <ChevronRight className="h-3.5 w-3.5" />
+            )}
+            {`지난 송장 ${past.length}장`}
+          </Button>
+          {pastOpen && (
+            <ul
+              aria-label="지난 송장"
+              className="mt-2 divide-y rounded-md border text-sm"
+            >
+              {past.map((waybill) => (
+                <li
+                  key={waybill.id}
+                  className="grid gap-2 p-3 text-muted-foreground sm:grid-cols-4"
+                >
+                  <span className="text-xs">
+                    {carrierLabel(waybill.carrier)}
+                  </span>
+                  <span className="font-mono text-xs">
+                    {waybill.trackingNo || '번호 없음'}
+                  </span>
+                  <Badge
+                    variant={STATUS_VARIANT(waybill.status)}
+                    className="w-fit"
+                  >
+                    {waybillStatusLabel(waybill.status)}
+                  </Badge>
+                  <span className="text-xs">
+                    발급 {when(waybill.issuedAt)}
+                    {waybill.voidedAt
+                      ? ` · 무효 ${when(waybill.voidedAt)}`
+                      : ''}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </section>
+  );
 }
 
 function resolveResultBox(
@@ -268,50 +423,10 @@ function ShipmentDetailView({
           </div>
         </section>
 
-        <section>
-          <h3 className="mb-2 text-sm font-semibold">
-            운송장 이력 ({waybills.length})
-          </h3>
-          {showsWaybillActions(shipment) && (
-            <div className="mb-3 space-y-3">
-              <StuckWaybillPanel shipment={shipment} />
-              <WaybillActions
-                shipment={shipment}
-                voidLockedReason={voidLockedReason}
-              />
-            </div>
-          )}
-          {waybills.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              발급한 운송장이 없어요.
-            </p>
-          ) : (
-            <div className="divide-y rounded-md border text-sm">
-              {waybills.map((waybill) => (
-                <div key={waybill.id} className="grid gap-2 p-3 sm:grid-cols-4">
-                  <span className="text-xs">
-                    {carrierLabel(waybill.carrier)}
-                  </span>
-                  <span className="font-mono text-xs">
-                    {waybill.trackingNo || '번호 없음'}
-                  </span>
-                  <Badge
-                    variant={STATUS_VARIANT(waybill.status)}
-                    className="w-fit"
-                  >
-                    {waybillStatusLabel(waybill.status)}
-                  </Badge>
-                  <span className="text-xs text-muted-foreground">
-                    발급 {when(waybill.issuedAt)}
-                    {waybill.voidedAt
-                      ? ` · 무효 ${when(waybill.voidedAt)}`
-                      : ''}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
+        <WaybillSection
+          shipment={shipment}
+          voidLockedReason={voidLockedReason}
+        />
 
         <section>
           <h3 className="mb-2 text-sm font-semibold">

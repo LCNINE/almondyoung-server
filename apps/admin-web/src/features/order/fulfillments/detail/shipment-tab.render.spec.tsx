@@ -229,8 +229,8 @@ const expectVoidAndReissueLocked = (reason: string) => {
   expect(isDisabled('무효화')).toBe(true);
   expect(isDisabled('재발급')).toBe(true);
   expect(screen.getByText(reason)).toBeTruthy();
-  expect(isDisabled('운송장 발급')).toBe(false);
-  expect(isDisabled('수동 등록')).toBe(false);
+  // 지금 쓸 송장이 있으면 새 발급은 받지 않으므로 버튼이 없다
+  expect(screen.queryByRole('button', { name: '운송장 발급' })).toBeNull();
 };
 
 let queryClient: QueryClient;
@@ -451,8 +451,8 @@ describe('합쳐진 새 상자 카드', () => {
 
 describe('합포장 중 기존 무효화 버튼', () => {
   beforeEach(() => {
-    mockShipments.mockReturnValue(loaded([summary('src', 'draft')]));
-    mockDetail.mockImplementation((id) => loaded(detail(id, 'draft')));
+    mockShipments.mockReturnValue(loaded([summary('src', 'planned')]));
+    mockDetail.mockImplementation((id) => loaded(detail(id, 'planned')));
   });
 
   it('배치에 든 상자가 합포장 진행 중이면 무효화를 막고 진행 안내로 보낸다', () => {
@@ -479,11 +479,6 @@ describe('합포장 중 기존 무효화 버튼', () => {
     expect(
       screen.getByText('합포장 진행 중에는 위 진행 안내에서 운송장을 취소해요')
     ).toBeTruthy();
-    expect(
-      screen
-        .getByRole('button', { name: '운송장 발급' })
-        .hasAttribute('disabled')
-    ).toBe(false);
   });
 
   it('합포장이 없으면 무효화를 지금처럼 열 수 있다', async () => {
@@ -523,9 +518,7 @@ describe('합포장 중 기존 무효화 버튼', () => {
     expect(
       screen.getByRole('button', { name: '중단하고 다시 발급' })
     ).toBeTruthy();
-    expect(
-      screen.getByRole('button', { name: '무효화' }).hasAttribute('disabled')
-    ).toBe(true);
+    expect(screen.queryByRole('button', { name: '무효화' })).toBeNull();
   });
 
   it('진행 상태를 불러오는 중이면 무효화·재발급을 열지 않는다', () => {
@@ -857,5 +850,134 @@ describe('작업 기록의 사유·요청 경로·처리자·메모', () => {
     ]);
 
     expect(text).toContain('상자 분할 · 기타 · 박스 파손');
+  });
+});
+
+describe('운송장 영역은 지금 쓸 송장과 다음 작업을 먼저 보인다', () => {
+  const wb = (
+    id: string,
+    status: string,
+    trackingNo: string,
+    voidedAt: string | null = null
+  ) => ({
+    id,
+    status,
+    trackingNo,
+    carrier: 'HANJIN',
+    manifestVersion: 1,
+    issuedAt: '2026-10-29T00:00:00Z',
+    voidedAt,
+  });
+  const history = [
+    wb('wb-1', 'voided', '1111-0000-0001', '2026-10-29T01:00:00Z'),
+    wb('wb-2', 'voided', '1111-0000-0002', '2026-10-29T02:00:00Z'),
+    wb('wb-3', 'registered', '1111-0000-0003'),
+  ];
+  const show = (
+    status: string,
+    waybills: ShipmentAdminDetail['waybills'],
+    workItems: ShipmentAdminDetail['workItems'] = []
+  ) => {
+    mockShipments.mockReturnValue(loaded([summary('box', status)]));
+    mockDetail.mockReturnValue(
+      loaded({ ...detail('box', status), waybills, workItems })
+    );
+    renderTab();
+  };
+
+  it('지금 쓸 송장을 번호·택배사·한국어 상태로 먼저 보이고 무효 송장은 접어 둔다', async () => {
+    show('planned', history);
+
+    const current = screen.getByRole('region', { name: '지금 쓸 송장' });
+    expect(current.textContent).toContain('1111-0000-0003');
+    expect(current.textContent).toContain('한진택배');
+    expect(current.textContent).toContain('사용 가능');
+    expect(current.textContent).not.toContain('1111-0000-0001');
+    expect(screen.queryByText('1111-0000-0001')).toBeNull();
+
+    const toggle = screen.getByRole('button', { name: /지난 송장 2장/ });
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    await userEvent.click(toggle);
+
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    const past = screen.getByRole('list', { name: '지난 송장' });
+    expect(past.textContent?.indexOf('1111-0000-0002')).toBeLessThan(
+      past.textContent?.indexOf('1111-0000-0001') ?? -1
+    );
+    expect(past.textContent).toContain('무효');
+  });
+
+  it('배치에 넣기 전이면 이 상자 출고 준비로 잇는다', () => {
+    show('planned', history);
+
+    const current = screen.getByRole('region', { name: '지금 쓸 송장' });
+    expect(current.textContent).toContain('다음: 출고 준비');
+    expect(
+      screen
+        .getByRole('link', { name: '이 상자 출고 준비' })
+        .getAttribute('href')
+    ).toBe('/order/waybill-issue?warehouseId=wh-1&prepare=box');
+    expect(screen.queryByRole('button', { name: '운송장 발급' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '수동 등록' })).toBeNull();
+    expect(screen.getByRole('button', { name: '재발급' })).toBeTruthy();
+  });
+
+  it('배치에 들어 있으면 그 배치로 잇고 출력은 물류앱에서 한다고 알린다', () => {
+    show('planned', history, [
+      { id: 'wi-1', status: 'picking', batchId: 'b-1' },
+    ]);
+
+    const current = screen.getByRole('region', { name: '지금 쓸 송장' });
+    expect(current.textContent).toContain('물류앱');
+    expect(
+      screen.getByRole('link', { name: '배치 보기' }).getAttribute('href')
+    ).toBe('/order/outbound-batches?batchId=b-1');
+    expect(
+      screen.queryByRole('link', { name: '이 상자 출고 준비' })
+    ).toBeNull();
+  });
+
+  it('배치에 든 상자의 송장이 없어지면 출고 준비 대신 배치로 잇는다', () => {
+    show('planned', history.slice(0, 2), [
+      { id: 'wi-1', status: 'packing', batchId: 'b-1' },
+    ]);
+
+    expect(
+      screen.getByRole('region', { name: '지금 쓸 송장' }).textContent
+    ).toContain('배치에 들어 있는 상자예요');
+    expect(
+      screen.getByRole('link', { name: '배치 보기' }).getAttribute('href')
+    ).toBe('/order/outbound-batches?batchId=b-1');
+    expect(
+      screen.queryByRole('link', { name: '이 상자 출고 준비' })
+    ).toBeNull();
+    expect(screen.getByRole('button', { name: '운송장 발급' })).toBeTruthy();
+  });
+
+  it('지금 쓸 송장이 없으면 발급할 수 있다고 알리고 재발급·무효화는 없다', () => {
+    show('planned', history.slice(0, 2));
+
+    const current = screen.getByRole('region', { name: '지금 쓸 송장' });
+    expect(current.textContent).toContain('지금 쓸 송장이 없어요');
+    expect(screen.getByRole('button', { name: '운송장 발급' })).toBeTruthy();
+    expect(
+      screen
+        .getByRole('link', { name: '이 상자 출고 준비' })
+        .getAttribute('href')
+    ).toBe('/order/waybill-issue?warehouseId=wh-1&prepare=box');
+    expect(screen.queryByRole('button', { name: '재발급' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '무효화' })).toBeNull();
+  });
+
+  it('계획 전 상자는 계획 확정이 먼저라고 알리고 발급 버튼을 열지 않는다', () => {
+    show('draft', []);
+
+    expect(
+      screen.getByRole('region', { name: '지금 쓸 송장' }).textContent
+    ).toContain('계획을 확정하면');
+    expect(screen.queryByRole('button', { name: '운송장 발급' })).toBeNull();
+    expect(
+      screen.queryByRole('link', { name: '이 상자 출고 준비' })
+    ).toBeNull();
   });
 });

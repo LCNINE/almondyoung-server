@@ -1070,7 +1070,7 @@ describe('합포장 결과에서 넘어온 상자', () => {
 
     expect(
       await screen.findByText(
-        '합친 상자는 «부분출고» 내역에 있어 바로 출고 준비할 수 없어요. 내역에서 이 상자만 골라 두었어요.'
+        '이 상자는 «부분출고» 내역에 있어 바로 출고 준비할 수 없어요. 내역에서 이 상자만 골라 두었어요.'
       )
     ).toBeTruthy();
     expect(screen.queryByText(/출고 준비할까요/)).toBeNull();
@@ -1085,7 +1085,7 @@ describe('합포장 결과에서 넘어온 상자', () => {
     render(<OutboundPreparationTemplate />);
 
     expect(
-      await screen.findByText(/출고 준비 목록에서 합친 상자를 찾지 못했어요/)
+      await screen.findByText(/출고 준비 목록에서 이 상자를 찾지 못했어요/)
     ).toBeTruthy();
     expect(screen.queryByText(/출고 준비할까요/)).toBeNull();
   });

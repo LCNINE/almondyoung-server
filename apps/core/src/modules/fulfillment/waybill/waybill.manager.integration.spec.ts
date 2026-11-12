@@ -347,6 +347,43 @@ describeIfDb('WaybillManager.issueForShipment (DB integration)', () => {
         /WAYBILL_ABANDON_NOT_ALLOWED: .* is registered/,
       );
     });
+
+    it('재발급이 등록 전에 멈추면 같은 재발급은 거절되고, 발급 단계 키로 그 송장을 이어 받는다', async () => {
+      const seed = await db.transaction((tx) => seedPlannedShipmentForWaybill(tx as never, deps));
+      const first = await manager(new CarrierGatewayRegistry([fakeCarrierGateway()])).registerManual(
+        seed.shipmentId,
+        {
+          carrier: 'HANJIN',
+          trackingNo: `M-${randomUUID().slice(0, 8)}`,
+          expectedManifestVersion: seed.manifestVersion,
+        },
+        `idem-${randomUUID()}`,
+        actor,
+      );
+      const key = `idem-${randomUUID()}`;
+      const opts = { carrier: 'HANJIN' as const, expectedManifestVersion: seed.manifestVersion };
+      const stuck = await manager(new CarrierGatewayRegistry([stuckGateway()])).reissue(
+        seed.shipmentId,
+        opts,
+        key,
+        actor,
+      );
+      expect(stuck.status).toBe('allocated');
+
+      const mgr = manager(new CarrierGatewayRegistry([fakeCarrierGateway()]));
+      await expect(mgr.reissue(seed.shipmentId, opts, key, actor)).rejects.toThrow(/WAYBILL_ABANDON_NOT_ALLOWED/);
+
+      const resumed = await mgr.issueForShipment(seed.shipmentId, opts, `${key}:issue`, actor);
+      expect(resumed.id).toBe(stuck.id);
+      expect(resumed.status).toBe('registered');
+
+      const rows = await db
+        .select({ id: wmsTables.waybills.id, status: wmsTables.waybills.status })
+        .from(wmsTables.waybills)
+        .where(eq(wmsTables.waybills.shipmentId, seed.shipmentId));
+      expect(rows).toHaveLength(2);
+      expect(rows.find((row) => row.id === first.id)?.status).toBe('voided');
+    });
   });
 
   describe('seam: assertDispatchable + markUsed', () => {
