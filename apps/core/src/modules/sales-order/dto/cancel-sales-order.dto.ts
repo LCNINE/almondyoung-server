@@ -12,6 +12,7 @@ import {
   Min,
   ValidateNested,
 } from 'class-validator';
+import { REQUEST_CHANNEL_CODES, type RequestChannel } from '../../fulfillment/shipment/shipment-operation-reasons';
 
 export class CancelSalesOrderLineDto {
   @ApiProperty({ description: '부분 취소할 SalesOrder line ID' })
@@ -149,6 +150,15 @@ export class CancelSalesOrderDto {
   @IsString()
   @IsOptional()
   reasonCode?: string;
+
+  @ApiProperty({
+    description: '고객 요청 취소의 요청 경로. 고객 요청(CUSTOMER_REQUEST)일 때만 남는다',
+    required: false,
+    enum: REQUEST_CHANNEL_CODES,
+  })
+  @IsIn(REQUEST_CHANNEL_CODES)
+  @IsOptional()
+  requestChannel?: RequestChannel;
 
   @ApiProperty({ description: '취소 사유 상세', required: false })
   @IsString()

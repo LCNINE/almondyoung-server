@@ -40,6 +40,7 @@ import { readParcelClaimEligibility } from '../line-quantities/parcel-claim-elig
 import { hasExchangeableParcel } from '../internal/return-eligibility';
 import { selfCancelBlock, SelfCancelBlock } from './self-cancel-block';
 import { CARRIER_CODE_ALIASES, CARRIER_NAME_BY_CODE } from '../../fulfillment/waybill/carrier/carrier-names';
+import type { RequestChannel } from '../../fulfillment/shipment/shipment-operation-reasons';
 
 type SalesOrderRow = typeof inventoryTables.salesOrders.$inferSelect;
 
@@ -140,6 +141,7 @@ export class StoreSalesOrdersService {
     orderId: string,
     dto: {
       reasonCode?: string;
+      requestChannel?: RequestChannel;
       reasonDetail?: string;
       lines?: Array<{ salesOrderLineId: string; quantity: number }>;
       alreadyRefundedAmount?: number;
@@ -155,6 +157,7 @@ export class StoreSalesOrdersService {
       salesOrderId: so.id,
       sourceKey: ctx?.idempotencyKey,
       reasonCode: dto.reasonCode,
+      ...(dto.requestChannel ? { requestChannel: dto.requestChannel } : {}),
       reasonDetail: dto.reasonDetail,
       ...(dto.lines ? { lines: dto.lines } : {}),
       ...(dto.alreadyRefundedAmount !== undefined ? { alreadyRefundedAmount: dto.alreadyRefundedAmount } : {}),

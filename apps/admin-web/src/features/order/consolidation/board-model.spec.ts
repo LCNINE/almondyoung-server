@@ -113,7 +113,8 @@ describe('buildBoardRequest', () => {
         expectedReservationVersion: 3,
       })),
       recipientSourceShipmentId: 'a',
-      reason: '동일 수령인 합포장',
+      reason: '같은 주소 주문을 합침',
+      reasonCode: 'same_address',
     });
   });
 });

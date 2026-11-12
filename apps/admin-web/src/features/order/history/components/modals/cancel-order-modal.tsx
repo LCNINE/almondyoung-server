@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { toast } from 'sonner';
 import {
   Dialog,
@@ -12,6 +12,8 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { REQUEST_CHANNEL_OPTIONS } from '@/features/order/fulfillments/detail/operation-reasons';
 import { getServerDenyMessage } from '@/lib/api/server-error';
 import { useAdminCancelSalesOrder } from '@/lib/services/orders';
 import type { OrderLineRow } from '@/features/order/history/hooks/use-order-rows';
@@ -137,6 +139,8 @@ export function CancelOrderModal({ order, open, onOpenChange }: Props) {
   const [lineQuantities, setLineQuantities] = useState<Record<string, number>>({});
   const [reasonCode, setReasonCode] = useState('CUSTOMER_REQUEST');
   const [reasonDetail, setReasonDetail] = useState('');
+  const [requestChannel, setRequestChannel] = useState<string | undefined>();
+  const [showErrors, setShowErrors] = useState(false);
   const [cancelResult, setCancelResult] = useState<CancelResult | null>(null);
 
   useEffect(() => {
@@ -147,12 +151,25 @@ export function CancelOrderModal({ order, open, onOpenChange }: Props) {
       setLineQuantities(initial);
       setReasonCode('CUSTOMER_REQUEST');
       setReasonDetail('');
+      setRequestChannel(undefined);
+      setShowErrors(false);
       setCancelResult(null);
     }
   }, [open, order, isShipped]);
 
+  const uid = useId();
+  const channelLabelId = `${uid}-channel-label`;
+  const needsChannel = reasonCode === 'CUSTOMER_REQUEST';
+  const channelErrorId = `${uid}-channel-error`;
+  const channelMissing = needsChannel && !requestChannel;
+  const channelError = showErrors && channelMissing;
+
   const handleSubmit = async () => {
     if (!order) return;
+    if (channelMissing) {
+      setShowErrors(true);
+      return;
+    }
 
     let lines: CancelSalesOrderLineDto[] | undefined;
     if (scope === 'partial') {
@@ -173,6 +190,7 @@ export function CancelOrderModal({ order, open, onOpenChange }: Props) {
           reasonCode: reasonCode || undefined,
           reasonDetail: reasonDetail || undefined,
           cancelledBy: 'admin',
+          ...(needsChannel && requestChannel ? { requestChannel } : {}),
         },
       });
       if (isCancelRequested(result)) {
@@ -278,13 +296,53 @@ export function CancelOrderModal({ order, open, onOpenChange }: Props) {
                 <select
                   className="w-full border rounded px-3 py-2 text-sm"
                   value={reasonCode}
-                  onChange={(e) => setReasonCode(e.target.value)}
+                  onChange={(e) => {
+                    setReasonCode(e.target.value);
+                    setRequestChannel(undefined);
+                    setShowErrors(false);
+                  }}
                 >
                   {REASON_CODES.map((r) => (
                     <option key={r.value} value={r.value}>{r.label}</option>
                   ))}
                 </select>
               </div>
+
+              {/* 고객 요청 취소: 요청 경로 */}
+              {needsChannel && (
+                <div className="space-y-2">
+                  <Label id={channelLabelId}>고객이 요청한 경로 (필수)</Label>
+                  <div
+                    role="group"
+                    aria-labelledby={channelLabelId}
+                    aria-describedby={channelError ? channelErrorId : undefined}
+                  >
+                    <RadioGroup
+                      aria-labelledby={channelLabelId}
+                      aria-invalid={channelError || undefined}
+                      aria-required
+                      value={requestChannel ?? ''}
+                      onValueChange={setRequestChannel}
+                      className="gap-2"
+                    >
+                      {REQUEST_CHANNEL_OPTIONS.map((channel) => {
+                        const id = `${uid}-channel-${channel.code}`;
+                        return (
+                          <div key={channel.code} className="flex items-center gap-2">
+                            <RadioGroupItem value={channel.code} id={id} />
+                            <Label htmlFor={id} className="font-normal">{channel.label}</Label>
+                          </div>
+                        );
+                      })}
+                    </RadioGroup>
+                  </div>
+                  {channelError && (
+                    <p id={channelErrorId} role="alert" className="text-xs text-destructive">
+                      고객이 요청한 경로를 골라 주세요.
+                    </p>
+                  )}
+                </div>
+              )}
 
               {/* 취소 사유 상세 */}
               <div className="space-y-2">

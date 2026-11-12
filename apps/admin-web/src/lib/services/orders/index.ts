@@ -17,6 +17,7 @@ export {
   useOrderStats,
   usePendingChannelChanges,
   useSalesOrderAmendments,
+  useSalesOrderShipmentOperations,
   useDailyOrderStatus,
   useSalesOrders,
   useSalesOrder,

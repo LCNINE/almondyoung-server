@@ -69,6 +69,14 @@ export class CreateConsolidationDto {
   @IsNotEmpty()
   reason: string;
 
+  @IsString()
+  @IsOptional()
+  reasonCode?: string;
+
+  @IsString()
+  @IsOptional()
+  requestChannel?: string;
+
   @IsUUID()
   @IsOptional()
   csCaseId?: string;

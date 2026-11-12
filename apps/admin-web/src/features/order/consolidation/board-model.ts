@@ -15,7 +15,9 @@ import type {
   ShipmentConsolidationResponse,
 } from '@/lib/types/dto/fulfillment';
 
-export const DEFAULT_MERGE_REASON = '동일 수령인 합포장';
+export const MERGE_REASON_CODE = 'same_address';
+
+export const DEFAULT_MERGE_REASON = '같은 주소 주문을 합침';
 
 export const BOARD_EMPTY_TEXT = '지금 합칠 수 있는 주문이 없어요.';
 
@@ -43,6 +45,7 @@ export function buildBoardRequest(
     })),
     recipientSourceShipmentId: group.shipments[0].shipmentId,
     reason,
+    reasonCode: MERGE_REASON_CODE,
   };
 }
 

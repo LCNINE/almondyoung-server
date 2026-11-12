@@ -19,6 +19,14 @@ export class ShipmentCommandReasonDto {
   @IsNotEmpty()
   reason: string;
 
+  @IsString()
+  @IsOptional()
+  reasonCode?: string;
+
+  @IsString()
+  @IsOptional()
+  requestChannel?: string;
+
   @IsUUID()
   @IsOptional()
   csCaseId?: string;
@@ -296,6 +304,21 @@ export class ShipmentOperationHistoryResponseDto {
 
   @ApiProperty({ nullable: true })
   lastError: string | null;
+
+  @ApiProperty()
+  operatorId: string;
+
+  @ApiProperty()
+  reason: string;
+
+  @ApiProperty({ nullable: true })
+  reasonCode: string | null;
+
+  @ApiProperty({ nullable: true })
+  requestChannel: string | null;
+
+  @ApiProperty({ nullable: true })
+  note: string | null;
 
   @ApiProperty()
   createdAt: Date;

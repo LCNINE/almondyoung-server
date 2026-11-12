@@ -354,14 +354,14 @@ describe('OutboundPreparationManager', () => {
     expect(splitUnreserved).toHaveBeenNthCalledWith(
       1,
       's1',
-      { reason: '출고 준비: 있는 것만 먼저 보내기', expectedManifestVersion: 3 },
+      { reason: '출고 준비: 있는 것만 먼저 보내기', reasonCode: 'ship_available_first', expectedManifestVersion: 3 },
       'k:s1',
       actor,
     );
     expect(splitUnreserved).toHaveBeenNthCalledWith(
       2,
       's2',
-      { reason: '출고 준비: 있는 것만 먼저 보내기', expectedManifestVersion: 8 },
+      { reason: '출고 준비: 있는 것만 먼저 보내기', reasonCode: 'ship_available_first', expectedManifestVersion: 8 },
       'k:s2',
       actor,
     );
@@ -382,7 +382,7 @@ describe('OutboundPreparationManager', () => {
     expect(splitUnreserved).toHaveBeenNthCalledWith(
       2,
       's3',
-      { reason: '출고 준비: 있는 것만 먼저 보내기', expectedManifestVersion: 3 },
+      { reason: '출고 준비: 있는 것만 먼저 보내기', reasonCode: 'ship_available_first', expectedManifestVersion: 3 },
       'k:s3',
       actor,
     );

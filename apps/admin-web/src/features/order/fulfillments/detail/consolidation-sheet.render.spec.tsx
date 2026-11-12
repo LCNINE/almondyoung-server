@@ -166,7 +166,9 @@ const fillMemoRequest = async (user: ReturnType<typeof userEvent.setup>) => {
   await user.click(card('SO-memo1'));
   await user.click(screen.getByRole('button', { name: '다음' }));
   await user.click(screen.getByRole('radio', { name: /경비실에 맡겨 주세요/ }));
-  await user.type(screen.getByLabelText('작업 사유'), '고객 요청');
+  await user.click(
+      screen.getByRole('radio', { name: '같은 주소 주문을 합침' })
+    );
 
   expect(
     screen
@@ -282,7 +284,9 @@ describe('합포장 Sheet 1단계', () => {
 
     await user.click(card('SO-ok1'));
     await user.click(screen.getByRole('button', { name: '다음' }));
-    await user.type(screen.getByLabelText('작업 사유'), '고객 요청');
+    await user.click(
+      screen.getByRole('radio', { name: '같은 주소 주문을 합침' })
+    );
 
     expect(requestButton().hasAttribute('disabled')).toBe(false);
 
@@ -311,7 +315,9 @@ describe('합포장 Sheet 2단계', () => {
 
     await user.click(card('SO-memo1'));
     await user.click(screen.getByRole('button', { name: '다음' }));
-    await user.type(screen.getByLabelText('작업 사유'), '고객 요청');
+    await user.click(
+      screen.getByRole('radio', { name: '같은 주소 주문을 합침' })
+    );
 
     expect(requestButton().hasAttribute('disabled')).toBe(true);
     expect(
@@ -356,7 +362,8 @@ describe('합포장 Sheet 2단계', () => {
         },
       ],
       recipientSourceShipmentId: 'memo1',
-      reason: '고객 요청',
+      reason: '같은 주소 주문을 합침',
+      reasonCode: 'same_address',
     });
     expect('recipientSnapshot' in command.data).toBe(false);
     expect(command.idempotencyKey).not.toBe('');
@@ -652,7 +659,9 @@ describe('같은 주문을 나눈 상자', () => {
       )
     ).toBeTruthy();
 
-    await user.type(screen.getByLabelText('작업 사유'), '다시 합치기');
+    await user.click(
+      screen.getByRole('radio', { name: '같은 주소 주문을 합침' })
+    );
     await user.click(requestButton());
 
     expect(
@@ -748,7 +757,9 @@ describe('합포장 결과에서 이어 가기', () => {
   });
 
   const request = async (user: ReturnType<typeof userEvent.setup>) => {
-    await user.type(screen.getByLabelText('작업 사유'), '고객 요청');
+    await user.click(
+      screen.getByRole('radio', { name: '같은 주소 주문을 합침' })
+    );
     await user.click(requestButton());
   };
 

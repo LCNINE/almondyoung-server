@@ -55,6 +55,7 @@ import {
   assertShipmentHasNoCustodyOrActiveWork,
   completeShipmentOperation,
   createShipmentOperation,
+  type ShipmentOperationType,
   loadShipmentAggregate,
   lockShipmentAggregate,
   selectConfirmedReservationQtyByLine,
@@ -68,6 +69,11 @@ import {
 import { shrinkDraftLines } from './draft-line-shrink';
 import { shipmentOwnerOf, warehouseIdOf } from '../shipment/shipment-owner';
 import { missingRecipientFields } from './recipient-completeness';
+import {
+  classifyOperationReason,
+  resolveOperationReason,
+  type ResolvedOperationReason,
+} from '../shipment/shipment-operation-reasons';
 
 const TRUSTED_CHANNELS = new Set(['medusa', 'naver', 'coupang']);
 
@@ -189,6 +195,7 @@ export class ShipmentPlanningService {
   ) {
     this.workflowGate.assertV2MutationAllowed('shipment.split');
     this.assertReason(dto.reason);
+    const resolvedReason = resolveOperationReason('split', dto);
     const moves = [...dto.moves].sort((a, b) => a.shipmentLineId.localeCompare(b.shipmentLineId));
     this.assertNoDuplicateIds(
       moves.map((move) => move.shipmentLineId),
@@ -263,6 +270,7 @@ export class ShipmentPlanningService {
               reservationTargets,
               actor,
               meta: dto,
+              resolvedReason,
               idempotencyKey,
               requestHash,
             });
@@ -289,6 +297,7 @@ export class ShipmentPlanningService {
   ) {
     this.workflowGate.assertV2MutationAllowed('shipment.split_unreserved');
     this.assertReason(dto.reason);
+    const resolvedReason = resolveOperationReason('split', dto);
 
     return this.commands.execute(
       {
@@ -354,6 +363,7 @@ export class ShipmentPlanningService {
               reservationTargets,
               actor,
               meta: dto,
+              resolvedReason,
               idempotencyKey,
               requestHash,
             });
@@ -375,6 +385,7 @@ export class ShipmentPlanningService {
   ) {
     this.workflowGate.assertV2MutationAllowed('shipment.revise_recipient');
     this.assertReason(dto.reason);
+    const resolvedReason = resolveOperationReason('recipient_revision', dto);
     return this.commands.execute(
       {
         commandType: 'shipment.recipient_revision',
@@ -416,7 +427,7 @@ export class ShipmentPlanningService {
               tx,
               'recipient_revision',
               actor,
-              dto.reason,
+              resolvedReason,
               dto.csCaseId,
               dto.note,
               idempotencyKey,
@@ -508,7 +519,7 @@ export class ShipmentPlanningService {
               tx,
               'recipient_revision',
               actor,
-              'CHANNEL_ORDER_MODIFIED',
+              { reason: 'CHANNEL_ORDER_MODIFIED', reasonCode: 'channel_order_modified', requestChannel: null },
               undefined,
               undefined,
               idempotencyKey,
@@ -584,7 +595,7 @@ export class ShipmentPlanningService {
           tx,
           'plan',
           actor,
-          'Shipment planned',
+          { reason: 'Shipment planned', reasonCode: 'system_plan', requestChannel: null },
           undefined,
           undefined,
           idempotencyKey,
@@ -621,13 +632,16 @@ export class ShipmentPlanningService {
     shipmentId: string,
     dto: CancelShipmentOutstandingDto,
     idempotencyKey: string,
-    actor: ShipmentPlanningActor,
+    // recordedOperatorId — 작업 기록의 처리자만 바꾼다. 권한 판정·요청 해시는 actor 그대로다
+    actor: ShipmentPlanningActor & { recordedOperatorId?: string },
     // 요청 해시에 넣지 않는다 — 매번 새 uuid 라 같은 키 재전송이 불일치로 바뀐다(K3 PR6 N2)
     origin: SalesOrderCancellationOrigin | null,
     tx?: DbTx,
   ) {
     this.workflowGate.assertV2MutationAllowed('shipment.cancel_outstanding');
     this.assertReason(dto.reason);
+    const resolvedReason = resolveOperationReason('cancel', dto);
+    const recordedActor = actor.recordedOperatorId ? { ...actor, id: actor.recordedOperatorId } : actor;
     const requestedLines = [...dto.lines].sort((a, b) => a.shipmentLineId.localeCompare(b.shipmentLineId));
     this.assertNoDuplicateIds(
       requestedLines.map((line) => line.shipmentLineId),
@@ -758,8 +772,8 @@ export class ShipmentPlanningService {
         const operation = await this.createOperation(
           tx,
           'cancel',
-          actor,
-          dto.reason,
+          recordedActor,
+          resolvedReason,
           dto.csCaseId,
           dto.note,
           idempotencyKey,
@@ -1202,6 +1216,11 @@ export class ShipmentPlanningService {
             type: wmsTables.shipmentOperations.type,
             status: wmsTables.shipmentOperations.status,
             lastError: wmsTables.shipmentOperations.lastError,
+            operatorId: wmsTables.shipmentOperations.operatorId,
+            reason: wmsTables.shipmentOperations.reason,
+            storedReasonCode: wmsTables.shipmentOperations.reasonCode,
+            requestChannel: wmsTables.shipmentOperations.requestChannel,
+            note: wmsTables.shipmentOperations.note,
             createdAt: wmsTables.shipmentOperations.createdAt,
             completedAt: wmsTables.shipmentOperations.completedAt,
           })
@@ -1254,7 +1273,13 @@ export class ShipmentPlanningService {
             .map((source) => ({ ...source, quantity: source.qty })),
           trackingEvents: trackingEvents.filter((event) => event.dispatchAttemptId === attempt.id),
         })),
-        operations,
+        operations: operations.map(({ storedReasonCode, ...operation }) => ({
+          ...operation,
+          reasonCode: classifyOperationReason(operation.type, {
+            reasonCode: storedReasonCode,
+            reason: operation.reason,
+          }),
+        })),
       };
     }, tx);
   }
@@ -1682,18 +1707,19 @@ export class ShipmentPlanningService {
       reservationTargets: Map<string, { source: number; target: number }>;
       actor: ShipmentPlanningActor;
       meta: ShipmentCommandReasonDto;
+      resolvedReason: ResolvedOperationReason;
       idempotencyKey: string;
       requestHash: string;
     },
   ): Promise<{ operationId: string; shipmentId: string; targetId: string; before: ShipmentManifestSnapshot }> {
-    const { aggregate, selected, reservationTargets, actor, meta, idempotencyKey, requestHash } = args;
+    const { aggregate, selected, reservationTargets, actor, meta, resolvedReason, idempotencyKey, requestHash } = args;
     const shipmentId = aggregate.shipment.id;
     const before = this.snapshot(aggregate);
     const operation = await this.createOperation(
       tx,
       'split',
       actor,
-      meta.reason,
+      resolvedReason,
       meta.csCaseId,
       meta.note,
       idempotencyKey,
@@ -1779,9 +1805,9 @@ export class ShipmentPlanningService {
 
   private async createOperation(
     tx: DbTx,
-    type: (typeof wmsTables.shipmentOperations.type.enumValues)[number],
+    type: ShipmentOperationType,
     actor: ShipmentPlanningActor,
-    reason: string,
+    reason: ResolvedOperationReason,
     csCaseId: string | undefined,
     note: string | undefined,
     idempotencyKey: string,
@@ -1791,7 +1817,9 @@ export class ShipmentPlanningService {
     return createShipmentOperation(tx, {
       type,
       actorId: actor.id,
-      reason,
+      reason: reason.reason,
+      reasonCode: reason.reasonCode,
+      requestChannel: reason.requestChannel,
       csCaseId: csCaseId ?? null,
       note: note ?? null,
       idempotencyKey,

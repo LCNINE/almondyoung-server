@@ -15,6 +15,7 @@ import { User, RequirePermission, PiiResponse, PiiWrite } from '@app/authorizati
 import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
 import { ChannelCancelRequestService } from '../channel-cancel-request/channel-cancel-request.service';
 import { SalesOrdersService } from '../services/sales-orders.service';
+import { SalesOrderShipmentOperationsService } from '../services/sales-order-shipment-operations.service';
 import { SalesOrderAmendmentsService } from '../services/sales-order-amendments.service';
 import { StoreSalesOrdersService } from '../services/store-sales-orders.service';
 import { CreateSalesOrderDto } from '../dto/create-sales-order.dto';
@@ -38,6 +39,7 @@ export class SalesOrdersController {
     private readonly amendments: SalesOrderAmendmentsService,
     private readonly storeSalesOrders: StoreSalesOrdersService,
     private readonly cancelRequests: ChannelCancelRequestService,
+    private readonly shipmentOperations: SalesOrderShipmentOperationsService,
   ) {}
 
   @PiiResponse({
@@ -168,6 +170,7 @@ export class SalesOrdersController {
     }
     return this.storeSalesOrders.adminCancelRequest(id, {
       reasonCode: dto.reasonCode,
+      ...(dto.requestChannel ? { requestChannel: dto.requestChannel } : {}),
       reasonDetail: dto.reasonDetail,
       lines: dto.lines,
       alreadyRefundedAmount: dto.alreadyRefundedAmount,
@@ -308,6 +311,19 @@ export class SalesOrdersController {
   @ApiResponse({ status: 200, description: '조회 성공', type: SalesOrderResponseDto })
   getOne(@Param('id') id: string) {
     return this.service.getOne(id);
+  }
+
+  @PiiResponse({
+    fields: { 'items[].reason': 'text', 'items[].note': 'text' },
+    subjects: [{ path: 'salesOrderId', type: 'sales_order' }],
+    reveal: true,
+  })
+  @RequirePermission('order.order.read')
+  @Get(':id/shipment-operations')
+  @ApiOperation({ summary: '주문의 상자 작업 이력(사유·요청 경로·메모·처리자)' })
+  @ApiParam({ name: 'id', description: '판매 주문 ID' })
+  shipmentOperationHistory(@Param('id') id: string) {
+    return this.shipmentOperations.list(id);
   }
 
   @PiiResponse({

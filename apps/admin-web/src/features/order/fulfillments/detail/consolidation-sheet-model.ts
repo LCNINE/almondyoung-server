@@ -159,7 +159,7 @@ export function step2Blocker(input: {
   needsReopen: boolean;
   hasMemoChoices: boolean;
   memoFrom: string;
-  reason: string;
+  reasonReady: boolean;
 }): string | null {
   if (input.hasLostCommand) {
     return '응답을 받지 못한 요청을 먼저 다시 보내 주세요';
@@ -178,8 +178,8 @@ export function step2Blocker(input: {
     return '합친 상자의 배송 메모를 골라 주세요';
   }
 
-  if (!input.reason.trim()) {
-    return '작업 사유를 적어 주세요';
+  if (!input.reasonReady) {
+    return '작업 사유를 골라 주세요';
   }
 
   return null;

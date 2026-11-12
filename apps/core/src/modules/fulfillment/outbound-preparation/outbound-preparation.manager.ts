@@ -230,7 +230,11 @@ export class OutboundPreparationManager {
 
       await this.planning.splitUnreserved(
         shipmentId,
-        { reason: '출고 준비: 있는 것만 먼저 보내기', expectedManifestVersion: manifestVersion },
+        {
+          reason: '출고 준비: 있는 것만 먼저 보내기',
+          reasonCode: 'ship_available_first',
+          expectedManifestVersion: manifestVersion,
+        },
         `${idempotencyKey}:${shipmentId}`,
         actor,
       );
