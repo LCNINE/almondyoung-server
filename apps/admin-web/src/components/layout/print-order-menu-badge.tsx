@@ -18,7 +18,11 @@ export function PrintOrderMenuBadge() {
 
   return (
     <Badge
-      variant={data.cancelRefused > 0 ? 'destructive' : 'secondary'}
+      variant={
+        data.cancelRefused + data.vendorAttention > 0
+          ? 'destructive'
+          : 'secondary'
+      }
       className="ml-auto text-xs group-data-[collapsible=icon]:hidden"
       aria-label={`와우프레스 발주 처리 필요 ${count}건`}
     >

@@ -27,7 +27,7 @@ describe('describeLastError', () => {
       '와우프레스 접수 에러: 접수에러-양단면접수에러. 와우프레스 주문배송조회에서 파일재접수나 주문취소로 처리해 주세요.',
     ]);
     expect(describeLastError('wowpress needs attention: cancelled')).toEqual([
-      '와우프레스에서 주문이 취소됐습니다. 주문 화면에서 이 주문을 취소해 환불해 주세요.',
+      '와우프레스에서 주문이 취소됐습니다. 취소 완료함을 눌러 고객 주문을 취소하고 환불해 주세요.',
     ]);
   });
 });

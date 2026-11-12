@@ -1,6 +1,7 @@
 import { type PrintOrderRow } from '../schema/print-order.schema';
 import { CANCEL_CLAIM_STALE_MS } from './print-order-cancellation.manager';
 import { PRINT_ORDER_STALE_MS } from './print-order-submit.manager';
+import { VENDOR_CANCELLED } from './print-order-tracking.manager';
 import { isPreservedLastError } from './print-order.repository';
 import { type PrintOrderListItem } from './print-order.reader';
 
@@ -53,12 +54,18 @@ export function shippedAfterCancel(row: PrintOrderRow): boolean {
   );
 }
 
+// 와우프레스에서 취소됐는데 우리 발주는 아직 접수 상태인 행. 운영자가 취소 완료함을 눌러야 환불이 열린다
+export function cancelledAtVendor(row: Pick<PrintOrderRow, 'status' | 'lastError'>): boolean {
+  return row.status === 'submitted' && row.lastError === VENDOR_CANCELLED;
+}
+
 export function awaitsCancelResolution(row: PrintOrderRow, now: number, refundNotOpened: boolean): boolean {
   return (
     row.status === 'cancel_refused' ||
     isStaleCancelling(row, now) ||
     cancelledButNotRefunded(row, refundNotOpened) ||
-    shippedAfterCancel(row)
+    shippedAfterCancel(row) ||
+    cancelledAtVendor(row)
   );
 }
 

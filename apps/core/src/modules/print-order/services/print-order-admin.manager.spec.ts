@@ -438,6 +438,16 @@ describe('PrintOrderAdminManager', () => {
       },
     );
 
+    it('a row cancelled on wowpress can only be finished as cancelled, which opens the refund', async () => {
+      const { store, manager, add } = setup();
+      const r = add({ ...refused, status: 'submitted', lastError: 'wowpress needs attention: cancelled' });
+      await expect(manager.resolveCancel(r.id, 'proceed', ACTOR)).rejects.toBeInstanceOf(BadRequestError);
+
+      const out = await manager.resolveCancel(r.id, 'cancelled', ACTOR);
+      expect(store.get(r.id).status).toBe('cancelled');
+      expect(out.cancelSales).toBe(true);
+    });
+
     it('cancelled on a row cancelled by the normal path is a no-op without a sales cancel', async () => {
       const { manager, add } = setup();
       const r = add({ status: 'cancelled' });

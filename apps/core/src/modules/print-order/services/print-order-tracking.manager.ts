@@ -12,13 +12,15 @@ import { isPreservedLastError, PrintOrderRepository } from './print-order.reposi
 
 export const WOWPRESS_STATUS_DELIVERED = 85;
 
-// 와우프레스에서 사람이 처리해야 하는 상태. 보드 와우프레스 확인 탭이 이 접두어로 고른다
+// 와우프레스에서 사람이 처리해야 하는 상태. 접수 에러는 보드 와우프레스 확인 탭, 취소는 취소 확인 필요 탭이 고른다
 export const VENDOR_ATTENTION_PREFIX = 'wowpress needs attention: ';
+export const VENDOR_CANCELLED = `${VENDOR_ATTENTION_PREFIX}cancelled`;
+export const VENDOR_JOB_ERROR_PREFIX = `${VENDOR_ATTENTION_PREFIX}job error `;
 
 export function vendorAttention(detail: Pick<WowpressOrderDetail, 'ordstat' | 'jobstat'>): string | null {
-  if (detail.ordstat === WOWPRESS_STATUS_CANCELLED) return `${VENDOR_ATTENTION_PREFIX}cancelled`;
+  if (detail.ordstat === WOWPRESS_STATUS_CANCELLED) return VENDOR_CANCELLED;
   if (detail.jobstat !== null && WOWPRESS_JOB_ERRORS.has(detail.jobstat)) {
-    return `${VENDOR_ATTENTION_PREFIX}job error ${detail.jobstat}`;
+    return `${VENDOR_JOB_ERROR_PREFIX}${detail.jobstat}`;
   }
 
   return null;

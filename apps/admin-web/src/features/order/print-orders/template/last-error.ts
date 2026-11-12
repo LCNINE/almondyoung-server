@@ -55,7 +55,7 @@ const REASONS: [prefix: string, korean: string][] = [
 ];
 
 const REJECTED = 'wowpress rejected the order: ';
-const VENDOR_CANCELLED = 'wowpress needs attention: cancelled';
+export const VENDOR_CANCELLED = 'wowpress needs attention: cancelled';
 const JOB_ERROR = 'wowpress needs attention: job error ';
 
 // 와우프레스 API 문서의 주문작업상태코드(JobStat) 중 에러
@@ -80,7 +80,7 @@ export function describeLastError(raw: string): string[] {
     if (part.startsWith(REJECTED))
       return `와우프레스가 주문을 받지 않았습니다. 사유: ${part.slice(REJECTED.length)}`;
     if (part === VENDOR_CANCELLED)
-      return '와우프레스에서 주문이 취소됐습니다. 주문 화면에서 이 주문을 취소해 환불해 주세요.';
+      return '와우프레스에서 주문이 취소됐습니다. 취소 완료함을 눌러 고객 주문을 취소하고 환불해 주세요.';
     if (part.startsWith(JOB_ERROR)) {
       const code = part.slice(JOB_ERROR.length);
 

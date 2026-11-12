@@ -5,7 +5,12 @@ import { BadRequestError, ConflictError, NotFoundError } from '@app/shared';
 import { wmsSchema } from '../../inventory/schema/inventory.schema';
 import { PrintProductSpecRepository } from '../repositories/print-product-spec.repository';
 import { type PrintOrderRow } from '../schema/print-order.schema';
-import { awaitsCancelResolution, orderMayBeInFlight, shippedAfterCancel } from './print-order-board.rules';
+import {
+  awaitsCancelResolution,
+  cancelledAtVendor,
+  orderMayBeInFlight,
+  shippedAfterCancel,
+} from './print-order-board.rules';
 import { PrintOrderReader } from './print-order.reader';
 import { isPreservedLastError, PrintOrderRepository } from './print-order.repository';
 
@@ -106,6 +111,9 @@ export class PrintOrderAdminManager {
     const refundNotOpened = row.status === 'cancelled' && (await this.reader.refundNotOpened(id));
     // 판매주문 줄에 남은 수량이 없으면 열 환불이 없다
     if (outcome === 'cancelled' && row.status === 'cancelled' && !refundNotOpened) return { row, cancelSales: false };
+    if (outcome === 'proceed' && cancelledAtVendor(row)) {
+      throw new BadRequestError('WowPress already cancelled this print order; it cannot go back to production');
+    }
     if (outcome === 'proceed' && PROCEEDED.includes(row.status) && !shippedAfterCancel(row)) {
       return { row, cancelSales: false };
     }

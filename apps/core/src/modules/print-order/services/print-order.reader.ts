@@ -19,7 +19,7 @@ import {
 } from 'drizzle-orm';
 import { wmsSchema, wmsTables, type DbTx } from '../../inventory/schema/inventory.schema';
 import { type PrintOrderRow } from '../schema/print-order.schema';
-import { VENDOR_ATTENTION_PREFIX } from './print-order-tracking.manager';
+import { VENDOR_CANCELLED, VENDOR_JOB_ERROR_PREFIX } from './print-order-tracking.manager';
 import { lineCanceledQuantitySql } from '../../sales-order/line-quantities/line-quantities.sql';
 
 export const PRINT_ORDER_TABS = [
@@ -252,12 +252,13 @@ export class PrintOrderReader {
     const t = wmsTables.printOrders;
     switch (tab) {
       case 'cancel_refused':
-        // 결과 미상 cancelling, 인쇄는 취소됐는데 판매주문 줄에 남은 수량이 있는 행도 여기서 사람이 본다
+        // 결과 미상 cancelling, 인쇄는 취소됐는데 판매주문 줄에 남은 수량이 있는 행, 와우프레스에서 취소된 행도 여기서 사람이 본다
         return or(
           eq(t.status, 'cancel_refused'),
           and(eq(t.status, 'cancelling'), lt(t.updatedAt, staleCancellingBefore)),
           refundNotOpenedSql(),
           and(inArray(t.status, ['shipped', 'delivered']), isNotNull(t.cancelRefusedAt), isNull(t.cancelResolvedAt)),
+          and(eq(t.status, 'submitted'), eq(t.lastError, VENDOR_CANCELLED)),
         );
       case 'awaiting_payment':
         // 테스트 주문은 일부러 입금대기에 두므로 테스트 확인대기 탭에서만 본다
@@ -265,7 +266,7 @@ export class PrintOrderReader {
       case 'vendor_attention':
         return and(
           inArray(t.status, ['submitted', 'shipped']),
-          sql`starts_with(coalesce(${t.lastError}, ''), ${VENDOR_ATTENTION_PREFIX})`,
+          sql`starts_with(coalesce(${t.lastError}, ''), ${VENDOR_JOB_ERROR_PREFIX})`,
         );
       case 'test_pending':
         return and(eq(t.testMemo, true), isNull(t.testConfirmedAt), ne(t.status, 'cancelled'));

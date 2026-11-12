@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { describeLastError } from './last-error';
+import { describeLastError, VENDOR_CANCELLED } from './last-error';
 import { Copy } from 'lucide-react';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
@@ -130,7 +130,9 @@ export default function PrintOrdersTemplate() {
 
       <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
         {TABS.map(({ key, label }) => {
-          const danger = key === 'cancel_refused' && counts[key] > 0;
+          const danger =
+            (key === 'cancel_refused' || key === 'vendor_attention') &&
+            counts[key] > 0;
           return (
             <button
               key={key}
@@ -292,6 +294,8 @@ function PrintOrderRow({
     row.resolvable && row.status === 'cancelled' && row.salesCancelFailed;
   const showResolve = row.resolvable && !showSalesRetry;
   const shipped = row.status === 'shipped' || row.status === 'delivered';
+  const cancelledAtVendor =
+    row.status === 'submitted' && row.lastError === VENDOR_CANCELLED;
   const awaitingTest =
     row.testMemo && !row.testConfirmedAt && row.status !== 'cancelled';
   const retryable = row.status === 'failed' || row.status === 'unsupported';
@@ -387,15 +391,17 @@ function PrintOrderRow({
                     취소 완료함
                   </Button>
                 )}
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() =>
-                    onAction({ kind: 'resolve', row, outcome: 'proceed' })
-                  }
-                >
-                  {shipped ? '반품·환불 확인함' : '생산 진행으로 처리'}
-                </Button>
+                {!cancelledAtVendor && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() =>
+                      onAction({ kind: 'resolve', row, outcome: 'proceed' })
+                    }
+                  >
+                    {shipped ? '반품·환불 확인함' : '생산 진행으로 처리'}
+                  </Button>
+                )}
               </>
             )}
             {canWrite && awaitingTest && (
