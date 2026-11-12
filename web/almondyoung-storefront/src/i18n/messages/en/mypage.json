@@ -499,6 +499,7 @@
       "shipping": "Shipping",
       "partialShipping": "Partial Shipping",
       "preparing": "Preparing",
+      "inProduction": "In production",
       "paid": "Paid",
       "orderCancel": "Cancel Order"
     },
@@ -595,6 +596,7 @@
         "already_shipped": "This order has already shipped and cannot be canceled. Please use the return request instead.",
         "channel_order": "Please cancel this order on the channel where it was placed.",
         "already_processing": "Order preparation has started, so self-cancellation is unavailable. Please contact customer support.",
+        "print_in_production": "Production has started, so you can no longer cancel this order yourself. If there is a problem with your printed items, please contact customer support within 5 days of receiving them.",
         "digital_downloaded": "This order includes a digital item you already downloaded, so self-cancellation is unavailable. Please contact customer support."
       },
       "writeReview": "Write a review",

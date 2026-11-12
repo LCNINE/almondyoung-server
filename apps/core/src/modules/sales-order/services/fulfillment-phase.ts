@@ -14,6 +14,7 @@ export interface FulfillmentPhaseInput {
   supplierShipmentStages: SupplierShipmentStage[];
   /** 인쇄 외주(print_orders) 상태 목록 (취소 제외). 없으면 생략 */
   printStatuses?: string[];
+  printInProduction?: boolean;
 }
 
 type UnitPhase = 'preparing' | 'shipping' | 'delivered';

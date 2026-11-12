@@ -65,6 +65,38 @@ describeIfDb('PrintOrderReader board (tabs, summary)', () => {
     return row?.id ?? '';
   }
 
+  it('ignores print lines and fully cancelled non-print lines when checking the production label', async () => {
+    await inRollbackTx(conn.db, async (tx) => {
+      const reader = new PrintOrderReader(makeDbService(conn.db));
+      const { salesOrderId } = await seedOrder(tx, randomUUID());
+
+      expect(await reader.hasActiveNonPrintLine(salesOrderId, tx)).toBe(false);
+
+      const lineId = randomUUID();
+      await tx.insert(wmsTables.salesOrderLines).values({
+        id: lineId,
+        salesOrderId,
+        variantId: randomUUID(),
+        productName: '일반 상품',
+        quantity: 2,
+      });
+
+      expect(await reader.hasActiveNonPrintLine(salesOrderId, tx)).toBe(true);
+
+      await recordSalesOrderCancellation(tx, { salesOrderId, cancellationScope: 'partial' }, [
+        { salesOrderLineId: lineId, quantity: 1 },
+      ]);
+
+      expect(await reader.hasActiveNonPrintLine(salesOrderId, tx)).toBe(true);
+
+      await recordSalesOrderCancellation(tx, { salesOrderId, cancellationScope: 'partial' }, [
+        { salesOrderLineId: lineId, quantity: 1 },
+      ]);
+
+      expect(await reader.hasActiveNonPrintLine(salesOrderId, tx)).toBe(false);
+    });
+  });
+
   it('normalizes stored phones exactly like the search term (landline and mobile, +82 or not)', async () => {
     const samples: Array<[string, string]> = [
       ['010-1234-5678', '01012345678'],

@@ -9,7 +9,7 @@
 - `PrintOrderSubmitWorker` (매분): 판매주문 하나씩 집어 시안 주인 확인 → ugc 에서 인쇄 파일 링크 → 와우프레스 가격조회 → 주문 → 파일 전달. 아래 묶음 발주 참고.
   시안 ID 는 고객이 장바구니 메타데이터로 넣는 값이라, 시안 주인(ugc `almond_designs.user_id`)과 주문 고객(`sales_orders.customer_id`)이 다르면 주문하지 않고 `failed` 로 둔다.
 - 와우프레스 주문상태 콜백(`POST /wowpress/callback`): 와우프레스가 상태가 바뀔 때마다 알려 주면 그 주문만 바로 다시 읽는다. 아래 상태 콜백 참고.
-- `PrintOrderTrackingWorker` (30분): 콜백을 놓친 경우를 위한 보조 확인. 주문상세로 송장·배송 상태, 입금대기, 와우프레스 확인 필요(접수·파일 에러, 와우프레스 쪽 취소)를 반영한다. 고객 배송조회(`/store/orders/by-channel-order/:id/tracking`)에 한 항목으로 덧붙는다.
+- `PrintOrderTrackingWorker` (30분): 콜백을 놓친 경우를 위한 보조 확인. 주문상세로 송장·배송 상태, 제작 여부, 입금대기, 와우프레스 확인 필요(접수·파일 에러, 와우프레스 쪽 취소)를 반영한다. 고객 배송조회(`/store/orders/by-channel-order/:id/tracking`)에 한 항목으로 덧붙는다.
 - 취소: `PrintOrderCancellation` 이 판매주문 취소 앞단에서 와우프레스 취소를 먼저 시도한다. 아래 취소·환불 경로 참고.
 - 운영자 보드: admin-web `주문 > 와우프레스 발주` (`/order/print-orders`).
 - 배송지 변경: Medusa 에서 주소를 고쳐도 와우프레스로 이미 보냈거나 보내는 중인 인쇄 줄이 있으면 반영하지 않고 운영자 확인(`SHIPMENT_NOT_REVISABLE`)으로 남긴다. 와우프레스 쪽 주소는 사람이 고친다. 발주 전 줄은 발주할 때 새 주소를 읽는다.
@@ -45,6 +45,10 @@
 | `cancelled` | 취소됨 | 종료 |
 | `cancel_refused` | 와우프레스가 취소를 거절(이미 생산 중) | 운영자가 전화 확인 후 `cancelled` 또는 `submitted` |
 
+`vendor_in_production` 은 주문 상태와 별도로 저장하는 제작 여부다(`NOT NULL DEFAULT false`). 상세가 취소 불가(`WOWPRESS_CANCELLABLE` 이 false)이면서 `ordstat !== 90` 이면 true다. 콜백과 30분 폴러가 같은 `refresh` 경로에서 값이 바뀔 때만 기록한다. `ordstat` 0·1이나 `jobstat` 109로 돌아가거나 와우프레스에서 취소되면 false로 지운다.
+
+고객 actions의 `printInProduction` 은 공통 `fulfillmentStatus` 가 `preparing` 이고, 활성 인쇄 행 중 제작 중인 것이 있으며, 취소되지 않은 일반 상품이 없을 때만 true다. 일반 상품의 남은 수량은 기존 `lineRemainingSql` 로 판정한다. 스토어프론트는 이때만 준비 문구를 ko/en/ja의 제작 중 문구로 바꾼다. 혼합 주문은 상품 준비 중을 유지하고, 출고 후에는 기존 배송 단계를 표시한다. 관리자·통계·채널의 공통 단계 값은 늘리지 않는다.
+
 `cancelling` 은 오래 남으면(`CANCEL_CLAIM_STALE_MS`) 보드의 `취소 확인 필요` 로 넘어간다.
 
 ### 한 번만 주문할 권리 (`order_attempted_at`)
@@ -74,6 +78,10 @@
 | 어드민 결제 상세 금액 직접 환불·결제취소 | 취소되지 않은 인쇄 줄이 있으면 막고 부분 취소로 안내한다. 하자로 재제작이 불가하거나 배송 사고일 때만 체크해서 연다(와우프레스는 건드리지 않는다). Medusa 주문인데 core 가 아직 수집하지 않았으면 받은 돈을 돌려주는 동작을 막는다. 버튼을 누르는 순간 상태를 다시 읽는다 |
 | 어드민 무통장 환불신청 승인 | 취소되지 않은 인쇄 줄(아직 안 보낸 실패·미지원 포함)이 있으면 409 `PRINT_NEEDS_PARTIAL_CANCEL` 로 승인을 막는다. 와우프레스 취소는 시도하지 않는다 |
 | 고객 주문 취소 | 인쇄가 제작 중이고 다른 상품이 남으면 409 `PRINT_PARTIAL_CANCEL_AVAILABLE`. 스토어(`web/almondyoung-storefront/src/components/orders/print-partial-cancel-dialog.tsx`)가 안내창을 띄우고, 고객이 동의하면 `excludePrint: true` 로 다시 보내 취소되지 않은 인쇄 줄과 디지털 줄을 뺀 나머지를 부분 취소한다. 이 경로의 와우프레스 거절은 `cancel_refused` 로 남기지 않고 `submitted` 로 되돌린다(고객이 안내를 받았고 인쇄는 계속되므로 운영자 확인이 필요 없다) |
+
+제작 중인 인쇄물만 있고 `hasNonPrintLine` 이 false인 주문은 취소 버튼을 숨기고 `cancelUnavailableReason: print_in_production` 을 보낸다. 고객에게 직접 취소 불가와 수령일부터 5일 안에 인쇄물 문제를 고객센터로 접수하도록 안내한다. 다른 상품이 있으면 기존 `cancel_refused` 예외와 똑같이 취소 버튼을 유지한다. 실제 취소 요청은 저장된 플래그로 승인하지 않고 기존 와우프레스 실시간 확인과 409 흐름을 유지한다.
+
+제작 플래그 추가 마이그레이션은 `20261112090012_add-print-order-vendor-in-production.sql` 이다. expand 변경이므로 마이그레이션을 먼저 적용하고 core를 배포한다. 기존 행은 false로 시작하고 다음 콜백 또는 폴러에서 갱신된다. 콜백 누락이나 상세 조회 실패 중에는 화면 반영이 지연될 수 있다.
 
 ## 품목 여는 절차
 

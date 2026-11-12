@@ -48,6 +48,7 @@ export const printOrders = pgTable(
     salesCancelFailedAt: timestamp('sales_cancel_failed_at', { withTimezone: true }),
     fileDeliveredAt: timestamp('file_delivered_at', { withTimezone: true }),
     vendorAwaitingPayment: boolean('vendor_awaiting_payment').notNull().default(false),
+    vendorInProduction: boolean('vendor_in_production').notNull().default(false),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },

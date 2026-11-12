@@ -157,6 +157,7 @@ function row(overrides: Partial<PrintOrderRow> = {}): PrintOrderRow {
     salesCancelFailedAt: null,
     fileDeliveredAt: null,
     vendorAwaitingPayment: false,
+    vendorInProduction: false,
     createdAt: new Date(Date.UTC(2026, 9, 14, 0, seq)),
     updatedAt: new Date(),
     ...overrides,

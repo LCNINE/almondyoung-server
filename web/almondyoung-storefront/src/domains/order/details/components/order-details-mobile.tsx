@@ -110,7 +110,7 @@ export const OrderDetailsMobile = ({
   const deliveryStatusLabel = refundRequestStatus === "REQUESTED"
     ? tRefundRequest("requested")
     : coreActions
-    ? getCoreDisplayStatus(coreActions)
+    ? getCoreDisplayStatus(coreActions, tStatus)
     : tStatus(
         order.status === "canceled"
           ? "orderCancel"

@@ -3,6 +3,7 @@ import { type PrintOrderRow } from '../schema/print-order.schema';
 import { WowpressClient } from '../wowpress/wowpress.client';
 import {
   WOWPRESS_CARRIER,
+  WOWPRESS_CANCELLABLE,
   WOWPRESS_JOB_ERRORS,
   WOWPRESS_STATUS_AWAITING_PAYMENT,
   WOWPRESS_STATUS_CANCELLED,
@@ -64,6 +65,7 @@ export class PrintOrderTrackingManager {
     await this.fillVendorBox(row, detail.boxNumber);
     await this.markAwaitingPayment(row, detail.ordstat === WOWPRESS_STATUS_AWAITING_PAYMENT);
     await this.markVendorAttention(row, vendorAttention(detail));
+    await this.markInProduction(row, !WOWPRESS_CANCELLABLE(detail) && detail.ordstat !== WOWPRESS_STATUS_CANCELLED);
 
     const now = new Date();
     const invoice = detail.trackingNumber;
@@ -100,6 +102,12 @@ export class PrintOrderTrackingManager {
     if (row.vendorAwaitingPayment === awaiting) return;
 
     await this.repository.updateTracked(row.id, { vendorAwaitingPayment: awaiting });
+  }
+
+  private async markInProduction(row: PrintOrderRow, inProduction: boolean): Promise<void> {
+    if (row.vendorInProduction === inProduction) return;
+
+    await this.repository.updateTracked(row.id, { vendorInProduction: inProduction });
   }
 
   // 중복 의심 같은 보존 기록은 덮지 않는다. 풀리면 우리가 쓴 기록만 지운다

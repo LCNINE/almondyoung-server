@@ -77,7 +77,14 @@ export function orderBadgeStatus(actions: Pick<StoreOrderActionsResponse, "order
  * Core action projection에서 고객 화면 주 상태 텍스트를 도출한다.
  * 진행 단계 > paymentStatus 분기 > SO 상태 순으로 우선 적용.
  */
-export function getCoreDisplayStatus(actions: StoreOrderActionsResponse): string {
+export function getCoreDisplayStatus(
+  actions: StoreOrderActionsResponse,
+  tStatus: (key: "inProduction") => string
+): string {
+  if (actions.fulfillmentStatus === "preparing" && actions.printInProduction) {
+    return tStatus("inProduction")
+  }
+
   // 진행 단계가 더 구체적이면 우선 표시
   const phaseLabel = PHASE_LABELS[actions.fulfillmentStatus]
   if (phaseLabel) return phaseLabel

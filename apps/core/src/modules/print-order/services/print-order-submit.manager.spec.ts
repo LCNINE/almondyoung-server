@@ -268,6 +268,7 @@ function makeRow(overrides: Partial<PrintOrderRow> = {}): PrintOrderRow {
     salesCancelFailedAt: null,
     fileDeliveredAt: null,
     vendorAwaitingPayment: false,
+    vendorInProduction: false,
     createdAt: now,
     updatedAt: now,
     ...overrides,

@@ -448,7 +448,7 @@ export function OrderList({
                 (refund === "REQUESTED"
                   ? "환불 신청됨 · 처리 대기중"
                   : actions
-                    ? getCoreDisplayStatus(actions)
+                    ? getCoreDisplayStatus(actions, tStatus)
                     : order.status)
 
               return (

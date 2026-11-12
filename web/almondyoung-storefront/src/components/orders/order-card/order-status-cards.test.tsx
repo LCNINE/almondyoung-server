@@ -156,6 +156,56 @@ afterEach(async () => {
 })
 
 describe("status cards and order actions", () => {
+  it("목록에서도 인쇄 제작 중 취소 불가 사유를 보여 준다", async () => {
+    await render(
+      <OrderActions
+        orderId="order-3065"
+        paymentStatus="captured"
+        productName="인쇄물"
+        coreActions={{
+          ...coreActions,
+          availableActions: ["receipt"],
+          cancelUnavailableReason: "print_in_production",
+        }}
+      />
+    )
+
+    expect(container.textContent).toContain(
+      mypage.order.actions.cancelUnavailable.print_in_production
+    )
+  })
+
+  it.each([OrderDetailsDesktop, OrderDetailsMobile])(
+    "제작 중 주문은 %s 상세에서 제작 표시와 취소 불가 사유를 보여 준다",
+    async (Details) => {
+      await render(
+        <Details
+          order={order}
+          countryCode="kr"
+          coreActions={{
+            ...coreActions,
+            fulfillmentStatus: "preparing",
+            printInProduction: true,
+            availableActions: ["receipt"],
+            cancelUnavailableReason: "print_in_production",
+          }}
+          returns={[]}
+          intentId="intent-3065"
+        />
+      )
+
+      expect(container.textContent).toContain(mypage.order.status.inProduction)
+      expect(container.textContent).toContain(
+        mypage.order.actions.cancelUnavailable.print_in_production
+      )
+      expect(
+        Array.from(container.querySelectorAll("button")).some(
+          (button) => button.textContent === "주문 취소" && !button.disabled
+        )
+      ).toBe(false)
+    }
+  )
+
   it.each([OrderDetailsDesktop, OrderDetailsMobile])(
     "renders status cards before other details in %s",
     async (Details) => {

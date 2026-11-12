@@ -75,6 +75,7 @@ function row(overrides: Partial<PrintOrderRow> = {}): PrintOrderRow {
     salesCancelFailedAt: null,
     fileDeliveredAt: null,
     vendorAwaitingPayment: false,
+    vendorInProduction: false,
     createdAt: new Date(),
     updatedAt: new Date(),
     ...overrides,
@@ -88,6 +89,40 @@ function setup() {
 }
 
 describe('PrintOrderTrackingManager', () => {
+  it.each([
+    { ordstat: 20, jobstat: null, before: false, after: true },
+    { ordstat: 0, jobstat: null, before: true, after: false },
+    { ordstat: 1, jobstat: null, before: true, after: false },
+    { ordstat: 20, jobstat: 109, before: true, after: false },
+    { ordstat: 90, jobstat: null, before: true, after: false },
+  ])('updates production for $ordstat/$jobstat from $before to $after', async ({ ordstat, jobstat, before, after }) => {
+    const { repo, wowpress, manager } = setup();
+    wowpress.detail.mockResolvedValue({ ordstat, jobstat, carrierCode: null, trackingNumber: null, boxNumber: null });
+
+    await manager.refresh(row({ vendorInProduction: before }));
+
+    expect(repo.updateTracked).toHaveBeenCalledWith('po-1', { vendorInProduction: after });
+  });
+
+  it.each([
+    { ordstat: 20, vendorInProduction: true },
+    { ordstat: 1, vendorInProduction: false },
+  ])('does not rewrite unchanged production flag $vendorInProduction', async ({ ordstat, vendorInProduction }) => {
+    const { repo, wowpress, manager } = setup();
+    wowpress.detail.mockResolvedValue({
+      ordstat,
+      jobstat: null,
+      carrierCode: null,
+      trackingNumber: null,
+      boxNumber: null,
+    });
+
+    await manager.refresh(row({ vendorInProduction }));
+
+    expect(repo.updateTracked).not.toHaveBeenCalled();
+    expect(repo.touch).toHaveBeenCalledWith('po-1');
+  });
+
   it('marks shipped with LOTTE when dlvyinvc appears and dlvyno is 109', async () => {
     const { repo, wowpress, manager } = setup();
     wowpress.detail.mockResolvedValue({
@@ -105,7 +140,9 @@ describe('PrintOrderTrackingManager', () => {
       'po-1',
       expect.objectContaining({ status: 'shipped', carrier: 'LOTTE', trackingNumber: '1234567890', deliveredAt: null }),
     );
-    expect(repo.updateTracked.mock.calls[0]?.[1].shippedAt).toBeInstanceOf(Date);
+    expect(repo.updateTracked.mock.calls.find(([, patch]) => patch.status === 'shipped')?.[1].shippedAt).toBeInstanceOf(
+      Date,
+    );
   });
 
   it('marks shipped with CJ from dlvybox', async () => {
@@ -169,7 +206,7 @@ describe('PrintOrderTrackingManager', () => {
 
     await manager.refresh(row());
 
-    expect(repo.updateTracked).toHaveBeenCalledTimes(1);
+    expect(repo.updateTracked).toHaveBeenCalledTimes(2);
   });
 
   it('treats a row that left tracking (cancel flow changed it) as a no-op', async () => {
@@ -183,7 +220,7 @@ describe('PrintOrderTrackingManager', () => {
     });
     repo.updateTracked.mockResolvedValue(false);
     await expect(manager.refresh(row())).resolves.toBeUndefined();
-    expect(repo.updateTracked).toHaveBeenCalledTimes(1);
+    expect(repo.updateTracked).toHaveBeenCalledTimes(2);
   });
 
   it('keeps tracking number with null carrier for unknown dlvyno', async () => {
@@ -217,7 +254,7 @@ describe('PrintOrderTrackingManager', () => {
 
     await manager.refresh(row({ status: 'shipped', carrier: 'CJ', trackingNumber: '555', shippedAt }));
 
-    const patch = repo.updateTracked.mock.calls[0]?.[1];
+    const patch = repo.updateTracked.mock.calls.find(([, update]) => update.status === 'delivered')?.[1];
     expect(patch).toMatchObject({ status: 'delivered', carrier: 'CJ', trackingNumber: '555', shippedAt });
     expect(patch?.deliveredAt).toBeInstanceOf(Date);
   });
@@ -257,7 +294,7 @@ describe('PrintOrderTrackingManager', () => {
       trackingNumber: null,
       boxNumber: null,
     });
-    await manager.refresh(row());
+    await manager.refresh(row({ vendorInProduction: true }));
     wowpress.detail.mockResolvedValue({
       ordstat: 80,
       jobstat: null,
@@ -265,7 +302,15 @@ describe('PrintOrderTrackingManager', () => {
       trackingNumber: '1',
       boxNumber: null,
     });
-    await manager.refresh(row({ status: 'shipped', carrier: 'LOTTE', trackingNumber: '1', shippedAt: new Date() }));
+    await manager.refresh(
+      row({
+        vendorInProduction: true,
+        status: 'shipped',
+        carrier: 'LOTTE',
+        trackingNumber: '1',
+        shippedAt: new Date(),
+      }),
+    );
     expect(repo.updateTracked).not.toHaveBeenCalled();
     expect(repo.touch).toHaveBeenCalledTimes(2);
   });
@@ -280,7 +325,9 @@ describe('PrintOrderTrackingManager', () => {
       boxNumber: null,
     });
 
-    await manager.refresh(row({ status: 'shipped', carrier: 'CJ', trackingNumber: '555', shippedAt: new Date() }));
+    await manager.refresh(
+      row({ vendorInProduction: true, status: 'shipped', carrier: 'CJ', trackingNumber: '555', shippedAt: new Date() }),
+    );
 
     expect(repo.updateTracked).not.toHaveBeenCalled();
   });
@@ -354,10 +401,18 @@ describe('PrintOrderTrackingManager', () => {
 
   it('clears only its own attention record once wowpress moves on', async () => {
     const { repo, wowpress, manager } = setup();
-    wowpress.detail.mockResolvedValue({ ordstat: 20, jobstat: null, carrierCode: null, trackingNumber: null, boxNumber: null });
+    wowpress.detail.mockResolvedValue({
+      ordstat: 20,
+      jobstat: null,
+      carrierCode: null,
+      trackingNumber: null,
+      boxNumber: null,
+    });
 
-    await manager.refresh(row({ lastError: 'wowpress needs attention: job error 129' }));
-    await manager.refresh(row({ lastError: 'duplicate wowpress order suspected: WP-1 / WP-2' }));
+    await manager.refresh(row({ vendorInProduction: true, lastError: 'wowpress needs attention: job error 129' }));
+    await manager.refresh(
+      row({ vendorInProduction: true, lastError: 'duplicate wowpress order suspected: WP-1 / WP-2' }),
+    );
 
     expect(repo.updateTracked).toHaveBeenCalledTimes(1);
     expect(repo.updateTracked).toHaveBeenCalledWith('po-1', { lastError: null });
@@ -449,7 +504,13 @@ describe('PrintOrderTrackingManager.refreshByVendorOrderNumber', () => {
   it('finds the row in whichever tenant holds it and re-reads the order detail', async () => {
     const { repo, wowpress, manager } = setup();
     repo.findTrackedByVendorOrderNumber.mockResolvedValueOnce(null).mockResolvedValueOnce(row());
-    wowpress.detail.mockResolvedValue({ ordstat: 10, jobstat: 129, carrierCode: null, trackingNumber: null, boxNumber: null });
+    wowpress.detail.mockResolvedValue({
+      ordstat: 10,
+      jobstat: 129,
+      carrierCode: null,
+      trackingNumber: null,
+      boxNumber: null,
+    });
 
     await manager.refreshByVendorOrderNumber('WP-1');
 
@@ -465,4 +526,3 @@ describe('PrintOrderTrackingManager.refreshByVendorOrderNumber', () => {
     await expect(manager.refreshByVendorOrderNumber('WP-1')).rejects.toThrow('db down');
   });
 });
-

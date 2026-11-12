@@ -1100,6 +1100,13 @@
       "when": 1794455397882,
       "tag": "20261112034957_add-shipment-operation-reason-code",
       "breakpoints": true
+    },
+    {
+      "idx": 157,
+      "version": "7",
+      "when": 1794474012548,
+      "tag": "20261112090012_add-print-order-vendor-in-production",
+      "breakpoints": true
     }
   ]
 }

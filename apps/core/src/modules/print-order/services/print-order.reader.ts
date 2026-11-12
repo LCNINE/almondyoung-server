@@ -7,6 +7,7 @@ import {
   desc,
   eq,
   ilike,
+  gt,
   inArray,
   isNotNull,
   isNull,
@@ -20,7 +21,7 @@ import {
 import { wmsSchema, wmsTables, type DbTx } from '../../inventory/schema/inventory.schema';
 import { type PrintOrderRow } from '../schema/print-order.schema';
 import { VENDOR_CANCELLED, VENDOR_JOB_ERROR_PREFIX } from './print-order-tracking.manager';
-import { lineCanceledQuantitySql } from '../../sales-order/line-quantities/line-quantities.sql';
+import { lineCanceledQuantitySql, lineRemainingSql } from '../../sales-order/line-quantities/line-quantities.sql';
 
 export const PRINT_ORDER_TABS = [
   'cancel_refused',
@@ -105,6 +106,27 @@ export class PrintOrderReader {
       (trx) => trx.select().from(t).where(eq(t.salesOrderId, salesOrderId)).orderBy(asc(t.createdAt)),
       tx,
     );
+  }
+
+  async hasActiveNonPrintLine(salesOrderId: string, tx?: DbTx): Promise<boolean> {
+    const lines = wmsTables.salesOrderLines;
+    const [row] = await this.dbService.run(
+      (trx) =>
+        trx
+          .select({ id: lines.id })
+          .from(lines)
+          .where(
+            and(
+              eq(lines.salesOrderId, salesOrderId),
+              isNull(lines.almondDesignId),
+              gt(lineRemainingSql(lines.quantity, lines.id), 0),
+            ),
+          )
+          .limit(1),
+      tx,
+    );
+
+    return !!row;
   }
 
   // 주문의 모든 라인이 인쇄 외주 라인인가 (창고 출고가 전혀 없는 주문)

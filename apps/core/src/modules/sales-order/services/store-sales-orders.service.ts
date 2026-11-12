@@ -431,6 +431,10 @@ export class StoreSalesOrdersService {
     // 단계는 관리자 뱃지·일별 통계와 같은 사다리 한 벌에서 온다 — 진행 요약(소포 수)만 여기서 센다
     const phase = preloadedPhase ?? (await this.loadFulfillmentPhase(so.id));
     const fulfillmentStatus = phase.storePhase;
+    const printInProduction =
+      fulfillmentStatus === 'preparing' &&
+      phaseInput.printInProduction === true &&
+      !(await this.printOrders.hasActiveNonPrintLine(so.id));
     const progress = shipmentProgressOf(phaseInput);
     const shipmentProgress: ShipmentProgressDto | undefined = progress.total > 0 ? progress : undefined;
     const isChannelOrder = so.salesChannel !== 'medusa';
@@ -602,6 +606,7 @@ export class StoreSalesOrdersService {
       channelOrderId: so.channelOrderId,
       orderStatus: so.status,
       fulfillmentStatus,
+      printInProduction,
       shipmentProgress,
       refundStatus,
       refundSummary,
@@ -625,10 +630,13 @@ export class StoreSalesOrdersService {
 
     if (block) return block.reason;
 
-    // 와우프레스가 인쇄 취소를 거절했고 인쇄 말고 취소할 상품이 없으면 버튼을 숨긴다. 다른 상품이 있으면 열어 두고 요청이
-    // PRINT_PARTIAL_CANCEL_AVAILABLE 로 인쇄 제외 취소를 묻는다 — 서버는 판정이 아니라 인쇄 취소 단계에서 거절한다
-    if (phaseInput.printStatuses?.includes('cancel_refused') && !(await this.hasNonPrintLine(so.id))) {
-      return 'already_processing';
+    // 와우프레스가 제작에 들어갔거나 인쇄 취소를 거절했고 인쇄 말고 취소할 상품이 없으면 버튼을 숨긴다. 다른 상품이 있으면 열어 두고
+    // 요청이 PRINT_PARTIAL_CANCEL_AVAILABLE 로 인쇄 제외 취소를 묻는다 — 서버는 판정이 아니라 인쇄 취소 단계에서 거절한다
+    if (
+      (phaseInput.printInProduction || phaseInput.printStatuses?.includes('cancel_refused')) &&
+      !(await this.hasNonPrintLine(so.id))
+    ) {
+      return phaseInput.printInProduction ? 'print_in_production' : 'already_processing';
     }
 
     return undefined;
@@ -727,7 +735,11 @@ export class StoreSalesOrdersService {
     const base = { foCount, allFoCanceled, activeShipmentStatuses, supplierShipmentStages };
     const prints = (await this.printOrders.forSalesOrder(salesOrderId)).filter((p) => p.status !== 'cancelled');
     if (prints.length === 0) return base;
-    return { ...base, printStatuses: prints.map((p) => p.status) };
+    return {
+      ...base,
+      printStatuses: prints.map((p) => p.status),
+      printInProduction: prints.some((p) => p.vendorInProduction),
+    };
   }
 
   /** 사다리 한 벌이 낸 이 주문의 단계. 방금 읽은 주문이라 맵에 없으면 프로그램 결함이다 — 기본값으로 덮지 않는다 */

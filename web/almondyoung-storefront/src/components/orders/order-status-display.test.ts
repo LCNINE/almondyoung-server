@@ -1,11 +1,23 @@
 import { describe, expect, it } from "vitest"
+import { createTranslator } from "next-intl"
+import ko from "@/i18n/messages/ko/mypage.json"
+import en from "@/i18n/messages/en/mypage.json"
+import ja from "@/i18n/messages/ja/mypage.json"
+
+const tStatus = createTranslator({
+  locale: "ko",
+  messages: ko,
+  namespace: "order.status",
+})
 import type {
   StoreFulfillmentStatus,
   StoreOrderActionsResponse,
 } from "@/lib/api/orders/store-orders"
 import { getCoreDisplayStatus, orderBadgeStatus } from "./order-status-display"
 
-function actions(over: Partial<StoreOrderActionsResponse> = {}): StoreOrderActionsResponse {
+function actions(
+  over: Partial<StoreOrderActionsResponse> = {}
+): StoreOrderActionsResponse {
   return {
     orderId: "so-1",
     channelOrderId: "order_1",
@@ -33,22 +45,99 @@ describe("getCoreDisplayStatus — 진행 단계가 core 값을 따른다 (K6 PR
     ["shipped", "delivered", "paid", "배송 완료"], // 셀메이트 출고 — 바뀌지 않는다
     ["cancelled", "canceled", "paid", "취소됨"],
     ["confirmed", "canceled", "paid", "결제 완료"], // FO 만 취소 — 현행 유지
-  ] as const)("%s · %s · %s → %s", (orderStatus, fulfillmentStatus, paymentStatus, expected) => {
-    expect(getCoreDisplayStatus(actions({ orderStatus, fulfillmentStatus, paymentStatus }))).toBe(expected)
-  })
+  ] as const)(
+    "%s · %s · %s → %s",
+    (orderStatus, fulfillmentStatus, paymentStatus, expected) => {
+      expect(
+        getCoreDisplayStatus(
+          actions({ orderStatus, fulfillmentStatus, paymentStatus }),
+          tStatus
+        )
+      ).toBe(expected)
+    }
+  )
 
   it("core 가 먼저 늘린 모르는 단계는 SO 라벨로 내려간다(예외 없음)", () => {
     // core 가 스토어프론트보다 먼저 값을 늘리는 경우를 흉내 낸다(같은 SST 스택이라 배포 순서가 없다)
     const unknown = "returning" as unknown as StoreFulfillmentStatus
-    expect(getCoreDisplayStatus(actions({ orderStatus: "pending", fulfillmentStatus: unknown }))).toBe("결제 완료")
+    expect(
+      getCoreDisplayStatus(
+        actions({ orderStatus: "pending", fulfillmentStatus: unknown }),
+        tStatus
+      )
+    ).toBe("결제 완료")
   })
 })
 
 describe("orderBadgeStatus — 주문 상태 뱃지와 진행 단계 뱃지가 겹치지 않는다 (K6 PR5)", () => {
-  it.each(["shipped", "delivered"])("SO %s(셀메이트 출고)는 주문 상태 뱃지를 그리지 않는다 — 단계 뱃지가 그 사실을 담는다", (orderStatus) => {
-    expect(orderBadgeStatus(actions({ orderStatus, fulfillmentStatus: "shipping" }))).toBeNull()
+  it.each(["shipped", "delivered"])(
+    "SO %s(셀메이트 출고)는 주문 상태 뱃지를 그리지 않는다 — 단계 뱃지가 그 사실을 담는다",
+    (orderStatus) => {
+      expect(
+        orderBadgeStatus(
+          actions({ orderStatus, fulfillmentStatus: "shipping" })
+        )
+      ).toBeNull()
+    }
+  )
+  it.each(["pending", "confirmed", "processing", "cancelled", "timeout"])(
+    "SO %s 는 그대로",
+    (orderStatus) => {
+      expect(
+        orderBadgeStatus(
+          actions({ orderStatus, fulfillmentStatus: "preparing" })
+        )
+      ).toBe(orderStatus)
+    }
+  )
+})
+
+describe("인쇄 제작 표시", () => {
+  it.each([
+    { locale: "ko", messages: ko, expected: "제작 중" },
+    { locale: "en", messages: en, expected: "In production" },
+    { locale: "ja", messages: ja, expected: "製作中" },
+  ])(
+    "$locale 번역으로 제작 중을 표시한다",
+    ({ locale, messages, expected }) => {
+      const t = createTranslator({
+        locale,
+        messages,
+        namespace: "order.status",
+      })
+
+      expect(
+        getCoreDisplayStatus(
+          actions({ fulfillmentStatus: "preparing", printInProduction: true }),
+          t
+        )
+      ).toBe(expected)
+    }
+  )
+
+  it("제작 표시가 없는 혼합 주문은 상품 준비 중을 유지한다", () => {
+    expect(
+      getCoreDisplayStatus(
+        actions({ fulfillmentStatus: "preparing", printInProduction: false }),
+        tStatus
+      )
+    ).toBe("상품 준비 중")
   })
-  it.each(["pending", "confirmed", "processing", "cancelled", "timeout"])("SO %s 는 그대로", (orderStatus) => {
-    expect(orderBadgeStatus(actions({ orderStatus, fulfillmentStatus: "preparing" }))).toBe(orderStatus)
-  })
+
+  it.each<{ fulfillmentStatus: StoreFulfillmentStatus; expected: string }>([
+    { fulfillmentStatus: "shipping", expected: "배송 중" },
+    { fulfillmentStatus: "delivered", expected: "배송 완료" },
+    { fulfillmentStatus: "canceled", expected: "결제 완료" },
+    { fulfillmentStatus: "not_created", expected: "결제 완료" },
+  ])(
+    "$fulfillmentStatus 단계는 제작 플래그가 남아 있어도 기존 표시를 유지한다",
+    ({ fulfillmentStatus, expected }) => {
+      expect(
+        getCoreDisplayStatus(
+          actions({ fulfillmentStatus, printInProduction: true }),
+          tStatus
+        )
+      ).toBe(expected)
+    }
+  )
 })
