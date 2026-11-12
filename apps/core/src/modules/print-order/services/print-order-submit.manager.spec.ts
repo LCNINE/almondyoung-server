@@ -986,7 +986,7 @@ describe('PrintOrderSubmitManager.submitBatch', () => {
 
   it('routes rows already sent to the existing submit path', async () => {
     const { repo, wowpress, ugc, manager, claimed, listed } = batchSetup(ALL, [
-      { orderAttemptedAt: ATTEMPTED },
+      { orderAttemptedAt: ATTEMPTED, lastError: ORDER_LOOKUP_PENDING_ERROR },
       { orderAttemptedAt: ATTEMPTED, vendorOrderNumber: 'W-OLD' },
     ]);
     listed({ [LINES[0] ?? '']: 'W-LOST' });
@@ -998,7 +998,7 @@ describe('PrintOrderSubmitManager.submitBatch', () => {
     expect(wowpress.findByOrdkey).toHaveBeenCalledWith(LINES[0], repo.get('po-1').createdAt);
     expect(ugc.design).toHaveBeenCalledTimes(1);
     expect(ugc.design).toHaveBeenCalledWith('design-3');
-    expect(repo.get('po-1')).toMatchObject({ status: 'submitted', vendorOrderNumber: 'W-LOST' });
+    expect(repo.get('po-1')).toMatchObject({ status: 'submitted', vendorOrderNumber: 'W-LOST', lastError: null });
     expect(repo.get('po-2')).toMatchObject({ status: 'submitted', vendorOrderNumber: 'W-OLD' });
     expect(repo.get('po-3')).toMatchObject({ status: 'submitted', vendorOrderNumber: 'W-1' });
     for (const ordnum of ['W-LOST', 'W-OLD', 'W-1']) {
