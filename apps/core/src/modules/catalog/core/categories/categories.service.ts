@@ -64,7 +64,7 @@ export class ProductCategoriesService {
   }
 
   // 기본 CRUD
-  async createCategory(data: CreateCategoryDto, tx?: DbTransaction): Promise<CategoryResponseDto> {
+  async createCategory(data: CreateCategoryDto, actorId?: string, tx?: DbTransaction): Promise<CategoryResponseDto> {
     return this.db.run(async (client) => {
       const { tagGroupLinks, isBrand, ...categoryData } = data;
 
@@ -93,6 +93,8 @@ export class ProductCategoriesService {
         ...categoryData,
         slug: categoryData.slug ?? Math.random().toString(36).slice(2, 8),
         level,
+        createdBy: actorId,
+        updatedBy: actorId,
         // 브랜드 여부는 별도 컬럼이 아니라 display_settings jsonb 안에 있다.
         ...(isBrand !== undefined && { displaySettings: { isBrand } }),
       };
@@ -146,7 +148,7 @@ export class ProductCategoriesService {
     }, tx);
   }
 
-  async updateCategory(categoryId: string, data: UpdateCategoryDto, tx?: DbTransaction): Promise<CategoryResponseDto> {
+  async updateCategory(categoryId: string, data: UpdateCategoryDto, actorId?: string, tx?: DbTransaction): Promise<CategoryResponseDto> {
     return this.db.run(async (client) => {
       const { tagGroupLinks, isVisibleToMembersOnly, isBrand, ...categoryData } = data;
       const updatingCategoryData: UpdateProductCategory = categoryData;
@@ -199,6 +201,7 @@ export class ProductCategoriesService {
           ...updatingCategoryData,
           ...(displaySettings && { displaySettings }),
           updatedAt: new Date(),
+          updatedBy: actorId,
         })
         .where(eq(pimSchema.productCategories.id, categoryId))
         .returning();
@@ -402,7 +405,7 @@ export class ProductCategoriesService {
     return responseDto;
   }
 
-  async moveCategory(categoryId: string, newParentId?: string, tx?: DbTransaction): Promise<CategoryResponseDto> {
+  async moveCategory(categoryId: string, newParentId?: string, actorId?: string, tx?: DbTransaction): Promise<CategoryResponseDto> {
     const client = this.getClient(tx);
 
     const executeMove = async (txn: DbTransaction) => {
@@ -444,6 +447,7 @@ export class ProductCategoriesService {
           level: newLevel,
           path: newPath,
           updatedAt: new Date(),
+          updatedBy: actorId,
         })
         .where(eq(pimSchema.productCategories.id, categoryId))
         .returning();
@@ -1099,6 +1103,7 @@ export class ProductCategoriesService {
   async updateDisplaySettings(
     categoryId: string,
     dto: UpdateDisplaySettingsDto,
+    actorId?: string,
     tx?: DbTransaction,
   ): Promise<CategoryResponseDto> {
     return this.db.run(async (client) => {
@@ -1121,6 +1126,7 @@ export class ProductCategoriesService {
         .set({
           displaySettings,
           updatedAt: new Date(),
+          updatedBy: actorId,
         })
         .where(eq(pimSchema.productCategories.id, categoryId))
         .returning();
@@ -1141,7 +1147,12 @@ export class ProductCategoriesService {
   /**
    * 카테고리 SEO 설정 업데이트
    */
-  async updateSeoConfig(categoryId: string, dto: UpdateSeoConfigDto, tx?: DbTransaction): Promise<CategoryResponseDto> {
+  async updateSeoConfig(
+    categoryId: string,
+    dto: UpdateSeoConfigDto,
+    actorId?: string,
+    tx?: DbTransaction,
+  ): Promise<CategoryResponseDto> {
     return this.db.run(async (client) => {
       const [category] = await client
         .select()
@@ -1162,6 +1173,7 @@ export class ProductCategoriesService {
         .set({
           seoConfig,
           updatedAt: new Date(),
+          updatedBy: actorId,
         })
         .where(eq(pimSchema.productCategories.id, categoryId))
         .returning();
@@ -1181,6 +1193,7 @@ export class ProductCategoriesService {
   async updateTemplateConfig(
     categoryId: string,
     dto: UpdateTemplateConfigDto,
+    actorId?: string,
     tx?: DbTransaction,
   ): Promise<CategoryResponseDto> {
     return this.db.run(async (client) => {
@@ -1203,6 +1216,7 @@ export class ProductCategoriesService {
         .set({
           templateConfig,
           updatedAt: new Date(),
+          updatedBy: actorId,
         })
         .where(eq(pimSchema.productCategories.id, categoryId))
         .returning();
@@ -1219,7 +1233,7 @@ export class ProductCategoriesService {
   /**
    * 카테고리 표시 여부 업데이트
    */
-  async updateVisibility(categoryId: string, visible: boolean, tx?: DbTransaction): Promise<CategoryResponseDto> {
+  async updateVisibility(categoryId: string, visible: boolean, actorId?: string, tx?: DbTransaction): Promise<CategoryResponseDto> {
     return this.db.run(async (client) => {
       const [category] = await client
         .select()
@@ -1235,6 +1249,7 @@ export class ProductCategoriesService {
         .set({
           visibility: visible,
           updatedAt: new Date(),
+          updatedBy: actorId,
         })
         .where(eq(pimSchema.productCategories.id, categoryId))
         .returning();
