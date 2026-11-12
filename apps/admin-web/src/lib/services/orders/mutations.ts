@@ -1009,18 +1009,21 @@ export const useExcludeShipmentFromBatch = () => {
       batchId,
       shipmentId,
       reason,
+      voidWaybill,
       idempotencyKey,
     }: {
       batchId: string;
       shipmentId: string;
       reason: string;
+      voidWaybill?: boolean;
       idempotencyKey?: string;
     }) =>
       orders.outboundBatches.excludeShipment(
         batchId,
         shipmentId,
         reason,
-        commandKey(idempotencyKey)
+        commandKey(idempotencyKey),
+        voidWaybill
       ),
     onSuccess: (_, { batchId }) => invalidateBatchV2(queryClient, batchId),
   });

@@ -77,6 +77,31 @@ export class WaybillService {
     return toView(row);
   }
 
+  async requestWithdrawalVoid(shipmentId: string, workItemId: string, actorId: string, tx?: DbTx): Promise<void> {
+    await this.manager.requestWithdrawalVoid(shipmentId, workItemId, actorId, tx);
+  }
+
+  async voidAfterWithdrawal(workItemId: string, tx?: DbTx): Promise<boolean> {
+    if (tx) return false;
+
+    try {
+      const waybill = await this.manager.findWithdrawalVoid(workItemId);
+
+      if (!waybill) return false;
+
+      await this.void(waybill.id, { reason: 'withdrawn:excluded' }, `withdrawal-void:${workItemId}:${waybill.id}`, {
+        id: waybill.actorId,
+        roles: [],
+      });
+
+      return true;
+    } catch (error) {
+      this.logger.warn(`Failed to void waybill after withdrawal: workItemId=${workItemId}`, error);
+
+      return false;
+    }
+  }
+
   private async resumeAfterVoid(shipmentId: string): Promise<void> {
     try {
       const { ConsolidationService } = await import('../services/consolidation.service');

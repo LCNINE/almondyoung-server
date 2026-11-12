@@ -29,6 +29,7 @@ describe('buildConsolidationProgressSources', () => {
         workItemStatus: 'withdrawing',
         waybillId: 'wb-1',
         waybillStatus: 'registered',
+        voidOnWithdrawal: false,
         blockers: ['ACTIVE_INVOICE', 'ACTIVE_WORK_ITEM'],
         gaveUpAt: '2026-10-29T01:00:00.000Z',
         nextCheckAt: '2026-10-29T02:00:00.000Z',
@@ -41,12 +42,31 @@ describe('buildConsolidationProgressSources', () => {
         workItemStatus: null,
         waybillId: null,
         waybillStatus: null,
+        voidOnWithdrawal: false,
         blockers: [],
         gaveUpAt: null,
         nextCheckAt: null,
       },
     ]);
   });
+
+  it.each([
+    { withdrawalWorkItemId: 'work-1', expected: true },
+    { withdrawalWorkItemId: 'old-work', expected: false },
+    { withdrawalWorkItemId: null, expected: false },
+  ])(
+    '현재 철회 작업에 예약된 송장만 자동 무효화로 표시한다: $withdrawalWorkItemId',
+    ({ withdrawalWorkItemId, expected }) => {
+      const [source] = buildConsolidationProgressSources({
+        ...empty,
+        sourceIds: ['a'],
+        workItems: [{ id: 'work-1', shipmentId: 'a', batchId: 'batch-1', status: 'withdrawing' }],
+        waybills: [{ shipmentId: 'a', id: 'wb-1', status: 'registered', trackingNo: 'T-1', withdrawalWorkItemId }],
+      });
+
+      expect(source.voidOnWithdrawal).toBe(expected);
+    },
+  );
 
   it('같은 원본의 행이 여럿이면 앞(가장 최근) 것을 쓴다', () => {
     const [source] = buildConsolidationProgressSources({

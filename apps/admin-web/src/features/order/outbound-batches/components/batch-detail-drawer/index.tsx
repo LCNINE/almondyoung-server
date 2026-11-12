@@ -37,6 +37,7 @@ import {
   useOutboundBatchV2,
 } from '@/lib/services/orders';
 import type { PickingStrategyName } from '@/lib/types/dto/fulfillment';
+import { ExcludeShipmentDialog } from '../exclude-shipment-dialog';
 import { BatchStatusBadge } from '../batch-status-badge';
 import { useWarehouseCommandRetry } from '../../warehouse-command-retry';
 import { PICKING_METHOD_LABELS } from '@/lib/utils/picking-method';
@@ -62,6 +63,11 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
   const claimPicker = useClaimBatchPicker();
   const claimPacker = useClaimBatchPacker();
   const handoff = useHandoffBatchWorkItem();
+  const [excluding, setExcluding] = useState<{
+    id: string;
+    shipmentId: string;
+    trackingNo?: string | null;
+  } | null>(null);
   const [targetWorkerId, setTargetWorkerId] = useState('');
   const [reason, setReason] = useState(REASON_SUGGESTIONS[0]);
   const retry = useWarehouseCommandRetry();
@@ -97,6 +103,26 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
   if (!open) return null;
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
+      {excluding && (
+        <ExcludeShipmentDialog
+          trackingNo={excluding.trackingNo}
+          defaultVoidWaybill={false}
+          onClose={() => setExcluding(null)}
+          onConfirm={(voidWaybill) =>
+            void command(
+              `exclude:${excluding.id}`,
+              {
+                batchId,
+                shipmentId: excluding.shipmentId,
+                reason: reason.trim() || '잘못 넣은 상자',
+                voidWaybill,
+              },
+              (payload, idempotencyKey) =>
+                excludeShipment.mutateAsync({ ...payload, idempotencyKey })
+            )
+          }
+        />
+      )}
       <SheetContent className="w-full overflow-auto sm:max-w-[900px]">
         <SheetHeader>
           <SheetTitle>V2 배치 상세</SheetTitle>
@@ -405,30 +431,16 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
                                 포장 넘기기
                               </Button>
                               )}
-                              {canExclude && EXCLUDABLE.includes(item.status) && (
-                              <Button
-                                size="sm"
-                                variant="destructive"
-                                onClick={() =>
-                                  command(
-                                    `exclude:${item.id}`,
-                                    {
-                                      batchId,
-                                      shipmentId: item.shipmentId,
-                                      reason:
-                                        reason.trim() || '잘못 넣은 상자',
-                                    },
-                                    (payload, idempotencyKey) =>
-                                      excludeShipment.mutateAsync({
-                                        ...payload,
-                                        idempotencyKey,
-                                      })
-                                  )
-                                }
-                              >
-                                배치에서 빼기
-                              </Button>
-                              )}
+                              {canExclude &&
+                                EXCLUDABLE.includes(item.status) && (
+                                  <Button
+                                    size="sm"
+                                    variant="destructive"
+                                    onClick={() => setExcluding(item)}
+                                  >
+                                    배치에서 빼기
+                                  </Button>
+                                )}
                             </div>
                           </TableCell>
                         )}

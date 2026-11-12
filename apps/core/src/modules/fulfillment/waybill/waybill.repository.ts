@@ -12,6 +12,38 @@ const T = inventoryTables.waybills;
 export class WaybillRepository {
   constructor(@InjectTypedDb<typeof inventorySchema>() private readonly dbService: DbService<typeof inventorySchema>) {}
 
+  async requestWithdrawalVoid(trx: DbTx, shipmentId: string, workItemId: string, actorId: string): Promise<void> {
+    await trx
+      .update(T)
+      .set({
+        labelData: sql`coalesce(${T.labelData}, '{}'::jsonb) || ${JSON.stringify({ voidOnWithdrawal: { workItemId, actorId } })}::jsonb`,
+        updatedAt: new Date(),
+      })
+      .where(and(eq(T.shipmentId, shipmentId), notInArray(T.status, [...WAYBILL_TERMINAL_STATUSES])));
+  }
+
+  async findWithdrawalVoid(trx: DbTx, workItemId: string) {
+    const workItems = inventoryTables.outboundBatchWorkItems;
+    const [row] = await trx
+      .select({
+        id: T.id,
+        actorId: sql<string>`${T.labelData}->'voidOnWithdrawal'->>'actorId'`,
+      })
+      .from(T)
+      .innerJoin(workItems, eq(workItems.shipmentId, T.shipmentId))
+      .where(
+        and(
+          eq(workItems.id, workItemId),
+          eq(workItems.status, 'excluded'),
+          sql`${T.labelData}->'voidOnWithdrawal'->>'workItemId' = ${workItemId}`,
+          notInArray(T.status, [...WAYBILL_TERMINAL_STATUSES]),
+        ),
+      )
+      .limit(1);
+
+    return row;
+  }
+
   async insertPending(
     trx: DbTx,
     row: {
@@ -100,7 +132,12 @@ export class WaybillRepository {
   ): Promise<boolean> {
     const rows = await trx
       .update(T)
-      .set({ trackingNo, labelData, status: 'allocated', updatedAt: new Date() })
+      .set({
+        trackingNo,
+        labelData: sql`coalesce(${T.labelData}, '{}'::jsonb) || ${JSON.stringify(labelData)}::jsonb`,
+        status: 'allocated',
+        updatedAt: new Date(),
+      })
       .where(and(eq(T.id, id), eq(T.status, 'pending')))
       .returning({ id: T.id });
     return rows.length === 1;

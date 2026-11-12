@@ -215,6 +215,8 @@ export class ConsolidationProgressSourceDto {
   waybillId: string | null;
   @ApiProperty({ type: String, nullable: true })
   waybillStatus: string | null;
+  @ApiProperty({ type: Boolean })
+  voidOnWithdrawal: boolean;
   @ApiProperty({ type: [String], description: '재개를 막는 사유. 끝난 작업이면 빈 배열' })
   blockers: string[];
   @ApiProperty({ type: String, nullable: true, description: '리컨실러가 자동 재개를 포기한 시각' })
