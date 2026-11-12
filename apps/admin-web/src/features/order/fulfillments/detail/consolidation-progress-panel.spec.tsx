@@ -4,8 +4,9 @@
 import { randomUUID } from 'node:crypto';
 import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { toast } from 'sonner';
 import type { PermissionedAction } from '@/lib/auth/mutation-permission';
 import { orderQueryKeys } from '@/lib/services/orders/query-keys';
 import type {
@@ -31,6 +32,7 @@ const mockBatch = jest.fn<
 >();
 const mockExclude = jest.fn<Promise<unknown>, [ExcludeVars]>();
 const mockVoid = jest.fn<Promise<unknown>, [VoidVars]>();
+let mockVoidPending = false;
 const mockGranted = new Set<string>();
 
 jest.mock('@/lib/services/orders/queries', () => ({
@@ -46,7 +48,7 @@ jest.mock('@/lib/services/orders', () => ({
     { permission: ['fulfillment.warehouse.operate'] }
   ),
   useVoidWaybill: Object.assign(
-    () => ({ mutateAsync: mockVoid, isPending: false }),
+    () => ({ mutateAsync: mockVoid, isPending: mockVoidPending }),
     { permission: ['fulfillment.shipment.reopen'] }
   ),
 }));
@@ -145,6 +147,7 @@ beforeEach(() => {
   });
   mockExclude.mockResolvedValue({});
   mockVoid.mockResolvedValue({});
+  mockVoidPending = false;
 });
 
 describe('합포장 진행 패널', () => {
@@ -239,6 +242,22 @@ describe('합포장 진행 패널', () => {
     });
   });
 
+  it('운송장 취소 중이면 버튼 크기를 그대로 두고 로딩을 보인다', () => {
+    mockProgress.mockReturnValue({
+      data: pending([source({ batchId: null, blockers: ['ACTIVE_INVOICE'] })]),
+    });
+    grant('fulfillment.shipment.reopen');
+    mockVoidPending = true;
+
+    renderPanel();
+
+    const button = screen.getByRole('button', { name: '운송장 취소' });
+
+    expect(button.getAttribute('aria-busy')).toBe('true');
+    expect(button.hasAttribute('disabled')).toBe(true);
+    expect(button.querySelector('.invisible')?.textContent).toBe('운송장 취소');
+  });
+
   it('송장이 registered 가 아니면 운송장 취소 대신 예외로 보인다', () => {
     mockProgress.mockReturnValue({
       data: pending([
@@ -259,15 +278,137 @@ describe('합포장 진행 패널', () => {
     ).toBeTruthy();
   });
 
-  it('auto 단계면 "10분 안에 자동으로 합쳐져요"', () => {
-    mockProgress.mockReturnValue({
-      data: pending([source({ batchId: null, blockers: [] })]),
+  describe('자동 합포장 대기', () => {
+    beforeEach(() => {
+      jest.useFakeTimers();
+      jest.setSystemTime(new Date('2026-11-12T12:00:00'));
     });
 
-    renderPanel();
+    afterEach(() => {
+      cleanup();
+      jest.useRealTimers();
+    });
 
-    expect(screen.getByText('10분 안에 자동으로 합쳐져요')).toBeTruthy();
-    expect(screen.queryByText(/1분/)).toBeNull();
+    it('가장 빠른 확인 시각까지 매초 세고 예정 시각과 2분 뒤에 상태를 바꾼다', () => {
+      mockProgress.mockReturnValue({
+        data: pending([
+          source({
+            batchId: null,
+            blockers: [],
+            nextCheckAt: '2026-11-12T12:05:00',
+          }),
+          source({
+            shipmentId: 'other',
+            batchId: null,
+            blockers: [],
+            nextCheckAt: '2026-11-12T12:01:02',
+          }),
+        ]),
+      });
+
+      renderPanel();
+
+      expect(screen.getByText('자동으로 합치는 중이에요')).toBeTruthy();
+      expect(
+        screen.getByText(
+          '서버가 1분 02초 뒤(12:01)에 다시 확인하고 바로 합쳐요.'
+        )
+      ).toBeTruthy();
+      expect(screen.getByRole('progressbar')).toBeTruthy();
+      expect(
+        screen.getByText(
+          '더 누를 건 없어요. 합쳐지면 이 화면이 저절로 바뀌어요.'
+        )
+      ).toBeTruthy();
+
+      act(() => jest.advanceTimersByTime(1000));
+
+      expect(
+        screen.getByText(
+          '서버가 1분 01초 뒤(12:01)에 다시 확인하고 바로 합쳐요.'
+        )
+      ).toBeTruthy();
+      expect(
+        Number(screen.getByRole('progressbar').getAttribute('aria-valuenow'))
+      ).toBeGreaterThan(0);
+
+      act(() => jest.advanceTimersByTime(61_000));
+
+      expect(screen.getByText('지금 확인하고 있어요')).toBeTruthy();
+      expect(
+        screen.getByText('곧 합쳐져요. 보통 1분 안에 끝나요.')
+      ).toBeTruthy();
+      expect(screen.queryByRole('progressbar')).toBeNull();
+
+      act(() => jest.advanceTimersByTime(119_000));
+
+      expect(screen.getByText('지금 확인하고 있어요')).toBeTruthy();
+
+      act(() => jest.advanceTimersByTime(1000));
+
+      expect(screen.getByText('예상보다 오래 걸리고 있어요')).toBeTruthy();
+      expect(
+        screen.getByText('12:01에 확인하기로 했는데 아직 안 합쳐졌어요.')
+      ).toBeTruthy();
+      expect(
+        screen
+          .getByRole('link', { name: '정체 보드 열기' })
+          .getAttribute('href')
+      ).toBe('/order/stall-board');
+    });
+
+    it('확인 시각이 없으면 지금 확인 중이라고 표시한다', () => {
+      mockProgress.mockReturnValue({
+        data: pending([source({ batchId: null, blockers: [] })]),
+      });
+
+      renderPanel();
+
+      expect(screen.getByText('지금 확인하고 있어요')).toBeTruthy();
+      expect(
+        screen.getByText('곧 합쳐져요. 보통 1분 안에 끝나요.')
+      ).toBeTruthy();
+      expect(screen.queryByRole('progressbar')).toBeNull();
+    });
+
+    it('재조회로 확인 시각이 바뀌면 새 시각부터 기다린다', () => {
+      mockProgress.mockReturnValue({
+        data: pending([
+          source({
+            batchId: null,
+            blockers: [],
+            nextCheckAt: '2026-11-12T11:57:00',
+          }),
+        ]),
+      });
+      const view = renderPanel();
+
+      expect(screen.getByText('예상보다 오래 걸리고 있어요')).toBeTruthy();
+
+      mockProgress.mockReturnValue({
+        data: pending([
+          source({ batchId: null, blockers: [], nextCheckAt: null }),
+          source({
+            shipmentId: 'other',
+            batchId: null,
+            blockers: [],
+            nextCheckAt: '2026-11-12T12:03:00',
+          }),
+        ]),
+      });
+      view.rerender(
+        <ConsolidationProgressPanel shipmentId="src" target={TARGET} />
+      );
+
+      expect(
+        screen.getByText(
+          '서버가 3분 00초 뒤(12:03)에 다시 확인하고 바로 합쳐요.'
+        )
+      ).toBeTruthy();
+      expect(
+        screen.getByRole('progressbar').getAttribute('aria-valuenow')
+      ).toBe('0');
+    });
   });
 
   it('stuck 이면 "이 화면에서 처리할 수 없는 상태예요"와 정체 보드 링크', () => {
@@ -315,7 +456,8 @@ describe('합포장 진행 패널', () => {
     renderPanel();
 
     expect(screen.getByText('자동으로 합쳐지지 않았어요')).toBeTruthy();
-    expect(screen.queryByText('10분 안에 자동으로 합쳐져요')).toBeNull();
+    expect(screen.queryByText('지금 확인하고 있어요')).toBeNull();
+    expect(screen.queryByText('자동으로 합치는 중이에요')).toBeNull();
     expect(
       screen.getByRole('link', { name: '정체 보드 열기' }).getAttribute('href')
     ).toBe('/order/stall-board');
@@ -429,7 +571,10 @@ describe('합포장 진행 패널', () => {
   it('합포장이 끝나면 출고주문과 상자 조회를 다시 불러온다', async () => {
     const invalidate = jest.spyOn(queryClient, 'invalidateQueries');
     mockProgress.mockReturnValue({
-      data: pending([source(), source({ shipmentId: 'other' })]),
+      data: pending([
+        source({ orderNo: '6275' }),
+        source({ shipmentId: 'other', orderNo: '6314' }),
+      ]),
     });
 
     const view = renderPanel();
@@ -443,7 +588,10 @@ describe('합포장 진행 패널', () => {
         operationId: 'op-1',
         status: 'completed',
         targetShipmentId: 'target-1',
-        sources: [source(), source({ shipmentId: 'other' })],
+        sources: [
+          source({ orderNo: '6275' }),
+          source({ shipmentId: 'other', orderNo: '6314' }),
+        ],
       },
     });
     view.rerender(
@@ -467,6 +615,13 @@ describe('합포장 진행 패널', () => {
     expect(invalidate).toHaveBeenCalledWith({
       queryKey: orderQueryKeys.shipment('target-1'),
     });
+    expect(toast.success).toHaveBeenCalledWith('#6275와 #6314가 합쳐졌어요');
+
+    view.rerender(
+      <ConsolidationProgressPanel shipmentId="src" target={TARGET} />
+    );
+
+    expect(toast.success).toHaveBeenCalledTimes(1);
   });
 
   it('이미 합쳐진 상자를 처음 열 때는 다시 불러오지 않는다', () => {
@@ -483,6 +638,7 @@ describe('합포장 진행 패널', () => {
     renderPanel();
 
     expect(invalidate).not.toHaveBeenCalled();
+    expect(toast.success).not.toHaveBeenCalled();
   });
 
   it('진행 중 제목은 합치는 두 주문을 말하고 내 주문을 앞에 둔다', () => {
@@ -679,7 +835,8 @@ describe('합포장 진행 패널', () => {
     expect(
       screen.getByText('송장 1111-2222-3333 상자의 일이에요')
     ).toBeTruthy();
-    expect(screen.queryByText('10분 안에 자동으로 합쳐져요')).toBeNull();
+    expect(screen.queryByText('지금 확인하고 있어요')).toBeNull();
+    expect(screen.queryByText('자동으로 합치는 중이에요')).toBeNull();
   });
 
   it('합쳐진 원본 상자는 아래 내용을 흐리게 두고 초록 패널은 그대로 둔다', () => {

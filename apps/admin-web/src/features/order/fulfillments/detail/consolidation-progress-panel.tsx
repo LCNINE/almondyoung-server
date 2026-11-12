@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
@@ -145,6 +145,113 @@ function GaveUpNotice({ description }: { description: string }) {
         <p className="mt-1 text-sm text-zinc-700">{description}</p>
       </div>
       <StallBoardLink />
+    </div>
+  );
+}
+
+function PendingButton({
+  pending,
+  disabled,
+  onClick,
+  children,
+}: {
+  pending: boolean;
+  disabled: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <Button
+      type="button"
+      className="relative"
+      disabled={disabled}
+      aria-busy={pending}
+      onClick={onClick}
+    >
+      <span className={pending ? 'invisible' : undefined}>{children}</span>
+      {pending && (
+        <span className="absolute inset-0 flex items-center justify-center">
+          <span
+            aria-hidden="true"
+            className="h-4 w-4 animate-spin rounded-full border-2 border-white/40 border-t-white motion-reduce:animate-none"
+          />
+        </span>
+      )}
+    </Button>
+  );
+}
+
+function AutoMergeWaiting({ nextCheckAt }: { nextCheckAt: number | null }) {
+  const [startedAt] = useState(Date.now);
+  const [now, setNow] = useState(startedAt);
+
+  useEffect(() => {
+    if (nextCheckAt === null) {
+      return;
+    }
+
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+
+    return () => clearInterval(timer);
+  }, [nextCheckAt]);
+
+  const waiting = nextCheckAt !== null && now < nextCheckAt;
+  const overdue = nextCheckAt !== null && now >= nextCheckAt + 120_000;
+  const seconds = Math.max(0, Math.ceil(((nextCheckAt ?? now) - now) / 1000));
+  const scheduled = nextCheckAt === null ? null : new Date(nextCheckAt);
+  const time = scheduled
+    ? `${String(scheduled.getHours()).padStart(2, '0')}:${String(scheduled.getMinutes()).padStart(2, '0')}`
+    : '';
+  const percent = waiting
+    ? Math.min(
+        100,
+        Math.max(0, ((now - startedAt) / (nextCheckAt - startedAt)) * 100)
+      )
+    : 100;
+
+  return (
+    <div className="flex flex-col gap-2">
+      <p className="flex items-center gap-2 text-base font-semibold text-blue-700">
+        {!overdue && (
+          <span
+            aria-hidden="true"
+            className="h-4 w-4 animate-spin rounded-full border-2 border-blue-200 border-t-blue-700 motion-reduce:animate-none"
+          />
+        )}
+        {overdue
+          ? '예상보다 오래 걸리고 있어요'
+          : waiting
+            ? '자동으로 합치는 중이에요'
+            : '지금 확인하고 있어요'}
+      </p>
+      <p className="text-sm text-zinc-700">
+        {overdue
+          ? `${time}에 확인하기로 했는데 아직 안 합쳐졌어요.`
+          : waiting
+            ? `서버가 ${Math.floor(seconds / 60)}분 ${String(seconds % 60).padStart(2, '0')}초 뒤(${time})에 다시 확인하고 바로 합쳐요.`
+            : '곧 합쳐져요. 보통 1분 안에 끝나요.'}
+      </p>
+      {waiting && (
+        <>
+          <div
+            role="progressbar"
+            aria-label="다음 합포장 확인까지 대기"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={Math.round(percent)}
+            className="h-1 overflow-hidden rounded-full bg-blue-100"
+          >
+            <div
+              className="h-full bg-blue-700 transition-[width] motion-reduce:transition-none"
+              style={{ width: `${percent}%` }}
+            />
+          </div>
+          <p className="text-sm text-zinc-700">
+            더 누를 건 없어요. 합쳐지면 이 화면이 저절로 바뀌어요.
+          </p>
+        </>
+      )}
+      {overdue && <StallBoardLink />}
     </div>
   );
 }
@@ -354,6 +461,13 @@ function PendingPanel({
     !!current?.waybillId &&
     current.waybillStatus === 'registered';
 
+  const earliestCheck = Math.min(
+    ...progress.sources.flatMap((source) =>
+      source.nextCheckAt ? [new Date(source.nextCheckAt).getTime()] : []
+    )
+  );
+  const nextCheckAt = Number.isFinite(earliestCheck) ? earliestCheck : null;
+
   return (
     <section className="overflow-hidden rounded-lg border border-blue-200">
       <div className="bg-blue-50 px-5 py-4">
@@ -441,13 +555,13 @@ function PendingPanel({
               </p>
             </div>
             {canExclude && (
-              <Button
-                type="button"
+              <PendingButton
+                pending={exclude.isPending}
                 disabled={busy}
                 onClick={() => void onExclude()}
               >
                 배치에서 빼기
-              </Button>
+              </PendingButton>
             )}
           </div>
         )}
@@ -493,27 +607,19 @@ function PendingPanel({
               </p>
             </div>
             {canVoid && (
-              <Button
-                type="button"
+              <PendingButton
+                pending={voidWaybill.isPending}
                 disabled={busy}
                 onClick={() => void onVoid()}
               >
                 운송장 취소
-              </Button>
+              </PendingButton>
             )}
           </div>
         )}
 
         {exception === null && !overall.gaveUp && step === 'auto' && (
-          <div className="flex flex-col gap-2">
-            <p className="text-xs font-semibold text-green-700">할 일 끝</p>
-            <p className="text-base font-semibold">
-              10분 안에 자동으로 합쳐져요
-            </p>
-            <p className="text-sm text-zinc-700">
-              더 누를 건 없어요. 합쳐지면 여기에 새 상자가 나타나요.
-            </p>
-          </div>
+          <AutoMergeWaiting key={nextCheckAt} nextCheckAt={nextCheckAt} />
         )}
 
         {exception === null &&
@@ -564,6 +670,14 @@ export function ConsolidationProgressPanel({
       status === 'completed' &&
       data
     ) {
+      const orderNos = orderNosOf(data.sources, shipmentId);
+      const heading = orderNos && mergedHeading(orderNos);
+
+      toast.success(
+        heading?.replace(' 새 상자 하나로', '') ??
+          `상자 ${data.sources.length}개가 합쳐졌어요`
+      );
+
       const shipmentIds = new Set([
         shipmentId,
         ...data.sources.map((source) => source.shipmentId),
