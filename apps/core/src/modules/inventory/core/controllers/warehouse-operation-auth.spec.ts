@@ -55,7 +55,7 @@ describe('warehouse v2 HTTP authorization and DTO contract', () => {
             'fulfillment.dispatch.force',
           ],
           custom_force: ['inventory.stock.read', 'inventory.stock.operate', 'fulfillment.dispatch.force'],
-          outbound_only: ['fulfillment.warehouse.operate'],
+          outbound_only: ['fulfillment.shipment.read', 'fulfillment.warehouse.operate'],
           no_warehouse: ['catalog.product.read'],
           mapped_master: FIRST_GRANT_ROLE_PERMISSIONS.master,
         }),

@@ -7,12 +7,7 @@ export class WarehouseWorkContextController {
   constructor(private readonly checkpoints: PermissionCheckpoints) {}
 
   // 물류앱의 입장 확인이다 — 재고·출고 중 하나라도 맡은 사람이면 열고, 각 작업은 그 라우트가 다시 판정한다.
-  @RequireAnyPermission(
-    'inventory.stock.read',
-    'inventory.stock.operate',
-    'fulfillment.warehouse.operate',
-    'fulfillment.shipment.read',
-  )
+  @RequireAnyPermission('inventory.stock.read', 'fulfillment.shipment.read')
   @Get('work-context')
   workContext(@User() user: WarehouseActor & { roles?: string[] }) {
     const actorId = authenticatedWarehouseActor(user);
