@@ -53,6 +53,7 @@ export {
   useFulfillmentShipments,
   useShipmentDetail,
   useFulfillmentOperation,
+  useFulfillmentRequestOutcome,
   useShipmentRecallOperation,
   useLegacyPurchaseOrders,
   useLegacyPurchaseOrder,

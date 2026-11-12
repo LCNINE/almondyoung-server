@@ -251,6 +251,36 @@ describeIfDb('ShipmentPlanningService (DB integration)', () => {
     });
   });
 
+  it('tells whether a request key was processed, per command type, without running it', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const fixture = await physicalFixture(tx, 10, 6);
+      const key = `split-${randomUUID()}`;
+      const notProcessed = { processed: false, operationId: null, status: null, completedAt: null };
+
+      expect(await planning.findRequestOutcome('shipment.split', key, tx)).toEqual(notProcessed);
+
+      const first = await planning.split(
+        fixture.shipment.id,
+        {
+          expectedManifestVersion: fixture.shipment.manifestVersion,
+          reason: 'separate backorder',
+          moves: [{ shipmentLineId: fixture.line.id, expectedLineVersion: fixture.line.lineVersion, qty: 4 }],
+        },
+        key,
+        actor,
+        tx,
+      );
+
+      expect(await planning.findRequestOutcome('shipment.split', key, tx)).toEqual({
+        processed: true,
+        operationId: first.operationId,
+        status: 'completed',
+        completedAt: expect.any(Date),
+      });
+      expect(await planning.findRequestOutcome('shipment.plan', key, tx)).toEqual(notProcessed);
+    });
+  });
+
   it.each([
     {
       name: 'fully reserved',

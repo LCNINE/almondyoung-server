@@ -370,6 +370,39 @@ export const useFulfillmentOperation = (operationId: string) => {
   });
 };
 
+/**
+ * 응답을 받지 못한 요청의 처리 여부. 아직 서버에 늦게 닿을 수 있는 시간(settleMs) 안이면
+ * «처리 안 됨»을 확정으로 보지 않고 그 시간이 지나면 한 번 더 묻는다.
+ */
+export const useFulfillmentRequestOutcome = (
+  commandType: string,
+  idempotencyKey: string,
+  sentAt: number,
+  settleMs: number
+) => {
+  return useQuery({
+    queryKey: orderQueryKeys.fulfillmentRequestOutcome(
+      commandType,
+      idempotencyKey
+    ),
+    queryFn: () =>
+      orders.fulfillmentOrder.getRequestOutcome(commandType, idempotencyKey),
+    // 상자를 다시 열 때마다 새로 묻는다 — 앱 전역 캐시 시간(5분) 동안 옛 답에 머물지 않게
+    staleTime: 0,
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      if (!data) return false;
+      if (!data.processed) {
+        const wait = sentAt + settleMs - Date.now();
+        return wait > 0 ? wait + 500 : false;
+      }
+      return data.status === 'pending' || data.status === 'in_progress'
+        ? 2_000
+        : false;
+    },
+  });
+};
+
 export const useShipmentRecallOperation = (operationId: string) => {
   return useQuery({
     queryKey: orderQueryKeys.shipmentRecallOperation(operationId),

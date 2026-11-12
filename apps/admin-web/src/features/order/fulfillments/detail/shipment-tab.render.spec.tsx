@@ -6,6 +6,7 @@ import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { rememberPending } from './shipment-action-pending';
 import type { PermissionedAction } from '@/lib/auth/mutation-permission';
 import type {
   ConsolidationProgressResponse,
@@ -299,6 +300,23 @@ describe('배송 탭 상자 선택', () => {
     renderTab();
 
     expect(screen.getByText('계획 전 · 5개')).toBeTruthy();
+  });
+
+  it('응답을 받지 못한 요청이 남은 상자는 목록에서 결과 확인이 필요하다고 보인다', () => {
+    window.localStorage.clear();
+    rememberPending({
+      shipmentId: 'ship-new',
+      action: 'split',
+      idempotencyKey: 'k-1',
+      sentAt: Date.now(),
+    });
+
+    renderTab();
+
+    expect(
+      screen.getByRole('button', { name: /상자 ship-new.*결과 확인 필요/ })
+    ).toBeTruthy();
+    window.localStorage.clear();
   });
 });
 

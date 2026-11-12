@@ -1,6 +1,7 @@
 'use client';
 
 import axios, { AxiosError, AxiosInstance, AxiosRequestConfig } from 'axios';
+import { REJECTED_MESSAGE, failureMessage } from './transport-message';
 import { CustomError } from './customError';
 // 상대 경로로 둔다 — 다른 앱의 계약 테스트가 이 파일을 직접 import 한다.
 import { permissionDeniedMessage, readRequiredPermissions } from '../auth/permission-labels';
@@ -170,7 +171,7 @@ client.interceptors.response.use(
     // (재시도 후 raw AxiosError를 던지면 토스트에 "Request failed with status code 409" 같은
     //  generic 문구만 떠서 운영자가 원인을 알 수 없다)
     if (err.response && err.response.status < 500) {
-      const serverMessage = readErrorMessage(err.response.data) || err.message || '요청 처리 중 오류가 발생했습니다.';
+      const serverMessage = readErrorMessage(err.response.data) || REJECTED_MESSAGE;
       let message = serverMessage;
       // 403 이면 내 권한을 다시 읽게 알리고(그사이 역할·매핑이 바뀌었을 수 있다), 서버가 필요한 권한을
       // 알려 줬으면 그 이름으로 안내한다.
@@ -194,7 +195,7 @@ client.interceptors.response.use(
     // 일반적인 재시도 로직
     if (!config) {
       const statusCode = err.response?.status || 500;
-      const message = readErrorMessage(err.response?.data) || err.message || '요청 처리 중 오류가 발생했습니다.';
+      const message = failureMessage({ status: err.response?.status, data: err.response?.data });
 
       throw new CustomError({
         message,
@@ -216,7 +217,7 @@ client.interceptors.response.use(
     const headers = (config.headers ?? {}) as Record<string, unknown>;
     const hasIdempotencyKey = Boolean(headers['Idempotency-Key'] ?? headers['idempotency-key']);
     if (['post', 'put', 'patch', 'delete'].includes(method) && !hasIdempotencyKey) {
-      const message = readErrorMessage(err.response?.data) || err.message || '요청 처리 중 오류가 발생했습니다.';
+      const message = failureMessage({ method, status: err.response?.status, data: err.response?.data });
       throw new CustomError({
         message,
         statusCode: err.response?.status || 500,
@@ -226,7 +227,7 @@ client.interceptors.response.use(
 
     // 재시도 횟수 체크 — 소진 시에도 서버 메시지를 보존해 던진다
     if (config.retry <= 0) {
-      const message = readErrorMessage(err.response?.data) || err.message || '요청 처리 중 오류가 발생했습니다.';
+      const message = failureMessage({ method, status: err.response?.status, data: err.response?.data });
 
       throw new CustomError({
         message,

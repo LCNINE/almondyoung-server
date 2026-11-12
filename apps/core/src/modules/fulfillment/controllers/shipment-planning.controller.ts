@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Headers, Param, Patch, Post, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Get, Headers, Param, Patch, Post, UnauthorizedException } from '@nestjs/common';
 import { User, RequirePermission, PiiResponse, PiiWrite, OPEN_WITH_RECIPIENT } from '@app/authorization';
 import { ApiOkResponse } from '@nestjs/swagger';
 import {
@@ -7,6 +7,7 @@ import {
   ShipmentPlanningActor,
   ShipmentDetailResponseDto,
   FulfillmentOperationResponseDto,
+  FulfillmentRequestOutcomeDto,
   SplitShipmentDto,
   SplitUnreservedShipmentDto,
 } from '../dto/shipment-planning.dto';
@@ -200,9 +201,30 @@ export class ShipmentPlanningController {
   }
 }
 
+// 관리자 상자 작업 창이 응답을 받지 못한 요청의 결과를 확인할 수 있는 명령
+const OUTCOME_COMMAND_TYPES = new Set([
+  'shipment.split',
+  'shipment.recipient_revision',
+  'shipment.plan',
+  'shipment.dispatch.recall',
+]);
+
 @Controller('fulfillment-operations')
 export class FulfillmentOperationController {
   constructor(private readonly planning: ShipmentPlanningService) {}
+
+  @RequirePermission('fulfillment.shipment.read')
+  @Get('requests/:commandType/:idempotencyKey')
+  @ApiOkResponse({ type: FulfillmentRequestOutcomeDto })
+  requestOutcome(
+    @Param('commandType') commandType: string,
+    @Param('idempotencyKey') idempotencyKey: string,
+  ): Promise<FulfillmentRequestOutcomeDto> {
+    if (!OUTCOME_COMMAND_TYPES.has(commandType)) {
+      throw new BadRequestException(`Unsupported command type: ${commandType}`);
+    }
+    return this.planning.findRequestOutcome(commandType, idempotencyKey);
+  }
 
   @PiiResponse({
     fields: {

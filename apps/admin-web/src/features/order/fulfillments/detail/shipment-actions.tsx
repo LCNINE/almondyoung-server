@@ -32,7 +32,6 @@ import {
 import {
   canRecallShipment,
   createIdempotentCommand,
-  getServerDenyMessage,
   isRecoverableOperation,
   parseServerError,
   useCreateShipmentConsolidation,
@@ -56,11 +55,19 @@ import { ConsolidationSheet } from './consolidation-sheet';
 import { showsConsolidationButton } from './consolidation-sheet-model';
 import {
   ACTION_TITLE,
+  NO_ANSWER_MESSAGE,
   SUBMIT_LABEL,
+  actionFailureMessage,
   dispatchAttemptLabel,
   operationStatusLabel,
   retryNotice,
 } from './shipment-action-copy';
+import { PendingRequestNotice } from './pending-request-notice';
+import {
+  forgetPending,
+  rememberPending,
+  usePendingRequests,
+} from './shipment-action-pending';
 import {
   splitLineLabel,
   splitLineName,
@@ -174,6 +181,10 @@ export function ShipmentActions({
     (profiles.data?.length === 1 ? profiles.data[0].id : '');
   const [retry, setRetry] = useState<RetryState | null>(null);
   const operation = useFulfillmentOperation(retry?.operationId ?? '');
+  // 새로고침·다른 상자 이동으로 «다시 시도» 안내가 사라진 요청 — 지금 안내 중인 요청은 뺀다
+  const leftovers = usePendingRequests(shipment.id).filter(
+    (request) => request.idempotencyKey !== retry?.idempotencyKey
+  );
 
   const line = shipment.lines.find((entry) => entry.id === lineId);
   const preview = splitPreview(line, qty, shipment.lines);
@@ -219,6 +230,7 @@ export function ShipmentActions({
     sent: ActionDraft,
     run: () => Promise<void>
   ) => {
+    forgetPending(idempotencyKey);
     const actionLabel = ACTION_TITLE[done];
     const nextStatus = result.operationStatus ?? result.status ?? 'pending';
     setRetry({
@@ -246,6 +258,12 @@ export function ShipmentActions({
     sent: ActionDraft,
     run: () => Promise<void>
   ) => {
+    rememberPending({
+      shipmentId: sent.shipmentId,
+      action: pendingAction,
+      idempotencyKey,
+      sentAt: Date.now(),
+    });
     setRetry({
       action: pendingAction,
       operationId: '',
@@ -260,11 +278,13 @@ export function ShipmentActions({
   const handleFailure = (
     error: unknown,
     failed: Action,
-    sent: ActionDraft
+    sent: ActionDraft,
+    idempotencyKey: string
   ) => {
-    const { status } = parseServerError(error);
+    const { status, code } = parseServerError(error);
     if (status !== null && status < 500) {
       // 서버가 거절했으면 처리되지 않았다 — 대기 안내를 지우고 보낸 입력으로 고칠 창을 연다
+      forgetPending(idempotencyKey);
       setRetry(null);
       setDraft(sent);
       setAction(failed);
@@ -272,13 +292,12 @@ export function ShipmentActions({
       // 응답이 없거나(클라이언트가 500 으로 바꾼다) 5xx 면 처리됐는지 모른다 —
       // 창을 닫아 같은 요청 키로 다시 보내는 안내를 보인다
       setAction(null);
+      if (!code) {
+        toast.error(NO_ANSWER_MESSAGE);
+        return;
+      }
     }
-    toast.error(
-      getServerDenyMessage(
-        error,
-        `${ACTION_TITLE[failed]}에 실패했어요. 잠시 뒤 다시 시도해 주세요.`
-      )
-    );
+    toast.error(actionFailureMessage(error, failed));
   };
 
   // 버튼으로 여는 창은 새 작업이다 — 앞 작업의 사유·메모·체크를 넘기지 않는다
@@ -292,7 +311,7 @@ export function ShipmentActions({
     try {
       await retry.run();
     } catch (error) {
-      handleFailure(error, retry.action, retry.draft);
+      handleFailure(error, retry.action, retry.draft, retry.idempotencyKey);
     }
   };
 
@@ -412,7 +431,7 @@ export function ShipmentActions({
       };
       await run();
     } catch (error) {
-      handleFailure(error, action, sent);
+      handleFailure(error, action, sent, idempotencyKey);
     }
   };
 
@@ -488,6 +507,18 @@ export function ShipmentActions({
             </AlertDescription>
           </Alert>
         )}
+
+      {leftovers.map((request) => (
+        <PendingRequestNotice
+          key={request.idempotencyKey}
+          request={request}
+          onDismiss={() => forgetPending(request.idempotencyKey)}
+          onRedo={() => {
+            forgetPending(request.idempotencyKey);
+            startAction(request.action);
+          }}
+        />
+      ))}
 
       {canConsolidate && (
         <ConsolidationSheet

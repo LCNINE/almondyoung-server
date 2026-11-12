@@ -821,6 +821,14 @@ export interface ShipmentAdminDetail {
   operations: ShipmentOperationHistory[];
 }
 
+/** 응답을 받지 못한 요청이 서버에서 처리됐는지(요청 키 기준) */
+export interface FulfillmentRequestOutcome {
+  processed: boolean;
+  operationId: string | null;
+  status: FulfillmentOperationStatus | null;
+  completedAt: string | null;
+}
+
 export interface FulfillmentOperation<TSnapshot = unknown> {
   operationId: string;
   type: string;

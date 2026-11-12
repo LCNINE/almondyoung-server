@@ -62,6 +62,7 @@ import {
   ownerLabel,
   showsWaybillActions,
 } from './shipment-owner';
+import { usePendingRequests } from './shipment-action-pending';
 import { WaybillActions } from './waybill-actions';
 import { StuckWaybillPanel } from './stuck-waybill-panel';
 
@@ -425,10 +426,12 @@ function ShipmentDetailView({
 function ShipmentListButton({
   shipment,
   selected,
+  awaitingResult,
   onSelect,
 }: {
   shipment: ShipmentAdminSummary;
   selected: boolean;
+  awaitingResult: boolean;
   onSelect: (id: string) => void;
 }) {
   return (
@@ -453,6 +456,11 @@ function ShipmentListButton({
             .filter(Boolean)
             .join(' · ')}
         </span>
+        {awaitingResult && (
+          <span className="mt-1 block text-xs font-medium text-amber-700 dark:text-amber-400">
+            결과 확인 필요
+          </span>
+        )}
       </span>
     </Button>
   );
@@ -470,6 +478,11 @@ export function ShipmentTab({
   );
   const shipments = useFulfillmentShipments(fo.id);
   const [retiredOpen, setRetiredOpen] = useState(false);
+  // 응답을 받지 못한 상자 작업이 남은 상자 — 열면 작업 창이 결과를 확인해 알린다
+  const pendingRequests = usePendingRequests();
+  const awaiting = new Set(
+    pendingRequests.map((request) => request.shipmentId)
+  );
   const { active, retired } = orderShipments(shipments.data ?? []);
   const selectedShipmentId = shipments.data?.some(
     (shipment) => shipment.id === requestedShipmentId
@@ -573,6 +586,7 @@ export function ShipmentTab({
             key={shipment.id}
             shipment={shipment}
             selected={shipment.id === selectedShipmentId}
+            awaitingResult={awaiting.has(shipment.id)}
             onSelect={setRequestedShipmentId}
           />
         ))}
@@ -599,6 +613,7 @@ export function ShipmentTab({
                   key={shipment.id}
                   shipment={shipment}
                   selected={shipment.id === selectedShipmentId}
+                  awaitingResult={awaiting.has(shipment.id)}
                   onSelect={setRequestedShipmentId}
                 />
               ))}

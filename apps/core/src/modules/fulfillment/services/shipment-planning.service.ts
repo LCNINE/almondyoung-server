@@ -21,6 +21,7 @@ import {
   ShipmentDetailResponseDto,
   ShipmentSummaryResponseDto,
   FulfillmentOperationResponseDto,
+  FulfillmentRequestOutcomeDto,
   ShipmentCommandReasonDto,
   ShipmentSplitMoveDto,
   SplitShipmentDto,
@@ -1351,6 +1352,36 @@ export class ShipmentPlanningService {
         };
       }
       throw new NotFoundException(`Fulfillment operation ${operationId} not found`);
+    }, tx);
+  }
+
+  /**
+   * 응답을 받지 못한 요청이 처리됐는지 요청 키로 확인한다. 키 기록과 처리는 한 트랜잭션이라
+   * 기록이 없으면 처리되지 않은 것이다. 요청을 다시 실행하지 않는다.
+   */
+  async findRequestOutcome(
+    commandType: string,
+    idempotencyKey: string,
+    tx?: DbTx,
+  ): Promise<FulfillmentRequestOutcomeDto> {
+    return this.dbService.run(async (trx) => {
+      const table = wmsTables.fulfillmentCommandRequests;
+      const [command] = await trx
+        .select({ operationId: table.operationId, status: table.status, completedAt: table.completedAt })
+        .from(table)
+        .where(and(eq(table.commandType, commandType), eq(table.idempotencyKey, idempotencyKey)))
+        .limit(1);
+      if (!command) return { processed: false, operationId: null, status: null, completedAt: null };
+      if (!command.operationId) {
+        return { processed: true, operationId: null, status: command.status, completedAt: command.completedAt };
+      }
+      const operation = await this.getOperation(command.operationId, trx);
+      return {
+        processed: true,
+        operationId: operation.operationId,
+        status: operation.status,
+        completedAt: operation.completedAt ?? command.completedAt,
+      };
     }, tx);
   }
 
