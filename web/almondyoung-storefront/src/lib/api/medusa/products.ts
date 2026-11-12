@@ -154,6 +154,7 @@ export const listProductsSorted = async ({
   regionId,
   categoryId,
   collectionId,
+  productIds,
   limit = 12,
 }: {
   pageParam?: number
@@ -163,6 +164,7 @@ export const listProductsSorted = async ({
   regionId?: string
   categoryId?: string[]
   collectionId?: string
+  productIds?: string[]
   limit?: number
 }): Promise<{
   response: { products: HttpTypes.StoreProduct[]; count: number }
@@ -219,6 +221,10 @@ export const listProductsSorted = async ({
     query.collection_id = collectionId
   }
 
+  if (productIds) {
+    query.id = productIds
+  }
+
   return sdk.client
     .fetch<{
       products: HttpTypes.StoreProduct[]
@@ -240,4 +246,42 @@ export const listProductsSorted = async ({
         nextPage,
       }
     })
+}
+
+const MEMBERSHIP_PAGE_LIMIT = 200
+
+/**
+ * 주어진 카테고리들(OR)에 속한 상품마다 그 상품이 붙은 카테고리 id 목록.
+ * 분야 브랜드 화면이 "이 분야 상품 중 어느 브랜드에 몇 개" 를 세는 데 쓴다.
+ * 비로그인 조회라 회원 전용 상품은 빠진다(응답 미들웨어가 metadata 로 거른다).
+ */
+export const listProductCategoryMemberships = async (
+  categoryIds: string[]
+): Promise<{ id: string; categoryIds: string[] }[]> => {
+  const result: { id: string; categoryIds: string[] }[] = []
+
+  for (let offset = 0; ; offset += MEMBERSHIP_PAGE_LIMIT) {
+    const { products, count } = await sdk.client.fetch<{
+      products: { id: string; categories?: { id: string }[] | null }[]
+      count: number
+    }>(`/store/products`, {
+      method: "GET",
+      query: {
+        category_id: categoryIds,
+        fields: "id,+metadata,categories.id",
+        limit: MEMBERSHIP_PAGE_LIMIT,
+        offset,
+      },
+      next: { tags: [PRODUCT_LIST_TAG], revalidate: 3600 },
+    })
+
+    for (const p of products) {
+      result.push({
+        id: p.id,
+        categoryIds: (p.categories ?? []).map((c) => c.id),
+      })
+    }
+
+    if (offset + MEMBERSHIP_PAGE_LIMIT >= count) return result
+  }
 }

@@ -20,6 +20,8 @@ export type SortedProductIdsParams = {
   currencyCode: string;
   categoryIds?: string[];
   collectionId?: string;
+  /** 이 상품들 안에서만 정렬한다. 카테고리 조건과 AND 로 걸린다. */
+  productIds?: string[];
   /** 비회원 요청. metadata.isVisibleToMembersOnly 상품을 SQL 단계에서 제외한다. */
   excludeMembersOnly: boolean;
 };
@@ -81,7 +83,7 @@ class ProductSortingModuleService extends MedusaService({ ProductSortIndex }) {
     @MedusaContext() sharedContext: Context<EntityManager> = {},
   ): Promise<{ productIds: string[]; count: number }> {
     const knex = sharedContext.manager!.getKnex();
-    const { sortBy, order, limit, offset, currencyCode, categoryIds, collectionId, excludeMembersOnly } = params;
+    const { sortBy, order, limit, offset, currencyCode, categoryIds, collectionId, productIds, excludeMembersOnly } = params;
 
     const base = knex('product_sort_index as psi')
       .join('product as p', 'p.id', 'psi.product_id')
@@ -107,6 +109,10 @@ class ProductSortingModuleService extends MedusaService({ ProductSortIndex }) {
 
     if (collectionId) {
       base.where('p.collection_id', collectionId);
+    }
+
+    if (productIds) {
+      base.whereIn('psi.product_id', productIds);
     }
 
     if (excludeMembersOnly) {

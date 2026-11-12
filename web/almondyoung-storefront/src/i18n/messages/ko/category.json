@@ -38,5 +38,13 @@
     "nail": "네일",
     "hair": "헤어",
     "waxing": "왁싱"
+  },
+  "fieldBrands": {
+    "summary": "{field} 상품이 있는 브랜드 {count}곳",
+    "productCount": "{count}개",
+    "more": "브랜드 {count}개 더보기",
+    "collapse": "접기",
+    "clear": "{brand} 선택 해제",
+    "selectedHint": "{brand} 상품 중 {field} 상품만 보여요"
   }
 }

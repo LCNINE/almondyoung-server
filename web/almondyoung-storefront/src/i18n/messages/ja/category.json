@@ -38,5 +38,13 @@
     "nail": "ネイル",
     "hair": "ヘア",
     "waxing": "ワックス"
+  },
+  "fieldBrands": {
+    "summary": "{field}商品のあるブランド {count}件",
+    "productCount": "{count}件",
+    "more": "ブランドをさらに{count}件表示",
+    "collapse": "閉じる",
+    "clear": "{brand}の選択を解除",
+    "selectedHint": "{brand}の商品のうち{field}の商品のみ表示しています"
   }
 }

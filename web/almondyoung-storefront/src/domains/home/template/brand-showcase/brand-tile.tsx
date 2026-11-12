@@ -1,4 +1,5 @@
 import LocalizedClientLink from "@/components/shared/localized-client-link"
+import { cn } from "@/lib/utils"
 import Image from "next/image"
 
 interface BrandTileProps {
@@ -6,6 +7,9 @@ interface BrandTileProps {
   href: string
   /** 이미 URL 로 resolve 된 로고. 없으면 텍스트 타일로 폴백. */
   thumbnailUrl: string | null
+  selected?: boolean
+  /** 이름 아래 작은 보조 문구(상품 수 등) */
+  caption?: string
 }
 
 /**
@@ -14,13 +18,25 @@ interface BrandTileProps {
  * object-contain 이라 여백 있는 로고도 잘리지 않고, 로고가 없으면 브랜드명을
  * 타일 안에 그대로 보여준다(빈 이미지 자리 금지).
  */
-export function BrandTile({ name, href, thumbnailUrl }: BrandTileProps) {
+export function BrandTile({
+  name,
+  href,
+  thumbnailUrl,
+  selected,
+  caption,
+}: BrandTileProps) {
   return (
     <LocalizedClientLink
       href={href}
+      aria-current={selected ? "true" : undefined}
       className="flex w-[76px] flex-col items-center gap-2 transition-opacity hover:opacity-90 md:w-[92px]"
     >
-      <span className="border-border relative flex aspect-square w-full items-center justify-center overflow-hidden rounded-xl border bg-white">
+      <span
+        className={cn(
+          "border-border relative flex aspect-square w-full items-center justify-center overflow-hidden rounded-xl border bg-white",
+          selected && "border-primary border-2"
+        )}
+      >
         {thumbnailUrl ? (
           <Image
             src={thumbnailUrl}
@@ -35,9 +51,19 @@ export function BrandTile({ name, href, thumbnailUrl }: BrandTileProps) {
           </span>
         )}
       </span>
-      <span className="line-clamp-1 w-full text-center text-[12px] leading-tight text-gray-700 md:text-[13px]">
+      <span
+        className={cn(
+          "line-clamp-1 w-full text-center text-[12px] leading-tight text-gray-700 md:text-[13px]",
+          selected && "text-foreground font-bold"
+        )}
+      >
         {name}
       </span>
+      {caption && (
+        <span className="text-muted-foreground -mt-1 text-[11px] tabular-nums">
+          {caption}
+        </span>
+      )}
     </LocalizedClientLink>
   )
 }

@@ -68,6 +68,7 @@ type Params = {
     sortBy?: SortOptions
     limit?: string
     page?: string
+    brand?: string
   }>
   params: Promise<{
     countryCode: string
@@ -78,7 +79,7 @@ type Params = {
 export default async function CategoryPage(props: Params) {
   const params = await props.params
   const searchParams = await props.searchParams
-  const { sortBy, limit } = searchParams
+  const { sortBy, limit, brand } = searchParams
   const page = normalizePage(searchParams.page)
 
   const category = await getCategoryByHandleCached(params.segments)
@@ -96,6 +97,7 @@ export default async function CategoryPage(props: Params) {
       countryCode={params.countryCode}
       category={category}
       segments={params.segments}
+      brand={brand}
     />
   )
 }
