@@ -128,6 +128,17 @@ const mergedBox = shipment([
   }),
 ]);
 
+async function chooseCustomerReason(dialog: HTMLElement) {
+  await userEvent.click(
+    within(dialog).getByRole('radio', {
+      name: '고객이 일부 먼저 보내 달라고 요청',
+    })
+  );
+  await userEvent.click(
+    within(dialog).getByRole('radio', { name: '카카오 상담' })
+  );
+}
+
 async function openSplit(detail = mergedBox) {
   render(<ShipmentActions shipment={detail} />);
   await userEvent.click(screen.getByRole('button', { name: '분할' }));
@@ -183,10 +194,7 @@ it('입력한 수량으로 이번 상자에 남을 수량과 새 상자로 보�
     '새 상자로 보낼 수량샘플 상품 (빨강) 1개'
   );
 
-  await userEvent.type(
-    within(dialog).getByLabelText('작업 사유 (필수)'),
-    '먼저 보내기'
-  );
+  await chooseCustomerReason(dialog);
   await userEvent.click(
     within(dialog).getByRole('button', { name: '분할하기' })
   );
@@ -199,6 +207,33 @@ it('입력한 수량으로 이번 상자에 남을 수량과 새 상자로 보�
       moves: [{ shipmentLineId: 'line-b', expectedLineVersion: 3, qty: 1 }],
     },
   });
+});
+
+it('분할은 사유 이름표와 요청 경로를 보내고 CS 건 번호는 보내지 않는다', async () => {
+  const dialog = await openSplit();
+  await chooseCustomerReason(dialog);
+  await userEvent.click(
+    within(dialog).getByRole('button', { name: '분할하기' })
+  );
+
+  const { data } = mockSplit.mock.calls[0][0];
+  expect(data).toMatchObject({
+    reason: '고객이 일부 먼저 보내 달라고 요청',
+    reasonCode: 'customer_ship_first',
+    requestChannel: 'kakao',
+  });
+  expect(data).not.toHaveProperty('csCaseId');
+  expect(dialog.textContent).not.toMatch(/CS case/);
+});
+
+it('사유를 고르지 않고 분할하기를 누르면 보내지 않고 안내한다', async () => {
+  const dialog = await openSplit();
+  await userEvent.click(
+    within(dialog).getByRole('button', { name: '분할하기' })
+  );
+
+  expect(mockSplit).not.toHaveBeenCalled();
+  expect(within(dialog).getByText('작업 사유를 골라 주세요.')).toBeTruthy();
 });
 
 it('보낼 수 없는 수량이면 범위를 알려 주고 분할하기를 막는다', async () => {
@@ -337,6 +372,7 @@ it('출고 되돌리기는 송장 번호로 돌아온 출고를 고르고 실물
     },
   });
   expect(mockRecall.mock.calls[0][0].data).not.toHaveProperty('csCaseId');
+  expect(mockRecall.mock.calls[0][0].data).not.toHaveProperty('reasonCode');
 });
 
 // API 클라이언트는 응답이 없거나 시간이 지나면 500, 서버가 거절하면 그 상태로 던진다
@@ -345,10 +381,7 @@ const rejected = { statusCode: 409, message: '그사이 상자가 바뀌었어�
 
 async function submitSplit() {
   const dialog = await openSplit();
-  await userEvent.type(
-    within(dialog).getByLabelText('작업 사유 (필수)'),
-    '먼저 보내기'
-  );
+  await chooseCustomerReason(dialog);
   await userEvent.click(
     within(dialog).getByRole('button', { name: '분할하기' })
   );
@@ -362,10 +395,7 @@ it('처리 중인 작업은 한국어 상태로 보이고 끝나면 안내가 �
   const { rerender } = render(<ShipmentActions shipment={mergedBox} />);
   await userEvent.click(screen.getByRole('button', { name: '분할' }));
   const dialog = screen.getByRole('dialog');
-  await userEvent.type(
-    within(dialog).getByLabelText('작업 사유 (필수)'),
-    '먼저 보내기'
-  );
+  await chooseCustomerReason(dialog);
   await userEvent.click(
     within(dialog).getByRole('button', { name: '분할하기' })
   );
@@ -442,9 +472,10 @@ it('다시 시도를 서버가 거절하면 고칠 수 있게 창을 다시 연�
 
   const dialog = screen.getByRole('dialog');
   expect(
-    (within(dialog).getByLabelText('작업 사유 (필수)') as HTMLInputElement)
-      .value
-  ).toBe('먼저 보내기');
+    within(dialog)
+      .getByRole('radio', { name: '고객이 일부 먼저 보내 달라고 요청' })
+      .getAttribute('aria-checked')
+  ).toBe('true');
   expect(screen.queryByRole('alert', { hidden: true })).toBeNull();
 });
 

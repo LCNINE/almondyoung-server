@@ -835,7 +835,8 @@ export interface FulfillmentOperation<TSnapshot = unknown> {
 
 export interface ShipmentCommandReason {
   reason: string;
-  csCaseId?: string;
+  reasonCode?: string;
+  requestChannel?: string;
   note?: string;
 }
 
@@ -1115,7 +1116,6 @@ export interface RecallShipmentRequest {
   expectedManifestVersion: number;
   physicalRecoveryConfirmed: true;
   reason: ShipmentRecallReason;
-  csCaseId?: string;
   note?: string;
 }
 
@@ -1148,7 +1148,6 @@ export interface ReportShipmentShortPickRequest {
   expectedManifestVersion: number;
   lines: ShipmentShortPickLineRequest[];
   reason: ShipmentShortPickReason;
-  csCaseId?: string;
   note?: string;
 }
 

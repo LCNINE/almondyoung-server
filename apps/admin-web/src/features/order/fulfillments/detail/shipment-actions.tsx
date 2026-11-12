@@ -45,6 +45,7 @@ import {
 import type {
   FulfillmentOperationStatus,
   ShipmentAdminDetail,
+  ShipmentRecallReason,
 } from '@/lib/types/dto/fulfillment';
 import {
   buildRecipientRevisionPayload,
@@ -54,6 +55,13 @@ import {
 } from './recipient-revision';
 import { ConsolidationSheet } from './consolidation-sheet';
 import { showsConsolidationButton } from './consolidation-sheet-model';
+import { OperationReasonFields } from './operation-reason-fields';
+import {
+  OPERATION_REASONS,
+  canSubmitOperationReason,
+  toOperationReasonPayload,
+  type OperationReasonValue,
+} from './operation-reasons';
 import {
   ACTION_TITLE,
   SUBMIT_LABEL,
@@ -83,12 +91,11 @@ type RetryState = {
   run: () => Promise<void>;
 };
 
-const RECALL_REASONS = [
-  ['carrier_handoff_failed', '택배사 인계 실패'],
-  ['dispatch_mistake', '출고 오류'],
-  ['address_correction', '주소 수정'],
-  ['package_recovered', '상자 회수'],
-] as const;
+const RECALL_REASONS = OPERATION_REASONS.recall.map(
+  (option) => [option.code as ShipmentRecallReason, option.label] as const
+);
+
+const EMPTY_REASON: OperationReasonValue = { otherText: '', note: '' };
 
 function blankRecipient(snapshot: unknown): RecipientForm {
   const value =
@@ -129,14 +136,16 @@ export function ShipmentActions({
   const chosenProfileId =
     shippingProfileId ||
     (profiles.data?.length === 1 ? profiles.data[0].id : '');
-  const [reason, setReason] = useState('');
+  const [reasonValue, setReasonValue] =
+    useState<OperationReasonValue>(EMPTY_REASON);
+  const [showReasonErrors, setShowReasonErrors] = useState(false);
   const [note, setNote] = useState('');
   const [recipient, setRecipient] = useState<RecipientForm>(() =>
     blankRecipient(shipment.recipientSnapshot)
   );
   const [attemptId, setAttemptId] = useState('');
   const [recallReason, setRecallReason] =
-    useState<(typeof RECALL_REASONS)[number][0]>('package_recovered');
+    useState<ShipmentRecallReason>('package_recovered');
   const [physicalRecovery, setPhysicalRecovery] = useState(false);
   const [retry, setRetry] = useState<RetryState | null>(null);
   const operation = useFulfillmentOperation(retry?.operationId ?? '');
@@ -219,6 +228,13 @@ export function ShipmentActions({
     });
   };
 
+  const openAction = (next: Action) => {
+    setReasonValue(EMPTY_REASON);
+    setShowReasonErrors(false);
+    setNote('');
+    setAction(next);
+  };
+
   const handleFailure = (error: unknown, failed: Action) => {
     const { status } = parseServerError(error);
     if (status !== null && status < 500) {
@@ -256,6 +272,8 @@ export function ShipmentActions({
     const quantity = Number(qty);
     try {
       if (action === 'split') {
+        const reasonReady = canSubmitOperationReason('split', reasonValue);
+        if (!reasonReady) setShowReasonErrors(true);
         if (
           !line ||
           !isSplitQtyAllowed(
@@ -267,10 +285,7 @@ export function ShipmentActions({
           toast.error(SPLIT_QTY_ERROR);
           return;
         }
-        if (!reason.trim()) {
-          toast.error('작업 사유를 입력하세요.');
-          return;
-        }
+        if (!reasonReady) return;
         const data = {
           expectedManifestVersion: shipment.manifestVersion,
           moves: [
@@ -280,8 +295,7 @@ export function ShipmentActions({
               qty: quantity,
             },
           ],
-          reason: reason.trim(),
-          ...(note.trim() ? { note: note.trim() } : {}),
+          ...toOperationReasonPayload('split', reasonValue),
         };
         const run: () => Promise<void> = async () => {
           registerPending(idempotencyKey, action, run);
@@ -296,14 +310,17 @@ export function ShipmentActions({
         return;
       }
       if (action === 'recipient') {
-        if (!reason.trim() || missingRecipientFields(recipient).length > 0) {
-          toast.error('수령인 필수 정보와 작업 사유를 모두 입력하세요.');
+        if (
+          !canSubmitOperationReason('recipient_revision', reasonValue) ||
+          missingRecipientFields(recipient).length > 0
+        ) {
+          setShowReasonErrors(true);
+          toast.error('수령인 필수 정보와 작업 사유를 모두 입력해 주세요.');
           return;
         }
         const data = buildRecipientRevisionPayload(recipient, {
           expectedManifestVersion: shipment.manifestVersion,
-          reason,
-          note,
+          ...toOperationReasonPayload('recipient_revision', reasonValue),
           currentSnapshot: shipment.recipientSnapshot,
         });
         const run: () => Promise<void> = async () => {
@@ -373,7 +390,7 @@ export function ShipmentActions({
           <Button
             size="sm"
             variant="outline"
-            onClick={() => setAction('split')}
+            onClick={() => openAction('split')}
           >
             분할
           </Button>
@@ -383,13 +400,13 @@ export function ShipmentActions({
             <Button
               size="sm"
               variant="outline"
-              onClick={() => setAction('recipient')}
+              onClick={() => openAction('recipient')}
             >
               수령인 변경
             </Button>
           )}
         {allowed.includes('plan') && canRun(usePlanShipment) && (
-          <Button size="sm" variant="outline" onClick={() => setAction('plan')}>
+          <Button size="sm" variant="outline" onClick={() => openAction('plan')}>
             {ACTION_TITLE.plan}
           </Button>
         )}
@@ -406,7 +423,7 @@ export function ShipmentActions({
           <Button
             size="sm"
             variant="destructive"
-            onClick={() => setAction('recall')}
+            onClick={() => openAction('recall')}
           >
             {ACTION_TITLE.recall}
           </Button>
@@ -598,7 +615,7 @@ export function ShipmentActions({
                 <Select
                   value={recallReason}
                   onValueChange={(value) =>
-                    setRecallReason(value as typeof recallReason)
+                    setRecallReason(value as ShipmentRecallReason)
                   }
                 >
                   <SelectTrigger id="recall-reason" className="w-full">
@@ -625,17 +642,15 @@ export function ShipmentActions({
             </div>
           )}
 
-          {action !== 'plan' && action !== 'recall' && (
-            <div className="space-y-1.5">
-              <Label htmlFor="shipment-action-reason">작업 사유 (필수)</Label>
-              <Input
-                id="shipment-action-reason"
-                value={reason}
-                onChange={(event) => setReason(event.target.value)}
-              />
-            </div>
+          {(action === 'split' || action === 'recipient') && (
+            <OperationReasonFields
+              type={action === 'split' ? 'split' : 'recipient_revision'}
+              value={reasonValue}
+              onChange={setReasonValue}
+              showErrors={showReasonErrors}
+            />
           )}
-          {action !== 'plan' && (
+          {action === 'recall' && (
             <div className="space-y-1.5">
               <Label htmlFor="shipment-action-note">운영 메모 (선택)</Label>
               <Textarea
