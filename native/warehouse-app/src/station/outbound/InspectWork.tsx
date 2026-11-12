@@ -173,6 +173,8 @@ export function InspectWork({
     setShortBusy(true);
     try {
       let sent = shortPickRetries.get(box.shipmentId);
+      const priorUncertain = Boolean(sent);
+
       if (!sent) {
         // 버전은 스캔마다 낡는다 — 보내기 직전에 다시 조회한 값으로 보낸다(PR A 계약 메모). 남은 수량이 창의 수량보다
         // 줄었으면(다른 스테이션이 더 찍음) 보내지 않는다 — 부모가 박스를 다시 그려 «다시 F9» 가 새 수량으로 열린다
@@ -205,7 +207,7 @@ export function InspectWork({
         onShortPicked(box, result);
       } catch (error) {
         setShortOpen(false);
-        const failure = shortPickFailure(error);
+        const failure = shortPickFailure(error, priorUncertain);
         if (failure.kind === 'rejected') {
           shortPickRetries.delete(box.shipmentId);
           onShortPickRefused(box, failure.message);

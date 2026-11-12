@@ -126,11 +126,9 @@ it('only classifies explicit force non-application as rejected and preserves gen
     new ConflictError('not applied', 'LOCATION_OUTBOUND_FORCE_NOT_APPLIED')
       .outcome
   ).toBe('rejected');
-  for (const status of [401, 403])
-    expect(
-      new ApiError('forbidden', status, 'LOCATION_OUTBOUND_FORCE_NOT_APPLIED')
-        .outcome
-    ).toBe('uncertain');
+  expect(
+    new ApiError('expired', 401, 'LOCATION_OUTBOUND_FORCE_NOT_APPLIED').outcome
+  ).toBe('uncertain');
 });
 
 it.each([
@@ -308,7 +306,7 @@ describe('서버 도달 기록(상태바 «서버»)', () => {
   });
 });
 
-it('403 본문의 요구 권한을 오류에 싣고, 결과를 모르는 분류는 그대로 둔다', async () => {
+it('403 본문의 요구 권한을 오류에 싣고 확정 거절로 분류한다', async () => {
   const client = createApiClient({
     baseUrl: 'https://api.test',
     getToken: async () => 'TOK',
@@ -326,7 +324,7 @@ it('403 본문의 요구 권한을 오류에 싣고, 결과를 모르는 분류�
   if (!(error instanceof ApiError)) throw new Error('Expected ApiError');
   expect(error.status).toBe(403);
   expect(error.requiredPermissions).toEqual(['inventory.stock.adjust']);
-  expect(error.outcome).toBe('uncertain');
+  expect(error.outcome).toBe('rejected');
 });
 
 it('403 이 아닌 응답의 requiredPermissions 는 읽지 않는다', async () => {
@@ -341,3 +339,10 @@ it('403 이 아닌 응답의 requiredPermissions 는 읽지 않는다', async ()
   if (!(error instanceof ApiError)) throw new Error('Expected ApiError');
   expect(error.requiredPermissions).toBeUndefined();
 });
+
+it.each([undefined, 'Forbidden', 'FORBIDDEN', 'UNKNOWN'])(
+  'rejects 403 regardless of code %s',
+  (code) => {
+    expect(new ApiError('denied', 403, code).outcome).toBe('rejected');
+  }
+);

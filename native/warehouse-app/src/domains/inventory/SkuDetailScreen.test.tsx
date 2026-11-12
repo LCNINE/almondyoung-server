@@ -142,3 +142,19 @@ describe('SkuDetailScreen', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('서버에 문제가 있어요');
   });
 });
+
+it('권한이 없으면 상품과 위치별 조정 진입을 모두 막는다', async () => {
+  renderScreen(
+    clientFor({
+      '/inventory/work-context': { permissions: { stockAdjust: false } },
+    }),
+    { id: 'w-1', name: '본창고' }
+  );
+
+  expect(await screen.findByText('재고 조정 권한이 없어요. 관리자에게 요청해 주세요.')).toBeInTheDocument();
+  expect(screen.getByRole('button', { name: '재고 조정' })).toBeDisabled();
+  for (const button of await screen.findAllByRole('button', { name: '조정' })) {
+    expect(button).toBeDisabled();
+    expect(button.closest('a')).not.toHaveAttribute('href');
+  }
+});

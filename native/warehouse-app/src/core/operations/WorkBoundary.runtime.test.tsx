@@ -1,4 +1,9 @@
 import 'fake-indexeddb/auto';
+import { useState, useSyncExternalStore } from 'react';
+import { useAdjustStock } from '../../domains/inventory/useAdjustStock';
+import { errorMessage } from '../data/errorMessage';
+import { useWorkRuntime } from './OperationContext';
+import { unsentCount } from '../../station/status/statusBarItems';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -377,7 +382,7 @@ it('allows matching scans while sending and blocks them after the result becomes
   );
   expect(screen.getByText('연속 스캔').closest('[inert]')).toBeNull();
 
-  resolveScan(Response.json({ error: 'Forbidden' }, { status: 403 }));
+  resolveScan(Response.json({ error: 'Unauthorized' }, { status: 401 }));
 
   await waitFor(() =>
     expect(screen.getByText('연속 스캔').closest('[inert]')).not.toBeNull()
@@ -386,6 +391,11 @@ it('allows matching scans while sending and blocks them after the result becomes
     status: 'uncertain',
     attempts: 1,
   });
+
+  await userEvent.click(
+    await screen.findByRole('button', { name: '다시 로그인' })
+  );
+  expect(authed).toBe(false);
 });
 
 function SimpleScanRequest() {
@@ -431,8 +441,98 @@ it('단순출고 스캔도 첫 전송 중엔 막지 않고, 결과가 불확실�
   );
   expect(screen.getByText('단순 스캔').closest('[inert]')).toBeNull();
 
-  resolveScan(Response.json({ error: 'Forbidden' }, { status: 403 }));
+  resolveScan(Response.json({ error: 'Unauthorized' }, { status: 401 }));
 
   await waitFor(() => expect(screen.getByText('단순 스캔').closest('[inert]')).not.toBeNull());
   expect(await createOperationStore().get('simple-1')).toMatchObject({ status: 'uncertain', attempts: 1 });
+});
+
+function AdjustmentThenInbound() {
+  const runtime = useWorkRuntime()!;
+  const adjust = useAdjustStock();
+  const api = useApiClient();
+  const operations = useSyncExternalStore(
+    runtime.runner.subscribe,
+    runtime.runner.getSnapshot
+  );
+  const [received, setReceived] = useState(false);
+
+  return (
+    <>
+      <span>미전송 {unsentCount(operations, Date.now())}</span>
+      <WorkArea kind="adjust">
+        <button
+          onClick={() =>
+            adjust.mutate({
+              skuId: 's',
+              warehouseId: 'w',
+              locationId: 'l',
+              delta: 1,
+              reason: '발견',
+              idempotencyKey: 'adjust-denied',
+            })
+          }
+        >
+          재고 조정 실행
+        </button>
+      </WorkArea>
+      {adjust.isError && (
+        <p role="alert">{errorMessage(adjust.error, 'adjust')}</p>
+      )}
+      <WorkArea kind="inbound">
+        <button
+          onClick={async () => {
+            if ((await runtime.store.pending(await runtime.getScope())).length)
+              return;
+
+            await api.request({
+              method: 'POST',
+              path: '/inbound/simple',
+              body: { warehouseId: 'w' },
+              idempotencyKey: 'next-inbound',
+            });
+            setReceived(true);
+          }}
+        >
+          입고 실행
+        </button>
+      </WorkArea>
+      {received && <p>입고했어요.</p>}
+    </>
+  );
+}
+
+it('403 adjustment leaves no unsent notice or login prompt and permits the next inbound', async () => {
+  const defaultHandler = fetchHandler;
+  fetchHandler = async (...args) => {
+    const url = String(args[0]);
+
+    if (url.endsWith('/inventory/stocks/adjust'))
+      return Response.json({}, { status: 403 });
+    if (url.endsWith('/inbound/simple'))
+      return Response.json({
+        id: 'receipt',
+        lines: [{ id: 'line', skuId: 's', quantity: 1 }],
+      });
+
+    return defaultHandler(...args);
+  };
+  authed = true;
+  renderBoundary(<AdjustmentThenInbound />);
+  await waitFor(() =>
+    expect(screen.getByText('재고 조정 실행').closest('[inert]')).toBeNull()
+  );
+  await userEvent.click(screen.getByText('재고 조정 실행'));
+  expect(await screen.findByRole('alert')).toHaveTextContent(
+    '재고 조정 권한이 없어요. 관리자에게 요청해 주세요.'
+  );
+  await waitFor(() => expect(screen.getByText('미전송 0')).toBeInTheDocument());
+  expect(
+    screen.queryByRole('button', { name: '다시 로그인' })
+  ).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole('button', { name: '처리 내역 확인' })
+  ).not.toBeInTheDocument();
+  await userEvent.click(screen.getByText('입고 실행'));
+  expect(await screen.findByText('입고했어요.')).toBeInTheDocument();
 });

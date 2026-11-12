@@ -92,16 +92,16 @@ describe('warehouse v2 HTTP authorization and DTO contract', () => {
       actorId: '00000000-0000-4000-8000-000000000001',
       operationContractVersion: 2,
       capabilities: { stocktakingAddCountItem: true, locationOutbound: true, inboundWorkflowConsistency: true },
-      permissions: { forceDispatch: false, stationForceDispatch: false, shortPick: false },
+      permissions: { stockAdjust: false, forceDispatch: false, stationForceDispatch: false, shortPick: false },
     });
   });
   it.each([
-    ['worker', { forceDispatch: false, stationForceDispatch: false, shortPick: false }],
-    ['station_worker', { forceDispatch: false, stationForceDispatch: true, shortPick: true }],
-    ['manager', { forceDispatch: true, stationForceDispatch: true, shortPick: false }],
-    ['custom_force', { forceDispatch: true, stationForceDispatch: true, shortPick: false }],
-    ['master', { forceDispatch: true, stationForceDispatch: true, shortPick: true }],
-    ['mapped_master', { forceDispatch: true, stationForceDispatch: true, shortPick: true }],
+    ['worker', { stockAdjust: false, forceDispatch: false, stationForceDispatch: false, shortPick: false }],
+    ['station_worker', { stockAdjust: false, forceDispatch: false, stationForceDispatch: true, shortPick: true }],
+    ['manager', { stockAdjust: true, forceDispatch: true, stationForceDispatch: true, shortPick: false }],
+    ['custom_force', { stockAdjust: false, forceDispatch: true, stationForceDispatch: true, shortPick: false }],
+    ['master', { stockAdjust: true, forceDispatch: true, stationForceDispatch: true, shortPick: true }],
+    ['mapped_master', { stockAdjust: true, forceDispatch: true, stationForceDispatch: true, shortPick: true }],
   ])('matches the actual force guard for %s', async (role, permissions) => {
     const context = await request(app.getHttpServer() as Server)
       .get('/inventory/work-context')
@@ -120,7 +120,12 @@ describe('warehouse v2 HTTP authorization and DTO contract', () => {
       .get('/inventory/work-context')
       .set('x-test-role', 'manager')
       .expect(200);
-    expect(context.body).toHaveProperty('permissions', { forceDispatch: true, stationForceDispatch: true, shortPick: false });
+    expect(context.body).toHaveProperty('permissions', {
+      stockAdjust: true,
+      forceDispatch: true,
+      stationForceDispatch: true,
+      shortPick: false,
+    });
     await request(app.getHttpServer() as Server)
       .post('/shipments/00000000-0000-4000-8000-000000000002/location-outbound-forces')
       .set('x-test-role', 'manager')

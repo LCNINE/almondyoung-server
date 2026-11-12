@@ -2,7 +2,11 @@ import { WorkArea } from '../../core/operations/WorkBoundary';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useWarehouse } from '../../app/warehouse-context';
-import { errorMessage } from '../../core/data/errorMessage';
+import { useWorkPermissions } from '../../core/operations/useWorkCapabilities';
+import {
+  errorMessage,
+  STOCK_ADJUST_PERMISSION_MESSAGE,
+} from '../../core/data/errorMessage';
 import { Button } from '../../core/design/Button';
 import { ScreenHeader } from '../../core/design/ScreenHeader';
 import { NumberPad } from '../../core/design/NumberPad';
@@ -28,6 +32,10 @@ function AdjustStockScreenContent({
   const detail = useSkuDetail(skuId);
   const stock = useSkuWarehouseStock(skuId, warehouseId);
   const adjust = useAdjustStock();
+  const permissions = useWorkPermissions();
+
+  const permissionDenied =
+    !permissions.isError && permissions.data?.stockAdjust === false;
 
   const [locationId, setLocationId] = useState<string | undefined>(
     initialLocationId
@@ -78,6 +86,7 @@ function AdjustStockScreenContent({
   const effectiveReason =
     reason === OTHER ? otherReason.trim() : (reason ?? '');
   const canSubmit =
+    !permissionDenied &&
     isSet &&
     Boolean(warehouseId) &&
     Boolean(locationId) &&
@@ -123,6 +132,12 @@ function AdjustStockScreenContent({
   return (
     <div className="space-y-5">
       <ScreenHeader title="재고 조정" backTo="/inventory" />
+
+      {permissionDenied && (
+        <p role="alert" className="text-sm text-red-600">
+          {STOCK_ADJUST_PERMISSION_MESSAGE}
+        </p>
+      )}
 
       {detail.data ? (
         <div className="rounded-lg border border-gray-200 bg-white p-3">
@@ -246,7 +261,7 @@ function AdjustStockScreenContent({
 
       {adjust.isError ? (
         <p role="alert" className="text-sm text-red-600">
-          {errorMessage(adjust.error)}
+          {errorMessage(adjust.error, 'adjust')}
         </p>
       ) : null}
 
@@ -270,7 +285,8 @@ function AdjustStockScreenContent({
         onCancel={() => setConfirming(false)}
         onConfirm={() => {
           setConfirming(false);
-          if (!warehouseId || !locationId) return;
+          if (!canSubmit || !warehouseId || !locationId) return;
+
           adjust.mutate(
             {
               skuId,
