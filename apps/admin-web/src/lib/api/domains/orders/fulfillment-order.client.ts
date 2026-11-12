@@ -19,6 +19,7 @@ import type {
   ShipmentAdminSummary,
   ShipmentAdminDetail,
   FulfillmentOperation,
+  FulfillmentRequestOutcome,
   SplitShipmentRequest,
   SplitUnreservedShipmentRequest,
   ReviseShipmentRecipientRequest,
@@ -83,6 +84,17 @@ export const fulfillmentOrder = {
   getOperation: async (operationId: string): Promise<FulfillmentOperation> => {
     const response = await client.get(
       `${ALMONDYOUNG_API_BASE_URL}/fulfillment-operations/${encodeURIComponent(operationId)}`
+    );
+    return response.data;
+  },
+
+  /** 응답을 받지 못한 요청이 처리됐는지 요청 키로 확인한다(다시 실행하지 않는다) */
+  getRequestOutcome: async (
+    commandType: string,
+    idempotencyKey: string
+  ): Promise<FulfillmentRequestOutcome> => {
+    const response = await client.get(
+      `${ALMONDYOUNG_API_BASE_URL}/fulfillment-operations/requests/${encodeURIComponent(commandType)}/${encodeURIComponent(idempotencyKey)}`
     );
     return response.data;
   },

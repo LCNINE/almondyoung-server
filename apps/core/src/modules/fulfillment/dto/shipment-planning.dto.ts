@@ -428,3 +428,17 @@ export class FulfillmentOperationResponseDto {
   @ApiProperty({ nullable: true })
   completedAt: Date | null;
 }
+
+export class FulfillmentRequestOutcomeDto {
+  @ApiProperty({ description: '요청 키 기록이 있으면 처리된 것이다(기록과 처리는 한 트랜잭션)' })
+  processed: boolean;
+
+  @ApiProperty({ nullable: true })
+  operationId: string | null;
+
+  @ApiProperty({ nullable: true })
+  status: string | null;
+
+  @ApiProperty({ nullable: true })
+  completedAt: Date | null;
+}

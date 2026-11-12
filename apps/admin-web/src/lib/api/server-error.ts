@@ -75,6 +75,11 @@ const CONFLICT_MESSAGES: Record<string, string> = {
     '그사이 주문이 바뀌었어요. 새로고침한 뒤 다시 시도해 주세요.',
 };
 
+/** 화면에 따로 문장을 둔 거절 코드면 그 문장 */
+export function knownConflictMessage(code: string | null): string | undefined {
+  return code ? CONFLICT_MESSAGES[code] : undefined;
+}
+
 export function getServerDenyMessage(
   error: unknown,
   fallback = '작업에 실패했습니다.'

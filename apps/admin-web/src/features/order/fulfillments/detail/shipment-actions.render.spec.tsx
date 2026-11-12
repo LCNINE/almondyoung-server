@@ -7,13 +7,17 @@ import type {
   ShipmentAdminDetail,
   ShipmentAdminLine,
 } from '@/lib/types/dto/fulfillment';
+import { toast } from 'sonner';
 import { ShipmentActions } from './shipment-actions';
+import { pendingRequests, rememberPending } from './shipment-action-pending';
 
 const mockSplit = jest.fn();
 const mockRecall = jest.fn();
 let mockCanRecall = false;
 let mockOperationStatus: string | undefined;
 let mockKeySeq = 0;
+const mockRefetchOutcome = jest.fn();
+let mockOutcome: { data?: unknown; isError?: boolean } = {};
 
 jest.mock('@/hooks/use-permission', () => ({
   usePermissionCheck: () => ({
@@ -42,6 +46,10 @@ jest.mock('@/lib/services/orders', () => {
       status === 'in_progress' ||
       status === 'recovery_required',
     useCreateShipmentConsolidation: idle,
+    useFulfillmentRequestOutcome: () => ({
+      ...mockOutcome,
+      refetch: mockRefetchOutcome,
+    }),
     useFulfillmentOperation: (operationId: string) => ({
       data:
         operationId && mockOperationStatus
@@ -146,6 +154,10 @@ async function openSplit(detail = mergedBox) {
 }
 
 beforeEach(() => {
+  window.localStorage.clear();
+  mockOutcome = {};
+  mockRefetchOutcome.mockReset();
+  jest.mocked(toast.error).mockReset();
   mockCanRecall = false;
   mockOperationStatus = undefined;
   mockKeySeq = 0;
@@ -422,6 +434,10 @@ it('응답을 받지 못하면 접수됐다고 하지 않고 같은 요청 키�
   const alert = screen.getByRole('alert');
   expect(alert.textContent).toContain('상자 분할 · 응답 대기');
   expect(alert.textContent).not.toContain('접수됨');
+  // 바로 아래 안내의 «다시 시도»를 가리킨다 — 새로고침하라고 하면 같은 요청으로 다시 보낼 길을 잃는다
+  expect(toast.error).toHaveBeenCalledWith(
+    '응답을 받지 못했어요. 아래 «다시 시도»로 같은 요청을 다시 보낼 수 있어요.'
+  );
 
   await userEvent.click(
     within(alert).getByRole('button', { name: '다시 시도' })
@@ -639,6 +655,195 @@ it('거절 응답이 다른 상자로 넘어간 뒤 오면 그 상자에 앞 상
   expect(screen.queryByRole('dialog')).toBeNull();
   await userEvent.click(screen.getByRole('button', { name: '수령인 변경' }));
   expect(checkedReasons(screen.getByRole('dialog'))).toHaveLength(0);
+});
+
+describe('응답을 받지 못한 요청의 기록', () => {
+  it('보내기 전에 요청 키를 남기고, 서버가 답하면 지운다', async () => {
+    let atSend: unknown[] = [];
+    mockSplit.mockImplementationOnce(async () => {
+      atSend = pendingRequests();
+      return { operationId: 'op-1', operationStatus: 'completed' };
+    });
+    await submitSplit();
+
+    expect(atSend).toEqual([
+      {
+        shipmentId: 'shipment-1',
+        action: 'split',
+        idempotencyKey: 'key-1',
+        sentAt: expect.any(Number),
+      },
+    ]);
+    expect(pendingRequests()).toEqual([]);
+  });
+
+  it('응답을 받지 못하면 남기고, 서버가 거절하면 지운다', async () => {
+    mockSplit.mockRejectedValueOnce(noResponse);
+    await submitSplit();
+    expect(pendingRequests().map((entry) => entry.idempotencyKey)).toEqual([
+      'key-1',
+    ]);
+
+    mockSplit.mockRejectedValueOnce(rejected);
+    await userEvent.click(
+      within(screen.getByRole('alert')).getByRole('button', {
+        name: '다시 시도',
+      })
+    );
+    expect(pendingRequests()).toEqual([]);
+  });
+
+  it('지금 화면의 «다시 시도» 안내와 같은 요청이면 결과 안내를 따로 띄우지 않는다', async () => {
+    mockSplit.mockRejectedValueOnce(noResponse);
+    await submitSplit();
+
+    expect(screen.queryByRole('status')).toBeNull();
+    expect(screen.getAllByRole('alert')).toHaveLength(1);
+  });
+});
+
+describe('새로고침 뒤 남은 요청의 결과', () => {
+  const remember = (shipmentId = 'shipment-1', ago = 60_000) =>
+    rememberPending({
+      shipmentId,
+      action: 'split',
+      idempotencyKey: 'old-key',
+      sentAt: Date.now() - ago,
+    });
+
+  it('처리됐으면 알리고, 확인을 누르면 기록을 지운다', async () => {
+    remember();
+    mockOutcome = {
+      data: {
+        processed: true,
+        operationId: 'op-9',
+        status: 'completed',
+        completedAt: new Date().toISOString(),
+      },
+    };
+    render(<ShipmentActions shipment={mergedBox} />);
+
+    const notice = screen.getByRole('status');
+    expect(notice.textContent).toContain(
+      '앞서 보낸 상자 분할 요청은 처리됐어요'
+    );
+    await userEvent.click(within(notice).getByRole('button', { name: '확인' }));
+
+    expect(pendingRequests()).toEqual([]);
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+
+  it('처리되지 않았으면 다시 하기로 빈 입력 창을 연다', async () => {
+    remember();
+    mockOutcome = {
+      data: {
+        processed: false,
+        operationId: null,
+        status: null,
+        completedAt: null,
+      },
+    };
+    render(<ShipmentActions shipment={mergedBox} />);
+
+    const notice = screen.getByRole('status');
+    expect(notice.textContent).toContain(
+      '앞서 보낸 상자 분할 요청은 처리되지 않았어요. 필요하면 다시 해 주세요.'
+    );
+    await userEvent.click(
+      within(notice).getByRole('button', { name: '다시 하기' })
+    );
+
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByRole('heading').textContent).toBe('상자 분할');
+    expect(checkedReasons(dialog)).toHaveLength(0);
+    expect(pendingRequests()).toEqual([]);
+  });
+
+  it('보낸 지 얼마 안 됐으면 처리 안 됨으로 단정하지 않는다', () => {
+    remember('shipment-1', 3_000);
+    mockOutcome = {
+      data: {
+        processed: false,
+        operationId: null,
+        status: null,
+        completedAt: null,
+      },
+    };
+    render(<ShipmentActions shipment={mergedBox} />);
+
+    const notice = screen.getByRole('status');
+    expect(notice.textContent).toContain('결과를 확인하고 있어요');
+    expect(
+      within(notice).queryByRole('button', { name: '다시 하기' })
+    ).toBeNull();
+  });
+
+  it('결과를 확인하지 못하면 다시 확인할 수 있다', async () => {
+    remember();
+    mockOutcome = { isError: true };
+    render(<ShipmentActions shipment={mergedBox} />);
+
+    const notice = screen.getByRole('status');
+    expect(notice.textContent).toContain(
+      '앞서 보낸 상자 분할 요청의 결과를 확인하지 못했어요.'
+    );
+    await userEvent.click(
+      within(notice).getByRole('button', { name: '다시 확인' })
+    );
+    expect(mockRefetchOutcome).toHaveBeenCalled();
+  });
+
+  it('앞서 받은 답이 «확인 중»인데 다시 묻다 실패하면 다시 확인할 수 있다', async () => {
+    remember('shipment-1', 3_000);
+    mockOutcome = {
+      data: {
+        processed: false,
+        operationId: null,
+        status: null,
+        completedAt: null,
+      },
+      isError: true,
+    };
+    render(<ShipmentActions shipment={mergedBox} />);
+
+    const notice = screen.getByRole('status');
+    expect(notice.textContent).toContain('결과를 확인하지 못했어요');
+    await userEvent.click(
+      within(notice).getByRole('button', { name: '다시 확인' })
+    );
+    expect(mockRefetchOutcome).toHaveBeenCalled();
+  });
+
+  it('다른 상자의 남은 요청은 이 상자에 보이지 않는다', () => {
+    remember('shipment-other');
+    mockOutcome = {
+      data: {
+        processed: true,
+        operationId: 'op-9',
+        status: 'completed',
+        completedAt: null,
+      },
+    };
+    render(<ShipmentActions shipment={mergedBox} />);
+
+    expect(screen.queryByRole('status')).toBeNull();
+  });
+});
+
+it('서버가 거절한 이유를 관리자 문장으로 알린다', async () => {
+  mockSplit.mockRejectedValueOnce({
+    statusCode: 409,
+    message: 'Shipment shipment-1 must be Draft to split',
+    response: {
+      code: 'SHIPMENT_NOT_DRAFT',
+      message: 'Shipment shipment-1 must be Draft to split',
+    },
+  });
+  await submitSplit();
+
+  expect(toast.error).toHaveBeenCalledWith(
+    '계획 전 상자만 나눌 수 있어요. 새로고침해 상자 상태를 확인해 주세요.'
+  );
 });
 
 it('출고한 상자에는 되돌리기만 보인다', () => {

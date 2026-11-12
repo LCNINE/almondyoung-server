@@ -79,6 +79,16 @@ describe('fulfillment V2 typed clients', () => {
     );
   });
 
+  it('asks whether a request key was processed by command type and key', async () => {
+    mockedClient.get.mockResolvedValueOnce({ data: { processed: false } });
+
+    await fulfillmentOrder.getRequestOutcome('shipment.split', 'key/1');
+
+    expect(mockedClient.get).toHaveBeenLastCalledWith(
+      '/core/fulfillment-operations/requests/shipment.split/key%2F1'
+    );
+  });
+
   it('reuses the caller-owned key for planning and batch commands', async () => {
     await fulfillmentOrder.planShipment(
       'shipment-1',
