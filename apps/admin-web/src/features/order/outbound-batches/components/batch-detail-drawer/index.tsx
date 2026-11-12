@@ -137,6 +137,7 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
               <div>
                 <p className="text-muted-foreground">배치</p>
                 <p className="font-medium">{batch.name || batch.batchNumber}</p>
+                <p className="font-mono text-xs text-muted-foreground">{batch.batchNumber}</p>
               </div>
               <div>
                 <p className="text-muted-foreground">상태</p>

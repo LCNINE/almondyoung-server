@@ -27,6 +27,7 @@ export {
   useOutboundPreparationSummary,
   useLoadMoreOutboundPreparation,
   useOutboundBatchV2,
+  useLoadOutboundBatchV2,
   useOutboundBatchEligibleShipments,
   useOutboundBatchWorkItems,
   // 직배 운영 (K3)

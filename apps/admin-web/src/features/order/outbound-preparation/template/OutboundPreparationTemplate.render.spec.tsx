@@ -37,6 +37,14 @@ const mockRefetch = jest.fn();
 let mockKeyCounter = 0;
 let mockAllowed = true;
 let mockShipmentReadAllowed = true;
+type MockBatch = {
+  batchNumber: string;
+  name: string;
+  status: string;
+  startedAt?: string;
+  workItems: { shipmentId: string; status: string }[];
+};
+const mockLoadBatch = jest.fn<Promise<MockBatch>, [string]>();
 let mockConsolidationAllowed = true;
 let mockSummary: OutboundPreparationSummary;
 let mockError = false;
@@ -75,6 +83,7 @@ jest.mock('@/lib/services/orders', () => ({
     data,
     idempotencyKey: `split-${++mockKeyCounter}`,
   }),
+  useLoadOutboundBatchV2: () => mockLoadBatch,
   getServerDenyMessage: (_error: unknown, fallback: string) => fallback,
   parseServerError: jest.requireActual('@/lib/api/server-error')
     .parseServerError,
@@ -187,6 +196,24 @@ function checkedRows() {
   );
 }
 
+function batchData(
+  data: Partial<MockBatch> = {},
+  inBatch = Array.from({ length: 35 }, (_, index) => `ready-${index + 1}`)
+): MockBatch {
+  return {
+    batchNumber: 'OB-1A2B3C4D5E6F',
+    name: '11/05 토탈피킹 #1',
+    status: 'created',
+    workItems: inBatch.map((shipmentId) => ({ shipmentId, status: 'queued' })),
+    ...data,
+  };
+}
+
+const steps = (section: HTMLElement) =>
+  within(section)
+    .queryAllByRole('listitem')
+    .map((item) => item.textContent);
+
 async function start() {
   await userEvent.click(
     row('완전출고').getByRole('button', { name: '출고 준비' })
@@ -200,6 +227,27 @@ beforeEach(() => {
   mockKeyCounter = 0;
   mockAllowed = true;
   mockShipmentReadAllowed = true;
+  mockLoadBatch.mockReset();
+  mockLoadBatch.mockImplementation(async () => {
+    const joined = new Set<string>();
+
+    for (const [index, [call]] of mockRun.mock.calls.entries()) {
+      const done = await mockRun.mock.results[index]?.value.catch(() => null);
+      const failed = new Set(
+        (done?.failures ?? []).map(
+          (failure: { shipmentId: string }) => failure.shipmentId
+        )
+      );
+
+      for (const id of call.shipmentIds) {
+        if (done && !failed.has(id)) {
+          joined.add(id);
+        }
+      }
+    }
+
+    return batchData({}, [...joined]);
+  });
   mockConsolidationAllowed = true;
   mockError = false;
   mockParams = new URLSearchParams();
@@ -1108,5 +1156,317 @@ describe('합포장 결과에서 넘어온 상자', () => {
     await userEvent.click(screen.getByRole('button', { name: '시작' }));
 
     expect(mockRun.mock.calls[0][0].shipmentIds).toEqual(['ready-2']);
+  });
+});
+
+describe('현장에 넘길 배치', () => {
+  const handoff = () =>
+    screen.findByRole('region', { name: '현장에 넘길 배치' });
+  const joinFailure = () =>
+    result({
+      joined: 34,
+      failures: [
+        {
+          shipmentId: 'ready-1',
+          stage: 'join',
+          message: '응답이 없어요',
+          retryable: true,
+        },
+      ],
+    });
+  const deferred = () => {
+    let resolve: (value: MockBatch) => void = () => undefined;
+    const promise = new Promise<MockBatch>((done) => {
+      resolve = done;
+    });
+
+    return { promise, resolve };
+  };
+
+  it('완료 창에 배치 이름·물류앱 코드와 현장 순서를 보여 준다', async () => {
+    render(<OutboundPreparationTemplate />);
+    await start();
+
+    const batch = await handoff();
+    await waitFor(() =>
+      expect(
+        within(batch).getByText('물류앱 코드').nextElementSibling?.textContent
+      ).toBe('OB-1A2B3C4D5E6F')
+    );
+    expect(within(batch).getByText('11/05 토탈피킹 #1')).toBeTruthy();
+    expect(within(batch).getByText('35상자')).toBeTruthy();
+    expect(steps(batch)).toEqual([
+      '물류앱 F2 «배치 현황»에서 OB-1A2B3C4D5E6F 를 고르세요.',
+      '«작업 시작»을 누르세요.',
+      '«송장 인쇄»로 송장을 뽑아 상자에 붙이세요.',
+      'F1 «출고 검수»에서 송장을 스캔하고 상품을 검수하세요.',
+    ]);
+    expect(mockLoadBatch).toHaveBeenCalledTimes(1);
+    expect(mockLoadBatch).toHaveBeenCalledWith('batch-1');
+  });
+
+  it('준비하지 못한 상자는 배치에 담기지 않았다고 따로 알린다', async () => {
+    mockLoadBatch.mockResolvedValue(
+      batchData(
+        {},
+        Array.from({ length: 34 }, (_, index) => `ready-${index + 2}`)
+      )
+    );
+    mockRun.mockResolvedValueOnce(
+      result({
+        waybilled: 34,
+        joined: 34,
+        failures: [
+          {
+            shipmentId: 'ready-1',
+            stage: 'waybill',
+            message: '한진 주소 확인 불가',
+            retryable: true,
+          },
+        ],
+      })
+    );
+    render(<OutboundPreparationTemplate />);
+    await start();
+
+    expect(await within(await handoff()).findByText('34상자')).toBeTruthy();
+    expect(
+      await screen.findByText(
+        '1상자는 준비하지 못했어요. 이 배치에 담기지 않았으니 현장에 넘기지 마세요.'
+      )
+    ).toBeTruthy();
+  });
+
+  it('응답을 못 받았지만 배치에 들어간 상자는 넘기지 말라고 하지 않는다', async () => {
+    mockLoadBatch.mockResolvedValue(batchData());
+    mockRun.mockResolvedValueOnce(joinFailure());
+    render(<OutboundPreparationTemplate />);
+    await start();
+
+    expect(
+      await screen.findByText('응답을 받지 못한 1상자도 배치에 들어가 있어요.')
+    ).toBeTruthy();
+    expect(within(await handoff()).getByText('35상자')).toBeTruthy();
+    expect(
+      screen.getByText('응답은 받지 못했지만 이 상자는 배치에 들어가 있어요.')
+    ).toBeTruthy();
+    expect(screen.getByText('35상자 출고 준비를 마쳤어요')).toBeTruthy();
+    expect(screen.queryByText(/현장에 넘기지 마세요/)).toBeNull();
+  });
+
+  it('담기 응답을 모두 잃어도 배치에서 확인한 상자로 제목과 수량을 맞춘다', async () => {
+    mockLoadBatch.mockResolvedValue(batchData());
+    mockRun.mockResolvedValueOnce(
+      result({
+        joined: 0,
+        failures: Array.from({ length: 35 }, (_, index) => ({
+          shipmentId: `ready-${index + 1}`,
+          stage: 'join' as const,
+          message: '응답이 없어요',
+          retryable: true,
+        })),
+      })
+    );
+    render(<OutboundPreparationTemplate />);
+    await start();
+
+    expect(await screen.findByText('35상자 출고 준비를 마쳤어요')).toBeTruthy();
+    expect(screen.getByText(/출고 배치에 담기 35\/35/)).toBeTruthy();
+    expect(steps(await handoff())).toHaveLength(4);
+    expect(screen.queryByText('출고 배치에 담은 상자가 없어요.')).toBeNull();
+  });
+
+  it('배치를 확인하기 전에는 담기 실패를 단정하지 않고 순서도 보이지 않는다', async () => {
+    mockLoadBatch.mockReturnValue(new Promise(() => undefined));
+    mockRun.mockResolvedValueOnce(joinFailure());
+    render(<OutboundPreparationTemplate />);
+    await start();
+
+    const batch = await handoff();
+    expect(within(batch).getByText('불러오는 중…')).toBeTruthy();
+    expect(steps(batch)).toEqual([]);
+    expect(
+      screen.getByText(
+        '1상자는 준비하지 못했어요. 배치에 담겼는지는 «출고 배치 열기»에서 확인해 주세요.'
+      )
+    ).toBeTruthy();
+  });
+
+  it('다시 시도 전에 시작한 배치 확인 응답이 늦게 와도 버린다', async () => {
+    const first = deferred();
+    const second = deferred();
+    mockLoadBatch
+      .mockReturnValueOnce(first.promise)
+      .mockReturnValueOnce(second.promise);
+    mockRun.mockResolvedValueOnce(joinFailure());
+    mockRun.mockResolvedValueOnce(
+      result({ planned: 1, waybilled: 1, joined: 1, total: 1, batchName: null })
+    );
+    render(<OutboundPreparationTemplate />);
+    await start();
+
+    await userEvent.click(
+      await screen.findByRole('button', { name: '다시 시도' })
+    );
+    await waitFor(() => expect(mockLoadBatch).toHaveBeenCalledTimes(2));
+    await act(async () => {
+      second.resolve(
+        batchData({ status: 'picking', startedAt: '2026-11-05T01:00:00.000Z' })
+      );
+    });
+    await act(async () => {
+      first.resolve(batchData());
+    });
+
+    expect(steps(await handoff())[1]).toBe(
+      '이미 작업을 시작한 배치예요. «바뀐·미출력 송장만 다시»로 새로 담은 상자의 송장을 뽑아 붙이세요.'
+    );
+  });
+
+  it('배치를 못 불러오면 다시 불러오기로 다시 확인한다', async () => {
+    mockLoadBatch
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValueOnce(batchData());
+    render(<OutboundPreparationTemplate />);
+    await start();
+
+    const batch = await handoff();
+    await within(batch).findByText('불러오지 못했어요');
+    expect(within(batch).getByText('11/05 토탈피킹 #1')).toBeTruthy();
+    expect(steps(batch)).toEqual([]);
+    await userEvent.click(
+      within(batch).getByRole('button', { name: '다시 불러오기' })
+    );
+
+    await waitFor(() => expect(steps(batch)).toHaveLength(4));
+    expect(mockLoadBatch).toHaveBeenCalledTimes(2);
+  });
+
+  it('담기 응답을 모두 잃고 배치 확인도 실패하면 다시 불러오기로 확인한다', async () => {
+    mockLoadBatch
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValueOnce(batchData());
+    mockRun.mockResolvedValueOnce(
+      result({
+        joined: 0,
+        failures: Array.from({ length: 35 }, (_, index) => ({
+          shipmentId: `ready-${index + 1}`,
+          stage: 'join' as const,
+          message: '응답이 없어요',
+          retryable: true,
+        })),
+      })
+    );
+    render(<OutboundPreparationTemplate />);
+    await start();
+
+    const batch = await handoff();
+    await within(batch).findByText('불러오지 못했어요');
+    expect(within(batch).getByText('확인하지 못했어요')).toBeTruthy();
+    expect(steps(batch)).toEqual([]);
+    await userEvent.click(
+      within(batch).getByRole('button', { name: '다시 불러오기' })
+    );
+
+    await waitFor(() => expect(steps(batch)).toHaveLength(4));
+    expect(within(batch).getByText('35상자')).toBeTruthy();
+    expect(screen.getByText('35상자 출고 준비를 마쳤어요')).toBeTruthy();
+  });
+
+  it('다시 시도가 실패해도 배치를 다시 확인해 안내를 되살린다', async () => {
+    mockRun.mockResolvedValueOnce(joinFailure());
+    mockRun.mockRejectedValueOnce(new Error('offline'));
+    mockLoadBatch.mockResolvedValue(batchData());
+    render(<OutboundPreparationTemplate />);
+    await start();
+
+    await userEvent.click(
+      await screen.findByRole('button', { name: '다시 시도' })
+    );
+
+    await waitFor(() => expect(mockLoadBatch).toHaveBeenCalledTimes(2));
+    await waitFor(async () => expect(steps(await handoff())).toHaveLength(4));
+  });
+
+  it('이미 작업을 시작한 배치면 작업 시작 단계를 빼고 안내한다', async () => {
+    mockLoadBatch.mockResolvedValue(
+      batchData({ status: 'picking', startedAt: '2026-11-05T01:00:00.000Z' })
+    );
+    render(<OutboundPreparationTemplate />);
+    await start();
+
+    const batch = await handoff();
+    await waitFor(() =>
+      expect(steps(batch)).toEqual([
+        '물류앱 F2 «배치 현황»에서 OB-1A2B3C4D5E6F 를 고르세요.',
+        '이미 작업을 시작한 배치예요. «바뀐·미출력 송장만 다시»로 새로 담은 상자의 송장을 뽑아 붙이세요.',
+        'F1 «출고 검수»에서 송장을 스캔하고 상품을 검수하세요.',
+      ])
+    );
+  });
+
+  it('출고를 마친 배치면 순서 대신 새로 준비하라고 안내한다', async () => {
+    mockLoadBatch.mockResolvedValue(batchData({ status: 'completed' }));
+    render(<OutboundPreparationTemplate />);
+    await start();
+
+    const batch = await handoff();
+    expect(
+      await within(batch).findByText(
+        '이 배치는 이미 출고를 마쳤어요. 남은 상자는 출고 준비에서 새로 준비해 주세요.'
+      )
+    ).toBeTruthy();
+    expect(steps(batch)).toEqual([]);
+  });
+
+  it('상자가 모두 빠져 취소된 배치도 취소 안내를 보여 준다', async () => {
+    mockLoadBatch.mockResolvedValue(
+      batchData({
+        status: 'canceled',
+        startedAt: '2026-11-05T01:00:00.000Z',
+        workItems: Array.from({ length: 35 }, (_, index) => ({
+          shipmentId: `ready-${index + 1}`,
+          status: 'excluded',
+        })),
+      })
+    );
+    render(<OutboundPreparationTemplate />);
+    await start();
+
+    expect(
+      await screen.findByText(
+        '이 배치는 취소됐어요. 남은 상자는 출고 준비에서 새로 준비해 주세요.'
+      )
+    ).toBeTruthy();
+    expect(steps(await handoff())).toEqual([]);
+  });
+
+  it('배치에 담은 상자가 없으면 배치를 확인하지 않고 현장 안내도 보이지 않는다', async () => {
+    mockRun.mockResolvedValueOnce(
+      result({
+        waybilled: 0,
+        joined: 0,
+        batchId: null,
+        batchName: null,
+        failures: [
+          {
+            shipmentId: 'ready-1',
+            stage: 'waybill',
+            message: '송장 실패',
+            retryable: true,
+          },
+        ],
+      })
+    );
+    render(<OutboundPreparationTemplate />);
+    await start();
+
+    expect(
+      await screen.findByText('출고 배치에 담은 상자가 없어요.')
+    ).toBeTruthy();
+    expect(
+      screen.queryByRole('region', { name: '현장에 넘길 배치' })
+    ).toBeNull();
+    expect(mockLoadBatch).not.toHaveBeenCalled();
   });
 });

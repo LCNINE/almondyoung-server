@@ -277,6 +277,17 @@ describe('OutboundQueueScreen', () => {
     expect(screen.getAllByRole('button', { name: '박스 넣기' })).toHaveLength(1);
   });
 
+  it('배치 코드와 관리자 화면의 배치 이름을 함께 보여 준다', async () => {
+    renderScreen([], undefined, {
+      picking: [],
+      created: [
+        { id: 'b-2', batchNumber: 'OB-2', name: '11/12 개별피킹 17:13:48', status: 'created', totalItems: 2, totalQty: 5, startedAt: null, withdrawingItems: 0 },
+      ],
+    });
+    await screen.findByText('OB-2');
+    expect(screen.getByText('11/12 개별피킹 17:13:48')).toBeInTheDocument();
+  });
+
   it('박스 넣기 패널이 열려 있는 동안 스캔은 박스 열기로 가지 않는다', async () => {
     const user = userEvent.setup();
     const requests: CapturedRequest[] = [];

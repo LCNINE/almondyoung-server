@@ -23,6 +23,13 @@ export function batchProgressOf(
   return { code: batchNumber, done: live.filter((item) => item.status === 'completed').length, total: live.length };
 }
 
+/** 관리자 화면이 붙인 배치 이름. 이름 없이 만든 배치는 코드에서 나온 «Batch …» 라 코드만 보인다 */
+export function batchNameOf(batch: Pick<OutboundBatchSummary, 'batchNumber' | 'name'>): string | null {
+  const name = batch.name?.trim() ?? '';
+  if (!name || name === `Batch ${batch.batchNumber.replace(/^OB-/, '')}`) return null;
+  return name;
+}
+
 export interface BoxCounts {
   done: number;
   working: number;
