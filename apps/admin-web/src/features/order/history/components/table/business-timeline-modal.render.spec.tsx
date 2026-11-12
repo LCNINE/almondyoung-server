@@ -1,7 +1,7 @@
 /**
  * @jest-environment jsdom
  */
-import { render } from '@testing-library/react';
+import { fireEvent, render } from '@testing-library/react';
 import type {
   SalesOrderBusinessTimelineItemDto,
   SalesOrderShipmentOperationDto,
@@ -151,7 +151,9 @@ describe('주문 이력 창의 상자 작업', () => {
     const anchor = Array.from(document.querySelectorAll('a')).find((a) =>
       a.textContent?.includes('상자 8f772b52')
     );
-    expect(anchor?.getAttribute('href')).toBe('/order/fulfillments/fo-77');
+    expect(anchor?.getAttribute('href')).toBe(
+      '/order/fulfillments/fo-77?shipmentId=8f772b52-43a1-4826-90ec-8981411c7466'
+    );
 
     const notes = text.indexOf('환불 접수 메모');
     const box = text.indexOf('상자 분할');
@@ -197,5 +199,77 @@ describe('주문 이력 창의 상자 작업', () => {
     const text = document.body.textContent ?? '';
     expect(text).not.toContain('아직 기록된 업무 이력이 없습니다');
     expect(text).toContain('상자 분할');
+  });
+
+  it('상자마다 자기 상자를 여는 주소로 연결한다', () => {
+    mockOperationsHook.mockReturnValue({
+      data: {
+        salesOrderId: 'order-1',
+        items: [
+          operation({
+            shipmentIds: ['aaaaaaaa-1111', 'bbbbbbbb-2222'],
+          }),
+        ],
+      },
+    });
+    render(<BusinessTimelineModal order={row} open onOpenChange={jest.fn()} />);
+
+    const hrefOf = (label: string) =>
+      Array.from(document.querySelectorAll('a'))
+        .find((a) => a.textContent?.includes(label))
+        ?.getAttribute('href');
+    expect(hrefOf('상자 aaaaaaaa')).toBe(
+      '/order/fulfillments/fo-77?shipmentId=aaaaaaaa-1111'
+    );
+    expect(hrefOf('상자 bbbbbbbb')).toBe(
+      '/order/fulfillments/fo-77?shipmentId=bbbbbbbb-2222'
+    );
+  });
+
+  it('상자 작업 조회가 실패하면 안내와 다시 불러오기를 보이고 빈 안내는 없다', () => {
+    const refetch = jest.fn();
+    mockOrder.mockReturnValue({
+      isLoading: false,
+      data: { businessTimeline: [] },
+    });
+    mockOperationsHook.mockReturnValue({
+      data: undefined,
+      isError: true,
+      refetch,
+    });
+    render(<BusinessTimelineModal order={row} open onOpenChange={jest.fn()} />);
+
+    const text = document.body.textContent ?? '';
+    expect(text).toContain('상자 작업 기록을 불러오지 못했어요.');
+    expect(text).not.toContain('아직 기록된 업무 이력이 없습니다');
+
+    fireEvent.click(
+      Array.from(document.querySelectorAll('button')).find((b) =>
+        b.textContent?.includes('다시 불러오기')
+      ) as HTMLButtonElement
+    );
+    expect(refetch).toHaveBeenCalledTimes(1);
+  });
+
+  it('상자 작업 조회가 실패해도 연결 기록은 그대로 보인다', () => {
+    mockOperationsHook.mockReturnValue({
+      data: undefined,
+      isError: true,
+      refetch: jest.fn(),
+    });
+    render(<BusinessTimelineModal order={row} open onOpenChange={jest.fn()} />);
+
+    const text = document.body.textContent ?? '';
+    expect(text).toContain('환불 접수 메모');
+    expect(text).toContain('상자 작업 기록을 불러오지 못했어요.');
+  });
+
+  it('상자 작업을 불러오는 동안에는 불러오는 중으로 보인다', () => {
+    mockOperationsHook.mockReturnValue({ data: undefined, isLoading: true });
+    render(<BusinessTimelineModal order={row} open onOpenChange={jest.fn()} />);
+
+    const text = document.body.textContent ?? '';
+    expect(text).toContain('불러오는 중');
+    expect(text).not.toContain('아직 기록된 업무 이력이 없습니다');
   });
 });

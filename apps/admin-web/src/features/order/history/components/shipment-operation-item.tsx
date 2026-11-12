@@ -63,7 +63,7 @@ export function ShipmentOperationItem({
               item.fulfillmentOrderId ? (
                 <Link
                   key={id}
-                  href={`/order/fulfillments/${item.fulfillmentOrderId}`}
+                  href={`/order/fulfillments/${item.fulfillmentOrderId}?shipmentId=${id}`}
                   className="font-mono text-primary underline"
                 >
                   상자 {id.slice(0, 8)}

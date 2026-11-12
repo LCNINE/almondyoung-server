@@ -687,7 +687,12 @@ export function BusinessTimelineModal({
   onOpenChange: (open: boolean) => void;
 }) {
   const { data, isLoading } = useSalesOrder(open && order ? order.orderId : '');
-  const { data: boxOperations } = useSalesOrderShipmentOperations(
+  const {
+    data: boxOperations,
+    isLoading: boxOperationsLoading,
+    isError: boxOperationsFailed,
+    refetch: refetchBoxOperations,
+  } = useSalesOrderShipmentOperations(
     order?.orderId ?? '',
     { enabled: open }
   );
@@ -721,11 +726,11 @@ export function BusinessTimelineModal({
         </DialogHeader>
 
         <div className="flex max-h-[60vh] flex-col overflow-y-auto">
-          {isLoading ? (
+          {isLoading || boxOperationsLoading ? (
             <div className="p-4 text-sm text-muted-foreground">
               불러오는 중...
             </div>
-          ) : timeline.length === 0 ? (
+          ) : timeline.length === 0 && !boxOperationsFailed ? (
             <div className="p-4 text-sm text-muted-foreground">
               아직 기록된 업무 이력이 없습니다.
             </div>
@@ -742,6 +747,19 @@ export function BusinessTimelineModal({
                   />
                 )
               )}
+            </div>
+          )}
+          {boxOperationsFailed && !boxOperationsLoading && (
+            <div className="flex items-center gap-2 px-1 py-3 text-sm text-destructive">
+              <p>상자 작업 기록을 불러오지 못했어요.</p>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => void refetchBoxOperations()}
+              >
+                다시 불러오기
+              </Button>
             </div>
           )}
           {amendmentsFailed && (
