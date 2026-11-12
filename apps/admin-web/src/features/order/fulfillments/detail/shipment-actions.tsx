@@ -34,6 +34,7 @@ import {
   createIdempotentCommand,
   getServerDenyMessage,
   isRecoverableOperation,
+  parseServerError,
   useCreateShipmentConsolidation,
   useFulfillmentOperation,
   usePlanShipment,
@@ -54,6 +55,13 @@ import {
 import { ConsolidationSheet } from './consolidation-sheet';
 import { showsConsolidationButton } from './consolidation-sheet-model';
 import {
+  ACTION_TITLE,
+  SUBMIT_LABEL,
+  dispatchAttemptLabel,
+  operationStatusLabel,
+  retryNotice,
+} from './shipment-action-copy';
+import {
   splitLineLabel,
   splitLineName,
   splitPreview,
@@ -67,6 +75,7 @@ import {
 type Action = ShipmentAction;
 
 type RetryState = {
+  action: Action;
   operationId: string;
   status: FulfillmentOperationStatus;
   actionLabel: string;
@@ -74,18 +83,11 @@ type RetryState = {
   run: () => Promise<void>;
 };
 
-const ACTION_TITLE: Record<Action, string> = {
-  split: '상자 분할',
-  recipient: '수령인 변경',
-  plan: 'shipment 계획 확정',
-  recall: '출고 recall',
-};
-
 const RECALL_REASONS = [
   ['carrier_handoff_failed', '택배사 인계 실패'],
   ['dispatch_mistake', '출고 오류'],
   ['address_correction', '주소 수정'],
-  ['package_recovered', '패키지 회수'],
+  ['package_recovered', '상자 회수'],
 ] as const;
 
 function blankRecipient(snapshot: unknown): RecipientForm {
@@ -103,10 +105,6 @@ function blankRecipient(snapshot: unknown): RecipientForm {
     // 비번은 스냅샷에 없다(크리덴셜이라 응답에 실리지 않는다). 빈 값은 "안 건드림"이다.
     entrancePassword: '',
   };
-}
-
-function shortId(value: string) {
-  return value ? `${value.slice(0, 8)}…` : '응답 대기';
 }
 
 export function ShipmentActions({
@@ -132,7 +130,6 @@ export function ShipmentActions({
     shippingProfileId ||
     (profiles.data?.length === 1 ? profiles.data[0].id : '');
   const [reason, setReason] = useState('');
-  const [csCaseId, setCsCaseId] = useState('');
   const [note, setNote] = useState('');
   const [recipient, setRecipient] = useState<RecipientForm>(() =>
     blankRecipient(shipment.recipientSnapshot)
@@ -184,11 +181,13 @@ export function ShipmentActions({
       status?: FulfillmentOperationStatus;
     },
     idempotencyKey: string,
-    actionLabel: string,
+    done: Action,
     run: () => Promise<void>
   ) => {
+    const actionLabel = ACTION_TITLE[done];
     const nextStatus = result.operationStatus ?? result.status ?? 'pending';
     setRetry({
+      action: done,
       operationId: result.operationId,
       status: nextStatus,
       actionLabel,
@@ -197,26 +196,55 @@ export function ShipmentActions({
     });
     setAction(null);
     if (nextStatus === 'completed' || nextStatus === 'succeeded') {
-      toast.success(`${actionLabel} 작업이 완료되었습니다.`);
+      toast.success(`${actionLabel} 완료`);
     } else {
       toast.info(
-        `${actionLabel} 작업이 접수되었습니다. 서버 완료 확인 전에는 성공으로 표시하지 않습니다.`
+        `${actionLabel} 요청을 받았어요. 처리 상태는 상자 작업 버튼 아래에 보여요.`
       );
     }
   };
 
   const registerPending = (
     idempotencyKey: string,
-    actionLabel: string,
+    pendingAction: Action,
     run: () => Promise<void>
   ) => {
     setRetry({
+      action: pendingAction,
       operationId: '',
       status: 'pending',
-      actionLabel,
+      actionLabel: ACTION_TITLE[pendingAction],
       idempotencyKey,
       run,
     });
+  };
+
+  const handleFailure = (error: unknown, failed: Action) => {
+    const { status } = parseServerError(error);
+    if (status !== null && status < 500) {
+      // 서버가 거절했으면 처리되지 않았다 — 대기 안내를 지우고 입력을 고칠 창을 연다
+      setRetry(null);
+      setAction(failed);
+    } else {
+      // 응답이 없거나(클라이언트가 500 으로 바꾼다) 5xx 면 처리됐는지 모른다 —
+      // 창을 닫아 같은 요청 키로 다시 보내는 안내를 보인다
+      setAction(null);
+    }
+    toast.error(
+      getServerDenyMessage(
+        error,
+        `${ACTION_TITLE[failed]}에 실패했어요. 잠시 뒤 다시 시도해 주세요.`
+      )
+    );
+  };
+
+  const retryAgain = async () => {
+    if (!retry) return;
+    try {
+      await retry.run();
+    } catch (error) {
+      handleFailure(error, retry.action);
+    }
   };
 
   const submit = async (originalKey?: string) => {
@@ -253,41 +281,39 @@ export function ShipmentActions({
             },
           ],
           reason: reason.trim(),
-          ...(csCaseId.trim() ? { csCaseId: csCaseId.trim() } : {}),
           ...(note.trim() ? { note: note.trim() } : {}),
         };
         const run: () => Promise<void> = async () => {
-          registerPending(idempotencyKey, ACTION_TITLE[action], run);
+          registerPending(idempotencyKey, action, run);
           const result = await split.mutateAsync({
             shipmentId: shipment.id,
             data,
             idempotencyKey,
           });
-          registerResult(result, idempotencyKey, ACTION_TITLE[action], run);
+          registerResult(result, idempotencyKey, action, run);
         };
         await run();
         return;
       }
       if (action === 'recipient') {
         if (!reason.trim() || missingRecipientFields(recipient).length > 0) {
-          toast.error('수령인 필수 정보와 변경 사유를 모두 입력하세요.');
+          toast.error('수령인 필수 정보와 작업 사유를 모두 입력하세요.');
           return;
         }
         const data = buildRecipientRevisionPayload(recipient, {
           expectedManifestVersion: shipment.manifestVersion,
           reason,
-          csCaseId,
           note,
           currentSnapshot: shipment.recipientSnapshot,
         });
         const run: () => Promise<void> = async () => {
-          registerPending(idempotencyKey, ACTION_TITLE[action], run);
+          registerPending(idempotencyKey, action, run);
           const result = await reviseRecipient.mutateAsync({
             shipmentId: shipment.id,
             data,
             idempotencyKey,
           });
-          registerResult(result, idempotencyKey, ACTION_TITLE[action], run);
+          registerResult(result, idempotencyKey, action, run);
         };
         await run();
         return;
@@ -303,21 +329,19 @@ export function ShipmentActions({
           expectedReservationVersion: shipment.reservationVersion,
         };
         const run: () => Promise<void> = async () => {
-          registerPending(idempotencyKey, ACTION_TITLE[action], run);
+          registerPending(idempotencyKey, action, run);
           const result = await plan.mutateAsync({
             shipmentId: shipment.id,
             data,
             idempotencyKey,
           });
-          registerResult(result, idempotencyKey, ACTION_TITLE[action], run);
+          registerResult(result, idempotencyKey, action, run);
         };
         await run();
         return;
       }
       if (!attemptId || !physicalRecovery) {
-        toast.error(
-          '회수된 정확한 출고 시도를 선택하고 실물 회수를 확인하세요.'
-        );
+        toast.error('돌아온 출고를 고르고 상자를 돌려받았는지 확인하세요.');
         return;
       }
       const data = {
@@ -325,26 +349,20 @@ export function ShipmentActions({
         expectedManifestVersion: shipment.manifestVersion,
         physicalRecoveryConfirmed: true as const,
         reason: recallReason,
-        ...(csCaseId.trim() ? { csCaseId: csCaseId.trim() } : {}),
         ...(note.trim() ? { note: note.trim() } : {}),
       };
       const run: () => Promise<void> = async () => {
-        registerPending(idempotencyKey, ACTION_TITLE[action], run);
+        registerPending(idempotencyKey, action, run);
         const result = await recall.mutateAsync({
           shipmentId: shipment.id,
           data,
           idempotencyKey,
         });
-        registerResult(result, idempotencyKey, ACTION_TITLE[action], run);
+        registerResult(result, idempotencyKey, action, run);
       };
       await run();
     } catch (error) {
-      toast.error(
-        getServerDenyMessage(
-          error,
-          `${ACTION_TITLE[action]} 요청에 실패했습니다.`
-        )
-      );
+      handleFailure(error, action);
     }
   };
 
@@ -372,7 +390,7 @@ export function ShipmentActions({
           )}
         {allowed.includes('plan') && canRun(usePlanShipment) && (
           <Button size="sm" variant="outline" onClick={() => setAction('plan')}>
-            계획 확정
+            {ACTION_TITLE.plan}
           </Button>
         )}
         {canConsolidate && (
@@ -390,7 +408,7 @@ export function ShipmentActions({
             variant="destructive"
             onClick={() => setAction('recall')}
           >
-            출고 recall
+            {ACTION_TITLE.recall}
           </Button>
         )}
       </div>
@@ -399,21 +417,18 @@ export function ShipmentActions({
         <Alert className="border-amber-300 bg-amber-50 dark:bg-amber-950/20">
           <RefreshCw />
           <AlertTitle>
-            {retry.actionLabel} · {status}
+            {retry.actionLabel} ·{' '}
+            {operationStatusLabel(retry.operationId ? status : undefined)}
           </AlertTitle>
           <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
-            <span>
-              {retry.operationId
-                ? `작업 ${shortId(retry.operationId)}. 서버 operation 상태만 표시합니다.`
-                : '서버 응답을 확인하지 못했습니다. 성공을 추정하지 않고 원래 요청 키를 보존했습니다.'}
-            </span>
+            <span>{retryNotice(retry.operationId, status)}</span>
             <Button
               size="sm"
               variant="outline"
-              onClick={retry.run}
+              onClick={retryAgain}
               disabled={pending}
             >
-              동일 키로 안전 재시도
+              다시 시도
             </Button>
           </AlertDescription>
         </Alert>
@@ -502,8 +517,9 @@ export function ShipmentActions({
                     key={key}
                     className={`space-y-1.5 ${key.includes('Address') ? 'col-span-2' : ''}`}
                   >
-                    <Label>{label}</Label>
+                    <Label htmlFor={`recipient-${key}`}>{label}</Label>
                     <Input
+                      id={`recipient-${key}`}
                       value={recipient[key]}
                       placeholder={placeholder}
                       type={type}
@@ -523,13 +539,13 @@ export function ShipmentActions({
 
           {action === 'plan' && (
             <div className="space-y-1.5">
-              <Label>배송 프로필</Label>
+              <Label htmlFor="plan-profile">배송 프로필</Label>
               <Select
                 value={chosenProfileId}
                 onValueChange={setShippingProfileId}
                 disabled={profiles.isLoading}
               >
-                <SelectTrigger>
+                <SelectTrigger id="plan-profile">
                   <SelectValue
                     placeholder={profiles.isLoading ? '불러오는 중…' : '배송 프로필 선택'}
                   />
@@ -558,34 +574,34 @@ export function ShipmentActions({
               <Alert variant="destructive">
                 <AlertTriangle />
                 <AlertDescription>
-                  고객 반품이 아닙니다. 정확한 출고 패키지가 창고 custody로
-                  돌아온 경우에만 실행하세요.
+                  고객 반품이 아니에요. 보낸 상자가 택배사에 넘어가지 않고
+                  창고로 돌아왔을 때만 실행하세요.
                 </AlertDescription>
               </Alert>
               <div className="space-y-1.5">
-                <Label>출고 시도</Label>
+                <Label htmlFor="recall-attempt">되돌릴 출고</Label>
                 <Select value={attemptId} onValueChange={setAttemptId}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="회수한 attempt 선택" />
+                  <SelectTrigger id="recall-attempt" className="w-full">
+                    <SelectValue placeholder="돌아온 출고 선택" />
                   </SelectTrigger>
                   <SelectContent>
                     {dispatchedAttempts.map((attempt) => (
                       <SelectItem key={attempt.id} value={attempt.id}>
-                        시도 #{attempt.attemptNo} · {shortId(attempt.id)}
+                        {dispatchAttemptLabel(attempt, shipment.waybills)}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-1.5">
-                <Label>recall 사유</Label>
+                <Label htmlFor="recall-reason">되돌리는 이유</Label>
                 <Select
                   value={recallReason}
                   onValueChange={(value) =>
                     setRecallReason(value as typeof recallReason)
                   }
                 >
-                  <SelectTrigger>
+                  <SelectTrigger id="recall-reason" className="w-full">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -620,23 +636,14 @@ export function ShipmentActions({
             </div>
           )}
           {action !== 'plan' && (
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label>CS case UUID</Label>
-                <Input
-                  value={csCaseId}
-                  onChange={(event) => setCsCaseId(event.target.value)}
-                  placeholder="선택"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label>운영 메모</Label>
-                <Textarea
-                  value={note}
-                  onChange={(event) => setNote(event.target.value)}
-                  rows={2}
-                />
-              </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="shipment-action-note">운영 메모 (선택)</Label>
+              <Textarea
+                id="shipment-action-note"
+                value={note}
+                onChange={(event) => setNote(event.target.value)}
+                rows={2}
+              />
             </div>
           )}
 
@@ -653,11 +660,7 @@ export function ShipmentActions({
                 (action === 'recall' && (!attemptId || !physicalRecovery))
               }
             >
-              {pending
-                ? '요청 중...'
-                : action === 'split'
-                  ? '분할하기'
-                  : '서버에 요청'}
+              {pending ? '처리 중…' : action ? SUBMIT_LABEL[action] : ''}
             </Button>
           </DialogFooter>
         </DialogContent>

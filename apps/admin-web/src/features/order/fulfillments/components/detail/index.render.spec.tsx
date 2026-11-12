@@ -99,3 +99,86 @@ describe('출고주문 상세 정보 블록', () => {
     expect(screen.getByText('이 주문 수량')).toBeTruthy();
   });
 });
+
+describe('출고주문 상세 머리 정보', () => {
+  it('내부 번호·영어 값 없이 주문번호·쇼핑몰·수량·상자를 보인다', () => {
+    mockOrder.mockReturnValue({
+      data: {
+        ...order(null),
+        id: '5713b78b-a6e3-4237-81c5-706ed0cf0faf',
+        salesOrderId: '9e3a8c1d-0000-4000-8000-000000000001',
+        displayOrderNo: '6275',
+        salesChannel: 'medusa',
+        warehouseName: '샘플 창고',
+        totalItems: 2,
+        totalQty: 3,
+        totalReservedQty: 2,
+        shipments: [
+          {
+            id: 'ship-1',
+            status: 'draft',
+            manifestVersion: 1,
+            reservationVersion: 1,
+            shippingProfileId: null,
+            qty: 3,
+            reservedQty: 2,
+          },
+        ],
+        progress: {
+          status: 'ready',
+          totalQty: 3,
+          shippedQty: 0,
+          canceledQty: 0,
+          outstandingQty: 3,
+          confirmedReservedQty: 2,
+          items: [],
+        },
+        items: [
+          {
+            id: 'item-1',
+            skuId: 'sku-1',
+            skuCode: 'SAMPLE-RED',
+            skuName: '샘플 상품 (빨강)',
+            qty: 3,
+            reservedQty: 2,
+            pickedQty: 0,
+            shippedQty: 0,
+            status: 'partially_reserved',
+          },
+        ] as unknown as FulfillmentOrderDetail['items'],
+      },
+      isLoading: false,
+    });
+
+    const { container } = render(<FulfillmentDetail id="fo-1" />);
+    const text = container.textContent ?? '';
+
+    for (const expected of [
+      '#6275',
+      '아몬드영 (자사몰)',
+      '2종 · 3개 · 재고 확보 2개',
+      '1개',
+      '출고 0 · 취소 0 · 남음 3',
+      '보낼 상품 (1)',
+      '부분 확보',
+      '출고 방식',
+    ]) {
+      expect(text).toContain(expected);
+    }
+    expect(text).not.toMatch(
+      /5713b78b|9e3a8c1d|V2|shipment|SO\)|medusa|partially_reserved|아이템|운영 액션/
+    );
+  });
+});
+
+it('끝난 출고주문은 풀린 재고 확보 수량을 보이지 않는다', () => {
+  mockOrder.mockReturnValue({
+    data: { ...order(null), status: 'completed', totalReservedQty: 0 },
+    isLoading: false,
+  });
+
+  const { container } = render(<FulfillmentDetail id="fo-1" />);
+
+  expect(container.textContent).toContain('1종 · 1개');
+  expect(container.textContent).not.toContain('재고 확보 0개');
+});

@@ -18,6 +18,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { siteLabel } from '@/lib/api/domains/sales-channel/vocabulary';
 import { useSuppliers } from '@/lib/services/inventory/queries';
 import { directDeliverySuppliers } from '@/lib/utils/direct-delivery-suppliers';
 import {
@@ -43,6 +44,19 @@ import {
   ChannelDispatchAttemptStatus,
 } from './channel-dispatch-status';
 import { ShipmentActions } from './shipment-actions';
+import { lineOrderNo, splitLineName } from './shipment-split-model';
+import {
+  dispatchAttemptLabel,
+  operationStatusLabel,
+} from './shipment-action-copy';
+import {
+  carrierLabel,
+  dispatchAttemptStatusLabel,
+  operationTypeLabel,
+  recoveryLabel,
+  shipmentStatusLabel,
+  waybillStatusLabel,
+} from './fulfillment-labels';
 import {
   orderShipments,
   ownerLabel,
@@ -66,10 +80,13 @@ const STATUS_VARIANT = (
   return 'outline';
 };
 
-function shortId(value: string | null | undefined) {
-  if (!value) return '-';
-  return `${value.slice(0, 8)}…`;
+/** 상자 이름. 같은 출고주문 안의 상자를 가르는 짧은 번호다 */
+function boxName(id: string) {
+  return `상자 ${id.slice(0, 8)}`;
 }
+
+// 계획 전·계획 확정 상자만 재고 확보가 진행 중이다. 출고 뒤에는 확보가 풀리는 게 정상이다
+const RESERVING_STATUSES = new Set(['draft', 'planned']);
 
 function when(value: string | null | undefined) {
   return value ? new Date(value).toLocaleString('ko-KR') : '-';
@@ -145,6 +162,17 @@ function ShipmentDetailView({
     (entry) => entry.id === shipment.supplierId
   )?.name;
 
+  const totalQty = shipment.lines.reduce((sum, line) => sum + line.qty, 0);
+  const kinds = new Set(shipment.lines.map((line) => line.skuId)).size;
+  const lineName = new Map(
+    shipment.lines.map((line) => [line.id, splitLineName(line)])
+  );
+  const orderNoOf = (salesOrderId: string) => {
+    const line = shipment.lines.find(
+      (entry) => entry.origin?.salesOrderId === salesOrderId
+    );
+    return line ? lineOrderNo(line) : null;
+  };
   const consolidation = useConsolidationProgress(shipment.id);
   const voidLockedReason = waybillVoidLockReason(consolidation, shipment.id);
 
@@ -162,19 +190,19 @@ function ShipmentDetailView({
         <section className="space-y-3">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h3 className="font-mono text-sm font-semibold">{shipment.id}</h3>
+              <h3 className="text-sm font-semibold">{boxName(shipment.id)}</h3>
               <p className="text-xs text-muted-foreground">
-                manifest v{shipment.manifestVersion} · reservation v
-                {shipment.reservationVersion} ·{' '}
                 {ownerLabel(shipment, supplierName)}
               </p>
             </div>
             <div className="flex items-center gap-2">
               <Badge variant={STATUS_VARIANT(shipment.status)}>
-                {shipment.status}
+                {shipmentStatusLabel(shipment.status)}
               </Badge>
               {shipment.recoveryCode && (
-                <Badge variant="destructive">{shipment.recoveryCode}</Badge>
+                <Badge variant="destructive">
+                  {recoveryLabel(shipment.recoveryCode)}
+                </Badge>
               )}
             </div>
           </div>
@@ -183,58 +211,53 @@ function ShipmentDetailView({
 
         <section>
           <h3 className="mb-2 text-sm font-semibold">
-            shipment 라인 / 진행 수량
+            {`담긴 상품 ${kinds}종 · ${totalQty}개`}
           </h3>
           <div className="overflow-auto rounded-md border">
             <Table>
               <TableHeader>
                 <TableRow>
-                  <TableHead>라인</TableHead>
-                  <TableHead>원본 주문</TableHead>
+                  <TableHead>상품</TableHead>
+                  <TableHead>주문</TableHead>
                   <TableHead className="text-right">수량</TableHead>
-                  <TableHead className="text-right">예약</TableHead>
+                  <TableHead className="text-right">재고 확보</TableHead>
                   <TableHead className="text-right">검수</TableHead>
-                  <TableHead className="text-right">버전</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {shipment.lines.map((line) => (
-                  <TableRow key={line.id}>
-                    <TableCell>
-                      <p className="font-mono text-xs">{shortId(line.id)}</p>
-                      <p className="font-mono text-[11px] text-muted-foreground">
-                        SKU {shortId(line.skuId)}
-                      </p>
-                    </TableCell>
-                    <TableCell className="text-xs">
-                      {line.origin ? (
-                        <>
-                          <p>
-                            {line.origin.salesChannel} ·{' '}
-                            {shortId(line.origin.salesOrderId)}
-                          </p>
-                          <p className="text-muted-foreground">
-                            item {shortId(line.origin.channelOrderItemId)}
-                          </p>
-                        </>
-                      ) : (
-                        '-'
-                      )}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {line.qty}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {isSupplier ? '—' : line.reservedQty}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {line.inspectedQty}
-                    </TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      v{line.lineVersion}
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {shipment.lines.map((line) => {
+                  const orderNo = lineOrderNo(line);
+                  return (
+                    <TableRow key={line.id}>
+                      <TableCell className="whitespace-normal break-keep font-medium">
+                        {splitLineName(line)}
+                      </TableCell>
+                      <TableCell className="whitespace-normal text-xs">
+                        {line.origin ? (
+                          <>
+                            <p>{orderNo ? `#${orderNo}` : '-'}</p>
+                            <p className="text-muted-foreground">
+                              {siteLabel(line.origin.salesChannel)}
+                            </p>
+                          </>
+                        ) : (
+                          '-'
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {line.qty}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {isSupplier || !RESERVING_STATUSES.has(shipment.status)
+                          ? '—'
+                          : line.reservedQty}
+                      </TableCell>
+                      <TableCell className="text-right tabular-nums">
+                        {line.inspectedQty}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           </div>
@@ -255,27 +278,29 @@ function ShipmentDetailView({
           )}
           {waybills.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              발행된 운송장이 없습니다.
+              발급한 운송장이 없어요.
             </p>
           ) : (
             <div className="divide-y rounded-md border text-sm">
               {waybills.map((waybill) => (
                 <div key={waybill.id} className="grid gap-2 p-3 sm:grid-cols-4">
-                  <span className="font-mono text-xs">
-                    {shortId(waybill.id)}
+                  <span className="text-xs">
+                    {carrierLabel(waybill.carrier)}
                   </span>
                   <span className="font-mono text-xs">
-                    {waybill.trackingNo || '-'}
+                    {waybill.trackingNo || '번호 없음'}
                   </span>
                   <Badge
                     variant={STATUS_VARIANT(waybill.status)}
                     className="w-fit"
                   >
-                    {waybill.status}
+                    {waybillStatusLabel(waybill.status)}
                   </Badge>
                   <span className="text-xs text-muted-foreground">
-                    발행 {when(waybill.issuedAt)} · void{' '}
-                    {when(waybill.voidedAt)}
+                    발급 {when(waybill.issuedAt)}
+                    {waybill.voidedAt
+                      ? ` · 무효 ${when(waybill.voidedAt)}`
+                      : ''}
                   </span>
                 </div>
               ))}
@@ -285,58 +310,49 @@ function ShipmentDetailView({
 
         <section>
           <h3 className="mb-2 text-sm font-semibold">
-            출고 attempt / 운송 추적 ({attempts.length})
+            출고 기록 ({attempts.length})
           </h3>
           {attempts.length === 0 ? (
             <p className="text-sm text-muted-foreground">
-              출고 시도가 없습니다.
+              아직 출고하지 않았어요.
             </p>
           ) : (
             <div className="space-y-3">
               {attempts.map((attempt) => (
                 <div key={attempt.id} className="rounded-md border p-3 text-sm">
                   <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-                    <div>
-                      <span className="font-semibold">
-                        시도 #{attempt.attemptNo}
-                      </span>
-                      <span className="ml-2 font-mono text-xs text-muted-foreground">
-                        {shortId(attempt.id)}
-                      </span>
-                    </div>
+                    <span className="font-semibold">
+                      {dispatchAttemptLabel(attempt, waybills)}
+                    </span>
                     <Badge variant={STATUS_VARIANT(attempt.status)}>
-                      {attempt.status}
+                      {dispatchAttemptStatusLabel(attempt.status)}
                     </Badge>
                   </div>
                   <ChannelDispatchAttemptStatus
                     attemptId={attempt.id}
+                    orderNoOf={orderNoOf}
                     viewModel={channelDispatch}
                   />
                   <div className="grid gap-3 md:grid-cols-2">
                     <div>
-                      <p className="mb-1 text-xs font-medium">
-                        실제 출고 source
-                      </p>
+                      <p className="mb-1 text-xs font-medium">보낸 상품</p>
                       {(attempt.sources ?? []).map((source) => (
                         <p
                           key={source.id}
-                          className="font-mono text-xs text-muted-foreground"
+                          className="text-xs text-muted-foreground"
                         >
-                          line {shortId(source.shipmentLineId)} · location{' '}
-                          {shortId(source.sourceLocationId)} · {source.quantity}
-                          개
+                          {lineName.get(source.shipmentLineId) ?? '상품'}{' '}
+                          {source.quantity}개
                         </p>
                       ))}
                       {(attempt.sources?.length ?? 0) === 0 && (
                         <p className="text-xs text-muted-foreground">
-                          source 기록 없음
+                          기록된 상품이 없어요.
                         </p>
                       )}
                     </div>
                     <div>
-                      <p className="mb-1 text-xs font-medium">
-                        tracking history
-                      </p>
+                      <p className="mb-1 text-xs font-medium">배송 추적</p>
                       {(attempt.trackingEvents ?? []).map((event) => (
                         <p
                           key={event.id}
@@ -348,7 +364,7 @@ function ShipmentDetailView({
                       ))}
                       {(attempt.trackingEvents?.length ?? 0) === 0 && (
                         <p className="text-xs text-muted-foreground">
-                          추적 이벤트 없음
+                          아직 배송 추적 기록이 없어요.
                         </p>
                       )}
                     </div>
@@ -361,7 +377,7 @@ function ShipmentDetailView({
 
         <section>
           <h3 className="mb-2 text-sm font-semibold">
-            durable operation 이력 ({operations.length})
+            작업 기록 ({operations.length})
           </h3>
           <div className="divide-y rounded-md border">
             {operations.map((operation) => (
@@ -371,11 +387,16 @@ function ShipmentDetailView({
               >
                 <div>
                   <p className="font-medium">
-                    {operation.type} · {shortId(operation.operationId)}
+                    {operationTypeLabel(operation.type)}
+                    {operation.reason ? ` · ${operation.reason}` : ''}
                   </p>
                   <p className="text-muted-foreground">
                     {when(operation.createdAt)}
-                    {operation.lastError ? ` · ${operation.lastError}` : ''}
+                    {operation.lastError && (
+                      <span title={operation.lastError}>
+                        {' · 처리하지 못했어요'}
+                      </span>
+                    )}
                   </p>
                 </div>
                 <Badge
@@ -385,13 +406,13 @@ function ShipmentDetailView({
                       : STATUS_VARIANT(operation.status)
                   }
                 >
-                  {operation.status}
+                  {operationStatusLabel(operation.status)}
                 </Badge>
               </div>
             ))}
             {operations.length === 0 && (
               <p className="p-4 text-sm text-muted-foreground">
-                operation 기록 없음
+                작업 기록이 없어요.
               </p>
             )}
           </div>
@@ -417,11 +438,20 @@ function ShipmentListButton({
       onClick={() => onSelect(shipment.id)}
     >
       <span className="min-w-0">
-        <span className="block truncate font-mono text-xs">{shipment.id}</span>
+        <span className="block truncate text-xs font-medium">
+          {boxName(shipment.id)}
+        </span>
         <span className="mt-1 block text-xs font-normal text-muted-foreground">
-          {shipment.status} · {shipment.totalQty}개 · 예약{' '}
-          {shipment.reservedQty} · M{shipment.manifestVersion}/R
-          {shipment.reservationVersion}
+          {[
+            shipmentStatusLabel(shipment.status),
+            `${shipment.totalQty}개`,
+            RESERVING_STATUSES.has(shipment.status) &&
+            shipment.reservedQty < shipment.totalQty
+              ? `재고 확보 ${shipment.reservedQty}개`
+              : null,
+          ]
+            .filter(Boolean)
+            .join(' · ')}
         </span>
       </span>
     </Button>
@@ -507,7 +537,7 @@ export function ShipmentTab({
   if (shipments.isLoading)
     return (
       <p className="py-8 text-center text-sm text-muted-foreground">
-        shipment 목록을 불러오는 중입니다.
+        상자를 불러오는 중이에요.
       </p>
     );
   if (shipments.isError) {
@@ -517,7 +547,7 @@ export function ShipmentTab({
         <AlertDescription>
           {getServerDenyMessage(
             shipments.error,
-            'shipment 목록 조회에 실패했습니다.'
+            '상자를 불러오지 못했어요. 새로고침해 주세요.'
           )}
         </AlertDescription>
       </Alert>
@@ -527,7 +557,7 @@ export function ShipmentTab({
     return (
       <div className="flex flex-col items-center gap-2 py-10 text-muted-foreground">
         <PackageOpen className="h-6 w-6" />
-        <p className="text-sm">이 FO에 연결된 shipment가 없습니다.</p>
+        <p className="text-sm">이 출고주문에는 아직 상자가 없어요.</p>
       </div>
     );
   }
@@ -536,7 +566,7 @@ export function ShipmentTab({
     <div className="grid gap-5 py-4 lg:grid-cols-[260px_minmax(0,1fr)]">
       <aside className="space-y-2">
         <h3 className="text-sm font-semibold">
-          shipment 목록 ({shipments.data.length})
+          상자 ({shipments.data.length})
         </h3>
         {active.map((shipment) => (
           <ShipmentListButton
@@ -578,7 +608,7 @@ export function ShipmentTab({
       <main className="min-w-0">
         {detail.isLoading ? (
           <p className="py-8 text-center text-sm text-muted-foreground">
-            shipment 상세를 불러오는 중입니다.
+            상자 정보를 불러오는 중이에요.
           </p>
         ) : detail.isError ? (
           <Alert variant="destructive">
@@ -586,7 +616,7 @@ export function ShipmentTab({
             <AlertDescription>
               {getServerDenyMessage(
                 detail.error,
-                'shipment 상세 조회에 실패했습니다.'
+                '상자 정보를 불러오지 못했어요. 새로고침해 주세요.'
               )}
             </AlertDescription>
           </Alert>
