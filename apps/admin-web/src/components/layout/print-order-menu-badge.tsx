@@ -10,6 +10,7 @@ export function PrintOrderMenuBadge() {
   const count =
     data.cancelRefused +
     data.awaitingPayment +
+    data.vendorAttention +
     data.testPending +
     data.failed +
     data.unsupported;

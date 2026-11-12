@@ -17,6 +17,18 @@ export function containsDataUri(value: unknown): boolean {
   return false;
 }
 
+// 뒷면을 인쇄하는지. 템플릿 목록은 같은 규칙을 SQL 로 읽는다(almond-template.reader 의 printsBack)
+export function designPrintsBack(design: Record<string, unknown>): boolean {
+  const back = readLayers(design.back) ?? [];
+  const backBackground = isRecord(design.backBackground) ? design.backBackground : undefined;
+
+  return (
+    back.length > 0 ||
+    typeof backBackground?.backgroundImage === 'string' ||
+    (typeof backBackground?.background === 'string' && backBackground.background.toLowerCase() !== '#ffffff')
+  );
+}
+
 export interface AlmondDesignInput {
   design: Record<string, unknown>;
   frontSvg: string;
@@ -49,11 +61,7 @@ export function parseAlmondDesign(input: AlmondDesignInput): AlmondDesignRecord 
     throw new BadRequestError('시안 JSON 에 이미지를 직접 넣을 수 없습니다. 업로드한 파일(file:<id>)로 참조하세요.');
   }
 
-  const backBackground = isRecord(design.backBackground) ? design.backBackground : undefined;
-  const printsBack =
-    back.length > 0 ||
-    typeof backBackground?.backgroundImage === 'string' ||
-    (typeof backBackground?.background === 'string' && backBackground.background.toLowerCase() !== '#ffffff');
+  const printsBack = designPrintsBack(design);
 
   assertSafeDesignSvg(frontSvg, 'front');
   if (printsBack && backSvg === undefined) {

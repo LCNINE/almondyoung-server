@@ -9,9 +9,14 @@ import {
   type AlmondTemplateEntity,
   type AlmondTemplateSummary,
 } from '../types/almond-template.types';
+import { designPrintsBack } from '../services/almond-design.manager';
 
 function kindOf(design: Record<string, unknown>): string | null {
   return typeof design.kind === 'string' ? design.kind : null;
+}
+
+function withDerived(row: AlmondTemplateEntity): AlmondTemplateSummary {
+  return { ...row, kind: kindOf(row.design), printsBack: designPrintsBack(row.design) };
 }
 
 export class AlmondTemplateMapper {
@@ -25,12 +30,13 @@ export class AlmondTemplateMapper {
       industry: row.industry,
       purpose: row.purpose,
       kind: row.kind,
+      printsBack: row.printsBack,
       updatedAt: row.updatedAt.toISOString(),
     };
   }
 
   static toDetail(row: AlmondTemplateEntity): AlmondTemplateDetailResponseDto {
-    return { ...this.toSummary({ ...row, kind: kindOf(row.design) }), design: row.design };
+    return { ...this.toSummary(withDerived(row)), design: row.design };
   }
 
   static toAdminSummary(row: AdminAlmondTemplateSummary): AdminAlmondTemplateSummaryResponseDto {
@@ -44,7 +50,7 @@ export class AlmondTemplateMapper {
   }
 
   static toAdminSummaryFromEntity(row: AlmondTemplateEntity): AdminAlmondTemplateSummaryResponseDto {
-    return this.toAdminSummary({ ...row, kind: kindOf(row.design) });
+    return this.toAdminSummary(withDerived(row));
   }
 
   static toAdminDetail(row: AlmondTemplateEntity): AdminAlmondTemplateDetailResponseDto {

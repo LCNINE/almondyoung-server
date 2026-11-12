@@ -1,5 +1,5 @@
 import { ConfigService } from '@nestjs/config';
-import { DbService } from '@app/db';
+import { DbService, type DatabaseRun } from '@app/db';
 import { wmsSchema } from '../../inventory/schema/inventory.schema';
 import { type PrintOrderRow } from '../schema/print-order.schema';
 import { WowpressClient } from '../wowpress/wowpress.client';
@@ -29,6 +29,20 @@ class FakeRepo extends PrintOrderRepository {
   >(() => Promise.resolve());
   touch = jest.fn<Promise<void>, [string]>(() => Promise.resolve());
   trackable = jest.fn<Promise<PrintOrderRow[]>, [number]>(() => Promise.resolve([]));
+  findTrackedByVendorOrderNumber = jest.fn<Promise<PrintOrderRow | null>, [string]>(() => Promise.resolve(null));
+  // 테넌트 DB 두 개를 차례로 도는 것처럼 fn 을 두 번 부른다
+  override async inEveryDatabase<T>(fn: () => Promise<T>): Promise<DatabaseRun<T>[]> {
+    const out: DatabaseRun<T>[] = [];
+    for (const key of ['t1', 't2']) {
+      try {
+        out.push({ key, ok: true, value: await fn() });
+      } catch (error) {
+        out.push({ key, ok: false, error });
+      }
+    }
+
+    return out;
+  }
 }
 
 function row(overrides: Partial<PrintOrderRow> = {}): PrintOrderRow {
@@ -325,6 +339,29 @@ describe('PrintOrderTrackingManager', () => {
     expect(repo.updateTracked).not.toHaveBeenCalled();
     expect(repo.touch).toHaveBeenCalledWith('po-1');
   });
+
+  it.each([
+    ['a job error', { ordstat: 10, jobstat: 129 }, 'wowpress needs attention: job error 129'],
+    ['a cancel made on wowpress', { ordstat: 90, jobstat: null }, 'wowpress needs attention: cancelled'],
+  ])('flags %s for the vendor attention tab', async (_label, stat, lastError) => {
+    const { repo, wowpress, manager } = setup();
+    wowpress.detail.mockResolvedValue({ ...stat, carrierCode: null, trackingNumber: null, boxNumber: null });
+
+    await manager.refresh(row({ lastError: 'order sent but response lost — looking up by ordkey before giving up' }));
+
+    expect(repo.updateTracked).toHaveBeenCalledWith('po-1', { lastError });
+  });
+
+  it('clears only its own attention record once wowpress moves on', async () => {
+    const { repo, wowpress, manager } = setup();
+    wowpress.detail.mockResolvedValue({ ordstat: 20, jobstat: null, carrierCode: null, trackingNumber: null, boxNumber: null });
+
+    await manager.refresh(row({ lastError: 'wowpress needs attention: job error 129' }));
+    await manager.refresh(row({ lastError: 'duplicate wowpress order suspected: WP-1 / WP-2' }));
+
+    expect(repo.updateTracked).toHaveBeenCalledTimes(1);
+    expect(repo.updateTracked).toHaveBeenCalledWith('po-1', { lastError: null });
+  });
 });
 
 describe('PrintOrderTrackingWorker', () => {
@@ -407,3 +444,25 @@ describe('PrintOrderTrackingWorker', () => {
     expect(refresh).toHaveBeenCalledTimes(2);
   });
 });
+
+describe('PrintOrderTrackingManager.refreshByVendorOrderNumber', () => {
+  it('finds the row in whichever tenant holds it and re-reads the order detail', async () => {
+    const { repo, wowpress, manager } = setup();
+    repo.findTrackedByVendorOrderNumber.mockResolvedValueOnce(null).mockResolvedValueOnce(row());
+    wowpress.detail.mockResolvedValue({ ordstat: 10, jobstat: 129, carrierCode: null, trackingNumber: null, boxNumber: null });
+
+    await manager.refreshByVendorOrderNumber('WP-1');
+
+    expect(wowpress.detail).toHaveBeenCalledTimes(1);
+    expect(wowpress.detail).toHaveBeenCalledWith('WP-1');
+    expect(repo.updateTracked).toHaveBeenCalledWith('po-1', { lastError: 'wowpress needs attention: job error 129' });
+  });
+
+  it('throws when a tenant database fails so wowpress retries the callback', async () => {
+    const { repo, manager } = setup();
+    repo.findTrackedByVendorOrderNumber.mockRejectedValueOnce(new Error('db down'));
+
+    await expect(manager.refreshByVendorOrderNumber('WP-1')).rejects.toThrow('db down');
+  });
+});
+

@@ -1,5 +1,6 @@
 /** @jest-environment jsdom */
 import {
+  sidesFor,
   COMBO_LIMIT,
   applyTimes,
   blockers,
@@ -248,5 +249,17 @@ describe('draft storage', () => {
     window.localStorage.setItem(draftKey('t1'), '{"step":9');
 
     expect(loadDraft('t1')).toBeNull();
+  });
+});
+
+describe('sidesFor', () => {
+  const colors = [
+    { colorno: 255, label: '단면 칼라4도' },
+    { colorno: 256, label: '양면 칼라8도' },
+  ];
+
+  it('뒷면이 있는 템플릿에는 단면을 빼고, 앞면만 있으면 그대로 둔다', () => {
+    expect(sidesFor(colors, true).map((c) => c.colorno)).toEqual([256]);
+    expect(sidesFor(colors, false).map((c) => c.colorno)).toEqual([255, 256]);
   });
 });

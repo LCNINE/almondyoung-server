@@ -3,12 +3,26 @@ import { type PrintOrderRow } from '../schema/print-order.schema';
 import { WowpressClient } from '../wowpress/wowpress.client';
 import {
   WOWPRESS_CARRIER,
+  WOWPRESS_JOB_ERRORS,
   WOWPRESS_STATUS_AWAITING_PAYMENT,
+  WOWPRESS_STATUS_CANCELLED,
   type WowpressOrderDetail,
 } from '../wowpress/wowpress.types';
-import { PrintOrderRepository } from './print-order.repository';
+import { isPreservedLastError, PrintOrderRepository } from './print-order.repository';
 
 export const WOWPRESS_STATUS_DELIVERED = 85;
+
+// 와우프레스에서 사람이 처리해야 하는 상태. 보드 와우프레스 확인 탭이 이 접두어로 고른다
+export const VENDOR_ATTENTION_PREFIX = 'wowpress needs attention: ';
+
+export function vendorAttention(detail: Pick<WowpressOrderDetail, 'ordstat' | 'jobstat'>): string | null {
+  if (detail.ordstat === WOWPRESS_STATUS_CANCELLED) return `${VENDOR_ATTENTION_PREFIX}cancelled`;
+  if (detail.jobstat !== null && WOWPRESS_JOB_ERRORS.has(detail.jobstat)) {
+    return `${VENDOR_ATTENTION_PREFIX}job error ${detail.jobstat}`;
+  }
+
+  return null;
+}
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -23,6 +37,17 @@ export class PrintOrderTrackingManager {
     private readonly wowpress: WowpressClient,
   ) {}
 
+  // 콜백 본문은 서명이 없어 믿지 않는다. 주문번호로 우리 행을 찾아 주문상세를 다시 불러 반영한다
+  async refreshByVendorOrderNumber(ordnum: string): Promise<void> {
+    const runs = await this.repository.inEveryDatabase(async () => {
+      const row = await this.repository.findTrackedByVendorOrderNumber(ordnum);
+      if (row) await this.refresh(row);
+    });
+    const failed = runs.find((run) => !run.ok);
+    // 실패를 던지면 와우프레스가 10초 간격으로 다시 보낸다
+    if (failed && !failed.ok) throw failed.error;
+  }
+
   async refresh(row: PrintOrderRow): Promise<void> {
     if (!row.vendorOrderNumber) return;
     let detail: WowpressOrderDetail;
@@ -36,6 +61,7 @@ export class PrintOrderTrackingManager {
 
     await this.fillVendorBox(row, detail.boxNumber);
     await this.markAwaitingPayment(row, detail.ordstat === WOWPRESS_STATUS_AWAITING_PAYMENT);
+    await this.markVendorAttention(row, vendorAttention(detail));
 
     const now = new Date();
     const invoice = detail.trackingNumber;
@@ -72,6 +98,14 @@ export class PrintOrderTrackingManager {
     if (row.vendorAwaitingPayment === awaiting) return;
 
     await this.repository.updateTracked(row.id, { vendorAwaitingPayment: awaiting });
+  }
+
+  // 중복 의심 같은 보존 기록은 덮지 않는다. 풀리면 우리가 쓴 기록만 지운다
+  private async markVendorAttention(row: PrintOrderRow, attention: string | null): Promise<void> {
+    if (row.lastError === attention || isPreservedLastError(row.lastError)) return;
+    if (attention === null && !row.lastError?.startsWith(VENDOR_ATTENTION_PREFIX)) return;
+
+    await this.repository.updateTracked(row.id, { lastError: attention });
   }
 
   private async fillVendorBox(row: PrintOrderRow, boxNumber: string | null): Promise<void> {

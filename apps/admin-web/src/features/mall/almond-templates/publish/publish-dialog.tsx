@@ -35,6 +35,7 @@ import {
   qtyChoices,
   qtyLabel,
   saveDraft,
+  sidesFor,
   type ComboLabels,
   type DiscountPct,
   type PickedAxes,
@@ -87,7 +88,11 @@ export function PublishDialog({ template, kind, onClose }: PublishDialogProps) {
 
   const { width, height } = parseTemplateSize(template.size);
   const optionsQuery = usePrintOptions(kind, width, height);
-  const options = optionsQuery.data;
+  const loaded = optionsQuery.data;
+  const options = useMemo(
+    () => (loaded ? { ...loaded, colors: sidesFor(loaded.colors, template.printsBack ?? true) } : undefined),
+    [loaded, template.printsBack]
+  );
   const quotes = usePrintQuotes();
   const preview = usePreviewAlmondTemplateImage();
   const publish = usePublishPrintProduct();

@@ -66,6 +66,7 @@ function elapsed(iso: string, now: number): string {
 const TABS: { key: PrintOrderTab; label: string }[] = [
   { key: 'cancel_refused', label: '취소 확인 필요' },
   { key: 'awaiting_payment', label: '입금대기' },
+  { key: 'vendor_attention', label: '와우프레스 확인' },
   { key: 'test_pending', label: '테스트 확인대기' },
   { key: 'failed', label: '발주 실패' },
   { key: 'unsupported', label: '미지원 품목' },
@@ -93,6 +94,7 @@ export default function PrintOrdersTemplate() {
   const counts: Record<PrintOrderTab, number> = {
     cancel_refused: summary.data?.cancelRefused ?? 0,
     awaiting_payment: summary.data?.awaitingPayment ?? 0,
+    vendor_attention: summary.data?.vendorAttention ?? 0,
     test_pending: summary.data?.testPending ?? 0,
     failed: summary.data?.failed ?? 0,
     unsupported: summary.data?.unsupported ?? 0,
