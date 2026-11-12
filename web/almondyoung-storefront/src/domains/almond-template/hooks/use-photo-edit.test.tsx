@@ -14,6 +14,9 @@ import { svgMarkup } from "./use-template-export"
 vi.mock("./use-auth-retry", () => ({ useAuthRetry: () => ({}) }))
 vi.mock("./use-template-storage", () => ({ useTemplateStorage: () => ({}) }))
 vi.mock("./use-design-order", () => ({ useDesignOrder: () => ({}) }))
+vi.mock("next-intl", () => ({
+  useTranslations: () => (key: string) => key,
+}))
 
 const frame: Layer = {
   id: "photo",

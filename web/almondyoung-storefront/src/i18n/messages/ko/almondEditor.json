@@ -1,0 +1,16 @@
+{
+  "steps": {
+    "label": "주문 단계",
+    "design": "디자인",
+    "proof": "인쇄 파일 확인",
+    "order": "주문"
+  },
+  "goOrder": "주문하러 가기",
+  "goOrderHint": "인쇄 파일 확인 후 주문해요",
+  "orderHint": {
+    "title": "디자인을 마쳤으면 여기를 눌러요",
+    "body": "글자가 잘리거나 사진이 흐린 곳이 없는지 확인한 뒤 바로 주문할 수 있어요.",
+    "dismiss": "알겠어요"
+  },
+  "textEditHint": "Enter 적용 · Shift+Enter 줄바꿈 · Esc 취소"
+}

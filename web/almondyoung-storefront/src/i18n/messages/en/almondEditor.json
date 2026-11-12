@@ -1,0 +1,16 @@
+{
+  "steps": {
+    "label": "Order steps",
+    "design": "Design",
+    "proof": "Check print file",
+    "order": "Order"
+  },
+  "goOrder": "Go to order",
+  "goOrderHint": "Check the print file, then order",
+  "orderHint": {
+    "title": "Done designing? Click here",
+    "body": "We check for cut-off text and blurry photos, then you can order right away.",
+    "dismiss": "Got it"
+  },
+  "textEditHint": "Enter to apply · Shift+Enter for new line · Esc to cancel"
+}

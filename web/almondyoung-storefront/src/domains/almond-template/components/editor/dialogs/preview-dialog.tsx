@@ -2,6 +2,7 @@ import { X } from "lucide-react"
 import { Backdrop } from "../../graphic"
 import { LayerStack } from "../../layer-stack"
 import type { AlmondEditor } from "../../../hooks/use-almond-editor"
+import { OrderSteps } from "../order-steps"
 import { sideBackground, unfiltered } from "../../../lib/document"
 
 export function PreviewDialog({ editor }: { editor: AlmondEditor }) {
@@ -27,9 +28,13 @@ export function PreviewDialog({ editor }: { editor: AlmondEditor }) {
       className="absolute inset-0 z-20 flex flex-col bg-white"
     >
       <div className="flex h-16 items-center justify-between border-b px-6">
-        <strong>
-          시안 미리보기 · {previewSide === "front" ? "앞면" : "뒷면"}
-        </strong>
+        {mode === "designer" ? (
+          <strong>
+            시안 미리보기 · {previewSide === "front" ? "앞면" : "뒷면"}
+          </strong>
+        ) : (
+          <OrderSteps current={2} />
+        )}
         <div className="flex gap-2">
           <button
             className={`border px-3 py-1 ${previewSide === "front" ? "bg-slate-900 text-white" : ""}`}
@@ -113,7 +118,7 @@ export function PreviewDialog({ editor }: { editor: AlmondEditor }) {
           </button>
         ) : (
           <button
-            className="bg-primary rounded px-4 py-2 font-bold text-white disabled:opacity-50"
+            className="bg-primary rounded-lg px-8 py-3 text-base font-bold text-white disabled:opacity-50"
             disabled={ordering}
             onClick={orderDesign}
           >

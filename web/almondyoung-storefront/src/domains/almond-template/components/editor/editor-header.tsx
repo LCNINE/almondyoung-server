@@ -11,7 +11,33 @@ import {
   Save,
   CopyPlus,
 } from "lucide-react"
+import { useEffect, useState } from "react"
+import { useTranslations } from "next-intl"
 import type { AlmondEditor } from "../../hooks/use-almond-editor"
+import { OrderSteps } from "./order-steps"
+
+const ORDER_HINT_KEY = "almond-editor-order-hint-seen"
+
+// 처음 연 손님에게 주문은 오른쪽 위 버튼에서 시작한다는 걸 한 번만 알린다
+function useOrderHint(enabled: boolean) {
+  const [open, setOpen] = useState(false)
+  useEffect(() => {
+    if (!enabled) return
+    try {
+      setOpen(!localStorage.getItem(ORDER_HINT_KEY))
+    } catch {
+      setOpen(true)
+    }
+  }, [enabled])
+  const dismiss = () => {
+    setOpen(false)
+    try {
+      localStorage.setItem(ORDER_HINT_KEY, "1")
+    } catch {}
+  }
+
+  return { open, dismiss }
+}
 
 export function EditorHeader({ editor }: { editor: AlmondEditor }) {
   const {
@@ -43,8 +69,12 @@ export function EditorHeader({ editor }: { editor: AlmondEditor }) {
     pasteCopied,
     cutSelected,
   } = editor
+  const t = useTranslations("almondEditor")
+  const customer = mode !== "designer"
+  const hint = useOrderHint(customer)
+
   return (
-    <header className="flex h-[72px] shrink-0 items-stretch border-b bg-white text-xs shadow-sm">
+    <header className="relative flex h-[72px] shrink-0 items-stretch border-b bg-white text-xs shadow-sm">
       <button
         onClick={() => {
           if (
@@ -118,7 +148,12 @@ export function EditorHeader({ editor }: { editor: AlmondEditor }) {
           </button>
         ))}
       </div>
-      <div className="ml-auto flex items-stretch">
+      {customer && (
+        <div className="mx-auto flex items-center px-4">
+          <OrderSteps current={1} />
+        </div>
+      )}
+      <div className={`flex items-stretch ${customer ? "" : "ml-auto"}`}>
         {[
           {
             label: "미리보기",
@@ -153,13 +188,45 @@ export function EditorHeader({ editor }: { editor: AlmondEditor }) {
             {label}
           </button>
         ))}
-        <button
-          onClick={complete}
-          className="min-w-[145px] bg-[#303030] px-5 text-base font-bold text-white hover:bg-black"
-        >
-          {mode === "designer" ? "편집완료 >" : "인쇄 파일 확인 >"}
-        </button>
+        {customer ? (
+          <button
+            onClick={() => {
+              hint.dismiss()
+              complete()
+            }}
+            className="flex min-w-[190px] flex-col items-start justify-center gap-0.5 bg-[#303030] px-6 text-white hover:bg-black"
+          >
+            <span className="text-base font-bold">{t("goOrder")} →</span>
+            <span className="text-[11px] text-slate-300">
+              {t("goOrderHint")}
+            </span>
+          </button>
+        ) : (
+          <button
+            onClick={complete}
+            className="min-w-[145px] bg-[#303030] px-5 text-base font-bold text-white hover:bg-black"
+          >
+            편집완료 &gt;
+          </button>
+        )}
       </div>
+      {hint.open && (
+        <div
+          role="status"
+          className="absolute top-full right-4 z-30 mt-3 flex w-[300px] flex-col gap-1.5 rounded-xl bg-[#20232a] px-4 py-3.5 text-white shadow-[0_8px_24px_rgba(0,0,0,0.18)]"
+        >
+          <strong className="text-sm">{t("orderHint.title")}</strong>
+          <p className="text-[13px] leading-relaxed text-slate-200">
+            {t("orderHint.body")}
+          </p>
+          <button
+            onClick={hint.dismiss}
+            className="self-end py-1 text-xs underline"
+          >
+            {t("orderHint.dismiss")}
+          </button>
+        </div>
+      )}
       <input
         ref={inputRef}
         type="file"

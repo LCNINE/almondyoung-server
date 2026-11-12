@@ -19,6 +19,7 @@ import {
   useState,
 } from "react"
 import { createPortal } from "react-dom"
+import { useTranslations } from "next-intl"
 import { Backdrop, photoBox } from "../graphic"
 import { LayerStack, StackedLayer } from "../layer-stack"
 import {
@@ -384,6 +385,7 @@ function insideOf(layer: Layer) {
 }
 
 export function Canvas({ editor }: { editor: AlmondEditor }) {
+  const t = useTranslations("almondEditor")
   const imageSrc = useImageSrc()
   const {
     mode,
@@ -1128,34 +1130,45 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
             />
           )}
           {editingLayer && editing && (
-            <textarea
-              autoFocus
-              aria-label="문구 수정"
-              value={editing.text}
-              maxLength={500}
-              onChange={(event) =>
-                setEditing({ ...editing, text: event.target.value })
-              }
-              onFocus={(event) => event.currentTarget.select()}
-              onBlur={finishTextEdit}
-              onKeyDown={(event) => {
-                if (event.key === "Escape") {
-                  event.stopPropagation()
-                  cancelEdit.current = true
-                  event.currentTarget.blur()
-                } else if (
-                  event.key === "Enter" &&
-                  (event.metaKey || event.ctrlKey)
-                )
-                  event.currentTarget.blur()
-              }}
-              className="absolute z-30 min-h-24 resize-none border border-[#10c9c1] bg-white p-2 text-base text-[#1a1c20] shadow-lg outline-none"
+            <div
+              className="absolute z-30 flex flex-col gap-1"
               style={{
                 left: `${Math.max(0, editingLayer.x * scale)}px`,
                 top: `${(editingLayer.y + editingLayer.height) * scale + 4}px`,
                 width: `${Math.max(260, editingLayer.width * scale)}px`,
               }}
-            />
+            >
+              <textarea
+                autoFocus
+                aria-label="문구 수정"
+                value={editing.text}
+                maxLength={500}
+                onChange={(event) =>
+                  setEditing({ ...editing, text: event.target.value })
+                }
+                onFocus={(event) => event.currentTarget.select()}
+                onBlur={finishTextEdit}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") {
+                    event.stopPropagation()
+                    cancelEdit.current = true
+                    event.currentTarget.blur()
+                  } else if (
+                    event.key === "Enter" &&
+                    !event.shiftKey &&
+                    !event.nativeEvent.isComposing
+                  ) {
+                    // 한글 조합 중 Enter 는 조합 확정이라 적용하지 않는다. 줄바꿈은 Shift+Enter
+                    event.preventDefault()
+                    event.currentTarget.blur()
+                  }
+                }}
+                className="min-h-24 w-full resize-none border border-[#10c9c1] bg-white p-2 text-base text-[#1a1c20] shadow-lg outline-none"
+              />
+              <p className="rounded bg-[#20232a]/80 px-2 py-1 text-[11px] text-white">
+                {t("textEditHint")}
+              </p>
+            </div>
           )}
           {selected && selectedPrintWarning && (
             <div
