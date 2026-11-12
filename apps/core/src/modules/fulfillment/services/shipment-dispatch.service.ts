@@ -8,6 +8,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { isUUID } from 'class-validator';
 import { DbService, InjectTypedDb } from '@app/db';
 import { type PermissionDecision } from '@app/authorization';
 import {
@@ -38,6 +39,14 @@ import type { WaybillRow } from '../waybill/waybill.types';
 import { resolveSkuIdByBarcode } from './sku-barcode-resolution';
 import { warehouseIdOf } from '../shipment/shipment-owner';
 import { emitShipmentDispatched, incrementFulfillmentItems, markFullyShippedOrders } from './dispatch-effects';
+import { resolveOperationReason } from '../shipment/shipment-operation-reasons';
+import {
+  completeShipmentOperation,
+  createShipmentOperation,
+  loadShipmentAggregate,
+  shipmentSnapshot,
+  type ShipmentManifestSnapshot,
+} from './shipment-aggregate';
 
 export interface ShipmentDispatchActor {
   id: string;
@@ -53,6 +62,8 @@ export interface InspectionScanInput {
 
 export interface ForceShipmentDispatchInput {
   reason: string;
+  reasonCode?: string;
+  requestChannel?: string;
   csCaseId?: string;
   note?: string;
   actor: ShipmentDispatchActor;
@@ -73,6 +84,9 @@ export interface ShipmentDispatchResponse {
 type ShipmentRow = typeof wmsTables.shipments.$inferSelect;
 type ShipmentLineRow = typeof wmsTables.shipmentLines.$inferSelect;
 type SessionRow = typeof wmsTables.batchInventorySessions.$inferSelect;
+
+/** stock_events.reason 칸 길이. 강제 출고 사유는 500자까지 받으므로 넘치면 잘라 쓴다. */
+const STOCK_EVENT_REASON_MAX = 255;
 
 interface LockedDispatchAggregate {
   shipment: ShipmentRow;
@@ -310,6 +324,14 @@ export class ShipmentDispatchService {
         message: 'Force dispatch scope is required',
       });
     }
+    // 작업 기록 칸은 uuid 라 uuid 가 아닌 글은 감사 로그에만 남는다.
+    const trimmedCsCaseId = input.csCaseId?.trim();
+    const operationCsCaseId = trimmedCsCaseId && isUUID(trimmedCsCaseId) ? trimmedCsCaseId : null;
+    const resolvedReason = resolveOperationReason('force_dispatch', {
+      reason: input.reason.trim(),
+      reasonCode: input.reasonCode,
+      requestChannel: input.requestChannel,
+    });
 
     return this.commands.execute(
       {
@@ -318,14 +340,17 @@ export class ShipmentDispatchService {
         canonicalRequest: {
           shipmentId,
           reason: input.reason.trim(),
+          ...(input.reasonCode && { reasonCode: input.reasonCode }),
+          ...(input.requestChannel && { requestChannel: input.requestChannel }),
           csCaseId: input.csCaseId?.trim() || null,
           note: input.note?.trim() || null,
           actorId: input.actor.id,
         },
       },
-      async (tx, commandRequestId) => {
+      async (tx, commandRequestId, requestHash) => {
         const aggregate = await this.lockAggregate(shipmentId, tx);
         this.assertDispatchCandidate(aggregate, input.actor, true);
+        const beforeSnapshot = await this.operationSnapshot(tx, shipmentId);
         const beforeLineManifest = this.dispatchLineManifest(aggregate.lines);
         const forcedQuantities = aggregate.lines
           .map((line) => ({ shipmentLineId: line.id, quantity: line.qty - line.inspectedQty }))
@@ -362,6 +387,26 @@ export class ShipmentDispatchService {
           authorizationScope: forceDispatchDecisionKey(authorization),
           beforeLineManifest,
         });
+        const operation = await createShipmentOperation(tx, {
+          type: 'force_dispatch',
+          actorId: input.actor.id,
+          reason: resolvedReason.reason,
+          reasonCode: resolvedReason.reasonCode,
+          requestChannel: resolvedReason.requestChannel,
+          csCaseId: operationCsCaseId,
+          note: input.note?.trim() || null,
+          idempotencyKey: input.idempotencyKey,
+          requestHash,
+          before: beforeSnapshot,
+        });
+        await completeShipmentOperation(tx, operation.id, [
+          {
+            shipmentId,
+            role: 'target',
+            before: beforeSnapshot,
+            after: await this.operationSnapshot(tx, shipmentId),
+          },
+        ]);
         return {
           response,
           resourceType: 'shipment',
@@ -371,6 +416,10 @@ export class ShipmentDispatchService {
       },
       tx,
     );
+  }
+
+  private async operationSnapshot(tx: DbTx, shipmentId: string): Promise<ShipmentManifestSnapshot> {
+    return shipmentSnapshot(await loadShipmentAggregate(tx, shipmentId));
   }
 
   private async lockAggregate(shipmentId: string, tx: DbTx): Promise<LockedDispatchAggregate> {
@@ -746,7 +795,9 @@ export class ShipmentDispatchService {
           quantity: source.qty,
           occurredAt: dispatchedAt,
           idempotencyKey: `dispatch:${attemptId}:${source.shipmentLineId}:${source.sourceLocationId}`,
-          reason: force ? `Force dispatch: ${force.reason}` : `Shipment ${aggregate.shipment.id} dispatched`,
+          reason: force
+            ? `Force dispatch: ${force.reason}`.slice(0, STOCK_EVENT_REASON_MAX)
+            : `Shipment ${aggregate.shipment.id} dispatched`,
           journalId,
           batchSessionDispatch: { sessionId: aggregate.session.id, dispatchAttemptSourceId: source.id },
           deferSellableProjection: true,

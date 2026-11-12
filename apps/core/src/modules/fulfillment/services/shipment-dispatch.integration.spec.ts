@@ -43,6 +43,8 @@ import { warehouseIdOf } from '../shipment/shipment-owner';
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
 
+const CS_CASE_ID = '8b3f1c52-6e0a-4d0e-9a57-2f1d3c4b5a69';
+
 describeIfDb('ShipmentDispatchService (PostgreSQL integration)', () => {
   jest.setTimeout(120_000);
   let client: postgres.Sql;
@@ -1281,7 +1283,7 @@ describeIfDb('ShipmentDispatchService (PostgreSQL integration)', () => {
       const fixture = await seedReadyShipment(tx);
       const response = await services(tx).forceDispatch(fixture.shipment.id, {
         reason: 'scanner outage',
-        csCaseId: 'CS-1234',
+        csCaseId: CS_CASE_ID,
         note: 'approved by warehouse lead',
         actor: { id: fixture.actorId, roles: ['logistics_manager'] },
         idempotencyKey: `dispatch-force-${randomUUID()}`,
@@ -1302,10 +1304,120 @@ describeIfDb('ShipmentDispatchService (PostgreSQL integration)', () => {
       expect(audit.metadata).toMatchObject({
         dispatchAttemptId: response.dispatchAttemptId,
         reason: 'scanner outage',
-        csCaseId: 'CS-1234',
+        csCaseId: CS_CASE_ID,
         note: 'approved by warehouse lead',
         forcedQuantities: [{ shipmentLineId: fixture.line.id, quantity: 1 }],
         authorization: { scope: 'fulfillment.dispatch.force', granted: true, source: 'permission_guard' },
+      });
+    });
+  });
+
+  describe('강제 출고 작업 기록', () => {
+    async function forceOperations(tx: DbTx, shipmentId: string) {
+      return tx
+        .select({
+          id: wmsTables.shipmentOperations.id,
+          status: wmsTables.shipmentOperations.status,
+          reason: wmsTables.shipmentOperations.reason,
+          reasonCode: wmsTables.shipmentOperations.reasonCode,
+          requestChannel: wmsTables.shipmentOperations.requestChannel,
+          idempotencyKey: wmsTables.shipmentOperations.idempotencyKey,
+          requestHash: wmsTables.shipmentOperations.requestHash,
+          afterVersion: wmsTables.shipmentOperationMembers.afterManifestVersion,
+        })
+        .from(wmsTables.shipmentOperations)
+        .innerJoin(
+          wmsTables.shipmentOperationMembers,
+          eq(wmsTables.shipmentOperationMembers.operationId, wmsTables.shipmentOperations.id),
+        )
+        .where(
+          and(
+            eq(wmsTables.shipmentOperationMembers.shipmentId, shipmentId),
+            eq(wmsTables.shipmentOperations.type, 'force_dispatch'),
+          ),
+        );
+    }
+
+    it('사유 코드로 강제 출고하면 완료된 작업 행 하나와 멤버 하나가 남는다', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const fixture = await seedReadyShipment(tx);
+        const key = `dispatch-force-${randomUUID()}`;
+        await services(tx).forceDispatch(fixture.shipment.id, {
+          reason: '무시되는 글',
+          reasonCode: 'scan_unavailable',
+          actor: { id: fixture.actorId, roles: ['logistics_manager'] },
+          idempotencyKey: key,
+          authorization: grantedPermissionDecision('fulfillment.dispatch.force'),
+        });
+
+        const rows = await forceOperations(tx, fixture.shipment.id);
+        expect(rows).toHaveLength(1);
+        expect(rows[0]).toMatchObject({
+          status: 'completed',
+          reason: '바코드·스캔 불가',
+          reasonCode: 'scan_unavailable',
+          requestChannel: null,
+          idempotencyKey: key,
+        });
+        const [command] = await tx
+          .select({ requestHash: wmsTables.fulfillmentCommandRequests.requestHash })
+          .from(wmsTables.fulfillmentCommandRequests)
+          .where(
+            and(
+              eq(wmsTables.fulfillmentCommandRequests.commandType, 'shipment.dispatch.force'),
+              eq(wmsTables.fulfillmentCommandRequests.idempotencyKey, key),
+            ),
+          );
+        expect(rows[0].requestHash).toBe(command.requestHash);
+      });
+    });
+
+    it('같은 키로 다시 보내도 작업 행은 하나이고 새 칸이 없는 요청의 해시는 그대로다', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const fixture = await seedReadyShipment(tx);
+        const key = `dispatch-force-${randomUUID()}`;
+        const input = {
+          reason: 'scanner outage',
+          actor: { id: fixture.actorId, roles: ['logistics_manager'] },
+          idempotencyKey: key,
+          authorization: grantedPermissionDecision('fulfillment.dispatch.force'),
+        };
+        await services(tx).forceDispatch(fixture.shipment.id, input);
+        await services(tx).forceDispatch(fixture.shipment.id, input);
+
+        const rows = await forceOperations(tx, fixture.shipment.id);
+        expect(rows).toHaveLength(1);
+        expect(rows[0]).toMatchObject({ reason: 'scanner outage', reasonCode: null });
+        expect(rows[0].requestHash).toBe(
+          canonicalFulfillmentRequestHash({
+            shipmentId: fixture.shipment.id,
+            reason: 'scanner outage',
+            csCaseId: null,
+            note: null,
+            actorId: fixture.actorId,
+          }),
+        );
+      });
+    });
+
+    it('모르는 사유 코드는 명령 키를 잡기 전에 거절한다', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const fixture = await seedReadyShipment(tx);
+        const key = `dispatch-force-${randomUUID()}`;
+        await expect(
+          services(tx).forceDispatch(fixture.shipment.id, {
+            reason: 'x',
+            reasonCode: 'nope',
+            actor: { id: fixture.actorId, roles: ['logistics_manager'] },
+            idempotencyKey: key,
+            authorization: grantedPermissionDecision('fulfillment.dispatch.force'),
+          }),
+        ).rejects.toThrow('Unknown reason code');
+        const claimed = await tx
+          .select({ id: wmsTables.fulfillmentCommandRequests.id })
+          .from(wmsTables.fulfillmentCommandRequests)
+          .where(eq(wmsTables.fulfillmentCommandRequests.idempotencyKey, key));
+        expect(claimed).toHaveLength(0);
       });
     });
   });

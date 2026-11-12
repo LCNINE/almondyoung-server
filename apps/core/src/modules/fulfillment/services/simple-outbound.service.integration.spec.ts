@@ -835,6 +835,85 @@ describeIfDb('SimpleOutboundService.forceComplete', () => {
     });
   });
 
+  it('간편 강제 출고는 사유 코드 없이 긴 사유 글 그대로 작업 기록에 남는다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const fixture = await seedPickableShipment(tx, 2);
+      await startBatchFor(tx, fixture);
+      const service = assembleSimpleOutbound(tx);
+      const actor = { id: fixture.actorId, roles: ['logistics_worker'] };
+      const reason = '가'.repeat(300);
+
+      await service.forceComplete(
+        fixture.shipmentId,
+        { reason, actor, idempotencyKey: `force-${randomUUID()}`, authorization },
+        tx,
+      );
+
+      const rows = await tx
+        .select({
+          reason: wmsTables.shipmentOperations.reason,
+          reasonCode: wmsTables.shipmentOperations.reasonCode,
+          requestChannel: wmsTables.shipmentOperations.requestChannel,
+          status: wmsTables.shipmentOperations.status,
+        })
+        .from(wmsTables.shipmentOperations)
+        .innerJoin(
+          wmsTables.shipmentOperationMembers,
+          eq(wmsTables.shipmentOperationMembers.operationId, wmsTables.shipmentOperations.id),
+        )
+        .where(
+          and(
+            eq(wmsTables.shipmentOperationMembers.shipmentId, fixture.shipmentId),
+            eq(wmsTables.shipmentOperations.type, 'force_dispatch'),
+          ),
+        );
+      expect(rows).toEqual([{ reason, reasonCode: null, requestChannel: null, status: 'completed' }]);
+    });
+  });
+
+  it('uuid 가 아닌 CS 번호로도 강제 출고되고 작업 기록 칸은 비며 감사 로그에는 그대로 남는다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const fixture = await seedPickableShipment(tx, 2);
+      await startBatchFor(tx, fixture);
+      const service = assembleSimpleOutbound(tx);
+      const actor = { id: fixture.actorId, roles: ['logistics_worker'] };
+
+      const state = await service.forceComplete(
+        fixture.shipmentId,
+        { reason: '스캔 생략', csCaseId: 'CS-1234', actor, idempotencyKey: `force-${randomUUID()}`, authorization },
+        tx,
+      );
+      if (isPreparationBlocked(state)) throw new Error('Expected prepared outbound state');
+      expect(state.status).toBe('shipped');
+
+      const [operation] = await tx
+        .select({ csCaseId: wmsTables.shipmentOperations.csCaseId })
+        .from(wmsTables.shipmentOperations)
+        .innerJoin(
+          wmsTables.shipmentOperationMembers,
+          eq(wmsTables.shipmentOperationMembers.operationId, wmsTables.shipmentOperations.id),
+        )
+        .where(
+          and(
+            eq(wmsTables.shipmentOperationMembers.shipmentId, fixture.shipmentId),
+            eq(wmsTables.shipmentOperations.type, 'force_dispatch'),
+          ),
+        );
+      expect(operation.csCaseId).toBeNull();
+      const [auditRow] = await tx
+        .select({ metadata: wmsTables.auditLogs.metadata })
+        .from(wmsTables.auditLogs)
+        .where(
+          and(
+            eq(wmsTables.auditLogs.action, 'shipment.dispatch.force'),
+            eq(wmsTables.auditLogs.userId, fixture.actorId),
+          ),
+        )
+        .limit(1);
+      expect(auditRow?.metadata).toMatchObject({ csCaseId: 'CS-1234' });
+    });
+  });
+
   it('미피킹 수량을 강제로 채워 출고한다', async () => {
     await inRollbackTx(db, async (tx) => {
       const fixture = await seedPickableShipment(tx, 2);
