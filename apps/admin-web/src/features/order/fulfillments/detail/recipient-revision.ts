@@ -41,7 +41,7 @@ export const RECIPIENT_FIELDS: ReadonlyArray<{
     key: 'entrancePassword',
     label: '공동현관 비밀번호',
     // 현재 값은 응답에 실리지 않으므로(크리덴셜) 빈 칸이 "비번 없음"이 아니다.
-    placeholder: '비워 두면 기존 비번을 그대로 둡니다',
+    placeholder: '비우면 지금 값 유지',
     // 크리덴셜이다. 어깨너머로 읽히지 않게 가리고, 브라우저가 저장하지 않게 막는다.
     type: 'password',
     autoComplete: 'off',

@@ -254,41 +254,41 @@ describe('배송 탭 상자 선택', () => {
   it('새 상자 링크로 들어오면 합쳐진 원본이 아니라 새 상자를 연다', () => {
     renderTab('ship-new');
 
-    expect(screen.getByRole('heading', { name: 'ship-new' })).toBeTruthy();
-    expect(screen.queryByRole('heading', { name: 'ship-old' })).toBeNull();
+    expect(screen.getByRole('heading', { name: '상자 ship-new' })).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: '상자 ship-old' })).toBeNull();
     expect(mockDetail).toHaveBeenLastCalledWith('ship-new');
   });
 
   it('상자를 지정하지 않으면 쓰지 않는 상자가 아니라 열린 상자를 연다', () => {
     renderTab();
 
-    expect(screen.getByRole('heading', { name: 'ship-new' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: '상자 ship-new' })).toBeTruthy();
     expect(mockDetail).toHaveBeenLastCalledWith('ship-new');
   });
 
   it('없는 상자를 지정하면 열린 상자를 연다', () => {
     renderTab('ship-gone');
 
-    expect(screen.getByRole('heading', { name: 'ship-new' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: '상자 ship-new' })).toBeTruthy();
   });
 
   it('쓰지 않는 상자는 접어 두고 개수만 보인다', async () => {
     renderTab();
 
-    expect(screen.queryByText('ship-old')).toBeNull();
+    expect(screen.queryByText('상자 ship-old')).toBeNull();
 
     await userEvent.click(
       screen.getByRole('button', { name: '쓰지 않는 상자 1개' })
     );
 
-    expect(screen.getByText('ship-old')).toBeTruthy();
+    expect(screen.getByText('상자 ship-old')).toBeTruthy();
   });
 
   it('쓰지 않는 상자로 들어오면 접힌 목록을 펼쳐 둔다', () => {
     renderTab('ship-old');
 
-    expect(screen.getByRole('heading', { name: 'ship-old' })).toBeTruthy();
-    expect(screen.getAllByText('ship-old').length).toBeGreaterThan(0);
+    expect(screen.getByRole('heading', { name: '상자 ship-old' })).toBeTruthy();
+    expect(screen.getAllByText('상자 ship-old').length).toBeGreaterThan(0);
   });
 
   it('목록에는 상자 전체 수량을 그대로 보인다', () => {
@@ -298,7 +298,83 @@ describe('배송 탭 상자 선택', () => {
 
     renderTab();
 
-    expect(screen.getByText(/draft · 5개 · 예약 5/)).toBeTruthy();
+    expect(screen.getByText('계획 전 · 5개')).toBeTruthy();
+  });
+});
+
+describe('상자에 담긴 상품 표', () => {
+  const lineOf = (
+    id: string,
+    qty: number,
+    extra: Partial<ShipmentAdminDetail['lines'][number]>
+  ): ShipmentAdminDetail['lines'][number] => ({
+    id,
+    fulfillmentOrderId: 'fo-1',
+    fulfillmentOrderItemId: `item-${id}`,
+    skuId: `sku-${id}-0000`,
+    qty,
+    reservedQty: qty,
+    inspectedQty: 0,
+    lineVersion: 4,
+    origin: null,
+    reservations: [],
+    ...extra,
+  });
+
+  const originOf = (channelOrderId: string, displayOrderNo: string | null) => ({
+    salesOrderLineId: `sol-${channelOrderId}`,
+    salesOrderId: `so-${channelOrderId}`,
+    salesChannel: 'medusa',
+    channelOrderId,
+    displayOrderNo,
+    channelOrderItemId: `coi-${channelOrderId}`,
+    channelProductId: null,
+  });
+
+  beforeEach(() => {
+    mockShipments.mockReturnValue(loaded([summary('ship-1', 'draft')]));
+    mockDetail.mockReturnValue(
+      loaded({
+        ...detail('ship-1', 'draft'),
+        lines: [
+          lineOf('line-aaaa-1111', 1, {
+            skuName: '샘플 상품 (빨강)',
+            origin: originOf('ch-order-1', 'ORDER-1'),
+          }),
+          lineOf('line-aaaa-3333', 1, {
+            skuId: 'sku-line-aaaa-1111-0000',
+            skuName: '샘플 상품 (빨강)',
+            origin: originOf('ch-order-2', null),
+          }),
+          lineOf('line-bbbb-2222', 2, {
+            skuName: '샘플 상품 (파랑)',
+            origin: originOf('ch-order-2', null),
+          }),
+        ],
+      })
+    );
+  });
+
+  it('줄마다 상품명과 고객이 아는 주문번호·판매처를 보이고 내부 번호와 버전은 감춘다', () => {
+    renderTab();
+
+    const table = screen.getByRole('table');
+    expect(
+      screen.getByRole('heading', { name: '담긴 상품 2종 · 4개' })
+    ).toBeTruthy();
+    expect(
+      Array.from(table.querySelectorAll('th')).map((cell) => cell.textContent)
+    ).toEqual(['상품', '주문', '수량', '재고 확보', '검수']);
+
+    const rows = Array.from(table.querySelectorAll('tbody tr')).map(
+      (row) => row.textContent
+    );
+    expect(rows[0]).toContain('샘플 상품 (빨강)');
+    expect(rows[0]).toContain('#ORDER-1');
+    expect(rows[0]).toContain('아몬드영 (자사몰)');
+    expect(rows[1]).toContain('#ch-order-2');
+    expect(rows).toHaveLength(3);
+    expect(table.textContent).not.toMatch(/line-aaa|so-ch-order|coi-|v4/);
   });
 });
 
@@ -474,7 +550,7 @@ describe('합쳐진 뒤 상자 선택', () => {
 
     const view = renderTab('ship-a');
 
-    expect(screen.getByRole('heading', { name: 'ship-a' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: '상자 ship-a' })).toBeTruthy();
 
     mockShipments.mockReturnValue(
       loaded([summary('ship-a', 'superseded'), summary('ship-new', 'draft')])
@@ -486,7 +562,7 @@ describe('합쳐진 뒤 상자 선택', () => {
     }));
     view.rerender(<ShipmentTab fo={fo} initialShipmentId="ship-a" />);
 
-    expect(screen.getByRole('heading', { name: 'ship-new' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: '상자 ship-new' })).toBeTruthy();
     expect(
       screen
         .getByRole('button', { name: '쓰지 않는 상자 1개' })
@@ -521,9 +597,124 @@ describe('합쳐진 뒤 상자 선택', () => {
 
     renderTab();
 
-    expect(screen.getByRole('heading', { name: 'box-e' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: '상자 box-e' })).toBeTruthy();
     expect(
       screen.getByText('#6275와 #6314가 새 상자 하나로 합쳐졌어요')
     ).toBeTruthy();
+  });
+});
+
+describe('상자 정보는 내부 번호·영어 상태 없이 보인다', () => {
+  const longId = '8f772b52-43a1-4826-90ec-8981411c7466';
+
+  beforeEach(() => {
+    mockShipments.mockReturnValue(
+      loaded([{ ...summary(longId, 'shipped'), reservedQty: 0 }])
+    );
+    mockDetail.mockReturnValue(
+      loaded({
+        ...detail(longId, 'shipped'),
+        manifestVersion: 2,
+        reservationVersion: 3,
+        recoveryCode: 'DISPATCH_RECALL_PENDING',
+        lines: [
+          {
+            id: 'line-1',
+            fulfillmentOrderId: 'fo-1',
+            fulfillmentOrderItemId: 'item-1',
+            skuId: 'sku-1',
+            skuName: '샘플 상품 (빨강)',
+            qty: 1,
+            reservedQty: 0,
+            inspectedQty: 1,
+            lineVersion: 1,
+            origin: null,
+            reservations: [],
+          },
+        ],
+        waybills: [
+          {
+            id: 'wb-uuid-1',
+            status: 'used',
+            trackingNo: '4567-8901-2345',
+            carrier: 'HANJIN',
+            manifestVersion: 2,
+            issuedAt: '2026-11-01T00:00:00Z',
+            voidedAt: null,
+          },
+        ],
+        dispatchAttempts: [
+          {
+            id: 'attempt-uuid-1',
+            attemptNo: 1,
+            status: 'dispatched',
+            waybillId: 'wb-uuid-1',
+            dispatchedAt: '2026-11-01T01:00:00Z',
+            recalledAt: null,
+            recoveryCode: null,
+            sources: [
+              {
+                id: 'src-1',
+                shipmentLineId: 'line-1',
+                sourceLocationId: 'loc-uuid-1',
+                quantity: 1,
+                stockEventId: null,
+              },
+            ],
+            trackingEvents: [],
+          },
+        ],
+        operations: [
+          {
+            operationId: 'op-uuid-1',
+            type: 'consolidate',
+            status: 'completed',
+            reason: '같은 고객 묶음',
+            createdAt: '2026-11-01T00:00:00Z',
+            completedAt: '2026-11-01T00:00:01Z',
+          },
+          {
+            operationId: 'op-uuid-2',
+            type: 'plan',
+            status: 'failed',
+            lastError: 'SHIPMENT_NOT_DRAFT',
+            createdAt: '2026-11-01T00:00:00Z',
+            completedAt: null,
+          },
+        ],
+      })
+    );
+  });
+
+  it('머리·목록·송장·출고·작업 기록을 한국어로 보인다', () => {
+    renderTab();
+
+    expect(screen.getByRole('heading', { name: '상자 8f772b52' })).toBeTruthy();
+    const text = document.body.textContent ?? '';
+    for (const expected of [
+      '상자 (1)',
+      '출고 완료 · 1개',
+      '회수 재처리 대기',
+      '창고 출고',
+      '한진택배',
+      '출고에 씀',
+      '출고 기록 (1)',
+      '1차 출고 · 송장 4567-8901-2345',
+      '출고됨',
+      '샘플 상품 (빨강) 1개',
+      '작업 기록 (2)',
+      '합포장',
+      '같은 고객 묶음',
+      '계획 확정',
+      '처리하지 못했어요',
+    ]) {
+      expect(text).toContain(expected);
+    }
+    expect(text).not.toMatch(
+      /manifest|reservation|attempt|durable|operation|source|tracking|shipment|shipped|dispatched|completed|SHIPMENT_NOT_DRAFT|M2\/R3|wb-uuid|op-uuid|8f772b52-43a1/
+    );
+    const row = screen.getByRole('table').querySelector('tbody tr');
+    // 출고한 상자는 확보가 풀려 있어 확보 수량 대신 —
+    expect(row?.textContent).toBe('샘플 상품 (빨강)-1—1');
   });
 });
