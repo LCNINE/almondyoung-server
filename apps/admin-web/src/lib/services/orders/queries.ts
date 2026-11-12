@@ -153,6 +153,23 @@ export const useOutboundBatchV2 = (id: string) => {
   });
 };
 
+/** 쓰기 직후 배치를 확인할 때 — 진행 중이던 조회를 끊고 서버에서 새로 받는다 */
+export const useLoadOutboundBatchV2 = () => {
+  const queryClient = useQueryClient();
+
+  return async (id: string) => {
+    const queryKey = orderQueryKeys.outboundBatchV2(id);
+
+    await queryClient.cancelQueries({ queryKey });
+
+    return queryClient.fetchQuery({
+      queryKey,
+      queryFn: () => orders.outboundBatches.getV2(id),
+      staleTime: 0,
+    });
+  };
+};
+
 export const useOutboundBatchEligibleShipments = (id: string) => {
   return useQuery({
     queryKey: orderQueryKeys.outboundBatchEligibleShipments(id),

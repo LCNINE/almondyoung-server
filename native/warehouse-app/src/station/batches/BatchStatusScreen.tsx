@@ -11,6 +11,7 @@ import { cn } from '../../core/design/cn';
 import { printRaw, type PrintRaw } from '../../core/hardware/print/labelPrinter';
 import { BatchLabelPrintButton } from '../../domains/outbound/BatchLabelPrintButton';
 import {
+  batchNameOf,
   batchProgressOf,
   boxCountsOf,
   boxRowOf,
@@ -146,6 +147,7 @@ function BatchRow({ batch, selected, onSelect }: { batch: OutboundBatchSummary; 
         <button type="button" onClick={onSelect} className="font-mono font-semibold">
           {batch.batchNumber}
         </button>
+        {batchNameOf(batch) ? <span className="ml-3 text-sm text-[#535968]">{batchNameOf(batch)}</span> : null}
       </td>
       <td className="px-4">{batch.startedAt === null ? '시작 전' : '진행 중'}</td>
       <td className="px-4">
@@ -191,7 +193,10 @@ function BatchDetail({ batch, items }: { batch: OutboundBatchSummary; items: Bat
   );
   return (
     <section aria-label="배치 상세" className="flex min-h-0 flex-col gap-3 rounded-[10px] border border-[#D5D8DE] bg-white p-4">
-      <h2 className="font-mono text-2xl font-semibold">{batch.batchNumber}</h2>
+      <div className="shrink-0">
+        <h2 className="font-mono text-2xl font-semibold">{batch.batchNumber}</h2>
+        {batchNameOf(batch) ? <p className="text-[15px] text-[#535968]">{batchNameOf(batch)}</p> : null}
+      </div>
       {counts ? (
         <div className="grid shrink-0 grid-cols-4 gap-2 text-center text-sm">
           {COUNT_CELLS.map((cell) => (

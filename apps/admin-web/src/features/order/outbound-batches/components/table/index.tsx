@@ -114,8 +114,8 @@ export function OutboundBatchesTable() {
                     <p className="font-medium">
                       {batch.name || batch.batchNumber}
                     </p>
-                    <p className="font-mono text-[10px] text-muted-foreground">
-                      {batch.id}
+                    <p className="font-mono text-xs text-muted-foreground">
+                      {batch.batchNumber}
                     </p>
                   </TableCell>
                   <TableCell>

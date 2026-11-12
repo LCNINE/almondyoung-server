@@ -47,6 +47,18 @@ describe('F2 배치 현황(스펙 §8, 목업 ⑤)', () => {
     expect(second).toHaveTextContent('시작 전');
   });
 
+  it('배치 코드 옆에 관리자 화면의 배치 이름을 함께 보여 준다', async () => {
+    setupBatches({ created: [batchSummary({ id: 'b-3', batchNumber: 'B-1004', name: '11/12 개별피킹 17:13:48', status: 'created', startedAt: null, totalItems: 1 })] });
+    const table = await screen.findByRole('table');
+    await waitFor(() => expect(within(table).getAllByRole('row')).toHaveLength(3));
+    const [first, second] = within(table).getAllByRole('row').slice(1);
+    expect(first).toHaveTextContent('오전');
+    expect(second).toHaveTextContent('11/12 개별피킹 17:13:48');
+    fireEvent.click(screen.getByRole('button', { name: 'B-1004' }));
+    await waitFor(() => expect(within(detail()).getByRole('heading', { name: 'B-1004' })).toBeInTheDocument());
+    expect(detail()).toHaveTextContent('11/12 개별피킹 17:13:48');
+  });
+
   it('고른 배치의 건수와 미완료 박스 — 송장번호·받는 분·상태', async () => {
     setupBatches();
     await waitFor(() => expect(within(detail()).getByLabelText('완료')).toHaveTextContent('1'));

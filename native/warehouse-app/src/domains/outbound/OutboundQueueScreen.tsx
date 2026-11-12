@@ -15,6 +15,7 @@ import type { PrintRaw } from '../../core/hardware/print/labelPrinter';
 import { WarehousePicker } from '../warehouse/WarehousePicker';
 import { BatchLabelPrintButton } from './BatchLabelPrintButton';
 import { StartBatchButton } from './StartBatchButton';
+import { batchNameOf } from './batchStatus';
 import { JoinBoxPanel } from './JoinBoxPanel';
 import { RemoveBoxPanel } from './RemoveBoxPanel';
 import { ReprintLabelButton } from './ReprintLabelButton';
@@ -242,6 +243,7 @@ function OutboundQueueContent({
           {batches.map((batch) => (
             <li key={batch.id} className="rounded border px-3 py-2">
               <p className="font-medium">{batch.batchNumber}</p>
+              {batchNameOf(batch) && <p className="text-sm text-neutral-500">{batchNameOf(batch)}</p>}
               <p className="text-sm text-neutral-500">
                 {batch.totalItems}박스 · {batch.totalQty}개
               </p>
