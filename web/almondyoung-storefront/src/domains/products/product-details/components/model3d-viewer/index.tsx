@@ -199,7 +199,7 @@ function Model3dLayer({
     <div
       aria-hidden={!visible}
       className={cn(
-        "bg-muted absolute inset-0 z-[5] transition-opacity duration-300",
+        "bg-gray-20 absolute inset-0 z-[5] transition-opacity duration-300",
         visible ? "opacity-100" : "pointer-events-none opacity-0"
       )}
     >
@@ -207,7 +207,7 @@ function Model3dLayer({
       {visible && !ready && (
         <p
           role="status"
-          className="text-muted-foreground absolute inset-0 flex items-center justify-center text-sm"
+          className="text-gray-70 absolute inset-0 flex items-center justify-center text-sm"
         >
           {t("loading")}
         </p>
@@ -239,7 +239,7 @@ function Model3dLayer({
           </button>
         ))}
       </div>
-      <p className="text-muted-foreground pointer-events-none absolute right-3 bottom-3 left-3 text-center text-xs">
+      <p className="text-gray-70 pointer-events-none absolute right-3 bottom-3 left-3 text-center text-xs">
         {t("representativeOption")}
       </p>
     </div>
