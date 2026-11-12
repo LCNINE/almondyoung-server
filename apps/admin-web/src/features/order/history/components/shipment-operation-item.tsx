@@ -2,10 +2,8 @@
 
 import Link from 'next/link';
 import dayjs from 'dayjs';
-import {
-  operationReasonText,
-  requestChannelLabel,
-} from '@/features/order/fulfillments/detail/operation-reasons';
+import { operationReasonText } from '@/features/order/fulfillments/detail/operation-reason-text';
+import { requestChannelLabel } from '@/features/order/fulfillments/detail/operation-reasons';
 import { operationStatusLabel } from '@/features/order/fulfillments/detail/shipment-action-copy';
 import { operationTypeLabel } from '@/features/order/fulfillments/detail/fulfillment-labels';
 import type { SalesOrderShipmentOperationDto } from '@/lib/types/dto/orders';

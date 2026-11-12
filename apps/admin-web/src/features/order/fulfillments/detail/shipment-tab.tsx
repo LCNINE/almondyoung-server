@@ -45,10 +45,8 @@ import {
 } from './channel-dispatch-status';
 import { ShipmentActions } from './shipment-actions';
 import { useOperatorNames } from './operation-operator';
-import {
-  operationReasonText,
-  requestChannelLabel,
-} from './operation-reasons';
+import { operationReasonText } from './operation-reason-text';
+import { requestChannelLabel } from './operation-reasons';
 import { lineOrderNo, splitLineName } from './shipment-split-model';
 import {
   dispatchAttemptLabel,

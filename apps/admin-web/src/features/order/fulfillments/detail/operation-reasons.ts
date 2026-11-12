@@ -1,5 +1,3 @@
-import { operationTypeLabel } from './fulfillment-labels';
-
 /** 사람이 아닌 자동 처리가 남기는 행위자 id — core 와 같은 값(parity 스펙) */
 export const FULFILLMENT_SYSTEM_ACTOR_ID =
   '00000000-0000-4000-8000-000000000010';
@@ -232,19 +230,4 @@ export function toOperationReasonPayload(
   const note = value.note.trim();
   if (note) payload.note = note;
   return payload;
-}
-
-/** 화면에 보일 사유 — «기타» 는 직접 쓴 글을 뒤에 붙인다 */
-export function operationReasonText(
-  type: string,
-  reasonCode: string | null | undefined,
-  reason: string | null | undefined
-): string {
-  const text = reason ?? '';
-  const label = operationReasonLabel(type, reasonCode, text);
-  if (label === operationTypeLabel(type)) return '';
-  if (reasonCode && reasonCode.toLowerCase() === 'other') {
-    return text && text !== reasonCode ? `${label} · ${text}` : label;
-  }
-  return label;
 }
