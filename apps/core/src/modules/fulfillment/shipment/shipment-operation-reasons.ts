@@ -71,7 +71,7 @@ const CANCEL_CUSTOMER_REQUEST = 'CUSTOMER_REQUEST';
 const OPERATION_REASON_CODE_MAX = 64;
 
 /** 주문 취소 창의 사유 코드와 자동 취소 경로가 쓰는 코드. */
-const CANCEL_CODES: ReadonlySet<string> = new Set([
+export const CANCEL_CODES: ReadonlySet<string> = new Set([
   'CUSTOMER_REQUEST',
   'OUT_OF_STOCK',
   'ADMIN_REQUEST',
@@ -83,7 +83,7 @@ const CANCEL_CODES: ReadonlySet<string> = new Set([
 ]);
 
 /** 코드 없이 저장된 자동 기록의 고정 문자열 → 분류 코드(읽기 전용). */
-const LEGACY_REASON_CODES: ReadonlyMap<string, string> = new Map([
+export const LEGACY_REASON_CODES: ReadonlyMap<string, string> = new Map([
   ['Shipment planned', 'system_plan'],
   ['CHANNEL_ORDER_MODIFIED', 'channel_order_modified'],
   ['출고 준비: 있는 것만 먼저 보내기', 'ship_available_first'],
