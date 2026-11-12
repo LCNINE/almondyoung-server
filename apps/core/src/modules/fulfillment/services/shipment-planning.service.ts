@@ -69,7 +69,11 @@ import {
 import { shrinkDraftLines } from './draft-line-shrink';
 import { shipmentOwnerOf, warehouseIdOf } from '../shipment/shipment-owner';
 import { missingRecipientFields } from './recipient-completeness';
-import { resolveOperationReason, type ResolvedOperationReason } from '../shipment/shipment-operation-reasons';
+import {
+  classifyOperationReason,
+  resolveOperationReason,
+  type ResolvedOperationReason,
+} from '../shipment/shipment-operation-reasons';
 
 const TRUSTED_CHANNELS = new Set(['medusa', 'naver', 'coupang']);
 
@@ -1212,6 +1216,11 @@ export class ShipmentPlanningService {
             type: wmsTables.shipmentOperations.type,
             status: wmsTables.shipmentOperations.status,
             lastError: wmsTables.shipmentOperations.lastError,
+            operatorId: wmsTables.shipmentOperations.operatorId,
+            reason: wmsTables.shipmentOperations.reason,
+            storedReasonCode: wmsTables.shipmentOperations.reasonCode,
+            requestChannel: wmsTables.shipmentOperations.requestChannel,
+            note: wmsTables.shipmentOperations.note,
             createdAt: wmsTables.shipmentOperations.createdAt,
             completedAt: wmsTables.shipmentOperations.completedAt,
           })
@@ -1264,7 +1273,13 @@ export class ShipmentPlanningService {
             .map((source) => ({ ...source, quantity: source.qty })),
           trackingEvents: trackingEvents.filter((event) => event.dispatchAttemptId === attempt.id),
         })),
-        operations,
+        operations: operations.map(({ storedReasonCode, ...operation }) => ({
+          ...operation,
+          reasonCode: classifyOperationReason(operation.type, {
+            reasonCode: storedReasonCode,
+            reason: operation.reason,
+          }),
+        })),
       };
     }, tx);
   }

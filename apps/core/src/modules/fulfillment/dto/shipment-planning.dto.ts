@@ -306,6 +306,21 @@ export class ShipmentOperationHistoryResponseDto {
   lastError: string | null;
 
   @ApiProperty()
+  operatorId: string;
+
+  @ApiProperty()
+  reason: string;
+
+  @ApiProperty({ nullable: true })
+  reasonCode: string | null;
+
+  @ApiProperty({ nullable: true })
+  requestChannel: string | null;
+
+  @ApiProperty({ nullable: true })
+  note: string | null;
+
+  @ApiProperty()
   createdAt: Date;
 
   @ApiProperty({ nullable: true })
