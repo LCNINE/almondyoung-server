@@ -17,6 +17,8 @@ export interface MenuItem {
    */
   hasQuarantineBadge?: boolean;
   hasPrintOrderBadge?: boolean;
+  hasOutboundPreparationBadge?: boolean;
+  hasConsolidationBadge?: boolean;
 }
 
 export interface MainMenu {
@@ -198,6 +200,7 @@ const allMenus: MainMenu[] = [
             id: 'waybill-issue',
             title: '출고 준비',
             path: '/order/waybill-issue',
+            hasOutboundPreparationBadge: true,
           },
           {
             id: 'fulfillments',
@@ -238,6 +241,7 @@ const allMenus: MainMenu[] = [
             id: 'consolidation',
             title: '합칠 수 있는 주문',
             path: '/order/consolidation',
+            hasConsolidationBadge: true,
           },
           {
             id: 'location-optimization',
