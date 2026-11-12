@@ -4,6 +4,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { MouseEvent, ReactNode } from 'react';
 import { PurchaseSatisfactionSection } from '../purchase-satisfaction-section';
+import { ShipmentOperationItem } from '../shipment-operation-item';
+import { useOperatorNames } from '@/features/order/fulfillments/detail/operation-operator';
 import { MoreHorizontal } from 'lucide-react';
 import {
   cancelActionOf,
@@ -33,6 +35,7 @@ import {
   useSalesOrder,
   useAdminRetryRefund,
   useSalesOrderAmendments,
+  useSalesOrderShipmentOperations,
   useAdminCancelSalesOrder,
   useAdminManualRefundComplete,
   useAdminWaiveRefund,
@@ -674,7 +677,7 @@ function TimelineItem({ item }: { item: SalesOrderBusinessTimelineItemDto }) {
   );
 }
 
-function BusinessTimelineModal({
+export function BusinessTimelineModal({
   order,
   open,
   onOpenChange,
@@ -684,10 +687,25 @@ function BusinessTimelineModal({
   onOpenChange: (open: boolean) => void;
 }) {
   const { data, isLoading } = useSalesOrder(open && order ? order.orderId : '');
-  const timeline = [...(data?.businessTimeline ?? [])].sort(
-    (a, b) =>
-      new Date(a.occurredAt).getTime() - new Date(b.occurredAt).getTime()
+  const { data: boxOperations } = useSalesOrderShipmentOperations(
+    order?.orderId ?? '',
+    { enabled: open }
   );
+  const operatorName = useOperatorNames(
+    (boxOperations?.items ?? []).map((item) => item.operatorId)
+  );
+  const timeline = [
+    ...(data?.businessTimeline ?? []).map((item) => ({
+      kind: 'link' as const,
+      at: item.occurredAt,
+      item,
+    })),
+    ...(boxOperations?.items ?? []).map((item) => ({
+      kind: 'operation' as const,
+      at: item.createdAt,
+      item,
+    })),
+  ].sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());
   const { data: amendments, isError: amendmentsFailed } = useSalesOrderAmendments(
     open && order ? order.orderId : ''
   );
@@ -713,9 +731,17 @@ function BusinessTimelineModal({
             </div>
           ) : (
             <div className="px-1">
-              {timeline.map((item) => (
-                <TimelineItem key={item.id} item={item} />
-              ))}
+              {timeline.map((entry) =>
+                entry.kind === 'link' ? (
+                  <TimelineItem key={entry.item.id} item={entry.item} />
+                ) : (
+                  <ShipmentOperationItem
+                    key={`operation-${entry.item.operationId}`}
+                    item={entry.item}
+                    operatorName={operatorName(entry.item.operatorId)}
+                  />
+                )
+              )}
             </div>
           )}
           {amendmentsFailed && (

@@ -787,6 +787,10 @@ export interface ShipmentOperationHistory {
   type: string;
   status: FulfillmentOperationStatus;
   reason?: string | null;
+  reasonCode?: string | null;
+  requestChannel?: string | null;
+  note?: string | null;
+  operatorId?: string | null;
   lastError?: string | null;
   createdAt: string;
   completedAt: string | null;

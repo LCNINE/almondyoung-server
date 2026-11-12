@@ -14,6 +14,7 @@ import type {
   ShipmentAdminDetail,
   ShipmentAdminSummary,
 } from '@/lib/types/dto/fulfillment';
+import { FULFILLMENT_SYSTEM_ACTOR_ID } from './operation-reasons';
 import { ShipmentTab } from './shipment-tab';
 
 type QueryState<T> = {
@@ -82,6 +83,20 @@ jest.mock('@/lib/services/inventory/queries', () => ({
   useSuppliers: () => ({ data: undefined }),
 }));
 
+let mockCanReadProfile = true;
+const mockUsersLookup = jest.fn();
+
+jest.mock('@/lib/services/users/queries', () => ({
+  useAdminUsersByIds: (ids: string[], options: { enabled?: boolean }) => {
+    mockUsersLookup(ids, options);
+    return {
+      data: options.enabled
+        ? { data: [{ id: 'user-1', username: '김관리', loginId: 'kim' }] }
+        : undefined,
+    };
+  },
+}));
+
 jest.mock('./channel-dispatch-query', () => ({
   useChannelDispatchViewModel: () => null,
 }));
@@ -101,6 +116,7 @@ jest.mock('@/hooks/use-permission', () => {
   >('@/lib/auth/mutation-permission');
 
   return {
+    useCan: () => ({ status: 'ready', allowed: mockCanReadProfile }),
     usePermissionCheck: () => ({
       can: () => true,
       isPermissionLoading: false,
@@ -231,6 +247,7 @@ const renderTab = (initialShipmentId?: string) => {
 beforeEach(() => {
   jest.clearAllMocks();
   mockGranted.clear();
+  mockCanReadProfile = true;
   mockGranted.add('fulfillment.shipment.reopen');
   mockGranted.add('fulfillment.warehouse.operate');
   queryClient = new QueryClient();
@@ -716,5 +733,111 @@ describe('상자 정보는 내부 번호·영어 상태 없이 보인다', () =>
     const row = screen.getByRole('table').querySelector('tbody tr');
     // 출고한 상자는 확보가 풀려 있어 확보 수량 대신 —
     expect(row?.textContent).toBe('샘플 상품 (빨강)-1—1');
+  });
+});
+
+describe('작업 기록의 사유·요청 경로·처리자·메모', () => {
+  const systemActor = FULFILLMENT_SYSTEM_ACTOR_ID;
+  const operation = (
+    id: string,
+    fields: Partial<ShipmentAdminDetail['operations'][number]>
+  ): ShipmentAdminDetail['operations'][number] => ({
+    operationId: id,
+    type: 'recipient_revision',
+    status: 'completed',
+    createdAt: '2026-11-01T00:00:00Z',
+    completedAt: '2026-11-01T00:00:01Z',
+    ...fields,
+  });
+
+  const renderWith = (
+    operations: ShipmentAdminDetail['operations']
+  ): string => {
+    mockShipments.mockReturnValue(loaded([summary('ship-1', 'draft')]));
+    mockDetail.mockReturnValue(
+      loaded({ ...detail('ship-1', 'draft'), operations })
+    );
+    renderTab();
+    return document.body.textContent ?? '';
+  };
+
+  it('사유 이름표·요청 경로·처리자·시각·메모를 줄마다 보인다', () => {
+    const text = renderWith([
+      operation('op-1', {
+        reason: '[가림]',
+        reasonCode: 'customer_address_change',
+        requestChannel: 'phone',
+        operatorId: 'user-1',
+        note: '택배사 확인 후 변경',
+      }),
+    ]);
+
+    expect(text).toContain('수령인 변경 · 고객이 주소·연락처 변경 요청');
+    expect(text).toContain(
+      `전화 · 김관리 · ${new Date('2026-11-01T00:00:00Z').toLocaleString('ko-KR')}`
+    );
+    expect(text).toContain('택배사 확인 후 변경');
+    expect(text).not.toMatch(/[a-z]+_[a-z_]+/);
+  });
+
+  it('자동 기록은 이름표와 «자동» 으로 보인다', () => {
+    const text = renderWith([
+      operation('op-2', {
+        type: 'plan',
+        reason: '[가림]',
+        reasonCode: 'system_plan',
+        operatorId: systemActor,
+      }),
+    ]);
+
+    expect(text).toContain('계획 확정');
+    expect(text).not.toContain('계획 확정 · 계획 확정');
+    expect(text).toContain(
+      `자동 · ${new Date('2026-11-01T00:00:00Z').toLocaleString('ko-KR')}`
+    );
+    expect(text).not.toContain(systemActor);
+  });
+
+  it('분류되지 않은 가려진 사유는 그대로 보이고 모르는 처리자 id 는 감춘다', () => {
+    const text = renderWith([
+      operation('op-3', {
+        reason: '[가림]',
+        reasonCode: null,
+        operatorId: 'user-unknown',
+      }),
+    ]);
+
+    expect(text).toContain('수령인 변경 · [가림]');
+    expect(text).not.toContain('user-unknown');
+  });
+
+  it('직원 목록을 볼 권한이 없으면 조회하지 않고 처리자 없이 보인다', () => {
+    mockCanReadProfile = false;
+    const text = renderWith([
+      operation('op-5', {
+        reason: '[가림]',
+        reasonCode: 'customer_address_change',
+        operatorId: 'user-1',
+      }),
+    ]);
+
+    expect(mockUsersLookup).toHaveBeenCalledWith(
+      ['user-1'],
+      expect.objectContaining({ enabled: false, retry: false })
+    );
+    expect(text).not.toContain('김관리');
+    expect(text).not.toContain('user-1');
+  });
+
+  it('기타는 직접 쓴 글을 뒤에 붙인다', () => {
+    const text = renderWith([
+      operation('op-4', {
+        type: 'split',
+        reason: '박스 파손',
+        reasonCode: 'other',
+      }),
+    ]);
+
+    expect(text).toContain('상자 분할 · 기타 · 박스 파손');
   });
 });

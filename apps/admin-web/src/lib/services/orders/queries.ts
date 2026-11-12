@@ -45,6 +45,17 @@ export const useSalesOrder = (id: string) => {
   });
 };
 
+export const useSalesOrderShipmentOperations = (
+  orderId: string,
+  options: { enabled?: boolean } = {}
+) => {
+  return useQuery({
+    queryKey: orderQueryKeys.orderShipmentOperations(orderId),
+    queryFn: () => orders.salesOrders.getSalesOrderShipmentOperations(orderId),
+    enabled: !!orderId && (options.enabled ?? true),
+  });
+};
+
 export const useSalesOrderItems = (orderId: string) => {
   return useQuery({
     queryKey: orderQueryKeys.orderItems(orderId),

@@ -44,6 +44,11 @@ import {
   ChannelDispatchAttemptStatus,
 } from './channel-dispatch-status';
 import { ShipmentActions } from './shipment-actions';
+import { useOperatorNames } from './operation-operator';
+import {
+  operationReasonText,
+  requestChannelLabel,
+} from './operation-reasons';
 import { lineOrderNo, splitLineName } from './shipment-split-model';
 import {
   dispatchAttemptLabel,
@@ -153,6 +158,7 @@ function ShipmentDetailView({
   retiredShipmentId?: string;
 }) {
   const operations = shipment.operations ?? [];
+  const operatorName = useOperatorNames(operations.map((o) => o.operatorId));
   const waybills = shipment.waybills ?? [];
   const attempts = shipment.dispatchAttempts ?? [];
   const channelDispatch = useChannelDispatchViewModel(shipment);
@@ -387,17 +393,34 @@ function ShipmentDetailView({
               >
                 <div>
                   <p className="font-medium">
-                    {operationTypeLabel(operation.type)}
-                    {operation.reason ? ` · ${operation.reason}` : ''}
+                    {[
+                      operationTypeLabel(operation.type),
+                      operationReasonText(
+                        operation.type,
+                        operation.reasonCode,
+                        operation.reason
+                      ),
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')}
                   </p>
                   <p className="text-muted-foreground">
-                    {when(operation.createdAt)}
+                    {[
+                      requestChannelLabel(operation.requestChannel),
+                      operatorName(operation.operatorId),
+                      when(operation.createdAt),
+                    ]
+                      .filter(Boolean)
+                      .join(' · ')}
                     {operation.lastError && (
                       <span title={operation.lastError}>
                         {' · 처리하지 못했어요'}
                       </span>
                     )}
                   </p>
+                  {operation.note && (
+                    <p className="text-muted-foreground">{operation.note}</p>
+                  )}
                 </div>
                 <Badge
                   variant={

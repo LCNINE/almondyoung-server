@@ -76,6 +76,7 @@ const OPERATION_TYPE: Record<string, string> = {
   short_pick: '결품 처리',
   recall: '출고 되돌리기',
   amend: '구성 변경',
+  force_dispatch: '강제 출고',
 };
 
 export const operationTypeLabel = (type: string) =>

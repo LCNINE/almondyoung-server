@@ -6,6 +6,8 @@ export const orderQueryKeys = {
   orders: ['orders'] as const,
   ordersList: (params?: object) => ['orders', 'list', params ?? {}] as const,
   order: (id: string) => ['orders', id] as const,
+  orderShipmentOperations: (orderId: string) =>
+    ['orders', orderId, 'shipment-operations'] as const,
   orderItems: (orderId: string) => ['orders', orderId, 'items'] as const,
 
   // 정정(채널 변경)

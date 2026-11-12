@@ -4,7 +4,9 @@ import {
   REQUEST_CHANNELS,
   SHIPMENT_OPERATION_REASONS,
 } from 'apps/core/src/modules/fulfillment/shipment/shipment-operation-reasons';
+import { FULFILLMENT_SYSTEM_ACTOR_ID } from 'apps/core/src/platform/auth/system-actor';
 import {
+  FULFILLMENT_SYSTEM_ACTOR_ID as ADMIN_SYSTEM_ACTOR_ID,
   OPERATION_REASONS,
   REQUEST_CHANNEL_OPTIONS,
   operationReasonLabel,
@@ -19,6 +21,10 @@ describe('작업 사유 표: core 정본과 admin-web 이름표', () => {
     expect(OPERATION_REASONS[type as keyof typeof OPERATION_REASONS]).toEqual(
       SHIPMENT_OPERATION_REASONS[type as keyof typeof SHIPMENT_OPERATION_REASONS],
     );
+  });
+
+  it('자동 처리 행위자 id 가 같다', () => {
+    expect(ADMIN_SYSTEM_ACTOR_ID).toBe(FULFILLMENT_SYSTEM_ACTOR_ID);
   });
 
   it('요청 경로 코드와 문구가 같다', () => {
