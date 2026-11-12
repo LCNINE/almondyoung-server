@@ -9,7 +9,12 @@ describe('WarehouseWorkContextController permission preview', () => {
       }),
     );
     const result = controller.workContext({ userId: 'w-1', roles: ['logistics_worker'] });
-    expect(result.permissions).toEqual({ forceDispatch: false, stationForceDispatch: true, shortPick: true });
+    expect(result.permissions).toEqual({
+      stockAdjust: false,
+      forceDispatch: false,
+      stationForceDispatch: true,
+      shortPick: true,
+    });
   });
 
   it('opens every flag through dispatch.force and shipment.reopen', () => {
@@ -17,12 +22,37 @@ describe('WarehouseWorkContextController permission preview', () => {
       createCheckpointsForTesting({ lead: ['fulfillment.dispatch.force', 'fulfillment.shipment.reopen'] }),
     );
     const result = controller.workContext({ userId: 'w-1', roles: ['lead'] });
-    expect(result.permissions).toEqual({ forceDispatch: true, stationForceDispatch: true, shortPick: true });
+    expect(result.permissions).toEqual({
+      stockAdjust: false,
+      forceDispatch: true,
+      stationForceDispatch: true,
+      shortPick: true,
+    });
   });
 
   it('closes every flag before the permission copy arrives', () => {
     const controller = new WarehouseWorkContextController(createCheckpointsForTesting(null));
     const result = controller.workContext({ userId: 'w-1', roles: ['admin'] });
-    expect(result.permissions).toEqual({ forceDispatch: false, stationForceDispatch: false, shortPick: false });
+    expect(result.permissions).toEqual({
+      stockAdjust: false,
+      forceDispatch: false,
+      stationForceDispatch: false,
+      shortPick: false,
+    });
+  });
+});
+
+describe('stock adjustment permission preview', () => {
+  it('uses inventory.stock.adjust independently of force dispatch', () => {
+    const controller = new WarehouseWorkContextController(
+      createCheckpointsForTesting({ adjuster: ['inventory.stock.adjust'] }),
+    );
+
+    expect(controller.workContext({ userId: 'w-1', roles: ['adjuster'] }).permissions).toEqual({
+      stockAdjust: true,
+      forceDispatch: false,
+      stationForceDispatch: false,
+      shortPick: false,
+    });
   });
 });

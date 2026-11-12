@@ -119,12 +119,12 @@ export class ApiError extends Error {
           code
         ));
     this.outcome =
-      status < 500 &&
-      status !== 401 &&
-      status !== 403 &&
-      status !== 408 &&
-      status !== 429 &&
-      rejected
+      status === 403 ||
+      (status < 500 &&
+        status !== 401 &&
+        status !== 408 &&
+        status !== 429 &&
+        rejected)
         ? 'rejected'
         : 'uncertain';
     if (

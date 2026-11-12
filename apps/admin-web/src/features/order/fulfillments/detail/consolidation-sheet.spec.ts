@@ -215,7 +215,7 @@ describe('2단계 요청 버튼', () => {
     needsReopen: false,
     hasMemoChoices: false,
     memoFrom: 'a',
-    reason: '고객 요청',
+    reasonReady: true,
   };
 
   it('메모가 다른 주문을 고르면 메모를 골라야 요청이 켜진다', () => {
@@ -227,9 +227,9 @@ describe('2단계 요청 버튼', () => {
     ).toBeNull();
   });
 
-  it('작업 사유가 비면 요청이 꺼진다', () => {
-    expect(step2Blocker({ ...ready, reason: '  ' })).toBe(
-      '작업 사유를 적어 주세요'
+  it('작업 사유가 덜 채워지면 요청이 꺼진다', () => {
+    expect(step2Blocker({ ...ready, reasonReady: false })).toBe(
+      '작업 사유를 골라 주세요'
     );
   });
 

@@ -17,7 +17,6 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
-import { Textarea } from '@/components/ui/textarea';
 import { usePermissionCheck } from '@/hooks/use-permission';
 import { cn } from '@/lib/utils/ui';
 import {
@@ -31,6 +30,12 @@ import type {
   ConsolidationOptionShipment,
   ShipmentConsolidationResponse,
 } from '@/lib/types/dto/fulfillment';
+import { OperationReasonFields } from './operation-reason-fields';
+import {
+  canSubmitOperationReason,
+  toOperationReasonPayload,
+  type OperationReasonValue,
+} from './operation-reasons';
 import { ConsolidationItemList, MergedItemsTable } from './consolidation-items';
 import {
   ConsolidationOutcomeView,
@@ -60,6 +65,8 @@ import {
 } from './consolidation-sheet-model';
 
 type Step = 1 | 2 | 3;
+
+const EMPTY_REASON: OperationReasonValue = { otherText: '', note: '' };
 
 const UNWIND_STEPS: Array<{ title: string; hint: string; who: string }> = [
   {
@@ -273,7 +280,8 @@ export function ConsolidationSheet({
     headline: string;
   } | null>(null);
   const [memoChoice, setMemoChoice] = useState('');
-  const [reason, setReason] = useState('');
+  const [reasonValue, setReasonValue] =
+    useState<OperationReasonValue>(EMPTY_REASON);
   // 응답을 못 받은 요청은 보낸 그대로 다시 보낸다. 결과도 그때 고른 상자로 보여 준다(목록은 그사이 바뀔 수 있다).
   const [lost, setLost] = useState<{
     command: PendingCommand;
@@ -305,7 +313,7 @@ export function ConsolidationSheet({
       : false,
     hasMemoChoices: choices.length > 0,
     memoFrom,
-    reason,
+    reasonReady: canSubmitOperationReason('consolidate', reasonValue),
   });
   const step: Step =
     chosenStep ??
@@ -319,7 +327,7 @@ export function ConsolidationSheet({
     setStep(1);
     setPicked([]);
     setMemoChoice('');
-    setReason('');
+    setReasonValue(EMPTY_REASON);
     setOutcome(null);
     setVoidWaybill(true);
   };
@@ -425,7 +433,7 @@ export function ConsolidationSheet({
           source,
           picked: pickedOptions,
           memoFrom,
-          reason: reason.trim(),
+          ...toOperationReasonPayload('consolidate', reasonValue),
         })
       ),
       [source, ...pickedOptions]
@@ -712,16 +720,11 @@ export function ConsolidationSheet({
                 주문이면 합치지 말고 따로 보내는 게 나아요.
               </div>
 
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="consolidation-reason">작업 사유</Label>
-                <Textarea
-                  id="consolidation-reason"
-                  value={reason}
-                  onChange={(event) => setReason(event.target.value)}
-                  placeholder="예: 고객이 CS로 추가 주문 합포장 요청"
-                  className="min-h-16"
-                />
-              </div>
+              <OperationReasonFields
+                type="consolidate"
+                value={reasonValue}
+                onChange={setReasonValue}
+              />
             </div>
 
             <div className="flex items-center justify-between gap-2 border-t px-6 py-4">

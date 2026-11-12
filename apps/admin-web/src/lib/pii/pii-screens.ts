@@ -34,6 +34,11 @@ const RECIPIENT_ALL_MIXED: PiiScreen = {
   ...RECIPIENT_ALL_DETAIL,
   revealScope: 'detail',
 };
+const RECIPIENT_MIXED: PiiScreen = {
+  opens: 'recipient',
+  reveal: true,
+  revealScope: 'detail',
+};
 
 /**
  * 개인정보를 응답하는 API 를 부르는 화면 — `pii-screens.gate.spec.ts` 가 import 를 따라가 빠진 화면을 찾는다.
@@ -86,6 +91,8 @@ const SHOWN: Readonly<Record<string, PiiScreen>> = {
   '/order/consolidation': RECIPIENT_ALL,
   '/order/direct-ship': RECIPIENT_ALL,
   '/order/fulfillments': RECIPIENT_ALL_MIXED,
+  // 작업 기록의 처리자 이름을 직원 목록으로 받는다
+  '/order/fulfillments/[id]': RECIPIENT_MIXED,
   '/order/inspection': RECIPIENT_ALL_DETAIL,
   '/order/picking-list': RECIPIENT_ALL_MIXED,
   '/order/stall-board': RECIPIENT_ALL,

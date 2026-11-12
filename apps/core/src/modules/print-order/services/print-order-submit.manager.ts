@@ -90,7 +90,7 @@ export class PrintOrderSubmitManager {
     try {
       // 파일까지 보냈는데 submitted 로 바꾸기 전에 멈춘 행이다. 업로드는 되풀이하지 않는다
       if (lane.state.ordnum && row.fileDeliveredAt) {
-        await lane.owned({ status: 'submitted', submittingAt: null });
+        await lane.owned({ status: 'submitted', submittingAt: null, lastError: null });
         return;
       }
       const line = await this.lineSpec(lane);
@@ -294,7 +294,7 @@ export class PrintOrderSubmitManager {
     await this.wowpress.uploadFileUrl(ordnum, link.fileName, link.url);
     // 그사이 취소 흐름이 행을 가져갔어도 파일은 이미 갔다. 소유 조건 없이 남겨야 운영자 마무리가 다시 올리지 않는다
     await this.repository.update(lane.row.id, { fileDeliveredAt: new Date() });
-    await lane.owned({ status: 'submitted', submittingAt: null });
+    await lane.owned({ status: 'submitted', submittingAt: null, lastError: null });
   }
 
   private async settle(lane: Lane, error: unknown): Promise<void> {

@@ -145,6 +145,18 @@ function collectOrdnums(node: unknown, out: string[] = []): string[] {
   return out;
 }
 
+function flatRows(value: unknown): unknown {
+  return Array.isArray(value) ? value.flat() : value;
+}
+
+// 응답 모양을 모를 때 로그로 남긴다. 값은 빼고 키만 적는다
+function describeShape(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(describeShape).join(',')}]`;
+  const r = asRecord(value);
+
+  return r ? `{${Object.keys(r).join(',')}}` : typeof value;
+}
+
 // 와우프레스 UserOrdKey 칸은 판매주문 줄 id(UUID 36자)를 받지 못한다. 하이픈을 뺀 뒤 16자리(무작위 부분)만 보낸다.
 // ponytail: 줄 id 는 바꾸지 않고 보낼 때만 줄인다. 조회는 ordkey 로 거른 뒤 같은 값으로 다시 맞춰 보므로 충돌은 기간 안 같은 키뿐이다
 export function toWowpressOrdkey(lineId: string): string {
@@ -243,7 +255,8 @@ export class WowpressClient {
     if (status !== undefined && Number(status) !== 200 && collectOrdnums(resultMap).length === 0) {
       throw new WowpressOrderRejectedError(nonEmptyString(container?.errmsg) ?? `status ${String(status)}`);
     }
-    const ordinfo = recordArray.safeParse(container?.ordinfo);
+    // 요청 ordreq 처럼 줄마다 배열로 한 번 더 싸서 오기도 한다
+    const ordinfo = recordArray.safeParse(flatRows(container?.ordinfo));
     if (!ordinfo.success || ordinfo.data.length !== items.length) {
       throw new WowpressApiError('ordinfo count does not match items in cjson_order response');
     }
@@ -251,11 +264,11 @@ export class WowpressClient {
     const orders = ordinfo.data.map((row): WowpressPlacedOrder => {
       const r = asRecord(row);
       const ordnum = nonEmptyString(r?.ordnum);
-      if (!r || !ordnum) throw new WowpressApiError('ordnum missing in cjson_order response');
+      if (!r || !ordnum) throw new WowpressApiError(`ordnum missing in cjson_order response (row ${describeShape(row)})`);
       return { ordnum, dboxno: toNumber(r.dboxno), prodno: toNumber(r.prodno) };
     });
 
-    const dlvinfo = recordArray.safeParse(container?.dlvinfo);
+    const dlvinfo = recordArray.safeParse(flatRows(container?.dlvinfo));
     const boxes: WowpressBox[] = [];
     for (const row of dlvinfo.success ? dlvinfo.data : []) {
       const r = asRecord(row);

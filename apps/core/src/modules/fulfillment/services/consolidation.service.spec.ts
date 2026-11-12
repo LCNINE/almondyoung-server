@@ -167,6 +167,25 @@ describe('ConsolidationService command boundary', () => {
     expect(await checkpointEvaluations('fulfillment.consolidation_scope', 'allow')).toBe(1);
   });
 
+  it('rejects a reason code that is not in the consolidate list before claiming the command', async () => {
+    const { service, execute } = harness();
+    const source = { shipmentId: first, expectedManifestVersion: 1, expectedReservationVersion: 1 };
+    await expect(
+      service.consolidate(
+        {
+          sources: [source, { ...source, shipmentId: second }],
+          recipientSourceShipmentId: first,
+          reason: 'urgent',
+          reasonCode: 'customer_urgent',
+          requestChannel: 'kakao',
+        },
+        'key',
+        actor,
+      ),
+    ).rejects.toThrow('Unknown reason code for consolidate: customer_urgent');
+    expect(execute).not.toHaveBeenCalled();
+  });
+
   it('denies consolidation without the permission before claiming the command', async () => {
     register.resetMetrics();
     const { service, execute } = harness({}, createCheckpointsForTesting({ logistics_manager: [] }));

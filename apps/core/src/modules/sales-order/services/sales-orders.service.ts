@@ -89,6 +89,7 @@ import { canonicalFulfillmentRequestHash } from '../../fulfillment/services/fulf
 import type { CancellationEffect } from '../cancellation-record/cancellation-lines';
 import { recordSalesOrderCancellation } from '../cancellation-record/record-cancellation';
 import { FULFILLMENT_SYSTEM_ACTOR } from '../../../platform/auth/system-actor';
+import { isCustomerRequestReason } from '../../fulfillment/shipment/shipment-operation-reasons';
 
 type SalesOrderLineInsert = InferInsertModel<typeof wmsTables.salesOrderLines>;
 type BusinessLinkInsert = InferInsertModel<typeof wmsTables.businessLinks>;
@@ -125,6 +126,8 @@ type CancelSalesOrderOptions = CancelSalesOrderDto & {
     actorId: string;
     actorRoles: string[];
   };
+  /** 채널 주문 관리자 취소 — 상자 취소 작업의 처리자로만 남긴다(권한 판정은 시스템 행위자). 요청 해시에 넣지 않는다 */
+  operatorActorId?: string;
 };
 type PartialCancellationLine = {
   salesOrderLineId: string;
@@ -1443,7 +1446,11 @@ export class SalesOrdersService {
       reasonDetail: options.reasonDetail ?? null,
       cancelledBy: options.cancelledBy ?? null,
       effects,
-      metadata: { ...(options.metadata ?? {}), ...this.commandReplayMetadata(id, options) },
+      metadata: {
+        ...(options.metadata ?? {}),
+        ...this.commandReplayMetadata(id, options),
+        ...this.requestChannelMetadata(options),
+      },
       occurredAt,
     };
     const cancellation = await recordSalesOrderCancellation(trx, cancellationValues, null);
@@ -1623,7 +1630,11 @@ export class SalesOrdersService {
       reasonDetail: options.reasonDetail ?? null,
       cancelledBy: options.cancelledBy ?? null,
       effects,
-      metadata: { ...(options.metadata ?? {}), ...this.commandReplayMetadata(salesOrderId, options) },
+      metadata: {
+        ...(options.metadata ?? {}),
+        ...this.commandReplayMetadata(salesOrderId, options),
+        ...this.requestChannelMetadata(options),
+      },
       occurredAt,
     };
     const cancellation = await recordSalesOrderCancellation(trx, cancellationValues, cancelledLines);
@@ -1920,7 +1931,11 @@ export class SalesOrdersService {
           id: options.fulfillmentCommandContext.actorId,
           roles: options.fulfillmentCommandContext.actorRoles,
         }
-      : FULFILLMENT_SYSTEM_ACTOR;
+      : options.operatorActorId
+        ? { ...FULFILLMENT_SYSTEM_ACTOR, recordedOperatorId: options.operatorActorId }
+        : FULFILLMENT_SYSTEM_ACTOR;
+    const reasonCode = options.reasonCode?.trim() || undefined;
+    const requestChannel = this.requestChannelMetadata(options).requestChannel;
     const operationEffects: CancellationEffect[] = [];
     for (const request of requestedSalesLines) {
       const salesLine = salesLineById.get(request.salesOrderLineId)!;
@@ -1946,6 +1961,8 @@ export class SalesOrdersService {
           expectedManifestVersion: request.manifestVersion,
           lines: request.lines.sort((a, b) => a.shipmentLineId.localeCompare(b.shipmentLineId)),
           reason,
+          ...(reasonCode ? { reasonCode } : {}),
+          ...(requestChannel ? { requestChannel } : {}),
         },
         `sales-order-cancel:${sourceKey}:${shipmentId}`,
         commandActor,
@@ -1995,6 +2012,7 @@ export class SalesOrdersService {
         ...(options.metadata ?? {}),
         fulfillmentCommandSourceKey: this.explicitAfterBoxingSourceKey(options),
         fulfillmentCommandRequestHash: this.afterBoxingRequestHash(salesOrderId, options),
+        ...this.requestChannelMetadata(options),
       },
       occurredAt,
     };
@@ -2048,6 +2066,13 @@ export class SalesOrdersService {
       fulfillmentCommandSourceKey: idempotencyKey,
       fulfillmentCommandRequestHash: this.afterBoxingRequestHash(salesOrderId, options),
     };
+  }
+
+  /** 고객 요청 취소의 요청 경로 — 고객 요청일 때만, 값이 있을 때만 키를 둔다 */
+  private requestChannelMetadata(options: CancelSalesOrderOptions): Pick<CancelSalesOrderDto, 'requestChannel'> {
+    const reasonCode = options.reasonCode?.trim();
+    if (!options.requestChannel || !reasonCode || !isCustomerRequestReason('cancel', reasonCode)) return {};
+    return { requestChannel: options.requestChannel };
   }
 
   private explicitAfterBoxingSourceKey(options: CancelSalesOrderOptions): string | undefined {

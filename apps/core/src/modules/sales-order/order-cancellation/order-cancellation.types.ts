@@ -1,5 +1,6 @@
 import type { CancelRequestView } from '../channel-cancel-request/channel-cancel-request.types';
 import type { SalesChannelName } from './channel-cancellation-capability';
+import type { RequestChannel } from '../../fulfillment/shipment/shipment-operation-reasons';
 
 /** 취소할 줄과 수량. 없으면(요청에 `lines` 가 없으면) 전체취소다 */
 export type CancelLine = { salesOrderLineId: string; quantity: number };
@@ -25,6 +26,8 @@ export type CancellationRequest =
       salesOrderId: string;
       sourceKey: string | undefined;
       reasonCode?: string;
+      /** 고객 요청 취소를 받은 경로(전화·카카오 등). 재전송 판정에는 넣지 않는다 */
+      requestChannel?: RequestChannel;
       reasonDetail?: string;
       lines?: CancelLine[];
       /** 부분취소만. 이번 취소 품목에 이미 다른 경로로 돌려준 금액(원) — 채널이 상계한다(#1016 37번) */

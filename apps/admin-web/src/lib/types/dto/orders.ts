@@ -2,6 +2,7 @@
 // 주문 관련 DTO 타입 정의
 
 import type { UUID } from './common';
+import type { FulfillmentOperationStatus } from './fulfillment';
 import type { SalesChannelSite } from '@/lib/api/domains/sales-channel/vocabulary';
 
 // ===== 매칭 타입 re-export (lib/types/dto/matching.ts로 이전됨) =====
@@ -141,6 +142,27 @@ export interface SalesOrderBusinessTimelineItemDto {
   metadata: Record<string, unknown>;
   occurredAt: string;
   createdAt: string;
+}
+
+export interface SalesOrderShipmentOperationDto {
+  operationId: string;
+  type: string;
+  status: FulfillmentOperationStatus;
+  shipmentIds: string[];
+  fulfillmentOrderId: string | null;
+  otherOrdersInBox: boolean;
+  reasonCode: string | null;
+  reason: string | null;
+  requestChannel: string | null;
+  note: string | null;
+  operatorId: string | null;
+  createdAt: string;
+  completedAt: string | null;
+}
+
+export interface SalesOrderShipmentOperationsDto {
+  salesOrderId: string;
+  items: SalesOrderShipmentOperationDto[];
 }
 
 export interface CreateBusinessLinkDto {
@@ -364,6 +386,8 @@ export interface CancelSalesOrderDto {
   reasonCode?: string;
   reasonDetail?: string;
   cancelledBy?: string;
+  /** 고객 요청 취소일 때 고객이 요청한 경로 */
+  requestChannel?: string;
   alreadyRefundedAmount?: number;
 }
 

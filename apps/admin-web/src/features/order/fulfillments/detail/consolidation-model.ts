@@ -88,6 +88,9 @@ export function buildConsolidationRequest(input: {
   picked: ConsolidationOptionShipment[];
   memoFrom: string;
   reason: string;
+  reasonCode?: string;
+  requestChannel?: string;
+  note?: string;
 }): CreateShipmentConsolidationRequest {
   return {
     sources: [input.source, ...input.picked].map((shipment) => ({
@@ -97,6 +100,9 @@ export function buildConsolidationRequest(input: {
     })),
     recipientSourceShipmentId: input.memoFrom,
     reason: input.reason,
+    ...(input.reasonCode ? { reasonCode: input.reasonCode } : {}),
+    ...(input.requestChannel ? { requestChannel: input.requestChannel } : {}),
+    ...(input.note ? { note: input.note } : {}),
   };
 }
 

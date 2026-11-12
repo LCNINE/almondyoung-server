@@ -19,6 +19,14 @@ export class ForceShipmentDispatchDto {
   @MaxLength(500)
   reason: string;
 
+  @IsString()
+  @IsOptional()
+  reasonCode?: string;
+
+  @IsString()
+  @IsOptional()
+  requestChannel?: string;
+
   @IsUUID()
   @IsOptional()
   csCaseId?: string;

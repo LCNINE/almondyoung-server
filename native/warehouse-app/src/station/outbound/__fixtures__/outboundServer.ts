@@ -235,8 +235,7 @@ export function createOutboundServer(init: { boxes: FakeBox[] }) {
       scans.push({ key, shipmentId, barcode: body.barcode, quantity: body.quantity });
       applied.set(key, outState(box));
     }
-    // 서버는 반영했는데 응답을 잃었다 — 403 은 재시도하지 않는 불확실 결과다
-    if (losing) throw new ApiError('응답 유실', 403);
+    if (losing) throw new NetworkError('응답 유실');
     return applied.get(key);
   }
 

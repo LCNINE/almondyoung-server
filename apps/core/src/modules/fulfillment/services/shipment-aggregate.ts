@@ -2,6 +2,7 @@ import { ConflictException, NotFoundException } from '@nestjs/common';
 import { and, asc, eq, gt, inArray, ne, notInArray } from 'drizzle-orm';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
 import { WAYBILL_TERMINAL_STATUSES } from '../waybill/waybill.constants';
+import type { RequestChannel } from '../shipment/shipment-operation-reasons';
 import { FulfillmentInvariantService } from './fulfillment-invariant.service';
 import { ACTIVE_WORK_ITEM_STATUSES } from './work-item-status';
 
@@ -168,6 +169,8 @@ export async function createShipmentOperation(
     type: ShipmentOperationType;
     actorId: string;
     reason: string;
+    reasonCode: string | null;
+    requestChannel: RequestChannel | null;
     csCaseId: string | null;
     note: string | null;
     idempotencyKey: string;
@@ -182,6 +185,8 @@ export async function createShipmentOperation(
       status: 'pending',
       operatorId: input.actorId,
       reason: input.reason,
+      reasonCode: input.reasonCode,
+      requestChannel: input.requestChannel,
       csCaseId: input.csCaseId,
       note: input.note,
       idempotencyKey: input.idempotencyKey,

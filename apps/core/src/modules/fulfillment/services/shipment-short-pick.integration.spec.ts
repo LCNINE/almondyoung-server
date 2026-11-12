@@ -34,6 +34,15 @@ describeIfDb('결품 보고 — 재배정 (스펙 §9, PR 4)', () => {
         ],
         shortages: [],
       });
+      const [operation] = await tx
+        .select()
+        .from(wmsTables.shipmentOperations)
+        .where(eq(wmsTables.shipmentOperations.id, result.operationId));
+      expect(operation).toMatchObject({
+        reason: 'inventory_shortage',
+        reasonCode: 'inventory_shortage',
+        requestChannel: null,
+      });
       const [after] = await tx
         .select()
         .from(wmsTables.outboundBatchWorkItems)

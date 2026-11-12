@@ -1,4 +1,5 @@
-import { REQUIRED_PERMISSIONS_KEY } from '@app/authorization';
+import { PII_RESPONSE_KEY, REQUIRED_PERMISSIONS_KEY, type PiiResponseSpec } from '@app/authorization';
+import { maskPaths } from '@app/shared/pii';
 import { FulfillmentOperationController, ShipmentPlanningController } from './shipment-planning.controller';
 
 describe('Shipment planning read contract', () => {
@@ -47,5 +48,41 @@ describe('Shipment planning read contract', () => {
     expect(Reflect.getMetadata(REQUIRED_PERMISSIONS_KEY, recipient)).toEqual([
       'fulfillment.shipment.override_recipient',
     ]);
+  });
+
+  describe('출고 상세의 작업 기록 개인정보 선언', () => {
+    const detail = Object.getOwnPropertyDescriptor(ShipmentPlanningController.prototype, 'detail')?.value as object;
+    const spec = Reflect.getMetadata(PII_RESPONSE_KEY, detail) as PiiResponseSpec;
+    const body = {
+      id: 'shipment-1',
+      operations: [
+        {
+          operationId: 'operation-1',
+          type: 'split',
+          operatorId: 'user-1',
+          reason: '고객 요청',
+          reasonCode: 'customer_ship_first',
+          requestChannel: 'kakao',
+          note: '010-1234-5678 로 연락',
+        },
+      ],
+    };
+
+    it('기본 가림에서 사유 글과 메모는 가리고 코드·요청 경로·처리자는 원문이다', () => {
+      const masked = maskPaths(body, spec.fields).body as typeof body;
+      expect(masked.operations[0].note).not.toBe(body.operations[0].note);
+      expect(masked.operations[0].reason).not.toBe(body.operations[0].reason);
+      expect(masked.operations[0]).toMatchObject({
+        reasonCode: 'customer_ship_first',
+        requestChannel: 'kakao',
+        operatorId: 'user-1',
+      });
+    });
+
+    it('받는 분 정보 권한으로 사유 글과 메모도 열린다', () => {
+      const recipientPerms = spec.rawWithByField?.['recipientSnapshot.recipientName'];
+      expect(spec.rawWithByField?.['operations[].reason']).toEqual(recipientPerms);
+      expect(spec.rawWithByField?.['operations[].note']).toEqual(recipientPerms);
+    });
   });
 });

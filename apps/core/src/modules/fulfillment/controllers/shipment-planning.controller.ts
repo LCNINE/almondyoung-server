@@ -171,6 +171,8 @@ export class ShipmentPlanningController {
       'recipientSnapshot.deliveryNote': 'text',
       'recipientSnapshot.personalCustomsCode': 'secret',
       'entrancePassword': 'secret',
+      'operations[].reason': 'text',
+      'operations[].note': 'text',
     },
     subjects: [
       { path: 'id', type: 'shipment' },
@@ -185,6 +187,8 @@ export class ShipmentPlanningController {
       'recipientSnapshot.deliveryNote': OPEN_WITH_RECIPIENT,
       'recipientSnapshot.personalCustomsCode': OPEN_WITH_RECIPIENT,
       'entrancePassword': OPEN_WITH_RECIPIENT,
+      'operations[].reason': OPEN_WITH_RECIPIENT,
+      'operations[].note': OPEN_WITH_RECIPIENT,
     },
   })
   @RequirePermission('fulfillment.shipment.read')

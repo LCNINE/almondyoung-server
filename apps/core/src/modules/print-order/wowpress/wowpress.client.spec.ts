@@ -363,6 +363,10 @@ describe('WowpressClient', () => {
   it.each([
     ['nested in cjson_order', { cjson_order: orderBody() }],
     ['directly under resultMap', orderBody()],
+    [
+      'rows wrapped per line like ordreq',
+      { cjson_order: { ordinfo: orderBody().ordinfo.map((r) => [r]), dlvinfo: [orderBody().dlvinfo] } },
+    ],
   ])('parses ordinfo and dlvinfo into orders and boxes (%s)', async (_label, resultMap) => {
     const { client } = makeClient({
       [`${API}/api/login/issue`]: [tokenOk('tok')],
