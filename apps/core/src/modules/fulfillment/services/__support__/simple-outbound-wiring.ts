@@ -158,6 +158,7 @@ export function assembleOutboundWithDb(dbService: DbService<typeof wmsSchema>) {
     barcodes,
     planning,
     batches,
+    waybills,
   );
   const aggregate = new AggregateThenSortPickingStrategy(
     commands,

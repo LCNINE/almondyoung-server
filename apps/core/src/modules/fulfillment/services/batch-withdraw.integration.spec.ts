@@ -41,6 +41,36 @@ describeIfDb('시작된 배치에서 이탈 (스펙 §8, PR 2·3)', () => {
       tx,
     );
 
+  it('송장 무효화 예약을 현재 송장 JSON에 보존하고 외부 트랜잭션 안에서는 무효화하지 않는다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const { second, wiring } = await started(tx);
+      await tx
+        .update(wmsTables.waybills)
+        .set({ labelData: { printField: 'preserved' } })
+        .where(eq(wmsTables.waybills.shipmentId, second.shipmentId));
+
+      const result = await wiring.batches.excludeShipment(
+        second.batchId,
+        second.shipmentId,
+        { reason: '합포장', voidWaybill: true },
+        `x-${randomUUID()}`,
+        actor,
+        tx,
+      );
+      const [waybill] = await tx
+        .select()
+        .from(wmsTables.waybills)
+        .where(eq(wmsTables.waybills.shipmentId, second.shipmentId));
+
+      expect(result.workItem.status).toBe('excluded');
+      expect(waybill.status).toBe('registered');
+      expect(waybill.labelData).toEqual({
+        printField: 'preserved',
+        voidOnWithdrawal: { workItemId: second.workItemId, actorId: actor.id },
+      });
+    });
+  });
+
   it('집지 않은 박스는 반납하고 excluded — 배정 행은 0 으로 남고 박스는 planned·예약 그대로, 재고는 일반 가용으로', async () => {
     await inRollbackTx(db, async (tx) => {
       const { first, second, wiring, sessionId } = await started(tx);

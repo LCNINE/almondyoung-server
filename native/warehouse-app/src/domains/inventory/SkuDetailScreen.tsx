@@ -1,6 +1,7 @@
 import { Link } from '@tanstack/react-router';
 import { useWarehouse } from '../../app/warehouse-context';
-import { errorMessage } from '../../core/data/errorMessage';
+import { useWorkPermissions } from '../../core/operations/useWorkCapabilities';
+import { errorMessage, STOCK_ADJUST_PERMISSION_MESSAGE } from '../../core/data/errorMessage';
 import { Button } from '../../core/design/Button';
 import { ScreenHeader } from '../../core/design/ScreenHeader';
 import { WarehousePicker } from '../warehouse/WarehousePicker';
@@ -23,6 +24,9 @@ export function SkuDetailScreen({ skuId }: { skuId: string }) {
   const detail = useSkuDetail(skuId);
   const summary = useSkuStockSummary(skuId);
   const warehouseStock = useSkuWarehouseStock(skuId, warehouseId);
+  const permissions = useWorkPermissions();
+
+  const permissionDenied = !permissions.isError && permissions.data?.stockAdjust === false;
 
   if (detail.isError) {
     return (
@@ -49,6 +53,12 @@ export function SkuDetailScreen({ skuId }: { skuId: string }) {
           {sku.optionKey ? <span className="ml-2 text-gray-500">{sku.optionKey}</span> : null}
         </div>
       ) : null}
+
+      {permissionDenied && (
+        <p role="alert" className="text-sm text-red-600">
+          {STOCK_ADJUST_PERMISSION_MESSAGE}
+        </p>
+      )}
 
       {summary.data ? (
         <div className="grid grid-cols-3 gap-2">
@@ -89,11 +99,14 @@ export function SkuDetailScreen({ skuId }: { skuId: string }) {
                 </span>
                 <span className="text-lg font-semibold text-gray-900">{row.quantity}</span>
                 <Link
+                  disabled={permissionDenied}
                   to="/inventory/$sku/adjust"
                   params={{ sku: skuId }}
                   search={{ locationId: row.locationId }}
                 >
-                  <Button className="px-3 py-1.5 text-xs">조정</Button>
+                  <Button disabled={permissionDenied} className="px-3 py-1.5 text-xs">
+                    조정
+                  </Button>
                 </Link>
               </li>
             ))}
@@ -102,8 +115,10 @@ export function SkuDetailScreen({ skuId }: { skuId: string }) {
       </section>
 
       {isSet ? (
-        <Link to="/inventory/$sku/adjust" params={{ sku: skuId }}>
-          <Button className="w-full py-3">재고 조정</Button>
+        <Link disabled={permissionDenied} to="/inventory/$sku/adjust" params={{ sku: skuId }}>
+          <Button disabled={permissionDenied} className="w-full py-3">
+            재고 조정
+          </Button>
         </Link>
       ) : null}
     </div>

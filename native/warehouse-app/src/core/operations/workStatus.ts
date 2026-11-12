@@ -2,6 +2,7 @@ import { permissionNames } from '../auth/permissionNames';
 import type { StoredOperation } from './operationStore';
 // 응답 필터는 403 을 FORBIDDEN 으로, Nest 기본 예외 본문은 Forbidden 으로 싣는다.
 const deniedByPermission = (o: StoredOperation) =>
+  o.errorStatus === 403 ||
   Boolean(o.requiredPermissions?.length) ||
   o.errorCode === 'FORBIDDEN' ||
   o.errorCode === 'Forbidden';

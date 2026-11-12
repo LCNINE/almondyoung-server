@@ -7,6 +7,7 @@ export interface WorkCapabilities {
   locationOutbound?: boolean;
 }
 export interface WorkPermissions {
+  stockAdjust?: boolean;
   forceDispatch?: boolean;
   /** 스테이션 강제출고(F10, core A3). 관리자 `forceDispatch` 와 다른 뜻이다 */
   stationForceDispatch?: boolean;

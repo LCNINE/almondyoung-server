@@ -342,6 +342,14 @@ export class WaybillManager {
     );
   }
 
+  async requestWithdrawalVoid(shipmentId: string, workItemId: string, actorId: string, tx?: DbTx): Promise<void> {
+    await this.dbService.run((trx) => this.repo.requestWithdrawalVoid(trx, shipmentId, workItemId, actorId), tx);
+  }
+
+  async findWithdrawalVoid(workItemId: string, tx?: DbTx) {
+    return this.dbService.run((trx) => this.repo.findWithdrawalVoid(trx, workItemId), tx);
+  }
+
   // 발송 전 로컬 취소. 외부 캐리어 호출 없음 — used(이미 사용) 또는 shipment 가 발송 이후 상태면 거부.
   // 순서 중요: used/발송이후 체크가 !== 'registered' 체크보다 먼저 — used 는 ALREADY_DISPATCHED 로 보고해야 하고
   // NOT_VOIDABLE 로 뭉뚱그리면 안 된다(브리프 명시).

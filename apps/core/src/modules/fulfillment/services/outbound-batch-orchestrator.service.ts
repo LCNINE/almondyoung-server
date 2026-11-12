@@ -324,7 +324,13 @@ export class OutboundBatchOrchestrator {
       {
         commandType: 'outbound_batch.shipment.exclude',
         idempotencyKey,
-        canonicalRequest: { actorId: actor.id, batchId, shipmentId, reason: dto.reason.trim() },
+        canonicalRequest: {
+          actorId: actor.id,
+          batchId,
+          shipmentId,
+          reason: dto.reason.trim(),
+          ...(dto.voidWaybill ? { voidWaybill: true } : {}),
+        },
       },
       async (trx, commandRequestId) => {
         const aggregate = await this.lockEligibilityAggregate(shipmentId, trx);
@@ -352,6 +358,10 @@ export class OutboundBatchOrchestrator {
         if (workItem.waitingOperationId) {
           await this.assertWaitingOperationOwnership(workItem.waitingOperationId, shipmentId, trx);
         }
+        if (dto.voidWaybill) {
+          await this.waybills.requestWithdrawalVoid(shipmentId, workItem.id, actor.id, trx);
+        }
+
         const reason = dto.reason.trim();
         if (batch.startedAt) {
           // 시작된 배치 — 이탈(스펙 §8). 집은 몫이 있으면 withdrawing 으로 남고, 없으면 이 트랜잭션에서 나간다.
@@ -399,10 +409,15 @@ export class OutboundBatchOrchestrator {
       },
       tx,
     );
+    const handled =
+      response.workItem.status === 'excluded' && dto.voidWaybill
+        ? await this.waybills.voidAfterWithdrawal(response.workItem.id, tx)
+        : false;
+
     // The exclusion command is durable before a dependent cancellation/consolidation is resumed.
     // Replaying the command retries this exact resume without repeating the membership mutation.
     // 나간(excluded) 박스만 — 빼는 중(withdrawing)이면 아직 배치에 있다. canceled 로 나간 박스의 취소는 이미 완료돼 있어 재개가 곧 돌아온다.
-    if (response.workItem.status === 'excluded' && response.workItem.waitingOperationId) {
+    if (!handled && response.workItem.status === 'excluded' && response.workItem.waitingOperationId) {
       await this.resumeWaitingOperation(response.workItem.waitingOperationId, shipmentId, tx);
     }
     return response;

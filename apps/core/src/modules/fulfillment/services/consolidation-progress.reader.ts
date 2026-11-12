@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { DbService, InjectTypedDb } from '@app/db';
-import { and, desc, eq, inArray, ne, notInArray } from 'drizzle-orm';
+import { and, desc, eq, inArray, ne, notInArray, sql } from 'drizzle-orm';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import { ConsolidationProgressResponseDto } from '../dto/consolidation.dto';
 import { WAYBILL_TERMINAL_STATUSES } from '../waybill/waybill.constants';
@@ -42,6 +42,7 @@ export class ConsolidationProgressReader {
           .select({
             shipmentId: wmsTables.outboundBatchWorkItems.shipmentId,
             batchId: wmsTables.outboundBatchWorkItems.batchId,
+            id: wmsTables.outboundBatchWorkItems.id,
             status: wmsTables.outboundBatchWorkItems.status,
           })
           .from(wmsTables.outboundBatchWorkItems)
@@ -58,6 +59,9 @@ export class ConsolidationProgressReader {
             id: wmsTables.waybills.id,
             status: wmsTables.waybills.status,
             trackingNo: wmsTables.waybills.trackingNo,
+            withdrawalWorkItemId: sql<
+              string | null
+            >`${wmsTables.waybills.labelData}->'voidOnWithdrawal'->>'workItemId'`,
           })
           .from(wmsTables.waybills)
           .where(

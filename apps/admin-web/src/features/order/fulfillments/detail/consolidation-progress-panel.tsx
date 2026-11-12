@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import Link from 'next/link';
 import { useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
+import { ExcludeShipmentDialog } from '../../outbound-batches/components/exclude-shipment-dialog';
 import { Button } from '@/components/ui/button';
 import { usePermissionCheck } from '@/hooks/use-permission';
 import {
@@ -362,6 +363,7 @@ function PendingPanel({
   const queryClient = useQueryClient();
   const { canRun } = usePermissionCheck();
   const exclude = useExcludeShipmentFromBatch();
+  const [confirmExclude, setConfirmExclude] = useState(false);
   const voidWaybill = useVoidWaybill();
 
   const overall = overallProgress(progress.sources);
@@ -403,7 +405,7 @@ function PendingPanel({
     });
   };
 
-  const onExclude = async () => {
+  const onExclude = async (voidWaybill: boolean) => {
     if (!current?.batchId) {
       return;
     }
@@ -413,6 +415,7 @@ function PendingPanel({
         batchId: current.batchId,
         shipmentId: current.shipmentId,
         reason: EXCLUDE_REASON,
+        voidWaybill,
       });
       toast.success('배치에서 뺐어요');
       refresh();
@@ -456,6 +459,9 @@ function PendingPanel({
   };
 
   const canExclude = canRun(useExcludeShipmentFromBatch) && !!current?.batchId;
+  const automaticVoid =
+    current?.workItemStatus === 'withdrawing' && current.voidOnWithdrawal;
+
   const canVoid =
     canRun(useVoidWaybill) &&
     !!current?.waybillId &&
@@ -511,7 +517,8 @@ function PendingPanel({
                 </span>
                 <span className="text-sm font-semibold">{entry.title}</span>
                 <span className="text-xs text-muted-foreground">
-                  담당: {entry.who}
+                  담당:{' '}
+                  {entry.step === 'void' && automaticVoid ? '자동' : entry.who}
                 </span>
               </li>
             );
@@ -541,6 +548,15 @@ function PendingPanel({
           <GaveUpNotice description="여러 번 시도해도 안 합쳐졌어요. 정체 보드에 멈춘 이유가 있어요. 개발팀에 이 화면 주소를 같이 보내 주세요." />
         )}
 
+        {confirmExclude && current && (
+          <ExcludeShipmentDialog
+            trackingNo={current.trackingNo}
+            defaultVoidWaybill
+            onClose={() => setConfirmExclude(false)}
+            onConfirm={(checked) => void onExclude(checked)}
+          />
+        )}
+
         {exception === null && step === 'exclude' && (
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
@@ -558,12 +574,18 @@ function PendingPanel({
               <PendingButton
                 pending={exclude.isPending}
                 disabled={busy}
-                onClick={() => void onExclude()}
+                onClick={() => setConfirmExclude(true)}
               >
                 배치에서 빼기
               </PendingButton>
             )}
           </div>
+        )}
+
+        {automaticVoid && (
+          <p className="text-sm text-muted-foreground">
+            상품을 다 꺼내면 송장이 자동으로 무효화돼요
+          </p>
         )}
 
         {exception === null && step === 'unpick' && (

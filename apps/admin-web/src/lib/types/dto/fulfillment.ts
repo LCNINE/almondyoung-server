@@ -1097,6 +1097,7 @@ export interface ConsolidationProgressSource {
   workItemStatus: string | null;
   waybillId: string | null;
   waybillStatus: string | null;
+  voidOnWithdrawal?: boolean;
   blockers: string[];
   gaveUpAt: string | null;
   nextCheckAt: string | null;

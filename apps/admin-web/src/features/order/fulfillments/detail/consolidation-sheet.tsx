@@ -6,6 +6,7 @@ import { Check, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
+import { WithdrawalWaybillCheckbox } from '../../outbound-batches/components/exclude-shipment-dialog';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
@@ -268,6 +269,7 @@ export function ConsolidationSheet({
   const create = useCreateShipmentConsolidation();
   const exclude = useExcludeShipmentFromBatch();
   const [sending, setSending] = useState(false);
+  const [voidWaybill, setVoidWaybill] = useState(true);
   // null 이면 아직 고르지 않았다 — 미리 고른 주문을 모두 고를 수 있을 때만 확인 단계부터 연다
   const [chosenStep, setStep] = useState<Step | null>(
     preselect.length > 0 ? null : 1
@@ -327,6 +329,7 @@ export function ConsolidationSheet({
     setMemoChoice('');
     setReasonValue(EMPTY_REASON);
     setOutcome(null);
+    setVoidWaybill(true);
   };
 
   const changeOpen = (next: boolean) => {
@@ -364,6 +367,7 @@ export function ConsolidationSheet({
               batchId: shipment.batchId,
               shipmentId: shipment.shipmentId,
               reason: '합포장',
+              voidWaybill,
             });
           } catch (error) {
             toast.error(getServerDenyMessage(error));
@@ -639,6 +643,21 @@ export function ConsolidationSheet({
                   </ol>
                 </>
               )}
+
+              {canExclude &&
+                [source, ...pickedOptions].some(
+                  (shipment) => shipment.batchId
+                ) && (
+                  <WithdrawalWaybillCheckbox
+                    checked={voidWaybill}
+                    onCheckedChange={setVoidWaybill}
+                    trackingNo={[source, ...pickedOptions]
+                      .filter((shipment) => shipment.batchId)
+                      .map((shipment) => shipment.waybillTrackingNo)
+                      .filter(Boolean)
+                      .join(', ')}
+                  />
+                )}
 
               {choices.length > 0 ? (
                 <div className="flex flex-col gap-2">

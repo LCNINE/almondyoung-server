@@ -1,7 +1,7 @@
 /**
  * @jest-environment jsdom
  */
-import { render, screen, within } from '@testing-library/react';
+import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type {
   ShipmentAdminDetail,
@@ -477,6 +477,168 @@ it('다시 시도를 서버가 거절하면 고칠 수 있게 창을 다시 연�
       .getAttribute('aria-checked')
   ).toBe('true');
   expect(screen.queryByRole('alert', { hidden: true })).toBeNull();
+});
+
+function checkedReasons(dialog: HTMLElement) {
+  return within(dialog)
+    .queryAllByRole('radio')
+    .filter((radio) => radio.getAttribute('aria-checked') === 'true');
+}
+
+function noteIn(dialog: HTMLElement) {
+  return within(dialog).getByLabelText(
+    '운영 메모 (선택)'
+  ) as HTMLTextAreaElement;
+}
+
+async function chooseOtherReason(dialog: HTMLElement, text: string) {
+  await userEvent.click(within(dialog).getByRole('radio', { name: '기타' }));
+  await userEvent.type(within(dialog).getByLabelText('기타 사유 (필수)'), text);
+}
+
+it('다른 작업을 열면 앞 작업의 사유와 메모를 비운다', async () => {
+  render(<ShipmentActions shipment={mergedBox} />);
+  await userEvent.click(screen.getByRole('button', { name: '수령인 변경' }));
+  let dialog = screen.getByRole('dialog');
+  await chooseOtherReason(dialog, '배송지 변경 요청');
+  await userEvent.type(noteIn(dialog), '전화로 접수');
+  await userEvent.click(within(dialog).getByRole('button', { name: '취소' }));
+
+  await userEvent.click(screen.getByRole('button', { name: '분할' }));
+  dialog = screen.getByRole('dialog');
+
+  expect(checkedReasons(dialog)).toHaveLength(0);
+  expect(within(dialog).queryByLabelText('기타 사유 (필수)')).toBeNull();
+  expect(noteIn(dialog).value).toBe('');
+});
+
+it('사유 없이 누른 뒤 창을 닫았다 열면 안내도 사유도 비운다', async () => {
+  render(<ShipmentActions shipment={mergedBox} />);
+  await userEvent.click(screen.getByRole('button', { name: '수령인 변경' }));
+  let dialog = screen.getByRole('dialog');
+  await userEvent.click(
+    within(dialog).getByRole('radio', { name: '고객이 주소·연락처 변경 요청' })
+  );
+  await userEvent.click(
+    within(dialog).getByRole('button', { name: '변경하기' })
+  );
+  expect(
+    within(dialog).getByText('고객이 요청한 경로를 골라 주세요.')
+  ).toBeTruthy();
+  await userEvent.click(within(dialog).getByRole('button', { name: '취소' }));
+
+  await userEvent.click(screen.getByRole('button', { name: '수령인 변경' }));
+  dialog = screen.getByRole('dialog');
+
+  expect(checkedReasons(dialog)).toHaveLength(0);
+  expect(within(dialog).queryByText('작업 사유를 골라 주세요.')).toBeNull();
+  expect(
+    within(dialog).queryByText('고객이 요청한 경로를 골라 주세요.')
+  ).toBeNull();
+});
+
+it('작업을 마친 뒤 같은 작업을 다시 열어도 새로 입력하게 한다', async () => {
+  await submitSplit();
+  expect(screen.queryByRole('dialog')).toBeNull();
+
+  await userEvent.click(screen.getByRole('button', { name: '분할' }));
+  const dialog = screen.getByRole('dialog');
+
+  expect(checkedReasons(dialog)).toHaveLength(0);
+  expect(
+    (within(dialog).getByLabelText('새 상자로 보낼 수량') as HTMLInputElement)
+      .value
+  ).toBe('1');
+});
+
+it('되돌리기 실물 확인은 창을 열 때마다 다시 체크하게 한다', async () => {
+  mockCanRecall = true;
+  render(<ShipmentActions shipment={shippedBox} />);
+  await userEvent.click(screen.getByRole('button', { name: '출고 되돌리기' }));
+  let dialog = screen.getByRole('dialog');
+  const confirm = {
+    name: '고른 출고의 상자를 창고에서 실제로 돌려받았어요.',
+  };
+  await userEvent.click(within(dialog).getByRole('checkbox', confirm));
+  await userEvent.click(within(dialog).getByRole('button', { name: '취소' }));
+
+  await userEvent.click(screen.getByRole('button', { name: '출고 되돌리기' }));
+  dialog = screen.getByRole('dialog');
+
+  expect(
+    within(dialog).getByRole('checkbox', confirm).getAttribute('aria-checked')
+  ).toBe('false');
+});
+
+it('응답을 기다리는 사이 다른 작업 창을 열어도 거절된 요청은 보낸 입력으로 다시 연다', async () => {
+  mockSplit.mockRejectedValueOnce(noResponse);
+  mockSplit.mockRejectedValueOnce(rejected);
+  await submitSplit();
+
+  await userEvent.click(screen.getByRole('button', { name: '수령인 변경' }));
+  const other = screen.getByRole('dialog');
+  expect(checkedReasons(other)).toHaveLength(0);
+  await chooseOtherReason(other, '다른 작업');
+  await userEvent.click(within(other).getByRole('button', { name: '취소' }));
+
+  await userEvent.click(
+    within(screen.getByRole('alert')).getByRole('button', {
+      name: '다시 시도',
+    })
+  );
+
+  expect(mockSplit.mock.calls[1][0]).toEqual(mockSplit.mock.calls[0][0]);
+  expect(mockSplit.mock.calls[1][0].idempotencyKey).toBe('key-1');
+  expect(mockSplit.mock.calls[1][0].data).toMatchObject({
+    reason: '고객이 일부 먼저 보내 달라고 요청',
+    reasonCode: 'customer_ship_first',
+    requestChannel: 'kakao',
+  });
+  const dialog = screen.getByRole('dialog');
+  expect(within(dialog).getByRole('heading').textContent).toBe('상자 분할');
+  expect(
+    checkedReasons(dialog).map((radio) => radio.getAttribute('value'))
+  ).toEqual(['customer_ship_first', 'kakao']);
+});
+
+const otherBox: ShipmentAdminDetail = {
+  ...shipment([line('line-x', 2, { skuName: '다른 상품' })]),
+  id: 'shipment-2',
+};
+
+it('다른 상자를 보는 동안에는 앞 상자의 재시도 안내를 보이지 않는다', async () => {
+  mockSplit.mockRejectedValueOnce(noResponse);
+  const { rerender } = render(<ShipmentActions shipment={mergedBox} />);
+  await userEvent.click(screen.getByRole('button', { name: '분할' }));
+  await chooseCustomerReason(screen.getByRole('dialog'));
+  await userEvent.click(screen.getByRole('button', { name: '분할하기' }));
+  expect(screen.getByRole('alert')).toBeTruthy();
+
+  rerender(<ShipmentActions shipment={otherBox} />);
+  expect(screen.queryByRole('alert')).toBeNull();
+
+  rerender(<ShipmentActions shipment={mergedBox} />);
+  expect(screen.getByRole('alert').textContent).toContain('응답 대기');
+});
+
+it('거절 응답이 다른 상자로 넘어간 뒤 오면 그 상자에 앞 상자의 입력으로 창을 열지 않는다', async () => {
+  let reject: (error: unknown) => void = () => {};
+  mockSplit.mockReturnValueOnce(
+    new Promise((_resolve, fail) => {
+      reject = fail;
+    })
+  );
+  const { rerender } = render(<ShipmentActions shipment={mergedBox} />);
+  await userEvent.click(screen.getByRole('button', { name: '분할' }));
+  await chooseCustomerReason(screen.getByRole('dialog'));
+  await userEvent.click(screen.getByRole('button', { name: '분할하기' }));
+
+  rerender(<ShipmentActions shipment={otherBox} />);
+  await act(async () => reject(rejected));
+
+  expect(screen.queryByRole('dialog')).toBeNull();
+  await userEvent.click(screen.getByRole('button', { name: '수령인 변경' }));
+  expect(checkedReasons(screen.getByRole('dialog'))).toHaveLength(0);
 });
 
 it('출고한 상자에는 되돌리기만 보인다', () => {

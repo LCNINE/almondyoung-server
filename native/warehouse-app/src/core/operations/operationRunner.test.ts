@@ -2,7 +2,9 @@ import { describe, it, expect, vi } from 'vitest';
 import 'fake-indexeddb/auto';
 import { createOperationStore } from './operationStore';
 import { createOperationRunner } from './operationRunner';
-import { ApiError, type ApiClient } from '../data/httpClient';
+import { ApiError, NetworkError, type ApiClient } from '../data/httpClient';
+import { workStatus } from './workStatus';
+import { unsentCount } from '../../station/status/statusBarItems';
 import { errorMessage } from '../data/errorMessage';
 
 describe('durable requests', () => {
@@ -320,47 +322,126 @@ for (const path of [
   });
 }
 
-it('권한 부족으로 거절된 작업은 요구 권한을 저장하고 확인 화면에 그대로 넘긴다', async () => {
+it.each([undefined, 'FORBIDDEN'])(
+  'settles a first adjustment 403 and allows inbound (%s)',
+  async (code) => {
+    const store = createOperationStore(crypto.randomUUID());
+    const inbound = {
+      id: 'receipt',
+      lines: [{ id: 'line', skuId: 's', quantity: 1 }],
+    };
+    const runner = createOperationRunner({
+      store,
+      getScope: async () => 'a',
+      api: {
+        request: async <T>(o: Parameters<ApiClient['request']>[0]) => {
+          if (o.path === '/inventory/stocks/adjust')
+            throw new ApiError('denied', 403, code, undefined, undefined, [
+              'inventory.stock.adjust',
+            ]);
+
+          return inbound as T;
+        },
+      },
+    });
+    const request = {
+      method: 'POST',
+      path: '/inventory/stocks/adjust',
+      body: { skuId: 's', locationId: 'l', delta: 1 },
+      idempotencyKey: 'denied',
+    };
+    const error = await runner.request(request).catch((e: unknown) => e);
+
+    expect(error).toMatchObject({
+      status: 403,
+      outcome: 'rejected',
+      requiredPermissions: ['inventory.stock.adjust'],
+    });
+    expect(errorMessage(error, 'adjust')).toBe(
+      '재고 조정 권한이 없어요. 관리자에게 요청해 주세요.'
+    );
+    expect(await store.get('denied')).toMatchObject({
+      status: 'rejected',
+      errorStatus: 403,
+    });
+    expect(await store.pending('a')).toEqual([]);
+    await vi.waitFor(() => expect(runner.getSnapshot()).toEqual([]));
+    expect(workStatus(runner.getSnapshot(), Date.now()).blocksWork).toBe(false);
+    expect(unsentCount(runner.getSnapshot(), Date.now())).toBe(0);
+    await expect(runner.request(request)).rejects.toMatchObject({
+      status: 403,
+    });
+    await expect(
+      runner.request({
+        method: 'POST',
+        path: '/inbound/simple',
+        body: { warehouseId: 'w' },
+        idempotencyKey: 'inbound',
+      })
+    ).resolves.toEqual(inbound);
+  }
+);
+
+it('keeps adjustment uncertainty when a network loss is followed by 403', async () => {
   const store = createOperationStore(crypto.randomUUID());
+  let calls = 0;
   const runner = createOperationRunner({
     store,
     getScope: async () => 'a',
     wait: async () => {},
     api: {
       request: async () => {
-        throw new ApiError(
-          'POST /inventory/stocks/adjust → 403',
-          403,
-          'FORBIDDEN',
-          undefined,
-          undefined,
-          ['inventory.stock.adjust']
-        );
+        calls += 1;
+
+        if (calls === 1) throw new NetworkError('response lost');
+
+        throw new ApiError('denied', 403);
       },
     },
   });
+  const settled = vi.fn();
   void runner
     .request({
       method: 'POST',
       path: '/inventory/stocks/adjust',
-      body: { skuId: 's', delta: 1 },
-      idempotencyKey: 'denied',
+      body: { skuId: 's', locationId: 'l', delta: 1 },
+      idempotencyKey: 'lost',
     })
-    .catch(() => {});
+    .then(settled, settled);
+
   await vi.waitFor(async () =>
-    expect(await store.get('denied')).toMatchObject({
+    expect(await store.get('lost')).toMatchObject({
       status: 'uncertain',
-      errorCode: 'FORBIDDEN',
-      requiredPermissions: ['inventory.stock.adjust'],
+      attempts: 2,
+      errorStatus: 403,
+      leaseExpiresAt: 0,
     })
   );
-  await vi.waitFor(() =>
-    expect(runner.getSnapshot()).toEqual([
-      expect.objectContaining({
-        requiredPermissions: ['inventory.stock.adjust'],
-      }),
-    ])
+  expect(settled).not.toHaveBeenCalled();
+  expect(await store.pending('a')).toHaveLength(1);
+  expect(workStatus(runner.getSnapshot(), Date.now())).toMatchObject({
+    blocksWork: true,
+  });
+  expect(workStatus(runner.getSnapshot(), Date.now()).message).toContain(
+    '권한이 없어 처리 결과를 확인하지 못했어요'
   );
+  expect(unsentCount(runner.getSnapshot(), Date.now())).toBe(1);
+
+  const restored = createOperationRunner({
+    store,
+    getScope: async () => 'a',
+    api: {
+      request: async () => {
+        throw new ApiError('denied', 403);
+      },
+    },
+  });
+  await restored.restore();
+  await restored.retryPending();
+  expect(await store.get('lost')).toMatchObject({
+    status: 'uncertain',
+    attempts: 3,
+  });
 });
 
 describe('location force resolution', () => {
@@ -406,7 +487,7 @@ describe('location force resolution', () => {
     await store.finish('force-key', 'uncertain');
     return store;
   }
-  it('resolves an initial 403 with the original key/body and durably rejects its waiting promise', async () => {
+  it('resolves an initial lost response with the original key/body and durably rejects its waiting promise', async () => {
     const store = createOperationStore(crypto.randomUUID());
     const sent: Parameters<ApiClient['request']>[0][] = [];
     const runner = createOperationRunner({
@@ -416,7 +497,7 @@ describe('location force resolution', () => {
       api: {
         request: async <T>(o: Parameters<ApiClient['request']>[0]) => {
           sent.push(o);
-          if (o.path === path) throw new ApiError('forbidden', 403);
+          if (o.path === path) throw new TypeError('response lost');
           return rejected as T;
         },
       },
@@ -476,7 +557,7 @@ describe('location force resolution', () => {
       api: {
         request: async <T>(o: Parameters<ApiClient['request']>[0]) => {
           sent.push(o);
-          if (lost) throw new ApiError('lost', 403);
+          if (lost) throw new NetworkError('lost');
           return rejected as T;
         },
       },
@@ -709,7 +790,7 @@ describe('inbound workflow rejection outcomes', () => {
       expect((await store.get('original'))?.status).toBe('rejected');
     }
   );
-  it.each([401, 403, 408, 429, 500])(
+  it.each([401, 408, 429, 500])(
     'keeps protected code with status %s uncertain',
     (status) => {
       expect(new ApiError('unknown', status, codes[0]).outcome).toBe(

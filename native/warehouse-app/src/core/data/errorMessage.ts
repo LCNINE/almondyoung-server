@@ -3,6 +3,7 @@ import { ApiError, ConflictError, NetworkError } from './httpClient';
 
 /** 같은 상태 코드라도 화면 문맥에 따라 현장에 필요한 문구가 다르다. */
 export type ErrorContext =
+  | 'adjust'
   | 'barcode'
   | 'location'
   | 'stocktaking'
@@ -16,7 +17,11 @@ export type ErrorContext =
   // 되돌림 적치 화면 — 'returns' 와 같되 이 화면에만 맞는 문구를 덧씌운다.
   | 'return-putaway';
 
+export const STOCK_ADJUST_PERMISSION_MESSAGE =
+  '재고 조정 권한이 없어요. 관리자에게 요청해 주세요.';
+
 const CONTEXTUAL: Record<ErrorContext, Partial<Record<number, string>>> = {
+  adjust: { 403: STOCK_ADJUST_PERMISSION_MESSAGE },
   'return-putaway': { 404: '등록되지 않은 되돌림 바구니예요.' },
   returns: { 404: '등록되지 않은 되돌림 바구니예요.' },
   barcode: { 404: '등록되지 않은 바코드예요.' },
@@ -221,7 +226,12 @@ export function errorMessage(error: unknown, context?: ErrorContext): string {
   }
   if (error instanceof Error) {
     const match = /→\s*(\d{3})/.exec(error.message);
-    const status = match ? Number(match[1]) : undefined;
+    const status =
+      error instanceof ApiError
+        ? error.status
+        : match
+          ? Number(match[1])
+          : undefined;
     // 문맥 문구가 일반 문구보다 먼저다 — 강제출고 권한 부족처럼 화면이 더 정확히 안다.
     if (status !== undefined && context) {
       const specific = CONTEXTUAL[context][status];

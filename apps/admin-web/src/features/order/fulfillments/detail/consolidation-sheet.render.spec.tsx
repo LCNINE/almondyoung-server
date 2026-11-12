@@ -472,6 +472,41 @@ describe('합포장 요청 뒤 배치 제외', () => {
     return user;
   };
 
+  it('확인 단계에서 무효화 체크를 끄면 모든 제외 요청에 false를 보낸다', async () => {
+    renderSheet();
+    const user = userEvent.setup();
+
+    await user.click(card('SO-ok1'));
+    await fillMemoRequest(user);
+    const checkbox = screen.getByRole('checkbox', {
+      name: '송장도 같이 무효화',
+    });
+
+    expect(checkbox.getAttribute('data-state')).toBe('checked');
+    await user.click(checkbox);
+    await user.click(requestButton());
+
+    await waitFor(() => expect(mockExclude).toHaveBeenCalledTimes(2));
+    expect(mockExclude.mock.calls).toEqual([
+      [
+        {
+          batchId: 'batch-src',
+          shipmentId: 'src',
+          reason: '합포장',
+          voidWaybill: false,
+        },
+      ],
+      [
+        {
+          batchId: 'batch-memo',
+          shipmentId: 'memo1',
+          reason: '합포장',
+          voidWaybill: false,
+        },
+      ],
+    ]);
+  });
+
   it('대기 중이면 합칠 상자 중 배치에 든 상자를 모두 빼고 진행 링크를 보인다', async () => {
     const sheet = renderSheet();
 
@@ -479,8 +514,22 @@ describe('합포장 요청 뒤 배치 제외', () => {
 
     await waitFor(() => expect(mockExclude).toHaveBeenCalledTimes(2));
     expect(mockExclude.mock.calls).toEqual([
-      [{ batchId: 'batch-src', shipmentId: 'src', reason: '합포장' }],
-      [{ batchId: 'batch-memo', shipmentId: 'memo1', reason: '합포장' }],
+      [
+        {
+          batchId: 'batch-src',
+          shipmentId: 'src',
+          reason: '합포장',
+          voidWaybill: true,
+        },
+      ],
+      [
+        {
+          batchId: 'batch-memo',
+          shipmentId: 'memo1',
+          reason: '합포장',
+          voidWaybill: true,
+        },
+      ],
     ]);
     expect(
       screen.getByRole('heading', { name: '합포장을 요청했어요.' })

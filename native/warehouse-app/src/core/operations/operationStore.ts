@@ -21,6 +21,7 @@ export interface StoredOperation extends OperationInput {
   attempts: number;
   result?: unknown;
   errorCode?: string;
+  errorStatus?: number;
   preparation?: PreparationRejection;
   requiredPermissions?: string[];
 }
@@ -149,7 +150,8 @@ export function createOperationStore(name = 'almondwms-work-v2') {
     errorCode?: string,
     ownership?: { scope: string; ownerId: string },
     preparation?: PreparationRejection,
-    requiredPermissions?: readonly string[]
+    requiredPermissions?: readonly string[],
+    errorStatus?: number
   ) =>
     transaction<void>('readwrite', (s, done) => {
       const r = s.get(id);
@@ -170,6 +172,7 @@ export function createOperationStore(name = 'almondwms-work-v2') {
             status,
             result,
             errorCode,
+            errorStatus,
             preparation:
               status === 'rejected' &&
               errorCode === 'SIMPLE_OUTBOUND_PLAN_INVALIDATED'

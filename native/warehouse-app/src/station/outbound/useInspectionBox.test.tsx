@@ -38,7 +38,9 @@ const BOX: FakeBox = {
 let box: ReturnType<typeof useInspectionBox>;
 function Probe({ found, events }: { found: ShipmentByWaybill; events: InspectionBoxEvents }) {
   box = useInspectionBox(found, events);
-  return <p data-testid="progress">{box.progress.map((p) => `${p.shipmentLineId}:${p.pickedQty}/${p.qty}`).join(',')}</p>;
+  return (
+    <p data-testid="progress">{box.progress.map((p) => `${p.shipmentLineId}:${p.pickedQty}/${p.qty}`).join(',')}</p>
+  );
 }
 
 function mount(runtime: WorkRuntime, found: ShipmentByWaybill, events: InspectionBoxEvents) {
@@ -102,7 +104,9 @@ describe('useInspectionBox — 박스 하나의 스캔 큐(스펙 §6.3·§10.1)
     act(() => {
       box.accept('A', 1);
     });
-    await waitFor(async () => expect((await runtime.store.pending('scope'))[0]?.status).toBe('uncertain'));
+    await waitFor(async () =>
+      expect((await runtime.store.pending('scope'))[0]).toMatchObject({ status: 'uncertain', leaseExpiresAt: 0 })
+    );
     await waitFor(() => expect(box.intakeBlocked).toBe(true));
     let accepted = true;
     act(() => {
@@ -113,7 +117,7 @@ describe('useInspectionBox — 박스 하나의 스캔 큐(스펙 §6.3·§10.1)
     server.loseResponses(false);
     await act(async () => runtime.runner.retryPending());
     await waitFor(async () => expect(await saved()).toHaveLength(0));
-    expect(server.scanCalls).toHaveLength(2);
+    expect(server.scanCalls).toHaveLength(5);
     expect(new Set(server.scanCalls).size).toBe(1);
     expect(server.scans).toHaveLength(1);
     await waitFor(() => expect(box.intakeBlocked).toBe(false));
@@ -126,7 +130,9 @@ describe('useInspectionBox — 박스 하나의 스캔 큐(스펙 §6.3·§10.1)
       box.accept('A', 1);
       box.accept('B', 1);
     });
-    await waitFor(async () => expect((await runtime.store.pending('scope'))[0]?.status).toBe('uncertain'));
+    await waitFor(async () =>
+      expect((await runtime.store.pending('scope'))[0]).toMatchObject({ status: 'uncertain', leaseExpiresAt: 0 })
+    );
     await waitFor(async () => expect(await saved()).toHaveLength(2));
     const before = (await saved()) ?? [];
     view.unmount();
@@ -238,7 +244,9 @@ describe('useInspectionBox — 박스 하나의 스캔 큐(스펙 §6.3·§10.1)
     act(() => {
       box.accept('A', 1);
     });
-    await waitFor(async () => expect((await runtime.store.pending('scope'))[0]?.status).toBe('uncertain'));
+    await waitFor(async () =>
+      expect((await runtime.store.pending('scope'))[0]).toMatchObject({ status: 'uncertain', leaseExpiresAt: 0 })
+    );
     await waitFor(() => expect(box.intakeBlocked).toBe(true));
     await expect(box.settle()).rejects.toThrow(UNCERTAIN_SCAN_MESSAGE);
   });

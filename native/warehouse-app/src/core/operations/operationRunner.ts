@@ -51,9 +51,11 @@ export function createOperationRunner(deps: {
         : w.reject(
             new ApiError(
               '작업이 반영되지 않았어요.',
-              400,
+              op.errorStatus ?? 400,
               op.errorCode,
-              op.preparation
+              op.preparation,
+              undefined,
+              op.requiredPermissions
             )
           )
     );
@@ -163,7 +165,11 @@ export function createOperationRunner(deps: {
         const status = failure
           ? !resolving &&
             failure instanceof ApiError &&
-            failure.outcome === 'rejected'
+            failure.outcome === 'rejected' &&
+            !(
+              failure.status === 403 &&
+              (claimed.attempts > 0 || claimed.status !== 'queued')
+            )
             ? 'rejected'
             : 'uncertain'
           : forceRejected
@@ -180,7 +186,8 @@ export function createOperationRunner(deps: {
               : undefined,
           ownership,
           failure instanceof ApiError ? failure.preparation : undefined,
-          failure instanceof ApiError ? failure.requiredPermissions : undefined
+          failure instanceof ApiError ? failure.requiredPermissions : undefined,
+          failure instanceof ApiError ? failure.status : undefined
         );
         const saved = (await deps.store.get(input.id))!;
         recordDiagnostic(saved);
@@ -252,9 +259,11 @@ export function createOperationRunner(deps: {
     if (op.status === 'rejected')
       throw new ApiError(
         '작업이 반영되지 않았어요.',
-        400,
+        op.errorStatus ?? 400,
         op.errorCode,
-        op.preparation
+        op.preparation,
+        undefined,
+        op.requiredPermissions
       );
     return new Promise<T>((resolve, reject) => {
       const list = waiting.get(id) ?? [];

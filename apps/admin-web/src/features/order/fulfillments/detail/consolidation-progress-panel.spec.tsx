@@ -174,11 +174,18 @@ describe('합포장 진행 패널', () => {
     ).toBeTruthy();
 
     await user.click(screen.getByRole('button', { name: '배치에서 빼기' }));
+    expect(
+      screen
+        .getByRole('checkbox', { name: '송장도 같이 무효화' })
+        .getAttribute('data-state')
+    ).toBe('checked');
+    await user.click(screen.getByRole('button', { name: '빼기' }));
 
     expect(mockExclude).toHaveBeenCalledWith({
       batchId: 'batch-1',
       shipmentId: 'src',
       reason: '합포장',
+      voidWaybill: true,
     });
     await waitFor(() =>
       expect(invalidate).toHaveBeenCalledWith({
@@ -188,6 +195,42 @@ describe('합포장 진행 패널', () => {
     expect(invalidate).toHaveBeenCalledWith({
       queryKey: orderQueryKeys.shipment('src'),
     });
+  });
+
+  it('체크를 끄면 송장 무효화 없이 빼기를 요청한다', async () => {
+    mockProgress.mockReturnValue({ data: pending([source()]) });
+    grant('fulfillment.warehouse.operate');
+    const user = userEvent.setup();
+
+    renderPanel();
+    await user.click(screen.getByRole('button', { name: '배치에서 빼기' }));
+    await user.click(
+      screen.getByRole('checkbox', { name: '송장도 같이 무효화' })
+    );
+    await user.click(screen.getByRole('button', { name: '빼기' }));
+
+    expect(mockExclude).toHaveBeenCalledWith({
+      batchId: 'batch-1',
+      shipmentId: 'src',
+      reason: '합포장',
+      voidWaybill: false,
+    });
+  });
+
+  it('자동 무효화가 예약된 철회 상자는 안내를 보이고 수동 취소 버튼을 숨긴다', () => {
+    mockProgress.mockReturnValue({
+      data: pending([
+        source({ workItemStatus: 'withdrawing', voidOnWithdrawal: true }),
+      ]),
+    });
+    grant('fulfillment.shipment.reopen');
+
+    renderPanel();
+
+    expect(
+      screen.getByText('상품을 다 꺼내면 송장이 자동으로 무효화돼요')
+    ).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '운송장 취소' })).toBeNull();
   });
 
   it('배치에서 빼기 권한이 없으면 버튼을 숨긴다', () => {
@@ -755,11 +798,18 @@ describe('합포장 진행 패널', () => {
     expect(screen.getByText('상자 2개를 하나로 합치는 중이에요')).toBeTruthy();
 
     await user.click(screen.getByRole('button', { name: '배치에서 빼기' }));
+    expect(
+      screen
+        .getByRole('checkbox', { name: '송장도 같이 무효화' })
+        .getAttribute('data-state')
+    ).toBe('checked');
+    await user.click(screen.getByRole('button', { name: '빼기' }));
 
     expect(mockExclude).toHaveBeenCalledWith({
       batchId: 'batch-2',
       shipmentId: 'other',
       reason: '합포장',
+      voidWaybill: true,
     });
   });
 

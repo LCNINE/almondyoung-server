@@ -34,7 +34,7 @@ const voided: WaybillRow = {
 describe('WaybillService void 후 보류 작업 재개', () => {
   let module: TestingModule;
   let service: WaybillService;
-  const manager = { void: jest.fn(), voidForRecall: jest.fn() };
+  const manager = { void: jest.fn(), voidForRecall: jest.fn(), findWithdrawalVoid: jest.fn() };
   const consolidation = {
     findPendingOperationIdForSource: jest.fn(),
     tryResumePending: jest.fn(),
@@ -165,6 +165,41 @@ describe('WaybillService void 후 보류 작업 재개', () => {
     expect(manager.void).toHaveBeenCalledWith('wb-1', { reason: '합포장' }, 'key', { id: 'actor', roles: [] }, tx);
     expect(consolidation.findPendingOperationIdForSource).not.toHaveBeenCalled();
     expect(planning.findPendingCancellationOperationId).not.toHaveBeenCalled();
+  });
+
+  it('철회된 상자의 예약 송장을 무효화하고 합포장과 취소를 재개한다', async () => {
+    manager.findWithdrawalVoid.mockResolvedValue({ id: 'wb-1', actorId: 'admin' });
+
+    await service.voidAfterWithdrawal('work-1');
+
+    expect(manager.void).toHaveBeenCalledWith(
+      'wb-1',
+      { reason: 'withdrawn:excluded' },
+      'withdrawal-void:work-1:wb-1',
+      { id: 'admin', roles: [] },
+      undefined,
+    );
+    expect(consolidation.tryResumePending).toHaveBeenCalledWith('merge-1');
+    expect(planning.tryResumePendingCancellation).toHaveBeenCalledWith('cancel-1');
+  });
+
+  it('예약 송장이 없으면 무효화하지 않는다', async () => {
+    manager.findWithdrawalVoid.mockResolvedValue(undefined);
+
+    await service.voidAfterWithdrawal('work-1');
+
+    expect(manager.void).not.toHaveBeenCalled();
+  });
+
+  it.each(['find', 'void'])('자동 무효화 %s 실패는 경고만 남기고 기존 재개 흐름에 맡긴다', async (stage) => {
+    const error = new Error('void unavailable');
+    manager.findWithdrawalVoid.mockResolvedValue({ id: 'wb-1', actorId: 'admin' });
+    (stage === 'find' ? manager.findWithdrawalVoid : manager.void).mockRejectedValue(error);
+
+    await expect(service.voidAfterWithdrawal('work-1')).resolves.toBe(false);
+
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('work-1'), error);
+    expect(consolidation.tryResumePending).not.toHaveBeenCalled();
   });
 
   it('회수용 송장 취소는 회수 흐름에 맡긴다', async () => {

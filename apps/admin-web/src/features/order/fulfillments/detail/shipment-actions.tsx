@@ -82,20 +82,37 @@ import {
 
 type Action = ShipmentAction;
 
+const RECALL_REASONS = OPERATION_REASONS.recall.map(
+  (option) => [option.code as ShipmentRecallReason, option.label] as const
+);
+
+const EMPTY_REASON: OperationReasonValue = { otherText: '', note: '' };
+
+// 창에 입력한 값. 작업 기록에 남으므로 새 작업을 열 때마다 비운다.
+// 같은 화면이 다른 상자로 바뀔 수 있어 어느 상자의 입력인지 함께 둔다.
+type ActionDraft = {
+  shipmentId: string;
+  lineId: string;
+  qty: string;
+  shippingProfileId: string;
+  reasonValue: OperationReasonValue;
+  note: string;
+  recipient: RecipientForm;
+  attemptId: string;
+  recallReason: ShipmentRecallReason;
+  physicalRecovery: boolean;
+};
+
 type RetryState = {
   action: Action;
   operationId: string;
   status: FulfillmentOperationStatus;
   actionLabel: string;
   idempotencyKey: string;
+  // 서버가 거절하면 이 입력으로 창을 다시 연다
+  draft: ActionDraft;
   run: () => Promise<void>;
 };
-
-const RECALL_REASONS = OPERATION_REASONS.recall.map(
-  (option) => [option.code as ShipmentRecallReason, option.label] as const
-);
-
-const EMPTY_REASON: OperationReasonValue = { otherText: '', note: '' };
 
 function blankRecipient(snapshot: unknown): RecipientForm {
   const value =
@@ -114,6 +131,21 @@ function blankRecipient(snapshot: unknown): RecipientForm {
   };
 }
 
+function freshDraft(shipment: ShipmentAdminDetail): ActionDraft {
+  return {
+    shipmentId: shipment.id,
+    lineId: shipment.lines[0]?.id ?? '',
+    qty: '1',
+    shippingProfileId: shipment.shippingProfileId ?? '',
+    reasonValue: EMPTY_REASON,
+    note: '',
+    recipient: blankRecipient(shipment.recipientSnapshot),
+    attemptId: '',
+    recallReason: 'package_recovered',
+    physicalRecovery: false,
+  };
+}
+
 export function ShipmentActions({
   shipment,
 }: {
@@ -126,27 +158,26 @@ export function ShipmentActions({
   const plan = usePlanShipment();
   const recall = useRecallShipment();
   const [action, setAction] = useState<Action | null>(null);
-  const [lineId, setLineId] = useState(shipment.lines[0]?.id ?? '');
-  const [qty, setQty] = useState('1');
-  const [shippingProfileId, setShippingProfileId] = useState(
-    shipment.shippingProfileId ?? ''
-  );
+  const [draft, setDraft] = useState<ActionDraft>(() => freshDraft(shipment));
+  const {
+    lineId,
+    qty,
+    shippingProfileId,
+    reasonValue,
+    note,
+    recipient,
+    attemptId,
+    recallReason,
+    physicalRecovery,
+  } = draft;
+  const edit = <K extends keyof ActionDraft>(key: K, value: ActionDraft[K]) =>
+    setDraft((current) => ({ ...current, [key]: value }));
   const profiles = useDeliveryProfiles();
   // 프로필이 하나뿐이면 고를 것이 없다
   const chosenProfileId =
     shippingProfileId ||
     (profiles.data?.length === 1 ? profiles.data[0].id : '');
-  const [reasonValue, setReasonValue] =
-    useState<OperationReasonValue>(EMPTY_REASON);
   const [showReasonErrors, setShowReasonErrors] = useState(false);
-  const [note, setNote] = useState('');
-  const [recipient, setRecipient] = useState<RecipientForm>(() =>
-    blankRecipient(shipment.recipientSnapshot)
-  );
-  const [attemptId, setAttemptId] = useState('');
-  const [recallReason, setRecallReason] =
-    useState<ShipmentRecallReason>('package_recovered');
-  const [physicalRecovery, setPhysicalRecovery] = useState(false);
   const [retry, setRetry] = useState<RetryState | null>(null);
   const operation = useFulfillmentOperation(retry?.operationId ?? '');
 
@@ -191,6 +222,7 @@ export function ShipmentActions({
     },
     idempotencyKey: string,
     done: Action,
+    sent: ActionDraft,
     run: () => Promise<void>
   ) => {
     const actionLabel = ACTION_TITLE[done];
@@ -201,6 +233,7 @@ export function ShipmentActions({
       status: nextStatus,
       actionLabel,
       idempotencyKey,
+      draft: sent,
       run,
     });
     setAction(null);
@@ -216,6 +249,7 @@ export function ShipmentActions({
   const registerPending = (
     idempotencyKey: string,
     pendingAction: Action,
+    sent: ActionDraft,
     run: () => Promise<void>
   ) => {
     setRetry({
@@ -224,22 +258,21 @@ export function ShipmentActions({
       status: 'pending',
       actionLabel: ACTION_TITLE[pendingAction],
       idempotencyKey,
+      draft: sent,
       run,
     });
   };
 
-  const openAction = (next: Action) => {
-    setReasonValue(EMPTY_REASON);
-    setShowReasonErrors(false);
-    setNote('');
-    setAction(next);
-  };
-
-  const handleFailure = (error: unknown, failed: Action) => {
+  const handleFailure = (
+    error: unknown,
+    failed: Action,
+    sent: ActionDraft
+  ) => {
     const { status } = parseServerError(error);
     if (status !== null && status < 500) {
-      // 서버가 거절했으면 처리되지 않았다 — 대기 안내를 지우고 입력을 고칠 창을 연다
+      // 서버가 거절했으면 처리되지 않았다 — 대기 안내를 지우고 보낸 입력으로 고칠 창을 연다
       setRetry(null);
+      setDraft(sent);
       setAction(failed);
     } else {
       // 응답이 없거나(클라이언트가 500 으로 바꾼다) 5xx 면 처리됐는지 모른다 —
@@ -254,12 +287,19 @@ export function ShipmentActions({
     );
   };
 
+  // 버튼으로 여는 창은 새 작업이다 — 앞 작업의 사유·메모·체크를 넘기지 않는다
+  const startAction = (next: Action) => {
+    setDraft(freshDraft(shipment));
+    setShowReasonErrors(false);
+    setAction(next);
+  };
+
   const retryAgain = async () => {
     if (!retry) return;
     try {
       await retry.run();
     } catch (error) {
-      handleFailure(error, retry.action);
+      handleFailure(error, retry.action, retry.draft);
     }
   };
 
@@ -269,6 +309,7 @@ export function ShipmentActions({
       {},
       originalKey
     ).idempotencyKey;
+    const sent = draft;
     const quantity = Number(qty);
     try {
       if (action === 'split') {
@@ -298,13 +339,13 @@ export function ShipmentActions({
           ...toOperationReasonPayload('split', reasonValue),
         };
         const run: () => Promise<void> = async () => {
-          registerPending(idempotencyKey, action, run);
+          registerPending(idempotencyKey, action, sent, run);
           const result = await split.mutateAsync({
             shipmentId: shipment.id,
             data,
             idempotencyKey,
           });
-          registerResult(result, idempotencyKey, action, run);
+          registerResult(result, idempotencyKey, action, sent, run);
         };
         await run();
         return;
@@ -324,13 +365,13 @@ export function ShipmentActions({
           currentSnapshot: shipment.recipientSnapshot,
         });
         const run: () => Promise<void> = async () => {
-          registerPending(idempotencyKey, action, run);
+          registerPending(idempotencyKey, action, sent, run);
           const result = await reviseRecipient.mutateAsync({
             shipmentId: shipment.id,
             data,
             idempotencyKey,
           });
-          registerResult(result, idempotencyKey, action, run);
+          registerResult(result, idempotencyKey, action, sent, run);
         };
         await run();
         return;
@@ -346,13 +387,13 @@ export function ShipmentActions({
           expectedReservationVersion: shipment.reservationVersion,
         };
         const run: () => Promise<void> = async () => {
-          registerPending(idempotencyKey, action, run);
+          registerPending(idempotencyKey, action, sent, run);
           const result = await plan.mutateAsync({
             shipmentId: shipment.id,
             data,
             idempotencyKey,
           });
-          registerResult(result, idempotencyKey, action, run);
+          registerResult(result, idempotencyKey, action, sent, run);
         };
         await run();
         return;
@@ -369,17 +410,17 @@ export function ShipmentActions({
         ...(note.trim() ? { note: note.trim() } : {}),
       };
       const run: () => Promise<void> = async () => {
-        registerPending(idempotencyKey, action, run);
+        registerPending(idempotencyKey, action, sent, run);
         const result = await recall.mutateAsync({
           shipmentId: shipment.id,
           data,
           idempotencyKey,
         });
-        registerResult(result, idempotencyKey, action, run);
+        registerResult(result, idempotencyKey, action, sent, run);
       };
       await run();
     } catch (error) {
-      handleFailure(error, action);
+      handleFailure(error, action, sent);
     }
   };
 
@@ -390,7 +431,7 @@ export function ShipmentActions({
           <Button
             size="sm"
             variant="outline"
-            onClick={() => openAction('split')}
+            onClick={() => startAction('split')}
           >
             분할
           </Button>
@@ -400,13 +441,17 @@ export function ShipmentActions({
             <Button
               size="sm"
               variant="outline"
-              onClick={() => openAction('recipient')}
+              onClick={() => startAction('recipient')}
             >
               수령인 변경
             </Button>
           )}
         {allowed.includes('plan') && canRun(usePlanShipment) && (
-          <Button size="sm" variant="outline" onClick={() => openAction('plan')}>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => startAction('plan')}
+          >
             {ACTION_TITLE.plan}
           </Button>
         )}
@@ -423,33 +468,34 @@ export function ShipmentActions({
           <Button
             size="sm"
             variant="destructive"
-            onClick={() => openAction('recall')}
+            onClick={() => startAction('recall')}
           >
             {ACTION_TITLE.recall}
           </Button>
         )}
       </div>
 
-      {retry && isRecoverableOperation(status) && (
-        <Alert className="border-amber-300 bg-amber-50 dark:bg-amber-950/20">
-          <RefreshCw />
-          <AlertTitle>
-            {retry.actionLabel} ·{' '}
-            {operationStatusLabel(retry.operationId ? status : undefined)}
-          </AlertTitle>
-          <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
-            <span>{retryNotice(retry.operationId, status)}</span>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={retryAgain}
-              disabled={pending}
-            >
-              다시 시도
-            </Button>
-          </AlertDescription>
-        </Alert>
-      )}
+      {retry?.draft.shipmentId === shipment.id &&
+        isRecoverableOperation(status) && (
+          <Alert className="border-amber-300 bg-amber-50 dark:bg-amber-950/20">
+            <RefreshCw />
+            <AlertTitle>
+              {retry.actionLabel} ·{' '}
+              {operationStatusLabel(retry.operationId ? status : undefined)}
+            </AlertTitle>
+            <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
+              <span>{retryNotice(retry.operationId, status)}</span>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={retryAgain}
+                disabled={pending}
+              >
+                다시 시도
+              </Button>
+            </AlertDescription>
+          </Alert>
+        )}
 
       {canConsolidate && (
         <ConsolidationSheet
@@ -459,7 +505,10 @@ export function ShipmentActions({
         />
       )}
 
-      <Dialog open={!!action} onOpenChange={(open) => !open && setAction(null)}>
+      <Dialog
+        open={!!action && draft.shipmentId === shipment.id}
+        onOpenChange={(open) => !open && setAction(null)}
+      >
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>{action ? ACTION_TITLE[action] : ''}</DialogTitle>
@@ -469,7 +518,10 @@ export function ShipmentActions({
             <div className="grid grid-cols-2 gap-3">
               <div className="col-span-2 space-y-1.5">
                 <Label htmlFor="split-line">나눌 상품</Label>
-                <Select value={lineId} onValueChange={setLineId}>
+                <Select
+                  value={lineId}
+                  onValueChange={(value) => edit('lineId', value)}
+                >
                   <SelectTrigger id="split-line" className="w-full">
                     <SelectValue placeholder="상품 선택" />
                   </SelectTrigger>
@@ -490,7 +542,7 @@ export function ShipmentActions({
                   min={1}
                   max={Math.max(maxMove, 1)}
                   value={qty}
-                  onChange={(event) => setQty(event.target.value)}
+                  onChange={(event) => edit('qty', event.target.value)}
                 />
               </div>
               <div className="col-span-2">
@@ -542,7 +594,7 @@ export function ShipmentActions({
                       type={type}
                       autoComplete={autoComplete}
                       onChange={(event) =>
-                        setRecipient({
+                        edit('recipient', {
                           ...recipient,
                           [key]: event.target.value,
                         })
@@ -559,7 +611,7 @@ export function ShipmentActions({
               <Label htmlFor="plan-profile">배송 프로필</Label>
               <Select
                 value={chosenProfileId}
-                onValueChange={setShippingProfileId}
+                onValueChange={(value) => edit('shippingProfileId', value)}
                 disabled={profiles.isLoading}
               >
                 <SelectTrigger id="plan-profile">
@@ -597,7 +649,10 @@ export function ShipmentActions({
               </Alert>
               <div className="space-y-1.5">
                 <Label htmlFor="recall-attempt">되돌릴 출고</Label>
-                <Select value={attemptId} onValueChange={setAttemptId}>
+                <Select
+                  value={attemptId}
+                  onValueChange={(value) => edit('attemptId', value)}
+                >
                   <SelectTrigger id="recall-attempt" className="w-full">
                     <SelectValue placeholder="돌아온 출고 선택" />
                   </SelectTrigger>
@@ -615,7 +670,7 @@ export function ShipmentActions({
                 <Select
                   value={recallReason}
                   onValueChange={(value) =>
-                    setRecallReason(value as ShipmentRecallReason)
+                    edit('recallReason', value as ShipmentRecallReason)
                   }
                 >
                   <SelectTrigger id="recall-reason" className="w-full">
@@ -634,7 +689,7 @@ export function ShipmentActions({
                 <Checkbox
                   checked={physicalRecovery}
                   onCheckedChange={(checked) =>
-                    setPhysicalRecovery(checked === true)
+                    edit('physicalRecovery', checked === true)
                   }
                 />
                 <span>{recallConfirmText(isSupplier)}</span>
@@ -646,7 +701,7 @@ export function ShipmentActions({
             <OperationReasonFields
               type={action === 'split' ? 'split' : 'recipient_revision'}
               value={reasonValue}
-              onChange={setReasonValue}
+              onChange={(value) => edit('reasonValue', value)}
               showErrors={showReasonErrors}
             />
           )}
@@ -656,7 +711,7 @@ export function ShipmentActions({
               <Textarea
                 id="shipment-action-note"
                 value={note}
-                onChange={(event) => setNote(event.target.value)}
+                onChange={(event) => edit('note', event.target.value)}
                 rows={2}
               />
             </div>

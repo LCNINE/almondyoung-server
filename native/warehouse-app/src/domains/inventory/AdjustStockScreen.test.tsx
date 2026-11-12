@@ -17,7 +17,7 @@ import { useWarehouse } from '../../app/warehouse-context';
 import { createMemoryPrefs } from '../../core/data/devicePrefs';
 import { ApiClientProvider } from '../../core/data/ApiClientProvider';
 import { ScanProvider } from '../../core/hardware/scan/ScanProvider';
-import type { ApiClient } from '../../core/data/httpClient';
+import { ApiError, type ApiClient } from '../../core/data/httpClient';
 import type { Session } from '../../core/auth/session';
 import { AdjustStockScreen } from './AdjustStockScreen';
 
@@ -141,7 +141,11 @@ describe('AdjustStockScreen', () => {
   });
 
   it('로케이션·delta·사유가 갖춰지면 확인 후 조정을 보낸다', async () => {
-    const calls: Array<{ path: string; body?: unknown; idempotencyKey?: string }> = [];
+    const calls: Array<{
+      path: string;
+      body?: unknown;
+      idempotencyKey?: string;
+    }> = [];
     renderScreen(makeClient(calls), 'l-1');
 
     await userEvent.click(await screen.findByRole('button', { name: '2' }));
@@ -275,7 +279,11 @@ describe('AdjustStockScreen', () => {
   });
 
   it('확인창이 열려 있는 동안 스캔이 들어와도 조정 대상 로케이션은 바뀌지 않는다', async () => {
-    const calls: Array<{ path: string; body?: unknown; idempotencyKey?: string }> = [];
+    const calls: Array<{
+      path: string;
+      body?: unknown;
+      idempotencyKey?: string;
+    }> = [];
     renderScreen(makeClient(calls), 'l-1');
 
     await userEvent.click(await screen.findByRole('button', { name: '2' }));
@@ -338,7 +346,11 @@ describe('AdjustStockScreen', () => {
     // 제출이 같은 키를 재사용해 백엔드가 조용히 no-op 한다 — 재고는 안 움직이는데
     // 화면은 성공을 보여준다. useNavigate 를 가로채 이동으로 인한 언마운트를
     // 막아, 이 위험을 타이밍에 기대지 않고 확정적으로 재현한다.
-    const calls: Array<{ path: string; body?: unknown; idempotencyKey?: string }> = [];
+    const calls: Array<{
+      path: string;
+      body?: unknown;
+      idempotencyKey?: string;
+    }> = [];
     navigateOverride.current = vi.fn();
 
     renderScreen(makeClient(calls), 'l-1');
@@ -374,7 +386,11 @@ describe('AdjustStockScreen', () => {
     // 키가 성공 후에만 회전하면, "요청은 커밋됐는데 응답만 유실"된 경우 작업자가
     // delta 를 고쳐서 재제출해도 같은 키가 재사용된다 — 백엔드는 이걸 replay 로
     // 보고 성공을 보여주지만 실제로는 예전(틀린) 금액이 적용된다.
-    const calls: Array<{ path: string; body?: unknown; idempotencyKey?: string }> = [];
+    const calls: Array<{
+      path: string;
+      body?: unknown;
+      idempotencyKey?: string;
+    }> = [];
     let shouldFail = true;
     const client: ApiClient = {
       request: (async (opts: { path: string; method?: string; body?: unknown; idempotencyKey?: string }) => {
@@ -417,7 +433,11 @@ describe('AdjustStockScreen', () => {
   });
 
   it('실패 후 같은 값으로 재시도하면 같은 멱등키를 재사용한다', async () => {
-    const calls: Array<{ path: string; body?: unknown; idempotencyKey?: string }> = [];
+    const calls: Array<{
+      path: string;
+      body?: unknown;
+      idempotencyKey?: string;
+    }> = [];
     let shouldFail = true;
     const client: ApiClient = {
       request: (async (opts: { path: string; method?: string; body?: unknown; idempotencyKey?: string }) => {
@@ -456,4 +476,40 @@ describe('AdjustStockScreen', () => {
     expect(calls[1].body).toMatchObject({ delta: -2 });
     expect(calls[1].idempotencyKey).toEqual(firstKey);
   });
+});
+
+it('권한이 없으면 입력 전 안내하고 수량과 사유를 넣어도 제출하지 못한다', async () => {
+  const calls: Array<{ path: string; body?: unknown }> = [];
+  const client = makeClient(calls);
+  const baseRequest = client.request;
+  client.request = async <T,>(opts: Parameters<ApiClient['request']>[0]) => {
+    if (opts.path === '/inventory/work-context') return { permissions: { stockAdjust: false } } as T;
+
+    return baseRequest<T>(opts);
+  };
+  renderScreen(client, 'l-1');
+
+  expect(await screen.findByText('재고 조정 권한이 없어요. 관리자에게 요청해 주세요.')).toBeInTheDocument();
+  await userEvent.click(screen.getByRole('button', { name: '2' }));
+  await userEvent.click(screen.getByRole('button', { name: '파손' }));
+  expect(screen.getByRole('button', { name: '조정하기' })).toBeDisabled();
+  expect(calls.filter((call) => call.path === '/inventory/stocks/adjust')).toHaveLength(0);
+});
+
+it('권한 조회가 실패해도 제출하고 서버 403은 같은 권한 문구로 안내한다', async () => {
+  const client = makeClient([]);
+  const baseRequest = client.request;
+  client.request = async <T,>(opts: Parameters<ApiClient['request']>[0]) => {
+    if (opts.path === '/inventory/stocks/adjust') throw new ApiError('denied', 403);
+
+    return baseRequest<T>(opts);
+  };
+  renderScreen(client, 'l-1');
+
+  await userEvent.click(await screen.findByRole('button', { name: '2' }));
+  await userEvent.click(screen.getByRole('button', { name: '파손' }));
+  await userEvent.click(screen.getByRole('button', { name: '조정하기' }));
+  await userEvent.click(await screen.findByRole('button', { name: '조정' }));
+  expect(await screen.findByRole('alert')).toHaveTextContent('재고 조정 권한이 없어요. 관리자에게 요청해 주세요.');
+  expect(screen.queryByText('다시 로그인')).not.toBeInTheDocument();
 });

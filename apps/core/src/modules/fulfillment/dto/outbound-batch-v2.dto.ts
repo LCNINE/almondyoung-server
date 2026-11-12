@@ -1,6 +1,6 @@
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsDate, IsIn, IsInt, IsNotEmpty, IsOptional, IsString, IsUUID, Max, Min } from 'class-validator';
+import { IsBoolean, IsDate, IsIn, IsInt, IsNotEmpty, IsOptional, IsString, IsUUID, Max, Min } from 'class-validator';
 import { pickingMethodValues, type PickingMethodEnum } from '../../inventory/schema/enum-values';
 
 export type OutboundBatchActor = {
@@ -36,6 +36,11 @@ export class CreateOutboundBatchV2Dto {
 }
 
 export class ExcludeShipmentFromBatchDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  voidWaybill?: boolean;
+
   @IsString()
   @IsNotEmpty()
   reason: string;

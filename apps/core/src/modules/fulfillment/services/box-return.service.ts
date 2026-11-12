@@ -2,6 +2,7 @@ import { BadRequestException, ConflictException, Injectable } from '@nestjs/comm
 import { and, eq, notInArray } from 'drizzle-orm';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
 import { BarcodeService } from '../../inventory/shared/services/barcode.service';
+import { WaybillService } from '../waybill/waybill.service';
 import { ReturnBinRemovalResponseDto } from '../dto/return-bin.dto';
 import { BoxAllocationManager } from './box-allocation.manager';
 import { BoxWithdrawalService, WorkItemRow } from './box-withdrawal.service';
@@ -35,6 +36,7 @@ export class BoxReturnService {
     private readonly barcodes: BarcodeService,
     private readonly planning: ShipmentPlanningService,
     private readonly batches: OutboundBatchOrchestrator,
+    private readonly waybills: WaybillService,
   ) {}
 
   /** 잠금: 구성요소 → 작업 항목 → 세션 → 보관. 마지막 몫이면 같은 트랜잭션에서 나가고, canceled 면 취소까지 끝낸다. */
@@ -157,11 +159,13 @@ export class BoxReturnService {
 
   /** 커밋 뒤의 몫 — draft 로 나간 박스가 기다리던 오퍼레이션(합포장·옛 부분 취소)을 잇는다(PR 2 빼기와 같다). */
   async resumeAfterDraftExit(
-    exits: Array<{ shipmentId: string; exitTo: string | null; waitingOperationId: string | null }>,
+    exits: Array<{ workItemId: string; shipmentId: string; exitTo: string | null; waitingOperationId: string | null }>,
     tx?: DbTx,
   ): Promise<void> {
     for (const exit of exits) {
-      if (exit.exitTo === 'draft' && exit.waitingOperationId) {
+      const handled = await this.waybills.voidAfterWithdrawal(exit.workItemId, tx);
+
+      if (!handled && exit.exitTo === 'draft' && exit.waitingOperationId) {
         await this.batches.resumeWaitingOperation(exit.waitingOperationId, exit.shipmentId, tx);
       }
     }
