@@ -1,6 +1,6 @@
 import { Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { WowpressApiError, WowpressClient, WowpressOrderRejectedError } from './wowpress.client';
+import { WowpressApiError, WowpressClient, WowpressOrderRejectedError, toWowpressOrdkey } from './wowpress.client';
 import { type WowpressLineSpec, type WowpressRequest, type WowpressResponse } from './wowpress.types';
 
 const API = 'https://api.wowpress.co.kr';
@@ -135,6 +135,10 @@ describe('WowpressClient', () => {
     expect(orders.map((c) => c.token)).toEqual(['tok-1', 'tok-1']);
   });
 
+  it('shortens a sales order line id to the 16-char WowPress ordkey', () => {
+    expect(toWowpressOrdkey('01a1c9a3-9ba1-75d9-9041-7f1b959b0d6b')).toBe('90417f1b959b0d6b');
+  });
+
   it('builds cjson_order with ordbody, ordkey, dlvymcd "4", dlvyfr from env and dlvyto', async () => {
     const { client, calls } = makeClient({
       [`${API}/api/login/issue`]: [tokenOk('tok')],
@@ -155,7 +159,7 @@ describe('WowpressClient', () => {
           ordcnt: '1',
           ordtitle: '아몬드영 SO-1',
           ordbody: '테스트 시안입니다. 혹시 이 시안대로 출력이 되나요?',
-          ordkey: '0190f1d2-0000-7000-8000-000000000001',
+          ordkey: '8000000000000001',
           jobpresetno: '3',
           prsjob: [{ jobno: 1, jobqty: 200 }],
           awkjob: [{ jobno: 2, jobqty: 200 }],
@@ -348,11 +352,11 @@ describe('WowpressClient', () => {
 
     const json = calls.find((c) => c.url.endsWith('/cjson_order'))?.json;
     expect(json).toHaveProperty('ordreq', [
-      [expect.objectContaining({ ordkey: 'line-a', ordbody: '<TEST 메모>', ordqty: '200', prodno: 40026 })],
-      [expect.objectContaining({ ordkey: 'line-b', ordbody: '<TEST 메모2>', ordqty: '300', prodno: 40073 })],
+      [expect.objectContaining({ ordkey: 'linea', ordbody: '<TEST 메모>', ordqty: '200', prodno: 40026 })],
+      [expect.objectContaining({ ordkey: 'lineb', ordbody: '<TEST 메모2>', ordqty: '300', prodno: 40073 })],
     ]);
     expect(json).toHaveProperty('dlvymcd', '4');
-    expect(logSpy.mock.calls.map((c) => String(c[0])).join('\n')).toContain('ordkey=line-a,line-b');
+    expect(logSpy.mock.calls.map((c) => String(c[0])).join('\n')).toContain('ordkey=linea,lineb');
     logSpy.mockRestore();
   });
 
@@ -463,7 +467,7 @@ describe('WowpressClient', () => {
     const { client } = makeClient({
       [`${API}/api/login/issue`]: [tokenOk('tok')],
       [`${API}/api/v1/ord/ord_list`]: [
-        ok({ resultMap: { ordlist: [{ ordkey: 'line-a', ordnum: 'WP1', dboxnum: '4-156-9410333' }] } }),
+        ok({ resultMap: { ordlist: [{ ordkey: 'linea', ordnum: 'WP1', dboxnum: '4-156-9410333' }] } }),
       ],
     });
 
@@ -625,7 +629,7 @@ describe('WowpressClient', () => {
 
       await expect(client.order(ORDER_INPUT)).rejects.toThrow('boom');
       expect(logged()).toContain('WP-LOST');
-      expect(logged()).toContain(ORDER_INPUT.items[0].ordkey);
+      expect(logged()).toContain(toWowpressOrdkey(ORDER_INPUT.items[0].ordkey));
     });
   });
 

@@ -145,6 +145,12 @@ function collectOrdnums(node: unknown, out: string[] = []): string[] {
   return out;
 }
 
+// 와우프레스 UserOrdKey 칸은 판매주문 줄 id(UUID 36자)를 받지 못한다. 하이픈을 뺀 뒤 16자리(무작위 부분)만 보낸다.
+// ponytail: 줄 id 는 바꾸지 않고 보낼 때만 줄인다. 조회는 ordkey 로 거른 뒤 같은 값으로 다시 맞춰 보므로 충돌은 기간 안 같은 키뿐이다
+export function toWowpressOrdkey(lineId: string): string {
+  return lineId.replace(/-/g, '').slice(-16);
+}
+
 @Injectable()
 export class WowpressClient {
   private readonly logger = new Logger(WowpressClient.name);
@@ -204,7 +210,7 @@ export class WowpressClient {
               ordcnt: '1',
               ordtitle: input.ordtitle,
               ordbody,
-              ordkey,
+              ordkey: toWowpressOrdkey(ordkey),
               jobpresetno: spec.jobpresetno,
               ...buildJobs(spec, qty),
             },
@@ -223,7 +229,7 @@ export class WowpressClient {
         },
       },
       false,
-      { name: 'cjson_order', ordkey: items.map((i) => i.ordkey).join(',') },
+      { name: 'cjson_order', ordkey: items.map((i) => toWowpressOrdkey(i.ordkey)).join(',') },
     );
 
     const resultMap = asRecord(res.resultMap);
@@ -272,7 +278,8 @@ export class WowpressClient {
     await this.call({ method: 'POST', url: `${API_BASE}/api/v1/ord/ord_cancel`, json: { ordnum } }, false);
   }
 
-  async findByOrdkey(ordkey: string, since: Date): Promise<{ ordnum: string; dboxnum: string | null } | null> {
+  async findByOrdkey(lineId: string, since: Date): Promise<{ ordnum: string; dboxnum: string | null } | null> {
+    const ordkey = toWowpressOrdkey(lineId);
     const res = await this.call(
       {
         method: 'POST',
