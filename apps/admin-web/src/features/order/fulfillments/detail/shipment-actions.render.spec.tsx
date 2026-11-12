@@ -755,7 +755,7 @@ describe('새로고침 뒤 남은 요청의 결과', () => {
 
     const dialog = screen.getByRole('dialog');
     expect(within(dialog).getByRole('heading').textContent).toBe('상자 분할');
-    expect(reasonIn(dialog).value).toBe('');
+    expect(checkedReasons(dialog)).toHaveLength(0);
     expect(pendingRequests()).toEqual([]);
   });
 
