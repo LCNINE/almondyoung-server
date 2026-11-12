@@ -40,6 +40,7 @@ export class AlmondTemplateSummaryResponseDto {
   @ApiProperty({ nullable: true, type: String }) industry: string | null;
   @ApiProperty({ nullable: true, type: String }) purpose: string | null;
   @ApiProperty({ nullable: true, type: String, example: 'pet', description: 'design.kind' }) kind: string | null;
+  @ApiProperty({ description: '뒷면을 인쇄하는 템플릿인지' }) printsBack: boolean;
   @ApiProperty() updatedAt: string;
 }
 

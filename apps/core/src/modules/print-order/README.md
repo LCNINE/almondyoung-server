@@ -8,7 +8,8 @@
 - 판매주문 라인에 `almond_design_id` 가 있으면 `pending` 행을 만든다.
 - `PrintOrderSubmitWorker` (매분): 판매주문 하나씩 집어 시안 주인 확인 → ugc 에서 인쇄 파일 링크 → 와우프레스 가격조회 → 주문 → 파일 전달. 아래 묶음 발주 참고.
   시안 ID 는 고객이 장바구니 메타데이터로 넣는 값이라, 시안 주인(ugc `almond_designs.user_id`)과 주문 고객(`sales_orders.customer_id`)이 다르면 주문하지 않고 `failed` 로 둔다.
-- `PrintOrderTrackingWorker` (30분): 주문상세로 송장·배송 상태 반영. 고객 배송조회(`/store/orders/by-channel-order/:id/tracking`)에 한 항목으로 덧붙는다.
+- 와우프레스 주문상태 콜백(`POST /wowpress/callback`): 와우프레스가 상태가 바뀔 때마다 알려 주면 그 주문만 바로 다시 읽는다. 아래 상태 콜백 참고.
+- `PrintOrderTrackingWorker` (30분): 콜백을 놓친 경우를 위한 보조 확인. 주문상세로 송장·배송 상태, 입금대기, 와우프레스 확인 필요(접수·파일 에러, 와우프레스 쪽 취소)를 반영한다. 고객 배송조회(`/store/orders/by-channel-order/:id/tracking`)에 한 항목으로 덧붙는다.
 - 취소: `PrintOrderCancellation` 이 판매주문 취소 앞단에서 와우프레스 취소를 먼저 시도한다. 아래 취소·환불 경로 참고.
 - 운영자 보드: admin-web `주문 > 와우프레스 발주` (`/order/print-orders`).
 - 배송지 변경: Medusa 에서 주소를 고쳐도 와우프레스로 이미 보냈거나 보내는 중인 인쇄 줄이 있으면 반영하지 않고 운영자 확인(`SHIPMENT_NOT_REVISABLE`)으로 남긴다. 와우프레스 쪽 주소는 사람이 고친다. 발주 전 줄은 발주할 때 새 주소를 읽는다.
@@ -53,6 +54,16 @@
 운영자가 와우프레스에 그 주문이 없음을 직접 확인한 뒤 재전송하면서 `와우프레스에 주문 없음 확인`(`confirmNoWowpressOrder`)을 체크해야만 주문권이 풀리고(`order_attempted_at` 해제) 다시 주문된다. 체크 없이 재전송하면 거절된다.
 중복 의심·번호 미저장·취소 뒤 주문 같은 보호 기록(`retryBlocked`)이 남은 행은 재전송 자체가 막힌다 — 와우프레스에서 처리한다 (`services/print-order-board.rules.ts`, `services/print-order-admin.manager.ts`).
 
+## 상태 콜백
+
+와우프레스 API 문서 6.11 주문상태 CALL BACK 을 받는다. 상태가 바뀔 때마다 등록한 주소로 `ordnum`·`ordstat`·`jobstat`·`shipnum` 을 POST 하고, 200 을 받을 때까지 10초 간격으로 최대 10번 다시 보낸다.
+
+- 주소는 core 의 `POST /wowpress/callback` 이다(`controllers/wowpress-callback.controller.ts`). 와우프레스 회원 정보에 콜백 주소를 한 번 등록해야 온다. 이 라우트가 배포된 뒤에 등록한다(먼저 등록하면 404 로 10번 실패하고 버려진다).
+  등록: 로그인 토큰을 Bearer 로 붙여 `POST https://api.wowpress.co.kr/api/v1/mpag/cbkurl/update`, form `cbkurl=<core 주소>/wowpress/callback?type=json`. `?type=json` 이 본문을 `application/json` 으로 고르는 표시다(없으면 form-urlencoded).
+- 본문에는 서명이 없어 누구나 보낼 수 있다. 그래서 본문의 상태는 쓰지 않고, `ordnum` 으로 우리 행을 찾은 뒤 주문상세 API 를 다시 불러 반영한다(30분 폴러와 같은 `PrintOrderTrackingManager.refresh`). 형식이 맞지 않는 `ordnum` 은 무시한다.
+- 와우프레스는 테넌트를 알려 주지 않는다. 라우트는 `@TenantFree` 이고, 모든 테넌트 core DB 에서 그 `ordnum` 을 찾는다. 한 DB 라도 실패하면 500 을 돌려 와우프레스가 다시 보내게 한다.
+- 콜백이 10번 다 실패하면 와우프레스는 더 보내지 않는다. 그 사이는 30분 폴러가 메운다.
+
 ## 취소·환불 경로
 
 인쇄 상품이 섞인 주문은 어느 상품을 돌려주는지 아는 경로(부분 취소)로만 환불한다.
@@ -80,7 +91,8 @@
 | 탭 | 대상 | 조치 |
 |---|---|---|
 | 취소 확인 필요 | `cancel_refused`, 오래 멈춘 `cancelling`, 판매주문 취소가 실패한 `cancelled` | 와우프레스에 전화 후 `취소 완료함`(이어서 판매주문 취소) 또는 `생산 진행으로 처리`(`submitted` 로 복귀) |
-| 입금대기 | 와우프레스가 입금대기(`ordstat=0`)로 멈춰 둔 `submitted` 행. 송장 폴러(30분)가 표시하고 풀리면 지운다. 테스트 주문은 빠진다 | 와우프레스 선입금 충전. 충전되면 자동 정산되고 다음 폴링에서 빠진다 |
+| 입금대기 | 와우프레스가 입금대기(`ordstat=0`)로 멈춰 둔 `submitted` 행. 상태 콜백이나 폴러가 표시하고 풀리면 지운다. 테스트 주문은 빠진다 | 와우프레스 선입금 충전. 결제·정산되지 않은 주문은 접수·생산이 진행되지 않는다(와우프레스 문서 6.5) |
+| 와우프레스 확인 | `submitted`·`shipped` 행 중 와우프레스 작업상태가 접수·파일 에러(`jobstat` 109, 121~131)이거나 와우프레스에서 취소된(`ordstat=90`) 행. `last_error` 를 `wowpress needs attention: …` 로 남기고, 풀리면 지운다(보호 기록은 덮지 않는다) | 에러는 와우프레스 주문배송조회에서 파일재접수나 주문취소. 와우프레스에서 취소됐으면 어드민 주문 화면에서 그 주문을 취소해 환불한다 |
 | 테스트 확인대기 | 테스트 메모를 붙였고 아직 확인 안 한 건 | 전화 확인 뒤 `확인 완료` |
 | 발주 실패 | `failed` | 사유 확인 후 `재전송` |
 | 미지원 품목 | `unsupported` | 매핑을 추가한 뒤 `재전송` |
@@ -122,4 +134,6 @@
 - 인쇄물 하자는 일반 반품(창고 회수) 흐름에 맞지 않는다. 와우프레스 약관(18조2)은 수령 7일 안에 전량 반송하면 재작업이 원칙이고 환불은 예외다. 고객에게는 5일 안에 고객센터로 접수하라고 안내한다(우리가 와우프레스 7일 기한 안에 접수할 여유). API 대리 주문·고객 직배송 건에 약관이 그대로 적용되는지는 와우프레스 확인이 필요하다.
 - 첫 실주문에서 `ord_list`, `cjson_order` 응답 모양과 배송지 `sd/sgg/umd` 분해(`wowpress/korean-address.ts`)가 실제 응답과 맞는지 반드시 확인한다. 문서만으로 확정하지 못한 부분이다.
 - 택배사 코드는 109=롯데, 156=CJ 만 매핑한다. 그 밖은 송장만 보인다.
+- 와우프레스에서 직접 취소한 주문은 우리 쪽에서 저절로 환불되지 않는다. 보드 `와우프레스 확인` 에 뜨고, 운영자가 어드민에서 주문을 취소해야 환불된다.
+- 뒷면이 있는 템플릿을 단면 옵션으로 주문하면 와우프레스가 `접수에러-양단면접수에러`(129)로 멈춘다. 게시 모달은 뒷면이 있는 템플릿에 단면 옵션을 만들지 않는다(ugc 템플릿 목록의 `printsBack`).
 - 주문상세의 송장은 배송박스 단위(`ordinfo.dlvybox.shipnum`)다. `dlvyinvc`/`dlvyno` 는 콜백 전용 키라 상세에서 읽으면 비어 있다(와우프레스 문서 2026.10.14 §6.11·§6.13).

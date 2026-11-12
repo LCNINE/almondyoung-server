@@ -10,6 +10,8 @@ export type Session = {
   getAccessToken(): Promise<string>;
   login(onStep?: (s: string) => void): Promise<void>;
   logout(): Promise<void>;
+  /** Also ends the browser sign-in so the next login can pick another account. */
+  signOut?(): Promise<void>;
   subscribe(fn: () => void): () => void;
 };
 
@@ -18,6 +20,7 @@ export function createSession(deps: {
   // side-effecting login runner, injected for testability; wraps
   // loginWithLoopback({ manager, onStep }) in production.
   runLogin: (manager: Manager, onStep?: (s: string) => void) => Promise<void>;
+  endBrowserSession?: (idToken?: string) => Promise<void>;
 }): Session {
   let authed = false;
   const listeners = new Set<() => void>();
@@ -50,6 +53,13 @@ export function createSession(deps: {
       setAuthed(true);
     },
     async logout() {
+      await deps.manager.clear();
+      setAuthed(false);
+    },
+    async signOut() {
+      const idToken = await deps.manager.getIdToken().catch(() => undefined);
+
+      await deps.endBrowserSession?.(idToken);
       await deps.manager.clear();
       setAuthed(false);
     },

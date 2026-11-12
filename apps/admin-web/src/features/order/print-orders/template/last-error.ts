@@ -55,12 +55,37 @@ const REASONS: [prefix: string, korean: string][] = [
 ];
 
 const REJECTED = 'wowpress rejected the order: ';
+const VENDOR_CANCELLED = 'wowpress needs attention: cancelled';
+const JOB_ERROR = 'wowpress needs attention: job error ';
+
+// 와우프레스 API 문서의 주문작업상태코드(JobStat) 중 에러
+const JOB_ERRORS: Record<string, string> = {
+  '109': '에러처리',
+  '121': '파일에러-그룹에러',
+  '122': '파일에러-테두리선에러',
+  '123': '파일에러-폰트아웃라인에러',
+  '124': '파일에러-프로그램버전에러',
+  '125': '파일에러-칼선없음',
+  '126': '파일에러-데이타누락',
+  '127': '파일에러-사이즈에러',
+  '128': '접수에러-건수불일치',
+  '129': '접수에러-양단면접수에러',
+  '130': '파일에러-이미지유실',
+  '131': '파일에러-기타',
+};
 
 // 여러 기록이 ' | ' 로 이어 붙을 수 있다. 모르는 문구는 원문 그대로 둔다
 export function describeLastError(raw: string): string[] {
   return raw.split(' | ').map((part) => {
     if (part.startsWith(REJECTED))
       return `와우프레스가 주문을 받지 않았습니다. 사유: ${part.slice(REJECTED.length)}`;
+    if (part === VENDOR_CANCELLED)
+      return '와우프레스에서 주문이 취소됐습니다. 주문 화면에서 이 주문을 취소해 환불해 주세요.';
+    if (part.startsWith(JOB_ERROR)) {
+      const code = part.slice(JOB_ERROR.length);
+
+      return `와우프레스 접수 에러: ${JOB_ERRORS[code] ?? code}. 와우프레스 주문배송조회에서 파일재접수나 주문취소로 처리해 주세요.`;
+    }
     const found = REASONS.find(([prefix]) => part.startsWith(prefix));
 
     return found ? found[1] : part;

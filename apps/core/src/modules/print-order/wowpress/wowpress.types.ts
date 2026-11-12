@@ -75,6 +75,9 @@ export type WowpressTransport = (req: WowpressRequest) => Promise<WowpressRespon
 export const WOWPRESS_STATUS_AWAITING_PAYMENT = 0;
 export const WOWPRESS_STATUS_CANCELLED = 90;
 
+// 작업상태(JobStat) 중 접수에러·파일에러. 와우프레스 화면에서 파일재접수나 취소로 풀어야 생산이 이어진다
+export const WOWPRESS_JOB_ERRORS: ReadonlySet<number> = new Set([109, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131]);
+
 export const WOWPRESS_CANCELLABLE = (d: WowpressOrderDetail): boolean =>
   d.ordstat === 0 || d.ordstat === 1 || d.jobstat === 109;
 

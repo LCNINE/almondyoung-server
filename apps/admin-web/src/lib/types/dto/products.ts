@@ -951,6 +951,8 @@ export interface AdminAlmondTemplateDto {
   colors: string[];
   industry: string | null;
   purpose: string | null;
+  /** 뒷면을 인쇄하는 템플릿인지. 옛 ugc 응답엔 없다 */
+  printsBack?: boolean;
   status: AlmondTemplateStatus;
   createdBy: string;
   updatedBy: string | null;

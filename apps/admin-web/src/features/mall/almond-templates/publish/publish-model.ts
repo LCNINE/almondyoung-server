@@ -273,3 +273,9 @@ export function qtyLabel(kind: PrintKind, qty: number): string {
 }
 
 export const won = (n: number): string => `${n.toLocaleString('ko-KR')}원`;
+
+// 뒷면이 있는 템플릿을 단면으로 팔면 와우프레스가 양단면 접수에러로 멈춘다
+// ponytail: 와우프레스 색상 이름에 단면/양면이 들어 있어 이름으로 거른다. 이름 규칙이 바뀌면 colorinfo 의 면 수로 바꾼다
+export function sidesFor<T extends { label: string }>(colors: T[], printsBack: boolean): T[] {
+  return printsBack ? colors.filter((c) => !c.label.includes('단면')) : colors;
+}

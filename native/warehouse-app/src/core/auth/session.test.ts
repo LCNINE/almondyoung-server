@@ -7,6 +7,7 @@ type Manager = ReturnType<typeof createTokenManager>;
 function fakeManager(over: Partial<Manager> = {}): Manager {
   return {
     getAccessToken: async () => 'A',
+    getIdToken: async () => undefined,
     set: async () => {},
     clear: async () => {},
     ...over,
@@ -16,10 +17,12 @@ function fakeManager(over: Partial<Manager> = {}): Manager {
 function make(over: {
   manager?: Partial<Manager>;
   runLogin?: (m: Manager, onStep?: (s: string) => void) => Promise<void>;
+  endBrowserSession?: (idToken?: string) => Promise<void>;
 } = {}): Session {
   return createSession({
     manager: fakeManager(over.manager),
     runLogin: over.runLogin ?? (async () => {}),
+    endBrowserSession: over.endBrowserSession,
   });
 }
 
@@ -67,6 +70,54 @@ describe('createSession', () => {
     expect(clear).toHaveBeenCalledOnce();
     expect(s.isAuthenticated()).toBe(false);
     expect(listener).toHaveBeenCalled();
+  });
+
+  it('logout clears only local tokens and never opens the browser', async () => {
+    const endBrowserSession = vi.fn(async () => {});
+    const s = make({ endBrowserSession });
+
+    await s.login();
+    await s.logout();
+
+    expect(endBrowserSession).not.toHaveBeenCalled();
+    expect(s.isAuthenticated()).toBe(false);
+  });
+
+  it('signOut opens the browser sign-out before leaving the session', async () => {
+    const order: string[] = [];
+    const s = make({
+      manager: {
+        getIdToken: async () => 'ID',
+        clear: async () => {
+          order.push('clear');
+        },
+      },
+      endBrowserSession: async (idToken) => {
+        order.push(`browser:${idToken}`);
+      },
+    });
+
+    await s.login();
+    s.subscribe(() => order.push(`authed:${s.isAuthenticated()}`));
+    await s.signOut?.();
+
+    expect(order).toEqual(['browser:ID', 'clear', 'authed:false']);
+  });
+
+  it('signOut keeps the session when the browser cannot be opened', async () => {
+    const clear = vi.fn(async () => {});
+    const s = make({
+      manager: { clear },
+      endBrowserSession: async () => {
+        throw new Error('no browser');
+      },
+    });
+
+    await s.login();
+
+    await expect(s.signOut?.()).rejects.toThrow('no browser');
+    expect(clear).not.toHaveBeenCalled();
+    expect(s.isAuthenticated()).toBe(true);
   });
 
   it('subscribe returns an unsubscribe that stops notifications', async () => {
