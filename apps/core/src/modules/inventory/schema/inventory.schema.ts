@@ -258,6 +258,7 @@ export const shipmentOperationTypeEnum = pgEnum('shipment_operation_type', [
   'replan',
   'short_pick',
   'recall',
+  'force_dispatch',
   // #1063: 작성 중 박스를 목표 내용에 맞춘 기록(라인 구성 변경·S2 주문 수정). PR 2 부터 쓴다.
   'amend',
 ]);
@@ -3287,7 +3288,9 @@ export const shipmentOperations = pgTable(
     type: shipmentOperationTypeEnum('type').notNull(),
     status: shipmentOperationStatusEnum('status').notNull().default('pending'),
     operatorId: uuid('operator_id').notNull(),
-    reason: varchar('reason', { length: 255 }).notNull(),
+    reason: varchar('reason', { length: 500 }).notNull(),
+    reasonCode: varchar('reason_code', { length: 64 }),
+    requestChannel: varchar('request_channel', { length: 32 }),
     csCaseId: uuid('cs_case_id'),
     note: text('note'),
     idempotencyKey: varchar('idempotency_key', { length: 255 }).notNull(),
@@ -5069,6 +5072,7 @@ export type DbTx = TxFor<typeof wmsSchema>;
  *──────────────────────────*/
 
 // Supplier Types
+export type ShipmentOperationType = (typeof shipmentOperationTypeEnum.enumValues)[number];
 export type Supplier = InferSelectModel<typeof suppliers>;
 export type NewSupplier = InferInsertModel<typeof suppliers>;
 
