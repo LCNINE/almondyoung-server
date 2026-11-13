@@ -4,11 +4,11 @@ import { parseDesign, printsBack } from "@/domains/almond-template/lib/document"
 import { printSvg } from "@/domains/almond-template/components/print-svg"
 import { rasterPng } from "@/domains/almond-template/lib/design-images"
 import { mountViewer } from "../model3d-viewer/mount-viewer"
-import { PAPER_MODELS, type PaperShape, type PaperVariant } from "./paper"
+import { PAPER_MODELS, type ModelShape, type PaperVariant } from "./paper"
 
 type PaperViewerOptions = {
   templateId: string
-  shape: PaperShape
+  shape: ModelShape
   alt: string
   interactionPrompt: string
   variant: () => PaperVariant
@@ -91,10 +91,12 @@ export async function mountPaperViewer(
 
         return viewer.createTexture(url)
       }
-      const [front, back] = await Promise.all([
+      const [front, printedBack] = await Promise.all([
         texture(frontBlob),
         backBlob ? texture(backBlob) : plain,
       ])
+      // 투명 필름은 뒷면을 인쇄하지 않고 앞면 그림이 비친다(모델 UV 가 좌우를 뒤집는다)
+      const back = model.throughFront && !backBlob ? front : printedBack
       if (disposed || !front || !back) return
 
       for (const material of faces) {

@@ -49,10 +49,23 @@ describe("paperTemplateOf", () => {
       id: "t2",
       shape: "nail",
     })
-    expect(paperTemplateOf("p3", templates)).toBeUndefined()
+    expect(paperTemplateOf("p3", templates)).toEqual({
+      id: "t3",
+      shape: "menu",
+    })
     expect(paperTemplateOf("p4", templates)).toEqual({
       id: "t4",
       shape: "card_portrait",
     })
+    expect(
+      paperTemplateOf("p5", [
+        { id: "t5", productId: "p5", kind: "mini", size: "150x300" },
+      ])
+    ).toEqual({ id: "t5", shape: "mini" })
+    expect(
+      paperTemplateOf("p6", [
+        { id: "t6", productId: "p6", kind: "pet", size: "600x1800" },
+      ])
+    ).toEqual({ id: "t6", shape: "pet" })
   })
 })

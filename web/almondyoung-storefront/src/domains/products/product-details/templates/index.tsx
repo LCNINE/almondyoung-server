@@ -23,8 +23,11 @@ import { notFound } from "next/navigation"
 import { getTranslations } from "next-intl/server"
 import { Suspense } from "react"
 import { ImageGallery } from "../components/image-gallery"
+import { hasPrintInfo, PrintInfo } from "../components/paper-preview/print-info"
 import { PaperCompare } from "../components/paper-preview/paper-compare"
+import { PrintDetail } from "../components/paper-preview/print-detail"
 import {
+  choosesPaper,
   paperTemplateOf,
   paperVariantOf,
 } from "../components/paper-preview/paper"
@@ -79,12 +82,14 @@ export async function ProductTemplate({
     ?.flatMap((option) => option.values ?? [])
     .map(({ value }) => paperVariantOf(value))
     .filter((variant) => variant !== undefined)
+  const paperSummary = templates?.find((t) => t.id === paperTemplate?.id)
+  // 용지를 고르는 종류는 용지 옵션이 있어야 3D 를 띄운다. 용지가 하나인 종류(미니배너·입간판·현수막)는 옵션 없이 띄운다
   const paper =
-    paperTemplate && paperValues?.length
+    paperTemplate && (!choosesPaper(paperTemplate.shape) || paperValues?.length)
       ? {
           templateId: paperTemplate.id,
           shape: paperTemplate.shape,
-          fallbackVariant: paperValues[0],
+          fallbackVariant: paperValues?.[0] ?? "uncoated",
         }
       : undefined
 
@@ -133,11 +138,33 @@ export async function ProductTemplate({
               {/* 상품 상세정보 Tab Panel — 데이터를 page 가 이미 await 하므로 별도
                   Suspense 없이 페이지 본문과 같은 청크로 렌더한다 (지연 스왑 1단계 제거) */}
               <SectionTabPanel value="detail">
-                {paper && <PaperCompare shape={paper.shape} />}
+                {paper && hasPrintInfo(paper.shape) && paperSummary ? (
+                  <PrintInfo
+                    shape={paper.shape}
+                    size={paperSummary.size}
+                    thumbnail={paperSummary.thumbnail}
+                  />
+                ) : (
+                  paper &&
+                  paper.shape !== "window" && (
+                    <PaperCompare shape={paper.shape} />
+                  )
+                )}
                 <ErrorBoundary fallback={<div>{t("loadDetailFail")}</div>}>
                   <ProductDetailInfoWrapper
                     pricedProduct={product}
                     pimDetail={pimDetail}
+                    extra={
+                      paperTemplate && paperSummary ? (
+                        <PrintDetail
+                          shape={paperTemplate.shape}
+                          size={paperSummary.size}
+                          thumbnail={paperSummary.thumbnail}
+                          name={product.title ?? ""}
+                          templateId={paperTemplate.id}
+                        />
+                      ) : undefined
+                    }
                   />
                 </ErrorBoundary>
 

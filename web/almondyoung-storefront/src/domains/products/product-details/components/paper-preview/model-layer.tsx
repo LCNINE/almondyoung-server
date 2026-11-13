@@ -10,7 +10,7 @@ import {
   type DeviceHints,
   type Model3dStatus,
 } from "../model3d-viewer"
-import type { PaperShape, PaperVariant } from "./paper"
+import type { ModelShape, PaperVariant } from "./paper"
 import { usePickedPaper } from "./paper-store"
 
 // 대표 이미지 첫 칸의 3D. 그 상품 템플릿 시안을 입힌 명함이 옵션에서 고른 용지 질감으로 바뀐다
@@ -24,7 +24,7 @@ export function PaperModelLayer({
   onStatus,
 }: {
   templateId: string
-  shape: PaperShape
+  shape: ModelShape
   productId: string
   productName: string
   fallbackVariant: PaperVariant
@@ -102,7 +102,7 @@ export function PaperModelLayer({
       ref={container}
       aria-hidden={!(ready && visible)}
       className={cn(
-        "bg-muted absolute inset-0 z-[5] transition-opacity",
+        "bg-ink absolute inset-0 z-[5] transition-opacity",
         ready && visible ? "opacity-100" : "pointer-events-none opacity-0"
       )}
     />

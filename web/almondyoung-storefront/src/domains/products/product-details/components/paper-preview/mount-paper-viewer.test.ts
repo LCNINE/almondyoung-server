@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { newDesign } from "@/domains/almond-template/lib/document"
 import { mountPaperViewer } from "./mount-paper-viewer"
+import type { ModelShape } from "./paper"
 
 const { getTemplate, print, raster, createTexture, faces, dispose, mount } =
   vi.hoisted(() => ({
@@ -104,12 +105,12 @@ afterEach(() => {
   )
 })
 
-async function setup() {
+async function setup(shape: ModelShape = "card") {
   const onReady = vi.fn()
   const onError = vi.fn()
   const cleanup = await mountPaperViewer(container, {
     templateId: "template",
-    shape: "card",
+    shape,
     alt: "Card",
     interactionPrompt: "Drag",
     variant: () => "matte_coated",
@@ -150,6 +151,19 @@ describe("paper model", () => {
     cleanup()
     expect(container.children).toHaveLength(0)
     expect(URL.revokeObjectURL).toHaveBeenCalledWith("blob:art")
+  })
+
+  it("shows the front artwork through the back of a clear film", async () => {
+    const { cleanup } = await setup("mini")
+    await load()
+
+    expect(print).toHaveBeenCalledExactlyOnceWith(expect.anything(), "front", 0)
+    for (const face of faces.filter(({ name }) => name !== "card_edge")) {
+      expect(
+        face.pbrMetallicRoughness.baseColorTexture.setTexture
+      ).toHaveBeenLastCalledWith({ source: "blob:art" })
+    }
+    cleanup()
   })
 
   it("renders a back background even without back layers", async () => {
