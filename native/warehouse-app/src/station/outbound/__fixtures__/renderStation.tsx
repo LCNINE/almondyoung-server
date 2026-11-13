@@ -155,7 +155,7 @@ export async function typeHuman(keys: string[]) {
 export async function openBox(trackingNo: string) {
   scan(trackingNo);
   await waitFor(() => expect(document.querySelector('[data-intake="open"]')).not.toBeNull());
-  // 칸이 열린 커밋의 effect(기능키 등록)까지 돈 뒤에 돌려준다 — 바로 누른 F7 이 앞 렌더의 «꺼짐» 으로 판정되지 않게
+  // 칸이 열린 커밋의 effect(기능키·숫자 등록)까지 돈 뒤에 돌려준다 — 바로 누른 키가 앞 렌더의 «꺼짐» 으로 판정되지 않게
   await act(async () => {});
 }
 

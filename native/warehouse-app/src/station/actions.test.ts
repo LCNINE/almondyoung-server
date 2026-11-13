@@ -49,11 +49,11 @@ describe('functionBarItems', () => {
     expect(functionBarItems(resolved).map((a) => a.id)).toEqual(['f7', 'f12', 'esc']);
   });
 
-  it('F7 은 탭이면 빠지고, 화면이 F7 을 선언하면(검수 중 수량) 바에 남는다', () => {
-    const tabs = [action('tab-F1', 'F1'), action('tab-F7', 'F7')];
+  it('F4 는 탭이면 빠지고, 화면이 F4 를 선언하면(빠진 상자의 되돌림 적치) 바에 남는다', () => {
+    const tabs = [action('tab-F1', 'F1'), action('tab-F4', 'F4')];
     expect(functionBarItems(resolveActions([tabs])).map((a) => a.id)).toEqual([]);
-    expect(functionBarItems(resolveActions([tabs, [action('inspect-quantity', 'F7')]])).map((a) => a.id)).toEqual([
-      'inspect-quantity',
+    expect(functionBarItems(resolveActions([tabs, [action('inspect-return-putaway', 'F4')]])).map((a) => a.id)).toEqual([
+      'inspect-return-putaway',
     ]);
   });
 });
