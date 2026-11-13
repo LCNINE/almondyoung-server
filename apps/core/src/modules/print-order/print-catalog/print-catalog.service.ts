@@ -21,4 +21,8 @@ export class PrintCatalogService {
   publish(input: PublishPrintProductInput, userId: string): Promise<PublishPrintProductResult> {
     return this.publisher.publish(input, userId);
   }
+
+  republish(input: PublishPrintProductInput & { masterId: string }, userId: string) {
+    return this.publisher.republish(input, userId);
+  }
 }

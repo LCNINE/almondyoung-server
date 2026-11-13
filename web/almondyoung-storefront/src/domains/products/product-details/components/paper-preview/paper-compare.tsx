@@ -1,12 +1,14 @@
 import Image from "next/image"
 import { useTranslations } from "next-intl"
-import { PAPER_MODELS, type PaperShape, type PaperVariant } from "./paper"
+import { PAPER_MODELS, type ModelShape, type PaperVariant } from "./paper"
 
 const PAPERS: PaperVariant[] = ["uncoated", "matte_coated"]
 
 // 상세정보 본문 맨 위에 두 용지를 크게 견줘 보여 준다
-export function PaperCompare({ shape }: { shape: PaperShape }) {
+export function PaperCompare({ shape }: { shape: ModelShape }) {
   const t = useTranslations("productDetail.paperPreview")
+  const macros = PAPER_MODELS[shape].macros
+  if (!macros) return null
 
   return (
     <section className="mx-auto flex max-w-[860px] flex-col gap-4 py-8">
@@ -20,7 +22,7 @@ export function PaperCompare({ shape }: { shape: PaperShape }) {
         {PAPERS.map((paper) => (
           <figure key={paper} className="flex flex-col gap-3">
             <Image
-              src={`${PAPER_MODELS[shape].macroPrefix}${paper}.jpg`}
+              src={macros[paper]}
               alt={t(`${paper}.caption`)}
               width={900}
               height={600}

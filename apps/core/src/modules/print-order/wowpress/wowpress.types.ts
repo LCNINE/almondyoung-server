@@ -1,3 +1,11 @@
+// 주제품과 같은 주문(같은 ordkey)으로 붙여 보내는 부자재. 와우프레스 문서 §6.5 의 ordreq 안쪽 배열
+export interface WowpressAccessorySpec {
+  prodno: number;
+  jobpresetno: string;
+  prsjob: Record<string, unknown>[];
+  qtyPerUnit: number;
+}
+
 export interface WowpressLineSpec {
   prodno: number;
   jobpresetno: string;
@@ -8,6 +16,7 @@ export interface WowpressLineSpec {
   // 이 품목에 맞는 시안. 시안 ID 는 장바구니 메타데이터로 들어와 고객이 다른 상품·크기의 시안을 붙일 수 있다
   design: { productId: string; widthMm: number; heightMm: number };
   confirmed: boolean;
+  accessories?: WowpressAccessorySpec[];
 }
 
 export interface WowpressReceiver {

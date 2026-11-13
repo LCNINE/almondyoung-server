@@ -101,6 +101,19 @@ const outOfRange = (r: Restriction, width: number, height: number): boolean =>
   (r.max_height != null && height > r.max_height) ||
   (r.min_sum_wh != null && width + height < r.min_sum_wh);
 
+// 와우프레스 이름에 HTML 엔티티가 그대로 온다(예: PET(투명) 250&mu;). 상품 옵션 이름으로 쓰기 전에 글자로 바꾼다
+const ENTITIES: Record<string, string> = { mu: 'μ', amp: '&', lt: '<', gt: '>', quot: '"', nbsp: ' ' };
+const decodeName = (name: string): string =>
+  name.replace(/&(#\d+|[a-z]+);/gi, (whole, code: string) =>
+    code.startsWith('#') ? String.fromCodePoint(Number(code.slice(1))) : (ENTITIES[code.toLowerCase()] ?? whole),
+  );
+
+// 고객이 알아보기 어려운 인쇄업계 표기를 고객용 이름으로 바꾼다. 발주는 paperno 로 하므로 이름만 바뀐다
+const PAPER_DISPLAY_NAMES: Record<number, string> = {
+  21029: '투명 PET (두께 0.25mm)',
+  21026: '백색 PET (두께 0.21mm)',
+};
+
 const conditionKey = (parts: [string, number | null | undefined][]): string => {
   const set = parts.filter(([, v]) => v != null).map(([k, v]) => `${k}:${v}`);
 
@@ -130,7 +143,7 @@ export function buildPrintOptions(
   const papers = paperinfoSchema
     .parse(prodInfo.paperinfo ?? [])
     .flatMap((p) => p.paperlist)
-    .map((p) => ({ paperno: p.paperno, label: p.papername }));
+    .map((p) => ({ paperno: p.paperno, label: PAPER_DISPLAY_NAMES[p.paperno] ?? decodeName(p.papername) }));
 
   const prsJobs = prsjobinfoSchema.parse(prodInfo.prsjobinfo ?? []).flatMap((g) => g.prsjoblist);
 
@@ -153,7 +166,7 @@ export function buildPrintOptions(
     .filter((c) => !product.excludeColors?.includes(c.colorno))
     .map((c) => ({
       colorno: c.colorno,
-      label: c.colorname,
+      label: decodeName(c.colorname),
       jobno: resolvePrsJobno(c.colorno, c.req_prsjob?.[0]?.jobno),
     }));
 
@@ -171,7 +184,7 @@ export function buildPrintOptions(
 
   const preferred = new Set(product.awkDefaults ?? []);
   const toRequired = (g: AwkGroup) => {
-    const options = g.awkjoblist.map((j) => ({ jobno: j.jobno, label: j.jobname }));
+    const options = g.awkjoblist.map((j) => ({ jobno: j.jobno, label: decodeName(j.jobname) }));
     const pick = options.find((o) => preferred.has(o.jobno)) ?? options[0];
 
     return { group: g.jobgroup, options, defaultJobno: pick.jobno };

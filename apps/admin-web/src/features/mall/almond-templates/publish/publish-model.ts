@@ -1,5 +1,11 @@
 import { z } from 'zod';
-import type { PrintComboDto, PrintKind, PrintOptionsDto } from '@/lib/types/dto/print-catalog';
+import type {
+  PrintAccessoryAxisDto,
+  PrintAccessoryChoiceDto,
+  PrintComboDto,
+  PrintKind,
+  PrintOptionsDto,
+} from '@/lib/types/dto/print-catalog';
 import { PRINT_KINDS } from '@/lib/types/dto/print-catalog';
 
 export const COMBO_LIMIT = 200;
@@ -17,6 +23,7 @@ export interface ComboLabels {
   paper: string;
   side: string;
   qty: string;
+  extras?: { group: string; value: string }[];
 }
 
 export interface PublishRow {
@@ -32,11 +39,58 @@ export interface PublishRow {
 export function gridSize(labels: ComboLabels[]): number {
   if (labels.length === 0) return 0;
 
-  return (
+  const extraAxes = labels[0].extras?.length ?? 0;
+  let size =
     new Set(labels.map((l) => l.paper)).size *
     new Set(labels.map((l) => l.side)).size *
-    new Set(labels.map((l) => l.qty)).size
+    new Set(labels.map((l) => l.qty)).size;
+  for (let i = 0; i < extraAxes; i++) size *= new Set(labels.map((l) => l.extras?.[i]?.value ?? '')).size;
+
+  return size;
+}
+
+export const NO_ACCESSORY = '없음';
+
+const accessoryCount = (choice: PrintAccessoryChoiceDto, qty: number): number =>
+  choice.qty === 'perBanner' ? qty : choice.qty;
+
+// 부자재 축마다 없음과 선택지를 곱해, 기본 조합 하나를 부자재 조합 수만큼 늘린다.
+// 기본 조합(부자재 없음)은 키가 그대로라 가격·견적·끈 상태를 이어받는다
+export function withAccessories(list: PrintComboDto[], axes: PrintAccessoryAxisDto[]): PrintComboDto[] {
+  let picks: PrintAccessoryChoiceDto[][] = [[]];
+  for (const axis of axes) picks = picks.flatMap((pick) => [pick, ...axis.choices.map((choice) => [...pick, choice])]);
+
+  return list.flatMap((combo) =>
+    picks.map((pick) =>
+      pick.length === 0
+        ? combo
+        : { ...combo, key: `${combo.key}+${pick.map((c) => c.key).join('+')}`, accessories: pick.map((c) => c.key) }
+    )
   );
+}
+
+export const baseKey = (key: string): string => key.split('+')[0];
+
+// 부자재 판매가 합계. 배너 판매가에 더한다(부자재는 원가 배수를 곱하지 않고 정해 둔 판매가로 판다)
+export function accessoryPrice(combo: PrintComboDto, axes: PrintAccessoryAxisDto[]): number {
+  const chosen = new Set(combo.accessories ?? []);
+
+  return axes
+    .flatMap((axis) => axis.choices)
+    .filter((choice) => chosen.has(choice.key))
+    .reduce((sum, choice) => sum + choice.unitPrice * accessoryCount(choice, combo.qty), 0);
+}
+
+export function accessoryLabels(
+  combo: PrintComboDto,
+  axes: PrintAccessoryAxisDto[]
+): { group: string; value: string }[] {
+  const chosen = new Set(combo.accessories ?? []);
+
+  return axes.map((axis) => ({
+    group: axis.group,
+    value: axis.choices.find((choice) => chosen.has(choice.key))?.label ?? NO_ACCESSORY,
+  }));
 }
 
 export const isValidPrice = (price: number): boolean => Number.isSafeInteger(price) && price >= 1;

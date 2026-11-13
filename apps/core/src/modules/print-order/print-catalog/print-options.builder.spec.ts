@@ -79,6 +79,19 @@ describe('buildPrintOptions', () => {
     expect(axes.colors.map((c) => c.colorno)).toEqual([302]);
   });
 
+  it('미니 투명배너: 인쇄업계 표기 PET(투명) 250&mu; 는 고객용 이름으로 바꾼다', () => {
+    const axes = buildPrintOptions(mini, { sizeno: 5668, awkDefaults: [11804], excludeColors: [1355] });
+
+    expect(axes.papers).toEqual([{ paperno: 21029, label: '투명 PET (두께 0.25mm)' }]);
+  });
+
+  it('이름에 든 HTML 엔티티는 글자로 바꾼다', () => {
+    const withEntities = JSON.parse(JSON.stringify(card).replace(/단면 칼라4도/g, '단면 칼라&amp;4도'));
+    const axes = buildPrintOptions(withEntities, { sizeno: 5458 });
+
+    expect(axes.colors.find((c) => c.colorno === 255)?.label).toBe('단면 칼라&4도');
+  });
+
   it('수량 조건이 맞지 않는 목록은 거른다', () => {
     const conditioned: WowpressProdInfo = {
       ...card,

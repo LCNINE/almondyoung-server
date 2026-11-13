@@ -1,6 +1,6 @@
 "use client"
 
-import { useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { Box } from "lucide-react"
 import { HttpTypes } from "@medusajs/types"
 import Image from "next/image"
@@ -13,11 +13,17 @@ import { ComingSoonBadge } from "@/components/shared/badges/coming-soon-badge"
 import { calculateStockStatus } from "@/domains/products/components/product-card/quantity/stock-status"
 import { type Model3dStatus, ProductModel3dLayer } from "../model3d-viewer"
 import { PaperModelLayer } from "../paper-preview/model-layer"
+import { PhotoMockupScene, useTemplateArt } from "../paper-preview/photo-layer"
+import {
+  MENU_MOCKUPS,
+  type PhotoMockup,
+  WINDOW_MOCKUP,
+} from "../paper-preview/photo-mockup"
 import type { PaperShape, PaperVariant } from "../paper-preview/paper"
 
 type Props = {
   product: HttpTypes.StoreProduct
-  // 아몬드템플릿 명함 상품이면 그 시안을 입힌 용지 3D 를 첫 칸에 둔다
+  // 아몬드템플릿 인쇄 상품이면 그 시안을 입힌 3D·장면 사진을 앞 칸들에 둔다
   paper?: {
     templateId: string
     shape: PaperShape
@@ -25,8 +31,22 @@ type Props = {
   }
 }
 
+type Slide =
+  | { type: "model" }
+  | { type: "photo"; mockup: PhotoMockup }
+  | {
+      type: "image"
+      image: HttpTypes.StoreProductImage | { id: string; url: string }
+    }
+
+// 유리창 현수막은 장면 사진이 첫 칸(3D 대신), 메뉴판은 3D 뒤에 장면 사진 세 장이 붙는다
+const PHOTO_SLIDES: Partial<Record<PaperShape, PhotoMockup[]>> = {
+  menu: MENU_MOCKUPS,
+}
+
 export function ImageGallery({ product, paper }: Props) {
   const t = useTranslations("productDetail.image")
+  const tPaper = useTranslations("productDetail.paperPreview")
   const images = product.images?.length
     ? product.images
     : product.thumbnail
@@ -36,17 +56,8 @@ export function ImageGallery({ product, paper }: Props) {
   const [selectedIndex, setSelectedIndex] = useState(0)
   const [modelStatus, setModelStatus] = useState<Model3dStatus | null>(null)
   const userPicked = useRef(false)
-  // 3D 를 받기 시작하면 첫 칸에 3D 를 끼우고 사진들은 한 칸씩 뒤로 민다. 사진은 그대로 다 남는다.
-  const hasModelSlot = modelStatus === "loading" || modelStatus === "ready"
-  const slides = hasModelSlot ? [null, ...images] : images
-  const selectedImage = slides[selectedIndex] ?? images[0]
-  const isSoldOut = calculateStockStatus(product).kind === "soldOut"
-  const comingSoon = pickComingSoon(product.variants)
-
-  const pick = (index: number) => {
-    userPicked.current = true
-    setSelectedIndex(index)
-  }
+  const isWindow = paper?.shape === "window"
+  const photoMockups = paper ? (PHOTO_SLIDES[paper.shape] ?? []) : []
 
   const handleModelStatus = (status: Model3dStatus) => {
     setModelStatus(status)
@@ -58,6 +69,43 @@ export function ImageGallery({ product, paper }: Props) {
     } else if (status === "failed") {
       setSelectedIndex((index) => Math.max(0, index - 1))
     }
+  }
+
+  // 유리창은 그림이 곧 첫 칸이라 그림 준비 상태가 첫 칸 상태다
+  const art = useTemplateArt(
+    isWindow || photoMockups.length > 0 ? paper?.templateId : undefined,
+    isWindow ? handleModelStatus : undefined
+  )
+
+  // 3D 를 받기 시작하면 첫 칸에 3D 를 끼우고 사진들은 한 칸씩 뒤로 민다. 사진은 그대로 다 남는다.
+  const hasModelSlot = modelStatus === "loading" || modelStatus === "ready"
+  const photoCount = art ? photoMockups.length : 0
+  const slides: Slide[] = [
+    ...(hasModelSlot ? [{ type: "model" as const }] : []),
+    ...(art
+      ? photoMockups.map((mockup) => ({ type: "photo" as const, mockup }))
+      : []),
+    ...images.map((image) => ({ type: "image" as const, image })),
+  ]
+  const selected = slides[selectedIndex]
+  const firstImageSlide = (hasModelSlot ? 1 : 0) + photoCount
+  const selectedImage = selected?.type === "image" ? selected.image : images[0]
+  const isSoldOut = calculateStockStatus(product).kind === "soldOut"
+  const comingSoon = pickComingSoon(product.variants)
+
+  // 장면 사진 칸이 생기면, 사용자가 이미 고른 상품 사진이 같은 사진으로 남게 그만큼 민다
+  useEffect(() => {
+    if (photoCount > 0 && userPicked.current) {
+      setSelectedIndex((index) =>
+        index >= (hasModelSlot ? 1 : 0) ? index + photoCount : index
+      )
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [photoCount])
+
+  const pick = (index: number) => {
+    userPicked.current = true
+    setSelectedIndex(index)
   }
 
   if (images.length === 0) {
@@ -72,10 +120,16 @@ export function ImageGallery({ product, paper }: Props) {
     <section className="mb-8 flex flex-col-reverse gap-3 md:flex-row md:justify-center xl:justify-start xl:px-14">
       {/* 썸네일 목록 */}
       {slides.length > 1 && (
-        <div className="flex gap-2 md:flex-col">
-          {slides.map((image, index) => (
+        <div className="flex gap-2 overflow-x-auto md:flex-col md:overflow-visible">
+          {slides.map((slide, index) => (
             <button
-              key={image ? (image.id ?? index) : "model3d"}
+              key={
+                slide.type === "image"
+                  ? (slide.image.id ?? index)
+                  : slide.type === "photo"
+                    ? slide.mockup.background
+                    : "model3d"
+              }
               type="button"
               className={cn(
                 "relative size-16 shrink-0 cursor-pointer overflow-hidden rounded-md border-2 transition-colors md:size-20",
@@ -86,14 +140,14 @@ export function ImageGallery({ product, paper }: Props) {
               onMouseEnter={() => pick(index)}
               onClick={() => pick(index)}
             >
-              {image ? (
+              {slide.type === "image" ? (
                 <Image
-                  src={getThumbnailUrl(image.url)}
+                  src={getThumbnailUrl(slide.image.url)}
                   alt={
                     product.title
                       ? t("altIndex", {
                           name: product.title,
-                          index: hasModelSlot ? index : index + 1,
+                          index: index - firstImageSlide + 1,
                         })
                       : t("mainAlt")
                   }
@@ -101,6 +155,10 @@ export function ImageGallery({ product, paper }: Props) {
                   sizes="80px"
                   className="object-cover"
                 />
+              ) : slide.type === "photo" && art ? (
+                <PhotoMockupScene mockup={slide.mockup} art={art} />
+              ) : isWindow && art ? (
+                <PhotoMockupScene mockup={WINDOW_MOCKUP} art={art} />
               ) : (
                 <span className="bg-muted text-foreground absolute inset-0 flex flex-col items-center justify-center gap-0.5 text-xs font-bold">
                   <Box className="size-5" aria-hidden="true" />
@@ -125,23 +183,48 @@ export function ImageGallery({ product, paper }: Props) {
             priority
           />
         )}
-        {paper ? (
+        {isWindow ? (
+          art && (
+            <div
+              role="img"
+              aria-label={tPaper("windowAlt", { name: product.title ?? "" })}
+              aria-hidden={selected?.type !== "model"}
+              className={cn(
+                "bg-muted absolute inset-0 z-[5] transition-opacity",
+                selected?.type === "model"
+                  ? "opacity-100"
+                  : "pointer-events-none opacity-0"
+              )}
+            >
+              <PhotoMockupScene mockup={WINDOW_MOCKUP} art={art} />
+            </div>
+          )
+        ) : paper && paper.shape !== "window" ? (
           <PaperModelLayer
             templateId={paper.templateId}
             shape={paper.shape}
             productId={product.id}
             productName={product.title ?? ""}
             fallbackVariant={paper.fallbackVariant}
-            visible={hasModelSlot && selectedIndex === 0}
+            visible={selected?.type === "model"}
             onStatus={handleModelStatus}
           />
         ) : (
           <ProductModel3dLayer
             fileId={product.metadata?.model3dFileId}
             productName={product.title ?? ""}
-            visible={hasModelSlot && selectedIndex === 0}
+            visible={selected?.type === "model"}
             onStatus={handleModelStatus}
           />
+        )}
+        {selected?.type === "photo" && art && (
+          <div
+            role="img"
+            aria-label={tPaper("sceneAlt", { name: product.title ?? "" })}
+            className="bg-muted absolute inset-0 z-[5]"
+          >
+            <PhotoMockupScene mockup={selected.mockup} art={art} />
+          </div>
         )}
         {isSoldOut && comingSoon && (
           <ComingSoonBadge

@@ -185,7 +185,7 @@ export class WowpressClient {
   }
 
   async jobcost(
-    spec: Pick<WowpressLineSpec, 'prodno' | 'prsjob' | 'awkjob' | 'qtyPerUnit'>,
+    spec: Pick<WowpressLineSpec, 'prodno' | 'prsjob' | 'awkjob' | 'qtyPerUnit'> & { jobpresetno?: string },
     qty: number,
   ): Promise<JobcostVerdict> {
     const jobs = buildJobs(spec, qty);
@@ -193,7 +193,14 @@ export class WowpressClient {
       {
         method: 'POST',
         url: `${API_BASE}/api/v1/ord/cjson_jobcost`,
-        json: { prodno: spec.prodno, ordqty: String(spec.qtyPerUnit * qty), ordcnt: '1', ordtitle: 'quote', ...jobs },
+        json: {
+          prodno: spec.prodno,
+          ordqty: String(spec.qtyPerUnit * qty),
+          ordcnt: '1',
+          ordtitle: 'quote',
+          ...(spec.jobpresetno !== undefined ? { jobpresetno: spec.jobpresetno } : {}),
+          ...jobs,
+        },
       },
       true,
     );
@@ -205,6 +212,11 @@ export class WowpressClient {
   async quote(spec: WowpressLineSpec, qty: number): Promise<void> {
     const verdict = await this.jobcost(spec, qty);
     if (!verdict.ok) throw new WowpressApiError(verdict.reason);
+
+    for (const accessory of spec.accessories ?? []) {
+      const accessoryVerdict = await this.jobcost({ ...accessory, awkjob: [] }, qty);
+      if (!accessoryVerdict.ok) throw new WowpressApiError(`부자재 ${accessory.prodno}: ${accessoryVerdict.reason}`);
+    }
   }
 
   async order(input: WowpressOrderInput): Promise<WowpressOrderResult> {
@@ -226,6 +238,16 @@ export class WowpressClient {
               jobpresetno: spec.jobpresetno,
               ...buildJobs(spec, qty),
             },
+            ...(spec.accessories ?? []).map((accessory) => ({
+              prodno: accessory.prodno,
+              ordqty: String(accessory.qtyPerUnit * qty),
+              ordcnt: '1',
+              ordtitle: input.ordtitle,
+              ordbody,
+              ordkey: toWowpressOrdkey(ordkey),
+              jobpresetno: accessory.jobpresetno,
+              ...buildJobs({ ...accessory, awkjob: [] }, qty),
+            })),
           ]),
           dlvymcd: '4',
           dlvyfr: this.sender(),
@@ -256,7 +278,12 @@ export class WowpressClient {
       throw new WowpressOrderRejectedError(nonEmptyString(container?.errmsg) ?? `status ${String(status)}`);
     }
     // 요청 ordreq 처럼 줄마다 배열로 한 번 더 싸서 오기도 한다
-    const ordinfo = recordArray.safeParse(flatRows(container?.ordinfo));
+    // 부자재도 같은 ordnum 으로 ordinfo 에 한 줄씩 온다(2026-11-13 실주문 확인). 주제품 줄만 센다
+    const accessoryProdnos = new Set(items.flatMap(({ spec }) => (spec.accessories ?? []).map((a) => a.prodno)));
+    const rows = flatRows(container?.ordinfo);
+    const ordinfo = recordArray.safeParse(
+      Array.isArray(rows) ? rows.filter((row) => !accessoryProdnos.has(toNumber(asRecord(row)?.prodno) ?? -1)) : rows,
+    );
     if (!ordinfo.success || ordinfo.data.length !== items.length) {
       throw new WowpressApiError('ordinfo count does not match items in cjson_order response');
     }

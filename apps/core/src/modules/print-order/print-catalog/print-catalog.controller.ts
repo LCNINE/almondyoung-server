@@ -6,6 +6,7 @@ import {
   PrintQuotesBodyDto,
   PrintSizeQueryDto,
   PublishPrintProductDto,
+  RepublishPrintProductDto,
 } from './dto/print-catalog.dto';
 import { PrintCatalogService } from './print-catalog.service';
 
@@ -39,6 +40,22 @@ export class PrintCatalogController {
   @HttpCode(200)
   @ApiOperation({ summary: '아몬드템플릿을 판매 상품으로 게시(이미 게시했으면 기존 상품을 돌려준다)' })
   publish(@Body() body: PublishPrintProductDto, @User() user: { userId: string; roles?: string[] }) {
+    this.assertCanPublish(user);
+
+    return this.service.publish(body, user.userId);
+  }
+
+  @RequirePermission('catalog.product.write')
+  @Post('republish')
+  @HttpCode(200)
+  @ApiOperation({ summary: '이미 게시한 아몬드템플릿 상품을 같은 상품의 새 버전으로 다시 게시(부자재 옵션·상품정보 반영)' })
+  republish(@Body() body: RepublishPrintProductDto, @User() user: { userId: string; roles?: string[] }) {
+    this.assertCanPublish(user);
+
+    return this.service.republish(body, user.userId);
+  }
+
+  private assertCanPublish(user: { roles?: string[] }): void {
     const subject = { roles: user.roles ?? [] };
     const canPrice = this.checkpoints.check('print_catalog.publish', subject, ['catalog.price.write']);
     const canTemplate = this.checkpoints.check('print_catalog.publish', subject, ['marketing.almond_template.write']);
@@ -46,7 +63,5 @@ export class PrintCatalogController {
     if (!canPrice || !canTemplate) {
       throw new ForbiddenException(PUBLISH_DENIED);
     }
-
-    return this.service.publish(body, user.userId);
   }
 }

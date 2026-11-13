@@ -318,6 +318,30 @@ describe('WowpressClient', () => {
     await expect(client.quote(SPEC, 3)).rejects.toThrow(WowpressApiError);
   });
 
+  it('quotes each accessory with its own preset and quantity', async () => {
+    const accessoryOk = ok({
+      resultMap: {
+        cjson_jobcost: { status: 200, ordcost_sup: 2800, ordcost_bill: 3080, prsjob: [{ status: 200, jobqty: 6 }] },
+      },
+    });
+    const { client, calls } = makeClient({
+      [`${API}/api/login/issue`]: [tokenOk('tok')],
+      [`${API}/api/v1/ord/cjson_jobcost`]: [jobcostOk(300), accessoryOk],
+    });
+
+    await client.quote(
+      {
+        ...SPEC,
+        accessories: [{ prodno: 40119, jobpresetno: '30', prsjob: [{ covercd: 0, jobno: 30, sizeno: 5668 }], qtyPerUnit: 2 }],
+      },
+      3,
+    );
+
+    const quotes = calls.filter((c) => c.url.endsWith('/cjson_jobcost')).map((c) => c.json);
+    expect(quotes).toHaveLength(2);
+    expect(quotes[1]).toMatchObject({ prodno: 40119, jobpresetno: '30', ordqty: '6', awkjob: [] });
+  });
+
   it('returns the verdict from jobcost', async () => {
     const { client } = makeClient({
       [`${API}/api/login/issue`]: [tokenOk('tok')],
@@ -380,6 +404,44 @@ describe('WowpressClient', () => {
       ],
       boxes: [{ dboxno: 4343784, dboxnum: '4-1-4343784', shippingFee: 0 }],
     });
+  });
+
+  it('sends accessories in the same ordreq element with the same ordkey and counts only main rows', async () => {
+    const stand = { prodno: 40119, jobpresetno: '30', prsjob: [{ covercd: 0, jobno: 30, sizeno: 5668 }], qtyPerUnit: 2 };
+    const { client, calls } = makeClient({
+      [`${API}/api/login/issue`]: [tokenOk('tok')],
+      [`${API}/api/v1/ord/cjson_order`]: [
+        // 2026-11-13 실주문 응답처럼 부자재도 같은 ordnum 으로 한 줄 더 온다
+        ok({
+          resultMap: {
+            cjson_order: {
+              ordinfo: [
+                [
+                  { ordnum: 'WP1', dboxno: 11, prodno: 40026 },
+                  { ordnum: 'WP1', dboxno: 11, prodno: 40119 },
+                ],
+              ],
+              dlvinfo: [{ dboxno: 11, dboxnum: '4-1-11', dlvcost_bill: 4620 }],
+            },
+          },
+        }),
+      ],
+    });
+
+    const result = await client.order({ ...ORDER_INPUT, items: [{ ...ORDER_INPUT.items[0], spec: { ...SPEC, accessories: [stand] } }] });
+
+    const ordreq = (calls.find((c) => c.url.endsWith('/cjson_order'))?.json as { ordreq: unknown[][] }).ordreq;
+    expect(ordreq).toHaveLength(1);
+    expect(ordreq[0]).toHaveLength(2);
+    expect(ordreq[0][1]).toMatchObject({
+      prodno: 40119,
+      ordqty: '4',
+      ordkey: (ordreq[0][0] as { ordkey: string }).ordkey,
+      jobpresetno: '30',
+      prsjob: [{ covercd: 0, jobno: 30, sizeno: 5668, jobqty: 4 }],
+      awkjob: [],
+    });
+    expect(result.orders).toEqual([{ ordnum: 'WP1', dboxno: 11, prodno: 40026 }]);
   });
 
   it('throws when ordinfo count differs from items', async () => {

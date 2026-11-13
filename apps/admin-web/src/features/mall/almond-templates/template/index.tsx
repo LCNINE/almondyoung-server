@@ -33,6 +33,7 @@ import {
   usePreviewAlmondTemplateImage,
   usePrintQuotes,
   usePublishPrintProduct,
+  useRepublishPrintProduct,
   useUpdateAlmondTemplateStatus,
 } from '@/lib/services/products';
 import { useOptionalAdminUser } from '@/lib/services/users';
@@ -76,6 +77,8 @@ export default function AlmondTemplatesTemplate() {
     useState<AdminAlmondTemplateDto | null>(null);
   const [publishTarget, setPublishTarget] =
     useState<AdminAlmondTemplateDto | null>(null);
+  const [republishTarget, setRepublishTarget] =
+    useState<AdminAlmondTemplateDto | null>(null);
 
   const { data, isLoading, isError, refetch } = useAlmondTemplates();
   const statusMutation = useUpdateAlmondTemplateStatus();
@@ -107,6 +110,11 @@ export default function AlmondTemplatesTemplate() {
     usePrintQuotes,
     usePublishPrintProduct,
     useLinkAlmondTemplateProduct
+  );
+  const canRepublishProduct = canRun(
+    usePreviewAlmondTemplateImage,
+    usePrintQuotes,
+    useRepublishPrintProduct
   );
 
   const handleToggleStatus = async (template: AdminAlmondTemplateDto) => {
@@ -345,6 +353,18 @@ export default function AlmondTemplatesTemplate() {
                     {template.status === 'published' ? '게시 내리기' : '게시하기'}
                   </Button>
                 )}
+                {template.status === 'published' &&
+                  isPrintKind(template.kind) &&
+                  template.productId &&
+                  canRepublishProduct && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setRepublishTarget(template)}
+                    >
+                      다시 게시
+                    </Button>
+                  )}
                 {editUrl ? (
                   <Button variant="outline" size="sm" asChild>
                     <a href={editUrl} target="_blank" rel="noopener noreferrer">
@@ -387,6 +407,16 @@ export default function AlmondTemplatesTemplate() {
           template={publishTarget}
           kind={publishTarget.kind}
           onClose={() => setPublishTarget(null)}
+        />
+      )}
+
+      {republishTarget && isPrintKind(republishTarget.kind) && (
+        <PublishDialog
+          key={`re-${republishTarget.id}`}
+          template={republishTarget}
+          kind={republishTarget.kind}
+          republishMasterId={republishTarget.productId}
+          onClose={() => setRepublishTarget(null)}
         />
       )}
 

@@ -10,7 +10,25 @@ const card: WowpressProdInfo = JSON.parse(
   readFileSync(join(__dirname, '__fixtures__', 'prod-info-40073.json'), 'utf8'),
 );
 
+const mini: WowpressProdInfo = JSON.parse(
+  readFileSync(join(__dirname, '__fixtures__', 'prod-info-40162.json'), 'utf8'),
+);
+const banner: WowpressProdInfo = JSON.parse(
+  readFileSync(join(__dirname, '__fixtures__', 'prod-info-40115.json'), 'utf8'),
+);
+const pet: WowpressProdInfo = JSON.parse(
+  readFileSync(join(__dirname, '__fixtures__', 'prod-info-40106.json'), 'utf8'),
+);
+
 const combo = (key: string, qty = 500): PrintCombo => ({ key, paperno: 22904, colorno: 256, qty, awk: [] });
+const miniCombo = (accessories?: string[], qty = 2): PrintCombo => ({
+  key: 'm',
+  paperno: 21029,
+  colorno: 302,
+  qty,
+  awk: [11804],
+  ...(accessories ? { accessories } : {}),
+});
 
 describe('PrintCatalogReader', () => {
   const prodInfo = jest.fn();
@@ -131,5 +149,93 @@ describe('PrintCatalogReader', () => {
       { key: 'b', verdict: { ok: false, reason: 'boom' } },
       { key: 'c', verdict: { ok: true, supply: 3, bill: 4 } },
     ]);
+  });
+
+  describe('부자재', () => {
+    it('toSpec: 고른 거치대를 배너와 같은 규격의 부자재로 싣고, 개수는 배너 수량과 따로 간다', () => {
+      const spec = reader.toSpec('mini', { width: 150, height: 300 }, miniCombo(['stand-3'], 2), mini);
+
+      expect(spec.qtyPerUnit).toBe(2);
+      expect(spec.accessories).toEqual([
+        { prodno: 40119, jobpresetno: '30', prsjob: [{ covercd: 0, jobno: 30, sizeno: 5668 }], qtyPerUnit: 3 },
+      ]);
+      expect(reader.toSpec('mini', { width: 150, height: 300 }, miniCombo(), mini)).not.toHaveProperty('accessories');
+    });
+
+    it('toSpec: PET 거치대는 배너 수량만큼, 큐방은 고른 개수만큼 싣는다', () => {
+      const petInfo = pet.paperinfo as { paperlist: { paperno: number }[] }[];
+      const colorInfo = pet.colorinfo as { pagelist: { colorlist: { colorno: number }[] }[] }[];
+      const spec = reader.toSpec(
+        'pet',
+        { width: 600, height: 1800 },
+        {
+          key: 'p',
+          paperno: petInfo[0].paperlist[0].paperno,
+          colorno: colorInfo[0].pagelist[0].colorlist[0].colorno,
+          qty: 2,
+          awk: [],
+          accessories: ['indoor', 'qbang-8'],
+        },
+        pet,
+      );
+
+      expect(spec.accessories?.map((a) => [a.prodno, a.qtyPerUnit])).toEqual([
+        [40586, 2],
+        [40080, 8],
+      ]);
+      expect(spec.accessories?.[1].prsjob).toEqual([{ covercd: 0, jobno: 30 }]);
+    });
+
+    it('toSpec: 현수막 큐방은 같은 개수의 아일렛을 주제품 후가공에 함께 넣는다', () => {
+      const paperInfo = banner.paperinfo as { paperlist: { paperno: number }[] }[];
+      const colorInfo = banner.colorinfo as { pagelist: { colorlist: { colorno: number }[] }[] }[];
+      const spec = reader.toSpec(
+        'window',
+        { width: 600, height: 600 },
+        {
+          key: 'w',
+          paperno: paperInfo[0].paperlist[0].paperno,
+          colorno: colorInfo[0].pagelist[0].colorlist[0].colorno,
+          qty: 1,
+          awk: [11411],
+          accessories: ['qbang-8'],
+        },
+        banner,
+      );
+
+      expect(spec.awkjob).toEqual([
+        { covercd: 0, jobno: 11411 },
+        { covercd: 0, jobno: 42103 },
+      ]);
+      expect(spec.accessories?.map((a) => [a.prodno, a.qtyPerUnit])).toEqual([[40080, 8]]);
+    });
+
+    it('options: 그 종류의 부자재 축을 함께 돌려준다', async () => {
+      prodInfo.mockResolvedValue(mini);
+      const view = await reader.options('mini', { width: 150, height: 300 });
+
+      expect(view.accessoryAxes.map((axis) => axis.group)).toEqual(['거치대']);
+      prodInfo.mockResolvedValue(card);
+      expect((await reader.options('nail', { width: 90, height: 90 })).accessoryAxes).toEqual([]);
+    });
+
+    it('quotes: 배너와 부자재 견적을 더하고, 모르는 키나 한 축에 둘을 고르면 실패로 돌려준다', async () => {
+      prodInfo.mockResolvedValue(mini);
+      jobcost
+        .mockResolvedValueOnce({ ok: true, supply: 4400, bill: 4840, weightKg: 0.01125 })
+        .mockResolvedValueOnce({ ok: true, supply: 4200, bill: 4620 });
+
+      const [summed, unknown, doubled] = await reader.quotes('mini', { width: 150, height: 300 }, [
+        miniCombo(['stand-3'], 1),
+        { ...miniCombo(['stand-99'], 1), key: 'u' },
+        { ...miniCombo(['stand-1', 'stand-2'], 1), key: 'd' },
+      ]);
+
+      expect(summed.verdict).toEqual({ ok: true, supply: 8600, bill: 9460, weightKg: 0.01125 });
+      expect(jobcost.mock.calls[1][0]).toMatchObject({ prodno: 40119, qtyPerUnit: 3, awkjob: [] });
+      expect(unknown.verdict.ok).toBe(false);
+      expect(doubled.verdict.ok).toBe(false);
+      expect(jobcost).toHaveBeenCalledTimes(2);
+    });
   });
 });

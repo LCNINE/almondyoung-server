@@ -12,6 +12,7 @@ import {
   usePrintOptions,
   usePrintQuotes,
   usePublishPrintProduct,
+  useRepublishPrintProduct,
 } from '@/lib/services/products';
 import type { AdminAlmondTemplateDto } from '@/lib/types/dto/products';
 import type { PrintComboDto, PrintKind, PublishPrintComboDto } from '@/lib/types/dto/print-catalog';
@@ -19,7 +20,11 @@ import { cn } from '@/lib/utils/ui';
 import { almondTemplateKindLabel } from '../lib/almond-template-rules';
 import {
   COMBO_LIMIT,
+  accessoryLabels,
+  accessoryPrice,
+  baseKey,
   gridSize,
+  withAccessories,
   quoteBatches,
   quoteId,
   quoteSignature,
@@ -48,6 +53,8 @@ import { StepProduct } from './step-product';
 interface PublishDialogProps {
   template: AdminAlmondTemplateDto;
   kind: PrintKind;
+  // 있으면 이미 게시한 이 상품에 새 버전을 만든다(이름·설명·대표 이미지는 상품 그대로)
+  republishMasterId?: string;
   onClose: () => void;
 }
 
@@ -79,7 +86,7 @@ function initialDraft(template: AdminAlmondTemplateDto): PublishDraft {
   );
 }
 
-export function PublishDialog({ template, kind, onClose }: PublishDialogProps) {
+export function PublishDialog({ template, kind, republishMasterId, onClose }: PublishDialogProps) {
   const [draft, setDraft] = useState<PublishDraft>(() => initialDraft(template));
   const [costs, setCosts] = useState<Record<string, number | null>>({});
   const [retryTick, setRetryTick] = useState(0);
@@ -96,11 +103,12 @@ export function PublishDialog({ template, kind, onClose }: PublishDialogProps) {
   const quotes = usePrintQuotes();
   const preview = usePreviewAlmondTemplateImage();
   const publish = usePublishPrintProduct();
+  const republish = useRepublishPrintProduct();
   const link = useLinkAlmondTemplateProduct();
 
   const thumbnailUrl = almondTemplatesClient.thumbnailUrl(template.id, template.updatedAt);
   const { step, picked, times, discountPct } = draft;
-  const masterId = draft.pendingMasterId ?? null;
+  const masterId = republishMasterId ? null : (draft.pendingMasterId ?? null);
   const update = (patch: Partial<PublishDraft>) => setDraft((prev) => ({ ...prev, ...patch }));
 
   useEffect(() => saveDraft(template.id, draft), [template.id, draft]);
@@ -138,8 +146,12 @@ export function PublishDialog({ template, kind, onClose }: PublishDialogProps) {
       qtys: picked.qtys,
     };
 
-    return combos(current, awk, (p, c, q) => qtyAllowed(options.quantities, p, c, q));
+    return withAccessories(
+      combos(current, awk, (p, c, q) => qtyAllowed(options.quantities, p, c, q)),
+      options.accessoryAxes
+    );
   }, [options, picked, awk]);
+  const accessoryAxes = useMemo(() => options?.accessoryAxes ?? [], [options]);
   const size = useMemo(() => ({ width, height }), [width, height]);
   const signature = quoteSignature(list, draft.off, size);
 
@@ -178,23 +190,32 @@ export function PublishDialog({ template, kind, onClose }: PublishDialogProps) {
     paper: paperLabel.get(c.paperno) ?? String(c.paperno),
     side: colorLabel.get(c.colorno) ?? String(c.colorno),
     qty: qtyLabel(kind, c.qty),
+    ...(accessoryAxes.length > 0 ? { extras: accessoryLabels(c, accessoryAxes) } : {}),
   });
 
+  // 배수는 배너(부자재 없는 기본 조합) 원가에만 곱하고, 부자재는 정해 둔 판매가를 더한다
   const knownCosts: Record<string, number> = {};
   for (const c of list) {
     const cost = costs[quoteId(c, size)];
-    if (typeof cost === 'number') knownCosts[c.key] = cost;
+    if (!c.accessories && typeof cost === 'number') knownCosts[c.key] = cost;
   }
-  const prices = applyTimes(draft.edited, new Set(Object.keys(draft.edited)), knownCosts, times);
+  const basePrices = applyTimes(draft.edited, new Set(Object.keys(draft.edited)), knownCosts, times);
 
   const rows: (OptionRow & { combo: PublishPrintComboDto })[] = list.map((c) => {
-    const price = prices[c.key] ?? 0;
-    const memberPrice = discountPct ? memberPriceFor(price, discountPct) : null;
+    const addon = accessoryPrice(c, accessoryAxes);
+    const base = basePrices[baseKey(c.key)];
+    const price = draft.edited[c.key] ?? (base === undefined ? 0 : base + addon);
+    const memberPrice = discountPct
+      ? c.key in draft.edited || base === undefined
+        ? memberPriceFor(price, discountPct)
+        : memberPriceFor(base, discountPct) + addon
+      : null;
     const optionLabels = labelsOf(c);
+    const extraText = optionLabels.extras?.map((e) => `${e.group} ${e.value}`).join(' · ');
 
     return {
       key: c.key,
-      label: `${optionLabels.paper} · ${optionLabels.side} · ${optionLabels.qty}`,
+      label: [optionLabels.paper, optionLabels.side, optionLabels.qty, extraText].filter(Boolean).join(' · '),
       cost: quoteId(c, size) in costs ? costs[quoteId(c, size)] : undefined,
       price,
       memberPrice,
@@ -222,7 +243,7 @@ export function PublishDialog({ template, kind, onClose }: PublishDialogProps) {
 
     const next = { ...picked, [axis]: [...current, value].sort((a, b) => a - b) };
     const nextLabels = options
-      ? combos(next, awk, (p, c, q) => qtyAllowed(options.quantities, p, c, q))
+      ? withAccessories(combos(next, awk, (p, c, q) => qtyAllowed(options.quantities, p, c, q)), accessoryAxes)
           .filter((c) => !off.has(c.key))
           .map((c) => labelsOf(c))
       : [];
@@ -259,6 +280,25 @@ export function PublishDialog({ template, kind, onClose }: PublishDialogProps) {
     setPublishing(true);
     try {
       const { fileId } = await preview.mutateAsync(template.id);
+      if (republishMasterId) {
+        await republish.mutateAsync({
+          masterId: republishMasterId,
+          templateId: template.id,
+          kind,
+          width,
+          height,
+          name: draft.name.trim(),
+          description: draft.description.trim(),
+          thumbnailFileId: fileId,
+          combos: rows.filter((r) => r.on).map((r) => r.combo),
+        });
+        clearDraft(template.id);
+        toast.success('같은 상품에 새 버전으로 다시 게시했어요.');
+        onClose();
+
+        return;
+      }
+
       const result = await publish.mutateAsync({
         templateId: template.id,
         kind,
@@ -296,7 +336,7 @@ export function PublishDialog({ template, kind, onClose }: PublishDialogProps) {
     <Dialog open onOpenChange={(open) => !open && !publishing && onClose()}>
       <DialogContent className="flex max-h-[calc(100vh-48px)] flex-col gap-0 p-0 sm:max-w-[760px]">
         <DialogHeader className="px-6 pt-5">
-          <DialogTitle>템플릿 게시하기</DialogTitle>
+          <DialogTitle>{republishMasterId ? '새 버전으로 다시 게시하기' : '템플릿 게시하기'}</DialogTitle>
           <DialogDescription className="sr-only">{template.title}</DialogDescription>
           <div className="mt-3 flex gap-2">
             {STEPS.map((label, i) => (
@@ -372,7 +412,9 @@ export function PublishDialog({ template, kind, onClose }: PublishDialogProps) {
             {masterId
               ? '상품은 만들었어요. 템플릿 연결만 다시 하면 돼요.'
               : step === 3
-                ? '게시하면 상품 생성, 판매가, 자동 발주 연결, 공개가 한 번에 끝나요.'
+                ? republishMasterId
+                  ? '같은 상품에 새 버전을 만들어 공개해요. 이름·설명·대표 이미지는 지금 상품 그대로예요.'
+                  : '게시하면 상품 생성, 판매가, 자동 발주 연결, 공개가 한 번에 끝나요.'
                 : '닫아도 입력은 임시 저장돼요.'}
           </span>
           <div className="flex gap-2">

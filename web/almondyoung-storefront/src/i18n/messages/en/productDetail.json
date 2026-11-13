@@ -12,9 +12,16 @@
     "notice": "The cards rotate slowly in the light. This preview simulates real paper, so colors and textures may differ slightly.",
     "disclaimer": "This preview simulates real paper, so colors and textures may differ slightly.",
     "modelAlt": "{name} 3D preview",
-    "interactionPrompt": "Drag or use the arrow keys to rotate the cards.",
+    "interactionPrompt": "Drag or use the arrow keys to rotate.",
     "compareTitle": "Compare papers",
-    "compareLead": "The same paper shot up close under raking light. Pick a paper in the options and the 3D above changes texture too."
+    "compareLead": "The same paper shot up close under raking light. Pick a paper in the options and the 3D above changes texture too.",
+    "standNotice": {
+      "title": "Choose a stand separately in the options",
+      "body": "By default we ship the clear banner only. It has a hole in each corner for a stand. If you need tabletop stands, choose how many in the options below."
+    },
+    "defaultCase": "A paper card case comes with your cards (one per 500 cards). Choose more cases in the options if you need them.",
+    "windowAlt": "{name} on a shop window",
+    "sceneAlt": "{name} in a real shop"
   },
   "digitalBadge": "Digital",
   "section": {
@@ -301,5 +308,122 @@
     "previewOptions": "Preview discounts by option",
     "previewDescription": "Compare bundle prices for eligible options before choosing what to buy.",
     "previewPurchaseHint": "This preview does not change your purchase selection. Choose the option and quantity below."
+  },
+  "printInfo": {
+    "sizeAlt": "Size drawing, {width}mm wide and {height}mm tall",
+    "sizeCaption": "Actual size {width}×{height}cm",
+    "front": "Front",
+    "back": "Back",
+    "frontAlt": "Seen from the front",
+    "backAlt": "Seen from the back, with the artwork mirrored and faint",
+    "mini": {
+      "title": "Here is the banner you will receive",
+      "sizeDescription": "A good size for a tabletop. Each corner has a hole for a stand.",
+      "materialCaption": "Clear PET film",
+      "materialDescription": "Printed on the front of 0.25mm clear film. From the back, the artwork shows through mirrored.",
+      "useAlt": "Stand hook passing through a corner hole",
+      "useCaption": "Hang it by the holes",
+      "useDescription": "Hook a tabletop stand through the corner holes and the banner stays flat. You can add a stand in the options."
+    },
+    "pet": {
+      "title": "Here is the standing banner you will receive",
+      "sizeDescription": "A good size to stand in front of or inside your shop. Each corner has a metal eyelet.",
+      "materialCaption": "White PET film",
+      "materialDescription": "Printed on 0.21mm white PET film with a matte coating to cut glare. The back is white.",
+      "useAlt": "Stand rod hooked into a corner eyelet",
+      "useCaption": "Hang it on a stand by the eyelets",
+      "useDescription": "Hook the X stand rods into the four eyelets and the banner stays taut. You can add a stand in the options."
+    },
+    "window": {
+      "title": "Here is the banner you will receive",
+      "sizeDescription": "A good size for a shop window or glass door. The edges are heat-cut so they do not fray.",
+      "materialCaption": "Banner fabric",
+      "materialDescription": "Printed on the front of 150-denier polyester fabric. Light and easy to put up and take down.",
+      "useAlt": "Suction cup pushed into a corner eyelet",
+      "useCaption": "Stick it to glass with suction cups",
+      "useDescription": "Choose suction cups and we punch the same number of eyelets. Push the cups into the eyelets and press them onto the inside of the glass."
+    },
+    "menu": {
+      "title": "Here is the menu board you will receive",
+      "sizeDescription": "A good size to stand on a counter or put on a wall or glass.",
+      "materialCaption": "3mm foam PVC board",
+      "materialDescription": "The print is mounted on a light, rigid white PVC board. It does not bend or crease.",
+      "useAlt": "Suction cup in the corner of a white board",
+      "useCaption": "Stand it up or stick it on",
+      "useDescription": "Stand it on a counter, or choose suction cups and we punch holes so you can stick it to glass."
+    }
+  },
+  "printDetail": {
+    "heroAlt": "{name} design",
+    "heroCaption": "We print this design. You can change the text and photos yourself.",
+    "stepsTitle": "How we make it",
+    "steps": {
+      "edit": {
+        "title": "Edit the design",
+        "body": "Change your shop name, prices and photos in Almond Template."
+      },
+      "print": {
+        "title": "Printing starts at payment",
+        "body": "The print shop starts making it as soon as you pay."
+      },
+      "ship": {
+        "title": "Delivered to you",
+        "body": "We ship the finished print to your shop."
+      }
+    },
+    "specTitle": "Specifications",
+    "sizeValue": "{width}×{height}cm",
+    "rows": {
+      "size": "Size",
+      "material": "Material",
+      "print": "Printing",
+      "finish": "Finishing",
+      "addOn": "Add-ons"
+    },
+    "spec": {
+      "card": {
+        "material": "Snow paper 250g (uncoated / matte coated)",
+        "print": "Color (one side / both sides)",
+        "addOn": "Extra card cases (one paper case included)"
+      },
+      "card_portrait": {
+        "material": "Snow paper 250g (uncoated / matte coated)",
+        "print": "Color (one side / both sides)",
+        "addOn": "Extra card cases (one paper case included)"
+      },
+      "nail": {
+        "material": "Snow paper 250g (uncoated / matte coated)",
+        "print": "Color, one side"
+      },
+      "mini": {
+        "material": "Clear PET film 0.25mm",
+        "print": "Color, one side",
+        "finish": "Stand holes in all four corners",
+        "addOn": "Tabletop stand"
+      },
+      "pet": {
+        "material": "White PET film 0.21mm",
+        "print": "Color, one side",
+        "finish": "Matte coating, metal eyelets in all four corners",
+        "addOn": "Indoor and outdoor stands, suction cups"
+      },
+      "window": {
+        "material": "Banner fabric 150 denier",
+        "print": "Color, one side",
+        "finish": "Heat-cut edges",
+        "addOn": "Suction cups (we punch matching eyelets)"
+      },
+      "menu": {
+        "material": "White foam PVC board 3mm",
+        "print": "Color, one side",
+        "addOn": "Suction cups (we punch matching holes)"
+      }
+    },
+    "notesTitle": "Before you order",
+    "notes": {
+      "color": "Colors on screen may look slightly different from the print depending on your monitor.",
+      "custom": "This is made to order. Once printing starts after payment, it cannot be cancelled or returned for a change of mind.",
+      "defect": "Report printing defects with photos to customer service within 5 days of delivery. If confirmed, we reprint it."
+    }
   }
 }

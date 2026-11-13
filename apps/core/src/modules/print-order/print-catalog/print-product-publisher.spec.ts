@@ -75,6 +75,8 @@ describe('PrintProductPublisher', () => {
   const createMaster = jest.fn();
   const updateVersion = jest.fn();
   const publishVersion = jest.fn();
+  const getActiveVersion = jest.fn();
+  const createDraftVersion = jest.fn();
   const bulkUpdateVariantsInDraft = jest.fn();
   const replaceVersionRules = jest.fn();
   const getOptionGroups = jest.fn();
@@ -85,7 +87,7 @@ describe('PrintProductPublisher', () => {
     { quotes, specFor } as unknown as PrintCatalogReader,
     { findClaimedMaster, claimTemplate, assignClaimedMaster, insertSpecs } as unknown as PrintProductSpecRepository,
     { createMaster, updateVersion } as unknown as ProductMastersService,
-    { publishVersion } as unknown as ProductVersionsService,
+    { publishVersion, getActiveVersion, createDraftVersion } as unknown as ProductVersionsService,
     { bulkUpdateVariantsInDraft } as unknown as ProductVariantsService,
     { replaceVersionRules } as unknown as PricingService,
     { getOptionGroups } as unknown as OptionReadLoader,
@@ -176,6 +178,138 @@ describe('PrintProductPublisher', () => {
     }
 
     expect(bulkUpdateVariantsInDraft).not.toHaveBeenCalled();
+  });
+
+  it('adds accessory option axes after the base axes and resolves variants across all of them', async () => {
+    const withStand = (key: string, value: string, price: number, accessories?: string[]) => ({
+      key,
+      paperno: 1,
+      colorno: 10,
+      qty: 1,
+      awk: [],
+      price,
+      memberPrice: null,
+      ...(accessories ? { accessories } : {}),
+      optionLabels: { paper: '투명 PET (두께 0.25mm)', side: '단면', qty: '1개', extras: [{ group: '거치대', value }] },
+    });
+    quotes.mockResolvedValue([
+      { key: 'none', verdict: { ok: true, supply: 4400, bill: 4840 } },
+      { key: 'one', verdict: { ok: true, supply: 5800, bill: 6380 } },
+    ]);
+    getOptionGroups.mockResolvedValue([
+      { id: 'g-paper', displayName: '용지', values: [{ id: 'pv1', displayName: '투명 PET (두께 0.25mm)' }] },
+      { id: 'g-side', displayName: '면', values: [{ id: 'sv1', displayName: '단면' }] },
+      { id: 'g-qty', displayName: '수량', values: [{ id: 'qv1', displayName: '1개' }] },
+      {
+        id: 'g-stand',
+        displayName: '거치대',
+        values: [
+          { id: 'xv0', displayName: '없음' },
+          { id: 'xv1', displayName: '1개' },
+        ],
+      },
+    ]);
+    resolveExisting.mockReset();
+    resolveExisting.mockResolvedValueOnce(new Map([['', 'var-default']]));
+    resolveExisting.mockResolvedValue(
+      new Map([
+        [idKey('pv1', 'sv1', 'qv1', 'xv0'), 'var-none'],
+        [idKey('pv1', 'sv1', 'qv1', 'xv1'), 'var-one'],
+      ]),
+    );
+
+    await publisher.publish(
+      input({ kind: 'mini', width: 150, height: 300, combos: [withStand('none', '없음', 15000), withStand('one', '1개', 17200, ['stand-1'])] }),
+      'admin-1',
+    );
+
+    const [, data] = updateVersion.mock.calls[0];
+    expect(data.optionDiff.add.map((g: { displayName: string }) => g.displayName)).toEqual(['용지', '면', '수량', '거치대']);
+    expect(insertSpecs.mock.calls[0][0].map((r: { variantId: string }) => r.variantId)).toEqual(['var-none', 'var-one']);
+    expect(specFor.mock.calls[1][2]).toMatchObject({ accessories: ['stand-1'] });
+  });
+
+  it('rejects combos whose accessory axes differ', async () => {
+    const [a, b] = input().combos;
+
+    await expect(
+      publisher.publish(
+        input({ combos: [a, { ...b, optionLabels: { ...b.optionLabels, extras: [{ group: '명함케이스 추가', value: '없음' }] } }] }),
+        'admin-1',
+      ),
+    ).rejects.toBeInstanceOf(BadRequestError);
+    expect(run).not.toHaveBeenCalled();
+  });
+
+  it('fills product info from the template size, option labels and the smallest quote, leaving maker and number empty', async () => {
+    quotes.mockResolvedValue([
+      { key: 'a', verdict: { ok: true, supply: 4100, bill: 4510, weightKg: 0.5625 } },
+      { key: 'b', verdict: { ok: true, supply: 4100, bill: 4510 } },
+    ]);
+
+    await publisher.publish(input(), 'admin-1');
+
+    expect(updateVersion.mock.calls[0][1].productInfo).toEqual({
+      dimensions: '90×50mm',
+      material: '아트지',
+      capacity: '100매',
+      weight: '약 563g (100매 기준)',
+      origin: '대한민국',
+      expirationDate: '해당 없음',
+      usage: '카운터나 지갑에 두고 손님께 건네요.',
+    });
+  });
+
+  describe('republish', () => {
+    beforeEach(() => {
+      getActiveVersion.mockResolvedValue({ id: 'v-active', masterId: MASTER });
+      createDraftVersion.mockResolvedValue({ id: 'v-draft', masterId: MASTER });
+      resolveExisting.mockReset();
+      resolveExisting.mockResolvedValue(
+        new Map([
+          [idKey('pv1', 'sv1', 'qv1'), 'var-a2'],
+          [idKey('pv1', 'sv2', 'qv1'), 'var-b2'],
+        ]),
+      );
+    });
+
+    it('publishes a new version of the same product, replacing every option group', async () => {
+      findClaimedMaster.mockResolvedValue(MASTER);
+
+      await expect(publisher.republish({ ...input(), masterId: MASTER }, 'admin-1')).resolves.toEqual({
+        masterId: MASTER,
+        versionId: 'v-draft',
+      });
+
+      expect(createMaster).not.toHaveBeenCalled();
+      expect(claimTemplate).not.toHaveBeenCalled();
+      expect(createDraftVersion).toHaveBeenCalledWith('v-active', 'admin-1', true, TX);
+      const [versionId, data] = updateVersion.mock.calls[0];
+      expect(versionId).toBe('v-draft');
+      expect(data.optionDiff.remove).toEqual(['g-paper', 'g-side', 'g-qty']);
+      expect(data.optionDiff.add.map((g: { displayName: string }) => g.displayName)).toEqual(['용지', '면', '수량']);
+      expect(data.productInfo).toMatchObject({ dimensions: '90×50mm', origin: '대한민국' });
+      expect(data).not.toHaveProperty('name');
+      expect(data).not.toHaveProperty('thumbnailFileId');
+      expect(insertSpecs.mock.calls[0][0].map((r: { variantId: string }) => r.variantId)).toEqual(['var-a2', 'var-b2']);
+      expect(publishVersion).toHaveBeenCalledWith('v-draft', 'admin-1', TX);
+    });
+
+    it('links a template published before automatic ordering existed', async () => {
+      await publisher.republish({ ...input(), masterId: MASTER }, 'admin-1');
+
+      expect(claimTemplate).toHaveBeenCalledWith('tpl-1', MASTER, TX);
+    });
+
+    it('refuses a template linked to another product before calling Wowpress', async () => {
+      findClaimedMaster.mockResolvedValue('m-other');
+
+      await expect(publisher.republish({ ...input(), masterId: MASTER }, 'admin-1')).rejects.toBeInstanceOf(
+        BadRequestError,
+      );
+      expect(quotes).not.toHaveBeenCalled();
+      expect(run).not.toHaveBeenCalled();
+    });
   });
 
   it('returns the existing master when the template was already published', async () => {

@@ -132,10 +132,30 @@ export default function ProductActions({
 
   const tPaper = useTranslations("productDetail.paperPreview")
   const paperPreview =
-    paperTemplate && paperOption && paperVariant ? (
-      <p className="text-muted-foreground text-sm">
-        {tPaper(`${paperVariant}.description`)}
-      </p>
+    paperTemplate?.shape === "mini" ? (
+      <div
+        role="note"
+        className="bg-muted flex flex-col gap-1 rounded-lg px-4 py-3"
+      >
+        <strong className="text-foreground text-sm font-bold">
+          {tPaper("standNotice.title")}
+        </strong>
+        <span className="text-muted-foreground text-[13px] leading-normal">
+          {tPaper("standNotice.body")}
+        </span>
+      </div>
+    ) : paperTemplate && paperOption && paperVariant ? (
+      <div className="flex flex-col gap-1">
+        <p className="text-muted-foreground text-sm">
+          {tPaper(`${paperVariant}.description`)}
+        </p>
+        {(paperTemplate.shape === "card" ||
+          paperTemplate.shape === "card_portrait") && (
+          <p className="text-muted-foreground text-sm">
+            {tPaper("defaultCase")}
+          </p>
+        )}
+      </div>
     ) : null
 
   const [options, setOptions] = useState<Record<string, string | undefined>>({})

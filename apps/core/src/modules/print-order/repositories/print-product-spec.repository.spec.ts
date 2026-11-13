@@ -23,6 +23,18 @@ describe('print product spec row conversion', () => {
     ).toEqual(SPEC);
   });
 
+  it('round-trips accessories and leaves them out when there are none', () => {
+    const withStand: WowpressLineSpec = {
+      ...SPEC,
+      accessories: [{ prodno: 40119, jobpresetno: '30', prsjob: [{ covercd: 0, jobno: 30, sizeno: 5668 }], qtyPerUnit: 2 }],
+    };
+    const row = specToRow(VARIANT, withStand);
+    const meta = { confirmedAt: null, confirmedBy: null, createdAt: new Date(), updatedAt: new Date() };
+
+    expect(rowToSpec({ ...row, ...meta })).toEqual(withStand);
+    expect(rowToSpec({ ...specToRow(VARIANT, SPEC), ...meta })).not.toHaveProperty('accessories');
+  });
+
   it('maps each field to its column', () => {
     expect(specToRow(VARIANT, SPEC)).toEqual({
       variantId: VARIANT,
@@ -30,6 +42,7 @@ describe('print product spec row conversion', () => {
       jobpresetno: '1234',
       prsjob: [{ jobno: 1, jobname: 'front' }],
       awkjob: [{ jobno: 2 }],
+      accessories: [],
       qtyPerUnit: 100,
       fileFormat: 'pdf',
       fileDpi: 300,
