@@ -195,9 +195,9 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'core GET /store/orders/by-channel-order/:channelOrderId/returns/:channelReturnId/progress': {
     verdict: 'SAFE',
-    evidence: 'apps/core/src/modules/sales-order/services/store-sales-orders.service.ts:784',
+    evidence: 'apps/core/src/modules/sales-order/services/store-sales-orders.service.ts:799',
     predicate: "if (so.customerId !== customerId) throw new NotFoundException('반품을 찾을 수 없습니다.');",
-    note: 'getReturnProgressByChannelOrder: 주문을 channelOrderId 로 찾고 so.customerId 가 토큰의 userId 와 다르면 404(존재 여부를 흘리지 않는다). 반품은 그 주문의 salesOrderId 와 channelReturnId 둘 다로 좁힌다(같은 파일 789행) — 남의 주문 반품 id 를 넣어도 내 주문 아래에서만 찾는다.',
+    note: 'getReturnProgressByChannelOrder: 주문을 channelOrderId 로 찾고 so.customerId 가 토큰의 userId 와 다르면 404(존재 여부를 흘리지 않는다). 반품은 그 주문의 salesOrderId 와 channelReturnId 둘 다로 좁힌다(같은 파일 804행) — 남의 주문 반품 id 를 넣어도 내 주문 아래에서만 찾는다.',
   },
   'core GET /store/orders/by-wallet-intent/:walletIntentId/digital-exercised': {
     verdict: 'SAFE',
