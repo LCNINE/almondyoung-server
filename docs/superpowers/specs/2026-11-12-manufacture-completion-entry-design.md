@@ -47,7 +47,7 @@
 3. **확인** — 상품·위치·수량(전 → 후)·사유를 보여 주고 `등록`.
 4. **결과** — 등록했다는 안내, 위치 수량 전 → 후, `다음 상품 등록`. 바코드를 바로 스캔해도 다음 상품으로 넘어간다. 일반 조정처럼 상품 상세로 이동하지 않고 이 화면에 머문다.
 
-경로는 `/inventory/manufacture`(상품 고르기) → `/inventory/$sku/adjust?mode=manufacture` 를 생각하고 있다. `/inventory/$sku` 와 겹치지 않는지는 구현 때 라우터에서 확인한다.
+경로는 `/inventory/manufacture`(상품 고르기) → `/inventory/manufacture/$sku`(조정 화면을 제조 모드로) 다. 처음엔 `/inventory/$sku/adjust?mode=manufacture` 를 생각했지만, 스테이션 하위 탭 강조가 경로만 보므로 제조 흐름 내내 `재고 조회` 가 강조됐다. 경로를 제조 아래로 두면 강조 로직을 고치지 않아도 된다.
 
 ## 5. 완료 조건
 

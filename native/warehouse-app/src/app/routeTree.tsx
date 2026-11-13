@@ -12,6 +12,7 @@ import { AuthedLayout } from './routes/AuthedLayout';
 import { ProfileHome } from './routes/ProfileHome';
 import { DiagnosticsRoute } from './routes/DiagnosticsRoute';
 import { InventoryLookupRoute } from './routes/InventoryLookupRoute';
+import { ManufactureAdjustRoute, ManufactureSelectRoute } from './routes/ManufactureSelectRoute';
 import { SettingsRoute } from './routes/SettingsRoute';
 import { PlaceholderScreen } from '../core/design/PlaceholderScreen';
 import { SkuDetailRoute } from './routes/SkuDetailRoute';
@@ -84,6 +85,11 @@ const inventoryRoute = createRoute({
   path: '/inventory',
   component: InventoryLookupRoute,
 });
+const manufactureSelectRoute = createRoute({
+  getParentRoute: () => authedRoute,
+  path: '/inventory/manufacture',
+  component: ManufactureSelectRoute,
+});
 const inventoryDetailRoute = createRoute({
   getParentRoute: () => authedRoute,
   path: '/inventory/$sku',
@@ -99,6 +105,11 @@ const inventoryAdjustRoute = createRoute({
     locationId:
       typeof search.locationId === 'string' ? search.locationId : undefined,
   }),
+});
+const manufactureAdjustRoute = createRoute({
+  getParentRoute: () => authedRoute,
+  path: '/inventory/manufacture/$sku',
+  component: ManufactureAdjustRoute,
 });
 const shipmentsRoute = createRoute({
   getParentRoute: () => authedRoute,
@@ -229,6 +240,8 @@ export const routeTree = rootRoute.addChildren([
     indexRoute,
     diagnosticsRoute,
     inventoryRoute,
+    manufactureSelectRoute,
+    manufactureAdjustRoute,
     inventoryDetailRoute,
     inventoryAdjustRoute,
     shipmentsRoute,
