@@ -207,6 +207,11 @@ function BatchDetail({ batch, items }: { batch: OutboundBatchSummary; items: Bat
           ))}
         </div>
       ) : null}
+      {counts && counts.withdrawing > 0 ? (
+        <p role="status" className="shrink-0 rounded-md bg-[#FFF1C7] px-3 py-2 text-[15px] font-semibold text-[#5E3B00]">
+          빠지는 중인 상자는 F1 «출고 검수»에서 송장을 찍고 담은 상품을 꺼내 주세요.
+        </p>
+      ) : null}
       {hasCancelPending(states.data ?? []) ? (
         <p role="alert" className="shrink-0 rounded-md bg-[#FDECEE] px-3 py-2 text-[15px] font-semibold text-[#9E1320]">
           취소 대기 박스는 박스 빼기로 빼야 취소가 끝나요.

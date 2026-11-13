@@ -217,7 +217,32 @@ describe('F9 결품(스펙 §7.1·§7.2)', () => {
     const { server } = await openShortPick();
     server.config.shortPickOutcome = 'withdrawing';
     await typeHuman(['Enter', 'Enter']);
-    expect(await screen.findByText('뺄 상품을 찍어 주세요')).toBeInTheDocument();
+    expect(await screen.findByRole('list', { name: '뺄 상품' })).toBeInTheDocument();
+  });
+
+  it('결품으로 빠지는 상자는 결품을 등록했다고 알리고, 다 꺼내면 결품으로 빠졌다고 보인다', async () => {
+    const { server } = await openShortPick();
+    server.config.shortPickOutcome = 'withdrawing';
+    await typeHuman(['Enter', 'Enter']);
+    expect(await screen.findByText('결품을 등록했어요')).toBeInTheDocument();
+    expect(screen.getByText(/이 상자는 배치에서 빠져요/)).toBeInTheDocument();
+    await waitFor(() => expect(document.querySelector('[data-intake="open"]')).not.toBeNull());
+    scan('8801002');
+    expect(await screen.findByText(/결품을 등록해 이 상자는 배치에서 빠졌어요/)).toBeInTheDocument();
+  });
+
+  it('결품으로 빠지는 상자의 송장을 다시 찍어도 결품 안내를 이어 간다', async () => {
+    const { server } = await openShortPick();
+    server.config.shortPickOutcome = 'withdrawing';
+    await typeHuman(['Enter', 'Enter']);
+    await screen.findByText('결품을 등록했어요');
+    await waitFor(() => expect(document.querySelector('[data-intake="open"]')).not.toBeNull());
+    scan('421033881907');
+    await waitFor(() => expect(within(screen.getByRole('list', { name: '최근 스캔' })).getAllByText('4210-3388-1907')).toHaveLength(2));
+    expect(await screen.findByText('결품을 등록했어요')).toBeInTheDocument();
+    await waitFor(() => expect(document.querySelector('[data-intake="open"]')).not.toBeNull());
+    scan('8801002');
+    expect(await screen.findByText(/결품을 등록해 이 상자는 배치에서 빠졌어요/)).toBeInTheDocument();
   });
 
   it('빠짐(exited) — 빠진 박스', async () => {
@@ -225,6 +250,7 @@ describe('F9 결품(스펙 §7.1·§7.2)', () => {
     server.config.shortPickOutcome = 'exited';
     await typeHuman(['Enter', 'Enter']);
     expect(await screen.findByText('빠진 박스')).toBeInTheDocument();
+    expect(screen.getByText(/결품을 등록해 이 상자는 배치에서 빠졌어요/)).toBeInTheDocument();
     // 결과로 다시 그리기만 한다 — 송장 줄은 처음 찍었을 때 한 줄뿐
     const recent = screen.getByRole('list', { name: '최근 스캔' });
     expect(within(recent).getAllByText('4210-3388-1907')).toHaveLength(1);

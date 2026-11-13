@@ -8,7 +8,7 @@ import { useWorkScanQueue } from '../../core/hardware/scan/useWorkScanQueue';
 import type { ShipmentByWaybill, WithdrawalRemoval } from '../../domains/outbound/types';
 import { removeToReturnBin, withdrawalRows } from '../../domains/outbound/withdraw';
 import { isReturnBinCode } from '../../domains/returns/returnBin';
-import type { Alert, BoxWorkHandle } from './model';
+import type { Alert, BoxWorkHandle, WithdrawCause } from './model';
 import { BigPanel, BoxCard, QueueTrouble, RecentList, WorkGrid } from './panels';
 import type { RecentEntry } from './recent';
 import { INTAKE_BLOCKED_MESSAGE } from './useInspectionBox';
@@ -19,6 +19,7 @@ export function WithdrawWork({
   box,
   seq,
   handleRef,
+  cause,
   alert,
   recent,
   onAlert,
@@ -29,12 +30,13 @@ export function WithdrawWork({
   /** 부모가 이 화면에 붙인 번호 — 손잡이에 싣는다 */
   seq: number;
   handleRef: RefObject<BoxWorkHandle | null>;
+  cause?: WithdrawCause;
   alert: Alert | null;
   recent: readonly RecentEntry[];
   onAlert(message: string, detail?: string): void;
   /** 최근 목록에 적을 것 — 서버가 알려 준 상품 이름, 옛 core 면 찍은 바코드 */
   onRemoved(label: string): void;
-  onDone(box: ShipmentByWaybill): void;
+  onDone(box: ShipmentByWaybill, exitTo: ShipmentByWaybill['exitTo']): void;
 }) {
   const api = useApiClient();
   const [removals, setRemovals] = useState<WithdrawalRemoval[]>(box.removals);
@@ -51,7 +53,7 @@ export function WithdrawWork({
       onRemoved(result.removedSkuName ?? input.barcode);
       if (result.exited) {
         done.current = true;
-        onDone(box);
+        onDone(box, result.exitTo);
       }
     } catch (error) {
       onAlert(errorMessage(error, 'outbound'), input.barcode);
@@ -95,11 +97,17 @@ export function WithdrawWork({
             content={
               alert
                 ? { kind: 'alert', ...alert }
-                : {
-                    kind: 'notice',
-                    title: '뺄 상품을 찍어 주세요',
-                    message: '꺼낸 상품을 찍고 되돌림 바구니에 넣어 주세요.',
-                  }
+                : cause === 'short-pick'
+                  ? {
+                      kind: 'notice',
+                      title: '결품을 등록했어요',
+                      message: '이 상자는 배치에서 빠져요. 담은 상품을 꺼내 찍고 되돌림 바구니에 넣어 주세요.',
+                    }
+                  : {
+                      kind: 'notice',
+                      title: '뺄 상품을 찍어 주세요',
+                      message: '꺼낸 상품을 찍고 되돌림 바구니에 넣어 주세요.',
+                    }
             }
           />
           <BarcodeInput label="상품 바코드 직접 입력" onSubmit={take} />

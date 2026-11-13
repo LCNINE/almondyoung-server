@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from '@tanstack/react-router';
 import { useWarehouse } from '../../app/warehouse-context';
 import { useApiClient } from '../../core/data/ApiClientProvider';
 import { localStoragePrefs, type DevicePrefs } from '../../core/data/devicePrefs';
@@ -19,9 +20,18 @@ import type { StationAction } from '../actions';
 import { useFeedback } from '../feedback/FeedbackProvider';
 import { useBatchProgress } from '../status/batchProgress';
 import { modalOpen } from '../useStationKeys';
-import { INSPECTION_ACTIONS } from './inspectionActions';
+import { AfterWithdrawal } from './AfterWithdrawal';
+import { INSPECTION_ACTIONS, RETURN_PUTAWAY_ACTION } from './inspectionActions';
 import { InspectWork, type PendingShortPick } from './InspectWork';
-import { workFor, type Alert, type BoxWorkHandle, type LastBox, type PrintStatus, type View } from './model';
+import {
+  workFor,
+  type Alert,
+  type BoxWorkHandle,
+  type LastBox,
+  type PrintStatus,
+  type View,
+  type WithdrawCause,
+} from './model';
 import {
   BigPanel,
   BoxCard,
@@ -35,6 +45,7 @@ import {
 import { RefillPanel } from './RefillPanel';
 import { printWaybill } from './printWaybill';
 import { pushRecent, type RecentEntry } from './recent';
+import { needsReturnPutaway, useMyReturnBin } from './returnBinView';
 import { WithdrawWork } from './WithdrawWork';
 import { INTAKE_BLOCKED_MESSAGE, ScanWaitingError, UNCERTAIN_SCAN_MESSAGE } from './useInspectionBox';
 
@@ -63,6 +74,7 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
   const queryClient = useQueryClient();
   const { signal } = useFeedback();
   const emit = useScanEmit();
+  const navigate = useNavigate();
   const [view, setView] = useState<View>({ kind: 'waiting' });
   // 스캔 처리는 그려진 화면이 아니라 «정한» 화면을 본다 — go() 만 바꾼다
   const viewRef = useRef(view);
@@ -160,8 +172,15 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
   };
 
   /** 조회 결과로 화면을 정한다(스펙 §6.2). quiet 는 하던 박스 복구 — 거절이면 조용히 대기로 */
-  const show = async (found: ShipmentByWaybill, quiet = false, announce = true) => {
+  const show = async (found: ShipmentByWaybill, quiet = false, announce = true, why?: WithdrawCause) => {
     const gate = inspectionGateOf(found, { warehouseId, canPrint });
+    // 같은 상자를 다시 찍어 다시 그려도 이 화면에서 본 까닭(결품)은 이어 간다
+    const current = viewRef.current;
+    const cause =
+      why ??
+      ((current.kind === 'withdraw' || current.kind === 'withdrawn') && current.box.shipmentId === found.shipmentId
+        ? current.cause
+        : undefined);
     if (gate.kind === 'reject') {
       if (quiet) clearLastBox(prefs);
       else reject(gate.message, found.trackingNo);
@@ -176,12 +195,12 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
     }
     if (gate.kind === 'withdrawn') {
       clearLastBox(prefs);
-      go({ kind: 'withdrawn', box: found });
+      go({ kind: 'withdrawn', box: found, seq: ++seq.current, exitTo: found.exitTo, cause });
       return;
     }
     if (gate.kind === 'withdraw') {
       writeLastBox(prefs, found);
-      go({ kind: 'withdraw', box: found, seq: ++seq.current });
+      go({ kind: 'withdraw', box: found, seq: ++seq.current, cause });
 
       const scanned = leftBatch.current;
       leftBatch.current = null;
@@ -480,7 +499,7 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
         return;
       }
       if (result.outcome !== 'refilled') {
-        await show(await lookup(box.trackingNo), false, false);
+        await show(await lookup(box.trackingNo), false, false, 'short-pick');
         signal('success');
         return;
       }
@@ -540,6 +559,12 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
     });
 
   const putDownAction: StationAction = { ...INSPECTION_ACTIONS.putDown, enabled: true, run: () => void putDown() };
+  const returnBin = useMyReturnBin(warehouseId, view.kind === 'withdrawn' ? view.seq : null);
+  const toReturnPutaway: StationAction = {
+    ...RETURN_PUTAWAY_ACTION,
+    enabled: true,
+    run: () => void navigate({ to: '/returns/putaway' }),
+  };
   const actions: StationAction[] =
     view.kind === 'reprint'
       ? [
@@ -551,8 +576,12 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
           },
           putDownAction,
         ]
-      : view.kind === 'withdraw' || view.kind === 'withdrawn'
+      : view.kind === 'withdraw'
         ? [putDownAction]
+        : view.kind === 'withdrawn'
+          ? needsReturnPutaway(returnBin)
+            ? [toReturnPutaway, putDownAction]
+            : [putDownAction]
         : view.kind === 'waiting' && last?.kind === 'refilled'
           ? [
               {
@@ -631,6 +660,7 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
           box={view.box}
           seq={view.seq}
           handleRef={work}
+          cause={view.cause}
           alert={alert}
           recent={recent}
           onAlert={boxAlert(view.box)}
@@ -639,11 +669,11 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
             signal('success');
             note({ kind: 'scan', text: label, qty: 1 });
           }}
-          onDone={(box) => {
+          onDone={(box, exitTo) => {
             clearLastBox(prefs);
             signal('complete');
             setAlert(null);
-            go({ kind: 'withdrawn', box });
+            go({ kind: 'withdrawn', box, seq: ++seq.current, exitTo, cause: view.cause });
           }}
         />
       );
@@ -657,7 +687,10 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
                 content={{
                   kind: 'notice',
                   title: '빠진 박스',
-                  message: '다 뺐어요. 이 상자는 배치에서 빠졌어요. 송장은 버리고 다음 송장을 찍어 주세요.',
+                  message:
+                    view.cause === 'short-pick'
+                      ? '결품을 등록해 이 상자는 배치에서 빠졌어요. 송장은 버리고 다음 송장을 찍어 주세요.'
+                      : '다 뺐어요. 이 상자는 배치에서 빠졌어요. 송장은 버리고 다음 송장을 찍어 주세요.',
                 }}
               />
               {alert ? (
@@ -667,7 +700,12 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
               ) : null}
             </>
           }
-          right={<RecentList entries={recent} grow />}
+          right={
+            <>
+              <AfterWithdrawal bin={returnBin} exitTo={view.exitTo} />
+              <RecentList entries={recent} grow />
+            </>
+          }
         />
       );
     default:

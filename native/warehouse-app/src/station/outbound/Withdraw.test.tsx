@@ -166,3 +166,95 @@ describe('뺄 상품(스펙 §6.2 withdrawing)', () => {
     expect(server.requests.filter((r) => r.path.endsWith('/return-bin-removals'))).toHaveLength(1);
   });
 });
+
+describe('빠진 박스 뒤 다음 할 일', () => {
+  const bar = () => within(screen.getByRole('toolbar', { name: '기능키' }));
+  const next = async () => within(await screen.findByRole('region', { name: '다음 할 일' }));
+
+  async function drain() {
+    const setup = await setupInspection({ boxes: [WITHDRAWING] });
+    await openBox('421033881907');
+    await screen.findByText('뺄 상품을 찍어 주세요');
+    scan('8801002');
+    await waitFor(() => expect(within(list()).getByText('1')).toBeInTheDocument());
+    scan('8801002');
+    await screen.findByText('빠진 박스');
+    return setup;
+  }
+
+  it('바구니에 든 상품과 원래 위치, 주문이 어디로 가는지 보여 주고 F4 로 되돌림 적치를 연다', async () => {
+    const { router } = await drain();
+    expect(within(await (await next()).findByRole('list', { name: '되돌릴 상품' })).getByRole('listitem')).toHaveTextContent(
+      '헤어클립 집게핀 2개 → B-11-1'
+    );
+    expect((await next()).getByText(/관리자가 «출고 준비»에서 다시 준비해요/)).toBeInTheDocument();
+    await waitFor(() => expect(bar().getByRole('button', { name: /되돌림 적치/ })).toBeInTheDocument());
+    press('F4');
+    await waitFor(() => expect(router.state.location.pathname).toBe('/returns/putaway'));
+  });
+
+  it('바구니가 비어 있으면 그렇게 알리고 F4 는 원래 탭 이동으로 둔다', async () => {
+    const { server, router } = await setupInspection({ boxes: [WITHDRAWING] });
+    const box = server.box('421033881907');
+    if (!box) throw new Error('Missing box');
+    box.removals = [];
+    box.withdrawn = true;
+    scan('421033881907');
+    await screen.findByText('빠진 박스');
+    expect(await (await next()).findByText('되돌림 바구니는 비어 있어요.')).toBeInTheDocument();
+    expect(bar().queryByRole('button', { name: /되돌림 적치/ })).toBeNull();
+    press('F4');
+    await waitFor(() => expect(router.state.location.pathname).toBe('/putaway'));
+  });
+
+  it('주문이 취소돼 빠진 상자는 다시 준비한다고 하지 않는다', async () => {
+    const setup = await setupInspection({ boxes: [{ ...WITHDRAWING, canceling: true }] });
+    await openBox('421033881907');
+    await screen.findByText('뺄 상품을 찍어 주세요');
+    scan('8801002');
+    await waitFor(() => expect(within(list()).getByText('1')).toBeInTheDocument());
+    scan('8801002');
+    expect(await (await next()).findByText(/이 상자의 주문은 취소됐어요/)).toBeInTheDocument();
+    expect(screen.queryByText(/다시 준비해요/)).toBeNull();
+    expect(setup.server.box('421033881907')?.withdrawn).toBe(true);
+  });
+
+  it('다른 상자가 빠지면 앞 상자 때 읽은 바구니로 판단하지 않고 새로 읽을 때까지 기다린다', async () => {
+    const { server } = await setupInspection({ boxes: [WITHDRAWING, { ...BOX2, labelState: 'withdrawing', removals: [] }] });
+    await openBox('421033881907');
+    await screen.findByText('뺄 상품을 찍어 주세요');
+    scan('8801002');
+    await waitFor(() => expect(within(list()).getByText('1')).toBeInTheDocument());
+    scan('8801002');
+    expect(within(await (await next()).findByRole('list', { name: '되돌릴 상품' })).getByRole('listitem')).toHaveTextContent(
+      '헤어클립 집게핀 2개 → B-11-1'
+    );
+    // 그 사이 바구니를 비웠고(되돌림 적치), 다음 상자의 조회는 아직 오지 않았다
+    server.returnBin.splice(0);
+    const release = server.holdReturnBin();
+    const other = server.box('421033881915');
+    if (!other) throw new Error('Missing box');
+    other.withdrawn = true;
+    scan('421033881915');
+    await screen.findByRole('heading', { name: '4210-3388-1915' });
+    expect(await (await next()).findByText('되돌림 바구니를 확인하고 있어요.')).toBeInTheDocument();
+    expect((await next()).queryByRole('list', { name: '되돌릴 상품' })).toBeNull();
+    expect(bar().queryByRole('button', { name: /되돌림 적치/ })).toBeNull();
+    await act(async () => release());
+    expect(await (await next()).findByText('되돌림 바구니는 비어 있어요.')).toBeInTheDocument();
+  });
+
+  it('바구니를 확인하지 못하면 되돌림 적치에서 확인하라고 하고 F4 로 열 수 있게 둔다', async () => {
+    const { server, router } = await setupInspection({ boxes: [WITHDRAWING] });
+    server.config.returnBinFail = true;
+    await openBox('421033881907');
+    await screen.findByText('뺄 상품을 찍어 주세요');
+    scan('8801002');
+    await waitFor(() => expect(within(list()).getByText('1')).toBeInTheDocument());
+    scan('8801002');
+    expect(await (await next()).findByText(/되돌림 바구니를 확인하지 못했어요/)).toBeInTheDocument();
+    await waitFor(() => expect(bar().getByRole('button', { name: /되돌림 적치/ })).toBeInTheDocument());
+    press('F4');
+    await waitFor(() => expect(router.state.location.pathname).toBe('/returns/putaway'));
+  });
+});
