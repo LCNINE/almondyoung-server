@@ -4,10 +4,11 @@ import { parseDesign, printsBack } from "@/domains/almond-template/lib/document"
 import { printSvg } from "@/domains/almond-template/components/print-svg"
 import { rasterPng } from "@/domains/almond-template/lib/design-images"
 import { mountViewer } from "../model3d-viewer/mount-viewer"
-import type { PaperVariant } from "./paper"
+import { PAPER_MODELS, type PaperShape, type PaperVariant } from "./paper"
 
 type PaperViewerOptions = {
   templateId: string
+  shape: PaperShape
   alt: string
   interactionPrompt: string
   variant: () => PaperVariant
@@ -15,13 +16,13 @@ type PaperViewerOptions = {
   onError: () => void
 }
 
-const CAMERA_ORBIT = "30deg 66deg 0.24m"
 const FIELD_OF_VIEW = "28deg"
 
 export async function mountPaperViewer(
   container: HTMLElement,
   {
     templateId,
+    shape,
     alt,
     interactionPrompt,
     variant,
@@ -29,6 +30,8 @@ export async function mountPaperViewer(
     onError,
   }: PaperViewerOptions
 ) {
+  const model = PAPER_MODELS[shape]
+
   let disposed = false
   let loaded = false
   const urls: string[] = []
@@ -61,7 +64,7 @@ export async function mountPaperViewer(
       material.pbrMetallicRoughness.baseColorTexture?.setTexture(plain)
     }
     // 공통 뷰어가 붙인 먼 카메라(150%)가 로드 때 다시 잡히므로, 로드 뒤에 명함 거리로 당긴다
-    viewer.cameraOrbit = CAMERA_ORBIT
+    viewer.cameraOrbit = model.cameraOrbit
     viewer.fieldOfView = FIELD_OF_VIEW
     viewer.jumpCameraToGoal()
     onReady()
@@ -105,7 +108,7 @@ export async function mountPaperViewer(
   }
 
   const disposeViewer = await mountViewer(container, {
-    src: "/almond-template/paper/card.glb",
+    src: model.src,
     alt,
     onLoad: () =>
       void hydrate().catch(() => {
@@ -117,7 +120,7 @@ export async function mountPaperViewer(
   viewer.variantName = variant()
   viewer.setAttribute("environment-image", "neutral")
   viewer.setAttribute("exposure", "1.15")
-  viewer.setAttribute("camera-orbit", CAMERA_ORBIT)
+  viewer.setAttribute("camera-orbit", model.cameraOrbit)
   viewer.setAttribute("min-camera-orbit", "auto auto 0.08m")
   viewer.setAttribute("field-of-view", FIELD_OF_VIEW)
   viewer.setAttribute("touch-action", "pan-y")

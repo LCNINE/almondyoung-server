@@ -109,6 +109,7 @@ async function setup() {
   const onError = vi.fn()
   const cleanup = await mountPaperViewer(container, {
     templateId: "template",
+    shape: "card",
     alt: "Card",
     interactionPrompt: "Drag",
     variant: () => "matte_coated",
@@ -194,7 +195,7 @@ describe("paper model", () => {
     expect(viewer.variantName).toBe("matte_coated")
     expect(viewer.getAttribute("environment-image")).toBe("neutral")
     expect(viewer.getAttribute("exposure")).toBe("1.15")
-    expect(viewer.getAttribute("camera-orbit")).toBe("30deg 66deg 0.24m")
+    expect(viewer.getAttribute("camera-orbit")).toBe("30deg 64deg 0.31m")
     expect(viewer.getAttribute("field-of-view")).toBe("28deg")
     expect(viewer.getAttribute("rotation-per-second")).toBe("8deg")
     expect(viewer.hasAttribute("auto-rotate")).toBe(false)

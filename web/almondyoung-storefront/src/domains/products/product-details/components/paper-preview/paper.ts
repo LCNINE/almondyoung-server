@@ -2,6 +2,31 @@ import type { AlmondTemplateSummary } from "@/lib/types/ui/almond-template"
 
 export type PaperVariant = "uncoated" | "matte_coated"
 
+// 종이 질감을 보여 줄 인쇄물. 모양이 달라 3D 모델·카메라 거리·확대 사진이 따로 있다
+export type PaperShape = "card" | "nail"
+
+export const PAPER_MODELS: Record<
+  PaperShape,
+  { src: string; cameraOrbit: string; macroPrefix: string }
+> = {
+  card: {
+    src: "/almond-template/paper/card.glb",
+    cameraOrbit: "30deg 64deg 0.31m",
+    macroPrefix: "/almond-template/paper/macro-",
+  },
+  nail: {
+    src: "/almond-template/paper/nail.glb",
+    cameraOrbit: "30deg 64deg 0.4m",
+    macroPrefix: "/almond-template/paper/nail-macro-",
+  },
+}
+
+const SHAPE_BY_KIND: Record<string, PaperShape> = {
+  bizcard: "card",
+  card: "card",
+  nail: "nail",
+}
+
 export function paperVariantOf(value?: string): PaperVariant | undefined {
   if (value?.includes("무광코팅")) return "matte_coated"
   if (value?.includes("무코팅")) return "uncoated"
@@ -12,10 +37,11 @@ export function paperVariantOf(value?: string): PaperVariant | undefined {
 export function paperTemplateOf(
   productId: string,
   templates: Pick<AlmondTemplateSummary, "id" | "productId" | "kind">[] | null
-) {
-  return templates?.find(
-    (template) =>
-      template.productId === productId &&
-      (template.kind === "bizcard" || template.kind === "card")
+): { id: string; shape: PaperShape } | undefined {
+  const template = templates?.find(
+    (t) => t.productId === productId && !!t.kind && !!SHAPE_BY_KIND[t.kind]
   )
+  if (!template?.kind) return undefined
+
+  return { id: template.id, shape: SHAPE_BY_KIND[template.kind] }
 }

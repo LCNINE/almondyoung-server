@@ -10,12 +10,13 @@ import {
   type DeviceHints,
   type Model3dStatus,
 } from "../model3d-viewer"
-import type { PaperVariant } from "./paper"
+import type { PaperShape, PaperVariant } from "./paper"
 import { usePickedPaper } from "./paper-store"
 
 // 대표 이미지 첫 칸의 3D. 그 상품 템플릿 시안을 입힌 명함이 옵션에서 고른 용지 질감으로 바뀐다
 export function PaperModelLayer({
   templateId,
+  shape,
   productId,
   productName,
   fallbackVariant,
@@ -23,6 +24,7 @@ export function PaperModelLayer({
   onStatus,
 }: {
   templateId: string
+  shape: PaperShape
   productId: string
   productName: string
   fallbackVariant: PaperVariant
@@ -62,6 +64,7 @@ export function PaperModelLayer({
 
           return mountPaperViewer(container.current, {
             templateId,
+            shape,
             alt,
             interactionPrompt,
             variant: () => variantRef.current,
@@ -86,7 +89,7 @@ export function PaperModelLayer({
       cancelWait()
       dispose?.()
     }
-  }, [templateId, alt, interactionPrompt])
+  }, [templateId, shape, alt, interactionPrompt])
 
   useEffect(() => {
     const viewer =

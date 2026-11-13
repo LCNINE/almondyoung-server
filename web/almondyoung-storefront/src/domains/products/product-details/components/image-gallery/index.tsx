@@ -13,12 +13,16 @@ import { ComingSoonBadge } from "@/components/shared/badges/coming-soon-badge"
 import { calculateStockStatus } from "@/domains/products/components/product-card/quantity/stock-status"
 import { type Model3dStatus, ProductModel3dLayer } from "../model3d-viewer"
 import { PaperModelLayer } from "../paper-preview/model-layer"
-import type { PaperVariant } from "../paper-preview/paper"
+import type { PaperShape, PaperVariant } from "../paper-preview/paper"
 
 type Props = {
   product: HttpTypes.StoreProduct
   // 아몬드템플릿 명함 상품이면 그 시안을 입힌 용지 3D 를 첫 칸에 둔다
-  paper?: { templateId: string; fallbackVariant: PaperVariant }
+  paper?: {
+    templateId: string
+    shape: PaperShape
+    fallbackVariant: PaperVariant
+  }
 }
 
 export function ImageGallery({ product, paper }: Props) {
@@ -124,6 +128,7 @@ export function ImageGallery({ product, paper }: Props) {
         {paper ? (
           <PaperModelLayer
             templateId={paper.templateId}
+            shape={paper.shape}
             productId={product.id}
             productName={product.title ?? ""}
             fallbackVariant={paper.fallbackVariant}

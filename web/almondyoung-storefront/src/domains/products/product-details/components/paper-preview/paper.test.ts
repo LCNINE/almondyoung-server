@@ -31,3 +31,23 @@ describe("paperTemplateOf", () => {
     expect(paperTemplateOf("product", templates.slice(0, 2))).toBeUndefined()
   })
 })
+
+describe("paperTemplateOf", () => {
+  it("명함·주의사항 카드는 명함 모델, 네일팁은 네일 모델을 쓴다", () => {
+    const templates = [
+      { id: "t1", productId: "p1", kind: "bizcard" },
+      { id: "t2", productId: "p2", kind: "nail" },
+      { id: "t3", productId: "p3", kind: "menu" },
+    ]
+
+    expect(paperTemplateOf("p1", templates)).toEqual({
+      id: "t1",
+      shape: "card",
+    })
+    expect(paperTemplateOf("p2", templates)).toEqual({
+      id: "t2",
+      shape: "nail",
+    })
+    expect(paperTemplateOf("p3", templates)).toBeUndefined()
+  })
+})

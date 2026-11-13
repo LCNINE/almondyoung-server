@@ -81,7 +81,11 @@ export async function ProductTemplate({
     .filter((variant) => variant !== undefined)
   const paper =
     paperTemplate && paperValues?.length
-      ? { templateId: paperTemplate.id, fallbackVariant: paperValues[0] }
+      ? {
+          templateId: paperTemplate.id,
+          shape: paperTemplate.shape,
+          fallbackVariant: paperValues[0],
+        }
       : undefined
 
   return (
@@ -129,7 +133,7 @@ export async function ProductTemplate({
               {/* 상품 상세정보 Tab Panel — 데이터를 page 가 이미 await 하므로 별도
                   Suspense 없이 페이지 본문과 같은 청크로 렌더한다 (지연 스왑 1단계 제거) */}
               <SectionTabPanel value="detail">
-                {paper && <PaperCompare />}
+                {paper && <PaperCompare shape={paper.shape} />}
                 <ErrorBoundary fallback={<div>{t("loadDetailFail")}</div>}>
                   <ProductDetailInfoWrapper
                     pricedProduct={product}
