@@ -1,0 +1,1822 @@
+{
+ "prodno": 40115,
+ "prodname": "일반현수막",
+ "filetype": "AI,EPS,JPG,PNG,ZIP,ALZ",
+ "sizeinfo": [
+  {
+   "covercd": 0,
+   "sizelist": [
+    {
+     "sizeno": 5664,
+     "sizename": "가로형 4000x700",
+     "width": 4000,
+     "height": 700,
+     "cutsize": 0,
+     "non_standard": false,
+     "req_width": null,
+     "req_height": null,
+     "req_paper": null,
+     "req_color": null,
+     "req_awkjob": null,
+     "rst_ordqty": null,
+     "rst_awkjob": [
+      {
+       "unit": "mm",
+       "min_width": null,
+       "max_width": null,
+       "min_height": 900,
+       "max_height": 900,
+       "min_verse": null,
+       "max_verse": null,
+       "min_sum_wh": null,
+       "max_sum_wh": null,
+       "joblist": [
+        {
+         "jobgroupno": 39000,
+         "jobgroup": "나무+로프",
+         "jobno": 11789,
+         "jobname": "나무+로프(좌우 900)"
+        }
+       ]
+      },
+      {
+       "unit": "mm",
+       "min_width": 700,
+       "max_width": 700,
+       "min_height": null,
+       "max_height": null,
+       "min_verse": null,
+       "max_verse": null,
+       "min_sum_wh": null,
+       "max_sum_wh": null,
+       "joblist": [
+        {
+         "jobgroupno": 39000,
+         "jobgroup": "나무+로프",
+         "jobno": 11390,
+         "jobname": "나무+로프(상하 700)"
+        }
+       ]
+      },
+      {
+       "unit": "mm",
+       "min_width": 900,
+       "max_width": 900,
+       "min_height": null,
+       "max_height": null,
+       "min_verse": null,
+       "max_verse": null,
+       "min_sum_wh": null,
+       "max_sum_wh": null,
+       "joblist": [
+        {
+         "jobgroupno": 39000,
+         "jobgroup": "나무+로프",
+         "jobno": 11391,
+         "jobname": "나무+로프(상하 900)"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "sizeno": 5663,
+     "sizename": "가로형 5000x900",
+     "width": 5000,
+     "height": 900,
+     "cutsize": 0,
+     "non_standard": false,
+     "req_width": null,
+     "req_height": null,
+     "req_paper": null,
+     "req_color": null,
+     "req_awkjob": null,
+     "rst_ordqty": null,
+     "rst_awkjob": [
+      {
+       "unit": "mm",
+       "min_width": null,
+       "max_width": null,
+       "min_height": 700,
+       "max_height": 700,
+       "min_verse": null,
+       "max_verse": null,
+       "min_sum_wh": null,
+       "max_sum_wh": null,
+       "joblist": [
+        {
+         "jobgroupno": 39000,
+         "jobgroup": "나무+로프",
+         "jobno": 11788,
+         "jobname": "나무+로프(좌우 700)"
+        }
+       ]
+      },
+      {
+       "unit": "mm",
+       "min_width": 700,
+       "max_width": 700,
+       "min_height": null,
+       "max_height": null,
+       "min_verse": null,
+       "max_verse": null,
+       "min_sum_wh": null,
+       "max_sum_wh": null,
+       "joblist": [
+        {
+         "jobgroupno": 39000,
+         "jobgroup": "나무+로프",
+         "jobno": 11390,
+         "jobname": "나무+로프(상하 700)"
+        }
+       ]
+      },
+      {
+       "unit": "mm",
+       "min_width": 900,
+       "max_width": 900,
+       "min_height": null,
+       "max_height": null,
+       "min_verse": null,
+       "max_verse": null,
+       "min_sum_wh": null,
+       "max_sum_wh": null,
+       "joblist": [
+        {
+         "jobgroupno": 39000,
+         "jobgroup": "나무+로프",
+         "jobno": 11391,
+         "jobname": "나무+로프(상하 900)"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "sizeno": 5666,
+     "sizename": "비규격",
+     "width": 1000,
+     "height": 1000,
+     "cutsize": 0,
+     "non_standard": true,
+     "req_width": {
+      "type": "input",
+      "unit": "가로(mm)",
+      "min": 200,
+      "max": 100000,
+      "interval": 100
+     },
+     "req_height": {
+      "type": "input",
+      "unit": "세로(mm)",
+      "min": 200,
+      "max": 1800,
+      "interval": 100
+     },
+     "req_paper": null,
+     "req_color": null,
+     "req_awkjob": null,
+     "rst_ordqty": null,
+     "rst_awkjob": [
+      {
+       "unit": "mm",
+       "min_width": null,
+       "max_width": null,
+       "min_height": 700,
+       "max_height": 700,
+       "min_verse": null,
+       "max_verse": null,
+       "min_sum_wh": null,
+       "max_sum_wh": null,
+       "joblist": [
+        {
+         "jobgroupno": 39000,
+         "jobgroup": "나무+로프",
+         "jobno": 11788,
+         "jobname": "나무+로프(좌우 700)"
+        }
+       ]
+      },
+      {
+       "unit": "mm",
+       "min_width": null,
+       "max_width": null,
+       "min_height": 900,
+       "max_height": 900,
+       "min_verse": null,
+       "max_verse": null,
+       "min_sum_wh": null,
+       "max_sum_wh": null,
+       "joblist": [
+        {
+         "jobgroupno": 39000,
+         "jobgroup": "나무+로프",
+         "jobno": 11789,
+         "jobname": "나무+로프(좌우 900)"
+        }
+       ]
+      },
+      {
+       "unit": "mm",
+       "min_width": 700,
+       "max_width": 700,
+       "min_height": null,
+       "max_height": null,
+       "min_verse": null,
+       "max_verse": null,
+       "min_sum_wh": null,
+       "max_sum_wh": null,
+       "joblist": [
+        {
+         "jobgroupno": 39000,
+         "jobgroup": "나무+로프",
+         "jobno": 11390,
+         "jobname": "나무+로프(상하 700)"
+        }
+       ]
+      },
+      {
+       "unit": "mm",
+       "min_width": 900,
+       "max_width": 900,
+       "min_height": null,
+       "max_height": null,
+       "min_verse": null,
+       "max_verse": null,
+       "min_sum_wh": null,
+       "max_sum_wh": null,
+       "joblist": [
+        {
+         "jobgroupno": 39000,
+         "jobgroup": "나무+로프",
+         "jobno": 11391,
+         "jobname": "나무+로프(상하 900)"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "sizeno": 5665,
+     "sizename": "세로형 900x5000",
+     "width": 900,
+     "height": 5000,
+     "cutsize": 0,
+     "non_standard": false,
+     "req_width": null,
+     "req_height": null,
+     "req_paper": null,
+     "req_color": null,
+     "req_awkjob": null,
+     "rst_ordqty": null,
+     "rst_awkjob": [
+      {
+       "unit": "mm",
+       "min_width": null,
+       "max_width": null,
+       "min_height": 700,
+       "max_height": 700,
+       "min_verse": null,
+       "max_verse": null,
+       "min_sum_wh": null,
+       "max_sum_wh": null,
+       "joblist": [
+        {
+         "jobgroupno": 39000,
+         "jobgroup": "나무+로프",
+         "jobno": 11788,
+         "jobname": "나무+로프(좌우 700)"
+        }
+       ]
+      },
+      {
+       "unit": "mm",
+       "min_width": null,
+       "max_width": null,
+       "min_height": 900,
+       "max_height": 900,
+       "min_verse": null,
+       "max_verse": null,
+       "min_sum_wh": null,
+       "max_sum_wh": null,
+       "joblist": [
+        {
+         "jobgroupno": 39000,
+         "jobgroup": "나무+로프",
+         "jobno": 11789,
+         "jobname": "나무+로프(좌우 900)"
+        }
+       ]
+      },
+      {
+       "unit": "mm",
+       "min_width": 700,
+       "max_width": 700,
+       "min_height": null,
+       "max_height": null,
+       "min_verse": null,
+       "max_verse": null,
+       "min_sum_wh": null,
+       "max_sum_wh": null,
+       "joblist": [
+        {
+         "jobgroupno": 39000,
+         "jobgroup": "나무+로프",
+         "jobno": 11390,
+         "jobname": "나무+로프(상하 700)"
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ ],
+ "paperinfo": [
+  {
+   "covercd": 0,
+   "paperlist": [
+    {
+     "paperno": 20848,
+     "papername": "현수막천 150denier",
+     "papergroup": "현수막천",
+     "pgram": 150,
+     "req_width": null,
+     "req_height": null,
+     "req_awkjob": null,
+     "rst_ordqty": null,
+     "rst_prsjob": null,
+     "rst_awkjob": null
+    }
+   ],
+   "ncr": null
+  }
+ ],
+ "colorinfo": [
+  {
+   "covercd": 0,
+   "pagelist": [
+    {
+     "pagecd": 0,
+     "type": "radio",
+     "colorlist": [
+      {
+       "colorno": 302,
+       "colorname": "단면 칼라",
+       "pdfpage": 1,
+       "req_prsjob": null,
+       "req_awkjob": null,
+       "rst_prsjob": null,
+       "rst_awkjob": null,
+       "rst_opt": null
+      }
+     ],
+     "addtype": null,
+     "coloraddlist": null
+    }
+   ]
+  }
+ ],
+ "ordqty": [
+  {
+   "type": "select",
+   "jobpresetno": null,
+   "sizeno": null,
+   "paperno": null,
+   "optno": null,
+   "colorno": null,
+   "ordqtymin": 1,
+   "ordqtymax": 10000,
+   "ordqtyinterval": null,
+   "ordqtylist": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23,
+    24,
+    25,
+    26,
+    27,
+    28,
+    29,
+    30,
+    31,
+    32,
+    33,
+    34,
+    35,
+    36,
+    37,
+    38,
+    39,
+    40,
+    41,
+    42,
+    43,
+    44,
+    45,
+    46,
+    47,
+    48,
+    49,
+    50,
+    51,
+    52,
+    53,
+    54,
+    55,
+    56,
+    57,
+    58,
+    59,
+    60,
+    61,
+    62,
+    63,
+    64,
+    65,
+    66,
+    67,
+    68,
+    69,
+    70,
+    71,
+    72,
+    73,
+    74,
+    75,
+    76,
+    77,
+    78,
+    79,
+    80,
+    81,
+    82,
+    83,
+    84,
+    85,
+    86,
+    87,
+    88,
+    89,
+    90,
+    91,
+    92,
+    93,
+    94,
+    95,
+    96,
+    97,
+    98,
+    99,
+    100,
+    200,
+    300,
+    400,
+    500,
+    600,
+    700,
+    800,
+    900,
+    1000,
+    2000,
+    3000,
+    4000,
+    5000,
+    6000,
+    7000,
+    8000,
+    9000,
+    10000
+   ]
+  }
+ ],
+ "prsjobinfo": [
+  {
+   "jobpresetno": 30,
+   "jobpreset": "분류",
+   "prsjoblist": [
+    {
+     "covercd": 0,
+     "jobno": 30,
+     "jobname": "분류",
+     "unit": "개",
+     "req_color": null,
+     "rst_paper": null,
+     "rst_awkjob": null
+    }
+   ]
+  }
+ ],
+ "awkjobinfo": [
+  {
+   "covercd": 0,
+   "type": "radio",
+   "jobgrouplist": [
+    {
+     "jobgroupno": 39000,
+     "jobgroup": "나무+로프",
+     "type": "select",
+     "displayloc": "awkjob",
+     "awkjoblist": [
+      {
+       "jobno": 11789,
+       "jobname": "나무+로프(좌우 900)",
+       "namestep1": "나무+로프",
+       "namestep2": "좌우(세로900)",
+       "unit": "개",
+       "sort": 101,
+       "unitlist": null,
+       "ck_page": null,
+       "req_joboption": null,
+       "req_jobsize": null,
+       "req_jobqty": null,
+       "req_awkjob": null,
+       "rst_jobqty": null,
+       "rst_cutcnt": null,
+       "rst_size": {
+        "unit": "mm",
+        "min_width": null,
+        "max_width": null,
+        "min_height": 900,
+        "max_height": 900,
+        "min_verse": null,
+        "max_verse": null,
+        "min_sum_wh": null,
+        "max_sum_wh": null,
+        "sizelist": [
+         {
+          "sizeno": 5664,
+          "sizename": "가로형 4000x700",
+          "non_standard": false,
+          "width": 4000,
+          "height": 700
+         },
+         {
+          "sizeno": 5666,
+          "sizename": "비규격",
+          "non_standard": true,
+          "width": 1000,
+          "height": 1000
+         },
+         {
+          "sizeno": 5665,
+          "sizename": "세로형 900x5000",
+          "non_standard": false,
+          "width": 900,
+          "height": 5000
+         }
+        ]
+       },
+       "rst_paper": null,
+       "rst_color": null,
+       "rst_awkjob": [
+        {
+         "jobgroupno": 42000,
+         "jobgroup": "아일렛(현수막)",
+         "jobno": 42104,
+         "jobname": "아일렛 10개"
+        },
+        {
+         "jobgroupno": 42000,
+         "jobgroup": "아일렛(현수막)",
+         "jobno": 42105,
+         "jobname": "아일렛 12개"
+        },
+        {
+         "jobgroupno": 42000,
+         "jobgroup": "아일렛(현수막)",
+         "jobno": 42106,
+         "jobname": "아일렛 14개"
+        },
+        {
+         "jobgroupno": 42000,
+         "jobgroup": "아일렛(현수막)",
+         "jobno": 42107,
+         "jobname": "아일렛 16개"
+        },
+        {
+         "jobgroupno": 42000,
+         "jobgroup": "아일렛(현수막)",
+         "jobno": 42108,
+         "jobname": "아일렛 18개"
+        },
+        {
+         "jobgroupno": 42000,
+         "jobgroup": "아일렛(현수막)",
+         "jobno": 42109,
+         "jobname": "아일렛 20개"
+        },
+        {
+         "jobgroupno": 42000,
+         "jobgroup": "아일렛(현수막)",
+         "jobno": 42101,
+         "jobname": "아일렛 4개"
+        },
+        {
+         "jobgroupno": 42000,
+         "jobgroup": "아일렛(현수막)",
+         "jobno": 42102,
+         "jobname": "아일렛 6개"
+        },
+        {
+         "jobgroupno": 42000,
+         "jobgroup": "아일렛(현수막)",
+         "jobno": 42103,
+         "jobname": "아일렛 8개"
+        },
+        {
+         "jobgroupno": 41000,
+         "jobgroup": "테두리마감",
+         "jobno": 11414,
+         "jobname": "현수막 미싱(사방)"
+        },
+        {
+         "jobgroupno": 41000,
+         "jobgroup": "테두리마감",
+         "jobno": 11412,
+         "jobname": "현수막 미싱(상하)"
+        },
+        {
+         "jobgroupno": 41000,
+         "jobgroup": "테두리마감",
+         "jobno": 11413,
+         "jobname": "현수막 미싱(좌우)"
+        },
+        {
+         "jobgroupno": 41000,
+         "jobgroup": "테두리마감",
+         "jobno": 11411,
+         "jobname": "현수막 열재단(사방)"
+        },
+        {
+         "jobgroupno": 41000,
+         "jobgroup": "테두리마감",
+         "jobno": 11409,
+         "jobname": "현수막 열재단(상하)"
+        },
+        {
+         "jobgroupno": 41000,
+         "jobgroup": "테두리마감",
+         "jobno": 11410,
+         "jobname": "현수막 열재단(좌우)"
+        }
+       ]
+      },
+      {
+       "jobno": 11788,
+       "jobname": "나무+로프(좌우 700)",
+       "namestep1": "나무+로프",
+       "namestep2": "좌우(세로700)",
+       "unit": "개",
+       "sort": 102,
+       "unitlist": null,
+       "ck_page": null,
+       "req_joboption": null,
+       "req_jobsize": null,
+       "req_jobqty": null,
+       "req_awkjob": null,
+       "rst_jobqty": null,
+       "rst_cutcnt": null,
+       "rst_size": {
+        "unit": "mm",
+        "min_width": null,
+        "max_width": null,
+        "min_height": 700,
+        "max_height": 700,
+        "min_verse": null,
+        "max_verse": null,
+        "min_sum_wh": null,
+        "max_sum_wh": null,
+        "sizelist": [
+         {
+          "sizeno": 5663,
+          "sizename": "가로형 5000x900",
+          "non_standard": false,
+          "width": 5000,
+          "height": 900
+         },
+         {
+          "sizeno": 5666,
+          "sizename": "비규격",
+          "non_standard": true,
+          "width": 1000,
+          "height": 1000
+         },
+         {
+          "sizeno": 5665,
+          "sizename": "세로형 900x5000",
+          "non_standard": false,
+          "width": 900,
+          "height": 5000
+         }
+        ]
+       },
+       "rst_paper": null,
+       "rst_color": null,
+       "rst_awkjob": [
+        {
+         "jobgroupno": 42000,
+         "jobgroup": "아일렛(현수막)",
+         "jobno": 42104,
+         "jobname": "아일렛 10개"
+        },
+        {
+         "jobgroupno": 42000,
+         "jobgroup": "아일렛(현수막)",
+         "jobno": 42105,
+         "jobname": "아일렛 12개"
+        },
+        {
+         "jobgroupno": 42000,
+         "jobgroup": "아일렛(현수막)",
+         "jobno": 42106,
+         "jobname": "아일렛 14개"
+        },
+        {
+         "jobgroupno": 42000,
+         "jobgroup": "아일렛(현수막)",
+         "jobno": 42107,
+         "jobname": "아일렛 16개"
+        },
+        {
+         "jobgroupno": 42000,
+         "jobgroup": "아일렛(현수막)",
+         "jobno": 42108,
+         "jobname": "아일렛 18개"
+        },
+        {
+         "jobgroupno": 42000,
+         "jobgroup": "아일렛(현수막)",
+         "jobno": 42109,
+         "jobname": "아일렛 20개"
+        },
+        {
+         "jobgroupno": 42000,
+         "jobgroup": "아일렛(현수막)",
+         "jobno": 42101,
+         "jobname": "아일렛 4개"
+        },
+        {
+         "jobgroupno": 42000,
+         "jobgroup": "아일렛(현수막)",
+         "jobno": 42102,
+         "jobname": "아일렛 6개"
+        },
+        {
+         "jobgroupno": 42000,
+         "jobgroup": "아일렛(현수막)",
+         "jobno": 42103,
+         "jobname": "아일렛 8개"
+        },
+        {
+         "jobgroupno": 41000,
+         "jobgroup": "테두리마감",
+         "jobno": 11414,
+         "jobname": "현수막 미싱(사방)"
+        },
+        {
+         "jobgroupno": 41000,
+         "jobgroup": "테두리마감",
+         "jobno": 11412,
+         "jobname": "현수막 미싱(상하)"
+        },
+        {
+         "jobgroupno": 41000,
+         "jobgroup": "테두리마감",
+         "jobno": 11413,
+         "jobname": "현수막 미싱(좌우)"
+        },
+        {
+         "jobgroupno": 41000,
+         "jobgroup": "테두리마감",
+         "jobno": 11411,
+         "jobname": "현수막 열재단(사방)"
+        },
+        {
+         "jobgroupno": 41000,
+         "jobgroup": "테두리마감",
+         "jobno": 11409,
+         "jobname": "현수막 열재단(상하)"
+        },
+        {
+         "jobgroupno": 41000,
+         "jobgroup": "테두리마감",
+         "jobno": 11410,
+         "jobname": "현수막 열재단(좌우)"
+        }
+       ]
+      },
+      {
+       "jobno": 11391,
+       "jobname": "나무+로프(상하 900)",
+       "namestep1": "나무+로프",
+       "namestep2": "상하(가로900)",
+       "unit": "개",
+       "sort": 103,
+       "unitlist": null,
+       "ck_page": null,
+       "req_joboption": null,
+       "req_jobsize": null,
+       "req_jobqty": null,
+       "req_awkjob": null,
+       "rst_jobqty": null,
+       "rst_cutcnt": null,
+       "rst_size": {
+        "unit": "mm",
+        "min_width": 900,
+        "max_width": 900,
+        "min_height": null,
+        "max_height": null,
+        "min_verse": null,
+        "max_verse": null,
+        "min_sum_wh": null,
+        "max_sum_wh": null,
+        "sizelist": [
+         {
+          "sizeno": 5664,
+          "sizename": "가로형 4000x700",
+          "non_standard": false,
+          "width": 4000,
+          "height": 700
+         },
+         {
+          "sizeno": 5663,
+          "sizename": "가로형 5000x900",
+          "non_standard": false,
+          "width": 5000,
+          "height": 900
+         },
+         {
+          "sizeno": 5666,
+          "sizename": "비규격",
+          "non_standard": true,
+          "width": 1000,
+          "height": 1000
+         }
+        ]
+       },
+       "rst_paper": null,
+       "rst_color": null,
+       "rst_awkjob": [
+        {
+         "jobgroupno": 42000,
+         "jobgroup": "아일렛(현수막)",
+         "jobno": 42104,
+         "jobname": "아일렛 10개"
+        },
+        {
+         "jobgroupno": 42000,
+         "jobgroup": "아일렛(현수막)",
+         "jobno": 42105,
+         "jobname": "아일렛 12개"
+        },
+        {
+         "jobgroupno": 42000,
+         "jobgroup": "아일렛(현수막)",
+         "jobno": 42106,
+         "jobname": "아일렛 14개"
+        },
+        {
+         "jobgroupno": 42000,
+         "jobgroup": "아일렛(현수막)",
+         "jobno": 42107,
+         "jobname": "아일렛 16개"
+        },
+        {
+         "jobgroupno": 42000,
+         "jobgroup": "아일렛(현수막)",
+         "jobno": 42108,
+         "jobname": "아일렛 18개"
+        },
+        {
+         "jobgroupno": 42000,
+         "jobgroup": "아일렛(현수막)",
+         "jobno": 42109,
+         "jobname": "아일렛 20개"
+        },
+        {
+         "jobgroupno": 42000,
+         "jobgroup": "아일렛(현수막)",
+         "jobno": 42101,
+         "jobname": "아일렛 4개"
+        },
+        {
+         "jobgroupno": 42000,
+         "jobgroup": "아일렛(현수막)",
+         "jobno": 42102,
+         "jobname": "아일렛 6개"
+        },
+        {
+         "jobgroupno": 42000,
+         "jobgroup": "아일렛(현수막)",
+         "jobno": 42103,
+         "jobname": "아일렛 8개"
+        },
+        {
+         "jobgroupno": 41000,
+         "jobgroup": "테두리마감",
+         "jobno": 11414,
+         "jobname": "현수막 미싱(사방)"
+        },
+        {
+         "jobgroupno": 41000,
+         "jobgroup": "테두리마감",
+         "jobno": 11412,
+         "jobname": "현수막 미싱(상하)"
+        },
+        {
+         "jobgroupno": 41000,
+         "jobgroup": "테두리마감",
+         "jobno": 11413,
+         "jobname": "현수막 미싱(좌우)"
+        },
+        {
+         "jobgroupno": 41000,
+         "jobgroup": "테두리마감",
+         "jobno": 11411,
+         "jobname": "현수막 열재단(사방)"
+        },
+        {
+         "jobgroupno": 41000,
+         "jobgroup": "테두리마감",
+         "jobno": 11409,
+         "jobname": "현수막 열재단(상하)"
+        },
+        {
+         "jobgroupno": 41000,
+         "jobgroup": "테두리마감",
+         "jobno": 11410,
+         "jobname": "현수막 열재단(좌우)"
+        }
+       ]
+      },
+      {
+       "jobno": 11390,
+       "jobname": "나무+로프(상하 700)",
+       "namestep1": "나무+로프",
+       "namestep2": "상하(가로700)",
+       "unit": "개",
+       "sort": 104,
+       "unitlist": null,
+       "ck_page": null,
+       "req_joboption": null,
+       "req_jobsize": null,
+       "req_jobqty": null,
+       "req_awkjob": null,
+       "rst_jobqty": null,
+       "rst_cutcnt": null,
+       "rst_size": {
+        "unit": "mm",
+        "min_width": 700,
+        "max_width": 700,
+        "min_height": null,
+        "max_height": null,
+        "min_verse": null,
+        "max_verse": null,
+        "min_sum_wh": null,
+        "max_sum_wh": null,
+        "sizelist": [
+         {
+          "sizeno": 5664,
+          "sizename": "가로형 4000x700",
+          "non_standard": false,
+          "width": 4000,
+          "height": 700
+         },
+         {
+          "sizeno": 5663,
+          "sizename": "가로형 5000x900",
+          "non_standard": false,
+          "width": 5000,
+          "height": 900
+         },
+         {
+          "sizeno": 5666,
+          "sizename": "비규격",
+          "non_standard": true,
+          "width": 1000,
+          "height": 1000
+         },
+         {
+          "sizeno": 5665,
+          "sizename": "세로형 900x5000",
+          "non_standard": false,
+          "width": 900,
+          "height": 5000
+         }
+        ]
+       },
+       "rst_paper": null,
+       "rst_color": null,
+       "rst_awkjob": [
+        {
+         "jobgroupno": 42000,
+         "jobgroup": "아일렛(현수막)",
+         "jobno": 42104,
+         "jobname": "아일렛 10개"
+        },
+        {
+         "jobgroupno": 42000,
+         "jobgroup": "아일렛(현수막)",
+         "jobno": 42105,
+         "jobname": "아일렛 12개"
+        },
+        {
+         "jobgroupno": 42000,
+         "jobgroup": "아일렛(현수막)",
+         "jobno": 42106,
+         "jobname": "아일렛 14개"
+        },
+        {
+         "jobgroupno": 42000,
+         "jobgroup": "아일렛(현수막)",
+         "jobno": 42107,
+         "jobname": "아일렛 16개"
+        },
+        {
+         "jobgroupno": 42000,
+         "jobgroup": "아일렛(현수막)",
+         "jobno": 42108,
+         "jobname": "아일렛 18개"
+        },
+        {
+         "jobgroupno": 42000,
+         "jobgroup": "아일렛(현수막)",
+         "jobno": 42109,
+         "jobname": "아일렛 20개"
+        },
+        {
+         "jobgroupno": 42000,
+         "jobgroup": "아일렛(현수막)",
+         "jobno": 42101,
+         "jobname": "아일렛 4개"
+        },
+        {
+         "jobgroupno": 42000,
+         "jobgroup": "아일렛(현수막)",
+         "jobno": 42102,
+         "jobname": "아일렛 6개"
+        },
+        {
+         "jobgroupno": 42000,
+         "jobgroup": "아일렛(현수막)",
+         "jobno": 42103,
+         "jobname": "아일렛 8개"
+        },
+        {
+         "jobgroupno": 41000,
+         "jobgroup": "테두리마감",
+         "jobno": 11414,
+         "jobname": "현수막 미싱(사방)"
+        },
+        {
+         "jobgroupno": 41000,
+         "jobgroup": "테두리마감",
+         "jobno": 11412,
+         "jobname": "현수막 미싱(상하)"
+        },
+        {
+         "jobgroupno": 41000,
+         "jobgroup": "테두리마감",
+         "jobno": 11413,
+         "jobname": "현수막 미싱(좌우)"
+        },
+        {
+         "jobgroupno": 41000,
+         "jobgroup": "테두리마감",
+         "jobno": 11411,
+         "jobname": "현수막 열재단(사방)"
+        },
+        {
+         "jobgroupno": 41000,
+         "jobgroup": "테두리마감",
+         "jobno": 11409,
+         "jobname": "현수막 열재단(상하)"
+        },
+        {
+         "jobgroupno": 41000,
+         "jobgroup": "테두리마감",
+         "jobno": 11410,
+         "jobname": "현수막 열재단(좌우)"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "jobgroupno": 41000,
+     "jobgroup": "테두리마감",
+     "type": "select",
+     "displayloc": "awkjob",
+     "awkjoblist": [
+      {
+       "jobno": 11414,
+       "jobname": "현수막 미싱(사방)",
+       "namestep1": "미싱",
+       "namestep2": "사방",
+       "unit": "개",
+       "sort": 70,
+       "unitlist": null,
+       "ck_page": null,
+       "req_joboption": null,
+       "req_jobsize": null,
+       "req_jobqty": null,
+       "req_awkjob": null,
+       "rst_jobqty": null,
+       "rst_cutcnt": null,
+       "rst_size": null,
+       "rst_paper": null,
+       "rst_color": null,
+       "rst_awkjob": [
+        {
+         "jobgroupno": 39000,
+         "jobgroup": "나무+로프",
+         "jobno": 11390,
+         "jobname": "나무+로프(상하 700)"
+        },
+        {
+         "jobgroupno": 39000,
+         "jobgroup": "나무+로프",
+         "jobno": 11391,
+         "jobname": "나무+로프(상하 900)"
+        },
+        {
+         "jobgroupno": 39000,
+         "jobgroup": "나무+로프",
+         "jobno": 11788,
+         "jobname": "나무+로프(좌우 700)"
+        },
+        {
+         "jobgroupno": 39000,
+         "jobgroup": "나무+로프",
+         "jobno": 11789,
+         "jobname": "나무+로프(좌우 900)"
+        }
+       ]
+      },
+      {
+       "jobno": 11413,
+       "jobname": "현수막 미싱(좌우)",
+       "namestep1": "미싱",
+       "namestep2": "좌우",
+       "unit": "개",
+       "sort": 70,
+       "unitlist": null,
+       "ck_page": null,
+       "req_joboption": null,
+       "req_jobsize": null,
+       "req_jobqty": null,
+       "req_awkjob": null,
+       "rst_jobqty": null,
+       "rst_cutcnt": null,
+       "rst_size": null,
+       "rst_paper": null,
+       "rst_color": null,
+       "rst_awkjob": [
+        {
+         "jobgroupno": 39000,
+         "jobgroup": "나무+로프",
+         "jobno": 11390,
+         "jobname": "나무+로프(상하 700)"
+        },
+        {
+         "jobgroupno": 39000,
+         "jobgroup": "나무+로프",
+         "jobno": 11391,
+         "jobname": "나무+로프(상하 900)"
+        },
+        {
+         "jobgroupno": 39000,
+         "jobgroup": "나무+로프",
+         "jobno": 11788,
+         "jobname": "나무+로프(좌우 700)"
+        },
+        {
+         "jobgroupno": 39000,
+         "jobgroup": "나무+로프",
+         "jobno": 11789,
+         "jobname": "나무+로프(좌우 900)"
+        }
+       ]
+      },
+      {
+       "jobno": 11412,
+       "jobname": "현수막 미싱(상하)",
+       "namestep1": "미싱",
+       "namestep2": "상하",
+       "unit": "개",
+       "sort": 70,
+       "unitlist": null,
+       "ck_page": null,
+       "req_joboption": null,
+       "req_jobsize": null,
+       "req_jobqty": null,
+       "req_awkjob": null,
+       "rst_jobqty": null,
+       "rst_cutcnt": null,
+       "rst_size": null,
+       "rst_paper": null,
+       "rst_color": null,
+       "rst_awkjob": [
+        {
+         "jobgroupno": 39000,
+         "jobgroup": "나무+로프",
+         "jobno": 11390,
+         "jobname": "나무+로프(상하 700)"
+        },
+        {
+         "jobgroupno": 39000,
+         "jobgroup": "나무+로프",
+         "jobno": 11391,
+         "jobname": "나무+로프(상하 900)"
+        },
+        {
+         "jobgroupno": 39000,
+         "jobgroup": "나무+로프",
+         "jobno": 11788,
+         "jobname": "나무+로프(좌우 700)"
+        },
+        {
+         "jobgroupno": 39000,
+         "jobgroup": "나무+로프",
+         "jobno": 11789,
+         "jobname": "나무+로프(좌우 900)"
+        }
+       ]
+      },
+      {
+       "jobno": 11411,
+       "jobname": "현수막 열재단(사방)",
+       "namestep1": "열재단",
+       "namestep2": "사방",
+       "unit": "개",
+       "sort": 70,
+       "unitlist": null,
+       "ck_page": null,
+       "req_joboption": null,
+       "req_jobsize": null,
+       "req_jobqty": null,
+       "req_awkjob": null,
+       "rst_jobqty": null,
+       "rst_cutcnt": null,
+       "rst_size": null,
+       "rst_paper": null,
+       "rst_color": null,
+       "rst_awkjob": [
+        {
+         "jobgroupno": 39000,
+         "jobgroup": "나무+로프",
+         "jobno": 11390,
+         "jobname": "나무+로프(상하 700)"
+        },
+        {
+         "jobgroupno": 39000,
+         "jobgroup": "나무+로프",
+         "jobno": 11391,
+         "jobname": "나무+로프(상하 900)"
+        },
+        {
+         "jobgroupno": 39000,
+         "jobgroup": "나무+로프",
+         "jobno": 11788,
+         "jobname": "나무+로프(좌우 700)"
+        },
+        {
+         "jobgroupno": 39000,
+         "jobgroup": "나무+로프",
+         "jobno": 11789,
+         "jobname": "나무+로프(좌우 900)"
+        }
+       ]
+      },
+      {
+       "jobno": 11410,
+       "jobname": "현수막 열재단(좌우)",
+       "namestep1": "열재단",
+       "namestep2": "좌우",
+       "unit": "개",
+       "sort": 70,
+       "unitlist": null,
+       "ck_page": null,
+       "req_joboption": null,
+       "req_jobsize": null,
+       "req_jobqty": null,
+       "req_awkjob": null,
+       "rst_jobqty": null,
+       "rst_cutcnt": null,
+       "rst_size": null,
+       "rst_paper": null,
+       "rst_color": null,
+       "rst_awkjob": [
+        {
+         "jobgroupno": 39000,
+         "jobgroup": "나무+로프",
+         "jobno": 11390,
+         "jobname": "나무+로프(상하 700)"
+        },
+        {
+         "jobgroupno": 39000,
+         "jobgroup": "나무+로프",
+         "jobno": 11391,
+         "jobname": "나무+로프(상하 900)"
+        },
+        {
+         "jobgroupno": 39000,
+         "jobgroup": "나무+로프",
+         "jobno": 11788,
+         "jobname": "나무+로프(좌우 700)"
+        },
+        {
+         "jobgroupno": 39000,
+         "jobgroup": "나무+로프",
+         "jobno": 11789,
+         "jobname": "나무+로프(좌우 900)"
+        }
+       ]
+      },
+      {
+       "jobno": 11409,
+       "jobname": "현수막 열재단(상하)",
+       "namestep1": "열재단",
+       "namestep2": "상하",
+       "unit": "개",
+       "sort": 70,
+       "unitlist": null,
+       "ck_page": null,
+       "req_joboption": null,
+       "req_jobsize": null,
+       "req_jobqty": null,
+       "req_awkjob": null,
+       "rst_jobqty": null,
+       "rst_cutcnt": null,
+       "rst_size": null,
+       "rst_paper": null,
+       "rst_color": null,
+       "rst_awkjob": [
+        {
+         "jobgroupno": 39000,
+         "jobgroup": "나무+로프",
+         "jobno": 11390,
+         "jobname": "나무+로프(상하 700)"
+        },
+        {
+         "jobgroupno": 39000,
+         "jobgroup": "나무+로프",
+         "jobno": 11391,
+         "jobname": "나무+로프(상하 900)"
+        },
+        {
+         "jobgroupno": 39000,
+         "jobgroup": "나무+로프",
+         "jobno": 11788,
+         "jobname": "나무+로프(좌우 700)"
+        },
+        {
+         "jobgroupno": 39000,
+         "jobgroup": "나무+로프",
+         "jobno": 11789,
+         "jobname": "나무+로프(좌우 900)"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "jobgroupno": 42000,
+     "jobgroup": "아일렛",
+     "type": "select",
+     "displayloc": "awkjob",
+     "awkjoblist": [
+      {
+       "jobno": 42101,
+       "jobname": "아일렛 4개",
+       "namestep1": "아일렛",
+       "namestep2": "4개",
+       "unit": "개",
+       "sort": 4,
+       "unitlist": null,
+       "ck_page": null,
+       "req_joboption": null,
+       "req_jobsize": null,
+       "req_jobqty": null,
+       "req_awkjob": null,
+       "rst_jobqty": null,
+       "rst_cutcnt": null,
+       "rst_size": null,
+       "rst_paper": null,
+       "rst_color": null,
+       "rst_awkjob": [
+        {
+         "jobgroupno": 39000,
+         "jobgroup": "나무+로프",
+         "jobno": 11390,
+         "jobname": "나무+로프(상하 700)"
+        },
+        {
+         "jobgroupno": 39000,
+         "jobgroup": "나무+로프",
+         "jobno": 11391,
+         "jobname": "나무+로프(상하 900)"
+        },
+        {
+         "jobgroupno": 39000,
+         "jobgroup": "나무+로프",
+         "jobno": 11788,
+         "jobname": "나무+로프(좌우 700)"
+        },
+        {
+         "jobgroupno": 39000,
+         "jobgroup": "나무+로프",
+         "jobno": 11789,
+         "jobname": "나무+로프(좌우 900)"
+        }
+       ]
+      },
+      {
+       "jobno": 42102,
+       "jobname": "아일렛 6개",
+       "namestep1": "아일렛",
+       "namestep2": "6개",
+       "unit": "개",
+       "sort": 6,
+       "unitlist": null,
+       "ck_page": null,
+       "req_joboption": null,
+       "req_jobsize": null,
+       "req_jobqty": null,
+       "req_awkjob": null,
+       "rst_jobqty": null,
+       "rst_cutcnt": null,
+       "rst_size": null,
+       "rst_paper": null,
+       "rst_color": null,
+       "rst_awkjob": [
+        {
+         "jobgroupno": 39000,
+         "jobgroup": "나무+로프",
+         "jobno": 11390,
+         "jobname": "나무+로프(상하 700)"
+        },
+        {
+         "jobgroupno": 39000,
+         "jobgroup": "나무+로프",
+         "jobno": 11391,
+         "jobname": "나무+로프(상하 900)"
+        },
+        {
+         "jobgroupno": 39000,
+         "jobgroup": "나무+로프",
+         "jobno": 11788,
+         "jobname": "나무+로프(좌우 700)"
+        },
+        {
+         "jobgroupno": 39000,
+         "jobgroup": "나무+로프",
+         "jobno": 11789,
+         "jobname": "나무+로프(좌우 900)"
+        }
+       ]
+      },
+      {
+       "jobno": 42103,
+       "jobname": "아일렛 8개",
+       "namestep1": "아일렛",
+       "namestep2": "8개",
+       "unit": "개",
+       "sort": 8,
+       "unitlist": null,
+       "ck_page": null,
+       "req_joboption": null,
+       "req_jobsize": null,
+       "req_jobqty": null,
+       "req_awkjob": null,
+       "rst_jobqty": null,
+       "rst_cutcnt": null,
+       "rst_size": null,
+       "rst_paper": null,
+       "rst_color": null,
+       "rst_awkjob": [
+        {
+         "jobgroupno": 39000,
+         "jobgroup": "나무+로프",
+         "jobno": 11390,
+         "jobname": "나무+로프(상하 700)"
+        },
+        {
+         "jobgroupno": 39000,
+         "jobgroup": "나무+로프",
+         "jobno": 11391,
+         "jobname": "나무+로프(상하 900)"
+        },
+        {
+         "jobgroupno": 39000,
+         "jobgroup": "나무+로프",
+         "jobno": 11788,
+         "jobname": "나무+로프(좌우 700)"
+        },
+        {
+         "jobgroupno": 39000,
+         "jobgroup": "나무+로프",
+         "jobno": 11789,
+         "jobname": "나무+로프(좌우 900)"
+        }
+       ]
+      },
+      {
+       "jobno": 42104,
+       "jobname": "아일렛 10개",
+       "namestep1": "아일렛",
+       "namestep2": "10개",
+       "unit": "개",
+       "sort": 10,
+       "unitlist": null,
+       "ck_page": null,
+       "req_joboption": null,
+       "req_jobsize": null,
+       "req_jobqty": null,
+       "req_awkjob": null,
+       "rst_jobqty": null,
+       "rst_cutcnt": null,
+       "rst_size": null,
+       "rst_paper": null,
+       "rst_color": null,
+       "rst_awkjob": [
+        {
+         "jobgroupno": 39000,
+         "jobgroup": "나무+로프",
+         "jobno": 11390,
+         "jobname": "나무+로프(상하 700)"
+        },
+        {
+         "jobgroupno": 39000,
+         "jobgroup": "나무+로프",
+         "jobno": 11391,
+         "jobname": "나무+로프(상하 900)"
+        },
+        {
+         "jobgroupno": 39000,
+         "jobgroup": "나무+로프",
+         "jobno": 11788,
+         "jobname": "나무+로프(좌우 700)"
+        },
+        {
+         "jobgroupno": 39000,
+         "jobgroup": "나무+로프",
+         "jobno": 11789,
+         "jobname": "나무+로프(좌우 900)"
+        }
+       ]
+      },
+      {
+       "jobno": 42105,
+       "jobname": "아일렛 12개",
+       "namestep1": "아일렛",
+       "namestep2": "12개",
+       "unit": "개",
+       "sort": 12,
+       "unitlist": null,
+       "ck_page": null,
+       "req_joboption": null,
+       "req_jobsize": null,
+       "req_jobqty": null,
+       "req_awkjob": null,
+       "rst_jobqty": null,
+       "rst_cutcnt": null,
+       "rst_size": null,
+       "rst_paper": null,
+       "rst_color": null,
+       "rst_awkjob": [
+        {
+         "jobgroupno": 39000,
+         "jobgroup": "나무+로프",
+         "jobno": 11390,
+         "jobname": "나무+로프(상하 700)"
+        },
+        {
+         "jobgroupno": 39000,
+         "jobgroup": "나무+로프",
+         "jobno": 11391,
+         "jobname": "나무+로프(상하 900)"
+        },
+        {
+         "jobgroupno": 39000,
+         "jobgroup": "나무+로프",
+         "jobno": 11788,
+         "jobname": "나무+로프(좌우 700)"
+        },
+        {
+         "jobgroupno": 39000,
+         "jobgroup": "나무+로프",
+         "jobno": 11789,
+         "jobname": "나무+로프(좌우 900)"
+        }
+       ]
+      },
+      {
+       "jobno": 42106,
+       "jobname": "아일렛 14개",
+       "namestep1": "아일렛",
+       "namestep2": "14개",
+       "unit": "개",
+       "sort": 14,
+       "unitlist": null,
+       "ck_page": null,
+       "req_joboption": null,
+       "req_jobsize": null,
+       "req_jobqty": null,
+       "req_awkjob": null,
+       "rst_jobqty": null,
+       "rst_cutcnt": null,
+       "rst_size": null,
+       "rst_paper": null,
+       "rst_color": null,
+       "rst_awkjob": [
+        {
+         "jobgroupno": 39000,
+         "jobgroup": "나무+로프",
+         "jobno": 11390,
+         "jobname": "나무+로프(상하 700)"
+        },
+        {
+         "jobgroupno": 39000,
+         "jobgroup": "나무+로프",
+         "jobno": 11391,
+         "jobname": "나무+로프(상하 900)"
+        },
+        {
+         "jobgroupno": 39000,
+         "jobgroup": "나무+로프",
+         "jobno": 11788,
+         "jobname": "나무+로프(좌우 700)"
+        },
+        {
+         "jobgroupno": 39000,
+         "jobgroup": "나무+로프",
+         "jobno": 11789,
+         "jobname": "나무+로프(좌우 900)"
+        }
+       ]
+      },
+      {
+       "jobno": 42107,
+       "jobname": "아일렛 16개",
+       "namestep1": "아일렛",
+       "namestep2": "16개",
+       "unit": "개",
+       "sort": 16,
+       "unitlist": null,
+       "ck_page": null,
+       "req_joboption": null,
+       "req_jobsize": null,
+       "req_jobqty": null,
+       "req_awkjob": null,
+       "rst_jobqty": null,
+       "rst_cutcnt": null,
+       "rst_size": null,
+       "rst_paper": null,
+       "rst_color": null,
+       "rst_awkjob": [
+        {
+         "jobgroupno": 39000,
+         "jobgroup": "나무+로프",
+         "jobno": 11390,
+         "jobname": "나무+로프(상하 700)"
+        },
+        {
+         "jobgroupno": 39000,
+         "jobgroup": "나무+로프",
+         "jobno": 11391,
+         "jobname": "나무+로프(상하 900)"
+        },
+        {
+         "jobgroupno": 39000,
+         "jobgroup": "나무+로프",
+         "jobno": 11788,
+         "jobname": "나무+로프(좌우 700)"
+        },
+        {
+         "jobgroupno": 39000,
+         "jobgroup": "나무+로프",
+         "jobno": 11789,
+         "jobname": "나무+로프(좌우 900)"
+        }
+       ]
+      },
+      {
+       "jobno": 42108,
+       "jobname": "아일렛 18개",
+       "namestep1": "아일렛",
+       "namestep2": "18개",
+       "unit": "개",
+       "sort": 18,
+       "unitlist": null,
+       "ck_page": null,
+       "req_joboption": null,
+       "req_jobsize": null,
+       "req_jobqty": null,
+       "req_awkjob": null,
+       "rst_jobqty": null,
+       "rst_cutcnt": null,
+       "rst_size": null,
+       "rst_paper": null,
+       "rst_color": null,
+       "rst_awkjob": [
+        {
+         "jobgroupno": 39000,
+         "jobgroup": "나무+로프",
+         "jobno": 11390,
+         "jobname": "나무+로프(상하 700)"
+        },
+        {
+         "jobgroupno": 39000,
+         "jobgroup": "나무+로프",
+         "jobno": 11391,
+         "jobname": "나무+로프(상하 900)"
+        },
+        {
+         "jobgroupno": 39000,
+         "jobgroup": "나무+로프",
+         "jobno": 11788,
+         "jobname": "나무+로프(좌우 700)"
+        },
+        {
+         "jobgroupno": 39000,
+         "jobgroup": "나무+로프",
+         "jobno": 11789,
+         "jobname": "나무+로프(좌우 900)"
+        }
+       ]
+      },
+      {
+       "jobno": 42109,
+       "jobname": "아일렛 20개",
+       "namestep1": "아일렛",
+       "namestep2": "20개",
+       "unit": "개",
+       "sort": 20,
+       "unitlist": null,
+       "ck_page": null,
+       "req_joboption": null,
+       "req_jobsize": null,
+       "req_jobqty": null,
+       "req_awkjob": null,
+       "rst_jobqty": null,
+       "rst_cutcnt": null,
+       "rst_size": null,
+       "rst_paper": null,
+       "rst_color": null,
+       "rst_awkjob": [
+        {
+         "jobgroupno": 39000,
+         "jobgroup": "나무+로프",
+         "jobno": 11390,
+         "jobname": "나무+로프(상하 700)"
+        },
+        {
+         "jobgroupno": 39000,
+         "jobgroup": "나무+로프",
+         "jobno": 11391,
+         "jobname": "나무+로프(상하 900)"
+        },
+        {
+         "jobgroupno": 39000,
+         "jobgroup": "나무+로프",
+         "jobno": 11788,
+         "jobname": "나무+로프(좌우 700)"
+        },
+        {
+         "jobgroupno": 39000,
+         "jobgroup": "나무+로프",
+         "jobno": 11789,
+         "jobname": "나무+로프(좌우 900)"
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ ],
+ "dlvyprepay": true,
+ "dlvygrpno": null
+}

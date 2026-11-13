@@ -9,6 +9,8 @@ const load = (name: string): WowpressProdInfo =>
 describe('buildPrintOptions', () => {
   const card = load('prod-info-40073.json');
   const pet = load('prod-info-40106.json');
+  const banner = load('prod-info-40115.json');
+  const mini = load('prod-info-40162.json');
 
   it('일반명함: 용지, 색상, 수량, 재단 여유를 뽑는다', () => {
     const axes = buildPrintOptions(card, { sizeno: 5458 });
@@ -56,6 +58,25 @@ describe('buildPrintOptions', () => {
     expect(axes.requiredAwk[1].defaultJobno).toBe(42101);
     expect(axes.cutsizeHalfMm).toBe(0);
     expect(axes.colors[0].jobno).toBe(30);
+  });
+
+  it('일반현수막: 후가공 하나 이상 필수인 묶음은 기본 후가공이 든 그룹을 필수로 둔다', () => {
+    const axes = buildPrintOptions(banner, { sizeno: 5666, wsize: 600, hsize: 600, awkDefaults: [11411] });
+
+    expect(axes.requiredAwk).toHaveLength(1);
+    expect(axes.requiredAwk[0].group).toBe('테두리마감');
+    expect(axes.requiredAwk[0].defaultJobno).toBe(11411);
+  });
+
+  it('일반현수막: 기본 후가공이 없으면 고를 수 없으니 던진다', () => {
+    expect(() => buildPrintOptions(banner, { sizeno: 5666, wsize: 600, hsize: 600 })).toThrow('awkDefaults');
+  });
+
+  it('미니 투명배너: 사방타공은 기본 후가공으로 고르고 뺀 도수는 내지 않는다', () => {
+    const axes = buildPrintOptions(mini, { sizeno: 5668, awkDefaults: [11804], excludeColors: [1355] });
+
+    expect(axes.requiredAwk.map((g) => [g.group, g.defaultJobno])).toEqual([['사방타공', 11804]]);
+    expect(axes.colors.map((c) => c.colorno)).toEqual([302]);
   });
 
   it('수량 조건이 맞지 않는 목록은 거른다', () => {

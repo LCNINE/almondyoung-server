@@ -1,0 +1,313 @@
+{
+ "prodno": 40162,
+ "prodname": "미니 투명배너",
+ "filetype": "AI,EPS,JPG,PNG,ZIP,ALZ",
+ "sizeinfo": [
+  {
+   "covercd": 0,
+   "sizelist": [
+    {
+     "sizeno": 5668,
+     "sizename": "150x300",
+     "width": 150,
+     "height": 300,
+     "cutsize": 3,
+     "non_standard": false,
+     "req_width": null,
+     "req_height": null,
+     "req_paper": null,
+     "req_color": null,
+     "req_awkjob": null,
+     "rst_ordqty": null,
+     "rst_awkjob": null
+    },
+    {
+     "sizeno": 5669,
+     "sizename": "180x420",
+     "width": 180,
+     "height": 420,
+     "cutsize": 3,
+     "non_standard": false,
+     "req_width": null,
+     "req_height": null,
+     "req_paper": null,
+     "req_color": null,
+     "req_awkjob": null,
+     "rst_ordqty": null,
+     "rst_awkjob": null
+    }
+   ]
+  }
+ ],
+ "paperinfo": [
+  {
+   "covercd": 0,
+   "paperlist": [
+    {
+     "paperno": 21029,
+     "papername": "PET(투명) 250&mu;",
+     "papergroup": "PET",
+     "pgram": 250,
+     "req_width": null,
+     "req_height": null,
+     "req_awkjob": null,
+     "rst_ordqty": null,
+     "rst_prsjob": null,
+     "rst_awkjob": null
+    }
+   ],
+   "ncr": null
+  }
+ ],
+ "colorinfo": [
+  {
+   "covercd": 0,
+   "pagelist": [
+    {
+     "pagecd": 0,
+     "type": "radio",
+     "colorlist": [
+      {
+       "colorno": 302,
+       "colorname": "단면 칼라",
+       "pdfpage": 1,
+       "req_prsjob": null,
+       "req_awkjob": null,
+       "rst_prsjob": null,
+       "rst_awkjob": null,
+       "rst_opt": null
+      },
+      {
+       "colorno": 1355,
+       "colorname": "단면 칼라+백색",
+       "pdfpage": 1,
+       "req_prsjob": null,
+       "req_awkjob": null,
+       "rst_prsjob": null,
+       "rst_awkjob": null,
+       "rst_opt": null
+      }
+     ],
+     "addtype": null,
+     "coloraddlist": null
+    }
+   ]
+  }
+ ],
+ "ordqty": [
+  {
+   "type": "select",
+   "jobpresetno": null,
+   "sizeno": null,
+   "paperno": null,
+   "optno": null,
+   "colorno": null,
+   "ordqtymin": 1,
+   "ordqtymax": 1000,
+   "ordqtyinterval": null,
+   "ordqtylist": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23,
+    24,
+    25,
+    26,
+    27,
+    28,
+    29,
+    30,
+    31,
+    32,
+    33,
+    34,
+    35,
+    36,
+    37,
+    38,
+    39,
+    40,
+    41,
+    42,
+    43,
+    44,
+    45,
+    46,
+    47,
+    48,
+    49,
+    50,
+    51,
+    52,
+    53,
+    54,
+    55,
+    56,
+    57,
+    58,
+    59,
+    60,
+    61,
+    62,
+    63,
+    64,
+    65,
+    66,
+    67,
+    68,
+    69,
+    70,
+    71,
+    72,
+    73,
+    74,
+    75,
+    76,
+    77,
+    78,
+    79,
+    80,
+    81,
+    82,
+    83,
+    84,
+    85,
+    86,
+    87,
+    88,
+    89,
+    90,
+    91,
+    92,
+    93,
+    94,
+    95,
+    96,
+    97,
+    98,
+    99,
+    100,
+    110,
+    120,
+    130,
+    140,
+    150,
+    160,
+    170,
+    180,
+    190,
+    200,
+    250,
+    300,
+    350,
+    400,
+    450,
+    500,
+    550,
+    600,
+    650,
+    700,
+    750,
+    800,
+    850,
+    900,
+    950,
+    1000
+   ]
+  }
+ ],
+ "prsjobinfo": [
+  {
+   "jobpresetno": 30,
+   "jobpreset": "분류",
+   "prsjoblist": [
+    {
+     "covercd": 0,
+     "jobno": 30,
+     "jobname": "분류",
+     "unit": "개",
+     "req_color": null,
+     "rst_paper": null,
+     "rst_awkjob": null
+    }
+   ]
+  }
+ ],
+ "awkjobinfo": [
+  {
+   "covercd": 0,
+   "type": "checkbox",
+   "jobgrouplist": [
+    {
+     "jobgroupno": 11803,
+     "jobgroup": "사방타공",
+     "type": "radio",
+     "displayloc": "awkjob",
+     "awkjoblist": [
+      {
+       "jobno": 11805,
+       "jobname": "사방타공 없음",
+       "namestep1": "사방타공",
+       "namestep2": "없음",
+       "unit": "개",
+       "sort": 70,
+       "unitlist": null,
+       "ck_page": null,
+       "req_joboption": null,
+       "req_jobsize": null,
+       "req_jobqty": null,
+       "req_awkjob": null,
+       "rst_jobqty": null,
+       "rst_cutcnt": null,
+       "rst_size": null,
+       "rst_paper": null,
+       "rst_color": null,
+       "rst_awkjob": null
+      },
+      {
+       "jobno": 11804,
+       "jobname": "사방타공 있음",
+       "namestep1": "사방타공",
+       "namestep2": "있음",
+       "unit": "개",
+       "sort": 70,
+       "unitlist": null,
+       "ck_page": null,
+       "req_joboption": null,
+       "req_jobsize": null,
+       "req_jobqty": null,
+       "req_awkjob": null,
+       "rst_jobqty": null,
+       "rst_cutcnt": null,
+       "rst_size": null,
+       "rst_paper": null,
+       "rst_color": null,
+       "rst_awkjob": null
+      }
+     ]
+    }
+   ]
+  }
+ ],
+ "dlvyprepay": true,
+ "dlvygrpno": 18
+}

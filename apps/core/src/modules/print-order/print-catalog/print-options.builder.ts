@@ -77,8 +77,10 @@ const prsjobinfoSchema = z.array(
   }),
 );
 
+// 바깥 type 은 묶음 전체(radio 면 그룹 하나 이상 필수), 그룹 type 은 그 그룹(radio 면 하나 필수). 2026-11-13 견적 API 로 확인
 const awkjobinfoSchema = z.array(
   z.object({
+    type: z.string().nullish(),
     jobgrouplist: z.array(
       z.object({
         jobgroup: z.string(),
@@ -90,6 +92,7 @@ const awkjobinfoSchema = z.array(
 );
 
 type Restriction = z.infer<typeof restrictionSchema>;
+type AwkGroup = z.infer<typeof awkjobinfoSchema>[number]['jobgrouplist'][number];
 
 const outOfRange = (r: Restriction, width: number, height: number): boolean =>
   (r.min_width != null && width < r.min_width) ||
@@ -106,7 +109,7 @@ const conditionKey = (parts: [string, number | null | undefined][]): string => {
 
 export function buildPrintOptions(
   prodInfo: WowpressProdInfo,
-  product: { sizeno: number; wsize?: number; hsize?: number },
+  product: { sizeno: number; wsize?: number; hsize?: number; awkDefaults?: number[]; excludeColors?: number[] },
 ): PrintOptionAxes {
   const sizes = sizeinfoSchema.parse(prodInfo.sizeinfo ?? []).flatMap((s) => s.sizelist);
   const size = sizes.find((s) => s.sizeno === product.sizeno);
@@ -147,6 +150,7 @@ export function buildPrintOptions(
     .parse(prodInfo.colorinfo ?? [])
     .flatMap((c) => c.pagelist)
     .flatMap((p) => p.colorlist)
+    .filter((c) => !product.excludeColors?.includes(c.colorno))
     .map((c) => ({
       colorno: c.colorno,
       label: c.colorname,
@@ -165,15 +169,24 @@ export function buildPrintOptions(
       values: q.ordqtylist ?? [],
     }));
 
-  const requiredAwk = awkjobinfoSchema
-    .parse(prodInfo.awkjobinfo ?? [])
-    .flatMap((a) => a.jobgrouplist)
-    .filter((g) => g.type === 'radio' && g.awkjoblist.length > 0)
-    .map((g) => ({
-      group: g.jobgroup,
-      options: g.awkjoblist.map((j) => ({ jobno: j.jobno, label: j.jobname })),
-      defaultJobno: g.awkjoblist[0].jobno,
-    }));
+  const preferred = new Set(product.awkDefaults ?? []);
+  const toRequired = (g: AwkGroup) => {
+    const options = g.awkjoblist.map((j) => ({ jobno: j.jobno, label: j.jobname }));
+    const pick = options.find((o) => preferred.has(o.jobno)) ?? options[0];
+
+    return { group: g.jobgroup, options, defaultJobno: pick.jobno };
+  };
+
+  const requiredAwk = awkjobinfoSchema.parse(prodInfo.awkjobinfo ?? []).flatMap((entry) => {
+    const radio = entry.jobgrouplist.filter((g) => g.type === 'radio' && g.awkjoblist.length > 0);
+    if (entry.type !== 'radio' || radio.length > 0) return radio.map(toRequired);
+
+    // 그룹 하나 이상이 필수인데 어느 그룹인지는 상품마다 다르다. 종류 표의 기본 후가공이 든 그룹을 고른다
+    const chosen = entry.jobgrouplist.find((g) => g.awkjoblist.some((j) => preferred.has(j.jobno)));
+    if (!chosen) throw new Error(`prod ${prodInfo.prodno} requires an awk group; set awkDefaults for it`);
+
+    return [toRequired(chosen)];
+  });
 
   return {
     prodno: prodInfo.prodno,
