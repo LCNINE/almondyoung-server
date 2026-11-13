@@ -99,4 +99,10 @@ describe('buildPlan — [치명] 파일 간 중복이 단일상품을 옵션상�
     expect(deduped[0].productName).toBe('새이름');
     expect(deduped[0].barcode).toBe('NEW');
   });
+
+  it('바코드번호(서식) 열의 엑셀 수식 꼴은 벗겨서 읽는다', () => {
+    const [item] = parseFile(rows(['', '700', '상품', 'Y', '단일상품', '="10579820000"']), 'a.xls', true);
+
+    expect(item.barcode).toBe('10579820000');
+  });
 });
