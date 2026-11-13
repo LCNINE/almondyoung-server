@@ -12,29 +12,37 @@ export function useWorkDraft<T>(key: string, initial: T) {
     async () => `${await runtime!.getScope()}:draft:${key}`,
     [runtime, key]
   );
-  useEffect(() => {
-    let live = true;
+  // 마지막으로 시작한 불러오기만 결과를 반영한다(다시 불러오기·언마운트).
+  const [loads] = useState(() => ({ generation: 0 }));
+  const load = useCallback(() => {
+    const mine = ++loads.generation;
     if (!runtime) {
       setReady(true);
       return;
     }
     setReady(false);
-    serial.current = id()
+    setError(undefined);
+    // 앞서 시작한 저장이 끝난 뒤에 읽는다 — 저장 순서를 끊지 않는다.
+    serial.current = serial.current
+      .then(() => id())
       .then((name) => runtime.store.draft<T>(name))
       .then((saved) => {
-        if (live) {
+        if (loads.generation === mine) {
           current.current = saved ?? initial;
           setValue(current.current);
           setReady(true);
         }
       })
       .catch((e) => {
-        if (live) setError(e);
+        if (loads.generation === mine) setError(e);
       });
+  }, [runtime, id, loads]);
+  useEffect(() => {
+    load();
     return () => {
-      live = false;
+      loads.generation++;
     };
-  }, [runtime, key, id]);
+  }, [load, loads]);
   const update = useCallback(
     (reduce: (prev: T) => T): Promise<void> => {
       const run = serial.current.then(async () => {
@@ -57,6 +65,8 @@ export function useWorkDraft<T>(key: string, initial: T) {
     update,
     ready,
     error,
+    /** 불러오기에 실패했을 때 저장된 작업을 다시 읽는다. */
+    reload: load,
     read: async () => {
       await serial.current;
       return current.current;
