@@ -69,7 +69,11 @@ import {
 import { usePendingRequests } from './shipment-action-pending';
 import { WaybillActions } from './waybill-actions';
 import { preparationHref } from './consolidation-result';
-import { splitWaybills, waybillNextStep } from './waybill-view';
+import {
+  isAfterDispatch,
+  splitWaybills,
+  waybillNextStep,
+} from './waybill-view';
 import { StuckWaybillPanel } from './stuck-waybill-panel';
 
 const STATUS_VARIANT = (
@@ -185,7 +189,11 @@ function WaybillSection({
             </span>
           </div>
         ) : (
-          <p className="text-sm">지금 쓸 송장이 없어요.</p>
+          <p className="text-sm">
+            {isAfterDispatch(shipment.status)
+              ? '운송장 없이 출고된 상자예요.'
+              : '지금 쓸 송장이 없어요.'}
+          </p>
         )}
         {isWarehouse && nextText && (
           <div className="mt-2 flex flex-wrap items-center justify-between gap-2">

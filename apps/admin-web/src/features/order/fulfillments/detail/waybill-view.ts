@@ -59,6 +59,10 @@ export type WaybillAction = 'issue' | 'manual' | 'reissue' | 'void';
 
 const AFTER_DISPATCH = new Set(['shipped', 'in_transit', 'delivered']);
 
+export function isAfterDispatch(shipmentStatus: string): boolean {
+  return AFTER_DISPATCH.has(shipmentStatus);
+}
+
 /**
  * 서버가 받는 작업만 보인다. 발급·수동 등록은 계획 확정 상자에 활성 송장이 없을 때,
  * 재발급은 계획 확정 상자의 사용 가능한 송장이 있을 때(먼저 무효로 한 뒤 새로 발급하므로
