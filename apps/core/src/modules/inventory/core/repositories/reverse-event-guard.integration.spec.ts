@@ -114,6 +114,16 @@ describeIfDb('StockEventStore.reverseEvent lock+guard (DB integration, rollback-
     });
   });
 
+  it('사유 없이 역분개하면 사유에 원 이벤트 id 만 남긴다', async () => {
+    await inRollbackTx(async (tx) => {
+      const { warehouse, sku } = await createFixture(tx);
+      const up = await command.adjustUp({ skuId: sku.id, warehouseId: warehouse.id, quantity: 10 }, tx);
+      const withoutReason = await eventStore.reverseEvent(up.eventId, undefined, tx);
+
+      expect(withoutReason.reason).toBe(`REVERSAL of ${up.eventId}`);
+    });
+  });
+
   it('여유가 있으면(차감 후 ON_HAND ≥ 예약) 증가 이벤트 역분개가 성공한다', async () => {
     await inRollbackTx(async (tx) => {
       const { warehouse, sku } = await createFixture(tx);

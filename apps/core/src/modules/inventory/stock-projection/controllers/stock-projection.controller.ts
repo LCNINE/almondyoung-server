@@ -196,7 +196,7 @@ export class StockProjectionController {
   @ApiParam({ name: 'eventId', description: '취소할 이벤트 ID' })
   @ApiResponse({ status: 204, description: '이벤트가 성공적으로 취소되었습니다.' })
   @ApiResponse({ status: 403, description: '재고 원장 조정 권한이 없습니다.' })
-  async cancelStockEvent(@Param('eventId') eventId: string, @Body('reason') reason: string) {
+  async cancelStockEvent(@Param('eventId') eventId: string, @Body('reason') reason?: string) {
     await this.stockProjection.cancelEvent(eventId, reason);
   }
 

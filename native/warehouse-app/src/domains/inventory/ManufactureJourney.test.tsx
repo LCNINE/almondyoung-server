@@ -227,6 +227,25 @@ describe('제조 완료 등록 여정 (스테이션)', () => {
     expect(core.state.adjusts).toHaveLength(0);
   });
 
+  it('재고 조회와 제조 완료 탭을 오가도 각 탭의 검색어가 남는다', async () => {
+    const core = createCore();
+
+    renderApp(core.client);
+
+    const lookup = await screen.findByPlaceholderText('상품명·코드·바코드 검색');
+
+    await userEvent.type(lookup, '터번');
+    await openManufactureTab();
+    await userEvent.type(screen.getByPlaceholderText('상품명·코드 검색'), '펌제');
+    await userEvent.click(subTab('재고 조회'));
+
+    expect(await screen.findByPlaceholderText('상품명·코드·바코드 검색')).toHaveValue('터번');
+
+    await userEvent.click(subTab('제조 완료'));
+
+    expect(await screen.findByPlaceholderText('상품명·코드 검색')).toHaveValue('펌제');
+  });
+
   it('등록 확인 창에서 취소하면 재고를 올리지 않는다', async () => {
     const core = createCore();
 
