@@ -954,6 +954,22 @@ describe('운송장 영역은 지금 쓸 송장과 다음 작업을 먼저 보�
     expect(screen.getByRole('button', { name: '운송장 발급' })).toBeTruthy();
   });
 
+  it('송장 없이 출고된 상자는 지금 쓸 송장이 없다고 하지 않는다', () => {
+    show('shipped', []);
+
+    const current = screen.getByRole('region', { name: '지금 쓸 송장' });
+    expect(current.textContent).toContain('운송장 없이 출고된 상자예요');
+    expect(current.textContent).not.toContain('지금 쓸 송장이 없어요');
+  });
+
+  it('무효가 된 송장만 남은 채 출고된 상자도 같은 안내를 보인다', () => {
+    show('delivered', history.slice(0, 2));
+
+    expect(
+      screen.getByRole('region', { name: '지금 쓸 송장' }).textContent
+    ).toContain('운송장 없이 출고된 상자예요');
+  });
+
   it('지금 쓸 송장이 없으면 발급할 수 있다고 알리고 재발급·무효화는 없다', () => {
     show('planned', history.slice(0, 2));
 
