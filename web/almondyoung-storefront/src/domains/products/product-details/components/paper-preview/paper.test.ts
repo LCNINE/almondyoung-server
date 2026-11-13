@@ -15,9 +15,9 @@ describe("paperVariantOf", () => {
 
 describe("paperTemplateOf", () => {
   const templates = [
-    { id: "other", productId: "other-product", kind: "bizcard" },
-    { id: "poster", productId: "product", kind: "poster" },
-    { id: "card", productId: "product", kind: "card" },
+    { id: "other", productId: "other-product", kind: "bizcard", size: "90x50" },
+    { id: "poster", productId: "product", kind: "poster", size: "90x50" },
+    { id: "card", productId: "product", kind: "card", size: "90x50" },
   ]
 
   it("finds the matching published card template, not the first template", () => {
@@ -35,9 +35,10 @@ describe("paperTemplateOf", () => {
 describe("paperTemplateOf", () => {
   it("명함·주의사항 카드는 명함 모델, 네일팁은 네일 모델을 쓴다", () => {
     const templates = [
-      { id: "t1", productId: "p1", kind: "bizcard" },
-      { id: "t2", productId: "p2", kind: "nail" },
-      { id: "t3", productId: "p3", kind: "menu" },
+      { id: "t1", productId: "p1", kind: "bizcard", size: "90x50" },
+      { id: "t2", productId: "p2", kind: "nail", size: "90x90" },
+      { id: "t3", productId: "p3", kind: "menu", size: "210x297" },
+      { id: "t4", productId: "p4", kind: "bizcard", size: "50x90" },
     ]
 
     expect(paperTemplateOf("p1", templates)).toEqual({
@@ -49,5 +50,9 @@ describe("paperTemplateOf", () => {
       shape: "nail",
     })
     expect(paperTemplateOf("p3", templates)).toBeUndefined()
+    expect(paperTemplateOf("p4", templates)).toEqual({
+      id: "t4",
+      shape: "card_portrait",
+    })
   })
 })
