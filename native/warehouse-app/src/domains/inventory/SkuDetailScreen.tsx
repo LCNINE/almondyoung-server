@@ -94,7 +94,7 @@ export function SkuDetailScreen({ skuId }: { skuId: string }) {
                 className="flex items-center gap-3 rounded-lg border border-gray-200 bg-white p-3"
               >
                 <span className="flex-1">
-                  <span className="block font-medium text-gray-800">{row.locationCode}</span>
+                  <span className="block font-medium text-gray-800">{row.locationName || row.locationCode}</span>
                   <span className="block text-xs text-gray-500">{row.stockState}</span>
                 </span>
                 <span className="text-lg font-semibold text-gray-900">{row.quantity}</span>

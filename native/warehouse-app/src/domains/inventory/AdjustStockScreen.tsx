@@ -51,6 +51,7 @@ function AdjustStockScreenContent({
   const [otherReason, setOtherReason] = useState('');
   const [confirming, setConfirming] = useState(false);
   const [autoSelected, setAutoSelected] = useState(false);
+  const [previous, setPrevious] = useState<{ id: string; auto: boolean } | null>(null);
   const [result, setResult] = useState<{
     productName: string;
     locationCode: string;
@@ -104,10 +105,10 @@ function AdjustStockScreenContent({
   const selected = useMemo(() => {
     if (!locationId) return null;
     const fromStock = rows.find((r) => r.locationId === locationId);
-    if (fromStock) return { id: locationId, code: fromStock.locationCode };
+    if (fromStock) return { id: locationId, code: fromStock.locationName || fromStock.locationCode };
     const fromSearch = search.data?.items.find((i) => i.id === locationId);
     return fromSearch
-      ? { id: fromSearch.id, code: fromSearch.code }
+      ? { id: fromSearch.id, code: fromSearch.displayName || fromSearch.code }
       : { id: locationId, code: locationId };
   }, [locationId, rows, search.data]);
 
@@ -234,6 +235,7 @@ function AdjustStockScreenContent({
               className="text-xs text-blue-700 underline"
               onClick={() => {
                 autoSelectionChecked.current = true;
+                setPrevious({ id: selected.id, auto: autoSelected });
                 setAutoSelected(false);
                 setLocationId(undefined);
               }}
@@ -246,14 +248,29 @@ function AdjustStockScreenContent({
             <label htmlFor="loc-search" className="sr-only">
               로케이션 검색
             </label>
-            <input
-              id="loc-search"
-              aria-label="로케이션 검색"
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
-              placeholder="로케이션 바코드를 스캔하거나 코드를 입력하세요"
-              value={term}
-              onChange={(e) => setTerm(e.target.value)}
-            />
+            <div className="flex gap-2">
+              <input
+                id="loc-search"
+                aria-label="로케이션 검색"
+                className="min-w-0 flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm"
+                placeholder="로케이션 바코드를 스캔하거나 코드를 입력하세요"
+                value={term}
+                onChange={(e) => setTerm(e.target.value)}
+              />
+              {previous && (
+                <Button
+                  type="button"
+                  onClick={() => {
+                    setLocationId(previous.id);
+                    setAutoSelected(previous.auto);
+                    setPrevious(null);
+                    setTerm('');
+                  }}
+                >
+                  취소
+                </Button>
+              )}
+            </div>
             {search.isError ? (
               <p role="alert" className="text-sm text-red-600">
                 {errorMessage(search.error, 'location')}
@@ -270,9 +287,12 @@ function AdjustStockScreenContent({
                     <button
                       type="button"
                       className="w-full rounded-md border border-gray-200 bg-white p-3 text-left active:bg-gray-50"
-                      onClick={() => setLocationId(loc.id)}
+                      onClick={() => {
+                        setPrevious(null);
+                        setLocationId(loc.id);
+                      }}
                     >
-                      {loc.code}
+                      {loc.displayName || loc.code}
                     </button>
                   </li>
                 ))}
@@ -305,6 +325,7 @@ function AdjustStockScreenContent({
           value={delta}
           onChange={setDelta}
           allowNegative={!isManufacture}
+          keyboard={!confirming && !adjust.isPending}
         />
         <p className="text-xs text-gray-500">
           {isManufacture

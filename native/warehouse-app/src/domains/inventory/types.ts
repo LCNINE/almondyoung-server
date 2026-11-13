@@ -58,6 +58,8 @@ export interface SkuStockSummary {
 export interface StockDetailRow {
   locationId: string;
   locationCode: string;
+  /** 로케이션 표시명. 옛 core 는 내려주지 않는다. */
+  locationName?: string | null;
   stockState: string;
   quantity: number;
 }
