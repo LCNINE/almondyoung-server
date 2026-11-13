@@ -84,6 +84,18 @@ describe('F9 결품(스펙 §7.1·§7.2)', () => {
     expect(screen.getByRole('heading', { name: '4210-3388-1907' })).toBeInTheDocument();
   });
 
+  it('결품 창에서 친 숫자는 창의 수량만 바꾼다 — 창을 닫아도 검수 수량은 열려 있지 않다', async () => {
+    const { server } = await openShortPick();
+    await typeHuman(['Backspace', '1']);
+    expect(cell('헤어클립 집게핀')).toHaveTextContent('1');
+    scan('%91%1');
+    await typeHuman(['Escape']);
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.queryByRole('status', { name: '수량' })).toBeNull();
+    scan('8801002');
+    await waitFor(() => expect(server.scans[1]).toMatchObject({ barcode: '8801002', quantity: 1 }));
+  });
+
   it('결품 창이 열린 채 상품을 찍으면 오류음만 — 창·수량이 그대로이고 스캐너 Enter 로 확정되지 않는다', async () => {
     const { server } = await openShortPick();
     scan('8801002');

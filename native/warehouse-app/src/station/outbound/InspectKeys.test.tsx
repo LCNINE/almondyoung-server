@@ -11,9 +11,17 @@ const big = (name: string) => screen.getByRole('status', { name });
 /** 키가 켜질 때까지 — 꺼진 키에 누르면 아무 일도 안 일어나 «무장» 이 검증되지 않는다 */
 const enabledKey = (name: RegExp) => waitFor(() => expect(bar().getByRole('button', { name })).toBeEnabled());
 
-describe('송장 대기의 F7', () => {
-  it('반품 탭으로 간다 — 탭 바에 있으니 기능키 바에는 그리지 않는다', async () => {
+describe('F7 은 어디서나 반품 탭', () => {
+  it('송장 대기에서 반품 탭으로 간다 — 탭 바에 있으니 기능키 바에는 그리지 않는다', async () => {
     const { router } = await setupInspection();
+    expect(bar().queryByRole('button', { name: /F7/ })).toBeNull();
+    press('F7');
+    await waitFor(() => expect(router.state.location.pathname).toBe('/customer-returns'));
+  });
+
+  it('검수 중에도 반품 탭으로 간다 — 기능키 바에 F7 이 없다', async () => {
+    const { router } = await setupInspection();
+    await openBox('421033881907');
     expect(bar().queryByRole('button', { name: /F7/ })).toBeNull();
     press('F7');
     await waitFor(() => expect(router.state.location.pathname).toBe('/customer-returns'));
@@ -21,15 +29,13 @@ describe('송장 대기의 F7', () => {
 });
 
 describe('검수 중 기능키(스펙 §6.3)', () => {
-  it('F7 수량 → 키보드 숫자 → 다음 스캔 한 번에 그 수량, 그 뒤엔 1', async () => {
+  it('숫자를 치면 바로 수량 — 다음 스캔 한 번에 그 수량, 그 뒤엔 1', async () => {
     const { server, router } = await setupInspection();
     await openBox('421033881907');
-    // F7 은 반품 탭 키이기도 하다 — 검수 중엔 화면의 «수량» 이 이기고 기능키 바에도 남는다
-    expect(bar().getByRole('button', { name: /F7\s*수량/ })).toBeInTheDocument();
-    press('F7');
-    expect(router.state.location.pathname).toBe('/outbound');
+    expect(within(bar().getByLabelText('키 안내')).getByText('0-9')).toBeInTheDocument();
     await typeHuman(['2']);
     expect(big('수량')).toHaveTextContent('2');
+    expect(router.state.location.pathname).toBe('/outbound');
     scan('8801002');
     await waitFor(() => expect(server.scans).toEqual([expect.objectContaining({ barcode: '8801002', quantity: 2 })]), SLOW);
     await waitFor(() => expect(big('진행')).toHaveTextContent('2 / 4'), SLOW);
@@ -37,10 +43,9 @@ describe('검수 중 기능키(스펙 §6.3)', () => {
     await waitFor(() => expect(server.scans[1]).toMatchObject({ barcode: '8801002', quantity: 1 }));
   });
 
-  it('F7 수량은 숫자 명령(%91%N)으로도 넣고 Backspace 로 지운다', async () => {
+  it('숫자 명령(%91%N)으로도 바로 넣고 Backspace 로 지운다', async () => {
     const { server } = await setupInspection();
     await openBox('421033881907');
-    press('F7');
     scan('%91%3');
     scan('%91%1');
     expect(big('수량')).toHaveTextContent('31');
@@ -50,10 +55,23 @@ describe('검수 중 기능키(스펙 §6.3)', () => {
     await waitFor(() => expect(server.scans[0]).toMatchObject({ quantity: 3 }));
   });
 
+  it('확인 창이 떠 있는 동안 친 숫자는 수량을 열지 않는다', async () => {
+    await setupInspection();
+    await openBox('421033881907');
+    const modal = document.body.appendChild(document.createElement('div'));
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    await typeHuman(['2']);
+    scan('%91%3');
+    modal.remove();
+    expect(screen.queryByRole('status', { name: '수량' })).toBeNull();
+    expect(big('진행')).toHaveTextContent('0 / 4');
+  });
+
   it('Esc 는 수량 입력만 먼저 취소한다 — 박스는 그대로', async () => {
     await setupInspection();
     await openBox('421033881907');
-    press('F7');
+    await typeHuman(['2']);
     expect(bar().getByRole('button', { name: /수량 취소/ })).toBeInTheDocument();
     press('Escape');
     expect(big('진행')).toHaveTextContent('0 / 4');
@@ -96,7 +114,7 @@ describe('검수 중 기능키(스펙 §6.3)', () => {
     await enabledKey(/강제출고$/);
     press('F10');
     await enabledKey(/강제출고 확정/);
-    press('F7');
+    await typeHuman(['1']);
     await enabledKey(/강제출고$/);
     press('F10');
     await enabledKey(/강제출고 확정/);
