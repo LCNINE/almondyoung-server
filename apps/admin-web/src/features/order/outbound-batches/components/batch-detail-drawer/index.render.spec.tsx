@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { toast } from 'sonner';
 import type {
   BatchClaimState,
+  EligibleShipmentV2,
   OutboundBatchV2,
   OutboundBatchWorkItemV2,
 } from '@/lib/types/dto/fulfillment';
@@ -12,10 +13,15 @@ import { BatchDetailDrawer } from '.';
 const mockPickingHandoff = jest.fn();
 const mockPackerHandoff = jest.fn();
 const mockRefetch = jest.fn();
+let mockBatchAt = 2;
 let mockBatch: OutboundBatchV2;
 let mockKey = 0;
 let mockCanHandoff = true;
 let mockCanReadAccounts = true;
+let mockEligible: EligibleShipmentV2[] = [];
+const mockEligibleEnabled: boolean[] = [];
+const mockEligibleSnapshots: Array<number | undefined> = [];
+let mockEligiblePending = false;
 
 function mockMutation() {
   return Object.assign(() => ({ mutateAsync: jest.fn(), isPending: false }), {
@@ -48,9 +54,20 @@ jest.mock('@/lib/services/orders', () => ({
   useOutboundBatchV2: () => ({
     data: mockBatch,
     isLoading: false,
+    dataUpdatedAt: mockBatchAt,
     refetch: mockRefetch,
   }),
-  useOutboundBatchEligibleShipments: () => ({ data: [] }),
+  useOutboundBatchEligibleShipments: (
+    _id: string,
+    options?: { enabled?: boolean; snapshotAt?: number }
+  ) => {
+    mockEligibleEnabled.push(options?.enabled ?? true);
+    mockEligibleSnapshots.push(options?.snapshotAt);
+    return {
+      data: mockEligiblePending ? undefined : mockEligible,
+      isPending: mockEligiblePending,
+    };
+  },
   useAddShipmentToBatch: mockMutation(),
   useExcludeShipmentFromBatch: mockMutation(),
   useClaimBatchPicker: mockMutation(),
@@ -213,6 +230,7 @@ beforeEach(() => {
   mockPickingHandoff.mockReset().mockResolvedValue({});
   mockPackerHandoff.mockReset().mockResolvedValue({});
   mockRefetch.mockReset().mockResolvedValue({});
+  mockBatchAt = 2;
   jest.mocked(toast.success).mockClear();
   jest.mocked(toast.error).mockClear();
   mockKey = 0;
@@ -220,6 +238,10 @@ beforeEach(() => {
   mockCanHandoff = true;
   mockCanReadAccounts = true;
   mockBatch = batchWith([picking]);
+  mockEligible = [];
+  mockEligibleEnabled.length = 0;
+  mockEligibleSnapshots.length = 0;
+  mockEligiblePending = false;
 });
 
 it('맡은 작업자를 이름으로 보이고, 시간이 지났으면 이름 옆에 적는다', () => {
@@ -494,4 +516,163 @@ it('검색어는 서버에 보내 직원이 많아도 찾게 한다', async () =
     })
   );
   expect(mockStaffQueries[0].q).toBeUndefined();
+});
+
+describe('상자 추가와 재고 작업 안내는 배치 상태를 따른다', () => {
+  const candidate: EligibleShipmentV2 = {
+    shipmentId: 'ship-9',
+    warehouseId: 'wh-1',
+    shippingProfileId: 'profile-1',
+    manifestVersion: 1,
+    reservationVersion: 1,
+    recipientHash: 'hash',
+    totalItems: 1,
+    totalQty: 2,
+    waybillId: 'waybill-9',
+    trackingNo: '100000000009',
+    displayOrderNo: 'B-9',
+    itemSummary: '다른 상품',
+  };
+  const done = workItem({ status: 'completed' });
+
+  beforeEach(() => {
+    mockEligible = [candidate];
+  });
+
+  it('출고를 마친 배치에는 추가할 상자를 묻지도 보이지도 않는다', () => {
+    mockBatch = {
+      ...batchWith([done], null),
+      status: 'completed',
+      startedAt: '2026-01-02T03:00:00.000Z',
+    };
+    renderDrawer();
+
+    expect(mockEligibleEnabled).not.toContain(true);
+    expect(screen.queryByText('추가할 수 있는 상자')).toBeNull();
+    expect(screen.queryByRole('button', { name: '추가' })).toBeNull();
+    expect(screen.queryByText('#B-9')).toBeNull();
+    expect(screen.getByText('출고를 마쳐 재고 작업이 끝났어요.')).toBeTruthy();
+    expect(screen.queryByText('피킹 시작 전입니다.')).toBeNull();
+  });
+
+  it('상자가 모두 빠져 취소된 배치도 추가를 막고 재고 작업이 끝났다고 한다', () => {
+    mockBatch = {
+      ...batchWith([workItem({ status: 'excluded' })], null),
+      status: 'canceled',
+      startedAt: '2026-01-02T03:00:00.000Z',
+    };
+    renderDrawer();
+
+    expect(mockEligibleEnabled).not.toContain(true);
+    expect(screen.queryByText('추가할 수 있는 상자')).toBeNull();
+    expect(screen.queryByRole('button', { name: '추가' })).toBeNull();
+    expect(
+      screen.getByText('취소된 배치라 재고 작업이 끝났어요.')
+    ).toBeTruthy();
+  });
+
+  it('재고 작업 복구가 필요한 진행 중 배치는 복구 뒤에 넣으라고 한다', () => {
+    const base = batchWith([picking]);
+    mockBatch = {
+      ...base,
+      startedAt: '2026-01-02T03:00:00.000Z',
+      inventorySession: base.inventorySession && {
+        ...base.inventorySession,
+        status: 'recovery_required',
+      },
+    };
+    renderDrawer();
+
+    expect(screen.queryByRole('button', { name: '추가' })).toBeNull();
+    expect(
+      screen.getByText('재고 작업 복구가 끝나야 상자를 더 넣을 수 있어요.')
+    ).toBeTruthy();
+  });
+
+  it('바구니가 모두 찬 배치는 정원을 알려 주고, 상자가 끝나 바구니가 비면 다시 받는다', () => {
+    const tote = (items: OutboundBatchWorkItemV2[]): OutboundBatchV2 => ({
+      ...batchWith(items),
+      pickingMethod: 'multi_order',
+      cartCapacity: 1,
+      startedAt: '2026-01-02T03:00:00.000Z',
+    });
+    mockBatch = tote([picking]);
+    const { unmount } = renderDrawer();
+
+    expect(mockEligibleEnabled).not.toContain(true);
+    expect(screen.queryByRole('button', { name: '추가' })).toBeNull();
+    expect(
+      screen.getByText('바구니 1개가 모두 차서 상자를 더 넣을 수 없어요.')
+    ).toBeTruthy();
+
+    unmount();
+    mockBatch = tote([workItem({ status: 'completed' })]);
+    renderDrawer();
+    expect(screen.getByRole('button', { name: '추가' })).toBeTruthy();
+  });
+
+  it('후보를 받기 전에는 추가할 상자가 없다고 하지 않는다', () => {
+    mockBatch = {
+      ...batchWith([picking]),
+      startedAt: '2026-01-02T03:00:00.000Z',
+    };
+    mockEligiblePending = true;
+    renderDrawer();
+
+    expect(screen.getByText('추가할 수 있는 상자를 확인하는 중…')).toBeTruthy();
+    expect(screen.queryByText(/추가할 수 있는 상자가 없습니다/)).toBeNull();
+  });
+
+  it('후보는 받은 배치 시점을 기준으로 묻고, 배치가 새로 들어오면 그 시점으로 다시 묻는다', () => {
+    mockBatch = {
+      ...batchWith([picking]),
+      startedAt: '2026-01-02T03:00:00.000Z',
+    };
+    const view = renderDrawer();
+    expect(mockEligibleSnapshots.at(-1)).toBe(2);
+
+    mockBatchAt = 5;
+    view.rerender(
+      <BatchDetailDrawer
+        batchId="batch-1"
+        open
+        onOpenChange={() => undefined}
+      />
+    );
+    expect(mockEligibleSnapshots.at(-1)).toBe(5);
+  });
+
+  it('이미 이 배치에 들어간 상자는 후보로 보이지 않는다', () => {
+    mockBatch = {
+      ...batchWith([picking, workItem({ id: 'item-9', shipmentId: 'ship-9' })]),
+      startedAt: '2026-01-02T03:00:00.000Z',
+    };
+    renderDrawer();
+
+    expect(screen.queryByRole('button', { name: '추가' })).toBeNull();
+    expect(screen.getByText(/추가할 수 있는 상자가 없습니다/)).toBeTruthy();
+  });
+
+  it('피킹 중인 배치는 후보와 추가 버튼을 그대로 보인다', () => {
+    mockBatch = {
+      ...batchWith([picking]),
+      startedAt: '2026-01-02T03:00:00.000Z',
+    };
+    renderDrawer();
+
+    expect(mockEligibleEnabled).toContain(true);
+    expect(screen.getByText('#B-9')).toBeTruthy();
+    expect(screen.getByRole('button', { name: '추가' })).toBeTruthy();
+  });
+
+  it('시작 전 배치는 후보를 보이고 피킹 시작 전이라고 한다', () => {
+    mockBatch = {
+      ...batchWith([workItem({})], null),
+      status: 'created',
+    };
+    renderDrawer();
+
+    expect(screen.getByRole('button', { name: '추가' })).toBeTruthy();
+    expect(screen.getByText('피킹 시작 전입니다.')).toBeTruthy();
+  });
 });

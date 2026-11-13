@@ -64,8 +64,28 @@ const STRATEGY_LABELS: Record<PickingStrategyName, string> = {
 
 export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
   const { canRun } = usePermissionCheck();
-  const { data: batch, isLoading, refetch } = useOutboundBatchV2(batchId);
-  const { data: eligible = [] } = useOutboundBatchEligibleShipments(batchId);
+  const {
+    data: batch,
+    dataUpdatedAt: batchUpdatedAt,
+    isLoading,
+    refetch,
+  } = useOutboundBatchV2(batchId);
+  const closed = !!batch && isClosed(batch);
+  const joinBlocked = batch ? joinBlockedReason(batch) : null;
+  const acceptsShipments = !!batch && !closed && !joinBlocked;
+  // 상자를 받는 배치에만, 받은 배치 시점마다 한 번 묻는다(서버가 창고의 상자를 하나씩 검사하는 조회다)
+  const { data: candidates = [], isPending: eligiblePending } =
+    useOutboundBatchEligibleShipments(batchId, {
+      enabled: acceptsShipments,
+      snapshotAt: batchUpdatedAt,
+    });
+  // 새 후보가 오기 전에는 앞 후보를 보여 주므로, 그사이 이 배치에 들어간 상자는 뺀다
+  const inBatch = new Set(
+    (batch?.workItems ?? [])
+      .filter((item) => item.status !== 'completed' && item.status !== 'excluded')
+      .map((item) => item.shipmentId)
+  );
+  const eligible = candidates.filter((item) => !inBatch.has(item.shipmentId));
   const addShipment = useAddShipmentToBatch();
   const excludeShipment = useExcludeShipmentFromBatch();
   const claimPicker = useClaimBatchPicker();
@@ -267,73 +287,83 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
               )}
             </section>
 
-            <Separator />
-            <section className="space-y-3">
-              <h3 className="font-medium">추가할 수 있는 상자</h3>
-              {eligible.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  추가할 수 있는 상자가 없습니다. 출고주문에서 계획 확정과 운송장 발급을 마친 상자만 나와요.
-                </p>
-              ) : (
-                <div className="max-h-48 overflow-auto rounded border">
-                  <Table>
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>주문 · 상품</TableHead>
-                        <TableHead>운송장</TableHead>
-                        <TableHead className="text-right">수량</TableHead>
-                        {canAdd && <TableHead />}
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {eligible.map((item) => (
-                        <TableRow key={item.shipmentId}>
-                          <TableCell>
-                            <Link
-                              className="font-medium hover:underline"
-                              href={`/order/fulfillments?shipmentId=${item.shipmentId}`}
-                              title={`상자 ${item.shipmentId} · manifest v${item.manifestVersion} / reservation v${item.reservationVersion}`}
-                            >
-                              {item.displayOrderNo ? `#${item.displayOrderNo}` : '주문번호 없음'}
-                            </Link>
-                            <p className="text-xs text-muted-foreground">
-                              {item.itemSummary}
-                            </p>
-                          </TableCell>
-                          <TableCell className="font-mono text-xs">
-                            {item.trackingNo}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            {item.totalQty}
-                          </TableCell>
-                          {canAdd && (
-                            <TableCell>
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() =>
-                                  command(
-                                    `add:${item.shipmentId}`,
-                                    { batchId, shipmentId: item.shipmentId },
-                                    (data, idempotencyKey) =>
-                                      addShipment.mutateAsync({
-                                        ...data,
-                                        idempotencyKey,
-                                      })
-                                  )
-                                }
-                              >
-                                추가
-                              </Button>
-                            </TableCell>
-                          )}
-                        </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
-                </div>
-              )}
-            </section>
+            {!closed && (
+              <>
+                <Separator />
+                <section className="space-y-3">
+                  <h3 className="font-medium">추가할 수 있는 상자</h3>
+                  {joinBlocked ? (
+                    <p className="text-sm text-muted-foreground">{joinBlocked}</p>
+                  ) : eligiblePending ? (
+                    <p className="text-sm text-muted-foreground">
+                      추가할 수 있는 상자를 확인하는 중…
+                    </p>
+                  ) : eligible.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">
+                      추가할 수 있는 상자가 없습니다. 출고주문에서 계획 확정과 운송장 발급을 마친 상자만 나와요.
+                    </p>
+                  ) : (
+                    <div className="max-h-48 overflow-auto rounded border">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>주문 · 상품</TableHead>
+                            <TableHead>운송장</TableHead>
+                            <TableHead className="text-right">수량</TableHead>
+                            {canAdd && <TableHead />}
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {eligible.map((item) => (
+                            <TableRow key={item.shipmentId}>
+                              <TableCell>
+                                <Link
+                                  className="font-medium hover:underline"
+                                  href={`/order/fulfillments?shipmentId=${item.shipmentId}`}
+                                  title={`상자 ${item.shipmentId} · manifest v${item.manifestVersion} / reservation v${item.reservationVersion}`}
+                                >
+                                  {item.displayOrderNo ? `#${item.displayOrderNo}` : '주문번호 없음'}
+                                </Link>
+                                <p className="text-xs text-muted-foreground">
+                                  {item.itemSummary}
+                                </p>
+                              </TableCell>
+                              <TableCell className="font-mono text-xs">
+                                {item.trackingNo}
+                              </TableCell>
+                              <TableCell className="text-right">
+                                {item.totalQty}
+                              </TableCell>
+                              {canAdd && (
+                                <TableCell>
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() =>
+                                      command(
+                                        `add:${item.shipmentId}`,
+                                        { batchId, shipmentId: item.shipmentId },
+                                        (data, idempotencyKey) =>
+                                          addShipment.mutateAsync({
+                                            ...data,
+                                            idempotencyKey,
+                                          })
+                                      )
+                                    }
+                                  >
+                                    추가
+                                  </Button>
+                                </TableCell>
+                              )}
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  )}
+                </section>
+              </>
+            )}
 
             <Separator />
             <section className="space-y-3">
@@ -527,7 +557,7 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
               <h3 className="font-medium">Custody / inventory session</h3>
               {!batch.inventorySession ? (
                 <p className="text-sm text-muted-foreground">
-                  피킹 시작 전입니다.
+                  {closedSessionText(batch)}
                 </p>
               ) : (
                 <div className="rounded border p-3 text-sm">
@@ -618,6 +648,40 @@ function hasWorkItemAction(status: string): boolean {
 }
 
 type WorkItem = OutboundBatchV2['workItems'][number];
+
+function isClosed(batch: OutboundBatchV2): boolean {
+  return batch.status === 'completed' || batch.status === 'canceled';
+}
+
+/**
+ * 아직 열린 배치가 지금 상자를 받지 못하면 그 이유. 서버 판정(core outbound-batch-orchestrator 의 addShipment)과 같다 —
+ * 시작된 배치는 재고 작업이 진행 중일 때만, 바구니 정원이 있는 배치는 남은 바구니가 있을 때만 받는다.
+ * 끝났거나 취소된 배치는 이 절을 아예 보이지 않는다.
+ */
+function joinBlockedReason(batch: OutboundBatchV2): string | null {
+  if (batch.startedAt && batch.inventorySession?.status !== 'active') {
+    return batch.inventorySession?.status === 'recovery_required'
+      ? '재고 작업 복구가 끝나야 상자를 더 넣을 수 있어요.'
+      : '지금은 상자를 더 넣을 수 없어요.';
+  }
+  if (batch.pickingMethod === 'multi_order' && batch.cartCapacity !== null) {
+    const holding = batch.workItems.filter(
+      (item) => item.status !== 'completed' && item.status !== 'excluded'
+    ).length;
+    if (holding >= batch.cartCapacity) {
+      return `바구니 ${batch.cartCapacity}개가 모두 차서 상자를 더 넣을 수 없어요.`;
+    }
+  }
+  return null;
+}
+
+/** 진행 중인 재고 작업이 없을 때 — 시작 전인지, 이미 끝났는지를 배치 상태로 가른다 */
+function closedSessionText(batch: OutboundBatchV2): string {
+  if (!batch.startedAt) return '피킹 시작 전입니다.';
+  if (batch.status === 'completed') return '출고를 마쳐 재고 작업이 끝났어요.';
+  if (batch.status === 'canceled') return '취소된 배치라 재고 작업이 끝났어요.';
+  return '진행 중인 재고 작업이 없어요.';
+}
 
 function orderLabel(item: WorkItem): string {
   return item.displayOrderNo ? `#${item.displayOrderNo}` : '주문번호 없음';

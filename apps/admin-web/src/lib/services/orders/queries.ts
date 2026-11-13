@@ -170,11 +170,27 @@ export const useLoadOutboundBatchV2 = () => {
   };
 };
 
-export const useOutboundBatchEligibleShipments = (id: string) => {
+/**
+ * 배치에 넣을 수 있는 상자 후보. snapshotAt(그 배치를 받은 시각)을 키에 넣어 배치가 새로 들어올 때만 묻는다 —
+ * 같은 시점의 후보는 다시 받지 않고, 그 전에 보낸 요청의 응답은 옛 키에만 남는다.
+ * 새 응답이 오기 전까지는 같은 배치의 앞 후보를 보여 준다.
+ */
+export const useOutboundBatchEligibleShipments = (
+  id: string,
+  options?: { enabled?: boolean; snapshotAt?: number }
+) => {
   return useQuery({
-    queryKey: orderQueryKeys.outboundBatchEligibleShipments(id),
+    queryKey: [
+      ...orderQueryKeys.outboundBatchEligibleShipments(id),
+      options?.snapshotAt ?? 0,
+    ],
     queryFn: () => orders.outboundBatches.getEligibleShipments(id),
-    enabled: !!id,
+    enabled: !!id && (options?.enabled ?? true),
+    staleTime: Infinity,
+    refetchOnMount: false,
+    refetchOnReconnect: false,
+    placeholderData: (previous, previousQuery) =>
+      previousQuery?.queryKey[2] === id ? previous : undefined,
   });
 };
 

@@ -1,7 +1,7 @@
 // src/lib/services/orders/mutations.ts
 'use client';
 
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient, type Query } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { orderQueryKeys } from './query-keys';
 import {
@@ -946,15 +946,22 @@ useForceShipmentDispatch.permission = [
 
 // ===== Outbound batch V2 / strategy picking =====
 
+const ELIGIBLE_SHIPMENTS = orderQueryKeys.outboundBatchEligibleShipments('')[3];
+// 추가할 상자 후보는 여기서 다시 묻지 않는다 — 배치 시점이 키라서, 배치가 새로 들어오면 화면이 아직 상자를 받는
+// 배치인지 보고 묻는다(그사이 끝난 배치에 묻지 않게)
+const notEligible = (query: Query) => query.queryKey[3] !== ELIGIBLE_SHIPMENTS;
+
 function invalidateBatchV2(
   queryClient: ReturnType<typeof useQueryClient>,
   batchId: string
 ) {
   queryClient.invalidateQueries({
     queryKey: orderQueryKeys.outboundBatchV2(batchId),
+    predicate: notEligible,
   });
   queryClient.invalidateQueries({
     queryKey: orderQueryKeys.outboundBatchesV2Root,
+    predicate: notEligible,
   });
 }
 
