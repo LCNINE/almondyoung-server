@@ -1,4 +1,19 @@
 {
+  "paperPreview": {
+    "title": "Paper texture preview",
+    "uncoated": {
+      "description": "A calm, glare-free paper texture. Easy to write on with a pen and the most affordable option.",
+      "caption": "Uncoated · Natural paper grain with no glare"
+    },
+    "matte_coated": {
+      "description": "A subtle satin coating helps resist fingerprints and moisture. Recommended for business cards you hand out often.",
+      "caption": "Matte coated · A smooth surface with a soft sheen"
+    },
+    "notice": "The cards rotate slowly in the light. This preview simulates real paper, so colors and textures may differ slightly.",
+    "disclaimer": "This preview simulates real paper, so colors and textures may differ slightly.",
+    "modelAlt": "{name} business card front and back, with a stack of cards",
+    "interactionPrompt": "Drag or use the arrow keys to rotate the cards."
+  },
   "digitalBadge": "Digital",
   "section": {
     "detail": "Details",

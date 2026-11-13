@@ -34,7 +34,7 @@ export function canAutoLoad3d({ connection, deviceMemory }: DeviceHints) {
   return deviceMemory === undefined || deviceMemory >= 4
 }
 
-function afterPageIdle(run: () => void): () => void {
+export function afterPageIdle(run: () => void): () => void {
   let idleId: number | undefined
   let timerId: number | undefined
 

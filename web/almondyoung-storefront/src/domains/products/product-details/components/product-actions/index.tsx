@@ -45,6 +45,8 @@ import { showCartAddedToast } from "@/components/shared/cart-added-toast"
 import { isTimeSaleProduct } from "@/lib/utils/time-sale"
 import MobileActions from "./mobile-actions"
 import OptionSelect from "./option-select"
+import PaperPreview from "../paper-preview"
+import { paperTemplateOf, paperVariantOf } from "../paper-preview/paper"
 import { AlmondDesignNotice } from "./almond-design-notice"
 import SelectedItemRow from "./selected-item-row"
 import { SelectedItem } from "./types"
@@ -112,6 +114,31 @@ export default function ProductActions({
     ? templateProductOf(printProductId, templates ?? [])
     : undefined
   const hasAlmondTemplate = !!templateProduct
+
+  const paperTemplate = paperTemplateOf(printProductId ?? product.id, templates)
+  const paperOption = product.options?.find((option) =>
+    option.values?.some(({ value }) => paperVariantOf(value))
+  )
+
+  const [paperSelection, setPaperSelection] = useState<{
+    productId: string
+    value: string
+  }>()
+
+  const paperVariant =
+    paperSelection?.productId === product.id
+      ? paperVariantOf(paperSelection.value)
+      : (paperVariantOf(paperOption?.values?.[0]?.value) ?? "uncoated")
+
+  const paperPreview =
+    paperTemplate && paperOption && paperVariant ? (
+      <PaperPreview
+        key={paperTemplate.id}
+        templateId={paperTemplate.id}
+        productName={product.title ?? ""}
+        variant={paperVariant}
+      />
+    ) : null
 
   const [options, setOptions] = useState<Record<string, string | undefined>>({})
   const [selectedItems, setSelectedItems] = useState<SelectedItem[]>([])
@@ -211,6 +238,10 @@ export default function ProductActions({
   }, [matchedVariant, isSimple, selectedItems, t])
 
   const setOptionValue = (optionId: string, value: string) => {
+    if (optionId === paperOption?.id) {
+      setPaperSelection({ productId: product.id, value })
+    }
+
     setOptions((prev) => ({
       ...prev,
       [optionId]: value,
@@ -597,6 +628,8 @@ export default function ProductActions({
             </div>
           )}
 
+          {paperPreview}
+
           {/* 선택된 항목 리스트 */}
           {selectedItems.length > 0 && (
             <>
@@ -743,6 +776,7 @@ export default function ProductActions({
       </div>
 
       <MobileActions
+        paperPreview={paperPreview}
         product={product}
         options={options}
         setOptionValue={setOptionValue}

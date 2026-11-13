@@ -29,6 +29,7 @@ import {
 import LocalizedClientLink from "@/components/shared/localized-client-link"
 
 type MobileActionsProps = {
+  paperPreview?: React.ReactNode
   product: HttpTypes.StoreProduct
   options: Record<string, string | undefined>
   setOptionValue: (optionId: string, value: string) => void
@@ -59,6 +60,7 @@ type MobileActionsProps = {
 const SHEET_NOTICE_ID = "custom-order-notice-sheet"
 
 const MobileActions: React.FC<MobileActionsProps> = ({
+  paperPreview,
   product,
   options,
   setOptionValue,
@@ -272,6 +274,8 @@ const MobileActions: React.FC<MobileActionsProps> = ({
                 ))}
               </div>
             )}
+
+            {paperPreview}
 
             {!isWelcomeMembership && (
               <QuantityDiscountOffer

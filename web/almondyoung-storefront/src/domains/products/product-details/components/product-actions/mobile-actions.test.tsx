@@ -118,6 +118,16 @@ describe("mobile quantity discount entry", () => {
     ).not.toBeNull()
   })
 
+  it("places the paper preview immediately after the option chips in the sheet", () => {
+    renderActions({ paperPreview: <section data-testid="paper-preview" /> })
+    openOffers()
+
+    const preview = container.querySelector('[data-testid="paper-preview"]')
+    expect(preview?.previousElementSibling?.textContent).toBe(
+      "옵션 선택 컨트롤"
+    )
+  })
+
   it("shows a guest the member-only cards in the purchase sheet", () => {
     renderActions({
       selectedItems: [
