@@ -7,7 +7,9 @@ import {
   createRoute,
   createRouter,
 } from '@tanstack/react-router';
+import { SessionProvider } from '../app/session-context';
 import { WarehouseProvider } from '../app/warehouse-context';
+import type { Session } from '../core/auth/session';
 import { createMemoryPrefs } from '../core/data/devicePrefs';
 import { ScanProvider } from '../core/hardware/scan/ScanProvider';
 import { useStationActions } from './ActionRegistry';
@@ -36,6 +38,16 @@ function scan(code: string) {
   });
 }
 
+const session: Session = {
+  bootstrap: async () => {},
+  isAuthenticated: () => true,
+  getAccessToken: async () => 'tok',
+  login: async () => {},
+  logout: async () => {},
+  identity: async () => ({ id: 'u-1', name: '김작업', loginId: 'worker01' }),
+  subscribe: () => () => {},
+};
+
 function renderShell(initial = '/outbound') {
   const beeps: Beep[] = [];
   const sink: ToneSink = { now: () => 0, beep: (b) => void beeps.push(b) };
@@ -55,12 +67,14 @@ function renderShell(initial = '/outbound') {
   ]);
   const router = createRouter({ routeTree: tree, history: createMemoryHistory({ initialEntries: [initial] }) });
   render(
-    <ScanProvider>
-      <WarehouseProvider prefs={createMemoryPrefs({ 'almondwms.warehouse': JSON.stringify({ id: 'w-1', name: '부천 창고' }) })}>
-        {/* 테스트 전용 라우터라 앱의 Register 타입과 다르다 */}
-        <RouterProvider router={router as never} />
-      </WarehouseProvider>
-    </ScanProvider>
+    <SessionProvider session={session}>
+      <ScanProvider>
+        <WarehouseProvider prefs={createMemoryPrefs({ 'almondwms.warehouse': JSON.stringify({ id: 'w-1', name: '부천 창고' }) })}>
+          {/* 테스트 전용 라우터라 앱의 Register 타입과 다르다 */}
+          <RouterProvider router={router as never} />
+        </WarehouseProvider>
+      </ScanProvider>
+    </SessionProvider>
   );
   return { router, beeps };
 }
@@ -173,5 +187,12 @@ describe('StationShell', () => {
   it('창고 이름이 설정으로 가는 링크다', async () => {
     renderShell();
     expect(await screen.findByRole('link', { name: '부천 창고' })).toHaveAttribute('href', '/settings');
+  });
+
+  it('로그인한 작업자 이름을 창고 옆에 보이고 설정으로 이어 준다', async () => {
+    renderShell();
+    const worker = await screen.findByRole('link', { name: '로그인한 작업자 김작업' });
+    expect(worker).toHaveTextContent('김작업');
+    expect(worker).toHaveAttribute('href', '/settings');
   });
 });

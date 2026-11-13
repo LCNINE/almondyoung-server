@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildAuthorizeUrl, buildEndSessionUrl, parseCallback, discover } from './oidc';
+import { buildAuthorizeUrl, buildEndSessionUrl, parseCallback, parseUserInfo, discover } from './oidc';
 
 const cfg = {
   issuer: 'https://auth.example.com',
@@ -78,5 +78,28 @@ describe('buildEndSessionUrl', () => {
     );
 
     expect(url.searchParams.has('id_token_hint')).toBe(false);
+  });
+});
+
+describe('parseUserInfo', () => {
+  it('reads the display name and login id', () => {
+    expect(
+      parseUserInfo({
+        sub: 'u1',
+        name: '김작업',
+        preferred_username: 'worker01',
+        nickname: '닉',
+      })
+    ).toEqual({ id: 'u1', name: '김작업', loginId: 'worker01' });
+  });
+
+  it('falls back to the login id when the name is empty', () => {
+    expect(
+      parseUserInfo({ sub: 'u1', name: ' ', preferred_username: 'worker01' })
+    ).toEqual({ id: 'u1', name: 'worker01' });
+  });
+
+  it('rejects a response without a subject', () => {
+    expect(() => parseUserInfo({ name: '김작업' })).toThrow();
   });
 });

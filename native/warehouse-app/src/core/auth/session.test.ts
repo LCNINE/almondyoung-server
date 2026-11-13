@@ -129,3 +129,54 @@ describe('createSession', () => {
     expect(listener).not.toHaveBeenCalled();
   });
 });
+
+describe('session identity', () => {
+  function withIdentity(fetchIdentity: (token: string) => Promise<{ id: string; name: string }>) {
+    let token = 'A';
+    const session = createSession({
+      manager: fakeManager({ getAccessToken: async () => token }),
+      runLogin: async () => {},
+      fetchIdentity,
+    });
+    return { session, useToken: (next: string) => (token = next) };
+  }
+
+  it('fetches the worker once per login', async () => {
+    const fetchIdentity = vi.fn(async (t: string) => ({ id: t, name: `작업자 ${t}` }));
+    const { session } = withIdentity(fetchIdentity);
+    await session.login();
+
+    await Promise.all([session.identity!(), session.identity!()]);
+    expect(await session.identity!()).toEqual({ id: 'A', name: '작업자 A' });
+    expect(fetchIdentity).toHaveBeenCalledOnce();
+  });
+
+  it('forgets the previous worker after logging out and in as someone else', async () => {
+    const fetchIdentity = vi.fn(async (t: string) => ({ id: t, name: `작업자 ${t}` }));
+    const { session, useToken } = withIdentity(fetchIdentity);
+    await session.login();
+    await session.identity!();
+
+    await session.logout();
+    useToken('B');
+    await session.login();
+
+    expect(await session.identity!()).toEqual({ id: 'B', name: '작업자 B' });
+  });
+
+  it('retries after a failed lookup', async () => {
+    const fetchIdentity = vi
+      .fn<(t: string) => Promise<{ id: string; name: string }>>()
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValueOnce({ id: 'A', name: '작업자 A' });
+    const { session } = withIdentity(fetchIdentity);
+    await session.login();
+
+    await expect(session.identity!()).rejects.toThrow('offline');
+    await expect(session.identity!()).resolves.toEqual({ id: 'A', name: '작업자 A' });
+  });
+
+  it('does not offer identity when no lookup is wired', () => {
+    expect(make().identity).toBeUndefined();
+  });
+});

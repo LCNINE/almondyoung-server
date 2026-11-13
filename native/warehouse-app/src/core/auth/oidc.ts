@@ -59,3 +59,23 @@ export function parseCallback(url: string): { code: string; state: string } {
   if (!code || !state) throw new Error('OIDC callback missing code/state');
   return { code, state };
 }
+
+export interface WorkerIdentity {
+  id: string;
+  name: string;
+  loginId?: string;
+}
+
+/** OIDC userinfo 응답에서 화면에 보일 작업자 이름과 로그인 아이디를 고른다. */
+export function parseUserInfo(raw: unknown): WorkerIdentity {
+  const text = (key: string) => {
+    const value: unknown =
+      raw && typeof raw === 'object' ? Reflect.get(raw, key) : undefined;
+    return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+  };
+  const id = text('sub');
+  const loginId = text('preferred_username');
+  const name = text('name') ?? text('nickname') ?? loginId;
+  if (!id || !name) throw new Error('userinfo missing sub/name');
+  return { id, name, ...(loginId && loginId !== name && { loginId }) };
+}

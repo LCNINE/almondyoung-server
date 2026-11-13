@@ -3,7 +3,14 @@ import { fetch as tauriFetch } from '@tauri-apps/plugin-http';
 import { onOpenUrl } from '@tauri-apps/plugin-deep-link';
 import { openUrl } from '@tauri-apps/plugin-opener';
 import { generatePkce, randomUrlSafe } from './pkce';
-import { discover, buildAuthorizeUrl, buildEndSessionUrl, parseCallback } from './oidc';
+import {
+  discover,
+  buildAuthorizeUrl,
+  buildEndSessionUrl,
+  parseCallback,
+  parseUserInfo,
+  type WorkerIdentity,
+} from './oidc';
 import { oidcConfig } from '../../app/config';
 import type { TokenSet } from './tokenStore';
 import type { createTokenManager } from './tokenManager';
@@ -20,6 +27,15 @@ export async function endBrowserSession(idToken?: string): Promise<void> {
 
 export async function discoverEndpoints() {
   return discover(oidcConfig.issuer, getJson);
+}
+
+export async function fetchUserInfo(accessToken: string): Promise<WorkerIdentity> {
+  const { userinfo_endpoint } = await discoverEndpoints();
+  const res = await tauriFetch(userinfo_endpoint, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!res.ok) throw new Error(`userinfo failed: ${res.status}`);
+  return parseUserInfo(await res.json());
 }
 
 export async function exchangeCode(p: {
