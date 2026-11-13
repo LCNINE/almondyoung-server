@@ -43,6 +43,7 @@ import * as fs from 'fs';
 import postgres, { Sql } from 'postgres';
 import { readRows, detectColumns } from './parse';
 import { excludedReason } from './excluded';
+import { unwrapFormula } from './formula-barcodes-plan';
 
 // 셀메이트 헤더 후보. 실제 양식 헤더(2026-06 개발팀 데이터 내보내기용) 기준으로 확정.
 const COLUMN_CANDIDATES = {
@@ -135,7 +136,7 @@ export function parseFile(rows: string[][], file: string, quiet = false): Parsed
       productName: get(row, cols.productName),
       itemCode,
       optionName,
-      barcode: get(row, cols.barcode),
+      barcode: unwrapFormula(get(row, cols.barcode)),
       rowNumber: i,
       file: path.basename(file),
     });
