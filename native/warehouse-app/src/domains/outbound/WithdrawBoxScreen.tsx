@@ -25,6 +25,7 @@ function WithdrawBoxContent({
   const api = useApiClient();
   const [removals, setRemovals] = useState<WithdrawalRemoval[]>(shipment?.removals ?? []);
   const [done, setDone] = useState(false);
+  const [exitTo, setExitTo] = useState<ShipmentByWaybill['exitTo']>(null);
   const doneRef = useRef(false);
   const [notice, setNotice] = useState<string | null>(null);
   const queue = useWorkScanQueue<{ barcode: string }>(
@@ -40,6 +41,7 @@ function WithdrawBoxContent({
         setRemovals(result.removals);
         if (result.exited) {
           doneRef.current = true;
+          setExitTo(result.exitTo ?? null);
           setDone(true);
         }
       } catch (error) {
@@ -108,7 +110,15 @@ function WithdrawBoxContent({
         <p className="text-sm text-neutral-500">배치에서 빠지는 박스예요. 뺄 상품을 스캔해 되돌림 바구니에 넣어 주세요.</p>
       </section>
       {done ? (
-        <p role="status">다 뺐어요. 이 박스의 송장은 버려 주세요.</p>
+        <div className="space-y-1">
+          <p role="status">다 뺐어요. 이 박스의 송장은 버려 주세요.</p>
+          <p className="text-sm text-neutral-500">꺼낸 상품은 되돌림 적치에서 원래 자리에 넣어 주세요.</p>
+          {exitTo === 'canceled' ? (
+            <p className="text-sm text-neutral-500">이 상자의 주문은 취소됐어요. 다시 보내지 않아요.</p>
+          ) : exitTo === 'draft' ? (
+            <p className="text-sm text-neutral-500">이 상자의 주문은 관리자가 «출고 준비»에서 다시 준비해요.</p>
+          ) : null}
+        </div>
       ) : (
         <ul className="space-y-1">
           {rows.map((row) => (
@@ -127,11 +137,16 @@ function WithdrawBoxContent({
       )}
       {queueStatus}
       {!done && !cartOnly && <BarcodeInput label="상품 바코드" onSubmit={accept} />}
-      {done && (
-        <Link to="/outbound">
-          <Button>출고작업으로</Button>
-        </Link>
-      )}
+      {done ? (
+        <div className="flex gap-2">
+          <Link to="/returns/putaway">
+            <Button>되돌림 적치</Button>
+          </Link>
+          <Link to="/outbound">
+            <Button className="border border-neutral-300 bg-white text-neutral-800 hover:bg-neutral-100">출고작업으로</Button>
+          </Link>
+        </div>
+      ) : null}
     </div>
   );
 }

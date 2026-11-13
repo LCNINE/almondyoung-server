@@ -40,6 +40,8 @@ export interface FakeBox {
   removals?: WithdrawalRemoval[];
   /** 되돌림 응답에 removedSkuName 을 싣지 않는 옛 core */
   omitRemovedName?: boolean;
+  /** 주문 전체 취소로 빠지는 상자 — 다 빼면 다시 준비하지 않는다 */
+  canceling?: boolean;
   lines: FakeLine[];
 }
 
@@ -63,6 +65,8 @@ export interface OutboundServerConfig {
   batchesFail: boolean;
   /** 배치 박스 목록에 작업 상태·송장번호·받는 분을 싣지 않는 옛 core */
   legacyBatchStates: boolean;
+  /** 내 되돌림 바구니 조회를 실패시킨다(503) */
+  returnBinFail: boolean;
 }
 
 export function batchSummary(
@@ -98,7 +102,10 @@ export function createOutboundServer(init: { boxes: FakeBox[] }) {
     batches: { picking: [], created: [] },
     batchesFail: false,
     legacyBatchStates: false,
+    returnBinFail: false,
   };
+  /** 내 되돌림 바구니 — 상자에서 꺼낸 상품이 쌓인다 */
+  const returnBin: Array<{ skuId: string; skuCode: string; skuName: string; sourceLocationId: string; locationCode: string; qty: number }> = [];
   const requests: Req[] = [];
   const scanCalls: string[] = [];
   const scans: Array<{ key: string; shipmentId: string; barcode: string; quantity: number }> = [];
@@ -117,6 +124,7 @@ export function createOutboundServer(init: { boxes: FakeBox[] }) {
   const applied = new Map<string, SimpleOutboundState>();
   let sendGate: Promise<void> | null = null;
   let writeGate: Promise<void> | null = null;
+  let returnBinGate: Promise<void> | null = null;
   let losing = false;
   let offline = false;
 
@@ -203,7 +211,7 @@ export function createOutboundServer(init: { boxes: FakeBox[] }) {
           : [],
       labelIssue: null,
       removals: active(box) && box.labelState === 'withdrawing' ? box.removals : [],
-      exitTo: box.withdrawn ? 'draft' : null,
+      exitTo: box.withdrawn ? (box.canceling ? 'canceled' : 'draft') : null,
       ...(box.legacy
         ? {}
         : {
@@ -317,6 +325,17 @@ export function createOutboundServer(init: { boxes: FakeBox[] }) {
     const removal = line && box.removals.find((r) => r.shipmentLineId === line.id && r.boxQty > 0);
     if (!removal) throw new ConflictError('not pending', 'REMOVAL_NOT_PENDING');
     removal.boxQty -= 1;
+    const held = returnBin.find((item) => item.skuId === removal.skuId && item.sourceLocationId === removal.sourceLocationId);
+    if (held) held.qty += 1;
+    else
+      returnBin.push({
+        skuId: removal.skuId,
+        skuCode: removal.skuCode,
+        skuName: removal.skuName,
+        sourceLocationId: removal.sourceLocationId,
+        locationCode: removal.locationCode,
+        qty: 1,
+      });
     box.removals = box.removals.filter((r) => r.boxQty > 0 || r.cartQty > 0);
     const exited = box.removals.length === 0;
     if (exited) box.withdrawn = true;
@@ -324,7 +343,7 @@ export function createOutboundServer(init: { boxes: FakeBox[] }) {
       removedQty: 1,
       ...(box.omitRemovedName ? {} : { removedSkuName: removal.skuName }),
       exited,
-      exitTo: exited ? 'draft' : null,
+      exitTo: exited ? (box.canceling ? 'canceled' : 'draft') : null,
       removals: box.removals,
     };
   }
@@ -378,6 +397,11 @@ export function createOutboundServer(init: { boxes: FakeBox[] }) {
     }
     const removal = /^\/shipments\/([^/]+)\/return-bin-removals$/.exec(path);
     if (removal) return reply(removeToBin(o, removal[1]));
+    if (path === '/return-bins/mine') {
+      if (returnBinGate) await returnBinGate;
+      if (config.returnBinFail) throw new ApiError(`GET ${o.path} → 503`, 503);
+      return reply({ id: 'rb-1', barcode: 'RB-me', warehouseId: params.get('warehouseId'), items: returnBin.filter((item) => item.qty > 0) });
+    }
     if (path === '/outbound-refills/pending') {
       if (listGate) await listGate;
       if (config.refillsFail) throw new ApiError(`GET ${o.path} → 503`, 503);
@@ -425,6 +449,7 @@ export function createOutboundServer(init: { boxes: FakeBox[] }) {
     shortPickCalls,
     excludes,
     confirmedPrints,
+    returnBin,
     /** 다음 스캔 응답을 붙잡는다 — 돌려받은 함수를 부르면 놓는다 */
     holdSends(): () => void {
       let release!: () => void;
@@ -442,6 +467,17 @@ export function createOutboundServer(init: { boxes: FakeBox[] }) {
       writeGate = new Promise<void>((resolve) => {
         release = () => {
           writeGate = null;
+          resolve();
+        };
+      });
+      return release;
+    },
+    /** 내 되돌림 바구니 조회 응답을 붙잡는다 — 돌려받은 함수를 부르면 놓는다 */
+    holdReturnBin(): () => void {
+      let release!: () => void;
+      returnBinGate = new Promise<void>((resolve) => {
+        release = () => {
+          returnBinGate = null;
           resolve();
         };
       });

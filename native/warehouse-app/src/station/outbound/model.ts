@@ -29,8 +29,11 @@ export type View =
   | { kind: 'waiting' }
   | { kind: 'inspect'; box: ShipmentByWaybill; seq: number }
   | { kind: 'reprint'; box: ShipmentByWaybill; changes: LabelItemChange[]; print: PrintStatus }
-  | { kind: 'withdraw'; box: ShipmentByWaybill; seq: number }
-  | { kind: 'withdrawn'; box: ShipmentByWaybill };
+  | { kind: 'withdraw'; box: ShipmentByWaybill; seq: number; cause?: WithdrawCause }
+  | { kind: 'withdrawn'; box: ShipmentByWaybill; seq: number; exitTo: ShipmentByWaybill['exitTo']; cause?: WithdrawCause };
+
+/** 이 화면에서 상자가 배치에서 빠진 까닭 — 결품이면 그 결과를 함께 알린다 */
+export type WithdrawCause = 'short-pick';
 
 /** 부모(출고 검수 화면)가 송장인지 상품인지 가른 뒤 상품을 넘기는 곳. 내려놓기·전환 전에 앞 스캔을 다 보낸다 */
 export interface BoxWorkHandle {

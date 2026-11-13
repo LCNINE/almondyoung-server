@@ -70,6 +70,19 @@ describe('F2 배치 현황(스펙 §8, 목업 ⑤)', () => {
     expect(boxes).toHaveTextContent('대기');
   });
 
+  it('빠지는 중인 상자가 있으면 F1 에서 송장을 찍어 상품을 꺼내라고 안내한다', async () => {
+    setupBatches({ boxes: [{ ...BOX1, labelState: 'withdrawing' }, BOX3] });
+    await screen.findByRole('region', { name: '배치 상세' });
+    expect(await within(detail()).findByText(/빠지는 중인 상자는 F1 «출고 검수»에서 송장을 찍고/)).toBeInTheDocument();
+  });
+
+  it('빠지는 중인 상자가 없으면 그 안내를 보이지 않는다', async () => {
+    setupBatches();
+    await screen.findByRole('region', { name: '배치 상세' });
+    await waitFor(() => expect(within(detail()).getByLabelText('대기')).toHaveTextContent('1'));
+    expect(within(detail()).queryByText(/빠지는 중인 상자는/)).toBeNull();
+  });
+
   it('송장을 손볼 박스가 위로 — «재출력»', async () => {
     setupBatches({ boxes: [BOX2, { ...BOX1, labelState: 'reprint_required' }, BOX3] });
     const boxes = await screen.findByRole('list', { name: '박스' });

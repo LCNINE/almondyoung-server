@@ -13,3 +13,10 @@ export const INSPECTION_ACTIONS = {
   reprint: { id: 'inspect-reprint', key: 'F12', label: '송장 재출력' },
   putDown: { id: 'inspect-put-down', key: 'Escape', label: '내려놓기' },
 } as const satisfies Record<string, ActionSpec>;
+
+/** 빠진 상자 화면에서만 — 탭 이동(F4 적치·이동)을 덮어 꺼낸 상품의 되돌림 적치로 바로 간다 */
+export const RETURN_PUTAWAY_ACTION = {
+  id: 'inspect-return-putaway',
+  key: 'F4',
+  label: '되돌림 적치',
+} as const satisfies ActionSpec;

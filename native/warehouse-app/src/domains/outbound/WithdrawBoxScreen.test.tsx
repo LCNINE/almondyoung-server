@@ -85,8 +85,9 @@ function mount(opts: {
   });
   const settingsRoute = createRoute({ getParentRoute: () => rootRoute, path: '/settings', component: () => <p>설정</p> });
   const outboundRoute = createRoute({ getParentRoute: () => rootRoute, path: '/outbound', component: () => <p>출고</p> });
+  const returnsRoute = createRoute({ getParentRoute: () => rootRoute, path: '/returns/putaway', component: () => <p>되돌림 적치 화면</p> });
   const router = createRouter({
-    routeTree: rootRoute.addChildren([screenRoute, settingsRoute, outboundRoute]),
+    routeTree: rootRoute.addChildren([screenRoute, settingsRoute, outboundRoute, returnsRoute]),
     history: createMemoryHistory({ initialEntries: ['/'] }),
   });
   const wrapper = ({ children }: { children: ReactNode }) => (
@@ -121,6 +122,31 @@ describe('WithdrawBoxScreen', () => {
     await user.click(screen.getByRole('button', { name: '스캔:880' }));
     await waitFor(() => expect(calls).toHaveLength(1));
     expect(calls[0]).toEqual(expect.objectContaining({ body: { barcode: '880', quantity: 1 } }));
+  });
+
+  it('다 빼면 꺼낸 상품을 되돌림 적치로 이어 가게 하고 주문이 어디로 가는지 알린다', async () => {
+    const { user } = mount({
+      prefs: warehousePrefs(),
+      request: async () => ({ removedQty: 1, exited: true, exitTo: 'draft', removals: [] }),
+    });
+
+    await screen.findByText('[A-01] 볼펜');
+    await user.click(screen.getByRole('button', { name: '스캔:880' }));
+    expect(await screen.findByText(/관리자가 «출고 준비»에서 다시 준비해요/)).toBeInTheDocument();
+    await user.click(screen.getByRole('link', { name: '되돌림 적치' }));
+    expect(await screen.findByText('되돌림 적치 화면')).toBeInTheDocument();
+  });
+
+  it('주문이 취소돼 빠진 상자는 다시 준비한다고 하지 않는다', async () => {
+    const { user } = mount({
+      prefs: warehousePrefs(),
+      request: async () => ({ removedQty: 1, exited: true, exitTo: 'canceled', removals: [] }),
+    });
+
+    await screen.findByText('[A-01] 볼펜');
+    await user.click(screen.getByRole('button', { name: '스캔:880' }));
+    expect(await screen.findByText(/이 상자의 주문은 취소됐어요/)).toBeInTheDocument();
+    expect(screen.queryByText(/다시 준비해요/)).toBeNull();
   });
 
   it('송장 정보를 잃은 채로는 스캔을 보내지 않는다', async () => {
