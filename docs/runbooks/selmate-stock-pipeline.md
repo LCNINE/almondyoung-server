@@ -8,6 +8,7 @@
 - **①③ 입고예정 (재고 동기화 때마다)** — 셀메이트 CSV 의 `입고예정일` 을 core 발주 라인으로 넣고(①) Medusa 로 옮겨(③) **스토어프론트에 입고예정일을 표시**한다.
 - **Ⓓ 기한 지난 발주 종결 (수시, ③ 직전)** — 예정일이 지났는데 미수령인 발주 라인을 잔량 포기로 닫는다. 안 하면 ③ 이 볼 후보가 과거로 오염된다.
 - **Ⓔ 선반 위치 (재고 동기화 때마다, Ⓐ 다음)** — 셀메이트 CSV 의 `상품위치` 를 core `sku_shelf_positions` 에 넣는다. **한진 송장 품목 줄의 `[CC-02-02]` 위치가 여기서 나온다.** 빼먹으면 새 상품·옮긴 상품의 송장에 `[RECEIVING_DEFAULT]` 가 찍힌다.
+- **Ⓕ 로케이션 마스터 (재고 동기화 때마다, Ⓔ 다음)** — Ⓔ 로 들어온 선반 코드 중 아직 로케이션이 없는 칸을 판매 창고에 만든다. 빼먹으면 셀메이트에 새로 쓴 칸(랙 끝 번호를 넘는 칸)이 로케이션으로 이어지지 않아 적치 스캔이 그 칸을 못 잡고, 컷오버 판정에 `로케이션이 없는 선반 코드` 가 뜬다.
 
 > 이 문서는 "나중에 다시 돌릴 때 / Claude 에게 시킬 때" 를 위한 런북이다. 각 스크립트는 멱등(중복 실행 안전)하게 작성돼 있다.
 
@@ -21,6 +22,7 @@
    │      ↑ 반영값 = 현재재고 − 미발송주문수
    │ Ⓒ close-shipped-shipments  (core 유령 예약 해제 — Ⓐ 다음)
    │ Ⓔ load-shelf-positions     (상품위치 → sku_shelf_positions, 송장 품목 줄 위치 — Ⓐ 다음)
+   │ Ⓕ build-location-master    (새 선반 코드 → 판매 창고 로케이션 — Ⓔ 다음)
    ▼
 core: skus / stock_events / stock_ledgers → ProductSellableQuantityChanged
    ▼
@@ -386,6 +388,22 @@ bash scripts/sellmate/run.sh live load-shelf-positions <csv>
 - **Ⓐ 다음에 돌린다** — 신규 SKU 는 `import-products` 가 만들어야 매칭된다.
 - 위치가 빈 행은 기존 값을 지우지 않는다. 셀메이트에서 위치를 지운 상품은 core 에 옛 위치가 남으니, 이상하면 그 SKU 를 직접 본다.
 - 송장은 인쇄할 때마다 다시 그리므로, 적재 뒤 **송장 인쇄를 다시 누르면** 새 위치로 나온다(이미 뽑은 송장은 "송장이 바뀌었어요" 로 재출력 대상이 된다).
+
+## Ⓕ 로케이션 마스터 (재고 동기화 때마다, Ⓔ 다음) — `scripts/sellmate/build-location-master.ts`
+
+Ⓔ 가 `sku_shelf_positions` 를 갱신한 뒤, 그 선반 코드로 판매 창고의 열·랙·칸을 만든다(#1235). 셀메이트에서 상품 위치를
+기존 칸으로 고친 경우는 Ⓔ 만으로 로케이션에 이어진다. **랙 끝 번호를 넘는 새 칸**(예: 33번까지 있던 랙에 `A-06-35`)이나 새 랙·열이
+들어온 경우에만 Ⓕ 가 무언가를 만든다. 늘리기만 하고 지우지 않으며 다시 돌려도 안전하다.
+
+```bash
+bash scripts/sellmate/run.sh live build-location-master            # dry-run — 만들어 보고 되돌림
+bash scripts/sellmate/run.sh live build-location-master --apply    # dry-run 에 생성·늘림이 있을 때만
+```
+
+- **Ⓔ 다음에 돌린다** — Ⓔ 가 넣은 선반 코드를 읽는다.
+- dry-run 마지막의 `열 생성 0 · 랙 생성 0 · 칸 생성 0` 이고 `랙 늘림` 줄이 없으면 `--apply` 는 건너뛴다.
+- `❓ 사람이 정할 예외` 는 만들지 않는다. 규칙(`열-랙-칸`)에 맞지 않는 셀메이트 위치 텍스트라 사람이 셀메이트에서 고쳐야 한다(#1330). 고치면 다음 동기화의 Ⓔ → Ⓕ 로 자동 반영된다.
+- `🔗 선반 위치가 로케이션으로 이어지는 SKU` 비율이 지난번보다 떨어졌으면 새 예외가 생긴 것이니 예외 목록을 본다.
 
 ## Ⓐ 재고 동기화 (일일) — `import-products` → `sync-stock` → `recalc-sellable`
 
@@ -1024,6 +1042,7 @@ A-3 은 variant 20,748개를 전부 재계산하지만 **값이 바뀐 것만 �
 2. `Ⓐ import-products` → `sync-stock` → `recalc-sellable` → 재고 동기화 + 이벤트 발행
    2-B. **`Ⓒ close-shipped-shipments`** ← Ⓐ 직후. core 에 열린 채 남은 상자를 닫고 유령 예약을 푼다.
    빼먹으면 실재고가 있는 상품이 계속 품절로 나간다. 끝나고 출력된 `VARIANT_IDS` 로 `recalc-sellable` 한 번 더.
+   2-C. **`Ⓔ load-shelf-positions` → `Ⓕ build-location-master`** ← Ⓐ 다음. 선반 위치 갱신 후 새 칸이 있으면 로케이션을 만든다.
 3. `② match-sku-to-variant` — `--rule A --apply` → `--rule B --report` 검토 → `--limit 20 --apply` 검증(admin "매칭됨" 확인) → 전체 `--apply`
 4. **`②-B` 한국상품 `pre_stock_sellable`(선판매) 적용** ← 빼먹으면 한국상품이 품절된다
    (+ `②-C` 표에 예외 브랜드가 있으면 같이 다시 걸 것 — 신규 매칭분에는 안 걸려 있다)
@@ -1033,14 +1052,14 @@ A-3 은 variant 20,748개를 전부 재계산하지만 **값이 바뀐 것만 �
 
 **3→4→5 는 세트다.** 3 만 하고 4 를 빼면 한국상품이 품절되고, 5 를 빼면 아무것도 반영되지 않는다.
 
-**일일 운영은 Ⓑ → Ⓐ → Ⓒ → ① → ③** 다 (주문수집과 같이). ② 는 신규매칭이 생겼을 때.
+**일일 운영은 Ⓑ → Ⓐ → Ⓒ → Ⓔ → Ⓕ → ① → ③** 다 (주문수집과 같이). ② 는 신규매칭이 생겼을 때.
 Ⓑ 는 Medusa 예약, Ⓒ 는 core 예약 — **둘 다 있어야 한쪽만 풀린 채 품절로 남지 않는다.**
 
 ## Claude 에게 시키는 법
 
 다음처럼 요청하면 이 런북대로 진행한다:
 
-- "셀메이트 재고 동기화 돌려줘 `<csv>`" → **Ⓑ → Ⓐ → Ⓒ → ① → ③** (clear-reservations → A-1→A-2→A-3 → close-shipped-shipments → 영향 variant recalc → load-inbound-from-csv → sync-restock). Ⓐ-0 제외 목록은 스크립트가 자동 적용
+- "셀메이트 재고 동기화 돌려줘 `<csv>`" → **Ⓑ → Ⓐ → Ⓒ → Ⓔ → Ⓕ → ① → ③** (clear-reservations → A-1→A-2→A-3 → close-shipped-shipments → 영향 variant recalc → load-shelf-positions → build-location-master → load-inbound-from-csv → sync-restock). Ⓐ-0 제외 목록은 스크립트가 자동 적용
 - "재고가 셀메이트랑 다른데?" → ① `sync-stock` dry-run 으로 Core 대조(변동없음이면 Core 는 정상) → ② **Ⓑ 예약 누적** 확인 → ③ 미매칭 여부
 - **"`Medusa product not found` 가 잔뜩 떴어" / "재고동기화 했는데 며칠째 반영이 안 돼"** → 「반영이 늦을 때」의
   **대량 상품등록 절** — 신규 등록 상품의 재고 이벤트가 Medusa 상품 생성보다 먼저 처리된 **순서 문제**다.
