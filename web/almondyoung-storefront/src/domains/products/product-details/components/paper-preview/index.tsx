@@ -34,6 +34,8 @@ export default function PaperPreview({
   const visible = useIntersection(section)
   const [started, setStarted] = useState(false)
   const [ready, setReady] = useState(false)
+  // 3D 를 못 띄우면 칸을 빼고 사진만 둔다. 높이는 처음부터 잡아 둬야 뷰어가 0 크기로 그리지 않는다
+  const [unavailable, setUnavailable] = useState(false)
   const variantRef = useRef(variant)
   variantRef.current = variant
   const alt = t("modelAlt", { name: productName })
@@ -45,13 +47,21 @@ export default function PaperPreview({
 
   useEffect(() => {
     const hints: Navigator & DeviceHints = navigator
-    if (!started || !canAutoLoad3d(hints)) return
+    if (!started) return
+    if (!canAutoLoad3d(hints)) {
+      setUnavailable(true)
+
+      return
+    }
 
     let cancelled = false
     let dispose: (() => void) | undefined
     setReady(false)
     const fail = () => {
-      if (!cancelled) setReady(false)
+      if (cancelled) return
+
+      setReady(false)
+      setUnavailable(true)
     }
     const cancelWait = afterPageIdle(() => {
       void import("./mount-paper-viewer")
@@ -98,14 +108,16 @@ export default function PaperPreview({
       <h3 id={titleId} className="text-base font-bold">
         {t("title")}
       </h3>
-      <div
-        ref={container}
-        aria-hidden={!ready}
-        className={cn(
-          "bg-muted h-72 overflow-hidden rounded-xl",
-          !ready && "invisible h-0"
-        )}
-      />
+      {!unavailable && (
+        <div
+          ref={container}
+          aria-hidden={!ready}
+          className={cn(
+            "bg-muted h-72 overflow-hidden rounded-xl transition-opacity",
+            !ready && "opacity-0"
+          )}
+        />
+      )}
       <div className="grid grid-cols-2 gap-3">
         {papers.map((paper) => (
           <Card
