@@ -5,7 +5,7 @@ import type { Report } from '../report';
 const MARKETS = ['naver', 'coupang'] as const;
 
 export async function checkMarketCore(tx: Sql, r: Report): Promise<void> {
-  r.section('마켓 1. 판매 채널·리스팅 (core)');
+  r.section('마켓 1. 판매 채널·리스팅 (core, 2단계)');
   const channels = await tx<{ site: string; is_active: boolean; listings: number }[]>`
     select c.site, c.is_active, count(l.id)::int as listings
     from sales_channels c left join channel_variant_listings l on l.sales_channel_id = c.id
@@ -14,7 +14,7 @@ export async function checkMarketCore(tx: Sql, r: Report): Promise<void> {
   for (const site of MARKETS) {
     const row = channels.find((c) => c.site === site);
     // 채널은 컷오버 시각 T 에 켠다(런북 #1251). 그 전엔 꺼져 있는 게 맞다 — 행이 있는지만 본다.
-    if (!row) r.bad(`${site} 판매 채널 행이 없다`, `admin-web 판매 채널에 ${site} 를 만든다(비활성으로) — #1244/#1245`);
+    if (!row) r.later(`${site} 판매 채널 행이 없다`, `admin-web 판매 채널에 ${site} 를 만든다(비활성으로) — #1244/#1245`);
     else r.info(`${site}: ${row.is_active ? '활성' : '비활성(T 에 켠다)'} · 리스팅 ${row.listings}개(그때그때 매핑)`);
   }
 }
@@ -47,7 +47,7 @@ export async function checkMarketAdapter(tx: Sql, r: Report): Promise<void> {
  * 이벤트(OrderCreated)가 core 에서 거절되면 매핑만 남는다. 두 DB 라 id 목록을 core 로 가져가 비교한다.
  */
 export async function checkCoupangCollectedHasCoreOrder(core: Sql, adapter: Sql, r: Report): Promise<void> {
-  r.section('마켓 4. 쿠팡 수집분이 core 판매주문으로 이어졌나 (channel_adapter → core)');
+  r.section('마켓 4. 쿠팡 수집분이 core 판매주문으로 이어졌나 (channel_adapter → core, 2단계)');
   const mapped = await adapter<{ channel_order_id: string }[]>`
     select channel_order_id from wms_order_mappings
     where sales_channel = 'coupang' and created_at < now() - interval '30 minutes'`;
@@ -62,5 +62,5 @@ export async function checkCoupangCollectedHasCoreOrder(core: Sql, adapter: Sql,
   const have = new Set(present.map((p) => p.channel_order_id));
   const missing = ids.filter((id) => !have.has(id)).length;
   if (missing === 0) r.ok(`쿠팡 수집 매핑 ${ids.length}건 모두 core 판매주문이 있다`);
-  else r.bad(`쿠팡 수집 매핑 ${missing}건이 core 판매주문에 없다`, 'DLQ 화면에서 OrderCreated 거절 사유 확인 (#1245)');
+  else r.later(`쿠팡 수집 매핑 ${missing}건이 core 판매주문에 없다`, 'DLQ 화면에서 OrderCreated 거절 사유 확인 (#1245)');
 }
