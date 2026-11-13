@@ -18,6 +18,7 @@ import {
   endBrowserSession,
   refreshTokens,
   discoverEndpoints,
+  fetchUserInfo,
 } from './core/auth/login';
 import { createAppRouter } from './app/router';
 import { UpdatePrompt } from './app/UpdatePrompt';
@@ -34,6 +35,7 @@ const session = createSession({
   manager,
   runLogin: (m, onStep) => loginWithLoopback({ manager: m, onStep }),
   endBrowserSession,
+  fetchIdentity: fetchUserInfo,
 });
 const router = createAppRouter(session);
 

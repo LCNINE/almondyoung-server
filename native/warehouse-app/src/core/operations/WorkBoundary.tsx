@@ -1,5 +1,4 @@
 import {
-  createContext,
   useContext,
   useEffect,
   useState,
@@ -10,8 +9,8 @@ import { useIsAuthenticated, useSession } from '../../app/session-context';
 import { useWorkRuntime } from './OperationContext';
 import { workStatus } from './workStatus';
 import { Button } from '../design/Button';
-import type { StoredOperation } from './operationStore';
 import { useWorkReadiness } from './useWorkReadiness';
+import { AreaContext } from './workArea';
 
 export interface ScanAllowance {
   path: string;
@@ -20,12 +19,6 @@ export interface ScanAllowance {
   warehouseId?: string;
   sourceLocationId?: string;
 }
-const AreaContext = createContext({
-  operations: [] as StoredOperation[],
-  scope: null as string | null,
-  problem: false,
-  restoring: false,
-});
 const SCAN_PATH = /^\/shipments\/[^/]+\/(location|simple)-outbound-scans$/;
 /** A scan region can accept more inputs only for its first, normal send. */
 export function useWorkAreaBlocked(
@@ -133,6 +126,7 @@ function ActiveBoundary({
         scope,
         problem: authed && problem,
         restoring: authed && restoring,
+        recheck,
       }}
     >
       {children}

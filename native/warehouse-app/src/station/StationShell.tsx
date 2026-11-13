@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo } from 'react';
 import { Link, Outlet, useNavigate, useRouterState } from '@tanstack/react-router';
 import { Wrench } from 'lucide-react';
 import { useWarehouse } from '../app/warehouse-context';
+import { useWorkerIdentity } from '../app/useWorkerIdentity';
 import { cn } from '../core/design/cn';
 import { ShellChromeContext } from '../core/design/shellChrome';
 import { useDeveloperMode } from '../core/diagnostics/DeveloperModeProvider';
@@ -44,6 +45,7 @@ function ShellFrame() {
   const section = tab ? activeSectionOf(tab, pathname) : null;
   const navigate = useNavigate();
   const { warehouseName } = useWarehouse();
+  const worker = useWorkerIdentity();
   const developer = useDeveloperMode();
   const { signal, clearFlash } = useFeedback();
   const flash = useFlash();
@@ -131,6 +133,11 @@ function ShellFrame() {
           {developer.enabled && (
             <Link to="/diagnostics" aria-label="개발자 진단" className="hover:text-white">
               <Wrench className="h-4 w-4" aria-hidden />
+            </Link>
+          )}
+          {worker.status === 'ready' && (
+            <Link to="/settings" aria-label={`로그인한 작업자 ${worker.identity.name}`} className="font-semibold text-[#E2E4E8] hover:text-white">
+              {worker.identity.name}
             </Link>
           )}
           <Link to="/settings" className="hover:text-white">
