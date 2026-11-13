@@ -1100,9 +1100,10 @@ export const useHandoffBatchWorkItem = () => {
     onSuccess: (_, { batchId }) => invalidateBatchV2(queryClient, batchId),
   });
 };
-useHandoffBatchWorkItem.permission = [
-  'fulfillment.warehouse.operate',
-] as const satisfies PermissionRequirement;
+// 넘기기는 남이 맡은 작업을 다른 사람에게 주는 일이라 서버가 현장 작업 감독 권한도 본다
+useHandoffBatchWorkItem.permission = {
+  allOf: [['fulfillment.warehouse.operate'], ['fulfillment.work.supervise']],
+} as const satisfies PermissionRequirement;
 
 function pickingMutation<T extends { batchId: string }>(
   mutationFn: (data: T, key: string) => Promise<unknown>
@@ -1141,9 +1142,12 @@ export const useDiscretePickingScan = Object.assign(
 export const usePickingHandoff = Object.assign(
   pickingMutation<PickingHandoffRequest>(orders.picking.handoffV2),
   {
-    permission: [
-      'fulfillment.warehouse.operate',
-    ] as const satisfies PermissionRequirement,
+    permission: {
+      allOf: [
+        ['fulfillment.warehouse.operate'],
+        ['fulfillment.work.supervise'],
+      ],
+    } as const satisfies PermissionRequirement,
   }
 );
 export const useCompletePickingV2 = Object.assign(
