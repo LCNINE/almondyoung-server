@@ -12,12 +12,16 @@ import { pickComingSoon } from "@/domains/products/product-details/components/pr
 import { ComingSoonBadge } from "@/components/shared/badges/coming-soon-badge"
 import { calculateStockStatus } from "@/domains/products/components/product-card/quantity/stock-status"
 import { type Model3dStatus, ProductModel3dLayer } from "../model3d-viewer"
+import { PaperModelLayer } from "../paper-preview/model-layer"
+import type { PaperVariant } from "../paper-preview/paper"
 
 type Props = {
   product: HttpTypes.StoreProduct
+  // 아몬드템플릿 명함 상품이면 그 시안을 입힌 용지 3D 를 첫 칸에 둔다
+  paper?: { templateId: string; fallbackVariant: PaperVariant }
 }
 
-export function ImageGallery({ product }: Props) {
+export function ImageGallery({ product, paper }: Props) {
   const t = useTranslations("productDetail.image")
   const images = product.images?.length
     ? product.images
@@ -117,12 +121,23 @@ export function ImageGallery({ product }: Props) {
             priority
           />
         )}
-        <ProductModel3dLayer
-          fileId={product.metadata?.model3dFileId}
-          productName={product.title ?? ""}
-          visible={hasModelSlot && selectedIndex === 0}
-          onStatus={handleModelStatus}
-        />
+        {paper ? (
+          <PaperModelLayer
+            templateId={paper.templateId}
+            productId={product.id}
+            productName={product.title ?? ""}
+            fallbackVariant={paper.fallbackVariant}
+            visible={hasModelSlot && selectedIndex === 0}
+            onStatus={handleModelStatus}
+          />
+        ) : (
+          <ProductModel3dLayer
+            fileId={product.metadata?.model3dFileId}
+            productName={product.title ?? ""}
+            visible={hasModelSlot && selectedIndex === 0}
+            onStatus={handleModelStatus}
+          />
+        )}
         {isSoldOut && comingSoon && (
           <ComingSoonBadge
             date={comingSoon.date}

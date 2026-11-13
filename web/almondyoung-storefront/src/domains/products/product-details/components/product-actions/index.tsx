@@ -45,8 +45,8 @@ import { showCartAddedToast } from "@/components/shared/cart-added-toast"
 import { isTimeSaleProduct } from "@/lib/utils/time-sale"
 import MobileActions from "./mobile-actions"
 import OptionSelect from "./option-select"
-import PaperPreview from "../paper-preview"
 import { paperTemplateOf, paperVariantOf } from "../paper-preview/paper"
+import { pickPaper } from "../paper-preview/paper-store"
 import { AlmondDesignNotice } from "./almond-design-notice"
 import SelectedItemRow from "./selected-item-row"
 import { SelectedItem } from "./types"
@@ -130,14 +130,12 @@ export default function ProductActions({
       ? paperVariantOf(paperSelection.value)
       : (paperVariantOf(paperOption?.values?.[0]?.value) ?? "uncoated")
 
+  const tPaper = useTranslations("productDetail.paperPreview")
   const paperPreview =
     paperTemplate && paperOption && paperVariant ? (
-      <PaperPreview
-        key={paperTemplate.id}
-        templateId={paperTemplate.id}
-        productName={product.title ?? ""}
-        variant={paperVariant}
-      />
+      <p className="text-muted-foreground text-sm">
+        {tPaper(`${paperVariant}.description`)}
+      </p>
     ) : null
 
   const [options, setOptions] = useState<Record<string, string | undefined>>({})
@@ -240,6 +238,8 @@ export default function ProductActions({
   const setOptionValue = (optionId: string, value: string) => {
     if (optionId === paperOption?.id) {
       setPaperSelection({ productId: product.id, value })
+      const picked = paperVariantOf(value)
+      if (picked) pickPaper(product.id, picked)
     }
 
     setOptions((prev) => ({
@@ -659,7 +659,9 @@ export default function ProductActions({
                     }}
                     onRemove={() => removeItem(item.variantId)}
                     pricing={pricingOf(item)}
-                    onAddQuantity={(count) => updateQuantity(item.variantId, count)}
+                    onAddQuantity={(count) =>
+                      updateQuantity(item.variantId, count)
+                    }
                   />
                 ))}
               </div>

@@ -15,6 +15,9 @@ type PaperViewerOptions = {
   onError: () => void
 }
 
+const CAMERA_ORBIT = "30deg 66deg 0.24m"
+const FIELD_OF_VIEW = "28deg"
+
 export async function mountPaperViewer(
   container: HTMLElement,
   {
@@ -57,6 +60,10 @@ export async function mountPaperViewer(
     for (const material of faces) {
       material.pbrMetallicRoughness.baseColorTexture?.setTexture(plain)
     }
+    // 공통 뷰어가 붙인 먼 카메라(150%)가 로드 때 다시 잡히므로, 로드 뒤에 명함 거리로 당긴다
+    viewer.cameraOrbit = CAMERA_ORBIT
+    viewer.fieldOfView = FIELD_OF_VIEW
+    viewer.jumpCameraToGoal()
     onReady()
 
     // Artwork is optional; keep both faces plain if fonts, images or the API fail.
@@ -110,8 +117,9 @@ export async function mountPaperViewer(
   viewer.variantName = variant()
   viewer.setAttribute("environment-image", "neutral")
   viewer.setAttribute("exposure", "1.15")
-  viewer.setAttribute("camera-orbit", "30deg 66deg 0.27m")
-  viewer.setAttribute("field-of-view", "28deg")
+  viewer.setAttribute("camera-orbit", CAMERA_ORBIT)
+  viewer.setAttribute("min-camera-orbit", "auto auto 0.08m")
+  viewer.setAttribute("field-of-view", FIELD_OF_VIEW)
   viewer.setAttribute("touch-action", "pan-y")
   viewer.setAttribute("rotation-per-second", "8deg")
   viewer.setAttribute("auto-rotate-delay", "0")

@@ -81,7 +81,11 @@ beforeEach(() => {
     async (target: HTMLElement, options: { onLoad: () => void }) => {
       onLoad = options.onLoad
       const viewer = document.createElement("model-viewer")
-      Object.assign(viewer, { model: { materials: faces }, createTexture })
+      Object.assign(viewer, {
+        model: { materials: faces },
+        createTexture,
+        jumpCameraToGoal: vi.fn(),
+      })
       target.append(viewer)
       dispose.mockImplementation(() => viewer.remove())
 
@@ -190,7 +194,7 @@ describe("paper model", () => {
     expect(viewer.variantName).toBe("matte_coated")
     expect(viewer.getAttribute("environment-image")).toBe("neutral")
     expect(viewer.getAttribute("exposure")).toBe("1.15")
-    expect(viewer.getAttribute("camera-orbit")).toBe("30deg 66deg 0.27m")
+    expect(viewer.getAttribute("camera-orbit")).toBe("30deg 66deg 0.24m")
     expect(viewer.getAttribute("field-of-view")).toBe("28deg")
     expect(viewer.getAttribute("rotation-per-second")).toBe("8deg")
     expect(viewer.hasAttribute("auto-rotate")).toBe(false)

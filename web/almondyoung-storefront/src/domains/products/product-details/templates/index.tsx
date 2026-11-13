@@ -23,6 +23,11 @@ import { notFound } from "next/navigation"
 import { getTranslations } from "next-intl/server"
 import { Suspense } from "react"
 import { ImageGallery } from "../components/image-gallery"
+import { PaperCompare } from "../components/paper-preview/paper-compare"
+import {
+  paperTemplateOf,
+  paperVariantOf,
+} from "../components/paper-preview/paper"
 import { ProductBreadcrumb } from "../components/breadcrumb"
 import ProductActions from "../components/product-actions"
 import { ProductInfoAccordion } from "../components/product-detail-info/product-info-accordion"
@@ -69,6 +74,15 @@ export async function ProductTemplate({
       : []
   const isCustomOrder =
     !!pimMasterId && !!templateProductOf(pimMasterId, templates ?? [])
+  const paperTemplate = paperTemplateOf(pimMasterId ?? product.id, templates)
+  const paperValues = product.options
+    ?.flatMap((option) => option.values ?? [])
+    .map(({ value }) => paperVariantOf(value))
+    .filter((variant) => variant !== undefined)
+  const paper =
+    paperTemplate && paperValues?.length
+      ? { templateId: paperTemplate.id, fallbackVariant: paperValues[0] }
+      : undefined
 
   return (
     <div className="min-h-screen bg-white pt-6">
@@ -78,7 +92,7 @@ export async function ProductTemplate({
         <div className="py-2 xl:flex xl:items-start xl:gap-4">
           {/* 메인 콘텐츠 */}
           <main className="w-full min-w-0 flex-1 pb-24 xl:pb-0">
-            <ImageGallery key={product.id} product={product} />
+            <ImageGallery key={product.id} product={product} paper={paper} />
 
             {/* 모바일 상품 정보 */}
             <div className="xl:hidden">
@@ -115,6 +129,7 @@ export async function ProductTemplate({
               {/* 상품 상세정보 Tab Panel — 데이터를 page 가 이미 await 하므로 별도
                   Suspense 없이 페이지 본문과 같은 청크로 렌더한다 (지연 스왑 1단계 제거) */}
               <SectionTabPanel value="detail">
+                {paper && <PaperCompare />}
                 <ErrorBoundary fallback={<div>{t("loadDetailFail")}</div>}>
                   <ProductDetailInfoWrapper
                     pricedProduct={product}

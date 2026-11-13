@@ -12,7 +12,9 @@
     "notice": "The cards rotate slowly in the light. This preview simulates real paper, so colors and textures may differ slightly.",
     "disclaimer": "This preview simulates real paper, so colors and textures may differ slightly.",
     "modelAlt": "{name} business card front and back, with a stack of cards",
-    "interactionPrompt": "Drag or use the arrow keys to rotate the cards."
+    "interactionPrompt": "Drag or use the arrow keys to rotate the cards.",
+    "compareTitle": "Compare papers",
+    "compareLead": "The same card shot up close under raking light. Pick a paper in the options and the 3D card above changes texture too."
   },
   "digitalBadge": "Digital",
   "section": {
