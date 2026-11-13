@@ -4,7 +4,7 @@ import { STOCK_ADJUST_PERMISSION_MESSAGE } from '../../core/data/errorMessage';
 import { usePermissionReader } from '../../core/operations/useWorkCapabilities';
 import { useApiClient } from '../../core/data/ApiClientProvider';
 
-export const ADJUST_REASONS = ['파손', '분실', '발견', '오출고 정정', '기타'] as const;
+export const ADJUST_REASONS = ['파손', '분실', '발견', '오출고 정정', '제조', '기타'] as const;
 
 export interface AdjustStockInput {
   skuId: string;
