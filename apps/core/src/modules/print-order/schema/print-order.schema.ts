@@ -1,6 +1,7 @@
 import { pgTable, uuid, varchar, text, boolean, integer, timestamp, index, unique, jsonb } from 'drizzle-orm/pg-core';
 import { type InferSelectModel } from 'drizzle-orm';
 import { v7 as uuidv7 } from 'uuid';
+import { type WowpressAccessorySpec } from '../wowpress/wowpress.types';
 
 export type PrintOrderStatus =
   | 'pending'
@@ -70,6 +71,7 @@ export const printProductSpecs = pgTable('print_product_specs', {
   jobpresetno: text('jobpresetno').notNull(),
   prsjob: jsonb('prsjob').$type<Record<string, unknown>[]>().notNull(),
   awkjob: jsonb('awkjob').$type<Record<string, unknown>[]>().notNull(),
+  accessories: jsonb('accessories').$type<WowpressAccessorySpec[]>().notNull().default([]),
   qtyPerUnit: integer('qty_per_unit').notNull(),
   fileFormat: text('file_format').$type<PrintFileFormat>().notNull(),
   fileDpi: integer('file_dpi').notNull(),

@@ -6,7 +6,9 @@ export interface WowpressJobs {
   awkjob: Record<string, unknown>[];
 }
 
-export type JobcostVerdict = { ok: true; supply: number; bill: number } | { ok: false; reason: string };
+export type JobcostVerdict =
+  | { ok: true; supply: number; bill: number; weightKg?: number }
+  | { ok: false; reason: string };
 
 const record = z.record(z.string(), z.unknown());
 const numeric = z
@@ -105,6 +107,7 @@ export function judgeJobcost(sent: WowpressJobs, response: unknown): JobcostVerd
   const supply = toNumber(body.ordcost_sup);
   const bill = toNumber(body.ordcost_bill);
   if (supply === null || bill === null) return fail('견적 금액이 응답에 없습니다');
+  const weightKg = toNumber(body.weight_ord);
 
-  return { ok: true, supply, bill };
+  return { ok: true, supply, bill, ...(weightKg !== null ? { weightKg } : {}) };
 }

@@ -9,6 +9,7 @@ import {
   IsInt,
   IsNumber,
   IsObject,
+  IsOptional,
   IsString,
   IsUUID,
   Max,
@@ -65,6 +66,14 @@ export class PrintComboDto {
   @IsArray()
   @IsInt({ each: true })
   awk!: number[];
+
+  @ApiProperty({ type: [String], required: false, description: '부자재 옵션 축마다 고른 선택지 키' })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(5)
+  @IsString({ each: true })
+  @MaxLength(50, { each: true })
+  accessories?: string[];
 }
 
 export class PrintQuotesBodyDto extends PrintSizeQueryDto {
@@ -74,6 +83,20 @@ export class PrintQuotesBodyDto extends PrintSizeQueryDto {
   @ValidateNested({ each: true })
   @Type(() => PrintComboDto)
   combos!: PrintComboDto[];
+}
+
+export class PrintOptionExtraLabelDto {
+  @ApiProperty({ description: '옵션 축 이름(예: 거치대)' })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(50)
+  group!: string;
+
+  @ApiProperty({ description: '고른 값 표시(예: 1개, 없음)' })
+  @IsString()
+  @MinLength(1)
+  @MaxLength(100)
+  value!: string;
 }
 
 export class PrintOptionLabelsDto {
@@ -94,6 +117,14 @@ export class PrintOptionLabelsDto {
   @MinLength(1)
   @MaxLength(100)
   qty!: string;
+
+  @ApiProperty({ type: [PrintOptionExtraLabelDto], required: false, description: '부자재 옵션 축 표시' })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(5)
+  @ValidateNested({ each: true })
+  @Type(() => PrintOptionExtraLabelDto)
+  extras?: PrintOptionExtraLabelDto[];
 }
 
 export class PublishPrintComboDto extends PrintComboDto {
@@ -146,4 +177,10 @@ export class PublishPrintProductDto extends PrintSizeQueryDto {
   @ValidateNested({ each: true })
   @Type(() => PublishPrintComboDto)
   combos!: PublishPrintComboDto[];
+}
+
+export class RepublishPrintProductDto extends PublishPrintProductDto {
+  @ApiProperty({ description: '새 버전을 만들 기존 상품(master) ID' })
+  @IsUUID()
+  masterId!: string;
 }

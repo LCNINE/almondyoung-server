@@ -4,7 +4,16 @@ import { z } from 'zod';
 import { WowpressClient } from '../wowpress/wowpress.client';
 import { WowpressLineSpec, WowpressProdInfo } from '../wowpress/wowpress.types';
 import { JobcostVerdict } from '../wowpress/wowpress-body';
-import { PRINT_KIND_PRODUCTS, PrintKind, PrintKindProduct } from './print-kind-products';
+import {
+  ACCESSORY_PRESET,
+  accessoryCount,
+  PRINT_KIND_ACCESSORIES,
+  PRINT_KIND_PRODUCTS,
+  PrintAccessoryAxis,
+  PrintAccessoryChoice,
+  PrintKind,
+  PrintKindProduct,
+} from './print-kind-products';
 import { buildPrintOptions, PrintOptionAxes } from './print-options.builder';
 
 export interface PrintCombo {
@@ -13,6 +22,8 @@ export interface PrintCombo {
   colorno: number;
   qty: number;
   awk: number[];
+  // 부자재 옵션 축마다 고른 선택지 키. 축이 없거나 고르지 않았으면 빠진다
+  accessories?: string[];
 }
 
 export interface PrintSize {
@@ -20,7 +31,7 @@ export interface PrintSize {
   height: number;
 }
 
-export type PrintOptionsView = PrintOptionAxes & { bleedMatches: boolean };
+export type PrintOptionsView = PrintOptionAxes & { bleedMatches: boolean; accessoryAxes: PrintAccessoryAxis[] };
 
 const sizeDimsSchema = z.array(
   z.object({ sizelist: z.array(z.object({ sizeno: z.number(), width: z.number(), height: z.number() })) }),
@@ -42,7 +53,11 @@ export class PrintCatalogReader {
     const entry = this.selectProduct(kind, size, prodInfo);
     const axes = buildPrintOptions(prodInfo, entry);
 
-    return { ...axes, bleedMatches: entry.bleedMm === axes.cutsizeHalfMm };
+    return {
+      ...axes,
+      bleedMatches: entry.bleedMm === axes.cutsizeHalfMm,
+      accessoryAxes: PRINT_KIND_ACCESSORIES[kind] ?? [],
+    };
   }
 
   async quotes(
@@ -90,13 +105,46 @@ export class PrintCatalogReader {
       prodno: entry.prodno,
       jobpresetno: String(color.jobno),
       prsjob: [prsjob],
-      awkjob: combo.awk.map((jobno) => ({ covercd: 0, jobno })),
+      awkjob: [...combo.awk, ...this.chosenAccessories(kind, combo).flatMap((choice) => choice.awk ?? [])].map((jobno) => ({
+        covercd: 0,
+        jobno,
+      })),
       qtyPerUnit: combo.qty,
       file: { format: entry.fileFormat, dpi: entry.fileDpi },
       design: { productId: '', widthMm: size.width, heightMm: size.height },
       // 게시 모달은 견적이 통과한 조합만 만들므로 테스트 주문 단계 없이 바로 제작으로 보낸다
       confirmed: true,
+      ...(combo.accessories?.length
+        ? {
+            accessories: this.chosenAccessories(kind, combo).map((choice) => ({
+              prodno: choice.prodno,
+              jobpresetno: ACCESSORY_PRESET,
+              prsjob: [
+                {
+                  covercd: 0,
+                  jobno: Number(ACCESSORY_PRESET),
+                  ...(choice.sizeno !== undefined
+                    ? { sizeno: choice.sizeno === 'banner' ? entry.sizeno : choice.sizeno }
+                    : {}),
+                },
+              ],
+              qtyPerUnit: accessoryCount(choice, combo.qty),
+            })),
+          }
+        : {}),
     };
+  }
+
+  // 축마다 하나만 고를 수 있다. 모르는 키나 한 축에 둘을 고르면 게시를 막는다
+  chosenAccessories(kind: PrintKind, combo: PrintCombo): PrintAccessoryChoice[] {
+    const axes = PRINT_KIND_ACCESSORIES[kind] ?? [];
+
+    return axes.flatMap((axis) => {
+      const picked = axis.choices.filter((choice) => combo.accessories?.includes(choice.key));
+      if (picked.length > 1) throw new BadRequestError(`${axis.group} 은 하나만 고를 수 있습니다.`);
+
+      return picked;
+    });
   }
 
   private async quoteOne(
@@ -106,7 +154,26 @@ export class PrintCatalogReader {
     prodInfo: WowpressProdInfo,
   ): Promise<JobcostVerdict> {
     try {
-      return await this.client.jobcost(this.toSpec(kind, size, combo, prodInfo), 1);
+      const spec = this.toSpec(kind, size, combo, prodInfo);
+      const known = this.chosenAccessories(kind, combo).length;
+      if (known !== (combo.accessories?.length ?? 0)) {
+        return { ok: false, reason: `알 수 없는 부자재가 있습니다: ${combo.accessories?.join(', ')}` };
+      }
+
+      // 원가 비교는 배너와 부자재 견적을 합한 값으로 한다
+      const main = await this.client.jobcost(spec, 1);
+      if (!main.ok) return main;
+
+      let { supply, bill } = main;
+      for (const accessory of spec.accessories ?? []) {
+        const part = await this.client.jobcost({ ...accessory, awkjob: [] }, 1);
+        if (!part.ok) return part;
+        supply += part.supply;
+        bill += part.bill;
+      }
+
+      // 무게는 상품정보 표에 배너(주제품) 기준으로만 쓴다
+      return { ok: true, supply, bill, ...(main.weightKg !== undefined ? { weightKg: main.weightKg } : {}) };
     } catch (e) {
       return { ok: false, reason: e instanceof Error ? e.message : String(e) };
     }

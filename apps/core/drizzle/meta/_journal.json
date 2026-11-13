@@ -1107,6 +1107,13 @@
       "when": 1794474012548,
       "tag": "20261112090012_add-print-order-vendor-in-production",
       "breakpoints": true
+    },
+    {
+      "idx": 158,
+      "version": "7",
+      "when": 1794546762443,
+      "tag": "20261113051242_add-print-spec-accessories",
+      "breakpoints": true
     }
   ]
 }
