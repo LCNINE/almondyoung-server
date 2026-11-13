@@ -9,6 +9,8 @@ import type {
   PrintQuotesBodyDto,
   PublishPrintProductDto,
   PublishPrintProductResultDto,
+  RepublishPrintProductDto,
+  RepublishPrintProductResultDto,
 } from '../../../types/dto/print-catalog';
 
 const BASE = `${ALMONDYOUNG_API_BASE_URL}/admin/print-catalog`;
@@ -26,6 +28,11 @@ export const printCatalogClient = {
 
   publish: async (body: PublishPrintProductDto): Promise<PublishPrintProductResultDto> => {
     const response = await client.post(`${BASE}/publish`, body, { timeout: 120000 });
+    return response.data;
+  },
+
+  republish: async (body: RepublishPrintProductDto): Promise<RepublishPrintProductResultDto> => {
+    const response = await client.post(`${BASE}/republish`, body, { timeout: 120000 });
     return response.data;
   },
 };

@@ -8,6 +8,23 @@ export interface PrintSizeDto {
   height: number;
 }
 
+/** 주제품에 붙여 파는 와우프레스 부자재 선택지. qty 가 'perBanner' 면 배너 수량만큼 */
+export interface PrintAccessoryChoiceDto {
+  key: string;
+  label: string;
+  prodno: number;
+  sizeno?: number | 'banner';
+  qty: number | 'perBanner';
+  /** 한 개 판매가(원, 부가세 포함) */
+  unitPrice: number;
+}
+
+export interface PrintAccessoryAxisDto {
+  key: string;
+  group: string;
+  choices: PrintAccessoryChoiceDto[];
+}
+
 /** core `GET /admin/print-catalog/:kind/options` */
 export interface PrintOptionsDto {
   prodno: number;
@@ -19,6 +36,7 @@ export interface PrintOptionsDto {
   requiredAwk: { group: string; options: { jobno: number; label: string }[]; defaultJobno: number }[];
   forbiddenAwk: { jobno: number; reason: string }[];
   bleedMatches: boolean;
+  accessoryAxes: PrintAccessoryAxisDto[];
 }
 
 export interface PrintComboDto {
@@ -27,6 +45,8 @@ export interface PrintComboDto {
   colorno: number;
   qty: number;
   awk: number[];
+  /** 부자재 축마다 고른 선택지 키 */
+  accessories?: string[];
 }
 
 /** core `POST /admin/print-catalog/:kind/quotes` 요청 */
@@ -45,6 +65,8 @@ export interface PrintOptionLabelsDto {
   paper: string;
   side: string;
   qty: string;
+  /** 부자재 옵션 축 표시(예: 거치대 · 1개) */
+  extras?: { group: string; value: string }[];
 }
 
 export interface PublishPrintComboDto extends PrintComboDto {
@@ -69,4 +91,14 @@ export interface PublishPrintProductDto extends PrintSizeDto {
 export interface PublishPrintProductResultDto {
   masterId: string;
   created: boolean;
+}
+
+/** core `POST /admin/print-catalog/republish` 요청. 이미 게시한 상품에 새 버전을 만든다 */
+export interface RepublishPrintProductDto extends PublishPrintProductDto {
+  masterId: string;
+}
+
+export interface RepublishPrintProductResultDto {
+  masterId: string;
+  versionId: string;
 }

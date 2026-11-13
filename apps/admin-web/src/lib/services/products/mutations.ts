@@ -51,7 +51,12 @@ import type {
   UpdateMasterVersionDto,
   UpdateProductVariantDto,
 } from './products-detail.types';
-import type { PrintKind, PrintQuotesBodyDto, PublishPrintProductDto } from '@/lib/types/dto/print-catalog';
+import type {
+  PrintKind,
+  PrintQuotesBodyDto,
+  PublishPrintProductDto,
+  RepublishPrintProductDto,
+} from '@/lib/types/dto/print-catalog';
 import type { PermissionRequirement } from '@/lib/auth/mutation-permission';
 import type { UpsertQuantityDiscountDto } from '@/lib/pricing/quantity-discount';
 
@@ -1094,6 +1099,17 @@ export const usePublishPrintProduct = () => {
   });
 };
 usePublishPrintProduct.permission = {
+  allOf: [['catalog.product.write'], ['catalog.price.write'], ['marketing.almond_template.write']],
+} as const satisfies PermissionRequirement;
+
+export const useRepublishPrintProduct = () => {
+  const invalidate = useInvalidateAlmondTemplates();
+  return useMutation({
+    mutationFn: (body: RepublishPrintProductDto) => products.printCatalog.republish(body),
+    onSuccess: () => invalidate(),
+  });
+};
+useRepublishPrintProduct.permission = {
   allOf: [['catalog.product.write'], ['catalog.price.write'], ['marketing.almond_template.write']],
 } as const satisfies PermissionRequirement;
 

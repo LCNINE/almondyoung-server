@@ -19,6 +19,11 @@ import {
   saveDraft,
   type PublishDraft,
   type PublishRow,
+  NO_ACCESSORY,
+  accessoryLabels,
+  accessoryPrice,
+  baseKey,
+  withAccessories,
 } from './publish-model';
 
 const row = (over: Partial<PublishRow>): PublishRow => ({
@@ -261,5 +266,57 @@ describe('sidesFor', () => {
   it('뒷면이 있는 템플릿에는 단면을 빼고, 앞면만 있으면 그대로 둔다', () => {
     expect(sidesFor(colors, true).map((c) => c.colorno)).toEqual([256]);
     expect(sidesFor(colors, false).map((c) => c.colorno)).toEqual([255, 256]);
+  });
+});
+
+describe('부자재 조합', () => {
+  const stand = {
+    key: 'stand',
+    group: '거치대',
+    choices: [
+      { key: 'stand-1', label: '1개', prodno: 40119, sizeno: 'banner' as const, qty: 1, unitPrice: 2200 },
+      { key: 'stand-2', label: '2개', prodno: 40119, sizeno: 'banner' as const, qty: 2, unitPrice: 2200 },
+    ],
+  };
+  const petStand = {
+    key: 'stand',
+    group: '거치대',
+    choices: [{ key: 'indoor', label: '실내용 일반형', prodno: 40586, sizeno: 7137, qty: 'perBanner' as const, unitPrice: 13000 }],
+  };
+  const base = { key: '21029-302-1', paperno: 21029, colorno: 302, qty: 1, awk: [11804] };
+
+  it('기본 조합은 키를 그대로 두고 부자재 선택지마다 조합을 늘린다', () => {
+    const list = withAccessories([base], [stand]);
+
+    expect(list.map((c) => c.key)).toEqual(['21029-302-1', '21029-302-1+stand-1', '21029-302-1+stand-2']);
+    expect(list[0]).not.toHaveProperty('accessories');
+    expect(list[2].accessories).toEqual(['stand-2']);
+    expect(baseKey(list[2].key)).toBe('21029-302-1');
+  });
+
+  it('축이 둘이면 서로 곱한다', () => {
+    const qbang = { key: 'qbang', group: '큐방', choices: [{ key: 'qbang-4', label: '4개', prodno: 40080, qty: 4, unitPrice: 500 }] };
+
+    expect(withAccessories([base], [petStand, qbang]).map((c) => c.accessories ?? [])).toEqual([
+      [],
+      ['qbang-4'],
+      ['indoor'],
+      ['indoor', 'qbang-4'],
+    ]);
+  });
+
+  it('부자재 판매가는 개당 가격에 개수를 곱하고, 배너 수량만큼이면 배너 수량을 곱한다', () => {
+    expect(accessoryPrice({ ...base, accessories: ['stand-2'] }, [stand])).toBe(4400);
+    expect(accessoryPrice({ ...base, qty: 3, accessories: ['indoor'] }, [petStand])).toBe(39000);
+    expect(accessoryPrice(base, [stand])).toBe(0);
+  });
+
+  it('부자재 표시는 축마다 고른 이름이거나 없음이고, 격자에 그 축도 곱한다', () => {
+    const [none, one] = withAccessories([base], [stand]);
+    const labels = (c: typeof none) => ({ paper: 'PET', side: '단면', qty: '1개', extras: accessoryLabels(c, [stand]) });
+
+    expect(labels(none).extras).toEqual([{ group: '거치대', value: NO_ACCESSORY }]);
+    expect(labels(one).extras).toEqual([{ group: '거치대', value: '1개' }]);
+    expect(gridSize([labels(none), labels(one)])).toBe(2);
   });
 });
