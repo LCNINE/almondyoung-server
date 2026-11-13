@@ -21,7 +21,10 @@
  * 당일 처리 항목이 남아 있으면 ✗ 가 되고, 셀메이트 재고 sync 가 T 뒤에 돌았는지도 본다.
  *   … index.ts --after-cutover=2026-11-20T09:00:00+09:00
  *
- * 종료 코드: ✗ 가 하나라도 있으면 1, DB 에 못 닿으면 2.
+ * ◇ 「2단계」는 마켓(네이버·쿠팡) 통합(#1306)의 선행조건이다. 이 판정은 1단계(자사몰·core 재고 정본, #1233) 기준이라
+ * 2단계 항목은 보여 주기만 하고 실패로 세지 않는다.
+ *
+ * 종료 코드: ✗ 가 하나라도 있으면 1, DB 에 못 닿으면 2. ◆·◇ 만 남으면 0.
  */
 import { connect, linkedResource, readOnly, type Sql } from './db';
 import { checkInbound } from './checks/inbound';
