@@ -11,6 +11,7 @@ import { DataTable } from '../../core/design/DataTable';
 import { loadFailed } from '../../core/data/loadFailed';
 import { LoadFailure } from '../../core/design/LoadFailure';
 import { useScanner } from '../../core/hardware/scan/useScanner';
+import { remembered, useRememberedState } from '../../core/design/rememberedState';
 import { useSkuSearch } from './useSkuSearch';
 import { useSkuByBarcode } from './useSkuByBarcode';
 import { StockCell } from './StockCell';
@@ -23,11 +24,18 @@ function toServerSortBy(id: string | undefined): 'name' | 'code' | undefined {
   return id === 'name' || id === 'code' ? id : undefined;
 }
 
+const lookupMemory = {
+  term: remembered(''),
+  query: remembered(''),
+  sorting: remembered<SortingState>([]),
+  pagination: remembered<PaginationState>({ pageIndex: 0, pageSize: PAGE_SIZE }),
+};
+
 export function InventoryLookupScreen() {
-  const [term, setTerm] = useState('');
-  const [query, setQuery] = useState('');
-  const [sorting, setSorting] = useState<SortingState>([]);
-  const [pagination, setPagination] = useState<PaginationState>({
+  const [term, setTerm] = useRememberedState(lookupMemory.term, '');
+  const [query, setQuery] = useRememberedState(lookupMemory.query, '');
+  const [sorting, setSorting] = useRememberedState<SortingState>(lookupMemory.sorting, []);
+  const [pagination, setPagination] = useRememberedState<PaginationState>(lookupMemory.pagination, {
     pageIndex: 0,
     pageSize: PAGE_SIZE,
   });

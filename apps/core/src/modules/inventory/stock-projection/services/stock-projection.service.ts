@@ -62,7 +62,7 @@ export class StockProjectionService {
     return this.expectedArrivals.listByWarehouse(warehouseId, tx);
   }
 
-  cancelEvent(eventId: string, reason: string) {
+  cancelEvent(eventId: string, reason?: string) {
     return this.manager.cancelEvent(eventId, reason);
   }
 

@@ -11,9 +11,11 @@ import {
 } from '../../core/operations/WorkBoundary';
 import { useWorkPermissions } from '../../core/operations/useWorkCapabilities';
 import { WarehousePicker } from '../warehouse/WarehousePicker';
-import { SkuPicker, type SelectedSku } from './SkuPicker';
+import { SkuPicker, skuPickerMemory, type SelectedSku } from './SkuPicker';
 import type { SkuSearchItem } from './types';
 import { useSkuByBarcode } from './useSkuByBarcode';
+
+const pickerMemory = skuPickerMemory();
 
 export function ManufactureSelectScreen() {
   const navigate = useNavigate();
@@ -152,7 +154,7 @@ export function ManufactureSelectScreen() {
               />
             )}
 
-            <SkuPicker disabled={blocked} onSelect={selectSku} />
+            <SkuPicker disabled={blocked} onSelect={selectSku} memory={pickerMemory} />
           </>
         )}
       </div>
