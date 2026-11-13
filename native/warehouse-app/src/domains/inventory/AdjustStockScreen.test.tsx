@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import type { ReactNode } from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import {
@@ -859,6 +859,77 @@ describe('AdjustStockScreen 제조 모드', () => {
     expect(
       screen.getByRole('button', { name: '제조 완료 등록' })
     ).toBeDisabled();
+  });
+
+  it('변경 뒤 취소하면 자동으로 골랐던 위치로 돌아간다', async () => {
+    renderScreen(makeClient([]), undefined, 'manufacture');
+
+    await userEvent.click(await screen.findByRole('button', { name: '변경' }));
+    await userEvent.click(screen.getByRole('button', { name: '취소' }));
+
+    expect(screen.queryByLabelText('로케이션 검색')).not.toBeInTheDocument();
+    expect(screen.getByText('A-01-02')).toBeInTheDocument();
+    expect(
+      screen.getByText('재고가 있는 위치가 한 곳이라 먼저 골라 뒀어요.')
+    ).toBeInTheDocument();
+  });
+
+  it('처음부터 위치를 고르는 중이면 취소 버튼이 없다', async () => {
+    const { '/inventory/stocks/sku/sku-1/warehouse/w-1': _stock, ...withoutStock } = TABLE;
+
+    renderScreen(
+      makeClient([], {
+        ...withoutStock,
+        '/inventory/stocks/sku/sku-1/warehouse/w-1': { summary: null, details: [] },
+      }),
+      undefined,
+      'manufacture'
+    );
+
+    expect(await screen.findByLabelText('로케이션 검색')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: '취소' })).not.toBeInTheDocument();
+  });
+
+  it('로케이션 표시명이 있으면 코드 대신 표시명을 보여 준다', async () => {
+    renderScreen(
+      makeClient([], {
+        ...TABLE,
+        '/inventory/stocks/sku/sku-1/warehouse/w-1': {
+          summary: null,
+          details: [
+            {
+              locationId: 'l-1',
+              locationCode: 'RECEIVING_DEFAULT',
+              locationName: '입고기본존',
+              stockState: 'ON_HAND',
+              quantity: 12,
+            },
+          ],
+        },
+      }),
+      undefined,
+      'manufacture'
+    );
+
+    expect(await screen.findByText('입고기본존')).toBeInTheDocument();
+    expect(screen.queryByText('RECEIVING_DEFAULT')).not.toBeInTheDocument();
+  });
+
+  it('키보드 숫자와 Backspace 로 수량을 입력한다', async () => {
+    renderScreen(makeClient([]), undefined, 'manufacture');
+
+    await screen.findByText('재고가 있는 위치가 한 곳이라 먼저 골라 뒀어요.');
+
+    for (const key of ['1', '2', 'Backspace', '3']) {
+      act(() => {
+        window.dispatchEvent(new KeyboardEvent('keydown', { key }));
+      });
+      await act(async () => {
+        await new Promise((resolve) => setTimeout(resolve, 80));
+      });
+    }
+
+    expect(screen.getByText('+13')).toBeInTheDocument();
   });
 
   it('초기 위치가 주어지면 자동 선택으로 덮어쓰지 않는다', async () => {
