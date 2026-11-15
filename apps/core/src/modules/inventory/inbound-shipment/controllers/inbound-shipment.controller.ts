@@ -12,6 +12,9 @@ import {
   InboundShipmentSummaryDto,
 } from '../dto/inbound-shipment-view.dto';
 
+const isStatus = (v: string): v is InboundShipmentStatusValue =>
+  (INBOUND_SHIPMENT_STATUSES as readonly string[]).includes(v);
+
 @ApiTags('Inbound Shipments')
 @Controller('inventory/inbound-shipments')
 export class InboundShipmentController {
@@ -44,13 +47,13 @@ export class InboundShipmentController {
   @ApiQuery({ name: 'status', required: false, description: '쉼표로 여러 개' })
   @ApiResponse({ status: 200, type: [InboundShipmentSummaryDto] })
   list(
-    @Query('warehouseId') warehouseId?: string,
+    @Query('warehouseId', new ParseUUIDPipe({ optional: true })) warehouseId?: string,
     @Query('status') status?: string,
   ): Promise<InboundShipmentSummaryDto[]> {
-    const statuses = status ? status.split(',').filter(Boolean) : undefined;
-    const valid = new Set<string>(INBOUND_SHIPMENT_STATUSES);
-    if (statuses?.some((s) => !valid.has(s))) throw new BadRequestError('status 값이 올바르지 않습니다.');
-    return this.service.list({ warehouseId, status: statuses as InboundShipmentStatusValue[] | undefined });
+    const requested = status ? status.split(',').filter(Boolean) : [];
+    const statuses = requested.filter(isStatus);
+    if (statuses.length !== requested.length) throw new BadRequestError('status 값이 올바르지 않습니다.');
+    return this.service.list({ warehouseId, status: statuses.length > 0 ? statuses : undefined });
   }
 
   @RequirePermission('inventory.stock.read')

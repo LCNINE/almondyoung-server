@@ -175,6 +175,12 @@ export function parseShipmentList(input: ListInput): ParsedList {
     );
   }
 
+  const seenRows = new Set<number>();
+  for (const r of rows) {
+    if (seenRows.has(r.rowNumber)) throw new BadRequestError(`입고리스트 줄 번호가 겹칩니다: ${r.rowNumber}`);
+    seenRows.add(r.rowNumber);
+  }
+
   const boxes: ParsedBox[] = [];
   const boxByLabel = new Map<string, ParsedBox>();
   const lines: ParsedLine[] = [];

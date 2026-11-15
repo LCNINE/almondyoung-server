@@ -8,6 +8,7 @@ import { Database, inRollbackTx } from '../../inbound/services/__fixtures__/inbo
 import { InboundShipmentSkuMatcherReader } from './inbound-shipment-sku-matcher.reader';
 import { InboundShipmentDraftManager, CreateDraftInput } from './inbound-shipment-draft.manager';
 import { InboundShipmentReader } from './inbound-shipment.reader';
+import { NotFoundError } from '@app/shared';
 import { ListCell, ListInput } from './inbound-shipment-list.parser';
 
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -35,9 +36,10 @@ describeIfDb('InboundShipmentDraftManager (DB integration)', () => {
       db: trx,
       run: <T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx): Promise<T> => fn(tx ?? trx),
     } as unknown as DbService<typeof wmsSchema>;
+    const matcher = new InboundShipmentSkuMatcherReader(dbService);
     return {
-      manager: new InboundShipmentDraftManager(dbService, new InboundShipmentSkuMatcherReader(dbService)),
-      reader: new InboundShipmentReader(dbService),
+      manager: new InboundShipmentDraftManager(dbService, matcher),
+      reader: new InboundShipmentReader(dbService, matcher),
     };
   }
 
@@ -161,6 +163,82 @@ describeIfDb('InboundShipmentDraftManager (DB integration)', () => {
       );
       const [line] = await trx.select().from(wmsTables.inboundShipmentLines).where(eq(wmsTables.inboundShipmentLines.shipmentId, shipmentId));
       expect((line.raw as { option: { text: string } }).option.text).toBe('opt');
+    });
+  });
+
+  it('packing_unit barcode stays unresolved but detail shows the candidate', async () => {
+    await inRollbackTx(db, async (trx) => {
+      const f = await seed(trx);
+      await trx.update(wmsTables.skuBarcodes).set({ packingUnit: 12 }).where(eq(wmsTables.skuBarcodes.skuId, f.skuIds[0]));
+      const { manager, reader } = build(trx);
+      const { shipmentId } = await manager.createDraft(
+        input(f.warehouseId, { header: HEADER, rows: [row(1, 'L1', 10, f.barcodes[0])] }),
+        ACTOR,
+        trx,
+      );
+      const detail = await reader.detail(shipmentId, trx);
+      expect(detail.lines[0].kind).toBe('unresolved');
+      expect(detail.lines[0].issues).toContain('packing_unit_barcode');
+      expect(detail.lines[0].barcodeCandidates.map((c) => c.skuId)).toEqual([f.skuIds[0]]);
+      expect(detail.lines[0].barcodeCandidates[0].name).toBe('ds-sku-0');
+    });
+  });
+
+  it('ambiguous barcode lists both SKUs', async () => {
+    await inRollbackTx(db, async (trx) => {
+      const f = await seed(trx);
+      const [other] = await trx.select().from(wmsTables.skus).where(eq(wmsTables.skus.id, f.skuIds[1]));
+      await trx.update(wmsTables.skus).set({ code: f.barcodes[0] }).where(eq(wmsTables.skus.id, other.id));
+      const { manager, reader } = build(trx);
+      const { shipmentId } = await manager.createDraft(
+        input(f.warehouseId, { header: HEADER, rows: [row(1, 'L1', 10, f.barcodes[0])] }),
+        ACTOR,
+        trx,
+      );
+      const detail = await reader.detail(shipmentId, trx);
+      expect(detail.lines[0].issues).toContain('barcode_ambiguous');
+      expect(detail.lines[0].barcodeCandidates.map((c) => c.skuId).sort()).toEqual([f.skuIds[0], f.skuIds[1]].sort());
+    });
+  });
+
+  it('matched barcode with invalid qty is unresolved but keeps the candidate', async () => {
+    await inRollbackTx(db, async (trx) => {
+      const f = await seed(trx);
+      const { manager, reader } = build(trx);
+      const bad = row(1, 'L1', 10, f.barcodes[0]);
+      bad.cells[3] = cell('abc', 'abc');
+      const { shipmentId } = await manager.createDraft(input(f.warehouseId, { header: HEADER, rows: [bad] }), ACTOR, trx);
+      const detail = await reader.detail(shipmentId, trx);
+      expect(detail.lines[0].kind).toBe('unresolved');
+      expect(detail.lines[0].issues).toContain('qty_invalid');
+      expect(detail.lines[0].barcodeCandidates.map((c) => c.skuId)).toEqual([f.skuIds[0]]);
+    });
+  });
+
+  it('sku lines have no barcode candidates', async () => {
+    await inRollbackTx(db, async (trx) => {
+      const f = await seed(trx);
+      const { manager, reader } = build(trx);
+      const { shipmentId } = await manager.createDraft(
+        input(f.warehouseId, { header: HEADER, rows: [row(1, 'L1', 10, f.barcodes[0])] }),
+        ACTOR,
+        trx,
+      );
+      expect((await reader.detail(shipmentId, trx)).lines[0].barcodeCandidates).toEqual([]);
+    });
+  });
+
+  it('unknown warehouse is NotFound', async () => {
+    await inRollbackTx(db, async (trx) => {
+      const f = await seed(trx);
+      const { manager } = build(trx);
+      await expect(
+        manager.createDraft(
+          input(randomUUID(), { header: HEADER, rows: [row(1, 'L1', 10, f.barcodes[0])] }),
+          ACTOR,
+          trx,
+        ),
+      ).rejects.toThrow(NotFoundError);
     });
   });
 });

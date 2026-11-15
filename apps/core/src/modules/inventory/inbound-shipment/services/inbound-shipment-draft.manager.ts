@@ -1,9 +1,12 @@
 import { Injectable } from '@nestjs/common';
+import { randomUUID } from 'crypto';
+import { eq } from 'drizzle-orm';
+import { NotFoundError } from '@app/shared';
 import { InjectTypedDb } from '@app/db/decorators';
 import { DbService } from '@app/db';
 import { DbTx, wmsSchema, wmsTables } from '../../schema/inventory.schema';
 import { InboundShipmentSkuMatcherReader, SkuMatch } from './inbound-shipment-sku-matcher.reader';
-import { ListInput, ParsedLine, parseShipmentList } from './inbound-shipment-list.parser';
+import { LineIssue, ListInput, ParsedLine, parseShipmentList } from './inbound-shipment-list.parser';
 
 export interface CreateDraftInput {
   warehouseId: string;
@@ -24,7 +27,7 @@ function chunks<T>(items: T[], size: number): T[][] {
   return out;
 }
 
-const MATCH_ISSUE: Record<'none' | 'many' | 'packing_unit', string> = {
+const MATCH_ISSUE: Record<'none' | 'many' | 'packing_unit', LineIssue> = {
   none: 'barcode_not_found',
   many: 'barcode_ambiguous',
   packing_unit: 'packing_unit_barcode',
@@ -42,6 +45,13 @@ export class InboundShipmentDraftManager {
   async createDraft(input: CreateDraftInput, actorId: string, tx?: DbTx): Promise<{ shipmentId: string }> {
     const parsed = parseShipmentList(input.list);
     return this.dbService.run(async (trx: DbTx) => {
+      const [warehouse] = await trx
+        .select({ id: wmsTables.warehouses.id })
+        .from(wmsTables.warehouses)
+        .where(eq(wmsTables.warehouses.id, input.warehouseId))
+        .limit(1);
+      if (!warehouse) throw new NotFoundError(`Warehouse not found: ${input.warehouseId}`);
+
       const barcodes = parsed.lines.flatMap((l) => (l.barcode ? [l.barcode] : []));
       const matches = await this.matcher.match(barcodes, trx);
 
@@ -76,19 +86,13 @@ export class InboundShipmentDraftManager {
         for (const r of rows) boxIdByLabel.set(r.label, r.id);
       }
 
-      const drafts = parsed.lines.map((line) => this.lineValues(shipment.id, line, matches));
-      const lineIdByRow = new Map<number, string>();
+      // 줄 id 는 미리 만든다 — 덮기를 RETURNING 행 매핑이 아니라 이 id 로 짓는다
+      const drafts = parsed.lines.map((line) => ({ id: randomUUID(), line, ...this.lineValues(shipment.id, line, matches) }));
       for (const part of chunks(drafts, LINE_CHUNK)) {
-        const rows = await trx
-          .insert(wmsTables.inboundShipmentLines)
-          .values(part)
-          .returning({ id: wmsTables.inboundShipmentLines.id, rowNumber: wmsTables.inboundShipmentLines.rowNumber });
-        for (const r of rows) lineIdByRow.set(r.rowNumber, r.id);
+        await trx.insert(wmsTables.inboundShipmentLines).values(part.map(({ line: _line, ...values }) => values));
       }
 
-      const cover = parsed.lines.flatMap((line) => {
-        const lineId = lineIdByRow.get(line.rowNumber);
-        if (!lineId) return [];
+      const cover = drafts.flatMap(({ id: lineId, line }) => {
         return [...new Set(line.boxLabels)].flatMap((label) => {
           const boxId = boxIdByLabel.get(label);
           return boxId ? [{ lineId, boxId }] : [];
@@ -103,7 +107,7 @@ export class InboundShipmentDraftManager {
 
   private lineValues(shipmentId: string, line: ParsedLine, matches: Map<string, SkuMatch>) {
     const match = line.barcode ? matches.get(line.barcode) : undefined;
-    const issues: string[] = [...line.issues];
+    const issues: LineIssue[] = [...line.issues];
     if (match && match.kind !== 'one') issues.push(MATCH_ISSUE[match.kind]);
 
     const resolved = match?.kind === 'one' && line.expectedQty !== null && line.boxLabels.length > 0;

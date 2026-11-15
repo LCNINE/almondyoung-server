@@ -169,4 +169,10 @@ describe('parseShipmentList', () => {
     ];
     expect(parseShipmentList(input(ok)).lines).toHaveLength(2000);
   });
+
+  it('rejects duplicate rowNumber', () => {
+    expect(() => parseShipmentList(input([row(5, { box: c('L1') }), row(5, { box: c('L2') })]))).toThrow(
+      BadRequestError,
+    );
+  });
 });

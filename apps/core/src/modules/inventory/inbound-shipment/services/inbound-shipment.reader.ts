@@ -1,8 +1,10 @@
 import { Injectable } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
 import { DbService } from '@app/db';
-import { and, asc, desc, eq, inArray, isNull, sql, SQL } from 'drizzle-orm';
+import { and, asc, countDistinct, desc, eq, inArray, isNull, SQL } from 'drizzle-orm';
 import { NotFoundError } from '@app/shared';
+import { normalizeBarcode, ListCell } from './inbound-shipment-list.parser';
+import { InboundShipmentSkuMatcherReader } from './inbound-shipment-sku-matcher.reader';
 import { DbTx, InboundShipment, wmsSchema, wmsTables } from '../../schema/inventory.schema';
 import {
   InboundShipmentDetailView,
@@ -16,6 +18,7 @@ export class InboundShipmentReader {
   constructor(
     @InjectTypedDb<typeof wmsSchema>()
     private readonly dbService: DbService<typeof wmsSchema>,
+    private readonly matcher: InboundShipmentSkuMatcherReader,
   ) {}
 
   async list(
@@ -27,7 +30,9 @@ export class InboundShipmentReader {
       const conds: SQL[] = [];
       if (q.warehouseId) conds.push(eq(s.warehouseId, q.warehouseId));
       if (q.status && q.status.length > 0) conds.push(inArray(s.status, q.status));
-      const rows = await trx
+      const boxes = wmsTables.inboundShipmentBoxes;
+      const lines = wmsTables.inboundShipmentLines;
+      return trx
         .select({
           id: s.id,
           warehouseId: s.warehouseId,
@@ -35,13 +40,16 @@ export class InboundShipmentReader {
           name: s.name,
           expectedArrival: s.expectedArrival,
           createdAt: s.createdAt,
-          boxCount: sql<number>`(SELECT count(*)::int FROM inbound_shipment_boxes b WHERE b.shipment_id = ${s.id})`,
-          lineCount: sql<number>`(SELECT count(*)::int FROM inbound_shipment_lines l WHERE l.shipment_id = ${s.id})`,
+          boxCount: countDistinct(boxes.id),
+          lineCount: countDistinct(lines.id),
         })
         .from(s)
+        .leftJoin(boxes, eq(boxes.shipmentId, s.id))
+        .leftJoin(lines, eq(lines.shipmentId, s.id))
         .where(conds.length > 0 ? and(...conds) : undefined)
+        .groupBy(s.id)
         .orderBy(desc(s.createdAt));
-      return rows;
+
     }, tx);
   }
 
@@ -87,6 +95,8 @@ export class InboundShipmentReader {
         if (c.lineId) byLine.set(c.lineId, (byLine.get(c.lineId) ?? 0) + c.qty);
       }
 
+      const candidates = await this.candidatesFor(trx, lines);
+
       return {
         id: shipment.id,
         warehouseId: shipment.warehouseId,
@@ -120,9 +130,49 @@ export class InboundShipmentReader {
           aiCandidates: l.aiCandidates,
           raw: l.raw,
           countedQty: byLine.get(l.id) ?? 0,
+          barcodeCandidates: candidates.get(l.id) ?? [],
           difference: null,
         })),
       };
     }, tx);
+  }
+
+  /** unresolved 줄의 원문 바코드를 다시 읽어 매처를 한 번만 불러 후보 SKU 를 붙인다 (spec §6.3). */
+  private async candidatesFor(
+    trx: DbTx,
+    lines: { id: string; kind: string; raw: Record<string, unknown> }[],
+  ): Promise<Map<string, { skuId: string; code: string; name: string }[]>> {
+    const out = new Map<string, { skuId: string; code: string; name: string }[]>();
+    const barcodeOf = new Map<string, string>();
+    for (const l of lines) {
+      if (l.kind !== 'unresolved') continue;
+      const { barcode } = normalizeBarcode(l.raw.barcode as ListCell | null, l.raw.remark as ListCell | null);
+      if (barcode) barcodeOf.set(l.id, barcode);
+    }
+    if (barcodeOf.size === 0) return out;
+
+    const matches = await this.matcher.match([...barcodeOf.values()], trx);
+    const idsOf = (barcode: string): string[] => {
+      const m = matches.get(barcode);
+      if (!m || m.kind === 'none') return [];
+      return m.kind === 'many' ? m.skuIds : [m.skuId];
+    };
+    const allIds = [...new Set([...barcodeOf.values()].flatMap(idsOf))];
+    if (allIds.length === 0) return out;
+    const skuRows = await trx
+      .select({ id: wmsTables.skus.id, code: wmsTables.skus.code, name: wmsTables.skus.name })
+      .from(wmsTables.skus)
+      .where(inArray(wmsTables.skus.id, allIds));
+    const skuById = new Map(skuRows.map((r) => [r.id, r]));
+    for (const [lineId, barcode] of barcodeOf) {
+      out.set(
+        lineId,
+        idsOf(barcode).flatMap((id) => {
+          const r = skuById.get(id);
+          return r ? [{ skuId: r.id, code: r.code, name: r.name }] : [];
+        }),
+      );
+    }
+    return out;
   }
 }

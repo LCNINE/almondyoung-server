@@ -30,6 +30,12 @@ export class InboundShipmentAiCandidateDto {
   @ApiProperty() reason: string;
 }
 
+export class InboundShipmentBarcodeCandidateDto {
+  @ApiProperty() skuId: string;
+  @ApiProperty() code: string;
+  @ApiProperty() name: string;
+}
+
 export class InboundShipmentLineViewDto {
   @ApiProperty() id: string;
   @ApiProperty() rowNumber: number;
@@ -41,6 +47,8 @@ export class InboundShipmentLineViewDto {
   @ApiProperty({ type: [String] }) coversBoxLabels: string[];
   @ApiPropertyOptional({ type: [InboundShipmentAiCandidateDto], nullable: true })
   aiCandidates: InboundShipmentAiCandidateDto[] | null;
+  @ApiProperty({ type: [InboundShipmentBarcodeCandidateDto], description: '미확정 줄의 바코드가 가리키는 SKU 후보' })
+  barcodeCandidates: InboundShipmentBarcodeCandidateDto[];
   @ApiProperty({ description: '업로드 원문 셀(키별 {text,value,formula?})' }) raw: Record<string, unknown>;
   @ApiProperty({ description: '취소되지 않은 센 수량 합' }) countedQty: number;
   @ApiPropertyOptional({ nullable: true, description: '차이 계산은 이후 단계가 채운다' }) difference: number | null;
