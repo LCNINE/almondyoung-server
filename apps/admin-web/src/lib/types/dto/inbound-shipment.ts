@@ -1,4 +1,5 @@
 // 선적 입고 — core inbound-shipment-view.dto.ts 응답 모양. 날짜는 JSON 으로 오므로 string.
+import type { ShipmentListRow } from '@/features/inventory/inbound-shipments/lib/read-workbook';
 
 export type InboundShipmentStatus = 'draft' | 'expected' | 'receiving' | 'closed' | 'canceled';
 
@@ -126,4 +127,45 @@ export interface InboundShipmentDetail extends InboundShipmentSummary {
   lines: InboundShipmentLine[];
   summary: InboundShipmentDifferenceSummary;
   unplannedItems: InboundShipmentUnplannedItem[];
+}
+
+// ── 요청 본문 (core dto/upload.dto.ts · draft-edit.dto.ts 와 같은 모양)
+
+export interface UploadInboundShipmentBody {
+  warehouseId: string;
+  name: string;
+  /** YYYY-MM-DD */
+  expectedArrival?: string;
+  sourceFileId?: string;
+  sourceFileName: string;
+  header: string[];
+  rows: ShipmentListRow[];
+}
+
+export interface UpdateInboundShipmentHeaderBody {
+  name?: string;
+  expectedArrival?: string | null;
+  memo?: string | null;
+}
+
+export interface EditInboundShipmentLineBody {
+  kind?: 'sku' | 'free';
+  skuId?: string;
+  expectedQty?: number;
+  boxLabels?: string[];
+}
+
+export interface EditInboundShipmentBoxBody {
+  disposition?: 'stock' | 'forward';
+  forwardNote?: string | null;
+  label?: string;
+}
+
+export interface ConfirmInboundShipmentBody {
+  acknowledgedForwardBoxIds: string[];
+}
+
+export interface InboundShipmentListFilter {
+  status?: InboundShipmentStatus[];
+  warehouseId?: string;
 }

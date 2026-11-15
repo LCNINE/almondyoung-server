@@ -15,6 +15,7 @@ import type {
   InboundStatusQuery,
   MovementHistoryQuery,
 } from '../../types/dto/inventory';
+import type { InboundShipmentListFilter } from '../../types/dto/inbound-shipment';
 
 export const inventoryQueryKeys = {
   // 재고 관련
@@ -170,4 +171,10 @@ export const inventoryQueryKeys = {
     ['inventory', 'movement', 'jobs', jobId] as const,
   movementHistory: (query?: MovementHistoryQuery) =>
     ['inventory', 'movement', 'history', query] as const,
+
+  // 선적 입고
+  inboundShipmentsRoot: ['inbound-shipments'] as const,
+  inboundShipments: (filter?: InboundShipmentListFilter) =>
+    ['inbound-shipments', 'list', filter] as const,
+  inboundShipment: (id: string) => ['inbound-shipments', 'detail', id] as const,
 } as const;
