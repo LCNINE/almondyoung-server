@@ -42,3 +42,23 @@ export function lineEditable(
   }
   return false;
 }
+
+export type InboundShipmentStatus = 'draft' | 'expected' | 'receiving' | 'closed' | 'canceled';
+
+/**
+ * 상자 확정·취소 뒤 선적 상태 (spec §8.4). 초안·취소는 상자로 파생하지 않는다.
+ * 재고 상자가 전부 받혔으면 `closed`, 하나라도 받혔으면 `receiving`, 하나도 없으면 `expected`.
+ * 전달용 상자는 확정되지 않으므로 세지 않는다 — 전달용뿐인 선적은 저절로 닫히지 않는다.
+ */
+export function deriveShipmentStatus(
+  current: InboundShipmentStatus,
+  boxes: { disposition: 'stock' | 'forward'; status: 'open' | 'received' }[],
+  manuallyClosed: boolean,
+): InboundShipmentStatus {
+  if (current === 'draft' || current === 'canceled') return current;
+  if (manuallyClosed) return 'closed';
+  const stock = boxes.filter((b) => b.disposition === 'stock');
+  const received = stock.filter((b) => b.status === 'received').length;
+  if (stock.length > 0 && received === stock.length) return 'closed';
+  return received > 0 ? 'receiving' : 'expected';
+}

@@ -9,6 +9,7 @@ import { InboundShipmentSkuMatcherReader, SkuMatch } from './inbound-shipment-sk
 import { LineIssue, ListInput, ParsedLine, expandBoxLabel, parseShipmentList } from './inbound-shipment-list.parser';
 import { ConfirmBlocker, confirmBlockers, lineEditable } from './inbound-shipment.rules';
 import { MAX_BOX_RANGE } from './inbound-shipment-list.parser';
+import { lockInboundShipment } from './inbound-shipment-locks';
 
 export interface CreateDraftInput {
   warehouseId: string;
@@ -136,7 +137,7 @@ export class InboundShipmentDraftManager {
     tx?: DbTx,
   ): Promise<void> {
     return this.dbService.run(async (trx: DbTx) => {
-      const shipment = await this.lockShipment(trx, shipmentId);
+      const shipment = await lockInboundShipment(trx, shipmentId);
       const [line] = await trx
         .select()
         .from(wmsTables.inboundShipmentLines)
@@ -201,7 +202,7 @@ export class InboundShipmentDraftManager {
 
   async editBox(shipmentId: string, boxId: string, patch: BoxPatch, _actorId: string, tx?: DbTx): Promise<void> {
     return this.dbService.run(async (trx: DbTx) => {
-      const shipment = await this.lockShipment(trx, shipmentId);
+      const shipment = await lockInboundShipment(trx, shipmentId);
       if (shipment.status === 'closed' || shipment.status === 'canceled') {
         throw new ConflictError('닫히거나 취소된 선적의 상자는 고칠 수 없습니다.');
       }
@@ -261,7 +262,7 @@ export class InboundShipmentDraftManager {
     tx?: DbTx,
   ): Promise<void> {
     return this.dbService.run(async (trx: DbTx) => {
-      const shipment = await this.lockShipment(trx, shipmentId);
+      const shipment = await lockInboundShipment(trx, shipmentId);
       if (shipment.status !== 'draft') throw new ConflictError('초안일 때만 후보를 적을 수 있습니다.');
       const [line] = await trx
         .select({ kind: wmsTables.inboundShipmentLines.kind })
@@ -296,7 +297,7 @@ export class InboundShipmentDraftManager {
     tx?: DbTx,
   ): Promise<{ shipmentId: string; status: 'expected'; labelOverlaps: string[] }> {
     return this.dbService.run(async (trx: DbTx) => {
-      const shipment = await this.lockShipment(trx, shipmentId);
+      const shipment = await lockInboundShipment(trx, shipmentId);
       if (shipment.status !== 'draft') throw new ConflictError('초안만 확정할 수 있습니다.');
 
       const boxes = await trx
@@ -363,7 +364,7 @@ export class InboundShipmentDraftManager {
 
   async cancel(shipmentId: string, actorId: string, tx?: DbTx): Promise<{ shipmentId: string; status: 'canceled' }> {
     return this.dbService.run(async (trx: DbTx) => {
-      const shipment = await this.lockShipment(trx, shipmentId);
+      const shipment = await lockInboundShipment(trx, shipmentId);
       if (shipment.status === 'expected') {
         const [received] = await trx
           .select({ n: sql<number>`count(*)::int` })
@@ -388,7 +389,7 @@ export class InboundShipmentDraftManager {
 
   async updateHeader(shipmentId: string, patch: HeaderPatch, tx?: DbTx): Promise<void> {
     return this.dbService.run(async (trx: DbTx) => {
-      const shipment = await this.lockShipment(trx, shipmentId);
+      const shipment = await lockInboundShipment(trx, shipmentId);
       if (shipment.status === 'canceled') throw new ConflictError('취소된 선적은 고칠 수 없습니다.');
       if (patch.name !== undefined && patch.name.trim() === '') throw new BadRequestError('이름을 비울 수 없습니다.');
       const set: Partial<typeof wmsTables.inboundShipments.$inferInsert> = { updatedAt: new Date() };
@@ -438,16 +439,6 @@ export class InboundShipmentDraftManager {
     throw new ConflictError(
       `구분을 바꾸면 확정 규칙이 깨집니다 (상품이 정해지지 않은 줄이 입고 상자에 얹히거나 입고·전달 상자가 섞이는 줄: ${[...new Set(names)].join(', ')}).`,
     );
-  }
-
-  private async lockShipment(trx: DbTx, shipmentId: string) {
-    const [shipment] = await trx
-      .select()
-      .from(wmsTables.inboundShipments)
-      .where(eq(wmsTables.inboundShipments.id, shipmentId))
-      .for('update');
-    if (!shipment) throw new NotFoundError(`Inbound shipment not found: ${shipmentId}`);
-    return shipment;
   }
 
   private expandLabels(raw: string[]): string[] {

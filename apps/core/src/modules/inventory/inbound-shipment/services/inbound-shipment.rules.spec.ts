@@ -1,4 +1,4 @@
-import { confirmBlockers, lineEditable } from './inbound-shipment.rules';
+import { confirmBlockers, deriveShipmentStatus, lineEditable } from './inbound-shipment.rules';
 
 const box = (id: string, disposition: 'stock' | 'forward' = 'stock', origin: 'list' | 'added' = 'list') => ({
   id,
@@ -44,4 +44,23 @@ describe('lineEditable', () => {
   it('expected with only open boxes is editable', () => expect(lineEditable('expected', ['open', 'open'])).toBe(true));
   it('receiving with a received box is not', () => expect(lineEditable('receiving', ['open', 'received'])).toBe(false));
   it('closed is not', () => expect(lineEditable('closed', ['open'])).toBe(false));
+});
+
+describe('deriveShipmentStatus', () => {
+  const b = (disposition: 'stock' | 'forward', status: 'open' | 'received') => ({ disposition, status });
+
+  it('one received stock box of two makes it receiving', () =>
+    expect(deriveShipmentStatus('expected', [b('stock', 'received'), b('stock', 'open')], false)).toBe('receiving'));
+  it('every stock box received closes it even with an open forward box', () =>
+    expect(deriveShipmentStatus('receiving', [b('stock', 'received'), b('forward', 'open')], false)).toBe('closed'));
+  it('no received stock box is expected', () =>
+    expect(deriveShipmentStatus('receiving', [b('stock', 'open'), b('forward', 'open')], false)).toBe('expected'));
+  it('manually closed stays closed with open boxes', () =>
+    expect(deriveShipmentStatus('closed', [b('stock', 'open'), b('stock', 'received')], true)).toBe('closed'));
+  it('only forward boxes never closes by itself', () =>
+    expect(deriveShipmentStatus('expected', [b('forward', 'open')], false)).toBe('expected'));
+  it('draft and canceled are not derived', () => {
+    expect(deriveShipmentStatus('draft', [b('stock', 'received')], false)).toBe('draft');
+    expect(deriveShipmentStatus('canceled', [b('stock', 'received')], true)).toBe('canceled');
+  });
 });

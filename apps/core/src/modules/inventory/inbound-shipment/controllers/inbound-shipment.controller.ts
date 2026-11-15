@@ -14,10 +14,21 @@ import {
 import { ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { RequirePermission, User } from '@app/authorization';
 import { BadRequestError } from '@app/shared';
-import { WarehouseActor, authenticatedWarehouseActor } from '../../core/services/warehouse-operation-contract';
+import {
+  WarehouseActor,
+  authenticatedWarehouseActor,
+  warehouseOperationContext,
+} from '../../core/services/warehouse-operation-contract';
 import { InboundShipmentService } from '../services/inbound-shipment.service';
 import { UploadInboundShipmentDto } from '../dto/upload.dto';
 import { EditBoxDto, EditLineDto, SetAiCandidatesDto, UpdateHeaderDto } from '../dto/draft-edit.dto';
+import {
+  AddInboundShipmentBoxDto,
+  AddInboundShipmentBoxResultDto,
+  BoxViewDto,
+  ReceiveBoxDto,
+  ReceiveBoxResultDto,
+} from '../dto/receive.dto';
 import {
   INBOUND_SHIPMENT_STATUSES,
   InboundShipmentDetailViewDto,
@@ -155,5 +166,44 @@ export class InboundShipmentController {
   @ApiOperation({ summary: '선적 취소 — 초안이거나 받은 상자가 없을 때만' })
   cancel(@Param('id', new ParseUUIDPipe()) id: string, @User() user: WarehouseActor) {
     return this.service.cancel(id, authenticatedWarehouseActor(user));
+  }
+
+  @RequirePermission('inventory.stock.read')
+  @Get(':id/boxes/:boxId')
+  @ApiOperation({ summary: '상자 열기 — 그 상자를 덮는 줄과 다른 상자에서 이미 센 수량' })
+  @ApiResponse({ status: 200, type: BoxViewDto })
+  openBox(
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Param('boxId', new ParseUUIDPipe()) boxId: string,
+  ): Promise<BoxViewDto> {
+    return this.service.openBox(id, boxId);
+  }
+
+  @RequirePermission('inventory.stock.operate')
+  @Post(':id/boxes/:boxId/receive')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: '상자 확정 — 센 만큼 입고(창고 작업 계약 v2)' })
+  @ApiResponse({ status: 200, type: ReceiveBoxResultDto })
+  receiveBox(
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Param('boxId', new ParseUUIDPipe()) boxId: string,
+    @Body() dto: ReceiveBoxDto,
+    @User() user: WarehouseActor,
+  ): Promise<ReceiveBoxResultDto> {
+    const actorId = warehouseOperationContext(dto, user) ?? authenticatedWarehouseActor(user);
+    return this.service.receiveBox(id, boxId, dto, actorId);
+  }
+
+  @RequirePermission('inventory.stock.operate')
+  @Post(':id/boxes')
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({ summary: '리스트에 없던 상자로 받기 — 확정된 선적에만' })
+  @ApiResponse({ status: 201, type: AddInboundShipmentBoxResultDto })
+  addBox(
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Body() dto: AddInboundShipmentBoxDto,
+    @User() user: WarehouseActor,
+  ): Promise<AddInboundShipmentBoxResultDto> {
+    return this.service.addBox(id, dto.label, authenticatedWarehouseActor(user));
   }
 }
