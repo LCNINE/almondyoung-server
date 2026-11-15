@@ -374,7 +374,7 @@ file-service `default-file-contexts` 에 입고리스트 컨텍스트 하나를 
 | `PATCH /inventory/inbound-shipments/:id/lines/:lineId` | `inventory.inbound_shipment.write` | 초안·확정 뒤(§6.4) |
 | `PATCH /inventory/inbound-shipments/:id/boxes/:boxId` (처분·이름) | `inventory.inbound_shipment.write` | 초안·확정 뒤(§6.4) |
 | `PUT /inventory/inbound-shipments/:id/lines/:lineId/ai-candidates` | `inventory.inbound_shipment.write` | 업로드 |
-| `POST /inventory/inbound-shipments/:id/confirm` | `inventory.inbound_shipment.write` | 업로드 |
+| `POST /inventory/inbound-shipments/:id/confirm` | `inventory.inbound_shipment.write` | 업로드 · 본문 `{ acknowledgedForwardBoxIds }` (실행 중 결정) |
 | `POST /inventory/inbound-shipments/:id/cancel` | `inventory.inbound_shipment.write` | 공통 |
 | `POST /inventory/inbound-shipments/:id/close` (사유 — 상자 분실 등) | `inventory.inbound_shipment.write` | 검수 |
 | `POST /inventory/inbound-shipments/:id/reopen` | `inventory.inbound_shipment.write` | 검수 |

@@ -20,6 +20,17 @@ import {
 } from 'class-validator';
 import { MAX_BOX_LABEL_LENGTH, MAX_LINE_QTY } from '../services/inbound-shipment-list.parser';
 
+export class ConfirmInboundShipmentDto {
+  @ApiProperty({
+    type: [String],
+    description: '사람이 «전달용 맞음»을 확인한 상자 id — 지금 전달용 상자 전부와 같아야 확정된다',
+  })
+  @IsArray()
+  @ArrayMaxSize(2000)
+  @IsUUID('all', { each: true })
+  acknowledgedForwardBoxIds: string[];
+}
+
 export class EditLineDto {
   @ApiPropertyOptional({
     enum: ['sku', 'free'],

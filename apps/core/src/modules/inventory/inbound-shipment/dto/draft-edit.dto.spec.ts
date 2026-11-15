@@ -1,7 +1,7 @@
 import 'reflect-metadata';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
-import { CloseInboundShipmentDto, EditBoxDto, EditLineDto, UpdateHeaderDto } from './draft-edit.dto';
+import { CloseInboundShipmentDto, ConfirmInboundShipmentDto, EditBoxDto, EditLineDto, UpdateHeaderDto } from './draft-edit.dto';
 
 const errors = (cls: new () => object, plain: object) => validate(plainToInstance(cls, plain));
 
@@ -44,5 +44,15 @@ describe('CloseInboundShipmentDto', () => {
       'reason',
     ]);
     expect((await errors(CloseInboundShipmentDto, {})).map((e) => e.property)).toEqual(['reason']);
+  });
+  it('ConfirmInboundShipmentDto requires a uuid array of at most 2,000', async () => {
+    const id = '8f0e4c3a-5b1d-4e6f-9a2b-1c3d5e7f9a0b';
+    expect(await errors(ConfirmInboundShipmentDto, { acknowledgedForwardBoxIds: [] })).toHaveLength(0);
+    expect(await errors(ConfirmInboundShipmentDto, { acknowledgedForwardBoxIds: [id] })).toHaveLength(0);
+    expect((await errors(ConfirmInboundShipmentDto, {})).length).toBeGreaterThan(0);
+    expect((await errors(ConfirmInboundShipmentDto, { acknowledgedForwardBoxIds: ['x'] })).length).toBeGreaterThan(0);
+    expect(
+      (await errors(ConfirmInboundShipmentDto, { acknowledgedForwardBoxIds: Array(2001).fill(id) })).length,
+    ).toBeGreaterThan(0);
   });
 });

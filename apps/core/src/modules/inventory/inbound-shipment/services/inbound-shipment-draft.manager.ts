@@ -15,7 +15,7 @@ import {
   expandBoxLabel,
   parseShipmentList,
 } from './inbound-shipment-list.parser';
-import { ConfirmBlocker, confirmBlockers, lineEditable } from './inbound-shipment.rules';
+import { ConfirmBlocker, confirmBlockers, forwardAcknowledgementMatches, lineEditable } from './inbound-shipment.rules';
 import { lockInboundShipment } from './inbound-shipment-locks';
 import { refreshInboundShipmentStatus } from './inbound-shipment-status';
 
@@ -325,6 +325,7 @@ export class InboundShipmentDraftManager {
 
   async confirm(
     shipmentId: string,
+    acknowledgedForwardBoxIds: readonly string[],
     actorId: string,
     tx?: DbTx,
   ): Promise<{ shipmentId: string; status: 'expected'; labelOverlaps: string[] }> {
@@ -363,6 +364,10 @@ export class InboundShipmentDraftManager {
       );
       if (blockers.length > 0) {
         throw new ConflictError(this.blockerMessage(blockers, lines, boxes));
+      }
+      const forwardBoxIds = boxes.filter((b) => b.disposition === 'forward').map((b) => b.id);
+      if (!forwardAcknowledgementMatches(forwardBoxIds, acknowledgedForwardBoxIds)) {
+        throw new ConflictError('전달용 상자 확인이 화면과 다릅니다 — 새로 고쳐 다시 확인하세요.');
       }
 
       await trx

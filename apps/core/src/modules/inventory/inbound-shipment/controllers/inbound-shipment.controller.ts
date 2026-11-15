@@ -23,6 +23,7 @@ import { InboundShipmentService } from '../services/inbound-shipment.service';
 import { UploadInboundShipmentDto } from '../dto/upload.dto';
 import {
   CloseInboundShipmentDto,
+  ConfirmInboundShipmentDto,
   EditBoxDto,
   EditLineDto,
   SetAiCandidatesDto,
@@ -168,8 +169,12 @@ export class InboundShipmentController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '초안 확정 — 막는 줄·상자가 있으면 409' })
   @ApiResponse({ status: 200, description: '{ shipmentId, status, labelOverlaps }' })
-  confirm(@Param('id', new ParseUUIDPipe()) id: string, @User() user: WarehouseActor) {
-    return this.service.confirm(id, authenticatedWarehouseActor(user));
+  confirm(
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Body() dto: ConfirmInboundShipmentDto,
+    @User() user: WarehouseActor,
+  ) {
+    return this.service.confirm(id, dto.acknowledgedForwardBoxIds, authenticatedWarehouseActor(user));
   }
 
   @RequirePermission('inventory.inbound_shipment.write')
