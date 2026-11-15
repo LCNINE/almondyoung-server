@@ -16,7 +16,10 @@ export class ReceiptLineState {
   @ApiProperty() lineId: string;
   @ApiProperty() receiptId: string;
   @ApiProperty() warehouseId: string;
-  @ApiProperty({ enum: ['direct', 'purchase_order'] }) source: 'direct' | 'purchase_order';
+  @ApiProperty({ enum: ['direct', 'purchase_order', 'inbound_shipment'] }) source:
+    | 'direct'
+    | 'purchase_order'
+    | 'inbound_shipment';
   @ApiProperty({ enum: ['posted', 'voided'] }) receiptStatus: 'posted' | 'voided';
   @ApiProperty() skuId: string;
   @ApiProperty() skuCode: string;

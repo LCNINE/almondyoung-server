@@ -3,6 +3,7 @@ import { EventsModule } from '@app/events';
 import { INVENTORY_STREAM } from '@packages/event-contracts';
 import { CoreInventoryModule } from './core/inventory.module';
 import { InboundModule } from './inbound/inbound.module';
+import { InboundShipmentModule } from './inbound-shipment/inbound-shipment.module';
 import { ProcurementModule } from './procurement/procurement.module';
 import { MovementModule } from './movement/movement.module';
 import { StocktakingModule } from './stocktaking/stocktaking.module';
@@ -40,6 +41,7 @@ import { Sku3dModelsModule } from './sku-3d-models/sku-3d-models.module';
     SkuCatalogModule,
     WarehouseTransferModule,
     InboundModule,
+    InboundShipmentModule,
     ProcurementModule,
     ReplenishmentModule,
     MovementModule,

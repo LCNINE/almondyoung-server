@@ -279,6 +279,11 @@ export const PERMISSION_CATALOG = [
     owners: ['core'],
     grant: ['admin', ...LOGISTICS_MANAGER],
   }),
+  permission('inventory.inbound_shipment.write', '선적 입고리스트 관리', '중국 선적 입고리스트를 올리고 정리·확정·종결한다', {
+    owners: ['core'],
+    grant: ADMIN,
+    requires: ['inventory.stock.read'],
+  }),
   permission('inventory.warehouse.write', '창고 관리', '창고를 만들고 고치고 피킹 방식을 정한다', {
     owners: ['core'],
     grant: ['admin', ...LOGISTICS_MANAGER],

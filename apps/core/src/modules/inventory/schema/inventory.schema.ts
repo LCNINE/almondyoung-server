@@ -163,11 +163,32 @@ export const inboundReceiptStatusEnum = pgEnum('inbound_receipt_status', ['poste
 /**
  * 회차 라인이 문서 정산에 묶였는가. 커널은 **어느 문서인지는 모르고** 묶였다는 사실만 안다 —
  * 연결은 문서 쪽 링크 테이블이 든다(스펙 §3.2).
- * 처음부터 두 값으로 만든다: drizzle 마이그레이터는 대기 마이그레이션 전부를 한 트랜잭션으로 돌고,
- * `ALTER TYPE … ADD VALUE` 로 넣은 값은 그 트랜잭션 안에서 쓸 수 없다(스펙 §5.1 D9).
- * `purchase_order` 를 쓰는 코드는 PR-B 에서 생긴다.
+ * - `direct` — 입고 화면에서 바로 받은 회차(기본값).
+ * - `purchase_order` — 발주 수령이 묶은 회차(발주 문서가 링크를 든다).
+ * - `inbound_shipment` — 선적 상자 확정이 만든 회차(`inbound_shipment_box_counts.receipt_line_id` 가 링크다).
+ * `direct`·`purchase_order` 는 타입을 만들 때 넣었고 `inbound_shipment` 는 선적 입고 마이그가 `ADD VALUE` 로 더했다.
+ * drizzle 마이그레이터는 대기 마이그레이션 전부를 한 트랜잭션으로 돌고 `ADD VALUE` 로 넣은 값은 그 트랜잭션 안에서
+ * 쓸 수 없으므로(스펙 §5.1 D9), 값을 더하는 마이그와 같은 배치의 마이그는 새 값을 SQL 로 쓰지 않는다.
  */
-export const inboundReceiptSourceEnum = pgEnum('inbound_receipt_source', ['direct', 'purchase_order']);
+export const inboundReceiptSourceEnum = pgEnum('inbound_receipt_source', [
+  'direct',
+  'purchase_order',
+  'inbound_shipment',
+]);
+
+// 중국 선적 입고(선적·상자·리스트 줄). 설계: docs/superpowers/specs/2026-11-16-inbound-shipment-boxes-design.md §5.2
+export const inboundShipmentStatusEnum = pgEnum('inbound_shipment_status', [
+  'draft',
+  'expected',
+  'receiving',
+  'closed',
+  'canceled',
+]);
+export const inboundShipmentBoxDispositionEnum = pgEnum('inbound_shipment_box_disposition', ['stock', 'forward']);
+export const inboundShipmentBoxStatusEnum = pgEnum('inbound_shipment_box_status', ['open', 'received']);
+export const inboundShipmentBoxOriginEnum = pgEnum('inbound_shipment_box_origin', ['list', 'added']);
+export const inboundShipmentLineKindEnum = pgEnum('inbound_shipment_line_kind', ['sku', 'free', 'unresolved']);
+export const inboundShipmentLineResolutionEnum = pgEnum('inbound_shipment_line_resolution', ['barcode', 'manual']);
 export const inboundWorkTypeEnum = pgEnum('inbound_work_type', ['INBOUND', 'PUTAWAY', 'RETURN', 'CANCEL']);
 
 export const locationTypeEnum = pgEnum('location_type', ['standard', 'zone']);
@@ -2984,6 +3005,159 @@ export const inboundReceiptLines = pgTable(
 );
 
 /*───────────────────────────
+ * INBOUND SHIPMENTS (중국 선적 입고)
+ *──────────────────────────*/
+export type InboundShipmentLineRaw = Record<string, unknown>;
+export type InboundShipmentAiCandidate = { skuId: string; reason: string };
+
+export const inboundShipments = pgTable(
+  'inbound_shipments',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    warehouseId: uuid('warehouse_id')
+      .references(() => warehouses.id, { onDelete: 'restrict' })
+      .notNull(),
+    status: inboundShipmentStatusEnum('status').notNull().default('draft'),
+    name: varchar('name', { length: 255 }).notNull(),
+    // date 문자열 — purchase_order_lines.expected_arrival 과 같은 이유(Date 객체 경계 함정)
+    expectedArrival: date('expected_arrival', { mode: 'string' }),
+    sourceFileId: uuid('source_file_id'),
+    sourceFileName: varchar('source_file_name', { length: 255 }),
+    memo: text('memo'),
+    createdBy: uuid('created_by'),
+    confirmedAt: timestamp('confirmed_at', { withTimezone: true }),
+    confirmedBy: uuid('confirmed_by'),
+    closedAt: timestamp('closed_at', { withTimezone: true }),
+    closedBy: uuid('closed_by'),
+    closedReason: text('closed_reason'),
+    canceledAt: timestamp('canceled_at', { withTimezone: true }),
+    canceledBy: uuid('canceled_by'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    idxInboundShipmentsWhStatus: index('idx_inbound_shipments_wh_status').on(t.warehouseId, t.status),
+  }),
+);
+
+export const inboundShipmentBoxes = pgTable(
+  'inbound_shipment_boxes',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    shipmentId: uuid('shipment_id')
+      .references(() => inboundShipments.id, { onDelete: 'cascade' })
+      .notNull(),
+    label: varchar('label', { length: 32 }).notNull(),
+    sortKey: integer('sort_key').notNull(),
+    origin: inboundShipmentBoxOriginEnum('origin').notNull(),
+    disposition: inboundShipmentBoxDispositionEnum('disposition').notNull().default('stock'),
+    forwardNote: text('forward_note'),
+    status: inboundShipmentBoxStatusEnum('status').notNull().default('open'),
+    receiptId: uuid('receipt_id').references(() => inboundReceipts.id, { onDelete: 'set null' }),
+    receivedAt: timestamp('received_at', { withTimezone: true }),
+    receivedBy: uuid('received_by'),
+    version: integer('version').notNull().default(0),
+  },
+  (t) => ({
+    uqInboundShipmentBoxLabel: unique('uq_inbound_shipment_boxes_label').on(t.shipmentId, t.label),
+    // 전달용 상자는 확정되지 않는다
+    ckInboundShipmentBoxForwardOpen: check(
+      'ck_inbound_shipment_boxes_forward_open',
+      sql`${t.disposition} <> 'forward' OR ${t.status} = 'open'`,
+    ),
+  }),
+);
+
+export const inboundShipmentLines = pgTable(
+  'inbound_shipment_lines',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    shipmentId: uuid('shipment_id')
+      .references(() => inboundShipments.id, { onDelete: 'cascade' })
+      .notNull(),
+    rowNumber: integer('row_number').notNull(),
+    raw: jsonb('raw').$type<InboundShipmentLineRaw>().notNull(),
+    kind: inboundShipmentLineKindEnum('kind').notNull(),
+    skuId: uuid('sku_id').references(() => skus.id, { onDelete: 'restrict' }),
+    expectedQty: integer('expected_qty'),
+    resolution: inboundShipmentLineResolutionEnum('resolution'),
+    resolvedBy: uuid('resolved_by'),
+    resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+    issues: text('issues')
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
+    // 참고용 — 어떤 판정 코드도 읽지 않는다
+    aiCandidates: jsonb('ai_candidates').$type<InboundShipmentAiCandidate[]>(),
+  },
+  (t) => ({
+    idxInboundShipmentLinesRow: index('idx_inbound_shipment_lines_row').on(t.shipmentId, t.rowNumber),
+    idxInboundShipmentLinesSku: index('idx_inbound_shipment_lines_sku')
+      .on(t.skuId)
+      .where(sql`${t.kind} = 'sku'`),
+    ckInboundShipmentLineSku: check(
+      'ck_inbound_shipment_lines_sku',
+      sql`(${t.kind} = 'sku') = (${t.skuId} IS NOT NULL)`,
+    ),
+    ckInboundShipmentLineQty: check(
+      'ck_inbound_shipment_lines_qty',
+      sql`${t.kind} = 'unresolved' OR (${t.expectedQty} IS NOT NULL AND ${t.expectedQty} > 0)`,
+    ),
+  }),
+);
+
+export const inboundShipmentLineBoxes = pgTable(
+  'inbound_shipment_line_boxes',
+  {
+    lineId: uuid('line_id')
+      .references(() => inboundShipmentLines.id, { onDelete: 'cascade' })
+      .notNull(),
+    boxId: uuid('box_id')
+      .references(() => inboundShipmentBoxes.id, { onDelete: 'cascade' })
+      .notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.lineId, t.boxId] }),
+    idxInboundShipmentLineBoxesBox: index('idx_inbound_shipment_line_boxes_box').on(t.boxId),
+  }),
+);
+
+export const inboundShipmentBoxCounts = pgTable(
+  'inbound_shipment_box_counts',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    boxId: uuid('box_id')
+      .references(() => inboundShipmentBoxes.id, { onDelete: 'restrict' })
+      .notNull(),
+    // null = 리스트에 없던 물건
+    lineId: uuid('line_id').references(() => inboundShipmentLines.id, { onDelete: 'restrict' }),
+    skuId: uuid('sku_id').references(() => skus.id, { onDelete: 'restrict' }),
+    countedQty: integer('counted_qty').notNull(),
+    receiptLineId: uuid('receipt_line_id')
+      .references(() => inboundReceiptLines.id, { onDelete: 'set null' })
+      .unique(),
+    canceledAt: timestamp('canceled_at', { withTimezone: true }),
+    canceledBy: uuid('canceled_by'),
+    createdBy: uuid('created_by'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    uqInboundShipmentBoxCountLive: uniqueIndex('uq_inbound_shipment_box_counts_live')
+      .on(t.boxId, t.lineId)
+      .where(sql`${t.canceledAt} IS NULL AND ${t.lineId} IS NOT NULL`),
+    ckInboundShipmentBoxCountQty: check('ck_inbound_shipment_box_counts_qty', sql`${t.countedQty} >= 0`),
+    ckInboundShipmentBoxCountSku: check(
+      'ck_inbound_shipment_box_counts_sku',
+      sql`${t.lineId} IS NOT NULL OR ${t.skuId} IS NOT NULL`,
+    ),
+    ckInboundShipmentBoxCountUnplannedQty: check(
+      'ck_inbound_shipment_box_counts_unplanned_qty',
+      sql`${t.lineId} IS NOT NULL OR ${t.countedQty} > 0`,
+    ),
+  }),
+);
+
+/*───────────────────────────
  * INBOUND WORK LOGS (타임라인)
  *──────────────────────────*/
 export const inboundWorkLogs = pgTable(
@@ -4056,6 +4230,11 @@ export const wmsTables = {
   purchaseOrderCart,
   inboundReceipts,
   inboundReceiptLines,
+  inboundShipments,
+  inboundShipmentBoxes,
+  inboundShipmentLines,
+  inboundShipmentLineBoxes,
+  inboundShipmentBoxCounts,
   inboundWorkLogs,
   movementJobs,
   movementJobLines,
@@ -5251,6 +5430,10 @@ export type NewInboundReceipt = InferInsertModel<typeof inboundReceipts>;
 
 export type InboundReceiptLine = InferSelectModel<typeof inboundReceiptLines>;
 export type NewInboundReceiptLine = InferInsertModel<typeof inboundReceiptLines>;
+export type InboundShipment = InferSelectModel<typeof inboundShipments>;
+export type InboundShipmentBox = InferSelectModel<typeof inboundShipmentBoxes>;
+export type InboundShipmentLine = InferSelectModel<typeof inboundShipmentLines>;
+export type InboundShipmentBoxCount = InferSelectModel<typeof inboundShipmentBoxCounts>;
 
 export type InboundWorkLog = InferSelectModel<typeof inboundWorkLogs>;
 export type NewInboundWorkLog = InferInsertModel<typeof inboundWorkLogs>;
