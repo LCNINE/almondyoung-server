@@ -7,6 +7,7 @@ type TransitionRules<TStatus extends string> = Partial<Record<TStatus, readonly 
 //                      → FAILED (terminal)
 //                      → REQUIRES_ACTION → PROCESSING
 //                                        → AUTHORIZED (terminal-ish, e.g. Toss confirm)
+//                                        → AWAITING_DEPOSIT (결제위젯 가상계좌 승인)
 //                                        → CREATED (back-transition on confirm failure)
 //                      → AWAITING_DEPOSIT → AUTHORIZED (admin 입금확인) | CANCELED (만료/취소) | FAILED
 //                      → PENDING_SETTLEMENT (CMS batch: awaiting async result)
@@ -22,7 +23,7 @@ type TransitionRules<TStatus extends string> = Partial<Record<TStatus, readonly 
 const paymentIntentTransitionRules: TransitionRules<PaymentIntentStatus> = {
   CREATED: ['PROCESSING', 'FAILED', 'CANCELED'],
   PROCESSING: ['AUTHORIZED', 'FAILED', 'REQUIRES_ACTION', 'AWAITING_DEPOSIT', 'PENDING_SETTLEMENT', 'CREATED', 'CANCELED'],
-  REQUIRES_ACTION: ['PROCESSING', 'AUTHORIZED', 'FAILED', 'CREATED', 'CANCELED'],
+  REQUIRES_ACTION: ['PROCESSING', 'AUTHORIZED', 'AWAITING_DEPOSIT', 'FAILED', 'CREATED', 'CANCELED'],
   AWAITING_DEPOSIT: ['AUTHORIZED', 'CANCELED', 'FAILED'],
   PENDING_SETTLEMENT: ['AUTHORIZED', 'FAILED', 'CANCELED'],
   AUTHORIZED: ['CAPTURED', 'PARTIALLY_CAPTURED', 'CANCELED'],

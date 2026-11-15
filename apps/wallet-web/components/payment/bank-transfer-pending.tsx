@@ -4,7 +4,7 @@ import { useRef, useState } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Check, Copy, Landmark, Lock } from 'lucide-react';
-import { formatAmount, type BankTransferPendingAction } from './utils';
+import { formatAmount, formatExpiry, type BankTransferPendingAction } from './utils';
 
 interface Props {
   pending: BankTransferPendingAction;
@@ -65,7 +65,7 @@ export function BankTransferPending({
 
             <ul className="bg-muted/50 text-muted-foreground space-y-1.5 rounded-md p-3 text-xs break-keep">
               <li>· 입금이 확인되면 자동으로 결제가 완료됩니다. 확인까지 시간이 걸릴 수 있어요.</li>
-              <li>· 입금 기한(7일) 내 미입금 시 주문은 자동 취소됩니다.</li>
+              <li>· {pending.dueDate ? `${formatExpiry(pending.dueDate)}까지` : '입금 기한 내'} 입금하지 않으면 주문은 자동 취소됩니다.</li>
               <li>· 입금 후 취소·환불은 주문 내역에서 신청하실 수 있으며, 영업일 기준 약 2일 소요됩니다.</li>
             </ul>
 

@@ -148,6 +148,13 @@
       "when": 1793244080993,
       "tag": "20261029032120_drop-legacy-scope-tables",
       "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1794776578530,
+      "tag": "20261115210258_widen-toss-payment-key-columns",
+      "breakpoints": true
     }
   ]
 }

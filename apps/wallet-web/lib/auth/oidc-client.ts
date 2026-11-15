@@ -88,10 +88,7 @@ export function createAuthorizationRequest(
 /**
  * code → token 교환. client_secret 은 form body 에 포함 (RFC 6749 §2.3.1 client_secret_post).
  */
-export async function exchangeCodeForTokens(
-  code: string,
-  codeVerifier: string,
-): Promise<TokenSet> {
+export async function exchangeCodeForTokens(code: string, codeVerifier: string): Promise<TokenSet> {
   const body = new URLSearchParams({
     grant_type: 'authorization_code',
     code,
@@ -219,10 +216,7 @@ export async function exchangeHandoffForTokens(handoffToken: string): Promise<To
 }
 
 /** id_token 검증 — JWKS 서명 + iss + aud + nonce 일치. exp/iat/nbf 는 jose 가 기본 검사. */
-export async function verifyIdToken(
-  idToken: string,
-  expectedNonce: string,
-): Promise<{ sub: string; nonce?: string }> {
+export async function verifyIdToken(idToken: string, expectedNonce: string): Promise<{ sub: string; nonce?: string }> {
   const { payload } = await jwtVerify(idToken, JWKS, {
     issuer: oidcEnv.issuerUrl,
     audience: oidcEnv.clientId,
@@ -244,7 +238,7 @@ export async function verifyIdToken(
  * post_logout_redirect_uri 는 클라이언트 등록 시 화이트리스트와 정확히 일치해야 한다.
  */
 export function buildEndSessionUrl(idToken: string | null): string {
-  const url = new URL(`${oidcEnv.issuerUrl}/oauth/end_session`);
+  const url = new URL('/oauth/end_session', oidcEnv.authorizationUrl);
   url.searchParams.set('client_id', oidcEnv.clientId);
   url.searchParams.set('post_logout_redirect_uri', oidcEnv.postLogoutRedirectUri);
   if (idToken) url.searchParams.set('id_token_hint', idToken);

@@ -3,10 +3,12 @@ import { TossApiClient } from './toss-api.client';
 describe('TossApiClient', () => {
   const originalFetch = global.fetch;
   const originalSecretKey = process.env.TOSS_SECRET_KEY;
+  const originalWidgetSecretKey = process.env.TOSS_WIDGET_SECRET_KEY;
 
   afterEach(() => {
     global.fetch = originalFetch;
     process.env.TOSS_SECRET_KEY = originalSecretKey;
+    process.env.TOSS_WIDGET_SECRET_KEY = originalWidgetSecretKey;
     jest.restoreAllMocks();
   });
 
@@ -57,5 +59,112 @@ describe('TossApiClient', () => {
       expect(result.error.message).toContain('"status":404');
       expect(result.error.message).not.toBe('[object Object]');
     }
+  });
+
+  it('uses the widget key for widget payments without changing the standard key', async () => {
+    process.env.TOSS_SECRET_KEY = 'test_sk_standard';
+    process.env.TOSS_WIDGET_SECRET_KEY = 'test_gsk_widget';
+    const fetchMock = jest.fn().mockResolvedValue({
+      ok: true,
+      json: jest.fn().mockResolvedValue({ paymentKey: 'pay_123', orderId: 'order_123', status: 'DONE' }),
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    const client = new TossApiClient();
+    await client.confirmPayment('pay_123', 4000, 'order_123', true);
+    await client.queryPayment('order_123', 'pay_123', true);
+    await client.confirmPayment('pay_456', 5000, 'order_456');
+
+    const widgetAuth = `Basic ${Buffer.from('test_gsk_widget:').toString('base64')}`;
+    const standardAuth = `Basic ${Buffer.from('test_sk_standard:').toString('base64')}`;
+    const calls = fetchMock.mock.calls as unknown as Array<[string, { headers: { Authorization: string } }]>;
+    expect(calls[0][1].headers.Authorization).toBe(widgetAuth);
+    expect(calls[1][1].headers.Authorization).toBe(widgetAuth);
+    expect(calls[2][1].headers.Authorization).toBe(standardAuth);
+  });
+
+  it('confirms BrandPay through its dedicated endpoint with the customer and widget secret', async () => {
+    process.env.TOSS_WIDGET_SECRET_KEY = 'test_gsk_widget';
+    const fetchMock = jest
+      .fn()
+      .mockResolvedValue({ ok: true, json: jest.fn().mockResolvedValue({ paymentKey: 'pay_brandpay' }) });
+    global.fetch = fetchMock as unknown as typeof fetch;
+    await new TossApiClient().confirmBrandPayPayment('pay_brandpay', 4000, 'order_123', 'user-123');
+    expect(fetchMock).toHaveBeenCalledWith('https://api.tosspayments.com/v1/brandpay/payments/confirm', {
+      method: 'POST',
+      headers: {
+        Authorization: `Basic ${Buffer.from('test_gsk_widget:').toString('base64')}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ paymentKey: 'pay_brandpay', orderId: 'order_123', amount: 4000, customerKey: 'user-123' }),
+    });
+  });
+
+  it('exchanges a BrandPay authorization code with the matching widget secret', async () => {
+    process.env.TOSS_WIDGET_SECRET_KEY = 'test_gsk_widget';
+    const fetchMock = jest.fn().mockResolvedValue({
+      ok: true,
+      json: jest.fn().mockResolvedValue({ accessToken: 'brandpay_token' }),
+    });
+    global.fetch = fetchMock as unknown as typeof fetch;
+
+    const result = await new TossApiClient().issueBrandPayAccessToken('auth_code', 'user-123');
+
+    expect(result.ok).toBe(true);
+    expect(fetchMock).toHaveBeenCalledWith('https://api.tosspayments.com/v1/brandpay/authorizations/access-token', {
+      method: 'POST',
+      headers: {
+        Authorization: `Basic ${Buffer.from('test_gsk_widget:').toString('base64')}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ grantType: 'AuthorizationCode', code: 'auth_code', customerKey: 'user-123' }),
+    });
+  });
+
+  describe('queryPayment', () => {
+    const okFetch = (orderId: string) =>
+      jest.fn().mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ paymentKey: 'pay_123', orderId, status: 'DONE' }),
+      });
+
+    it('위젯 결제는 orderId 조회를 지원하지 않는 위젯 키 대신 paymentKey 로 조회한다', async () => {
+      process.env.TOSS_WIDGET_SECRET_KEY = 'test_gsk_widget';
+      const fetchMock = okFetch('order_123');
+      global.fetch = fetchMock as unknown as typeof fetch;
+
+      const result = await new TossApiClient().queryPayment('order_123', 'pay_123', true);
+
+      expect(result.ok).toBe(true);
+      expect(fetchMock.mock.calls[0][0]).toBe('https://api.tosspayments.com/v1/payments/pay_123');
+    });
+
+    it('기존 결제는 orderId 로 조회한다', async () => {
+      const fetchMock = okFetch('order_123');
+      global.fetch = fetchMock as unknown as typeof fetch;
+
+      await new TossApiClient().queryPayment('order_123', 'pay_123', false);
+
+      expect(fetchMock.mock.calls[0][0]).toBe('https://api.tosspayments.com/v1/payments/orders/order_123');
+    });
+
+    it('위젯 결제의 paymentKey 를 모르면 결제 없음(404)이 아니라 상태 불명으로 돌린다', async () => {
+      const fetchMock = jest.fn();
+      global.fetch = fetchMock as unknown as typeof fetch;
+
+      const result = await new TossApiClient().queryPayment('order_123', undefined, true);
+
+      expect(result).toMatchObject({ ok: false, statusCode: 0, error: { code: 'WIDGET_PAYMENT_KEY_UNKNOWN' } });
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('paymentKey 의 결제가 다른 주문이면 우리 결제로 받지 않는다', async () => {
+      process.env.TOSS_WIDGET_SECRET_KEY = 'test_gsk_widget';
+      global.fetch = okFetch('someone_else') as unknown as typeof fetch;
+
+      const result = await new TossApiClient().queryPayment('order_123', 'pay_123', true);
+
+      expect(result).toMatchObject({ ok: false, statusCode: 0, error: { code: 'ORDER_ID_MISMATCH' } });
+    });
   });
 });

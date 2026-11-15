@@ -4,6 +4,9 @@ export interface TossConfirmResponse {
   paymentKey: string;
   orderId: string;
   status: string;
+  // 가상계좌 승인(WAITING_FOR_DEPOSIT)에만 온다.
+  secret?: string | null;
+  virtualAccount?: TossVirtualAccount | null;
   [key: string]: unknown;
 }
 
@@ -56,6 +59,14 @@ export interface TossPaymentQueryResponse {
   // 발급 응답에만 값이 있고, 이후 조회에서는 보안상 null 로 돌아온다. 웹훅 secret 대조는
   // 발급 시 charge 에 저장해 둔 값과 하며, 이 필드에 의존하지 않는다.
   secret: string | null;
+  virtualAccount?: TossVirtualAccount | null;
+  // 결제에 딸려 토스가 발급한 현금영수증. 우리가 /cash-receipts 로 따로 발급한 건은 여기 안 붙는다.
+  cashReceipt?: { receiptKey?: string } | null;
+  cashReceipts?: Array<{
+    transactionType: 'CONFIRM' | 'CANCEL';
+    issueStatus: 'IN_PROGRESS' | 'COMPLETED' | 'FAILED';
+    amount: number;
+  }> | null;
   [key: string]: unknown;
 }
 
@@ -67,6 +78,7 @@ export interface TossCashReceiptResponse {
   receiptUrl: string;
   amount: number;
   taxFreeAmount: number;
+  requestedAt?: string;
   [key: string]: unknown;
 }
 
@@ -75,22 +87,53 @@ export interface TossApiError {
   message: string;
 }
 
-export type TossApiResult<T> =
-  | { ok: true; data: T }
-  | { ok: false; error: TossApiError; statusCode: number };
+export type TossApiResult<T> = { ok: true; data: T } | { ok: false; error: TossApiError; statusCode: number };
 
 @Injectable()
 export class TossApiClient {
   private readonly logger = new Logger(TossApiClient.name);
   private readonly baseUrl = 'https://api.tosspayments.com/v1';
 
-  private get auth(): string {
-    const secretKey = process.env.TOSS_SECRET_KEY ?? '';
+  private auth(useWidgetKey = false): string {
+    const secretKey = (useWidgetKey ? process.env.TOSS_WIDGET_SECRET_KEY : process.env.TOSS_SECRET_KEY) ?? '';
     return Buffer.from(`${secretKey}:`).toString('base64');
   }
 
-  async confirmPayment(paymentKey: string, amount: number, orderId: string): Promise<TossApiResult<TossConfirmResponse>> {
-    return this.post<TossConfirmResponse>('/payments/confirm', { paymentKey, orderId, amount });
+  async confirmPayment(
+    paymentKey: string,
+    amount: number,
+    orderId: string,
+    useWidgetKey = false,
+  ): Promise<TossApiResult<TossConfirmResponse>> {
+    return this.post<TossConfirmResponse>(
+      '/payments/confirm',
+      { paymentKey, orderId, amount },
+      undefined,
+      useWidgetKey,
+    );
+  }
+
+  async confirmBrandPayPayment(
+    paymentKey: string,
+    amount: number,
+    orderId: string,
+    customerKey: string,
+  ): Promise<TossApiResult<TossConfirmResponse>> {
+    return this.post<TossConfirmResponse>(
+      '/brandpay/payments/confirm',
+      { paymentKey, orderId, amount, customerKey },
+      undefined,
+      true,
+    );
+  }
+
+  async issueBrandPayAccessToken(code: string, customerKey: string): Promise<TossApiResult<{ accessToken: string }>> {
+    return this.post<{ accessToken: string }>(
+      '/brandpay/authorizations/access-token',
+      { grantType: 'AuthorizationCode', code, customerKey },
+      undefined,
+      true,
+    );
   }
 
   async cancelPayment(
@@ -100,14 +143,16 @@ export class TossApiClient {
     idempotencyKey?: string,
     // 가상계좌 결제의 입금 후 환불은 환불받을 계좌가 필수 (토스가 그 계좌로 송금).
     refundReceiveAccount?: { bank: string; accountNumber: string; holderName: string },
+    useWidgetKey = false,
   ): Promise<TossApiResult<TossCancelResponse>> {
     const body: Record<string, unknown> = { cancelReason };
     if (cancelAmount !== undefined) body.cancelAmount = cancelAmount;
     if (refundReceiveAccount) body.refundReceiveAccount = refundReceiveAccount;
     return this.post<TossCancelResponse>(
-      `/payments/${paymentKey}/cancel`,
+      `/payments/${encodeURIComponent(paymentKey)}/cancel`,
       body,
       idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined,
+      useWidgetKey,
     );
   }
 
@@ -172,10 +217,24 @@ export class TossApiClient {
     return this.post<TossCashReceiptResponse>('/cash-receipts', body);
   }
 
-  async cancelCashReceipt(receiptKey: string, amount?: number): Promise<TossApiResult<TossCashReceiptResponse>> {
+  async cancelCashReceipt(
+    receiptKey: string,
+    amount?: number,
+    idempotencyKey?: string,
+  ): Promise<TossApiResult<TossCashReceiptResponse>> {
     const body: Record<string, unknown> = {};
     if (amount !== undefined) body.amount = amount;
-    return this.post<TossCashReceiptResponse>(`/cash-receipts/${receiptKey}/cancel`, body);
+    const headers = idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined;
+    return this.post<TossCashReceiptResponse>(`/cash-receipts/${receiptKey}/cancel`, body, headers);
+  }
+
+  /** requestDate(yyyy-MM-dd) 에 요청된 현금영수증 발급·취소 거래. 취소 거래의 receiptKey 는 원래 키에 `c_` 가 붙는다. */
+  async listCashReceipts(
+    requestDate: string,
+    cursor?: number,
+  ): Promise<TossApiResult<{ hasNext: boolean; lastCursor: number | null; data: TossCashReceiptResponse[] }>> {
+    const query = `requestDate=${requestDate}&limit=10000${cursor !== undefined ? `&cursor=${cursor}` : ''}`;
+    return this.get(`/cash-receipts?${query}`);
   }
 
   /**
@@ -187,13 +246,52 @@ export class TossApiClient {
     return this.get<TossPaymentQueryResponse>(`/payments/orders/${encodeURIComponent(orderId)}`);
   }
 
-  private async get<T>(path: string): Promise<TossApiResult<T>> {
+  /**
+   * 위젯 키는 orderId 조회를 지원하지 않는다 — 결제가 있어도 404(NOT_FOUND_MERCHANT)가 온다. 위젯 결제는
+   * paymentKey 로 묻고, 응답의 orderId 가 우리 charge 인지 대조해 남의 결제를 붙이지 못하게 한다.
+   * paymentKey 를 모르거나 orderId 가 다르면 404 가 아닌 statusCode 0 으로 돌려 결제 없음으로 읽히지 않게 한다.
+   */
+  async queryPayment(
+    orderId: string,
+    paymentKey: string | null | undefined,
+    useWidgetKey: boolean,
+  ): Promise<TossApiResult<TossPaymentQueryResponse>> {
+    if (!useWidgetKey) return this.getPaymentByOrderId(orderId);
+
+    if (!paymentKey) {
+      return {
+        ok: false,
+        error: {
+          code: 'WIDGET_PAYMENT_KEY_UNKNOWN',
+          message: `위젯 결제를 조회할 paymentKey 가 없다: orderId=${orderId}`,
+        },
+        statusCode: 0,
+      };
+    }
+
+    const result = await this.getPayment(paymentKey, true);
+    if (result.ok && result.data.orderId !== orderId) {
+      return {
+        ok: false,
+        error: { code: 'ORDER_ID_MISMATCH', message: `paymentKey 의 orderId 가 다르다: orderId=${orderId}` },
+        statusCode: 0,
+      };
+    }
+
+    return result;
+  }
+
+  async getPayment(paymentKey: string, useWidgetKey = false): Promise<TossApiResult<TossPaymentQueryResponse>> {
+    return this.get<TossPaymentQueryResponse>(`/payments/${encodeURIComponent(paymentKey)}`, useWidgetKey);
+  }
+
+  private async get<T>(path: string, useWidgetKey = false): Promise<TossApiResult<T>> {
     const url = `${this.baseUrl}${path}`;
     this.logger.debug(`GET ${url}`);
 
     const res = await fetch(url, {
       method: 'GET',
-      headers: { Authorization: `Basic ${this.auth}` },
+      headers: { Authorization: `Basic ${this.auth(useWidgetKey)}` },
     });
 
     if (res.ok) {
@@ -210,6 +308,7 @@ export class TossApiClient {
     path: string,
     body: Record<string, unknown>,
     extraHeaders?: Record<string, string>,
+    useWidgetKey = false,
   ): Promise<TossApiResult<T>> {
     const url = `${this.baseUrl}${path}`;
     this.logger.debug(`POST ${url}`);
@@ -217,7 +316,7 @@ export class TossApiClient {
     const res = await fetch(url, {
       method: 'POST',
       headers: {
-        Authorization: `Basic ${this.auth}`,
+        Authorization: `Basic ${this.auth(useWidgetKey)}`,
         'Content-Type': 'application/json',
         ...extraHeaders,
       },
