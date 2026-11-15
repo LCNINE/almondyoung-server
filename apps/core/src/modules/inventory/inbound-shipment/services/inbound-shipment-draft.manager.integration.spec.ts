@@ -411,7 +411,7 @@ describeIfDb('InboundShipmentDraftManager (DB integration)', () => {
           .where(eq(wmsTables.inboundShipmentLineBoxes.lineId, unresolved.id));
         expect(cover).toHaveLength(3);
         // L2 is now empty and list-origin
-        await expect(manager.confirm(shipmentId, ACTOR, trx)).rejects.toThrow(/L2|빈 상자|상자/);
+        await expect(manager.confirm(shipmentId, ACTOR, trx)).rejects.toThrow(/줄이 없는 상자 1개 \(L2\)/);
       });
     });
 
@@ -500,6 +500,95 @@ describeIfDb('InboundShipmentDraftManager (DB integration)', () => {
         expect([after.disposition, after.forwardNote, after.label]).toEqual(['forward', 'acme', 'L9']);
         await manager.confirm(shipmentId, ACTOR, trx);
         await expect(manager.editBox(shipmentId, box.id, { label: 'L10' }, ACTOR, trx)).rejects.toThrow(ConflictError);
+      });
+    });
+
+    it('post-confirm disposition flip cannot re-break confirm rules', async () => {
+      await inRollbackTx(db, async (trx) => {
+        const f = await seed(trx);
+        const { manager } = build(trx);
+        const { shipmentId } = await manager.createDraft(
+          input(f.warehouseId, {
+            header: HEADER,
+            rows: [
+              row(1, 'L1-L2', 10, f.barcodes[0]),
+              row(2, 'L3', 5, '7000000000001', 'acme 에 발송바람'),
+            ],
+          }),
+          ACTOR,
+          trx,
+        );
+        await manager.confirm(shipmentId, ACTOR, trx);
+        const boxes = await trx.select().from(wmsTables.inboundShipmentBoxes).where(eq(wmsTables.inboundShipmentBoxes.shipmentId, shipmentId));
+        const byLabel = (l: string) => boxes.find((b) => b.label === l)!;
+        expect(byLabel('L3').disposition).toBe('forward');
+        // unresolved line on a forward-only box -> stock would break confirm
+        await expect(manager.editBox(shipmentId, byLabel('L3').id, { disposition: 'stock' }, ACTOR, trx)).rejects.toThrow(ConflictError);
+        // flipping one of two boxes of a line makes it mixed
+        await expect(manager.editBox(shipmentId, byLabel('L2').id, { disposition: 'forward' }, ACTOR, trx)).rejects.toThrow(ConflictError);
+        const [l2] = await trx.select().from(wmsTables.inboundShipmentBoxes).where(eq(wmsTables.inboundShipmentBoxes.id, byLabel('L2').id));
+        expect(l2.disposition).toBe('stock');
+      });
+    });
+
+    it('editBox on a received box is refused; cancel in receiving is refused', async () => {
+      await inRollbackTx(db, async (trx) => {
+        const f = await seed(trx);
+        const { manager } = build(trx);
+        const { shipmentId } = await manager.createDraft(
+          input(f.warehouseId, { header: HEADER, rows: [row(1, 'L1', 10, f.barcodes[0])] }),
+          ACTOR,
+          trx,
+        );
+        await manager.confirm(shipmentId, ACTOR, trx);
+        await trx.update(wmsTables.inboundShipmentBoxes).set({ status: 'received' }).where(eq(wmsTables.inboundShipmentBoxes.shipmentId, shipmentId));
+        const [box] = await trx.select().from(wmsTables.inboundShipmentBoxes).where(eq(wmsTables.inboundShipmentBoxes.shipmentId, shipmentId));
+        await expect(manager.editBox(shipmentId, box.id, { forwardNote: 'x' }, ACTOR, trx)).rejects.toThrow(ConflictError);
+        await trx.update(wmsTables.inboundShipments).set({ status: 'receiving' }).where(eq(wmsTables.inboundShipments.id, shipmentId));
+        await expect(manager.cancel(shipmentId, ACTOR, trx)).rejects.toThrow(ConflictError);
+      });
+    });
+
+    it('editBox rejects ranges and bumps version; mutations touch updated_at', async () => {
+      await inRollbackTx(db, async (trx) => {
+        const f = await seed(trx);
+        const { manager } = build(trx);
+        const { shipmentId } = await manager.createDraft(
+          input(f.warehouseId, { header: HEADER, rows: [row(1, 'L1', 10, f.barcodes[0])] }),
+          ACTOR,
+          trx,
+        );
+        const [box] = await trx.select().from(wmsTables.inboundShipmentBoxes).where(eq(wmsTables.inboundShipmentBoxes.shipmentId, shipmentId));
+        await expect(manager.editBox(shipmentId, box.id, { label: 'L1-L3' }, ACTOR, trx)).rejects.toThrow(BadRequestError);
+        const old = new Date('2020-01-01T00:00:00Z');
+        await trx.update(wmsTables.inboundShipments).set({ updatedAt: old }).where(eq(wmsTables.inboundShipments.id, shipmentId));
+        await manager.editBox(shipmentId, box.id, { forwardNote: 'n' }, ACTOR, trx);
+        const [after] = await trx.select().from(wmsTables.inboundShipmentBoxes).where(eq(wmsTables.inboundShipmentBoxes.id, box.id));
+        expect(after.version).toBe(box.version + 1);
+        const [s] = await trx.select().from(wmsTables.inboundShipments).where(eq(wmsTables.inboundShipments.id, shipmentId));
+        expect(s.updatedAt.getTime()).toBeGreaterThan(old.getTime());
+        const [line] = await trx.select().from(wmsTables.inboundShipmentLines).where(eq(wmsTables.inboundShipmentLines.shipmentId, shipmentId));
+        await trx.update(wmsTables.inboundShipments).set({ updatedAt: old }).where(eq(wmsTables.inboundShipments.id, shipmentId));
+        await manager.setAiCandidates(shipmentId, line.id, [], trx).catch(() => undefined);
+        await manager.editLine(shipmentId, line.id, { kind: 'free' }, {}, ACTOR, trx);
+        const [s2] = await trx.select().from(wmsTables.inboundShipments).where(eq(wmsTables.inboundShipments.id, shipmentId));
+        expect(s2.updatedAt.getTime()).toBeGreaterThan(old.getTime());
+      });
+    });
+
+    it('boxLabels edit is capped at 50 expanded labels', async () => {
+      await inRollbackTx(db, async (trx) => {
+        const f = await seed(trx);
+        const { manager } = build(trx);
+        const { shipmentId } = await manager.createDraft(
+          input(f.warehouseId, { header: HEADER, rows: [row(1, 'L1', 10, f.barcodes[0])] }),
+          ACTOR,
+          trx,
+        );
+        const [line] = await trx.select().from(wmsTables.inboundShipmentLines).where(eq(wmsTables.inboundShipmentLines.shipmentId, shipmentId));
+        await expect(
+          manager.editLine(shipmentId, line.id, { kind: 'free' }, { boxLabels: ['A1-A50', 'B1-B50'] }, ACTOR, trx),
+        ).rejects.toThrow(BadRequestError);
       });
     });
   });

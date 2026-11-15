@@ -34,7 +34,7 @@ export class EditLineDto {
   @IsOptional()
   @IsArray()
   @ArrayMinSize(1)
-  @ArrayMaxSize(200)
+  @ArrayMaxSize(20)
   @IsString({ each: true })
   @MaxLength(64, { each: true })
   boxLabels?: string[];
@@ -42,7 +42,7 @@ export class EditLineDto {
 
 export class EditBoxDto {
   @ApiPropertyOptional({ enum: ['stock', 'forward'] })
-  @IsOptional()
+  @ValidateIf((_o, v) => v !== undefined)
   @IsIn(['stock', 'forward'])
   disposition?: 'stock' | 'forward';
 
@@ -53,7 +53,7 @@ export class EditBoxDto {
   forwardNote?: string | null;
 
   @ApiPropertyOptional({ description: '초안일 때만' })
-  @IsOptional()
+  @ValidateIf((_o, v) => v !== undefined)
   @IsString()
   @MinLength(1)
   @MaxLength(32)
@@ -75,7 +75,12 @@ export class SetAiCandidatesDto {
 }
 
 export class UpdateHeaderDto {
-  @ApiPropertyOptional() @IsOptional() @IsString() @MinLength(1) @MaxLength(255) name?: string;
+  @ApiPropertyOptional()
+  @ValidateIf((_o, v) => v !== undefined)
+  @IsString()
+  @MinLength(1)
+  @MaxLength(255)
+  name?: string;
 
   @ApiPropertyOptional({ nullable: true, description: 'YYYY-MM-DD 또는 null' })
   @ValidateIf((_o, v) => v !== null)

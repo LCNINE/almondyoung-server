@@ -8,6 +8,7 @@ import { DbTx, wmsSchema, wmsTables } from '../../schema/inventory.schema';
 import { InboundShipmentSkuMatcherReader, SkuMatch } from './inbound-shipment-sku-matcher.reader';
 import { LineIssue, ListInput, ParsedLine, expandBoxLabel, parseShipmentList } from './inbound-shipment-list.parser';
 import { ConfirmBlocker, confirmBlockers, lineEditable } from './inbound-shipment.rules';
+import { MAX_BOX_RANGE } from './inbound-shipment-list.parser';
 
 export interface CreateDraftInput {
   warehouseId: string;
@@ -194,6 +195,7 @@ export class InboundShipmentDraftManager {
         .where(eq(wmsTables.inboundShipmentLines.id, lineId));
 
       if (labels) await this.replaceCoverage(trx, shipmentId, lineId, labels);
+      await this.touchShipment(trx, shipmentId);
     }, tx);
   }
 
@@ -215,13 +217,18 @@ export class InboundShipmentDraftManager {
 
       const set: Partial<typeof wmsTables.inboundShipmentBoxes.$inferInsert> = {};
       if (patch.disposition !== undefined) {
+        if (shipment.status !== 'draft' && patch.disposition !== box.disposition) {
+          await this.assertFlipKeepsConfirmRules(trx, boxId, patch.disposition);
+        }
         set.disposition = patch.disposition;
         if (patch.disposition === 'stock' && patch.forwardNote === undefined) set.forwardNote = null;
       }
       if (patch.forwardNote !== undefined) set.forwardNote = patch.forwardNote;
       if (patch.label !== undefined) {
         if (shipment.status !== 'draft') throw new ConflictError('확정 뒤에는 상자 이름을 바꿀 수 없습니다.');
-        const [label] = this.expandLabels([patch.label]);
+        const labels = this.expandLabels([patch.label]);
+        if (labels.length !== 1) throw new BadRequestError(`상자 이름은 하나여야 합니다: ${patch.label}`);
+        const [label] = labels;
         if (label !== box.label) {
           const [dup] = await trx
             .select({ id: wmsTables.inboundShipmentBoxes.id })
@@ -238,7 +245,11 @@ export class InboundShipmentDraftManager {
         set.label = label;
       }
       if (Object.keys(set).length === 0) return;
-      await trx.update(wmsTables.inboundShipmentBoxes).set(set).where(eq(wmsTables.inboundShipmentBoxes.id, boxId));
+      await trx
+        .update(wmsTables.inboundShipmentBoxes)
+        .set({ ...set, version: sql`${wmsTables.inboundShipmentBoxes.version} + 1` })
+        .where(eq(wmsTables.inboundShipmentBoxes.id, boxId));
+      await this.touchShipment(trx, shipmentId);
     }, tx);
   }
 
@@ -275,6 +286,7 @@ export class InboundShipmentDraftManager {
         .update(wmsTables.inboundShipmentLines)
         .set({ aiCandidates: candidates.map((c) => ({ skuId: c.skuId, reason: c.reason })) })
         .where(eq(wmsTables.inboundShipmentLines.id, lineId));
+      await this.touchShipment(trx, shipmentId);
     }, tx);
   }
 
@@ -387,6 +399,47 @@ export class InboundShipmentDraftManager {
     }, tx);
   }
 
+  private async touchShipment(trx: DbTx, shipmentId: string): Promise<void> {
+    await trx.update(wmsTables.inboundShipments).set({ updatedAt: new Date() }).where(eq(wmsTables.inboundShipments.id, shipmentId));
+  }
+
+  /** 확정 뒤 구분을 바꿔도 §6.2 의 «미확인 줄·섞인 줄» 규칙이 깨지지 않아야 한다. */
+  private async assertFlipKeepsConfirmRules(trx: DbTx, boxId: string, next: 'stock' | 'forward'): Promise<void> {
+    const lineIds = (
+      await trx
+        .select({ lineId: wmsTables.inboundShipmentLineBoxes.lineId })
+        .from(wmsTables.inboundShipmentLineBoxes)
+        .where(eq(wmsTables.inboundShipmentLineBoxes.boxId, boxId))
+    ).map((r) => r.lineId);
+    if (lineIds.length === 0) return;
+    const rows = await trx
+      .select({
+        lineId: wmsTables.inboundShipmentLineBoxes.lineId,
+        kind: wmsTables.inboundShipmentLines.kind,
+        rowNumber: wmsTables.inboundShipmentLines.rowNumber,
+        boxId: wmsTables.inboundShipmentBoxes.id,
+        disposition: wmsTables.inboundShipmentBoxes.disposition,
+      })
+      .from(wmsTables.inboundShipmentLineBoxes)
+      .innerJoin(wmsTables.inboundShipmentLines, eq(wmsTables.inboundShipmentLines.id, wmsTables.inboundShipmentLineBoxes.lineId))
+      .innerJoin(wmsTables.inboundShipmentBoxes, eq(wmsTables.inboundShipmentBoxes.id, wmsTables.inboundShipmentLineBoxes.boxId))
+      .where(inArray(wmsTables.inboundShipmentLineBoxes.lineId, lineIds));
+    const boxes = new Map(
+      rows.map((r) => [r.boxId, { id: r.boxId, disposition: r.boxId === boxId ? next : r.disposition, origin: 'added' as const }]),
+    );
+    const lines = lineIds.map((id) => {
+      const mine = rows.filter((r) => r.lineId === id);
+      return { id, kind: mine[0].kind, boxIds: mine.map((r) => r.boxId) };
+    });
+    const blockers = confirmBlockers([...boxes.values()], lines).filter((b) => b.code !== 'empty_box');
+    if (blockers.length === 0) return;
+    const rowOf = new Map(rows.map((r) => [r.lineId, r.rowNumber]));
+    const names = blockers.map((b) => `${rowOf.get(b.lineId)}행`);
+    throw new ConflictError(
+      `구분을 바꾸면 확정 규칙이 깨집니다 (상품이 정해지지 않은 줄이 입고 상자에 얹히거나 입고·전달 상자가 섞이는 줄: ${[...new Set(names)].join(', ')}).`,
+    );
+  }
+
   private async lockShipment(trx: DbTx, shipmentId: string) {
     const [shipment] = await trx
       .select()
@@ -405,6 +458,7 @@ export class InboundShipmentDraftManager {
       for (const l of labels) if (!out.includes(l)) out.push(l);
     }
     if (out.length === 0) throw new BadRequestError('상자를 하나 이상 지정해야 합니다.');
+    if (out.length > MAX_BOX_RANGE) throw new BadRequestError(`한 번에 ${MAX_BOX_RANGE}개를 넘는 상자를 지정할 수 없습니다.`);
     return out;
   }
 
@@ -430,7 +484,12 @@ export class InboundShipmentDraftManager {
     await trx.delete(wmsTables.inboundShipmentLineBoxes).where(eq(wmsTables.inboundShipmentLineBoxes.lineId, lineId));
     await trx
       .insert(wmsTables.inboundShipmentLineBoxes)
-      .values(labels.flatMap((l) => (idByLabel.has(l) ? [{ lineId, boxId: idByLabel.get(l) as string }] : [])));
+      .values(
+        labels.flatMap((l) => {
+          const boxId = idByLabel.get(l);
+          return boxId === undefined ? [] : [{ lineId, boxId }];
+        }),
+      );
   }
 
   private blockerMessage(

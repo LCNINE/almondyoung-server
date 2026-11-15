@@ -23,6 +23,15 @@ describe('confirmBlockers', () => {
     ).toEqual([{ code: 'mixed_disposition', lineId: 'l1' }]);
   });
 
+  it('unresolved line covering stock and forward boxes yields both blockers', () => {
+    expect(
+      confirmBlockers([box('b1'), box('b2', 'forward')], [{ id: 'l1', kind: 'unresolved', boxIds: ['b1', 'b2'] }]),
+    ).toEqual([
+      { code: 'unresolved_line', lineId: 'l1' },
+      { code: 'mixed_disposition', lineId: 'l1' },
+    ]);
+  });
+
   it('list box without lines blocks, added box does not', () => {
     expect(confirmBlockers([box('b1', 'stock', 'list'), box('b2', 'stock', 'added')], [])).toEqual([
       { code: 'empty_box', boxId: 'b1' },
