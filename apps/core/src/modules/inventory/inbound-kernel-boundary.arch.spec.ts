@@ -3,7 +3,7 @@ import { collectTsFiles, moduleSpecifiers, readCodeWithoutComments } from './arc
 
 const KERNEL_DIR = join(__dirname, 'inbound', 'kernel');
 const INBOUND_DIR = join(__dirname, 'inbound');
-const DOCUMENT_MODULES = /(^|\/)(procurement|warehouse-transfer)(\/|$)/;
+const DOCUMENT_MODULES = /(^|\/)(procurement|warehouse-transfer|inbound-shipment)(\/|$)/;
 
 /**
  * 입고 커널의 경계 (스펙 docs/superpowers/specs/2026-09-14-purchase-order-owns-receiving-design.md §3·§8).

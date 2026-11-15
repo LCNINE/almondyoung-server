@@ -158,6 +158,24 @@ describeIfDb('InboundReceiptKernel (PostgreSQL integration)', () => {
       });
     });
 
+    it('records an inbound_shipment arrival as planned', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const fx = await seedWarehouseAndSku(tx, randomUUID());
+        const result = await kernel.recordArrival(
+          {
+            source: 'inbound_shipment',
+            warehouseId: fx.warehouseId,
+            reason: 'inbound_shipment',
+            lines: [{ skuId: fx.skuId, quantity: 4, eventKey: `k-${randomUUID()}` }],
+          },
+          tx,
+        );
+
+        expect(result.receipt.method).toBe('planned');
+        expect(result.lines[0]?.source).toBe('inbound_shipment');
+      });
+    });
+
     it('source=purchase_order 도착은 method=planned 로 기록되고 라인 source 가 purchase_order 다', async () => {
       await inRollbackTx(db, async (tx) => {
         const fx = await seedWarehouseAndSku(tx, randomUUID());
@@ -331,6 +349,24 @@ describeIfDb('InboundReceiptKernel (PostgreSQL integration)', () => {
   });
 
   describe('cancelLine source 가드', () => {
+    it('direct cancel refuses an inbound_shipment line', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const fx = await seedWarehouseAndSku(tx, randomUUID());
+        const arrival = await kernel.recordArrival(
+          {
+            source: 'inbound_shipment',
+            warehouseId: fx.warehouseId,
+            reason: 'inbound_shipment',
+            lines: [{ skuId: fx.skuId, quantity: 1, eventKey: `k-${randomUUID()}` }],
+          },
+          tx,
+        );
+        await expect(
+          kernel.cancelLine({ receiptLineId: arrival.lines[0]?.id ?? '', expected: { source: 'direct' } }, tx),
+        ).rejects.toMatchObject({ status: 409, message: '선적 입고는 선적에서 취소하세요' });
+      });
+    });
+
     it('expected.source 와 라인 source 가 다르면 source 에 맞는 409로 거절한다', async () => {
       await inRollbackTx(db, async (tx) => {
         const fx = await seedWarehouseAndSku(tx, randomUUID());

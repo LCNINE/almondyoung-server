@@ -15,7 +15,10 @@ import { lockProductVariantsForSkus } from '../../product-sellable-quantity/serv
 
 export type DirectArrivalMethod = 'simple' | 'simple_fullscan' | 'individual';
 export type InboundReceiptSource = 'direct' | 'purchase_order' | 'inbound_shipment';
-export type ArrivalOrigin = { source: 'direct'; method: DirectArrivalMethod } | { source: 'purchase_order' };
+export type ArrivalOrigin =
+  | { source: 'direct'; method: DirectArrivalMethod }
+  | { source: 'purchase_order' }
+  | { source: 'inbound_shipment' };
 
 export interface ArrivalLineInput {
   skuId: string;
@@ -193,7 +196,11 @@ export class InboundReceiptKernel {
     const line = await this.lockLine(input.receiptLineId, tx);
     if (line.source !== input.expected.source) {
       throw new ConflictException(
-        line.source === 'purchase_order' ? '발주 입고는 발주에서 취소하세요' : '이 회차 라인은 직접 입고가 아닙니다',
+        line.source === 'purchase_order'
+          ? '발주 입고는 발주에서 취소하세요'
+          : line.source === 'inbound_shipment'
+            ? '선적 입고는 선적에서 취소하세요'
+            : '이 회차 라인은 직접 입고가 아닙니다',
       );
     }
     const receipt = await this.loadReceipt(line.receiptId, tx);
