@@ -27,11 +27,13 @@ const summaryColumns = {
     string | null
   >`case when jsonb_typeof(${almondTemplates.design}->'kind') = 'string' then ${almondTemplates.design}->>'kind' end`,
   // designPrintsBack 의 SQL 짝. 목록에서 design 전체를 읽지 않으려고 둘로 둔다
-  printsBack: sql<boolean>`(
+  // 뒷면 칸이 없으면 비교식이 null 이 되므로 false 로 고정한다
+  printsBack: sql<boolean>`coalesce(
     (jsonb_typeof(${almondTemplates.design}->'back') = 'array' and jsonb_array_length(${almondTemplates.design}->'back') > 0)
     or jsonb_typeof(${almondTemplates.design}->'backBackground'->'backgroundImage') = 'string'
     or (jsonb_typeof(${almondTemplates.design}->'backBackground'->'background') = 'string'
-      and lower(${almondTemplates.design}->'backBackground'->>'background') <> '#ffffff')
+      and lower(${almondTemplates.design}->'backBackground'->>'background') <> '#ffffff'),
+    false
   )`,
 };
 
