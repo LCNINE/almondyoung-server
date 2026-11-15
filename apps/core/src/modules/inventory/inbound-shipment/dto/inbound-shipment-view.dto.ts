@@ -38,12 +38,15 @@ export class InboundShipmentBarcodeCandidateDto {
 
 export class InboundShipmentLineDifferenceDto {
   @ApiProperty({
-    enum: ['pending', 'match', 'short', 'over'],
-    description: 'pending = 진행 중(덮는 상자 중 열린 것이 있거나 예정 수량이 없다)',
+    enum: ['pending', 'not_arrived', 'match', 'short', 'over'],
+    description:
+      'pending = 진행 중(덮는 입고 상자 중 열린 것이 있거나 예정 수량이 없다), not_arrived = 사람이 닫은 선적에서 열린 상자가 남은 줄',
   })
-  state: 'pending' | 'match' | 'short' | 'over';
+  state: 'pending' | 'not_arrived' | 'match' | 'short' | 'over';
   @ApiProperty({ description: '유효 집계 합' }) counted: number;
-  @ApiPropertyOptional({ nullable: true, description: 'pending 일 때만 null 일 수 있다' }) expected: number | null;
+  @ApiPropertyOptional({ nullable: true, description: 'pending·not_arrived 일 때만 null 일 수 있다' }) expected:
+    | number
+    | null;
 }
 
 export class InboundShipmentLineViewDto {
@@ -75,6 +78,7 @@ export class InboundShipmentDifferenceSummaryDto {
   @ApiProperty({ description: '리스트에 없던 상자 수' }) addedBoxes: number;
   @ApiProperty({ description: '모자란 줄 수' }) shortLines: number;
   @ApiProperty({ description: '남는 줄 수' }) overLines: number;
+  @ApiProperty({ description: '사람이 닫은 선적에서 열린 상자가 남은(안 온) 줄 수' }) notArrivedLines: number;
   @ApiProperty({ description: '리스트에 없던 물건의 유효 집계 행 수' }) unplannedCounts: number;
 }
 

@@ -80,6 +80,7 @@ export class InboundShipmentReader {
           label: t.inboundShipmentBoxes.label,
           sortKey: t.inboundShipmentBoxes.sortKey,
           status: t.inboundShipmentBoxes.status,
+          disposition: t.inboundShipmentBoxes.disposition,
         })
         .from(t.inboundShipmentLineBoxes)
         .innerJoin(t.inboundShipmentBoxes, eq(t.inboundShipmentBoxes.id, t.inboundShipmentLineBoxes.boxId))
@@ -89,7 +90,10 @@ export class InboundShipmentReader {
       const coverStatusesByLine = new Map<string, ('open' | 'received')[]>();
       for (const c of cover) {
         labelsByLine.set(c.lineId, [...(labelsByLine.get(c.lineId) ?? []), c.label]);
-        coverStatusesByLine.set(c.lineId, [...(coverStatusesByLine.get(c.lineId) ?? []), c.status]);
+        // 전달용 상자는 확정되지 않으므로 차이 판정에서 뺀다 — 전달용뿐인 줄은 늘 진행 중이다
+        if (c.disposition === 'stock') {
+          coverStatusesByLine.set(c.lineId, [...(coverStatusesByLine.get(c.lineId) ?? []), c.status]);
+        }
       }
 
       const counts = await trx
@@ -111,11 +115,13 @@ export class InboundShipmentReader {
       }
 
       // 미확인 줄은 예정 수량이 있어도 판정하지 않는다 — 무엇이 와야 하는지 아직 모른다
+      const manuallyClosed = shipment.status === 'closed' && shipment.closedReason !== null;
       const differences = lines.map((l) =>
         lineDifference(
           l.kind === 'unresolved' ? null : l.expectedQty,
           byLine.get(l.id) ?? [],
           coverStatusesByLine.get(l.id) ?? [],
+          manuallyClosed,
         ),
       );
       const stockBoxes = boxes.filter((b) => b.disposition === 'stock');
@@ -165,6 +171,7 @@ export class InboundShipmentReader {
           addedBoxes: boxes.filter((b) => b.origin === 'added').length,
           shortLines: differences.filter((d) => d.state === 'short').length,
           overLines: differences.filter((d) => d.state === 'over').length,
+          notArrivedLines: differences.filter((d) => d.state === 'not_arrived').length,
           unplannedCounts,
         },
       };

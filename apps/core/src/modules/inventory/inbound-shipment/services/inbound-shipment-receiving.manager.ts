@@ -18,7 +18,7 @@ import {
   ReceiveBoxResult,
 } from '../dto/receive.dto';
 import { lockInboundShipment, lockInboundShipmentBox } from './inbound-shipment-locks';
-import { deriveShipmentStatus, normalizeSingleBoxLabel } from './inbound-shipment.rules';
+import { deriveShipmentStatus, normalizeSingleBoxLabel, orderReceiptLinesForCancel } from './inbound-shipment.rules';
 
 /** 상자를 받거나 더할 수 있는 선적 상태 — 도착 예정·입고 중. */
 const isOpen = (status: InboundShipment['status']): boolean => status === 'expected' || status === 'receiving';
@@ -149,7 +149,8 @@ export class InboundShipmentReceivingManager {
    * 상자 확정 취소 — 그 상자의 회차 라인을 전부 커널 `cancelLine` 으로 되돌린다 (spec §8.3).
    *
    * 규칙(당일·전량·적치/회송 없음)은 커널이 본다 — 거절은 그대로 올라가고, 한 라인이라도 거절되면
-   * 트랜잭션째 되돌아가 «일부만 취소된 상자»가 남지 않는다. 원장에 들어간 줄이 없는 상자(0·자유 줄뿐)도
+   * 트랜잭션째 되돌아가 «일부만 취소된 상자»가 남지 않는다(호출자가 tx 를 넘기면 그 tx 를 되돌리는 것은
+   * 호출자 몫이다 — 이어서 쓸 거면 세이브포인트로 감싼다). 원장에 들어간 줄이 없는 상자(0·자유 줄뿐)도
    * 취소할 수 있다 — 그때는 커널을 부르지 않는다.
    * 선적 상태는 상자로 다시 계산한다. 사람이 닫았어도 «닫힘»을 잇지 않는다(§8.4 — 다시 끝내면 된다).
    */
@@ -175,10 +176,7 @@ export class InboundShipmentReceivingManager {
         }
 
         const live = await trx
-          .select({
-            id: wmsTables.inboundShipmentBoxCounts.id,
-            receiptLineId: wmsTables.inboundShipmentBoxCounts.receiptLineId,
-          })
+          .select({ id: wmsTables.inboundShipmentBoxCounts.id })
           .from(wmsTables.inboundShipmentBoxCounts)
           .where(
             and(
@@ -187,11 +185,26 @@ export class InboundShipmentReceivingManager {
             ),
           )
           .orderBy(asc(wmsTables.inboundShipmentBoxCounts.id));
+        const ledger = await trx
+          .select({
+            receiptLineId: wmsTables.inboundReceiptLines.id,
+            skuId: wmsTables.inboundReceiptLines.skuId,
+          })
+          .from(wmsTables.inboundShipmentBoxCounts)
+          .innerJoin(
+            wmsTables.inboundReceiptLines,
+            eq(wmsTables.inboundReceiptLines.id, wmsTables.inboundShipmentBoxCounts.receiptLineId),
+          )
+          .where(
+            and(
+              eq(wmsTables.inboundShipmentBoxCounts.boxId, boxId),
+              isNull(wmsTables.inboundShipmentBoxCounts.canceledAt),
+            ),
+          );
 
-        // 회차 라인은 id 순으로 잠근다 — 동시 취소끼리 순서가 같아 교착이 없다
-        const receiptLineIds = live.flatMap((c) => (c.receiptLineId ? [c.receiptLineId] : [])).sort();
+        // 커널은 SKU 순으로 부른다 — 도착이 (sku, 창고) 락을 미리 잡는 순서와 같아야 교차 교착이 없다
         const canceledSkuIds = new Set<string>();
-        for (const receiptLineId of receiptLineIds) {
+        for (const { receiptLineId } of orderReceiptLinesForCancel(ledger)) {
           const line = await this.kernel.cancelLine({ receiptLineId, expected: { source: 'inbound_shipment' } }, trx);
           canceledSkuIds.add(line.skuId);
         }

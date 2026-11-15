@@ -44,15 +44,14 @@ describeIfDb('InboundShipmentReceivingManager (DB integration)', () => {
     } as unknown as DbService<typeof wmsSchema>;
     const matcher = new InboundShipmentSkuMatcherReader(dbService);
     const recalculateAndPublishForSkus = jest.fn<Promise<unknown[]>, [string[], DbTx?]>().mockResolvedValue([]);
+    const kernel = makeInboundReceiptKernel(db);
     return {
+      kernel,
       drafts: new InboundShipmentDraftManager(dbService, matcher),
       reader: new InboundShipmentReader(dbService, matcher),
-      receiving: new InboundShipmentReceivingManager(
-        dbService,
-        makeInboundReceiptKernel(db),
-        new InventoryIdempotencyService(dbService),
-        { recalculateAndPublishForSkus } as never,
-      ),
+      receiving: new InboundShipmentReceivingManager(dbService, kernel, new InventoryIdempotencyService(dbService), {
+        recalculateAndPublishForSkus,
+      } as never),
       recalculateAndPublishForSkus,
     };
   }
@@ -979,9 +978,130 @@ describeIfDb('InboundShipmentReceivingManager (DB integration)', () => {
         addedBoxes: 1,
         shortLines: 1,
         overLines: 1,
+        notArrivedLines: 0,
         unplannedCounts: 1,
       });
       expect(added.label).toBe('L99');
+    });
+  });
+  /** 두 SKU 줄을 한 상자로 받는다. 회차 라인 id 순서가 SKU 순서와 반대가 될 때까지 새 선적으로 다시 만든다. */
+  async function receivedTwoSkuBox(trx: DbTx, built: Built, f: Awaited<ReturnType<typeof seed>>, opposite: boolean) {
+    for (let attempt = 0; attempt < 16; attempt += 1) {
+      const s = await shipment(trx, built, f.warehouseId, [
+        row(1, 'L1', 6, f.barcodes[0]),
+        row(2, 'L1', 4, f.barcodes[1]),
+        row(3, 'L2', 1, f.barcodes[2]),
+      ]);
+      const box = s.boxOf('L1');
+      const received = await built.receiving.receiveBox(
+        s.shipmentId,
+        box,
+        dto([
+          { lineId: s.lineOf(1), countedQty: 6 },
+          { lineId: s.lineOf(2), countedQty: 4 },
+        ]),
+        ACTOR,
+        trx,
+      );
+      const lines = await trx
+        .select()
+        .from(wmsTables.inboundReceiptLines)
+        .where(eq(wmsTables.inboundReceiptLines.receiptId, received.receiptId ?? ''));
+      const [lo, hi] = [...lines].sort((a, b) => (a.skuId < b.skuId ? -1 : 1));
+      if (!opposite || lo.id > hi.id) return { s, box, lo, hi };
+    }
+    throw new Error('could not build receipt lines whose id order is opposite to their sku order');
+  }
+
+  it('cancel calls the kernel in sku order, not receipt line order', async () => {
+    await inRollbackTx(db, async (trx) => {
+      const f = await seed(trx);
+      const built = build(trx);
+      const { s, box, lo, hi } = await receivedTwoSkuBox(trx, built, f, true);
+      expect(lo.id > hi.id).toBe(true);
+      const spy = jest.spyOn(built.kernel, 'cancelLine');
+
+      await built.receiving.cancelBoxReceipt(s.shipmentId, box, cancelDto(), ACTOR, trx);
+
+      expect(spy.mock.calls.map(([input]) => input.receiptLineId)).toEqual([lo.id, hi.id]);
+    });
+  });
+
+  it('a refusal on the second line leaves the first line uncanceled', async () => {
+    await inRollbackTx(db, async (trx) => {
+      const f = await seed(trx);
+      const built = build(trx);
+      const { s, box, lo, hi } = await receivedTwoSkuBox(trx, built, f, false);
+      const [shelf] = await trx
+        .insert(wmsTables.locations)
+        .values({
+          warehouseId: f.warehouseId,
+          code: `RC-PUT-${randomUUID().slice(0, 8)}`,
+          locationType: 'zone',
+          isSystem: false,
+          systemRole: null,
+          isActive: true,
+        })
+        .returning();
+      // 커널이 두 번째로 취소할 줄(SKU 가 큰 쪽)에 적치를 걸어 둔다
+      await built.kernel.putaway(
+        { receiptLineId: hi.id, toLocationId: shelf.id, quantity: 1, eventKey: `rc-put-${randomUUID()}` },
+        trx,
+      );
+      const spy = jest.spyOn(built.kernel, 'cancelLine');
+
+      // 호출자가 준 트랜잭션 안에서는 세이브포인트가 있어야 첫 줄의 취소가 함께 되돌아간다
+      await expect(
+        trx.transaction((sp) => built.receiving.cancelBoxReceipt(s.shipmentId, box, cancelDto(), ACTOR, sp)),
+      ).rejects.toThrow('cannot cancel: putaway exists; move all back to origin first');
+
+      expect(spy.mock.calls.map(([input]) => input.receiptLineId)).toEqual([lo.id, hi.id]);
+      const [first] = await trx
+        .select()
+        .from(wmsTables.inboundReceiptLines)
+        .where(eq(wmsTables.inboundReceiptLines.id, lo.id));
+      expect(first.canceledQty).toBe(0);
+      const reversals = await trx
+        .select()
+        .from(wmsTables.stockEvents)
+        .where(eq(wmsTables.stockEvents.reversalOfEventId, lo.eventId ?? ''));
+      expect(reversals).toHaveLength(0);
+      expect(await boxRow(trx, box)).toMatchObject({ status: 'received' });
+      expect((await countsOf(trx, box)).every((c) => c.canceledAt === null)).toBe(true);
+    });
+  });
+
+  it('manual close shows lines of open boxes as not arrived; reopen makes them pending again', async () => {
+    await inRollbackTx(db, async (trx) => {
+      const f = await seed(trx);
+      const built = build(trx);
+      const s = await shipment(trx, built, f.warehouseId, [
+        row(1, 'L1', 10, f.barcodes[0]),
+        row(2, 'L2', 5, f.barcodes[1]),
+        row(3, 'L3', 2, f.barcodes[2], 'acme 에 발송바람'),
+      ]);
+      await built.receiving.receiveBox(
+        s.shipmentId,
+        s.boxOf('L1'),
+        dto([{ lineId: s.lineOf(1), countedQty: 10 }]),
+        ACTOR,
+        trx,
+      );
+      await built.drafts.close(s.shipmentId, 'lost box (synthetic)', ACTOR, trx);
+
+      const closed = await built.reader.detail(s.shipmentId, trx);
+      const diffOf = (view: typeof closed, rowNumber: number) =>
+        view.lines.find((l) => l.id === s.lineOf(rowNumber))?.difference;
+      expect(diffOf(closed, 1)).toEqual({ state: 'match', counted: 10, expected: 10 });
+      expect(diffOf(closed, 2)).toEqual({ state: 'not_arrived', counted: 0, expected: 5 });
+      // 전달용 상자의 줄은 받지 않으므로 «안 옴»이 아니다
+      expect(diffOf(closed, 3)).toEqual({ state: 'pending', counted: 0, expected: 2 });
+      expect(closed.summary).toMatchObject({ notArrivedLines: 1, shortLines: 0, overLines: 0 });
+
+      await built.drafts.reopen(s.shipmentId, ACTOR, trx);
+      const reopened = await built.reader.detail(s.shipmentId, trx);
+      expect(diffOf(reopened, 2)).toEqual({ state: 'pending', counted: 0, expected: 5 });
+      expect(reopened.summary.notArrivedLines).toBe(0);
     });
   });
 });

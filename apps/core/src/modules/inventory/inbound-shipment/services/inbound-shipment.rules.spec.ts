@@ -5,6 +5,7 @@ import {
   lineDifference,
   lineEditable,
   normalizeSingleBoxLabel,
+  orderReceiptLinesForCancel,
 } from './inbound-shipment.rules';
 
 const box = (id: string, disposition: 'stock' | 'forward' = 'stock', origin: 'list' | 'added' = 'list') => ({
@@ -84,17 +85,21 @@ describe('normalizeSingleBoxLabel', () => {
 describe('lineDifference', () => {
   it('range line difference is pending until every covered box is received', () => {
     const four = [200, 200, 200, 200];
-    expect(lineDifference(1076, four, ['received', 'received', 'received', 'received', 'open'])).toEqual({
+    expect(lineDifference(1076, four, ['received', 'received', 'received', 'received', 'open'], false)).toEqual({
       state: 'pending',
       counted: 800,
       expected: 1076,
     });
-    expect(lineDifference(1076, [...four, 276], ['received', 'received', 'received', 'received', 'received'])).toEqual({
+    expect(
+      lineDifference(1076, [...four, 276], ['received', 'received', 'received', 'received', 'received'], false),
+    ).toEqual({
       state: 'match',
       counted: 1076,
       expected: 1076,
     });
-    expect(lineDifference(1076, [...four, 276], ['received', 'received', 'received', 'received', 'open'])).toEqual({
+    expect(
+      lineDifference(1076, [...four, 276], ['received', 'received', 'received', 'received', 'open'], false),
+    ).toEqual({
       state: 'pending',
       counted: 1076,
       expected: 1076,
@@ -102,13 +107,42 @@ describe('lineDifference', () => {
   });
 
   it('short and over', () => {
-    expect(lineDifference(10, [8], ['received'])).toEqual({ state: 'short', counted: 8, expected: 10 });
-    expect(lineDifference(10, [12], ['received'])).toEqual({ state: 'over', counted: 12, expected: 10 });
+    expect(lineDifference(10, [8], ['received'], false)).toEqual({ state: 'short', counted: 8, expected: 10 });
+    expect(lineDifference(10, [12], ['received'], false)).toEqual({ state: 'over', counted: 12, expected: 10 });
   });
 
   it('no expected quantity is always pending', () =>
-    expect(lineDifference(null, [3], ['received'])).toEqual({ state: 'pending', counted: 3, expected: null }));
+    expect(lineDifference(null, [3], ['received'], false)).toEqual({ state: 'pending', counted: 3, expected: null }));
 
   it('a line with no covering box is never judged', () =>
-    expect(lineDifference(5, [], [])).toEqual({ state: 'pending', counted: 0, expected: 5 }));
+    expect(lineDifference(5, [], [], false)).toEqual({ state: 'pending', counted: 0, expected: 5 }));
+
+  it('manual close marks a line with an open box as not arrived', () => {
+    expect(lineDifference(10, [4], ['received', 'open'], true)).toEqual({
+      state: 'not_arrived',
+      counted: 4,
+      expected: 10,
+    });
+    expect(lineDifference(10, [], ['open'], true)).toEqual({ state: 'not_arrived', counted: 0, expected: 10 });
+  });
+
+  it('manual close still judges fully received lines and never judges unknown ones', () => {
+    expect(lineDifference(10, [10], ['received'], true)).toEqual({ state: 'match', counted: 10, expected: 10 });
+    expect(lineDifference(10, [8], ['received'], true)).toEqual({ state: 'short', counted: 8, expected: 10 });
+    expect(lineDifference(null, [], ['open'], true)).toEqual({ state: 'pending', counted: 0, expected: null });
+    expect(lineDifference(5, [], [], true)).toEqual({ state: 'pending', counted: 0, expected: 5 });
+  });
+});
+
+describe('orderReceiptLinesForCancel', () => {
+  it('orders by sku then receipt line — the same order as the arrival pre-claim', () => {
+    expect(
+      orderReceiptLinesForCancel([
+        { receiptLineId: 'b', skuId: 's2' },
+        { receiptLineId: 'a', skuId: 's3' },
+        { receiptLineId: 'c', skuId: 's2' },
+        { receiptLineId: 'd', skuId: 's1' },
+      ]).map((l) => l.receiptLineId),
+    ).toEqual(['d', 'b', 'c', 'a']);
+  });
 });

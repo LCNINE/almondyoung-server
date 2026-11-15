@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   ArrayMinSize,
@@ -96,9 +96,10 @@ export class UpdateHeaderDto {
   memo?: string | null;
 }
 
-/** 사람이 선적을 끝낸다 — 상자 분실 등. 앞뒤 공백을 뺀 1~500자는 매니저가 본다 (spec §8.4). */
+/** 사람이 선적을 끝낸다 — 상자 분실 등. 앞뒤 공백을 뺀 1~500자 — 매니저도 같은 검사를 한다 (spec §8.4). */
 export class CloseInboundShipmentDto {
-  @ApiProperty({ maxLength: 500, description: '끝내는 사유(상자 분실 등)' })
+  @ApiProperty({ maxLength: 500, description: '끝내는 사유(상자 분실 등). 앞뒤 공백은 빼고 센다' })
+  @Transform(({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value))
   @IsString()
   @Matches(/\S/)
   @MaxLength(500)
