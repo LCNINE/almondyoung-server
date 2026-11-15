@@ -383,16 +383,18 @@ file-service `default-file-contexts` 에 입고리스트 컨텍스트 하나를 
 - 배포 뒤 중국 쪽 직원 역할에 `inventory.inbound_shipment.write` · `inventory.stock.read` 부여(`/users/roles`). 첫 등록
   부여는 admin 뿐이다.
 
-## 12. 단계
+## 12. 작업 순서
 
-1. **core 모델·API** — 스키마·마이그, 파서 순수 함수 + 스펙(샘플 형태 전부), 초안·해소·확정·상자 확정·취소·차이,
+> 이 설계 안의 순서다. 컷오버 «1단계»(#1233)와 무관하다. 나머지가 전부 core API 를 부르므로 core 가 먼저다.
+
+① **core 모델·API** — 스키마·마이그, 파서 순수 함수 + 스펙(샘플 형태 전부), 초안·해소·확정·상자 확정·취소·차이,
    커널 source 추가, arch 스펙 갱신, 통합 스펙(`describeIfDb`). ← 이번 작업
-2. **admin-web 업로드·확인 화면 + ai 엔드포인트 + file_context** (#1238 마무리)
-3. **warehouse-app 상자 입고 화면** (#1239 마무리). 같은 릴리스에 기존 화면이 새 `source` 를 알게 한다 — 지금
+② **admin-web 업로드·확인 화면 + ai 엔드포인트 + file_context** (#1238 마무리)
+③ **warehouse-app 상자 입고 화면** (#1239 마무리). 같은 릴리스에 기존 화면이 새 `source` 를 알게 한다 — 지금
    `native/warehouse-app/src/domains/inbound/types.ts` 의 `isActionablePutaway` 는 `direct`·`purchase_order` 만 적치
    시트를 열고, `InboundHistoryScreen` 은 `purchase_order` 가 아니면 직접 입고 취소로 보내 선적 입고에서 409 가 난다.
-   admin-web DTO 의 `source` 유니언도 같이. 선적 입고가 생기는 첫 화면이 3단계이므로 그 전엔 문제가 드러나지 않는다.
-4. #1240
+   admin-web DTO 의 `source` 유니언도 같이. 선적 입고가 생기는 첫 화면이 ③ 이므로 그 전엔 문제가 드러나지 않는다.
+④ #1240
 
 ## 13. 문서
 
