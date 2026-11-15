@@ -1,13 +1,17 @@
 import { Injectable } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
 import { DbService } from '@app/db';
-import { and, asc, countDistinct, desc, eq, inArray, isNull, ne, SQL, sql } from 'drizzle-orm';
+import { and, asc, count, desc, eq, inArray, isNull, ne, SQL, sql } from 'drizzle-orm';
 import { NotFoundError } from '@app/shared';
 import { normalizeBarcode, ListCell } from './inbound-shipment-list.parser';
 import { lineDifference, normalizeSingleBoxLabel } from './inbound-shipment.rules';
 import { InboundShipmentSkuMatcherReader } from './inbound-shipment-sku-matcher.reader';
 import { DbTx, InboundShipment, wmsSchema, wmsTables } from '../../schema/inventory.schema';
-import { InboundShipmentDetailView, InboundShipmentSummaryDto } from '../dto/inbound-shipment-view.dto';
+import {
+  InboundShipmentDetailView,
+  InboundShipmentSummaryDto,
+  InboundShipmentUnplannedItemDto,
+} from '../dto/inbound-shipment-view.dto';
 import { BoxCandidateView, BoxView } from '../dto/receive.dto';
 
 type ShipmentStatus = InboundShipment['status'];
@@ -19,6 +23,19 @@ function cellText(raw: Record<string, unknown>, key: string): string {
   const c = raw[key];
   if (c !== null && typeof c === 'object' && 'text' in c && typeof c.text === 'string') return c.text;
   return '';
+}
+
+const isCellValue = (v: unknown): v is ListCell['value'] =>
+  v === null || typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean';
+
+/** 원문 칸 하나를 `ListCell` 로 읽는다. `raw` 는 jsonb 라 모양이 다르면 `null`(칸이 없던 것과 같다). */
+function cellOf(raw: Record<string, unknown>, key: string): ListCell | null {
+  const c = raw[key];
+  if (c === null || typeof c !== 'object' || !('text' in c) || typeof c.text !== 'string') return null;
+  const value = 'value' in c ? c.value : null;
+  if (!isCellValue(value)) return null;
+  const formula = 'formula' in c && typeof c.formula === 'string' ? c.formula : undefined;
+  return formula === undefined ? { text: c.text, value } : { text: c.text, value, formula };
 }
 
 @Injectable()
@@ -37,6 +54,18 @@ export class InboundShipmentReader {
       if (q.status && q.status.length > 0) conds.push(inArray(s.status, q.status));
       const boxes = wmsTables.inboundShipmentBoxes;
       const lines = wmsTables.inboundShipmentLines;
+      // 선적마다 먼저 센 뒤 잇는다 — 상자·줄을 함께 LEFT JOIN 하면 상자 수 × 줄 수 행이 생긴다.
+      // 별칭은 서로 달라야 한다 — drizzle 은 바깥에서 집계 열을 별칭만으로(테이블 없이) 부른다
+      const boxCounts = trx
+        .select({ shipmentId: boxes.shipmentId, n: count().as('box_count') })
+        .from(boxes)
+        .groupBy(boxes.shipmentId)
+        .as('box_counts');
+      const lineCounts = trx
+        .select({ shipmentId: lines.shipmentId, n: count().as('line_count') })
+        .from(lines)
+        .groupBy(lines.shipmentId)
+        .as('line_counts');
       return trx
         .select({
           id: s.id,
@@ -45,14 +74,13 @@ export class InboundShipmentReader {
           name: s.name,
           expectedArrival: s.expectedArrival,
           createdAt: s.createdAt,
-          boxCount: countDistinct(boxes.id),
-          lineCount: countDistinct(lines.id),
+          boxCount: sql<number>`coalesce(${boxCounts.n}, 0)`.mapWith(Number),
+          lineCount: sql<number>`coalesce(${lineCounts.n}, 0)`.mapWith(Number),
         })
         .from(s)
-        .leftJoin(boxes, eq(boxes.shipmentId, s.id))
-        .leftJoin(lines, eq(lines.shipmentId, s.id))
+        .leftJoin(boxCounts, eq(boxCounts.shipmentId, s.id))
+        .leftJoin(lineCounts, eq(lineCounts.shipmentId, s.id))
         .where(conds.length > 0 ? and(...conds) : undefined)
-        .groupBy(s.id)
         .orderBy(desc(s.createdAt));
     }, tx);
   }
@@ -68,11 +96,20 @@ export class InboundShipmentReader {
         .from(t.inboundShipmentBoxes)
         .where(eq(t.inboundShipmentBoxes.shipmentId, id))
         .orderBy(asc(t.inboundShipmentBoxes.sortKey));
-      const lines = await trx
-        .select()
+      const lineRows = await trx
+        .select({ line: t.inboundShipmentLines, skuCode: t.skus.code, skuName: t.skus.name })
         .from(t.inboundShipmentLines)
+        .leftJoin(t.skus, eq(t.skus.id, t.inboundShipmentLines.skuId))
         .where(eq(t.inboundShipmentLines.shipmentId, id))
         .orderBy(asc(t.inboundShipmentLines.rowNumber), asc(t.inboundShipmentLines.id));
+      const lines = lineRows.map((r) => r.line);
+      const skuOfLine = new Map(
+        lineRows.flatMap((r) =>
+          r.line.kind === 'sku' && r.skuCode !== null && r.skuName !== null
+            ? [[r.line.id, { code: r.skuCode, name: r.skuName }] as const]
+            : [],
+        ),
+      );
 
       const cover = await trx
         .select({
@@ -99,19 +136,39 @@ export class InboundShipmentReader {
       const counts = await trx
         .select({
           boxId: t.inboundShipmentBoxCounts.boxId,
+          boxLabel: t.inboundShipmentBoxes.label,
           lineId: t.inboundShipmentBoxCounts.lineId,
+          skuId: t.inboundShipmentBoxCounts.skuId,
+          skuCode: t.skus.code,
+          skuName: t.skus.name,
           qty: t.inboundShipmentBoxCounts.countedQty,
         })
         .from(t.inboundShipmentBoxCounts)
         .innerJoin(t.inboundShipmentBoxes, eq(t.inboundShipmentBoxes.id, t.inboundShipmentBoxCounts.boxId))
-        .where(and(eq(t.inboundShipmentBoxes.shipmentId, id), isNull(t.inboundShipmentBoxCounts.canceledAt)));
+        .leftJoin(t.skus, eq(t.skus.id, t.inboundShipmentBoxCounts.skuId))
+        .where(and(eq(t.inboundShipmentBoxes.shipmentId, id), isNull(t.inboundShipmentBoxCounts.canceledAt)))
+        .orderBy(
+          asc(t.inboundShipmentBoxes.sortKey),
+          asc(t.inboundShipmentBoxCounts.createdAt),
+          asc(t.inboundShipmentBoxCounts.id),
+        );
       const byBox = new Map<string, number>();
       const byLine = new Map<string, number[]>();
-      let unplannedCounts = 0;
+      const unplannedItems: InboundShipmentUnplannedItemDto[] = [];
       for (const c of counts) {
         byBox.set(c.boxId, (byBox.get(c.boxId) ?? 0) + c.qty);
         if (c.lineId) byLine.set(c.lineId, [...(byLine.get(c.lineId) ?? []), c.qty]);
-        else unplannedCounts += 1;
+        else if (c.skuId !== null) {
+          // 리스트에 없던 물건 — CHECK 가 sku_id 를 보장한다
+          unplannedItems.push({
+            boxId: c.boxId,
+            boxLabel: c.boxLabel,
+            skuId: c.skuId,
+            skuCode: c.skuCode ?? '',
+            skuName: c.skuName ?? '',
+            countedQty: c.qty,
+          });
+        }
       }
 
       // 미확인 줄은 예정 수량이 있어도 판정하지 않는다 — 무엇이 와야 하는지 아직 모른다
@@ -127,6 +184,7 @@ export class InboundShipmentReader {
       const stockBoxes = boxes.filter((b) => b.disposition === 'stock');
 
       const candidates = await this.candidatesFor(trx, lines);
+      const aiSkus = await this.aiCandidateSkus(trx, lines);
 
       return {
         id: shipment.id,
@@ -134,8 +192,11 @@ export class InboundShipmentReader {
         status: shipment.status,
         name: shipment.name,
         expectedArrival: shipment.expectedArrival,
+        sourceFileId: shipment.sourceFileId,
         sourceFileName: shipment.sourceFileName,
         memo: shipment.memo,
+        closedReason: shipment.closedReason,
+        closedAt: shipment.closedAt,
         createdAt: shipment.createdAt,
         boxCount: boxes.length,
         lineCount: lines.length,
@@ -147,6 +208,7 @@ export class InboundShipmentReader {
           disposition: b.disposition,
           forwardNote: b.forwardNote,
           status: b.status,
+          receivedAt: b.receivedAt,
           countedQty: byBox.get(b.id) ?? 0,
         })),
         lines: lines.map((l, index) => ({
@@ -154,11 +216,20 @@ export class InboundShipmentReader {
           rowNumber: l.rowNumber,
           kind: l.kind,
           skuId: l.skuId,
+          sku: skuOfLine.get(l.id) ?? null,
           expectedQty: l.expectedQty,
           resolution: l.resolution,
           issues: l.issues,
           coversBoxLabels: labelsByLine.get(l.id) ?? [],
-          aiCandidates: l.aiCandidates,
+          aiCandidates:
+            l.aiCandidates === null
+              ? null
+              : l.aiCandidates.map((c) => ({
+                  skuId: c.skuId,
+                  reason: c.reason,
+                  code: aiSkus.get(c.skuId)?.code ?? null,
+                  name: aiSkus.get(c.skuId)?.name ?? null,
+                })),
           raw: l.raw,
           countedQty: differences[index].counted,
           barcodeCandidates: candidates.get(l.id) ?? [],
@@ -172,8 +243,9 @@ export class InboundShipmentReader {
           shortLines: differences.filter((d) => d.state === 'short').length,
           overLines: differences.filter((d) => d.state === 'over').length,
           notArrivedLines: differences.filter((d) => d.state === 'not_arrived').length,
-          unplannedCounts,
+          unplannedCounts: unplannedItems.length,
         },
+        unplannedItems,
       };
     }, tx);
   }
@@ -328,6 +400,20 @@ export class InboundShipmentReader {
     }, tx);
   }
 
+  /** AI 후보 SKU 의 코드·이름 — 모든 줄의 후보를 한 번에 읽는다. 지워진 SKU 는 맵에 없다. */
+  private async aiCandidateSkus(
+    trx: DbTx,
+    lines: { aiCandidates: { skuId: string }[] | null }[],
+  ): Promise<Map<string, { code: string; name: string }>> {
+    const ids = [...new Set(lines.flatMap((l) => (l.aiCandidates ?? []).map((c) => c.skuId)))];
+    if (ids.length === 0) return new Map();
+    const rows = await trx
+      .select({ id: wmsTables.skus.id, code: wmsTables.skus.code, name: wmsTables.skus.name })
+      .from(wmsTables.skus)
+      .where(inArray(wmsTables.skus.id, ids));
+    return new Map(rows.map((r) => [r.id, { code: r.code, name: r.name }]));
+  }
+
   /** unresolved 줄의 원문 바코드를 다시 읽어 매처를 한 번만 불러 후보 SKU 를 붙인다 (spec §6.3). */
   private async candidatesFor(
     trx: DbTx,
@@ -337,7 +423,7 @@ export class InboundShipmentReader {
     const barcodeOf = new Map<string, string>();
     for (const l of lines) {
       if (l.kind !== 'unresolved') continue;
-      const { barcode } = normalizeBarcode(l.raw.barcode as ListCell | null, l.raw.remark as ListCell | null);
+      const { barcode } = normalizeBarcode(cellOf(l.raw, 'barcode'), cellOf(l.raw, 'remark'));
       if (barcode) barcodeOf.set(l.id, barcode);
     }
     if (barcodeOf.size === 0) return out;

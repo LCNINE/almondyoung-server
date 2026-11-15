@@ -163,9 +163,12 @@ export const inboundReceiptStatusEnum = pgEnum('inbound_receipt_status', ['poste
 /**
  * 회차 라인이 문서 정산에 묶였는가. 커널은 **어느 문서인지는 모르고** 묶였다는 사실만 안다 —
  * 연결은 문서 쪽 링크 테이블이 든다(스펙 §3.2).
- * 처음부터 두 값으로 만든다: drizzle 마이그레이터는 대기 마이그레이션 전부를 한 트랜잭션으로 돌고,
- * `ALTER TYPE … ADD VALUE` 로 넣은 값은 그 트랜잭션 안에서 쓸 수 없다(스펙 §5.1 D9).
- * `purchase_order` 를 쓰는 코드는 PR-B 에서 생긴다.
+ * - `direct` — 입고 화면에서 바로 받은 회차(기본값).
+ * - `purchase_order` — 발주 수령이 묶은 회차(발주 문서가 링크를 든다).
+ * - `inbound_shipment` — 선적 상자 확정이 만든 회차(`inbound_shipment_box_counts.receipt_line_id` 가 링크다).
+ * `direct`·`purchase_order` 는 타입을 만들 때 넣었고 `inbound_shipment` 는 선적 입고 마이그가 `ADD VALUE` 로 더했다.
+ * drizzle 마이그레이터는 대기 마이그레이션 전부를 한 트랜잭션으로 돌고 `ADD VALUE` 로 넣은 값은 그 트랜잭션 안에서
+ * 쓸 수 없으므로(스펙 §5.1 D9), 값을 더하는 마이그와 같은 배치의 마이그는 새 값을 SQL 로 쓰지 않는다.
  */
 export const inboundReceiptSourceEnum = pgEnum('inbound_receipt_source', [
   'direct',

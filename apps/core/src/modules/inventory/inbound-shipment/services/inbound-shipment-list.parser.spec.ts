@@ -61,6 +61,25 @@ describe('parseShipmentList', () => {
     expect(expandBoxLabel('L1-L60')).toEqual({ labels: [], issue: 'box_range_invalid' });
   });
 
+  it('keeps zero padding of the start number in a range', () => {
+    expect(expandBoxLabel('L05-L07')).toEqual({ labels: ['L05', 'L06', 'L07'], issue: null });
+    expect(expandBoxLabel('L09-L11')).toEqual({ labels: ['L09', 'L10', 'L11'], issue: null });
+    expect(expandBoxLabel('L5-L7')).toEqual({ labels: ['L5', 'L6', 'L7'], issue: null });
+    expect(expandBoxLabel('L10-L12')).toEqual({ labels: ['L10', 'L11', 'L12'], issue: null });
+  });
+
+  it('refuses a label longer than 32 characters', () => {
+    const long = `L${'1'.repeat(32)}`;
+    expect(expandBoxLabel(long)).toEqual({ labels: [], issue: 'box_label_too_long' });
+    expect(expandBoxLabel(`${long}-${long}`)).toEqual({ labels: [], issue: 'box_label_too_long' });
+    expect(expandBoxLabel(`${long}-`)).toEqual({ labels: [], issue: 'box_label_too_long' });
+    expect(expandBoxLabel(`L${'1'.repeat(31)}`).labels).toHaveLength(1);
+    const r = parseShipmentList(input([row(2, { box: c(long) })]));
+    expect(r.boxes).toEqual([]);
+    expect(r.lines[0].boxLabels).toEqual([]);
+    expect(r.lines[0].issues).toContain('box_label_too_long');
+  });
+
   it('reports a missing box label', () => {
     expect(expandBoxLabel('  ')).toEqual({ labels: [], issue: 'box_label_missing' });
   });
@@ -112,6 +131,21 @@ describe('parseShipmentList', () => {
     expect(r.lines[3].issues).toEqual([]);
   });
 
+  it('treats a quantity above 1,000,000 as invalid', () => {
+    const r = parseShipmentList(
+      input([
+        row(2, { box: c('L1'), qty: c('1000000', 1_000_000) }),
+        row(3, { box: c('L1'), qty: c('1000001', 1_000_001) }),
+        row(4, { box: c('L1'), qty: c('99999999999', '99999999999') }),
+      ]),
+    );
+    expect(r.lines[0].expectedQty).toBe(1_000_000);
+    expect(r.lines[1].expectedQty).toBeNull();
+    expect(r.lines[1].issues).toContain('qty_invalid');
+    expect(r.lines[2].expectedQty).toBeNull();
+    expect(r.lines[2].issues).toContain('qty_invalid');
+  });
+
   it('flags a date-coerced option', () => {
     const r = parseShipmentList(input([row(2, { box: c('L1'), option: c('2026-01-03', '2026-01-03T00:00:00.000Z') })]));
     expect(r.lines[0].issues).toContain('option_date_coerced');
@@ -160,6 +194,12 @@ describe('parseShipmentList', () => {
       ...Array.from({ length: 2000 }, (_, i) => data(i + 1002)),
     ];
     expect(parseShipmentList(input(ok)).lines).toHaveLength(2000);
+  });
+
+  it('rejects an upload with no data rows', () => {
+    const blank = (n: number) => ({ rowNumber: n, cells: HEADER.map(() => c('')) });
+    expect(() => parseShipmentList(input([]))).toThrow(BadRequestError);
+    expect(() => parseShipmentList(input([blank(2), blank(3)]))).toThrow(BadRequestError);
   });
 
   it('rejects duplicate rowNumber', () => {

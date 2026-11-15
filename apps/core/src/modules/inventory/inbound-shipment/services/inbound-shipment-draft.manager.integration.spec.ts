@@ -342,6 +342,11 @@ describeIfDb('InboundShipmentDraftManager (DB integration)', () => {
           .where(eq(wmsTables.inboundShipmentLines.id, unresolved.id));
         expect(line.kind).toBe('unresolved');
         expect(line.aiCandidates).toEqual([{ skuId: f.skuIds[1], reason: 'name match' }]);
+        const detail = await build(trx).reader.detail(shipmentId, trx);
+        const [sku1] = await trx.select().from(wmsTables.skus).where(eq(wmsTables.skus.id, f.skuIds[1]));
+        expect(detail.lines.find((l) => l.id === unresolved.id)?.aiCandidates).toEqual([
+          { skuId: f.skuIds[1], reason: 'name match', code: sku1.code, name: 'ds-sku-1' },
+        ]);
         await expect(manager.confirm(shipmentId, ACTOR, trx)).rejects.toThrow(ConflictError);
         await expect(
           manager.setAiCandidates(shipmentId, unresolved.id, [{ skuId: randomUUID(), reason: 'x' }], trx),
@@ -408,15 +413,100 @@ describeIfDb('InboundShipmentDraftManager (DB integration)', () => {
           .select()
           .from(wmsTables.inboundShipmentBoxes)
           .where(eq(wmsTables.inboundShipmentBoxes.shipmentId, shipmentId));
-        expect(boxes.map((b) => b.label).sort()).toEqual(['L1', 'L2', 'L7', 'L8']);
+        // L2 lost its only line — a draft list box with no line is removed, not left to block confirm
+        expect(boxes.map((b) => b.label).sort()).toEqual(['L1', 'L7', 'L8']);
         expect(boxes.find((b) => b.label === 'L7')?.origin).toBe('list');
         const cover = await trx
           .select()
           .from(wmsTables.inboundShipmentLineBoxes)
           .where(eq(wmsTables.inboundShipmentLineBoxes.lineId, unresolved.id));
         expect(cover).toHaveLength(3);
-        // L2 is now empty and list-origin
-        await expect(manager.confirm(shipmentId, ACTOR, trx)).rejects.toThrow(/줄이 없는 상자 1개 \(L2\)/);
+        await expect(manager.confirm(shipmentId, ACTOR, trx)).resolves.toMatchObject({ status: 'expected' });
+      });
+    });
+
+    it('box labels longer than 32 characters are a 400 for line and box edits', async () => {
+      await inRollbackTx(db, async (trx) => {
+        const { manager, shipmentId, unresolved } = await draftWithUnresolved(trx);
+        const long = `L${'1'.repeat(32)}`;
+        await expect(
+          manager.editLine(
+            shipmentId,
+            unresolved.id,
+            { kind: 'free' },
+            { expectedQty: 1, boxLabels: [long] },
+            ACTOR,
+            trx,
+          ),
+        ).rejects.toThrow(BadRequestError);
+        const [box] = await trx
+          .select()
+          .from(wmsTables.inboundShipmentBoxes)
+          .where(eq(wmsTables.inboundShipmentBoxes.shipmentId, shipmentId));
+        await expect(manager.editBox(shipmentId, box.id, { label: long }, ACTOR, trx)).rejects.toThrow(BadRequestError);
+      });
+    });
+
+    it('a quantity-only edit keeps kind, sku and resolution', async () => {
+      await inRollbackTx(db, async (trx) => {
+        const { f, manager, shipmentId, unresolved, lines } = await draftWithUnresolved(trx);
+        const sku = lines.find((l) => l.kind === 'sku')!;
+        await manager.editLine(shipmentId, sku.id, null, { expectedQty: 4 }, ACTOR, trx);
+        await manager.editLine(shipmentId, unresolved.id, null, { expectedQty: 9 }, ACTOR, trx);
+        const after = await trx
+          .select()
+          .from(wmsTables.inboundShipmentLines)
+          .where(eq(wmsTables.inboundShipmentLines.shipmentId, shipmentId));
+        const byId = (id: string) => after.find((l) => l.id === id)!;
+        expect(byId(sku.id)).toMatchObject({
+          kind: 'sku',
+          skuId: f.skuIds[0],
+          resolution: 'barcode',
+          expectedQty: 4,
+          resolvedBy: null,
+        });
+        expect(byId(unresolved.id)).toMatchObject({
+          kind: 'unresolved',
+          skuId: null,
+          resolution: null,
+          expectedQty: 9,
+        });
+        // still subject to lineEditable once a covered box is received
+        await manager.editLine(shipmentId, unresolved.id, { kind: 'free' }, {}, ACTOR, trx);
+        await manager.confirm(shipmentId, ACTOR, trx);
+        const [cover] = await trx
+          .select()
+          .from(wmsTables.inboundShipmentLineBoxes)
+          .where(eq(wmsTables.inboundShipmentLineBoxes.lineId, sku.id));
+        await trx
+          .update(wmsTables.inboundShipmentBoxes)
+          .set({ status: 'received' })
+          .where(eq(wmsTables.inboundShipmentBoxes.id, cover.boxId));
+        await expect(manager.editLine(shipmentId, sku.id, null, { expectedQty: 5 }, ACTOR, trx)).rejects.toThrow(
+          ConflictError,
+        );
+      });
+    });
+
+    it('list counts boxes and lines per shipment without multiplying them', async () => {
+      await inRollbackTx(db, async (trx) => {
+        const f = await seed(trx);
+        const { manager, reader } = build(trx);
+        const { shipmentId } = await manager.createDraft(
+          input(f.warehouseId, {
+            header: HEADER,
+            rows: [row(1, 'L1-L3', 10, f.barcodes[0]), row(2, 'L1', 5, f.barcodes[1])],
+          }),
+          ACTOR,
+          trx,
+        );
+        const empty = await trx
+          .insert(wmsTables.inboundShipments)
+          .values({ warehouseId: f.warehouseId, name: 'no boxes yet' })
+          .returning({ id: wmsTables.inboundShipments.id });
+        const list = await reader.list({ warehouseId: f.warehouseId }, trx);
+        expect(list.find((s) => s.id === shipmentId)).toMatchObject({ boxCount: 3, lineCount: 2 });
+        expect(list.find((s) => s.id === empty[0].id)).toMatchObject({ boxCount: 0, lineCount: 0 });
       });
     });
 

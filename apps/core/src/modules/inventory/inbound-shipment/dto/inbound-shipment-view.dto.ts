@@ -22,12 +22,29 @@ export class InboundShipmentBoxViewDto {
   @ApiProperty({ enum: ['stock', 'forward'] }) disposition: 'stock' | 'forward';
   @ApiPropertyOptional({ nullable: true }) forwardNote: string | null;
   @ApiProperty({ enum: ['open', 'received'] }) status: 'open' | 'received';
+  @ApiPropertyOptional({ nullable: true, description: '확정한 때 — 열린 상자는 null' }) receivedAt: Date | null;
   @ApiProperty({ description: '취소되지 않은 센 수량 합' }) countedQty: number;
 }
 
 export class InboundShipmentAiCandidateDto {
   @ApiProperty() skuId: string;
   @ApiProperty() reason: string;
+  @ApiPropertyOptional({ nullable: true, description: 'SKU 코드 — 후보 SKU 가 지워졌으면 null' }) code: string | null;
+  @ApiPropertyOptional({ nullable: true, description: 'SKU 이름 — 후보 SKU 가 지워졌으면 null' }) name: string | null;
+}
+
+export class InboundShipmentLineSkuDto {
+  @ApiProperty() code: string;
+  @ApiProperty() name: string;
+}
+
+export class InboundShipmentUnplannedItemDto {
+  @ApiProperty() boxId: string;
+  @ApiProperty() boxLabel: string;
+  @ApiProperty() skuId: string;
+  @ApiProperty() skuCode: string;
+  @ApiProperty() skuName: string;
+  @ApiProperty({ description: '센 수량(취소되지 않은 집계)' }) countedQty: number;
 }
 
 export class InboundShipmentBarcodeCandidateDto {
@@ -54,6 +71,8 @@ export class InboundShipmentLineViewDto {
   @ApiProperty() rowNumber: number;
   @ApiProperty({ enum: ['sku', 'free', 'unresolved'] }) kind: 'sku' | 'free' | 'unresolved';
   @ApiPropertyOptional({ nullable: true }) skuId: string | null;
+  @ApiPropertyOptional({ type: InboundShipmentLineSkuDto, nullable: true, description: 'kind=sku 일 때만' })
+  sku: InboundShipmentLineSkuDto | null;
   @ApiPropertyOptional({ nullable: true }) expectedQty: number | null;
   @ApiPropertyOptional({ enum: ['barcode', 'manual'], nullable: true }) resolution: 'barcode' | 'manual' | null;
   @ApiProperty({ type: [String] }) issues: string[];
@@ -83,11 +102,18 @@ export class InboundShipmentDifferenceSummaryDto {
 }
 
 export class InboundShipmentDetailViewDto extends InboundShipmentSummaryDto {
+  @ApiPropertyOptional({ nullable: true, description: '원본 파일(file-service) — 올리기가 실패했으면 null' })
+  sourceFileId: string | null;
   @ApiPropertyOptional({ nullable: true }) sourceFileName: string | null;
   @ApiPropertyOptional({ nullable: true }) memo: string | null;
+  @ApiPropertyOptional({ nullable: true, description: '사람이 끝낸 사유 — 저절로 끝났거나 열려 있으면 null' })
+  closedReason: string | null;
+  @ApiPropertyOptional({ nullable: true }) closedAt: Date | null;
   @ApiProperty({ type: [InboundShipmentBoxViewDto] }) boxes: InboundShipmentBoxViewDto[];
   @ApiProperty({ type: [InboundShipmentLineViewDto] }) lines: InboundShipmentLineViewDto[];
   @ApiProperty({ type: InboundShipmentDifferenceSummaryDto }) summary: InboundShipmentDifferenceSummaryDto;
+  @ApiProperty({ type: [InboundShipmentUnplannedItemDto], description: '리스트에 없던 물건 — 상자 순' })
+  unplannedItems: InboundShipmentUnplannedItemDto[];
 }
 
 export type InboundShipmentDetailView = InboundShipmentDetailViewDto;

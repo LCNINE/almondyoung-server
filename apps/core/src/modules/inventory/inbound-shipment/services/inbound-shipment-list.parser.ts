@@ -23,6 +23,7 @@ export type LineIssue =
   | 'box_label_guess'
   | 'box_label_missing'
   | 'box_range_invalid'
+  | 'box_label_too_long'
   | 'qty_formula'
   | 'qty_invalid'
   | 'barcode_missing'
@@ -41,7 +42,8 @@ export interface ParsedBox {
   forwardHint: string | null;
 }
 
-type RawKey = 'boxLabel' | 'no' | 'productName' | 'quantity' | 'option' | 'barcode' | 'total' | 'remark';
+const RAW_KEYS = ['boxLabel', 'no', 'productName', 'quantity', 'option', 'barcode', 'total', 'remark'] as const;
+type RawKey = (typeof RAW_KEYS)[number];
 
 export interface ParsedLine {
   rowNumber: number;
@@ -58,6 +60,10 @@ export interface ParsedList {
 
 export const MAX_SHIPMENT_LIST_ROWS = 2_000;
 export const MAX_BOX_RANGE = 50;
+/** `inbound_shipment_boxes.label` 은 `varchar(32)` 다 — 넘는 이름은 상자를 만들지 않는다. */
+export const MAX_BOX_LABEL_LENGTH = 32;
+/** 한 줄의 예정·센 수량 상한. 넘는 값은 오타로 본다(원장 합계가 integer 를 넘지 않게). */
+export const MAX_LINE_QTY = 1_000_000;
 
 const HEADER_ALIASES: Record<RawKey, string[]> = {
   boxLabel: ['박스번호', '상자번호'],
@@ -79,8 +85,10 @@ const ISO_DATE = /^\d{4}-\d{2}-\d{2}T/;
 export function expandBoxLabel(raw: string): { labels: string[]; issue: LineIssue | null } {
   const label = squash(raw).toUpperCase();
   if (!label) return { labels: [], issue: 'box_label_missing' };
+  const tooLong = { labels: [], issue: 'box_label_too_long' as const };
 
-  if (/^[A-Z]+\d+$/.test(label)) return { labels: [label], issue: null };
+  if (/^[A-Z]+\d+$/.test(label))
+    return label.length > MAX_BOX_LABEL_LENGTH ? tooLong : { labels: [label], issue: null };
 
   const range = /^([A-Z]+)(\d+)[-~]([A-Z]+)?(\d+)$/.exec(label);
   if (range) {
@@ -88,19 +96,26 @@ export function expandBoxLabel(raw: string): { labels: string[]; issue: LineIssu
     if (endPrefix !== undefined && endPrefix !== prefix) {
       return { labels: [], issue: 'box_range_invalid' };
     }
-    const start = Number(from);
-    const end = Number(to);
-    if (end < start || end - start + 1 > MAX_BOX_RANGE) {
+    if (prefix.length + Math.max(from.length, to.length) > MAX_BOX_LABEL_LENGTH) return tooLong;
+    // 31자리 숫자도 정확히 비교하려고 BigInt 로 센다
+    const start = BigInt(from);
+    const end = BigInt(to);
+    if (end < start || end - start + BigInt(1) > BigInt(MAX_BOX_RANGE)) {
       return { labels: [], issue: 'box_range_invalid' };
     }
+    // `L05-L07` 은 L05·L06·L07 — 시작 번호가 0 으로 시작하면 그 자릿수를 지킨다
+    const width = from.length > 1 && from.startsWith('0') ? from.length : 0;
     const labels: string[] = [];
-    for (let n = start; n <= end; n++) labels.push(`${prefix}${n}`);
+    for (let n = start; n <= end; n += BigInt(1)) labels.push(`${prefix}${n.toString().padStart(width, '0')}`);
     return { labels, issue: null };
   }
 
   // 깨진 표기(`L86-`): 앞쪽 접두사+숫자로 추측한다
   const guess = /^([A-Z]+)(\d+)/.exec(label);
-  if (guess) return { labels: [`${guess[1]}${guess[2]}`], issue: 'box_label_guess' };
+  if (guess) {
+    const guessed = `${guess[1]}${guess[2]}`;
+    return guessed.length > MAX_BOX_LABEL_LENGTH ? tooLong : { labels: [guessed], issue: 'box_label_guess' };
+  }
   return { labels: [], issue: 'box_label_missing' };
 }
 
@@ -139,7 +154,7 @@ function readQty(cell: ListCell | null): { qty: number | null; issue: LineIssue 
       : typeof v === 'string' && /^\d+$/.test(v.trim()) && Number(v) > 0
         ? Number(v)
         : null;
-  if (asInt === null) return { qty: null, issue: 'qty_invalid' };
+  if (asInt === null || asInt > MAX_LINE_QTY) return { qty: null, issue: 'qty_invalid' };
   return { qty: asInt, issue: cell.formula ? 'qty_formula' : null };
 }
 
@@ -149,7 +164,7 @@ export function parseShipmentList(input: ListInput): ParsedList {
   const columnOf = new Map<RawKey, number>();
   input.header.forEach((h, idx) => {
     const key = squash(h).toLowerCase();
-    for (const raw of Object.keys(HEADER_ALIASES) as RawKey[]) {
+    for (const raw of RAW_KEYS) {
       if (!columnOf.has(raw) && HEADER_ALIASES[raw].includes(key)) columnOf.set(raw, idx);
     }
   });
@@ -161,6 +176,7 @@ export function parseShipmentList(input: ListInput): ParsedList {
   }
 
   const rows = input.rows.filter((r) => !isBlankRow(r));
+  if (rows.length === 0) throw new BadRequestError('입고리스트에 데이터 줄이 없습니다.');
   if (rows.length > MAX_SHIPMENT_LIST_ROWS) {
     throw new BadRequestError(`입고리스트 줄이 상한(${MAX_SHIPMENT_LIST_ROWS})을 넘습니다. 파일을 나눠 올려주세요.`);
   }

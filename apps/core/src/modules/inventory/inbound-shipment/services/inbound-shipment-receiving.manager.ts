@@ -2,15 +2,14 @@ import { Injectable } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { BadRequestError, ConflictError } from '@app/shared';
-import { InjectTypedDb } from '@app/db/decorators';
-import { DbService } from '@app/db';
-import { DbTx, wmsSchema, wmsTables } from '../../schema/inventory.schema';
+import { DbTx, wmsTables } from '../../schema/inventory.schema';
 import type { InboundShipment, InboundShipmentLine } from '../../schema/inventory.schema';
 import { InboundReceiptKernel } from '../../inbound/kernel/inbound-receipt.kernel';
 import { InventoryIdempotencyService } from '../../core/services/inventory-idempotency.service';
 import { warehouseEndpoint, warehouseRequest } from '../../core/services/warehouse-operation-contract';
 import { ProductSellableQuantityService } from '../../product-sellable-quantity/services/product-sellable-quantity.service';
 import {
+  AddInboundShipmentBoxDto,
   AddInboundShipmentBoxResultDto,
   CancelBoxReceiptDto,
   CancelBoxReceiptResult,
@@ -18,7 +17,9 @@ import {
   ReceiveBoxResult,
 } from '../dto/receive.dto';
 import { lockInboundShipment, lockInboundShipmentBox } from './inbound-shipment-locks';
-import { deriveShipmentStatus, normalizeSingleBoxLabel, orderReceiptLinesForCancel } from './inbound-shipment.rules';
+import { normalizeSingleBoxLabel, orderReceiptLinesForCancel } from './inbound-shipment.rules';
+import { refreshInboundShipmentStatus } from './inbound-shipment-status';
+import { MAX_LINE_QTY } from './inbound-shipment-list.parser';
 
 /** 상자를 받거나 더할 수 있는 선적 상태 — 도착 예정·입고 중. */
 const isOpen = (status: InboundShipment['status']): boolean => status === 'expected' || status === 'receiving';
@@ -41,8 +42,6 @@ interface PlannedCount {
 @Injectable()
 export class InboundShipmentReceivingManager {
   constructor(
-    @InjectTypedDb<typeof wmsSchema>()
-    private readonly dbService: DbService<typeof wmsSchema>,
     private readonly kernel: InboundReceiptKernel,
     private readonly idempotency: InventoryIdempotencyService,
     private readonly productSellableQuantity: ProductSellableQuantityService,
@@ -133,7 +132,13 @@ export class InboundShipmentReceivingManager {
           })
           .where(eq(wmsTables.inboundShipmentBoxes.id, boxId));
 
-        const shipmentStatus = await this.refreshShipmentStatus(trx, shipmentId, shipment.status, actorId, new Date());
+        const shipmentStatus = await refreshInboundShipmentStatus(
+          trx,
+          shipmentId,
+          shipment.status,
+          actorId,
+          new Date(),
+        );
 
         const receivedSkuIds = [...new Set(ledger.map((l) => l.skuId))];
         if (receivedSkuIds.length > 0) {
@@ -228,7 +233,7 @@ export class InboundShipmentReceivingManager {
           })
           .where(eq(wmsTables.inboundShipmentBoxes.id, boxId));
 
-        const shipmentStatus = await this.refreshShipmentStatus(trx, shipmentId, shipment.status, actorId, now);
+        const shipmentStatus = await refreshInboundShipmentStatus(trx, shipmentId, shipment.status, actorId, now);
 
         if (canceledSkuIds.size > 0) {
           await this.productSellableQuantity.recalculateAndPublishForSkus([...canceledSkuIds], trx);
@@ -239,67 +244,47 @@ export class InboundShipmentReceivingManager {
     );
   }
 
-  /** 리스트에 없던 상자 — 줄 0개로 생기고 `unplanned` 로만 확정한다 (spec §8.7). */
+  /**
+   * 리스트에 없던 상자 — 줄 0개로 생기고 `unplanned` 로만 확정한다 (spec §8.7). 창고 작업 계약 v2 —
+   * 같은 키로 다시 보내면 같은 상자를 돌려준다(현장 앱 재시도가 상자를 둘 만들지 않는다).
+   */
   async addBox(
     shipmentId: string,
-    label: string,
-    _actorId: string,
+    dto: AddInboundShipmentBoxDto,
+    actorId: string,
     tx?: DbTx,
   ): Promise<AddInboundShipmentBoxResultDto> {
-    const normalized = normalizeSingleBoxLabel(label);
-    return this.dbService.run(async (trx: DbTx) => {
-      const shipment = await lockInboundShipment(trx, shipmentId);
-      if (!isOpen(shipment.status)) {
-        throw new ConflictError('확정된 선적(도착 예정·입고 중)에만 상자를 더할 수 있습니다.');
-      }
-      const existing = await trx
-        .select({ label: wmsTables.inboundShipmentBoxes.label, sortKey: wmsTables.inboundShipmentBoxes.sortKey })
-        .from(wmsTables.inboundShipmentBoxes)
-        .where(eq(wmsTables.inboundShipmentBoxes.shipmentId, shipmentId));
-      if (existing.some((b) => b.label === normalized)) {
-        throw new ConflictError(`이 선적에 이미 있는 상자입니다: ${normalized}`);
-      }
-      const sortKey = existing.reduce((m, b) => Math.max(m, b.sortKey), -1) + 1;
-      const [box] = await trx
-        .insert(wmsTables.inboundShipmentBoxes)
-        .values({ shipmentId, label: normalized, sortKey, origin: 'added', disposition: 'stock' })
-        .returning({ id: wmsTables.inboundShipmentBoxes.id, label: wmsTables.inboundShipmentBoxes.label });
-      await trx
-        .update(wmsTables.inboundShipments)
-        .set({ updatedAt: new Date() })
-        .where(eq(wmsTables.inboundShipments.id, shipmentId));
-      return { boxId: box.id, label: box.label };
-    }, tx);
-  }
-
-  /**
-   * 상자 확정·취소 뒤 선적 상태를 상자로 다시 정한다 (spec §8.4). 저절로 닫히면 사유 없이 `closed_at/by` 를
-   * 찍고, 닫힘이 아니면 `closed_*` 를 비운다 — 사람이 닫았던 선적도 취소가 다시 연다.
-   */
-  private async refreshShipmentStatus(
-    trx: DbTx,
-    shipmentId: string,
-    current: InboundShipment['status'],
-    actorId: string,
-    now: Date,
-  ): Promise<InboundShipment['status']> {
-    const boxes = await trx
-      .select({
-        disposition: wmsTables.inboundShipmentBoxes.disposition,
-        status: wmsTables.inboundShipmentBoxes.status,
-      })
-      .from(wmsTables.inboundShipmentBoxes)
-      .where(eq(wmsTables.inboundShipmentBoxes.shipmentId, shipmentId));
-    const status = deriveShipmentStatus(current, boxes, false);
-    await trx
-      .update(wmsTables.inboundShipments)
-      .set(
-        status === 'closed'
-          ? { status, closedAt: now, closedBy: actorId, closedReason: null, updatedAt: now }
-          : { status, closedAt: null, closedBy: null, closedReason: null, updatedAt: now },
-      )
-      .where(eq(wmsTables.inboundShipments.id, shipmentId));
-    return status;
+    const normalized = normalizeSingleBoxLabel(dto.label);
+    const request: AddInboundShipmentBoxDto & { shipmentId: string } = { shipmentId, ...dto };
+    return this.idempotency.withIdempotency(
+      warehouseEndpoint('inbound_shipment.box.add', dto),
+      dto.idempotencyKey,
+      warehouseRequest(request, actorId),
+      async (trx) => {
+        const shipment = await lockInboundShipment(trx, shipmentId);
+        if (!isOpen(shipment.status)) {
+          throw new ConflictError('확정된 선적(도착 예정·입고 중)에만 상자를 더할 수 있습니다.');
+        }
+        const existing = await trx
+          .select({ label: wmsTables.inboundShipmentBoxes.label, sortKey: wmsTables.inboundShipmentBoxes.sortKey })
+          .from(wmsTables.inboundShipmentBoxes)
+          .where(eq(wmsTables.inboundShipmentBoxes.shipmentId, shipmentId));
+        if (existing.some((b) => b.label === normalized)) {
+          throw new ConflictError(`이 선적에 이미 있는 상자입니다: ${normalized}`);
+        }
+        const sortKey = existing.reduce((m, b) => Math.max(m, b.sortKey), -1) + 1;
+        const [box] = await trx
+          .insert(wmsTables.inboundShipmentBoxes)
+          .values({ shipmentId, label: normalized, sortKey, origin: 'added', disposition: 'stock' })
+          .returning({ id: wmsTables.inboundShipmentBoxes.id, label: wmsTables.inboundShipmentBoxes.label });
+        await trx
+          .update(wmsTables.inboundShipments)
+          .set({ updatedAt: new Date() })
+          .where(eq(wmsTables.inboundShipments.id, shipmentId));
+        return { boxId: box.id, label: box.label };
+      },
+      tx,
+    );
   }
 
   private async linesOfBox(
@@ -335,8 +320,8 @@ export class InboundShipmentReceivingManager {
       seen.add(c.lineId);
       const line = lineById.get(c.lineId);
       if (!line) throw new BadRequestError(`이 상자의 줄이 아닙니다: ${c.lineId}`);
-      if (!Number.isInteger(c.countedQty) || c.countedQty < 0) {
-        throw new BadRequestError('센 수량은 0 이상의 정수여야 합니다.');
+      if (!Number.isInteger(c.countedQty) || c.countedQty < 0 || c.countedQty > MAX_LINE_QTY) {
+        throw new BadRequestError(`센 수량은 0 이상 ${MAX_LINE_QTY} 이하의 정수여야 합니다.`);
       }
       matched.push({ line, countedQty: c.countedQty });
     }
@@ -361,8 +346,8 @@ export class InboundShipmentReceivingManager {
 
   private async assertUnplannedValid(trx: DbTx, dto: ReceiveBoxDto): Promise<void> {
     for (const u of dto.unplanned) {
-      if (!Number.isInteger(u.quantity) || u.quantity <= 0) {
-        throw new BadRequestError('리스트에 없던 물건의 수량은 1 이상의 정수여야 합니다.');
+      if (!Number.isInteger(u.quantity) || u.quantity <= 0 || u.quantity > MAX_LINE_QTY) {
+        throw new BadRequestError(`리스트에 없던 물건의 수량은 1 이상 ${MAX_LINE_QTY} 이하의 정수여야 합니다.`);
       }
     }
     const ids = [...new Set(dto.unplanned.map((u) => u.skuId))];

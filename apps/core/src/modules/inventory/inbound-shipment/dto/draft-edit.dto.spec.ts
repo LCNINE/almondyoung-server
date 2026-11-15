@@ -15,6 +15,17 @@ describe('draft edit DTOs', () => {
     expect(await errors(UpdateHeaderDto, { expectedArrival: null, memo: null })).toHaveLength(0);
     expect(await errors(EditBoxDto, { forwardNote: null })).toHaveLength(0);
   });
+  it('caps expectedQty at 1,000,000', async () => {
+    expect(await errors(EditLineDto, { kind: 'free', expectedQty: 1_000_000 })).toHaveLength(0);
+    expect((await errors(EditLineDto, { kind: 'free', expectedQty: 1_000_001 })).map((e) => e.property)).toEqual([
+      'expectedQty',
+    ]);
+  });
+  it('kind is optional for a quantity-only edit, but not null or unknown', async () => {
+    expect(await errors(EditLineDto, { expectedQty: 3 })).toHaveLength(0);
+    expect((await errors(EditLineDto, { kind: null, expectedQty: 3 })).map((e) => e.property)).toEqual(['kind']);
+    expect((await errors(EditLineDto, { kind: 'unresolved' })).map((e) => e.property)).toEqual(['kind']);
+  });
   it('caps boxLabels at 20', async () => {
     const boxLabels = Array.from({ length: 21 }, (_, i) => `L${i + 1}`);
     expect((await errors(EditLineDto, { kind: 'free', boxLabels })).length).toBeGreaterThan(0);

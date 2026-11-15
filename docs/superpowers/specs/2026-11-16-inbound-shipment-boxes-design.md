@@ -231,6 +231,10 @@ CHECK: `line_id IS NOT NULL OR sku_id IS NOT NULL`(리스트에 없던 물건은
   `contact_hint`(표시만).
 - **총수량·NO·이미지**: 판정에 안 쓴다. 원문만 `raw` 에.
 - 같은 상자 이름이 떨어진 행에 또 나오면 같은 상자다.
+- **(실행 중 결정)** 범위의 시작 번호가 0 으로 시작하면 그 자릿수를 지킨다(`L05-L07` → L05·L06·L07, `L5-L7` 은 그대로).
+  펼친 이름이 32자(`label` 열 길이)를 넘으면 `box_label_too_long`(미확인, 상자를 만들지 않는다) — 고치기·상자 더하기·
+  상자 찾기에서는 400. 수량이 1,000,000 을 넘으면 `qty_invalid`(상자 확정의 센 수량·리스트에 없던 물건 수량도 같은
+  상한). 빈 줄을 빼고 데이터 줄이 0개면 400.
 
 **바코드 매칭 (Reader)**: 정규화한 값으로 `sku_barcodes.barcode` 를 찾고, 없으면 `skus.code` 를 찾는다.
 SKU 하나면 `kind = 'sku'`, `resolution = 'barcode'`. 단 그 바코드가 상자 바코드(`packing_unit > 1`)면 리스트 수량이 낱개인지 상자 수인지 알 수 없으므로 `packing_unit_barcode`(미확인, 후보로 그 SKU 를 보여 준다)로 둔다. **(Claude 판단 — 라이브 `packing_unit` 은 메모 기준 전부 NULL 이라 지금은 안 생긴다)** 없으면 `barcode_not_found`, 둘 이상이면 `barcode_ambiguous`
@@ -245,6 +249,11 @@ SKU 하나면 `kind = 'sku'`, `resolution = 'barcode'`. 단 그 바코드가 상
 - 확정 뒤(`expected`·`receiving`): **아직 확정된 상자를 하나도 덮지 않은 줄**만 종류·SKU·예정 수량을 고칠 수 있다.
   상자 처분은 그 상자가 `open` 일 때만 바꿀 수 있다. 도착 예정일·이름·메모는 언제든.
 - `expected` 이고 확정된 상자가 0이면 선적을 취소할 수 있다.
+- **(실행 중 결정)** 초안에서 줄이 덮는 상자를 바꿔 어떤 리스트 상자(`origin = 'list'`)를 덮는 줄이 하나도 남지 않으면
+  그 상자를 지운다. 남겨 두면 확정이 «줄이 없는 상자»로 막히는데 그 상자를 지울 길이 없다. 초안에는 집계가 없으므로
+  지워도 잃는 것이 없다.
+- **(실행 중 결정)** 확정 뒤 상자 처분을 바꾸면 선적 상태를 상자로 다시 정한다(§8.4) — 입고 중에 마지막 열린 입고 상자를
+  전달용으로 돌리면 저절로 끝난다(사유 없음).
 
 ## 7. AI 보조
 
@@ -329,7 +338,9 @@ SKU 하나면 `kind = 'sku'`, `resolution = 'barcode'`. 단 그 바코드가 상
 ### 8.6 #1240 이 읽을 모양 (구현은 #1240)
 
 SKU 의 «오는 중» = `kind = 'sku'` 이고 선적이 `expected`·`receiving` 인 줄의 `max(expected_qty − 유효 집계 합, 0)`
-을 줄이 덮는 상자 중 `open` 이 하나라도 있는 줄에 대해 더한 것. 도착 예정일은 `inbound_shipments.expected_arrival`.
+을 줄이 덮는 **입고용** 상자(`disposition = 'stock'`) 중 `open` 이 하나라도 있는 줄에 대해 더한 것 **(실행 중 결정 —
+전달용 상자는 확정되지 않으므로 그 상자로만 오는 줄은 재고로 오지 않는다)**. 도착 예정일은
+`inbound_shipments.expected_arrival`.
 
 ### 8.7 리스트에 없던 상자 **(Claude 판단)**
 
@@ -337,6 +348,8 @@ SKU 의 «오는 중» = `kind = 'sku'` 이고 선적이 `expected`·`receiving`
 (`POST /inventory/inbound-shipments/:id/boxes { label }`, `inventory.stock.operate`, 선적이 `expected`·`receiving`
 일 때). `origin = 'added'`, 줄 0개로 생기고, 확정은 `unplanned` 만으로 한다. 결정 ④(«리스트와 다른 실물은 기록으로
 남긴다»)를 상자 단위로 넓힌 것이다. 선적 화면에 «리스트에 없던 상자»로 따로 보인다.
+**(실행 중 결정)** 이 라우트도 창고 작업 계약 v2 만 받는다(`{ contractVersion: 2, idempotencyKey, label }`) — 현장 앱이
+다시 보내도 같은 키면 같은 상자를 돌려주고, 상자가 둘 생기지 않는다.
 
 ## 9. 원본 파일
 
@@ -359,7 +372,7 @@ file-service `default-file-contexts` 에 입고리스트 컨텍스트 하나를 
 | `POST /inventory/inbound-shipments/:id/cancel` | `inventory.inbound_shipment.write` | 공통 |
 | `POST /inventory/inbound-shipments/:id/close` (사유 — 상자 분실 등) | `inventory.inbound_shipment.write` | 검수 |
 | `POST /inventory/inbound-shipments/:id/reopen` | `inventory.inbound_shipment.write` | 검수 |
-| `POST /inventory/inbound-shipments/:id/boxes` (리스트에 없던 상자) | `inventory.stock.operate` | 검수 |
+| `POST /inventory/inbound-shipments/:id/boxes` (리스트에 없던 상자, 창고 작업 계약 v2 — 실행 중 결정) | `inventory.stock.operate` | 검수 |
 | `GET /inventory/inbound-shipment-boxes?warehouseId=&label=` (앱이 상자 찾기 — 열린 선적 전부, 후보 여러 개 가능) | `inventory.stock.read` | 검수 |
 | `GET /inventory/inbound-shipments/:id/boxes/:boxId` (상자 열기) | `inventory.stock.read` | 검수 |
 | `POST /inventory/inbound-shipments/:id/boxes/:boxId/receive` | `inventory.stock.operate` | 검수 |

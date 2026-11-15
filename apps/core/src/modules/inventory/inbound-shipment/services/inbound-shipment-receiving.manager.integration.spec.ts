@@ -13,7 +13,7 @@ import { InboundShipmentReader } from './inbound-shipment.reader';
 import { InboundShipmentReceivingManager } from './inbound-shipment-receiving.manager';
 import { ListCell } from './inbound-shipment-list.parser';
 import { BadRequestException } from '@nestjs/common';
-import { CancelBoxReceiptDto, ReceiveBoxDto } from '../dto/receive.dto';
+import { AddInboundShipmentBoxDto, CancelBoxReceiptDto, ReceiveBoxDto } from '../dto/receive.dto';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
@@ -49,7 +49,7 @@ describeIfDb('InboundShipmentReceivingManager (DB integration)', () => {
       kernel,
       drafts: new InboundShipmentDraftManager(dbService, matcher),
       reader: new InboundShipmentReader(dbService, matcher),
-      receiving: new InboundShipmentReceivingManager(dbService, kernel, new InventoryIdempotencyService(dbService), {
+      receiving: new InboundShipmentReceivingManager(kernel, new InventoryIdempotencyService(dbService), {
         recalculateAndPublishForSkus,
       } as never),
       recalculateAndPublishForSkus,
@@ -151,6 +151,12 @@ describeIfDb('InboundShipmentReceivingManager (DB integration)', () => {
   ): ReceiveBoxDto => ({ contractVersion: 2, idempotencyKey, counts, unplanned });
 
   const cancelDto = (idempotencyKey = randomUUID()): CancelBoxReceiptDto => ({ contractVersion: 2, idempotencyKey });
+
+  const addDto = (label: string, idempotencyKey = randomUUID()): AddInboundShipmentBoxDto => ({
+    contractVersion: 2,
+    idempotencyKey,
+    label,
+  });
 
   async function boxRow(trx: DbTx, boxId: string) {
     const [b] = await trx
@@ -532,10 +538,14 @@ describeIfDb('InboundShipmentReceivingManager (DB integration)', () => {
       const built = build(trx);
       const s = await shipment(trx, built, f.warehouseId, [row(1, 'L1', 10, f.barcodes[0])]);
 
-      const added = await built.receiving.addBox(s.shipmentId, 'l99', ACTOR, trx);
+      const added = await built.receiving.addBox(s.shipmentId, addDto('l99'), ACTOR, trx);
       expect(added.label).toBe('L99');
-      await expect(built.receiving.addBox(s.shipmentId, 'L99', ACTOR, trx)).rejects.toBeInstanceOf(ConflictError);
-      await expect(built.receiving.addBox(s.shipmentId, 'L5-L9', ACTOR, trx)).rejects.toBeInstanceOf(BadRequestError);
+      await expect(built.receiving.addBox(s.shipmentId, addDto('L99'), ACTOR, trx)).rejects.toBeInstanceOf(
+        ConflictError,
+      );
+      await expect(built.receiving.addBox(s.shipmentId, addDto('L5-L9'), ACTOR, trx)).rejects.toBeInstanceOf(
+        BadRequestError,
+      );
 
       const result = await built.receiving.receiveBox(
         s.shipmentId,
@@ -552,6 +562,62 @@ describeIfDb('InboundShipmentReceivingManager (DB integration)', () => {
       expect(box).toMatchObject({ origin: 'added', status: 'received' });
       const found = await built.reader.findBoxes(f.warehouseId, 'L99', trx);
       expect(found).toEqual([expect.objectContaining({ boxId: added.boxId, previewItems: [] })]);
+    });
+  });
+
+  it('addBox replays the same box for the same key; labels over 32 characters are a 400', async () => {
+    await inRollbackTx(db, async (trx) => {
+      const f = await seed(trx);
+      const built = build(trx);
+      const s = await shipment(trx, built, f.warehouseId, [row(1, 'L1', 10, f.barcodes[0])]);
+      const request = addDto('L77');
+      const first = await built.receiving.addBox(s.shipmentId, request, ACTOR, trx);
+      const replay = await built.receiving.addBox(s.shipmentId, { ...request }, ACTOR, trx);
+      expect(replay).toEqual(first);
+      const boxes = await trx
+        .select()
+        .from(wmsTables.inboundShipmentBoxes)
+        .where(eq(wmsTables.inboundShipmentBoxes.shipmentId, s.shipmentId));
+      expect(boxes.filter((b) => b.label === 'L77')).toHaveLength(1);
+      // a new key for the same label is a new request — the box already exists
+      await expect(built.receiving.addBox(s.shipmentId, addDto('L77'), ACTOR, trx)).rejects.toBeInstanceOf(
+        ConflictError,
+      );
+      const long = `L${'1'.repeat(32)}`;
+      await expect(built.receiving.addBox(s.shipmentId, addDto(long), ACTOR, trx)).rejects.toBeInstanceOf(
+        BadRequestError,
+      );
+      await expect(built.reader.findBoxes(f.warehouseId, long, trx)).rejects.toBeInstanceOf(BadRequestError);
+    });
+  });
+
+  it('flipping the last open stock box to forward closes a receiving shipment', async () => {
+    await inRollbackTx(db, async (trx) => {
+      const f = await seed(trx);
+      const built = build(trx);
+      const s = await shipment(trx, built, f.warehouseId, [
+        row(1, 'L1', 10, f.barcodes[0]),
+        row(2, 'L2', 5, f.barcodes[1]),
+        row(3, 'L3', 2, f.barcodes[2], 'acme 에 발송바람'),
+      ]);
+      // expected with nothing received stays expected after a flip
+      await built.drafts.editBox(s.shipmentId, s.boxOf('L3'), { disposition: 'stock' }, ACTOR, trx);
+      expect(await shipmentStatus(trx, s.shipmentId)).toBe('expected');
+      await built.drafts.editBox(s.shipmentId, s.boxOf('L3'), { disposition: 'forward' }, ACTOR, trx);
+
+      await built.receiving.receiveBox(
+        s.shipmentId,
+        s.boxOf('L1'),
+        dto([{ lineId: s.lineOf(1), countedQty: 10 }]),
+        ACTOR,
+        trx,
+      );
+      expect(await shipmentStatus(trx, s.shipmentId)).toBe('receiving');
+
+      await built.drafts.editBox(s.shipmentId, s.boxOf('L2'), { disposition: 'forward' }, ACTOR, trx);
+      const closed = await shipmentRow(trx, s.shipmentId);
+      expect(closed).toMatchObject({ status: 'closed', closedReason: null, closedBy: ACTOR });
+      expect(closed.closedAt).not.toBeNull();
     });
   });
 
@@ -624,7 +690,9 @@ describeIfDb('InboundShipmentReceivingManager (DB integration)', () => {
           trx,
         ),
       ).rejects.toBeInstanceOf(ConflictError);
-      await expect(built.receiving.addBox(s.shipmentId, 'L9', ACTOR, trx)).rejects.toBeInstanceOf(ConflictError);
+      await expect(built.receiving.addBox(s.shipmentId, addDto('L9'), ACTOR, trx)).rejects.toBeInstanceOf(
+        ConflictError,
+      );
     });
   });
 
@@ -668,7 +736,9 @@ describeIfDb('InboundShipmentReceivingManager (DB integration)', () => {
           trx,
         ),
       ).rejects.toBeInstanceOf(ConflictError);
-      await expect(built.receiving.addBox(s.shipmentId, 'L9', ACTOR, trx)).rejects.toBeInstanceOf(ConflictError);
+      await expect(built.receiving.addBox(s.shipmentId, addDto('L9'), ACTOR, trx)).rejects.toBeInstanceOf(
+        ConflictError,
+      );
     });
   });
 
@@ -962,7 +1032,7 @@ describeIfDb('InboundShipmentReceivingManager (DB integration)', () => {
         ACTOR,
         trx,
       );
-      const added = await built.receiving.addBox(s.shipmentId, 'L99', ACTOR, trx);
+      const added = await built.receiving.addBox(s.shipmentId, addDto('L99'), ACTOR, trx);
 
       const view = await built.reader.detail(s.shipmentId, trx);
 
@@ -982,6 +1052,30 @@ describeIfDb('InboundShipmentReceivingManager (DB integration)', () => {
         unplannedCounts: 1,
       });
       expect(added.label).toBe('L99');
+
+      // header, box and line fields the screens read
+      expect(view).toMatchObject({ closedReason: null, closedAt: null, sourceFileId: null, sourceFileName: 'a.xlsx' });
+      const boxOfLabel = (label: string) => view.boxes.find((b) => b.label === label);
+      expect(boxOfLabel('L1')?.receivedAt).toBeInstanceOf(Date);
+      expect(boxOfLabel('L3')?.receivedAt).toBeNull();
+      const [sku0] = await trx.select().from(wmsTables.skus).where(eq(wmsTables.skus.id, f.skuIds[0]));
+      expect(view.lines.find((l) => l.id === s.lineOf(1))?.sku).toEqual({ code: sku0.code, name: 'rc-sku-0' });
+      const [sku2] = await trx.select().from(wmsTables.skus).where(eq(wmsTables.skus.id, f.skuIds[2]));
+      expect(view.unplannedItems).toEqual([
+        {
+          boxId: s.boxOf('L2'),
+          boxLabel: 'L2',
+          skuId: f.skuIds[2],
+          skuCode: sku2.code,
+          skuName: 'rc-sku-2',
+          countedQty: 1,
+        },
+      ]);
+
+      await built.drafts.close(s.shipmentId, 'lost box (synthetic)', ACTOR, trx);
+      const closed = await built.reader.detail(s.shipmentId, trx);
+      expect(closed.closedReason).toBe('lost box (synthetic)');
+      expect(closed.closedAt).toBeInstanceOf(Date);
     });
   });
   /** 두 SKU 줄을 한 상자로 받는다. 회차 라인 id 순서가 SKU 순서와 반대가 될 때까지 새 선적으로 다시 만든다. */

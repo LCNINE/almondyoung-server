@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { randomUUID } from 'crypto';
-import { and, eq, inArray, ne, sql } from 'drizzle-orm';
+import { and, eq, inArray, ne, notExists, sql } from 'drizzle-orm';
 import { BadRequestError, ConflictError, NotFoundError } from '@app/shared';
 import { InjectTypedDb } from '@app/db/decorators';
 import { DbService } from '@app/db';
@@ -10,12 +10,14 @@ import {
   LineIssue,
   ListInput,
   MAX_BOX_RANGE,
+  MAX_LINE_QTY,
   ParsedLine,
   expandBoxLabel,
   parseShipmentList,
 } from './inbound-shipment-list.parser';
 import { ConfirmBlocker, confirmBlockers, lineEditable } from './inbound-shipment.rules';
 import { lockInboundShipment } from './inbound-shipment-locks';
+import { refreshInboundShipmentStatus } from './inbound-shipment-status';
 
 export interface CreateDraftInput {
   warehouseId: string;
@@ -36,6 +38,7 @@ function chunks<T>(items: T[], size: number): T[][] {
   return out;
 }
 
+/** 줄을 sku/free 로 정한다. `null` 이면 종류·SKU·확정 방식을 그대로 두고 수량·상자만 고친다. */
 export type LinePatch = { kind: 'sku'; skuId: string } | { kind: 'free' };
 export interface BoxPatch {
   disposition?: 'stock' | 'forward';
@@ -133,11 +136,14 @@ export class InboundShipmentDraftManager {
     }, tx);
   }
 
-  /** 줄을 사람이 확정한다. 확정 뒤엔 kind 를 sku/free 사이로만 바꾼다 — spec §6.4. */
+  /**
+   * 줄을 사람이 확정한다. 확정 뒤엔 kind 를 sku/free 사이로만 바꾼다 — spec §6.4.
+   * `patch` 가 `null` 이면 종류·SKU·확정 방식(resolution·resolved_*)을 그대로 두고 예정 수량(초안이면 덮는 상자도)만 고친다.
+   */
   async editLine(
     shipmentId: string,
     lineId: string,
-    patch: LinePatch,
+    patch: LinePatch | null,
     extra: { expectedQty?: number; boxLabels?: string[] },
     actorId: string,
     tx?: DbTx,
@@ -174,12 +180,19 @@ export class InboundShipmentDraftManager {
       }
 
       const expectedQty = extra.expectedQty ?? line.expectedQty;
-      if (extra.expectedQty !== undefined && (!Number.isInteger(extra.expectedQty) || extra.expectedQty <= 0)) {
-        throw new BadRequestError('수량은 1 이상의 정수여야 합니다.');
+      if (
+        extra.expectedQty !== undefined &&
+        (!Number.isInteger(extra.expectedQty) || extra.expectedQty <= 0 || extra.expectedQty > MAX_LINE_QTY)
+      ) {
+        throw new BadRequestError(`수량은 1 이상 ${MAX_LINE_QTY} 이하의 정수여야 합니다.`);
       }
-      if (expectedQty === null || expectedQty <= 0) throw new BadRequestError('수량을 먼저 정해야 합니다.');
+      // 미확인 줄은 수량 없이 남을 수 있다(DB CHECK 와 같은 규칙) — 정해진 줄만 수량이 있어야 한다
+      const nextKind = patch?.kind ?? line.kind;
+      if (nextKind !== 'unresolved' && (expectedQty === null || expectedQty <= 0)) {
+        throw new BadRequestError('수량을 먼저 정해야 합니다.');
+      }
 
-      if (patch.kind === 'sku') {
+      if (patch?.kind === 'sku') {
         const [sku] = await trx
           .select({ id: wmsTables.skus.id })
           .from(wmsTables.skus)
@@ -191,14 +204,18 @@ export class InboundShipmentDraftManager {
       const labels = extra.boxLabels === undefined ? null : this.expandLabels(extra.boxLabels);
       await trx
         .update(wmsTables.inboundShipmentLines)
-        .set({
-          kind: patch.kind,
-          skuId: patch.kind === 'sku' ? patch.skuId : null,
-          expectedQty,
-          resolution: 'manual',
-          resolvedBy: actorId,
-          resolvedAt: new Date(),
-        })
+        .set(
+          patch === null
+            ? { expectedQty }
+            : {
+                kind: patch.kind,
+                skuId: patch.kind === 'sku' ? patch.skuId : null,
+                expectedQty,
+                resolution: 'manual',
+                resolvedBy: actorId,
+                resolvedAt: new Date(),
+              },
+        )
         .where(eq(wmsTables.inboundShipmentLines.id, lineId));
 
       if (labels) await this.replaceCoverage(trx, shipmentId, lineId, labels);
@@ -206,7 +223,11 @@ export class InboundShipmentDraftManager {
     }, tx);
   }
 
-  async editBox(shipmentId: string, boxId: string, patch: BoxPatch, _actorId: string, tx?: DbTx): Promise<void> {
+  /**
+   * 상자의 처분·전달 메모·이름을 고친다 (spec §6.4). 확정 뒤 처분을 바꾸면 선적 상태를 상자로 다시 정한다 —
+   * 마지막 열린 입고 상자를 전달용으로 돌리면 저절로 닫힌다(§8.4). 닫힌 선적은 여기 오지 않는다.
+   */
+  async editBox(shipmentId: string, boxId: string, patch: BoxPatch, actorId: string, tx?: DbTx): Promise<void> {
     return this.dbService.run(async (trx: DbTx) => {
       const shipment = await lockInboundShipment(trx, shipmentId);
       if (shipment.status === 'closed' || shipment.status === 'canceled') {
@@ -256,7 +277,12 @@ export class InboundShipmentDraftManager {
         .update(wmsTables.inboundShipmentBoxes)
         .set({ ...set, version: sql`${wmsTables.inboundShipmentBoxes.version} + 1` })
         .where(eq(wmsTables.inboundShipmentBoxes.id, boxId));
-      await this.touchShipment(trx, shipmentId);
+      const flipped = patch.disposition !== undefined && patch.disposition !== box.disposition;
+      if (flipped && (shipment.status === 'expected' || shipment.status === 'receiving')) {
+        await refreshInboundShipmentStatus(trx, shipmentId, shipment.status, actorId, new Date());
+      } else {
+        await this.touchShipment(trx, shipmentId);
+      }
     }, tx);
   }
 
@@ -534,6 +560,7 @@ export class InboundShipmentDraftManager {
     return out;
   }
 
+  /** 초안 전용 — 줄이 덮는 상자를 바꾼다. 없는 이름은 리스트 상자로 만들고, 줄을 잃은 리스트 상자는 지운다. */
   private async replaceCoverage(trx: DbTx, shipmentId: string, lineId: string, labels: string[]): Promise<void> {
     const existing = await trx
       .select({
@@ -560,6 +587,19 @@ export class InboundShipmentDraftManager {
         return boxId === undefined ? [] : [{ lineId, boxId }];
       }),
     );
+    // 줄을 잃은 리스트 상자는 지운다 — 남겨 두면 확정이 `empty_box` 로 막히는데 지울 길이 없다.
+    // 초안에서만 불리므로 집계가 없다(상자 확정은 확정된 선적에서만 된다).
+    const boxes = wmsTables.inboundShipmentBoxes;
+    const lineBoxes = wmsTables.inboundShipmentLineBoxes;
+    await trx
+      .delete(boxes)
+      .where(
+        and(
+          eq(boxes.shipmentId, shipmentId),
+          eq(boxes.origin, 'list'),
+          notExists(trx.select({ boxId: lineBoxes.boxId }).from(lineBoxes).where(eq(lineBoxes.boxId, boxes.id))),
+        ),
+      );
   }
 
   private blockerMessage(

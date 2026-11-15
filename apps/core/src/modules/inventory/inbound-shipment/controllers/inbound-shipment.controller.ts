@@ -118,13 +118,17 @@ export class InboundShipmentController {
   ): Promise<{ lineId: string }> {
     const actorId = authenticatedWarehouseActor(user);
     if (dto.kind === 'sku' && !dto.skuId) throw new BadRequestError('skuId is required');
-    await this.service.editLine(
-      id,
-      lineId,
-      dto.kind === 'sku' && dto.skuId ? { kind: 'sku', skuId: dto.skuId } : { kind: 'free' },
-      { expectedQty: dto.expectedQty, boxLabels: dto.boxLabels },
-      actorId,
-    );
+    if (dto.kind === undefined && dto.expectedQty === undefined && dto.boxLabels === undefined) {
+      throw new BadRequestError('kind, expectedQty, boxLabels 중 하나는 있어야 합니다.');
+    }
+    // kind 를 빼면 종류·SKU·확정 방식은 그대로 두고 수량·상자만 고친다
+    const patch =
+      dto.kind === undefined
+        ? null
+        : dto.kind === 'sku' && dto.skuId
+          ? { kind: 'sku' as const, skuId: dto.skuId }
+          : { kind: 'free' as const };
+    await this.service.editLine(id, lineId, patch, { expectedQty: dto.expectedQty, boxLabels: dto.boxLabels }, actorId);
     return { lineId };
   }
 
@@ -246,13 +250,16 @@ export class InboundShipmentController {
   @RequirePermission('inventory.stock.operate')
   @Post(':id/boxes')
   @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({ summary: '리스트에 없던 상자로 받기 — 확정된 선적에만' })
+  @ApiOperation({ summary: '리스트에 없던 상자로 받기 — 확정된 선적에만(창고 작업 계약 v2)' })
   @ApiResponse({ status: 201, type: AddInboundShipmentBoxResultDto })
   addBox(
     @Param('id', new ParseUUIDPipe()) id: string,
     @Body() dto: AddInboundShipmentBoxDto,
     @User() user: WarehouseActor,
   ): Promise<AddInboundShipmentBoxResultDto> {
-    return this.service.addBox(id, dto.label, authenticatedWarehouseActor(user));
+    const actorId = warehouseOperationContext(dto, user);
+    // v2 만 받는다 — v1(키 없음)로 내려오면 재시도가 상자를 둘 만들 수 있으므로 여기서 막는다
+    if (!actorId) throw new BadRequestError('창고 작업 계약 v2(contractVersion: 2, idempotencyKey)가 필요합니다.');
+    return this.service.addBox(id, dto, actorId);
   }
 }

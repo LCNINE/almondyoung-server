@@ -79,6 +79,7 @@ describe('normalizeSingleBoxLabel', () => {
     expect(() => normalizeSingleBoxLabel('L5-L9')).toThrow(BadRequestError);
     expect(() => normalizeSingleBoxLabel('L86-')).toThrow(BadRequestError);
     expect(() => normalizeSingleBoxLabel('')).toThrow(BadRequestError);
+    expect(() => normalizeSingleBoxLabel(`L${'1'.repeat(32)}`)).toThrow(BadRequestError);
   });
 });
 

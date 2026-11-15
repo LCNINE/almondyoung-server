@@ -11,24 +11,35 @@ import {
   IsString,
   IsUUID,
   Matches,
+  Max,
   MaxLength,
   Min,
   MinLength,
   ValidateIf,
   ValidateNested,
 } from 'class-validator';
+import { MAX_BOX_LABEL_LENGTH, MAX_LINE_QTY } from '../services/inbound-shipment-list.parser';
 
 export class EditLineDto {
-  @ApiProperty({ enum: ['sku', 'free'] })
+  @ApiPropertyOptional({
+    enum: ['sku', 'free'],
+    description: '빼면 종류·SKU·확정 방식을 그대로 두고 수량·상자만 고친다',
+  })
+  @ValidateIf((_o, v) => v !== undefined)
   @IsIn(['sku', 'free'])
-  kind: 'sku' | 'free';
+  kind?: 'sku' | 'free';
 
   @ApiPropertyOptional({ description: 'kind=sku 일 때 필수' })
   @ValidateIf((o: EditLineDto) => o.kind === 'sku')
   @IsUUID()
   skuId?: string;
 
-  @ApiPropertyOptional() @IsOptional() @IsInt() @Min(1) expectedQty?: number;
+  @ApiPropertyOptional({ minimum: 1, maximum: MAX_LINE_QTY })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(MAX_LINE_QTY)
+  expectedQty?: number;
 
   @ApiPropertyOptional({ type: [String], description: '초안일 때만 — 줄이 덮는 상자 이름(범위 표기 가능)' })
   @IsOptional()
@@ -56,7 +67,7 @@ export class EditBoxDto {
   @ValidateIf((_o, v) => v !== undefined)
   @IsString()
   @MinLength(1)
-  @MaxLength(32)
+  @MaxLength(MAX_BOX_LABEL_LENGTH)
   label?: string;
 }
 

@@ -16,8 +16,8 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { WarehouseOperationDto } from '../../core/services/warehouse-operation-contract';
+import { MAX_BOX_LABEL_LENGTH, MAX_LINE_QTY } from '../services/inbound-shipment-list.parser';
 
-const POSTGRES_INTEGER_MAX = 2_147_483_647;
 const MAX_RECEIVE_ITEMS = 500;
 
 export class ReceiveBoxCountDto {
@@ -25,10 +25,10 @@ export class ReceiveBoxCountDto {
   @IsUUID()
   lineId: string;
 
-  @ApiProperty({ minimum: 0, description: '센 수량. 0 은 «열어 봤는데 없었다»' })
+  @ApiProperty({ minimum: 0, maximum: MAX_LINE_QTY, description: '센 수량. 0 은 «열어 봤는데 없었다»' })
   @IsInt()
   @Min(0)
-  @Max(POSTGRES_INTEGER_MAX)
+  @Max(MAX_LINE_QTY)
   countedQty: number;
 }
 
@@ -37,10 +37,10 @@ export class ReceiveBoxUnplannedDto {
   @IsUUID()
   skuId: string;
 
-  @ApiProperty({ minimum: 1 })
+  @ApiProperty({ minimum: 1, maximum: MAX_LINE_QTY })
   @IsInt()
   @Min(1)
-  @Max(POSTGRES_INTEGER_MAX)
+  @Max(MAX_LINE_QTY)
   quantity: number;
 }
 
@@ -97,11 +97,30 @@ export class CancelBoxReceiptDto extends WarehouseOperationDto {
   declare idempotencyKey: string;
 }
 
-export class AddInboundShipmentBoxDto {
-  @ApiProperty({ description: '리스트에 없던 상자 이름(`L99`). 범위 표기는 받지 않는다' })
+/**
+ * 리스트에 없던 상자 더하기 — 창고 작업 계약 v2 만 받는다 (spec §8.7). 현장 앱이 다시 보내도 상자가 둘 생기지 않게
+ * 멱등 키로 묶는다. `ReceiveBoxDto` 와 같은 이유로 부모의 규칙을 다시 적는다 — 빠뜨리면 그 규칙이 조용히 사라진다.
+ */
+export class AddInboundShipmentBoxDto extends WarehouseOperationDto {
+  @ApiProperty({ enum: [2] })
+  @ValidateIf(() => true)
+  @Equals(2)
+  declare contractVersion: number;
+
+  @ApiProperty({ maxLength: 90 })
+  @ValidateIf(() => true)
+  @IsString()
+  @Matches(/\S/)
+  @MaxLength(90)
+  declare idempotencyKey: string;
+
+  @ApiProperty({
+    maxLength: MAX_BOX_LABEL_LENGTH,
+    description: '리스트에 없던 상자 이름(`L99`). 범위 표기는 받지 않는다',
+  })
   @IsString()
   @MinLength(1)
-  @MaxLength(32)
+  @MaxLength(MAX_BOX_LABEL_LENGTH)
   label: string;
 }
 

@@ -9,7 +9,7 @@ import {
 } from './inbound-shipment-draft.manager';
 import { InboundShipmentReader } from './inbound-shipment.reader';
 import { InboundShipmentReceivingManager } from './inbound-shipment-receiving.manager';
-import { CancelBoxReceiptDto, ReceiveBoxDto } from '../dto/receive.dto';
+import { AddInboundShipmentBoxDto, CancelBoxReceiptDto, ReceiveBoxDto } from '../dto/receive.dto';
 
 /** 선적 입고 포트 — 위임만 한다. */
 @Injectable()
@@ -35,7 +35,7 @@ export class InboundShipmentService {
   editLine(
     id: string,
     lineId: string,
-    patch: LinePatch,
+    patch: LinePatch | null,
     extra: { expectedQty?: number; boxLabels?: string[] },
     actorId: string,
     tx?: DbTx,
@@ -87,7 +87,7 @@ export class InboundShipmentService {
     return this.receiving.cancelBoxReceipt(id, boxId, dto, actorId, tx);
   }
 
-  addBox(id: string, label: string, actorId: string, tx?: DbTx) {
-    return this.receiving.addBox(id, label, actorId, tx);
+  addBox(id: string, dto: AddInboundShipmentBoxDto, actorId: string, tx?: DbTx) {
+    return this.receiving.addBox(id, dto, actorId, tx);
   }
 }
