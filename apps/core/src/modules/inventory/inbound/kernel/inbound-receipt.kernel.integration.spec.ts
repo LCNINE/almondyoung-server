@@ -395,7 +395,23 @@ describeIfDb('InboundReceiptKernel (PostgreSQL integration)', () => {
         );
         await expect(
           kernel.cancelLine({ receiptLineId: direct.lines[0]?.id ?? '', expected: { source: 'purchase_order' } }, tx),
-        ).rejects.toMatchObject({ status: 409, message: '이 회차 라인은 직접 입고가 아닙니다' });
+        ).rejects.toMatchObject({ status: 409, message: '직접 입고는 입고 내역에서 취소하세요' });
+        await expect(
+          kernel.cancelLine({ receiptLineId: direct.lines[0]?.id ?? '', expected: { source: 'inbound_shipment' } }, tx),
+        ).rejects.toMatchObject({ status: 409, message: '직접 입고는 입고 내역에서 취소하세요' });
+
+        const shipment = await kernel.recordArrival(
+          {
+            source: 'inbound_shipment',
+            warehouseId: fx.warehouseId,
+            reason: 'inbound_shipment',
+            lines: [{ skuId: fx.skuId, quantity: 1, eventKey: `k-${randomUUID()}` }],
+          },
+          tx,
+        );
+        await expect(
+          kernel.cancelLine({ receiptLineId: shipment.lines[0]?.id ?? '', expected: { source: 'purchase_order' } }, tx),
+        ).rejects.toMatchObject({ status: 409, message: '선적 입고는 선적에서 취소하세요' });
         await expect(
           kernel.cancelLine({ receiptLineId: direct.lines[0]?.id ?? '', expected: { source: 'direct' } }, tx),
         ).resolves.toMatchObject({ id: direct.lines[0]?.id });

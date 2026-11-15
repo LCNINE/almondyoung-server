@@ -15,6 +15,13 @@ import { lockProductVariantsForSkus } from '../../product-sellable-quantity/serv
 
 export type DirectArrivalMethod = 'simple' | 'simple_fullscan' | 'individual';
 export type InboundReceiptSource = 'direct' | 'purchase_order' | 'inbound_shipment';
+/** 라인 출처별로 «어디서 취소해야 하는지» 안내한다. cancelLine 의 source 불일치 409 문구. */
+const CANCEL_ROUTE_MESSAGE: Record<InboundReceiptSource, string> = {
+  direct: '직접 입고는 입고 내역에서 취소하세요',
+  purchase_order: '발주 입고는 발주에서 취소하세요',
+  inbound_shipment: '선적 입고는 선적에서 취소하세요',
+};
+
 export type ArrivalOrigin =
   | { source: 'direct'; method: DirectArrivalMethod }
   | { source: 'purchase_order' }
@@ -195,13 +202,7 @@ export class InboundReceiptKernel {
   async cancelLine(input: CancelLineInput, tx: DbTx): Promise<InboundReceiptLine> {
     const line = await this.lockLine(input.receiptLineId, tx);
     if (line.source !== input.expected.source) {
-      throw new ConflictException(
-        line.source === 'purchase_order'
-          ? '발주 입고는 발주에서 취소하세요'
-          : line.source === 'inbound_shipment'
-            ? '선적 입고는 선적에서 취소하세요'
-            : '이 회차 라인은 직접 입고가 아닙니다',
-      );
+      throw new ConflictException(CANCEL_ROUTE_MESSAGE[line.source]);
     }
     const receipt = await this.loadReceipt(line.receiptId, tx);
     const originLocationId = this.requireOrigin(line);
