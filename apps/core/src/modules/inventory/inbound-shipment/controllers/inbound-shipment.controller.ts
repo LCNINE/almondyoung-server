@@ -190,7 +190,9 @@ export class InboundShipmentController {
     @Body() dto: ReceiveBoxDto,
     @User() user: WarehouseActor,
   ): Promise<ReceiveBoxResultDto> {
-    const actorId = warehouseOperationContext(dto, user) ?? authenticatedWarehouseActor(user);
+    const actorId = warehouseOperationContext(dto, user);
+    // v2 만 받는다 — v1(키 없음)로 내려오면 멱등 키 없이 원장에 쓰게 되므로 여기서 막는다
+    if (!actorId) throw new BadRequestError('창고 작업 계약 v2(contractVersion: 2, idempotencyKey)가 필요합니다.');
     return this.service.receiveBox(id, boxId, dto, actorId);
   }
 

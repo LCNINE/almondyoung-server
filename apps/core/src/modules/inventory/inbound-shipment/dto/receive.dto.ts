@@ -7,10 +7,12 @@ import {
   IsInt,
   IsString,
   IsUUID,
+  Matches,
   Max,
   MaxLength,
   Min,
   MinLength,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
 import { WarehouseOperationDto } from '../../core/services/warehouse-operation-contract';
@@ -42,15 +44,23 @@ export class ReceiveBoxUnplannedDto {
   quantity: number;
 }
 
-/** 상자 확정 — 창고 작업 계약 v2 만 받는다 (spec §8.2). */
+/**
+ * 상자 확정 — 창고 작업 계약 v2 만 받는다 (spec §8.2).
+ *
+ * 부모 `WarehouseOperationDto` 의 `@ValidateIf(값이 있을 때만)` 를 같은 속성의 `@ValidateIf(() => true)` 로 덮는다.
+ * class-validator 는 같은 속성·같은 종류의 메타데이터가 자식에 있으면 부모 것을 버리므로, 부모의 규칙
+ * (IsString·Matches·MaxLength)도 여기서 다시 적는다 — 빠뜨리면 그 규칙이 조용히 사라진다.
+ */
 export class ReceiveBoxDto extends WarehouseOperationDto {
   @ApiProperty({ enum: [2] })
+  @ValidateIf(() => true)
   @Equals(2)
   declare contractVersion: number;
 
   @ApiProperty({ maxLength: 90 })
+  @ValidateIf(() => true)
   @IsString()
-  @MinLength(1)
+  @Matches(/\S/)
   @MaxLength(90)
   declare idempotencyKey: string;
 

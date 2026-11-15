@@ -1,4 +1,5 @@
-import { confirmBlockers, deriveShipmentStatus, lineEditable } from './inbound-shipment.rules';
+import { BadRequestError } from '@app/shared';
+import { confirmBlockers, deriveShipmentStatus, lineEditable, normalizeSingleBoxLabel } from './inbound-shipment.rules';
 
 const box = (id: string, disposition: 'stock' | 'forward' = 'stock', origin: 'list' | 'added' = 'list') => ({
   id,
@@ -62,5 +63,14 @@ describe('deriveShipmentStatus', () => {
   it('draft and canceled are not derived', () => {
     expect(deriveShipmentStatus('draft', [b('stock', 'received')], false)).toBe('draft');
     expect(deriveShipmentStatus('canceled', [b('stock', 'received')], true)).toBe('canceled');
+  });
+});
+
+describe('normalizeSingleBoxLabel', () => {
+  it('normalizes a single label', () => expect(normalizeSingleBoxLabel(' l5 ')).toBe('L5'));
+  it('refuses ranges and guesses', () => {
+    expect(() => normalizeSingleBoxLabel('L5-L9')).toThrow(BadRequestError);
+    expect(() => normalizeSingleBoxLabel('L86-')).toThrow(BadRequestError);
+    expect(() => normalizeSingleBoxLabel('')).toThrow(BadRequestError);
   });
 });

@@ -1,5 +1,8 @@
 /** 선적 입고 순수 규칙 — DB·Nest 를 모른다 (spec §6.2, §6.4). */
 
+import { BadRequestError } from '@app/shared';
+import { expandBoxLabel } from './inbound-shipment-list.parser';
+
 export type LineKind = 'sku' | 'free' | 'unresolved';
 
 export type ConfirmBlocker =
@@ -61,4 +64,11 @@ export function deriveShipmentStatus(
   const received = stock.filter((b) => b.status === 'received').length;
   if (stock.length > 0 && received === stock.length) return 'closed';
   return received > 0 ? 'receiving' : 'expected';
+}
+
+/** 앱이 넣거나 스캔한 상자 이름 하나를 정규화한다 — 범위·추측 표기는 400 (spec §8.1·§8.7). */
+export function normalizeSingleBoxLabel(input: string): string {
+  const { labels, issue } = expandBoxLabel(input);
+  if (issue !== null || labels.length !== 1) throw new BadRequestError(`상자 이름 하나를 넣어 주세요: ${input}`);
+  return labels[0];
 }

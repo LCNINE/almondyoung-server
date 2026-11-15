@@ -2,8 +2,9 @@ import { Injectable } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
 import { DbService } from '@app/db';
 import { and, asc, countDistinct, desc, eq, inArray, isNull, ne, SQL, sql } from 'drizzle-orm';
-import { BadRequestError, NotFoundError } from '@app/shared';
-import { expandBoxLabel, normalizeBarcode, ListCell } from './inbound-shipment-list.parser';
+import { NotFoundError } from '@app/shared';
+import { normalizeBarcode, ListCell } from './inbound-shipment-list.parser';
+import { normalizeSingleBoxLabel } from './inbound-shipment.rules';
 import { InboundShipmentSkuMatcherReader } from './inbound-shipment-sku-matcher.reader';
 import { DbTx, InboundShipment, wmsSchema, wmsTables } from '../../schema/inventory.schema';
 import { InboundShipmentDetailView, InboundShipmentSummaryDto } from '../dto/inbound-shipment-view.dto';
@@ -18,13 +19,6 @@ function cellText(raw: Record<string, unknown>, key: string): string {
   const c = raw[key];
   if (c !== null && typeof c === 'object' && 'text' in c && typeof c.text === 'string') return c.text;
   return '';
-}
-
-/** 앱이 넣거나 스캔한 상자 이름 하나를 정규화한다 — 범위·추측 표기는 400. */
-export function normalizeSingleBoxLabel(input: string): string {
-  const { labels, issue } = expandBoxLabel(input);
-  if (issue !== null || labels.length !== 1) throw new BadRequestError(`상자 이름 하나를 넣어 주세요: ${input}`);
-  return labels[0];
 }
 
 @Injectable()

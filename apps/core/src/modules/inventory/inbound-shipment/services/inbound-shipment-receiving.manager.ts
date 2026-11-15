@@ -5,18 +5,17 @@ import { BadRequestError, ConflictError } from '@app/shared';
 import { InjectTypedDb } from '@app/db/decorators';
 import { DbService } from '@app/db';
 import { DbTx, wmsSchema, wmsTables } from '../../schema/inventory.schema';
-import type { InboundShipmentLine } from '../../schema/inventory.schema';
+import type { InboundShipment, InboundShipmentLine } from '../../schema/inventory.schema';
 import { InboundReceiptKernel } from '../../inbound/kernel/inbound-receipt.kernel';
 import { InventoryIdempotencyService } from '../../core/services/inventory-idempotency.service';
 import { warehouseEndpoint, warehouseRequest } from '../../core/services/warehouse-operation-contract';
 import { ProductSellableQuantityService } from '../../product-sellable-quantity/services/product-sellable-quantity.service';
 import { AddInboundShipmentBoxResultDto, ReceiveBoxDto, ReceiveBoxResult } from '../dto/receive.dto';
 import { lockInboundShipment, lockInboundShipmentBox } from './inbound-shipment-locks';
-import { deriveShipmentStatus } from './inbound-shipment.rules';
-import { normalizeSingleBoxLabel } from './inbound-shipment.reader';
+import { deriveShipmentStatus, normalizeSingleBoxLabel } from './inbound-shipment.rules';
 
-const OPEN_STATUSES = ['expected', 'receiving'] as const;
-const isOpen = (status: string) => (OPEN_STATUSES as readonly string[]).includes(status);
+/** 상자를 받거나 더할 수 있는 선적 상태 — 도착 예정·입고 중. */
+const isOpen = (status: InboundShipment['status']): boolean => status === 'expected' || status === 'receiving';
 
 /** 집계 한 행이 될 것 — 원장에 들어가면 `ledgerIndex` 가 커널 입력의 자리다. */
 interface PlannedCount {
@@ -215,7 +214,8 @@ export class InboundShipmentReceivingManager {
   ): PlannedCount[] {
     const lineById = new Map(lines.map((l) => [l.id, l]));
     const seen = new Set<string>();
-    const planned: PlannedCount[] = [];
+    const matched: { line: (typeof lines)[number]; countedQty: number }[] = [];
+    // 1) 덮는 줄 전부를 정확히 한 번씩 — 400
     for (const c of dto.counts) {
       if (seen.has(c.lineId)) throw new BadRequestError(`같은 줄을 두 번 셌습니다: ${c.lineId}`);
       seen.add(c.lineId);
@@ -224,21 +224,25 @@ export class InboundShipmentReceivingManager {
       if (!Number.isInteger(c.countedQty) || c.countedQty < 0) {
         throw new BadRequestError('센 수량은 0 이상의 정수여야 합니다.');
       }
-      if (line.kind === 'unresolved') {
-        throw new ConflictError(`상품이 정해지지 않은 줄은 받을 수 없습니다: ${line.rowNumber}행`);
-      }
-      planned.push({
-        lineId: line.id,
-        skuId: line.kind === 'sku' ? line.skuId : null,
-        countedQty: c.countedQty,
-        ledgerIndex: null,
-      });
+      matched.push({ line, countedQty: c.countedQty });
     }
     const missing = lines.filter((l) => !seen.has(l.id)).sort((a, b) => a.rowNumber - b.rowNumber);
     if (missing.length > 0) {
       throw new BadRequestError(`세지 않은 줄이 있습니다: ${missing.map((l) => `${l.rowNumber}행`).join(', ')}`);
     }
-    return planned;
+    // 2) 확정이 막았어야 할 미확인 줄 — 409 (방어선)
+    const unresolved = matched.filter((m) => m.line.kind === 'unresolved');
+    if (unresolved.length > 0) {
+      throw new ConflictError(
+        `상품이 정해지지 않은 줄은 받을 수 없습니다: ${unresolved.map((m) => `${m.line.rowNumber}행`).join(', ')}`,
+      );
+    }
+    return matched.map(({ line, countedQty }) => ({
+      lineId: line.id,
+      skuId: line.kind === 'sku' ? line.skuId : null,
+      countedQty,
+      ledgerIndex: null,
+    }));
   }
 
   private async assertUnplannedValid(trx: DbTx, dto: ReceiveBoxDto): Promise<void> {

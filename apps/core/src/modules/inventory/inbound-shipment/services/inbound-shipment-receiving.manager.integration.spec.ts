@@ -540,6 +540,105 @@ describeIfDb('InboundShipmentReceivingManager (DB integration)', () => {
     });
   });
 
+  it('coverage is checked before an unresolved line is refused', async () => {
+    await inRollbackTx(db, async (trx) => {
+      const f = await seed(trx);
+      const built = build(trx);
+      const s = await shipment(trx, built, f.warehouseId, [
+        row(1, 'L1', 10, f.barcodes[0]),
+        row(2, 'L1', 5, f.barcodes[1]),
+      ]);
+      // 확정이 막았어야 할 상태를 DB 에서 직접 만든다(방어선 확인)
+      await trx
+        .update(wmsTables.inboundShipmentLines)
+        .set({ kind: 'unresolved', skuId: null })
+        .where(eq(wmsTables.inboundShipmentLines.id, s.lineOf(1)));
+      const box = s.boxOf('L1');
+
+      await expect(
+        built.receiving.receiveBox(s.shipmentId, box, dto([{ lineId: s.lineOf(1), countedQty: 10 }]), ACTOR, trx),
+      ).rejects.toBeInstanceOf(BadRequestError);
+      await expect(
+        built.receiving.receiveBox(
+          s.shipmentId,
+          box,
+          dto([
+            { lineId: s.lineOf(1), countedQty: 10 },
+            { lineId: s.lineOf(1), countedQty: 10 },
+            { lineId: s.lineOf(2), countedQty: 5 },
+          ]),
+          ACTOR,
+          trx,
+        ),
+      ).rejects.toBeInstanceOf(BadRequestError);
+      await expect(
+        built.receiving.receiveBox(
+          s.shipmentId,
+          box,
+          dto([
+            { lineId: s.lineOf(1), countedQty: 10 },
+            { lineId: s.lineOf(2), countedQty: 5 },
+          ]),
+          ACTOR,
+          trx,
+        ),
+      ).rejects.toBeInstanceOf(ConflictError);
+      expect(await countsOf(trx, box)).toHaveLength(0);
+    });
+  });
+
+  it('a closed shipment refuses receive and addBox', async () => {
+    await inRollbackTx(db, async (trx) => {
+      const f = await seed(trx);
+      const built = build(trx);
+      const s = await shipment(trx, built, f.warehouseId, [
+        row(1, 'L1', 10, f.barcodes[0]),
+        row(2, 'L2', 5, f.barcodes[1]),
+      ]);
+      await trx
+        .update(wmsTables.inboundShipments)
+        .set({ status: 'closed', closedReason: 'lost box (synthetic)' })
+        .where(eq(wmsTables.inboundShipments.id, s.shipmentId));
+
+      await expect(
+        built.receiving.receiveBox(
+          s.shipmentId,
+          s.boxOf('L1'),
+          dto([{ lineId: s.lineOf(1), countedQty: 10 }]),
+          ACTOR,
+          trx,
+        ),
+      ).rejects.toBeInstanceOf(ConflictError);
+      await expect(built.receiving.addBox(s.shipmentId, 'L9', ACTOR, trx)).rejects.toBeInstanceOf(ConflictError);
+    });
+  });
+
+  it('auto close stamps closed_at and closed_by with no reason', async () => {
+    await inRollbackTx(db, async (trx) => {
+      const f = await seed(trx);
+      const built = build(trx);
+      const s = await shipment(trx, built, f.warehouseId, [row(1, 'L1', 10, f.barcodes[0])]);
+      const before = new Date(Date.now() - 1000);
+
+      const result = await built.receiving.receiveBox(
+        s.shipmentId,
+        s.boxOf('L1'),
+        dto([{ lineId: s.lineOf(1), countedQty: 10 }]),
+        ACTOR,
+        trx,
+      );
+
+      expect(result.shipmentStatus).toBe('closed');
+      const [row1] = await trx
+        .select()
+        .from(wmsTables.inboundShipments)
+        .where(eq(wmsTables.inboundShipments.id, s.shipmentId));
+      expect(row1).toMatchObject({ status: 'closed', closedBy: ACTOR, closedReason: null });
+      expect(row1.closedAt).not.toBeNull();
+      expect((row1.closedAt ?? new Date(0)).getTime()).toBeGreaterThanOrEqual(before.getTime());
+    });
+  });
+
   it('draft shipment boxes cannot be received', async () => {
     await inRollbackTx(db, async (trx) => {
       const f = await seed(trx);
