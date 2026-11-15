@@ -6,9 +6,15 @@ import { InjectTypedDb } from '@app/db/decorators';
 import { DbService } from '@app/db';
 import { DbTx, wmsSchema, wmsTables } from '../../schema/inventory.schema';
 import { InboundShipmentSkuMatcherReader, SkuMatch } from './inbound-shipment-sku-matcher.reader';
-import { LineIssue, ListInput, ParsedLine, expandBoxLabel, parseShipmentList } from './inbound-shipment-list.parser';
+import {
+  LineIssue,
+  ListInput,
+  MAX_BOX_RANGE,
+  ParsedLine,
+  expandBoxLabel,
+  parseShipmentList,
+} from './inbound-shipment-list.parser';
 import { ConfirmBlocker, confirmBlockers, lineEditable } from './inbound-shipment.rules';
-import { MAX_BOX_RANGE } from './inbound-shipment-list.parser';
 import { lockInboundShipment } from './inbound-shipment-locks';
 
 export interface CreateDraftInput {
@@ -106,16 +112,15 @@ export class InboundShipmentDraftManager {
       }
 
       // 줄 id 는 미리 만든다 — 덮기를 RETURNING 행 매핑이 아니라 이 id 로 짓는다
-      const drafts = parsed.lines.map((line) => ({
-        id: randomUUID(),
-        line,
-        ...this.lineValues(shipment.id, line, matches),
-      }));
+      const drafts = parsed.lines.map((line) => {
+        const values = { id: randomUUID(), ...this.lineValues(shipment.id, line, matches) };
+        return { line, values };
+      });
       for (const part of chunks(drafts, LINE_CHUNK)) {
-        await trx.insert(wmsTables.inboundShipmentLines).values(part.map(({ line: _line, ...values }) => values));
+        await trx.insert(wmsTables.inboundShipmentLines).values(part.map(({ values }) => values));
       }
 
-      const cover = drafts.flatMap(({ id: lineId, line }) => {
+      const cover = drafts.flatMap(({ values: { id: lineId }, line }) => {
         return [...new Set(line.boxLabels)].flatMap((label) => {
           const boxId = boxIdByLabel.get(label);
           return boxId ? [{ lineId, boxId }] : [];
@@ -464,7 +469,10 @@ export class InboundShipmentDraftManager {
   }
 
   private async touchShipment(trx: DbTx, shipmentId: string): Promise<void> {
-    await trx.update(wmsTables.inboundShipments).set({ updatedAt: new Date() }).where(eq(wmsTables.inboundShipments.id, shipmentId));
+    await trx
+      .update(wmsTables.inboundShipments)
+      .set({ updatedAt: new Date() })
+      .where(eq(wmsTables.inboundShipments.id, shipmentId));
   }
 
   /** 확정 뒤 구분을 바꿔도 §6.2 의 «미확인 줄·섞인 줄» 규칙이 깨지지 않아야 한다. */
@@ -485,11 +493,20 @@ export class InboundShipmentDraftManager {
         disposition: wmsTables.inboundShipmentBoxes.disposition,
       })
       .from(wmsTables.inboundShipmentLineBoxes)
-      .innerJoin(wmsTables.inboundShipmentLines, eq(wmsTables.inboundShipmentLines.id, wmsTables.inboundShipmentLineBoxes.lineId))
-      .innerJoin(wmsTables.inboundShipmentBoxes, eq(wmsTables.inboundShipmentBoxes.id, wmsTables.inboundShipmentLineBoxes.boxId))
+      .innerJoin(
+        wmsTables.inboundShipmentLines,
+        eq(wmsTables.inboundShipmentLines.id, wmsTables.inboundShipmentLineBoxes.lineId),
+      )
+      .innerJoin(
+        wmsTables.inboundShipmentBoxes,
+        eq(wmsTables.inboundShipmentBoxes.id, wmsTables.inboundShipmentLineBoxes.boxId),
+      )
       .where(inArray(wmsTables.inboundShipmentLineBoxes.lineId, lineIds));
     const boxes = new Map(
-      rows.map((r) => [r.boxId, { id: r.boxId, disposition: r.boxId === boxId ? next : r.disposition, origin: 'added' as const }]),
+      rows.map((r) => [
+        r.boxId,
+        { id: r.boxId, disposition: r.boxId === boxId ? next : r.disposition, origin: 'added' as const },
+      ]),
     );
     const lines = lineIds.map((id) => {
       const mine = rows.filter((r) => r.lineId === id);
@@ -512,7 +529,8 @@ export class InboundShipmentDraftManager {
       for (const l of labels) if (!out.includes(l)) out.push(l);
     }
     if (out.length === 0) throw new BadRequestError('상자를 하나 이상 지정해야 합니다.');
-    if (out.length > MAX_BOX_RANGE) throw new BadRequestError(`한 번에 ${MAX_BOX_RANGE}개를 넘는 상자를 지정할 수 없습니다.`);
+    if (out.length > MAX_BOX_RANGE)
+      throw new BadRequestError(`한 번에 ${MAX_BOX_RANGE}개를 넘는 상자를 지정할 수 없습니다.`);
     return out;
   }
 
@@ -536,14 +554,12 @@ export class InboundShipmentDraftManager {
       for (const c of created) idByLabel.set(c.label, c.id);
     }
     await trx.delete(wmsTables.inboundShipmentLineBoxes).where(eq(wmsTables.inboundShipmentLineBoxes.lineId, lineId));
-    await trx
-      .insert(wmsTables.inboundShipmentLineBoxes)
-      .values(
-        labels.flatMap((l) => {
-          const boxId = idByLabel.get(l);
-          return boxId === undefined ? [] : [{ lineId, boxId }];
-        }),
-      );
+    await trx.insert(wmsTables.inboundShipmentLineBoxes).values(
+      labels.flatMap((l) => {
+        const boxId = idByLabel.get(l);
+        return boxId === undefined ? [] : [{ lineId, boxId }];
+      }),
+    );
   }
 
   private blockerMessage(

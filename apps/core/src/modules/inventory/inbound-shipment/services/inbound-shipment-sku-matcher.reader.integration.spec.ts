@@ -31,15 +31,25 @@ describeIfDb('InboundShipmentSkuMatcherReader (DB integration)', () => {
   }
 
   async function seedSku(trx: DbTx, code?: string) {
-    const [holder] = await trx.insert(wmsTables.holders).values({ name: `m-holder-${randomUUID().slice(0, 8)}` }).returning();
+    const [holder] = await trx
+      .insert(wmsTables.holders)
+      .values({ name: `m-holder-${randomUUID().slice(0, 8)}` })
+      .returning();
     const [sku] = await trx
       .insert(wmsTables.skus)
-      .values({ name: 'matcher-sku', code: code ?? `M-${randomUUID().toUpperCase()}`.slice(0, 40), holderId: holder.id })
+      .values({
+        name: 'matcher-sku',
+        code: code ?? `M-${randomUUID().toUpperCase()}`.slice(0, 40),
+        holderId: holder.id,
+      })
       .returning();
     return sku;
   }
 
-  const num = () => `9${Math.floor(Math.random() * 1e11).toString().padStart(11, '0')}`;
+  const num = () =>
+    `9${Math.floor(Math.random() * 1e11)
+      .toString()
+      .padStart(11, '0')}`;
 
   it('matches a registered barcode', async () => {
     await inRollbackTx(db, async (trx) => {

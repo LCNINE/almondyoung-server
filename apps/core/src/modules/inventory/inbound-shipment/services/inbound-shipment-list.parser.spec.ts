@@ -67,11 +67,7 @@ describe('parseShipmentList', () => {
 
   it('same label on non-adjacent rows is one box', () => {
     const r = parseShipmentList(
-      input([
-        row(2, { box: c('L23') }),
-        row(3, { box: c('L24') }),
-        row(4, { box: c('L23') }),
-      ]),
+      input([row(2, { box: c('L23') }), row(3, { box: c('L24') }), row(4, { box: c('L23') })]),
     );
     expect(r.boxes).toHaveLength(2);
     expect(r.boxes.map((b) => [b.label, b.sortKey])).toEqual([
@@ -117,9 +113,7 @@ describe('parseShipmentList', () => {
   });
 
   it('flags a date-coerced option', () => {
-    const r = parseShipmentList(
-      input([row(2, { box: c('L1'), option: c('2026-01-03', '2026-01-03T00:00:00.000Z') })]),
-    );
+    const r = parseShipmentList(input([row(2, { box: c('L1'), option: c('2026-01-03', '2026-01-03T00:00:00.000Z') })]));
     expect(r.lines[0].issues).toContain('option_date_coerced');
     expect(r.lines[0].raw.option?.text).toBe('2026-01-03');
   });
@@ -139,9 +133,7 @@ describe('parseShipmentList', () => {
   });
 
   it('ignores total and NO', () => {
-    const r = parseShipmentList(
-      input([row(2, { box: c('L1'), no: c(''), total: c('총수량:15개') })]),
-    );
+    const r = parseShipmentList(input([row(2, { box: c('L1'), no: c(''), total: c('총수량:15개') })]));
     expect(r.lines[0].issues).toEqual([]);
     expect(r.lines[0].raw.total?.text).toBe('총수량:15개');
   });

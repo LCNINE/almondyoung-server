@@ -41,15 +41,7 @@ export interface ParsedBox {
   forwardHint: string | null;
 }
 
-type RawKey =
-  | 'boxLabel'
-  | 'no'
-  | 'productName'
-  | 'quantity'
-  | 'option'
-  | 'barcode'
-  | 'total'
-  | 'remark';
+type RawKey = 'boxLabel' | 'no' | 'productName' | 'quantity' | 'option' | 'barcode' | 'total' | 'remark';
 
 export interface ParsedLine {
   rowNumber: number;
@@ -170,9 +162,7 @@ export function parseShipmentList(input: ListInput): ParsedList {
 
   const rows = input.rows.filter((r) => !isBlankRow(r));
   if (rows.length > MAX_SHIPMENT_LIST_ROWS) {
-    throw new BadRequestError(
-      `입고리스트 줄이 상한(${MAX_SHIPMENT_LIST_ROWS})을 넘습니다. 파일을 나눠 올려주세요.`,
-    );
+    throw new BadRequestError(`입고리스트 줄이 상한(${MAX_SHIPMENT_LIST_ROWS})을 넘습니다. 파일을 나눠 올려주세요.`);
   }
 
   const seenRows = new Set<number>();

@@ -515,23 +515,30 @@ describeIfDb('InboundShipmentDraftManager (DB integration)', () => {
         const { shipmentId } = await manager.createDraft(
           input(f.warehouseId, {
             header: HEADER,
-            rows: [
-              row(1, 'L1-L2', 10, f.barcodes[0]),
-              row(2, 'L3', 5, '7000000000001', 'acme 에 발송바람'),
-            ],
+            rows: [row(1, 'L1-L2', 10, f.barcodes[0]), row(2, 'L3', 5, '7000000000001', 'acme 에 발송바람')],
           }),
           ACTOR,
           trx,
         );
         await manager.confirm(shipmentId, ACTOR, trx);
-        const boxes = await trx.select().from(wmsTables.inboundShipmentBoxes).where(eq(wmsTables.inboundShipmentBoxes.shipmentId, shipmentId));
+        const boxes = await trx
+          .select()
+          .from(wmsTables.inboundShipmentBoxes)
+          .where(eq(wmsTables.inboundShipmentBoxes.shipmentId, shipmentId));
         const byLabel = (l: string) => boxes.find((b) => b.label === l)!;
         expect(byLabel('L3').disposition).toBe('forward');
         // unresolved line on a forward-only box -> stock would break confirm
-        await expect(manager.editBox(shipmentId, byLabel('L3').id, { disposition: 'stock' }, ACTOR, trx)).rejects.toThrow(ConflictError);
+        await expect(
+          manager.editBox(shipmentId, byLabel('L3').id, { disposition: 'stock' }, ACTOR, trx),
+        ).rejects.toThrow(ConflictError);
         // flipping one of two boxes of a line makes it mixed
-        await expect(manager.editBox(shipmentId, byLabel('L2').id, { disposition: 'forward' }, ACTOR, trx)).rejects.toThrow(ConflictError);
-        const [l2] = await trx.select().from(wmsTables.inboundShipmentBoxes).where(eq(wmsTables.inboundShipmentBoxes.id, byLabel('L2').id));
+        await expect(
+          manager.editBox(shipmentId, byLabel('L2').id, { disposition: 'forward' }, ACTOR, trx),
+        ).rejects.toThrow(ConflictError);
+        const [l2] = await trx
+          .select()
+          .from(wmsTables.inboundShipmentBoxes)
+          .where(eq(wmsTables.inboundShipmentBoxes.id, byLabel('L2').id));
         expect(l2.disposition).toBe('stock');
       });
     });
@@ -546,10 +553,21 @@ describeIfDb('InboundShipmentDraftManager (DB integration)', () => {
           trx,
         );
         await manager.confirm(shipmentId, ACTOR, trx);
-        await trx.update(wmsTables.inboundShipmentBoxes).set({ status: 'received' }).where(eq(wmsTables.inboundShipmentBoxes.shipmentId, shipmentId));
-        const [box] = await trx.select().from(wmsTables.inboundShipmentBoxes).where(eq(wmsTables.inboundShipmentBoxes.shipmentId, shipmentId));
-        await expect(manager.editBox(shipmentId, box.id, { forwardNote: 'x' }, ACTOR, trx)).rejects.toThrow(ConflictError);
-        await trx.update(wmsTables.inboundShipments).set({ status: 'receiving' }).where(eq(wmsTables.inboundShipments.id, shipmentId));
+        await trx
+          .update(wmsTables.inboundShipmentBoxes)
+          .set({ status: 'received' })
+          .where(eq(wmsTables.inboundShipmentBoxes.shipmentId, shipmentId));
+        const [box] = await trx
+          .select()
+          .from(wmsTables.inboundShipmentBoxes)
+          .where(eq(wmsTables.inboundShipmentBoxes.shipmentId, shipmentId));
+        await expect(manager.editBox(shipmentId, box.id, { forwardNote: 'x' }, ACTOR, trx)).rejects.toThrow(
+          ConflictError,
+        );
+        await trx
+          .update(wmsTables.inboundShipments)
+          .set({ status: 'receiving' })
+          .where(eq(wmsTables.inboundShipments.id, shipmentId));
         await expect(manager.cancel(shipmentId, ACTOR, trx)).rejects.toThrow(ConflictError);
       });
     });
@@ -563,20 +581,43 @@ describeIfDb('InboundShipmentDraftManager (DB integration)', () => {
           ACTOR,
           trx,
         );
-        const [box] = await trx.select().from(wmsTables.inboundShipmentBoxes).where(eq(wmsTables.inboundShipmentBoxes.shipmentId, shipmentId));
-        await expect(manager.editBox(shipmentId, box.id, { label: 'L1-L3' }, ACTOR, trx)).rejects.toThrow(BadRequestError);
+        const [box] = await trx
+          .select()
+          .from(wmsTables.inboundShipmentBoxes)
+          .where(eq(wmsTables.inboundShipmentBoxes.shipmentId, shipmentId));
+        await expect(manager.editBox(shipmentId, box.id, { label: 'L1-L3' }, ACTOR, trx)).rejects.toThrow(
+          BadRequestError,
+        );
         const old = new Date('2020-01-01T00:00:00Z');
-        await trx.update(wmsTables.inboundShipments).set({ updatedAt: old }).where(eq(wmsTables.inboundShipments.id, shipmentId));
+        await trx
+          .update(wmsTables.inboundShipments)
+          .set({ updatedAt: old })
+          .where(eq(wmsTables.inboundShipments.id, shipmentId));
         await manager.editBox(shipmentId, box.id, { forwardNote: 'n' }, ACTOR, trx);
-        const [after] = await trx.select().from(wmsTables.inboundShipmentBoxes).where(eq(wmsTables.inboundShipmentBoxes.id, box.id));
+        const [after] = await trx
+          .select()
+          .from(wmsTables.inboundShipmentBoxes)
+          .where(eq(wmsTables.inboundShipmentBoxes.id, box.id));
         expect(after.version).toBe(box.version + 1);
-        const [s] = await trx.select().from(wmsTables.inboundShipments).where(eq(wmsTables.inboundShipments.id, shipmentId));
+        const [s] = await trx
+          .select()
+          .from(wmsTables.inboundShipments)
+          .where(eq(wmsTables.inboundShipments.id, shipmentId));
         expect(s.updatedAt.getTime()).toBeGreaterThan(old.getTime());
-        const [line] = await trx.select().from(wmsTables.inboundShipmentLines).where(eq(wmsTables.inboundShipmentLines.shipmentId, shipmentId));
-        await trx.update(wmsTables.inboundShipments).set({ updatedAt: old }).where(eq(wmsTables.inboundShipments.id, shipmentId));
+        const [line] = await trx
+          .select()
+          .from(wmsTables.inboundShipmentLines)
+          .where(eq(wmsTables.inboundShipmentLines.shipmentId, shipmentId));
+        await trx
+          .update(wmsTables.inboundShipments)
+          .set({ updatedAt: old })
+          .where(eq(wmsTables.inboundShipments.id, shipmentId));
         await manager.setAiCandidates(shipmentId, line.id, [], trx).catch(() => undefined);
         await manager.editLine(shipmentId, line.id, { kind: 'free' }, {}, ACTOR, trx);
-        const [s2] = await trx.select().from(wmsTables.inboundShipments).where(eq(wmsTables.inboundShipments.id, shipmentId));
+        const [s2] = await trx
+          .select()
+          .from(wmsTables.inboundShipments)
+          .where(eq(wmsTables.inboundShipments.id, shipmentId));
         expect(s2.updatedAt.getTime()).toBeGreaterThan(old.getTime());
       });
     });
@@ -590,7 +631,10 @@ describeIfDb('InboundShipmentDraftManager (DB integration)', () => {
           ACTOR,
           trx,
         );
-        const [line] = await trx.select().from(wmsTables.inboundShipmentLines).where(eq(wmsTables.inboundShipmentLines.shipmentId, shipmentId));
+        const [line] = await trx
+          .select()
+          .from(wmsTables.inboundShipmentLines)
+          .where(eq(wmsTables.inboundShipmentLines.shipmentId, shipmentId));
         await expect(
           manager.editLine(shipmentId, line.id, { kind: 'free' }, { boxLabels: ['A1-A50', 'B1-B50'] }, ACTOR, trx),
         ).rejects.toThrow(BadRequestError);
