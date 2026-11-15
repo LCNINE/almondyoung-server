@@ -234,7 +234,8 @@ CHECK: `line_id IS NOT NULL OR sku_id IS NOT NULL`(리스트에 없던 물건은
 
 **바코드 매칭 (Reader)**: 정규화한 값으로 `sku_barcodes.barcode` 를 찾고, 없으면 `skus.code` 를 찾는다.
 SKU 하나면 `kind = 'sku'`, `resolution = 'barcode'`. 단 그 바코드가 상자 바코드(`packing_unit > 1`)면 리스트 수량이 낱개인지 상자 수인지 알 수 없으므로 `packing_unit_barcode`(미확인, 후보로 그 SKU 를 보여 준다)로 둔다. **(Claude 판단 — 라이브 `packing_unit` 은 메모 기준 전부 NULL 이라 지금은 안 생긴다)** 없으면 `barcode_not_found`, 둘 이상이면 `barcode_ambiguous`
-(미확인, 후보를 `ai_candidates` 와 별개로 화면에 보여 줄 수 있게 이슈에 남긴다). 라이브 `sku_barcodes` 에는
+(미확인, 후보를 `ai_candidates` 와 별개로 화면에 보여 줄 수 있게 이슈에 남긴다).
+**(실행 중 결정)** 아직 못 정한 줄(`unresolved`)에는 읽을 때마다 다시 계산한 `barcodeCandidates`(SKU id·코드·이름)를 함께 낸다. 라이브 `sku_barcodes` 에는
 `="…"` 로 저장된 옛 행이 있으므로(메모 기준 2.9만 행) DB 쪽 값도 같은 정규화로 비교한다.
 
 ### 6.4 초안·확정 뒤 고치기
@@ -250,7 +251,7 @@ SKU 하나면 `kind = 'sku'`, `resolution = 'barcode'`. 단 그 바코드가 상
 - `apps/ai` 에 비채팅 엔드포인트 `POST /inbound-shipment-assist/suggest { shipmentId }`(`ai.assistant.use`).
   선례: `apps/ai/src/product-description`.
 - ai 는 **부른 사람의 쿠키**로 core 에서 초안의 미확인 줄을 읽고, 줄마다 제품명·옵션으로 core SKU 검색
-  (`GET /skus/search/advanced`)을 불러 후보를 모은 뒤, 모델에게 후보 중에서 고르게 한다(후보 밖 SKU 를 지어내지 않게).
+  (`GET /inventory/skus/search/advanced`, 실행 중 결정 — 실제 경로)을 불러 후보를 모은 뒤, 모델에게 후보 중에서 고르게 한다(후보 밖 SKU 를 지어내지 않게).
 - 결과는 core `PUT /inventory/inbound-shipments/:id/lines/:lineId/ai-candidates` 로 **후보만** 적는다. 줄의 `kind`·
   `sku_id`·`expected_qty` 는 바꾸지 않는다. 사람이 후보를 골라야 줄이 정해진다.
 - 수량은 AI 가 읽지 않는다. 수량이 비거나 이상한 줄은 사람이 원문을 보고 넣는다.
@@ -294,6 +295,7 @@ SKU 하나면 `kind = 'sku'`, `resolution = 'barcode'`. 단 그 바코드가 상
 - `sku` 줄의 `countedQty > 0` 과 `unplanned` 전부를 커널 `recordArrival({ source: 'inbound_shipment', reason:
   'inbound_shipment', locationId: null(입고기본존) })` 한 번으로 넣는다. 이벤트 키는 발주와 같은 꼴
   `${endpoint}:${idempotencyKey}:${index}`.
+- **(실행 중 결정)** 취소(§8.3)는 커널을 SKU 순으로 부른다 — 도착이 원장 잠금을 잡는 순서와 같아야 교착이 안 난다.
 - 집계 행을 쓰고(자유 줄은 `receipt_line_id` 없이), 상자를 `received` 로, 선적을 `receiving` 으로. 재고 상자가 전부
   `received` 면 선적을 `closed` 로.
 - 끝에 `productSellableQuantity.recalculateAndPublishForSkus(skuIds, tx)`.
@@ -306,19 +308,21 @@ SKU 하나면 `kind = 'sku'`, `resolution = 'barcode'`. 단 그 바코드가 상
 커널 `cancelLine(expected: { source: 'inbound_shipment' })` 으로 취소한다. 규칙은 기존 입고 취소와 같다(당일·전량,
 적치가 시작된 라인은 거절). 집계 행에 `canceled_at` 을 찍고 상자를 `open` 으로, 선적 상태를 다시 계산한다
 (`closed` 였으면 `receiving` 으로). 권한 `inventory.stock.operate`.
+**(실행 중 결정)** 취소 뒤 선적 상태는 다시 파생한다: 확정된 재고 상자가 아직 있으면 `receiving`, 하나도 없으면 `expected`. 닫혀 있던 선적은 다시 열리고 `closed_*` 는 지운다.
 
 ### 8.4 종결 · 다시 열기 **(Claude 판단)**
 
 - 재고 상자가 전부 `received` 가 되면 선적은 저절로 `closed`.
-- 상자가 안 왔는데 끝내야 하면 `close { reason }`(사람). 남은 `open` 상자는 그대로 두고 확정만 막는다. 그 상자들의
+- 상자가 안 왔는데 끝내야 하면 `close { reason }`(사람). **(실행 중 결정)** 사유는 필수다. 남은 `open` 상자는 그대로 두고 확정만 막는다. 그 상자들의
   줄은 «안 옴»으로 차이에 잡힌다.
-- 끝낸 뒤 상자가 나타나면 `reopen`(`closed → receiving`)하고 받는다.
+- 끝낸 뒤 상자가 나타나면 `reopen`(`closed → receiving`)하고 받는다. **(실행 중 결정)** `reopen` 은 사람이 닫은 선적만 된다 — 저절로 닫힌 선적은 409.
 - 확정 취소는 `closed` 선적에서도 되고, 선적을 `receiving` 으로 되돌린다(수동 종결이었어도 같다 — 다시 끝내면 된다).
 
 ### 8.5 차이
 
 - 줄의 실제 = 그 줄의 유효 집계(`canceled_at IS NULL`) 합. 줄이 덮는 상자가 **전부** 확정됐을 때만 «모자람·남음»을
   판정하고, 그 전엔 «진행 중 (실제/예정)».
+- **(실행 중 결정)** 새 차이 상태 `not_arrived`(«안 옴»): 사람이 닫은 선적에서 열린 재고 상자를 아직 덮는 줄. 요약에 `notArrivedLines`. 전달용 상자만 덮는 줄은 «진행 중»으로 둔다.
 - 리스트에 없던 물건은 상자별로 따로 보인다.
 - 선적 요약: 상자 확정 수/전체, 모자람 줄·남음 줄·리스트에 없던 물건 수, 전달용 상자 수.
 
@@ -370,6 +374,8 @@ file-service `default-file-contexts` 에 입고리스트 컨텍스트 하나를 
   `grantOnFirstRegistration` 은 `admin`.
 - 중국 쪽 직원 계정(없으면 발급)의 역할에는 배포 뒤 사람이 이 키와 `inventory.stock.read` 를 직접 준다(§11).
 - 상자 확정·취소·리스트에 없던 상자는 현장 작업이라 기존 `inventory.stock.operate`(작업자 역할이 이미 가짐).
+
+**(실행 중 결정)** 업로드 라우트에만 본문 한도 4 MiB 를 둔다(Fastify `onRoute` 훅). 나머지 라우트는 기본 한도.
 
 고객 개인정보는 없다.
 
