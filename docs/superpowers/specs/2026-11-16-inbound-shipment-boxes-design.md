@@ -211,6 +211,9 @@ CHECK: `line_id IS NOT NULL OR sku_id IS NOT NULL`(리스트에 없던 물건은
 - 처분이 `stock` 인 상자를 하나라도 덮는 줄은 `unresolved` 가 0. (전달용 상자에만 있는 줄은 정하지 않아도 된다)
 - 한 줄이 덮는 상자들의 처분이 같다(전달용과 재고 상자를 같이 덮는 줄은 사람이 고친다).
 - 리스트에서 나온 상자(`origin = 'list'`)는 줄을 하나 이상 가진다.
+- **(실행 중 결정 2026-11-16)** 확정 요청이 싣는 «사람이 확인한 전달용 상자 id 목록»이 지금 전달용 상자 전부와 같다. 파서는
+  «발송»이 보이면 상자를 바로 `forward` 로 만들기 때문에, 확인 없이는 상자가 조용히 재고 입고에서 빠진다
+  (`2026-11-16-inbound-shipment-upload-screen-design.md` §7.6).
 
 ### 6.3 파서 규칙 (core 순수 함수 `parseShipmentList`)
 
