@@ -2,7 +2,11 @@ import { Injectable } from '@nestjs/common';
 import { NotFoundError, ForbiddenError } from '@app/shared';
 import { AuthzSubject, Permission, PermissionCheckpoints, systemPrincipal } from '@app/authorization';
 import { FileRepository } from '../shared/repositories/file.repository';
-import { ARCHIVE_PAGE_ATTACHMENT_CONTEXT_ID, DIGITAL_ASSET_FILE_CONTEXT_ID } from '../database/default-file-contexts';
+import {
+  ARCHIVE_PAGE_ATTACHMENT_CONTEXT_ID,
+  DIGITAL_ASSET_FILE_CONTEXT_ID,
+  INBOUND_SHIPMENT_LIST_CONTEXT_ID,
+} from '../database/default-file-contexts';
 import { Upload } from '../shared/types/file.types';
 import { JwtPayload } from '../shared/types/jwt-payload.interface';
 import { delegationOf, FileDelegate } from './service-delegation';
@@ -26,6 +30,8 @@ export interface DeleteResult {
 const STAFF_CONTEXT_PERMISSIONS: ReadonlyMap<string, Permission> = new Map<string, Permission>([
   [DIGITAL_ASSET_FILE_CONTEXT_ID, 'catalog.product.read'],
   [ARCHIVE_PAGE_ATTACHMENT_CONTEXT_ID, 'archive.page.read'],
+  // 중국 직원이 올리고 한국 쪽이 연다 — 올린 사람만 읽으면 선적 상세에서 원본이 안 열린다.
+  [INBOUND_SHIPMENT_LIST_CONTEXT_ID, 'inventory.stock.read'],
 ]);
 
 /** 서비스 위임 토큰의 주체. 사람 주체가 아니다. */
