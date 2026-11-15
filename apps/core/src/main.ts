@@ -14,7 +14,8 @@ import { createGlobalValidationPipe } from './platform/http/validation-pipe';
 async function bootstrap() {
   const app = await NestFactory.create<NestFastifyApplication>(
     AppModule,
-    new FastifyAdapter(),
+    // 입고리스트 업로드(2,000행·9열 ≈ 1 MB)가 기본 1 MiB 에 걸린다. admin-web 프록시 상한(≈4.7 MB) 아래로 4 MiB.
+    new FastifyAdapter({ bodyLimit: 4 * 1024 * 1024 }),
     // 부팅 로그를 버퍼링했다가 pino 로거가 준비되면 flush — 초기 로그도 JSON+trace_id 로.
     { bufferLogs: true },
   );
