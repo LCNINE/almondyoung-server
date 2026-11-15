@@ -13,7 +13,7 @@ import {
 } from '../payment-provider.interface';
 import { WalletSchema, charges, paymentMethods } from '../../schema';
 import { TossApiClient } from './toss-api.client';
-import { hasConfirmAttempt, usesTossWidget } from './toss-widget-mode';
+import { hasConfirmAttempt, knownTossPaymentKey, usesTossWidget } from './toss-widget-mode';
 import { and } from 'drizzle-orm';
 import { isTossRefundRetryable } from './toss-refund-errors';
 
@@ -106,7 +106,7 @@ export class TossPaymentProvider implements PaymentProvider {
 
   async cancel(params: ChargeParams): Promise<ChargeResult> {
     const unconfirmed = await this.loadUnconfirmed(params.chargeId);
-    if (unconfirmed) return this.settleUnconfirmed(params.chargeId, unconfirmed.useWidgetKey, params.idempotencyKey);
+    if (unconfirmed) return this.settleUnconfirmed(params.chargeId, unconfirmed, params.idempotencyKey);
 
     const payment = await this.getPayment(params.chargeId);
     if (!payment) {
@@ -152,7 +152,9 @@ export class TossPaymentProvider implements PaymentProvider {
   }
 
   /** 승인 시도 표식만 있고 확정된 결제 키가 없는 charge — 승인 응답을 잃었을 수 있다. */
-  private async loadUnconfirmed(chargeId: string): Promise<{ useWidgetKey: boolean } | null> {
+  private async loadUnconfirmed(
+    chargeId: string,
+  ): Promise<{ useWidgetKey: boolean; paymentKey: string | undefined } | null> {
     const rows = await this.dbService.db
       .select({ providerTransactionId: charges.providerTransactionId, responsePayload: charges.responsePayload })
       .from(charges)
@@ -160,7 +162,11 @@ export class TossPaymentProvider implements PaymentProvider {
       .limit(1);
     const charge = rows[0];
     if (!charge || charge.providerTransactionId || !hasConfirmAttempt(charge.responsePayload)) return null;
-    return { useWidgetKey: usesTossWidget(charge.responsePayload) };
+
+    return {
+      useWidgetKey: usesTossWidget(charge.responsePayload),
+      paymentKey: knownTossPaymentKey(charge.responsePayload),
+    };
   }
 
   /**
@@ -169,10 +175,12 @@ export class TossPaymentProvider implements PaymentProvider {
    */
   private async settleUnconfirmed(
     chargeId: string,
-    useWidgetKey: boolean,
+    { useWidgetKey, paymentKey }: { useWidgetKey: boolean; paymentKey: string | undefined },
     idempotencyKey: string,
   ): Promise<ChargeResult> {
-    const query = await this.tossApi.getPaymentByOrderId(chargeId.replace(/-/g, ''), useWidgetKey).catch(() => null);
+    const query = await this.tossApi
+      .queryPayment(chargeId.replace(/-/g, ''), paymentKey, useWidgetKey)
+      .catch(() => null);
     if (!query) return { status: 'FAILED', errorCode: 'TOSS_STATUS_UNKNOWN' };
     if (!query.ok) {
       return query.statusCode === 404

@@ -12,7 +12,7 @@ function makeContext(rows: Record<string, unknown>[], status: unknown, cancelRes
     }),
   };
   const tossApi = {
-    getPaymentByOrderId: jest.fn().mockResolvedValue(status),
+    queryPayment: jest.fn().mockResolvedValue(status),
     cancelPayment: jest.fn().mockResolvedValue(cancelResult),
   };
   const job = new OpenVirtualAccountCloseJob({ db } as never, tossApi as never);
@@ -21,7 +21,11 @@ function makeContext(rows: Record<string, unknown>[], status: unknown, cancelRes
 
 const LEFT_OPEN = {
   id: 'charge-va',
-  responsePayload: { nextAction: { checkoutMode: 'WIDGET' }, virtualAccountLeftOpenAt: '2026-10-23T00:00:00.000Z' },
+  responsePayload: {
+    nextAction: { checkoutMode: 'WIDGET' },
+    paymentKey: 'pk_va',
+    virtualAccountLeftOpenAt: '2026-10-23T00:00:00.000Z',
+  },
 };
 const WAITING = { ok: true, data: { status: 'WAITING_FOR_DEPOSIT', paymentKey: 'pk_va' } };
 
@@ -30,12 +34,12 @@ describe('OpenVirtualAccountCloseJob', () => {
     const { job, tossApi, updates } = makeContext([LEFT_OPEN], WAITING);
 
     expect(await job.closeLeftOpen()).toEqual({ scanned: 1, closed: 1 });
-    expect(tossApi.getPaymentByOrderId).toHaveBeenCalledWith('chargeva', true);
+    expect(tossApi.queryPayment).toHaveBeenCalledWith('chargeva', 'pk_va', true);
     // 첫 폐쇄 요청과 같은 키면 토스가 그 실패 응답을 재생한다.
     const [, , , idempotencyKey] = tossApi.cancelPayment.mock.calls[0];
     expect(idempotencyKey).not.toBe('cancel:wallet:authorize:charge-va');
     expect(updates[0]).toEqual(
-      expect.objectContaining({ responsePayload: { nextAction: { checkoutMode: 'WIDGET' } } }),
+      expect.objectContaining({ responsePayload: { nextAction: { checkoutMode: 'WIDGET' }, paymentKey: 'pk_va' } }),
     );
   });
 

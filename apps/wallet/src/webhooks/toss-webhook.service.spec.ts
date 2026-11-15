@@ -57,7 +57,7 @@ function buildService(chargeStatus: string, opts: BuildOpts = {}) {
       },
     }),
   };
-  const getPaymentByOrderId = jest.fn().mockResolvedValue(
+  const queryPayment = jest.fn().mockResolvedValue(
     reQueryError
       ? { ok: false, error: { code: reQueryError.code, message: 'x' }, statusCode: reQueryError.statusCode }
       : {
@@ -65,7 +65,7 @@ function buildService(chargeStatus: string, opts: BuildOpts = {}) {
           data: { orderId: ORDER_ID, status: reQueryStatus, totalAmount: reQueryAmount, paymentKey: reQueryPaymentKey },
         },
   );
-  const tossApi = { getPaymentByOrderId };
+  const tossApi = { queryPayment };
 
   const service = new TossWebhookService(
     repository as never,
@@ -74,7 +74,7 @@ function buildService(chargeStatus: string, opts: BuildOpts = {}) {
     {} as never,
     tossApi as never,
   );
-  return { service, updateStatus, finalizeApproval, finalizeFailure, insertOrIgnore, getPaymentByOrderId };
+  return { service, updateStatus, finalizeApproval, finalizeFailure, insertOrIgnore, queryPayment };
 }
 
 describe('TossWebhookService — 위조 방어 (토스 재조회 + secret 대조)', () => {
@@ -162,11 +162,11 @@ describe('TossWebhookService — 위조 방어 (토스 재조회 + secret 대조
 
 describe('TossWebhookService — 기존 동작 회귀', () => {
   it('위젯 결제는 위젯 키로 재조회한다', async () => {
-    const { service, getPaymentByOrderId } = buildService('REQUIRES_ACTION', { widgetCheckout: true });
+    const { service, queryPayment } = buildService('REQUIRES_ACTION', { widgetCheckout: true });
 
     await service.handle(depositWebhook());
 
-    expect(getPaymentByOrderId).toHaveBeenCalledWith(ORDER_ID, true);
+    expect(queryPayment).toHaveBeenCalledWith(ORDER_ID, 'pk_body', true);
   });
 
   it('취소된 charge 에 실제 입금이 들어오면 FAILED 로 흔적을 남긴다', async () => {

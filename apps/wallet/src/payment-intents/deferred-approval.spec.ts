@@ -70,9 +70,7 @@ function makeTossContext(
     confirmPayment: jest.fn().mockResolvedValue(confirmResult),
     confirmBrandPayPayment: jest.fn().mockResolvedValue(confirmResult),
     cancelPayment: jest.fn().mockResolvedValue({ ok: true, data: {} }),
-    getPaymentByOrderId: jest
-      .fn()
-      .mockResolvedValue({ ok: false, error: { code: 'UNKNOWN', message: 'x' }, statusCode: 500 }),
+    queryPayment: jest.fn().mockResolvedValue({ ok: false, error: { code: 'UNKNOWN', message: 'x' }, statusCode: 500 }),
   };
   const cashReceiptsService = { issue: jest.fn() };
   const bankTransferProvider = { getUserMethods: jest.fn().mockResolvedValue([{ id: 'pm-bank' }]) };
@@ -434,7 +432,7 @@ describe('widget virtual account', () => {
     };
     const ctx = makeTossContext({ approvalMode: 'DEFERRED' }, WIDGET_CHARGE, VA_CONFIRM);
     ctx.tossApi.cancelPayment.mockRejectedValue(new Error('ECONNRESET'));
-    ctx.tossApi.getPaymentByOrderId.mockResolvedValue({ ok: true, data: { status: 'CANCELED' } });
+    ctx.tossApi.queryPayment.mockResolvedValue({ ok: true, data: { status: 'CANCELED' } });
 
     await expect(ctx.service.confirmStaged(WIDGET_CHARGE, staged, 'corr-1')).rejects.toMatchObject({
       response: expect.objectContaining({ error: 'VIRTUAL_ACCOUNT_NOT_DEFERRABLE' }),
@@ -557,12 +555,12 @@ describe('widget virtual account', () => {
       data: { paymentKey: 'pk_card', status: 'DONE' },
     });
     ctx.tossApi.cancelPayment.mockRejectedValue(new Error('ECONNRESET'));
-    ctx.tossApi.getPaymentByOrderId.mockResolvedValue({ ok: true, data: { status: 'CANCELED' } });
+    ctx.tossApi.queryPayment.mockResolvedValue({ ok: true, data: { status: 'CANCELED' } });
 
     await expect(
       ctx.service.approve('intent-1', 'pk_card', ORDER_ID, 10000, 'corr-1', 'NORMAL', 'VIRTUAL_ACCOUNT'),
     ).rejects.toMatchObject({ response: expect.objectContaining({ error: 'PAYMENT_METHOD_MISMATCH' }) });
-    expect(ctx.tossApi.getPaymentByOrderId).toHaveBeenCalledWith(ORDER_ID, true);
+    expect(ctx.tossApi.queryPayment).toHaveBeenCalledWith(ORDER_ID, 'pk_card', true);
     expect(ctx.autoCaptureService.attemptAutoCapture).not.toHaveBeenCalled();
   });
 
@@ -572,7 +570,7 @@ describe('widget virtual account', () => {
       data: { paymentKey: 'pk_card', status: 'DONE' },
     });
     ctx.tossApi.cancelPayment.mockResolvedValue({ ok: false, error: { code: 'PROVIDER_ERROR', message: 'x' } });
-    ctx.tossApi.getPaymentByOrderId.mockResolvedValue({ ok: true, data: { status: 'CANCELED' } });
+    ctx.tossApi.queryPayment.mockResolvedValue({ ok: true, data: { status: 'CANCELED' } });
 
     await expect(
       ctx.service.approve('intent-1', 'pk_card', ORDER_ID, 10000, 'corr-1', 'NORMAL', 'VIRTUAL_ACCOUNT'),
@@ -612,7 +610,7 @@ describe('widget virtual account', () => {
       data: { paymentKey: 'pk_card', status: 'DONE' },
     });
     ctx.tossApi.cancelPayment.mockRejectedValue(new Error('ECONNRESET'));
-    ctx.tossApi.getPaymentByOrderId.mockRejectedValue(new Error('ECONNRESET'));
+    ctx.tossApi.queryPayment.mockRejectedValue(new Error('ECONNRESET'));
 
     await expect(
       ctx.service.approve('intent-1', 'pk_card', ORDER_ID, 10000, 'corr-1', 'NORMAL', 'VIRTUAL_ACCOUNT'),

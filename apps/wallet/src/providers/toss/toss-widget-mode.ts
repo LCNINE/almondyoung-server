@@ -22,3 +22,23 @@ export const CONFIRM_ATTEMPT = 'confirmAttempt';
 export function hasConfirmAttempt(responsePayload: unknown): boolean {
   return !!responsePayload && typeof responsePayload === 'object' && CONFIRM_ATTEMPT in responsePayload;
 }
+
+/** 이 charge 의 토스 paymentKey — 확정된 키, 계좌 발급 때 남긴 키, 승인 직전 표식 순으로 찾는다. */
+export function knownTossPaymentKey(
+  responsePayload: unknown,
+  providerTransactionId?: string | null,
+): string | undefined {
+  if (providerTransactionId) return providerTransactionId;
+  if (!responsePayload || typeof responsePayload !== 'object') return undefined;
+
+  const payload = responsePayload as Record<string, unknown>;
+  if (typeof payload.paymentKey === 'string') return payload.paymentKey;
+
+  const attempt = payload[CONFIRM_ATTEMPT];
+  if (attempt && typeof attempt === 'object') {
+    const key = (attempt as Record<string, unknown>).paymentKey;
+    if (typeof key === 'string') return key;
+  }
+
+  return undefined;
+}

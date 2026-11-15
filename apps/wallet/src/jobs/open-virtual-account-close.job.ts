@@ -4,7 +4,7 @@ import { DbService } from '@app/db';
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { WalletSchema, charges } from '../schema';
 import { TossApiClient } from '../providers/toss/toss-api.client';
-import { VIRTUAL_ACCOUNT_LEFT_OPEN, usesTossWidget } from '../providers/toss/toss-widget-mode';
+import { VIRTUAL_ACCOUNT_LEFT_OPEN, knownTossPaymentKey, usesTossWidget } from '../providers/toss/toss-widget-mode';
 
 const BATCH_SIZE = 50;
 
@@ -75,7 +75,9 @@ export class OpenVirtualAccountCloseJob {
    */
   private async closeIfOpen(chargeId: string, responsePayload: Record<string, unknown> | null): Promise<boolean> {
     const useWidgetKey = usesTossWidget(responsePayload);
-    const query = await this.tossApi.getPaymentByOrderId(chargeId.replace(/-/g, ''), useWidgetKey).catch(() => null);
+    const query = await this.tossApi
+      .queryPayment(chargeId.replace(/-/g, ''), knownTossPaymentKey(responsePayload), useWidgetKey)
+      .catch(() => null);
     if (!query?.ok) {
       this.logger.warn(`virtual account status unknown: chargeId=${chargeId}`);
       return false;

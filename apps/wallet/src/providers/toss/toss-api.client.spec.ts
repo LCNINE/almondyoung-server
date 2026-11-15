@@ -72,7 +72,7 @@ describe('TossApiClient', () => {
 
     const client = new TossApiClient();
     await client.confirmPayment('pay_123', 4000, 'order_123', true);
-    await client.getPaymentByOrderId('order_123', true);
+    await client.queryPayment('order_123', 'pay_123', true);
     await client.confirmPayment('pay_456', 5000, 'order_456');
 
     const widgetAuth = `Basic ${Buffer.from('test_gsk_widget:').toString('base64')}`;
@@ -121,4 +121,50 @@ describe('TossApiClient', () => {
     });
   });
 
+  describe('queryPayment', () => {
+    const okFetch = (orderId: string) =>
+      jest.fn().mockResolvedValue({
+        ok: true,
+        json: jest.fn().mockResolvedValue({ paymentKey: 'pay_123', orderId, status: 'DONE' }),
+      });
+
+    it('위젯 결제는 orderId 조회를 지원하지 않는 위젯 키 대신 paymentKey 로 조회한다', async () => {
+      process.env.TOSS_WIDGET_SECRET_KEY = 'test_gsk_widget';
+      const fetchMock = okFetch('order_123');
+      global.fetch = fetchMock as unknown as typeof fetch;
+
+      const result = await new TossApiClient().queryPayment('order_123', 'pay_123', true);
+
+      expect(result.ok).toBe(true);
+      expect(fetchMock.mock.calls[0][0]).toBe('https://api.tosspayments.com/v1/payments/pay_123');
+    });
+
+    it('기존 결제는 orderId 로 조회한다', async () => {
+      const fetchMock = okFetch('order_123');
+      global.fetch = fetchMock as unknown as typeof fetch;
+
+      await new TossApiClient().queryPayment('order_123', 'pay_123', false);
+
+      expect(fetchMock.mock.calls[0][0]).toBe('https://api.tosspayments.com/v1/payments/orders/order_123');
+    });
+
+    it('위젯 결제의 paymentKey 를 모르면 결제 없음(404)이 아니라 상태 불명으로 돌린다', async () => {
+      const fetchMock = jest.fn();
+      global.fetch = fetchMock as unknown as typeof fetch;
+
+      const result = await new TossApiClient().queryPayment('order_123', undefined, true);
+
+      expect(result).toMatchObject({ ok: false, statusCode: 0, error: { code: 'WIDGET_PAYMENT_KEY_UNKNOWN' } });
+      expect(fetchMock).not.toHaveBeenCalled();
+    });
+
+    it('paymentKey 의 결제가 다른 주문이면 우리 결제로 받지 않는다', async () => {
+      process.env.TOSS_WIDGET_SECRET_KEY = 'test_gsk_widget';
+      global.fetch = okFetch('someone_else') as unknown as typeof fetch;
+
+      const result = await new TossApiClient().queryPayment('order_123', 'pay_123', true);
+
+      expect(result).toMatchObject({ ok: false, statusCode: 0, error: { code: 'ORDER_ID_MISMATCH' } });
+    });
+  });
 });

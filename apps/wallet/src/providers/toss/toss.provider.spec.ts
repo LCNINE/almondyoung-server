@@ -126,16 +126,16 @@ describe('TossPaymentProvider.cancel — 승인 결과를 모르는 charge', () 
 
   it('토스에 결제가 없거나 이미 끝났으면 닫을 게 없다', async () => {
     const notFound = {
-      getPaymentByOrderId: jest
+      queryPayment: jest
         .fn()
         .mockResolvedValue({ ok: false, error: { code: 'NOT_FOUND_PAYMENT', message: 'x' }, statusCode: 404 }),
       cancelPayment: jest.fn(),
     };
     expect((await make(notFound).cancel(cancelParams())).status).toBe('SUCCEEDED');
-    expect(notFound.getPaymentByOrderId).toHaveBeenCalledWith('11111111222233334444555555555555', false);
+    expect(notFound.queryPayment).toHaveBeenCalledWith('11111111222233334444555555555555', 'pk_1', false);
 
     const aborted = {
-      getPaymentByOrderId: jest.fn().mockResolvedValue({ ok: true, data: { status: 'ABORTED' } }),
+      queryPayment: jest.fn().mockResolvedValue({ ok: true, data: { status: 'ABORTED' } }),
       cancelPayment: jest.fn(),
     };
     expect((await make(aborted).cancel(cancelParams())).status).toBe('SUCCEEDED');
@@ -144,9 +144,7 @@ describe('TossPaymentProvider.cancel — 승인 결과를 모르는 charge', () 
 
   it('승인 대기(IN_PROGRESS)면 정리 완료로 넘기지 않는다 — 뒤늦은 승인 성공이 원장 밖에 남지 않게', async () => {
     const api = {
-      getPaymentByOrderId: jest
-        .fn()
-        .mockResolvedValue({ ok: true, data: { status: 'IN_PROGRESS', paymentKey: 'pk_p' } }),
+      queryPayment: jest.fn().mockResolvedValue({ ok: true, data: { status: 'IN_PROGRESS', paymentKey: 'pk_p' } }),
       cancelPayment: jest.fn(),
     };
     expect(await make(api).cancel(cancelParams())).toEqual({ status: 'FAILED', errorCode: 'TOSS_CONFIRM_IN_PROGRESS' });
@@ -155,7 +153,7 @@ describe('TossPaymentProvider.cancel — 승인 결과를 모르는 charge', () 
 
   it('돈이 빠졌거나 계좌가 열려 있으면 토스 결제 키로 취소한다', async () => {
     const api = {
-      getPaymentByOrderId: jest.fn().mockResolvedValue({ ok: true, data: { status: 'DONE', paymentKey: 'pk_real' } }),
+      queryPayment: jest.fn().mockResolvedValue({ ok: true, data: { status: 'DONE', paymentKey: 'pk_real' } }),
       cancelPayment: jest.fn().mockResolvedValue({ ok: true, data: {} }),
     };
     expect((await make(api).cancel(cancelParams())).status).toBe('SUCCEEDED');
@@ -171,13 +169,13 @@ describe('TossPaymentProvider.cancel — 승인 결과를 모르는 charge', () 
 
   it('조회나 취소가 실패하면 FAILED — 정리 경로가 intent 를 넘기지 않는다', async () => {
     const lookupDown = {
-      getPaymentByOrderId: jest.fn().mockRejectedValue(new Error('ECONNRESET')),
+      queryPayment: jest.fn().mockRejectedValue(new Error('ECONNRESET')),
       cancelPayment: jest.fn(),
     };
     expect((await make(lookupDown).cancel(cancelParams())).status).toBe('FAILED');
 
     const cancelRefused = {
-      getPaymentByOrderId: jest
+      queryPayment: jest
         .fn()
         .mockResolvedValue({ ok: true, data: { status: 'WAITING_FOR_DEPOSIT', paymentKey: 'pk_va' } }),
       cancelPayment: jest
@@ -189,7 +187,7 @@ describe('TossPaymentProvider.cancel — 승인 결과를 모르는 charge', () 
 
   it('다음 주기의 재시도는 새 멱등 키로 취소한다 — 토스가 캐시한 실패를 재생하지 않게', async () => {
     const api = {
-      getPaymentByOrderId: jest
+      queryPayment: jest
         .fn()
         .mockResolvedValue({ ok: true, data: { status: 'WAITING_FOR_DEPOSIT', paymentKey: 'pk_va' } }),
       cancelPayment: jest.fn().mockResolvedValue({ ok: false, error: { code: 'PROVIDER_ERROR' }, statusCode: 500 }),

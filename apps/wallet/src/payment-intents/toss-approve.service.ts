@@ -176,7 +176,7 @@ export class TossApproveService {
       .catch(() => null);
     if (reverted?.ok || reverted?.error.code === 'ALREADY_CANCELED_PAYMENT') return 'REVERTED';
     this.logger.error(`approval revert not confirmed: chargeId=${charge.id} error=${JSON.stringify(reverted?.error)}`);
-    const query = await this.tossApi.getPaymentByOrderId(orderId, useWidgetKey).catch(() => null);
+    const query = await this.tossApi.queryPayment(orderId, paymentKey, useWidgetKey).catch(() => null);
     if (!query?.ok) return 'UNKNOWN';
     return query.data.status === 'CANCELED' ? 'REVERTED' : 'KEPT';
   }
@@ -395,7 +395,7 @@ export class TossApproveService {
     if (canceled.ok || canceled.error.code === 'ALREADY_CANCELED_PAYMENT') return true;
     // 취소는 토스에서 끝났는데 응답만 잃었을 수 있다 — 닫힌 계좌를 입금대기로 안내하지 않게 실제 상태를 묻는다.
     const query = await this.tossApi
-      .getPaymentByOrderId(charge.id.replace(/-/g, ''), usesTossWidget(charge.responsePayload))
+      .queryPayment(charge.id.replace(/-/g, ''), paymentKey, usesTossWidget(charge.responsePayload))
       .catch(() => null);
     if (query?.ok && ['CANCELED', 'EXPIRED', 'ABORTED'].includes(query.data.status)) return true;
     this.logger.error(

@@ -242,8 +242,43 @@ export class TossApiClient {
    * status/totalAmount/paymentKey 를 authoritative 로 쓴다. paymentKey 가 아니라 orderId 로
    * 조회하는 이유: 공격자가 본문 paymentKey 로 남의 결제를 우리 charge 에 갖다 붙이지 못하게 하기 위함.
    */
-  async getPaymentByOrderId(orderId: string, useWidgetKey = false): Promise<TossApiResult<TossPaymentQueryResponse>> {
-    return this.get<TossPaymentQueryResponse>(`/payments/orders/${encodeURIComponent(orderId)}`, useWidgetKey);
+  async getPaymentByOrderId(orderId: string): Promise<TossApiResult<TossPaymentQueryResponse>> {
+    return this.get<TossPaymentQueryResponse>(`/payments/orders/${encodeURIComponent(orderId)}`);
+  }
+
+  /**
+   * 위젯 키는 orderId 조회를 지원하지 않는다 — 결제가 있어도 404(NOT_FOUND_MERCHANT)가 온다. 위젯 결제는
+   * paymentKey 로 묻고, 응답의 orderId 가 우리 charge 인지 대조해 남의 결제를 붙이지 못하게 한다.
+   * paymentKey 를 모르거나 orderId 가 다르면 404 가 아닌 statusCode 0 으로 돌려 결제 없음으로 읽히지 않게 한다.
+   */
+  async queryPayment(
+    orderId: string,
+    paymentKey: string | null | undefined,
+    useWidgetKey: boolean,
+  ): Promise<TossApiResult<TossPaymentQueryResponse>> {
+    if (!useWidgetKey) return this.getPaymentByOrderId(orderId);
+
+    if (!paymentKey) {
+      return {
+        ok: false,
+        error: {
+          code: 'WIDGET_PAYMENT_KEY_UNKNOWN',
+          message: `위젯 결제를 조회할 paymentKey 가 없다: orderId=${orderId}`,
+        },
+        statusCode: 0,
+      };
+    }
+
+    const result = await this.getPayment(paymentKey, true);
+    if (result.ok && result.data.orderId !== orderId) {
+      return {
+        ok: false,
+        error: { code: 'ORDER_ID_MISMATCH', message: `paymentKey 의 orderId 가 다르다: orderId=${orderId}` },
+        statusCode: 0,
+      };
+    }
+
+    return result;
   }
 
   async getPayment(paymentKey: string, useWidgetKey = false): Promise<TossApiResult<TossPaymentQueryResponse>> {
