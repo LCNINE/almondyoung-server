@@ -257,6 +257,9 @@ SKU 하나면 `kind = 'sku'`, `resolution = 'barcode'`. 단 그 바코드가 상
 
 ## 7. AI 보조
 
+> **(실행 중 결정 2026-11-16) ② 에서 뺐다.** 미리 채운 SKU 검색으로 대신하고, 라이브 초안에서 못 찾는 줄이 많으면 그때 붙인다.
+> core 의 `ai-candidates` 라우트·열은 휴면으로 둔다. 근거·화면은 `2026-11-16-inbound-shipment-upload-screen-design.md` §2.
+
 - `apps/ai` 에 비채팅 엔드포인트 `POST /inbound-shipment-assist/suggest { shipmentId }`(`ai.assistant.use`).
   선례: `apps/ai/src/product-description`.
 - ai 는 **부른 사람의 쿠키**로 core 에서 초안의 미확인 줄을 읽고, 줄마다 제품명·옵션으로 core SKU 검색
@@ -408,7 +411,8 @@ file-service `default-file-contexts` 에 입고리스트 컨텍스트 하나를 
 
 ① **core 모델·API** — 스키마·마이그, 파서 순수 함수 + 스펙(샘플 형태 전부), 초안·해소·확정·상자 확정·취소·차이,
    커널 source 추가, arch 스펙 갱신, 통합 스펙(`describeIfDb`). ← 이번 작업
-② **admin-web 업로드·확인 화면 + ai 엔드포인트 + file_context** (#1238 마무리)
+② **admin-web 업로드·확인·선적 상세 화면 + file_context + SKU 이름 검색 단어 AND** (#1238 마무리). AI 는 보류 **(실행 중 결정 —
+   `2026-11-16-inbound-shipment-upload-screen-design.md`)**
 ③ **warehouse-app 상자 입고 화면** (#1239 마무리). 같은 릴리스에 기존 화면이 새 `source` 를 알게 한다 — 지금
    `native/warehouse-app/src/domains/inbound/types.ts` 의 `isActionablePutaway` 는 `direct`·`purchase_order` 만 적치
    시트를 열고, `InboundHistoryScreen` 은 `purchase_order` 가 아니면 직접 입고 취소로 보내 선적 입고에서 409 가 난다.
