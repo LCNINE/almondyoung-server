@@ -2,8 +2,8 @@ import { ReceiptActionBlockReason, RECEIPT_ACTION_BLOCK_REASONS } from './inboun
 import { ApiProperty } from '@nestjs/swagger';
 
 export class PutawayPendingItemDto {
-  @ApiProperty({ enum: ['direct', 'purchase_order'] })
-  source: 'direct' | 'purchase_order';
+  @ApiProperty({ enum: ['direct', 'purchase_order', 'inbound_shipment'] })
+  source: 'direct' | 'purchase_order' | 'inbound_shipment';
 
   @ApiProperty()
   canPutaway: boolean;

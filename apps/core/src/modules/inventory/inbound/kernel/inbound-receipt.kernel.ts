@@ -14,7 +14,7 @@ import { isTodaySeoul } from '../../shared/services/time.util';
 import { lockProductVariantsForSkus } from '../../product-sellable-quantity/services/product-variant-lock';
 
 export type DirectArrivalMethod = 'simple' | 'simple_fullscan' | 'individual';
-export type InboundReceiptSource = 'direct' | 'purchase_order';
+export type InboundReceiptSource = 'direct' | 'purchase_order' | 'inbound_shipment';
 export type ArrivalOrigin = { source: 'direct'; method: DirectArrivalMethod } | { source: 'purchase_order' };
 
 export interface ArrivalLineInput {

@@ -67,10 +67,10 @@ export class InboundReceiptLineDto {
 
   @ApiProperty({
     description: '입고 출처',
-    enum: ['direct', 'purchase_order'],
+    enum: ['direct', 'purchase_order', 'inbound_shipment'],
     example: 'direct',
   })
-  source: 'direct' | 'purchase_order';
+  source: 'direct' | 'purchase_order' | 'inbound_shipment';
 
   @ApiProperty({
     description: '생성 일시',
