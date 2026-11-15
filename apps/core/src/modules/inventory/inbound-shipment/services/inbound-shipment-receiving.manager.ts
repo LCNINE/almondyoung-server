@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { randomUUID } from 'crypto';
-import { eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { BadRequestError, ConflictError } from '@app/shared';
 import { InjectTypedDb } from '@app/db/decorators';
 import { DbService } from '@app/db';
@@ -10,7 +10,13 @@ import { InboundReceiptKernel } from '../../inbound/kernel/inbound-receipt.kerne
 import { InventoryIdempotencyService } from '../../core/services/inventory-idempotency.service';
 import { warehouseEndpoint, warehouseRequest } from '../../core/services/warehouse-operation-contract';
 import { ProductSellableQuantityService } from '../../product-sellable-quantity/services/product-sellable-quantity.service';
-import { AddInboundShipmentBoxResultDto, ReceiveBoxDto, ReceiveBoxResult } from '../dto/receive.dto';
+import {
+  AddInboundShipmentBoxResultDto,
+  CancelBoxReceiptDto,
+  CancelBoxReceiptResult,
+  ReceiveBoxDto,
+  ReceiveBoxResult,
+} from '../dto/receive.dto';
 import { lockInboundShipment, lockInboundShipmentBox } from './inbound-shipment-locks';
 import { deriveShipmentStatus, normalizeSingleBoxLabel } from './inbound-shipment.rules';
 
@@ -127,29 +133,94 @@ export class InboundShipmentReceivingManager {
           })
           .where(eq(wmsTables.inboundShipmentBoxes.id, boxId));
 
-        const boxes = await trx
-          .select({
-            disposition: wmsTables.inboundShipmentBoxes.disposition,
-            status: wmsTables.inboundShipmentBoxes.status,
-          })
-          .from(wmsTables.inboundShipmentBoxes)
-          .where(eq(wmsTables.inboundShipmentBoxes.shipmentId, shipmentId));
-        const shipmentStatus = deriveShipmentStatus(shipment.status, boxes, false);
-        const now = new Date();
-        await trx
-          .update(wmsTables.inboundShipments)
-          .set(
-            shipmentStatus === 'closed'
-              ? { status: shipmentStatus, closedAt: now, closedBy: actorId, closedReason: null, updatedAt: now }
-              : { status: shipmentStatus, updatedAt: now },
-          )
-          .where(eq(wmsTables.inboundShipments.id, shipmentId));
+        const shipmentStatus = await this.refreshShipmentStatus(trx, shipmentId, shipment.status, actorId, new Date());
 
         const receivedSkuIds = [...new Set(ledger.map((l) => l.skuId))];
         if (receivedSkuIds.length > 0) {
           await this.productSellableQuantity.recalculateAndPublishForSkus(receivedSkuIds, trx);
         }
         return { boxId, receiptId, shipmentStatus, countIds };
+      },
+      tx,
+    );
+  }
+
+  /**
+   * 상자 확정 취소 — 그 상자의 회차 라인을 전부 커널 `cancelLine` 으로 되돌린다 (spec §8.3).
+   *
+   * 규칙(당일·전량·적치/회송 없음)은 커널이 본다 — 거절은 그대로 올라가고, 한 라인이라도 거절되면
+   * 트랜잭션째 되돌아가 «일부만 취소된 상자»가 남지 않는다. 원장에 들어간 줄이 없는 상자(0·자유 줄뿐)도
+   * 취소할 수 있다 — 그때는 커널을 부르지 않는다.
+   * 선적 상태는 상자로 다시 계산한다. 사람이 닫았어도 «닫힘»을 잇지 않는다(§8.4 — 다시 끝내면 된다).
+   */
+  async cancelBoxReceipt(
+    shipmentId: string,
+    boxId: string,
+    dto: CancelBoxReceiptDto,
+    actorId: string,
+    tx?: DbTx,
+  ): Promise<CancelBoxReceiptResult> {
+    const endpoint = warehouseEndpoint('inbound_shipment.box.receive.cancel', dto);
+    const request: CancelBoxReceiptDto & { shipmentId: string; boxId: string } = { shipmentId, boxId, ...dto };
+    return this.idempotency.withIdempotency(
+      endpoint,
+      dto.idempotencyKey,
+      warehouseRequest(request, actorId),
+      async (trx) => {
+        const shipment = await lockInboundShipment(trx, shipmentId);
+        const box = await lockInboundShipmentBox(trx, shipmentId, boxId);
+        if (box.status !== 'received') throw new ConflictError(`확정되지 않은 상자입니다: ${box.label}`);
+        if (shipment.status !== 'receiving' && shipment.status !== 'closed') {
+          throw new ConflictError('입고 중이거나 끝난 선적의 상자만 확정을 취소할 수 있습니다.');
+        }
+
+        const live = await trx
+          .select({
+            id: wmsTables.inboundShipmentBoxCounts.id,
+            receiptLineId: wmsTables.inboundShipmentBoxCounts.receiptLineId,
+          })
+          .from(wmsTables.inboundShipmentBoxCounts)
+          .where(
+            and(
+              eq(wmsTables.inboundShipmentBoxCounts.boxId, boxId),
+              isNull(wmsTables.inboundShipmentBoxCounts.canceledAt),
+            ),
+          )
+          .orderBy(asc(wmsTables.inboundShipmentBoxCounts.id));
+
+        // 회차 라인은 id 순으로 잠근다 — 동시 취소끼리 순서가 같아 교착이 없다
+        const receiptLineIds = live.flatMap((c) => (c.receiptLineId ? [c.receiptLineId] : [])).sort();
+        const canceledSkuIds = new Set<string>();
+        for (const receiptLineId of receiptLineIds) {
+          const line = await this.kernel.cancelLine({ receiptLineId, expected: { source: 'inbound_shipment' } }, trx);
+          canceledSkuIds.add(line.skuId);
+        }
+
+        const now = new Date();
+        const canceledCountIds = live.map((c) => c.id);
+        if (canceledCountIds.length > 0) {
+          await trx
+            .update(wmsTables.inboundShipmentBoxCounts)
+            .set({ canceledAt: now, canceledBy: actorId })
+            .where(inArray(wmsTables.inboundShipmentBoxCounts.id, canceledCountIds));
+        }
+        await trx
+          .update(wmsTables.inboundShipmentBoxes)
+          .set({
+            status: 'open',
+            receiptId: null,
+            receivedAt: null,
+            receivedBy: null,
+            version: sql`${wmsTables.inboundShipmentBoxes.version} + 1`,
+          })
+          .where(eq(wmsTables.inboundShipmentBoxes.id, boxId));
+
+        const shipmentStatus = await this.refreshShipmentStatus(trx, shipmentId, shipment.status, actorId, now);
+
+        if (canceledSkuIds.size > 0) {
+          await this.productSellableQuantity.recalculateAndPublishForSkus([...canceledSkuIds], trx);
+        }
+        return { boxId, shipmentStatus, canceledCountIds };
       },
       tx,
     );
@@ -186,6 +257,36 @@ export class InboundShipmentReceivingManager {
         .where(eq(wmsTables.inboundShipments.id, shipmentId));
       return { boxId: box.id, label: box.label };
     }, tx);
+  }
+
+  /**
+   * 상자 확정·취소 뒤 선적 상태를 상자로 다시 정한다 (spec §8.4). 저절로 닫히면 사유 없이 `closed_at/by` 를
+   * 찍고, 닫힘이 아니면 `closed_*` 를 비운다 — 사람이 닫았던 선적도 취소가 다시 연다.
+   */
+  private async refreshShipmentStatus(
+    trx: DbTx,
+    shipmentId: string,
+    current: InboundShipment['status'],
+    actorId: string,
+    now: Date,
+  ): Promise<InboundShipment['status']> {
+    const boxes = await trx
+      .select({
+        disposition: wmsTables.inboundShipmentBoxes.disposition,
+        status: wmsTables.inboundShipmentBoxes.status,
+      })
+      .from(wmsTables.inboundShipmentBoxes)
+      .where(eq(wmsTables.inboundShipmentBoxes.shipmentId, shipmentId));
+    const status = deriveShipmentStatus(current, boxes, false);
+    await trx
+      .update(wmsTables.inboundShipments)
+      .set(
+        status === 'closed'
+          ? { status, closedAt: now, closedBy: actorId, closedReason: null, updatedAt: now }
+          : { status, closedAt: null, closedBy: null, closedReason: null, updatedAt: now },
+      )
+      .where(eq(wmsTables.inboundShipments.id, shipmentId));
+    return status;
   }
 
   private async linesOfBox(

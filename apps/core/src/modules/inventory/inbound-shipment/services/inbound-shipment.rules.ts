@@ -72,3 +72,24 @@ export function normalizeSingleBoxLabel(input: string): string {
   if (issue !== null || labels.length !== 1) throw new BadRequestError(`상자 이름 하나를 넣어 주세요: ${input}`);
   return labels[0];
 }
+
+export type LineDifference =
+  | { state: 'pending'; counted: number; expected: number | null }
+  | { state: 'match' | 'short' | 'over'; counted: number; expected: number };
+
+/**
+ * 줄의 예정·실제 차이 (spec §8.5). 실제 = 유효 집계 합.
+ * 줄이 덮는 상자가 **전부** 확정됐을 때만 판정하고, 그 전엔 진행 중(`pending`).
+ * 예정 수량이 없으면(미확인 줄 잔재 등) 판정하지 않는다. 덮는 상자가 없는 줄도 판정하지 않는다.
+ */
+export function lineDifference(
+  expectedQty: number | null,
+  liveCounts: number[],
+  coveredBoxStatuses: ('open' | 'received')[],
+): LineDifference {
+  const counted = liveCounts.reduce((sum, n) => sum + n, 0);
+  const allReceived = coveredBoxStatuses.length > 0 && coveredBoxStatuses.every((s) => s === 'received');
+  if (expectedQty === null || !allReceived) return { state: 'pending', counted, expected: expectedQty };
+  if (counted === expectedQty) return { state: 'match', counted, expected: expectedQty };
+  return { state: counted < expectedQty ? 'short' : 'over', counted, expected: expectedQty };
+}

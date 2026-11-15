@@ -12,7 +12,8 @@ import { InboundShipmentDraftManager } from './inbound-shipment-draft.manager';
 import { InboundShipmentReader } from './inbound-shipment.reader';
 import { InboundShipmentReceivingManager } from './inbound-shipment-receiving.manager';
 import { ListCell } from './inbound-shipment-list.parser';
-import { ReceiveBoxDto } from '../dto/receive.dto';
+import { BadRequestException } from '@nestjs/common';
+import { CancelBoxReceiptDto, ReceiveBoxDto } from '../dto/receive.dto';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
@@ -149,6 +150,21 @@ describeIfDb('InboundShipmentReceivingManager (DB integration)', () => {
     unplanned: { skuId: string; quantity: number }[] = [],
     idempotencyKey = randomUUID(),
   ): ReceiveBoxDto => ({ contractVersion: 2, idempotencyKey, counts, unplanned });
+
+  const cancelDto = (idempotencyKey = randomUUID()): CancelBoxReceiptDto => ({ contractVersion: 2, idempotencyKey });
+
+  async function boxRow(trx: DbTx, boxId: string) {
+    const [b] = await trx
+      .select()
+      .from(wmsTables.inboundShipmentBoxes)
+      .where(eq(wmsTables.inboundShipmentBoxes.id, boxId));
+    return b;
+  }
+
+  async function shipmentRow(trx: DbTx, id: string) {
+    const [s] = await trx.select().from(wmsTables.inboundShipments).where(eq(wmsTables.inboundShipments.id, id));
+    return s;
+  }
 
   async function shipmentStatus(trx: DbTx, id: string) {
     const [s] = await trx
@@ -676,6 +692,296 @@ describeIfDb('InboundShipmentReceivingManager (DB integration)', () => {
         .from(wmsTables.inboundShipmentBoxCounts)
         .where(inArray(wmsTables.inboundShipmentBoxCounts.boxId, [s.boxOf('L1')]));
       expect(remaining).toHaveLength(0);
+    });
+  });
+  it('cancel restores the box and reverses the ledger', async () => {
+    await inRollbackTx(db, async (trx) => {
+      const f = await seed(trx);
+      const built = build(trx);
+      const s = await shipment(trx, built, f.warehouseId, [
+        row(1, 'L1', 20, f.barcodes[0]),
+        row(2, 'L1', 5, f.barcodes[1]),
+        row(3, 'L2', 7, f.barcodes[2]),
+      ]);
+      const box = s.boxOf('L1');
+      const counts = [
+        { lineId: s.lineOf(1), countedQty: 20 },
+        { lineId: s.lineOf(2), countedQty: 5 },
+      ];
+      const received = await built.receiving.receiveBox(s.shipmentId, box, dto(counts), ACTOR, trx);
+      built.recalculateAndPublishForSkus.mockClear();
+
+      const request = cancelDto();
+      const result = await built.receiving.cancelBoxReceipt(s.shipmentId, box, request, ACTOR, trx);
+
+      expect(result).toMatchObject({ boxId: box, shipmentStatus: 'expected' });
+      expect(await boxRow(trx, box)).toMatchObject({ status: 'open', receiptId: null, receivedAt: null });
+      const receiptLines = await trx
+        .select()
+        .from(wmsTables.inboundReceiptLines)
+        .where(eq(wmsTables.inboundReceiptLines.receiptId, received.receiptId ?? ''));
+      expect(receiptLines).toHaveLength(2);
+      for (const l of receiptLines) expect(l.canceledQty).toBe(l.quantity);
+      const rows = await countsOf(trx, box);
+      expect(rows).toHaveLength(2);
+      expect(rows.every((c) => c.canceledAt !== null && c.canceledBy === ACTOR)).toBe(true);
+      expect(await shipmentStatus(trx, s.shipmentId)).toBe('expected');
+      expect(built.recalculateAndPublishForSkus).toHaveBeenCalledTimes(1);
+      expect([...built.recalculateAndPublishForSkus.mock.calls[0][0]].sort()).toEqual(
+        [f.skuIds[0], f.skuIds[1]].sort(),
+      );
+
+      // 같은 키 재시도는 같은 응답
+      expect(await built.receiving.cancelBoxReceipt(s.shipmentId, box, { ...request }, ACTOR, trx)).toEqual(result);
+      // 열린 상자를 또 취소하면 409
+      await expect(built.receiving.cancelBoxReceipt(s.shipmentId, box, cancelDto(), ACTOR, trx)).rejects.toBeInstanceOf(
+        ConflictError,
+      );
+
+      // 같은 상자를 다시 확정할 수 있다
+      const again = await built.receiving.receiveBox(s.shipmentId, box, dto(counts), ACTOR, trx);
+      expect(again.shipmentStatus).toBe('receiving');
+      const live = (await countsOf(trx, box)).filter((c) => c.canceledAt === null);
+      expect(live).toHaveLength(2);
+      const view = await built.reader.detail(s.shipmentId, trx);
+      expect(view.lines.find((l) => l.id === s.lineOf(1))?.countedQty).toBe(20);
+    });
+  });
+
+  it('cancel on a closed shipment returns it to receiving', async () => {
+    await inRollbackTx(db, async (trx) => {
+      const f = await seed(trx);
+      const built = build(trx);
+      const s = await shipment(trx, built, f.warehouseId, [
+        row(1, 'L1', 10, f.barcodes[0]),
+        row(2, 'L2', 5, f.barcodes[1]),
+      ]);
+      await built.receiving.receiveBox(
+        s.shipmentId,
+        s.boxOf('L1'),
+        dto([{ lineId: s.lineOf(1), countedQty: 10 }]),
+        ACTOR,
+        trx,
+      );
+      const closed = await built.receiving.receiveBox(
+        s.shipmentId,
+        s.boxOf('L2'),
+        dto([{ lineId: s.lineOf(2), countedQty: 5 }]),
+        ACTOR,
+        trx,
+      );
+      expect(closed.shipmentStatus).toBe('closed');
+
+      const result = await built.receiving.cancelBoxReceipt(s.shipmentId, s.boxOf('L2'), cancelDto(), ACTOR, trx);
+
+      expect(result.shipmentStatus).toBe('receiving');
+      expect(await shipmentRow(trx, s.shipmentId)).toMatchObject({
+        status: 'receiving',
+        closedAt: null,
+        closedBy: null,
+        closedReason: null,
+      });
+
+      // 사람이 닫은 선적도 취소하면 다시 열린다
+      await built.drafts.close(s.shipmentId, 'lost box (synthetic)', ACTOR, trx);
+      const reopened = await built.receiving.cancelBoxReceipt(s.shipmentId, s.boxOf('L1'), cancelDto(), ACTOR, trx);
+      expect(reopened.shipmentStatus).toBe('expected');
+      expect(await shipmentRow(trx, s.shipmentId)).toMatchObject({ status: 'expected', closedReason: null });
+    });
+  });
+
+  it('cancel after putaway is refused by the kernel', async () => {
+    await inRollbackTx(db, async (trx) => {
+      const f = await seed(trx);
+      const built = build(trx);
+      const s = await shipment(trx, built, f.warehouseId, [
+        row(1, 'L1', 10, f.barcodes[0]),
+        row(2, 'L2', 5, f.barcodes[1]),
+      ]);
+      const box = s.boxOf('L1');
+      await built.receiving.receiveBox(s.shipmentId, box, dto([{ lineId: s.lineOf(1), countedQty: 10 }]), ACTOR, trx);
+      const [count] = await countsOf(trx, box);
+      const [shelf] = await trx
+        .insert(wmsTables.locations)
+        .values({
+          warehouseId: f.warehouseId,
+          code: `RC-PUT-${randomUUID().slice(0, 8)}`,
+          locationType: 'zone',
+          isSystem: false,
+          systemRole: null,
+          isActive: true,
+        })
+        .returning();
+      await makeInboundReceiptKernel(db).putaway(
+        {
+          receiptLineId: count.receiptLineId ?? '',
+          toLocationId: shelf.id,
+          quantity: 1,
+          eventKey: `rc-put-${randomUUID()}`,
+        },
+        trx,
+      );
+      built.recalculateAndPublishForSkus.mockClear();
+
+      const attempt = built.receiving.cancelBoxReceipt(s.shipmentId, box, cancelDto(), ACTOR, trx);
+      await expect(attempt).rejects.toBeInstanceOf(BadRequestException);
+      await expect(attempt).rejects.toThrow('cannot cancel: putaway exists; move all back to origin first');
+      expect(await boxRow(trx, box)).toMatchObject({ status: 'received' });
+      expect((await countsOf(trx, box)).every((c) => c.canceledAt === null)).toBe(true);
+      expect(built.recalculateAndPublishForSkus).not.toHaveBeenCalled();
+    });
+  });
+
+  it('cancel of a box received without ledger rows reopens it without the kernel', async () => {
+    await inRollbackTx(db, async (trx) => {
+      const f = await seed(trx);
+      const built = build(trx);
+      const s = await shipment(
+        trx,
+        built,
+        f.warehouseId,
+        [row(1, 'L1', 4, f.barcodes[0]), row(2, 'L2', 3, '8000000000000')],
+        { freeRows: [2] },
+      );
+      await built.receiving.receiveBox(
+        s.shipmentId,
+        s.boxOf('L1'),
+        dto([{ lineId: s.lineOf(1), countedQty: 0 }]),
+        ACTOR,
+        trx,
+      );
+      await built.receiving.receiveBox(
+        s.shipmentId,
+        s.boxOf('L2'),
+        dto([{ lineId: s.lineOf(2), countedQty: 3 }]),
+        ACTOR,
+        trx,
+      );
+      expect(await shipmentStatus(trx, s.shipmentId)).toBe('closed');
+
+      const result = await built.receiving.cancelBoxReceipt(s.shipmentId, s.boxOf('L2'), cancelDto(), ACTOR, trx);
+
+      expect(result.shipmentStatus).toBe('receiving');
+      expect(await boxRow(trx, s.boxOf('L2'))).toMatchObject({ status: 'open', receiptId: null });
+      expect((await countsOf(trx, s.boxOf('L2'))).every((c) => c.canceledAt !== null)).toBe(true);
+      expect(built.recalculateAndPublishForSkus).not.toHaveBeenCalled();
+    });
+  });
+
+  it('manual close blocks receive; reopen allows it', async () => {
+    await inRollbackTx(db, async (trx) => {
+      const f = await seed(trx);
+      const built = build(trx);
+      const s = await shipment(trx, built, f.warehouseId, [
+        row(1, 'L1', 10, f.barcodes[0]),
+        row(2, 'L2', 5, f.barcodes[1]),
+      ]);
+      await built.receiving.receiveBox(
+        s.shipmentId,
+        s.boxOf('L1'),
+        dto([{ lineId: s.lineOf(1), countedQty: 10 }]),
+        ACTOR,
+        trx,
+      );
+
+      await expect(built.drafts.close(s.shipmentId, '   ', ACTOR, trx)).rejects.toBeInstanceOf(BadRequestError);
+      await expect(built.drafts.close(s.shipmentId, 'x'.repeat(501), ACTOR, trx)).rejects.toBeInstanceOf(
+        BadRequestError,
+      );
+      await expect(built.drafts.reopen(s.shipmentId, ACTOR, trx)).rejects.toBeInstanceOf(ConflictError);
+
+      const closed = await built.drafts.close(s.shipmentId, '  lost box (synthetic)  ', ACTOR, trx);
+      expect(closed).toEqual({ shipmentId: s.shipmentId, status: 'closed' });
+      const row1 = await shipmentRow(trx, s.shipmentId);
+      expect(row1).toMatchObject({ status: 'closed', closedBy: ACTOR, closedReason: 'lost box (synthetic)' });
+      expect(row1.closedAt).not.toBeNull();
+      await expect(built.drafts.close(s.shipmentId, 'again', ACTOR, trx)).rejects.toBeInstanceOf(ConflictError);
+
+      const l2 = dto([{ lineId: s.lineOf(2), countedQty: 5 }]);
+      await expect(built.receiving.receiveBox(s.shipmentId, s.boxOf('L2'), l2, ACTOR, trx)).rejects.toBeInstanceOf(
+        ConflictError,
+      );
+
+      const reopened = await built.drafts.reopen(s.shipmentId, ACTOR, trx);
+      expect(reopened).toEqual({ shipmentId: s.shipmentId, status: 'receiving' });
+      expect(await shipmentRow(trx, s.shipmentId)).toMatchObject({
+        status: 'receiving',
+        closedAt: null,
+        closedBy: null,
+        closedReason: null,
+      });
+
+      const done = await built.receiving.receiveBox(
+        s.shipmentId,
+        s.boxOf('L2'),
+        dto([{ lineId: s.lineOf(2), countedQty: 5 }]),
+        ACTOR,
+        trx,
+      );
+      expect(done.shipmentStatus).toBe('closed');
+      // 저절로 닫힌 선적은 다시 열지 않는다 — 확정 취소로 연다
+      await expect(built.drafts.reopen(s.shipmentId, ACTOR, trx)).rejects.toBeInstanceOf(ConflictError);
+    });
+  });
+
+  it('reopen with no received stock box goes back to expected', async () => {
+    await inRollbackTx(db, async (trx) => {
+      const f = await seed(trx);
+      const built = build(trx);
+      const s = await shipment(trx, built, f.warehouseId, [row(1, 'L1', 10, f.barcodes[0])]);
+      await built.drafts.close(s.shipmentId, 'never shipped (synthetic)', ACTOR, trx);
+      expect(await built.drafts.reopen(s.shipmentId, ACTOR, trx)).toEqual({
+        shipmentId: s.shipmentId,
+        status: 'expected',
+      });
+      const draft = await shipment(trx, built, f.warehouseId, [row(2, 'L1', 1, f.barcodes[1])], { confirm: false });
+      await expect(built.drafts.close(draft.shipmentId, 'nope', ACTOR, trx)).rejects.toBeInstanceOf(ConflictError);
+    });
+  });
+
+  it('detail reports short, over and unplanned', async () => {
+    await inRollbackTx(db, async (trx) => {
+      const f = await seed(trx);
+      const built = build(trx);
+      const s = await shipment(trx, built, f.warehouseId, [
+        row(1, 'L1', 10, f.barcodes[0]),
+        row(2, 'L2', 5, f.barcodes[1]),
+        row(3, 'L3', 4, f.barcodes[2]),
+        row(4, 'L4', 2, f.barcodes[2], 'acme 에 발송바람'),
+      ]);
+      await built.receiving.receiveBox(
+        s.shipmentId,
+        s.boxOf('L1'),
+        dto([{ lineId: s.lineOf(1), countedQty: 8 }]),
+        ACTOR,
+        trx,
+      );
+      await built.receiving.receiveBox(
+        s.shipmentId,
+        s.boxOf('L2'),
+        dto([{ lineId: s.lineOf(2), countedQty: 7 }], [{ skuId: f.skuIds[2], quantity: 1 }]),
+        ACTOR,
+        trx,
+      );
+      const added = await built.receiving.addBox(s.shipmentId, 'L99', ACTOR, trx);
+
+      const view = await built.reader.detail(s.shipmentId, trx);
+
+      const diffOf = (rowNumber: number) => view.lines.find((l) => l.id === s.lineOf(rowNumber))?.difference;
+      expect(diffOf(1)).toEqual({ state: 'short', counted: 8, expected: 10 });
+      expect(diffOf(2)).toEqual({ state: 'over', counted: 7, expected: 5 });
+      expect(diffOf(3)).toEqual({ state: 'pending', counted: 0, expected: 4 });
+      expect(diffOf(4)).toEqual({ state: 'pending', counted: 0, expected: 2 });
+      expect(view.summary).toEqual({
+        boxesReceived: 2,
+        boxesTotalStock: 4,
+        forwardBoxes: 1,
+        addedBoxes: 1,
+        shortLines: 1,
+        overLines: 1,
+        unplannedCounts: 1,
+      });
+      expect(added.label).toBe('L99');
     });
   });
 });

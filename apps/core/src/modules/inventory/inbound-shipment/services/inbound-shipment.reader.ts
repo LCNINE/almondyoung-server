@@ -4,7 +4,7 @@ import { DbService } from '@app/db';
 import { and, asc, countDistinct, desc, eq, inArray, isNull, ne, SQL, sql } from 'drizzle-orm';
 import { NotFoundError } from '@app/shared';
 import { normalizeBarcode, ListCell } from './inbound-shipment-list.parser';
-import { normalizeSingleBoxLabel } from './inbound-shipment.rules';
+import { lineDifference, normalizeSingleBoxLabel } from './inbound-shipment.rules';
 import { InboundShipmentSkuMatcherReader } from './inbound-shipment-sku-matcher.reader';
 import { DbTx, InboundShipment, wmsSchema, wmsTables } from '../../schema/inventory.schema';
 import { InboundShipmentDetailView, InboundShipmentSummaryDto } from '../dto/inbound-shipment-view.dto';
@@ -79,13 +79,18 @@ export class InboundShipmentReader {
           lineId: t.inboundShipmentLineBoxes.lineId,
           label: t.inboundShipmentBoxes.label,
           sortKey: t.inboundShipmentBoxes.sortKey,
+          status: t.inboundShipmentBoxes.status,
         })
         .from(t.inboundShipmentLineBoxes)
         .innerJoin(t.inboundShipmentBoxes, eq(t.inboundShipmentBoxes.id, t.inboundShipmentLineBoxes.boxId))
         .where(eq(t.inboundShipmentBoxes.shipmentId, id))
         .orderBy(asc(t.inboundShipmentBoxes.sortKey));
       const labelsByLine = new Map<string, string[]>();
-      for (const c of cover) labelsByLine.set(c.lineId, [...(labelsByLine.get(c.lineId) ?? []), c.label]);
+      const coverStatusesByLine = new Map<string, ('open' | 'received')[]>();
+      for (const c of cover) {
+        labelsByLine.set(c.lineId, [...(labelsByLine.get(c.lineId) ?? []), c.label]);
+        coverStatusesByLine.set(c.lineId, [...(coverStatusesByLine.get(c.lineId) ?? []), c.status]);
+      }
 
       const counts = await trx
         .select({
@@ -97,11 +102,23 @@ export class InboundShipmentReader {
         .innerJoin(t.inboundShipmentBoxes, eq(t.inboundShipmentBoxes.id, t.inboundShipmentBoxCounts.boxId))
         .where(and(eq(t.inboundShipmentBoxes.shipmentId, id), isNull(t.inboundShipmentBoxCounts.canceledAt)));
       const byBox = new Map<string, number>();
-      const byLine = new Map<string, number>();
+      const byLine = new Map<string, number[]>();
+      let unplannedCounts = 0;
       for (const c of counts) {
         byBox.set(c.boxId, (byBox.get(c.boxId) ?? 0) + c.qty);
-        if (c.lineId) byLine.set(c.lineId, (byLine.get(c.lineId) ?? 0) + c.qty);
+        if (c.lineId) byLine.set(c.lineId, [...(byLine.get(c.lineId) ?? []), c.qty]);
+        else unplannedCounts += 1;
       }
+
+      // 미확인 줄은 예정 수량이 있어도 판정하지 않는다 — 무엇이 와야 하는지 아직 모른다
+      const differences = lines.map((l) =>
+        lineDifference(
+          l.kind === 'unresolved' ? null : l.expectedQty,
+          byLine.get(l.id) ?? [],
+          coverStatusesByLine.get(l.id) ?? [],
+        ),
+      );
+      const stockBoxes = boxes.filter((b) => b.disposition === 'stock');
 
       const candidates = await this.candidatesFor(trx, lines);
 
@@ -126,7 +143,7 @@ export class InboundShipmentReader {
           status: b.status,
           countedQty: byBox.get(b.id) ?? 0,
         })),
-        lines: lines.map((l) => ({
+        lines: lines.map((l, index) => ({
           id: l.id,
           rowNumber: l.rowNumber,
           kind: l.kind,
@@ -137,10 +154,19 @@ export class InboundShipmentReader {
           coversBoxLabels: labelsByLine.get(l.id) ?? [],
           aiCandidates: l.aiCandidates,
           raw: l.raw,
-          countedQty: byLine.get(l.id) ?? 0,
+          countedQty: differences[index].counted,
           barcodeCandidates: candidates.get(l.id) ?? [],
-          difference: null,
+          difference: differences[index],
         })),
+        summary: {
+          boxesReceived: stockBoxes.filter((b) => b.status === 'received').length,
+          boxesTotalStock: stockBoxes.length,
+          forwardBoxes: boxes.length - stockBoxes.length,
+          addedBoxes: boxes.filter((b) => b.origin === 'added').length,
+          shortLines: differences.filter((d) => d.state === 'short').length,
+          overLines: differences.filter((d) => d.state === 'over').length,
+          unplannedCounts,
+        },
       };
     }, tx);
   }

@@ -9,7 +9,7 @@ import {
 } from './inbound-shipment-draft.manager';
 import { InboundShipmentReader } from './inbound-shipment.reader';
 import { InboundShipmentReceivingManager } from './inbound-shipment-receiving.manager';
-import { ReceiveBoxDto } from '../dto/receive.dto';
+import { CancelBoxReceiptDto, ReceiveBoxDto } from '../dto/receive.dto';
 
 /** 선적 입고 포트 — 위임만 한다. */
 @Injectable()
@@ -59,6 +59,14 @@ export class InboundShipmentService {
     return this.drafts.cancel(id, actorId, tx);
   }
 
+  close(id: string, reason: string, actorId: string, tx?: DbTx) {
+    return this.drafts.close(id, reason, actorId, tx);
+  }
+
+  reopen(id: string, actorId: string, tx?: DbTx) {
+    return this.drafts.reopen(id, actorId, tx);
+  }
+
   updateHeader(id: string, patch: HeaderPatch, tx?: DbTx) {
     return this.drafts.updateHeader(id, patch, tx);
   }
@@ -73,6 +81,10 @@ export class InboundShipmentService {
 
   receiveBox(id: string, boxId: string, dto: ReceiveBoxDto, actorId: string, tx?: DbTx) {
     return this.receiving.receiveBox(id, boxId, dto, actorId, tx);
+  }
+
+  cancelBoxReceipt(id: string, boxId: string, dto: CancelBoxReceiptDto, actorId: string, tx?: DbTx) {
+    return this.receiving.cancelBoxReceipt(id, boxId, dto, actorId, tx);
   }
 
   addBox(id: string, label: string, actorId: string, tx?: DbTx) {

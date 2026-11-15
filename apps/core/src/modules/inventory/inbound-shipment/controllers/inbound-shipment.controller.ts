@@ -21,11 +21,19 @@ import {
 } from '../../core/services/warehouse-operation-contract';
 import { InboundShipmentService } from '../services/inbound-shipment.service';
 import { UploadInboundShipmentDto } from '../dto/upload.dto';
-import { EditBoxDto, EditLineDto, SetAiCandidatesDto, UpdateHeaderDto } from '../dto/draft-edit.dto';
+import {
+  CloseInboundShipmentDto,
+  EditBoxDto,
+  EditLineDto,
+  SetAiCandidatesDto,
+  UpdateHeaderDto,
+} from '../dto/draft-edit.dto';
 import {
   AddInboundShipmentBoxDto,
   AddInboundShipmentBoxResultDto,
   BoxViewDto,
+  CancelBoxReceiptDto,
+  CancelBoxReceiptResultDto,
   ReceiveBoxDto,
   ReceiveBoxResultDto,
 } from '../dto/receive.dto';
@@ -168,6 +176,28 @@ export class InboundShipmentController {
     return this.service.cancel(id, authenticatedWarehouseActor(user));
   }
 
+  @RequirePermission('inventory.inbound_shipment.write')
+  @Post(':id/close')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: '선적 끝내기 — 상자가 안 왔는데 끝낼 때(사유 필수). 남은 상자는 확정만 막힌다' })
+  @ApiResponse({ status: 200, description: '{ shipmentId, status }' })
+  close(
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Body() dto: CloseInboundShipmentDto,
+    @User() user: WarehouseActor,
+  ) {
+    return this.service.close(id, dto.reason, authenticatedWarehouseActor(user));
+  }
+
+  @RequirePermission('inventory.inbound_shipment.write')
+  @Post(':id/reopen')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: '사람이 끝낸 선적 다시 열기 — 저절로 끝난 선적은 409' })
+  @ApiResponse({ status: 200, description: '{ shipmentId, status }' })
+  reopen(@Param('id', new ParseUUIDPipe()) id: string, @User() user: WarehouseActor) {
+    return this.service.reopen(id, authenticatedWarehouseActor(user));
+  }
+
   @RequirePermission('inventory.stock.read')
   @Get(':id/boxes/:boxId')
   @ApiOperation({ summary: '상자 열기 — 그 상자를 덮는 줄과 다른 상자에서 이미 센 수량' })
@@ -194,6 +224,23 @@ export class InboundShipmentController {
     // v2 만 받는다 — v1(키 없음)로 내려오면 멱등 키 없이 원장에 쓰게 되므로 여기서 막는다
     if (!actorId) throw new BadRequestError('창고 작업 계약 v2(contractVersion: 2, idempotencyKey)가 필요합니다.');
     return this.service.receiveBox(id, boxId, dto, actorId);
+  }
+
+  @RequirePermission('inventory.stock.operate')
+  @Post(':id/boxes/:boxId/receive/cancel')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: '상자 확정 취소 — 당일·전량, 적치 전만(창고 작업 계약 v2)' })
+  @ApiResponse({ status: 200, type: CancelBoxReceiptResultDto })
+  cancelBoxReceipt(
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @Param('boxId', new ParseUUIDPipe()) boxId: string,
+    @Body() dto: CancelBoxReceiptDto,
+    @User() user: WarehouseActor,
+  ): Promise<CancelBoxReceiptResultDto> {
+    const actorId = warehouseOperationContext(dto, user);
+    // v2 만 받는다 — v1(키 없음)로 내려오면 멱등 키 없이 원장을 되돌리게 되므로 여기서 막는다
+    if (!actorId) throw new BadRequestError('창고 작업 계약 v2(contractVersion: 2, idempotencyKey)가 필요합니다.');
+    return this.service.cancelBoxReceipt(id, boxId, dto, actorId);
   }
 
   @RequirePermission('inventory.stock.operate')

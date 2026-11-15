@@ -137,7 +137,12 @@ describeIfDb('InboundShipmentDraftManager (DB integration)', () => {
       expect(detail.boxes).toHaveLength(6);
       expect(detail.lines).toHaveLength(3);
       expect(detail.lines.find((l) => l.rowNumber === 3)?.coversBoxLabels).toHaveLength(5);
-      expect(detail.lines[0].difference).toBeNull();
+      expect(detail.lines[0].difference).toEqual({
+        state: 'pending',
+        counted: 0,
+        expected: detail.lines[0].expectedQty,
+      });
+      expect(detail.summary).toMatchObject({ boxesReceived: 0, shortLines: 0, overLines: 0, unplannedCounts: 0 });
     });
   });
 

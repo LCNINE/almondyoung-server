@@ -1,5 +1,11 @@
 import { BadRequestError } from '@app/shared';
-import { confirmBlockers, deriveShipmentStatus, lineEditable, normalizeSingleBoxLabel } from './inbound-shipment.rules';
+import {
+  confirmBlockers,
+  deriveShipmentStatus,
+  lineDifference,
+  lineEditable,
+  normalizeSingleBoxLabel,
+} from './inbound-shipment.rules';
 
 const box = (id: string, disposition: 'stock' | 'forward' = 'stock', origin: 'list' | 'added' = 'list') => ({
   id,
@@ -73,4 +79,36 @@ describe('normalizeSingleBoxLabel', () => {
     expect(() => normalizeSingleBoxLabel('L86-')).toThrow(BadRequestError);
     expect(() => normalizeSingleBoxLabel('')).toThrow(BadRequestError);
   });
+});
+
+describe('lineDifference', () => {
+  it('range line difference is pending until every covered box is received', () => {
+    const four = [200, 200, 200, 200];
+    expect(lineDifference(1076, four, ['received', 'received', 'received', 'received', 'open'])).toEqual({
+      state: 'pending',
+      counted: 800,
+      expected: 1076,
+    });
+    expect(lineDifference(1076, [...four, 276], ['received', 'received', 'received', 'received', 'received'])).toEqual({
+      state: 'match',
+      counted: 1076,
+      expected: 1076,
+    });
+    expect(lineDifference(1076, [...four, 276], ['received', 'received', 'received', 'received', 'open'])).toEqual({
+      state: 'pending',
+      counted: 1076,
+      expected: 1076,
+    });
+  });
+
+  it('short and over', () => {
+    expect(lineDifference(10, [8], ['received'])).toEqual({ state: 'short', counted: 8, expected: 10 });
+    expect(lineDifference(10, [12], ['received'])).toEqual({ state: 'over', counted: 12, expected: 10 });
+  });
+
+  it('no expected quantity is always pending', () =>
+    expect(lineDifference(null, [3], ['received'])).toEqual({ state: 'pending', counted: 3, expected: null }));
+
+  it('a line with no covering box is never judged', () =>
+    expect(lineDifference(5, [], [])).toEqual({ state: 'pending', counted: 0, expected: 5 }));
 });

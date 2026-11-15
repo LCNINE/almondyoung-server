@@ -79,6 +79,24 @@ export class ReceiveBoxDto extends WarehouseOperationDto {
   unplanned: ReceiveBoxUnplannedDto[];
 }
 
+/**
+ * 상자 확정 취소 — 창고 작업 계약 v2 만 받는다 (spec §8.3). 본문은 계약 필드뿐이다.
+ * `ReceiveBoxDto` 와 같은 이유로 부모의 규칙을 다시 적는다 — 빠뜨리면 그 규칙이 조용히 사라진다.
+ */
+export class CancelBoxReceiptDto extends WarehouseOperationDto {
+  @ApiProperty({ enum: [2] })
+  @ValidateIf(() => true)
+  @Equals(2)
+  declare contractVersion: number;
+
+  @ApiProperty({ maxLength: 90 })
+  @ValidateIf(() => true)
+  @IsString()
+  @Matches(/\S/)
+  @MaxLength(90)
+  declare idempotencyKey: string;
+}
+
 export class AddInboundShipmentBoxDto {
   @ApiProperty({ description: '리스트에 없던 상자 이름(`L99`). 범위 표기는 받지 않는다' })
   @IsString()
@@ -93,6 +111,13 @@ export class ReceiveBoxResultDto {
   @ApiProperty({ enum: ['draft', 'expected', 'receiving', 'closed', 'canceled'] })
   shipmentStatus: 'draft' | 'expected' | 'receiving' | 'closed' | 'canceled';
   @ApiProperty({ type: [String], description: '집계 행 id — counts 순서, 그다음 unplanned 순서' }) countIds: string[];
+}
+
+export class CancelBoxReceiptResultDto {
+  @ApiProperty() boxId: string;
+  @ApiProperty({ enum: ['draft', 'expected', 'receiving', 'closed', 'canceled'] })
+  shipmentStatus: 'draft' | 'expected' | 'receiving' | 'closed' | 'canceled';
+  @ApiProperty({ type: [String], description: '취소한 집계 행 id' }) canceledCountIds: string[];
 }
 
 export class AddInboundShipmentBoxResultDto {
@@ -154,3 +179,4 @@ export class BoxViewDto {
 export type BoxCandidateView = BoxCandidateViewDto;
 export type BoxView = BoxViewDto;
 export type ReceiveBoxResult = ReceiveBoxResultDto;
+export type CancelBoxReceiptResult = CancelBoxReceiptResultDto;

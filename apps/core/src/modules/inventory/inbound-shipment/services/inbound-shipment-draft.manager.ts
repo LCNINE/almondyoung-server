@@ -44,6 +44,7 @@ export interface HeaderPatch {
 
 const BLOCKER_LIST_LIMIT = 10;
 const MAX_AI_CANDIDATES = 5;
+const MAX_CLOSE_REASON = 500;
 
 const MATCH_ISSUE: Record<'none' | 'many' | 'packing_unit', LineIssue> = {
   none: 'barcode_not_found',
@@ -384,6 +385,68 @@ export class InboundShipmentDraftManager {
         .set({ status: 'canceled', canceledAt: new Date(), canceledBy: actorId, updatedAt: new Date() })
         .where(eq(wmsTables.inboundShipments.id, shipmentId));
       return { shipmentId, status: 'canceled' as const };
+    }, tx);
+  }
+
+  /**
+   * 사람이 선적을 끝낸다 — 상자가 안 왔는데 끝내야 할 때 (spec §8.4). 남은 열린 상자는 그대로 두고 확정만 막는다.
+   * `closed_reason` 이 있는 것이 «사람이 닫았다»의 표지다 — 저절로 닫힌 선적은 사유가 없다.
+   */
+  async close(
+    shipmentId: string,
+    reason: string,
+    actorId: string,
+    tx?: DbTx,
+  ): Promise<{ shipmentId: string; status: 'closed' }> {
+    const trimmed = reason.trim();
+    if (trimmed.length === 0 || trimmed.length > MAX_CLOSE_REASON) {
+      throw new BadRequestError(`끝내는 사유는 1~${MAX_CLOSE_REASON}자로 적어 주세요.`);
+    }
+    return this.dbService.run(async (trx: DbTx) => {
+      const shipment = await lockInboundShipment(trx, shipmentId);
+      if (shipment.status !== 'expected' && shipment.status !== 'receiving') {
+        throw new ConflictError('도착 예정·입고 중인 선적만 끝낼 수 있습니다.');
+      }
+      const now = new Date();
+      await trx
+        .update(wmsTables.inboundShipments)
+        .set({ status: 'closed', closedAt: now, closedBy: actorId, closedReason: trimmed, updatedAt: now })
+        .where(eq(wmsTables.inboundShipments.id, shipmentId));
+      return { shipmentId, status: 'closed' as const };
+    }, tx);
+  }
+
+  /**
+   * 사람이 닫은 선적을 다시 연다 — 끝낸 뒤 상자가 나타났을 때 (spec §8.4).
+   * 저절로 닫힌 선적(사유 없음)은 열지 않는다 — 받을 상자가 없으므로 확정 취소로 연다.
+   */
+  async reopen(
+    shipmentId: string,
+    _actorId: string,
+    tx?: DbTx,
+  ): Promise<{ shipmentId: string; status: 'expected' | 'receiving' }> {
+    return this.dbService.run(async (trx: DbTx) => {
+      const shipment = await lockInboundShipment(trx, shipmentId);
+      if (shipment.status !== 'closed') throw new ConflictError('끝난 선적만 다시 열 수 있습니다.');
+      if (shipment.closedReason === null) {
+        throw new ConflictError('모든 상자를 받아 저절로 끝난 선적은 다시 열지 않습니다 — 상자 확정을 취소하세요.');
+      }
+      const [received] = await trx
+        .select({ n: sql<number>`count(*)::int` })
+        .from(wmsTables.inboundShipmentBoxes)
+        .where(
+          and(
+            eq(wmsTables.inboundShipmentBoxes.shipmentId, shipmentId),
+            eq(wmsTables.inboundShipmentBoxes.disposition, 'stock'),
+            eq(wmsTables.inboundShipmentBoxes.status, 'received'),
+          ),
+        );
+      const status = received.n > 0 ? ('receiving' as const) : ('expected' as const);
+      await trx
+        .update(wmsTables.inboundShipments)
+        .set({ status, closedAt: null, closedBy: null, closedReason: null, updatedAt: new Date() })
+        .where(eq(wmsTables.inboundShipments.id, shipmentId));
+      return { shipmentId, status };
     }, tx);
   }
 

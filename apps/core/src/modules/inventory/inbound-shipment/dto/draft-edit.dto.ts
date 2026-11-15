@@ -95,3 +95,12 @@ export class UpdateHeaderDto {
   @MaxLength(2000)
   memo?: string | null;
 }
+
+/** 사람이 선적을 끝낸다 — 상자 분실 등. 앞뒤 공백을 뺀 1~500자는 매니저가 본다 (spec §8.4). */
+export class CloseInboundShipmentDto {
+  @ApiProperty({ maxLength: 500, description: '끝내는 사유(상자 분실 등)' })
+  @IsString()
+  @Matches(/\S/)
+  @MaxLength(500)
+  reason: string;
+}
