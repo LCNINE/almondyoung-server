@@ -3,6 +3,7 @@ import { and, asc, desc, eq, gte, inArray, like, lte, or, SQL, sql } from 'drizz
 import { NotFoundError } from '@app/shared';
 import { InjectTypedDb, DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../schema/inventory.schema';
+import { skuNameLikePatterns } from './sku-name-search';
 import { SkuResponseDto } from '../dto/sku-response.dto';
 import { AdvancedInventoryFiltersDto, StockDisplayMode } from '../dto/advanced-filters.dto';
 
@@ -175,7 +176,9 @@ export class SkuCatalogReader {
       if (query.code) conditions.push(eq(wmsTables.skus.code, query.code));
       if (query.groupId) conditions.push(eq(wmsTables.skus.groupId, query.groupId));
       if (query.holderId) conditions.push(eq(wmsTables.skus.holderId, query.holderId));
-      if (query.name) conditions.push(sql`${wmsTables.skus.name} ILIKE ${'%' + query.name + '%'}`);
+      // 단어마다 AND 라 예전 한 덩어리 검색이 찾던 것은 그대로 찾는다(`%`·`_` 는 이제 글자로 찾는다).
+      const namePatterns = query.name ? skuNameLikePatterns(query.name) : [];
+      for (const p of namePatterns) conditions.push(sql`${wmsTables.skus.name} ILIKE ${p}`);
       if (skuIdFilter && skuIdFilter.length > 0) {
         conditions.push(inArray(wmsTables.skus.id, skuIdFilter));
       }
