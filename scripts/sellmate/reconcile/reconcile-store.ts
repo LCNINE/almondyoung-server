@@ -41,7 +41,8 @@ export async function reconcileTablesExist(sql: Sql): Promise<boolean> {
 }
 
 /** init 뒤 옛 스크립트(sync-stock·handover-stock-addback)가 내는 거절 문구 */
-export const SYNC_REFUSAL_AFTER_INIT = '저녁 맞추기 init 이 있다 — T 이후 이 스크립트는 core 원장을 되돌리므로 돌리지 않는다 (#1304)';
+export const SYNC_REFUSAL_AFTER_INIT =
+  '저녁 맞추기 init 이 있다 — T 이후 이 스크립트는 core 원장을 되돌리므로 돌리지 않는다 (#1304)';
 
 export async function reconcileInitExists(sql: Sql): Promise<boolean> {
   if (!(await reconcileTablesExist(sql))) return false;
@@ -451,7 +452,12 @@ export async function loadUnpairedPairs(sql: Sql): Promise<{ optionSerial: strin
  * 닫지 못한 닫기 시도(--apply)의 입력을 열린 회차에 적는다. 다음 닫기 입력은 이 시각보다 늦어야 한다 —
  * 같은 CSV 를 다시 넣어 고친 기준과 옛 숫자가 부딪치지 않게. 회차를 닫으면 closeRunRow 가 덮어쓴다.
  */
-export async function recordCloseAttempt(tx: Sql, runId: string, closeSha: string, closeSnapshotAt: Date): Promise<void> {
+export async function recordCloseAttempt(
+  tx: Sql,
+  runId: string,
+  closeSha: string,
+  closeSnapshotAt: Date,
+): Promise<void> {
   await tx`
     UPDATE sellmate_reconcile_runs
     SET close_input_sha256 = ${closeSha}, close_snapshot_at = ${closeSnapshotAt}

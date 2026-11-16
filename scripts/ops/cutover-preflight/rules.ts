@@ -254,7 +254,8 @@ export function judgeReconcile(f: ReconcileFacts, now: Date): Verdict[] {
     });
   } else out.push({ level: 'ok', msg: `짝 못 지은 품목 0 (짝 ${f.pairRows}행)` });
 
-  if (f.carry.length) out.push({ level: 'info', msg: `이월(부족분) 품목 ${f.carry.length}건 — 실패 아님, 다음 회차가 이어받는다` });
+  if (f.carry.length)
+    out.push({ level: 'info', msg: `이월(부족분) 품목 ${f.carry.length}건 — 실패 아님, 다음 회차가 이어받는다` });
   else out.push({ level: 'ok', msg: '이월 품목 0' });
 
   return out;

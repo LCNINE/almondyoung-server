@@ -184,7 +184,9 @@ describe('judgeReconcile', () => {
   });
 
   it('init T 와 adapter T 가 다르면 bad, 같은 시각이면 통과', () => {
-    expect(judge({ adapterCutoverAt: new Date('2026-11-20T01:00:00Z') }).filter((x) => x.level === 'bad')).toHaveLength(1);
+    expect(judge({ adapterCutoverAt: new Date('2026-11-20T01:00:00Z') }).filter((x) => x.level === 'bad')).toHaveLength(
+      1,
+    );
     expect(judge({ adapterCutoverAt: null }).filter((x) => x.level === 'bad')).toHaveLength(1);
     expect(judge({ adapterCutoverAt: new Date(T.getTime()) }).filter((x) => x.level === 'bad')).toHaveLength(0);
   });

@@ -88,7 +88,9 @@ async function main(): Promise<void> {
     if (medusa && core)
       await readOnly(medusa, (med) =>
         readOnly(core, (tx) =>
-          adapter ? readOnly(adapter, (ad) => checkMedusaReservations(med, tx, ad, r)) : checkMedusaReservations(med, tx, null, r),
+          adapter
+            ? readOnly(adapter, (ad) => checkMedusaReservations(med, tx, ad, r))
+            : checkMedusaReservations(med, tx, null, r),
         ),
       );
     if (r.phase === 'after' && core && adapter)

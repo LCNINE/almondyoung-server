@@ -17,36 +17,44 @@ describe('저녁 맞추기 산식 (planApply)', () => {
     expect(initState(6)).toEqual({ baseline: 6, carry: 0 });
   });
   it('init 음수 품목은 변화가 없으면 다음 회에 이월이 두 배가 되지 않는다', () => {
-    expect(planApply({ s: -3, baseline: -3, carry: 3, onHand: 0, reservedAll: 0, reservedHandedOver: 0, unshipped: 5 }))
-      .toEqual({ delta: 0, carryAfter: 3, uploadAvail: 0, uploadCurrent: 5 });
+    expect(
+      planApply({ s: -3, baseline: -3, carry: 3, onHand: 0, reservedAll: 0, reservedHandedOver: 0, unshipped: 5 }),
+    ).toEqual({ delta: 0, carryAfter: 3, uploadAvail: 0, uploadCurrent: 5 });
   });
   it('드레인 중 넘긴 주문 출고는 차이 0이고 넘긴 주문 예약은 가용에서 빼지 않는다', () => {
-    expect(planApply({ s: 6, baseline: 6, carry: 0, onHand: 6, reservedAll: 3, reservedHandedOver: 3, unshipped: 1 }))
-      .toEqual({ delta: 0, carryAfter: 0, uploadAvail: 6, uploadCurrent: 7 });
+    expect(
+      planApply({ s: 6, baseline: 6, carry: 0, onHand: 6, reservedAll: 3, reservedHandedOver: 3, unshipped: 1 }),
+    ).toEqual({ delta: 0, carryAfter: 0, uploadAvail: 6, uploadCurrent: 7 });
   });
   it('마켓 주문 2개는 core 에서 2 빠진다', () => {
-    expect(planApply({ s: 4, baseline: 6, carry: 0, onHand: 6, reservedAll: 0, reservedHandedOver: 0, unshipped: 6 }))
-      .toEqual({ delta: -2, carryAfter: 0, uploadAvail: 4, uploadCurrent: 10 });
+    expect(
+      planApply({ s: 4, baseline: 6, carry: 0, onHand: 6, reservedAll: 0, reservedHandedOver: 0, unshipped: 6 }),
+    ).toEqual({ delta: -2, carryAfter: 0, uploadAvail: 4, uploadCurrent: 10 });
   });
   it('마켓 취소·반품 1개는 core 에 1 더한다', () => {
-    expect(planApply({ s: 5, baseline: 4, carry: 0, onHand: 4, reservedAll: 0, reservedHandedOver: 0, unshipped: 0 }).delta).toBe(1);
+    expect(
+      planApply({ s: 5, baseline: 4, carry: 0, onHand: 4, reservedAll: 0, reservedHandedOver: 0, unshipped: 0 }).delta,
+    ).toBe(1);
   });
   it('입고로 여유가 생기면 이월부터 갚고 남는 것만 올린다', () => {
-    expect(planApply({ s: 0, baseline: 0, carry: 3, onHand: 5, reservedAll: 0, reservedHandedOver: 0, unshipped: 0 }))
-      .toEqual({ delta: -3, carryAfter: 0, uploadAvail: 2, uploadCurrent: 2 });
+    expect(
+      planApply({ s: 0, baseline: 0, carry: 3, onHand: 5, reservedAll: 0, reservedHandedOver: 0, unshipped: 0 }),
+    ).toEqual({ delta: -3, carryAfter: 0, uploadAvail: 2, uploadCurrent: 2 });
   });
   it('자사몰 확정 예약은 깎지 않는다 — 여유가 없으면 이월로 간다', () => {
     // onHand 5 = 넘긴 주문 예약 2 + T 뒤 자사몰 예약 3 → A=2, R=0
-    expect(planApply({ s: 2, baseline: 4, carry: 0, onHand: 5, reservedAll: 5, reservedHandedOver: 2, unshipped: 0 }))
-      .toEqual({ delta: 0, carryAfter: 2, uploadAvail: 0, uploadCurrent: 0 });
+    expect(
+      planApply({ s: 2, baseline: 4, carry: 0, onHand: 5, reservedAll: 5, reservedHandedOver: 2, unshipped: 0 }),
+    ).toEqual({ delta: 0, carryAfter: 2, uploadAvail: 0, uploadCurrent: 0 });
   });
   it('정수가 아닌 입력은 throw 한다', () => {
-    expect(() => planApply({ s: 1.5, baseline: 0, carry: 0, onHand: 0, reservedAll: 0, reservedHandedOver: 0, unshipped: 0 })).toThrow();
+    expect(() =>
+      planApply({ s: 1.5, baseline: 0, carry: 0, onHand: 0, reservedAll: 0, reservedHandedOver: 0, unshipped: 0 }),
+    ).toThrow();
     expect(() => sellmateAvail(NaN, 0)).toThrow();
     expect(() => initState(Infinity)).toThrow();
   });
 });
-
 
 describe('새로 짝지어진 품목 (freshState → planApply)', () => {
   it('시작 상태는 기준값 S, 이월 = 미발송주문수', () => {

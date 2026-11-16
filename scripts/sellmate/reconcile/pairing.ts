@@ -67,10 +67,7 @@ function countBy<T>(items: readonly T[], key: (t: T) => string): Map<string, num
   return counts;
 }
 
-export function pairItems(
-  rows: readonly SellmateStockRow[],
-  core: CoreIndex,
-): { pairs: Pair[]; unpaired: Unpaired[] } {
+export function pairItems(rows: readonly SellmateStockRow[], core: CoreIndex): { pairs: Pair[]; unpaired: Unpaired[] } {
   const candidates = rows.map((row) => firstPass(row, core));
 
   // 두 번째 패스: CSV 전체를 본 뒤에야 알 수 있는 사유. 앞 사유가 이미 있는 품목은 건드리지 않는다.

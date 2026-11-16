@@ -42,7 +42,14 @@ describe('parseReconcileStock', () => {
     const r = parse(['1', '100', 'TEST-0001', '="8800000000001" ', '5', '2']);
     expect(r.errors).toEqual([]);
     expect(r.rows).toEqual([
-      { optionSerial: '1', productSerial: '100', name: 'TEST-0001', barcode: '8800000000001', current: 5, unshipped: 2 },
+      {
+        optionSerial: '1',
+        productSerial: '100',
+        name: 'TEST-0001',
+        barcode: '8800000000001',
+        current: 5,
+        unshipped: 2,
+      },
     ]);
   });
   it('현재재고 음수는 허용한다', () => {
@@ -59,14 +66,23 @@ describe('parseReconcileStock', () => {
     expect(r.rows).toHaveLength(0);
   });
   it('같은 옵션 두 행: 값이 같으면 1건, 다르면 오류', () => {
-    const same = parse(['1', '100', 'TEST-0001', '8800000000001', '5', '2'], ['1', '100', 'TEST-0001', '8800000000001', '5', '2']);
+    const same = parse(
+      ['1', '100', 'TEST-0001', '8800000000001', '5', '2'],
+      ['1', '100', 'TEST-0001', '8800000000001', '5', '2'],
+    );
     expect(same.rows).toHaveLength(1);
     expect(same.errors).toEqual([]);
-    const diff = parse(['1', '100', 'TEST-0001', '8800000000001', '5', '2'], ['1', '100', 'TEST-0001', '8800000000001', '6', '2']);
+    const diff = parse(
+      ['1', '100', 'TEST-0001', '8800000000001', '5', '2'],
+      ['1', '100', 'TEST-0001', '8800000000001', '6', '2'],
+    );
     expect(diff.errors).toHaveLength(1);
   });
   it('제외 상품은 rows 에서 빠지고 사유별로 세며 옵션 번호를 남긴다', () => {
-    const r = parse(['9', '13248', 'TEST-0002', '8800000000009', '3', '0'], ['1', '100', 'TEST-0001', '8800000000001', '5', '2']);
+    const r = parse(
+      ['9', '13248', 'TEST-0002', '8800000000009', '3', '0'],
+      ['1', '100', 'TEST-0001', '8800000000001', '5', '2'],
+    );
     expect(r.rows.map((x) => x.optionSerial)).toEqual(['1']);
     expect(r.excludedSerials).toEqual(new Set(['9']));
     expect([...r.excluded.values()]).toEqual([1]);
@@ -79,13 +95,24 @@ describe('parseReconcileStock', () => {
 describe('parseOwnMallDisplayIds', () => {
   it('자사몰 행만, 번호 꼴에서 displayId 를 뽑고 중복 제거', () => {
     const r = parseOwnMallDisplayIds(
-      [['판매처', '주문번호'], ['자사몰', '20261120-1234'], ['쿠팡', '9000000001'], ['자사몰', '20261120-1234']],
+      [
+        ['판매처', '주문번호'],
+        ['자사몰', '20261120-1234'],
+        ['쿠팡', '9000000001'],
+        ['자사몰', '20261120-1234'],
+      ],
       '자사몰',
     );
     expect(r).toEqual({ displayIds: [1234], errors: [] });
   });
   it('꼴이 안 맞는 자사몰 주문번호는 오류', () => {
-    const r = parseOwnMallDisplayIds([['판매처', '주문번호'], ['자사몰', 'abc']], '자사몰');
+    const r = parseOwnMallDisplayIds(
+      [
+        ['판매처', '주문번호'],
+        ['자사몰', 'abc'],
+      ],
+      '자사몰',
+    );
     expect(r.errors).toHaveLength(1);
     expect(r.displayIds).toEqual([]);
   });
@@ -94,7 +121,10 @@ describe('parseOwnMallDisplayIds', () => {
 describe('renderUploadCsv', () => {
   it('바코드 순 정렬, CRLF', () => {
     expect(
-      renderUploadCsv([{ barcode: '8800000000002', current: 5 }, { barcode: '8800000000001', current: 0 }]),
+      renderUploadCsv([
+        { barcode: '8800000000002', current: 5 },
+        { barcode: '8800000000001', current: 0 },
+      ]),
     ).toBe('바코드번호,재고수량\r\n8800000000001,0\r\n8800000000002,5\r\n');
   });
 });
@@ -122,7 +152,14 @@ describe('파일 입출력', () => {
     const r = await readStockCsv(f);
     expect(r.errors).toEqual([]);
     expect(r.rows).toEqual([
-      { optionSerial: '1', productSerial: '100', name: 'TEST-0001, 대형', barcode: '8800000000001', current: -2, unshipped: 3 },
+      {
+        optionSerial: '1',
+        productSerial: '100',
+        name: 'TEST-0001, 대형',
+        barcode: '8800000000001',
+        current: -2,
+        unshipped: 3,
+      },
     ]);
   });
   it('readStockCsv 는 euc-kr 파일도 읽는다', async () => {
