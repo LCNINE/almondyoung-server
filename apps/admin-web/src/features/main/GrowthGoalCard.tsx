@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { CompanyRevenueCard } from '@/features/statistics/revenue-report/CompanyRevenueCard';
 import Link from 'next/link';
 import { ChevronRight } from 'lucide-react';
@@ -11,14 +11,11 @@ import { useOrderRefunds } from '@/lib/services/wallet/queries';
 import { cn } from '@/lib/utils/ui';
 import {
   changeSignals,
-  goalView,
   monitorStats,
   refundMap,
   repeatRate90,
 } from '@/features/statistics/growth/model';
-import { formatProbability } from '@/features/statistics/growth/probability';
 import { formatWon as won } from '@/features/statistics/growth/format';
-import { paceCopy } from '@/features/statistics/growth/pace-copy';
 
 /** 메인 관례(한국 증시 색): 증가 빨강, 감소 파랑. 통계 화면과 반대다 — 섞지 않는다. */
 const UP = 'text-[#D71952]';
@@ -134,8 +131,6 @@ function AxisTile({
  * 실패해도 이 카드만 안내로 바뀌고 메인의 다른 카드는 영향받지 않는다.
  */
 export function GrowthGoalCard({ className }: { className?: string }) {
-  const [exporting, setExporting] = useState(false);
-  const [exportError, setExportError] = useState('');
   const summaryQuery = useGrowthSummary();
   const summary = summaryQuery.data;
   const hasGoal = Boolean(summary?.goal);
@@ -162,10 +157,6 @@ export function GrowthGoalCard({ className }: { className?: string }) {
     () => (summary && !waitingRefunds ? monitorStats(summary, refunds) : null),
     [summary, refunds, waitingRefunds]
   );
-  const goal = useMemo(
-    () => (summary && monitor ? goalView(summary, refunds, monitor) : null),
-    [summary, monitor, refunds]
-  );
   const topSignal = useMemo(() => {
     if (!summary || waitingRefunds) return null;
     const hits = changeSignals(summary, refunds).filter(
@@ -176,28 +167,6 @@ export function GrowthGoalCard({ className }: { className?: string }) {
     );
   }, [summary, refunds, waitingRefunds]);
   const repeat = summary ? repeatRate90(summary) : null;
-  const pace =
-    goal && summary?.goal
-      ? paceCopy(goal.pacing, summary.goal.monthlyTargets)
-      : null;
-
-  async function exportEvidence() {
-    if (!summary || !goal) return;
-
-    setExporting(true);
-    setExportError('');
-
-    try {
-      const { downloadGoalEvidence } =
-        await import('@/features/statistics/revenue-report/goal-export');
-      await downloadGoalEvidence(summary, refunds);
-    } catch {
-      setExportError('엑셀을 만들지 못했습니다. 다시 시도해 주세요.');
-    } finally {
-      setExporting(false);
-    }
-  }
-
   const conversion =
     monitor && monitor.sessionsPerDay
       ? monitor.ordersPerDay / monitor.sessionsPerDay
@@ -226,14 +195,12 @@ export function GrowthGoalCard({ className }: { className?: string }) {
               id="main-growth-title"
               className="text-base font-bold text-[#1C1C1C]"
             >
-              {summary
-                ? `${summary.year}년 기존 집계 목표 · 일별 추세`
-                : '매출 목표'}
+              자사몰 운영 지표
             </h2>
             <HelpPopover
               label="매출 목표와 성장 3축"
               items={[
-                '달성액 = 목표 범위(기본 자사몰)의 순매출(취소·환불 차감)에서 결제 환불을 뺀 값, 어제까지 기준입니다.',
+                '회사 전체 매출과 목표 달성률은 위에서 확인합니다. 아래 지표는 자사몰 기준입니다.',
                 '유입·구매자·전환·객단가는 최근 28일(어제까지) 하루 평균이고, 화살표는 그 앞 28일 대비입니다.',
                 '재구매 주기는 첫 구매 뒤 두 번째 구매까지 걸린 날(중앙값, 최근 1년 첫 구매 고객)입니다.',
                 '재구매율은 첫 구매 후 90일 안에 다시 산 비율(자사몰 회원)입니다.',
@@ -249,30 +216,6 @@ export function GrowthGoalCard({ className }: { className?: string }) {
           </Link>
         </div>
 
-        <div className="mt-2 flex flex-wrap gap-3 text-xs text-[#1779BA]">
-          <button
-            type="button"
-            onClick={exportEvidence}
-            disabled={
-              !goal || waitingRefunds || exporting || summaryQuery.isError
-            }
-            className="hover:underline disabled:opacity-40"
-          >
-            {exporting ? '엑셀 생성 중…' : '목표 실적 근거 엑셀'}
-          </button>
-          <Link
-            href="/statistics/sales#revenue-report"
-            className="hover:underline"
-          >
-            주문 원장·외부 채널 취합
-          </Link>
-        </div>
-        {exportError ? (
-          <p role="alert" className="mt-1 text-xs text-red-600">
-            {exportError}
-          </p>
-        ) : null}
-
         {summaryQuery.isError ? (
           <p className="mt-3 text-sm text-[#757575]">
             성장 요약을 불러오지 못했습니다. 잠시 후 다시 시도해주세요.
@@ -280,75 +223,7 @@ export function GrowthGoalCard({ className }: { className?: string }) {
         ) : !summary || !monitor ? (
           <Skeleton className="mt-3 h-28 w-full" />
         ) : (
-          <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-[minmax(0,360px)_1fr]">
-            {goal ? (
-              <div className="min-w-0 rounded-xl border border-[#EBEBEB] px-3 py-2.5">
-                <div className="flex items-baseline justify-between">
-                  <span className="text-[12px] text-[#757575]">
-                    연간 달성률 · 목표 {won(goal.pacing.annualTarget)}
-                  </span>
-                  <span className="text-xl font-bold tabular-nums text-[#1C1C1C]">
-                    {pct(goal.pacing.annualAchievement)}
-                  </span>
-                </div>
-                <div
-                  className="mt-1 h-2 w-full overflow-hidden rounded-full bg-[#EBEBEB]"
-                  role="img"
-                  aria-label={`연간 달성률 ${pct(goal.pacing.annualAchievement)}`}
-                >
-                  <div
-                    className="h-2 rounded-full bg-[#1A54F5]"
-                    style={{
-                      width: `${Math.min(goal.pacing.annualAchievement, 1) * 100}%`,
-                    }}
-                  />
-                </div>
-                <p
-                  className={cn(
-                    'mt-2 text-sm font-bold',
-                    pace?.tone === 'behind'
-                      ? 'text-[#D71952]'
-                      : 'text-[#1C1C1C]'
-                  )}
-                >
-                  {pace?.headline}
-                </p>
-                <p className="mt-0.5 text-[12px] leading-relaxed text-[#757575]">
-                  {pace?.detail}
-                </p>
-                {pace?.action ? (
-                  <p className="mt-0.5 text-[12px] leading-relaxed text-[#1C1C1C]">
-                    {pace.action}
-                  </p>
-                ) : null}
-                {goal.pacing.missingPreCoverage ? (
-                  <p className="mt-0.5 text-[11px] text-[#D71952]">
-                    집계 시작({goal.pacing.planStart}) 전 실적이 빠져
-                    달성률·확률이 낮게 나옵니다 — 설정에서 입력
-                  </p>
-                ) : null}
-                <p className="mt-0.5 text-[12px] text-[#757575]">
-                  지금 속도가 이어지면 연말 {won(goal.pacing.landing)}(목표의{' '}
-                  {pct(goal.pacing.landingRatio, 0)}) · 달성 확률{' '}
-                  {goal.probability
-                    ? formatProbability(goal.probability.probability)
-                    : '판정 불가'}
-                </p>
-              </div>
-            ) : (
-              <Link
-                href="/statistics/settings#revenue-goal"
-                className="flex min-w-0 flex-col justify-center rounded-xl border border-dashed border-[#D9D9D9] px-3 py-3 hover:bg-[#FAFAFA]"
-              >
-                <span className="text-sm font-bold text-[#1C1C1C]">
-                  올해 매출 목표를 넣어 주세요
-                </span>
-                <span className="mt-0.5 text-[12px] text-[#757575]">
-                  넣으면 여기서 남은 금액·하루 필요 매출·달성 확률을 봅니다 →
-                </span>
-              </Link>
-            )}
-
+          <div className="mt-3">
             <div className="grid min-w-0 grid-cols-2 gap-2 sm:grid-cols-3">
               <AxisTile
                 label="유입 · 하루 방문"

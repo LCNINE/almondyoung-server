@@ -58,7 +58,7 @@ export function appendGoalEvidence(
         ? '기존 집계의 전 판매채널'
         : '자사몰',
     ],
-    ['화면 목표 실적(원)', pacing.actualToDate],
+    ['과거 수기 포함 집계(원) · 현재 회사 목표와 별도', pacing.actualToDate],
     ['집계 시작 전 실적(관리자 입력)', preCoverageActual],
     ['목표 등록 메모', summary.goal?.memo ?? '없음'],
     ['일별 목표 반영액 합계', rows.reduce((sum, r) => sum + r.목표반영액, 0)],
@@ -70,13 +70,13 @@ export function appendGoalEvidence(
     ],
     [
       '결제 환불 반영',
-      refunds ? '반영' : '조회 실패 또는 미제공: 화면과 동일하게 미차감',
+      refunds ? '반영' : '조회 실패 또는 미제공: 이 과거 대사에서는 미차감',
     ],
     ['집계 갱신 시각', summary.dataAsOf ?? '미확인'],
     ['집계 시작일', summary.coverageStart ?? '미확인'],
     [
       '주의',
-      '이 파일은 화면 산출 근거입니다. 주문 상품 원장은 판매 통계 > 매출에서 별도로 다운로드합니다.',
+      '이 시트는 과거 수기 포함 집계의 보관 근거입니다. 현재 회사 목표는 통합 목표 시트 기준이며, 주문 상품 원장은 판매 통계 > 매출에서 다운로드합니다.',
     ],
     [
       '과거 실적',

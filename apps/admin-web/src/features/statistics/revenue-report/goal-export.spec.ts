@@ -59,10 +59,65 @@ it('엑셀 파일에 화면 합계와 관리자 입력 메모를 보존한다', 
     decoded.Sheets['화면 실적 대사'],
     { header: 1 }
   );
-  expect(rows).toContainEqual(['화면 목표 실적(원)', 340]);
+  expect(rows).toContainEqual([
+    '과거 수기 포함 집계(원) · 현재 회사 목표와 별도',
+    340,
+  ]);
   expect(rows).toContainEqual(['검산 차이', 0]);
   expect(rows).toContainEqual(['목표 등록 메모', '과거 자료 확인 필요']);
   expect(
     XLSX.utils.sheet_to_json(decoded.Sheets['일별 실적 근거'])
   ).toHaveLength(2);
+});
+
+import { appendCompanyRevenueEvidence } from './company-revenue-export';
+
+it('exports the same company total and monthly channel amounts without the legacy opening balance', () => {
+  const source = fixture('own_mall');
+  const summary = {
+    ...source,
+    channels: ['medusa'],
+    ytdDaily: source.ytdDaily.map((day) => ({
+      ...day,
+      allChannels: day.ownMall,
+    })),
+  };
+  const book = XLSX.utils.book_new();
+  appendCompanyRevenueEvidence(
+    XLSX,
+    book,
+    summary,
+    new Map([['2026-01-02', 10]]),
+    [
+      {
+        channel: 'naver',
+        account: 'sample',
+        month: '2026-01',
+        basis: 'purchase_confirmed',
+        amount: 100,
+        source: 'fixture',
+      },
+    ]
+  );
+  const decoded = XLSX.read(
+    XLSX.write(book, { type: 'buffer', bookType: 'xlsx' }),
+    { type: 'buffer' }
+  );
+  const totals = XLSX.utils.sheet_to_json<unknown[]>(
+    decoded.Sheets['통합 목표'],
+    { header: 1 }
+  );
+  expect(totals).toContainEqual(['회사 전체 매출 · 잠정', 390]);
+  expect(totals).toContainEqual(['합산 제외 · 근거 미확인 수기 누적액', 50]);
+  expect(XLSX.utils.sheet_to_json(decoded.Sheets['월별 채널 매출'])).toEqual([
+    {
+      월: '2026-01',
+      전체: 390,
+      자사몰: 290,
+      스마트스토어: 100,
+      쿠팡: 0,
+      전화주문: 0,
+      기타채널: 0,
+    },
+  ]);
 });

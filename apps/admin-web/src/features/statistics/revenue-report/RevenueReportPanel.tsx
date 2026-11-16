@@ -12,6 +12,7 @@ import { useGrowthSummary } from '@/lib/services/analytics';
 import { useOrderRefunds } from '@/lib/services/wallet/queries';
 import { refundMap } from '../growth/model';
 import { appendGoalEvidence } from './goal-export';
+import { appendCompanyRevenueEvidence } from './company-revenue-export';
 import { kstToday } from '@/features/statistics/as-of';
 import { RevenueDocuments } from './RevenueDocuments';
 import {
@@ -159,6 +160,14 @@ export function RevenueReportPanel() {
         ),
         '최근 반영 이력'
       );
+      if (goal)
+        appendCompanyRevenueEvidence(
+          XLSX,
+          book,
+          goal,
+          refundsQuery.isError ? null : refundMap(refundsQuery.data?.series),
+          report.data.external
+        );
       if (goal?.goal)
         appendGoalEvidence(
           XLSX,
@@ -198,7 +207,7 @@ export function RevenueReportPanel() {
           [
             '목표 실적 근거',
             goal?.goal
-              ? '화면 실적 대사 및 일별 실적 근거 시트 참조'
+              ? '통합 목표·월별 채널 매출 시트 참조. 과거 수기 포함 집계는 화면 실적 대사에 별도 보관'
               : '이 연도의 목표 근거 미수집',
           ],
           [
@@ -221,7 +230,7 @@ export function RevenueReportPanel() {
           ],
           [
             '외부 자료',
-            '매출 기준별로 구분합니다. 기존 집계와 중복될 수 있어 자동 합산하지 않습니다.',
+            '통합 목표에는 반영 가능한 자료만 잠정 합산합니다. 채널 반영 근거 시트에서 제외 사유를 확인하세요.',
           ],
           ['누락', '미등록 채널·월은 미수집이며 0원이 아닙니다.'],
           [
@@ -487,8 +496,8 @@ export function RevenueReportPanel() {
       </div>
       <p className="text-sm text-gray-600">
         위 기간 필터와 별도로 선택한 연도의 자료를 조회합니다. 기존 주문 집계와
-        외부 자료는 기준이 달라 자동 합산하지 않습니다. 올해 목표 실적의 근거도
-        엑셀에 함께 포함됩니다. 금액은 원 단위입니다.
+        외부 자료 중 반영 가능한 금액은 상단 회사 전체 매출에 합산됩니다. 올해
+        목표 실적의 근거도 엑셀에 함께 포함됩니다. 금액은 원 단위입니다.
       </p>
       <p className="text-sm text-amber-800">
         미등록 채널·월은 미수집입니다. 전화 주문은 기존 자사몰 주문에 포함되지
@@ -498,8 +507,8 @@ export function RevenueReportPanel() {
       <div className="rounded-lg bg-slate-50 p-3 text-sm space-y-1">
         <p className="font-medium">전체 매출 대조 중</p>
         <p>
-          기존 목표 실적에는 과거 수기 누적액이 포함될 수 있습니다. 카페24·이관
-          주문과의 중복을 확인한 뒤 합계를 확정합니다.
+          출처 미확인 수기 누적액은 회사 전체 매출에서 제외합니다. 카페24
+          전환기·이관 주문은 중복을 확인한 뒤 반영합니다.
         </p>
         <p>
           운영 순매출은 채널 화면의 참고 금액입니다. 신고자료·구매확정·결제완료

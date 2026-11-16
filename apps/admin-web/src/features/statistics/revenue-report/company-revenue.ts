@@ -72,3 +72,91 @@ export function companyRevenueRows(
     excludedCount: reviewed.length - included.length,
   };
 }
+
+export const REVENUE_CHANNELS = {
+  all: '전체',
+  own_mall: '자사몰',
+  naver: '스마트스토어',
+  coupang: '쿠팡',
+  phone: '전화 주문',
+  other: '기타 채널',
+} as const;
+export type RevenueChannel = keyof typeof REVENUE_CHANNELS;
+
+/** One annual ledger for the headline, channel selector, chart and export. */
+export function annualCompanyRevenue(input: {
+  today: string;
+  coverageStart: string | null;
+  hasIntegratedChannels: boolean;
+  daily: Array<{ date: string; ownMall: number; allChannels: number }>;
+  refunds: Map<string, number> | null;
+  external: ExternalRevenueRow[];
+}) {
+  const year = input.today.slice(0, 4);
+  const currentMonth = input.today.slice(0, 7);
+  const imported = companyRevenueRows(
+    input.external,
+    input.today,
+    input.hasIntegratedChannels,
+    input.coverageStart
+  );
+  const monthly = Array.from({ length: 12 }, (_, index) => ({
+    month: `${year}-${String(index + 1).padStart(2, '0')}`,
+    own_mall: 0,
+    naver: 0,
+    coupang: 0,
+    phone: 0,
+    other: 0,
+    all: 0,
+  }));
+  const byMonth = new Map(monthly.map((row) => [row.month, row]));
+  let dailyAmount = 0;
+
+  for (const day of input.daily) {
+    if (day.date < `${year}-01-01` || day.date >= input.today) continue;
+    const month = byMonth.get(day.date.slice(0, 7));
+    if (!month) continue;
+
+    month.own_mall += day.ownMall - (input.refunds?.get(day.date) ?? 0);
+    month.other += day.allChannels - day.ownMall;
+    dailyAmount += day.allChannels - (input.refunds?.get(day.date) ?? 0);
+  }
+
+  for (const row of imported.rows) {
+    if (!row.included) continue;
+    const month = byMonth.get(row.month);
+    if (!month) continue;
+    const channel = row.channel === 'cafe24' ? 'own_mall' : row.channel;
+    if (
+      channel === 'own_mall' ||
+      channel === 'naver' ||
+      channel === 'coupang' ||
+      channel === 'phone'
+    )
+      month[channel] += row.amount;
+  }
+
+  const totals = {
+    own_mall: 0,
+    naver: 0,
+    coupang: 0,
+    phone: 0,
+    other: 0,
+    all: 0,
+  };
+  for (const month of monthly) {
+    month.all =
+      month.own_mall + month.naver + month.coupang + month.phone + month.other;
+    for (const channel of Object.keys(totals) as RevenueChannel[])
+      totals[channel] += month[channel];
+  }
+
+  // Refund lookup failure is not zero refunds. Do not expose a partial total as a company result.
+  return {
+    imported,
+    monthly,
+    currentMonth,
+    totals: input.refunds === null ? null : totals,
+    dailyAmount: input.refunds === null ? null : dailyAmount,
+  };
+}
