@@ -199,7 +199,10 @@ export function ShipmentHeader({ shipment, acknowledged, onStale }: Props) {
           )}
           {actions.close && (
             <Can run={useCloseInboundShipment}>
-              <Button size="sm" variant="outline" onClick={() => setCloseOpen(true)}>
+              <Button size="sm" variant="outline" onClick={() => {
+                  setMessage(null);
+                  setCloseOpen(true);
+                }}>
                 끝내기…
               </Button>
             </Can>
@@ -236,6 +239,8 @@ export function ShipmentHeader({ shipment, acknowledged, onStale }: Props) {
           <DialogTitle>선적 끝내기</DialogTitle>
           <DialogDescription>끝내는 사유를 적어 주세요. 다시 열 수 있습니다.</DialogDescription>
           <Textarea value={closeText} onChange={(e) => setCloseText(e.target.value)} aria-label="끝내는 사유" rows={4} />
+          {/* 모달 뒤에 가리지 않게 대화상자 안에 보여 준다. 열어 둬서 적은 사유를 지키고, 409 면 이미 refetch 중이다. */}
+          {message && <div className="text-sm text-destructive">{message}</div>}
           <DialogFooter>
             <Button variant="outline" onClick={() => setCloseOpen(false)}>
               닫기
@@ -246,7 +251,7 @@ export function ShipmentHeader({ shipment, acknowledged, onStale }: Props) {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      {message && <div className="text-sm text-destructive">{message}</div>}
+      {message && !closeOpen && <div className="text-sm text-destructive">{message}</div>}
       {overlaps.length > 0 && (
         <div className="text-sm text-amber-600">
           같은 창고의 열린 선적과 상자 이름이 겹칩니다: {overlaps.join(', ')}
