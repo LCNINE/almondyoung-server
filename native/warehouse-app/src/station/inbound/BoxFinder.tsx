@@ -166,8 +166,13 @@ export function WaitingForBox({
   );
 }
 
+function Tag({ text }: { text: string }) {
+  return <span className="rounded-md bg-[#E4E6EA] px-2 py-1 text-base font-semibold text-[#535968]">{text}</span>;
+}
+
 /**
- * 고르기 — 같은 이름이 둘 이상의 선적에 있다(스펙 §5.3). 기본 선택 없음 — 커서가 처음엔 어느 줄에도 없고
+ * 고르기 — 같은 이름이 둘 이상의 선적에 있다(스펙 §5.3). 끝난 선적엔 «끝남», 확정된 상자엔 «확정됨»(§7.5 — 찾기가 오늘
+ * 확정된 상자도 돌려준다). 기본 선택 없음 — 커서가 처음엔 어느 줄에도 없고
  * Enter 만 쳐서는 안 열린다. 숫자(·숫자 명령 바코드)·↑↓+Enter·클릭으로 고른다.
  */
 export function ChooseBox({
@@ -194,7 +199,11 @@ export function ChooseBox({
         onPick={pick}
         render={(c) => (
           <>
-            <span className="text-lg font-semibold">{`${c.shipmentName}${arrivalText(c.expectedArrival)}`}</span>
+            <span className="flex items-center gap-3">
+              <span className="text-lg font-semibold">{`${c.shipmentName}${arrivalText(c.expectedArrival)}`}</span>
+              {c.shipmentStatus === 'closed' ? <Tag text="끝남" /> : null}
+              {c.status === 'received' ? <Tag text="확정됨" /> : null}
+            </span>
             <span className="text-base text-[#535968]">{c.previewItems.join(', ')}</span>
           </>
         )}

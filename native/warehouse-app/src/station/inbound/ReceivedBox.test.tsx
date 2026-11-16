@@ -267,6 +267,32 @@ describe('확정된 상자', () => {
     for (const s of resent) expect(s.key).toBe(key);
   });
 
+  it('같은 상자에 결과를 모르는 다른 쓰기가 있으면 취소는 보내지 않는다 — «처리 여부를 먼저 확인해 주세요», 잠기지 않는다', async () => {
+    const { server, runtime } = await setup();
+    // 이 상자의 확정이 아직 결과를 모른다(다른 화면·다른 시도) — 러너가 같은 상자의 쓰기를 막는다
+    await runtime.store.begin({
+      id: 'k-receive',
+      scope: 'scope',
+      resource: 'inbound-shipment-box:b-1',
+      path: '/inventory/inbound-shipments/s-1/boxes/b-1/receive',
+      method: 'POST',
+      bodyJson: JSON.stringify({ contractVersion: 2, idempotencyKey: 'k-receive' }),
+      createdAt: Date.now(),
+    });
+    await runtime.store.finish('k-receive', 'uncertain');
+    await readyReceived();
+    await cancelTwice();
+    expect(await screen.findByText('처리 여부를 먼저 확인해 주세요.')).toBeInTheDocument();
+    expect(flash()).toBe('error');
+    expect(server.cancels()).toHaveLength(0);
+    expect(screen.queryByText(UNCERTAIN)).toBeNull();
+    // 보낸 것이 없으니 «다시 보내기» 가 아니다 — 기기에 남긴 취소 키도 지웠다
+    await waitFor(() => expect(keyButton(/F11\s*확정 취소/)).toBeInTheDocument());
+    expect(keyButton(/다시 보내기/)).toBeNull();
+    expect(await runtime.store.draft<string | null>('scope:draft:inbound-box-cancel:b-1:c-1')).toBeNull();
+    expect(screen.getByRole('region', { name: '확정된 상자' })).toBeInTheDocument();
+  });
+
   it('저절로 끝난 선적의 오늘 확정 상자도 찾기로 열려 F11 이 된다', async () => {
     const closed = base({ shipmentStatus: 'closed' });
     const candidate: BoxCandidate = {

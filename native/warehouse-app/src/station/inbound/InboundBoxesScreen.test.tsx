@@ -191,6 +191,25 @@ describe('고르기', () => {
     expect(screen.queryByText(/상자 L7 · /)).toBeNull();
   });
 
+  it('끝난 선적 후보엔 «끝남», 확정된 상자 후보엔 «확정됨»', async () => {
+    setup({
+      found: [
+        candidate({ shipmentStatus: 'closed', status: 'received' }),
+        candidate({ shipmentId: 's-2', shipmentName: '11월 1차 배편', boxId: 'b-2', shipmentStatus: 'receiving', status: 'received' }),
+        candidate({ shipmentId: 's-3', shipmentName: '11월 3차 배편', boxId: 'b-3' }),
+      ],
+    });
+    await search('L7');
+    await screen.findByText(/L7 이 선적 3곳에 있어요/);
+    const options = screen.getAllByRole('option');
+    expect(within(options[0]).getByText('끝남')).toBeInTheDocument();
+    expect(within(options[0]).getByText('확정됨')).toBeInTheDocument();
+    expect(within(options[1]).queryByText('끝남')).toBeNull();
+    expect(within(options[1]).getByText('확정됨')).toBeInTheDocument();
+    expect(within(options[2]).queryByText('끝남')).toBeNull();
+    expect(within(options[2]).queryByText('확정됨')).toBeNull();
+  });
+
   it('2 를 누르면 둘째가 열린다', async () => {
     setup({ found: two, boxes });
     await search('L7');

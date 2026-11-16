@@ -109,7 +109,7 @@ function AddingBox({
   }, [write]);
 
   const actions: StationAction[] = [
-    ...(write.uncertain || write.unsaved
+    ...(write.uncertain || write.unsaved || write.blocked
       ? [{ ...INBOUND_BOX_ACTIONS.addUnlisted, label: '다시 보내기', enabled: true, run: () => void write.send() }]
       : []),
     { ...INBOUND_BOX_ACTIONS.back, enabled: !write.sending, run: onBack },
@@ -119,6 +119,7 @@ function AddingBox({
   if (write.loadError) return <StatusLine tone="alert" text={errorMessage(write.loadError)} />;
   if (write.uncertain) return <StatusLine tone="alert" text={ADD_UNCERTAIN} />;
   if (write.unsaved) return <StatusLine tone="alert" text="기기에 저장하지 못했어요 — F12 를 다시 눌러 주세요" />;
+  if (write.blocked) return <StatusLine tone="alert" text={write.blocked} />;
   return <StatusLine tone="notice" text="상자를 더하고 있어요" />;
 }
 

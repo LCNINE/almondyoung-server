@@ -1,10 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { ApiClient } from '../../core/data/httpClient';
 import type { WorkPermissions } from '../../core/operations/OperationContext';
+import { ApiError } from '../../core/data/httpClient';
+import { WorkBlockedError } from '../../core/operations/operationStore';
 import {
   addBox,
   cancelBoxReceipt,
   findBoxes,
+  isBlockedWrite,
+  isUncertainWrite,
   listShipments,
   openBox,
   receiveBox,
@@ -74,5 +78,17 @@ describe('inbound shipment box api', () => {
   it('work permissions carry inboundShipmentOperate', async () => {
     const p: WorkPermissions = { inboundShipmentOperate: true };
     expect(p.inboundShipmentOperate).toBe(true);
+  });
+});
+
+describe('isBlockedWrite', () => {
+  it('러너가 보내기 전에 막은 쓰기(WorkBlockedError)만 참이다 — 결과 모름·거절과 다르다', () => {
+    expect(isBlockedWrite(new WorkBlockedError())).toBe(true);
+    expect(isBlockedWrite(new TypeError('Failed to fetch'))).toBe(false);
+    expect(isBlockedWrite(new ApiError('POST x → 503', 503))).toBe(false);
+    expect(isBlockedWrite(new ApiError('POST x → 409', 409, 'CONFLICT'))).toBe(false);
+  });
+  it('반품 화면이 쓰는 isUncertainWrite 는 그대로다 — 막힌 쓰기는 화면이 먼저 가른다', () => {
+    expect(isUncertainWrite(new WorkBlockedError())).toBe(true);
   });
 });

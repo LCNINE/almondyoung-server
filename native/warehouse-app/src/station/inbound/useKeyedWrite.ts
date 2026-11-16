@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useWorkRuntime } from '../../core/operations/OperationContext';
 import { useWorkDraft } from '../../core/operations/useWorkDraft';
-import { isUncertainWrite } from '../../domains/inbound-shipment/api';
+import { isBlockedWrite, isUncertainWrite } from '../../domains/inbound-shipment/api';
 import { useFeedback } from '../feedback/FeedbackProvider';
 
 /**
@@ -15,6 +15,8 @@ import { useFeedback } from '../feedback/FeedbackProvider';
  * - 확정되면 `onConfirmed` 가 서버 상태를 확인한다. 다음 할 일을 돌려주면 키를 지운 뒤 부르고, false 면(확인 못 함)
  *   키를 둔 채 «결과 모름» 으로 남는다.
  * - 거절되면 키를 지우고 `onRejected` — 다음 보내기는 새 키다.
+ * - 러너가 보내기 전에 막으면(같은 자원에 결과가 나지 않은 다른 쓰기, `isBlockedWrite`) 이 키로 나간 것이 없다 —
+ *   «결과 모름» 으로 잠그지 않게 기기의 키를 지우고 `blocked` 에 그 까닭을 둔다. 다음 보내기는 새 키여도 안전하다.
  */
 export function useKeyedWrite<R>({
   draftKey,
@@ -33,6 +35,7 @@ export function useKeyedWrite<R>({
   const [sending, setSendingState] = useState(false);
   const sendingRef = useRef(false);
   const [unsaved, setUnsaved] = useState(false);
+  const [blocked, setBlocked] = useState<string | null>(null);
   const mounted = useRef(true);
   // 이 키의 결과를 이미 처리했다 — 같은 키의 대기가 여럿 풀려도(재전송) 한 번만
   const settled = useRef<string | null>(null);
@@ -69,6 +72,13 @@ export function useKeyedWrite<R>({
         result = await handlers.current.send(key);
       } catch (error) {
         if (!mounted.current || settled.current === key) return;
+        if (isBlockedWrite(error)) {
+          await drop();
+          if (!mounted.current) return;
+          setBlocked(error.message);
+          signal('error');
+          return;
+        }
         if (isUncertainWrite(error)) {
           signal('error');
           return;
@@ -96,6 +106,7 @@ export function useKeyedWrite<R>({
     if (sendingRef.current || !saved.ready) return;
     setSending(true);
     setUnsaved(false);
+    setBlocked(null);
     let key = await saved.read();
     if (!key) {
       const fresh = crypto.randomUUID();
@@ -161,6 +172,8 @@ export function useKeyedWrite<R>({
     uncertain: !!sentKey && !sending,
     /** 키를 기기에 남기지 못해 보내지 않았다 */
     unsaved,
+    /** 러너가 보내기 전에 막았다(같은 자원에 결과가 나지 않은 쓰기) — 보일 한 줄. 보낸 것이 없어 잠기지 않는다 */
+    blocked,
     send: sendNow,
   };
 }

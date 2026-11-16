@@ -128,9 +128,11 @@ export function useBoxCancel({
           ? { tone: 'notice', text: CANCEL_ARMED }
           : write.unsaved
             ? { tone: 'alert', text: '기기에 저장하지 못했어요 — F11 을 다시 눌러 주세요' }
-            : alert
-              ? { tone: 'alert', text: alert }
-              : null;
+            : write.blocked
+              ? { tone: 'alert', text: write.blocked }
+              : alert
+                ? { tone: 'alert', text: alert }
+                : null;
 
   return {
     /** 기능키 바에 올릴 F11 — 권한이 없거나 집계가 없으면 null */

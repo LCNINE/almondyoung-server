@@ -187,6 +187,9 @@ const savedDraft = (runtime: WorkRuntime) => runtime.store.draft<BoxDraft | null
 const RECEIVE_PATH = '/inventory/inbound-shipments/s-1/boxes/b-1/receive';
 const DONE = 'L7 확정 — 적치 대기로 갔어요';
 const STALE = '앞서 보낸 확정이 취소됐어요 — 다시 세 주세요';
+const CANNOT_RECEIVE = '지금은 이 상자를 받을 수 없어요 — 상자를 다시 열어 확인해 주세요';
+const SHIPMENT_ENDED = '이 선적은 끝났거나 취소됐어요 — 관리자에게 확인해 주세요';
+const BLOCKED = '처리 여부를 먼저 확인해 주세요.';
 
 /** 네 줄을 다 채우고 보낸 초안 — 앱이 꺼지기 전에 F10 두 번까지 간 상태 */
 function sentDraft(key: string): BoxDraft {
@@ -214,6 +217,19 @@ function seedSent(draft: BoxDraft, outcome: 'confirmed' | 'rejected') {
     if (outcome === 'confirmed') await runtime.store.finish(draft.key, 'confirmed', RESULT);
     else await runtime.store.finish(draft.key, 'rejected', undefined, 'BAD_REQUEST', undefined, undefined, undefined, 400);
   };
+}
+/** 같은 상자에 결과를 모르는 확정 취소가 하나 남았다 — 러너가 이 상자의 다른 쓰기를 보내기 전에 막는다 */
+async function seedUnresolvedCancel(runtime: WorkRuntime) {
+  await runtime.store.begin({
+    id: 'k-cancel',
+    scope: 'scope',
+    resource: 'inbound-shipment-box:b-1',
+    path: `${RECEIVE_PATH}/cancel`,
+    method: 'POST',
+    bodyJson: JSON.stringify({ contractVersion: 2, idempotencyKey: 'k-cancel' }),
+    createdAt: Date.now(),
+  });
+  await runtime.store.finish('k-cancel', 'uncertain');
 }
 const settle = () => act(async () => {
   await new Promise((r) => setTimeout(r, 30));
@@ -570,16 +586,89 @@ describe('상자 작업 — 고침 라운드', () => {
     expect(qty('line:L2')).toBe('18');
   });
 
-  it('409 인데 다시 읽은 상자가 열려 있으면 수량은 남고 새 키로', async () => {
+  it('409 인데 다시 읽은 상자가 열려 있으면 수량은 남고 새 키로 — «지금은 이 상자를 받을 수 없어요»', async () => {
     const { server, runtime } = await setup({ receive: () => new ConflictError('선적이 닫혔어요', 'CONFLICT') });
     await fillAll();
     await confirmTwice();
     await waitFor(() => expect(server.sent).toHaveLength(1));
     await waitFor(async () => expect((await savedDraft(runtime))?.key).not.toBe(server.sent[0].key));
+    expect(await screen.findByText(CANNOT_RECEIVE)).toBeInTheDocument();
+    expect(screen.queryByText('알 수 없는 오류가 발생했어요.')).toBeNull();
     expect(screen.queryByText('다른 곳에서 이미 확정했어요')).toBeNull();
     expect(screen.getByRole('region', { name: '상자 작업' })).toBeInTheDocument();
     expect(qty('line:L2')).toBe('18');
     expect((await savedDraft(runtime))?.sentBody ?? null).toBeNull();
+  });
+
+  it.each(['closed', 'canceled'] as const)(
+    '409 인데 다시 읽은 상자의 선적이 %s 면 «이 선적은 끝났거나 취소됐어요» — 수량은 남는다',
+    async (shipmentStatus) => {
+      const { server, runtime } = await setup({
+        // 처음 · 확정 직전 · 409 뒤 다시 읽기
+        boxes: [view(), view(), view({ shipmentStatus })],
+        receive: () => new ConflictError('선적이 닫혔어요', 'CONFLICT'),
+      });
+      await fillAll();
+      await confirmTwice();
+      expect(await screen.findByText(SHIPMENT_ENDED)).toBeInTheDocument();
+      expect(server.sent).toHaveLength(1);
+      expect(flash()).toBe('error');
+      expect(screen.getByRole('region', { name: '상자 작업' })).toBeInTheDocument();
+      expect(qty('line:L2')).toBe('18');
+      expect((await savedDraft(runtime))?.sentBody ?? null).toBeNull();
+    }
+  );
+
+  it('409 뒤 상자를 다시 읽지 못하면 «지금은 이 상자를 받을 수 없어요» — 수량은 남는다', async () => {
+    const { server } = await setup({
+      boxes: [view(), view(), new Error('network down')],
+      receive: () => new ConflictError('선적이 닫혔어요', 'CONFLICT'),
+    });
+    await fillAll();
+    await confirmTwice();
+    expect(await screen.findByText(CANNOT_RECEIVE)).toBeInTheDocument();
+    expect(server.sent).toHaveLength(1);
+    expect(qty('line:L2')).toBe('18');
+  });
+
+  it('같은 상자의 확정 취소가 아직 결과를 모르면 확정은 보내지 않는다 — «처리 여부를 먼저 확인해 주세요», 잠그지 않고 키는 그대로', async () => {
+    const { server, runtime } = await setup({}, { seed: seedUnresolvedCancel });
+    await fillAll();
+    const key = (await savedDraft(runtime))?.key;
+    await confirmTwice();
+    expect(await screen.findByText(BLOCKED)).toBeInTheDocument();
+    expect(flash()).toBe('error');
+    // 서버에 간 것이 없다
+    expect(server.sent).toHaveLength(0);
+    expect(screen.queryByText(UNCERTAIN)).toBeNull();
+    await waitFor(async () => expect((await savedDraft(runtime))?.sentBody ?? null).toBeNull());
+    expect((await savedDraft(runtime))?.key).toBe(key);
+    await waitFor(() => expect(keyButton(/F10\s*확정/)).toBeInTheDocument());
+    expect(keyButton(/다시 보내기/)).toBeNull();
+    // 잠기지 않았다 — 고칠 수 있다
+    await typeHuman(['ArrowUp', 'ArrowUp', '1', '9']);
+    expect(qty('line:L2')).toBe('19');
+  });
+
+  it('다시 켰을 때 보낸 본문이 남았지만 작업 기록이 없고 같은 상자의 취소가 막고 있으면 — F10 다시 보내기는 막히고 잠김이 풀린다', async () => {
+    const draft = sentDraft('k-sent');
+    const { server, runtime } = await setup(
+      {},
+      {
+        seed: async (rt) => {
+          await rt.store.draft<BoxDraft | null>(DRAFT_ID, () => draft);
+          await seedUnresolvedCancel(rt);
+        },
+      }
+    );
+    expect(await screen.findByText(UNCERTAIN)).toBeInTheDocument();
+    await waitFor(() => expect(keyButton(/F10\s*다시 보내기/)).toBeInTheDocument());
+    press('F10');
+    expect(await screen.findByText(BLOCKED)).toBeInTheDocument();
+    expect(server.sent).toHaveLength(0);
+    await waitFor(async () => expect((await savedDraft(runtime))?.sentBody ?? null).toBeNull());
+    expect((await savedDraft(runtime))?.key).toBe('k-sent');
+    expect(qty('line:L2')).toBe('18');
   });
 
   it('기기의 확정 결과가 남았는데 상자가 다시 열려 있으면(그 사이 취소) «확정» 이 아니라 새 빈 초안', async () => {

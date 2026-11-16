@@ -7,7 +7,7 @@ import { useWorkRuntime } from '../../core/operations/OperationContext';
 import { useWorkPermissions } from '../../core/operations/useWorkCapabilities';
 import { useWorkDraft } from '../../core/operations/useWorkDraft';
 import { scanIncrement } from '../../domains/inbound/packingUnit';
-import { isUncertainWrite, openBox, receiveBox } from '../../domains/inbound-shipment/api';
+import { isBlockedWrite, isUncertainWrite, openBox, receiveBox } from '../../domains/inbound-shipment/api';
 import {
   applyList,
   applyScan,
@@ -41,6 +41,9 @@ import { INBOUND_BOX_ACTIONS } from './inboundBoxActions';
 
 const CONFLICT_NOTICE = '다른 곳에서 이미 확정했어요';
 const STALE_CONFIRM = '앞서 보낸 확정이 취소됐어요 — 다시 세 주세요';
+// 확정 409 인데 상자는 아직 열려 있다 — 러너가 409 를 ApiError 로 다시 만들어 공용 문구로는 «알 수 없는 오류» 가 된다
+const SHIPMENT_ENDED = '이 선적은 끝났거나 취소됐어요 — 관리자에게 확인해 주세요';
+const CANNOT_RECEIVE = '지금은 이 상자를 받을 수 없어요 — 상자를 다시 열어 확인해 주세요';
 const listChangedMessage = (n: number) => `관리자가 리스트를 고쳤어요 — ${n}줄 다시 확인`;
 
 type Phase = 'idle' | 'checking' | 'sending';
@@ -168,14 +171,17 @@ export function BoxWork({
     signal('error');
   };
 
-  /** 409 — 상자를 다시 읽어 그 상태를 보인다. 확정돼 있으면 다른 곳이 먼저 한 것(수량을 버린다), 아니면 수량을 두고 까닭을 보인다 */
-  const afterConflict = async (error: unknown, draft: BoxDraft) => {
+  /**
+   * 409 — 상자를 다시 읽어 그 상태를 보인다. 확정돼 있으면 다른 곳이 먼저 한 것(수량을 버린다), 아니면 수량을 두고 까닭을 보인다:
+   * 다시 읽은 줄로 확정이 막히면 그 까닭, 선적이 끝났거나 취소됐으면 그렇다고, 그 밖은 상자를 다시 열어 보라고(§5.9).
+   */
+  const afterConflict = async (draft: BoxDraft) => {
     let latest: BoxView;
     try {
       latest = await openBox(api, boxRef.current.shipmentId, boxRef.current.boxId);
     } catch {
       if (!mounted.current) return;
-      setAlert({ message: errorMessage(error) });
+      setAlert({ message: CANNOT_RECEIVE });
       signal('error');
       return;
     }
@@ -186,7 +192,8 @@ export function BoxWork({
       explain(block, draft, latest);
       return;
     }
-    setAlert({ message: errorMessage(error) });
+    const ended = latest.shipmentStatus === 'closed' || latest.shipmentStatus === 'canceled';
+    setAlert({ message: ended ? SHIPMENT_ENDED : CANNOT_RECEIVE });
     signal('error');
   };
 
@@ -201,6 +208,15 @@ export function BoxWork({
         result = await receiveBox(api, current.shipmentId, current.boxId, body, key);
       } catch (error) {
         if (!mounted.current || settled.current === key) return;
+        if (isBlockedWrite(error)) {
+          // 보내지 않았다 — 방금 남긴 보낸 본문을 거둬 잠그지 않는다. 이 키로 나간 것이 없으니 키는 그대로 둔다
+          const current = workRef.current;
+          if (current?.key === key && current.sentBody) await commit({ ...current, sentBody: null }).catch(() => {});
+          if (!mounted.current) return;
+          setAlert({ message: error.message });
+          signal('error');
+          return;
+        }
         if (isUncertainWrite(error)) {
           signal('error');
           return;
@@ -211,7 +227,7 @@ export function BoxWork({
         const rotated: BoxDraft | null = workRef.current ? { ...workRef.current, key: crypto.randomUUID(), sentBody: null } : null;
         if (rotated) await commit(rotated).catch(() => {});
         if (rotated && error instanceof ApiError && error.status === 409) {
-          await afterConflict(error, rotated);
+          await afterConflict(rotated);
           return;
         }
         setAlert({ message: errorMessage(error) });

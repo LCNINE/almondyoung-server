@@ -1,4 +1,5 @@
 import type { ApiClient } from '../../core/data/httpClient';
+import { WorkBlockedError } from '../../core/operations/operationStore';
 import type {
   AddBoxResult,
   BoxCandidate,
@@ -10,6 +11,15 @@ import type {
 } from './types';
 
 export { isUncertainWrite } from '../customer-returns/api';
+
+/**
+ * 러너가 보내기 전에 막았다 — 같은 상자(상자 더하기는 같은 선적)에 결과가 나지 않은 다른 쓰기가 남아 있다(`store.begin`).
+ * 서버에 아무것도 가지 않았으니 «결과 모름» 이 아니다: 잠그지 않고 `error.message`(«처리 여부를 먼저 확인해 주세요.»)를 보인다.
+ * `isUncertainWrite` 는 이것도 참으로 본다(반품 화면이 쓰는 판정이라 그대로 둔다) — 선적 화면은 이 판정을 먼저 한다.
+ */
+export function isBlockedWrite(error: unknown): error is WorkBlockedError {
+  return error instanceof WorkBlockedError;
+}
 
 const enc = encodeURIComponent;
 const shipmentPath = (shipmentId: string) =>
