@@ -20,8 +20,14 @@ export class PermissionCatalogSyncBootstrap implements OnApplicationBootstrap {
       this.logger.log(
         `permission catalog synced: inserted=${result.inserted.length} deprecated=${result.deprecated} restored=${result.restored} grants=${result.grants} relabeled=${result.relabeled}`,
       );
+      if (result.granted.length > 0) {
+        this.logger.log(`initial grants: ${result.granted.map((g) => `${g.permissionKey}→${g.roleName}`).join(', ')}`);
+      }
       if (result.missingRoles.length > 0) {
-        this.logger.warn(`initial grants skipped for missing roles: ${result.missingRoles.join(', ')}`);
+        // 역할 행은 시드(db:seed:ref)가 만든다 — 시드 뒤 한 번 더 부팅하면 그 몫이 들어간다(#1248)
+        this.logger.warn(
+          `initial grants waiting for missing roles: ${result.missingRoles.join(', ')} — 역할이 생기면 다음 부팅에 부여된다`,
+        );
       }
     } catch (error) {
       this.logger.error('permission catalog sync failed — continuing boot', error);

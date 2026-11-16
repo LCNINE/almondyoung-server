@@ -348,7 +348,7 @@ Cross-BC **seam** services (those that legitimately span schemas, e.g. `ProductS
 새 HTTP 라우트는 반드시 넷 중 하나를 단다: `@Public`/`@InternalOnly`/`@OptionalAuth` · `@StoreRoute`(고객) ·
 `@KeyAuthRoute`(wallet 머천트 키) · `@RequirePermission('영역.대상.행동')`. 없으면 `route-classification.spec.ts`
 가 빨갛다. 권한 키는 `libs/authorization/src/permissions/permission-catalog.ts` 에만 있다 — 새 키는 거기에 추가하고
-`grantOnFirstRegistration` 에 «오늘 그 기능을 쓰는 역할»을 적는다(첫 등록 때 한 번만 부여된다).
+`grantOnFirstRegistration` 에 «오늘 그 기능을 쓰는 역할»을 적는다((키, 역할)마다 한 번만 부여된다 — 첫 등록 때 없던 역할은 생긴 뒤 다음 부팅에 받고, 회수하면 다시 주지 않는다).
 코드는 역할 이름이 아니라 권한만 본다.
 
 관리자 화면(admin-web)도 역할 이름이 아니라 권한으로 판정한다. 새 페이지는 `RouteGuard screen="<경로>"` 를 달고
