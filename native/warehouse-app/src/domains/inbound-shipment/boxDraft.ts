@@ -75,6 +75,10 @@ export function applyScan(
   increment: number,
   currentLineId: string | null,
 ): { draft: BoxDraft; target: ScanTarget; rejected?: true } {
+  if (!Number.isInteger(increment) || increment < 1) {
+    const target: ScanTarget = { kind: 'unplanned', skuId: sku.id };
+    return { draft, target, rejected: true };
+  }
   const matches = box.lines.filter(
     (l) => l.kind === 'sku' && l.skuId === sku.id,
   );
@@ -105,6 +109,7 @@ export function setUnplannedQty(
   qty: number,
 ): BoxDraft {
   if (!validQty(qty)) return draft;
+  if (!draft.unplanned.some((u) => u.skuId === skuId)) return draft;
   if (qty === 0) {
     return { ...draft, unplanned: draft.unplanned.filter((u) => u.skuId !== skuId) };
   }
@@ -119,7 +124,7 @@ export const blankLineIds = (draft: BoxDraft, box: BoxView): string[] =>
 
 /**
  * 관리자가 리스트를 고친 뒤 초안을 지금 상자에 맞춘다.
- * `changedLineIds` 는 «센 칸이 지워진 줄» — 작업자에게 다시 세라고 알릴 줄이다(행 순서).
+ * `changedLineIds` 는 kind·skuId·expectedQty 가 바뀌었거나 새로 생긴 줄 전부(칸이 지워졌든 남았든 빈칸이든, 행 순서).
  */
 export function reconcileDraft(
   draft: BoxDraft,
@@ -132,15 +137,13 @@ export function reconcileDraft(
     snapshot[l.lineId] = snap(l);
     const cell = draft.cells[l.lineId];
     const old = draft.snapshot[l.lineId];
-    if (!cell) continue;
     const identityChanged =
       !old || old.kind !== l.kind || old.skuId !== l.skuId;
     const expectedChanged = !!old && old.expectedQty !== l.expectedQty;
-    if (identityChanged || (expectedChanged && cell.method === 'list')) {
-      changedLineIds.push(l.lineId);
-    } else {
-      cells[l.lineId] = cell;
-    }
+    if (identityChanged || expectedChanged) changedLineIds.push(l.lineId);
+    if (!cell) continue;
+    if (identityChanged || (expectedChanged && cell.method === 'list')) continue;
+    cells[l.lineId] = cell;
   }
   return { draft: { ...draft, cells, snapshot }, changedLineIds };
 }
@@ -148,6 +151,8 @@ export function reconcileDraft(
 export type ConfirmBlock =
   | null
   | { reason: 'blank'; lineIds: string[] }
+  | { reason: 'stale_list'; lineIds: string[] }
+  | { reason: 'unplanned_on_list'; skuIds: string[] }
   | { reason: 'empty_added_box' }
   | { reason: 'unresolved' }
   | { reason: 'not_stock_open' };
@@ -161,6 +166,18 @@ export function confirmBlock(draft: BoxDraft, box: BoxView): ConfirmBlock {
   }
   const blanks = blankLineIds(draft, box);
   if (blanks.length > 0) return { reason: 'blank', lineIds: blanks };
+  const stale = box.lines
+    .filter((l) => {
+      const c = draft.cells[l.lineId];
+      return c?.method === 'list' && (!canApplyList(l) || c.qty !== l.expectedQty);
+    })
+    .map((l) => l.lineId);
+  if (stale.length > 0) return { reason: 'stale_list', lineIds: stale };
+  const listed = new Set(
+    box.lines.filter((l) => l.kind === 'sku' && l.skuId).map((l) => l.skuId),
+  );
+  const dup = draft.unplanned.filter((u) => listed.has(u.skuId)).map((u) => u.skuId);
+  if (dup.length > 0) return { reason: 'unplanned_on_list', skuIds: dup };
   if (box.origin === 'added' && draft.unplanned.length === 0) {
     return { reason: 'empty_added_box' };
   }

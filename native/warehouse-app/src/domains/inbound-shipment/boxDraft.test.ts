@@ -126,6 +126,34 @@ describe('boxDraft', () => {
     expect(r.draft).toBe(d);
   });
 
+  it('증가분은 1 이상의 정수만', () => {
+    const b = box();
+    const d = createBoxDraft(b, 'k');
+    for (const inc of [0, -1, 1.5]) {
+      const r = applyScan(d, b, sku1, inc, null);
+      expect(r.rejected).toBe(true);
+      expect(r.draft).toBe(d);
+      expect(blankLineIds(r.draft, b)).toContain('L1');
+    }
+  });
+
+  it('리스트에 없던 물건도 상한에서 거절', () => {
+    const b = box();
+    const other = { id: 'sku-9', code: 'C9', name: 'n' };
+    const d = setUnplannedQty(applyScan(createBoxDraft(b, 'k'), b, other, 1, null).draft, 'sku-9', MAX_LINE_QTY);
+    const r = applyScan(d, b, other, 1, null);
+    expect(r.rejected).toBe(true);
+    expect(r.draft).toBe(d);
+  });
+
+  it('setUnplannedQty 모르는 SKU·비정수는 그대로', () => {
+    const b = box();
+    const other = { id: 'sku-9', code: 'C9', name: 'n' };
+    const d = applyScan(createBoxDraft(b, 'k'), b, other, 1, null).draft;
+    expect(setUnplannedQty(d, 'nope', 3)).toBe(d);
+    expect(setUnplannedQty(d, 'sku-9', 1.5)).toBe(d);
+  });
+
   it('setUnplannedQty 0 은 지운다', () => {
     const b = box();
     const other = { id: 'sku-9', code: 'C9', name: 'n' };
@@ -145,7 +173,7 @@ describe('boxDraft', () => {
       const r = reconcileDraft(d, b2);
       expect(r.draft.cells.L1).toBeUndefined();
       expect(r.draft.cells.L2).toEqual({ qty: 38, method: 'counted' });
-      expect(r.changedLineIds).toEqual(['L1']);
+      expect(r.changedLineIds).toEqual(['L1', 'L2']);
       expect(r.draft.snapshot.L1.expectedQty).toBe(50);
     });
     it('(c) SKU 바뀜', () => {
@@ -155,6 +183,19 @@ describe('boxDraft', () => {
       const r = reconcileDraft(d, b2);
       expect(r.draft.cells.L1).toBeUndefined();
       expect(r.changedLineIds).toEqual(['L1']);
+    });
+    it('kind sku→free 는 지우고 알린다', () => {
+      const b = box();
+      const d = setLineQty(createBoxDraft(b, 'k'), 'L1', 5);
+      const b2 = box({ lines: b.lines.map((l) => (l.lineId === 'L1' ? { ...l, kind: 'free' as const } : l)) });
+      const r = reconcileDraft(d, b2);
+      expect(r.draft.cells.L1).toBeUndefined();
+      expect(r.changedLineIds).toEqual(['L1']);
+    });
+    it('빈칸 줄의 SKU 가 바뀌어도 알린다', () => {
+      const b = box();
+      const b2 = box({ lines: b.lines.map((l) => (l.lineId === 'L2' ? { ...l, skuId: 'sku-7' } : l)) });
+      expect(reconcileDraft(createBoxDraft(b, 'k'), b2).changedLineIds).toEqual(['L2']);
     });
     it('(d) 사라진 줄·새 줄', () => {
       const b = box();
@@ -167,6 +208,7 @@ describe('boxDraft', () => {
       expect(r.draft.snapshot.L4).toBeUndefined();
       expect(r.draft.snapshot.L5).toBeDefined();
       expect(blankLineIds(r.draft, b2)).toContain('L5');
+      expect(r.changedLineIds).toEqual(['L5']);
     });
     it('(e) 변화 없음', () => {
       const b = box();
@@ -198,6 +240,22 @@ describe('boxDraft', () => {
       expect(confirmBlock(fill(b), b)).toEqual({ reason: 'not_stock_open' });
       const b2 = box({ status: 'received' });
       expect(confirmBlock(fill(b2), b2)).toEqual({ reason: 'not_stock_open' });
+    });
+    it('stale_list', () => {
+      const b = box();
+      const d = fill(b);
+      const stale = { ...d, cells: { ...d.cells, L1: { qty: 39, method: 'list' as const }, L3: { qty: 100, method: 'list' as const } } };
+      expect(confirmBlock(stale, b)).toEqual({ reason: 'stale_list', lineIds: ['L1', 'L3'] });
+    });
+    it('unplanned_on_list', () => {
+      const b = box();
+      const d = { ...fill(b), unplanned: [{ skuId: 'sku-1', skuCode: 'C1', skuName: 'n', qty: 1 }] };
+      expect(confirmBlock(d, b)).toEqual({ reason: 'unplanned_on_list', skuIds: ['sku-1'] });
+      expect(() => toReceiveBody(d, b)).toThrow();
+    });
+    it('toReceiveBody 는 not_stock_open 도 던진다', () => {
+      const b = box({ disposition: 'forward' });
+      expect(() => toReceiveBody(fill(b), b)).toThrow();
     });
     it('unresolved', () => {
       const b = box({ lines: [line({ lineId: 'U', kind: 'unresolved', skuId: null })] });
