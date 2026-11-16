@@ -15,7 +15,7 @@ export interface MigrationContext {
 // No identifier/schema/stock changes; length is unchanged and already-converted rows do not match.
 // Keep the original SQL/history immutable. A changed file or another stage requires a new review.
 const reviewedDataMigrations = [
-  // Reviewed 2026-11-16: create an empty audit table and add five metadata columns.
+  // Create an empty audit table and add defaulted metadata columns.
   // All existing-table additions have constant defaults (pending / empty text).
   // No amount, identity, existing constraint, or source row is changed or removed.
   // The deployment runner retains lock/statement timeouts; this exact SQL only.

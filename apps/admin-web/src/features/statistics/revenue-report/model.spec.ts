@@ -1,5 +1,7 @@
 import {
   HEADERS,
+  decodeRevenueCsv,
+  externalTable,
   parseExternalRevenue,
   revenueSummary,
   externalMonthlyStatistics,
@@ -119,12 +121,12 @@ describe('세무사 확인용 요약', () => {
     const totals = revenueSummary(report, 3);
     expect(totals).toHaveLength(3);
     expect(totals[0]).toMatchObject({
-      확인금액: 100,
+      등록금액: 100,
       등록월: '01, 03',
       미등록월: '02',
     });
-    expect(totals[1].확인금액).toBe(200);
-    expect(totals[2].확인금액).toBe(300);
+    expect(totals[1].등록금액).toBe(200);
+    expect(totals[2].등록금액).toBe(300);
   });
 });
 
@@ -169,4 +171,33 @@ describe('대조 상태와 교체 비교', () => {
       ])
     ).toThrow('대조 상태');
   });
+});
+
+it('다운로드한 한글 자료를 재수입하고 공백 헤더를 정규화한다', () => {
+  const row = {
+    channel: 'cafe24',
+    account: '테스트',
+    month: '2026-01',
+    basis: 'operational_net',
+    amount: 0,
+    source: '검토',
+    originalStatus: 'confirmed',
+    reviewNote: '원본 확인',
+  };
+  const table = externalTable([row]);
+  expect(parseExternalRevenue(table)[0]).toMatchObject(row);
+  expect(
+    parseExternalRevenue([
+      [...HEADERS.map((h) => ` ${h} `), '', ''],
+      ['카페24', '테스트', '2026-01', '운영 순매출', 0, '검토'],
+    ])[0].amount
+  ).toBe(0);
+});
+
+it('UTF-8과 CP949 한글 CSV를 읽는다', () => {
+  const utf8 = new TextEncoder().encode('채널,계정');
+  expect(decodeRevenueCsv(utf8.buffer as ArrayBuffer)).toBe('채널,계정');
+  expect(
+    decodeRevenueCsv(new Uint8Array([0xc3, 0xa4, 0xb3, 0xce]).buffer)
+  ).toBe('채널');
 });

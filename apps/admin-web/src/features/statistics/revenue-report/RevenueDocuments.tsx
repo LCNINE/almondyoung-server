@@ -40,7 +40,11 @@ export function RevenueDocuments() {
       const pages = (await archiveClient.listTree('team')).filter(
         (page) => !page.parentId && page.title === '매출 자료'
       );
-      if (pages.length !== 1) return null;
+      if (pages.length > 1)
+        throw new Error(
+          '팀 스페이스의 매출 자료 문서가 여러 개입니다. 자료 보관함에서 하나로 정리해 주세요.'
+        );
+      if (!pages.length) return null;
       const page = await archiveClient.get(pages[0].id);
       return { page, files: revenueAttachments(page.content) };
     },
@@ -74,17 +78,22 @@ export function RevenueDocuments() {
         보관함의 원본 묶음입니다. 파일명의 연도와 보완 여부를 확인하세요. 위
         연도 선택으로 파일이 바뀌지는 않습니다.
       </p>
-      {documents.isLoading ? (
+      {documents.isPending ? (
         <p className="text-sm">자료 목록을 불러오는 중입니다.</p>
       ) : null}
       {documents.isError ? (
-        <p role="alert">자료 목록을 불러오지 못했습니다.</p>
+        <p role="alert">
+          {documents.error instanceof Error
+            ? documents.error.message
+            : '자료 목록을 불러오지 못했습니다.'}
+        </p>
       ) : null}
       <div className="flex flex-wrap gap-2">
         {documents.data?.files.map((file) => (
           <Button
             key={file.id}
             variant="outline"
+            className="h-auto max-w-full whitespace-normal break-all text-left"
             disabled={Boolean(busy)}
             onClick={() => download(file.id)}
           >
@@ -100,7 +109,7 @@ export function RevenueDocuments() {
           자료 보관함·업로드 안내
         </Link>
       </div>
-      {!documents.isLoading &&
+      {!documents.isPending &&
       !documents.isError &&
       !documents.data?.files.length ? (
         <p className="text-sm">

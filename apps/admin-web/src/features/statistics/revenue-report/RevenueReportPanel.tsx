@@ -5,6 +5,7 @@ import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { useCanRun } from '@/hooks/use-permission';
 import type { PermissionRequirement } from '@/lib/auth/mutation-permission';
 import { client } from '@/lib/api/client';
+import { isCustomError } from '@/lib/api/customError';
 import { ANALYTICS_SERVICE_BASE_URL } from '@/const/api-const';
 import { Button } from '@/components/ui/button';
 import { useGrowthSummary } from '@/lib/services/analytics';
@@ -19,6 +20,8 @@ import {
   reviewLabel,
   reviewTable,
   importPreview,
+  decodeRevenueCsv,
+  rowKey,
 } from './model';
 import { ExternalRevenueStatistics } from './ExternalRevenueStatistics';
 import {
@@ -36,8 +39,8 @@ const URL = `${ANALYTICS_SERVICE_BASE_URL}/statistics/revenue-report`;
 
 export function useImportRevenueRows() {
   return useMutation({
-    mutationFn: (rows: ExternalRevenueRow[]) =>
-      client.post(`${URL}/external`, { rows }),
+    mutationFn: (input: { rows: ExternalRevenueRow[]; batchId: string }) =>
+      client.post(`${URL}/external`, input),
   });
 }
 useImportRevenueRows.permission = [
@@ -50,6 +53,10 @@ export function RevenueReportPanel() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const fileInput = useRef<HTMLInputElement>(null);
+  const readGeneration = useRef(0);
+  const batchId = useRef('');
+  const [reading, setReading] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const cache = useQueryClient();
   const importer = useImportRevenueRows();
   const writeAccess = useCanRun(useImportRevenueRows);
@@ -57,8 +64,24 @@ export function RevenueReportPanel() {
   const report = useQuery({
     queryKey: ['revenue-report', year],
     queryFn: async () =>
-      (await client.get<RevenueReport>(`${URL}?year=${year}`)).data,
+      (
+        await client.get<RevenueReport>(
+          `${URL}?year=${year}&includeHistory=false`
+        )
+      ).data,
   });
+
+  const historyOptions = {
+    queryKey: ['revenue-report-history', year],
+    queryFn: async () =>
+      (
+        await client.get<NonNullable<RevenueReport['history']>>(
+          `${URL}/history?year=${year}`
+        )
+      ).data,
+    staleTime: 60_000,
+  };
+  const historyQuery = useQuery({ ...historyOptions, enabled: historyOpen });
 
   const goalQuery = useGrowthSummary();
   const goal = goalQuery.data?.year === year ? goalQuery.data : undefined;
@@ -82,6 +105,10 @@ export function RevenueReportPanel() {
     setMessage('');
 
     try {
+      const history = await cache.fetchQuery({
+        ...historyOptions,
+        staleTime: 0,
+      });
       const XLSX = await import('xlsx');
       const book = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(
@@ -91,14 +118,14 @@ export function RevenueReportPanel() {
             '채널',
             '계정',
             '매출기준',
-            '확인금액',
+            '등록금액',
             '등록월',
             '미등록월',
             '대조상태',
-            '마지막반영',
+            '마지막반영(UTC)',
           ],
         }),
-        '채널별 확인 금액'
+        '채널별 등록 금액'
       );
       XLSX.utils.book_append_sheet(
         book,
@@ -108,20 +135,26 @@ export function RevenueReportPanel() {
       XLSX.utils.book_append_sheet(
         book,
         XLSX.utils.json_to_sheet(
-          (report.data.history ?? []).flatMap((batch) =>
-            batch.after.map((row) => ({
-              반영시각: batch.recordedAt,
-              ...reviewTable([row])[0],
-              반영금액: row.amount,
-              이전금액:
-                batch.before.find(
-                  (old) =>
-                    old.channel === row.channel &&
-                    old.account === row.account &&
-                    old.month === row.month &&
-                    old.basis === row.basis
-                )?.amount ?? '신규',
-            }))
+          history.flatMap((batch) =>
+            batch.after
+              .filter((row) => row.month.startsWith(`${year}-`))
+              .map((row) => ({
+                '반영시각(UTC)': batch.recordedAt,
+                ...Object.fromEntries(
+                  Object.entries(reviewTable([row])[0]).filter(
+                    ([key]) => key !== '마지막반영(UTC)'
+                  )
+                ),
+                반영금액: row.amount,
+                이전금액:
+                  batch.before.find(
+                    (old) =>
+                      old.channel === row.channel &&
+                      old.account === row.account &&
+                      old.month === row.month &&
+                      old.basis === row.basis
+                  )?.amount ?? '신규',
+              }))
           )
         ),
         '최근 반영 이력'
@@ -161,7 +194,7 @@ export function RevenueReportPanel() {
             '자료 성격',
             '세무사 검토용 임시 취합. 신고액 확정 자료가 아닙니다.',
           ],
-          ['자료 조회 시각', report.data.extractedAt ?? '미확인'],
+          ['자료 조회 시각(UTC)', report.data.extractedAt ?? '미확인'],
           [
             '목표 실적 근거',
             goal?.goal
@@ -181,7 +214,7 @@ export function RevenueReportPanel() {
             '원본 확인',
             '외부 자료는 출처와 인식 기준을 확인해야 합니다. 과세·면세·쿠폰·배송비·수수료·정산액은 총매출에서 임의로 역산하지 않습니다.',
           ],
-          ['추출 시각', new Date().toISOString()],
+          ['추출 시각(UTC)', new Date().toISOString()],
           [
             '기존 집계',
             '총매출 - 취소 - 환불. 목표 카드의 별도 결제 환불과 과거 실적 입력은 포함하지 않습니다.',
@@ -191,6 +224,14 @@ export function RevenueReportPanel() {
             '매출 기준별로 구분합니다. 기존 집계와 중복될 수 있어 자동 합산하지 않습니다.',
           ],
           ['누락', '미등록 채널·월은 미수집이며 0원이 아닙니다.'],
+          [
+            '반영 이력',
+            '해당 연도를 포함하는 최근 50회만 표시합니다. 이력 기능 적용 전 저장 기록은 포함하지 않습니다.',
+          ],
+          [
+            '조회 범위',
+            '다운로드 시점의 운영 자료입니다. 조회 도중 기존 주문 정정이 반영될 수 있으며 결산 시점 고정 원장이 아닙니다.',
+          ],
           [
             '주문 상품 원장',
             '주문 발생일(KST) 기준. 취소·환불 전 상품 금액으로 순매출과 다릅니다.',
@@ -221,16 +262,26 @@ export function RevenueReportPanel() {
           ],
         ]);
 
+        let after: string | null = null;
+        let through: string | null = null;
         for (let page = 0; ; page += 1) {
           if (page >= 1000)
             throw new Error(
               '원장이 100만 행을 초과합니다. 다운로드 범위를 나누어야 합니다.'
             );
 
-          const response = await client.get<{
-            rows: Array<Record<string, unknown>>;
-            hasMore: boolean;
-          }>(`${URL}/raw?year=${year}&page=${page}`);
+          const response: {
+            data: {
+              rows: Array<Record<string, unknown>>;
+              hasMore: boolean;
+              next: string | null;
+              through: string | null;
+            };
+          } = await client.get(
+            `${URL}/raw?year=${year}${after ? `&after=${after}&through=${through}` : ''}`
+          );
+          after = response.data.next;
+          through = response.data.through;
           XLSX.utils.sheet_add_aoa(
             sheet,
             response.data.rows.map((r) => [
@@ -254,6 +305,10 @@ export function RevenueReportPanel() {
           );
 
           if (!response.data.hasMore) break;
+          if (!after || !through)
+            throw new Error(
+              '원장 조회 경계를 확인하지 못했습니다. 새로고침 후 다시 내려받아 주세요.'
+            );
         }
 
         XLSX.utils.book_append_sheet(book, sheet, '주문 상품 원장');
@@ -280,8 +335,10 @@ export function RevenueReportPanel() {
   }
 
   async function read(file?: File) {
+    const generation = ++readGeneration.current;
     setPending([]);
     setMessage('');
+    setReading(Boolean(file));
     if (!file) return;
 
     try {
@@ -290,19 +347,39 @@ export function RevenueReportPanel() {
 
       const XLSX = await import('xlsx');
       const book = /\.csv$/i.test(file.name)
-        ? XLSX.read(await file.text(), { type: 'string', raw: true })
+        ? XLSX.read(decodeRevenueCsv(await file.arrayBuffer()), {
+            type: 'string',
+            raw: true,
+          })
         : XLSX.read(await file.arrayBuffer(), { type: 'array' });
       const sheet =
         book.Sheets['외부 채널 월별 자료'] ?? book.Sheets[book.SheetNames[0]];
-      setPending(
-        parseExternalRevenue(
-          XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: '' })
-        )
+      const parsed = parseExternalRevenue(
+        XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: '' })
       );
+      if (parsed.some((row) => !row.month.startsWith(`${year}-`)))
+        throw new Error(
+          '선택한 연도와 파일의 연도가 다릅니다. 연도별로 나누어 불러와 주세요.'
+        );
+      if (generation === readGeneration.current) {
+        const current = new Map(
+          (report.data?.external ?? []).map((row) => [rowKey(row), row])
+        );
+        setPending(
+          parsed.map((row) => ({
+            ...row,
+            expectedUpdatedAt: current.get(rowKey(row))?.updatedAt ?? null,
+          }))
+        );
+        batchId.current = crypto.randomUUID();
+      }
     } catch (error) {
-      setMessage(
-        error instanceof Error ? error.message : '파일을 읽지 못했습니다.'
-      );
+      if (generation === readGeneration.current)
+        setMessage(
+          error instanceof Error ? error.message : '파일을 읽지 못했습니다.'
+        );
+    } finally {
+      if (generation === readGeneration.current) setReading(false);
     }
   }
 
@@ -316,15 +393,17 @@ export function RevenueReportPanel() {
     setBusy(true);
 
     try {
-      await importer.mutateAsync(pending);
+      await importer.mutateAsync({ rows: pending, batchId: batchId.current });
       setPending([]);
       await cache.invalidateQueries({ queryKey: ['revenue-report'] });
+      await cache.invalidateQueries({ queryKey: ['revenue-report-history'] });
+      setMessage('저장 결과를 반영했습니다. 반영 이력과 금액을 확인해 주세요.');
+    } catch (error) {
+      if (isCustomError(error) && error.statusCode === 409) setPending([]);
+      await cache.invalidateQueries({ queryKey: ['revenue-report'] });
+      await cache.invalidateQueries({ queryKey: ['revenue-report-history'] });
       setMessage(
-        '저장했습니다. 같은 채널·계정·월·기준의 기존 값은 교체되었습니다.'
-      );
-    } catch {
-      setMessage(
-        '저장하지 못했습니다. 통계 설정 권한과 연결 상태를 확인해 주세요.'
+        `${error instanceof Error ? error.message : '저장 결과를 확인하지 못했습니다.'} 반영 이력을 확인해 주세요. 자료가 변경되었다면 파일을 다시 불러와 주세요.`
       );
     } finally {
       setBusy(false);
@@ -336,7 +415,15 @@ export function RevenueReportPanel() {
     const book = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(
       book,
-      XLSX.utils.aoa_to_sheet([[...HEADERS, ...REVIEW_HEADERS]]),
+      (() => {
+        const sheet = XLSX.utils.aoa_to_sheet([
+          [...HEADERS, ...REVIEW_HEADERS],
+        ]);
+        for (let row = 1; row <= 1200; row++)
+          sheet[`C${row + 1}`] = { t: 's', v: '', z: '@' };
+        sheet['!ref'] = 'A1:K1201';
+        return sheet;
+      })(),
       '외부 채널 월별 자료'
     );
     XLSX.writeFile(book, '외부채널_월별매출_양식.xlsx');
@@ -355,15 +442,17 @@ export function RevenueReportPanel() {
           연도{' '}
           <input
             aria-label="매출 자료 연도"
-            disabled={busy}
+            disabled={busy || reading}
             type="number"
             min={2020}
-            max={2100}
+            max={2099}
             value={year}
             onChange={(e) => {
               const value = Number(e.target.value);
+              readGeneration.current += 1;
+              setReading(false);
               setPending([]);
-              if (Number.isInteger(value) && value >= 2020 && value <= 2100)
+              if (Number.isInteger(value) && value >= 2020 && value <= 2099)
                 setYear(value);
             }}
             className="w-24 rounded border px-2 py-1"
@@ -375,8 +464,8 @@ export function RevenueReportPanel() {
             busy ||
             !report.data ||
             report.isError ||
-            goalQuery.isLoading ||
-            Boolean(goal?.goal && refundsQuery.isLoading)
+            goalQuery.isPending ||
+            Boolean(goal?.goal && refundsQuery.isPending)
           }
           onClick={() => download(false)}
         >
@@ -388,8 +477,8 @@ export function RevenueReportPanel() {
             busy ||
             !report.data ||
             report.isError ||
-            goalQuery.isLoading ||
-            Boolean(goal?.goal && refundsQuery.isLoading)
+            goalQuery.isPending ||
+            Boolean(goal?.goal && refundsQuery.isPending)
           }
           onClick={() => download(true)}
         >
@@ -435,14 +524,16 @@ export function RevenueReportPanel() {
                 {t.채널} · {t.계정}
               </p>
               <p className="text-xl font-semibold tabular-nums">
-                {t.확인금액.toLocaleString()}원
+                {t.등록금액.toLocaleString()}원
               </p>
               <p className="text-sm text-gray-600">
                 {t.매출기준} · 등록월 {t.등록월}
               </p>
               <p className="text-xs text-gray-600">{t.대조상태}</p>
               <p className="text-sm text-amber-800">
-                미등록월: {t.미등록월} (0원 아님)
+                {t.미등록월 === '없음'
+                  ? '미등록월 없음'
+                  : `미등록월: ${t.미등록월} · 부분 합계`}
               </p>
             </div>
           ))}
@@ -471,7 +562,14 @@ export function RevenueReportPanel() {
         </Button>
         <Button
           variant="outline"
-          disabled={busy || !canImport}
+          disabled={
+            busy ||
+            reading ||
+            !canImport ||
+            !report.data ||
+            report.isFetching ||
+            report.isError
+          }
           onClick={() => fileInput.current?.click()}
         >
           외부 채널 엑셀 불러오기
@@ -502,8 +600,12 @@ export function RevenueReportPanel() {
             </Button>
             <Button
               variant="outline"
-              disabled={busy}
-              onClick={() => setPending([])}
+              disabled={busy || reading}
+              onClick={() => {
+                readGeneration.current += 1;
+                setReading(false);
+                setPending([]);
+              }}
             >
               취소
             </Button>
@@ -518,7 +620,8 @@ export function RevenueReportPanel() {
         6열 양식은 모두 미확인으로 반영됩니다. 저장에는 통계 설정 권한이
         필요합니다.
       </p>
-      {report.isLoading ? <p>자료를 불러오는 중입니다.</p> : null}
+      {reading ? <p role="status">파일을 읽는 중입니다.</p> : null}
+      {report.isPending ? <p>자료를 불러오는 중입니다.</p> : null}
       {report.isError ? (
         <p role="alert" className="text-red-600">
           자료를 불러오지 못했습니다. 서버 연결을 확인해 주세요.
@@ -534,7 +637,7 @@ export function RevenueReportPanel() {
         확인 → 저장. 계정명이나 매출기준을 바꾸면 별도 자료로 등록됩니다.
       </p>
       {pending.length ? (
-        <div className="overflow-auto rounded border p-3 text-sm">
+        <div className="max-h-80 overflow-auto rounded border p-3 text-sm">
           <h3 className="font-medium">반영 전 비교</h3>
           <p>
             선택한 연도의 자료만 저장할 수 있습니다. 기존 자료 교체 시 대조
@@ -555,6 +658,20 @@ export function RevenueReportPanel() {
                 {previous
                   ? `${previous.amount.toLocaleString()}원 → ${row.amount.toLocaleString()}원 (교체)`
                   : `${row.amount.toLocaleString()}원 (신규)`}
+                {previous ? (
+                  <span className="block text-xs text-gray-600">
+                    {REVIEW_FIELDS.map(
+                      (field, index) =>
+                        `${REVIEW_HEADERS[index]}: ${reviewLabel(previous[field])} → ${reviewLabel(row[field])}`
+                    ).join(' · ')}
+                    {' · '}대조메모:{' '}
+                    {previous.reviewNote === row.reviewNote
+                      ? '유지'
+                      : row.reviewNote
+                        ? '교체'
+                        : '삭제'}
+                  </span>
+                ) : null}
               </p>
             )
           )}
@@ -566,7 +683,7 @@ export function RevenueReportPanel() {
         </p>
       ) : null}
       <div className="max-h-96 overflow-auto">
-        <table className="w-full text-left text-sm">
+        <table className="w-full min-w-[1100px] text-left text-sm">
           <thead>
             <tr>
               {[...HEADERS, ...REVIEW_HEADERS, '마지막 반영'].map((h) => (
@@ -606,13 +723,16 @@ export function RevenueReportPanel() {
             ))}
           </tbody>
         </table>
-        {!rows.length && !report.isLoading ? (
+        {!rows.length && !report.isPending ? (
           <p className="py-4 text-sm text-gray-500">
             등록된 외부 채널 자료가 없습니다.
           </p>
         ) : null}
       </div>
-      <details className="rounded border p-3 text-sm">
+      <details
+        className="rounded border p-3 text-sm"
+        onToggle={(event) => setHistoryOpen(event.currentTarget.open)}
+      >
         <summary className="cursor-pointer font-medium">
           최근 반영 이력 (최대 50회)
         </summary>
@@ -620,7 +740,13 @@ export function RevenueReportPanel() {
           이력 기능 적용 이후 저장한 자료부터 기록됩니다. 이전 값은 검토용
           엑셀에도 포함됩니다.
         </p>
-        {(report.data?.history ?? []).map((batch) => (
+        {historyOpen && historyQuery.isPending ? (
+          <p>이력을 불러오는 중입니다.</p>
+        ) : null}
+        {historyQuery.isError ? (
+          <p role="alert">반영 이력을 불러오지 못했습니다.</p>
+        ) : null}
+        {(historyQuery.data ?? []).map((batch) => (
           <p key={batch.id}>
             {new Date(batch.recordedAt).toLocaleString('ko-KR', {
               timeZone: 'Asia/Seoul',

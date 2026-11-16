@@ -1,3 +1,4 @@
+import { RevenueReportManager } from '../read-model/revenue-report.manager';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 import { ImportExternalRevenueDto, RevenueRawQueryDto, RevenueReportController } from './revenue-report.controller';
@@ -26,9 +27,9 @@ describe('매출 취합 입력 검증', () => {
 
   it('중복 행과 공백 출처는 저장 전에 차단한다', () => {
     const service = { import: jest.fn() };
-    const controller = new RevenueReportController(service as never);
-    expect(() => controller.import({ rows: [{ ...row }, { ...row }] })).toThrow();
-    expect(() => controller.import({ rows: [{ ...row, source: ' ' }] })).toThrow();
+    const manager = new RevenueReportManager(service as never);
+    expect(() => manager.import([{ ...row }, { ...row }])).toThrow();
+    expect(() => manager.import([{ ...row, source: ' ' }])).toThrow();
     expect(service.import).not.toHaveBeenCalled();
   });
 });
@@ -51,8 +52,9 @@ describe('카페24·대조 상태 입력', () => {
   it('근거 없는 확인을 막고 인증된 반영자를 서비스로 전달한다', () => {
     const service = { import: jest.fn() };
     const controller = new RevenueReportController(service as never);
-    expect(() => controller.import({ rows: [{ ...row, originalStatus: 'confirmed' }] })).toThrow();
+    const manager = new RevenueReportManager(service as never);
+    expect(() => manager.import([{ ...row, originalStatus: 'confirmed' }])).toThrow();
     controller.import({ rows: [{ ...row }] }, { userId: 'test-operator' });
-    expect(service.import).toHaveBeenCalledWith([{ ...row }], 'test-operator');
+    expect(service.import).toHaveBeenCalledWith([{ ...row }], 'test-operator', undefined);
   });
 });

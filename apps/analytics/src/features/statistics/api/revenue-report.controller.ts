@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard, PermissionGuard, RequirePermission, User } from '@app/authorization';
 import { Type } from 'class-transformer';
 import {
@@ -8,6 +8,8 @@ import {
   IsIn,
   IsInt,
   IsOptional,
+  IsISO8601,
+  IsUUID,
   IsString,
   Matches,
   Max,
@@ -21,11 +23,19 @@ export class RevenueReportYearDto {
   @Type(() => Number)
   @IsInt()
   @Min(2020)
-  @Max(2100)
+  @Max(2099)
   year: number;
+
+  @IsOptional()
+  @IsIn(['true', 'false'])
+  includeHistory?: string;
 }
 
 export class ExternalRevenueRowDto {
+  @IsOptional()
+  @IsISO8601()
+  expectedUpdatedAt?: string | null;
+
   @IsIn(['coupang', 'naver', 'phone', 'cafe24'])
   channel: string;
 
@@ -33,7 +43,7 @@ export class ExternalRevenueRowDto {
   @MaxLength(100)
   account: string;
 
-  @Matches(/^20\d{2}-(0[1-9]|1[0-2])$/)
+  @Matches(/^20[2-9]\d-(0[1-9]|1[0-2])$/)
   month: string;
 
   @IsIn(['purchase_confirmed', 'paid', 'order', 'tax_report', 'operational_net'])
@@ -71,6 +81,14 @@ export class ExternalRevenueRowDto {
 }
 
 export class RevenueRawQueryDto extends RevenueReportYearDto {
+  @IsOptional()
+  @IsUUID()
+  after?: string;
+
+  @IsOptional()
+  @IsUUID()
+  through?: string;
+
   @Type(() => Number)
   @IsInt()
   @Min(0)
@@ -79,6 +97,10 @@ export class RevenueRawQueryDto extends RevenueReportYearDto {
 }
 
 export class ImportExternalRevenueDto {
+  @IsOptional()
+  @IsUUID()
+  batchId?: string;
+
   @IsArray()
   @ArrayMinSize(1)
   @ArrayMaxSize(1200)
@@ -95,38 +117,24 @@ export class RevenueReportController {
   @Get()
   @RequirePermission('analytics.report.read')
   get(@Query() query: RevenueReportYearDto) {
-    return this.service.get(query.year);
+    return this.service.get(query.year, query.includeHistory !== 'false');
+  }
+
+  @Get('history')
+  @RequirePermission('analytics.report.read')
+  history(@Query() query: RevenueReportYearDto) {
+    return this.service.history(query.year);
   }
 
   @Get('raw')
   @RequirePermission('analytics.report.read')
   raw(@Query() query: RevenueRawQueryDto) {
-    return this.service.raw(query.year, query.page);
+    return this.service.raw(query.year, query.page, query.after, query.through);
   }
 
   @Post('external')
   @RequirePermission('analytics.setting.write')
   import(@Body() dto: ImportExternalRevenueDto, @User() user?: { userId?: string }) {
-    const keys = new Set<string>();
-
-    for (const row of dto.rows) {
-      row.account = row.account.trim();
-      row.source = row.source.trim();
-      const key = JSON.stringify([row.channel, row.account, row.month, row.basis]);
-
-      if (!row.account || !row.source || keys.has(key)) {
-        throw new BadRequestException('계정·출처를 입력하고 같은 채널·계정·월·기준의 중복 행을 제거해 주세요.');
-      }
-
-      if (
-        [row.originalStatus, row.monthlyStatus, row.duplicateStatus, row.settlementStatus].includes('confirmed') &&
-        !row.reviewNote?.trim()
-      ) {
-        throw new BadRequestException('확인으로 표시한 항목에는 대조 메모를 입력해 주세요.');
-      }
-      keys.add(key);
-    }
-
-    return this.service.import(dto.rows, user?.userId);
+    return this.service.import(dto.rows, user?.userId, dto.batchId);
   }
 }

@@ -1,4 +1,5 @@
 export interface ExternalRevenueRow {
+  expectedUpdatedAt?: string | null;
   channel: string;
   account: string;
   month: string;
@@ -68,7 +69,9 @@ export const HEADERS = ['채널', '계정', '월', '매출기준', '매출액', 
 
 /** Deliberately accept a documented template only. Unknown native exports must not be guessed into sales. */
 export function parseExternalRevenue(rows: unknown[][]): ExternalRevenueRow[] {
-  if (!HEADERS.every((header, i) => rows[0]?.[i] === header)) {
+  const headers = (rows[0] ?? []).map((value) => String(value ?? '').trim());
+  while (headers.length && headers.at(-1) === '') headers.pop();
+  if (!HEADERS.every((header, i) => headers[i] === header)) {
     throw new Error(
       `첫 행은 ${HEADERS.join(', ')} 순서여야 합니다. 양식을 내려받아 작성해 주세요.`
     );
@@ -93,8 +96,8 @@ export function parseExternalRevenue(rows: unknown[][]): ExternalRevenueRow[] {
       amount,
       source: String(source ?? '').trim(),
     };
-    if (rows[0].length > HEADERS.length) {
-      if (!REVIEW_HEADERS.every((header, i) => rows[0][i + 6] === header))
+    if (headers.length > HEADERS.length) {
+      if (!REVIEW_HEADERS.every((header, i) => headers[i + 6] === header))
         throw new Error(
           '대조 항목은 최신 취합 양식의 열 순서를 사용해 주세요.'
         );
@@ -132,7 +135,7 @@ export function parseExternalRevenue(rows: unknown[][]): ExternalRevenueRow[] {
       entry.account.length > 100 ||
       !entry.source ||
       entry.source.length > 255 ||
-      !/^20\d{2}-(0[1-9]|1[0-2])$/.test(entry.month) ||
+      !/^20[2-9]\d-(0[1-9]|1[0-2])$/.test(entry.month) ||
       rawAmount == null ||
       String(rawAmount).trim() === '' ||
       (typeof rawAmount !== 'number' &&
@@ -160,10 +163,10 @@ export function externalTable(rows: ExternalRevenueRow[]) {
   return [
     [...HEADERS, ...REVIEW_HEADERS],
     ...rows.map((r) => [
-      r.channel,
+      CHANNELS[r.channel] ?? r.channel,
       r.account,
       r.month,
-      r.basis,
+      BASES[r.basis] ?? r.basis,
       r.amount,
       r.source,
       ...REVIEW_FIELDS.map((field) => reviewLabel(r[field])),
@@ -245,12 +248,12 @@ export function revenueSummary(report: RevenueReport, throughMonth: number) {
     채널: CHANNELS[g.channel] ?? g.channel,
     계정: g.account,
     매출기준: BASES[g.basis] ?? g.basis,
-    확인금액: g.amount,
+    등록금액: g.amount,
     대조상태: REVIEW_FIELDS.map(
       (field, i) =>
         `${REVIEW_HEADERS[i]} ${g.rows.filter((row) => row[field] === 'confirmed').length}/${g.rows.length}개월`
     ).join(' · '),
-    마지막반영:
+    '마지막반영(UTC)':
       g.rows
         .map((row) => row.updatedAt ?? '')
         .sort()
@@ -287,7 +290,15 @@ export function reviewTable(rows: ExternalRevenueRow[]) {
     중복확인: reviewLabel(row.duplicateStatus),
     입금대조: reviewLabel(row.settlementStatus),
     대조메모: row.reviewNote ?? '',
-    마지막반영: row.updatedAt ?? '미확인',
+    '마지막반영(UTC)': row.updatedAt ?? '미확인',
     출처: row.source,
   }));
+}
+
+export function decodeRevenueCsv(buffer: ArrayBuffer): string {
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(buffer);
+  } catch {
+    return new TextDecoder('euc-kr', { fatal: true }).decode(buffer);
+  }
 }
