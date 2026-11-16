@@ -13,8 +13,10 @@ import {
   shortageSummary,
   stateLabel,
 } from '@/lib/api/domains/orders/order-progress.shape';
-import { settlementReason, settlementTiming } from '@/lib/api/domains/orders/cancel-request.shape';
+import { settlementLabel, settlementReason, settlementTiming } from '@/lib/api/domains/orders/cancel-request.shape';
 import { SettlementActions } from '@/features/order/cancel-settlement/settlement-actions';
+import { ManualRefundTodo } from '@/features/order/cancel-settlement/manual-refund-todo';
+import { PendingTransfers } from './pending-transfers';
 import { ShortageSplitAction } from './shortage-split-action';
 import { cn } from '@/lib/utils/ui';
 
@@ -107,6 +109,7 @@ export function StageOrders(props: {
           </select>
         </div>
       </div>
+      {isCancelRequest && <PendingTransfers now={props.now} />}
       {items.length === 0 ? (
         <div className="px-4 py-10 text-center text-muted-foreground">
           {q.isLoading
@@ -154,8 +157,8 @@ export function StageOrders(props: {
                     })}
                   </td>
                   <td className="px-4 py-2">
-                    <span className="rounded bg-slate-100 px-1.5 py-0.5 text-xs">
-                      {stateLabel(r.state)}
+                    <span className="whitespace-nowrap rounded bg-slate-100 px-1.5 py-0.5 text-xs">
+                      {r.settlement ? settlementLabel(r.settlement) : stateLabel(r.state)}
                     </span>
                     {badge && (
                       <span
@@ -171,6 +174,7 @@ export function StageOrders(props: {
                         {settlementReason(r.settlement) && (
                           <span className="ml-1.5 text-red-600">{settlementReason(r.settlement)}</span>
                         )}
+                        <ManualRefundTodo settlement={r.settlement} walletIntentId={r.walletIntentId} />
                       </div>
                     )}
                   </td>
@@ -206,7 +210,11 @@ export function StageOrders(props: {
                   {isCancelRequest && (
                     <td className="px-4 py-2 text-right whitespace-nowrap">
                       {r.settlement ? (
-                        <SettlementActions salesOrderId={r.salesOrderId} settlement={r.settlement} />
+                        <SettlementActions
+                          salesOrderId={r.salesOrderId}
+                          settlement={r.settlement}
+                          walletIntentId={r.walletIntentId}
+                        />
                       ) : null}
                     </td>
                   )}

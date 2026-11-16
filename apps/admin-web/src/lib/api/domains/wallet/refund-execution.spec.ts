@@ -1,4 +1,10 @@
-import { pendingRefundToast, refundExecutionLabel, refundFailureLabel } from './refund-execution';
+import {
+  pendingRefundToast,
+  pendingTransfersOf,
+  refundExecutionLabel,
+  refundFailureLabel,
+  refundListHref,
+} from './refund-execution';
 
 describe('refundExecutionLabel', () => {
   it('수동 실행은 «계좌 송금», 자동·모름은 빈 칸(정상 상태는 숨긴다)', () => {
@@ -26,5 +32,30 @@ describe('refundFailureLabel — «환불 내역» 실패 사유', () => {
     expect(refundFailureLabel({ status: 'FAILED', failureCode: 'REFUND_REJECTED', retryable: false })).toBe('REFUND_REJECTED · 다시 시도 불가');
     expect(refundFailureLabel({ status: 'FAILED', failureCode: 'PROVIDER_ERROR', retryable: true })).toBe('PROVIDER_ERROR');
     expect(refundFailureLabel({ status: 'FAILED', failureCode: null, retryable: null })).toBe('');
+  });
+});
+
+describe('송금 대기 환불', () => {
+  const row = (id: string, over: Partial<{ status: string; manualConfirmable: boolean; createdAt: string }> = {}) => ({
+    id,
+    status: 'PENDING',
+    manualConfirmable: true,
+    createdAt: '2026-11-02T00:00:00.000Z',
+    ...over,
+  });
+
+  it('사람이 닫을 대기 환불만, 오래된 것부터', () => {
+    const rows = [
+      row('new', { createdAt: '2026-11-03T00:00:00.000Z' }),
+      row('card-pending', { manualConfirmable: false }),
+      row('done', { status: 'SUCCEEDED' }),
+      row('old', { createdAt: '2026-11-01T00:00:00.000Z' }),
+    ];
+    expect(pendingTransfersOf(rows).map((r) => r.id)).toEqual(['old', 'new']);
+    expect(rows.map((r) => r.id)).toEqual(['new', 'card-pending', 'done', 'old']);
+  });
+
+  it('한 결제로 거른 환불 내역 주소', () => {
+    expect(refundListHref('a b')).toBe('/payments/refunds?intentId=a%20b');
   });
 });

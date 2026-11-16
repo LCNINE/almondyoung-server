@@ -11,6 +11,7 @@ import {
   cancelActionOf,
   cancelRequestFromAmendment,
   cancelRequestLine,
+  settlementAlert,
   settlementLabel,
   settlementReason,
   settlementTiming,
@@ -21,6 +22,7 @@ import {
   type ShipmentPhase,
 } from '@/lib/api/domains/orders/shipment-phase.shape';
 import { SettlementActions } from '@/features/order/cancel-settlement/settlement-actions';
+import { ManualRefundTodo } from '@/features/order/cancel-settlement/manual-refund-todo';
 import { cn } from '@/lib/utils/ui';
 import dayjs from 'dayjs';
 import { toast } from 'sonner';
@@ -273,7 +275,8 @@ function SettlementCell({ r }: { r: OrderLineRow }) {
       {settlementReason(s) && (
         <span className="text-[11px] text-red-600 whitespace-normal leading-tight">{settlementReason(s)}</span>
       )}
-      <SettlementActions salesOrderId={r.orderId} settlement={s} />
+      <ManualRefundTodo settlement={s} walletIntentId={r.walletIntentId} length="short" />
+      <SettlementActions salesOrderId={r.orderId} settlement={s} walletIntentId={r.walletIntentId} />
     </div>
   );
 }
@@ -1037,7 +1040,7 @@ export default function OrderTable() {
                     <span
                       className={cn(
                         'inline-flex items-center h-7 px-2 rounded border text-xs whitespace-nowrap',
-                        r.cancelRequest.settlement.phase !== 'in_progress'
+                        settlementAlert(r.cancelRequest.settlement)
                           ? 'border-red-200 bg-red-50 text-red-700'
                           : 'border-amber-200 bg-amber-50 text-amber-700'
                       )}

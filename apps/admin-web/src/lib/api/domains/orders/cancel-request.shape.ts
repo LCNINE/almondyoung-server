@@ -107,7 +107,30 @@ export function settlementLabel(s: SettlementView): string {
   if (s.phase === 'refused' && s.lastFailure?.code.startsWith(EXTERNAL_REFUND_PREFIX)) {
     return REJECTION_LABELS.EXTERNAL_REFUND_UNRESOLVED;
   }
+  if (preparingManualRefund(s)) return MANUAL_REFUND_PREPARING;
   return SETTLEMENT_LABELS[s.phase];
+}
+
+/**
+ * 계좌 송금으로 바꾼 뒤 취소가 아직 반영되지 않은 정산. 단계(지연)는 확정 시각으로 정해져 바꾼 직후에도 «지연»이라,
+ * 그 이름 대신 지금 기다리는 일을 부른다. 거절이면 거절 이름이 그대로다.
+ */
+function preparingManualRefund(s: SettlementView): boolean {
+  return s.mode === 'manual' && s.phase !== 'refused';
+}
+const MANUAL_REFUND_PREPARING = '계좌 송금 준비';
+
+/** 칩을 경고색으로 그릴지 — 지연·거절. 계좌 송금 준비 중은 운영자가 이미 조치한 것이라 경고가 아니다 */
+export function settlementAlert(s: SettlementView): boolean {
+  return s.phase !== 'in_progress' && !preparingManualRefund(s);
+}
+
+/** 계좌 송금으로 바꾼 정산 행의 남은 할 일. 아니면 null. short 는 좁은 칸(주문 내역)용 */
+export function manualRefundTodo(s: SettlementView | null, length: 'full' | 'short' = 'full'): string | null {
+  if (!s || !preparingManualRefund(s)) return null;
+  return length === 'short'
+    ? '취소가 반영되면 송금하고 환불 내역에서 [완료 처리]'
+    : '취소가 반영되면 환불 내역에 송금 대기 환불이 생깁니다. 고객 계좌로 송금한 뒤 [완료 처리]를 눌러 주세요.';
 }
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
 const KST_OFFSET_MS = 9 * 3_600_000;
@@ -255,7 +278,8 @@ export function cancelActionOf(row: { channel: string; orderStatus: string; canc
   if (request?.status === 'settling') {
     const phase = request.settlement?.phase ?? 'in_progress';
     const label = request.settlement ? settlementLabel(request.settlement) : SETTLEMENT_LABELS.in_progress;
-    return { kind: 'settling', label, alert: phase !== 'in_progress' };
+    const alert = request.settlement ? settlementAlert(request.settlement) : phase !== 'in_progress';
+    return { kind: 'settling', label, alert };
   }
   if (request?.status === 'rejected' && request.rejection) {
     return { kind: 'rejected', reason: `${REJECTION_LABELS[request.rejection.reasonCode] ?? request.rejection.reasonCode} · ${request.rejection.message}` };

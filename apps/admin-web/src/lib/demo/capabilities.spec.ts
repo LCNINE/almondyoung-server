@@ -1,4 +1,5 @@
 import {
+  isServedInStage,
   isDemoUnavailablePath,
   isDemoConsoleEnabled,
   filterDemoMenus,
@@ -71,5 +72,15 @@ describe('demo capability boundaries', () => {
         children: [{ id: 'stock', title: '재고', path: '/inventory/status' }],
       },
     ]);
+  });
+});
+
+describe('isServedInStage', () => {
+  it('시연 단계만 결제 경로를 섬기지 않는다', () => {
+    expect(isServedInStage('/api/proxy/wallet', 'demo')).toBe(false);
+    expect(isServedInStage('/payments/refunds', 'demo')).toBe(false);
+    expect(isServedInStage('/order/stall-board', 'demo')).toBe(true);
+    expect(isServedInStage('/api/proxy/wallet', 'live')).toBe(true);
+    expect(isServedInStage('/api/proxy/wallet', undefined)).toBe(true);
   });
 });

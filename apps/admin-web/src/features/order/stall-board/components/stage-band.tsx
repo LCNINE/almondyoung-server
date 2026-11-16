@@ -24,6 +24,8 @@ export function StageBand(props: {
   selected: BoardStageKey;
   onSelect: (k: BoardStageKey) => void;
   now: Date;
+  /** 칸 아래 덧붙이는 한 줄(단계 수와 따로 세는 남은 일) */
+  notes?: Partial<Record<BoardStageKey, string>>;
 }) {
   const byKey = new Map(props.cells.map((c) => [c.key, c]));
   const main = BOARD_STAGES.slice(0, 9);
@@ -40,6 +42,7 @@ export function StageBand(props: {
     };
     const hidden = c.hiddenReason ?? null;
     const unknown = c.open === null || hidden !== null;
+    const note = props.notes?.[s.key];
     return (
       <button
         key={s.key}
@@ -48,7 +51,7 @@ export function StageBand(props: {
         title={hidden ?? undefined}
         className={cn(
           'flex min-w-0 flex-col gap-1 rounded-lg border bg-white p-2.5 text-left transition-colors hover:border-slate-400',
-          c.open === 0 && 'opacity-50',
+          c.open === 0 && !note && 'opacity-50',
           !unknown && c.stuck > 0 && 'border-t-[3px] border-t-red-600 pt-2',
           props.selected === s.key && 'border-primary ring-1 ring-primary'
         )}
@@ -68,6 +71,7 @@ export function StageBand(props: {
             ? `최장 ${formatDwell(props.now.getTime() - new Date(c.oldestAt).getTime())}`
             : ''}
         </span>
+        {note && <span className="text-[11px] font-semibold text-amber-700">{note}</span>}
       </button>
     );
   };
