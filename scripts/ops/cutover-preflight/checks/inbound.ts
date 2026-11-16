@@ -71,11 +71,12 @@ export async function checkInbound(tx: Sql, r: Report): Promise<void> {
     select count(*)::int as lines
     from purchase_order_lines pol join purchase_orders po on po.id = pol.po_id
     where coalesce(po.audit_notes, '') not like ${CSV_TAG}
+      and po.status <> 'cancelled'
       and pol.closed_at is null and pol.status = 'ordered'
-      and coalesce(pol.ordered_qty, 0) > pol.received_qty
+      and pol.received_qty < coalesce(pol.ordered_qty, 0)
       and pol.sku_id in (select sku_id from (${tx.unsafe(OUTSTANDING_LINES)}) o)`;
   if (overlap.lines === 0) r.ok('열린 선적과 SKU 가 겹치는 CSV 밖 열린 발주 라인 0');
-  else r.bad(`열린 선적과 SKU 가 겹치는 CSV 밖 열린 발주 라인 ${overlap.lines}줄`, '발주 잔량과 선적 잔량을 두 번 센다 — 설계 #1240 §11, 사용자에게 돌아온다');
+  else r.bad(`열린 선적과 SKU 가 겹치는 CSV 밖 열린 발주 라인 ${overlap.lines}줄`, '발주 잔량과 선적 잔량을 두 번 센다 — 설계 #1240 §11, 보충 제안이 두 번 센다');
 
   r.section('입고 6. 예정일 지난 열린 선적');
   const overdue = await tx<{ name: string; expected_arrival: string; boxes_received: number; boxes_stock: number }[]>`
