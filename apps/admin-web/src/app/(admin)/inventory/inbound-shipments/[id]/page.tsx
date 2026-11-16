@@ -1,15 +1,12 @@
-'use client';
-
-import { use } from 'react';
 import RouteGuard from '@/components/layout/route-guard';
 import { ShipmentDetail } from '@/features/inventory/inbound-shipments/components/shipment-detail';
 
-export default function InventoryInboundShipmentDetailPage({
+export default async function InventoryInboundShipmentDetailPage({
   params,
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const { id } = use(params);
+  const { id } = await params;
   return (
     <RouteGuard screen="/inventory/inbound-shipments/[id]">
       <ShipmentDetail id={id} />
