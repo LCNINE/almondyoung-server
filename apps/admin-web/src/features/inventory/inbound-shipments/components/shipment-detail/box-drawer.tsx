@@ -43,7 +43,7 @@ export function BoxDrawer({
                 <span>{STATE_LABEL[rows.header.state]}</span>
                 {rows.header.receivedAt && (
                   <span className="text-muted-foreground">
-                    {new Date(rows.header.receivedAt).toLocaleString('ko-KR')}
+                    {rows.header.receivedAt}
                   </span>
                 )}
               </div>

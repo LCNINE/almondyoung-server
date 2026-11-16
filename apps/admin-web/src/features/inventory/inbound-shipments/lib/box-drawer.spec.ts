@@ -7,7 +7,7 @@ const single = {
   skuId: 's1',
   sku: { code: 'C1', name: '샘플 A' },
   productName: '샘플 A 원문',
-  option: '',
+  option: '빨강',
   expectedQty: 30,
   coversBoxLabels: ['L5'],
   alreadyCountedInOtherBoxes: 0,
@@ -21,10 +21,23 @@ const range = {
   kind: 'unresolved' as const,
   productName: '샘플 B 원문',
   expectedQty: 1076,
+  option: '',
   coversBoxLabels: ['L5', 'L6', 'L7', 'L8', 'L9'],
 };
 
 describe('boxDrawerRows', () => {
+  it('범위 줄 예정 수량이 null 이면 합계 —', () => {
+    const r = boxDrawerRows(boxView({ lines: [{ ...range, expectedQty: null }] }));
+    expect(r.lines[0].expected).toBe('L5~L9 합계 —');
+  });
+
+  it('서울 시각으로 자정을 넘긴다', () => {
+    const r = boxDrawerRows(
+      boxView({ status: 'received', receivedAt: '2026-11-16T15:30:00.000Z' })
+    );
+    expect(r.header.receivedAt).toBe('2026-11-17 00:30');
+  });
+
   it('확정된 상자: 줄별 센 수량·방법, 범위 줄 예정 문구, 리스트에 없던 물건', () => {
     const r = boxDrawerRows(
       boxView({
@@ -38,8 +51,8 @@ describe('boxDrawerRows', () => {
         ],
       })
     );
-    expect(r.header).toEqual({ title: 'L5', state: 'received', receivedAt: '2026-11-16T01:00:00.000Z' });
-    expect(r.lines[0]).toMatchObject({ lineId: 'l1', product: '샘플 A', sku: 'C1', expected: '30', counted: 30, method: 'list' });
+    expect(r.header).toEqual({ title: '11월 2차 배편 · 상자 L5', shipmentName: '11월 2차 배편', state: 'received', receivedAt: '2026-11-16 10:00' });
+    expect(r.lines[0]).toMatchObject({ lineId: 'l1', product: '샘플 A 원문 빨강', sku: 'C1 샘플 A', expected: '30', counted: 30, method: 'list' });
     expect(r.lines[1]).toMatchObject({ product: '샘플 B 원문', sku: null, expected: 'L5~L9 합계 1,076', counted: 0, method: 'counted' });
     expect(r.unplanned).toEqual([{ skuCode: 'C9', skuName: '덤 물건', counted: 3 }]);
     expect(r.forwardNote).toBeNull();
