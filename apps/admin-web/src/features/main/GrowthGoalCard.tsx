@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { CompanyRevenueCard } from '@/features/statistics/revenue-report/CompanyRevenueCard';
 import Link from 'next/link';
 import { ChevronRight } from 'lucide-react';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -218,13 +219,16 @@ export function GrowthGoalCard({ className }: { className?: string }) {
   return (
     <section className={className} aria-labelledby="main-growth-title">
       <div className="px-4 pt-3.5 pb-4">
+        <CompanyRevenueCard />
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <h2
               id="main-growth-title"
               className="text-base font-bold text-[#1C1C1C]"
             >
-              {summary ? `${summary.year}년 매출 목표` : '매출 목표'}
+              {summary
+                ? `${summary.year}년 기존 집계 목표 · 일별 추세`
+                : '매출 목표'}
             </h2>
             <HelpPopover
               label="매출 목표와 성장 3축"

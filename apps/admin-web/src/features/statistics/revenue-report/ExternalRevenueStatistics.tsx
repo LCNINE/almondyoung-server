@@ -28,8 +28,9 @@ export function ExternalRevenueStatistics({
       <h3 className="font-medium">채널 자료 월별 매출</h3>
       <p className="text-sm text-gray-600">
         저장한 자료가 바로 반영됩니다. 계정·매출 기준별로 구분하며, 미등록월은
-        0원으로 표시하지 않습니다. 진행 중인 달은 잠정 금액입니다. 자사몰 목표
-        실적에는 합산하지 않습니다.
+        0원으로 표시하지 않습니다. 진행 중인 달은 잠정 금액입니다. 네이버·쿠팡
+        자료는 상단 통합 목표에 잠정 합산하며, 카페24·전화 주문은 중복 확인
+        전까지 별도 표시합니다.
       </p>
       <ResponsiveContainer width="100%" height={280}>
         <LineChart
