@@ -211,6 +211,9 @@ CHECK: `line_id IS NOT NULL OR sku_id IS NOT NULL`(리스트에 없던 물건은
 - 처분이 `stock` 인 상자를 하나라도 덮는 줄은 `unresolved` 가 0. (전달용 상자에만 있는 줄은 정하지 않아도 된다)
 - 한 줄이 덮는 상자들의 처분이 같다(전달용과 재고 상자를 같이 덮는 줄은 사람이 고친다).
 - 리스트에서 나온 상자(`origin = 'list'`)는 줄을 하나 이상 가진다.
+- **(실행 중 결정 2026-11-16)** 확정 요청이 싣는 «사람이 확인한 전달용 상자 id 목록»이 지금 전달용 상자 전부와 같다. 파서는
+  «발송»이 보이면 상자를 바로 `forward` 로 만들기 때문에, 확인 없이는 상자가 조용히 재고 입고에서 빠진다
+  (`2026-11-16-inbound-shipment-upload-screen-design.md` §7.6).
 
 ### 6.3 파서 규칙 (core 순수 함수 `parseShipmentList`)
 
@@ -256,6 +259,9 @@ SKU 하나면 `kind = 'sku'`, `resolution = 'barcode'`. 단 그 바코드가 상
   전달용으로 돌리면 저절로 끝난다(사유 없음).
 
 ## 7. AI 보조
+
+> **(실행 중 결정 2026-11-16) ② 에서 뺐다.** 미리 채운 SKU 검색으로 대신하고, 라이브 초안에서 못 찾는 줄이 많으면 그때 붙인다.
+> core 의 `ai-candidates` 라우트·열은 휴면으로 둔다. 근거·화면은 `2026-11-16-inbound-shipment-upload-screen-design.md` §2.
 
 - `apps/ai` 에 비채팅 엔드포인트 `POST /inbound-shipment-assist/suggest { shipmentId }`(`ai.assistant.use`).
   선례: `apps/ai/src/product-description`.
@@ -368,7 +374,7 @@ file-service `default-file-contexts` 에 입고리스트 컨텍스트 하나를 
 | `PATCH /inventory/inbound-shipments/:id/lines/:lineId` | `inventory.inbound_shipment.write` | 초안·확정 뒤(§6.4) |
 | `PATCH /inventory/inbound-shipments/:id/boxes/:boxId` (처분·이름) | `inventory.inbound_shipment.write` | 초안·확정 뒤(§6.4) |
 | `PUT /inventory/inbound-shipments/:id/lines/:lineId/ai-candidates` | `inventory.inbound_shipment.write` | 업로드 |
-| `POST /inventory/inbound-shipments/:id/confirm` | `inventory.inbound_shipment.write` | 업로드 |
+| `POST /inventory/inbound-shipments/:id/confirm` | `inventory.inbound_shipment.write` | 업로드 · 본문 `{ acknowledgedForwardBoxIds }` (실행 중 결정) |
 | `POST /inventory/inbound-shipments/:id/cancel` | `inventory.inbound_shipment.write` | 공통 |
 | `POST /inventory/inbound-shipments/:id/close` (사유 — 상자 분실 등) | `inventory.inbound_shipment.write` | 검수 |
 | `POST /inventory/inbound-shipments/:id/reopen` | `inventory.inbound_shipment.write` | 검수 |
@@ -408,7 +414,8 @@ file-service `default-file-contexts` 에 입고리스트 컨텍스트 하나를 
 
 ① **core 모델·API** — 스키마·마이그, 파서 순수 함수 + 스펙(샘플 형태 전부), 초안·해소·확정·상자 확정·취소·차이,
    커널 source 추가, arch 스펙 갱신, 통합 스펙(`describeIfDb`). ← 이번 작업
-② **admin-web 업로드·확인 화면 + ai 엔드포인트 + file_context** (#1238 마무리)
+② **admin-web 업로드·확인·선적 상세 화면 + file_context + SKU 이름 검색 단어 AND** (#1238 마무리). AI 는 보류 **(실행 중 결정 —
+   `2026-11-16-inbound-shipment-upload-screen-design.md`)**
 ③ **warehouse-app 상자 입고 화면** (#1239 마무리). 같은 릴리스에 기존 화면이 새 `source` 를 알게 한다 — 지금
    `native/warehouse-app/src/domains/inbound/types.ts` 의 `isActionablePutaway` 는 `direct`·`purchase_order` 만 적치
    시트를 열고, `InboundHistoryScreen` 은 `purchase_order` 가 아니면 직접 입고 취소로 보내 선적 입고에서 409 가 난다.

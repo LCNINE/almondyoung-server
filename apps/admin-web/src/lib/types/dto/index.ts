@@ -14,3 +14,4 @@ export * from './user';
 export * from './shop';
 export * from './qna';
 export * from './library';
+export * from './inbound-shipment';

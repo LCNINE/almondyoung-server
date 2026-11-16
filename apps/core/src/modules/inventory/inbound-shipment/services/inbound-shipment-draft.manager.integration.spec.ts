@@ -313,9 +313,9 @@ describeIfDb('InboundShipmentDraftManager (DB integration)', () => {
     it('resolving the last unresolved line lets confirm pass', async () => {
       await inRollbackTx(db, async (trx) => {
         const { manager, shipmentId, unresolved } = await draftWithUnresolved(trx);
-        await expect(manager.confirm(shipmentId, ACTOR, trx)).rejects.toThrow(ConflictError);
+        await expect(manager.confirm(shipmentId, [], ACTOR, trx)).rejects.toThrow(ConflictError);
         await manager.editLine(shipmentId, unresolved.id, { kind: 'free' }, {}, ACTOR, trx);
-        const result = await manager.confirm(shipmentId, ACTOR, trx);
+        const result = await manager.confirm(shipmentId, [], ACTOR, trx);
         expect(result.status).toBe('expected');
         const [s] = await trx
           .select()
@@ -347,7 +347,7 @@ describeIfDb('InboundShipmentDraftManager (DB integration)', () => {
         expect(detail.lines.find((l) => l.id === unresolved.id)?.aiCandidates).toEqual([
           { skuId: f.skuIds[1], reason: 'name match', code: sku1.code, name: 'ds-sku-1' },
         ]);
-        await expect(manager.confirm(shipmentId, ACTOR, trx)).rejects.toThrow(ConflictError);
+        await expect(manager.confirm(shipmentId, [], ACTOR, trx)).rejects.toThrow(ConflictError);
         await expect(
           manager.setAiCandidates(shipmentId, unresolved.id, [{ skuId: randomUUID(), reason: 'x' }], trx),
         ).rejects.toThrow(BadRequestError);
@@ -358,7 +358,7 @@ describeIfDb('InboundShipmentDraftManager (DB integration)', () => {
       await inRollbackTx(db, async (trx) => {
         const { f, manager, shipmentId, lines, unresolved } = await draftWithUnresolved(trx);
         await manager.editLine(shipmentId, unresolved.id, { kind: 'free' }, {}, ACTOR, trx);
-        await manager.confirm(shipmentId, ACTOR, trx);
+        await manager.confirm(shipmentId, [], ACTOR, trx);
         const target = lines.find((l) => l.kind === 'sku')!;
         await manager.editLine(
           shipmentId,
@@ -421,7 +421,7 @@ describeIfDb('InboundShipmentDraftManager (DB integration)', () => {
           .from(wmsTables.inboundShipmentLineBoxes)
           .where(eq(wmsTables.inboundShipmentLineBoxes.lineId, unresolved.id));
         expect(cover).toHaveLength(3);
-        await expect(manager.confirm(shipmentId, ACTOR, trx)).resolves.toMatchObject({ status: 'expected' });
+        await expect(manager.confirm(shipmentId, [], ACTOR, trx)).resolves.toMatchObject({ status: 'expected' });
       });
     });
 
@@ -473,7 +473,7 @@ describeIfDb('InboundShipmentDraftManager (DB integration)', () => {
         });
         // still subject to lineEditable once a covered box is received
         await manager.editLine(shipmentId, unresolved.id, { kind: 'free' }, {}, ACTOR, trx);
-        await manager.confirm(shipmentId, ACTOR, trx);
+        await manager.confirm(shipmentId, [], ACTOR, trx);
         const [cover] = await trx
           .select()
           .from(wmsTables.inboundShipmentLineBoxes)
@@ -523,9 +523,9 @@ describeIfDb('InboundShipmentDraftManager (DB integration)', () => {
             )
           ).shipmentId;
         const first = await make('L1');
-        expect((await manager.confirm(first, ACTOR, trx)).labelOverlaps).toEqual([]);
+        expect((await manager.confirm(first, [], ACTOR, trx)).labelOverlaps).toEqual([]);
         const second = await make('L1');
-        const result = await manager.confirm(second, ACTOR, trx);
+        const result = await manager.confirm(second, [], ACTOR, trx);
         expect(result.labelOverlaps).toEqual(['L1']);
       });
     });
@@ -539,7 +539,7 @@ describeIfDb('InboundShipmentDraftManager (DB integration)', () => {
           ACTOR,
           trx,
         );
-        await manager.confirm(shipmentId, ACTOR, trx);
+        await manager.confirm(shipmentId, [], ACTOR, trx);
         await trx
           .update(wmsTables.inboundShipmentBoxes)
           .set({ status: 'received' })
@@ -593,7 +593,7 @@ describeIfDb('InboundShipmentDraftManager (DB integration)', () => {
           .from(wmsTables.inboundShipmentBoxes)
           .where(eq(wmsTables.inboundShipmentBoxes.id, box.id));
         expect([after.disposition, after.forwardNote, after.label]).toEqual(['forward', 'acme', 'L9']);
-        await manager.confirm(shipmentId, ACTOR, trx);
+        await manager.confirm(shipmentId, [box.id], ACTOR, trx);
         await expect(manager.editBox(shipmentId, box.id, { label: 'L10' }, ACTOR, trx)).rejects.toThrow(ConflictError);
       });
     });
@@ -610,7 +610,11 @@ describeIfDb('InboundShipmentDraftManager (DB integration)', () => {
           ACTOR,
           trx,
         );
-        await manager.confirm(shipmentId, ACTOR, trx);
+        const draftBoxes = await trx
+          .select()
+          .from(wmsTables.inboundShipmentBoxes)
+          .where(eq(wmsTables.inboundShipmentBoxes.shipmentId, shipmentId));
+        await manager.confirm(shipmentId, [draftBoxes.find((x) => x.label === 'L3')!.id], ACTOR, trx);
         const boxes = await trx
           .select()
           .from(wmsTables.inboundShipmentBoxes)
@@ -633,6 +637,46 @@ describeIfDb('InboundShipmentDraftManager (DB integration)', () => {
       });
     });
 
+    async function draftWithForwardBox(trx: DbTx) {
+      const f = await seed(trx);
+      const { manager } = build(trx);
+      const { shipmentId } = await manager.createDraft(
+        input(f.warehouseId, {
+          header: HEADER,
+          rows: [row(1, 'L1', 10, f.barcodes[0]), row(2, 'L2', 5, f.barcodes[0], 'acme 에 발송바람')],
+        }),
+        ACTOR,
+        trx,
+      );
+      const boxes = await trx
+        .select()
+        .from(wmsTables.inboundShipmentBoxes)
+        .where(eq(wmsTables.inboundShipmentBoxes.shipmentId, shipmentId));
+      const forwardBox = boxes.find((b) => b.disposition === 'forward')!;
+      return { manager, shipmentId, forwardBox };
+    }
+
+    it('confirm requires the exact set of forward boxes to be acknowledged', async () => {
+      await inRollbackTx(db, async (trx) => {
+        const { manager, shipmentId, forwardBox } = await draftWithForwardBox(trx);
+        const refused = manager.confirm(shipmentId, [], ACTOR, trx);
+        await expect(refused).rejects.toThrow(ConflictError);
+        await expect(refused).rejects.toThrow('전달용 상자 확인');
+        await expect(manager.confirm(shipmentId, [forwardBox.id], ACTOR, trx)).resolves.toMatchObject({
+          status: 'expected',
+        });
+      });
+    });
+
+    it('a stale acknowledgement is rejected after a box is flipped back to stock', async () => {
+      await inRollbackTx(db, async (trx) => {
+        const { manager, shipmentId, forwardBox } = await draftWithForwardBox(trx);
+        await manager.editBox(shipmentId, forwardBox.id, { disposition: 'stock' }, ACTOR, trx);
+        await expect(manager.confirm(shipmentId, [forwardBox.id], ACTOR, trx)).rejects.toThrow(ConflictError);
+        await expect(manager.confirm(shipmentId, [], ACTOR, trx)).resolves.toMatchObject({ status: 'expected' });
+      });
+    });
+
     it('editBox on a received box is refused; cancel in receiving is refused', async () => {
       await inRollbackTx(db, async (trx) => {
         const f = await seed(trx);
@@ -642,7 +686,7 @@ describeIfDb('InboundShipmentDraftManager (DB integration)', () => {
           ACTOR,
           trx,
         );
-        await manager.confirm(shipmentId, ACTOR, trx);
+        await manager.confirm(shipmentId, [], ACTOR, trx);
         await trx
           .update(wmsTables.inboundShipmentBoxes)
           .set({ status: 'received' })

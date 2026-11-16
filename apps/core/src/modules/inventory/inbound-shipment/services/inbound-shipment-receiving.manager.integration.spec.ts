@@ -131,7 +131,20 @@ describeIfDb('InboundShipmentReceivingManager (DB integration)', () => {
     for (const rowNumber of opts.freeRows ?? []) {
       await built.drafts.editLine(shipmentId, lineOf(rowNumber), { kind: 'free' }, {}, ACTOR, trx);
     }
-    if (opts.confirm !== false) await built.drafts.confirm(shipmentId, ACTOR, trx);
+    if (opts.confirm !== false) {
+      const forwardIds = (
+        await trx
+          .select({ id: wmsTables.inboundShipmentBoxes.id })
+          .from(wmsTables.inboundShipmentBoxes)
+          .where(
+            and(
+              eq(wmsTables.inboundShipmentBoxes.shipmentId, shipmentId),
+              eq(wmsTables.inboundShipmentBoxes.disposition, 'forward'),
+            ),
+          )
+      ).map((r) => r.id);
+      await built.drafts.confirm(shipmentId, forwardIds, ACTOR, trx);
+    }
     const boxes = await trx
       .select()
       .from(wmsTables.inboundShipmentBoxes)

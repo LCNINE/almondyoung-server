@@ -106,6 +106,8 @@ export const SCREEN_ACCESS: Readonly<Record<string, ScreenAccess>> = {
   '/inventory/purchase-orders': any('inventory.master.read'),
   '/inventory/replenishment': any('inventory.master.read'),
   '/inventory/inbound': any('inventory.stock.read'),
+  '/inventory/inbound-shipments': any('inventory.stock.read'),
+  '/inventory/inbound-shipments/[id]': any('inventory.stock.read'),
   '/inventory/suppliers': any('inventory.master.read'),
   '/inventory/supplier-categories': any('inventory.master.read'),
   '/inventory/locations': any('inventory.stock.read'),

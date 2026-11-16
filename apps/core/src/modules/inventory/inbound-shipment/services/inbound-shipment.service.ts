@@ -51,8 +51,8 @@ export class InboundShipmentService {
     return this.drafts.setAiCandidates(id, lineId, candidates, tx);
   }
 
-  confirm(id: string, actorId: string, tx?: DbTx) {
-    return this.drafts.confirm(id, actorId, tx);
+  confirm(id: string, acknowledgedForwardBoxIds: readonly string[], actorId: string, tx?: DbTx) {
+    return this.drafts.confirm(id, acknowledgedForwardBoxIds, actorId, tx);
   }
 
   cancel(id: string, actorId: string, tx?: DbTx) {

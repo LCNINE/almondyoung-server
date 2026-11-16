@@ -2,6 +2,7 @@ import { BadRequestError } from '@app/shared';
 import {
   confirmBlockers,
   deriveShipmentStatus,
+  forwardAcknowledgementMatches,
   lineDifference,
   lineEditable,
   normalizeSingleBoxLabel,
@@ -146,4 +147,14 @@ describe('orderReceiptLinesForCancel', () => {
       ]).map((l) => l.receiptLineId),
     ).toEqual(['d', 'b', 'c', 'a']);
   });
+});
+
+describe('forwardAcknowledgementMatches', () => {
+  it('ignores order', () => expect(forwardAcknowledgementMatches(['b1', 'b2'], ['b2', 'b1'])).toBe(true));
+  it('empty vs empty matches', () => expect(forwardAcknowledgementMatches([], [])).toBe(true));
+  it('a missing acknowledgement fails', () => expect(forwardAcknowledgementMatches(['b1'], [])).toBe(false));
+  it('a surplus acknowledgement fails (stale screen)', () =>
+    expect(forwardAcknowledgementMatches([], ['b1'])).toBe(false));
+  it('duplicates are treated as a set', () =>
+    expect(forwardAcknowledgementMatches(['b1'], ['b1', 'b1'])).toBe(true));
 });

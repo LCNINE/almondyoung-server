@@ -127,6 +127,7 @@ export const PII_SCREEN_NOT_SHOWN: Readonly<Record<string, string>> = {
   '/cs/reviews/new': '새로 입력하는 만들기 폼이다',
   '/cs/reviews/rewards':
     '리뷰 상세 [id] 와 다른 페이지이고 개인정보 API 를 부르지 않는다',
+  '/inventory/inbound-shipments': '고객 개인정보를 부르지 않는다. 리스트 비고의 이름은 직원·거래처다',
   '/inventory/warehouses/new': '새로 입력하는 만들기 폼이다',
   '/mall/almond-template-categories': '카테고리 이름·이미지만 다루고 개인정보 API 를 부르지 않는다',
   '/mall/products-list/[masterId]': '상품 상세 — 등록자 고르기가 없다',
