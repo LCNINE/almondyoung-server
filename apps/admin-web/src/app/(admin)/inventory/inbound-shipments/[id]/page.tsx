@@ -1,10 +1,14 @@
-import RouteGuard from '@/components/layout/route-guard';
+'use client';
 
-// Task 8 이 상세 화면을 채운다.
-export default function InventoryInboundShipmentDetailPage() {
+import { use } from 'react';
+import RouteGuard from '@/components/layout/route-guard';
+import { ShipmentDetail } from '@/features/inventory/inbound-shipments/components/shipment-detail';
+
+export default function InventoryInboundShipmentDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = use(params);
   return (
     <RouteGuard screen="/inventory/inbound-shipments/[id]">
-      <div className="p-3 text-sm text-muted-foreground">선적 상세</div>
+      <ShipmentDetail id={id} />
     </RouteGuard>
   );
 }
