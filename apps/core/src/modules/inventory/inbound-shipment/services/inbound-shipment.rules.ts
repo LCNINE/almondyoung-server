@@ -11,7 +11,10 @@ export type ConfirmBlocker =
   | { code: 'empty_box'; boxId: string };
 
 /** 확정 때 사람이 확인한 «전달용 상자» 목록이 지금 전달용 상자 전부와 같은가 — 순서·중복 무시. */
-export function forwardAcknowledgementMatches(forwardBoxIds: readonly string[], acknowledged: readonly string[]): boolean {
+export function forwardAcknowledgementMatches(
+  forwardBoxIds: readonly string[],
+  acknowledged: readonly string[],
+): boolean {
   const forward = new Set(forwardBoxIds);
   const ack = new Set(acknowledged);
   return forward.size === ack.size && [...forward].every((id) => ack.has(id));

@@ -1,7 +1,13 @@
 import 'reflect-metadata';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
-import { CloseInboundShipmentDto, ConfirmInboundShipmentDto, EditBoxDto, EditLineDto, UpdateHeaderDto } from './draft-edit.dto';
+import {
+  CloseInboundShipmentDto,
+  ConfirmInboundShipmentDto,
+  EditBoxDto,
+  EditLineDto,
+  UpdateHeaderDto,
+} from './draft-edit.dto';
 
 const errors = (cls: new () => object, plain: object) => validate(plainToInstance(cls, plain));
 
