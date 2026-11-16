@@ -350,64 +350,152 @@ export function CompanyRevenueCard() {
         기간은 아래에서 확인할 수 있습니다.
       </p>
       {base && base.preCoverageActual !== 0 ? (
-        <section
+        <details
           aria-label="이전 표시액과 현재 매출의 차이"
           className="space-y-2 rounded-lg bg-gray-50 p-4 text-sm leading-relaxed text-gray-700"
         >
-          <h3 className="font-semibold text-gray-900">
+          <summary className="cursor-pointer text-lg font-bold text-gray-900">
             이전 표시액과 달라진 이유
-          </h3>
-          <p>
-            이전 화면은 수기 보정액 {formatKrw(base.preCoverageActual)}에 메두사
-            집계 매출을 더했습니다.
-            {registeredDate
-              ? ` 목표 등록일은 ${registeredDate}(한국시간)입니다.`
-              : ''}
-            {summary.goal?.memo
-              ? ` 당시 등록 메모: “${summary.goal.memo}”.`
-              : ''}
-          </p>
-          {registrationDaily !== null ? (
-            <p>
-              등록일 전일까지 현재 원장으로 재계산하면, 기준 누적액{' '}
-              {formatKrw(base.preCoverageActual + registrationDaily)}에서 메두사
-              실적 {formatKrw(registrationDaily)}을 뺀 금액이 이 보정액과
-              일치합니다. 당시 원장의 별도 스냅샷이 아닌 현재 자료로 한
-              검산입니다.
+          </summary>
+          <div className="space-y-5 pt-3">
+            <p className="font-medium text-gray-900">
+              현재 금액은 메두사 자사몰 자동 집계에 카페24·스마트스토어·쿠팡 등
+              합산 대상으로 등록된 자료를 더한 회사 매출입니다. 메두사 매출도
+              포함되어 있습니다. 이전 화면의 출처 미확인 수기 보정액을 자료별
+              금액으로 바꾼 결과이며, 아직 세무 신고용 확정 매출은 아닙니다.
             </p>
-          ) : null}
-          <p>
-            수기액 자체는 주문별 증빙을 합산한 금액으로 확인되지 않았습니다.
-            셀메이트 조회액을 참고했을 가능성은 있지만 당시 원본과 포함 채널이
-            확인되지 않아 출처를 확정하지 않습니다.
-          </p>
-          {refunds !== null && total !== null ? (
-            <p>
-              같은 기준일({asOf})의 이전 방식은{' '}
-              {formatKrw(base.preCoverageActual)} + 메두사{' '}
-              {formatKrw(
-                base.rows.reduce((sum, row) => sum + row.목표반영액, 0)
-              )}{' '}
-              = {formatKrw(base.pacing.actualToDate)}입니다. 현재는 수기액 대신
-              확인한 채널 자료 {formatKrw(imported.amount)}을 반영하여 전체{' '}
-              {formatKrw(total)}을 표시합니다. 두 방식의 차이{' '}
-              {formatKrw(Math.abs(base.pacing.actualToDate - total))}를 누락
-              매출이나 매출 감소로 단정할 수는 없습니다.
-            </p>
-          ) : null}
-          <p>
-            자사몰에는 카페24와 메두사를 함께 포함합니다. 셀메이트에 복사 입력한
-            같은 주문과 은행 입금은 다시 더하지 않습니다. 셀메이트 주문금액은
-            할인·취소·환불 기준과 배송대행 물량 때문에 실제 매출과 다를 수
-            있습니다.
-          </p>
-          <p className="font-medium">
-            아직 잠정 합계입니다. 전화·수동 주문의 누락·중복, 채널별 미수집
-            기간, 취소·환불 중복 차감과 정산 입금은 대조 중입니다. 아래 합산
-            보류 건수는 등록 자료의 합산 상태이며, 전체 검토 완료를 뜻하지
-            않습니다.
-          </p>
-        </section>
+            <div className="space-y-2">
+              <h3 className="font-bold text-gray-900">
+                1. 이전 금액은 어떻게 계산했나요?
+              </h3>
+              <p>
+                이전 화면은 수기 보정액 {formatKrw(base.preCoverageActual)}에
+                메두사 집계 매출을 더했습니다. 수기 보정액은 자동 집계가
+                시작되기 전의 매출을 보충하려고 입력한 값입니다.
+                {registeredDate
+                  ? ` 목표 등록일은 ${registeredDate}(한국시간)입니다.`
+                  : ''}
+                {summary.goal?.memo
+                  ? ` 당시 등록 메모: “${summary.goal.memo}”.`
+                  : ''}
+              </p>
+              {registrationDaily !== null ? (
+                <p>
+                  현재 자료로 등록일 전일까지 다시 계산하면, 기준 누적액{' '}
+                  {formatKrw(base.preCoverageActual + registrationDaily)} −
+                  메두사 실적 {formatKrw(registrationDaily)} = 수기 보정액{' '}
+                  {formatKrw(base.preCoverageActual)}으로 일치합니다. 즉, 당시
+                  참고한 누적 금액에 맞추기 위해 차액을 입력한 계산으로
+                  설명됩니다. 다만 당시 자료를 따로 보관한 사본이 아니라 현재
+                  원장으로 검산한 결과입니다.
+                </p>
+              ) : null}
+              <p>
+                그 기준 누적액이 어느 판매처·기간·취소 기준으로 집계됐는지는
+                확인되지 않았습니다. 셀메이트 조회액을 참고했을 가능성은 있지만
+                당시 원본과 포함 채널이 확인되지 않아 출처를 확정하지 않습니다.
+                따라서 이 수기액을 실제 주문 증빙으로 확인된 매출처럼 계속
+                더하지 않습니다.
+              </p>
+            </div>
+            <div className="space-y-2">
+              <h3 className="font-bold text-gray-900">
+                2. 지금은 어떤 자료를 합산하나요?
+              </h3>
+              <ul className="list-disc space-y-1 pl-5">
+                <li>
+                  현재 자사몰(메두사): 전환 후 새 주문의 자동 집계 매출을
+                  반영합니다. 취소·환불을 차감하며 {asOf}까지 반영합니다.
+                </li>
+                <li>
+                  이전 자사몰(카페24): 업로드한 월별 매출 중 합산 대상으로
+                  확인한 자료를 반영합니다. 메두사 전환 후에도 카페24에 남은
+                  매출은 해당 월 자료에 따라 반영합니다.
+                </li>
+                <li>
+                  스마트스토어·쿠팡: 각 판매자센터에서 받은 자료를 업로드한
+                  기간까지 반영합니다. 채널마다 구매확정·결제완료 등 집계 기준이
+                  다를 수 있습니다.
+                </li>
+                <li>
+                  전화·수동 주문 등: 기존 자사몰·다른 채널 주문과 겹치지 않는지
+                  확인하고 합산 대상으로 등록한 자료만 반영합니다.
+                </li>
+              </ul>
+              <p>
+                아래 월별 표에서 메두사와 카페24를 각각 확인할 수 있습니다. 채널
+                선택의 ‘자사몰’은 둘을 합친 금액입니다. 미등록 기간은 매출이
+                없다는 뜻이 아니며, 진행 중인 달은 수집한 날짜까지만 포함합니다.
+                ‘매출 근거 엑셀’에서 월별 금액과 합산 근거를 내려받을 수
+                있습니다.
+              </p>
+            </div>
+            {refunds !== null && total !== null ? (
+              <div className="space-y-2">
+                <h3 className="font-bold text-gray-900">
+                  3. 이전 방식과 지금 금액은 얼마나 다른가요?
+                </h3>
+                <p>
+                  메두사 집계 기준일을 {asOf}로 맞춰 비교한 계산입니다. 업로드
+                  자료의 종료일은 채널마다 다를 수 있습니다.
+                </p>
+                <p>
+                  이전 방식: 수기 보정액 {formatKrw(base.preCoverageActual)} +
+                  메두사{' '}
+                  {formatKrw(
+                    base.rows.reduce((sum, row) => sum + row.목표반영액, 0)
+                  )}{' '}
+                  = <strong>{formatKrw(base.pacing.actualToDate)}</strong>
+                </p>
+                <p>
+                  현재 방식: 메두사 {formatKrw(total - imported.amount)} + 합산
+                  대상 업로드 자료 {formatKrw(imported.amount)} ={' '}
+                  <strong>{formatKrw(total)}</strong>
+                </p>
+                <p>
+                  두 방식의 차이는{' '}
+                  {formatKrw(Math.abs(base.pacing.actualToDate - total))}입니다.
+                  메두사 매출을 통째로 제외해서 생긴 차이가 아니라, 출처 미확인
+                  수기액을 등록된 채널 자료로 교체하면서 생긴 차이입니다. 이
+                  차액 자체를 누락 매출이나 실제 매출 감소로 단정할 수는
+                  없습니다.
+                </p>
+              </div>
+            ) : null}
+            <div className="space-y-2">
+              <h3 className="font-bold text-gray-900">
+                4. 셀메이트 금액을 그대로 더하지 않는 이유는 무엇인가요?
+              </h3>
+              <p>
+                셀메이트에는 배송 처리를 위해 메두사·카페24·다른 채널의 같은
+                주문을 옮겨 입력합니다. 이를 다시 더하면 같은 매출을 두 번
+                계산하게 됩니다. 주문금액에는 할인·취소·환불 반영 차이가 있고
+                다른 업체의 배송대행 물량도 섞일 수 있어, 셀메이트 전체
+                주문금액과 회사 매출이 그대로 일치하지는 않습니다. 배송대행
+                업체의 상품 판매액은 회사 매출에 넣지 않으며, 은행 정산 입금도
+                이미 잡힌 매출에 다시 더하지 않습니다.
+              </p>
+            </div>
+            <div className="space-y-2">
+              <h3 className="font-bold text-gray-900">
+                5. 현재 금액은 어디까지 확인된 결과인가요?
+              </h3>
+              <p>
+                현재 화면은 자동 집계와 등록 자료를 같은 월별 합계에 모아
+                보여주는 잠정 결과입니다. 메두사 매출의 포함 여부와 월별 합계는
+                확인했지만, 모든 매출의 누락·중복 검증이 끝났다는 의미는
+                아닙니다. 전화·수동 주문의 누락·중복, 채널별 미수집 기간,
+                취소·환불 중복 차감과 실제 정산 입금은 추가 대조가 필요합니다.
+                확인 결과에 따라 금액이 바뀔 수 있습니다.
+              </p>
+              <p className="font-medium">
+                아래 합산 보류 건수는 등록 자료의 합산 상태이며, 전체 검토
+                완료를 뜻하지 않습니다. 보류가 0건이어도 아직 수집하지 않은
+                자료나 입금 대조까지 모두 끝난 것은 아닙니다.
+              </p>
+            </div>
+          </div>
+        </details>
       ) : null}
       <CompanyMonthlyRevenue
         revenue={revenue}

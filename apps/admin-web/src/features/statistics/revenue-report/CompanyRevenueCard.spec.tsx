@@ -128,12 +128,12 @@ it('does not display an incomplete company achievement when refunds fail', () =>
   ).toBe(true);
 });
 
-it('shows the legacy calculation and its uncertainty without opening details', () => {
+it('keeps the legacy explanation collapsed behind a prominent summary', () => {
   render(<CompanyRevenueCard />);
-  const explanation = screen.getByRole('region', {
-    name: '이전 표시액과 현재 매출의 차이',
-  });
-  expect(explanation.closest('details')).toBeNull();
+  const explanation = screen.getByLabelText('이전 표시액과 현재 매출의 차이');
+  expect(explanation.tagName).toBe('DETAILS');
+  expect(explanation.hasAttribute('open')).toBe(false);
+  expect(screen.getByText('이전 표시액과 달라진 이유').tagName).toBe('SUMMARY');
   expect(explanation.textContent).toContain('2026-06-16');
   expect(explanation.textContent).toContain('₩100,179');
   expect(explanation.textContent).toContain('₩99,999');
