@@ -71,7 +71,15 @@ async function seedSalesOrder(tx: Sql, channelOrderId = 'TEST-ORD-' + uid()): Pr
 /** 판매주문 → FO → FO 항목 → 상자 → 상자 라인 → 예약 한 줄 */
 async function seedReservation(
   tx: Sql,
-  o: { skuId: string; salesOrderId: string; qty: number; status: 'confirmed' | 'pending' },
+  o: {
+    skuId: string;
+    salesOrderId: string;
+    qty: number;
+    status: 'confirmed' | 'pending';
+    warehouseId?: string;
+    /** false 면 shipments.opened_for_fulfillment_order_id 를 NULL 로 둔다(합배송 상자) */
+    openedForFo?: boolean;
+  },
 ): Promise<void> {
   const [fo] = await tx<{ id: string }[]>`
     INSERT INTO fulfillment_orders (sales_order_id) VALUES (${o.salesOrderId}) RETURNING id`;
@@ -80,12 +88,12 @@ async function seedReservation(
     VALUES (${fo.id}, ${o.skuId}, ${o.qty}) RETURNING id`;
   const [shipment] = await tx<{ id: string }[]>`
     INSERT INTO shipments (warehouse_id, opened_for_fulfillment_order_id)
-    VALUES (${BUCHEON_WAREHOUSE_ID}, ${fo.id}) RETURNING id`;
+    VALUES (${o.warehouseId ?? BUCHEON_WAREHOUSE_ID}, ${o.openedForFo === false ? null : fo.id}) RETURNING id`;
   const [line] = await tx<{ id: string }[]>`
     INSERT INTO shipment_lines (shipment_id, fulfillment_order_item_id, sku_id, qty)
     VALUES (${shipment.id}, ${item.id}, ${o.skuId}, ${o.qty}) RETURNING id`;
   await tx`INSERT INTO stock_reservations (target_type, target_id, sku_id, warehouse_id, quantity, status, shipment_line_id)
-    VALUES ('SHIPMENT_LINE', ${line.id}, ${o.skuId}, ${BUCHEON_WAREHOUSE_ID}, ${o.qty}, ${o.status}, ${line.id})`;
+    VALUES ('SHIPMENT_LINE', ${line.id}, ${o.skuId}, ${o.warehouseId ?? BUCHEON_WAREHOUSE_ID}, ${o.qty}, ${o.status}, ${line.id})`;
 }
 
 async function seedInitRun(tx: Sql, sha = 'a'.repeat(64)): Promise<string> {
@@ -161,6 +169,53 @@ describeIfDb('reconcile-store (DB integration)', () => {
         const figures = await readCoreFigures(tx, [sku]);
 
         expect(figures.get(sku)).toEqual({ onHand: 0, reservedAll: 3, reservedHandedOver: 2 });
+      });
+    });
+
+    it('상자의 opened_for_fulfillment_order_id 가 NULL(합배송)이어도 넘긴 주문 몫을 센다', async () => {
+      await rolledBack(async (tx) => {
+        await ensureBucheon(tx);
+        const sku = await seedSku(tx);
+        const handed = await seedSalesOrder(tx);
+        await seedReservation(tx, {
+          skuId: sku,
+          salesOrderId: handed,
+          qty: 2,
+          status: 'confirmed',
+          openedForFo: false,
+        });
+        const runId = await seedInitRun(tx);
+        await insertHandedOver(tx, runId, [{ salesOrderId: handed, displayId: 1, medusaOrderId: 'TEST-M-1' }]);
+
+        expect((await readCoreFigures(tx, [sku])).get(sku)).toEqual({
+          onHand: 0,
+          reservedAll: 2,
+          reservedHandedOver: 2,
+        });
+      });
+    });
+
+    it('다른 창고의 confirmed 예약은 세지 않는다', async () => {
+      await rolledBack(async (tx) => {
+        await ensureBucheon(tx);
+        const other = await seedWarehouse(tx);
+        const sku = await seedSku(tx);
+        const handed = await seedSalesOrder(tx);
+        await seedReservation(tx, {
+          skuId: sku,
+          salesOrderId: handed,
+          qty: 4,
+          status: 'confirmed',
+          warehouseId: other,
+        });
+        const runId = await seedInitRun(tx);
+        await insertHandedOver(tx, runId, [{ salesOrderId: handed, displayId: 1, medusaOrderId: 'TEST-M-1' }]);
+
+        expect((await readCoreFigures(tx, [sku])).get(sku)).toEqual({
+          onHand: 0,
+          reservedAll: 0,
+          reservedHandedOver: 0,
+        });
       });
     });
 
@@ -293,6 +348,7 @@ describeIfDb('reconcile-store (DB integration)', () => {
     await rolledBack(async (tx) => {
       await ensureBucheon(tx);
       const sku = await seedSku(tx);
+      await tx`DELETE FROM stock_events WHERE reason = 'sellmate-handover'`;
       expect(await handoverEventsExist(tx)).toBe(false);
       await applyStockDelta(tx, { skuId: sku, delta: 1, source: 'sellmate-handover' });
       expect(await handoverEventsExist(tx)).toBe(true);

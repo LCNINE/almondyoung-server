@@ -135,34 +135,28 @@ export async function readCoreFigures(tx: Sql, skuIds: readonly string[]): Promi
   for (const id of skuIds) out.set(id, { onHand: 0, reservedAll: 0, reservedHandedOver: 0 });
   const ids = [...skuIds];
 
-  const onHand = await tx<{ sku_id: string; qty: number }[]>`
-    SELECT sku_id, COALESCE(SUM(qty), 0)::int AS qty FROM stock_ledgers
-    WHERE warehouse_id = ${BUCHEON_WAREHOUSE_ID} AND stock_state = 'ON_HAND' AND sku_id = ANY(${ids}::uuid[])
-    GROUP BY sku_id`;
-  for (const r of onHand) {
-    const f = out.get(r.sku_id);
-    if (f) f.onHand = r.qty;
-  }
-
-  const reserved = await tx<{ sku_id: string; all_qty: number; handed_qty: number }[]>`
-    SELECT r.sku_id,
-           COALESCE(SUM(r.quantity), 0)::int AS all_qty,
-           COALESCE(SUM(r.quantity) FILTER (WHERE EXISTS (
-             SELECT 1 FROM shipment_lines sl
-             JOIN fulfillment_order_items foi ON foi.id = sl.fulfillment_order_item_id
-             JOIN fulfillment_orders fo ON fo.id = foi.fulfillment_order_id
-             JOIN sellmate_handed_over_orders h ON h.sales_order_id = fo.sales_order_id
-             WHERE sl.id = r.shipment_line_id)), 0)::int AS handed_qty
-    FROM stock_reservations r
-    WHERE r.warehouse_id = ${BUCHEON_WAREHOUSE_ID} AND r.status = 'confirmed' AND r.sku_id = ANY(${ids}::uuid[])
-    GROUP BY r.sku_id`;
-  for (const r of reserved) {
-    const f = out.get(r.sku_id);
-    if (f) {
-      f.reservedAll = r.all_qty;
-      f.reservedHandedOver = r.handed_qty;
-    }
-  }
+  // ON_HAND 합과 예약 합은 한 statement 로 읽는다(warehouse-availability.ts 규칙) — 두 번에 나눠 읽으면
+  // READ COMMITTED 에서 그 사이 커밋된 SHIP 이 한쪽에만 비쳐 torn read 가 난다.
+  const rows = await tx<{ sku_id: string; on_hand: number; all_qty: number; handed_qty: number }[]>`
+    SELECT k.sku_id,
+           COALESCE((SELECT SUM(l.qty) FROM stock_ledgers l
+                      WHERE l.sku_id = k.sku_id AND l.warehouse_id = ${BUCHEON_WAREHOUSE_ID}
+                        AND l.stock_state = 'ON_HAND'), 0)::int AS on_hand,
+           COALESCE((SELECT SUM(r.quantity) FROM stock_reservations r
+                      WHERE r.sku_id = k.sku_id AND r.warehouse_id = ${BUCHEON_WAREHOUSE_ID}
+                        AND r.status = 'confirmed'), 0)::int AS all_qty,
+           COALESCE((SELECT SUM(r.quantity) FROM stock_reservations r
+                      WHERE r.sku_id = k.sku_id AND r.warehouse_id = ${BUCHEON_WAREHOUSE_ID}
+                        AND r.status = 'confirmed'
+                        AND EXISTS (
+                          SELECT 1 FROM shipment_lines sl
+                          JOIN fulfillment_order_items foi ON foi.id = sl.fulfillment_order_item_id
+                          JOIN fulfillment_orders fo ON fo.id = foi.fulfillment_order_id
+                          JOIN sellmate_handed_over_orders h ON h.sales_order_id = fo.sales_order_id
+                          WHERE sl.id = r.shipment_line_id)), 0)::int AS handed_qty
+    FROM unnest(${ids}::uuid[]) AS k(sku_id)`;
+  for (const r of rows)
+    out.set(r.sku_id, { onHand: r.on_hand, reservedAll: r.all_qty, reservedHandedOver: r.handed_qty });
   return out;
 }
 
