@@ -88,3 +88,25 @@ describe('deployment migration policy', () => {
     expect(() => assertAdditiveMigrations([file(1, sql)])).toThrow('maintenance review');
   });
 });
+
+describe('revenue review metadata migration', () => {
+  const migration = readMigrationFiles({ migrationsFolder: resolve(__dirname, '../../apps/analytics/drizzle') }).find(
+    (entry) => entry.folderMillis === 1794802680296,
+  )!;
+  const context = { stage: 'live', deployment: 'lcnine-services', service: 'analytics' };
+
+  it('allows only the reviewed defaulted metadata columns and audit table in live analytics', () => {
+    expect(migration).toBeDefined();
+    expect(() => assertAdditiveMigrations([migration], context)).not.toThrow();
+    expect(() => assertAdditiveMigrations([migration], { ...context, stage: 'demo' })).toThrow('maintenance review');
+    expect(() => assertAdditiveMigrations([migration], { ...context, service: 'core' })).toThrow('maintenance review');
+    expect(() => assertAdditiveMigrations([{ ...migration, hash: 'changed' }], context)).toThrow('maintenance review');
+    expect(() =>
+      assertAdditiveMigrations([{ ...migration, folderMillis: migration.folderMillis + 1 }], context),
+    ).toThrow('maintenance review');
+    const additions = migration.sql.filter((statement) => statement.includes('ADD COLUMN'));
+    expect(additions).toHaveLength(5);
+    expect(additions.every((statement) => /DEFAULT '(pending|)' NOT NULL/.test(statement))).toBe(true);
+    expect(migration.sql.join(' ')).not.toMatch(/\b(DROP|DELETE|UPDATE|TRUNCATE)\b/i);
+  });
+});

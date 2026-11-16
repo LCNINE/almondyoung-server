@@ -15,6 +15,17 @@ export interface MigrationContext {
 // No identifier/schema/stock changes; length is unchanged and already-converted rows do not match.
 // Keep the original SQL/history immutable. A changed file or another stage requires a new review.
 const reviewedDataMigrations = [
+  // Reviewed 2026-11-16: create an empty audit table and add five metadata columns.
+  // All existing-table additions have constant defaults (pending / empty text).
+  // No amount, identity, existing constraint, or source row is changed or removed.
+  // The deployment runner retains lock/statement timeouts; this exact SQL only.
+  {
+    stage: 'live',
+    deployment: 'lcnine-services',
+    service: 'analytics',
+    folderMillis: 1794802680296,
+    hash: 'da52b2be0a648e8b65c30962bc6acbc77f2e70b9e93bba218d7efa6b14c3fcbb',
+  },
   {
     stage: 'live',
     deployment: 'lcnine-services',
