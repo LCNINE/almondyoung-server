@@ -13,6 +13,8 @@ export interface WorkPermissions {
   stationForceDispatch?: boolean;
   /** 결품 보고(F9, core A2) */
   shortPick?: boolean;
+  /** 선적 상자 입고(확정·확정 취소·리스트에 없는 상자) — core `inventory.stock.operate` */
+  inboundShipmentOperate?: boolean;
 }
 export interface WorkRuntime {
   getPermissions?: () => Promise<WorkPermissions>;

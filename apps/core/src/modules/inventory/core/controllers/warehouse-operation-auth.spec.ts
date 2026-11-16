@@ -94,16 +94,76 @@ describe('warehouse v2 HTTP authorization and DTO contract', () => {
       actorId: '00000000-0000-4000-8000-000000000001',
       operationContractVersion: 2,
       capabilities: { stocktakingAddCountItem: true, locationOutbound: true, inboundWorkflowConsistency: true },
-      permissions: { stockAdjust: false, forceDispatch: false, stationForceDispatch: false, shortPick: false },
+      permissions: {
+        stockAdjust: false,
+        forceDispatch: false,
+        stationForceDispatch: false,
+        shortPick: false,
+        inboundShipmentOperate: true,
+      },
     });
   });
   it.each([
-    ['worker', { stockAdjust: false, forceDispatch: false, stationForceDispatch: false, shortPick: false }],
-    ['station_worker', { stockAdjust: false, forceDispatch: false, stationForceDispatch: true, shortPick: true }],
-    ['manager', { stockAdjust: true, forceDispatch: true, stationForceDispatch: true, shortPick: false }],
-    ['custom_force', { stockAdjust: false, forceDispatch: true, stationForceDispatch: true, shortPick: false }],
-    ['master', { stockAdjust: true, forceDispatch: true, stationForceDispatch: true, shortPick: true }],
-    ['mapped_master', { stockAdjust: true, forceDispatch: true, stationForceDispatch: true, shortPick: true }],
+    [
+      'worker',
+      {
+        stockAdjust: false,
+        forceDispatch: false,
+        stationForceDispatch: false,
+        shortPick: false,
+        inboundShipmentOperate: true,
+      },
+    ],
+    [
+      'station_worker',
+      {
+        stockAdjust: false,
+        forceDispatch: false,
+        stationForceDispatch: true,
+        shortPick: true,
+        inboundShipmentOperate: true,
+      },
+    ],
+    [
+      'manager',
+      {
+        stockAdjust: true,
+        forceDispatch: true,
+        stationForceDispatch: true,
+        shortPick: false,
+        inboundShipmentOperate: true,
+      },
+    ],
+    [
+      'custom_force',
+      {
+        stockAdjust: false,
+        forceDispatch: true,
+        stationForceDispatch: true,
+        shortPick: false,
+        inboundShipmentOperate: true,
+      },
+    ],
+    [
+      'master',
+      {
+        stockAdjust: true,
+        forceDispatch: true,
+        stationForceDispatch: true,
+        shortPick: true,
+        inboundShipmentOperate: true,
+      },
+    ],
+    [
+      'mapped_master',
+      {
+        stockAdjust: true,
+        forceDispatch: true,
+        stationForceDispatch: true,
+        shortPick: true,
+        inboundShipmentOperate: true,
+      },
+    ],
   ])('matches the actual force guard for %s', async (role, permissions) => {
     const context = await request(app.getHttpServer() as Server)
       .get('/inventory/work-context')
@@ -127,6 +187,7 @@ describe('warehouse v2 HTTP authorization and DTO contract', () => {
       forceDispatch: true,
       stationForceDispatch: true,
       shortPick: false,
+      inboundShipmentOperate: true,
     });
     await request(app.getHttpServer() as Server)
       .post('/shipments/00000000-0000-4000-8000-000000000002/location-outbound-forces')

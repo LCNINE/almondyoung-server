@@ -11,6 +11,10 @@ import { Button } from '@/components/ui/button';
 import { useCancelInbound, useCancelPurchaseOrderReceiptLine } from '@/lib/services/inventory';
 import type { InboundReceiptLineDto } from '@/lib/types/dto/inventory';
 import { toast } from 'sonner';
+import {
+  INBOUND_SHIPMENT_CANCEL_NOTICE,
+  receiptLineCancelRoute,
+} from '../../lib/receipt-line-cancel';
 
 type Props = {
   line: InboundReceiptLineDto | null;
@@ -24,14 +28,15 @@ export function CancelDialog({ line, source, open, onOpenChange }: Props) {
   const purchaseOrderMutation = useCancelPurchaseOrderReceiptLine();
   const isPending = directMutation.isPending || purchaseOrderMutation.isPending;
 
+  const route = receiptLineCancelRoute(source);
   const blockedByAction = line
     ? line.putawayFromOriginQty > 0 || line.returnedQty > 0
     : false;
 
   const handleSubmit = async () => {
-    if (!line) return;
+    if (!line || route === 'inbound_shipment') return;
     try {
-      if (source === 'purchase_order') {
+      if (route === 'purchase_order') {
         await purchaseOrderMutation.mutateAsync({ receiptLineId: line.id });
       } else {
         await directMutation.mutateAsync({ lineId: line.id, quantity: line.quantity });
@@ -57,8 +62,11 @@ export function CancelDialog({ line, source, open, onOpenChange }: Props) {
               적치 또는 회송 이력이 있어 취소할 수 없습니다.
             </p>
           )}
-          {source === 'purchase_order' && (
+          {route === 'purchase_order' && (
             <p className="rounded-md bg-muted px-3 py-2 text-sm">발주 입고입니다. 발주 수령을 취소합니다.</p>
+          )}
+          {route === 'inbound_shipment' && (
+            <p className="rounded-md bg-muted px-3 py-2 text-sm">{INBOUND_SHIPMENT_CANCEL_NOTICE}</p>
           )}
           <p className="text-sm text-muted-foreground">
             취소는 <strong>당일</strong> 내, <strong>전체 수량({line.quantity}개)</strong>만 가능합니다.
@@ -70,7 +78,7 @@ export function CancelDialog({ line, source, open, onOpenChange }: Props) {
           <Button
             variant="destructive"
             onClick={handleSubmit}
-            disabled={isPending || blockedByAction}
+            disabled={isPending || blockedByAction || route === 'inbound_shipment'}
           >
             {isPending ? '처리 중…' : '취소 확인'}
           </Button>

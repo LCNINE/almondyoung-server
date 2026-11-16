@@ -6,7 +6,7 @@ import { createSoundPlayer, defaultToneSink, type ToneSink } from './soundPlayer
 import { readSoundPrefs } from './soundPrefs';
 import type { FeedbackKind } from './tones';
 
-export type Flash = 'error' | 'complete' | null;
+export type Flash = 'error' | 'complete' | 'attention' | null;
 
 interface FeedbackApi {
   signal(kind: FeedbackKind): void;
@@ -41,7 +41,7 @@ export function FeedbackProvider({
     return {
       signal(kind) {
         player.play(kind);
-        setFlash(kind === 'error' ? 'error' : kind === 'complete' ? 'complete' : null);
+        setFlash(kind === 'error' || kind === 'complete' || kind === 'attention' ? kind : null);
       },
       clearFlash() {
         setFlash(null);

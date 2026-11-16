@@ -59,6 +59,8 @@ export interface InboundShipmentSummary {
   boxCount: number;
   lineCount: number;
   createdAt: string;
+  closedAt: string | null;
+  closedManually: boolean;
 }
 
 export interface InboundShipmentBox {
@@ -134,7 +136,6 @@ export interface InboundShipmentDetail extends InboundShipmentSummary {
   sourceFileName: string | null;
   memo: string | null;
   closedReason: string | null;
-  closedAt: string | null;
   boxes: InboundShipmentBox[];
   lines: InboundShipmentLine[];
   summary: InboundShipmentDifferenceSummary;
@@ -204,4 +205,47 @@ export interface CloseInboundShipmentResult {
 export interface ReopenInboundShipmentResult {
   shipmentId: string;
   status: 'expected' | 'receiving';
+}
+
+// ── 상자 하나 (core receive.dto.ts `BoxViewDto`)
+
+export interface InboundShipmentBoxViewLine {
+  lineId: string;
+  kind: 'sku' | 'free' | 'unresolved';
+  skuId: string | null;
+  sku: { code: string; name: string } | null;
+  productName: string;
+  option: string;
+  expectedQty: number | null;
+  coversBoxLabels: string[];
+  alreadyCountedInOtherBoxes: number;
+  remark: string;
+}
+
+export interface InboundShipmentBoxViewCount {
+  id: string;
+  /** null = 리스트에 없던 물건 */
+  lineId: string | null;
+  skuId: string | null;
+  skuCode: string | null;
+  skuName: string | null;
+  countedQty: number;
+  method: 'counted' | 'list';
+}
+
+export interface InboundShipmentBoxView {
+  shipmentId: string;
+  shipmentName: string;
+  shipmentStatus: InboundShipmentStatus;
+  expectedArrival: string | null;
+  boxId: string;
+  label: string;
+  origin: 'list' | 'added';
+  disposition: 'stock' | 'forward';
+  status: 'open' | 'received';
+  forwardNote: string | null;
+  receiptId: string | null;
+  receivedAt: string | null;
+  lines: InboundShipmentBoxViewLine[];
+  counts: InboundShipmentBoxViewCount[];
 }

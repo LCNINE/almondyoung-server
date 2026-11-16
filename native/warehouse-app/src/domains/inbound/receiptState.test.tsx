@@ -29,6 +29,15 @@ describe('receipt state contract', () => {
       validateReceiptLineState(receiptState, 'line', 'warehouse')
     ).not.toThrow();
   });
+  it('accepts an inbound_shipment line state', () => {
+    expect(() =>
+      validateReceiptLineState(
+        { ...receiptState, source: 'inbound_shipment' },
+        'line',
+        'warehouse'
+      )
+    ).not.toThrow();
+  });
   it.each([
     null,
     {},

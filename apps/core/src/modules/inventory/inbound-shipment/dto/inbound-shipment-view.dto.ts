@@ -12,6 +12,9 @@ export class InboundShipmentSummaryDto {
   @ApiProperty() boxCount: number;
   @ApiProperty() lineCount: number;
   @ApiProperty() createdAt: Date;
+  @ApiPropertyOptional({ nullable: true, description: '끝난 때 — 열려 있으면 null' }) closedAt: Date | null;
+  @ApiProperty({ description: '사람이 끝낸 선적(사유 있음) — 저절로 끝났거나 열려 있으면 false' })
+  closedManually: boolean;
 }
 
 export class InboundShipmentBoxViewDto {
@@ -108,7 +111,6 @@ export class InboundShipmentDetailViewDto extends InboundShipmentSummaryDto {
   @ApiPropertyOptional({ nullable: true }) memo: string | null;
   @ApiPropertyOptional({ nullable: true, description: '사람이 끝낸 사유 — 저절로 끝났거나 열려 있으면 null' })
   closedReason: string | null;
-  @ApiPropertyOptional({ nullable: true }) closedAt: Date | null;
   @ApiProperty({ type: [InboundShipmentBoxViewDto] }) boxes: InboundShipmentBoxViewDto[];
   @ApiProperty({ type: [InboundShipmentLineViewDto] }) lines: InboundShipmentLineViewDto[];
   @ApiProperty({ type: InboundShipmentDifferenceSummaryDto }) summary: InboundShipmentDifferenceSummaryDto;

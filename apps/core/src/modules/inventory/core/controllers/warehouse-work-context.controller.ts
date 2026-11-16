@@ -22,6 +22,9 @@ export class WarehouseWorkContextController {
       'fulfillment.shipment.short_pick',
     ]);
     const stockAdjust = this.checkpoints.check('inventory.work_context', subject, ['inventory.stock.adjust']);
+    const inboundShipmentOperate = this.checkpoints.check('inventory.work_context', subject, [
+      'inventory.stock.operate',
+    ]);
 
     return {
       actorId,
@@ -35,6 +38,8 @@ export class WarehouseWorkContextController {
         stationForceDispatch,
         // 결품 보고(short-picks) — 스테이션 F9
         shortPick,
+        // 선적 상자 입고(확정·확정 취소·리스트에 없는 상자) — 스테이션 F10·F11·F12
+        inboundShipmentOperate,
       },
       capabilities: {
         stocktakingAddCountItem: true as const,

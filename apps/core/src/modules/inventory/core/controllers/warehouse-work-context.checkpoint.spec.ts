@@ -14,6 +14,7 @@ describe('WarehouseWorkContextController permission preview', () => {
       forceDispatch: false,
       stationForceDispatch: true,
       shortPick: true,
+      inboundShipmentOperate: false,
     });
   });
 
@@ -27,6 +28,7 @@ describe('WarehouseWorkContextController permission preview', () => {
       forceDispatch: true,
       stationForceDispatch: true,
       shortPick: true,
+      inboundShipmentOperate: false,
     });
   });
 
@@ -38,6 +40,7 @@ describe('WarehouseWorkContextController permission preview', () => {
       forceDispatch: false,
       stationForceDispatch: false,
       shortPick: false,
+      inboundShipmentOperate: false,
     });
   });
 });
@@ -53,6 +56,20 @@ describe('stock adjustment permission preview', () => {
       forceDispatch: false,
       stationForceDispatch: false,
       shortPick: false,
+      inboundShipmentOperate: false,
     });
+  });
+});
+
+describe('inbound shipment box permission preview', () => {
+  it('inboundShipmentOperate follows inventory.stock.operate', () => {
+    const controller = new WarehouseWorkContextController(
+      createCheckpointsForTesting({ operator: ['inventory.stock.operate'], reader: ['inventory.stock.read'] }),
+    );
+
+    expect(controller.workContext({ userId: 'w-1', roles: ['operator'] }).permissions.inboundShipmentOperate).toBe(
+      true,
+    );
+    expect(controller.workContext({ userId: 'w-2', roles: ['reader'] }).permissions.inboundShipmentOperate).toBe(false);
   });
 });

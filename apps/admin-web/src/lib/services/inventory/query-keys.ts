@@ -177,4 +177,6 @@ export const inventoryQueryKeys = {
   inboundShipments: (filter?: InboundShipmentListFilter) =>
     ['inbound-shipments', 'list', filter] as const,
   inboundShipment: (id: string) => ['inbound-shipments', 'detail', id] as const,
+  inboundShipmentBox: (id: string, boxId: string) =>
+    ['inbound-shipments', 'detail', id, 'box', boxId] as const,
 } as const;

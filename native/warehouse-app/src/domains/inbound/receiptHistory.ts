@@ -4,6 +4,7 @@ import {
   receiptActionBlockReasons,
   type ReceiptActionBlockReason,
 } from './receiptState';
+import type { ReceiptSource } from './types';
 export class ReceiptHistoryError extends Error {}
 export type ReceiptStatus = 'posted' | 'voided' | 'all';
 export interface ReceiptHistoryLine {
@@ -12,7 +13,7 @@ export interface ReceiptHistoryLine {
   skuCode: string;
   skuName: string;
   quantity: number;
-  source: 'direct' | 'purchase_order';
+  source: ReceiptSource;
   originLocationCode: string | null;
   originLocationId?: string | null;
   canceledQty: number;
@@ -23,6 +24,14 @@ export interface ReceiptHistoryLine {
   putawayBlockReason?: ReceiptActionBlockReason | null;
   canCancel: boolean;
   cancelBlockReason: string | null;
+  /** source 가 inbound_shipment 일 때만 값이 있다. 옛 서버는 필드가 없어 null 로 읽는다. */
+  inboundShipmentBox: InboundShipmentBoxRef | null;
+}
+export interface InboundShipmentBoxRef {
+  shipmentId: string;
+  shipmentName: string;
+  boxId: string;
+  boxLabel: string;
 }
 export interface ReceiptHistoryItem {
   id: string;
@@ -101,6 +110,20 @@ export function validateReceiptHistory(
         line.cancelBlockReason === line.putawayBlockReason)
     );
   };
+  const shipmentBox = (line: Record<string, unknown>) => {
+    const box = line.inboundShipmentBox;
+    if (box === undefined || box === null) {
+      line.inboundShipmentBox = null;
+      return true;
+    }
+    return (
+      line.source === 'inbound_shipment' &&
+      object(box) &&
+      ['shipmentId', 'shipmentName', 'boxId', 'boxLabel'].every(
+        (k) => typeof box[k] === 'string'
+      )
+    );
+  };
   const date = (v: unknown) =>
     typeof v === 'string' && Number.isFinite(Date.parse(v));
   if (
@@ -125,7 +148,10 @@ export function validateReceiptHistory(
             typeof line.skuId === 'string' &&
             typeof line.skuCode === 'string' &&
             typeof line.skuName === 'string' &&
-            ['direct', 'purchase_order'].includes(String(line.source)) &&
+            ['direct', 'purchase_order', 'inbound_shipment'].includes(
+              String(line.source)
+            ) &&
+            shipmentBox(line) &&
             integer(line.quantity) &&
             integer(line.canceledQty) &&
             integer(line.returnedQty) &&

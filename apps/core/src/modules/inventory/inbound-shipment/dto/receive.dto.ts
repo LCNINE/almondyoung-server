@@ -4,6 +4,7 @@ import {
   ArrayMaxSize,
   Equals,
   IsArray,
+  IsIn,
   IsInt,
   IsString,
   IsUUID,
@@ -16,6 +17,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { WarehouseOperationDto } from '../../core/services/warehouse-operation-contract';
+import { InboundShipmentLineSkuDto } from './inbound-shipment-view.dto';
 import { MAX_BOX_LABEL_LENGTH, MAX_LINE_QTY } from '../services/inbound-shipment-list.parser';
 
 const MAX_RECEIVE_ITEMS = 500;
@@ -30,6 +32,13 @@ export class ReceiveBoxCountDto {
   @Min(0)
   @Max(MAX_LINE_QTY)
   countedQty: number;
+
+  @ApiProperty({
+    enum: ['counted', 'list'],
+    description: "'list' = 리스트대로. 이 상자 하나만 덮고 예정 수량과 같은 줄에만 쓸 수 있다",
+  })
+  @IsIn(['counted', 'list'])
+  method: 'counted' | 'list';
 }
 
 export class ReceiveBoxUnplannedDto {
@@ -142,6 +151,11 @@ export class CancelBoxReceiptResultDto {
 export class AddInboundShipmentBoxResultDto {
   @ApiProperty() boxId: string;
   @ApiProperty() label: string;
+  @ApiProperty({
+    enum: ['draft', 'expected', 'receiving', 'closed', 'canceled'],
+    description: '더한 뒤 선적 상태 — 저절로 끝난 선적은 receiving (실제로는 expected·receiving·closed)',
+  })
+  shipmentStatus: 'draft' | 'expected' | 'receiving' | 'closed' | 'canceled';
 }
 
 export class BoxCandidateViewDto {
@@ -152,6 +166,7 @@ export class BoxCandidateViewDto {
   @ApiProperty() label: string;
   @ApiProperty({ enum: ['stock', 'forward'] }) disposition: 'stock' | 'forward';
   @ApiProperty({ enum: ['open', 'received'] }) status: 'open' | 'received';
+  @ApiProperty({ enum: ['expected', 'receiving', 'closed'] }) shipmentStatus: 'expected' | 'receiving' | 'closed';
   @ApiProperty({ type: [String], description: '그 상자 줄의 제품명 원문 앞 3개(행 순)' }) previewItems: string[];
 }
 
@@ -159,6 +174,8 @@ export class BoxLineViewDto {
   @ApiProperty() lineId: string;
   @ApiProperty({ enum: ['sku', 'free', 'unresolved'] }) kind: 'sku' | 'free' | 'unresolved';
   @ApiPropertyOptional({ nullable: true }) skuId: string | null;
+  @ApiPropertyOptional({ type: InboundShipmentLineSkuDto, nullable: true, description: 'kind=sku 일 때만' })
+  sku: InboundShipmentLineSkuDto | null;
   @ApiProperty({ description: '제품명 원문' }) productName: string;
   @ApiProperty({ description: '옵션 원문' }) option: string;
   @ApiPropertyOptional({ nullable: true, description: '줄 전체 예정 수량(범위 줄이면 덮는 상자 합계)' })
@@ -172,7 +189,10 @@ export class BoxCountViewDto {
   @ApiProperty() id: string;
   @ApiPropertyOptional({ nullable: true, description: 'null = 리스트에 없던 물건' }) lineId: string | null;
   @ApiPropertyOptional({ nullable: true }) skuId: string | null;
+  @ApiPropertyOptional({ nullable: true, description: 'SKU 가 있는 집계면 채운다' }) skuCode: string | null;
+  @ApiPropertyOptional({ nullable: true, description: 'SKU 가 있는 집계면 채운다' }) skuName: string | null;
   @ApiProperty() countedQty: number;
+  @ApiProperty({ enum: ['counted', 'list'] }) method: 'counted' | 'list';
 }
 
 export class BoxViewDto {
@@ -190,6 +210,7 @@ export class BoxViewDto {
     | string
     | null;
   @ApiPropertyOptional({ nullable: true }) receiptId: string | null;
+  @ApiPropertyOptional({ nullable: true, description: '확정 시각 — 열린 상자는 null' }) receivedAt: Date | null;
   @ApiProperty({ type: [BoxLineViewDto] }) lines: BoxLineViewDto[];
   @ApiProperty({ type: [BoxCountViewDto], description: '이 상자의 유효 집계(확정된 상자만 있다)' })
   counts: BoxCountViewDto[];

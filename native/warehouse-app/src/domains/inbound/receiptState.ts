@@ -6,6 +6,7 @@ import {
   useWorkRuntime,
   type WorkRuntime,
 } from '../../core/operations/OperationContext';
+import type { ReceiptSource } from './types';
 
 export const receiptActionBlockReasons = [
   'CANCELED',
@@ -23,7 +24,7 @@ export interface ReceiptLineState {
   lineId: string;
   receiptId: string;
   warehouseId: string;
-  source: 'direct' | 'purchase_order';
+  source: ReceiptSource;
   receiptStatus: 'posted' | 'voided';
   skuId: string;
   skuCode: string;
@@ -69,7 +70,9 @@ export function validateReceiptLineState(
       row.skuCode,
       row.skuName,
     ].every(text) ||
-    (row.source !== 'direct' && row.source !== 'purchase_order') ||
+    (row.source !== 'direct' &&
+      row.source !== 'purchase_order' &&
+      row.source !== 'inbound_shipment') ||
     (row.receiptStatus !== 'posted' && row.receiptStatus !== 'voided') ||
     !(row.originLocationId === null || text(row.originLocationId)) ||
     !(row.originLocationCode === null || text(row.originLocationCode)) ||

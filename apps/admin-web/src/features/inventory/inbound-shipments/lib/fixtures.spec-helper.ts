@@ -1,4 +1,5 @@
 import type {
+  InboundShipmentBoxView,
   InboundShipmentBox,
   InboundShipmentDetail,
   InboundShipmentLine,
@@ -55,11 +56,12 @@ export function shipment(
     boxCount: 0,
     lineCount: 0,
     createdAt: '2026-11-16T00:00:00.000Z',
+    closedAt: null,
+    closedManually: false,
     sourceFileId: null,
     sourceFileName: null,
     memo: null,
     closedReason: null,
-    closedAt: null,
     boxes: [],
     lines: [],
     summary: {
@@ -73,6 +75,28 @@ export function shipment(
       unplannedCounts: 0,
     },
     unplannedItems: [],
+    ...over,
+  };
+}
+
+export function boxView(
+  over: Partial<InboundShipmentBoxView> = {}
+): InboundShipmentBoxView {
+  return {
+    shipmentId: 'sh1',
+    shipmentName: '11월 2차 배편',
+    shipmentStatus: 'receiving',
+    expectedArrival: null,
+    boxId: 'b1',
+    label: 'L5',
+    origin: 'list',
+    disposition: 'stock',
+    status: 'open',
+    forwardNote: null,
+    receiptId: null,
+    receivedAt: null,
+    lines: [],
+    counts: [],
     ...over,
   };
 }

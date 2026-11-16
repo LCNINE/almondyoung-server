@@ -21,6 +21,7 @@ import type {
 } from '@/lib/types/dto/inbound-shipment';
 import { boxDispositionEditable } from '../../lib/shipment-rules';
 import { writeErrorMessage } from './mutation-error';
+import { BoxDrawer } from './box-drawer';
 
 export function BoxesTab({
   shipment,
@@ -30,8 +31,14 @@ export function BoxesTab({
   onForgetAck: (boxId: string) => void;
 }) {
   const [message, setMessage] = useState<string | null>(null);
+  const [openBoxId, setOpenBoxId] = useState<string | null>(null);
   return (
     <div className="flex flex-col gap-2">
+      <BoxDrawer
+        shipmentId={shipment.id}
+        boxId={openBoxId}
+        onClose={() => setOpenBoxId(null)}
+      />
       {message && <div className="text-sm text-destructive">{message}</div>}
       <Table>
         <TableHeader>
@@ -43,6 +50,7 @@ export function BoxesTab({
                 <TableHead>상태</TableHead>
                 <TableHead className="text-right">센 수량</TableHead>
                 <TableHead>확정 시각</TableHead>
+                <TableHead />
               </>
             )}
             <TableHead className="text-right">덮는 줄</TableHead>
@@ -56,6 +64,7 @@ export function BoxesTab({
               box={box}
               onError={setMessage}
               onForgetAck={onForgetAck}
+              onOpen={setOpenBoxId}
             />
           ))}
         </TableBody>
@@ -69,11 +78,13 @@ function BoxRow({
   box,
   onError,
   onForgetAck,
+  onOpen,
 }: {
   shipment: InboundShipmentDetail;
   box: InboundShipmentBox;
   onError: (m: string | null) => void;
   onForgetAck: (boxId: string) => void;
+  onOpen: (boxId: string) => void;
 }) {
   const editBox = useEditInboundShipmentBox();
   const [label, setLabel] = useSyncedState(box.label);
@@ -152,6 +163,11 @@ function BoxRow({
             {box.receivedAt
               ? new Date(box.receivedAt).toLocaleString('ko-KR')
               : ''}
+          </TableCell>
+          <TableCell>
+            <Button size="sm" variant="outline" onClick={() => onOpen(box.id)}>
+              열기
+            </Button>
           </TableCell>
         </>
       )}

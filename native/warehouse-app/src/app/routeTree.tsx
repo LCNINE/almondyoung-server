@@ -32,6 +32,7 @@ import { OutboundRoute } from './routes/OutboundRoute';
 import { SimpleOutboundRoute } from './routes/SimpleOutboundRoute';
 import { WithdrawRoute } from './routes/WithdrawRoute';
 import { CustomerReturnsRoute } from './routes/CustomerReturnsRoute';
+import { InboundBoxesRoute } from './routes/InboundBoxesRoute';
 import { CommandSheetScreen } from '../station/CommandSheetScreen';
 import type { ShipmentByWaybill } from '../domains/outbound/types';
 
@@ -158,6 +159,19 @@ const inboundHistoryRoute = createRoute({
   path: '/inbound/history',
   component: InboundHistoryRoute,
 });
+// 스테이션 선적 상자 입고 — 입고내역 링크가 shipmentId·boxId 로 바로 연다. 핸드헬드는 안내만 한다
+const inboundBoxesRoute = createRoute({
+  getParentRoute: () => authedRoute,
+  path: '/inbound/boxes',
+  validateSearch: (
+    search: Record<string, unknown>
+  ): { shipmentId?: string; boxId?: string } => ({
+    shipmentId:
+      typeof search.shipmentId === 'string' ? search.shipmentId : undefined,
+    boxId: typeof search.boxId === 'string' ? search.boxId : undefined,
+  }),
+  component: InboundBoxesRoute,
+});
 const inboundQuickRoute = createRoute({
   getParentRoute: () => authedRoute,
   path: '/inbound/quick',
@@ -253,6 +267,7 @@ export const routeTree = rootRoute.addChildren([
     inboundPurchaseOrderRoute,
     inboundQuickRoute,
     inboundHistoryRoute,
+    inboundBoxesRoute,
     pickingRoute,
     putawayRoute,
     returnPutawayRoute,
