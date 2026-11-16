@@ -179,7 +179,7 @@ function ShellFrame() {
           data-flash={flash}
           className={cn(
             'pointer-events-none fixed inset-0 z-[90] border-[6px] print:hidden',
-            flash === 'error' ? 'border-[#C62828]' : 'border-[#1E7A46]'
+            flash === 'error' ? 'border-[#C62828]' : flash === 'attention' ? 'border-[#E0A100]' : 'border-[#1E7A46]'
           )}
         />
       )}

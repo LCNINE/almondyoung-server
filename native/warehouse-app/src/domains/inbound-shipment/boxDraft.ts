@@ -15,6 +15,11 @@ export interface BoxDraft {
     string,
     { kind: BoxLine['kind']; skuId: string | null; expectedQty: number | null }
   >;
+  /**
+   * 이 키로 보낸 확정 본문 — 있으면 결과를 모르는 것이다(칸 잠금). 재전송은 이 본문 그대로, 같은 키로.
+   * 확정·거절이 나면 지운다(거절이면 새 키와 함께).
+   */
+  sentBody?: ReceiveBoxBody | null;
 }
 
 const snap = (l: BoxLine) => ({

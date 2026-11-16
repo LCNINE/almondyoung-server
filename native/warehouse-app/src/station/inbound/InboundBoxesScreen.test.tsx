@@ -124,7 +124,8 @@ describe('대기', () => {
     setup({ found: [] }, { operate: true });
     await search('zz9');
     expect(await screen.findByText('이 이름의 상자가 열린 선적에 없어요')).toBeInTheDocument();
-    expect(bar().getByText('리스트에 없는 상자로 받기')).toBeInTheDocument();
+    // 기능키 바는 권한을 읽고 다음 렌더에 그린다
+    await waitFor(() => expect(bar().getByText('리스트에 없는 상자로 받기')).toBeInTheDocument());
   });
 
   it('후보 0개 + 권한이 없으면 F12 가 없다', async () => {
