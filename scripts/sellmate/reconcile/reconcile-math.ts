@@ -74,3 +74,20 @@ export function planApply(f: ItemFigures): ApplyResult {
   const uploadCurrent = uploadAvail + f.unshipped;
   return { delta, carryAfter, uploadAvail, uploadCurrent };
 }
+
+/**
+ * 새로 짝지어진 품목(init 뒤 처음 보는 품목)의 이번 회 값. 원장은 쓰지 않고(delta 0) init 처럼 기준값·이월을 잡는다.
+ * 셀메이트 쪽 첫 재고는 무시하고 core 가 정본이므로, 업로드는 planApply 와 같은 식 U = max(0, A − C) 다.
+ */
+export function planFresh(
+  f: Omit<ItemFigures, 'baseline' | 'carry'>,
+): { baseline: number; carry: number } & ApplyResult {
+  assertInteger('onHand', f.onHand);
+  assertInteger('reservedAll', f.reservedAll);
+  assertInteger('reservedHandedOver', f.reservedHandedOver);
+  assertInteger('unshipped', f.unshipped);
+  const start = initState(f.s);
+  const available = f.onHand - (f.reservedAll - f.reservedHandedOver);
+  const uploadAvail = Math.max(0, available - start.carry);
+  return { ...start, delta: 0, carryAfter: start.carry, uploadAvail, uploadCurrent: uploadAvail + f.unshipped };
+}

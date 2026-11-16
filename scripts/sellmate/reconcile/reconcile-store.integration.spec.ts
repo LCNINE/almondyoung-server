@@ -16,6 +16,14 @@ import {
   resolveSalesOrders,
   singleRealLocation,
 } from './reconcile-store';
+import {
+  ensureBucheon,
+  seedLedger,
+  seedSalesOrder,
+  seedSku,
+  seedWarehouse,
+  seedZone,
+} from './__support__/reconcile-seed';
 
 /**
  * 셀메이트 저녁 맞추기 저장소(#1304). 모든 케이스는 트랜잭션 안에서 시드하고 끝에 던져 롤백한다.
@@ -26,47 +34,6 @@ const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
 
 class Rollback extends Error {}
-
-let n = 0;
-const uid = () => `${Date.now().toString(36)}${(n++).toString(36)}`;
-
-async function seedWarehouse(tx: Sql): Promise<string> {
-  const [row] = await tx<{ id: string }[]>`
-    INSERT INTO warehouses (name, type) VALUES (${'TEST-WH-' + uid()}, 'domestic') RETURNING id`;
-  return row.id;
-}
-
-async function ensureBucheon(tx: Sql): Promise<void> {
-  await tx`INSERT INTO warehouses (id, name, type) VALUES (${BUCHEON_WAREHOUSE_ID}, 'TEST-BUCHEON', 'domestic') ON CONFLICT (id) DO NOTHING`;
-  await tx`INSERT INTO locations (id, warehouse_id, code, location_type, is_system, system_role)
-    VALUES (${BUCHEON_RECEIVING_LOC_ID}, ${BUCHEON_WAREHOUSE_ID}, 'TEST-RECV', 'zone', true, 'inbound_default')
-    ON CONFLICT (id) DO NOTHING`;
-}
-
-async function seedZone(tx: Sql, warehouseId: string): Promise<string> {
-  const [row] = await tx<{ id: string }[]>`
-    INSERT INTO locations (warehouse_id, code, location_type) VALUES (${warehouseId}, ${'TEST-Z-' + uid()}, 'zone') RETURNING id`;
-  return row.id;
-}
-
-async function seedSku(tx: Sql): Promise<string> {
-  const [holder] = await tx<{ id: string }[]>`INSERT INTO holders (name) VALUES ('TEST-HOLDER') RETURNING id`;
-  const [row] = await tx<{ id: string }[]>`
-    INSERT INTO skus (holder_id, name, code) VALUES (${holder.id}, 'TEST-ITEM', ${'TEST-' + uid()}) RETURNING id`;
-  return row.id;
-}
-
-async function seedLedger(tx: Sql, skuId: string, warehouseId: string, locationId: string, qty: number) {
-  await tx`INSERT INTO stock_ledgers (sku_id, warehouse_id, location_id, stock_state, qty)
-    VALUES (${skuId}, ${warehouseId}, ${locationId}, 'ON_HAND', ${qty})`;
-}
-
-async function seedSalesOrder(tx: Sql, channelOrderId = 'TEST-ORD-' + uid()): Promise<string> {
-  const [row] = await tx<{ id: string }[]>`
-    INSERT INTO sales_orders (channel_order_id, sales_channel, shipping_address, order_date)
-    VALUES (${channelOrderId}, 'medusa', '{}'::json, now()) RETURNING id`;
-  return row.id;
-}
 
 /** 판매주문 → FO → FO 항목 → 상자 → 상자 라인 → 예약 한 줄 */
 async function seedReservation(

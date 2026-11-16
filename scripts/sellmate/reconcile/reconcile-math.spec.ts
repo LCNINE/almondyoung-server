@@ -2,7 +2,7 @@
  * 저녁 맞추기 정본 산식 회귀 테스트 (DB 불필요).
  * 설계 문서 «계산» 의 시나리오를 한 줄씩 고정한다.
  */
-import { initState, planApply, sellmateAvail } from './reconcile-math';
+import { initState, planApply, planFresh, sellmateAvail } from './reconcile-math';
 
 describe('sellmateAvail', () => {
   it('셀메이트 가용 = 현재 − 미발송, 음수도 그대로 돌린다', () => {
@@ -44,5 +44,29 @@ describe('저녁 맞추기 산식 (planApply)', () => {
     expect(() => planApply({ s: 1.5, baseline: 0, carry: 0, onHand: 0, reservedAll: 0, reservedHandedOver: 0, unshipped: 0 })).toThrow();
     expect(() => sellmateAvail(NaN, 0)).toThrow();
     expect(() => initState(Infinity)).toThrow();
+  });
+});
+
+
+describe('새로 짝지어진 품목 (planFresh)', () => {
+  it('원장은 쓰지 않고 init 처럼 시작하며, 이번 회 업로드는 core 가용을 올린다', () => {
+    expect(planFresh({ s: 7, onHand: 4, reservedAll: 1, reservedHandedOver: 0, unshipped: 2 })).toEqual({
+      baseline: 7,
+      carry: 0,
+      delta: 0,
+      carryAfter: 0,
+      uploadAvail: 3,
+      uploadCurrent: 5,
+    });
+  });
+  it('음수 S 는 init 처럼 이월을 두고, 업로드 가용에서 이월을 뺀다', () => {
+    expect(planFresh({ s: -2, onHand: 5, reservedAll: 0, reservedHandedOver: 0, unshipped: 3 })).toEqual({
+      baseline: -2,
+      carry: 2,
+      delta: 0,
+      carryAfter: 2,
+      uploadAvail: 3,
+      uploadCurrent: 6,
+    });
   });
 });

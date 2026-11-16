@@ -417,3 +417,26 @@ export async function insertHandedOver(
       ON CONFLICT (sales_order_id) DO NOTHING`;
   }
 }
+
+/** 회차 id 로 이름을 짓는 업로드 파일 경로를 행을 만든 뒤에 적는다 */
+export async function setRunUploadFile(tx: Sql, runId: string, uploadFile: string): Promise<void> {
+  await tx`UPDATE sellmate_reconcile_runs SET upload_file = ${uploadFile} WHERE id = ${runId}`;
+}
+
+/**
+ * 얼어 있던 상태가 다른 SKU 로 다시 짝지어져 새로 시작할 때, 옛 행이 option_serial unique 를 막지 않게 지운다.
+ * 얼지 않은 행은 지우지 않는다(그건 skuChanged 로 막혀 여기까지 오지 않는다).
+ */
+export async function dropFrozenStates(tx: Sql, optionSerials: readonly string[]): Promise<void> {
+  if (optionSerials.length === 0) return;
+  const serials = [...optionSerials];
+  await tx`DELETE FROM sellmate_reconcile_states WHERE frozen = true AND option_serial = ANY(${serials}::text[])`;
+}
+
+/** 마지막 pair/init/apply 가 쓴 짝 표에서 짝 못 지은 품목 */
+export async function loadUnpairedPairs(sql: Sql): Promise<{ optionSerial: string; reason: string }[]> {
+  const rows = await sql<{ option_serial: string; unpaired_reason: string }[]>`
+    SELECT option_serial, unpaired_reason FROM sellmate_item_pairs
+    WHERE unpaired_reason IS NOT NULL ORDER BY option_serial`;
+  return rows.map((r) => ({ optionSerial: r.option_serial, reason: r.unpaired_reason }));
+}
