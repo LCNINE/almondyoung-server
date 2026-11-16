@@ -175,16 +175,19 @@ export class TossApiClient {
     });
   }
 
-  async issueVirtualAccount(params: {
-    amount: number;
-    orderId: string;
-    orderName: string;
-    customerName: string;
-    bank: string;
-    validHours?: number;
-    customerEmail?: string;
-    customerMobilePhone?: string;
-  }): Promise<TossApiResult<TossVirtualAccountResponse>> {
+  async issueVirtualAccount(
+    params: {
+      amount: number;
+      orderId: string;
+      orderName: string;
+      customerName: string;
+      bank: string;
+      validHours?: number;
+      customerEmail?: string;
+      customerMobilePhone?: string;
+    },
+    useWidgetKey = false,
+  ): Promise<TossApiResult<TossVirtualAccountResponse>> {
     const body: Record<string, unknown> = {
       amount: params.amount,
       orderId: params.orderId,
@@ -195,7 +198,7 @@ export class TossApiClient {
     if (params.validHours !== undefined) body.validHours = params.validHours;
     if (params.customerEmail) body.customerEmail = params.customerEmail;
     if (params.customerMobilePhone) body.customerMobilePhone = params.customerMobilePhone;
-    return this.post<TossVirtualAccountResponse>('/virtual-accounts', body);
+    return this.post<TossVirtualAccountResponse>('/virtual-accounts', body, undefined, useWidgetKey);
   }
 
   async issueCashReceipt(params: {

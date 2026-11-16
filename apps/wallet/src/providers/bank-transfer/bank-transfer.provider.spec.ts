@@ -26,6 +26,7 @@ describe('BankTransferPaymentProvider', () => {
   it('issues a Toss virtual account and maps it into BANK_TRANSFER_PENDING nextAction', async () => {
     process.env.TOSS_VIRTUAL_ACCOUNT_BANK = '04';
     process.env.TOSS_VIRTUAL_ACCOUNT_BANK_NAME = '국민은행';
+    delete process.env.TOSS_WIDGET_SECRET_KEY;
     const issueVirtualAccount = jest.fn().mockResolvedValue({
       ok: true,
       data: {
@@ -53,6 +54,7 @@ describe('BankTransferPaymentProvider', () => {
     // orderId 는 chargeId 하이픈 제거값이어야 웹훅 복원이 성립한다.
     expect(issueVirtualAccount).toHaveBeenCalledWith(
       expect.objectContaining({ orderId: 'aaaaaaaabbbbccccddddeeeeeeeeeeee', bank: '04', amount: 10000 }),
+      false,
     );
     expect(result.status).toBe('REQUIRES_ACTION');
     expect(result.providerTransactionId).toBe('pk_1');
@@ -61,6 +63,30 @@ describe('BankTransferPaymentProvider', () => {
       bankName: '국민은행',
       accountNumber: '1234567890',
     });
+    expect(result.nextAction).not.toHaveProperty('checkoutMode');
+  });
+
+  it('issues with the widget key and marks the account WIDGET when a widget secret is configured', async () => {
+    process.env.TOSS_VIRTUAL_ACCOUNT_BANK = '06';
+    process.env.TOSS_WIDGET_SECRET_KEY = 'gsk_test';
+    const issueVirtualAccount = jest.fn().mockResolvedValue({
+      ok: true,
+      data: {
+        paymentKey: 'pk_2',
+        secret: 'sk_2',
+        virtualAccount: { accountNumber: '111', bankCode: '06', customerName: '홍길동', dueDate: '2026-11-19' },
+      },
+    });
+    const provider = new BankTransferPaymentProvider(
+      null as never,
+      { issueVirtualAccount } as unknown as TossApiClient,
+    );
+
+    const result = await provider.authorize(chargeParams());
+    delete process.env.TOSS_WIDGET_SECRET_KEY;
+
+    expect(issueVirtualAccount).toHaveBeenCalledWith(expect.anything(), true);
+    expect(result.nextAction).toMatchObject({ type: 'BANK_TRANSFER_PENDING', checkoutMode: 'WIDGET' });
   });
 
   it('fails clearly when the issuing bank is not configured', async () => {
