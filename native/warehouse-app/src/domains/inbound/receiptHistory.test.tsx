@@ -169,3 +169,31 @@ it('a line without inboundShipmentBox parses to null', () => {
   validateReceiptHistory(value);
   expect(value.items[0].lines[0].inboundShipmentBox).toBeNull();
 });
+it.each([
+  { ...shipmentBox, boxLabel: 7 },
+  { ...shipmentBox, shipmentId: null },
+  'not-an-object',
+])('rejects a malformed inboundShipmentBox %#', (box) => {
+  expect(() =>
+    validateReceiptHistory(
+      historyWith({
+        ...historyLine,
+        source: 'inbound_shipment',
+        canCancel: false,
+        cancelBlockReason: 'PUTAWAY_EXISTS',
+        inboundShipmentBox: box,
+      })
+    )
+  ).toThrow();
+});
+it('rejects an inboundShipmentBox on a direct line', () => {
+  expect(() =>
+    validateReceiptHistory(
+      historyWith({
+        ...historyLine,
+        source: 'direct',
+        inboundShipmentBox: shipmentBox,
+      })
+    )
+  ).toThrow();
+});

@@ -58,16 +58,20 @@ export class ApiError extends Error {
   readonly errors?: unknown;
   /** 403 본문이 알려 준 요구 권한 키(어느 하나면 된다). */
   readonly requiredPermissions?: readonly string[];
+  /** 400 본문의 `message` 그대로 — 서버가 현장 문구로 쓰라고 만든 거절 사유(범위 표기 등). */
+  readonly serverMessage?: string;
   constructor(
     message: string,
     status: number,
     code?: string,
     preparation?: PreparationRejection,
     errors?: unknown,
-    requiredPermissions?: readonly string[]
+    requiredPermissions?: readonly string[],
+    serverMessage?: string
   ) {
     super(message);
     this.status = status;
+    if (serverMessage) this.serverMessage = serverMessage;
     this.errors = errors;
     this.code = code;
     if (requiredPermissions?.length)
@@ -247,6 +251,7 @@ export function createApiClient(deps: {
         const body = (await res.json().catch(() => ({}))) as {
           code?: string;
           error?: string;
+          message?: unknown;
           requiredPermissions?: unknown;
         };
         throw new ApiError(
@@ -257,6 +262,9 @@ export function createApiClient(deps: {
           undefined,
           res.status === 403
             ? readRequiredPermissions(body.requiredPermissions)
+            : undefined,
+          res.status === 400 && typeof body.message === 'string'
+            ? body.message
             : undefined
         );
       }

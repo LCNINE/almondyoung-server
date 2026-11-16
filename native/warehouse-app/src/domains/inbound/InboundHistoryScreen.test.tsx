@@ -317,3 +317,21 @@ it('shipment receipt line on station shows box without line cancel or handheld h
   expect(screen.queryByText('스테이션에서 취소해요')).not.toBeInTheDocument();
   station.on = false;
 });
+it('on station the shipment box line links to that box', async () => {
+  station.on = true;
+  await mountShipmentLine();
+  const link = await screen.findByRole('link', { name: /11월 2차 배편 · 상자 L7/ });
+  expect(link).toHaveAttribute(
+    'href',
+    '/inbound/boxes?shipmentId=ship-1&boxId=box-1'
+  );
+  station.on = false;
+});
+it('on handheld the shipment box line is plain text, not a link', async () => {
+  station.on = false;
+  await mountShipmentLine();
+  await screen.findByText(/11월 2차 배편 · 상자 L7/);
+  expect(
+    screen.queryByRole('link', { name: /11월 2차 배편 · 상자 L7/ })
+  ).toBeNull();
+});

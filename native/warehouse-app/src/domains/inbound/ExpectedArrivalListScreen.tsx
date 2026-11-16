@@ -1,4 +1,5 @@
 import { Link } from '@tanstack/react-router';
+import { isStationDevice } from '../../app/station';
 import { useWarehouse } from '../../app/warehouse-context';
 import { errorMessage } from '../../core/data/errorMessage';
 import { ScreenHeader } from '../../core/design/ScreenHeader';
@@ -45,6 +46,14 @@ export function ExpectedArrivalListScreen() {
       >
         입고내역 · 취소
       </Link>
+      {isStationDevice() && (
+        <Link
+          to="/inbound/boxes"
+          className="block rounded-lg border p-3 text-center"
+        >
+          선적 상자 입고
+        </Link>
+      )}
       <section className="space-y-2">
         <h2 className="text-sm font-semibold text-gray-700">입고 예정</h2>
         {arrivals.isError ? (

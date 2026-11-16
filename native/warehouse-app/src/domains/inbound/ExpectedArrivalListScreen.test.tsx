@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import type { ReactNode } from 'react';
 import { render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -19,6 +19,9 @@ import type { ApiClient } from '../../core/data/httpClient';
 import type { Session } from '../../core/auth/session';
 import type { ExpectedArrivalsResult } from './types';
 import { ExpectedArrivalListScreen } from './ExpectedArrivalListScreen';
+
+const station = vi.hoisted(() => ({ on: false }));
+vi.mock('../../app/station', () => ({ isStationDevice: () => station.on }));
 
 const session = {
   bootstrap: async () => {},
@@ -125,5 +128,20 @@ describe('ExpectedArrivalListScreen', () => {
       'href',
       '/inbound/history'
     );
+  });
+
+  it('스테이션에서만 «선적 상자 입고» 링크가 /inbound/boxes 로 간다', async () => {
+    station.on = true;
+    renderScreen(SELECTED);
+    const link = await screen.findByRole('link', { name: '선적 상자 입고' });
+    expect(link).toHaveAttribute('href', '/inbound/boxes');
+    station.on = false;
+  });
+
+  it('핸드헬드에는 «선적 상자 입고» 링크가 없다', async () => {
+    station.on = false;
+    renderScreen(SELECTED);
+    await screen.findByText('알몬드상사');
+    expect(screen.queryByRole('link', { name: '선적 상자 입고' })).toBeNull();
   });
 });

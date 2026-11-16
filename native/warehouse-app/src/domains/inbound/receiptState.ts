@@ -6,6 +6,7 @@ import {
   useWorkRuntime,
   type WorkRuntime,
 } from '../../core/operations/OperationContext';
+import type { ReceiptSource } from './types';
 
 export const receiptActionBlockReasons = [
   'CANCELED',
@@ -17,7 +18,6 @@ export const receiptActionBlockReasons = [
   'MISSING_ORIGIN_OR_EVENT',
   'NOTHING_PENDING',
 ] as const;
-import type { ReceiptSource } from './types';
 export type ReceiptActionBlockReason =
   (typeof receiptActionBlockReasons)[number];
 export interface ReceiptLineState {
