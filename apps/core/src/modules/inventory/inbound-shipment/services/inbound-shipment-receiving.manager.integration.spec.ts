@@ -158,7 +158,7 @@ describeIfDb('InboundShipmentReceivingManager (DB integration)', () => {
   }
 
   const dto = (
-    counts: { lineId: string; countedQty: number }[],
+    counts: { lineId: string; countedQty: number; method: 'counted' | 'list' }[],
     unplanned: { skuId: string; quantity: number }[] = [],
     idempotencyKey = randomUUID(),
   ): ReceiveBoxDto => ({ contractVersion: 2, idempotencyKey, counts, unplanned });
@@ -221,8 +221,8 @@ describeIfDb('InboundShipmentReceivingManager (DB integration)', () => {
         row(3, 'L2', 7, f.barcodes[2]),
       ]);
       const request = dto([
-        { lineId: s.lineOf(1), countedQty: 20 },
-        { lineId: s.lineOf(2), countedQty: 5 },
+        { lineId: s.lineOf(1), countedQty: 20, method: 'counted' },
+        { lineId: s.lineOf(2), countedQty: 5, method: 'counted' },
       ]);
 
       const result = await built.receiving.receiveBox(s.shipmentId, s.boxOf('L1'), request, ACTOR, trx);
@@ -280,22 +280,22 @@ describeIfDb('InboundShipmentReceivingManager (DB integration)', () => {
         row(3, 'L2', 7, f.barcodes[2]),
       ]);
       const box = s.boxOf('L1');
-      const missing = dto([{ lineId: s.lineOf(1), countedQty: 20 }]);
+      const missing = dto([{ lineId: s.lineOf(1), countedQty: 20, method: 'counted' }]);
       await expect(built.receiving.receiveBox(s.shipmentId, box, missing, ACTOR, trx)).rejects.toBeInstanceOf(
         BadRequestError,
       );
       const foreign = dto([
-        { lineId: s.lineOf(1), countedQty: 20 },
-        { lineId: s.lineOf(2), countedQty: 5 },
-        { lineId: s.lineOf(3), countedQty: 7 },
+        { lineId: s.lineOf(1), countedQty: 20, method: 'counted' },
+        { lineId: s.lineOf(2), countedQty: 5, method: 'counted' },
+        { lineId: s.lineOf(3), countedQty: 7, method: 'counted' },
       ]);
       await expect(built.receiving.receiveBox(s.shipmentId, box, foreign, ACTOR, trx)).rejects.toBeInstanceOf(
         BadRequestError,
       );
       const duplicate = dto([
-        { lineId: s.lineOf(1), countedQty: 20 },
-        { lineId: s.lineOf(1), countedQty: 20 },
-        { lineId: s.lineOf(2), countedQty: 5 },
+        { lineId: s.lineOf(1), countedQty: 20, method: 'counted' },
+        { lineId: s.lineOf(1), countedQty: 20, method: 'counted' },
+        { lineId: s.lineOf(2), countedQty: 5, method: 'counted' },
       ]);
       await expect(built.receiving.receiveBox(s.shipmentId, box, duplicate, ACTOR, trx)).rejects.toBeInstanceOf(
         BadRequestError,
@@ -314,8 +314,8 @@ describeIfDb('InboundShipmentReceivingManager (DB integration)', () => {
         row(3, 'L2', 7, f.barcodes[2]),
       ]);
       const request = dto([
-        { lineId: s.lineOf(1), countedQty: 0 },
-        { lineId: s.lineOf(2), countedQty: 5 },
+        { lineId: s.lineOf(1), countedQty: 0, method: 'counted' },
+        { lineId: s.lineOf(2), countedQty: 5, method: 'counted' },
       ]);
       await built.receiving.receiveBox(s.shipmentId, s.boxOf('L1'), request, ACTOR, trx);
 
@@ -325,7 +325,7 @@ describeIfDb('InboundShipmentReceivingManager (DB integration)', () => {
       expect(await receiveEventsFor(trx, request.idempotencyKey ?? '')).toHaveLength(1);
 
       // 상자 전체가 0 이면 회차 자체가 없다
-      const allZero = dto([{ lineId: s.lineOf(3), countedQty: 0 }]);
+      const allZero = dto([{ lineId: s.lineOf(3), countedQty: 0, method: 'counted' }]);
       const result = await built.receiving.receiveBox(s.shipmentId, s.boxOf('L2'), allZero, ACTOR, trx);
       expect(result.receiptId).toBeNull();
       expect(await receiveEventsFor(trx, allZero.idempotencyKey ?? '')).toHaveLength(0);
@@ -338,7 +338,7 @@ describeIfDb('InboundShipmentReceivingManager (DB integration)', () => {
       const f = await seed(trx);
       const built = build(trx);
       const s = await shipment(trx, built, f.warehouseId, [row(1, 'L1', 3, '8000000000000')], { freeRows: [1] });
-      const request = dto([{ lineId: s.lineOf(1), countedQty: 3 }]);
+      const request = dto([{ lineId: s.lineOf(1), countedQty: 3, method: 'counted' }]);
 
       const result = await built.receiving.receiveBox(s.shipmentId, s.boxOf('L1'), request, ACTOR, trx);
 
@@ -356,7 +356,10 @@ describeIfDb('InboundShipmentReceivingManager (DB integration)', () => {
       const f = await seed(trx);
       const built = build(trx);
       const s = await shipment(trx, built, f.warehouseId, [row(1, 'L1', 4, f.barcodes[0])]);
-      const request = dto([{ lineId: s.lineOf(1), countedQty: 0 }], [{ skuId: f.skuIds[2], quantity: 2 }]);
+      const request = dto(
+        [{ lineId: s.lineOf(1), countedQty: 0, method: 'counted' }],
+        [{ skuId: f.skuIds[2], quantity: 2 }],
+      );
 
       const result = await built.receiving.receiveBox(s.shipmentId, s.boxOf('L1'), request, ACTOR, trx);
 
@@ -369,6 +372,71 @@ describeIfDb('InboundShipmentReceivingManager (DB integration)', () => {
     });
   });
 
+  it('stores list method for a single-box line whose qty equals expected', async () => {
+    await inRollbackTx(db, async (trx) => {
+      const f = await seed(trx);
+      const built = build(trx);
+      const s = await shipment(trx, built, f.warehouseId, [row(1, 'L1', 40, f.barcodes[0])]);
+      await built.receiving.receiveBox(
+        s.shipmentId,
+        s.boxOf('L1'),
+        dto([{ lineId: s.lineOf(1), countedQty: 40, method: 'list' }]),
+        ACTOR,
+        trx,
+      );
+      const counts = await countsOf(trx, s.boxOf('L1'));
+      expect(counts[0].countMethod).toBe('list');
+      const view = await built.reader.openBox(s.shipmentId, s.boxOf('L1'), trx);
+      expect(view.counts[0].method).toBe('list');
+    });
+  });
+
+  it('refuses list method on a range line', async () => {
+    await inRollbackTx(db, async (trx) => {
+      const f = await seed(trx);
+      const built = build(trx);
+      const s = await shipment(trx, built, f.warehouseId, [row(1, 'L1-L2', 30, f.barcodes[0])]);
+      const request = dto([{ lineId: s.lineOf(1), countedQty: 30, method: 'list' }]);
+      const err = await built.receiving.receiveBox(s.shipmentId, s.boxOf('L1'), request, ACTOR, trx).catch((e) => e);
+      expect(err).toBeInstanceOf(BadRequestError);
+      expect(String(err.message)).toContain('행');
+    });
+  });
+
+  it('refuses list method when qty differs from expected', async () => {
+    await inRollbackTx(db, async (trx) => {
+      const f = await seed(trx);
+      const built = build(trx);
+      const s = await shipment(trx, built, f.warehouseId, [row(1, 'L1', 40, f.barcodes[0])]);
+      await expect(
+        built.receiving.receiveBox(
+          s.shipmentId,
+          s.boxOf('L1'),
+          dto([{ lineId: s.lineOf(1), countedQty: 38, method: 'list' }]),
+          ACTOR,
+          trx,
+        ),
+      ).rejects.toBeInstanceOf(BadRequestError);
+    });
+  });
+
+  it('unplanned counts are stored as counted', async () => {
+    await inRollbackTx(db, async (trx) => {
+      const f = await seed(trx);
+      const built = build(trx);
+      const s = await shipment(trx, built, f.warehouseId, [row(1, 'L1', 4, f.barcodes[0])]);
+      await built.receiving.receiveBox(
+        s.shipmentId,
+        s.boxOf('L1'),
+        dto([{ lineId: s.lineOf(1), countedQty: 0, method: 'counted' }], [{ skuId: f.skuIds[2], quantity: 2 }]),
+        ACTOR,
+        trx,
+      );
+      const unplanned = (await countsOf(trx, s.boxOf('L1'))).find((c) => c.lineId === null);
+      expect(unplanned?.countMethod).toBe('counted');
+    });
+  });
+
   it('same SKU on two lines in one box gets two receipt lines', async () => {
     await inRollbackTx(db, async (trx) => {
       const f = await seed(trx);
@@ -378,8 +446,8 @@ describeIfDb('InboundShipmentReceivingManager (DB integration)', () => {
         row(2, 'L1', 4, f.barcodes[0]),
       ]);
       const request = dto([
-        { lineId: s.lineOf(1), countedQty: 10 },
-        { lineId: s.lineOf(2), countedQty: 4 },
+        { lineId: s.lineOf(1), countedQty: 10, method: 'counted' },
+        { lineId: s.lineOf(2), countedQty: 4, method: 'counted' },
       ]);
 
       const result = await built.receiving.receiveBox(s.shipmentId, s.boxOf('L1'), request, ACTOR, trx);
@@ -410,7 +478,7 @@ describeIfDb('InboundShipmentReceivingManager (DB integration)', () => {
         built.receiving.receiveBox(
           s.shipmentId,
           s.boxOf('L2'),
-          dto([{ lineId: s.lineOf(2), countedQty: 5 }]),
+          dto([{ lineId: s.lineOf(2), countedQty: 5, method: 'counted' }]),
           ACTOR,
           trx,
         ),
@@ -423,7 +491,7 @@ describeIfDb('InboundShipmentReceivingManager (DB integration)', () => {
       const f = await seed(trx);
       const built = build(trx);
       const s = await shipment(trx, built, f.warehouseId, [row(1, 'L1', 10, f.barcodes[0])]);
-      const request = dto([{ lineId: s.lineOf(1), countedQty: 10 }]);
+      const request = dto([{ lineId: s.lineOf(1), countedQty: 10, method: 'counted' }]);
 
       const first = await built.receiving.receiveBox(s.shipmentId, s.boxOf('L1'), request, ACTOR, trx);
       const replay = await built.receiving.receiveBox(s.shipmentId, s.boxOf('L1'), { ...request }, ACTOR, trx);
@@ -435,7 +503,7 @@ describeIfDb('InboundShipmentReceivingManager (DB integration)', () => {
         built.receiving.receiveBox(
           s.shipmentId,
           s.boxOf('L1'),
-          dto([{ lineId: s.lineOf(1), countedQty: 10 }]),
+          dto([{ lineId: s.lineOf(1), countedQty: 10, method: 'counted' }]),
           ACTOR,
           trx,
         ),
@@ -455,7 +523,7 @@ describeIfDb('InboundShipmentReceivingManager (DB integration)', () => {
       const r1 = await built.receiving.receiveBox(
         s.shipmentId,
         s.boxOf('L1'),
-        dto([{ lineId: s.lineOf(1), countedQty: 10 }]),
+        dto([{ lineId: s.lineOf(1), countedQty: 10, method: 'counted' }]),
         ACTOR,
         trx,
       );
@@ -463,7 +531,7 @@ describeIfDb('InboundShipmentReceivingManager (DB integration)', () => {
       const r2 = await built.receiving.receiveBox(
         s.shipmentId,
         s.boxOf('L2'),
-        dto([{ lineId: s.lineOf(2), countedQty: 5 }]),
+        dto([{ lineId: s.lineOf(2), countedQty: 5, method: 'counted' }]),
         ACTOR,
         trx,
       );
@@ -522,7 +590,7 @@ describeIfDb('InboundShipmentReceivingManager (DB integration)', () => {
       await built.receiving.receiveBox(
         s.shipmentId,
         s.boxOf('L1'),
-        dto([{ lineId: s.lineOf(1), countedQty: 12 }]),
+        dto([{ lineId: s.lineOf(1), countedQty: 12, method: 'counted' }]),
         ACTOR,
         trx,
       );
@@ -621,7 +689,7 @@ describeIfDb('InboundShipmentReceivingManager (DB integration)', () => {
       await built.receiving.receiveBox(
         s.shipmentId,
         s.boxOf('L1'),
-        dto([{ lineId: s.lineOf(1), countedQty: 10 }]),
+        dto([{ lineId: s.lineOf(1), countedQty: 10, method: 'counted' }]),
         ACTOR,
         trx,
       );
@@ -650,16 +718,22 @@ describeIfDb('InboundShipmentReceivingManager (DB integration)', () => {
       const box = s.boxOf('L1');
 
       await expect(
-        built.receiving.receiveBox(s.shipmentId, box, dto([{ lineId: s.lineOf(1), countedQty: 10 }]), ACTOR, trx),
+        built.receiving.receiveBox(
+          s.shipmentId,
+          box,
+          dto([{ lineId: s.lineOf(1), countedQty: 10, method: 'counted' }]),
+          ACTOR,
+          trx,
+        ),
       ).rejects.toBeInstanceOf(BadRequestError);
       await expect(
         built.receiving.receiveBox(
           s.shipmentId,
           box,
           dto([
-            { lineId: s.lineOf(1), countedQty: 10 },
-            { lineId: s.lineOf(1), countedQty: 10 },
-            { lineId: s.lineOf(2), countedQty: 5 },
+            { lineId: s.lineOf(1), countedQty: 10, method: 'counted' },
+            { lineId: s.lineOf(1), countedQty: 10, method: 'counted' },
+            { lineId: s.lineOf(2), countedQty: 5, method: 'counted' },
           ]),
           ACTOR,
           trx,
@@ -670,8 +744,8 @@ describeIfDb('InboundShipmentReceivingManager (DB integration)', () => {
           s.shipmentId,
           box,
           dto([
-            { lineId: s.lineOf(1), countedQty: 10 },
-            { lineId: s.lineOf(2), countedQty: 5 },
+            { lineId: s.lineOf(1), countedQty: 10, method: 'counted' },
+            { lineId: s.lineOf(2), countedQty: 5, method: 'counted' },
           ]),
           ACTOR,
           trx,
@@ -698,7 +772,7 @@ describeIfDb('InboundShipmentReceivingManager (DB integration)', () => {
         built.receiving.receiveBox(
           s.shipmentId,
           s.boxOf('L1'),
-          dto([{ lineId: s.lineOf(1), countedQty: 10 }]),
+          dto([{ lineId: s.lineOf(1), countedQty: 10, method: 'counted' }]),
           ACTOR,
           trx,
         ),
@@ -719,7 +793,7 @@ describeIfDb('InboundShipmentReceivingManager (DB integration)', () => {
       const result = await built.receiving.receiveBox(
         s.shipmentId,
         s.boxOf('L1'),
-        dto([{ lineId: s.lineOf(1), countedQty: 10 }]),
+        dto([{ lineId: s.lineOf(1), countedQty: 10, method: 'counted' }]),
         ACTOR,
         trx,
       );
@@ -744,7 +818,7 @@ describeIfDb('InboundShipmentReceivingManager (DB integration)', () => {
         built.receiving.receiveBox(
           s.shipmentId,
           s.boxOf('L1'),
-          dto([{ lineId: s.lineOf(1), countedQty: 10 }]),
+          dto([{ lineId: s.lineOf(1), countedQty: 10, method: 'counted' }]),
           ACTOR,
           trx,
         ),
@@ -764,7 +838,7 @@ describeIfDb('InboundShipmentReceivingManager (DB integration)', () => {
         built.receiving.receiveBox(
           s.shipmentId,
           s.boxOf('L1'),
-          dto([{ lineId: s.lineOf(1), countedQty: 10 }], [{ skuId: randomUUID(), quantity: 1 }]),
+          dto([{ lineId: s.lineOf(1), countedQty: 10, method: 'counted' }], [{ skuId: randomUUID(), quantity: 1 }]),
           ACTOR,
           trx,
         ),
@@ -786,9 +860,9 @@ describeIfDb('InboundShipmentReceivingManager (DB integration)', () => {
         row(3, 'L2', 7, f.barcodes[2]),
       ]);
       const box = s.boxOf('L1');
-      const counts = [
-        { lineId: s.lineOf(1), countedQty: 20 },
-        { lineId: s.lineOf(2), countedQty: 5 },
+      const counts: Parameters<typeof dto>[0] = [
+        { lineId: s.lineOf(1), countedQty: 20, method: 'counted' },
+        { lineId: s.lineOf(2), countedQty: 5, method: 'counted' },
       ];
       const received = await built.receiving.receiveBox(s.shipmentId, box, dto(counts), ACTOR, trx);
       built.recalculateAndPublishForSkus.mockClear();
@@ -841,14 +915,14 @@ describeIfDb('InboundShipmentReceivingManager (DB integration)', () => {
       await built.receiving.receiveBox(
         s.shipmentId,
         s.boxOf('L1'),
-        dto([{ lineId: s.lineOf(1), countedQty: 10 }]),
+        dto([{ lineId: s.lineOf(1), countedQty: 10, method: 'counted' }]),
         ACTOR,
         trx,
       );
       const closed = await built.receiving.receiveBox(
         s.shipmentId,
         s.boxOf('L2'),
-        dto([{ lineId: s.lineOf(2), countedQty: 5 }]),
+        dto([{ lineId: s.lineOf(2), countedQty: 5, method: 'counted' }]),
         ACTOR,
         trx,
       );
@@ -881,7 +955,13 @@ describeIfDb('InboundShipmentReceivingManager (DB integration)', () => {
         row(2, 'L2', 5, f.barcodes[1]),
       ]);
       const box = s.boxOf('L1');
-      await built.receiving.receiveBox(s.shipmentId, box, dto([{ lineId: s.lineOf(1), countedQty: 10 }]), ACTOR, trx);
+      await built.receiving.receiveBox(
+        s.shipmentId,
+        box,
+        dto([{ lineId: s.lineOf(1), countedQty: 10, method: 'counted' }]),
+        ACTOR,
+        trx,
+      );
       const [count] = await countsOf(trx, box);
       const [shelf] = await trx
         .insert(wmsTables.locations)
@@ -928,14 +1008,14 @@ describeIfDb('InboundShipmentReceivingManager (DB integration)', () => {
       await built.receiving.receiveBox(
         s.shipmentId,
         s.boxOf('L1'),
-        dto([{ lineId: s.lineOf(1), countedQty: 0 }]),
+        dto([{ lineId: s.lineOf(1), countedQty: 0, method: 'counted' }]),
         ACTOR,
         trx,
       );
       await built.receiving.receiveBox(
         s.shipmentId,
         s.boxOf('L2'),
-        dto([{ lineId: s.lineOf(2), countedQty: 3 }]),
+        dto([{ lineId: s.lineOf(2), countedQty: 3, method: 'counted' }]),
         ACTOR,
         trx,
       );
@@ -961,7 +1041,7 @@ describeIfDb('InboundShipmentReceivingManager (DB integration)', () => {
       await built.receiving.receiveBox(
         s.shipmentId,
         s.boxOf('L1'),
-        dto([{ lineId: s.lineOf(1), countedQty: 10 }]),
+        dto([{ lineId: s.lineOf(1), countedQty: 10, method: 'counted' }]),
         ACTOR,
         trx,
       );
@@ -979,7 +1059,7 @@ describeIfDb('InboundShipmentReceivingManager (DB integration)', () => {
       expect(row1.closedAt).not.toBeNull();
       await expect(built.drafts.close(s.shipmentId, 'again', ACTOR, trx)).rejects.toBeInstanceOf(ConflictError);
 
-      const l2 = dto([{ lineId: s.lineOf(2), countedQty: 5 }]);
+      const l2 = dto([{ lineId: s.lineOf(2), countedQty: 5, method: 'counted' }]);
       await expect(built.receiving.receiveBox(s.shipmentId, s.boxOf('L2'), l2, ACTOR, trx)).rejects.toBeInstanceOf(
         ConflictError,
       );
@@ -996,7 +1076,7 @@ describeIfDb('InboundShipmentReceivingManager (DB integration)', () => {
       const done = await built.receiving.receiveBox(
         s.shipmentId,
         s.boxOf('L2'),
-        dto([{ lineId: s.lineOf(2), countedQty: 5 }]),
+        dto([{ lineId: s.lineOf(2), countedQty: 5, method: 'counted' }]),
         ACTOR,
         trx,
       );
@@ -1034,14 +1114,14 @@ describeIfDb('InboundShipmentReceivingManager (DB integration)', () => {
       await built.receiving.receiveBox(
         s.shipmentId,
         s.boxOf('L1'),
-        dto([{ lineId: s.lineOf(1), countedQty: 8 }]),
+        dto([{ lineId: s.lineOf(1), countedQty: 8, method: 'counted' }]),
         ACTOR,
         trx,
       );
       await built.receiving.receiveBox(
         s.shipmentId,
         s.boxOf('L2'),
-        dto([{ lineId: s.lineOf(2), countedQty: 7 }], [{ skuId: f.skuIds[2], quantity: 1 }]),
+        dto([{ lineId: s.lineOf(2), countedQty: 7, method: 'counted' }], [{ skuId: f.skuIds[2], quantity: 1 }]),
         ACTOR,
         trx,
       );
@@ -1104,8 +1184,8 @@ describeIfDb('InboundShipmentReceivingManager (DB integration)', () => {
         s.shipmentId,
         box,
         dto([
-          { lineId: s.lineOf(1), countedQty: 6 },
-          { lineId: s.lineOf(2), countedQty: 4 },
+          { lineId: s.lineOf(1), countedQty: 6, method: 'counted' },
+          { lineId: s.lineOf(2), countedQty: 4, method: 'counted' },
         ]),
         ACTOR,
         trx,
@@ -1190,7 +1270,7 @@ describeIfDb('InboundShipmentReceivingManager (DB integration)', () => {
       await built.receiving.receiveBox(
         s.shipmentId,
         s.boxOf('L1'),
-        dto([{ lineId: s.lineOf(1), countedQty: 10 }]),
+        dto([{ lineId: s.lineOf(1), countedQty: 10, method: 'counted' }]),
         ACTOR,
         trx,
       );

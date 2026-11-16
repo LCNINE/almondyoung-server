@@ -1,0 +1,3 @@
+CREATE TYPE "public"."inbound_shipment_count_method" AS ENUM('counted', 'list');--> statement-breakpoint
+ALTER TABLE "inbound_shipment_box_counts" ADD COLUMN "count_method" "inbound_shipment_count_method" DEFAULT 'counted' NOT NULL;--> statement-breakpoint
+ALTER TABLE "inbound_shipment_box_counts" ADD CONSTRAINT "ck_inbound_shipment_box_counts_method" CHECK ("inbound_shipment_box_counts"."line_id" IS NOT NULL OR "inbound_shipment_box_counts"."count_method" = 'counted');

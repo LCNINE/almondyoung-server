@@ -1121,6 +1121,13 @@
       "when": 1794763450198,
       "tag": "20261115172410_add-inbound-shipments",
       "breakpoints": true
+    },
+    {
+      "idx": 160,
+      "version": "7",
+      "when": 1794794231615,
+      "tag": "20261116015711_add-inbound-shipment-count-method",
+      "breakpoints": true
     }
   ]
 }

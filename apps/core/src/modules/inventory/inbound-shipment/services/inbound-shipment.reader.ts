@@ -367,6 +367,7 @@ export class InboundShipmentReader {
           lineId: t.inboundShipmentBoxCounts.lineId,
           skuId: t.inboundShipmentBoxCounts.skuId,
           countedQty: t.inboundShipmentBoxCounts.countedQty,
+          method: t.inboundShipmentBoxCounts.countMethod,
         })
         .from(t.inboundShipmentBoxCounts)
         .where(and(eq(t.inboundShipmentBoxCounts.boxId, boxId), isNull(t.inboundShipmentBoxCounts.canceledAt)))

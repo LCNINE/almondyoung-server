@@ -187,6 +187,7 @@ export const inboundShipmentStatusEnum = pgEnum('inbound_shipment_status', [
 export const inboundShipmentBoxDispositionEnum = pgEnum('inbound_shipment_box_disposition', ['stock', 'forward']);
 export const inboundShipmentBoxStatusEnum = pgEnum('inbound_shipment_box_status', ['open', 'received']);
 export const inboundShipmentBoxOriginEnum = pgEnum('inbound_shipment_box_origin', ['list', 'added']);
+export const inboundShipmentCountMethodEnum = pgEnum('inbound_shipment_count_method', ['counted', 'list']);
 export const inboundShipmentLineKindEnum = pgEnum('inbound_shipment_line_kind', ['sku', 'free', 'unresolved']);
 export const inboundShipmentLineResolutionEnum = pgEnum('inbound_shipment_line_resolution', ['barcode', 'manual']);
 export const inboundWorkTypeEnum = pgEnum('inbound_work_type', ['INBOUND', 'PUTAWAY', 'RETURN', 'CANCEL']);
@@ -3133,6 +3134,8 @@ export const inboundShipmentBoxCounts = pgTable(
     lineId: uuid('line_id').references(() => inboundShipmentLines.id, { onDelete: 'restrict' }),
     skuId: uuid('sku_id').references(() => skus.id, { onDelete: 'restrict' }),
     countedQty: integer('counted_qty').notNull(),
+    // 'list' = 리스트대로(세지 않고 예정 수량을 받음). 리스트에 없던 물건·범위 줄은 늘 'counted'
+    countMethod: inboundShipmentCountMethodEnum('count_method').notNull().default('counted'),
     receiptLineId: uuid('receipt_line_id')
       .references(() => inboundReceiptLines.id, { onDelete: 'set null' })
       .unique(),
@@ -3149,6 +3152,10 @@ export const inboundShipmentBoxCounts = pgTable(
     ckInboundShipmentBoxCountSku: check(
       'ck_inbound_shipment_box_counts_sku',
       sql`${t.lineId} IS NOT NULL OR ${t.skuId} IS NOT NULL`,
+    ),
+    ckInboundShipmentBoxCountMethod: check(
+      'ck_inbound_shipment_box_counts_method',
+      sql`${t.lineId} IS NOT NULL OR ${t.countMethod} = 'counted'`,
     ),
     ckInboundShipmentBoxCountUnplannedQty: check(
       'ck_inbound_shipment_box_counts_unplanned_qty',

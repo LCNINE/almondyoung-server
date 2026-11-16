@@ -29,8 +29,14 @@ interface PlannedCount {
   lineId: string | null;
   skuId: string | null;
   countedQty: number;
+  countMethod: 'counted' | 'list';
   ledgerIndex: number | null;
 }
+
+/** 이 상자를 덮는 줄 + 리스트대로 검증에 쓰는 예정 수량·덮는 상자 수. */
+type BoxLine = Pick<InboundShipmentLine, 'id' | 'kind' | 'skuId' | 'rowNumber' | 'expectedQty'> & {
+  coverCount: number;
+};
 
 /**
  * 상자 확정 — 센 만큼 입고 커널로 RECEIVE 한다 (spec §8.2·§8.7).
@@ -81,7 +87,13 @@ export class InboundShipmentReceivingManager {
           }
         }
         for (const u of dto.unplanned) {
-          planned.push({ lineId: null, skuId: u.skuId, countedQty: u.quantity, ledgerIndex: ledger.length });
+          planned.push({
+            lineId: null,
+            skuId: u.skuId,
+            countedQty: u.quantity,
+            countMethod: 'counted',
+            ledgerIndex: ledger.length,
+          });
           ledger.push({ skuId: u.skuId, quantity: u.quantity });
         }
 
@@ -114,6 +126,7 @@ export class InboundShipmentReceivingManager {
           lineId: p.lineId,
           skuId: p.skuId,
           countedQty: p.countedQty,
+          countMethod: p.countMethod,
           receiptLineId: arrival && p.ledgerIndex !== null ? arrival.lines[p.ledgerIndex].id : null,
           createdBy: actorId,
         }));
@@ -287,33 +300,40 @@ export class InboundShipmentReceivingManager {
     );
   }
 
-  private async linesOfBox(
-    trx: DbTx,
-    boxId: string,
-  ): Promise<Pick<InboundShipmentLine, 'id' | 'kind' | 'skuId' | 'rowNumber'>[]> {
-    return trx
+  private async linesOfBox(trx: DbTx, boxId: string): Promise<BoxLine[]> {
+    const lb = wmsTables.inboundShipmentLineBoxes;
+    const rows = await trx
       .select({
         id: wmsTables.inboundShipmentLines.id,
         kind: wmsTables.inboundShipmentLines.kind,
         skuId: wmsTables.inboundShipmentLines.skuId,
         rowNumber: wmsTables.inboundShipmentLines.rowNumber,
+        expectedQty: wmsTables.inboundShipmentLines.expectedQty,
       })
-      .from(wmsTables.inboundShipmentLineBoxes)
-      .innerJoin(
-        wmsTables.inboundShipmentLines,
-        eq(wmsTables.inboundShipmentLines.id, wmsTables.inboundShipmentLineBoxes.lineId),
+      .from(lb)
+      .innerJoin(wmsTables.inboundShipmentLines, eq(wmsTables.inboundShipmentLines.id, lb.lineId))
+      .where(eq(lb.boxId, boxId));
+    if (rows.length === 0) return [];
+    // 줄이 덮는 상자 수 — 범위 줄은 «리스트대로» 를 쓸 수 없다
+    const covers = await trx
+      .select({ lineId: lb.lineId, n: sql<number>`count(*)::int` })
+      .from(lb)
+      .where(
+        inArray(
+          lb.lineId,
+          rows.map((r) => r.id),
+        ),
       )
-      .where(eq(wmsTables.inboundShipmentLineBoxes.boxId, boxId));
+      .groupBy(lb.lineId);
+    const coverOf = new Map(covers.map((c) => [c.lineId, Number(c.n)]));
+    return rows.map((r) => ({ ...r, coverCount: coverOf.get(r.id) ?? 1 }));
   }
 
   /** `counts` 는 이 상자를 덮는 줄 전부를 정확히 한 번씩 — «안 셌다»와 «0개»를 가른다 (spec §8.2). */
-  private planLineCounts(
-    dto: ReceiveBoxDto,
-    lines: Pick<InboundShipmentLine, 'id' | 'kind' | 'skuId' | 'rowNumber'>[],
-  ): PlannedCount[] {
+  private planLineCounts(dto: ReceiveBoxDto, lines: BoxLine[]): PlannedCount[] {
     const lineById = new Map(lines.map((l) => [l.id, l]));
     const seen = new Set<string>();
-    const matched: { line: (typeof lines)[number]; countedQty: number }[] = [];
+    const matched: { line: (typeof lines)[number]; countedQty: number; method: 'counted' | 'list' }[] = [];
     // 1) 덮는 줄 전부를 정확히 한 번씩 — 400
     for (const c of dto.counts) {
       if (seen.has(c.lineId)) throw new BadRequestError(`같은 줄을 두 번 셌습니다: ${c.lineId}`);
@@ -323,7 +343,12 @@ export class InboundShipmentReceivingManager {
       if (!Number.isInteger(c.countedQty) || c.countedQty < 0 || c.countedQty > MAX_LINE_QTY) {
         throw new BadRequestError(`센 수량은 0 이상 ${MAX_LINE_QTY} 이하의 정수여야 합니다.`);
       }
-      matched.push({ line, countedQty: c.countedQty });
+      if (c.method === 'list' && (line.coverCount !== 1 || c.countedQty !== line.expectedQty)) {
+        throw new BadRequestError(
+          `리스트대로는 이 상자 하나만 덮고 예정 수량과 같은 줄에만 쓸 수 있습니다: ${line.rowNumber}행`,
+        );
+      }
+      matched.push({ line, countedQty: c.countedQty, method: c.method });
     }
     const missing = lines.filter((l) => !seen.has(l.id)).sort((a, b) => a.rowNumber - b.rowNumber);
     if (missing.length > 0) {
@@ -336,10 +361,11 @@ export class InboundShipmentReceivingManager {
         `상품이 정해지지 않은 줄은 받을 수 없습니다: ${unresolved.map((m) => `${m.line.rowNumber}행`).join(', ')}`,
       );
     }
-    return matched.map(({ line, countedQty }) => ({
+    return matched.map(({ line, countedQty, method }) => ({
       lineId: line.id,
       skuId: line.kind === 'sku' ? line.skuId : null,
       countedQty,
+      countMethod: method,
       ledgerIndex: null,
     }));
   }

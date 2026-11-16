@@ -4,6 +4,7 @@ import {
   ArrayMaxSize,
   Equals,
   IsArray,
+  IsIn,
   IsInt,
   IsString,
   IsUUID,
@@ -30,6 +31,13 @@ export class ReceiveBoxCountDto {
   @Min(0)
   @Max(MAX_LINE_QTY)
   countedQty: number;
+
+  @ApiProperty({
+    enum: ['counted', 'list'],
+    description: "'list' = 리스트대로. 이 상자 하나만 덮고 예정 수량과 같은 줄에만 쓸 수 있다",
+  })
+  @IsIn(['counted', 'list'])
+  method: 'counted' | 'list';
 }
 
 export class ReceiveBoxUnplannedDto {
@@ -173,6 +181,7 @@ export class BoxCountViewDto {
   @ApiPropertyOptional({ nullable: true, description: 'null = 리스트에 없던 물건' }) lineId: string | null;
   @ApiPropertyOptional({ nullable: true }) skuId: string | null;
   @ApiProperty() countedQty: number;
+  @ApiProperty({ enum: ['counted', 'list'] }) method: 'counted' | 'list';
 }
 
 export class BoxViewDto {
