@@ -1,3 +1,6 @@
+import { GUARDS_METADATA } from '@nestjs/common/constants';
+import { JwtAuthGuard, PermissionGuard } from '@app/authorization';
+import { REQUIRED_PERMISSIONS_KEY } from '@app/authorization/decorators/require-permission.decorator';
 import { RevenueReportManager } from '../read-model/revenue-report.manager';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
@@ -56,5 +59,30 @@ describe('카페24·대조 상태 입력', () => {
     expect(() => manager.import([{ ...row, originalStatus: 'confirmed' }])).toThrow();
     controller.import({ rows: [{ ...row }] }, { userId: 'test-operator' });
     expect(service.import).toHaveBeenCalledWith([{ ...row }], 'test-operator', undefined);
+  });
+});
+
+describe('매출 자료 권한', () => {
+  it('모든 경로에 인증·권한 가드를 유지한다', () => {
+    expect(Reflect.getMetadata(GUARDS_METADATA, RevenueReportController)).toEqual([JwtAuthGuard, PermissionGuard]);
+  });
+
+  it.each(['get', 'history', 'raw'] as const)('%s 조회는 통계 조회 권한을 요구한다', (method) => {
+    expect(Reflect.getMetadata(REQUIRED_PERMISSIONS_KEY, RevenueReportController.prototype[method])).toEqual([
+      'analytics.report.read',
+    ]);
+  });
+
+  it('등록은 조회 권한보다 강한 설정 권한을 요구한다', () => {
+    expect(Reflect.getMetadata(REQUIRED_PERMISSIONS_KEY, RevenueReportController.prototype.import)).toEqual([
+      'analytics.setting.write',
+    ]);
+  });
+
+  it('반영 이력은 검증된 연도만 서비스에 전달한다', () => {
+    const service = { history: jest.fn().mockReturnValue([]) };
+    const controller = new RevenueReportController(service as never);
+    controller.history({ year: 2026 });
+    expect(service.history).toHaveBeenCalledWith(2026);
   });
 });

@@ -51,19 +51,25 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'analytics GET /statistics/revenue-report': {
     verdict: 'N/A',
-    evidence: 'apps/analytics/src/features/statistics/api/revenue-report.controller.ts:74',
+    evidence: 'apps/analytics/src/features/statistics/api/revenue-report.controller.ts:118',
     predicate: "@RequirePermission('analytics.report.read')",
     note: '연도별 전사 매출 자료. 연도만 받고 개인 소유 자원을 선택하지 않는다. 클래스의 JwtAuthGuard·PermissionGuard와 served-tenant 권한 설정을 함께 적용한다.',
   },
+  'analytics GET /statistics/revenue-report/history': {
+    verdict: 'N/A',
+    evidence: 'apps/analytics/src/features/statistics/api/revenue-report.controller.ts:124',
+    predicate: "@RequirePermission('analytics.report.read')",
+    note: '연도별 전사 매출 자료의 최근 반영 이력. 사용자가 타인의 이력 ID를 지정하는 경로가 아니며 연도만 받는다. JwtAuthGuard·PermissionGuard와 analytics served-tenant 권한을 적용한다. 조회 서비스는 해당 연도의 변경 행이 있는 이력만 최근 50개 반환한다.',
+  },
   'analytics GET /statistics/revenue-report/raw': {
     verdict: 'N/A',
-    evidence: 'apps/analytics/src/features/statistics/api/revenue-report.controller.ts:80',
+    evidence: 'apps/analytics/src/features/statistics/api/revenue-report.controller.ts:130',
     predicate: "@RequirePermission('analytics.report.read')",
     note: '연도·페이지로 조회하는 전사 주문 상품 원장. 고객 개인정보를 선택하지 않으며 개별 고객 소유권이 아닌 통계 조회 권한으로 접근한다. 클래스의 JwtAuthGuard·PermissionGuard와 served-tenant 권한 설정을 함께 적용한다.',
   },
   'analytics POST /statistics/revenue-report/external': {
     verdict: 'N/A',
-    evidence: 'apps/analytics/src/features/statistics/api/revenue-report.controller.ts:86',
+    evidence: 'apps/analytics/src/features/statistics/api/revenue-report.controller.ts:136',
     predicate: "@RequirePermission('analytics.setting.write')",
     note: '전사 월별 채널 매출의 등록·교체. 계정은 보고서 구분용 문자열이며 로그인 계정이나 다른 사용자의 자원 식별자가 아니다. 클래스의 JwtAuthGuard·PermissionGuard와 served-tenant 권한 설정을 함께 적용한다.',
   },
@@ -1762,15 +1768,15 @@ const keyOf = (r: AuditRow): string => `${r.app} ${r.verb} ${r.route}`;
 describe('IDOR 검사 대상 집합', () => {
   it('감사 스크립트가 idorTarget 을 내보낸다', () => {
     const targets = runAudit().filter((r) => r.idorTarget);
-    expect(targets).toHaveLength(286);
+    expect(targets).toHaveLength(287);
   });
 
   // search 와 analytics 가 둘 다 `GET /health` 이고, user-service 와 file-service 가 둘 다
   // `POST /files/upload` 다. `<VERB> <route>` 로 키를 만들면 그만큼 뭉개지고 스냅샷이 조용히 잃는다.
   it('키에 app 이 들어가야 충돌하지 않는다', () => {
     const targets = runAudit().filter((r) => r.idorTarget);
-    expect(new Set(targets.map(keyOf)).size).toBe(286);
-    expect(new Set(targets.map((r) => `${r.verb} ${r.route}`)).size).toBe(284);
+    expect(new Set(targets.map(keyOf)).size).toBe(287);
+    expect(new Set(targets.map((r) => `${r.verb} ${r.route}`)).size).toBe(285);
   });
 
   it('감사 스크립트의 대상 집합과 명단이 정확히 일치한다', () => {
