@@ -24,6 +24,9 @@ import { useInboundShipments } from '@/lib/services/inventory/inbound-shipment-q
 import { useUploadInboundShipment } from '@/lib/services/inventory/inbound-shipment-mutations';
 import { useWarehouses } from '@/lib/services/inventory/queries';
 import type { InboundShipmentStatus } from '@/lib/types/dto/inbound-shipment';
+import { Badge } from '@/components/ui/badge';
+import { toLocalDateString } from '@/lib/utils/date';
+import { isArrivalOverdue } from '../../lib/arrival-overdue';
 import { SHIPMENT_STATUS_LABEL } from '../../lib/shipment-rules';
 import { UploadDialog } from '../upload-dialog';
 
@@ -51,6 +54,7 @@ export function ShipmentList() {
     ...(warehouseId !== ALL ? { warehouseId } : {}),
   });
   const rows = data ?? [];
+  const today = toLocalDateString(new Date());
 
   return (
     <>
@@ -122,7 +126,18 @@ export function ShipmentList() {
                   <TableCell>{SHIPMENT_STATUS_LABEL[row.status]}</TableCell>
                   <TableCell className="text-right">{row.boxCount}</TableCell>
                   <TableCell className="text-right">{row.lineCount}</TableCell>
-                  <TableCell>{row.expectedArrival ?? ''}</TableCell>
+                  <TableCell>
+                    {row.expectedArrival ?? ''}
+                    {isArrivalOverdue(
+                      row.status,
+                      row.expectedArrival,
+                      today
+                    ) && (
+                      <Badge variant="destructive" className="ml-2">
+                        예정일 지남
+                      </Badge>
+                    )}
+                  </TableCell>
                 </TableRow>
               ))
             )}

@@ -37,8 +37,10 @@ describeIfDb('InboundShipmentDraftManager (DB integration)', () => {
       run: <T>(fn: (tx: DbTx) => Promise<T>, tx?: DbTx): Promise<T> => fn(tx ?? trx),
     } as unknown as DbService<typeof wmsSchema>;
     const matcher = new InboundShipmentSkuMatcherReader(dbService);
+    const recalc = jest.fn<Promise<unknown[]>, [string[], DbTx?]>().mockResolvedValue([]);
     return {
-      manager: new InboundShipmentDraftManager(dbService, matcher),
+      recalc,
+      manager: new InboundShipmentDraftManager(dbService, matcher, { recalculateAndPublishForSkus: recalc } as never),
       reader: new InboundShipmentReader(dbService, matcher),
     };
   }
@@ -287,6 +289,183 @@ describeIfDb('InboundShipmentDraftManager (DB integration)', () => {
           trx,
         ),
       ).rejects.toThrow(NotFoundError);
+    });
+  });
+
+  describe('recalculates sellable quantity on every shipment action', () => {
+    const sorted = (call: [string[], DbTx?]) => [...call[0]].sort();
+
+    async function draft(trx: DbTx, rows = 2) {
+      const f = await seed(trx);
+      const built = build(trx);
+      const { shipmentId } = await built.manager.createDraft(
+        input(f.warehouseId, {
+          header: HEADER,
+          rows: Array.from({ length: rows }, (_, i) => row(i + 1, `L${i + 1}`, 5, f.barcodes[i])),
+        }),
+        ACTOR,
+        trx,
+      );
+      const lines = await trx
+        .select()
+        .from(wmsTables.inboundShipmentLines)
+        .where(eq(wmsTables.inboundShipmentLines.shipmentId, shipmentId));
+      const boxes = await trx
+        .select()
+        .from(wmsTables.inboundShipmentBoxes)
+        .where(eq(wmsTables.inboundShipmentBoxes.shipmentId, shipmentId));
+      return { f, built, shipmentId, lines, boxes };
+    }
+
+    it('confirm recalculates every sku line in the same tx', async () => {
+      await inRollbackTx(db, async (trx) => {
+        const { f, built, shipmentId } = await draft(trx);
+        await built.manager.confirm(shipmentId, [], ACTOR, trx);
+        expect(built.recalc).toHaveBeenCalledTimes(1);
+        expect(sorted(built.recalc.mock.calls[0])).toEqual([f.skuIds[0], f.skuIds[1]].sort());
+        expect(built.recalc.mock.calls[0][1] !== undefined).toBe(true);
+      });
+    });
+
+    it('cancel of a draft does not recalculate', async () => {
+      await inRollbackTx(db, async (trx) => {
+        const { built, shipmentId } = await draft(trx);
+        await built.manager.cancel(shipmentId, ACTOR, trx);
+        expect(built.recalc).not.toHaveBeenCalled();
+      });
+    });
+
+    it('cancel of an expected shipment recalculates its sku lines', async () => {
+      await inRollbackTx(db, async (trx) => {
+        const { f, built, shipmentId } = await draft(trx);
+        await built.manager.confirm(shipmentId, [], ACTOR, trx);
+        built.recalc.mockClear();
+        await built.manager.cancel(shipmentId, ACTOR, trx);
+        expect(built.recalc).toHaveBeenCalledTimes(1);
+        expect(sorted(built.recalc.mock.calls[0])).toEqual([f.skuIds[0], f.skuIds[1]].sort());
+      });
+    });
+
+    it('updateHeader on a draft does not recalculate', async () => {
+      await inRollbackTx(db, async (trx) => {
+        const { built, shipmentId } = await draft(trx);
+        await built.manager.updateHeader(shipmentId, { expectedArrival: '2026-12-01' }, trx);
+        expect(built.recalc).not.toHaveBeenCalled();
+      });
+    });
+
+    it('updateHeader recalculates only when expectedArrival changes on a confirmed shipment', async () => {
+      await inRollbackTx(db, async (trx) => {
+        const { f, built, shipmentId } = await draft(trx);
+        await built.manager.confirm(shipmentId, [], ACTOR, trx);
+        built.recalc.mockClear();
+        await built.manager.updateHeader(shipmentId, { name: 'renamed' }, trx);
+        expect(built.recalc).not.toHaveBeenCalled();
+        await built.manager.updateHeader(shipmentId, { expectedArrival: '2026-12-01' }, trx);
+        expect(built.recalc).toHaveBeenCalledTimes(1);
+        expect(sorted(built.recalc.mock.calls[0])).toEqual([f.skuIds[0], f.skuIds[1]].sort());
+        built.recalc.mockClear();
+        await built.manager.updateHeader(shipmentId, { name: 'again', expectedArrival: '2026-12-01' }, trx);
+        expect(built.recalc).not.toHaveBeenCalled();
+      });
+    });
+
+    describe('promised_arrival', () => {
+      async function promised(trx: DbTx, shipmentId: string) {
+        const [s] = await trx
+          .select()
+          .from(wmsTables.inboundShipments)
+          .where(eq(wmsTables.inboundShipments.id, shipmentId));
+        return { promised: s.promisedArrival, expected: s.expectedArrival };
+      }
+
+      it('confirm copies expected_arrival into promised_arrival', async () => {
+        await inRollbackTx(db, async (trx) => {
+          const { built, shipmentId } = await draft(trx);
+          await built.manager.updateHeader(shipmentId, { expectedArrival: '2026-12-01' }, trx);
+          await built.manager.confirm(shipmentId, [], ACTOR, trx);
+          expect(await promised(trx, shipmentId)).toEqual({ promised: '2026-12-01', expected: '2026-12-01' });
+        });
+      });
+
+      it('first PATCH after a null-date confirm sets promised_arrival', async () => {
+        await inRollbackTx(db, async (trx) => {
+          const { built, shipmentId } = await draft(trx);
+          await built.manager.confirm(shipmentId, [], ACTOR, trx);
+          expect((await promised(trx, shipmentId)).promised).toBeNull();
+          await built.manager.updateHeader(shipmentId, { expectedArrival: '2026-12-05' }, trx);
+          expect(await promised(trx, shipmentId)).toEqual({ promised: '2026-12-05', expected: '2026-12-05' });
+        });
+      });
+
+      it('later PATCH changes expected_arrival but not promised_arrival', async () => {
+        await inRollbackTx(db, async (trx) => {
+          const { built, shipmentId } = await draft(trx);
+          await built.manager.updateHeader(shipmentId, { expectedArrival: '2026-12-01' }, trx);
+          await built.manager.confirm(shipmentId, [], ACTOR, trx);
+          await built.manager.updateHeader(shipmentId, { expectedArrival: '2026-12-20' }, trx);
+          expect(await promised(trx, shipmentId)).toEqual({ promised: '2026-12-01', expected: '2026-12-20' });
+        });
+      });
+
+      it('draft PATCH does not set promised_arrival', async () => {
+        await inRollbackTx(db, async (trx) => {
+          const { built, shipmentId } = await draft(trx);
+          await built.manager.updateHeader(shipmentId, { expectedArrival: '2026-12-01' }, trx);
+          expect((await promised(trx, shipmentId)).promised).toBeNull();
+        });
+      });
+    });
+
+    it('editLine recalculates the sku before and after, and not on a draft', async () => {
+      await inRollbackTx(db, async (trx) => {
+        const { f, built, shipmentId, lines } = await draft(trx);
+        const line = lines.find((l) => l.rowNumber === 1)!;
+        await built.manager.editLine(shipmentId, line.id, null, { expectedQty: 7 }, ACTOR, trx);
+        expect(built.recalc).not.toHaveBeenCalled();
+        await built.manager.confirm(shipmentId, [], ACTOR, trx);
+        built.recalc.mockClear();
+
+        await built.manager.editLine(shipmentId, line.id, { kind: 'sku', skuId: f.skuIds[2] }, {}, ACTOR, trx);
+        expect(built.recalc).toHaveBeenCalledTimes(1);
+        expect(sorted(built.recalc.mock.calls[0])).toEqual([f.skuIds[0], f.skuIds[2]].sort());
+
+        built.recalc.mockClear();
+        await built.manager.editLine(shipmentId, line.id, { kind: 'free' }, {}, ACTOR, trx);
+        expect(built.recalc.mock.calls[0][0]).toEqual([f.skuIds[2]]);
+      });
+    });
+
+    it('editBox disposition flip recalculates the skus of that box', async () => {
+      await inRollbackTx(db, async (trx) => {
+        const { f, built, shipmentId, boxes } = await draft(trx, 2);
+        const box = boxes.find((b) => b.label === 'L1')!;
+        await built.manager.editBox(shipmentId, box.id, { disposition: 'forward' }, ACTOR, trx);
+        expect(built.recalc).not.toHaveBeenCalled();
+        await built.manager.editBox(shipmentId, box.id, { disposition: 'stock' }, ACTOR, trx);
+        await built.manager.confirm(shipmentId, [], ACTOR, trx);
+        built.recalc.mockClear();
+
+        await built.manager.editBox(shipmentId, box.id, { forwardNote: 'n' }, ACTOR, trx);
+        expect(built.recalc).not.toHaveBeenCalled();
+        await built.manager.editBox(shipmentId, box.id, { disposition: 'forward' }, ACTOR, trx);
+        expect(built.recalc).toHaveBeenCalledTimes(1);
+        expect(built.recalc.mock.calls[0][0]).toEqual([f.skuIds[0]]);
+      });
+    });
+
+    it('close and reopen recalculate every sku line', async () => {
+      await inRollbackTx(db, async (trx) => {
+        const { f, built, shipmentId } = await draft(trx);
+        await built.manager.confirm(shipmentId, [], ACTOR, trx);
+        built.recalc.mockClear();
+        await built.manager.close(shipmentId, 'never arrived', ACTOR, trx);
+        await built.manager.reopen(shipmentId, ACTOR, trx);
+        expect(built.recalc).toHaveBeenCalledTimes(2);
+        for (const call of built.recalc.mock.calls) {
+          expect(sorted(call)).toEqual([f.skuIds[0], f.skuIds[1]].sort());
+        }
+      });
     });
   });
 

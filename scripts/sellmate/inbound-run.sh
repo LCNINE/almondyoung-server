@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 입고예정 파이프라인(match-sku-to-variant / sync-restock-to-medusa)을
+# 입고예정 파이프라인(match-sku-to-variant)을
 # live/dev RDS 로 실행하는 러너. run.sh 와 같은 방식으로 시크릿을 런타임 조회해
 # CORE_DB_URL / MEDUSA_DB_URL 을 주입한다(비번은 transcript 에 안 찍음).
 #
@@ -7,12 +7,10 @@
 #
 # 사용:
 #   bash scripts/sellmate/inbound-run.sh live match-sku        <csv> [--limit N] [--apply]
-#   MEDUSA_API_URL=... MEDUSA_API_KEY=... \
-#     bash scripts/sellmate/inbound-run.sh live sync-restock   [--apply]
 set -euo pipefail
 
-STAGE="${1:?사용: inbound-run.sh <dev|live> <match-sku|sync-restock> [args]}"
-STEP="${2:?스텝(match-sku|sync-restock) 필요}"
+STAGE="${1:?사용: inbound-run.sh <dev|live> <match-sku> [args]}"
+STEP="${2:?스텝(match-sku) 필요}"
 shift 2
 
 REGION="ap-northeast-2"
@@ -72,10 +70,6 @@ case "$STEP" in
     export MEDUSA_DB_URL
     echo "🔌 medusa @ ${MASK}:5432"
     exec npx tsx apps/channel-adapter/scripts/match-sku-to-variant.ts "$@"
-    ;;
-  sync-restock)
-    : "${MEDUSA_API_URL:?MEDUSA_API_URL 필요}" "${MEDUSA_API_KEY:?MEDUSA_API_KEY 필요}"
-    exec npx tsx apps/channel-adapter/scripts/sync-restock-to-medusa.ts "$@"
     ;;
   *)
     echo "❌ 모르는 스텝: $STEP"; exit 1;;

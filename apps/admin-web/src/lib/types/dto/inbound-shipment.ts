@@ -56,6 +56,8 @@ export interface InboundShipmentSummary {
   status: InboundShipmentStatus;
   name: string;
   expectedArrival: string | null;
+  /** 처음 약속한 도착 예정일 — 지금 예정일과 다를 때만 화면에 보인다. */
+  promisedArrival: string | null;
   boxCount: number;
   lineCount: number;
   createdAt: string;

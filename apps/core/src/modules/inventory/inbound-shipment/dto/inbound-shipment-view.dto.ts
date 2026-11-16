@@ -9,6 +9,8 @@ export class InboundShipmentSummaryDto {
   @ApiProperty({ enum: INBOUND_SHIPMENT_STATUSES }) status: InboundShipmentStatusValue;
   @ApiProperty() name: string;
   @ApiPropertyOptional({ nullable: true }) expectedArrival: string | null;
+  @ApiPropertyOptional({ nullable: true, description: '처음 약속한 도착 예정일 — 확정 전엔 null' })
+  promisedArrival: string | null;
   @ApiProperty() boxCount: number;
   @ApiProperty() lineCount: number;
   @ApiProperty() createdAt: Date;

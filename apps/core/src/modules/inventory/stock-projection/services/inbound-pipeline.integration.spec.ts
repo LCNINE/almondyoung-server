@@ -19,6 +19,8 @@ import { InventoryIdempotencyService } from '../../core/services/inventory-idemp
 import { WarehouseTransferManager } from '../../warehouse-transfer/services/warehouse-transfer.manager';
 import { WarehouseTransferReader } from '../../warehouse-transfer/services/warehouse-transfer.reader';
 import { InboundPipelineReader } from './inbound-pipeline.reader';
+import { InboundShipmentSkuMatcherReader } from '../../inbound-shipment/services/inbound-shipment-sku-matcher.reader';
+import { InboundShipmentDraftManager } from '../../inbound-shipment/services/inbound-shipment-draft.manager';
 import { PurchaseOrderExpectedArrivalReader } from '../../procurement/services/purchase-order-expected-arrival.reader';
 
 /**
@@ -311,6 +313,118 @@ describeIfDb('공급 파이프라인 판독 (DB integration)', () => {
       const rows = await buildReader(trx).read(trx, { skuIds: [fx.skuIds[0]], toWarehouseId: fx.sellableWarehouseId });
       expect(rows[0].onOrderQty).toBe(4);
       expect(rows[0].onOrderEta).toBeNull();
+    });
+  });
+  describe('선적 오는 중 (#1240)', () => {
+    const ACTOR = randomUUID();
+    const HEADER = ['박스번호', 'NO', '제품명', '수량', '옵션', '바코드', '총수량', '비고'];
+    const cell = (text: string, value: string | number | null = text) => ({ text, value });
+
+    async function seedShipmentSku(trx: DbTx) {
+      const { holderId } = await seedHolder(trx);
+      const { skuId } = await seedSku(trx, holderId);
+      const barcode = `8${Math.floor(Math.random() * 1e11)
+        .toString()
+        .padStart(11, '0')}`;
+      await trx.insert(wmsTables.skuBarcodes).values({ skuId, barcode });
+      return { skuId, barcode };
+    }
+
+    async function confirmedShipment(
+      trx: DbTx,
+      warehouseId: string,
+      barcode: string,
+      qty: number,
+      expectedArrival: string | null,
+    ): Promise<string> {
+      const dbService = boundDbService(trx);
+      const drafts = new InboundShipmentDraftManager(dbService, new InboundShipmentSkuMatcherReader(dbService), {
+        recalculateAndPublishForSkus: jest.fn().mockResolvedValue([]),
+      } as never);
+      const { shipmentId } = await drafts.createDraft(
+        {
+          warehouseId,
+          name: `pipe-${randomUUID().slice(0, 6)}`,
+          expectedArrival,
+          sourceFileId: null,
+          sourceFileName: 'a.xlsx',
+          list: {
+            header: HEADER,
+            rows: [
+              {
+                rowNumber: 1,
+                cells: [
+                  cell('L1'),
+                  cell('1'),
+                  cell('prod'),
+                  cell(String(qty), qty),
+                  cell('opt'),
+                  cell(barcode),
+                  cell(String(qty), qty),
+                  cell(''),
+                ],
+              },
+            ],
+          },
+        },
+        ACTOR,
+        trx,
+      );
+      await drafts.confirm(shipmentId, [], ACTOR, trx);
+      return shipmentId;
+    }
+
+    async function setSellable(trx: DbTx, warehouseId: string, isSellable: boolean) {
+      await trx.update(wmsTables.warehouses).set({ isSellable }).where(eq(wmsTables.warehouses.id, warehouseId));
+    }
+
+    it('pipeline counts late shipments', async () => {
+      await inRollback(async (trx) => {
+        const sellable = await seedWarehouseWithZone(trx);
+        await setSellable(trx, sellable.warehouseId, true);
+        const other = await seedWarehouseWithZone(trx);
+        await setSellable(trx, other.warehouseId, false);
+        const a = await seedShipmentSku(trx);
+        const b = await seedShipmentSku(trx);
+
+        await confirmedShipment(trx, sellable.warehouseId, a.barcode, 7, '2020-01-01');
+        await confirmedShipment(trx, other.warehouseId, a.barcode, 5, '2019-01-01');
+        await confirmedShipment(trx, other.warehouseId, b.barcode, 4, null);
+
+        const rows = await buildReader(trx).read(trx, {
+          skuIds: [a.skuId, b.skuId],
+          toWarehouseId: sellable.warehouseId,
+        });
+        const rowA = rows.find((r) => r.skuId === a.skuId);
+        const rowB = rows.find((r) => r.skuId === b.skuId);
+        expect(rowA).toMatchObject({
+          inboundShipmentQty: 12,
+          inboundShipmentToSellableQty: 7,
+          inboundShipmentEta: '2020-01-01',
+        });
+        expect(rowB).toMatchObject({
+          inboundShipmentQty: 4,
+          inboundShipmentToSellableQty: 0,
+          inboundShipmentEta: null,
+        });
+      });
+    });
+
+    it('pipeline ignores manually closed shipments', async () => {
+      await inRollback(async (trx) => {
+        const sellable = await seedWarehouseWithZone(trx);
+        await setSellable(trx, sellable.warehouseId, true);
+        const a = await seedShipmentSku(trx);
+        const shipmentId = await confirmedShipment(trx, sellable.warehouseId, a.barcode, 7, '2030-01-01');
+        const dbService = boundDbService(trx);
+        const drafts = new InboundShipmentDraftManager(dbService, new InboundShipmentSkuMatcherReader(dbService), {
+          recalculateAndPublishForSkus: jest.fn().mockResolvedValue([]),
+        } as never);
+        await drafts.close(shipmentId, 'never arrived', ACTOR, trx);
+
+        const [row] = await buildReader(trx).read(trx, { skuIds: [a.skuId], toWarehouseId: sellable.warehouseId });
+        expect(row).toMatchObject({ inboundShipmentQty: 0, inboundShipmentToSellableQty: 0, inboundShipmentEta: null });
+      });
     });
   });
 });

@@ -34,8 +34,9 @@ export class CompanyAxisDto {
   @ApiProperty() onHand: number;
   @ApiProperty() inTransfer: number;
   @ApiProperty() onOrder: number;
+  @ApiProperty({ description: '선적 오는 중 (외부 선적 잔량, 창고 불문)' }) inboundShipment: number;
   @ApiProperty() reserved: number;
-  @ApiProperty({ description: 'ON_HAND + IN_TRANSFER + 발주잔량 − 확정예약' }) position: number;
+  @ApiProperty({ description: 'ON_HAND + IN_TRANSFER + 발주잔량 + 선적 오는 중 − 확정예약' }) position: number;
   @ApiProperty() safetyStock: number;
   @ApiProperty() reorderPoint: number;
   @ApiProperty() targetLevel: number;
@@ -48,7 +49,8 @@ export class SellableAxisDto {
   @ApiProperty() reserved: number;
   @ApiProperty() inTransit: number;
   @ApiProperty({ description: '판매창고로 직행하는 발주잔량' }) onOrderDirect: number;
-  @ApiProperty({ description: 'ON_HAND − 예약 + 이동중 + 직행 발주잔량' }) position: number;
+  @ApiProperty({ description: '판매창고로 오는 선적 잔량' }) inboundShipment: number;
+  @ApiProperty({ description: 'ON_HAND − 예약 + 이동중 + 직행 발주잔량 + 선적 오는 중' }) position: number;
   @ApiProperty() safetyStock: number;
   @ApiProperty() reorderPoint: number;
   @ApiProperty() targetLevel: number;

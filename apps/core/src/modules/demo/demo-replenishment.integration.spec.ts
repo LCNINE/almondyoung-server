@@ -49,7 +49,7 @@ const databaseUrl =
       new StockProjectionReader(db, w.eventStore),
       new StockProjectionManager(w.eventStore),
       new InboundPipelineReader(db, transfer, po),
-      new ExpectedArrivalsReader(po),
+      new ExpectedArrivalsReader(po, db),
       db,
     );
     reader = new ReplenishmentSuggestionReader(

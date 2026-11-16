@@ -3022,6 +3022,8 @@ export const inboundShipments = pgTable(
     name: varchar('name', { length: 255 }).notNull(),
     // date 문자열 — purchase_order_lines.expected_arrival 과 같은 이유(Date 객체 경계 함정)
     expectedArrival: date('expected_arrival', { mode: 'string' }),
+    // 처음 약속한 도착 예정일 — 확정 때(또는 확정 뒤 처음 날짜가 생긴 때) 한 번만 채운다. 이후 expected_arrival 이 밀려도 그대로.
+    promisedArrival: date('promised_arrival', { mode: 'string' }),
     sourceFileId: uuid('source_file_id'),
     sourceFileName: varchar('source_file_name', { length: 255 }),
     memo: text('memo'),

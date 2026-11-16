@@ -1432,6 +1432,7 @@ export interface CompanyAxisDto {
   onHand: number;
   inTransfer: number;
   onOrder: number;
+  inboundShipment: number;
   reserved: number;
   position: number;
   safetyStock: number;
@@ -1445,6 +1446,7 @@ export interface SellableAxisDto {
   reserved: number;
   inTransit: number;
   onOrderDirect: number;
+  inboundShipment: number;
   position: number;
   safetyStock: number;
   reorderPoint: number;

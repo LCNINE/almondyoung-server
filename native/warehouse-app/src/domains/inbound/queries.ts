@@ -15,7 +15,10 @@ export function useExpectedArrivals(warehouseId: string | null) {
     queryKey: ['expected-arrivals', warehouseId],
     enabled: warehouseId !== null,
     queryFn: () => {
-      const qs = new URLSearchParams({ warehouseId: warehouseId ?? '' });
+      const qs = new URLSearchParams({
+        warehouseId: warehouseId ?? '',
+        include: 'inbound_shipment',
+      });
       return api.request<ExpectedArrivalsResult>({
         path: `/inventory/expected-arrivals?${qs.toString()}`,
       });

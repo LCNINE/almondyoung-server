@@ -67,3 +67,33 @@ describe('StockProjectionController inbound-pipeline input validation', () => {
     });
   });
 });
+
+describe('StockProjectionController expected-arrivals include', () => {
+  const warehouseId = '11111111-1111-1111-1111-111111111111';
+  function make() {
+    const listExpectedArrivals = jest.fn().mockResolvedValue({ arrivals: [] });
+    return { controller: new StockProjectionController({ listExpectedArrivals } as never), listExpectedArrivals };
+  }
+
+  it('unknown include value is ignored (no 400)', async () => {
+    const { controller, listExpectedArrivals } = make();
+    await controller.listExpectedArrivals(warehouseId, 'nope');
+    await controller.listExpectedArrivals(warehouseId, 'inbound_shipment,nope');
+    expect(listExpectedArrivals).toHaveBeenNthCalledWith(1, warehouseId, { includeShipments: false });
+    expect(listExpectedArrivals).toHaveBeenNthCalledWith(2, warehouseId, { includeShipments: true });
+  });
+
+  it('repeated include param works', async () => {
+    const { controller, listExpectedArrivals } = make();
+    await controller.listExpectedArrivals(warehouseId, ['other', 'inbound_shipment']);
+    expect(listExpectedArrivals).toHaveBeenCalledWith(warehouseId, { includeShipments: true });
+  });
+
+  it('include is opt-in', async () => {
+    const { controller, listExpectedArrivals } = make();
+    await controller.listExpectedArrivals(warehouseId);
+    await controller.listExpectedArrivals(warehouseId, 'inbound_shipment');
+    expect(listExpectedArrivals).toHaveBeenNthCalledWith(1, warehouseId, { includeShipments: false });
+    expect(listExpectedArrivals).toHaveBeenNthCalledWith(2, warehouseId, { includeShipments: true });
+  });
+});

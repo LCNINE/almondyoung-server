@@ -2,7 +2,7 @@ import { receiptFeedback } from './receiptFeedback';
 import { useReceiptReconciliation } from './useReceiptReconciliation';
 import { useWorkDraft } from '../../core/operations/useWorkDraft';
 import { useWorkRuntime } from '../../core/operations/OperationContext';
-import type { ReceivePurchaseOrderResult } from './types';
+import type { PurchaseOrderArrival, ReceivePurchaseOrderResult } from './types';
 import { WorkArea } from '../../core/operations/WorkBoundary';
 import { useEffect, useRef, useState } from 'react';
 import { useWarehouse } from '../../app/warehouse-context';
@@ -150,7 +150,8 @@ function PurchaseOrderReceiveScreenContent({ poId }: { poId: string }) {
   const [cancelConfirm, setCancelConfirm] = useState(false);
 
   const purchaseOrder = (arrivals.data?.arrivals ?? []).find(
-    (arrival) => arrival.documentId === poId
+    (arrival): arrival is PurchaseOrderArrival =>
+      arrival.source === 'purchase_order' && arrival.documentId === poId
   );
   const lines = purchaseOrder?.lines ?? [];
 

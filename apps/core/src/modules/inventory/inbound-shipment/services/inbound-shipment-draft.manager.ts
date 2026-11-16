@@ -16,6 +16,8 @@ import {
   parseShipmentList,
 } from './inbound-shipment-list.parser';
 import { ConfirmBlocker, confirmBlockers, forwardAcknowledgementMatches, lineEditable } from './inbound-shipment.rules';
+import { ProductSellableQuantityService } from '../../product-sellable-quantity/services/product-sellable-quantity.service';
+import { boxSkuIds, shipmentSkuIds, uniqueSkuIds } from './inbound-shipment-affected-skus';
 import { lockInboundShipment } from './inbound-shipment-locks';
 import { refreshInboundShipmentStatus } from './inbound-shipment-status';
 
@@ -68,7 +70,14 @@ export class InboundShipmentDraftManager {
     @InjectTypedDb<typeof wmsSchema>()
     private readonly dbService: DbService<typeof wmsSchema>,
     private readonly matcher: InboundShipmentSkuMatcherReader,
+    private readonly productSellableQuantity: ProductSellableQuantityService,
   ) {}
+
+  /** 빈 집합이면 부르지 않는다. 호출자의 트랜잭션 마지막에서 같은 tx 로 부른다. */
+  private async republish(trx: DbTx, skuIds: readonly string[]): Promise<void> {
+    if (skuIds.length === 0) return;
+    await this.productSellableQuantity.recalculateAndPublishForSkus([...skuIds], trx);
+  }
 
   async createDraft(input: CreateDraftInput, actorId: string, tx?: DbTx): Promise<{ shipmentId: string }> {
     const parsed = parseShipmentList(input.list);
@@ -202,6 +211,7 @@ export class InboundShipmentDraftManager {
       }
 
       const labels = extra.boxLabels === undefined ? null : this.expandLabels(extra.boxLabels);
+      const skuBefore = line.skuId;
       await trx
         .update(wmsTables.inboundShipmentLines)
         .set(
@@ -220,6 +230,10 @@ export class InboundShipmentDraftManager {
 
       if (labels) await this.replaceCoverage(trx, shipmentId, lineId, labels);
       await this.touchShipment(trx, shipmentId);
+      if (shipment.status === 'expected' || shipment.status === 'receiving') {
+        const skuAfter = patch === null ? skuBefore : patch.kind === 'sku' ? patch.skuId : null;
+        await this.republish(trx, uniqueSkuIds([skuBefore, skuAfter]));
+      }
     }, tx);
   }
 
@@ -279,7 +293,11 @@ export class InboundShipmentDraftManager {
         .where(eq(wmsTables.inboundShipmentBoxes.id, boxId));
       const flipped = patch.disposition !== undefined && patch.disposition !== box.disposition;
       if (flipped && (shipment.status === 'expected' || shipment.status === 'receiving')) {
-        await refreshInboundShipmentStatus(trx, shipmentId, shipment.status, actorId, new Date());
+        const next = await refreshInboundShipmentStatus(trx, shipmentId, shipment.status, actorId, new Date());
+        await this.republish(
+          trx,
+          next !== shipment.status ? await shipmentSkuIds(trx, shipmentId) : await boxSkuIds(trx, boxId),
+        );
       } else {
         await this.touchShipment(trx, shipmentId);
       }
@@ -372,7 +390,13 @@ export class InboundShipmentDraftManager {
 
       await trx
         .update(wmsTables.inboundShipments)
-        .set({ status: 'expected', confirmedAt: new Date(), confirmedBy: actorId, updatedAt: new Date() })
+        .set({
+          status: 'expected',
+          confirmedAt: new Date(),
+          confirmedBy: actorId,
+          promisedArrival: shipment.expectedArrival,
+          updatedAt: new Date(),
+        })
         .where(eq(wmsTables.inboundShipments.id, shipmentId));
 
       const labels = boxes.map((b) => b.label);
@@ -395,6 +419,7 @@ export class InboundShipmentDraftManager {
                 ),
               );
       const overlapping = new Set(overlapRows.map((r) => r.label));
+      await this.republish(trx, await shipmentSkuIds(trx, shipmentId));
       return { shipmentId, status: 'expected' as const, labelOverlaps: labels.filter((l) => overlapping.has(l)) };
     }, tx);
   }
@@ -420,6 +445,7 @@ export class InboundShipmentDraftManager {
         .update(wmsTables.inboundShipments)
         .set({ status: 'canceled', canceledAt: new Date(), canceledBy: actorId, updatedAt: new Date() })
         .where(eq(wmsTables.inboundShipments.id, shipmentId));
+      if (shipment.status === 'expected') await this.republish(trx, await shipmentSkuIds(trx, shipmentId));
       return { shipmentId, status: 'canceled' as const };
     }, tx);
   }
@@ -448,6 +474,7 @@ export class InboundShipmentDraftManager {
         .update(wmsTables.inboundShipments)
         .set({ status: 'closed', closedAt: now, closedBy: actorId, closedReason: trimmed, updatedAt: now })
         .where(eq(wmsTables.inboundShipments.id, shipmentId));
+      await this.republish(trx, await shipmentSkuIds(trx, shipmentId));
       return { shipmentId, status: 'closed' as const };
     }, tx);
   }
@@ -482,6 +509,7 @@ export class InboundShipmentDraftManager {
         .update(wmsTables.inboundShipments)
         .set({ status, closedAt: null, closedBy: null, closedReason: null, updatedAt: new Date() })
         .where(eq(wmsTables.inboundShipments.id, shipmentId));
+      await this.republish(trx, await shipmentSkuIds(trx, shipmentId));
       return { shipmentId, status };
     }, tx);
   }
@@ -494,8 +522,22 @@ export class InboundShipmentDraftManager {
       const set: Partial<typeof wmsTables.inboundShipments.$inferInsert> = { updatedAt: new Date() };
       if (patch.name !== undefined) set.name = patch.name.trim();
       if (patch.expectedArrival !== undefined) set.expectedArrival = patch.expectedArrival;
+      if (
+        patch.expectedArrival &&
+        (shipment.status === 'expected' || shipment.status === 'receiving') &&
+        shipment.promisedArrival === null
+      ) {
+        set.promisedArrival = patch.expectedArrival;
+      }
       if (patch.memo !== undefined) set.memo = patch.memo;
       await trx.update(wmsTables.inboundShipments).set(set).where(eq(wmsTables.inboundShipments.id, shipmentId));
+      if (
+        patch.expectedArrival !== undefined &&
+        patch.expectedArrival !== shipment.expectedArrival &&
+        (shipment.status === 'expected' || shipment.status === 'receiving')
+      ) {
+        await this.republish(trx, await shipmentSkuIds(trx, shipmentId));
+      }
     }, tx);
   }
 

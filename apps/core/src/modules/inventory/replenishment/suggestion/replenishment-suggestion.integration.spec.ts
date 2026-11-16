@@ -69,7 +69,7 @@ describeIfDb('ReplenishmentSuggestionService (DB integration, end-to-end)', () =
       new StockProjectionReader(dbService, w.eventStore),
       new StockProjectionManager(dbService as never),
       pipeline,
-      new ExpectedArrivalsReader(purchaseOrders),
+      new ExpectedArrivalsReader(purchaseOrders, dbService),
       dbService,
     );
     const manager = new WarehouseTransferManager(

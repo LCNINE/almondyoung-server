@@ -25,6 +25,7 @@ import {
 } from '../../core/hardware/scan/ScanProvider';
 import { ConflictError, type ApiClient } from '../../core/data/httpClient';
 import type { Session } from '../../core/auth/session';
+import type { ExpectedArrivalsResult, PurchaseOrderArrival } from './types';
 import { PurchaseOrderReceiveScreen } from './PurchaseOrderReceiveScreen';
 import { scanHid } from '../../core/hardware/scan/__fixtures__/hid';
 
@@ -73,31 +74,30 @@ const session = {
   subscribe: () => () => {},
 } satisfies Session;
 
-const ARRIVALS = {
+const PO_ARRIVAL: PurchaseOrderArrival = {
+  source: 'purchase_order',
+  documentId: 'po-1',
+  type: 'domestic',
+  supplier: { id: 'sup-1', name: '르아리컴퍼니' },
+  expectedDate: '2026-09-20',
+  totalOutstandingQuantity: 12,
+  lines: [
+    {
+      skuId: 's1',
+      skuName: '코튼셔츠',
+      skuCode: 'CT-001',
+      orderedQty: 20,
+      receivedQty: 8,
+      outstandingQty: 12,
+      expectedArrival: '2026-09-20',
+    },
+  ],
+};
+const ARRIVALS: ExpectedArrivalsResult = {
   warehouseId: 'w-1',
   totalDocuments: 1,
   totalOutstandingQuantity: 12,
-  arrivals: [
-    {
-      source: 'purchase_order',
-      documentId: 'po-1',
-      type: 'domestic',
-      supplier: { id: 'sup-1', name: '르아리컴퍼니' },
-      expectedDate: '2026-09-20',
-      totalOutstandingQuantity: 12,
-      lines: [
-        {
-          skuId: 's1',
-          skuName: '코튼셔츠',
-          skuCode: 'CT-001',
-          orderedQty: 20,
-          receivedQty: 8,
-          outstandingQty: 12,
-          expectedArrival: '2026-09-20',
-        },
-      ],
-    },
-  ],
+  arrivals: [PO_ARRIVAL],
 };
 
 const SKU_BY_BARCODE = [
@@ -134,6 +134,8 @@ function ScanButton({ code }: { code: string }) {
 }
 
 interface RenderOpts {
+  /** 같은 documentId 의 선적 문서를 발주 앞에 끼운다. */
+  shipmentFirst?: boolean;
   /** true 면 발주 수령이 항상 400 으로 실패한다(응답 유실 흉내). */
   failReceive?: boolean;
   /**
@@ -152,7 +154,23 @@ async function renderScreen(calls: Call[], opts: RenderOpts = {}) {
   const qc = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   });
-  let served = ARRIVALS;
+  let served = opts.shipmentFirst
+    ? {
+        ...ARRIVALS,
+        arrivals: [
+          {
+            source: 'inbound_shipment' as const,
+            documentId: 'po-1',
+            name: '선적',
+            expectedDate: null,
+            totalOutstandingQuantity: 1,
+            receivedBoxes: 0,
+            stockBoxes: 1,
+          },
+          ...ARRIVALS.arrivals,
+        ],
+      }
+    : ARRIVALS;
   let current = receiptFixture({
     source: 'purchase_order',
     lineId: 'rl-1',
@@ -187,7 +205,7 @@ async function renderScreen(calls: Call[], opts: RenderOpts = {}) {
         if (opts.silentCommit) {
           served = {
             ...served,
-            arrivals: [{ ...served.arrivals[0], lines: [] }],
+            arrivals: [{ ...PO_ARRIVAL, lines: [] }],
           };
         }
         if (opts.conflictReceive) {
@@ -311,6 +329,11 @@ describe('PurchaseOrderReceiveScreen', () => {
     await renderScreen([]);
     expect(await screen.findByText('코튼셔츠')).toBeInTheDocument();
     expect(screen.getByText(/남은 12/)).toBeInTheDocument();
+  });
+
+  it('같은 documentId 의 선적 문서는 무시하고 발주만 고른다', async () => {
+    await renderScreen([], { shipmentFirst: true });
+    expect(await screen.findByText('코튼셔츠')).toBeInTheDocument();
   });
 
   it('예정 바코드 첫 스캔은 실제 스캔한 수량으로 열린다', async () => {

@@ -16,8 +16,11 @@ import {
   ReceiveBoxDto,
   ReceiveBoxResult,
 } from '../dto/receive.dto';
+import { boxSkuIds, shipmentSkuIds } from './inbound-shipment-affected-skus';
 import { lockInboundShipment, lockInboundShipmentBox } from './inbound-shipment-locks';
 import { normalizeSingleBoxLabel, orderReceiptLinesForCancel } from './inbound-shipment.rules';
+import { lockProductVariantsForSkus } from '../../product-sellable-quantity/services/product-variant-lock';
+import { acquireStockAvailabilityLocks } from '../../shared/locks/stock-availability-lock';
 import { refreshInboundShipmentStatus } from './inbound-shipment-status';
 import { MAX_LINE_QTY } from './inbound-shipment-list.parser';
 
@@ -42,6 +45,8 @@ type BoxLine = Pick<InboundShipmentLine, 'id' | 'kind' | 'skuId' | 'rowNumber' |
  * 상자 확정 — 센 만큼 입고 커널로 RECEIVE 한다 (spec §8.2·§8.7).
  *
  * 잠금 순서: 선적 행 → 상자 행(`FOR UPDATE`) → 커널(회차 라인·원장). 커널은 문서 행을 잠그지 않는다.
+ * 확정은 커널 앞에서 (sku, 창고) → 품목을 미리 잡고(커널 `recordArrival` 과 같은 순서), 확정 취소는 아무것도
+ * 미리 잡지 않는다(커널 `cancelLine`·`putaway` 는 회차 라인을 먼저 잡는다).
  * 한 상자의 확정은 멱등 키 하나로 한 번만 일어난다 — 같은 키 재시도는 같은 응답, 다른 키는 상자가
  * 이미 `received` 라 409.
  */
@@ -96,6 +101,16 @@ export class InboundShipmentReceivingManager {
           });
           ledger.push({ skuId: u.skuId, quantity: u.quantity });
         }
+
+        // 커널·재계산이 잠금을 누적하기 전에 선점한다: 선적 → 상자 → (sku, 창고)(정렬) → 품목(정렬) → 커널.
+        // 커널 `recordArrival` 도 안에서 (sku, 창고) → 품목 순으로 잡는다 — 품목을 먼저 잡으면 그 순서와 뒤집혀
+        // 다른 도착·재고 명령과 교착한다. 재고는 원장에 들어갈 SKU 만, 품목은 상자가 닿는 SKU 전부(0 으로 센
+        // 줄도 재계산하므로)를 잡는다.
+        await acquireStockAvailabilityLocks(
+          trx,
+          ledger.map((l) => ({ skuId: l.skuId, warehouseId: shipment.warehouseId })),
+        );
+        await lockProductVariantsForSkus(trx, [...(await boxSkuIds(trx, boxId)), ...ledger.map((l) => l.skuId)]);
 
         const arrival =
           ledger.length === 0
@@ -153,9 +168,10 @@ export class InboundShipmentReceivingManager {
           new Date(),
         );
 
-        const receivedSkuIds = [...new Set(ledger.map((l) => l.skuId))];
-        if (receivedSkuIds.length > 0) {
-          await this.productSellableQuantity.recalculateAndPublishForSkus(receivedSkuIds, trx);
+        // 0 으로 센 마지막 상자도 «오는 중» 이 줄므로 원장 SKU 가 아니라 상자가 닿는 SKU 전부
+        const affectedSkuIds = await boxSkuIds(trx, boxId);
+        if (affectedSkuIds.length > 0) {
+          await this.productSellableQuantity.recalculateAndPublishForSkus(affectedSkuIds, trx);
         }
         return { boxId, receiptId, shipmentStatus, countIds };
       },
@@ -220,6 +236,13 @@ export class InboundShipmentReceivingManager {
             ),
           );
 
+        // 사람이 닫은 선적의 확정 취소는 상태가 «닫힘» 에서 풀려 줄 전체의 «오는 중» 이 다시 켜진다
+        const wasManuallyClosed = shipment.status === 'closed' && shipment.closedReason !== null;
+        const reachedSkuIds = wasManuallyClosed ? await shipmentSkuIds(trx, shipmentId) : await boxSkuIds(trx, boxId);
+        // 취소는 재고·품목을 미리 잡지 않는다 — 커널 `cancelLine` 은 회차 라인 → RECEIVE 이벤트 → 재고 순,
+        // `putaway` 는 회차 라인 → 재고 순으로 잡는다. 여기서 재고·품목을 먼저 잡으면 동시 적치와 순서가 뒤집혀
+        // 교착한다. 품목 잠금은 커널 뒤 재계산이 정렬 순으로 잡는다.
+
         // 커널은 SKU 순으로 부른다 — 도착이 (sku, 창고) 락을 미리 잡는 순서와 같아야 교차 교착이 없다
         const canceledSkuIds = new Set<string>();
         for (const { receiptLineId } of orderReceiptLinesForCancel(ledger)) {
@@ -248,8 +271,9 @@ export class InboundShipmentReceivingManager {
 
         const shipmentStatus = await refreshInboundShipmentStatus(trx, shipmentId, shipment.status, actorId, now);
 
-        if (canceledSkuIds.size > 0) {
-          await this.productSellableQuantity.recalculateAndPublishForSkus([...canceledSkuIds], trx);
+        const affectedSkuIds = new Set<string>([...canceledSkuIds, ...reachedSkuIds]);
+        if (affectedSkuIds.size > 0) {
+          await this.productSellableQuantity.recalculateAndPublishForSkus([...affectedSkuIds], trx);
         }
         return { boxId, shipmentStatus, canceledCountIds };
       },

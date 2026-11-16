@@ -8,6 +8,7 @@ import {
   linkedSecretValue,
   missingGrants,
   orderSourceWired,
+  overdueShipmentFix,
   reservationAxisFindings,
   reservationMismatches,
   shelfCodeLinks,
@@ -136,5 +137,10 @@ describe('Medusa 예약 투영 축 (#1247)', () => {
       { lineItemId: 'c', ordered: 2, canceledBeforeShipment: 2, current: 1 }, // 목표 0 — 어긋남
     ];
     expect(reservationMismatches(lines, reservationTarget).map((l) => l.lineItemId)).toEqual(['b', 'c']);
+  });
+
+  it('예정일 지난 선적 안내는 컷오버 전/후가 다르다', () => {
+    expect(overdueShipmentFix('before')).toContain('셀메이트로 받음');
+    expect(overdueShipmentFix('after')).toBe('예정일을 고치거나 닫는다');
   });
 });

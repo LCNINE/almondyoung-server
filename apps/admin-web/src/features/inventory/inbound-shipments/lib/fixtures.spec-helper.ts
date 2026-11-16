@@ -53,6 +53,7 @@ export function shipment(
     status: 'draft',
     name: '샘플 선적',
     expectedArrival: null,
+    promisedArrival: null,
     boxCount: 0,
     lineCount: 0,
     createdAt: '2026-11-16T00:00:00.000Z',

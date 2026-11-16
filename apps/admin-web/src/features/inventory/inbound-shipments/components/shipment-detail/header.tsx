@@ -24,6 +24,12 @@ import {
 } from '@/lib/services/inventory/inbound-shipment-mutations';
 import { getFileSignedUrlFromFileService } from '@/lib/api/domains/files/upload.client';
 import { isCustomError } from '@/lib/api/customError';
+import { toLocalDateString } from '@/lib/utils/date';
+import {
+  formatMonthDay,
+  isArrivalOverdue,
+  showPromisedArrival,
+} from '../../lib/arrival-overdue';
 import type { InboundShipmentDetail } from '@/lib/types/dto/inbound-shipment';
 import {
   CLOSE_REASON_MAX,
@@ -184,6 +190,11 @@ export function ShipmentHeader({ shipment, acknowledged, onStale }: Props) {
         <Badge variant="outline">
           {SHIPMENT_STATUS_LABEL[shipment.status]}
         </Badge>
+        {isArrivalOverdue(
+          shipment.status,
+          shipment.expectedArrival,
+          toLocalDateString(new Date())
+        ) && <Badge variant="destructive">예정일 지남</Badge>}
         {warehouseName && (
           <span className="text-sm text-muted-foreground">{warehouseName}</span>
         )}
@@ -195,6 +206,15 @@ export function ShipmentHeader({ shipment, acknowledged, onStale }: Props) {
           onChange={(e) => setArrival(e.target.value)}
           aria-label="도착 예정일"
         />
+        {showPromisedArrival(
+          shipment.expectedArrival,
+          shipment.promisedArrival
+        ) &&
+          shipment.promisedArrival && (
+            <span className="text-sm text-muted-foreground">
+              처음 예정 {formatMonthDay(shipment.promisedArrival)}
+            </span>
+          )}
         <Input
           className="w-64"
           placeholder="메모"

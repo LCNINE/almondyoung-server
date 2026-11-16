@@ -37,7 +37,7 @@ core: purchase_orders / purchase_order_lines (발주 라인이 입고예정, ADR
    ▼
 core: product_variant_sku_links          (SKU 구성 매칭, admin "매칭"과 동일) ─┘
    │
-   │ ③ sync-restock-to-medusa.ts         (발주 라인 남은 수량·예정일 → Medusa variant.metadata)
+   │ ③ (폐지, #1240) 투영 → 이벤트 → channel-adapter 소비자가 Medusa variant.metadata 를 채운다
    ▼
 Medusa: variant.metadata.inboundDate / inboundApproximate
    │
@@ -72,7 +72,7 @@ Medusa: variant.metadata.inboundDate / inboundApproximate
     셀메이트에서 실재고를 정정하는 게 원칙이고, 급하면 그 셀만 0 으로 고친 사본으로 돌린다.
 - **러너 사용 권장**: 아래 ②③ 은 `CORE_DB_URL` 을 손으로 만드는 예시지만, 실제로는 러너가 RDS 엔드포인트·시크릿을 런타임 조회해 주입한다. 비번이 transcript 에 안 남는다.
   - `scripts/sellmate/run.sh <stage> <import-products|sync-stock|recalc-sellable|check> <경로>`
-  - `scripts/sellmate/inbound-run.sh <stage> <match-sku|sync-restock> [args]`
+  - `scripts/sellmate/inbound-run.sh <stage> <match-sku> [args]`
 
 ## Ⓐ-0 동기화 금지 목록 — `scripts/sellmate/excluded.ts`
 
@@ -585,23 +585,11 @@ SELECT count(*) AS 막힌_SKU, coalesce(sum(v.on_hand_qty),0) AS 묶인_실재�
 `mark-core-shipped.js` 가 출고 반영할 때 상자도 함께 닫아야 한다. 그 전까지는 Ⓒ 를 빼먹으면
 그날 출고분만큼 다시 쌓인다 (2026-09-09 실측: 정리 몇 시간 뒤 이미 상자 5개 / 예약 30행 재적체).
 
-## ① 입고예정 적재 — `scripts/sellmate/load-inbound-from-csv.ts`
+## ① 입고예정 적재 — 폐지 (#1240)
 
-셀메이트 재고 CSV 의 `입고예정일` 열을 **core 발주 라인**으로 넣는다. 스토어프론트 "○월 ○일 재입고 예정" 의
-원천은 발주 라인이고(③ 이 Medusa 로 옮긴다), Medusa 에 직접 쓰면 다음 ③ 이 stale 로 지운다.
-
-```bash
-bash scripts/sellmate/run.sh live load-inbound-from-csv <csv>            # dry-run
-bash scripts/sellmate/run.sh live load-inbound-from-csv <csv> --apply
-# 이어서 ③ (dry-run → --apply)
-```
-
-- 실행마다 발주 1건(국내 · 부천 · `audit_notes` = `sellmate-csv-inbound <파일명>`) + 오늘 이후 예정 품목당 라인 1개(`ordered`, **수량 1** — CSV 에 입고예정수량이 없다).
-- **반복 실행 안전**: 이전 실행이 만든 미종결 라인을 잔량 포기로 닫고 새로 넣는다 → 최신 CSV 가 이긴다. 사람이 입력한 발주는 건드리지 않는다.
-- 표시되는 건 **판매상품과 매칭된 SKU 중 품절인 것**뿐이다. dry-run 의 `판매상품 매칭 N` 이 표시 대상 수다. 미매칭은 발주에만 남는다(② 매칭 필요).
-- CSV 다운로드 양식에 `입고예정일` 열이 있어야 한다. 셀메이트 "Core" 양식에서 빠진 적이 있다(2026-10-08).
-
-> 이력: 2026-09-14 ADR-0039 D6 으로 옛 ① 을 폐지했으나, 셀메이트가 계속 입고예정의 실질 입력처라 2026-10-08 발주 라인 적재 방식으로 되살렸다. 첫 적재 391라인(매칭 294 → Medusa 294 variant).
+`load-inbound-from-csv.ts` 는 지웠다. 입고예정일의 원천은 이제 **선적**(중국 물량, #1240)과 **발주 라인**(국내, #1335)이다.
+셀메이트 CSV 가 남긴 거울 발주(`audit_notes` = `sellmate-csv-inbound …`)의 열린 라인은 배포 뒤 한 번
+`scripts/ops/close-sellmate-csv-inbound.ts`(dry-run 먼저, `--apply`)로 닫는다. 열린 선적이 있는 테넌트 core DB 마다 한 번 돈다(1부 CSV 라인 닫기는 테넌트 1 에만 대상이 있다).
 
 ## ② SKU 매칭 — `apps/channel-adapter/scripts/match-sku-to-variant.ts`
 
@@ -880,30 +868,11 @@ CLOSED_BY=00000000-0000-0000-0000-000000000000 \
 `status`·`closed_at`·`received_qty`·**`expected_arrival < CURRENT_DATE`** 를 전부 다시 건다.
 **대상을 정의하는 조건을 재검증에서 빼면 재검증 자체가 무의미하다.**
 
-## ③ 발주 라인 남은 수량·예정일 → Medusa — `apps/channel-adapter/scripts/sync-restock-to-medusa.ts`
+## ③ 입고예정일 → Medusa — 폐지 (#1240)
 
-매칭된 variant 의 입고예정일을 Medusa `variant.metadata` 에 직접 쓴다(restock-notice UI 가 읽음).
-
-```bash
-CORE_DB_URL=...core MEDUSA_API_URL=... MEDUSA_API_KEY=... \
-  npx ts-node -r tsconfig-paths/register apps/channel-adapter/scripts/sync-restock-to-medusa.ts [--apply]
-```
-
-- 기본 dry-run. `--apply` 로 Medusa 반영.
-- variant 구성 sku 의 남은 수량이 있는 발주 라인 중 가장 이른 `expected_arrival` + 해외 발주면 `inboundApproximate=true`.
-- **후보는 오늘 이후 예정일만이다** (`pol.expected_arrival >= CURRENT_DATE`). 기한이 지난 미수령
-  라인을 후보에 두면 `MIN()` 이 그걸 집어 과거 날짜가 박히고, storefront 가 stale 로 버려
-  **진짜 입고예정이 있는 상품이 그냥 품절로 보인다.** 2026-09-15 live 실측으로 variant **137개**가
-  이 상태였다(7월짜리 미수령 라인 하나가 10월 입고를 덮음). 미래 라인이 하나도 없는 variant 는
-  행 자체가 안 나와 아래 stale 제거가 걷어간다.
-  `apps/channel-adapter/scripts/sync-restock-to-medusa.spec.ts` 가 이 조건을 지킨다.
-- 멱등: 이미 같은 inboundDate 면 skip. Medusa 502(일시) 나면 재실행하면 이어서 채워짐.
-- **stale 제거가 기본 동작이다** — 입고완료/취소로 예정이 사라진 variant 의 `inboundDate` 를 지운다.
-  그래서 handle 별 조회가 아니라 **전 상품을 페이지네이션으로 훑는다**(예정이 사라진 상품은 handle 로는 영영 안 만나므로).
-  안 지우면 그 상품이 **다시 품절되는 순간 지난 날짜가 "재입고 예정"으로 노출된다** — 2026-07-22 에
-  LED UV 블랙 아이패치가 7/14(과거) 날짜를 띄운 사고가 이것이었다. 스토어프론트도 `pickEarliestRestock` 에서
-  지난 날짜를 후보에서 빼도록 방어를 넣었지만, 데이터를 지우는 게 근본이다.
-- ⚠️ 한계: storefront 캐시는 즉시 무효화하지 않는다(TTL 후 반영). 급하면 해당 handle 을 revalidate.
+`sync-restock-to-medusa.ts` 와 `inbound-run.sh` 의 `sync-restock` 단계는 지웠다. 이 스크립트는 발주 라인만 보는 SQL 로
+`variant.metadata.inboundDate` 를 직접 쓰고 발주에 없는 variant 의 날짜를 지워서, 돌리면 선적 기반 날짜가 사라진다.
+지금은 sellable 투영 → `ProductSellableQuantityChanged` 이벤트 → channel-adapter 소비자가 같은 메타데이터를 채운다.
 
 ## 반영이 늦을 때 — inbox 처리량과 동시성 (2026-07-22 실측)
 
@@ -1047,19 +1016,19 @@ A-3 은 variant 20,748개를 전부 재계산하지만 **값이 바뀐 것만 �
 4. **`②-B` 한국상품 `pre_stock_sellable`(선판매) 적용** ← 빼먹으면 한국상품이 품절된다
    (+ `②-C` 표에 예외 브랜드가 있으면 같이 다시 걸 것 — 신규 매칭분에는 안 걸려 있다)
 5. **`Ⓐ A-3 recalc-sellable` 재실행** (`SINCE_HOURS` 넉넉히) → 신규 매칭분 품절 반영
-6. `① load-inbound-from-csv --apply` → `③ sync-restock-to-medusa --apply` → Medusa metadata
+6. (폐지, #1240) 입고예정일은 투영·이벤트가 채운다 — 별도 단계 없음
 7. (선택) 스토어프론트 재배포 — restock-notice UI 변경이 있을 때만
 
 **3→4→5 는 세트다.** 3 만 하고 4 를 빼면 한국상품이 품절되고, 5 를 빼면 아무것도 반영되지 않는다.
 
-**일일 운영은 Ⓑ → Ⓐ → Ⓒ → Ⓔ → Ⓕ → ① → ③** 다 (주문수집과 같이). ② 는 신규매칭이 생겼을 때.
+**일일 운영은 Ⓑ → Ⓐ → Ⓒ → Ⓔ → Ⓕ** 다 (주문수집과 같이). ② 는 신규매칭이 생겼을 때.
 Ⓑ 는 Medusa 예약, Ⓒ 는 core 예약 — **둘 다 있어야 한쪽만 풀린 채 품절로 남지 않는다.**
 
 ## Claude 에게 시키는 법
 
 다음처럼 요청하면 이 런북대로 진행한다:
 
-- "셀메이트 재고 동기화 돌려줘 `<csv>`" → **Ⓑ → Ⓐ → Ⓒ → Ⓔ → Ⓕ → ① → ③** (clear-reservations → A-1→A-2→A-3 → close-shipped-shipments → 영향 variant recalc → load-shelf-positions → build-location-master → load-inbound-from-csv → sync-restock). Ⓐ-0 제외 목록은 스크립트가 자동 적용
+- "셀메이트 재고 동기화 돌려줘 `<csv>`" → **Ⓑ → Ⓐ → Ⓒ → Ⓔ → Ⓕ** (clear-reservations → A-1→A-2→A-3 → close-shipped-shipments → 영향 variant recalc → load-shelf-positions → build-location-master). Ⓐ-0 제외 목록은 스크립트가 자동 적용
 - "재고가 셀메이트랑 다른데?" → ① `sync-stock` dry-run 으로 Core 대조(변동없음이면 Core 는 정상) → ② **Ⓑ 예약 누적** 확인 → ③ 미매칭 여부
 - **"`Medusa product not found` 가 잔뜩 떴어" / "재고동기화 했는데 며칠째 반영이 안 돼"** → 「반영이 늦을 때」의
   **대량 상품등록 절** — 신규 등록 상품의 재고 이벤트가 Medusa 상품 생성보다 먼저 처리된 **순서 문제**다.
@@ -1071,7 +1040,7 @@ A-3 은 variant 20,748개를 전부 재계산하지만 **값이 바뀐 것만 �
   그 SKU 의 `예약 수량`이 `현재 수량`보다 크면 확정이다. 그게 아니면 **Ⓑ dry-run**
   (`🧮 reserved 카운터 어긋남` 이 0칸이 아니면 거기서 끝). 둘 다 0 이면 ②-C 진단표(Core판정)로 내려간다
 - "○○ 는 재고동기화 하지 마 / 품절로 둬" → **Ⓐ-0** — `excluded.ts` 에 등록(코드로 강제) + `--set-manual-oos` 로 품절 고정 + 런북 표 갱신
-- "입고예정일도 반영해줘" / 재고 동기화 요청 → Ⓑ→Ⓐ→Ⓒ 뒤 **① load-inbound-from-csv → ③** 까지 (각 dry-run→apply)
+- "입고예정일도 반영해줘" → 별도 단계 없음. 입고예정일은 선적·발주가 원천이고 투영이 채운다(#1240)
 - "셀메이트 sku 매칭 돌려줘 (소량 먼저)" → ②
 - "셀메이트 매칭 리포트 뽑아줘 `<csv>`" → ② dry-run + `--report`, 쓰기 없음
 - "품절 처리 안 되는 상품 매칭 붙여줘 `<csv>`" → ② `--rule A --apply` → `--rule B` 리포트 검토 → apply → **Ⓐ A-3 recalc-sellable 까지**
