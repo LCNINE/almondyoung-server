@@ -44,10 +44,14 @@ describeIfDb('InboundShipmentReceivingManager (DB integration)', () => {
     } as unknown as DbService<typeof wmsSchema>;
     const matcher = new InboundShipmentSkuMatcherReader(dbService);
     const recalculateAndPublishForSkus = jest.fn<Promise<unknown[]>, [string[], DbTx?]>().mockResolvedValue([]);
+    const draftRecalc = jest.fn<Promise<unknown[]>, [string[], DbTx?]>().mockResolvedValue([]);
     const kernel = makeInboundReceiptKernel(db);
     return {
       kernel,
-      drafts: new InboundShipmentDraftManager(dbService, matcher),
+      draftRecalc,
+      drafts: new InboundShipmentDraftManager(dbService, matcher, {
+        recalculateAndPublishForSkus: draftRecalc,
+      } as never),
       reader: new InboundShipmentReader(dbService, matcher),
       receiving: new InboundShipmentReceivingManager(kernel, new InventoryIdempotencyService(dbService), {
         recalculateAndPublishForSkus,
@@ -329,7 +333,58 @@ describeIfDb('InboundShipmentReceivingManager (DB integration)', () => {
       const result = await built.receiving.receiveBox(s.shipmentId, s.boxOf('L2'), allZero, ACTOR, trx);
       expect(result.receiptId).toBeNull();
       expect(await receiveEventsFor(trx, allZero.idempotencyKey ?? '')).toHaveLength(0);
+      // 0 으로 센 줄이 없는 상자(L2 의 줄 3)도 «오는 중» 이 줄므로 상자가 닿는 SKU 로 재발행한다
+      expect(built.recalculateAndPublishForSkus).toHaveBeenCalledTimes(2);
+      expect(built.recalculateAndPublishForSkus.mock.calls[1][0]).toEqual([f.skuIds[2]]);
+    });
+  });
+
+  it('receiveBox recalculates a sku counted zero on its last box', async () => {
+    await inRollbackTx(db, async (trx) => {
+      const f = await seed(trx);
+      const built = build(trx);
+      const s = await shipment(trx, built, f.warehouseId, [row(1, 'L1', 4, f.barcodes[0])]);
+      built.recalculateAndPublishForSkus.mockClear();
+
+      const result = await built.receiving.receiveBox(
+        s.shipmentId,
+        s.boxOf('L1'),
+        dto([{ lineId: s.lineOf(1), countedQty: 0, method: 'counted' }]),
+        ACTOR,
+        trx,
+      );
+
+      expect(result.receiptId).toBeNull();
       expect(built.recalculateAndPublishForSkus).toHaveBeenCalledTimes(1);
+      expect(built.recalculateAndPublishForSkus.mock.calls[0][0]).toEqual([f.skuIds[0]]);
+    });
+  });
+
+  it('cancelBoxReceipt on a manually closed shipment recalculates every sku line', async () => {
+    await inRollbackTx(db, async (trx) => {
+      const f = await seed(trx);
+      const built = build(trx);
+      const s = await shipment(trx, built, f.warehouseId, [
+        row(1, 'L1', 4, f.barcodes[0]),
+        row(2, 'L2', 3, f.barcodes[1]),
+        row(3, 'L3', 2, f.barcodes[2]),
+      ]);
+      await built.receiving.receiveBox(
+        s.shipmentId,
+        s.boxOf('L1'),
+        dto([{ lineId: s.lineOf(1), countedQty: 4, method: 'counted' }]),
+        ACTOR,
+        trx,
+      );
+      await built.drafts.close(s.shipmentId, 'never arrived', ACTOR, trx);
+      built.recalculateAndPublishForSkus.mockClear();
+
+      await built.receiving.cancelBoxReceipt(s.shipmentId, s.boxOf('L1'), cancelDto(), ACTOR, trx);
+
+      expect(built.recalculateAndPublishForSkus).toHaveBeenCalledTimes(1);
+      const [skus, tx] = built.recalculateAndPublishForSkus.mock.calls[0];
+      expect([...skus].sort()).toEqual([...f.skuIds].sort());
+      expect(tx !== undefined).toBe(true);
     });
   });
 
@@ -1163,6 +1218,8 @@ describeIfDb('InboundShipmentReceivingManager (DB integration)', () => {
         trx,
       );
       expect(await shipmentStatus(trx, s.shipmentId)).toBe('closed');
+
+      built.recalculateAndPublishForSkus.mockClear();
 
       const result = await built.receiving.cancelBoxReceipt(s.shipmentId, s.boxOf('L2'), cancelDto(), ACTOR, trx);
 

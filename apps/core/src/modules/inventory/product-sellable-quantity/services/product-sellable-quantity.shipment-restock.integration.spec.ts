@@ -75,7 +75,9 @@ describeIfDb('선적 입고예정 후보 (DB integration, rollback-only)', () =>
   ) {
     const wiring = buildWiring(db);
     const matcher = new InboundShipmentSkuMatcherReader(wiring.dbService as never);
-    const drafts = new InboundShipmentDraftManager(wiring.dbService as never, matcher);
+    const drafts = new InboundShipmentDraftManager(wiring.dbService as never, matcher, {
+      recalculateAndPublishForSkus: jest.fn().mockResolvedValue([]),
+    } as never);
     const { shipmentId } = await drafts.createDraft(
       {
         warehouseId: f.warehouseId,

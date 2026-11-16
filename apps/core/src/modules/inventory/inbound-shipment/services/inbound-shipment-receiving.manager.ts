@@ -16,6 +16,7 @@ import {
   ReceiveBoxDto,
   ReceiveBoxResult,
 } from '../dto/receive.dto';
+import { boxSkuIds, shipmentSkuIds } from './inbound-shipment-affected-skus';
 import { lockInboundShipment, lockInboundShipmentBox } from './inbound-shipment-locks';
 import { normalizeSingleBoxLabel, orderReceiptLinesForCancel } from './inbound-shipment.rules';
 import { refreshInboundShipmentStatus } from './inbound-shipment-status';
@@ -153,9 +154,10 @@ export class InboundShipmentReceivingManager {
           new Date(),
         );
 
-        const receivedSkuIds = [...new Set(ledger.map((l) => l.skuId))];
-        if (receivedSkuIds.length > 0) {
-          await this.productSellableQuantity.recalculateAndPublishForSkus(receivedSkuIds, trx);
+        // 0 으로 센 마지막 상자도 «오는 중» 이 줄므로 원장 SKU 가 아니라 상자가 닿는 SKU 전부
+        const affectedSkuIds = await boxSkuIds(trx, boxId);
+        if (affectedSkuIds.length > 0) {
+          await this.productSellableQuantity.recalculateAndPublishForSkus(affectedSkuIds, trx);
         }
         return { boxId, receiptId, shipmentStatus, countIds };
       },
@@ -248,8 +250,14 @@ export class InboundShipmentReceivingManager {
 
         const shipmentStatus = await refreshInboundShipmentStatus(trx, shipmentId, shipment.status, actorId, now);
 
-        if (canceledSkuIds.size > 0) {
-          await this.productSellableQuantity.recalculateAndPublishForSkus([...canceledSkuIds], trx);
+        // 사람이 닫은 선적의 확정 취소는 상태가 «닫힘» 에서 풀려 줄 전체의 «오는 중» 이 다시 켜진다
+        const wasManuallyClosed = shipment.status === 'closed' && shipment.closedReason !== null;
+        const affectedSkuIds = new Set<string>([
+          ...canceledSkuIds,
+          ...(wasManuallyClosed ? await shipmentSkuIds(trx, shipmentId) : await boxSkuIds(trx, boxId)),
+        ]);
+        if (affectedSkuIds.size > 0) {
+          await this.productSellableQuantity.recalculateAndPublishForSkus([...affectedSkuIds], trx);
         }
         return { boxId, shipmentStatus, canceledCountIds };
       },

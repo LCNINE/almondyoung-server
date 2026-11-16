@@ -42,7 +42,9 @@ describeIfDb('inbound shipment outstanding SQL (DB integration)', () => {
     const matcher = new InboundShipmentSkuMatcherReader(dbService);
     const kernel = makeInboundReceiptKernel(db);
     return {
-      drafts: new InboundShipmentDraftManager(dbService, matcher),
+      drafts: new InboundShipmentDraftManager(dbService, matcher, {
+        recalculateAndPublishForSkus: jest.fn().mockResolvedValue([]),
+      } as never),
       reader: new InboundShipmentReader(dbService, matcher),
       receiving: new InboundShipmentReceivingManager(kernel, new InventoryIdempotencyService(dbService), {
         recalculateAndPublishForSkus: jest.fn().mockResolvedValue([]),
