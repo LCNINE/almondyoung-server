@@ -1,6 +1,7 @@
 import { randomUUID } from 'crypto';
 import * as postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
+import { PgDialect } from 'drizzle-orm/pg-core';
 import { and, eq, inArray, like, sql } from 'drizzle-orm';
 import { DbService } from '@app/db';
 import { BadRequestError, ConflictError } from '@app/shared';
@@ -1489,6 +1490,118 @@ describeIfDb('InboundShipmentReceivingManager (DB integration)', () => {
       const reopened = await built.reader.detail(s.shipmentId, trx);
       expect(diffOf(reopened, 2)).toEqual({ state: 'pending', counted: 0, expected: 5 });
       expect(reopened.summary.notArrivedLines).toBe(0);
+    });
+  });
+
+  /** SKU 마다 품목 하나를 잇는다 — 품목 잠금이 실제로 잡히게. */
+  async function linkVariants(trx: DbTx, skuIds: string[]): Promise<string[]> {
+    const variantIds: string[] = [];
+    for (const skuId of skuIds) {
+      const [matching] = await trx.insert(wmsTables.productMatchings).values({ variantId: randomUUID() }).returning();
+      await trx.insert(wmsTables.productVariantSkuLinks).values({ productMatchingId: matching.id, skuId });
+      variantIds.push(matching.variantId);
+    }
+    return variantIds;
+  }
+
+  /**
+   * 잠금 기록 — `pg_advisory_xact_lock` 키를 잡힌 순서대로 적는다. 재고 키는 `<sku>:<창고>`, 품목 키는 품목 id 다.
+   * 커널 진입은 `kernel` 로 적는다. 이 뒤에 설치하므로 준비 단계의 잠금은 섞이지 않는다.
+   */
+  function recordLocks(trx: DbTx, built: Built, kernelMethod: 'recordArrival' | 'cancelLine'): string[] {
+    const log: string[] = [];
+    const dialect = new PgDialect();
+    const execute = trx.execute.bind(trx);
+    jest.spyOn(trx, 'execute').mockImplementation((query) => {
+      if (typeof query !== 'string') {
+        const { sql: text, params } = dialect.sqlToQuery(query.getSQL());
+        if (text.includes('pg_advisory_xact_lock')) {
+          const key = String(params[0]);
+          log.push(key.includes(':') ? `stock:${key}` : `variant:${key}`);
+        }
+      }
+      return execute(query);
+    });
+    if (kernelMethod === 'recordArrival') {
+      const recordArrival = built.kernel.recordArrival.bind(built.kernel);
+      jest.spyOn(built.kernel, 'recordArrival').mockImplementation((input, tx) => {
+        log.push('kernel');
+        return recordArrival(input, tx);
+      });
+    } else {
+      const cancelLine = built.kernel.cancelLine.bind(built.kernel);
+      jest.spyOn(built.kernel, 'cancelLine').mockImplementation((input, tx) => {
+        log.push('kernel');
+        return cancelLine(input, tx);
+      });
+    }
+    return log;
+  }
+
+  it('receiveBox locks stock, then variants, before the kernel — the kernel recordArrival order', async () => {
+    await inRollbackTx(db, async (trx) => {
+      const f = await seed(trx);
+      const built = build(trx);
+      const variantIds = await linkVariants(trx, f.skuIds);
+      const s = await shipment(trx, built, f.warehouseId, [
+        row(1, 'L1', 4, f.barcodes[1]),
+        row(2, 'L1', 3, f.barcodes[0]),
+        row(3, 'L1', 2, f.barcodes[2]),
+      ]);
+      const log = recordLocks(trx, built, 'recordArrival');
+
+      await built.receiving.receiveBox(
+        s.shipmentId,
+        s.boxOf('L1'),
+        dto([
+          { lineId: s.lineOf(1), countedQty: 4, method: 'counted' },
+          { lineId: s.lineOf(2), countedQty: 3, method: 'counted' },
+          { lineId: s.lineOf(3), countedQty: 0, method: 'counted' },
+        ]),
+        ACTOR,
+        trx,
+      );
+
+      expect(log).toContain('kernel');
+      // 재고는 원장에 들어가는 SKU(0 이 아닌 줄)만, 품목은 상자가 닿는 SKU 전부 — 재고 → 품목, 각각 정렬
+      expect(log.slice(0, log.indexOf('kernel'))).toEqual([
+        ...[f.skuIds[0], f.skuIds[1]].sort().map((id) => `stock:${id}:${f.warehouseId}`),
+        ...[...variantIds].sort((a, b) => a.localeCompare(b)).map((id) => `variant:${id}`),
+      ]);
+    });
+  });
+
+  it.each([
+    ['a receiving shipment', false],
+    ['a manually closed shipment', true],
+  ])('cancelBoxReceipt on %s takes no stock or variant lock before the kernel', async (_label, manualClose) => {
+    await inRollbackTx(db, async (trx) => {
+      const f = await seed(trx);
+      const built = build(trx);
+      await linkVariants(trx, f.skuIds);
+      const s = await shipment(trx, built, f.warehouseId, [
+        row(1, 'L1', 4, f.barcodes[1]),
+        row(2, 'L1', 3, f.barcodes[0]),
+        row(3, 'L2', 2, f.barcodes[2]),
+      ]);
+      await built.receiving.receiveBox(
+        s.shipmentId,
+        s.boxOf('L1'),
+        dto([
+          { lineId: s.lineOf(1), countedQty: 4, method: 'counted' },
+          { lineId: s.lineOf(2), countedQty: 3, method: 'counted' },
+        ]),
+        ACTOR,
+        trx,
+      );
+      if (manualClose) await built.drafts.close(s.shipmentId, 'lost box (synthetic)', ACTOR, trx);
+      const log = recordLocks(trx, built, 'cancelLine');
+
+      await built.receiving.cancelBoxReceipt(s.shipmentId, s.boxOf('L1'), cancelDto(), ACTOR, trx);
+
+      // 커널 취소 순서는 회차 라인 → 이벤트 → 재고 — 앞서 재고·품목을 잡으면 동시 적치와 뒤집힌다
+      expect(log[0]).toBe('kernel');
+      expect(log.filter((e) => e === 'kernel')).toHaveLength(2);
     });
   });
 });
