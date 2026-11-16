@@ -114,3 +114,57 @@ DATABASE_URL=postgres://... npx tsx scripts/sellmate/load-shelf-positions.ts <cs
 bash scripts/sellmate/run.sh live build-location-master            # dry-run
 bash scripts/sellmate/run.sh live build-location-master --apply    # 반영
 ```
+
+## 저녁 맞추기 (`evening-reconcile.ts`, #1304)
+
+T(컷오버) 뒤 매일 저녁, 셀메이트 쪽 변화(마켓 주문·취소·반품)를 core 원장으로 가져오고 core 가용을 셀메이트 «재고 수정» 업로드 CSV 로 돌려보낸다.
+규칙·근거는 `docs/superpowers/specs/2026-11-17-sellmate-evening-reconcile-design.md`.
+
+> **T 전에 live `db:migrate` 필요** (`20261116154029_add-sellmate-reconcile-tables`). 앱 배포는 필요 없다.
+> `sync-stock` 은 DRY_RUN 이어도 `DATABASE_URL` 이 필요하다(`run.sh` 가 넣는다). `init` 뒤에는 `sync-stock`·`handover-stock-addback` 이 거절한다.
+
+### 하위 명령 (모두 dry-run 이 기본, `--apply` 일 때만 쓴다)
+
+| 명령 | 하는 일 |
+|---|---|
+| `pair <재고 CSV>` | 셀메이트 품목 ↔ core SKU 짝 표를 다시 쓴다(원장 안 건드림). 짝 못 지은 품목이 있으면 종료 코드 1 |
+| `init <마지막 sync 재고 CSV> --cutover-at=<T> --sellmate-orders=<T 의 미발송 주문 파일> --own-mall-channel=<자사몰 판매처 이름>` | T 에 한 번. 기준값·이월·넘긴 주문을 쓴다(원장은 안 씀). `MEDUSA_DATABASE_URL` 필요 → `WITH_MEDUSA=1` |
+| `apply <지금 받은 재고 CSV>` | 원장 반영 + 회차(업로드 대기) + 업로드 CSV(`<OUT_DIR>/sellmate-reconcile-<회차>-upload.csv`) |
+| `close <업로드 뒤 다시 받은 재고 CSV> [--accept-landed=<옵션,…>] [--accept-not-landed=<옵션,…>]` | 업로드가 먹었는지 판정하고 기준값을 확정한다. ✗ 가 있으면 1 (`--apply` 면 고친 CSV `…-fix.csv` 를 쓴다) |
+| `status` | 열린 회차·이월·짝 못 지은 품목(읽기 전용) |
+
+`OUT_DIR`(기본 `apps/core/tmp`), `UPLOAD_ENCODING`(기본 euc-kr), `COL_*`(열 이름 덮기) 환경변수를 쓴다.
+
+### 매일 절차
+
+```bash
+# 1. 셀메이트에서 재고 현황 CSV 받기 → apps/core/tmp/
+# 2. 미리보기 → 반영 (업로드 CSV 가 만들어진다)
+bash scripts/sellmate/run.sh live evening-reconcile apply apps/core/tmp/<받은 CSV>
+bash scripts/sellmate/run.sh live evening-reconcile apply apps/core/tmp/<받은 CSV> --apply
+# 3. 업로드 CSV 를 셀메이트 «재고 수정» 에 올린다
+# 4. 셀메이트에서 재고 현황 CSV 를 «다시» 받는다 (새 파일)
+# 5. 판정 → 확정
+bash scripts/sellmate/run.sh live evening-reconcile close apps/core/tmp/<다시 받은 CSV>
+bash scripts/sellmate/run.sh live evening-reconcile close apps/core/tmp/<다시 받은 CSV> --apply
+```
+
+### 운영 규칙
+
+- 맞추는 동안(받기 → 업로드 → 다시 받기) 셀메이트 출고·반품 입고를 멈춘다. 셀메이트에서 재고를 손으로 고치지 않는다.
+- 같은 CSV 로 `apply` 를 두 번 반영할 수 없다(거절).
+- `close` 가 실패한 회차에 쓴 CSV 는 다시 쓸 수 없다. 새로 받은 CSV 로 다시 한다. `--apply` 가 쓴 `…-fix.csv` 를 고쳐 올리고 새로 받는다.
+- 고친 파일(fix)이 남은 품목은 `--accept-landed`/`--accept-not-landed` 로 지목하지 않으면 반품으로 받아들이지 않는다. 같은 품목을 둘 다에 지목하면 거절.
+- 새 품목·동결 해제 품목은 같은 `apply` 안에서 셀메이트 미발송분을 core 에서 차감한다.
+- 짝 못 지은 품목·CSV 에서 사라진 품목·SKU 가 바뀐 품목이 있으면 `init`·`apply` 는 쓰지 않고 종료 코드 1.
+- `apply --apply` 뒤 sellable 재계산이 실패하면 원장은 이미 커밋된 것이다 — `apply` 를 다시 돌리지 말고 24시간 안에
+  `bash scripts/sellmate/run.sh live recalc-sellable .` 를 돌린다.
+
+### 첫 live `--apply` 전에 사람이 확인할 것
+
+- [ ] 재고 수정 업로드가 **바코드번호 1~3·글로벌바코드 중 어느 것**과 맞추는지. 시험 상품 1개의 값을 바꿔 올리고 되돌려 본다. 결과에 따라 CSV 바코드 열을 정한다(`COL_*` 환경변수로 덮는다).
+- [ ] 마켓에 보내는 숫자에 **안정재고**가 끼는지. 끼면 `U` 의 정의를 고친다.
+- [ ] 셀메이트 미발송 주문 목록 export 에 **판매처와 주문번호** 열이 있는지, 자사몰 주문번호가 `YYYYMMDD-display_id` 꼴로 남는지.
+- [ ] 재고 현황 CSV 양식에 바코드 열이 있는지. 없으면 «개발팀 데이터 내보내기용» 양식에 더한다.
+
+컷오버 사전 점검(`scripts/ops/cutover-preflight/index.ts`)의 «재고 1. 저녁 맞추기» 절(`checks/reconcile.ts`)이 본다.

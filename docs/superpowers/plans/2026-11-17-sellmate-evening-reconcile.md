@@ -375,7 +375,7 @@
   10. `--accept-not-landed` 로 닫기 → 그 품목 baseline = apply 의 `s`
   11. 직전 닫기 입력보다 이른 `snapshotAt` 의 `runApply` → exit 1(Review Focus 3)
   12. `sellmate-handover` 이벤트가 있으면 `runApply`·`runInit` → exit 1
-  13. 새로 짝지어진 품목 → 원장 불변, 상태 `initState(S)`, 출력에 «새 품목»
+  13. 새로 짝지어진 품목 → 같은 apply 에서 `freshState(S, unshipped)` = {baseline: S, carry: 셀메이트 미발송} 로 `planApply` 를 거쳐 미발송만큼 core 에서 차감, 출력에 «새 품목»
   14. 상태 있는 품목이 CSV 에서 사라지면 → exit 1
 - [ ] **Step 3: 실패 확인** — `npx jest scripts/sellmate/evening-reconcile.spec --maxWorkers=2` 와 `COMPOSE_PROJECT_NAME=almondyoung-server npm run test:core:integration:local -- 'evening-reconcile\.integration\.spec\.ts$'` → FAIL
 - [ ] **Step 4: 구현**
@@ -385,7 +385,7 @@
     - `replacePairs` 를 한다.
     - 원장 delta 가 0 이 아니면 `applyStockDelta({source: RECONCILE_SOURCE, upLocationId: await singleRealLocation(...) ?? undefined})` 를 부른다.
     - 업로드 파일은 `${outDir}/sellmate-reconcile-${runId}-upload.csv` 다. 짝 지은 품목 전부(새 품목 포함, frozen 제외)를 싣는다.
-    - 상태는 **apply 에서 `carry := carryAfter` 만** 쓴다(원장과 같이 커밋되므로). `baseline` 은 건드리지 않는다. 새 품목은 `initState(S)` 로 행을 만들고, `toFreeze` 는 `frozen := true`.
+    - 상태는 **apply 에서 `carry := carryAfter` 만** 쓴다(원장과 같이 커밋되므로). `baseline` 은 건드리지 않는다. 새 품목은 `freshState(S, unshipped)` = {baseline: S, carry: unshipped} 로 행을 만들어 같은 apply 의 `planApply` 에 태운다(원장 불변이 아니다). `toFreeze` 는 `frozen := true`.
     - `baseline` 은 **close 에서만** `confirmedBaseline` 으로 쓴다.
   - `close`:
     - 열린 회차가 없으면 exit 1 이다.
