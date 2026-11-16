@@ -48,7 +48,7 @@ export interface PermissionDefinition {
   readonly systemOnly: boolean;
   /** 판정 API 가 있는 곳. 영역(업무)과 서비스는 다를 수 있다. */
   readonly ownerServices: readonly OwnerService[];
-  /** 이 키가 DB 에 «처음» 들어갈 때 한 번만 부여한다. 이후엔 화면에서 바꾼 값이 원본이다. */
+  /** (키, 역할)마다 한 번만 부여한다 — 키가 처음 들어갈 때 없던 역할은 생긴 뒤 다음 부팅에. 이후엔 화면에서 바꾼 값이 원본이다(회수해도 다시 주지 않는다). */
   readonly grantOnFirstRegistration: readonly InitialGrantRole[];
   /**
    * 이 권한을 켜려면 함께 있어야 하는 조회 권한. 같은 대상의 `.read` 는 적지 않아도 포함된다.
