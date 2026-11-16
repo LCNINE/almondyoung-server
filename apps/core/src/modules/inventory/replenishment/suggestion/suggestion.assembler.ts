@@ -48,19 +48,27 @@ function assembleOne(input: SkuStockInput, ctx: AssembleContext): SuggestionRow 
     onHand: input.onHandTotal,
     inTransfer: input.inTransferTotal,
     onOrder: input.onOrderTotal,
+    inboundShipment: input.inboundShipmentTotal,
     reserved: input.reservedTotal,
-    position: input.onHandTotal + input.inTransferTotal + input.onOrderTotal - input.reservedTotal,
+    position:
+      input.onHandTotal + input.inTransferTotal + input.onOrderTotal + input.inboundShipmentTotal - input.reservedTotal,
     ...companyLevels,
   };
 
   const onOrderDirect = input.onOrderTotal - input.onOrderNonSellable;
-  const sellablePosition = input.onHandSellable - input.reservedSellable + input.inTransitToSellable + onOrderDirect;
+  const sellablePosition =
+    input.onHandSellable -
+    input.reservedSellable +
+    input.inTransitToSellable +
+    onOrderDirect +
+    input.inboundShipmentToSellable;
   const sellable: SellableAxis = {
     warehouseId: ctx.sellableWarehouseId,
     onHand: input.onHandSellable,
     reserved: input.reservedSellable,
     inTransit: input.inTransitToSellable,
     onOrderDirect,
+    inboundShipment: input.inboundShipmentToSellable,
     position: sellablePosition,
     daysOfCover: daysOfCover(sellablePosition, input.demand.dailyMean),
     ...sellableLevels,

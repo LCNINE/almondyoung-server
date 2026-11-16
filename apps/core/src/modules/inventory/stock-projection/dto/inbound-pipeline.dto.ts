@@ -21,6 +21,15 @@ export class InboundPipelineItemDto {
 
   @ApiPropertyOptional({ description: '이동 도착 예정일', nullable: true, type: Date })
   inTransitEta: Date | null;
+
+  @ApiProperty({ description: '선적 오는 중 (외부 선적 잔량, 창고 불문)' })
+  inboundShipmentQty: number;
+
+  @ApiProperty({ description: '선적 오는 중 중 판매 창고행' })
+  inboundShipmentToSellableQty: number;
+
+  @ApiPropertyOptional({ description: '판매 창고행 선적의 가장 이른 도착 예정일 (YYYY-MM-DD)', nullable: true, type: String })
+  inboundShipmentEta: string | null;
 }
 
 export class InboundPipelineResponseDto {

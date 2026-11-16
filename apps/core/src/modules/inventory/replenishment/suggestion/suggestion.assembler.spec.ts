@@ -33,6 +33,8 @@ function sku(overrides: Partial<SkuStockInput> = {}): SkuStockInput {
     onOrderTotal: 0,
     onOrderNonSellable: 0,
     inTransitToSellable: 0,
+    inboundShipmentTotal: 0,
+    inboundShipmentToSellable: 0,
     draftTransferPlanned: [],
     ...overrides,
   };
@@ -94,6 +96,30 @@ describe('assembleSuggestions — 재고 위치 재료', () => {
       ctx,
     );
     expect(row.sellable).toMatchObject({ onHand: 10, reserved: 4, inTransit: 20, onOrderDirect: 5, position: 31 });
+  });
+
+  it('shipment remainder lowers purchase suggestion', () => {
+    const base = assembleSuggestions([sku({ onHandTotal: 20 })], ctx)[0].actions.find((a) => a.type === 'purchase');
+    const [row] = assembleSuggestions([sku({ onHandTotal: 20, inboundShipmentTotal: 30 })], ctx);
+    const purchase = row.actions.find((a) => a.type === 'purchase');
+    expect(base?.qty).toBe(80);
+    expect(purchase?.qty).toBe(50);
+    expect(row.company).toMatchObject({ inboundShipment: 30, position: 50 });
+  });
+
+  it('shipment to sellable warehouse lowers transfer suggestion', () => {
+    const stock = { onHandTotal: 200, nonSellableOnHand: [{ warehouseId: CHINA, locationId: LOC_A, qty: 200 }] };
+    const [row] = assembleSuggestions([sku({ ...stock, inboundShipmentTotal: 30, inboundShipmentToSellable: 30 })], ctx);
+    expect(row.sellable).toMatchObject({ inboundShipment: 30, position: 30 });
+    expect(row.actions).toEqual([
+      { type: 'transfer', qty: 70, fromWarehouseId: CHINA, toWarehouseId: SELL, lines: [{ fromLocationId: LOC_A, quantity: 70 }] },
+    ]);
+  });
+
+  it('shipment to non-sellable warehouse counts only on company axis', () => {
+    const [row] = assembleSuggestions([sku({ onHandTotal: 20, inboundShipmentTotal: 30, inboundShipmentToSellable: 0 })], ctx);
+    expect(row.company.position).toBe(50);
+    expect(row.sellable).toMatchObject({ inboundShipment: 0, position: 0 });
   });
 
   it('발주잔량이 전사 부족을 덮으면 발주 제안 없음', () => {
