@@ -87,7 +87,9 @@ def put_object(bucket, key, source):
 
 
 def cache_paths():
-    return ['.deployment-cache/npm', '.deployment-cache/yarn'] + [f'{app}/.next/cache' for app in WEB]
+    # Cache downloaded packages, not npx installations: the safe archive intentionally
+    # excludes symlinks, so restoring _npx would lose node_modules/.bin executables.
+    return ['.deployment-cache/npm/_cacache', '.deployment-cache/yarn'] + [f'{app}/.next/cache' for app in WEB]
 
 
 def cache_key(stage):
@@ -101,7 +103,7 @@ def cache_key(stage):
     # Reuse only compatible dependency/toolchain/stage caches. Cache is optional acceleration.
     for command in (['node', '--version'], ['npm', '--version'], ['yarn', '--version']):
         digest.update(run(command, capture=True).strip().encode())
-    return f'cache/{stage}/linux-arm64-sst4.17.2-{digest.hexdigest()}.tar.gz'
+    return f'cache/{stage}/linux-arm64-sst4.17.2-fetch-v2-{digest.hexdigest()}.tar.gz'
 
 
 def restore_cache(archive):

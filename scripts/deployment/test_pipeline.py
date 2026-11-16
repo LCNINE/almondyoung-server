@@ -124,6 +124,27 @@ class PipelineTest(unittest.TestCase):
                 with self.assertRaises(RuntimeError):
                     pipeline.restore_cache(archive)
 
+    def test_cache_restores_fetch_data_but_never_partial_npx_installations(self):
+        import io
+        for name, accepted in [('.deployment-cache/npm/_cacache/content-v2/package', True),
+                               ('.deployment-cache/npm/_npx/hash/node_modules/open-next/package.json', False)]:
+            with tempfile.TemporaryDirectory() as directory:
+                root = Path(directory) / 'checkout'
+                root.mkdir()
+                archive = Path(directory) / 'cache.tar.gz'
+                with tarfile.open(archive, 'w:gz') as bundle:
+                    member = tarfile.TarInfo(name)
+                    member.size = 4
+                    bundle.addfile(member, io.BytesIO(b'data'))
+                with patch.object(pipeline, 'ROOT', root):
+                    if accepted:
+                        pipeline.restore_cache(archive)
+                        self.assertEqual((root / name).read_bytes(), b'data')
+                    else:
+                        with self.assertRaises(RuntimeError):
+                            pipeline.restore_cache(archive)
+                        self.assertFalse((root / name).exists())
+
 
 if __name__ == '__main__':
     unittest.main()
