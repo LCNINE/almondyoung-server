@@ -252,7 +252,9 @@ export function RevenueReportPanel() {
         throw new Error('월별 취합 파일은 5MB 이하로 올려 주세요.');
 
       const XLSX = await import('xlsx');
-      const book = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+      const book = /\.csv$/i.test(file.name)
+        ? XLSX.read(await file.text(), { type: 'string', raw: true })
+        : XLSX.read(await file.arrayBuffer(), { type: 'array' });
       const sheet =
         book.Sheets['외부 채널 월별 자료'] ?? book.Sheets[book.SheetNames[0]];
       setPending(
