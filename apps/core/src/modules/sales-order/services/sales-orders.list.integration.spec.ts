@@ -139,7 +139,7 @@ describeIfDb('SalesOrdersService.list — server-side filters (DB integration, r
 
       const res = await listByKeyword(svc, tx, { keyword: tag });
       const phaseById = new Map(res.data.map((d: { id: string; shipmentPhase: string }) => [d.id, d.shipmentPhase]));
-      expect(phaseById.get(pending)).toBe('pending');
+      expect(phaseById.get(pending)).toBe('preparing');
       expect(phaseById.get(preparing)).toBe('preparing');
       expect(phaseById.get(cancelled)).toBe('cancelled');
       expect(phaseById.get(external)).toBe('external_shipped');
@@ -155,6 +155,22 @@ describeIfDb('SalesOrdersService.list — server-side filters (DB integration, r
 
       expect((await svc.getOne(id, tx))!.shipmentPhase).toBe('preparing');
       expect((await svc.getOne(ext, tx))!.shipmentPhase).toBe('external_shipped');
+    });
+  });
+
+  it('getOne(id).fulfillmentOrder — 출고주문 id·상태만 싣고, 없으면 null', async () => {
+    await run(async (tx, svc, tag) => {
+      const withFo = await insertOrder(tx, { channelOrderId: `${tag}-fo` });
+      await insertLine(tx, withFo);
+      const [fo] = await tx
+        .insert(wmsTables.fulfillmentOrders)
+        .values({ salesOrderId: withFo, status: 'shipped' })
+        .returning({ id: wmsTables.fulfillmentOrders.id });
+      const withoutFo = await insertOrder(tx, { channelOrderId: `${tag}-nofo` });
+      await insertLine(tx, withoutFo);
+
+      expect((await svc.getOne(withFo, tx))!.fulfillmentOrder).toEqual({ id: fo.id, status: 'shipped' });
+      expect((await svc.getOne(withoutFo, tx))!.fulfillmentOrder).toBeNull();
     });
   });
 

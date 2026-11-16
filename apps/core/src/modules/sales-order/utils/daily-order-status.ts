@@ -1,5 +1,6 @@
 export interface DailyOrderStatusPoint {
   bucket: string;
+  /** 더는 세지 않는다(늘 0) — 출고 단계에 결제 대기 칸이 없다. 옛 화면이 읽는 키라 남긴다 */
   pending: number;
   preparing: number;
   shipping: number;
@@ -14,7 +15,7 @@ export interface DailyOrderStatusPoint {
 
 type OrderRow = Pick<
   DailyOrderStatusPoint,
-  'pending' | 'preparing' | 'shipping' | 'delivered' | 'externalShipped' | 'cancelled' | 'total'
+  'preparing' | 'shipping' | 'delivered' | 'externalShipped' | 'cancelled' | 'total'
 > & {
   day: string;
 };
@@ -35,7 +36,7 @@ export function buildDailyOrderStatusSeries(
     const row = orderByDay.get(bucket);
     series.push({
       bucket,
-      pending: row?.pending ?? 0,
+      pending: 0,
       preparing: row?.preparing ?? 0,
       shipping: row?.shipping ?? 0,
       delivered: row?.delivered ?? 0,

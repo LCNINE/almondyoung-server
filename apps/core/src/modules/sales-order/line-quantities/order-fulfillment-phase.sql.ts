@@ -3,7 +3,7 @@ import { wmsTables } from '../../inventory/schema/inventory.schema';
 import { lineSkuQuantitiesSql } from './line-quantities.sql';
 
 /** 주문의 출고 단계(관리자) — 주문 목록·상세 뱃지와 일별 통계가 같이 쓴다 */
-export type OrderShipmentPhase = 'pending' | 'preparing' | 'shipping' | 'delivered' | 'external_shipped' | 'cancelled';
+export type OrderShipmentPhase = 'preparing' | 'shipping' | 'delivered' | 'external_shipped' | 'cancelled';
 
 /**
  * 주문 하나의 진행 단계 사다리 한 벌 (K6 PR2b). 관리자 뱃지·일별 통계·고객 actions 가 모두 이 SQL 을 읽는다 —
@@ -25,16 +25,17 @@ export type OrderShipmentPhase = 'pending' | 'preparing' | 'shipping' | 'deliver
  * 사다리는 두 층이다. 각 칸은 한 번만 쓴다.
  *   SO 칸(`so_phase`) — SO 상태만 본다. 맞지 않으면 null.
  *     1. SO cancelled·timeout                                 → cancelled
- *     2. SO pending                                           → pending
- *     3. SO shipped·delivered                                 → external_shipped
+ *     2. SO shipped·delivered                                 → external_shipped
  *        (producer 는 셀메이트 스크립트뿐이라 «core 밖에서 나갔다» 뜻이다)
+ *     SO pending·confirmed 는 칸이 없다. core 는 결제가 끝난 주문만 받고 생성이 pending 으로 넣으며
+ *     confirm 을 부르는 화면이 없어, pending 은 «결제 대기»가 아니라 진행 중 주문의 보통 상태다.
  *   사실 칸(`facts_phase`) — SO 상태를 보지 않는다. 위에서 먼저 맞는 것이 이긴다.
- *     4. FO 가 canceled, 활성 인쇄 0                           → cancelled
- *     5. (FO 없음 또는 required 합 0), 활성 인쇄 0             → not_created
- *     6. 있는 몫이 전부 끝남 — 창고 몫(required>0)은 outstanding 0 이고 delivered+partner_completed ≥ required,
- *        인쇄 몫은 전부 delivered. 없는 몫은 조건에서 빠진다(5 가 «둘 다 없음»을 이미 걸렀다) → delivered
- *     7. 창고 shipped+forwarded > 0, 또는 인쇄 shipped/delivered 하나 이상 → shipping
- *     8. 그 밖                                                → preparing
+ *     3. FO 가 canceled, 활성 인쇄 0                           → cancelled
+ *     4. (FO 없음 또는 required 합 0), 활성 인쇄 0             → not_created
+ *     5. 있는 몫이 전부 끝남 — 창고 몫(required>0)은 outstanding 0 이고 delivered+partner_completed ≥ required,
+ *        인쇄 몫은 전부 delivered. 없는 몫은 조건에서 빠진다(4 가 «둘 다 없음»을 이미 걸렀다) → delivered
+ *     6. 창고 shipped+forwarded > 0, 또는 인쇄 shipped/delivered 하나 이상 → shipping
+ *     7. 그 밖                                                → preparing
  * 넘긴 입점사 상자(`forwarded`)는 출고가 아니지만 화면은 «배송 중», 발송된 입점사 상자(`partner_completed`)는 배송완료 수량이
  * 0(모름)이지만 화면은 «배송 완료»다(스펙 §6.4 — 단계는 표시용 투영이라 일부러 다르게 읽는다. K3 스펙 §4.6 «지금 동작을 유지»).
  *
@@ -42,9 +43,7 @@ export type OrderShipmentPhase = 'pending' | 'preparing' | 'shipping' | 'deliver
  *   admin_phase — SO 칸이 있으면 그것(core 상자가 남아 있어도 셀메이트 출고가 이긴다 — 같은 주문을 두 번 세지 않으려는 순서다),
  *                 없으면 사실 칸(not_created → preparing).
  *   store_phase — SO cancelled·timeout 이면 canceled. SO shipped·delivered 면 사실 칸이 delivered 일 때만 delivered,
- *                 아니면 shipping. 그 밖(SO pending 포함)은 사실 칸 그대로(cancelled → canceled) (R13).
- *                 라이브 진행 중 주문은 `pending` 이다 — 생성이 pending 으로 넣고 confirm 은 관리자 엔드포인트뿐이다.
- *                 옛 고객 단계는 SO 상태를 보지 않았으므로 pending 칸을 태우면 «배송 완료»·«출고 취소»가 사라진다(스펙 §6.4 «현행 화면 유지»).
+ *                 아니면 shipping. 그 밖은 사실 칸 그대로(cancelled → canceled) (R13).
  * any_shipped 는 사다리와 독립인 사실이다 — SO shipped·delivered, 창고 shipped+forwarded > 0, 인쇄 shipped/delivered 하나 이상.
  * SO 가 취소여도 나간 것은 나간 것이라 SO 상태로 덮지 않는다(셀프취소 차단이 읽는다).
  *
@@ -66,7 +65,6 @@ export function orderFulfillmentPhaseSql(salesOrderScope: SQL): SQL {
         select order_fact.sales_order_id,
                case
                  when order_fact.so_status in ('cancelled', 'timeout') then 'cancelled'
-                 when order_fact.so_status = 'pending' then 'pending'
                  when order_fact.so_status in ('shipped', 'delivered') then 'external_shipped'
                end as so_phase,
                case

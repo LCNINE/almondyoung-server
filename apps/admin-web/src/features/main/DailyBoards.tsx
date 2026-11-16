@@ -279,8 +279,10 @@ function LineIcon({ color }: { color: string }) {
   );
 }
 
+// 결제 대기 단계는 없다(core 는 결제가 끝난 주문만 받는다). 옛 core 응답이 pending 을 세어 오면 숫자를 숨기지 않게 그 칸만 다시 보인다
+const LEGACY_PENDING_COLUMN = { key: 'pending', label: '입금전' } as const;
+
 const ORDER_COLUMNS = [
-  { key: 'pending', label: '입금전' },
   { key: 'preparing', label: '상품준비중' },
   { key: 'shipping', label: '배송중' },
   { key: 'delivered', label: '배송완료' },
@@ -290,7 +292,12 @@ const ORDER_COLUMNS = [
   { key: 'total', label: '주문합계' },
 ] as const;
 
-type OrderColumnKey = (typeof ORDER_COLUMNS)[number]['key'];
+type OrderColumn = (typeof ORDER_COLUMNS)[number] | typeof LEGACY_PENDING_COLUMN;
+type OrderColumnKey = OrderColumn['key'];
+
+export function orderColumnsFor(series: ReadonlyArray<{ pending: number }>): readonly OrderColumn[] {
+  return series.some((point) => point.pending > 0) ? [LEGACY_PENDING_COLUMN, ...ORDER_COLUMNS] : ORDER_COLUMNS;
+}
 
 export function OrderStatusBoard() {
   const range = useRange();
@@ -309,6 +316,7 @@ export function OrderStatusBoard() {
   const series = data?.series ?? [];
   const sum = (key: OrderColumnKey) => series.reduce((total, point) => total + point[key], 0);
   const rows = desc ? [...series].reverse() : series;
+  const columns = orderColumnsFor(series);
 
   return (
     <div className="overflow-x-auto">
@@ -316,7 +324,7 @@ export function OrderStatusBoard() {
         <thead>
           <tr className="border-b border-[#CCCCCC] bg-[#FAFAFA] text-[#616161]">
             <SortableDateHeader desc={desc} onToggle={() => setDesc((value) => !value)} />
-            {ORDER_COLUMNS.map((column) => (
+            {columns.map((column) => (
               <th key={column.key} className="h-[41px] whitespace-nowrap px-2.5 text-right font-medium">
                 {column.label}
               </th>
@@ -324,11 +332,11 @@ export function OrderStatusBoard() {
           </tr>
         </thead>
         <tbody>
-          {isLoading ? <SkeletonRows rows={DAYS + 1} cols={ORDER_COLUMNS.length} /> : null}
+          {isLoading ? <SkeletonRows rows={DAYS + 1} cols={columns.length} /> : null}
           {isLoading ? null : (
             <tr className="border-b border-[#EBEBEB] bg-[#F1F9FD]">
               <td className="border-l-[3px] border-l-[#1882C8] px-3 py-3 font-bold text-[#1C1C1C]">합계</td>
-              {ORDER_COLUMNS.map((column) => (
+              {columns.map((column) => (
                 <td key={column.key} className="px-3 py-3 text-right text-sm font-bold tabular-nums text-[#2B2B2B]">
                   {sum(column.key).toLocaleString('ko-KR')}
                 </td>
@@ -341,7 +349,7 @@ export function OrderStatusBoard() {
               className={cn('border-b border-[#EBEBEB]', point.bucket === today && 'bg-[#FAFDFE]')}
             >
               <DayCell bucket={point.bucket} today={today} />
-              {ORDER_COLUMNS.map((column) => (
+              {columns.map((column) => (
                 <td
                   key={column.key}
                   className={cn(

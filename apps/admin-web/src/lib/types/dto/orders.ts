@@ -113,6 +113,8 @@ export interface SalesOrderDto {
   walletIntentId?: string | null;
   /** 출고 단계 — core 가 정해 싣는다. 읽을 땐 toShipmentPhase 로 좁힌다(옛 응답엔 없다) */
   shipmentPhase?: string;
+  /** 상세 조회에만 싣는다(판매주문당 많아야 하나). 옛 응답엔 없다 */
+  fulfillmentOrder?: { id: string; status: string } | null;
   lines: {
     variantId: string;
     matchingResolved?: boolean;

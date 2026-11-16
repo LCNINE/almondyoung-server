@@ -6,8 +6,7 @@ describe('buildDailyOrderStatusSeries', () => {
       [
         {
           day: '2026-09-15',
-          pending: 1,
-          preparing: 2,
+          preparing: 3,
           shipping: 3,
           delivered: 4,
           externalShipped: 6,
@@ -23,8 +22,8 @@ describe('buildDailyOrderStatusSeries', () => {
     expect(series[0]).toMatchObject({ total: 0, externalShipped: 0, return: 0 });
     expect(series[0]).not.toHaveProperty('exchange');
     expect(series[1]).toMatchObject({
-      pending: 1,
-      preparing: 2,
+      pending: 0,
+      preparing: 3,
       shipping: 3,
       delivered: 4,
       externalShipped: 6,

@@ -214,7 +214,6 @@ const HIDDEN_COLUMNS_KEY = 'order-history:hidden-columns';
 
 /* ── 상태 배지 ────────────────────────────────────────────── */
 const PHASE_BADGE_CLASS: Record<ShipmentPhase, string> = {
-  pending: 'bg-gray-100 text-gray-600',
   preparing: 'bg-blue-100 text-blue-700',
   shipping: 'bg-sky-100 text-sky-700',
   delivered: 'bg-green-100 text-green-700',
@@ -682,7 +681,7 @@ export function BusinessTimelineModal({
   open,
   onOpenChange,
 }: {
-  order: OrderLineRow | null;
+  order: Pick<OrderLineRow, 'orderId' | 'orderNo'> | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
