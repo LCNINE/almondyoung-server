@@ -1,5 +1,6 @@
 import { DbService } from '@app/db';
 import {
+  iamAuditLogs,
   iamInitialGrantDeliveries,
   iamPermissions,
   iamRolePermissions,
@@ -49,6 +50,7 @@ describeIfDb('permission catalog sync against a real database', () => {
     await dbService.db.delete(iamInitialGrantDeliveries).where(like(iamInitialGrantDeliveries.permissionKey, 'zz.%'));
     await dbService.db.delete(iamRolePermissions).where(like(iamRolePermissions.permissionKey, 'zz.%'));
     await dbService.db.delete(iamPermissions).where(like(iamPermissions.key, 'zz.%'));
+    await dbService.db.delete(iamAuditLogs).where(like(iamAuditLogs.targetLabel, 'zz_%'));
     await dbService.db.delete(roles).where(like(roles.name, 'zz_%'));
   };
 
@@ -146,5 +148,25 @@ describeIfDb('permission catalog sync against a real database', () => {
 
     expect(await grantsOf('zz.item.read')).toHaveLength(1);
     expect(results[0].grants + results[1].grants).toBe(1);
+  });
+
+  // 관리자 화면(RoleAdminManager.create)이 만든 역할은 사람이 권한을 정한 역할이다 — 카탈로그 이름이어도 몫을 주지 않는다.
+  // 주면 직원이 그 이름으로 빈 역할을 만들어 자기에게 붙이고, 다음 부팅에 자기가 갖지 않은 권한을 얻는다(#1248 반목표).
+  it('gives nothing to a role a person created through the admin API', async () => {
+    const catalog = [def('zz.item.read', ['zz_late_worker'])];
+    await manager().sync(catalog, ZZ);
+    const roleId = await createRole('zz_late_worker');
+    await dbService.db.insert(iamAuditLogs).values({
+      actorUserId: '00000000-0000-4000-8000-000000000001',
+      action: 'role.create',
+      targetType: 'role',
+      targetId: roleId,
+      targetLabel: 'zz_late_worker',
+      after: { name: 'zz_late_worker', permissions: [] },
+    });
+    const result = await manager().sync(catalog, ZZ);
+
+    expect(await grantsOf('zz.item.read')).toHaveLength(0);
+    expect(result.granted).toEqual([]);
   });
 });

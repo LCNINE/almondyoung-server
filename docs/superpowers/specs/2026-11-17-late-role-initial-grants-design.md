@@ -52,6 +52,10 @@
 
 나머지(역할이 키보다 늦게 생겼고 부여도 회수 이력도 없음)가 이번 수정으로 다음 부팅에 부여되는 몫이다.
 
+**사람이 만든 역할은 받지 않는다** (최종 리뷰에서 추가) — 관리자 화면(`RoleAdminManager.create`)이 만든 역할은 `role.create` 이력이 있다. 동기화는 그 역할을 몫에서 뺀다.
+이름만 같으면 받게 두면, `iam.role.write`·`iam.role.assign` 을 가진 직원이 카탈로그 이름(`logistics_manager` 등)으로 빈 역할을 만들어 자기에게 붙이고
+다음 부팅에 자기가 갖지 않은 권한을 얻는다(반목표). 시드가 만든 역할은 이력이 없어 받는다 — «지우고 다시 만든 역할»도 시드가 다시 만든 경우만 다시 받는다.
+
 **관측** — 부팅 로그에 새로 준 몫을 `key→role` 로 적는다(라이브 첫 부팅에서 무엇이 들어갔는지 보이게).
 
 **테스트** — `permission-catalog-sync.manager.spec.ts`(단위)와 `permission-catalog-sync.integration.spec.ts`(`describeIfDb`)에 회귀:

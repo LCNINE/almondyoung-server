@@ -1,6 +1,7 @@
 import { DbService, InjectDb } from '@app/db';
 import { Injectable } from '@nestjs/common';
 import {
+  iamAuditLogs,
   iamInitialGrantDeliveries,
   iamPermissions,
   iamRolePermissions,
@@ -101,6 +102,25 @@ export class IamRepository {
       .select({ permissionKey: iamInitialGrantDeliveries.permissionKey, roleId: iamInitialGrantDeliveries.roleId })
       .from(iamInitialGrantDeliveries)
       .where(inArray(iamInitialGrantDeliveries.permissionKey, permissionKeys));
+  }
+
+  /**
+   * 관리자 화면이 만든 역할(`role.create` 이력이 있다) — 사람이 권한을 정한 역할이라 카탈로그 첫 부여를 주지 않는다(#1248).
+   * 시드가 만든 역할은 이력이 없다.
+   */
+  async findRoleIdsCreatedByPeople(roleIds: string[], tx: UserServiceTx): Promise<Set<string>> {
+    if (roleIds.length === 0) return new Set();
+    const rows = await tx
+      .selectDistinct({ roleId: iamAuditLogs.targetId })
+      .from(iamAuditLogs)
+      .where(
+        and(
+          eq(iamAuditLogs.action, 'role.create'),
+          eq(iamAuditLogs.targetType, 'role'),
+          inArray(iamAuditLogs.targetId, roleIds),
+        ),
+      );
+    return new Set(rows.map((row) => row.roleId));
   }
 
   /** 이번에 새로 기록된 몫만 돌려준다 — 함께 부팅한 다른 인스턴스가 먼저 기록한 몫은 빠진다 */

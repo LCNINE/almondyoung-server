@@ -31,6 +31,7 @@ export type SyncablePermission = Omit<PermissionDefinition, 'grantOnFirstRegistr
 /**
  * 첫 부여는 (키, 역할)마다 한 번이다. 첫 등록 때 없던 역할도 생긴 뒤 다음 부팅에 받고,
  * 준 기록(iam_initial_grant_deliveries)이 회수된 몫을 되살리지 않게 한다(#1248).
+ * 받는 역할은 시드가 만든 역할뿐이다 — 관리자 화면이 만든 역할은 사람이 권한을 정했다.
  */
 @Injectable()
 export class PermissionCatalogSyncManager {
@@ -102,6 +103,9 @@ export class PermissionCatalogSyncManager {
     if (wanted.length === 0) return { granted: [], missingRoles: [] };
     const roleIds = await this.repository.findRoleIdsByNames(wanted, tx);
     const roleNames = new Map([...roleIds].map(([name, id]) => [id, name]));
+    // 관리자 화면이 만든 역할은 이름이 카탈로그와 같아도 받지 않는다 — 주면 직원이 그 이름으로 빈 역할을 만들어
+    // 자기에게 붙이고, 다음 부팅에 자기가 갖지 않은 권한을 얻는다(권한 상승 방지 우회)
+    const createdByPeople = await this.repository.findRoleIdsCreatedByPeople([...roleIds.values()], tx);
 
     const deliveredRows = await this.repository.findDeliveredShares(
       catalog.map((p) => p.key),
@@ -111,7 +115,7 @@ export class PermissionCatalogSyncManager {
     const undelivered = catalog.flatMap((p) =>
       p.grantOnFirstRegistration
         .map((role) => roleIds.get(role))
-        .filter((roleId): roleId is string => roleId !== undefined)
+        .filter((roleId): roleId is string => roleId !== undefined && !createdByPeople.has(roleId))
         .map((roleId) => ({ roleId, permissionKey: p.key }))
         .filter((share) => !delivered.has(shareId(share))),
     );

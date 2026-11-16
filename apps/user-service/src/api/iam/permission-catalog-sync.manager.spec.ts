@@ -26,6 +26,7 @@ describe('PermissionCatalogSyncManager', () => {
     insertGrants: jest.fn(),
     findDeliveredShares: jest.fn(),
     insertDeliveries: jest.fn(),
+    findRoleIdsCreatedByPeople: jest.fn(),
     findPermissionDefinitions: jest.fn(),
     updatePermissionDefinition: jest.fn(),
   };
@@ -41,6 +42,7 @@ describe('PermissionCatalogSyncManager', () => {
     repository.clearDeprecated.mockResolvedValue(0);
     repository.findPermissionDefinitions.mockResolvedValue([]);
     repository.findDeliveredShares.mockResolvedValue([]);
+    repository.findRoleIdsCreatedByPeople.mockResolvedValue(new Set());
     repository.insertDeliveries.mockImplementation((rows: unknown[]) => Promise.resolve(rows));
     repository.findRoleIdsByNames.mockResolvedValue(
       new Map([
@@ -79,6 +81,15 @@ describe('PermissionCatalogSyncManager', () => {
   it('grants only what this instance recorded', async () => {
     repository.insertMissingPermissions.mockResolvedValue(['a.b.read']);
     repository.insertDeliveries.mockResolvedValue([{ roleId: 'role-admin', permissionKey: 'a.b.read' }]);
+    const result = await manager.sync([def('a.b.read', ['admin', 'intern'])]);
+
+    expect(repository.insertGrants).toHaveBeenCalledWith([{ roleId: 'role-admin', permissionKey: 'a.b.read' }], tx);
+    expect(result.granted).toEqual([{ permissionKey: 'a.b.read', roleName: 'admin' }]);
+  });
+
+  it('skips roles a person created through the admin API', async () => {
+    repository.insertMissingPermissions.mockResolvedValue(['a.b.read']);
+    repository.findRoleIdsCreatedByPeople.mockResolvedValue(new Set(['role-intern']));
     const result = await manager.sync([def('a.b.read', ['admin', 'intern'])]);
 
     expect(repository.insertGrants).toHaveBeenCalledWith([{ roleId: 'role-admin', permissionKey: 'a.b.read' }], tx);
