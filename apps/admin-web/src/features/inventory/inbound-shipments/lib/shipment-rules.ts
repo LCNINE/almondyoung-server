@@ -67,3 +67,11 @@ export function defaultWarehouseId(warehouses: Array<{ id: string; type: string 
   const local = warehouses.filter((w) => w.type !== 'overseas');
   return local.length === 1 ? local[0].id : null;
 }
+
+export const CLOSE_REASON_MAX = 500;
+
+/** 끝내기 사유 — 앞뒤 공백을 뺀 1~500자. 서버가 같은 규칙으로 다시 판정한다. */
+export function normalizeCloseReason(input: string): { ok: true; reason: string } | { ok: false } {
+  const reason = input.trim();
+  return reason.length >= 1 && reason.length <= CLOSE_REASON_MAX ? { ok: true, reason } : { ok: false };
+}

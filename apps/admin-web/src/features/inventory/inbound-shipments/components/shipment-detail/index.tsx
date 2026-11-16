@@ -8,6 +8,8 @@ import { ForwardStrip } from './forward-strip';
 import { LinesTable } from './lines-table';
 import { LineDrawer } from './line-drawer';
 import { BoxesTab } from './boxes-tab';
+import { SummaryCards } from './summary-cards';
+import { UnplannedTab } from './unplanned-tab';
 
 /**
  * 선적 상세. 머리·탭·줄 서랍은 상태와 상관없이 같은 부품이고,
@@ -15,7 +17,7 @@ import { BoxesTab } from './boxes-tab';
  */
 export function ShipmentDetail({ id }: { id: string }) {
   const { data: shipment, isLoading, refetch } = useInboundShipment(id);
-  const [tab, setTab] = useState<'lines' | 'boxes'>('lines');
+  const [tab, setTab] = useState<'lines' | 'boxes' | 'unplanned'>('lines');
   const [selectedLineId, setSelectedLineId] = useState<string | null>(null);
   // 화면 상태일 뿐 저장하지 않는다.
   const [acknowledged, setAcknowledged] = useState<ReadonlySet<string>>(new Set());
@@ -37,15 +39,19 @@ export function ShipmentDetail({ id }: { id: string }) {
   return (
     <div className="flex flex-col gap-3 p-4">
       <ShipmentHeader shipment={shipment} acknowledged={acknowledged} onStale={() => void refetch()} />
+      {!isDraft && shipment.status !== 'canceled' && <SummaryCards shipment={shipment} />}
       {isDraft && <ForwardStrip shipment={shipment} acknowledged={acknowledged} onCheck={setChecked} />}
-      <Tabs value={tab} onValueChange={(v) => setTab(v as 'lines' | 'boxes')}>
+      <Tabs value={tab} onValueChange={(v) => setTab(v as 'lines' | 'boxes' | 'unplanned')}>
         <TabsList>
           <TabsTrigger value="lines">줄</TabsTrigger>
           <TabsTrigger value="boxes">상자</TabsTrigger>
+          {!isDraft && <TabsTrigger value="unplanned">리스트에 없던 물건</TabsTrigger>}
         </TabsList>
       </Tabs>
       {tab === 'lines' ? (
         <LinesTable shipment={shipment} onSelect={setSelectedLineId} />
+      ) : tab === 'unplanned' && !isDraft ? (
+        <UnplannedTab shipment={shipment} />
       ) : (
         <BoxesTab shipment={shipment} onForgetAck={(boxId) => setChecked(boxId, false)} />
       )}

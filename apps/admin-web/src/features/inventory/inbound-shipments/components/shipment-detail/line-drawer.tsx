@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useSyncedState } from '../../lib/use-synced-state';
 import { useQuery } from '@tanstack/react-query';
 import { Can } from '@/components/auth/can';
 import { Button } from '@/components/ui/button';
@@ -68,8 +69,8 @@ function DrawerBody({ shipment, line }: { shipment: InboundShipmentDetail; line:
   const [message, setMessage] = useState<string | null>(null);
   const [text, setText] = useState(prefillSearchText(line));
   const debounced = useDebounced(text, 300);
-  const [qty, setQty] = useState(line.expectedQty?.toString() ?? '');
-  const [boxLabels, setBoxLabels] = useState<string[]>(line.coversBoxLabels);
+  const [qty, setQty] = useSyncedState(line.expectedQty?.toString() ?? '');
+  const [boxLabels, setBoxLabels] = useSyncedState<string[]>(line.coversBoxLabels);
 
   const queries = skuSearchQueries(debounced);
   const search = useQuery({
@@ -105,6 +106,23 @@ function DrawerBody({ shipment, line }: { shipment: InboundShipmentDetail; line:
           );
         })}
       </div>
+
+      {!isDraft && (
+        <div className="flex flex-col gap-1">
+          <div>
+            센 수량 합계 {line.countedQty}
+            {line.expectedQty !== null ? ` / 예정 ${line.expectedQty}` : ''}
+          </div>
+          {shipment.boxes
+            .filter((b) => line.coversBoxLabels.includes(b.label))
+            .map((b) => (
+              <div key={b.id} className="flex gap-2">
+                <span className="w-24 shrink-0">{b.label}</span>
+                <span className="text-muted-foreground">{b.status === 'received' ? '받음' : '열림'}</span>
+              </div>
+            ))}
+        </div>
+      )}
 
       {line.issues.length > 0 && <ul className="list-disc pl-4">{line.issues.map((c) => <li key={c}>{issueLabel(c)}</li>)}</ul>}
       {!editability.editable && <div className="text-muted-foreground">{editability.reason}</div>}
@@ -168,7 +186,7 @@ function DrawerBody({ shipment, line }: { shipment: InboundShipmentDetail; line:
                 <Checkbox
                   checked={boxLabels.includes(b.label)}
                   onCheckedChange={(v) =>
-                    setBoxLabels((prev) => (v === true ? [...prev, b.label] : prev.filter((x) => x !== b.label)))
+                    setBoxLabels(v === true ? [...boxLabels, b.label] : boxLabels.filter((x) => x !== b.label))
                   }
                 />
                 {b.label}

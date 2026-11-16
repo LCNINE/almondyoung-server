@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useSyncedState } from '../../lib/use-synced-state';
 import { Can } from '@/components/auth/can';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -26,6 +27,13 @@ export function BoxesTab({
           <TableRow>
             <TableHead>이름</TableHead>
             <TableHead>처분</TableHead>
+            {shipment.status !== 'draft' && (
+              <>
+                <TableHead>상태</TableHead>
+                <TableHead className="text-right">센 수량</TableHead>
+                <TableHead>확정 시각</TableHead>
+              </>
+            )}
             <TableHead className="text-right">덮는 줄</TableHead>
           </TableRow>
         </TableHeader>
@@ -51,7 +59,7 @@ function BoxRow({
   onForgetAck: (boxId: string) => void;
 }) {
   const editBox = useEditInboundShipmentBox();
-  const [label, setLabel] = useState(box.label);
+  const [label, setLabel] = useSyncedState(box.label);
   const coverCount = shipment.lines.filter((l) => l.coversBoxLabels.includes(box.label)).length;
   const dispositionEditable = boxDispositionEditable(shipment, box);
   const nameEditable = shipment.status === 'draft';
@@ -83,6 +91,7 @@ function BoxRow({
       <TableCell>
         <div className="flex items-center gap-2">
           <span>{box.disposition === 'stock' ? '재고' : '전달용'}</span>
+          {box.origin === 'added' && <span className="text-muted-foreground">리스트에 없던 상자</span>}
           {dispositionEditable && (
             <Can run={useEditInboundShipmentBox}>
               <Button
@@ -100,6 +109,13 @@ function BoxRow({
           )}
         </div>
       </TableCell>
+      {shipment.status !== 'draft' && (
+        <>
+          <TableCell>{box.status === 'received' ? '받음' : '열림'}</TableCell>
+          <TableCell className="text-right">{box.countedQty}</TableCell>
+          <TableCell>{box.receivedAt ? new Date(box.receivedAt).toLocaleString('ko-KR') : ''}</TableCell>
+        </>
+      )}
       <TableCell className="text-right">{coverCount}</TableCell>
     </TableRow>
   );

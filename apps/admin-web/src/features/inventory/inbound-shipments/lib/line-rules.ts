@@ -92,3 +92,9 @@ export function differenceText(line: InboundShipmentLine, coveredBoxes: InboundS
       return '안 옴';
   }
 }
+
+/** «차이 있는 줄만» — 모자람·남음·안 옴. 맞음·진행 중은 차이가 아니다. */
+export function hasDifference(line: InboundShipmentLine): boolean {
+  const { state } = line.difference;
+  return state === 'short' || state === 'over' || state === 'not_arrived';
+}

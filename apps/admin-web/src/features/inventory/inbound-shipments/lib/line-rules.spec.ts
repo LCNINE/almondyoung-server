@@ -2,6 +2,7 @@ import type { LineIssueCode } from '@/lib/types/dto/inbound-shipment';
 import { box, line, shipment } from './fixtures.spec-helper';
 import {
   differenceText,
+  hasDifference,
   issueLabel,
   lineEditability,
   needsAttention,
@@ -114,4 +115,18 @@ describe('differenceText', () => {
   it('short', () => expect(differenceText(d('short', 7, 10), covered)).toBe('모자람 3'));
   it('over', () => expect(differenceText(d('over', 12, 10), covered)).toBe('남음 2'));
   it('not_arrived', () => expect(differenceText(d('not_arrived', 0, 10), covered)).toBe('안 옴'));
+});
+
+describe('hasDifference', () => {
+  const withState = (state: 'pending' | 'not_arrived' | 'match' | 'short' | 'over') =>
+    line({ difference: { state, counted: 0, expected: 1 } });
+  it('모자람·남음·안 옴만 true', () => {
+    expect(hasDifference(withState('short'))).toBe(true);
+    expect(hasDifference(withState('over'))).toBe(true);
+    expect(hasDifference(withState('not_arrived'))).toBe(true);
+  });
+  it('맞음·진행 중은 false', () => {
+    expect(hasDifference(withState('match'))).toBe(false);
+    expect(hasDifference(withState('pending'))).toBe(false);
+  });
 });

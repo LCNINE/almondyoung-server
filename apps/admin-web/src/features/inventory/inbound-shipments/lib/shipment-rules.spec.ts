@@ -4,6 +4,7 @@ import {
   confirmReadiness,
   defaultShipmentName,
   defaultWarehouseId,
+  normalizeCloseReason,
   forwardBoxes,
   shipmentActions,
   skuLineCountInBox,
@@ -176,4 +177,17 @@ describe('defaultWarehouseId', () => {
       ]),
     ).toBeNull());
   it('없으면 null', () => expect(defaultWarehouseId([])).toBeNull());
+});
+
+describe('normalizeCloseReason', () => {
+  it('앞뒤 공백을 뺀다', () => expect(normalizeCloseReason('  파손  ')).toEqual({ ok: true, reason: '파손' }));
+  it('빈 값·공백뿐이면 거절', () => {
+    expect(normalizeCloseReason('')).toEqual({ ok: false });
+    expect(normalizeCloseReason('   ')).toEqual({ ok: false });
+  });
+  it('500자까지 허용, 501자는 거절', () => {
+    expect(normalizeCloseReason('가'.repeat(500)).ok).toBe(true);
+    expect(normalizeCloseReason('가'.repeat(501)).ok).toBe(false);
+  });
+  it('공백을 뺀 뒤 길이로 센다', () => expect(normalizeCloseReason(` ${'가'.repeat(500)} `).ok).toBe(true));
 });

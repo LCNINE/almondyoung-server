@@ -17,15 +17,30 @@ import {
 } from '@/components/ui/alert-dialog';
 import {
   useCancelInboundShipment,
+  useCloseInboundShipment,
+  useReopenInboundShipment,
   useConfirmInboundShipment,
   useUpdateInboundShipmentHeader,
 } from '@/lib/services/inventory/inbound-shipment-mutations';
 import { getFileSignedUrlFromFileService } from '@/lib/api/domains/files/upload.client';
 import { isCustomError } from '@/lib/api/customError';
 import type { InboundShipmentDetail } from '@/lib/types/dto/inbound-shipment';
-import { confirmReadiness, shipmentActions } from '../../lib/shipment-rules';
+import { confirmReadiness, normalizeCloseReason, shipmentActions } from '../../lib/shipment-rules';
 import { needsAttention } from '../../lib/line-rules';
 import { writeErrorMessage } from './mutation-error';
+import { useSyncedState } from '../../lib/use-synced-state';
+import { useWarehouses } from '@/lib/services/inventory/queries';
+import { Textarea } from '@/components/ui/textarea';
+import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogTitle } from '@/components/ui/dialog';
+
+const STATUS_TEXT: Record<InboundShipmentDetail['status'], string> = {
+  draft: '초안',
+  expected: '도착 예정',
+  receiving: '받는 중',
+  closed: '끝남',
+  canceled: '취소됨',
+};
 
 interface Props {
   shipment: InboundShipmentDetail;
@@ -41,12 +56,22 @@ export function ShipmentHeader({ shipment, acknowledged, onStale }: Props) {
   const cancel = useCancelInboundShipment();
   const actions = shipmentActions(shipment);
   const isDraft = shipment.status === 'draft';
+  // 서버는 취소된 선적만 머리 수정을 거절한다 — 확정 뒤에도 도착 예정일을 고친다.
+  const editsHeader = shipment.status !== 'canceled';
+  const { data: warehouses = [] } = useWarehouses();
+  const warehouseName = warehouses.find((w) => w.id === shipment.warehouseId)?.name;
   const readiness = confirmReadiness(shipment, acknowledged);
   const attentionCount = shipment.lines.filter(needsAttention).length;
 
-  const [name, setName] = useState(shipment.name);
-  const [arrival, setArrival] = useState(shipment.expectedArrival?.slice(0, 10) ?? '');
-  const [memo, setMemo] = useState(shipment.memo ?? '');
+  // refetch 로 서버 값이 바뀌면 따라간다(고치는 중인 칸은 지킨다).
+  const [name, setName] = useSyncedState(shipment.name);
+  const [arrival, setArrival] = useSyncedState(shipment.expectedArrival?.slice(0, 10) ?? '');
+  const [memo, setMemo] = useSyncedState(shipment.memo ?? '');
+  const [closeOpen, setCloseOpen] = useState(false);
+  const [closeText, setCloseText] = useState('');
+  const closeShipment = useCloseInboundShipment();
+  const reopen = useReopenInboundShipment();
+  const closeInput = normalizeCloseReason(closeText);
   const [message, setMessage] = useState<string | null>(null);
   const [overlaps, setOverlaps] = useState<string[]>([]);
 
@@ -59,7 +84,7 @@ export function ShipmentHeader({ shipment, acknowledged, onStale }: Props) {
     setMessage(null);
     update.mutate(
       { id: shipment.id, name, expectedArrival: arrival === '' ? null : arrival, memo: memo === '' ? null : memo },
-      { onError: (e) => setMessage(writeErrorMessage(e)) },
+      { onError: onWriteError },
     );
   };
 
@@ -79,11 +104,36 @@ export function ShipmentHeader({ shipment, acknowledged, onStale }: Props) {
     );
   };
 
+  const onWriteError = (e: unknown) => {
+    setMessage(writeErrorMessage(e));
+    if (isCustomError(e) && e.statusCode === 409) onStale();
+  };
+
+  const doClose = () => {
+    if (!closeInput.ok) return;
+    setMessage(null);
+    closeShipment.mutate(
+      { id: shipment.id, reason: closeInput.reason },
+      {
+        onSuccess: () => {
+          setCloseOpen(false);
+          setCloseText('');
+        },
+        onError: onWriteError,
+      },
+    );
+  };
+
+  const doReopen = () => {
+    setMessage(null);
+    reopen.mutate(shipment.id, { onError: onWriteError });
+  };
+
   const doCancel = () => {
     setMessage(null);
     cancel.mutate(shipment.id, {
       onSuccess: () => router.push('/inventory/inbound-shipments'),
-      onError: (e) => setMessage(writeErrorMessage(e)),
+      onError: onWriteError,
     });
   };
 
@@ -100,17 +150,19 @@ export function ShipmentHeader({ shipment, acknowledged, onStale }: Props) {
   return (
     <div className="flex flex-col gap-2">
       <div className="flex flex-wrap items-center gap-2">
-        <Input className="w-64" value={name} disabled={!isDraft} onChange={(e) => setName(e.target.value)} aria-label="이름" />
+        <Input className="w-64" value={name} disabled={!editsHeader} onChange={(e) => setName(e.target.value)} aria-label="이름" />
+        <Badge variant="outline">{STATUS_TEXT[shipment.status]}</Badge>
+        {warehouseName && <span className="text-sm text-muted-foreground">{warehouseName}</span>}
         <Input
           type="date"
           className="w-40"
           value={arrival}
-          disabled={!isDraft}
+          disabled={!editsHeader}
           onChange={(e) => setArrival(e.target.value)}
           aria-label="도착 예정일"
         />
-        <Input className="w-64" placeholder="메모" value={memo} disabled={!isDraft} onChange={(e) => setMemo(e.target.value)} aria-label="메모" />
-        {isDraft && dirty && (
+        <Input className="w-64" placeholder="메모" value={memo} disabled={!editsHeader} onChange={(e) => setMemo(e.target.value)} aria-label="메모" />
+        {editsHeader && dirty && (
           <Can run={useUpdateInboundShipmentHeader}>
             <Button size="sm" onClick={saveHeader} disabled={update.isPending || name.trim() === ''}>
               저장
@@ -145,6 +197,20 @@ export function ShipmentHeader({ shipment, acknowledged, onStale }: Props) {
               </AlertDialog>
             </Can>
           )}
+          {actions.close && (
+            <Can run={useCloseInboundShipment}>
+              <Button size="sm" variant="outline" onClick={() => setCloseOpen(true)}>
+                끝내기…
+              </Button>
+            </Can>
+          )}
+          {actions.reopen && (
+            <Can run={useReopenInboundShipment}>
+              <Button size="sm" variant="outline" disabled={reopen.isPending} onClick={doReopen}>
+                다시 열기
+              </Button>
+            </Can>
+          )}
           {actions.confirm && (
             <Can run={useConfirmInboundShipment}>
               <span className="text-sm text-muted-foreground">
@@ -159,6 +225,27 @@ export function ShipmentHeader({ shipment, acknowledged, onStale }: Props) {
           )}
         </div>
       </div>
+      {shipment.status === 'closed' && shipment.closedReason && (
+        <div className="text-sm text-muted-foreground">
+          끝낸 사유: {shipment.closedReason}
+          {shipment.closedAt ? ` · ${new Date(shipment.closedAt).toLocaleString('ko-KR')}` : ''}
+        </div>
+      )}
+      <Dialog open={closeOpen} onOpenChange={setCloseOpen}>
+        <DialogContent>
+          <DialogTitle>선적 끝내기</DialogTitle>
+          <DialogDescription>끝내는 사유를 적어 주세요. 다시 열 수 있습니다.</DialogDescription>
+          <Textarea value={closeText} onChange={(e) => setCloseText(e.target.value)} aria-label="끝내는 사유" rows={4} />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCloseOpen(false)}>
+              닫기
+            </Button>
+            <Button onClick={doClose} disabled={!closeInput.ok || closeShipment.isPending}>
+              끝내기
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       {message && <div className="text-sm text-destructive">{message}</div>}
       {overlaps.length > 0 && (
         <div className="text-sm text-amber-600">
