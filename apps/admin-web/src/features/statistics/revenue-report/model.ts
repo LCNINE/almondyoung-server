@@ -114,6 +114,39 @@ export function externalTable(rows: ExternalRevenueRow[]) {
   ];
 }
 
+export function externalMonthlyStatistics(
+  rows: ExternalRevenueRow[],
+  year: number
+) {
+  const groups = new Map<
+    string,
+    { key: string; label: string; amounts: Map<string, number> }
+  >();
+
+  for (const row of rows) {
+    if (!row.month.startsWith(`${year}-`)) continue;
+    const key = JSON.stringify([row.channel, row.account, row.basis]);
+    const group = groups.get(key) ?? {
+      key: `series${groups.size}`,
+      label: `${CHANNELS[row.channel] ?? row.channel} · ${row.account} · ${BASES[row.basis] ?? row.basis}`,
+      amounts: new Map<string, number>(),
+    };
+    group.amounts.set(row.month, row.amount);
+    groups.set(key, group);
+  }
+
+  const series = [...groups.values()];
+  const months = Array.from({ length: 12 }, (_, i) => {
+    const month = `${year}-${String(i + 1).padStart(2, '0')}`;
+    const values: Record<string, number | string | null> = { month };
+    for (const group of series)
+      values[group.key] = group.amounts.get(month) ?? null;
+    return values;
+  });
+
+  return { series: series.map(({ key, label }) => ({ key, label })), months };
+}
+
 function labelKey(labels: Record<string, string>, value: unknown): string {
   const text = String(value ?? '').trim();
   return (

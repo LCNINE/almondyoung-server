@@ -1,4 +1,40 @@
-import { HEADERS, parseExternalRevenue, revenueSummary } from './model';
+import {
+  HEADERS,
+  parseExternalRevenue,
+  revenueSummary,
+  externalMonthlyStatistics,
+} from './model';
+
+describe('업로드 자료 월별 통계', () => {
+  it('계정과 기준을 구분하며 미수집월과 실제 0원, 음수, 다른 연도를 구분한다', () => {
+    const source = {
+      channel: 'coupang',
+      account: '일반판매',
+      basis: 'paid',
+      source: '월별 원본',
+    };
+    const result = externalMonthlyStatistics(
+      [
+        { ...source, month: '2026-01', amount: 0 },
+        { ...source, month: '2026-02', amount: -100 },
+        { ...source, month: '2025-01', amount: 999 },
+        { ...source, account: '로켓', month: '2026-01', amount: 200 },
+        { ...source, basis: 'tax_report', month: '2026-01', amount: 300 },
+      ],
+      2026
+    );
+    expect(result.series).toHaveLength(3);
+    expect(result.months).toHaveLength(12);
+    expect(result.months[0]).toEqual({
+      month: '2026-01',
+      series0: 0,
+      series1: 200,
+      series2: 300,
+    });
+    expect(result.months[1].series0).toBe(-100);
+    expect(result.months[2].series0).toBeNull();
+  });
+});
 
 const row = [
   'coupang',

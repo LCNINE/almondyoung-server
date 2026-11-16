@@ -41,14 +41,14 @@ export default function SalesStatisticsTemplate() {
         <div className="space-y-4">
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
             <KpiTile
-              label="순매출"
+              label="기존 주문 집계 순매출"
               value={formatKrw(kpis?.netRevenue)}
               previous={
                 kpis && prev
                   ? { current: kpis.netRevenue, previous: prev.netRevenue }
                   : undefined
               }
-              hint="총매출 − 취소 − 환불"
+              hint="총매출 − 취소 − 환불 · 외부 업로드 자료는 위 월별 통계에서 확인"
               isLoading={isLoading}
             />
             <KpiTile

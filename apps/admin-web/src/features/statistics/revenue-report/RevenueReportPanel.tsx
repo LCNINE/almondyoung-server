@@ -1,6 +1,8 @@
 'use client';
 
 import { useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { archiveClient } from '@/lib/api/domains/archive/archive.client';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { useCanRun } from '@/hooks/use-permission';
 import type { PermissionRequirement } from '@/lib/auth/mutation-permission';
@@ -12,6 +14,7 @@ import { useOrderRefunds } from '@/lib/services/wallet/queries';
 import { refundMap } from '../growth/model';
 import { appendGoalEvidence } from './goal-export';
 import { kstToday } from '@/features/statistics/as-of';
+import { ExternalRevenueStatistics } from './ExternalRevenueStatistics';
 import {
   BASES,
   CHANNELS,
@@ -36,6 +39,8 @@ useImportRevenueRows.permission = [
 ] as const satisfies PermissionRequirement;
 
 export function RevenueReportPanel() {
+  const router = useRouter();
+  const [openingArchive, setOpeningArchive] = useState(false);
   const [year, setYear] = useState(Number(kstToday().slice(0, 4)));
   const [pending, setPending] = useState<ExternalRevenueRow[]>([]);
   const [busy, setBusy] = useState(false);
@@ -65,6 +70,28 @@ export function RevenueReportPanel() {
         ? Number(kstToday().slice(5, 7))
         : 0;
   const totals = report.data ? revenueSummary(report.data, throughMonth) : [];
+
+  async function openArchive() {
+    setOpeningArchive(true);
+    setMessage('');
+    try {
+      const pages = await archiveClient.listTree('team');
+      const matches = pages.filter(
+        (page) => !page.parentId && page.title === '매출 자료'
+      );
+      if (matches.length === 1) router.push(`/archive/${matches[0].id}`);
+      else {
+        setMessage('아카이브 팀 스페이스에서 매출 자료 문서를 선택해 주세요.');
+        router.push('/archive');
+      }
+    } catch {
+      setMessage(
+        '보관함을 열지 못했습니다. 아카이브 조회 권한과 연결 상태를 확인해 주세요.'
+      );
+    } finally {
+      setOpeningArchive(false);
+    }
+  }
 
   async function download(raw: boolean) {
     if (!report.data) return;
@@ -352,6 +379,13 @@ export function RevenueReportPanel() {
         >
           주문 원장 포함 엑셀
         </Button>
+        <Button
+          variant="outline"
+          disabled={openingArchive}
+          onClick={openArchive}
+        >
+          {openingArchive ? '보관함 여는 중…' : '원본·세무사 전달 자료'}
+        </Button>
       </div>
       <p className="text-sm text-gray-600">
         위 기간 필터와 별도로 선택한 연도의 자료를 조회합니다. 기존 주문 집계와
@@ -362,6 +396,9 @@ export function RevenueReportPanel() {
         미등록 채널·월은 미수집입니다. 전화 주문은 기존 자사몰 주문에 포함되지
         않은 자료만 등록하세요.
       </p>
+      {report.data && !report.isError ? (
+        <ExternalRevenueStatistics rows={report.data.external} year={year} />
+      ) : null}
       {report.data ? (
         <div className="grid gap-3 md:grid-cols-3">
           {totals.map((t) => (
