@@ -1099,7 +1099,12 @@ export const usePublishPrintProduct = () => {
   });
 };
 usePublishPrintProduct.permission = {
-  allOf: [['catalog.product.write'], ['catalog.price.write'], ['marketing.almond_template.write']],
+  allOf: [
+    ['catalog.product.write'],
+    ['catalog.price.write'],
+    ['marketing.almond_template.write'],
+    ['marketing.almond_template.publish'],
+  ],
 } as const satisfies PermissionRequirement;
 
 export const useRepublishPrintProduct = () => {

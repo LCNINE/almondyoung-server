@@ -55,6 +55,7 @@ import { PublishDialog } from '../publish/publish-dialog';
 import { isPrintKind } from '../publish/publish-model';
 
 const PER_PAGE = 20;
+const FIRST_PUBLISH_CONTACT = '아몬드템플릿 상품 게시는 정중식에게 문의해 주세요.';
 const STOREFRONT_URL = process.env.NEXT_PUBLIC_STOREFRONT_URL ?? '';
 const DEFAULT_COUNTRY =
   process.env.NEXT_PUBLIC_STOREFRONT_DEFAULT_COUNTRY ?? 'kr';
@@ -119,7 +120,9 @@ export default function AlmondTemplatesTemplate() {
 
   const handleToggleStatus = async (template: AdminAlmondTemplateDto) => {
     if (template.status === 'draft' && isPrintKind(template.kind)) {
-      setPublishTarget(template);
+      if (canPublishProduct) setPublishTarget(template);
+      else toast.info(FIRST_PUBLISH_CONTACT);
+
       return;
     }
 
@@ -340,7 +343,7 @@ export default function AlmondTemplatesTemplate() {
 
               <div className="flex shrink-0 gap-2">
                 {(template.status === 'draft' && isPrintKind(template.kind)
-                  ? canPublishProduct
+                  ? canPublishProduct || canRepublishProduct
                   : canRun(useUpdateAlmondTemplateStatus)) && (
                   <Button
                     variant={

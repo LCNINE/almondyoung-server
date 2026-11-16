@@ -405,6 +405,11 @@ export const PERMISSION_CATALOG = [
     owners: ['ugc-service'],
     grant: ADMIN,
   }),
+  // 상세 페이지를 함께 만들어야 해서 처음 게시는 따로 받은 사람만 한다. 다시 게시는 write 로 충분하다
+  permission('marketing.almond_template.publish', '아몬드템플릿 상품 게시', '아몬드템플릿을 판매 상품으로 처음 게시한다', {
+    owners: ['core'],
+    grant: NOBODY,
+  }),
   permission('marketing.almond_template.read', '아몬드템플릿 조회', '아몬드템플릿 시안과 디자인을 본다', {
     owners: ['ugc-service'],
     grant: ADMIN_INTERN,

@@ -11,6 +11,7 @@ import {
 import { PrintCatalogService } from './print-catalog.service';
 
 const PUBLISH_DENIED = '템플릿 상품을 게시하려면 가격 변경과 아몬드템플릿 관리 권한도 필요합니다.';
+const FIRST_PUBLISH_DENIED = '아몬드템플릿 상품 게시는 정중식에게 문의해 주세요.';
 
 @ApiTags('Admin - Print Catalog')
 @Controller('admin/print-catalog')
@@ -41,6 +42,9 @@ export class PrintCatalogController {
   @ApiOperation({ summary: '아몬드템플릿을 판매 상품으로 게시(이미 게시했으면 기존 상품을 돌려준다)' })
   publish(@Body() body: PublishPrintProductDto, @User() user: { userId: string; roles?: string[] }) {
     this.assertCanPublish(user);
+    if (!this.checkpoints.check('print_catalog.publish', { roles: user.roles ?? [] }, ['marketing.almond_template.publish'])) {
+      throw new ForbiddenException(FIRST_PUBLISH_DENIED);
+    }
 
     return this.service.publish(body, user.userId);
   }
