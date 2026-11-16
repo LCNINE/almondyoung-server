@@ -93,6 +93,14 @@ export class SalesOrderBusinessTimelineItemDto {
   createdAt: Date;
 }
 
+export class SalesOrderFulfillmentRefDto {
+  @ApiProperty({ description: '출고주문 ID' })
+  id: string;
+
+  @ApiProperty({ description: '출고주문 상태' })
+  status: string;
+}
+
 export class SalesOrderResponseDto {
   @ApiProperty({ description: '판매 주문 ID' })
   id: string;
@@ -165,10 +173,18 @@ export class SalesOrderResponseDto {
 
   @ApiProperty({
     description:
-      '출고 단계 — 일별 통계와 같은 정의 한 벌. pending 미확정 / preparing 준비 중 / shipping 배송 중 / delivered 배송 완료 / external_shipped core 밖(셀메이트)에서 출고 / cancelled 취소',
-    enum: ['pending', 'preparing', 'shipping', 'delivered', 'external_shipped', 'cancelled'],
+      '출고 단계 — 일별 통계와 같은 정의 한 벌. preparing 준비 중 / shipping 배송 중 / delivered 배송 완료 / external_shipped core 밖(셀메이트)에서 출고 / cancelled 취소',
+    enum: ['preparing', 'shipping', 'delivered', 'external_shipped', 'cancelled'],
   })
   shipmentPhase: OrderShipmentPhase;
+
+  @ApiProperty({
+    description: '이 주문의 출고주문(판매주문당 많아야 하나). 상세 조회에만 싣는다',
+    type: SalesOrderFulfillmentRefDto,
+    nullable: true,
+    required: false,
+  })
+  fulfillmentOrder?: SalesOrderFulfillmentRefDto | null;
 
   @ApiProperty({ description: '주문 라인 목록', type: [SalesOrderLineResponseDto] })
   lines: SalesOrderLineResponseDto[];

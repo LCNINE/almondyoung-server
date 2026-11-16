@@ -197,7 +197,8 @@ describeIfDb('orderFulfillmentPhaseSql — 진행 단계 사다리 한 벌 (K6 P
   it('pending order', async () => {
     await inRollbackTx(db, async (tx) => {
       const o = await f.seedOrder(tx, { status: 'pending' });
-      expect(await phaseOf(tx, o)).toEqual(['pending', 'not_created', false]);
+      // core 주문은 결제가 끝난 뒤에 들어온다 — SO pending 은 결제 대기가 아니라 진행 중이다
+      expect(await phaseOf(tx, o)).toEqual(['preparing', 'not_created', false]);
     });
   });
 
@@ -363,7 +364,7 @@ describeIfDb('orderFulfillmentPhaseSql — 진행 단계 사다리 한 벌 (K6 P
       const before = await pointOf();
 
       const w = await f.seedWorld(tx);
-      await f.seedOrder(tx, { status: 'pending', createdAt: day }); // pending
+      await f.seedOrder(tx, { status: 'pending', createdAt: day }); // preparing (FO 전)
       await f.seedOrder(tx, { status: 'confirmed', createdAt: day }); // preparing (FO 전)
       {
         // shipping — 소포 둘 중 하나 발송
@@ -402,8 +403,8 @@ describeIfDb('orderFulfillmentPhaseSql — 진행 단계 사다리 한 벌 (K6 P
       const delta = (
         k: 'pending' | 'preparing' | 'shipping' | 'delivered' | 'externalShipped' | 'cancelled' | 'total',
       ) => after[k] - before[k];
-      expect(delta('pending')).toBe(1);
-      expect(delta('preparing')).toBe(1);
+      expect(delta('pending')).toBe(0);
+      expect(delta('preparing')).toBe(2);
       expect(delta('shipping')).toBe(1);
       expect(delta('delivered')).toBe(1);
       expect(delta('externalShipped')).toBe(2);
@@ -572,21 +573,20 @@ describeIfDb('orderFulfillmentPhaseSql — 진행 단계 사다리 한 벌 (K6 P
       const fo = await f.seedFo(tx, w, o, { status: 'processing' });
       const box = await f.seedBox(tx, w, [fo.foItemId], { status: 'planned' });
       await dispatch(tx, w, box, fo.foItemId, 1, false);
-      // 관리자는 SO pending 칸이 이기고, 고객은 SO pending 칸을 타지 않는다 — 사실 단계 그대로 «배송 중»(R13)
-      expect(await phaseOf(tx, o)).toEqual(['pending', 'shipping', true]);
+      // 관리자도 고객도 SO pending 을 보지 않는다 — 사실 단계 그대로 «배송 중»
+      expect(await phaseOf(tx, o)).toEqual(['shipping', 'shipping', true]);
     });
   });
 
-  // ── 고객 단계는 SO pending·shipped 칸을 타지 않는다 (R13, 스펙 §6.4 «현행 화면 유지») ──
-  // 라이브 진행 중 주문은 `pending` 이다(생성이 pending 으로 넣고 confirm 은 관리자 엔드포인트뿐). 옛 고객 단계는
-  // SO 상태를 보지 않았으므로, 그 칸을 고객 단계에 태우면 pending 주문의 «배송 완료»·«출고 취소»가 사라진다.
+  // ── SO pending 은 단계 칸이 없고, 고객 단계는 SO shipped 칸도 타지 않는다 (R13) ──
+  // 진행 중 주문은 `pending` 이다(생성이 pending 으로 넣고 confirm 을 부르는 화면이 없다).
 
   it('pending order with completed drop-ship shows delivered to the customer', async () => {
     await inRollbackTx(db, async (tx) => {
       const w = await f.seedWorld(tx);
       const o = await f.seedOrder(tx, { status: 'pending' });
       await seedCompletedDropShip(tx, w, o);
-      expect(await phaseOf(tx, o)).toEqual(['pending', 'delivered', true]);
+      expect(await phaseOf(tx, o)).toEqual(['delivered', 'delivered', true]);
     });
   });
 
@@ -595,7 +595,7 @@ describeIfDb('orderFulfillmentPhaseSql — 진행 단계 사다리 한 벌 (K6 P
       const o = await f.seedOrder(tx, { status: 'pending' });
       await seedPrint(tx, o, 'delivered');
       await seedPrint(tx, o, 'delivered');
-      expect(await phaseOf(tx, o)).toEqual(['pending', 'delivered', true]);
+      expect(await phaseOf(tx, o)).toEqual(['delivered', 'delivered', true]);
     });
   });
 
@@ -608,7 +608,7 @@ describeIfDb('orderFulfillmentPhaseSql — 진행 단계 사다리 한 벌 (K6 P
         .update(wmsTables.fulfillmentOrders)
         .set({ status: 'canceled' })
         .where(eq(wmsTables.fulfillmentOrders.id, fo.foId));
-      expect(await phaseOf(tx, o)).toEqual(['pending', 'canceled', false]);
+      expect(await phaseOf(tx, o)).toEqual(['cancelled', 'canceled', false]);
     });
   });
 

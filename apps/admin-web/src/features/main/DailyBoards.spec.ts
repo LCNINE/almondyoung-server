@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { kstDaysAgo, kstToday } from '@/features/statistics/as-of';
 import { authQueryKeys } from '@/lib/services/auth/query-keys';
-import { CsBoard } from './DailyBoards';
+import { CsBoard, orderColumnsFor } from './DailyBoards';
 
 describe('CS board columns the viewer cannot read', () => {
   const render = (permissions: readonly string[]) => {
@@ -48,5 +48,18 @@ describe('CS board columns the viewer cannot read', () => {
     expect(html).not.toContain('교환');
     expect(html).toContain('href="/cs/return-exchange"');
     expect(html).not.toContain('/cs/return-exchange?');
+  });
+});
+
+describe('주문처리 현황 열', () => {
+  const point = (pending: number) => ({ pending });
+
+  it('결제 대기 칸 없이 상품준비중부터 보인다', () => {
+    expect(orderColumnsFor([point(0), point(0)]).map((c) => c.label)[0]).toBe('상품준비중');
+    expect(orderColumnsFor([]).map((c) => c.label)).not.toContain('입금전');
+  });
+
+  it('옛 응답이 입금전을 세어 오면 그 칸을 다시 보여 숫자가 합계에만 남지 않는다', () => {
+    expect(orderColumnsFor([point(0), point(3)]).map((c) => c.label)[0]).toBe('입금전');
   });
 });

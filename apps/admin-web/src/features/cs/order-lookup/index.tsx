@@ -13,6 +13,9 @@ import { formatCustomerOrderNo } from '@/features/order/history/utils/customer-o
 import { AlmondDesignPrintCard } from '@/features/orders/almond-design/almond-design-print-card';
 import { shipmentPhaseLabel, toShipmentPhase } from '@/lib/api/domains/orders/shipment-phase.shape';
 import { useMedusaOrderById } from '@/lib/services/medusa-customers/queries';
+import { paymentStatusLabel } from '@/features/customers/detail-window/lib/order-labels';
+import { OrderFulfillmentSection } from './order-fulfillment-section';
+import { salesOrderStatusLabel } from './order-status-label';
 
 function formatWon(v?: number | null): string {
   if (v === undefined || v === null) return '-';
@@ -151,7 +154,13 @@ export default function CsOrderLookup() {
           <Field label="주문번호" value={customerOrderNo} />
           <Field label="내부 주문 ID" value={order.channelOrderId ?? '-'} />
           <Field label="판매채널" value={formatChannel(order.salesChannel)} />
-          <Field label="주문상태" value={order.status} />
+          <Field label="주문상태" value={salesOrderStatusLabel(order.status)} />
+          {medusaOrder?.order?.payment_status && (
+            <Field
+              label="결제"
+              value={paymentStatusLabel(medusaOrder.order.payment_status)}
+            />
+          )}
           {/* 단계는 core 가 정한다. 옛 응답이면 «모름» — 빈 칸 대신 칸을 감춘다. */}
           {shipmentPhaseLabel(toShipmentPhase(order.shipmentPhase)) && (
             <Field
@@ -171,6 +180,12 @@ export default function CsOrderLookup() {
           <Field label="배송비" value={formatWon(order.shippingFee)} />
         </div>
       </section>
+
+      <OrderFulfillmentSection
+        orderId={order.id}
+        orderNo={customerOrderNo}
+        fulfillmentOrder={order.fulfillmentOrder}
+      />
 
       {/* 고객/배송 정보 */}
       <section className="rounded-md border border-gray-200 bg-white p-4">

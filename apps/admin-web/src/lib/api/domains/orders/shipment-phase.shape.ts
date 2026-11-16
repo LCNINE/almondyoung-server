@@ -8,7 +8,6 @@
 // 그 상태는 아무도 쓰지 않아 죽었고, 도출 규칙이 두 군데 있으면 갈린다.
 
 export const SHIPMENT_PHASES = [
-  'pending',
   'preparing',
   'shipping',
   'delivered',
@@ -19,7 +18,6 @@ export const SHIPMENT_PHASES = [
 export type ShipmentPhase = (typeof SHIPMENT_PHASES)[number];
 
 const LABELS: Record<ShipmentPhase, string> = {
-  pending: '결제대기',
   preparing: '준비중',
   shipping: '배송중',
   delivered: '배송완료',
@@ -41,13 +39,13 @@ export function shipmentPhaseLabel(p: ShipmentPhase | null): string {
 
 /**
  * 상품 줄 배지 종류. 출고가 시작됐거나 끝난 주문은 매칭 여부와 무관하게 단계를 보인다(이미 나갔는데
- * «매칭 대기» 라고 하면 거짓이다). 아직 안 나간 주문(결제대기·준비중·모름)에서만 미매칭을 먼저 알린다.
+ * «매칭 대기» 라고 하면 거짓이다). 아직 안 나간 주문(준비중·모름)에서만 미매칭을 먼저 알린다.
  */
 export function badgeKindOf(
   phase: ShipmentPhase | null,
   isMatched: boolean,
 ): 'phase' | 'unmatched' | 'none' {
-  const left = phase === null || phase === 'pending' || phase === 'preparing';
+  const left = phase === null || phase === 'preparing';
   if (left && !isMatched) return 'unmatched';
   return phase === null ? 'none' : 'phase';
 }

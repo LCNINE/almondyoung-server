@@ -679,12 +679,19 @@ export class SalesOrdersService {
       .from(wmsTables.salesOrderLines)
       .where(eq(wmsTables.salesOrderLines.salesOrderId, id));
     const shipmentPhase = (await this.loadShipmentPhases([id], db)).get(id) ?? FALLBACK_SHIPMENT_PHASE;
+    // 판매주문당 출고주문은 많아야 하나다 — 화면이 받는 분 정보가 실린 출고주문 목록을 부르지 않고 바로 이동하게 id·상태만 싣는다
+    const [fulfillmentOrder] = await db
+      .select({ id: wmsTables.fulfillmentOrders.id, status: wmsTables.fulfillmentOrders.status })
+      .from(wmsTables.fulfillmentOrders)
+      .where(eq(wmsTables.fulfillmentOrders.salesOrderId, id))
+      .limit(1);
     const { links: businessLinks, context } = await this.loadBusinessTimelineLinks(id, db);
     // 리더는 상태가 없다 — 생성자에 넣으면 이 서비스를 위치 인자로 만드는 통합 스펙이 깨진다
     const cancelRequestRow = await new ChannelCancelRequestReader().latestFor(id, db);
     return {
       ...order,
       shipmentPhase,
+      fulfillmentOrder: fulfillmentOrder ?? null,
       lines,
       businessTimeline: this.toBusinessTimeline(context, businessLinks),
       // 채널 주문 취소 요청(#1016 35번) — admin-web 이 «취소 요청됨»·«취소 실패»를 그린다
@@ -1103,7 +1110,6 @@ export class SalesOrdersService {
         ),
         ph AS (${orderFulfillmentPhaseSql(sql`SELECT ranged.id FROM ranged`)})
         SELECT ranged.day,
-               count(*) FILTER (WHERE ph.admin_phase = 'pending')::int AS pending,
                count(*) FILTER (WHERE ph.admin_phase = 'preparing')::int AS preparing,
                count(*) FILTER (WHERE ph.admin_phase = 'shipping')::int AS shipping,
                count(*) FILTER (WHERE ph.admin_phase = 'delivered')::int AS delivered,
