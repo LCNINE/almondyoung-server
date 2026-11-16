@@ -9,8 +9,6 @@ import {
 import { useInboundShipmentBox } from '@/lib/services/inventory/inbound-shipment-queries';
 import { boxDrawerRows } from '../../lib/box-drawer';
 
-const STATE_LABEL = { open: '열림', received: '받음', forward: '전달용' };
-
 export function BoxDrawer({
   shipmentId,
   boxId,
@@ -40,13 +38,18 @@ export function BoxDrawer({
           {rows && (
             <>
               <div className="flex gap-2">
-                <span>{STATE_LABEL[rows.header.state]}</span>
+                <span>{rows.header.stateLabel}</span>
                 {rows.header.receivedAt && (
                   <span className="text-muted-foreground">
                     {rows.header.receivedAt}
                   </span>
                 )}
               </div>
+              {rows.header.notice !== null && (
+                <div className="text-muted-foreground">
+                  {rows.header.notice}
+                </div>
+              )}
               {rows.forwardNote !== null && <div>{rows.forwardNote}</div>}
               {rows.lines.length > 0 && (
                 <ul className="flex flex-col gap-2">
@@ -66,12 +69,12 @@ export function BoxDrawer({
                       <span className="text-muted-foreground">
                         예정 {l.expected}
                       </span>
-                      {l.counted !== null && (
+                      {l.countText !== null && (
                         <span className="flex items-center gap-1">
-                          <b>{l.counted}</b>
-                          {l.method === 'list' && (
+                          <b>{l.countText}</b>
+                          {l.methodLabel !== null && (
                             <span className="text-xs text-muted-foreground">
-                              리스트대로
+                              {l.methodLabel}
                             </span>
                           )}
                         </span>
