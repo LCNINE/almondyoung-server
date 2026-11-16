@@ -5,6 +5,8 @@ import {
   channelInventoryIsManual,
   isPlaceholderEnv,
   isPlaceholderValue,
+  judgeReconcile,
+  type ReconcileFacts,
   linkedSecretValue,
   missingGrants,
   orderSourceWired,
@@ -142,5 +144,89 @@ describe('Medusa 예약 투영 축 (#1247)', () => {
   it('예정일 지난 선적 안내는 컷오버 전/후가 다르다', () => {
     expect(overdueShipmentFix('before')).toContain('셀메이트로 받음');
     expect(overdueShipmentFix('after')).toBe('예정일을 고치거나 닫는다');
+  });
+});
+
+describe('judgeReconcile', () => {
+  const now = new Date('2026-11-20T12:00:00Z');
+  const T = new Date('2026-11-20T00:00:00Z');
+  const base: ReconcileFacts = {
+    tablesExist: true,
+    initCutoverAt: T,
+    adapterCutoverAt: T,
+    openRunCreatedAt: null,
+    pairRows: 10,
+    unpaired: [],
+    carry: [],
+  };
+  const judge = (over: Partial<ReconcileFacts>) => judgeReconcile({ ...base, ...over }, now);
+
+  it('테이블이 없으면 bad + 마이그레이션 명령', () => {
+    const v = judge({ tablesExist: false });
+    expect(v).toHaveLength(1);
+    expect(v[0].level).toBe('bad');
+    expect(v[0].fix).toContain('npm run db:migrate -- --stage live --deployment lcnine-services --yes');
+  });
+
+  it('전부 정상이면 bad·dayOf 가 없다', () => {
+    const v = judge({});
+    expect(v.filter((x) => x.level === 'bad' || x.level === 'dayOf')).toEqual([]);
+    expect(v.some((x) => x.level === 'ok')).toBe(true);
+  });
+
+  it('init 이 없으면 dayOf + init 명령', () => {
+    const v = judge({ initCutoverAt: null });
+    const d = v.filter((x) => x.level === 'dayOf');
+    expect(d).toHaveLength(1);
+    expect(d[0].fix).toContain(
+      'WITH_MEDUSA=1 bash scripts/sellmate/run.sh live evening-reconcile init <재고 CSV> --cutover-at=<T> --sellmate-orders=<주문 목록> --own-mall-channel=<판매처> --apply',
+    );
+  });
+
+  it('init T 와 adapter T 가 다르면 bad, 같은 시각이면 통과', () => {
+    expect(judge({ adapterCutoverAt: new Date('2026-11-20T01:00:00Z') }).filter((x) => x.level === 'bad')).toHaveLength(1);
+    expect(judge({ adapterCutoverAt: null }).filter((x) => x.level === 'bad')).toHaveLength(1);
+    expect(judge({ adapterCutoverAt: new Date(T.getTime()) }).filter((x) => x.level === 'bad')).toHaveLength(0);
+  });
+
+  it('adapter T 를 못 읽으면 info', () => {
+    const v = judge({ adapterCutoverAt: undefined });
+    expect(v.filter((x) => x.level === 'bad')).toHaveLength(0);
+    expect(v.some((x) => x.level === 'info' && x.msg.includes('channel_adapter'))).toBe(true);
+  });
+
+  it('열린 회차가 25시간이면 bad + close 명령, 2시간이면 info', () => {
+    const old = judge({ openRunCreatedAt: new Date(now.getTime() - 25 * 3600_000) }).filter((x) => x.level === 'bad');
+    expect(old).toHaveLength(1);
+    expect(old[0].fix).toContain('evening-reconcile close <새 재고 CSV> --apply');
+    const fresh = judge({ openRunCreatedAt: new Date(now.getTime() - 2 * 3600_000) });
+    expect(fresh.filter((x) => x.level === 'bad')).toHaveLength(0);
+    expect(fresh.some((x) => x.level === 'info' && x.msg.includes('열린'))).toBe(true);
+  });
+
+  it('짝 행이 0 이면 bad + pair 명령', () => {
+    const b = judge({ pairRows: 0 }).filter((x) => x.level === 'bad');
+    expect(b).toHaveLength(1);
+    expect(b[0].fix).toContain('evening-reconcile pair <재고 CSV> --apply');
+  });
+
+  it('짝 못 지은 품목은 bad 하나로 건수와 사유별 수를 적는다', () => {
+    const b = judge({
+      unpaired: [
+        { optionSerial: 'TEST-0001', reason: 'no_barcode' },
+        { optionSerial: 'TEST-0002', reason: 'no_barcode' },
+        { optionSerial: 'TEST-0003', reason: 'ambiguous' },
+      ],
+    }).filter((x) => x.level === 'bad');
+    expect(b).toHaveLength(1);
+    expect(b[0].msg).toContain('3');
+    expect(b[0].msg).toContain('no_barcode 2');
+    expect(b[0].msg).toContain('ambiguous 1');
+  });
+
+  it('이월은 info 이고 실패가 아니다', () => {
+    const v = judge({ carry: [{ optionSerial: 'TEST-0001', skuCode: 'SKU-1', carry: 3 }] });
+    expect(v.filter((x) => x.level === 'bad')).toHaveLength(0);
+    expect(v.some((x) => x.level === 'info' && x.msg.includes('이월'))).toBe(true);
   });
 });

@@ -174,3 +174,88 @@ export function overdueShipmentFix(phase: 'before' | 'after'): string {
     ? 'T 전 도착분이면 셀메이트로 받은 뒤 사유 «셀메이트로 받음» 으로 닫는다'
     : '예정일을 고치거나 닫는다';
 }
+
+export type ReconcileFacts = {
+  tablesExist: boolean;
+  initCutoverAt: Date | null;
+  /** undefined = channel_adapter 를 못 읽음, null = 읽었는데 T 가 비어 있음 */
+  adapterCutoverAt: Date | null | undefined;
+  openRunCreatedAt: Date | null;
+  pairRows: number;
+  unpaired: { optionSerial: string; reason: string }[];
+  carry: { optionSerial: string; skuCode: string; carry: number }[];
+};
+
+export type Verdict = { level: 'ok' | 'bad' | 'dayOf' | 'info'; msg: string; fix?: string };
+
+const RECONCILE_CMD = 'WITH_MEDUSA=1 bash scripts/sellmate/run.sh live evening-reconcile';
+/** 열린 회차가 이 시간을 넘기면 어제 저녁에 닫지 않은 것이다. */
+const OPEN_RUN_STALE_HOURS = 24;
+
+/**
+ * 셀메이트 저녁 맞추기(#1304) 판정. 정본: scripts/sellmate/evening-reconcile.ts.
+ * 기준값(init)이 있나, 그 T 가 예약 투영 T 와 같나, 열린 회차가 묵지 않았나, 짝을 못 지은 품목·이월이 있나.
+ */
+export function judgeReconcile(f: ReconcileFacts, now: Date): Verdict[] {
+  if (!f.tablesExist)
+    return [
+      {
+        level: 'bad',
+        msg: '저녁 맞추기 테이블이 없다 — 마이그레이션이 라이브에 적용되지 않았다',
+        fix: 'npm run db:migrate -- --stage live --deployment lcnine-services --yes',
+      },
+    ];
+  const out: Verdict[] = [];
+
+  if (!f.initCutoverAt)
+    out.push({
+      level: 'dayOf',
+      msg: '저녁 맞추기 기준값(init)이 없다',
+      fix: `${RECONCILE_CMD} init <재고 CSV> --cutover-at=<T> --sellmate-orders=<주문 목록> --own-mall-channel=<판매처> --apply`,
+    });
+  else {
+    out.push({ level: 'ok', msg: `저녁 맞추기 기준값 T = ${f.initCutoverAt.toISOString()}` });
+    if (f.adapterCutoverAt === undefined)
+      out.push({ level: 'info', msg: 'channel_adapter 를 읽지 못해 기준값 T 와 예약 투영 T 를 대조하지 못했다' });
+    else if (f.adapterCutoverAt?.getTime() !== f.initCutoverAt.getTime())
+      out.push({
+        level: 'bad',
+        msg: `기준값 T(${f.initCutoverAt.toISOString()}) ≠ 예약 투영 T(${f.adapterCutoverAt?.toISOString() ?? '비어 있음'})`,
+        fix: '두 T 를 같은 시각으로 맞춘다 — 예약 투영 T 를 고치거나 init 을 다시 한다 (설계 문서의 컷오버 시각 절)',
+      });
+    else out.push({ level: 'ok', msg: '기준값 T 가 예약 투영 T 와 같다' });
+  }
+
+  if (f.openRunCreatedAt) {
+    const hours = (now.getTime() - f.openRunCreatedAt.getTime()) / 3_600_000;
+    if (hours > OPEN_RUN_STALE_HOURS)
+      out.push({
+        level: 'bad',
+        msg: `닫지 않은 회차가 ${hours.toFixed(1)}시간째 열려 있다`,
+        fix: `${RECONCILE_CMD} close <새 재고 CSV> --apply`,
+      });
+    else out.push({ level: 'info', msg: `열린 회차가 있다(${hours.toFixed(1)}시간 전 시작) — 저녁에 close 로 닫는다` });
+  } else out.push({ level: 'ok', msg: '열린 회차 없음' });
+
+  if (f.pairRows === 0)
+    out.push({
+      level: 'bad',
+      msg: '셀메이트 품목 짝(sellmate_item_pairs)이 비어 있다',
+      fix: `${RECONCILE_CMD} pair <재고 CSV> --apply`,
+    });
+  else if (f.unpaired.length) {
+    const byReason = new Map<string, number>();
+    for (const u of f.unpaired) byReason.set(u.reason, (byReason.get(u.reason) ?? 0) + 1);
+    const reasons = [...byReason].map(([k, n]) => `${k} ${n}`).join(', ');
+    out.push({
+      level: 'bad',
+      msg: `짝을 못 지은 셀메이트 품목 ${f.unpaired.length}건 (${reasons})`,
+      fix: `사유별로 바코드·SKU 를 고친 뒤 ${RECONCILE_CMD} pair <재고 CSV> --apply 를 다시 돌린다`,
+    });
+  } else out.push({ level: 'ok', msg: `짝 못 지은 품목 0 (짝 ${f.pairRows}행)` });
+
+  if (f.carry.length) out.push({ level: 'info', msg: `이월(부족분) 품목 ${f.carry.length}건 — 실패 아님, 다음 회차가 이어받는다` });
+  else out.push({ level: 'ok', msg: '이월 품목 0' });
+
+  return out;
+}
