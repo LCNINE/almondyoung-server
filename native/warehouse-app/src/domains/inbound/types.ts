@@ -9,7 +9,7 @@ export interface ExpectedArrivalLine {
   expectedArrival: string | null;
 }
 
-export interface ExpectedArrival {
+export interface PurchaseOrderArrival {
   source: 'purchase_order';
   documentId: string;
   type: 'domestic' | 'foreign';
@@ -18,6 +18,19 @@ export interface ExpectedArrival {
   totalOutstandingQuantity: number;
   lines: ExpectedArrivalLine[];
 }
+
+/** 중국 등에서 오는 선적 — 상자 입고는 스테이션에서 한다. */
+export interface InboundShipmentArrival {
+  source: 'inbound_shipment';
+  documentId: string;
+  name: string;
+  expectedDate: string | null;
+  totalOutstandingQuantity: number;
+  receivedBoxes: number;
+  stockBoxes: number;
+}
+
+export type ExpectedArrival = PurchaseOrderArrival | InboundShipmentArrival;
 
 export interface ExpectedArrivalsResult {
   warehouseId: string;

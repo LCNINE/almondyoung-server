@@ -45,7 +45,7 @@ describe('useExpectedArrivals', () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(request.mock.calls[0][0].path).toBe(
-      '/inventory/expected-arrivals?warehouseId=w-1'
+      '/inventory/expected-arrivals?warehouseId=w-1&include=inbound_shipment'
     );
   });
 
