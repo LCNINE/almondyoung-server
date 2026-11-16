@@ -219,6 +219,26 @@ export const iamRolePermissions = pgTable(
   }),
 );
 
+// 카탈로그 첫 부여(grantOnFirstRegistration) 몫을 이미 준 (키, 역할). 회수돼도 남아 다시 주지 않는다(#1248).
+// 역할은 id 로 잇는다 — 지우고 같은 이름으로 다시 만든 역할은 새 역할이라 다시 받는다.
+export const iamInitialGrantDeliveries = pgTable(
+  'iam_initial_grant_deliveries',
+  {
+    permissionKey: varchar('permission_key', { length: 100 })
+      .references(() => iamPermissions.key)
+      .notNull(),
+    roleId: uuid('role_id')
+      .references(() => roles.roleId, { onDelete: 'cascade' })
+      .notNull(),
+    deliveredAt: timestamp('delivered_at')
+      .default(sql`now()`)
+      .notNull(),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.permissionKey, table.roleId] }),
+  }),
+);
+
 // 역할·권한·부여 변경 이력. 변경과 같은 트랜잭션에서 쓴다(이력을 못 쓰면 변경도 없다).
 // 대상이 지워져도 읽히도록 이름(target_label·actor_login_id)을 그 시점 값으로 남긴다.
 export const iamAuditLogs = pgTable(
@@ -956,6 +976,7 @@ export const userServiceTables = {
   roles,
   iamPermissions,
   iamRolePermissions,
+  iamInitialGrantDeliveries,
   iamAuditLogs,
   piiAccessLogs,
   piiAccessReviews,

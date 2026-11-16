@@ -253,6 +253,20 @@
       "when": 1794120657734,
       "tag": "20261108065057_contract-tenant-columns-not-null",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1794853213409,
+      "tag": "20261116182013_add-initial-grant-deliveries",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1794853215907,
+      "tag": "20261116182015_backfill-initial-grant-deliveries",
+      "breakpoints": true
     }
   ]
 }
