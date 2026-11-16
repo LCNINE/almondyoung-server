@@ -1,9 +1,17 @@
 import { formatInTimeZone } from 'date-fns-tz';
 
+export type RestockSource = 'manual' | 'purchase_order' | 'inbound_shipment';
+
+export interface RestockArrival {
+  expectedArrival: string;
+  approximate: boolean;
+  source: 'purchase_order' | 'inbound_shipment';
+}
+
 export interface RestockSchedule {
   inboundDate: string | null;
   inboundApproximate: boolean;
-  inboundSource: 'manual' | 'purchase_order' | null;
+  inboundSource: RestockSource | null;
 }
 
 export function restockToday(now = new Date()): string {
@@ -12,7 +20,7 @@ export function restockToday(now = new Date()): string {
 
 export function resolveRestockSchedule(
   policy: { restockDate?: string | null; restockApproximate?: boolean } | undefined,
-  arrivals: Array<{ expectedArrival: string; approximate: boolean }>,
+  arrivals: RestockArrival[],
   stockBoundQuantity: number,
   today: string,
 ): RestockSchedule {
@@ -40,9 +48,12 @@ export function resolveRestockSchedule(
     return empty;
   }
 
+  const winners = eligible.filter((arrival) => arrival.expectedArrival === earliest);
+
   return {
     inboundDate: earliest,
-    inboundApproximate: eligible.some((arrival) => arrival.expectedArrival === earliest && arrival.approximate),
-    inboundSource: 'purchase_order',
+    inboundApproximate: winners.some((arrival) => arrival.approximate),
+    // 같은 날이면 발주를 먼저 표시한다(고정 순서)
+    inboundSource: winners.some((arrival) => arrival.source === 'purchase_order') ? 'purchase_order' : 'inbound_shipment',
   };
 }
