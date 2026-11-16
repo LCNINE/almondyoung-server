@@ -15,6 +15,8 @@ import {
   asksAlreadyRefunded,
   awaitsSettlementResult,
   parseAlreadyRefunded,
+  manualRefundTodo,
+  settlementAlert,
 } from './cancel-request.shape';
 
 const view = (over: Record<string, unknown> = {}) => ({
@@ -307,5 +309,57 @@ describe('정산(#1016 36번 재설계)', () => {
 
   it('계좌 송금 확인 문구는 실제 화면 이름을 쓴다(D7, PR 6 — 환불 내역에 [완료 처리]가 생겼다)', () => {
     expect(MANUAL_REFUND_CONFIRM_TEXT).toBe('고객에게 계좌를 받아 직접 송금한 뒤, 결제 관리 › 환불 내역에서 [완료 처리]를 눌러 주세요.');
+  });
+});
+
+describe('계좌 송금으로 바꾼 정산 — 남은 할 일', () => {
+  const manual = (over: Partial<SettlementView> = {}): SettlementView => ({
+    requestId: 'r1',
+    phase: 'delayed',
+    mode: 'manual',
+    confirmedAt: '2026-10-12T01:00:00.000Z',
+    startedAt: '2026-10-12T02:00:00.000Z',
+    deadlineAt: '2026-10-15T01:00:00.000Z',
+    lastFailure: null,
+    marketRequest: false,
+    ...over,
+  });
+
+  it('바꾼 직후에도 단계는 확정 시각 기준 «지연»이지만, 이름은 지금 기다리는 일이고 경고색이 아니다', () => {
+    expect(settlementLabel(manual())).toBe('계좌 송금 준비');
+    expect(settlementLabel(manual({ phase: 'in_progress' }))).toBe('계좌 송금 준비');
+    expect(settlementAlert(manual())).toBe(false);
+    const request = toCancelRequestView({ id: 'r1', status: 'settling', scope: 'full', settlement: manual() });
+    expect(cancelActionOf({ channel: 'medusa', orderStatus: 'cancelled', cancelRequest: request })).toEqual({
+      kind: 'settling',
+      label: '계좌 송금 준비',
+      alert: false,
+    });
+  });
+
+  it('남은 할 일은 송금과 [완료 처리] — 좁은 칸엔 짧게', () => {
+    expect(manualRefundTodo(manual())).toBe(
+      '취소가 반영되면 환불 내역에 송금 대기 환불이 생깁니다. 고객 계좌로 송금한 뒤 [완료 처리]를 눌러 주세요.',
+    );
+    expect(manualRefundTodo(manual(), 'short')).toBe('취소가 반영되면 송금하고 환불 내역에서 [완료 처리]');
+  });
+
+  it('거절되면 거절 이름·경고 그대로, 할 일 문구는 없다', () => {
+    const refused = manual({
+      phase: 'refused',
+      lastFailure: { code: 'wallet_refund_refused:X', message: '거절', retryable: false, at: '2026-10-12T02:00:05.000Z' },
+    });
+    expect(settlementLabel(refused)).toBe('환불 거절');
+    expect(settlementAlert(refused)).toBe(true);
+    expect(manualRefundTodo(refused)).toBeNull();
+  });
+
+  it('자동 정산은 그대로 — 지연은 경고, 할 일 문구 없음', () => {
+    const auto = manual({ mode: 'auto' });
+    expect(settlementLabel(auto)).toBe('환불 지연');
+    expect(settlementAlert(auto)).toBe(true);
+    expect(settlementAlert(manual({ mode: 'auto', phase: 'in_progress' }))).toBe(false);
+    expect(manualRefundTodo(auto)).toBeNull();
+    expect(manualRefundTodo(null)).toBeNull();
   });
 });

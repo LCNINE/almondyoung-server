@@ -21,6 +21,13 @@ import {
 import { StageBand, BandCell } from '../components/stage-band';
 import { StageOrders } from '../components/stage-orders';
 import { collectCell, known } from '../collect-cell';
+import {
+  PENDING_TRANSFER_READ,
+  PENDING_TRANSFER_SERVED,
+} from '../components/pending-transfers';
+import { useReadGate } from '@/features/main/read-gate';
+import { usePendingRefunds } from '@/lib/services/wallet/queries';
+import { pendingTransfersOf } from '@/lib/api/domains/wallet/refund-execution';
 import { cn } from '@/lib/utils/ui';
 
 export default function StallBoardTemplate() {
@@ -49,6 +56,19 @@ export default function StallBoardTemplate() {
     channelRead.status === 'ready' && !channelRead.allowed
       ? `${permissionLabel('channel.account.read')} 권한이 있어야 보입니다`
       : null;
+
+  // 송금 대기는 정산이 끝난 뒤의 일이라 core 단계 수에 없다 — 취소 요청 칸 아래에 따로 센다(목록과 같은 조회)
+  const refundRead = useReadGate(PENDING_TRANSFER_READ);
+  const pendingRefunds = usePendingRefunds({
+    enabled: refundRead.enabled && PENDING_TRANSFER_SERVED,
+  });
+  const transferCount = pendingRefunds.data
+    ? pendingTransfersOf(pendingRefunds.data.data).length
+    : 0;
+  const notes =
+    transferCount > 0
+      ? { cancel_request: `송금 대기 ${transferCount.toLocaleString('ko-KR')}` }
+      : undefined;
 
   const stages = summary.data?.stages ?? [];
   const hasSummary = summary.data !== undefined;
@@ -101,6 +121,7 @@ export default function StallBoardTemplate() {
         selected={selected}
         onSelect={setSelected}
         now={now}
+        notes={notes}
       />
       {selected === 'collect' ? (
         <div className="flex flex-wrap gap-2 rounded-lg border bg-white px-4 py-6 text-sm">
