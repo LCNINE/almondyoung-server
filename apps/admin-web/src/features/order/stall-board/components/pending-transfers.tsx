@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { CanOpen } from '@/components/auth/can';
 import { RefundConfirmCell } from '@/features/payments/components/refund-table/confirm-cell';
+import { BankRefundButton } from '@/features/payments/components/refund-table/bank-refund-button';
 import { useReadGate } from '@/features/main/read-gate';
 import { formatDwell } from '@/lib/api/domains/orders/order-progress.shape';
 import {
@@ -114,6 +115,7 @@ export function PendingTransfers(props: { now: Date }) {
                     환불 내역
                   </Link>
                 </CanOpen>
+                <BankRefundButton refund={r} />
                 <RefundConfirmCell refund={r} />
               </span>
             </li>

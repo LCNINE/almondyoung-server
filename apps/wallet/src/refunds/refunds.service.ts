@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { DbService } from '@app/db';
-import { and, asc, eq, gt, inArray, lt, sql, SQL } from 'drizzle-orm';
+import { and, asc, eq, gt, inArray, lt, ne, sql, SQL } from 'drizzle-orm';
 import {
   WalletSchema,
   charges as chargesTable,
@@ -214,7 +214,7 @@ export class RefundsService {
     const { charge, method, userId } = ctx;
     const correlationId = `refund:${refund.id}:${Date.now()}`;
     const provider = this.providerRegistry.getProviderOrThrow(method.type);
-    const idempotencyKey = `wallet:refund:${refund.id}`;
+    const idempotencyKey = await this.refundIdempotencyKey(refund.id, !!ctx.refundReceiveAccount);
 
     let providerResult: Awaited<ReturnType<typeof provider.refund>>;
     try {
@@ -233,7 +233,11 @@ export class RefundsService {
         refundReceiveAccount: ctx.refundReceiveAccount,
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = ctx.refundReceiveAccount
+        ? '계좌 환불 결과를 확인할 수 없습니다.'
+        : error instanceof Error
+          ? error.message
+          : String(error);
       this.logger.error(`Provider refund threw: refundId=${refund.id}, error=${message}`);
       // reasonCode는 관리자가 입력한 환불 사유를 보존. PG 오류는 reasonMessage에 추가하고 state_transitions에 기록
       await this.dbService.db
@@ -259,6 +263,8 @@ export class RefundsService {
     if (providerResult.status === 'SUCCEEDED') {
       const notifyExtra = await this.getRefundNotifyExtra(charge.intentId);
       await this.dbService.db.transaction(async (tx) => {
+        await tx.execute(sql`SELECT id FROM ${chargesTable} WHERE id = ${charge.id} FOR UPDATE`);
+
         // Keep provider metadata, then let the state machine perform PENDING -> SUCCEEDED.
         await tx
           .update(refunds)
@@ -346,6 +352,30 @@ export class RefundsService {
     }
 
     return this.findByIdOrThrow(refund.id);
+  }
+
+  /**
+   * 계좌 환불은 토스가 거절한 행을 다른 계좌로 다시 보낸다(reopenRejectedBankRefund). 토스는 같은 키의 거절을 재생하므로 확정 거절 횟수를 키에 붙인다.
+   * 결과 모름(PROVIDER_EXCEPTION)은 세지 않는다 — 그 시도는 같은 키로 다시 확인해야 한다
+   */
+  private async refundIdempotencyKey(refundId: string, accountRefund: boolean): Promise<string> {
+    const base = `wallet:refund:${refundId}`;
+    if (!accountRefund) return base;
+
+    const [row] = await this.dbService.db
+      .select({ rejected: sql<number>`count(*)::int` })
+      .from(paymentStateTransitions)
+      .where(
+        and(
+          eq(paymentStateTransitions.entityType, 'REFUND'),
+          eq(paymentStateTransitions.entityId, refundId),
+          eq(paymentStateTransitions.newStatus, 'FAILED'),
+          ne(paymentStateTransitions.reasonCode, 'PROVIDER_EXCEPTION'),
+        ),
+      );
+    const rejected = row?.rejected ?? 0;
+
+    return rejected > 0 ? `${base}:${rejected}` : base;
   }
 
   /**
@@ -641,7 +671,7 @@ export class RefundsService {
           eq(refunds.execution, 'AUTO'),
           lt(refunds.updatedAt, stuckBefore),
           gt(refunds.createdAt, new Date(now.getTime() - AMBIGUOUS_RESEND_WINDOW_MS)),
-          inArray(paymentMethodsTable.type, [...RESENDABLE_METHOD_TYPES]),
+          inArray(paymentMethodsTable.type, [...RESUMABLE_METHOD_TYPES]),
         ),
       )
       .orderBy(asc(refunds.updatedAt))
@@ -649,6 +679,12 @@ export class RefundsService {
 
     let resent = 0;
     for (const { refund, charge, method } of candidates) {
+      // 계좌는 저장하지 않아 다시 보낼 수 없다 — 결과 모름으로 내려 같은 계좌로 다시 확인하게 한다
+      if (method.type === 'BANK_TRANSFER') {
+        if (await this.markStuckBankRefundUnknown(refund.id, stuckBefore)) resent++;
+        continue;
+      }
+
       const claimed = await this.dbService.db
         .update(refunds)
         // 집은 «그 시각»을 적는다 — 실행 시작 시각(now)을 쓰면 오래 걸린 실행의 뒤쪽 행이 이미 낡아 보인다
@@ -678,6 +714,37 @@ export class RefundsService {
     return { scanned: candidates.length, resent };
   }
 
+  private async markStuckBankRefundUnknown(refundId: string, stuckBefore: Date): Promise<boolean> {
+    const reasonMessage = '계좌 환불 응답이 기록되지 않았습니다. 같은 계좌로 다시 확인하세요.';
+
+    return this.dbService.db.transaction(async (tx) => {
+      const claimed = await tx
+        .update(refunds)
+        .set({ reasonMessage, failureCode: 'PROVIDER_EXCEPTION', failureRetryable: true, updatedAt: new Date() })
+        .where(
+          and(
+            eq(refunds.id, refundId),
+            eq(refunds.status, 'PENDING'),
+            eq(refunds.execution, 'AUTO'),
+            lt(refunds.updatedAt, stuckBefore),
+          ),
+        )
+        .returning({ id: refunds.id });
+      if (claimed.length === 0) return false;
+
+      await this.stateTransitionService.transitionRefund(
+        refundId,
+        'FAILED',
+        { correlationId: `refund-stuck:${refundId}`, reasonCode: 'PROVIDER_EXCEPTION', reasonMessage },
+        'PENDING',
+        tx,
+      );
+      this.logger.error(`[resendStuckAutoPending] 무통장 계좌 환불을 결과 모름으로 내렸다 — refund=${refundId}`);
+
+      return true;
+    });
+  }
+
   /** intent 의 환불 전부(상태 무관), 만든 순서. 거르는 건 호출자 몫이다(스펙 §6.2·§8.2). */
   async listByIntent(intentId: string): Promise<Refund[]> {
     return this.dbService.db
@@ -698,6 +765,92 @@ export class RefundsService {
       });
     }
     return refund;
+  }
+
+  async executeBankRefund(
+    refundId: string,
+    refundReceiveAccount: NonNullable<CreateRefundDto['refundReceiveAccount']>,
+  ): Promise<{ refund: Refund; rejectedCode: string | null }> {
+    const refund = await this.findByIdOrThrow(refundId);
+    const charge = await this.chargesService.findById(refund.chargeId);
+    const method = charge ? await this.paymentMethodsService.findById(charge.paymentMethodId) : null;
+    const userId = await this.getIntentUserId(refund.intentId);
+
+    if (!charge || !method || !userId) {
+      throw new NotFoundException('환불 결제 정보를 찾을 수 없습니다.');
+    }
+
+    if (method.type !== 'BANK_TRANSFER') {
+      throw new BadRequestException('무통장 환불만 계좌로 실행할 수 있습니다.');
+    }
+
+    const pending = await this.dbService.db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT id FROM ${chargesTable} WHERE id = ${charge.id} FOR UPDATE`);
+      const [current] = await tx.select().from(refunds).where(eq(refunds.id, refundId)).for('update').limit(1);
+
+      if (current?.status === 'PENDING' && current.execution === 'MANUAL') {
+        const [claimed] = await tx
+          .update(refunds)
+          .set({ execution: 'AUTO', updatedAt: new Date() })
+          .where(eq(refunds.id, refundId))
+          .returning();
+
+        return claimed;
+      }
+
+      const [ambiguous] = await tx
+        .select()
+        .from(refunds)
+        .where(this.ambiguousWhere(eq(refunds.id, refundId)))
+        .limit(1);
+
+      if (ambiguous) {
+        return this.resumeAmbiguousInTx(ambiguous, method, true, tx);
+      }
+
+      throw new ConflictException('수동 송금 대기 또는 결과 확인이 필요한 환불만 실행할 수 있습니다.');
+    });
+
+    const result = await this.dispatch(pending, { charge, method, userId, refundReceiveAccount });
+
+    if (result.status !== 'FAILED' || result.failureCode === 'PROVIDER_EXCEPTION') {
+      return { refund: result, rejectedCode: null };
+    }
+
+    const reopened = await this.reopenRejectedBankRefund(result, charge);
+
+    return { refund: reopened ?? result, rejectedCode: result.failureCode };
+  }
+
+  /** 토스가 거절했다 — 돈은 안 나갔다. 같은 행을 수동 송금 대기로 되돌려 다른 계좌로 다시 시도하게 한다(Medusa 장부가 이 행 id 를 들고 있다) */
+  private async reopenRejectedBankRefund(rejected: Refund, charge: Charge): Promise<Refund | null> {
+    return this.dbService.db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT id FROM ${chargesTable} WHERE id = ${charge.id} FOR UPDATE`);
+      const available = charge.amount - (await this.getRefundedTotalInTx(charge.id, tx));
+
+      if (rejected.amount > available) {
+        this.logger.error(
+          `[executeBankRefund] 거절된 환불을 다시 열 수 없다 — 남은 금액 부족. refund=${rejected.id} amount=${rejected.amount} available=${available}`,
+        );
+
+        return null;
+      }
+
+      await this.stateTransitionService.transitionRefund(
+        rejected.id,
+        'PENDING',
+        { correlationId: `bank-refund-reopen:${rejected.id}`, reasonCode: 'BANK_REFUND_REJECTED' },
+        'FAILED',
+        tx,
+      );
+      const [reopened] = await tx
+        .update(refunds)
+        .set({ execution: 'MANUAL', failureCode: null, failureRetryable: null, updatedAt: new Date() })
+        .where(eq(refunds.id, rejected.id))
+        .returning();
+
+      return reopened ?? null;
+    });
   }
 
   /**
@@ -878,23 +1031,23 @@ export class RefundsService {
   async confirmManual(refundId: string): Promise<Refund> {
     const refund = await this.findByIdOrThrow(refundId);
     if (refund.status !== 'PENDING') {
-      throw new Error(`환불이 PENDING 상태가 아닙니다: ${refund.status}`);
+      throw new BadRequestException(`환불이 PENDING 상태가 아닙니다: ${refund.status}`);
     }
 
     const charge = await this.chargesService.findById(refund.chargeId);
-    if (!charge) throw new Error(`Charge not found: ${refund.chargeId}`);
+    if (!charge) throw new NotFoundException(`Charge not found: ${refund.chargeId}`);
     const method = await this.paymentMethodsService.findById(charge.paymentMethodId);
     if (
       !isManuallyConfirmable({ status: refund.status, execution: refund.execution, methodType: method?.type ?? null })
     ) {
       throw new BadRequestException({
         error: 'REFUND_NOT_MANUALLY_CONFIRMABLE',
-        message: '수동 완료 처리는 무통장 환불(BANK_TRANSFER)이나 수동 실행(MANUAL) 환불만 가능합니다.',
+        message: '수동 완료 처리는 수동 송금 대기(MANUAL PENDING) 환불만 가능합니다.',
       });
     }
 
     const userId = await this.getIntentUserId(refund.intentId);
-    if (!userId) throw new Error(`Intent not found for refund: ${refundId}`);
+    if (!userId) throw new NotFoundException(`Intent not found for refund: ${refundId}`);
     // 멤버십 환불 차단은 create() 단일 길목에서 처리한다. 여기 도달한 PENDING 환불은
     // create() 가 이미 허용한 건(= admin 강제취소 예외)뿐이라 완료를 막지 않는다.
     const now = new Date().toISOString();
@@ -902,6 +1055,13 @@ export class RefundsService {
     const notifyExtra = await this.getRefundNotifyExtra(refund.intentId);
 
     await this.dbService.db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT id FROM ${chargesTable} WHERE id = ${charge.id} FOR UPDATE`);
+      const [current] = await tx.select().from(refunds).where(eq(refunds.id, refundId)).for('update').limit(1);
+
+      if (!current || !isManuallyConfirmable({ ...current, methodType: method?.type ?? null })) {
+        throw new ConflictException('환불 상태가 변경되었습니다. 새로고침 후 확인하세요.');
+      }
+
       // transitionRefund가 status update와 state_transitions 기록을 모두 처리
       await this.stateTransitionService.transitionRefund(
         refundId,

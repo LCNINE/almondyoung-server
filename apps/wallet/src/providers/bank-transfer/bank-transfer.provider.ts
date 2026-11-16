@@ -182,6 +182,10 @@ export class BankTransferPaymentProvider implements PaymentProvider {
     if (result.ok) {
       return { status: 'SUCCEEDED', providerRefundId: payment.paymentKey };
     }
+    if (result.statusCode >= 500) {
+      throw new Error('가상계좌 환불 결과를 확인할 수 없습니다. 같은 환불을 다시 확인하세요.');
+    }
+
     return {
       status: 'FAILED',
       errorCode: result.error.code,

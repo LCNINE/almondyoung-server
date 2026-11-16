@@ -71,7 +71,7 @@ describeIfDb('PaymentIntentAdminService.listRefunds — manualConfirmable (실 P
     const list = await service.listRefunds({ intentId, page: 1, limit: 20 } as never);
     const byId = new Map(list.data.map((r) => [r.id, r.manualConfirmable]));
     expect(byId.get(refundIds.manualToss)).toBe(true);
-    expect(byId.get(refundIds.autoBank)).toBe(true);
+    expect(byId.get(refundIds.autoBank)).toBe(false);
     expect(byId.get(refundIds.autoToss)).toBe(false);
     expect(byId.get(refundIds.doneManual)).toBe(false);
     expect(list.total).toBe(4);

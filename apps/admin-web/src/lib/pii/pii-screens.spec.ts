@@ -95,7 +95,7 @@ describe('resolvePiiScreen', () => {
       revealScope: 'detail',
     });
     expect(resolvePiiScreen('/order/inspection')).toEqual(RAD);
-    expect(resolvePiiScreen('/order/stall-board')).toEqual(RA);
+    expect(resolvePiiScreen('/order/stall-board')).toEqual(R);
     expect(resolvePiiScreen('/attendance')).toBeNull();
   });
 });

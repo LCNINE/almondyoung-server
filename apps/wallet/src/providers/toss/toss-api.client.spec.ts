@@ -1,3 +1,4 @@
+import { Logger } from '@nestjs/common';
 import { TossApiClient } from './toss-api.client';
 
 describe('TossApiClient', () => {
@@ -33,6 +34,23 @@ describe('TossApiClient', () => {
       },
       body: JSON.stringify({ cancelReason: '고객 요청', cancelAmount: 4000 }),
     });
+  });
+
+  it('계좌를 전송하지만 PG 오류에 반사된 계좌는 로그·결과에서 제거한다', async () => {
+    const account = { bank: '06', accountNumber: '1234567890', holderName: '테스트' };
+    const log = jest.spyOn(Logger.prototype, 'error').mockImplementation(() => undefined);
+    const fetchMock = jest.fn().mockResolvedValue({
+      ok: false,
+      status: 400,
+      json: async () => ({ code: 'INVALID_REFUND_ACCOUNT_INFO', message: account.accountNumber }),
+    });
+    global.fetch = fetchMock;
+
+    const result = await new TossApiClient().cancelPayment('pay_123', '고객 요청', 4000, 'wallet:refund:rf-1', account);
+
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).refundReceiveAccount).toEqual(account);
+    expect(JSON.stringify(result)).not.toContain(account.accountNumber);
+    expect(JSON.stringify(log.mock.calls)).not.toContain(account.accountNumber);
   });
 
   it('serializes object-shaped Toss error messages instead of returning [object Object]', async () => {

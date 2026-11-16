@@ -208,6 +208,31 @@ describe('BankTransferPaymentProvider', () => {
     expect(result).toMatchObject({ status: 'FAILED', errorCode: 'INVALID_REFUND_ACCOUNT_INFO', retryable: false });
   });
 
+  it('토스 5xx 는 결과 불명으로 던져 같은 환불 재전송 경로에 남긴다', async () => {
+    const provider = new BankTransferPaymentProvider(
+      dbWithCharge({ providerTransactionId: null, responsePayload: { paymentKey: 'pk_1' } }),
+      {
+        cancelPayment: jest
+          .fn()
+          .mockResolvedValue({ ok: false, statusCode: 503, error: { code: 'UNKNOWN', message: 'unavailable' } }),
+      } as never,
+    );
+
+    await expect(
+      provider.refund({
+        refundId: 'rf-1',
+        chargeId: 'ch-1',
+        intentId: 'i1',
+        userId: 'u1',
+        amount: 10000,
+        currency: 'KRW',
+        idempotencyKey: 'wallet:refund:rf-1',
+        correlationId: 'c1',
+        refundReceiveAccount: { bank: '06', accountNumber: '1234567890', holderName: '테스트' },
+      }),
+    ).rejects.toThrow('결과를 확인할 수 없습니다');
+  });
+
   it('환불계좌가 없으면 PG 를 부르지 않고 «수동 송금» PENDING — manualTransfer 로 표시한다', async () => {
     const cancelPayment = jest.fn();
     const provider = new BankTransferPaymentProvider(

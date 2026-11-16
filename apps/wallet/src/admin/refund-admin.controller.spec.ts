@@ -1,3 +1,4 @@
+import { RefundReceiveAccountDto } from '../refunds/dto';
 import { BadRequestException, ValidationPipe } from '@nestjs/common';
 import { RefundAdminController } from './refund-admin.controller';
 import { ChangeRefundKindDto } from './dto';
@@ -12,9 +13,11 @@ describe('RefundAdminController.confirmManual — 오류 상태 코드', () => {
     await expect(controllerWith(jest.fn().mockRejectedValue(refusal)).confirmManual('rf-1')).rejects.toBe(refusal);
   });
 
-  it('옛 문자열 오류(PENDING 아님)는 지금처럼 400', async () => {
-    const confirm = jest.fn().mockRejectedValue(new Error('환불이 PENDING 상태가 아닙니다: SUCCEEDED'));
-    await expect(controllerWith(confirm).confirmManual('rf-1')).rejects.toBeInstanceOf(BadRequestException);
+  it('서비스의 상태 오류를 전역 필터로 전달한다', async () => {
+    const error = new BadRequestException('환불이 PENDING 상태가 아닙니다: SUCCEEDED');
+    const confirm = jest.fn().mockRejectedValue(error);
+
+    await expect(controllerWith(confirm).confirmManual('rf-1')).rejects.toBe(error);
   });
 });
 
@@ -57,4 +60,21 @@ describe('PATCH :id/kind — 바디 검증과 위임', () => {
     await controller.changeKind({} as never, 'rf-1', { kind: 'RETURN' });
     expect(changeKind).toHaveBeenLastCalledWith('rf-1', 'RETURN', 'admin');
   });
+});
+
+describe('계좌 환불 입력 검증', () => {
+  const pipe = new ValidationPipe({ whitelist: true, transform: true });
+  const account = { bank: '06', accountNumber: '1234567890', holderName: '테스트' };
+  const validate = (body: unknown) => pipe.transform(body, { type: 'body', metatype: RefundReceiveAccountDto });
+
+  it('정상 계좌는 통과한다', async () => {
+    await expect(validate(account)).resolves.toEqual(account);
+  });
+
+  it.each([{ bank: '006' }, { accountNumber: '12**90' }, { accountNumber: '' }, { holderName: '   ' }])(
+    '잘못된 계좌는 거절한다: %s',
+    async (fields) => {
+      await expect(validate({ ...account, ...fields })).rejects.toBeInstanceOf(BadRequestException);
+    },
+  );
 });

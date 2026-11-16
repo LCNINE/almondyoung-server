@@ -1,6 +1,12 @@
 // src/features/order/history/components/table/index.tsx
 'use client';
 
+import { OrderBankRefundCard } from './order-bank-refund-card';
+import {
+  bankRefundsForRow,
+  useOrderBankRefunds,
+} from '../../hooks/use-order-bank-refunds';
+import { isPendingBankRefund } from '@/features/payments/components/refund-table/bank-refund';
 import { useEffect, useMemo, useState } from 'react';
 import type { MouseEvent, ReactNode } from 'react';
 import { PurchaseSatisfactionSection } from '../purchase-satisfaction-section';
@@ -836,6 +842,7 @@ export default function OrderTable() {
   // 구분·키워드·환불이슈·기간 필터와 페이지네이션 모두 서버가 처리 → 클라이언트 필터/슬라이스 없음.
   // 한 페이지 = 주문 ≤ PAGE_SIZE (라인 rowspan 병합은 테이블이 처리).
   const rows: OrderLineRow[] = data?.items ?? [];
+  const bankRefunds = useOrderBankRefunds(rows);
 
   /* 모달 상태 */
   const [showEditModal, setShowEditModal] = useState(false);
@@ -952,6 +959,8 @@ export default function OrderTable() {
         label: '기능',
         width: '108px',
         render: (_, r) => {
+          const rowBankRefunds = bankRefundsForRow(r, bankRefunds.data ?? []);
+          const needsBankAccount = rowBankRefunds.some(isPendingBankRefund);
           const action = r.orderStatus === 'cancelled' ? null : cancelActionOf(r);
           const cancelLabel = !canCancelOrder
             ? null
@@ -960,6 +969,7 @@ export default function OrderTable() {
               : action?.kind === 'rejected'
                 ? '다시 요청'
                 : null;
+
           return (
           <div className="flex flex-col gap-1">
             <div className="flex gap-1">
@@ -1033,8 +1043,10 @@ export default function OrderTable() {
             {r.orderStatus === 'cancelled' ? (
               <div className="flex flex-col gap-1">
                 <span className="inline-flex items-center h-7 px-2 rounded border border-gray-200 bg-gray-50 text-xs text-gray-500 whitespace-nowrap">
-                  취소됨
+                  {rowBankRefunds.length > 0 ? '주문 취소됨' : '취소됨'}
                 </span>
+                {rowBankRefunds.length === 0 && (
+                <>
                 {r.isFirstOfOrder && r.cancelRequest?.status === 'settling' && r.cancelRequest.settlement && (
                   <>
                     <span
@@ -1094,11 +1106,13 @@ export default function OrderTable() {
                 {r.isFirstOfOrder && r.refundStatus === 'pending' && (
                   <ViewPaymentButton walletIntentId={r.walletIntentId} />
                 )}
+                </>
+                )}
               </div>
             ) : (
               <div className="flex flex-col gap-1">
                 {(() => {
-                  if (!action) return null;
+                  if (!action || needsBankAccount) return null;
                   if (action.kind === 'seller_center') {
                     return <span className="text-[11px] text-gray-500 whitespace-normal leading-tight">{action.label}</span>;
                   }
@@ -1152,6 +1166,9 @@ export default function OrderTable() {
                 )}
               </div>
             )}
+            {rowBankRefunds.map((refund) => (
+              <OrderBankRefundCard key={refund.id} refund={refund} />
+            ))}
           </div>
           );
         },
@@ -1240,7 +1257,7 @@ export default function OrderTable() {
           ) : null,
       },
     ],
-    [canCancelOrder, canWriteOrder]
+    [bankRefunds.data, canCancelOrder, canWriteOrder]
   );
 
   return (
@@ -1323,7 +1340,12 @@ export default function OrderTable() {
           loading={isInitialLoading}
           isFetching={false}
           getRowClassName={(r) =>
-            cn(r.orderStatus === 'cancelled' && 'opacity-50', r.orderId === detailOrderId && 'bg-blue-50')
+            cn(
+              r.orderStatus === 'cancelled' &&
+                !bankRefundsForRow(r, bankRefunds.data ?? []).some(isPendingBankRefund) &&
+                'opacity-50',
+              r.orderId === detailOrderId && 'bg-blue-50'
+            )
           }
           onRowClick={(r) => setDetailOrderId(r.orderId)}
         />

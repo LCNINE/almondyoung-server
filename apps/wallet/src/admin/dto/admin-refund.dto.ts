@@ -1,5 +1,6 @@
+import { Transform } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsIn, IsOptional, IsString, ValidateIf } from 'class-validator';
+import { ArrayMaxSize, ArrayNotEmpty, IsArray, IsIn, IsOptional, IsString, IsUUID, ValidateIf } from 'class-validator';
 import { PaginationQueryDto } from '@app/shared';
 import { RefundKind, refundKindEnum } from '../../schema';
 
@@ -26,6 +27,15 @@ export class AdminRefundListQueryDto extends PaginationQueryDto {
   @IsOptional()
   @IsString()
   intentId?: string;
+
+  @ApiPropertyOptional({ type: [String], description: 'Filter by up to 100 payment intent IDs' })
+  @IsOptional()
+  @Transform(({ value }) => (typeof value === 'string' ? value.split(',') : value))
+  @IsArray()
+  @ArrayNotEmpty()
+  @ArrayMaxSize(100)
+  @IsUUID('all', { each: true })
+  intentIds?: string[];
 
   @ApiPropertyOptional({
     enum: [...refundKindEnum.enumValues, REFUND_KIND_FILTER_UNKNOWN],

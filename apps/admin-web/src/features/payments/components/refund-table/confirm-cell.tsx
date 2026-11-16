@@ -22,7 +22,15 @@ import type { RefundDto } from '@/lib/types/dto/wallet';
  * «환불 내역»의 [완료 처리] — 계좌 송금 대기(무통장·수동 실행) 행만(서버가 manualConfirmable 로 정한다, #1016 36번 PR 6).
  * 행마다 독립된 mutation. 되돌릴 수 없으므로 확인을 한 번 거친다.
  */
-export function RefundConfirmCell({ refund }: { refund: RefundDto }) {
+export function RefundConfirmCell({
+  refund,
+  label = '완료 처리',
+  onConfirmed,
+}: {
+  refund: RefundDto;
+  label?: string;
+  onConfirmed?: () => void;
+}) {
   const [open, setOpen] = useState(false);
   const confirm = useConfirmRefund();
   const amount = `${refund.amount.toLocaleString('ko-KR')} ${refund.currency}`;
@@ -34,6 +42,7 @@ export function RefundConfirmCell({ refund }: { refund: RefundDto }) {
         onSuccess: () => {
           toast.success('환불 완료 처리되었습니다.');
           setOpen(false);
+          onConfirmed?.();
         },
         onError: (e) => toast.error(e instanceof Error && e.message ? e.message : '완료 처리 중 오류가 발생했습니다.'),
       },
@@ -43,8 +52,18 @@ export function RefundConfirmCell({ refund }: { refund: RefundDto }) {
     <Can run={useConfirmRefund}>
       <AlertDialog open={open} onOpenChange={setOpen}>
         <AlertDialogTrigger asChild>
-          <Button size="sm" variant="outline" className="h-7 text-xs" disabled={confirm.isPending} onClick={(e) => e.stopPropagation()}>
-            완료 처리
+          <Button
+            size="sm"
+            variant={label === '완료 처리' ? 'outline' : 'link'}
+            className={
+              label === '완료 처리'
+                ? 'h-7 text-xs'
+                : 'h-7 text-xs text-gray-500 underline'
+            }
+            disabled={confirm.isPending}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {label}
           </Button>
         </AlertDialogTrigger>
         <AlertDialogContent onClick={(e) => e.stopPropagation()}>

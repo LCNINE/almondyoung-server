@@ -1,6 +1,10 @@
 'use client';
 
 import { useEffect, useId, useState } from 'react';
+import { BankRefundForm } from '@/features/payments/components/refund-table/bank-refund-button';
+import { walletApi } from '@/lib/api/domains/wallet';
+import { usePermissionCheck } from '@/hooks/use-permission';
+import type { RefundDto } from '@/lib/types/dto/wallet';
 import { toast } from 'sonner';
 import {
   Dialog,
@@ -132,6 +136,13 @@ function RefundStatusPanel({ result, onClose }: { result: CancelResult; onClose:
 
 export function CancelOrderModal({ order, open, onOpenChange }: Props) {
   const cancelMutation = useAdminCancelSalesOrder();
+  const { can } = usePermissionCheck();
+  const [checkingPayment, setCheckingPayment] = useState(false);
+  const [bankRefund, setBankRefund] = useState<{
+    intentId: string;
+    excludedRefundIds: string[];
+    savedAccount?: RefundDto['refundReceiveAccount'];
+  } | null>(null);
 
   const isShipped = order?.orderStatus === 'shipped' || order?.orderStatus === 'delivered';
   const isProcessing = order?.orderStatus === 'processing';
@@ -154,8 +165,9 @@ export function CancelOrderModal({ order, open, onOpenChange }: Props) {
       setRequestChannel(undefined);
       setShowErrors(false);
       setCancelResult(null);
+      setBankRefund(null);
     }
-  }, [open, order, isShipped]);
+  }, [open, order?.orderId, isShipped]);
 
   const uid = useId();
   const channelLabelId = `${uid}-channel-label`;
@@ -183,6 +195,14 @@ export function CancelOrderModal({ order, open, onOpenChange }: Props) {
     }
 
     try {
+      setCheckingPayment(true);
+
+      const payment =
+        order.channel === 'medusa' &&
+        order.walletIntentId &&
+        can(['payment.payment.read'])
+          ? await walletApi.getPaymentIntentDetail(order.walletIntentId)
+          : null;
       const result = await cancelMutation.mutateAsync({
         id: order.orderId,
         body: {
@@ -194,7 +214,18 @@ export function CancelOrderModal({ order, open, onOpenChange }: Props) {
         },
       });
       if (isCancelRequested(result)) {
-        // 채널 주문 — core 가 그 자리에서 취소를 확정했고 환불은 채널이 정산한다(#1016 36번 재설계). 정산 상태는 주문 행이 보여 준다.
+        if (payment?.paymentMethod?.type === 'BANK_TRANSFER') {
+          setBankRefund({
+            intentId: payment.id,
+            excludedRefundIds: payment.refunds.map((refund) => refund.id),
+            savedAccount: payment.refunds.find(
+              (refund) => refund.refundReceiveAccount
+            )?.refundReceiveAccount,
+          });
+
+          return;
+        }
+
         toast.success(cancelRequestToast(result));
         onOpenChange(false);
         return;
@@ -208,6 +239,8 @@ export function CancelOrderModal({ order, open, onOpenChange }: Props) {
       });
     } catch (err: unknown) {
       toast.error(getServerDenyMessage(err, '취소하지 못했어요.'));
+    } finally {
+      setCheckingPayment(false);
     }
   };
 
@@ -216,7 +249,13 @@ export function CancelOrderModal({ order, open, onOpenChange }: Props) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg">
-        {cancelResult ? (
+        {bankRefund ? (
+          <BankRefundForm
+            {...bankRefund}
+            cancelled
+            onClose={() => onOpenChange(false)}
+          />
+        ) : cancelResult ? (
           <RefundStatusPanel result={cancelResult} onClose={() => onOpenChange(false)} />
         ) : (
           <>
@@ -364,15 +403,19 @@ export function CancelOrderModal({ order, open, onOpenChange }: Props) {
             </div>
 
             <DialogFooter>
-              <Button variant="outline" onClick={() => onOpenChange(false)} disabled={cancelMutation.isPending}>
+              <Button
+                variant="outline"
+                onClick={() => onOpenChange(false)}
+                disabled={cancelMutation.isPending || checkingPayment}
+              >
                 닫기
               </Button>
               <Button
                 variant="destructive"
                 onClick={handleSubmit}
-                disabled={cancelMutation.isPending}
+                disabled={cancelMutation.isPending || checkingPayment}
               >
-                {cancelMutation.isPending
+                {cancelMutation.isPending || checkingPayment
                   ? '처리 중...'
                   : scope === 'full'
                     ? (isProcessing ? '강제 취소 실행' : '전체 취소 실행')

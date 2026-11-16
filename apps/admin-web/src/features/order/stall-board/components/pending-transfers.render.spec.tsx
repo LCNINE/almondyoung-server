@@ -7,6 +7,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { RefundDto } from '@/lib/types/dto/wallet';
@@ -14,18 +15,22 @@ import type { SettlementView } from '@/lib/api/domains/orders/cancel-request.sha
 
 const mockListRefunds = jest.fn();
 const mockConfirmRefund = jest.fn();
+const mockExecuteBankRefund = jest.fn();
 const mockPermission = jest.fn();
 
 jest.mock('@/lib/api/domains/wallet', () => ({
   walletApi: {
     listRefunds: (q: unknown) => mockListRefunds(q),
     confirmRefund: (id: string) => mockConfirmRefund(id),
+    executeBankRefund: (id: string, account: unknown) =>
+      mockExecuteBankRefund(id, account),
   },
 }));
 jest.mock('@/hooks/use-permission', () => ({
   useCan: () => mockPermission(),
   useCanOpen: () => mockPermission(),
   useCanRun: () => mockPermission(),
+  usePermissionCheck: () => ({ can: () => mockPermission().allowed }),
 }));
 jest.mock('sonner', () => ({
   toast: { success: jest.fn(), error: jest.fn() },
@@ -72,10 +77,63 @@ function renderWithClient(ui: React.ReactElement) {
 beforeEach(() => {
   mockListRefunds.mockReset();
   mockConfirmRefund.mockReset();
+  mockExecuteBankRefund.mockReset();
   mockPermission.mockReturnValue({ status: 'ready', allowed: true });
 });
 
 describe('정체 보드 «송금 대기 환불»', () => {
+  it('무통장 수동 대기만 공유 계좌 창을 열고 환불 성공 후 목록을 다시 읽는다', async () => {
+    const bankRefund = refund({
+      paymentMethodType: 'BANK_TRANSFER',
+      refundReceiveAccount: {
+        bank: '06',
+        accountNumber: '1234567890',
+        holderName: '테스트',
+      },
+    });
+    const cardRefund = refund({ id: 'rf-card', paymentMethodType: 'TOSS' });
+    mockListRefunds
+      .mockResolvedValueOnce(page([bankRefund, cardRefund]))
+      .mockResolvedValue(page([cardRefund]));
+    mockExecuteBankRefund.mockResolvedValue({
+      ...bankRefund,
+      status: 'SUCCEEDED',
+      manualConfirmable: false,
+    });
+    renderWithClient(<PendingTransfers now={NOW} />);
+
+    fireEvent.click(await screen.findByRole('button', { name: '계좌로 환불' }));
+
+    const dialog = screen.getByRole('dialog');
+    expect(
+      within(dialog).getByRole('heading', { name: '계좌로 환불' })
+    ).toBeTruthy();
+    expect(
+      within(dialog).getByText('12,000원을 입력한 계좌로 환불해요.')
+    ).toBeTruthy();
+    expect(within(dialog).getByLabelText('환불 계좌번호')).toHaveProperty(
+      'value',
+      '1234567890'
+    );
+    expect(
+      within(dialog).getByRole('button', { name: '직접 송금했어요' })
+    ).toBeTruthy();
+
+    fireEvent.click(
+      within(dialog).getByRole('button', { name: '계좌로 환불' })
+    );
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(mockExecuteBankRefund).toHaveBeenCalledWith(
+      'rf-1',
+      bankRefund.refundReceiveAccount
+    );
+    expect(mockConfirmRefund).not.toHaveBeenCalled();
+    expect(await screen.findByText('송금 대기 환불 1건')).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '계좌로 환불' })).toBeNull();
+    expect(screen.getByRole('button', { name: '완료 처리' })).toBeTruthy();
+  });
+
   it('사람이 닫을 대기 환불만 보이고, 그 결제·환불 내역으로 간다', async () => {
     mockListRefunds.mockResolvedValue(
       page([
