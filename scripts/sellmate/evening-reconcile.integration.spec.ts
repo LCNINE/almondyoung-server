@@ -1,9 +1,12 @@
 /**
  * 셀메이트 저녁 맞추기 명령(#1304) 통합 스펙. 각 run* 은 스스로 트랜잭션을 열고 커밋하므로, 이 스펙은 롤백으로 감싸지
- * 않고 매 케이스 앞에서 맞추기 테이블·맞추기 원장 이벤트를 비운다 — 전용(스크래치) DB 에서만 돌릴 것.
+ * 않고 매 케이스 앞뒤에서 맞추기 테이블 5개 전부와 sellmate-reconcile·sellmate-handover 원장 이벤트 전부를 **커밋으로 지운다**.
+ * 그래서 DB 이름에 `scratch` 가 들어간 DATABASE_URL 에서만 돈다(아니면 skip, 접속 뒤 current_database() 로 다시 확인해 던진다).
+ * 로컬 `core` 를 가리키는 npm run test:core:integration:local 에서는 skip 된다 — 아래처럼 스크래치 DB 를 직접 준다.
  *
  * 실행: DATABASE_URL=postgresql://postgres:postgres@localhost:5432/core_reconcile_scratch \
  *         npx jest scripts/sellmate/evening-reconcile.integration --runInBand
+ *       (처음이면 createdb core_reconcile_scratch 후 같은 URL 로 npx drizzle-kit migrate --config apps/core/drizzle.config.ts)
  */
 import * as crypto from 'crypto';
 import * as fs from 'fs';
@@ -26,7 +29,15 @@ import {
 import { Deps, RunOutcome, StockInput, runApply, runClose, runInit, runPair, runStatus } from './evening-reconcile';
 
 const DATABASE_URL = process.env.DATABASE_URL;
-const describeIfDb = DATABASE_URL ? describe : describe.skip;
+const isScratchName = (name: string): boolean => name.includes('scratch');
+function databaseName(url: string): string {
+  try {
+    return decodeURIComponent(new URL(url).pathname.replace(/^\//, ''));
+  } catch {
+    return '';
+  }
+}
+const describeIfDb = DATABASE_URL && isScratchName(databaseName(DATABASE_URL)) ? describe : describe.skip;
 
 const HEADER = ['옵션정보일련번호', '상품일련번호', '상품명', '바코드번호', '현재재고', '미발송주문수'];
 /** productSerial 은 기본 TEST-P. excluded.ts 의 제외 상품일련번호를 주면 그 행은 제외된다 */
@@ -65,8 +76,13 @@ describeIfDb('evening-reconcile (DB integration)', () => {
   let A: { serial: string; sku: string; barcode: string };
   let B: { serial: string; sku: string; barcode: string };
 
-  beforeAll(() => {
+  beforeAll(async () => {
     sql = postgres(DATABASE_URL as string, { max: 2, onnotice: () => undefined });
+    const [{ db }] = await sql<{ db: string }[]>`SELECT current_database() AS db`;
+    if (!isScratchName(db)) {
+      await sql.end({ timeout: 5 });
+      throw new Error(`스크래치 DB 가 아니다(${db}) — 이 스펙은 맞추기 테이블을 통째로 지운다`);
+    }
   });
   afterAll(async () => {
     // 커밋한 맞추기 행을 남기면 같은 DB 의 다른 스펙(reconcile-store 의 init 시드 등)이 unique 에 걸린다
@@ -327,18 +343,29 @@ describeIfDb('evening-reconcile (DB integration)', () => {
       expect(await tableCounts()).toEqual(before);
     });
 
-    it('13. init 뒤 새로 짝지어진 품목은 원장을 안 쓰고 initState(S) 로 시작하며 «새 품목» 으로 띄운다', async () => {
+    it('13. init 뒤 새로 짝지어진 품목은 기준값 S·이월 미발송으로 시작해 같은 회에 미발송만큼 core 에서 뺀다', async () => {
       expect((await runInit(d, stock('20261117_090000', [row(A, 5, 0)]), [], T, true)).exitCode).toBe(0);
       lines.length = 0;
+      // B: 현재 2, 미발송 3 → S = −1. core 5 는 그 미발송 3 과 상계된 적이 없다
       const out = await runApply(d, stock('20261117_180000', [row(A, 5, 0), row(B, 2, 3)]), true);
 
       expect(out.exitCode).toBe(0);
-      expect(await reconcileEvents()).toEqual([]);
-      expect(await onHand(B.sku)).toBe(5);
-      expect(await state(B.sku)).toEqual({ baseline: -1, carry: 1, frozen: false });
-      expect(lines[0]).toContain('새 품목 1');
-      expect(lines.join('\n')).toContain('새 품목');
-      // 새 품목도 core 값을 올린다: U = max(0, 5 − 이월 1) = 4, 현재 = 4 + 미발송 3
+      expect(await reconcileEvents()).toEqual([{ sku_id: B.sku, transition_type: 'ADJUST_DOWN', quantity: 3 }]);
+      expect(await onHand(B.sku)).toBe(2);
+      expect(out.touchedSkuIds).toEqual([B.sku]);
+      expect(await state(B.sku)).toEqual({ baseline: -1, carry: 0, frozen: false });
+      expect(lines[0]).toBe('UP 0품목 · DOWN 1품목 · 이월 0품목 · 짝 못 지음 0품목 · 새 품목 1');
+      expect(lines.join('\n')).toContain('[새 품목]');
+      // 업로드는 planApply 값: U = 5 − 3 = 2, 현재 = 2 + 미발송 3
+      expect(uploadLines(out.uploadFile as string)).toContain(`${B.barcode},5`);
+    });
+
+    it('새 품목의 미발송이 여유보다 많으면 여유만큼 빼고 나머지는 이월로 둔다', async () => {
+      expect((await runInit(d, stock('20261117_090000', [row(A, 5, 0)]), [], T, true)).exitCode).toBe(0);
+      const out = await runApply(d, stock('20261117_180000', [row(A, 5, 0), row(B, 0, 7)]), true);
+      expect(out.exitCode).toBe(0);
+      expect(await onHand(B.sku)).toBe(0);
+      expect(await state(B.sku)).toEqual({ baseline: -7, carry: 2, frozen: false });
       expect(uploadLines(out.uploadFile as string)).toContain(`${B.barcode},7`);
     });
 
@@ -357,8 +384,9 @@ describeIfDb('evening-reconcile (DB integration)', () => {
 
       const back = await runApply(d, stock('20261118_180000', [row(A, 10, 0), row(B, 1, 3)]), true);
       expect(back.exitCode).toBe(0);
-      expect(await state(B.sku)).toEqual({ baseline: -2, carry: 2, frozen: false });
-      expect(await onHand(B.sku)).toBe(5);
+      // 다시 시작: 기준값 S = −2, 이월 = 미발송 3 → 같은 회에 3 을 뺀다
+      expect(await state(B.sku)).toEqual({ baseline: -2, carry: 0, frozen: false });
+      expect(await onHand(B.sku)).toBe(2);
     });
 
     it('14. 상태가 있는 품목이 CSV 에서 사라지면 1', async () => {
@@ -437,13 +465,49 @@ describeIfDb('evening-reconcile (DB integration)', () => {
       expect(await state(A.sku)).toEqual({ baseline: 8, carry: 0, frozen: false });
     });
 
+    it('C1. 고친 파일을 기다리는 품목은 같은 CSV·고친 파일을 안 올린 CSV 로 닫히지 않고, 고친 파일이 먹으면 B = U 로 닫힌다', async () => {
+      await initAndApply();
+      const notUploaded = (at: string) => stock(at, [row(A, 10, 1), row(B, 6, 1)]);
+      expect((await runClose(d, notUploaded('20261117_183000'), noAccept, true)).exitCode).toBe(1);
+      const before = await tableCounts();
+      const itemA = async () =>
+        (
+          await sql`
+            SELECT i.uploaded_current, i.ref_unshipped, i.close_verdict FROM sellmate_reconcile_items i
+            JOIN sellmate_reconcile_runs r ON r.id = i.run_id
+            WHERE r.kind = 'apply' AND i.option_serial = ${A.serial}`
+        )[0];
+
+      // 같은 CSV 를 다시 — 닫지 못한 시도의 입력보다 늦지 않아 거절
+      expect((await runClose(d, notUploaded('20261117_183000'), noAccept, true)).exitCode).toBe(1);
+      expect(await state(A.sku)).toEqual({ baseline: 5, carry: 0, frozen: false });
+
+      // 새로 받았지만 고친 파일을 안 올렸다(현재 10 그대로) — 반품처럼 보여도 ✗
+      expect((await runClose(d, notUploaded('20261117_184000'), noAccept, true)).exitCode).toBe(1);
+      expect(await itemA()).toEqual({ uploaded_current: 9, ref_unshipped: 1, close_verdict: 'mismatch' });
+      // 세 번째도 마찬가지(저장된 판정이 mismatch 로 바뀌어도 여전히 기다린다)
+      expect((await runClose(d, notUploaded('20261117_185000'), noAccept, true)).exitCode).toBe(1);
+      expect((await runs()).map((r) => r.status)).toEqual(['closed', 'awaiting_close']);
+      expect(await state(A.sku)).toEqual({ baseline: 5, carry: 0, frozen: false });
+      expect((await tableCounts()).events).toBe(before.events);
+
+      // 고친 파일이 먹었다(현재 9, 미발송 1) → 닫히고 기준값 = U = 8
+      const done = await runClose(d, stock('20261117_190000', [row(A, 9, 1), row(B, 6, 1)]), noAccept, true);
+      expect(done.exitCode).toBe(0);
+      expect(await state(A.sku)).toEqual({ baseline: 8, carry: 0, frozen: false });
+      expect((await runs()).map((r) => r.status)).toEqual(['closed', 'closed']);
+    });
+
     it('10. --accept-not-landed 로 닫으면 그 품목 기준값 = apply 의 S', async () => {
       await initAndApply();
       // A 업로드가 안 먹었다(현재 5 그대로) → mismatch
       const closeInput = stock('20261117_183000', [row(A, 5, 2), row(B, 6, 1)]);
       expect((await runClose(d, closeInput, noAccept, true)).exitCode).toBe(1);
+      // 닫지 못한 시도의 입력은 다시 쓸 수 없다 — 지목하더라도 새로 받은 파일로
+      expect((await runClose(d, closeInput, { landed: [], notLanded: [A.serial] }, true)).exitCode).toBe(1);
 
-      const out = await runClose(d, closeInput, { landed: [], notLanded: [A.serial] }, true);
+      const later = stock('20261117_184000', [row(A, 5, 2), row(B, 6, 1)]);
+      const out = await runClose(d, later, { landed: [], notLanded: [A.serial] }, true);
       expect(out.exitCode).toBe(0);
       expect(await state(A.sku)).toEqual({ baseline: 3, carry: 0, frozen: false });
       expect(await state(B.sku)).toEqual({ baseline: 5, carry: 0, frozen: false });

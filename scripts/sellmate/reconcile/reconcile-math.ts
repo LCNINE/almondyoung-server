@@ -76,18 +76,14 @@ export function planApply(f: ItemFigures): ApplyResult {
 }
 
 /**
- * 새로 짝지어진 품목(init 뒤 처음 보는 품목)의 이번 회 값. 원장은 쓰지 않고(delta 0) init 처럼 기준값·이월을 잡는다.
- * 셀메이트 쪽 첫 재고는 무시하고 core 가 정본이므로, 업로드는 planApply 와 같은 식 U = max(0, A − C) 다.
+ * 새로 짝지어진(또는 얼었다 풀린) 품목의 시작 상태: 기준값 = S, 이월 = 미발송주문수.
+ * 그 품목의 core 재고는 셀메이트 미발송 마켓 주문과 한 번도 상계된 적이 없다. 그 주문이 나가도 셀메이트 S 는 그대로라
+ * (현재·미발송이 같이 준다) 차이로는 영영 잡히지 않는다 — 그래서 미발송 전부를 이월로 두고 같은 회의 planApply 가
+ * 여유 R 안에서 바로 뺀다. init 은 sync-stock 이 이미 상계했으므로 initState 를 쓴다.
  */
-export function planFresh(
-  f: Omit<ItemFigures, 'baseline' | 'carry'>,
-): { baseline: number; carry: number } & ApplyResult {
-  assertInteger('onHand', f.onHand);
-  assertInteger('reservedAll', f.reservedAll);
-  assertInteger('reservedHandedOver', f.reservedHandedOver);
-  assertInteger('unshipped', f.unshipped);
-  const start = initState(f.s);
-  const available = f.onHand - (f.reservedAll - f.reservedHandedOver);
-  const uploadAvail = Math.max(0, available - start.carry);
-  return { ...start, delta: 0, carryAfter: start.carry, uploadAvail, uploadCurrent: uploadAvail + f.unshipped };
+export function freshState(s: number, unshipped: number): { baseline: number; carry: number } {
+  assertInteger('s', s);
+  assertInteger('unshipped', unshipped);
+  if (unshipped < 0) throw new Error(`unshipped 는 0 이상이어야 한다: ${unshipped}`);
+  return { baseline: s, carry: unshipped };
 }

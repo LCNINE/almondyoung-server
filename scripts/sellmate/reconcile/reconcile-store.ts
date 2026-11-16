@@ -323,7 +323,8 @@ export async function insertRunItems(tx: Sql, runId: string, items: readonly Run
   }
 }
 
-export async function loadRunItems(tx: Sql, runId: string): Promise<RunItemRow[]> {
+/** 회차 품목 + 마지막 닫기 판정(닫기 전이면 null) */
+export async function loadRunItems(tx: Sql, runId: string): Promise<(RunItemRow & { closeVerdict: string | null })[]> {
   const rows = await tx<
     {
       option_serial: string;
@@ -338,6 +339,7 @@ export async function loadRunItems(tx: Sql, runId: string): Promise<RunItemRow[]
       upload_avail: number | null;
       uploaded_current: number | null;
       ref_unshipped: number | null;
+      close_verdict: string | null;
     }[]
   >`SELECT * FROM sellmate_reconcile_items WHERE run_id = ${runId} ORDER BY option_serial`;
   return rows.map((r) => ({
@@ -353,6 +355,7 @@ export async function loadRunItems(tx: Sql, runId: string): Promise<RunItemRow[]
     uploadAvail: r.upload_avail,
     uploadedCurrent: r.uploaded_current,
     refUnshipped: r.ref_unshipped,
+    closeVerdict: r.close_verdict,
   }));
 }
 
@@ -442,4 +445,15 @@ export async function loadUnpairedPairs(sql: Sql): Promise<{ optionSerial: strin
     SELECT option_serial, unpaired_reason FROM sellmate_item_pairs
     WHERE unpaired_reason IS NOT NULL ORDER BY option_serial`;
   return rows.map((r) => ({ optionSerial: r.option_serial, reason: r.unpaired_reason }));
+}
+
+/**
+ * 닫지 못한 닫기 시도(--apply)의 입력을 열린 회차에 적는다. 다음 닫기 입력은 이 시각보다 늦어야 한다 —
+ * 같은 CSV 를 다시 넣어 고친 기준과 옛 숫자가 부딪치지 않게. 회차를 닫으면 closeRunRow 가 덮어쓴다.
+ */
+export async function recordCloseAttempt(tx: Sql, runId: string, closeSha: string, closeSnapshotAt: Date): Promise<void> {
+  await tx`
+    UPDATE sellmate_reconcile_runs
+    SET close_input_sha256 = ${closeSha}, close_snapshot_at = ${closeSnapshotAt}
+    WHERE id = ${runId} AND status = 'awaiting_close'`;
 }

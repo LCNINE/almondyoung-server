@@ -30,8 +30,15 @@ import { readStockCsv } from './reconcile/stock-csv';
 import { parseOwnMallDisplayIds } from './reconcile/orders-csv';
 import { UploadLine, writeUploadCsv } from './reconcile/upload-csv';
 import { Pair, StateRow, Unpaired, compareWithState, pairItems } from './reconcile/pairing';
-import { ApplyResult, initState, planApply, planFresh, sellmateAvail } from './reconcile/reconcile-math';
-import { Accept, CloseVerdict, confirmedBaseline, isOkVerdict, judgeClose } from './reconcile/close-verdict';
+import { ApplyResult, freshState, initState, planApply, sellmateAvail } from './reconcile/reconcile-math';
+import {
+  Accept,
+  CloseVerdict,
+  confirmedBaseline,
+  isFixPending,
+  isOkVerdict,
+  judgeClose,
+} from './reconcile/close-verdict';
 import {
   RECONCILE_SOURCE,
   RunItemRow,
@@ -52,6 +59,7 @@ import {
   openRun,
   readCoreFigures,
   reconcileTablesExist,
+  recordCloseAttempt,
   replacePairs,
   resolveMedusaOrderIds,
   resolveSalesOrders,
@@ -417,15 +425,19 @@ export async function runApply(d: Deps, stock: StockInput, apply: boolean): Prom
       const row = requireValue(rowBySerial, pair.optionSerial, '재고 행');
       const f = requireValue(figures, pair.skuId, 'core 수치');
       const s = sellmateAvail(row.current, row.unshipped);
-      const common = { pair, fresh, current: row.current, unshipped: row.unshipped, s };
-      if (fresh) {
-        const p = planFresh({ s, ...f, unshipped: row.unshipped });
-        planned.push({ ...common, baselineBefore: p.baseline, carryBefore: p.carry, plan: p });
-      } else {
-        const st = requireValue(stateBySerial, pair.optionSerial, '품목 상태');
-        const plan = planApply({ s, baseline: st.baseline, carry: st.carry, ...f, unshipped: row.unshipped });
-        planned.push({ ...common, baselineBefore: st.baseline, carryBefore: st.carry, plan });
-      }
+      // 새 품목은 기준값 S·이월 = 미발송으로 시작해 같은 회에 planApply 를 탄다 — core 가 그 미발송을 지금 뺀다(freshState 주석)
+      const st = fresh ? freshState(s, row.unshipped) : requireValue(stateBySerial, pair.optionSerial, '품목 상태');
+      const plan = planApply({ s, baseline: st.baseline, carry: st.carry, ...f, unshipped: row.unshipped });
+      planned.push({
+        pair,
+        fresh,
+        current: row.current,
+        unshipped: row.unshipped,
+        s,
+        baselineBefore: st.baseline,
+        carryBefore: st.carry,
+        plan,
+      });
     }
     planned.sort((a, b) => (a.pair.optionSerial < b.pair.optionSerial ? -1 : 1));
 
@@ -549,10 +561,14 @@ export async function runClose(
     if (refusal) return refuse(d, refusal);
     const run = await openRun(tx);
     if (!run) return refuse(d, '열린 회차가 없다 — apply 뒤에만 닫는다');
-    if (stock.snapshotAt.getTime() <= run.inputSnapshotAt.getTime()) {
+    // 닫지 못한 시도가 있었으면 그 입력보다도 늦어야 한다 — 같은 CSV 를 고친 기준에 다시 대지 않게
+    const attempt = run.closeSnapshotAt;
+    const floor = attempt && attempt.getTime() > run.inputSnapshotAt.getTime() ? attempt : run.inputSnapshotAt;
+    if (stock.snapshotAt.getTime() <= floor.getTime()) {
       return refuse(
         d,
-        `닫기 CSV 시각 ${stock.snapshotAt.toISOString()} 이 회차 입력 ${run.inputSnapshotAt.toISOString()} 보다 늦지 않다 — 업로드 뒤에 받은 파일이어야 한다`,
+        `닫기 CSV 시각 ${stock.snapshotAt.toISOString()} 이 ${floor === attempt ? '직전 닫기 시도' : '회차'} 입력 ${floor.toISOString()} 보다 늦지 않다 — ` +
+          '업로드(고친 파일이 있으면 그것까지) 뒤에 새로 받은 파일이어야 한다',
       );
     }
     const items = await loadRunItems(tx, run.id);
@@ -562,13 +578,20 @@ export async function runClose(
 
     const rowBySerial = new Map(stock.rows.map((r) => [r.optionSerial, r]));
     const judged: Judged[] = items.map((item) => {
-      const { uploadedCurrent, refUnshipped } = item;
-      if (uploadedCurrent === null || refUnshipped === null) {
+      const { uploadedCurrent, refUnshipped, uploadAvail } = item;
+      if (uploadedCurrent === null || refUnshipped === null || uploadAvail === null) {
         throw new Error(`apply 회차 품목에 올린 값이 없다: 회차 ${run.id} ${item.optionSerial}`);
       }
       const row = rowBySerial.get(item.optionSerial);
       const now = row ? { current: row.current, unshipped: row.unshipped } : null;
-      const { verdict, correctedCurrent } = judgeClose({ uploadedCurrent, refUnshipped, now });
+      const fixPending = isFixPending({
+        uploadAvail,
+        sellmateUnshipped: item.sellmateUnshipped,
+        uploadedCurrent,
+        refUnshipped,
+        closeVerdict: item.closeVerdict,
+      });
+      const { verdict, correctedCurrent } = judgeClose({ uploadedCurrent, refUnshipped, now, fixPending });
       const a: Accept = accept.landed.includes(item.optionSerial)
         ? 'landed'
         : accept.notLanded.includes(item.optionSerial)
@@ -619,7 +642,8 @@ export async function runClose(
         '\n원인을 알고 그대로 닫으려면 품목을 지목한다: --accept-landed=<업로드는 먹음> / --accept-not-landed=<업로드가 안 먹음>',
       );
       d.log(`⛔ 회차 ${run.id} 를 닫지 않았다.`);
-      // R2: --apply 면 판정·고친 비교 기준·고친 파일은 남기고(커밋) 회차는 열어 둔다
+      // R2: --apply 면 판정·고친 비교 기준·고친 파일·이 시도의 입력 시각은 남기고(커밋) 회차는 열어 둔다
+      await recordCloseAttempt(tx, run.id, stock.sha256, stock.snapshotAt);
       return { outcome: { exitCode: 1, touchedSkuIds: [], uploadFile: fixFile }, commit: true };
     }
 
@@ -780,8 +804,22 @@ async function main(): Promise<void> {
       // 커밋 뒤에만 부른다. 실패하면 손으로: bash scripts/sellmate/run.sh live recalc-sellable .
       // recalc-sellable 은 core 앱 서비스를 끌어오므로, 인자 파싱 스펙이 그걸 싣지 않게 여기서만 불러온다.
       const { recalcSellableForSkus } = await import('./recalc-sellable');
-      const n = await recalcSellableForSkus(url, outcome.touchedSkuIds, !args.apply);
-      console.log(`\n📊 sellable 재계산 대상 variant ${n}개${args.apply ? '' : ' (DRY-RUN — 재계산 안 함)'}`);
+      try {
+        const n = await recalcSellableForSkus(url, outcome.touchedSkuIds, !args.apply);
+        console.log(`\n📊 sellable 재계산 대상 variant ${n}개${args.apply ? '' : ' (DRY-RUN — 재계산 안 함)'}`);
+      } catch (err) {
+        if (!args.apply) throw err;
+        // recalc-sellable 의 main 은 최근 SINCE_HOURS(기본 24)시간 안의 셀메이트 출처(sellmate-reconcile 포함) 원장 이벤트가
+        // 건드린 SKU 를 전부 다시 계산한다 — 이번에 바뀐 SKU 를 덮는다.
+        console.error(`\n❌ sellable 재계산 실패: ${err instanceof Error ? err.message : String(err)}`);
+        console.error(
+          `   ⚠️ 원장 변경(${outcome.touchedSkuIds.length}개 SKU)과 회차는 이미 커밋됐다 — apply 를 다시 돌리지 말 것.`,
+        );
+        console.error('   sellable 만 다시 계산한다(24시간 안에, 늦으면 SINCE_HOURS 를 늘린다. dev 면 live 대신 dev):');
+        console.error('   bash scripts/sellmate/run.sh live recalc-sellable .');
+        process.exitCode = 1;
+        return;
+      }
     }
     process.exitCode = outcome.exitCode;
   } finally {

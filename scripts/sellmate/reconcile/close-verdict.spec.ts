@@ -2,7 +2,7 @@
  * 닫기 판정 회귀 테스트 (DB 불필요).
  * 설계 문서 판정 표의 한 줄마다 it 하나.
  */
-import { confirmedBaseline, isOkVerdict, judgeClose } from './close-verdict';
+import { confirmedBaseline, isFixPending, isOkVerdict, judgeClose } from './close-verdict';
 
 describe('judgeClose (닫기 판정 표)', () => {
   it('현재·미발송 모두 그대로거나 주문만 늘었으면 ok_new_orders', () => {
@@ -42,6 +42,32 @@ describe('judgeClose (닫기 판정 표)', () => {
     expect(isOkVerdict('shipped_before_upload')).toBe(false);
     expect(isOkVerdict('mismatch')).toBe(false);
     expect(isOkVerdict('missing')).toBe(false);
+  });
+});
+
+describe('고친 CSV 를 기다리는 품목 (fixPending)', () => {
+  // apply 때 올린 현재 10·받을 때 미발송 2. 업로드 전 1 출고 → 고친 값 9·기준 미발송 1 로 바꿨다
+  it('같은 닫기 CSV(현재 10, 미발송 1)를 다시 넣으면 반품이 아니라 mismatch', () => {
+    expect(judgeClose({ uploadedCurrent: 9, refUnshipped: 1, now: { current: 10, unshipped: 1 }, fixPending: true }))
+      .toEqual({ verdict: 'mismatch', correctedCurrent: null });
+  });
+  it('fixPending 이 아니면 같은 숫자는 ok_return_after 그대로', () => {
+    expect(judgeClose({ uploadedCurrent: 9, refUnshipped: 1, now: { current: 10, unshipped: 1 }, fixPending: false }))
+      .toEqual({ verdict: 'ok_return_after', correctedCurrent: null });
+  });
+  it('고친 파일이 먹었으면(현재 9) fixPending 이어도 통과', () => {
+    expect(judgeClose({ uploadedCurrent: 9, refUnshipped: 1, now: { current: 9, unshipped: 1 }, fixPending: true }))
+      .toEqual({ verdict: 'ok_new_orders', correctedCurrent: null });
+    expect(judgeClose({ uploadedCurrent: 9, refUnshipped: 1, now: { current: 8, unshipped: 0 }, fixPending: true }))
+      .toEqual({ verdict: 'ok_shipped_after', correctedCurrent: null });
+  });
+  it('isFixPending: 기준을 바꿨고 그 뒤 통과 판정이 없으면 true', () => {
+    const base = { uploadAvail: 8, sellmateUnshipped: 2 };
+    expect(isFixPending({ ...base, uploadedCurrent: 10, refUnshipped: 2, closeVerdict: 'mismatch' })).toBe(false);
+    expect(isFixPending({ ...base, uploadedCurrent: 9, refUnshipped: 1, closeVerdict: 'shipped_before_upload' })).toBe(true);
+    // 고친 파일을 안 올린 채 다시 닫아 mismatch 가 저장돼도 여전히 기다린다
+    expect(isFixPending({ ...base, uploadedCurrent: 9, refUnshipped: 1, closeVerdict: 'mismatch' })).toBe(true);
+    expect(isFixPending({ ...base, uploadedCurrent: 9, refUnshipped: 1, closeVerdict: 'ok_new_orders' })).toBe(false);
   });
 });
 

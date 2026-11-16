@@ -2,7 +2,7 @@
  * 저녁 맞추기 정본 산식 회귀 테스트 (DB 불필요).
  * 설계 문서 «계산» 의 시나리오를 한 줄씩 고정한다.
  */
-import { initState, planApply, planFresh, sellmateAvail } from './reconcile-math';
+import { freshState, initState, planApply, sellmateAvail } from './reconcile-math';
 
 describe('sellmateAvail', () => {
   it('셀메이트 가용 = 현재 − 미발송, 음수도 그대로 돌린다', () => {
@@ -48,25 +48,25 @@ describe('저녁 맞추기 산식 (planApply)', () => {
 });
 
 
-describe('새로 짝지어진 품목 (planFresh)', () => {
-  it('원장은 쓰지 않고 init 처럼 시작하며, 이번 회 업로드는 core 가용을 올린다', () => {
-    expect(planFresh({ s: 7, onHand: 4, reservedAll: 1, reservedHandedOver: 0, unshipped: 2 })).toEqual({
-      baseline: 7,
-      carry: 0,
-      delta: 0,
+describe('새로 짝지어진 품목 (freshState → planApply)', () => {
+  it('시작 상태는 기준값 S, 이월 = 미발송주문수', () => {
+    expect(freshState(-1, 3)).toEqual({ baseline: -1, carry: 3 });
+    expect(freshState(7, 0)).toEqual({ baseline: 7, carry: 0 });
+    expect(() => freshState(1, -1)).toThrow();
+  });
+  it('같은 회의 planApply 가 미발송만큼 여유 안에서 빼고, 남은 것은 이월로 둔다', () => {
+    const start = freshState(-1, 3); // 현재 2, 미발송 3
+    expect(planApply({ s: -1, ...start, onHand: 5, reservedAll: 0, reservedHandedOver: 0, unshipped: 3 })).toEqual({
+      delta: -3,
       carryAfter: 0,
-      uploadAvail: 3,
+      uploadAvail: 2,
       uploadCurrent: 5,
     });
-  });
-  it('음수 S 는 init 처럼 이월을 두고, 업로드 가용에서 이월을 뺀다', () => {
-    expect(planFresh({ s: -2, onHand: 5, reservedAll: 0, reservedHandedOver: 0, unshipped: 3 })).toEqual({
-      baseline: -2,
-      carry: 2,
-      delta: 0,
-      carryAfter: 2,
-      uploadAvail: 3,
-      uploadCurrent: 6,
+    expect(planApply({ s: -1, ...start, onHand: 2, reservedAll: 0, reservedHandedOver: 0, unshipped: 3 })).toEqual({
+      delta: -2,
+      carryAfter: 1,
+      uploadAvail: 0,
+      uploadCurrent: 3,
     });
   });
 });

@@ -16,6 +16,11 @@ export type CloseInput = {
   uploadedCurrent: number;
   refUnshipped: number;
   now: { current: number; unshipped: number } | null;
+  /**
+   * 직전 닫기 시도가 고친 CSV 를 만들며 비교 기준을 바꿨고 그 뒤로 아직 통과하지 못했다(isFixPending).
+   * 그 상태의 «현재만 늘었다»는 반품이 아니라 «고친 파일을 아직 안 올렸다»와 구별되지 않으므로 ✗ 로 본다.
+   */
+  fixPending?: boolean;
 };
 
 export function judgeClose(i: CloseInput): { verdict: CloseVerdict; correctedCurrent: number | null } {
@@ -32,12 +37,36 @@ export function judgeClose(i: CloseInput): { verdict: CloseVerdict; correctedCur
     return { verdict: 'ok_shipped_after', correctedCurrent: null };
   }
   if (du === 0 && dc > 0) {
+    // 고친 값(X+Δu)을 기준으로 둔 품목에 옛 CSV(현재 X)를 다시 넣으면 dc = −Δu > 0 으로 반품처럼 보인다.
+    // 통과시키면 기준값이 실제보다 |Δu| 작아지고 다음 apply 가 이미 나간 수량을 ADJUST_UP 한다.
+    if (i.fixPending) return { verdict: 'mismatch', correctedCurrent: null };
     return { verdict: 'ok_return_after', correctedCurrent: null };
   }
   if (dc === 0 && du < 0) {
     return { verdict: 'shipped_before_upload', correctedCurrent: i.uploadedCurrent + du };
   }
   return { verdict: 'mismatch', correctedCurrent: null };
+}
+
+/**
+ * 회차 품목의 비교 기준이 고친 CSV 로 바뀌었고(apply 때 올린 값·받을 때 미발송과 다르다) 그 뒤 아직 통과 판정을 받지 못했나.
+ * 저장된 판정이 ✗ 인 동안은 계속 true — 고친 파일을 안 올린 채 두 번, 세 번 다시 닫아도 반품으로 통과하지 않는다.
+ */
+export function isFixPending(item: {
+  uploadAvail: number;
+  sellmateUnshipped: number;
+  uploadedCurrent: number;
+  refUnshipped: number;
+  closeVerdict: string | null;
+}): boolean {
+  const rewritten =
+    item.uploadedCurrent !== item.uploadAvail + item.sellmateUnshipped || item.refUnshipped !== item.sellmateUnshipped;
+  const passed = item.closeVerdict !== null && isOkVerdictName(item.closeVerdict);
+  return rewritten && !passed;
+}
+
+function isOkVerdictName(v: string): boolean {
+  return v === 'ok_new_orders' || v === 'ok_shipped_after' || v === 'ok_return_after';
 }
 
 export function isOkVerdict(v: CloseVerdict): boolean {
