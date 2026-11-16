@@ -91,7 +91,7 @@ MD 가 신상품을 등록할 때, 물건이 아직 안 들어온 구간에서 �
 ## Follow-ups
 - `sales_start_date` 는 여전히 엑셀 임포트가 유일한 쓰기 경로다. 출시예정과는 별개 축(판매기간)이며
   admin 편집 수단이 없는 상태 그대로 남는다.
-- `inbound_plans` → `variant.metadata.inboundDate` 동기화는 수동 스크립트(`sync-restock-to-medusa.ts`)다.
+- `variant.metadata.inboundDate` 는 한때 수동 스크립트(`sync-restock-to-medusa.ts`)가 채웠으나 #1240 에서 지웠다. 지금은 sellable 투영 → 이벤트 → channel-adapter 소비자가 채운다.
   출시예정 날짜는 이와 독립적으로 관리자가 직접 넣는 값이라 영향받지 않는다.
 - 출시예정 토글을 variant 테이블 컬럼에도 노출할지는 미정. 현재는 variant 편집 다이얼로그에만 있고,
   여러 상품 일괄 적용은 기존 배치 API 를 쓴다.

@@ -17,7 +17,7 @@ const OUTSTANDING_LINES = `
     and greatest(l.expected_qty - coalesce((select sum(c.counted_qty) from inbound_shipment_box_counts c
                                             where c.line_id = l.id and c.canceled_at is null), 0), 0)::int > 0`;
 
-// scripts/sellmate/load-inbound-from-csv.ts 가 발주에 남기는 표지.
+// 지워진 load-inbound-from-csv(#1240)가 발주에 남긴 표지.
 const CSV_TAG = 'sellmate-csv-inbound%';
 
 export async function checkInbound(tx: Sql, r: Report): Promise<void> {

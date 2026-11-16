@@ -3,8 +3,8 @@ import { HttpTypes } from "@medusajs/types"
 /**
  * 품절 옵션들 중 가장 이른 입고예정일을 고른다.
  *
- * 데이터(variant.metadata.inboundDate)는 미수령 수량이 남은 core 발주 라인 →
- * Medusa variant.metadata 동기화로 채워진다 (sync-restock-to-medusa.ts).
+ * 데이터(variant.metadata.inboundDate)는 미수령 수량이 남은 core 발주 라인·선적 →
+ * sellable 투영 → 이벤트 → channel-adapter 소비자가 채운다 (#1240).
  * 없으면 null → 아무것도 렌더하지 않는다.
  *
  * 지난 날짜는 후보에서 뺀다. 동기화가 stale 값을 남기면(입고완료/취소 후 미삭제)

@@ -4,7 +4,6 @@ import { sql } from 'drizzle-orm';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { DbService } from '@app/db';
 import { makeDb } from '../../../fulfillment/services/__support__';
-import { RESTOCK_SQL } from '../../../../../../channel-adapter/scripts/sync-restock-to-medusa';
 import { PurchaseOrderReader } from '../../procurement/services/purchase-order.reader';
 import { PurchaseOrderExpectedArrivalReader } from '../../procurement/services/purchase-order-expected-arrival.reader';
 import { WarehouseTransferReader } from '../../warehouse-transfer/services/warehouse-transfer.reader';
@@ -13,7 +12,7 @@ import { ExpectedArrivalsReader } from './expected-arrivals.reader';
 import { InboundPipelineReader } from './inbound-pipeline.reader';
 
 /**
- * 읽기 파리티(스펙 §12 #8) + 스토어프론트 동기화 SQL 실행(#12).
+ * 읽기 파리티(스펙 §12 #8). 스토어프론트 동기화 SQL 스크립트는 #1240 에서 지웠다 — 지금은 투영 → 이벤트가 채운다.
  * 입고 대기 잔량 = VIEW inbound_pending_qty = 파이프라인 ①(비판매 출발 창고)·전사 합계 = 헤더 도착예정일.
  * 실행: DATABASE_URL=... npx jest --runInBand expected-arrivals-parity
  */
@@ -289,53 +288,6 @@ describeIfDb('입고예정 읽기 파리티 (DB integration)', () => {
       );
       expect((await purchaseOrders.sumOutstandingBySku([fx.skuA], 'all', trx)).get(fx.skuA)?.qty).toBe(17);
       expect(await readViewQty(trx, fx.skuA, fx.nonSellableWarehouseId)).toBe(10);
-    });
-  });
-
-  it('#12 스토어프론트 동기화 SQL은 실제 상품 조인에서 ETA와 해외 여부를 내고 닫힘·취소를 제외한다', async () => {
-    await inRollback(async (trx) => {
-      const fx = await seedFixture(trx);
-      const masterId = randomUUID();
-      const versionId = randomUUID();
-      const variantA = randomUUID();
-      const variantB = randomUUID();
-      const matchingA = randomUUID();
-      const matchingB = randomUUID();
-
-      await trx.execute(sql`INSERT INTO product_masters (id) VALUES (${masterId})`);
-      await trx.execute(sql`
-        INSERT INTO product_master_versions (id, master_id, name, status)
-        VALUES (${versionId}, ${masterId}, 'T7 상품', 'active')
-      `);
-      await trx.execute(sql`INSERT INTO product_variants (id) VALUES (${variantA}), (${variantB})`);
-      await trx.execute(sql`
-        INSERT INTO product_master_variants (id, master_id, variant_id, version_id)
-        VALUES (${randomUUID()}, ${masterId}, ${variantA}, ${versionId}),
-               (${randomUUID()}, ${masterId}, ${variantB}, ${versionId})
-      `);
-      await trx.insert(wmsTables.productMatchings).values([
-        { id: matchingA, variantId: variantA, masterId, status: 'matched', strategy: 'variant', isResolved: true },
-        { id: matchingB, variantId: variantB, masterId, status: 'matched', strategy: 'variant', isResolved: true },
-      ]);
-      await trx.insert(wmsTables.productVariantSkuLinks).values([
-        { productMatchingId: matchingA, skuId: fx.skuA },
-        { productMatchingId: matchingB, skuId: fx.skuB },
-      ]);
-
-      const rows = (await trx.execute(sql.raw(RESTOCK_SQL))) as unknown as Array<{
-        master_id: string;
-        variant_id: string;
-        expected_date: string;
-        approximate: boolean;
-      }>;
-
-      const expected = [
-        { master_id: masterId, variant_id: variantA, expected_date: '2026-09-18', approximate: true },
-        { master_id: masterId, variant_id: variantB, expected_date: '2026-09-15', approximate: true },
-      ];
-      expect([...rows].sort((left, right) => left.variant_id.localeCompare(right.variant_id))).toEqual(
-        expected.sort((left, right) => left.variant_id.localeCompare(right.variant_id)),
-      );
     });
   });
 });
