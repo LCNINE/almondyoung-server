@@ -95,7 +95,7 @@ const SHOWN: Readonly<Record<string, PiiScreen>> = {
   '/order/fulfillments/[id]': RECIPIENT_MIXED,
   '/order/inspection': RECIPIENT_ALL_DETAIL,
   '/order/picking-list': RECIPIENT_ALL_MIXED,
-  '/order/stall-board': RECIPIENT_ALL,
+  '/order/stall-board': { opens: 'recipient' },
   '/order/waybill-issue': RECIPIENT_ALL,
   '/order/history': CUSTOMER_MIXED,
   '/order/manual-single': CUSTOMER_MIXED,
@@ -106,6 +106,7 @@ const SHOWN: Readonly<Record<string, PiiScreen>> = {
   '/payments': CUSTOMER_MIXED,
   '/payments/points': CUSTOMER,
   '/payments/refund-requests': CUSTOMER,
+  '/payments/refunds': CUSTOMER,
 
   '/statistics/keywords': CUSTOMER,
   '/users': CUSTOMER,
@@ -137,7 +138,6 @@ export const PII_SCREEN_NOT_SHOWN: Readonly<Record<string, string>> = {
   '/order/outbound-batches':
     '상자를 넣고 빼는 쓰기만 부르고 받는 분 정보를 응답에서 그리지 않는다',
   '/payments/methods': SIBLING_PAYMENT,
-  '/payments/refunds': SIBLING_PAYMENT,
   '/payments/regions': SIBLING_PAYMENT,
   '/statistics/overview': '운영 현황 타일에 건수만 그린다',
   '/users/audit-log': SIBLING_USER,

@@ -93,6 +93,7 @@ export const PII_ROUTES: readonly string[] = [
   'wallet GET /v1/admin/payment-intents/pending-bank-transfers',
   'wallet GET /v1/admin/recurring-billing/invoices',
   'wallet GET /v1/admin/refund-requests',
+  'wallet GET /v1/admin/refunds',
   'wallet POST /v1/admin/refund-requests/:id/approve',
   'wallet POST /v1/admin/refund-requests/:id/reject',
 ];
@@ -154,6 +155,7 @@ export const PII_EXPORT_EXCEPTIONS: Readonly<Record<string, string>> = {
  * 한다(`pii-write-routes.spec.ts`). 그 화면이 가린 값을 채워 보내는 쓰기면 여기에 한 줄 더한다.
  */
 export const PII_WRITE_ROUTES: readonly string[] = [
+  'wallet POST /v1/admin/refunds/:id/execute-bank-refund',
   'core PATCH /cs-cases/:caseId/comments/:commentId',
   'core PATCH /sales-orders/:id',
   'core PATCH /shipments/:id/recipient',

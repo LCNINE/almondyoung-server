@@ -11,6 +11,7 @@ import { PII_ROUTES, PII_WRITE_EXEMPT, PII_WRITE_ROUTES } from './pii-routes';
 const ROOT = join(__dirname, '..', '..');
 const AUDIT = join(__dirname, 'route-authz-audit.js');
 const ROOT_MODULES: Readonly<Record<string, string>> = {
+  wallet: 'apps/wallet/src/wallet.module.ts',
   core: 'apps/core/src/app.module.ts',
   notification: 'apps/notification/src/notification.module.ts',
   'user-service': 'apps/user-service/src/app.module.ts',
@@ -174,4 +175,3 @@ describe('개인정보 쓰기 라우트', () => {
     expect(Object.keys(PII_WRITE_EXEMPT).filter((key) => !live.has(key))).toEqual([]);
   });
 });
-

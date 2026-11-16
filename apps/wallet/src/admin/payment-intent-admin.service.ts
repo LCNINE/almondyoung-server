@@ -15,6 +15,7 @@ import {
   paymentMethods,
   paymentStateTransitions,
   refunds,
+  refundRequests,
 } from '../schema';
 import {
   AdminPaymentIntentListQueryDto,
@@ -25,7 +26,7 @@ import {
 } from './dto/admin-payment-intent.dto';
 import { AdminRefundListQueryDto, REFUND_KIND_FILTER_UNKNOWN } from './dto/admin-refund.dto';
 import { StateTransitionResponseDto } from './dto/state-transition.dto';
-import { RefundResponseDto } from '../refunds/dto';
+import { RefundReceiveAccountDto, RefundResponseDto } from '../refunds/dto';
 import { isManuallyConfirmable } from '../refunds/manual-confirmable';
 import {
   PaymentIntentItemResponseDto,
@@ -55,6 +56,13 @@ function refundRowsQuery(db: DbService<WalletSchema>['db']) {
       failureCode: refunds.failureCode,
       failureRetryable: refunds.failureRetryable,
       paymentMethodType: paymentMethods.type,
+      refundReceiveAccount: sql<RefundReceiveAccountDto | null>`(
+        SELECT json_build_object('bank', ${refundRequests.bankCode}, 'accountNumber', ${refundRequests.accountNumber}, 'holderName', ${refundRequests.holderName})
+        FROM ${refundRequests}
+        WHERE ${refundRequests.intentId} = ${refunds.intentId}
+          AND ${refundRequests.status} IN ('REQUESTED', 'APPROVED')
+        ORDER BY ${refundRequests.createdAt} DESC, ${refundRequests.id} DESC LIMIT 1
+      )`,
     })
     .from(refunds)
     .leftJoin(charges, eq(refunds.chargeId, charges.id))
@@ -84,6 +92,8 @@ function toAdminRefund(r: AdminRefundRow): RefundResponseDto {
     kind: r.kind ?? null,
     failureCode: r.failureCode ?? null,
     retryable: r.failureRetryable ?? null,
+    paymentMethodType: r.paymentMethodType ?? null,
+    refundReceiveAccount: r.refundReceiveAccount ?? null,
   };
 }
 
@@ -382,7 +392,7 @@ export class PaymentIntentAdminService {
 
     const rows = await refundRowsQuery(db)
       .where(and(...conditions))
-      .orderBy(desc(refunds.createdAt))
+      .orderBy(desc(refunds.createdAt), desc(refunds.id))
       .limit(limit)
       .offset(offset);
 
@@ -560,6 +570,10 @@ export class PaymentIntentAdminService {
 
     if (query.intentId) {
       conditions.push(eq(refunds.intentId, query.intentId));
+    }
+
+    if (query.intentIds) {
+      conditions.push(inArray(refunds.intentId, query.intentIds));
     }
 
     if (query.kind === REFUND_KIND_FILTER_UNKNOWN) {

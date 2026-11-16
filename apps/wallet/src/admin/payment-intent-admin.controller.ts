@@ -122,6 +122,8 @@ export class PaymentIntentAdminController {
       metadata: 'redact',
       'charges[].providerTransactionId': 'secret',
       'paymentMethod.displayName': 'text',
+      'refunds[].refundReceiveAccount.accountNumber': 'account',
+      'refunds[].refundReceiveAccount.holderName': 'name',
     },
     subjects: [
       { path: 'id', type: 'payment_intent' },

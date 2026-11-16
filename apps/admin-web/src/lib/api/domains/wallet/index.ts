@@ -147,6 +147,19 @@ export const walletApi = {
 
   // ── Refunds ──────────────────────────────────────────────────────────────
 
+  executeBankRefund: async (
+    id: string,
+    account: NonNullable<RefundDto['refundReceiveAccount']>
+  ): Promise<RefundDto> => {
+    const res = await client.post(
+      `${BASE}/v1/admin/refunds/${encodeURIComponent(id)}/execute-bank-refund`,
+      account,
+      idempotencyConfig()
+    );
+
+    return res.data;
+  },
+
   confirmRefund: async (id: string): Promise<RefundDto> => {
     const res = await client.post(
       `${BASE}/v1/admin/refunds/${encodeURIComponent(id)}/confirm`,

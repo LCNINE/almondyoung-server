@@ -90,6 +90,12 @@ export interface ChargeDto {
 // ─── Refund ─────────────────────────────────────────────────────────────────
 
 export interface RefundDto {
+  paymentMethodType?: string | null;
+  refundReceiveAccount?: {
+    bank: string;
+    accountNumber: string;
+    holderName: string;
+  } | null;
   id: string;
   chargeId: string;
   intentId: string;
@@ -231,6 +237,7 @@ export interface RefundListQuery {
   status?: string;
   kind?: string;
   intentId?: string;
+  intentIds?: string[];
   dateFrom?: string;
   dateTo?: string;
 }

@@ -329,8 +329,16 @@ export class TossApiClient {
     }
 
     const error = await res.json().catch(() => ({ code: 'UNKNOWN', message: 'Unknown error' }));
-    this.logger.error(`Toss API error: ${res.status} ${this.stringifyError(error)}`);
-    return { ok: false, error: this.normalizeError(error), statusCode: res.status };
+    const normalized = this.normalizeError(error);
+
+    if (body.refundReceiveAccount) {
+      normalized.message = '계좌 환불 요청을 처리하지 못했습니다.';
+      this.logger.error(`Toss account refund error: ${res.status}`);
+    } else {
+      this.logger.error(`Toss API error: ${res.status} ${this.stringifyError(error)}`);
+    }
+
+    return { ok: false, error: normalized, statusCode: res.status };
   }
 
   private normalizeError(error: unknown): TossApiError {

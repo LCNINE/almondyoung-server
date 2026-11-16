@@ -233,7 +233,11 @@ export class RefundsService {
         refundReceiveAccount: ctx.refundReceiveAccount,
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = ctx.refundReceiveAccount
+        ? '계좌 환불 결과를 확인할 수 없습니다.'
+        : error instanceof Error
+          ? error.message
+          : String(error);
       this.logger.error(`Provider refund threw: refundId=${refund.id}, error=${message}`);
       // reasonCode는 관리자가 입력한 환불 사유를 보존. PG 오류는 reasonMessage에 추가하고 state_transitions에 기록
       await this.dbService.db
@@ -259,6 +263,8 @@ export class RefundsService {
     if (providerResult.status === 'SUCCEEDED') {
       const notifyExtra = await this.getRefundNotifyExtra(charge.intentId);
       await this.dbService.db.transaction(async (tx) => {
+        await tx.execute(sql`SELECT id FROM ${chargesTable} WHERE id = ${charge.id} FOR UPDATE`);
+
         // Keep provider metadata, then let the state machine perform PENDING -> SUCCEEDED.
         await tx
           .update(refunds)
@@ -700,6 +706,53 @@ export class RefundsService {
     return refund;
   }
 
+  async executeBankRefund(
+    refundId: string,
+    refundReceiveAccount: NonNullable<CreateRefundDto['refundReceiveAccount']>,
+  ): Promise<Refund> {
+    const refund = await this.findByIdOrThrow(refundId);
+    const charge = await this.chargesService.findById(refund.chargeId);
+    const method = charge ? await this.paymentMethodsService.findById(charge.paymentMethodId) : null;
+    const userId = await this.getIntentUserId(refund.intentId);
+
+    if (!charge || !method || !userId) {
+      throw new NotFoundException('환불 결제 정보를 찾을 수 없습니다.');
+    }
+
+    if (method.type !== 'BANK_TRANSFER') {
+      throw new BadRequestException('무통장 환불만 계좌로 실행할 수 있습니다.');
+    }
+
+    const pending = await this.dbService.db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT id FROM ${chargesTable} WHERE id = ${charge.id} FOR UPDATE`);
+      const [current] = await tx.select().from(refunds).where(eq(refunds.id, refundId)).for('update').limit(1);
+
+      if (current?.status === 'PENDING' && current.execution === 'MANUAL') {
+        const [claimed] = await tx
+          .update(refunds)
+          .set({ execution: 'AUTO', updatedAt: new Date() })
+          .where(eq(refunds.id, refundId))
+          .returning();
+
+        return claimed;
+      }
+
+      const [ambiguous] = await tx
+        .select()
+        .from(refunds)
+        .where(this.ambiguousWhere(eq(refunds.id, refundId)))
+        .limit(1);
+
+      if (ambiguous) {
+        return this.resumeAmbiguousInTx(ambiguous, method, true, tx);
+      }
+
+      throw new ConflictException('수동 송금 대기 또는 결과 확인이 필요한 환불만 실행할 수 있습니다.');
+    });
+
+    return this.dispatch(pending, { charge, method, userId, refundReceiveAccount });
+  }
+
   /**
    * 관리자가 환불 종류를 고친다 (스펙 §6.1). 종류는 돈을 바꾸지 않으니 대개 허용한다 — 이미 PG 로 나간 취소 사유는 바뀌지 않는다.
    * 단 같은 행·같은 토스 키(`wallet:refund:<id>`)로 PG 에 다시 나갈 수 있는 행은 409 로 거절한다: 멈춘 AUTO PENDING
@@ -878,23 +931,23 @@ export class RefundsService {
   async confirmManual(refundId: string): Promise<Refund> {
     const refund = await this.findByIdOrThrow(refundId);
     if (refund.status !== 'PENDING') {
-      throw new Error(`환불이 PENDING 상태가 아닙니다: ${refund.status}`);
+      throw new BadRequestException(`환불이 PENDING 상태가 아닙니다: ${refund.status}`);
     }
 
     const charge = await this.chargesService.findById(refund.chargeId);
-    if (!charge) throw new Error(`Charge not found: ${refund.chargeId}`);
+    if (!charge) throw new NotFoundException(`Charge not found: ${refund.chargeId}`);
     const method = await this.paymentMethodsService.findById(charge.paymentMethodId);
     if (
       !isManuallyConfirmable({ status: refund.status, execution: refund.execution, methodType: method?.type ?? null })
     ) {
       throw new BadRequestException({
         error: 'REFUND_NOT_MANUALLY_CONFIRMABLE',
-        message: '수동 완료 처리는 무통장 환불(BANK_TRANSFER)이나 수동 실행(MANUAL) 환불만 가능합니다.',
+        message: '수동 완료 처리는 수동 송금 대기(MANUAL PENDING) 환불만 가능합니다.',
       });
     }
 
     const userId = await this.getIntentUserId(refund.intentId);
-    if (!userId) throw new Error(`Intent not found for refund: ${refundId}`);
+    if (!userId) throw new NotFoundException(`Intent not found for refund: ${refundId}`);
     // 멤버십 환불 차단은 create() 단일 길목에서 처리한다. 여기 도달한 PENDING 환불은
     // create() 가 이미 허용한 건(= admin 강제취소 예외)뿐이라 완료를 막지 않는다.
     const now = new Date().toISOString();
@@ -902,6 +955,13 @@ export class RefundsService {
     const notifyExtra = await this.getRefundNotifyExtra(refund.intentId);
 
     await this.dbService.db.transaction(async (tx) => {
+      await tx.execute(sql`SELECT id FROM ${chargesTable} WHERE id = ${charge.id} FOR UPDATE`);
+      const [current] = await tx.select().from(refunds).where(eq(refunds.id, refundId)).for('update').limit(1);
+
+      if (!current || !isManuallyConfirmable({ ...current, methodType: method?.type ?? null })) {
+        throw new ConflictException('환불 상태가 변경되었습니다. 새로고침 후 확인하세요.');
+      }
+
       // transitionRefund가 status update와 state_transitions 기록을 모두 처리
       await this.stateTransitionService.transitionRefund(
         refundId,

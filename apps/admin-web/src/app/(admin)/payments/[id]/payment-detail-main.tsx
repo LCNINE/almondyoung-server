@@ -1,5 +1,6 @@
 'use client';
 
+import { BankRefundButton } from '@/features/payments/components/refund-table/bank-refund-button';
 import { Suspense, useState } from 'react';
 import { toast } from 'sonner';
 import { Container } from '@/components/admin-ui-experimental/common/container/container';
@@ -439,6 +440,7 @@ function RefundsTableContent({ intentId }: { intentId: string }) {
                   {new Date(r.createdAt).toLocaleString('ko-KR')}
                 </td>
                 <td className="px-4 py-2">
+                  <BankRefundButton refund={r} />
                   {r.manualConfirmable && (
                     <RefundConfirmButton
                       refundId={r.id}
@@ -455,8 +457,8 @@ function RefundsTableContent({ intentId }: { intentId: string }) {
       </table>
       {data.refunds.some((r: RefundDto) => r.manualConfirmable) && (
         <p className="px-4 py-2 text-xs text-amber-600">
-          수동 송금 대기 중인 환불이 있습니다. 실제 송금 완료 후 “완료 처리”
-          버튼을 눌러주세요.
+          무통장 환불은 계좌로 환불을 이용할 수 있습니다. 이미 직접 송금했다면
+          완료 처리를 눌러주세요.
         </p>
       )}
     </div>

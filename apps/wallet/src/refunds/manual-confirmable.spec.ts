@@ -5,9 +5,9 @@ describe('isManuallyConfirmable — 운영자의 [송금 완료]를 받을 수 �
     ['PENDING · MANUAL · 카드', { status: 'PENDING', execution: 'MANUAL', methodType: 'TOSS' }, true],
     ['PENDING · MANUAL · 효성 CMS', { status: 'PENDING', execution: 'MANUAL', methodType: 'CMS_BATCH' }, true],
     [
-      'PENDING · AUTO · 무통장 (지금과 같다)',
+      'PENDING · AUTO · 무통장 (PG 실행 중)',
       { status: 'PENDING', execution: 'AUTO', methodType: 'BANK_TRANSFER' },
-      true,
+      false,
     ],
     ['PENDING · AUTO · 카드 (PG 가 처리 중)', { status: 'PENDING', execution: 'AUTO', methodType: 'TOSS' }, false],
     ['PENDING · AUTO · 결제수단 모름', { status: 'PENDING', execution: 'AUTO', methodType: null }, false],

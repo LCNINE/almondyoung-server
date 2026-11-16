@@ -120,6 +120,7 @@ function makeContext(
           where: () =>
             Object.assign([{ amount: selectAmount }], {
               orderBy: () => ({ limit: () => Promise.resolve(ambiguousRefund ? [ambiguousRefund] : []) }),
+              for: () => ({ limit: () => Promise.resolve(pendingRefund ? [pendingRefund] : []) }),
             }),
         }),
       })),
@@ -499,7 +500,7 @@ describe('RefundsService', () => {
     it('confirmManual: 차단은 create() 길목에서만 — 이미 PENDING 인 건은 완료 허용', async () => {
       const { service } = makeContext({
         method: makeMethod('BANK_TRANSFER'),
-        pendingRefund: makeInsertedRefund(),
+        pendingRefund: makeInsertedRefund({ execution: 'MANUAL' }),
         intentMetadata: { type: 'MEMBERSHIP_FEE' },
       });
       await expect(service.confirmManual(REFUND_ID)).resolves.toBeDefined();
@@ -666,7 +667,7 @@ describe('RefundsService', () => {
       chargesService.findById = jest.fn().mockResolvedValue(makeCharge());
       paymentMethodsService.findById = jest.fn().mockResolvedValue(makeMethod('TOSS'));
 
-      await expect(service.confirmManual(REFUND_ID)).rejects.toThrow('BANK_TRANSFER');
+      await expect(service.confirmManual(REFUND_ID)).rejects.toThrow('MANUAL PENDING');
     });
 
     it('confirmManual: 카드 결제분이라도 MANUAL 행이면 받는다 (#1016 36번 PR 1)', async () => {
@@ -704,7 +705,7 @@ describe('RefundsService', () => {
     it('confirmManual: BANK_TRANSFER는 SUCCEEDED + REFUND_SUCCEEDED outbox 발행', async () => {
       const { service, chargesService, paymentMethodsService, stateTransitionService } = makeContext({
         method: makeMethod('BANK_TRANSFER'),
-        pendingRefund: makeInsertedRefund(),
+        pendingRefund: makeInsertedRefund({ execution: 'MANUAL' }),
       });
       chargesService.findById = jest.fn().mockResolvedValue(makeCharge());
       paymentMethodsService.findById = jest.fn().mockResolvedValue(makeMethod('BANK_TRANSFER'));
@@ -815,7 +816,7 @@ describe('RefundsService', () => {
         const { service, chargesService, paymentMethodsService, stateTransitionService } = makeContext({
           charge: makeCharge({ amount: 5000 }),
           method: makeMethod('BANK_TRANSFER'),
-          pendingRefund: makeInsertedRefund({ amount: 5000 }),
+          pendingRefund: makeInsertedRefund({ amount: 5000, execution: 'MANUAL' }),
           succeededRefundedAmount: 5000, // 환불 후 SUCCEEDED 합계 = charge.amount
         });
         chargesService.findById = jest.fn().mockResolvedValue(makeCharge({ amount: 5000 }));
@@ -836,7 +837,7 @@ describe('RefundsService', () => {
         const { service, chargesService, paymentMethodsService, stateTransitionService } = makeContext({
           charge: makeCharge({ amount: 10000 }),
           method: makeMethod('BANK_TRANSFER'),
-          pendingRefund: makeInsertedRefund({ amount: 5000 }),
+          pendingRefund: makeInsertedRefund({ amount: 5000, execution: 'MANUAL' }),
           succeededRefundedAmount: 5000, // 5000 < 10000
         });
         chargesService.findById = jest.fn().mockResolvedValue(makeCharge({ amount: 10000 }));

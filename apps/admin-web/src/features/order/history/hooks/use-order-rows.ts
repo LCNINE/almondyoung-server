@@ -292,9 +292,7 @@ export function useSalesOrderRows(query: SalesOrdersQuery & { _t?: number }) {
               };
 
         const walletIntentId: string | null | undefined =
-          idx === 0
-            ? (detail?.walletIntentId ?? listItem.walletIntentId ?? null)
-            : undefined;
+          detail?.walletIntentId ?? listItem.walletIntentId ?? null;
 
         const row: OrderLineRow = {
           rowId: `${listItem.id}-${line.id ?? idx}`,
@@ -398,6 +396,8 @@ export function useSalesOrderRows(query: SalesOrdersQuery & { _t?: number }) {
           isMatched: false,
           isDirect: false,
           shipmentPhase: toShipmentPhase(detail?.shipmentPhase ?? listItem.shipmentPhase),
+          walletIntentId:
+            detail?.walletIntentId ?? listItem.walletIntentId ?? null,
           lines: [], // 빈 배열
         });
       }

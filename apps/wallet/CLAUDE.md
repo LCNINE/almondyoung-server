@@ -83,7 +83,9 @@
   - **모르는 코드·없는 값은 `true`(일시).** 영구로 잘못 두면 아무도 다시 안 부른다
 - **수동 실행(`execution = MANUAL`)**: `POST /v1/payment-intents/:id/refund` 에 `execution: 'MANUAL'`. 계획(남은 금액 비례·외부 먼저·포인트 마지막)은 자동과 같고,
   외부 결제 몫만 PG 를 부르지 않고 `PENDING` 행으로 남는다. 포인트 몫은 자동. 운영자가 송금한 뒤 `confirmManual` 로 닫는다
-- `confirmManual` 이 받는 행은 `isManuallyConfirmable` 한 곳이 정한다(무통장 PENDING 또는 MANUAL PENDING). 관리자 상세의 `manualConfirmable` 도 같은 함수다
+- `confirmManual` 이 받는 행은 `isManuallyConfirmable` 한 곳이 정한다(MANUAL PENDING 만). 관리자 상세의 `manualConfirmable` 도 같은 함수다
+  - 무통장 AUTO PENDING 을 받지 않는 이유: 계좌로 환불(`executeBankRefund`)이 MANUAL 행을 AUTO 로 선점한 채 토스를 부르는 동안 사람이 닫으면 이중 송금이 된다
+  - 계좌로 환불은 MANUAL PENDING 무통장 행을 결제 행 잠금 안에서 AUTO 로 바꾼 뒤 같은 행·같은 키로 보낸다. 결제 키가 없는 구건은 provider 가 다시 수동 폴백(MANUAL)으로 돌린다
 - **돈이 나갔는지 모르는 환불은 새 행을 만들지 않는다.** 멱등 키가 행 id(`wallet:refund:<id>`)라 새 행 = 새 키 = 토스가 같은 돈을 또 보낸다
 - **응답 끊긴 환불(`FAILED`·`PROVIDER_EXCEPTION`·AUTO, 14일 안)**: `createByIntent` 가 돈이 움직이기 «전에» 의도 전체에서 먼저 확인한다(`settleAmbiguousBeforePlan`)
   - 빠른 길: 그런 행이 정확히 하나이고 계획이 그 결제 한 다리·같은 금액이면 `create()` 가 그 행을 같은 키로 다시 보낸다
