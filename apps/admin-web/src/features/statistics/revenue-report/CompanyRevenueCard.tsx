@@ -63,9 +63,15 @@ export function CompanyRevenueCard() {
   const imported = companyRevenueRows(
     report.data.external,
     summary.today,
-    summary.channels.some((channel) => channel !== OWN_MALL_CHANNEL)
+    summary.channels.some((channel) => channel !== OWN_MALL_CHANNEL),
+    summary.coverageStart
   );
-  const total = base ? base.pacing.actualToDate + imported.amount : null;
+  const dailyAmount =
+    base?.rows.reduce((sum, row) => sum + row.목표반영액, 0) ?? null;
+  const total =
+    dailyAmount !== null && !refundsQuery.isError
+      ? dailyAmount + imported.amount
+      : null;
   const target = summary.goal?.annualTarget ?? 0;
   const ratio = total !== null && target > 0 ? total / target : null;
 
@@ -83,7 +89,13 @@ export function CompanyRevenueCard() {
           ['항목', '값'],
           ['연도', summary.year],
           ['조회일', summary.today],
-          ['잠정 통합 매출', total],
+          ['자료 기준 매출 · 잠정', total],
+          ['일별 집계 반영액', dailyAmount],
+          [
+            '합산 제외 · 근거 미확인 수기 누적액',
+            base?.preCoverageActual ?? null,
+          ],
+          ['일별 집계 시작일', summary.coverageStart],
           ['기존 목표 실적', base?.pacing.actualToDate ?? null],
           ['기존 실적 기준일', base?.pacing.asOf ?? null],
           ['업로드 채널 매출', imported.amount],
@@ -92,7 +104,7 @@ export function CompanyRevenueCard() {
           ['잠정 목표 달성률', ratio],
           [
             '주의',
-            '서로 다른 매출 기준과 조회시점의 잠정 합계. 확정 신고 매출이 아니며 수기 누적·이관·채널 간 중복은 추가 확인 필요.',
+            '수기 누적액은 합산 제외. 일별 집계와 반영 가능한 업로드의 잠정 소계이며 회사 전체 확정 매출이 아님. 전환기·전화 주문 누락 및 서로 다른 매출·환불 기준은 추가 대조 필요.',
           ],
           [
             '예측',
@@ -138,7 +150,7 @@ export function CompanyRevenueCard() {
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="font-semibold">
-          {summary.year}년 통합 매출 목표 · 잠정
+          {summary.year}년 자료 기준 매출 · 잠정
         </h2>
         <div className="flex gap-3 text-sm text-orange-800">
           <button type="button" onClick={download} disabled={exporting}>
@@ -149,9 +161,13 @@ export function CompanyRevenueCard() {
       </div>
       <div className="grid gap-3 sm:grid-cols-3">
         <div>
-          <p className="text-xs text-gray-600">통합 매출</p>
+          <p className="text-xs text-gray-600">자료 기준 소계</p>
           <p className="text-xl font-bold">
-            {total === null ? '목표 설정 필요' : formatKrw(total)}
+            {total === null
+              ? refundsQuery.isError
+                ? '환불 확인 필요'
+                : '목표 설정 필요'
+              : formatKrw(total)}
           </p>
         </div>
         <div>
@@ -167,16 +183,25 @@ export function CompanyRevenueCard() {
         </div>
       </div>
       <p className="text-xs leading-relaxed text-gray-600">
-        기존 목표 실적 {base ? formatKrw(base.pacing.actualToDate) : '미설정'} (
-        {base?.pacing.asOf ?? '기준일 없음'}까지) + 네이버·쿠팡 등록 자료{' '}
-        {imported.includedCount}건. 진행 중인 달{' '}
-        {formatKrw(imported.currentMonthAmount)} 포함이며 채널별 기준·조회일은
-        원본을 따릅니다. 선택한 기간 필터와 무관한 올해 누적입니다. 수기
-        누적·채널 간 중복과 정산은 미확인으로, 확정 매출이 아닙니다. 은행 입금은
-        매출에 더하지 않습니다.
+        일별 집계 {dailyAmount === null ? '미설정' : formatKrw(dailyAmount)} (
+        {base?.pacing.asOf ?? '기준일 없음'}까지) + 업로드 자료{' '}
+        {imported.includedCount}건입니다. 수기 누적액{' '}
+        {formatKrw(base?.preCoverageActual ?? 0)}은 근거 미확인으로 합산에서
+        제외했습니다. 기존 목표 실적{' '}
+        {base ? formatKrw(base.pacing.actualToDate) : '미설정'}은 아래 기존
+        추세에 보존합니다. 카페24는 일별 집계 시작일(
+        {summary.coverageStart ?? '미확인'}) 이전 월부터 반영합니다. 전환기·전화
+        주문 대조가 남아 있어 회사 전체 확정 매출은 아닙니다.
         {refundsQuery.isError
-          ? ' 결제 환불 조회에 실패하여 기존 실적에서 추가 차감하지 못했습니다.'
+          ? ' 결제 환불 조회에 실패하여 소계와 달성률을 표시하지 않습니다.'
           : ''}
+      </p>
+      <p className="text-xs leading-relaxed text-gray-600">
+        선택 기간과 무관한 올해 누적이며, 진행 중인 달{' '}
+        {formatKrw(imported.currentMonthAmount)} 포함입니다. 채널별 매출
+        기준·조회일이 다르고, 기존 일별 집계의 취소·결제 환불 중복 차감 여부도
+        대조가 필요합니다. 셀메이트에 입력한 자사몰 주문과 은행 입금은 별도
+        매출로 더하지 않습니다.
       </p>
       <details className="text-sm">
         <summary className="cursor-pointer">
@@ -184,8 +209,9 @@ export function CompanyRevenueCard() {
         </summary>
         <p className="my-2 text-xs text-gray-600">
           월 합계만 있는 자료는 아래 일별·상품·고객·이익 지표에 배분하지
-          않습니다. 카페24·전화 주문은 기존 누적액과 중복 확인 후 반영해야
-          합니다.
+          않습니다. 카페24 전환기와 전화 주문은 자사몰·다른 채널과 중복 대조 후
+          반영합니다. 제외한 수기액과 카페24 금액의 차이는 미확인 차이이며 누락
+          매출로 간주하지 않습니다.
         </p>
         <div className="max-h-72 overflow-auto">
           <table className="w-full text-xs">
