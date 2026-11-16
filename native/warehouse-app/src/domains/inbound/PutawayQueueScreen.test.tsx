@@ -938,3 +938,17 @@ it('distinguishes all-period candidates by their Seoul date and time', async () 
   expect(await screen.findByText(/2026.07.26 00:14/)).toBeInTheDocument();
   expect(screen.getByText(/2026.07.27 00:14/)).toBeInTheDocument();
 });
+
+it('opens the putaway sheet for an inbound_shipment line', async () => {
+  renderScreen(SELECTED, {
+    queue: {
+      ...QUEUE,
+      items: [{ ...QUEUE.items[0], source: 'inbound_shipment' }],
+    },
+  });
+  const row = await screen.findByRole('button', { name: /무선마우스 블랙/ });
+  await userEvent.click(row);
+  expect(
+    await screen.findByRole('dialog', { name: '적치' })
+  ).toBeInTheDocument();
+});

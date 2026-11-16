@@ -3,6 +3,7 @@ import { useReceiptReconciliation } from './useReceiptReconciliation';
 import { useWorkCapabilities } from '../../core/operations/useWorkCapabilities';
 import { useWorkRuntime } from '../../core/operations/OperationContext';
 import { useEffect, useRef, useState } from 'react';
+import { isStationDevice } from '../../app/station';
 import { useWarehouse } from '../../app/warehouse-context';
 import { WorkArea } from '../../core/operations/WorkBoundary';
 import { useUnsavedWork } from '../../core/operations/useUnsavedWork';
@@ -264,7 +265,9 @@ function HistoryContent({
                         <p>
                           {line.source === 'purchase_order'
                             ? '발주입고'
-                            : '직접입고'}{' '}
+                            : line.source === 'inbound_shipment'
+                              ? '선적입고'
+                              : '직접입고'}{' '}
                           · 원위치 {line.originLocationCode ?? '확인 필요'}
                         </p>
                         <p>
@@ -272,7 +275,21 @@ function HistoryContent({
                           {line.putawayFromOriginQty}개 · 취소{' '}
                           {line.canceledQty}개 · 회송 {line.returnedQty}개
                         </p>
-                        {line.canCancel && current ? (
+                        {line.source === 'inbound_shipment' ? (
+                          <>
+                            {line.inboundShipmentBox && (
+                              <p>
+                                {line.inboundShipmentBox.shipmentName} · 상자{' '}
+                                {line.inboundShipmentBox.boxLabel}
+                              </p>
+                            )}
+                            {!isStationDevice() && (
+                              <p className="text-sm text-gray-600">
+                                스테이션에서 취소해요
+                              </p>
+                            )}
+                          </>
+                        ) : line.canCancel && current ? (
                           <Button
                             aria-label={`${line.skuName} 입고 취소`}
                             disabled={busy || !!selection || !supported}
