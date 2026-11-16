@@ -319,7 +319,9 @@ export function BoxWork({
           const body = workRef.current?.sentBody;
           if (body) void transmitRef.current(body, sentKey);
         }
-      });
+      })
+      // 작업 기록을 못 읽으면 그대로 둔다 — 다음 알림이나 F10 이 다시 본다
+      .catch(() => {});
     });
     // 보낸 키가 바뀔 때만 다시 구독한다(처리기는 ref 로 최신을 본다)
     // eslint-disable-next-line react-hooks/exhaustive-deps

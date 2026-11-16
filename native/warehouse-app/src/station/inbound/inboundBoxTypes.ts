@@ -37,3 +37,9 @@ export function arrivalDay(expectedArrival: string | null): string | null {
   const match = expectedArrival ? /^\d{4}-(\d{2})-(\d{2})/.exec(expectedArrival) : null;
   return match ? `${match[1]}-${match[2]}` : null;
 }
+
+/** 목록 한 줄의 « · 11-20 도착» — 날짜가 없으면 '' */
+export const arrivalText = (expectedArrival: string | null): string => {
+  const day = arrivalDay(expectedArrival);
+  return day ? ` · ${day} 도착` : '';
+};

@@ -2,7 +2,7 @@ import 'fake-indexeddb/auto';
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { ApiError, type ApiClient } from '../../core/data/httpClient';
-import type { BoxCandidate, BoxView, ShipmentSummary } from '../../domains/inbound-shipment/types';
+import type { AddBoxResult, BoxCandidate, BoxView, ShipmentSummary } from '../../domains/inbound-shipment/types';
 import { createTestRuntime } from '../outbound/__fixtures__/outboundServer';
 import { press, renderStation, stationPrefs, typeHuman } from '../outbound/__fixtures__/renderStation';
 import { InboundBoxesScreen } from './InboundBoxesScreen';
@@ -59,17 +59,36 @@ interface Fake {
   found?: BoxCandidate[] | ApiError;
   boxes?: Record<string, BoxView>;
   shipments?: ShipmentSummary[];
+  /** 리스트에 없는 상자 더하기 응답 — 없으면 b-new. Error 면 던진다 */
+  add?: () => AddBoxResult | Error;
+}
+
+interface Post {
+  path: string;
+  body: Record<string, unknown>;
+  key: string | undefined;
 }
 
 function setup(fake: Fake = {}, opts: { operate?: boolean; initial?: { shipmentId: string; boxId: string } } = {}) {
   const calls: string[] = [];
+  const posts: Post[] = [];
   const request = (async (o: Req) => {
     calls.push(o.path);
     if (o.path.startsWith('/inventory/inbound-shipment-boxes?')) {
       if (fake.found instanceof ApiError) throw fake.found;
       return fake.found ?? [];
     }
-    if (o.path.startsWith('/inventory/inbound-shipments?')) return fake.shipments ?? [summary()];
+    if (o.path.startsWith('/inventory/inbound-shipments?')) {
+      const statuses = (new URL(`http://x${o.path}`).searchParams.get('status') ?? '').split(',');
+      return (fake.shipments ?? [summary()]).filter((s) => statuses.includes(s.status));
+    }
+    const add = /^\/inventory\/inbound-shipments\/([^/]+)\/boxes$/.exec(o.path);
+    if (add && o.method === 'POST') {
+      posts.push({ path: o.path, body: o.body as Record<string, unknown>, key: o.idempotencyKey });
+      const outcome = fake.add?.() ?? { boxId: 'b-new', label: 'ZZ9', shipmentStatus: 'receiving' };
+      if (outcome instanceof Error) throw outcome;
+      return outcome;
+    }
     const open = /^\/inventory\/inbound-shipments\/([^/]+)\/boxes\/([^/]+)$/.exec(o.path);
     if (open) {
       const box = fake.boxes?.[open[2]];
@@ -84,7 +103,7 @@ function setup(fake: Fake = {}, opts: { operate?: boolean; initial?: { shipmentI
     prefs: stationPrefs(),
     path: '/inbound',
   });
-  return { calls, ...rendered };
+  return { calls, posts, ...rendered };
 }
 
 const bar = () => within(screen.getByRole('toolbar', { name: '기능키' }));
@@ -162,7 +181,7 @@ describe('고르기', () => {
   it('후보마다 선적 이름·도착일·미리보기를 보이고, Enter 만으로는 열리지 않는다', async () => {
     setup({ found: two, boxes });
     await search('L7');
-    expect(await screen.findByText(/L7 이 두 선적에 있어요/)).toBeInTheDocument();
+    expect(await screen.findByText(/L7 이 선적 2곳에 있어요/)).toBeInTheDocument();
     expect(screen.getByText('11월 2차 배편 · 11-20 도착')).toBeInTheDocument();
     expect(screen.getByText('11월 1차 배편 · 11-12 도착')).toBeInTheDocument();
     expect(screen.getByText('수강가방 미디엄, 헤어끈')).toBeInTheDocument();
@@ -175,7 +194,7 @@ describe('고르기', () => {
   it('2 를 누르면 둘째가 열린다', async () => {
     setup({ found: two, boxes });
     await search('L7');
-    await screen.findByText(/L7 이 두 선적에 있어요/);
+    await screen.findByText(/L7 이 선적 2곳에 있어요/);
     await typeHuman(['2']);
     expect(await screen.findByText('11월 1차 배편 · 상자 L7 · 11-12 도착')).toBeInTheDocument();
   });
@@ -183,7 +202,7 @@ describe('고르기', () => {
   it('↓ + Enter 로도 고른다, Esc 는 대기로', async () => {
     setup({ found: two, boxes });
     await search('L7');
-    await screen.findByText(/L7 이 두 선적에 있어요/);
+    await screen.findByText(/L7 이 선적 2곳에 있어요/);
     press('ArrowDown');
     press('Enter');
     expect(await screen.findByText('11월 2차 배편 · 상자 L7 · 11-20 도착')).toBeInTheDocument();
@@ -192,10 +211,10 @@ describe('고르기', () => {
   it('Esc 는 대기로 돌아간다', async () => {
     setup({ found: two, boxes });
     await search('L7');
-    await screen.findByText(/L7 이 두 선적에 있어요/);
+    await screen.findByText(/L7 이 선적 2곳에 있어요/);
     press('Escape');
     expect(await screen.findByText('열린 선적')).toBeInTheDocument();
-    expect(screen.queryByText(/L7 이 두 선적에 있어요/)).toBeNull();
+    expect(screen.queryByText(/L7 이 선적 2곳에 있어요/)).toBeNull();
   });
 });
 
@@ -238,6 +257,113 @@ describe('열린 상자', () => {
     const { calls } = setup({ boxes: { 'b-1': view() } }, { initial: { shipmentId: 's-1', boxId: 'b-1' } });
     expect(await screen.findByText('11월 2차 배편 · 상자 L7 · 11-20 도착')).toBeInTheDocument();
     expect(calls.some((p) => p.includes('inbound-shipment-boxes?'))).toBe(false);
+  });
+
+  it('입고내역 링크의 상자가 없으면(404) 대기로 — 안내가 보인다', async () => {
+    setup({ boxes: {} }, { initial: { shipmentId: 's-1', boxId: 'b-gone' } });
+    expect(await screen.findByRole('alert')).toHaveTextContent('찾을 수 없어요');
+    expect(screen.getByText('상자 이름을 입력하거나 스캔하세요')).toBeInTheDocument();
+  });
+});
+
+describe('고르기 문구', () => {
+  it('선적 수에 맞게 — 세 곳이면 «선적 3곳»', async () => {
+    const three = ['s-1', 's-2', 's-3'].map((id, i) => candidate({ shipmentId: id, boxId: `b-${i}`, shipmentName: `11월 ${i + 1}차 배편` }));
+    setup({ found: three });
+    await search('L7');
+    expect(await screen.findByText('L7 이 선적 3곳에 있어요. 고르세요.')).toBeInTheDocument();
+  });
+});
+
+describe('리스트에 없는 상자로 받기', () => {
+  const added = view({ shipmentId: 's-1', boxId: 'b-new', label: 'ZZ9', origin: 'added', lines: [] });
+  const shipments = [
+    summary({ id: 's-1', status: 'closed', closedAt: new Date(Date.now() - 86_400_000).toISOString() }),
+    summary({ id: 's-9', name: '10월 3차 배편', status: 'closed', closedAt: new Date().toISOString(), closedManually: true }),
+  ];
+
+  async function startAdd(fake: Fake) {
+    const rendered = setup({ found: [], shipments, boxes: { 'b-new': added }, ...fake });
+    await search('ZZ9');
+    await screen.findByText('이 이름의 상자가 열린 선적에 없어요');
+    await waitFor(() => expect(bar().getByText('리스트에 없는 상자로 받기')).toBeInTheDocument());
+    press('F12');
+    await screen.findByRole('listbox', { name: '선적 고르기' });
+    return rendered;
+  }
+
+  it('F12 → 선적이 하나여도 고르기(«끝남» 표시, 사람이 닫은 선적은 없음, 기본 선택 없음) → 고르면 그 선적에 더하고 받은 상자를 연다', async () => {
+    const { posts } = await startAdd({});
+    expect(screen.getByText(/ZZ9 — 리스트에 없는 상자를 더할 선적을 고르세요/)).toBeInTheDocument();
+    const options = screen.getAllByRole('option');
+    expect(options).toHaveLength(1);
+    expect(within(options[0]).getByText('끝남')).toBeInTheDocument();
+    expect(screen.queryByText(/10월 3차 배편/)).toBeNull();
+    // 기본 선택 없음 — Enter 만으로는 더하지 않는다
+    press('Enter');
+    await new Promise((r) => setTimeout(r, 50));
+    expect(posts).toHaveLength(0);
+    await typeHuman(['1']);
+    const work = await screen.findByRole('region', { name: '상자 작업' });
+    expect(posts).toHaveLength(1);
+    expect(posts[0].path).toBe('/inventory/inbound-shipments/s-1/boxes');
+    expect(posts[0].body).toMatchObject({ label: 'ZZ9', contractVersion: 2, idempotencyKey: posts[0].key });
+    expect(screen.getByText('11월 2차 배편 · 상자 ZZ9 · 11-20 도착')).toBeInTheDocument();
+    await within(work).findByRole('table', { name: '상자 줄' });
+    expect(work.querySelectorAll('tbody tr')).toHaveLength(0);
+    // 리스트에 없던 물건 없이 확정하면 막는다
+    await waitFor(() => expect(bar().queryByRole('button', { name: /F10/ })).toBeInTheDocument());
+    press('F10');
+    expect(await screen.findByText('리스트에 없던 물건을 하나 이상 넣어 주세요')).toBeInTheDocument();
+  });
+
+  it('Esc 는 대기로', async () => {
+    const { posts } = await startAdd({});
+    press('Escape');
+    expect(await screen.findByText('상자 이름을 입력하거나 스캔하세요')).toBeInTheDocument();
+    expect(posts).toHaveLength(0);
+  });
+
+  it('결과를 모르면 «결과를 확인하지 못했어요» — 같은 선적·같은 이름으로 다시 F12 하면 같은 키', async () => {
+    let offline = true;
+    const { posts } = await startAdd({ add: () => (offline ? new Error('network down') : { boxId: 'b-new', label: 'ZZ9', shipmentStatus: 'receiving' }) });
+    await typeHuman(['1']);
+    expect(await screen.findByText('결과를 확인하지 못했어요 — F12 다시 보내기')).toBeInTheDocument();
+    const key = posts[0].key;
+    expect(key).toBeTruthy();
+    await waitFor(() => expect(bar().queryByRole('button', { name: /Esc/ })).toBeInTheDocument());
+    press('Escape');
+    await screen.findByText('상자 이름을 입력하거나 스캔하세요');
+
+    offline = false;
+    const before = posts.length;
+    await search('ZZ9');
+    await screen.findByText('이 이름의 상자가 열린 선적에 없어요');
+    await waitFor(() => expect(bar().getByText('리스트에 없는 상자로 받기')).toBeInTheDocument());
+    press('F12');
+    await screen.findByRole('listbox', { name: '선적 고르기' });
+    await typeHuman(['1']);
+    await screen.findByRole('region', { name: '상자 작업' });
+    const again = posts.slice(before);
+    expect(again.length).toBeGreaterThan(0);
+    for (const p of again) expect(p.key).toBe(key);
+  });
+
+  it('거절되면 문구를 띄우고 고르기에 남는다', async () => {
+    const { posts } = await startAdd({ add: () => new ApiError('POST → 409', 409, 'CONFLICT') });
+    await typeHuman(['1']);
+    expect(await screen.findByText('이 선적에는 이 상자를 더할 수 없어요')).toBeInTheDocument();
+    expect(posts).toHaveLength(1);
+    expect(screen.getByRole('listbox', { name: '선적 고르기' })).toBeInTheDocument();
+  });
+
+  it('더할 수 있는 선적이 없으면 안내', async () => {
+    setup({ found: [], shipments: [shipments[1]] });
+    await search('ZZ9');
+    await screen.findByText('이 이름의 상자가 열린 선적에 없어요');
+    await waitFor(() => expect(bar().getByText('리스트에 없는 상자로 받기')).toBeInTheDocument());
+    press('F12');
+    expect(await screen.findByText('상자를 더할 수 있는 선적이 없어요')).toBeInTheDocument();
   });
 });
 

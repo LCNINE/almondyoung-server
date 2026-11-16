@@ -4,18 +4,21 @@ import { useApiClient } from '../../core/data/ApiClientProvider';
 import { errorMessage } from '../../core/data/errorMessage';
 import { cn } from '../../core/design/cn';
 import { useWorkPermissions } from '../../core/operations/useWorkCapabilities';
-import { openBox } from '../../domains/inbound-shipment/api';
+import { listShipments, openBox } from '../../domains/inbound-shipment/api';
 import type { BoxCandidate, BoxView, ReceiveBoxResult } from '../../domains/inbound-shipment/types';
 import { WarehousePicker } from '../../domains/warehouse/WarehousePicker';
 import { useStationActions } from '../ActionRegistry';
 import type { StationAction } from '../actions';
 import { useFeedback } from '../feedback/FeedbackProvider';
 import { BigPanel } from '../outbound/panels';
+import { ChooseShipmentForAdd } from './AddBoxFlow';
 import { BoxHeader } from './BoxHeader';
 import { BoxWork } from './BoxWork';
 import { ChooseBox, WaitingForBox } from './BoxFinder';
+import { DoneBox } from './DoneBox';
 import { INBOUND_BOX_ACTIONS } from './inboundBoxActions';
-import type { InboundBoxesNotice, InboundBoxesView } from './inboundBoxTypes';
+import { addableShipments, type InboundBoxesNotice, type InboundBoxesView } from './inboundBoxTypes';
+import { ReceivedBox } from './ReceivedBox';
 
 /** 입고내역의 선적 입고 줄이 바로 여는 상자 */
 export interface InitialBox {
@@ -90,17 +93,54 @@ function InboundBoxes({ warehouseId, initial }: { warehouseId: string; initial?:
   }, [initial, open]);
 
   const choose = useCallback((label: string, candidates: BoxCandidate[]) => setCurrent({ kind: 'choose', label, candidates }), []);
-  // 리스트에 없는 상자로 받기(F12) — 화면은 Task 12 가 잇는다
-  const addUnlisted = useCallback(() => {}, []);
+  // 리스트에 없는 상자로 받기(F12) — 열린 선적 + 저절로 끝난 지 30일 안의 선적에서 고른다(사람이 닫은 선적은 빠진다)
+  const loadingShipments = useRef(false);
+  const addUnlisted = useCallback(
+    async (label: string) => {
+      if (loadingShipments.current) return;
+      loadingShipments.current = true;
+      try {
+        const shipments = addableShipments(await listShipments(api, warehouseId, ['expected', 'receiving', 'closed']), new Date());
+        if (shipments.length === 0) say({ text: '상자를 더할 수 있는 선적이 없어요', tone: 'error' });
+        else {
+          say(null);
+          setCurrent({ kind: 'chooseShipmentForAdd', label, shipments });
+        }
+      } catch (error) {
+        say({ text: errorMessage(error), tone: 'error' });
+      } finally {
+        loadingShipments.current = false;
+      }
+    },
+    [api, warehouseId, say]
+  );
   const back = useCallback(() => toWaiting(), [toWaiting]);
-  // 확정 — 끝 화면(Task 12)이 오기 전까지는 한 줄 안내와 함께 대기로
+  // 확정 — 끝(대기 위에 방금 상자, 다음 이름을 치기 전까지 F11 확정 취소)
   const done = useCallback(
-    (box: BoxView, result: ReceiveBoxResult) =>
-      toWaiting({
-        text: `${box.label} 확정 — 적치 대기로 갔어요${result.shipmentStatus === 'closed' ? ' · 이 선적의 상자를 다 받았어요' : ''}`,
-        tone: 'info',
-      }),
-    [toWaiting]
+    (box: BoxView, result: ReceiveBoxResult) => {
+      say(null);
+      setCurrent({ kind: 'done', box, result });
+    },
+    [say]
+  );
+  // 다음 상자 이름을 치기 시작하면 끝을 거둔다(확정 취소가 사라진다)
+  const leaveDone = useCallback(() => setCurrent((now) => (now.kind === 'done' ? { kind: 'waiting' } : now)), []);
+  /** 확정 취소가 됐다 — 다시 열린 상자를 작업 화면으로(새로 마운트해 빈칸에서) */
+  const reopenedForWork = useCallback(
+    (next: BoxView) => {
+      say(null);
+      setOpenCount((n) => n + 1);
+      setCurrent(viewOf(next));
+    },
+    [say]
+  );
+  /** 끝에서 취소했는데 상자가 아직 확정돼 있다 — 새로 읽은 확정된 상자로 */
+  const stillReceived = useCallback(
+    (latest: BoxView, text: string) => {
+      setCurrent(viewOf(latest));
+      say({ text, tone: 'error' });
+    },
+    [say]
   );
   /** 상자를 다시 읽어 그 상태대로 연다 — 안내는 읽은 뒤에 띄운다(열기가 안내를 지운다) */
   const reopen = useCallback(
@@ -112,26 +152,45 @@ function InboundBoxes({ warehouseId, initial }: { warehouseId: string; initial?:
     },
     [open, say]
   );
+  /** 더한 상자를 연다 — 못 읽으면 대기로(상자는 이미 있어 이름으로 찾으면 열린다) */
+  const openAdded = useCallback(
+    async (shipmentId: string, boxId: string) => {
+      if (!(await open(shipmentId, boxId))) setCurrent({ kind: 'waiting' });
+    },
+    [open]
+  );
 
-  // 대기·고르기·상자 작업은 자기 층에서 Esc 를 선언한다 — 나머지 상태는 여기서 대기로
-  const elsewhere: StationAction[] =
-    current.kind === 'waiting' || current.kind === 'choose' || current.kind === 'work'
-      ? []
-      : [{ ...INBOUND_BOX_ACTIONS.back, enabled: true, run: back }];
+  // 대기·고르기·상자 작업·확정된 상자·선적 고르기는 자기 층에서 Esc 를 선언한다 — 나머지(전달용·끝)는 여기서 대기로
+  const ownsEsc = ['waiting', 'choose', 'work', 'received', 'chooseShipmentForAdd'];
+  const elsewhere: StationAction[] = ownsEsc.includes(current.kind) ? [] : [{ ...INBOUND_BOX_ACTIONS.back, enabled: true, run: back }];
   useStationActions(elsewhere);
 
   let body;
   switch (current.kind) {
     case 'waiting':
+    case 'done':
+      // 끝은 대기 위에 방금 상자를 얹은 것 — 대기 칸은 같은 자리라 끝을 거둬도 친 이름이 남는다
       body = (
-        <WaitingForBox
-          warehouseId={warehouseId}
-          canAddUnlisted={canAddUnlisted}
-          onOpen={open}
-          onChoose={choose}
-          onAddUnlisted={addUnlisted}
-          say={say}
-        />
+        <div className="flex h-full min-h-0 flex-col gap-3">
+          {current.kind === 'done' ? (
+            <DoneBox
+              key={`${current.box.boxId}:${current.result.countIds.join(',')}`}
+              box={current.box}
+              result={current.result}
+              onCanceled={reopenedForWork}
+              onStillReceived={stillReceived}
+            />
+          ) : null}
+          <WaitingForBox
+            warehouseId={warehouseId}
+            canAddUnlisted={canAddUnlisted}
+            onOpen={open}
+            onChoose={choose}
+            onAddUnlisted={(label) => void addUnlisted(label)}
+            onNextName={leaveDone}
+            say={say}
+          />
+        </div>
       );
       break;
     case 'choose':
@@ -148,7 +207,17 @@ function InboundBoxes({ warehouseId, initial }: { warehouseId: string; initial?:
       );
       break;
     case 'chooseShipmentForAdd':
-      body = null;
+      body = (
+        <ChooseShipmentForAdd
+          label={current.label}
+          shipments={current.shipments}
+          onAdded={(shipmentId, boxId) => void openAdded(shipmentId, boxId)}
+          onBack={back}
+        />
+      );
+      break;
+    case 'received':
+      body = <ReceivedBox key={`${current.box.boxId}:${openCount}`} box={current.box} onCanceled={reopenedForWork} onBack={back} />;
       break;
     case 'work': {
       const box = current.box;
@@ -163,9 +232,6 @@ function InboundBoxes({ warehouseId, initial }: { warehouseId: string; initial?:
       );
       break;
     }
-    default:
-      // received·done — 확정된 상자·끝(Task 12)이 이 자리를 채운다
-      body = <BoxHeader box={current.box} />;
   }
 
   return (

@@ -1,15 +1,29 @@
 import type { BoxDraft, ConfirmBlock, ScanTarget } from '../../domains/inbound-shipment/boxDraft';
-import type { BoxLine } from '../../domains/inbound-shipment/types';
+import type { BoxLine, BoxView } from '../../domains/inbound-shipment/types';
 
 /** 그리드의 한 줄 — 리스트 줄(서버 행 순서) 뒤에 이 상자에서 더한 «리스트에 없던 물건» */
 export type BoxRow = { kind: 'line'; line: BoxLine } | { kind: 'unplanned'; item: BoxDraft['unplanned'][number] };
 
 export const rowKey = (row: BoxRow): string => (row.kind === 'line' ? `line:${row.line.lineId}` : `unplanned:${row.item.skuId}`);
 
-export const rowsOf = (lines: BoxLine[], draft: BoxDraft): BoxRow[] => [
+/** 표가 그리는 것 — 칸 값과 리스트에 없던 물건. 작업 초안이든 확정된 집계든 */
+export type GridValues = Pick<BoxDraft, 'cells' | 'unplanned'>;
+
+export const rowsOf = (lines: BoxLine[], draft: Pick<BoxDraft, 'unplanned'>): BoxRow[] => [
   ...lines.map((line): BoxRow => ({ kind: 'line', line })),
   ...draft.unplanned.map((item): BoxRow => ({ kind: 'unplanned', item })),
 ];
+
+/** 확정된 상자의 집계를 표 값으로 — 줄 집계는 칸(센 것/리스트대로), 줄 없는 집계는 리스트에 없던 물건 */
+export function countsView(box: BoxView): GridValues {
+  const cells: GridValues['cells'] = {};
+  const unplanned: GridValues['unplanned'] = [];
+  for (const c of box.counts) {
+    if (c.lineId) cells[c.lineId] = { qty: c.countedQty, method: c.method };
+    else if (c.skuId) unplanned.push({ skuId: c.skuId, skuCode: c.skuCode ?? '', skuName: c.skuName ?? '', qty: c.countedQty });
+  }
+  return { cells, unplanned };
+}
 
 export const fmt = (n: number): string => n.toLocaleString('ko-KR');
 

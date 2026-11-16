@@ -2,15 +2,15 @@ import { useEffect, useRef } from 'react';
 import { cn } from '../../core/design/cn';
 import { isRangeLine, type BoxDraft } from '../../domains/inbound-shipment/boxDraft';
 import type { BoxLine } from '../../domains/inbound-shipment/types';
-import { coverRange, fmt, rowKey, type BoxRow } from './boxRows';
+import { coverRange, fmt, rowKey, type BoxRow, type GridValues } from './boxRows';
 
 const CARD = 'rounded-[10px] border border-[#D5D8DE] bg-white';
 const TH = 'border-b border-[#D5D8DE] bg-[#F6F7F8] px-4 py-2.5 text-left text-[13px] font-semibold text-[#535968]';
 
 type CellState = 'blank' | 'counted' | 'list';
 
-/** 상자 작업의 오른쪽 표 — 제품명·옵션 | 우리 상품 | 리스트 | 센 수량 */
-export function BoxGrid({ rows, draft, cursor }: { rows: BoxRow[]; draft: BoxDraft; cursor: number }) {
+/** 상자 작업(·확정된 상자)의 오른쪽 표 — 제품명·옵션 | 우리 상품 | 리스트 | 센 수량. cursor -1 이면 고른 줄 없음 */
+export function BoxGrid({ rows, draft, cursor }: { rows: BoxRow[]; draft: GridValues; cursor: number }) {
   return (
     <div className={cn(CARD, 'min-h-0 flex-1 overflow-auto')}>
       <table aria-label="상자 줄" className="w-full border-collapse">
@@ -32,7 +32,7 @@ export function BoxGrid({ rows, draft, cursor }: { rows: BoxRow[]; draft: BoxDra
   );
 }
 
-function GridRow({ row, draft, selected }: { row: BoxRow; draft: BoxDraft; selected: boolean }) {
+function GridRow({ row, draft, selected }: { row: BoxRow; draft: GridValues; selected: boolean }) {
   const ref = useRef<HTMLTableRowElement>(null);
   // ↑↓·스캔으로 고른 줄이 화면 밖이면 따라간다(jsdom 엔 scrollIntoView 가 없다)
   useEffect(() => {

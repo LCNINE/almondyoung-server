@@ -1,17 +1,17 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useApiClient } from '../../core/data/ApiClientProvider';
 import { errorMessage } from '../../core/data/errorMessage';
 import { ApiError } from '../../core/data/httpClient';
-import { cn } from '../../core/design/cn';
 import { isCommandCode } from '../../core/hardware/scan/commandPrefix';
 import { useHumanKeys, useScanEmit, useScanner } from '../../core/hardware/scan/useScanner';
 import { findBoxes, listShipments } from '../../domains/inbound-shipment/api';
 import type { BoxCandidate } from '../../domains/inbound-shipment/types';
-import { useDigitCommands, useStationActions } from '../ActionRegistry';
+import { useStationActions } from '../ActionRegistry';
 import type { StationAction } from '../actions';
 import { INBOUND_BOX_ACTIONS } from './inboundBoxActions';
-import { arrivalDay, type InboundBoxesNotice } from './inboundBoxTypes';
+import { arrivalText, type InboundBoxesNotice } from './inboundBoxTypes';
+import { PickList } from './PickList';
 
 /** 서버가 현장 문구로 보낸 400 사유(범위 표기 등)는 그대로, 나머지는 공용 문구 */
 function findError(error: unknown): string {
@@ -19,11 +19,6 @@ function findError(error: unknown): string {
     ? error.serverMessage
     : errorMessage(error);
 }
-
-const arrivalText = (expectedArrival: string | null) => {
-  const day = arrivalDay(expectedArrival);
-  return day ? ` · ${day} 도착` : '';
-};
 
 /**
  * 대기 — 상자 이름을 치거나 찍어 찾는다(스펙 §5.2). 정규화는 서버 몫이라 친 그대로 보낸다.
@@ -35,6 +30,7 @@ export function WaitingForBox({
   onOpen,
   onChoose,
   onAddUnlisted,
+  onNextName,
   say,
 }: {
   warehouseId: string;
@@ -42,6 +38,8 @@ export function WaitingForBox({
   onOpen(shipmentId: string, boxId: string): void;
   onChoose(label: string, candidates: BoxCandidate[]): void;
   onAddUnlisted(label: string): void;
+  /** 다음 상자 이름을 치기(찍기) 시작했다 — «끝» 의 확정 취소를 거둔다 */
+  onNextName?(): void;
   say(notice: InboundBoxesNotice | null): void;
 }) {
   const api = useApiClient();
@@ -78,9 +76,12 @@ export function WaitingForBox({
 
   const findRef = useRef(find);
   findRef.current = find;
+  const nextNameRef = useRef(onNextName);
+  nextNameRef.current = onNextName;
   useScanner(
     useCallback((event: { code: string }) => {
       setDraft(null);
+      nextNameRef.current?.();
       void findRef.current(event.code);
     }, [])
   );
@@ -93,6 +94,7 @@ export function WaitingForBox({
             say(null);
             setMissing(null);
             setDraft(key);
+            onNextName?.();
           }
         }
       : null
@@ -179,55 +181,24 @@ export function ChooseBox({
   onOpen(shipmentId: string, boxId: string): void;
   onBack(): void;
 }) {
-  const [cursor, setCursor] = useState(-1);
-  const pick = useCallback(
-    (index: number) => {
-      const chosen = candidates[index];
-      if (chosen) onOpen(chosen.shipmentId, chosen.boxId);
-    },
-    [candidates, onOpen]
-  );
-  const pickRef = useRef(pick);
-  pickRef.current = pick;
-
-  useHumanKeys((key: string) => {
-    if (/^[1-9]$/.test(key)) pick(Number(key) - 1);
-    else if (key === 'ArrowDown') setCursor(Math.min(cursor + 1, candidates.length - 1));
-    else if (key === 'ArrowUp') setCursor(Math.max(cursor - 1, 0));
-    else if (key === 'Enter' && cursor >= 0) pick(cursor);
-  });
-  useDigitCommands(useCallback((digit: number) => pickRef.current(digit - 1), []));
-  useEffect(() => setCursor(-1), [candidates]);
+  const pick = useCallback((c: BoxCandidate) => onOpen(c.shipmentId, c.boxId), [onOpen]);
   useStationActions([{ ...INBOUND_BOX_ACTIONS.back, enabled: true, run: onBack }]);
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-3 rounded-[10px] border border-[#D5D8DE] bg-white p-6">
-      <p className="text-xl font-semibold">{`${label} 이 두 선적에 있어요. 고르세요.`}</p>
-      <ul role="listbox" aria-label="선적 고르기" className="min-h-0 flex-1 overflow-auto">
-        {candidates.map((c, index) => (
-          <li key={`${c.shipmentId}:${c.boxId}`} role="option" aria-selected={index === cursor}>
-            <button
-              type="button"
-              tabIndex={-1}
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => {
-                setCursor(index);
-                pick(index);
-              }}
-              className={cn(
-                'grid w-full grid-cols-[48px_minmax(0,1fr)] items-center gap-3 border-b border-[#E4E6EA] px-4 py-3 text-left',
-                index === cursor && 'bg-[#E3ECFC]'
-              )}
-            >
-              <span className="font-mono text-2xl font-semibold">{index + 1}</span>
-              <span className="flex flex-col">
-                <span className="text-lg font-semibold">{`${c.shipmentName}${arrivalText(c.expectedArrival)}`}</span>
-                <span className="text-base text-[#535968]">{c.previewItems.join(', ')}</span>
-              </span>
-            </button>
-          </li>
-        ))}
-      </ul>
+      <p className="text-xl font-semibold">{`${label} 이 선적 ${candidates.length}곳에 있어요. 고르세요.`}</p>
+      <PickList
+        label="선적 고르기"
+        items={candidates}
+        itemKey={(c) => `${c.shipmentId}:${c.boxId}`}
+        onPick={pick}
+        render={(c) => (
+          <>
+            <span className="text-lg font-semibold">{`${c.shipmentName}${arrivalText(c.expectedArrival)}`}</span>
+            <span className="text-base text-[#535968]">{c.previewItems.join(', ')}</span>
+          </>
+        )}
+      />
     </div>
   );
 }
