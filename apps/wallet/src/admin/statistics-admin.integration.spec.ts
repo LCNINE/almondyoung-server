@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto';
 import * as postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
-import { inArray } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import type { DbService } from '@app/db';
 import {
@@ -78,12 +78,33 @@ describeIfDb('StatisticsAdminService (실 Postgres)', () => {
       })),
     );
     await db.insert(paymentIntents).values([
-      { id: extraIntentIds[0], payableAmount: 9_900, currency: 'KRW', status: 'SUCCEEDED' as const, purpose: 'SUBSCRIPTION' as const,
-        clientSecret: `itest-${extraIntentIds[0].slice(0, 20)}`, expiresAt, metadata: { medusaSessionId: 'itest-sub' } },
-      { id: extraIntentIds[1], payableAmount: 9_900, currency: 'KRW', status: 'SUCCEEDED' as const,
-        clientSecret: `itest-${extraIntentIds[1].slice(0, 20)}`, expiresAt },
-      { id: extraIntentIds[2], payableAmount: 50_000, currency: 'KRW', status: 'SUCCEEDED' as const,
-        clientSecret: `itest-${extraIntentIds[2].slice(0, 20)}`, expiresAt, metadata: { medusaSessionId: 'itest-session-2' } },
+      {
+        id: extraIntentIds[0],
+        payableAmount: 9_900,
+        currency: 'KRW',
+        status: 'SUCCEEDED' as const,
+        purpose: 'SUBSCRIPTION' as const,
+        clientSecret: `itest-${extraIntentIds[0].slice(0, 20)}`,
+        expiresAt,
+        metadata: { medusaSessionId: 'itest-sub' },
+      },
+      {
+        id: extraIntentIds[1],
+        payableAmount: 9_900,
+        currency: 'KRW',
+        status: 'SUCCEEDED' as const,
+        clientSecret: `itest-${extraIntentIds[1].slice(0, 20)}`,
+        expiresAt,
+      },
+      {
+        id: extraIntentIds[2],
+        payableAmount: 50_000,
+        currency: 'KRW',
+        status: 'SUCCEEDED' as const,
+        clientSecret: `itest-${extraIntentIds[2].slice(0, 20)}`,
+        expiresAt,
+        metadata: { medusaSessionId: 'itest-session-2' },
+      },
     ]);
 
     await db.insert(charges).values([
@@ -181,18 +202,53 @@ describeIfDb('StatisticsAdminService (실 Postgres)', () => {
       },
       // 아래는 상품 주문 환불 판별용 — 3월 수수료 스펙과 겹치지 않게 4월에 둔다.
       // 정기결제 환불 — 제외
-      { id: refundIds[2], chargeId: chargeIds[0], intentId: extraIntentIds[0], amount: 9_900, currency: 'KRW', status: 'SUCCEEDED',
-        createdAt: new Date('2031-04-22T12:00:00+09:00') },
+      {
+        id: refundIds[2],
+        chargeId: chargeIds[0],
+        intentId: extraIntentIds[0],
+        amount: 9_900,
+        currency: 'KRW',
+        status: 'SUCCEEDED',
+        createdAt: new Date('2031-04-22T12:00:00+09:00'),
+      },
       // Medusa 표식 없는 PURCHASE 환불 — 제외
-      { id: refundIds[3], chargeId: chargeIds[0], intentId: extraIntentIds[1], amount: 7_000, currency: 'KRW', status: 'SUCCEEDED',
-        createdAt: new Date('2031-04-22T12:00:00+09:00') },
+      {
+        id: refundIds[3],
+        chargeId: chargeIds[0],
+        intentId: extraIntentIds[1],
+        amount: 7_000,
+        currency: 'KRW',
+        status: 'SUCCEEDED',
+        createdAt: new Date('2031-04-22T12:00:00+09:00'),
+      },
       // Medusa 상품 환불 — KST 4/1 00:10(UTC 로는 3/31)·4/30 23:50 은 4월, 5/1 00:10 은 기간 밖
-      { id: refundIds[4], chargeId: chargeIds[0], intentId: extraIntentIds[2], amount: 3_000, currency: 'KRW', status: 'SUCCEEDED',
-        createdAt: new Date('2031-04-01T00:10:00+09:00') },
-      { id: refundIds[5], chargeId: chargeIds[0], intentId: extraIntentIds[2], amount: 5_000, currency: 'KRW', status: 'SUCCEEDED',
-        createdAt: new Date('2031-04-30T23:50:00+09:00') },
-      { id: refundIds[6], chargeId: chargeIds[0], intentId: extraIntentIds[2], amount: 4_000, currency: 'KRW', status: 'SUCCEEDED',
-        createdAt: new Date('2031-05-01T00:10:00+09:00') },
+      {
+        id: refundIds[4],
+        chargeId: chargeIds[0],
+        intentId: extraIntentIds[2],
+        amount: 3_000,
+        currency: 'KRW',
+        status: 'SUCCEEDED',
+        createdAt: new Date('2031-04-01T00:10:00+09:00'),
+      },
+      {
+        id: refundIds[5],
+        chargeId: chargeIds[0],
+        intentId: extraIntentIds[2],
+        amount: 5_000,
+        currency: 'KRW',
+        status: 'SUCCEEDED',
+        createdAt: new Date('2031-04-30T23:50:00+09:00'),
+      },
+      {
+        id: refundIds[6],
+        chargeId: chargeIds[0],
+        intentId: extraIntentIds[2],
+        amount: 4_000,
+        currency: 'KRW',
+        status: 'SUCCEEDED',
+        createdAt: new Date('2031-05-01T00:10:00+09:00'),
+      },
     ]);
 
     await db.insert(billingMethods).values([{ id: billingMethodId, userId: 'itest-user', providerType: 'CMS' }]);
@@ -318,11 +374,87 @@ describeIfDb('StatisticsAdminService (실 Postgres)', () => {
     expect(result.totals.refundedAmount).toBe(30_000);
   });
 
-  it('멤버십 수입 — PAID·MEMBERSHIP·기간 내만, 일별 시리즈', async () => {
-    const result = await service.getMembershipRevenue(FROM, TO);
-    expect(result.totalAmount).toBe(19_800);
-    expect(result.invoiceCount).toBe(2);
-    expect(result.series).toEqual([{ bucket: '2031-03-05', amount: 19_800, count: 2 }]);
+  it('환불 완료 후에도 원 결제는 남기고 환불을 별도로 표시한다', async () => {
+    await db.update(charges).set({ status: 'REFUNDED' }).where(eq(charges.id, chargeIds[0]));
+    try {
+      const fees = await service.getFeeSummary(FROM, TO);
+      expect(fees.totals.capturedAmount).toBe(350000);
+      expect(fees.totals.refundedAmount).toBe(30000);
+      const daily = await service.getDailyPayments(FROM, TO);
+      expect(daily.series.find((row) => row.bucket === '2031-03-10')?.capturedAmount).toBe(100000);
+    } finally {
+      await db.update(charges).set({ status: 'SUCCEEDED' }).where(eq(charges.id, chargeIds[0]));
+    }
+  });
+
+  it('멤버십 수입 — 청구서 중복 없이 가입·정기 수금과 성공 환불을 KST 일자로 집계한다', async () => {
+    // 청구서가 PAID 여도 수금 원장 없이 매출을 만들지 않는다.
+    expect((await service.getMembershipRevenue(FROM, TO)).totalAmount).toBe(0);
+    const members = [randomUUID(), randomUUID(), randomUUID()];
+    const payments = Array.from({ length: 5 }, () => randomUUID());
+    const reversals = [randomUUID(), randomUUID()];
+    try {
+      await db.insert(paymentIntents).values(
+        members.map((id, i) => ({
+          id,
+          payableAmount: 9900,
+          currency: 'KRW',
+          status: 'SUCCEEDED' as const,
+          clientSecret: `itest-${id}`,
+          expiresAt: new Date('2031-04-02'),
+          invoiceId: i < 2 ? invoiceIds[i] : null,
+          purpose: i < 2 ? ('SUBSCRIPTION' as const) : ('PURCHASE' as const),
+          metadata: i === 2 ? { type: 'MEMBERSHIP_FEE' } : {},
+        })),
+      );
+      await db.insert(charges).values(
+        payments.map((id, i) => ({
+          id,
+          intentId: members[Math.min(i, 2)],
+          paymentMethodId: methodCardId,
+          amount: 9900,
+          currency: 'KRW',
+          operation: i === 3 ? ('AUTHORIZE' as const) : ('CAPTURE' as const),
+          status: i === 4 ? ('FAILED' as const) : i === 2 ? ('REFUNDED' as const) : ('SUCCEEDED' as const),
+          providerIdempotencyKey: `itest-${id}`,
+          createdAt: new Date('2031-03-31T00:10:00+09:00'),
+        })),
+      );
+      await db.insert(refunds).values(
+        reversals.map((id, i) => ({
+          id,
+          chargeId: payments[2],
+          intentId: members[2],
+          amount: 9900,
+          currency: 'KRW',
+          status: i === 0 ? ('SUCCEEDED' as const) : ('FAILED' as const),
+          createdAt: new Date('2031-04-01T00:10:00+09:00'),
+        })),
+      );
+      const march = await service.getMembershipRevenue(FROM, TO);
+      expect(march).toMatchObject({
+        totalAmount: 29700,
+        capturedAmount: 29700,
+        refundedAmount: 0,
+        paymentCount: 3,
+        invoiceCount: 2,
+        refundCount: 0,
+        series: [{ bucket: '2031-03-31', amount: 29700, count: 3 }],
+      });
+      const april = await service.getMembershipRevenue('2031-04-01', '2031-04-30');
+      expect(april).toMatchObject({
+        totalAmount: -9900,
+        capturedAmount: 0,
+        refundedAmount: 9900,
+        paymentCount: 0,
+        refundCount: 1,
+        series: [{ bucket: '2031-04-01', amount: -9900, count: 0 }],
+      });
+    } finally {
+      await db.delete(refunds).where(inArray(refunds.id, reversals));
+      await db.delete(charges).where(inArray(charges.id, payments));
+      await db.delete(paymentIntents).where(inArray(paymentIntents.id, members));
+    }
   });
 
   it('상품 주문 환불 — Medusa 결제(PURCHASE + medusaSessionId)의 성공 환불만, KST 달력일', async () => {

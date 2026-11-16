@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { and, asc, desc, eq, gte, lt, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, lt, sql } from 'drizzle-orm';
 import { AnyPgColumn } from 'drizzle-orm/pg-core';
 import { DbService } from '@app/db';
 import {
@@ -67,6 +67,10 @@ export interface MembershipRevenueResponse {
   range: { from: string; to: string };
   totalAmount: number;
   invoiceCount: number;
+  paymentCount: number;
+  capturedAmount: number;
+  refundedAmount: number;
+  refundCount: number;
   series: MembershipRevenuePoint[];
 }
 
@@ -277,7 +281,9 @@ export class StatisticsAdminService {
       .where(and(eq(paymentFeeRates.methodType, input.methodType), eq(paymentFeeRates.effectiveFrom, effectiveFrom)))
       .limit(1);
     if (existing) {
-      throw new ConflictException(`같은 결제수단·적용일의 요율이 이미 있습니다: ${input.methodType} ${input.effectiveFrom}`);
+      throw new ConflictException(
+        `같은 결제수단·적용일의 요율이 이미 있습니다: ${input.methodType} ${input.effectiveFrom}`,
+      );
     }
     const [inserted] = await this.db
       .insert(paymentFeeRates)
@@ -292,7 +298,10 @@ export class StatisticsAdminService {
   }
 
   async deleteFeeRate(id: string): Promise<{ deleted: true }> {
-    const rows = await this.db.delete(paymentFeeRates).where(eq(paymentFeeRates.id, id)).returning({ id: paymentFeeRates.id });
+    const rows = await this.db
+      .delete(paymentFeeRates)
+      .where(eq(paymentFeeRates.id, id))
+      .returning({ id: paymentFeeRates.id });
     if (rows.length === 0) {
       throw new NotFoundException(`요율을 찾을 수 없습니다: ${id}`);
     }
@@ -320,7 +329,7 @@ export class StatisticsAdminService {
         .where(
           and(
             eq(charges.operation, 'CAPTURE'),
-            eq(charges.status, 'SUCCEEDED'),
+            inArray(charges.status, ['SUCCEEDED', 'REFUNDED']),
             kstDayRange(charges.createdAt, from, to),
           ),
         )
@@ -366,12 +375,7 @@ export class StatisticsAdminService {
       .from(refunds)
       .innerJoin(charges, eq(charges.id, refunds.chargeId))
       .innerJoin(paymentMethods, eq(paymentMethods.id, charges.paymentMethodId))
-      .where(
-        and(
-          eq(refunds.status, 'SUCCEEDED'),
-          kstDayRange(refunds.createdAt, from, to),
-        ),
-      )
+      .where(and(eq(refunds.status, 'SUCCEEDED'), kstDayRange(refunds.createdAt, from, to)))
       .groupBy(paymentMethods.type);
     return new Map(rows.map((row) => [row.methodType, Number(row.amount)]));
   }
@@ -393,7 +397,7 @@ export class StatisticsAdminService {
         .where(
           and(
             eq(charges.operation, 'CAPTURE'),
-            eq(charges.status, 'SUCCEEDED'),
+            inArray(charges.status, ['SUCCEEDED', 'REFUNDED']),
             kstDayRange(charges.createdAt, from, to),
           ),
         )
@@ -401,19 +405,17 @@ export class StatisticsAdminService {
       this.db
         .select({ day: refundDay, amount: sql<string>`SUM(${refunds.amount})`, count: sql<string>`COUNT(*)` })
         .from(refunds)
-        .where(
-          and(
-            eq(refunds.status, 'SUCCEEDED'),
-            kstDayRange(refunds.createdAt, from, to),
-          ),
-        )
+        .where(and(eq(refunds.status, 'SUCCEEDED'), kstDayRange(refunds.createdAt, from, to)))
         .groupBy(sql`1`),
     ]);
 
     const toRows = (rows: Array<{ day: string; amount: string; count: string }>) =>
       rows.map((row) => ({ day: row.day, amount: Number(row.amount), count: Number(row.count) }));
 
-    return { range: { from, to }, series: buildDailyPaymentSeries(toRows(capturedRows), toRows(refundedRows), from, to) };
+    return {
+      range: { from, to },
+      series: buildDailyPaymentSeries(toRows(capturedRows), toRows(refundedRows), from, to),
+    };
   }
 
   /**
@@ -461,38 +463,61 @@ export class StatisticsAdminService {
     return { range: { from, to }, series: buildDailyPointSeries(earned, from, to) };
   }
 
-  /** 멤버십 구독료 수입 — PAID 인보이스의 amount_due 를 finalized_at(KST 달력일) 기준으로 귀속 */
+  /** 가입·등급 변경·정기결제 수금에서 성공 환불을 차감한다. 청구서는 결제와 중복 합산하지 않는다. */
   async getMembershipRevenue(from: string, to: string): Promise<MembershipRevenueResponse> {
     assertRange(from, to);
 
-    const bucket = sql<string>`((${invoices.finalizedAt} AT TIME ZONE 'Asia/Seoul')::date)::text`;
-    const rows = await this.db
+    const membership = sql`(${paymentIntents.metadata}->>'type' = 'MEMBERSHIP_FEE' OR EXISTS (
+      SELECT 1 FROM ${invoices} WHERE ${invoices.id} = ${paymentIntents.invoiceId}
+      AND ${invoices.subscriberType} = 'MEMBERSHIP'
+    ))`;
+    const captured = await this.db
       .select({
-        bucket,
-        amount: sql<string>`SUM(${invoices.amountDue})`,
-        count: sql<string>`COUNT(*)`,
+        bucket: sql<string>`((${charges.createdAt} AT TIME ZONE 'Asia/Seoul')::date)::text`,
+        amount: charges.amount,
+        invoiceId: paymentIntents.invoiceId,
       })
-      .from(invoices)
+      .from(charges)
+      .innerJoin(paymentIntents, eq(paymentIntents.id, charges.intentId))
       .where(
         and(
-          eq(invoices.subscriberType, 'MEMBERSHIP'),
-          eq(invoices.status, 'PAID'),
-          kstDayRange(invoices.finalizedAt, from, to),
+          membership,
+          eq(charges.operation, 'CAPTURE'),
+          inArray(charges.status, ['SUCCEEDED', 'REFUNDED']),
+          kstDayRange(charges.createdAt, from, to),
         ),
-      )
-      .groupBy(sql`1`)
-      .orderBy(sql`1`);
+      );
+    const refunded = await this.db
+      .select({
+        bucket: sql<string>`((${refunds.createdAt} AT TIME ZONE 'Asia/Seoul')::date)::text`,
+        amount: refunds.amount,
+      })
+      .from(refunds)
+      .innerJoin(paymentIntents, eq(paymentIntents.id, refunds.intentId))
+      .where(and(membership, eq(refunds.status, 'SUCCEEDED'), kstDayRange(refunds.createdAt, from, to)));
 
-    const series = rows.map((row) => ({
-      bucket: row.bucket,
-      amount: Number(row.amount),
-      count: Number(row.count),
-    }));
+    const buckets = new Map<string, MembershipRevenuePoint>();
+    for (const row of captured) {
+      const point = buckets.get(row.bucket) ?? { bucket: row.bucket, amount: 0, count: 0 };
+      point.amount += row.amount;
+      point.count += 1;
+      buckets.set(row.bucket, point);
+    }
+    for (const row of refunded) {
+      const point = buckets.get(row.bucket) ?? { bucket: row.bucket, amount: 0, count: 0 };
+      point.amount -= row.amount;
+      buckets.set(row.bucket, point);
+    }
 
+    const series = [...buckets.values()].sort((a, b) => a.bucket.localeCompare(b.bucket));
     return {
       range: { from, to },
       totalAmount: series.reduce((sum, point) => sum + point.amount, 0),
-      invoiceCount: series.reduce((sum, point) => sum + point.count, 0),
+      invoiceCount: new Set(captured.flatMap((row) => (row.invoiceId ? [row.invoiceId] : []))).size,
+      paymentCount: captured.length,
+      capturedAmount: captured.reduce((sum, row) => sum + row.amount, 0),
+      refundedAmount: refunded.reduce((sum, row) => sum + row.amount, 0),
+      refundCount: refunded.length,
       series,
     };
   }

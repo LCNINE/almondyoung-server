@@ -91,7 +91,9 @@ export class StatisticsAdminController {
 
   @RequirePermission('analytics.report.read')
   @Get('order-refunds')
-  @ApiOperation({ summary: '일별 상품 주문 환불 (Medusa 결제만, SUCCEEDED, KST 달력일 귀속) — 멤버십·정기결제 환불 제외' })
+  @ApiOperation({
+    summary: '일별 상품 주문 환불 (Medusa 결제만, SUCCEEDED, KST 달력일 귀속) — 멤버십·정기결제 환불 제외',
+  })
   async getOrderRefunds(@Query() query: StatisticsRangeQueryDto) {
     return this.service.getOrderRefunds(query.from, query.to);
   }
@@ -105,7 +107,7 @@ export class StatisticsAdminController {
 
   @RequirePermission('analytics.report.read')
   @Get('membership-revenue')
-  @ApiOperation({ summary: '멤버십 구독료 수입 (PAID 인보이스, finalized_at KST 기준)' })
+  @ApiOperation({ summary: '멤버십 수입 (가입·등급 변경·정기 수금에서 성공 환불 차감, KST 기준)' })
   async getMembershipRevenue(@Query() query: StatisticsRangeQueryDto) {
     return this.service.getMembershipRevenue(query.from, query.to);
   }
