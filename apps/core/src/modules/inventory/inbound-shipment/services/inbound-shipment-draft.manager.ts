@@ -390,7 +390,13 @@ export class InboundShipmentDraftManager {
 
       await trx
         .update(wmsTables.inboundShipments)
-        .set({ status: 'expected', confirmedAt: new Date(), confirmedBy: actorId, updatedAt: new Date() })
+        .set({
+          status: 'expected',
+          confirmedAt: new Date(),
+          confirmedBy: actorId,
+          promisedArrival: shipment.expectedArrival,
+          updatedAt: new Date(),
+        })
         .where(eq(wmsTables.inboundShipments.id, shipmentId));
 
       const labels = boxes.map((b) => b.label);
@@ -516,6 +522,13 @@ export class InboundShipmentDraftManager {
       const set: Partial<typeof wmsTables.inboundShipments.$inferInsert> = { updatedAt: new Date() };
       if (patch.name !== undefined) set.name = patch.name.trim();
       if (patch.expectedArrival !== undefined) set.expectedArrival = patch.expectedArrival;
+      if (
+        patch.expectedArrival &&
+        (shipment.status === 'expected' || shipment.status === 'receiving') &&
+        shipment.promisedArrival === null
+      ) {
+        set.promisedArrival = patch.expectedArrival;
+      }
       if (patch.memo !== undefined) set.memo = patch.memo;
       await trx.update(wmsTables.inboundShipments).set(set).where(eq(wmsTables.inboundShipments.id, shipmentId));
       if (patch.expectedArrival !== undefined && (shipment.status === 'expected' || shipment.status === 'receiving')) {

@@ -367,6 +367,53 @@ describeIfDb('InboundShipmentDraftManager (DB integration)', () => {
       });
     });
 
+    describe('promised_arrival', () => {
+      async function promised(trx: DbTx, shipmentId: string) {
+        const [s] = await trx
+          .select()
+          .from(wmsTables.inboundShipments)
+          .where(eq(wmsTables.inboundShipments.id, shipmentId));
+        return { promised: s.promisedArrival, expected: s.expectedArrival };
+      }
+
+      it('confirm copies expected_arrival into promised_arrival', async () => {
+        await inRollbackTx(db, async (trx) => {
+          const { built, shipmentId } = await draft(trx);
+          await built.manager.updateHeader(shipmentId, { expectedArrival: '2026-12-01' }, trx);
+          await built.manager.confirm(shipmentId, [], ACTOR, trx);
+          expect(await promised(trx, shipmentId)).toEqual({ promised: '2026-12-01', expected: '2026-12-01' });
+        });
+      });
+
+      it('first PATCH after a null-date confirm sets promised_arrival', async () => {
+        await inRollbackTx(db, async (trx) => {
+          const { built, shipmentId } = await draft(trx);
+          await built.manager.confirm(shipmentId, [], ACTOR, trx);
+          expect((await promised(trx, shipmentId)).promised).toBeNull();
+          await built.manager.updateHeader(shipmentId, { expectedArrival: '2026-12-05' }, trx);
+          expect(await promised(trx, shipmentId)).toEqual({ promised: '2026-12-05', expected: '2026-12-05' });
+        });
+      });
+
+      it('later PATCH changes expected_arrival but not promised_arrival', async () => {
+        await inRollbackTx(db, async (trx) => {
+          const { built, shipmentId } = await draft(trx);
+          await built.manager.updateHeader(shipmentId, { expectedArrival: '2026-12-01' }, trx);
+          await built.manager.confirm(shipmentId, [], ACTOR, trx);
+          await built.manager.updateHeader(shipmentId, { expectedArrival: '2026-12-20' }, trx);
+          expect(await promised(trx, shipmentId)).toEqual({ promised: '2026-12-01', expected: '2026-12-20' });
+        });
+      });
+
+      it('draft PATCH does not set promised_arrival', async () => {
+        await inRollbackTx(db, async (trx) => {
+          const { built, shipmentId } = await draft(trx);
+          await built.manager.updateHeader(shipmentId, { expectedArrival: '2026-12-01' }, trx);
+          expect((await promised(trx, shipmentId)).promised).toBeNull();
+        });
+      });
+    });
+
     it('editLine recalculates the sku before and after, and not on a draft', async () => {
       await inRollbackTx(db, async (trx) => {
         const { f, built, shipmentId, lines } = await draft(trx);
