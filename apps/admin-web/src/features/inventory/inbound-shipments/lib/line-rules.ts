@@ -2,6 +2,7 @@ import type {
   InboundShipmentBox,
   InboundShipmentDetail,
   InboundShipmentLine,
+  InboundShipmentRawCell,
   LineIssueCode,
 } from '@/lib/types/dto/inbound-shipment';
 
@@ -9,16 +10,19 @@ import type {
  * 사람이 한 번 봐야 하는 경고 코드. 나머지는 미확인을 만드는 코드라 kind==='unresolved' 로 이미 잡히고,
  * forward_hint·contact_hint 는 표시만 한다.
  */
-export const WARNING_ISSUES: ReadonlySet<LineIssueCode> = new Set<LineIssueCode>([
-  'box_label_guess',
-  'box_range_invalid',
-  'qty_formula',
-  'option_date_coerced',
-  'packing_unit_barcode',
-]);
+export const WARNING_ISSUES: ReadonlySet<LineIssueCode> =
+  new Set<LineIssueCode>([
+    'box_label_guess',
+    'box_range_invalid',
+    'qty_formula',
+    'option_date_coerced',
+    'packing_unit_barcode',
+  ]);
 
 export function needsAttention(line: InboundShipmentLine): boolean {
-  return line.kind === 'unresolved' || line.issues.some((c) => WARNING_ISSUES.has(c));
+  return (
+    line.kind === 'unresolved' || line.issues.some((c) => WARNING_ISSUES.has(c))
+  );
 }
 
 const ISSUE_LABELS: Record<LineIssueCode, string> = {
@@ -47,27 +51,35 @@ export function prefillSearchText(line: InboundShipmentLine): string {
   return line.raw.productName?.text?.trim() ?? '';
 }
 
-export function skuSearchQueries(input: string): Array<{ barcode: string } | { code: string } | { name: string }> {
+export function skuSearchQueries(
+  input: string
+): Array<{ barcode: string } | { code: string } | { name: string }> {
   const text = input.trim();
   if (text === '') return [];
   if (/^\d{8,}$/.test(text)) return [{ barcode: text }, { code: text }];
   return [{ name: text }];
 }
 
-function coveredBoxes(shipment: InboundShipmentDetail, line: InboundShipmentLine): InboundShipmentBox[] {
+function coveredBoxes(
+  shipment: InboundShipmentDetail,
+  line: InboundShipmentLine
+): InboundShipmentBox[] {
   const labels = new Set(line.coversBoxLabels);
   return shipment.boxes.filter((b) => labels.has(b.label));
 }
 
 export function lineEditability(
   shipment: InboundShipmentDetail,
-  line: InboundShipmentLine,
+  line: InboundShipmentLine
 ): { editable: true } | { editable: false; reason: string } {
   switch (shipment.status) {
     case 'draft':
       return { editable: true };
     case 'closed':
-      return { editable: false, reason: '끝난 선적입니다. 다시 열어야 고칠 수 있습니다' };
+      return {
+        editable: false,
+        reason: '끝난 선적입니다. 다시 열어야 고칠 수 있습니다',
+      };
     case 'canceled':
       return { editable: false, reason: '취소된 선적입니다' };
     default:
@@ -77,7 +89,10 @@ export function lineEditability(
   }
 }
 
-export function differenceText(line: InboundShipmentLine, coveredBoxes: InboundShipmentBox[]): string {
+export function differenceText(
+  line: InboundShipmentLine,
+  coveredBoxes: InboundShipmentBox[]
+): string {
   const { state, counted, expected } = line.difference;
   switch (state) {
     case 'pending':
@@ -97,4 +112,52 @@ export function differenceText(line: InboundShipmentLine, coveredBoxes: InboundS
 export function hasDifference(line: InboundShipmentLine): boolean {
   const { state } = line.difference;
   return state === 'short' || state === 'over' || state === 'not_arrived';
+}
+
+export const MAX_LINE_QTY = 1_000_000;
+
+/** core `EditLineDto` 와 같은 규칙 — 1~1,000,000 정수. */
+export function isValidLineQty(input: string): boolean {
+  const text = input.trim();
+  if (text === '') return false;
+  const n = Number(text);
+  return Number.isInteger(n) && n >= 1 && n <= MAX_LINE_QTY;
+}
+
+/** 원문 칸 표시. 13자리 숫자 바코드는 SheetJS 서식 글자가 «8.80123E+12» 라 정수 값을 그대로 펼친다. */
+export function cellDisplayText(
+  cell: Pick<InboundShipmentRawCell, 'text' | 'value'>
+): string {
+  if (typeof cell.value === 'number' && Number.isInteger(cell.value))
+    return cell.value.toFixed(0);
+  return cell.text;
+}
+
+function splitLabel(label: string): { prefix: string; digits: string } | null {
+  const m = /^(.*?)(\d+)$/.exec(label);
+  return m ? { prefix: m[1], digits: m[2] } : null;
+}
+
+function isNextLabel(a: string, b: string): boolean {
+  const x = splitLabel(a);
+  const y = splitLabel(b);
+  if (!x || !y || x.prefix !== y.prefix) return false;
+  return (
+    Number(y.digits) === Number(x.digits) + 1 &&
+    y.digits.length >= x.digits.length
+  );
+}
+
+/** 덮는 상자 표시 — 연속 구간만 «~» 로 묶고 나머지는 쉼표(예 «L1, L5~L7»). */
+export function boxRangeText(labels: string[]): string {
+  const parts: string[] = [];
+  let start = 0;
+  for (let i = 1; i <= labels.length; i++) {
+    if (i < labels.length && isNextLabel(labels[i - 1], labels[i])) continue;
+    parts.push(
+      i - 1 === start ? labels[start] : `${labels[start]}~${labels[i - 1]}`
+    );
+    start = i;
+  }
+  return parts.join(', ');
 }

@@ -23,8 +23,13 @@ import type { PermissionRequirement } from '@/lib/auth/mutation-permission';
 function useInvalidateShipments() {
   const queryClient = useQueryClient();
   return (id?: string) => {
-    queryClient.invalidateQueries({ queryKey: ['inbound-shipments', 'list'] });
-    if (id) queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.inboundShipment(id) });
+    queryClient.invalidateQueries({
+      queryKey: inventoryQueryKeys.inboundShipmentsRoot,
+    });
+    if (id)
+      queryClient.invalidateQueries({
+        queryKey: inventoryQueryKeys.inboundShipment(id),
+      });
   };
 }
 
@@ -44,47 +49,71 @@ export const useUploadInboundShipment = () => {
     onSuccess: (data) => invalidate(data.shipmentId),
   });
 };
-useUploadInboundShipment.permission = ['inventory.inbound_shipment.write'] as const satisfies PermissionRequirement;
+useUploadInboundShipment.permission = [
+  'inventory.inbound_shipment.write',
+] as const satisfies PermissionRequirement;
 
 export const useUpdateInboundShipmentHeader = () => {
   const invalidate = useInvalidateShipments();
   return useMutation({
-    mutationFn: ({ id, ...body }: { id: string } & UpdateInboundShipmentHeaderBody) =>
+    mutationFn: ({
+      id,
+      ...body
+    }: { id: string } & UpdateInboundShipmentHeaderBody) =>
       inboundShipmentsClient.updateHeader(id, body),
     onSuccess: (_d, vars) => invalidate(vars.id),
   });
 };
-useUpdateInboundShipmentHeader.permission = ['inventory.inbound_shipment.write'] as const satisfies PermissionRequirement;
+useUpdateInboundShipmentHeader.permission = [
+  'inventory.inbound_shipment.write',
+] as const satisfies PermissionRequirement;
 
 export const useEditInboundShipmentLine = () => {
   const invalidate = useInvalidateShipments();
   return useMutation({
-    mutationFn: ({ id, lineId, ...body }: { id: string; lineId: string } & EditInboundShipmentLineBody) =>
+    mutationFn: ({
+      id,
+      lineId,
+      ...body
+    }: { id: string; lineId: string } & EditInboundShipmentLineBody) =>
       inboundShipmentsClient.editLine(id, lineId, body),
     onSuccess: (_d, vars) => invalidate(vars.id),
   });
 };
-useEditInboundShipmentLine.permission = ['inventory.inbound_shipment.write'] as const satisfies PermissionRequirement;
+useEditInboundShipmentLine.permission = [
+  'inventory.inbound_shipment.write',
+] as const satisfies PermissionRequirement;
 
 export const useEditInboundShipmentBox = () => {
   const invalidate = useInvalidateShipments();
   return useMutation({
-    mutationFn: ({ id, boxId, ...body }: { id: string; boxId: string } & EditInboundShipmentBoxBody) =>
+    mutationFn: ({
+      id,
+      boxId,
+      ...body
+    }: { id: string; boxId: string } & EditInboundShipmentBoxBody) =>
       inboundShipmentsClient.editBox(id, boxId, body),
     onSuccess: (_d, vars) => invalidate(vars.id),
   });
 };
-useEditInboundShipmentBox.permission = ['inventory.inbound_shipment.write'] as const satisfies PermissionRequirement;
+useEditInboundShipmentBox.permission = [
+  'inventory.inbound_shipment.write',
+] as const satisfies PermissionRequirement;
 
 export const useConfirmInboundShipment = () => {
   const invalidate = useInvalidateShipments();
   return useMutation({
-    mutationFn: ({ id, ...body }: { id: string } & ConfirmInboundShipmentBody) =>
+    mutationFn: ({
+      id,
+      ...body
+    }: { id: string } & ConfirmInboundShipmentBody) =>
       inboundShipmentsClient.confirm(id, body),
     onSuccess: (_d, vars) => invalidate(vars.id),
   });
 };
-useConfirmInboundShipment.permission = ['inventory.inbound_shipment.write'] as const satisfies PermissionRequirement;
+useConfirmInboundShipment.permission = [
+  'inventory.inbound_shipment.write',
+] as const satisfies PermissionRequirement;
 
 export const useCancelInboundShipment = () => {
   const invalidate = useInvalidateShipments();
@@ -93,16 +122,21 @@ export const useCancelInboundShipment = () => {
     onSuccess: (_d, id) => invalidate(id),
   });
 };
-useCancelInboundShipment.permission = ['inventory.inbound_shipment.write'] as const satisfies PermissionRequirement;
+useCancelInboundShipment.permission = [
+  'inventory.inbound_shipment.write',
+] as const satisfies PermissionRequirement;
 
 export const useCloseInboundShipment = () => {
   const invalidate = useInvalidateShipments();
   return useMutation({
-    mutationFn: ({ id, reason }: { id: string; reason: string }) => inboundShipmentsClient.close(id, { reason }),
+    mutationFn: ({ id, reason }: { id: string; reason: string }) =>
+      inboundShipmentsClient.close(id, { reason }),
     onSuccess: (_d, vars) => invalidate(vars.id),
   });
 };
-useCloseInboundShipment.permission = ['inventory.inbound_shipment.write'] as const satisfies PermissionRequirement;
+useCloseInboundShipment.permission = [
+  'inventory.inbound_shipment.write',
+] as const satisfies PermissionRequirement;
 
 export const useReopenInboundShipment = () => {
   const invalidate = useInvalidateShipments();
@@ -111,4 +145,6 @@ export const useReopenInboundShipment = () => {
     onSuccess: (_d, id) => invalidate(id),
   });
 };
-useReopenInboundShipment.permission = ['inventory.inbound_shipment.write'] as const satisfies PermissionRequirement;
+useReopenInboundShipment.permission = [
+  'inventory.inbound_shipment.write',
+] as const satisfies PermissionRequirement;

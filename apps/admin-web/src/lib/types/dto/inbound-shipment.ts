@@ -1,7 +1,19 @@
 // 선적 입고 — core inbound-shipment-view.dto.ts 응답 모양. 날짜는 JSON 으로 오므로 string.
-import type { ShipmentListRow } from '@/features/inventory/inbound-shipments/lib/read-workbook';
 
-export type InboundShipmentStatus = 'draft' | 'expected' | 'receiving' | 'closed' | 'canceled';
+/** core `ListCell` 과 같은 모양 — 브라우저는 칸의 글자·원본 값·수식만 보내고 판정은 core 가 한다. */
+export type ShipmentListCell = {
+  text: string;
+  value: string | number | boolean | null;
+  formula?: string;
+};
+export type ShipmentListRow = { rowNumber: number; cells: ShipmentListCell[] };
+
+export type InboundShipmentStatus =
+  | 'draft'
+  | 'expected'
+  | 'receiving'
+  | 'closed'
+  | 'canceled';
 
 /** core 파서 `LineIssue` 15개 그대로. */
 export type LineIssueCode =

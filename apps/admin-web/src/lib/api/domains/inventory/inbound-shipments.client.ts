@@ -20,7 +20,9 @@ import type {
 const BASE = `${ALMONDYOUNG_API_BASE_URL}/inventory/inbound-shipments`;
 
 export const inboundShipmentsClient = {
-  list: async (filter: InboundShipmentListFilter = {}): Promise<InboundShipmentSummary[]> => {
+  list: async (
+    filter: InboundShipmentListFilter = {}
+  ): Promise<InboundShipmentSummary[]> => {
     const params: Record<string, string> = {};
     if (filter.status?.length) params.status = filter.status.join(',');
     if (filter.warehouseId) params.warehouseId = filter.warehouseId;
@@ -33,27 +35,43 @@ export const inboundShipmentsClient = {
     return response.data;
   },
 
-  upload: async (body: UploadInboundShipmentBody): Promise<{ shipmentId: string }> => {
+  upload: async (
+    body: UploadInboundShipmentBody
+  ): Promise<{ shipmentId: string }> => {
     const response = await client.post(BASE, body);
     return response.data;
   },
 
-  updateHeader: async (id: string, body: UpdateInboundShipmentHeaderBody): Promise<{ shipmentId: string }> => {
+  updateHeader: async (
+    id: string,
+    body: UpdateInboundShipmentHeaderBody
+  ): Promise<{ shipmentId: string }> => {
     const response = await client.patch(`${BASE}/${id}`, body);
     return response.data;
   },
 
-  editLine: async (id: string, lineId: string, body: EditInboundShipmentLineBody): Promise<{ lineId: string }> => {
+  editLine: async (
+    id: string,
+    lineId: string,
+    body: EditInboundShipmentLineBody
+  ): Promise<{ lineId: string }> => {
     const response = await client.patch(`${BASE}/${id}/lines/${lineId}`, body);
     return response.data;
   },
 
-  editBox: async (id: string, boxId: string, body: EditInboundShipmentBoxBody): Promise<{ boxId: string }> => {
+  editBox: async (
+    id: string,
+    boxId: string,
+    body: EditInboundShipmentBoxBody
+  ): Promise<{ boxId: string }> => {
     const response = await client.patch(`${BASE}/${id}/boxes/${boxId}`, body);
     return response.data;
   },
 
-  confirm: async (id: string, body: ConfirmInboundShipmentBody): Promise<ConfirmInboundShipmentResult> => {
+  confirm: async (
+    id: string,
+    body: ConfirmInboundShipmentBody
+  ): Promise<ConfirmInboundShipmentResult> => {
     const response = await client.post(`${BASE}/${id}/confirm`, body);
     return response.data;
   },
@@ -63,7 +81,10 @@ export const inboundShipmentsClient = {
     return response.data;
   },
 
-  close: async (id: string, body: { reason: string }): Promise<CloseInboundShipmentResult> => {
+  close: async (
+    id: string,
+    body: { reason: string }
+  ): Promise<CloseInboundShipmentResult> => {
     const response = await client.post(`${BASE}/${id}/close`, body);
     return response.data;
   },

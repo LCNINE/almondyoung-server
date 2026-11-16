@@ -1,20 +1,40 @@
-import { OriginalUploadFailedError, runInboundShipmentUpload } from './upload-flow';
+import {
+  OriginalUploadFailedError,
+  runInboundShipmentUpload,
+} from './upload-flow';
 import type { ReadWorkbookResult } from './read-workbook';
 
 const read: ReadWorkbookResult = {
   sheetName: 'Sheet1',
   header: ['박스', '품명'],
-  rows: [{ rowNumber: 2, cells: [{ text: '1', value: 1 }, { text: '컵', value: '컵' }] }],
+  rows: [
+    {
+      rowNumber: 2,
+      cells: [
+        { text: '1', value: 1 },
+        { text: '컵', value: '컵' },
+      ],
+    },
+  ],
   dataRowCount: 1,
 };
 const file = new File(['x'], '입고리스트.xlsx');
-const base = { file, read, warehouseId: 'w1', name: '11월 선적', expectedArrival: '2026-11-30' };
+const base = {
+  file,
+  read,
+  warehouseId: 'w1',
+  name: '11월 선적',
+  expectedArrival: '2026-11-30',
+};
 
 describe('runInboundShipmentUpload', () => {
   it('원본을 올린 뒤 그 id 로 초안을 만든다', async () => {
     const uploadOriginal = jest.fn().mockResolvedValue({ id: 'f1' });
     const createDraft = jest.fn().mockResolvedValue({ shipmentId: 's1' });
-    const result = await runInboundShipmentUpload(base, { uploadOriginal, createDraft });
+    const result = await runInboundShipmentUpload(base, {
+      uploadOriginal,
+      createDraft,
+    });
     expect(createDraft).toHaveBeenCalledTimes(1);
     expect(createDraft).toHaveBeenCalledWith({
       warehouseId: 'w1',
@@ -43,7 +63,7 @@ describe('runInboundShipmentUpload', () => {
     const createDraft = jest.fn().mockResolvedValue({ shipmentId: 's2' });
     const result = await runInboundShipmentUpload(
       { ...base, allowWithoutOriginal: true },
-      { uploadOriginal, createDraft },
+      { uploadOriginal, createDraft }
     );
     expect(uploadOriginal).not.toHaveBeenCalled();
     expect(createDraft.mock.calls[0][0]).not.toHaveProperty('sourceFileId');
@@ -54,6 +74,18 @@ describe('runInboundShipmentUpload', () => {
     const err = new Error('409');
     const uploadOriginal = jest.fn().mockResolvedValue({ id: 'f1' });
     const createDraft = jest.fn().mockRejectedValue(err);
-    await expect(runInboundShipmentUpload(base, { uploadOriginal, createDraft })).rejects.toBe(err);
+    await expect(
+      runInboundShipmentUpload(base, { uploadOriginal, createDraft })
+    ).rejects.toBe(err);
+  });
+
+  it('원본 파일 이름은 255자로 자른다', async () => {
+    const longFile = new File(['x'], `${'가'.repeat(300)}.xlsx`);
+    const createDraft = jest.fn().mockResolvedValue({ shipmentId: 's1' });
+    await runInboundShipmentUpload(
+      { ...base, file: longFile, allowWithoutOriginal: true },
+      { uploadOriginal: jest.fn(), createDraft }
+    );
+    expect(createDraft.mock.calls[0][0].sourceFileName).toHaveLength(255);
   });
 });

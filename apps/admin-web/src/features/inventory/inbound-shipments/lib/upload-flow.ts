@@ -26,7 +26,7 @@ export interface InboundShipmentUploadDeps {
 /** ① 원본 보관 → ② 초안 생성. 원본이 실패하면 core 를 부르지 않는다. */
 export async function runInboundShipmentUpload(
   input: InboundShipmentUploadInput,
-  deps: InboundShipmentUploadDeps,
+  deps: InboundShipmentUploadDeps
 ): Promise<{ shipmentId: string; sourceFileId: string | null }> {
   let sourceFileId: string | null = null;
   if (!input.allowWithoutOriginal) {
@@ -39,9 +39,11 @@ export async function runInboundShipmentUpload(
   const { shipmentId } = await deps.createDraft({
     warehouseId: input.warehouseId,
     name: input.name,
-    ...(input.expectedArrival ? { expectedArrival: input.expectedArrival } : {}),
+    ...(input.expectedArrival
+      ? { expectedArrival: input.expectedArrival }
+      : {}),
     ...(sourceFileId ? { sourceFileId } : {}),
-    sourceFileName: input.file.name,
+    sourceFileName: input.file.name.slice(0, 255),
     header: input.read.header,
     rows: input.read.rows,
   });

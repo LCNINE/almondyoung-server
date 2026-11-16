@@ -9,7 +9,10 @@ export default function InventoryInboundShipmentsPage() {
     <RouteGuard screen="/inventory/inbound-shipments">
       <div className="flex w-full max-w-[1600px] flex-col gap-y-2 p-3">
         <Container>
-          <Header title="선적 입고" subtitle="입고리스트를 올리고 선적을 확인합니다." />
+          <Header
+            title="선적 입고"
+            subtitle="입고리스트를 올리고 선적을 확인합니다."
+          />
           <Suspense>
             <ShipmentList />
           </Suspense>

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import {
@@ -26,7 +26,11 @@ import {
   WorkbookReadError,
   type ReadWorkbookResult,
 } from '../../lib/read-workbook';
-import { defaultShipmentName, defaultWarehouseId } from '../../lib/shipment-rules';
+import {
+  defaultShipmentName,
+  defaultWarehouseId,
+  MAX_SHIPMENT_NAME_LENGTH,
+} from '../../lib/shipment-rules';
 import { OriginalUploadFailedError } from '../../lib/upload-flow';
 import { uploadErrorMessage } from '../../lib/upload-error-message';
 
@@ -39,6 +43,8 @@ export function UploadDialog({ open, onOpenChange }: Props) {
   const router = useRouter();
   const { data: warehouses = [] } = useWarehouses();
   const upload = useUploadInboundShipment();
+  /** 읽기 토큰 — 마지막으로 고른 파일의 읽기 결과만 반영한다. */
+  const readToken = useRef(0);
 
   const [file, setFile] = useState<File | null>(null);
   const [read, setRead] = useState<ReadWorkbookResult | null>(null);
@@ -52,6 +58,7 @@ export function UploadDialog({ open, onOpenChange }: Props) {
 
   useEffect(() => {
     if (open) return;
+    readToken.current += 1;
     setFile(null);
     setRead(null);
     setReadError(null);
@@ -68,6 +75,7 @@ export function UploadDialog({ open, onOpenChange }: Props) {
   }, [open, warehouses, warehouseId]);
 
   const handleFile = async (picked: File | undefined) => {
+    const token = ++readToken.current;
     setError(null);
     setAskWithoutOriginal(false);
     setRead(null);
@@ -76,16 +84,24 @@ export function UploadDialog({ open, onOpenChange }: Props) {
     if (!picked) return;
     setName(defaultShipmentName(picked.name));
     try {
-      setRead(readInboundShipmentWorkbook(await picked.arrayBuffer()));
+      const result = readInboundShipmentWorkbook(await picked.arrayBuffer());
+      if (token === readToken.current) setRead(result);
     } catch (e) {
+      if (token !== readToken.current) return;
       setReadError(
-        e instanceof WorkbookReadError ? e.message : '엑셀 파일을 읽지 못했습니다.',
+        e instanceof WorkbookReadError
+          ? e.message
+          : '엑셀 파일을 읽지 못했습니다.'
       );
     }
   };
 
   const canSubmit =
-    !!file && !!read && !!warehouseId && name.trim().length > 0 && !upload.isPending;
+    !!file &&
+    !!read &&
+    !!warehouseId &&
+    name.trim().length > 0 &&
+    !upload.isPending;
 
   const submit = (allowWithoutOriginal: boolean) => {
     if (!file || !read) return;
@@ -107,13 +123,15 @@ export function UploadDialog({ open, onOpenChange }: Props) {
         onError: (e) => {
           if (e instanceof OriginalUploadFailedError) {
             setAskWithoutOriginal(true);
-            setError(`원본 파일을 보관하지 못했습니다. ${uploadErrorMessage(e.cause)}`);
+            setError(
+              `원본 파일을 보관하지 못했습니다. ${uploadErrorMessage(e.cause)}`
+            );
           } else {
             setAskWithoutOriginal(false);
             setError(uploadErrorMessage(e));
           }
         },
-      },
+      }
     );
   };
 
@@ -133,8 +151,14 @@ export function UploadDialog({ open, onOpenChange }: Props) {
               accept=".xlsx"
               onChange={(e) => void handleFile(e.target.files?.[0])}
             />
-            {read && <p className="text-xs text-muted-foreground">{read.dataRowCount}줄 읽음</p>}
-            {readError && <p className="text-xs text-destructive">{readError}</p>}
+            {read && (
+              <p className="text-xs text-muted-foreground">
+                {read.dataRowCount}줄 읽음
+              </p>
+            )}
+            {readError && (
+              <p className="text-xs text-destructive">{readError}</p>
+            )}
           </div>
 
           <div className="space-y-1">
@@ -158,7 +182,7 @@ export function UploadDialog({ open, onOpenChange }: Props) {
             <Input
               id="shipment-name"
               value={name}
-              maxLength={255}
+              maxLength={MAX_SHIPMENT_NAME_LENGTH}
               onChange={(e) => setName(e.target.value)}
             />
           </div>

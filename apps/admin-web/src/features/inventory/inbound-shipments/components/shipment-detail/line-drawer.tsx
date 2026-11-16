@@ -7,7 +7,12 @@ import { Can } from '@/components/auth/can';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from '@/components/ui/sheet';
 import { skusClient } from '@/lib/api/domains/inventory/skus.client';
 import { useEditInboundShipmentLine } from '@/lib/services/inventory/inbound-shipment-mutations';
 import type {
@@ -15,7 +20,14 @@ import type {
   InboundShipmentDetail,
   InboundShipmentLine,
 } from '@/lib/types/dto/inbound-shipment';
-import { issueLabel, lineEditability, prefillSearchText, skuSearchQueries } from '../../lib/line-rules';
+import {
+  cellDisplayText,
+  isValidLineQty,
+  issueLabel,
+  lineEditability,
+  prefillSearchText,
+  skuSearchQueries,
+} from '../../lib/line-rules';
 import { mergeSkuCandidates } from '../../lib/sku-candidates';
 import { writeErrorMessage } from './mutation-error';
 
@@ -61,7 +73,13 @@ export function LineDrawer({
   );
 }
 
-function DrawerBody({ shipment, line }: { shipment: InboundShipmentDetail; line: InboundShipmentLine }) {
+function DrawerBody({
+  shipment,
+  line,
+}: {
+  shipment: InboundShipmentDetail;
+  line: InboundShipmentLine;
+}) {
   const edit = useEditInboundShipmentLine();
   const editability = lineEditability(shipment, line);
   const canEdit = editability.editable;
@@ -70,13 +88,17 @@ function DrawerBody({ shipment, line }: { shipment: InboundShipmentDetail; line:
   const [text, setText] = useState(prefillSearchText(line));
   const debounced = useDebounced(text, 300);
   const [qty, setQty] = useSyncedState(line.expectedQty?.toString() ?? '');
-  const [boxLabels, setBoxLabels] = useSyncedState<string[]>(line.coversBoxLabels);
+  const [boxLabels, setBoxLabels] = useSyncedState<string[]>(
+    line.coversBoxLabels
+  );
 
   const queries = skuSearchQueries(debounced);
   const search = useQuery({
     queryKey: ['inbound-shipment-sku-search', queries],
     queryFn: async () => {
-      const results = await Promise.all(queries.map((q) => skusClient.getSkus({ ...q, limit: 20 })));
+      const results = await Promise.all(
+        queries.map((q) => skusClient.getSkus({ ...q, limit: 20 }))
+      );
       return results.flatMap((r) => r.items);
     },
     enabled: queries.length > 0,
@@ -85,11 +107,14 @@ function DrawerBody({ shipment, line }: { shipment: InboundShipmentDetail; line:
 
   const run = (body: EditInboundShipmentLineBody) => {
     setMessage(null);
-    edit.mutate({ id: shipment.id, lineId: line.id, ...body }, { onError: (e) => setMessage(writeErrorMessage(e)) });
+    edit.mutate(
+      { id: shipment.id, lineId: line.id, ...body },
+      { onError: (e) => setMessage(writeErrorMessage(e)) }
+    );
   };
 
   const qtyNumber = Number(qty);
-  const qtyValid = qty.trim() !== '' && Number.isInteger(qtyNumber) && qtyNumber >= 0;
+  const qtyValid = isValidLineQty(qty);
 
   return (
     <div className="flex flex-col gap-4 p-4 text-sm">
@@ -99,9 +124,15 @@ function DrawerBody({ shipment, line }: { shipment: InboundShipmentDetail; line:
           if (!cell) return null;
           return (
             <div key={key} className="flex gap-2">
-              <span className="w-14 shrink-0 text-muted-foreground">{label}</span>
-              <span className="break-all">{cell.text}</span>
-              {cell.formula && <span className="text-muted-foreground">={cell.formula}</span>}
+              <span className="w-14 shrink-0 text-muted-foreground">
+                {label}
+              </span>
+              <span className="break-all">
+                {key === 'barcode' ? cellDisplayText(cell) : cell.text}
+              </span>
+              {cell.formula && (
+                <span className="text-muted-foreground">={cell.formula}</span>
+              )}
             </div>
           );
         })}
@@ -118,29 +149,54 @@ function DrawerBody({ shipment, line }: { shipment: InboundShipmentDetail; line:
             .map((b) => (
               <div key={b.id} className="flex gap-2">
                 <span className="w-24 shrink-0">{b.label}</span>
-                <span className="text-muted-foreground">{b.status === 'received' ? '받음' : '열림'}</span>
+                <span className="text-muted-foreground">
+                  {b.status === 'received' ? '받음' : '열림'}
+                </span>
               </div>
             ))}
         </div>
       )}
 
-      {line.issues.length > 0 && <ul className="list-disc pl-4">{line.issues.map((c) => <li key={c}>{issueLabel(c)}</li>)}</ul>}
-      {!editability.editable && <div className="text-muted-foreground">{editability.reason}</div>}
+      {line.issues.length > 0 && (
+        <ul className="list-disc pl-4">
+          {line.issues.map((c) => (
+            <li key={c}>{issueLabel(c)}</li>
+          ))}
+        </ul>
+      )}
+      {!editability.editable && (
+        <div className="text-muted-foreground">{editability.reason}</div>
+      )}
       {message && <div className="text-destructive">{message}</div>}
 
       <div className="flex flex-col gap-2">
         <div className="flex items-center gap-2">
-          <Input value={text} onChange={(e) => setText(e.target.value)} placeholder="SKU 검색 (이름·코드·바코드)" aria-label="SKU 검색" />
+          <Input
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder="SKU 검색 (이름·코드·바코드)"
+            aria-label="SKU 검색"
+          />
           <Can run={useEditInboundShipmentLine}>
-            <Button size="sm" variant="outline" disabled={!canEdit || edit.isPending} onClick={() => run({ kind: 'free' })}>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={!canEdit || edit.isPending}
+              onClick={() => run({ kind: 'free' })}
+            >
               자유 줄로
             </Button>
           </Can>
         </div>
-        {search.isFetching && <div className="text-muted-foreground">검색 중…</div>}
+        {search.isFetching && (
+          <div className="text-muted-foreground">검색 중…</div>
+        )}
         <ul className="flex max-h-72 flex-col gap-1 overflow-y-auto">
           {candidates.map((c) => (
-            <li key={c.skuId} className="flex items-center gap-2 rounded border px-2 py-1">
+            <li
+              key={c.skuId}
+              className="flex items-center gap-2 rounded border px-2 py-1"
+            >
               <div className="min-w-0 flex-1">
                 <div className="truncate">{c.name}</div>
                 <div className="truncate text-muted-foreground">
@@ -151,7 +207,9 @@ function DrawerBody({ shipment, line }: { shipment: InboundShipmentDetail; line:
               <Can run={useEditInboundShipmentLine}>
                 <Button
                   size="sm"
-                  disabled={!canEdit || edit.isPending || line.skuId === c.skuId}
+                  disabled={
+                    !canEdit || edit.isPending || line.skuId === c.skuId
+                  }
                   onClick={() => run({ kind: 'sku', skuId: c.skuId })}
                 >
                   이 SKU 로
@@ -164,12 +222,23 @@ function DrawerBody({ shipment, line }: { shipment: InboundShipmentDetail; line:
 
       <div className="flex items-center gap-2">
         <span className="text-muted-foreground">수량</span>
-        <Input className="w-28" inputMode="numeric" value={qty} onChange={(e) => setQty(e.target.value)} aria-label="수량" />
+        <Input
+          className="w-28"
+          inputMode="numeric"
+          value={qty}
+          onChange={(e) => setQty(e.target.value)}
+          aria-label="수량"
+        />
         <Can run={useEditInboundShipmentLine}>
           <Button
             size="sm"
             variant="outline"
-            disabled={!canEdit || !qtyValid || qtyNumber === line.expectedQty || edit.isPending}
+            disabled={
+              !canEdit ||
+              !qtyValid ||
+              qtyNumber === line.expectedQty ||
+              edit.isPending
+            }
             onClick={() => run({ expectedQty: qtyNumber })}
           >
             수량 저장
@@ -186,7 +255,11 @@ function DrawerBody({ shipment, line }: { shipment: InboundShipmentDetail; line:
                 <Checkbox
                   checked={boxLabels.includes(b.label)}
                   onCheckedChange={(v) =>
-                    setBoxLabels(v === true ? [...boxLabels, b.label] : boxLabels.filter((x) => x !== b.label))
+                    setBoxLabels(
+                      v === true
+                        ? [...boxLabels, b.label]
+                        : boxLabels.filter((x) => x !== b.label)
+                    )
                   }
                 />
                 {b.label}
@@ -198,7 +271,11 @@ function DrawerBody({ shipment, line }: { shipment: InboundShipmentDetail; line:
               size="sm"
               variant="outline"
               className="self-start"
-              disabled={!canEdit || edit.isPending || sameSet(boxLabels, line.coversBoxLabels)}
+              disabled={
+                !canEdit ||
+                edit.isPending ||
+                sameSet(boxLabels, line.coversBoxLabels)
+              }
               onClick={() => run({ boxLabels })}
             >
               상자 저장

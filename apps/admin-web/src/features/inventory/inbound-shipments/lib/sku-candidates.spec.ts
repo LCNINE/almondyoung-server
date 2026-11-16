@@ -21,13 +21,21 @@ describe('mergeSkuCandidates', () => {
   });
 
   it('AI 후보에 이름이 없으면 검색 결과의 이름을 쓴다', () => {
-    const l = line({ aiCandidates: [{ skuId: 's2', reason: 'r', code: null, name: null }] });
-    const out = mergeSkuCandidates(l, [{ id: 's2', code: 'C2', name: '검색이름' }]);
+    const l = line({
+      aiCandidates: [{ skuId: 's2', reason: 'r', code: null, name: null }],
+    });
+    const out = mergeSkuCandidates(l, [
+      { id: 's2', code: 'C2', name: '검색이름' },
+    ]);
     expect(out[0]).toMatchObject({ skuId: 's2', code: 'C2', name: '검색이름' });
   });
 
   it('최대 20개로 자른다', () => {
-    const results = Array.from({ length: 30 }, (_, i) => ({ id: `x${i}`, code: `c${i}`, name: `n${i}` }));
+    const results = Array.from({ length: 30 }, (_, i) => ({
+      id: `x${i}`,
+      code: `c${i}`,
+      name: `n${i}`,
+    }));
     expect(mergeSkuCandidates(line(), results)).toHaveLength(20);
   });
 });

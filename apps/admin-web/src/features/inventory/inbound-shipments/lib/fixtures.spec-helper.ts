@@ -4,7 +4,9 @@ import type {
   InboundShipmentLine,
 } from '@/lib/types/dto/inbound-shipment';
 
-export function box(over: Partial<InboundShipmentBox> = {}): InboundShipmentBox {
+export function box(
+  over: Partial<InboundShipmentBox> = {}
+): InboundShipmentBox {
   return {
     id: 'b1',
     label: 'A1',
@@ -19,7 +21,9 @@ export function box(over: Partial<InboundShipmentBox> = {}): InboundShipmentBox 
   };
 }
 
-export function line(over: Partial<InboundShipmentLine> = {}): InboundShipmentLine {
+export function line(
+  over: Partial<InboundShipmentLine> = {}
+): InboundShipmentLine {
   return {
     id: 'l1',
     rowNumber: 2,
@@ -39,7 +43,9 @@ export function line(over: Partial<InboundShipmentLine> = {}): InboundShipmentLi
   };
 }
 
-export function shipment(over: Partial<InboundShipmentDetail> = {}): InboundShipmentDetail {
+export function shipment(
+  over: Partial<InboundShipmentDetail> = {}
+): InboundShipmentDetail {
   return {
     id: 'sh1',
     warehouseId: 'w1',

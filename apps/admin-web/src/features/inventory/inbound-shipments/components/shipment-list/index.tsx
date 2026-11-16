@@ -12,27 +12,30 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import { useInboundShipments } from '@/lib/services/inventory/inbound-shipment-queries';
 import { useUploadInboundShipment } from '@/lib/services/inventory/inbound-shipment-mutations';
 import { useWarehouses } from '@/lib/services/inventory/queries';
 import type { InboundShipmentStatus } from '@/lib/types/dto/inbound-shipment';
+import { SHIPMENT_STATUS_LABEL } from '../../lib/shipment-rules';
 import { UploadDialog } from '../upload-dialog';
 
 const TABS = {
-  active: { label: '진행 중', status: ['draft', 'expected', 'receiving'] as InboundShipmentStatus[] },
+  active: {
+    label: '진행 중',
+    status: ['draft', 'expected', 'receiving'] as InboundShipmentStatus[],
+  },
   closed: { label: '끝남', status: ['closed'] as InboundShipmentStatus[] },
   canceled: { label: '취소', status: ['canceled'] as InboundShipmentStatus[] },
 };
 type TabKey = keyof typeof TABS;
-
-const STATUS_LABEL: Record<InboundShipmentStatus, string> = {
-  draft: '초안',
-  expected: '입고 예정',
-  receiving: '입고 중',
-  closed: '끝남',
-  canceled: '취소',
-};
 
 const ALL = '__all__';
 
@@ -99,7 +102,10 @@ export function ShipmentList() {
           <TableBody>
             {rows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="text-center text-muted-foreground">
+                <TableCell
+                  colSpan={5}
+                  className="text-center text-muted-foreground"
+                >
                   {isLoading ? '불러오는 중…' : '선적이 없습니다.'}
                 </TableCell>
               </TableRow>
@@ -108,10 +114,12 @@ export function ShipmentList() {
                 <TableRow
                   key={row.id}
                   className="cursor-pointer"
-                  onClick={() => router.push(`/inventory/inbound-shipments/${row.id}`)}
+                  onClick={() =>
+                    router.push(`/inventory/inbound-shipments/${row.id}`)
+                  }
                 >
                   <TableCell>{row.name}</TableCell>
-                  <TableCell>{STATUS_LABEL[row.status]}</TableCell>
+                  <TableCell>{SHIPMENT_STATUS_LABEL[row.status]}</TableCell>
                   <TableCell className="text-right">{row.boxCount}</TableCell>
                   <TableCell className="text-right">{row.lineCount}</TableCell>
                   <TableCell>{row.expectedArrival ?? ''}</TableCell>

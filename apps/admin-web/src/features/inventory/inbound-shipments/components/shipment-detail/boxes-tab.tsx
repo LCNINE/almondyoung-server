@@ -5,9 +5,20 @@ import { useSyncedState } from '../../lib/use-synced-state';
 import { Can } from '@/components/auth/can';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { MAX_BOX_LABEL_LENGTH } from '../../lib/shipment-rules';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import { useEditInboundShipmentBox } from '@/lib/services/inventory/inbound-shipment-mutations';
-import type { InboundShipmentBox, InboundShipmentDetail } from '@/lib/types/dto/inbound-shipment';
+import type {
+  InboundShipmentBox,
+  InboundShipmentDetail,
+} from '@/lib/types/dto/inbound-shipment';
 import { boxDispositionEditable } from '../../lib/shipment-rules';
 import { writeErrorMessage } from './mutation-error';
 
@@ -39,7 +50,13 @@ export function BoxesTab({
         </TableHeader>
         <TableBody>
           {shipment.boxes.map((box) => (
-            <BoxRow key={box.id} shipment={shipment} box={box} onError={setMessage} onForgetAck={onForgetAck} />
+            <BoxRow
+              key={box.id}
+              shipment={shipment}
+              box={box}
+              onError={setMessage}
+              onForgetAck={onForgetAck}
+            />
           ))}
         </TableBody>
       </Table>
@@ -60,14 +77,19 @@ function BoxRow({
 }) {
   const editBox = useEditInboundShipmentBox();
   const [label, setLabel] = useSyncedState(box.label);
-  const coverCount = shipment.lines.filter((l) => l.coversBoxLabels.includes(box.label)).length;
+  const coverCount = shipment.lines.filter((l) =>
+    l.coversBoxLabels.includes(box.label)
+  ).length;
   const dispositionEditable = boxDispositionEditable(shipment, box);
   const nameEditable = shipment.status === 'draft';
   const next = box.disposition === 'stock' ? 'forward' : 'stock';
 
   const run = (body: { disposition?: 'stock' | 'forward'; label?: string }) => {
     onError(null);
-    editBox.mutate({ id: shipment.id, boxId: box.id, ...body }, { onError: (e) => onError(writeErrorMessage(e)) });
+    editBox.mutate(
+      { id: shipment.id, boxId: box.id, ...body },
+      { onError: (e) => onError(writeErrorMessage(e)) }
+    );
   };
 
   return (
@@ -75,10 +97,21 @@ function BoxRow({
       <TableCell>
         {nameEditable ? (
           <div className="flex items-center gap-2">
-            <Input className="w-40" value={label} onChange={(e) => setLabel(e.target.value)} aria-label="상자 이름" />
+            <Input
+              className="w-40"
+              value={label}
+              maxLength={MAX_BOX_LABEL_LENGTH}
+              onChange={(e) => setLabel(e.target.value)}
+              aria-label="상자 이름"
+            />
             {label !== box.label && label.trim() !== '' && (
               <Can run={useEditInboundShipmentBox}>
-                <Button size="sm" variant="outline" disabled={editBox.isPending} onClick={() => run({ label })}>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={editBox.isPending}
+                  onClick={() => run({ label })}
+                >
                   이름 저장
                 </Button>
               </Can>
@@ -91,7 +124,9 @@ function BoxRow({
       <TableCell>
         <div className="flex items-center gap-2">
           <span>{box.disposition === 'stock' ? '재고' : '전달용'}</span>
-          {box.origin === 'added' && <span className="text-muted-foreground">리스트에 없던 상자</span>}
+          {box.origin === 'added' && (
+            <span className="text-muted-foreground">리스트에 없던 상자</span>
+          )}
           {dispositionEditable && (
             <Can run={useEditInboundShipmentBox}>
               <Button
@@ -113,7 +148,11 @@ function BoxRow({
         <>
           <TableCell>{box.status === 'received' ? '받음' : '열림'}</TableCell>
           <TableCell className="text-right">{box.countedQty}</TableCell>
-          <TableCell>{box.receivedAt ? new Date(box.receivedAt).toLocaleString('ko-KR') : ''}</TableCell>
+          <TableCell>
+            {box.receivedAt
+              ? new Date(box.receivedAt).toLocaleString('ko-KR')
+              : ''}
+          </TableCell>
         </>
       )}
       <TableCell className="text-right">{coverCount}</TableCell>

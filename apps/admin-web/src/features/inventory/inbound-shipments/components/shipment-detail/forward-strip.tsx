@@ -27,14 +27,22 @@ export function ForwardStrip({ shipment, acknowledged, onCheck }: Props) {
       {boxes.map((box) => {
         const skuLines = skuLineCountInBox(shipment, box.label);
         return (
-          <div key={box.id} className="flex flex-wrap items-center gap-3 text-sm">
+          <div
+            key={box.id}
+            className="flex flex-wrap items-center gap-3 text-sm"
+          >
             <label className="flex items-center gap-2">
-              <Checkbox checked={acknowledged.has(box.id)} onCheckedChange={(v) => onCheck(box.id, v === true)} />
+              <Checkbox
+                checked={acknowledged.has(box.id)}
+                onCheckedChange={(v) => onCheck(box.id, v === true)}
+              />
               <span className="font-medium">{box.label}</span>
             </label>
             <span className="text-muted-foreground">{box.forwardNote}</span>
             {skuLines > 0 && (
-              <span className="text-amber-600">이 상자 안의 SKU 줄 {skuLines}개는 재고로 안 들어옵니다</span>
+              <span className="text-amber-600">
+                이 상자 안의 SKU 줄 {skuLines}개는 재고로 안 들어옵니다
+              </span>
             )}
             <Can run={useEditInboundShipmentBox}>
               <Button
@@ -47,7 +55,7 @@ export function ForwardStrip({ shipment, acknowledged, onCheck }: Props) {
                   onCheck(box.id, false);
                   editBox.mutate(
                     { id: shipment.id, boxId: box.id, disposition: 'stock' },
-                    { onError: (e) => setMessage(writeErrorMessage(e)) },
+                    { onError: (e) => setMessage(writeErrorMessage(e)) }
                   );
                 }}
               >

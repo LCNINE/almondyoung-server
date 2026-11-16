@@ -1,9 +1,12 @@
+import { CustomError } from '@/lib/api/customError';
 import { box, line, shipment } from './fixtures.spec-helper';
 import {
   boxDispositionEditable,
   confirmReadiness,
   defaultShipmentName,
   defaultWarehouseId,
+  detailLoadErrorMessage,
+  SHIPMENT_STATUS_LABEL,
   normalizeCloseReason,
   forwardBoxes,
   shipmentActions,
@@ -47,14 +50,20 @@ describe('confirmReadiness', () => {
   ];
 
   it('전달용 b2 가 미확인이면 막힌다', () => {
-    const r = confirmReadiness(shipment({ status: 'draft', boxes }), new Set(['b1']));
+    const r = confirmReadiness(
+      shipment({ status: 'draft', boxes }),
+      new Set(['b1'])
+    );
     expect(r.enabled).toBe(false);
     expect(r.unacknowledgedForwardBoxIds).toEqual(['b2']);
     expect(r.acknowledgedForwardBoxIds).toEqual(['b1']);
   });
 
   it('둘 다 체크하면 활성', () => {
-    const r = confirmReadiness(shipment({ status: 'draft', boxes }), new Set(['b1', 'b2']));
+    const r = confirmReadiness(
+      shipment({ status: 'draft', boxes }),
+      new Set(['b1', 'b2'])
+    );
     expect(r).toEqual({
       enabled: true,
       unresolvedStockLines: 0,
@@ -64,16 +73,25 @@ describe('confirmReadiness', () => {
   });
 
   it('재고로 되돌린 상자의 남은 체크는 버린다', () => {
-    const back = boxes.map((b) => (b.id === 'b2' ? { ...b, disposition: 'stock' as const } : b));
-    const r = confirmReadiness(shipment({ status: 'draft', boxes: back }), new Set(['b1', 'b2']));
+    const back = boxes.map((b) =>
+      b.id === 'b2' ? { ...b, disposition: 'stock' as const } : b
+    );
+    const r = confirmReadiness(
+      shipment({ status: 'draft', boxes: back }),
+      new Set(['b1', 'b2'])
+    );
     expect(r.acknowledgedForwardBoxIds).toEqual(['b1']);
     expect(r.enabled).toBe(true);
   });
 
   it('재고 상자를 덮는 미확인 줄은 막는다', () => {
     const r = confirmReadiness(
-      shipment({ status: 'draft', boxes, lines: [line({ kind: 'unresolved', coversBoxLabels: ['S1'] })] }),
-      new Set(['b1', 'b2']),
+      shipment({
+        status: 'draft',
+        boxes,
+        lines: [line({ kind: 'unresolved', coversBoxLabels: ['S1'] })],
+      }),
+      new Set(['b1', 'b2'])
     );
     expect(r.unresolvedStockLines).toBe(1);
     expect(r.enabled).toBe(false);
@@ -81,8 +99,12 @@ describe('confirmReadiness', () => {
 
   it('전달용 상자에만 얹힌 미확인 줄은 세지 않는다', () => {
     const r = confirmReadiness(
-      shipment({ status: 'draft', boxes, lines: [line({ kind: 'unresolved', coversBoxLabels: ['F1'] })] }),
-      new Set(['b1', 'b2']),
+      shipment({
+        status: 'draft',
+        boxes,
+        lines: [line({ kind: 'unresolved', coversBoxLabels: ['F1'] })],
+      }),
+      new Set(['b1', 'b2'])
     );
     expect(r.unresolvedStockLines).toBe(0);
     expect(r.enabled).toBe(true);
@@ -90,14 +112,23 @@ describe('confirmReadiness', () => {
 
   it('전달용과 재고 상자를 같이 덮는 미확인 줄은 센다', () => {
     const r = confirmReadiness(
-      shipment({ status: 'draft', boxes, lines: [line({ kind: 'unresolved', coversBoxLabels: ['F1', 'S1'] })] }),
-      new Set(['b1', 'b2']),
+      shipment({
+        status: 'draft',
+        boxes,
+        lines: [line({ kind: 'unresolved', coversBoxLabels: ['F1', 'S1'] })],
+      }),
+      new Set(['b1', 'b2'])
     );
     expect(r.unresolvedStockLines).toBe(1);
   });
 
   it('초안이 아니면 비활성', () => {
-    expect(confirmReadiness(shipment({ status: 'expected', boxes }), new Set(['b1', 'b2'])).enabled).toBe(false);
+    expect(
+      confirmReadiness(
+        shipment({ status: 'expected', boxes }),
+        new Set(['b1', 'b2'])
+      ).enabled
+    ).toBe(false);
   });
 });
 
@@ -129,9 +160,14 @@ describe('shipmentActions', () => {
       reopen: false,
     }));
   it('사람이 닫은 선적은 다시 열기', () =>
-    expect(shipmentActions(shipment({ status: 'closed', closedReason: '안 옴' })).reopen).toBe(true));
+    expect(
+      shipmentActions(shipment({ status: 'closed', closedReason: '안 옴' }))
+        .reopen
+    ).toBe(true));
   it('저절로 닫힌 선적은 다시 열기 불가', () =>
-    expect(shipmentActions(shipment({ status: 'closed', closedReason: null })).reopen).toBe(false));
+    expect(
+      shipmentActions(shipment({ status: 'closed', closedReason: null })).reopen
+    ).toBe(false));
   it('취소된 선적은 전부 false', () =>
     expect(shipmentActions(shipment({ status: 'canceled' }))).toEqual({
       confirm: false,
@@ -143,22 +179,39 @@ describe('shipmentActions', () => {
 
 describe('boxDispositionEditable', () => {
   it('열린 상자·진행 중 선적이면 가능', () => {
-    expect(boxDispositionEditable(shipment({ status: 'draft' }), box())).toBe(true);
-    expect(boxDispositionEditable(shipment({ status: 'receiving' }), box())).toBe(true);
+    expect(boxDispositionEditable(shipment({ status: 'draft' }), box())).toBe(
+      true
+    );
+    expect(
+      boxDispositionEditable(shipment({ status: 'receiving' }), box())
+    ).toBe(true);
   });
   it('받은 상자는 불가', () =>
-    expect(boxDispositionEditable(shipment({ status: 'receiving' }), box({ status: 'received' }))).toBe(false));
+    expect(
+      boxDispositionEditable(
+        shipment({ status: 'receiving' }),
+        box({ status: 'received' })
+      )
+    ).toBe(false));
   it('closed·canceled 는 불가', () => {
-    expect(boxDispositionEditable(shipment({ status: 'closed' }), box())).toBe(false);
-    expect(boxDispositionEditable(shipment({ status: 'canceled' }), box())).toBe(false);
+    expect(boxDispositionEditable(shipment({ status: 'closed' }), box())).toBe(
+      false
+    );
+    expect(
+      boxDispositionEditable(shipment({ status: 'canceled' }), box())
+    ).toBe(false);
   });
 });
 
 describe('defaultShipmentName', () => {
-  it('마지막 확장자만 제거', () => expect(defaultShipmentName('입고.리스트.xlsx')).toBe('입고.리스트'));
-  it('확장자 없으면 그대로', () => expect(defaultShipmentName('입고리스트')).toBe('입고리스트'));
-  it('점으로 시작하는 이름은 그대로', () => expect(defaultShipmentName('.xlsx')).toBe('.xlsx'));
-  it('255자로 자른다', () => expect(defaultShipmentName(`${'가'.repeat(300)}.xlsx`)).toHaveLength(255));
+  it('마지막 확장자만 제거', () =>
+    expect(defaultShipmentName('입고.리스트.xlsx')).toBe('입고.리스트'));
+  it('확장자 없으면 그대로', () =>
+    expect(defaultShipmentName('입고리스트')).toBe('입고리스트'));
+  it('점으로 시작하는 이름은 그대로', () =>
+    expect(defaultShipmentName('.xlsx')).toBe('.xlsx'));
+  it('255자로 자른다', () =>
+    expect(defaultShipmentName(`${'가'.repeat(300)}.xlsx`)).toHaveLength(255));
 });
 
 describe('defaultWarehouseId', () => {
@@ -167,20 +220,24 @@ describe('defaultWarehouseId', () => {
       defaultWarehouseId([
         { id: 'w1', type: 'domestic' },
         { id: 'w2', type: 'overseas' },
-      ]),
+      ])
     ).toBe('w1'));
   it('국내 둘 → null', () =>
     expect(
       defaultWarehouseId([
         { id: 'w1', type: 'domestic' },
         { id: 'w3', type: 'domestic' },
-      ]),
+      ])
     ).toBeNull());
   it('없으면 null', () => expect(defaultWarehouseId([])).toBeNull());
 });
 
 describe('normalizeCloseReason', () => {
-  it('앞뒤 공백을 뺀다', () => expect(normalizeCloseReason('  파손  ')).toEqual({ ok: true, reason: '파손' }));
+  it('앞뒤 공백을 뺀다', () =>
+    expect(normalizeCloseReason('  파손  ')).toEqual({
+      ok: true,
+      reason: '파손',
+    }));
   it('빈 값·공백뿐이면 거절', () => {
     expect(normalizeCloseReason('')).toEqual({ ok: false });
     expect(normalizeCloseReason('   ')).toEqual({ ok: false });
@@ -189,5 +246,40 @@ describe('normalizeCloseReason', () => {
     expect(normalizeCloseReason('가'.repeat(500)).ok).toBe(true);
     expect(normalizeCloseReason('가'.repeat(501)).ok).toBe(false);
   });
-  it('공백을 뺀 뒤 길이로 센다', () => expect(normalizeCloseReason(` ${'가'.repeat(500)} `).ok).toBe(true));
+  it('공백을 뺀 뒤 길이로 센다', () =>
+    expect(normalizeCloseReason(` ${'가'.repeat(500)} `).ok).toBe(true));
+});
+
+describe('SHIPMENT_STATUS_LABEL', () => {
+  it('상태 다섯 개의 문구 한 벌', () => {
+    expect(SHIPMENT_STATUS_LABEL).toEqual({
+      draft: '초안',
+      expected: '도착 예정',
+      receiving: '입고 중',
+      closed: '끝남',
+      canceled: '취소',
+    });
+  });
+});
+
+describe('detailLoadErrorMessage', () => {
+  it('404 는 못 찾음, 403 은 권한 없음, 그 밖은 서버 문구', () => {
+    expect(
+      detailLoadErrorMessage(new CustomError({ message: 'x', statusCode: 404 }))
+    ).toBe('선적을 찾을 수 없습니다.');
+    expect(
+      detailLoadErrorMessage(new CustomError({ message: 'x', statusCode: 403 }))
+    ).toBe('볼 권한이 없습니다.');
+    expect(
+      detailLoadErrorMessage(
+        new CustomError({
+          message: '서버 오류가 발생했습니다',
+          statusCode: 500,
+        })
+      )
+    ).toBe('서버 오류가 발생했습니다');
+    expect(detailLoadErrorMessage(undefined)).toBe(
+      '선적을 불러오지 못했습니다.'
+    );
+  });
 });

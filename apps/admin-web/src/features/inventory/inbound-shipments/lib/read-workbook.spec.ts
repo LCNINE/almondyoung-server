@@ -1,5 +1,8 @@
 import * as XLSX from 'xlsx';
-import { readInboundShipmentWorkbook, WorkbookReadError } from './read-workbook';
+import {
+  readInboundShipmentWorkbook,
+  WorkbookReadError,
+} from './read-workbook';
 
 type Sheets = Array<{ name: string; ws: XLSX.WorkSheet }>;
 
@@ -10,15 +13,35 @@ function toBytes(sheets: Sheets): ArrayBuffer {
   return out;
 }
 
-const one = (ws: XLSX.WorkSheet): ArrayBuffer => toBytes([{ name: 'Sheet1', ws }]);
-const HEADER = ['박스번호', 'NO', '제품명', '이미지', '수량', '옵션', '바코드', '총수량', '비고'];
+const one = (ws: XLSX.WorkSheet): ArrayBuffer =>
+  toBytes([{ name: 'Sheet1', ws }]);
+const HEADER = [
+  '박스번호',
+  'NO',
+  '제품명',
+  '이미지',
+  '수량',
+  '옵션',
+  '바코드',
+  '총수량',
+  '비고',
+];
 
 describe('readInboundShipmentWorkbook', () => {
   it('병합 칸의 값을 범위 전체에 채운다', () => {
-    const ws = XLSX.utils.aoa_to_sheet([['박스번호', '수량'], ['L5-L9', 1], [null, 2], [null, 3]]);
+    const ws = XLSX.utils.aoa_to_sheet([
+      ['박스번호', '수량'],
+      ['L5-L9', 1],
+      [null, 2],
+      [null, 3],
+    ]);
     ws['!merges'] = [XLSX.utils.decode_range('A2:A4')];
     const r = readInboundShipmentWorkbook(one(ws));
-    expect(r.rows.map((x) => x.cells[0].text)).toEqual(['L5-L9', 'L5-L9', 'L5-L9']);
+    expect(r.rows.map((x) => x.cells[0].text)).toEqual([
+      'L5-L9',
+      'L5-L9',
+      'L5-L9',
+    ]);
   });
 
   it('머리글은 첫 비어 있지 않은 행이다', () => {
@@ -36,7 +59,11 @@ describe('readInboundShipmentWorkbook', () => {
   });
 
   it('끝의 빈 행·빈 열을 자른다', () => {
-    const ws = XLSX.utils.aoa_to_sheet([HEADER, ['L1', 1, 'x', '', 3, '', '1234567890123', 3, ''], ['L2', 2, 'y', '', 4, '', '1234567890124', 4, '']]);
+    const ws = XLSX.utils.aoa_to_sheet([
+      HEADER,
+      ['L1', 1, 'x', '', 3, '', '1234567890123', 3, ''],
+      ['L2', 2, 'y', '', 4, '', '1234567890124', 4, ''],
+    ]);
     ws['!ref'] = 'A1:Z1000';
     const r = readInboundShipmentWorkbook(one(ws));
     expect(r.header).toHaveLength(9);
@@ -48,7 +75,11 @@ describe('readInboundShipmentWorkbook', () => {
     const ws = XLSX.utils.aoa_to_sheet([['수량'], [0]]);
     ws['A2'] = { t: 'n', v: 208, f: '199+9' };
     const r = readInboundShipmentWorkbook(one(ws));
-    expect(r.rows[0].cells[0]).toEqual({ text: '208', value: 208, formula: '199+9' });
+    expect(r.rows[0].cells[0]).toEqual({
+      text: '208',
+      value: 208,
+      formula: '199+9',
+    });
   });
 
   it('숫자 바코드는 숫자 그대로 둔다', () => {
@@ -58,7 +89,10 @@ describe('readInboundShipmentWorkbook', () => {
   });
 
   it('날짜 칸은 ISO 문자열 value 와 표시 text 를 갖는다', () => {
-    const ws = XLSX.utils.aoa_to_sheet([['옵션'], [new Date(Date.UTC(2026, 9, 1))]], { cellDates: true });
+    const ws = XLSX.utils.aoa_to_sheet(
+      [['옵션'], [new Date(Date.UTC(2026, 9, 1))]],
+      { cellDates: true }
+    );
     const r = readInboundShipmentWorkbook(one(ws));
     const cell = r.rows[0].cells[0];
     expect(typeof cell.value).toBe('string');
@@ -74,16 +108,20 @@ describe('readInboundShipmentWorkbook', () => {
       toBytes([
         { name: '빈', ws: empty },
         { name: '데이터', ws: data },
-      ]),
+      ])
     );
     expect(r.sheetName).toBe('데이터');
   });
 
   it('모든 시트가 비면 WorkbookReadError', () => {
-    expect(() => readInboundShipmentWorkbook(one(XLSX.utils.aoa_to_sheet([])))).toThrow(WorkbookReadError);
+    expect(() =>
+      readInboundShipmentWorkbook(one(XLSX.utils.aoa_to_sheet([])))
+    ).toThrow(WorkbookReadError);
   });
 
   it('엑셀이 아닌 바이트는 WorkbookReadError', () => {
-    expect(() => readInboundShipmentWorkbook(new TextEncoder().encode('hello').buffer)).toThrow(WorkbookReadError);
+    expect(() =>
+      readInboundShipmentWorkbook(new TextEncoder().encode('hello').buffer)
+    ).toThrow(WorkbookReadError);
   });
 });

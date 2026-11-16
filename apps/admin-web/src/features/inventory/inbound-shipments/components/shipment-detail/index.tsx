@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useInboundShipment } from '@/lib/services/inventory/inbound-shipment-queries';
+import { detailLoadErrorMessage } from '../../lib/shipment-rules';
 import { ShipmentHeader } from './header';
 import { ForwardStrip } from './forward-strip';
 import { LinesTable } from './lines-table';
@@ -16,17 +17,24 @@ import { UnplannedTab } from './unplanned-tab';
  * 초안 전용 부분(전달용 띠·확정)만 status 로 갈린다 — 확정 뒤 화면은 이 파일 위쪽에서 갈래를 더한다.
  */
 export function ShipmentDetail({ id }: { id: string }) {
-  const { data: shipment, isLoading, refetch } = useInboundShipment(id);
+  const { data: shipment, isLoading, error, refetch } = useInboundShipment(id);
   const [tab, setTab] = useState<'lines' | 'boxes' | 'unplanned'>('lines');
   const [selectedLineId, setSelectedLineId] = useState<string | null>(null);
   // 화면 상태일 뿐 저장하지 않는다.
-  const [acknowledged, setAcknowledged] = useState<ReadonlySet<string>>(new Set());
+  const [acknowledged, setAcknowledged] = useState<ReadonlySet<string>>(
+    new Set()
+  );
 
   if (!shipment) {
-    return <div className="p-4 text-sm text-muted-foreground">{isLoading ? '불러오는 중…' : '선적을 찾을 수 없습니다.'}</div>;
+    return (
+      <div className="p-4 text-sm text-muted-foreground">
+        {isLoading ? '불러오는 중…' : detailLoadErrorMessage(error)}
+      </div>
+    );
   }
   const isDraft = shipment.status === 'draft';
-  const selectedLine = shipment.lines.find((l) => l.id === selectedLineId) ?? null;
+  const selectedLine =
+    shipment.lines.find((l) => l.id === selectedLineId) ?? null;
 
   const setChecked = (boxId: string, checked: boolean) =>
     setAcknowledged((prev) => {
@@ -38,14 +46,31 @@ export function ShipmentDetail({ id }: { id: string }) {
 
   return (
     <div className="flex flex-col gap-3 p-4">
-      <ShipmentHeader shipment={shipment} acknowledged={acknowledged} onStale={() => void refetch()} />
-      {!isDraft && shipment.status !== 'canceled' && <SummaryCards shipment={shipment} />}
-      {isDraft && <ForwardStrip shipment={shipment} acknowledged={acknowledged} onCheck={setChecked} />}
-      <Tabs value={tab} onValueChange={(v) => setTab(v as 'lines' | 'boxes' | 'unplanned')}>
+      <ShipmentHeader
+        shipment={shipment}
+        acknowledged={acknowledged}
+        onStale={() => void refetch()}
+      />
+      {!isDraft && shipment.status !== 'canceled' && (
+        <SummaryCards shipment={shipment} />
+      )}
+      {isDraft && (
+        <ForwardStrip
+          shipment={shipment}
+          acknowledged={acknowledged}
+          onCheck={setChecked}
+        />
+      )}
+      <Tabs
+        value={tab}
+        onValueChange={(v) => setTab(v as 'lines' | 'boxes' | 'unplanned')}
+      >
         <TabsList>
           <TabsTrigger value="lines">줄</TabsTrigger>
           <TabsTrigger value="boxes">상자</TabsTrigger>
-          {!isDraft && <TabsTrigger value="unplanned">리스트에 없던 물건</TabsTrigger>}
+          {!isDraft && (
+            <TabsTrigger value="unplanned">리스트에 없던 물건</TabsTrigger>
+          )}
         </TabsList>
       </Tabs>
       {tab === 'lines' ? (
@@ -53,9 +78,16 @@ export function ShipmentDetail({ id }: { id: string }) {
       ) : tab === 'unplanned' && !isDraft ? (
         <UnplannedTab shipment={shipment} />
       ) : (
-        <BoxesTab shipment={shipment} onForgetAck={(boxId) => setChecked(boxId, false)} />
+        <BoxesTab
+          shipment={shipment}
+          onForgetAck={(boxId) => setChecked(boxId, false)}
+        />
       )}
-      <LineDrawer shipment={shipment} line={selectedLine} onClose={() => setSelectedLineId(null)} />
+      <LineDrawer
+        shipment={shipment}
+        line={selectedLine}
+        onClose={() => setSelectedLineId(null)}
+      />
     </div>
   );
 }

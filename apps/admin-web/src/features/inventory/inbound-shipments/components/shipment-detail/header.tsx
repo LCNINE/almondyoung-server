@@ -25,22 +25,28 @@ import {
 import { getFileSignedUrlFromFileService } from '@/lib/api/domains/files/upload.client';
 import { isCustomError } from '@/lib/api/customError';
 import type { InboundShipmentDetail } from '@/lib/types/dto/inbound-shipment';
-import { confirmReadiness, normalizeCloseReason, shipmentActions } from '../../lib/shipment-rules';
+import {
+  CLOSE_REASON_MAX,
+  confirmReadiness,
+  MAX_MEMO_LENGTH,
+  MAX_SHIPMENT_NAME_LENGTH,
+  normalizeCloseReason,
+  SHIPMENT_STATUS_LABEL,
+  shipmentActions,
+} from '../../lib/shipment-rules';
 import { needsAttention } from '../../lib/line-rules';
 import { writeErrorMessage } from './mutation-error';
 import { useSyncedState } from '../../lib/use-synced-state';
 import { useWarehouses } from '@/lib/services/inventory/queries';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogTitle } from '@/components/ui/dialog';
-
-const STATUS_TEXT: Record<InboundShipmentDetail['status'], string> = {
-  draft: '초안',
-  expected: '도착 예정',
-  receiving: '받는 중',
-  closed: '끝남',
-  canceled: '취소됨',
-};
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogTitle,
+} from '@/components/ui/dialog';
 
 interface Props {
   shipment: InboundShipmentDetail;
@@ -59,13 +65,17 @@ export function ShipmentHeader({ shipment, acknowledged, onStale }: Props) {
   // 서버는 취소된 선적만 머리 수정을 거절한다 — 확정 뒤에도 도착 예정일을 고친다.
   const editsHeader = shipment.status !== 'canceled';
   const { data: warehouses = [] } = useWarehouses();
-  const warehouseName = warehouses.find((w) => w.id === shipment.warehouseId)?.name;
+  const warehouseName = warehouses.find(
+    (w) => w.id === shipment.warehouseId
+  )?.name;
   const readiness = confirmReadiness(shipment, acknowledged);
   const attentionCount = shipment.lines.filter(needsAttention).length;
 
   // refetch 로 서버 값이 바뀌면 따라간다(고치는 중인 칸은 지킨다).
   const [name, setName] = useSyncedState(shipment.name);
-  const [arrival, setArrival] = useSyncedState(shipment.expectedArrival?.slice(0, 10) ?? '');
+  const [arrival, setArrival] = useSyncedState(
+    shipment.expectedArrival?.slice(0, 10) ?? ''
+  );
   const [memo, setMemo] = useSyncedState(shipment.memo ?? '');
   const [closeOpen, setCloseOpen] = useState(false);
   const [closeText, setCloseText] = useState('');
@@ -83,15 +93,23 @@ export function ShipmentHeader({ shipment, acknowledged, onStale }: Props) {
   const saveHeader = () => {
     setMessage(null);
     update.mutate(
-      { id: shipment.id, name, expectedArrival: arrival === '' ? null : arrival, memo: memo === '' ? null : memo },
-      { onError: onWriteError },
+      {
+        id: shipment.id,
+        name,
+        expectedArrival: arrival === '' ? null : arrival,
+        memo: memo === '' ? null : memo,
+      },
+      { onError: onWriteError }
     );
   };
 
   const doConfirm = () => {
     setMessage(null);
     confirm.mutate(
-      { id: shipment.id, acknowledgedForwardBoxIds: readiness.acknowledgedForwardBoxIds },
+      {
+        id: shipment.id,
+        acknowledgedForwardBoxIds: readiness.acknowledgedForwardBoxIds,
+      },
       {
         onSuccess: (res) => {
           setOverlaps(res.labelOverlaps);
@@ -100,7 +118,7 @@ export function ShipmentHeader({ shipment, acknowledged, onStale }: Props) {
           setMessage(writeErrorMessage(e));
           if (isCustomError(e) && e.statusCode === 409) onStale();
         },
-      },
+      }
     );
   };
 
@@ -120,7 +138,7 @@ export function ShipmentHeader({ shipment, acknowledged, onStale }: Props) {
           setCloseText('');
         },
         onError: onWriteError,
-      },
+      }
     );
   };
 
@@ -140,8 +158,13 @@ export function ShipmentHeader({ shipment, acknowledged, onStale }: Props) {
   const openOriginal = async () => {
     if (!shipment.sourceFileId) return;
     try {
-      const { signedUrl } = await getFileSignedUrlFromFileService(shipment.sourceFileId);
-      window.open(signedUrl, '_blank', 'noopener');
+      // await 뒤 window.open 은 팝업 차단에 걸린다 — 내려받기 강제로 현재 창에서 연다.
+      const { signedUrl } = await getFileSignedUrlFromFileService(
+        shipment.sourceFileId,
+        300,
+        { forceDownload: true }
+      );
+      window.location.href = signedUrl;
     } catch (e) {
       setMessage(writeErrorMessage(e));
     }
@@ -150,9 +173,20 @@ export function ShipmentHeader({ shipment, acknowledged, onStale }: Props) {
   return (
     <div className="flex flex-col gap-2">
       <div className="flex flex-wrap items-center gap-2">
-        <Input className="w-64" value={name} disabled={!editsHeader} onChange={(e) => setName(e.target.value)} aria-label="이름" />
-        <Badge variant="outline">{STATUS_TEXT[shipment.status]}</Badge>
-        {warehouseName && <span className="text-sm text-muted-foreground">{warehouseName}</span>}
+        <Input
+          className="w-64"
+          value={name}
+          maxLength={MAX_SHIPMENT_NAME_LENGTH}
+          disabled={!editsHeader}
+          onChange={(e) => setName(e.target.value)}
+          aria-label="이름"
+        />
+        <Badge variant="outline">
+          {SHIPMENT_STATUS_LABEL[shipment.status]}
+        </Badge>
+        {warehouseName && (
+          <span className="text-sm text-muted-foreground">{warehouseName}</span>
+        )}
         <Input
           type="date"
           className="w-40"
@@ -161,37 +195,63 @@ export function ShipmentHeader({ shipment, acknowledged, onStale }: Props) {
           onChange={(e) => setArrival(e.target.value)}
           aria-label="도착 예정일"
         />
-        <Input className="w-64" placeholder="메모" value={memo} disabled={!editsHeader} onChange={(e) => setMemo(e.target.value)} aria-label="메모" />
+        <Input
+          className="w-64"
+          placeholder="메모"
+          value={memo}
+          maxLength={MAX_MEMO_LENGTH}
+          disabled={!editsHeader}
+          onChange={(e) => setMemo(e.target.value)}
+          aria-label="메모"
+        />
         {editsHeader && dirty && (
           <Can run={useUpdateInboundShipmentHeader}>
-            <Button size="sm" onClick={saveHeader} disabled={update.isPending || name.trim() === ''}>
+            <Button
+              size="sm"
+              onClick={saveHeader}
+              disabled={update.isPending || name.trim() === ''}
+            >
               저장
             </Button>
           </Can>
         )}
         <div className="ml-auto flex items-center gap-2">
           {shipment.sourceFileId ? (
-            <Button size="sm" variant="outline" onClick={() => void openOriginal()}>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => void openOriginal()}
+            >
               원본 ⬇
             </Button>
           ) : (
             <span className="text-sm text-muted-foreground">원본 없음</span>
           )}
-          {isDraft && attentionCount > 0 && <span className="text-sm">미확인 {attentionCount}</span>}
+          {isDraft && attentionCount > 0 && (
+            <span className="text-sm">확인 필요 {attentionCount}</span>
+          )}
           {actions.cancel && (
             <Can run={useCancelInboundShipment}>
               <AlertDialog>
                 <AlertDialogTrigger asChild>
-                  <Button size="sm" variant="outline" disabled={cancel.isPending}>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={cancel.isPending}
+                  >
                     취소
                   </Button>
                 </AlertDialogTrigger>
                 <AlertDialogContent>
                   <AlertDialogTitle>이 선적을 취소할까요?</AlertDialogTitle>
-                  <AlertDialogDescription>취소하면 되돌릴 수 없습니다.</AlertDialogDescription>
+                  <AlertDialogDescription>
+                    취소하면 되돌릴 수 없습니다.
+                  </AlertDialogDescription>
                   <AlertDialogFooter>
                     <AlertDialogCancel>닫기</AlertDialogCancel>
-                    <AlertDialogAction onClick={doCancel}>선적 취소</AlertDialogAction>
+                    <AlertDialogAction onClick={doCancel}>
+                      선적 취소
+                    </AlertDialogAction>
                   </AlertDialogFooter>
                 </AlertDialogContent>
               </AlertDialog>
@@ -199,17 +259,26 @@ export function ShipmentHeader({ shipment, acknowledged, onStale }: Props) {
           )}
           {actions.close && (
             <Can run={useCloseInboundShipment}>
-              <Button size="sm" variant="outline" onClick={() => {
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => {
                   setMessage(null);
                   setCloseOpen(true);
-                }}>
+                }}
+              >
                 끝내기…
               </Button>
             </Can>
           )}
           {actions.reopen && (
             <Can run={useReopenInboundShipment}>
-              <Button size="sm" variant="outline" disabled={reopen.isPending} onClick={doReopen}>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={reopen.isPending}
+                onClick={doReopen}
+              >
                 다시 열기
               </Button>
             </Can>
@@ -217,11 +286,16 @@ export function ShipmentHeader({ shipment, acknowledged, onStale }: Props) {
           {actions.confirm && (
             <Can run={useConfirmInboundShipment}>
               <span className="text-sm text-muted-foreground">
-                {readiness.unresolvedStockLines > 0 && `미확인 ${readiness.unresolvedStockLines} `}
+                {readiness.unresolvedStockLines > 0 &&
+                  `재고 상자를 막는 미확인 ${readiness.unresolvedStockLines} `}
                 {readiness.unacknowledgedForwardBoxIds.length > 0 &&
                   `전달용 미확인 ${readiness.unacknowledgedForwardBoxIds.length}`}
               </span>
-              <Button size="sm" onClick={doConfirm} disabled={!readiness.enabled || confirm.isPending}>
+              <Button
+                size="sm"
+                onClick={doConfirm}
+                disabled={!readiness.enabled || confirm.isPending}
+              >
                 확정
               </Button>
             </Can>
@@ -231,27 +305,42 @@ export function ShipmentHeader({ shipment, acknowledged, onStale }: Props) {
       {shipment.status === 'closed' && shipment.closedReason && (
         <div className="text-sm text-muted-foreground">
           끝낸 사유: {shipment.closedReason}
-          {shipment.closedAt ? ` · ${new Date(shipment.closedAt).toLocaleString('ko-KR')}` : ''}
+          {shipment.closedAt
+            ? ` · ${new Date(shipment.closedAt).toLocaleString('ko-KR')}`
+            : ''}
         </div>
       )}
       <Dialog open={closeOpen} onOpenChange={setCloseOpen}>
         <DialogContent>
           <DialogTitle>선적 끝내기</DialogTitle>
-          <DialogDescription>끝내는 사유를 적어 주세요. 다시 열 수 있습니다.</DialogDescription>
-          <Textarea value={closeText} onChange={(e) => setCloseText(e.target.value)} aria-label="끝내는 사유" rows={4} />
+          <DialogDescription>
+            끝내는 사유를 적어 주세요. 다시 열 수 있습니다.
+          </DialogDescription>
+          <Textarea
+            value={closeText}
+            maxLength={CLOSE_REASON_MAX}
+            onChange={(e) => setCloseText(e.target.value)}
+            aria-label="끝내는 사유"
+            rows={4}
+          />
           {/* 모달 뒤에 가리지 않게 대화상자 안에 보여 준다. 열어 둬서 적은 사유를 지키고, 409 면 이미 refetch 중이다. */}
           {message && <div className="text-sm text-destructive">{message}</div>}
           <DialogFooter>
             <Button variant="outline" onClick={() => setCloseOpen(false)}>
               닫기
             </Button>
-            <Button onClick={doClose} disabled={!closeInput.ok || closeShipment.isPending}>
+            <Button
+              onClick={doClose}
+              disabled={!closeInput.ok || closeShipment.isPending}
+            >
               끝내기
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      {message && !closeOpen && <div className="text-sm text-destructive">{message}</div>}
+      {message && !closeOpen && (
+        <div className="text-sm text-destructive">{message}</div>
+      )}
       {overlaps.length > 0 && (
         <div className="text-sm text-amber-600">
           같은 창고의 열린 선적과 상자 이름이 겹칩니다: {overlaps.join(', ')}
