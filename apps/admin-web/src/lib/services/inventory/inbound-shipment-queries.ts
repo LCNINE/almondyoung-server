@@ -17,3 +17,10 @@ export const useInboundShipment = (id: string | undefined) =>
     queryFn: () => inboundShipmentsClient.detail(id as string),
     enabled: !!id,
   });
+
+export const useInboundShipmentBox = (id: string, boxId: string | undefined) =>
+  useQuery({
+    queryKey: inventoryQueryKeys.inboundShipmentBox(id, boxId ?? ''),
+    queryFn: () => inboundShipmentsClient.getBox(id, boxId as string),
+    enabled: !!boxId,
+  });

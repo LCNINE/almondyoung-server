@@ -10,6 +10,7 @@ import type {
   ReopenInboundShipmentResult,
   EditInboundShipmentBoxBody,
   EditInboundShipmentLineBody,
+  InboundShipmentBoxView,
   InboundShipmentDetail,
   InboundShipmentListFilter,
   InboundShipmentSummary,
@@ -32,6 +33,11 @@ export const inboundShipmentsClient = {
 
   detail: async (id: string): Promise<InboundShipmentDetail> => {
     const response = await client.get(`${BASE}/${id}`);
+    return response.data;
+  },
+
+  getBox: async (id: string, boxId: string): Promise<InboundShipmentBoxView> => {
+    const response = await client.get(`${BASE}/${id}/boxes/${boxId}`);
     return response.data;
   },
 

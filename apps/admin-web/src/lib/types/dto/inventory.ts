@@ -477,7 +477,7 @@ export interface InboundReceiptLineDto {
   returnedQty: number;
   canceledQty: number;
   putawayFromOriginQty: number;
-  source: 'direct' | 'purchase_order';
+  source: 'direct' | 'purchase_order' | 'inbound_shipment';
   createdAt: string;
   updatedAt: string;
 }
