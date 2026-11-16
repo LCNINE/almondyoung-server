@@ -110,3 +110,20 @@ describe('revenue review metadata migration', () => {
     expect(migration.sql.join(' ')).not.toMatch(/\b(DROP|DELETE|UPDATE|TRUNCATE)\b/i);
   });
 });
+
+describe('count method additive migration review', () => {
+  const migration = readMigrationFiles({ migrationsFolder: resolve(__dirname, '../../apps/core/drizzle') }).find(
+    (entry) => entry.folderMillis === 1794794231615,
+  )!;
+  const context = { stage: 'live', deployment: 'lcnine-services', service: 'core' };
+  it('accepts only the reviewed SQL and context while keeping other changes blocked', () => {
+    expect(() => assertAdditiveMigrations([migration], context)).not.toThrow();
+    expect(() => assertAdditiveMigrations([{ ...migration, hash: 'changed' }], context)).toThrow('maintenance review');
+    expect(() => assertAdditiveMigrations([migration], { ...context, stage: 'demo' })).toThrow('maintenance review');
+    expect(() => assertAdditiveMigrations([migration], { ...context, service: 'analytics' })).toThrow(
+      'maintenance review',
+    );
+    expect(migration.sql.join(' ')).not.toMatch(/\b(DROP|DELETE|UPDATE|TRUNCATE)\b/i);
+    expect(migration.sql.join(' ')).toContain("DEFAULT 'counted' NOT NULL");
+  });
+});

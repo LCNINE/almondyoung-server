@@ -15,6 +15,16 @@ export interface MigrationContext {
 // No identifier/schema/stock changes; length is unchanged and already-converted rows do not match.
 // Keep the original SQL/history immutable. A changed file or another stage requires a new review.
 const reviewedDataMigrations = [
+  // Add a count-method enum and a constant default without changing stored quantities.
+  // Existing rows receive 'counted', which satisfies the new CHECK regardless of line_id.
+  // Constraint validation scans existing rows; deployment lock/statement timeouts remain active.
+  {
+    stage: 'live',
+    deployment: 'lcnine-services',
+    service: 'core',
+    folderMillis: 1794794231615,
+    hash: '596de3ed3033976609dd0525a3910566850da9d3dccb5febb241b6957bed8e48',
+  },
   // Create an empty audit table and add defaulted metadata columns.
   // All existing-table additions have constant defaults (pending / empty text).
   // No amount, identity, existing constraint, or source row is changed or removed.
