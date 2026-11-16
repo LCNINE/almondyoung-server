@@ -19,6 +19,7 @@ const channels = [
   ['naver', '스마트스토어'],
   ['coupang', '쿠팡'],
   ['phone', '전화 주문'],
+  ['membership', '멤버십'],
   ['other', '기타 채널'],
 ] as const;
 

@@ -191,6 +191,7 @@ describe('annual company revenue', () => {
       naver: 100,
       coupang: 80,
       phone: 0,
+      membership: 0,
       other: 0,
       all: 860,
     });
@@ -224,5 +225,38 @@ describe('annual company revenue', () => {
     expect(result.totals!.own_mall).toBe(180);
     expect(result.totals!.other).toBe(70);
     expect(result.imported.amount).toBe(0);
+  });
+});
+
+describe('membership payments in the shared company ledger', () => {
+  const base = {
+    today: '2031-03-15',
+    coverageStart: '2031-01-01',
+    hasIntegratedChannels: false,
+    daily: [{ date: '2031-03-01', ownMall: 1000, allChannels: 1000 }],
+    refunds: new Map<string, number>(),
+    external: [],
+  };
+
+  it('adds separate membership receipts and subtracts refund-only dates, excluding today', () => {
+    const result = annualCompanyRevenue({
+      ...base,
+      membership: [
+        { bucket: '2031-02-20', amount: 300 },
+        { bucket: '2031-03-02', amount: -100 },
+        { bucket: '2031-03-15', amount: 900 },
+        { bucket: '2030-12-31', amount: 700 },
+      ],
+    });
+    expect(result.totals?.all).toBe(1200);
+    expect(result.totals?.own_mall).toBe(1000);
+    expect(result.totals?.membership).toBe(200);
+    expect(result.monthly[2].membership).toBe(-100);
+  });
+
+  it('does not label a failed membership lookup as zero revenue', () => {
+    expect(
+      annualCompanyRevenue({ ...base, membership: null }).totals
+    ).toBeNull();
   });
 });

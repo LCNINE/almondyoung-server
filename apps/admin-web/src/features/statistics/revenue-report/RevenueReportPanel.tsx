@@ -10,6 +10,8 @@ import { ANALYTICS_SERVICE_BASE_URL } from '@/const/api-const';
 import { Button } from '@/components/ui/button';
 import { useGrowthSummary } from '@/lib/services/analytics';
 import { useOrderRefunds } from '@/lib/services/wallet/queries';
+import { walletApi } from '@/lib/api/domains/wallet';
+import { addDays } from '../growth/calendar';
 import { refundMap } from '../growth/model';
 import { appendGoalEvidence } from './goal-export';
 import { appendCompanyRevenueEvidence } from './company-revenue-export';
@@ -160,14 +162,23 @@ export function RevenueReportPanel() {
         ),
         '최근 반영 이력'
       );
-      if (goal)
+      if (goal) {
+        const membership = await walletApi.getMembershipRevenue(
+          `${year}-01-01`,
+          addDays(goal.today, -1)
+        );
+        if (membership.paymentCount === undefined)
+          throw new Error('멤버십 결제 집계 확인 필요');
         appendCompanyRevenueEvidence(
           XLSX,
           book,
           goal,
           refundsQuery.isError ? null : refundMap(refundsQuery.data?.series),
-          report.data.external
+          report.data.external,
+          'all',
+          membership
         );
+      }
       if (goal?.goal)
         appendGoalEvidence(
           XLSX,

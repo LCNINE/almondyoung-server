@@ -79,6 +79,7 @@ export const REVENUE_CHANNELS = {
   naver: '스마트스토어',
   coupang: '쿠팡',
   phone: '전화 주문',
+  membership: '멤버십',
   other: '기타 채널',
 } as const;
 export type RevenueChannel = keyof typeof REVENUE_CHANNELS;
@@ -91,6 +92,7 @@ export function annualCompanyRevenue(input: {
   daily: Array<{ date: string; ownMall: number; allChannels: number }>;
   refunds: Map<string, number> | null;
   external: ExternalRevenueRow[];
+  membership?: Array<{ bucket: string; amount: number }> | null;
 }) {
   const year = input.today.slice(0, 4);
   const currentMonth = input.today.slice(0, 7);
@@ -106,6 +108,7 @@ export function annualCompanyRevenue(input: {
     naver: 0,
     coupang: 0,
     phone: 0,
+    membership: 0,
     other: 0,
     all: 0,
   }));
@@ -136,17 +139,29 @@ export function annualCompanyRevenue(input: {
       month[channel] += row.amount;
   }
 
+  for (const day of input.membership ?? []) {
+    if (day.bucket < `${year}-01-01` || day.bucket >= input.today) continue;
+    const month = byMonth.get(day.bucket.slice(0, 7));
+    if (month) month.membership += day.amount;
+  }
+
   const totals = {
     own_mall: 0,
     naver: 0,
     coupang: 0,
     phone: 0,
+    membership: 0,
     other: 0,
     all: 0,
   };
   for (const month of monthly) {
     month.all =
-      month.own_mall + month.naver + month.coupang + month.phone + month.other;
+      month.own_mall +
+      month.naver +
+      month.coupang +
+      month.phone +
+      month.membership +
+      month.other;
     for (const channel of Object.keys(totals) as RevenueChannel[])
       totals[channel] += month[channel];
   }
@@ -156,7 +171,7 @@ export function annualCompanyRevenue(input: {
     imported,
     monthly,
     currentMonth,
-    totals: input.refunds === null ? null : totals,
+    totals: input.refunds === null || input.membership === null ? null : totals,
     dailyAmount: input.refunds === null ? null : dailyAmount,
   };
 }
@@ -187,6 +202,7 @@ export function companyMonthlyRows(
       naver: collected('naver') ? month.naver : null,
       coupang: collected('coupang') ? month.coupang : null,
       phone: collected('phone') ? month.phone : null,
+      membership: active ? month.membership : null,
       other: active && month.other !== 0 ? month.other : null,
       all: active ? month.all : null,
     };

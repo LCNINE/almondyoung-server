@@ -323,7 +323,7 @@ function CombinedProfitSection({
   return (
     <ChartCard
       title="수입 구성과 종합 손익"
-      description="멤버십 구독료(청구 확정일 기준)와 결제 수수료는 결제 원장 기준 전사 값입니다. 종합 이익 = 커머스 추정 마진 + 멤버십 구독료 − 추정 수수료."
+      description="멤버십 수입(가입·등급 변경·정기결제, 수금·환불일 기준)와 결제 수수료는 결제 원장 기준 전사 값입니다. 종합 이익 = 커머스 추정 마진 + 멤버십 구독료 − 추정 수수료."
       isLoading={isLoading}
       isEmpty={false}
     >
@@ -339,7 +339,7 @@ function CombinedProfitSection({
           <KpiTile
             label="멤버십 구독료"
             value={formatKrw(membershipAmount)}
-            hint={membership ? `PAID 인보이스 ${formatCount(membership.invoiceCount)}건` : undefined}
+            hint={membership ? `결제 ${formatCount(membership.paymentCount ?? membership.invoiceCount)}건 · 성공 환불 차감` : undefined}
           />
           <KpiTile
             label="추정 결제수수료"

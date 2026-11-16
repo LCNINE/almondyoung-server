@@ -18,7 +18,10 @@ import { useQuery } from '@tanstack/react-query';
 import { client } from '@/lib/api/client';
 import { ANALYTICS_SERVICE_BASE_URL } from '@/const/api-const';
 import { useGrowthSummary } from '@/lib/services/analytics';
-import { useOrderRefunds } from '@/lib/services/wallet/queries';
+import {
+  useOrderRefunds,
+  useMembershipRevenue,
+} from '@/lib/services/wallet/queries';
 import { refundMap, OWN_MALL_CHANNEL } from '../growth/model';
 import { kstToday } from '../as-of';
 import { formatKrw, formatKrwAxis } from '../shared';
@@ -55,9 +58,19 @@ export function CompanyRevenueCard() {
     summary?.today ?? '',
     Boolean(summary)
   );
+  const membershipQuery = useMembershipRevenue(
+    `${year}-01-01`,
+    addDays(summary?.today ?? kstToday(), -1)
+  );
+  const membership =
+    membershipQuery.isError || membershipQuery.data?.paymentCount === undefined
+      ? null
+      : membershipQuery.data;
   const loading =
     summaryQuery.isPending ||
     report.isPending ||
+    membershipQuery.isPending ||
+    membershipQuery.isPlaceholderData ||
     (Boolean(summary) && refundsQuery.isLoading);
 
   if (summaryQuery.isError || report.isError) {
@@ -88,6 +101,7 @@ export function CompanyRevenueCard() {
     daily: summary.ytdDaily,
     refunds,
     external: report.data.external,
+    membership: membership?.series ?? null,
   });
   const { imported } = revenue;
   const registeredAt = summary.goal?.createdAt;
@@ -159,7 +173,8 @@ export function CompanyRevenueCard() {
         summary,
         refunds,
         report.data.external,
-        channel
+        channel,
+        membership
       );
       if (summary.goal) appendGoalEvidence(XLSX, book, summary, refunds);
       XLSX.writeFile(book, `매출목표_${summary.year}_통합근거.xlsx`);
@@ -177,7 +192,7 @@ export function CompanyRevenueCard() {
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h2 className="text-base font-semibold">
-          {summary.year}년 회사 전체 매출
+          {summary.year}년 회사 매출 · 수집 자료 기준
         </h2>
         <div className="flex flex-wrap gap-3 text-sm text-orange-800">
           <button
@@ -195,6 +210,12 @@ export function CompanyRevenueCard() {
           <Link href="/statistics/settings#revenue-goal">목표 설정</Link>
         </div>
       </div>
+      <p className="rounded-md bg-amber-50 p-3 text-sm leading-relaxed text-amber-900">
+        현재 금액은 수집한 매출의 소계입니다. 직접 거래·OEM·서비스 매출과 은행
+        입금 대조를 진행 중이므로 회사 전체 확정 매출로 보시면 안 됩니다. 상품
+        매출과 멤버십 결제를 합산하며, 수수료는 매출에서 중복 차감하지 않고
+        비용·정산액으로 구분합니다.
+      </p>
       <div
         role="group"
         aria-label="매출 채널 선택"
@@ -223,12 +244,12 @@ export function CompanyRevenueCard() {
           <div>
             <p className="text-xs text-gray-500">
               {channel === 'all'
-                ? '올해 전체 매출'
+                ? '올해 매출 소계'
                 : `올해 ${REVENUE_CHANNELS[channel]} 매출`}
             </p>
             <p className="mt-1 text-2xl font-bold tabular-nums">
               {selectedAmount === null
-                ? '환불 확인 필요'
+                ? '결제·환불 확인 필요'
                 : formatKrw(selectedAmount)}
             </p>
             <p className="mt-1 text-xs text-gray-500">
@@ -241,7 +262,7 @@ export function CompanyRevenueCard() {
             <div className="flex items-baseline justify-between gap-2">
               <span className="text-xs text-gray-500">
                 {channel === 'all'
-                  ? '연간 목표 달성률'
+                  ? '수집분 기준 목표 달성률'
                   : '회사 연간 목표 기여율'}
               </span>
               <strong className="text-xl tabular-nums">
@@ -292,7 +313,7 @@ export function CompanyRevenueCard() {
           </p>
           {selectedAmount === null ? (
             <p role="alert" className="py-12 text-sm">
-              환불 자료 확인 후 매출과 달성률을 표시합니다.
+              결제·환불 자료 확인 후 매출과 달성률을 표시합니다.
             </p>
           ) : (
             <ResponsiveContainer width="100%" height={230}>
@@ -340,8 +361,8 @@ export function CompanyRevenueCard() {
             {channel === 'all' ? <span>계획 누적</span> : null}
           </p>
           <p className="mt-2 text-xs text-gray-500">
-            자사몰 {asOf}까지 + 채널별 업로드 자료. 이번 달은 등록된 금액까지만
-            반영합니다.
+            자사몰·멤버십 {asOf}까지 + 채널별 업로드 자료. 이번 달은 등록된
+            금액까지만 반영합니다.
           </p>
         </div>
       </div>
@@ -360,9 +381,10 @@ export function CompanyRevenueCard() {
           <div className="space-y-5 pt-3">
             <p className="font-medium text-gray-900">
               현재 금액은 메두사 자사몰 자동 집계에 카페24·스마트스토어·쿠팡 등
-              합산 대상으로 등록된 자료를 더한 회사 매출입니다. 메두사 매출도
-              포함되어 있습니다. 이전 화면의 출처 미확인 수기 보정액을 자료별
-              금액으로 바꾼 결과이며, 아직 세무 신고용 확정 매출은 아닙니다.
+              합산 대상으로 등록된 자료와 멤버십 수입을 더한 매출 소계입니다.
+              메두사 매출도 포함되어 있습니다. 이전 화면의 출처 미확인 수기
+              보정액을 자료별 금액으로 바꾼 결과이며, 아직 세무 신고용 확정
+              매출은 아닙니다.
             </p>
             <div className="space-y-2">
               <h3 className="font-bold text-gray-900">
@@ -418,6 +440,10 @@ export function CompanyRevenueCard() {
                   다를 수 있습니다.
                 </li>
                 <li>
+                  멤버십: 가입·등급 변경·정기결제의 실제 수금에서 성공 환불을
+                  차감합니다. 청구서와 결제액을 중복 합산하지 않습니다.
+                </li>
+                <li>
                   전화·수동 주문 등: 기존 자사몰·다른 채널 주문과 겹치지 않는지
                   확인하고 합산 대상으로 등록한 자료만 반영합니다.
                 </li>
@@ -448,8 +474,10 @@ export function CompanyRevenueCard() {
                   = <strong>{formatKrw(base.pacing.actualToDate)}</strong>
                 </p>
                 <p>
-                  현재 방식: 메두사 {formatKrw(total - imported.amount)} + 합산
-                  대상 업로드 자료 {formatKrw(imported.amount)} ={' '}
+                  현재 방식: 상품 자동 집계{' '}
+                  {formatKrw(revenue.dailyAmount ?? 0)} + 합산 대상 업로드 자료{' '}
+                  {formatKrw(imported.amount)} + 멤버십{' '}
+                  {formatKrw(membership?.totalAmount ?? 0)} ={' '}
                   <strong>{formatKrw(total)}</strong>
                 </p>
                 <p>

@@ -577,6 +577,10 @@ export interface MembershipRevenueDto {
   range: { from: string; to: string };
   totalAmount: number;
   invoiceCount: number;
+  paymentCount: number;
+  capturedAmount: number;
+  refundedAmount: number;
+  refundCount: number;
   series: Array<{ bucket: string; amount: number; count: number }>;
 }
 

@@ -45,10 +45,23 @@ const report = {
   ],
 };
 let refundError = false;
+let membershipError = false;
+let membershipSeries: Array<{ bucket: string; amount: number; count: number }> =
+  [];
 jest.mock('@/lib/services/analytics', () => ({
   useGrowthSummary: () => ({ data: summary }),
 }));
 jest.mock('@/lib/services/wallet/queries', () => ({
+  useMembershipRevenue: () => ({
+    isError: membershipError,
+    data: {
+      totalAmount: 0,
+      capturedAmount: 0,
+      refundedAmount: 0,
+      paymentCount: 0,
+      series: membershipSeries,
+    },
+  }),
   useOrderRefunds: () => ({
     data: { series: [{ day: '2026-06-15', amount: 20 }] },
     isError: refundError,
@@ -86,6 +99,8 @@ jest.mock('recharts', () => ({
 
 afterEach(() => {
   refundError = false;
+  membershipError = false;
+  membershipSeries = [];
 });
 
 it('uses the combined company total in the actual goal and chart, then filters the same ledger', () => {
@@ -154,4 +169,17 @@ it('shows native and legacy storefront sales together and reconciles the monthly
   expect(table.textContent).toContain('₩500');
   expect(table.textContent).toContain('₩860');
   expect(table.textContent).toContain('미등록');
+});
+
+it('includes membership in the same goal and keeps lookup failure distinct from zero', () => {
+  membershipSeries = [{ bucket: '2026-06-15', amount: 140, count: 1 }];
+  const view = render(<CompanyRevenueCard />);
+  expect(screen.getByText('50.0%')).toBeTruthy();
+  fireEvent.click(screen.getByRole('button', { name: '멤버십' }));
+  expect(screen.getByTestId('monthly-chart').textContent).toContain(
+    '"actual":140'
+  );
+  membershipError = true;
+  view.rerender(<CompanyRevenueCard />);
+  expect(screen.queryByTestId('monthly-chart')).toBeNull();
 });

@@ -1,3 +1,4 @@
+import type { MembershipRevenueDto } from '@/lib/types/dto/wallet';
 import type * as XLSXTypes from 'xlsx';
 import type { GrowthSummary } from '@/lib/api/domains/analytics';
 import { OWN_MALL_CHANNEL } from '../growth/model';
@@ -17,7 +18,8 @@ export function appendCompanyRevenueEvidence(
   summary: GrowthSummary,
   refunds: Map<string, number> | null,
   external: ExternalRevenueRow[],
-  channel: RevenueChannel = 'all'
+  channel: RevenueChannel = 'all',
+  membership?: MembershipRevenueDto | null
 ) {
   const revenue = annualCompanyRevenue({
     today: summary.today,
@@ -28,6 +30,7 @@ export function appendCompanyRevenueEvidence(
     daily: summary.ytdDaily,
     refunds,
     external,
+    membership: membership?.series ?? (membership === null ? null : undefined),
   });
   const { imported, dailyAmount } = revenue;
   const base = summary.goal ? goalExportRows(summary, refunds) : null;
@@ -41,8 +44,11 @@ export function appendCompanyRevenueEvidence(
       ['항목', '값'],
       ['연도', summary.year],
       ['조회일', summary.today],
-      ['회사 전체 매출 · 잠정', total],
-      ['일별 집계 반영액', dailyAmount],
+      ['회사 매출 소계 · 수집 자료 기준', total],
+      ['일별 상품 집계 반영액', dailyAmount],
+      ['멤버십 결제', membership?.capturedAmount ?? null],
+      ['멤버십 환불', membership?.refundedAmount ?? null],
+      ['멤버십 반영액', membership?.totalAmount ?? null],
       ['합산 제외 · 근거 미확인 수기 누적액', base?.preCoverageActual ?? null],
       ['일별 집계 시작일', summary.coverageStart],
       [
@@ -106,6 +112,7 @@ export function appendCompanyRevenueEvidence(
           스마트스토어: revenue.totals ? row.naver : null,
           쿠팡: revenue.totals ? row.coupang : null,
           전화주문: revenue.totals ? row.phone : null,
+          멤버십: revenue.totals ? row.membership : null,
           기타채널: revenue.totals ? row.other : null,
         }))
     ),
@@ -121,6 +128,7 @@ export function appendCompanyRevenueEvidence(
         스마트스토어: revenue.totals ? row.naver : null,
         쿠팡: revenue.totals ? row.coupang : null,
         전화주문: revenue.totals ? row.phone : null,
+        멤버십: revenue.totals ? row.membership : null,
         기타채널: revenue.totals ? row.other : null,
         전체합계: revenue.totals ? row.all : null,
         비고: '미등록·집계 전·미도래는 빈칸. 수집분 잠정 합계.',

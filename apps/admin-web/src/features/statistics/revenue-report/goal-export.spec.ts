@@ -97,7 +97,18 @@ it('exports the same company total and monthly channel amounts without the legac
         amount: 100,
         source: 'fixture',
       },
-    ]
+    ],
+    'all',
+    {
+      range: { from: '2026-01-01', to: '2026-01-02' },
+      totalAmount: 30,
+      capturedAmount: 40,
+      refundedAmount: 10,
+      paymentCount: 1,
+      refundCount: 1,
+      invoiceCount: 0,
+      series: [{ bucket: '2026-01-02', amount: 30, count: 1 }],
+    }
   );
   const decoded = XLSX.read(
     XLSX.write(book, { type: 'buffer', bookType: 'xlsx' }),
@@ -107,16 +118,17 @@ it('exports the same company total and monthly channel amounts without the legac
     decoded.Sheets['통합 목표'],
     { header: 1 }
   );
-  expect(totals).toContainEqual(['회사 전체 매출 · 잠정', 390]);
+  expect(totals).toContainEqual(['회사 매출 소계 · 수집 자료 기준', 420]);
   expect(totals).toContainEqual(['합산 제외 · 근거 미확인 수기 누적액', 50]);
   expect(XLSX.utils.sheet_to_json(decoded.Sheets['월별 채널 매출'])).toEqual([
     {
       월: '2026-01',
-      전체: 390,
+      전체: 420,
       자사몰: 290,
       스마트스토어: 100,
       쿠팡: 0,
       전화주문: 0,
+      멤버십: 30,
       기타채널: 0,
     },
   ]);
