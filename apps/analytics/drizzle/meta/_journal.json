@@ -78,6 +78,13 @@
       "when": 1793244085162,
       "tag": "20261029032125_drop-legacy-scope-tables",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1794794051107,
+      "tag": "20261116015411_external-revenue-monthly",
+      "breakpoints": true
     }
   ]
 }

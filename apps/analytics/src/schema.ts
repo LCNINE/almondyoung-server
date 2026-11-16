@@ -387,7 +387,23 @@ export const settingRevenueGoalMonths = pgTable(
   (table) => [primaryKey({ columns: [table.goalId, table.month] })],
 );
 
+/** 채널 통합 전 수집한 월별 자료. 주문 집계에 더하지 않아 향후 API 수집과 중복되지 않는다. */
+export const externalRevenueMonthly = pgTable(
+  'external_revenue_monthly',
+  {
+    channel: varchar('channel', { length: 20 }).notNull(),
+    account: varchar('account', { length: 100 }).notNull(),
+    month: varchar('month', { length: 7 }).notNull(),
+    basis: varchar('basis', { length: 30 }).notNull(),
+    amount: bigint('amount', { mode: 'number' }).notNull(),
+    source: varchar('source', { length: 255 }).notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.channel, table.account, table.month, table.basis] })],
+);
+
 export const analyticsSchema = {
+  externalRevenueMonthly,
   factOrderEvents,
   factOrderItems,
   aggProductOrderDaily,
