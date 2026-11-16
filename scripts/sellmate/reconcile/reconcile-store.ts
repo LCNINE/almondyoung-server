@@ -40,6 +40,9 @@ export async function reconcileTablesExist(sql: Sql): Promise<boolean> {
   return rows.every((r) => r.oid !== null);
 }
 
+/** init 뒤 옛 스크립트(sync-stock·handover-stock-addback)가 내는 거절 문구 */
+export const SYNC_REFUSAL_AFTER_INIT = '저녁 맞추기 init 이 있다 — T 이후 이 스크립트는 core 원장을 되돌리므로 돌리지 않는다 (#1304)';
+
 export async function reconcileInitExists(sql: Sql): Promise<boolean> {
   if (!(await reconcileTablesExist(sql))) return false;
   const [row] = await sql<{ n: number }[]>`SELECT count(*)::int AS n FROM sellmate_reconcile_runs WHERE kind = 'init'`;

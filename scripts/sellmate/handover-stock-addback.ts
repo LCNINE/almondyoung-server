@@ -34,6 +34,7 @@ import * as path from 'path';
 import postgres, { Sql } from 'postgres';
 import { chunk, readRows } from './parse';
 import { applyStockDelta } from './stock-delta';
+import { reconcileInitExists, SYNC_REFUSAL_AFTER_INIT } from './reconcile/reconcile-store';
 import { parseStockRows, StockCount, StockParseError } from './sync-stock';
 
 export const HANDOVER_SOURCE = 'sellmate-handover';
@@ -434,6 +435,9 @@ async function main(): Promise<void> {
   }
   const sql = postgres(url, { max: 2, onnotice: () => undefined });
   try {
+    // 저녁 맞추기 init 뒤에는 이중 가산이 된다 — dry-run 이어도 거절한다 (#1304).
+    if (await reconcileInitExists(sql)) throw new RefusedError(SYNC_REFUSAL_AFTER_INIT);
+
     if (!args.apply) {
       const assessment = await assess(sql, counts, args.collectedAt);
       report(assessment, args.collectedAt);
