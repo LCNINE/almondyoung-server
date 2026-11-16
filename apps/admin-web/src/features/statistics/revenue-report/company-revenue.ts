@@ -160,3 +160,35 @@ export function annualCompanyRevenue(input: {
     dailyAmount: input.refunds === null ? null : dailyAmount,
   };
 }
+
+export function companyMonthlyRows(
+  revenue: ReturnType<typeof annualCompanyRevenue>,
+  coverageStart: string | null
+) {
+  return revenue.monthly.map((month) => {
+    const included = revenue.imported.rows.filter(
+      (row) => row.included && row.month === month.month
+    );
+    const cafe = included
+      .filter((row) => row.channel === 'cafe24')
+      .reduce((sum, row) => sum + row.amount, 0);
+    const collected = (channel: string) =>
+      included.some((row) => row.channel === channel);
+    const active = month.month <= revenue.currentMonth;
+    return {
+      month: month.month,
+      medusa:
+        active &&
+        (month.own_mall !== cafe ||
+          (coverageStart && month.month >= coverageStart.slice(0, 7)))
+          ? month.own_mall - cafe
+          : null,
+      cafe24: collected('cafe24') ? cafe : null,
+      naver: collected('naver') ? month.naver : null,
+      coupang: collected('coupang') ? month.coupang : null,
+      phone: collected('phone') ? month.phone : null,
+      other: active && month.other !== 0 ? month.other : null,
+      all: active ? month.all : null,
+    };
+  });
+}

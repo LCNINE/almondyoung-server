@@ -30,6 +30,7 @@ import {
 import { appendGoalEvidence, goalExportRows } from './goal-export';
 import { appendCompanyRevenueEvidence } from './company-revenue-export';
 import { BASES, CHANNELS, type RevenueReport } from './model';
+import { CompanyMonthlyRevenue } from './CompanyMonthlyRevenue';
 
 /** Shared annual view: every statistics tab and the home goal read the same persisted uploads. */
 export function CompanyRevenueCard() {
@@ -89,6 +90,23 @@ export function CompanyRevenueCard() {
     external: report.data.external,
   });
   const { imported } = revenue;
+  const registeredAt = summary.goal?.createdAt;
+  const registeredDate =
+    registeredAt && Number.isFinite(Date.parse(registeredAt))
+      ? new Intl.DateTimeFormat('en-CA', {
+          timeZone: 'Asia/Seoul',
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+        }).format(new Date(registeredAt))
+      : null;
+  const registrationDaily =
+    base && registeredDate && refunds !== null
+      ? base.rows
+          .filter((row) => row.일자 < registeredDate)
+          .reduce((sum, row) => sum + row.목표반영액, 0)
+      : null;
+
   const total = revenue.totals?.all ?? null;
   const selectedAmount = revenue.totals?.[channel] ?? null;
   const target = summary.goal?.annualTarget ?? 0;
@@ -164,7 +182,9 @@ export function CompanyRevenueCard() {
         <div className="flex flex-wrap gap-3 text-sm text-orange-800">
           <button
             type="button"
-            onClick={download}
+            onClick={() => {
+              void download();
+            }}
             disabled={exporting || total === null}
           >
             {exporting ? '생성 중…' : '매출 근거 엑셀'}
@@ -329,9 +349,73 @@ export function CompanyRevenueCard() {
         연초부터의 누적 매출입니다. 미확인 자료는 합산에서 제외하며, 채널별 반영
         기간은 아래에서 확인할 수 있습니다.
       </p>
+      {base && base.preCoverageActual !== 0 ? (
+        <section
+          aria-label="이전 표시액과 현재 매출의 차이"
+          className="space-y-2 rounded-lg bg-gray-50 p-4 text-sm leading-relaxed text-gray-700"
+        >
+          <h3 className="font-semibold text-gray-900">
+            이전 표시액과 달라진 이유
+          </h3>
+          <p>
+            이전 화면은 수기 보정액 {formatKrw(base.preCoverageActual)}에 메두사
+            집계 매출을 더했습니다.
+            {registeredDate
+              ? ` 목표 등록일은 ${registeredDate}(한국시간)입니다.`
+              : ''}
+            {summary.goal?.memo
+              ? ` 당시 등록 메모: “${summary.goal.memo}”.`
+              : ''}
+          </p>
+          {registrationDaily !== null ? (
+            <p>
+              등록일 전일까지 현재 원장으로 재계산하면, 기준 누적액{' '}
+              {formatKrw(base.preCoverageActual + registrationDaily)}에서 메두사
+              실적 {formatKrw(registrationDaily)}을 뺀 금액이 이 보정액과
+              일치합니다. 당시 원장의 별도 스냅샷이 아닌 현재 자료로 한
+              검산입니다.
+            </p>
+          ) : null}
+          <p>
+            수기액 자체는 주문별 증빙을 합산한 금액으로 확인되지 않았습니다.
+            셀메이트 조회액을 참고했을 가능성은 있지만 당시 원본과 포함 채널이
+            확인되지 않아 출처를 확정하지 않습니다.
+          </p>
+          {refunds !== null && total !== null ? (
+            <p>
+              같은 기준일({asOf})의 이전 방식은{' '}
+              {formatKrw(base.preCoverageActual)} + 메두사{' '}
+              {formatKrw(
+                base.rows.reduce((sum, row) => sum + row.목표반영액, 0)
+              )}{' '}
+              = {formatKrw(base.pacing.actualToDate)}입니다. 현재는 수기액 대신
+              확인한 채널 자료 {formatKrw(imported.amount)}을 반영하여 전체{' '}
+              {formatKrw(total)}을 표시합니다. 두 방식의 차이{' '}
+              {formatKrw(Math.abs(base.pacing.actualToDate - total))}를 누락
+              매출이나 매출 감소로 단정할 수는 없습니다.
+            </p>
+          ) : null}
+          <p>
+            자사몰에는 카페24와 메두사를 함께 포함합니다. 셀메이트에 복사 입력한
+            같은 주문과 은행 입금은 다시 더하지 않습니다. 셀메이트 주문금액은
+            할인·취소·환불 기준과 배송대행 물량 때문에 실제 매출과 다를 수
+            있습니다.
+          </p>
+          <p className="font-medium">
+            아직 잠정 합계입니다. 전화·수동 주문의 누락·중복, 채널별 미수집
+            기간, 취소·환불 중복 차감과 정산 입금은 대조 중입니다. 아래 합산
+            보류 건수는 등록 자료의 합산 상태이며, 전체 검토 완료를 뜻하지
+            않습니다.
+          </p>
+        </section>
+      ) : null}
+      <CompanyMonthlyRevenue
+        revenue={revenue}
+        coverageStart={summary.coverageStart}
+      />
       <details className="text-sm">
         <summary className="cursor-pointer">
-          합산 근거·확인할 자료 ({imported.excludedCount}건)
+          합산 근거 · 등록 자료 중 합산 보류 {imported.excludedCount}건
         </summary>
         <p className="my-2 text-xs leading-relaxed text-gray-600">
           자사몰은 현재 자사몰과 전환 전 카페24 자료를 합칩니다. 출처 미확인

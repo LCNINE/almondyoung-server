@@ -25,12 +25,11 @@ export function ExternalRevenueStatistics({
 
   return (
     <div className="space-y-3 rounded-lg border p-3">
-      <h3 className="font-medium">채널 자료 월별 매출</h3>
+      <h3 className="font-medium">업로드 원본 월별 금액</h3>
       <p className="text-sm text-gray-600">
-        저장한 자료가 바로 반영됩니다. 계정·매출 기준별로 구분하며, 미등록월은
-        0원으로 표시하지 않습니다. 진행 중인 달은 잠정 금액입니다. 네이버·쿠팡
-        자료는 상단 통합 목표에 잠정 합산하며, 카페24·전화 주문은 중복 확인
-        전까지 별도 표시합니다.
+        메두사 자동 집계를 제외한 원본 조회입니다. 합산 보류 자료도 표시되며,
+        회사 전체 매출에 반영한 내역은 상단의 합산 근거에서 확인할 수 있습니다.
+        계정·매출 기준별로 구분하며 미등록월은 0원으로 표시하지 않습니다.
       </p>
       <ResponsiveContainer width="100%" height={280}>
         <LineChart
@@ -61,7 +60,7 @@ export function ExternalRevenueStatistics({
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <caption className="sr-only">
-            {year}년 채널 자료 월별 매출, 원 단위
+            {year}년 업로드 원본 월별 금액, 메두사 자동 집계 제외, 원 단위
           </caption>
           <thead>
             <tr className="border-b text-left">

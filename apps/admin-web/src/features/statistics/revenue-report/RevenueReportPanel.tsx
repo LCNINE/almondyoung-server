@@ -214,7 +214,7 @@ export function RevenueReportPanel() {
             '미수집 채널',
             Object.entries(CHANNELS)
               .filter(
-                ([key]) => !report.data!.external.some((r) => r.channel === key)
+                ([key]) => !report.data.external.some((r) => r.channel === key)
               )
               .map(([, label]) => label)
               .join(', ') || '등록된 채널별 미등록월 확인 필요',
@@ -476,7 +476,9 @@ export function RevenueReportPanel() {
             goalQuery.isPending ||
             Boolean(goal?.goal && refundsQuery.isPending)
           }
-          onClick={() => download(false)}
+          onClick={() => {
+            void download(false);
+          }}
         >
           세무사 검토용 엑셀
         </Button>
@@ -489,7 +491,9 @@ export function RevenueReportPanel() {
             goalQuery.isPending ||
             Boolean(goal?.goal && refundsQuery.isPending)
           }
-          onClick={() => download(true)}
+          onClick={() => {
+            void download(true);
+          }}
         >
           주문 원장 포함 엑셀
         </Button>
@@ -520,7 +524,17 @@ export function RevenueReportPanel() {
         </p>
       </div>
       {report.data && !report.isError ? (
-        <ExternalRevenueStatistics rows={report.data.external} year={year} />
+        <details className="rounded-lg border p-3">
+          <summary className="cursor-pointer text-sm font-medium">
+            업로드 원본별 내역 · 메두사 자동 집계 제외
+          </summary>
+          <p className="my-3 text-sm text-gray-600">
+            회사 전체 매출과 자사몰 추이는 상단에서 확인하세요. 아래는 업로드한
+            원본의 금액만 보여줍니다. 카페24에서 새 자사몰로 전환한 이후 매출은
+            메두사 자동 집계에 포함되므로 이 원본 내역에는 나타나지 않습니다.
+          </p>
+          <ExternalRevenueStatistics rows={report.data.external} year={year} />
+        </details>
       ) : null}
       {report.data ? (
         <div className="grid gap-3 md:grid-cols-3">
@@ -548,7 +562,7 @@ export function RevenueReportPanel() {
           ))}
           {Object.entries(CHANNELS)
             .filter(
-              ([key]) => !report.data!.external.some((r) => r.channel === key)
+              ([key]) => !report.data.external.some((r) => r.channel === key)
             )
             .map(([key, label]) => (
               <div
@@ -566,7 +580,12 @@ export function RevenueReportPanel() {
         </p>
       ) : null}
       <div className="flex flex-wrap gap-2">
-        <Button variant="outline" onClick={template}>
+        <Button
+          variant="outline"
+          onClick={() => {
+            void template();
+          }}
+        >
           취합 양식 다운로드
         </Button>
         <Button
@@ -603,7 +622,9 @@ export function RevenueReportPanel() {
                 report.isError ||
                 !report.data
               }
-              onClick={save}
+              onClick={() => {
+                void save();
+              }}
             >
               {pending.length}행 확인 후 저장
             </Button>

@@ -13,6 +13,8 @@ const summary = {
     monthlyTargets: Array(12).fill(2000 / 12),
     preCoverageActual: 99999,
     scope: 'own_mall',
+    createdAt: '2026-06-15T22:00:00.000Z',
+    memo: '참고 누적액에서 집계액을 차감',
   },
   ytdDaily: [{ date: '2026-06-15', ownMall: 200, allChannels: 200 }],
 };
@@ -72,6 +74,8 @@ jest.mock('recharts', () => ({
   ComposedChart: ({ data }: { data: unknown }) => (
     <div data-testid="monthly-chart">{JSON.stringify(data)}</div>
   ),
+  LineChart: () => null,
+  Legend: () => null,
   Area: () => null,
   CartesianGrid: () => null,
   Line: () => null,
@@ -119,10 +123,35 @@ it('does not display an incomplete company achievement when refunds fail', () =>
   expect(screen.queryByText('43.0%')).toBeNull();
   expect(screen.queryByTestId('monthly-chart')).toBeNull();
   expect(
-    (
-      screen.getByRole('button', {
-        name: '매출 근거 엑셀',
-      }) as HTMLButtonElement
-    ).disabled
+    screen.getByRole<HTMLButtonElement>('button', { name: '매출 근거 엑셀' })
+      .disabled
   ).toBe(true);
+});
+
+it('shows the legacy calculation and its uncertainty without opening details', () => {
+  render(<CompanyRevenueCard />);
+  const explanation = screen.getByRole('region', {
+    name: '이전 표시액과 현재 매출의 차이',
+  });
+  expect(explanation.closest('details')).toBeNull();
+  expect(explanation.textContent).toContain('2026-06-16');
+  expect(explanation.textContent).toContain('₩100,179');
+  expect(explanation.textContent).toContain('₩99,999');
+  expect(explanation.textContent).toContain('₩680');
+  expect(explanation.textContent).toContain('₩860');
+  expect(explanation.textContent).toContain('출처를 확정하지 않습니다');
+  expect(explanation.textContent).toContain('전체 검토 완료를 뜻하지 않습니다');
+});
+
+it('shows native and legacy storefront sales together and reconciles the monthly total', () => {
+  render(<CompanyRevenueCard />);
+  const table = screen.getByRole('table', {
+    name: '월별 채널 매출과 회사 전체 합계, 원 단위',
+  });
+  expect(table.textContent).toContain('현재 자사몰(메두사)');
+  expect(table.textContent).toContain('이전 자사몰(카페24)');
+  expect(table.textContent).toContain('₩180');
+  expect(table.textContent).toContain('₩500');
+  expect(table.textContent).toContain('₩860');
+  expect(table.textContent).toContain('미등록');
 });

@@ -3,6 +3,7 @@ import type { GrowthSummary } from '@/lib/api/domains/analytics';
 import { OWN_MALL_CHANNEL } from '../growth/model';
 import {
   annualCompanyRevenue,
+  companyMonthlyRows,
   REVENUE_CHANNELS,
   type RevenueChannel,
 } from './company-revenue';
@@ -49,6 +50,12 @@ export function appendCompanyRevenueEvidence(
         base?.pacing.actualToDate ?? null,
       ],
       ['기존 실적 기준일', base?.pacing.asOf ?? null],
+      ['목표 등록 시각', summary.goal?.createdAt ?? null],
+      ['당시 등록 메모', summary.goal?.memo ?? null],
+      [
+        '수기액 설명',
+        '이전 화면은 수기 보정액에 이후 집계 매출을 더했음. 당시 참고 누적액의 원본·포함 채널은 미확인. 현재는 수기액을 빼고 채널별 근거 자료를 반영하며 차이를 누락 매출로 단정하지 않음.',
+      ],
       ['업로드 채널 매출', imported.amount],
       ['그중 진행 중인 달', imported.currentMonthAmount],
       ['연간 목표', target],
@@ -103,5 +110,22 @@ export function appendCompanyRevenueEvidence(
         }))
     ),
     '월별 채널 매출'
+  );
+  XLSX.utils.book_append_sheet(
+    book,
+    XLSX.utils.json_to_sheet(
+      companyMonthlyRows(revenue, summary.coverageStart).map((row) => ({
+        월: row.month,
+        '현재 자사몰(메두사)': revenue.totals ? row.medusa : null,
+        '이전 자사몰(카페24)': revenue.totals ? row.cafe24 : null,
+        스마트스토어: revenue.totals ? row.naver : null,
+        쿠팡: revenue.totals ? row.coupang : null,
+        전화주문: revenue.totals ? row.phone : null,
+        기타채널: revenue.totals ? row.other : null,
+        전체합계: revenue.totals ? row.all : null,
+        비고: '미등록·집계 전·미도래는 빈칸. 수집분 잠정 합계.',
+      }))
+    ),
+    '월별 채널 상세'
   );
 }
