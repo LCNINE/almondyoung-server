@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto';
 import * as postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
-import { and, eq, inArray, like } from 'drizzle-orm';
+import { and, eq, inArray, like, sql } from 'drizzle-orm';
 import { DbService } from '@app/db';
 import { BadRequestError, ConflictError } from '@app/shared';
 import { DbTx, wmsSchema, wmsTables } from '../../schema/inventory.schema';
@@ -576,6 +576,53 @@ describeIfDb('InboundShipmentReceivingManager (DB integration)', () => {
       expect(afterClose.map((c) => c.shipmentId)).toEqual([sooner.shipmentId]);
 
       await expect(built.reader.findBoxes(f.warehouseId, 'L3-L5', trx)).rejects.toBeInstanceOf(BadRequestError);
+    });
+  });
+
+  describe('findBoxes and closed shipments', () => {
+    async function autoClosedSingleBox(trx: DbTx) {
+      const f = await seed(trx);
+      const built = build(trx);
+      const s = await shipment(trx, built, f.warehouseId, [row(1, 'L1', 10, f.barcodes[0])]);
+      const r = await built.receiving.receiveBox(
+        s.shipmentId,
+        s.boxOf('L1'),
+        dto([{ lineId: s.lineOf(1), countedQty: 10, method: 'counted' }]),
+        ACTOR,
+        trx,
+      );
+      expect(r.shipmentStatus).toBe('closed');
+      return { f, built, s };
+    }
+
+    it('findBoxes returns a box received today in an auto-closed shipment', async () => {
+      await inRollbackTx(db, async (trx) => {
+        const { f, built, s } = await autoClosedSingleBox(trx);
+        const found = await built.reader.findBoxes(f.warehouseId, 'l1', trx);
+        expect(found).toHaveLength(1);
+        expect(found[0]).toMatchObject({ boxId: s.boxOf('L1'), status: 'received', shipmentStatus: 'closed' });
+      });
+    });
+
+    it('findBoxes skips closed shipments boxes received before today', async () => {
+      await inRollbackTx(db, async (trx) => {
+        const { f, built, s } = await autoClosedSingleBox(trx);
+        await trx
+          .update(wmsTables.inboundShipmentBoxes)
+          .set({ receivedAt: sql`now() - interval '1 day'` })
+          .where(eq(wmsTables.inboundShipmentBoxes.id, s.boxOf('L1')));
+        expect(await built.reader.findBoxes(f.warehouseId, 'l1', trx)).toHaveLength(0);
+      });
+    });
+
+    it('findBoxes skips open boxes of a manually closed shipment', async () => {
+      await inRollbackTx(db, async (trx) => {
+        const f = await seed(trx);
+        const built = build(trx);
+        const s = await shipment(trx, built, f.warehouseId, [row(1, 'L1', 10, f.barcodes[0])]);
+        await built.drafts.close(s.shipmentId, 'lost box (synthetic)', ACTOR, trx);
+        expect(await built.reader.findBoxes(f.warehouseId, 'l1', trx)).toHaveLength(0);
+      });
     });
   });
 

@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
 import { DbService } from '@app/db';
-import { and, asc, count, desc, eq, inArray, isNull, ne, SQL, sql } from 'drizzle-orm';
+import { and, asc, count, desc, eq, inArray, isNull, ne, or, SQL, sql } from 'drizzle-orm';
 import { NotFoundError } from '@app/shared';
 import { normalizeBarcode, ListCell } from './inbound-shipment-list.parser';
 import { lineDifference, normalizeSingleBoxLabel } from './inbound-shipment.rules';
@@ -251,7 +251,7 @@ export class InboundShipmentReader {
   }
 
   /**
-   * 그 창고의 열린 선적(`expected`·`receiving`)에서 이름이 같은 상자 전부 — spec §8.1.
+   * 그 창고의 열린 선적(`expected`·`receiving`)과, 저절로 끝난 선적의 오늘 확정 상자에서 이름이 같은 상자 전부 — spec §8.1.
    * 선적마다 이름이 `L1` 부터 다시 시작하므로 후보가 여럿일 수 있다. 기본 선택은 두지 않는다.
    */
   async findBoxes(warehouseId: string, label: string, tx?: DbTx): Promise<BoxCandidateView[]> {
@@ -269,11 +269,24 @@ export class InboundShipmentReader {
           origin: b.origin,
           disposition: b.disposition,
           status: b.status,
+          shipmentStatus: s.status,
         })
         .from(b)
         .innerJoin(s, eq(s.id, b.shipmentId))
         .where(
-          and(eq(s.warehouseId, warehouseId), inArray(s.status, ['expected', 'receiving']), eq(b.label, normalized)),
+          and(
+            eq(s.warehouseId, warehouseId),
+            eq(b.label, normalized),
+            or(
+              inArray(s.status, ['expected', 'receiving']),
+              // 저절로 끝난 선적(마지막 상자 확정)의 «오늘(서울) 확정된» 상자 — 같은 날 확정 취소할 수 있게.
+              and(
+                eq(s.status, 'closed'),
+                eq(b.status, 'received'),
+                sql`(${b.receivedAt} AT TIME ZONE 'Asia/Seoul')::date = (now() AT TIME ZONE 'Asia/Seoul')::date`,
+              ),
+            ),
+          ),
         )
         .orderBy(asc(s.expectedArrival), asc(s.createdAt), asc(s.id));
 
@@ -295,10 +308,17 @@ export class InboundShipmentReader {
           if (name && items.length < PREVIEW_ITEMS) preview.set(r.boxId, [...items, name]);
         }
       }
-      return boxes.map(({ origin, ...box }) => ({
-        ...box,
-        previewItems: origin === 'list' ? (preview.get(box.boxId) ?? []) : [],
-      }));
+      const result: BoxCandidateView[] = [];
+      for (const { origin, shipmentStatus, ...box } of boxes) {
+        // where 절이 expected·receiving·closed 만 통과시킨다 — 타입도 그렇게 좁힌다.
+        if (shipmentStatus !== 'expected' && shipmentStatus !== 'receiving' && shipmentStatus !== 'closed') continue;
+        result.push({
+          ...box,
+          shipmentStatus,
+          previewItems: origin === 'list' ? (preview.get(box.boxId) ?? []) : [],
+        });
+      }
+      return result;
     }, tx);
   }
 

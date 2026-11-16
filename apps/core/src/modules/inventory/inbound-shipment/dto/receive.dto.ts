@@ -161,6 +161,7 @@ export class BoxCandidateViewDto {
   @ApiProperty() label: string;
   @ApiProperty({ enum: ['stock', 'forward'] }) disposition: 'stock' | 'forward';
   @ApiProperty({ enum: ['open', 'received'] }) status: 'open' | 'received';
+  @ApiProperty({ enum: ['expected', 'receiving', 'closed'] }) shipmentStatus: 'expected' | 'receiving' | 'closed';
   @ApiProperty({ type: [String], description: '그 상자 줄의 제품명 원문 앞 3개(행 순)' }) previewItems: string[];
 }
 
