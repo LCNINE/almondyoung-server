@@ -292,7 +292,7 @@ export const PRINT_SPECS: Record<
       [148, 210],
     ],
     safetyMm: 10,
-    bleedMm: 3,
+    bleedMm: 0,
     fileScale: 1,
     minImageDpi: 300,
     duplex: false,

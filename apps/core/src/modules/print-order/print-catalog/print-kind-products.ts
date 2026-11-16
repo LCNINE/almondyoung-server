@@ -47,11 +47,11 @@ export const PRINT_KIND_PRODUCTS: Record<PrintKind, PrintKindProduct[]> = {
     fileDpi: 700,
     awkDefaults: [BANNER_HEAT_CUT],
   })),
-  // 포맥스보드는 AI·EPS 만 받는다(방울이 답변 2026-11-13)
+  // 포맥스보드는 AI·EPS 만 받는다(방울이 답변 2026-11-13). 작업 크기가 재단 크기와 같아(cutsize 0) 재단 여유를 붙이지 않는다
   menu: [5678, 5677, 5679].map((sizeno) => ({
     prodno: 40164,
     sizeno,
-    bleedMm: 3,
+    bleedMm: 0,
     fileFormat: 'eps' as const,
     fileDpi: 300,
   })),

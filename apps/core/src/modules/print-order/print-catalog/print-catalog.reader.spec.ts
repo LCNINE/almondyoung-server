@@ -89,7 +89,7 @@ describe('PrintCatalogReader', () => {
     expect(view.bleedMatches).toBe(true);
   });
 
-  it('options: 와우프레스 재단 여유가 편집기 메뉴판 재단 여유 3mm 와 다르면 bleedMatches 가 false', async () => {
+  it('options: 와우프레스 재단 여유가 편집기 메뉴판 재단 여유 0mm 와 다르면 bleedMatches 가 false', async () => {
     const menuInfo = (cutsize: number) => ({
       ...card,
       sizeinfo: [{ sizelist: [{ sizeno: 5678, sizename: 'A4(국8절)', width: 210, height: 297, cutsize }] }],
@@ -101,8 +101,8 @@ describe('PrintCatalogReader', () => {
         jobcost,
       } as unknown as WowpressClient).options('menu', { width: 210, height: 297 });
 
-    expect((await viewWith(0)).bleedMatches).toBe(false);
-    expect((await viewWith(6)).bleedMatches).toBe(true);
+    expect((await viewWith(0)).bleedMatches).toBe(true);
+    expect((await viewWith(6)).bleedMatches).toBe(false);
   });
 
   it('편집기 재단 여유는 종류마다 스토어프론트 PRINT_SPECS 의 bleedMm 과 같다', () => {
