@@ -531,7 +531,11 @@ export class InboundShipmentDraftManager {
       }
       if (patch.memo !== undefined) set.memo = patch.memo;
       await trx.update(wmsTables.inboundShipments).set(set).where(eq(wmsTables.inboundShipments.id, shipmentId));
-      if (patch.expectedArrival !== undefined && (shipment.status === 'expected' || shipment.status === 'receiving')) {
+      if (
+        patch.expectedArrival !== undefined &&
+        patch.expectedArrival !== shipment.expectedArrival &&
+        (shipment.status === 'expected' || shipment.status === 'receiving')
+      ) {
         await this.republish(trx, await shipmentSkuIds(trx, shipmentId));
       }
     }, tx);

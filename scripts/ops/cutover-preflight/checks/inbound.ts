@@ -84,7 +84,7 @@ export async function checkInbound(tx: Sql, r: Report): Promise<void> {
            (select count(*) from inbound_shipment_boxes b where b.shipment_id = s.id and b.disposition = 'stock' and b.status <> 'open')::int as boxes_received,
            (select count(*) from inbound_shipment_boxes b where b.shipment_id = s.id and b.disposition = 'stock')::int as boxes_stock
     from inbound_shipments s
-    where s.status in ('expected', 'receiving') and s.expected_arrival < current_date
+    where s.status in ('expected', 'receiving') and s.expected_arrival < (now() at time zone 'Asia/Seoul')::date
     order by s.expected_arrival`;
   if (overdue.length === 0) r.ok('예정일 지난 열린 선적 0');
   else {

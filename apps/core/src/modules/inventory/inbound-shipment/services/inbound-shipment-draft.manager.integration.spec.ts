@@ -364,6 +364,9 @@ describeIfDb('InboundShipmentDraftManager (DB integration)', () => {
         await built.manager.updateHeader(shipmentId, { expectedArrival: '2026-12-01' }, trx);
         expect(built.recalc).toHaveBeenCalledTimes(1);
         expect(sorted(built.recalc.mock.calls[0])).toEqual([f.skuIds[0], f.skuIds[1]].sort());
+        built.recalc.mockClear();
+        await built.manager.updateHeader(shipmentId, { name: 'again', expectedArrival: '2026-12-01' }, trx);
+        expect(built.recalc).not.toHaveBeenCalled();
       });
     });
 

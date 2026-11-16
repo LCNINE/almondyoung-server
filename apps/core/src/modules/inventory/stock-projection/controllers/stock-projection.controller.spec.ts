@@ -75,12 +75,18 @@ describe('StockProjectionController expected-arrivals include', () => {
     return { controller: new StockProjectionController({ listExpectedArrivals } as never), listExpectedArrivals };
   }
 
-  it('unknown include value is 400', async () => {
+  it('unknown include value is ignored (no 400)', async () => {
     const { controller, listExpectedArrivals } = make();
-    await expect(controller.listExpectedArrivals(warehouseId, 'inbound_shipment,nope')).rejects.toThrow(
-      BadRequestException,
-    );
-    expect(listExpectedArrivals).not.toHaveBeenCalled();
+    await controller.listExpectedArrivals(warehouseId, 'nope');
+    await controller.listExpectedArrivals(warehouseId, 'inbound_shipment,nope');
+    expect(listExpectedArrivals).toHaveBeenNthCalledWith(1, warehouseId, { includeShipments: false });
+    expect(listExpectedArrivals).toHaveBeenNthCalledWith(2, warehouseId, { includeShipments: true });
+  });
+
+  it('repeated include param works', async () => {
+    const { controller, listExpectedArrivals } = make();
+    await controller.listExpectedArrivals(warehouseId, ['other', 'inbound_shipment']);
+    expect(listExpectedArrivals).toHaveBeenCalledWith(warehouseId, { includeShipments: true });
   });
 
   it('include is opt-in', async () => {

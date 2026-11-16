@@ -589,7 +589,7 @@ SELECT count(*) AS 막힌_SKU, coalesce(sum(v.on_hand_qty),0) AS 묶인_실재�
 
 `load-inbound-from-csv.ts` 는 지웠다. 입고예정일의 원천은 이제 **선적**(중국 물량, #1240)과 **발주 라인**(국내, #1335)이다.
 셀메이트 CSV 가 남긴 거울 발주(`audit_notes` = `sellmate-csv-inbound …`)의 열린 라인은 배포 뒤 한 번
-`scripts/ops/close-sellmate-csv-inbound.ts`(dry-run 먼저, `--apply`)로 닫는다.
+`scripts/ops/close-sellmate-csv-inbound.ts`(dry-run 먼저, `--apply`)로 닫는다. 열린 선적이 있는 테넌트 core DB 마다 한 번 돈다(1부 CSV 라인 닫기는 테넌트 1 에만 대상이 있다).
 
 ## ② SKU 매칭 — `apps/channel-adapter/scripts/match-sku-to-variant.ts`
 

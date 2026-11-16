@@ -12,6 +12,8 @@
  *   2. 열린 선적(expected·receiving)의 sku 줄 SKU 를 재발행한다. #1240 배포 전에 확정된 선적은
  *      확정 시점의 재발행 트리거가 없었다.
  *
+ * 열린 선적이 있는 테넌트 core DB 마다 한 번 돈다(1부 CSV 라인 닫기는 테넌트 1 에만 대상이 있다).
+ *
  * 기본은 dry-run(대상 수만 출력, DB 미반영). 반드시 dry-run 을 먼저 본다.
  *
  *   DATABASE_URL=… npx tsx scripts/ops/close-sellmate-csv-inbound.ts            # dry-run

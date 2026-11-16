@@ -20,7 +20,7 @@ const HEADER = ['박스번호', 'NO', '제품명', '수량', '옵션', '바코�
 const cell = (text: string, value: string | number | null = text): ListCell => ({ text, value });
 
 /** «오는 중» 조각 — 설계 §5. 외부 선적만 센다. 상세 화면(reader.detail)과의 파리티도 여기서 고정한다. */
-describeIfDb('inbound shipment outstanding SQL (DB integration)', () => {
+describeIfDb('inbound shipment outstanding SQL — 외부 선적 (DB integration)', () => {
   jest.setTimeout(120_000);
   let client: postgres.Sql;
   let db: Database;

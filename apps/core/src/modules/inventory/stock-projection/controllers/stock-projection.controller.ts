@@ -163,14 +163,14 @@ export class StockProjectionController {
   @ApiResponse({ status: 200, type: ExpectedArrivalsResponseDto })
   async listExpectedArrivals(
     @Query('warehouseId', new ParseUUIDPipe()) warehouseId: string,
-    @Query('include') include?: string,
+    @Query('include') include?: string | string[],
   ): Promise<ExpectedArrivalsResponseDto> {
-    const values = (include ?? '')
-      .split(',')
+    // 반복 파라미터(?include=a&include=b)도 받는다. 모르는 값은 무시한다(앞으로 값이 늘어도 옛 서버가 400 을 내지 않게).
+    const values = [include ?? []]
+      .flat()
+      .flatMap((v) => v.split(','))
       .map((v) => v.trim())
-      .filter((v) => v.length > 0);
-    const unknown = values.filter((v) => !EXPECTED_ARRIVAL_INCLUDES.includes(v));
-    if (unknown.length > 0) throw new BadRequestException(`unknown include: ${unknown.join(',')}`);
+      .filter((v) => EXPECTED_ARRIVAL_INCLUDES.includes(v));
     return this.stockProjection.listExpectedArrivals(warehouseId, {
       includeShipments: values.includes('inbound_shipment'),
     });

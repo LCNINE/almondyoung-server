@@ -19,6 +19,7 @@ import {
 import { boxSkuIds, shipmentSkuIds } from './inbound-shipment-affected-skus';
 import { lockInboundShipment, lockInboundShipmentBox } from './inbound-shipment-locks';
 import { normalizeSingleBoxLabel, orderReceiptLinesForCancel } from './inbound-shipment.rules';
+import { lockProductVariantsForSkus } from '../../product-sellable-quantity/services/product-variant-lock';
 import { refreshInboundShipmentStatus } from './inbound-shipment-status';
 import { MAX_LINE_QTY } from './inbound-shipment-list.parser';
 
@@ -97,6 +98,9 @@ export class InboundShipmentReceivingManager {
           });
           ledger.push({ skuId: u.skuId, quantity: u.quantity });
         }
+
+        // 커널·재계산이 잠금을 누적하기 전에 상자가 닿는 SKU 전부를 같은 순서로 선점한다 (shipment → box → variant → kernel)
+        await lockProductVariantsForSkus(trx, [...(await boxSkuIds(trx, boxId)), ...ledger.map((l) => l.skuId)]);
 
         const arrival =
           ledger.length === 0
@@ -222,6 +226,11 @@ export class InboundShipmentReceivingManager {
             ),
           );
 
+        // 사람이 닫은 선적의 확정 취소는 상태가 «닫힘» 에서 풀려 줄 전체의 «오는 중» 이 다시 켜진다
+        const wasManuallyClosed = shipment.status === 'closed' && shipment.closedReason !== null;
+        const reachedSkuIds = wasManuallyClosed ? await shipmentSkuIds(trx, shipmentId) : await boxSkuIds(trx, boxId);
+        await lockProductVariantsForSkus(trx, [...reachedSkuIds, ...ledger.map((l) => l.skuId)]);
+
         // 커널은 SKU 순으로 부른다 — 도착이 (sku, 창고) 락을 미리 잡는 순서와 같아야 교차 교착이 없다
         const canceledSkuIds = new Set<string>();
         for (const { receiptLineId } of orderReceiptLinesForCancel(ledger)) {
@@ -250,12 +259,7 @@ export class InboundShipmentReceivingManager {
 
         const shipmentStatus = await refreshInboundShipmentStatus(trx, shipmentId, shipment.status, actorId, now);
 
-        // 사람이 닫은 선적의 확정 취소는 상태가 «닫힘» 에서 풀려 줄 전체의 «오는 중» 이 다시 켜진다
-        const wasManuallyClosed = shipment.status === 'closed' && shipment.closedReason !== null;
-        const affectedSkuIds = new Set<string>([
-          ...canceledSkuIds,
-          ...(wasManuallyClosed ? await shipmentSkuIds(trx, shipmentId) : await boxSkuIds(trx, boxId)),
-        ]);
+        const affectedSkuIds = new Set<string>([...canceledSkuIds, ...reachedSkuIds]);
         if (affectedSkuIds.size > 0) {
           await this.productSellableQuantity.recalculateAndPublishForSkus([...affectedSkuIds], trx);
         }
