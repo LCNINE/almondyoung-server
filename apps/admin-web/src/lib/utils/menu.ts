@@ -366,6 +366,11 @@ const allMenus: MainMenu[] = [
         path: '/inventory/inbound',
       },
       {
+        id: 'inventory-inbound-shipments',
+        title: '선적 입고',
+        path: '/inventory/inbound-shipments',
+      },
+      {
         id: 'inventory-suppliers',
         title: '공급처 관리',
         path: '/inventory/suppliers',
