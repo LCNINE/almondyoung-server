@@ -884,3 +884,52 @@ it('persists preparation metadata for live rejection and restarted same-key repl
     ).rejects.toThrow('처리 여부를 먼저 확인');
   expect(sends).toBe(1);
 });
+
+it('wraps inbound shipment box writes with contract v2', async () => {
+  const sent: Array<{ path: string; body: Record<string, unknown> }> = [];
+  const api: ApiClient = {
+    request: async <T>(o: Parameters<ApiClient['request']>[0]) => {
+      sent.push({ path: o.path, body: o.body as Record<string, unknown> });
+      return { boxId: 'b1', shipmentStatus: 'receiving' } as T;
+    },
+  };
+  const store = createOperationStore(crypto.randomUUID());
+  const begin = vi.spyOn(store, 'begin');
+  const runner = createOperationRunner({
+    api,
+    store,
+    getScope: async () => 'actor|server',
+    wait: async () => {},
+  });
+  const paths = [
+    '/inventory/inbound-shipments/s1/boxes/b1/receive',
+    '/inventory/inbound-shipments/s1/boxes/b1/receive/cancel',
+    '/inventory/inbound-shipments/s1/boxes',
+  ];
+  for (const [i, path] of paths.entries())
+    await runner.request({
+      method: 'POST',
+      path,
+      body: { label: 'L1' },
+      idempotencyKey: `k${i}`,
+    });
+  expect(sent.map((s) => s.path)).toEqual(paths);
+  sent.forEach((s, i) =>
+    expect(s.body).toMatchObject({
+      contractVersion: 2,
+      idempotencyKey: `k${i}`,
+    })
+  );
+  expect(begin.mock.calls.map((c) => c[0].resource)).toEqual([
+    'inbound-shipment-box:b1',
+    'inbound-shipment-box:b1',
+    'inbound-shipment:s1',
+  ]);
+  // other shipment routes stay outside the durable ledger
+  await runner.request({
+    method: 'POST',
+    path: '/inventory/inbound-shipments/s1/close',
+    body: {},
+  });
+  expect(begin).toHaveBeenCalledTimes(3);
+});
