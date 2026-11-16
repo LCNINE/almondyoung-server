@@ -9,6 +9,7 @@ import {
   createBoxDraft,
   isRangeLine,
   reconcileDraft,
+  clearLine,
   reviewRows,
   setLineQty,
   setUnplannedQty,
@@ -154,6 +155,14 @@ describe('boxDraft', () => {
     expect(setUnplannedQty(d, 'sku-9', 1.5)).toBe(d);
   });
 
+  it('clearLine 은 칸을 빈칸으로 — 모르는 줄은 그대로', () => {
+    const b = box();
+    const d = setLineQty(createBoxDraft(b, 'k'), 'L1', 3);
+    expect(clearLine(d, 'L1').cells.L1).toBeUndefined();
+    expect(blankLineIds(clearLine(d, 'L1'), b)).toContain('L1');
+    expect(clearLine(d, 'nope')).toBe(d);
+  });
+
   it('setUnplannedQty 0 은 지운다', () => {
     const b = box();
     const other = { id: 'sku-9', code: 'C9', name: 'n' };
@@ -208,7 +217,8 @@ describe('boxDraft', () => {
       expect(r.draft.snapshot.L4).toBeUndefined();
       expect(r.draft.snapshot.L5).toBeDefined();
       expect(blankLineIds(r.draft, b2)).toContain('L5');
-      expect(r.changedLineIds).toEqual(['L5']);
+      // 사라진 줄도 바뀐 줄이다(행 순서 뒤에)
+      expect(r.changedLineIds).toEqual(['L5', 'L4']);
     });
     it('(e) 변화 없음', () => {
       const b = box();

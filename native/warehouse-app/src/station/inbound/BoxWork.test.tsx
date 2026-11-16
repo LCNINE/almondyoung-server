@@ -3,7 +3,8 @@ import { act, fireEvent, screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it } from 'vitest';
 import { ApiError, ConflictError, type ApiClient } from '../../core/data/httpClient';
 import type { WorkRuntime } from '../../core/operations/OperationContext';
-import { createBoxDraft, setLineQty, type BoxDraft } from '../../domains/inbound-shipment/boxDraft';
+import { createOperationStore, type OperationStore } from '../../core/operations/operationStore';
+import { applyList, createBoxDraft, setLineQty, toReceiveBody, type BoxDraft } from '../../domains/inbound-shipment/boxDraft';
 import type { BoxLine, BoxView, ReceiveBoxResult } from '../../domains/inbound-shipment/types';
 import { createTestRuntime } from '../outbound/__fixtures__/outboundServer';
 import { flash, press, renderStation, scan, stationPrefs, typeHuman } from '../outbound/__fixtures__/renderStation';
@@ -98,8 +99,8 @@ interface Sent {
 }
 
 interface Fake {
-  /** 상자 열기 응답 — 부를 때마다 앞에서 하나씩, 마지막은 계속 */
-  boxes: BoxView[];
+  /** 상자 열기 응답 — 부를 때마다 앞에서 하나씩, 마지막은 계속. Error 면 그 읽기가 실패한다. 확정이 한 번 성공한 뒤로는 received 로 */
+  boxes: (BoxView | Error)[];
   /** 확정 응답 — 없으면 RESULT. 함수면 부를 때마다 판정 */
   receive?: () => ReceiveBoxResult | Error;
 }
@@ -108,6 +109,7 @@ function createServer(fake: Fake) {
   const calls: string[] = [];
   const sent: Sent[] = [];
   let opened = 0;
+  let received = false;
   const request = (async (o: Req) => {
     calls.push(`${o.method ?? 'GET'} ${o.path}`);
     if (o.path.startsWith('/inventory/inbound-shipment-boxes?')) return [];
@@ -126,12 +128,14 @@ function createServer(fake: Fake) {
       sent.push({ body: o.body as Record<string, unknown>, key: o.idempotencyKey });
       const outcome = fake.receive?.() ?? RESULT;
       if (outcome instanceof Error) throw outcome;
+      received = true;
       return outcome;
     }
     if (/^\/inventory\/inbound-shipments\/s-1\/boxes\/b-1$/.test(o.path)) {
       const box = fake.boxes[Math.min(opened, fake.boxes.length - 1)];
       opened++;
-      return box;
+      if (box instanceof Error) throw box;
+      return received ? { ...box, status: 'received', receiptId: 'r-1' } : box;
     }
     throw new Error(`unexpected ${o.path}`);
   }) as ApiClient['request'];
@@ -147,9 +151,13 @@ function mount(runtime: WorkRuntime) {
   });
 }
 
-async function setup(fake: Partial<Fake> = {}, opts: { operate?: boolean; runtime?: WorkRuntime } = {}) {
+async function setup(
+  fake: Partial<Fake> = {},
+  opts: { operate?: boolean; store?: OperationStore; seed?: (runtime: WorkRuntime) => Promise<void> } = {}
+) {
   const server = createServer({ boxes: [view()], ...fake });
-  const runtime = opts.runtime ?? createTestRuntime({ request: server.request }, { inboundShipmentOperate: opts.operate ?? true });
+  const runtime = createTestRuntime({ request: server.request }, { inboundShipmentOperate: opts.operate ?? true }, opts.store);
+  await opts.seed?.(runtime);
   const rendered = mount(runtime);
   await ready();
   return { server, runtime, ...rendered };
@@ -176,6 +184,37 @@ const qty = (key: string) => qtyCell(key).getAttribute('data-qty');
 const cellState = (key: string) => qtyCell(key).getAttribute('data-state');
 const selectedRow = () => region().querySelector<HTMLElement>('tr[aria-selected="true"]')?.getAttribute('data-row') ?? null;
 const savedDraft = (runtime: WorkRuntime) => runtime.store.draft<BoxDraft | null>(DRAFT_ID);
+const RECEIVE_PATH = '/inventory/inbound-shipments/s-1/boxes/b-1/receive';
+const DONE = 'L7 확정 — 적치 대기로 갔어요';
+const STALE = '앞서 보낸 확정이 취소됐어요 — 다시 세 주세요';
+
+/** 네 줄을 다 채우고 보낸 초안 — 앱이 꺼지기 전에 F10 두 번까지 간 상태 */
+function sentDraft(key: string): BoxDraft {
+  let d = createBoxDraft(view(), key);
+  d = applyList(d, LINES[0]);
+  d = setLineQty(d, 'L2', 18);
+  d = setLineQty(d, 'L3', 400);
+  d = applyList(d, LINES[3]);
+  return { ...d, sentBody: toReceiveBody(d, view()) };
+}
+
+/** 기기에 그 초안과, 같은 키의 끝난 작업(확정 또는 거절)을 남긴다 */
+function seedSent(draft: BoxDraft, outcome: 'confirmed' | 'rejected') {
+  return async (runtime: WorkRuntime) => {
+    await runtime.store.draft<BoxDraft | null>(DRAFT_ID, () => draft);
+    await runtime.store.begin({
+      id: draft.key,
+      scope: 'scope',
+      resource: 'inbound-shipment-box:b-1',
+      path: RECEIVE_PATH,
+      method: 'POST',
+      bodyJson: JSON.stringify({ ...draft.sentBody, contractVersion: 2, idempotencyKey: draft.key }),
+      createdAt: Date.now(),
+    });
+    if (outcome === 'confirmed') await runtime.store.finish(draft.key, 'confirmed', RESULT);
+    else await runtime.store.finish(draft.key, 'rejected', undefined, 'BAD_REQUEST', undefined, undefined, undefined, 400);
+  };
+}
 const settle = () => act(async () => {
   await new Promise((r) => setTimeout(r, 30));
 });
@@ -341,7 +380,8 @@ describe('상자 작업 — 확정', () => {
     const opensBefore = server.opens();
     press('F10');
     expect(await screen.findByText('L7 확정 — 적치 대기로 갔어요')).toBeInTheDocument();
-    expect(server.opens()).toBe(opensBefore + 1);
+    // 확정 직전 한 번, 확정 뒤 결과 확인 한 번
+    expect(server.opens()).toBe(opensBefore + 2);
     expect(server.sent).toHaveLength(1);
     expect(server.sent[0].key).toBe(key);
     expect(server.sent[0].body).toMatchObject({
@@ -386,12 +426,14 @@ describe('상자 작업 — 확정', () => {
 
   it('두 번째 F10 에서 다시 읽은 상자가 이미 확정됐으면 보내지 않고 «다른 곳에서 이미 확정했어요» 후 다시 연다', async () => {
     const received = view({ status: 'received', receiptId: 'r-9' });
-    const { server } = await setup({ boxes: [view(), received] });
+    const { server, runtime } = await setup({ boxes: [view(), received] });
     await fillAll();
     await confirmTwice();
     expect(await screen.findByText('다른 곳에서 이미 확정했어요')).toBeInTheDocument();
     expect(server.sent).toHaveLength(0);
     await waitFor(() => expect(screen.queryByRole('region', { name: '상자 작업' })).toBeNull());
+    // 늦은 쪽이 넣던 수량은 버린다(§5.9)
+    expect(await savedDraft(runtime)).toBeNull();
   });
 
   it('리스트에 없던 상자에 리스트에 없던 물건이 없으면 막는다', async () => {
@@ -477,7 +519,8 @@ describe('상자 작업 — 결과를 모를 때', () => {
     await fillAll();
     await confirmTwice();
     expect(await screen.findByText('다른 곳에서 이미 확정했어요')).toBeInTheDocument();
-    await waitFor(() => expect(server.opens()).toBe(3));
+    // 처음 · 확정 직전 · 409 뒤 다시 읽기 · 확정된 상자로 다시 열기
+    await waitFor(() => expect(server.opens()).toBe(4));
     await waitFor(() => expect(screen.queryByRole('region', { name: '상자 작업' })).toBeNull());
     expect(await savedDraft(runtime)).toBeNull();
   });
@@ -495,6 +538,129 @@ describe('상자 작업 — 다시 열기', () => {
     expect(cellState('line:L1')).toBe('blank');
     expect(qty('line:L2')).toBe('18');
     expect((await savedDraft(runtime))?.key).toBe('k-old');
+  });
+});
+
+describe('상자 작업 — 고침 라운드', () => {
+  it('Backspace 로 한 자리 칸을 지우면 빈칸이다(센 0 이 아니다)', async () => {
+    await setup();
+    await typeHuman(['4', '2', 'Backspace']);
+    expect(qty('line:L1')).toBe('4');
+    expect(cellState('line:L1')).toBe('counted');
+    await typeHuman(['Backspace']);
+    expect(cellState('line:L1')).toBe('blank');
+  });
+
+  it('스캔이 상한을 넘기면 오류음 · 그대로', async () => {
+    await setup();
+    await typeHuman(['1', '0', '0', '0', '0', '0', '0']);
+    expect(qty('line:L1')).toBe('1000000');
+    scan('8801001');
+    await waitFor(() => expect(flash()).toBe('error'));
+    expect(qty('line:L1')).toBe('1000000');
+  });
+
+  it('두 번째 F10 의 다시 읽기가 실패하면 보내지 않는다', async () => {
+    const { server } = await setup({ boxes: [view(), new Error('network down')] });
+    await fillAll();
+    await confirmTwice();
+    await waitFor(() => expect(flash()).toBe('error'));
+    expect(server.sent).toHaveLength(0);
+    expect(screen.queryByRole('region', { name: '확정 확인' })).toBeNull();
+    expect(qty('line:L2')).toBe('18');
+  });
+
+  it('409 인데 다시 읽은 상자가 열려 있으면 수량은 남고 새 키로', async () => {
+    const { server, runtime } = await setup({ receive: () => new ConflictError('선적이 닫혔어요', 'CONFLICT') });
+    await fillAll();
+    await confirmTwice();
+    await waitFor(() => expect(server.sent).toHaveLength(1));
+    await waitFor(async () => expect((await savedDraft(runtime))?.key).not.toBe(server.sent[0].key));
+    expect(screen.queryByText('다른 곳에서 이미 확정했어요')).toBeNull();
+    expect(screen.getByRole('region', { name: '상자 작업' })).toBeInTheDocument();
+    expect(qty('line:L2')).toBe('18');
+    expect((await savedDraft(runtime))?.sentBody ?? null).toBeNull();
+  });
+
+  it('기기의 확정 결과가 남았는데 상자가 다시 열려 있으면(그 사이 취소) «확정» 이 아니라 새 빈 초안', async () => {
+    const draft = sentDraft('k-sent');
+    const { server, runtime } = await setup({}, { seed: seedSent(draft, 'confirmed') });
+    expect(await screen.findByText(STALE)).toBeInTheDocument();
+    expect(screen.queryByText(DONE)).toBeNull();
+    for (const id of ['L1', 'L2', 'L3', 'L4']) expect(cellState(`line:${id}`)).toBe('blank');
+    const fresh = await savedDraft(runtime);
+    expect(fresh?.key).toBeTruthy();
+    expect(fresh?.key).not.toBe('k-sent');
+    expect(fresh?.sentBody ?? null).toBeNull();
+    expect(server.sent).toHaveLength(0);
+    // 잠기지 않았다
+    await typeHuman(['5']);
+    expect(qty('line:L1')).toBe('5');
+  });
+
+  it('기기의 확정 결과가 남았고 상자가 확정돼 있으면 끝', async () => {
+    const draft = sentDraft('k-sent');
+    const { server, runtime } = await setup(
+      { boxes: [view(), view({ status: 'received', receiptId: 'r-1' })] },
+      { seed: seedSent(draft, 'confirmed') }
+    );
+    expect(await screen.findByText(DONE)).toBeInTheDocument();
+    expect(server.sent).toHaveLength(0);
+    await waitFor(async () => expect(await savedDraft(runtime)).toBeNull());
+  });
+
+  it('기기의 거절 결과가 남았으면 잠김이 풀리고 수량은 남고 새 키로', async () => {
+    const draft = sentDraft('k-sent');
+    const { server, runtime } = await setup({}, { seed: seedSent(draft, 'rejected') });
+    await waitFor(async () => expect((await savedDraft(runtime))?.key).not.toBe('k-sent'));
+    const now = await savedDraft(runtime);
+    expect(now?.sentBody ?? null).toBeNull();
+    expect(now?.cells.L2).toEqual({ qty: 18, method: 'counted' });
+    expect(server.sent).toHaveLength(0);
+    await waitFor(() => expect(screen.queryByText(UNCERTAIN)).toBeNull());
+    await typeHuman(['ArrowDown', '9']);
+    expect(qty('line:L2')).toBe('9');
+  });
+
+  it('열 때 작업 기록을 못 읽으면 잠긴 채 «결과를 확인하지 못했어요»', async () => {
+    const base = createOperationStore(crypto.randomUUID());
+    let failGet = true;
+    const store: OperationStore = {
+      ...base,
+      get: async (id) => {
+        if (failGet && id === 'k-sent') {
+          failGet = false;
+          throw new Error('idb read failed');
+        }
+        return base.get(id);
+      },
+    };
+    await setup({}, { store, seed: seedSent(sentDraft('k-sent'), 'confirmed') });
+    expect(await screen.findByText(UNCERTAIN)).toBeInTheDocument();
+    await typeHuman(['7']);
+    expect(flash()).toBe('error');
+    expect(qty('line:L1')).toBe('40');
+  });
+
+  it('확정 뒤 초안 지우기가 실패해도 끝으로 간다', async () => {
+    const base = createOperationStore(crypto.randomUUID());
+    let failDelete = true;
+    const store: OperationStore = {
+      ...base,
+      draft: async <T,>(id: string, update?: (previous: T | undefined) => T) => {
+        if (update && failDelete && update(undefined) === null) {
+          failDelete = false;
+          throw new Error('idb write failed');
+        }
+        return base.draft<T>(id, update);
+      },
+    };
+    const { server } = await setup({}, { store });
+    await fillAll();
+    await confirmTwice();
+    expect(await screen.findByText(DONE)).toBeInTheDocument();
+    expect(server.sent).toHaveLength(1);
+    expect(failDelete).toBe(false);
   });
 });
 

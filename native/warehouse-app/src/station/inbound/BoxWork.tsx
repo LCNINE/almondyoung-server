@@ -13,6 +13,7 @@ import {
   applyScan,
   blankLineIds,
   canApplyList,
+  clearLine,
   confirmBlock,
   createBoxDraft,
   reconcileDraft,
@@ -39,6 +40,7 @@ import { BoxWorkPanel } from './BoxWorkPanel';
 import { INBOUND_BOX_ACTIONS } from './inboundBoxActions';
 
 const CONFLICT_NOTICE = '다른 곳에서 이미 확정했어요';
+const STALE_CONFIRM = '앞서 보낸 확정이 취소됐어요 — 다시 세 주세요';
 const listChangedMessage = (n: number) => `관리자가 리스트를 고쳤어요 — ${n}줄 다시 확인`;
 
 type Phase = 'idle' | 'checking' | 'sending';
@@ -112,6 +114,8 @@ export function BoxWork({
     setPhase('idle');
   };
   const busy = () => phaseRef.current !== 'idle';
+  /** 이 상자의 초안을 기기에서 지운다 — 실패해도 다음 단계는 막지 않는다(다시 열면 결과 확인이 같은 판정을 한다) */
+  const dropDraft = () => saved.update(() => null).catch(() => {});
   const locked = () => busy() || !!workRef.current?.sentBody;
 
   const listChanged = (n: number) => {
@@ -124,13 +128,65 @@ export function BoxWork({
   const explain = (block: Exclude<ConfirmBlock, null>, draft: BoxDraft, current: BoxView) => {
     const notice = blockNotice(block);
     if (!notice) {
-      // 확인 사이에 다른 곳이 확정했다 — 409 와 같은 안내로 확정된 상자를 연다
-      onReopen(current.status === 'received' ? CONFLICT_NOTICE : undefined);
+      // 다른 곳이 확정했다 — 넣던 수량은 버리고 확정된 상자를 연다(§5.9). 그 밖(전달용 등)은 초안을 두고 그 상태로 연다
+      if (current.status === 'received') void dropDraft().then(() => onReopen(CONFLICT_NOTICE));
+      else onReopen();
       return;
     }
     if (notice.focus) moveTo(rowsOf(current.lines, draft).findIndex((r) => rowKey(r) === notice.focus));
     setArmed(false);
     setAlert({ message: notice.message });
+    signal('error');
+  };
+
+  /**
+   * 확정 결과(방금 받은 것이든 기기에 남은 것이든)를 상자로 확인한다. 기기의 결과는 그 뒤 취소됐을 수 있다 —
+   * 상자가 다시 열려 있으면 낡은 확정이라 «확정» 을 띄우지 않고 새 빈 초안(새 키)으로 다시 세게 한다.
+   * 읽지 못하면 잠금을 둔다(F10 이 같은 키로 다시 받아 다시 확인한다).
+   */
+  const afterConfirmed = async (result: ReceiveBoxResult, key: string) => {
+    let latest: BoxView;
+    try {
+      latest = await openBox(api, boxRef.current.shipmentId, boxRef.current.boxId);
+    } catch {
+      if (mounted.current) signal('error');
+      return;
+    }
+    if (!mounted.current || settled.current === key) return;
+    settled.current = key;
+    if (latest.status === 'received') {
+      await dropDraft();
+      signal('complete');
+      onDone(result);
+      return;
+    }
+    setBox(latest);
+    setUndo(null);
+    await commit(createBoxDraft(latest, crypto.randomUUID())).catch(() => {});
+    moveTo(0);
+    setAlert({ message: STALE_CONFIRM });
+    signal('error');
+  };
+
+  /** 409 — 상자를 다시 읽어 그 상태를 보인다. 확정돼 있으면 다른 곳이 먼저 한 것(수량을 버린다), 아니면 수량을 두고 까닭을 보인다 */
+  const afterConflict = async (error: unknown, draft: BoxDraft) => {
+    let latest: BoxView;
+    try {
+      latest = await openBox(api, boxRef.current.shipmentId, boxRef.current.boxId);
+    } catch {
+      if (!mounted.current) return;
+      setAlert({ message: errorMessage(error) });
+      signal('error');
+      return;
+    }
+    if (!mounted.current) return;
+    setBox(latest);
+    const block = confirmBlock(draft, latest);
+    if (block) {
+      explain(block, draft, latest);
+      return;
+    }
+    setAlert({ message: errorMessage(error) });
     signal('error');
   };
 
@@ -140,29 +196,30 @@ export function BoxWork({
     setPhase('sending');
     const current = boxRef.current;
     try {
-      const result = await receiveBox(api, current.shipmentId, current.boxId, body, key);
-      if (!mounted.current || settled.current === key) return;
-      settled.current = key;
-      await saved.update(() => null);
-      signal('complete');
-      onDone(result);
-    } catch (error) {
-      if (!mounted.current || settled.current === key) return;
-      if (error instanceof ApiError && error.status === 409) {
-        // 다른 스테이션이 먼저 확정했다 — 넣던 수량은 버린다(§5.9)
-        settled.current = key;
-        await saved.update(() => null).catch(() => {});
-        onReopen(CONFLICT_NOTICE);
-      } else if (isUncertainWrite(error)) {
-        signal('error');
-      } else {
+      let result: ReceiveBoxResult;
+      try {
+        result = await receiveBox(api, current.shipmentId, current.boxId, body, key);
+      } catch (error) {
+        if (!mounted.current || settled.current === key) return;
+        if (isUncertainWrite(error)) {
+          signal('error');
+          return;
+        }
         // 거절 — 수량은 남기고 다음 전송은 새 키로(§6)
         settled.current = key;
         setUndo(null);
-        if (workRef.current) await commit({ ...workRef.current, key: crypto.randomUUID(), sentBody: null }).catch(() => {});
+        const rotated: BoxDraft | null = workRef.current ? { ...workRef.current, key: crypto.randomUUID(), sentBody: null } : null;
+        if (rotated) await commit(rotated).catch(() => {});
+        if (rotated && error instanceof ApiError && error.status === 409) {
+          await afterConflict(error, rotated);
+          return;
+        }
         setAlert({ message: errorMessage(error) });
         signal('error');
+        return;
       }
+      if (!mounted.current || settled.current === key) return;
+      await afterConfirmed(result, key);
     } finally {
       if (mounted.current && sendSeq.current === mine) release();
     }
@@ -227,9 +284,13 @@ export function BoxWork({
     if (value?.sentBody) {
       const body = value.sentBody;
       setWork(value);
-      void runtime?.store.get(value.key).then((op) => {
-        if (op?.status === 'confirmed' || op?.status === 'rejected') void transmitRef.current(body, value.key);
-      });
+      // 작업 기록을 못 읽으면 잠긴 채 둔다(결과 모름 안내 · F10 이 같은 키로 다시)
+      void runtime?.store
+        .get(value.key)
+        .then((op) => {
+          if (op?.status === 'confirmed' || op?.status === 'rejected') void transmitRef.current(body, value.key);
+        })
+        .catch(() => {});
       return;
     }
     if (!value) {
@@ -280,14 +341,21 @@ export function BoxWork({
   };
 
   /** 지금 줄의 수량을 바꾼다 — 상한을 넘으면 오류음·그대로 */
-  const edit = (compute: (current: number | undefined) => number | null) => {
+  /** compute: 새 수량 · 'blank'(빈칸으로) · null(그대로) */
+  const edit = (compute: (current: number | undefined) => number | 'blank' | null) => {
     if (!touch()) return;
     const before = workRef.current!;
     const row = rowsNow()[cursorRef.current];
     if (!row) return;
     const qty = compute(row.kind === 'line' ? before.cells[row.line.lineId]?.qty : row.item.qty);
     if (qty === null) return;
-    const next = row.kind === 'line' ? setLineQty(before, row.line.lineId, qty) : setUnplannedQty(before, row.item.skuId, qty);
+    // 리스트에 없던 물건의 «빈칸» 은 줄을 지우는 것이다(0 과 같다)
+    const next =
+      row.kind === 'line'
+        ? qty === 'blank'
+          ? clearLine(before, row.line.lineId)
+          : setLineQty(before, row.line.lineId, qty)
+        : setUnplannedQty(before, row.item.skuId, qty === 'blank' ? 0 : qty);
     if (next === before) {
       signal('error');
       return;
@@ -296,7 +364,8 @@ export function BoxWork({
     void commit(next).catch(() => {});
     freshRef.current = false;
     // 리스트에 없던 물건을 0 으로 — 그 줄이 지워졌다
-    if (row.kind === 'unplanned' && qty === 0) {
+    if (qty === 'blank') freshRef.current = true;
+    if (row.kind === 'unplanned' && (qty === 0 || qty === 'blank')) {
       setCursor(Math.max(0, Math.min(cursorRef.current, rowsNow().length - 1)));
       freshRef.current = true;
     }
@@ -319,7 +388,8 @@ export function BoxWork({
       ? null
       : (key: string) => {
           if (/^\d$/.test(key)) typeDigit(Number(key));
-          else if (key === 'Backspace') edit((current) => (current === undefined ? null : Math.floor(current / 10)));
+          // 한 자리를 지우면 빈칸 — 센 0 이 아니다
+          else if (key === 'Backspace') edit((current) => (current === undefined ? null : current < 10 ? 'blank' : Math.floor(current / 10)));
           else if (key === 'ArrowUp') move(-1);
           else if (key === 'ArrowDown' || key === 'Enter') move(1);
         }

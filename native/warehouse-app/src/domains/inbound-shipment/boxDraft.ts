@@ -55,6 +55,14 @@ export function setLineQty(
   };
 }
 
+/** 칸을 빈칸(아직 안 넣음)으로 되돌린다 — 0 과 다르다 */
+export function clearLine(draft: BoxDraft, lineId: string): BoxDraft {
+  if (!draft.cells[lineId]) return draft;
+  const cells = { ...draft.cells };
+  delete cells[lineId];
+  return { ...draft, cells };
+}
+
 export function applyList(draft: BoxDraft, line: BoxLine): BoxDraft {
   if (!canApplyList(line) || line.expectedQty === null) return draft;
   return {
@@ -129,7 +137,8 @@ export const blankLineIds = (draft: BoxDraft, box: BoxView): string[] =>
 
 /**
  * 관리자가 리스트를 고친 뒤 초안을 지금 상자에 맞춘다.
- * `changedLineIds` 는 kind·skuId·expectedQty 가 바뀌었거나 새로 생긴 줄 전부(칸이 지워졌든 남았든 빈칸이든, 행 순서).
+ * `changedLineIds` 는 kind·skuId·expectedQty 가 바뀌었거나 새로 생긴 줄 전부(칸이 지워졌든 남았든 빈칸이든, 행 순서),
+ * 그 뒤에 초안엔 있었는데 상자에서 사라진 줄.
  */
 export function reconcileDraft(
   draft: BoxDraft,
@@ -149,6 +158,9 @@ export function reconcileDraft(
     if (!cell) continue;
     if (identityChanged || (expectedChanged && cell.method === 'list')) continue;
     cells[l.lineId] = cell;
+  }
+  for (const lineId of Object.keys(draft.snapshot)) {
+    if (!snapshot[lineId]) changedLineIds.push(lineId);
   }
   return { draft: { ...draft, cells, snapshot }, changedLineIds };
 }
