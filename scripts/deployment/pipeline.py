@@ -168,7 +168,8 @@ def main():
             restore_cache(archive)
         log('cache', status='restored' if hit else 'miss', note='archive restoration does not prove compiler cache hits')
         step_start = time.monotonic()
-        run(['yarn', 'install', '--frozen-lockfile', '--non-interactive'])
+        # The repository tracks package-lock.json, not yarn.lock. Use the pinned versions.
+        run(['npm', 'ci', '--no-audit', '--no-fund'])
         log('dependencies', seconds=round(time.monotonic() - step_start, 1))
 
         # Always check BOTH deployments, even when all application inputs are unchanged.
