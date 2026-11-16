@@ -1,8 +1,6 @@
 'use client';
 
 import { useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { archiveClient } from '@/lib/api/domains/archive/archive.client';
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query';
 import { useCanRun } from '@/hooks/use-permission';
 import type { PermissionRequirement } from '@/lib/auth/mutation-permission';
@@ -14,6 +12,14 @@ import { useOrderRefunds } from '@/lib/services/wallet/queries';
 import { refundMap } from '../growth/model';
 import { appendGoalEvidence } from './goal-export';
 import { kstToday } from '@/features/statistics/as-of';
+import { RevenueDocuments } from './RevenueDocuments';
+import {
+  REVIEW_HEADERS,
+  REVIEW_FIELDS,
+  reviewLabel,
+  reviewTable,
+  importPreview,
+} from './model';
 import { ExternalRevenueStatistics } from './ExternalRevenueStatistics';
 import {
   BASES,
@@ -39,8 +45,6 @@ useImportRevenueRows.permission = [
 ] as const satisfies PermissionRequirement;
 
 export function RevenueReportPanel() {
-  const router = useRouter();
-  const [openingArchive, setOpeningArchive] = useState(false);
   const [year, setYear] = useState(Number(kstToday().slice(0, 4)));
   const [pending, setPending] = useState<ExternalRevenueRow[]>([]);
   const [busy, setBusy] = useState(false);
@@ -71,28 +75,6 @@ export function RevenueReportPanel() {
         : 0;
   const totals = report.data ? revenueSummary(report.data, throughMonth) : [];
 
-  async function openArchive() {
-    setOpeningArchive(true);
-    setMessage('');
-    try {
-      const pages = await archiveClient.listTree('team');
-      const matches = pages.filter(
-        (page) => !page.parentId && page.title === '매출 자료'
-      );
-      if (matches.length === 1) router.push(`/archive/${matches[0].id}`);
-      else {
-        setMessage('아카이브 팀 스페이스에서 매출 자료 문서를 선택해 주세요.');
-        router.push('/archive');
-      }
-    } catch {
-      setMessage(
-        '보관함을 열지 못했습니다. 아카이브 조회 권한과 연결 상태를 확인해 주세요.'
-      );
-    } finally {
-      setOpeningArchive(false);
-    }
-  }
-
   async function download(raw: boolean) {
     if (!report.data) return;
 
@@ -112,9 +94,37 @@ export function RevenueReportPanel() {
             '확인금액',
             '등록월',
             '미등록월',
+            '대조상태',
+            '마지막반영',
           ],
         }),
         '채널별 확인 금액'
+      );
+      XLSX.utils.book_append_sheet(
+        book,
+        XLSX.utils.json_to_sheet(reviewTable(report.data.external)),
+        '자료 대조 상태'
+      );
+      XLSX.utils.book_append_sheet(
+        book,
+        XLSX.utils.json_to_sheet(
+          (report.data.history ?? []).flatMap((batch) =>
+            batch.after.map((row) => ({
+              반영시각: batch.recordedAt,
+              ...reviewTable([row])[0],
+              반영금액: row.amount,
+              이전금액:
+                batch.before.find(
+                  (old) =>
+                    old.channel === row.channel &&
+                    old.account === row.account &&
+                    old.month === row.month &&
+                    old.basis === row.basis
+                )?.amount ?? '신규',
+            }))
+          )
+        ),
+        '최근 반영 이력'
       );
       if (goal?.goal)
         appendGoalEvidence(
@@ -297,6 +307,12 @@ export function RevenueReportPanel() {
   }
 
   async function save() {
+    if (pending.some((row) => !row.month.startsWith(`${year}-`))) {
+      setMessage(
+        '선택한 연도와 업로드 자료의 연도가 다릅니다. 연도별로 나누어 등록해 주세요.'
+      );
+      return;
+    }
     setBusy(true);
 
     try {
@@ -320,7 +336,7 @@ export function RevenueReportPanel() {
     const book = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(
       book,
-      XLSX.utils.aoa_to_sheet([HEADERS]),
+      XLSX.utils.aoa_to_sheet([[...HEADERS, ...REVIEW_HEADERS]]),
       '외부 채널 월별 자료'
     );
     XLSX.writeFile(book, '외부채널_월별매출_양식.xlsx');
@@ -379,13 +395,6 @@ export function RevenueReportPanel() {
         >
           주문 원장 포함 엑셀
         </Button>
-        <Button
-          variant="outline"
-          disabled={openingArchive}
-          onClick={openArchive}
-        >
-          {openingArchive ? '보관함 여는 중…' : '원본·세무사 전달 자료'}
-        </Button>
       </div>
       <p className="text-sm text-gray-600">
         위 기간 필터와 별도로 선택한 연도의 자료를 조회합니다. 기존 주문 집계와
@@ -396,6 +405,22 @@ export function RevenueReportPanel() {
         미등록 채널·월은 미수집입니다. 전화 주문은 기존 자사몰 주문에 포함되지
         않은 자료만 등록하세요.
       </p>
+      <RevenueDocuments />
+      <div className="rounded-lg bg-slate-50 p-3 text-sm space-y-1">
+        <p className="font-medium">전체 매출 대조 중</p>
+        <p>
+          기존 목표 실적에는 과거 수기 누적액이 포함될 수 있습니다. 카페24·이관
+          주문과의 중복을 확인한 뒤 합계를 확정합니다.
+        </p>
+        <p>
+          운영 순매출은 채널 화면의 참고 금액입니다. 신고자료·구매확정·결제완료
+          기준과 구분해 확인하세요.
+        </p>
+        <p>
+          원본확보 → 월별대조 → 중복확인 → 입금대조. ‘확인’은 입력자가 근거를
+          기록한 상태이며 자동 검증이나 신고 확정을 뜻하지 않습니다.
+        </p>
+      </div>
       {report.data && !report.isError ? (
         <ExternalRevenueStatistics rows={report.data.external} year={year} />
       ) : null}
@@ -415,6 +440,7 @@ export function RevenueReportPanel() {
               <p className="text-sm text-gray-600">
                 {t.매출기준} · 등록월 {t.등록월}
               </p>
+              <p className="text-xs text-gray-600">{t.대조상태}</p>
               <p className="text-sm text-amber-800">
                 미등록월: {t.미등록월} (0원 아님)
               </p>
@@ -462,7 +488,16 @@ export function RevenueReportPanel() {
         />
         {pending.length > 0 ? (
           <>
-            <Button disabled={busy || !canImport} onClick={save}>
+            <Button
+              disabled={
+                busy ||
+                !canImport ||
+                report.isFetching ||
+                report.isError ||
+                !report.data
+              }
+              onClick={save}
+            >
               {pending.length}행 확인 후 저장
             </Button>
             <Button
@@ -476,9 +511,11 @@ export function RevenueReportPanel() {
         ) : null}
       </div>
       <p className="text-xs text-gray-500">
-        양식 채널: 쿠팡 / 스마트스토어 / 전화 주문. 매출기준: 구매확정 /
-        결제완료 / 주문 / 부가세 신고자료. 월: YYYY-MM. 매출액: 원 단위 정수.
-        출처에 보고서명과 조회 기준일을 적어 주세요. 저장에는 통계 설정 권한이
+        양식 채널: 쿠팡 / 스마트스토어 / 카페24 / 전화 주문. 매출기준: 구매확정
+        / 결제완료 / 주문 / 부가세 신고자료 / 운영 순매출. 월: YYYY-MM. 매출액:
+        원 단위 정수. 출처에 보고서명과 조회 기준일을 적어 주세요. 대조 항목은
+        확인 또는 미확인으로 입력하고 확인 근거를 대조메모에 적어 주세요. 기존
+        6열 양식은 모두 미확인으로 반영됩니다. 저장에는 통계 설정 권한이
         필요합니다.
       </p>
       {report.isLoading ? <p>자료를 불러오는 중입니다.</p> : null}
@@ -492,6 +529,37 @@ export function RevenueReportPanel() {
           {message}
         </p>
       ) : null}
+      <p className="text-sm text-gray-600">
+        채널 자료 다운로드 → 원본 보관 → 취합 양식 작성 → 불러오기·교체 금액
+        확인 → 저장. 계정명이나 매출기준을 바꾸면 별도 자료로 등록됩니다.
+      </p>
+      {pending.length ? (
+        <div className="overflow-auto rounded border p-3 text-sm">
+          <h3 className="font-medium">반영 전 비교</h3>
+          <p>
+            선택한 연도의 자료만 저장할 수 있습니다. 기존 자료 교체 시 대조
+            상태도 함께 교체됩니다.
+          </p>
+          {importPreview(pending, report.data?.external ?? []).map(
+            ({ row, previous }) => (
+              <p
+                key={JSON.stringify([
+                  row.channel,
+                  row.account,
+                  row.month,
+                  row.basis,
+                ])}
+              >
+                {CHANNELS[row.channel]} · {row.account} · {row.month} ·{' '}
+                {BASES[row.basis]}:{' '}
+                {previous
+                  ? `${previous.amount.toLocaleString()}원 → ${row.amount.toLocaleString()}원 (교체)`
+                  : `${row.amount.toLocaleString()}원 (신규)`}
+              </p>
+            )
+          )}
+        </div>
+      ) : null}
       {pending.length ? (
         <p className="font-medium">
           저장 전 미리보기 · 기존 값과 같은 채널·계정·월·기준은 교체됩니다.
@@ -501,7 +569,7 @@ export function RevenueReportPanel() {
         <table className="w-full text-left text-sm">
           <thead>
             <tr>
-              {HEADERS.map((h) => (
+              {[...HEADERS, ...REVIEW_HEADERS, '마지막 반영'].map((h) => (
                 <th key={h} className="border-b p-2">
                   {h}
                 </th>
@@ -521,6 +589,19 @@ export function RevenueReportPanel() {
                   {r.amount.toLocaleString()}원
                 </td>
                 <td className="p-2">{r.source}</td>
+                {REVIEW_FIELDS.map((field) => (
+                  <td key={field} className="p-2">
+                    {reviewLabel(r[field])}
+                  </td>
+                ))}
+                <td className="p-2">{r.reviewNote || '—'}</td>
+                <td className="p-2">
+                  {r.updatedAt
+                    ? new Date(r.updatedAt).toLocaleString('ko-KR', {
+                        timeZone: 'Asia/Seoul',
+                      })
+                    : '—'}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -531,6 +612,23 @@ export function RevenueReportPanel() {
           </p>
         ) : null}
       </div>
+      <details className="rounded border p-3 text-sm">
+        <summary className="cursor-pointer font-medium">
+          최근 반영 이력 (최대 50회)
+        </summary>
+        <p>
+          이력 기능 적용 이후 저장한 자료부터 기록됩니다. 이전 값은 검토용
+          엑셀에도 포함됩니다.
+        </p>
+        {(report.data?.history ?? []).map((batch) => (
+          <p key={batch.id}>
+            {new Date(batch.recordedAt).toLocaleString('ko-KR', {
+              timeZone: 'Asia/Seoul',
+            })}{' '}
+            · {batch.after.length}행 반영 · {batch.before.length}행 교체
+          </p>
+        ))}
+      </details>
     </section>
   );
 }

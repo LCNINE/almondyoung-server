@@ -25,7 +25,7 @@ export function ExternalRevenueStatistics({
 
   return (
     <div className="space-y-3 rounded-lg border p-3">
-      <h3 className="font-medium">외부 채널 월별 매출</h3>
+      <h3 className="font-medium">채널 자료 월별 매출</h3>
       <p className="text-sm text-gray-600">
         저장한 자료가 바로 반영됩니다. 계정·매출 기준별로 구분하며, 미등록월은
         0원으로 표시하지 않습니다. 진행 중인 달은 잠정 금액입니다. 자사몰 목표
@@ -60,7 +60,7 @@ export function ExternalRevenueStatistics({
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
           <caption className="sr-only">
-            {year}년 외부 채널 월별 매출, 원 단위
+            {year}년 채널 자료 월별 매출, 원 단위
           </caption>
           <thead>
             <tr className="border-b text-left">

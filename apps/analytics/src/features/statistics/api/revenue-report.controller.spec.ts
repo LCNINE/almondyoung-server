@@ -32,3 +32,27 @@ describe('매출 취합 입력 검증', () => {
     expect(service.import).not.toHaveBeenCalled();
   });
 });
+
+describe('카페24·대조 상태 입력', () => {
+  it('운영 순매출과 허용된 상태만 받는다', async () => {
+    const cafe = {
+      ...row,
+      channel: 'cafe24',
+      basis: 'operational_net',
+      originalStatus: 'confirmed',
+      reviewNote: '원본 대조 근거',
+    };
+    expect(await validate(plainToInstance(ImportExternalRevenueDto, { rows: [cafe] }))).toHaveLength(0);
+    expect(
+      (await validate(plainToInstance(ImportExternalRevenueDto, { rows: [{ ...cafe, monthlyStatus: 'done' }] })))
+        .length,
+    ).toBeGreaterThan(0);
+  });
+  it('근거 없는 확인을 막고 인증된 반영자를 서비스로 전달한다', () => {
+    const service = { import: jest.fn() };
+    const controller = new RevenueReportController(service as never);
+    expect(() => controller.import({ rows: [{ ...row, originalStatus: 'confirmed' }] })).toThrow();
+    controller.import({ rows: [{ ...row }] }, { userId: 'test-operator' });
+    expect(service.import).toHaveBeenCalledWith([{ ...row }], 'test-operator');
+  });
+});

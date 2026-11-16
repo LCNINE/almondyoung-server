@@ -1,5 +1,5 @@
 import { BadRequestException, Body, Controller, Get, Post, Query, UseGuards } from '@nestjs/common';
-import { JwtAuthGuard, PermissionGuard, RequirePermission } from '@app/authorization';
+import { JwtAuthGuard, PermissionGuard, RequirePermission, User } from '@app/authorization';
 import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
@@ -7,6 +7,7 @@ import {
   IsArray,
   IsIn,
   IsInt,
+  IsOptional,
   IsString,
   Matches,
   Max,
@@ -25,7 +26,7 @@ export class RevenueReportYearDto {
 }
 
 export class ExternalRevenueRowDto {
-  @IsIn(['coupang', 'naver', 'phone'])
+  @IsIn(['coupang', 'naver', 'phone', 'cafe24'])
   channel: string;
 
   @IsString()
@@ -35,7 +36,7 @@ export class ExternalRevenueRowDto {
   @Matches(/^20\d{2}-(0[1-9]|1[0-2])$/)
   month: string;
 
-  @IsIn(['purchase_confirmed', 'paid', 'order', 'tax_report'])
+  @IsIn(['purchase_confirmed', 'paid', 'order', 'tax_report', 'operational_net'])
   basis: string;
 
   @IsInt()
@@ -46,6 +47,27 @@ export class ExternalRevenueRowDto {
   @IsString()
   @MaxLength(255)
   source: string;
+
+  @IsOptional()
+  @IsIn(['pending', 'confirmed'])
+  originalStatus?: string;
+
+  @IsOptional()
+  @IsIn(['pending', 'confirmed'])
+  monthlyStatus?: string;
+
+  @IsOptional()
+  @IsIn(['pending', 'confirmed'])
+  duplicateStatus?: string;
+
+  @IsOptional()
+  @IsIn(['pending', 'confirmed'])
+  settlementStatus?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  reviewNote?: string;
 }
 
 export class RevenueRawQueryDto extends RevenueReportYearDto {
@@ -84,7 +106,7 @@ export class RevenueReportController {
 
   @Post('external')
   @RequirePermission('analytics.setting.write')
-  import(@Body() dto: ImportExternalRevenueDto) {
+  import(@Body() dto: ImportExternalRevenueDto, @User() user?: { userId?: string }) {
     const keys = new Set<string>();
 
     for (const row of dto.rows) {
@@ -96,9 +118,15 @@ export class RevenueReportController {
         throw new BadRequestException('계정·출처를 입력하고 같은 채널·계정·월·기준의 중복 행을 제거해 주세요.');
       }
 
+      if (
+        [row.originalStatus, row.monthlyStatus, row.duplicateStatus, row.settlementStatus].includes('confirmed') &&
+        !row.reviewNote?.trim()
+      ) {
+        throw new BadRequestException('확인으로 표시한 항목에는 대조 메모를 입력해 주세요.');
+      }
       keys.add(key);
     }
 
-    return this.service.import(dto.rows);
+    return this.service.import(dto.rows, user?.userId);
   }
 }

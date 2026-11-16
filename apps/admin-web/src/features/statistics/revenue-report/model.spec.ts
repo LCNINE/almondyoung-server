@@ -127,3 +127,46 @@ describe('세무사 확인용 요약', () => {
     expect(totals[2].확인금액).toBe(300);
   });
 });
+
+describe('대조 상태와 교체 비교', () => {
+  it('카페24 운영 금액을 별도 기준으로 보존하고 확인 근거를 요구한다', () => {
+    const headers = [
+      ...HEADERS,
+      '원본확보',
+      '월별대조',
+      '중복확인',
+      '입금대조',
+      '대조메모',
+    ];
+    const cafe = [
+      '카페24',
+      '테스트몰',
+      '2026-01',
+      '운영 순매출',
+      -200,
+      '화면 조회',
+      '확인',
+      '미확인',
+      '미확인',
+      '미확인',
+      '원본 1개 확보, 금액 차이 확인 중',
+    ];
+    const parsed = parseExternalRevenue([headers, cafe])[0];
+    expect(parsed).toMatchObject({
+      channel: 'cafe24',
+      basis: 'operational_net',
+      amount: -200,
+      originalStatus: 'confirmed',
+      monthlyStatus: 'pending',
+    });
+    expect(() =>
+      parseExternalRevenue([headers, [...cafe.slice(0, 10), '']])
+    ).toThrow('확인 근거');
+    expect(() =>
+      parseExternalRevenue([
+        headers,
+        [...cafe.slice(0, 6), '완료', ...cafe.slice(7)],
+      ])
+    ).toThrow('대조 상태');
+  });
+});

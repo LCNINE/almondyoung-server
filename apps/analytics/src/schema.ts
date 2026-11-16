@@ -397,12 +397,26 @@ export const externalRevenueMonthly = pgTable(
     basis: varchar('basis', { length: 30 }).notNull(),
     amount: bigint('amount', { mode: 'number' }).notNull(),
     source: varchar('source', { length: 255 }).notNull(),
+    originalStatus: varchar('original_status', { length: 20 }).default('pending').notNull(),
+    monthlyStatus: varchar('monthly_status', { length: 20 }).default('pending').notNull(),
+    duplicateStatus: varchar('duplicate_status', { length: 20 }).default('pending').notNull(),
+    settlementStatus: varchar('settlement_status', { length: 20 }).default('pending').notNull(),
+    reviewNote: text('review_note').default('').notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
   },
   (table) => [primaryKey({ columns: [table.channel, table.account, table.month, table.basis] })],
 );
 
+export const externalRevenueHistory = pgTable('external_revenue_history', {
+  id: uuid('id').primaryKey().$defaultFn(uuidv7),
+  recordedAt: timestamp('recorded_at').defaultNow().notNull(),
+  recordedBy: varchar('recorded_by', { length: 255 }),
+  before: jsonb('before').notNull(),
+  after: jsonb('after').notNull(),
+});
+
 export const analyticsSchema = {
+  externalRevenueHistory,
   externalRevenueMonthly,
   factOrderEvents,
   factOrderItems,
