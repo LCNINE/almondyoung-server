@@ -3,7 +3,7 @@ import {
   TestWorkProvider,
   receiptFixture,
 } from './__fixtures__/workRuntime';
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -19,6 +19,8 @@ import { SessionProvider } from '../../app/session-context';
 import { WarehouseProvider } from '../../app/warehouse-context';
 import type { ApiClient } from '../../core/data/httpClient';
 import { InboundHistoryScreen } from './InboundHistoryScreen';
+const station = vi.hoisted(() => ({ on: false }));
+vi.mock('../../app/station', () => ({ isStationDevice: () => station.on }));
 const session = {
   bootstrap: async () => {},
   isAuthenticated: () => true,
@@ -261,4 +263,75 @@ it('keeps invalid diagnostic rows visible and valid neighboring actions availabl
   expect(calls.every((call) => !call.method || call.method === 'GET')).toBe(
     true
   );
+});
+
+async function mountShipmentLine() {
+  await mount((async (opts: Call) => {
+    if (opts.path.startsWith('/inbound/receipts?')) {
+      return {
+        total: 1,
+        serverTime: new Date().toISOString(),
+        items: [
+          {
+            ...receipt('s', 'direct'),
+            lines: [
+              {
+                ...line('s', 'direct'),
+                skuName: '선적상품',
+                source: 'inbound_shipment',
+                inboundShipmentBox: {
+                  shipmentId: 'ship-1',
+                  shipmentName: '11월 2차 배편',
+                  boxId: 'box-1',
+                  boxLabel: 'L7',
+                },
+              },
+            ],
+          },
+        ],
+      };
+    }
+    return {};
+  }) as ApiClient['request']);
+}
+it('shipment receipt line shows box and no line cancel', async () => {
+  station.on = false;
+  await mountShipmentLine();
+  expect(
+    await screen.findByText(/11월 2차 배편 · 상자 L7/)
+  ).toBeInTheDocument();
+  expect(
+    screen.queryByRole('button', { name: /입고 취소/ })
+  ).not.toBeInTheDocument();
+  expect(screen.getByText('스테이션에서 취소해요')).toBeInTheDocument();
+});
+it('shipment receipt line on station shows box without line cancel or handheld hint', async () => {
+  station.on = true;
+  await mountShipmentLine();
+  expect(
+    await screen.findByText(/11월 2차 배편 · 상자 L7/)
+  ).toBeInTheDocument();
+  expect(
+    screen.queryByRole('button', { name: /입고 취소/ })
+  ).not.toBeInTheDocument();
+  expect(screen.queryByText('스테이션에서 취소해요')).not.toBeInTheDocument();
+  station.on = false;
+});
+it('on station the shipment box line links to that box', async () => {
+  station.on = true;
+  await mountShipmentLine();
+  const link = await screen.findByRole('link', { name: /11월 2차 배편 · 상자 L7/ });
+  expect(link).toHaveAttribute(
+    'href',
+    '/inbound/boxes?shipmentId=ship-1&boxId=box-1'
+  );
+  station.on = false;
+});
+it('on handheld the shipment box line is plain text, not a link', async () => {
+  station.on = false;
+  await mountShipmentLine();
+  await screen.findByText(/11월 2차 배편 · 상자 L7/);
+  expect(
+    screen.queryByRole('link', { name: /11월 2차 배편 · 상자 L7/ })
+  ).toBeNull();
 });

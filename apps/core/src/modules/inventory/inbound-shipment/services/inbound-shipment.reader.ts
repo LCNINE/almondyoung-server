@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { InjectTypedDb } from '@app/db/decorators';
 import { DbService } from '@app/db';
-import { and, asc, count, desc, eq, inArray, isNull, ne, SQL, sql } from 'drizzle-orm';
+import { and, asc, count, desc, eq, inArray, isNull, ne, or, SQL, sql } from 'drizzle-orm';
 import { NotFoundError } from '@app/shared';
 import { normalizeBarcode, ListCell } from './inbound-shipment-list.parser';
 import { lineDifference, normalizeSingleBoxLabel } from './inbound-shipment.rules';
@@ -74,6 +74,8 @@ export class InboundShipmentReader {
           name: s.name,
           expectedArrival: s.expectedArrival,
           createdAt: s.createdAt,
+          closedAt: s.closedAt,
+          closedManually: sql<boolean>`${s.closedReason} IS NOT NULL`,
           boxCount: sql<number>`coalesce(${boxCounts.n}, 0)`.mapWith(Number),
           lineCount: sql<number>`coalesce(${lineCounts.n}, 0)`.mapWith(Number),
         })
@@ -197,6 +199,7 @@ export class InboundShipmentReader {
         memo: shipment.memo,
         closedReason: shipment.closedReason,
         closedAt: shipment.closedAt,
+        closedManually: shipment.closedReason !== null,
         createdAt: shipment.createdAt,
         boxCount: boxes.length,
         lineCount: lines.length,
@@ -251,7 +254,8 @@ export class InboundShipmentReader {
   }
 
   /**
-   * 그 창고의 열린 선적(`expected`·`receiving`)에서 이름이 같은 상자 전부 — spec §8.1.
+   * 그 창고의 열린 선적(`expected`·`receiving`)과, 끝난 선적(저절로든 사람이 닫았든)의 오늘 확정 상자에서 이름이 같은 상자 전부
+   * — spec §8.1·§7.5. 사람이 닫은 선적의 상자도 당일 확정 취소는 된다(모델 설계 §8.4). 상자 더하기만 막힌다(`addBox`).
    * 선적마다 이름이 `L1` 부터 다시 시작하므로 후보가 여럿일 수 있다. 기본 선택은 두지 않는다.
    */
   async findBoxes(warehouseId: string, label: string, tx?: DbTx): Promise<BoxCandidateView[]> {
@@ -269,11 +273,24 @@ export class InboundShipmentReader {
           origin: b.origin,
           disposition: b.disposition,
           status: b.status,
+          shipmentStatus: s.status,
         })
         .from(b)
         .innerJoin(s, eq(s.id, b.shipmentId))
         .where(
-          and(eq(s.warehouseId, warehouseId), inArray(s.status, ['expected', 'receiving']), eq(b.label, normalized)),
+          and(
+            eq(s.warehouseId, warehouseId),
+            eq(b.label, normalized),
+            or(
+              inArray(s.status, ['expected', 'receiving']),
+              // 끝난 선적(저절로든 사람이 닫았든 — closed_reason 을 보지 않는다)의 «오늘(서울) 확정된» 상자 — 같은 날 확정 취소할 수 있게.
+              and(
+                eq(s.status, 'closed'),
+                eq(b.status, 'received'),
+                sql`(${b.receivedAt} AT TIME ZONE 'Asia/Seoul')::date = (now() AT TIME ZONE 'Asia/Seoul')::date`,
+              ),
+            ),
+          ),
         )
         .orderBy(asc(s.expectedArrival), asc(s.createdAt), asc(s.id));
 
@@ -295,10 +312,17 @@ export class InboundShipmentReader {
           if (name && items.length < PREVIEW_ITEMS) preview.set(r.boxId, [...items, name]);
         }
       }
-      return boxes.map(({ origin, ...box }) => ({
-        ...box,
-        previewItems: origin === 'list' ? (preview.get(box.boxId) ?? []) : [],
-      }));
+      const result: BoxCandidateView[] = [];
+      for (const { origin, shipmentStatus, ...box } of boxes) {
+        // where 절이 expected·receiving·closed 만 통과시킨다 — 타입도 그렇게 좁힌다.
+        if (shipmentStatus !== 'expected' && shipmentStatus !== 'receiving' && shipmentStatus !== 'closed') continue;
+        result.push({
+          ...box,
+          shipmentStatus,
+          previewItems: origin === 'list' ? (preview.get(box.boxId) ?? []) : [],
+        });
+      }
+      return result;
     }, tx);
   }
 
@@ -324,11 +348,14 @@ export class InboundShipmentReader {
           id: t.inboundShipmentLines.id,
           kind: t.inboundShipmentLines.kind,
           skuId: t.inboundShipmentLines.skuId,
+          skuCode: wmsTables.skus.code,
+          skuName: wmsTables.skus.name,
           expectedQty: t.inboundShipmentLines.expectedQty,
           raw: t.inboundShipmentLines.raw,
         })
         .from(t.inboundShipmentLineBoxes)
         .innerJoin(t.inboundShipmentLines, eq(t.inboundShipmentLines.id, t.inboundShipmentLineBoxes.lineId))
+        .leftJoin(wmsTables.skus, eq(wmsTables.skus.id, t.inboundShipmentLines.skuId))
         .where(eq(t.inboundShipmentLineBoxes.boxId, boxId))
         .orderBy(asc(t.inboundShipmentLines.rowNumber), asc(t.inboundShipmentLines.id));
       const lineIds = lines.map((l) => l.id);
@@ -366,9 +393,13 @@ export class InboundShipmentReader {
           id: t.inboundShipmentBoxCounts.id,
           lineId: t.inboundShipmentBoxCounts.lineId,
           skuId: t.inboundShipmentBoxCounts.skuId,
+          skuCode: wmsTables.skus.code,
+          skuName: wmsTables.skus.name,
           countedQty: t.inboundShipmentBoxCounts.countedQty,
+          method: t.inboundShipmentBoxCounts.countMethod,
         })
         .from(t.inboundShipmentBoxCounts)
+        .leftJoin(wmsTables.skus, eq(wmsTables.skus.id, t.inboundShipmentBoxCounts.skuId))
         .where(and(eq(t.inboundShipmentBoxCounts.boxId, boxId), isNull(t.inboundShipmentBoxCounts.canceledAt)))
         .orderBy(asc(t.inboundShipmentBoxCounts.createdAt), asc(t.inboundShipmentBoxCounts.id));
 
@@ -384,10 +415,13 @@ export class InboundShipmentReader {
         status: box.status,
         forwardNote: box.disposition === 'forward' ? box.forwardNote : null,
         receiptId: box.receiptId,
+        receivedAt: box.receivedAt,
         lines: lines.map((l) => ({
           lineId: l.id,
           kind: l.kind,
           skuId: l.skuId,
+          sku:
+            l.kind === 'sku' && l.skuCode !== null && l.skuName !== null ? { code: l.skuCode, name: l.skuName } : null,
           productName: cellText(l.raw, 'productName'),
           option: cellText(l.raw, 'option'),
           expectedQty: l.expectedQty,

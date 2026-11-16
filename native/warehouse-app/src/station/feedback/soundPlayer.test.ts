@@ -41,9 +41,9 @@ describe('createSoundPlayer', () => {
     expect(() => createSoundPlayer({ sink: null, readPrefs: prefs({ volume: 80, muted: false }) }).play('success')).not.toThrow();
   });
 
-  it('네 소리는 서로 다르다 — 화면을 안 보고 구별해야 한다', () => {
-    const kinds: FeedbackKind[] = ['success', 'error', 'complete', 'command'];
+  it('다섯 소리는 서로 다르다 — 화면을 안 보고 구별해야 한다', () => {
+    const kinds: FeedbackKind[] = ['success', 'error', 'complete', 'command', 'attention'];
     const signatures = kinds.map((k) => JSON.stringify(TONES[k]));
-    expect(new Set(signatures).size).toBe(4);
+    expect(new Set(signatures).size).toBe(5);
   });
 });

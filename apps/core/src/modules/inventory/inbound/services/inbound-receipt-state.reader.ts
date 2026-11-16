@@ -24,6 +24,10 @@ export interface ReceiptFactsRow extends Omit<
   receivedAt: Date | string;
   cursorAt: string;
   eventId: string | null;
+  inboundShipmentId: string | null;
+  inboundShipmentName: string | null;
+  inboundShipmentBoxId: string | null;
+  inboundShipmentBoxLabel: string | null;
   memo: string | null;
   createdAt: Date | string;
   updatedAt: Date | string;
@@ -74,7 +78,8 @@ export function receiptFactsCtes(where: SQL, page: SQL = sql``): SQL {
         COALESCE(sl.qty, 0) AS "onHandQty", COALESCE(p.qty, 0) AS "bucketPendingQty",
         COALESCE(c.qty, 0) AS "custodyQty", irl.occurred_at AS "receivedAt",
         to_char(irl.occurred_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"') AS "cursorAt",
-        irl.event_id AS "eventId", irl.memo, irl.created_at AS "createdAt", irl.updated_at AS "updatedAt"
+        irl.event_id AS "eventId", ish.id AS "inboundShipmentId", ish.name AS "inboundShipmentName",
+        isb.id AS "inboundShipmentBoxId", isb.label AS "inboundShipmentBoxLabel", irl.memo, irl.created_at AS "createdAt", irl.updated_at AS "updatedAt"
       FROM selected irl
       JOIN skus sku ON sku.id = irl.sku_id
       LEFT JOIN locations origin ON origin.id = irl.origin_location_id
@@ -85,6 +90,9 @@ export function receiptFactsCtes(where: SQL, page: SQL = sql``): SQL {
         AND p.origin_location_id IS NOT DISTINCT FROM irl.origin_location_id
       LEFT JOIN custody c ON c.sku_id = irl.sku_id AND c.warehouse_id = irl.warehouse_id
         AND c.origin_location_id = irl.origin_location_id
+      LEFT JOIN inbound_shipment_box_counts isbc ON isbc.receipt_line_id = irl.id
+      LEFT JOIN inbound_shipment_boxes isb ON isb.id = isbc.box_id
+      LEFT JOIN inbound_shipments ish ON ish.id = isb.shipment_id
     )`;
 }
 

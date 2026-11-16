@@ -5,7 +5,7 @@ import { randomUUID } from 'crypto';
 import { AddInboundShipmentBoxDto, CancelBoxReceiptDto, ReceiveBoxDto } from './receive.dto';
 
 const errors = (plain: object) => validate(plainToInstance(ReceiveBoxDto, plain));
-const body = { counts: [{ lineId: randomUUID(), countedQty: 0 }], unplanned: [] };
+const body = { counts: [{ lineId: randomUUID(), countedQty: 0, method: 'counted' }], unplanned: [] };
 
 describe('ReceiveBoxDto (창고 작업 계약 v2 고정)', () => {
   it('rejects a body without contractVersion and idempotencyKey', async () => {
@@ -28,15 +28,39 @@ describe('ReceiveBoxDto (창고 작업 계약 v2 고정)', () => {
   it('accepts a valid v2 body', async () => {
     expect(await errors({ ...body, contractVersion: 2, idempotencyKey: 'k-1' })).toHaveLength(0);
   });
+  it('requires counts[].method', async () => {
+    const found = await errors({
+      contractVersion: 2,
+      idempotencyKey: 'k-1',
+      counts: [{ lineId: randomUUID(), countedQty: 1 }],
+      unplanned: [],
+    });
+    expect(found.map((e) => e.property)).toEqual(['counts']);
+  });
+  it('rejects an unknown method', async () => {
+    const found = await errors({
+      contractVersion: 2,
+      idempotencyKey: 'k-1',
+      counts: [{ lineId: randomUUID(), countedQty: 1, method: 'guess' }],
+      unplanned: [],
+    });
+    expect(found.map((e) => e.property)).toEqual(['counts']);
+  });
   it('caps counted and unplanned quantities at 1,000,000', async () => {
     const v2 = { contractVersion: 2, idempotencyKey: 'k-1' };
     const lineId = randomUUID();
     const skuId = randomUUID();
     expect(
-      await errors({ ...v2, counts: [{ lineId, countedQty: 1_000_000 }], unplanned: [{ skuId, quantity: 1_000_000 }] }),
+      await errors({
+        ...v2,
+        counts: [{ lineId, countedQty: 1_000_000, method: 'counted' }],
+        unplanned: [{ skuId, quantity: 1_000_000 }],
+      }),
     ).toHaveLength(0);
     expect(
-      (await errors({ ...v2, counts: [{ lineId, countedQty: 1_000_001 }], unplanned: [] })).map((e) => e.property),
+      (await errors({ ...v2, counts: [{ lineId, countedQty: 1_000_001, method: 'counted' }], unplanned: [] })).map(
+        (e) => e.property,
+      ),
     ).toEqual(['counts']);
     expect(
       (await errors({ ...v2, counts: [], unplanned: [{ skuId, quantity: 1_000_001 }] })).map((e) => e.property),
