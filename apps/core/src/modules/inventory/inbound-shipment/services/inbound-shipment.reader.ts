@@ -324,11 +324,14 @@ export class InboundShipmentReader {
           id: t.inboundShipmentLines.id,
           kind: t.inboundShipmentLines.kind,
           skuId: t.inboundShipmentLines.skuId,
+          skuCode: wmsTables.skus.code,
+          skuName: wmsTables.skus.name,
           expectedQty: t.inboundShipmentLines.expectedQty,
           raw: t.inboundShipmentLines.raw,
         })
         .from(t.inboundShipmentLineBoxes)
         .innerJoin(t.inboundShipmentLines, eq(t.inboundShipmentLines.id, t.inboundShipmentLineBoxes.lineId))
+        .leftJoin(wmsTables.skus, eq(wmsTables.skus.id, t.inboundShipmentLines.skuId))
         .where(eq(t.inboundShipmentLineBoxes.boxId, boxId))
         .orderBy(asc(t.inboundShipmentLines.rowNumber), asc(t.inboundShipmentLines.id));
       const lineIds = lines.map((l) => l.id);
@@ -366,10 +369,13 @@ export class InboundShipmentReader {
           id: t.inboundShipmentBoxCounts.id,
           lineId: t.inboundShipmentBoxCounts.lineId,
           skuId: t.inboundShipmentBoxCounts.skuId,
+          skuCode: wmsTables.skus.code,
+          skuName: wmsTables.skus.name,
           countedQty: t.inboundShipmentBoxCounts.countedQty,
           method: t.inboundShipmentBoxCounts.countMethod,
         })
         .from(t.inboundShipmentBoxCounts)
+        .leftJoin(wmsTables.skus, eq(wmsTables.skus.id, t.inboundShipmentBoxCounts.skuId))
         .where(and(eq(t.inboundShipmentBoxCounts.boxId, boxId), isNull(t.inboundShipmentBoxCounts.canceledAt)))
         .orderBy(asc(t.inboundShipmentBoxCounts.createdAt), asc(t.inboundShipmentBoxCounts.id));
 
@@ -385,10 +391,13 @@ export class InboundShipmentReader {
         status: box.status,
         forwardNote: box.disposition === 'forward' ? box.forwardNote : null,
         receiptId: box.receiptId,
+        receivedAt: box.receivedAt,
         lines: lines.map((l) => ({
           lineId: l.id,
           kind: l.kind,
           skuId: l.skuId,
+          sku:
+            l.kind === 'sku' && l.skuCode !== null && l.skuName !== null ? { code: l.skuCode, name: l.skuName } : null,
           productName: cellText(l.raw, 'productName'),
           option: cellText(l.raw, 'option'),
           expectedQty: l.expectedQty,

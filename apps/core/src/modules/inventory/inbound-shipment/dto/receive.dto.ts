@@ -17,6 +17,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { WarehouseOperationDto } from '../../core/services/warehouse-operation-contract';
+import { InboundShipmentLineSkuDto } from './inbound-shipment-view.dto';
 import { MAX_BOX_LABEL_LENGTH, MAX_LINE_QTY } from '../services/inbound-shipment-list.parser';
 
 const MAX_RECEIVE_ITEMS = 500;
@@ -167,6 +168,8 @@ export class BoxLineViewDto {
   @ApiProperty() lineId: string;
   @ApiProperty({ enum: ['sku', 'free', 'unresolved'] }) kind: 'sku' | 'free' | 'unresolved';
   @ApiPropertyOptional({ nullable: true }) skuId: string | null;
+  @ApiPropertyOptional({ type: InboundShipmentLineSkuDto, nullable: true, description: 'kind=sku 일 때만' })
+  sku: InboundShipmentLineSkuDto | null;
   @ApiProperty({ description: '제품명 원문' }) productName: string;
   @ApiProperty({ description: '옵션 원문' }) option: string;
   @ApiPropertyOptional({ nullable: true, description: '줄 전체 예정 수량(범위 줄이면 덮는 상자 합계)' })
@@ -180,6 +183,8 @@ export class BoxCountViewDto {
   @ApiProperty() id: string;
   @ApiPropertyOptional({ nullable: true, description: 'null = 리스트에 없던 물건' }) lineId: string | null;
   @ApiPropertyOptional({ nullable: true }) skuId: string | null;
+  @ApiPropertyOptional({ nullable: true, description: 'SKU 가 있는 집계면 채운다' }) skuCode: string | null;
+  @ApiPropertyOptional({ nullable: true, description: 'SKU 가 있는 집계면 채운다' }) skuName: string | null;
   @ApiProperty() countedQty: number;
   @ApiProperty({ enum: ['counted', 'list'] }) method: 'counted' | 'list';
 }
@@ -199,6 +204,7 @@ export class BoxViewDto {
     | string
     | null;
   @ApiPropertyOptional({ nullable: true }) receiptId: string | null;
+  @ApiPropertyOptional({ nullable: true, description: '확정 시각 — 열린 상자는 null' }) receivedAt: Date | null;
   @ApiProperty({ type: [BoxLineViewDto] }) lines: BoxLineViewDto[];
   @ApiProperty({ type: [BoxCountViewDto], description: '이 상자의 유효 집계(확정된 상자만 있다)' })
   counts: BoxCountViewDto[];

@@ -326,7 +326,7 @@ export class InboundShipmentReceivingManager {
       )
       .groupBy(lb.lineId);
     const coverOf = new Map(covers.map((c) => [c.lineId, Number(c.n)]));
-    return rows.map((r) => ({ ...r, coverCount: coverOf.get(r.id) ?? 1 }));
+    return rows.map((r) => ({ ...r, coverCount: coverOf.get(r.id) ?? 0 }));
   }
 
   /** `counts` 는 이 상자를 덮는 줄 전부를 정확히 한 번씩 — «안 셌다»와 «0개»를 가른다 (spec §8.2). */

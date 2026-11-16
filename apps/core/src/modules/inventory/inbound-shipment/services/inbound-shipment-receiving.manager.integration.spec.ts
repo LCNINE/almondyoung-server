@@ -613,6 +613,47 @@ describeIfDb('InboundShipmentReceivingManager (DB integration)', () => {
     });
   });
 
+  it('openBox carries sku code/name, receivedAt and unplanned sku names', async () => {
+    await inRollbackTx(db, async (trx) => {
+      const f = await seed(trx);
+      const built = build(trx);
+      const s = await shipment(
+        trx,
+        built,
+        f.warehouseId,
+        [row(1, 'L1', 5, f.barcodes[0]), row(2, 'L1', 3, '8000000000000')],
+        { freeRows: [2] },
+      );
+      const before = await built.reader.openBox(s.shipmentId, s.boxOf('L1'), trx);
+      expect(before.receivedAt).toBeNull();
+
+      await built.receiving.receiveBox(
+        s.shipmentId,
+        s.boxOf('L1'),
+        dto(
+          [
+            { lineId: s.lineOf(1), countedQty: 5, method: 'counted' },
+            { lineId: s.lineOf(2), countedQty: 3, method: 'counted' },
+          ],
+          [{ skuId: f.skuIds[2], quantity: 2 }],
+        ),
+        ACTOR,
+        trx,
+      );
+
+      const [sku0] = await trx.select().from(wmsTables.skus).where(eq(wmsTables.skus.id, f.skuIds[0]));
+      const [sku2] = await trx.select().from(wmsTables.skus).where(eq(wmsTables.skus.id, f.skuIds[2]));
+      const view = await built.reader.openBox(s.shipmentId, s.boxOf('L1'), trx);
+      expect(view.receivedAt).toBeInstanceOf(Date);
+      expect(view.lines.find((l) => l.lineId === s.lineOf(1))?.sku).toEqual({ code: sku0.code, name: sku0.name });
+      expect(view.lines.find((l) => l.lineId === s.lineOf(2))?.sku).toBeNull();
+      const unplanned = view.counts.find((c) => c.lineId === null);
+      expect(unplanned).toMatchObject({ skuId: f.skuIds[2], skuCode: sku2.code, skuName: sku2.name });
+      const freeCount = view.counts.find((c) => c.lineId === s.lineOf(2));
+      expect(freeCount).toMatchObject({ skuCode: null, skuName: null });
+    });
+  });
+
   it('added box receives unplanned only', async () => {
     await inRollbackTx(db, async (trx) => {
       const f = await seed(trx);
