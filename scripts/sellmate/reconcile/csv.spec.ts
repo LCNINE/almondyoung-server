@@ -10,16 +10,17 @@ import { parseReconcileStock, parseSignedInt, readStockCsv } from './stock-csv';
 import { parseOwnMallDisplayIds } from './orders-csv';
 import { renderUploadCsv, writeUploadCsv } from './upload-csv';
 
-// parse.ts 의 papaparse 기본 import 는 jest(esModuleInterop 없음)에서 못 뜬다 — 파일 읽기만 대체하고 나머지는 실물을 쓴다.
-jest.mock('../parse', () => ({
-  ...jest.requireActual('../parse'),
-  readRows: jest.fn(async (f: string) =>
-    (jest.requireActual('fs').readFileSync(f, 'utf-8') as string)
-      .split('\n')
-      .filter(Boolean)
-      .map((l: string) => l.split(',')),
-  ),
-}));
+// parse.ts 는 `import iconv from 'iconv-lite'`·`import Papa from 'papaparse'` 기본 import 를 쓰는데 jest 설정엔
+// esModuleInterop 이 없어 default 가 undefined 다(TypeError: Cannot read properties of undefined (reading 'parse'/'decode')).
+// parse.ts 는 건드리지 않고, 두 라이브러리를 «진짜 그대로» default 로도 노출해 실제 readRows 를 태운다.
+jest.mock('iconv-lite', () => {
+  const actual = jest.requireActual('iconv-lite');
+  return { __esModule: true, ...actual, default: actual };
+});
+jest.mock('papaparse', () => {
+  const actual = jest.requireActual('papaparse');
+  return { __esModule: true, ...actual, default: actual };
+});
 
 const HEADER = ['옵션정보일련번호', '상품일련번호', '상품명', '바코드번호(서식)', '현재재고', '미발송주문수'];
 
@@ -114,6 +115,22 @@ describe('파일 입출력', () => {
     expect(r.rows).toHaveLength(1);
     expect(r.snapshotAt.toISOString()).toBe('2026-11-17T09:00:00.000Z');
     expect(r.sha256).toMatch(/^[0-9a-f]{64}$/);
+  });
+  it('readStockCsv 는 실제 readRows 로 ="…" 셀을 벗기고 쉼표 따옴표를 읽는다', async () => {
+    const f = path.join(dir, 'stk_stockList_20261117_190000.csv');
+    fs.writeFileSync(f, `${HEADER.join(',')}\n1,100,"TEST-0001, 대형",="8800000000001",-2,3\n`);
+    const r = await readStockCsv(f);
+    expect(r.errors).toEqual([]);
+    expect(r.rows).toEqual([
+      { optionSerial: '1', productSerial: '100', name: 'TEST-0001, 대형', barcode: '8800000000001', current: -2, unshipped: 3 },
+    ]);
+  });
+  it('readStockCsv 는 euc-kr 파일도 읽는다', async () => {
+    const f = path.join(dir, 'stk_stockList_20261117_200000.csv');
+    fs.writeFileSync(f, iconv.encode(`${HEADER.join(',')}\n1,100,테스트상품,="8800000000001",4,0\n`, 'euc-kr'));
+    const r = await readStockCsv(f);
+    expect(r.errors).toEqual([]);
+    expect(r.rows[0]).toMatchObject({ name: '테스트상품', barcode: '8800000000001', current: 4 });
   });
   it('파일명에 시각이 없으면 throw', async () => {
     const f = path.join(dir, 'nodate.csv');
