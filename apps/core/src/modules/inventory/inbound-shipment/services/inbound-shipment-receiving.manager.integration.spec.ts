@@ -843,7 +843,7 @@ describeIfDb('InboundShipmentReceivingManager (DB integration)', () => {
     });
   });
 
-  it('a closed shipment refuses receive and addBox', async () => {
+  it('a manually closed shipment refuses receive and addBox', async () => {
     await inRollbackTx(db, async (trx) => {
       const f = await seed(trx);
       const built = build(trx);
@@ -868,6 +868,61 @@ describeIfDb('InboundShipmentReceivingManager (DB integration)', () => {
       await expect(built.receiving.addBox(s.shipmentId, addDto('L9'), ACTOR, trx)).rejects.toBeInstanceOf(
         ConflictError,
       );
+    });
+  });
+
+  it('addBox on an auto-closed shipment reopens it to receiving', async () => {
+    await inRollbackTx(db, async (trx) => {
+      const f = await seed(trx);
+      const built = build(trx);
+      const s = await shipment(trx, built, f.warehouseId, [row(1, 'L1', 10, f.barcodes[0])]);
+      const r = await built.receiving.receiveBox(
+        s.shipmentId,
+        s.boxOf('L1'),
+        dto([{ lineId: s.lineOf(1), countedQty: 10, method: 'counted' }]),
+        ACTOR,
+        trx,
+      );
+      expect(r.shipmentStatus).toBe('closed');
+
+      const added = await built.receiving.addBox(s.shipmentId, addDto('L99'), ACTOR, trx);
+      expect(added.shipmentStatus).toBe('receiving');
+      expect((await shipmentRow(trx, s.shipmentId)).closedAt).toBeNull();
+
+      const again = await built.receiving.receiveBox(
+        s.shipmentId,
+        added.boxId,
+        dto([], [{ skuId: f.skuIds[1], quantity: 1 }]),
+        ACTOR,
+        trx,
+      );
+      expect(again.shipmentStatus).toBe('closed');
+    });
+  });
+
+  it('list summary exposes closedAt and closedManually', async () => {
+    await inRollbackTx(db, async (trx) => {
+      const f = await seed(trx);
+      const built = build(trx);
+      const auto = await shipment(trx, built, f.warehouseId, [row(1, 'L1', 10, f.barcodes[0])]);
+      await built.receiving.receiveBox(
+        auto.shipmentId,
+        auto.boxOf('L1'),
+        dto([{ lineId: auto.lineOf(1), countedQty: 10, method: 'counted' }]),
+        ACTOR,
+        trx,
+      );
+      const manual = await shipment(trx, built, f.warehouseId, [row(1, 'L1', 10, f.barcodes[0])]);
+      await built.drafts.close(manual.shipmentId, 'lost box (synthetic)', ACTOR, trx);
+      const open = await shipment(trx, built, f.warehouseId, [row(1, 'L1', 10, f.barcodes[0])]);
+
+      const list = await built.reader.list({ warehouseId: f.warehouseId }, trx);
+      const of = (id: string) => list.find((x) => x.id === id);
+      expect(of(auto.shipmentId)).toMatchObject({ closedManually: false });
+      expect(of(auto.shipmentId)?.closedAt).not.toBeNull();
+      expect(of(manual.shipmentId)).toMatchObject({ closedManually: true });
+      expect(of(manual.shipmentId)?.closedAt).not.toBeNull();
+      expect(of(open.shipmentId)).toMatchObject({ closedAt: null, closedManually: false });
     });
   });
 

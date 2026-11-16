@@ -275,8 +275,12 @@ export class InboundShipmentReceivingManager {
       warehouseRequest(request, actorId),
       async (trx) => {
         const shipment = await lockInboundShipment(trx, shipmentId);
-        if (!isOpen(shipment.status)) {
-          throw new ConflictError('확정된 선적(도착 예정·입고 중)에만 상자를 더할 수 있습니다.');
+        // 저절로 끝난 선적(사유 없음)은 다시 연다 — 리스트에 없던 상자가 끝난 뒤에 나올 수 있다 (③ 설계 §7.6)
+        const autoClosed = shipment.status === 'closed' && shipment.closedReason === null;
+        if (!isOpen(shipment.status) && !autoClosed) {
+          throw new ConflictError(
+            '확정된 선적(도착 예정·입고 중)에만 상자를 더할 수 있습니다. 사람이 끝낸 선적은 다시 연 뒤에 더하세요.',
+          );
         }
         const existing = await trx
           .select({ label: wmsTables.inboundShipmentBoxes.label, sortKey: wmsTables.inboundShipmentBoxes.sortKey })
@@ -290,11 +294,15 @@ export class InboundShipmentReceivingManager {
           .insert(wmsTables.inboundShipmentBoxes)
           .values({ shipmentId, label: normalized, sortKey, origin: 'added', disposition: 'stock' })
           .returning({ id: wmsTables.inboundShipmentBoxes.id, label: wmsTables.inboundShipmentBoxes.label });
-        await trx
-          .update(wmsTables.inboundShipments)
-          .set({ updatedAt: new Date() })
-          .where(eq(wmsTables.inboundShipments.id, shipmentId));
-        return { boxId: box.id, label: box.label };
+        // 열린 상자가 생겼으니 상태를 상자로 다시 정한다 — 저절로 끝난 선적은 `receiving` 으로 돌아온다
+        const shipmentStatus = await refreshInboundShipmentStatus(
+          trx,
+          shipmentId,
+          shipment.status,
+          actorId,
+          new Date(),
+        );
+        return { boxId: box.id, label: box.label, shipmentStatus };
       },
       tx,
     );

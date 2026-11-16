@@ -151,6 +151,11 @@ export class CancelBoxReceiptResultDto {
 export class AddInboundShipmentBoxResultDto {
   @ApiProperty() boxId: string;
   @ApiProperty() label: string;
+  @ApiProperty({
+    enum: ['draft', 'expected', 'receiving', 'closed', 'canceled'],
+    description: '더한 뒤 선적 상태 — 저절로 끝난 선적은 receiving (실제로는 expected·receiving·closed)',
+  })
+  shipmentStatus: 'draft' | 'expected' | 'receiving' | 'closed' | 'canceled';
 }
 
 export class BoxCandidateViewDto {

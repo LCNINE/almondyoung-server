@@ -352,7 +352,7 @@ SKU 의 «오는 중» = `kind = 'sku'` 이고 선적이 `expected`·`receiving`
 
 앱에서 상자 이름을 넣었는데 그 선적에 없으면 «리스트에 없는 상자로 받기»를 고를 수 있다
 (`POST /inventory/inbound-shipments/:id/boxes { label }`, `inventory.stock.operate`, 선적이 `expected`·`receiving`
-일 때). `origin = 'added'`, 줄 0개로 생기고, 확정은 `unplanned` 만으로 한다. 결정 ④(«리스트와 다른 실물은 기록으로
+일 때 — 저절로 끝난 선적에도 더할 수 있고 더하면 `receiving` 으로 다시 열린다(③ 설계 §7.6). 사람이 끝낸 선적은 409). `origin = 'added'`, 줄 0개로 생기고, 확정은 `unplanned` 만으로 한다. 결정 ④(«리스트와 다른 실물은 기록으로
 남긴다»)를 상자 단위로 넓힌 것이다. 선적 화면에 «리스트에 없던 상자»로 따로 보인다.
 **(실행 중 결정)** 이 라우트도 창고 작업 계약 v2 만 받는다(`{ contractVersion: 2, idempotencyKey, label }`) — 현장 앱이
 다시 보내도 같은 키면 같은 상자를 돌려주고, 상자가 둘 생기지 않는다.

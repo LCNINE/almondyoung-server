@@ -74,6 +74,8 @@ export class InboundShipmentReader {
           name: s.name,
           expectedArrival: s.expectedArrival,
           createdAt: s.createdAt,
+          closedAt: s.closedAt,
+          closedManually: sql<boolean>`${s.closedReason} IS NOT NULL`,
           boxCount: sql<number>`coalesce(${boxCounts.n}, 0)`.mapWith(Number),
           lineCount: sql<number>`coalesce(${lineCounts.n}, 0)`.mapWith(Number),
         })
@@ -197,6 +199,7 @@ export class InboundShipmentReader {
         memo: shipment.memo,
         closedReason: shipment.closedReason,
         closedAt: shipment.closedAt,
+        closedManually: shipment.closedReason !== null,
         createdAt: shipment.createdAt,
         boxCount: boxes.length,
         lineCount: lines.length,
