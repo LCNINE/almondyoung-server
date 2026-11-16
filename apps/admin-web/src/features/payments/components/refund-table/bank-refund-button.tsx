@@ -149,6 +149,12 @@ export function BankRefundForm({
             if (result.status === 'SUCCEEDED') {
               toast.success('계좌 환불이 완료되었습니다.');
               onClose();
+            } else if (result.rejectedCode) {
+              toast.error(
+                result.status === 'PENDING'
+                  ? `토스가 환불을 거절했어요(${result.rejectedCode}). 계좌 정보를 확인하고 다시 시도해 주세요.`
+                  : `환불이 거절되었습니다: ${result.rejectedCode}`
+              );
             } else if (result.status === 'PENDING') {
               toast.error(
                 '자동 송금할 수 없는 결제입니다. 수동 송금 후 완료 처리해 주세요.'

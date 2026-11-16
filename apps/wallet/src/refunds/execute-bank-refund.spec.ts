@@ -1,7 +1,7 @@
 import { ConflictException } from '@nestjs/common';
 import { SQL } from 'drizzle-orm';
 import { PgDialect } from 'drizzle-orm/pg-core';
-import { paymentIntents } from '../schema';
+import { paymentIntents, paymentStateTransitions } from '../schema';
 import type { Refund } from '../types';
 import { RefundsService, AMBIGUOUS_RESEND_WINDOW_MS } from './refunds.service';
 
@@ -30,6 +30,7 @@ function fixture(overrides: Partial<Refund> = {}, methodType = 'BANK_TRANSFER') 
   const beforeNotify = jest.fn().mockResolvedValue(undefined);
   const provider = { refund: jest.fn().mockResolvedValue({ status: 'SUCCEEDED', providerRefundId: 'pg-1' }) };
   const writes: Partial<Refund>[] = [];
+  const transitionLog: { status: Refund['status']; reasonCode?: string }[] = [];
   const db = {
     execute: jest.fn().mockResolvedValue([]),
     select: (fields?: Record<string, unknown>) => ({
@@ -37,7 +38,11 @@ function fixture(overrides: Partial<Refund> = {}, methodType = 'BANK_TRANSFER') 
         where: (condition: SQL) => {
           const ambiguous = new PgDialect().sqlToQuery(condition).sql.includes('failure_code');
           const rows = () =>
-            table === paymentIntents
+            table === paymentStateTransitions
+              ? [{ rejected: transitionLog.filter((t) => t.status === 'FAILED' && t.reasonCode !== 'PROVIDER_EXCEPTION').length }]
+              : fields && Object.keys(fields).join() === 'amount'
+                ? ['SUCCEEDED', 'PENDING'].includes(row.status) ? [{ amount: row.amount }] : []
+                : table === paymentIntents
               ? [{ userId: 'user-1', metadata: {} }]
               : ambiguous &&
                   !(
@@ -86,8 +91,9 @@ function fixture(overrides: Partial<Refund> = {}, methodType = 'BANK_TRANSFER') 
     return next;
   };
   const transitions = {
-    transitionRefund: jest.fn(async (_id: string, status: Refund['status']) => {
+    transitionRefund: jest.fn(async (_id: string, status: Refund['status'], ctx: { reasonCode?: string }) => {
       row.status = status;
+      transitionLog.push({ status, reasonCode: ctx.reasonCode });
     }),
     transitionCharge: jest.fn(),
   };
@@ -115,8 +121,9 @@ function fixture(overrides: Partial<Refund> = {}, methodType = 'BANK_TRANSFER') 
 describe('executeBankRefund', () => {
   it('기존 행과 사유·금액·멱등키를 유지하고 계좌는 PG 에만 전달한다', async () => {
     const f = fixture();
-    const result = await f.service.executeBankRefund(f.row.id, account);
+    const { refund: result, rejectedCode } = await f.service.executeBankRefund(f.row.id, account);
 
+    expect(rejectedCode).toBeNull();
     expect(result).toMatchObject({
       id: 'refund-1',
       status: 'SUCCEEDED',
@@ -204,11 +211,13 @@ describe('executeBankRefund', () => {
     f.provider.refund.mockRejectedValueOnce(new Error(account.accountNumber));
 
     await expect(f.service.executeBankRefund(f.row.id, account)).resolves.toMatchObject({
-      status: 'FAILED',
-      failureCode: 'PROVIDER_EXCEPTION',
+      refund: { status: 'FAILED', failureCode: 'PROVIDER_EXCEPTION' },
+      rejectedCode: null,
     });
     expect(JSON.stringify(f.row)).not.toContain(account.accountNumber);
-    await expect(f.service.executeBankRefund(f.row.id, account)).resolves.toMatchObject({ status: 'SUCCEEDED' });
+    await expect(f.service.executeBankRefund(f.row.id, account)).resolves.toMatchObject({
+      refund: { status: 'SUCCEEDED' },
+    });
     expect(f.provider.refund.mock.calls.map(([arg]) => arg.idempotencyKey)).toEqual([
       'wallet:refund:refund-1',
       'wallet:refund:refund-1',
@@ -244,9 +253,47 @@ describe('executeBankRefund', () => {
     f.provider.refund.mockResolvedValue({ status: 'PENDING', manualTransfer: true });
 
     await expect(f.service.executeBankRefund(f.row.id, account)).resolves.toMatchObject({
-      status: 'PENDING',
-      execution: 'MANUAL',
+      refund: { status: 'PENDING', execution: 'MANUAL' },
     });
     expect(f.transitions.transitionRefund).not.toHaveBeenCalled();
+  });
+
+  it('토스가 거절하면 같은 행을 수동 대기로 되돌리고, 다음 시도는 새 키로 보낸다', async () => {
+    const f = fixture();
+    f.provider.refund.mockResolvedValueOnce({
+      status: 'FAILED',
+      errorCode: 'INVALID_REFUND_ACCOUNT_INFO',
+      errorMessage: '계좌 환불 요청을 처리하지 못했습니다.',
+      retryable: false,
+    });
+
+    await expect(f.service.executeBankRefund(f.row.id, account)).resolves.toMatchObject({
+      refund: { id: 'refund-1', status: 'PENDING', execution: 'MANUAL', failureCode: null },
+      rejectedCode: 'INVALID_REFUND_ACCOUNT_INFO',
+    });
+    await expect(f.service.executeBankRefund(f.row.id, account)).resolves.toMatchObject({
+      refund: { id: 'refund-1', status: 'SUCCEEDED' },
+    });
+    expect(f.provider.refund.mock.calls.map(([arg]) => arg.idempotencyKey)).toEqual([
+      'wallet:refund:refund-1',
+      'wallet:refund:refund-1:1',
+    ]);
+  });
+
+  it('거절 뒤 응답이 끊겨도 같은 시도의 키로 다시 확인한다', async () => {
+    const f = fixture();
+    f.provider.refund
+      .mockResolvedValueOnce({ status: 'FAILED', errorCode: 'INVALID_REFUND_ACCOUNT_INFO', retryable: false })
+      .mockRejectedValueOnce(new Error('ECONNRESET'));
+
+    await f.service.executeBankRefund(f.row.id, account);
+    await f.service.executeBankRefund(f.row.id, account);
+    await f.service.executeBankRefund(f.row.id, account);
+
+    expect(f.provider.refund.mock.calls.map(([arg]) => arg.idempotencyKey)).toEqual([
+      'wallet:refund:refund-1',
+      'wallet:refund:refund-1:1',
+      'wallet:refund:refund-1:1',
+    ]);
   });
 });

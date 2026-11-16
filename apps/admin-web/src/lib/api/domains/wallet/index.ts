@@ -150,7 +150,7 @@ export const walletApi = {
   executeBankRefund: async (
     id: string,
     account: NonNullable<RefundDto['refundReceiveAccount']>
-  ): Promise<RefundDto> => {
+  ): Promise<RefundDto & { rejectedCode: string | null }> => {
     const res = await client.post(
       `${BASE}/v1/admin/refunds/${encodeURIComponent(id)}/execute-bank-refund`,
       account,

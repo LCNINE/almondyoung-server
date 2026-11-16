@@ -86,6 +86,7 @@
 - `confirmManual` 이 받는 행은 `isManuallyConfirmable` 한 곳이 정한다(MANUAL PENDING 만). 관리자 상세의 `manualConfirmable` 도 같은 함수다
   - 무통장 AUTO PENDING 을 받지 않는 이유: 계좌로 환불(`executeBankRefund`)이 MANUAL 행을 AUTO 로 선점한 채 토스를 부르는 동안 사람이 닫으면 이중 송금이 된다
   - 계좌로 환불은 MANUAL PENDING 무통장 행을 결제 행 잠금 안에서 AUTO 로 바꾼 뒤 같은 행·같은 키로 보낸다. 결제 키가 없는 구건은 provider 가 다시 수동 폴백(MANUAL)으로 돌린다
+  - 토스가 거절(4xx, 결과 모름 아님)하면 같은 행을 MANUAL PENDING 으로 되돌린다 — Medusa 장부가 그 행 id 를 들고 있어 새 행을 만들면 두 번 잡힌다. 토스는 같은 키의 거절을 재생하므로 다음 시도의 키에는 확정 거절 횟수가 붙는다(`wallet:refund:<id>:<n>`)
 - **돈이 나갔는지 모르는 환불은 새 행을 만들지 않는다.** 멱등 키가 행 id(`wallet:refund:<id>`)라 새 행 = 새 키 = 토스가 같은 돈을 또 보낸다
 - **응답 끊긴 환불(`FAILED`·`PROVIDER_EXCEPTION`·AUTO, 14일 안)**: `createByIntent` 가 돈이 움직이기 «전에» 의도 전체에서 먼저 확인한다(`settleAmbiguousBeforePlan`)
   - 빠른 길: 그런 행이 정확히 하나이고 계획이 그 결제 한 다리·같은 금액이면 `create()` 가 그 행을 같은 키로 다시 보낸다
@@ -93,7 +94,7 @@
   - 토스 409 `IDEMPOTENT_REQUEST_PROCESSING`(이전 멱등 요청이 처리중)도 «결과 모름»이다 — `dispatch` 가 `PROVIDER_EXCEPTION`·일시로 적고 원래 코드는 `reason_message` 에 남긴다
   - 요청 경로가 되살리는 수단은 멱등 키를 보내는 TOSS·POINTS·BANK_TRANSFER 뿐이다(나이스는 키가 없어 «같은 키»가 성립하지 않는다 — 행을 무시)
   - 그 외: 해당 행을 전부 다시 보내고 요청은 `AMBIGUOUS_REFUND_RESOLVED` / `AMBIGUOUS_REFUND_UNRESOLVED`(일시)로 거절해 호출자가 장부를 다시 맞추게 한다. 무통장 행에 계좌가 없으면 `AMBIGUOUS_REFUND_NEEDS_ACCOUNT`(영구). 전부 MANUAL 인 계획은 이 확인을 건너뛴다
-- **멈춘 AUTO PENDING(30분, TOSS·POINTS, 14일 안)**: `refund-stuck-resend` 크론(`@CronOnce` 5분)이 같은 행을 다시 보낸다. 선점은 `updated_at < now-30분` 조건부 UPDATE(등호 아님 — `defaultNow()` µs 와 JS ms 가 어긋난다)
+- **멈춘 AUTO PENDING(30분, TOSS·POINTS, 14일 안)**: `refund-stuck-resend` 크론(`@CronOnce` 5분)이 같은 행을 다시 보낸다. 무통장은 계좌를 저장하지 않아 다시 보내지 못하므로 결과 모름(FAILED·`PROVIDER_EXCEPTION`)으로 내린다 — 운영자가 같은 계좌로 다시 확인한다. 선점은 `updated_at < now-30분` 조건부 UPDATE(등호 아님 — `defaultNow()` µs 와 JS ms 가 어긋난다)
 - provider 가 PG 를 안 부른 PENDING 은 `RefundResult.manualTransfer` 를 붙이고 wallet 이 그 행을 `MANUAL` 로 적는다(무통장 계좌 없음 폴백)
 - `GET /v1/payment-intents/:id/refunds` — 환불 목록(상태 무관, 만든 순서). 정산 직전 장부 맞추기가 읽는다
 - `refunds.kind` = 무엇을 되돌렸나(선택, null=모름). `reason_code` 는 출처 표지·고객 사유로 남는다

@@ -53,9 +53,12 @@ export class RefundAdminController {
   @Post(':id/execute-bank-refund')
   @HttpCode(200)
   async executeBankRefund(@Param('id') id: string, @Body() dto: RefundReceiveAccountDto) {
-    const refund = await this.refundsService.executeBankRefund(id, dto);
+    const { refund, rejectedCode } = await this.refundsService.executeBankRefund(id, dto);
 
-    return toRefundResponse(refund, isManuallyConfirmable({ ...refund, methodType: 'BANK_TRANSFER' }));
+    return {
+      ...toRefundResponse(refund, isManuallyConfirmable({ ...refund, methodType: 'BANK_TRANSFER' })),
+      rejectedCode,
+    };
   }
 
   @RequirePermission('payment.refund.execute')

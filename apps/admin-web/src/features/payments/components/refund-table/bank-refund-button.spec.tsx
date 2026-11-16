@@ -172,6 +172,25 @@ it('결과 불명인 환불은 같은 계좌 재확인을 안내한다', async (
   expect(screen.getByText(/이전 요청과 같은 계좌/)).toBeTruthy();
 });
 
+it('토스가 거절하면 창을 열어 둔 채 다시 시도할 수 있다', async () => {
+  const user = userEvent.setup();
+  mutate.mockImplementation((_vars, { onSuccess }) =>
+    onSuccess({ ...refund, rejectedCode: 'INVALID_REFUND_ACCOUNT_INFO' })
+  );
+  render(<BankRefundButton refund={refund} />);
+  await user.click(screen.getByRole('button', { name: '계좌로 환불' }));
+  const submit = within(screen.getByRole('dialog')).getByRole('button', {
+    name: '계좌로 환불',
+  });
+  await user.click(submit);
+
+  expect(toast.error).toHaveBeenCalledWith(
+    expect.stringContaining('INVALID_REFUND_ACCOUNT_INFO')
+  );
+  expect(screen.getByRole('dialog')).toBeTruthy();
+  expect((submit as HTMLButtonElement).disabled).toBe(false);
+});
+
 it('환불 행이 없으면 1.5초 간격으로 5회 확인한 뒤 안내하고 닫는다', async () => {
   jest.useFakeTimers();
   useQueryMock.mockReturnValue({ data: [] });
