@@ -49,6 +49,24 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
     predicate: '@UseGuards(JwtAuthGuard, PermissionGuard)',
     note: '대시보드 요약(오늘/어제 전사 매출 + 활성 멤버십 수) — 사용자 소유 리소스 파라미터가 없어 IDOR 대상 아님. JwtAuthGuard 로 인증 요구. 응답이 전사 매출 수치라 관리자 스코프 제한은 analytics 전반 스코프 도입과 함께 별도 검토.',
   },
+  'analytics GET /statistics/revenue-report': {
+    verdict: 'N/A',
+    evidence: 'apps/analytics/src/features/statistics/api/revenue-report.controller.ts:74',
+    predicate: "@RequirePermission('analytics.report.read')",
+    note: '연도별 전사 매출 자료. 연도만 받고 개인 소유 자원을 선택하지 않는다. 클래스의 JwtAuthGuard·PermissionGuard와 served-tenant 권한 설정을 함께 적용한다.',
+  },
+  'analytics GET /statistics/revenue-report/raw': {
+    verdict: 'N/A',
+    evidence: 'apps/analytics/src/features/statistics/api/revenue-report.controller.ts:80',
+    predicate: "@RequirePermission('analytics.report.read')",
+    note: '연도·페이지로 조회하는 전사 주문 상품 원장. 고객 개인정보를 선택하지 않으며 개별 고객 소유권이 아닌 통계 조회 권한으로 접근한다. 클래스의 JwtAuthGuard·PermissionGuard와 served-tenant 권한 설정을 함께 적용한다.',
+  },
+  'analytics POST /statistics/revenue-report/external': {
+    verdict: 'N/A',
+    evidence: 'apps/analytics/src/features/statistics/api/revenue-report.controller.ts:86',
+    predicate: "@RequirePermission('analytics.setting.write')",
+    note: '전사 월별 채널 매출의 등록·교체. 계정은 보고서 구분용 문자열이며 로그인 계정이나 다른 사용자의 자원 식별자가 아니다. 클래스의 JwtAuthGuard·PermissionGuard와 served-tenant 권한 설정을 함께 적용한다.',
+  },
   'analytics GET /statistics/sales': {
     verdict: 'N/A',
     evidence: 'apps/analytics/src/features/statistics/api/statistics.controller.ts:15',
@@ -1744,15 +1762,15 @@ const keyOf = (r: AuditRow): string => `${r.app} ${r.verb} ${r.route}`;
 describe('IDOR 검사 대상 집합', () => {
   it('감사 스크립트가 idorTarget 을 내보낸다', () => {
     const targets = runAudit().filter((r) => r.idorTarget);
-    expect(targets).toHaveLength(283);
+    expect(targets).toHaveLength(286);
   });
 
   // search 와 analytics 가 둘 다 `GET /health` 이고, user-service 와 file-service 가 둘 다
   // `POST /files/upload` 다. `<VERB> <route>` 로 키를 만들면 그만큼 뭉개지고 스냅샷이 조용히 잃는다.
   it('키에 app 이 들어가야 충돌하지 않는다', () => {
     const targets = runAudit().filter((r) => r.idorTarget);
-    expect(new Set(targets.map(keyOf)).size).toBe(283);
-    expect(new Set(targets.map((r) => `${r.verb} ${r.route}`)).size).toBe(281);
+    expect(new Set(targets.map(keyOf)).size).toBe(286);
+    expect(new Set(targets.map((r) => `${r.verb} ${r.route}`)).size).toBe(284);
   });
 
   it('감사 스크립트의 대상 집합과 명단이 정확히 일치한다', () => {
