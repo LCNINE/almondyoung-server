@@ -10,10 +10,14 @@
 #   bash scripts/sellmate/run.sh dev  import-products apps/core/tmp/
 #   bash scripts/sellmate/run.sh live import-products apps/core/tmp/
 #   DRY_RUN=1 bash scripts/sellmate/run.sh live sync-stock apps/core/tmp/
+#   bash scripts/sellmate/run.sh live evening-reconcile apply apps/core/tmp/stk_stockList_20261120_180000.csv [--apply]
+#   WITH_MEDUSA=1 bash scripts/sellmate/run.sh live evening-reconcile init <csv> --cutover-at=… --sellmate-orders=… --own-mall-channel=… [--apply]
+#
+# WITH_MEDUSA=1 이면 같은 클러스터의 medusa DB 도 찾아 MEDUSA_DATABASE_URL 로 넣는다(evening-reconcile init 이 쓴다).
 set -euo pipefail
 
-STAGE="${1:?사용: run.sh <dev|live> <import-products|sync-stock> <파일/폴더>}"
-SCRIPT="${2:?스크립트명(import-products|sync-stock) 필요}"
+STAGE="${1:?사용: run.sh <dev|live> <import-products|sync-stock|evening-reconcile|…> <인자…>}"
+SCRIPT="${2:?스크립트명(import-products|sync-stock|evening-reconcile|…) 필요}"
 shift 2
 
 REGION="ap-northeast-2"
@@ -42,11 +46,13 @@ SECRET_ID=$(aws secretsmanager list-secrets --region "$REGION" \
 [ -z "${SECRET_ID:-}" ] && { echo "❌ 시크릿 못 찾음: ${APP}-DbProxySecret*"; exit 1; }
 SECRET=$(aws secretsmanager get-secret-value --secret-id "$SECRET_ID" --region "$REGION" --query SecretString --output text)
 
-# 4) 후보 IP 중 "대상 DB(/${DB_NAME}) 에 직접 붙어 필수 스키마가 있는" IP 만 선택.
+# 4) 후보 IP 중 "대상 DB(/<db>) 에 직접 붙어 필수 스키마가 있는" IP 만 선택.
 #    /postgres 로그인만 확인하면 엉뚱한 클러스터를 고를 수 있으므로 대상 DB 자체를 검증한다.
 #    주의: 'export VAR=$(...)' 는 export 가 0 을 반환해 set -e 가 probe 실패를 못 잡는다 →
 #    먼저 일반 변수에 담아(실패 시 set -e 가 즉시 중단) 그 다음 export 한다.
-DATABASE_URL=$(SECRET="$SECRET" IPS="$IPS" DB_NAME="$DB_NAME" node -e '
+#    DB 이름을 인자로 받는 함수라 WITH_MEDUSA=1 일 때 medusa 로 한 번 더 부른다.
+discover_db_url() {
+SECRET="$SECRET" IPS="$IPS" DB_NAME="$1" node -e '
 const s=JSON.parse(process.env.SECRET);
 const ips=process.env.IPS.split(" ").filter(Boolean);
 const postgres=require("postgres");
@@ -71,11 +77,19 @@ const db=process.env.DB_NAME;
   if(loginOnly.length) console.error("연결은 됐지만 대상 DB/스키마 불일치: "+loginOnly.join(", "));
   else console.error("어느 후보 IP 도 /"+db+" 연결 실패: "+ips.join(", ")+" (터널 떠있는지 확인)");
   process.exit(1);
-})();')
+})();'
+}
+
+DATABASE_URL=$(discover_db_url "$DB_NAME")
 export DATABASE_URL
 
 MASKED_IP=$(echo "$DATABASE_URL" | sed -E 's#.*@([^:/]+).*#\1#')
 echo "🔌 ${STAGE} ${DB_NAME} @ ${MASKED_IP}:5432 (시크릿 ${SECRET_ID})"
+if [ "${WITH_MEDUSA:-}" = "1" ]; then
+  MEDUSA_DATABASE_URL=$(discover_db_url medusa)
+  export MEDUSA_DATABASE_URL
+  echo "🔌 ${STAGE} medusa @ $(echo "$MEDUSA_DATABASE_URL" | sed -E 's#.*@([^:/]+).*#\1#'):5432 (MEDUSA_DATABASE_URL)"
+fi
 cd "$(dirname "$0")/../.."
 echo "▶ ${DRY_RUN:+[DRY_RUN] }scripts/sellmate/${SCRIPT}.ts $*"
 exec npx tsx "scripts/sellmate/${SCRIPT}.ts" "$@"

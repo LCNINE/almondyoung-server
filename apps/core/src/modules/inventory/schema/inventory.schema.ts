@@ -4,6 +4,7 @@ import {
   pgTable,
   pgView,
   uuid,
+  char,
   varchar,
   boolean,
   integer,
@@ -802,6 +803,108 @@ export const skuShelfPositions = pgTable(
     idxCode: index('idx_sku_shelf_positions_code').on(t.positionCode),
   }),
 );
+
+// ===== 셀메이트 저녁 맞추기 (#1304) =====
+// #1304 저녁 맞추기 전용 상태 테이블 — 앱 코드는 읽지 않는다. scripts/sellmate 가 raw SQL 로만 쓴다.
+
+/** 셀메이트 품목(옵션 시리얼) ↔ core SKU 짝. */
+export const sellmateItemPairs = pgTable('sellmate_item_pairs', {
+  optionSerial: varchar('option_serial', { length: 64 }).primaryKey(),
+  productSerial: varchar('product_serial', { length: 64 }).notNull(),
+  itemName: text('item_name').notNull(),
+  barcode: varchar('barcode', { length: 128 }),
+  skuId: uuid('sku_id').references(() => skus.id, { onDelete: 'restrict' }),
+  matchedBy: varchar('matched_by', { length: 16 }),
+  unpairedReason: varchar('unpaired_reason', { length: 32 }),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** 저녁 맞추기 실행 기록 (kind: init/apply, status: closed/awaiting_close). */
+export const sellmateReconcileRuns = pgTable(
+  'sellmate_reconcile_runs',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    kind: varchar('kind', { length: 16 }).notNull(),
+    status: varchar('status', { length: 24 }).notNull(),
+    inputSha256: char('input_sha256', { length: 64 }).notNull().unique(),
+    inputSnapshotAt: timestamp('input_snapshot_at', { withTimezone: true }).notNull(),
+    cutoverAt: timestamp('cutover_at', { withTimezone: true }),
+    uploadFile: text('upload_file'),
+    closeInputSha256: char('close_input_sha256', { length: 64 }),
+    closeSnapshotAt: timestamp('close_snapshot_at', { withTimezone: true }),
+    accepted: jsonb('accepted'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    closedAt: timestamp('closed_at', { withTimezone: true }),
+  },
+  (t) => ({
+    uqInit: uniqueIndex('uq_sellmate_reconcile_runs_init')
+      .on(t.kind)
+      .where(sql`${t.kind} = 'init'`),
+    uqAwaitingClose: uniqueIndex('uq_sellmate_reconcile_runs_awaiting_close')
+      .on(t.status)
+      .where(sql`${t.status} = 'awaiting_close'`),
+  }),
+);
+
+/** 실행마다 품목별 계산 결과. */
+export const sellmateReconcileItems = pgTable(
+  'sellmate_reconcile_items',
+  {
+    runId: uuid('run_id')
+      .notNull()
+      .references(() => sellmateReconcileRuns.id, { onDelete: 'cascade' }),
+    optionSerial: varchar('option_serial', { length: 64 }).notNull(),
+    skuId: uuid('sku_id').notNull(),
+    sellmateCurrent: integer('sellmate_current').notNull(),
+    sellmateUnshipped: integer('sellmate_unshipped').notNull(),
+    s: integer('s').notNull(),
+    baselineBefore: integer('baseline_before').notNull(),
+    carryBefore: integer('carry_before').notNull(),
+    delta: integer('delta').notNull(),
+    carryAfter: integer('carry_after').notNull(),
+    uploadAvail: integer('upload_avail'),
+    uploadedCurrent: integer('uploaded_current'),
+    refUnshipped: integer('ref_unshipped'),
+    closeVerdict: varchar('close_verdict', { length: 32 }),
+    accept: varchar('accept', { length: 16 }),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.runId, t.optionSerial] }),
+  }),
+);
+
+/** SKU 별 현재 기준선·이월. */
+export const sellmateReconcileStates = pgTable(
+  'sellmate_reconcile_states',
+  {
+    skuId: uuid('sku_id')
+      .primaryKey()
+      .references(() => skus.id, { onDelete: 'restrict' }),
+    optionSerial: varchar('option_serial', { length: 64 }).notNull().unique(),
+    baseline: integer('baseline').notNull(),
+    carry: integer('carry').notNull(),
+    frozen: boolean('frozen').notNull().default(false),
+    lastRunId: uuid('last_run_id')
+      .notNull()
+      .references(() => sellmateReconcileRuns.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    ckCarryNonNegative: check('ck_sellmate_reconcile_states_carry_nonneg', sql`${t.carry} >= 0`),
+  }),
+);
+
+/** 셀메이트로 넘겨 받은 주문 (중복 방지). */
+export const sellmateHandedOverOrders = pgTable('sellmate_handed_over_orders', {
+  salesOrderId: uuid('sales_order_id')
+    .primaryKey()
+    .references(() => salesOrders.id, { onDelete: 'restrict' }),
+  displayId: integer('display_id').notNull(),
+  medusaOrderId: varchar('medusa_order_id', { length: 64 }).notNull(),
+  runId: uuid('run_id')
+    .notNull()
+    .references(() => sellmateReconcileRuns.id),
+});
 
 export const skuReferencePhotos = pgTable(
   'sku_reference_photos',
@@ -4183,6 +4286,11 @@ export const wmsTables = {
   skuSuppliers,
   skuBarcodes,
   skuShelfPositions,
+  sellmateItemPairs,
+  sellmateReconcileRuns,
+  sellmateReconcileItems,
+  sellmateReconcileStates,
+  sellmateHandedOverOrders,
   skuReferencePhotos,
   sku3dModels,
   skuFieldCaptures,

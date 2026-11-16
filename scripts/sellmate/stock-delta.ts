@@ -2,7 +2,7 @@
  * 셀메이트 스크립트가 재고 원장에 delta 를 적는 한 자리 — sync-stock 과 handover-stock-addback 이 같이 쓴다.
  *
  * InventoryCommandService.adjustUp/Down 과 같은 모양을 raw SQL 로 재현한다:
- *   - 증가: ADJUST_UP stock_events 한 행 + 입고기본존 ON_HAND 원장 upsert(qty += delta)
+ *   - 증가: ADJUST_UP stock_events 한 행 + 입고기본존(또는 upLocationId) ON_HAND 원장 upsert(qty += delta)
  *   - 감소: 잠근 위치들에서 많은 곳부터 ADJUST_DOWN 한 행씩 + 조건부 차감(qty >= take), 영향 행 1 검증
  * 이벤트의 `reason` 이 출처(`source`)다 — sync 는 'sellmate-sync', 넘겨받은 주문 되돌리기는 'sellmate-handover'.
  *
@@ -27,9 +27,14 @@ export type StockDelta = {
   label?: string;
   /** 이벤트 occurred_at·원장 updated_at. 한 번의 실행이 같은 시각을 쓰게 호출자가 넘긴다(없으면 지금) */
   occurredAt?: Date;
+  /** 증가할 로케이션. 없으면 입고기본존(BUCHEON_RECEIVING_LOC_ID). 감소에는 쓰지 않는다 */
+  upLocationId?: string;
 };
 
-export async function applyStockDelta(tx: Sql, { skuId, delta, source, label, occurredAt }: StockDelta): Promise<void> {
+export async function applyStockDelta(
+  tx: Sql,
+  { skuId, delta, source, label, occurredAt, upLocationId }: StockDelta,
+): Promise<void> {
   if (delta === 0) return;
   if (!Number.isSafeInteger(delta)) throw new Error(`재고 delta 가 정수가 아니다: ${label ?? skuId} delta=${delta}`);
   const now = occurredAt ?? new Date();
@@ -43,13 +48,14 @@ export async function applyStockDelta(tx: Sql, { skuId, delta, source, label, oc
   `;
 
   if (delta > 0) {
+    const upLoc = upLocationId ?? BUCHEON_RECEIVING_LOC_ID;
     await tx`
       INSERT INTO stock_events (sku_id, to_warehouse_id, to_location_id, to_state, transition_type, quantity, occurred_at, reason)
-      VALUES (${skuId}, ${BUCHEON_WAREHOUSE_ID}, ${BUCHEON_RECEIVING_LOC_ID}, 'ON_HAND', 'ADJUST_UP', ${delta}, ${now}, ${source})
+      VALUES (${skuId}, ${BUCHEON_WAREHOUSE_ID}, ${upLoc}, 'ON_HAND', 'ADJUST_UP', ${delta}, ${now}, ${source})
     `;
     await tx`
       INSERT INTO stock_ledgers (sku_id, warehouse_id, location_id, stock_state, qty, updated_at)
-      VALUES (${skuId}, ${BUCHEON_WAREHOUSE_ID}, ${BUCHEON_RECEIVING_LOC_ID}, 'ON_HAND', ${delta}, ${now})
+      VALUES (${skuId}, ${BUCHEON_WAREHOUSE_ID}, ${upLoc}, 'ON_HAND', ${delta}, ${now})
       ON CONFLICT (sku_id, warehouse_id, location_id, stock_state)
       DO UPDATE SET qty = stock_ledgers.qty + ${delta}, updated_at = ${now}
     `;
