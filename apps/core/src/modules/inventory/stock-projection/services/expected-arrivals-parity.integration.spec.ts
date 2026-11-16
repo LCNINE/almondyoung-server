@@ -187,7 +187,11 @@ describeIfDb('입고예정 읽기 파리티 (DB integration)', () => {
     await inRollback(async (trx) => {
       const fx = await seedFixture(trx);
       const purchaseOrders = new PurchaseOrderExpectedArrivalReader(boundDbService(trx));
-      const result = await new ExpectedArrivalsReader(purchaseOrders).listByWarehouse(fx.nonSellableWarehouseId, trx);
+      const result = await new ExpectedArrivalsReader(purchaseOrders, boundDbService(trx)).listByWarehouse(
+        fx.nonSellableWarehouseId,
+        { includeShipments: false },
+        trx,
+      );
       const expectedLines = [
         {
           skuId: fx.skuA,

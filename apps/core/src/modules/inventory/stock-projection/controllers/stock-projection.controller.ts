@@ -24,6 +24,8 @@ import { InboundPipelineResponseDto } from '../dto/inbound-pipeline.dto';
 import { ExpectedArrivalsResponseDto } from '../dto/expected-arrivals.dto';
 import { StockProjectionService } from '../services/stock-projection.service';
 
+const EXPECTED_ARRIVAL_INCLUDES: readonly string[] = ['inbound_shipment'];
+
 // skuIds 는 쉼표 구분 문자열도 받아서 데코레이터 파이프를 걸 수 없다 — 분해한 뒤
 // 원소마다 같은 파이프를 태워 warehouseId 와 판정 기준을 하나로 유지한다.
 // class-validator 의 isUUID 를 쓰지 않는 이유: 그쪽은 RFC-4122 version/variant 니블까지
@@ -152,11 +154,26 @@ export class StockProjectionController {
     description: '옛 GET /inbound/pending 을 대체한다(PR-B).',
   })
   @ApiQuery({ name: 'warehouseId', required: true })
+  @ApiQuery({
+    name: 'include',
+    required: false,
+    description:
+      '쉼표 목록. 지금 아는 값: inbound_shipment(열린 선적을 문서로 더한다). 없으면 발주만 — 옛 앱은 모든 줄을 발주 화면으로 잇는다.',
+  })
   @ApiResponse({ status: 200, type: ExpectedArrivalsResponseDto })
   async listExpectedArrivals(
     @Query('warehouseId', new ParseUUIDPipe()) warehouseId: string,
+    @Query('include') include?: string,
   ): Promise<ExpectedArrivalsResponseDto> {
-    return this.stockProjection.listExpectedArrivals(warehouseId);
+    const values = (include ?? '')
+      .split(',')
+      .map((v) => v.trim())
+      .filter((v) => v.length > 0);
+    const unknown = values.filter((v) => !EXPECTED_ARRIVAL_INCLUDES.includes(v));
+    if (unknown.length > 0) throw new BadRequestException(`unknown include: ${unknown.join(',')}`);
+    return this.stockProjection.listExpectedArrivals(warehouseId, {
+      includeShipments: values.includes('inbound_shipment'),
+    });
   }
 
   @RequirePermission('inventory.stock.read')
