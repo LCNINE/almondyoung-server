@@ -87,18 +87,23 @@ export class BankTransferPaymentProvider implements PaymentProvider {
       };
     }
 
+    // 위젯 키가 있으면 위젯 결제와 같은 상점으로 발급한다. 취소·환불·웹훅은 nextAction.checkoutMode 로 키를 고른다.
+    const useWidgetKey = !!process.env.TOSS_WIDGET_SECRET_KEY;
     const meta = params.metadata ?? {};
     const orderId = params.chargeId.replace(/-/g, '');
-    const result = await this.tossApi.issueVirtualAccount({
-      amount: params.amount,
-      orderId,
-      orderName: (meta.orderName as string) ?? '무통장입금',
-      customerName: (meta.customerName as string) ?? '주문자',
-      bank,
-      validHours: depositWindowHours(),
-      ...(meta.customerEmail ? { customerEmail: meta.customerEmail as string } : {}),
-      ...(meta.customerMobilePhone ? { customerMobilePhone: meta.customerMobilePhone as string } : {}),
-    });
+    const result = await this.tossApi.issueVirtualAccount(
+      {
+        amount: params.amount,
+        orderId,
+        orderName: (meta.orderName as string) ?? '무통장입금',
+        customerName: (meta.customerName as string) ?? '주문자',
+        bank,
+        validHours: depositWindowHours(),
+        ...(meta.customerEmail ? { customerEmail: meta.customerEmail as string } : {}),
+        ...(meta.customerMobilePhone ? { customerMobilePhone: meta.customerMobilePhone as string } : {}),
+      },
+      useWidgetKey,
+    );
 
     if (!result.ok) {
       return { status: 'FAILED', errorCode: result.error.code, errorMessage: result.error.message };
@@ -116,6 +121,7 @@ export class BankTransferPaymentProvider implements PaymentProvider {
         dueDate: va.dueDate,
         amount: params.amount,
         currency: params.currency,
+        ...(useWidgetKey ? { checkoutMode: 'WIDGET' } : {}),
       },
       raw: { paymentKey: result.data.paymentKey, secret: result.data.secret, virtualAccount: va },
     };
