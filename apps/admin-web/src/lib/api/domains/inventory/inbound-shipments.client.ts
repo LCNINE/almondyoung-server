@@ -3,7 +3,11 @@
 import { ALMONDYOUNG_API_BASE_URL } from '@/const';
 import { client } from '../../client';
 import type {
+  CancelInboundShipmentResult,
+  CloseInboundShipmentResult,
   ConfirmInboundShipmentBody,
+  ConfirmInboundShipmentResult,
+  ReopenInboundShipmentResult,
   EditInboundShipmentBoxBody,
   EditInboundShipmentLineBody,
   InboundShipmentDetail,
@@ -49,22 +53,22 @@ export const inboundShipmentsClient = {
     return response.data;
   },
 
-  confirm: async (id: string, body: ConfirmInboundShipmentBody) => {
+  confirm: async (id: string, body: ConfirmInboundShipmentBody): Promise<ConfirmInboundShipmentResult> => {
     const response = await client.post(`${BASE}/${id}/confirm`, body);
     return response.data;
   },
 
-  cancel: async (id: string) => {
+  cancel: async (id: string): Promise<CancelInboundShipmentResult> => {
     const response = await client.post(`${BASE}/${id}/cancel`);
     return response.data;
   },
 
-  close: async (id: string, body: { reason: string }) => {
+  close: async (id: string, body: { reason: string }): Promise<CloseInboundShipmentResult> => {
     const response = await client.post(`${BASE}/${id}/close`, body);
     return response.data;
   },
 
-  reopen: async (id: string) => {
+  reopen: async (id: string): Promise<ReopenInboundShipmentResult> => {
     const response = await client.post(`${BASE}/${id}/reopen`);
     return response.data;
   },

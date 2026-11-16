@@ -169,3 +169,27 @@ export interface InboundShipmentListFilter {
   status?: InboundShipmentStatus[];
   warehouseId?: string;
 }
+
+// ── 응답 (core inbound-shipment-draft.manager.ts 반환 모양)
+
+export interface ConfirmInboundShipmentResult {
+  shipmentId: string;
+  status: 'expected';
+  /** 같은 창고의 열린 선적과 이름이 겹치는 상자. 막지 않는 경고. */
+  labelOverlaps: string[];
+}
+
+export interface CancelInboundShipmentResult {
+  shipmentId: string;
+  status: 'canceled';
+}
+
+export interface CloseInboundShipmentResult {
+  shipmentId: string;
+  status: 'closed';
+}
+
+export interface ReopenInboundShipmentResult {
+  shipmentId: string;
+  status: 'expected' | 'receiving';
+}

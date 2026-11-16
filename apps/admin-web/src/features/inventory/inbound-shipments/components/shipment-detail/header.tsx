@@ -69,8 +69,7 @@ export function ShipmentHeader({ shipment, acknowledged, onStale }: Props) {
       { id: shipment.id, acknowledgedForwardBoxIds: readiness.acknowledgedForwardBoxIds },
       {
         onSuccess: (res) => {
-          const labels = (res as { labelOverlaps?: string[] } | undefined)?.labelOverlaps;
-          setOverlaps(labels ?? []);
+          setOverlaps(res.labelOverlaps);
         },
         onError: (e) => {
           setMessage(writeErrorMessage(e));
