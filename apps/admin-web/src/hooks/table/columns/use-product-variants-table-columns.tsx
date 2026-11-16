@@ -476,7 +476,8 @@ export function useProductVariantsTableColumns(
                         <span className="text-[10px] text-muted-foreground">
                           {isManual
                             ? '직접 지정'
-                            : info?.projection?.inboundSource === 'inbound_shipment'
+                            : info?.projection?.inboundSource ===
+                                'inbound_shipment'
                               ? '선적 도착 예정일'
                               : '발주서 도착 예정일'}
                         </span>

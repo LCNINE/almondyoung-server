@@ -28,7 +28,11 @@ export class InboundPipelineItemDto {
   @ApiProperty({ description: '선적 오는 중 중 판매 창고행' })
   inboundShipmentToSellableQty: number;
 
-  @ApiPropertyOptional({ description: '판매 창고행 선적의 가장 이른 도착 예정일 (YYYY-MM-DD)', nullable: true, type: String })
+  @ApiPropertyOptional({
+    description: '판매 창고행 선적의 가장 이른 도착 예정일 (YYYY-MM-DD)',
+    nullable: true,
+    type: String,
+  })
   inboundShipmentEta: string | null;
 }
 

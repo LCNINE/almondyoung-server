@@ -54,6 +54,8 @@ export function resolveRestockSchedule(
     inboundDate: earliest,
     inboundApproximate: winners.some((arrival) => arrival.approximate),
     // 같은 날이면 발주를 먼저 표시한다(고정 순서)
-    inboundSource: winners.some((arrival) => arrival.source === 'purchase_order') ? 'purchase_order' : 'inbound_shipment',
+    inboundSource: winners.some((arrival) => arrival.source === 'purchase_order')
+      ? 'purchase_order'
+      : 'inbound_shipment',
   };
 }

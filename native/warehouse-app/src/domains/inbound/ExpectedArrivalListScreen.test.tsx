@@ -116,12 +116,16 @@ function renderScreen(prefsSeed?: Record<string, string>) {
   render(<RouterProvider router={router} />, { wrapper });
 }
 
-const SELECTED = { 'almondwms.warehouse': JSON.stringify({ id: 'w-1', name: '한국창고' }) };
+const SELECTED = {
+  'almondwms.warehouse': JSON.stringify({ id: 'w-1', name: '한국창고' }),
+};
 
 describe('ExpectedArrivalListScreen', () => {
   it('창고가 없으면 창고 선택을 요구한다', async () => {
     renderScreen();
-    expect(await screen.findByText('창고를 먼저 선택해 주세요.')).toBeInTheDocument();
+    expect(
+      await screen.findByText('창고를 먼저 선택해 주세요.')
+    ).toBeInTheDocument();
   });
 
   it('창고별 GET /inventory/expected-arrivals 를 부르고 발주 카드를 남은 수량과 함께 보여준다', async () => {
@@ -138,15 +142,16 @@ describe('ExpectedArrivalListScreen', () => {
 
   it('간편입고 진입점을 제공한다', async () => {
     renderScreen(SELECTED);
-    expect(await screen.findByRole('link', { name: '간편입고' })).toBeInTheDocument();
+    expect(
+      await screen.findByRole('link', { name: '간편입고' })
+    ).toBeInTheDocument();
   });
 
   it('간편입고·입고내역 링크가 있다 — 스테이션 홈이 사라져도 닿는 유일한 길(U3)', async () => {
     renderScreen(SELECTED);
-    expect(await screen.findByRole('link', { name: '간편입고' })).toHaveAttribute(
-      'href',
-      '/inbound/quick'
-    );
+    expect(
+      await screen.findByRole('link', { name: '간편입고' })
+    ).toHaveAttribute('href', '/inbound/quick');
     // 링크 이름은 「입고내역 · 취소」다
     expect(screen.getByRole('link', { name: /입고내역/ })).toHaveAttribute(
       'href',
@@ -225,7 +230,9 @@ describe('ExpectedArrivalListScreen', () => {
     it('빈 목록 문구에 간편입고 안내가 없다', async () => {
       ARRIVALS = { ...BASE, arrivals: [] };
       renderScreen(SELECTED);
-      expect(await screen.findByText('입고 예정이 없어요.')).toBeInTheDocument();
+      expect(
+        await screen.findByText('입고 예정이 없어요.')
+      ).toBeInTheDocument();
     });
   });
 });

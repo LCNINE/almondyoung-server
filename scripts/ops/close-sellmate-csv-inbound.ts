@@ -50,7 +50,9 @@ function unusedByShortCloseLine<T extends object>(name: string): T {
     {},
     {
       get: () => {
-        throw new Error(`${name} 은 close-sellmate-csv-inbound 스크립트에 연결돼 있지 않다 — shortCloseLine 이 바뀌었다`);
+        throw new Error(
+          `${name} 은 close-sellmate-csv-inbound 스크립트에 연결돼 있지 않다 — shortCloseLine 이 바뀌었다`,
+        );
       },
     },
   ) as T;

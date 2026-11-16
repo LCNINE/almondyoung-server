@@ -209,11 +209,12 @@ export function ShipmentHeader({ shipment, acknowledged, onStale }: Props) {
         {showPromisedArrival(
           shipment.expectedArrival,
           shipment.promisedArrival
-        ) && shipment.promisedArrival && (
-          <span className="text-sm text-muted-foreground">
-            처음 예정 {formatMonthDay(shipment.promisedArrival)}
-          </span>
-        )}
+        ) &&
+          shipment.promisedArrival && (
+            <span className="text-sm text-muted-foreground">
+              처음 예정 {formatMonthDay(shipment.promisedArrival)}
+            </span>
+          )}
         <Input
           className="w-64"
           placeholder="메모"

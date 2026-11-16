@@ -100,9 +100,9 @@ describe('재입고 예정일 원천 선택', () => {
     });
 
     it('manual restock date still wins over shipment', () => {
-      expect(
-        resolveRestockSchedule({ restockDate: '2026-12-10' }, [shipment('2026-12-01')], 0, t).inboundSource,
-      ).toBe('manual');
+      expect(resolveRestockSchedule({ restockDate: '2026-12-10' }, [shipment('2026-12-01')], 0, t).inboundSource).toBe(
+        'manual',
+      );
     });
   });
 

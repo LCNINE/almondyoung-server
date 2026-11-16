@@ -323,7 +323,9 @@ describeIfDb('공급 파이프라인 판독 (DB integration)', () => {
     async function seedShipmentSku(trx: DbTx) {
       const { holderId } = await seedHolder(trx);
       const { skuId } = await seedSku(trx, holderId);
-      const barcode = `8${Math.floor(Math.random() * 1e11).toString().padStart(11, '0')}`;
+      const barcode = `8${Math.floor(Math.random() * 1e11)
+        .toString()
+        .padStart(11, '0')}`;
       await trx.insert(wmsTables.skuBarcodes).values({ skuId, barcode });
       return { skuId, barcode };
     }
@@ -351,7 +353,16 @@ describeIfDb('공급 파이프라인 판독 (DB integration)', () => {
             rows: [
               {
                 rowNumber: 1,
-                cells: [cell('L1'), cell('1'), cell('prod'), cell(String(qty), qty), cell('opt'), cell(barcode), cell(String(qty), qty), cell('')],
+                cells: [
+                  cell('L1'),
+                  cell('1'),
+                  cell('prod'),
+                  cell(String(qty), qty),
+                  cell('opt'),
+                  cell(barcode),
+                  cell(String(qty), qty),
+                  cell(''),
+                ],
               },
             ],
           },
@@ -386,8 +397,16 @@ describeIfDb('공급 파이프라인 판독 (DB integration)', () => {
         });
         const rowA = rows.find((r) => r.skuId === a.skuId);
         const rowB = rows.find((r) => r.skuId === b.skuId);
-        expect(rowA).toMatchObject({ inboundShipmentQty: 12, inboundShipmentToSellableQty: 7, inboundShipmentEta: '2020-01-01' });
-        expect(rowB).toMatchObject({ inboundShipmentQty: 4, inboundShipmentToSellableQty: 0, inboundShipmentEta: null });
+        expect(rowA).toMatchObject({
+          inboundShipmentQty: 12,
+          inboundShipmentToSellableQty: 7,
+          inboundShipmentEta: '2020-01-01',
+        });
+        expect(rowB).toMatchObject({
+          inboundShipmentQty: 4,
+          inboundShipmentToSellableQty: 0,
+          inboundShipmentEta: null,
+        });
       });
     });
 

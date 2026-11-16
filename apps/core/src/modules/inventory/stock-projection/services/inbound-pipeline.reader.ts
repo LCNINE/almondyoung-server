@@ -4,7 +4,10 @@ import { InjectTypedDb, DbService } from '@app/db';
 import { wmsSchema, wmsTables, DbTx } from '../../schema/inventory.schema';
 import { inSellableWarehouse } from '../../shared/availability/sellable-warehouses';
 import { WarehouseTransferReader } from '../../warehouse-transfer/services/warehouse-transfer.reader';
-import { outstandingShipmentLineWhere, outstandingShipmentQtySql } from '../../inbound-shipment/services/inbound-shipment-outstanding.sql';
+import {
+  outstandingShipmentLineWhere,
+  outstandingShipmentQtySql,
+} from '../../inbound-shipment/services/inbound-shipment-outstanding.sql';
 import { PurchaseOrderExpectedArrivalReader } from '../../procurement/services/purchase-order-expected-arrival.reader';
 
 export interface InboundPipelineRow {

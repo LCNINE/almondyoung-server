@@ -165,9 +165,7 @@ export function reservationMismatches(
   lines: readonly RecountLine[],
   target: (line: { demand: number; heldUnits: number }) => number,
 ): RecountLine[] {
-  return lines.filter(
-    (l) => target({ demand: l.ordered - l.canceledBeforeShipment, heldUnits: 0 }) !== l.current,
-  );
+  return lines.filter((l) => target({ demand: l.ordered - l.canceledBeforeShipment, heldUnits: 0 }) !== l.current);
 }
 
 /** 예정일 지난 열린 선적의 안내 문구. 컷오버 전엔 T 전 도착분일 수 있고, 뒤엔 날짜를 고치거나 닫는다(설계 §13). */
