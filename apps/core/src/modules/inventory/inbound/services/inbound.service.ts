@@ -238,6 +238,18 @@ export class InboundService {
               putawayBlockReason: state.putawayBlockReason,
               canCancel: state.canCancel,
               cancelBlockReason: toHistoryCancelBlockReason(state.cancelBlockReason),
+              inboundShipmentBox:
+                row.inboundShipmentId &&
+                row.inboundShipmentName &&
+                row.inboundShipmentBoxId &&
+                row.inboundShipmentBoxLabel
+                  ? {
+                      shipmentId: row.inboundShipmentId,
+                      shipmentName: row.inboundShipmentName,
+                      boxId: row.inboundShipmentBoxId,
+                      boxLabel: row.inboundShipmentBoxLabel,
+                    }
+                  : null,
             };
           }),
         })),
