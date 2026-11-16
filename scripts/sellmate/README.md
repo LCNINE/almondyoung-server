@@ -128,7 +128,7 @@ T(컷오버) 뒤 매일 저녁, 셀메이트 쪽 변화(마켓 주문·취소·�
 | 명령 | 하는 일 |
 |---|---|
 | `pair <재고 CSV>` | 셀메이트 품목 ↔ core SKU 짝 표를 다시 쓴다(원장 안 건드림). 짝 못 지은 품목이 있으면 종료 코드 1 |
-| `init <마지막 sync 재고 CSV> --cutover-at=<T> --sellmate-orders=<T 의 미발송 주문 파일> --own-mall-channel=<자사몰 판매처 이름>` | T 에 한 번. 기준값·이월·넘긴 주문을 쓴다(원장은 안 씀). `MEDUSA_DATABASE_URL` 필요 → `WITH_MEDUSA=1` |
+| `init <마지막 sync 재고 CSV> --cutover-at=<T> --sellmate-orders=<T 의 미발송 주문 파일> --own-mall-channel=<자사몰 판매처 이름>` | T 에 한 번. 기준값·이월·넘긴 주문을 쓴다(원장은 안 씀). `MEDUSA_DATABASE_URL` 필요 → `WITH_MEDUSA=1`. 부천 ON_HAND 가 `max(0, 현재재고 − 미발송)` 과 다른 품목이 있거나 넘긴 자사몰 주문이 0건이면 거절 — 확인했으면 `--accept-onhand-mismatch`·`--no-handed-over-orders` |
 | `apply <지금 받은 재고 CSV>` | 원장 반영 + 회차(업로드 대기) + 업로드 CSV(`<OUT_DIR>/sellmate-reconcile-<회차>-upload.csv`) |
 | `close <업로드 뒤 다시 받은 재고 CSV> [--accept-landed=<옵션,…>] [--accept-not-landed=<옵션,…>]` | 업로드가 먹었는지 판정하고 기준값을 확정한다. ✗ 가 있으면 1 (`--apply` 면 고친 CSV `…-fix.csv` 를 쓴다) |
 | `status` | 열린 회차·이월·짝 못 지은 품목(읽기 전용) |
@@ -153,10 +153,15 @@ bash scripts/sellmate/run.sh live evening-reconcile close apps/core/tmp/<다시 
 
 - 맞추는 동안(받기 → 업로드 → 다시 받기) 셀메이트 출고·반품 입고를 멈춘다. 셀메이트에서 재고를 손으로 고치지 않는다.
 - 같은 CSV 로 `apply` 를 두 번 반영할 수 없다(거절).
-- `close` 가 실패한 회차에 쓴 CSV 는 다시 쓸 수 없다. 새로 받은 CSV 로 다시 한다. `--apply` 가 쓴 `…-fix.csv` 를 고쳐 올리고 새로 받는다.
-- 고친 파일(fix)이 남은 품목은 `--accept-landed`/`--accept-not-landed` 로 지목하지 않으면 반품으로 받아들이지 않는다. 같은 품목을 둘 다에 지목하면 거절.
+- `close` 가 실패한 시도에 쓴 CSV 는 다시 쓸 수 없다. 새로 받은 CSV 로 다시 한다.
+- `close` 가 `shipped_before_upload(업로드 전 출고 또는 마켓 취소)` 를 띄우면 셀메이트 주문 목록에서 확인한다:
+  - 출고였으면 `--apply` 가 쓴 `…-fix.csv` 를 올리고 재고 현황을 다시 받아 `close`.
+  - 취소였으면 fix 를 올리지 말고 새로 받은 CSV 로 `close --accept-landed=<품목>` (취소분은 다음 `apply` 가 core 에 더한다).
+- 고친 파일(fix)을 만든 품목은 그 회차가 닫힐 때까지 «현재만 늘었다» 를 반품으로 받아들이지 않는다 — 지목(`--accept-landed`/`--accept-not-landed`)해야 넘어간다. 같은 품목을 둘 다에 지목하면 거절.
+- 닫힌 회차의 업로드·fix 파일은 다시 올리지 않는다(셀메이트를 옛 숫자로 덮는다).
 - 새 품목·동결 해제 품목은 같은 `apply` 안에서 셀메이트 미발송분을 core 에서 차감한다.
-- 짝 못 지은 품목·CSV 에서 사라진 품목·SKU 가 바뀐 품목이 있으면 `init`·`apply` 는 쓰지 않고 종료 코드 1.
+- 짝 못 지은 품목·CSV 에서 사라진 품목·SKU 가 바뀐 품목이 있으면 `init`·`apply` 는 쓰지 않고 종료 코드 1. 짝 표도 안 쓰므로, 판정(cutover-preflight)이 보게 같은 CSV 로 `pair --apply` 를 돌려 둔다.
+- 제외 품목(`excluded.ts`)과 바코드가 같은 품목은 `barcode_shared` 로 짝 못 지은 품목이 된다(올리면 제외 품목 재고를 덮는다).
 - `apply --apply` 뒤 sellable 재계산이 실패하면 원장은 이미 커밋된 것이다 — `apply` 를 다시 돌리지 말고 24시간 안에
   `bash scripts/sellmate/run.sh live recalc-sellable .` 를 돌린다.
 

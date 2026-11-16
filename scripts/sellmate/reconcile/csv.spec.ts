@@ -87,6 +87,24 @@ describe('parseReconcileStock', () => {
     expect(r.excludedSerials).toEqual(new Set(['9']));
     expect([...r.excluded.values()]).toEqual([1]);
   });
+  it('제외 행의 바코드는 수식을 벗겨 excludedBarcodes 로 남긴다(빈 바코드는 뺀다)', () => {
+    const r = parse(
+      ['9', '13248', 'TEST-0002', '="8800000000009"', '3', '0'],
+      ['8', '13248', 'TEST-0003', '', '3', '0'],
+      ['1', '100', 'TEST-0001', '8800000000001', '5', '2'],
+    );
+    expect(r.excludedBarcodes).toEqual(new Set(['8800000000009']));
+  });
+  it('옵션정보일련번호만 빈 행은 오류, 완전히 빈 행은 건너뛴다', () => {
+    const r = parse(
+      ['', '100', 'TEST-0001', '8800000000001', '5', '2'],
+      ['', '', '', '', '', ''],
+      ['1', '100', 'TEST-0001', '8800000000002', '1', '0'],
+    );
+    expect(r.rows.map((x) => x.optionSerial)).toEqual(['1']);
+    expect(r.errors).toHaveLength(1);
+    expect(r.errors[0]).toContain('옵션정보일련번호');
+  });
   it('미발송 열이 없는 헤더는 throw', () => {
     expect(() => parseReconcileStock([HEADER.slice(0, 5), ['1', '100', 'a', 'b', '1']], 'x.csv')).toThrow();
   });

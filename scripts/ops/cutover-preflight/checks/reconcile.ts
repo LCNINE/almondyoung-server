@@ -6,14 +6,14 @@ import { judgeReconcile, type ReconcileFacts } from '../rules';
 
 const MAX_ROWS = 30;
 
+/** 테이블이 아직 없으면(#1247 마이그 전) undefined — 대조를 못 했다는 뜻. 그 밖의 오류는 그대로 던진다 */
 async function readAdapterCutoverAt(adapter: Sql): Promise<Date | null | undefined> {
-  try {
-    const [row] = await adapter<{ cutover_at: Date | null }[]>`
-      select cutover_at from reservation_projection_settings where id = 'singleton'`;
-    return row?.cutover_at ?? null;
-  } catch {
-    return undefined;
-  }
+  const [reg] = await adapter<{ ok: boolean }[]>`
+    select to_regclass('reservation_projection_settings') is not null as ok`;
+  if (reg?.ok !== true) return undefined;
+  const [row] = await adapter<{ cutover_at: Date | null }[]>`
+    select cutover_at from reservation_projection_settings where id = 'singleton'`;
+  return row?.cutover_at ?? null;
 }
 
 export async function checkReconcile(core: Sql, adapter: Sql | null, r: Report): Promise<void> {
@@ -46,7 +46,7 @@ export async function checkReconcile(core: Sql, adapter: Sql | null, r: Report):
     facts.unpaired = unpaired.map((u) => ({ optionSerial: u.option_serial, reason: u.unpaired_reason }));
     const carry = await core<{ option_serial: string; code: string; carry: number }[]>`
       select st.option_serial, s.code, st.carry from sellmate_reconcile_states st
-      join skus s on s.id = st.sku_id where st.carry > 0 order by st.carry desc, st.option_serial`;
+      join skus s on s.id = st.sku_id where st.carry > 0 and st.frozen = false order by st.carry desc, st.option_serial`;
     facts.carry = carry.map((c) => ({ optionSerial: c.option_serial, skuCode: c.code, carry: c.carry }));
   }
 

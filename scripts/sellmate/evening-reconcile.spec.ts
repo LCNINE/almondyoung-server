@@ -24,6 +24,18 @@ describe('parseCliArgs', () => {
     expect(args).toMatchObject({ sub: 'init', stockFile: 's.csv', ordersFile: 'o.csv', ownMallChannel: 'TEST-MALL' });
   });
 
+  it('init 확인 넘기기 플래그는 기본 false, 붙이면 true, 값은 받지 않는다', () => {
+    expect(parseCliArgs(['init', 's.csv', ...INIT_FLAGS])).toMatchObject({
+      acceptOnhandMismatch: false,
+      noHandedOverOrders: false,
+    });
+    expect(
+      parseCliArgs(['init', 's.csv', ...INIT_FLAGS, '--accept-onhand-mismatch', '--no-handed-over-orders']),
+    ).toMatchObject({ acceptOnhandMismatch: true, noHandedOverOrders: true });
+    expect(() => parseCliArgs(['init', 's.csv', ...INIT_FLAGS, '--no-handed-over-orders=1'])).toThrow();
+    expect(() => parseCliArgs(['apply', 'a.csv', '--accept-onhand-mismatch'])).toThrow();
+  });
+
   it('--cutover-at 은 offset 이 없으면 KST 다', () => {
     const args = parseCliArgs(['init', 's.csv', ...INIT_FLAGS]);
     expect(args.cutoverAt?.toISOString()).toBe('2026-11-20T00:00:00.000Z');

@@ -79,12 +79,23 @@ export type CliArgs = {
   ownMallChannel: string | null;
   acceptLanded: string[];
   acceptNotLanded: string[];
+  /** init: 부천 ON_HAND 가 max(0, S) 와 다른 품목이 있어도 진행(마지막 sync 뒤 앱이 재고를 움직인 걸 확인했을 때만) */
+  acceptOnhandMismatch: boolean;
+  /** init: 넘긴 자사몰 주문이 정말 0건일 때만(판매처 이름이 틀려 0건이 된 것과 구별한다) */
+  noHandedOverOrders: boolean;
 };
 
 const SUBS: readonly Sub[] = ['pair', 'init', 'apply', 'close', 'status'];
 const FLAGS: Record<Sub, readonly string[]> = {
   pair: ['--apply'],
-  init: ['--apply', '--cutover-at', '--sellmate-orders', '--own-mall-channel'],
+  init: [
+    '--apply',
+    '--cutover-at',
+    '--sellmate-orders',
+    '--own-mall-channel',
+    '--accept-onhand-mismatch',
+    '--no-handed-over-orders',
+  ],
   apply: ['--apply'],
   close: ['--apply', '--accept-landed', '--accept-not-landed'],
   status: [],
@@ -123,7 +134,10 @@ export function parseCliArgs(argv: readonly string[]): CliArgs {
     ownMallChannel: null,
     acceptLanded: [],
     acceptNotLanded: [],
+    acceptOnhandMismatch: false,
+    noHandedOverOrders: false,
   };
+  const SWITCHES = ['--apply', '--accept-onhand-mismatch', '--no-handed-over-orders'];
   for (const arg of rest) {
     if (!arg.startsWith('--')) {
       if (sub === 'status') throw new Error(`status 는 파일을 받지 않는다: ${arg}`);
@@ -135,9 +149,11 @@ export function parseCliArgs(argv: readonly string[]): CliArgs {
     const name = eq < 0 ? arg : arg.slice(0, eq);
     const value = eq < 0 ? null : arg.slice(eq + 1);
     if (!FLAGS[sub].includes(name)) throw new Error(`${sub} 에 쓸 수 없는 인자: ${arg}`);
-    if (name === '--apply') {
-      if (value !== null) throw new Error(`--apply 는 값을 받지 않는다: ${arg}`);
-      args.apply = true;
+    if (SWITCHES.includes(name)) {
+      if (value !== null) throw new Error(`${name} 는 값을 받지 않는다: ${arg}`);
+      if (name === '--apply') args.apply = true;
+      else if (name === '--accept-onhand-mismatch') args.acceptOnhandMismatch = true;
+      else args.noHandedOverOrders = true;
       continue;
     }
     if (value === null || value.trim() === '') throw new Error(`${name}=<값> 꼴이어야 한다: ${arg}`);
@@ -226,6 +242,11 @@ function logUnpaired(d: Deps, unpaired: readonly Unpaired[]): void {
   for (const u of unpaired) d.log(`   ${u.optionSerial}  ${u.reason}  바코드=${u.barcode || '(빈칸)'}  ${u.name}`);
 }
 
+/** 거절한 init/apply 는 짝 표를 쓰지 않는다 — 판정(cutover-preflight)이 읽는 짝 표를 이번 CSV 로 다시 쓰게 안내한다 */
+const PAIR_HINT =
+  '\n   짝 표는 갱신하지 않았다. 판정(cutover-preflight)이 이 품목들을 보게 같은 CSV 로 먼저:\n' +
+  '   bash scripts/sellmate/run.sh live evening-reconcile pair <같은 재고 CSV> --apply';
+
 function requireValue<K, V>(map: ReadonlyMap<K, V>, key: K, what: string): V {
   const v = map.get(key);
   if (v === undefined) throw new Error(`${what} 를 찾지 못했다: ${String(key)}`);
@@ -238,7 +259,7 @@ export async function runPair(d: Deps, stock: StockInput, apply: boolean): Promi
   return inTx(d, apply, async (tx) => {
     const refusal = await commonRefusal(tx, d, stock);
     if (refusal) return refuse(d, refusal);
-    const { pairs, unpaired } = pairItems(stock.rows, await loadCoreIndex(tx));
+    const { pairs, unpaired } = pairItems(stock.rows, await loadCoreIndex(tx), stock.excludedBarcodes);
     await replacePairs(tx, pairs, unpaired);
     d.log(`짝 ${pairs.length}품목 · 짝 못 지음 ${unpaired.length}품목`);
     logExcluded(d, stock);
@@ -256,6 +277,7 @@ export async function runInit(
   handedOver: readonly { displayId: number; medusaOrderId: string }[],
   cutoverAt: Date,
   apply: boolean,
+  checks: { acceptOnhandMismatch: boolean; noHandedOverOrders: boolean },
 ): Promise<RunOutcome> {
   return inTx(d, apply, async (tx) => {
     const refusal = await commonRefusal(tx, d, stock);
@@ -269,11 +291,12 @@ export async function runInit(
     if (await handoverEventsExist(tx))
       return refuse(d, "'sellmate-handover' 원장 이벤트가 있다 — 맞추기와 섞지 않는다(#1306)");
 
-    const { pairs, unpaired } = pairItems(stock.rows, await loadCoreIndex(tx));
+    const { pairs, unpaired } = pairItems(stock.rows, await loadCoreIndex(tx), stock.excludedBarcodes);
     if (unpaired.length) {
       d.log(summaryLine({ up: 0, down: 0, carry: 0, unpaired: unpaired.length, fresh: 0 }));
       logUnpaired(d, unpaired);
-      return refuse(d, `짝 못 지은 품목 ${unpaired.length}개 — pair 로 짝 표를 고친 뒤 다시`);
+      d.log(PAIR_HINT);
+      return refuse(d, `짝 못 지은 품목 ${unpaired.length}개 — 짝을 고친 뒤 다시`);
     }
 
     const salesOrderByMedusa = await resolveSalesOrders(
@@ -285,6 +308,43 @@ export async function runInit(
       d.log(`\ncore 판매주문을 못 찾은 넘긴 주문 ${unresolved.length}건:`);
       for (const h of unresolved) d.log(`   display_id=${h.displayId}  medusa=${h.medusaOrderId}`);
       return refuse(d, '넘긴 주문을 전부 core 판매주문으로 찾아야 한다 — 빠진 주문은 그만큼 두 번 빠진다');
+    }
+
+    // init 은 한 번뿐이라 입력을 여기서 확인한다(빌더 점검 2차).
+    // ① 넘긴 자사몰 주문 0건은 판매처 이름(--own-mall-channel)이 틀렸을 때와 구별되지 않는다
+    if (handedOver.length === 0 && !checks.noHandedOverOrders) {
+      return refuse(
+        d,
+        '넘긴 자사몰 주문이 0건이다 — 판매처 이름(--own-mall-channel)과 주문 파일을 확인한다. 정말 0건이면 --no-handed-over-orders',
+      );
+    }
+    // ② 마지막 sync 가 부천 ON_HAND 를 max(0, S) 로 맞췄다. 다르면 다른 CSV 이거나 그 뒤 원장이 움직였다
+    const rowBySerialForCheck = new Map(stock.rows.map((r) => [r.optionSerial, r]));
+    const onHandBySku = await readCoreFigures(
+      tx,
+      pairs.map((p) => p.skuId),
+    );
+    const onHandMismatch = pairs.flatMap((p) => {
+      const row = requireValue(rowBySerialForCheck, p.optionSerial, '재고 행');
+      const expected = Math.max(0, sellmateAvail(row.current, row.unshipped));
+      const onHand = requireValue(onHandBySku, p.skuId, 'core 수치').onHand;
+      return onHand === expected ? [] : [{ p, row, expected, onHand }];
+    });
+    if (onHandMismatch.length) {
+      d.log(`
+부천 ON_HAND 가 이 CSV 의 max(0, 현재재고 − 미발송) 과 다른 품목 ${onHandMismatch.length}:`);
+      d.log('   옵션정보일련번호  core ON_HAND  max(0,S)  현재재고  미발송');
+      for (const m of onHandMismatch.slice(0, 50)) {
+        d.log(`   ${m.p.optionSerial}  ${m.onHand}  ${m.expected}  ${m.row.current}  ${m.row.unshipped}`);
+      }
+      if (onHandMismatch.length > 50) d.log(`   … 외 ${onHandMismatch.length - 50}개`);
+      if (!checks.acceptOnhandMismatch) {
+        return refuse(
+          d,
+          'init 재고 CSV 가 마지막 sync 에 쓴 그 파일인지 확인한다. 그 뒤 앱이 재고를 움직인 걸 확인했으면 --accept-onhand-mismatch',
+        );
+      }
+      d.log('   ⚠️ --accept-onhand-mismatch 로 진행한다.');
     }
 
     const runId = await insertRun(tx, {
@@ -393,7 +453,7 @@ export async function runApply(d: Deps, stock: StockInput, apply: boolean): Prom
       );
     }
 
-    const { pairs, unpaired } = pairItems(stock.rows, await loadCoreIndex(tx));
+    const { pairs, unpaired } = pairItems(stock.rows, await loadCoreIndex(tx), stock.excludedBarcodes);
     const states = await loadStates(tx);
     const cmp = compareWithState(pairs, states, stock.excludedSerials);
     const blocked = unpaired.length + cmp.missing.length + cmp.skuChanged.length;
@@ -408,6 +468,7 @@ export async function runApply(d: Deps, stock: StockInput, apply: boolean): Prom
         d.log(`\n다른 SKU 로 다시 짝지어진 품목 ${cmp.skuChanged.length}:`);
         for (const c of cmp.skuChanged) d.log(`   ${c.pair.optionSerial}  ${c.state.skuId} → ${c.pair.skuId}`);
       }
+      d.log(PAIR_HINT);
       return refuse(d, `짝 못 지은·사라진·SKU 가 바뀐 품목 ${blocked}개 — 짝 표를 고칠 때까지 반영하지 않는다`);
     }
 
@@ -589,7 +650,6 @@ export async function runClose(
         sellmateUnshipped: item.sellmateUnshipped,
         uploadedCurrent,
         refUnshipped,
-        closeVerdict: item.closeVerdict,
       });
       const { verdict, correctedCurrent } = judgeClose({ uploadedCurrent, refUnshipped, now, fixPending });
       const a: Accept = accept.landed.includes(item.optionSerial)
@@ -621,8 +681,11 @@ export async function runClose(
       );
       d.log('   옵션정보일련번호  판정  올린현재재고  기준미발송  지금현재재고  지금미발송  고친값');
       for (const j of failed) {
+        // shipped_before_upload 와 «apply 때 미발송이던 주문의 마켓 취소» 는 숫자 모양(Δc=0, Δu<0)이 같다 — 사람이 가른다
+        const label =
+          j.verdict === 'shipped_before_upload' ? 'shipped_before_upload(업로드 전 출고 또는 마켓 취소)' : j.verdict;
         d.log(
-          `   ${j.item.optionSerial}  ${j.verdict}  ${j.uploadedCurrent}  ${j.refUnshipped}  ` +
+          `   ${j.item.optionSerial}  ${label}  ${j.uploadedCurrent}  ${j.refUnshipped}  ` +
             `${j.now?.current ?? '-'}  ${j.now?.unshipped ?? '-'}  ${j.corrected ?? '-'}`,
         );
       }
@@ -633,10 +696,15 @@ export async function runClose(
           fixFile = path.join(d.outDir, `sellmate-reconcile-${run.id}-fix.csv`);
           fs.mkdirSync(d.outDir, { recursive: true });
           writeUploadCsv(fixFile, lines);
-          d.log(`\n고친 업로드 파일 ${lines.length}품목: ${fixFile} — 올리고 다시 받아 close 를 다시 돌린다.`);
+          d.log(`\n고친 업로드 파일 ${lines.length}품목: ${fixFile}`);
         } else {
           d.log(`\n(DRY-RUN) --apply 면 고친 업로드 파일 ${lines.length}품목을 쓰고 비교 기준을 바꾼다.`);
         }
+        d.log(
+          `업로드 전 출고 또는 마켓 취소 ${fixes.length}품목(${fixes.map((f) => f.serial).join(', ')}) — 셀메이트 주문 목록에서 확인:\n` +
+            '   · 출고였으면 fix 파일을 올리고 재고 현황을 다시 받아 close\n' +
+            '   · 취소였으면 fix 를 올리지 말고 새로 받은 CSV 로 close --accept-landed=<품목> (취소분은 다음 apply 가 core 에 더한다)',
+        );
       }
       d.log(
         '\n원인을 알고 그대로 닫으려면 품목을 지목한다: --accept-landed=<업로드는 먹음> / --accept-not-landed=<업로드가 안 먹음>',
@@ -725,9 +793,6 @@ async function handedOverFromOrders(
     throw new RefusedError(`미발송 주문 파일 오류 ${errors.length}건 — 추정하지 않는다`);
   }
   console.log(`📄 미발송 주문 파일: 자사몰(판매처 "${ownMallChannel}") 주문 ${displayIds.length}건`);
-  if (displayIds.length === 0) {
-    console.log('   ⚠️ 자사몰 주문이 0건이다 — 판매처 이름(--own-mall-channel)이 맞는지 확인한다.');
-  }
   const resolved = await resolveMedusaOrderIds(medusa, displayIds);
   const out: { displayId: number; medusaOrderId: string }[] = [];
   const unresolved: number[] = [];
@@ -746,7 +811,8 @@ async function handedOverFromOrders(
 
 const USAGE =
   '사용: evening-reconcile <pair|apply|close> <재고 CSV> [--apply] [--accept-landed=…] [--accept-not-landed=…]\n' +
-  '      evening-reconcile init <재고 CSV> --cutover-at=<T> --sellmate-orders=<파일> --own-mall-channel=<판매처> [--apply]\n' +
+  '      evening-reconcile init <재고 CSV> --cutover-at=<T> --sellmate-orders=<파일> --own-mall-channel=<판매처>\n' +
+  '                             [--accept-onhand-mismatch] [--no-handed-over-orders] [--apply]\n' +
   '      evening-reconcile status';
 
 async function main(): Promise<void> {
@@ -782,7 +848,10 @@ async function main(): Promise<void> {
         const stock = await readStockCsv(stockFile);
         medusa = postgres(medusaUrl, { max: 2, onnotice: () => undefined });
         const handedOver = await handedOverFromOrders(medusa, args.ordersFile, args.ownMallChannel);
-        outcome = await runInit({ ...d, medusa }, stock, handedOver, args.cutoverAt, args.apply);
+        outcome = await runInit({ ...d, medusa }, stock, handedOver, args.cutoverAt, args.apply, {
+          acceptOnhandMismatch: args.acceptOnhandMismatch,
+          noHandedOverOrders: args.noHandedOverOrders,
+        });
       } else {
         const stock = await readStockCsv(stockFile);
         console.log(

@@ -17,7 +17,7 @@ export type CloseInput = {
   refUnshipped: number;
   now: { current: number; unshipped: number } | null;
   /**
-   * 직전 닫기 시도가 고친 CSV 를 만들며 비교 기준을 바꿨고 그 뒤로 아직 통과하지 못했다(isFixPending).
+   * 이 회차의 앞선 닫기 시도가 고친 CSV 를 만들며 비교 기준을 바꿨다(isFixPending).
    * 그 상태의 «현재만 늘었다»는 반품이 아니라 «고친 파일을 아직 안 올렸다»와 구별되지 않으므로 ✗ 로 본다.
    */
   fixPending?: boolean;
@@ -49,24 +49,19 @@ export function judgeClose(i: CloseInput): { verdict: CloseVerdict; correctedCur
 }
 
 /**
- * 회차 품목의 비교 기준이 고친 CSV 로 바뀌었고(apply 때 올린 값·받을 때 미발송과 다르다) 그 뒤 아직 통과 판정을 받지 못했나.
- * 저장된 판정이 ✗ 인 동안은 계속 true — 고친 파일을 안 올린 채 두 번, 세 번 다시 닫아도 반품으로 통과하지 않는다.
+ * 회차 품목의 비교 기준이 고친 CSV 로 바뀌었나(apply 때 올린 값·받을 때 미발송과 다르다).
+ * 한 번 바뀌면 회차가 닫힐 때까지 true 다. 그 품목이 한 번 통과했더라도, 다른 품목 때문에 회차가 열린 채 옛 업로드 파일을
+ * 다시 올리면 «현재만 늘었다» 가 되어 반품과 구별되지 않는다 — 그래서 통과 여부로 풀어 주지 않는다.
  */
 export function isFixPending(item: {
   uploadAvail: number;
   sellmateUnshipped: number;
   uploadedCurrent: number;
   refUnshipped: number;
-  closeVerdict: string | null;
 }): boolean {
-  const rewritten =
-    item.uploadedCurrent !== item.uploadAvail + item.sellmateUnshipped || item.refUnshipped !== item.sellmateUnshipped;
-  const passed = item.closeVerdict !== null && isOkVerdictName(item.closeVerdict);
-  return rewritten && !passed;
-}
-
-function isOkVerdictName(v: string): boolean {
-  return v === 'ok_new_orders' || v === 'ok_shipped_after' || v === 'ok_return_after';
+  return (
+    item.uploadedCurrent !== item.uploadAvail + item.sellmateUnshipped || item.refUnshipped !== item.sellmateUnshipped
+  );
 }
 
 export function isOkVerdict(v: CloseVerdict): boolean {

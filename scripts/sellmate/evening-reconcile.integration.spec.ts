@@ -65,6 +65,9 @@ function stock(at: string, rows: readonly Row[]): StockInput {
 }
 
 const T = new Date('2026-11-17T00:00:00Z');
+/** 대부분의 케이스는 init 입력 확인(ON_HAND 대조·넘긴 주문 0건)과 무관한 숫자를 쓴다 — 확인 자체는 'init 입력 확인' 블록이 본다 */
+const SKIP_INIT_CHECKS = { acceptOnhandMismatch: true, noHandedOverOrders: true };
+const NO_SKIP = { acceptOnhandMismatch: false, noHandedOverOrders: false };
 
 describeIfDb('evening-reconcile (DB integration)', () => {
   jest.setTimeout(120_000);
@@ -157,7 +160,7 @@ describeIfDb('evening-reconcile (DB integration)', () => {
   /** init: A S=5(현재 5, 미발송 0), B S=3(현재 4, 미발송 1). 넘긴 주문 없음 */
   const INIT_STOCK = () => stock('20261117_090000', [row(A, 5, 0), row(B, 4, 1)]);
   async function init(): Promise<void> {
-    expect((await runInit(d, INIT_STOCK(), [], T, true)).exitCode).toBe(0);
+    expect((await runInit(d, INIT_STOCK(), [], T, true, SKIP_INIT_CHECKS)).exitCode).toBe(0);
     lines.length = 0; // 이어지는 명령의 출력만 보게
   }
   /** 첫 apply: A 에 마켓 주문 2(미발송 0→2), B 는 그대로 */
@@ -189,7 +192,7 @@ describeIfDb('evening-reconcile (DB integration)', () => {
   describe('init', () => {
     it('1. dry-run 은 테이블·원장 행 수를 바꾸지 않는다', async () => {
       const before = await tableCounts();
-      const out = await runInit(d, INIT_STOCK(), [], T, false);
+      const out = await runInit(d, INIT_STOCK(), [], T, false, SKIP_INIT_CHECKS);
       expect(out.exitCode).toBe(0);
       expect(await tableCounts()).toEqual(before);
     });
@@ -198,7 +201,7 @@ describeIfDb('evening-reconcile (DB integration)', () => {
       const medusaOrderId = 'TEST-M-' + uid();
       const so = await seedSalesOrder(sql, medusaOrderId);
       const input = stock('20261117_090000', [row(A, 3, 5), row(B, 4, 1)]);
-      const out = await runInit(d, input, [{ displayId: 101, medusaOrderId }], T, true);
+      const out = await runInit(d, input, [{ displayId: 101, medusaOrderId }], T, true, SKIP_INIT_CHECKS);
 
       expect(out.exitCode).toBe(0);
       expect(await state(A.sku)).toEqual({ baseline: -2, carry: 2, frozen: false });
@@ -212,7 +215,14 @@ describeIfDb('evening-reconcile (DB integration)', () => {
     it('3. 두 번째 init 은 1 로 끝나고 쓰지 않는다', async () => {
       await init();
       const before = await tableCounts();
-      const out = await runInit(d, stock('20261117_100000', [row(A, 5, 0), row(B, 4, 1)]), [], T, true);
+      const out = await runInit(
+        d,
+        stock('20261117_100000', [row(A, 5, 0), row(B, 4, 1)]),
+        [],
+        T,
+        true,
+        SKIP_INIT_CHECKS,
+      );
       expect(out.exitCode).toBe(1);
       expect(await tableCounts()).toEqual(before);
     });
@@ -220,10 +230,49 @@ describeIfDb('evening-reconcile (DB integration)', () => {
     it('core 판매주문을 못 찾은 넘긴 주문이 있으면 1 로 끝나고 쓰지 않는다', async () => {
       const before = await tableCounts();
       const missing = 'TEST-M-NONE-' + uid();
-      const out = await runInit(d, INIT_STOCK(), [{ displayId: 7, medusaOrderId: missing }], T, true);
+      const out = await runInit(d, INIT_STOCK(), [{ displayId: 7, medusaOrderId: missing }], T, true, SKIP_INIT_CHECKS);
       expect(out.exitCode).toBe(1);
       expect(await tableCounts()).toEqual(before);
       expect(lines.join('\n')).toContain(missing);
+    });
+  });
+
+  describe('init 입력 확인', () => {
+    // 부천에 A 10, B 5. 마지막 sync 가 넣은 값과 맞는 CSV: A(10, 0) → 10, B(6, 1) → 5
+    const matching = () => stock('20261117_090000', [row(A, 10, 0), row(B, 6, 1)]);
+    async function handedOver(): Promise<{ displayId: number; medusaOrderId: string }[]> {
+      const medusaOrderId = 'TEST-M-' + uid();
+      await seedSalesOrder(sql, medusaOrderId);
+      return [{ displayId: 1, medusaOrderId }];
+    }
+
+    it('맞는 CSV·넘긴 주문이 있으면 넘기기 플래그 없이 진행한다', async () => {
+      expect((await runInit(d, matching(), await handedOver(), T, true, NO_SKIP)).exitCode).toBe(0);
+    });
+
+    it('부천 ON_HAND 가 max(0, S) 와 다르면 dry-run 도 목록을 찍고 1, --apply 는 쓰지 않는다', async () => {
+      const input = stock('20261117_090000', [row(A, 5, 0), row(B, 6, 1)]);
+      const ho = await handedOver();
+      const before = await tableCounts();
+      expect((await runInit(d, input, ho, T, false, NO_SKIP)).exitCode).toBe(1);
+      expect(lines.join('\n')).toContain(A.serial);
+      expect(lines.join('\n')).not.toContain(`   ${B.serial}  `);
+      expect((await runInit(d, input, ho, T, true, NO_SKIP)).exitCode).toBe(1);
+      expect(await tableCounts()).toEqual(before);
+    });
+
+    it('--accept-onhand-mismatch 면 다른 품목이 있어도 진행한다', async () => {
+      const input = stock('20261117_090000', [row(A, 5, 0), row(B, 6, 1)]);
+      const out = await runInit(d, input, await handedOver(), T, true, { ...NO_SKIP, acceptOnhandMismatch: true });
+      expect(out.exitCode).toBe(0);
+      expect(await state(A.sku)).toEqual({ baseline: 5, carry: 0, frozen: false });
+    });
+
+    it('넘긴 자사몰 주문이 0건이면 1, --no-handed-over-orders 면 진행한다', async () => {
+      const before = await tableCounts();
+      expect((await runInit(d, matching(), [], T, true, NO_SKIP)).exitCode).toBe(1);
+      expect(await tableCounts()).toEqual(before);
+      expect((await runInit(d, matching(), [], T, true, { ...NO_SKIP, noHandedOverOrders: true })).exitCode).toBe(0);
     });
   });
 
@@ -332,7 +381,7 @@ describeIfDb('evening-reconcile (DB integration)', () => {
 
     it('12. sellmate-handover 이벤트가 있으면 apply·init 은 1', async () => {
       await applyStockDelta(sql, { skuId: B.sku, delta: 1, source: 'sellmate-handover' });
-      expect((await runInit(d, INIT_STOCK(), [], T, true)).exitCode).toBe(1);
+      expect((await runInit(d, INIT_STOCK(), [], T, true, SKIP_INIT_CHECKS)).exitCode).toBe(1);
       expect((await tableCounts()).runs).toBe(0);
 
       await sql`DELETE FROM stock_events WHERE reason = 'sellmate-handover'`;
@@ -344,7 +393,9 @@ describeIfDb('evening-reconcile (DB integration)', () => {
     });
 
     it('13. init 뒤 새로 짝지어진 품목은 기준값 S·이월 미발송으로 시작해 같은 회에 미발송만큼 core 에서 뺀다', async () => {
-      expect((await runInit(d, stock('20261117_090000', [row(A, 5, 0)]), [], T, true)).exitCode).toBe(0);
+      expect((await runInit(d, stock('20261117_090000', [row(A, 5, 0)]), [], T, true, SKIP_INIT_CHECKS)).exitCode).toBe(
+        0,
+      );
       lines.length = 0;
       // B: 현재 2, 미발송 3 → S = −1. core 5 는 그 미발송 3 과 상계된 적이 없다
       const out = await runApply(d, stock('20261117_180000', [row(A, 5, 0), row(B, 2, 3)]), true);
@@ -361,7 +412,9 @@ describeIfDb('evening-reconcile (DB integration)', () => {
     });
 
     it('새 품목의 미발송이 여유보다 많으면 여유만큼 빼고 나머지는 이월로 둔다', async () => {
-      expect((await runInit(d, stock('20261117_090000', [row(A, 5, 0)]), [], T, true)).exitCode).toBe(0);
+      expect((await runInit(d, stock('20261117_090000', [row(A, 5, 0)]), [], T, true, SKIP_INIT_CHECKS)).exitCode).toBe(
+        0,
+      );
       const out = await runApply(d, stock('20261117_180000', [row(A, 5, 0), row(B, 0, 7)]), true);
       expect(out.exitCode).toBe(0);
       expect(await onHand(B.sku)).toBe(0);
@@ -496,6 +549,63 @@ describeIfDb('evening-reconcile (DB integration)', () => {
       expect(done.exitCode).toBe(0);
       expect(await state(A.sku)).toEqual({ baseline: 8, carry: 0, frozen: false });
       expect((await runs()).map((r) => r.status)).toEqual(['closed', 'closed']);
+    });
+
+    it('F1. 업로드 전 «마켓 취소» 였으면 fix 를 올리지 않고 --accept-landed 로 닫고, 다음 apply 가 +1 을 더한다', async () => {
+      await initAndApply();
+      // A: apply 때 미발송 2 중 1 이 업로드 전에 마켓에서 취소됐다(현재 10 그대로, 미발송 1) — 출고와 숫자 모양이 같다
+      expect(
+        (await runClose(d, stock('20261117_183000', [row(A, 10, 1), row(B, 6, 1)]), noAccept, true)).exitCode,
+      ).toBe(1);
+      expect(lines.join('\n')).toContain('업로드 전 출고 또는 마켓 취소');
+      expect(lines.join('\n')).toContain('--accept-landed');
+
+      const out = await runClose(
+        d,
+        stock('20261117_184000', [row(A, 10, 1), row(B, 6, 1)]),
+        { landed: [A.serial], notLanded: [] },
+        true,
+      );
+      expect(out.exitCode).toBe(0);
+      expect(await state(A.sku)).toEqual({ baseline: 8, carry: 0, frozen: false }); // B = U
+
+      const next = await runApply(d, stock('20261118_180000', [row(A, 10, 1), row(B, 6, 1)]), true);
+      expect(next.exitCode).toBe(0);
+      expect(await onHand(A.sku)).toBe(9); // 8 + 취소 1
+      expect(await reconcileEvents()).toEqual(
+        expect.arrayContaining([{ sku_id: A.sku, transition_type: 'ADJUST_UP', quantity: 1 }]),
+      );
+    });
+
+    it('F2. 한 번 통과한 품목도 회차가 열린 채면 옛 업로드 파일 재업로드(Δc=+1, Δu=0)를 ✗ 로 본다', async () => {
+      await initAndApply();
+      const verdictA = async () =>
+        (
+          await sql`
+            SELECT i.close_verdict FROM sellmate_reconcile_items i
+            JOIN sellmate_reconcile_runs r ON r.id = i.run_id
+            WHERE r.kind = 'apply' AND i.option_serial = ${A.serial}`
+        )[0].close_verdict;
+      // 1차: A 업로드 전 1 출고 → 고친 파일(9 / 기준 미발송 1)
+      expect(
+        (await runClose(d, stock('20261117_183000', [row(A, 10, 1), row(B, 6, 1)]), noAccept, true)).exitCode,
+      ).toBe(1);
+      // 2차: A 는 고친 파일이 먹어 통과, B 는 업로드가 안 먹어(현재 3) 회차가 열린 채
+      expect((await runClose(d, stock('20261117_184000', [row(A, 9, 1), row(B, 3, 1)]), noAccept, true)).exitCode).toBe(
+        1,
+      );
+      expect(await verdictA()).toBe('ok_new_orders');
+      // 3차: 누군가 옛 업로드 파일을 다시 올렸다(A 현재 10). B 는 지목해 넘긴다
+      const third = await runClose(
+        d,
+        stock('20261117_185000', [row(A, 10, 1), row(B, 3, 1)]),
+        { landed: [], notLanded: [B.serial] },
+        true,
+      );
+      expect(third.exitCode).toBe(1);
+      expect(await verdictA()).toBe('mismatch');
+      expect((await runs()).map((r) => r.status)).toEqual(['closed', 'awaiting_close']);
+      expect(await state(A.sku)).toEqual({ baseline: 5, carry: 0, frozen: false });
     });
 
     it('10. --accept-not-landed 로 닫으면 그 품목 기준값 = apply 의 S', async () => {

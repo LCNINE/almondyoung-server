@@ -81,15 +81,13 @@ describe('고친 CSV 를 기다리는 품목 (fixPending)', () => {
       judgeClose({ uploadedCurrent: 9, refUnshipped: 1, now: { current: 8, unshipped: 0 }, fixPending: true }),
     ).toEqual({ verdict: 'ok_shipped_after', correctedCurrent: null });
   });
-  it('isFixPending: 기준을 바꿨고 그 뒤 통과 판정이 없으면 true', () => {
+  it('isFixPending: 비교 기준을 바꿨으면 true, 안 바꿨으면 false', () => {
     const base = { uploadAvail: 8, sellmateUnshipped: 2 };
-    expect(isFixPending({ ...base, uploadedCurrent: 10, refUnshipped: 2, closeVerdict: 'mismatch' })).toBe(false);
-    expect(isFixPending({ ...base, uploadedCurrent: 9, refUnshipped: 1, closeVerdict: 'shipped_before_upload' })).toBe(
-      true,
-    );
-    // 고친 파일을 안 올린 채 다시 닫아 mismatch 가 저장돼도 여전히 기다린다
-    expect(isFixPending({ ...base, uploadedCurrent: 9, refUnshipped: 1, closeVerdict: 'mismatch' })).toBe(true);
-    expect(isFixPending({ ...base, uploadedCurrent: 9, refUnshipped: 1, closeVerdict: 'ok_new_orders' })).toBe(false);
+    expect(isFixPending({ ...base, uploadedCurrent: 10, refUnshipped: 2 })).toBe(false);
+    expect(isFixPending({ ...base, uploadedCurrent: 9, refUnshipped: 1 })).toBe(true);
+    // 판정은 보지 않는다 — 그 품목이 한 번 통과(ok_new_orders)한 뒤에도 회차가 열려 있는 한 기다린다.
+    // 옛 업로드 파일을 다시 올리면 «현재만 늘었다» 가 되기 때문이다
+    expect(isFixPending({ ...base, uploadedCurrent: 9, refUnshipped: 2 })).toBe(true);
   });
 });
 

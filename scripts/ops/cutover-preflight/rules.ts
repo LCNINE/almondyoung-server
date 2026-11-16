@@ -221,7 +221,7 @@ export function judgeReconcile(f: ReconcileFacts, now: Date): Verdict[] {
       out.push({
         level: 'bad',
         msg: `기준값 T(${f.initCutoverAt.toISOString()}) ≠ 예약 투영 T(${f.adapterCutoverAt?.toISOString() ?? '비어 있음'})`,
-        fix: '두 T 를 같은 시각으로 맞춘다 — 예약 투영 T 를 고치거나 init 을 다시 한다 (설계 문서의 컷오버 시각 절)',
+        fix: '예약 투영 T 를 기준값 T 로 고친다(#1247). init 의 T 가 틀렸다면 init 은 다시 돌 수 없으니 개발자가 DB 를 손으로 고친다 (설계 문서의 컷오버 시각 절)',
       });
     else out.push({ level: 'ok', msg: '기준값 T 가 예약 투영 T 와 같다' });
   }

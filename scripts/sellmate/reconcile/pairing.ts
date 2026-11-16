@@ -67,7 +67,21 @@ function countBy<T>(items: readonly T[], key: (t: T) => string): Map<string, num
   return counts;
 }
 
-export function pairItems(rows: readonly SellmateStockRow[], core: CoreIndex): { pairs: Pair[]; unpaired: Unpaired[] } {
+/** 사유가 없는 후보는 firstPass 가 skuId 를 늘 채운다. 그 불변식을 캐스트 대신 여기서 확인한다 */
+function skuOf(c: Candidate): string {
+  if (c.skuId === null) throw new Error(`짝 후보에 SKU 가 없다(내부 오류): ${c.row.optionSerial}`);
+  return c.skuId;
+}
+
+/**
+ * excludedBarcodes = 같은 CSV 의 제외 품목(excluded.ts) 바코드. 업로드 키가 바코드라, 짝 품목이 그 바코드를 쓰면
+ * 올릴 때 품절을 지켜야 하는 제외 품목 재고를 덮는다 — barcode_shared 로 막는다.
+ */
+export function pairItems(
+  rows: readonly SellmateStockRow[],
+  core: CoreIndex,
+  excludedBarcodes: ReadonlySet<string>,
+): { pairs: Pair[]; unpaired: Unpaired[] } {
   const candidates = rows.map((row) => firstPass(row, core));
 
   // 두 번째 패스: CSV 전체를 본 뒤에야 알 수 있는 사유. 앞 사유가 이미 있는 품목은 건드리지 않는다.
@@ -76,21 +90,23 @@ export function pairItems(rows: readonly SellmateStockRow[], core: CoreIndex): {
     (c) => c.row.barcode,
   );
   for (const c of candidates) {
-    if (c.reason === null && (sharedBarcodes.get(c.row.barcode) ?? 0) > 1) c.reason = 'barcode_shared';
+    if (c.reason !== null) continue;
+    if ((sharedBarcodes.get(c.row.barcode) ?? 0) > 1 || excludedBarcodes.has(c.row.barcode))
+      c.reason = 'barcode_shared';
   }
 
   for (const c of candidates) {
     if (c.reason !== null || c.matchedBy !== 'code') continue;
     const barcodeSkus = core.skuIdsByBarcode.get(c.row.barcode) ?? [];
-    if (barcodeSkus.length > 0 && !barcodeSkus.includes(c.skuId as string)) c.reason = 'code_barcode_conflict';
+    if (barcodeSkus.length > 0 && !barcodeSkus.includes(skuOf(c))) c.reason = 'code_barcode_conflict';
   }
 
   const sharedSkus = countBy(
     candidates.filter((c) => c.reason === null),
-    (c) => c.skuId as string,
+    (c) => skuOf(c),
   );
   for (const c of candidates) {
-    if (c.reason === null && (sharedSkus.get(c.skuId as string) ?? 0) > 1) c.reason = 'sku_shared';
+    if (c.reason === null && (sharedSkus.get(skuOf(c)) ?? 0) > 1) c.reason = 'sku_shared';
   }
 
   const pairs: Pair[] = [];
@@ -98,7 +114,7 @@ export function pairItems(rows: readonly SellmateStockRow[], core: CoreIndex): {
   for (const c of candidates) {
     const { optionSerial, productSerial, name, barcode } = c.row;
     if (c.reason === null) {
-      pairs.push({ optionSerial, productSerial, name, barcode, skuId: c.skuId as string, matchedBy: c.matchedBy });
+      pairs.push({ optionSerial, productSerial, name, barcode, skuId: skuOf(c), matchedBy: c.matchedBy });
     } else {
       unpaired.push({ optionSerial, productSerial, name, barcode, skuId: c.skuId, reason: c.reason });
     }

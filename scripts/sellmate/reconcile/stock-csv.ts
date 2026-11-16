@@ -24,6 +24,8 @@ export type StockCsv = {
   excluded: Map<string, number>;
   /** 제외된 옵션정보일련번호 */
   excludedSerials: Set<string>;
+  /** 제외된 행의 바코드(unwrapFormula+trim, 빈값 제외) — 같은 바코드의 짝 품목을 올리면 제외 품목 재고를 덮는다 */
+  excludedBarcodes: Set<string>;
   errors: string[];
 };
 
@@ -57,7 +59,13 @@ export function parseSignedInt(raw: string): number | null {
 const cell = (row: string[], idx: number): string => (idx >= 0 ? (row[idx] ?? '').toString() : '');
 
 export function parseReconcileStock(table: string[][], file: string): StockCsv {
-  const result: StockCsv = { rows: [], excluded: new Map(), excludedSerials: new Set(), errors: [] };
+  const result: StockCsv = {
+    rows: [],
+    excluded: new Map(),
+    excludedSerials: new Set(),
+    excludedBarcodes: new Set(),
+    errors: [],
+  };
   if (table.length < 1) throw new Error(`[${path.basename(file)}] 빈 파일입니다.`);
   const header = table[0];
   const cols = detectColumns(header, COLUMN_CANDIDATES, overrides());
@@ -72,7 +80,13 @@ export function parseReconcileStock(table: string[][], file: string): StockCsv {
   for (let i = 1; i < table.length; i++) {
     const row = table[i];
     const optionSerial = cell(row, cols.itemCode).trim();
-    if (!optionSerial) continue;
+    if (!optionSerial) {
+      // 완전히 빈 행만 건너뛴다. 값이 있는데 옵션정보일련번호만 비었으면 조용히 빼지 않는다
+      if (row.some((v) => (v ?? '').toString().trim() !== '')) {
+        result.errors.push(`${path.basename(file)} 행${i + 1}: 옵션정보일련번호가 비었는데 다른 값이 있습니다`);
+      }
+      continue;
+    }
     const productSerial = cell(row, cols.productSerial).trim();
     const name = cell(row, cols.productName).trim();
 
@@ -80,6 +94,8 @@ export function parseReconcileStock(table: string[][], file: string): StockCsv {
     if (reason) {
       result.excluded.set(reason, (result.excluded.get(reason) ?? 0) + 1);
       result.excludedSerials.add(optionSerial);
+      const excludedBarcode = unwrapFormula(cell(row, cols.barcode).trim()).trim();
+      if (excludedBarcode !== '') result.excludedBarcodes.add(excludedBarcode);
       continue;
     }
 

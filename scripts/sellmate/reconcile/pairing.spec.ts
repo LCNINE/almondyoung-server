@@ -16,37 +16,40 @@ const core = (codes: Record<string, string>, barcodes: Record<string, string[]>)
   skuIdsByBarcode: new Map(Object.entries(barcodes)),
 });
 
+/** 제외 품목 바코드가 없는 경우 */
+const pairPlain = (rows: SellmateStockRow[], c: CoreIndex) => pairItems(rows, c, new Set());
+
 describe('pairItems', () => {
   it('code 가 core SKU 와 일치하면 code 로 짝짓는다', () => {
-    const r = pairItems([row('TEST-0001', '8800000000001')], core({ 'TEST-0001': 'skuA' }, {}));
+    const r = pairPlain([row('TEST-0001', '8800000000001')], core({ 'TEST-0001': 'skuA' }, {}));
     expect(r.unpaired).toEqual([]);
     expect(r.pairs).toEqual([expect.objectContaining({ optionSerial: 'TEST-0001', skuId: 'skuA', matchedBy: 'code' })]);
   });
 
   it('code 가 없고 바코드가 core SKU 하나면 barcode 로 짝짓는다', () => {
-    const r = pairItems([row('TEST-0001', '8800000000001')], core({}, { '8800000000001': ['skuB'] }));
+    const r = pairPlain([row('TEST-0001', '8800000000001')], core({}, { '8800000000001': ['skuB'] }));
     expect(r.pairs).toEqual([expect.objectContaining({ skuId: 'skuB', matchedBy: 'barcode' })]);
   });
 
   it('둘 다 없으면 no_core_sku', () => {
-    const r = pairItems([row('TEST-0001', '8800000000001')], core({}, {}));
+    const r = pairPlain([row('TEST-0001', '8800000000001')], core({}, {}));
     expect(r.pairs).toEqual([]);
     expect(r.unpaired).toEqual([expect.objectContaining({ reason: 'no_core_sku', skuId: null })]);
   });
 
   it('바코드가 core SKU 둘이면 core_barcode_ambiguous', () => {
-    const r = pairItems([row('TEST-0001', '8800000000001')], core({}, { '8800000000001': ['skuA', 'skuB'] }));
+    const r = pairPlain([row('TEST-0001', '8800000000001')], core({}, { '8800000000001': ['skuA', 'skuB'] }));
     expect(r.unpaired).toEqual([expect.objectContaining({ reason: 'core_barcode_ambiguous' })]);
   });
 
   it('바코드가 비면 code 가 일치해도 empty_barcode', () => {
-    const r = pairItems([row('TEST-0001', '')], core({ 'TEST-0001': 'skuA' }, {}));
+    const r = pairPlain([row('TEST-0001', '')], core({ 'TEST-0001': 'skuA' }, {}));
     expect(r.pairs).toEqual([]);
     expect(r.unpaired).toEqual([expect.objectContaining({ reason: 'empty_barcode', skuId: 'skuA' })]);
   });
 
   it('셀메이트 두 옵션이 같은 바코드면 둘 다 barcode_shared', () => {
-    const r = pairItems(
+    const r = pairPlain(
       [row('TEST-0001', '8800000000001'), row('TEST-0002', '8800000000001')],
       core({ 'TEST-0001': 'skuA', 'TEST-0002': 'skuB' }, {}),
     );
@@ -54,8 +57,18 @@ describe('pairItems', () => {
     expect(r.unpaired.map((u) => u.reason)).toEqual(['barcode_shared', 'barcode_shared']);
   });
 
-  it('code 로 skuA, 바코드로 skuB 면 code_barcode_conflict', () => {
+  it('제외 품목과 같은 바코드면 barcode_shared — 올리면 제외 품목 재고를 덮는다', () => {
     const r = pairItems(
+      [row('TEST-0001', '8800000000001'), row('TEST-0002', '8800000000002')],
+      core({ 'TEST-0001': 'skuA', 'TEST-0002': 'skuB' }, {}),
+      new Set(['8800000000001']),
+    );
+    expect(r.pairs.map((p) => p.optionSerial)).toEqual(['TEST-0002']);
+    expect(r.unpaired).toEqual([expect.objectContaining({ optionSerial: 'TEST-0001', reason: 'barcode_shared' })]);
+  });
+
+  it('code 로 skuA, 바코드로 skuB 면 code_barcode_conflict', () => {
+    const r = pairPlain(
       [row('TEST-0001', '8800000000001')],
       core({ 'TEST-0001': 'skuA' }, { '8800000000001': ['skuB'] }),
     );
@@ -63,12 +76,12 @@ describe('pairItems', () => {
   });
 
   it('code 는 skuA 이고 바코드가 core 에 없으면 충돌이 아니라 code 일치', () => {
-    const r = pairItems([row('TEST-0001', '8800000000001')], core({ 'TEST-0001': 'skuA' }, {}));
+    const r = pairPlain([row('TEST-0001', '8800000000001')], core({ 'TEST-0001': 'skuA' }, {}));
     expect(r.pairs).toHaveLength(1);
   });
 
   it('두 옵션이 같은 SKU 면 둘 다 sku_shared', () => {
-    const r = pairItems(
+    const r = pairPlain(
       [row('TEST-0001', '8800000000001'), row('TEST-0002', '8800000000002')],
       core({ 'TEST-0001': 'skuA' }, { '8800000000002': ['skuA'] }),
     );
@@ -77,12 +90,12 @@ describe('pairItems', () => {
   });
 
   it('벗겨 저장된 core 바코드 키로 짝지어진다', () => {
-    const r = pairItems([row('TEST-0001', '8800000000001')], core({}, { '8800000000001': ['skuA'] }));
+    const r = pairPlain([row('TEST-0001', '8800000000001')], core({}, { '8800000000001': ['skuA'] }));
     expect(r.pairs).toHaveLength(1);
   });
 
   it('사유가 여럿이면 앞 사유 하나만 적는다', () => {
-    const r = pairItems([row('TEST-0001', '8800000000001'), row('TEST-0002', '8800000000001')], core({}, {}));
+    const r = pairPlain([row('TEST-0001', '8800000000001'), row('TEST-0002', '8800000000001')], core({}, {}));
     expect(r.unpaired.map((u) => u.reason)).toEqual(['no_core_sku', 'no_core_sku']);
   });
 });
