@@ -114,3 +114,16 @@ DATABASE_URL=postgres://... npx tsx scripts/sellmate/load-shelf-positions.ts <cs
 bash scripts/sellmate/run.sh live build-location-master            # dry-run
 bash scripts/sellmate/run.sh live build-location-master --apply    # 반영
 ```
+
+## 바코드 없는 SKU 에 SKU 코드 등록 (`register-missing-barcodes.ts`, #1281)
+
+`sku_barcodes` 행이 하나도 없는 SKU 에 `skus.code` 를 대표 바코드(`is_primary`)로 넣는다. 스테이션 SKU 라벨이 바코드 없이 찍히지 않게 하는 일회성 보충이다.
+**#1356 백필 뒤에** 돌린다(백필이 채울 수 있는 SKU 를 먼저 채워야 이 스크립트가 건드릴 SKU 가 줄어든다). 항상 dry-run 으로 먼저 본다.
+
+- 기본은 dry-run(읽기 전용 트랜잭션). `--apply` 로 반영. 이미 바코드가 있는 SKU 는 건드리지 않고, 그 코드를 다른 SKU 가 쓰면 넣지 않고 충돌로 보고한다. 다시 돌려도 안전하다.
+- core 는 테넌트마다 논리 DB 가 따로라 다른 셀메이트 스크립트와 같게 테넌트 DB 마다 한 번씩 돈다(`run.sh` 의 `DB_NAME`).
+
+```bash
+bash scripts/sellmate/run.sh live register-missing-barcodes            # dry-run
+bash scripts/sellmate/run.sh live register-missing-barcodes --apply    # 반영
+```
