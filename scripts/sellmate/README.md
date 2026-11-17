@@ -128,6 +128,7 @@ bash scripts/sellmate/run.sh live build-location-master --apply    # 반영
 ```bash
 bash scripts/sellmate/run.sh live move-stock-to-shelf --positions-since=<시각>            # dry-run
 bash scripts/sellmate/run.sh live move-stock-to-shelf --positions-since=<시각> --apply    # 반영
+# 판매 창고가 둘 이상이면 --warehouse-id=<부천 창고 id> 를 붙인다
 ```
 
 ## 바코드번호2 백필 (`backfill-barcode2.ts`, #1356)

@@ -70,7 +70,8 @@
 ### 5.2 스크립트 `scripts/sellmate/move-stock-to-shelf.ts`
 
 - 기본 dry-run, `--apply` 로 적용. `DATABASE_URL` 필수.
-- 대상: 판매 창고(`warehouses.is_sellable`)마다 그 창고의 `inbound_default` 로케이션에 있는 `ON_HAND qty > 0` 원장 행. SKU 마다 5.1 로 판정한다.
+- 대상: **창고 하나**(최종 리뷰 반영 — `sku_shelf_positions` 에는 창고 열이 없고 셀메이트 위치는 부천 위치다)의 `inbound_default` 로케이션에 있는 `ON_HAND qty > 0` 원장 행. 창고는 `--warehouse-id`, 없으면 판매 창고가 정확히 하나일 때 그 창고(`build-location-master.ts` 와 같은 규칙). SKU 마다 5.1 로 판정한다.
+- 행은 정해지는 대로 흘려 보낸다 — 200개마다 진행을 찍고, 중간에 죽어도(터널 끊김 등) 그때까지의 요약·CSV 를 남긴다. 고쳐 읽은 코드라 남긴 행에는 꺼져 있던 규칙을 싣고 요약이 규칙별로 센다(현장 확인 뒤 규칙마다 켠다).
 - `move` 인 SKU 의 옮길 수량 = 그 원장 행의 qty 중 **일반 가용분**(`BatchControlledStockGuard` 의 `generallyAvailableQty` — 적치 대기 입고분·배치 통제분 제외). 제외된 나머지는 남기고 사유 `keep: protected` 로 적는다. 일반 가용분이 0 이면 통째로 남긴다.
 - 그 SKU·창고에 진행 중 피킹 배정(`picking_source_allocations`, 활성 작업 항목)이 걸려 있으면 옮기지 않는다(`keep: allocated`). T 직후라 0 이어야 정상이다.
 - 적용은 SKU 하나당 `MovementService.moveImmediately` 한 번(줄 하나). 생성은 `scripts/ops/close-sellmate-csv-inbound.ts` 선례처럼 필요한 의존성만 손으로 만든다(`StockEventStore`·`InventoryIdempotencyService`·sellable 서비스·guard). actor 는 시스템 actor, memo 에 `cutover #1236`.
@@ -83,7 +84,7 @@
 
 ### 5.3 판정 스크립트 고치기
 
-`scripts/ops/cutover-preflight/checks/location.ts` «로케이션 2»의 «위치가 하나인 SKU» 쿼리(`count(distinct position_code) = 1`)와 «둘 이상» 쿼리(`> 1`, 항상 0)를 5.1 함수로 바꾼다 — 행을 읽어 TS 에서 판정하고 사유별로 센다. 범위는 `inbound_default` 로케이션만(지금은 `is_system` 전체라 반품기본존 등이 섞인다). 신선도 기준은 판정 스크립트가 모르므로 `stale` 은 세지 않고, guard 몫(`protected`·`allocated`·`inconsistent`)도 세지 않는다 — 그건 이 스크립트의 출력이 정본이다. ◆(당일 처리)는 «5.1 이 `move` 로 판정한 SKU 가 입고기본존에 남았다»이고 문구에 스크립트 명령을 적는다. `--after-cutover` 에서는 앱 입고분이 다시 잡히므로 ◆ 가 아니라 정보로 낮춘다 **(Claude 판단)**.
+`scripts/ops/cutover-preflight/checks/location.ts` «로케이션 2»의 «위치가 하나인 SKU» 쿼리(`count(distinct position_code) = 1`)와 «둘 이상» 쿼리(`> 1`, 항상 0)를 5.1 함수로 바꾼다 — 행을 읽어 TS 에서 판정하고 사유별로 센다. 범위는 `inbound_default` 로케이션만(지금은 `is_system` 전체라 반품기본존 등이 섞인다). 신선도 기준은 판정 스크립트가 모르므로 `stale` 은 세지 않고, guard 몫(`protected`·`allocated`·`inconsistent`)도 세지 않는다 — 그건 이 스크립트의 출력이 정본이다. ◆(당일 처리)는 «5.1 이 `move` 로 판정한 SKU 가 입고기본존에 남았다»이고 문구에 스크립트 명령을 적는다. 컷오버 뒤(`--after-cutover`)에는 앱 입고분이 다시 잡히므로 남은 것만으로는 실패가 아니다. 다만 이동 스크립트가 돈 흔적(`movement_jobs.memo = 'cutover #1236'`)이 없으면 ✗ 로 센다 — 당일에 스크립트를 빼먹은 것을 잡는다(최종 리뷰 반영). 흔적이 있으면 정보.
 
 ### 5.4 테스트
 
@@ -92,7 +93,7 @@
 
 ## 6. 운영
 
-- 당일 순서 2: `clear-reservations` → `sync-stock` → `load-shelf-positions` 마지막 실행 → **이 스크립트 dry-run → 숫자 확인 → `--apply`** → 판정 스크립트 재실행(«로케이션 2» ◆ 0). 남긴 SKU 목록의 사유별 숫자를 본다.
+- 당일 순서 2: `clear-reservations` → `sync-stock` → `load-shelf-positions` 마지막 실행 → **이 스크립트 dry-run → 숫자 확인 → `--apply`** → 판정 스크립트 재실행. «로케이션 2» ◆ 는 0 이 아닐 수 있다 — 판정 스크립트는 guard 몫(적치 대기·배정·불일치)과 낡은 위치·실패를 모르므로, ◆ 수가 스크립트 CSV 의 그 사유 수와 맞는지 본다. 리허설 dry-run 은 apply 보다 훨씬 빠르다(SKU 마다 MOVE 트랜잭션이 없다) — 걸린 시간으로 당일 시간을 짐작하지 않는다.
 - 라이브 dry-run 은 터널이 필요하다 — 사용자가 띄운다. 리허설로 T 전에 dry-run 을 한 번 돌려 사유별 숫자를 본다(쓰기 없음).
 - 배포 무관(스크립트만). 남긴 SKU 목록은 컷오버 뒤 실사 입력이 된다.
 
