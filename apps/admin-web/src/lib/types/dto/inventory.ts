@@ -1781,6 +1781,7 @@ export interface DeliveryProfileDto {
   id: string;
   name: string;
   sourceType: DeliveryProfileSourceType;
+  holderId: string | null;
   avgDeliveryDays: number | null;
   sender: { name: string; phone: string };
   originAddress: DeliveryProfileAddress;
@@ -1795,6 +1796,7 @@ export interface DeliveryProfileDto {
 export interface CreateDeliveryProfileDto {
   name: string;
   sourceType: DeliveryProfileSourceType;
+  holderId?: string;
   avgDeliveryDays?: number;
   sender: { name: string; phone: string };
   originAddress: DeliveryProfileAddress;

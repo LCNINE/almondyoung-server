@@ -9,6 +9,7 @@ import type {
 export type ProfileFormState = {
   name: string;
   sourceType: DeliveryProfileSourceType;
+  holderId: string;
   avgDeliveryDays: string;
   senderName: string;
   senderPhone: string;
@@ -19,6 +20,7 @@ export type ProfileFormState = {
   returnRoadAddress: string;
   returnDetailAddress: string;
   returnPhone: string;
+  returnSameAsOrigin: boolean;
   carrierAccountRef: string;
   modes: FulfillmentMode[];
 };
@@ -29,6 +31,7 @@ export function emptyProfileForm(): ProfileFormState {
   return {
     name: '',
     sourceType: 'in_house',
+    holderId: '',
     avgDeliveryDays: '',
     senderName: '',
     senderPhone: '',
@@ -39,6 +42,7 @@ export function emptyProfileForm(): ProfileFormState {
     returnRoadAddress: '',
     returnDetailAddress: '',
     returnPhone: '',
+    returnSameAsOrigin: true,
     carrierAccountRef: '',
     modes: ['in_house'],
   };
@@ -48,7 +52,9 @@ export function formFromProfile(p: DeliveryProfileDto): ProfileFormState {
   return {
     name: p.name,
     sourceType: p.sourceType,
-    avgDeliveryDays: p.avgDeliveryDays === null ? '' : String(p.avgDeliveryDays),
+    holderId: p.holderId ?? '',
+    avgDeliveryDays:
+      p.avgDeliveryDays === null ? '' : String(p.avgDeliveryDays),
     senderName: p.sender.name,
     senderPhone: p.sender.phone,
     originPostalCode: p.originAddress.postalCode,
@@ -58,6 +64,11 @@ export function formFromProfile(p: DeliveryProfileDto): ProfileFormState {
     returnRoadAddress: p.returnAddress.roadAddress,
     returnDetailAddress: p.returnAddress.detailAddress,
     returnPhone: p.returnAddress.phone ?? '',
+    returnSameAsOrigin:
+      !p.returnAddress.phone &&
+      p.returnAddress.postalCode === p.originAddress.postalCode &&
+      p.returnAddress.roadAddress === p.originAddress.roadAddress &&
+      p.returnAddress.detailAddress === p.originAddress.detailAddress,
     carrierAccountRef: p.carrierAccountRef ?? '',
     modes: p.supportedFulfillmentModes,
   };
@@ -75,11 +86,19 @@ const REQUIRED: Array<keyof ProfileFormState> = [
   'carrierAccountRef',
 ];
 
+const RETURN_KEYS: Array<keyof ProfileFormState> = [
+  'returnPostalCode',
+  'returnRoadAddress',
+];
+
 export function validateProfileForm(s: ProfileFormState): ProfileFormErrors {
   const errors: ProfileFormErrors = {};
   for (const key of REQUIRED) {
+    if (s.returnSameAsOrigin && RETURN_KEYS.includes(key)) continue;
+
     const value = s[key];
-    if (typeof value === 'string' && !value.trim()) errors[key] = '필수 항목입니다.';
+    if (typeof value === 'string' && !value.trim())
+      errors[key] = '필수 항목입니다.';
   }
   if (s.modes.length === 0) errors.modes = '이행 방식을 하나 이상 고르세요.';
   if (s.avgDeliveryDays.trim() && !/^\d+$/.test(s.avgDeliveryDays.trim())) {
@@ -99,6 +118,8 @@ function origin(s: ProfileFormState) {
   };
 }
 function returnAddress(s: ProfileFormState) {
+  if (s.returnSameAsOrigin) return origin(s);
+
   return {
     postalCode: s.returnPostalCode.trim(),
     roadAddress: s.returnRoadAddress.trim(),
@@ -111,7 +132,10 @@ export function toCreatePayload(s: ProfileFormState): CreateDeliveryProfileDto {
   return {
     name: s.name.trim(),
     sourceType: s.sourceType,
-    ...(s.avgDeliveryDays.trim() ? { avgDeliveryDays: Number(s.avgDeliveryDays.trim()) } : {}),
+    ...(s.holderId ? { holderId: s.holderId } : {}),
+    ...(s.avgDeliveryDays.trim()
+      ? { avgDeliveryDays: Number(s.avgDeliveryDays.trim()) }
+      : {}),
     sender: sender(s),
     originAddress: origin(s),
     returnAddress: returnAddress(s),
@@ -120,25 +144,41 @@ export function toCreatePayload(s: ProfileFormState): CreateDeliveryProfileDto {
   };
 }
 
-const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
+const same = (a: unknown, b: unknown) =>
+  JSON.stringify(a) === JSON.stringify(b);
 
 /** 바뀐 필드만. 중첩 객체는 한 칸만 바뀌어도 통째로 보낸다(core PATCH 계약). */
-export function toUpdatePayload(before: DeliveryProfileDto, s: ProfileFormState): UpdateDeliveryProfileDto {
+export function toUpdatePayload(
+  before: DeliveryProfileDto,
+  s: ProfileFormState
+): UpdateDeliveryProfileDto {
   const next = toCreatePayload(s);
   const beforeForm = toCreatePayload(formFromProfile(before));
   const payload: UpdateDeliveryProfileDto = {};
   if (next.name !== beforeForm.name) payload.name = next.name;
-  if (next.sourceType !== beforeForm.sourceType) payload.sourceType = next.sourceType;
+  if (next.sourceType !== beforeForm.sourceType)
+    payload.sourceType = next.sourceType;
+  if (next.holderId !== beforeForm.holderId) payload.holderId = next.holderId;
   // 비우면(undefined) 이전 값이 있었을 때만 null(지우기)을 보낸다 — 둘 다 undefined 면 바뀐 게 없다.
   if (next.avgDeliveryDays !== beforeForm.avgDeliveryDays) {
     payload.avgDeliveryDays = next.avgDeliveryDays ?? null;
   }
   if (!same(next.sender, beforeForm.sender)) payload.sender = next.sender;
-  if (!same(next.originAddress, beforeForm.originAddress)) payload.originAddress = next.originAddress;
-  if (!same(next.returnAddress, beforeForm.returnAddress)) payload.returnAddress = next.returnAddress;
-  if (next.carrierAccountRef !== beforeForm.carrierAccountRef) payload.carrierAccountRef = next.carrierAccountRef;
-  if (!same(next.supportedFulfillmentModes, beforeForm.supportedFulfillmentModes)) {
+  if (!same(next.originAddress, beforeForm.originAddress))
+    payload.originAddress = next.originAddress;
+  if (!same(next.returnAddress, beforeForm.returnAddress))
+    payload.returnAddress = next.returnAddress;
+  if (next.carrierAccountRef !== beforeForm.carrierAccountRef)
+    payload.carrierAccountRef = next.carrierAccountRef;
+  if (
+    !same(next.supportedFulfillmentModes, beforeForm.supportedFulfillmentModes)
+  ) {
     payload.supportedFulfillmentModes = next.supportedFulfillmentModes;
   }
   return payload;
+}
+
+/** 복제: 같은 값으로 새 프로필을 만든다. 이름만 겹치지 않게 바꾼다. */
+export function copiedProfileForm(p: DeliveryProfileDto): ProfileFormState {
+  return { ...formFromProfile(p), name: `${p.name} 사본` };
 }
