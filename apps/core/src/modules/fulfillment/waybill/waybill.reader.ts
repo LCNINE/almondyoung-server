@@ -28,18 +28,18 @@ export class WaybillReader {
     return canonicalFulfillmentRequestHash(recipientSnapshot);
   }
 
-  /** 화주가 연결된 프로필만 송장 보내는 분을 바꾼다. 자사 프로필은 지금처럼 HANJIN_SENDER_* 로 나간다 */
+  /** 배송 프로필은 테넌트 DB 에 있다. HANJIN_SENDER_* 는 인스턴스 하나에 한 벌이라 다른 테넌트 이름이 찍힌다 */
   private async loadProfileSender(trx: DbTx, profileId: string | null): Promise<ProfileSender | null> {
     if (!profileId) return null;
 
     const p = inventoryTables.deliveryProfiles;
     const [profile] = await trx
-      .select({ holderId: p.holderId, sender: p.senderSnapshot })
+      .select({ sender: p.senderSnapshot, origin: p.originAddressSnapshot })
       .from(p)
       .where(eq(p.id, profileId))
       .limit(1);
 
-    return profile?.holderId ? profileSenderOf(profile.sender) : null;
+    return profile ? profileSenderOf(profile.sender, profile.origin) : null;
   }
 
   async loadIssueContext(trx: DbTx, shipmentId: string): Promise<IssueContext> {

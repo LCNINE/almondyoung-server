@@ -3658,6 +3658,8 @@ export const waybills = pgTable(
     trackingNo: varchar('tracking_no', { length: 128 }),
     custOrdNo: varchar('cust_ord_no', { length: 30 }),
     labelData: jsonb('label_data'),
+    // 발급 때 한진에 보낸 보내는 분. 재시도·라벨이 이 값을 다시 쓴다(발급 뒤 프로필을 고쳐도 등록값과 어긋나지 않게)
+    senderSnapshot: jsonb('sender_snapshot'),
     manifestVersion: integer('manifest_version').notNull(),
     recipientHash: varchar('recipient_hash', { length: 64 }).notNull(),
     lastError: text('last_error'),

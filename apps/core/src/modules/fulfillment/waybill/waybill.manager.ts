@@ -98,6 +98,7 @@ export class WaybillManager {
             custOrdNo: req.custOrdNo,
             manifestVersion: ctx.manifestVersion,
             recipientHash: this.reader.recipientHashOf(ctx.recipientSnapshot),
+            senderSnapshot: req.sender,
           });
           return { response: { waybillId: row.id }, resourceType: 'waybill', resourceId: row.id };
         },
@@ -105,7 +106,10 @@ export class WaybillManager {
       .then(async (r) => {
         // 커맨드 밖에서 request 재조립(멱등 replay 시에도 동일). 커맨드 핸들러의 지역변수는 replay 시 실행되지 않아
         // 사용할 수 없다 — drive 는 저장된 pending 행 기준으로 동작하므로 재조립 request 로 충분하다.
-        const ctx = await this.dbService.run((trx) => this.reader.loadIssueContext(trx, shipmentId));
+        const { ctx, stored } = await this.dbService.run(async (trx) => ({
+          ctx: await this.reader.loadIssueContext(trx, shipmentId),
+          stored: (await this.repo.findById(trx, r.waybillId))?.senderSnapshot,
+        }));
         const request = assembleWaybillRequest({
           shipmentId,
           recipientSnapshot: ctx.recipientSnapshot,
@@ -113,6 +117,7 @@ export class WaybillManager {
           config: this.config,
           entrancePassword: ctx.entrancePassword,
           profileSender: ctx.profileSender,
+          storedSender: stored,
         });
         return { waybillId: r.waybillId, request };
       });
@@ -168,6 +173,7 @@ export class WaybillManager {
       config: this.config,
       entrancePassword: ctx.entrancePassword,
       profileSender: ctx.profileSender,
+      storedSender: active.senderSnapshot,
     });
     return this.machine.drive(active.id, request);
   }

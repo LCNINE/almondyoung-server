@@ -33,25 +33,57 @@ export interface AssembleInput {
   /** 송장에만 싣고 저장하지 않는다. shipments.entrance_password 에서 온다. */
   entrancePassword?: string | null;
   profileSender?: ProfileSender | null;
+  /** 이미 발급한 송장의 보내는 분. 있으면 프로필보다 먼저 쓴다 */
+  storedSender?: unknown;
 }
 
-/** jsonb 스냅샷에서 이름이 있을 때만 보내는 분으로 쓴다. 이름 없는 프로필로 빈 보낸분이 찍히지 않게 */
-export function profileSenderOf(snapshot: unknown): ProfileSender | null {
-  const s = (snapshot ?? {}) as Record<string, unknown>; // jsonb 는 unknown 이라 키 접근에 캐스팅이 필요하다. 값 타입은 아래에서 다시 본다
-  const name = typeof s.name === 'string' ? s.name.trim() : '';
+// jsonb 는 unknown 이라 키 접근에 캐스팅이 필요하다. 값 타입은 str 이 다시 본다
+const fieldsOf = (v: unknown) => (v ?? {}) as Record<string, unknown>;
+const str = (v: unknown) => (typeof v === 'string' ? v.trim() : '');
+
+/** 배송 프로필의 보내는 분·출고지 스냅샷. 이름이 없으면 프로필 값을 쓰지 않는다(빈 보낸분이 찍히지 않게) */
+export function profileSenderOf(sender: unknown, origin: unknown): ProfileSender | null {
+  const s = fieldsOf(sender);
+  const o = fieldsOf(origin);
+  const name = str(s.name);
   if (!name) return null;
 
-  return { name, phone: typeof s.phone === 'string' ? s.phone.trim() : '' };
+  return {
+    name,
+    phone: str(s.phone),
+    zip: str(o.postalCode),
+    baseAddress: str(o.roadAddress),
+    detailAddress: str(o.detailAddress),
+  };
 }
 
-/** 프로필 보내는 분이 있으면 이름·전화만 바꾼다. 주소는 출고지(창고)라 HANJIN_SENDER_* 그대로다 */
-export function senderOf(
-  config: HanjinConfig,
-  profileSender: ProfileSender | null | undefined,
-): HanjinConfig['sender'] {
-  if (!profileSender) return config.sender;
+/** 프로필 값이 있으면 그것을, 빈 칸은 HANJIN_SENDER_* 를 쓴다. 주소는 우편번호·도로명이 다 있을 때만 통째로 바꾼다 */
+export function senderOf(config: HanjinConfig, profile: ProfileSender | null | undefined): HanjinConfig['sender'] {
+  if (!profile) return config.sender;
 
-  return { ...config.sender, name: profileSender.name, tel: profileSender.phone || config.sender.tel };
+  const hasAddress = !!profile.zip && !!profile.baseAddress;
+
+  return {
+    name: profile.name,
+    tel: profile.phone || config.sender.tel,
+    zip: hasAddress ? profile.zip : config.sender.zip,
+    baseAddress: hasAddress ? profile.baseAddress : config.sender.baseAddress,
+    detailAddress: hasAddress ? profile.detailAddress : config.sender.detailAddress,
+  };
+}
+
+/** 송장 행에 저장한 보내는 분. 칸이 하나라도 빠졌으면(이 칸이 생기기 전 송장) null */
+export function storedSenderOf(snapshot: unknown): HanjinConfig['sender'] | null {
+  const s = fieldsOf(snapshot);
+  const sender = {
+    name: str(s.name),
+    zip: str(s.zip),
+    baseAddress: str(s.baseAddress),
+    detailAddress: str(s.detailAddress),
+    tel: str(s.tel),
+  };
+
+  return sender.name && sender.zip && sender.baseAddress ? sender : null;
 }
 
 /**
@@ -89,7 +121,7 @@ export function assembleWaybillRequest(input: AssembleInput): WaybillRequest {
       mobile: rc.phone,
       message: composeMessage(rc.deliveryNote, input.entrancePassword),
     },
-    sender: senderOf(input.config, input.profileSender),
+    sender: storedSenderOf(input.storedSender) ?? senderOf(input.config, input.profileSender),
     items,
     commodityName,
     boxType: input.config.boxType,

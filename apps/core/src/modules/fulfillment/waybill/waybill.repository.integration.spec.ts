@@ -34,6 +34,7 @@ describeIfDb('WaybillRepository (DB integration)', () => {
     custOrdNo: 'AYTEST',
     manifestVersion: 1,
     recipientHash: 'a'.repeat(64),
+    senderSnapshot: { name: 'S', zip: '1', baseAddress: 'B', detailAddress: 'D', tel: '02' },
   });
 
   it('pending → allocated CAS only fires from pending', async () => {

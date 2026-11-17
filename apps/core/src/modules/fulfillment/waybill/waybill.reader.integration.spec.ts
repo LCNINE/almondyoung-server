@@ -5,7 +5,7 @@ import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { eq } from 'drizzle-orm';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import { AuditService } from '../../inventory/shared/services/audit.service';
-import { makeDb, makeDbService, seedHolder, wireLogistics, type Wired } from '../services/__support__';
+import { makeDb, makeDbService, wireLogistics, type Wired } from '../services/__support__';
 import { FulfillmentCommandService } from '../services/fulfillment-command.service';
 import { FulfillmentInvariantService } from '../services/fulfillment-invariant.service';
 import { FulfillmentWorkflowGate } from '../services/fulfillment-workflow-gate.service';
@@ -80,24 +80,33 @@ describeIfDb('WaybillReader (DB integration)', () => {
       });
   });
 
-  it('화주가 연결된 배송 프로필이면 그 보내는 분을 싣고, 아니면 비운다', async () => {
+  it('상자 배송 프로필의 보내는 분·출고지를 싣는다', async () => {
     await db
       .transaction(async (tx) => {
         const seed = await seedPlannedShipmentForWaybill(tx as never, deps);
-        expect((await reader.loadIssueContext(tx as never, seed.shipmentId)).profileSender).toBeNull();
-
         const [shipment] = await tx
           .select({ profileId: wmsTables.shipments.shippingProfileId })
           .from(wmsTables.shipments)
           .where(eq(wmsTables.shipments.id, seed.shipmentId));
-        const { holderId } = await seedHolder(tx as never);
         await tx
           .update(wmsTables.deliveryProfiles)
-          .set({ holderId })
+          .set({
+            originAddressSnapshot: {
+              postalCode: '14521',
+              roadAddress: '부천시 평천로832번길 42',
+              detailAddress: '4층',
+            },
+          })
           .where(eq(wmsTables.deliveryProfiles.id, shipment.profileId as string));
 
         const ctx = await reader.loadIssueContext(tx as never, seed.shipmentId);
-        expect(ctx.profileSender).toEqual({ name: 'Sender', phone: '02-0000-0000' });
+        expect(ctx.profileSender).toEqual({
+          name: 'Sender',
+          phone: '02-0000-0000',
+          zip: '14521',
+          baseAddress: '부천시 평천로832번길 42',
+          detailAddress: '4층',
+        });
         throw new Error('rollback');
       })
       .catch((e: unknown) => {
