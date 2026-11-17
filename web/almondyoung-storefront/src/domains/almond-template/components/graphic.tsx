@@ -126,11 +126,15 @@ export function textInkBox(layer: Layer) {
     })
   if (!boxes.length) return null
 
+  // 윤곽선은 글자 가장자리 바깥으로 두께의 절반만큼 묻는다. 뚫어내기 글자는 윤곽선을 그리지 않는다
+  const stroked = layer.stroke && layer.stroke !== "none" && !layer.knockout
+  const half = stroked ? (layer.strokeWidth ?? 0) / 2 : 0
+
   return {
-    x0: Math.min(...boxes.map((b) => b.x0)),
-    y0: Math.min(...boxes.map((b) => b.y0)),
-    x1: Math.max(...boxes.map((b) => b.x1)),
-    y1: Math.max(...boxes.map((b) => b.y1)),
+    x0: Math.min(...boxes.map((b) => b.x0)) - half * ratio,
+    y0: Math.min(...boxes.map((b) => b.y0)) - half,
+    x1: Math.max(...boxes.map((b) => b.x1)) + half * ratio,
+    y1: Math.max(...boxes.map((b) => b.y1)) + half,
   }
 }
 

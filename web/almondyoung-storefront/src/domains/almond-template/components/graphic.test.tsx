@@ -207,5 +207,14 @@ describe("textInkBox", () => {
       x1: 19,
       y1: 11,
     })
+    expect(textInkBox({ ...one, stroke: "#000000", strokeWidth: 2 })).toEqual({
+      x0: -1,
+      y0: 1,
+      x1: 10,
+      y1: 12,
+    })
+    expect(
+      textInkBox({ ...one, stroke: "#000000", strokeWidth: 2, knockout: true })
+    ).toEqual({ x0: 0, y0: 2, x1: 9, y1: 11 })
   })
 })
