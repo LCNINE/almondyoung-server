@@ -28,6 +28,10 @@ const messages = new Map([
   ['SHIPMENT_PROFILE_INCOMPATIBLE', '배송 프로필을 정할 수 없어요'],
   ['SHIPMENT_PROFILE_CONFIGURATION_INCOMPLETE', '배송 프로필 설정이 비어 있어요'],
   ['SHIPMENT_ACTIVE_WORK_ITEM', '이미 다른 배치에 들어 있어요'],
+  [
+    'SHIPMENT_CHANNEL_LINE_IDENTITY_UNTRUSTED',
+    '쇼핑몰 품목 번호가 없거나 맞지 않는 주문이에요 — 다시 시도해도 같으니 담당자에게 알려 주세요',
+  ],
 ]);
 
 // 도메인 예외는 종류별 코드(CONFLICT 등)만 가지므로 waybill 모듈처럼 메시지 앞 `CODE:` 로 세부 코드를 싣는다.

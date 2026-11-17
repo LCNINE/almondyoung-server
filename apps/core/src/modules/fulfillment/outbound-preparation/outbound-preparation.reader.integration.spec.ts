@@ -5,7 +5,7 @@ import { FulfillmentInvariantService } from '../services/fulfillment-invariant.s
 import { ShipmentPlanningService } from '../services/shipment-planning.service';
 import { assembleBoxWithdrawal } from '../services/__support__/box-withdrawal-wiring';
 import { randomUUID } from 'crypto';
-import { count, eq } from 'drizzle-orm';
+import { count, eq, inArray } from 'drizzle-orm';
 import * as postgres from 'postgres';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 import { wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
@@ -376,6 +376,81 @@ describeIfDb('OutboundPreparationReader (DB integration)', () => {
 
       expect(missingProfile.buckets.find(({ bucket }) => bucket === 'needs_info')?.shipments[0].reason).toBe(
         '배송 프로필이 없는 상품이 있어요',
+      );
+    });
+  });
+
+  it('쇼핑몰 품목 번호가 없는 상자는 정보 필요로 두고 사유를 보인다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const base = await consolidationBase(tx);
+      const source = await createConsolidationSource(tx, wired, base, { quantity: 1, customerId: randomUUID() });
+
+      await tx
+        .update(wmsTables.salesOrderLines)
+        .set({ channelOrderItemId: null })
+        .where(eq(wmsTables.salesOrderLines.salesOrderId, source.salesOrderId));
+
+      const summary = await reader.summarize(base.warehouseId, undefined, tx);
+      const needsInfo = summary.buckets.find(({ bucket }) => bucket === 'needs_info');
+
+      expect(summary.buckets.find(({ bucket }) => bucket === 'ready')?.count).toBe(0);
+      expect(needsInfo?.shipments.map(({ shipmentId, reason }) => [shipmentId, reason])).toEqual([
+        [source.shipment.id, '쇼핑몰 품목 번호가 없거나 맞지 않아요'],
+      ]);
+    });
+  });
+
+  it('이어서 할 상자는 마지막 송장 기록의 실패 사유를 보인다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const base = await consolidationBase(tx);
+      const make = () => createConsolidationSource(tx, wired, base, { quantity: 1, customerId: randomUUID() });
+      const rejected = await make();
+      const reissued = await make();
+      const untouched = await make();
+
+      await tx
+        .update(wmsTables.shipments)
+        .set({ status: 'planned' })
+        .where(inArray(wmsTables.shipments.id, [rejected.shipment.id, reissued.shipment.id, untouched.shipment.id]));
+
+      const waybill = (
+        fixture: typeof rejected,
+        values: { status: 'failed' | 'pending'; lastError: string | null; createdAt: Date },
+      ) =>
+        tx.insert(wmsTables.waybills).values({
+          shipmentId: fixture.shipment.id,
+          source: 'carrier',
+          carrier: 'HANJIN',
+          manifestVersion: fixture.shipment.manifestVersion,
+          recipientHash: 'h'.repeat(64),
+          ...values,
+        });
+
+      await waybill(rejected, {
+        status: 'failed',
+        lastError: 'allocate ERROR-01',
+        createdAt: new Date('2026-01-01T00:00:00Z'),
+      });
+      await waybill(reissued, {
+        status: 'failed',
+        lastError: 'allocate ERROR-01',
+        createdAt: new Date('2026-01-01T00:00:00Z'),
+      });
+      await waybill(reissued, { status: 'pending', lastError: null, createdAt: new Date('2026-01-01T00:01:00Z') });
+
+      const summary = await reader.summarize(base.warehouseId, undefined, tx);
+      const reasons = new Map(
+        summary.buckets
+          .find(({ bucket }) => bucket === 'resume')
+          ?.shipments.map(({ shipmentId, reason }) => [shipmentId, reason]),
+      );
+
+      expect(reasons).toEqual(
+        new Map([
+          [rejected.shipment.id, '운송사가 송장 번호를 주지 않았어요 (ERROR-01) — 상자 화면에서 확인해요'],
+          [reissued.shipment.id, '운송사 응답을 확인하지 못했어요 — 상자 화면에서 송장 상태를 확인해요'],
+          [untouched.shipment.id, null],
+        ]),
       );
     });
   });
