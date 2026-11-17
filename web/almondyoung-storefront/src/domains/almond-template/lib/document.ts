@@ -18,7 +18,7 @@ import { CLIPART_IDS, FRAME_IDS, SHAPE_VARIANTS } from "./art-library"
 import { FILE_IMAGE_REF } from "./image-ref"
 import type { PathPoint } from "./path-shape"
 import { LINE_CAPS, type LineCap } from "./line-shape"
-import { fittedFontSize, textExtent } from "../components/graphic"
+import { fittedFontSize, textInkBox } from "../components/graphic"
 import { isAutoTextName, MIN_LAYER_MM, textLayerName } from "./layer"
 
 export type Layer = {
@@ -936,21 +936,13 @@ function issueLabel(layer: Layer) {
   return `'${text.length > 12 ? `${text.slice(0, 12)}…` : text}' 글자`
 }
 
-// 선택 상자가 아니라 실제로 인쇄되는 영역. 글자는 상자보다 좁을 수 있고 회전·뒤집기가 반영된다
+// 선택 상자가 아니라 실제로 인쇄되는 영역. 글자는 글꼴의 실제 잉크 범위이고 회전·뒤집기가 반영된다
 export function printedBox(layer: Layer) {
-  let { x, y, width, height } = layer
-  if (layer.type === "text") {
-    const size = fittedFontSize(layer)
-    const extent = textExtent(layer)
-    width = Math.min(layer.width, extent.width * size)
-    height = Math.min(layer.height, extent.height * size)
-    x =
-      layer.align === "center"
-        ? layer.x + (layer.width - width) / 2
-        : layer.align === "right"
-          ? layer.x + layer.width - width
-          : layer.x
-  }
+  const ink = layer.type === "text" ? textInkBox(layer) : null
+  const x = ink?.x0 ?? layer.x
+  const y = ink?.y0 ?? layer.y
+  const width = ink ? ink.x1 - ink.x0 : layer.width
+  const height = ink ? ink.y1 - ink.y0 : layer.height
 
   const cx = layer.x + layer.width / 2
   const cy = layer.y + layer.height / 2
