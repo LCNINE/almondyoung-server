@@ -58,11 +58,12 @@
 | `move` (목적 코드) | 텍스트가 `exact`·`fixed`·`custom-bin` 으로 읽히고 고쳐 읽은 코드의 로케이션이 있다 |
 | `keep: no-position` | `sku_shelf_positions` 행이 없다 |
 | `keep: unreadable` | `exception` (여러 위치 텍스트 포함) |
+| `keep: unconfirmed` | `fixed`·`custom-bin` 인데 그 규칙의 스위치가 꺼져 있다(아래) |
 | `keep: stale` | 위치 행의 `updated_at` 이 신선도 기준보다 앞이다(T 당일 적재가 다시 쓰지 않았다) |
 | `keep: no-location` | 읽혔지만 그 코드의 활성 standard 로케이션이 창고에 없다 |
 | `keep: elsewhere` | 이 SKU 가 셀메이트 위치와 **다른** standard 로케이션에 이미 ON_HAND 를 가졌다(컷오버 전 앱 적치 등). 옮기면 한 SKU 가 선반 두 곳에 나뉜다 **(Claude 판단)** |
 
-`fixed`(`CC-4-1` → `CC-04-01` 등)·`custom-bin` 을 옮길지는 #1235 의 현장 확인(설계 §7 ①②③)에 달렸다 — **사용자 답 대기.** 확인 전이면 규칙별 스위치로 `keep: unconfirmed` 로 돌린다.
+`fixed`(`CC-4-1` → `CC-04-01` 등)·`custom-bin` 을 옮길지는 #1235 의 현장 확인(설계 §7 ①②③)에 달렸다. 사용자가 2026-11-18 부천에서 확인한다. 그래서 **기본은 `exact` 만 `move`** 이고, 고쳐 읽은 규칙은 규칙별 스위치(`--include-rule=zero-pad,dash-position,custom-bin`)로 켠다. 꺼진 규칙의 SKU 는 `keep: unconfirmed` — 송장에 셀메이트 원문이 찍혀 작업자가 읽을 수 있다. 확인 결과가 «아니다»인 규칙은 #1235 의 `readShelfCode` 에서도 빼야 할 수 있다(로케이션 이름이 자석과 달라진다) — 그건 #1235 의 일이다.
 
 신선도 기준은 `--positions-since=<시각>` 으로 받는다(T 당일 `load-shelf-positions` 를 돌리기 직전 시각). 빠지면 `--apply` 를 거절한다 **(Claude 판단)**.
 
