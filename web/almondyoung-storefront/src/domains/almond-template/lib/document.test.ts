@@ -6,6 +6,7 @@ import {
   hasProduct,
   imageDpi,
   newDesign,
+  outsideSafeArea,
   parseDesign,
   printIssues,
   printWarnings,
@@ -274,6 +275,35 @@ describe("아몬드템플릿", () => {
     expect(printWarnings(design).join("\n")).toContain(
       "권장 350dpi보다 낮아 흐리게 인쇄될 수 있습니다."
     )
+  })
+
+  it("글자 상자가 안전선을 넘어도 실제 글자가 안쪽이면 통과한다", () => {
+    const design = newDesign("mini")
+    const wide = {
+      id: "t",
+      type: "text" as const,
+      name: "글자",
+      text: "가",
+      x: 0,
+      y: 20,
+      width: design.widthMm,
+      height: 5,
+      fill: "#000000",
+      fontSize: 5,
+    }
+    expect(outsideSafeArea(design, { ...wide, align: "center" })).toBe(false)
+    expect(outsideSafeArea(design, { ...wide, align: "left" })).toBe(true)
+
+    const landscape = { ...design, widthMm: 100, heightMm: 50 }
+    const long = {
+      ...wide,
+      text: "가".repeat(16),
+      x: 10,
+      width: 80,
+      align: "center" as const,
+    }
+    expect(outsideSafeArea(landscape, long)).toBe(false)
+    expect(outsideSafeArea(landscape, { ...long, rotation: 90 })).toBe(true)
   })
 
   it.each([

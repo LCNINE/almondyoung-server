@@ -51,6 +51,7 @@ import {
 import {
   layerImageDpi,
   outsideSafeArea,
+  printedBox,
   SHAPE_TEXT_TYPES,
   sideBackground,
   unfiltered,
@@ -800,13 +801,14 @@ export function Canvas({ editor }: { editor: AlmondEditor }) {
             {editor.safetyChecked &&
               layers
                 .filter((layer) => outsideSafeArea(design, layer))
-                .map((layer) => (
+                .map((layer) => ({ layer, box: printedBox(layer) }))
+                .map(({ layer, box }) => (
                   <rect
                     key={`unsafe-${layer.id}`}
-                    x={layer.x}
-                    y={layer.y}
-                    width={layer.width}
-                    height={layer.height}
+                    x={box.x0}
+                    y={box.y0}
+                    width={box.x1 - box.x0}
+                    height={box.y1 - box.y0}
                     fill="rgba(239, 68, 68, 0.08)"
                     stroke="#ef4444"
                     strokeWidth={2 / scale}
