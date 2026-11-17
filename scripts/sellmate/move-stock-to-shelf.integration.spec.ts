@@ -395,4 +395,29 @@ describeIfDb('runShelfMove (DB integration)', () => {
       expect(row).toMatchObject({ outcome: 'keep:unconfirmed', rule: 'zero-pad' });
     });
   });
+
+  it('동시 실행 중 교착(40P01)이면 그 SKU 를 한 번 다시 시도한다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = await world(tx);
+      const shelfId = await w.shelf('01');
+      const s = await w.sku('A-01-01');
+      await w.receive(s.skuId, 3);
+      const real = makeMovementService(w.asDb);
+      let calls = 0;
+      const deadlockOnce = {
+        moveImmediately: (dto: Parameters<MovementService['moveImmediately']>[0]) => {
+          calls += 1;
+          return calls === 1
+            ? Promise.reject(Object.assign(new Error('deadlock detected'), { code: '40P01' }))
+            : real.moveImmediately(dto);
+        },
+      } as unknown as MovementService;
+
+      const [row] = await w.run(opts(), deadlockOnce);
+
+      expect(row).toMatchObject({ outcome: 'moved', movedQty: 3 });
+      expect(calls).toBe(2);
+      expect(await onHandAt(tx, s.skuId, shelfId)).toBe(3);
+    });
+  });
 });

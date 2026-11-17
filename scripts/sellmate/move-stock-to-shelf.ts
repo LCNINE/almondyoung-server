@@ -51,16 +51,24 @@ export type ShelfMoveOptions = {
   apply: boolean;
   positionsSince: Date | null;
   includeRules: ReadonlySet<ShelfMoveRule>;
+  /**
+   * 동시에 처리할 SKU 수(기본 1). 잠금이 SKU·창고 단위라 SKU 끼리는 서로 막지 않는다. 터널 너머 왕복이 SKU 하나에
+   * 30~40번이라 하나씩 돌면 수천 SKU 에 수십 분이 걸린다. 통합 스펙은 롤백 트랜잭션 하나(연결 하나)라 1 로만 돈다.
+   */
+  concurrency?: number;
 };
 
 function stamp(d: Date): string {
   return d.toISOString().replace(/[-:T]/g, '').slice(0, 14);
 }
 
-export function parseShelfMoveArgs(
-  argv: string[],
-): Omit<ShelfMoveOptions, 'warehouseId'> & { warehouseId: string | null; out: string } {
+export function parseShelfMoveArgs(argv: string[]): Omit<ShelfMoveOptions, 'warehouseId' | 'concurrency'> & {
+  warehouseId: string | null;
+  concurrency: number;
+  out: string;
+} {
   let apply = false;
+  let concurrency = 8;
   let warehouseId: string | null = null;
   let positionsSince: Date | null = null;
   const includeRules = new Set<ShelfMoveRule>();
@@ -77,6 +85,11 @@ export function parseShelfMoveArgs(
         if (!known) throw new Error(`모르는 규칙 ${rule} — ${SHELF_MOVE_RULES.join(', ')} 중에서`);
         includeRules.add(known);
       }
+    } else if (arg.startsWith('--concurrency=')) {
+      concurrency = Number(arg.slice('--concurrency='.length));
+      if (!Number.isInteger(concurrency) || concurrency < 1 || concurrency > 16) {
+        throw new Error(`--concurrency 는 1~16 의 정수다: ${arg}`);
+      }
     } else if (arg.startsWith('--warehouse-id=')) warehouseId = arg.slice('--warehouse-id='.length);
     else if (arg.startsWith('--out=')) out = arg.slice('--out='.length);
     else throw new Error(`모르는 인자 ${arg}`);
@@ -86,7 +99,7 @@ export function parseShelfMoveArgs(
       '--apply 는 --positions-since=<T 당일 load-shelf-positions 직전 시각> 이 있어야 한다 — 낡은 위치 행으로 옮기지 않게',
     );
   }
-  return { apply, warehouseId, positionsSince, includeRules, out };
+  return { apply, warehouseId, positionsSince, includeRules, concurrency, out };
 }
 
 type GuardReason = 'protected' | 'allocated' | 'inconsistent';
@@ -191,13 +204,46 @@ export async function runShelfMove(
 ): Promise<ShelfMoveRow[]> {
   const candidates = await readCandidates(db, opts.warehouseId);
   const codes = await readShelves(db, opts.warehouseId);
-  const rows: ShelfMoveRow[] = [];
-  for (const c of candidates) {
-    const row = await decide(db, deps, opts, codes, c);
-    rows.push(row);
-    onRow?.(row);
-  }
-  return rows;
+  return mapPool(candidates, opts.concurrency ?? 1, (c) => decide(db, deps, opts, codes, c), onRow);
+}
+
+/**
+ * items 를 n 개씩 동시에 fn 에 넘긴다. 결과는 입력 순서, onDone 은 끝나는 대로.
+ * 하나가 던지면 새 일을 시작하지 않고, 이미 돌던 일이 끝난 뒤 그 오류로 끝난다 — 그때까지 끝난 행은 onDone 으로 나갔다.
+ */
+export async function mapPool<T, R>(
+  items: readonly T[],
+  n: number,
+  fn: (item: T) => Promise<R>,
+  onDone?: (result: R) => void,
+): Promise<R[]> {
+  const results: R[] = new Array<R>(items.length);
+  let next = 0;
+  const failures: unknown[] = [];
+  const worker = async () => {
+    while (failures.length === 0 && next < items.length) {
+      const i = next++;
+      try {
+        results[i] = await fn(items[i]);
+        onDone?.(results[i]);
+      } catch (error) {
+        failures.push(error);
+      }
+    }
+  };
+  await Promise.all(Array.from({ length: Math.max(1, Math.min(n, items.length)) }, worker));
+  if (failures.length > 0) throw failures[0];
+  return results;
+}
+
+function codeOf(x: unknown): unknown {
+  return typeof x === 'object' && x !== null && 'code' in x ? x.code : undefined;
+}
+
+/** 교착(40P01)·직렬화 실패(40001) — 트랜잭션이 통째로 롤백되니 같은 명령을 다시 보내도 된다. drizzle 이 감싸면 cause 에 있다. */
+export function isRetryableTxError(e: unknown): boolean {
+  const cause = typeof e === 'object' && e !== null && 'cause' in e ? e.cause : undefined;
+  return [codeOf(e), codeOf(cause)].some((c) => c === '40P01' || c === '40001');
 }
 
 async function decide(
@@ -268,21 +314,28 @@ async function decide(
   // judgeShelfMove 는 codes 의 키로만 move 를 낸다 — 없으면 판정과 조회가 갈린 것이다.
   const toLocationId = codes.get(verdict.toCode);
   if (!toLocationId) throw new Error(`판정한 선반 ${verdict.toCode} 의 로케이션 id 가 없다`);
+  const dto = {
+    warehouseId: c.warehouse_id,
+    actorId: SYSTEM_ACTOR,
+    memo: MEMO,
+    idempotencyKey: `cutover-1236:${c.warehouse_id}:${c.sku_id}:${stockVersion ?? 0}`,
+    lines: [
+      {
+        skuId: c.sku_id,
+        fromLocationId: c.from_location_id,
+        toLocationId,
+        quantity: available,
+      },
+    ],
+  };
   try {
-    await deps.movement.moveImmediately({
-      warehouseId: c.warehouse_id,
-      actorId: SYSTEM_ACTOR,
-      memo: MEMO,
-      idempotencyKey: `cutover-1236:${c.warehouse_id}:${c.sku_id}:${stockVersion ?? 0}`,
-      lines: [
-        {
-          skuId: c.sku_id,
-          fromLocationId: c.from_location_id,
-          toLocationId,
-          quantity: available,
-        },
-      ],
-    });
+    try {
+      await deps.movement.moveImmediately(dto);
+    } catch (e) {
+      // 동시 실행에서 같은 상품에 걸린 SKU 끼리 드물게 교착될 수 있다 — 한 번만 다시 보낸다(같은 멱등키, 롤백돼 소비되지 않았다).
+      if (!isRetryableTxError(e)) throw e;
+      await deps.movement.moveImmediately(dto);
+    }
     row.outcome = 'moved';
     row.movedQty = available;
   } catch (e) {
@@ -339,7 +392,7 @@ async function main() {
     process.exit(1);
   }
   // DbService 생성자는 tsx 에서 CJS interop 문제로 못 쓴다 — prototype 만 빌려 클라이언트를 주입한다(close-sellmate-csv-inbound.ts 와 같다).
-  const client = postgres(url, { max: 4 });
+  const client = postgres(url, { max: args.concurrency + 2 });
   const db = drizzle(client, { schema: wmsSchema });
   const dbService: DbService<typeof wmsSchema> = Object.assign(
     Object.create(DbService.prototype) as DbService<typeof wmsSchema>,
