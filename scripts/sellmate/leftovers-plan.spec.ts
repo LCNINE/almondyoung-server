@@ -14,8 +14,16 @@ const none: LeftoverAction = { closeFo: false, closeShipments: false, closeBackl
 
 describe('classifyLeftover — 셀메이트로 나간 자사몰 주문만 닫는다', () => {
   it.each<[string, Partial<LeftoverOrder>, LeftoverAction]>([
-    ['외부 출고 · FO 열림 → 전부 닫는다', {}, { closeFo: true, closeShipments: true, closeBacklogs: true, report: null }],
-    ['delivered 도 외부 출고다', { soStatus: 'delivered' }, { closeFo: true, closeShipments: true, closeBacklogs: true, report: null }],
+    [
+      '외부 출고 · FO 열림 → 전부 닫는다',
+      {},
+      { closeFo: true, closeShipments: true, closeBacklogs: true, report: null },
+    ],
+    [
+      'delivered 도 외부 출고다',
+      { soStatus: 'delivered' },
+      { closeFo: true, closeShipments: true, closeBacklogs: true, report: null },
+    ],
     ['FO 없이 대기열만', { foStatus: null, openShipments: 0 }, { ...none, closeBacklogs: true }],
     ['FO 는 이미 닫혔고 상자만 열림', { foStatus: 'shipped', openBacklogs: 0 }, { ...none, closeShipments: true }],
     ['FO processing → 사람이 본다', { foStatus: 'processing' }, { ...none, report: 'human-fo' }],
