@@ -219,7 +219,14 @@ export function buildPlan(dedupedItems: ParsedItem[]): Plan {
       }
     } else {
       const it = group[0];
-      skus.push({ code: it.itemCode, name: productName, optionKey: null, groupCode: null, barcode: it.barcode, barcode2: it.barcode2 });
+      skus.push({
+        code: it.itemCode,
+        name: productName,
+        optionKey: null,
+        groupCode: null,
+        barcode: it.barcode,
+        barcode2: it.barcode2,
+      });
     }
   }
 

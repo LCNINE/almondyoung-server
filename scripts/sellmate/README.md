@@ -115,10 +115,28 @@ bash scripts/sellmate/run.sh live build-location-master            # dry-run
 bash scripts/sellmate/run.sh live build-location-master --apply    # 반영
 ```
 
+## 바코드번호2 백필 (`backfill-barcode2.ts`, #1356)
+
+셀메이트 «현재고 전체» CSV 의 `바코드번호2` 를 이미 적재된 SKU 에 보조 바코드(`is_primary=false`)로 넣는다.
+T 부터 스캔은 core 가 `sku_barcodes` 에서 찾으므로, 셀메이트에서 스캔되던 바코드번호2 가 없으면 «모르는 바코드»가 된다.
+새로 가져오는 SKU 는 `import-products` 가 같은 규칙(`barcode2-plan.ts`)으로 함께 넣는다.
+
+- 보조 바코드만 넣는다. SKU·그룹·대표 바코드는 건드리지 않는다. 대표 바코드와 같은 값·빈 값은 건너뛴다.
+- 이미 같은 SKU 에 달린 값(대표든 보조든)은 그대로 두고, 다른 SKU 가 쓰는 값은 넣지 않고 충돌로 보고한다. 같은 값을 다른 품목의 대표가 원하면 대표가 이긴다.
+- 출력: 넣을 것 / 이미 같은 SKU / 충돌 / core 에 SKU 없음. 넣을 것·충돌에는 재고 있는 SKU 수를 붙인다.
+- 기본은 dry-run(읽기 전용 트랜잭션). `--apply` 로 반영. 다시 돌려도 안전하다. 셀메이트는 테넌트 1 의 것이라 기본 `DB_NAME=core` 에만 돈다.
+- **`--apply` 직전에 «현재고 전체» 를 다시 받는다** — 받은 뒤에 생긴 SKU 는 파일에 없어 빠진다.
+- 끝: 다시 돌린 dry-run 의 «core 에 넣을 것» 이 0. 충돌 목록은 사람이 정한다. 그 다음 아래 `register-missing-barcodes` 를 돌린다.
+
+```bash
+DRY_RUN=1 bash scripts/sellmate/run.sh live backfill-barcode2 ~/다운로드/01_현재고_전체_YYYYMMDD.csv           # dry-run
+bash scripts/sellmate/run.sh live backfill-barcode2 ~/다운로드/01_현재고_전체_YYYYMMDD.csv --apply              # 반영
+```
+
 ## 바코드 없는 SKU 에 SKU 코드 등록 (`register-missing-barcodes.ts`, #1281)
 
 `sku_barcodes` 행이 하나도 없는 SKU 에 `skus.code` 를 대표 바코드(`is_primary`)로 넣는다. 스테이션 SKU 라벨이 바코드 없이 찍히지 않게 하는 일회성 보충이다.
-**#1356 백필 뒤에** 돌린다(백필이 채울 수 있는 SKU 를 먼저 채워야 이 스크립트가 건드릴 SKU 가 줄어든다). 항상 dry-run 으로 먼저 본다.
+**#1356 백필(`backfill-barcode2`, 위) 뒤에** 돌린다(백필이 채울 수 있는 SKU 를 먼저 채워야 이 스크립트가 건드릴 SKU 가 줄어든다). 항상 dry-run 으로 먼저 본다.
 
 - 기본은 dry-run(읽기 전용 트랜잭션). `--apply` 로 반영. 이미 바코드가 있는 SKU 는 건드리지 않고, 그 코드를 다른 SKU 가 쓰면 넣지 않고 충돌로 보고한다. 다시 돌려도 안전하다.
 - 등록 대상 SKU 코드 목록을 출력하고 재고(`stock_ledgers.qty` 합)가 있는 SKU 는 ★ 로 먼저 보인다 — T 전에 스티커를 뽑을 대상이다. dry-run 에서도 같은 목록이 나온다.

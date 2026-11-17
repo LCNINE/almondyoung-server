@@ -10,6 +10,7 @@
 #   bash scripts/sellmate/run.sh dev  import-products apps/core/tmp/
 #   bash scripts/sellmate/run.sh live import-products apps/core/tmp/
 #   DRY_RUN=1 bash scripts/sellmate/run.sh live sync-stock apps/core/tmp/
+#   DRY_RUN=1 bash scripts/sellmate/run.sh live backfill-barcode2 <현재고 CSV>   (반영은 DRY_RUN 빼고 --apply)
 #   bash scripts/sellmate/run.sh live evening-reconcile apply apps/core/tmp/stk_stockList_20261120_180000.csv [--apply]
 #   WITH_MEDUSA=1 bash scripts/sellmate/run.sh live evening-reconcile init <csv> --cutover-at=… --sellmate-orders=… --own-mall-channel=… [--apply]
 #
