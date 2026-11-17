@@ -541,6 +541,13 @@ export class OutboundBatchOrchestrator {
         .where(eq(wmsTables.outboundBatches.id, batchId))
         .limit(1);
       if (!batch) throw new NotFoundException(`Outbound batch ${batchId} not found`);
+      // 추가 명령이 거절할 끝난 배치에는 후보를 주지 않는다(같은 파생 상태로 판정).
+      const workItems = await trx
+        .select()
+        .from(wmsTables.outboundBatchWorkItems)
+        .where(eq(wmsTables.outboundBatchWorkItems.batchId, batchId));
+      const status = this.derivedBatchStatus(batch, workItems);
+      if (status === 'completed' || status === 'canceled') return [];
       const candidates = await trx
         .select({ id: wmsTables.shipments.id })
         .from(wmsTables.shipments)
