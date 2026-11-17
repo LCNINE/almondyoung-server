@@ -4,7 +4,7 @@ import { Button } from '../../core/design/Button';
 import { Link } from '@tanstack/react-router';
 import { ScreenHeader } from '../../core/design/ScreenHeader';
 import { WarehousePicker } from '../../domains/warehouse/WarehousePicker';
-import { LabelPrinterSettings } from '../../core/hardware/print/LabelPrinterSettings';
+import { PrinterSettings } from '../../core/hardware/print/PrinterSettings';
 import { isStationDevice } from '../station';
 import { useSession } from '../session-context';
 import { SoundSettings } from '../../station/feedback/SoundSettings';
@@ -59,7 +59,8 @@ export function SettingsRoute() {
 
       {isStationDevice() && (
         <>
-          <LabelPrinterSettings />
+          <PrinterSettings slot="waybill" />
+          <PrinterSettings slot="label" />
           <SoundSettings />
           <Link to="/station/command-sheet" className="text-sm font-medium text-blue-700 underline">
             명령 바코드 시트
