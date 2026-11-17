@@ -57,7 +57,7 @@ FO 가 `processing`·`partially_shipped`·`recovery_required` 이면 그 판매�
 
 ### 5.2 상자와 예약
 
-`scripts/sellmate/close-shipped-shipments.ts` 의 종결 로직(상자 먼저 닫고 예약 해제)을 함수로 export 하고, **판매주문 id 목록으로 좁히는 인자**를 더해 이 스크립트에서 부른다. 좁힌 조건: 상자의 모든 라인이 대상 판매주문의 FO 에 속하고 그 FO 가 terminal 이다. 진행 중 배치 작업 항목(`outbound_batch_work_items`, 상태가 `excluded`·`completed` 아님)이 가리키는 상자는 닫지 않고 보고한다. CLI(인자 없이 부를 때)의 동작은 그대로 둔다 — T 전 매일 돌던 대로 **(Claude 판단)**.
+`scripts/sellmate/close-shipped-shipments.ts` 의 종결 로직(상자 먼저 닫고 예약 해제)을 함수로 export 하고, **판매주문 id 목록으로 좁히는 인자**를 더해 이 스크립트에서 부른다. 좁힌 조건: 상자의 모든 라인이 대상 판매주문의 FO 에 속하고 그 FO 가 terminal 이다. 진행 중 배치 작업 항목(`outbound_batch_work_items`, 상태가 `excluded`·`completed` 아님)이 가리키는 상자는 닫지 않고 보고한다. `recovery_required` 상자(집은 물건이 있을 수 있다)도 닫지 않고 보고한다 — 원래 CLI 는 닫는다 **(Claude 판단)**. 예약을 풀었으면 그 SKU 의 판매가능수량을 `ProductSellableQuantityService.recalculateAndPublishForSkus` 로 다시 계산해 낸다 — 원래 CLI 는 variant 목록만 파일로 남기고 `recalc-sellable` 을 따로 돌리게 했다 **(Claude 판단 — 한 명령으로 끝나게)**. CLI(인자 없이 부를 때)의 동작은 그대로 둔다 — T 전 매일 돌던 대로 **(Claude 판단)**.
 
 ### 5.3 대기열 행
 
