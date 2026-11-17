@@ -37,6 +37,7 @@ import {
   getMyArrears,
 } from "@lib/api/membership"
 import { setPendingPaymentMode } from "@lib/utils/checkout-intent-map"
+import { goToWalletWeb } from "@lib/utils/wallet-web-navigation"
 import { isInvoiceBillingEnabled } from "@lib/utils/invoice-billing"
 import { cn } from "@lib/utils"
 import { providerLabel } from "@lib/utils/billing-provider"
@@ -306,11 +307,9 @@ export function MembershipForm({
             // 바로 보낸다. 등록을 마치면 서버가 그 계좌로 가입을 만들고, 결제수단 페이지(cardChanged=1)는
             // 가입이 생길 때까지 기다렸다가 완료 화면으로 넘긴다.
             const returnUrl = `${window.location.origin}/${countryCode}/mypage/membership/payment-method?redirect=subscribe&planId=${selectedPlanId}${agreementId ? `&termsAgreementId=${agreementId}` : ""}`
-            const walletWebUrl =
-              process.env.NEXT_PUBLIC_WALLET_WEB_URL || "http://localhost:3200"
-            window.location.href = `${walletWebUrl}/billing-change?returnUrl=${encodeURIComponent(
-              returnUrl
-            )}`
+            await goToWalletWeb(
+              `/billing-change?returnUrl=${encodeURIComponent(returnUrl)}`
+            )
           } else {
             const returnUrl = `${window.location.origin}/${countryCode}/checkout/callback`
             const { intentId } = await createMembershipCheckoutIntent(
@@ -323,9 +322,7 @@ export function MembershipForm({
               planId: selectedPlanId,
               billingMode: "one_time",
             })
-            const walletWebUrl =
-              process.env.NEXT_PUBLIC_WALLET_WEB_URL || "http://localhost:3200"
-            window.location.href = `${walletWebUrl}/pay/${intentId}?region=${countryCode}`
+            await goToWalletWeb(`/pay/${intentId}?region=${countryCode}`)
           }
         }
       } catch (error) {

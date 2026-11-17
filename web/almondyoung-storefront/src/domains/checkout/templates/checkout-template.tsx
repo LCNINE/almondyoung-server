@@ -21,7 +21,6 @@ import {
 } from "@/domains/checkout/utils/customs"
 import { initiatePaymentSession, updateCart } from "@/lib/api/medusa/cart"
 import { cartRequiresShipping } from "@/lib/api/medusa/shipping-method-policy"
-import { mintPaymentHandoffToken } from "@/lib/api/users/auth/payment-handoff"
 import { CartResponseDto } from "@/lib/types/dto/medusa"
 import type { CartTotals, ShippingInfo } from "@/lib/types/ui/cart"
 import { calculateCartDiscount } from "@/domains/cart/utils/calculate-discount"
@@ -29,6 +28,7 @@ import { useCartDiscountContext } from "@/domains/cart/hooks/use-cart-discount-c
 import type { Promotion } from "@/lib/types/ui/promotion"
 import { buildPaymentItems } from "@/lib/utils/build-payment-items"
 import { setCheckoutCartByIntent } from "@/lib/utils/checkout-intent-map"
+import { goToWalletWeb } from "@/lib/utils/wallet-web-navigation"
 import {
   getCartTotals,
 } from "@/lib/utils/price-utils"
@@ -53,39 +53,6 @@ interface CheckoutTemplateProps {
   checkoutCartId: string
   shipping: ShippingInfo
   promotions: Promotion[]
-}
-
-function isUnauthorizedError(error: unknown): boolean {
-  const err = error as Error & { digest?: string }
-  return err?.digest === "UNAUTHORIZED" || err?.message === "UNAUTHORIZED"
-}
-
-async function restoreStorefrontToken(): Promise<boolean> {
-  try {
-    const res = await fetch("/api/auth/restore-token", {
-      method: "POST",
-      credentials: "include",
-    })
-    return res.ok
-  } catch {
-    return false
-  }
-}
-
-function redirectToWalletHandoff(
-  walletWebUrl: string,
-  handoffToken: string,
-  payPath: string
-) {
-  window.location.href = `${walletWebUrl}/auth/handoff?h=${encodeURIComponent(
-    handoffToken
-  )}&redirect_to=${encodeURIComponent(payPath)}`
-}
-
-function redirectToWalletEnsure(walletWebUrl: string, payPath: string) {
-  window.location.href = `${walletWebUrl}/auth/ensure?redirect_to=${encodeURIComponent(
-    payPath
-  )}`
 }
 
 export default function CheckoutTemplate({
@@ -371,38 +338,7 @@ export default function CheckoutTemplate({
       if (!intentId) throw new Error(tProcess("toasts.paymentInitFailed"))
       setCheckoutCartByIntent(intentId, checkoutCartId)
 
-      const walletWebUrl =
-        process.env.NEXT_PUBLIC_WALLET_WEB_URL || "http://localhost:3200"
-      const payPath = `/pay/${intentId}?region=${countryCode}`
-
-      // 결제창(wallet-web)은 별도 서브도메인이라, 인앱브라우저·iOS Safari(ITP)에서 로그인 세션을
-      // 재확보하지 못해 결제가 막힌다. storefront에서 단기 핸드오프 토큰을 발급해 넘기면 wallet-web이
-      // 그걸 교환해 자기 세션을 확보한다. 발급 실패 시 기존 직접 진입으로 폴백(무회귀).
-      try {
-        const handoffToken = await mintPaymentHandoffToken()
-        redirectToWalletHandoff(walletWebUrl, handoffToken, payPath)
-      } catch (handoffErr) {
-        if (isUnauthorizedError(handoffErr)) {
-          const restored = await restoreStorefrontToken()
-          if (restored) {
-            try {
-              const retryHandoffToken = await mintPaymentHandoffToken()
-              redirectToWalletHandoff(walletWebUrl, retryHandoffToken, payPath)
-              return
-            } catch (retryErr) {
-              if (!isUnauthorizedError(retryErr)) {
-                window.location.href = `${walletWebUrl}${payPath}`
-                return
-              }
-            }
-          }
-
-          redirectToWalletEnsure(walletWebUrl, payPath)
-          return
-        }
-        // 핸드오프 미가용(미배포 등) → 기존 경로로 진입(wallet-web 자체 세션 복구).
-        window.location.href = `${walletWebUrl}${payPath}`
-      }
+      await goToWalletWeb(`/pay/${intentId}?region=${countryCode}`)
     } catch (err) {
       console.error("결제 처리 실패:", err)
       setError(

@@ -32,6 +32,7 @@ import { MembershipPaymentMethodSkeleton } from "@/components/skeletons/page-ske
 import { providerLabel } from "@lib/utils/billing-provider"
 import { getCmsFailureReasonKey } from "@lib/utils/cms-failure-reason"
 import { formatDate } from "@lib/utils/format-date"
+import { goToWalletWeb } from "@lib/utils/wallet-web-navigation"
 import SignupResumeCard from "@/domains/membership/components/signup-resume-card"
 import LocalizedClientLink from "@/components/shared/localized-client-link"
 import { deleteBillingMethodAction } from "./actions"
@@ -367,25 +368,26 @@ export default function MembershipPaymentMethodContent() {
 
   const pushToCmsRegistration = () => {
     // CMS 자동이체 등록은 wallet-web 으로 통일한다. /billing-change 는 기존 CMS 수단 유무로
-    // 신규등록/변경을 자동 판별하고, 자체 auth 가드(/auth/ensure)로 세션을 복구한다.
+    // 신규등록/변경을 자동 판별한다.
     // 등록 완료 시 returnUrl(현재 화면 + cardChanged=1)로 복귀해 기존 자동구독 흐름을 잇는다.
     const returnUrl = window.location.href
-    const walletWebUrl =
-      process.env.NEXT_PUBLIC_WALLET_WEB_URL || "http://localhost:3200"
-    window.location.href = `${walletWebUrl}/billing-change?returnUrl=${encodeURIComponent(
-      returnUrl
-    )}`
+
+    return goToWalletWeb(
+      `/billing-change?returnUrl=${encodeURIComponent(returnUrl)}`
+    )
   }
 
   const handleRegisterNewCard = () => {
+    if (isChanging || isActionPending) return
+
     // 정기결제는 효성 CMS 자동이체로만 운영하므로 신규 등록도 CMS 자동이체 위저드로 보낸다.
     // (카드 빌링 provider는 현재 미등록 상태라 등록해도 정기결제에 사용할 수 없음)
-    pushToCmsRegistration()
+    startActionTransition(() => pushToCmsRegistration())
   }
 
   const handleRegisterCmsBankAccount = () => {
     // 실패한 CMS 계좌 재등록 — 은행계좌 등록 흐름이 있는 결제 관리 페이지로 이동
-    pushToCmsRegistration()
+    return pushToCmsRegistration()
   }
 
   const handleReregisterFailedMethod = (billingMethodId: string) => {
@@ -403,7 +405,7 @@ export default function MembershipPaymentMethodContent() {
         }
 
         removeMethodFromState(billingMethodId)
-        handleRegisterCmsBankAccount()
+        await handleRegisterCmsBankAccount()
       } catch (error) {
         if (isUnauthorizedError(error)) {
           throw error
