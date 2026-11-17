@@ -27,6 +27,7 @@ import * as path from 'path';
 import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { SQL, sql } from 'drizzle-orm';
+import { Logger } from '@nestjs/common';
 import { DbService } from '@app/db';
 import { INVENTORY_STREAM } from '@packages/event-contracts/streams';
 import { DbTx, wmsSchema } from '../../apps/core/src/modules/inventory/schema/inventory.schema';
@@ -265,6 +266,9 @@ function stamp(d: Date): string {
 }
 
 async function main() {
+  // closeOpenForSalesOrder 가 주문마다 «Closed … for cancelled order» 를 LOG 로 찍는다 — dry-run(롤백)에도, 셀메이트로 나간
+  // 주문에도 그 문구라 «실제로 닫았다»로 읽힌다(2026-11-18 라이브 dry-run 에서 수백 줄). 건수는 아래 요약이 정본이다.
+  Logger.overrideLogger(['warn', 'error']);
   const apply = process.argv.includes('--apply');
   const outArg = process.argv.find((a) => a.startsWith('--out='));
   const out = outArg ? outArg.slice('--out='.length) : `apps/core/tmp/cutover-1243-report-${stamp(new Date())}.txt`;
