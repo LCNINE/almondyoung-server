@@ -70,6 +70,10 @@ export function ProfileDialog({ target, onOpenChange }: Props) {
   const [form, setForm] = useState<ProfileFormState>(emptyProfileForm());
   const [errors, setErrors] = useState<ProfileFormErrors>({});
   const [holderChoice, setHolderChoice] = useState(NO_HOLDER);
+  const [createdHolder, setCreatedHolder] = useState<{
+    value: string;
+    label: string;
+  } | null>(null);
   const [newHolderName, setNewHolderName] = useState('');
   const [searching, setSearching] = useState<'origin' | 'return' | null>(null);
   const create = useCreateDeliveryProfile();
@@ -85,6 +89,7 @@ export function ProfileDialog({ target, onOpenChange }: Props) {
     setForm(next);
     setHolderChoice(next.holderId || NO_HOLDER);
     setNewHolderName('');
+    setCreatedHolder(null);
     setErrors({});
   }, [target]);
 
@@ -144,12 +149,18 @@ export function ProfileDialog({ target, onOpenChange }: Props) {
     </>
   );
 
+  const fetchedHolders = (holdersResponse?.data ?? []).map((h) => ({
+    value: h.id,
+    label: h.isOurAsset ? `${h.name} (자사)` : h.name,
+  }));
+  // 방금 만든 화주는 목록이 다시 불러오기 전이거나 첫 100개 밖일 수 있다
+  const missingCreated =
+    createdHolder &&
+    !fetchedHolders.some((h) => h.value === createdHolder.value);
   const holderOptions = [
     { value: NO_HOLDER, label: '연결 안 함(자사)' },
-    ...(holdersResponse?.data ?? []).map((h) => ({
-      value: h.id,
-      label: h.isOurAsset ? `${h.name} (자사)` : h.name,
-    })),
+    ...fetchedHolders,
+    ...(missingCreated ? [createdHolder] : []),
     { value: NEW_HOLDER, label: '+ 새 화주 만들기' },
   ];
 
@@ -162,6 +173,7 @@ export function ProfileDialog({ target, onOpenChange }: Props) {
       isOurAsset: false,
     });
     // 프로필 저장이 실패해도 다시 저장할 때 같은 이름으로 또 만들지 않게 만든 화주를 고른 상태로 둔다
+    setCreatedHolder({ value: holder.id, label: holder.name });
     setHolderChoice(holder.id);
 
     return holder.id;
