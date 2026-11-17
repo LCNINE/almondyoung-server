@@ -66,7 +66,7 @@ export function AddressCard({
       className={cn(
         "relative cursor-pointer rounded-lg border p-4 transition-colors",
         isSelected
-          ? "border-primary bg-primary/5"
+          ? "border-primary bg-white"
           : "border-gray-200 hover:border-gray-300",
         isActionLoading && "pointer-events-none opacity-50"
       )}
@@ -147,7 +147,7 @@ export function AddressCard({
   )
 }
 
-function AddressRow({
+export function AddressRow({
   label,
   value,
 }: {

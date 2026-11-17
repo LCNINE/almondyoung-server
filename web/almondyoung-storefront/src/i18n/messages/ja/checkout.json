@@ -293,6 +293,7 @@
     "errorPrefix": "エラー:",
     "toasts": {
       "setShipping": "配送先を設定してください。",
+      "agreeCustomOrder": "オーダーメイド商品のご案内を確認し、同意してください。",
       "selectMemo": "配送メモを選択してください。",
       "enterEntrancePw": "共同玄関の暗証番号を入力してください。",
       "noItems": "決済する商品がありません。カートに戻って商品を選択してください。",
