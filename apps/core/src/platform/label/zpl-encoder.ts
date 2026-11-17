@@ -1,3 +1,4 @@
+import { planCode128 } from './code128';
 import {
   createBitmap,
   getBit,
@@ -25,6 +26,8 @@ export interface ZplOptions {
   compress: boolean;
   /** LabelSpec.rotation — 프린터에 넣을 때 시계방향 회전(도). */
   rotation: LabelRotation;
+  /** 같은 라벨 장수(`^PQ`). 기본 1. */
+  copies?: number;
 }
 
 export function rotateClockwise(src: MonoBitmap): MonoBitmap {
@@ -112,6 +115,11 @@ function barcodeField(b: BarcodePlacement, drawnW: number, drawnH: number, rotat
     // f·g = N: 사람용 숫자는 SVG 에서 그린다. e = N: 한진 번호에 체크디지트가 이미 있다.
     return `${fo}^BY${b.moduleDots},${(b.wideRatio ?? 2.5).toFixed(1)}^B2${orientation},${h},N,N,N^FD${b.data}^FS`;
   }
+  if (b.kind === 'CODE128_OPTIMAL') {
+    const plan = planCode128(b.data);
+    if (!plan) throw new Error(`CODE128_OPTIMAL data is not encodable: "${b.data}"`);
+    return `${fo}^BY${b.moduleDots}^BC${orientation},${h},N,N,N^FD${plan.zplData}^FS`;
+  }
   if (!b.data || /[\^~]/.test(b.data)) {
     throw new Error(`CODE128 data is empty or contains ZPL control characters: "${b.data}"`);
   }
@@ -137,7 +145,7 @@ export function encodeZpl(drawn: MonoBitmap, barcodes: readonly BarcodePlacement
     '^LH0,0',
     `^FO0,0^GFA,${total},${total},${printed.bytesPerRow},${gfData}^FS`,
     ...barcodes.map((b) => barcodeField(b, drawn.widthDots, drawn.heightDots, opts.rotation)),
-    '^PQ1',
+    `^PQ${opts.copies ?? 1}`,
     '^XZ',
   ];
   return lines.join('\n');

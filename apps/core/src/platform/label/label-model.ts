@@ -1,3 +1,5 @@
+import { planCode128 } from './code128';
+
 /**
  * 캐리어 중립 라벨 모델. 템플릿(캐리어 전용)이 LabelSpec 을 만들고, 래스터라이저가 svg 를
  * MonoBitmap 으로, ZPL 인코더가 비트맵 + 바코드를 프린터 명령으로 바꾼다(#913).
@@ -18,7 +20,7 @@ export interface MonoBitmap {
   data: Uint8Array;
 }
 
-export type BarcodeKind = 'ITF' | 'CODE128';
+export type BarcodeKind = 'ITF' | 'CODE128' | 'CODE128_OPTIMAL';
 
 /** 바코드 배치. 좌표는 템플릿과 같은 가로 방향 mm, (xMm, yMm) 는 바코드 상자의 왼쪽 위. */
 export interface BarcodePlacement {
@@ -57,10 +59,16 @@ export interface LabelSpec {
  * 직접 그리므로 출력에는 영향이 없다.
  *
  * ITF: start(좁은 4모듈) + 자릿수 × (좁은 3 + 넓은 2) + stop(넓은 1 + 좁은 2). 넓은 막대는 모듈 × 비를 dot 단위로 «올린» 값 — 프린터는 반 dot 를 못 찍는다(3dot × 2.5 = 7.5 → 8, zebrash 역렌더 실측 2026-09-28).
+ * CODE128_OPTIMAL: `planCode128` 이 숫자 쌍을 접은 실제 모듈 수.
  * CODE128: subset B 기준 start·check 포함 (n + 2) 글자 × 11 + stop 13 모듈. 숫자 쌍을 subset C 로
  * 접으면 더 좁아지므로 상한이다.
  */
 export function barcodeWidthMm(b: BarcodePlacement): number {
+  if (b.kind === 'CODE128_OPTIMAL') {
+    const plan = planCode128(b.data);
+    if (!plan) throw new Error(`CODE128_OPTIMAL data is not encodable: "${b.data}"`);
+    return (plan.modules * b.moduleDots) / DOTS_PER_MM;
+  }
   if (b.kind === 'CODE128') return ((11 * (b.data.length + 2) + 13) * b.moduleDots) / DOTS_PER_MM;
   const wideDots = Math.ceil(b.moduleDots * (b.wideRatio ?? 2.5));
   return (
