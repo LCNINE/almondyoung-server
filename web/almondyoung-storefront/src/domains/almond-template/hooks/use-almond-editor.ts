@@ -340,10 +340,11 @@ export function useAlmondEditor({
     onSaved: (stored) => {
       if (mode !== "designer") return
       const found = printIssues(stored)
-      if (!found.length) return
-      setSafetyChecked(true)
-      setWarnings([])
-      setIssues(found)
+      const warned = printWarnings(stored)
+      if (!found.length && !warned.length) return
+      if (found.length) setSafetyChecked(true)
+      setWarnings(warned)
+      setIssues(found.length ? found : warned)
     },
   })
   const actions = useLayerActions({
