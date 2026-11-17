@@ -31,6 +31,13 @@ export interface IssueContext {
   entrancePassword: string | null;
   /** 상자에 담긴 주문의 번호(`20261027-6009`) — 라벨이 찍는다. 합포장이면 여럿, 줄 순서대로 */
   orderNos: string[];
+  /** 위탁 업체(화주가 연결된) 배송 프로필의 보내는 분. 없으면 HANJIN_SENDER_* 를 쓴다 */
+  profileSender?: ProfileSender | null;
+}
+
+export interface ProfileSender {
+  name: string;
+  phone: string;
 }
 
 // WaybillManager.issueBatch 개별 결과. status 는 issueForShipment 가 반환한 WaybillRow.status(registered/failed 등)

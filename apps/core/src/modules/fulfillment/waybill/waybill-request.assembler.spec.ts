@@ -1,4 +1,11 @@
-import { assembleWaybillRequest, parseRecipient, commodityNameOf, composeMessage } from './waybill-request.assembler';
+import {
+  assembleWaybillRequest,
+  parseRecipient,
+  commodityNameOf,
+  composeMessage,
+  profileSenderOf,
+  senderOf,
+} from './waybill-request.assembler';
 import type { WaybillRequest } from './carrier/carrier-gateway.interface';
 import type { HanjinConfig } from './carrier/hanjin/hanjin.config';
 
@@ -161,5 +168,38 @@ describe('composeMessage', () => {
   });
   it('둘 다 없으면 undefined', () => {
     expect(composeMessage(undefined, null)).toBeUndefined();
+  });
+});
+
+describe('위탁 업체 보내는 분', () => {
+  it('프로필 보내는 분이 있으면 이름·전화만 바꾸고 주소는 그대로 둔다', () => {
+    expect(senderOf(config, { name: '제이시스', phone: '010-1111-2222' })).toEqual({
+      ...config.sender,
+      name: '제이시스',
+      tel: '010-1111-2222',
+    });
+  });
+
+  it('프로필이 없거나 전화가 비면 HANJIN_SENDER_* 값을 쓴다', () => {
+    expect(senderOf(config, null)).toBe(config.sender);
+    expect(senderOf(config, { name: '모모', phone: '' }).tel).toBe(config.sender.tel);
+  });
+
+  it('이름 없는 스냅샷은 보내는 분으로 쓰지 않는다', () => {
+    expect(profileSenderOf({ name: '  ', phone: '010' })).toBeNull();
+    expect(profileSenderOf(null)).toBeNull();
+    expect(profileSenderOf({ name: ' 오직미 ', phone: ' 010-1 ' })).toEqual({ name: '오직미', phone: '010-1' });
+  });
+
+  it('송장 요청에 프로필 보내는 분이 실린다', () => {
+    const req = assembleWaybillRequest({
+      shipmentId,
+      recipientSnapshot: snapshot,
+      lines: [{ productName: 'A', skuName: 'A', quantity: 1, skuId: 's1' }],
+      config,
+      profileSender: { name: '룰루아이', phone: '010-3333-4444' },
+    });
+    expect(req.sender.name).toBe('룰루아이');
+    expect(req.sender.baseAddress).toBe(config.sender.baseAddress);
   });
 });

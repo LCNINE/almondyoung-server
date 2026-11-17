@@ -89,6 +89,7 @@ export class WaybillManager {
             lines: ctx.lines,
             config: this.config,
             entrancePassword: ctx.entrancePassword,
+            profileSender: ctx.profileSender,
           });
           const row = await this.repo.insertPending(trx, {
             shipmentId,
@@ -111,6 +112,7 @@ export class WaybillManager {
           lines: ctx.lines,
           config: this.config,
           entrancePassword: ctx.entrancePassword,
+          profileSender: ctx.profileSender,
         });
         return { waybillId: r.waybillId, request };
       });
@@ -165,6 +167,7 @@ export class WaybillManager {
       lines: ctx.lines,
       config: this.config,
       entrancePassword: ctx.entrancePassword,
+      profileSender: ctx.profileSender,
     });
     return this.machine.drive(active.id, request);
   }

@@ -2,9 +2,10 @@ import { createCheckpointsForTesting } from '@app/authorization';
 import { ConfigService } from '@nestjs/config';
 import * as postgres from 'postgres';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
-import { DbTx, wmsSchema } from '../../inventory/schema/inventory.schema';
+import { eq } from 'drizzle-orm';
+import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import { AuditService } from '../../inventory/shared/services/audit.service';
-import { makeDb, makeDbService, wireLogistics, type Wired } from '../services/__support__';
+import { makeDb, makeDbService, seedHolder, wireLogistics, type Wired } from '../services/__support__';
 import { FulfillmentCommandService } from '../services/fulfillment-command.service';
 import { FulfillmentInvariantService } from '../services/fulfillment-invariant.service';
 import { FulfillmentWorkflowGate } from '../services/fulfillment-workflow-gate.service';
@@ -72,6 +73,31 @@ describeIfDb('WaybillReader (DB integration)', () => {
           { productName: '아몬드유 30입', skuName: 'it-sku', quantity: 2, skuId: seed.skuId },
         ]);
         expect(reader.recipientHashOf(ctx.recipientSnapshot)).toHaveLength(64);
+        throw new Error('rollback');
+      })
+      .catch((e: unknown) => {
+        if (!(e instanceof Error) || e.message !== 'rollback') throw e;
+      });
+  });
+
+  it('화주가 연결된 배송 프로필이면 그 보내는 분을 싣고, 아니면 비운다', async () => {
+    await db
+      .transaction(async (tx) => {
+        const seed = await seedPlannedShipmentForWaybill(tx as never, deps);
+        expect((await reader.loadIssueContext(tx as never, seed.shipmentId)).profileSender).toBeNull();
+
+        const [shipment] = await tx
+          .select({ profileId: wmsTables.shipments.shippingProfileId })
+          .from(wmsTables.shipments)
+          .where(eq(wmsTables.shipments.id, seed.shipmentId));
+        const { holderId } = await seedHolder(tx as never);
+        await tx
+          .update(wmsTables.deliveryProfiles)
+          .set({ holderId })
+          .where(eq(wmsTables.deliveryProfiles.id, shipment.profileId as string));
+
+        const ctx = await reader.loadIssueContext(tx as never, seed.shipmentId);
+        expect(ctx.profileSender).toEqual({ name: 'Sender', phone: '02-0000-0000' });
         throw new Error('rollback');
       })
       .catch((e: unknown) => {

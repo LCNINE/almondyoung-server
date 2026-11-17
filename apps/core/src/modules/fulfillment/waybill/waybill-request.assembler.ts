@@ -3,7 +3,7 @@ import type { HanjinConfig } from './carrier/hanjin/hanjin.config';
 import type { WaybillRequest } from './carrier/carrier-gateway.interface';
 import { deriveCustOrdNo } from './cust-ord-no';
 import { WAYBILL } from './waybill.constants';
-import type { ManifestLineLite, WaybillRecipient } from './waybill.types';
+import type { ManifestLineLite, ProfileSender, WaybillRecipient } from './waybill.types';
 
 // 상세주소는 없는 주소(단독주택 등)가 있어 받지 않는다. 한진은 빈 상세주소를 거절하므로 보낼 때 대체값을 넣는다(hanjin-carrier.gateway).
 export const REQUIRED_RECIPIENT_FIELDS = ['recipientName', 'phone', 'postalCode', 'roadAddress'] as const;
@@ -32,6 +32,26 @@ export interface AssembleInput {
   config: HanjinConfig;
   /** 송장에만 싣고 저장하지 않는다. shipments.entrance_password 에서 온다. */
   entrancePassword?: string | null;
+  profileSender?: ProfileSender | null;
+}
+
+/** jsonb 스냅샷에서 이름이 있을 때만 보내는 분으로 쓴다. 이름 없는 프로필로 빈 보낸분이 찍히지 않게 */
+export function profileSenderOf(snapshot: unknown): ProfileSender | null {
+  const s = (snapshot ?? {}) as Record<string, unknown>; // jsonb 는 unknown 이라 키 접근에 캐스팅이 필요하다. 값 타입은 아래에서 다시 본다
+  const name = typeof s.name === 'string' ? s.name.trim() : '';
+  if (!name) return null;
+
+  return { name, phone: typeof s.phone === 'string' ? s.phone.trim() : '' };
+}
+
+/** 프로필 보내는 분이 있으면 이름·전화만 바꾼다. 주소는 출고지(창고)라 HANJIN_SENDER_* 그대로다 */
+export function senderOf(
+  config: HanjinConfig,
+  profileSender: ProfileSender | null | undefined,
+): HanjinConfig['sender'] {
+  if (!profileSender) return config.sender;
+
+  return { ...config.sender, name: profileSender.name, tel: profileSender.phone || config.sender.tel };
 }
 
 /**
@@ -69,7 +89,7 @@ export function assembleWaybillRequest(input: AssembleInput): WaybillRequest {
       mobile: rc.phone,
       message: composeMessage(rc.deliveryNote, input.entrancePassword),
     },
-    sender: input.config.sender,
+    sender: senderOf(input.config, input.profileSender),
     items,
     commodityName,
     boxType: input.config.boxType,

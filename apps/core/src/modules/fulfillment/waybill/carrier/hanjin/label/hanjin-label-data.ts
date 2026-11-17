@@ -1,6 +1,6 @@
 import type { HanjinConfig } from '../hanjin.config';
 import type { IssueContext, WaybillRow } from '../../../waybill.types';
-import { commodityNameOf, composeMessage, parseRecipient } from '../../../waybill-request.assembler';
+import { commodityNameOf, composeMessage, parseRecipient, senderOf } from '../../../waybill-request.assembler';
 import type { LabelItem } from '../../../label/label-items';
 
 /** print-wbl 분류필드(정본 §3.2). labelData 에 없으면 '' — demo 캐리어는 일부만 채운다. */
@@ -105,6 +105,7 @@ export function buildHanjinLabelContent({
     return typeof v === 'string' || typeof v === 'number' ? String(v).trim() : '';
   };
   const rc = parseRecipient(ctx.recipientSnapshot);
+  const sender = senderOf(config, ctx.profileSender);
   const regionCode = field('dom_rgn');
 
   return {
@@ -134,7 +135,7 @@ export function buildHanjinLabelContent({
       baseAddress: rc.roadAddress,
       detailAddress: rc.detailAddress,
     },
-    sender: { name: config.sender.name, phone: config.sender.tel, baseAddress: config.sender.baseAddress },
+    sender: { name: sender.name, phone: sender.tel, baseAddress: sender.baseAddress },
     deliveryMessage: composeMessage(rc.deliveryNote, ctx.entrancePassword) ?? '',
     commodityName: commodityNameOf(ctx.lines),
     items: [...items],
