@@ -1,5 +1,6 @@
 import { BadRequestError } from '@app/shared';
 import { SvgRasterizer } from '../../../platform/label/svg-rasterizer';
+import { InventoryLabelsManager } from './inventory-labels.manager';
 import { InventoryLabelsReader } from './inventory-labels.reader';
 import { InventoryLabelsService } from './inventory-labels.service';
 
@@ -12,8 +13,7 @@ describe('InventoryLabelsService', () => {
   const locationsForLabels = jest.fn();
   const skusForLabels = jest.fn();
   const service = new InventoryLabelsService(
-    { locationsForLabels, skusForLabels } as unknown as InventoryLabelsReader,
-    rasterizer,
+    new InventoryLabelsManager({ locationsForLabels, skusForLabels } as unknown as InventoryLabelsReader, rasterizer),
   );
 
   beforeEach(() => jest.resetAllMocks());
