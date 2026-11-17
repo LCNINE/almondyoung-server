@@ -6,7 +6,7 @@
 
 ## 1. 왜
 
-라이브 판매 창고의 재고는 전량이 입고기본존(시스템 로케이션, `system_role = 'inbound_default'`) 한 곳에 있다. #1235 가 셀메이트 선반 위치 텍스트로 선반 로케이션(standard)을 만들었지만 재고는 아직 거기 없다. 원장이 실제 선반을 가리켜야 피킹 안내(`FifoLocationStrategy`, 원장 행 기준)와 송장 위치 칸이 원장에서 나온다.
+라이브 판매 창고의 재고는 전량이 입고기본존(시스템 로케이션, `system_role = 'inbound_default'`) 한 곳에 있다. #1235 가 셀메이트 선반 위치 텍스트로 선반 로케이션(standard)을 만들었지만 재고는 아직 거기 없다. 원장이 실제 선반을 가리켜야 피킹 배정(`fulfillment/picking/allocation/` 의 `lockSkuCapacities`·`allocate-lines.ts` — 원장 행에서 로케이션 코드 순으로 고르고, 한 곳에서 줄 전량을 채울 수 있으면 그곳을 먼저 쓴다)과 송장 위치 칸이 원장에서 나온다.
 
 컷오버 때 실사는 하지 않는다(사용자 결정 — 셀메이트를 믿는다). 그래서 **위치를 하나로 아는 SKU 만** 옮기고, 나머지는 입고기본존에 남겨 컷오버 뒤 실사 대상으로 넘긴다. 남은 SKU 의 송장은 지금 규칙(`label-items.ts` — 배정 로케이션이 시스템 로케이션이면 셀메이트 위치 텍스트)대로 찍힌다.
 
@@ -30,7 +30,8 @@
 
 ## 3. 제약
 
-- 실행 시점: **T 의 마지막 `sync-stock`·`load-shelf-positions` 직후**(당일 순서 2). sync 가 증가분을 입고기본존에 넣으므로 전날 옮기면 다시 갈린다. `sku_shelf_positions` 도 그 직전 적재가 최신이어야 한다.
+- 실행 시점: **T 의 마지막 `sync-stock`·`load-shelf-positions` 직후**(당일 순서 2). sync 가 증가분을 입고기본존에 넣으므로 전날 옮기면 다시 갈린다. `load-shelf-positions` 는 upsert 만 하고 **지우지 않는다** — 셀메이트에서 위치를 지웠거나 백업에서 빠진 SKU 는 옛 위치 행이 남는다. 그래서 T 당일 적재가 다시 쓴 행만 믿는다(5.1 `keep: stale`).
+- sync-stock 의 절대값 차감(`applyStockDelta`)은 `stock_ledgers.version` 을 올리지 않고, 입고 대기분을 보지 않고 입고기본존에서 뺀다. 그래서 출발 행에서 guard 가 `INBOUND_ORIGIN_STOCK_INCONSISTENT`(ON_HAND < 입고 대기 + 세션 통제분)를 던질 수 있다.
 - `sku_shelf_positions` 는 SKU 당 한 행이고, 적재 스크립트는 같은 옵션이 두 번 나오면 **마지막 값으로 덮어쓴다.** 그래서 DB 만으로 «위치가 여럿»을 알 수 있는 건 텍스트 자체에 여럿이 적힌 경우뿐이다.
 - `MovementService.moveImmediately` 가 MOVE 의 도메인 명령이다. 멱등키 재사용 시 본문이 다르면 `ConflictError` 를 던진다.
 - `StockEventStore.createEvent` 는 `BatchControlledStockGuard.assertRemovalAllowed` 로 **적치 대기 입고분(`inboundPendingQty`)·배치 세션 통제분**을 출발지에서 빼지 못하게 막는다(`INBOUND_ORIGIN_STOCK_PROTECTED` / `BATCH_CONTROLLED_STOCK`).
@@ -50,16 +51,20 @@
 
 ### 5.1 판정 — 순수 함수 (스크립트·판정 스크립트 공유)
 
-`readShelfCode` 옆(또는 `scripts/sellmate/` 의 import 없는 파일)에 순수 함수 하나를 둔다. 입력: SKU 의 위치 텍스트(없을 수 있음), 그 창고의 활성 standard 로케이션 코드 집합. 출력:
+`readShelfCode` 옆(또는 `scripts/sellmate/` 의 import 없는 파일)에 순수 함수 하나를 둔다. 입력: SKU 의 위치 텍스트와 그 행의 `updated_at`(없을 수 있음), 신선도 기준 시각, 그 창고의 활성 standard 로케이션 코드 집합, 그 SKU 가 이미 ON_HAND 를 가진 standard 로케이션 코드들. 출력:
 
 | 결과 | 조건 |
 |---|---|
 | `move` (목적 코드) | 텍스트가 `exact`·`fixed`·`custom-bin` 으로 읽히고 고쳐 읽은 코드의 로케이션이 있다 |
 | `keep: no-position` | `sku_shelf_positions` 행이 없다 |
 | `keep: unreadable` | `exception` (여러 위치 텍스트 포함) |
+| `keep: stale` | 위치 행의 `updated_at` 이 신선도 기준보다 앞이다(T 당일 적재가 다시 쓰지 않았다) |
 | `keep: no-location` | 읽혔지만 그 코드의 활성 standard 로케이션이 창고에 없다 |
+| `keep: elsewhere` | 이 SKU 가 셀메이트 위치와 **다른** standard 로케이션에 이미 ON_HAND 를 가졌다(컷오버 전 앱 적치 등). 옮기면 한 SKU 가 선반 두 곳에 나뉜다 **(Claude 판단)** |
 
-`fixed`(`CC-4-1` → `CC-04-01` 등)는 #1235 가 그 고친 코드로 로케이션을 만들었으므로 `move` 다.
+`fixed`(`CC-4-1` → `CC-04-01` 등)·`custom-bin` 을 옮길지는 #1235 의 현장 확인(설계 §7 ①②③)에 달렸다 — **사용자 답 대기.** 확인 전이면 규칙별 스위치로 `keep: unconfirmed` 로 돌린다.
+
+신선도 기준은 `--positions-since=<시각>` 으로 받는다(T 당일 `load-shelf-positions` 를 돌리기 직전 시각). 빠지면 `--apply` 를 거절한다 **(Claude 판단)**.
 
 ### 5.2 스크립트 `scripts/sellmate/move-stock-to-shelf.ts`
 
@@ -68,23 +73,25 @@
 - `move` 인 SKU 의 옮길 수량 = 그 원장 행의 qty 중 **일반 가용분**(`BatchControlledStockGuard` 의 `generallyAvailableQty` — 적치 대기 입고분·배치 통제분 제외). 제외된 나머지는 남기고 사유 `keep: protected` 로 적는다. 일반 가용분이 0 이면 통째로 남긴다.
 - 그 SKU·창고에 진행 중 피킹 배정(`picking_source_allocations`, 활성 작업 항목)이 걸려 있으면 옮기지 않는다(`keep: allocated`). T 직후라 0 이어야 정상이다.
 - 적용은 SKU 하나당 `MovementService.moveImmediately` 한 번(줄 하나). 생성은 `scripts/ops/close-sellmate-csv-inbound.ts` 선례처럼 필요한 의존성만 손으로 만든다(`StockEventStore`·`InventoryIdempotencyService`·sellable 서비스·guard). actor 는 시스템 actor, memo 에 `cutover #1236`.
-- **멱등:** 1차는 대상 조건 자체다 — 옮긴 SKU 는 입고기본존 잔량이 0 이라 다시 대상이 안 된다. 2차는 멱등키 `cutover-1236:<warehouseId>:<skuId>:<출발 원장 행 version>` — 중간에 죽고 다시 돌려도 같은 상태면 같은 키라 두 번 옮기지 않고, 원장이 바뀌었으면 새 키다.
-- SKU 하나의 실패(409 등)는 기록하고 다음 SKU 로 간다. 끝에 실패 수가 0 이 아니면 종료 코드 1.
+- **멱등:** 1차는 대상 조건 자체다 — 옮긴 SKU 는 입고기본존 잔량이 0 이라 다시 대상이 안 된다. 2차는 멱등키 `cutover-1236:<warehouseId>:<skuId>:<출발 원장 행 version>`. 키는 MOVE 가 커밋될 때만 소비되고 그 MOVE 가 version 을 올리므로(`stock-event.store.ts`), 다음 MOVE 는 언제나 새 키다. (sync 의 `applyStockDelta` 는 version 을 안 올리지만, 키를 소비하지 않으니 충돌하지 않는다.)
+- 출발 행에서 guard 가 `INBOUND_ORIGIN_STOCK_INCONSISTENT` 를 던지면 `keep: inconsistent` 로 남기고 목록에 적는다(실패로 세지 않는다 — 실사 대상이다).
+- SKU 하나의 실패는 기록하고 다음 SKU 로 간다. `moveImmediately` 는 Nest `BadRequestException`/`ConflictException` 을, 멱등 쪽은 `@app/shared` 의 `ConflictError` 를 던지므로 SKU 단위 catch 는 셋 다 잡는다(선례처럼 `ConflictError` 만 잡으면 실행 전체가 죽는다). 끝에 실패 수가 0 이 아니면 종료 코드 1.
+- **dry-run 은 읽기 전용 분류다.** `moveImmediately` 는 tx 를 받지 않고 자기 트랜잭션을 열기 때문에 «끝까지 돌리고 롤백»은 안 된다. guard 판정(`protected`·`inconsistent`)은 dry-run 에서도 guard 의 읽기(`getAvailability`, lock 없이)로 미리 센다.
 - 출력: 요약(옮김 SKU·수량, 사유별 남김 SKU·수량, 실패) + **남긴 SKU 목록 CSV**(SKU 코드·사유·수량·위치 텍스트). 경로는 `--out`, 기본은 `apps/core/tmp/`(커밋 안 되는 곳). 위치 원문이 들어가므로 레포에 커밋하지 않는다.
 - **1회성.** T 당일 재시도만 안전하다. T 이후 앱 간편입고분은 입고기본존에 들어오므로, 며칠 뒤 다시 돌리면 그걸 쓸어 간다(적치 대기로 묶인 입고분은 guard 가 막지만, 묶이지 않은 입고분은 막지 못한다). 스크립트 머리 주석과 런북에 «T 당일만»을 적는다. 막는 장치는 두지 않는다 **(Claude 판단 — 당일 한 번 돌리는 개발자 스크립트라 장치의 값이 작다)**.
 
 ### 5.3 판정 스크립트 고치기
 
-`scripts/ops/cutover-preflight/checks/location.ts` «로케이션 2»의 «위치가 하나인 SKU» 쿼리(`count(distinct position_code) = 1`)와 «둘 이상» 쿼리(`> 1`, 항상 0)를 5.1 함수로 바꾼다 — 행을 읽어 TS 에서 판정하고 사유별로 센다. ◆(당일 처리) 문구에 스크립트 명령을 적는다.
+`scripts/ops/cutover-preflight/checks/location.ts` «로케이션 2»의 «위치가 하나인 SKU» 쿼리(`count(distinct position_code) = 1`)와 «둘 이상» 쿼리(`> 1`, 항상 0)를 5.1 함수로 바꾼다 — 행을 읽어 TS 에서 판정하고 사유별로 센다. 범위는 `inbound_default` 로케이션만(지금은 `is_system` 전체라 반품기본존 등이 섞인다). 신선도 기준은 판정 스크립트가 모르므로 `stale` 은 세지 않고, guard 몫(`protected`·`allocated`·`inconsistent`)도 세지 않는다 — 그건 이 스크립트의 출력이 정본이다. ◆(당일 처리)는 «5.1 이 `move` 로 판정한 SKU 가 입고기본존에 남았다»이고 문구에 스크립트 명령을 적는다. `--after-cutover` 에서는 앱 입고분이 다시 잡히므로 ◆ 가 아니라 정보로 낮춘다 **(Claude 판단)**.
 
 ### 5.4 테스트
 
 - 5.1 순수 함수: 표의 각 줄, `fixed`·`custom-bin` 이 고친 코드로 `move`, 다른 창고에만 있는 코드는 `no-location`.
-- 통합 스펙(`describeIfDb` 가드): 입고기본존 재고 → MOVE 후 원장이 로케이션으로, `stock_events` 에 MOVE 1건; 재실행 0건; 적치 대기 입고분은 남김; 피킹 배정 걸린 SKU 남김. 하네스는 `apps/core/src/modules/inventory/inbound/services/__fixtures__/inbound-harness.ts` 의 `MovementService` 조립을 쓴다.
+- 통합 스펙(`describeIfDb` 가드): 입고기본존 재고 → MOVE 후 원장이 로케이션으로, `stock_events` 에 MOVE 1건; 재실행 0건; 적치 대기 입고분은 남김; 피킹 배정 걸린 SKU 남김; 다른 선반에 재고가 있는 SKU 남김; 낡은 위치 행 남김. 옮긴 뒤 피킹 배정(`allocate-lines.ts` 경로)이 그 선반을 고르는지도 본다. 하네스는 `apps/core/src/modules/inventory/inbound/services/__fixtures__/inbound-harness.ts` 의 `MovementService` 조립을 쓴다 — 커밋하므로 `inRollbackTx` 를 못 쓰고 정리를 직접 한다.
 
 ## 6. 운영
 
-- 당일 순서 2: `clear-reservations` → `sync-stock` → `load-shelf-positions` 마지막 실행 → **이 스크립트 dry-run → 숫자 확인 → `--apply`** → 판정 스크립트 재실행(«로케이션 2» 초록).
+- 당일 순서 2: `clear-reservations` → `sync-stock` → `load-shelf-positions` 마지막 실행 → **이 스크립트 dry-run → 숫자 확인 → `--apply`** → 판정 스크립트 재실행(«로케이션 2» ◆ 0). 남긴 SKU 목록의 사유별 숫자를 본다.
 - 라이브 dry-run 은 터널이 필요하다 — 사용자가 띄운다. 리허설로 T 전에 dry-run 을 한 번 돌려 사유별 숫자를 본다(쓰기 없음).
 - 배포 무관(스크립트만). 남긴 SKU 목록은 컷오버 뒤 실사 입력이 된다.
 
