@@ -806,6 +806,9 @@ describeIfDb('OutboundBatchOrchestrator (DB integration)', () => {
       `closed-add-a-${randomUUID()}`,
       master,
     );
+    expect((await services.batches.getEligibleShipments(batch.batchId)).map((row) => row.shipmentId)).toContain(
+      fixtureB.shipment.id,
+    );
     await db
       .update(wmsTables.outboundBatchWorkItems)
       .set({ status: 'completed', completedAt: new Date() })
@@ -829,8 +832,27 @@ describeIfDb('OutboundBatchOrchestrator (DB integration)', () => {
       batch.batchId,
     );
 
+    expect(await services.batches.getEligibleShipments(batch.batchId)).toEqual([]);
     await expect(
       services.batches.addShipment(batch.batchId, fixtureB.shipment.id, `closed-add-b-${randomUUID()}`, master),
+    ).rejects.toMatchObject({ response: expect.objectContaining({ code: 'BATCH_NOT_JOINABLE' }) });
+  });
+
+  it('offers no eligible shipments for a canceled batch', async () => {
+    const warehouse = await db.transaction((tx) => seedWarehouseWithZone(tx as unknown as DbTx));
+    const fixture = await committedFixture({ warehouse });
+    const batch = await createBatch(warehouse.warehouseId);
+    expect((await services.batches.getEligibleShipments(batch.batchId)).map((row) => row.shipmentId)).toContain(
+      fixture.shipment.id,
+    );
+    await db
+      .update(wmsTables.outboundBatches)
+      .set({ status: 'canceled' })
+      .where(eq(wmsTables.outboundBatches.id, batch.batchId));
+
+    expect(await services.batches.getEligibleShipments(batch.batchId)).toEqual([]);
+    await expect(
+      services.batches.addShipment(batch.batchId, fixture.shipment.id, `canceled-add-${randomUUID()}`, master),
     ).rejects.toMatchObject({ response: expect.objectContaining({ code: 'BATCH_NOT_JOINABLE' }) });
   });
 
