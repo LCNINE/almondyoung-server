@@ -49,6 +49,8 @@ async function insertLine(
   salesOrderId: string,
   l: Partial<{
     productName: string;
+    fulfillmentKind: 'physical' | 'digital';
+    almondDesignId: string;
   }> = {},
 ): Promise<void> {
   await tx.insert(wmsTables.salesOrderLines).values({
@@ -57,6 +59,8 @@ async function insertLine(
     productName: l.productName ?? 'IT Product',
     quantity: 1,
     unitPrice: 1000,
+    fulfillmentKind: l.fulfillmentKind ?? null,
+    almondDesignId: l.almondDesignId ?? null,
   });
 }
 
@@ -171,6 +175,20 @@ describeIfDb('SalesOrdersService.list — server-side filters (DB integration, r
 
       expect((await svc.getOne(withFo, tx))!.fulfillmentOrder).toEqual({ id: fo.id, status: 'shipped' });
       expect((await svc.getOne(withoutFo, tx))!.fulfillmentOrder).toBeNull();
+    });
+  });
+
+  it('getOne(id).lineRouteCounts — 창고·인쇄·디지털 라인 수를 싣는다', async () => {
+    await run(async (tx, svc, tag) => {
+      const printOnly = await insertOrder(tx, { channelOrderId: `${tag}-print` });
+      await insertLine(tx, printOnly, { almondDesignId: randomUUID() });
+      const mixed = await insertOrder(tx, { channelOrderId: `${tag}-mixed` });
+      await insertLine(tx, mixed);
+      await insertLine(tx, mixed, { almondDesignId: randomUUID() });
+      await insertLine(tx, mixed, { fulfillmentKind: 'digital' });
+
+      expect((await svc.getOne(printOnly, tx))!.lineRouteCounts).toEqual({ warehouse: 0, outsourced: 1, digital: 0 });
+      expect((await svc.getOne(mixed, tx))!.lineRouteCounts).toEqual({ warehouse: 1, outsourced: 1, digital: 1 });
     });
   });
 

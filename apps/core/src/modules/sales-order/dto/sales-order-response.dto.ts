@@ -101,6 +101,17 @@ export class SalesOrderFulfillmentRefDto {
   status: string;
 }
 
+export class SalesOrderLineRouteCountsDto {
+  @ApiProperty({ description: '창고에서 출고하는 라인 수 — 출고주문 항목이 되는 라인' })
+  warehouse: number;
+
+  @ApiProperty({ description: '외주(인쇄) 라인 수 — 인쇄소가 고객에게 바로 보낸다' })
+  outsourced: number;
+
+  @ApiProperty({ description: '디지털 라인 수 — 배송이 없다' })
+  digital: number;
+}
+
 export class SalesOrderResponseDto {
   @ApiProperty({ description: '판매 주문 ID' })
   id: string;
@@ -185,6 +196,13 @@ export class SalesOrderResponseDto {
     required: false,
   })
   fulfillmentOrder?: SalesOrderFulfillmentRefDto | null;
+
+  @ApiProperty({
+    description: '라인이 나가는 길별 수. 상세 조회에만 싣는다',
+    type: SalesOrderLineRouteCountsDto,
+    required: false,
+  })
+  lineRouteCounts?: SalesOrderLineRouteCountsDto;
 
   @ApiProperty({ description: '주문 라인 목록', type: [SalesOrderLineResponseDto] })
   lines: SalesOrderLineResponseDto[];

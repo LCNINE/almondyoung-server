@@ -109,6 +109,70 @@ it('출고주문이 없으면 없다고 보인다', () => {
   expect(mockShipments).not.toHaveBeenCalled();
 });
 
+it('창고 상품이 없는 주문은 출고주문이 생길 것처럼 말하지 않는다', () => {
+  mockPermissions = ['fulfillment.order.read', 'order.order.read'];
+  render(
+    <OrderFulfillmentSection
+      orderId="so-1"
+      orderNo="AY-1"
+      fulfillmentOrder={null}
+      lineRouteCounts={{ warehouse: 0, outsourced: 1, digital: 1 }}
+    />
+  );
+
+  expect(
+    screen.getByText('창고에서 내보낼 상품이 없는 주문이에요.')
+  ).toBeTruthy();
+  expect(screen.queryByText('아직 출고주문이 없어요.')).toBeNull();
+  expect(
+    screen.getByText(/인쇄소가 고객에게 바로 보내요\. 진행은 아래/)
+  ).toBeTruthy();
+  expect(screen.getByText(/디지털 상품은 배송 없이/)).toBeTruthy();
+});
+
+it('인쇄 정보를 볼 권한이 없으면 인쇄 정보로 안내하지 않는다', () => {
+  render(
+    <OrderFulfillmentSection
+      orderId="so-1"
+      orderNo="AY-1"
+      fulfillmentOrder={null}
+      lineRouteCounts={{ warehouse: 0, outsourced: 1, digital: 0 }}
+    />
+  );
+
+  expect(screen.getByText(/인쇄소가 고객에게 바로 보내요/)).toBeTruthy();
+  expect(screen.queryByText(/진행은 아래/)).toBeNull();
+});
+
+it('창고 상품이 있는데 출고주문이 없으면 아직 없다고 보인다', () => {
+  render(
+    <OrderFulfillmentSection
+      orderId="so-1"
+      orderNo="AY-1"
+      fulfillmentOrder={null}
+      lineRouteCounts={{ warehouse: 1, outsourced: 0, digital: 0 }}
+    />
+  );
+
+  expect(screen.getByText('아직 출고주문이 없어요.')).toBeTruthy();
+  expect(screen.queryByRole('listitem')).toBeNull();
+});
+
+it('출고주문이 있어도 거기 들어가지 않는 인쇄 상품을 알린다', () => {
+  render(
+    <OrderFulfillmentSection
+      orderId="so-1"
+      orderNo="AY-1"
+      fulfillmentOrder={fo}
+      lineRouteCounts={{ warehouse: 1, outsourced: 1, digital: 0 }}
+    />
+  );
+
+  expect(screen.getByRole('link', { name: '출고주문 상세' })).toBeTruthy();
+  expect(screen.getByText(/인쇄 상품은 출고주문에 들어가지 않고/)).toBeTruthy();
+  expect(screen.queryByText(/디지털 상품/)).toBeNull();
+});
+
 it('출고주문을 싣지 않는 옛 응답이면 없다고 단정하지 않는다', () => {
   render(
     <OrderFulfillmentSection

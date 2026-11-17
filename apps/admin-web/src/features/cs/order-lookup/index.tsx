@@ -185,6 +185,7 @@ export default function CsOrderLookup() {
         orderId={order.id}
         orderNo={customerOrderNo}
         fulfillmentOrder={order.fulfillmentOrder}
+        lineRouteCounts={order.lineRouteCounts}
       />
 
       {/* 고객/배송 정보 */}
@@ -233,9 +234,10 @@ export default function CsOrderLookup() {
                 ? variantMap?.get(line.variantId)
                 : undefined;
               const option = variant?.optionLabel;
-              const almondDesignId = almondDesignByItem.get(
-                line.channelOrderItemId
-              );
+              // core 라인 값이 출고 안내와 같은 근거다. 옛 응답이면 Medusa 주문에서 찾는다
+              const almondDesignId =
+                line.almondDesignId ??
+                almondDesignByItem.get(line.channelOrderItemId);
               return (
                 <Fragment key={line.id ?? idx}>
                 <tr className="border-b border-gray-100 last:border-0">

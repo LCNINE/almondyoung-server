@@ -115,6 +115,8 @@ export interface SalesOrderDto {
   shipmentPhase?: string;
   /** 상세 조회에만 싣는다(판매주문당 많아야 하나). 옛 응답엔 없다 */
   fulfillmentOrder?: { id: string; status: string } | null;
+  /** 상세 조회에만 싣는다 — 창고(출고주문에 들어감)·인쇄·디지털 라인 수. 옛 응답엔 없다 */
+  lineRouteCounts?: { warehouse: number; outsourced: number; digital: number };
   lines: {
     variantId: string;
     matchingResolved?: boolean;
@@ -122,6 +124,8 @@ export interface SalesOrderDto {
     quantity: number;
     unitPrice?: number;
     totalPrice?: number;
+    /** 아몬드템플릿 인쇄 라인이면 디자인 id */
+    almondDesignId?: string | null;
   }[];
   businessTimeline?: SalesOrderBusinessTimelineItemDto[];
   createdAt: string;
