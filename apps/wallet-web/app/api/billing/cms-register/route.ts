@@ -1,7 +1,11 @@
 import { registerCmsBankAccount } from '@/lib/wallet-api';
 import { getBackendAuthCookie } from '@/lib/auth/session-cookies';
+import { rejectUnboundBillingRequest } from '@/lib/auth/entry-ticket';
 
 export async function POST(request: Request) {
+  const rejected = await rejectUnboundBillingRequest(request);
+  if (rejected) return rejected;
+
   const body = await request.json().catch(() => null);
   if (!body) {
     return Response.json({ error: '잘못된 요청입니다.' }, { status: 400 });

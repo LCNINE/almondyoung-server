@@ -1,8 +1,12 @@
 import { getBackendAuthCookie } from '@/lib/auth/session-cookies';
+import { rejectUnboundBillingRequest } from '@/lib/auth/entry-ticket';
 
 const WALLET_API_URL = process.env.NEXT_PUBLIC_WALLET_API_URL ?? 'http://localhost:3100';
 
 export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const rejected = await rejectUnboundBillingRequest(request);
+  if (rejected) return rejected;
+
   const { id } = await params;
   if (!id) {
     return Response.json({ error: '잘못된 요청입니다.' }, { status: 400 });

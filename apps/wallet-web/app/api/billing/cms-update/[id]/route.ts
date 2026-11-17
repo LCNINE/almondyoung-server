@@ -1,7 +1,11 @@
 import { updateCmsBankAccount } from '@/lib/wallet-api';
 import { getBackendAuthCookie } from '@/lib/auth/session-cookies';
+import { rejectUnboundBillingRequest } from '@/lib/auth/entry-ticket';
 
 export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const rejected = await rejectUnboundBillingRequest(request);
+  if (rejected) return rejected;
+
   const { id } = await params;
 
   const body = await request.json().catch(() => null);
