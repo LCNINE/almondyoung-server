@@ -68,7 +68,8 @@ export function parseShelfMoveArgs(argv: string[]): Omit<ShelfMoveOptions, 'ware
   out: string;
 } {
   let apply = false;
-  let concurrency = 8;
+  // 4 — 2026-11-18 라이브에서 8·16 동시 연결 직후 sst 터널이 죽었다. 터널이 죽으면 당일 시간이 다 날아가니 끝까지 가는 쪽을 고른다.
+  let concurrency = 4;
   let warehouseId: string | null = null;
   let positionsSince: Date | null = null;
   const includeRules = new Set<ShelfMoveRule>();

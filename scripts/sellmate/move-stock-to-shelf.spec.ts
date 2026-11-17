@@ -87,8 +87,8 @@ describe('parseShelfMoveArgs', () => {
     expect(parseShelfMoveArgs(['--warehouse-id=wh-1']).warehouseId).toBe('wh-1');
   });
 
-  it('동시 처리 수는 기본 8, --concurrency 로 1~16', () => {
-    expect(parseShelfMoveArgs([]).concurrency).toBe(8);
+  it('동시 처리 수는 기본 4(터널이 버티는 수), --concurrency 로 1~16', () => {
+    expect(parseShelfMoveArgs([]).concurrency).toBe(4);
     expect(parseShelfMoveArgs(['--concurrency=3']).concurrency).toBe(3);
     expect(() => parseShelfMoveArgs(['--concurrency=0'])).toThrow(/concurrency/);
     expect(() => parseShelfMoveArgs(['--concurrency=17'])).toThrow(/concurrency/);

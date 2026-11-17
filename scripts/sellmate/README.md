@@ -129,6 +129,7 @@ bash scripts/sellmate/run.sh live build-location-master --apply    # 반영
 bash scripts/sellmate/run.sh live move-stock-to-shelf --positions-since=<시각>            # dry-run
 bash scripts/sellmate/run.sh live move-stock-to-shelf --positions-since=<시각> --apply    # 반영
 # 판매 창고가 둘 이상이면 --warehouse-id=<부천 창고 id> 를 붙인다
+# 동시 처리 기본 4(--concurrency). 11-18 라이브에서 8·16 은 sst 터널을 죽였다. 4 로 dry-run 약 3분, apply 는 그보다 몇 배 길다
 ```
 
 ## 바코드번호2 백필 (`backfill-barcode2.ts`, #1356)
