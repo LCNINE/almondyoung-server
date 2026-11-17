@@ -90,6 +90,51 @@ useUpdateSalesOrder.permission = [
   'order.order.write',
 ] as const satisfies PermissionRequirement;
 
+const ORDER_HISTORY_DETAILS = ['sales-orders', 'details'] as const;
+
+/** 주문 메모 저장. 저장한 글자는 서버에 그대로 들어가므로 주문내역 목록의 그 주문 메모만 바로 바꾸고, 목록은 뒤에서 다시 읽는다. */
+export const useUpdateSalesOrderMemo = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, memo }: { id: string; memo: string }) =>
+      orders.salesOrders.updateSalesOrder(id, { memo }),
+    onSuccess: async (_, { id, memo }) => {
+      // 다른 페이지·검색에 남은 상세는 옛 메모라, 돌아갔을 때 새로 읽기 전에는 고칠 수 없게 지운다
+      queryClient.removeQueries({
+        queryKey: ORDER_HISTORY_DETAILS,
+        type: 'inactive',
+      });
+      // 저장 전에 시작한 조회(첫 조회 포함)가 옛 메모로 덮지 않게 멈춘다 — 아래 무효화가 다시 읽는다
+      await queryClient.cancelQueries({ queryKey: ORDER_HISTORY_DETAILS });
+      queryClient.setQueriesData<unknown[]>(
+        { queryKey: ORDER_HISTORY_DETAILS },
+        (details) =>
+          details?.map((detail) =>
+            isOrderDetailOf(detail, id) ? { ...detail, memo } : detail
+          )
+      );
+      void queryClient.invalidateQueries({ queryKey: orderQueryKeys.orders });
+      void queryClient.invalidateQueries({ queryKey: ORDER_HISTORY_DETAILS });
+    },
+  });
+};
+function isOrderDetailOf(
+  detail: unknown,
+  id: string
+): detail is Record<string, unknown> {
+  return (
+    typeof detail === 'object' &&
+    detail !== null &&
+    'id' in detail &&
+    detail.id === id
+  );
+}
+// 메모는 개인정보 필드라 서버가 개인정보 보기 권한이 없는 저장을 거절한다
+useUpdateSalesOrderMemo.permission = {
+  allOf: [['order.order.write'], ['customer.pii.read']],
+} as const satisfies PermissionRequirement;
+
 export const useCancelSalesOrder = () => {
   const queryClient = useQueryClient();
 

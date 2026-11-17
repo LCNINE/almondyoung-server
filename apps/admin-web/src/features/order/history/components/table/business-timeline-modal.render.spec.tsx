@@ -161,6 +161,7 @@ describe('주문 행의 계좌 대기 안내', () => {
         orderDate: '',
         channel: 'medusa',
         orderStatus,
+        memoLoaded: true,
         walletIntentId: 'pi-1',
         variantId: 'v-1',
         productName: '상품',

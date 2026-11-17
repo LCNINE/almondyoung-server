@@ -3,7 +3,6 @@
 
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
-import { useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Dialog,
   DialogContent,
@@ -13,8 +12,7 @@ import {
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
-import { orders } from '@/lib/api/domains';
-import { orderQueryKeys } from '@/lib/services/orders';
+import { useUpdateSalesOrderMemo } from '@/lib/services/orders';
 import type { OrderLineRow } from '@/features/order/history/hooks/use-order-rows';
 
 interface Props {
@@ -25,7 +23,6 @@ interface Props {
 
 export function MemoModal({ order, open, onOpenChange }: Props) {
     const [memo, setMemo] = useState('');
-    const queryClient = useQueryClient();
 
     // order가 변경될 때마다 memo 초기화
     useEffect(() => {
@@ -34,29 +31,22 @@ export function MemoModal({ order, open, onOpenChange }: Props) {
         }
     }, [order, open]);
 
-    const updateMutation = useMutation({
-        meta: { permission: ['order.order.write'] },
-        mutationFn: async (params: { orderId: string; memo: string }) => {
-            await orders.salesOrders.updateSalesOrder(params.orderId, {
-                memo: params.memo,
-            });
-        },
-        onSuccess: () => {
-            toast.success('메모가 저장되었습니다.');
-            queryClient.invalidateQueries({ queryKey: orderQueryKeys.orders });
-            onOpenChange(false);
-        },
-        onError: (error: any) => {
-            toast.error(error.message || '메모 저장 중 오류가 발생했습니다.');
-        },
-    });
+    const updateMutation = useUpdateSalesOrderMemo();
 
     const handleSave = () => {
         if (!order) return;
-        updateMutation.mutate({
-            orderId: order.orderId,
-            memo,
-        });
+        updateMutation.mutate(
+            { id: order.orderId, memo },
+            {
+                onSuccess: () => {
+                    toast.success('메모가 저장되었습니다.');
+                    onOpenChange(false);
+                },
+                onError: (error) => {
+                    toast.error(error.message || '메모 저장 중 오류가 발생했습니다.');
+                },
+            }
+        );
     };
 
     if (!order) return null;
@@ -78,7 +68,7 @@ export function MemoModal({ order, open, onOpenChange }: Props) {
                     {order.memo && (
                         <div className="p-3 bg-gray-50 rounded-lg border">
                             <div className="text-xs text-gray-500 mb-1">현재 메모</div>
-                            <div className="text-sm text-gray-700">{order.memo}</div>
+                            <div className="text-sm text-gray-700 whitespace-pre-wrap break-words">{order.memo}</div>
                             <div className="text-xs text-gray-400 mt-1">
                                 메모 히스토리는 WMS API 추가 후 지원 예정 (관리자/시간별 이력 표시)
                             </div>
