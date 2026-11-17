@@ -32,7 +32,7 @@
  *   DATABASE_URL        core 논리 DB 접속 문자열 (실제 반영 시 필수)
  *   DRY_RUN=1           DB 쓰기 없이 헤더 감지 + 샘플 + 통계만 출력
  *   SELLMATE_ENCODING   HTML-xls 인코딩 (기본 euc-kr)
- *   COL_PRODUCT_CODE / COL_PRODUCT_SERIAL / COL_PRODUCT_NAME / COL_ITEM_CODE / COL_OPTION_NAME / COL_BARCODE
+ *   COL_PRODUCT_CODE / COL_PRODUCT_SERIAL / COL_PRODUCT_NAME / COL_ITEM_CODE / COL_OPTION_NAME / COL_BARCODE / COL_BARCODE2
  *                       자동감지가 틀렸을 때 해당 "헤더 이름" 직접 지정
  *
  * ⚠️ 원시 SQL 로 skus 에 넣으므로 배송 프로필 필수 규칙(SkuCatalogManager, #923)을 우회한다 — 셀메이트 폐기와 함께 사라질 경로.
@@ -44,6 +44,7 @@ import postgres, { Sql } from 'postgres';
 import { readRows, detectColumns } from './parse';
 import { excludedReason } from './excluded';
 import { unwrapFormula } from './formula-barcodes-plan';
+import { planSecondaryBarcodes, type Barcode2Plan, type Barcode2Want } from './barcode2-plan';
 
 // 셀메이트 헤더 후보. 실제 양식 헤더(2026-06 개발팀 데이터 내보내기용) 기준으로 확정.
 const COLUMN_CANDIDATES = {
@@ -56,6 +57,8 @@ const COLUMN_CANDIDATES = {
   itemCode: ['옵션정보일련번호', '옵션코드', '품목코드', '판매처옵션코드'],
   optionName: ['옵션명', '사입옵션명'],
   barcode: ['바코드번호(서식)', '바코드번호', '바코드번호2(서식)'],
+  // 보조 바코드(#1356). 대표 바코드 규칙과 별개로, 있으면 is_primary=false 로 넣는다.
+  barcode2: ['바코드번호2'],
 } as const;
 
 type LogicalField = keyof typeof COLUMN_CANDIDATES;
@@ -67,6 +70,7 @@ const OVERRIDES: Partial<Record<LogicalField, string | undefined>> = {
   itemCode: process.env.COL_ITEM_CODE,
   optionName: process.env.COL_OPTION_NAME,
   barcode: process.env.COL_BARCODE,
+  barcode2: process.env.COL_BARCODE2,
 };
 
 const DRY_RUN = process.env.DRY_RUN === '1' || process.env.DRY_RUN === 'true';
@@ -81,6 +85,8 @@ export type ParsedItem = {
   itemCode: string;
   optionName: string;
   barcode: string;
+  /** 셀메이트 바코드번호2. 빈 문자열 = 없음. */
+  barcode2: string;
   /** 진단용: 원본 행 번호(1-base, 헤더 제외) */
   rowNumber: number;
   file: string;
@@ -137,6 +143,7 @@ export function parseFile(rows: string[][], file: string, quiet = false): Parsed
       itemCode,
       optionName,
       barcode: unwrapFormula(get(row, cols.barcode)),
+      barcode2: unwrapFormula(get(row, cols.barcode2)),
       rowNumber: i,
       file: path.basename(file),
     });
@@ -152,6 +159,7 @@ export type Sku = {
   optionKey: string | null;
   groupCode: string | null;
   barcode: string;
+  barcode2: string;
 };
 export type Plan = { groups: Group[]; skus: Sku[]; invalid: ParsedItem[] };
 
@@ -206,11 +214,12 @@ export function buildPlan(dedupedItems: ParsedItem[]): Plan {
           optionKey: it.optionName || null,
           groupCode: code,
           barcode: it.barcode,
+          barcode2: it.barcode2,
         });
       }
     } else {
       const it = group[0];
-      skus.push({ code: it.itemCode, name: productName, optionKey: null, groupCode: null, barcode: it.barcode });
+      skus.push({ code: it.itemCode, name: productName, optionKey: null, groupCode: null, barcode: it.barcode, barcode2: it.barcode2 });
     }
   }
 
@@ -274,7 +283,7 @@ async function main() {
     console.log('\n🔎 [DRY-RUN] 샘플 8개 SKU:');
     for (const s of skus.slice(0, 8)) {
       console.log(
-        `   code=${s.code} | name="${s.name}" | option=${s.optionKey ?? '-'} | group=${s.groupCode ?? '(단독)'} | barcode=${s.barcode || '(없음)'}`,
+        `   code=${s.code} | name="${s.name}" | option=${s.optionKey ?? '-'} | group=${s.groupCode ?? '(단독)'} | barcode=${s.barcode || '(없음)'} | barcode2=${s.barcode2 || '(없음)'}`,
       );
     }
     console.log('\n✅ DRY-RUN 종료 — DB 미반영. 매핑이 맞으면 DRY_RUN 빼고 DATABASE_URL 주고 재실행.');
@@ -305,6 +314,9 @@ async function main() {
     inserted: number;
     alreadyOk: number;
     conflicts: { barcode: string; wantedSku: string; ownerSku: string }[];
+    secondaryInserted: number;
+    secondaryAlreadyOk: number;
+    secondaryConflicts: Barcode2Plan['conflicts'];
   };
   let captured: Summary | null = null;
 
@@ -399,12 +411,36 @@ async function main() {
         await tx`INSERT INTO sku_barcodes ${tx(rows, 'sku_id', 'barcode', 'is_primary', 'updated_at')}`;
       }
 
+      // 4) 보조 바코드(바코드번호2, #1356). 대표 배정이 끝난 ownerByBarcode 를 그대로 점유 상태로 쓴다 —
+      //    이번 실행에서 대표로 선점한 값도 들어 있어 «대표가 먼저 차지한다» 가 지켜진다. 대표는 건드리지 않는다.
+      const secondaryWants: Barcode2Want[] = skus
+        .filter((s) => skuIdByCode.has(s.code))
+        .map((s) => ({ skuId: skuIdByCode.get(s.code)!, primary: s.barcode, secondary: s.barcode2 }));
+      const unknownSecondaries = [
+        ...new Set(secondaryWants.map((w) => w.secondary).filter((b) => b && !ownerByBarcode.has(b))),
+      ];
+      for (const part of chunk(unknownSecondaries)) {
+        const res = (await tx`
+          SELECT barcode, sku_id FROM sku_barcodes WHERE barcode IN ${tx(part)}
+        `) as unknown as { barcode: string; sku_id: string }[];
+        for (const r of res) ownerByBarcode.set(r.barcode, r.sku_id);
+      }
+      const secondary = planSecondaryBarcodes(secondaryWants, ownerByBarcode);
+      for (const part of chunk(secondary.insert)) {
+        const rows = part.map((w) => ({ sku_id: w.skuId, barcode: w.barcode, is_primary: false, updated_at: now }));
+        await tx`INSERT INTO sku_barcodes ${tx(rows, 'sku_id', 'barcode', 'is_primary', 'updated_at')}
+                 ON CONFLICT (barcode) DO NOTHING`;
+      }
+
       captured = {
         groups: groupIdByCode.size,
         skus: skuIdByCode.size,
         inserted: toInsert.length,
         alreadyOk,
         conflicts,
+        secondaryInserted: secondary.insert.length,
+        secondaryAlreadyOk: secondary.alreadyOk,
+        secondaryConflicts: secondary.conflicts,
       };
       if (ROLLBACK) throw new Error(ROLLBACK_SIGNAL);
       return captured;
@@ -423,6 +459,15 @@ async function main() {
         console.warn(`   barcode=${c.barcode} 원하던 sku=${c.wantedSku} 점유 sku=${c.ownerSku}`);
       }
       console.warn('   → 의도된 이전이면 수동 정리 후 재실행하세요.');
+    }
+    console.log(
+      `✔ sku_barcodes 보조(바코드번호2): 신규 ${summary.secondaryInserted}개 / 기존 유지 ${summary.secondaryAlreadyOk}개`,
+    );
+    if (summary.secondaryConflicts.length) {
+      console.warn(`\n⚠️  보조 바코드 충돌 ${summary.secondaryConflicts.length}건(다른 SKU 가 이미 점유 — 미반영):`);
+      for (const c of summary.secondaryConflicts.slice(0, 20)) {
+        console.warn(`   barcode=${c.barcode} 원하던 sku=${c.skuId} 점유 sku=${c.ownerSkuId}`);
+      }
     }
     console.log('\n✅ 임포트 완료.');
   } finally {
