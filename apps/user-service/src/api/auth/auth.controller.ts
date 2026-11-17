@@ -23,6 +23,7 @@ import { FastifyReply, FastifyRequest } from 'fastify';
 import { Public } from '../../commons/decorator/public.decorator';
 import { ProviderType } from '../../commons/types';
 import { vouchedSiteTenant } from '../../tenancy/vouched-site-tenant';
+import { OAuthService } from '../oauth/oauth.service';
 import { AuthService } from './auth.service';
 import { Cafe24SignupBootstrapRequestDto, Cafe24SignupBootstrapResponseDto } from './dto/cafe24-signup-bootstrap.dto';
 import { ChangePasswordDto } from './dto/change-pw.dto';
@@ -31,6 +32,7 @@ import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { SignInDto } from './dto/sign-in.dto';
 import { LocalSignUpDto } from './dto/sign-up.dto';
+import { PaymentHandoffCodeRequestDto } from './dto/payment-handoff.dto';
 
 @ApiTags('Auth')
 @ApiBearerAuth('access-token')
@@ -41,6 +43,7 @@ export class AuthController {
   constructor(
     private readonly authService: AuthService,
     private readonly configService: ConfigService,
+    private readonly oauthService: OAuthService,
   ) {}
 
   @ApiOperation({ summary: '회원가입' })
@@ -159,20 +162,21 @@ export class AuthController {
   }
 
   @ApiOperation({
-    summary: '결제창(wallet-web) 핸드오프 토큰 발급',
+    summary: '결제창(wallet-web) 핸드오프 인가 코드 발급',
     description:
-      '인증된 고객이 결제로 진입할 때 호출. wallet-web 이 별도 서브도메인에서 세션을 재확보하지 못하는 ' +
-      '인앱브라우저·ITP 환경을 우회하기 위해, storefront 가 이 단기 토큰을 받아 결제창 URL 로 넘긴다. ' +
-      '토큰은 wallet-web 이 POST /oauth/token (grant_type=payment_handoff) 으로 한 번 교환한다.',
+      '쇼핑몰이 로그인된 고객 몫으로 wallet-web 의 인가 코드를 받아 wallet-web /auth/callback 으로 넘긴다. ' +
+      'wallet-web 이 만든 PKCE challenge 에 묶이고 한 번만 교환되므로 그 브라우저의 verifier 없이는 쓸 수 없다.',
   })
-  @ApiResponse({ status: 200, description: '핸드오프 토큰 발급 성공' })
+  @ApiResponse({ status: 200, description: '인가 코드 발급 성공' })
   @StoreRoute()
   @Post('payment-handoff')
   @UseGuards(AuthGuard('jwt'))
   @HttpCode(HttpStatus.OK)
-  async paymentHandoff(@CurrentUser() user: JwtPayload): Promise<{ handoffToken: string }> {
-    const handoffToken = await this.authService.issuePaymentHandoffToken(user.id);
-    return { handoffToken };
+  paymentHandoff(
+    @Body(ValidationPipe) dto: PaymentHandoffCodeRequestDto,
+    @CurrentUser() user: JwtPayload,
+  ): Promise<{ code: string; expiresIn: number }> {
+    return this.oauthService.issuePaymentHandoffCode(user.id, dto);
   }
 
   @ApiOperation({ summary: '아이디 찾기' })

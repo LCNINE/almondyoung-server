@@ -7,13 +7,12 @@ import { TokensService } from '../tokens/tokens.service';
 import { type UserServiceSchema } from 'apps/user-service/database/drizzle/schema';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'crypto';
-import * as jwt from 'jsonwebtoken';
 import { DbTransaction } from '../../commons/types';
 import {
   INTERNAL_TOKEN_AUDIENCE,
   JWT_ACCESS_TOKEN_EXPIRATION,
   JWT_REFRESH_TOKEN_LONG_EXPIRATION,
-  PAYMENT_HANDOFF_TOKEN_PURPOSE,
+  PAYMENT_HANDOFF_CLIENT_ID,
 } from '../../constants/auth.constant';
 import { UsersService } from '../users/users.service';
 import { IssueCodeRequestDto } from './dto/issue-code.dto';
@@ -111,6 +110,15 @@ export class OAuthManager {
     return { code, expiresIn: CODE_TTL_SECONDS };
   }
 
+  // 결제창 핸드오프: 쇼핑몰에 로그인된 고객 몫으로 wallet-web 의 인가 코드를 발급한다. wallet-web 이 만든 PKCE
+  // challenge 에 묶이고 한 번만 교환되므로, 그 브라우저의 verifier 없이는 남이 받은 코드로 세션을 만들 수 없다.
+  issuePaymentHandoffCode(
+    userId: string,
+    input: Omit<IssueCodeRequestDto, 'clientId' | 'userId'>,
+  ): Promise<{ code: string; expiresIn: number }> {
+    return this.issueAuthorizationCode({ ...input, clientId: PAYMENT_HANDOFF_CLIENT_ID, userId });
+  }
+
   // ─────────────────────────────────────────
   // 2. token 교환 (authorization_code | refresh_token)
   // ─────────────────────────────────────────
@@ -122,9 +130,6 @@ export class OAuthManager {
     }
     if (input.grantType === 'refresh_token') {
       return this.refreshTokens(input);
-    }
-    if (input.grantType === 'payment_handoff') {
-      return this.exchangeHandoffForToken(input);
     }
     throw new BadRequestError('unsupported grant_type');
   }
@@ -163,55 +168,16 @@ export class OAuthManager {
       const client = await this.reader.getClientOrThrow(row.clientId);
       const tenantId = this.assertIssuable(await this.tenantForRedirect(client, row.redirectUri, tx));
 
-      await this.repo.markCodeConsumed(row.code, tx);
+      const claimed = await this.repo.markCodeConsumed(row.code, tx);
+      if (!claimed) {
+        throw new BadRequestError('invalid or already used code');
+      }
 
       const tokens = await this.mintTokenPair(row.userId, row.clientId, tenantId, row.scope, undefined, tx, {
         authTime: row.createdAt,
         nonce: row.nonce ?? undefined,
       });
       return tokens;
-    });
-  }
-
-  // payment_handoff grant: storefront 가 인증된 고객에게 발급한 단기 핸드오프 토큰을 wallet-web 이
-  // confidential client 인증과 함께 교환해 자기 세션 토큰셋을 받는다. wallet-web 이 별도 서브도메인에서
-  // OIDC silent-SSO/쿠키로 세션을 재확보하지 못하는 인앱브라우저·ITP 환경을 우회하기 위한 경로다.
-  // PKCE 대신 client_secret 으로 신뢰를 보증하므로 confidential client 만 허용한다
-  // (client 자격 검증은 issueToken 의 assertClientCredentials 에서 선행됨).
-  private async exchangeHandoffForToken(input: TokenRequestDto): Promise<TokenResponseDto> {
-    if (!input.code) throw new BadRequestError('code (handoff token) required for payment_handoff grant');
-
-    const client = await this.reader.getClientOrThrow(input.clientId);
-    if (client.clientType !== 'confidential') {
-      throw new UnauthorizedError('payment_handoff grant requires a confidential client');
-    }
-
-    const handoffSecret = this.configService.getOrThrow<string>('JWT_VERIFICATION_TOKEN_SECRET');
-    let payload: jwt.JwtPayload & { purpose?: string; client_id?: string };
-    try {
-      const verified = jwt.verify(input.code, handoffSecret, {
-        algorithms: ['HS256'],
-      });
-      if (typeof verified === 'string') {
-        throw new UnauthorizedError('invalid handoff token');
-      }
-      payload = verified;
-    } catch {
-      throw new UnauthorizedError('invalid or expired handoff token');
-    }
-    if (payload.purpose !== PAYMENT_HANDOFF_TOKEN_PURPOSE || !payload.sub) {
-      throw new UnauthorizedError('invalid handoff token');
-    }
-    // 핸드오프 토큰이 특정 client 를 지목했다면(선택) 교환하는 client 와 일치해야 한다.
-    if (payload.client_id && payload.client_id !== input.clientId) {
-      throw new UnauthorizedError('handoff token client mismatch');
-    }
-
-    const userId = payload.sub;
-    const scope = (client.allowedScopes ?? []).join(' ') || null;
-    return this.inTx(async (tx) => {
-      const tenantId = this.assertIssuable(await this.tenantForSession(client, null, tx));
-      return this.mintTokenPair(userId, input.clientId, tenantId, scope, undefined, tx, { authTime: new Date() });
     });
   }
 

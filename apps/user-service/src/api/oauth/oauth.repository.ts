@@ -99,12 +99,21 @@ export class OAuthRepository {
     return row ?? null;
   }
 
-  async markCodeConsumed(code: string, tx?: DbTransaction): Promise<void> {
+  /** 아직 안 쓴 code 만 소비한다. 동시에 같은 code 가 두 번 와도 한쪽만 true 를 받는다. */
+  async markCodeConsumed(code: string, tx?: DbTransaction): Promise<boolean> {
     const client = this.getClient(tx);
-    await client
+    const claimed = await client
       .update(userServiceSchema.oauthAuthorizationCodes)
       .set({ consumedAt: new Date() })
-      .where(eq(userServiceSchema.oauthAuthorizationCodes.code, code));
+      .where(
+        and(
+          eq(userServiceSchema.oauthAuthorizationCodes.code, code),
+          isNull(userServiceSchema.oauthAuthorizationCodes.consumedAt),
+        ),
+      )
+      .returning({ code: userServiceSchema.oauthAuthorizationCodes.code });
+
+    return claimed.length > 0;
   }
 
   // ─────────────────────────────────────────

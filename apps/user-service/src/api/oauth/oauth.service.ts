@@ -12,6 +12,13 @@ export class OAuthService {
     return this.manager.issueAuthorizationCode(input);
   }
 
+  issuePaymentHandoffCode(
+    userId: string,
+    input: Omit<IssueCodeRequestDto, 'clientId' | 'userId'>,
+  ): Promise<IssueCodeResponseDto> {
+    return this.manager.issuePaymentHandoffCode(userId, input);
+  }
+
   exchangeToken(input: TokenRequestDto): Promise<TokenResponseDto> {
     return this.manager.issueToken(input);
   }
