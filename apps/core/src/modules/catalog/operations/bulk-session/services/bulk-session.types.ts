@@ -94,6 +94,8 @@ export interface BulkItemPayload {
   /** '카테고리경로' 를 해석한 결과. category.set 이 fields 에 있을 때만 채워진다. */
   categoryIds?: string[];
   primaryCategoryId?: string;
+  /** '공급처' 이름을 해석한 결과. product.supplier 가 fields 에 있을 때만 채워진다. */
+  supplierId?: string | null;
   /** 이 행이 참조하는 (imageKey, usage). 3단계가 fileId 로 해석한다. */
   imageRefs?: Array<{ imageKey: string; usage: 'main' | 'description' }>;
 }

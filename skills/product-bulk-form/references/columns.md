@@ -15,6 +15,7 @@
 | 멤버십가 | `membershipPrice` |  |  |
 | 상품코드 | `productCode` |  |  |
 | 브랜드 | `brand` |  |  |
+| 공급처 | `supplier` |  | 재고 > 공급처에 등록된 이름 그대로. 빈칸이면 공급처 없음. |
 | 대표이미지키 | `thumbnailImageKey` |  |  |
 | 부가이미지키 | `additionalImageKeys` |  |  |
 | 상세설명 | `description` |  |  |

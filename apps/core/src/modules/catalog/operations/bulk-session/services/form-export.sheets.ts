@@ -43,6 +43,7 @@ export const PRODUCT_COLUMNS: ColumnDef[] = [
   opt('membershipPrice', '멤버십가'),
   opt('productCode', '상품코드'),
   opt('brand', '브랜드'),
+  opt('supplier', '공급처', '재고 > 공급처에 등록된 이름 그대로. 빈칸이면 공급처 없음.'),
   opt('thumbnailImageKey', '대표이미지키'),
   opt('additionalImageKeys', '부가이미지키'),
   opt('description', '상세설명'),
