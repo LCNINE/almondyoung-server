@@ -1,7 +1,12 @@
 // 로케이션 축 (core) — 적치 목적지가 있나, 재고가 실제 선반에 있나, 셀메이트 위치 텍스트와 이어지나.
 import type { Sql } from '../db';
 import type { Report } from '../report';
-import { shelfCodeLinks } from '../rules';
+import { shelfCodeLinks, shelfMoveSummary } from '../rules';
+import {
+  judgeShelfMove,
+  SHELF_MOVE_RULES,
+  ShelfMoveRule,
+} from '../../../../apps/core/src/modules/inventory/core/shelf-move-verdict';
 
 export async function checkLocation(tx: Sql, r: Report): Promise<void> {
   r.section('로케이션 1. 판매 창고의 적치 목적지');
@@ -33,26 +38,66 @@ export async function checkLocation(tx: Sql, r: Report): Promise<void> {
     group by 1, 2 order by 4 desc limit 15`;
   r.table(where);
 
-  // 위치가 하나뿐인 SKU 인데 아직 시스템 로케이션(입고기본존)에 있는 재고 — #1236 이 옮길 대상.
-  const [single] = await tx<{ skus: number; qty: number }[]>`
-    with one as (
-      select sku_id from sku_shelf_positions group by 1 having count(distinct position_code) = 1)
-    select count(distinct sl.sku_id)::int as skus, coalesce(sum(sl.qty), 0)::bigint as qty
+  // 입고기본존 재고를 #1236 이동 스크립트와 같은 판정(shelf-move-verdict)으로 센다. guard 몫(적치 대기·배정·불일치)과
+  // 신선도(stale)는 여기서 세지 않는다 — 그건 이동 스크립트의 dry-run 출력이 정본이다.
+  const stock = await tx<
+    {
+      warehouse_id: string;
+      qty: number;
+      position_code: string | null;
+      updated_at: Date | null;
+      shelves: string[] | null;
+    }[]
+  >`
+    select sl.warehouse_id, sl.qty::int as qty, p.position_code, p.updated_at,
+           (select array_agg(ol.code) from stock_ledgers o join locations ol on ol.id = o.location_id
+             where o.sku_id = sl.sku_id and o.warehouse_id = sl.warehouse_id and o.stock_state = 'ON_HAND'
+               and o.qty > 0 and ol.location_type = 'standard') as shelves
     from stock_ledgers sl
     join warehouses w on w.id = sl.warehouse_id and w.is_sellable
-    join locations l on l.id = sl.location_id and l.is_system
-    join one on one.sku_id = sl.sku_id
+    join locations l on l.id = sl.location_id and l.system_role = 'inbound_default'
+    left join sku_shelf_positions p on p.sku_id = sl.sku_id
     where sl.stock_state = 'ON_HAND' and sl.qty > 0`;
-  if (single.skus === 0) r.ok('위치가 하나인 SKU 의 재고가 시스템 로케이션에 남아 있지 않다');
-  else
-    r.dayOf(
-      `위치가 하나인 SKU ${single.skus}개(${single.qty}개)가 아직 시스템 로케이션에 있다`,
-      '마지막 셀메이트 sync 직후 실제 로케이션으로 MOVE (#1236)',
+  const shelfRows = await tx<{ warehouse_id: string; code: string }[]>`
+    select l.warehouse_id, l.code from locations l join warehouses w on w.id = l.warehouse_id and w.is_sellable
+    where l.is_active and not l.is_system and l.location_type = 'standard'`;
+  const shelvesByWarehouse = new Map<string, Set<string>>();
+  for (const s of shelfRows) {
+    const set = shelvesByWarehouse.get(s.warehouse_id) ?? new Set<string>();
+    set.add(s.code);
+    shelvesByWarehouse.set(s.warehouse_id, set);
+  }
+  const judge = (row: (typeof stock)[number], includeRules: ReadonlySet<ShelfMoveRule>) =>
+    judgeShelfMove({
+      position:
+        row.position_code && row.updated_at ? { code: row.position_code, updatedAt: new Date(row.updated_at) } : null,
+      freshSince: null,
+      locationCodes: shelvesByWarehouse.get(row.warehouse_id) ?? new Set(),
+      shelvesWithStock: row.shelves ?? [],
+      includeRules,
+    });
+  const exactOnly = stock.map((row) => judge(row, new Set()));
+  const summary = shelfMoveSummary(
+    exactOnly,
+    stock.map((row) => judge(row, new Set(SHELF_MOVE_RULES))),
+  );
+  const moveQty = stock.reduce((sum, row, i) => (exactOnly[i].kind === 'move' ? sum + Number(row.qty) : sum), 0);
+  const moveMsg = `위치가 하나인 SKU ${summary.move}개(${moveQty}개)가 입고기본존에 있다`;
+  const moveFix =
+    'bash scripts/sellmate/run.sh live move-stock-to-shelf --positions-since=<load-shelf-positions 직전 시각> 후 --apply (#1236)';
+  if (summary.move === 0) r.ok('위치가 하나인 SKU 의 재고가 입고기본존에 남아 있지 않다');
+  // 컷오버 뒤에는 앱 입고분이 다시 입고기본존에 들어오므로 «당일 처리»가 아니라 정보다.
+  else if (r.cutoverAt) r.info(`${moveMsg} — 컷오버 뒤 앱 입고분일 수 있다`);
+  else r.dayOf(moveMsg, moveFix);
+  const kept = Object.entries(summary.byReason)
+    .filter(([, n]) => n > 0)
+    .map(([reason, n]) => `${reason} ${n}`)
+    .join(' · ');
+  if (kept) r.info(`입고기본존에 남길 SKU(사유별) ${kept} — 컷오버 뒤 실사 대상`);
+  if (summary.unlockedByRules > 0)
+    r.info(
+      `고쳐 읽은 코드라 스위치가 꺼져 남는 SKU ${summary.unlockedByRules}개 — 현장 확인 뒤 --include-rule 로 켠다`,
     );
-  const [multi] = await tx<{ skus: number }[]>`
-    select count(*)::int as skus from (
-      select sku_id from sku_shelf_positions group by 1 having count(distinct position_code) > 1) x`;
-  r.info(`셀메이트 위치가 둘 이상인 SKU ${multi.skus}개 — 옮기지 않고 컷오버 뒤 실사 대상`);
 
   r.section('로케이션 3. 셀메이트 선반 위치 텍스트(sku_shelf_positions)와 로케이션의 연결');
   const [shelf] = await tx<{ rows: number; last_upd: Date | null }[]>`
@@ -67,7 +112,10 @@ export async function checkLocation(tx: Sql, r: Report): Promise<void> {
   );
   r.info(`선반 위치 ${shelf.rows}행 · 고유 코드 ${shelfCodes.length}개 · 로케이션과 이어진 코드 ${links.linked}개`);
   r.info(`선반 위치 마지막 적재 ${shelf.last_upd?.toISOString() ?? '없음'} — 셀메이트 sync(Ⓔ)가 멈추면 굳는다(#1237)`);
-  if (links.exceptions.length > 0) r.info(`꼴에 안 맞아 사람이 정할 선반 텍스트 ${links.exceptions.length}개 (만들기 스크립트 dry-run 이 목록을 보여 준다)`);
+  if (links.exceptions.length > 0)
+    r.info(
+      `꼴에 안 맞아 사람이 정할 선반 텍스트 ${links.exceptions.length}개 (만들기 스크립트 dry-run 이 목록을 보여 준다)`,
+    );
   if (links.unlinked.length > 0)
     r.bad(
       `로케이션이 없는 선반 코드 ${links.unlinked.length}개`,

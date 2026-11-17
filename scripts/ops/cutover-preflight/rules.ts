@@ -1,6 +1,10 @@
 // DB·파일을 읽지 않는 판정 규칙. 여기만 유닛 테스트한다(rules.spec.ts).
 import { PERMISSION_CATALOG } from '../../../libs/authorization/src/permissions/permission-catalog';
 import { readShelfCode } from '../../../apps/core/src/modules/inventory/core/shelf-code-reading';
+import type {
+  ShelfKeepReason,
+  ShelfMoveVerdict,
+} from '../../../apps/core/src/modules/inventory/core/shelf-move-verdict';
 
 /** 카탈로그가 «첫 등록 때» 그 역할에 주게 적어 둔 권한 키. 라이브 부여의 기대값이다. */
 export function catalogGrantsFor(role: string): string[] {
@@ -57,6 +61,36 @@ export function orderSourceWired(adapterModuleText: string, sourceClass: string)
   return new RegExp(`createOrderProvider\\(\\s*\\w+\\s*,\\s*translator\\s*\\)`).test(adapterModuleText)
     ? new RegExp(`inject:\\s*\\[[^\\]]*\\b${sourceClass}\\b`).test(adapterModuleText)
     : false;
+}
+
+/**
+ * «로케이션 2»(#1236) — 입고기본존에 재고가 있는 SKU 마다 판정을 두 번 받는다: 고쳐 읽기 규칙 없이(이동 스크립트 기본값),
+ * 규칙을 다 켜고. 두 목록은 같은 순서의 SKU 쌍이다. 판정 스크립트는 신선도 기준을 모르므로 stale 은 0 으로 나온다.
+ */
+export function shelfMoveSummary(
+  verdicts: readonly ShelfMoveVerdict[],
+  verdictsAllRules: readonly ShelfMoveVerdict[],
+): { move: number; byReason: Record<ShelfKeepReason, number>; unlockedByRules: number } {
+  if (verdicts.length !== verdictsAllRules.length)
+    throw new Error('판정 목록 두 개의 길이가 다르다 — SKU 마다 한 쌍이어야 한다');
+  const byReason: Record<ShelfKeepReason, number> = {
+    'no-position': 0,
+    stale: 0,
+    unreadable: 0,
+    unconfirmed: 0,
+    'no-location': 0,
+    elsewhere: 0,
+  };
+  let move = 0;
+  let unlockedByRules = 0;
+  verdicts.forEach((v, i) => {
+    if (v.kind === 'move') move += 1;
+    else {
+      byReason[v.reason] += 1;
+      if (verdictsAllRules[i].kind === 'move') unlockedByRules += 1;
+    }
+  });
+  return { move, byReason, unlockedByRules };
 }
 
 /**

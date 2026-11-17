@@ -14,6 +14,7 @@ import {
   reservationAxisFindings,
   reservationMismatches,
   shelfCodeLinks,
+  shelfMoveSummary,
 } from './rules';
 import { reservationTarget } from '../../../apps/channel-adapter/src/services/reservation-projection/reservation-target';
 
@@ -230,5 +231,24 @@ describe('judgeReconcile', () => {
     const v = judge({ carry: [{ optionSerial: 'TEST-0001', skuCode: 'SKU-1', carry: 3 }] });
     expect(v.filter((x) => x.level === 'bad')).toHaveLength(0);
     expect(v.some((x) => x.level === 'info' && x.msg.includes('이월'))).toBe(true);
+  });
+});
+
+describe('shelfMoveSummary — «로케이션 2» 를 재고 이동 스크립트와 같은 판정으로 센다 (#1236)', () => {
+  const move = { kind: 'move', toCode: 'A-01-01', rule: 'exact' } as const;
+  const keep = (reason: 'no-position' | 'unconfirmed') => ({ kind: 'keep', reason }) as const;
+
+  it('옮길 것·사유별 남김·규칙을 켜면 더 옮겨지는 수를 낸다', () => {
+    const exactOnly = [move, move, keep('no-position'), keep('unconfirmed')];
+    const allRules = [move, move, keep('no-position'), { kind: 'move', toCode: 'CC-04-01', rule: 'zero-pad' } as const];
+    expect(shelfMoveSummary(exactOnly, allRules)).toEqual({
+      move: 2,
+      byReason: { 'no-position': 1, stale: 0, unreadable: 0, unconfirmed: 1, 'no-location': 0, elsewhere: 0 },
+      unlockedByRules: 1,
+    });
+  });
+
+  it('두 목록 길이가 다르면 던진다 — SKU 마다 한 쌍이어야 한다', () => {
+    expect(() => shelfMoveSummary([move], [])).toThrow();
   });
 });
