@@ -1,4 +1,4 @@
-import { planMissingBarcodes } from './register-missing-barcodes';
+import { formatRegistrationList, planMissingBarcodes } from './register-missing-barcodes';
 
 describe('planMissingBarcodes', () => {
   it('아무도 안 쓰는 코드면 전부 insert 한다', () => {
@@ -41,5 +41,21 @@ describe('planMissingBarcodes', () => {
 
     expect(plan.insert).toEqual([{ skuId: 's1', barcode: 'A1' }]);
     expect(plan.conflicts).toEqual([{ skuId: 's2', barcode: 'A1', ownerSkuId: 's1' }]);
+  });
+});
+
+describe('formatRegistrationList', () => {
+  it('재고가 있는 SKU 를 표시하고 먼저 보인다', () => {
+    const lines = formatRegistrationList(
+      [
+        { skuId: 's1', barcode: 'A1' },
+        { skuId: 's2', barcode: 'A2' },
+      ],
+      new Map([['s2', 7]]),
+    );
+
+    expect(lines[0]).toContain('재고 있는 SKU 1개');
+    expect(lines[1]).toBe('   ★ A2 (재고 7)');
+    expect(lines[2]).toBe('     A1');
   });
 });

@@ -51,6 +51,25 @@ export function planMissingBarcodes(
   return plan;
 }
 
+/**
+ * 등록 대상 목록 줄들 — 재고가 있는 SKU 를 먼저(스티커를 T 전에 뽑을 대상) 표시한다. 순수 함수.
+ * stock: skuId → stock_ledgers.qty 합. 없으면 0.
+ */
+export function formatRegistrationList(
+  insert: readonly { skuId: string; barcode: string }[],
+  stock: ReadonlyMap<string, number>,
+): string[] {
+  const rows = insert.map((row) => ({ code: row.barcode, qty: stock.get(row.skuId) ?? 0 }));
+  const withStock = rows.filter((r) => r.qty > 0);
+  const lines = [`   재고 있는 SKU ${withStock.length}개 — 스티커를 먼저 뽑을 대상`];
+
+  for (const r of rows.slice().sort((a, b) => Number(b.qty > 0) - Number(a.qty > 0))) {
+    lines.push(`   ${r.qty > 0 ? '★' : ' '} ${r.code}${r.qty > 0 ? ` (재고 ${r.qty})` : ''}`);
+  }
+
+  return lines;
+}
+
 function chunks<T>(list: readonly T[]): T[][] {
   const out: T[][] = [];
 
@@ -61,7 +80,9 @@ function chunks<T>(list: readonly T[]): T[][] {
   return out;
 }
 
-async function readPlan(tx: DbTx): Promise<{ plan: MissingBarcodePlan; missingCount: number }> {
+async function readPlan(
+  tx: DbTx,
+): Promise<{ plan: MissingBarcodePlan; missingCount: number; stock: Map<string, number> }> {
   const rows: MissingBarcodeRow[] = await tx
     .select({ skuId: wmsTables.skus.id, code: wmsTables.skus.code })
     .from(wmsTables.skus)
@@ -87,16 +108,38 @@ async function readPlan(tx: DbTx): Promise<{ plan: MissingBarcodePlan; missingCo
     }
   }
 
-  return { plan: planMissingBarcodes(rows, taken), missingCount: rows.length };
+  const plan = planMissingBarcodes(rows, taken);
+  const stock = new Map<string, number>();
+
+  for (const part of chunks(plan.insert.map((row) => row.skuId))) {
+    const sums = await tx
+      .select({
+        skuId: wmsTables.stockLedgers.skuId,
+        qty: sql<number>`coalesce(sum(${wmsTables.stockLedgers.qty}), 0)::int`,
+      })
+      .from(wmsTables.stockLedgers)
+      .where(inArray(wmsTables.stockLedgers.skuId, part))
+      .groupBy(wmsTables.stockLedgers.skuId);
+
+    for (const row of sums) {
+      stock.set(row.skuId, row.qty);
+    }
+  }
+
+  return { plan, missingCount: rows.length, stock };
 }
 
-function printPlan(plan: MissingBarcodePlan, missingCount: number) {
+function printPlan(plan: MissingBarcodePlan, missingCount: number, stock: ReadonlyMap<string, number>) {
   console.log(`📄 바코드 행이 없는 SKU ${missingCount}개`);
   console.log(`   SKU 코드를 대표 바코드로 등록 ${plan.insert.length}`);
   console.log(`   손대지 않음(다른 SKU 가 그 값을 씀) ${plan.conflicts.length}`);
 
   for (const c of plan.conflicts.slice(0, 10)) {
     console.log(`   ⚠️  충돌 ${c.barcode} (sku ${c.skuId}) — 쓰는 sku ${c.ownerSkuId}`);
+  }
+
+  for (const line of formatRegistrationList(plan.insert, stock)) {
+    console.log(line);
   }
 }
 
@@ -148,9 +191,9 @@ async function main(): Promise<void> {
     if (!apply) {
       await db.transaction(
         async (tx) => {
-          const { plan, missingCount } = await readPlan(tx);
+          const { plan, missingCount, stock } = await readPlan(tx);
 
-          printPlan(plan, missingCount);
+          printPlan(plan, missingCount, stock);
           console.log('\n🧪 DRY-RUN — 아무것도 바꾸지 않았습니다. 반영하려면 --apply');
         },
         { accessMode: 'read only' },
@@ -160,9 +203,9 @@ async function main(): Promise<void> {
     }
 
     await db.transaction(async (tx) => {
-      const { plan, missingCount } = await readPlan(tx);
+      const { plan, missingCount, stock } = await readPlan(tx);
 
-      printPlan(plan, missingCount);
+      printPlan(plan, missingCount, stock);
 
       const inserted = await applyPlan(tx, plan);
 
