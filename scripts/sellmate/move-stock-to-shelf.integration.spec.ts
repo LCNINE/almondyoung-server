@@ -88,12 +88,14 @@ async function world(tx: DbTx) {
     o: RunOptions,
     movement: MovementService = makeMovementService(asDb),
     onRow?: (row: ShelfMoveRow) => void,
+    onStart?: (targets: number) => void,
   ) =>
     runShelfMove(
       tx as unknown as PostgresJsDatabase<typeof wmsSchema>,
       { movement, guard: wiring.guard },
       { ...o, warehouseId },
       onRow,
+      onStart,
     );
   const moveEvents = async (skuId: string) =>
     tx
@@ -418,6 +420,27 @@ describeIfDb('runShelfMove (DB integration)', () => {
       expect(row).toMatchObject({ outcome: 'moved', movedQty: 3 });
       expect(calls).toBe(2);
       expect(await onHandAt(tx, s.skuId, shelfId)).toBe(3);
+    });
+  });
+
+  it('대상 수를 먼저 알린다 — 0 이면 «이미 옮김»인지 «연결 문제»인지 사람이 가린다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = await world(tx);
+      await w.shelf('01');
+      const a = await w.sku('A-01-01');
+      const b = await w.sku(null);
+      await w.receive(a.skuId, 1);
+      await w.receive(b.skuId, 1);
+      const events: string[] = [];
+
+      await w.run(
+        opts({ apply: false }),
+        undefined,
+        () => events.push('row'),
+        (targets) => events.push(`start:${targets}`),
+      );
+
+      expect(events).toEqual(['start:2', 'row', 'row']);
     });
   });
 });

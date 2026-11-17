@@ -201,8 +201,11 @@ export async function runShelfMove(
   opts: ShelfMoveOptions,
   /** 행이 정해질 때마다 부른다 — 진행 표시와, 중간에 죽어도 그때까지의 결과를 남기는 데 쓴다 */
   onRow?: (row: ShelfMoveRow) => void,
+  /** 대상(입고기본존 ON_HAND 행) 수를 처리 전에 알린다 — 0 이면 «이미 옮김»인지 «연결 문제»인지 사람이 가린다 */
+  onStart?: (targets: number) => void,
 ): Promise<ShelfMoveRow[]> {
   const candidates = await readCandidates(db, opts.warehouseId);
+  onStart?.(candidates.length);
   const codes = await readShelves(db, opts.warehouseId);
   return mapPool(candidates, opts.concurrency ?? 1, (c) => decide(db, deps, opts, codes, c), onRow);
 }
@@ -427,13 +430,26 @@ async function main() {
     const rows: ShelfMoveRow[] = [];
     const started = Date.now();
     try {
-      await runShelfMove(db, { movement, guard }, { ...args, warehouseId }, (row) => {
-        rows.push(row);
-        if (rows.length % PROGRESS_EVERY === 0) {
-          const moved = rows.filter((r) => r.outcome === 'moved' || r.outcome === 'would-move').length;
-          console.log(`   … ${rows.length}개 처리 (옮김 ${moved}) · ${Math.round((Date.now() - started) / 1000)}초`);
-        }
-      });
+      const onStart = (targets: number) => {
+        if (targets === 0) {
+          console.log(
+            '⚠️  대상 0 — 입고기본존에 ON_HAND 재고가 없다. 이미 옮겼으면 정상이고, 아니면 연결(터널)·창고를 확인한다',
+          );
+        } else console.log(`대상: 입고기본존 ON_HAND SKU ${targets}개 · 동시 ${args.concurrency}`);
+      };
+      await runShelfMove(
+        db,
+        { movement, guard },
+        { ...args, warehouseId },
+        (row) => {
+          rows.push(row);
+          if (rows.length % PROGRESS_EVERY === 0) {
+            const moved = rows.filter((r) => r.outcome === 'moved' || r.outcome === 'would-move').length;
+            console.log(`   … ${rows.length}개 처리 (옮김 ${moved}) · ${Math.round((Date.now() - started) / 1000)}초`);
+          }
+        },
+        onStart,
+      );
     } finally {
       summarize(rows, args.apply);
       fs.mkdirSync(path.dirname(args.out), { recursive: true });
