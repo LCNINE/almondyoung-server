@@ -25,7 +25,11 @@ describe('judgeShelfMove — 위치를 하나로 아는 SKU 만 옮긴다 (#1236
     ],
     ['창고 이름 같은 텍스트', { position: at('외부창고') }, { kind: 'keep', reason: 'unreadable' }],
     ['한 칸에 위치 여럿', { position: at('A-01-01,B-02-03') }, { kind: 'keep', reason: 'unreadable' }],
-    ['0 채우기 규칙이 꺼져 있다', { position: at('CC-4-1') }, { kind: 'keep', reason: 'unconfirmed' }],
+    [
+      '0 채우기 규칙이 꺼져 있다 — 어느 규칙인지 싣는다(현장 확인 뒤 규칙마다 켠다)',
+      { position: at('CC-4-1') },
+      { kind: 'keep', reason: 'unconfirmed', rule: 'zero-pad' },
+    ],
     [
       '0 채우기 규칙을 켰다',
       { position: at('CC-4-1'), includeRules: new Set(['zero-pad'] as const) },
@@ -39,7 +43,7 @@ describe('judgeShelfMove — 위치를 하나로 아는 SKU 만 옮긴다 (#1236
     [
       '다른 규칙만 켜져 있으면 대시 자리는 여전히 미확인',
       { position: at('O21-30-'), includeRules: new Set(['zero-pad'] as const) },
-      { kind: 'keep', reason: 'unconfirmed' },
+      { kind: 'keep', reason: 'unconfirmed', rule: 'dash-position' },
     ],
     [
       '커스텀 칸 규칙을 켰다',

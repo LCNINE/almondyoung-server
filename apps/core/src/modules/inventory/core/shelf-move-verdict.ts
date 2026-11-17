@@ -9,6 +9,9 @@
  */
 import { readShelfCode } from './shelf-code-reading';
 
+/** 이동 스크립트가 movement_jobs.memo 에 남기는 표시 — 판정 스크립트가 «돌았는가»를 이걸로 본다 */
+export const CUTOVER_MOVE_MEMO = 'cutover #1236';
+
 export type ShelfMoveRule = 'zero-pad' | 'dash-position' | 'custom-bin';
 export const SHELF_MOVE_RULES: readonly ShelfMoveRule[] = ['zero-pad', 'dash-position', 'custom-bin'];
 
@@ -27,9 +30,11 @@ export type ShelfMoveInput = {
 
 export type ShelfMoveVerdict =
   | { kind: 'move'; toCode: string; rule: 'exact' | ShelfMoveRule }
-  | { kind: 'keep'; reason: ShelfKeepReason };
+  | { kind: 'keep'; reason: Exclude<ShelfKeepReason, 'unconfirmed'> }
+  /** 어느 규칙이 꺼져 남았는지 싣는다 — 현장 확인 뒤 규칙마다 켜기 때문이다 */
+  | { kind: 'keep'; reason: 'unconfirmed'; rule: ShelfMoveRule };
 
-const keep = (reason: ShelfKeepReason): ShelfMoveVerdict => ({ kind: 'keep', reason });
+const keep = (reason: Exclude<ShelfKeepReason, 'unconfirmed'>): ShelfMoveVerdict => ({ kind: 'keep', reason });
 
 export function judgeShelfMove(input: ShelfMoveInput): ShelfMoveVerdict {
   const { position } = input;
@@ -40,7 +45,7 @@ export function judgeShelfMove(input: ShelfMoveInput): ShelfMoveVerdict {
   if (reading.kind === 'exception') return keep('unreadable');
   const rule: 'exact' | ShelfMoveRule =
     reading.kind === 'exact' ? 'exact' : reading.kind === 'fixed' ? reading.rule : 'custom-bin';
-  if (rule !== 'exact' && !input.includeRules.has(rule)) return keep('unconfirmed');
+  if (rule !== 'exact' && !input.includeRules.has(rule)) return { kind: 'keep', reason: 'unconfirmed', rule };
 
   if (!input.locationCodes.has(reading.code)) return keep('no-location');
   // 다른 선반에 이미 재고가 있으면 옮겼을 때 한 SKU 가 선반 두 곳에 나뉜다 — 실사로 넘긴다.

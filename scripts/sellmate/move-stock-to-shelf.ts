@@ -28,6 +28,7 @@ import { ApplicationException } from '@app/shared';
 import { INVENTORY_STREAM } from '@packages/event-contracts/streams';
 import { wmsSchema } from '../../apps/core/src/modules/inventory/schema/inventory.schema';
 import {
+  CUTOVER_MOVE_MEMO,
   judgeShelfMove,
   SHELF_MOVE_RULES,
   ShelfKeepReason,
@@ -41,9 +42,12 @@ import { ProductSellableQuantityService } from '../../apps/core/src/modules/inve
 import { outboxPublisherFor } from '../../apps/core/src/modules/fulfillment/outbox/__support__/outbox-publisher.factory';
 
 const SYSTEM_ACTOR = '00000000-0000-0000-0000-000000000000';
-const MEMO = 'cutover #1236';
+const MEMO = CUTOVER_MOVE_MEMO;
+const PROGRESS_EVERY = 200;
 
 export type ShelfMoveOptions = {
+  /** 셀메이트 위치는 창고 하나(부천)의 위치다 — 판매 창고가 여럿이어도 그 창고만 옮긴다 */
+  warehouseId: string;
   apply: boolean;
   positionsSince: Date | null;
   includeRules: ReadonlySet<ShelfMoveRule>;
@@ -53,8 +57,11 @@ function stamp(d: Date): string {
   return d.toISOString().replace(/[-:T]/g, '').slice(0, 14);
 }
 
-export function parseShelfMoveArgs(argv: string[]): ShelfMoveOptions & { out: string } {
+export function parseShelfMoveArgs(
+  argv: string[],
+): Omit<ShelfMoveOptions, 'warehouseId'> & { warehouseId: string | null; out: string } {
   let apply = false;
+  let warehouseId: string | null = null;
   let positionsSince: Date | null = null;
   const includeRules = new Set<ShelfMoveRule>();
   let out = `apps/core/tmp/cutover-1236-kept-${stamp(new Date())}.csv`;
@@ -70,7 +77,8 @@ export function parseShelfMoveArgs(argv: string[]): ShelfMoveOptions & { out: st
         if (!known) throw new Error(`모르는 규칙 ${rule} — ${SHELF_MOVE_RULES.join(', ')} 중에서`);
         includeRules.add(known);
       }
-    } else if (arg.startsWith('--out=')) out = arg.slice('--out='.length);
+    } else if (arg.startsWith('--warehouse-id=')) warehouseId = arg.slice('--warehouse-id='.length);
+    else if (arg.startsWith('--out=')) out = arg.slice('--out='.length);
     else throw new Error(`모르는 인자 ${arg}`);
   }
   if (apply && !positionsSince) {
@@ -78,7 +86,7 @@ export function parseShelfMoveArgs(argv: string[]): ShelfMoveOptions & { out: st
       '--apply 는 --positions-since=<T 당일 load-shelf-positions 직전 시각> 이 있어야 한다 — 낡은 위치 행으로 옮기지 않게',
     );
   }
-  return { apply, positionsSince, includeRules, out };
+  return { apply, warehouseId, positionsSince, includeRules, out };
 }
 
 type GuardReason = 'protected' | 'allocated' | 'inconsistent';
@@ -93,6 +101,8 @@ export type ShelfMoveRow = {
   outcome: 'moved' | 'would-move' | 'failed' | `keep:${ShelfKeepReason | GuardReason}`;
   movedQty: number;
   toCode: string | null;
+  /** keep:unconfirmed 일 때 꺼져 있던 고쳐 읽기 규칙 */
+  rule?: ShelfMoveRule;
   error?: string;
 };
 
@@ -124,7 +134,7 @@ type Candidate = {
   shelves_with_stock: string[] | null;
 };
 
-async function readCandidates(db: PostgresJsDatabase<typeof wmsSchema>): Promise<Candidate[]> {
+async function readCandidates(db: PostgresJsDatabase<typeof wmsSchema>, warehouseId: string): Promise<Candidate[]> {
   return db.execute<Candidate>(sql`
     SELECT l.warehouse_id, l.sku_id, k.code AS sku_code, l.qty, l.location_id AS from_location_id,
            p.position_code, p.updated_at AS position_updated_at,
@@ -142,26 +152,18 @@ async function readCandidates(db: PostgresJsDatabase<typeof wmsSchema>): Promise
       JOIN warehouses w ON w.id = l.warehouse_id AND w.is_sellable
       JOIN skus k ON k.id = l.sku_id
       LEFT JOIN sku_shelf_positions p ON p.sku_id = l.sku_id
-     WHERE l.stock_state = 'ON_HAND' AND l.qty > 0
-     ORDER BY l.warehouse_id, k.code`);
+     WHERE l.stock_state = 'ON_HAND' AND l.qty > 0 AND l.warehouse_id = ${warehouseId}
+     ORDER BY k.code`);
 }
 
 async function readShelves(
   db: PostgresJsDatabase<typeof wmsSchema>,
-  warehouseIds: string[],
-): Promise<Map<string, Map<string, string>>> {
-  const byWarehouse = new Map<string, Map<string, string>>();
-  if (warehouseIds.length === 0) return byWarehouse;
-  const rows = await db.execute<{ warehouse_id: string; id: string; code: string }>(sql`
-    SELECT warehouse_id, id, code FROM locations
-     WHERE is_active AND NOT is_system AND location_type = 'standard'
-       AND warehouse_id = ANY(${sql.param(warehouseIds)}::uuid[])`);
-  for (const r of rows) {
-    const codes = byWarehouse.get(r.warehouse_id) ?? new Map<string, string>();
-    codes.set(r.code, r.id);
-    byWarehouse.set(r.warehouse_id, codes);
-  }
-  return byWarehouse;
+  warehouseId: string,
+): Promise<Map<string, string>> {
+  const rows = await db.execute<{ id: string; code: string }>(sql`
+    SELECT id, code FROM locations
+     WHERE is_active AND NOT is_system AND location_type = 'standard' AND warehouse_id = ${warehouseId}`);
+  return new Map(rows.map((r) => [r.code, r.id]));
 }
 
 function conflictCode(e: unknown): string | undefined {
@@ -184,99 +186,112 @@ export async function runShelfMove(
   db: PostgresJsDatabase<typeof wmsSchema>,
   deps: { movement: MovementService; guard: BatchControlledStockGuard },
   opts: ShelfMoveOptions,
+  /** 행이 정해질 때마다 부른다 — 진행 표시와, 중간에 죽어도 그때까지의 결과를 남기는 데 쓴다 */
+  onRow?: (row: ShelfMoveRow) => void,
 ): Promise<ShelfMoveRow[]> {
-  const candidates = await readCandidates(db);
-  const shelves = await readShelves(db, [...new Set(candidates.map((c) => c.warehouse_id))]);
+  const candidates = await readCandidates(db, opts.warehouseId);
+  const codes = await readShelves(db, opts.warehouseId);
   const rows: ShelfMoveRow[] = [];
-
   for (const c of candidates) {
-    const qty = Number(c.qty);
-    const row: ShelfMoveRow = {
-      warehouseId: c.warehouse_id,
-      skuId: c.sku_id,
-      skuCode: c.sku_code,
-      positionText: c.position_code,
-      qty,
-      outcome: 'failed',
-      movedQty: 0,
-      toCode: null,
-    };
+    const row = await decide(db, deps, opts, codes, c);
     rows.push(row);
-    const codes = shelves.get(c.warehouse_id) ?? new Map<string, string>();
-    const verdict = judgeShelfMove({
-      position:
-        c.position_code === null || c.position_updated_at === null
-          ? null
-          : { code: c.position_code, updatedAt: new Date(c.position_updated_at) },
-      freshSince: opts.positionsSince,
-      locationCodes: new Set(codes.keys()),
-      shelvesWithStock: c.shelves_with_stock ?? [],
-      includeRules: opts.includeRules,
-    });
-    if (verdict.kind === 'keep') {
-      row.outcome = `keep:${verdict.reason}`;
-      continue;
-    }
-    row.toCode = verdict.toCode;
-    if (c.allocated) {
-      row.outcome = 'keep:allocated';
-      continue;
-    }
-
-    let available: number;
-    let stockVersion: number | null;
-    try {
-      const a = await db.transaction((tx) =>
-        deps.guard.getAvailability(
-          { skuId: c.sku_id, warehouseId: c.warehouse_id, sourceLocationId: c.from_location_id },
-          tx,
-        ),
-      );
-      available = a.generallyAvailableQty;
-      stockVersion = a.stockVersion;
-    } catch (e) {
-      if (conflictCode(e) !== 'INBOUND_ORIGIN_STOCK_INCONSISTENT') throw e;
-      row.outcome = 'keep:inconsistent';
-      continue;
-    }
-    if (available <= 0) {
-      row.outcome = 'keep:protected';
-      continue;
-    }
-    if (!opts.apply) {
-      row.outcome = 'would-move';
-      row.movedQty = available;
-      continue;
-    }
-
-    // judgeShelfMove 는 codes 의 키로만 move 를 낸다 — 없으면 판정과 조회가 갈린 것이다.
-    const toLocationId = codes.get(verdict.toCode);
-    if (!toLocationId) throw new Error(`판정한 선반 ${verdict.toCode} 의 로케이션 id 가 없다`);
-    try {
-      await deps.movement.moveImmediately({
-        warehouseId: c.warehouse_id,
-        actorId: SYSTEM_ACTOR,
-        memo: MEMO,
-        idempotencyKey: `cutover-1236:${c.warehouse_id}:${c.sku_id}:${stockVersion ?? 0}`,
-        lines: [
-          {
-            skuId: c.sku_id,
-            fromLocationId: c.from_location_id,
-            toLocationId,
-            quantity: available,
-          },
-        ],
-      });
-      row.outcome = 'moved';
-      row.movedQty = available;
-    } catch (e) {
-      // SKU 하나의 도메인 거절(목적지 비활성·수량 부족·멱등 충돌 등)만 기록하고 넘어간다. 그 밖(DB 연결 등)은 멈춘다.
-      if (!(e instanceof HttpException) && !(e instanceof ApplicationException)) throw e;
-      row.outcome = 'failed';
-      row.error = errorText(e);
-    }
+    onRow?.(row);
   }
   return rows;
+}
+
+async function decide(
+  db: PostgresJsDatabase<typeof wmsSchema>,
+  deps: { movement: MovementService; guard: BatchControlledStockGuard },
+  opts: ShelfMoveOptions,
+  codes: Map<string, string>,
+  c: Candidate,
+): Promise<ShelfMoveRow> {
+  const qty = Number(c.qty);
+  const row: ShelfMoveRow = {
+    warehouseId: c.warehouse_id,
+    skuId: c.sku_id,
+    skuCode: c.sku_code,
+    positionText: c.position_code,
+    qty,
+    outcome: 'failed',
+    movedQty: 0,
+    toCode: null,
+  };
+  const verdict = judgeShelfMove({
+    position:
+      c.position_code === null || c.position_updated_at === null
+        ? null
+        : { code: c.position_code, updatedAt: new Date(c.position_updated_at) },
+    freshSince: opts.positionsSince,
+    locationCodes: new Set(codes.keys()),
+    shelvesWithStock: c.shelves_with_stock ?? [],
+    includeRules: opts.includeRules,
+  });
+  if (verdict.kind === 'keep') {
+    row.outcome = `keep:${verdict.reason}`;
+    if (verdict.reason === 'unconfirmed') row.rule = verdict.rule;
+    return row;
+  }
+  row.toCode = verdict.toCode;
+  if (c.allocated) {
+    row.outcome = 'keep:allocated';
+    return row;
+  }
+
+  let available: number;
+  let stockVersion: number | null;
+  try {
+    const a = await db.transaction((tx) =>
+      deps.guard.getAvailability(
+        { skuId: c.sku_id, warehouseId: c.warehouse_id, sourceLocationId: c.from_location_id },
+        tx,
+      ),
+    );
+    available = a.generallyAvailableQty;
+    stockVersion = a.stockVersion;
+  } catch (e) {
+    if (conflictCode(e) !== 'INBOUND_ORIGIN_STOCK_INCONSISTENT') throw e;
+    row.outcome = 'keep:inconsistent';
+    return row;
+  }
+  if (available <= 0) {
+    row.outcome = 'keep:protected';
+    return row;
+  }
+  if (!opts.apply) {
+    row.outcome = 'would-move';
+    row.movedQty = available;
+    return row;
+  }
+
+  // judgeShelfMove 는 codes 의 키로만 move 를 낸다 — 없으면 판정과 조회가 갈린 것이다.
+  const toLocationId = codes.get(verdict.toCode);
+  if (!toLocationId) throw new Error(`판정한 선반 ${verdict.toCode} 의 로케이션 id 가 없다`);
+  try {
+    await deps.movement.moveImmediately({
+      warehouseId: c.warehouse_id,
+      actorId: SYSTEM_ACTOR,
+      memo: MEMO,
+      idempotencyKey: `cutover-1236:${c.warehouse_id}:${c.sku_id}:${stockVersion ?? 0}`,
+      lines: [
+        {
+          skuId: c.sku_id,
+          fromLocationId: c.from_location_id,
+          toLocationId,
+          quantity: available,
+        },
+      ],
+    });
+    row.outcome = 'moved';
+    row.movedQty = available;
+  } catch (e) {
+    // SKU 하나의 도메인 거절(목적지 비활성·수량 부족·멱등 충돌 등)만 기록하고 넘어간다. 그 밖(DB 연결 등)은 멈춘다.
+    if (!(e instanceof HttpException) && !(e instanceof ApplicationException)) throw e;
+    row.outcome = 'failed';
+    row.error = errorText(e);
+  }
+  return row;
 }
 
 function summarize(rows: ShelfMoveRow[], apply: boolean): void {
@@ -293,6 +308,15 @@ function summarize(rows: ShelfMoveRow[], apply: boolean): void {
   }
   for (const [reason, list] of [...byReason].sort()) {
     console.log(`   남김 ${reason.slice('keep:'.length)}: SKU ${list.length}개 · ${sum(list, (r) => r.qty)}개`);
+  }
+  // 현장 확인은 규칙마다 한다 — 어느 규칙을 켜면 몇 SKU 가 더 옮겨지는지 따로 보인다.
+  for (const rule of SHELF_MOVE_RULES) {
+    const off = rows.filter((r) => r.outcome === 'keep:unconfirmed' && r.rule === rule);
+    if (off.length > 0) {
+      console.log(
+        `     └ 규칙 ${rule} 꺼짐: SKU ${off.length}개 · ${sum(off, (r) => r.qty)}개 — 현장 확인 뒤 --include-rule=${rule}`,
+      );
+    }
   }
   const partial = moved.filter((r) => r.movedQty < r.qty);
   if (partial.length) {
@@ -333,18 +357,36 @@ async function main() {
       new InventoryIdempotencyService(dbService),
     );
 
-    if (args.includeRules.size) console.log(`켠 고쳐 읽기 규칙: ${[...args.includeRules].join(', ')}`);
-    const rows = await runShelfMove(db, { movement, guard }, args);
-    summarize(rows, args.apply);
-    if (!args.apply) {
-      const unconfirmed = rows.filter((r) => r.outcome === 'keep:unconfirmed').length;
-      if (unconfirmed)
-        console.log(`   (고쳐 읽은 코드라 스위치가 꺼져 남은 SKU ${unconfirmed}개 — --include-rule 로 켜면 다시 판정)`);
+    // 셀메이트 위치는 창고 하나의 위치다 — build-location-master 와 같은 규칙으로 창고를 고른다.
+    const sellableWarehouses = await db.execute<{ id: string; name: string }>(
+      sql`SELECT id, name FROM warehouses WHERE is_sellable`,
+    );
+    const warehouseId = args.warehouseId ?? (sellableWarehouses.length === 1 ? sellableWarehouses[0].id : null);
+    if (!warehouseId) {
+      console.error(`판매 창고가 ${sellableWarehouses.length}개입니다. --warehouse-id 로 고르세요:`);
+      for (const w of sellableWarehouses) console.error(`  ${w.id}  ${w.name}`);
+      process.exitCode = 1;
+      return;
     }
+    if (args.includeRules.size) console.log(`켠 고쳐 읽기 규칙: ${[...args.includeRules].join(', ')}`);
 
-    fs.mkdirSync(path.dirname(args.out), { recursive: true });
-    fs.writeFileSync(args.out, keptRowsCsv(rows));
-    console.log(`\n남긴 SKU 목록 → ${args.out} (위치 원문이 들어 있다 — 커밋하지 않는다)`);
+    // 행이 정해지는 대로 모은다 — 중간에 죽어도(터널 끊김 등) 그때까지 옮긴 것의 요약·목록을 남긴다.
+    const rows: ShelfMoveRow[] = [];
+    const started = Date.now();
+    try {
+      await runShelfMove(db, { movement, guard }, { ...args, warehouseId }, (row) => {
+        rows.push(row);
+        if (rows.length % PROGRESS_EVERY === 0) {
+          const moved = rows.filter((r) => r.outcome === 'moved' || r.outcome === 'would-move').length;
+          console.log(`   … ${rows.length}개 처리 (옮김 ${moved}) · ${Math.round((Date.now() - started) / 1000)}초`);
+        }
+      });
+    } finally {
+      summarize(rows, args.apply);
+      fs.mkdirSync(path.dirname(args.out), { recursive: true });
+      fs.writeFileSync(args.out, keptRowsCsv(rows));
+      console.log(`\n남긴 SKU 목록 ${rows.length}개 처리분 → ${args.out} (위치 원문이 들어 있다 — 커밋하지 않는다)`);
+    }
     if (rows.some((r) => r.outcome === 'failed')) process.exitCode = 1;
   } finally {
     await client.end();

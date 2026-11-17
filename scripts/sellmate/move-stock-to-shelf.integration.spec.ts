@@ -28,7 +28,7 @@ import {
 } from '../../apps/core/src/modules/fulfillment/order-progress/__support__/order-progress.fixtures';
 import { lockSkuCapacities } from '../../apps/core/src/modules/fulfillment/picking/allocation/allocation.locks';
 import { MovementService } from '../../apps/core/src/modules/inventory/movement/services/movement.service';
-import { runShelfMove, ShelfMoveOptions } from './move-stock-to-shelf';
+import { runShelfMove, ShelfMoveOptions, ShelfMoveRow } from './move-stock-to-shelf';
 
 /**
  * 컷오버 재고 이동(#1236). 롤백 트랜잭션 안에서만 돈다 — MovementService 에 바깥 트랜잭션을 DB 로 넘기면
@@ -42,7 +42,8 @@ const describeIfDb = DATABASE_URL ? describe : describe.skip;
 
 const SINCE = new Date('2026-11-20T09:00:00Z');
 const FRESH = new Date('2026-11-20T10:00:00Z');
-const opts = (over: Partial<ShelfMoveOptions> = {}): ShelfMoveOptions => ({
+type RunOptions = Omit<ShelfMoveOptions, 'warehouseId'>;
+const opts = (over: Partial<RunOptions> = {}): RunOptions => ({
   apply: true,
   positionsSince: SINCE,
   includeRules: new Set(),
@@ -83,9 +84,16 @@ async function world(tx: DbTx) {
   };
   const receive = (skuId: string, quantity: number, locationId = inbound.id) =>
     receiveStock(wiring.command, tx, { skuId, warehouseId, locationId, quantity });
-  const run = (o: ShelfMoveOptions, movement: MovementService = makeMovementService(asDb)) =>
-    runShelfMove(tx as unknown as PostgresJsDatabase<typeof wmsSchema>, { movement, guard: wiring.guard }, o).then(
-      (rows) => rows.filter((r) => r.warehouseId === warehouseId),
+  const run = (
+    o: RunOptions,
+    movement: MovementService = makeMovementService(asDb),
+    onRow?: (row: ShelfMoveRow) => void,
+  ) =>
+    runShelfMove(
+      tx as unknown as PostgresJsDatabase<typeof wmsSchema>,
+      { movement, guard: wiring.guard },
+      { ...o, warehouseId },
+      onRow,
     );
   const moveEvents = async (skuId: string) =>
     tx
@@ -329,6 +337,62 @@ describeIfDb('runShelfMove (DB integration)', () => {
       const sources = capacities.filter((c) => c.remainingQty > 0).map((c) => c.sourceLocationId);
       expect(sources).toContain(shelfId);
       expect(sources).not.toContain(w.inboundId);
+    });
+  });
+
+  it('지정한 창고만 옮긴다 — 셀메이트 위치는 창고 하나의 위치다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = await world(tx);
+      const other = await world(tx);
+      await w.shelf('01');
+      await other.shelf('01');
+      const s = await w.sku('A-01-01');
+      await w.receive(s.skuId, 5);
+      await other.receive(s.skuId, 6);
+
+      const rows = await w.run(opts());
+
+      expect(rows.every((r) => r.warehouseId === w.warehouseId)).toBe(true);
+      expect(await onHandAt(tx, s.skuId, w.inboundId)).toBe(0);
+      expect(await onHandAt(tx, s.skuId, other.inboundId)).toBe(6);
+    });
+  });
+
+  it('행을 처리하는 대로 내보낸다 — 중간에 죽어도 그때까지 옮긴 것이 남는다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = await world(tx);
+      await w.shelf('01');
+      const a = await w.sku('A-01-01');
+      const b = await w.sku('A-01-01');
+      await w.receive(a.skuId, 3);
+      await w.receive(b.skuId, 4);
+      const real = makeMovementService(w.asDb);
+      let calls = 0;
+      const dying = {
+        moveImmediately: (dto: Parameters<MovementService['moveImmediately']>[0]) => {
+          calls += 1;
+          return calls === 1 ? real.moveImmediately(dto) : Promise.reject(new Error('터널 끊김'));
+        },
+      } as unknown as MovementService;
+      const seen: ShelfMoveRow[] = [];
+
+      await expect(w.run(opts(), dying, (row) => seen.push(row))).rejects.toThrow('터널 끊김');
+
+      expect(seen).toHaveLength(1);
+      expect(seen[0]).toMatchObject({ outcome: 'moved' });
+    });
+  });
+
+  it('고쳐 읽은 코드라 남긴 행은 어느 규칙인지 싣는다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = await world(tx);
+      await w.shelf('01');
+      const s = await w.sku('A-1-1');
+      await w.receive(s.skuId, 2);
+
+      const [row] = await w.run(opts());
+
+      expect(row).toMatchObject({ outcome: 'keep:unconfirmed', rule: 'zero-pad' });
     });
   });
 });

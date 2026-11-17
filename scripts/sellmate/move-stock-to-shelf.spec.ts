@@ -23,6 +23,11 @@ describe('parseShelfMoveArgs', () => {
     expect([...o.includeRules].sort()).toEqual(['custom-bin', 'zero-pad']);
   });
 
+  it('창고를 지정할 수 있다 — 지정하지 않으면 null(판매 창고가 하나일 때만 CLI 가 그 창고를 쓴다)', () => {
+    expect(parseShelfMoveArgs([]).warehouseId).toBeNull();
+    expect(parseShelfMoveArgs(['--warehouse-id=wh-1']).warehouseId).toBe('wh-1');
+  });
+
   it('모르는 규칙·읽을 수 없는 시각은 거절한다', () => {
     expect(() => parseShelfMoveArgs(['--include-rule=bogus'])).toThrow(/bogus/);
     expect(() => parseShelfMoveArgs(['--positions-since=어제'])).toThrow(/positions-since/);

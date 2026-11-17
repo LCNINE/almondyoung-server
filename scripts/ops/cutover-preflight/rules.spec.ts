@@ -236,11 +236,12 @@ describe('judgeReconcile', () => {
 
 describe('shelfMoveSummary — «로케이션 2» 를 재고 이동 스크립트와 같은 판정으로 센다 (#1236)', () => {
   const move = { kind: 'move', toCode: 'A-01-01', rule: 'exact' } as const;
-  const keep = (reason: 'no-position' | 'unconfirmed') => ({ kind: 'keep', reason }) as const;
+  const noPosition = { kind: 'keep', reason: 'no-position' } as const;
+  const unconfirmed = { kind: 'keep', reason: 'unconfirmed', rule: 'zero-pad' } as const;
 
   it('옮길 것·사유별 남김·규칙을 켜면 더 옮겨지는 수를 낸다', () => {
-    const exactOnly = [move, move, keep('no-position'), keep('unconfirmed')];
-    const allRules = [move, move, keep('no-position'), { kind: 'move', toCode: 'CC-04-01', rule: 'zero-pad' } as const];
+    const exactOnly = [move, move, noPosition, unconfirmed];
+    const allRules = [move, move, noPosition, { kind: 'move', toCode: 'CC-04-01', rule: 'zero-pad' } as const];
     expect(shelfMoveSummary(exactOnly, allRules)).toEqual({
       move: 2,
       byReason: { 'no-position': 1, stale: 0, unreadable: 0, unconfirmed: 1, 'no-location': 0, elsewhere: 0 },

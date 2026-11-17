@@ -3,6 +3,7 @@ import type { Sql } from '../db';
 import type { Report } from '../report';
 import { shelfCodeLinks, shelfMoveSummary } from '../rules';
 import {
+  CUTOVER_MOVE_MEMO,
   judgeShelfMove,
   SHELF_MOVE_RULES,
   ShelfMoveRule,
@@ -86,9 +87,14 @@ export async function checkLocation(tx: Sql, r: Report): Promise<void> {
   const moveFix =
     'bash scripts/sellmate/run.sh live move-stock-to-shelf --positions-since=<load-shelf-positions 직전 시각> 후 --apply (#1236)';
   if (summary.move === 0) r.ok('위치가 하나인 SKU 의 재고가 입고기본존에 남아 있지 않다');
-  // 컷오버 뒤에는 앱 입고분이 다시 입고기본존에 들어오므로 «당일 처리»가 아니라 정보다.
-  else if (r.cutoverAt) r.info(`${moveMsg} — 컷오버 뒤 앱 입고분일 수 있다`);
-  else r.dayOf(moveMsg, moveFix);
+  else if (r.phase === 'after' || r.cutoverAt) {
+    // 컷오버 뒤에는 앱 입고분이 다시 입고기본존에 들어오므로 남은 것만으로는 실패가 아니다 — 이동 스크립트가 돌지 않았을 때만 실패.
+    const [ran] = await tx<{ n: number }[]>`
+      select count(*)::int as n from movement_jobs j join warehouses w on w.id = j.warehouse_id and w.is_sellable
+      where j.memo = ${CUTOVER_MOVE_MEMO}`;
+    if (ran.n === 0) r.bad(`${moveMsg} — 이동 스크립트가 돈 흔적이 없다`, moveFix);
+    else r.info(`${moveMsg} — 이동 스크립트는 돌았다(작업 ${ran.n}건). 남은 건 앱 입고분·이동 때 남긴 SKU`);
+  } else r.dayOf(moveMsg, moveFix);
   const kept = Object.entries(summary.byReason)
     .filter(([, n]) => n > 0)
     .map(([reason, n]) => `${reason} ${n}`)
