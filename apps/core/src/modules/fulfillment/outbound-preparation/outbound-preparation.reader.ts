@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { DbService, InjectTypedDb } from '@app/db';
-import { and, asc, count, eq, inArray, isNull, notInArray, sql } from 'drizzle-orm';
+import { and, asc, count, desc, eq, inArray, isNull, notInArray, sql } from 'drizzle-orm';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import { ConsolidationBoardReader } from '../services/consolidation-board.reader';
 import {
@@ -17,6 +17,8 @@ import {
   PreparationFacts,
 } from './outbound-preparation-classify';
 import { compatibleShippingProfileId } from '../services/shipping-profile';
+import { isUntrustedExternalLine } from '../services/external-line-identity';
+import { waybillFailureText } from '../waybill/waybill-failure-text';
 import {
   OutboundPreparationQueryDto,
   OutboundPreparationSummaryDto,
@@ -27,6 +29,9 @@ type PreparationLineQuantity = PreparationFacts['lines'][number] & { name: strin
 
 // 분류마다 한 번에 돌려주는 상자 수. 나머지는 화면이 `bucket`·`offset` 으로 더 부른다.
 const BUCKET_PAGE_SIZE = 200;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+// 바인드 변수 한도 안에서 판매주문 품목을 나눠 찾는다
+const LINE_LOOKUP_CHUNK = 5000;
 
 @Injectable()
 export class OutboundPreparationReader {
@@ -86,6 +91,7 @@ export class OutboundPreparationReader {
             notInArray(wmsTables.outboundBatchWorkItems.status, ['excluded', 'completed']),
           ),
         );
+      const untrustedIds = await this.untrustedExternalLineShipments(trx, ids);
       const board = await this.consolidationBoard.findBoard(warehouseId, trx);
       const groupByShipment = new Map(
         board.groups.flatMap((group) =>
@@ -116,6 +122,7 @@ export class OutboundPreparationReader {
           lines: quantities,
           profileIds,
           recipientComplete: isRecipientComplete(shipment.recipientSnapshot),
+          externalLinesTrusted: !untrustedIds.has(shipment.id),
           consolidationPeerLines: (groupByShipment.get(shipment.id)?.shipments ?? [])
             .filter(
               (peer) => peer.shipmentId !== shipment.id && peer.status === 'draft' && !activeIds.has(peer.shipmentId),
@@ -150,8 +157,10 @@ export class OutboundPreparationReader {
               profileIds.includes(null) || profileIds.length === 0
                 ? '배송 프로필이 없는 상품이 있어요'
                 : '배송 프로필이 상품마다 달라요';
-          } else {
+          } else if (!isRecipientComplete(shipment.recipientSnapshot)) {
             reason = '수령인 정보가 비어 있어요';
+          } else {
+            reason = '쇼핑몰 품목 번호가 없거나 맞지 않아요';
           }
         }
 
@@ -173,8 +182,92 @@ export class OutboundPreparationReader {
         });
       }
 
+      await this.fillWaybillFailures(trx, buckets.find((entry) => entry.bucket === 'resume')?.shipments ?? []);
+
       return { warehouseId, buckets, awaitingMatchingCount: backlog.count };
     }, tx);
+  }
+
+  // 상자 확정이 같은 판정으로 거절하는 상자. 다시 눌러도 같으니 «정보 필요»로 둔다.
+  // 판매주문 품목은 기본키로 찾는다 — 출고 품목의 참조는 문자열이라 조인하면 인덱스를 못 쓴다.
+  private async untrustedExternalLineShipments(trx: DbTx, shipmentIds: string[]): Promise<Set<string>> {
+    const links = await trx
+      .select({
+        shipmentId: wmsTables.shipmentLines.shipmentId,
+        salesOrderLineId: wmsTables.fulfillmentOrderItems.salesOrderLineId,
+      })
+      .from(wmsTables.shipmentLines)
+      .innerJoin(
+        wmsTables.fulfillmentOrderItems,
+        eq(wmsTables.fulfillmentOrderItems.id, wmsTables.shipmentLines.fulfillmentOrderItemId),
+      )
+      .where(inArray(wmsTables.shipmentLines.shipmentId, shipmentIds));
+    // 상자 확정은 `id::text` 와 그대로 견준다 — 같은 판정이 되도록 소문자 uuid 꼴만 찾는다
+    const lineIds = uniqueInOrder(
+      links.flatMap(({ salesOrderLineId }) =>
+        salesOrderLineId && UUID.test(salesOrderLineId) ? [salesOrderLineId] : [],
+      ),
+    );
+    const untrusted = new Set<string>();
+
+    for (let start = 0; start < lineIds.length; start += LINE_LOOKUP_CHUNK) {
+      const origins = await trx
+        .select({
+          id: wmsTables.salesOrderLines.id,
+          salesChannel: wmsTables.salesOrders.salesChannel,
+          channelOrderItemId: wmsTables.salesOrderLines.channelOrderItemId,
+          channelProductId: wmsTables.salesOrderLines.channelProductId,
+          exchangeReturnLineId: wmsTables.salesOrderLines.exchangeReturnLineId,
+        })
+        .from(wmsTables.salesOrderLines)
+        .innerJoin(wmsTables.salesOrders, eq(wmsTables.salesOrders.id, wmsTables.salesOrderLines.salesOrderId))
+        .where(inArray(wmsTables.salesOrderLines.id, lineIds.slice(start, start + LINE_LOOKUP_CHUNK)));
+
+      for (const origin of origins.filter(isUntrustedExternalLine)) {
+        untrusted.add(origin.id);
+      }
+    }
+
+    return new Set(
+      links.flatMap(({ shipmentId, salesOrderLineId }) =>
+        salesOrderLineId && untrusted.has(salesOrderLineId) ? [shipmentId] : [],
+      ),
+    );
+  }
+
+  // «이어서 하기» 상자는 송장 단계에서 멈춘 것이다 — 마지막 송장 기록으로 이유를 보인다.
+  private async fillWaybillFailures(trx: DbTx, shipments: PreparationBucketDto['shipments']): Promise<void> {
+    if (shipments.length === 0) {
+      return;
+    }
+
+    const rows = await trx
+      .select({
+        shipmentId: wmsTables.waybills.shipmentId,
+        status: wmsTables.waybills.status,
+        lastError: wmsTables.waybills.lastError,
+      })
+      .from(wmsTables.waybills)
+      .where(
+        inArray(
+          wmsTables.waybills.shipmentId,
+          shipments.map((shipment) => shipment.shipmentId),
+        ),
+      )
+      .orderBy(desc(wmsTables.waybills.createdAt), desc(wmsTables.waybills.id));
+    const latest = new Map<string, (typeof rows)[number]>();
+
+    for (const row of rows) {
+      if (!latest.has(row.shipmentId)) {
+        latest.set(row.shipmentId, row);
+      }
+    }
+
+    for (const shipment of shipments) {
+      const waybill = latest.get(shipment.shipmentId);
+
+      shipment.reason = waybill ? waybillFailureText(waybill) : null;
+    }
   }
 
   // 상자별 라인의 주문 수량과 confirmed 예약 합. 분류와 «있는 것만 먼저 보내기»가 같은 계산을 쓴다.
