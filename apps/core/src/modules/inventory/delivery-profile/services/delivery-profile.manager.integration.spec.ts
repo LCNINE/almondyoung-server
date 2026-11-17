@@ -9,6 +9,8 @@ import { assertProfileComplete } from '../../../fulfillment/picking/allocation/a
 import { CreateDeliveryProfileDto } from '../dto/create-delivery-profile.dto';
 import { DeliveryProfileReader } from './delivery-profile.reader';
 import { DeliveryProfileManager } from './delivery-profile.manager';
+import { HolderService } from '../../core/services/holder.service';
+import { BadRequestException } from '@nestjs/common';
 
 /**
  * 실행: COMPOSE_PROJECT_NAME=almondyoung-server npm run test:core:integration:local -- 'delivery-profile\.manager\.integration\.spec\.ts$'
@@ -38,13 +40,17 @@ describeIfDb('DeliveryProfileManager (DB integration)', () => {
     await client.end();
   });
 
-  function build(trx: DbTx): { reader: DeliveryProfileReader; manager: DeliveryProfileManager } {
+  function build(trx: DbTx): {
+    reader: DeliveryProfileReader;
+    manager: DeliveryProfileManager;
+    holders: HolderService;
+  } {
     const dbService = {
       db,
       run: <T>(fn: (t: DbTx) => Promise<T>, tx?: DbTx): Promise<T> => fn(tx ?? trx),
     } as unknown as DbService<typeof wmsSchema>;
     const reader = new DeliveryProfileReader(dbService);
-    return { reader, manager: new DeliveryProfileManager(dbService) };
+    return { reader, manager: new DeliveryProfileManager(dbService), holders: new HolderService(dbService) };
   }
 
   // 이 API 로 만든 프로필은 계획 확정·배치 편입의 완전성 검사를 통과해야 한다 — 그게 이 기능의 목적이다.
@@ -123,6 +129,15 @@ describeIfDb('DeliveryProfileManager (DB integration)', () => {
       await manager.remove(created.id, trx);
       await expect(reader.findOne(created.id, trx)).rejects.toBeInstanceOf(NotFoundError);
       await expect(manager.remove(created.id, trx)).rejects.toBeInstanceOf(NotFoundError);
+    });
+  });
+
+  it('배송 프로필이 쓰는 화주는 지우지 않는다', async () => {
+    await inRollbackTx(db, async (trx) => {
+      const { manager, holders } = build(trx);
+      const { holderId } = await seedHolder(trx);
+      await manager.create({ ...input, holderId }, trx);
+      await expect(holders.deleteHolder(holderId, trx)).rejects.toBeInstanceOf(BadRequestException);
     });
   });
 });

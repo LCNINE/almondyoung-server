@@ -43,6 +43,15 @@ export class DeliveryProfileManager {
   async remove(id: string, tx?: DbTx): Promise<void> {
     return this.dbService.run(async (trx) => {
       const { skus, shipments, deliveryProfiles } = wmsTables;
+      // 행을 먼저 잠근다. SKU·상자가 이 프로필을 새로 참조하려면 FK 검사가 이 행에 KEY SHARE 잠금을 걸어야 하므로,
+      // 아래 검사와 삭제 사이에 참조가 끼어들지 못한다.
+      const [locked] = await trx
+        .select({ id: deliveryProfiles.id })
+        .from(deliveryProfiles)
+        .where(eq(deliveryProfiles.id, id))
+        .for('update');
+      if (!locked) throw new NotFoundError(`배송 프로필을 찾을 수 없습니다: ${id}`);
+
       const [skuUse] = await trx
         .select({ n: sql<number>`count(*)::int` })
         .from(skus)
@@ -60,11 +69,7 @@ export class DeliveryProfileManager {
       }
 
       // 삭제된 SKU 는 FK 가 set null 로 풀어 준다
-      const deleted = await trx
-        .delete(deliveryProfiles)
-        .where(eq(deliveryProfiles.id, id))
-        .returning({ id: deliveryProfiles.id });
-      if (deleted.length === 0) throw new NotFoundError(`배송 프로필을 찾을 수 없습니다: ${id}`);
+      await trx.delete(deliveryProfiles).where(eq(deliveryProfiles.id, id));
     }, tx);
   }
 
