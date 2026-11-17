@@ -35,6 +35,7 @@ import { toast } from 'sonner';
 import { useOrderHistoryFilter } from '../../contexts/filter.context';
 import type { SalesOrderBusinessTimelineItemDto } from '@/lib/types/dto/orders';
 import { buildQuery, PAGE_SIZE } from '../../utils/build-query';
+import { memoPreview } from '../../utils/memo-preview';
 import { useSalesOrderRows } from '../../hooks/use-order-rows';
 import type { OrderLineRow } from '../../hooks/use-order-rows';
 import { refundDecisionActionsOf } from '../../hooks/refund-decision-actions';
@@ -47,6 +48,7 @@ import {
   useAdminCancelSalesOrder,
   useAdminManualRefundComplete,
   useAdminWaiveRefund,
+  useUpdateSalesOrderMemo,
 } from '@/lib/services/orders';
 import { usePermissionCheck } from '@/hooks/use-permission';
 import {
@@ -876,8 +878,7 @@ export default function OrderTable() {
   const [returnOrderId, setReturnOrderId] = useState<string | null>(null);
   const { can, canRun } = usePermissionCheck();
   const canCancelOrder = canRun(useAdminCancelSalesOrder);
-  // 메모 모달은 컴포넌트 안 뮤테이션이라 훅이 없다
-  const canWriteOrder = can(['order.order.write']);
+  const canWriteMemo = canRun(useUpdateSalesOrderMemo);
 
   /* 컬럼 정의 */
   const columns: MergedTableColumn<OrderLineRow>[] = useMemo(
@@ -1002,14 +1003,15 @@ export default function OrderTable() {
                   >
                     업무연결
                   </DropdownMenuItem>
-                  {canWriteOrder && (
+                  {canWriteMemo && (
                     <DropdownMenuItem
+                      disabled={!r.memoLoaded}
                       onSelect={() => {
                         setSelectedOrder(r);
                         setShowMemoModal(true);
                       }}
                     >
-                      메모추가
+                      {memoPreview(r.memo) ? '메모수정' : '메모추가'}
                     </DropdownMenuItem>
                   )}
                   {r.channel === 'medusa' && r.isFirstOfOrder && r.orderStatus !== 'cancelled' && (
@@ -1242,22 +1244,37 @@ export default function OrderTable() {
       {
         key: 'csStatus',
         label: 'C/S\n상태',
-        render: (_, r) =>
-          canWriteOrder ? (
-            <button
-              className="h-7 px-2 rounded border hover:bg-gray-50 whitespace-nowrap text-xs"
-              onClick={(e) => {
-                e.stopPropagation();
-                setSelectedOrder(r);
-                setShowMemoModal(true);
-              }}
-            >
-              메모추가
-            </button>
-          ) : null,
+        merged: true,
+        render: (_, r) => {
+          const preview = memoPreview(r.memo);
+          return (
+            <div className="flex flex-col items-start gap-1">
+              {preview && (
+                <p className="max-w-[140px] truncate text-gray-700" title={r.memo}>
+                  {preview}
+                </p>
+              )}
+              {canWriteMemo && (
+                <button
+                  className="h-7 px-2 rounded border hover:bg-gray-50 whitespace-nowrap text-xs disabled:cursor-not-allowed disabled:opacity-50"
+                  // 상세를 못 읽은 주문은 지금 메모를 모른다 — 빈 칸에서 고치면 저장된 메모를 덮는다
+                  disabled={!r.memoLoaded}
+                  title={r.memoLoaded ? undefined : '주문 상세를 불러온 뒤 메모를 고칠 수 있어요.'}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setSelectedOrder(r);
+                    setShowMemoModal(true);
+                  }}
+                >
+                  {preview ? '메모수정' : '메모추가'}
+                </button>
+              )}
+            </div>
+          );
+        },
       },
     ],
-    [bankRefunds.data, canCancelOrder, canWriteOrder]
+    [bankRefunds.data, canCancelOrder, canWriteMemo]
   );
 
   return (
