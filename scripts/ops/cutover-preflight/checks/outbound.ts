@@ -113,7 +113,7 @@ export async function checkOutbound(tx: Sql, r: Report): Promise<void> {
     r.table(ghosts);
     r.bad(
       '끝난 출고주문에 확정 예약이 남아 재고를 묶고 있다(유령 예약)',
-      'ShipmentReservationService.releasePartial 로 해제 (#1233). ReservationLifecycleService 는 SHIPMENT_LINE 을 못 본다',
+      'ShipmentReservationService.releasePartial 로 해제 (#1233). ReservationLifecycleService 는 SHIPMENT_LINE 을 못 본다. 드레인 끝이면 bash scripts/sellmate/run.sh live close-sellmate-leftovers 후 --apply (#1243)',
     );
   }
   const [negative] = await tx`select count(*)::int as n from stock_summary_view where available_qty < 0`;
@@ -123,7 +123,7 @@ export async function checkOutbound(tx: Sql, r: Report): Promise<void> {
     r.bad(
       `가용재고가 음수인 SKU·창고 ${negative.n}개`,
       ghosts.length
-        ? '유령 예약 해제(close-shipped-shipments.ts) 후 다시 판정 (#1233)'
+        ? '유령 예약 해제 후 다시 판정 — T 전은 close-shipped-shipments.ts, T 뒤(드레인 끝)는 close-sellmate-leftovers (#1243)'
         : '유령 예약은 0 — sync-stock 과 core 예약의 이중 차감. 컷오버 때 실사는 안 한다(#1233 결정) — 컷오버 뒤 실사로 재확인',
     );
   else r.ok('가용재고 음수 0');
@@ -162,7 +162,11 @@ export async function checkOutbound(tx: Sql, r: Report): Promise<void> {
       'admin-web /order/matching 에서 SKU 매칭',
     );
   else r.ok('아직 안 나간 주문의 매칭 대기 0');
-  if (matching.done) r.dayOf(`이미 끝난 주문의 매칭 대기 ${matching.done}건`, '출고할 게 아니라 닫는다 (#1243)');
+  if (matching.done)
+    r.dayOf(
+      `이미 끝난 주문의 매칭 대기 ${matching.done}건`,
+      '드레인 끝에 bash scripts/sellmate/run.sh live close-sellmate-leftovers 후 --apply (#1243)',
+    );
   const failed = await tx`
     select coalesce(failure_reason, '(null)') as failure_reason, count(*)::int
     from fulfillment_order_creation_backlogs where status = 'failed' group by 1 order by 2 desc limit 10`;
