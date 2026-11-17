@@ -34,7 +34,7 @@ describe('OpenVirtualAccountCloseJob', () => {
     const { job, tossApi, updates } = makeContext([LEFT_OPEN], WAITING);
 
     expect(await job.closeLeftOpen()).toEqual({ scanned: 1, closed: 1 });
-    expect(tossApi.queryPayment).toHaveBeenCalledWith('chargeva', 'pk_va', true);
+    expect(tossApi.queryPayment).toHaveBeenCalledWith('chargeva', 'pk_va', 'WIDGET');
     // 첫 폐쇄 요청과 같은 키면 토스가 그 실패 응답을 재생한다.
     const [, , , idempotencyKey] = tossApi.cancelPayment.mock.calls[0];
     expect(idempotencyKey).not.toBe('cancel:wallet:authorize:charge-va');

@@ -28,6 +28,7 @@ export const walletEnvSchema = z.object({
   TOSS_CLIENT_KEY: z.string().min(1).optional(),
   TOSS_WIDGET_CLIENT_KEY: z.string().min(1).optional(),
   TOSS_WIDGET_SECRET_KEY: z.string().min(1).optional(),
+  TOSS_DIRECT_SECRET_KEY: z.string().min(1).optional(),
   TOSS_WIDGET_VARIANT_KEY: z.string().min(1).optional(),
   TOSS_WIDGET_TEST_CUSTOMER_KEY_SUFFIX: z.string().regex(/^[a-zA-Z0-9_-]{1,8}$/).optional(),
   // 무통장입금(토스 가상계좌) — bank: 토스에 넘길 두 자리 은행 코드(계약 은행), bank_name: 고객 표시명

@@ -4,7 +4,7 @@ import { ChargesService } from '../charges/charges.service';
 import { TossApproveService } from '../payment-intents/toss-approve.service';
 import { BillingMethodService } from '../billing/billing-method.service';
 import { TossApiClient } from '../providers/toss/toss-api.client';
-import { knownTossPaymentKey, usesTossWidget } from '../providers/toss/toss-widget-mode';
+import { knownTossPaymentKey, tossKeyOf } from '../providers/toss/toss-widget-mode';
 import { TossWebhookRepository } from './toss-webhook.repository';
 import { TossWebhookBodyDto } from './dto';
 
@@ -113,7 +113,7 @@ export class TossWebhookService {
     const paymentKey =
       knownTossPaymentKey(charge.responsePayload, charge.providerTransactionId) ??
       (typeof dto.data.paymentKey === 'string' ? dto.data.paymentKey : undefined);
-    const query = await this.tossApi.queryPayment(orderId, paymentKey, usesTossWidget(charge.responsePayload));
+    const query = await this.tossApi.queryPayment(orderId, paymentKey, tossKeyOf(charge.responsePayload));
     if (!query.ok) {
       // 5xx/429 는 일시적 → throw(500) → 토스 재전송. 4xx(미존재 등)는 재시도 무의미 → 기록만.
       if (query.statusCode >= 500 || query.statusCode === 429) {

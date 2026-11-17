@@ -104,7 +104,7 @@ describe('TossPaymentProvider.refund — 위젯 결제 키 선택', () => {
       authorizeChargeId: 'authorize-charge',
     });
 
-    expect(cancelPayment).toHaveBeenCalledWith('pk_w', '고객 요청', 5000, 'wallet:refund:rf-1', undefined, true);
+    expect(cancelPayment).toHaveBeenCalledWith('pk_w', '고객 요청', 5000, 'wallet:refund:rf-1', undefined, 'WIDGET');
     expect(result.status).toBe('SUCCEEDED');
   });
 });
@@ -132,7 +132,7 @@ describe('TossPaymentProvider.cancel — 승인 결과를 모르는 charge', () 
       cancelPayment: jest.fn(),
     };
     expect((await make(notFound).cancel(cancelParams())).status).toBe('SUCCEEDED');
-    expect(notFound.queryPayment).toHaveBeenCalledWith('11111111222233334444555555555555', 'pk_1', false);
+    expect(notFound.queryPayment).toHaveBeenCalledWith('11111111222233334444555555555555', 'pk_1', 'LEGACY');
 
     const aborted = {
       queryPayment: jest.fn().mockResolvedValue({ ok: true, data: { status: 'ABORTED' } }),
@@ -163,7 +163,7 @@ describe('TossPaymentProvider.cancel — 승인 결과를 모르는 charge', () 
       undefined,
       expect.any(String),
       undefined,
-      false,
+      'LEGACY',
     );
   });
 

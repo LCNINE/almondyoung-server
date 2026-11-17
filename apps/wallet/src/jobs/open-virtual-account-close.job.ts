@@ -4,7 +4,7 @@ import { DbService } from '@app/db';
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import { WalletSchema, charges } from '../schema';
 import { TossApiClient } from '../providers/toss/toss-api.client';
-import { VIRTUAL_ACCOUNT_LEFT_OPEN, knownTossPaymentKey, usesTossWidget } from '../providers/toss/toss-widget-mode';
+import { VIRTUAL_ACCOUNT_LEFT_OPEN, knownTossPaymentKey, tossKeyOf } from '../providers/toss/toss-widget-mode';
 
 const BATCH_SIZE = 50;
 
@@ -74,9 +74,9 @@ export class OpenVirtualAccountCloseJob {
    * 토스가 그 응답(실패 포함)을 15일간 재생하므로, 상태를 보고 새 키로 취소한다.
    */
   private async closeIfOpen(chargeId: string, responsePayload: Record<string, unknown> | null): Promise<boolean> {
-    const useWidgetKey = usesTossWidget(responsePayload);
+    const tossKey = tossKeyOf(responsePayload);
     const query = await this.tossApi
-      .queryPayment(chargeId.replace(/-/g, ''), knownTossPaymentKey(responsePayload), useWidgetKey)
+      .queryPayment(chargeId.replace(/-/g, ''), knownTossPaymentKey(responsePayload), tossKey)
       .catch(() => null);
     if (!query?.ok) {
       this.logger.warn(`virtual account status unknown: chargeId=${chargeId}`);
@@ -98,7 +98,7 @@ export class OpenVirtualAccountCloseJob {
         undefined,
         `cancel-open-va:${chargeId}:${Date.now()}`,
         undefined,
-        useWidgetKey,
+        tossKey,
       )
       .catch(() => null);
     if (canceled?.ok || canceled?.error.code === 'ALREADY_CANCELED_PAYMENT') return true;

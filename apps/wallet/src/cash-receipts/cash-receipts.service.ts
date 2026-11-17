@@ -15,7 +15,7 @@ import { Charge, CashReceipt } from '../types';
 import { ChargesService } from '../charges/charges.service';
 import { PaymentMethodsService } from '../payment-methods/payment-methods.service';
 import { TossApiClient, TossPaymentQueryResponse } from '../providers/toss/toss-api.client';
-import { usesTossWidget } from '../providers/toss/toss-widget-mode';
+import { tossKeyOf } from '../providers/toss/toss-widget-mode';
 import { ledgerLegChargeId } from '../charges/ledger-leg';
 
 // 발급 가능한 인텐트 상태 (결제 완료된 건만)
@@ -525,7 +525,7 @@ export class CashReceiptsService {
     const paymentKey = (leg?.responsePayload as { paymentKey?: unknown } | null | undefined)?.paymentKey;
     if (typeof paymentKey !== 'string' || !paymentKey) return;
 
-    const result = await this.tossApiClient.getPayment(paymentKey, usesTossWidget(leg?.responsePayload));
+    const result = await this.tossApiClient.getPayment(paymentKey, tossKeyOf(leg?.responsePayload));
     if (!result.ok) {
       this.logger.error(`Toss payment lookup failed before cash receipt issue: error=${result.error.message}`);
       throw new BadRequestException({

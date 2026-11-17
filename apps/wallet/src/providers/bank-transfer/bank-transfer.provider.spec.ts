@@ -54,7 +54,7 @@ describe('BankTransferPaymentProvider', () => {
     // orderId 는 chargeId 하이픈 제거값이어야 웹훅 복원이 성립한다.
     expect(issueVirtualAccount).toHaveBeenCalledWith(
       expect.objectContaining({ orderId: 'aaaaaaaabbbbccccddddeeeeeeeeeeee', bank: '04', amount: 10000 }),
-      false,
+      'LEGACY',
     );
     expect(result.status).toBe('REQUIRES_ACTION');
     expect(result.providerTransactionId).toBe('pk_1');
@@ -66,9 +66,10 @@ describe('BankTransferPaymentProvider', () => {
     expect(result.nextAction).not.toHaveProperty('checkoutMode');
   });
 
-  it('issues with the widget key and marks the account WIDGET when a widget secret is configured', async () => {
+  it('issues with the new store API key and marks the account DIRECT, never with the widget key', async () => {
     process.env.TOSS_VIRTUAL_ACCOUNT_BANK = '06';
     process.env.TOSS_WIDGET_SECRET_KEY = 'gsk_test';
+    process.env.TOSS_DIRECT_SECRET_KEY = 'sk_test';
     const issueVirtualAccount = jest.fn().mockResolvedValue({
       ok: true,
       data: {
@@ -84,9 +85,10 @@ describe('BankTransferPaymentProvider', () => {
 
     const result = await provider.authorize(chargeParams());
     delete process.env.TOSS_WIDGET_SECRET_KEY;
+    delete process.env.TOSS_DIRECT_SECRET_KEY;
 
-    expect(issueVirtualAccount).toHaveBeenCalledWith(expect.anything(), true);
-    expect(result.nextAction).toMatchObject({ type: 'BANK_TRANSFER_PENDING', checkoutMode: 'WIDGET' });
+    expect(issueVirtualAccount).toHaveBeenCalledWith(expect.anything(), 'DIRECT');
+    expect(result.nextAction).toMatchObject({ type: 'BANK_TRANSFER_PENDING', checkoutMode: 'DIRECT' });
   });
 
   it('fails clearly when the issuing bank is not configured', async () => {
@@ -125,7 +127,7 @@ describe('BankTransferPaymentProvider', () => {
       undefined,
       expect.stringMatching(/^cancel:k1:/),
       undefined,
-      false,
+      'LEGACY',
     );
     expect(result.status).toBe('SUCCEEDED');
   });
@@ -149,7 +151,7 @@ describe('BankTransferPaymentProvider', () => {
       undefined,
       expect.stringMatching(/^cancel:k1:/),
       undefined,
-      true,
+      'WIDGET',
     );
   });
 
@@ -344,7 +346,7 @@ describe('BankTransferPaymentProvider', () => {
 
     // CAPTURE charge 엔 발급 스냅샷이 없어, 위젯 여부를 AUTHORIZE charge 에서 읽어야 위젯 키로 환불된다.
     expect(new PgDialect().sqlToQuery(lookedUp[0] as SQL).params).toEqual(['authorize-charge']);
-    expect(cancelPayment).toHaveBeenCalledWith('pk_w', '고객 요청', 10000, 'k1', account, true);
+    expect(cancelPayment).toHaveBeenCalledWith('pk_w', '고객 요청', 10000, 'k1', account, 'WIDGET');
     expect(result.status).toBe('SUCCEEDED');
   });
 });

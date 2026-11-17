@@ -166,7 +166,7 @@ describe('TossWebhookService — 기존 동작 회귀', () => {
 
     await service.handle(depositWebhook());
 
-    expect(queryPayment).toHaveBeenCalledWith(ORDER_ID, 'pk_body', true);
+    expect(queryPayment).toHaveBeenCalledWith(ORDER_ID, 'pk_body', 'WIDGET');
   });
 
   it('취소된 charge 에 실제 입금이 들어오면 FAILED 로 흔적을 남긴다', async () => {
