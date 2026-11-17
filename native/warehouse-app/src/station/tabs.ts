@@ -6,6 +6,7 @@ export type StationPath =
   | '/outbound/batches'
   | '/inbound'
   | '/putaway'
+  | '/putaway/location-labels'
   | '/returns/putaway'
   | '/movement'
   | '/stocktaking'
@@ -49,6 +50,7 @@ export const STATION_TABS: readonly StationTab[] = [
       { label: '적치', to: '/putaway' },
       { label: '되돌림 적치', to: '/returns/putaway' },
       { label: '이동', to: '/movement' },
+      { label: '로케이션 라벨', to: '/putaway/location-labels' },
     ],
   },
   { key: 'F5', label: '실사', to: '/stocktaking', owns: ['/stocktaking'], sections: [] },

@@ -144,6 +144,7 @@ it('예전 스테이션 홈 타일의 작업에 탭·하위 탭으로 모두 닿
     ['F4', '적치', '/putaway'],
     ['F4', '되돌림 적치', '/returns/putaway'],
     ['F4', '이동', '/movement'],
+    ['F4', '로케이션 라벨', '/putaway/location-labels'],
     ['F5', null, '/stocktaking'],
     ['F1', null, '/outbound'],
     ['F2', null, '/outbound/batches'],
