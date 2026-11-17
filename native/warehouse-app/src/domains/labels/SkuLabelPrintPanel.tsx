@@ -10,7 +10,7 @@ import {
   type PrintRaw,
 } from '../../core/hardware/print/labelPrinter';
 import { useSkuDetail } from '../inventory/useSkuDetail';
-import { fetchSkuLabels, SKIP_REASON_TEXT, type LabelBatch, type SkuLabelSize } from './labelApi';
+import { fetchSkuLabels, skipReasonText, type LabelBatch, type SkuLabelSize } from './labelApi';
 import { SKU_LABEL_SIZE_KEY, usePrintLabels, type PrintResult } from './usePrintLabels';
 
 const SIZES: { value: SkuLabelSize; text: string }[] = [
@@ -23,11 +23,12 @@ function readSize(prefs: DevicePrefs): SkuLabelSize {
   return prefs.get(SKU_LABEL_SIZE_KEY) === '30x10' ? '30x10' : '50x30';
 }
 
-function skipText(skipped: LabelBatch['skipped']): string {
-  return skipped.map((s) => SKIP_REASON_TEXT[s.reason]).join(' · ');
+function skipText(skipped: LabelBatch['skipped'], size: SkuLabelSize): string {
+  const context = size === '30x10' ? 'sku-30x10' : 'sku-50x30';
+  return skipped.map((s) => skipReasonText(s.reason, context)).join(' · ');
 }
 
-type Outcome = { kind: 'result'; result: PrintResult } | { kind: 'error'; text: string };
+type Outcome = { kind: 'result'; result: PrintResult; size: SkuLabelSize } | { kind: 'error'; text: string };
 
 /** SKU 상세의 «라벨 출력» — 크기·장수를 골라 core 가 만든 ZPL 을 라벨 프린터로 보낸다(#1281). */
 export function SkuLabelPrintPanel({
@@ -63,7 +64,7 @@ export function SkuLabelPrintPanel({
         fetchSkuLabels(api, { size, items: [{ skuId, copies: count }] }),
       );
       if (result.kind === 'ignored') return;
-      setOutcome({ kind: 'result', result });
+      setOutcome({ kind: 'result', result, size });
     } catch (error) {
       setOutcome({ kind: 'error', text: errorMessage(error) });
     }
@@ -142,14 +143,14 @@ function OutcomeText({ outcome }: { outcome: Outcome }) {
     case 'nothing':
       return (
         <p role="alert" className="text-sm text-red-600">
-          {r.skipped.length ? skipText(r.skipped) : '찍을 라벨이 없어요'}
+          {r.skipped.length ? skipText(r.skipped, outcome.size) : '찍을 라벨이 없어요'}
         </p>
       );
     case 'sent':
       return (
         <div role="status" className="text-sm text-gray-700">
           <p>{`라벨 ${r.labels}장을 보냈어요`}</p>
-          {r.skipped.length ? <p className="text-amber-700">{skipText(r.skipped)}</p> : null}
+          {r.skipped.length ? <p className="text-amber-700">{skipText(r.skipped, outcome.size)}</p> : null}
         </div>
       );
   }

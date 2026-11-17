@@ -103,7 +103,9 @@ export function PrinterSettings({
           value={name}
           onChange={(e) => setName(e.target.value)}
         />
-        <Button type="submit">저장</Button>
+        <Button type="submit" aria-label={`${title} 저장`}>
+          저장
+        </Button>
       </form>
       <Button
         type="button"

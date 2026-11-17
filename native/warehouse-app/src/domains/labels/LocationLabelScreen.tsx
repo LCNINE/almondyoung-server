@@ -1,9 +1,12 @@
-import { useState, type FormEvent } from 'react';
+import { useState } from 'react';
 import { useWarehouse } from '../../app/warehouse-context';
 import { useApiClient } from '../../core/data/ApiClientProvider';
 import { localStoragePrefs, type DevicePrefs } from '../../core/data/devicePrefs';
 import { errorMessage } from '../../core/data/errorMessage';
 import { Button } from '../../core/design/Button';
+import { ScreenHeader } from '../../core/design/ScreenHeader';
+import { BarcodeInput } from '../../core/hardware/scan/BarcodeInput';
+import { useScanner } from '../../core/hardware/scan/useScanner';
 import {
   NO_LABEL_PRINTER_MESSAGE,
   PRINTER_FAILURE_MESSAGE,
@@ -12,19 +15,25 @@ import {
 } from '../../core/hardware/print/labelPrinter';
 import { useLocationSearch } from '../warehouse/useLocationSearch';
 import { WarehousePicker } from '../warehouse/WarehousePicker';
-import { fetchLocationLabels, SKIP_REASON_TEXT, type LabelBatch } from './labelApi';
+import { fetchLocationLabels, skipReasonText, type LabelBatch } from './labelApi';
 import { usePrintLabels, type PrintResult } from './usePrintLabels';
 import { rackLabelOf, useRacks } from './useRacks';
 
-type Outcome = { kind: 'result'; result: PrintResult } | { kind: 'error'; text: string };
+type Outcome = { kind: 'result'; result: PrintResult; picked: Picked[] } | { kind: 'error'; text: string };
 interface Picked {
   id: string;
   code: string;
 }
 
-/** 건너뛴 칸 한 줄 — 코드가 있으면 `코드 — 사유`, 없으면 ref. */
-function skipLines(skipped: LabelBatch['skipped']): string[] {
-  return skipped.map((s) => `${s.code ?? s.ref} — ${SKIP_REASON_TEXT[s.reason]}`);
+/**
+ * 건너뛴 칸 한 줄 — `코드 — 사유`. core 가 코드를 못 줄 때(찾을 수 없음)는 ref(id)를
+ * 고른 칸 목록에서 코드로 되돌리고, 모르는 ref 일 때만 ref 를 그대로 보인다.
+ */
+function skipLines(skipped: LabelBatch['skipped'], picked: Picked[]): string[] {
+  return skipped.map((s) => {
+    const code = s.code ?? picked.find((p) => p.id === s.ref)?.code ?? s.ref;
+    return `${code} — ${skipReasonText(s.reason, 'location')}`;
+  });
 }
 
 /** 적치·이동 탭의 «로케이션 라벨» — 랙 전체나 고른 칸의 바코드 라벨을 라벨 프린터로 뽑는다(#1281). */
@@ -40,26 +49,23 @@ export function LocationLabelScreen({
   const racks = useRacks(warehouseId);
   const { run, busy } = usePrintLabels(prefs, print);
   const [rackId, setRackId] = useState('');
-  const [input, setInput] = useState('');
   const [term, setTerm] = useState('');
   const [picked, setPicked] = useState<Picked[]>([]);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
-  const found = useLocationSearch(warehouseId, term, 'lookup');
+  const found = useLocationSearch(warehouseId, term, 'putaway-destination');
 
-  const submitSearch = (event: FormEvent) => {
-    event.preventDefault();
-    setTerm(input.trim());
-    setInput('');
-  };
+  // 스캔은 포커스가 어디 있든 검색어가 된다 — 명령 바코드는 셸이 가져가 여기 오지 않는다.
+  useScanner((e) => setTerm(e.code.trim()));
 
   const add = (item: Picked) =>
     setPicked((prev) => (prev.some((p) => p.id === item.id) ? prev : [...prev, item]));
 
   const send = async (body: { rackId: string } | { locationIds: string[] }) => {
+    const pickedAtSend = picked;
     try {
       const result = await run(() => fetchLocationLabels(api, body));
       if (result.kind === 'ignored') return;
-      setOutcome({ kind: 'result', result });
+      setOutcome({ kind: 'result', result, picked: pickedAtSend });
     } catch (error) {
       setOutcome({ kind: 'error', text: errorMessage(error) });
     }
@@ -68,7 +74,7 @@ export function LocationLabelScreen({
   if (!isSet) {
     return (
       <div className="space-y-3">
-        <h1 className="text-lg font-semibold text-gray-800">로케이션 라벨</h1>
+        <ScreenHeader title="로케이션 라벨" backTo="/" />
         <p className="text-sm text-gray-600">창고를 먼저 선택하세요.</p>
         <WarehousePicker />
       </div>
@@ -77,7 +83,7 @@ export function LocationLabelScreen({
 
   return (
     <div className="space-y-4">
-      <h1 className="text-lg font-semibold text-gray-800">로케이션 라벨</h1>
+      <ScreenHeader title="로케이션 라벨" backTo="/" />
 
       <section className="space-y-2" aria-label="랙으로 뽑기">
         <h2 className="text-sm font-semibold text-gray-700">랙으로 뽑기</h2>
@@ -114,18 +120,7 @@ export function LocationLabelScreen({
 
       <section className="space-y-2" aria-label="칸으로 뽑기">
         <h2 className="text-sm font-semibold text-gray-700">칸으로 뽑기</h2>
-        <form onSubmit={submitSearch} className="flex gap-2">
-          <input
-            aria-label="로케이션 코드"
-            className="min-w-0 flex-1 rounded border px-2 py-2"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="스캔하거나 입력하세요"
-          />
-          <Button type="submit" disabled={input.trim() === ''}>
-            찾기
-          </Button>
-        </form>
+        <BarcodeInput label="로케이션 코드" onSubmit={(code) => setTerm(code.trim())} />
         {found.isError ? (
           <p role="alert" className="text-sm text-red-600">
             {errorMessage(found.error)}
@@ -174,6 +169,7 @@ export function LocationLabelScreen({
         >
           담은 칸 출력
         </Button>
+        <p className="text-xs text-gray-500">코드 순서로 나와요</p>
       </section>
 
       {outcome ? <OutcomeText outcome={outcome} /> : null}
@@ -181,10 +177,10 @@ export function LocationLabelScreen({
   );
 }
 
-function SkipList({ skipped }: { skipped: LabelBatch['skipped'] }) {
+function SkipList({ skipped, picked }: { skipped: LabelBatch['skipped']; picked: Picked[] }) {
   return (
     <ul>
-      {skipLines(skipped).map((line) => (
+      {skipLines(skipped, picked).map((line) => (
         <li key={line}>{line}</li>
       ))}
     </ul>
@@ -218,7 +214,7 @@ function OutcomeText({ outcome }: { outcome: Outcome }) {
     case 'nothing':
       return (
         <div role="alert" className="text-sm text-red-600">
-          {r.skipped.length ? <SkipList skipped={r.skipped} /> : <p>찍을 라벨이 없어요</p>}
+          {r.skipped.length ? <SkipList skipped={r.skipped} picked={outcome.picked} /> : <p>찍을 라벨이 없어요</p>}
         </div>
       );
     case 'sent':
@@ -227,7 +223,7 @@ function OutcomeText({ outcome }: { outcome: Outcome }) {
           <p>{`라벨 ${r.labels}장을 보냈어요`}</p>
           {r.skipped.length ? (
             <div className="text-amber-700">
-              <SkipList skipped={r.skipped} />
+              <SkipList skipped={r.skipped} picked={outcome.picked} />
             </div>
           ) : null}
         </div>

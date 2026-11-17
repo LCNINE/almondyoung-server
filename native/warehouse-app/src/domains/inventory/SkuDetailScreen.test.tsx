@@ -1,4 +1,7 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+
+const platformMock = vi.hoisted(() => ({ value: 'windows' }));
+vi.mock('@tauri-apps/plugin-os', () => ({ platform: () => platformMock.value }));
 import type { ReactNode } from 'react';
 import { render, screen, within } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -125,6 +128,23 @@ describe('SkuDetailScreen', () => {
     expect(screen.getByTestId('stock-reserved')).toHaveTextContent('3');
     expect(screen.getByTestId('stock-available')).toHaveTextContent('12');
     expect(screen.getByText('다른 창고에는 재고가 없어요.')).toBeInTheDocument();
+  });
+
+  it('라벨 프린터 설정이 있는 스테이션에서만 라벨 출력 패널을 보인다', async () => {
+    platformMock.value = 'windows';
+    renderScreen(clientFor(), { id: 'w-1', name: '본창고' });
+    expect(await screen.findByRole('region', { name: '라벨 출력' })).toBeInTheDocument();
+  });
+
+  it('핸드헬드에는 라벨 출력 패널이 없다', async () => {
+    platformMock.value = 'android';
+    try {
+      renderScreen(clientFor(), { id: 'w-1', name: '본창고' });
+      await screen.findByRole('heading', { name: /코튼셔츠/ });
+      expect(screen.queryByRole('region', { name: '라벨 출력' })).not.toBeInTheDocument();
+    } finally {
+      platformMock.value = 'windows';
+    }
   });
 
   it('다른 창고 재고와 전체 합계를 선택한 창고와 따로 보여준다', async () => {

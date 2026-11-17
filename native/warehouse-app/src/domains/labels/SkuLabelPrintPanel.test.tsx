@@ -97,6 +97,25 @@ describe('SkuLabelPrintPanel', () => {
     expect(print).not.toHaveBeenCalled();
   });
 
+  it('바코드가 넓을 때 1×3 이면 3×5 를 권하고 3×5 면 권하지 않는다', async () => {
+    const wide: LabelBatch = {
+      format: 'zpl',
+      data: '',
+      labels: 0,
+      skipped: [{ ref: 'sku-1', code: null, reason: 'BARCODE_TOO_WIDE' }],
+    };
+    const small = setup({ batch: wide });
+    render(small.ui());
+    await userEvent.click(screen.getByRole('button', { name: '1×3' }));
+    await userEvent.click(screen.getByRole('button', { name: '라벨 출력' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('바코드가 길어 1×3 에 안 들어가요. 3×5 를 쓰세요');
+    await userEvent.click(screen.getByRole('button', { name: '3×5' }));
+    await userEvent.click(screen.getByRole('button', { name: '라벨 출력' }));
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent('바코드가 길어 라벨에 안 들어가요'),
+    );
+  });
+
   it('크기를 1×3 으로 바꾸면 30x10 으로 요청하고 다시 열어도 1×3 이다', async () => {
     const { ui, labelCalls, prefs } = setup();
     const first = render(ui());

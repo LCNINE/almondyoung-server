@@ -16,7 +16,7 @@ describe('PrinterSettings 송장 칸', () => {
     const prefs = createMemoryPrefs();
     render(<PrinterSettings slot="waybill" prefs={prefs} print={vi.fn()} />);
     await userEvent.type(screen.getByLabelText('송장 프린터 이름'), 'XP-DT108B');
-    await userEvent.click(screen.getByRole('button', { name: '저장' }));
+    await userEvent.click(screen.getByRole('button', { name: '송장 프린터 저장' }));
     expect(prefs.get(LABEL_PRINTER_KEY)).toBe('spooler://XP-DT108B');
     expect(screen.getByRole('status')).toHaveTextContent('저장했어요');
   });
@@ -77,7 +77,7 @@ describe('PrinterSettings 라벨 칸·두 절', () => {
     const prefs = createMemoryPrefs({ [LABEL_PRINTER_KEY]: 'spooler://XP' });
     render(<PrinterSettings slot="label" prefs={prefs} print={vi.fn()} />);
     await userEvent.type(screen.getByLabelText('라벨 프린터 이름'), 'TX400');
-    await userEvent.click(screen.getByRole('button', { name: '저장' }));
+    await userEvent.click(screen.getByRole('button', { name: '라벨 프린터 저장' }));
     expect(prefs.get(BARCODE_LABEL_PRINTER_KEY)).toBe('spooler://TX400');
     expect(prefs.get(LABEL_PRINTER_KEY)).toBe('spooler://XP');
   });
