@@ -27,4 +27,8 @@ export class DeliveryProfileService {
   update(id: string, dto: UpdateDeliveryProfileDto, tx?: DbTx) {
     return this.manager.update(id, dto, tx);
   }
+
+  remove(id: string, tx?: DbTx) {
+    return this.manager.remove(id, tx);
+  }
 }

@@ -1128,6 +1128,8 @@ export const deliveryProfiles = pgTable('delivery_profiles', {
   id: uuid('id').primaryKey().defaultRandom(),
   name: varchar('name', { length: 128 }).notNull(),
   sourceType: sourceTypeEnum('source_type').notNull(),
+  // 위탁(3PL) 프로필이면 그 업체 화주. 자사 프로필은 비워 둔다.
+  holderId: uuid('holder_id').references(() => holders.id, { onDelete: 'restrict' }),
   avgDeliveryDays: integer('avg_delivery_days'),
   // TODO(outbound-v2-contract Task 25): require execution snapshots/modes for profiles used by planned shipments.
   senderSnapshot: jsonb('sender_snapshot'),
