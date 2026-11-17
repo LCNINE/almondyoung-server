@@ -77,6 +77,7 @@ export {
 export {
   useCreateSalesOrder,
   useUpdateSalesOrder,
+  useUpdateSalesOrderMemo,
   useCancelSalesOrder,
   useAdminCancelSalesOrder,
   useAdminRetryRefund,

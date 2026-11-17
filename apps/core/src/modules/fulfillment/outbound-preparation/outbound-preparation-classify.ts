@@ -10,6 +10,7 @@ export interface PreparationFacts {
   lines: { qty: number; confirmedQty: number }[];
   profileIds: (string | null)[];
   recipientComplete: boolean;
+  externalLinesTrusted: boolean;
   consolidationPeerLines: PreparationFacts['lines'][];
 }
 
@@ -31,7 +32,7 @@ export function classifyPreparation(f: PreparationFacts): PreparationBucket | nu
     return 'partial';
   }
 
-  if (compatibleShippingProfileId(f.profileIds) === null || !f.recipientComplete) {
+  if (compatibleShippingProfileId(f.profileIds) === null || !f.recipientComplete || !f.externalLinesTrusted) {
     return 'needs_info';
   }
 

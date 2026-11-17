@@ -81,6 +81,7 @@ const row: OrderLineRow = {
   channel: 'medusa',
   cancelRequest: null,
   orderStatus: 'cancelled',
+  memoLoaded: true,
   walletIntentId: 'pi-1',
   variantId: 'v-1',
   productName: '상품',

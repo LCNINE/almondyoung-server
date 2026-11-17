@@ -182,3 +182,39 @@ describe("LayerGraphic", () => {
     })
   })
 })
+
+describe("textInkBox", () => {
+  afterEach(() => vi.restoreAllMocks())
+
+  it("행간 여백은 빼고 글꼴이 실제로 그리는 범위만 잡는다", async () => {
+    vi.resetModules()
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
+      measureText: () => ({
+        width: 100,
+        actualBoundingBoxLeft: 0,
+        actualBoundingBoxRight: 90,
+        actualBoundingBoxAscent: 80,
+        actualBoundingBoxDescent: 10,
+      }),
+    } as unknown as RenderingContext)
+    const { textInkBox } = await import("./graphic")
+    const one = { ...layer, text: "가", width: 10, height: 12, fontSize: 10 }
+
+    expect(textInkBox(one)).toEqual({ x0: 0, y0: 2, x1: 9, y1: 11 })
+    expect(textInkBox({ ...one, x: 5, width: 20, align: "center" })).toEqual({
+      x0: 10,
+      y0: 2,
+      x1: 19,
+      y1: 11,
+    })
+    expect(textInkBox({ ...one, stroke: "#000000", strokeWidth: 2 })).toEqual({
+      x0: -1,
+      y0: 1,
+      x1: 10,
+      y1: 12,
+    })
+    expect(
+      textInkBox({ ...one, stroke: "#000000", strokeWidth: 2, knockout: true })
+    ).toEqual({ x0: 0, y0: 2, x1: 9, y1: 11 })
+  })
+})

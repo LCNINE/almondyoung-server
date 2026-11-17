@@ -33,7 +33,7 @@
  *   DATABASE_URL=postgres://... npx tsx scripts/sellmate/sync-stock.ts apps/core/tmp/
  *
  * ── 환경변수 ─────────────────────────────────────────────────────────────────
- *   DATABASE_URL        core 논리 DB 접속 문자열 (실제 반영 시 필수)
+ *   DATABASE_URL        core 논리 DB 접속 문자열 (필수 — DRY_RUN 도. 저녁 맞추기 init 뒤에는 거절한다 #1304)
  *   DRY_RUN=1           조정 계획만 출력
  *   WAREHOUSE_ID        재고를 잡을 창고 (기본: 부천 물류창고)
  *   LOCATION_ID         증가분을 넣을 로케이션 (기본: 부천 입고기본존)
@@ -50,6 +50,7 @@ import postgres, { Sql } from 'postgres';
 import { readRows, detectColumns, chunk } from './parse';
 import { excludedReason } from './excluded';
 import { applyStockDelta, BUCHEON_WAREHOUSE_ID } from './stock-delta';
+import { reconcileInitExists, SYNC_REFUSAL_AFTER_INIT } from './reconcile/reconcile-store';
 
 const ALLOW_MISSING = process.env.ALLOW_MISSING === '1' || process.env.ALLOW_MISSING === 'true';
 const ALLOW_DUP_FILES = process.env.ALLOW_DUP_FILES === '1' || process.env.ALLOW_DUP_FILES === 'true';
@@ -213,22 +214,19 @@ async function main() {
   console.log(`\n📊 대상 품목 ${targetByCode.size}개`);
 
   const DATABASE_URL = process.env.DATABASE_URL;
-  if (!DATABASE_URL && !DRY_RUN) {
-    console.error('DATABASE_URL 환경변수가 필요합니다 (core 논리 DB).');
+  if (!DATABASE_URL) {
+    // DRY_RUN 이어도 필요하다 — 저녁 맞추기 init 여부를 DB 에서 봐야 거절할 수 있다 (#1304).
+    console.error(
+      'DATABASE_URL 환경변수가 필요합니다 (core 논리 DB). DRY_RUN 에서도 필요합니다 — 저녁 맞추기 init 여부를 DB 에서 확인합니다.',
+    );
     process.exit(1);
   }
-  if (DRY_RUN && !DATABASE_URL) {
-    console.log('\nℹ️  DRY_RUN 이지만 DATABASE_URL 이 없어 현재고 비교는 생략하고 파싱 결과만 보여줍니다.');
-    let shown = 0;
-    for (const [code, target] of targetByCode) {
-      if (shown++ >= 10) break;
-      console.log(`   code=${code} → target=${target}`);
-    }
-    return;
-  }
 
-  const sql = postgres(DATABASE_URL!, { max: 4 });
+  const sql = postgres(DATABASE_URL, { max: 4 });
   try {
+    // 저녁 맞추기 init 뒤에는 절대값 덮어쓰기가 core 원장을 되돌린다 — DRY_RUN 이어도 거절한다 (#1304).
+    if (await reconcileInitExists(sql)) throw new Error(SYNC_REFUSAL_AFTER_INIT);
+
     // ── DRY_RUN: 읽기 전용으로 계획만 산출 ──────────────────────────────────────
     if (DRY_RUN) {
       const { plans, missing } = await computePlans(sql, targetByCode);

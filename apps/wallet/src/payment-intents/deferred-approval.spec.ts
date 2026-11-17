@@ -178,7 +178,7 @@ describe('deferred approval — staging', () => {
 
     await ctx.service.approve('intent-1', 'pk_live_1', ORDER_ID, 10000, 'corr-1');
 
-    expect(ctx.tossApi.confirmPayment).toHaveBeenCalledWith('pk_live_1', 10000, ORDER_ID, false);
+    expect(ctx.tossApi.confirmPayment).toHaveBeenCalledWith('pk_live_1', 10000, ORDER_ID, 'LEGACY');
   });
 });
 
@@ -196,7 +196,7 @@ describe('deferred approval — confirmStaged', () => {
 
     await ctx.service.confirmStaged(makeCharge(), staged, 'corr-1');
 
-    expect(ctx.tossApi.confirmPayment).toHaveBeenCalledWith('pk_live_1', 10000, ORDER_ID, false);
+    expect(ctx.tossApi.confirmPayment).toHaveBeenCalledWith('pk_live_1', 10000, ORDER_ID, 'LEGACY');
     expect(ctx.stateTransitionService.transitionIntent).toHaveBeenCalledWith(
       'intent-1',
       'AUTHORIZED',
@@ -305,7 +305,7 @@ describe('widget virtual account', () => {
 
     await ctx.service.approve('intent-1', 'pk_va', ORDER_ID, 10000, 'corr-1', 'NORMAL', 'VIRTUAL_ACCOUNT');
 
-    expect(ctx.tossApi.confirmPayment).toHaveBeenCalledWith('pk_va', 10000, ORDER_ID, true);
+    expect(ctx.tossApi.confirmPayment).toHaveBeenCalledWith('pk_va', 10000, ORDER_ID, 'WIDGET');
     expect(ctx.bankTransferProvider.getUserMethods).toHaveBeenCalledWith('u1');
     const [, status, extra] = ctx.chargesService.updateStatus.mock.calls[0];
     expect(status).toBe('REQUIRES_ACTION');
@@ -381,7 +381,7 @@ describe('widget virtual account', () => {
       undefined,
       expect.any(String),
       undefined,
-      true,
+      'WIDGET',
     );
     expect(ctx.stateTransitionService.transitionIntent).toHaveBeenCalledWith(
       'intent-1',
@@ -499,7 +499,7 @@ describe('widget virtual account', () => {
       undefined,
       expect.any(String),
       undefined,
-      true,
+      'WIDGET',
     );
   });
 
@@ -544,7 +544,7 @@ describe('widget virtual account', () => {
       undefined,
       expect.any(String),
       undefined,
-      true,
+      'WIDGET',
     );
     expect(ctx.autoCaptureService.attemptAutoCapture).not.toHaveBeenCalled();
   });
@@ -560,7 +560,7 @@ describe('widget virtual account', () => {
     await expect(
       ctx.service.approve('intent-1', 'pk_card', ORDER_ID, 10000, 'corr-1', 'NORMAL', 'VIRTUAL_ACCOUNT'),
     ).rejects.toMatchObject({ response: expect.objectContaining({ error: 'PAYMENT_METHOD_MISMATCH' }) });
-    expect(ctx.tossApi.queryPayment).toHaveBeenCalledWith(ORDER_ID, 'pk_card', true);
+    expect(ctx.tossApi.queryPayment).toHaveBeenCalledWith(ORDER_ID, 'pk_card', 'WIDGET');
     expect(ctx.autoCaptureService.attemptAutoCapture).not.toHaveBeenCalled();
   });
 

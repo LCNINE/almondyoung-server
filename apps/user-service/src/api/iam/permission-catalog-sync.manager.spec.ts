@@ -24,6 +24,9 @@ describe('PermissionCatalogSyncManager', () => {
     clearDeprecated: jest.fn(),
     findRoleIdsByNames: jest.fn(),
     insertGrants: jest.fn(),
+    findDeliveredShares: jest.fn(),
+    insertDeliveries: jest.fn(),
+    findRoleIdsCreatedByPeople: jest.fn(),
     findPermissionDefinitions: jest.fn(),
     updatePermissionDefinition: jest.fn(),
   };
@@ -38,6 +41,9 @@ describe('PermissionCatalogSyncManager', () => {
     repository.markDeprecated.mockResolvedValue(0);
     repository.clearDeprecated.mockResolvedValue(0);
     repository.findPermissionDefinitions.mockResolvedValue([]);
+    repository.findDeliveredShares.mockResolvedValue([]);
+    repository.findRoleIdsCreatedByPeople.mockResolvedValue(new Set());
+    repository.insertDeliveries.mockImplementation((rows: unknown[]) => Promise.resolve(rows));
     repository.findRoleIdsByNames.mockResolvedValue(
       new Map([
         ['admin', 'role-admin'],
@@ -54,23 +60,57 @@ describe('PermissionCatalogSyncManager', () => {
     manager = module.get(PermissionCatalogSyncManager);
   });
 
-  it('grants only the keys this call actually inserted', async () => {
-    repository.insertMissingPermissions.mockResolvedValue(['a.b.read']);
+  it('grants every undelivered share of the catalog, not only new keys', async () => {
+    repository.insertMissingPermissions.mockResolvedValue([]);
+    repository.findDeliveredShares.mockResolvedValue([{ permissionKey: 'a.b.read', roleId: 'role-admin' }]);
     const result = await manager.sync([def('a.b.read', ['admin', 'intern']), def('a.b.write', ['admin'])]);
 
-    expect(repository.insertGrants).toHaveBeenCalledWith(
-      [
-        { roleId: 'role-admin', permissionKey: 'a.b.read' },
-        { roleId: 'role-intern', permissionKey: 'a.b.read' },
-      ],
-      tx,
-    );
+    const undelivered = [
+      { roleId: 'role-intern', permissionKey: 'a.b.read' },
+      { roleId: 'role-admin', permissionKey: 'a.b.write' },
+    ];
+    expect(repository.insertDeliveries).toHaveBeenCalledWith(undelivered, tx);
+    expect(repository.insertGrants).toHaveBeenCalledWith(undelivered, tx);
+    expect(result.granted).toEqual([
+      { permissionKey: 'a.b.read', roleName: 'intern' },
+      { permissionKey: 'a.b.write', roleName: 'admin' },
+    ]);
     expect(result.grants).toBe(2);
   });
 
-  it('does nothing when the catalog is already in the database', async () => {
+  it('grants only what this instance recorded', async () => {
+    repository.insertMissingPermissions.mockResolvedValue(['a.b.read']);
+    repository.insertDeliveries.mockResolvedValue([{ roleId: 'role-admin', permissionKey: 'a.b.read' }]);
+    const result = await manager.sync([def('a.b.read', ['admin', 'intern'])]);
+
+    expect(repository.insertGrants).toHaveBeenCalledWith([{ roleId: 'role-admin', permissionKey: 'a.b.read' }], tx);
+    expect(result.granted).toEqual([{ permissionKey: 'a.b.read', roleName: 'admin' }]);
+  });
+
+  it('skips roles a person created through the admin API', async () => {
+    repository.insertMissingPermissions.mockResolvedValue(['a.b.read']);
+    repository.findRoleIdsCreatedByPeople.mockResolvedValue(new Set(['role-intern']));
+    const result = await manager.sync([def('a.b.read', ['admin', 'intern'])]);
+
+    expect(repository.insertGrants).toHaveBeenCalledWith([{ roleId: 'role-admin', permissionKey: 'a.b.read' }], tx);
+    expect(result.granted).toEqual([{ permissionKey: 'a.b.read', roleName: 'admin' }]);
+  });
+
+  it('only looks up shares of keys still in the catalog', async () => {
+    repository.insertMissingPermissions.mockResolvedValue([]);
+    repository.findPermissionStates.mockResolvedValue([
+      { key: 'a.b.read', deprecatedAt: null },
+      { key: 'a.old.read', deprecatedAt: null },
+    ]);
+    await manager.sync([def('a.b.read', ['admin'])]);
+
+    expect(repository.findDeliveredShares).toHaveBeenCalledWith(['a.b.read'], tx);
+  });
+
+  it('does nothing when every share was already delivered', async () => {
     repository.insertMissingPermissions.mockResolvedValue([]);
     repository.findPermissionStates.mockResolvedValue([{ key: 'a.b.read', deprecatedAt: null }]);
+    repository.findDeliveredShares.mockResolvedValue([{ permissionKey: 'a.b.read', roleId: 'role-admin' }]);
     const result = await manager.sync([def('a.b.read', ['admin'])]);
 
     expect(repository.insertGrants).not.toHaveBeenCalled();
@@ -94,6 +134,7 @@ describe('PermissionCatalogSyncManager', () => {
     repository.insertMissingPermissions.mockResolvedValue([]);
     repository.findPermissionStates.mockResolvedValue([{ key: 'a.b.read', deprecatedAt: new Date() }]);
     repository.clearDeprecated.mockResolvedValue(1);
+    repository.findDeliveredShares.mockResolvedValue([{ permissionKey: 'a.b.read', roleId: 'role-admin' }]);
     const result = await manager.sync([def('a.b.read', ['admin'])]);
 
     expect(repository.clearDeprecated).toHaveBeenCalledWith(['a.b.read'], tx);

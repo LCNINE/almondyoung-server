@@ -295,7 +295,7 @@ describe('CashReceiptsService', () => {
         tossIssue: OK_ISSUE,
       });
       await service.issue(DTO, USER_ID);
-      expect(tossApiClient.getPayment).toHaveBeenCalledWith('pk-1', true);
+      expect(tossApiClient.getPayment).toHaveBeenCalledWith('pk-1', 'WIDGET');
       expect(tossApiClient.issueCashReceipt).toHaveBeenCalled();
     });
 

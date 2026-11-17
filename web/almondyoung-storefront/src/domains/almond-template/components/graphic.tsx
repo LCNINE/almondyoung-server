@@ -63,6 +63,81 @@ function lineEm(line: string, layer: Layer) {
   return em
 }
 
+type Ink = { left: number; right: number; ascent: number; descent: number }
+const inked = new Map<string, Ink>()
+if (typeof document !== "undefined")
+  document.fonts?.addEventListener("loadingdone", () => inked.clear())
+
+// 한 줄에서 잉크가 실제로 묻는 범위(em). 기준점은 줄의 시작·기준선. 브라우저 밖에선 줄 상자 전체로 어림한다
+function lineInk(line: string, layer: Layer): Ink {
+  const guess = () => ({
+    left: 0,
+    right: lineEm(line, layer),
+    ascent: 1,
+    descent: (layer.lineHeight ?? 120) / 100 - 1,
+  })
+  if (typeof document === "undefined") return guess()
+  const font = fontOf(layer, 100)
+  const key = `${font}\u0000${line}`
+  const hit = inked.get(key)
+  if (hit) return hit
+  measurer ??= document.createElement("canvas").getContext("2d")
+  if (!measurer) return guess()
+  measurer.font = font
+  const m = measurer.measureText(line)
+  if (m.actualBoundingBoxAscent === undefined) return guess()
+  const ink = {
+    left: -m.actualBoundingBoxLeft / 100,
+    right: m.actualBoundingBoxRight / 100,
+    ascent: m.actualBoundingBoxAscent / 100,
+    descent: m.actualBoundingBoxDescent / 100,
+  }
+  inked.set(key, ink)
+  return ink
+}
+
+// 글자 레이어에서 실제로 인쇄되는 범위. 회전·뒤집기 전, 용지 좌표(mm)
+export function textInkBox(layer: Layer) {
+  const size = fittedFontSize(layer)
+  const ratio = widthRatio(layer)
+  const step = size * ((layer.lineHeight ?? 120) / 100)
+  const anchor =
+    layer.align === "center"
+      ? layer.x + layer.width / 2
+      : layer.align === "right"
+        ? layer.x + layer.width
+        : layer.x
+  const boxes = (layer.text ?? "")
+    .split("\n")
+    .map((line, i) => ({ line, baseline: layer.y + size + i * step }))
+    .filter(({ line }) => line.trim())
+    .map(({ line, baseline }) => {
+      const ink = lineInk(line, layer)
+      const width = lineEm(line, layer)
+      const start =
+        layer.align === "center" ? -width / 2 : layer.align === "right" ? -width : 0
+
+      return {
+        x0: anchor + (start + ink.left) * size * ratio,
+        x1: anchor + (start + ink.right) * size * ratio,
+        y0: baseline - ink.ascent * size,
+        y1: baseline + ink.descent * size,
+      }
+    })
+  if (!boxes.length) return null
+
+  // 윤곽선은 글자 가장자리 바깥으로 두께의 절반만큼 묻는다. 뚫어내기 글자는 윤곽선을 그리지 않는다
+  const stroked = layer.stroke && layer.stroke !== "none" && !layer.knockout
+  const half = stroked ? (layer.strokeWidth ?? 0) / 2 : 0
+
+  return {
+    x0: Math.min(...boxes.map((b) => b.x0)) - half * ratio,
+    y0: Math.min(...boxes.map((b) => b.y0)) - half,
+    x1: Math.max(...boxes.map((b) => b.x1)) + half * ratio,
+    y1: Math.max(...boxes.map((b) => b.y1)) + half,
+  }
+}
+
 export function textExtent(layer: Layer, stretched = true) {
   const lines = (layer.text ?? "").split("\n")
   const longest = Math.max(0.5, ...lines.map((line) => lineEm(line, layer)))

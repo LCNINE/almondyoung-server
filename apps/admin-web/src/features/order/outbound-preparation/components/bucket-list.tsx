@@ -157,7 +157,8 @@ export function BucketList({
                       </Button>
                     </Can>
                   )}
-                  {bucket.bucket === 'needs_info' && (
+                  {(bucket.bucket === 'needs_info' ||
+                    (bucket.bucket === 'resume' && shipment.reason)) && (
                     <Button size="sm" variant="outline" asChild>
                       <Link
                         href={`/order/fulfillments?shipmentId=${encodeURIComponent(shipment.shipmentId)}`}

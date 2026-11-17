@@ -12,6 +12,7 @@ describe('classifyPreparation', () => {
     lines: [{ qty: 2, confirmedQty: 2 }],
     profileIds: ['p1'],
     recipientComplete: true,
+    externalLinesTrusted: true,
     consolidationPeerLines: [],
   };
 
@@ -66,6 +67,16 @@ describe('classifyPreparation', () => {
     { name: '프로필이 없으면 needs_info', facts: { profileIds: [null] }, expected: 'needs_info' },
     { name: '프로필 목록이 비면 needs_info', facts: { profileIds: [] }, expected: 'needs_info' },
     { name: '수령인 정보가 불완전하면 needs_info', facts: { recipientComplete: false }, expected: 'needs_info' },
+    {
+      name: '쇼핑몰 품목 번호를 믿을 수 없으면 needs_info',
+      facts: { externalLinesTrusted: false },
+      expected: 'needs_info',
+    },
+    {
+      name: '쇼핑몰 품목 번호를 믿을 수 없어도 합칠 수 있는 그룹보다 needs_info',
+      facts: { externalLinesTrusted: false, consolidationPeerLines: [[{ qty: 1, confirmedQty: 1 }]] },
+      expected: 'needs_info',
+    },
     { name: 'planned이고 활성 작업이 없으면 resume', facts: { status: 'planned' }, expected: 'resume' },
     {
       name: 'planned이고 활성 작업이 있으면 대상 제외',

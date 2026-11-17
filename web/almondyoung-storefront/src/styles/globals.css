@@ -446,7 +446,7 @@ input[type="search"]::-webkit-search-results-decoration {
     animation: fade-in 0.3s ease-out;
   }
   .animate-shake {
-    animation: shake 0.5s ease-in-out;
+    animation: shake 0.4s ease-in-out;
   }
 }
 
@@ -473,18 +473,13 @@ input[type="search"]::-webkit-search-results-decoration {
   100% {
     transform: translateX(0);
   }
-  10%,
-  30%,
-  50%,
-  70%,
-  90% {
-    transform: translateX(-10px);
-  }
   20%,
+  60% {
+    transform: translateX(-4px);
+  }
   40%,
-  60%,
   80% {
-    transform: translateX(10px);
+    transform: translateX(4px);
   }
 }
 

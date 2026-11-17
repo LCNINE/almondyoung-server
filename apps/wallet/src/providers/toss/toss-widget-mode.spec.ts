@@ -1,10 +1,11 @@
-import { knownTossPaymentKey, usesTossWidget } from './toss-widget-mode';
+import { knownTossPaymentKey, tossKeyOf } from './toss-widget-mode';
 
-describe('usesTossWidget', () => {
-  it('identifies widget charges from the stored checkout action', () => {
-    expect(usesTossWidget({ nextAction: { type: 'TOSS_CHECKOUT', checkoutMode: 'WIDGET' } })).toBe(true);
-    expect(usesTossWidget({ nextAction: { type: 'TOSS_CHECKOUT' } })).toBe(false);
-    expect(usesTossWidget(null)).toBe(false);
+describe('tossKeyOf', () => {
+  it('charge 에 남긴 checkoutMode 로 발급 때 쓴 키를 고른다', () => {
+    expect(tossKeyOf({ nextAction: { type: 'TOSS_CHECKOUT', checkoutMode: 'WIDGET' } })).toBe('WIDGET');
+    expect(tossKeyOf({ nextAction: { type: 'BANK_TRANSFER_PENDING', checkoutMode: 'DIRECT' } })).toBe('DIRECT');
+    expect(tossKeyOf({ nextAction: { type: 'TOSS_CHECKOUT' } })).toBe('LEGACY');
+    expect(tossKeyOf(null)).toBe('LEGACY');
   });
 });
 

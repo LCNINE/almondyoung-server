@@ -13,7 +13,9 @@ Accepted (2026-10-12). 적용은 단계별로 한다 — 이 ADR 시점에는 �
    영역은 서비스가 아니라 업무 단위다. 목록의 원본은 `@app/authorization` 의 `PERMISSION_CATALOG` 이고, 키는 `Permission`
    리터럴 유니온 타입이라 목록에 없는 키는 컴파일되지 않는다. 와일드카드는 쓰지 않는다.
 2. **매핑의 원본은 user-service DB 다** (`iam_permissions`·`iam_role_permissions`). 코드는 매핑을 덮어쓰지 않는다.
-   부팅 동기화는 새 키만 넣고, 그 키가 «처음» 들어갈 때만 `grantOnFirstRegistration` 역할에 한 번 부여한다.
+   부팅 동기화는 새 키만 넣고, `grantOnFirstRegistration` 역할에는 (키, 역할)마다 한 번만 부여한다 — 키가 처음 들어갈 때
+   역할 행이 없었으면 역할이 생긴 뒤 다음 부팅에 준다. 준 기록(`iam_initial_grant_deliveries`)이 남아 회수된 부여는 되살리지 않는다(#1248).
+   받는 역할은 시드가 만든 역할뿐이다 — 관리자 화면이 만든 역할(`role.create` 이력)은 이름이 같아도 받지 않는다(권한 상승 방지).
    목록에서 사라진 키는 지우지 않고 `deprecated_at` 만 찍는다.
 3. **토큰에는 역할만 싣는다.** 다른 서비스는 user-service 내부 경로(`GET /internal/iam/role-permissions`, 버전 ETag)에서
    역할별 권한을 받아 메모리에 두고 판정한다. 버전은 스냅샷 «내용»에서 계산한다 — 역할을 바꾸는 경로(관리 API, 시드,

@@ -18,7 +18,7 @@ import { CLIPART_IDS, FRAME_IDS, SHAPE_VARIANTS } from "./art-library"
 import { FILE_IMAGE_REF } from "./image-ref"
 import type { PathPoint } from "./path-shape"
 import { LINE_CAPS, type LineCap } from "./line-shape"
-import { fittedFontSize } from "../components/graphic"
+import { fittedFontSize, textInkBox } from "../components/graphic"
 import { isAutoTextName, MIN_LAYER_MM, textLayerName } from "./layer"
 
 export type Layer = {
@@ -936,16 +936,54 @@ function issueLabel(layer: Layer) {
   return `'${text.length > 12 ? `${text.slice(0, 12)}…` : text}' 글자`
 }
 
+// 선택 상자가 아니라 실제로 인쇄되는 영역. 글자는 글꼴의 실제 잉크 범위이고 회전·뒤집기가 반영된다
+export function printedBox(layer: Layer) {
+  const ink = layer.type === "text" ? textInkBox(layer) : null
+  const x = ink?.x0 ?? layer.x
+  const y = ink?.y0 ?? layer.y
+  const width = ink ? ink.x1 - ink.x0 : layer.width
+  const height = ink ? ink.y1 - ink.y0 : layer.height
+
+  const cx = layer.x + layer.width / 2
+  const cy = layer.y + layer.height / 2
+  const rad = ((layer.rotation ?? 0) * Math.PI) / 180
+  const corners = [
+    [x, y],
+    [x + width, y],
+    [x, y + height],
+    [x + width, y + height],
+  ].map(([px, py]) => {
+    const dx = (px - cx) * (layer.flipX ? -1 : 1)
+    const dy = (py - cy) * (layer.flipY ? -1 : 1)
+
+    return [
+      cx + dx * Math.cos(rad) - dy * Math.sin(rad),
+      cy + dx * Math.sin(rad) + dy * Math.cos(rad),
+    ]
+  })
+  const xs = corners.map(([px]) => px)
+  const ys = corners.map(([, py]) => py)
+
+  return {
+    x0: Math.min(...xs),
+    y0: Math.min(...ys),
+    x1: Math.max(...xs),
+    y1: Math.max(...ys),
+  }
+}
+
 export function outsideSafeArea(design: Design, layer: Layer) {
+  if (layer.type !== "text" && layer.type !== "qr") return false
+  if (layer.visible === false) return false
+
   const safety = PRINT_SPECS[design.kind].safetyMm
+  const box = printedBox(layer)
 
   return (
-    (layer.type === "text" || layer.type === "qr") &&
-    layer.visible !== false &&
-    (layer.x < safety ||
-      layer.y < safety ||
-      layer.x + layer.width > design.widthMm - safety ||
-      layer.y + layer.height > design.heightMm - safety)
+    box.x0 < safety ||
+    box.y0 < safety ||
+    box.x1 > design.widthMm - safety ||
+    box.y1 > design.heightMm - safety
   )
 }
 

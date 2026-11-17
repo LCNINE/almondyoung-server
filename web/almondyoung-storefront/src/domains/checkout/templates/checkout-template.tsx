@@ -33,12 +33,14 @@ import {
   getCartTotals,
 } from "@/lib/utils/price-utils"
 import {
+  CUSTOM_ORDER_NOTICE_PAGE_ID,
   CustomOrderNotice,
   isCustomOrderPaymentBlocked,
 } from "@/domains/almond-template/components/custom-order-notice"
 import { ensureCustomOrderAgreement } from "@/domains/almond-template/custom-order-agreement"
 import { MobileCTA, PCFixedCTA } from "domains/checkout/components/cta"
 import { MobileHeader, PCHeader } from "domains/checkout/components/header"
+import { cn } from "@/lib/utils"
 import { useTranslations } from "next-intl"
 import { useParams, useRouter } from "next/navigation"
 import { useCallback, useEffect, useMemo, useState } from "react"
@@ -185,6 +187,7 @@ export default function CheckoutTemplate({
     cartItems,
     customOrderAgreed
   )
+  const [agreementPromptKey, setAgreementPromptKey] = useState(0)
   const [error, setError] = useState<string | null>(null)
 
   // 배송 메모 상태
@@ -227,6 +230,14 @@ export default function CheckoutTemplate({
     if (hasOverseasItem && !isValidPersonalCustomsCode(personalCustomsCode)) {
       setCustomsCodeError(tCustoms("error"))
       return toast.error(tCustoms("error"))
+    }
+    if (paymentBlocked) {
+      setAgreementPromptKey((n) => n + 1)
+      document
+        .getElementById(CUSTOM_ORDER_NOTICE_PAGE_ID)
+        ?.scrollIntoView({ behavior: "smooth", block: "center" })
+
+      return toast.error(tProcess("toasts.agreeCustomOrder"))
     }
     processPayment()
   }
@@ -488,6 +499,13 @@ export default function CheckoutTemplate({
             {needsAgreement && (
               <div className="mt-4">
                 <CustomOrderNotice
+                  key={agreementPromptKey}
+                  id={CUSTOM_ORDER_NOTICE_PAGE_ID}
+                  className={cn(
+                    agreementPromptKey > 0 &&
+                      !customOrderAgreed &&
+                      "animate-shake border-2 border-red-500"
+                  )}
                   withAgreement
                   agreed={customOrderAgreed}
                   onAgreeChange={setCustomOrderAgreed}
@@ -524,13 +542,11 @@ export default function CheckoutTemplate({
         onPayment={handlePayment}
         loading={loading}
         totals={cartTotals}
-        disabled={paymentBlocked}
       />
       <MobileCTA
         onPayment={handlePayment}
         loading={loading}
         totals={cartTotals}
-        disabled={paymentBlocked}
       />
     </main>
   )

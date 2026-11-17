@@ -48,6 +48,7 @@ describe('OutboundPreparationReader consolidation reservations', () => {
           { lineId: 'split-line', quantity: peerQty },
         ]),
       )
+      .mockReturnValueOnce(query([]))
       .mockReturnValueOnce(query([]));
     const db = { select };
 
@@ -121,6 +122,7 @@ describe('OutboundPreparationReader consolidation reservations', () => {
           { lineId: 'line-b', quantity: 1 },
         ]),
       )
+      .mockReturnValueOnce(query([]))
       .mockReturnValueOnce(query([]));
     const db = { select };
 
@@ -196,6 +198,7 @@ describe('OutboundPreparationReader consolidation reservations', () => {
         )
         .mockReturnValueOnce(query([]))
         .mockReturnValueOnce(query([]))
+        .mockReturnValueOnce(query([]))
         .mockReturnValueOnce(query([]));
 
       const summary = await reader.summarize('warehouse', { bucket: 'unavailable', offset });
@@ -211,5 +214,75 @@ describe('OutboundPreparationReader consolidation reservations', () => {
       expect(summary.buckets.find((entry) => entry.bucket === 'resume')?.count).toBe(401);
       expect(summary.awaitingMatchingCount).toBe(3);
     }
+  });
+
+  it('looks up many shop lines in chunks and marks only the box whose line is untrusted', async () => {
+    const recipientSnapshot = {
+      recipientName: '테스트',
+      phone: '01000000000',
+      postalCode: '00000',
+      roadAddress: '테스트 주소',
+    };
+    const lineId = (index: number) => `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`;
+    const untrustedId = '0000000a-0000-4000-8000-00000000000a';
+    const links = [
+      ...Array.from({ length: 5000 }, (_, index) => ({ shipmentId: 'box', salesOrderLineId: lineId(index) })),
+      { shipmentId: 'other', salesOrderLineId: untrustedId },
+      { shipmentId: 'other', salesOrderLineId: 'not-a-uuid' },
+      { shipmentId: 'box', salesOrderLineId: untrustedId.toUpperCase() },
+    ];
+    const trusted = {
+      salesChannel: 'naver',
+      channelOrderItemId: 'item',
+      channelProductId: 'product',
+      exchangeReturnLineId: null,
+    };
+    const select = jest
+      .fn()
+      .mockReturnValueOnce(query([{ count: 0 }]))
+      .mockReturnValueOnce(query(['box', 'other'].map((id) => ({ id, status: 'draft', recipientSnapshot }))))
+      .mockReturnValueOnce(
+        query(['box', 'other'].map((id) => ({ id: `${id}-line`, shipmentId: id, qty: 1, name: '상품' }))),
+      )
+      .mockReturnValueOnce(query(['box', 'other'].map((id) => ({ lineId: `${id}-line`, quantity: 1 }))))
+      .mockReturnValueOnce(query([]))
+      .mockReturnValueOnce(query(links))
+      .mockReturnValueOnce(query([{ id: lineId(0), ...trusted }]))
+      .mockReturnValueOnce(query([{ id: untrustedId, ...trusted, channelOrderItemId: null }]));
+    const db = { select };
+    const module = await Test.createTestingModule({
+      providers: [
+        OutboundPreparationReader,
+        { provide: DbService, useValue: { run: (fn: (tx: typeof db) => unknown) => fn(db) } },
+        { provide: ConsolidationBoardReader, useValue: { findBoard: async () => ({ groups: [] }) } },
+      ],
+    }).compile();
+    jest.mocked(loadShipmentLines).mockResolvedValue(
+      ['box', 'other'].map((shipmentId) => ({
+        shipmentId,
+        qty: 1,
+        skuProfileId: 'profile',
+        skuId: 'sku',
+        skuName: '상품',
+        fulfillmentMode: 'in_house',
+        skuStockType: 'stocked',
+        salesOrderId: 'order',
+        customerId: 'customer',
+        customerName: null,
+        customerPhone: null,
+        displayOrderNo: shipmentId,
+        channelOrderId: null,
+        salesChannel: 'naver',
+        salesOrderCreatedAt: null,
+      })),
+    );
+
+    const summary = await module.get(OutboundPreparationReader).summarize('warehouse');
+    const ids = (bucket: string) =>
+      summary.buckets.find((entry) => entry.bucket === bucket)?.shipments.map((shipment) => shipment.shipmentId);
+
+    expect(select).toHaveBeenCalledTimes(8);
+    expect(ids('ready')).toEqual(['box']);
+    expect(ids('needs_info')).toEqual(['other']);
   });
 });

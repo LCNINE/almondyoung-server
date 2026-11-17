@@ -14,7 +14,7 @@ import {
 import { WalletSchema, charges, paymentMethods } from '../../schema';
 import { TossApiClient } from '../toss/toss-api.client';
 import { isTossRefundRetryable } from '../toss/toss-refund-errors';
-import { usesTossWidget } from '../toss/toss-widget-mode';
+import { TossKey, tossKeyOf } from '../toss/toss-widget-mode';
 import { depositWindowHours } from '../../payment-intents/deposit-window';
 
 @Injectable()
@@ -87,8 +87,9 @@ export class BankTransferPaymentProvider implements PaymentProvider {
       };
     }
 
-    // 위젯 키가 있으면 위젯 결제와 같은 상점으로 발급한다. 취소·환불·웹훅은 nextAction.checkoutMode 로 키를 고른다.
-    const useWidgetKey = !!process.env.TOSS_WIDGET_SECRET_KEY;
+    // 새 상점의 API 개별 연동 키가 있으면 위젯 결제와 같은 상점으로 발급한다. 위젯 키로는 이 API 가 NOT_FOUND_MERCHANT 다.
+    // 취소·환불·웹훅은 nextAction.checkoutMode 로 같은 키를 고른다.
+    const tossKey: TossKey = process.env.TOSS_DIRECT_SECRET_KEY ? 'DIRECT' : 'LEGACY';
     const meta = params.metadata ?? {};
     const orderId = params.chargeId.replace(/-/g, '');
     const result = await this.tossApi.issueVirtualAccount(
@@ -102,7 +103,7 @@ export class BankTransferPaymentProvider implements PaymentProvider {
         ...(meta.customerEmail ? { customerEmail: meta.customerEmail as string } : {}),
         ...(meta.customerMobilePhone ? { customerMobilePhone: meta.customerMobilePhone as string } : {}),
       },
-      useWidgetKey,
+      tossKey,
     );
 
     if (!result.ok) {
@@ -121,7 +122,7 @@ export class BankTransferPaymentProvider implements PaymentProvider {
         dueDate: va.dueDate,
         amount: params.amount,
         currency: params.currency,
-        ...(useWidgetKey ? { checkoutMode: 'WIDGET' } : {}),
+        ...(tossKey === 'DIRECT' ? { checkoutMode: 'DIRECT' } : {}),
       },
       raw: { paymentKey: result.data.paymentKey, secret: result.data.secret, virtualAccount: va },
     };
@@ -151,7 +152,7 @@ export class BankTransferPaymentProvider implements PaymentProvider {
       undefined,
       `cancel:${params.idempotencyKey}:${Date.now()}`,
       undefined,
-      payment.useWidgetKey,
+      payment.tossKey,
     );
     // 이미 취소된 계좌도 닫힌 것이다 — 폐쇄 응답을 잃은 재시도가 영영 실패로 남지 않게.
     if (result.ok || result.error.code === 'ALREADY_CANCELED_PAYMENT') {
@@ -183,7 +184,7 @@ export class BankTransferPaymentProvider implements PaymentProvider {
       params.amount,
       params.idempotencyKey,
       params.refundReceiveAccount,
-      payment.useWidgetKey,
+      payment.tossKey,
     );
     if (result.ok) {
       return { status: 'SUCCEEDED', providerRefundId: payment.paymentKey };
@@ -204,7 +205,7 @@ export class BankTransferPaymentProvider implements PaymentProvider {
    * 발급 시 스냅샷된 paymentKey 를 charge 에서 읽는다 (webhook 확정건은 providerTransactionId 에도 있음).
    * 결제위젯에서 발급된 계좌는 위젯 시크릿 키로만 취소·환불된다.
    */
-  private async getPayment(chargeId: string): Promise<{ paymentKey: string; useWidgetKey: boolean } | undefined> {
+  private async getPayment(chargeId: string): Promise<{ paymentKey: string; tossKey: TossKey } | undefined> {
     const rows = await this.dbService.db
       .select({ providerTransactionId: charges.providerTransactionId, responsePayload: charges.responsePayload })
       .from(charges)
@@ -212,12 +213,12 @@ export class BankTransferPaymentProvider implements PaymentProvider {
       .limit(1);
     const row = rows[0];
     if (!row) return undefined;
-    const useWidgetKey = usesTossWidget(row.responsePayload);
+    const tossKey = tossKeyOf(row.responsePayload);
     const fromPayload = (row.responsePayload as { paymentKey?: unknown } | null)?.paymentKey;
-    if (typeof fromPayload === 'string' && fromPayload) return { paymentKey: fromPayload, useWidgetKey };
+    if (typeof fromPayload === 'string' && fromPayload) return { paymentKey: fromPayload, tossKey };
     // 수동확정 placeholder('BANK_TRANSFER_CONFIRMED')는 실제 paymentKey 가 아니므로 제외.
     const ptid = row.providerTransactionId ?? undefined;
-    if (ptid && ptid !== 'BANK_TRANSFER_CONFIRMED') return { paymentKey: ptid, useWidgetKey };
+    if (ptid && ptid !== 'BANK_TRANSFER_CONFIRMED') return { paymentKey: ptid, tossKey };
     return undefined;
   }
 }

@@ -9,6 +9,8 @@ export interface CatalogSyncResult {
   deprecated: number;
   restored: number;
   grants: number;
+  /** 이번에 준 첫 부여 몫 — 배포 뒤 첫 부팅에 무엇이 들어갔는지 로그로 남긴다 */
+  granted: { permissionKey: string; roleName: string }[];
   missingRoles: string[];
   /** 이름·설명·표시가 코드와 달라 맞춘 권한 수 */
   relabeled: number;
@@ -21,6 +23,16 @@ const sameDefinition = (a: PermissionDefinitionRow, b: PermissionDefinitionRow) 
   a.dangerous === b.dangerous &&
   a.systemOnly === b.systemOnly;
 
+/** 동기화가 읽는 카탈로그 모양. 역할 이름은 문자열로 받는다 — 테스트가 실제 역할과 겹치지 않는 이름을 쓰게. */
+export type SyncablePermission = Omit<PermissionDefinition, 'grantOnFirstRegistration'> & {
+  readonly grantOnFirstRegistration: readonly string[];
+};
+
+/**
+ * 첫 부여는 (키, 역할)마다 한 번이다. 첫 등록 때 없던 역할도 생긴 뒤 다음 부팅에 받고,
+ * 준 기록(iam_initial_grant_deliveries)이 회수된 몫을 되살리지 않게 한다(#1248).
+ * 받는 역할은 시드가 만든 역할뿐이다 — 관리자 화면이 만든 역할은 사람이 권한을 정했다.
+ */
 @Injectable()
 export class PermissionCatalogSyncManager {
   constructor(
@@ -29,14 +41,14 @@ export class PermissionCatalogSyncManager {
   ) {}
 
   sync(
-    catalog: readonly PermissionDefinition[] = PERMISSION_CATALOG,
+    catalog: readonly SyncablePermission[] = PERMISSION_CATALOG,
     options: { scopePrefix?: string } = {},
   ): Promise<CatalogSyncResult> {
     return this.dbService.run((tx) => this.syncIn(catalog, options.scopePrefix, tx));
   }
 
   private async syncIn(
-    catalog: readonly PermissionDefinition[],
+    catalog: readonly SyncablePermission[],
     scopePrefix: string | undefined,
     tx: UserServiceTx,
   ): Promise<CatalogSyncResult> {
@@ -64,10 +76,10 @@ export class PermissionCatalogSyncManager {
       tx,
     );
 
-    const { grants, missingRoles } = await this.grantFirstRegistrations(catalog, new Set(inserted), tx);
+    const { granted, missingRoles } = await this.grantUndeliveredShares(catalog, tx);
     const relabeled = await this.relabel(definitions, tx);
 
-    return { inserted, deprecated, restored, grants, missingRoles, relabeled };
+    return { inserted, deprecated, restored, grants: granted.length, granted, missingRoles, relabeled };
   }
 
   /** 목록의 원본은 코드다 — 이름·설명·위험 표시가 바뀌면 DB 도 따라간다(부여는 건드리지 않는다). */
@@ -83,24 +95,44 @@ export class PermissionCatalogSyncManager {
     return relabeled;
   }
 
-  private async grantFirstRegistrations(
-    catalog: readonly PermissionDefinition[],
-    insertedKeys: ReadonlySet<string>,
+  private async grantUndeliveredShares(
+    catalog: readonly SyncablePermission[],
     tx: UserServiceTx,
-  ): Promise<{ grants: number; missingRoles: string[] }> {
-    const fresh = catalog.filter((p) => insertedKeys.has(p.key));
-    if (fresh.length === 0) return { grants: 0, missingRoles: [] };
-    const wanted = [...new Set(fresh.flatMap((p) => p.grantOnFirstRegistration))];
+  ): Promise<{ granted: { permissionKey: string; roleName: string }[]; missingRoles: string[] }> {
+    const wanted = [...new Set(catalog.flatMap((p) => p.grantOnFirstRegistration))];
+    if (wanted.length === 0) return { granted: [], missingRoles: [] };
     const roleIds = await this.repository.findRoleIdsByNames(wanted, tx);
+    const roleNames = new Map([...roleIds].map(([name, id]) => [id, name]));
+    // 관리자 화면이 만든 역할은 이름이 카탈로그와 같아도 받지 않는다 — 주면 직원이 그 이름으로 빈 역할을 만들어
+    // 자기에게 붙이고, 다음 부팅에 자기가 갖지 않은 권한을 얻는다(권한 상승 방지 우회)
+    const createdByPeople = await this.repository.findRoleIdsCreatedByPeople([...roleIds.values()], tx);
 
-    const rows = fresh.flatMap((p) =>
+    const deliveredRows = await this.repository.findDeliveredShares(
+      catalog.map((p) => p.key),
+      tx,
+    );
+    const delivered = new Set(deliveredRows.map(shareId));
+    const undelivered = catalog.flatMap((p) =>
       p.grantOnFirstRegistration
         .map((role) => roleIds.get(role))
-        .filter((roleId): roleId is string => roleId !== undefined)
-        .map((roleId) => ({ roleId, permissionKey: p.key })),
+        .filter((roleId): roleId is string => roleId !== undefined && !createdByPeople.has(roleId))
+        .map((roleId) => ({ roleId, permissionKey: p.key }))
+        .filter((share) => !delivered.has(shareId(share))),
     );
-    await this.repository.insertGrants(rows, tx);
+    const missingRoles = wanted.filter((role) => !roleIds.has(role));
+    if (undelivered.length === 0) return { granted: [], missingRoles };
+    // 기록을 먼저 넣고 새로 들어간 몫만 부여한다 — 두 인스턴스가 함께 부팅해도 한 몫은 한 번이다
+    const recorded = await this.repository.insertDeliveries(undelivered, tx);
+    await this.repository.insertGrants(recorded, tx);
 
-    return { grants: rows.length, missingRoles: wanted.filter((role) => !roleIds.has(role)) };
+    return {
+      granted: recorded.map((share) => ({
+        permissionKey: share.permissionKey,
+        roleName: roleNames.get(share.roleId) ?? '',
+      })),
+      missingRoles,
+    };
   }
 }
+
+const shareId = (share: { roleId: string; permissionKey: string }) => `${share.permissionKey}\u0000${share.roleId}`;

@@ -11,6 +11,7 @@ import { ACTIVE_WORK_ITEM_STATUSES } from '../services/work-item-status';
 import { WAYBILL, WAYBILL_DISPATCHABLE_STATUSES } from '../waybill/waybill.constants';
 import { toView, WaybillService } from '../waybill/waybill.service';
 import type { WaybillView } from '../waybill/waybill.types';
+import { waybillFailureText } from '../waybill/waybill-failure-text';
 import {
   bulkShipmentFailure,
   BulkShipmentResult,
@@ -107,7 +108,7 @@ export class OutboundPreparationManager {
               shipmentId,
               status: waybill.status,
               trackingNo: waybill.trackingNo,
-              reason: waybill.lastError,
+              reason: waybillFailureText(waybill),
               nextAttemptAt: waybill.nextAttemptAt,
             };
           } catch (error) {

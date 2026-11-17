@@ -15,7 +15,7 @@ import {
   CONFIRM_ATTEMPT,
   VIRTUAL_ACCOUNT_LEFT_OPEN,
   hasConfirmAttempt,
-  usesTossWidget,
+  tossKeyOf,
 } from '../providers/toss/toss-widget-mode';
 import { CashReceiptsService } from '../cash-receipts/cash-receipts.service';
 import { StagedApproval, isDeferredApprovalIntent } from './deferred-approval';
@@ -109,7 +109,7 @@ export class TossApproveService {
     await this.markConfirmAttempt(charge, paymentKey);
     const result = customerKey
       ? await this.tossApi.confirmBrandPayPayment(paymentKey, amount, orderId, customerKey)
-      : await this.tossApi.confirmPayment(paymentKey, amount, orderId, usesTossWidget(charge.responsePayload));
+      : await this.tossApi.confirmPayment(paymentKey, amount, orderId, tossKeyOf(charge.responsePayload));
     this.logger.log(`Toss API confirm response: ok=${result.ok}`);
 
     if (!result.ok) {
@@ -163,7 +163,7 @@ export class TossApproveService {
     paymentKey: string,
     orderId: string,
   ): Promise<'REVERTED' | 'KEPT' | 'UNKNOWN'> {
-    const useWidgetKey = usesTossWidget(charge.responsePayload);
+    const tossKey = tossKeyOf(charge.responsePayload);
     const reverted = await this.tossApi
       .cancelPayment(
         paymentKey,
@@ -171,12 +171,12 @@ export class TossApproveService {
         undefined,
         `cancel:${charge.providerIdempotencyKey}`,
         undefined,
-        useWidgetKey,
+        tossKey,
       )
       .catch(() => null);
     if (reverted?.ok || reverted?.error.code === 'ALREADY_CANCELED_PAYMENT') return 'REVERTED';
     this.logger.error(`approval revert not confirmed: chargeId=${charge.id} error=${JSON.stringify(reverted?.error)}`);
-    const query = await this.tossApi.queryPayment(orderId, paymentKey, useWidgetKey).catch(() => null);
+    const query = await this.tossApi.queryPayment(orderId, paymentKey, tossKey).catch(() => null);
     if (!query?.ok) return 'UNKNOWN';
     return query.data.status === 'CANCELED' ? 'REVERTED' : 'KEPT';
   }
@@ -389,13 +389,13 @@ export class TossApproveService {
         undefined,
         `cancel:${charge.providerIdempotencyKey}`,
         undefined,
-        usesTossWidget(charge.responsePayload),
+        tossKeyOf(charge.responsePayload),
       )
       .catch((error: unknown) => ({ ok: false as const, error: { code: undefined, message: String(error) } }));
     if (canceled.ok || canceled.error.code === 'ALREADY_CANCELED_PAYMENT') return true;
     // 취소는 토스에서 끝났는데 응답만 잃었을 수 있다 — 닫힌 계좌를 입금대기로 안내하지 않게 실제 상태를 묻는다.
     const query = await this.tossApi
-      .queryPayment(charge.id.replace(/-/g, ''), paymentKey, usesTossWidget(charge.responsePayload))
+      .queryPayment(charge.id.replace(/-/g, ''), paymentKey, tossKeyOf(charge.responsePayload))
       .catch(() => null);
     if (query?.ok && ['CANCELED', 'EXPIRED', 'ABORTED'].includes(query.data.status)) return true;
     this.logger.error(
@@ -488,7 +488,7 @@ export class TossApproveService {
             staged.providerToken,
             staged.amount,
             staged.orderId,
-            usesTossWidget(charge.responsePayload),
+            tossKeyOf(charge.responsePayload),
           );
     this.logger.log(`staged approval confirm: intentId=${charge.intentId} ok=${result.ok}`);
 
