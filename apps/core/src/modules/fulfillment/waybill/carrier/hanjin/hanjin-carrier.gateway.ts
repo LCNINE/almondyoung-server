@@ -201,7 +201,8 @@ export class HanjinCarrierGateway extends CarrierGateway {
       pickupAskDt: this.kstDate(this.now()),
       sndrZip: req.sender.zip,
       sndrBaseAddr: req.sender.baseAddress,
-      sndrDtlAddr: req.sender.detailAddress,
+      // 프로필 출고지는 상세주소가 비어도 된다. 한진은 빈 값을 거절해 수하인과 같은 대체 문구를 쓴다
+      sndrDtlAddr: req.sender.detailAddress.trim() || RECIPIENT_DETAIL_FALLBACK,
       sndrNm: req.sender.name,
       // 송하인은 폴백할 두 번째 번호가 없다. 빈 값이 나가지 않는 것은 isHanjinConfigured 가
       // HANJIN_SENDER_TEL 을 필수로 보기 때문이다(#912) — 게이트를 좁히면 여기가 다시 빈다.

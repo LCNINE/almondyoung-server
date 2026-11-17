@@ -33,7 +33,10 @@ export interface AssembleInput {
   /** 송장에만 싣고 저장하지 않는다. shipments.entrance_password 에서 온다. */
   entrancePassword?: string | null;
   profileSender?: ProfileSender | null;
-  /** 이미 발급한 송장의 보내는 분. 있으면 프로필보다 먼저 쓴다 */
+  /**
+   * 이미 만든 송장 행의 sender_snapshot. 재시도는 이 값을 넘긴다(새 발급은 넘기지 않는다).
+   * 이 칸이 생기기 전 송장(null)은 그때처럼 HANJIN_SENDER_* 로 등록됐으므로 그 값을 쓴다
+   */
   storedSender?: unknown;
 }
 
@@ -121,7 +124,10 @@ export function assembleWaybillRequest(input: AssembleInput): WaybillRequest {
       mobile: rc.phone,
       message: composeMessage(rc.deliveryNote, input.entrancePassword),
     },
-    sender: storedSenderOf(input.storedSender) ?? senderOf(input.config, input.profileSender),
+    sender:
+      input.storedSender === undefined
+        ? senderOf(input.config, input.profileSender)
+        : (storedSenderOf(input.storedSender) ?? input.config.sender),
     items,
     commodityName,
     boxType: input.config.boxType,

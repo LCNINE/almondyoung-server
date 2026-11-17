@@ -64,7 +64,12 @@ const LABEL_DATA = {
 const ITEMS = [{ locationCode: 'A-01', skuId: 's1', name: '토익 Speaking', quantity: 1 }];
 
 const input = (over: Partial<BuildHanjinLabelContentInput> = {}): BuildHanjinLabelContentInput => ({
-  waybill: { trackingNo: '452716978431', custOrdNo: 'AY0123456789ABCDEFGHJKMNPQRS', labelData: LABEL_DATA },
+  waybill: {
+    trackingNo: '452716978431',
+    custOrdNo: 'AY0123456789ABCDEFGHJKMNPQRS',
+    labelData: LABEL_DATA,
+    senderSnapshot: null,
+  },
   ctx: CTX,
   config: CONFIG,
   items: ITEMS,
@@ -197,7 +202,7 @@ describe('buildHanjinLabelContent', () => {
       prt_add: '서울 종로구 세종대로 1 101',
     };
     const d = buildHanjinLabelContent(
-      input({ waybill: { trackingNo: '912345678901', custOrdNo: 'AYX', labelData: demo } }),
+      input({ waybill: { trackingNo: '912345678901', custOrdNo: 'AYX', labelData: demo, senderSnapshot: null } }),
     );
     expect([d.sort.hubCode, d.regionText, d.trackingNoDisplay]).toEqual(['DEMO', 'D', '9123-4567-8901']);
   });
@@ -206,5 +211,22 @@ describe('buildHanjinLabelContent', () => {
     expect(() => buildHanjinLabelContent(input({ waybill: { ...input().waybill, custOrdNo: null } }))).toThrow(
       /custOrdNo/,
     );
+  });
+});
+
+describe('라벨 보내는 분', () => {
+  const profileSender = { name: '프로필', phone: '010-0', zip: '1', baseAddress: '프로필 주소', detailAddress: '' };
+
+  it('송장에 저장한 보내는 분을 그린다', () => {
+    const stored = { name: '제이시스', tel: '010-1', zip: '1', baseAddress: '부천', detailAddress: '' };
+    const d = buildHanjinLabelContent(
+      input({ waybill: { ...input().waybill, senderSnapshot: stored }, ctx: { ...CTX, profileSender } }),
+    );
+    expect(d.sender).toEqual({ name: '제이시스', phone: '010-1', baseAddress: '부천' });
+  });
+
+  it('저장값이 없는 옛 송장은 등록 때처럼 HANJIN_SENDER_* 로 그린다(지금 프로필이 달라도)', () => {
+    const d = buildHanjinLabelContent(input({ ctx: { ...CTX, profileSender } }));
+    expect(d.sender.name).toBe(CONFIG.sender.name);
   });
 });

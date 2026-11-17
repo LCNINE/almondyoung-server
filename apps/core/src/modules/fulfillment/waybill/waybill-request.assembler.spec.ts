@@ -233,6 +233,18 @@ describe('배송 프로필 보내는 분', () => {
     expect(replay.sender).toEqual(fresh.sender);
   });
 
+  it('저장값이 없는 옛 송장의 재시도는 등록 때처럼 HANJIN_SENDER_* 를 쓴다', () => {
+    const req = assembleWaybillRequest({
+      shipmentId,
+      recipientSnapshot: snapshot,
+      lines: [{ productName: 'A', skuName: 'A', quantity: 1, skuId: 's1' }],
+      config,
+      profileSender: profile,
+      storedSender: null,
+    });
+    expect(req.sender).toBe(config.sender);
+  });
+
   it('칸이 빠진 저장값(이 칸이 생기기 전 송장)은 쓰지 않는다', () => {
     expect(storedSenderOf(null)).toBeNull();
     expect(storedSenderOf({ name: 'A' })).toBeNull();
