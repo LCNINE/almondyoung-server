@@ -47,13 +47,14 @@
 
 ## 5. 설계 — `scripts/sellmate/close-sellmate-leftovers.ts`
 
-기본 dry-run, `--apply` 로 적용. `DATABASE_URL`(테넌트 1 core DB) 필수. 대상 판매주문(자사몰 · `shipped`/`delivered`)마다 한 트랜잭션으로 아래 5.1~5.3 을 하고, 같은 트랜잭션에서 `markLineStateDirty(tx, [salesOrderId])` 를 부른다 — #1247 의 Medusa 예약 투영이 이 변화를 따라오게(`line-state-dirty.ts`: 바뀌는 쓰기와 같은 트랜잭션에서 부른다).
+기본 dry-run, `--apply` 로 적용. `DATABASE_URL`(테넌트 1 core DB) 필수. **실행 전체가 한 트랜잭션이다**(최종 리뷰 반영 — 묶음마다 커밋하면 셀메이트로 나간 두 주문의 합포장 상자가 묶음 경계에서 갈려 안 닫히고, 중간 실패 뒤 재실행이 판매가능수량 재계산할 SKU 를 못 찾는다). 묶음(200)은 문장 파라미터 크기만 정한다. 아래 5.1~5.3 을 하고, 같은 트랜잭션에서 `markLineStateDirty(tx, salesOrderIds)` 를 부른다 — #1247 의 Medusa 예약 투영이 이 변화를 따라오게(`line-state-dirty.ts`: 바뀌는 쓰기와 같은 트랜잭션에서 부른다).
 
 ### 5.1 열린 출고주문
 
 대상: FO 상태 `created`·`partially_reserved`·`ready`.
 처리: `scripts/ops/cellmate-local/mark-core-shipped.sql.js` 의 `MARK_FULFILLMENT_ORDERS_SHIPPED`·`MARK_FULFILLMENT_ORDER_ITEMS_SHIPPED` 를 그 판매주문의 `channel_order_id` 로 그대로 실행한다(취소 FO 건너뜀, FOI 는 취소 수량 뺀 만큼 — 그 파일의 규칙을 그대로 얻는다). 판매주문 문장은 부르지 않는다(이미 `shipped`). 판매주문:FO 는 0..1 이라(`uq_fulfillment_orders_sales_order`) 다른 FO 를 덮을 일이 없다.
 FO 가 `processing`·`partially_shipped`·`recovery_required` 이면 그 판매주문은 5.1~5.3 모두 건너뛰고 보고한다 — 사람이 봐야 하는 상태다 **(Claude 판단)**.
+**앱이 출고를 붙인 주문도 건너뛰고 보고한다**(최종 리뷰 반영): 교환품을 보냈거나(`customer_returns.kind='exchange'`·`exchange_released_at` 있음) 열린 입점사 상자(`shipments.supplier_id`)가 있는 주문. 교환 FOI 는 셀메이트로 나간 옛 FO 에 붙으므로 FO 째 닫으면 교환품이 송장 없이 «발송됨»이 된다.
 
 ### 5.2 상자와 예약
 
@@ -68,6 +69,8 @@ FO 가 `processing`·`partially_shipped`·`recovery_required` 이면 그 판매�
 
 - 5.1 에서 건너뛴 판매주문(FO 가 사람이 볼 상태).
 - 5.2 에서 건너뛴 상자(진행 중 배치 작업 항목).
+- 앱이 출고를 붙인 주문(5.1).
+- 앱 주문 줄과 섞여 남은 상자 — 셀메이트분 FO 는 닫혔으니 그대로 발송하면 409(`SHIPMENT_FOI_OVER_SHIPPED`)다. 사람이 상자를 나눠 셀메이트분 줄을 뺀다. FO 를 닫아 두는 쪽이 이중 출고보다 낫다고 본다 **(Claude 판단)**.
 - 판매주문 `cancelled` 인데 FO·상자가 열린 것 — 리컨실러 30번 몫. 건수·목록만.
 - «드레인 미완료» — §4. 0 이 아니면 드레인이 덜 끝났다는 뜻이니 끝난 뒤 다시 돌린다.
 
@@ -92,5 +95,4 @@ FO 가 `processing`·`partially_shipped`·`recovery_required` 이면 그 판매�
 ## 7. 빌더에게 남긴 것
 
 - `close-shipped-shipments.ts` 를 함수로 떼는 모양(좁히는 인자 포함).
-- 판매주문 하나당 트랜잭션 vs 묶음 — 대상 수를 리허설에서 보고 정해도 된다.
 - 출력 서식.
