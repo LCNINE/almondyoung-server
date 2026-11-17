@@ -61,6 +61,7 @@ function returnLabel(p: DeliveryProfileDto): string {
 
 export function DeliveryProfilesTable() {
   const { data: profiles = [], isLoading } = useDeliveryProfiles();
+  // ponytail: 화주 첫 100개만 이름을 붙인다(서버 상한). 넘으면 목록 응답에 화주 이름을 싣는다
   const { data: holdersResponse } = useHolders({ limit: 100 });
   const remove = useDeleteDeliveryProfile();
   const [editing, setEditing] = useState<ProfileEditTarget | null>(null);

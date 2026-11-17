@@ -75,6 +75,7 @@ export function ProfileDialog({ target, onOpenChange }: Props) {
   const create = useCreateDeliveryProfile();
   const update = useUpdateDeliveryProfile();
   const createHolder = useCreateHolder();
+  // ponytail: 화주 첫 100개만 고를 수 있다(서버 상한). 넘으면 검색 선택으로 바꾼다
   const { data: holdersResponse } = useHolders({ limit: 100 });
 
   useEffect(() => {
@@ -160,6 +161,8 @@ export function ProfileDialog({ target, onOpenChange }: Props) {
       name: newHolderName.trim(),
       isOurAsset: false,
     });
+    // 프로필 저장이 실패해도 다시 저장할 때 같은 이름으로 또 만들지 않게 만든 화주를 고른 상태로 둔다
+    setHolderChoice(holder.id);
 
     return holder.id;
   };

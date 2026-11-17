@@ -193,6 +193,11 @@ describe('반품지·화주·복제', () => {
     ).toEqual({ holderId: 'h1' });
   });
 
+  it('연결 안 함으로 바꾸면 화주 연결을 푸는 null 을 보낸다', () => {
+    const linked = { ...profile, holderId: 'h1' };
+    expect(toUpdatePayload(linked, { ...formFromProfile(linked), holderId: '' })).toEqual({ holderId: null });
+  });
+
   it('복제는 이름에 사본을 붙이고 나머지 값을 그대로 쓴다', () => {
     const copy = copiedProfileForm({ ...profile, holderId: 'h1' });
     expect(copy.name).toBe('부천 자사 출고 사본');

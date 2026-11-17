@@ -158,7 +158,7 @@ export function toUpdatePayload(
   if (next.name !== beforeForm.name) payload.name = next.name;
   if (next.sourceType !== beforeForm.sourceType)
     payload.sourceType = next.sourceType;
-  if (next.holderId !== beforeForm.holderId) payload.holderId = next.holderId;
+  if (next.holderId !== beforeForm.holderId) payload.holderId = next.holderId ?? null;
   // 비우면(undefined) 이전 값이 있었을 때만 null(지우기)을 보낸다 — 둘 다 undefined 면 바뀐 게 없다.
   if (next.avgDeliveryDays !== beforeForm.avgDeliveryDays) {
     payload.avgDeliveryDays = next.avgDeliveryDays ?? null;
