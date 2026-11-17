@@ -14,6 +14,7 @@ export type PrintResult =
   | { kind: 'sent'; labels: number; skipped: LabelBatch['skipped'] }
   | { kind: 'nothing'; skipped: LabelBatch['skipped'] }
   | { kind: 'no-printer' }
+  | { kind: 'ignored' }
   | { kind: 'printer-error'; detail: string };
 
 /**
@@ -31,7 +32,8 @@ export function usePrintLabels(
   const run = async (fetch: () => Promise<LabelBatch>): Promise<PrintResult> => {
     const target = readPrinter(prefs, 'label');
     if (!target) return { kind: 'no-printer' };
-    if (running.current) return { kind: 'nothing', skipped: [] };
+    // 같은 틱의 두 번째 호출 — 결과를 만들지 않는다. 화면은 첫 호출의 결과만 보인다.
+    if (running.current) return { kind: 'ignored' };
     running.current = true;
     setBusy(true);
     try {

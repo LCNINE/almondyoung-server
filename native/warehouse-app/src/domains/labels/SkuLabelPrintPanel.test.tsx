@@ -84,6 +84,7 @@ describe('SkuLabelPrintPanel', () => {
     await waitFor(() => expect(print).toHaveBeenCalledTimes(1));
     expect(await screen.findByText('라벨 3장을 보냈어요')).toBeInTheDocument();
     expect(print).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText('찍을 라벨이 없어요')).not.toBeInTheDocument();
   });
 
   it('data 가 비고 NO_BARCODE 면 인쇄하지 않고 사유를 보인다', async () => {

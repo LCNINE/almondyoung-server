@@ -62,6 +62,7 @@ export function SkuLabelPrintPanel({
       const result = await run(() =>
         fetchSkuLabels(api, { size, items: [{ skuId, copies: count }] }),
       );
+      if (result.kind === 'ignored') return;
       setOutcome({ kind: 'result', result });
     } catch (error) {
       setOutcome({ kind: 'error', text: errorMessage(error) });
@@ -123,6 +124,8 @@ function OutcomeText({ outcome }: { outcome: Outcome }) {
     );
   const r = outcome.result;
   switch (r.kind) {
+    case 'ignored':
+      return null;
     case 'no-printer':
       return (
         <p role="alert" className="text-sm text-red-600">
