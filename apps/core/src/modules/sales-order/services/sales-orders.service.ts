@@ -35,7 +35,11 @@ import {
 } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { lineMatchingBadgeResolvedSql } from '../../product-matching/line-composition/line-resolved.sql';
-import { isDigitalFulfillmentLine, isOutsourcedLine } from '../../product-matching/line-composition/line-composition';
+import {
+  countLineRoutes,
+  isDigitalFulfillmentLine,
+  isOutsourcedLine,
+} from '../../product-matching/line-composition/line-composition';
 import { selectFrozenCompositions } from '../../product-matching/line-composition/frozen-compositions';
 import { physicalCancellationByItem } from './boxed-cancellation-units';
 import {
@@ -692,6 +696,8 @@ export class SalesOrdersService {
       ...order,
       shipmentPhase,
       fulfillmentOrder: fulfillmentOrder ?? null,
+      // 출고주문이 없을 때 «아직 안 생김»과 «생길 라인이 없음»을 화면이 가른다
+      lineRouteCounts: countLineRoutes(lines),
       lines,
       businessTimeline: this.toBusinessTimeline(context, businessLinks),
       // 채널 주문 취소 요청(#1016 35번) — admin-web 이 «취소 요청됨»·«취소 실패»를 그린다

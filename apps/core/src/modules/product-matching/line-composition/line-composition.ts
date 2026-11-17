@@ -47,6 +47,25 @@ export function isOutsourcedLine(line: { almondDesignId?: string | null }): bool
   return line.almondDesignId != null;
 }
 
+/** 라인이 나가는 길. 창고 라인만 출고주문 항목이 된다 — 디지털을 먼저 본다(구성 판정과 같은 순서) */
+export type LineRoute = 'digital' | 'outsourced' | 'warehouse';
+
+export function lineRouteOf(line: {
+  fulfillmentKind?: string | null;
+  requiresShipping?: boolean | null;
+  almondDesignId?: string | null;
+}): LineRoute {
+  if (isDigitalFulfillmentLine(line)) return 'digital';
+  if (isOutsourcedLine(line)) return 'outsourced';
+  return 'warehouse';
+}
+
+export function countLineRoutes(lines: readonly Parameters<typeof lineRouteOf>[0][]): Record<LineRoute, number> {
+  const counts: Record<LineRoute, number> = { warehouse: 0, outsourced: 0, digital: 0 };
+  for (const line of lines) counts[lineRouteOf(line)] += 1;
+  return counts;
+}
+
 export function matchingFailureReason(matching: MatchingForFulfillment): MatchingFailureReason {
   if (!matching) return 'NO_PRODUCT_SKU_MATCHING';
   if (matching.status === 'ignored') return 'LEGACY_PRODUCT_MATCHING_IGNORED';
@@ -101,8 +120,8 @@ export function resolveLineComposition(
   frozen: readonly CompositionItem[],
   matching: MatchingForFulfillment,
 ): LineCompositionResolution {
-  if (isDigitalFulfillmentLine(line)) return { kind: 'digital' };
-  if (isOutsourcedLine(line)) return { kind: 'outsourced' };
+  const route = lineRouteOf(line);
+  if (route !== 'warehouse') return { kind: route };
   if (line.compositionSource !== null) {
     // 출처가 있는데 행이 없으면 쓰는 쪽(LineCompositionManager)의 결함이다 — 상품매칭으로 슬쩍 대신하면 결함이 숨는다
     if (frozen.length === 0) {
