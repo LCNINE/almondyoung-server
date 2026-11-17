@@ -19,7 +19,8 @@ jest.mock('@packages/web-observability', () => ({
 }));
 
 import { NextRequest } from 'next/server';
-import { consumeStateCookie } from '../../lib/auth/session-cookies';
+import { exchangeHandoffForTokens, refreshTokens } from '../../lib/auth/oidc-client';
+import { clearSessionCookiesOn, consumeStateCookie } from '../../lib/auth/session-cookies';
 import { GET as callback } from './callback/route';
 import { GET as handoff } from './handoff/route';
 import { GET as ensure } from './ensure/route';
@@ -54,6 +55,23 @@ describe('mobile redirects with a localhost-normalized Next.js request', () => {
       ),
     );
     expect(response.headers.get('location')).toBe(`http://172.30.1.13:3200${paymentPath}`);
+  });
+
+  it('drops the leftover session and re-logs in when the handoff exchange fails', async () => {
+    jest.mocked(exchangeHandoffForTokens).mockRejectedValueOnce(new Error('invalid handoff'));
+
+    const response = await handoff(
+      new NextRequest(
+        `http://localhost:3200/auth/handoff?h=expired-handoff&redirect_to=${encodeURIComponent(paymentPath)}`,
+        { headers: { Cookie: 'wallet_rt=previous-account-refresh' } },
+      ),
+    );
+
+    const location = new URL(response.headers.get('location')!);
+    expect(location.origin + location.pathname).toBe('http://172.30.1.13:3200/login');
+    expect(location.searchParams.get('redirect_to')).toBe(paymentPath);
+    expect(clearSessionCookiesOn).toHaveBeenCalledWith(response.cookies);
+    expect(refreshTokens).not.toHaveBeenCalled();
   });
 
   it('recovers an expired session on the public host', async () => {
