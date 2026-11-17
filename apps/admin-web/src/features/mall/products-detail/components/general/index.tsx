@@ -121,7 +121,7 @@ function ProductBasicInformationEditDrawer({
   // 배송비 그룹의 정의는 Medusa 에 있다. 테넌트 셸에선 블록을 숨기고 코드는 비운 채(null) 저장된다.
   const shippingAvailable = useUpstreamAvailable('medusa');
   const { data: shippingGroups } = useShippingGroups(shippingAvailable);
-  const { data: suppliers } = useSuppliers({ limit: 200 });
+  const { data: suppliers } = useSuppliers({ limit: 100 });
   const supplierOptions = useMemo(
     () => [
       { value: NO_SUPPLIER, label: '공급처 없음' },
