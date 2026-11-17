@@ -11,6 +11,7 @@ import { SuppliersModule } from './suppliers/suppliers.module';
 import { SharedModule } from './shared/shared.module';
 import { WarehouseModule } from './warehouse/warehouse.module';
 import { DeliveryProfileModule } from './delivery-profile/delivery-profile.module';
+import { InventoryLabelsModule } from './labels/inventory-labels.module';
 import { SkuFieldCaptureModule } from './sku-field-capture/sku-field-capture.module';
 import { SkuGroupModule } from './sku-group/sku-group.module';
 import { StockProjectionModule } from './stock-projection/stock-projection.module';
@@ -33,6 +34,7 @@ import { Sku3dModelsModule } from './sku-3d-models/sku-3d-models.module';
     WarehouseModule,
     DeliveryProfileModule,
     SkuFieldCaptureModule,
+    InventoryLabelsModule,
     Sku3dModelsModule,
     SkuGroupModule,
     StockProjectionModule,

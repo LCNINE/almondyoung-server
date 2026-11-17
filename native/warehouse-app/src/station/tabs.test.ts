@@ -12,6 +12,7 @@ describe('activeTabOf — 가장 긴 접두어가 이긴다', () => {
     ['/inbound/quick', 'F3'],
     ['/inbound/history', 'F3'],
     ['/putaway', 'F4'],
+    ['/putaway/location-labels', 'F4'],
     ['/returns/putaway', 'F4'],
     ['/movement', 'F4'],
     ['/stocktaking/s-1/variances', 'F5'],
@@ -36,6 +37,7 @@ describe('activeSectionOf', () => {
     ['/putaway', '적치'],
     ['/returns/putaway', '되돌림 적치'],
     ['/movement', '이동'],
+    ['/putaway/location-labels', '로케이션 라벨'],
   ])('%s → %s', (path, label) => {
     expect(f4 && activeSectionOf(f4, path)?.label).toBe(label);
   });

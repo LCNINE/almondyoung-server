@@ -1,8 +1,8 @@
 import { ConflictError } from '@app/shared';
 import { WAYBILL } from '../../../waybill.constants';
-import { DOTS_PER_MM, type BarcodePlacement, type LabelSpec } from '../../../label/label-model';
+import { DOTS_PER_MM, type BarcodePlacement, type LabelSpec } from '../../../../../../platform/label/label-model';
 import { paginate, type LabelItem } from '../../../label/label-items';
-import { fitSizePt, fitText, textWidthMm } from '../../../label/svg-text';
+import { fitSizePt, fitText, textWidthMm } from '../../../../../../platform/label/svg-text';
 import type { HanjinLabelData } from './hanjin-label-data';
 import { maskAddress, maskName, maskPhone } from './hanjin-label-masking';
 import { rect, shrinkThenFit, svgDocument, text, wrapLines } from './hanjin-label-svg';

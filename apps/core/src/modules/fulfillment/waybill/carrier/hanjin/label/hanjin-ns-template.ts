@@ -1,5 +1,5 @@
-import { DOTS_PER_MM, type BarcodePlacement, type LabelSpec } from '../../../label/label-model';
-import { fitSizePt, fitText } from '../../../label/svg-text';
+import { DOTS_PER_MM, type BarcodePlacement, type LabelSpec } from '../../../../../../platform/label/label-model';
+import { fitSizePt, fitText } from '../../../../../../platform/label/svg-text';
 import { hline, koreanDate, rect, shrinkThenFit, svgDocument, text } from './hanjin-label-svg';
 import type { HanjinLabelData } from './hanjin-label-data';
 import { maskAddress, maskName, maskPhone } from './hanjin-label-masking';

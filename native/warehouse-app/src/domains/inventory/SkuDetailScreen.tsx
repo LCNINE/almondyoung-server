@@ -4,6 +4,8 @@ import { useWorkPermissions } from '../../core/operations/useWorkCapabilities';
 import { errorMessage, STOCK_ADJUST_PERMISSION_MESSAGE } from '../../core/data/errorMessage';
 import { Button } from '../../core/design/Button';
 import { ScreenHeader } from '../../core/design/ScreenHeader';
+import { isStationDevice } from '../../app/station';
+import { SkuLabelPrintPanel } from '../labels/SkuLabelPrintPanel';
 import { WarehousePicker } from '../warehouse/WarehousePicker';
 import { useSkuDetail, useSkuStockSummary, useSkuWarehouseStock } from './useSkuDetail';
 import type { SkuStockSummary, StockDetailRow } from './types';
@@ -79,6 +81,8 @@ export function SkuDetailScreen({ skuId }: { skuId: string }) {
           {sku.optionKey ? <span className="ml-2 text-gray-500">{sku.optionKey}</span> : null}
         </div>
       ) : null}
+
+      {sku && isStationDevice() ? <SkuLabelPrintPanel skuId={skuId} /> : null}
 
       {permissionDenied && (
         <p role="alert" className="text-sm text-red-600">

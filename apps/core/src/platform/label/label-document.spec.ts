@@ -1,6 +1,6 @@
 import type { LabelSpec } from './label-model';
 import { SvgRasterizer } from './svg-rasterizer';
-import { encodeLabelPages } from './label-document';
+import { encodeLabelPages, encodeLabelRuns } from './label-document';
 
 const page = (w: number): LabelSpec => ({
   widthMm: w,
@@ -26,5 +26,26 @@ describe('encodeLabelPages', () => {
 
   it('쪽이 없으면 던진다', () => {
     expect(() => encodeLabelPages([], rasterizer, false)).toThrow(/no pages/);
+  });
+});
+
+describe('encodeLabelRuns', () => {
+  const rasterizer = new SvgRasterizer();
+
+  it('쪽마다 ^XA…^XZ 하나에 자기 장수를 ^PQ 로 싣는다', () => {
+    const data = encodeLabelRuns(
+      [
+        { spec: page(10), copies: 2 },
+        { spec: page(20), copies: 5 },
+      ],
+      rasterizer,
+      false,
+    );
+    expect(data.match(/\^XA/g)).toHaveLength(2);
+    expect(data.indexOf('^PQ2')).toBeLessThan(data.indexOf('^PQ5'));
+  });
+
+  it('빈 입력은 던지지 않고 빈 문자열', () => {
+    expect(encodeLabelRuns([], rasterizer, false)).toBe('');
   });
 });

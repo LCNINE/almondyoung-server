@@ -17,3 +17,23 @@ export function encodeLabelPages(pages: readonly LabelSpec[], rasterizer: SvgRas
     )
     .join('\n');
 }
+
+/**
+ * 라벨 묶음을 장수와 함께 한 문자열로 만든다(#1281). 쪽마다 ^XA…^XZ 하나, 장수는 ^PQ 로 낸다.
+ * `encodeLabelPages` 와 달리 빈 입력은 던지지 않고 ''(그릴 것이 없음)를 돌려준다.
+ */
+export function encodeLabelRuns(
+  runs: readonly { spec: LabelSpec; copies: number }[],
+  rasterizer: SvgRasterizer,
+  compress: boolean,
+): string {
+  return runs
+    .map(({ spec, copies }) =>
+      encodeZpl(rasterizer.rasterize(spec.svg, mmToDots(spec.widthMm)), spec.barcodes, {
+        compress,
+        rotation: spec.rotation,
+        copies,
+      }),
+    )
+    .join('\n');
+}

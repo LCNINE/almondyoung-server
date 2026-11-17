@@ -27,6 +27,9 @@ describe('barcodeWidthMm', () => {
     // (11 × 5 + 13) × 2 / 8 = 17mm
     expect(barcodeWidthMm(CODE128)).toBe(17);
   });
+  it('CODE128_OPTIMAL: 숫자 쌍을 접은 모듈 수', () => {
+    expect(barcodeWidthMm({ ...CODE128, kind: 'CODE128_OPTIMAL', data: '11198120000', moduleDots: 2 })).toBe(28);
+  });
 });
 
 describe('quietZoneMm', () => {

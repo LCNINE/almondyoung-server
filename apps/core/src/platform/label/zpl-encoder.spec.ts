@@ -135,6 +135,31 @@ describe('encodeZpl', () => {
     expect(zpl).toContain('^FO606,35^BY2^BCR,64,N,N,N^FD150^FS');
   });
 
+  it('CODE128_OPTIMAL 은 숫자 쌍을 접은 invocation code 를 ^FD 로 낸다', () => {
+    const code: BarcodePlacement = {
+      kind: 'CODE128_OPTIMAL',
+      data: '11198120000',
+      xMm: 4,
+      yMm: 2,
+      heightMm: 8,
+      moduleDots: 2,
+    };
+    const zpl = encodeZpl(createBitmap(800, 816), [code], { compress: false, rotation: 0 });
+    expect(zpl).toContain('^BY2^BCN,64,N,N,N^FD>:1>51198120000^FS');
+  });
+
+  it('CODE128_OPTIMAL 데이터를 부호화할 수 없으면 던진다', () => {
+    const code: BarcodePlacement = { kind: 'CODE128_OPTIMAL', data: 'A^B', xMm: 4, yMm: 2, heightMm: 8, moduleDots: 2 };
+    expect(() => encodeZpl(createBitmap(800, 816), [code], { compress: false, rotation: 0 })).toThrow(
+      /CODE128_OPTIMAL/,
+    );
+  });
+
+  it('copies 는 ^PQ 로 나가고 생략하면 1', () => {
+    expect(encodeZpl(nsBitmap(), [], { compress: false, rotation: 90, copies: 3 })).toContain('^PQ3');
+    expect(encodeZpl(nsBitmap(), [], { compress: false, rotation: 90 })).toContain('^PQ1');
+  });
+
   it('ITF 데이터가 짝수 자리 숫자가 아니면 던진다', () => {
     expect(() => encodeZpl(nsBitmap(), [{ ...ITF, data: '12345' }], { compress: false, rotation: 90 })).toThrow(/ITF/);
     expect(() => encodeZpl(nsBitmap(), [{ ...ITF, data: 'WBL-1234' }], { compress: false, rotation: 90 })).toThrow(

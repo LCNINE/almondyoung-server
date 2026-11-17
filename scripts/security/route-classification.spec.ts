@@ -37,6 +37,8 @@ const READ_VIA_WRITE_VERB: Record<string, string> = {
   'core POST /versions/:versionId/pricing/calculate': '가격을 계산해 돌려줄 뿐 저장하지 않는다',
   'core POST /matchings/variants/:variantId/sku-lookup': '본문 조건으로 조회한다',
   'core POST /matchings/variants/batch': '여러 변형을 한 번에 조회한다',
+  'core POST /inventory/labels/locations': '라벨 ZPL 을 만들어 돌려줄 뿐 저장하지 않는다(#1281)',
+  'core POST /inventory/labels/skus': '라벨 ZPL 을 만들어 돌려줄 뿐 저장하지 않는다(#1281)',
   'notification POST /alimtalk/auto-sends/membership-notices/lookup': '대상을 조회만 한다',
   'notification POST /alimtalk/campaigns/preview': '미리보기 — 발송하지 않는다',
   'notification POST /sms-gate/campaigns/preview': '미리보기 — 발송하지 않는다',
