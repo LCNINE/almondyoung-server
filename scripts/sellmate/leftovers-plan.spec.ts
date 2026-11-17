@@ -8,6 +8,7 @@ const base: LeftoverOrder = {
   foStatus: 'ready',
   openBacklogs: 1,
   openShipments: 1,
+  appWork: false,
 };
 
 const none: LeftoverAction = { closeFo: false, closeShipments: false, closeBacklogs: false, report: null };
@@ -29,6 +30,11 @@ describe('classifyLeftover — 셀메이트로 나간 자사몰 주문만 닫는
     ['FO processing → 사람이 본다', { foStatus: 'processing' }, { ...none, report: 'human-fo' }],
     ['FO partially_shipped → 사람이 본다', { foStatus: 'partially_shipped' }, { ...none, report: 'human-fo' }],
     ['FO recovery_required → 사람이 본다', { foStatus: 'recovery_required' }, { ...none, report: 'human-fo' }],
+    [
+      '앱이 붙인 출고(교환품·입점사 상자)가 있으면 닫지 않고 보고한다',
+      { appWork: true },
+      { ...none, report: 'app-work' },
+    ],
     ['마켓 주문은 2단계 몫', { salesChannel: 'naver' }, none],
     ['앱이 출고할 주문(confirmed)', { soStatus: 'confirmed' }, none],
     ['결제 대기 주문(pending)', { soStatus: 'pending' }, none],

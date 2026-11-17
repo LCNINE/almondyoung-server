@@ -18,13 +18,18 @@ export type LeftoverOrder = {
   openBacklogs: number;
   /** draft·planned·recovery_required */
   openShipments: number;
+  /**
+   * 앱이 이 주문에 출고를 붙였다 — 교환품을 보냈거나(customer_returns kind=exchange, exchange_released_at) 열린 입점사 상자가 있다.
+   * 교환 FOI 는 셀메이트로 나간 옛 FO 에 붙으므로 FO 째 닫으면 교환품이 송장 없이 «발송됨»이 된다.
+   */
+  appWork: boolean;
 };
 
 export type LeftoverAction = {
   closeFo: boolean;
   closeShipments: boolean;
   closeBacklogs: boolean;
-  report: null | 'human-fo' | 'cancelled-open';
+  report: null | 'human-fo' | 'app-work' | 'cancelled-open';
 };
 
 export const FO_CLOSABLE: readonly string[] = ['created', 'partially_reserved', 'ready'];
@@ -39,6 +44,7 @@ export function classifyLeftover(o: LeftoverOrder): LeftoverAction {
   if (o.salesChannel !== 'medusa') return NOTHING;
 
   if (EXTERNALLY_SHIPPED.includes(o.soStatus)) {
+    if (o.appWork) return { ...NOTHING, report: 'app-work' };
     if (o.foStatus !== null && FO_HUMAN.includes(o.foStatus)) return { ...NOTHING, report: 'human-fo' };
     return {
       closeFo: o.foStatus !== null && FO_CLOSABLE.includes(o.foStatus),

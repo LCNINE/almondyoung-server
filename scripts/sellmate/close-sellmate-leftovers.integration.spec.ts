@@ -10,6 +10,7 @@ import {
   seedFo,
   seedFullReservations,
   seedOrder,
+  seedDirectSupplier,
   seedWorkItem,
   seedWorld,
   World,
@@ -28,7 +29,7 @@ const describeIfDb = DATABASE_URL ? describe : describe.skip;
 
 type Dirty = string[];
 
-function harness(tx: DbTx) {
+function harness(tx: DbTx, o: { failRecalc?: boolean; chunkSize?: number } = {}) {
   const dbService = makeDbService(tx as unknown as PostgresJsDatabase<typeof wmsSchema>);
   // closeOpenForSalesOrder 는 gate 를 쓰지 않는다 — 쓰기 시작하면 이 자리가 던진다.
   const gate = new Proxy(
@@ -43,12 +44,14 @@ function harness(tx: DbTx) {
   const recalculated: string[][] = [];
   const sellable = {
     recalculateAndPublishForSkus: (skuIds: string[]) => {
+      if (o.failRecalc) return Promise.reject(new Error('재계산 실패'));
       recalculated.push(skuIds);
       return Promise.resolve([]);
     },
   };
   return {
-    run: (apply: boolean) => runLeftoverClose(dbService, { backlog, sellable: sellable as never }, { apply }),
+    run: (apply: boolean) =>
+      runLeftoverClose(dbService, { backlog, sellable: sellable as never }, { apply, chunkSize: o.chunkSize }),
     recalculated,
   };
 }
@@ -273,11 +276,13 @@ describeIfDb('runLeftoverClose (DB integration)', () => {
         box: { lineIds: [box.lineIds[1]] },
       });
 
-      await harness(tx).run(true);
+      const report = await harness(tx).run(true);
 
       expect(await foStatus(tx, shippedFo.foId)).toBe('shipped');
       expect(await boxStatus(tx, box.shipmentId)).toBe('draft');
       expect(await reservationStatuses(tx, [box.lineIds[1]])).toEqual(['confirmed']);
+      // 셀메이트분 줄의 FO 는 닫혔으니 이 상자를 그대로 발송하면 409 다 — 사람이 상자를 나눠야 한다
+      expect(report.mixedShipments).toContain(box.shipmentId);
     });
   });
 
@@ -319,6 +324,85 @@ describeIfDb('runLeftoverClose (DB integration)', () => {
       await handOver(tx, [out.salesOrderId, waiting.salesOrderId]);
 
       expect((await h.run(false)).drainIncomplete).toBe(1);
+    });
+  });
+
+  it('교환품을 보낸 주문은 닫지 않고 보고한다 — 교환 FOI·상자는 앱이 출고한다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = await seedWorld(tx);
+      const { order, fo, box } = await seedExternallyShipped(tx, w);
+      await tx.insert(wmsTables.customerReturns).values({
+        salesOrderId: order.salesOrderId,
+        channelReturnId: randomUUID(),
+        channelRequestId: randomUUID(),
+        kind: 'exchange',
+        exchangeReleasedAt: new Date(),
+        reason: 'change_of_mind',
+        feeBearer: 'customer',
+        requestedBy: 'customer',
+        requestedAt: new Date(),
+      });
+
+      const report = await harness(tx).run(true);
+
+      expect(await foStatus(tx, fo.foId)).toBe('ready');
+      expect(await boxStatus(tx, box.shipmentId)).toBe('draft');
+      expect(await backlogStatuses(tx, order.salesOrderId)).toEqual(['awaiting_matching']);
+      const [so] = await tx
+        .select()
+        .from(wmsTables.salesOrders)
+        .where(eq(wmsTables.salesOrders.id, order.salesOrderId));
+      expect(report.appWork).toContain(so.channelOrderId);
+    });
+  });
+
+  it('열린 입점사 상자가 있는 주문은 닫지 않고 보고한다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = await seedWorld(tx);
+      const order = await seedOrder(tx, { status: 'shipped' });
+      const fo = await seedFo(tx, w, order, { status: 'ready' });
+      const supplierId = await seedDirectSupplier(tx);
+      const box = await seedBox(tx, w, [fo.foItemId], { status: 'draft', supplierId });
+
+      const report = await harness(tx).run(true);
+
+      expect(await foStatus(tx, fo.foId)).toBe('ready');
+      expect(await boxStatus(tx, box.shipmentId)).toBe('draft');
+      const [so] = await tx
+        .select()
+        .from(wmsTables.salesOrders)
+        .where(eq(wmsTables.salesOrders.id, order.salesOrderId));
+      expect(report.appWork).toContain(so.channelOrderId);
+    });
+  });
+
+  it('셀메이트로 나간 두 주문의 합포장 상자는 묶음이 갈려도 닫힌다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = await seedWorld(tx);
+      const a = await seedOrder(tx, { status: 'shipped' });
+      const aFo = await seedFo(tx, w, a, { status: 'ready' });
+      const b = await seedOrder(tx, { status: 'shipped' });
+      const bFo = await seedFo(tx, w, b, { status: 'ready' });
+      const box = await seedBox(tx, w, [aFo.foItemId, bFo.foItemId], { status: 'draft' });
+
+      const report = await harness(tx, { chunkSize: 1 }).run(true);
+
+      expect(await boxStatus(tx, box.shipmentId)).toBe('shipped');
+      expect(report.mixedShipments).not.toContain(box.shipmentId);
+    });
+  });
+
+  it('판매가능수량 재계산이 실패하면 아무것도 남기지 않는다 — 다시 돌리면 같은 SKU 를 다시 찾는다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const w = await seedWorld(tx);
+      const { order, fo, box } = await seedExternallyShipped(tx, w);
+
+      await expect(harness(tx, { failRecalc: true }).run(true)).rejects.toThrow('재계산 실패');
+
+      expect(await foStatus(tx, fo.foId)).toBe('ready');
+      expect(await boxStatus(tx, box.shipmentId)).toBe('draft');
+      expect(await reservationStatuses(tx, box.lineIds)).toEqual(['confirmed']);
+      expect(await backlogStatuses(tx, order.salesOrderId)).toEqual(['awaiting_matching']);
     });
   });
 });

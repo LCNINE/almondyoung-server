@@ -65,10 +65,14 @@ export type LeftoverReport = {
   releasedSkuIds: string[];
   /** channel_order_id */
   humanFo: string[];
+  /** 앱이 출고를 붙인 주문(교환품·입점사 상자) — FO 째 닫으면 앱 출고가 «발송됨»이 된다 */
+  appWork: string[];
   cancelledOpen: string[];
   /** shipment id */
   recoveryShipments: string[];
   activeWorkShipments: string[];
+  /** 대상 주문 FO 는 닫혔는데 다른(앱) 주문 줄과 섞여 남은 상자 — 그대로 발송하면 409, 상자를 나눠 셀메이트분 줄을 뺀다 */
+  mixedShipments: string[];
   /** null = sellmate_handed_over_orders 가 비었다(저녁 맞추기 init 전) */
   drainIncomplete: number | null;
 };
@@ -91,6 +95,7 @@ async function readCandidates(dbService: DbService<typeof wmsSchema>): Promise<L
     fo_status: string | null;
     open_backlogs: number;
     open_shipments: number;
+    app_work: boolean;
   }>(sql`
     SELECT * FROM (
       SELECT so.id AS sales_order_id, so.channel_order_id, so.sales_channel::text AS sales_channel,
@@ -102,7 +107,14 @@ async function readCandidates(dbService: DbService<typeof wmsSchema>): Promise<L
                 JOIN shipment_lines sl ON sl.shipment_id = s.id
                 JOIN fulfillment_order_items foi ON foi.id = sl.fulfillment_order_item_id
                WHERE foi.fulfillment_order_id = fo.id
-                 AND s.status IN ('draft','planned','recovery_required'))::int AS open_shipments
+                 AND s.status IN ('draft','planned','recovery_required'))::int AS open_shipments,
+             (EXISTS (SELECT 1 FROM customer_returns cr
+                       WHERE cr.sales_order_id = so.id AND cr.kind = 'exchange' AND cr.exchange_released_at IS NOT NULL)
+              OR EXISTS (SELECT 1 FROM shipments s
+                           JOIN shipment_lines sl ON sl.shipment_id = s.id
+                           JOIN fulfillment_order_items foi ON foi.id = sl.fulfillment_order_item_id
+                          WHERE foi.fulfillment_order_id = fo.id AND s.supplier_id IS NOT NULL
+                            AND s.status IN ('draft','planned'))) AS app_work
         FROM sales_orders so
         LEFT JOIN fulfillment_orders fo ON fo.sales_order_id = so.id
        WHERE so.sales_channel = 'medusa' AND so.status IN ('shipped','delivered','cancelled')
@@ -118,6 +130,7 @@ async function readCandidates(dbService: DbService<typeof wmsSchema>): Promise<L
     foStatus: r.fo_status,
     openBacklogs: Number(r.open_backlogs),
     openShipments: Number(r.open_shipments),
+    appWork: Boolean(r.app_work),
   }));
 }
 
@@ -129,19 +142,20 @@ async function readDrainIncomplete(dbService: DbService<typeof wmsSchema>): Prom
   return Number(row.total) === 0 ? null : Number(row.open);
 }
 
-type ChunkResult = Pick<
-  LeftoverReport,
-  | 'closedFo'
-  | 'closedShipments'
-  | 'releasedReservations'
-  | 'closedBacklogs'
-  | 'releasedSkuIds'
-  | 'recoveryShipments'
-  | 'activeWorkShipments'
->;
+type Totals = Omit<LeftoverReport, 'humanFo' | 'appWork' | 'cancelledOpen' | 'drainIncomplete'>;
 
-async function closeChunk(tx: DbTx, deps: Deps, chunk: Planned[]): Promise<ChunkResult> {
-  const result: ChunkResult = {
+/**
+ * 한 트랜잭션에서 전부 한다 — 묶음마다 커밋하면 ① 셀메이트로 나간 두 주문의 합포장 상자가 묶음 경계에서 갈려 영영 안 닫히고
+ * ② 중간 실패 뒤 다시 돌릴 때 이미 닫힌 주문의 SKU 를 판매가능수량 재계산에 다시 못 찾는다. 묶음(chunkSize)은 문장 파라미터 크기만 정한다.
+ */
+async function closeAll(
+  tx: DbTx,
+  deps: Deps,
+  actionable: Planned[],
+  chunkSize: number,
+  apply: boolean,
+): Promise<Totals> {
+  const t: Totals = {
     closedFo: 0,
     closedShipments: 0,
     releasedReservations: 0,
@@ -149,22 +163,29 @@ async function closeChunk(tx: DbTx, deps: Deps, chunk: Planned[]): Promise<Chunk
     releasedSkuIds: [],
     recoveryShipments: [],
     activeWorkShipments: [],
+    mixedShipments: [],
+  };
+  const chunks = <T>(xs: T[]): T[][] => {
+    const out: T[][] = [];
+    for (let i = 0; i < xs.length; i += chunkSize) out.push(xs.slice(i, i + chunkSize));
+    return out;
   };
 
   // ① 출고주문 — 상자 종결의 HAVING 이 FO terminal 을 보므로 먼저 닫는다
-  const foChannelIds = chunk.filter((o) => o.action.closeFo).map((o) => o.channelOrderId);
-  if (foChannelIds.length > 0) {
-    const fo = await tx.execute(bindTextArrayParam(markSql.MARK_FULFILLMENT_ORDERS_SHIPPED, foChannelIds));
-    await tx.execute(bindTextArrayParam(markSql.MARK_FULFILLMENT_ORDER_ITEMS_SHIPPED, foChannelIds));
-    result.closedFo = fo.count;
+  for (const ids of chunks(actionable.filter((o) => o.action.closeFo).map((o) => o.channelOrderId))) {
+    const fo = await tx.execute(bindTextArrayParam(markSql.MARK_FULFILLMENT_ORDERS_SHIPPED, ids));
+    await tx.execute(bindTextArrayParam(markSql.MARK_FULFILLMENT_ORDER_ITEMS_SHIPPED, ids));
+    t.closedFo += fo.count;
   }
 
-  // ② 상자·예약 — 대상 주문으로 좁힌 종결 문장
-  const scope = chunk.filter((o) => o.action.closeShipments).map((o) => o.salesOrderId);
+  // ② 상자·예약 — 실행 전체의 대상 주문으로 좁힌 종결 문장을 한 번
+  const scope = actionable.filter((o) => o.action.closeShipments).map((o) => o.salesOrderId);
   if (scope.length > 0) {
     await tx.execute(sql.raw('CREATE TEMP TABLE leftover_scope (sales_order_id uuid) ON COMMIT DROP'));
-    await tx.execute(sql`INSERT INTO leftover_scope SELECT unnest(${sql.param(scope)}::uuid[])`);
-    const skipped = await tx.execute<{ id: string; status: string; active: boolean }>(sql`
+    for (const ids of chunks(scope)) {
+      await tx.execute(sql`INSERT INTO leftover_scope SELECT unnest(${sql.param(ids)}::uuid[])`);
+    }
+    const scopeShipments = sql.raw(`
       SELECT DISTINCT s.id, s.status::text AS status,
              EXISTS (SELECT 1 FROM outbound_batch_work_items wi
                       WHERE wi.shipment_id = s.id AND wi.status NOT IN ('excluded','completed')) AS active
@@ -174,82 +195,69 @@ async function closeChunk(tx: DbTx, deps: Deps, chunk: Planned[]): Promise<Chunk
         JOIN fulfillment_orders fo ON fo.id = foi.fulfillment_order_id
        WHERE fo.sales_order_id IN (SELECT sales_order_id FROM leftover_scope)
          AND s.status IN ('draft','planned','recovery_required')`);
-    for (const s of skipped) {
-      if (s.status === 'recovery_required') result.recoveryShipments.push(s.id);
-      else if (s.active) result.activeWorkShipments.push(s.id);
+    for (const s of await tx.execute<{ id: string; status: string; active: boolean }>(scopeShipments)) {
+      if (s.status === 'recovery_required') t.recoveryShipments.push(s.id);
+      else if (s.active) t.activeWorkShipments.push(s.id);
     }
     for (const statement of closeoutStatements(SCOPED_CLOSEOUT_CTE)) await tx.execute(sql.raw(statement));
     const [closed] = await tx.execute<{ n: number }>(sql.raw('SELECT count(*)::int AS n FROM closeout'));
     const released = await tx.execute<{ sku_id: string }>(sql.raw('SELECT sku_id FROM closeout_reservation'));
-    result.closedShipments = Number(closed.n);
-    result.releasedReservations = released.length;
-    result.releasedSkuIds = [...new Set(released.map((r) => r.sku_id))];
-    // ON COMMIT DROP 은 바깥 트랜잭션 끝에야 지운다 — 다음 묶음(또는 중첩 트랜잭션 안의 재실행)이 같은 이름을 다시 만들게 지금 지운다.
+    t.closedShipments = Number(closed.n);
+    t.releasedReservations = released.length;
+    t.releasedSkuIds = [...new Set(released.map((r) => r.sku_id))];
+    // 닫히지 않고 남은 대상 상자 중 recovery·작업 중이 아닌 것 = 다른 주문 줄과 섞였다
+    for (const s of await tx.execute<{ id: string; status: string; active: boolean }>(scopeShipments)) {
+      if (s.status !== 'recovery_required' && !s.active) t.mixedShipments.push(s.id);
+    }
+    // ON COMMIT DROP 은 바깥 트랜잭션 끝에야 지운다 — 중첩 트랜잭션 안의 재실행이 같은 이름을 다시 만들게 지금 지운다.
     await tx.execute(sql.raw('DROP TABLE closeout, closeout_reservation, leftover_scope'));
   }
 
   // ③ 대기열 — 취소 경로가 부르는 그 명령
-  for (const o of chunk.filter((p) => p.action.closeBacklogs)) {
-    result.closedBacklogs += await deps.backlog.closeOpenForSalesOrder(o.salesOrderId, tx);
+  for (const o of actionable.filter((p) => p.action.closeBacklogs)) {
+    t.closedBacklogs += await deps.backlog.closeOpenForSalesOrder(o.salesOrderId, tx);
   }
 
-  // ④ #1247 — 줄 상태가 바뀐 주문에 표시(같은 트랜잭션)
-  const touched = chunk
-    .filter((o) => o.action.closeFo || o.action.closeShipments || o.action.closeBacklogs)
-    .map((o) => o.salesOrderId);
-  await markLineStateDirty(tx, touched);
-  return result;
+  // ④ #1247 — 줄 상태가 바뀐 주문에 표시
+  await markLineStateDirty(
+    tx,
+    actionable.map((o) => o.salesOrderId),
+  );
+
+  // ⑤ 예약이 풀린 SKU 의 판매가능수량 — 같은 트랜잭션(outbox 도 함께 커밋된다)
+  if (apply) {
+    for (const ids of chunks(t.releasedSkuIds)) await deps.sellable.recalculateAndPublishForSkus(ids, tx);
+  }
+  return t;
 }
 
 export async function runLeftoverClose(
   dbService: DbService<typeof wmsSchema>,
   deps: Deps,
-  opts: { apply: boolean },
+  opts: { apply: boolean; chunkSize?: number },
 ): Promise<LeftoverReport> {
   const planned: Planned[] = (await readCandidates(dbService)).map((o) => ({ ...o, action: classifyLeftover(o) }));
-  const report: LeftoverReport = {
-    closedFo: 0,
-    closedShipments: 0,
-    releasedReservations: 0,
-    closedBacklogs: 0,
-    releasedSkuIds: [],
-    humanFo: planned.filter((o) => o.action.report === 'human-fo').map((o) => o.channelOrderId),
-    cancelledOpen: planned.filter((o) => o.action.report === 'cancelled-open').map((o) => o.channelOrderId),
-    recoveryShipments: [],
-    activeWorkShipments: [],
-    drainIncomplete: await readDrainIncomplete(dbService),
-  };
-
   const actionable = planned.filter((o) => o.action.closeFo || o.action.closeShipments || o.action.closeBacklogs);
-  const skus = new Set<string>();
-  for (let i = 0; i < actionable.length; i += CHUNK) {
-    const chunk = actionable.slice(i, i + CHUNK);
-    let got: ChunkResult | undefined;
-    try {
-      await dbService.run(async (tx) => {
-        got = await closeChunk(tx, deps, chunk);
-        if (!opts.apply) throw new DryRunRollback();
-      });
-    } catch (e) {
-      if (!(e instanceof DryRunRollback)) throw e;
-    }
-    if (!got) throw new Error('묶음 결과가 없다');
-    report.closedFo += got.closedFo;
-    report.closedShipments += got.closedShipments;
-    report.releasedReservations += got.releasedReservations;
-    report.closedBacklogs += got.closedBacklogs;
-    report.recoveryShipments.push(...got.recoveryShipments);
-    report.activeWorkShipments.push(...got.activeWorkShipments);
-    got.releasedSkuIds.forEach((s) => skus.add(s));
-  }
-  report.releasedSkuIds = [...skus];
+  const drainIncomplete = await readDrainIncomplete(dbService);
 
-  if (opts.apply) {
-    for (let i = 0; i < report.releasedSkuIds.length; i += CHUNK) {
-      await deps.sellable.recalculateAndPublishForSkus(report.releasedSkuIds.slice(i, i + CHUNK));
-    }
+  let totals: Totals | undefined;
+  try {
+    await dbService.run(async (tx) => {
+      totals = await closeAll(tx, deps, actionable, opts.chunkSize ?? CHUNK, opts.apply);
+      // dry-run 은 같은 경로를 끝까지 돌린 뒤 롤백한다 — 건수가 apply 와 같다
+      if (!opts.apply) throw new DryRunRollback();
+    });
+  } catch (e) {
+    if (!(e instanceof DryRunRollback)) throw e;
   }
-  return report;
+  if (!totals) throw new Error('결과가 없다');
+  return {
+    ...totals,
+    humanFo: planned.filter((o) => o.action.report === 'human-fo').map((o) => o.channelOrderId),
+    appWork: planned.filter((o) => o.action.report === 'app-work').map((o) => o.channelOrderId),
+    cancelledOpen: planned.filter((o) => o.action.report === 'cancelled-open').map((o) => o.channelOrderId),
+    drainIncomplete,
+  };
 }
 
 function stamp(d: Date): string {
@@ -302,10 +310,15 @@ async function main() {
     console.log(`   예약이 풀린 SKU ${r.releasedSkuIds.length}개${apply ? ' — 판매가능수량 재계산·발행함' : ''}`);
     console.log(`\n보고(닫지 않음):`);
     console.log(`   FO 가 사람이 볼 상태(processing·partially_shipped·recovery_required) ${r.humanFo.length}건`);
+    console.log(`   앱이 출고를 붙인 주문(교환품·입점사 상자) ${r.appWork.length}건 — 사람이 옛 줄만 닫는다`);
     console.log(`   취소 주문인데 FO·상자가 열림(리컨실러 몫) ${r.cancelledOpen.length}건`);
     console.log(
       `   recovery_required 상자 ${r.recoveryShipments.length}개 · 진행 중 작업 항목이 걸린 상자 ${r.activeWorkShipments.length}개`,
     );
+    if (r.mixedShipments.length > 0)
+      console.log(
+        `   ⚠️  앱 주문 줄과 섞인 상자 ${r.mixedShipments.length}개 — 셀메이트분 FO 를 닫아 그대로 발송하면 409. 상자를 나눠 셀메이트분 줄을 뺀다`,
+      );
     if (r.drainIncomplete === null) console.log('   드레인 미완료: 넘긴 주문 집합 없음(저녁 맞추기 init 전)');
     else if (r.drainIncomplete > 0)
       console.log(`   ⚠️  드레인 미완료 ${r.drainIncomplete}건 — 셀메이트가 아직 안 내보냈다. 끝난 뒤 다시 돌린다`);
@@ -313,9 +326,11 @@ async function main() {
 
     const lines = [
       ...r.humanFo.map((id) => `human-fo\t${id}`),
+      ...r.appWork.map((id) => `app-work\t${id}`),
       ...r.cancelledOpen.map((id) => `cancelled-open\t${id}`),
       ...r.recoveryShipments.map((id) => `recovery-shipment\t${id}`),
       ...r.activeWorkShipments.map((id) => `active-work-shipment\t${id}`),
+      ...r.mixedShipments.map((id) => `mixed-shipment\t${id}`),
     ];
     fs.mkdirSync(path.dirname(out), { recursive: true });
     fs.writeFileSync(out, lines.join('\n') + (lines.length ? '\n' : ''));

@@ -151,9 +151,13 @@ export async function checkOutbound(tx: Sql, r: Report): Promise<void> {
              from fulfillment_order_creation_backlogs group by 1 order by 2 desc`,
   );
   // 이미 셀메이트로 나간 주문(판매주문 shipped·delivered·취소)의 행은 출고할 게 아니라 닫을 대상이다.
-  const [matching] = await tx<{ open: number; done: number }[]>`
+  // 닫기 스크립트(#1243)는 1단계 범위인 자사몰만 닫는다 — 마켓분은 2단계(#1306) 몫이라 ◆ 에 넣지 않는다.
+  const [matching] = await tx<{ open: number; done: number; done_market: number }[]>`
     select count(*) filter (where so.status::text not in ('shipped','delivered','canceled','cancelled'))::int as open,
-           count(*) filter (where so.status::text in ('shipped','delivered','canceled','cancelled'))::int as done
+           count(*) filter (where so.status::text in ('shipped','delivered','canceled','cancelled')
+                              and so.sales_channel = 'medusa')::int as done,
+           count(*) filter (where so.status::text in ('shipped','delivered','canceled','cancelled')
+                              and so.sales_channel <> 'medusa')::int as done_market
     from fulfillment_order_creation_backlogs b join sales_orders so on so.id = b.sales_order_id
     where b.status = 'awaiting_matching'`;
   if (matching.open)
@@ -164,9 +168,10 @@ export async function checkOutbound(tx: Sql, r: Report): Promise<void> {
   else r.ok('아직 안 나간 주문의 매칭 대기 0');
   if (matching.done)
     r.dayOf(
-      `이미 끝난 주문의 매칭 대기 ${matching.done}건`,
+      `이미 끝난 자사몰 주문의 매칭 대기 ${matching.done}건`,
       '드레인 끝에 bash scripts/sellmate/run.sh live close-sellmate-leftovers 후 --apply (#1243)',
     );
+  if (matching.done_market) r.info(`이미 끝난 마켓 주문의 매칭 대기 ${matching.done_market}건 — 2단계(#1306) 몫`);
   const failed = await tx`
     select coalesce(failure_reason, '(null)') as failure_reason, count(*)::int
     from fulfillment_order_creation_backlogs where status = 'failed' group by 1 order by 2 desc limit 10`;
