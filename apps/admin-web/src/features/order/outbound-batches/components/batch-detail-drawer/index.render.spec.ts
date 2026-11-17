@@ -1,0 +1,468 @@
+/** @jest-environment jsdom */
+
+import { randomUUID } from 'node:crypto';
+import { act, createElement } from 'react';
+import { createRoot, type Root } from 'react-dom/client';
+import { toast } from 'sonner';
+import type {
+  useAddShipmentToBatch,
+  useOutboundBatchEligibleShipments,
+  useOutboundBatchV2,
+} from '@/lib/services/orders';
+import type {
+  EligibleShipmentV2,
+  OutboundBatchCommandResponse,
+  OutboundBatchV2,
+  OutboundBatchWorkItemV2,
+} from '@/lib/types/dto/fulfillment';
+import { BatchDetailDrawer } from './index';
+
+// 외부 조회 hook은 화면이 소비하는 필드만 제공한다. 화면의 command와 재시도 hook은 실제 구현을 쓴다.
+const mockRefetch = jest.fn<
+  Promise<{ data: OutboundBatchV2 | undefined; isError: boolean }>,
+  []
+>();
+const mockBatchQuery = jest.fn<
+  Pick<ReturnType<typeof useOutboundBatchV2>, 'data' | 'isLoading'> & {
+    refetch: typeof mockRefetch;
+  },
+  [string]
+>();
+const mockEligibleQuery = jest.fn<
+  Pick<ReturnType<typeof useOutboundBatchEligibleShipments>, 'data'>,
+  [string]
+>();
+const mockAddShipment = jest.fn<
+  Promise<OutboundBatchCommandResponse>,
+  [Parameters<ReturnType<typeof useAddShipmentToBatch>['mutateAsync']>[0]]
+>();
+
+const mockClaimPicker = jest.fn();
+
+jest.mock('@/hooks/use-permission', () => ({
+  usePermissionCheck: () => ({ canRun: () => true }),
+}));
+
+jest.mock('@/lib/services/orders', () => ({
+  ...jest.requireActual('@/lib/api/server-error'),
+  ...jest.requireActual('@/lib/services/orders/idempotency'),
+  useAddShipmentToBatch: () => ({ mutateAsync: mockAddShipment }),
+  useOutboundBatchEligibleShipments: (id: string) => mockEligibleQuery(id),
+  useOutboundBatchV2: (id: string) => mockBatchQuery(id),
+  useExcludeShipmentFromBatch: () => ({ mutateAsync: jest.fn() }),
+  useClaimBatchPacker: () => ({ mutateAsync: jest.fn() }),
+  useClaimBatchPicker: () => ({ mutateAsync: mockClaimPicker }),
+  useHandoffBatchWorkItem: () => ({ mutateAsync: jest.fn() }),
+}));
+
+function deferred() {
+  let resolve!: (value: OutboundBatchCommandResponse) => void;
+  let reject!: (reason: unknown) => void;
+  const promise = new Promise<OutboundBatchCommandResponse>(
+    (resolvePromise, rejectPromise) => {
+      resolve = resolvePromise;
+      reject = rejectPromise;
+    }
+  );
+
+  return { promise, resolve, reject };
+}
+
+function noticeTexts(role: 'alert' | 'status'): string[] {
+  return Array.from(document.querySelectorAll(`[role="${role}"]`)).map(
+    (element) => element.textContent ?? ''
+  );
+}
+
+function workItem(shipmentId: string): OutboundBatchWorkItemV2 {
+  const claim = {
+    state: 'unclaimed' as const,
+    workerId: null,
+    claimedAt: null,
+    releasedAt: null,
+    leaseExpiresAt: null,
+  };
+
+  return {
+    id: `work-${shipmentId}`,
+    batchId: 'batch-1',
+    shipmentId,
+    status: 'queued',
+    leaseVersion: 1,
+    pickerId: null,
+    pickerClaimedAt: null,
+    pickerReleasedAt: null,
+    packerId: null,
+    packerClaimedAt: null,
+    packerReleasedAt: null,
+    handedOffAt: null,
+    completedAt: null,
+    leaseExpiresAt: null,
+    exclusionReason: null,
+    recoveryReason: null,
+    waitingOperationId: null,
+    pickerClaim: claim,
+    packerClaim: claim,
+  };
+}
+
+function batch(id = 'batch-1'): OutboundBatchV2 {
+  return {
+    id,
+    batchNumber: id,
+    name: id,
+    warehouseId: 'warehouse-1',
+    pickingMethod: 'individual',
+    cartCapacity: null,
+    status: 'picking',
+    totalItems: 0,
+    totalQty: 0,
+    startedAt: '2026-11-16T00:00:00Z',
+    workItems: [],
+    picking: null,
+    inventorySession: null,
+    toteAssignments: [],
+  };
+}
+
+const eligible: EligibleShipmentV2[] = ['box-A', 'box-B'].map((shipmentId) => ({
+  shipmentId,
+  warehouseId: 'warehouse-1',
+  shippingProfileId: 'profile-1',
+  manifestVersion: 1,
+  reservationVersion: 1,
+  recipientHash: 'recipient',
+  totalItems: 1,
+  totalQty: 1,
+  waybillId: `waybill-${shipmentId}`,
+  trackingNo: `tracking-${shipmentId}`,
+  displayOrderNo: shipmentId,
+  itemSummary: '상품 1개',
+}));
+
+describe('배치 상세에 남는 상자 추가 결과', () => {
+  let root: Root;
+  let container: HTMLDivElement;
+  let unmounted: boolean;
+  let first: ReturnType<typeof deferred>;
+  let second: ReturnType<typeof deferred>;
+
+  beforeAll(() => {
+    Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+    Object.defineProperty(crypto, 'randomUUID', {
+      configurable: true,
+      value: randomUUID,
+    });
+  });
+
+  beforeEach(() => {
+    toast.getToasts().forEach((entry) => toast.dismiss(entry.id));
+    jest.clearAllMocks();
+    first = deferred();
+    second = deferred();
+    unmounted = false;
+    mockRefetch.mockResolvedValue({
+      data: { ...batch(), workItems: [workItem('box-A'), workItem('box-B')] },
+      isError: false,
+    });
+    mockBatchQuery.mockImplementation((id) => ({
+      data: batch(id),
+      isLoading: false,
+      refetch: mockRefetch,
+    }));
+    mockEligibleQuery.mockReturnValue({
+      data: eligible,
+    });
+    mockAddShipment.mockImplementation(({ shipmentId }) =>
+      shipmentId === 'box-A' ? first.promise : second.promise
+    );
+
+    container = document.createElement('div');
+    document.body.append(container);
+    root = createRoot(container);
+  });
+
+  afterEach(async () => {
+    if (!unmounted) await act(async () => root.unmount());
+    container.remove();
+    toast.getToasts().forEach((entry) => toast.dismiss(entry.id));
+  });
+
+  async function render(batchId = 'batch-1', open = true) {
+    await act(async () => {
+      root.render(
+        createElement(BatchDetailDrawer, {
+          batchId,
+          open,
+          onOpenChange: () => undefined,
+        })
+      );
+    });
+  }
+
+  function addButton(shipmentId: string) {
+    const row = Array.from(document.querySelectorAll('tr')).find((candidate) =>
+      candidate.textContent?.includes(`#${shipmentId}`)
+    );
+    const button = row?.querySelector('button');
+    if (!button) throw new Error(`${shipmentId}의 추가 버튼이 없습니다.`);
+
+    return button;
+  }
+
+  async function add(shipmentId: string) {
+    await act(async () => addButton(shipmentId).click());
+  }
+
+  const blocked = {
+    statusCode: 409,
+    response: {
+      code: 'BATCH_JOIN_BLOCKED',
+      errors: [
+        {
+          shipmentId: 'box-A',
+          reason: 'STOCK_SHORT',
+          trackingNo: '123456789012',
+          skuName: '상품 A',
+          requiredQty: 3,
+          shortQty: 1,
+        },
+      ],
+    },
+  };
+
+  it.each(['success', 'blocked'] as const)(
+    '추가 %s 후 재조회까지 모든 추가 버튼을 잠그고 완료 후 다시 허용한다',
+    async (outcome) => {
+      let finishRefresh!: (
+        value: Awaited<ReturnType<typeof mockRefetch>>
+      ) => void;
+      mockRefetch.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finishRefresh = resolve;
+          })
+      );
+
+      await render();
+      // React가 disabled를 반영하기 전의 연속 클릭도 요청 하나만 보내야 한다.
+      await act(async () => {
+        addButton('box-A').click();
+        addButton('box-B').click();
+      });
+
+      expect(mockAddShipment).toHaveBeenCalledTimes(1);
+      expect(addButton('box-A').disabled).toBe(true);
+      expect(addButton('box-B').disabled).toBe(true);
+
+      await act(async () => {
+        if (outcome === 'success')
+          first.resolve({ operationId: 'op-A', workItem: workItem('box-A') });
+        else first.reject(blocked);
+      });
+      expect(mockRefetch).toHaveBeenCalledTimes(1);
+      expect(addButton('box-B').disabled).toBe(true);
+      await add('box-B');
+      expect(mockAddShipment).toHaveBeenCalledTimes(1);
+
+      await act(async () => finishRefresh({ data: batch(), isError: false }));
+      expect(addButton('box-A').disabled).toBe(false);
+      expect(addButton('box-B').disabled).toBe(false);
+      if (outcome === 'success') {
+        expect(toast.getToasts()).toEqual(
+          expect.arrayContaining([
+            expect.objectContaining({
+              type: 'success',
+              title: expect.stringContaining('송장 출력'),
+            }),
+          ])
+        );
+      } else {
+        expect(noticeTexts('alert').join('')).toContain(
+          '상품 A 3개 중 1개 부족'
+        );
+      }
+
+      await add('box-B');
+      expect(mockAddShipment).toHaveBeenCalledTimes(2);
+      await act(async () =>
+        second.resolve({ operationId: 'op-B', workItem: workItem('box-B') })
+      );
+      expect(addButton('box-B').disabled).toBe(false);
+    }
+  );
+
+  it.each(['close', 'switch'])(
+    '%s 후 새 추가를 허용하고 이전 요청 완료로 새 잠금을 풀지 않는다',
+    async (change) => {
+      await render();
+      await add('box-A');
+      if (change === 'close') await render('batch-1', false);
+      await render(change === 'switch' ? 'batch-2' : 'batch-1');
+      expect(addButton('box-B').disabled).toBe(false);
+
+      await add('box-B');
+      await act(async () =>
+        first.resolve({ operationId: 'op-A', workItem: workItem('box-A') })
+      );
+      expect(addButton('box-A').disabled).toBe(true);
+      expect(toast.getToasts()).toHaveLength(0);
+
+      await act(async () =>
+        second.resolve({ operationId: 'op-B', workItem: workItem('box-B') })
+      );
+      expect(addButton('box-A').disabled).toBe(false);
+    }
+  );
+
+  it.each([
+    {
+      name: '시작된 배치',
+      initialStarted: true,
+      refreshedStarted: true,
+      queryFailed: false,
+      expectsGuidance: true,
+    },
+    {
+      name: '추가 후 조회에서 시작을 확인한 배치',
+      initialStarted: false,
+      refreshedStarted: true,
+      queryFailed: false,
+      expectsGuidance: true,
+    },
+    {
+      name: '시작 전 배치',
+      initialStarted: false,
+      refreshedStarted: false,
+      queryFailed: false,
+      expectsGuidance: false,
+    },
+    {
+      name: '재조회에 실패한 시작된 배치',
+      initialStarted: true,
+      refreshedStarted: false,
+      queryFailed: true,
+      expectsGuidance: true,
+    },
+  ])(
+    '$name에 추가 성공 시 출력 안내 여부를 구분한다',
+    async ({
+      initialStarted,
+      refreshedStarted,
+      queryFailed,
+      expectsGuidance,
+    }) => {
+      const initialBatch = {
+        ...batch(),
+        startedAt: initialStarted ? batch().startedAt : undefined,
+      };
+      mockBatchQuery.mockReturnValue({
+        data: initialBatch,
+        isLoading: false,
+        refetch: mockRefetch,
+      });
+      mockRefetch.mockResolvedValue({
+        data: queryFailed
+          ? undefined
+          : {
+              ...batch(),
+              startedAt: refreshedStarted ? batch().startedAt : undefined,
+            },
+        isError: queryFailed,
+      });
+
+      await render();
+      await add('box-A');
+      await act(async () =>
+        first.resolve({ operationId: 'op', workItem: workItem('box-A') })
+      );
+
+      expect(toast.getToasts()).toEqual([
+        expect.objectContaining({
+          type: 'success',
+          title: expectsGuidance
+            ? '배치에 넣었어요. 송장 출력이 필요한 박스는 프린터가 있는 창고 앱에서 송장을 출력한 뒤 피킹해 주세요.'
+            : '명령을 접수했습니다. 서버 상태를 다시 확인합니다.',
+        }),
+      ]);
+    }
+  );
+
+  it('시작된 배치의 피킹 맡기 성공에는 출력 안내를 붙이지 않는다', async () => {
+    mockBatchQuery.mockReturnValue({
+      data: { ...batch(), workItems: [workItem('box-A')] },
+      isLoading: false,
+      refetch: mockRefetch,
+    });
+    mockClaimPicker.mockResolvedValue({
+      operationId: 'claim',
+      workItem: workItem('box-A'),
+    });
+
+    await render();
+    const button = Array.from(document.querySelectorAll('button')).find(
+      (candidate) => candidate.textContent === '내가 피킹 맡기'
+    );
+    if (!button) throw new Error('피킹 맡기 버튼이 없습니다.');
+
+    await act(async () => button.click());
+
+    expect(toast.getToasts()).toEqual([
+      expect.objectContaining({
+        type: 'success',
+        title: '명령을 접수했습니다. 서버 상태를 다시 확인합니다.',
+      }),
+    ]);
+  });
+
+  it.each(['close', 'switch'])(
+    '%s 후 늦게 도착한 합류 성공 안내는 표시하지 않는다',
+    async (change) => {
+      await render();
+      await add('box-A');
+      await render(
+        change === 'switch' ? 'batch-2' : 'batch-1',
+        change !== 'close'
+      );
+      await act(async () =>
+        first.resolve({ operationId: 'op', workItem: workItem('box-A') })
+      );
+
+      expect(toast.getToasts()).toHaveLength(0);
+    }
+  );
+
+  it('합류 차단 사유를 토스트 대신 화면에 남기고 성공하면 지운다', async () => {
+    await render();
+    await add('box-A');
+    await act(async () => first.reject(blocked));
+    expect(noticeTexts('alert').join('')).toContain('상품 A 3개 중 1개 부족');
+    expect(toast.getToasts()).toHaveLength(0);
+    expect(
+      toast
+        .getToasts()
+        .filter((entry) => 'type' in entry && entry.type === 'error')
+    ).toHaveLength(0);
+    first = deferred();
+    await add('box-A');
+    await act(async () =>
+      first.resolve({ operationId: 'op', workItem: workItem('box-A') })
+    );
+    expect(noticeTexts('alert')).toEqual([]);
+  });
+
+  it.each(['close', 'switch'])(
+    '%s 후 늦게 도착한 차단 응답은 표시하지 않는다',
+    async (change) => {
+      await render();
+      await add('box-A');
+      await render(
+        change === 'switch' ? 'batch-2' : 'batch-1',
+        change !== 'close'
+      );
+      await act(async () => first.reject(blocked));
+      await render();
+      expect(noticeTexts('alert')).toEqual([]);
+    }
+  );
+});
