@@ -1,6 +1,6 @@
 /**
  * Code128 최적 부호화(#1281). 숫자 쌍을 Code C 로 접어 막대를 줄이고, ZPL `^BC` 모드 N 의
- * invocation code 로 전환을 지시한다(`>;` Start C, `>:` Start B, `>5` → C, `>6` → B, `><` 리터럴 '>').
+ * invocation code 로 전환을 지시한다(`>;` Start C, `>:` Start B, `>5` → C, `>6` → B, `>0` 리터럴 '>').
  */
 export interface Code128Plan {
   zplData: string;
@@ -28,7 +28,12 @@ export function planCode128(data: string): Code128Plan | null {
   let symbols = 0;
   let mode: 'B' | 'C';
   const leadingRun = digitRunAt(data, 0);
-  if (leadingRun >= 4 || (data.length === 2 && leadingRun === 2)) {
+  // C→B 전환 뒤 한 글자만 남기지 않는다(역렌더러가 그 글자를 그리지 않는다). 홀수 길이 앞 숫자 구간은
+  // 첫 자리를 B 로 찍고 `>5` 로 넘기므로 B 로 시작한다.
+  const startsC =
+    (leadingRun >= 4 && leadingRun % 2 === 0 && data.length - leadingRun !== 1) ||
+    (data.length === 2 && leadingRun === 2);
+  if (startsC) {
     mode = 'C';
     out += '>;';
   } else {
@@ -63,7 +68,7 @@ export function planCode128(data: string): Code128Plan | null {
       mode = 'C';
       continue;
     }
-    out += data[i] === '>' ? '><' : data[i];
+    out += data[i] === '>' ? '>0' : data[i];
     symbols += 1;
     i += 1;
   }

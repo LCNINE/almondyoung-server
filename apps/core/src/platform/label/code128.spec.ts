@@ -1,8 +1,12 @@
 import { planCode128 } from './code128';
 
 describe('planCode128', () => {
-  it('숫자 쌍을 Code C 로 접고 남는 한 자리는 B 로 찍는다', () => {
-    expect(planCode128('11198120000')).toEqual({ zplData: '>;1119812000>60', modules: 112 });
+  it('홀수 길이 숫자는 첫 자리를 B 로 찍고 쌍은 Code C 로 접는다', () => {
+    expect(planCode128('11198120000')).toEqual({ zplData: '>:1>51198120000', modules: 112 });
+  });
+
+  it('짝수 길이 앞 숫자 구간(4 이상)은 Start C', () => {
+    expect(planCode128('1119812000')?.zplData).toBe('>;1119812000');
   });
 
   it('짧은 숫자 구간이 낀 문자열은 B 로 둔다', () => {
@@ -10,8 +14,9 @@ describe('planCode128', () => {
     expect(planCode128('A-01-01')?.modules).toBe(11 * (1 + 7 + 1) + 13);
   });
 
-  it('13자리 숫자는 쌍 6개와 B 한 자리', () => {
-    expect(planCode128('8801234567890')?.modules).toBe(11 * (1 + 6 + 1 + 1 + 1) + 13);
+  it('13자리 숫자는 B 한 자리 + 전환 + 쌍 6개', () => {
+    expect(planCode128('8801234567890')?.zplData).toBe('>:8>5801234567890');
+    expect(planCode128('8801234567890')?.modules).toBe(11 * (1 + 1 + 1 + 6 + 1) + 13);
   });
 
   it('끝의 4자리 이상 숫자는 C 로 바꾼다', () => {
@@ -26,8 +31,8 @@ describe('planCode128', () => {
     expect(planCode128('12')?.zplData).toBe('>;12');
   });
 
-  it("'>' 는 '><' 로 이스케이프한다", () => {
-    expect(planCode128('a>b')?.zplData).toBe('>:a><b');
+  it("'>' 는 '>0' 로 이스케이프한다", () => {
+    expect(planCode128('a>b')?.zplData).toBe('>:a>0b');
   });
 
   it('지원하지 않는 글자·빈 문자열은 null', () => {

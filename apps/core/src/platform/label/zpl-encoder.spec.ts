@@ -145,7 +145,7 @@ describe('encodeZpl', () => {
       moduleDots: 2,
     };
     const zpl = encodeZpl(createBitmap(800, 816), [code], { compress: false, rotation: 0 });
-    expect(zpl).toContain('^BY2^BCN,64,N,N,N^FD>;1119812000>60^FS');
+    expect(zpl).toContain('^BY2^BCN,64,N,N,N^FD>:1>51198120000^FS');
   });
 
   it('CODE128_OPTIMAL 데이터를 부호화할 수 없으면 던진다', () => {
