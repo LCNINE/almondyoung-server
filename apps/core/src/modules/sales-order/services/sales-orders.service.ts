@@ -1752,7 +1752,8 @@ export class SalesOrdersService {
     const salesOrderLines = await tx
       .select()
       .from(wmsTables.salesOrderLines)
-      .where(eq(wmsTables.salesOrderLines.salesOrderId, salesOrderId));
+      .where(eq(wmsTables.salesOrderLines.salesOrderId, salesOrderId))
+      .orderBy(asc(wmsTables.salesOrderLines.id));
     const fulfillmentItems = await tx
       .select({
         id: wmsTables.fulfillmentOrderItems.id,
@@ -2183,7 +2184,8 @@ export class SalesOrdersService {
     const salesOrderLines = await tx
       .select()
       .from(wmsTables.salesOrderLines)
-      .where(eq(wmsTables.salesOrderLines.salesOrderId, salesOrderId));
+      .where(eq(wmsTables.salesOrderLines.salesOrderId, salesOrderId))
+      .orderBy(asc(wmsTables.salesOrderLines.id));
     const prior = await this.loadPriorCancellationContext(salesOrderId, tx);
     const [fullCancellation] = await tx
       .select({ id: wmsTables.salesOrderCancellations.id })

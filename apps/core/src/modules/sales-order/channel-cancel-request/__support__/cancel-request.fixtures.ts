@@ -54,6 +54,8 @@ export async function seedChannelOrder(
     salesChannel?: 'medusa' | 'naver' | 'coupang' | '3pl';
     noChannelItemIds?: boolean;
     quantities?: [number, number];
+    /** 줄을 id 내림차순으로 만든다 — 읽는 쪽이 만든 순서가 아니라 id 순으로 돌려주는지 볼 때 */
+    descendingLineIds?: boolean;
   },
 ) {
   const { warehouseId, locationId } = await seedWarehouseWithZone(tx);
@@ -73,8 +75,11 @@ export async function seedChannelOrder(
       orderDate: new Date(),
     })
     .returning();
+  // 기본은 «만든 순서 = id 순» — 줄을 읽는 쪽은 id 순으로 돌려준다
+  const lineIdsInOrder = lines.map(() => randomUUID()).sort();
+  if (opts.descendingLineIds) lineIdsInOrder.reverse();
   const lineIds: string[] = [];
-  for (const line of lines) {
+  for (const [index, line] of lines.entries()) {
     const { skuId } = await seedSku(tx, holderId);
     await receiveStock(w.logistics.command, tx, { skuId, warehouseId, locationId, quantity: 10 });
     const variantId = randomUUID();
@@ -82,6 +87,7 @@ export async function seedChannelOrder(
     const [row] = await tx
       .insert(wmsTables.salesOrderLines)
       .values({
+        id: lineIdsInOrder[index],
         salesOrderId: so.id,
         variantId,
         productName: 'IT',

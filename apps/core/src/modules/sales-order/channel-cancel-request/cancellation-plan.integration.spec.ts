@@ -61,6 +61,18 @@ describeIfDb('SalesOrdersService.planCancellation (DB integration, rollback-only
     });
   });
 
+  it.each([
+    ['상자 후', true],
+    ['박스 이력 없음', false],
+  ])('%s 전체 — 줄은 만든 순서가 아니라 줄 id 순이다', async (_label, withFo) => {
+    await inRollbackTx(db, async (tx) => {
+      const w = wireSalesOrders(tx);
+      const seed = await seedChannelOrder(tx, w, { withFo, descendingLineIds: true });
+      const plan = await w.salesOrders.planCancellation(seed.salesOrderId, undefined, tx);
+      expect(plan.lines.map((line) => line.salesOrderLineId)).toEqual([...seed.lineIds].sort());
+    });
+  });
+
   it('상자 후 전체 — 한 줄이 다 나갔으면 남은 줄만, hasShippedQuantity', async () => {
     await inRollbackTx(db, async (tx) => {
       const w = wireSalesOrders(tx);
@@ -246,10 +258,12 @@ describeIfDb('SalesOrdersService.planCancellation (DB integration, rollback-only
         })
         .returning({ id: wmsTables.salesOrderLines.id });
       const plan = await w.salesOrders.planCancellation(seed.salesOrderId, undefined, tx);
-      expect(plan.lines).toEqual([
-        { salesOrderLineId: seed.lineIds[1], quantity: 1 },
-        { salesOrderLineId: printLine.id, quantity: 1 },
-      ]);
+      expect(plan.lines).toEqual(
+        [
+          { salesOrderLineId: seed.lineIds[1], quantity: 1 },
+          { salesOrderLineId: printLine.id, quantity: 1 },
+        ].sort((a, b) => (a.salesOrderLineId < b.salesOrderLineId ? -1 : 1)),
+      );
       expect(plan.hasShippedQuantity).toBe(true);
     });
   });
