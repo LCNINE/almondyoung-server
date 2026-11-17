@@ -3,7 +3,7 @@ import { PhotoEffectControls } from "./photo-effect-controls"
 import { useRef } from "react"
 import { Link, Unlink, Crop, Eraser } from "lucide-react"
 import type { Layer } from "../../lib/document"
-import { MIN_LAYER_MM } from "../../lib/layer"
+import { MIN_LAYER_MM, pxUnit } from "../../lib/layer"
 import { GrayButton } from "./object-properties"
 import { PrintColorPicker } from "../color-picker"
 import {
@@ -14,6 +14,7 @@ import {
   PropSection,
   PropSlider,
   SettingBox,
+  ShadowRow,
   Toggle,
 } from "./prop-sections"
 import type { AlmondEditor } from "../../hooks/use-almond-editor"
@@ -51,6 +52,12 @@ export function ImageProperties({
     setImageSize,
   } = panel
   const disabled = !editable
+  const shadowTarget = {
+    layers: [selected],
+    apply: (value: Partial<Layer>) => patch(selected.id, value),
+    disabled,
+    placement: inline ? ("left" as const) : ("right" as const),
+  }
   const filters = [
     ["원본", "none"],
     ["흑백", "grayscale"],
@@ -277,6 +284,9 @@ export function ImageProperties({
           사진을 교체해도 번짐 설정은 유지됩니다. 글자와 도형에는 적용되지
           않습니다.
         </p>
+      </PropSection>
+      <PropSection className="py-5">
+        <ShadowRow target={shadowTarget} unit={pxUnit(editor.design)} />
       </PropSection>
       <PhotoEffectControls editor={editor} selected={selected} />
       <OpacitySection

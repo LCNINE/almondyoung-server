@@ -24,6 +24,7 @@ import { ProductsModule } from '../../core/products/products.module';
 import { PricingModule } from '../../core/pricing/pricing.module';
 import { CategoriesModule } from '../../core/categories/categories.module';
 import { ProductMatchingModule } from '../../../product-matching/product-matching.module';
+import { SuppliersModule } from '../../../inventory/suppliers/suppliers.module';
 
 // FormExportSnapshotReader 는 FormExportService(접수·조회)가 직접 쓰진 않지만, Task 5
 // 산출물이 아직 어떤 모듈에도 물려 있지 않아 DI 그래프 검증이 안 된 상태였다 — 여기서
@@ -65,7 +66,7 @@ import { ProductMatchingModule } from '../../../product-matching/product-matchin
 // BulkDuplicateNameChecker 는 같은 자리에서 도는 신규 행 상품명 중복 사전검사다(이슈 #630) —
 // 등록 누락 시 부팅이 죽는 것도 같다.
 @Module({
-  imports: [ProductsModule, PricingModule, CategoriesModule, ProductMatchingModule],
+  imports: [ProductsModule, PricingModule, CategoriesModule, ProductMatchingModule, SuppliersModule],
   controllers: [FormExportController, BulkSessionController],
   providers: [
     FormExportService,

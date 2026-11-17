@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { BadRequestError, ConflictError, NotFoundError } from '@app/shared';
 import { DbService, InjectDb } from '@app/db';
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import { almondTemplates, type UgcServiceSchema, type UgcTx } from '../../db/schema';
 import {
   ALMOND_TEMPLATE_DEFAULT_INDUSTRY,
@@ -136,9 +136,16 @@ export class AlmondTemplateManager {
             .returning();
           return created;
         }
+        // 연결 상품은 linkProduct 만 바꾼다. 게시 전에 열어 둔 편집기가 옛 productId 를 실어 저장해도 연결이 되돌아가지 않게 행의 값을 유지한다
         const [updated] = await trx
           .update(almondTemplates)
-          .set({ ...record, updatedBy: userId, updatedAt: new Date() })
+          .set({
+            ...record,
+            productId: sql`${almondTemplates.productId}`,
+            design: sql`jsonb_set(${JSON.stringify(record.design)}::jsonb, '{productId}', to_jsonb(${almondTemplates.productId}))`,
+            updatedBy: userId,
+            updatedAt: new Date(),
+          })
           .where(and(eq(almondTemplates.id, id), isNull(almondTemplates.deletedAt)))
           .returning();
         if (!updated) throw new NotFoundError(`Almond template not found: ${id}`);
@@ -167,6 +174,43 @@ export class AlmondTemplateManager {
       if (!row) throw new NotFoundError(`Almond template not found: ${id}`);
       return row;
     }, tx);
+  }
+
+  async linkProduct(id: string, productId: string, userId: string, tx?: UgcTx): Promise<AlmondTemplateEntity> {
+    if (!UUID.test(productId)) throw new BadRequestError('상품 ID 가 올바르지 않습니다.');
+    const normalized = productId.toLowerCase();
+
+    try {
+      return await this.db.run(async (trx) => {
+        const [current] = await trx
+          .select()
+          .from(almondTemplates)
+          .where(and(eq(almondTemplates.id, id), isNull(almondTemplates.deletedAt)))
+          .limit(1);
+        if (!current) throw new NotFoundError(`Almond template not found: ${id}`);
+        if (current.productId === normalized && current.status === 'published') return current;
+
+        // 읽은 design 을 다시 쓰지 않고 SQL 에서 productId 키만 바꿔, 사이에 끼어든 저장을 덮지 않는다
+        const [linked] = await trx
+          .update(almondTemplates)
+          .set({
+            productId: normalized,
+            design: sql`jsonb_set(${almondTemplates.design}, '{productId}', to_jsonb(${normalized}::text))`,
+            status: 'published',
+            updatedBy: userId,
+            updatedAt: new Date(),
+          })
+          .where(and(eq(almondTemplates.id, id), isNull(almondTemplates.deletedAt)))
+          .returning();
+        if (!linked) throw new NotFoundError(`Almond template not found: ${id}`);
+        return linked;
+      }, tx);
+    } catch (error) {
+      if (isUniqueViolation(error, TITLE_UNIQUE_CONSTRAINT)) {
+        throw new ConflictError('연결하려는 상품에 같은 크기·이름의 시안이 이미 있습니다.');
+      }
+      throw error;
+    }
   }
 
   async remove(id: string, userId: string, tx?: UgcTx): Promise<void> {

@@ -17,11 +17,12 @@ import {
   type ShortPickResult,
 } from '../../domains/outbound/shortPick';
 import type { ShipmentByWaybill } from '../../domains/outbound/types';
-import { useDigitCommands, useStationActions } from '../ActionRegistry';
+import { useDigitCommands, useStationActions, useStationKeyHints, type KeyHint } from '../ActionRegistry';
 import type { StationAction } from '../actions';
+import { modalOpen } from '../useStationKeys';
 import { INSPECTION_ACTIONS } from './inspectionActions';
 import type { Alert, BoxWorkHandle } from './model';
-import { BigPanel, BoxCard, LineTable, QueueTrouble, RecentList, WorkGrid, type BigPanelContent } from './panels';
+import { BigPanel, BoxCard, LineTable, QueueTrouble, RecentList, ScanWaiting, WorkGrid, type BigPanelContent } from './panels';
 import type { RecentEntry } from './recent';
 import { ShortPickDialog } from './ShortPickDialog';
 import { INTAKE_BLOCKED_MESSAGE, STATION_WITHDRAW_REASON, useInspectionBox } from './useInspectionBox';
@@ -41,6 +42,9 @@ export interface PendingShortPick {
 
 /** 수량은 세 자리까지 — 그보다 많은 줄은 F8(이 상품 전량)이 맡는다 */
 const MAX_QUANTITY_DIGITS = 3;
+const QUANTITY_HINTS: readonly KeyHint[] = [{ keys: '0-9', label: '수량' }];
+const EDITING_HINTS: readonly KeyHint[] = [...QUANTITY_HINTS, { keys: '⌫', label: '지우기' }];
+const NO_HINTS: readonly KeyHint[] = [];
 
 /** «한 번 더 눌러 확정» 대기 중인 키(§6.3 F10·F11) */
 type Armed = 'force' | 'withdraw' | null;
@@ -57,6 +61,7 @@ export function InspectWork({
   onScanned,
   onShipped,
   onExcess,
+  onWithdrawn,
   onPutDown,
   onReopen,
   onReprint,
@@ -77,6 +82,7 @@ export function InspectWork({
   onScanned(name: string, quantity: number): void;
   onShipped(box: ShipmentByWaybill): void;
   onExcess(): void;
+  onWithdrawn(box: ShipmentByWaybill, barcode: string): void;
   onPutDown(): void;
   /** 박스 빼기 뒤 — 송장을 다시 조회해 화면을 정한다(뺄 상품·빠진 박스) */
   onReopen(box: ShipmentByWaybill): void;
@@ -98,6 +104,7 @@ export function InspectWork({
     onAccepted: (lineId, quantity) => onScanned(nameOf(lineId), quantity),
     onShipped: () => onShipped(box),
     onRejected: (message, barcode) => onAlert(message, barcode ?? undefined),
+    onWithdrawn: (barcode) => onWithdrawn(box, barcode),
     onExcess,
   });
 
@@ -130,6 +137,7 @@ export function InspectWork({
       },
       disarm: () => setArmed(null),
       settle: () => latest.current.settle(),
+      waitingForNetwork: () => latest.current.waitingNow(),
     };
     handleRef.current = own;
     return () => {
@@ -137,22 +145,25 @@ export function InspectWork({
     };
   });
 
-  // F7 수량 — 키보드 숫자(사람 키)와 숫자 명령(%91%N)이 같은 칸에 들어간다(§5.3). 입력칸을 쓰지 않는다:
-  // 입력칸에 포커스가 가면 스캔 버퍼가 아무것도 받지 않는다(PR B 계약 메모)
-  const typeDigit = useCallback(
-    (digit: number) =>
-      setQuantity((q) => (q === null ? q : `${q}${digit}`.replace(/^0+(?=\d)/, '').slice(0, MAX_QUANTITY_DIGITS))),
-    []
-  );
-  useDigitCommands(quantity !== null ? typeDigit : null);
+  // 수량 — 숫자를 치면(사람 키) 또는 숫자 명령(%91%N)을 찍으면 바로 시작한다(§5.3). 기능키를 쓰지 않는다: 탭 키와 겹친다.
+  // 입력칸을 쓰지 않는다: 입력칸에 포커스가 가면 스캔 버퍼가 아무것도 받지 않는다(PR B 계약 메모).
+  // 결품 창처럼 숫자를 받는 창이 열려 있으면 그 창이 숫자를 쓴다
+  const typeDigit = useCallback((digit: number) => {
+    if (modalOpen()) return;
+    setArmed(null);
+    setQuantity((q) => `${q ?? ''}${digit}`.replace(/^0+(?=\d)/, '').slice(0, MAX_QUANTITY_DIGITS));
+  }, []);
+  const typing = !shortOpen && (quantity !== null || !work.intakeBlocked);
+  useDigitCommands(typing ? typeDigit : null);
   useHumanKeys(
-    quantity !== null
+    typing
       ? (key: string) => {
           if (/^\d$/.test(key)) typeDigit(Number(key));
           else if (key === 'Backspace') setQuantity((q) => (q === null ? q : q.slice(0, -1)));
         }
       : null
   );
+  useStationKeyHints(!typing ? NO_HINTS : quantity !== null ? EDITING_HINTS : QUANTITY_HINTS);
 
   const remaining = work.lastScan ? remainingOf(work.progress, work.lastScan.shipmentLineId) : 0;
   const canForce = permissions.data?.stationForceDispatch === true;
@@ -169,6 +180,8 @@ export function InspectWork({
     setShortBusy(true);
     try {
       let sent = shortPickRetries.get(box.shipmentId);
+      const priorUncertain = Boolean(sent);
+
       if (!sent) {
         // 버전은 스캔마다 낡는다 — 보내기 직전에 다시 조회한 값으로 보낸다(PR A 계약 메모). 남은 수량이 창의 수량보다
         // 줄었으면(다른 스테이션이 더 찍음) 보내지 않는다 — 부모가 박스를 다시 그려 «다시 F9» 가 새 수량으로 열린다
@@ -201,7 +214,7 @@ export function InspectWork({
         onShortPicked(box, result);
       } catch (error) {
         setShortOpen(false);
-        const failure = shortPickFailure(error);
+        const failure = shortPickFailure(error, priorUncertain);
         if (failure.kind === 'rejected') {
           shortPickRetries.delete(box.shipmentId);
           onShortPickRefused(box, failure.message);
@@ -239,14 +252,6 @@ export function InspectWork({
   };
 
   const actions: StationAction[] = [
-    {
-      ...INSPECTION_ACTIONS.quantity,
-      enabled: !work.intakeBlocked,
-      run: () => {
-        setArmed(null);
-        setQuantity('');
-      },
-    },
     {
       ...INSPECTION_ACTIONS.all,
       enabled: work.idle && remaining > 0,
@@ -326,6 +331,8 @@ export function InspectWork({
             <BigPanel content={big} />
             {work.queueError ? (
               <QueueTrouble storage={!!work.storageError} onRetry={() => void work.retryHead().catch(() => {})} />
+            ) : work.waitingForNetwork > 0 ? (
+              <ScanWaiting count={work.waitingForNetwork} />
             ) : null}
           </>
         }

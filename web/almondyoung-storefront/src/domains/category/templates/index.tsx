@@ -11,6 +11,8 @@ import { ProductsSkeleton } from "../../../components/skeletons/products-skeleto
 import { ErrorBoundary } from "@/components/shared/error-boundary"
 import { collectCategoryIds } from "@/lib/utils/collect-category-ids"
 import { normalizeCategorySort, normalizePageSize } from "../utils/sort-mapping"
+import { FieldBrandView } from "../components/field-brand-view"
+import { FIELD_BRAND_CATEGORY_HANDLES } from "@/lib/constants/brand"
 
 const ALL_PRODUCTS_CATEGORY_HANDLE = "cafe24-cat-499"
 
@@ -21,6 +23,7 @@ export function CategoryTemplate({
   countryCode,
   category,
   segments,
+  brand,
 }: {
   sortBy?: SortOptions
   limit?: string
@@ -28,6 +31,7 @@ export function CategoryTemplate({
   countryCode: string
   category?: HttpTypes.StoreProductCategory
   segments?: string[]
+  brand?: string
 }) {
   const t = useTranslations("category.products")
   const sort = normalizeCategorySort(sortBy, category?.handle)
@@ -77,30 +81,48 @@ export function CategoryTemplate({
         </div>
       )}
 
-      <div className="py-2">
-        <RefinementList sortBy={sort} pageSize={pageSize} />
-      </div>
+      {category && FIELD_BRAND_CATEGORY_HANDLES.has(category.handle) ? (
+        <Suspense fallback={<ProductsSkeleton />}>
+          <FieldBrandView
+            category={category}
+            selectedBrandHandle={brand}
+            basePath={`/category/${(segments ?? [category.handle]).join("/")}`}
+            sortBy={sort}
+            rawSortBy={sortBy}
+            rawLimit={limit}
+            pageSize={pageSize}
+            page={page}
+            countryCode={countryCode}
+          />
+        </Suspense>
+      ) : (
+        <>
+          <div className="py-2">
+            <RefinementList sortBy={sort} pageSize={pageSize} />
+          </div>
 
-      <div className="w-full">
-        <ErrorBoundary fallback={<div>{t("loadFailed")}</div>}>
-          <Suspense fallback={<ProductsSkeleton />}>
-            <CategoryProducts
-              sortBy={sort}
-              limit={pageSize}
-              page={page}
-              paginationBaseUrl={
-                segments ? `/category/${segments.join("/")}` : undefined
-              }
-              countryCode={countryCode}
-              categoryIds={
-                category && category.handle !== ALL_PRODUCTS_CATEGORY_HANDLE
-                  ? collectCategoryIds(category)
-                  : undefined
-              }
-            />
-          </Suspense>
-        </ErrorBoundary>
-      </div>
+          <div className="w-full">
+            <ErrorBoundary fallback={<div>{t("loadFailed")}</div>}>
+              <Suspense fallback={<ProductsSkeleton />}>
+                <CategoryProducts
+                  sortBy={sort}
+                  limit={pageSize}
+                  page={page}
+                  paginationBaseUrl={
+                    segments ? `/category/${segments.join("/")}` : undefined
+                  }
+                  countryCode={countryCode}
+                  categoryIds={
+                    category && category.handle !== ALL_PRODUCTS_CATEGORY_HANDLE
+                      ? collectCategoryIds(category)
+                      : undefined
+                  }
+                />
+              </Suspense>
+            </ErrorBoundary>
+          </div>
+        </>
+      )}
     </div>
   )
 }

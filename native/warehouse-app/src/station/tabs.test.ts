@@ -12,10 +12,12 @@ describe('activeTabOf — 가장 긴 접두어가 이긴다', () => {
     ['/inbound/quick', 'F3'],
     ['/inbound/history', 'F3'],
     ['/putaway', 'F4'],
+    ['/putaway/location-labels', 'F4'],
     ['/returns/putaway', 'F4'],
     ['/movement', 'F4'],
     ['/stocktaking/s-1/variances', 'F5'],
     ['/inventory', 'F6'],
+    ['/inventory/manufacture', 'F6'],
     ['/inventory/sku-1/adjust', 'F6'],
     ['/customer-returns', 'F7'],
   ])('%s → %s', (path, key) => {
@@ -29,12 +31,24 @@ describe('activeTabOf — 가장 긴 접두어가 이긴다', () => {
 
 describe('activeSectionOf', () => {
   const f4 = STATION_TABS.find((t) => t.key === 'F4');
+  const f6 = STATION_TABS.find((t) => t.key === 'F6');
+
   it.each([
     ['/putaway', '적치'],
     ['/returns/putaway', '되돌림 적치'],
     ['/movement', '이동'],
+    ['/putaway/location-labels', '로케이션 라벨'],
   ])('%s → %s', (path, label) => {
     expect(f4 && activeSectionOf(f4, path)?.label).toBe(label);
+  });
+
+  it.each([
+    ['/inventory', '재고 조회'],
+    ['/inventory/manufacture', '제조 완료'],
+    ['/inventory/manufacture/sku-1', '제조 완료'],
+    ['/inventory/sku-1', '재고 조회'],
+  ])('%s → %s', (path, label) => {
+    expect(f6 && activeSectionOf(f6, path)?.label).toBe(label);
   });
 });
 
@@ -45,7 +59,7 @@ describe('STATION_TABS', () => {
     for (const tab of STATION_TABS) expect(activeTabOf(tab.to)?.key).toBe(tab.key);
   });
 
-  it('하위 탭은 F4 에만 — F3 은 입고 화면이 간편입고·입고내역 링크를 이미 갖는다(U2)', () => {
-    expect(STATION_TABS.filter((t) => t.sections.length > 0).map((t) => t.key)).toEqual(['F4']);
+  it('하위 탭은 F4·F6 에만 — F3 은 입고 화면이 간편입고·입고내역 링크를 이미 갖는다(U2)', () => {
+    expect(STATION_TABS.filter((t) => t.sections.length > 0).map((t) => t.key)).toEqual(['F4', 'F6']);
   });
 });

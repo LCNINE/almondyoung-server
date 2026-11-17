@@ -212,7 +212,6 @@ npm run test:admin-web            # admin-web 전용
 npm run test:user-service         # user-service 전용 config
 npm run test:membership           # itdoc (전용 config)
 npm run test:membership:integration  # 실 membership DB (--runInBand 고정)
-npm run test:coupang:integration  # 실 DB + adapter-mock 필요
 npm run test:core:integration:local
 scripts/local/run-medusa-integration.sh            # medusa HTTP 통합 (실 DB+redis)
 scripts/local/run-medusa-integration.sh --modules  # medusa 모듈 통합
@@ -349,14 +348,14 @@ Cross-BC **seam** services (those that legitimately span schemas, e.g. `ProductS
 새 HTTP 라우트는 반드시 넷 중 하나를 단다: `@Public`/`@InternalOnly`/`@OptionalAuth` · `@StoreRoute`(고객) ·
 `@KeyAuthRoute`(wallet 머천트 키) · `@RequirePermission('영역.대상.행동')`. 없으면 `route-classification.spec.ts`
 가 빨갛다. 권한 키는 `libs/authorization/src/permissions/permission-catalog.ts` 에만 있다 — 새 키는 거기에 추가하고
-`grantOnFirstRegistration` 에 «오늘 그 기능을 쓰는 역할»을 적는다(첫 등록 때 한 번만 부여된다).
+`grantOnFirstRegistration` 에 «오늘 그 기능을 쓰는 역할»을 적는다((키, 역할)마다 한 번만 부여된다 — 첫 등록 때 없던 역할은 생긴 뒤 다음 부팅에 받고, 회수하면 다시 주지 않는다. 관리자 화면이 만든 같은 이름의 역할은 받지 않는다).
 코드는 역할 이름이 아니라 권한만 본다.
 
 관리자 화면(admin-web)도 역할 이름이 아니라 권한으로 판정한다. 새 페이지는 `RouteGuard screen="<경로>"` 를 달고
 `apps/admin-web/src/lib/auth/screen-access.ts` 에 경로 권한을 적는다(없으면 `screen-access.gate.spec.ts` 가 빨갛다).
 Medusa 를 새로 부르면 `medusa-permissions.ts` 에 경로를 더한다(`medusa-coverage.spec.ts`). 새 뮤테이션 훅은
 `useX.permission` 을 선언하고, 그 동작을 부르는 화면은 `run={useX}` 로 판정한다(없으면 `mutation-guard.gate.spec.ts` 가
-빨갛다). admin-web 은 권한 목록을 `@permission-catalog` 별칭으로 원본 그대로 가져오므로 `libs/authorization/src/permissions` 는 폴더 밖을 import 하지 않는다.
+빨갛다). admin-web 과 물류앱은 권한 목록을 `@permission-catalog` 별칭으로 원본 그대로 가져오므로 `libs/authorization/src/permissions` 는 폴더 밖을 import 하지 않는다(물류앱 403 안내가 권한 이름을 여기서 찾는다).
 
 고객 개인정보(이름·연락처·이메일·주소·계좌)를 응답하는 새 관리자 라우트는 `@PiiResponse` 로 가릴 경로와 대상 식별자 경로를
 선언하고 `scripts/security/pii-routes.ts` 에 한 줄 더한다(없으면 `pii-routes.spec.ts` 가 빨갛다). 선언을 처음 다는 앱은 루트 모듈의

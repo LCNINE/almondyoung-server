@@ -1,5 +1,6 @@
 "use client"
 
+import Image from "next/image"
 import { useQuantityDiscountNow } from "@/hooks/use-quantity-discount-now"
 import { Button } from "@/components/ui/button"
 import { Separator } from "@/components/ui/separator"
@@ -40,18 +41,23 @@ import { useTranslations } from "next-intl"
 import ProductPreviewPrice from "../product-preview-price"
 import { ProductShippingNotice } from "../product-shipping-notice"
 import CartAddedModal from "./cart-added-modal"
+import { showCartAddedToast } from "@/components/shared/cart-added-toast"
+import { isTimeSaleProduct } from "@/lib/utils/time-sale"
 import MobileActions from "./mobile-actions"
 import OptionSelect from "./option-select"
+import { paperTemplateOf, paperVariantOf } from "../paper-preview/paper"
+import { pickPaper } from "../paper-preview/paper-store"
 import { AlmondDesignNotice } from "./almond-design-notice"
 import SelectedItemRow from "./selected-item-row"
 import { SelectedItem } from "./types"
 import { RestockNotice, hasStockNotice } from "./restock-notice"
 import { isWelcomeMembershipProduct } from "@/lib/utils/welcome-membership"
 import {
-  PRINT_PRODUCTS,
   PRINT_SPECS,
   sizeFromOption,
 } from "@/domains/almond-template/lib/catalog"
+import { templateProductOf } from "@/domains/almond-template/lib/template-product"
+import type { AlmondTemplateSummary } from "@/lib/types/ui/almond-template"
 import {
   describeStockShortage,
   getAvailableQuantity,
@@ -64,6 +70,7 @@ type ProductActionsProps = {
   product: HttpTypes.StoreProduct
   region: HttpTypes.StoreRegion
   disabled?: boolean
+  templates: AlmondTemplateSummary[] | null
 }
 
 const optionsAsKeymap = (
@@ -94,6 +101,7 @@ export default function ProductActions({
   product,
   disabled,
   customer,
+  templates,
 }: ProductActionsProps) {
   const t = useTranslations("productDetail.options")
   const [isPending, startTransition] = useTransition()
@@ -102,7 +110,53 @@ export default function ProductActions({
   const searchParams = useSearchParams()
   const countryCode = useParams().countryCode as string
   const printProductId = product.metadata?.pimMasterId as string | undefined
-  const hasAlmondTemplate = !!printProductId && !!PRINT_PRODUCTS[printProductId]
+  const templateProduct = printProductId
+    ? templateProductOf(printProductId, templates ?? [])
+    : undefined
+  const hasAlmondTemplate = !!templateProduct
+
+  const paperTemplate = paperTemplateOf(printProductId ?? product.id, templates)
+  const paperOption = product.options?.find((option) =>
+    option.values?.some(({ value }) => paperVariantOf(value))
+  )
+
+  const [paperSelection, setPaperSelection] = useState<{
+    productId: string
+    value: string
+  }>()
+
+  const paperVariant =
+    paperSelection?.productId === product.id
+      ? paperVariantOf(paperSelection.value)
+      : (paperVariantOf(paperOption?.values?.[0]?.value) ?? "uncoated")
+
+  const tPaper = useTranslations("productDetail.paperPreview")
+  const paperPreview =
+    paperTemplate?.shape === "mini" ? (
+      <div
+        role="note"
+        className="bg-muted flex flex-col gap-1 rounded-lg px-4 py-3"
+      >
+        <strong className="text-foreground text-sm font-bold">
+          {tPaper("standNotice.title")}
+        </strong>
+        <span className="text-muted-foreground text-[13px] leading-normal">
+          {tPaper("standNotice.body")}
+        </span>
+      </div>
+    ) : paperTemplate && paperOption && paperVariant ? (
+      <div className="flex flex-col gap-1">
+        <p className="text-muted-foreground text-sm">
+          {tPaper(`${paperVariant}.description`)}
+        </p>
+        {(paperTemplate.shape === "card" ||
+          paperTemplate.shape === "card_portrait") && (
+          <p className="text-muted-foreground text-sm">
+            {tPaper("defaultCase")}
+          </p>
+        )}
+      </div>
+    ) : null
 
   const [options, setOptions] = useState<Record<string, string | undefined>>({})
   const [selectedItems, setSelectedItems] = useState<SelectedItem[]>([])
@@ -202,6 +256,12 @@ export default function ProductActions({
   }, [matchedVariant, isSimple, selectedItems, t])
 
   const setOptionValue = (optionId: string, value: string) => {
+    if (optionId === paperOption?.id) {
+      setPaperSelection({ productId: product.id, value })
+      const picked = paperVariantOf(value)
+      if (picked) pickPaper(product.id, picked)
+    }
+
     setOptions((prev) => ({
       ...prev,
       [optionId]: value,
@@ -315,13 +375,13 @@ export default function ProductActions({
   )
   const templateVariant =
     selectedItems.length === 1 ? selectedItems[0].variant : undefined
-  const printKind = printProductId
-    ? PRINT_PRODUCTS[printProductId]?.kind
-    : undefined
+  const printKind = templateProduct?.kind
   const optionLabel =
     templateVariant?.options?.map((option) => option.value).join(" ") ?? ""
+  // 게시한 상품은 옵션에 크기가 없어 시안 크기를 쓴다
   const printSize = printKind
-    ? (sizeFromOption(printKind, optionLabel) ??
+    ? (templateProduct?.size ??
+      sizeFromOption(printKind, optionLabel) ??
       PRINT_SPECS[printKind].sizes[0])
     : undefined
   const almondDesignId = searchParams.get("almond_design")
@@ -343,7 +403,7 @@ export default function ProductActions({
     : undefined
   const almondDesignMetadata =
     !almondSizeMismatch &&
-    hasAlmondTemplate &&
+    (hasAlmondTemplate || templates === null) &&
     templateVariant &&
     almondDesignId &&
     /^[0-9a-f-]{36}$/.test(almondDesignId)
@@ -422,15 +482,28 @@ export default function ProductActions({
     })
   }
 
+  const membershipSavingsOf = (items: SelectedItem[]) => {
+    if (!isMember || isTimeSaleProduct(product)) return 0
+
+    return items.reduce((sum, item) => {
+      const price = item.variant.calculated_price
+      const saved =
+        (price?.original_amount ?? 0) - (price?.calculated_amount ?? 0)
+
+      return sum + Math.max(0, saved) * item.quantity
+    }, 0)
+  }
+
   // 장바구니 담기
   const handleAddToCart = () => {
     if (selectedItems.length === 0 || almondSizeMismatch) return
 
-    setShowCartModal(true)
     setPriceChange(null)
 
     startTransition(async () => {
       try {
+        let priceChanged = false
+
         for (const item of selectedItems) {
           const result = await addToCart({
             variantId: item.variantId,
@@ -446,9 +519,11 @@ export default function ProductActions({
             added: result.unitPrice,
             hasTiers: pricing.appliedPercent !== null || pricing.next !== null,
           })
-          if (change) setPriceChange(change)
+          if (change) {
+            priceChanged = true
+            setPriceChange(change)
+          }
           if (result.error) {
-            setShowCartModal(false)
             // 담기 직전에 상한을 이미 걸러주므로, 여기까지 온 재고부족은 "이 옵션이 품절" 이 아니라
             // 장바구니에 이미 담긴 수량과 합쳐 재고를 넘긴 경우다(또는 방금 재고가 줄었거나).
             toast.error(
@@ -460,9 +535,21 @@ export default function ProductActions({
           }
         }
         trackAddToCart(selectedItems)
+
+        // 담긴 가격이 화면과 다르면 모달로 알리고, 아니면 담기 완료 토스트만 띄운다
+        if (priceChanged) {
+          setShowCartModal(true)
+          return
+        }
+
+        showCartAddedToast({
+          title: product.title ?? "",
+          thumbnail: product.thumbnail || product.images?.[0]?.url,
+          membershipSavings: membershipSavingsOf(selectedItems),
+          productMetadata: product.metadata,
+        })
       } catch (error: unknown) {
         const err = error as Error & { digest?: string }
-        setShowCartModal(false)
         if (err.digest === "UNAUTHORIZED" || err.message === "UNAUTHORIZED") {
           throw error
         }
@@ -561,6 +648,8 @@ export default function ProductActions({
             </div>
           )}
 
+          {paperPreview}
+
           {/* 선택된 항목 리스트 */}
           {selectedItems.length > 0 && (
             <>
@@ -590,7 +679,9 @@ export default function ProductActions({
                     }}
                     onRemove={() => removeItem(item.variantId)}
                     pricing={pricingOf(item)}
-                    onAddQuantity={(count) => updateQuantity(item.variantId, count)}
+                    onAddQuantity={(count) =>
+                      updateQuantity(item.variantId, count)
+                    }
                   />
                 ))}
               </div>
@@ -623,6 +714,12 @@ export default function ProductActions({
           {templateHref && (
             <LocalizedClientLink href={templateHref} className="w-full">
               <Button variant="outline" className="h-12 w-full">
+                <Image
+                  src="/images/almond-template-palette.png"
+                  alt=""
+                  width={20}
+                  height={20}
+                />
                 아몬드템플릿으로 디자인
               </Button>
             </LocalizedClientLink>
@@ -672,7 +769,7 @@ export default function ProductActions({
                   variant="outline"
                   onClick={handleAddToCart}
                   disabled={!!disabledLabel || !!disabled || isPending}
-                  className="border-yellow-30 text-yellow-30 hover:text-primary h-12 w-full flex-1 cursor-pointer text-base hover:bg-transparent"
+                  className="border-primary text-primary hover:text-primary/80 h-12 w-full flex-1 cursor-pointer text-base hover:bg-transparent"
                   data-testid="add-product-button"
                 >
                   {isPending ? (
@@ -701,6 +798,7 @@ export default function ProductActions({
       </div>
 
       <MobileActions
+        paperPreview={paperPreview}
         product={product}
         options={options}
         setOptionValue={setOptionValue}

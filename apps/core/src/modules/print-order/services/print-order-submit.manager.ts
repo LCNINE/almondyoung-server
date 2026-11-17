@@ -1,8 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { z } from 'zod';
 import { UgcAlmondDesignClient, type UgcPrintLink } from '../clients/ugc-almond-design.client';
+import { PrintProductSpecRepository } from '../repositories/print-product-spec.repository';
 import { type PrintOrderRow } from '../schema/print-order.schema';
-import { WowpressClient, WowpressDuplicateOrdersError } from '../wowpress/wowpress.client';
+import { WowpressClient, WowpressDuplicateOrdersError, WowpressOrderRejectedError } from '../wowpress/wowpress.client';
 import { WOWPRESS_PRODUCTS } from '../wowpress/wowpress-products';
 import { type WowpressLineSpec, type WowpressOrderResult } from '../wowpress/wowpress.types';
 import {
@@ -20,7 +21,8 @@ export const ORDER_UNCONFIRMED_ERROR = 'order sent but not confirmed — verify 
 export const ORDER_LOOKUP_PENDING_ERROR = 'order sent but response lost — looking up by ordkey before giving up';
 export const ORDER_LOOKUP_DELAY_MS = 5 * 60_000;
 export const DESIGN_OWNER_MISMATCH_ERROR = 'almond design does not belong to the ordering customer — not ordered';
-export const DESIGN_SPEC_MISMATCH_ERROR = 'almond design does not match the purchased print product or size — not ordered';
+export const DESIGN_SPEC_MISMATCH_ERROR =
+  'almond design does not match the purchased print product or size — not ordered';
 const TEST_MEMO = '테스트 시안입니다. 혹시 이 시안대로 출력이 되나요?';
 
 const shippingAddress = z.object({
@@ -75,6 +77,7 @@ export class PrintOrderSubmitManager {
     private readonly repository: PrintOrderRepository,
     private readonly wowpress: WowpressClient,
     private readonly ugc: UgcAlmondDesignClient,
+    private readonly specs: PrintProductSpecRepository,
   ) {}
 
   async submit(row: PrintOrderRow): Promise<void> {
@@ -87,7 +90,7 @@ export class PrintOrderSubmitManager {
     try {
       // 파일까지 보냈는데 submitted 로 바꾸기 전에 멈춘 행이다. 업로드는 되풀이하지 않는다
       if (lane.state.ordnum && row.fileDeliveredAt) {
-        await lane.owned({ status: 'submitted', submittingAt: null });
+        await lane.owned({ status: 'submitted', submittingAt: null, lastError: null });
         return;
       }
       const line = await this.lineSpec(lane);
@@ -138,7 +141,7 @@ export class PrintOrderSubmitManager {
     const ctx = await this.repository.findLineContext(lane.row.salesOrderLineId);
     if (!ctx) throw new Error(`sales order line not found: ${lane.row.salesOrderLineId}`);
 
-    const spec = WOWPRESS_PRODUCTS[ctx.line.variantId];
+    const spec = (await this.specs.findSpec(ctx.line.variantId)) ?? WOWPRESS_PRODUCTS[ctx.line.variantId];
     if (!spec) {
       await lane.owned({ status: 'unsupported', lastError: `no wowpress spec for variant ${ctx.line.variantId}` });
       return null;
@@ -291,7 +294,7 @@ export class PrintOrderSubmitManager {
     await this.wowpress.uploadFileUrl(ordnum, link.fileName, link.url);
     // 그사이 취소 흐름이 행을 가져갔어도 파일은 이미 갔다. 소유 조건 없이 남겨야 운영자 마무리가 다시 올리지 않는다
     await this.repository.update(lane.row.id, { fileDeliveredAt: new Date() });
-    await lane.owned({ status: 'submitted', submittingAt: null });
+    await lane.owned({ status: 'submitted', submittingAt: null, lastError: null });
   }
 
   private async settle(lane: Lane, error: unknown): Promise<void> {
@@ -314,6 +317,13 @@ export class PrintOrderSubmitManager {
     if (error instanceof AlreadyRecorded) return;
     if (error instanceof WowpressDuplicateOrdersError) {
       await this.recordTerminal(row, duplicateOrdersError(error));
+      return;
+    }
+    if (error instanceof WowpressOrderRejectedError) {
+      // 와우프레스가 주문을 만들지 않았다고 답했다. 주문권을 돌려줘 운영자가 고친 뒤 재전송하거나 바로 취소할 수 있게 한다
+      this.logger.warn(`print order ${row.id}: ${error.message}`);
+      const patch: Partial<PrintOrderRow> = { status: 'failed', lastError: error.message, orderAttemptedAt: null };
+      if (!(await write(patch))) this.logger.warn(`print order ${row.id} was reclaimed; rejection not recorded`);
       return;
     }
     if (state.orderSent && !state.ordnum) {

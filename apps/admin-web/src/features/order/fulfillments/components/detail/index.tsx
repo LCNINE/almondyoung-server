@@ -11,6 +11,7 @@ import {
   FoStatusBadge,
 } from '@/components/table/table-cells/fulfillment';
 import { usePermissionCheck } from '@/hooks/use-permission';
+import { siteLabel } from '@/lib/api/domains/sales-channel/vocabulary';
 import { useFulfillmentOrder } from '@/lib/services/orders/queries';
 import type {
   FulfillmentMode,
@@ -27,8 +28,8 @@ import { foItemStatusLabel } from '../../../line-composition/line-composition-vi
 const TERMINAL_STATUSES = new Set(['shipped', 'completed', 'canceled']);
 
 const MODE_LABEL: Record<FulfillmentMode, string> = {
-  in_house: '자가출고',
-  '3pl': '3PL',
+  in_house: '우리 창고',
+  '3pl': '외부 물류(3PL)',
 };
 
 const PRIORITY_LABEL: Record<FulfillmentOrderPriority, string> = {
@@ -99,61 +100,53 @@ export function FulfillmentDetail({
             <span>
               #{data.displayOrderNo}
               {data.salesChannel && (
-                <span className="ml-2 text-xs text-gray-500">{data.salesChannel}</span>
+                <span className="ml-2 text-xs text-gray-500">
+                  {siteLabel(data.salesChannel)}
+                </span>
               )}
             </span>
           ) : (
             '-'
           )}
         </InfoRow>
-        <InfoRow label="출고주문 ID">
-          <span className="font-mono text-xs">{data.id}</span>
-        </InfoRow>
         <InfoRow label="상태">
           <FoStatusBadge status={fo.status} consolidation={fo.consolidation} />
         </InfoRow>
-        {fo.consolidation != null && (
+        {(fo.consolidation != null || fo.shipments) && (
           <InfoRow label="상자">
-            <FoConsolidationCell value={fo.consolidation} />
+            <div className="flex flex-wrap items-center gap-2">
+              {fo.shipments && (
+                <span>{`${fo.shipments.filter((box) => box.status !== 'superseded').length}개`}</span>
+              )}
+              {fo.consolidation != null && (
+                <FoConsolidationCell value={fo.consolidation} />
+              )}
+            </div>
           </InfoRow>
         )}
-        <InfoRow label="창고">
-          {fo.warehouseName ?? (
-            <span className="font-mono text-xs">{fo.warehouseId ?? '-'}</span>
-          )}
-        </InfoRow>
-        <InfoRow label="모드">
+        <InfoRow label="창고">{fo.warehouseName ?? '-'}</InfoRow>
+        <InfoRow label="출고 방식">
           {fo.fulfillmentMode ? MODE_LABEL[fo.fulfillmentMode] : '-'}
         </InfoRow>
         <InfoRow label="우선순위">
           {PRIORITY_LABEL[fo.priority] ?? fo.priority}
         </InfoRow>
         <InfoRow label="이 주문 수량">
-          아이템 {fo.totalItems} / 총 {fo.totalQty} / 예약 {fo.totalReservedQty}
+          {/* 출고가 끝나면 확보가 풀리는 게 정상이라 확보 수량은 진행 중일 때만 보인다 */}
+          {isTerminal
+            ? `${fo.totalItems}종 · ${fo.totalQty}개`
+            : `${fo.totalItems}종 · ${fo.totalQty}개 · 재고 확보 ${fo.totalReservedQty}개`}
         </InfoRow>
-        {fo.salesOrderId && (
-          <InfoRow label="원본 주문(SO)">
-            <span className="font-mono text-xs">{fo.salesOrderId}</span>
-          </InfoRow>
-        )}
         <InfoRow label="생성일">
           {new Date(fo.createdAt).toLocaleString('ko-KR')}
         </InfoRow>
-        {fo.shipments && (
-          <InfoRow label="V2 shipment">
-            {fo.shipments.length}건 · 단일 shipment/송장을 현재값으로 간주하지
-            않습니다.
-          </InfoRow>
-        )}
         {fo.progress && (
-          <InfoRow label="이행 진행">
-            출고 {fo.progress.shippedQty} / 취소 {fo.progress.canceledQty} /
-            미처리 {fo.progress.outstandingQty}
-            {' · '}확정 예약 {fo.progress.confirmedReservedQty}
+          <InfoRow label="진행">
+            {`출고 ${fo.progress.shippedQty} · 취소 ${fo.progress.canceledQty} · 남음 ${fo.progress.outstandingQty}`}
           </InfoRow>
         )}
         {fo.reservationFailureReason && (
-          <InfoRow label="예약 실패">
+          <InfoRow label="재고 확보 실패">
             <span className="text-red-600">{fo.reservationFailureReason}</span>
           </InfoRow>
         )}
@@ -161,16 +154,15 @@ export function FulfillmentDetail({
 
       <LineCompositions fo={fo} canEdit={canRun(useAssignLineComposition) && !isTerminal} />
 
-      {/* FOI 라인 */}
       <Container>
-        <Header title={`출고 라인 (${fo.items.length})`} />
+        <Header title={`보낼 상품 (${fo.items.length})`} />
         <div className="overflow-x-auto p-3">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b text-left text-xs text-gray-500">
-                <th className="py-2 pr-3">SKU</th>
-                <th className="py-2 pr-3">요청</th>
-                <th className="py-2 pr-3">예약</th>
+                <th className="py-2 pr-3">상품</th>
+                <th className="py-2 pr-3">필요</th>
+                <th className="py-2 pr-3">재고 확보</th>
                 <th className="py-2 pr-3">피킹</th>
                 <th className="py-2 pr-3">출고</th>
                 <th className="py-2 pr-3">상태</th>
@@ -204,7 +196,7 @@ export function FulfillmentDetail({
                     colSpan={6}
                     className="py-6 text-center text-muted-foreground"
                   >
-                    출고 라인이 없습니다.
+                    보낼 상품이 없어요.
                   </td>
                 </tr>
               )}
@@ -214,7 +206,7 @@ export function FulfillmentDetail({
       </Container>
 
       <Container>
-        <Header title="운영 액션" />
+        <Header title="작업" />
         <div className="p-3">
           <Tabs
             defaultValue={opensShipment ? 'shipment' : 'inventory'}

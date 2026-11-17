@@ -19,6 +19,8 @@ export type PrintOrderStatus =
 
 export type PrintOrderTab =
   | 'cancel_refused'
+  | 'awaiting_payment'
+  | 'vendor_attention'
   | 'test_pending'
   | 'failed'
   | 'unsupported'
@@ -80,6 +82,7 @@ export interface PrintOrder {
   cancelResolvedBy: string | null;
   createdAt: string;
   salesCancelFailedAt: string | null;
+  vendorAwaitingPayment: boolean;
   updatedAt: string;
 }
 
@@ -97,6 +100,8 @@ export interface PrintOrderBoardItem extends PrintOrder {
 
 export interface PrintOrderSummary {
   cancelRefused: number;
+  awaitingPayment: number;
+  vendorAttention: number;
   testPending: number;
   failed: number;
   unsupported: number;

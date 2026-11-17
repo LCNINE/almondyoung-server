@@ -9,7 +9,7 @@ export interface ExpectedArrivalLine {
   expectedArrival: string | null;
 }
 
-export interface ExpectedArrival {
+export interface PurchaseOrderArrival {
   source: 'purchase_order';
   documentId: string;
   type: 'domestic' | 'foreign';
@@ -18,6 +18,19 @@ export interface ExpectedArrival {
   totalOutstandingQuantity: number;
   lines: ExpectedArrivalLine[];
 }
+
+/** 중국 등에서 오는 선적 — 상자 입고는 스테이션에서 한다. */
+export interface InboundShipmentArrival {
+  source: 'inbound_shipment';
+  documentId: string;
+  name: string;
+  expectedDate: string | null;
+  totalOutstandingQuantity: number;
+  receivedBoxes: number;
+  stockBoxes: number;
+}
+
+export type ExpectedArrival = PurchaseOrderArrival | InboundShipmentArrival;
 
 export interface ExpectedArrivalsResult {
   warehouseId: string;
@@ -99,9 +112,12 @@ export interface FreshLine {
   putawayDoneQty: number;
 }
 
+/** 입고 줄의 출처. 선적 입고는 스테이션 상자 화면에서 받는다(#1239). */
+export type ReceiptSource = 'direct' | 'purchase_order' | 'inbound_shipment';
+
 /** GET /inbound/putaway/pending 의 items[] 한 행. */
 export interface PutawayPendingItem {
-  source: 'direct' | 'purchase_order';
+  source: ReceiptSource;
   canPutaway: boolean;
   putawayBlockReason: ReceiptActionBlockReason | null;
   lineId: string;
@@ -127,7 +143,7 @@ export interface PutawayPendingResult {
 /** Actionable sheet snapshot; the detail read revalidates it before submission. */
 export interface PutawayTarget {
   lineId: string;
-  source: 'direct' | 'purchase_order';
+  source: ReceiptSource;
   skuName: string;
   skuCode: string;
   pendingQty: number;
@@ -142,7 +158,9 @@ export function isActionablePutaway(
   return (
     item.canPutaway === true &&
     item.putawayBlockReason === null &&
-    (item.source === 'direct' || item.source === 'purchase_order') &&
+    (item.source === 'direct' ||
+      item.source === 'purchase_order' ||
+      item.source === 'inbound_shipment') &&
     typeof item.originLocationId === 'string' &&
     item.originLocationId.length > 0 &&
     typeof item.originLocationCode === 'string' &&

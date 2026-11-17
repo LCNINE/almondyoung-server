@@ -2,16 +2,15 @@
   "pageTitle": "アーモンドヨン - 美容材料MROショップ",
   "interestBanner": {
     "title": "自分の分野の商品だけ見ますか？",
-    "description": "最大{max}つ選ぶと、ホームがその分野のベストに変わります。",
+    "description": "{max}つまで選ぶと、その分野のベストだけを集めてお見せします",
     "dismiss": "1週間表示しない",
-    "saved": "これからホームで選んだ{count}分野の商品を先にお見せします",
     "saveFail": "保存に失敗しました。もう一度お試しください。",
     "dismissFail": "処理に失敗しました",
     "maxSelectable": "最大{max}個まで選択できます",
     "selectPrompt": "分野を選んでください",
-    "save": "{count}分野を適用する",
-    "saving": "保存中...",
-    "needAtLeastOne": "1つ以上選択してください"
+    "previewSuffix": "ベスト",
+    "showBest": "{count}分野のベストを見る",
+    "change": "変更"
   },
   "interestEdit": {
     "trigger": "編集",
@@ -32,10 +31,16 @@
   "showcase": {
     "overseas": "海外直輸入",
     "canva": "Canvaデザイン",
-    "class": "クラス",
-    "newArrivals": "NEW 新着商品",
+    "class": "ワンデークラス",
+    "newArrivals": "新着商品",
     "overseasDescription": "海外でしか出会えない商品",
-    "viewAll": "すべて見る"
+    "viewAll": "すべて見る",
+    "newArrivalsDescription": "今週入荷した材料です",
+    "canvaDescription": "Canvaですぐ編集できる教材・同意書・フィードテンプレート",
+    "classDescription": "現役オーナーが直接教える講座",
+    "canvaAccent": "デザイン",
+    "classAccent": "クラス",
+    "overseasAccent": "直輸入"
   },
   "cafe24Link": {
     "mobileText": "旧アーモンドヤングアカウントを連携しましょう",
@@ -60,11 +65,24 @@
     "ariaLabel": "ブランド一覧",
     "prev": "前のブランド",
     "next": "次のブランド",
-    "all": "すべて"
+    "all": "すべて",
+    "subtitle": "プロが信頼するブランドを一か所で",
+    "featuredCaption": "プロに人気の商品",
+    "emptyCaption": "ブランド館で全商品をご覧いただけます",
+    "goToBrand": "{name}ブランド館へ",
+    "membershipPrice": "メンバー価格",
+    "allBrands": "すべてのブランド",
+    "bannerTitle": "指先が知っているブランド",
+    "bannerCaption": "施術の仕上がりで選んだブランドだけを集めました"
   },
   "heroBanner": {
     "listPrev": "前の一覧を見る",
-    "listNext": "次の一覧を見る"
+    "listNext": "次の一覧を見る",
+    "label": "イベントバナー",
+    "prev": "前のバナー",
+    "next": "次のバナー",
+    "pause": "自動切り替えを停止",
+    "play": "自動切り替えを再開"
   },
   "timeSale": {
     "titleFirst": "タイム",
@@ -108,5 +126,36 @@
   "comingSoon": {
     "title": "アーモンドテンプレートは準備中です",
     "description": "もう少々お待ちください"
+  },
+  "sectionHead": {
+    "more": "もっと見る",
+    "viewAll": "すべて見る"
+  },
+  "v1Card": {
+    "membership": "メンバー割引価格"
+  },
+  "classList": {
+    "regionLabel": "地域",
+    "showMore": "クラスをもっと見る",
+    "regions": {
+      "all": "すべて",
+      "seoul": "ソウル",
+      "capital": "京畿・仁川",
+      "chungcheong": "忠清",
+      "gyeongsang": "慶尚"
+    }
+  },
+  "memberSavings": {
+    "titleLine1": "マシンは会員価格で",
+    "titleLine2": "買うと差が大きいです",
+    "description": "メンバーシップ会員はすべての商品が会員価格で計算されます。",
+    "join": "メンバーシップに加入する",
+    "myMembership": "マイメンバーシップを見る",
+    "saving": "{amount}ウォンお得"
+  },
+  "dailySupplies": {
+    "title": "毎日使うサロン消耗品",
+    "subtitle": "切らす前に補充しておきましょう",
+    "titleAccent": "消耗品"
   }
 }

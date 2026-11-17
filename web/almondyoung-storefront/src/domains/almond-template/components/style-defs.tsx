@@ -3,6 +3,7 @@ import {
   DEFAULT_FILTER_COLOR,
   toneTileSize,
   type ColorFilter,
+  type Gradient,
 } from "../lib/layer-style"
 
 export const gradientId = (layer: Layer) => `grad-${layer.id}`
@@ -10,7 +11,16 @@ export const colorFilterId = (layer: Layer) => `cf-${layer.id}`
 
 // 글자·도형 자기 상자 기준이라 크기를 바꿔도 색이 같은 비율로 걸친다
 export function GradientDef({ layer }: { layer: Layer }) {
-  const gradient = layer.gradient
+  return <GradientPaint id={gradientId(layer)} gradient={layer.gradient} />
+}
+
+export function GradientPaint({
+  id,
+  gradient,
+}: {
+  id: string
+  gradient: Gradient | undefined
+}) {
   if (!gradient) return null
   const stops = (
     <>
@@ -24,11 +34,11 @@ export function GradientDef({ layer }: { layer: Layer }) {
   )
 
   if (gradient.type === "radial")
-    return <radialGradient id={gradientId(layer)}>{stops}</radialGradient>
+    return <radialGradient id={id}>{stops}</radialGradient>
 
   return (
     <linearGradient
-      id={gradientId(layer)}
+      id={id}
       gradientTransform={`rotate(${gradient.angle} .5 .5)`}
     >
       {stops}

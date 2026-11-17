@@ -90,11 +90,12 @@ describe('resolvePiiScreen', () => {
     expect(resolvePiiScreen('/users/u-1')).toEqual(D);
     expect(resolvePiiScreen('/users/roles')).toBeNull();
     expect(resolvePiiScreen('/order/fulfillments/f-1')).toEqual({
-      ...RAD,
+      opens: 'recipient',
+      reveal: true,
       revealScope: 'detail',
     });
     expect(resolvePiiScreen('/order/inspection')).toEqual(RAD);
-    expect(resolvePiiScreen('/order/stall-board')).toEqual(RA);
+    expect(resolvePiiScreen('/order/stall-board')).toEqual(R);
     expect(resolvePiiScreen('/attendance')).toBeNull();
   });
 });

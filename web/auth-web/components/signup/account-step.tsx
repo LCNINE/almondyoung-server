@@ -32,10 +32,19 @@ export function AccountStep({
 }) {
   const [loginId, setLoginId] = React.useState(defaultValues.loginId ?? "")
   const [email, setEmail] = React.useState(defaultValues.email ?? "")
-  const loginIdAvailability = useLoginIdAvailability(loginId)
-  const emailAvailability = useEmailAvailability(email)
-  const loginIdTaken = loginIdAvailability.status === "taken"
-  const emailTaken = emailAvailability.status === "taken"
+  const [touched, setTouched] = React.useState({ loginId: false, email: false })
+  const loginIdAvailability = withFormatError(
+    useLoginIdAvailability(loginId),
+    touched.loginId && loginId.trim() !== "",
+    `아이디는 ${LOGIN_ID_RULE}로 입력해주세요.`
+  )
+  const emailAvailability = withFormatError(
+    useEmailAvailability(email),
+    touched.email && email.trim() !== "",
+    "이메일 주소를 정확히 입력해주세요."
+  )
+  const loginIdRejected = isRejected(loginIdAvailability)
+  const emailRejected = isRejected(emailAvailability)
   // 중복확인이 끝나기 전에 넘어가면 중복인 채로 마지막 스텝까지 가서야 실패한다.
   const unconfirmed =
     !isConfirmed(loginIdAvailability) || !isConfirmed(emailAvailability)
@@ -54,7 +63,7 @@ export function AccountStep({
 
   return (
     <form onSubmit={handleSubmit} className="flex flex-1 flex-col gap-4">
-      <Field data-invalid={loginIdTaken || undefined}>
+      <Field data-invalid={loginIdRejected || undefined}>
         <FloatingLabelInput
           id="loginId"
           name="loginId"
@@ -68,7 +77,8 @@ export function AccountStep({
           autoComplete="username"
           value={loginId}
           onChange={(e) => setLoginId(e.target.value)}
-          aria-invalid={loginIdTaken || undefined}
+          onBlur={() => setTouched((t) => ({ ...t, loginId: true }))}
+          aria-invalid={loginIdRejected || undefined}
           aria-describedby="loginIdStatus"
           onInvalid={(e) =>
             e.currentTarget.setCustomValidity(
@@ -135,7 +145,7 @@ export function AccountStep({
         )}
       </Field>
 
-      <Field data-invalid={emailTaken || undefined}>
+      <Field data-invalid={emailRejected || undefined}>
         <FloatingLabelInput
           id="email"
           name="email"
@@ -144,7 +154,8 @@ export function AccountStep({
           required
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          aria-invalid={emailTaken || undefined}
+          onBlur={() => setTouched((t) => ({ ...t, email: true }))}
+          aria-invalid={emailRejected || undefined}
           aria-describedby="emailStatus"
         />
         <AvailabilityStatus
@@ -159,6 +170,25 @@ export function AccountStep({
       <StepFooter onBack={onBack} nextDisabled={unconfirmed} />
     </form>
   )
+}
+
+/**
+ * 형식이 틀린 값은 훅이 서버를 부르지 않고 idle 로 둔다. 입력칸을 한 번 떠난 뒤에도 idle 이면 형식 오류다.
+ * 첫 글자부터 빨갛게 뜨지 않도록 blur 전에는 규칙 안내만 보인다.
+ */
+function withFormatError(
+  state: AvailabilityState,
+  shouldShow: boolean,
+  message: string
+): AvailabilityState {
+  if (shouldShow && state.status === "idle")
+    return { status: "invalid", message }
+
+  return state
+}
+
+function isRejected(state: AvailabilityState) {
+  return state.status === "taken" || state.status === "invalid"
 }
 
 /**

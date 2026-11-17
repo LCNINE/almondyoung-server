@@ -13,12 +13,12 @@ export interface RemovalResult {
 /** 빼는 박스에서 상품 하나를 되돌림 바구니로(스펙 §8). 스캔 한 번 = 하나 — 멱등 키는 스캔 큐의 사건 id 다. */
 export function removeToReturnBin(
   api: ApiClient,
-  input: { shipmentId: string; barcode: string; returnBinBarcode: string; idempotencyKey: string },
+  input: { shipmentId: string; barcode: string; idempotencyKey: string },
 ): Promise<RemovalResult> {
   return api.request<RemovalResult>({
     method: 'POST',
     path: `/shipments/${input.shipmentId}/return-bin-removals`,
-    body: { barcode: input.barcode, returnBinBarcode: input.returnBinBarcode, quantity: 1 },
+    body: { barcode: input.barcode, quantity: 1 },
     idempotencyKey: input.idempotencyKey,
   });
 }

@@ -92,8 +92,8 @@ run('attendance wage against PostgreSQL', () => {
     await database.db.execute(sql`INSERT INTO roles (name) VALUES ('admin'), ('master')`);
 
     await database.db.execute(sql`
-      INSERT INTO user_roles (user_id, role_id)
-      SELECT u.id, r.role_id FROM users u JOIN roles r
+      INSERT INTO user_roles (user_id, role_id, tenant_id)
+      SELECT u.id, r.role_id, u.tenant_id FROM users u JOIN roles r
         ON (u.id = ${master} AND r.name = 'master') OR (u.id <> ${master} AND r.name = 'admin')
     `);
 
@@ -194,7 +194,7 @@ run('attendance wage against PostgreSQL', () => {
       VALUES (${outsider}, 'outsider', '명단밖', 'outsider', 'outsider@example.test', '1')
     `);
     await database.db.execute(sql`
-      INSERT INTO user_roles (user_id, role_id) SELECT ${outsider}, role_id FROM roles WHERE name = 'admin'
+      INSERT INTO user_roles (user_id, role_id, tenant_id) SELECT ${outsider}, role_id, '1' FROM roles WHERE name = 'admin'
     `);
 
     const result = await reader.preview(groupId, '2026-09');

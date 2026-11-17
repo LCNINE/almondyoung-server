@@ -1,6 +1,8 @@
 import { BankTransferPaymentProvider } from './bank-transfer.provider';
 import { TossApiClient } from '../toss/toss-api.client';
 import { ChargeParams } from '../payment-provider.interface';
+import { SQL } from 'drizzle-orm';
+import { PgDialect } from 'drizzle-orm/pg-core';
 
 describe('BankTransferPaymentProvider', () => {
   it('declares offline-wait action mode (deposit is not a short interactive redirect)', () => {
@@ -24,6 +26,7 @@ describe('BankTransferPaymentProvider', () => {
   it('issues a Toss virtual account and maps it into BANK_TRANSFER_PENDING nextAction', async () => {
     process.env.TOSS_VIRTUAL_ACCOUNT_BANK = '04';
     process.env.TOSS_VIRTUAL_ACCOUNT_BANK_NAME = '국민은행';
+    delete process.env.TOSS_WIDGET_SECRET_KEY;
     const issueVirtualAccount = jest.fn().mockResolvedValue({
       ok: true,
       data: {
@@ -32,18 +35,60 @@ describe('BankTransferPaymentProvider', () => {
         status: 'WAITING_FOR_DEPOSIT',
         totalAmount: 10000,
         secret: 'sk_1',
-        virtualAccount: { accountType: '일반', accountNumber: '1234567890', bankCode: '04', customerName: '홍길동', dueDate: '2026-07-05T00:00:00+09:00' },
+        virtualAccount: {
+          accountType: '일반',
+          accountNumber: '1234567890',
+          bankCode: '04',
+          customerName: '홍길동',
+          dueDate: '2026-07-05T00:00:00+09:00',
+        },
       },
     });
-    const provider = new BankTransferPaymentProvider(null as never, { issueVirtualAccount } as unknown as TossApiClient);
+    const provider = new BankTransferPaymentProvider(
+      null as never,
+      { issueVirtualAccount } as unknown as TossApiClient,
+    );
 
     const result = await provider.authorize(chargeParams());
 
     // orderId 는 chargeId 하이픈 제거값이어야 웹훅 복원이 성립한다.
-    expect(issueVirtualAccount).toHaveBeenCalledWith(expect.objectContaining({ orderId: 'aaaaaaaabbbbccccddddeeeeeeeeeeee', bank: '04', amount: 10000 }));
+    expect(issueVirtualAccount).toHaveBeenCalledWith(
+      expect.objectContaining({ orderId: 'aaaaaaaabbbbccccddddeeeeeeeeeeee', bank: '04', amount: 10000 }),
+      'LEGACY',
+    );
     expect(result.status).toBe('REQUIRES_ACTION');
     expect(result.providerTransactionId).toBe('pk_1');
-    expect(result.nextAction).toMatchObject({ type: 'BANK_TRANSFER_PENDING', bankName: '국민은행', accountNumber: '1234567890' });
+    expect(result.nextAction).toMatchObject({
+      type: 'BANK_TRANSFER_PENDING',
+      bankName: '국민은행',
+      accountNumber: '1234567890',
+    });
+    expect(result.nextAction).not.toHaveProperty('checkoutMode');
+  });
+
+  it('issues with the new store API key and marks the account DIRECT, never with the widget key', async () => {
+    process.env.TOSS_VIRTUAL_ACCOUNT_BANK = '06';
+    process.env.TOSS_WIDGET_SECRET_KEY = 'gsk_test';
+    process.env.TOSS_DIRECT_SECRET_KEY = 'sk_test';
+    const issueVirtualAccount = jest.fn().mockResolvedValue({
+      ok: true,
+      data: {
+        paymentKey: 'pk_2',
+        secret: 'sk_2',
+        virtualAccount: { accountNumber: '111', bankCode: '06', customerName: '홍길동', dueDate: '2026-11-19' },
+      },
+    });
+    const provider = new BankTransferPaymentProvider(
+      null as never,
+      { issueVirtualAccount } as unknown as TossApiClient,
+    );
+
+    const result = await provider.authorize(chargeParams());
+    delete process.env.TOSS_WIDGET_SECRET_KEY;
+    delete process.env.TOSS_DIRECT_SECRET_KEY;
+
+    expect(issueVirtualAccount).toHaveBeenCalledWith(expect.anything(), 'DIRECT');
+    expect(result.nextAction).toMatchObject({ type: 'BANK_TRANSFER_PENDING', checkoutMode: 'DIRECT' });
   });
 
   it('fails clearly when the issuing bank is not configured', async () => {
@@ -76,12 +121,44 @@ describe('BankTransferPaymentProvider', () => {
     const result = await provider.cancel(chargeParams());
 
     // 계좌를 닫지 않으면 고객이 옛 계좌로 입금해 돈만 들어오고 주문이 안 생긴다.
-    expect(cancelPayment).toHaveBeenCalledWith('pk_1', '결제 취소', undefined, 'cancel:k1');
+    expect(cancelPayment).toHaveBeenCalledWith(
+      'pk_1',
+      '결제 취소',
+      undefined,
+      expect.stringMatching(/^cancel:k1:/),
+      undefined,
+      'LEGACY',
+    );
     expect(result.status).toBe('SUCCEEDED');
   });
 
+  it('closes a widget-issued virtual account with the widget key', async () => {
+    const cancelPayment = jest.fn().mockResolvedValue({ ok: true, data: {} });
+    const provider = new BankTransferPaymentProvider(
+      dbWithCharge({
+        providerTransactionId: 'pk_w',
+        responsePayload: { paymentKey: 'pk_w', nextAction: { type: 'BANK_TRANSFER_PENDING', checkoutMode: 'WIDGET' } },
+      }),
+      { cancelPayment } as unknown as TossApiClient,
+    );
+
+    await provider.cancel(chargeParams());
+
+    // 위젯에서 발급된 결제는 위젯 시크릿 키로만 취소된다.
+    expect(cancelPayment).toHaveBeenCalledWith(
+      'pk_w',
+      '결제 취소',
+      undefined,
+      expect.stringMatching(/^cancel:k1:/),
+      undefined,
+      'WIDGET',
+    );
+  });
+
   it('fails the cancel when Toss refuses to close the account', async () => {
-    const cancelPayment = jest.fn().mockResolvedValue({ ok: false, error: { code: 'ALREADY_DEPOSITED', message: '입금 완료' } });
+    const cancelPayment = jest
+      .fn()
+      .mockResolvedValue({ ok: false, error: { code: 'ALREADY_DEPOSITED', message: '입금 완료' } });
     const provider = new BankTransferPaymentProvider(
       dbWithCharge({ providerTransactionId: null, responsePayload: { paymentKey: 'pk_1' } }),
       { cancelPayment } as unknown as TossApiClient,
@@ -91,6 +168,35 @@ describe('BankTransferPaymentProvider', () => {
     const result = await provider.cancel(chargeParams());
     expect(result.status).toBe('FAILED');
     expect(result.errorCode).toBe('ALREADY_DEPOSITED');
+  });
+
+  it('treats an already-canceled account as closed (lost close response on a retry)', async () => {
+    const cancelPayment = jest
+      .fn()
+      .mockResolvedValue({ ok: false, error: { code: 'ALREADY_CANCELED_PAYMENT', message: '이미 취소' } });
+    const provider = new BankTransferPaymentProvider(
+      dbWithCharge({ providerTransactionId: 'pk_1', responsePayload: { paymentKey: 'pk_1' } }),
+      { cancelPayment } as unknown as TossApiClient,
+    );
+
+    expect((await provider.cancel(chargeParams())).status).toBe('SUCCEEDED');
+  });
+
+  it('retries the close with a fresh idempotency key — Toss replays a cached failure for the same key', async () => {
+    const cancelPayment = jest
+      .fn()
+      .mockResolvedValue({ ok: false, error: { code: 'PROVIDER_ERROR' }, statusCode: 500 });
+    const provider = new BankTransferPaymentProvider(
+      dbWithCharge({ providerTransactionId: 'pk_1', responsePayload: { paymentKey: 'pk_1' } }),
+      { cancelPayment } as unknown as TossApiClient,
+    );
+
+    const now = jest.spyOn(Date, 'now').mockReturnValueOnce(1).mockReturnValueOnce(2);
+    await provider.cancel(chargeParams());
+    await provider.cancel(chargeParams());
+    now.mockRestore();
+    const [first, second] = cancelPayment.mock.calls.map((call) => call[3]);
+    expect(first).not.toBe(second);
   });
 
   it('succeeds without calling Toss when no account was ever issued', async () => {
@@ -128,6 +234,31 @@ describe('BankTransferPaymentProvider', () => {
     });
 
     expect(result).toMatchObject({ status: 'FAILED', errorCode: 'INVALID_REFUND_ACCOUNT_INFO', retryable: false });
+  });
+
+  it('토스 5xx 는 결과 불명으로 던져 같은 환불 재전송 경로에 남긴다', async () => {
+    const provider = new BankTransferPaymentProvider(
+      dbWithCharge({ providerTransactionId: null, responsePayload: { paymentKey: 'pk_1' } }),
+      {
+        cancelPayment: jest
+          .fn()
+          .mockResolvedValue({ ok: false, statusCode: 503, error: { code: 'UNKNOWN', message: 'unavailable' } }),
+      } as never,
+    );
+
+    await expect(
+      provider.refund({
+        refundId: 'rf-1',
+        chargeId: 'ch-1',
+        intentId: 'i1',
+        userId: 'u1',
+        amount: 10000,
+        currency: 'KRW',
+        idempotencyKey: 'wallet:refund:rf-1',
+        correlationId: 'c1',
+        refundReceiveAccount: { bank: '06', accountNumber: '1234567890', holderName: '테스트' },
+      }),
+    ).rejects.toThrow('결과를 확인할 수 없습니다');
   });
 
   it('환불계좌가 없으면 PG 를 부르지 않고 «수동 송금» PENDING — manualTransfer 로 표시한다', async () => {
@@ -172,5 +303,50 @@ describe('BankTransferPaymentProvider', () => {
 
     expect(result).toEqual({ status: 'PENDING', manualTransfer: true });
     expect(cancelPayment).not.toHaveBeenCalled();
+  });
+
+  it('refunds a widget-issued account from the authorize charge snapshot with the widget key', async () => {
+    const cancelPayment = jest.fn().mockResolvedValue({ ok: true, data: {} });
+    const lookedUp: unknown[] = [];
+    const db = {
+      db: {
+        select: () => ({
+          from: () => ({
+            where: (cond: unknown) => {
+              lookedUp.push(cond);
+              return {
+                limit: () =>
+                  Promise.resolve([
+                    {
+                      providerTransactionId: 'pk_w',
+                      responsePayload: { paymentKey: 'pk_w', nextAction: { checkoutMode: 'WIDGET' } },
+                    },
+                  ]),
+              };
+            },
+          }),
+        }),
+      },
+    } as never;
+    const provider = new BankTransferPaymentProvider(db, { cancelPayment } as unknown as TossApiClient);
+    const account = { bank: '06', accountNumber: '1234567890', holderName: '홍길동' };
+
+    const result = await provider.refund({
+      refundId: 'rf-1',
+      chargeId: 'capture-charge',
+      authorizeChargeId: 'authorize-charge',
+      intentId: 'i1',
+      userId: 'u1',
+      amount: 10000,
+      currency: 'KRW',
+      idempotencyKey: 'k1',
+      correlationId: 'c1',
+      refundReceiveAccount: account,
+    });
+
+    // CAPTURE charge 엔 발급 스냅샷이 없어, 위젯 여부를 AUTHORIZE charge 에서 읽어야 위젯 키로 환불된다.
+    expect(new PgDialect().sqlToQuery(lookedUp[0] as SQL).params).toEqual(['authorize-charge']);
+    expect(cancelPayment).toHaveBeenCalledWith('pk_w', '고객 요청', 10000, 'k1', account, 'WIDGET');
+    expect(result.status).toBe('SUCCEEDED');
   });
 });

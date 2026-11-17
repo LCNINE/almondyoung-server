@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { describeLastError, VENDOR_CANCELLED } from './last-error';
 import { Copy } from 'lucide-react';
 import { toast } from 'sonner';
 import { Badge } from '@/components/ui/badge';
@@ -64,6 +65,8 @@ function elapsed(iso: string, now: number): string {
 
 const TABS: { key: PrintOrderTab; label: string }[] = [
   { key: 'cancel_refused', label: '취소 확인 필요' },
+  { key: 'awaiting_payment', label: '입금대기' },
+  { key: 'vendor_attention', label: '와우프레스 확인' },
   { key: 'test_pending', label: '테스트 확인대기' },
   { key: 'failed', label: '발주 실패' },
   { key: 'unsupported', label: '미지원 품목' },
@@ -90,6 +93,8 @@ export default function PrintOrdersTemplate() {
 
   const counts: Record<PrintOrderTab, number> = {
     cancel_refused: summary.data?.cancelRefused ?? 0,
+    awaiting_payment: summary.data?.awaitingPayment ?? 0,
+    vendor_attention: summary.data?.vendorAttention ?? 0,
     test_pending: summary.data?.testPending ?? 0,
     failed: summary.data?.failed ?? 0,
     unsupported: summary.data?.unsupported ?? 0,
@@ -125,7 +130,9 @@ export default function PrintOrdersTemplate() {
 
       <div className="grid grid-cols-2 gap-2 md:grid-cols-5">
         {TABS.map(({ key, label }) => {
-          const danger = key === 'cancel_refused' && counts[key] > 0;
+          const danger =
+            (key === 'cancel_refused' || key === 'vendor_attention') &&
+            counts[key] > 0;
           return (
             <button
               key={key}
@@ -287,6 +294,8 @@ function PrintOrderRow({
     row.resolvable && row.status === 'cancelled' && row.salesCancelFailed;
   const showResolve = row.resolvable && !showSalesRetry;
   const shipped = row.status === 'shipped' || row.status === 'delivered';
+  const cancelledAtVendor =
+    row.status === 'submitted' && row.lastError === VENDOR_CANCELLED;
   const awaitingTest =
     row.testMemo && !row.testConfirmedAt && row.status !== 'cancelled';
   const retryable = row.status === 'failed' || row.status === 'unsupported';
@@ -303,6 +312,11 @@ function PrintOrderRow({
           {row.testMemo && (
             <Badge variant="outline" className="mt-1">
               테스트
+            </Badge>
+          )}
+          {row.vendorAwaitingPayment && row.status === 'submitted' && (
+            <Badge variant="outline" className="mt-1">
+              입금대기
             </Badge>
           )}
         </td>
@@ -377,15 +391,17 @@ function PrintOrderRow({
                     취소 완료함
                   </Button>
                 )}
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() =>
-                    onAction({ kind: 'resolve', row, outcome: 'proceed' })
-                  }
-                >
-                  {shipped ? '반품·환불 확인함' : '생산 진행으로 처리'}
-                </Button>
+                {!cancelledAtVendor && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() =>
+                      onAction({ kind: 'resolve', row, outcome: 'proceed' })
+                    }
+                  >
+                    {shipped ? '반품·환불 확인함' : '생산 진행으로 처리'}
+                  </Button>
+                )}
               </>
             )}
             {canWrite && awaitingTest && (
@@ -434,7 +450,10 @@ function PrintOrderRow({
             colSpan={7}
             className="p-2 text-xs whitespace-pre-wrap text-gray-700"
           >
-            {row.lastError}
+            {describeLastError(row.lastError).map((reason, i) => (
+              <div key={i}>{reason}</div>
+            ))}
+            <div className="mt-1 text-gray-400">{row.lastError}</div>
           </td>
         </tr>
       )}

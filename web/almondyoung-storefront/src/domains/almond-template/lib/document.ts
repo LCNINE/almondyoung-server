@@ -18,7 +18,7 @@ import { CLIPART_IDS, FRAME_IDS, SHAPE_VARIANTS } from "./art-library"
 import { FILE_IMAGE_REF } from "./image-ref"
 import type { PathPoint } from "./path-shape"
 import { LINE_CAPS, type LineCap } from "./line-shape"
-import { fittedFontSize } from "../components/graphic"
+import { fittedFontSize, textInkBox } from "../components/graphic"
 import { isAutoTextName, MIN_LAYER_MM, textLayerName } from "./layer"
 
 export type Layer = {
@@ -94,13 +94,33 @@ export type Layer = {
   shadowOpacity?: number
   // 그림자를 아래 그림과 곱하기로 섞는다
   shadowMultiply?: boolean
+  // 모양 둘레로 번지는 빛. 크기는 mm, 세기는 0~1
+  glow?: boolean
+  glowColor?: string
+  glowSize?: number
+  glowOpacity?: number
+  // soft 는 둘레로 번지는 빛, neon 은 속까지 하얗게 달아오른 네온관
+  glowStyle?: "soft" | "neon"
+  // 0~100. 빛이 번지기 전에 모양을 얼마나 부풀릴지
+  glowSpread?: number
+  // 사각형 모서리 둥글기 0~100. 100 이면 짧은 변이 반원이 된다
+  cornerRadius?: number
   texture?: boolean
   textureKind?: "grain" | "paper"
   textureAmount?: number
+  // 입자 크기 %. 비우면 100
+  textureScale?: number
+  // 사진 그레인·필름 그레인 효과의 입자 크기 %. 비우면 100
+  grainScale?: number
   bevel?: boolean
   bevelSize?: number
   bevelDepth?: number
   bevelAngle?: number
+  bevelLightColor?: string
+  bevelShadowColor?: string
+  // 비우면 표준. dodge 는 발광 닷지로 아래 색을 밝힌다
+  bevelLightMode?: "dodge"
+  bevelShadowMode?: "multiply"
   starPoints?: number
   starRatio?: number
   pathPoints?: PathPoint[]
@@ -150,6 +170,8 @@ export type Design = {
   backgroundPixelHeight?: number
   backgroundFilter?: ColorFilter
   backgroundBlur?: number
+  backgroundGradient?: Gradient
+  backgroundTexture?: BackgroundTexture
   backBackground?: SideBackground
   // 원본 file: 참조 → 편집 화면용 축소본 file: 참조
   imagePreviews?: Record<string, string>
@@ -165,7 +187,15 @@ export type SideBackground = Pick<
   | "backgroundPixelHeight"
   | "backgroundFilter"
   | "backgroundBlur"
+  | "backgroundGradient"
+  | "backgroundTexture"
 >
+
+export type BackgroundTexture = {
+  textureKind?: "grain" | "paper"
+  textureAmount?: number
+  textureScale?: number
+}
 
 export function sideBackground(
   design: Design,
@@ -179,6 +209,8 @@ export function sideBackground(
     backgroundPixelHeight: design.backgroundPixelHeight,
     backgroundFilter: design.backgroundFilter,
     backgroundBlur: design.backgroundBlur,
+    backgroundGradient: design.backgroundGradient,
+    backgroundTexture: design.backgroundTexture,
   }
 }
 
@@ -191,6 +223,8 @@ export function printsBack(design: Design): boolean {
   return (
     design.back.length > 0 ||
     !!bg?.backgroundImage ||
+    !!bg?.backgroundGradient ||
+    !!bg?.backgroundTexture ||
     (!!bg && bg.background.toLowerCase() !== "#ffffff")
   )
 }
@@ -208,8 +242,24 @@ export function withSideBackground(
     backgroundPixelHeight: undefined,
     backgroundFilter: undefined,
     backgroundBlur: undefined,
+    backgroundGradient: undefined,
+    backgroundTexture: undefined,
     ...value,
   }
+}
+
+// 배경 사진만 갈아 끼운다. 흑백·블러 같은 효과는 시안의 설정이라 사진을 바꾸거나 지워도 남긴다
+export function withBackgroundImage(
+  design: Design,
+  side: "front" | "back",
+  image?: { src: string; pixelWidth: number; pixelHeight: number }
+): Design {
+  return withSideBackground(design, side, {
+    ...sideBackground(design, side),
+    backgroundImage: image?.src,
+    backgroundPixelWidth: image?.pixelWidth,
+    backgroundPixelHeight: image?.pixelHeight,
+  })
 }
 
 export function newDesign(kind: PrintKind, productId = ""): Design {
@@ -459,6 +509,25 @@ export function parseDesign(value: unknown): Design {
   }
 }
 
+export const TEXTURE_SCALE_MIN = 50
+export const TEXTURE_SCALE_MAX = 400
+
+function validBackgroundTexture(value: unknown) {
+  if (value === undefined) return true
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false
+  const texture = value as Record<string, unknown>
+  return (
+    Object.keys(texture).every((key) =>
+      ["textureKind", "textureAmount", "textureScale"].includes(key)
+    ) &&
+    optional(texture.textureKind, (v) => v === "grain" || v === "paper") &&
+    optional(texture.textureAmount, (v) => within(v, 1, 100)) &&
+    optional(texture.textureScale, (v) =>
+      within(v, TEXTURE_SCALE_MIN, TEXTURE_SCALE_MAX)
+    )
+  )
+}
+
 function legacyBlurAmount(
   filter: ColorFilter | { kind: "blur"; amount: number } | undefined
 ) {
@@ -494,6 +563,10 @@ function checkBackgroundImage(data: Partial<SideBackground>) {
 
   if (data.backgroundBlur !== undefined && !within(data.backgroundBlur, 0, 100))
     throw new Error("배경 블러가 올바르지 않습니다.")
+  if (!validGradient(data.backgroundGradient))
+    throw new Error("배경 그라데이션이 올바르지 않습니다.")
+  if (!validBackgroundTexture(data.backgroundTexture))
+    throw new Error("배경 질감이 올바르지 않습니다.")
 }
 
 export function updateLayer(
@@ -619,13 +692,36 @@ function validEffects(layer: Layer) {
     ) &&
     optional(layer.shadowOpacity, (v) => within(v, 0, 1)) &&
     optional(layer.shadowMultiply, isBool) &&
+    optional(layer.glow, isBool) &&
+    optional(layer.glowColor, (v) => typeof v === "string" && color.test(v)) &&
+    optional(layer.glowSize, (v) => within(v, 0, 20)) &&
+    optional(layer.glowOpacity, (v) => within(v, 0, 1)) &&
+    optional(layer.glowStyle, (v) => v === "soft" || v === "neon") &&
+    optional(layer.glowSpread, (v) => within(v, 0, 100)) &&
+    optional(layer.cornerRadius, (v) => within(v, 0, 100)) &&
     optional(layer.texture, isBool) &&
     optional(layer.textureKind, (v) => v === "grain" || v === "paper") &&
     optional(layer.textureAmount, (v) => within(v, 1, 100)) &&
+    optional(layer.grainScale, (v) =>
+      within(v, TEXTURE_SCALE_MIN, TEXTURE_SCALE_MAX)
+    ) &&
+    optional(layer.textureScale, (v) =>
+      within(v, TEXTURE_SCALE_MIN, TEXTURE_SCALE_MAX)
+    ) &&
     optional(layer.bevel, isBool) &&
     optional(layer.bevelSize, (v) => within(v, 0.05, 20)) &&
     optional(layer.bevelDepth, (v) => within(v, 0, 100)) &&
     optional(layer.bevelAngle, (v) => within(v, -360, 360)) &&
+    optional(
+      layer.bevelLightColor,
+      (v) => typeof v === "string" && color.test(v)
+    ) &&
+    optional(
+      layer.bevelShadowColor,
+      (v) => typeof v === "string" && color.test(v)
+    ) &&
+    optional(layer.bevelLightMode, (v) => v === "dodge") &&
+    optional(layer.bevelShadowMode, (v) => v === "multiply") &&
     optional(
       layer.starPoints,
       (v) => Number.isInteger(v) && within(v, 3, 20)
@@ -832,6 +928,65 @@ export function printWarnings(design: Design): string[] {
   return warnings
 }
 
+// 글자 레이어는 템플릿 때 붙은 이름보다 지금 쓰인 글자가 고객에게 알아보기 쉽다
+function issueLabel(layer: Layer) {
+  const text = (layer.text ?? "").trim().replace(/\s+/g, " ")
+  if (layer.type !== "text" || !text) return layer.name
+
+  return `'${text.length > 12 ? `${text.slice(0, 12)}…` : text}' 글자`
+}
+
+// 선택 상자가 아니라 실제로 인쇄되는 영역. 글자는 글꼴의 실제 잉크 범위이고 회전·뒤집기가 반영된다
+export function printedBox(layer: Layer) {
+  const ink = layer.type === "text" ? textInkBox(layer) : null
+  const x = ink?.x0 ?? layer.x
+  const y = ink?.y0 ?? layer.y
+  const width = ink ? ink.x1 - ink.x0 : layer.width
+  const height = ink ? ink.y1 - ink.y0 : layer.height
+
+  const cx = layer.x + layer.width / 2
+  const cy = layer.y + layer.height / 2
+  const rad = ((layer.rotation ?? 0) * Math.PI) / 180
+  const corners = [
+    [x, y],
+    [x + width, y],
+    [x, y + height],
+    [x + width, y + height],
+  ].map(([px, py]) => {
+    const dx = (px - cx) * (layer.flipX ? -1 : 1)
+    const dy = (py - cy) * (layer.flipY ? -1 : 1)
+
+    return [
+      cx + dx * Math.cos(rad) - dy * Math.sin(rad),
+      cy + dx * Math.sin(rad) + dy * Math.cos(rad),
+    ]
+  })
+  const xs = corners.map(([px]) => px)
+  const ys = corners.map(([, py]) => py)
+
+  return {
+    x0: Math.min(...xs),
+    y0: Math.min(...ys),
+    x1: Math.max(...xs),
+    y1: Math.max(...ys),
+  }
+}
+
+export function outsideSafeArea(design: Design, layer: Layer) {
+  if (layer.type !== "text" && layer.type !== "qr") return false
+  if (layer.visible === false) return false
+
+  const safety = PRINT_SPECS[design.kind].safetyMm
+  const box = printedBox(layer)
+
+  return (
+    box.x0 < safety ||
+    box.y0 < safety ||
+    box.x1 > design.widthMm - safety ||
+    box.y1 > design.heightMm - safety
+  )
+}
+
 export function printIssues(design: Design): string[] {
   const issues: string[] = []
   if (!design.front.length) issues.push("앞면에 인쇄할 내용이 없습니다.")
@@ -852,18 +1007,12 @@ export function printIssues(design: Design): string[] {
           MIN_PRINT_TEXT_MM
       )
         issues.push(
-          `${side}의 ${layer.name}: 글자가 너무 작아 인쇄 시 뭉개질 수 있습니다. 더 크게 키워 주세요.`
+          `${side}의 ${issueLabel(layer)}: 글자가 너무 작아 인쇄 시 뭉개질 수 있습니다. 더 크게 키워 주세요.`
         )
-      if (
-        (layer.type === "text" || layer.type === "qr") &&
-        (layer.x < PRINT_SPECS[design.kind].safetyMm ||
-          layer.y < PRINT_SPECS[design.kind].safetyMm ||
-          layer.x + layer.width >
-            design.widthMm - PRINT_SPECS[design.kind].safetyMm ||
-          layer.y + layer.height >
-            design.heightMm - PRINT_SPECS[design.kind].safetyMm)
-      )
-        issues.push(`${side}의 ${layer.name}: 안전영역 안으로 옮겨 주세요.`)
+      if (outsideSafeArea(design, layer))
+        issues.push(
+          `${side}의 ${issueLabel(layer)}: 빨간 테두리가 초록 점선 안에 들어오게 옮겨 주세요.`
+        )
     }
   }
   return issues

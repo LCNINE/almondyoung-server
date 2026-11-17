@@ -3,6 +3,7 @@ import { readFile, stat, writeFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { CopyObjectCommand, HeadObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import postgres, { type JSONValue, type Sql } from 'postgres';
+import { TENANT_ONE_ID } from '../seeding/lib/tenant-one-backfill';
 
 const IMAGE_CONTEXT_POLICIES = {
   'product-image': {
@@ -747,11 +748,11 @@ class PostgresCatalogImageTarget implements CatalogImageTarget {
           `INSERT INTO uploads (
              id, file_name, original_name, mime_type, size, file_path, url, storage_provider,
              status, context_id, metadata, uploaded_by, is_public,
-             created_at, updated_at, deleted_at, activated_at
+             created_at, updated_at, deleted_at, activated_at, tenant_id
            )
            SELECT id, file_name, original_name, mime_type, size, file_path, url, storage_provider,
                   status, context_id, metadata, uploaded_by, is_public,
-                  created_at, updated_at, deleted_at, activated_at
+                  created_at, updated_at, deleted_at, activated_at, $2
            FROM jsonb_to_recordset($1::jsonb) AS source(
              id uuid, file_name varchar, original_name varchar, mime_type varchar, size bigint,
              file_path text, url text, storage_provider varchar, status varchar, context_id varchar,
@@ -760,7 +761,8 @@ class PostgresCatalogImageTarget implements CatalogImageTarget {
            )
            ON CONFLICT (id) DO NOTHING
            RETURNING id::text`,
-          [batch as unknown as JSONValue],
+          // 데모 DB 의 파일은 그 배포의 테넌트 1 것이다 — uploads.tenant_id 는 NOT NULL 이고 기본값이 없다.
+          [batch as unknown as JSONValue, TENANT_ONE_ID],
         );
         inserted += result.length;
       }

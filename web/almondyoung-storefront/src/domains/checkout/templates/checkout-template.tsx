@@ -33,12 +33,14 @@ import {
   getCartTotals,
 } from "@/lib/utils/price-utils"
 import {
+  CUSTOM_ORDER_NOTICE_PAGE_ID,
   CustomOrderNotice,
   isCustomOrderPaymentBlocked,
 } from "@/domains/almond-template/components/custom-order-notice"
 import { ensureCustomOrderAgreement } from "@/domains/almond-template/custom-order-agreement"
 import { MobileCTA, PCFixedCTA } from "domains/checkout/components/cta"
 import { MobileHeader, PCHeader } from "domains/checkout/components/header"
+import { cn } from "@/lib/utils"
 import { useTranslations } from "next-intl"
 import { useParams, useRouter } from "next/navigation"
 import { useCallback, useEffect, useMemo, useState } from "react"
@@ -185,6 +187,7 @@ export default function CheckoutTemplate({
     cartItems,
     customOrderAgreed
   )
+  const [agreementPromptKey, setAgreementPromptKey] = useState(0)
   const [error, setError] = useState<string | null>(null)
 
   // 배송 메모 상태
@@ -227,6 +230,14 @@ export default function CheckoutTemplate({
     if (hasOverseasItem && !isValidPersonalCustomsCode(personalCustomsCode)) {
       setCustomsCodeError(tCustoms("error"))
       return toast.error(tCustoms("error"))
+    }
+    if (paymentBlocked) {
+      setAgreementPromptKey((n) => n + 1)
+      document
+        .getElementById(CUSTOM_ORDER_NOTICE_PAGE_ID)
+        ?.scrollIntoView({ behavior: "smooth", block: "center" })
+
+      return toast.error(tProcess("toasts.agreeCustomOrder"))
     }
     processPayment()
   }
@@ -450,26 +461,26 @@ export default function CheckoutTemplate({
             {/* 무통장입금/적립금은 다음 단계(결제 화면)에서 선택·사용 가능 — 미리 안내 */}
             <Card className="mb-8 shadow-none">
               <CardHeader className="flex-row items-center gap-2 space-y-0 p-4 pb-3 lg:p-6 lg:pb-4">
-                <Info className="size-5 shrink-0 text-[#ffa500]" />
+                <Info className="size-5 shrink-0 text-mint-deep" />
                 <CardTitle className="text-base font-bold lg:text-lg">
                   {tNotice("title")}
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-3 p-4 pt-0 lg:p-6 lg:pt-0">
                 <div className="flex items-start gap-2.5">
-                  <Banknote className="mt-0.5 size-5 shrink-0 text-[#ffa500]" />
+                  <Banknote className="mt-0.5 size-5 shrink-0 text-mint-deep" />
                   <p className="text-sm leading-relaxed text-gray-700 lg:text-[15px]">
                     {tNotice("bankTransfer")}
                   </p>
                 </div>
                 <div className="flex items-start gap-2.5">
-                  <Clock className="mt-0.5 size-5 shrink-0 text-[#ffa500]" />
+                  <Clock className="mt-0.5 size-5 shrink-0 text-mint-deep" />
                   <p className="text-sm leading-relaxed text-gray-700 lg:text-[15px]">
                     {tNotice("bankTransferDelay")}
                   </p>
                 </div>
                 <div className="flex items-start gap-2.5">
-                  <Coins className="mt-0.5 size-5 shrink-0 text-[#ffa500]" />
+                  <Coins className="mt-0.5 size-5 shrink-0 text-mint-deep" />
                   <p className="text-sm leading-relaxed text-gray-700 lg:text-[15px]">
                     {tNotice("points")}
                   </p>
@@ -488,6 +499,13 @@ export default function CheckoutTemplate({
             {needsAgreement && (
               <div className="mt-4">
                 <CustomOrderNotice
+                  key={agreementPromptKey}
+                  id={CUSTOM_ORDER_NOTICE_PAGE_ID}
+                  className={cn(
+                    agreementPromptKey > 0 &&
+                      !customOrderAgreed &&
+                      "animate-shake border-2 border-red-500"
+                  )}
                   withAgreement
                   agreed={customOrderAgreed}
                   onAgreeChange={setCustomOrderAgreed}
@@ -524,13 +542,11 @@ export default function CheckoutTemplate({
         onPayment={handlePayment}
         loading={loading}
         totals={cartTotals}
-        disabled={paymentBlocked}
       />
       <MobileCTA
         onPayment={handlePayment}
         loading={loading}
         totals={cartTotals}
-        disabled={paymentBlocked}
       />
     </main>
   )

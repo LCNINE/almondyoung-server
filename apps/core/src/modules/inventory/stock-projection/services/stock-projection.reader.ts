@@ -192,6 +192,7 @@ export class StockProjectionReader {
           .select({
             locationId: wmsTables.stockLedgers.locationId,
             locationCode: wmsTables.locations.code,
+            locationName: wmsTables.locations.displayName,
             stockState: wmsTables.stockLedgers.stockState,
             quantity: wmsTables.stockLedgers.qty,
           })

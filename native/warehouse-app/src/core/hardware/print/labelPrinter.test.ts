@@ -4,6 +4,10 @@ import {
   LABEL_PRINTER_KEY,
   PrinterError,
   printRaw,
+  printRawLabel,
+  BARCODE_LABEL_PRINTER_KEY,
+  readPrinter,
+  writePrinter,
   printerNameOf,
   readLabelPrinter,
   writeLabelPrinter,
@@ -93,5 +97,24 @@ describe('출력 결과 기록(상태바 «프린터»)', () => {
     await expect(printRaw('spooler://P', '^XA^XZ')).rejects.toBeInstanceOf(PrinterError);
     writeLabelPrinter(createMemoryPrefs(), 'XP-DT108B');
     expect(lastPrintFailed()).toBe(false);
+  });
+});
+
+describe('프린터 칸 둘', () => {
+  beforeEach(() => invokeMock.mockReset());
+
+  it('라벨 칸은 barcodeLabelPrinter 에 저장하고 송장 키는 건드리지 않는다', () => {
+    const prefs = createMemoryPrefs({ [LABEL_PRINTER_KEY]: 'spooler://WAY' });
+    writePrinter(prefs, 'label', 'TX400');
+    expect(prefs.get(BARCODE_LABEL_PRINTER_KEY)).toBe('spooler://TX400');
+    expect(prefs.get(LABEL_PRINTER_KEY)).toBe('spooler://WAY');
+    expect(readPrinter(prefs, 'waybill')).toBe('spooler://WAY');
+  });
+
+  it('라벨 칸 실패는 송장 칸 상태를 바꾸지 않는다', async () => {
+    invokeMock.mockRejectedValueOnce('offline');
+    await expect(printRawLabel('spooler://L', '^XA^XZ')).rejects.toBeInstanceOf(PrinterError);
+    expect(lastPrintFailed('label')).toBe(true);
+    expect(lastPrintFailed('waybill')).toBe(false);
   });
 });

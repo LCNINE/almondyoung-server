@@ -30,7 +30,7 @@ export function FloatingButtons({
 
   return (
     <div
-      className={`fixed right-6 bottom-20 z-50 flex flex-col items-center gap-3 ${className}`}
+      className={`fixed right-4 bottom-20 z-50 flex flex-col items-center gap-2.5 md:right-6 md:bottom-6 ${className}`}
     >
       {/* {showChatbot && <ChatbotButton onClick={onChatbotClick} />} */}
       {shouldShowKakao && <KakaoCsButton />}

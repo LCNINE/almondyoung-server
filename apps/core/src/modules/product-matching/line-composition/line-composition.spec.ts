@@ -2,6 +2,7 @@ import {
   blocksFulfillment,
   compositionFromMatching,
   compositionItemsProblem,
+  countLineRoutes,
   isOutsourcedLine,
   sameComposition,
   isDigitalFulfillmentLine,
@@ -114,6 +115,20 @@ describe('matchingFailureReason', () => {
 describe('isDigitalFulfillmentLine', () => {
   it('null 은 물리로 본다', () => {
     expect(isDigitalFulfillmentLine({ fulfillmentKind: null, requiresShipping: null })).toBe(false);
+  });
+});
+
+describe('countLineRoutes', () => {
+  it('디지털을 먼저 보고, 인쇄 라인과 나머지 창고 라인을 센다', () => {
+    expect(
+      countLineRoutes([
+        physical,
+        { ...physical, almondDesignId: 'd1' },
+        { ...physical, almondDesignId: 'd2', requiresShipping: false },
+        { ...physical, fulfillmentKind: 'digital' },
+      ]),
+    ).toEqual({ warehouse: 1, outsourced: 1, digital: 2 });
+    expect(countLineRoutes([])).toEqual({ warehouse: 0, outsourced: 0, digital: 0 });
   });
 });
 

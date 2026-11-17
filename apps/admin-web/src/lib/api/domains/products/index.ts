@@ -11,6 +11,7 @@ import { bannersClient } from './banners.client';
 import { noticesClient } from './notices.client';
 import { shopListingsClient } from './shop-listings.client';
 import { sitePopupsClient } from './site-popups.client';
+import { topNoticesClient } from './top-notices.client';
 import { bulkClient } from './bulk.client';
 import { bulkSessionClient } from './bulk-session.client';
 import { categoriesClient } from './categories.client';
@@ -18,6 +19,7 @@ import { channelsClient } from './channels.client';
 import { formExportClient } from './form-export.client';
 import { mastersClient } from './masters.client';
 import { pricingClient } from './pricing.client';
+import { printCatalogClient } from './print-catalog.client';
 import { tagsClient } from './tags.client';
 import { variantsClient } from './variants.client';
 import { versionsClient } from './versions.client';
@@ -34,8 +36,10 @@ export const products = {
   almondTemplates: almondTemplatesClient,
   almondTemplateCategories: almondTemplateCategoriesClient,
   sitePopups: sitePopupsClient,
+  topNotices: topNoticesClient,
   tags: tagsClient,
   pricing: pricingClient,
+  printCatalog: printCatalogClient,
   versions: versionsClient,
   bulk: bulkClient,
   bulkSession: bulkSessionClient,
@@ -53,8 +57,10 @@ export { noticesClient } from './notices.client';
 export { shopListingsClient } from './shop-listings.client';
 export { almondTemplatesClient } from './almond-templates.client';
 export { sitePopupsClient } from './site-popups.client';
+export { topNoticesClient } from './top-notices.client';
 export { tagsClient } from './tags.client';
 export { pricingClient } from './pricing.client';
+export { printCatalogClient } from './print-catalog.client';
 export { versionsClient } from './versions.client';
 export { bulkClient } from './bulk.client';
 export { bulkSessionClient } from './bulk-session.client';

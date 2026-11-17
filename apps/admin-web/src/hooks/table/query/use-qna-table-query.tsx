@@ -1,6 +1,6 @@
 import { QnaListQuery } from '@/lib/types/dto/qna';
 import { useQueryParams } from '../../use-query-params';
-import { parseDateRangeParam } from './date-range-param';
+import { parseDateRangeParam, toDayBoundInstants } from './date-range-param';
 
 type UseQnaTableQueryProps = {
   prefix?: string;
@@ -18,7 +18,7 @@ export const useQnaTableQuery = ({
 
   const { page, q, source, category, status, sort, order, createdAt } =
     queryObject;
-  const { from: createdFrom, to: createdTo } = parseDateRangeParam(createdAt);
+  const { from: createdFrom, to: createdTo } = toDayBoundInstants(parseDateRangeParam(createdAt));
 
   const searchParams: QnaListQuery = {
     limit: pageSize,

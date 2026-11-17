@@ -7,6 +7,7 @@ import { fulfillmentsClient } from './fulfillments.client';
 import { pickingClient } from './picking.client';
 import { inspectionClient } from './inspection.client';
 import { outboundBatchesClient } from './outbound-batches.client';
+import { outboundPreparationClient } from './outbound-preparation.client';
 import { directShipClient } from './direct-ship.client';
 import { consolidationClient } from './consolidation.client';
 import { locationOptimizationClient } from './location-optimization.client';
@@ -22,6 +23,7 @@ export const orders = {
   picking: pickingClient,
   inspection: inspectionClient,
   outboundBatches: outboundBatchesClient,
+  outboundPreparation: outboundPreparationClient,
   directShip: directShipClient,
   consolidation: consolidationClient,
   locationOptimization: locationOptimizationClient,
@@ -37,6 +39,7 @@ export { fulfillmentsClient } from './fulfillments.client';
 export { pickingClient } from './picking.client';
 export { inspectionClient } from './inspection.client';
 export { outboundBatchesClient } from './outbound-batches.client';
+export { outboundPreparationClient } from './outbound-preparation.client';
 export { directShipClient } from './direct-ship.client';
 export { consolidationClient } from './consolidation.client';
 export { locationOptimizationClient } from './location-optimization.client';

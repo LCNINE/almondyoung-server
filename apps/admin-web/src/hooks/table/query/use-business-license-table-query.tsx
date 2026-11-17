@@ -1,6 +1,6 @@
 import { BusinessLicenseListQuery, BusinessLicenseStatus } from '@/lib/types/dto/business-licenses';
 import { useQueryParams } from '../../use-query-params';
-import { parseDateRangeParam } from './date-range-param';
+import { parseDateRangeParam, toDayBoundInstants } from './date-range-param';
 
 type UseBusinessLicenseTableQueryProps = {
   prefix?: string;
@@ -17,7 +17,7 @@ export const useBusinessLicenseTableQuery = ({
   );
 
   const { page, status, hasVerificationFile, sort, order, createdAt } = queryObject;
-  const { from: createdFrom, to: createdTo } = parseDateRangeParam(createdAt);
+  const { from: createdFrom, to: createdTo } = toDayBoundInstants(parseDateRangeParam(createdAt));
 
   const searchParams: BusinessLicenseListQuery = {
     limit: pageSize,

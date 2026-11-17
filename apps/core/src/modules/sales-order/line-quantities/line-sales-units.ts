@@ -63,3 +63,11 @@ export function completedSetUnits(line: LineQuantities, quantityOf: (sku: LineSk
   if (composed.length === 0) return 0;
   return Math.min(...composed.map((sku) => Math.floor(quantityOf(sku) / sku.qtyPerUnit)));
 }
+
+/**
+ * 확정 예약·출고·넘김으로 이미 «잡은» 판매 단위 — 구성 SKU 마다 floor((reserved + shipped + forwarded) ÷ qtyPerUnit) 의 최솟값.
+ * Medusa 예약 투영의 목표(`수요 − 잡은 단위`)가 쓴다. 구성이 굳지 않았으면 0.
+ */
+export function heldSalesUnits(line: LineQuantities): number {
+  return completedSetUnits(line, (sku) => sku.reserved + sku.shipped + sku.forwarded);
+}

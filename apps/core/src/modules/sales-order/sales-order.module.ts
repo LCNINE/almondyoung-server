@@ -10,6 +10,8 @@ import { FulfillmentOrderCreationBacklogModule } from '../fulfillment/backlog/fu
 import { UnboxedDemandModule } from '../fulfillment/unboxed-demand/unboxed-demand.module';
 import { WaybillModule } from '../fulfillment/waybill/waybill.module';
 import { ExchangeShipmentModule } from '../fulfillment/exchange-shipment/exchange-shipment.module';
+import { OrderShipmentOperationsModule } from '../fulfillment/reader/order-shipment-operations.module';
+import { SalesOrderShipmentOperationsService } from './services/sales-order-shipment-operations.service';
 
 import { SalesOrdersController } from './controllers/sales-orders.controller';
 import { SalesOrderAmendmentsController } from './controllers/sales-order-amendments.controller';
@@ -41,6 +43,7 @@ import { CustomerExchangeReleaser } from './customer-return/customer-exchange.re
 import { CustomerReturnSettlementRetryCron } from './customer-return/customer-return-settlement-retry.cron';
 import { CustomerReturnPickupManager } from './customer-return/customer-return-pickup.manager';
 import { CustomerReturnPickupCron } from './customer-return/customer-return-pickup.cron';
+import { LineStatePublisher } from './line-reservation-state/line-state.publisher';
 import { CustomerReturnsController } from './customer-return/customer-returns.controller';
 import { CustomerReturnReceivingController } from './customer-return/customer-return-receiving.controller';
 import { OrderCancellation } from './order-cancellation/order-cancellation';
@@ -49,6 +52,7 @@ import { INTERNAL_KEY_ENV } from '@app/authorization';
 import { SalesOrdersInternalController } from './internal/sales-orders-internal.controller';
 import { ReturnEligibilityReader } from './internal/return-eligibility.reader';
 import { ReturnEligibilityService } from './internal/return-eligibility.service';
+import { LineReservationStateService } from './internal/line-reservation-state.service';
 import { SalesOrderLookupReader } from './internal/sales-order-lookup.reader';
 import { SalesOrderLookupService } from './internal/sales-order-lookup.service';
 
@@ -104,6 +108,9 @@ import { SalesOrderLookupService } from './internal/sales-order-lookup.service';
 
     // 교환 상자 열기의 출고 쪽 쓰기(K8 PR11). 소형 모듈이라 FulfillmentModule ↔ SalesOrderModule 순환이 없다
     ExchangeShipmentModule,
+
+    // 주문 이력 창의 상자 작업 조회(읽기)
+    OrderShipmentOperationsModule,
   ],
   controllers: [
     SalesOrdersController,
@@ -119,6 +126,7 @@ import { SalesOrderLookupService } from './internal/sales-order-lookup.service';
   ],
   providers: [
     SalesOrdersService,
+    SalesOrderShipmentOperationsService,
     SalesOrderAmendmentsService,
     SalesOrderQueryService,
     StoreSalesOrdersService,
@@ -159,6 +167,9 @@ import { SalesOrderLookupService } from './internal/sales-order-lookup.service';
     SalesOrderLookupService,
     ReturnEligibilityReader,
     ReturnEligibilityService,
+    LineReservationStateService,
+    // 판매주문 줄 상태 스냅샷 1분 폴러(#1247) — 표시는 `markLineStateDirty`, 발행은 여기
+    LineStatePublisher,
     // `SalesOrdersInternalController` 의 InternalKeyGuard 가 읽을 env 이름. core 로 들어오는 서비스 간 호출은 이 키 하나를 쓴다.
     { provide: INTERNAL_KEY_ENV, useValue: 'CORE_INTERNAL_KEY' },
 

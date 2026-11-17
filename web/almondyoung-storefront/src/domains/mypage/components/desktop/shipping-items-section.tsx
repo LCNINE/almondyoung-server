@@ -87,7 +87,7 @@ export function ShippingItemsSection({
         <h2 className="text-lg font-bold text-black">{t("orderTitle")}</h2>
         <LocalizedClientLink
           href="/mypage/order/list"
-          className="text-primary flex items-center gap-0.5 text-sm font-medium"
+          className="text-mint-deep flex items-center gap-0.5 text-sm font-medium"
         >
           {t("viewAll")}
           <ChevronRight className="h-4 w-4" />

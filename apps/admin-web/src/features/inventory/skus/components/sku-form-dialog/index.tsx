@@ -11,6 +11,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { ShellLink } from '@/components/layout/tenant-shell/shell-link';
 import { FormField } from '@/components/common/form/form-field';
 import { FormInput } from '@/components/common/form/form-input';
 import { FormSelect } from '@/components/common/form/form-select';
@@ -339,9 +340,9 @@ export function SkuFormDialog({ open, sku, onOpenChange }: Props) {
                 ) : directList.length === 0 ? (
                   <p className="text-sm text-destructive">
                     직배 공급사가 없습니다 —{' '}
-                    <Link href="/inventory/suppliers" className="underline">
+                    <ShellLink href="/inventory/suppliers" className="underline">
                       공급사 화면에서 ‘직배’로 등록하세요
-                    </Link>
+                    </ShellLink>
                     .
                   </p>
                 ) : (
@@ -369,12 +370,12 @@ export function SkuFormDialog({ open, sku, onOpenChange }: Props) {
             <p className="text-xs text-muted-foreground">
               안전재고는 수요 통계로 계산됩니다. 예외(제외 · 고정 안전재고 ·
               α)는{' '}
-              <Link
+              <ShellLink
                 href="/inventory/replenishment/rules?tab=skus"
                 className="underline"
               >
                 보충 규칙 › SKU 예외
-              </Link>
+              </ShellLink>
               에서 둡니다.
             </p>
           </FormSection>

@@ -1,5 +1,5 @@
-import { DOTS_PER_MM, type BarcodePlacement, type LabelSpec } from '../../../label/label-model';
-import { fitSizePt, fitText } from '../../../label/svg-text';
+import { DOTS_PER_MM, type BarcodePlacement, type LabelSpec } from '../../../../../../platform/label/label-model';
+import { fitSizePt, fitText } from '../../../../../../platform/label/svg-text';
 import type { HanjinLabelData } from './hanjin-label-data';
 import { maskAddress, maskName, maskPhone } from './hanjin-label-masking';
 import { koreanDate, rect, shrinkThenFit, svgDocument, text } from './hanjin-label-svg';
@@ -38,7 +38,7 @@ export function renderHanjinNlLabel(d: HanjinLabelData): LabelSpec {
 
   const slipAddress = shrinkThenFit(`${rc.baseAddress} ${rc.detailAddress}`, 89.5, 9); // 배달표 받는분 주소(원본)
   const message = shrinkThenFit(d.deliveryMessage, 84, 9); // ⑭
-  const custText = `출고번호: ${d.custOrdNo}`;
+  const custText = `주문번호: ${d.orderNo}`;
 
   // ── 분류 머리 ───────────────────────────────────────────────────────────
   const sortHead = [

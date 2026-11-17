@@ -66,6 +66,7 @@ export default async function CategoryProducts({
           countryCode,
           categoryId: categoryIds,
           collectionId,
+          productIds: productsIds,
           limit: pageSize,
         })
       : listProducts({

@@ -8,7 +8,7 @@ import {
   SHIPPING_FEE_TYPE_LABELS,
   type ShippingGroup,
 } from '@/lib/api/domains/medusa/shipping-groups';
-import Link from 'next/link';
+import { ShellLink } from '@/components/layout/tenant-shell/shell-link';
 import { useState } from 'react';
 
 const won = (amount: number) => `${amount.toLocaleString('ko-KR')}원`;
@@ -168,12 +168,12 @@ export function ShippingInfoBlock({
             )}
           </div>
         )}
-        <Link
+        <ShellLink
           href="/mall/shipping-groups"
           className="w-fit text-xs text-primary underline underline-offset-2"
         >
           그룹 관리 바로가기 ▸
-        </Link>
+        </ShellLink>
       </div>
 
       <dl className="grid grid-cols-[80px_1fr] gap-y-1 text-sm">

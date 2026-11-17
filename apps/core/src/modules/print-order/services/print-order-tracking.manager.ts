@@ -1,10 +1,31 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { type PrintOrderRow } from '../schema/print-order.schema';
 import { WowpressClient } from '../wowpress/wowpress.client';
-import { WOWPRESS_CARRIER, type WowpressOrderDetail } from '../wowpress/wowpress.types';
-import { PrintOrderRepository } from './print-order.repository';
+import {
+  WOWPRESS_CARRIER,
+  WOWPRESS_CANCELLABLE,
+  WOWPRESS_JOB_ERRORS,
+  WOWPRESS_STATUS_AWAITING_PAYMENT,
+  WOWPRESS_STATUS_CANCELLED,
+  type WowpressOrderDetail,
+} from '../wowpress/wowpress.types';
+import { isPreservedLastError, PrintOrderRepository } from './print-order.repository';
 
 export const WOWPRESS_STATUS_DELIVERED = 85;
+
+// 와우프레스에서 사람이 처리해야 하는 상태. 접수 에러는 보드 와우프레스 확인 탭, 취소는 취소 확인 필요 탭이 고른다
+export const VENDOR_ATTENTION_PREFIX = 'wowpress needs attention: ';
+export const VENDOR_CANCELLED = `${VENDOR_ATTENTION_PREFIX}cancelled`;
+export const VENDOR_JOB_ERROR_PREFIX = `${VENDOR_ATTENTION_PREFIX}job error `;
+
+export function vendorAttention(detail: Pick<WowpressOrderDetail, 'ordstat' | 'jobstat'>): string | null {
+  if (detail.ordstat === WOWPRESS_STATUS_CANCELLED) return VENDOR_CANCELLED;
+  if (detail.jobstat !== null && WOWPRESS_JOB_ERRORS.has(detail.jobstat)) {
+    return `${VENDOR_JOB_ERROR_PREFIX}${detail.jobstat}`;
+  }
+
+  return null;
+}
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
@@ -19,6 +40,17 @@ export class PrintOrderTrackingManager {
     private readonly wowpress: WowpressClient,
   ) {}
 
+  // 콜백 본문은 서명이 없어 믿지 않는다. 주문번호로 우리 행을 찾아 주문상세를 다시 불러 반영한다
+  async refreshByVendorOrderNumber(ordnum: string): Promise<void> {
+    const runs = await this.repository.inEveryDatabase(async () => {
+      const row = await this.repository.findTrackedByVendorOrderNumber(ordnum);
+      if (row) await this.refresh(row);
+    });
+    const failed = runs.find((run) => !run.ok);
+    // 실패를 던지면 와우프레스가 10초 간격으로 다시 보낸다
+    if (failed && !failed.ok) throw failed.error;
+  }
+
   async refresh(row: PrintOrderRow): Promise<void> {
     if (!row.vendorOrderNumber) return;
     let detail: WowpressOrderDetail;
@@ -31,6 +63,9 @@ export class PrintOrderTrackingManager {
     }
 
     await this.fillVendorBox(row, detail.boxNumber);
+    await this.markAwaitingPayment(row, detail.ordstat === WOWPRESS_STATUS_AWAITING_PAYMENT);
+    await this.markVendorAttention(row, vendorAttention(detail));
+    await this.markInProduction(row, !WOWPRESS_CANCELLABLE(detail) && detail.ordstat !== WOWPRESS_STATUS_CANCELLED);
 
     const now = new Date();
     const invoice = detail.trackingNumber;
@@ -60,6 +95,27 @@ export class PrintOrderTrackingManager {
     });
     if (!written)
       this.logger.log(`print order ${row.id} left tracking (now cancelling or cancelled); invoice not written`);
+  }
+
+  // 선입금이 모자라면 와우프레스가 입금대기에서 생산을 멈춘다. 보드 입금대기 탭이 이 값을 본다
+  private async markAwaitingPayment(row: PrintOrderRow, awaiting: boolean): Promise<void> {
+    if (row.vendorAwaitingPayment === awaiting) return;
+
+    await this.repository.updateTracked(row.id, { vendorAwaitingPayment: awaiting });
+  }
+
+  private async markInProduction(row: PrintOrderRow, inProduction: boolean): Promise<void> {
+    if (row.vendorInProduction === inProduction) return;
+
+    await this.repository.updateTracked(row.id, { vendorInProduction: inProduction });
+  }
+
+  // 중복 의심 같은 보존 기록은 덮지 않는다. 풀리면 우리가 쓴 기록만 지운다
+  private async markVendorAttention(row: PrintOrderRow, attention: string | null): Promise<void> {
+    if (row.lastError === attention || isPreservedLastError(row.lastError)) return;
+    if (attention === null && !row.lastError?.startsWith(VENDOR_ATTENTION_PREFIX)) return;
+
+    await this.repository.updateTracked(row.id, { lastError: attention });
   }
 
   private async fillVendorBox(row: PrintOrderRow, boxNumber: string | null): Promise<void> {

@@ -140,6 +140,7 @@ export const PaymentTotalSection = ({ totals }: PaymentTotalSectionProps) => {
             size="lg"
             weight="bold"
             tone="discount"
+            className="text-[#f54527]"
             data-testid="cart-total"
             data-value={finalTotal}
           >

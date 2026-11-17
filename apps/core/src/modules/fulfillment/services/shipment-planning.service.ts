@@ -21,6 +21,7 @@ import {
   ShipmentDetailResponseDto,
   ShipmentSummaryResponseDto,
   FulfillmentOperationResponseDto,
+  FulfillmentRequestOutcomeDto,
   ShipmentCommandReasonDto,
   ShipmentSplitMoveDto,
   SplitShipmentDto,
@@ -55,6 +56,7 @@ import {
   assertShipmentHasNoCustodyOrActiveWork,
   completeShipmentOperation,
   createShipmentOperation,
+  type ShipmentOperationType,
   loadShipmentAggregate,
   lockShipmentAggregate,
   selectConfirmedReservationQtyByLine,
@@ -67,9 +69,13 @@ import {
 } from './shipment-aggregate';
 import { shrinkDraftLines } from './draft-line-shrink';
 import { shipmentOwnerOf, warehouseIdOf } from '../shipment/shipment-owner';
-import { REQUIRED_RECIPIENT_FIELDS } from '../waybill/waybill-request.assembler';
-
-const TRUSTED_CHANNELS = new Set(['medusa', 'naver', 'coupang']);
+import { missingRecipientFields } from './recipient-completeness';
+import { isUntrustedExternalLine } from './external-line-identity';
+import {
+  classifyOperationReason,
+  resolveOperationReason,
+  type ResolvedOperationReason,
+} from '../shipment/shipment-operation-reasons';
 
 type CancelResponse = {
   operationId: string;
@@ -189,6 +195,7 @@ export class ShipmentPlanningService {
   ) {
     this.workflowGate.assertV2MutationAllowed('shipment.split');
     this.assertReason(dto.reason);
+    const resolvedReason = resolveOperationReason('split', dto);
     const moves = [...dto.moves].sort((a, b) => a.shipmentLineId.localeCompare(b.shipmentLineId));
     this.assertNoDuplicateIds(
       moves.map((move) => move.shipmentLineId),
@@ -242,7 +249,7 @@ export class ShipmentPlanningService {
               selected.map((entry) => entry.line.id),
               tx,
             );
-            const reservationTargets = new Map<string, number>();
+            const reservationTargets = new Map<string, { source: number; target: number }>();
             for (const { move, line } of selected) {
               const confirmed = confirmedByLine.get(line.id) ?? 0;
               const unreserved = line.qty - confirmed;
@@ -254,7 +261,7 @@ export class ShipmentPlanningService {
                   `targetReservedQty for line ${line.id} must be between ${minimum} and ${maximum}`,
                 );
               }
-              reservationTargets.set(line.id, requested);
+              reservationTargets.set(line.id, { source: confirmed - requested, target: requested });
             }
 
             return this.applySplit(tx, writer, {
@@ -263,6 +270,7 @@ export class ShipmentPlanningService {
               reservationTargets,
               actor,
               meta: dto,
+              resolvedReason,
               idempotencyKey,
               requestHash,
             });
@@ -289,6 +297,7 @@ export class ShipmentPlanningService {
   ) {
     this.workflowGate.assertV2MutationAllowed('shipment.split_unreserved');
     this.assertReason(dto.reason);
+    const resolvedReason = resolveOperationReason('split', dto);
 
     return this.commands.execute(
       {
@@ -345,13 +354,16 @@ export class ShipmentPlanningService {
                 move: { shipmentLineId: line.id, expectedLineVersion: line.lineVersion, qty: unreservedOf(line) },
                 line,
               }));
-            const reservationTargets = new Map(selected.map(({ line }) => [line.id, 0]));
+            const reservationTargets = new Map(
+              selected.map(({ line }) => [line.id, { source: confirmedByLine.get(line.id) ?? 0, target: 0 }]),
+            );
             return this.applySplit(tx, writer, {
               aggregate: locked,
               selected,
               reservationTargets,
               actor,
               meta: dto,
+              resolvedReason,
               idempotencyKey,
               requestHash,
             });
@@ -373,6 +385,7 @@ export class ShipmentPlanningService {
   ) {
     this.workflowGate.assertV2MutationAllowed('shipment.revise_recipient');
     this.assertReason(dto.reason);
+    const resolvedReason = resolveOperationReason('recipient_revision', dto);
     return this.commands.execute(
       {
         commandType: 'shipment.recipient_revision',
@@ -414,7 +427,7 @@ export class ShipmentPlanningService {
               tx,
               'recipient_revision',
               actor,
-              dto.reason,
+              resolvedReason,
               dto.csCaseId,
               dto.note,
               idempotencyKey,
@@ -506,7 +519,7 @@ export class ShipmentPlanningService {
               tx,
               'recipient_revision',
               actor,
-              'CHANNEL_ORDER_MODIFIED',
+              { reason: 'CHANNEL_ORDER_MODIFIED', reasonCode: 'channel_order_modified', requestChannel: null },
               undefined,
               undefined,
               idempotencyKey,
@@ -582,7 +595,7 @@ export class ShipmentPlanningService {
           tx,
           'plan',
           actor,
-          'Shipment planned',
+          { reason: 'Shipment planned', reasonCode: 'system_plan', requestChannel: null },
           undefined,
           undefined,
           idempotencyKey,
@@ -619,13 +632,16 @@ export class ShipmentPlanningService {
     shipmentId: string,
     dto: CancelShipmentOutstandingDto,
     idempotencyKey: string,
-    actor: ShipmentPlanningActor,
+    // recordedOperatorId — 작업 기록의 처리자만 바꾼다. 권한 판정·요청 해시는 actor 그대로다
+    actor: ShipmentPlanningActor & { recordedOperatorId?: string },
     // 요청 해시에 넣지 않는다 — 매번 새 uuid 라 같은 키 재전송이 불일치로 바뀐다(K3 PR6 N2)
     origin: SalesOrderCancellationOrigin | null,
     tx?: DbTx,
   ) {
     this.workflowGate.assertV2MutationAllowed('shipment.cancel_outstanding');
     this.assertReason(dto.reason);
+    const resolvedReason = resolveOperationReason('cancel', dto);
+    const recordedActor = actor.recordedOperatorId ? { ...actor, id: actor.recordedOperatorId } : actor;
     const requestedLines = [...dto.lines].sort((a, b) => a.shipmentLineId.localeCompare(b.shipmentLineId));
     this.assertNoDuplicateIds(
       requestedLines.map((line) => line.shipmentLineId),
@@ -650,9 +666,20 @@ export class ShipmentPlanningService {
         if (['canceled', 'superseded'].includes(aggregate.shipment.status)) {
           throw this.conflict('SHIPMENT_NOT_ACTIVE', `Shipment ${shipmentId} has no active outstanding demand`);
         }
+
+        let pendingOperationId: string | null = null;
+
         if (aggregate.shipment.status === 'recovery_required') {
-          throw this.conflict('SHIPMENT_RECOVERY_IN_PROGRESS', `Shipment ${shipmentId} is already in recovery`);
+          pendingOperationId =
+            aggregate.shipment.recoveryCode === 'CANCEL_REPLAN_PENDING'
+              ? await this.findPendingCancellationOperationId(shipmentId, tx)
+              : null;
+
+          if (!pendingOperationId) {
+            throw this.conflict('SHIPMENT_RECOVERY_IN_PROGRESS', `Shipment ${shipmentId} is already in recovery`);
+          }
         }
+
         const lineById = new Map(aggregate.lines.map((line) => [line.id, line]));
         const selected = requestedLines.map((request) => {
           const line = lineById.get(request.shipmentLineId);
@@ -666,11 +693,87 @@ export class ShipmentPlanningService {
           return { request, line };
         });
         const before = this.snapshot(aggregate);
+
+        if (pendingOperationId) {
+          this.requirePermission(actor, FULFILLMENT_PERMISSION.SHIPMENT_REOPEN);
+
+          const [operation] = await tx
+            .select()
+            .from(wmsTables.shipmentOperations)
+            .where(eq(wmsTables.shipmentOperations.id, pendingOperationId))
+            .limit(1)
+            .for('update');
+
+          if (!operation || operation.type !== 'cancel' || operation.status !== 'pending') {
+            throw this.conflict('SHIPMENT_RECOVERY_IN_PROGRESS', `Shipment ${shipmentId} is already in recovery`);
+          }
+
+          const pending = this.pendingCancellationIntent(operation.afterManifestSnapshot);
+          const mergedLines = new Map(pending.lines.map((line) => [line.shipmentLineId, line]));
+
+          for (const { request, line } of selected) {
+            const existing = mergedLines.get(line.id);
+            const qty = (existing?.qty ?? 0) + request.qty;
+
+            if (qty > line.qty) {
+              throw new BadRequestException(`Cannot cancel ${qty}; line ${line.id} has ${line.qty}`);
+            }
+
+            mergedLines.set(line.id, { ...(existing ?? request), qty });
+          }
+
+          const pendingIntent: PendingCancellationIntent = {
+            ...pending,
+            lines: [...mergedLines.values()].sort((a, b) => a.shipmentLineId.localeCompare(b.shipmentLineId)),
+          };
+
+          await tx
+            .update(wmsTables.shipmentOperations)
+            .set({ afterManifestSnapshot: { pendingIntent } })
+            .where(eq(wmsTables.shipmentOperations.id, pendingOperationId));
+          await tx
+            .update(wmsTables.shipmentOperationMembers)
+            .set({ afterManifestSnapshot: { pendingIntent } })
+            .where(
+              and(
+                eq(wmsTables.shipmentOperationMembers.operationId, pendingOperationId),
+                eq(wmsTables.shipmentOperationMembers.shipmentId, shipmentId),
+                eq(wmsTables.shipmentOperationMembers.role, 'source'),
+              ),
+            );
+          await this.auditCommand(
+            tx,
+            actor,
+            'shipment.cancel_outstanding.joined_pending',
+            pendingOperationId,
+            dto.reason,
+            {
+              shipmentId,
+              requestedLines,
+              before,
+            },
+          );
+
+          const response: CancelResponse = {
+            operationId: pendingOperationId,
+            operationStatus: 'pending',
+            shipmentId,
+            manifestVersion: before.manifestVersion,
+          };
+
+          return {
+            response,
+            resourceType: 'shipment_operation',
+            resourceId: pendingOperationId,
+            operationId: pendingOperationId,
+          };
+        }
+
         const operation = await this.createOperation(
           tx,
           'cancel',
-          actor,
-          dto.reason,
+          recordedActor,
+          resolvedReason,
           dto.csCaseId,
           dto.note,
           idempotencyKey,
@@ -1066,7 +1169,14 @@ export class ShipmentPlanningService {
     return this.dbService.run(async (trx) => {
       const aggregate = await this.loadAggregate(shipmentId, trx);
       const lineIds = aggregate.lines.map((line) => line.id);
-      const [reservations, waybills, workItems, attempts, origins, operations] = await Promise.all([
+      const skuIds = uniqueSorted(aggregate.lines.map((line) => line.skuId));
+      const skuNamesQuery: Promise<Array<{ id: string; name: string }>> = skuIds.length
+        ? trx
+            .select({ id: wmsTables.skus.id, name: wmsTables.skus.name })
+            .from(wmsTables.skus)
+            .where(inArray(wmsTables.skus.id, skuIds))
+        : Promise.resolve([]);
+      const [reservations, waybills, workItems, attempts, origins, operations, skuNames] = await Promise.all([
         lineIds.length
           ? trx
               .select()
@@ -1083,6 +1193,8 @@ export class ShipmentPlanningService {
             manifestVersion: wmsTables.waybills.manifestVersion,
             issuedAt: wmsTables.waybills.issuedAt,
             voidedAt: wmsTables.waybills.voidedAt,
+            lastError: wmsTables.waybills.lastError,
+            nextAttemptAt: wmsTables.waybills.nextAttemptAt,
           })
           .from(wmsTables.waybills)
           .where(eq(wmsTables.waybills.shipmentId, shipmentId))
@@ -1104,6 +1216,11 @@ export class ShipmentPlanningService {
             type: wmsTables.shipmentOperations.type,
             status: wmsTables.shipmentOperations.status,
             lastError: wmsTables.shipmentOperations.lastError,
+            operatorId: wmsTables.shipmentOperations.operatorId,
+            reason: wmsTables.shipmentOperations.reason,
+            storedReasonCode: wmsTables.shipmentOperations.reasonCode,
+            requestChannel: wmsTables.shipmentOperations.requestChannel,
+            note: wmsTables.shipmentOperations.note,
             createdAt: wmsTables.shipmentOperations.createdAt,
             completedAt: wmsTables.shipmentOperations.completedAt,
           })
@@ -1114,6 +1231,7 @@ export class ShipmentPlanningService {
           )
           .where(eq(wmsTables.shipmentOperationMembers.shipmentId, shipmentId))
           .orderBy(asc(wmsTables.shipmentOperations.createdAt), asc(wmsTables.shipmentOperations.id)),
+        skuNamesQuery,
       ]);
       const attemptIds = attempts.map((attempt) => attempt.id);
       const attemptSources: Array<typeof wmsTables.dispatchAttemptSources.$inferSelect> = attemptIds.length
@@ -1129,6 +1247,7 @@ export class ShipmentPlanningService {
         .where(eq(wmsTables.shipmentTracking.shipmentId, shipmentId))
         .orderBy(asc(wmsTables.shipmentTracking.timestamp), asc(wmsTables.shipmentTracking.id));
       const originByLineId = new Map(origins.map((origin) => [origin.salesOrderLineId, origin]));
+      const skuNameById = new Map(skuNames.map((sku) => [sku.id, sku.name]));
       const reservationByLine = new Map<string, typeof reservations>();
       for (const reservation of reservations) {
         if (!reservation.shipmentLineId) continue;
@@ -1141,6 +1260,7 @@ export class ShipmentPlanningService {
         ...aggregate.shipment,
         lines: aggregate.lines.map((line) => ({
           ...line,
+          skuName: skuNameById.get(line.skuId) ?? null,
           origin: line.salesOrderLineId ? (originByLineId.get(line.salesOrderLineId) ?? null) : null,
           reservations: reservationByLine.get(line.id) ?? [],
         })),
@@ -1153,7 +1273,13 @@ export class ShipmentPlanningService {
             .map((source) => ({ ...source, quantity: source.qty })),
           trackingEvents: trackingEvents.filter((event) => event.dispatchAttemptId === attempt.id),
         })),
-        operations,
+        operations: operations.map(({ storedReasonCode, ...operation }) => ({
+          ...operation,
+          reasonCode: classifyOperationReason(operation.type, {
+            reasonCode: storedReasonCode,
+            reason: operation.reason,
+          }),
+        })),
       };
     }, tx);
   }
@@ -1250,6 +1376,36 @@ export class ShipmentPlanningService {
         };
       }
       throw new NotFoundException(`Fulfillment operation ${operationId} not found`);
+    }, tx);
+  }
+
+  /**
+   * 응답을 받지 못한 요청이 처리됐는지 요청 키로 확인한다. 키 기록과 처리는 한 트랜잭션이라
+   * 기록이 없으면 처리되지 않은 것이다. 요청을 다시 실행하지 않는다.
+   */
+  async findRequestOutcome(
+    commandType: string,
+    idempotencyKey: string,
+    tx?: DbTx,
+  ): Promise<FulfillmentRequestOutcomeDto> {
+    return this.dbService.run(async (trx) => {
+      const table = wmsTables.fulfillmentCommandRequests;
+      const [command] = await trx
+        .select({ operationId: table.operationId, status: table.status, completedAt: table.completedAt })
+        .from(table)
+        .where(and(eq(table.commandType, commandType), eq(table.idempotencyKey, idempotencyKey)))
+        .limit(1);
+      if (!command) return { processed: false, operationId: null, status: null, completedAt: null };
+      if (!command.operationId) {
+        return { processed: true, operationId: null, status: command.status, completedAt: command.completedAt };
+      }
+      const operation = await this.getOperation(command.operationId, trx);
+      return {
+        processed: true,
+        operationId: operation.operationId,
+        status: operation.status,
+        completedAt: operation.completedAt ?? command.completedAt,
+      };
     }, tx);
   }
 
@@ -1578,21 +1734,22 @@ export class ShipmentPlanningService {
     args: {
       aggregate: ShipmentAggregate;
       selected: Array<{ move: ShipmentSplitMoveDto; line: ShipmentAggregate['lines'][number] }>;
-      reservationTargets: Map<string, number>;
+      reservationTargets: Map<string, { source: number; target: number }>;
       actor: ShipmentPlanningActor;
       meta: ShipmentCommandReasonDto;
+      resolvedReason: ResolvedOperationReason;
       idempotencyKey: string;
       requestHash: string;
     },
   ): Promise<{ operationId: string; shipmentId: string; targetId: string; before: ShipmentManifestSnapshot }> {
-    const { aggregate, selected, reservationTargets, actor, meta, idempotencyKey, requestHash } = args;
+    const { aggregate, selected, reservationTargets, actor, meta, resolvedReason, idempotencyKey, requestHash } = args;
     const shipmentId = aggregate.shipment.id;
     const before = this.snapshot(aggregate);
     const operation = await this.createOperation(
       tx,
       'split',
       actor,
-      meta.reason,
+      resolvedReason,
       meta.csCaseId,
       meta.note,
       idempotencyKey,
@@ -1616,7 +1773,10 @@ export class ShipmentPlanningService {
 
     let wholeLineReservationMove = false;
     for (const { move, line } of selected) {
-      const targetReservedQty = reservationTargets.get(line.id) ?? 0;
+      const allocation = reservationTargets.get(line.id);
+      if (!allocation) throw new Error(`Missing reservation allocation for shipment line ${line.id}`);
+
+      const targetReservedQty = allocation.target;
       if (move.qty === line.qty) {
         await writer.moveLine(line.id, shipmentId, target.id);
         wholeLineReservationMove ||= targetReservedQty > 0;
@@ -1626,7 +1786,7 @@ export class ShipmentPlanningService {
       // 원래 라인의 재고 대기 순번은 예약을 옮기기 «전에» 읽는다 — 새 라인이 «지금» 으로
       // 줄 맨 뒤에 서면, 나눠 보낸 것 때문에 이 주문이 뒤에 온 주문보다 늦게 재고를 받는다.
       const demandRequestedAt = await loadReservationQueueKey(tx, line.id);
-      await writer.setLineQty(line.id, shipmentId, line.qty - move.qty);
+      await writer.setLineQty(line.id, shipmentId, line.qty - move.qty, allocation.source);
       const targetLine = await writer.addLine(target.id, {
         fulfillmentOrderItemId: line.fulfillmentOrderItemId,
         skuId: line.skuId,
@@ -1675,9 +1835,9 @@ export class ShipmentPlanningService {
 
   private async createOperation(
     tx: DbTx,
-    type: (typeof wmsTables.shipmentOperations.type.enumValues)[number],
+    type: ShipmentOperationType,
     actor: ShipmentPlanningActor,
-    reason: string,
+    reason: ResolvedOperationReason,
     csCaseId: string | undefined,
     note: string | undefined,
     idempotencyKey: string,
@@ -1687,7 +1847,9 @@ export class ShipmentPlanningService {
     return createShipmentOperation(tx, {
       type,
       actorId: actor.id,
-      reason,
+      reason: reason.reason,
+      reasonCode: reason.reasonCode,
+      requestChannel: reason.requestChannel,
       csCaseId: csCaseId ?? null,
       note: note ?? null,
       idempotencyKey,
@@ -1826,12 +1988,7 @@ export class ShipmentPlanningService {
     const origins = await this.loadSalesOrderLineOrigins(aggregate.lines, tx);
     // 교환 줄(K8 PR11)은 Medusa 품목 id 를 정산 사실이 나중에 채운다 — 선발송·정산 전 출고가 그 id 를 기다리지 않는다.
     // 채널 발송 이벤트는 교환 줄을 싣지 않는다(dispatch-effects). 채널 품목 id 가 이미 있으면 같은 신뢰 검사를 받는다
-    const invalid = origins.filter(
-      (origin) =>
-        TRUSTED_CHANNELS.has(origin.salesChannel) &&
-        ((origin.exchangeReturnLineId === null && !origin.channelOrderItemId?.trim()) ||
-          (origin.channelProductId?.trim() && origin.channelOrderItemId?.trim() === origin.channelProductId.trim())),
-    );
+    const invalid = origins.filter(isUntrustedExternalLine);
     if (invalid.length) {
       throw this.conflict(
         'SHIPMENT_CHANNEL_LINE_IDENTITY_UNTRUSTED',
@@ -1849,6 +2006,7 @@ export class ShipmentPlanningService {
       salesOrderId: string;
       salesChannel: string;
       channelOrderId: string;
+      displayOrderNo: string | null;
       channelOrderItemId: string | null;
       channelProductId: string | null;
       exchangeReturnLineId: string | null;
@@ -1865,6 +2023,7 @@ export class ShipmentPlanningService {
              so.id::text AS "salesOrderId",
              so.sales_channel::text AS "salesChannel",
              so.channel_order_id AS "channelOrderId",
+             so.display_order_no AS "displayOrderNo",
              sol.channel_order_item_id AS "channelOrderItemId",
              sol.channel_product_id AS "channelProductId",
              sol.exchange_return_line_id::text AS "exchangeReturnLineId"
@@ -1878,6 +2037,7 @@ export class ShipmentPlanningService {
       salesOrderId: string;
       salesChannel: string;
       channelOrderId: string;
+      displayOrderNo: string | null;
       channelOrderItemId: string | null;
       channelProductId: string | null;
       exchangeReturnLineId: string | null;
@@ -1895,10 +2055,8 @@ export class ShipmentPlanningService {
   }
 
   private assertRecipientComplete(value: unknown): void {
-    const recipient = (value ?? {}) as Record<string, unknown>;
-    const missing = REQUIRED_RECIPIENT_FIELDS.filter(
-      (key) => typeof recipient[key] !== 'string' || !recipient[key].trim(),
-    );
+    const missing = missingRecipientFields(value);
+
     if (missing.length) {
       throw this.conflict('SHIPMENT_RECIPIENT_INCOMPLETE', `Missing recipient fields: ${missing.join(',')}`);
     }

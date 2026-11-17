@@ -1051,6 +1051,97 @@
       "when": 1793866446490,
       "tag": "20261105081406_add-quantity-discount-variant-overrides",
       "breakpoints": true
+    },
+    {
+      "idx": 150,
+      "version": "7",
+      "when": 1793942857582,
+      "tag": "20261106052737_add-print-product-specs",
+      "breakpoints": true
+    },
+    {
+      "idx": 151,
+      "version": "7",
+      "when": 1794231321035,
+      "tag": "20261109133521_add-sales-order-line-state",
+      "breakpoints": true
+    },
+    {
+      "idx": 152,
+      "version": "7",
+      "when": 1794278916379,
+      "tag": "20261110024836_add-print-order-vendor-awaiting-payment",
+      "breakpoints": true
+    },
+    {
+      "idx": 153,
+      "version": "7",
+      "when": 1794296145049,
+      "tag": "20261110073545_add-top-notices",
+      "breakpoints": true
+    },
+    {
+      "idx": 154,
+      "version": "7",
+      "when": 1794372922270,
+      "tag": "20261111045522_rename-sku-option-names",
+      "breakpoints": true
+    },
+    {
+      "idx": 155,
+      "version": "7",
+      "when": 1794376282138,
+      "tag": "20261111055122_bracket-sku-option-names",
+      "breakpoints": true
+    },
+    {
+      "idx": 156,
+      "version": "7",
+      "when": 1794455397882,
+      "tag": "20261112034957_add-shipment-operation-reason-code",
+      "breakpoints": true
+    },
+    {
+      "idx": 157,
+      "version": "7",
+      "when": 1794474012548,
+      "tag": "20261112090012_add-print-order-vendor-in-production",
+      "breakpoints": true
+    },
+    {
+      "idx": 158,
+      "version": "7",
+      "when": 1794546762443,
+      "tag": "20261113051242_add-print-spec-accessories",
+      "breakpoints": true
+    },
+    {
+      "idx": 159,
+      "version": "7",
+      "when": 1794763450198,
+      "tag": "20261115172410_add-inbound-shipments",
+      "breakpoints": true
+    },
+    {
+      "idx": 160,
+      "version": "7",
+      "when": 1794794231615,
+      "tag": "20261116015711_add-inbound-shipment-count-method",
+      "breakpoints": true
+    },
+    {
+      "idx": 161,
+      "version": "7",
+      "when": 1794813568231,
+      "tag": "20261116071928_add-inbound-shipment-promised-arrival",
+      "breakpoints": true
+    },
+    {
+      "idx": 162,
+      "version": "7",
+      "when": 1794843629102,
+      "tag": "20261116154029_add-sellmate-reconcile-tables",
+      "breakpoints": true
     }
   ]
 }

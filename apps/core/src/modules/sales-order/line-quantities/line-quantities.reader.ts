@@ -17,6 +17,8 @@ export type LineSkuQuantities = {
   shipped: number;
   /** 직배 파트너에게 넘긴 미출고 — 출고가 아니다. */
   forwarded: number;
+  /** 그 FOI 의 상자 라인에 걸린 확정 예약 수량(SKU 단위) — `CONFIRMED_LINE_RESERVATION_WHERE`. */
+  reserved: number;
   delivered: number;
   /** 직배 파트너가 완료한 수량 — 배송완료가 아니다(표시용). */
   partnerCompleted: number;
@@ -56,6 +58,7 @@ type LineSkuRow = {
   required: number;
   shipped: number;
   forwarded: number;
+  reserved: number;
   delivered: number;
   partner_completed: number;
   outstanding: number;
@@ -101,6 +104,7 @@ export async function readLineQuantities(trx: DbTx, salesOrderId: string): Promi
         required: row.required,
         shipped: row.shipped,
         forwarded: row.forwarded,
+        reserved: row.reserved,
         delivered: row.delivered,
         partnerCompleted: row.partner_completed,
         outstanding: row.outstanding,

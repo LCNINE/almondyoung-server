@@ -70,7 +70,7 @@ export const SearchInput = forwardRef<HTMLDivElement, SearchInputProps>(
             }}
             placeholder={t("inputPlaceholder")}
             className={cn(
-              "w-full rounded-xl border-none bg-gray-100 py-4 pr-20 pl-5 text-sm font-normal transition-all placeholder:text-gray-400 focus-visible:bg-white focus-visible:ring-2 focus-visible:ring-yellow-400 focus-visible:ring-offset-0",
+              "focus-visible:ring-ring w-full rounded-xl border-none bg-gray-100 py-4 pr-20 pl-5 text-sm font-normal transition-all placeholder:text-gray-400 focus-visible:bg-white focus-visible:ring-2 focus-visible:ring-offset-0",
               inputClassName
             )}
           />

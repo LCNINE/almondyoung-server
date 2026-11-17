@@ -31,7 +31,7 @@ export async function mountViewer(
   // 기본값(105%)은 상품이 화면을 꽉 채워 너무 가깝다.
   viewer.setAttribute("camera-orbit", "0deg 75deg 150%")
   viewer.setAttribute("max-camera-orbit", "auto auto 300%")
-  viewer.setAttribute("touch-action", "pan-y")
+  viewer.setAttribute("touch-action", "none")
   viewer.setAttribute("loading", "eager")
   viewer.setAttribute("alt", alt)
   viewer.style.width = "100%"

@@ -151,7 +151,7 @@ CSS `@import` 외부 폰트(네트워크 호스트 흔적 — 자체 서빙), �
 
 **17. file-service: 쓰기는 요청 테넌트, 읽기·서명·삭제·confirm 은 행의 테넌트.** 요청 테넌트로만 고르거나 버킷 이름을 코드에 두면 남의 버킷을 읽거나 파일을 잃는다. 버킷은 목록에서만 고른다.
 직원·위임 예외는 파일 테넌트 = 요청 테넌트일 때만.
-장치: `apps/file-service/src/tenancy/file-tenant-axis.http.spec.ts`, `apps/file-service/src/storage/storage.service.spec.ts`.
+장치: `apps/file-service/src/tenancy/file-tenant-axis.http.spec.ts`.
 
 **18. user-service 의 테넌트 1 데이터 컨트롤러는 `@ServedTenantData()`.** 고객·근태처럼 사실상 테넌트 1 데이터인 라우트를 분류 없이 만들면 다른 테넌트 토큰에 열린다. 계정·토큰·권한 라우트만 모든 테넌트용이다.
 장치: `apps/user-service/src/tenancy/served-tenant-classification.spec.ts`, `served-tenant.guard.spec.ts`.
@@ -167,7 +167,7 @@ CSS `@import` 외부 폰트(네트워크 호스트 흔적 — 자체 서빙), �
 되돌리기는 직전 `deploy/<stage>/…` 태그 커밋을 코드·배포 설정째 재배포한다 — 이미지만 돌리면 옛 문이 판정한다. 장치: 규율(모드 값은 `deployments/lcnine/auth/infra/services.ts` 의 `tenantGateMode` 한 줄).
 
 **22. 문 모드를 `warn` → `reject` 로 넘기기 전에 셈이 모두 0 이어야 한다** — `core_untenanted_requests_total`, `events_published_without_tenant_total`, `events_consumed_without_known_tenant_total`,
-공유 서비스·file-service·ai 의 테넌트 모르는 요청 셈, consumer lag, 그리고 액세스 토큰 수명 경과. admin-web 은 Lambda 라 Prometheus 셈 대신 CloudWatch 경고 로그 줄로 센다.
+공유 서비스의 테넌트 모르는 요청 셈(file-service·ai 는 #27 의 contract 뒤 셈 없이 두 모드 모두 403), consumer lag, 그리고 액세스 토큰 수명 경과. admin-web 은 Lambda 라 Prometheus 셈 대신 CloudWatch 경고 로그 줄로 센다.
 `reject` 에서 직접 발행은 테넌트를 못 정하면 던지므로 도메인 흐름 자체가 실패한다. 장치: 규율.
 
 **23. 테넌트 설정의 SoT 는 lcnine-auth 다.** 목록(`TenantList`)·T(`ServedTenantId`)·모드(`tenantGateMode`)를 바꾸면 **auth → services** 순서로 배포한다(services 앱은 auth 가 만든 SSM 파라미터를 읽는다). 장치: 규율.
@@ -184,9 +184,12 @@ CSS `@import` 외부 폰트(네트워크 호스트 흔적 — 자체 서빙), �
 장치: 규율(코드는 `deployments/lcnine/tenant-domain-distribution.ts`).
 
 **27. 테넌트 칸 백필의 DB 기본값 `'1'` 은 contract 에서 함께 걷는다.** user-service·file-service·ai 의 테넌트 칸 기본값은 마이그 SQL 에만 있고 `schema.ts` 엔 없다 — drizzle 이 모르므로 NOT NULL 을 거는 custom 마이그에 `DROP DEFAULT` 를 함께 넣는다.
-기본값이 남아 있는 동안 «테넌트를 안 넘기는 쓰기»는 조용히 테넌트 1 이 된다. user-service 의 계정·인증 기록은 걷었다(0056 contract — 계정을 넣는 시드는 `scripts/seeding/lib/tenant-one-backfill.ts` 의
-`TENANT_ONE_ID` 를 적는다). 부여·변경 이력·접속기록(`user_roles`·`iam_audit_logs`·`pii_access_logs`)과 file-service·ai 는 아직 기본값이 있다. 운영자 성질 변경 이력 행은 일부러 테넌트 null 이다. contract 는 `deploy → migrate` 이고 expand 와 한 배포에 섞지 않는다.
-장치: `npm run deploy:preflight`(expand/contract 섞임이면 1). `DROP DEFAULT` 는 규율.
+기본값이 남아 있는 동안 «테넌트를 안 넘기는 쓰기»는 조용히 테넌트 1 이 된다 — 접속기록(`pii_access_logs`)은 쓰는 코드가 테넌트를 아예 안 적어 테넌트 2 직원의 열람까지 테넌트 1 로 남았다.
+이제 전부 걷었다: 계정·인증 기록(0056 contract), 부여·변경 이력·접속기록·file-service `uploads`·ai 대화·업로드 추적. 변경 이력(`iam_audit_logs`)만 nullable 이다 — 운영자 성질 변경 행은 일부러 테넌트 null 이다.
+접속기록의 테넌트는 요청·이벤트 맥락(CLS)에서 오고, 맥락이 없으면 적재가 실패한다(원문 대신 가린 값). file-service·ai 는 테넌트를 모르는 요청을 두 모드 모두 403 한다.
+시드는 테넌트 1 백필 마이그를 다시 돌린다(`tenantOneBackfillStatements`) — 그 함수가 기본값을 거는 ALTER·일회성 «빈 칸 → '1'» UPDATE 를 걷고 도메인 INSERT 에 앱을 싣는다. 걷지 않으면 시드가 기본 테넌트를 되살린다.
+계정·부여를 넣는 시드는 `TENANT_ONE_ID` 를 적는다. contract 는 `deploy → migrate` 이고 expand 와 한 배포에 섞지 않는다.
+장치: `npm run deploy:preflight`(expand/contract 섞임이면 1), `scripts/seeding/lib/tenant-one-backfill.spec.ts`. `DROP DEFAULT` 는 규율.
 
 ### 4.3 테넌트 만들기·운영
 

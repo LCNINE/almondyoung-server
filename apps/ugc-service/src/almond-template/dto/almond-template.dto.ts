@@ -40,6 +40,7 @@ export class AlmondTemplateSummaryResponseDto {
   @ApiProperty({ nullable: true, type: String }) industry: string | null;
   @ApiProperty({ nullable: true, type: String }) purpose: string | null;
   @ApiProperty({ nullable: true, type: String, example: 'pet', description: 'design.kind' }) kind: string | null;
+  @ApiProperty({ description: '뒷면을 인쇄하는 템플릿인지' }) printsBack: boolean;
   @ApiProperty() updatedAt: string;
 }
 
@@ -58,4 +59,8 @@ export class AdminAlmondTemplateSummaryResponseDto extends AlmondTemplateSummary
 
 export class AdminAlmondTemplateDetailResponseDto extends AdminAlmondTemplateSummaryResponseDto {
   @ApiProperty({ type: 'object', additionalProperties: true }) design: Record<string, unknown>;
+}
+
+export class AlmondTemplatePreviewImageResponseDto {
+  @ApiProperty({ description: 'file-service 에 올린 미리보기 JPG 의 파일 id' }) fileId: string;
 }

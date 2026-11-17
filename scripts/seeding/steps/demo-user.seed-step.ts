@@ -124,8 +124,8 @@ export class DemoUserSeedStep extends SeedStep {
 
       this.logger.step(2, 2, 'Assigning user role');
       await this.db.execute(sql`
-        INSERT INTO user_roles (user_id, role_id)
-        VALUES (${DEMO_USER.id}, ${FIXED_UUIDS.ROLE_USER})
+        INSERT INTO user_roles (user_id, role_id, tenant_id)
+        VALUES (${DEMO_USER.id}, ${FIXED_UUIDS.ROLE_USER}, ${TENANT_ONE_ID})
         ON CONFLICT DO NOTHING
       `);
       itemsApplied += 1;

@@ -555,7 +555,7 @@ describeIfDb('환불 정산 — 수동 실행·실패 분류·송금 완료·목
     return id;
   }
 
-  it('크론: 30분 넘게 멈춘 TOSS AUTO PENDING 만 같은 키로 다시 보낸다 — 젊은 행·MANUAL·무통장은 그대로', async () => {
+  it('크론: 30분 넘게 멈춘 TOSS AUTO PENDING 만 같은 키로 다시 보낸다 — 젊은 행·MANUAL 은 그대로, 무통장은 결과 모름으로 내린다', async () => {
     const s = await seed({ toss: 10_000, bank: 5_000 });
     const old = await stuckPending(s.tossChargeId!, s.intentId, 2_000, 31 * 60_000);
     const young = await stuckPending(s.tossChargeId!, s.intentId, 1_000, 5 * 60_000);
@@ -568,7 +568,8 @@ describeIfDb('환불 정산 — 수동 실행·실패 분류·송금 완료·목
     expect(externalRefund).toHaveBeenCalledTimes(1);
     expect(externalRefund).toHaveBeenCalledWith(expect.objectContaining({ refundId: old, idempotencyKey: `wallet:refund:${old}`, amount: 2_000 }));
     const byId = new Map((await rowsOf(s.intentId)).map((r) => [r.id, r.status]));
-    expect([byId.get(old), byId.get(young), byId.get(manual), byId.get(bank)]).toEqual(['SUCCEEDED', 'PENDING', 'PENDING', 'PENDING']);
+    expect([byId.get(old), byId.get(young), byId.get(manual), byId.get(bank)]).toEqual(['SUCCEEDED', 'PENDING', 'PENDING', 'FAILED']);
+    expect((await rowsOf(s.intentId)).find((r) => r.id === bank)).toMatchObject({ failureCode: 'PROVIDER_EXCEPTION', execution: 'AUTO' });
     expect(summary.resent).toBeGreaterThanOrEqual(1);
   });
 

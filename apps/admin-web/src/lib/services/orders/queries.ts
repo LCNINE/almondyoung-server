@@ -24,6 +24,8 @@ import type {
   ShipmentConsolidationCandidateQuery,
   OutboundBatchV2ListQuery,
   SupplierQueueStage,
+  OutboundPreparationSummary,
+  PreparationBucket,
 } from '@/lib/types/dto/fulfillment';
 import type { PermissionRequirement } from '@/lib/auth/mutation-permission';
 
@@ -43,6 +45,17 @@ export const useSalesOrder = (id: string) => {
   });
 };
 
+export const useSalesOrderShipmentOperations = (
+  orderId: string,
+  options: { enabled?: boolean } = {}
+) => {
+  return useQuery({
+    queryKey: orderQueryKeys.orderShipmentOperations(orderId),
+    queryFn: () => orders.salesOrders.getSalesOrderShipmentOperations(orderId),
+    enabled: !!orderId && (options.enabled ?? true),
+  });
+};
+
 export const useSalesOrderItems = (orderId: string) => {
   return useQuery({
     queryKey: orderQueryKeys.orderItems(orderId),
@@ -52,6 +65,77 @@ export const useSalesOrderItems = (orderId: string) => {
 };
 
 // ===== 출고 배치 관련 쿼리 (D2) =====
+
+export const useOutboundPreparationSummary = (
+  warehouseId: string,
+  enabled = true
+) => {
+  return useQuery({
+    queryKey: orderQueryKeys.outboundPreparationSummary(warehouseId),
+    queryFn: () => orders.outboundPreparation.summary(warehouseId),
+    enabled: !!warehouseId && enabled,
+  });
+};
+
+export const useLoadMoreOutboundPreparation = (warehouseId: string) => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (bucket: PreparationBucket) => {
+      const queryKey = orderQueryKeys.outboundPreparationSummary(warehouseId);
+      const summary =
+        queryClient.getQueryData<OutboundPreparationSummary>(queryKey);
+      const current = summary?.buckets.find((entry) => entry.bucket === bucket);
+
+      if (!current || current.shipments.length >= current.count) {
+        return;
+      }
+
+      const page = await orders.outboundPreparation.summary(warehouseId, {
+        bucket,
+        offset: current.shipments.length,
+      });
+      const next = page.buckets.find((entry) => entry.bucket === bucket);
+
+      if (!next) {
+        return;
+      }
+
+      const existingIds = new Set(
+        current.shipments.map((shipment) => shipment.shipmentId)
+      );
+
+      queryClient.setQueryData<OutboundPreparationSummary>(
+        queryKey,
+        (latest) => {
+          if (!latest || latest !== summary) {
+            return latest;
+          }
+
+          return {
+            ...latest,
+            buckets: latest.buckets.map((entry) =>
+              entry.bucket === bucket
+                ? {
+                    ...next,
+                    shipments: [
+                      ...current.shipments,
+                      ...next.shipments.filter(
+                        (shipment) => !existingIds.has(shipment.shipmentId)
+                      ),
+                    ],
+                  }
+                : entry
+            ),
+          };
+        }
+      );
+    },
+  });
+};
+useLoadMoreOutboundPreparation.permission = [
+  'fulfillment.shipment.read',
+] satisfies PermissionRequirement;
 
 export const useOutboundBatchesV2 = (query: OutboundBatchV2ListQuery = {}) => {
   return useQuery({
@@ -69,11 +153,44 @@ export const useOutboundBatchV2 = (id: string) => {
   });
 };
 
-export const useOutboundBatchEligibleShipments = (id: string) => {
+/** 쓰기 직후 배치를 확인할 때 — 진행 중이던 조회를 끊고 서버에서 새로 받는다 */
+export const useLoadOutboundBatchV2 = () => {
+  const queryClient = useQueryClient();
+
+  return async (id: string) => {
+    const queryKey = orderQueryKeys.outboundBatchV2(id);
+
+    await queryClient.cancelQueries({ queryKey });
+
+    return queryClient.fetchQuery({
+      queryKey,
+      queryFn: () => orders.outboundBatches.getV2(id),
+      staleTime: 0,
+    });
+  };
+};
+
+/**
+ * 배치에 넣을 수 있는 상자 후보. snapshotAt(그 배치를 받은 시각)을 키에 넣어 배치가 새로 들어올 때만 묻는다 —
+ * 같은 시점의 후보는 다시 받지 않고, 그 전에 보낸 요청의 응답은 옛 키에만 남는다.
+ * 새 응답이 오기 전까지는 같은 배치의 앞 후보를 보여 준다.
+ */
+export const useOutboundBatchEligibleShipments = (
+  id: string,
+  options?: { enabled?: boolean; snapshotAt?: number }
+) => {
   return useQuery({
-    queryKey: orderQueryKeys.outboundBatchEligibleShipments(id),
+    queryKey: [
+      ...orderQueryKeys.outboundBatchEligibleShipments(id),
+      options?.snapshotAt ?? 0,
+    ],
     queryFn: () => orders.outboundBatches.getEligibleShipments(id),
-    enabled: !!id,
+    enabled: !!id && (options?.enabled ?? true),
+    staleTime: Infinity,
+    refetchOnMount: false,
+    refetchOnReconnect: false,
+    placeholderData: (previous, previousQuery) =>
+      previousQuery?.queryKey[2] === id ? previous : undefined,
   });
 };
 
@@ -100,8 +217,12 @@ export const useSupplierShipments = (
   stage: SupplierQueueStage
 ) => {
   return useQuery({
-    queryKey: orderQueryKeys.directShipSupplierShipments(supplierId ?? '', stage),
-    queryFn: () => orders.directShip.getSupplierShipments(supplierId ?? '', stage),
+    queryKey: orderQueryKeys.directShipSupplierShipments(
+      supplierId ?? '',
+      stage
+    ),
+    queryFn: () =>
+      orders.directShip.getSupplierShipments(supplierId ?? '', stage),
     enabled: !!supplierId,
   });
 };
@@ -258,7 +379,10 @@ export const useFulfillmentOutboxEvents = (id: string) => {
   });
 };
 
-export const useFulfillmentShipments = (id: string, options?: { enabled?: boolean }) => {
+export const useFulfillmentShipments = (
+  id: string,
+  options?: { enabled?: boolean }
+) => {
   return useQuery({
     queryKey: orderQueryKeys.fulfillmentShipments(id),
     queryFn: () => orders.fulfillmentOrder.getShipments(id),
@@ -284,6 +408,39 @@ export const useFulfillmentOperation = (operationId: string) => {
       return status === 'pending' ||
         status === 'in_progress' ||
         status === 'recovery_required'
+        ? 2_000
+        : false;
+    },
+  });
+};
+
+/**
+ * 응답을 받지 못한 요청의 처리 여부. 아직 서버에 늦게 닿을 수 있는 시간(settleMs) 안이면
+ * «처리 안 됨»을 확정으로 보지 않고 그 시간이 지나면 한 번 더 묻는다.
+ */
+export const useFulfillmentRequestOutcome = (
+  commandType: string,
+  idempotencyKey: string,
+  sentAt: number,
+  settleMs: number
+) => {
+  return useQuery({
+    queryKey: orderQueryKeys.fulfillmentRequestOutcome(
+      commandType,
+      idempotencyKey
+    ),
+    queryFn: () =>
+      orders.fulfillmentOrder.getRequestOutcome(commandType, idempotencyKey),
+    // 상자를 다시 열 때마다 새로 묻는다 — 앱 전역 캐시 시간(5분) 동안 옛 답에 머물지 않게
+    staleTime: 0,
+    refetchInterval: (query) => {
+      const data = query.state.data;
+      if (!data) return false;
+      if (!data.processed) {
+        const wait = sentAt + settleMs - Date.now();
+        return wait > 0 ? wait + 500 : false;
+      }
+      return data.status === 'pending' || data.status === 'in_progress'
         ? 2_000
         : false;
     },
@@ -397,7 +554,11 @@ export const useFulfillmentMetrics = () => {
   });
 };
 
-export const useDailyOrderStatus = (from: string, to: string, options: { enabled?: boolean } = {}) => {
+export const useDailyOrderStatus = (
+  from: string,
+  to: string,
+  options: { enabled?: boolean } = {}
+) => {
   return useQuery({
     enabled: options.enabled ?? true,
     queryKey: orderQueryKeys.dailyOrderStatus(from, to),
@@ -428,7 +589,9 @@ export const useConfirmSalesOrder = () => {
     },
   });
 };
-useConfirmSalesOrder.permission = ['order.order.write'] as const satisfies PermissionRequirement;
+useConfirmSalesOrder.permission = [
+  'order.order.write',
+] as const satisfies PermissionRequirement;
 
 // ===== 매칭 관련 쿼리 (WMS API 스펙 기반) =====
 

@@ -4,10 +4,12 @@ import {
   pgTable,
   pgView,
   uuid,
+  char,
   varchar,
   boolean,
   integer,
   bigint,
+  bigserial,
   doublePrecision,
   timestamp,
   json,
@@ -24,7 +26,7 @@ import {
   foreignKey,
   AnyPgColumn,
 } from 'drizzle-orm/pg-core';
-import { printOrders } from '../../print-order/schema/print-order.schema';
+import { printOrders, printProductSpecs, printTemplateProducts } from '../../print-order/schema/print-order.schema';
 // 타입만 가져온다(런타임 import 없음) — jsonb 칸의 모양은 반품 타입 파일이 정본이다
 import type {
   CustomerReturnCsResolution,
@@ -162,11 +164,33 @@ export const inboundReceiptStatusEnum = pgEnum('inbound_receipt_status', ['poste
 /**
  * 회차 라인이 문서 정산에 묶였는가. 커널은 **어느 문서인지는 모르고** 묶였다는 사실만 안다 —
  * 연결은 문서 쪽 링크 테이블이 든다(스펙 §3.2).
- * 처음부터 두 값으로 만든다: drizzle 마이그레이터는 대기 마이그레이션 전부를 한 트랜잭션으로 돌고,
- * `ALTER TYPE … ADD VALUE` 로 넣은 값은 그 트랜잭션 안에서 쓸 수 없다(스펙 §5.1 D9).
- * `purchase_order` 를 쓰는 코드는 PR-B 에서 생긴다.
+ * - `direct` — 입고 화면에서 바로 받은 회차(기본값).
+ * - `purchase_order` — 발주 수령이 묶은 회차(발주 문서가 링크를 든다).
+ * - `inbound_shipment` — 선적 상자 확정이 만든 회차(`inbound_shipment_box_counts.receipt_line_id` 가 링크다).
+ * `direct`·`purchase_order` 는 타입을 만들 때 넣었고 `inbound_shipment` 는 선적 입고 마이그가 `ADD VALUE` 로 더했다.
+ * drizzle 마이그레이터는 대기 마이그레이션 전부를 한 트랜잭션으로 돌고 `ADD VALUE` 로 넣은 값은 그 트랜잭션 안에서
+ * 쓸 수 없으므로(스펙 §5.1 D9), 값을 더하는 마이그와 같은 배치의 마이그는 새 값을 SQL 로 쓰지 않는다.
  */
-export const inboundReceiptSourceEnum = pgEnum('inbound_receipt_source', ['direct', 'purchase_order']);
+export const inboundReceiptSourceEnum = pgEnum('inbound_receipt_source', [
+  'direct',
+  'purchase_order',
+  'inbound_shipment',
+]);
+
+// 중국 선적 입고(선적·상자·리스트 줄). 설계: docs/superpowers/specs/2026-11-16-inbound-shipment-boxes-design.md §5.2
+export const inboundShipmentStatusEnum = pgEnum('inbound_shipment_status', [
+  'draft',
+  'expected',
+  'receiving',
+  'closed',
+  'canceled',
+]);
+export const inboundShipmentBoxDispositionEnum = pgEnum('inbound_shipment_box_disposition', ['stock', 'forward']);
+export const inboundShipmentBoxStatusEnum = pgEnum('inbound_shipment_box_status', ['open', 'received']);
+export const inboundShipmentBoxOriginEnum = pgEnum('inbound_shipment_box_origin', ['list', 'added']);
+export const inboundShipmentCountMethodEnum = pgEnum('inbound_shipment_count_method', ['counted', 'list']);
+export const inboundShipmentLineKindEnum = pgEnum('inbound_shipment_line_kind', ['sku', 'free', 'unresolved']);
+export const inboundShipmentLineResolutionEnum = pgEnum('inbound_shipment_line_resolution', ['barcode', 'manual']);
 export const inboundWorkTypeEnum = pgEnum('inbound_work_type', ['INBOUND', 'PUTAWAY', 'RETURN', 'CANCEL']);
 
 export const locationTypeEnum = pgEnum('location_type', ['standard', 'zone']);
@@ -257,6 +281,7 @@ export const shipmentOperationTypeEnum = pgEnum('shipment_operation_type', [
   'replan',
   'short_pick',
   'recall',
+  'force_dispatch',
   // #1063: 작성 중 박스를 목표 내용에 맞춘 기록(라인 구성 변경·S2 주문 수정). PR 2 부터 쓴다.
   'amend',
 ]);
@@ -778,6 +803,108 @@ export const skuShelfPositions = pgTable(
     idxCode: index('idx_sku_shelf_positions_code').on(t.positionCode),
   }),
 );
+
+// ===== 셀메이트 저녁 맞추기 (#1304) =====
+// #1304 저녁 맞추기 전용 상태 테이블 — 앱 코드는 읽지 않는다. scripts/sellmate 가 raw SQL 로만 쓴다.
+
+/** 셀메이트 품목(옵션 시리얼) ↔ core SKU 짝. */
+export const sellmateItemPairs = pgTable('sellmate_item_pairs', {
+  optionSerial: varchar('option_serial', { length: 64 }).primaryKey(),
+  productSerial: varchar('product_serial', { length: 64 }).notNull(),
+  itemName: text('item_name').notNull(),
+  barcode: varchar('barcode', { length: 128 }),
+  skuId: uuid('sku_id').references(() => skus.id, { onDelete: 'restrict' }),
+  matchedBy: varchar('matched_by', { length: 16 }),
+  unpairedReason: varchar('unpaired_reason', { length: 32 }),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** 저녁 맞추기 실행 기록 (kind: init/apply, status: closed/awaiting_close). */
+export const sellmateReconcileRuns = pgTable(
+  'sellmate_reconcile_runs',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    kind: varchar('kind', { length: 16 }).notNull(),
+    status: varchar('status', { length: 24 }).notNull(),
+    inputSha256: char('input_sha256', { length: 64 }).notNull().unique(),
+    inputSnapshotAt: timestamp('input_snapshot_at', { withTimezone: true }).notNull(),
+    cutoverAt: timestamp('cutover_at', { withTimezone: true }),
+    uploadFile: text('upload_file'),
+    closeInputSha256: char('close_input_sha256', { length: 64 }),
+    closeSnapshotAt: timestamp('close_snapshot_at', { withTimezone: true }),
+    accepted: jsonb('accepted'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    closedAt: timestamp('closed_at', { withTimezone: true }),
+  },
+  (t) => ({
+    uqInit: uniqueIndex('uq_sellmate_reconcile_runs_init')
+      .on(t.kind)
+      .where(sql`${t.kind} = 'init'`),
+    uqAwaitingClose: uniqueIndex('uq_sellmate_reconcile_runs_awaiting_close')
+      .on(t.status)
+      .where(sql`${t.status} = 'awaiting_close'`),
+  }),
+);
+
+/** 실행마다 품목별 계산 결과. */
+export const sellmateReconcileItems = pgTable(
+  'sellmate_reconcile_items',
+  {
+    runId: uuid('run_id')
+      .notNull()
+      .references(() => sellmateReconcileRuns.id, { onDelete: 'cascade' }),
+    optionSerial: varchar('option_serial', { length: 64 }).notNull(),
+    skuId: uuid('sku_id').notNull(),
+    sellmateCurrent: integer('sellmate_current').notNull(),
+    sellmateUnshipped: integer('sellmate_unshipped').notNull(),
+    s: integer('s').notNull(),
+    baselineBefore: integer('baseline_before').notNull(),
+    carryBefore: integer('carry_before').notNull(),
+    delta: integer('delta').notNull(),
+    carryAfter: integer('carry_after').notNull(),
+    uploadAvail: integer('upload_avail'),
+    uploadedCurrent: integer('uploaded_current'),
+    refUnshipped: integer('ref_unshipped'),
+    closeVerdict: varchar('close_verdict', { length: 32 }),
+    accept: varchar('accept', { length: 16 }),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.runId, t.optionSerial] }),
+  }),
+);
+
+/** SKU 별 현재 기준선·이월. */
+export const sellmateReconcileStates = pgTable(
+  'sellmate_reconcile_states',
+  {
+    skuId: uuid('sku_id')
+      .primaryKey()
+      .references(() => skus.id, { onDelete: 'restrict' }),
+    optionSerial: varchar('option_serial', { length: 64 }).notNull().unique(),
+    baseline: integer('baseline').notNull(),
+    carry: integer('carry').notNull(),
+    frozen: boolean('frozen').notNull().default(false),
+    lastRunId: uuid('last_run_id')
+      .notNull()
+      .references(() => sellmateReconcileRuns.id),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    ckCarryNonNegative: check('ck_sellmate_reconcile_states_carry_nonneg', sql`${t.carry} >= 0`),
+  }),
+);
+
+/** 셀메이트로 넘겨 받은 주문 (중복 방지). */
+export const sellmateHandedOverOrders = pgTable('sellmate_handed_over_orders', {
+  salesOrderId: uuid('sales_order_id')
+    .primaryKey()
+    .references(() => salesOrders.id, { onDelete: 'restrict' }),
+  displayId: integer('display_id').notNull(),
+  medusaOrderId: varchar('medusa_order_id', { length: 64 }).notNull(),
+  runId: uuid('run_id')
+    .notNull()
+    .references(() => sellmateReconcileRuns.id),
+});
 
 export const skuReferencePhotos = pgTable(
   'sku_reference_photos',
@@ -1494,6 +1621,10 @@ export const salesOrders = pgTable(
     confirmedAt: timestamp('confirmed_at', { withTimezone: true }),
     processedAt: timestamp('processed_at', { withTimezone: true }),
 
+    // #1247: 줄 예약 상태 스냅샷(`SalesOrderLineReservationState`)을 낼 때마다 오르는 주문별 버전.
+    // 쓰는 곳은 발행 폴러(`LineStatePublisher`) 하나다 — 바뀐 쪽은 `sales_order_line_state_marks` 에 표시만 한다.
+    lineStateVersion: integer('line_state_version').notNull().default(0),
+
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
@@ -1502,6 +1633,24 @@ export const salesOrders = pgTable(
     idxOrderDate: index('idx_sales_orders_order_date').on(t.orderDate), // 주문내역/통계의 주 기간필터
     // 주문번호 검색은 기간 조건을 빼고 도는 등호 조회다 — 인덱스가 없으면 전체 스캔이 된다.
     idxDisplayOrderNo: index('idx_sales_orders_display_order_no').on(t.displayOrderNo),
+  }),
+);
+
+/**
+ * 줄 상태가 바뀐 판매주문 표시 (#1247). 예약·출고·전달·취소 트랜잭션이 행 하나를 INSERT 만 한다 —
+ * `sales_orders` 행을 잠그지 않아, FO 를 먼저 잠근 경로와 판매주문을 먼저 잠근 경로(취소) 사이에 잠금 순서가 뒤집히지 않는다.
+ * 같은 이유로 `sales_orders` 에 FK 를 걸지 않는다(FK 검사가 그 행에 KEY SHARE 잠금을 잡아 `FOR UPDATE` 와 부딪힌다).
+ * 발행 폴러가 주문의 표시를 모아 버전을 올리고 스냅샷을 낸 뒤, 그때 본 표시까지만 지운다.
+ */
+export const salesOrderLineStateMarks = pgTable(
+  'sales_order_line_state_marks',
+  {
+    id: bigserial('id', { mode: 'number' }).primaryKey(),
+    salesOrderId: uuid('sales_order_id').notNull(),
+    markedAt: timestamp('marked_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    idxSalesOrder: index('idx_sales_order_line_state_marks_sales_order').on(t.salesOrderId),
   }),
 );
 
@@ -2960,6 +3109,167 @@ export const inboundReceiptLines = pgTable(
 );
 
 /*───────────────────────────
+ * INBOUND SHIPMENTS (중국 선적 입고)
+ *──────────────────────────*/
+export type InboundShipmentLineRaw = Record<string, unknown>;
+export type InboundShipmentAiCandidate = { skuId: string; reason: string };
+
+export const inboundShipments = pgTable(
+  'inbound_shipments',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    warehouseId: uuid('warehouse_id')
+      .references(() => warehouses.id, { onDelete: 'restrict' })
+      .notNull(),
+    status: inboundShipmentStatusEnum('status').notNull().default('draft'),
+    name: varchar('name', { length: 255 }).notNull(),
+    // date 문자열 — purchase_order_lines.expected_arrival 과 같은 이유(Date 객체 경계 함정)
+    expectedArrival: date('expected_arrival', { mode: 'string' }),
+    // 처음 약속한 도착 예정일 — 확정 때(또는 확정 뒤 처음 날짜가 생긴 때) 한 번만 채운다. 이후 expected_arrival 이 밀려도 그대로.
+    promisedArrival: date('promised_arrival', { mode: 'string' }),
+    sourceFileId: uuid('source_file_id'),
+    sourceFileName: varchar('source_file_name', { length: 255 }),
+    memo: text('memo'),
+    createdBy: uuid('created_by'),
+    confirmedAt: timestamp('confirmed_at', { withTimezone: true }),
+    confirmedBy: uuid('confirmed_by'),
+    closedAt: timestamp('closed_at', { withTimezone: true }),
+    closedBy: uuid('closed_by'),
+    closedReason: text('closed_reason'),
+    canceledAt: timestamp('canceled_at', { withTimezone: true }),
+    canceledBy: uuid('canceled_by'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    idxInboundShipmentsWhStatus: index('idx_inbound_shipments_wh_status').on(t.warehouseId, t.status),
+  }),
+);
+
+export const inboundShipmentBoxes = pgTable(
+  'inbound_shipment_boxes',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    shipmentId: uuid('shipment_id')
+      .references(() => inboundShipments.id, { onDelete: 'cascade' })
+      .notNull(),
+    label: varchar('label', { length: 32 }).notNull(),
+    sortKey: integer('sort_key').notNull(),
+    origin: inboundShipmentBoxOriginEnum('origin').notNull(),
+    disposition: inboundShipmentBoxDispositionEnum('disposition').notNull().default('stock'),
+    forwardNote: text('forward_note'),
+    status: inboundShipmentBoxStatusEnum('status').notNull().default('open'),
+    receiptId: uuid('receipt_id').references(() => inboundReceipts.id, { onDelete: 'set null' }),
+    receivedAt: timestamp('received_at', { withTimezone: true }),
+    receivedBy: uuid('received_by'),
+    version: integer('version').notNull().default(0),
+  },
+  (t) => ({
+    uqInboundShipmentBoxLabel: unique('uq_inbound_shipment_boxes_label').on(t.shipmentId, t.label),
+    // 전달용 상자는 확정되지 않는다
+    ckInboundShipmentBoxForwardOpen: check(
+      'ck_inbound_shipment_boxes_forward_open',
+      sql`${t.disposition} <> 'forward' OR ${t.status} = 'open'`,
+    ),
+  }),
+);
+
+export const inboundShipmentLines = pgTable(
+  'inbound_shipment_lines',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    shipmentId: uuid('shipment_id')
+      .references(() => inboundShipments.id, { onDelete: 'cascade' })
+      .notNull(),
+    rowNumber: integer('row_number').notNull(),
+    raw: jsonb('raw').$type<InboundShipmentLineRaw>().notNull(),
+    kind: inboundShipmentLineKindEnum('kind').notNull(),
+    skuId: uuid('sku_id').references(() => skus.id, { onDelete: 'restrict' }),
+    expectedQty: integer('expected_qty'),
+    resolution: inboundShipmentLineResolutionEnum('resolution'),
+    resolvedBy: uuid('resolved_by'),
+    resolvedAt: timestamp('resolved_at', { withTimezone: true }),
+    issues: text('issues')
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
+    // 참고용 — 어떤 판정 코드도 읽지 않는다
+    aiCandidates: jsonb('ai_candidates').$type<InboundShipmentAiCandidate[]>(),
+  },
+  (t) => ({
+    idxInboundShipmentLinesRow: index('idx_inbound_shipment_lines_row').on(t.shipmentId, t.rowNumber),
+    idxInboundShipmentLinesSku: index('idx_inbound_shipment_lines_sku')
+      .on(t.skuId)
+      .where(sql`${t.kind} = 'sku'`),
+    ckInboundShipmentLineSku: check(
+      'ck_inbound_shipment_lines_sku',
+      sql`(${t.kind} = 'sku') = (${t.skuId} IS NOT NULL)`,
+    ),
+    ckInboundShipmentLineQty: check(
+      'ck_inbound_shipment_lines_qty',
+      sql`${t.kind} = 'unresolved' OR (${t.expectedQty} IS NOT NULL AND ${t.expectedQty} > 0)`,
+    ),
+  }),
+);
+
+export const inboundShipmentLineBoxes = pgTable(
+  'inbound_shipment_line_boxes',
+  {
+    lineId: uuid('line_id')
+      .references(() => inboundShipmentLines.id, { onDelete: 'cascade' })
+      .notNull(),
+    boxId: uuid('box_id')
+      .references(() => inboundShipmentBoxes.id, { onDelete: 'cascade' })
+      .notNull(),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.lineId, t.boxId] }),
+    idxInboundShipmentLineBoxesBox: index('idx_inbound_shipment_line_boxes_box').on(t.boxId),
+  }),
+);
+
+export const inboundShipmentBoxCounts = pgTable(
+  'inbound_shipment_box_counts',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    boxId: uuid('box_id')
+      .references(() => inboundShipmentBoxes.id, { onDelete: 'restrict' })
+      .notNull(),
+    // null = 리스트에 없던 물건
+    lineId: uuid('line_id').references(() => inboundShipmentLines.id, { onDelete: 'restrict' }),
+    skuId: uuid('sku_id').references(() => skus.id, { onDelete: 'restrict' }),
+    countedQty: integer('counted_qty').notNull(),
+    // 'list' = 리스트대로(세지 않고 예정 수량을 받음). 리스트에 없던 물건·범위 줄은 늘 'counted'
+    countMethod: inboundShipmentCountMethodEnum('count_method').notNull().default('counted'),
+    receiptLineId: uuid('receipt_line_id')
+      .references(() => inboundReceiptLines.id, { onDelete: 'set null' })
+      .unique(),
+    canceledAt: timestamp('canceled_at', { withTimezone: true }),
+    canceledBy: uuid('canceled_by'),
+    createdBy: uuid('created_by'),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => ({
+    uqInboundShipmentBoxCountLive: uniqueIndex('uq_inbound_shipment_box_counts_live')
+      .on(t.boxId, t.lineId)
+      .where(sql`${t.canceledAt} IS NULL AND ${t.lineId} IS NOT NULL`),
+    ckInboundShipmentBoxCountQty: check('ck_inbound_shipment_box_counts_qty', sql`${t.countedQty} >= 0`),
+    ckInboundShipmentBoxCountSku: check(
+      'ck_inbound_shipment_box_counts_sku',
+      sql`${t.lineId} IS NOT NULL OR ${t.skuId} IS NOT NULL`,
+    ),
+    ckInboundShipmentBoxCountMethod: check(
+      'ck_inbound_shipment_box_counts_method',
+      sql`${t.lineId} IS NOT NULL OR ${t.countMethod} = 'counted'`,
+    ),
+    ckInboundShipmentBoxCountUnplannedQty: check(
+      'ck_inbound_shipment_box_counts_unplanned_qty',
+      sql`${t.lineId} IS NOT NULL OR ${t.countedQty} > 0`,
+    ),
+  }),
+);
+
+/*───────────────────────────
  * INBOUND WORK LOGS (타임라인)
  *──────────────────────────*/
 export const inboundWorkLogs = pgTable(
@@ -3264,7 +3574,9 @@ export const shipmentOperations = pgTable(
     type: shipmentOperationTypeEnum('type').notNull(),
     status: shipmentOperationStatusEnum('status').notNull().default('pending'),
     operatorId: uuid('operator_id').notNull(),
-    reason: varchar('reason', { length: 255 }).notNull(),
+    reason: varchar('reason', { length: 500 }).notNull(),
+    reasonCode: varchar('reason_code', { length: 64 }),
+    requestChannel: varchar('request_channel', { length: 32 }),
     csCaseId: uuid('cs_case_id'),
     note: text('note'),
     idempotencyKey: varchar('idempotency_key', { length: 255 }).notNull(),
@@ -3964,6 +4276,8 @@ export const dispatchAttemptSources = pgTable(
  *──────────────────────────*/
 export const wmsTables = {
   printOrders,
+  printProductSpecs,
+  printTemplateProducts,
   suppliers,
   supplierCategories,
   supplierCategoryMappings,
@@ -3972,6 +4286,11 @@ export const wmsTables = {
   skuSuppliers,
   skuBarcodes,
   skuShelfPositions,
+  sellmateItemPairs,
+  sellmateReconcileRuns,
+  sellmateReconcileItems,
+  sellmateReconcileStates,
+  sellmateHandedOverOrders,
   skuReferencePhotos,
   sku3dModels,
   skuFieldCaptures,
@@ -4009,6 +4328,7 @@ export const wmsTables = {
   shipmentReconcileState,
   salesOrderCancellations,
   salesOrderCancellationLines,
+  salesOrderLineStateMarks,
   mergeGroups,
   stockReservations,
   fulfillmentOrders,
@@ -4027,6 +4347,11 @@ export const wmsTables = {
   purchaseOrderCart,
   inboundReceipts,
   inboundReceiptLines,
+  inboundShipments,
+  inboundShipmentBoxes,
+  inboundShipmentLines,
+  inboundShipmentLineBoxes,
+  inboundShipmentBoxCounts,
   inboundWorkLogs,
   movementJobs,
   movementJobLines,
@@ -5043,6 +5368,7 @@ export type DbTx = TxFor<typeof wmsSchema>;
  *──────────────────────────*/
 
 // Supplier Types
+export type ShipmentOperationType = (typeof shipmentOperationTypeEnum.enumValues)[number];
 export type Supplier = InferSelectModel<typeof suppliers>;
 export type NewSupplier = InferInsertModel<typeof suppliers>;
 
@@ -5221,6 +5547,10 @@ export type NewInboundReceipt = InferInsertModel<typeof inboundReceipts>;
 
 export type InboundReceiptLine = InferSelectModel<typeof inboundReceiptLines>;
 export type NewInboundReceiptLine = InferInsertModel<typeof inboundReceiptLines>;
+export type InboundShipment = InferSelectModel<typeof inboundShipments>;
+export type InboundShipmentBox = InferSelectModel<typeof inboundShipmentBoxes>;
+export type InboundShipmentLine = InferSelectModel<typeof inboundShipmentLines>;
+export type InboundShipmentBoxCount = InferSelectModel<typeof inboundShipmentBoxCounts>;
 
 export type InboundWorkLog = InferSelectModel<typeof inboundWorkLogs>;
 export type NewInboundWorkLog = InferInsertModel<typeof inboundWorkLogs>;

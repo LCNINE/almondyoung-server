@@ -1,6 +1,7 @@
 // 이 스위트는 `ProductBulkService` 를 **진짜로** 부른다(§F1 회귀 잠금). 그 파일이 정적으로
 // 끌어오는 `product-versions.service.ts`/`product-masters.service.ts` 가 bare
 // `@packages/event-contracts` 를 import 하는데, 루트 jest 설정의 moduleNameMapper 에는
+import { SuppliersService } from '../../../../inventory/suppliers/services/suppliers.service';
 // `^@packages/event-contracts/(.*)$`(하위 경로)만 있고 bare 경로 항목이 없어 해석되지
 // 않는다 — 레포 상시 debt 다. 레포에 이미 있는 선례(product-versions.service.spec.ts:1-7)와
 // **같은 모양**으로 가상 모듈을 세운다. 값이 필요한 곳은 클래스 정의 시점에 평가되는
@@ -175,7 +176,7 @@ describeIfDb('일괄 세션 병합 시나리오 (실 Postgres)', () => {
     const skuMapping = {
       getVariantMatchingBatch: () => Promise.resolve({ data: [] }),
     } as unknown as ProductSkuMappingService;
-    reader = new FormExportSnapshotReader(versionLoader, optionLoader, pricing, categories, skuMapping, new QuantityDiscountReader(dbService));
+    reader = new FormExportSnapshotReader(versionLoader, optionLoader, pricing, categories, skuMapping, new QuantityDiscountReader(dbService), { getSuppliers: jest.fn().mockResolvedValue({ data: [] }) } as unknown as SuppliersService);
 
     // `ProductBulkService.bulkUpdate` 의 brand/seller 경로(§F1 회귀 잠금)는 dto.status 가
     // 없으면 productVersionsService/productMastersService 를 **한 번도** 부르지 않는다

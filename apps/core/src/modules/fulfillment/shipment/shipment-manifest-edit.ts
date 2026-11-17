@@ -45,7 +45,7 @@ export interface ManifestWriter {
   createShipment(box: NewShipment): Promise<ShipmentRow>;
   addLine(shipmentId: string, line: NewShipmentLine): Promise<ShipmentLineRecord>;
   moveLine(lineId: string, fromShipmentId: string, toShipmentId: string): Promise<void>;
-  setLineQty(lineId: string, shipmentId: string, qty: number): Promise<void>;
+  setLineQty(lineId: string, shipmentId: string, qty: number, reservedQty?: number): Promise<void>;
   reviseRecipient(shipmentId: string, recipientSnapshot: unknown): Promise<void>;
   setEntrancePassword(shipmentId: string, entrancePassword: string): Promise<void>;
   setShippingProfile(shipmentId: string, shippingProfileId: string | null): Promise<void>;
@@ -139,11 +139,11 @@ export async function editShipmentManifest<T>(
       lineChanged.add(fromShipmentId);
       lineChanged.add(toShipmentId);
     },
-    async setLineQty(lineId, shipmentId, qty) {
+    async setLineQty(lineId, shipmentId, qty, reservedQty) {
       assertTarget(shipmentId);
       const rows = await tx
         .update(L)
-        .set({ qty, lineVersion: sql`${L.lineVersion} + 1` })
+        .set({ qty, reservedQty, lineVersion: sql`${L.lineVersion} + 1` })
         .where(and(eq(L.id, lineId), eq(L.shipmentId, shipmentId)))
         .returning({ id: L.id });
       if (rows.length !== 1) throw new Error(`editShipmentManifest: line ${lineId} is not in shipment ${shipmentId}`);

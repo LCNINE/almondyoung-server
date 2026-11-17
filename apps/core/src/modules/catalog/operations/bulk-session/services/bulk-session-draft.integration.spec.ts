@@ -342,7 +342,7 @@ describeIfDb('일괄 세션 drafting 레인 (실 Postgres + 실 Nest DI)', () =>
    */
   async function renderSnapshot(masterId: string): Promise<BulkBaseSnapshot> {
     const bundle = await db.run((trx: DbTransaction) =>
-      snapshotReader.renderMaster(trx, masterId, createImageKeyAllocator(), new Map()),
+      snapshotReader.renderMaster(trx, masterId, createImageKeyAllocator(), new Map(), new Map()),
     );
     if (!bundle) throw new Error(`active 버전이 없어 스냅샷을 그릴 수 없다: ${masterId}`);
     return { ...bundle, pricingEditable: true };

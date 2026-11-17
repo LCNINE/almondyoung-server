@@ -24,6 +24,26 @@ import { ClaimStatusSchema, ProductOrderStatusSchema } from '../../zods/naver/na
  * - `productName`, `shippingAddress` — 기본값으로 표시 목적 달성
  * - `totalPaymentAmount` — `unitPrice * quantity` 로 유도 가능
  * - `deliveryFeeAmount` — 누락 시 배송료 0 (수량 부문 아님)
+ *
+ * **클레임 칸** (누락 가능, 🔴 shadow 점검 전 추정):
+ * - `productOrder.claimId`·`productOrder.claimType`, 최상위 `currentClaim.cancel.requestQuantity`
+ * - 이름·위치의 근거는 공식 Q&A 뿐이다(https://github.com/commerce-api-naver/commerce-api/discussions/1773 —
+ *   `quantityClaimCompatibility=true` 로 조회하면 상품주문 하나 안의 일부 수량 클레임이 `currentClaim` 에 온다).
+ *   실 응답으로 아직 확인하지 않았다. 틀렸으면 **여기만** 고친다.
+ * - 없어도 throw 하지 않는다 — **`null` 도 없는 것으로 본다**(`.nullish()`). 이 플래그를 모든 조회에 싣으므로
+ *   `currentClaim: null` 이 흔할 수 있고, 그걸로 상품주문 파싱이 터지면 네이버 주문 전부가 처리 실패로 돈다.
+ *   수량이 없을 때 무엇을 할지는 source(`naver-order.source.ts` 의 `buildLifecycle`)가 정한다.
+ *   있는데 모양이 틀리면(예: 수량이 문자열) throw 한다 — 틀린 수량으로 조용히 취소하지 않는다.
+ *
+ * **🔴 shadow 점검 전 확정 필수 (네이버 켜기 전 막음)** — 아래가 답해지기 전에 네이버 수집을 켜지 않는다:
+ * - (a) `currentClaim.cancel.requestQuantity` 가 그 상품주문의 **누적** 취소 수량인가, **이번 클레임** 수량인가.
+ *   클레임별이면 누적은 어디 있는가(예: 완료 클레임 목록). source 는 지금 «누적»으로 가정하고 core 에 줄의
+ *   누적 채널 취소 수량(상태)으로 보낸다 — 클레임별이면 두 번째 일부 취소부터 덜 취소된다.
+ * - (b) 일부 수량 취소 뒤 `productOrder.quantity` 가 **원래** 수량인가 **남은** 수량인가. 남은 수량이면
+ *   OrderCreated 의 줄 수량과 기존 `CANCELED` 관측(줄 전량 = 누적으로 보낸다)의 뜻이 함께 틀어진다.
+ * - (c) 클레임 칸 이름·위치 자체(`productOrder.claimId`·`productOrder.claimType`·최상위 `currentClaim`).
+ * - (d) productOrder 가 CANCELING/CANCEL_DONE 일 때 approve 를 다시 부르면 네이버가 무엇을 돌려주는가 — 리컨실러 재발행이 이 경로를 탄다
+ *   (`customer-cancel-approver.ts` 의 `NAVER_ALREADY_APPROVED_CODE` 가 «이미 승인됨»을 성공으로 읽는 추정값이다).
  */
 const OrderSchema = z.looseObject({
   orderId: z.string().min(1),
@@ -51,11 +71,25 @@ const ProductOrderSchema = z.looseObject({
   totalPaymentAmount: z.number().nonnegative().optional(),
   deliveryFeeAmount: z.number().nonnegative().optional(),
   shippingAddress: ShippingAddressSchema.optional(),
+  /** 🔴 shadow 점검 전 추정 (discussions/1773). 숫자로 와도 식별자로만 쓰므로 문자열로 받는다(`productId` 와 같다). */
+  claimId: z.union([z.string().min(1), z.number()]).nullish(),
+  /** 🔴 shadow 점검 전 추정 (discussions/1773). 예: `CANCEL`. */
+  claimType: z.string().min(1).nullish(),
+});
+
+/** 🔴 shadow 점검 전 추정 (discussions/1773). `quantityClaimCompatibility=true` 일 때만 온다. */
+const CurrentClaimSchema = z.looseObject({
+  cancel: z
+    .looseObject({
+      requestQuantity: z.number().int().nonnegative().nullish(),
+    })
+    .nullish(),
 });
 
 const ProductOrderInfoSchema = z.looseObject({
   order: OrderSchema,
   productOrder: ProductOrderSchema,
+  currentClaim: CurrentClaimSchema.nullish(),
 });
 
 export interface NaverProductOrderInfo {
@@ -63,6 +97,12 @@ export interface NaverProductOrderInfo {
   productOrderId: string;
   productOrderStatus: z.infer<typeof ProductOrderStatusSchema>;
   claimStatus?: z.infer<typeof ClaimStatusSchema>;
+  /** 클레임 식별. 🔴 shadow 점검 전 추정 이름. 취소요청의 중복 판정 키(`channelRequestKey`)에 들어간다. */
+  claimId?: string;
+  /** 클레임 종류(예: `CANCEL`). 🔴 shadow 점검 전 추정 이름. */
+  claimType?: string;
+  /** 현재 취소 클레임의 수량(`currentClaim.cancel.requestQuantity`). 🔴 shadow 점검 전 추정 이름. */
+  cancelClaimQuantity?: number;
   /** 리스팅 조회 키. 종류(원상품번호 vs 채널상품번호)는 shadow 로 확정한다. */
   channelProductId?: string;
   productName: string;
@@ -76,7 +116,8 @@ export interface NaverProductOrderInfo {
 
 export function parseNaverProductOrderInfo(raw: unknown): NaverProductOrderInfo {
   const parsed = ProductOrderInfoSchema.parse(raw);
-  const { order, productOrder } = parsed;
+  const { order, productOrder, currentClaim } = parsed;
+  const cancelClaimQuantity = currentClaim?.cancel?.requestQuantity;
   const address = productOrder.shippingAddress;
 
   return {
@@ -84,6 +125,9 @@ export function parseNaverProductOrderInfo(raw: unknown): NaverProductOrderInfo 
     productOrderId: productOrder.productOrderId,
     productOrderStatus: productOrder.productOrderStatus,
     ...(productOrder.claimStatus ? { claimStatus: productOrder.claimStatus } : {}),
+    ...(productOrder.claimId != null ? { claimId: String(productOrder.claimId) } : {}),
+    ...(productOrder.claimType != null ? { claimType: productOrder.claimType } : {}),
+    ...(cancelClaimQuantity != null ? { cancelClaimQuantity } : {}),
     ...(productOrder.productId != null ? { channelProductId: String(productOrder.productId) } : {}),
     productName: productOrder.productName ?? productOrder.productOrderId,
     quantity: productOrder.quantity,

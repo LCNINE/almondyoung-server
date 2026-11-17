@@ -15,7 +15,10 @@ type QuantityDiscountBadgeProps = {
  * 목록 카드의 «3개↑ 5%». 옵션마다 구간이 다르면 «3개↑ 최대 10%», 회원 전용 구간만 있으면 비회원에게 «멤버십 3개↑ 10%».
  * 대표가는 그대로 두고 조건과 함께 첫 구간만 알린다.
  */
-export default function QuantityDiscountBadge({ product, isMembership }: QuantityDiscountBadgeProps) {
+export default function QuantityDiscountBadge({
+  product,
+  isMembership,
+}: QuantityDiscountBadgeProps) {
   const t = useTranslations("productCard")
   const now = useQuantityDiscountNow([product.metadata])
   const summary = productQuantitySummary(product, {
@@ -23,7 +26,7 @@ export default function QuantityDiscountBadge({ product, isMembership }: Quantit
     hideMemberPrices: getHideMembershipPriceForNonMembers(product),
     now,
   })
-  if (!summary) return null
+  if (!summary || summary.pricesHidden) return null
 
   const key = summary.memberOnly
     ? summary.varies

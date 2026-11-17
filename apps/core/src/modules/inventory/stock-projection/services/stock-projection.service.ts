@@ -58,11 +58,11 @@ export class StockProjectionService {
     return this.dbService.run(async (trx) => ({ items: await this.inboundPipeline.read(trx, input) }), tx);
   }
 
-  listExpectedArrivals(warehouseId: string, tx?: DbTx) {
-    return this.expectedArrivals.listByWarehouse(warehouseId, tx);
+  listExpectedArrivals(warehouseId: string, opts: { includeShipments: boolean }, tx?: DbTx) {
+    return this.expectedArrivals.listByWarehouse(warehouseId, opts, tx);
   }
 
-  cancelEvent(eventId: string, reason: string) {
+  cancelEvent(eventId: string, reason?: string) {
     return this.manager.cancelEvent(eventId, reason);
   }
 

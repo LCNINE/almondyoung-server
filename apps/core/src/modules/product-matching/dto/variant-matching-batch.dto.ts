@@ -149,8 +149,8 @@ export class ProductSellableQuantityProjectionViewDto {
   @ApiProperty({ description: '재입고 일정이 대략적인지' })
   inboundApproximate?: boolean;
 
-  @ApiProperty({ description: '재입고일 출처', nullable: true, enum: ['manual', 'purchase_order'] })
-  inboundSource?: 'manual' | 'purchase_order' | null;
+  @ApiProperty({ description: '재입고일 출처', nullable: true, enum: ['manual', 'purchase_order', 'inbound_shipment'] })
+  inboundSource?: 'manual' | 'purchase_order' | 'inbound_shipment' | null;
 
   @ApiProperty({ description: '계산 시각' })
   calculatedAt: string;

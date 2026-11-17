@@ -6,6 +6,7 @@ import { isAxiosError } from 'axios';
 import { Download, Loader2 } from 'lucide-react';
 import Link from 'next/link';
 import { toast } from 'sonner';
+import { useCan } from '@/hooks/use-permission';
 import {
   almondDesignsClient,
   type AlmondPrintFormat,
@@ -81,19 +82,23 @@ function PrintOrderByDesign({ designId }: { designId: string }) {
   return <PrintOrderBlock items={data ?? []} />;
 }
 
-export function AlmondDesignPrintCard({
-  designId,
-  lineId,
-}: {
-  designId: string;
-  lineId?: string;
-}) {
+type CardProps = { designId: string; lineId?: string };
+
+export function AlmondDesignPrintCard(props: CardProps) {
+  const can = useCan(['order.order.read']);
+
+  if (can.status !== 'ready' || !can.allowed) return null;
+
+  return <DesignPrintCard {...props} />;
+}
+
+function DesignPrintCard({ designId, lineId }: CardProps) {
   const { data, isLoading, isError } = useQuery({
     queryKey: ['almond-design', designId],
     queryFn: () => almondDesignsClient.get(designId),
   });
   const [preparing, setPreparing] = useState<AlmondPrintFormat | null>(null);
-  const kind = typeof data?.design.kind === 'string' ? data.design.kind : '';
+  const kind = typeof data?.design?.kind === 'string' ? data.design.kind : '';
   const guide = GUIDES[kind];
   const hasBack = data?.hasBack ?? false;
 
@@ -105,6 +110,15 @@ export function AlmondDesignPrintCard({
         format,
         dpi
       );
+
+      // 접속기록을 남기지 못하면 링크가 가려져 온다
+      if (!/^https?:\/\//.test(url)) {
+        toast.error(
+          '인쇄 파일 링크를 받지 못했습니다. 잠시 후 다시 시도해 주세요.'
+        );
+        return;
+      }
+
       window.location.assign(url);
     } catch (error) {
       toast.error(

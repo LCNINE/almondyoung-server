@@ -35,6 +35,31 @@ describe('fulfillment V2 typed clients', () => {
     });
   });
 
+  it.each([true, false])(
+    'sends voidWaybill=%s in the exclusion body',
+    async (voidWaybill) => {
+      const remove = jest
+        .spyOn(client, 'delete')
+        .mockResolvedValue({ data: { operationId: 'op-1' } });
+
+      await outboundBatchesClient.excludeShipment(
+        'batch/1',
+        'shipment/1',
+        '합포장',
+        KEY,
+        voidWaybill
+      );
+
+      expect(remove).toHaveBeenCalledWith(
+        '/core/outbound-batches/batch%2F1/shipments/shipment%2F1',
+        {
+          data: { reason: '합포장', voidWaybill },
+          headers: { 'Idempotency-Key': KEY },
+        }
+      );
+    }
+  );
+
   it('uses shipment list/detail and durable operation read paths', async () => {
     await fulfillmentOrder.getShipments('fo/1');
     await fulfillmentOrder.getShipment('shipment/1');
@@ -51,6 +76,16 @@ describe('fulfillment V2 typed clients', () => {
     expect(mockedClient.get).toHaveBeenNthCalledWith(
       3,
       '/core/fulfillment-operations/operation%2F1'
+    );
+  });
+
+  it('asks whether a request key was processed by command type and key', async () => {
+    mockedClient.get.mockResolvedValueOnce({ data: { processed: false } });
+
+    await fulfillmentOrder.getRequestOutcome('shipment.split', 'key/1');
+
+    expect(mockedClient.get).toHaveBeenLastCalledWith(
+      '/core/fulfillment-operations/requests/shipment.split/key%2F1'
     );
   });
 

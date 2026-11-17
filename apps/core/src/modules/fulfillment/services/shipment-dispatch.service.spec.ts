@@ -4,6 +4,14 @@ import { getPermissionDecision, recordPermissionDecisions } from '@app/authoriza
 import { FULFILLMENT_PERMISSION } from '../../../platform/auth/fulfillment-permissions';
 import { ShipmentDispatchService } from './shipment-dispatch.service';
 import { emitShipmentDispatched, enqueueCustomerShipmentNotices } from './dispatch-effects';
+import { completeShipmentOperation, createShipmentOperation, loadShipmentAggregate } from './shipment-aggregate';
+
+jest.mock('./shipment-aggregate', () => ({
+  ...jest.requireActual('./shipment-aggregate'),
+  loadShipmentAggregate: jest.fn(),
+  createShipmentOperation: jest.fn(),
+  completeShipmentOperation: jest.fn(),
+}));
 
 /** 라우트의 PermissionGuard 가 남기는 낙인 — 위조 불가라 실제 기록 함수로 만든다. */
 function permissionDecision(permission: string) {
@@ -228,6 +236,14 @@ function makeService() {
 }
 
 describe('ShipmentDispatchService', () => {
+  beforeEach(() => {
+    jest
+      .mocked(loadShipmentAggregate)
+      .mockResolvedValue({ shipment: aggregate().shipment, lines: [], fulfillmentOrderIds: [] } as any);
+    jest.mocked(createShipmentOperation).mockResolvedValue({ id: 'operation-1' } as any);
+    jest.mocked(completeShipmentOperation).mockResolvedValue(undefined);
+  });
+
   it('dispatches on the last valid inspection scan in the same command transaction', async () => {
     const { service, tx, sessions } = makeService();
     const locked = aggregate();
@@ -302,6 +318,88 @@ describe('ShipmentDispatchService', () => {
       tx,
       expect.objectContaining({ forcedQuantities: [{ shipmentLineId: IDS.line, quantity: 3 }] }),
     );
+  });
+
+  it('records a completed force_dispatch operation with the resolved reason and the command hash', async () => {
+    const { service, tx } = makeService();
+    jest
+      .spyOn(service as any, 'lockAggregate')
+      .mockResolvedValue(aggregate({ lines: [line({ qty: 4, inspectedQty: 1 })] }));
+    jest.spyOn(service as any, 'moveInspectionCustody').mockResolvedValue(undefined);
+    jest.spyOn(service as any, 'dispatchLocked').mockResolvedValue({
+      shipmentId: IDS.shipment,
+      status: 'shipped',
+      dispatchAttemptId: 'attempt-1',
+      attemptNo: 1,
+    });
+
+    await service.forceDispatch(IDS.shipment, {
+      reason: '무시되는 글',
+      reasonCode: 'customer_urgent',
+      requestChannel: 'phone',
+      actor: { id: IDS.actor, roles: ['logistics_manager'] },
+      idempotencyKey: 'force-op',
+      authorization: FORCE_AUTHORIZATION,
+    });
+
+    expect(createShipmentOperation).toHaveBeenCalledWith(
+      tx,
+      expect.objectContaining({
+        type: 'force_dispatch',
+        actorId: IDS.actor,
+        reason: '고객이 급하게 보내 달라고 요청',
+        reasonCode: 'customer_urgent',
+        requestChannel: 'phone',
+        idempotencyKey: 'force-op',
+        requestHash: 'hash',
+      }),
+    );
+    expect(completeShipmentOperation).toHaveBeenCalledWith(tx, 'operation-1', [
+      expect.objectContaining({ shipmentId: IDS.shipment, role: 'target' }),
+    ]);
+  });
+
+  it('rejects an unknown reason code or a missing request channel before claiming the command key', async () => {
+    const { service, commands } = makeService();
+    const base = {
+      reason: 'x',
+      actor: { id: IDS.actor, roles: ['logistics_manager'] },
+      idempotencyKey: 'force-bad',
+      authorization: FORCE_AUTHORIZATION,
+    };
+    await expect(service.forceDispatch(IDS.shipment, { ...base, reasonCode: 'nope' })).rejects.toThrow(
+      'Unknown reason code',
+    );
+    await expect(service.forceDispatch(IDS.shipment, { ...base, reasonCode: 'customer_urgent' })).rejects.toThrow(
+      'Request channel is required',
+    );
+    expect(commands.execute).not.toHaveBeenCalled();
+  });
+
+  it('keeps the command hash input unchanged without new fields and adds them only when present', async () => {
+    const { service, commands } = makeService();
+    jest
+      .spyOn(service as any, 'lockAggregate')
+      .mockResolvedValue(aggregate({ lines: [line({ qty: 4, inspectedQty: 1 })] }));
+    jest.spyOn(service as any, 'moveInspectionCustody').mockResolvedValue(undefined);
+    jest.spyOn(service as any, 'dispatchLocked').mockResolvedValue({
+      shipmentId: IDS.shipment,
+      status: 'shipped',
+      dispatchAttemptId: 'attempt-1',
+      attemptNo: 1,
+    });
+    const base = {
+      actor: { id: IDS.actor, roles: ['logistics_manager'] },
+      idempotencyKey: 'force-hash',
+      authorization: FORCE_AUTHORIZATION,
+    };
+    await service.forceDispatch(IDS.shipment, { ...base, reason: 'r' });
+    await service.forceDispatch(IDS.shipment, { ...base, reason: 'r', reasonCode: 'scan_unavailable' });
+
+    const [plain, coded] = commands.execute.mock.calls.map((call: any[]) => call[0].canonicalRequest);
+    expect(Object.keys(plain).sort()).toEqual(['actorId', 'csCaseId', 'note', 'reason', 'shipmentId']);
+    expect(coded).toMatchObject({ reasonCode: 'scan_unavailable' });
+    expect('requestChannel' in coded).toBe(false);
   });
 
   it('rejects a direct force call without the permission decision even for a familiar raw role', async () => {

@@ -55,6 +55,8 @@ describe('warehouse v2 HTTP authorization and DTO contract', () => {
             'fulfillment.dispatch.force',
           ],
           custom_force: ['inventory.stock.read', 'inventory.stock.operate', 'fulfillment.dispatch.force'],
+          outbound_only: ['fulfillment.shipment.read', 'fulfillment.warehouse.operate'],
+          no_warehouse: ['catalog.product.read'],
           mapped_master: FIRST_GRANT_ROLE_PERMISSIONS.master,
         }),
         { provide: LocationOutboundService, useValue: { force: mutation } },
@@ -92,16 +94,76 @@ describe('warehouse v2 HTTP authorization and DTO contract', () => {
       actorId: '00000000-0000-4000-8000-000000000001',
       operationContractVersion: 2,
       capabilities: { stocktakingAddCountItem: true, locationOutbound: true, inboundWorkflowConsistency: true },
-      permissions: { forceDispatch: false, stationForceDispatch: false, shortPick: false },
+      permissions: {
+        stockAdjust: false,
+        forceDispatch: false,
+        stationForceDispatch: false,
+        shortPick: false,
+        inboundShipmentOperate: true,
+      },
     });
   });
   it.each([
-    ['worker', { forceDispatch: false, stationForceDispatch: false, shortPick: false }],
-    ['station_worker', { forceDispatch: false, stationForceDispatch: true, shortPick: true }],
-    ['manager', { forceDispatch: true, stationForceDispatch: true, shortPick: false }],
-    ['custom_force', { forceDispatch: true, stationForceDispatch: true, shortPick: false }],
-    ['master', { forceDispatch: true, stationForceDispatch: true, shortPick: true }],
-    ['mapped_master', { forceDispatch: true, stationForceDispatch: true, shortPick: true }],
+    [
+      'worker',
+      {
+        stockAdjust: false,
+        forceDispatch: false,
+        stationForceDispatch: false,
+        shortPick: false,
+        inboundShipmentOperate: true,
+      },
+    ],
+    [
+      'station_worker',
+      {
+        stockAdjust: false,
+        forceDispatch: false,
+        stationForceDispatch: true,
+        shortPick: true,
+        inboundShipmentOperate: true,
+      },
+    ],
+    [
+      'manager',
+      {
+        stockAdjust: true,
+        forceDispatch: true,
+        stationForceDispatch: true,
+        shortPick: false,
+        inboundShipmentOperate: true,
+      },
+    ],
+    [
+      'custom_force',
+      {
+        stockAdjust: false,
+        forceDispatch: true,
+        stationForceDispatch: true,
+        shortPick: false,
+        inboundShipmentOperate: true,
+      },
+    ],
+    [
+      'master',
+      {
+        stockAdjust: true,
+        forceDispatch: true,
+        stationForceDispatch: true,
+        shortPick: true,
+        inboundShipmentOperate: true,
+      },
+    ],
+    [
+      'mapped_master',
+      {
+        stockAdjust: true,
+        forceDispatch: true,
+        stationForceDispatch: true,
+        shortPick: true,
+        inboundShipmentOperate: true,
+      },
+    ],
   ])('matches the actual force guard for %s', async (role, permissions) => {
     const context = await request(app.getHttpServer() as Server)
       .get('/inventory/work-context')
@@ -120,7 +182,13 @@ describe('warehouse v2 HTTP authorization and DTO contract', () => {
       .get('/inventory/work-context')
       .set('x-test-role', 'manager')
       .expect(200);
-    expect(context.body).toHaveProperty('permissions', { forceDispatch: true, stationForceDispatch: true, shortPick: false });
+    expect(context.body).toHaveProperty('permissions', {
+      stockAdjust: true,
+      forceDispatch: true,
+      stationForceDispatch: true,
+      shortPick: false,
+      inboundShipmentOperate: true,
+    });
     await request(app.getHttpServer() as Server)
       .post('/shipments/00000000-0000-4000-8000-000000000002/location-outbound-forces')
       .set('x-test-role', 'manager')
@@ -134,6 +202,16 @@ describe('warehouse v2 HTTP authorization and DTO contract', () => {
       .send({ warehouseId: '00000000-0000-4000-8000-000000000003', reason: 'checked', items: [] })
       .expect(201);
     expect(mutation).toHaveBeenCalledTimes(1);
+  });
+  it('opens work context to an outbound-only worker and refuses an account with no warehouse work', async () => {
+    await request(app.getHttpServer() as Server)
+      .get('/inventory/work-context')
+      .set('x-test-role', 'outbound_only')
+      .expect(200);
+    await request(app.getHttpServer() as Server)
+      .get('/inventory/work-context')
+      .set('x-test-role', 'no_warehouse')
+      .expect(403);
   });
   it('fails closed for anonymous work context and ordinary worker diagnostics', async () => {
     await request(app.getHttpServer() as Server)

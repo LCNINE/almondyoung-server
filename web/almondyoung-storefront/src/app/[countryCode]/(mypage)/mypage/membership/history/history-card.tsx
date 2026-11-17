@@ -25,7 +25,7 @@ function AdjustmentRow({ adj }: { adj: SubscriptionAdjustmentDto }) {
       case "GRANTED_BY_ADMIN":
         return {
           text: t("history.adjGrantedByAdmin", { days: adj.days }),
-          cls: "text-primary",
+          cls: "text-purple-deep",
         }
       case "ENTITLEMENT_EXTENDED":
         return {

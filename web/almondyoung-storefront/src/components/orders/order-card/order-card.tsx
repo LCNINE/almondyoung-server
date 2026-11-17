@@ -35,7 +35,7 @@ export default function OrderCard({
         {/* 주문 상세보기 */}
         <LocalizedClientLink
           href={`/mypage/order/details?orderId=${orderId}`}
-          className="text-primary inline-flex items-center gap-1 text-xs md:gap-2 md:text-base"
+          className="text-mint-deep inline-flex items-center gap-1 text-xs md:gap-2 md:text-base"
         >
           주문 상세보기
           <ChevronRight className="h-3 w-3 md:h-4 md:w-4" />

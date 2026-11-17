@@ -1,10 +1,13 @@
 {
   "utility": {
-    "shipping": "주문배송",
     "support": "고객센터",
     "almondTemplate": "아몬드템플릿",
     "login": "로그인",
-    "signup": "회원가입"
+    "signup": "회원가입",
+    "orderLookup": "주문조회",
+    "cartWithCount": "장바구니 {count}개",
+    "menuAriaLabel": "내 메뉴",
+    "shipping": "주문배송"
   },
   "userInfo": {
     "logout": "로그아웃"
@@ -14,12 +17,27 @@
     "shopTrade": "샵매매",
     "brandHall": "브랜드관",
     "viewAll": "전체 보기",
-    "viewMore": "더보기"
+    "viewMore": "더보기",
+    "allCategories": "전체 카테고리"
   },
   "quickLinks": {
     "ariaLabel": "추천 바로가기",
     "prev": "이전 항목 보기",
     "next": "다음 항목 보기",
     "beautytop": "뷰티탑"
+  },
+  "serviceBar": {
+    "almondYoungPlay": "아몬드영 플레이",
+    "dabeau": "예약관리어플",
+    "beautyExam": "미용필기시험",
+    "new": "NEW"
+  },
+  "categoryNav": {
+    "ariaLabel": "카테고리",
+    "membershipHall": "멤버십관"
+  },
+  "topNotice": {
+    "more": "자세히 보기",
+    "ariaLabel": "공지"
   }
 }

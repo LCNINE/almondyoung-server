@@ -7,6 +7,13 @@ import type { ReturnEligibilityResponse } from './return-eligibility';
 import { SalesOrderLookupService } from './sales-order-lookup.service';
 import { SalesOrderLookupRequestDto, SalesOrderLookupResponse } from './sales-order-lookup.dto';
 import { CustomerReturnService } from '../customer-return/customer-return.service';
+import { LineReservationStateService } from './line-reservation-state.service';
+import {
+  LineReservationCandidatesRequestDto,
+  LineReservationCandidatesResponse,
+  LineReservationStatesRequestDto,
+  LineReservationStatesResponse,
+} from './line-reservation-state.dto';
 import { ReleaseCustomerReturnPickupDto } from './dto/release-customer-return-pickup.dto';
 
 /**
@@ -21,6 +28,7 @@ export class SalesOrdersInternalController {
     private readonly lookupService: SalesOrderLookupService,
     private readonly returnEligibilityService: ReturnEligibilityService,
     private readonly customerReturnService: CustomerReturnService,
+    private readonly lineReservationStateService: LineReservationStateService,
   ) {}
 
   @Post('lookup')
@@ -47,5 +55,21 @@ export class SalesOrdersInternalController {
     @Body() dto: ReleaseCustomerReturnPickupDto,
   ): Promise<{ result: 'released' | 'picked_up' | 'exchange_released' }> {
     return this.customerReturnService.releasePickup(dto.channelReturnId);
+  }
+
+  /** #1247 — channel-adapter 의 Medusa 예약 대사가 줄마다 수요·잡은 단위·주문 버전을 묻는다. 그 채널에 없는 id 는 `unknown`. */
+  @Post('line-reservation-states')
+  @HttpCode(HttpStatus.OK)
+  lineReservationStates(@Body() dto: LineReservationStatesRequestDto): Promise<LineReservationStatesResponse> {
+    return this.lineReservationStateService.readStates(dto.salesChannel, dto.channelOrderItemIds);
+  }
+
+  /** #1247 — 대사가 훑을 줄 후보(끝나지 않은 주문의 채널 줄 id). 줄 id 순 keyset 페이지. */
+  @Post('line-reservation-candidates')
+  @HttpCode(HttpStatus.OK)
+  lineReservationCandidates(
+    @Body() dto: LineReservationCandidatesRequestDto,
+  ): Promise<LineReservationCandidatesResponse> {
+    return this.lineReservationStateService.readCandidates(dto);
   }
 }

@@ -1,14 +1,23 @@
 // src/features/order/history/components/table/index.tsx
 'use client';
 
+import { OrderBankRefundCard } from './order-bank-refund-card';
+import {
+  bankRefundsForRow,
+  useOrderBankRefunds,
+} from '../../hooks/use-order-bank-refunds';
+import { isPendingBankRefund } from '@/features/payments/components/refund-table/bank-refund';
 import { useEffect, useMemo, useState } from 'react';
 import type { MouseEvent, ReactNode } from 'react';
 import { PurchaseSatisfactionSection } from '../purchase-satisfaction-section';
+import { ShipmentOperationItem } from '../shipment-operation-item';
+import { useOperatorNames } from '@/features/order/fulfillments/detail/operation-operator';
 import { MoreHorizontal } from 'lucide-react';
 import {
   cancelActionOf,
   cancelRequestFromAmendment,
   cancelRequestLine,
+  settlementAlert,
   settlementLabel,
   settlementReason,
   settlementTiming,
@@ -19,12 +28,14 @@ import {
   type ShipmentPhase,
 } from '@/lib/api/domains/orders/shipment-phase.shape';
 import { SettlementActions } from '@/features/order/cancel-settlement/settlement-actions';
+import { ManualRefundTodo } from '@/features/order/cancel-settlement/manual-refund-todo';
 import { cn } from '@/lib/utils/ui';
 import dayjs from 'dayjs';
 import { toast } from 'sonner';
 import { useOrderHistoryFilter } from '../../contexts/filter.context';
 import type { SalesOrderBusinessTimelineItemDto } from '@/lib/types/dto/orders';
 import { buildQuery, PAGE_SIZE } from '../../utils/build-query';
+import { memoPreview } from '../../utils/memo-preview';
 import { useSalesOrderRows } from '../../hooks/use-order-rows';
 import type { OrderLineRow } from '../../hooks/use-order-rows';
 import { refundDecisionActionsOf } from '../../hooks/refund-decision-actions';
@@ -33,9 +44,11 @@ import {
   useSalesOrder,
   useAdminRetryRefund,
   useSalesOrderAmendments,
+  useSalesOrderShipmentOperations,
   useAdminCancelSalesOrder,
   useAdminManualRefundComplete,
   useAdminWaiveRefund,
+  useUpdateSalesOrderMemo,
 } from '@/lib/services/orders';
 import { usePermissionCheck } from '@/hooks/use-permission';
 import {
@@ -211,7 +224,6 @@ const HIDDEN_COLUMNS_KEY = 'order-history:hidden-columns';
 
 /* ── 상태 배지 ────────────────────────────────────────────── */
 const PHASE_BADGE_CLASS: Record<ShipmentPhase, string> = {
-  pending: 'bg-gray-100 text-gray-600',
   preparing: 'bg-blue-100 text-blue-700',
   shipping: 'bg-sky-100 text-sky-700',
   delivered: 'bg-green-100 text-green-700',
@@ -271,7 +283,8 @@ function SettlementCell({ r }: { r: OrderLineRow }) {
       {settlementReason(s) && (
         <span className="text-[11px] text-red-600 whitespace-normal leading-tight">{settlementReason(s)}</span>
       )}
-      <SettlementActions salesOrderId={r.orderId} settlement={s} />
+      <ManualRefundTodo settlement={s} walletIntentId={r.walletIntentId} length="short" />
+      <SettlementActions salesOrderId={r.orderId} settlement={s} walletIntentId={r.walletIntentId} />
     </div>
   );
 }
@@ -430,7 +443,7 @@ function ChannelBadge({ channel }: { channel: string }) {
   if (channel === '3pl')
     return (
       <span className="inline-flex rounded bg-gray-200 text-gray-700 text-[10px] font-medium px-1.5 py-0.5">
-        3PL
+        수기·기타
       </span>
     );
   return (
@@ -674,20 +687,40 @@ function TimelineItem({ item }: { item: SalesOrderBusinessTimelineItemDto }) {
   );
 }
 
-function BusinessTimelineModal({
+export function BusinessTimelineModal({
   order,
   open,
   onOpenChange,
 }: {
-  order: OrderLineRow | null;
+  order: Pick<OrderLineRow, 'orderId' | 'orderNo'> | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
   const { data, isLoading } = useSalesOrder(open && order ? order.orderId : '');
-  const timeline = [...(data?.businessTimeline ?? [])].sort(
-    (a, b) =>
-      new Date(a.occurredAt).getTime() - new Date(b.occurredAt).getTime()
+  const {
+    data: boxOperations,
+    isLoading: boxOperationsLoading,
+    isError: boxOperationsFailed,
+    refetch: refetchBoxOperations,
+  } = useSalesOrderShipmentOperations(
+    order?.orderId ?? '',
+    { enabled: open }
   );
+  const operatorName = useOperatorNames(
+    (boxOperations?.items ?? []).map((item) => item.operatorId)
+  );
+  const timeline = [
+    ...(data?.businessTimeline ?? []).map((item) => ({
+      kind: 'link' as const,
+      at: item.occurredAt,
+      item,
+    })),
+    ...(boxOperations?.items ?? []).map((item) => ({
+      kind: 'operation' as const,
+      at: item.createdAt,
+      item,
+    })),
+  ].sort((a, b) => new Date(a.at).getTime() - new Date(b.at).getTime());
   const { data: amendments, isError: amendmentsFailed } = useSalesOrderAmendments(
     open && order ? order.orderId : ''
   );
@@ -703,19 +736,40 @@ function BusinessTimelineModal({
         </DialogHeader>
 
         <div className="flex max-h-[60vh] flex-col overflow-y-auto">
-          {isLoading ? (
+          {isLoading || boxOperationsLoading ? (
             <div className="p-4 text-sm text-muted-foreground">
               불러오는 중...
             </div>
-          ) : timeline.length === 0 ? (
+          ) : timeline.length === 0 && !boxOperationsFailed ? (
             <div className="p-4 text-sm text-muted-foreground">
               아직 기록된 업무 이력이 없습니다.
             </div>
           ) : (
             <div className="px-1">
-              {timeline.map((item) => (
-                <TimelineItem key={item.id} item={item} />
-              ))}
+              {timeline.map((entry) =>
+                entry.kind === 'link' ? (
+                  <TimelineItem key={entry.item.id} item={entry.item} />
+                ) : (
+                  <ShipmentOperationItem
+                    key={`operation-${entry.item.operationId}`}
+                    item={entry.item}
+                    operatorName={operatorName(entry.item.operatorId)}
+                  />
+                )
+              )}
+            </div>
+          )}
+          {boxOperationsFailed && !boxOperationsLoading && (
+            <div className="flex items-center gap-2 px-1 py-3 text-sm text-destructive">
+              <p>상자 작업 기록을 불러오지 못했어요.</p>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => void refetchBoxOperations()}
+              >
+                다시 불러오기
+              </Button>
             </div>
           )}
           {amendmentsFailed && (
@@ -790,6 +844,7 @@ export default function OrderTable() {
   // 구분·키워드·환불이슈·기간 필터와 페이지네이션 모두 서버가 처리 → 클라이언트 필터/슬라이스 없음.
   // 한 페이지 = 주문 ≤ PAGE_SIZE (라인 rowspan 병합은 테이블이 처리).
   const rows: OrderLineRow[] = data?.items ?? [];
+  const bankRefunds = useOrderBankRefunds(rows);
 
   /* 모달 상태 */
   const [showEditModal, setShowEditModal] = useState(false);
@@ -823,8 +878,7 @@ export default function OrderTable() {
   const [returnOrderId, setReturnOrderId] = useState<string | null>(null);
   const { can, canRun } = usePermissionCheck();
   const canCancelOrder = canRun(useAdminCancelSalesOrder);
-  // 메모 모달은 컴포넌트 안 뮤테이션이라 훅이 없다
-  const canWriteOrder = can(['order.order.write']);
+  const canWriteMemo = canRun(useUpdateSalesOrderMemo);
 
   /* 컬럼 정의 */
   const columns: MergedTableColumn<OrderLineRow>[] = useMemo(
@@ -906,6 +960,8 @@ export default function OrderTable() {
         label: '기능',
         width: '108px',
         render: (_, r) => {
+          const rowBankRefunds = bankRefundsForRow(r, bankRefunds.data ?? []);
+          const needsBankAccount = rowBankRefunds.some(isPendingBankRefund);
           const action = r.orderStatus === 'cancelled' ? null : cancelActionOf(r);
           const cancelLabel = !canCancelOrder
             ? null
@@ -914,6 +970,7 @@ export default function OrderTable() {
               : action?.kind === 'rejected'
                 ? '다시 요청'
                 : null;
+
           return (
           <div className="flex flex-col gap-1">
             <div className="flex gap-1">
@@ -946,14 +1003,15 @@ export default function OrderTable() {
                   >
                     업무연결
                   </DropdownMenuItem>
-                  {canWriteOrder && (
+                  {canWriteMemo && (
                     <DropdownMenuItem
+                      disabled={!r.memoLoaded}
                       onSelect={() => {
                         setSelectedOrder(r);
                         setShowMemoModal(true);
                       }}
                     >
-                      메모추가
+                      {memoPreview(r.memo) ? '메모수정' : '메모추가'}
                     </DropdownMenuItem>
                   )}
                   {r.channel === 'medusa' && r.isFirstOfOrder && r.orderStatus !== 'cancelled' && (
@@ -987,14 +1045,16 @@ export default function OrderTable() {
             {r.orderStatus === 'cancelled' ? (
               <div className="flex flex-col gap-1">
                 <span className="inline-flex items-center h-7 px-2 rounded border border-gray-200 bg-gray-50 text-xs text-gray-500 whitespace-nowrap">
-                  취소됨
+                  {rowBankRefunds.length > 0 ? '주문 취소됨' : '취소됨'}
                 </span>
+                {rowBankRefunds.length === 0 && (
+                <>
                 {r.isFirstOfOrder && r.cancelRequest?.status === 'settling' && r.cancelRequest.settlement && (
                   <>
                     <span
                       className={cn(
                         'inline-flex items-center h-7 px-2 rounded border text-xs whitespace-nowrap',
-                        r.cancelRequest.settlement.phase !== 'in_progress'
+                        settlementAlert(r.cancelRequest.settlement)
                           ? 'border-red-200 bg-red-50 text-red-700'
                           : 'border-amber-200 bg-amber-50 text-amber-700'
                       )}
@@ -1048,11 +1108,13 @@ export default function OrderTable() {
                 {r.isFirstOfOrder && r.refundStatus === 'pending' && (
                   <ViewPaymentButton walletIntentId={r.walletIntentId} />
                 )}
+                </>
+                )}
               </div>
             ) : (
               <div className="flex flex-col gap-1">
                 {(() => {
-                  if (!action) return null;
+                  if (!action || needsBankAccount) return null;
                   if (action.kind === 'seller_center') {
                     return <span className="text-[11px] text-gray-500 whitespace-normal leading-tight">{action.label}</span>;
                   }
@@ -1106,6 +1168,9 @@ export default function OrderTable() {
                 )}
               </div>
             )}
+            {rowBankRefunds.map((refund) => (
+              <OrderBankRefundCard key={refund.id} refund={refund} />
+            ))}
           </div>
           );
         },
@@ -1179,22 +1244,37 @@ export default function OrderTable() {
       {
         key: 'csStatus',
         label: 'C/S\n상태',
-        render: (_, r) =>
-          canWriteOrder ? (
-            <button
-              className="h-7 px-2 rounded border hover:bg-gray-50 whitespace-nowrap text-xs"
-              onClick={(e) => {
-                e.stopPropagation();
-                setSelectedOrder(r);
-                setShowMemoModal(true);
-              }}
-            >
-              메모추가
-            </button>
-          ) : null,
+        merged: true,
+        render: (_, r) => {
+          const preview = memoPreview(r.memo);
+          return (
+            <div className="flex flex-col items-start gap-1">
+              {preview && (
+                <p className="max-w-[140px] truncate text-gray-700" title={r.memo}>
+                  {preview}
+                </p>
+              )}
+              {canWriteMemo && (
+                <button
+                  className="h-7 px-2 rounded border hover:bg-gray-50 whitespace-nowrap text-xs disabled:cursor-not-allowed disabled:opacity-50"
+                  // 상세를 못 읽은 주문은 지금 메모를 모른다 — 빈 칸에서 고치면 저장된 메모를 덮는다
+                  disabled={!r.memoLoaded}
+                  title={r.memoLoaded ? undefined : '주문 상세를 불러온 뒤 메모를 고칠 수 있어요.'}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setSelectedOrder(r);
+                    setShowMemoModal(true);
+                  }}
+                >
+                  {preview ? '메모수정' : '메모추가'}
+                </button>
+              )}
+            </div>
+          );
+        },
       },
     ],
-    [canCancelOrder, canWriteOrder]
+    [bankRefunds.data, canCancelOrder, canWriteMemo]
   );
 
   return (
@@ -1277,7 +1357,12 @@ export default function OrderTable() {
           loading={isInitialLoading}
           isFetching={false}
           getRowClassName={(r) =>
-            cn(r.orderStatus === 'cancelled' && 'opacity-50', r.orderId === detailOrderId && 'bg-blue-50')
+            cn(
+              r.orderStatus === 'cancelled' &&
+                !bankRefundsForRow(r, bankRefunds.data ?? []).some(isPendingBankRefund) &&
+                'opacity-50',
+              r.orderId === detailOrderId && 'bg-blue-50'
+            )
           }
           onRowClick={(r) => setDetailOrderId(r.orderId)}
         />

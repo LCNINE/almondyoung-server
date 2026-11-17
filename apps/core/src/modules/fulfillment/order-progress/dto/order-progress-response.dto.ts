@@ -46,6 +46,8 @@ export class OrderProgressSettlementDto {
   @ApiProperty({ description: '3영업일 기한(주말 제외)' }) deadlineAt!: string;
   @ApiProperty({ nullable: true, type: OrderProgressSettlementFailureDto })
   lastFailure!: OrderProgressSettlementFailureDto | null;
+  @ApiProperty({ description: '마켓 고객 취소요청 행 — 환불은 마켓이 하고 core 는 승인만 보낸다(계좌 송금 없음)' })
+  marketRequest!: boolean;
 }
 
 export class ReserveShortageItemDto {

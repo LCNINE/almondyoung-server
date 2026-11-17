@@ -177,6 +177,36 @@ describe('handheld hub navigation', () => {
     expect(await screen.findByRole('link', { name: '간편입고' })).toBeInTheDocument();
   });
 
+  it('핸드헬드에서 /inbound/boxes 는 스테이션 안내만 한다', async () => {
+    const session = stub();
+    const client: ApiClient = {
+      request: (async (opts: { path: string }) => {
+        if (opts.path === '/inventory/warehouses') return [];
+        return { data: [], total: 0 };
+      }) as unknown as ApiClient['request'],
+    };
+    const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    const router = createAppRouter(session);
+    render(
+      <SessionProvider session={session}>
+        <QueryClientProvider client={qc}>
+          <ApiClientProvider client={client}>
+            <WarehouseProvider prefs={createMemoryPrefs()}>
+              <ScanProvider>
+                <RouterProvider router={router} />
+              </ScanProvider>
+            </WarehouseProvider>
+          </ApiClientProvider>
+        </QueryClientProvider>
+      </SessionProvider>
+    );
+    await screen.findByRole('link', { name: /실사/ });
+    await act(async () => {
+      await router.navigate({ to: '/inbound/boxes' });
+    });
+    expect(await screen.findByText('스테이션에서 하는 작업이에요')).toBeInTheDocument();
+  });
+
   it('핸드헬드는 셸이 없고 기능키를 가로채지 않는다 — 홈 타일·제목 줄 그대로', async () => {
     const session = stub();
     const client: ApiClient = {

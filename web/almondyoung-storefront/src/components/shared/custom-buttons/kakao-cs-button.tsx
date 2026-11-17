@@ -21,10 +21,10 @@ export function KakaoCsButton({ className = "" }: KakaoCsButtonProps) {
             target="_blank"
             rel="noopener noreferrer"
             aria-label="카카오톡 상담"
-            className={`mb-4 flex h-11 w-11 items-center justify-center rounded-full bg-[#FEE500] shadow-lg transition-opacity hover:opacity-80 sm:h-14 sm:w-14 ${className}`}
+            className={`flex h-11 w-11 bg-[#FEE500] items-center justify-center rounded-full shadow-[0_4px_14px_rgba(20,22,23,0.2)] transition-opacity hover:opacity-80 md:h-[52px] md:w-[52px] ${className}`}
           >
             <svg
-              className="h-5 w-5 sm:h-7 sm:w-7"
+              className="h-5 w-5 md:h-6 md:w-6"
               viewBox="0 0 256 256"
               fill="none"
               xmlns="http://www.w3.org/2000/svg"

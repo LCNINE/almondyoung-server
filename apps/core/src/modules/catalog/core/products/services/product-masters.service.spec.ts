@@ -289,11 +289,17 @@ describe('ProductMastersService.createMaster ownership', () => {
       {} as any,
       {} as any,
       productSellableQuantity as any,
-      { handleVariantCreated: jest.fn().mockResolvedValue(undefined) } as never,
+      productMatching as never,
     );
 
-    return { service, productPublisher, productSellableQuantity };
+    return { service, productPublisher, productSellableQuantity, productMatching };
   }
+
+  const productMatching = { handleVariantCreated: jest.fn() };
+
+  beforeEach(() => {
+    productMatching.handleVariantCreated.mockReset().mockResolvedValue(undefined);
+  });
 
   it('records the creating user as draft owner and creator on the initial version', async () => {
     const { service } = makeService();
@@ -357,6 +363,38 @@ describe('ProductMastersService.createMaster ownership', () => {
       },
       tx,
     );
+  });
+
+  it('기본 variant 의 매칭을 상품 생성 트랜잭션의 savepoint 안에서 만든다', async () => {
+    const { service } = makeService();
+    const savepoint = { name: 'savepoint' };
+    const tx: any = {
+      insert: jest.fn(() => ({
+        values: (v: any) => ({ returning: () => [{ id: v.id ?? 'variant-1', ...v }] }),
+      })),
+      transaction: jest.fn((fn: (sp: unknown) => Promise<unknown>) => fn(savepoint)),
+    };
+
+    await service.createMaster('user-123', tx);
+
+    expect(tx.transaction).toHaveBeenCalledTimes(1);
+    expect(productMatching.handleVariantCreated).toHaveBeenCalledWith(
+      expect.objectContaining({ variantId: 'variant-1' }),
+      savepoint,
+    );
+  });
+
+  it('매칭 생성이 실패해도 savepoint 만 되돌리고 상품 생성은 이어간다', async () => {
+    const { service } = makeService();
+    productMatching.handleVariantCreated.mockRejectedValue(new Error('matching failed'));
+    const tx: any = {
+      insert: jest.fn(() => ({
+        values: (v: any) => ({ returning: () => [{ id: v.id ?? 'variant-1', ...v }] }),
+      })),
+      transaction: jest.fn((fn: (sp: unknown) => Promise<unknown>) => fn({})),
+    };
+
+    await expect(service.createMaster('user-123', tx)).resolves.toMatchObject({ status: 'draft' });
   });
 });
 

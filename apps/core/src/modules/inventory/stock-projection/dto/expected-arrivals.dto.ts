@@ -1,4 +1,4 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiExtraModels, ApiProperty, ApiPropertyOptional, getSchemaPath } from '@nestjs/swagger';
 
 export class ExpectedArrivalSupplierDto {
   @ApiProperty({ description: '공급처 ID' })
@@ -31,7 +31,7 @@ export class ExpectedArrivalLineDto {
   expectedArrival: string | null;
 }
 
-export class ExpectedArrivalDto {
+export class PurchaseOrderExpectedArrivalDto {
   @ApiProperty({ enum: ['purchase_order'] })
   source: 'purchase_order';
 
@@ -54,6 +54,33 @@ export class ExpectedArrivalDto {
   lines: ExpectedArrivalLineDto[];
 }
 
+export class InboundShipmentExpectedArrivalDto {
+  @ApiProperty({ enum: ['inbound_shipment'] })
+  source: 'inbound_shipment';
+
+  @ApiProperty({ description: '선적 ID' })
+  documentId: string;
+
+  @ApiProperty({ description: '선적 이름' })
+  name: string;
+
+  @ApiPropertyOptional({ description: '도착 예정일', nullable: true, type: String, example: '2026-09-15' })
+  expectedDate: string | null;
+
+  @ApiProperty({ description: '오는 중 수량 합' })
+  totalOutstandingQuantity: number;
+
+  @ApiProperty({ description: '입고용 상자 중 입고 확정된 수' })
+  receivedBoxes: number;
+
+  @ApiProperty({ description: '입고용 상자 수' })
+  stockBoxes: number;
+}
+
+/** `source` 로 갈리는 유니언. 선적은 `include=inbound_shipment` 를 줄 때만 나온다. */
+export type ExpectedArrivalDto = PurchaseOrderExpectedArrivalDto | InboundShipmentExpectedArrivalDto;
+
+@ApiExtraModels(PurchaseOrderExpectedArrivalDto, InboundShipmentExpectedArrivalDto)
 export class ExpectedArrivalsResponseDto {
   @ApiProperty({ description: '직접 입고될 창고 ID' })
   warehouseId: string;
@@ -64,6 +91,21 @@ export class ExpectedArrivalsResponseDto {
   @ApiProperty({ description: '전체 남은 수량' })
   totalOutstandingQuantity: number;
 
-  @ApiProperty({ type: [ExpectedArrivalDto] })
+  @ApiProperty({
+    type: 'array',
+    items: {
+      oneOf: [
+        { $ref: getSchemaPath(PurchaseOrderExpectedArrivalDto) },
+        { $ref: getSchemaPath(InboundShipmentExpectedArrivalDto) },
+      ],
+      discriminator: {
+        propertyName: 'source',
+        mapping: {
+          purchase_order: getSchemaPath(PurchaseOrderExpectedArrivalDto),
+          inbound_shipment: getSchemaPath(InboundShipmentExpectedArrivalDto),
+        },
+      },
+    },
+  })
   arrivals: ExpectedArrivalDto[];
 }

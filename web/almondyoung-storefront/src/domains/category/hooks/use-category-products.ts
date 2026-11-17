@@ -72,6 +72,7 @@ export function useCategoryProducts({
           countryCode,
           categoryId: categoryIds,
           collectionId,
+          productIds: productsIds,
           limit,
         })
         return { response: result.response, nextPage: result.nextPage }

@@ -25,10 +25,7 @@ export const fileServiceEnvSchema = z
     AWS_REGION: z.string().optional(),
     AWS_ACCESS_KEY_ID: z.string().optional(),
     AWS_SECRET_ACCESS_KEY: z.string().optional(),
-    // 테넌트 전 버킷. 테넌트를 모르는 쓰기(전환 배포 ① 만)가 여기 들어간다 — 테넌트가 있는 파일의 버킷은
-    // 테넌트 목록(TENANT_LIST)의 그 테넌트 항목이다. 라이브에선 테넌트 1 의 버킷과 같은 값이다.
-    AWS_S3_PUBLIC_BUCKET: z.string().optional(),
-    AWS_S3_PRIVATE_BUCKET: z.string().optional(),
+    // 버킷은 env 가 아니라 테넌트 목록(TENANT_LIST)의 그 테넌트 항목이다.
 
     // 로컬 개발 전용: 이 인스턴스에 없는 공개 파일을 넘길 상위 file-service.
     // 배포 환경에는 설정하지 않는다 (설정하면 404 대신 외부로 302 된다).
@@ -39,12 +36,12 @@ export const fileServiceEnvSchema = z
       // Access keys remain optional — SDK default provider chain (ECS task role)
       // supplies credentials on Fargate.
       if (data.STORAGE_PROVIDER === 'S3') {
-        return data.AWS_REGION && data.AWS_S3_PUBLIC_BUCKET && data.AWS_S3_PRIVATE_BUCKET;
+        return !!data.AWS_REGION;
       }
       return true;
     },
     {
-      message: 'AWS_REGION, AWS_S3_PUBLIC_BUCKET, and AWS_S3_PRIVATE_BUCKET are required when STORAGE_PROVIDER is S3',
+      message: 'AWS_REGION is required when STORAGE_PROVIDER is S3',
       path: ['STORAGE_PROVIDER'],
     },
   )

@@ -1,0 +1,422 @@
+import { Injectable } from '@nestjs/common';
+import { randomUUID } from 'crypto';
+import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
+import { BadRequestError, ConflictError } from '@app/shared';
+import { DbTx, wmsTables } from '../../schema/inventory.schema';
+import type { InboundShipment, InboundShipmentLine } from '../../schema/inventory.schema';
+import { InboundReceiptKernel } from '../../inbound/kernel/inbound-receipt.kernel';
+import { InventoryIdempotencyService } from '../../core/services/inventory-idempotency.service';
+import { warehouseEndpoint, warehouseRequest } from '../../core/services/warehouse-operation-contract';
+import { ProductSellableQuantityService } from '../../product-sellable-quantity/services/product-sellable-quantity.service';
+import {
+  AddInboundShipmentBoxDto,
+  AddInboundShipmentBoxResultDto,
+  CancelBoxReceiptDto,
+  CancelBoxReceiptResult,
+  ReceiveBoxDto,
+  ReceiveBoxResult,
+} from '../dto/receive.dto';
+import { boxSkuIds, shipmentSkuIds } from './inbound-shipment-affected-skus';
+import { lockInboundShipment, lockInboundShipmentBox } from './inbound-shipment-locks';
+import { normalizeSingleBoxLabel, orderReceiptLinesForCancel } from './inbound-shipment.rules';
+import { lockProductVariantsForSkus } from '../../product-sellable-quantity/services/product-variant-lock';
+import { acquireStockAvailabilityLocks } from '../../shared/locks/stock-availability-lock';
+import { refreshInboundShipmentStatus } from './inbound-shipment-status';
+import { MAX_LINE_QTY } from './inbound-shipment-list.parser';
+
+/** 상자를 받거나 더할 수 있는 선적 상태 — 도착 예정·입고 중. */
+const isOpen = (status: InboundShipment['status']): boolean => status === 'expected' || status === 'receiving';
+
+/** 집계 한 행이 될 것 — 원장에 들어가면 `ledgerIndex` 가 커널 입력의 자리다. */
+interface PlannedCount {
+  lineId: string | null;
+  skuId: string | null;
+  countedQty: number;
+  countMethod: 'counted' | 'list';
+  ledgerIndex: number | null;
+}
+
+/** 이 상자를 덮는 줄 + 리스트대로 검증에 쓰는 예정 수량·덮는 상자 수. */
+type BoxLine = Pick<InboundShipmentLine, 'id' | 'kind' | 'skuId' | 'rowNumber' | 'expectedQty'> & {
+  coverCount: number;
+};
+
+/**
+ * 상자 확정 — 센 만큼 입고 커널로 RECEIVE 한다 (spec §8.2·§8.7).
+ *
+ * 잠금 순서: 선적 행 → 상자 행(`FOR UPDATE`) → 커널(회차 라인·원장). 커널은 문서 행을 잠그지 않는다.
+ * 확정은 커널 앞에서 (sku, 창고) → 품목을 미리 잡고(커널 `recordArrival` 과 같은 순서), 확정 취소는 아무것도
+ * 미리 잡지 않는다(커널 `cancelLine`·`putaway` 는 회차 라인을 먼저 잡는다).
+ * 한 상자의 확정은 멱등 키 하나로 한 번만 일어난다 — 같은 키 재시도는 같은 응답, 다른 키는 상자가
+ * 이미 `received` 라 409.
+ */
+@Injectable()
+export class InboundShipmentReceivingManager {
+  constructor(
+    private readonly kernel: InboundReceiptKernel,
+    private readonly idempotency: InventoryIdempotencyService,
+    private readonly productSellableQuantity: ProductSellableQuantityService,
+  ) {}
+
+  async receiveBox(
+    shipmentId: string,
+    boxId: string,
+    dto: ReceiveBoxDto,
+    actorId: string,
+    tx?: DbTx,
+  ): Promise<ReceiveBoxResult> {
+    const endpoint = warehouseEndpoint('inbound_shipment.box.receive', dto);
+    const request: ReceiveBoxDto & { shipmentId: string; boxId: string } = { shipmentId, boxId, ...dto };
+    return this.idempotency.withIdempotency(
+      endpoint,
+      dto.idempotencyKey,
+      warehouseRequest(request, actorId),
+      async (trx) => {
+        const shipment = await lockInboundShipment(trx, shipmentId);
+        if (!isOpen(shipment.status))
+          throw new ConflictError('확정된 선적(도착 예정·입고 중)의 상자만 받을 수 있습니다.');
+        const box = await lockInboundShipmentBox(trx, shipmentId, boxId);
+        if (box.status !== 'open') throw new ConflictError(`이미 확정된 상자입니다: ${box.label}`);
+        if (box.disposition !== 'stock') throw new ConflictError(`전달용 상자는 확정하지 않습니다: ${box.label}`);
+
+        const lines = await this.linesOfBox(trx, boxId);
+        const planned = this.planLineCounts(dto, lines);
+        await this.assertUnplannedValid(trx, dto);
+
+        // 커널 입력: sku 줄의 0 보다 큰 수량(counts 순서) → 리스트에 없던 물건(unplanned 순서)
+        const ledger: { skuId: string; quantity: number }[] = [];
+        for (const p of planned) {
+          if (p.skuId !== null && p.countedQty > 0) {
+            p.ledgerIndex = ledger.length;
+            ledger.push({ skuId: p.skuId, quantity: p.countedQty });
+          }
+        }
+        for (const u of dto.unplanned) {
+          planned.push({
+            lineId: null,
+            skuId: u.skuId,
+            countedQty: u.quantity,
+            countMethod: 'counted',
+            ledgerIndex: ledger.length,
+          });
+          ledger.push({ skuId: u.skuId, quantity: u.quantity });
+        }
+
+        // 커널·재계산이 잠금을 누적하기 전에 선점한다: 선적 → 상자 → (sku, 창고)(정렬) → 품목(정렬) → 커널.
+        // 커널 `recordArrival` 도 안에서 (sku, 창고) → 품목 순으로 잡는다 — 품목을 먼저 잡으면 그 순서와 뒤집혀
+        // 다른 도착·재고 명령과 교착한다. 재고는 원장에 들어갈 SKU 만, 품목은 상자가 닿는 SKU 전부(0 으로 센
+        // 줄도 재계산하므로)를 잡는다.
+        await acquireStockAvailabilityLocks(
+          trx,
+          ledger.map((l) => ({ skuId: l.skuId, warehouseId: shipment.warehouseId })),
+        );
+        await lockProductVariantsForSkus(trx, [...(await boxSkuIds(trx, boxId)), ...ledger.map((l) => l.skuId)]);
+
+        const arrival =
+          ledger.length === 0
+            ? null
+            : await this.kernel.recordArrival(
+                {
+                  source: 'inbound_shipment',
+                  actorId,
+                  warehouseId: shipment.warehouseId,
+                  locationId: null,
+                  reason: 'inbound_shipment',
+                  lines: ledger.map((l, index) => ({
+                    skuId: l.skuId,
+                    quantity: l.quantity,
+                    eventKey: `${endpoint}:${dto.idempotencyKey}:${index}`,
+                  })),
+                },
+                trx,
+              );
+        if (arrival && arrival.lines.length !== ledger.length) {
+          throw new Error(`kernel returned ${arrival.lines.length} receipt lines for ${ledger.length} inputs`);
+        }
+
+        // 집계 id 는 미리 만든다 — RETURNING 행 순서에 기대지 않는다
+        const countRows = planned.map((p) => ({
+          id: randomUUID(),
+          boxId,
+          lineId: p.lineId,
+          skuId: p.skuId,
+          countedQty: p.countedQty,
+          countMethod: p.countMethod,
+          receiptLineId: arrival && p.ledgerIndex !== null ? arrival.lines[p.ledgerIndex].id : null,
+          createdBy: actorId,
+        }));
+        if (countRows.length > 0) await trx.insert(wmsTables.inboundShipmentBoxCounts).values(countRows);
+        const countIds = countRows.map((r) => r.id);
+
+        const receiptId = arrival?.receipt.id ?? null;
+        await trx
+          .update(wmsTables.inboundShipmentBoxes)
+          .set({
+            status: 'received',
+            receiptId,
+            receivedAt: new Date(),
+            receivedBy: actorId,
+            version: sql`${wmsTables.inboundShipmentBoxes.version} + 1`,
+          })
+          .where(eq(wmsTables.inboundShipmentBoxes.id, boxId));
+
+        const shipmentStatus = await refreshInboundShipmentStatus(
+          trx,
+          shipmentId,
+          shipment.status,
+          actorId,
+          new Date(),
+        );
+
+        // 0 으로 센 마지막 상자도 «오는 중» 이 줄므로 원장 SKU 가 아니라 상자가 닿는 SKU 전부
+        const affectedSkuIds = await boxSkuIds(trx, boxId);
+        if (affectedSkuIds.length > 0) {
+          await this.productSellableQuantity.recalculateAndPublishForSkus(affectedSkuIds, trx);
+        }
+        return { boxId, receiptId, shipmentStatus, countIds };
+      },
+      tx,
+    );
+  }
+
+  /**
+   * 상자 확정 취소 — 그 상자의 회차 라인을 전부 커널 `cancelLine` 으로 되돌린다 (spec §8.3).
+   *
+   * 규칙(당일·전량·적치/회송 없음)은 커널이 본다 — 거절은 그대로 올라가고, 한 라인이라도 거절되면
+   * 트랜잭션째 되돌아가 «일부만 취소된 상자»가 남지 않는다(호출자가 tx 를 넘기면 그 tx 를 되돌리는 것은
+   * 호출자 몫이다 — 이어서 쓸 거면 세이브포인트로 감싼다). 원장에 들어간 줄이 없는 상자(0·자유 줄뿐)도
+   * 취소할 수 있다 — 그때는 커널을 부르지 않는다.
+   * 선적 상태는 상자로 다시 계산한다. 사람이 닫았어도 «닫힘»을 잇지 않는다(§8.4 — 다시 끝내면 된다).
+   */
+  async cancelBoxReceipt(
+    shipmentId: string,
+    boxId: string,
+    dto: CancelBoxReceiptDto,
+    actorId: string,
+    tx?: DbTx,
+  ): Promise<CancelBoxReceiptResult> {
+    const endpoint = warehouseEndpoint('inbound_shipment.box.receive.cancel', dto);
+    const request: CancelBoxReceiptDto & { shipmentId: string; boxId: string } = { shipmentId, boxId, ...dto };
+    return this.idempotency.withIdempotency(
+      endpoint,
+      dto.idempotencyKey,
+      warehouseRequest(request, actorId),
+      async (trx) => {
+        const shipment = await lockInboundShipment(trx, shipmentId);
+        const box = await lockInboundShipmentBox(trx, shipmentId, boxId);
+        if (box.status !== 'received') throw new ConflictError(`확정되지 않은 상자입니다: ${box.label}`);
+        if (shipment.status !== 'receiving' && shipment.status !== 'closed') {
+          throw new ConflictError('입고 중이거나 끝난 선적의 상자만 확정을 취소할 수 있습니다.');
+        }
+
+        const live = await trx
+          .select({ id: wmsTables.inboundShipmentBoxCounts.id })
+          .from(wmsTables.inboundShipmentBoxCounts)
+          .where(
+            and(
+              eq(wmsTables.inboundShipmentBoxCounts.boxId, boxId),
+              isNull(wmsTables.inboundShipmentBoxCounts.canceledAt),
+            ),
+          )
+          .orderBy(asc(wmsTables.inboundShipmentBoxCounts.id));
+        const ledger = await trx
+          .select({
+            receiptLineId: wmsTables.inboundReceiptLines.id,
+            skuId: wmsTables.inboundReceiptLines.skuId,
+          })
+          .from(wmsTables.inboundShipmentBoxCounts)
+          .innerJoin(
+            wmsTables.inboundReceiptLines,
+            eq(wmsTables.inboundReceiptLines.id, wmsTables.inboundShipmentBoxCounts.receiptLineId),
+          )
+          .where(
+            and(
+              eq(wmsTables.inboundShipmentBoxCounts.boxId, boxId),
+              isNull(wmsTables.inboundShipmentBoxCounts.canceledAt),
+            ),
+          );
+
+        // 사람이 닫은 선적의 확정 취소는 상태가 «닫힘» 에서 풀려 줄 전체의 «오는 중» 이 다시 켜진다
+        const wasManuallyClosed = shipment.status === 'closed' && shipment.closedReason !== null;
+        const reachedSkuIds = wasManuallyClosed ? await shipmentSkuIds(trx, shipmentId) : await boxSkuIds(trx, boxId);
+        // 취소는 재고·품목을 미리 잡지 않는다 — 커널 `cancelLine` 은 회차 라인 → RECEIVE 이벤트 → 재고 순,
+        // `putaway` 는 회차 라인 → 재고 순으로 잡는다. 여기서 재고·품목을 먼저 잡으면 동시 적치와 순서가 뒤집혀
+        // 교착한다. 품목 잠금은 커널 뒤 재계산이 정렬 순으로 잡는다.
+
+        // 커널은 SKU 순으로 부른다 — 도착이 (sku, 창고) 락을 미리 잡는 순서와 같아야 교차 교착이 없다
+        const canceledSkuIds = new Set<string>();
+        for (const { receiptLineId } of orderReceiptLinesForCancel(ledger)) {
+          const line = await this.kernel.cancelLine({ receiptLineId, expected: { source: 'inbound_shipment' } }, trx);
+          canceledSkuIds.add(line.skuId);
+        }
+
+        const now = new Date();
+        const canceledCountIds = live.map((c) => c.id);
+        if (canceledCountIds.length > 0) {
+          await trx
+            .update(wmsTables.inboundShipmentBoxCounts)
+            .set({ canceledAt: now, canceledBy: actorId })
+            .where(inArray(wmsTables.inboundShipmentBoxCounts.id, canceledCountIds));
+        }
+        await trx
+          .update(wmsTables.inboundShipmentBoxes)
+          .set({
+            status: 'open',
+            receiptId: null,
+            receivedAt: null,
+            receivedBy: null,
+            version: sql`${wmsTables.inboundShipmentBoxes.version} + 1`,
+          })
+          .where(eq(wmsTables.inboundShipmentBoxes.id, boxId));
+
+        const shipmentStatus = await refreshInboundShipmentStatus(trx, shipmentId, shipment.status, actorId, now);
+
+        const affectedSkuIds = new Set<string>([...canceledSkuIds, ...reachedSkuIds]);
+        if (affectedSkuIds.size > 0) {
+          await this.productSellableQuantity.recalculateAndPublishForSkus([...affectedSkuIds], trx);
+        }
+        return { boxId, shipmentStatus, canceledCountIds };
+      },
+      tx,
+    );
+  }
+
+  /**
+   * 리스트에 없던 상자 — 줄 0개로 생기고 `unplanned` 로만 확정한다 (spec §8.7). 창고 작업 계약 v2 —
+   * 같은 키로 다시 보내면 같은 상자를 돌려준다(현장 앱 재시도가 상자를 둘 만들지 않는다).
+   */
+  async addBox(
+    shipmentId: string,
+    dto: AddInboundShipmentBoxDto,
+    actorId: string,
+    tx?: DbTx,
+  ): Promise<AddInboundShipmentBoxResultDto> {
+    const normalized = normalizeSingleBoxLabel(dto.label);
+    const request: AddInboundShipmentBoxDto & { shipmentId: string } = { shipmentId, ...dto };
+    return this.idempotency.withIdempotency(
+      warehouseEndpoint('inbound_shipment.box.add', dto),
+      dto.idempotencyKey,
+      warehouseRequest(request, actorId),
+      async (trx) => {
+        const shipment = await lockInboundShipment(trx, shipmentId);
+        // 저절로 끝난 선적(사유 없음)은 다시 연다 — 리스트에 없던 상자가 끝난 뒤에 나올 수 있다 (③ 설계 §7.6)
+        const autoClosed = shipment.status === 'closed' && shipment.closedReason === null;
+        if (!isOpen(shipment.status) && !autoClosed) {
+          throw new ConflictError(
+            '확정된 선적(도착 예정·입고 중)에만 상자를 더할 수 있습니다. 사람이 끝낸 선적은 다시 연 뒤에 더하세요.',
+          );
+        }
+        const existing = await trx
+          .select({ label: wmsTables.inboundShipmentBoxes.label, sortKey: wmsTables.inboundShipmentBoxes.sortKey })
+          .from(wmsTables.inboundShipmentBoxes)
+          .where(eq(wmsTables.inboundShipmentBoxes.shipmentId, shipmentId));
+        if (existing.some((b) => b.label === normalized)) {
+          throw new ConflictError(`이 선적에 이미 있는 상자입니다: ${normalized}`);
+        }
+        const sortKey = existing.reduce((m, b) => Math.max(m, b.sortKey), -1) + 1;
+        const [box] = await trx
+          .insert(wmsTables.inboundShipmentBoxes)
+          .values({ shipmentId, label: normalized, sortKey, origin: 'added', disposition: 'stock' })
+          .returning({ id: wmsTables.inboundShipmentBoxes.id, label: wmsTables.inboundShipmentBoxes.label });
+        // 열린 상자가 생겼으니 상태를 상자로 다시 정한다 — 저절로 끝난 선적은 `receiving` 으로 돌아온다
+        const shipmentStatus = await refreshInboundShipmentStatus(
+          trx,
+          shipmentId,
+          shipment.status,
+          actorId,
+          new Date(),
+        );
+        return { boxId: box.id, label: box.label, shipmentStatus };
+      },
+      tx,
+    );
+  }
+
+  private async linesOfBox(trx: DbTx, boxId: string): Promise<BoxLine[]> {
+    const lb = wmsTables.inboundShipmentLineBoxes;
+    const rows = await trx
+      .select({
+        id: wmsTables.inboundShipmentLines.id,
+        kind: wmsTables.inboundShipmentLines.kind,
+        skuId: wmsTables.inboundShipmentLines.skuId,
+        rowNumber: wmsTables.inboundShipmentLines.rowNumber,
+        expectedQty: wmsTables.inboundShipmentLines.expectedQty,
+      })
+      .from(lb)
+      .innerJoin(wmsTables.inboundShipmentLines, eq(wmsTables.inboundShipmentLines.id, lb.lineId))
+      .where(eq(lb.boxId, boxId));
+    if (rows.length === 0) return [];
+    // 줄이 덮는 상자 수 — 범위 줄은 «리스트대로» 를 쓸 수 없다
+    const covers = await trx
+      .select({ lineId: lb.lineId, n: sql<number>`count(*)::int` })
+      .from(lb)
+      .where(
+        inArray(
+          lb.lineId,
+          rows.map((r) => r.id),
+        ),
+      )
+      .groupBy(lb.lineId);
+    const coverOf = new Map(covers.map((c) => [c.lineId, Number(c.n)]));
+    return rows.map((r) => ({ ...r, coverCount: coverOf.get(r.id) ?? 0 }));
+  }
+
+  /** `counts` 는 이 상자를 덮는 줄 전부를 정확히 한 번씩 — «안 셌다»와 «0개»를 가른다 (spec §8.2). */
+  private planLineCounts(dto: ReceiveBoxDto, lines: BoxLine[]): PlannedCount[] {
+    const lineById = new Map(lines.map((l) => [l.id, l]));
+    const seen = new Set<string>();
+    const matched: { line: (typeof lines)[number]; countedQty: number; method: 'counted' | 'list' }[] = [];
+    // 1) 덮는 줄 전부를 정확히 한 번씩 — 400
+    for (const c of dto.counts) {
+      if (seen.has(c.lineId)) throw new BadRequestError(`같은 줄을 두 번 셌습니다: ${c.lineId}`);
+      seen.add(c.lineId);
+      const line = lineById.get(c.lineId);
+      if (!line) throw new BadRequestError(`이 상자의 줄이 아닙니다: ${c.lineId}`);
+      if (!Number.isInteger(c.countedQty) || c.countedQty < 0 || c.countedQty > MAX_LINE_QTY) {
+        throw new BadRequestError(`센 수량은 0 이상 ${MAX_LINE_QTY} 이하의 정수여야 합니다.`);
+      }
+      if (c.method === 'list' && (line.coverCount !== 1 || c.countedQty !== line.expectedQty)) {
+        throw new BadRequestError(
+          `리스트대로는 이 상자 하나만 덮고 예정 수량과 같은 줄에만 쓸 수 있습니다: ${line.rowNumber}행`,
+        );
+      }
+      matched.push({ line, countedQty: c.countedQty, method: c.method });
+    }
+    const missing = lines.filter((l) => !seen.has(l.id)).sort((a, b) => a.rowNumber - b.rowNumber);
+    if (missing.length > 0) {
+      throw new BadRequestError(`세지 않은 줄이 있습니다: ${missing.map((l) => `${l.rowNumber}행`).join(', ')}`);
+    }
+    // 2) 확정이 막았어야 할 미확인 줄 — 409 (방어선)
+    const unresolved = matched.filter((m) => m.line.kind === 'unresolved');
+    if (unresolved.length > 0) {
+      throw new ConflictError(
+        `상품이 정해지지 않은 줄은 받을 수 없습니다: ${unresolved.map((m) => `${m.line.rowNumber}행`).join(', ')}`,
+      );
+    }
+    return matched.map(({ line, countedQty, method }) => ({
+      lineId: line.id,
+      skuId: line.kind === 'sku' ? line.skuId : null,
+      countedQty,
+      countMethod: method,
+      ledgerIndex: null,
+    }));
+  }
+
+  private async assertUnplannedValid(trx: DbTx, dto: ReceiveBoxDto): Promise<void> {
+    for (const u of dto.unplanned) {
+      if (!Number.isInteger(u.quantity) || u.quantity <= 0 || u.quantity > MAX_LINE_QTY) {
+        throw new BadRequestError(`리스트에 없던 물건의 수량은 1 이상 ${MAX_LINE_QTY} 이하의 정수여야 합니다.`);
+      }
+    }
+    const ids = [...new Set(dto.unplanned.map((u) => u.skuId))];
+    if (ids.length === 0) return;
+    const found = await trx
+      .select({ id: wmsTables.skus.id })
+      .from(wmsTables.skus)
+      .where(inArray(wmsTables.skus.id, ids));
+    if (found.length !== ids.length) {
+      const known = new Set(found.map((f) => f.id));
+      throw new BadRequestError(`존재하지 않는 SKU 입니다: ${ids.filter((id) => !known.has(id)).join(', ')}`);
+    }
+  }
+}

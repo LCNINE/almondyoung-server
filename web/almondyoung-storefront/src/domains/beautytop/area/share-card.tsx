@@ -55,7 +55,7 @@ async function drawCard(
     c.fillStyle = "#ececec"
     c.fillRect(128, y + 40, W - 256, 2)
   })
-  c.fillStyle = "#ffa500"
+  c.fillStyle = "#36c2b3"
   c.fillRect(128, H - 300, 96, 8)
   c.fillStyle = "#000000"
   c.font = `700 40px ${FONT}`

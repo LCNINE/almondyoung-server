@@ -1,10 +1,13 @@
 {
   "utility": {
-    "shipping": "注文・配送",
     "support": "カスタマーサポート",
     "almondTemplate": "アーモンドテンプレート",
     "login": "ログイン",
-    "signup": "会員登録"
+    "signup": "会員登録",
+    "orderLookup": "注文照会",
+    "cartWithCount": "カート {count}点",
+    "menuAriaLabel": "マイメニュー",
+    "shipping": "注文・配送"
   },
   "userInfo": {
     "logout": "ログアウト"
@@ -14,12 +17,27 @@
     "shopTrade": "ショップ売買",
     "brandHall": "ブランド館",
     "viewAll": "すべて見る",
-    "viewMore": "もっと見る"
+    "viewMore": "もっと見る",
+    "allCategories": "すべてのカテゴリ"
   },
   "quickLinks": {
     "ariaLabel": "おすすめショートカット",
     "prev": "前の項目",
     "next": "次の項目",
     "beautytop": "ビューティートップ"
+  },
+  "serviceBar": {
+    "almondYoungPlay": "アーモンドヤン プレイ",
+    "dabeau": "予約管理アプリ",
+    "beautyExam": "美容筆記試験",
+    "new": "NEW"
+  },
+  "categoryNav": {
+    "ariaLabel": "カテゴリ",
+    "membershipHall": "メンバーシップ館"
+  },
+  "topNotice": {
+    "more": "詳しく見る",
+    "ariaLabel": "お知らせ"
   }
 }

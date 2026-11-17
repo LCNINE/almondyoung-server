@@ -6,6 +6,7 @@ import type { ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { rememberPending } from './shipment-action-pending';
 import type { PermissionedAction } from '@/lib/auth/mutation-permission';
 import type {
   ConsolidationProgressResponse,
@@ -14,6 +15,7 @@ import type {
   ShipmentAdminDetail,
   ShipmentAdminSummary,
 } from '@/lib/types/dto/fulfillment';
+import { FULFILLMENT_SYSTEM_ACTOR_ID } from './operation-reasons';
 import { ShipmentTab } from './shipment-tab';
 
 type QueryState<T> = {
@@ -70,6 +72,9 @@ jest.mock('@/lib/services/orders', () => ({
   useVoidWaybill: Object.assign(() => mockMutation(), {
     permission: ['fulfillment.shipment.reopen'],
   }),
+  useAbandonWaybill: Object.assign(() => mockMutation(), {
+    permission: ['fulfillment.warehouse.operate'],
+  }),
   useExcludeShipmentFromBatch: Object.assign(() => mockMutation(), {
     permission: ['fulfillment.warehouse.operate'],
   }),
@@ -77,6 +82,20 @@ jest.mock('@/lib/services/orders', () => ({
 
 jest.mock('@/lib/services/inventory/queries', () => ({
   useSuppliers: () => ({ data: undefined }),
+}));
+
+let mockCanReadProfile = true;
+const mockUsersLookup = jest.fn();
+
+jest.mock('@/lib/services/users/queries', () => ({
+  useAdminUsersByIds: (ids: string[], options: { enabled?: boolean }) => {
+    mockUsersLookup(ids, options);
+    return {
+      data: options.enabled
+        ? { data: [{ id: 'user-1', username: '김관리', loginId: 'kim' }] }
+        : undefined,
+    };
+  },
 }));
 
 jest.mock('./channel-dispatch-query', () => ({
@@ -98,6 +117,7 @@ jest.mock('@/hooks/use-permission', () => {
   >('@/lib/auth/mutation-permission');
 
   return {
+    useCan: () => ({ status: 'ready', allowed: mockCanReadProfile }),
     usePermissionCheck: () => ({
       can: () => true,
       isPermissionLoading: false,
@@ -209,8 +229,8 @@ const expectVoidAndReissueLocked = (reason: string) => {
   expect(isDisabled('무효화')).toBe(true);
   expect(isDisabled('재발급')).toBe(true);
   expect(screen.getByText(reason)).toBeTruthy();
-  expect(isDisabled('운송장 발급')).toBe(false);
-  expect(isDisabled('수동 등록')).toBe(false);
+  // 지금 쓸 송장이 있으면 새 발급은 받지 않으므로 버튼이 없다
+  expect(screen.queryByRole('button', { name: '운송장 발급' })).toBeNull();
 };
 
 let queryClient: QueryClient;
@@ -228,6 +248,7 @@ const renderTab = (initialShipmentId?: string) => {
 beforeEach(() => {
   jest.clearAllMocks();
   mockGranted.clear();
+  mockCanReadProfile = true;
   mockGranted.add('fulfillment.shipment.reopen');
   mockGranted.add('fulfillment.warehouse.operate');
   queryClient = new QueryClient();
@@ -251,41 +272,41 @@ describe('배송 탭 상자 선택', () => {
   it('새 상자 링크로 들어오면 합쳐진 원본이 아니라 새 상자를 연다', () => {
     renderTab('ship-new');
 
-    expect(screen.getByRole('heading', { name: 'ship-new' })).toBeTruthy();
-    expect(screen.queryByRole('heading', { name: 'ship-old' })).toBeNull();
+    expect(screen.getByRole('heading', { name: '상자 ship-new' })).toBeTruthy();
+    expect(screen.queryByRole('heading', { name: '상자 ship-old' })).toBeNull();
     expect(mockDetail).toHaveBeenLastCalledWith('ship-new');
   });
 
   it('상자를 지정하지 않으면 쓰지 않는 상자가 아니라 열린 상자를 연다', () => {
     renderTab();
 
-    expect(screen.getByRole('heading', { name: 'ship-new' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: '상자 ship-new' })).toBeTruthy();
     expect(mockDetail).toHaveBeenLastCalledWith('ship-new');
   });
 
   it('없는 상자를 지정하면 열린 상자를 연다', () => {
     renderTab('ship-gone');
 
-    expect(screen.getByRole('heading', { name: 'ship-new' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: '상자 ship-new' })).toBeTruthy();
   });
 
   it('쓰지 않는 상자는 접어 두고 개수만 보인다', async () => {
     renderTab();
 
-    expect(screen.queryByText('ship-old')).toBeNull();
+    expect(screen.queryByText('상자 ship-old')).toBeNull();
 
     await userEvent.click(
       screen.getByRole('button', { name: '쓰지 않는 상자 1개' })
     );
 
-    expect(screen.getByText('ship-old')).toBeTruthy();
+    expect(screen.getByText('상자 ship-old')).toBeTruthy();
   });
 
   it('쓰지 않는 상자로 들어오면 접힌 목록을 펼쳐 둔다', () => {
     renderTab('ship-old');
 
-    expect(screen.getByRole('heading', { name: 'ship-old' })).toBeTruthy();
-    expect(screen.getAllByText('ship-old').length).toBeGreaterThan(0);
+    expect(screen.getByRole('heading', { name: '상자 ship-old' })).toBeTruthy();
+    expect(screen.getAllByText('상자 ship-old').length).toBeGreaterThan(0);
   });
 
   it('목록에는 상자 전체 수량을 그대로 보인다', () => {
@@ -295,7 +316,100 @@ describe('배송 탭 상자 선택', () => {
 
     renderTab();
 
-    expect(screen.getByText(/draft · 5개 · 예약 5/)).toBeTruthy();
+    expect(screen.getByText('계획 전 · 5개')).toBeTruthy();
+  });
+
+  it('응답을 받지 못한 요청이 남은 상자는 목록에서 결과 확인이 필요하다고 보인다', () => {
+    window.localStorage.clear();
+    rememberPending({
+      shipmentId: 'ship-new',
+      action: 'split',
+      idempotencyKey: 'k-1',
+      sentAt: Date.now(),
+    });
+
+    renderTab();
+
+    expect(
+      screen.getByRole('button', { name: /상자 ship-new.*결과 확인 필요/ })
+    ).toBeTruthy();
+    window.localStorage.clear();
+  });
+});
+
+describe('상자에 담긴 상품 표', () => {
+  const lineOf = (
+    id: string,
+    qty: number,
+    extra: Partial<ShipmentAdminDetail['lines'][number]>
+  ): ShipmentAdminDetail['lines'][number] => ({
+    id,
+    fulfillmentOrderId: 'fo-1',
+    fulfillmentOrderItemId: `item-${id}`,
+    skuId: `sku-${id}-0000`,
+    qty,
+    reservedQty: qty,
+    inspectedQty: 0,
+    lineVersion: 4,
+    origin: null,
+    reservations: [],
+    ...extra,
+  });
+
+  const originOf = (channelOrderId: string, displayOrderNo: string | null) => ({
+    salesOrderLineId: `sol-${channelOrderId}`,
+    salesOrderId: `so-${channelOrderId}`,
+    salesChannel: 'medusa',
+    channelOrderId,
+    displayOrderNo,
+    channelOrderItemId: `coi-${channelOrderId}`,
+    channelProductId: null,
+  });
+
+  beforeEach(() => {
+    mockShipments.mockReturnValue(loaded([summary('ship-1', 'draft')]));
+    mockDetail.mockReturnValue(
+      loaded({
+        ...detail('ship-1', 'draft'),
+        lines: [
+          lineOf('line-aaaa-1111', 1, {
+            skuName: '샘플 상품 (빨강)',
+            origin: originOf('ch-order-1', 'ORDER-1'),
+          }),
+          lineOf('line-aaaa-3333', 1, {
+            skuId: 'sku-line-aaaa-1111-0000',
+            skuName: '샘플 상품 (빨강)',
+            origin: originOf('ch-order-2', null),
+          }),
+          lineOf('line-bbbb-2222', 2, {
+            skuName: '샘플 상품 (파랑)',
+            origin: originOf('ch-order-2', null),
+          }),
+        ],
+      })
+    );
+  });
+
+  it('줄마다 상품명과 고객이 아는 주문번호·판매처를 보이고 내부 번호와 버전은 감춘다', () => {
+    renderTab();
+
+    const table = screen.getByRole('table');
+    expect(
+      screen.getByRole('heading', { name: '담긴 상품 2종 · 4개' })
+    ).toBeTruthy();
+    expect(
+      Array.from(table.querySelectorAll('th')).map((cell) => cell.textContent)
+    ).toEqual(['상품', '주문', '수량', '재고 확보', '검수']);
+
+    const rows = Array.from(table.querySelectorAll('tbody tr')).map(
+      (row) => row.textContent
+    );
+    expect(rows[0]).toContain('샘플 상품 (빨강)');
+    expect(rows[0]).toContain('#ORDER-1');
+    expect(rows[0]).toContain('아몬드영 (자사몰)');
+    expect(rows[1]).toContain('#ch-order-2');
+    expect(rows).toHaveLength(3);
+    expect(table.textContent).not.toMatch(/line-aaa|so-ch-order|coi-|v4/);
   });
 });
 
@@ -337,8 +451,8 @@ describe('합쳐진 새 상자 카드', () => {
 
 describe('합포장 중 기존 무효화 버튼', () => {
   beforeEach(() => {
-    mockShipments.mockReturnValue(loaded([summary('src', 'draft')]));
-    mockDetail.mockImplementation((id) => loaded(detail(id, 'draft')));
+    mockShipments.mockReturnValue(loaded([summary('src', 'planned')]));
+    mockDetail.mockImplementation((id) => loaded(detail(id, 'planned')));
   });
 
   it('배치에 든 상자가 합포장 진행 중이면 무효화를 막고 진행 안내로 보낸다', () => {
@@ -365,11 +479,6 @@ describe('합포장 중 기존 무효화 버튼', () => {
     expect(
       screen.getByText('합포장 진행 중에는 위 진행 안내에서 운송장을 취소해요')
     ).toBeTruthy();
-    expect(
-      screen
-        .getByRole('button', { name: '운송장 발급' })
-        .hasAttribute('disabled')
-    ).toBe(false);
   });
 
   it('합포장이 없으면 무효화를 지금처럼 열 수 있다', async () => {
@@ -392,6 +501,24 @@ describe('합포장 중 기존 무효화 버튼', () => {
     expect(
       await screen.findByRole('heading', { name: '운송장 무효화' })
     ).toBeTruthy();
+  });
+
+  it('멈춘 송장은 무효화가 아니라 «중단하고 다시 발급»으로 푼다(#1241)', () => {
+    mockDetail.mockImplementation((id) => {
+      const base = detail(id, 'planned');
+      return loaded({
+        ...base,
+        waybills: base.waybills.map((w) => ({ ...w, status: 'allocated' })),
+      });
+    });
+
+    renderTab();
+
+    expect(screen.getByText('송장 발급이 멈춰 있어요')).toBeTruthy();
+    expect(
+      screen.getByRole('button', { name: '중단하고 다시 발급' })
+    ).toBeTruthy();
+    expect(screen.queryByRole('button', { name: '무효화' })).toBeNull();
   });
 
   it('진행 상태를 불러오는 중이면 무효화·재발급을 열지 않는다', () => {
@@ -451,7 +578,7 @@ describe('합쳐진 뒤 상자 선택', () => {
 
     const view = renderTab('ship-a');
 
-    expect(screen.getByRole('heading', { name: 'ship-a' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: '상자 ship-a' })).toBeTruthy();
 
     mockShipments.mockReturnValue(
       loaded([summary('ship-a', 'superseded'), summary('ship-new', 'draft')])
@@ -463,7 +590,7 @@ describe('합쳐진 뒤 상자 선택', () => {
     }));
     view.rerender(<ShipmentTab fo={fo} initialShipmentId="ship-a" />);
 
-    expect(screen.getByRole('heading', { name: 'ship-new' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: '상자 ship-new' })).toBeTruthy();
     expect(
       screen
         .getByRole('button', { name: '쓰지 않는 상자 1개' })
@@ -498,9 +625,375 @@ describe('합쳐진 뒤 상자 선택', () => {
 
     renderTab();
 
-    expect(screen.getByRole('heading', { name: 'box-e' })).toBeTruthy();
+    expect(screen.getByRole('heading', { name: '상자 box-e' })).toBeTruthy();
     expect(
       screen.getByText('#6275와 #6314가 새 상자 하나로 합쳐졌어요')
     ).toBeTruthy();
+  });
+});
+
+describe('상자 정보는 내부 번호·영어 상태 없이 보인다', () => {
+  const longId = '8f772b52-43a1-4826-90ec-8981411c7466';
+
+  beforeEach(() => {
+    mockShipments.mockReturnValue(
+      loaded([{ ...summary(longId, 'shipped'), reservedQty: 0 }])
+    );
+    mockDetail.mockReturnValue(
+      loaded({
+        ...detail(longId, 'shipped'),
+        manifestVersion: 2,
+        reservationVersion: 3,
+        recoveryCode: 'DISPATCH_RECALL_PENDING',
+        lines: [
+          {
+            id: 'line-1',
+            fulfillmentOrderId: 'fo-1',
+            fulfillmentOrderItemId: 'item-1',
+            skuId: 'sku-1',
+            skuName: '샘플 상품 (빨강)',
+            qty: 1,
+            reservedQty: 0,
+            inspectedQty: 1,
+            lineVersion: 1,
+            origin: null,
+            reservations: [],
+          },
+        ],
+        waybills: [
+          {
+            id: 'wb-uuid-1',
+            status: 'used',
+            trackingNo: '4567-8901-2345',
+            carrier: 'HANJIN',
+            manifestVersion: 2,
+            issuedAt: '2026-11-01T00:00:00Z',
+            voidedAt: null,
+          },
+        ],
+        dispatchAttempts: [
+          {
+            id: 'attempt-uuid-1',
+            attemptNo: 1,
+            status: 'dispatched',
+            waybillId: 'wb-uuid-1',
+            dispatchedAt: '2026-11-01T01:00:00Z',
+            recalledAt: null,
+            recoveryCode: null,
+            sources: [
+              {
+                id: 'src-1',
+                shipmentLineId: 'line-1',
+                sourceLocationId: 'loc-uuid-1',
+                quantity: 1,
+                stockEventId: null,
+              },
+            ],
+            trackingEvents: [],
+          },
+        ],
+        operations: [
+          {
+            operationId: 'op-uuid-1',
+            type: 'consolidate',
+            status: 'completed',
+            reason: '같은 고객 묶음',
+            createdAt: '2026-11-01T00:00:00Z',
+            completedAt: '2026-11-01T00:00:01Z',
+          },
+          {
+            operationId: 'op-uuid-2',
+            type: 'plan',
+            status: 'failed',
+            lastError: 'SHIPMENT_NOT_DRAFT',
+            createdAt: '2026-11-01T00:00:00Z',
+            completedAt: null,
+          },
+        ],
+      })
+    );
+  });
+
+  it('머리·목록·송장·출고·작업 기록을 한국어로 보인다', () => {
+    renderTab();
+
+    expect(screen.getByRole('heading', { name: '상자 8f772b52' })).toBeTruthy();
+    const text = document.body.textContent ?? '';
+    for (const expected of [
+      '상자 (1)',
+      '출고 완료 · 1개',
+      '회수 재처리 대기',
+      '창고 출고',
+      '한진택배',
+      '출고에 씀',
+      '출고 기록 (1)',
+      '1차 출고 · 송장 4567-8901-2345',
+      '출고됨',
+      '샘플 상품 (빨강) 1개',
+      '작업 기록 (2)',
+      '합포장',
+      '같은 고객 묶음',
+      '계획 확정',
+      '처리하지 못했어요',
+    ]) {
+      expect(text).toContain(expected);
+    }
+    expect(text).not.toMatch(
+      /manifest|reservation|attempt|durable|operation|source|tracking|shipment|shipped|dispatched|completed|SHIPMENT_NOT_DRAFT|M2\/R3|wb-uuid|op-uuid|8f772b52-43a1/
+    );
+    const row = screen.getByRole('table').querySelector('tbody tr');
+    // 출고한 상자는 확보가 풀려 있어 확보 수량 대신 —
+    expect(row?.textContent).toBe('샘플 상품 (빨강)-1—1');
+  });
+});
+
+describe('작업 기록의 사유·요청 경로·처리자·메모', () => {
+  const systemActor = FULFILLMENT_SYSTEM_ACTOR_ID;
+  const operation = (
+    id: string,
+    fields: Partial<ShipmentAdminDetail['operations'][number]>
+  ): ShipmentAdminDetail['operations'][number] => ({
+    operationId: id,
+    type: 'recipient_revision',
+    status: 'completed',
+    createdAt: '2026-11-01T00:00:00Z',
+    completedAt: '2026-11-01T00:00:01Z',
+    ...fields,
+  });
+
+  const renderWith = (
+    operations: ShipmentAdminDetail['operations']
+  ): string => {
+    mockShipments.mockReturnValue(loaded([summary('ship-1', 'draft')]));
+    mockDetail.mockReturnValue(
+      loaded({ ...detail('ship-1', 'draft'), operations })
+    );
+    renderTab();
+    return document.body.textContent ?? '';
+  };
+
+  it('사유 이름표·요청 경로·처리자·시각·메모를 줄마다 보인다', () => {
+    const text = renderWith([
+      operation('op-1', {
+        reason: '[가림]',
+        reasonCode: 'customer_address_change',
+        requestChannel: 'phone',
+        operatorId: 'user-1',
+        note: '택배사 확인 후 변경',
+      }),
+    ]);
+
+    expect(text).toContain('수령인 변경 · 고객이 주소·연락처 변경 요청');
+    expect(text).toContain(
+      `전화 · 김관리 · ${new Date('2026-11-01T00:00:00Z').toLocaleString('ko-KR')}`
+    );
+    expect(text).toContain('택배사 확인 후 변경');
+    expect(text).not.toMatch(/[a-z]+_[a-z_]+/);
+  });
+
+  it('자동 기록은 이름표와 «자동» 으로 보인다', () => {
+    const text = renderWith([
+      operation('op-2', {
+        type: 'plan',
+        reason: '[가림]',
+        reasonCode: 'system_plan',
+        operatorId: systemActor,
+      }),
+    ]);
+
+    expect(text).toContain('계획 확정');
+    expect(text).not.toContain('계획 확정 · 계획 확정');
+    expect(text).toContain(
+      `자동 · ${new Date('2026-11-01T00:00:00Z').toLocaleString('ko-KR')}`
+    );
+    expect(text).not.toContain(systemActor);
+  });
+
+  it('분류되지 않은 가려진 사유는 그대로 보이고 모르는 처리자 id 는 감춘다', () => {
+    const text = renderWith([
+      operation('op-3', {
+        reason: '[가림]',
+        reasonCode: null,
+        operatorId: 'user-unknown',
+      }),
+    ]);
+
+    expect(text).toContain('수령인 변경 · [가림]');
+    expect(text).not.toContain('user-unknown');
+  });
+
+  it('직원 목록을 볼 권한이 없으면 조회하지 않고 처리자 없이 보인다', () => {
+    mockCanReadProfile = false;
+    const text = renderWith([
+      operation('op-5', {
+        reason: '[가림]',
+        reasonCode: 'customer_address_change',
+        operatorId: 'user-1',
+      }),
+    ]);
+
+    expect(mockUsersLookup).toHaveBeenCalledWith(
+      ['user-1'],
+      expect.objectContaining({ enabled: false, retry: false })
+    );
+    expect(text).not.toContain('김관리');
+    expect(text).not.toContain('user-1');
+  });
+
+  it('기타는 직접 쓴 글을 뒤에 붙인다', () => {
+    const text = renderWith([
+      operation('op-4', {
+        type: 'split',
+        reason: '박스 파손',
+        reasonCode: 'other',
+      }),
+    ]);
+
+    expect(text).toContain('상자 분할 · 기타 · 박스 파손');
+  });
+});
+
+describe('운송장 영역은 지금 쓸 송장과 다음 작업을 먼저 보인다', () => {
+  const wb = (
+    id: string,
+    status: string,
+    trackingNo: string,
+    voidedAt: string | null = null
+  ) => ({
+    id,
+    status,
+    trackingNo,
+    carrier: 'HANJIN',
+    manifestVersion: 1,
+    issuedAt: '2026-10-29T00:00:00Z',
+    voidedAt,
+  });
+  const history = [
+    wb('wb-1', 'voided', '1111-0000-0001', '2026-10-29T01:00:00Z'),
+    wb('wb-2', 'voided', '1111-0000-0002', '2026-10-29T02:00:00Z'),
+    wb('wb-3', 'registered', '1111-0000-0003'),
+  ];
+  const show = (
+    status: string,
+    waybills: ShipmentAdminDetail['waybills'],
+    workItems: ShipmentAdminDetail['workItems'] = []
+  ) => {
+    mockShipments.mockReturnValue(loaded([summary('box', status)]));
+    mockDetail.mockReturnValue(
+      loaded({ ...detail('box', status), waybills, workItems })
+    );
+    renderTab();
+  };
+
+  it('지금 쓸 송장을 번호·택배사·한국어 상태로 먼저 보이고 무효 송장은 접어 둔다', async () => {
+    show('planned', history);
+
+    const current = screen.getByRole('region', { name: '지금 쓸 송장' });
+    expect(current.textContent).toContain('1111-0000-0003');
+    expect(current.textContent).toContain('한진택배');
+    expect(current.textContent).toContain('사용 가능');
+    expect(current.textContent).not.toContain('1111-0000-0001');
+    expect(screen.queryByText('1111-0000-0001')).toBeNull();
+
+    const toggle = screen.getByRole('button', { name: /지난 송장 2장/ });
+    expect(toggle.getAttribute('aria-expanded')).toBe('false');
+    await userEvent.click(toggle);
+
+    expect(toggle.getAttribute('aria-expanded')).toBe('true');
+    const past = screen.getByRole('list', { name: '지난 송장' });
+    expect(past.textContent?.indexOf('1111-0000-0002')).toBeLessThan(
+      past.textContent?.indexOf('1111-0000-0001') ?? -1
+    );
+    expect(past.textContent).toContain('무효');
+  });
+
+  it('배치에 넣기 전이면 이 상자 출고 준비로 잇는다', () => {
+    show('planned', history);
+
+    const current = screen.getByRole('region', { name: '지금 쓸 송장' });
+    expect(current.textContent).toContain('다음: 출고 준비');
+    expect(
+      screen
+        .getByRole('link', { name: '이 상자 출고 준비' })
+        .getAttribute('href')
+    ).toBe('/order/waybill-issue?warehouseId=wh-1&prepare=box');
+    expect(screen.queryByRole('button', { name: '운송장 발급' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '수동 등록' })).toBeNull();
+    expect(screen.getByRole('button', { name: '재발급' })).toBeTruthy();
+  });
+
+  it('배치에 들어 있으면 그 배치로 잇고 출력은 물류앱에서 한다고 알린다', () => {
+    show('planned', history, [
+      { id: 'wi-1', status: 'picking', batchId: 'b-1' },
+    ]);
+
+    const current = screen.getByRole('region', { name: '지금 쓸 송장' });
+    expect(current.textContent).toContain('물류앱');
+    expect(
+      screen.getByRole('link', { name: '배치 보기' }).getAttribute('href')
+    ).toBe('/order/outbound-batches?batchId=b-1');
+    expect(
+      screen.queryByRole('link', { name: '이 상자 출고 준비' })
+    ).toBeNull();
+  });
+
+  it('배치에 든 상자의 송장이 없어지면 출고 준비 대신 배치로 잇는다', () => {
+    show('planned', history.slice(0, 2), [
+      { id: 'wi-1', status: 'packing', batchId: 'b-1' },
+    ]);
+
+    expect(
+      screen.getByRole('region', { name: '지금 쓸 송장' }).textContent
+    ).toContain('배치에 들어 있는 상자예요');
+    expect(
+      screen.getByRole('link', { name: '배치 보기' }).getAttribute('href')
+    ).toBe('/order/outbound-batches?batchId=b-1');
+    expect(
+      screen.queryByRole('link', { name: '이 상자 출고 준비' })
+    ).toBeNull();
+    expect(screen.getByRole('button', { name: '운송장 발급' })).toBeTruthy();
+  });
+
+  it('송장 없이 출고된 상자는 지금 쓸 송장이 없다고 하지 않는다', () => {
+    show('shipped', []);
+
+    const current = screen.getByRole('region', { name: '지금 쓸 송장' });
+    expect(current.textContent).toContain('운송장 없이 출고된 상자예요');
+    expect(current.textContent).not.toContain('지금 쓸 송장이 없어요');
+  });
+
+  it('무효가 된 송장만 남은 채 출고된 상자도 같은 안내를 보인다', () => {
+    show('delivered', history.slice(0, 2));
+
+    expect(
+      screen.getByRole('region', { name: '지금 쓸 송장' }).textContent
+    ).toContain('운송장 없이 출고된 상자예요');
+  });
+
+  it('지금 쓸 송장이 없으면 발급할 수 있다고 알리고 재발급·무효화는 없다', () => {
+    show('planned', history.slice(0, 2));
+
+    const current = screen.getByRole('region', { name: '지금 쓸 송장' });
+    expect(current.textContent).toContain('지금 쓸 송장이 없어요');
+    expect(screen.getByRole('button', { name: '운송장 발급' })).toBeTruthy();
+    expect(
+      screen
+        .getByRole('link', { name: '이 상자 출고 준비' })
+        .getAttribute('href')
+    ).toBe('/order/waybill-issue?warehouseId=wh-1&prepare=box');
+    expect(screen.queryByRole('button', { name: '재발급' })).toBeNull();
+    expect(screen.queryByRole('button', { name: '무효화' })).toBeNull();
+  });
+
+  it('계획 전 상자는 계획 확정이 먼저라고 알리고 발급 버튼을 열지 않는다', () => {
+    show('draft', []);
+
+    expect(
+      screen.getByRole('region', { name: '지금 쓸 송장' }).textContent
+    ).toContain('계획을 확정하면');
+    expect(screen.queryByRole('button', { name: '운송장 발급' })).toBeNull();
+    expect(
+      screen.queryByRole('link', { name: '이 상자 출고 준비' })
+    ).toBeNull();
   });
 });

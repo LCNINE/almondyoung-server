@@ -16,6 +16,11 @@ export interface SettlementView {
   startedAt?: string;
   deadlineAt: string;
   lastFailure: { code: string; message: string; retryable: boolean; at: string } | null;
+  /**
+   * 마켓(네이버·쿠팡) 고객 취소요청 행. 환불은 마켓이 하고 core 는 승인만 보낸다 — 거절은 «판매자센터 승인 필요»이고
+   * [계좌 송금으로 환불]은 없다(core 가 거절한다). 옛 core 응답엔 없어 false 로 읽는다
+   */
+  marketRequest: boolean;
 }
 
 export interface CancelRequestView {
@@ -83,14 +88,49 @@ const WALLET_REFUSED_PREFIX = 'wallet_refund_refused:';
 /** 채널(Medusa)이 «이미 환불한 금액»을 물으며 거절한 부분취소(#1016 37번) — core 가 이 실패일 때만 금액을 받는다 */
 const EXTERNAL_REFUND_PREFIX = 'external_refund_';
 /**
+ * 마켓 고객 취소요청의 거절 — core 가 이미 멈췄고 channel-adapter 가 승인을 보내지 못한 것이다(관찰 모드 `approval_observe_mode`,
+ * 그 밖 승인 실행부의 재시도 불가 실패). 마켓 행의 정산 실패 사실은 승인 갈래에서만 나고, 재시도 불가만 거절(refused)이 되므로
+ * 거절이면 곧 이 경우다. 운영자가 할 일은 환불이 아니라 판매자센터에서 승인하는 것이다.
+ * [다시 시도]는 남긴다 — act 로 바꾼 뒤엔 승인을 실제로 보낸다.
+ */
+function needsSellerCenterApproval(s: SettlementView): boolean {
+  return s.marketRequest && s.phase === 'refused';
+}
+const SELLER_CENTER_APPROVAL = '판매자센터 승인 필요';
+
+/**
  * 정산의 칩·줄 이름. 거절 중 채널이 «이미 환불한 금액»을 물은 것(#1016 37번, external_refund_*)은 운영자가 할 일이 다르다 —
  * 계좌 송금이 아니라 [다시 시도]에 금액을 넣는다. 그래서 «환불 거절» 대신 그 말로 부른다(36번 스모크 발견 ③).
  */
 export function settlementLabel(s: SettlementView): string {
+  if (needsSellerCenterApproval(s)) return SELLER_CENTER_APPROVAL;
   if (s.phase === 'refused' && s.lastFailure?.code.startsWith(EXTERNAL_REFUND_PREFIX)) {
     return REJECTION_LABELS.EXTERNAL_REFUND_UNRESOLVED;
   }
+  if (preparingManualRefund(s)) return MANUAL_REFUND_PREPARING;
   return SETTLEMENT_LABELS[s.phase];
+}
+
+/**
+ * 계좌 송금으로 바꾼 뒤 취소가 아직 반영되지 않은 정산. 단계(지연)는 확정 시각으로 정해져 바꾼 직후에도 «지연»이라,
+ * 그 이름 대신 지금 기다리는 일을 부른다. 거절이면 거절 이름이 그대로다.
+ */
+function preparingManualRefund(s: SettlementView): boolean {
+  return s.mode === 'manual' && s.phase !== 'refused';
+}
+const MANUAL_REFUND_PREPARING = '계좌 송금 준비';
+
+/** 칩을 경고색으로 그릴지 — 지연·거절. 계좌 송금 준비 중은 운영자가 이미 조치한 것이라 경고가 아니다 */
+export function settlementAlert(s: SettlementView): boolean {
+  return s.phase !== 'in_progress' && !preparingManualRefund(s);
+}
+
+/** 계좌 송금으로 바꾼 정산 행의 남은 할 일. 아니면 null. short 는 좁은 칸(주문 내역)용 */
+export function manualRefundTodo(s: SettlementView | null, length: 'full' | 'short' = 'full'): string | null {
+  if (!s || !preparingManualRefund(s)) return null;
+  return length === 'short'
+    ? '취소가 반영되면 송금하고 환불 내역에서 [완료 처리]'
+    : '취소가 반영되면 환불 내역에 송금 대기 환불이 생깁니다. 고객 계좌로 송금한 뒤 [완료 처리]를 눌러 주세요.';
 }
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
 const KST_OFFSET_MS = 9 * 3_600_000;
@@ -121,6 +161,7 @@ export function toSettlementView(value: unknown): SettlementView | null {
     ...(typeof value.startedAt === 'string' ? { startedAt: value.startedAt } : {}),
     deadlineAt: value.deadlineAt,
     lastFailure: failureOf(value.lastFailure),
+    marketRequest: value.marketRequest === true,
   };
 }
 
@@ -129,6 +170,7 @@ export function settlementReason(s: SettlementView): string | null {
   const f = s.lastFailure;
   // 환불 처리 중에 지난 실패를 곁에 두면 모순으로 읽힌다 — 다시 시도한 뒤의 진행 중엔 사유를 숨긴다
   if (!f || s.phase === 'in_progress') return null;
+  if (needsSellerCenterApproval(s)) return `${SELLER_CENTER_APPROVAL} · ${f.message || f.code}`;
   if (f.code.startsWith(WALLET_REFUSED_PREFIX)) return `환불 거절 · ${f.message || f.code}`;
   if (f.code.startsWith(EXTERNAL_REFUND_PREFIX)) return `${REJECTION_LABELS.EXTERNAL_REFUND_UNRESOLVED} · ${f.message || f.code}`;
   return `정산 실패 · 개발 확인 · ${f.message || f.code}`;
@@ -151,10 +193,13 @@ export function awaitsSettlementResult(details: ReadonlyArray<unknown>, now: num
   });
 }
 
-/** 서버(core restartSettlement)와 같은 규칙 — 정산 중(30분 안)엔 조치 없음(D8), 이미 계좌 송금이면 다시 시도만 */
+/**
+ * 서버(core restartSettlement)와 같은 규칙 — 정산 중(30분 안)엔 조치 없음(D8), 이미 계좌 송금이면 다시 시도만,
+ * 마켓 고객 취소요청은 환불을 마켓이 하므로 계좌 송금 없음(core 가 400 으로 거절한다)
+ */
 export function settlementActionsOf(s: SettlementView | null): { retry: boolean; manualRefund: boolean } {
   if (!s || s.phase === 'in_progress') return { retry: false, manualRefund: false };
-  return { retry: true, manualRefund: s.mode !== 'manual' };
+  return { retry: true, manualRefund: s.mode !== 'manual' && !s.marketRequest };
 }
 
 export function settlementTiming(s: SettlementView, now: number): string {
@@ -233,7 +278,8 @@ export function cancelActionOf(row: { channel: string; orderStatus: string; canc
   if (request?.status === 'settling') {
     const phase = request.settlement?.phase ?? 'in_progress';
     const label = request.settlement ? settlementLabel(request.settlement) : SETTLEMENT_LABELS.in_progress;
-    return { kind: 'settling', label, alert: phase !== 'in_progress' };
+    const alert = request.settlement ? settlementAlert(request.settlement) : phase !== 'in_progress';
+    return { kind: 'settling', label, alert };
   }
   if (request?.status === 'rejected' && request.rejection) {
     return { kind: 'rejected', reason: `${REJECTION_LABELS[request.rejection.reasonCode] ?? request.rejection.reasonCode} · ${request.rejection.message}` };

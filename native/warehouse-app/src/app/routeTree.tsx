@@ -12,6 +12,7 @@ import { AuthedLayout } from './routes/AuthedLayout';
 import { ProfileHome } from './routes/ProfileHome';
 import { DiagnosticsRoute } from './routes/DiagnosticsRoute';
 import { InventoryLookupRoute } from './routes/InventoryLookupRoute';
+import { ManufactureAdjustRoute, ManufactureSelectRoute } from './routes/ManufactureSelectRoute';
 import { SettingsRoute } from './routes/SettingsRoute';
 import { PlaceholderScreen } from '../core/design/PlaceholderScreen';
 import { SkuDetailRoute } from './routes/SkuDetailRoute';
@@ -26,11 +27,13 @@ import { PurchaseOrderReceiveRoute } from './routes/PurchaseOrderReceiveRoute';
 import { QuickInboundRoute } from './routes/QuickInboundRoute';
 import { PutawayRoute } from './routes/PutawayRoute';
 import { ReturnPutawayRoute } from './routes/ReturnPutawayRoute';
+import { LocationLabelRoute } from './routes/LocationLabelRoute';
 import { OutboundBatchesRoute } from './routes/OutboundBatchesRoute';
 import { OutboundRoute } from './routes/OutboundRoute';
 import { SimpleOutboundRoute } from './routes/SimpleOutboundRoute';
 import { WithdrawRoute } from './routes/WithdrawRoute';
 import { CustomerReturnsRoute } from './routes/CustomerReturnsRoute';
+import { InboundBoxesRoute } from './routes/InboundBoxesRoute';
 import { CommandSheetScreen } from '../station/CommandSheetScreen';
 import type { ShipmentByWaybill } from '../domains/outbound/types';
 
@@ -84,6 +87,11 @@ const inventoryRoute = createRoute({
   path: '/inventory',
   component: InventoryLookupRoute,
 });
+const manufactureSelectRoute = createRoute({
+  getParentRoute: () => authedRoute,
+  path: '/inventory/manufacture',
+  component: ManufactureSelectRoute,
+});
 const inventoryDetailRoute = createRoute({
   getParentRoute: () => authedRoute,
   path: '/inventory/$sku',
@@ -99,6 +107,11 @@ const inventoryAdjustRoute = createRoute({
     locationId:
       typeof search.locationId === 'string' ? search.locationId : undefined,
   }),
+});
+const manufactureAdjustRoute = createRoute({
+  getParentRoute: () => authedRoute,
+  path: '/inventory/manufacture/$sku',
+  component: ManufactureAdjustRoute,
 });
 const shipmentsRoute = createRoute({
   getParentRoute: () => authedRoute,
@@ -147,6 +160,19 @@ const inboundHistoryRoute = createRoute({
   path: '/inbound/history',
   component: InboundHistoryRoute,
 });
+// 스테이션 선적 상자 입고 — 입고내역 링크가 shipmentId·boxId 로 바로 연다. 핸드헬드는 안내만 한다
+const inboundBoxesRoute = createRoute({
+  getParentRoute: () => authedRoute,
+  path: '/inbound/boxes',
+  validateSearch: (
+    search: Record<string, unknown>
+  ): { shipmentId?: string; boxId?: string } => ({
+    shipmentId:
+      typeof search.shipmentId === 'string' ? search.shipmentId : undefined,
+    boxId: typeof search.boxId === 'string' ? search.boxId : undefined,
+  }),
+  component: InboundBoxesRoute,
+});
 const inboundQuickRoute = createRoute({
   getParentRoute: () => authedRoute,
   path: '/inbound/quick',
@@ -169,6 +195,11 @@ const returnPutawayRoute = createRoute({
   getParentRoute: () => authedRoute,
   path: '/returns/putaway',
   component: ReturnPutawayRoute,
+});
+const locationLabelRoute = createRoute({
+  getParentRoute: () => authedRoute,
+  path: '/putaway/location-labels',
+  component: LocationLabelRoute,
 });
 
 // --- 작업 · 스테이션 ---
@@ -229,6 +260,8 @@ export const routeTree = rootRoute.addChildren([
     indexRoute,
     diagnosticsRoute,
     inventoryRoute,
+    manufactureSelectRoute,
+    manufactureAdjustRoute,
     inventoryDetailRoute,
     inventoryAdjustRoute,
     shipmentsRoute,
@@ -240,8 +273,10 @@ export const routeTree = rootRoute.addChildren([
     inboundPurchaseOrderRoute,
     inboundQuickRoute,
     inboundHistoryRoute,
+    inboundBoxesRoute,
     pickingRoute,
     putawayRoute,
+    locationLabelRoute,
     returnPutawayRoute,
     packingRoute,
     outboundRoute,

@@ -10,14 +10,17 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import {
   getServerDenyMessage,
   parseServerError,
   useForceShipmentDispatch,
 } from '@/lib/services/orders';
+import { OperationReasonFields } from '../../../fulfillments/detail/operation-reason-fields';
+import {
+  canSubmitOperationReason,
+  toOperationReasonPayload,
+  type OperationReasonValue,
+} from '../../../fulfillments/detail/operation-reasons';
 import { inspectionServerDenyMessage } from '../../inspection-view-model';
 import { useWarehouseCommandRetry } from '../../../outbound-batches/warehouse-command-retry';
 
@@ -28,23 +31,25 @@ interface Props {
 
 export function ForceShipmentDialog({ shipmentId, onClose }: Props) {
   const mutation = useForceShipmentDispatch();
-  const [reason, setReason] = useState('');
-  const [caseId, setCaseId] = useState('');
-  const [note, setNote] = useState('');
+  const [reasonValue, setReasonValue] = useState<OperationReasonValue>({
+    otherText: '',
+    note: '',
+  });
+  const [showErrors, setShowErrors] = useState(false);
   const retry = useWarehouseCommandRetry();
 
   const submit = async () => {
-    const payload = {
-      reason: reason.trim(),
-      csCaseId: caseId.trim() || undefined,
-      note: note.trim() || undefined,
-    };
+    if (!canSubmitOperationReason('force_dispatch', reasonValue)) {
+      setShowErrors(true);
+      return;
+    }
+    const payload = toOperationReasonPayload('force_dispatch', reasonValue);
     try {
       await retry.execute('force-dispatch', payload, (data, idempotencyKey) =>
         mutation.mutateAsync({ shipmentId, data, idempotencyKey })
       );
       toast.success(
-        '강제 출고 명령을 접수했습니다. provider 반영 상태는 shipment에서 확인하세요.'
+        '강제 출고를 접수했어요. 출고 상세에서 처리 결과를 확인해 주세요.'
       );
       onClose();
     } catch (error) {
@@ -59,36 +64,18 @@ export function ForceShipmentDialog({ shipmentId, onClose }: Props) {
     <Dialog open onOpenChange={onClose}>
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Shipment 강제 출고</DialogTitle>
+          <DialogTitle>강제 출고</DialogTitle>
         </DialogHeader>
         <div className="space-y-3">
-          <p className="font-mono text-xs text-muted-foreground">
-            {shipmentId}
+          <p className="text-xs text-muted-foreground">
+            상자 {shipmentId.slice(0, 8)}
           </p>
-          <div className="space-y-1">
-            <Label>사유</Label>
-            <Input
-              value={reason}
-              onChange={(event) => setReason(event.target.value)}
-            />
-          </div>
-          <div className="space-y-1">
-            <Label>CS case ID</Label>
-            <Input
-              value={caseId}
-              onChange={(event) => setCaseId(event.target.value)}
-            />
-          </div>
-          <div className="space-y-1">
-            <Label>메모</Label>
-            <Textarea
-              value={note}
-              onChange={(event) => setNote(event.target.value)}
-            />
-          </div>
-          <p className="text-xs text-destructive">
-            버튼 숨김은 편의 기능일 뿐이며 서버가 최종 authorization 경계입니다.
-          </p>
+          <OperationReasonFields
+            type="force_dispatch"
+            value={reasonValue}
+            onChange={setReasonValue}
+            showErrors={showErrors}
+          />
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>
@@ -97,7 +84,7 @@ export function ForceShipmentDialog({ shipmentId, onClose }: Props) {
           <Button
             variant="destructive"
             onClick={submit}
-            disabled={!reason.trim() || mutation.isPending}
+            disabled={mutation.isPending}
           >
             {mutation.isPending
               ? '서버 확인 중…'

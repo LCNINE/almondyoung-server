@@ -46,7 +46,7 @@ export function FilterSelect({
         className={cn(
           "h-9 w-auto shrink-0 gap-1 rounded-full border px-3.5 text-sm",
           value
-            ? "border-primary text-primary font-medium [&>svg]:opacity-100"
+            ? "border-mint-deep text-mint-deep font-medium [&>svg]:opacity-100"
             : "border-border text-foreground"
         )}
       >

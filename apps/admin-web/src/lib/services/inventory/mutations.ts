@@ -153,7 +153,7 @@ export const useCreateSku = () => {
   return useMutation({
     mutationFn: (data: CreateSkuDto) => skusClient.createSku(data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.skus() });
+      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.skusRoot });
     },
   });
 };
@@ -165,7 +165,7 @@ export const useUpdateSku = () => {
     mutationFn: ({ id, data }: { id: string; data: UpdateSkuDto }) =>
       skusClient.updateSku(id, data),
     onSuccess: (_, { id }) => {
-      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.skus() });
+      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.skusRoot });
       queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.sku(id) });
     },
   });
@@ -177,7 +177,7 @@ export const useDeleteSku = () => {
   return useMutation({
     mutationFn: (id: string) => skusClient.deleteSku(id),
     onSuccess: (_, id) => {
-      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.skus() });
+      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.skusRoot });
       queryClient.removeQueries({ queryKey: inventoryQueryKeys.sku(id) });
     },
   });
@@ -256,7 +256,7 @@ export const useCreateSupplier = () => {
   return useMutation({
     mutationFn: (data: CreateSupplierRequest) => suppliersClient.create(data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.suppliers() });
+      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.suppliersRoot });
     },
   });
 };
@@ -268,7 +268,7 @@ export const useUpdateSupplier = () => {
     mutationFn: ({ id, data }: { id: string; data: UpdateSupplierRequest }) =>
       suppliersClient.update(id, data),
     onSuccess: (_result, { id }) => {
-      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.suppliers() });
+      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.suppliersRoot });
       queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.supplier(id) });
     },
   });
@@ -280,7 +280,7 @@ export const useDeleteSupplier = () => {
   return useMutation({
     mutationFn: (id: string) => suppliersClient.delete(id),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.suppliers() });
+      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.suppliersRoot });
     },
   });
 };
@@ -329,7 +329,7 @@ export const useCreateHolder = () => {
   return useMutation({
     mutationFn: (data: CreateHolderRequest) => holdersClient.create(data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.holders() });
+      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.holdersRoot });
     },
   });
 };
@@ -341,7 +341,7 @@ export const useUpdateHolder = () => {
     mutationFn: ({ id, data }: { id: string; data: UpdateHolderRequest }) =>
       holdersClient.update(id, data),
     onSuccess: (_, { id }) => {
-      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.holders() });
+      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.holdersRoot });
       queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.holder(id) });
     },
   });
@@ -353,7 +353,7 @@ export const useDeleteHolder = () => {
   return useMutation({
     mutationFn: (id: string) => holdersClient.delete(id),
     onSuccess: (_, id) => {
-      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.holders() });
+      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.holdersRoot });
       queryClient.removeQueries({ queryKey: inventoryQueryKeys.holder(id) });
     },
   });
@@ -491,7 +491,7 @@ export const useAddSkuToGroup = () => {
     onSuccess: (_, { groupId }) => {
       queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.skuGroups });
       queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.skuGroupMembers(groupId) });
-      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.skus() });
+      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.skusRoot });
     },
   });
 };
@@ -505,7 +505,7 @@ export const useBulkAddSkusToGroup = () => {
     onSuccess: (_, { groupId }) => {
       queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.skuGroups });
       queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.skuGroupMembers(groupId) });
-      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.skus() });
+      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.skusRoot });
     },
   });
 };
@@ -519,7 +519,7 @@ export const useRemoveSkuFromGroup = () => {
     onSuccess: (_, { groupId }) => {
       queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.skuGroups });
       queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.skuGroupMembers(groupId) });
-      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.skus() });
+      queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.skusRoot });
     },
   });
 };

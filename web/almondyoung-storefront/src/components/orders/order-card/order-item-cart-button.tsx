@@ -2,25 +2,25 @@
 
 import { CustomButton } from "@/components/shared/custom-buttons"
 import { useAddToCart } from "@/hooks/api/use-add-to-cart"
+import { showCartAddedToast } from "@/components/shared/cart-added-toast"
 import { useTranslations } from "next-intl"
-import { useRouter } from "next/navigation"
-import { toast } from "sonner"
 
 export default function OrderItemCartButton({
   variantId,
+  title,
+  thumbnail,
 }: {
   variantId: string
+  title: string
+  thumbnail?: string | null
 }) {
   const t = useTranslations("mypage.order.actions")
-  const router = useRouter()
   const { addToCart, isLoading } = useAddToCart()
 
   const handleClick = async () => {
     const result = await addToCart({ variantId })
     if (result.success) {
-      toast.success(t("addToCartSuccess"), {
-        action: { label: t("goToCart"), onClick: () => router.push("/cart") },
-      })
+      showCartAddedToast({ title, thumbnail })
     }
   }
 

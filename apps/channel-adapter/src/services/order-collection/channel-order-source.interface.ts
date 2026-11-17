@@ -1,4 +1,5 @@
 import {
+  ChannelCancelRequestedPayload,
   ChannelReturnCancelledPayload,
   ChannelReturnRequestedPayload,
   ChannelReturnPrepaidPayload,
@@ -62,6 +63,15 @@ export interface ChannelOrderLineSnapshot {
 /** 반품 관측 payload — 채널 키(`orderId`·`salesChannel`·`externalOrderId`)는 오케스트레이터가 붙인다. */
 export type ReturnObservationPayload<P> = Omit<P, 'orderId' | 'salesChannel' | 'externalOrderId'>;
 
+/**
+ * 마켓 고객 취소요청 관측 payload — 반품 관측과 같이 채널 키는 오케스트레이터가 붙인다.
+ * `channelRequestRef`(승인 API 대상)·`channelRequestKey`(요청 하나의 중복 판정 식별)는 source 가 채운다.
+ */
+export type CancelRequestObservationPayload = Omit<
+  ChannelCancelRequestedPayload,
+  'orderId' | 'salesChannel' | 'externalOrderId'
+>;
+
 interface LifecycleObservationBase {
   /** 같은 관측을 두 번 세지 않기 위한 채널 내 안정 키. 예: `cancelled`, `refund:<refundId>`. */
   eventKey: string;
@@ -78,6 +88,7 @@ export type LifecycleObservation = LifecycleObservationBase &
   (
     | { eventType: 'OrderCancelled'; payload: Omit<OrderCancelledPayload, 'orderId'> }
     | { eventType: 'OrderRefundCreated'; payload: Omit<OrderRefundCreatedPayload, 'orderId'> }
+    | { eventType: 'ChannelCancelRequested'; payload: CancelRequestObservationPayload }
     | { eventType: 'ChannelReturnRequested'; payload: ReturnObservationPayload<ChannelReturnRequestedPayload> }
     | { eventType: 'ChannelReturnCancelled'; payload: ReturnObservationPayload<ChannelReturnCancelledPayload> }
     | { eventType: 'ChannelReturnPrepaid'; payload: ReturnObservationPayload<ChannelReturnPrepaidPayload> }
@@ -191,4 +202,17 @@ export interface WindowedChannelOrderSource extends ChannelOrderSource {
 
 export function isWindowedSource(source: ChannelOrderSource): source is WindowedChannelOrderSource {
   return typeof (source as WindowedChannelOrderSource).fetchOrdersInWindow === 'function';
+}
+
+/**
+ * 수집이 커밋된 주문을 채널 쪽에서 «접수됨» 상태로 넘기는 source (쿠팡 결제완료 → 상품준비중, 스펙 §3 결정 1).
+ * 오케스트레이터가 항목 루프 뒤에 한 번 부른다. 실패는 주기를 바꾸지 않는다 — 그 주문은 채널에 결제완료로 남아
+ * 다음 주기가 다시 넘긴다. Medusa·네이버는 구현하지 않는다.
+ */
+export interface AcknowledgingChannelOrderSource extends ChannelOrderSource {
+  acknowledgeCollected(externalOrderIds: string[]): Promise<void>;
+}
+
+export function isAcknowledgingSource(source: ChannelOrderSource): source is AcknowledgingChannelOrderSource {
+  return 'acknowledgeCollected' in source && typeof source.acknowledgeCollected === 'function';
 }

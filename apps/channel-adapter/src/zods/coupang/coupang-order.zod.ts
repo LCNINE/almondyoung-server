@@ -3,6 +3,7 @@ import {
   createCoupangApiResponseSchema,
   CurrencySchema,
   CoupangDeliveryCompanyCodeSchema,
+  CoupangLongIdSchema,
   CoupangOrderStatusSchema,
   OrdererSchema,
   ReceiverSchema,
@@ -44,8 +45,8 @@ export const OrderItemSchema = z.object({
 // =================================================================
 
 export const CoupangOrderSheetSchema = z.object({
-  shipmentBoxId: z.number(), // 배송번호 (묶음배송번호)
-  orderId: z.number(), // 주문번호
+  shipmentBoxId: CoupangLongIdSchema, // 배송번호 (묶음배송번호)
+  orderId: CoupangLongIdSchema, // 주문번호
   orderedAt: z.iso.datetime(), // 주문일시
   paidAt: z.iso.datetime(), // 결제일시
   status: CoupangOrderStatusSchema, // 발주서 상태
@@ -77,7 +78,7 @@ export const CoupangOrderSheetByOrderIdResponseSchema = createCoupangApiResponse
 
 export const CoupangAcknowledgeOrdersheetsRequestSchema = z.object({
   vendorId: z.string().regex(/^A\d{8}$/), // 판매자 ID
-  shipmentBoxIds: z.array(z.string()).min(1).max(50), // 배송번호 목록 (최대 50개)
+  shipmentBoxIds: z.array(CoupangLongIdSchema).min(1).max(50), // 배송번호 목록 (최대 50개)
 });
 
 export const CoupangAcknowledgeOrdersheetsResponseSchema = createCoupangApiResponseSchema(
@@ -85,9 +86,10 @@ export const CoupangAcknowledgeOrdersheetsResponseSchema = createCoupangApiRespo
     responseCode: z.number(), // 전체 처리 결과 코드
     responseList: z.array(
       z.object({
-        shipmentBoxId: z.number(),
+        shipmentBoxId: CoupangLongIdSchema,
         succeed: z.boolean(),
         resultCode: z.string(),
+        retryRequired: z.boolean().optional(), // 재시도하면 성공할 수 있는 실패인지
         resultMessage: z.string(),
       }),
     ),
@@ -99,8 +101,8 @@ export const CoupangAcknowledgeOrdersheetsResponseSchema = createCoupangApiRespo
 // =================================================================
 
 export const OrderSheetInvoiceApplyDtoSchema = z.object({
-  shipmentBoxId: z.number().int().positive(), // 배송번호
-  orderId: z.number().int().positive(), // 주문번호
+  shipmentBoxId: CoupangLongIdSchema, // 배송번호
+  orderId: CoupangLongIdSchema, // 주문번호
   vendorItemId: z.number().int().positive(), // 옵션 ID
   deliveryCompanyCode: CoupangDeliveryCompanyCodeSchema, // 택배사 코드
   invoiceNumber: z.string().max(50).optional(), // 송장 번호
@@ -113,19 +115,22 @@ export const CoupangUploadInvoiceRequestSchema = z.object({
   orderSheetInvoiceApplyDtos: z.array(OrderSheetInvoiceApplyDtoSchema).min(1).max(100), // 송장 업로드 대상 목록 (최대 100개)
 });
 
-export const CoupangUploadInvoiceResponseSchema = createCoupangApiResponseSchema(
-  z.object({
-    responseCode: z.number(), // 전체 처리 결과 코드
-    responseList: z.array(
-      z.object({
-        shipmentBoxId: z.number(),
-        succeed: z.boolean(),
-        resultCode: z.string(),
-        resultMessage: z.string(),
-      }),
-    ),
-  }),
-);
+// 업로드·수정 응답의 `data` 는 같은 모양이다. 클라이언트는 봉투를 벗기고 이것만 돌려준다.
+export const CoupangInvoiceResultSchema = z.object({
+  responseCode: z.number(), // 전체 처리 결과 코드 (0 = 전부 성공)
+  responseList: z.array(
+    z.object({
+      shipmentBoxId: CoupangLongIdSchema,
+      succeed: z.boolean(),
+      resultCode: z.string(),
+      retryRequired: z.boolean().default(false),
+      resultMessage: z.string(),
+    }),
+  ),
+});
+export type CoupangInvoiceResult = z.infer<typeof CoupangInvoiceResultSchema>;
+
+export const CoupangUploadInvoiceResponseSchema = createCoupangApiResponseSchema(CoupangInvoiceResultSchema);
 
 // =================================================================
 // == 송장 업데이트 스키마 (Update Invoice)
@@ -144,20 +149,7 @@ export const CoupangUpdateInvoiceRequestSchema = z.object({
   orderSheetInvoiceApplyDtos: z.array(OrderSheetUpdateInvoiceDtoSchema).min(1), // 송장 업데이트 대상 목록
 });
 
-export const CoupangUpdateInvoiceResponseSchema = createCoupangApiResponseSchema(
-  z.object({
-    responseCode: z.number(), // 전체 처리 결과 코드
-    responseList: z.array(
-      z.object({
-        shipmentBoxId: z.number(),
-        succeed: z.boolean(),
-        resultCode: z.string(),
-        resultMessage: z.string(),
-        retryRequired: z.boolean(),
-      }),
-    ),
-  }),
-);
+export const CoupangUpdateInvoiceResponseSchema = createCoupangApiResponseSchema(CoupangInvoiceResultSchema);
 
 // =================================================================
 // == 배송 히스토리 스키마 (Delivery History)
@@ -165,11 +157,11 @@ export const CoupangUpdateInvoiceResponseSchema = createCoupangApiResponseSchema
 
 export const CoupangDeliveryHistoryRequestSchema = z.object({
   vendorId: z.string(), // 판매자 ID
-  shipmentBoxId: z.number(), // 발주서 ID
+  shipmentBoxId: CoupangLongIdSchema, // 발주서 ID
 });
 
 export const CoupangDeliveryHistoryItemSchema = z.object({
-  shipmentBoxId: z.number(), // 발주서 ID
+  shipmentBoxId: CoupangLongIdSchema, // 발주서 ID
   status: z.string(), // 배송상태
   statusName: z.string(), // 배송상태명
   changedAt: z.string(), // 상태 변경 일시
@@ -177,7 +169,7 @@ export const CoupangDeliveryHistoryItemSchema = z.object({
 
 export const CoupangDeliveryHistoryResponseSchema = createCoupangApiResponseSchema(
   z.object({
-    shipmentBoxId: z.number(), // 발주서 ID
+    shipmentBoxId: CoupangLongIdSchema, // 발주서 ID
     histories: z.array(CoupangDeliveryHistoryItemSchema), // 히스토리 목록
   }),
 );

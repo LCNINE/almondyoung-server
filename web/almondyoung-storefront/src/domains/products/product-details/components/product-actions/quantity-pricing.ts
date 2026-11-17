@@ -33,14 +33,44 @@ export function variantTierRows(
   variant: HttpTypes.StoreProductVariant,
   product: Pick<HttpTypes.StoreProduct, "metadata">,
   context: QuantityPricingContext
-): { currentPrice: number | null; rows: TierRow[]; memberHints: MemberTierHint[] } {
-  const currentPrice = getPricesForVariant(variant)?.calculated_price_number ?? null
-  if (currentPrice === null) return { currentPrice, rows: [], memberHints: [] }
+): {
+  currentPrice: number | null
+  rows: TierRow[]
+  memberHints: MemberTierHint[]
+  hiddenMemberQuantity: number | null
+} {
+  const currentPrice =
+    getPricesForVariant(variant)?.calculated_price_number ?? null
+
+  if (currentPrice === null) {
+    return {
+      currentPrice,
+      rows: [],
+      memberHints: [],
+      hiddenMemberQuantity: null,
+    }
+  }
+
   const tiers = readTiers(variant.metadata, product.metadata, context.now)
+
   return {
     currentPrice,
     rows: tierRows(currentPrice, tiers, context),
-    memberHints: memberTierHints(currentPrice, tiers, metadataNumber(variant.metadata?.membershipPrice), context),
+    memberHints: memberTierHints(
+      currentPrice,
+      tiers,
+      metadataNumber(variant.metadata?.membershipPrice),
+      context
+    ),
+    hiddenMemberQuantity:
+      !context.isMember && context.hideMemberPrices
+        ? (memberTierHints(
+            currentPrice,
+            tiers,
+            metadataNumber(variant.metadata?.membershipPrice),
+            { ...context, hideMemberPrices: false }
+          )[0]?.minQuantity ?? null)
+        : null,
   }
 }
 
@@ -49,7 +79,21 @@ export function productQuantitySummary(
   product: Pick<HttpTypes.StoreProduct, "metadata" | "variants">,
   context: QuantityPricingContext
 ): ProductTierSummary | null {
-  return productTierSummary((product.variants ?? []).map((v) => variantTierRows(v, product, context)))
+  const summary = productTierSummary(
+    (product.variants ?? []).map((v) => variantTierRows(v, product, context))
+  )
+
+  if (summary || context.isMember || !context.hideMemberPrices) return summary
+
+  const hiddenSummary = productTierSummary(
+    (product.variants ?? []).map((v) =>
+      variantTierRows(v, product, { ...context, hideMemberPrices: false })
+    )
+  )
+
+  return hiddenSummary
+    ? { ...hiddenSummary, percent: 0, pricesHidden: true }
+    : null
 }
 
 /**
@@ -58,14 +102,17 @@ export function productQuantitySummary(
  */
 export function quantityOptionNote(input: {
   chosen: boolean
+  hiddenMemberQuantity?: number | null
   rows: TierRow[]
   memberHints: MemberTierHint[]
   summary: ProductTierSummary | null
 }): "summary" | "notEligible" | null {
-  const { chosen, rows, memberHints, summary } = input
+  const { chosen, rows, memberHints, summary, hiddenMemberQuantity } = input
   if (!summary) return null
   if (!chosen) return summary.varies ? "summary" : null
-  return rows.length === 0 && memberHints.length === 0 ? "notEligible" : null
+  return rows.length === 0 && memberHints.length === 0 && !hiddenMemberQuantity
+    ? "notEligible"
+    : null
 }
 
 function metadataNumber(raw: unknown): number | undefined {

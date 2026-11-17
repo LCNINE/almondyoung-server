@@ -1,4 +1,15 @@
-import { IsBoolean, IsIn, IsInt, IsNotEmpty, IsOptional, IsString, MaxLength, Min, ValidateNested } from 'class-validator';
+import {
+  IsBoolean,
+  IsIn,
+  IsInt,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  Matches,
+  MaxLength,
+  Min,
+  ValidateNested,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
@@ -14,16 +25,20 @@ export class RefundReceiveAccountDto {
   @ApiProperty({ description: '토스 2자리 은행코드 (예: 국민 06)' })
   @IsString()
   @IsNotEmpty()
+  @Matches(/^\d{2}$/)
   bank: string;
 
   @ApiProperty({ description: '환불받을 계좌번호 (숫자만)' })
   @IsString()
   @IsNotEmpty()
+  @Matches(/^\d{1,20}$/)
   accountNumber: string;
 
   @ApiProperty({ description: '예금주명 (토스가 실명 검증)' })
   @IsString()
   @IsNotEmpty()
+  @Matches(/\S/)
+  @MaxLength(100)
   holderName: string;
 }
 
@@ -121,6 +136,12 @@ export class RefundRequestActionDto {
 }
 
 export class RefundResponseDto {
+  @ApiPropertyOptional({ type: String, nullable: true })
+  paymentMethodType?: string | null;
+
+  @ApiPropertyOptional({ type: RefundReceiveAccountDto, nullable: true })
+  refundReceiveAccount?: RefundReceiveAccountDto | null;
+
   @ApiProperty()
   id: string;
 
@@ -149,7 +170,7 @@ export class RefundResponseDto {
   createdAt: Date;
 
   @ApiProperty({
-    description: '수동 완료 처리 가능 여부 (무통장 PENDING 또는 수동 실행(MANUAL) PENDING 행 — 관리자 목록·상세가 isManuallyConfirmable 로 계산)',
+    description: '수동 완료 처리 가능 여부 (MANUAL PENDING 행 — 관리자 목록·상세가 isManuallyConfirmable 로 계산)',
   })
   manualConfirmable: boolean;
 

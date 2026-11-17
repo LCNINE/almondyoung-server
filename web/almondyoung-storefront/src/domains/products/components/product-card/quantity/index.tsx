@@ -20,7 +20,7 @@ export function Quantity({ product }: Props) {
       // 품절 카드: 입고예정 있으면 재입고 날짜 표시, 없으면 품절 배지
       const restockDate = pickEarliestRestock(product.variants ?? [])?.date
       return restockDate ? (
-        <span className="text-yellow-30 inline-flex items-center gap-1 text-[11px] font-medium">
+        <span className="text-mint-deep inline-flex items-center gap-1 text-[11px] font-medium">
           <Calendar className="h-3 w-3" aria-hidden="true" />
           {formatDate(restockDate, DATE_FORMATS.KO_DOT)} 재입고
         </span>

@@ -1,12 +1,9 @@
 import {
-  BadRequestException,
   Body,
   Controller,
   Get,
   HttpCode,
-  HttpException,
   InternalServerErrorException,
-  NotFoundException,
   Param,
   Patch,
   Post,
@@ -20,7 +17,9 @@ import type { AuthenticatedRequest } from '../wallet.module';
 import { toRefundResponse } from '../refunds/refund-response';
 import { WalletAdminAuth } from '../wallet-admin-auth.decorator';
 import { RefundsService } from '../refunds/refunds.service';
-import { RequirePermission } from '@app/authorization';
+import { RequirePermission, PiiWrite, PiiResponse } from '@app/authorization';
+import { RefundReceiveAccountDto } from '../refunds/dto';
+import { isManuallyConfirmable } from '../refunds/manual-confirmable';
 
 @ApiTags('Admin - Refunds')
 @WalletAdminAuth()
@@ -31,6 +30,13 @@ export class RefundAdminController {
     private readonly refundsService: RefundsService,
   ) {}
 
+  @PiiResponse({
+    fields: {
+      'data[].refundReceiveAccount.accountNumber': 'account',
+      'data[].refundReceiveAccount.holderName': 'name',
+    },
+    subjects: [{ path: 'data[].intentId', type: 'payment_intent' }],
+  })
   @RequirePermission('payment.refund.read')
   @Get()
   @ApiOperation({ summary: 'List refunds (admin, paginated)' })
@@ -42,20 +48,25 @@ export class RefundAdminController {
     }
   }
 
+  @PiiWrite({ fields: ['accountNumber', 'holderName'] })
+  @RequirePermission('payment.refund.execute')
+  @Post(':id/execute-bank-refund')
+  @HttpCode(200)
+  async executeBankRefund(@Param('id') id: string, @Body() dto: RefundReceiveAccountDto) {
+    const { refund, rejectedCode } = await this.refundsService.executeBankRefund(id, dto);
+
+    return {
+      ...toRefundResponse(refund, isManuallyConfirmable({ ...refund, methodType: 'BANK_TRANSFER' })),
+      rejectedCode,
+    };
+  }
+
   @RequirePermission('payment.refund.execute')
   @Post(':id/confirm')
   @HttpCode(200)
   @ApiOperation({ summary: '환불 수동 완료 처리 — 무통장·수동 실행(MANUAL) 송금 대기 (PENDING → SUCCEEDED)' })
   async confirmManual(@Param('id') id: string) {
-    try {
-      return await this.refundsService.confirmManual(id);
-    } catch (e: any) {
-      if (e instanceof HttpException) throw e;
-      const msg = (e?.message ?? '').toLowerCase();
-      if (msg.includes('not found')) throw new NotFoundException(e.message);
-      if (msg.match(/already|invalid|pending|status/)) throw new BadRequestException(e.message);
-      throw new InternalServerErrorException(e.message);
-    }
+    return this.refundsService.confirmManual(id);
   }
 
   @RequirePermission('payment.refund.execute')

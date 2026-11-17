@@ -100,6 +100,18 @@ export class LocationColumnResponseDto {
   updatedAt: string;
 }
 
+/** 랙 수정이 칸을 맞춘 결과(로케이션 코드 목록). */
+export class RackBinChangesDto {
+  @ApiProperty({ description: '새로 만든 칸', type: [String], example: ['A-01-21'] })
+  created: string[];
+
+  @ApiProperty({ description: '지운 칸 (사용 중이 아니던 칸)', type: [String] })
+  deleted: string[];
+
+  @ApiProperty({ description: '범위 밖이지만 사용 중이라 남긴 칸', type: [String] })
+  keptInUse: string[];
+}
+
 export class LocationRackResponseDto {
   @ApiProperty({ description: '랙 ID' })
   id: string;
@@ -139,6 +151,9 @@ export class LocationRackResponseDto {
 
   @ApiProperty({ description: '수정일시' })
   updatedAt: string;
+
+  @ApiPropertyOptional({ description: '랙 수정 때만 — 칸 맞추기 결과', type: RackBinChangesDto })
+  binChanges?: RackBinChangesDto;
 }
 
 export class LocationListResponseDto {

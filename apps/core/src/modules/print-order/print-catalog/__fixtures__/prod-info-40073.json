@@ -1,0 +1,1171 @@
+{
+ "prodno": 40073.0,
+ "prodname": "일반명함",
+ "filetype": "AI,EPS,JPG,PNG,CDR,ZIP,ALZ,PDF",
+ "dlvyprepay": true,
+ "dlvygrpno": 1.0,
+ "sizeinfo": [
+  {
+   "covercd": 0.0,
+   "sizelist": [
+    {
+     "sizeno": 10732.0,
+     "sizename": "50x90",
+     "width": 50.0,
+     "height": 90.0,
+     "cutsize": 2.0,
+     "non_standard": false,
+     "rst_awkjob": [
+      {
+       "unit": "mm",
+       "min_width": 65.0,
+       "max_width": null,
+       "min_height": 50.0,
+       "max_height": null,
+       "min_sum_wh": null,
+       "joblist": [
+        {
+         "jobgroupno": 11682.0,
+         "jobgroup": "박(뒷면)",
+         "jobno": 11701.0,
+         "jobname": "금박무광(뒷면) 15mm이하"
+        },
+        {
+         "jobgroupno": 11682.0,
+         "jobgroup": "박(뒷면)",
+         "jobno": 11702.0,
+         "jobname": "금박무광(뒷면) 30mm이하"
+        },
+        {
+         "jobgroupno": 11682.0,
+         "jobgroup": "박(뒷면)",
+         "jobno": 11703.0,
+         "jobname": "금박무광(뒷면) 70mm이하"
+        },
+        {
+         "jobgroupno": 11682.0,
+         "jobgroup": "박(뒷면)",
+         "jobno": 11704.0,
+         "jobname": "금박무광(뒷면) 90mm미만"
+        },
+        {
+         "jobgroupno": 11682.0,
+         "jobgroup": "박(뒷면)",
+         "jobno": 11692.0,
+         "jobname": "금박유광(뒷면) 15mm이하"
+        },
+        {
+         "jobgroupno": 11682.0,
+         "jobgroup": "박(뒷면)",
+         "jobno": 11693.0,
+         "jobname": "금박유광(뒷면) 30mm이하"
+        },
+        {
+         "jobgroupno": 11682.0,
+         "jobgroup": "박(뒷면)",
+         "jobno": 11694.0,
+         "jobname": "금박유광(뒷면) 70mm이하"
+        },
+        {
+         "jobgroupno": 11682.0,
+         "jobgroup": "박(뒷면)",
+         "jobno": 11695.0,
+         "jobname": "금박유광(뒷면) 90mm미만"
+        },
+        {
+         "jobgroupno": 11682.0,
+         "jobgroup": "박(뒷면)",
+         "jobno": 11747.0,
+         "jobname": "녹박(뒷면) 15mm이하"
+        },
+        {
+         "jobgroupno": 11682.0,
+         "jobgroup": "박(뒷면)",
+         "jobno": 11748.0,
+         "jobname": "녹박(뒷면) 30mm이하"
+        },
+        {
+         "jobgroupno": 11682.0,
+         "jobgroup": "박(뒷면)",
+         "jobno": 11749.0,
+         "jobname": "녹박(뒷면) 70mm이하"
+        },
+        {
+         "jobgroupno": 11682.0,
+         "jobgroup": "박(뒷면)",
+         "jobno": 11750.0,
+         "jobname": "녹박(뒷면) 90mm미만"
+        },
+        {
+         "jobgroupno": 11682.0,
+         "jobgroup": "박(뒷면)",
+         "jobno": 11756.0,
+         "jobname": "먹박(뒷면) 15mm이하"
+        },
+        {
+         "jobgroupno": 11682.0,
+         "jobgroup": "박(뒷면)",
+         "jobno": 11757.0,
+         "jobname": "먹박(뒷면) 30mm이하"
+        },
+        {
+         "jobgroupno": 11682.0,
+         "jobgroup": "박(뒷면)",
+         "jobno": 11758.0,
+         "jobname": "먹박(뒷면) 70mm이하"
+        },
+        {
+         "jobgroupno": 11682.0,
+         "jobgroup": "박(뒷면)",
+         "jobno": 11759.0,
+         "jobname": "먹박(뒷면) 90mm미만"
+        },
+        {
+         "jobgroupno": 11682.0,
+         "jobgroup": "박(뒷면)",
+         "jobno": 11719.0,
+         "jobname": "은박무광(뒷면) 15mm이하"
+        },
+        {
+         "jobgroupno": 11682.0,
+         "jobgroup": "박(뒷면)",
+         "jobno": 11720.0,
+         "jobname": "은박무광(뒷면) 30mm이하"
+        },
+        {
+         "jobgroupno": 11682.0,
+         "jobgroup": "박(뒷면)",
+         "jobno": 11721.0,
+         "jobname": "은박무광(뒷면) 70mm이하"
+        },
+        {
+         "jobgroupno": 11682.0,
+         "jobgroup": "박(뒷면)",
+         "jobno": 11722.0,
+         "jobname": "은박무광(뒷면) 90mm미만"
+        },
+        {
+         "jobgroupno": 11682.0,
+         "jobgroup": "박(뒷면)",
+         "jobno": 11710.0,
+         "jobname": "은박유광(뒷면) 15mm이하"
+        },
+        {
+         "jobgroupno": 11682.0,
+         "jobgroup": "박(뒷면)",
+         "jobno": 11712.0,
+         "jobname": "은박유광(뒷면) 30mm이하"
+        },
+        {
+         "jobgroupno": 11682.0,
+         "jobgroup": "박(뒷면)",
+         "jobno": 11711.0,
+         "jobname": "은박유광(뒷면) 70mm이하"
+        },
+        {
+         "jobgroupno": 11682.0,
+         "jobgroup": "박(뒷면)",
+         "jobno": 11713.0,
+         "jobname": "은박유광(뒷면) 90mm미만"
+        },
+        {
+         "jobgroupno": 11682.0,
+         "jobgroup": "박(뒷면)",
+         "jobno": 11728.0,
+         "jobname": "적박(뒷면) 15mm이하"
+        },
+        {
+         "jobgroupno": 11682.0,
+         "jobgroup": "박(뒷면)",
+         "jobno": 11729.0,
+         "jobname": "적박(뒷면) 30mm이하"
+        },
+        {
+         "jobgroupno": 11682.0,
+         "jobgroup": "박(뒷면)",
+         "jobno": 11730.0,
+         "jobname": "적박(뒷면) 70mm이하"
+        },
+        {
+         "jobgroupno": 11682.0,
+         "jobgroup": "박(뒷면)",
+         "jobno": 11731.0,
+         "jobname": "적박(뒷면) 90mm미만"
+        },
+        {
+         "jobgroupno": 11682.0,
+         "jobgroup": "박(뒷면)",
+         "jobno": 11737.0,
+         "jobname": "청박(뒷면) 15mm이하"
+        },
+        {
+         "jobgroupno": 11682.0,
+         "jobgroup": "박(뒷면)",
+         "jobno": 11738.0,
+         "jobname": "청박(뒷면) 30mm이하"
+        },
+        {
+         "jobgroupno": 11682.0,
+         "jobgroup": "박(뒷면)",
+         "jobno": 11739.0,
+         "jobname": "청박(뒷면) 70mm이하"
+        },
+        {
+         "jobgroupno": 11682.0,
+         "jobgroup": "박(뒷면)",
+         "jobno": 11740.0,
+         "jobname": "청박(뒷면) 90mm미만"
+        },
+        {
+         "jobgroupno": 11682.0,
+         "jobgroup": "박(뒷면)",
+         "jobno": 11765.0,
+         "jobname": "홀로그램박(뒷면) 15mm이하"
+        },
+        {
+         "jobgroupno": 11682.0,
+         "jobgroup": "박(뒷면)",
+         "jobno": 11766.0,
+         "jobname": "홀로그램박(뒷면) 30mm이하"
+        },
+        {
+         "jobgroupno": 11682.0,
+         "jobgroup": "박(뒷면)",
+         "jobno": 11767.0,
+         "jobname": "홀로그램박(뒷면) 70mm이하"
+        },
+        {
+         "jobgroupno": 11682.0,
+         "jobgroup": "박(뒷면)",
+         "jobno": 11768.0,
+         "jobname": "홀로그램박(뒷면) 90mm미만"
+        },
+        {
+         "jobgroupno": 11528.0,
+         "jobgroup": "박(앞면)",
+         "jobno": 11543.0,
+         "jobname": "금박무광(앞면) 15mm이하"
+        },
+        {
+         "jobgroupno": 11528.0,
+         "jobgroup": "박(앞면)",
+         "jobno": 11544.0,
+         "jobname": "금박무광(앞면) 30mm이하"
+        },
+        {
+         "jobgroupno": 11528.0,
+         "jobgroup": "박(앞면)",
+         "jobno": 11545.0,
+         "jobname": "금박무광(앞면) 70mm이하"
+        },
+        {
+         "jobgroupno": 11528.0,
+         "jobgroup": "박(앞면)",
+         "jobno": 11546.0,
+         "jobname": "금박무광(앞면) 90mm미만"
+        },
+        {
+         "jobgroupno": 11528.0,
+         "jobgroup": "박(앞면)",
+         "jobno": 11538.0,
+         "jobname": "금박유광(앞면) 15mm이하"
+        },
+        {
+         "jobgroupno": 11528.0,
+         "jobgroup": "박(앞면)",
+         "jobno": 11539.0,
+         "jobname": "금박유광(앞면) 30mm이하"
+        },
+        {
+         "jobgroupno": 11528.0,
+         "jobgroup": "박(앞면)",
+         "jobno": 11540.0,
+         "jobname": "금박유광(앞면) 70mm이하"
+        },
+        {
+         "jobgroupno": 11528.0,
+         "jobgroup": "박(앞면)",
+         "jobno": 11541.0,
+         "jobname": "금박유광(앞면) 90mm미만"
+        },
+        {
+         "jobgroupno": 11528.0,
+         "jobgroup": "박(앞면)",
+         "jobno": 11568.0,
+         "jobname": "녹박(앞면) 15mm이하"
+        },
+        {
+         "jobgroupno": 11528.0,
+         "jobgroup": "박(앞면)",
+         "jobno": 11569.0,
+         "jobname": "녹박(앞면) 30mm이하"
+        },
+        {
+         "jobgroupno": 11528.0,
+         "jobgroup": "박(앞면)",
+         "jobno": 11570.0,
+         "jobname": "녹박(앞면) 70mm이하"
+        },
+        {
+         "jobgroupno": 11528.0,
+         "jobgroup": "박(앞면)",
+         "jobno": 11571.0,
+         "jobname": "녹박(앞면) 90mm미만"
+        },
+        {
+         "jobgroupno": 11528.0,
+         "jobgroup": "박(앞면)",
+         "jobno": 11574.0,
+         "jobname": "먹박(앞면) 15mm이하"
+        },
+        {
+         "jobgroupno": 11528.0,
+         "jobgroup": "박(앞면)",
+         "jobno": 11575.0,
+         "jobname": "먹박(앞면) 30mm이하"
+        },
+        {
+         "jobgroupno": 11528.0,
+         "jobgroup": "박(앞면)",
+         "jobno": 11576.0,
+         "jobname": "먹박(앞면) 70mm이하"
+        },
+        {
+         "jobgroupno": 11528.0,
+         "jobgroup": "박(앞면)",
+         "jobno": 11577.0,
+         "jobname": "먹박(앞면) 90mm미만"
+        },
+        {
+         "jobgroupno": 11528.0,
+         "jobgroup": "박(앞면)",
+         "jobno": 11553.0,
+         "jobname": "은박무광(앞면) 15mm이하"
+        },
+        {
+         "jobgroupno": 11528.0,
+         "jobgroup": "박(앞면)",
+         "jobno": 11554.0,
+         "jobname": "은박무광(앞면) 30mm이하"
+        },
+        {
+         "jobgroupno": 11528.0,
+         "jobgroup": "박(앞면)",
+         "jobno": 11555.0,
+         "jobname": "은박무광(앞면) 70mm이하"
+        },
+        {
+         "jobgroupno": 11528.0,
+         "jobgroup": "박(앞면)",
+         "jobno": 11556.0,
+         "jobname": "은박무광(앞면) 90mm미만"
+        },
+        {
+         "jobgroupno": 11528.0,
+         "jobgroup": "박(앞면)",
+         "jobno": 11548.0,
+         "jobname": "은박유광(앞면) 15mm이하"
+        },
+        {
+         "jobgroupno": 11528.0,
+         "jobgroup": "박(앞면)",
+         "jobno": 11549.0,
+         "jobname": "은박유광(앞면) 30mm이하"
+        },
+        {
+         "jobgroupno": 11528.0,
+         "jobgroup": "박(앞면)",
+         "jobno": 11550.0,
+         "jobname": "은박유광(앞면) 70mm이하"
+        },
+        {
+         "jobgroupno": 11528.0,
+         "jobgroup": "박(앞면)",
+         "jobno": 11551.0,
+         "jobname": "은박유광(앞면) 90mm미만"
+        },
+        {
+         "jobgroupno": 11528.0,
+         "jobgroup": "박(앞면)",
+         "jobno": 11558.0,
+         "jobname": "적박(앞면) 15mm이하"
+        },
+        {
+         "jobgroupno": 11528.0,
+         "jobgroup": "박(앞면)",
+         "jobno": 11559.0,
+         "jobname": "적박(앞면) 30mm이하"
+        },
+        {
+         "jobgroupno": 11528.0,
+         "jobgroup": "박(앞면)",
+         "jobno": 11560.0,
+         "jobname": "적박(앞면) 70mm이하"
+        },
+        {
+         "jobgroupno": 11528.0,
+         "jobgroup": "박(앞면)",
+         "jobno": 11561.0,
+         "jobname": "적박(앞면) 90mm미만"
+        },
+        {
+         "jobgroupno": 11528.0,
+         "jobgroup": "박(앞면)",
+         "jobno": 11563.0,
+         "jobname": "청박(앞면) 15mm이하"
+        },
+        {
+         "jobgroupno": 11528.0,
+         "jobgroup": "박(앞면)",
+         "jobno": 11564.0,
+         "jobname": "청박(앞면) 30mm이하"
+        },
+        {
+         "jobgroupno": 11528.0,
+         "jobgroup": "박(앞면)",
+         "jobno": 11565.0,
+         "jobname": "청박(앞면) 70mm이하"
+        },
+        {
+         "jobgroupno": 11528.0,
+         "jobgroup": "박(앞면)",
+         "jobno": 11566.0,
+         "jobname": "청박(앞면) 90mm미만"
+        },
+        {
+         "jobgroupno": 11528.0,
+         "jobgroup": "박(앞면)",
+         "jobno": 11579.0,
+         "jobname": "홀로그램박(앞면) 15mm이하"
+        },
+        {
+         "jobgroupno": 11528.0,
+         "jobgroup": "박(앞면)",
+         "jobno": 11580.0,
+         "jobname": "홀로그램박(앞면) 30mm이하"
+        },
+        {
+         "jobgroupno": 11528.0,
+         "jobgroup": "박(앞면)",
+         "jobno": 11581.0,
+         "jobname": "홀로그램박(앞면) 70mm이하"
+        },
+        {
+         "jobgroupno": 11528.0,
+         "jobgroup": "박(앞면)",
+         "jobno": 11582.0,
+         "jobname": "홀로그램박(앞면) 90mm미만"
+        },
+        {
+         "jobgroupno": 11584.0,
+         "jobgroup": "형압",
+         "jobno": 11585.0,
+         "jobname": "형압 15mm이하"
+        },
+        {
+         "jobgroupno": 11584.0,
+         "jobgroup": "형압",
+         "jobno": 11586.0,
+         "jobname": "형압 30mm이하"
+        },
+        {
+         "jobgroupno": 11584.0,
+         "jobgroup": "형압",
+         "jobno": 11587.0,
+         "jobname": "형압 70mm이하"
+        },
+        {
+         "jobgroupno": 11584.0,
+         "jobgroup": "형압",
+         "jobno": 11588.0,
+         "jobname": "형압 90mm미만"
+        }
+       ]
+      },
+      {
+       "unit": "mm",
+       "min_width": 70.0,
+       "max_width": 300.0,
+       "min_height": 100.0,
+       "max_height": 700.0,
+       "min_sum_wh": null,
+       "joblist": [
+        {
+         "jobgroupno": 11341.0,
+         "jobgroup": "오시",
+         "jobno": 11347.0,
+         "jobname": "오시1줄(가로)"
+        },
+        {
+         "jobgroupno": 11341.0,
+         "jobgroup": "오시",
+         "jobno": 11345.0,
+         "jobname": "오시1줄(가로중앙)"
+        },
+        {
+         "jobgroupno": 11341.0,
+         "jobgroup": "오시",
+         "jobno": 11348.0,
+         "jobname": "오시2줄(가로)"
+        },
+        {
+         "jobgroupno": 11341.0,
+         "jobgroup": "오시",
+         "jobno": 11350.0,
+         "jobname": "오시3줄(가로)"
+        }
+       ]
+      },
+      {
+       "unit": "mm",
+       "min_width": 100.0,
+       "max_width": 360.0,
+       "min_height": 100.0,
+       "max_height": 360.0,
+       "min_sum_wh": null,
+       "joblist": [
+        {
+         "jobgroupno": 27000.0,
+         "jobgroup": "넘버링",
+         "jobno": 11457.0,
+         "jobname": "일반넘버링 1개"
+        },
+        {
+         "jobgroupno": 27000.0,
+         "jobgroup": "넘버링",
+         "jobno": 11458.0,
+         "jobname": "일반넘버링 2개"
+        },
+        {
+         "jobgroupno": 11352.0,
+         "jobgroup": "미싱",
+         "jobno": 11359.0,
+         "jobname": "미싱1줄(가로)"
+        },
+        {
+         "jobgroupno": 11352.0,
+         "jobgroup": "미싱",
+         "jobno": 11357.0,
+         "jobname": "미싱1줄(가로중앙)"
+        },
+        {
+         "jobgroupno": 11352.0,
+         "jobgroup": "미싱",
+         "jobno": 11388.0,
+         "jobname": "미싱1줄(세로)"
+        },
+        {
+         "jobgroupno": 11352.0,
+         "jobgroup": "미싱",
+         "jobno": 11358.0,
+         "jobname": "미싱1줄(세로중앙)"
+        },
+        {
+         "jobgroupno": 11352.0,
+         "jobgroup": "미싱",
+         "jobno": 11360.0,
+         "jobname": "미싱2줄(가로)"
+        },
+        {
+         "jobgroupno": 11352.0,
+         "jobgroup": "미싱",
+         "jobno": 11361.0,
+         "jobname": "미싱2줄(세로)"
+        },
+        {
+         "jobgroupno": 11352.0,
+         "jobgroup": "미싱",
+         "jobno": 11362.0,
+         "jobname": "미싱3줄(가로)"
+        },
+        {
+         "jobgroupno": 11352.0,
+         "jobgroup": "미싱",
+         "jobno": 11363.0,
+         "jobname": "미싱3줄(세로)"
+        }
+       ]
+      },
+      {
+       "unit": "mm",
+       "min_width": 100.0,
+       "max_width": 700.0,
+       "min_height": 70.0,
+       "max_height": 300.0,
+       "min_sum_wh": null,
+       "joblist": [
+        {
+         "jobgroupno": 11341.0,
+         "jobgroup": "오시",
+         "jobno": 11385.0,
+         "jobname": "오시1줄(세로)"
+        },
+        {
+         "jobgroupno": 11341.0,
+         "jobgroup": "오시",
+         "jobno": 11346.0,
+         "jobname": "오시1줄(세로중앙)"
+        },
+        {
+         "jobgroupno": 11341.0,
+         "jobgroup": "오시",
+         "jobno": 11349.0,
+         "jobname": "오시2줄(세로)"
+        },
+        {
+         "jobgroupno": 11341.0,
+         "jobgroup": "오시",
+         "jobno": 11351.0,
+         "jobname": "오시3줄(세로)"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "sizeno": 5456.0,
+     "sizename": "86x52",
+     "width": 86.0,
+     "height": 52.0,
+     "cutsize": 2.0,
+     "non_standard": false,
+     "rst_awkjob": [
+      {
+       "unit": "mm",
+       "min_width": 70.0,
+       "max_width": 300.0,
+       "min_height": 100.0,
+       "max_height": 700.0,
+       "min_sum_wh": null,
+       "joblist": [
+        {
+         "jobgroupno": 11341.0,
+         "jobgroup": "오시",
+         "jobno": 11347.0,
+         "jobname": "오시1줄(가로)"
+        },
+        {
+         "jobgroupno": 11341.0,
+         "jobgroup": "오시",
+         "jobno": 11345.0,
+         "jobname": "오시1줄(가로중앙)"
+        },
+        {
+         "jobgroupno": 11341.0,
+         "jobgroup": "오시",
+         "jobno": 11348.0,
+         "jobname": "오시2줄(가로)"
+        },
+        {
+         "jobgroupno": 11341.0,
+         "jobgroup": "오시",
+         "jobno": 11350.0,
+         "jobname": "오시3줄(가로)"
+        }
+       ]
+      },
+      {
+       "unit": "mm",
+       "min_width": 100.0,
+       "max_width": 360.0,
+       "min_height": 100.0,
+       "max_height": 360.0,
+       "min_sum_wh": null,
+       "joblist": [
+        {
+         "jobgroupno": 27000.0,
+         "jobgroup": "넘버링",
+         "jobno": 11457.0,
+         "jobname": "일반넘버링 1개"
+        },
+        {
+         "jobgroupno": 27000.0,
+         "jobgroup": "넘버링",
+         "jobno": 11458.0,
+         "jobname": "일반넘버링 2개"
+        },
+        {
+         "jobgroupno": 11352.0,
+         "jobgroup": "미싱",
+         "jobno": 11359.0,
+         "jobname": "미싱1줄(가로)"
+        },
+        {
+         "jobgroupno": 11352.0,
+         "jobgroup": "미싱",
+         "jobno": 11357.0,
+         "jobname": "미싱1줄(가로중앙)"
+        },
+        {
+         "jobgroupno": 11352.0,
+         "jobgroup": "미싱",
+         "jobno": 11388.0,
+         "jobname": "미싱1줄(세로)"
+        },
+        {
+         "jobgroupno": 11352.0,
+         "jobgroup": "미싱",
+         "jobno": 11358.0,
+         "jobname": "미싱1줄(세로중앙)"
+        },
+        {
+         "jobgroupno": 11352.0,
+         "jobgroup": "미싱",
+         "jobno": 11360.0,
+         "jobname": "미싱2줄(가로)"
+        },
+        {
+         "jobgroupno": 11352.0,
+         "jobgroup": "미싱",
+         "jobno": 11361.0,
+         "jobname": "미싱2줄(세로)"
+        },
+        {
+         "jobgroupno": 11352.0,
+         "jobgroup": "미싱",
+         "jobno": 11362.0,
+         "jobname": "미싱3줄(가로)"
+        },
+        {
+         "jobgroupno": 11352.0,
+         "jobgroup": "미싱",
+         "jobno": 11363.0,
+         "jobname": "미싱3줄(세로)"
+        }
+       ]
+      },
+      {
+       "unit": "mm",
+       "min_width": 100.0,
+       "max_width": 700.0,
+       "min_height": 70.0,
+       "max_height": 300.0,
+       "min_sum_wh": null,
+       "joblist": [
+        {
+         "jobgroupno": 11341.0,
+         "jobgroup": "오시",
+         "jobno": 11385.0,
+         "jobname": "오시1줄(세로)"
+        },
+        {
+         "jobgroupno": 11341.0,
+         "jobgroup": "오시",
+         "jobno": 11346.0,
+         "jobname": "오시1줄(세로중앙)"
+        },
+        {
+         "jobgroupno": 11341.0,
+         "jobgroup": "오시",
+         "jobno": 11349.0,
+         "jobname": "오시2줄(세로)"
+        },
+        {
+         "jobgroupno": 11341.0,
+         "jobgroup": "오시",
+         "jobno": 11351.0,
+         "jobname": "오시3줄(세로)"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "sizeno": 5458.0,
+     "sizename": "90x50",
+     "width": 90.0,
+     "height": 50.0,
+     "cutsize": 2.0,
+     "non_standard": false,
+     "rst_awkjob": [
+      {
+       "unit": "mm",
+       "min_width": 70.0,
+       "max_width": 300.0,
+       "min_height": 100.0,
+       "max_height": 700.0,
+       "min_sum_wh": null,
+       "joblist": [
+        {
+         "jobgroupno": 11341.0,
+         "jobgroup": "오시",
+         "jobno": 11347.0,
+         "jobname": "오시1줄(가로)"
+        },
+        {
+         "jobgroupno": 11341.0,
+         "jobgroup": "오시",
+         "jobno": 11345.0,
+         "jobname": "오시1줄(가로중앙)"
+        },
+        {
+         "jobgroupno": 11341.0,
+         "jobgroup": "오시",
+         "jobno": 11348.0,
+         "jobname": "오시2줄(가로)"
+        },
+        {
+         "jobgroupno": 11341.0,
+         "jobgroup": "오시",
+         "jobno": 11350.0,
+         "jobname": "오시3줄(가로)"
+        }
+       ]
+      },
+      {
+       "unit": "mm",
+       "min_width": 100.0,
+       "max_width": 360.0,
+       "min_height": 100.0,
+       "max_height": 360.0,
+       "min_sum_wh": null,
+       "joblist": [
+        {
+         "jobgroupno": 27000.0,
+         "jobgroup": "넘버링",
+         "jobno": 11457.0,
+         "jobname": "일반넘버링 1개"
+        },
+        {
+         "jobgroupno": 27000.0,
+         "jobgroup": "넘버링",
+         "jobno": 11458.0,
+         "jobname": "일반넘버링 2개"
+        },
+        {
+         "jobgroupno": 11352.0,
+         "jobgroup": "미싱",
+         "jobno": 11359.0,
+         "jobname": "미싱1줄(가로)"
+        },
+        {
+         "jobgroupno": 11352.0,
+         "jobgroup": "미싱",
+         "jobno": 11357.0,
+         "jobname": "미싱1줄(가로중앙)"
+        },
+        {
+         "jobgroupno": 11352.0,
+         "jobgroup": "미싱",
+         "jobno": 11388.0,
+         "jobname": "미싱1줄(세로)"
+        },
+        {
+         "jobgroupno": 11352.0,
+         "jobgroup": "미싱",
+         "jobno": 11358.0,
+         "jobname": "미싱1줄(세로중앙)"
+        },
+        {
+         "jobgroupno": 11352.0,
+         "jobgroup": "미싱",
+         "jobno": 11360.0,
+         "jobname": "미싱2줄(가로)"
+        },
+        {
+         "jobgroupno": 11352.0,
+         "jobgroup": "미싱",
+         "jobno": 11361.0,
+         "jobname": "미싱2줄(세로)"
+        },
+        {
+         "jobgroupno": 11352.0,
+         "jobgroup": "미싱",
+         "jobno": 11362.0,
+         "jobname": "미싱3줄(가로)"
+        },
+        {
+         "jobgroupno": 11352.0,
+         "jobgroup": "미싱",
+         "jobno": 11363.0,
+         "jobname": "미싱3줄(세로)"
+        }
+       ]
+      },
+      {
+       "unit": "mm",
+       "min_width": 100.0,
+       "max_width": 700.0,
+       "min_height": 70.0,
+       "max_height": 300.0,
+       "min_sum_wh": null,
+       "joblist": [
+        {
+         "jobgroupno": 11341.0,
+         "jobgroup": "오시",
+         "jobno": 11385.0,
+         "jobname": "오시1줄(세로)"
+        },
+        {
+         "jobgroupno": 11341.0,
+         "jobgroup": "오시",
+         "jobno": 11346.0,
+         "jobname": "오시1줄(세로중앙)"
+        },
+        {
+         "jobgroupno": 11341.0,
+         "jobgroup": "오시",
+         "jobno": 11349.0,
+         "jobname": "오시2줄(세로)"
+        },
+        {
+         "jobgroupno": 11341.0,
+         "jobgroup": "오시",
+         "jobno": 11351.0,
+         "jobname": "오시3줄(세로)"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "sizeno": 7071.0,
+     "sizename": "비규격",
+     "width": 90.0,
+     "height": 50.0,
+     "cutsize": 2.0,
+     "non_standard": true,
+     "rst_awkjob": [
+      {
+       "unit": "mm",
+       "min_width": 70.0,
+       "max_width": 300.0,
+       "min_height": 100.0,
+       "max_height": 700.0,
+       "min_sum_wh": null,
+       "joblist": [
+        {
+         "jobgroupno": 11341.0,
+         "jobgroup": "오시",
+         "jobno": 11347.0,
+         "jobname": "오시1줄(가로)"
+        },
+        {
+         "jobgroupno": 11341.0,
+         "jobgroup": "오시",
+         "jobno": 11345.0,
+         "jobname": "오시1줄(가로중앙)"
+        },
+        {
+         "jobgroupno": 11341.0,
+         "jobgroup": "오시",
+         "jobno": 11348.0,
+         "jobname": "오시2줄(가로)"
+        },
+        {
+         "jobgroupno": 11341.0,
+         "jobgroup": "오시",
+         "jobno": 11350.0,
+         "jobname": "오시3줄(가로)"
+        }
+       ]
+      },
+      {
+       "unit": "mm",
+       "min_width": 100.0,
+       "max_width": 360.0,
+       "min_height": 100.0,
+       "max_height": 360.0,
+       "min_sum_wh": null,
+       "joblist": [
+        {
+         "jobgroupno": 27000.0,
+         "jobgroup": "넘버링",
+         "jobno": 11457.0,
+         "jobname": "일반넘버링 1개"
+        },
+        {
+         "jobgroupno": 27000.0,
+         "jobgroup": "넘버링",
+         "jobno": 11458.0,
+         "jobname": "일반넘버링 2개"
+        },
+        {
+         "jobgroupno": 11352.0,
+         "jobgroup": "미싱",
+         "jobno": 11359.0,
+         "jobname": "미싱1줄(가로)"
+        },
+        {
+         "jobgroupno": 11352.0,
+         "jobgroup": "미싱",
+         "jobno": 11357.0,
+         "jobname": "미싱1줄(가로중앙)"
+        },
+        {
+         "jobgroupno": 11352.0,
+         "jobgroup": "미싱",
+         "jobno": 11388.0,
+         "jobname": "미싱1줄(세로)"
+        },
+        {
+         "jobgroupno": 11352.0,
+         "jobgroup": "미싱",
+         "jobno": 11358.0,
+         "jobname": "미싱1줄(세로중앙)"
+        },
+        {
+         "jobgroupno": 11352.0,
+         "jobgroup": "미싱",
+         "jobno": 11360.0,
+         "jobname": "미싱2줄(가로)"
+        },
+        {
+         "jobgroupno": 11352.0,
+         "jobgroup": "미싱",
+         "jobno": 11361.0,
+         "jobname": "미싱2줄(세로)"
+        },
+        {
+         "jobgroupno": 11352.0,
+         "jobgroup": "미싱",
+         "jobno": 11362.0,
+         "jobname": "미싱3줄(가로)"
+        },
+        {
+         "jobgroupno": 11352.0,
+         "jobgroup": "미싱",
+         "jobno": 11363.0,
+         "jobname": "미싱3줄(세로)"
+        }
+       ]
+      },
+      {
+       "unit": "mm",
+       "min_width": 100.0,
+       "max_width": 700.0,
+       "min_height": 70.0,
+       "max_height": 300.0,
+       "min_sum_wh": null,
+       "joblist": [
+        {
+         "jobgroupno": 11341.0,
+         "jobgroup": "오시",
+         "jobno": 11385.0,
+         "jobname": "오시1줄(세로)"
+        },
+        {
+         "jobgroupno": 11341.0,
+         "jobgroup": "오시",
+         "jobno": 11346.0,
+         "jobname": "오시1줄(세로중앙)"
+        },
+        {
+         "jobgroupno": 11341.0,
+         "jobgroup": "오시",
+         "jobno": 11349.0,
+         "jobname": "오시2줄(세로)"
+        },
+        {
+         "jobgroupno": 11341.0,
+         "jobgroup": "오시",
+         "jobno": 11351.0,
+         "jobname": "오시3줄(세로)"
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ ],
+ "paperinfo": [
+  {
+   "covercd": 0.0,
+   "paperlist": [
+    {
+     "paperno": 22904.0,
+     "papername": "스노우지(무코팅) 250g"
+    },
+    {
+     "paperno": 22907.0,
+     "papername": "스노우지(무광코팅) 219g"
+    },
+    {
+     "paperno": 22908.0,
+     "papername": "스노우지(무광코팅) 250g"
+    }
+   ]
+  }
+ ],
+ "colorinfo": [
+  {
+   "covercd": 0.0,
+   "pagelist": [
+    {
+     "pagecd": 0.0,
+     "type": "radio",
+     "colorlist": [
+      {
+       "colorno": 255.0,
+       "colorname": "단면 칼라4도",
+       "req_prsjob": [
+        {
+         "jobpresetno": 3110.0,
+         "jobno": 3110.0,
+         "jobname": "옵셋인쇄"
+        }
+       ]
+      },
+      {
+       "colorno": 256.0,
+       "colorname": "양면 칼라8도",
+       "req_prsjob": [
+        {
+         "jobpresetno": 3110.0,
+         "jobno": 3110.0,
+         "jobname": "옵셋인쇄"
+        }
+       ]
+      }
+     ]
+    }
+   ]
+  }
+ ],
+ "ordqty": [
+  {
+   "sizeno": null,
+   "paperno": null,
+   "colorno": null,
+   "ordqtylist": [
+    500.0,
+    1000.0,
+    2000.0,
+    3000.0,
+    4000.0,
+    5000.0,
+    6000.0,
+    7000.0,
+    8000.0,
+    9000.0,
+    10000.0,
+    15000.0,
+    20000.0,
+    25000.0,
+    30000.0,
+    35000.0,
+    40000.0,
+    45000.0,
+    50000.0,
+    55000.0,
+    60000.0,
+    65000.0,
+    70000.0,
+    75000.0,
+    80000.0,
+    85000.0,
+    90000.0,
+    95000.0,
+    100000.0
+   ]
+  }
+ ],
+ "awkjobinfo": [
+  {
+   "covercd": 0.0,
+   "type": "checkbox",
+   "jobgrouplist": []
+  }
+ ]
+}

@@ -23,6 +23,13 @@ export function batchProgressOf(
   return { code: batchNumber, done: live.filter((item) => item.status === 'completed').length, total: live.length };
 }
 
+/** 관리자 화면이 붙인 배치 이름. 이름 없이 만든 배치는 코드에서 나온 «Batch …» 라 코드만 보인다 */
+export function batchNameOf(batch: Pick<OutboundBatchSummary, 'batchNumber' | 'name'>): string | null {
+  const name = batch.name?.trim() ?? '';
+  if (!name || name === `Batch ${batch.batchNumber.replace(/^OB-/, '')}`) return null;
+  return name;
+}
+
 export interface BoxCounts {
   done: number;
   working: number;
@@ -69,10 +76,17 @@ export interface BoxRow {
 
 const IN_WORK_STATUSES: ReadonlySet<string> = new Set(['picking', 'ready_to_pack', 'packing']);
 
-/** 배치 현황 박스 한 줄(스펙 §8 F2, 목업 ⑤). 송장번호가 없으면(옛 core) null — 현장이 읽을 수 없는 id 를 그리지 않는다 */
+/**
+ * 배치 현황 박스 한 줄(스펙 §8 F2, 목업 ⑤). 송장번호가 없으면(옛 core) null — 현장이 읽을 수 없는 id 를 그리지 않는다.
+ * 취소 대기 박스는 송장이 없어도 그린다 — 빼기 전까지 취소가 끝나지 않는데 목록에서 안 보이면 «대기» 숫자만 남는다
+ */
 export function boxRowOf(state: BatchLabelState): BoxRow | null {
+  const base = { shipmentId: state.shipmentId, trackingNo: state.trackingNo ?? '', recipient: state.recipientMasked ?? '' };
+
+  if (state.cancelPending) return { ...base, status: '취소 대기', tone: 'alert' };
+
   if (!state.trackingNo) return null;
-  const base = { shipmentId: state.shipmentId, trackingNo: state.trackingNo, recipient: state.recipientMasked ?? '' };
+
   if (state.state === 'withdrawing' || state.workItemStatus === 'withdrawing') return { ...base, status: '빠지는 중', tone: 'warn' };
   if (state.state === 'never_printed') return { ...base, status: '미출력', tone: 'alert' };
   if (state.state === 'reprint_required') return { ...base, status: '재출력', tone: 'alert' };
@@ -80,6 +94,11 @@ export function boxRowOf(state: BatchLabelState): BoxRow | null {
   if (state.workItemStatus === 'short_pick_recovery') return { ...base, status: '결품 처리 중', tone: 'warn' };
   if (state.workItemStatus && IN_WORK_STATUSES.has(state.workItemStatus)) return { ...base, status: '검수 중', tone: 'work' };
   return { ...base, status: '대기', tone: 'idle' };
+}
+
+/** 배치에서 빼야 끝나는 취소가 있는가 — 배치 현황이 빼기 안내를 띄운다 */
+export function hasCancelPending(states: readonly BatchLabelState[]): boolean {
+  return states.some((state) => state.cancelPending === true);
 }
 
 const TONE_ORDER: Record<BoxRow['tone'], number> = { alert: 0, warn: 1, work: 2, idle: 3 };

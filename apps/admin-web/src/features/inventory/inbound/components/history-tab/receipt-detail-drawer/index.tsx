@@ -18,6 +18,11 @@ import type { InboundReceiptHistoryDto, InboundReceiptLineDto } from '@/lib/type
 import { PutawayDialog } from '../../line-action-menu/putaway-dialog';
 import { ReturnDialog } from '../../line-action-menu/return-dialog';
 import { CancelDialog } from '../../line-action-menu/cancel-dialog';
+import {
+  INBOUND_SHIPMENT_CANCEL_NOTICE,
+  INBOUND_SHIPMENT_SOURCE_LABEL,
+  receiptLineCancelRoute,
+} from '../../../lib/receipt-line-cancel';
 import { MemoDialog } from '../../line-action-menu/memo-dialog';
 
 const METHOD_LABELS: Record<string, string> = {
@@ -98,6 +103,12 @@ export function ReceiptDetailDrawer({ row, open, onOpenChange }: Props) {
                       <div className="flex flex-col gap-0.5 text-sm">
                         <span className="font-mono text-xs text-muted-foreground">{line.skuId.substring(0, 8)}…</span>
                         <span>수량: {line.quantity} | 회송: {line.returnedQty} | 취소: {line.canceledQty} | 적치: {line.putawayFromOriginQty}</span>
+                        {receiptLineCancelRoute(line.source) === 'inbound_shipment' && (
+                          <>
+                            <span className="text-xs">{INBOUND_SHIPMENT_SOURCE_LABEL}</span>
+                            <span className="text-xs text-muted-foreground">{INBOUND_SHIPMENT_CANCEL_NOTICE}</span>
+                          </>
+                        )}
                         {line.memo && <span className="text-xs text-muted-foreground">메모: {line.memo}</span>}
                       </div>
                       <div className="flex shrink-0 flex-wrap gap-1">
@@ -107,7 +118,7 @@ export function ReceiptDetailDrawer({ row, open, onOpenChange }: Props) {
                         {canRun(useReturnInbound) && (
                           <Button size="sm" variant="outline" onClick={() => openAction(line, 'return')}>회송</Button>
                         )}
-                        {canRun(line.source === 'purchase_order' ? useCancelPurchaseOrderReceiptLine : useCancelInbound) && (
+                        {receiptLineCancelRoute(line.source) !== 'inbound_shipment' && canRun(receiptLineCancelRoute(line.source) === 'purchase_order' ? useCancelPurchaseOrderReceiptLine : useCancelInbound) && (
                           <Button size="sm" variant="outline" onClick={() => openAction(line, 'cancel')}>취소</Button>
                         )}
                         {canRun(useUpdateInboundLineMemo) && (

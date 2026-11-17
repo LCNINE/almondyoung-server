@@ -293,6 +293,7 @@
     "errorPrefix": "오류:",
     "toasts": {
       "setShipping": "배송지를 설정해주세요.",
+      "agreeCustomOrder": "주문제작 상품 안내를 확인하고 동의해 주세요.",
       "selectMemo": "배송 메모를 선택해주세요.",
       "enterEntrancePw": "공동현관 비밀번호를 입력해주세요.",
       "noItems": "결제할 상품이 없습니다. 장바구니로 돌아가 상품을 선택해주세요.",

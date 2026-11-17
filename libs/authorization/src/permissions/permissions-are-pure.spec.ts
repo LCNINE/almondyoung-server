@@ -2,8 +2,9 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 /**
- * admin-web 이 이 폴더를 원본 그대로 가져가 빌드한다(`@permission-catalog`).
+ * admin-web 과 물류앱(native/warehouse-app)이 이 폴더를 원본 그대로 가져가 빌드한다(`@permission-catalog`).
  * 폴더 밖(Nest·드라이버 등)을 import 하면 브라우저 번들이 깨지므로 같은 폴더 안만 허용한다.
+ * 물류앱은 `verbatimModuleSyntax` 라 타입만 쓰는 import 는 `type` 을 붙인다.
  */
 describe('permission catalog folder', () => {
   const files = readdirSync(__dirname).filter((f) => f.endsWith('.ts') && !f.endsWith('.spec.ts'));

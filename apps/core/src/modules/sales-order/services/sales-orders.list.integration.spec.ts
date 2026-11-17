@@ -49,6 +49,8 @@ async function insertLine(
   salesOrderId: string,
   l: Partial<{
     productName: string;
+    fulfillmentKind: 'physical' | 'digital';
+    almondDesignId: string;
   }> = {},
 ): Promise<void> {
   await tx.insert(wmsTables.salesOrderLines).values({
@@ -57,6 +59,8 @@ async function insertLine(
     productName: l.productName ?? 'IT Product',
     quantity: 1,
     unitPrice: 1000,
+    fulfillmentKind: l.fulfillmentKind ?? null,
+    almondDesignId: l.almondDesignId ?? null,
   });
 }
 
@@ -139,7 +143,7 @@ describeIfDb('SalesOrdersService.list — server-side filters (DB integration, r
 
       const res = await listByKeyword(svc, tx, { keyword: tag });
       const phaseById = new Map(res.data.map((d: { id: string; shipmentPhase: string }) => [d.id, d.shipmentPhase]));
-      expect(phaseById.get(pending)).toBe('pending');
+      expect(phaseById.get(pending)).toBe('preparing');
       expect(phaseById.get(preparing)).toBe('preparing');
       expect(phaseById.get(cancelled)).toBe('cancelled');
       expect(phaseById.get(external)).toBe('external_shipped');
@@ -155,6 +159,36 @@ describeIfDb('SalesOrdersService.list — server-side filters (DB integration, r
 
       expect((await svc.getOne(id, tx))!.shipmentPhase).toBe('preparing');
       expect((await svc.getOne(ext, tx))!.shipmentPhase).toBe('external_shipped');
+    });
+  });
+
+  it('getOne(id).fulfillmentOrder — 출고주문 id·상태만 싣고, 없으면 null', async () => {
+    await run(async (tx, svc, tag) => {
+      const withFo = await insertOrder(tx, { channelOrderId: `${tag}-fo` });
+      await insertLine(tx, withFo);
+      const [fo] = await tx
+        .insert(wmsTables.fulfillmentOrders)
+        .values({ salesOrderId: withFo, status: 'shipped' })
+        .returning({ id: wmsTables.fulfillmentOrders.id });
+      const withoutFo = await insertOrder(tx, { channelOrderId: `${tag}-nofo` });
+      await insertLine(tx, withoutFo);
+
+      expect((await svc.getOne(withFo, tx))!.fulfillmentOrder).toEqual({ id: fo.id, status: 'shipped' });
+      expect((await svc.getOne(withoutFo, tx))!.fulfillmentOrder).toBeNull();
+    });
+  });
+
+  it('getOne(id).lineRouteCounts — 창고·인쇄·디지털 라인 수를 싣는다', async () => {
+    await run(async (tx, svc, tag) => {
+      const printOnly = await insertOrder(tx, { channelOrderId: `${tag}-print` });
+      await insertLine(tx, printOnly, { almondDesignId: randomUUID() });
+      const mixed = await insertOrder(tx, { channelOrderId: `${tag}-mixed` });
+      await insertLine(tx, mixed);
+      await insertLine(tx, mixed, { almondDesignId: randomUUID() });
+      await insertLine(tx, mixed, { fulfillmentKind: 'digital' });
+
+      expect((await svc.getOne(printOnly, tx))!.lineRouteCounts).toEqual({ warehouse: 0, outsourced: 1, digital: 0 });
+      expect((await svc.getOne(mixed, tx))!.lineRouteCounts).toEqual({ warehouse: 1, outsourced: 1, digital: 1 });
     });
   });
 

@@ -35,6 +35,7 @@ import {
   banners,
   notices,
   sitePopups,
+  topNotices,
 } from './catalog.schema';
 
 // ===== Category Types =====
@@ -121,6 +122,9 @@ export type NoticeInsert = typeof notices.$inferInsert;
 // ===== Site Popup Types =====
 export type SitePopupEntity = typeof sitePopups.$inferSelect;
 export type SitePopupInsert = typeof sitePopups.$inferInsert;
+
+// ===== Top Notice Types =====
+export type TopNoticeEntity = typeof topNotices.$inferSelect;
 
 // ===== Other Types =====
 export type ProductImageEntity = typeof productImages.$inferSelect;

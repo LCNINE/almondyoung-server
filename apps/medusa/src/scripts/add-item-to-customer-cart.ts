@@ -1,6 +1,7 @@
 import { ExecArgs } from '@medusajs/framework/types';
 import { ContainerRegistrationKeys } from '@medusajs/framework/utils';
 import { addToCartWorkflow, createCartWorkflow } from '@medusajs/medusa/core-flows';
+import { CustomerCartRow, selectCustomerCart } from '../api/store/customers/me/cart/select-customer-cart';
 
 type InputArgs = {
   customerId: string;
@@ -41,18 +42,12 @@ export default async function addItemToCustomerCart({ container, args }: ExecArg
 
   const { data: carts } = await query.graph({
     entity: 'cart',
-    fields: ['id', 'customer_id', 'completed_at', 'updated_at', 'email'],
-    filters: {
-      customer_id: input.customerId,
-      completed_at: null,
-    },
+    fields: ['id', 'completed_at', 'updated_at', 'metadata', 'items.id'],
+    filters: { customer_id: input.customerId },
   });
 
-  const activeCart = (carts || []).sort((a: any, b: any) => {
-    const dateA = new Date(a.updated_at || 0).getTime();
-    const dateB = new Date(b.updated_at || 0).getTime();
-    return dateB - dateA;
-  })[0];
+  // 고객 화면이 복구하는 카트와 같은 카트에 담아야 보인다.
+  const activeCart = selectCustomerCart(carts as CustomerCartRow[]).target;
 
   let cartId = activeCart?.id as string | undefined;
 
@@ -63,6 +58,7 @@ export default async function addItemToCustomerCart({ container, args }: ExecArg
         customer_id: input.customerId,
         sales_channel_id: input.salesChannelId,
         email: input.email,
+        metadata: { cart_kind: 'shopping' },
       },
       throwOnError: false,
     });

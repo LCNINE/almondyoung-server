@@ -1,4 +1,5 @@
 import { QuantityDiscountReader } from '../../../core/pricing/quantity-discount.reader';
+import { SuppliersService } from '../../../../inventory/suppliers/services/suppliers.service';
 import { NotFoundException } from '@nestjs/common';
 import { CategoryTreeResponseDto } from '../../../core/categories/dto';
 import { ProductCategoriesService } from '../../../core/categories/categories.service';
@@ -54,7 +55,7 @@ describe('FormExportSnapshotReader — getActiveVersion 에러 처리 (단위)',
     const skuMapping = { getVariantMatchingBatch: jest.fn() } as unknown as ProductSkuMappingService;
     const quantityDiscounts = { findForVersion: jest.fn().mockResolvedValue(null) } as unknown as QuantityDiscountReader;
 
-    return new FormExportSnapshotReader(versionLoader, optionLoader, pricing, categories, skuMapping, quantityDiscounts);
+    return new FormExportSnapshotReader(versionLoader, optionLoader, pricing, categories, skuMapping, quantityDiscounts, { getSuppliers: jest.fn().mockResolvedValue({ data: [] }) } as unknown as SuppliersService);
   }
 
   it('NotFoundException 은 해당 masterId 만 건너뛰고 나머지는 정상 처리한다', async () => {
@@ -163,6 +164,7 @@ describe('FormExportSnapshotReader — renderMaster 판매정책 프리필', () 
       categories,
       skuMapping as unknown as ProductSkuMappingService,
       { findForVersion: jest.fn().mockResolvedValue(null) } as unknown as QuantityDiscountReader,
+      { getSuppliers: jest.fn().mockResolvedValue({ data: [] }) } as unknown as SuppliersService,
     );
     allocator = createImageKeyAllocator();
   });
@@ -185,7 +187,7 @@ describe('FormExportSnapshotReader — renderMaster 판매정책 프리필', () 
       ],
     });
 
-    const bundle = await reader.renderMaster(tx, 'master-1', allocator, new Map());
+    const bundle = await reader.renderMaster(tx, 'master-1', allocator, new Map(), new Map());
 
     expect(bundle?.variants[0]).toMatchObject({
       availabilityOverride: '품절',
@@ -213,7 +215,7 @@ describe('FormExportSnapshotReader — renderMaster 판매정책 프리필', () 
       ],
     });
 
-    const bundle = await reader.renderMaster(tx, 'master-1', allocator, new Map());
+    const bundle = await reader.renderMaster(tx, 'master-1', allocator, new Map(), new Map());
 
     expect(bundle?.variants[0]).toMatchObject({
       availabilityOverride: '출시예정',
@@ -226,7 +228,7 @@ describe('FormExportSnapshotReader — renderMaster 판매정책 프리필', () 
   it('정책 행이 없는 품목은 기본값으로 찍힌다', async () => {
     skuMapping.getVariantMatchingBatch.mockResolvedValue({ data: [] });
 
-    const bundle = await reader.renderMaster(tx, 'master-1', allocator, new Map());
+    const bundle = await reader.renderMaster(tx, 'master-1', allocator, new Map(), new Map());
 
     expect(bundle?.variants[0]).toMatchObject({
       availabilityOverride: '',

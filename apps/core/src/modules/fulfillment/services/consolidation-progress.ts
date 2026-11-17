@@ -7,8 +7,14 @@ import {
 export type ProgressMemberRow = { shipmentId: string; role: 'source' | 'target' };
 
 export type ProgressOrderNoRow = { shipmentId: string; orderNo: string };
-export type ProgressWorkItemRow = { shipmentId: string; batchId: string; status: string };
-export type ProgressWaybillRow = { shipmentId: string; id: string; status: string; trackingNo: string | null };
+export type ProgressWorkItemRow = { id?: string; shipmentId: string; batchId: string; status: string };
+export type ProgressWaybillRow = {
+  withdrawalWorkItemId?: string | null;
+  shipmentId: string;
+  id: string;
+  status: string;
+  trackingNo: string | null;
+};
 export type ProgressReconcileRow = { shipmentId: string; gaveUpAt: Date | null; nextCheckAt: Date };
 
 export function consolidationProgressSourceIds(members: ProgressMemberRow[]): string[] {
@@ -82,6 +88,7 @@ export function buildConsolidationProgressSources(input: {
       workItemStatus: workItem?.status ?? null,
       waybillId: waybill?.id ?? null,
       waybillStatus: waybill?.status ?? null,
+      voidOnWithdrawal: Boolean(workItem?.id && waybill?.withdrawalWorkItemId === workItem.id),
       blockers: [...(blockers.get(shipmentId) ?? [])].sort(),
       gaveUpAt: state?.gaveUpAt?.toISOString() ?? null,
       nextCheckAt: state?.nextCheckAt.toISOString() ?? null,

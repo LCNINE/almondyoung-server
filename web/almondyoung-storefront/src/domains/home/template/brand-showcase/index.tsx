@@ -3,69 +3,70 @@ import { BRAND_CATEGORY_HANDLE } from "@/lib/constants/brand"
 import { listRootCategoriesCached } from "@/lib/data/category"
 import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
 import { getTranslations } from "next-intl/server"
-import { Header, MoreButton, Title } from "../../components/header"
+import { SectionHead } from "../../components/header"
 import { HomeSection } from "../../components/shared/home-section"
-import { BrandStrip, type BrandStripGroup } from "./brand-strip"
+import { BrandHall, type BrandHallBrand } from "./brand-hall"
+import { loadBrandFeaturedProducts } from "./brand-hall-actions"
+import { collectBrandCategoryIds, flattenBrandTiles } from "./brand-hall-data"
 import { selectBrandTiles } from "./select-brand-tiles"
 
-// 그룹당 스트립에 올리는 최대 타일 수. 넘치면 더보기(브랜드관)로 보낸다.
-const MAX_BRAND_TILES = 16
+// 6칸 2줄. 브랜드가 더 많으면 마지막 칸을 "전체 브랜드 +N" 으로 바꿔 브랜드관으로 보낸다.
+const MAX_BRANDS = 12
 
 /**
- * 홈 브랜드 섹션. 데이터는 "브랜드" 루트 카테고리의 자손들 — 헤더 메가메뉴가
- * 이미 요청 단위로 캐시한 listRootCategoriesCached 를 그대로 재사용하므로
- * Medusa 왕복이 추가로 늘지 않는다. 정렬(rank)·비활성/회원전용 필터도 그 경로에서 끝난 상태.
- * 브랜드관이 중간 그룹을 갖는 트리로 재편되면 자동으로 그룹 탭 UI 로 전환된다.
+ * 홈 브랜드관 섹션. 브랜드 = 브랜드관 카테고리 아래 브랜드 노드(헤더 메가메뉴와 같은
+ * listRootCategoriesCached 를 재사용). 상품은 처음 고른 브랜드만 서버에서 받고,
+ * 다른 로고를 누르면 그때 loadBrandFeaturedProducts 로 받는다(브랜드 수와 요청 수를 떼어 둔다).
  */
 export async function BrandShowcaseWrapper() {
   const [rootCategories, t] = await Promise.all([
-    listRootCategoriesCached(),
+    listRootCategoriesCached().catch(() => null),
     getTranslations("home.brands"),
   ])
 
-  const { groups, hasGroups } = selectBrandTiles(
+  if (!rootCategories) return null
+
+  const { groups } = selectBrandTiles(
     rootCategories,
     BRAND_CATEGORY_HANDLE,
-    MAX_BRAND_TILES
+    Number.MAX_SAFE_INTEGER
   )
+  const allTiles = flattenBrandTiles(groups, Number.MAX_SAFE_INTEGER)
 
   // 브랜드 카테고리가 없거나 비었으면 섹션 자체를 렌더링하지 않는다.
-  if (groups.length === 0) return null
+  if (allTiles.length === 0) return null
 
-  const stripGroups: BrandStripGroup[] = groups.map((group) => ({
-    id: group.category?.id ?? "direct",
-    name: group.category?.name ?? null,
-    brands: group.brands.map(({ category, handlePath }) => {
-      const thumbnail = getCategoryThumbnail(category)
-      return {
-        id: category.id,
-        name: category.name,
-        href: `/category/${handlePath.join("/")}`,
-        thumbnailUrl: thumbnail ? getThumbnailUrl(thumbnail) : null,
-      }
-    }),
-  }))
+  const hasMore = allTiles.length > MAX_BRANDS
+  const tiles = allTiles.slice(0, hasMore ? MAX_BRANDS - 1 : MAX_BRANDS)
+
+  const brands: BrandHallBrand[] = tiles.map(({ category, handlePath }) => {
+    const logo = getCategoryThumbnail(category)
+
+    return {
+      id: category.id,
+      name: category.name,
+      href: `/category/${handlePath.join("/")}`,
+      logoUrl: logo ? getThumbnailUrl(logo) : null,
+      categoryIds: collectBrandCategoryIds(category),
+    }
+  })
+
+  // 첫 화면에는 처음 고른 브랜드 상품만 싣는다. 나머지는 로고를 누를 때 불러온다
+  const initialProducts = await loadBrandFeaturedProducts(brands[0].categoryIds)
 
   return (
     <HomeSection className="lg:py-16">
-      <Header className="mb-5">
-        <Title>{t("title")}</Title>
-        <MoreButton
-          showOnDesktop
-          href={`/category/${BRAND_CATEGORY_HANDLE}`}
-          className="md:absolute md:right-0"
-        />
-      </Header>
+      <SectionHead
+        title={t("title")}
+        subtitle={t("subtitle")}
+        moreHref={`/category/${BRAND_CATEGORY_HANDLE}`}
+      />
 
-      <BrandStrip
-        groups={stripGroups}
-        showTabs={hasGroups}
-        labels={{
-          prev: t("prev"),
-          next: t("next"),
-          ariaLabel: t("ariaLabel"),
-          all: t("all"),
-        }}
+      <BrandHall
+        brands={brands}
+        initialProducts={initialProducts}
+        allBrandsHref={`/category/${BRAND_CATEGORY_HANDLE}`}
+        moreCount={hasMore ? allTiles.length - tiles.length : 0}
       />
     </HomeSection>
   )

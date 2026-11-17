@@ -13,19 +13,12 @@ import {
 } from '@/components/ui/table';
 import { useFulfillmentOutboxEvents } from '@/lib/services/orders';
 import type { FulfillmentOrderDetail } from '@/lib/types/dto/fulfillment';
+import { outboxEventLabel, outboxStatusLabel } from './fulfillment-labels';
 
 interface TimelineEvent {
   label: string;
   at: string | null | undefined;
 }
-
-const OUTBOX_STATUS_LABELS: Record<string, string> = {
-  pending: '발행 대기',
-  processing: '처리 중',
-  published: '발행 완료',
-  failed: '발행 실패',
-  skipped: '스킵',
-};
 
 const OUTBOX_STATUS_VARIANTS: Record<
   string,
@@ -36,17 +29,6 @@ const OUTBOX_STATUS_VARIANTS: Record<
   published: 'default',
   failed: 'destructive',
   skipped: 'outline',
-};
-
-const FO_EVENT_LABELS: Record<string, string> = {
-  FulfillmentCreated: 'FO 생성',
-  FulfillmentReady: '재고 준비 완료',
-  FulfillmentLabelled: '운송장 등록',
-  FulfillmentShipped: '출고 완료',
-  FulfillmentDelivered: '배송 완료',
-  FulfillmentCancelled: '취소',
-  ShipmentDispatchRecalled: '출고 recall',
-  FulfillmentReopened: '미처리 수량 재개',
 };
 
 function formatDate(value: string | null | undefined) {
@@ -62,15 +44,15 @@ export function HistoryTab({ fo }: { fo: FulfillmentOrderDetail }) {
   } = useFulfillmentOutboxEvents(fo.id);
   const timeline: TimelineEvent[] = [
     { label: '생성됨', at: fo.createdAt },
-    { label: '할당됨', at: fo.allocatedAt },
+    { label: '재고 확보', at: fo.allocatedAt },
     { label: '출고 완료', at: fo.shippedAt },
     { label: '취소됨', at: fo.canceledAt },
   ].filter((event) => !!event.at);
 
-  const failedOrRetrying = outboxEvents.filter(
-    (event) =>
-      event.status === 'failed' ||
-      (event.status === 'pending' && event.attempts > 0)
+  // failed 는 재시도 한도를 다 써서 더 보내지 않는다. pending 에 시도가 있으면 다시 보내는 중이다
+  const stopped = outboxEvents.filter((event) => event.status === 'failed');
+  const retrying = outboxEvents.filter(
+    (event) => event.status === 'pending' && event.attempts > 0
   );
 
   return (
@@ -78,7 +60,7 @@ export function HistoryTab({ fo }: { fo: FulfillmentOrderDetail }) {
       <section>
         <h3 className="mb-3 text-sm font-semibold">상태 타임라인</h3>
         {timeline.length === 0 ? (
-          <p className="text-sm text-muted-foreground">기록된 이벤트 없음</p>
+          <p className="text-sm text-muted-foreground">기록이 없어요.</p>
         ) : (
           <ol className="relative ml-3 border-l border-muted-foreground/20">
             {timeline.map((event) => (
@@ -95,31 +77,39 @@ export function HistoryTab({ fo }: { fo: FulfillmentOrderDetail }) {
       </section>
 
       <section>
-        <h3 className="mb-3 text-sm font-semibold">Core Outbox 이벤트</h3>
+        <h3 className="mb-3 text-sm font-semibold">쇼핑몰·연동 알림</h3>
         <p className="mb-3 text-xs text-muted-foreground">
-          Core가 발행한 outbox 이벤트입니다. 발행 완료는 dispatcher가 이벤트를
-          전달했음을 의미하며, channel-adapter 또는 Medusa projection 처리
-          완료를 보장하지는 않습니다.
+          출고 상태가 바뀔 때 쇼핑몰과 연동 서비스에 보낸 알림이에요. «보냄»은
+          알림을 전달했다는 뜻이고, 쇼핑몰에 반영됐는지는 배송 탭의 쇼핑몰
+          반영에서 확인해요.
         </p>
 
         {isError && (
           <Alert variant="destructive" className="mb-3">
             <AlertTriangle />
-            <AlertTitle>이벤트 조회 실패</AlertTitle>
+            <AlertTitle>알림 기록을 불러오지 못했어요</AlertTitle>
             <AlertDescription>
-              Core outbox 이벤트를 불러오지 못했습니다. 출고 상태와 채널 동기화
-              상태를 별도로 확인하세요.
+              잠시 뒤 새로고침해 주세요. 출고 상태와 쇼핑몰 반영은 배송 탭에서
+              따로 확인할 수 있어요.
             </AlertDescription>
           </Alert>
         )}
 
-        {failedOrRetrying.length > 0 && (
+        {(stopped.length > 0 || retrying.length > 0) && (
           <Alert variant="destructive" className="mb-3">
             <AlertTriangle />
-            <AlertTitle>운영 확인 필요</AlertTitle>
+            <AlertTitle>확인이 필요해요</AlertTitle>
             <AlertDescription>
-              발행 실패 또는 재시도 중인 이벤트 {failedOrRetrying.length}건이
-              있습니다. outbox-dispatcher 로그를 확인하세요.
+              {stopped.length > 0 && (
+                <p>
+                  {`보내지 못하고 멈춘 알림이 ${stopped.length}건 있어요. 다시 보내지 않으니 개발팀에 알려 주세요.`}
+                </p>
+              )}
+              {retrying.length > 0 && (
+                <p>
+                  {`다시 보내는 중인 알림이 ${retrying.length}건 있어요. 계속 실패하면 개발팀에 알려 주세요.`}
+                </p>
+              )}
             </AlertDescription>
           </Alert>
         )}
@@ -128,10 +118,10 @@ export function HistoryTab({ fo }: { fo: FulfillmentOrderDetail }) {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>이벤트</TableHead>
+                <TableHead>알림</TableHead>
                 <TableHead>상태</TableHead>
                 <TableHead className="text-right">시도</TableHead>
-                <TableHead>발행 시각</TableHead>
+                <TableHead>보낸 시각</TableHead>
                 <TableHead>생성 시각</TableHead>
               </TableRow>
             </TableHeader>
@@ -142,7 +132,7 @@ export function HistoryTab({ fo }: { fo: FulfillmentOrderDetail }) {
                     colSpan={5}
                     className="py-6 text-center text-muted-foreground"
                   >
-                    이벤트를 불러오는 중입니다.
+                    알림 기록을 불러오는 중이에요.
                   </TableCell>
                 </TableRow>
               ) : outboxEvents.length === 0 ? (
@@ -151,21 +141,16 @@ export function HistoryTab({ fo }: { fo: FulfillmentOrderDetail }) {
                     colSpan={5}
                     className="py-6 text-center text-muted-foreground"
                   >
-                    기록된 outbox 이벤트가 없습니다.
+                    보낸 알림이 없어요.
                   </TableCell>
                 </TableRow>
               ) : (
                 outboxEvents.map((event) => (
                   <TableRow key={event.id}>
                     <TableCell>
-                      <div className="flex flex-col">
-                        <span className="text-sm">
-                          {FO_EVENT_LABELS[event.eventType] ?? event.eventType}
-                        </span>
-                        <span className="font-mono text-xs text-muted-foreground">
-                          {event.eventType}
-                        </span>
-                      </div>
+                      <span className="text-sm">
+                        {outboxEventLabel(event.eventType)}
+                      </span>
                     </TableCell>
                     <TableCell>
                       <Badge
@@ -173,7 +158,7 @@ export function HistoryTab({ fo }: { fo: FulfillmentOrderDetail }) {
                           OUTBOX_STATUS_VARIANTS[event.status] ?? 'outline'
                         }
                       >
-                        {OUTBOX_STATUS_LABELS[event.status] ?? event.status}
+                        {outboxStatusLabel(event.status)}
                       </Badge>
                     </TableCell>
                     <TableCell className="text-right font-mono text-xs">
@@ -183,8 +168,12 @@ export function HistoryTab({ fo }: { fo: FulfillmentOrderDetail }) {
                       {event.publishedAt
                         ? formatDate(event.publishedAt)
                         : event.status === 'failed'
-                          ? `다음 재시도: ${formatDate(event.nextAttemptAt)}`
-                          : '-'}
+                          ? '다시 보내지 않아요'
+                          : event.status === 'pending' &&
+                              event.attempts > 0 &&
+                              event.nextAttemptAt
+                            ? `다시 보낼 시각: ${formatDate(event.nextAttemptAt)}`
+                            : '-'}
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">
                       {formatDate(event.createdAt)}

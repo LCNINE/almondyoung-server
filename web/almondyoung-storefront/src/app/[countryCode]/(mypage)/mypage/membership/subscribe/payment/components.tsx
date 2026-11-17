@@ -597,7 +597,7 @@ export function MembershipForm({
                   <span className="text-muted-foreground">
                     {selectedDiscount.title}
                   </span>
-                  <span className="text-primary">
+                  <span className="text-pink-deep">
                     -{(firstPrice - discountPrice).toLocaleString()}원
                   </span>
                 </div>
@@ -827,7 +827,7 @@ function MethodPickerRow({
         {note && <span className="text-muted-foreground text-xs">{note}</span>}
       </div>
       {selected && (
-        <Check className="text-primary size-5 shrink-0" strokeWidth={3} />
+        <Check className="text-mint-deep size-5 shrink-0" strokeWidth={3} />
       )}
     </button>
   )
@@ -1131,7 +1131,7 @@ const AgreementRow: React.FC<AgreementRowProps> = ({
             e.preventDefault()
             setIsDialogOpen(true)
           }}
-          className="text-primary shrink-0 text-xs font-semibold whitespace-nowrap underline underline-offset-2"
+          className="text-mint-deep shrink-0 text-xs font-semibold whitespace-nowrap underline underline-offset-2"
         >
           {t("agreeView")}
         </button>

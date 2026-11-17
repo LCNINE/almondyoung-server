@@ -10,6 +10,24 @@ import { parseDesign } from "@/domains/almond-template/lib/document"
 import { api } from "../api"
 import { HttpApiError } from "../api-error"
 
+const designProblem = (design: unknown) => {
+  try {
+    parseDesign(design)
+    return null
+  } catch (error) {
+    return error instanceof Error
+      ? error.message
+      : "저장할 수 없는 디자인입니다."
+  }
+}
+
+const rejectionMessage = (error: HttpApiError) => {
+  const message: unknown = error.data?.message
+  return typeof message === "string" && message
+    ? message
+    : "저장할 수 없는 시안입니다."
+}
+
 export const listMyAlmondSavedDesigns = async (
   productId: string,
   size: string
@@ -41,8 +59,11 @@ export const getMyAlmondSavedDesignThumbnail = async (
 
 export const upsertMyAlmondSavedDesign = async (
   dto: UpsertAlmondSavedDesignDto
-): Promise<AlmondSavedDesignDetailDto | { conflict: true }> => {
-  parseDesign(dto.design)
+): Promise<
+  AlmondSavedDesignDetailDto | { conflict: true } | { invalid: string }
+> => {
+  const invalid = designProblem(dto.design)
+  if (invalid) return { invalid }
   try {
     return await api<AlmondSavedDesignDetailDto>(
       "ugc",
@@ -52,6 +73,9 @@ export const upsertMyAlmondSavedDesign = async (
   } catch (error) {
     if (error instanceof HttpApiError && error.status === 409)
       return { conflict: true }
+    // 서버액션 경계를 넘으면 오류 문구가 지워지므로, 서버가 거절한 이유는 값으로 돌려준다
+    if (error instanceof HttpApiError && error.status === 400)
+      return { invalid: rejectionMessage(error) }
     throw error
   }
 }

@@ -105,7 +105,10 @@ export function BannerImageDrop({
         URL.revokeObjectURL(url);
       }
     }
-    const { file: compressed } = await compressImageForUpload(toSend);
+    // 배너는 화면 폭 가득 그려져 레티나에서 칸의 2배 해상도가 필요하다. 기본 상한(1600)이면 PC 배너가 흐려진다
+    const { file: compressed } = await compressImageForUpload(toSend, {
+      maxEdge: slot ? slot.width * 2 : undefined,
+    });
     if (compressed.size > IMAGE_CONTEXT_MAX_BYTES) {
       throw new Error(
         `이미지가 너무 큽니다 (${formatBytes(compressed.size)}). ${formatBytes(IMAGE_CONTEXT_MAX_BYTES)} 이하로 줄여 주세요.`

@@ -31,7 +31,7 @@ const plan: TenantPlan = {
   checkAccount: { loginId: 'c', username: 'c', nickname: 'c', email: 'c@example.test' },
 };
 
-type Domain = { host: string; app: TenantDomainApp | null };
+type Domain = { host: string; app: TenantDomainApp };
 
 function fakeOperator(tenant: { status: 'preparing' | 'active'; domains: Domain[] } | null) {
   const added: string[] = [];
@@ -88,23 +88,6 @@ describe('테넌트 도메인 단계', () => {
       ],
     });
     expect(await domainStep(operator).isDone()).toBe(true);
-  });
-
-  it('앱이 빈 도메인은 다시 붙여 앱을 채운다', async () => {
-    const { operator, added } = fakeOperator({
-      status: 'active',
-      domains: [
-        { host: 'rehearsal.localhost:8001', app: null },
-        { host: 'rehearsal.localhost:8002', app: 'admin-web' },
-      ],
-    });
-    const step = domainStep(operator);
-
-    expect(await step.isDone()).toBe(false);
-    await step.run();
-
-    expect(added).toEqual(['rehearsal.localhost:8001']);
-    expect(await step.isDone()).toBe(true);
   });
 
   it('행 단계 뒤에 온다 — 행이 없으면 붙일 곳이 없다', async () => {

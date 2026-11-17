@@ -188,15 +188,21 @@ export class ProductMastersService {
     this.logger.log(`📥 Enqueued ProductVariantCreated: ${variant.id} (${version.name})`);
 
     try {
-      await this.productMatchingService.handleVariantCreated({
-        masterId: version.masterId,
-        productName: version.name,
-        variantId: variant.id,
-        variantName: variant.variantName ?? undefined,
-        inventoryManagement: true,
-        preStockSellable: false,
-        alwaysSellableZeroStock: false,
-      });
+      // 매칭도 같은 트랜잭션에 쓰되, 실패가 상품 생성까지 깨지 않게 savepoint 로 감싼다
+      await tx.transaction((savepoint) =>
+        this.productMatchingService.handleVariantCreated(
+          {
+            masterId: version.masterId,
+            productName: version.name,
+            variantId: variant.id,
+            variantName: variant.variantName ?? undefined,
+            inventoryManagement: true,
+            preStockSellable: false,
+            alwaysSellableZeroStock: false,
+          },
+          savepoint,
+        ),
+      );
     } catch (error) {
       this.logger.error(`❌ Failed to create product matching for variant: ${variant.id}`, error.stack);
       // 매칭 생성 실패해도 트랜잭션은 커밋한다.

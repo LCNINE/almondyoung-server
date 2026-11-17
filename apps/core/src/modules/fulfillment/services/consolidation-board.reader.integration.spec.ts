@@ -52,6 +52,10 @@ describeIfDb('ConsolidationBoardReader (DB integration)', () => {
         [first.shipment.id, second.shipment.id].sort(),
       );
       expect(board.groups[0].canMergeNow).toBe(true);
+      expect(board.groups[0].shipments.map((shipment) => shipment.items)).toEqual([
+        [expect.objectContaining({ skuId: base.skuId, qty: 1 })],
+        [expect.objectContaining({ skuId: base.skuId, qty: 1 })],
+      ]);
       expect(JSON.stringify(board)).not.toContain(stranger.shipment.id);
 
       const [otherProfile] = await tx

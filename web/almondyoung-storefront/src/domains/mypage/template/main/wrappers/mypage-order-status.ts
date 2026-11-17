@@ -60,12 +60,13 @@ export async function resolveMypageCoreView(
     returns
   )
   const tItemReturn = await getTranslations("mypage.order.list.itemReturn")
+  const tStatus = await getTranslations("mypage.order.status")
 
   return {
     statusLabel: completedReturnStatus
       ? tItemReturn(completedReturnStatus)
       : actions
-        ? getCoreDisplayStatus(actions)
+        ? getCoreDisplayStatus(actions, tStatus)
         : fallbackLabel,
     cancelledByCore: actions ? isCancelledByCore(actions) : false,
   }

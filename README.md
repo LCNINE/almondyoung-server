@@ -2,6 +2,11 @@
 
 커머스·물류 통합 운영 시스템
 
+## 배포 안내
+
+`lcnine-public` 계정의 dev·demo·live 배포는 [배포 사용 안내](docs/runbooks/lcnine-public-deployment.md)를 따릅니다.
+[배포 스크립트](scripts/almondyoung-deploy.py)로 AWS의 지정된 빌드 작업을 호출하며, 실행 시점의 `develop` 코드를 배포합니다.
+
 ---
 
 ## 이 프로젝트의 지향점
@@ -52,58 +57,58 @@ flowchart TB
 
 ### 백엔드 앱 (`apps/`)
 
-| 앱                 | 역할                                             |
-| ----------------- | ---------------------------------------------- |
+| 앱                | 역할                                                                |
+| ----------------- | ------------------------------------------------------------------- |
 | `core`            | 메인 API. 상품 정보(PIM)와 재고 · 물류(WMS)를 함께 담는 통합 백엔드 |
-| `user-service`    | 인증, 사용자 계정                                     |
-| `wallet`          | 결제, BNPL, 환불                                   |
-| `membership`      | 구독 · 멤버십                                       |
-| `notification`    | 푸시 · 이메일 · SMS                                 |
-| `channel-adapter` | 네이버 · 쿠팡 등 판매채널 양방향 연동                         |
-| `file-service`    | 파일 업로드 · 저장(S3)                                |
-| `search`          | OpenSearch 상품 검색                               |
-| `analytics`       | 분석 데이터 수집                                      |
-| `ugc-service`     | 리뷰 등 사용자 생성 콘텐츠                                |
+| `user-service`    | 인증, 사용자 계정                                                   |
+| `wallet`          | 결제, BNPL, 환불                                                    |
+| `membership`      | 구독 · 멤버십                                                       |
+| `notification`    | 푸시 · 이메일 · SMS                                                 |
+| `channel-adapter` | 네이버 · 쿠팡 등 판매채널 양방향 연동                               |
+| `file-service`    | 파일 업로드 · 저장(S3)                                              |
+| `search`          | OpenSearch 상품 검색                                                |
+| `analytics`       | 분석 데이터 수집                                                    |
+| `ugc-service`     | 리뷰 등 사용자 생성 콘텐츠                                          |
 
 ### 커머스 · 프론트엔드 앱 (`apps/`)
 
-| 앱            | 역할                    |
-| ------------ | --------------------- |
+| 앱           | 역할                             |
+| ------------ | -------------------------------- |
 | `medusa`     | Medusa 기반 자사몰 커머스 백엔드 |
-| `admin-web`  | Next.js 관리자 대시보드      |
-| `wallet-web` | 결제 · 지갑 화면            |
+| `admin-web`  | Next.js 관리자 대시보드          |
+| `wallet-web` | 결제 · 지갑 화면                 |
 
 ### 공유 라이브러리 (`libs/`)
 
-| 라이브러리                | 역할                                                  |
-| -------------------- | --------------------------------------------------- |
-| `@app/db`            | Drizzle ORM 기반, `DbService<Schema>` 와 단일 트랜잭션 러너    |
+| 라이브러리           | 역할                                                              |
+| -------------------- | ----------------------------------------------------------------- |
+| `@app/db`            | Drizzle ORM 기반, `DbService<Schema>` 와 단일 트랜잭션 러너       |
 | `@app/events`        | Kafka 이벤트 버스 — 트랜잭셔널 아웃박스 · DLQ · graceful shutdown |
-| `@app/authorization` | RBAC 인가                                             |
-| `@app/shared`        | 공통 유틸리티와 도메인 예외                                     |
+| `@app/authorization` | RBAC 인가                                                         |
+| `@app/shared`        | 공통 유틸리티와 도메인 예외                                       |
 
 ### 웹 (`web/`)
 
-| 앱                        | 역할                |
-| ------------------------ | ----------------- |
+| 앱                       | 역할                    |
+| ------------------------ | ----------------------- |
 | `almondyoung-storefront` | 고객용 쇼핑몰 (Next.js) |
-| `auth-web`               | 로그인 · 인증 화면       |
+| `auth-web`               | 로그인 · 인증 화면      |
 
 ### 네이티브 (`native/`)
 
-| 앱                | 역할                                  |
-| ---------------- | ----------------------------------- |
+| 앱               | 역할                                                 |
+| ---------------- | ---------------------------------------------------- |
 | `warehouse-app`  | 물류 스테이션용 Tauri 앱. 하드웨어 스캐너 · ZPL 라벨 |
-| `storefront-app` | Expo 기반 쇼핑몰 모바일 셸                   |
+| `storefront-app` | Expo 기반 쇼핑몰 모바일 셸                           |
 
 ### 패키지 (`packages/`)
 
-| 패키지                   | 역할                                     |
-| --------------------- | -------------------------------------- |
+| 패키지                | 역할                                                        |
+| --------------------- | ----------------------------------------------------------- |
 | `event-contracts`     | 앱 간 Kafka 스트림 · 이벤트 스키마 정의 (프레임워크 비의존) |
-| `domain-types`        | 프레임워크 비의존 도메인 타입 정의                    |
-| `product-description` | 상품 상세 Markdown 계약                      |
-| `web-observability`   | Next.js 웹 앱용 관측성 헬퍼                    |
+| `domain-types`        | 프레임워크 비의존 도메인 타입 정의                          |
+| `product-description` | 상품 상세 Markdown 계약                                     |
+| `web-observability`   | Next.js 웹 앱용 관측성 헬퍼                                 |
 
 </details>
 
@@ -122,5 +127,5 @@ flowchart TB
 
 [Business Source License 1.1](LICENSE).
 
- [`web/almondyoung-storefront/`](web/almondyoung-storefront) 는 medusa-next(MIT,
+[`web/almondyoung-storefront/`](web/almondyoung-storefront) 는 medusa-next(MIT,
 © 2022 Medusa)의 파생물로서, 해당 디렉토리의 [`LICENSE`](web/almondyoung-storefront/LICENSE) 를 따릅니다.

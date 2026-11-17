@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from '@tanstack/react-router';
 import { useWarehouse } from '../../app/warehouse-context';
 import { useApiClient } from '../../core/data/ApiClientProvider';
 import { localStoragePrefs, type DevicePrefs } from '../../core/data/devicePrefs';
 import { errorMessage } from '../../core/data/errorMessage';
+import { NetworkError } from '../../core/data/httpClient';
 import { printRaw, readLabelPrinter, type PrintRaw } from '../../core/hardware/print/labelPrinter';
 import { useHumanKeys, useScanEmit, useScanner } from '../../core/hardware/scan/useScanner';
 import { batchProgressOf, useBatchWorkItems } from '../../domains/outbound/batchStatus';
@@ -18,9 +20,18 @@ import type { StationAction } from '../actions';
 import { useFeedback } from '../feedback/FeedbackProvider';
 import { useBatchProgress } from '../status/batchProgress';
 import { modalOpen } from '../useStationKeys';
-import { INSPECTION_ACTIONS } from './inspectionActions';
+import { AfterWithdrawal } from './AfterWithdrawal';
+import { INSPECTION_ACTIONS, RETURN_PUTAWAY_ACTION } from './inspectionActions';
 import { InspectWork, type PendingShortPick } from './InspectWork';
-import { workFor, type Alert, type BoxWorkHandle, type LastBox, type PrintStatus, type View } from './model';
+import {
+  workFor,
+  type Alert,
+  type BoxWorkHandle,
+  type LastBox,
+  type PrintStatus,
+  type View,
+  type WithdrawCause,
+} from './model';
 import {
   BigPanel,
   BoxCard,
@@ -34,17 +45,22 @@ import {
 import { RefillPanel } from './RefillPanel';
 import { printWaybill } from './printWaybill';
 import { pushRecent, type RecentEntry } from './recent';
+import { needsReturnPutaway, useMyReturnBin } from './returnBinView';
 import { WithdrawWork } from './WithdrawWork';
-import { INTAKE_BLOCKED_MESSAGE, UNCERTAIN_SCAN_MESSAGE } from './useInspectionBox';
+import { INTAKE_BLOCKED_MESSAGE, ScanWaitingError, UNCERTAIN_SCAN_MESSAGE } from './useInspectionBox';
 
 /** 화면이 스스로 거절한 것 — 문구를 그대로 보인다(서버 오류 문구 변환을 거치지 않는다) */
 class Refusal extends Error {}
 
 const LOOKING_UP_MESSAGE = '송장을 확인하고 있어요. 다시 찍어 주세요.';
+export const SCAN_NOT_SENT_MESSAGE = '연결이 끊겨 이 스캔은 반영하지 않았어요. 연결된 뒤 다시 찍어 주세요.';
 const EXCESS_MESSAGE = '출고가 끝난 박스에 찍은 상품은 반영되지 않았어요. 상품을 확인해 주세요.';
 const SHORT_PICKED_ELSEWHERE_MESSAGE = '앞 박스의 결품이 반영됐어요. 그 송장을 다시 찍어 주세요.';
 const REFILLED_ELSEWHERE_MESSAGE = '앞 박스의 결품이 반영돼 새 송장을 출력했어요. 보충 대기예요.';
 const WITHDRAWN_ELSEWHERE_MESSAGE = '박스를 뺐어요. 그 송장을 다시 찍어 주세요.';
+
+const WITHDRAWN_SCAN_MESSAGE = '이미 다 뺀 상자예요. 다음 송장을 찍어 주세요.';
+export const LEFT_BATCH_MESSAGE = '이 상자는 배치에서 빠졌어요. 방금 찍은 상품은 담지 말고, 담아 둔 상품을 꺼내 찍어 주세요.';
 
 /** 스테이션 F1 출고 검수(스펙 §6) — 송장 스캔 즉시 시작, 상품 스캔 = +1, 마지막 스캔 = 출고, 다음 송장 */
 export function InspectionScreen({ prefs = localStoragePrefs, print = printRaw }: { prefs?: DevicePrefs; print?: PrintRaw }) {
@@ -58,6 +74,7 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
   const queryClient = useQueryClient();
   const { signal } = useFeedback();
   const emit = useScanEmit();
+  const navigate = useNavigate();
   const [view, setView] = useState<View>({ kind: 'waiting' });
   // 스캔 처리는 그려진 화면이 아니라 «정한» 화면을 본다 — go() 만 바꾼다
   const viewRef = useRef(view);
@@ -74,6 +91,8 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
   // 결과를 모르는 결품, 박스별 — 박스가 다시 마운트돼도 같은 키로 다시 보내게
   const shortPickRetries = useRef(new Map<string, PendingShortPick>()).current;
   const seq = useRef(0);
+  // 빠진 박스에 찍어 거절된 상품 바코드 — 뺄 상품 화면으로 넘어갈 때 이유를 알린다
+  const leftBatch = useRef<string | null>(null);
   const canPrint = readLabelPrinter(prefs) !== null;
 
   /**
@@ -147,14 +166,21 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
   const settleWork = async () => {
     try {
       await work.current?.settle();
-    } catch {
-      throw new Refusal(UNCERTAIN_SCAN_MESSAGE);
+    } catch (error) {
+      throw new Refusal(error instanceof ScanWaitingError ? error.message : UNCERTAIN_SCAN_MESSAGE);
     }
   };
 
   /** 조회 결과로 화면을 정한다(스펙 §6.2). quiet 는 하던 박스 복구 — 거절이면 조용히 대기로 */
-  const show = async (found: ShipmentByWaybill, quiet = false, announce = true) => {
+  const show = async (found: ShipmentByWaybill, quiet = false, announce = true, why?: WithdrawCause) => {
     const gate = inspectionGateOf(found, { warehouseId, canPrint });
+    // 같은 상자를 다시 찍어 다시 그려도 이 화면에서 본 까닭(결품)은 이어 간다
+    const current = viewRef.current;
+    const cause =
+      why ??
+      ((current.kind === 'withdraw' || current.kind === 'withdrawn') && current.box.shipmentId === found.shipmentId
+        ? current.cause
+        : undefined);
     if (gate.kind === 'reject') {
       if (quiet) clearLastBox(prefs);
       else reject(gate.message, found.trackingNo);
@@ -169,12 +195,20 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
     }
     if (gate.kind === 'withdrawn') {
       clearLastBox(prefs);
-      go({ kind: 'withdrawn', box: found });
+      go({ kind: 'withdrawn', box: found, seq: ++seq.current, exitTo: found.exitTo, cause });
       return;
     }
     if (gate.kind === 'withdraw') {
       writeLastBox(prefs, found);
-      go({ kind: 'withdraw', box: found, seq: ++seq.current });
+      go({ kind: 'withdraw', box: found, seq: ++seq.current, cause });
+
+      const scanned = leftBatch.current;
+      leftBatch.current = null;
+
+      if (scanned !== null) {
+        reject(LEFT_BATCH_MESSAGE, scanned);
+      }
+
       return;
     }
     if (gate.kind === 'reprint') {
@@ -188,6 +222,90 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
     }
     writeLastBox(prefs, found);
     go({ kind: 'inspect', box: found, seq: ++seq.current });
+  };
+
+  const refreshedBatchItem = useRef<{ view: View; updatedAt: number } | null>(
+    null
+  );
+
+  useEffect(() => {
+    const current = viewRef.current;
+    const item = batchItems.data?.find(
+      (entry) =>
+        current.kind === 'inspect' &&
+        entry.shipmentId === current.box.shipmentId
+    );
+
+    if (
+      current.kind !== 'inspect' ||
+      (item?.status !== 'withdrawing' && item?.status !== 'excluded') ||
+      busy.current > 0 ||
+      running ||
+      (refreshedBatchItem.current?.view === current &&
+        refreshedBatchItem.current.updatedAt === batchItems.dataUpdatedAt)
+    ) {
+      return;
+    }
+
+    refreshedBatchItem.current = {
+      view: current,
+      updatedAt: batchItems.dataUpdatedAt,
+    };
+
+    void run(async () => {
+      await settleWork();
+
+      if (viewRef.current !== current) {
+        return;
+      }
+
+      const found = await lookup(current.box.trackingNo);
+
+      if (
+        viewRef.current === current &&
+        (found.labelState === 'withdrawing' || found.labelState === 'withdrawn')
+      ) {
+        await show(found, false, false);
+      }
+    });
+  });
+
+  // 창으로 돌아오면 바로 다시 본다 — 뒤에 있는 동안 10초 확인이 늦거나 멈춰, 빠진 상자가 옛 화면으로 남는다
+  const refetchBatchItems = batchItems.refetch;
+  useEffect(() => {
+    const recheck = () => {
+      if (document.visibilityState === 'visible') void refetchBatchItems();
+    };
+
+    window.addEventListener('focus', recheck);
+    document.addEventListener('visibilitychange', recheck);
+
+    return () => {
+      window.removeEventListener('focus', recheck);
+      document.removeEventListener('visibilitychange', recheck);
+    };
+  }, [refetchBatchItems]);
+
+  /**
+   * 상품을 찍었는데 그 사이 박스가 배치에서 빠졌다 — 다시 조회해 뺄 상품 화면으로 넘기고 이유를 알린다.
+   * 이미 다른 조회가 돌고 있으면(배치 확인이 먼저 알아챘다) 그 조회가 화면을 바꿀 때 이유를 싣는다
+   */
+  const onWithdrawnWhileScanning = (box: ShipmentByWaybill, barcode: string) => {
+    if (!inspecting(box.shipmentId)) {
+      reject(LEFT_BATCH_MESSAGE, barcode);
+      return;
+    }
+
+    leftBatch.current = barcode;
+
+    if (busy.current > 0) {
+      return;
+    }
+
+    void run(async () => {
+      await settleWork();
+      await show(await lookup(box.trackingNo), false, false);
+    });
   };
 
   const open = (code: string) => run(async () => show(await lookup(code)));
@@ -206,11 +324,18 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
   /** 박스를 든 채 찍은 송장(U13) — 앞 상품 스캔을 다 보낸 뒤 내려놓고 연다. 송장이 아니었으면(404) 상품으로 넘긴다 */
   const switchTo = (code: string, kind: 'same-waybill' | 'maybe-waybill', current: ShipmentByWaybill) =>
     run(async () => {
+      // 연결 전엔 어차피 내려놓을 수 없다 — 응답 없는 조회를 기다리지 않는다
+      if (work.current?.waitingForNetwork?.()) await settleWork();
       let found: ShipmentByWaybill | null = null;
       if (kind === 'maybe-waybill') {
         try {
           found = await lookup(code);
         } catch (error) {
+          // 상품 스캔은 아직 큐에 넣지 않았다 — 저장도 전송도 안 된 입력이다
+          if (error instanceof NetworkError) {
+            reject(SCAN_NOT_SENT_MESSAGE, code);
+            return;
+          }
           if (!isNotFound(error)) throw error;
           giveProduct(code);
           return;
@@ -240,6 +365,17 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
     setManual(null);
     workFor(viewRef.current, work.current)?.disarm();
     const current = viewRef.current;
+    if (current.kind === 'withdrawn') {
+      void run(async () => {
+        try {
+          await show(await lookup(code));
+        } catch (error) {
+          if (!isNotFound(error)) throw error;
+          reject(WITHDRAWN_SCAN_MESSAGE, code);
+        }
+      });
+      return;
+    }
     if (current.kind !== 'inspect' && current.kind !== 'withdraw') {
       void open(code);
       return;
@@ -363,7 +499,7 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
         return;
       }
       if (result.outcome !== 'refilled') {
-        await show(await lookup(box.trackingNo), false, false);
+        await show(await lookup(box.trackingNo), false, false, 'short-pick');
         signal('success');
         return;
       }
@@ -423,6 +559,12 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
     });
 
   const putDownAction: StationAction = { ...INSPECTION_ACTIONS.putDown, enabled: true, run: () => void putDown() };
+  const returnBin = useMyReturnBin(warehouseId, view.kind === 'withdrawn' ? view.seq : null);
+  const toReturnPutaway: StationAction = {
+    ...RETURN_PUTAWAY_ACTION,
+    enabled: true,
+    run: () => void navigate({ to: '/returns/putaway' }),
+  };
   const actions: StationAction[] =
     view.kind === 'reprint'
       ? [
@@ -434,8 +576,12 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
           },
           putDownAction,
         ]
-      : view.kind === 'withdraw' || view.kind === 'withdrawn'
+      : view.kind === 'withdraw'
         ? [putDownAction]
+        : view.kind === 'withdrawn'
+          ? needsReturnPutaway(returnBin)
+            ? [toReturnPutaway, putDownAction]
+            : [putDownAction]
         : view.kind === 'waiting' && last?.kind === 'refilled'
           ? [
               {
@@ -465,6 +611,7 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
           }}
           onShipped={onShipped}
           onExcess={() => reject(EXCESS_MESSAGE)}
+          onWithdrawn={onWithdrawnWhileScanning}
           onPutDown={() => void putDown()}
           canPrint={canPrint}
           onReopen={reopen}
@@ -513,8 +660,7 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
           box={view.box}
           seq={view.seq}
           handleRef={work}
-          prefs={prefs}
-          warehouseId={warehouseId}
+          cause={view.cause}
           alert={alert}
           recent={recent}
           onAlert={boxAlert(view.box)}
@@ -523,11 +669,11 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
             signal('success');
             note({ kind: 'scan', text: label, qty: 1 });
           }}
-          onDone={(box) => {
+          onDone={(box, exitTo) => {
             clearLastBox(prefs);
             signal('complete');
             setAlert(null);
-            go({ kind: 'withdrawn', box });
+            go({ kind: 'withdrawn', box, seq: ++seq.current, exitTo, cause: view.cause });
           }}
         />
       );
@@ -538,11 +684,28 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
             <>
               <BoxCard trackingNo={view.box.trackingNo} recipient={view.box.recipientMasked} />
               <BigPanel
-                content={alert ? { kind: 'alert', ...alert } : { kind: 'notice', title: '빠진 박스', message: '송장은 버려 주세요' }}
+                content={{
+                  kind: 'notice',
+                  title: '빠진 박스',
+                  message:
+                    view.cause === 'short-pick'
+                      ? '결품을 등록해 이 상자는 배치에서 빠졌어요. 송장은 버리고 다음 송장을 찍어 주세요.'
+                      : '다 뺐어요. 이 상자는 배치에서 빠졌어요. 송장은 버리고 다음 송장을 찍어 주세요.',
+                }}
               />
+              {alert ? (
+                <p role="alert" className="shrink-0 rounded-[10px] border-2 border-[#C8202F] bg-[#FDE8EA] p-3 font-semibold text-[#9E1320]">
+                  {alert.message}
+                </p>
+              ) : null}
             </>
           }
-          right={<RecentList entries={recent} grow />}
+          right={
+            <>
+              <AfterWithdrawal bin={returnBin} exitTo={view.exitTo} />
+              <RecentList entries={recent} grow />
+            </>
+          }
         />
       );
     default:

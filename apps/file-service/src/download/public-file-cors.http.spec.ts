@@ -1,6 +1,6 @@
-import { INestApplication } from '@nestjs/common';
+import { CanActivate, ExecutionContext, INestApplication, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { APP_INTERCEPTOR } from '@nestjs/core';
+import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { Test } from '@nestjs/testing';
 import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -14,6 +14,15 @@ import { LocalFileController } from './local-file.controller';
 
 const FILE_ID = '01933e7a-1234-7890-abcd-0123456789ab';
 const STOREFRONT_ORIGIN = 'https://www.example.com';
+
+/** 전역 인증 가드 자리 — 테넌트 1 사용자로 통과시킨다(테넌트를 모르는 요청은 문이 403). */
+@Injectable()
+class TenantOneUserGuard implements CanActivate {
+  canActivate(context: ExecutionContext): boolean {
+    context.switchToHttp().getRequest<{ user?: object }>().user = { userId: 'u-1', roles: [], tenant: '1' };
+    return true;
+  }
+}
 
 describe('public file browser access', () => {
   let app: INestApplication;
@@ -47,6 +56,7 @@ describe('public file browser access', () => {
             'warn',
           ),
         },
+        { provide: APP_GUARD, useClass: TenantOneUserGuard },
         { provide: APP_INTERCEPTOR, useClass: FileRequestTenantInterceptor },
       ],
     }).compile();

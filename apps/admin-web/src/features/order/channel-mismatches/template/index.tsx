@@ -5,13 +5,25 @@ import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import type { MismatchListScope } from '@/lib/api/domains/channel/order-reconcile-findings.shape';
-import { useMismatches } from '@/lib/services/channel/queries';
 import {
+  useMismatches,
+  useReservationReconcileRuns,
+} from '@/lib/services/channel/queries';
+import {
+  useApplyReservationRun,
   useCloseMismatch,
+  useCloseReservationRun,
   useRedeliverMismatch,
 } from '@/lib/services/channel/mutations';
 import {
+  RUN_REASON_MAX,
+  applyOutcome,
   canAct,
+  exampleText,
+  haltedRunText,
+  isRunInProgress,
+  latestRunText,
+  unknownText,
   emptyText,
   firstSeenText,
   handlingText,
@@ -40,6 +52,46 @@ export default function ChannelMismatchesTemplate() {
   const [closeTarget, setCloseTarget] = useState<CloseTarget | null>(null);
 
   const rows = list.data?.data ?? [];
+
+  // Medusa 예약 대사(#1247) — 멈춘 회차가 있을 때만 크게, 없으면 한 줄
+  const runs = useReservationReconcileRuns();
+  const applyRun = useApplyReservationRun();
+  const closeRun = useCloseReservationRun();
+  const canWriteRuns = usePermissionCheck().canRun(useApplyReservationRun);
+  const [closeRunTarget, setCloseRunTarget] = useState<CloseTarget | null>(
+    null
+  );
+
+  const onApplyRun = (id: string) =>
+    applyRun.mutateAsync(id).then(
+      (run) => {
+        const outcome = applyOutcome(run);
+        if (outcome.tone === 'success') toast.success(outcome.text);
+        else toast.error(outcome.text);
+      },
+      (e) => toast.error(mismatchActionError(e).text)
+    );
+
+  const onCloseRun = (reason: string) => {
+    if (!closeRunTarget) return;
+    void closeRun.mutateAsync({ id: closeRunTarget.id, reason }).then(
+      () => {
+        setCloseRunTarget(null);
+        toast.success('종결');
+      },
+      (e) => {
+        const failure = mismatchActionError(e);
+        if (failure.gone) setCloseRunTarget(null);
+        toast.error(failure.text);
+      }
+    );
+  };
+
+  const openRuns = runs.data?.open ?? [];
+  const latestLine = latestRunText(runs.data?.latest ?? null);
+  // 고치기는 뒤에서 돈다 — 그동안 버튼을 막고, 멈춘 회차 아래에도 마지막 회차(도는 중·건너뜀 등)를 보인다
+  const runInProgress = isRunInProgress(runs.data);
+  const latestIsOpen = openRuns.some((r) => r.id === runs.data?.latest?.id);
 
   // 결과 토스트는 mutateAsync 의 promise 에 건다 — mutate() 쪽 콜백은 다음 호출·언마운트로 유실된다
   const onRedeliver = (id: string) =>
@@ -79,6 +131,81 @@ export default function ChannelMismatchesTemplate() {
           />
         </label>
       </div>
+
+      {runs.isError ? (
+        <p className="text-xs text-red-600">
+          예약 대사 상태: {loadErrorText(runs.error)}
+        </p>
+      ) : openRuns.length > 0 ? (
+        openRuns.map((run) => {
+          const unknown = unknownText(run, now);
+          return (
+            <section
+              key={run.id}
+              className="flex flex-col gap-2 rounded-md border border-red-300 p-3"
+            >
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm font-medium">{haltedRunText(run)}</p>
+                {canWriteRuns && (
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={
+                        runInProgress ||
+                        (applyRun.isPending && applyRun.variables === run.id)
+                      }
+                      onClick={() => void onApplyRun(run.id)}
+                    >
+                      확인했으니 고치기
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() =>
+                        setCloseRunTarget({
+                          id: run.id,
+                          label: haltedRunText(run),
+                          maxLength: RUN_REASON_MAX,
+                        })
+                      }
+                    >
+                      종결
+                    </Button>
+                  </div>
+                )}
+              </div>
+              {run.error && (
+                <p className="text-xs text-muted-foreground">{run.error}</p>
+              )}
+              {latestLine && !latestIsOpen && (
+                <p className="text-xs text-muted-foreground">
+                  마지막 회차 · {latestLine}
+                </p>
+              )}
+              {unknown && (
+                <p className="text-xs text-muted-foreground">{unknown}</p>
+              )}
+              {run.examples.length > 0 && (
+                <ul className="font-mono text-xs text-muted-foreground">
+                  {run.examples.map((e) => (
+                    <li key={e.lineItemId}>{exampleText(e)}</li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          );
+        })
+      ) : (
+        latestLine && (
+          <div className="flex flex-col gap-0.5 text-xs text-muted-foreground">
+            <p>Medusa 예약 대사 · {latestLine}</p>
+            {runs.data?.latest && unknownText(runs.data.latest, now) && (
+              <p>{unknownText(runs.data.latest, now)}</p>
+            )}
+          </div>
+        )
+      )}
 
       {list.isError ? (
         <p className="text-sm text-red-600">{loadErrorText(list.error)}</p>
@@ -168,6 +295,12 @@ export default function ChannelMismatchesTemplate() {
         </p>
       )}
 
+      <CloseDialog
+        target={closeRunTarget}
+        pending={closeRun.isPending}
+        onClose={() => setCloseRunTarget(null)}
+        onSubmit={onCloseRun}
+      />
       <CloseDialog
         target={closeTarget}
         pending={close.isPending}

@@ -23,7 +23,7 @@ export default async function TimeSalePage({
   ])
 
   return (
-    <div className="container mx-auto max-w-[1360px] px-4 py-6 md:px-[40px]">
+    <div className="container mx-auto max-w-[1280px] px-4 py-6 md:px-[32px]">
       <SiteBreadcrumb className="mb-4" items={[{ label: t("titleFirst") + t("titleSecond") }]} />
 
       {/* 세일이 없어도 404 로 보내지 않는다 — 이 링크는 홈·카트·상품상세에 박혀 있어서

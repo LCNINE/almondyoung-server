@@ -1,6 +1,7 @@
 'use client';
 
 import { ReactNode, useState } from 'react';
+import { CompanyRevenueCard } from '../revenue-report/CompanyRevenueCard';
 import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { Search } from 'lucide-react';
@@ -14,24 +15,75 @@ import {
   FormDateRangePicker,
 } from '@/components/common/form';
 import { cn } from '@/lib/utils/ui';
-import { DatePreset, DATE_PRESET_OPTIONS, computeDateRange, toLocalDateString } from '@/lib/utils/date';
+import {
+  DatePreset,
+  DATE_PRESET_OPTIONS,
+  computeDateRange,
+  toLocalDateString,
+} from '@/lib/utils/date';
 import { defaultRange, useStatisticsRange } from '../shared';
 
 /** 탭마다 "이 탭이 답하는 질문"을 함께 둔다 — 탭 아래 안내줄과 종합 탭의 길잡이가 같이 쓴다. */
 export const TABS = [
-  { href: '/statistics/overview', label: '종합', question: '오늘 뭘 해야 하나 — 핵심 지표와 처리할 일을 한눈에' },
-  { href: '/statistics/growth', label: '성장', question: '목표까지 가고 있나 — 유입·전환·재구매 중 무엇을 얼마나 움직여야 하나' },
+  {
+    href: '/statistics/overview',
+    label: '종합',
+    question: '오늘 뭘 해야 하나 — 핵심 지표와 처리할 일을 한눈에',
+  },
+  {
+    href: '/statistics/growth',
+    label: '성장',
+    question:
+      '목표까지 가고 있나 — 유입·전환·재구매 중 무엇을 얼마나 움직여야 하나',
+  },
   { href: '/statistics/sales', label: '매출', question: '얼마나 팔리고 있나' },
-  { href: '/statistics/profit', label: '이익', question: '팔아서 실제로 남고 있나 (원가·수수료 반영)' },
-  { href: '/statistics/inventory', label: '재고', question: '재고가 돈을 얼마나 묶고 있나 — 뭘 털어야 하나' },
-  { href: '/statistics/products', label: '상품', question: '뭐가 팔리고 뭐가 안 팔리나' },
-  { href: '/statistics/customers', label: '고객·멤버십', question: '누가 사고 있나 (등급별)' },
-  { href: '/statistics/keywords', label: '검색 키워드', question: '고객이 뭘 찾나 — 찾는데 없는 건 뭔가' },
-  { href: '/statistics/traffic', label: '유입', question: '어떻게 들어오고 있나 (검색·랜딩·기기)' },
-  { href: '/statistics/insights', label: '고객 분석', question: '한 번 산 고객이 다시 사고 있나' },
-  { href: '/statistics/behavior', label: '행동 분석', question: '보다가 어디서 이탈하나' },
+  {
+    href: '/statistics/profit',
+    label: '이익',
+    question: '팔아서 실제로 남고 있나 (원가·수수료 반영)',
+  },
+  {
+    href: '/statistics/inventory',
+    label: '재고',
+    question: '재고가 돈을 얼마나 묶고 있나 — 뭘 털어야 하나',
+  },
+  {
+    href: '/statistics/products',
+    label: '상품',
+    question: '뭐가 팔리고 뭐가 안 팔리나',
+  },
+  {
+    href: '/statistics/customers',
+    label: '고객·멤버십',
+    question: '누가 사고 있나 (등급별)',
+  },
+  {
+    href: '/statistics/keywords',
+    label: '검색 키워드',
+    question: '고객이 뭘 찾나 — 찾는데 없는 건 뭔가',
+  },
+  {
+    href: '/statistics/traffic',
+    label: '유입',
+    question: '어떻게 들어오고 있나 (검색·랜딩·기기)',
+  },
+  {
+    href: '/statistics/insights',
+    label: '고객 분석',
+    question: '한 번 산 고객이 다시 사고 있나',
+  },
+  {
+    href: '/statistics/behavior',
+    label: '행동 분석',
+    question: '보다가 어디서 이탈하나',
+  },
   { href: '/statistics/reviews', label: '리뷰', question: '산 뒤에 만족했나' },
-  { href: '/statistics/settings', label: '설정', question: '월 고정비·연간 매출 목표 — 흑자·적자와 목표 페이스 판정에 필요한 값' },
+  {
+    href: '/statistics/settings',
+    label: '설정',
+    question:
+      '월 고정비·연간 매출 목표 — 흑자·적자와 목표 페이스 판정에 필요한 값',
+  },
 ];
 
 /** 탭별로 의미 없는 필터를 숨긴다 — 검색 키워드 통계는 채널·집계 단위가 없다. */
@@ -51,26 +103,45 @@ const GRANULARITY_LABELS: Record<GranularityOption, string> = {
   year: '연별',
 };
 
-export const DEFAULT_GRANULARITIES: GranularityOption[] = ['day', 'month', 'year'];
+export const DEFAULT_GRANULARITIES: GranularityOption[] = [
+  'day',
+  'month',
+  'year',
+];
 
 // '전체' 는 기간 필수인 통계에선 의미가 없어 뺀다.
-const PRESET_OPTIONS = DATE_PRESET_OPTIONS.filter((option) => option.value !== 'all');
+const PRESET_OPTIONS = DATE_PRESET_OPTIONS.filter(
+  (option) => option.value !== 'all'
+);
 
-function StatisticsFilter({ options }: { options: Required<StatisticsFilterOptions> }) {
-  const granularityOptions = options.granularities.map((value) => ({ value, label: GRANULARITY_LABELS[value] }));
+function StatisticsFilter({
+  options,
+}: {
+  options: Required<StatisticsFilterOptions>;
+}) {
+  const granularityOptions = options.granularities.map((value) => ({
+    value,
+    label: GRANULARITY_LABELS[value],
+  }));
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const range = useStatisticsRange();
 
-  const [preset, setPreset] = useState<DatePreset>((searchParams.get('preset') as DatePreset) ?? 'custom');
+  const [preset, setPreset] = useState<DatePreset>(
+    (searchParams.get('preset') as DatePreset) ?? 'custom'
+  );
   const [from, setFrom] = useState(range.from);
   const [to, setTo] = useState(range.to);
   const [channel, setChannel] = useState(range.channel ?? '');
   // URL 의 단위가 이 탭에서 지원하지 않는 값이면(다른 탭에서 «주»로 넘어온 경우) 일별로 둔다.
-  const urlGranularity = searchParams.get('granularity') as GranularityOption | null;
+  const urlGranularity = searchParams.get(
+    'granularity'
+  ) as GranularityOption | null;
   const [granularity, setGranularity] = useState<GranularityOption>(
-    urlGranularity && options.granularities.includes(urlGranularity) ? urlGranularity : 'day',
+    urlGranularity && options.granularities.includes(urlGranularity)
+      ? urlGranularity
+      : 'day'
   );
 
   const apply = () => {
@@ -90,7 +161,8 @@ function StatisticsFilter({ options }: { options: Required<StatisticsFilterOptio
     params.set('to', nextTo);
     if (options.granularity) params.set('granularity', granularity);
     if (preset !== 'custom') params.set('preset', preset);
-    if (options.channel && channel.trim()) params.set('channel', channel.trim());
+    if (options.channel && channel.trim())
+      params.set('channel', channel.trim());
     router.replace(`${pathname}?${params.toString()}`);
   };
 
@@ -120,7 +192,11 @@ function StatisticsFilter({ options }: { options: Required<StatisticsFilterOptio
       {preset === 'custom' && (
         <FormField label="조회 구간" direction="horizontal">
           <FormDateRangePicker
-            value={from ? { from: new Date(from), to: to ? new Date(to) : undefined } : undefined}
+            value={
+              from
+                ? { from: new Date(from), to: to ? new Date(to) : undefined }
+                : undefined
+            }
             onChange={(dateRange) => {
               setFrom(dateRange?.from ? toLocalDateString(dateRange.from) : '');
               setTo(dateRange?.to ? toLocalDateString(dateRange.to) : '');
@@ -157,7 +233,10 @@ function StatisticsFilter({ options }: { options: Required<StatisticsFilterOptio
       )}
 
       <div className="flex justify-center gap-2 pt-1">
-        <Button onClick={apply} className="h-9 w-28 bg-orange-500 text-white hover:bg-orange-600">
+        <Button
+          onClick={apply}
+          className="h-9 w-28 bg-orange-500 text-white hover:bg-orange-600"
+        >
           <Search className="mr-1.5 h-4 w-4" />
           조회
         </Button>
@@ -182,7 +261,12 @@ export function StatisticsShell({
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const qs = searchParams.toString();
-  const options = { channel: true, granularity: true, granularities: DEFAULT_GRANULARITIES, ...filterOptions };
+  const options = {
+    channel: true,
+    granularity: true,
+    granularities: DEFAULT_GRANULARITIES,
+    ...filterOptions,
+  };
   const activeTab = TABS.find((tab) => pathname.startsWith(tab.href));
 
   return (
@@ -202,7 +286,7 @@ export function StatisticsShell({
                 'px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap',
                 active
                   ? 'border-orange-500 text-orange-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-800',
+                  : 'border-transparent text-gray-500 hover:text-gray-800'
               )}
             >
               {tab.label}
@@ -218,6 +302,7 @@ export function StatisticsShell({
         <div className="mb-4" />
       )}
       {hideFilter ? null : <StatisticsFilter options={options} />}
+      <CompanyRevenueCard />
       {children}
     </Container>
   );

@@ -1,6 +1,6 @@
 import 'fake-indexeddb/auto';
 import { QueryObserver } from '@tanstack/react-query';
-import { screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { fetchPendingRefills } from '../../domains/outbound/refills';
 import { WAREHOUSE_ID } from './__fixtures__/outboundServer';
@@ -36,11 +36,33 @@ describe('보충 대기(스펙 §7.3)', () => {
     expect(screen.queryByRole('region', { name: '보충 대기' })).toBeNull();
   });
 
-  it('조회가 실패하면(PR A 이전 core) 그리지 않는다', async () => {
+  it('조회가 실패하면 빈 것처럼 숨기지 않고 알린다 — 다시 확인하면 목록을 보인다', async () => {
     const { server } = await setupInspection({ refills: 'fail' });
-    await waitFor(() => expect(refillRequests(server)).toBeGreaterThan(0));
-    expect(screen.queryByRole('region', { name: '보충 대기' })).toBeNull();
+    const panel = await screen.findByRole('region', { name: '보충 대기' });
+    expect(await within(panel).findByRole('alert')).toHaveTextContent('보충 대기를 불러오지 못했어요.');
     expect(screen.getByText('송장 바코드')).toBeInTheDocument();
+
+    const release = server.holdLists();
+    fireEvent.click(within(panel).getByRole('button', { name: '다시 확인' }));
+    expect(await within(panel).findByRole('button', { name: '확인하는 중…' })).toBeDisabled();
+    expect(within(panel).getByRole('alert')).toHaveTextContent('보충 대기를 불러오지 못했어요.');
+
+    server.config.refillsFail = false;
+    server.config.refills = PENDING;
+    release();
+    expect(await within(panel).findByText('퍼머넌트 1제 웨이브')).toBeInTheDocument();
+    expect(within(panel).queryByRole('alert')).toBeNull();
+  });
+
+  it('이미 읽은 목록은 갱신이 실패해도 남기고, 마지막으로 불러온 상태라고 알린다', async () => {
+    const { server, queryClient } = await setupInspection({ refills: PENDING });
+    const panel = await screen.findByRole('region', { name: '보충 대기' });
+    await within(panel).findByText('퍼머넌트 1제 웨이브');
+
+    server.config.refillsFail = true;
+    await queryClient.refetchQueries({ queryKey: ['outbound-refills'] });
+    expect(await within(panel).findByRole('alert')).toHaveTextContent('마지막으로 불러온');
+    expect(within(panel).getByText('퍼머넌트 1제 웨이브')).toBeInTheDocument();
   });
 
   it('결품으로 채우면 바로 다시 조회한다 — 30초를 기다리지 않는다', async () => {

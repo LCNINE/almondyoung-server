@@ -5,13 +5,19 @@ import type {
 } from '@/lib/types/dto/fulfillment';
 import { buildConsolidationRequest } from './consolidation-model';
 import {
+  boxNoText,
   freshCommand,
   isStaleVersionConflict,
+  itemsTotalText,
   keptAfterFailure,
+  mergedItems,
+  mergedToastText,
   needsReopenPermission,
   needsUnwindSteps,
   optionCard,
+  sharesSplitOrder,
   showsConsolidationButton,
+  splitShareText,
   step2Blocker,
   togglePick,
   type SheetPermissions,
@@ -209,7 +215,7 @@ describe('2단계 요청 버튼', () => {
     needsReopen: false,
     hasMemoChoices: false,
     memoFrom: 'a',
-    reason: '고객 요청',
+    reasonReady: true,
   };
 
   it('메모가 다른 주문을 고르면 메모를 골라야 요청이 켜진다', () => {
@@ -221,9 +227,9 @@ describe('2단계 요청 버튼', () => {
     ).toBeNull();
   });
 
-  it('작업 사유가 비면 요청이 꺼진다', () => {
-    expect(step2Blocker({ ...ready, reason: '  ' })).toBe(
-      '작업 사유를 적어 주세요'
+  it('작업 사유가 덜 채워지면 요청이 꺼진다', () => {
+    expect(step2Blocker({ ...ready, reasonReady: false })).toBe(
+      '작업 사유를 골라 주세요'
     );
   });
 
@@ -382,6 +388,116 @@ describe('요청', () => {
     ).toBeNull();
     expect(
       keptAfterFailure(sent, { statusCode: 403, message: 'x' })
+    ).toBeNull();
+  });
+});
+
+describe('나눈 상자 표시', () => {
+  const left = shipment('a', {
+    salesOrderNos: ['SO-1'],
+    split: { boxQty: 2, orderQty: 5, boxNo: 1, boxCount: 2 },
+  });
+  const right = shipment('b', {
+    salesOrderNos: ['SO-1'],
+    split: { boxQty: 3, orderQty: 5, boxNo: 2, boxCount: 2 },
+  });
+  const other = shipment('c', { salesOrderNos: ['SO-2'] });
+
+  it('몫이 없거나 옛 응답이면 문구를 만들지 않는다', () => {
+    expect(splitShareText(left.split)).toBe('나눈 상자 1/2 · 주문 5개 중 2개');
+    expect(splitShareText(null)).toBeNull();
+    expect(splitShareText(undefined)).toBeNull();
+    expect(boxNoText(left)).toBe('#SO-1 상자 1/2(2개)');
+    expect(boxNoText(other)).toBe('#SO-2');
+  });
+
+  it('수량이 같은 상자도 번호로 구분한다', () => {
+    const one = shipment('x', {
+      salesOrderNos: ['SO-1'],
+      split: { boxQty: 1, orderQty: 2, boxNo: 1, boxCount: 2 },
+    });
+    const two = shipment('y', {
+      salesOrderNos: ['SO-1'],
+      split: { boxQty: 1, orderQty: 2, boxNo: 2, boxCount: 2 },
+    });
+
+    expect(boxNoText(one)).not.toBe(boxNoText(two));
+    expect(splitShareText(one.split)).not.toBe(splitShareText(two.split));
+  });
+
+  it('같은 주문의 나눈 상자가 후보에 있을 때만 알린다', () => {
+    expect(sharesSplitOrder(left, [right, other])).toBe(true);
+    expect(sharesSplitOrder(left, [other])).toBe(false);
+    expect(sharesSplitOrder(other, [right])).toBe(false);
+  });
+
+  it('같은 주문을 나눈 상자끼리 합쳤을 때만 다시 합쳤다고 알린다', () => {
+    expect(mergedToastText([left, right])).toBe(
+      '나눈 상자 2개를 다시 한 상자로 합쳤어요: #SO-1'
+    );
+    expect(mergedToastText([left, other])).toBe('합포장했어요.');
+    expect(mergedToastText([])).toBe('합포장했어요.');
+  });
+});
+
+describe('합칠 상품과 수량', () => {
+  const lipBalm = { skuId: 'sku-1', name: '립밤', qty: 1 };
+
+  it('같은 상품은 합산하고 주문마다 몇 개씩인지 남긴다', () => {
+    const merged = mergedItems([
+      shipment('a', { items: [lipBalm] }),
+      shipment('b', {
+        items: [
+          { ...lipBalm, qty: 2 },
+          { skuId: 'sku-2', name: '핸드크림', qty: 1 },
+        ],
+      }),
+    ]);
+
+    expect(merged).toEqual([
+      {
+        skuId: 'sku-1',
+        name: '립밤',
+        qty: 3,
+        parts: [
+          { label: '#SO-a', qty: 1 },
+          { label: '#SO-b', qty: 2 },
+        ],
+      },
+      {
+        skuId: 'sku-2',
+        name: '핸드크림',
+        qty: 1,
+        parts: [{ label: '#SO-b', qty: 1 }],
+      },
+    ]);
+    expect(itemsTotalText(merged ?? [])).toBe('2종 · 총 4개');
+  });
+
+  it('같은 주문을 나눈 상자는 상자 번호로 구분한다', () => {
+    const split = { boxQty: 1, orderQty: 2, boxNo: 1, boxCount: 2 };
+    const merged = mergedItems([
+      shipment('a', {
+        salesOrderNos: ['SO-1'],
+        items: [lipBalm],
+        split,
+      }),
+      shipment('b', {
+        salesOrderNos: ['SO-1'],
+        items: [lipBalm],
+        split: { ...split, boxNo: 2 },
+      }),
+    ]);
+
+    expect(merged?.[0].parts.map((part) => part.label)).toEqual([
+      '#SO-1 상자 1/2(1개)',
+      '#SO-1 상자 2/2(1개)',
+    ]);
+  });
+
+  it('상품별 수량을 아직 주지 않는 응답이면 합치지 않는다', () => {
+    expect(
+      mergedItems([shipment('a', { items: [lipBalm] }), shipment('b')])
     ).toBeNull();
   });
 });

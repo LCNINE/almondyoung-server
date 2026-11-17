@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { formatInTimeZone } from 'date-fns-tz';
 import { and, asc, desc, eq, gt, notInArray, sql } from 'drizzle-orm';
 import { DbService, InjectTypedDb } from '@app/db';
 import { NotFoundError } from '@app/shared';
@@ -7,9 +8,16 @@ import { canonicalFulfillmentRequestHash } from '../services/fulfillment-command
 import { WAYBILL, WAYBILL_TERMINAL_STATUSES } from './waybill.constants';
 import type { IssueContext, LabelAllocation, WaybillRow } from './waybill.types';
 import { warehouseIdOf } from '../shipment/shipment-owner';
-import { labelLocationCode } from './label/label-items';
+import { labelLocationCode, labelSkuNameOf } from './label/label-items';
 
 const W = inventoryTables.waybills;
+
+/** 라벨의 주문번호 — `주문일(KST yyyyMMdd)-화면 주문번호`. 화면 번호가 없는 주문은 null(라벨이 상관키로 떨어진다) */
+export function labelOrderNoOf(order: { displayOrderNo: string | null; orderDate: Date | null }): string | null {
+  if (!order.displayOrderNo || !order.orderDate) return null;
+
+  return `${formatInTimeZone(order.orderDate, 'Asia/Seoul', 'yyyyMMdd')}-${order.displayOrderNo}`;
+}
 
 @Injectable()
 export class WaybillReader {
@@ -33,6 +41,8 @@ export class WaybillReader {
         skuName: inventoryTables.skus.name,
         productName: inventoryTables.salesOrderLines.productName,
         quantity: inventoryTables.shipmentLines.qty,
+        displayOrderNo: inventoryTables.salesOrders.displayOrderNo,
+        orderDate: inventoryTables.salesOrders.orderDate,
       })
       .from(inventoryTables.shipmentLines)
       .innerJoin(
@@ -67,6 +77,7 @@ export class WaybillReader {
         skuId: r.skuId,
       })),
       entrancePassword: shipment.entrancePassword,
+      orderNos: [...new Set(rows.flatMap((r) => labelOrderNoOf(r) ?? []))],
     };
   }
 
@@ -122,6 +133,7 @@ export class WaybillReader {
         shelfCode: inventoryTables.skuShelfPositions.positionCode,
         skuId: inventoryTables.shipmentLines.skuId,
         skuName: inventoryTables.skus.name,
+        optionKey: inventoryTables.skus.optionKey,
         qty: A.qty,
       })
       .from(A)
@@ -136,8 +148,9 @@ export class WaybillReader {
       batchStarted: item.batchStartedAt !== null,
       withdrawing: active?.status === 'withdrawing',
       lines,
-      rows: rows.map(({ systemRole, shelfCode, ...row }) => ({
+      rows: rows.map(({ systemRole, shelfCode, optionKey, ...row }) => ({
         ...row,
+        skuName: labelSkuNameOf(row.skuName, optionKey),
         locationCode: labelLocationCode({ locationCode: row.locationCode, systemRole, shelfCode }),
       })),
     };

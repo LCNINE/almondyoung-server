@@ -13,4 +13,19 @@ describe('channel-cancellation-capability ↔ channel-adapter CHANNEL_CAPABILITI
         CHANNEL_CAPABILITIES[ch as keyof typeof CHANNEL_CAPABILITIES].fulfillment.automatedCancellation,
       ),
   );
+
+  it.each(Object.keys(CHANNEL_CAPABILITIES))(
+    '%s — «고객 취소요청에 답한다»가 channel-adapter 의 approvesCustomerCancelRequest 와 같다',
+    (ch) =>
+      expect(CHANNEL_CANCELLATION_CAPABILITIES[ch as SalesChannelName].answersCustomerCancelRequest).toBe(
+        CHANNEL_CAPABILITIES[ch as keyof typeof CHANNEL_CAPABILITIES].fulfillment.approvesCustomerCancelRequest,
+      ),
+  );
+
+  it('고객 취소요청에 답하는 채널은 네이버·쿠팡뿐이다', () =>
+    expect(
+      Object.keys(CHANNEL_CANCELLATION_CAPABILITIES).filter(
+        (ch) => CHANNEL_CANCELLATION_CAPABILITIES[ch as SalesChannelName].answersCustomerCancelRequest,
+      ),
+    ).toEqual(['naver', 'coupang']));
 });

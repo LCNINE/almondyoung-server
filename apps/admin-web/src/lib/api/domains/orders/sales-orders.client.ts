@@ -18,6 +18,7 @@ import type {
   DailyOrderStatusDto,
   SalesOrderDto,
   SalesOrderBusinessTimelineItemDto,
+  SalesOrderShipmentOperationsDto,
   SalesOrdersQuery,
   SalesOrdersResponseDto,
   UpdateSalesOrderDto,
@@ -195,6 +196,15 @@ export const salesOrders = {
     const response = await client.post(
       `${ALMONDYOUNG_API_BASE_URL}/admin/sales-orders/${encodeURIComponent(id)}/refund-waive`,
       { adminNote, refundLinkId }
+    );
+    return response.data;
+  },
+
+  getSalesOrderShipmentOperations: async (
+    id: string
+  ): Promise<SalesOrderShipmentOperationsDto> => {
+    const response = await client.get(
+      `${ALMONDYOUNG_API_BASE_URL}/sales-orders/${encodeURIComponent(id)}/shipment-operations`
     );
     return response.data;
   },

@@ -49,6 +49,30 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
     predicate: '@UseGuards(JwtAuthGuard, PermissionGuard)',
     note: '대시보드 요약(오늘/어제 전사 매출 + 활성 멤버십 수) — 사용자 소유 리소스 파라미터가 없어 IDOR 대상 아님. JwtAuthGuard 로 인증 요구. 응답이 전사 매출 수치라 관리자 스코프 제한은 analytics 전반 스코프 도입과 함께 별도 검토.',
   },
+  'analytics GET /statistics/revenue-report': {
+    verdict: 'N/A',
+    evidence: 'apps/analytics/src/features/statistics/api/revenue-report.controller.ts:118',
+    predicate: "@RequirePermission('analytics.report.read')",
+    note: '연도별 전사 매출 자료. 연도만 받고 개인 소유 자원을 선택하지 않는다. 클래스의 JwtAuthGuard·PermissionGuard와 served-tenant 권한 설정을 함께 적용한다.',
+  },
+  'analytics GET /statistics/revenue-report/history': {
+    verdict: 'N/A',
+    evidence: 'apps/analytics/src/features/statistics/api/revenue-report.controller.ts:124',
+    predicate: "@RequirePermission('analytics.report.read')",
+    note: '연도별 전사 매출 자료의 최근 반영 이력. 사용자가 타인의 이력 ID를 지정하는 경로가 아니며 연도만 받는다. JwtAuthGuard·PermissionGuard와 analytics served-tenant 권한을 적용한다. 조회 서비스는 해당 연도의 변경 행이 있는 이력만 최근 50개 반환한다.',
+  },
+  'analytics GET /statistics/revenue-report/raw': {
+    verdict: 'N/A',
+    evidence: 'apps/analytics/src/features/statistics/api/revenue-report.controller.ts:130',
+    predicate: "@RequirePermission('analytics.report.read')",
+    note: '연도·페이지로 조회하는 전사 주문 상품 원장. 고객 개인정보를 선택하지 않으며 개별 고객 소유권이 아닌 통계 조회 권한으로 접근한다. 클래스의 JwtAuthGuard·PermissionGuard와 served-tenant 권한 설정을 함께 적용한다.',
+  },
+  'analytics POST /statistics/revenue-report/external': {
+    verdict: 'N/A',
+    evidence: 'apps/analytics/src/features/statistics/api/revenue-report.controller.ts:136',
+    predicate: "@RequirePermission('analytics.setting.write')",
+    note: '전사 월별 채널 매출의 등록·교체. 계정은 보고서 구분용 문자열이며 로그인 계정이나 다른 사용자의 자원 식별자가 아니다. 클래스의 JwtAuthGuard·PermissionGuard와 served-tenant 권한 설정을 함께 적용한다.',
+  },
   'analytics GET /statistics/sales': {
     verdict: 'N/A',
     evidence: 'apps/analytics/src/features/statistics/api/statistics.controller.ts:15',
@@ -171,33 +195,33 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'core GET /store/orders/:id/actions': {
     verdict: 'SAFE',
-    evidence: 'apps/core/src/modules/sales-order/services/store-sales-orders.service.ts:369',
+    evidence: 'apps/core/src/modules/sales-order/services/store-sales-orders.service.ts:375',
     predicate: 'if (customerId !== undefined && so.customerId !== customerId)',
     note: 'getActions -> findSoOrThrow({id: orderId}, customerId) 호출, 실제 소유권 검증은 findSoOrThrow 내부.',
   },
   'core GET /store/orders/:id/tracking': {
     verdict: 'SAFE',
-    evidence: 'apps/core/src/modules/sales-order/services/store-sales-orders.service.ts:369',
+    evidence: 'apps/core/src/modules/sales-order/services/store-sales-orders.service.ts:375',
     predicate: 'if (customerId !== undefined && so.customerId !== customerId)',
     note: 'getTracking -> findSoOrThrow({id: orderId}, customerId).',
   },
   'core GET /store/orders/by-channel-order/:channelOrderId/actions': {
     verdict: 'SAFE',
-    evidence: 'apps/core/src/modules/sales-order/services/store-sales-orders.service.ts:369',
+    evidence: 'apps/core/src/modules/sales-order/services/store-sales-orders.service.ts:375',
     predicate: 'if (customerId !== undefined && so.customerId !== customerId)',
     note: "getActionsByChannelOrder -> findSoOrThrow({channelOrderId, salesChannel:'medusa'}, customerId).",
   },
   'core GET /store/orders/by-channel-order/:channelOrderId/tracking': {
     verdict: 'SAFE',
-    evidence: 'apps/core/src/modules/sales-order/services/store-sales-orders.service.ts:369',
+    evidence: 'apps/core/src/modules/sales-order/services/store-sales-orders.service.ts:375',
     predicate: 'if (customerId !== undefined && so.customerId !== customerId)',
     note: "getTrackingByChannelOrder -> findSoOrThrow({channelOrderId, salesChannel:'medusa'}, customerId).",
   },
   'core GET /store/orders/by-channel-order/:channelOrderId/returns/:channelReturnId/progress': {
     verdict: 'SAFE',
-    evidence: 'apps/core/src/modules/sales-order/services/store-sales-orders.service.ts:784',
+    evidence: 'apps/core/src/modules/sales-order/services/store-sales-orders.service.ts:799',
     predicate: "if (so.customerId !== customerId) throw new NotFoundException('반품을 찾을 수 없습니다.');",
-    note: 'getReturnProgressByChannelOrder: 주문을 channelOrderId 로 찾고 so.customerId 가 토큰의 userId 와 다르면 404(존재 여부를 흘리지 않는다). 반품은 그 주문의 salesOrderId 와 channelReturnId 둘 다로 좁힌다(같은 파일 789행) — 남의 주문 반품 id 를 넣어도 내 주문 아래에서만 찾는다.',
+    note: 'getReturnProgressByChannelOrder: 주문을 channelOrderId 로 찾고 so.customerId 가 토큰의 userId 와 다르면 404(존재 여부를 흘리지 않는다). 반품은 그 주문의 salesOrderId 와 channelReturnId 둘 다로 좁힌다(같은 파일 804행) — 남의 주문 반품 id 를 넣어도 내 주문 아래에서만 찾는다.',
   },
   'core GET /store/orders/by-wallet-intent/:walletIntentId/digital-exercised': {
     verdict: 'SAFE',
@@ -213,45 +237,45 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'core POST /store/orders/:id/cancel-request': {
     verdict: 'SAFE',
-    evidence: 'apps/core/src/modules/sales-order/services/store-sales-orders.service.ts:369',
+    evidence: 'apps/core/src/modules/sales-order/services/store-sales-orders.service.ts:375',
     predicate: 'if (customerId !== undefined && so.customerId !== customerId)',
     note: 'cancelRequest -> findSoOrThrow({id: orderId}, customerId) -> processCancelRequest 는 이미 소유권 검증된 so 만 사용.',
   },
   'core POST /store/orders/by-channel-order/:channelOrderId/cancel-request': {
     verdict: 'SAFE',
-    evidence: 'apps/core/src/modules/sales-order/services/store-sales-orders.service.ts:369',
+    evidence: 'apps/core/src/modules/sales-order/services/store-sales-orders.service.ts:375',
     predicate: 'if (customerId !== undefined && so.customerId !== customerId)',
     note: "cancelRequestByChannelOrder -> findSoOrThrow({channelOrderId, salesChannel:'medusa'}, customerId).",
   },
   'core POST /store/orders/by-channel-order/actions/batch': {
     verdict: 'SAFE',
-    evidence: 'apps/core/src/modules/sales-order/services/store-sales-orders.service.ts:318',
+    evidence: 'apps/core/src/modules/sales-order/services/store-sales-orders.service.ts:324',
     predicate: 'eq(inventoryTables.salesOrders.customerId, customerId),',
     note: 'getActionsByChannelOrderBatch; channelOrderIds IN + customerId 조건으로 직접 필터 (타인 주문은 결과셋에서 조용히 제외됨, DTO에 @ArrayMaxSize(100)).',
   },
   'file-service DELETE /files/:fileId': {
     verdict: 'SAFE',
-    evidence: 'apps/file-service/src/access/file-access.ts:96',
+    evidence: 'apps/file-service/src/access/file-access.ts:102',
     predicate: 'if (file.uploadedBy === user.userId) return true;',
-    note: 'LifecycleController.deleteFile -> FileAccess.delete(fileId, user) (file-access.ts:65) -> isOwnerOrFileManager(file, user) (file-access.ts:70) gates the softDelete call on file.uploadedBy === user.userId, else the checkpoint file.owner_exception (system.file.manage; core delegation token = system principal). repo.softDelete(id) itself (file.repository.ts:44) only filters by eq(uploads.id, id), so all ownership enforcement lives in this application-layer check. Delete is NOT widened by the staff-context path — that path lives in loadReadable only.',
+    note: 'LifecycleController.deleteFile -> FileAccess.delete(fileId, user) (file-access.ts:80) -> isOwnerOrFileManager(file, user) (file-access.ts:85) gates the softDelete call on file.uploadedBy === user.userId, else the checkpoint file.owner_exception (system.file.manage; core delegation token = system principal). repo.softDelete(id) itself (file.repository.ts:44) only filters by eq(uploads.id, id), so all ownership enforcement lives in this application-layer check. Delete is NOT widened by the staff-context path — that path lives in loadReadable only.',
   },
   'file-service GET /files/:fileId/download': {
     verdict: 'SAFE',
-    evidence: 'apps/file-service/src/access/file-access.ts:96',
+    evidence: 'apps/file-service/src/access/file-access.ts:102',
     predicate: 'if (file.uploadedBy === user.userId) return true;',
-    note: "DownloadController.getSignedUrl -> DownloadService.getSignedUrl (apps/file-service/src/download/download.service.ts:21) -> FileAccess.loadReadable(fileId, user) (file-access.ts:36) -> isOwnerOrFileManager (file-access.ts:86) compares file.uploadedBy against caller's own userId, else requires system.file.manage. A further allow path (file-access.ts:47-50): a caller holding the screen permission of the file's context (STAFF_CONTEXT_PERMISSIONS: digital-asset-file -> catalog.product.read, archive-page-attachment -> archive.page.read) may read files of that context. That is an intentional permission grant for admin review, not an IDOR: it is scoped by context, not by object id, and file-access.spec.ts asserts admin still cannot read a business-license file. Everything else throws ForbiddenError.",
+    note: "DownloadController.getSignedUrl -> DownloadService.getSignedUrl (apps/file-service/src/download/download.service.ts:16) -> FileAccess.loadReadable(fileId, user) (file-access.ts:50) -> isOwnerOrFileManager (file-access.ts:101) compares file.uploadedBy against caller's own userId, else requires system.file.manage. A further allow path (file-access.ts:61-68): a caller holding the screen permission of the file's context (STAFF_CONTEXT_PERMISSIONS: digital-asset-file -> catalog.product.read, archive-page-attachment -> archive.page.read, inbound-shipment-list -> inventory.stock.read) may read files of that context. That is an intentional permission grant for admin review, not an IDOR: it is scoped by context, not by object id, and file-access.spec.ts asserts admin still cannot read a business-license file. Everything else throws ForbiddenError.",
   },
   'file-service GET /files/:fileId/open': {
     verdict: 'SAFE',
-    evidence: 'apps/file-service/src/access/file-access.ts:96',
+    evidence: 'apps/file-service/src/access/file-access.ts:102',
     predicate: 'if (file.uploadedBy === user.userId) return true;',
-    note: "DownloadController.openFile -> DownloadService.getSignedUrl (apps/file-service/src/download/download.service.ts:21) -> FileAccess.loadReadable(fileId, user) (file-access.ts:36) -> isOwnerOrFileManager (file-access.ts:86) compares file.uploadedBy against the caller's own userId before the row is returned; the route then 302s to a 5-minute signed URL for that same row. Same gate as GET /files/:fileId/download — this route only changes the response shape (redirect instead of JSON) so a plain anchor in archive body text can open a private attachment. The staff-context allow path (file-access.ts:47-50) covers archive-page-attachment via archive.page.read: an intentional permission grant scoped by context, not by object id, and file-access.spec.ts asserts a non-staff caller is still refused.",
+    note: "DownloadController.openFile -> DownloadService.getSignedUrl (apps/file-service/src/download/download.service.ts:16) -> FileAccess.loadReadable(fileId, user) (file-access.ts:50) -> isOwnerOrFileManager (file-access.ts:101) compares file.uploadedBy against the caller's own userId before the row is returned; the route then 302s to a 5-minute signed URL for that same row. Same gate as GET /files/:fileId/download — this route only changes the response shape (redirect instead of JSON) so a plain anchor in archive body text can open a private attachment. The staff-context allow path (file-access.ts:61-68) covers archive-page-attachment via archive.page.read: an intentional permission grant scoped by context, not by object id, and file-access.spec.ts asserts a non-staff caller is still refused.",
   },
   'file-service GET /files/:fileId/metadata': {
     verdict: 'SAFE',
-    evidence: 'apps/file-service/src/access/file-access.ts:96',
+    evidence: 'apps/file-service/src/access/file-access.ts:102',
     predicate: 'if (file.uploadedBy === user.userId) return true;',
-    note: 'DownloadController.getMetadata -> DownloadService.getMetadata (download.service.ts:50) -> FileAccess.loadReadable(fileId, user) -> same isOwnerOrFileManager ownership check as the download route, and the same staff-context permission path at file-access.ts:47-50.',
+    note: 'DownloadController.getMetadata -> DownloadService.getMetadata (download.service.ts:52) -> FileAccess.loadReadable(fileId, user) -> same isOwnerOrFileManager ownership check as the download route, and the same staff-context permission path at file-access.ts:61-68.',
   },
   'file-service POST /files/batch-upload': {
     verdict: 'N/A',
@@ -1744,15 +1768,15 @@ const keyOf = (r: AuditRow): string => `${r.app} ${r.verb} ${r.route}`;
 describe('IDOR 검사 대상 집합', () => {
   it('감사 스크립트가 idorTarget 을 내보낸다', () => {
     const targets = runAudit().filter((r) => r.idorTarget);
-    expect(targets).toHaveLength(283);
+    expect(targets).toHaveLength(287);
   });
 
   // search 와 analytics 가 둘 다 `GET /health` 이고, user-service 와 file-service 가 둘 다
   // `POST /files/upload` 다. `<VERB> <route>` 로 키를 만들면 그만큼 뭉개지고 스냅샷이 조용히 잃는다.
   it('키에 app 이 들어가야 충돌하지 않는다', () => {
     const targets = runAudit().filter((r) => r.idorTarget);
-    expect(new Set(targets.map(keyOf)).size).toBe(283);
-    expect(new Set(targets.map((r) => `${r.verb} ${r.route}`)).size).toBe(281);
+    expect(new Set(targets.map(keyOf)).size).toBe(287);
+    expect(new Set(targets.map((r) => `${r.verb} ${r.route}`)).size).toBe(285);
   });
 
   it('감사 스크립트의 대상 집합과 명단이 정확히 일치한다', () => {

@@ -27,7 +27,7 @@ export async function CategoryPaginationLinks({
           data-page-prev
           href={href(page - 1)}
           rel="prev"
-          className="text-muted-foreground hover:text-primary"
+          className="text-muted-foreground hover:text-mint-deep"
         >
           {t("prevPage")}
         </LocalizedClientLink>
@@ -37,7 +37,7 @@ export async function CategoryPaginationLinks({
           data-page-next
           href={href(page + 1)}
           rel="next"
-          className="text-muted-foreground hover:text-primary"
+          className="text-muted-foreground hover:text-mint-deep"
         >
           {t("nextPage")}
         </LocalizedClientLink>

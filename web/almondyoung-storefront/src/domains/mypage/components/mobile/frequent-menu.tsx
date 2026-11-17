@@ -21,7 +21,7 @@ export function FrequentMenu() {
         <h2 className="text-base font-bold text-black">{t("title")}</h2>
         <LocalizedClientLink
           href="/mypage/menu"
-          className="text-primary flex items-center gap-0.5 text-xs font-medium"
+          className="text-mint-deep flex items-center gap-0.5 text-xs font-medium"
         >
           {t("viewAll")}
           <ChevronRight className="h-3.5 w-3.5" />
@@ -33,7 +33,7 @@ export function FrequentMenu() {
           <LocalizedClientLink
             key={key}
             href={href}
-            className="hover:border-primary hover:text-primary shrink-0 rounded-md border border-gray-200 px-3.5 py-2 text-sm font-medium whitespace-nowrap text-gray-700 transition-colors"
+            className="hover:border-mint-deep hover:text-mint-deep shrink-0 rounded-md border border-gray-200 px-3.5 py-2 text-sm font-medium whitespace-nowrap text-gray-700 transition-colors"
           >
             {t(key)}
           </LocalizedClientLink>

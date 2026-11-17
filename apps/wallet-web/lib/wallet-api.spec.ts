@@ -1,4 +1,4 @@
-import { cancelPaymentIntent, confirmPaymentIntent } from './wallet-api';
+import { cancelPaymentIntent, confirmPaymentIntent, getTossWidgetConfig } from './wallet-api';
 
 describe('wallet payment mutations', () => {
   const originalFetch = global.fetch;
@@ -48,5 +48,16 @@ describe('wallet payment mutations', () => {
         'Idempotency-Key': expect.any(String),
       }),
     );
+  });
+
+  it('distinguishes an unconfigured widget from failed configuration lookup', async () => {
+    global.fetch = jest.fn().mockResolvedValue(Response.json(null));
+    await expect(getTossWidgetConfig()).resolves.toBeNull();
+    global.fetch = jest.fn().mockResolvedValue(new Response(null, { status: 401 }));
+    await expect(getTossWidgetConfig()).rejects.toMatchObject({ name: 'WalletSessionExpiredError' });
+    global.fetch = jest.fn().mockResolvedValue(new Response(null, { status: 503 }));
+    await expect(getTossWidgetConfig()).rejects.toThrow('503');
+    global.fetch = jest.fn().mockRejectedValue(new Error('network'));
+    await expect(getTossWidgetConfig()).rejects.toThrow('network');
   });
 });

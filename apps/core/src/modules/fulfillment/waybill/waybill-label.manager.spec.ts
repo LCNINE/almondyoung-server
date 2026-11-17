@@ -3,7 +3,7 @@ import { DbTx } from '../../inventory/schema/inventory.schema';
 import type { HanjinConfig } from './carrier/hanjin/hanjin.config';
 import { buildHanjinLabelContent } from './carrier/hanjin/label/hanjin-label-data';
 import type { LabelItem } from './label/label-items';
-import { SvgRasterizer } from './label/svg-rasterizer';
+import { SvgRasterizer } from '../../../platform/label/svg-rasterizer';
 import { assertContextMatchesWaybill, assertLabelAvailable, WaybillLabelManager } from './waybill-label.manager';
 import type { IssueContext } from './waybill.types';
 
@@ -105,6 +105,7 @@ describe('WaybillLabelManager.render — labelType 배선', () => {
     },
     lines: [{ productName: '토익 Speaking', skuName: '토익 Speaking', quantity: 1, skuId: 'k1' }],
     entrancePassword: '#1234',
+    orderNos: [],
   };
 
   const CONFIG_BASE: Omit<HanjinConfig, 'labelType'> = {

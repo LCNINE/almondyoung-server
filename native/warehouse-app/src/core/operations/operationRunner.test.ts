@@ -2,7 +2,9 @@ import { describe, it, expect, vi } from 'vitest';
 import 'fake-indexeddb/auto';
 import { createOperationStore } from './operationStore';
 import { createOperationRunner } from './operationRunner';
-import { ApiError, type ApiClient } from '../data/httpClient';
+import { ApiError, NetworkError, type ApiClient } from '../data/httpClient';
+import { workStatus } from './workStatus';
+import { unsentCount } from '../../station/status/statusBarItems';
 import { errorMessage } from '../data/errorMessage';
 
 describe('durable requests', () => {
@@ -320,6 +322,128 @@ for (const path of [
   });
 }
 
+it.each([undefined, 'FORBIDDEN'])(
+  'settles a first adjustment 403 and allows inbound (%s)',
+  async (code) => {
+    const store = createOperationStore(crypto.randomUUID());
+    const inbound = {
+      id: 'receipt',
+      lines: [{ id: 'line', skuId: 's', quantity: 1 }],
+    };
+    const runner = createOperationRunner({
+      store,
+      getScope: async () => 'a',
+      api: {
+        request: async <T>(o: Parameters<ApiClient['request']>[0]) => {
+          if (o.path === '/inventory/stocks/adjust')
+            throw new ApiError('denied', 403, code, undefined, undefined, [
+              'inventory.stock.adjust',
+            ]);
+
+          return inbound as T;
+        },
+      },
+    });
+    const request = {
+      method: 'POST',
+      path: '/inventory/stocks/adjust',
+      body: { skuId: 's', locationId: 'l', delta: 1 },
+      idempotencyKey: 'denied',
+    };
+    const error = await runner.request(request).catch((e: unknown) => e);
+
+    expect(error).toMatchObject({
+      status: 403,
+      outcome: 'rejected',
+      requiredPermissions: ['inventory.stock.adjust'],
+    });
+    expect(errorMessage(error, 'adjust')).toBe(
+      '재고 조정 권한이 없어요. 관리자에게 요청해 주세요.'
+    );
+    expect(await store.get('denied')).toMatchObject({
+      status: 'rejected',
+      errorStatus: 403,
+    });
+    expect(await store.pending('a')).toEqual([]);
+    await vi.waitFor(() => expect(runner.getSnapshot()).toEqual([]));
+    expect(workStatus(runner.getSnapshot(), Date.now()).blocksWork).toBe(false);
+    expect(unsentCount(runner.getSnapshot(), Date.now())).toBe(0);
+    await expect(runner.request(request)).rejects.toMatchObject({
+      status: 403,
+    });
+    await expect(
+      runner.request({
+        method: 'POST',
+        path: '/inbound/simple',
+        body: { warehouseId: 'w' },
+        idempotencyKey: 'inbound',
+      })
+    ).resolves.toEqual(inbound);
+  }
+);
+
+it('keeps adjustment uncertainty when a network loss is followed by 403', async () => {
+  const store = createOperationStore(crypto.randomUUID());
+  let calls = 0;
+  const runner = createOperationRunner({
+    store,
+    getScope: async () => 'a',
+    wait: async () => {},
+    api: {
+      request: async () => {
+        calls += 1;
+
+        if (calls === 1) throw new NetworkError('response lost');
+
+        throw new ApiError('denied', 403);
+      },
+    },
+  });
+  const settled = vi.fn();
+  void runner
+    .request({
+      method: 'POST',
+      path: '/inventory/stocks/adjust',
+      body: { skuId: 's', locationId: 'l', delta: 1 },
+      idempotencyKey: 'lost',
+    })
+    .then(settled, settled);
+
+  await vi.waitFor(async () =>
+    expect(await store.get('lost')).toMatchObject({
+      status: 'uncertain',
+      attempts: 2,
+      errorStatus: 403,
+      leaseExpiresAt: 0,
+    })
+  );
+  expect(settled).not.toHaveBeenCalled();
+  expect(await store.pending('a')).toHaveLength(1);
+  expect(workStatus(runner.getSnapshot(), Date.now())).toMatchObject({
+    blocksWork: true,
+  });
+  expect(workStatus(runner.getSnapshot(), Date.now()).message).toContain(
+    '권한이 없어 처리 결과를 확인하지 못했어요'
+  );
+  expect(unsentCount(runner.getSnapshot(), Date.now())).toBe(1);
+
+  const restored = createOperationRunner({
+    store,
+    getScope: async () => 'a',
+    api: {
+      request: async () => {
+        throw new ApiError('denied', 403);
+      },
+    },
+  });
+  await restored.restore();
+  await restored.retryPending();
+  expect(await store.get('lost')).toMatchObject({
+    status: 'uncertain',
+    attempts: 3,
+  });
+});
+
 describe('location force resolution', () => {
   const path = '/shipments/s/location-outbound-forces';
   const resolutionPath = '/shipments/s/location-outbound-force-resolutions';
@@ -363,7 +487,7 @@ describe('location force resolution', () => {
     await store.finish('force-key', 'uncertain');
     return store;
   }
-  it('resolves an initial 403 with the original key/body and durably rejects its waiting promise', async () => {
+  it('resolves an initial lost response with the original key/body and durably rejects its waiting promise', async () => {
     const store = createOperationStore(crypto.randomUUID());
     const sent: Parameters<ApiClient['request']>[0][] = [];
     const runner = createOperationRunner({
@@ -373,7 +497,7 @@ describe('location force resolution', () => {
       api: {
         request: async <T>(o: Parameters<ApiClient['request']>[0]) => {
           sent.push(o);
-          if (o.path === path) throw new ApiError('forbidden', 403);
+          if (o.path === path) throw new TypeError('response lost');
           return rejected as T;
         },
       },
@@ -433,7 +557,7 @@ describe('location force resolution', () => {
       api: {
         request: async <T>(o: Parameters<ApiClient['request']>[0]) => {
           sent.push(o);
-          if (lost) throw new ApiError('lost', 403);
+          if (lost) throw new NetworkError('lost');
           return rejected as T;
         },
       },
@@ -666,7 +790,7 @@ describe('inbound workflow rejection outcomes', () => {
       expect((await store.get('original'))?.status).toBe('rejected');
     }
   );
-  it.each([401, 403, 408, 429, 500])(
+  it.each([401, 408, 429, 500])(
     'keeps protected code with status %s uncertain',
     (status) => {
       expect(new ApiError('unknown', status, codes[0]).outcome).toBe(
@@ -759,4 +883,53 @@ it('persists preparation metadata for live rejection and restarted same-key repl
       }).request(request)
     ).rejects.toThrow('처리 여부를 먼저 확인');
   expect(sends).toBe(1);
+});
+
+it('wraps inbound shipment box writes with contract v2', async () => {
+  const sent: Array<{ path: string; body: Record<string, unknown> }> = [];
+  const api: ApiClient = {
+    request: async <T>(o: Parameters<ApiClient['request']>[0]) => {
+      sent.push({ path: o.path, body: o.body as Record<string, unknown> });
+      return { boxId: 'b1', shipmentStatus: 'receiving' } as T;
+    },
+  };
+  const store = createOperationStore(crypto.randomUUID());
+  const begin = vi.spyOn(store, 'begin');
+  const runner = createOperationRunner({
+    api,
+    store,
+    getScope: async () => 'actor|server',
+    wait: async () => {},
+  });
+  const paths = [
+    '/inventory/inbound-shipments/s1/boxes/b1/receive',
+    '/inventory/inbound-shipments/s1/boxes/b1/receive/cancel',
+    '/inventory/inbound-shipments/s1/boxes',
+  ];
+  for (const [i, path] of paths.entries())
+    await runner.request({
+      method: 'POST',
+      path,
+      body: { label: 'L1' },
+      idempotencyKey: `k${i}`,
+    });
+  expect(sent.map((s) => s.path)).toEqual(paths);
+  sent.forEach((s, i) =>
+    expect(s.body).toMatchObject({
+      contractVersion: 2,
+      idempotencyKey: `k${i}`,
+    })
+  );
+  expect(begin.mock.calls.map((c) => c[0].resource)).toEqual([
+    'inbound-shipment-box:b1',
+    'inbound-shipment-box:b1',
+    'inbound-shipment:s1',
+  ]);
+  // other shipment routes stay outside the durable ledger
+  await runner.request({
+    method: 'POST',
+    path: '/inventory/inbound-shipments/s1/close',
+    body: {},
+  });
+  expect(begin).toHaveBeenCalledTimes(3);
 });

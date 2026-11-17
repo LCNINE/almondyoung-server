@@ -3,6 +3,7 @@ import { Outlet, useNavigate, Link } from '@tanstack/react-router';
 import { Warehouse as WarehouseIcon } from 'lucide-react';
 import { useIsAuthenticated } from '../session-context';
 import { useWarehouse } from '../warehouse-context';
+import { useWorkerIdentity } from '../useWorkerIdentity';
 import { isStationDevice } from '../station';
 import { StationShell } from '../../station/StationShell';
 
@@ -10,6 +11,7 @@ export function AuthedLayout() {
   const authed = useIsAuthenticated();
   const navigate = useNavigate();
   const { warehouseName } = useWarehouse();
+  const worker = useWorkerIdentity();
   // beforeLoad gates entry; this effect handles a live logout / refresh
   // failure while an authenticated screen is already mounted.
   useEffect(() => {
@@ -19,7 +21,16 @@ export function AuthedLayout() {
   if (isStationDevice()) return <StationShell />;
   return (
     <div className="space-y-3">
-      <div className="flex justify-end">
+      <div className="flex items-center justify-end gap-2">
+        {worker.status === 'ready' && (
+          <Link
+            to="/settings"
+            aria-label={`로그인한 작업자 ${worker.identity.name}`}
+            className="min-w-0 truncate text-xs font-medium text-gray-600"
+          >
+            {worker.identity.name}
+          </Link>
+        )}
         <Link
           to="/settings"
           className="flex items-center gap-1.5 rounded-full border border-gray-300 bg-white px-3 py-1 text-xs font-medium text-gray-700 active:bg-gray-100"

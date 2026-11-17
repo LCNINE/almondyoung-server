@@ -4,6 +4,7 @@ import { almondTemplates } from '../../db/schema';
 export type AlmondTemplateEntity = InferSelectModel<typeof almondTemplates>;
 export type AlmondTemplateSummary = Omit<AlmondTemplateEntity, 'design' | 'thumbnailSvg' | 'deletedAt' | 'deletedBy'> & {
   kind: string | null;
+  printsBack: boolean;
 };
 export type AdminAlmondTemplateSummary = AlmondTemplateSummary;
 

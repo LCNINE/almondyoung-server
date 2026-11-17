@@ -1,6 +1,12 @@
 import { Logger } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
+import { firstValueFrom } from 'rxjs';
 import * as crypto from 'crypto';
+import { parseCoupangJson, stringifyCoupangJson } from './coupang-json';
+import { coupangRateLimiter } from './coupang-rate-limiter';
+
+/** 쿠팡 요청 하나의 상한. axios 기본(0)은 영원히 기다려 폴링 주기가 겹쳐 쌓인다. */
+const REQUEST_TIMEOUT_MS = 30_000;
 
 /**
  * 쿠팡 API 기본 설정 정보
@@ -79,4 +85,95 @@ export abstract class CoupangBaseClient {
 
     return `CEA algorithm=HmacSHA256, access-key=${accessKey}, signed-date=${datetime}, signature=${signature}`;
   }
+
+  /**
+   * 쿠팡 호출의 단일 통로 — 속도 제한 → 읽기 전용 검사 → 서명 → 전송 → 손실 없는 JSON 파싱.
+   *
+   * `COUPANG_READ_ONLY=true` 면 GET 이 아닌 호출은 보내기 전에 throw 한다(호출 시점에 읽는다).
+   * HTTP 오류는 상태 코드를 메시지(`쿠팡 <status>: …`)와 `status` 속성에 싣고 throw 한다.
+   * 요청은 30초에 끊는다 — timeout 도 에러로 세고(속도 제한의 에러 폭주), 메시지에 메서드·경로를 싣는다.
+   */
+  protected async send<T>(
+    method: 'GET' | 'PATCH' | 'POST' | 'PUT',
+    path: string,
+    options: { query?: URLSearchParams; body?: unknown } = {},
+  ): Promise<T> {
+    await coupangRateLimiter.acquire();
+
+    if (process.env.COUPANG_READ_ONLY === 'true' && method !== 'GET') {
+      throw new Error(`COUPANG_READ_ONLY: ${method} ${path} 차단`);
+    }
+
+    const config = this.getApiConfig();
+    const queryString = options.query?.toString() ?? '';
+    const authorization = this.generateAuthHeader(config.accessKey, config.secretKey, method, path, queryString);
+    const url = `${config.apiEndpoint}${path}${queryString ? `?${queryString}` : ''}`;
+
+    let status: number | undefined;
+    let text: string;
+    try {
+      const response = await firstValueFrom(
+        this.http.request<string>({
+          method,
+          url,
+          data: options.body === undefined ? undefined : stringifyCoupangJson(options.body),
+          responseType: 'text',
+          timeout: REQUEST_TIMEOUT_MS,
+          transformResponse: [(data: string) => data],
+          headers: { Authorization: authorization, 'Content-Type': 'application/json' },
+        }),
+      );
+      status = response.status;
+      text = response.data;
+    } catch (error) {
+      const failedStatus = statusOf(error);
+      if (failedStatus === 429) coupangRateLimiter.recordRateLimited();
+      else coupangRateLimiter.recordError();
+      throw Object.assign(new Error(failureMessage(error, failedStatus, `${method} ${path}`)), {
+        status: failedStatus,
+        cause: error,
+      });
+    }
+
+    coupangRateLimiter.recordSuccess();
+    this.logger.debug?.(`쿠팡 ${method} ${path} → ${status}`);
+    // 캐스팅 근거: 여기서는 응답을 런타임 검증하지 않는다 — T 는 부르는 쪽의 선언일 뿐이고, 필드에 따라 행동하는
+    // 쪽은 그 필드를 다시 검사한다(발주서·출고중지요청은 coupang-order-fields 의 zod 파서가 받는다).
+    return parseCoupangJson(text) as T;
+  }
+}
+
+function failureMessage(error: unknown, status: number | undefined, call: string): string {
+  if (status !== undefined) return `쿠팡 ${status}: ${brief(responseTextOf(error))}`;
+  if (isTimeout(error)) return `쿠팡 시간 초과(${REQUEST_TIMEOUT_MS}ms): ${call}`;
+  return `쿠팡 네트워크: ${call} — ${messageOf(error)}`;
+}
+
+/** axios 는 timeout 을 `ECONNABORTED`(구버전)·`ETIMEDOUT`(transitional.clarifyTimeoutError) 로 낸다 */
+function isTimeout(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null || !('code' in error)) return false;
+  return error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT';
+}
+
+function statusOf(error: unknown): number | undefined {
+  if (typeof error !== 'object' || error === null || !('response' in error)) return undefined;
+  const { response } = error;
+  if (typeof response !== 'object' || response === null || !('status' in response)) return undefined;
+  return typeof response.status === 'number' ? response.status : undefined;
+}
+
+function responseTextOf(error: unknown): string {
+  if (typeof error !== 'object' || error === null || !('response' in error)) return '';
+  const { response } = error;
+  if (typeof response !== 'object' || response === null || !('data' in response)) return '';
+  return typeof response.data === 'string' ? response.data : '';
+}
+
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+/** 오류 본문은 길 수 있고 고객 정보가 섞일 수 있어 앞부분만 싣는다 */
+function brief(text: string): string {
+  return text.length > 200 ? `${text.slice(0, 200)}…` : text;
 }

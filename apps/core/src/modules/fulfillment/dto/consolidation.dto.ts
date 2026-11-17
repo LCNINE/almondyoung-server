@@ -69,6 +69,14 @@ export class CreateConsolidationDto {
   @IsNotEmpty()
   reason: string;
 
+  @IsString()
+  @IsOptional()
+  reasonCode?: string;
+
+  @IsString()
+  @IsOptional()
+  requestChannel?: string;
+
   @IsUUID()
   @IsOptional()
   csCaseId?: string;
@@ -101,6 +109,24 @@ export class ConsolidationRecipientSnapshotDto {
   personalCustomsCode?: string;
 }
 
+export class ShipmentSplitShareDto {
+  @ApiProperty({ description: '이 상자에 담긴 수량' })
+  boxQty: number;
+  @ApiProperty({ description: '나누기로 이어진 상자들(이미 나간 상자 포함)의 수량 합' })
+  orderQty: number;
+  @ApiProperty({ description: '묶음 안에서 만든 순서로 매긴 이 상자의 번호(1부터)' })
+  boxNo: number;
+  @ApiProperty({ description: '묶음의 살아 있는 상자 수' })
+  boxCount: number;
+}
+
+export class ConsolidationItemDto {
+  skuId: string;
+  name: string;
+  @ApiProperty({ description: '이 상자에 담긴 이 상품의 수량(같은 상품 줄을 합친 값)' })
+  qty: number;
+}
+
 export class ConsolidationOptionShipmentDto {
   shipmentId: string;
   status: string;
@@ -109,6 +135,8 @@ export class ConsolidationOptionShipmentDto {
   @ApiProperty({ description: '첫 상품명 외 N건' })
   itemSummary: string;
   totalQty: number;
+  @ApiProperty({ type: [ConsolidationItemDto], description: '담긴 상품별 수량' })
+  items: ConsolidationItemDto[];
   @ApiProperty({ type: ConsolidationRecipientSnapshotDto, description: '상자의 수령인 스냅샷. 비어 있으면 빈 객체' })
   recipientSnapshot: ConsolidationRecipientSnapshotDto;
   @ApiProperty({ type: String, nullable: true, description: '끝나지 않은 배치 작업 항목의 배치' })
@@ -118,6 +146,12 @@ export class ConsolidationOptionShipmentDto {
   manifestVersion: number;
   reservationVersion: number;
   createdAt: Date;
+  @ApiProperty({
+    type: ShipmentSplitShareDto,
+    nullable: true,
+    description: '나누기로 다른 상자와 이어져 있으면 그 몫. 아니면 null',
+  })
+  split: ShipmentSplitShareDto | null;
 }
 
 export class ConsolidationBoardShipmentDto extends OmitType(ConsolidationOptionShipmentDto, [
@@ -189,6 +223,8 @@ export class ConsolidationProgressSourceDto {
   waybillId: string | null;
   @ApiProperty({ type: String, nullable: true })
   waybillStatus: string | null;
+  @ApiProperty({ type: Boolean })
+  voidOnWithdrawal: boolean;
   @ApiProperty({ type: [String], description: '재개를 막는 사유. 끝난 작업이면 빈 배열' })
   blockers: string[];
   @ApiProperty({ type: String, nullable: true, description: '리컨실러가 자동 재개를 포기한 시각' })

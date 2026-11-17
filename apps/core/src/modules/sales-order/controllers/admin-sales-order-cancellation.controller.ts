@@ -1,9 +1,10 @@
 import { BadRequestException, Body, Controller, Headers, HttpCode, Param, Post } from '@nestjs/common';
 import { ApiOperation, ApiParam, ApiTags } from '@nestjs/swagger';
-import { IsArray, IsInt, IsOptional, IsString, MaxLength, Min, ValidateNested } from 'class-validator';
+import { IsArray, IsIn, IsInt, IsOptional, IsString, MaxLength, Min, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
 import { User, RequirePermission } from '@app/authorization';
 import { StoreSalesOrdersService } from '../services/store-sales-orders.service';
+import { REQUEST_CHANNEL_CODES, type RequestChannel } from '../../fulfillment/shipment/shipment-operation-reasons';
 
 interface AuthenticatedAdmin {
   userId: string;
@@ -35,6 +36,10 @@ export class AdminCancelOrderDto {
   @IsOptional()
   @IsString()
   reasonCode?: string;
+
+  @IsOptional()
+  @IsIn(REQUEST_CHANNEL_CODES)
+  requestChannel?: RequestChannel;
 
   @IsOptional()
   @IsString()

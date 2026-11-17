@@ -32,4 +32,22 @@ describe("filterSoldOut", () => {
 
     expect(filterSoldOut(list)).toHaveLength(3)
   })
+
+  it("keepComingSoon 이면 재고 없는 출시예정 상품은 남긴다", () => {
+    const list = [
+      product("soon", [
+        {
+          manage_inventory: true,
+          inventory_quantity: 0,
+          metadata: { comingSoon: true },
+        },
+      ]),
+      product("sold", [{ manage_inventory: true, inventory_quantity: 0 }]),
+    ]
+
+    expect(filterSoldOut(list).map((p) => p.id)).toEqual([])
+    expect(
+      filterSoldOut(list, { keepComingSoon: true }).map((p) => p.id)
+    ).toEqual(["soon"])
+  })
 })

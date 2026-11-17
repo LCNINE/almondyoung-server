@@ -8,7 +8,8 @@
 - 판매주문 라인에 `almond_design_id` 가 있으면 `pending` 행을 만든다.
 - `PrintOrderSubmitWorker` (매분): 판매주문 하나씩 집어 시안 주인 확인 → ugc 에서 인쇄 파일 링크 → 와우프레스 가격조회 → 주문 → 파일 전달. 아래 묶음 발주 참고.
   시안 ID 는 고객이 장바구니 메타데이터로 넣는 값이라, 시안 주인(ugc `almond_designs.user_id`)과 주문 고객(`sales_orders.customer_id`)이 다르면 주문하지 않고 `failed` 로 둔다.
-- `PrintOrderTrackingWorker` (30분): 주문상세로 송장·배송 상태 반영. 고객 배송조회(`/store/orders/by-channel-order/:id/tracking`)에 한 항목으로 덧붙는다.
+- 와우프레스 주문상태 콜백(`POST /wowpress/callback`): 와우프레스가 상태가 바뀔 때마다 알려 주면 그 주문만 바로 다시 읽는다. 아래 상태 콜백 참고.
+- `PrintOrderTrackingWorker` (30분): 콜백을 놓친 경우를 위한 보조 확인. 주문상세로 송장·배송 상태, 제작 여부, 입금대기, 와우프레스 확인 필요(접수·파일 에러, 와우프레스 쪽 취소)를 반영한다. 고객 배송조회(`/store/orders/by-channel-order/:id/tracking`)에 한 항목으로 덧붙는다.
 - 취소: `PrintOrderCancellation` 이 판매주문 취소 앞단에서 와우프레스 취소를 먼저 시도한다. 아래 취소·환불 경로 참고.
 - 운영자 보드: admin-web `주문 > 와우프레스 발주` (`/order/print-orders`).
 - 배송지 변경: Medusa 에서 주소를 고쳐도 와우프레스로 이미 보냈거나 보내는 중인 인쇄 줄이 있으면 반영하지 않고 운영자 확인(`SHIPMENT_NOT_REVISABLE`)으로 남긴다. 와우프레스 쪽 주소는 사람이 고친다. 발주 전 줄은 발주할 때 새 주소를 읽는다.
@@ -44,6 +45,10 @@
 | `cancelled` | 취소됨 | 종료 |
 | `cancel_refused` | 와우프레스가 취소를 거절(이미 생산 중) | 운영자가 전화 확인 후 `cancelled` 또는 `submitted` |
 
+`vendor_in_production` 은 주문 상태와 별도로 저장하는 제작 여부다(`NOT NULL DEFAULT false`). 상세가 취소 불가(`WOWPRESS_CANCELLABLE` 이 false)이면서 `ordstat !== 90` 이면 true다. 콜백과 30분 폴러가 같은 `refresh` 경로에서 값이 바뀔 때만 기록한다. `ordstat` 0·1이나 `jobstat` 109로 돌아가거나 와우프레스에서 취소되면 false로 지운다.
+
+고객 actions의 `printInProduction` 은 공통 `fulfillmentStatus` 가 `preparing` 이고, 활성 인쇄 행 중 제작 중인 것이 있으며, 취소되지 않은 일반 상품이 없을 때만 true다. 일반 상품의 남은 수량은 기존 `lineRemainingSql` 로 판정한다. 스토어프론트는 이때만 준비 문구를 ko/en/ja의 제작 중 문구로 바꾼다. 혼합 주문은 상품 준비 중을 유지하고, 출고 후에는 기존 배송 단계를 표시한다. 관리자·통계·채널의 공통 단계 값은 늘리지 않는다.
+
 `cancelling` 은 오래 남으면(`CANCEL_CLAIM_STALE_MS`) 보드의 `취소 확인 필요` 로 넘어간다.
 
 ### 한 번만 주문할 권리 (`order_attempted_at`)
@@ -52,6 +57,16 @@
 이 경우 자동으로 다시 주문하지 않는다. 이번 차례에 보낸 주문의 응답을 잃었으면 바로 포기하지 않고 5분 미뤄(`pending`, `ORDER_LOOKUP_PENDING_ERROR`) 다음 차례에 `ordkey`(= `sales_order_line_id`)로 와우프레스에 조회한다. 있으면 `ordnum` 을 채우고 파일 전달부터 이어 가고, 없거나 조회가 실패하면 `failed`(`order sent but not confirmed — verify on WowPress before retry`)로 둔다. 보드에서는 `와우프레스 확인 필요`(`needsWowpressCheck`)로 표시된다.
 운영자가 와우프레스에 그 주문이 없음을 직접 확인한 뒤 재전송하면서 `와우프레스에 주문 없음 확인`(`confirmNoWowpressOrder`)을 체크해야만 주문권이 풀리고(`order_attempted_at` 해제) 다시 주문된다. 체크 없이 재전송하면 거절된다.
 중복 의심·번호 미저장·취소 뒤 주문 같은 보호 기록(`retryBlocked`)이 남은 행은 재전송 자체가 막힌다 — 와우프레스에서 처리한다 (`services/print-order-board.rules.ts`, `services/print-order-admin.manager.ts`).
+
+## 상태 콜백
+
+와우프레스 API 문서 6.11 주문상태 CALL BACK 을 받는다. 상태가 바뀔 때마다 등록한 주소로 `ordnum`·`ordstat`·`jobstat`·`shipnum` 을 POST 하고, 200 을 받을 때까지 10초 간격으로 최대 10번 다시 보낸다.
+
+- 주소는 core 의 `POST /wowpress/callback` 이다(`controllers/wowpress-callback.controller.ts`). 와우프레스 회원 정보에 콜백 주소를 한 번 등록해야 온다. 이 라우트가 배포된 뒤에 등록한다(먼저 등록하면 404 로 10번 실패하고 버려진다).
+  등록: 로그인 토큰을 Bearer 로 붙여 `POST https://api.wowpress.co.kr/api/v1/mpag/cbkurl/update`, form `cbkurl=<core 주소>/wowpress/callback?type=json`. `?type=json` 이 본문을 `application/json` 으로 고르는 표시다(없으면 form-urlencoded).
+- 본문에는 서명이 없어 누구나 보낼 수 있다. 그래서 본문의 상태는 쓰지 않고, `ordnum` 으로 우리 행을 찾은 뒤 주문상세 API 를 다시 불러 반영한다(30분 폴러와 같은 `PrintOrderTrackingManager.refresh`). 형식이 맞지 않는 `ordnum` 은 무시한다.
+- 와우프레스는 테넌트를 알려 주지 않는다. 라우트는 `@TenantFree` 이고, 모든 테넌트 core DB 에서 그 `ordnum` 을 찾는다. 한 DB 라도 실패하면 500 을 돌려 와우프레스가 다시 보내게 한다.
+- 콜백이 10번 다 실패하면 와우프레스는 더 보내지 않는다. 그 사이는 30분 폴러가 메운다.
 
 ## 취소·환불 경로
 
@@ -63,6 +78,10 @@
 | 어드민 결제 상세 금액 직접 환불·결제취소 | 취소되지 않은 인쇄 줄이 있으면 막고 부분 취소로 안내한다. 하자로 재제작이 불가하거나 배송 사고일 때만 체크해서 연다(와우프레스는 건드리지 않는다). Medusa 주문인데 core 가 아직 수집하지 않았으면 받은 돈을 돌려주는 동작을 막는다. 버튼을 누르는 순간 상태를 다시 읽는다 |
 | 어드민 무통장 환불신청 승인 | 취소되지 않은 인쇄 줄(아직 안 보낸 실패·미지원 포함)이 있으면 409 `PRINT_NEEDS_PARTIAL_CANCEL` 로 승인을 막는다. 와우프레스 취소는 시도하지 않는다 |
 | 고객 주문 취소 | 인쇄가 제작 중이고 다른 상품이 남으면 409 `PRINT_PARTIAL_CANCEL_AVAILABLE`. 스토어(`web/almondyoung-storefront/src/components/orders/print-partial-cancel-dialog.tsx`)가 안내창을 띄우고, 고객이 동의하면 `excludePrint: true` 로 다시 보내 취소되지 않은 인쇄 줄과 디지털 줄을 뺀 나머지를 부분 취소한다. 이 경로의 와우프레스 거절은 `cancel_refused` 로 남기지 않고 `submitted` 로 되돌린다(고객이 안내를 받았고 인쇄는 계속되므로 운영자 확인이 필요 없다) |
+
+제작 중인 인쇄물만 있고 `hasNonPrintLine` 이 false인 주문은 취소 버튼을 숨기고 `cancelUnavailableReason: print_in_production` 을 보낸다. 고객에게 직접 취소 불가와 수령일부터 5일 안에 인쇄물 문제를 고객센터로 접수하도록 안내한다. 다른 상품이 있으면 기존 `cancel_refused` 예외와 똑같이 취소 버튼을 유지한다. 실제 취소 요청은 저장된 플래그로 승인하지 않고 기존 와우프레스 실시간 확인과 409 흐름을 유지한다.
+
+제작 플래그 추가 마이그레이션은 `20261112090012_add-print-order-vendor-in-production.sql` 이다. expand 변경이므로 마이그레이션을 먼저 적용하고 core를 배포한다. 기존 행은 false로 시작하고 다음 콜백 또는 폴러에서 갱신된다. 콜백 누락이나 상세 조회 실패 중에는 화면 반영이 지연될 수 있다.
 
 ## 품목 여는 절차
 
@@ -79,7 +98,9 @@
 
 | 탭 | 대상 | 조치 |
 |---|---|---|
-| 취소 확인 필요 | `cancel_refused`, 오래 멈춘 `cancelling`, 판매주문 취소가 실패한 `cancelled` | 와우프레스에 전화 후 `취소 완료함`(이어서 판매주문 취소) 또는 `생산 진행으로 처리`(`submitted` 로 복귀) |
+| 취소 확인 필요 | `cancel_refused`, 오래 멈춘 `cancelling`, 판매주문 취소가 실패한 `cancelled`, 와우프레스에서 취소된(`ordstat=90`) `submitted` | 와우프레스에 전화 후 `취소 완료함`(이어서 판매주문 취소) 또는 `생산 진행으로 처리`(`submitted` 로 복귀). 와우프레스에서 취소된 건은 `취소 완료함` 만 있다 |
+| 입금대기 | 와우프레스가 입금대기(`ordstat=0`)로 멈춰 둔 `submitted` 행. 상태 콜백이나 폴러가 표시하고 풀리면 지운다. 테스트 주문은 빠진다 | 와우프레스 선입금 충전. 결제·정산되지 않은 주문은 접수·생산이 진행되지 않는다(와우프레스 문서 6.5) |
+| 와우프레스 확인 | `submitted`·`shipped` 행 중 와우프레스 작업상태가 접수·파일 에러(`jobstat` 109, 121~131)인 행. `last_error` 를 `wowpress needs attention: job error …` 로 남기고, 풀리면 지운다(보호 기록은 덮지 않는다) | 와우프레스 주문배송조회에서 파일재접수나 주문취소 |
 | 테스트 확인대기 | 테스트 메모를 붙였고 아직 확인 안 한 건 | 전화 확인 뒤 `확인 완료` |
 | 발주 실패 | `failed` | 사유 확인 후 `재전송` |
 | 미지원 품목 | `unsupported` | 매핑을 추가한 뒤 `재전송` |
@@ -121,4 +142,6 @@
 - 인쇄물 하자는 일반 반품(창고 회수) 흐름에 맞지 않는다. 와우프레스 약관(18조2)은 수령 7일 안에 전량 반송하면 재작업이 원칙이고 환불은 예외다. 고객에게는 5일 안에 고객센터로 접수하라고 안내한다(우리가 와우프레스 7일 기한 안에 접수할 여유). API 대리 주문·고객 직배송 건에 약관이 그대로 적용되는지는 와우프레스 확인이 필요하다.
 - 첫 실주문에서 `ord_list`, `cjson_order` 응답 모양과 배송지 `sd/sgg/umd` 분해(`wowpress/korean-address.ts`)가 실제 응답과 맞는지 반드시 확인한다. 문서만으로 확정하지 못한 부분이다.
 - 택배사 코드는 109=롯데, 156=CJ 만 매핑한다. 그 밖은 송장만 보인다.
+- 와우프레스에서 직접 취소한 주문(`ordstat=90`)은 우리 쪽에서 저절로 환불되지 않는다. `last_error` 를 `wowpress needs attention: cancelled` 로 남겨 보드 `취소 확인 필요` 에 띄우고, 운영자가 `취소 완료함` 을 누르면 발주가 취소되고 고객 주문 취소·환불이 열린다. 생산 진행으로는 되돌릴 수 없다.
+- 뒷면이 있는 템플릿을 단면 옵션으로 주문하면 와우프레스가 `접수에러-양단면접수에러`(129)로 멈춘다. 게시 모달은 뒷면이 있는 템플릿에 단면 옵션을 만들지 않는다(ugc 템플릿 목록의 `printsBack`).
 - 주문상세의 송장은 배송박스 단위(`ordinfo.dlvybox.shipnum`)다. `dlvyinvc`/`dlvyno` 는 콜백 전용 키라 상세에서 읽으면 비어 있다(와우프레스 문서 2026.10.14 §6.11·§6.13).

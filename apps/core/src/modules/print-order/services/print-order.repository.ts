@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { DbService } from '@app/db';
+import { DbService, type DatabaseRun } from '@app/db';
 import { InjectTypedDb } from '@app/db/decorators';
 import { and, asc, eq, gte, inArray, isNotNull, isNull, lt, lte, not, or, sql, type SQL } from 'drizzle-orm';
 import { wmsSchema, wmsTables, type DbTx } from '../../inventory/schema/inventory.schema';
@@ -116,6 +116,26 @@ export class PrintOrderRepository {
           .where(eq(t.id, id)),
       tx,
     );
+  }
+
+  async findTrackedByVendorOrderNumber(vendorOrderNumber: string, tx?: DbTx): Promise<PrintOrderRow | null> {
+    const t = wmsTables.printOrders;
+    const [row] = await this.dbService.run(
+      (trx) =>
+        trx
+          .select()
+          .from(t)
+          .where(and(eq(t.vendorOrderNumber, vendorOrderNumber), inArray(t.status, TRACKED_STATUSES)))
+          .limit(1),
+      tx,
+    );
+
+    return row ?? null;
+  }
+
+  // 와우프레스 콜백은 테넌트를 싣지 않아 주문번호가 든 DB 를 모든 테넌트에서 찾는다
+  inEveryDatabase<T>(fn: () => Promise<T>): Promise<DatabaseRun<T>[]> {
+    return this.dbService.forEachDatabase(() => fn());
   }
 
   trackable(limit: number, tx?: DbTx): Promise<PrintOrderRow[]> {

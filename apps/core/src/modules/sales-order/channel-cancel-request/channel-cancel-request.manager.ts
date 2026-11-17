@@ -17,14 +17,17 @@ import {
   SETTLE_DELAYED_AFTER_MS,
 } from '../../fulfillment/order-progress/order-progress.thresholds';
 import { SalesOrdersService } from '../services/sales-orders.service';
+import type { RequestChannel } from '../../fulfillment/shipment/shipment-operation-reasons';
 import { cancellationCapabilityOf, sellerCenterMessage } from '../order-cancellation/channel-cancellation-capability';
 import { ChannelCancelRequestReader } from './channel-cancel-request.reader';
 import {
   CHANNEL_CANCEL_REQUEST_REASON,
+  MARKET_CUSTOMER_REQUESTER_PREFIX,
   CancelRequestLine,
   CancelRequestMetadata,
   CancelRequestView,
   CancelRequester,
+  isMarketCustomerRequest,
   isReissuable,
   readCancelRequestMetadata,
   settlementPhase,
@@ -36,9 +39,11 @@ export interface CancelRequestInput {
   /** 없으면 전체취소 */
   lines?: Array<{ salesOrderLineId: string; quantity: number }>;
   requester: CancelRequester;
-  /** 운영자·고객은 Idempotency-Key, wallet 승인은 `wallet-refund-approval:<intentId>` */
+  /** 운영자·고객은 Idempotency-Key, wallet 승인은 `wallet-refund-approval:<intentId>`, 마켓 고객 요청은 `channel-request:<요청 키>` */
   sourceKey: string;
   reasonCode?: string;
+  /** 운영자 요청만. 고객 요청 취소를 받은 경로 */
+  requestChannel?: RequestChannel;
   reasonDetail?: string;
   /** 부분취소만. 이번 취소 품목에 이미 다른 경로로 돌려준 금액(원) — 채널이 상계한다(#1016 37번) */
   alreadyRefundedAmount?: number;
@@ -125,9 +130,7 @@ export class ChannelCancelRequestManager {
       const replay = await this.reader.findBySourceKey(so.id, input.sourceKey, trx);
       if (replay) return toCancelRequestView(replay);
 
-      const route = cancellationCapabilityOf(so.salesChannel).cancel;
-      if (route === 'seller_center') throw new BadRequestError(sellerCenterMessage(so.salesChannel));
-      if (route === 'core') throw new Error(`Sales channel ${so.salesChannel} does not take cancel commands`);
+      assertRouteTakesRequest(so.salesChannel, input.requester);
       if (so.status === 'cancelled') throw new BadRequestError('이미 취소된 주문입니다.');
       if (so.status === 'timeout') throw new BadRequestError('타임아웃된 주문은 취소할 수 없습니다.');
 
@@ -140,11 +143,22 @@ export class ChannelCancelRequestManager {
       if (input.alreadyRefundedAmount !== undefined) assertAlreadyRefundedAllowed(so.salesChannel, scope);
 
       const channelItems = await this.channelItemIds(so.id, trx);
+      // 마켓 고객 요청 행은 줄마다 요청 직전 취소 수량을 남긴다 — 수집된 누적 취소가 «이 요청»까지 닿았는지 가른다(settler).
+      // 판매주문·박스를 잠근 뒤, 확정(cancel) 전에 읽는다
+      const cancelledBefore =
+        input.requester.kind === 'channel-customer'
+          ? await this.salesOrders.cancelledQuantities(
+              so.id,
+              plan.lines.map((line) => line.salesOrderLineId),
+              trx,
+            )
+          : undefined;
       const lines: CancelRequestLine[] = plan.lines.map((line) => ({
         type: 'cancel_line',
         salesOrderLineId: line.salesOrderLineId,
         channelOrderItemId: channelItems.get(line.salesOrderLineId) ?? null,
         quantity: line.quantity,
+        ...(cancelledBefore ? { cancelledBefore: baselineOf(cancelledBefore, line.salesOrderLineId) } : {}),
       }));
       // 부분취소는 채널 줄 번호로 말한다 — 없는 줄이 하나라도 있으면 채널에 보낼 수 없다.
       const channelLines: Array<{ channelOrderItemId: string; quantity: number }> = [];
@@ -172,9 +186,16 @@ export class ChannelCancelRequestManager {
                 lines: plan.lines.map((line) => ({ salesOrderLineId: line.salesOrderLineId, quantity: line.quantity })),
               }
             : {}),
-          cancelledBy: cancelledByOf(input.requester),
+          cancelledBy: cancelledByOf(input.requester, so.salesChannel),
           reasonCode: input.reasonCode ?? CHANNEL_CANCEL_REQUEST_REASON,
           ...(input.reasonDetail ? { reasonDetail: input.reasonDetail } : {}),
+          ...(input.requester.kind === 'operator' && input.requestChannel
+            ? { requestChannel: input.requestChannel }
+            : {}),
+          // 상자 취소 작업의 처리자만 관리자로 남긴다 — 출고 명령의 권한 판정은 지금처럼 시스템 행위자다
+          ...(input.requester.kind === 'operator' && input.requester.actorId
+            ? { operatorActorId: input.requester.actorId }
+            : {}),
           occurredAt: at,
           metadata: { sourceEventId: `cancel-request:${id}` },
         },
@@ -191,6 +212,14 @@ export class ChannelCancelRequestManager {
         refundMode: 'auto',
         ...(input.reasonCode ? { reasonCode: input.reasonCode } : {}),
         requestedBy: input.requester.kind,
+        ...(input.requester.kind === 'channel-customer'
+          ? {
+              answers: {
+                channelRequestRef: input.requester.channelRequestRef,
+                needsApproval: input.requester.needsApproval,
+              },
+            }
+          : {}),
         requestedAt: at,
       };
       const metadata: CancelRequestMetadata = {
@@ -289,6 +318,10 @@ export class ChannelCancelRequestManager {
         throw new NotFoundError(`취소 요청을 찾을 수 없습니다: ${requestId}`);
       if (row.status !== 'settling') throw new ConflictError('정산 중인 취소 요청이 아닙니다.');
       const meta = readCancelRequestMetadata(row.metadata);
+      // 마켓 고객 요청의 환불은 마켓이 한다 — core 가 계좌로 송금하면 같은 취소에 환불이 둘 나간다(ADR-0042 원칙 1)
+      if (kind === 'manual' && isMarketCustomerRequest(meta)) {
+        throw new BadRequestError('마켓 주문의 환불은 마켓이 합니다 — 판매자센터에서 처리하세요.');
+      }
       const settlement = meta.settlement;
       if (!settlement) throw new Error(`Settling request ${row.id} has no settlement`);
       const now = new Date();
@@ -450,6 +483,28 @@ export class ChannelCancelRequestManager {
   }
 }
 
+/**
+ * 요청자가 이 채널에 취소 명령을 낼 수 있나. 마켓(판매자센터 취소)은 운영자·고객 요청을 받지 않지만, 마켓 고객 취소요청에는
+ * 승인으로 답한다(`answersCustomerCancelRequest`, 스펙 §5.5). 답하지 않는 채널에 마켓 요청이 오면 계약 위반이라 결함으로 멈춘다.
+ */
+function assertRouteTakesRequest(salesChannel: string, requester: CancelRequester): void {
+  const capability = cancellationCapabilityOf(salesChannel);
+  if (requester.kind === 'channel-customer') {
+    if (!capability.answersCustomerCancelRequest) {
+      throw new Error(`Sales channel ${salesChannel} does not answer customer cancel requests`);
+    }
+    return;
+  }
+  if (capability.cancel === 'seller_center') throw new BadRequestError(sellerCenterMessage(salesChannel));
+  if (capability.cancel === 'core') throw new Error(`Sales channel ${salesChannel} does not take cancel commands`);
+}
+
+function baselineOf(cancelled: Map<string, number>, salesOrderLineId: string): number {
+  const quantity = cancelled.get(salesOrderLineId);
+  if (quantity === undefined) throw new Error(`Cancelled quantity is missing SalesOrder line ${salesOrderLineId}`);
+  return quantity;
+}
+
 function requesterLabel(requester: CancelRequester): string {
   switch (requester.kind) {
     case 'operator':
@@ -458,11 +513,13 @@ function requesterLabel(requester: CancelRequester): string {
       return `customer:${requester.customerId}`;
     case 'wallet-refund-approval':
       return `wallet-refund-approval:${requester.intentId}`;
+    case 'channel-customer':
+      return `${MARKET_CUSTOMER_REQUESTER_PREFIX}${requester.channelRequestKey}`;
   }
 }
 
-/** 취소 기록의 cancelled_by — 누가 취소를 확정했나 */
-function cancelledByOf(requester: CancelRequester): string {
+/** 취소 기록의 cancelled_by — 누가 취소를 확정했나. 마켓 고객 요청은 그 마켓이다(수집된 채널 취소와 같은 값) */
+function cancelledByOf(requester: CancelRequester, salesChannel: string): string {
   switch (requester.kind) {
     case 'operator':
       return 'admin';
@@ -470,5 +527,7 @@ function cancelledByOf(requester: CancelRequester): string {
       return 'customer';
     case 'wallet-refund-approval':
       return 'wallet';
+    case 'channel-customer':
+      return salesChannel;
   }
 }

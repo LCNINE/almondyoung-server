@@ -33,6 +33,8 @@ function sku(overrides: Partial<SkuStockInput> = {}): SkuStockInput {
     onOrderTotal: 0,
     onOrderNonSellable: 0,
     inTransitToSellable: 0,
+    inboundShipmentTotal: 0,
+    inboundShipmentToSellable: 0,
     draftTransferPlanned: [],
     ...overrides,
   };
@@ -43,11 +45,23 @@ const ctx = { sellableWarehouseId: SELL };
 describe('assembleSuggestions — 두 축 독립', () => {
   it('부천 부족 · 중국 有 → 이동만', () => {
     const [row] = assembleSuggestions(
-      [sku({ onHandSellable: 20, onHandTotal: 220, nonSellableOnHand: [{ warehouseId: CHINA, locationId: LOC_A, qty: 200 }] })],
+      [
+        sku({
+          onHandSellable: 20,
+          onHandTotal: 220,
+          nonSellableOnHand: [{ warehouseId: CHINA, locationId: LOC_A, qty: 200 }],
+        }),
+      ],
       ctx,
     );
     expect(row.actions).toEqual([
-      { type: 'transfer', qty: 80, fromWarehouseId: CHINA, toWarehouseId: SELL, lines: [{ fromLocationId: LOC_A, quantity: 80 }] },
+      {
+        type: 'transfer',
+        qty: 80,
+        fromWarehouseId: CHINA,
+        toWarehouseId: SELL,
+        lines: [{ fromLocationId: LOC_A, quantity: 80 }],
+      },
     ]);
     expect(row.company.position).toBe(220);
     expect(row.sellable.position).toBe(20);
@@ -55,12 +69,24 @@ describe('assembleSuggestions — 두 축 독립', () => {
 
   it('부천 부족 · 중국 부족 → 이동(있는 만큼) + 발주(전사 부족분)', () => {
     const [row] = assembleSuggestions(
-      [sku({ onHandSellable: 20, onHandTotal: 50, nonSellableOnHand: [{ warehouseId: CHINA, locationId: LOC_A, qty: 30 }] })],
+      [
+        sku({
+          onHandSellable: 20,
+          onHandTotal: 50,
+          nonSellableOnHand: [{ warehouseId: CHINA, locationId: LOC_A, qty: 30 }],
+        }),
+      ],
       ctx,
     );
     expect(row.actions).toEqual([
       { type: 'purchase', qty: 50, supplierId: 'sup-1', sourceWarehouseId: null },
-      { type: 'transfer', qty: 30, fromWarehouseId: CHINA, toWarehouseId: SELL, lines: [{ fromLocationId: LOC_A, quantity: 30 }] },
+      {
+        type: 'transfer',
+        qty: 30,
+        fromWarehouseId: CHINA,
+        toWarehouseId: SELL,
+        lines: [{ fromLocationId: LOC_A, quantity: 30 }],
+      },
     ]);
   });
 
@@ -90,10 +116,54 @@ describe('assembleSuggestions — 재고 위치 재료', () => {
 
   it('판매 IP 는 판매창고 ON_HAND − 예약 + 이동중 + 판매창고행 발주잔량', () => {
     const [row] = assembleSuggestions(
-      [sku({ onHandSellable: 10, reservedSellable: 4, inTransitToSellable: 20, onOrderTotal: 30, onOrderNonSellable: 25 })],
+      [
+        sku({
+          onHandSellable: 10,
+          reservedSellable: 4,
+          inTransitToSellable: 20,
+          onOrderTotal: 30,
+          onOrderNonSellable: 25,
+        }),
+      ],
       ctx,
     );
     expect(row.sellable).toMatchObject({ onHand: 10, reserved: 4, inTransit: 20, onOrderDirect: 5, position: 31 });
+  });
+
+  it('shipment remainder lowers purchase suggestion', () => {
+    const base = assembleSuggestions([sku({ onHandTotal: 20 })], ctx)[0].actions.find((a) => a.type === 'purchase');
+    const [row] = assembleSuggestions([sku({ onHandTotal: 20, inboundShipmentTotal: 30 })], ctx);
+    const purchase = row.actions.find((a) => a.type === 'purchase');
+    expect(base?.qty).toBe(80);
+    expect(purchase?.qty).toBe(50);
+    expect(row.company).toMatchObject({ inboundShipment: 30, position: 50 });
+  });
+
+  it('shipment to sellable warehouse lowers transfer suggestion', () => {
+    const stock = { onHandTotal: 200, nonSellableOnHand: [{ warehouseId: CHINA, locationId: LOC_A, qty: 200 }] };
+    const [row] = assembleSuggestions(
+      [sku({ ...stock, inboundShipmentTotal: 30, inboundShipmentToSellable: 30 })],
+      ctx,
+    );
+    expect(row.sellable).toMatchObject({ inboundShipment: 30, position: 30 });
+    expect(row.actions).toEqual([
+      {
+        type: 'transfer',
+        qty: 70,
+        fromWarehouseId: CHINA,
+        toWarehouseId: SELL,
+        lines: [{ fromLocationId: LOC_A, quantity: 70 }],
+      },
+    ]);
+  });
+
+  it('shipment to non-sellable warehouse counts only on company axis', () => {
+    const [row] = assembleSuggestions(
+      [sku({ onHandTotal: 20, inboundShipmentTotal: 30, inboundShipmentToSellable: 0 })],
+      ctx,
+    );
+    expect(row.company.position).toBe(50);
+    expect(row.sellable).toMatchObject({ inboundShipment: 0, position: 0 });
   });
 
   it('발주잔량이 전사 부족을 덮으면 발주 제안 없음', () => {
@@ -105,11 +175,24 @@ describe('assembleSuggestions — 재고 위치 재료', () => {
 describe('assembleSuggestions — 이동 제안 세부', () => {
   it('draft 지시서에 실린 수량은 이동가능에서 뺀다', () => {
     const [row] = assembleSuggestions(
-      [sku({ onHandSellable: 0, onHandTotal: 200, nonSellableOnHand: [{ warehouseId: CHINA, locationId: LOC_A, qty: 200 }], draftTransferPlanned: [{ fromWarehouseId: CHINA, qty: 150 }] })],
+      [
+        sku({
+          onHandSellable: 0,
+          onHandTotal: 200,
+          nonSellableOnHand: [{ warehouseId: CHINA, locationId: LOC_A, qty: 200 }],
+          draftTransferPlanned: [{ fromWarehouseId: CHINA, qty: 150 }],
+        }),
+      ],
       ctx,
     );
     expect(row.actions).toEqual([
-      { type: 'transfer', qty: 50, fromWarehouseId: CHINA, toWarehouseId: SELL, lines: [{ fromLocationId: LOC_A, quantity: 50 }] },
+      {
+        type: 'transfer',
+        qty: 50,
+        fromWarehouseId: CHINA,
+        toWarehouseId: SELL,
+        lines: [{ fromLocationId: LOC_A, quantity: 50 }],
+      },
     ]);
   });
 
@@ -130,7 +213,13 @@ describe('assembleSuggestions — 이동 제안 세부', () => {
     );
     // 출발 창고는 가장 큰 로케이션이 속한 CHINA. wh-other 의 draft 60 은 무관 → 필요 100 전부 CHINA 에서
     expect(row.actions).toEqual([
-      { type: 'transfer', qty: 100, fromWarehouseId: CHINA, toWarehouseId: SELL, lines: [{ fromLocationId: LOC_A, quantity: 100 }] },
+      {
+        type: 'transfer',
+        qty: 100,
+        fromWarehouseId: CHINA,
+        toWarehouseId: SELL,
+        lines: [{ fromLocationId: LOC_A, quantity: 100 }],
+      },
     ]);
   });
 
@@ -154,7 +243,13 @@ describe('assembleSuggestions — 이동 제안 세부', () => {
       ctx,
     );
     expect(row.actions).toEqual([
-      { type: 'transfer', qty: 50, fromWarehouseId: CHINA, toWarehouseId: SELL, lines: [{ fromLocationId: LOC_A, quantity: 50 }] },
+      {
+        type: 'transfer',
+        qty: 50,
+        fromWarehouseId: CHINA,
+        toWarehouseId: SELL,
+        lines: [{ fromLocationId: LOC_A, quantity: 50 }],
+      },
     ]);
   });
 
@@ -209,7 +304,14 @@ describe('assembleSuggestions — 이동 제안 세부', () => {
 
   it('이동량은 올리지 않는다 — 있는 만큼만', () => {
     const [row] = assembleSuggestions(
-      [sku({ lot: { moq: 50, packingUnit: 12 }, onHandSellable: 0, onHandTotal: 7, nonSellableOnHand: [{ warehouseId: CHINA, locationId: LOC_A, qty: 7 }] })],
+      [
+        sku({
+          lot: { moq: 50, packingUnit: 12 },
+          onHandSellable: 0,
+          onHandTotal: 7,
+          nonSellableOnHand: [{ warehouseId: CHINA, locationId: LOC_A, qty: 7 }],
+        }),
+      ],
       ctx,
     );
     const transfer = row.actions.find((a) => a.type === 'transfer');
@@ -236,7 +338,21 @@ describe('assembleSuggestions — 발주량 · 예외 · 플래그 · 정렬', (
 
   it('수준은 levels 를 그대로 쓰고, 플래그는 parameterFlags + supplier_unknown', () => {
     const [row] = assembleSuggestions(
-      [sku({ levels: { company: { safetyStock: 5, reorderPoint: 30, targetLevel: 80, leadTimeDays: 32 }, sellable: { safetyStock: 2, reorderPoint: 12, targetLevel: 40, leadTimeDays: 5 } }, parameterFlags: ['default_lead_time', 'low_confidence'], supplier: null, sourceWarehouseId: 'wh-china', pattern: 'smooth', grade: 'A', confidence: 'normal', legacyReorderPoint: 320 })],
+      [
+        sku({
+          levels: {
+            company: { safetyStock: 5, reorderPoint: 30, targetLevel: 80, leadTimeDays: 32 },
+            sellable: { safetyStock: 2, reorderPoint: 12, targetLevel: 40, leadTimeDays: 5 },
+          },
+          parameterFlags: ['default_lead_time', 'low_confidence'],
+          supplier: null,
+          sourceWarehouseId: 'wh-china',
+          pattern: 'smooth',
+          grade: 'A',
+          confidence: 'normal',
+          legacyReorderPoint: 320,
+        }),
+      ],
       ctx,
     );
     expect(row.company).toMatchObject({ safetyStock: 5, reorderPoint: 30, targetLevel: 80, leadTimeDays: 32 });
@@ -247,7 +363,10 @@ describe('assembleSuggestions — 발주량 · 예외 · 플래그 · 정렬', (
   });
 
   it('daysOfCover = 판매 IP ÷ 일평균 (소수 1자리), 일평균 0 이면 null', () => {
-    const [withDemand] = assembleSuggestions([sku({ demand: { dailyMean: 3, dailyStd: 1 }, onHandSellable: 10, onHandTotal: 10 })], ctx);
+    const [withDemand] = assembleSuggestions(
+      [sku({ demand: { dailyMean: 3, dailyStd: 1 }, onHandSellable: 10, onHandTotal: 10 })],
+      ctx,
+    );
     expect(withDemand.sellable.daysOfCover).toBe(3.3);
     const [noDemand] = assembleSuggestions([sku({ onHandSellable: 10, onHandTotal: 10 })], ctx);
     expect(noDemand.sellable.daysOfCover).toBeNull();

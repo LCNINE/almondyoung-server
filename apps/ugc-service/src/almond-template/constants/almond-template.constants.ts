@@ -33,6 +33,8 @@ export const ALMOND_SAVED_DESIGN_UPSERT_ROUTE = { method: 'PUT', url: '/me/almon
 export const ALMOND_SAVED_DESIGN_UPSERT_BODY_LIMIT = 20 * 1024 * 1024;
 
 export const ALMOND_PRINT_FILE_CONTEXT_ID = 'almond-print-file';
+// 미리보기 JPG 는 상품 이미지로 쓰이므로 공개 컨텍스트에 올린다
+export const ALMOND_TEMPLATE_IMAGE_CONTEXT_ID = 'almond-template-image';
 export const ALMOND_PRINT_LINK_EXPIRES_SEC = 300;
 
 export const ALMOND_PRINT_SIDE_GAP_MM = 10;

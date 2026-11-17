@@ -43,6 +43,11 @@ export function parsePreparationRejection(
   return { reasonCode, recovery: value.recovery };
 }
 
+export function readRequiredPermissions(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((key): key is string => typeof key === 'string');
+}
+
 export class ApiError extends Error {
   readonly outcome: 'rejected' | 'uncertain';
   readonly retryable: boolean;
@@ -51,17 +56,26 @@ export class ApiError extends Error {
   readonly preparation?: PreparationRejection;
   /** 409 본문의 `errors` 그대로(배치 시작 차단 목록 등). */
   readonly errors?: unknown;
+  /** 403 본문이 알려 준 요구 권한 키(어느 하나면 된다). */
+  readonly requiredPermissions?: readonly string[];
+  /** 400 본문의 `message` 그대로 — 서버가 현장 문구로 쓰라고 만든 거절 사유(범위 표기 등). */
+  readonly serverMessage?: string;
   constructor(
     message: string,
     status: number,
     code?: string,
     preparation?: PreparationRejection,
-    errors?: unknown
+    errors?: unknown,
+    requiredPermissions?: readonly string[],
+    serverMessage?: string
   ) {
     super(message);
     this.status = status;
+    if (serverMessage) this.serverMessage = serverMessage;
     this.errors = errors;
     this.code = code;
+    if (requiredPermissions?.length)
+      this.requiredPermissions = [...requiredPermissions];
     const rejected =
       !!code &&
       ([
@@ -100,6 +114,7 @@ export class ApiError extends Error {
         'RETURN_BIN_ITEM_NOT_FOUND',
         'RETURN_BIN_ITEM_SHORT',
         'RETURN_LOCATION_MISMATCH',
+        'RETURN_LOCATION_REQUIRED',
         'WITHDRAWAL_WAYBILL_NOT_VOIDABLE',
         'SHIPMENT_LINE_INSPECTION_STALE',
         'WORKER_ACTIVE_CLAIM_EXISTS',
@@ -108,12 +123,12 @@ export class ApiError extends Error {
           code
         ));
     this.outcome =
-      status < 500 &&
-      status !== 401 &&
-      status !== 403 &&
-      status !== 408 &&
-      status !== 429 &&
-      rejected
+      status === 403 ||
+      (status < 500 &&
+        status !== 401 &&
+        status !== 408 &&
+        status !== 429 &&
+        rejected)
         ? 'rejected'
         : 'uncertain';
     if (
@@ -138,6 +153,14 @@ export class ConflictError extends ApiError {
     errors?: unknown
   ) {
     super(message, 409, code, preparation, errors);
+  }
+}
+
+/** 응답을 받지 못했다(연결 실패·15초 시간 초과). 서버가 요청을 받았는지는 알 수 없다. */
+export class NetworkError extends Error {
+  constructor(cause: unknown) {
+    super(cause instanceof Error ? cause.message : String(cause), { cause });
+    this.name = 'NetworkError';
   }
 }
 
@@ -191,7 +214,7 @@ export function createApiClient(deps: {
       return res;
     } catch (error) {
       reportServerReach('down');
-      throw error;
+      throw new NetworkError(error);
     } finally {
       clearTimeout(timeout);
     }
@@ -228,11 +251,21 @@ export function createApiClient(deps: {
         const body = (await res.json().catch(() => ({}))) as {
           code?: string;
           error?: string;
+          message?: unknown;
+          requiredPermissions?: unknown;
         };
         throw new ApiError(
           `${method} ${o.path} → ${res.status}`,
           res.status,
-          body.code ?? body.error
+          body.code ?? body.error,
+          undefined,
+          undefined,
+          res.status === 403
+            ? readRequiredPermissions(body.requiredPermissions)
+            : undefined,
+          res.status === 400 && typeof body.message === 'string'
+            ? body.message
+            : undefined
         );
       }
       if (res.status === 204) return undefined as T;

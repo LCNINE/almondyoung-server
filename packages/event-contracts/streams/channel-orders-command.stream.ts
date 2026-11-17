@@ -53,7 +53,12 @@ export interface CancelChannelOrderPayload {
   /** 없으면 `auto` — 옛 core(PR 5 전)는 이 칸을 모른다. 같은 requestId 의 재발행은 같은 값을 싣는다 */
   refundMode?: ChannelCancelRefundMode;
   reasonCode?: string;
-  requestedBy: 'operator' | 'customer' | 'wallet-refund-approval';
+  requestedBy: 'operator' | 'customer' | 'wallet-refund-approval' | 'channel-customer';
+  /**
+   * 마켓 고객 취소요청에 대한 답일 때만. 채널이 그 요청을 승인한다 — 없으면 판매자가 먼저 시작한 취소다.
+   * `channelRequestRef` 는 `ChannelCancelRequestedPayload.channelRequestRef` 와 같다.
+   */
+  answers?: { channelRequestRef: string; needsApproval: boolean };
   /** ISO 8601 */
   requestedAt: string;
 }
@@ -129,7 +134,8 @@ const CancelChannelOrderSchema = z
     alreadyRefundedAmount: z.number().int().nonnegative().optional(),
     refundMode: z.enum(CHANNEL_CANCEL_REFUND_MODES).optional(),
     reasonCode: z.string().min(1).optional(),
-    requestedBy: z.enum(['operator', 'customer', 'wallet-refund-approval']),
+    requestedBy: z.enum(['operator', 'customer', 'wallet-refund-approval', 'channel-customer']),
+    answers: z.object({ channelRequestRef: z.string().min(1), needsApproval: z.boolean() }).optional(),
     requestedAt: z.string().datetime(),
   })
   .superRefine((payload, context) => {

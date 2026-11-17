@@ -42,7 +42,7 @@ export function BottomNavigation() {
   ]
 
   return (
-    <nav className="bg-background pb-safe fixed right-0 bottom-0 left-0 z-50 flex min-h-16 items-center justify-around border-t px-2 xl:hidden">
+    <nav className="bg-background pb-safe fixed right-0 bottom-0 left-0 z-50 flex min-h-[calc(4rem+env(safe-area-inset-bottom))] items-center justify-around border-t px-2 xl:hidden">
       {navItems.map((item) => {
         // 홈은 정확히 일치할 때만, 나머지 링크는 하위 경로까지 활성 처리
         const isActive = !item.href
@@ -52,7 +52,9 @@ export function BottomNavigation() {
             : (pathname?.startsWith(item.href) ?? false)
         const commonClassName = cn(
           "flex flex-1 flex-col items-center justify-center gap-1 transition-colors cursor-pointer bg-transparent border-none outline-none",
-          isActive ? "text-primary" : "text-muted-foreground hover:text-primary"
+          isActive
+            ? "text-mint-deep"
+            : "text-muted-foreground hover:text-mint-deep"
         )
 
         // (Sheet 타입)

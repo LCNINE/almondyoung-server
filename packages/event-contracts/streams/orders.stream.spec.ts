@@ -1,4 +1,5 @@
 import {
+  CORE_ORDER_STREAM,
   CUSTOMER_RETURN_KINDS,
   CUSTOMER_RETURN_REASONS,
   ORDER_STREAM,
@@ -453,5 +454,76 @@ describe('channel-return 교환 칸 (K8 PR11)', () => {
 
   it('exchangeItems 없는 옛 settled 는 통과한다', () => {
     expect(() => settled.parse(settledPayload)).not.toThrow();
+  });
+});
+
+describe('CORE_ORDER_STREAM SalesOrderLineReservationState', () => {
+  const schema = CORE_ORDER_STREAM.events.SalesOrderLineReservationState.schema;
+  if (!schema) throw new Error('SalesOrderLineReservationState schema missing');
+  const line = {
+    salesOrderLineId: 'line-1',
+    channelOrderItemId: null,
+    variantId: 'variant-1',
+    ordered: 3,
+    canceledBeforeShipment: 1,
+    demand: 2,
+    heldUnits: 1,
+  };
+  const valid = {
+    salesOrderId: 'so-1',
+    salesChannel: 'medusa',
+    channelOrderId: 'order_01',
+    orderedAt: '2026-11-09T01:00:00.000Z',
+    version: 3,
+    asOf: '2026-11-09T01:00:05.000Z',
+    lines: [line],
+  };
+
+  it('정상 payload 를 통과시킨다', () => {
+    expect(schema.parse(valid)).toMatchObject({ version: 3, lines: [line] });
+  });
+
+  it('version 음수는 거절한다', () => {
+    expect(() => schema.parse({ ...valid, version: -1 })).toThrow();
+  });
+
+  it('lines[].heldUnits 누락은 거절한다', () => {
+    expect(() =>
+      schema.parse({
+        ...valid,
+        lines: [{ ...line, heldUnits: undefined }],
+      }),
+    ).toThrow();
+  });
+});
+
+describe('ChannelCancelRequested', () => {
+  const schema = ORDER_STREAM.events.ChannelCancelRequested.schema!;
+  const payload = {
+    orderId: 'wms-order-1',
+    salesChannel: 'naver',
+    externalOrderId: 'ord-1',
+    channelRequestRef: 'po-1',
+    channelRequestKey: 'po-1:claim-1',
+    needsApproval: true,
+    requestedAt: '2026-11-10T01:00:00.000Z',
+    items: [{ channelOrderItemId: 'po-1', quantity: 1 }],
+  };
+
+  it('정상 payload 를 통과시킨다', () => {
+    expect(() => schema.parse(payload)).not.toThrow();
+    expect(() => schema.parse({ ...payload, needsApproval: false })).not.toThrow();
+  });
+
+  it('items 가 비면 거절한다', () => {
+    expect(() => schema.parse({ ...payload, items: [] })).toThrow();
+  });
+
+  it.each([0, -1, 1.5])('quantity %p 는 거절한다', (quantity) => {
+    expect(() => schema.parse({ ...payload, items: [{ channelOrderItemId: 'po-1', quantity }] })).toThrow();
+  });
+
+  it.each(['channelRequestRef', 'channelRequestKey'])('%s 가 빈 문자열이면 거절한다', (key) => {
+    expect(() => schema.parse({ ...payload, [key]: '' })).toThrow();
   });
 });

@@ -2,6 +2,7 @@ import {
   formatVersionLifecycleError,
   getVersionLifecycleActions,
   getVersionLifecycleDeleteSuccessHref,
+  getPublishGaps,
 } from './version-lifecycle-actions-model';
 
 describe('version lifecycle actions model', () => {
@@ -130,5 +131,32 @@ describe('version lifecycle actions model', () => {
         getVersionLifecycleActions({ ...locked, status: 'inactive' })
       ).toEqual({ canPublish: false, canDeleteDraft: false });
     });
+  });
+});
+
+describe('getPublishGaps — 발행은 막지 않고, 빠진 것을 발행 전에 한 번 보인다', () => {
+  const image = { id: 'i1', fileId: 'f1', isPrimary: true, sortOrder: 0 };
+
+  it('판매가 규칙과 대표 이미지가 있으면 빠진 것이 없다', () => {
+    expect(getPublishGaps({ basePriceRuleCount: 1, images: [image] })).toEqual([]);
+  });
+
+  it('판매가 규칙이 없으면 판매가 0원으로 발행된다고 알린다', () => {
+    expect(getPublishGaps({ basePriceRuleCount: 0, images: [image] })).toEqual([
+      'price',
+    ]);
+  });
+
+  it('대표 이미지가 없으면 알린다 — 이미지가 있어도 대표가 없으면 같다', () => {
+    expect(getPublishGaps({ basePriceRuleCount: 1, images: [] })).toEqual(['image']);
+    expect(
+      getPublishGaps({ basePriceRuleCount: 1, images: [{ ...image, isPrimary: false }] })
+    ).toEqual(['image']);
+  });
+
+  it('가격 규칙을 아직 못 읽었으면 판매가는 «확인 못 함»으로 알린다', () => {
+    expect(getPublishGaps({ basePriceRuleCount: null, images: [image] })).toEqual([
+      'price-unknown',
+    ]);
   });
 });

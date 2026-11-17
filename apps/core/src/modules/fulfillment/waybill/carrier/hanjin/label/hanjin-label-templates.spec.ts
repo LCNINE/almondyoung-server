@@ -1,4 +1,4 @@
-import { PRINTER_MAX_WIDTH_MM } from '../../../label/label-model';
+import { PRINTER_MAX_WIDTH_MM } from '../../../../../../platform/label/label-model';
 import { HANJIN_LABEL_FIXTURE as DATA } from './__support__/hanjin-label-fixture';
 import { HANJIN_LABEL_TEMPLATES, HANJIN_LABEL_TYPES, renderHanjinLabel } from './hanjin-label-templates';
 

@@ -1,4 +1,5 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
+import { ModuleRef } from '@nestjs/core';
 import { DbTx } from '../../inventory/schema/inventory.schema';
 import { WaybillManager, type Actor, type IssueOpts } from './waybill.manager';
 import type { BatchResultItem, WaybillRow, WaybillView } from './waybill.types';
@@ -23,10 +24,20 @@ export function toView(row: WaybillRow): WaybillView {
 
 @Injectable()
 export class WaybillService {
+  private readonly logger = new Logger(WaybillService.name);
+
+  @Inject(ModuleRef)
+  private readonly moduleRef: ModuleRef;
+
   constructor(private readonly manager: WaybillManager) {}
 
   async issueForShipment(shipmentId: string, opts: IssueOpts, idemKey: string, actor: Actor): Promise<WaybillView> {
     return toView(await this.manager.issueForShipment(shipmentId, opts, idemKey, actor));
+  }
+
+  async resumeActive(shipmentId: string, opts: IssueOpts): Promise<WaybillView | null> {
+    const row = await this.manager.resumeActive(shipmentId, opts);
+    return row ? toView(row) : null;
   }
 
   async abandon(
@@ -56,7 +67,65 @@ export class WaybillService {
     actor: Actor,
     tx?: DbTx,
   ): Promise<WaybillView> {
-    return toView(await this.manager.void(waybillId, dto, idemKey, actor, tx));
+    const row = await this.manager.void(waybillId, dto, idemKey, actor, tx);
+
+    // 외부 tx는 아직 커밋 전이다. 운영자 취소가 커밋된 뒤에만 별도 트랜잭션으로 재개한다.
+    if (!tx) {
+      await this.resumeAfterVoid(row.shipmentId);
+    }
+
+    return toView(row);
+  }
+
+  async requestWithdrawalVoid(shipmentId: string, workItemId: string, actorId: string, tx?: DbTx): Promise<void> {
+    await this.manager.requestWithdrawalVoid(shipmentId, workItemId, actorId, tx);
+  }
+
+  async voidAfterWithdrawal(workItemId: string, tx?: DbTx): Promise<boolean> {
+    if (tx) return false;
+
+    try {
+      const waybill = await this.manager.findWithdrawalVoid(workItemId);
+
+      if (!waybill) return false;
+
+      await this.void(waybill.id, { reason: 'withdrawn:excluded' }, `withdrawal-void:${workItemId}:${waybill.id}`, {
+        id: waybill.actorId,
+        roles: [],
+      });
+
+      return true;
+    } catch (error) {
+      this.logger.warn(`Failed to void waybill after withdrawal: workItemId=${workItemId}`, error);
+
+      return false;
+    }
+  }
+
+  private async resumeAfterVoid(shipmentId: string): Promise<void> {
+    try {
+      const { ConsolidationService } = await import('../services/consolidation.service');
+      const consolidation = this.moduleRef.get(ConsolidationService, { strict: false });
+      const operationId = await consolidation.findPendingOperationIdForSource(shipmentId);
+
+      if (operationId) {
+        await consolidation.tryResumePending(operationId);
+      }
+    } catch (error) {
+      this.logger.warn(`Failed to resume consolidation after waybill void: shipmentId=${shipmentId}`, error);
+    }
+
+    try {
+      const { ShipmentPlanningService } = await import('../services/shipment-planning.service');
+      const planning = this.moduleRef.get(ShipmentPlanningService, { strict: false });
+      const operationId = await planning.findPendingCancellationOperationId(shipmentId);
+
+      if (operationId) {
+        await planning.tryResumePendingCancellation(operationId);
+      }
+    } catch (error) {
+      this.logger.warn(`Failed to resume cancellation after waybill void: shipmentId=${shipmentId}`, error);
+    }
   }
 
   async voidForRecall(

@@ -54,11 +54,17 @@ function AxisBlock({
         <Row label="운송중(전사)" value={axis.inTransfer} />
       )}
       {'onOrder' in axis && <Row label="발주잔량(전사)" value={axis.onOrder} />}
+      {'inTransfer' in axis && (
+        <Row label="선적 오는 중(전사)" value={axis.inboundShipment} />
+      )}
       {'inTransit' in axis && (
         <Row label="이동중(도착 예정)" value={axis.inTransit} />
       )}
       {'onOrderDirect' in axis && (
         <Row label="직행 발주잔량" value={axis.onOrderDirect} />
+      )}
+      {'onOrderDirect' in axis && (
+        <Row label="선적 오는 중(판매 창고)" value={axis.inboundShipment} />
       )}
       <Row label="안전재고" value={axis.safetyStock} />
       <Row label="재주문점" value={axis.reorderPoint} />

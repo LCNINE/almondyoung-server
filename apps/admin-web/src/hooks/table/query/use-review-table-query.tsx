@@ -1,6 +1,6 @@
 import { ReviewListQuery } from '@/lib/types/dto/review';
 import { useQueryParams } from '../../use-query-params';
-import { parseDateRangeParam } from './date-range-param';
+import { parseDateRangeParam, toDayBoundInstants } from './date-range-param';
 
 type UseReviewTableQueryProps = {
   prefix?: string;
@@ -46,7 +46,7 @@ export const useReviewTableQuery = ({
     sort,
     createdAt,
   } = queryObject;
-  const { from: createdFrom, to: createdTo } = parseDateRangeParam(createdAt);
+  const { from: createdFrom, to: createdTo } = toDayBoundInstants(parseDateRangeParam(createdAt));
 
   const searchParams: ReviewListQuery = {
     provider: provider as ReviewListQuery['provider'],

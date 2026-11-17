@@ -168,6 +168,9 @@ export function buildVersionData(
     }
   }
 
+  // 공급처도 2단계가 이름 → id 로 해석해 두었다.
+  if (touched('supplier')) data.supplierId = payload.supplierId ?? null;
+
   // 카테고리는 2단계가 이미 경로 → id 로 해석했다(bulk-session-job.manager.ts:654-659).
   // 여기서 다시 해석하지 않는다 — 해석 규칙이 두 벌이 되면 조용히 갈린다.
   if ('category.set' in fields && payload.categoryIds) {

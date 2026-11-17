@@ -83,6 +83,7 @@ export function useCanvasInteraction({
     groupBox?: Box
   } | null>(null)
   const marqueeStart = useRef<{ x: number; y: number } | null>(null)
+  const lastPress = useRef<{ id: string; at: number } | null>(null)
   const [marquee, setMarquee] = useState<Box | null>(null)
   const [panReady, setPanReady] = useState(false)
   const panning = moveMode || panReady
@@ -139,11 +140,15 @@ export function useCanvasInteraction({
     const up = (event: KeyboardEvent) => {
       if (event.code === "Space") setPanReady(false)
     }
+    // 스페이스를 누른 채 창을 벗어나면 keyup 이 오지 않아, 이후 모든 끌기가 화면 이동이 된다
+    const reset = () => setPanReady(false)
     window.addEventListener("keydown", down)
     window.addEventListener("keyup", up)
+    window.addEventListener("blur", reset)
     return () => {
       window.removeEventListener("keydown", down)
       window.removeEventListener("keyup", up)
+      window.removeEventListener("blur", reset)
     }
   }, [])
   useEffect(() => {
@@ -178,10 +183,12 @@ export function useCanvasInteraction({
     area.addEventListener("pointerdown", press, { capture: true })
     area.addEventListener("pointermove", move)
     area.addEventListener("pointerup", release)
+    area.addEventListener("pointercancel", release)
     return () => {
       area.removeEventListener("pointerdown", press, { capture: true })
       area.removeEventListener("pointermove", move)
       area.removeEventListener("pointerup", release)
+      area.removeEventListener("pointercancel", release)
     }
   }, [])
 
@@ -219,6 +226,14 @@ export function useCanvasInteraction({
       if (next.length > 1) setGroupIds(next)
       return
     }
+    // 그룹 안 요소를 더블클릭했거나 이미 그 요소 하나만 골라 둔 상태면 그룹을 건너뛰고 그 요소를 다룬다.
+    // pointerdown 의 event.detail 은 크롬에서 늘 0 이라 두 번 누른 간격으로 직접 잰다
+    const pressedTwice =
+      lastPress.current?.id === layer.id &&
+      event.timeStamp - lastPress.current.at < 400
+    lastPress.current = { id: layer.id, at: event.timeStamp }
+    const enterGroup =
+      !!layer.groupId && (pressedTwice || selectedId === layer.id)
     const merged = layer.groupId
       ? design[side].filter(
           (item) => item.groupId === layer.groupId && item.visible !== false
@@ -228,7 +243,11 @@ export function useCanvasInteraction({
       merged.length > 1 && !groupIds.includes(layer.id)
         ? merged
         : design[side].filter((item) => groupIds.includes(item.id))
-    if (group.length > 1 && group.some((item) => item.id === layer.id)) {
+    if (
+      !enterGroup &&
+      group.length > 1 &&
+      group.some((item) => item.id === layer.id)
+    ) {
       if (!groupIds.includes(layer.id)) {
         setSelectedId(null)
         setGroupIds(group.map((item) => item.id))

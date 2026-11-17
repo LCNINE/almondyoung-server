@@ -6,11 +6,12 @@
 
 **UI(컴포넌트·화면·스타일)를 만들거나 수정할 때는 반드시 [`DESIGN.md`](./DESIGN.md)를 먼저 읽고 그 규격(Karrot/Seed Design 기반)을 따른다.** 색·라운드·보더·포커스링은 `src/styles/globals.css`의 CSS 변수에 이미 매핑돼 있으니 하드코딩 hex 대신 시맨틱 유틸을 쓴다.
 
-- Primary/브랜드 `#ff6600` = `bg-primary`/`text-primary` (CTA·활성에만 아껴 사용)
-- 텍스트 `text-foreground`(#1a1c20, 순수검정 금지) · 보조 `text-muted-foreground`
-- 면 `bg-muted`(#f7f8f9)·`bg-secondary`(#f3f4f5) · 보더 `border-border`(#dcdee3)
+- 색은 라이브 팔레트(DESIGN.md 2장). 기본 버튼·강조 `bg-primary` = 주황 `#ffa500` · 헤더 `bg-header-background`(스톤) · 공지 띠 `bg-header-border` · 섹션 제목 강조 낱말 `text-mint` · 할인 `text-pink-deep` · 멤버십 가격은 주황
+- `mint`·`pink`·`purple`·`ink` 는 역할 이름으로 남은 토큰이고 값은 라이브 색이다(mint·purple=주황, pink=빨강, ink=`#20232a`)
+- 텍스트 `text-foreground`(#000000) · 보조 `text-muted-foreground`
+- 면 `bg-muted`(#f7f8f9)·`bg-secondary`(#f3f4f5) · 보더 `border-border`(#d9d9d9)
 - 4px 그리드, radius 8/12/16/24px, 그림자 3단계, 스프링 모션 금지
-- 옛 오렌지 `#f29219` 신규 사용 금지 (전부 `#ff6600`로 이관 완료)
+- 옛 주황 `#ff6600`·`#f29219` 신규 사용 금지
 
 ## 프로젝트 개요
 

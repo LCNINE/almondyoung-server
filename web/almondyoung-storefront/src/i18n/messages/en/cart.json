@@ -90,5 +90,12 @@
   },
   "won": "KRW",
   "timeSaleEndedOne": "The time sale ended — {name} changed from {from} to {to}.",
-  "timeSaleEndedMany": "The time sale ended — {name} and {count} more changed. Item total {from} → {to}"
+  "timeSaleEndedMany": "The time sale ended — {name} and {count} more changed. Item total {from} → {to}",
+  "addedToast": {
+    "title": "Added to cart",
+    "membershipSavings": "You saved {amount} KRW with the member price",
+    "freeShippingRemaining": "Add <b>{amount} KRW</b> more for free shipping",
+    "freeShippingReached": "Free shipping applied",
+    "goToCart": "Go to cart"
+  }
 }

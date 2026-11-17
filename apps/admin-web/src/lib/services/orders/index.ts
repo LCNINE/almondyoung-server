@@ -17,13 +17,17 @@ export {
   useOrderStats,
   usePendingChannelChanges,
   useSalesOrderAmendments,
+  useSalesOrderShipmentOperations,
   useDailyOrderStatus,
   useSalesOrders,
   useSalesOrder,
   useSalesOrderItems,
   // 출고 배치 (D2)
   useOutboundBatchesV2,
+  useOutboundPreparationSummary,
+  useLoadMoreOutboundPreparation,
   useOutboundBatchV2,
+  useLoadOutboundBatchV2,
   useOutboundBatchEligibleShipments,
   useOutboundBatchWorkItems,
   // 직배 운영 (K3)
@@ -51,6 +55,7 @@ export {
   useFulfillmentShipments,
   useShipmentDetail,
   useFulfillmentOperation,
+  useFulfillmentRequestOutcome,
   useShipmentRecallOperation,
   useLegacyPurchaseOrders,
   useLegacyPurchaseOrder,
@@ -72,6 +77,7 @@ export {
 export {
   useCreateSalesOrder,
   useUpdateSalesOrder,
+  useUpdateSalesOrderMemo,
   useCancelSalesOrder,
   useAdminCancelSalesOrder,
   useAdminRetryRefund,
@@ -80,6 +86,8 @@ export {
   // 출고주문(FO) 액션
   useSplitShipment,
   useSplitUnreservedShipment,
+  useSplitUnreservedMany,
+  useRunOutboundPreparation,
   useReviseShipmentRecipient,
   usePlanShipment,
   useRecallShipment,
@@ -121,6 +129,7 @@ export {
   useRegisterManualWaybill,
   useReissueWaybill,
   useVoidWaybill,
+  useAbandonWaybill,
   useBatchIssueWaybills,
   // 반영 대기 채널 변경 닫기 (#1016 6번 행)
   useDismissChannelChange,

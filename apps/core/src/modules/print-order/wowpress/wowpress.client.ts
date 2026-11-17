@@ -2,6 +2,7 @@ import { Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { z } from 'zod';
 import { splitKoreanAddress } from './korean-address';
+import { buildJobs, judgeJobcost, type JobcostVerdict } from './wowpress-body';
 import { httpsWowpressTransport } from './wowpress.transport';
 import {
   type WowpressLineSpec,
@@ -10,6 +11,7 @@ import {
   type WowpressOrderInput,
   type WowpressOrderResult,
   type WowpressPlacedOrder,
+  type WowpressProdInfo,
   type WowpressRequest,
   type WowpressResponse,
   type WowpressTransport,
@@ -18,15 +20,6 @@ import {
 
 const API_BASE = 'https://api.wowpress.co.kr';
 
-// 와우프레스는 수량을 ordqty 가 아니라 각 작업의 jobqty 로 계산한다. 빠지면 최소 수량 값으로 견적·발주된다
-function withJobqty(spec: WowpressLineSpec, qty: number) {
-  const jobqty = spec.qtyPerUnit * qty;
-
-  return {
-    prsjob: spec.prsjob.map((job) => ({ ...job, jobqty })),
-    awkjob: spec.awkjob.map((job) => ({ ...job, jobqty })),
-  };
-}
 const FILE_BASE = 'https://file.wowpress.co.kr';
 export const WOWPRESS_TRANSPORT = Symbol('WOWPRESS_TRANSPORT');
 
@@ -42,6 +35,14 @@ export class WowpressDuplicateOrdersError extends WowpressApiError {
   constructor(readonly ordnums: string[]) {
     super(`multiple ordnums for ordkey: ${ordnums.join(', ')}`);
     this.name = 'WowpressDuplicateOrdersError';
+  }
+}
+
+// 와우프레스가 주문을 만들지 않았다고 답한 경우. resultCode 는 200 이고 사유는 resultMap.cjson_order 의 status·errmsg 에 온다
+export class WowpressOrderRejectedError extends WowpressApiError {
+  constructor(readonly reason: string) {
+    super(`wowpress rejected the order: ${reason}`);
+    this.name = 'WowpressOrderRejectedError';
   }
 }
 
@@ -71,6 +72,26 @@ const numeric = z
       .regex(/^-?\d+(\.\d+)?$/),
   ])
   .transform(Number);
+
+const prodInfoSchema = z.object({
+  prodno: numeric,
+  prodname: z.string(),
+  filetype: z
+    .string()
+    .nullish()
+    .transform((v) => v ?? null),
+  sizeinfo: z.unknown(),
+  paperinfo: z.unknown(),
+  colorinfo: z.unknown(),
+  ordqty: z.unknown(),
+  prsjobinfo: z.unknown(),
+  awkjobinfo: z.unknown(),
+  dlvyprepay: z
+    .boolean()
+    .nullish()
+    .transform((v) => v ?? null),
+  dlvygrpno: numeric.nullish().transform((v) => v ?? null),
+});
 
 function asRecord(v: unknown): Record<string, unknown> | null {
   const r = record.safeParse(v);
@@ -124,6 +145,24 @@ function collectOrdnums(node: unknown, out: string[] = []): string[] {
   return out;
 }
 
+function flatRows(value: unknown): unknown {
+  return Array.isArray(value) ? value.flat() : value;
+}
+
+// 응답 모양을 모를 때 로그로 남긴다. 값은 빼고 키만 적는다
+function describeShape(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(describeShape).join(',')}]`;
+  const r = asRecord(value);
+
+  return r ? `{${Object.keys(r).join(',')}}` : typeof value;
+}
+
+// 와우프레스 UserOrdKey 칸은 판매주문 줄 id(UUID 36자)를 받지 못한다. 하이픈을 뺀 뒤 16자리(무작위 부분)만 보낸다.
+// ponytail: 줄 id 는 바꾸지 않고 보낼 때만 줄인다. 조회는 ordkey 로 거른 뒤 같은 값으로 다시 맞춰 보므로 충돌은 기간 안 같은 키뿐이다
+export function toWowpressOrdkey(lineId: string): string {
+  return lineId.replace(/-/g, '').slice(-16);
+}
+
 @Injectable()
 export class WowpressClient {
   private readonly logger = new Logger(WowpressClient.name);
@@ -137,8 +176,20 @@ export class WowpressClient {
     this.transport = transport ?? httpsWowpressTransport;
   }
 
-  async quote(spec: WowpressLineSpec, qty: number): Promise<void> {
-    await this.call(
+  async prodInfo(prodno: number): Promise<WowpressProdInfo> {
+    const res = await this.call({ method: 'GET', url: `${API_BASE}/api/v1/std/prod_info/${prodno}` }, true);
+    const parsed = prodInfoSchema.safeParse(asRecord(res.resultMap)?.prod_info);
+    if (!parsed.success) throw new WowpressApiError(`unrecognized prod_info response for ${prodno}`);
+
+    return parsed.data;
+  }
+
+  async jobcost(
+    spec: Pick<WowpressLineSpec, 'prodno' | 'prsjob' | 'awkjob' | 'qtyPerUnit'> & { jobpresetno?: string },
+    qty: number,
+  ): Promise<JobcostVerdict> {
+    const jobs = buildJobs(spec, qty);
+    const res = await this.call(
       {
         method: 'POST',
         url: `${API_BASE}/api/v1/ord/cjson_jobcost`,
@@ -147,11 +198,25 @@ export class WowpressClient {
           ordqty: String(spec.qtyPerUnit * qty),
           ordcnt: '1',
           ordtitle: 'quote',
-          ...withJobqty(spec, qty),
+          ...(spec.jobpresetno !== undefined ? { jobpresetno: spec.jobpresetno } : {}),
+          ...jobs,
         },
       },
       true,
     );
+
+    return judgeJobcost(jobs, res);
+  }
+
+  // 발주 전 검증. 견적이 보낸 값을 그대로 반영하지 않았으면 던진다
+  async quote(spec: WowpressLineSpec, qty: number): Promise<void> {
+    const verdict = await this.jobcost(spec, qty);
+    if (!verdict.ok) throw new WowpressApiError(verdict.reason);
+
+    for (const accessory of spec.accessories ?? []) {
+      const accessoryVerdict = await this.jobcost({ ...accessory, awkjob: [] }, qty);
+      if (!accessoryVerdict.ok) throw new WowpressApiError(`부자재 ${accessory.prodno}: ${accessoryVerdict.reason}`);
+    }
   }
 
   async order(input: WowpressOrderInput): Promise<WowpressOrderResult> {
@@ -169,10 +234,20 @@ export class WowpressClient {
               ordcnt: '1',
               ordtitle: input.ordtitle,
               ordbody,
-              ordkey,
+              ordkey: toWowpressOrdkey(ordkey),
               jobpresetno: spec.jobpresetno,
-              ...withJobqty(spec, qty),
+              ...buildJobs(spec, qty),
             },
+            ...(spec.accessories ?? []).map((accessory) => ({
+              prodno: accessory.prodno,
+              ordqty: String(accessory.qtyPerUnit * qty),
+              ordcnt: '1',
+              ordtitle: input.ordtitle,
+              ordbody,
+              ordkey: toWowpressOrdkey(ordkey),
+              jobpresetno: accessory.jobpresetno,
+              ...buildJobs({ ...accessory, awkjob: [] }, qty),
+            })),
           ]),
           dlvymcd: '4',
           dlvyfr: this.sender(),
@@ -188,7 +263,7 @@ export class WowpressClient {
         },
       },
       false,
-      { name: 'cjson_order', ordkey: items.map((i) => i.ordkey).join(',') },
+      { name: 'cjson_order', ordkey: items.map((i) => toWowpressOrdkey(i.ordkey)).join(',') },
     );
 
     const resultMap = asRecord(res.resultMap);
@@ -198,7 +273,17 @@ export class WowpressClient {
       throw new WowpressApiError('cjson_order is not an object in cjson_order response');
 
     const container = nested ?? resultMap;
-    const ordinfo = recordArray.safeParse(container?.ordinfo);
+    const status = container?.status;
+    if (status !== undefined && Number(status) !== 200 && collectOrdnums(resultMap).length === 0) {
+      throw new WowpressOrderRejectedError(nonEmptyString(container?.errmsg) ?? `status ${String(status)}`);
+    }
+    // 요청 ordreq 처럼 줄마다 배열로 한 번 더 싸서 오기도 한다
+    // 부자재도 같은 ordnum 으로 ordinfo 에 한 줄씩 온다(2026-11-13 실주문 확인). 주제품 줄만 센다
+    const accessoryProdnos = new Set(items.flatMap(({ spec }) => (spec.accessories ?? []).map((a) => a.prodno)));
+    const rows = flatRows(container?.ordinfo);
+    const ordinfo = recordArray.safeParse(
+      Array.isArray(rows) ? rows.filter((row) => !accessoryProdnos.has(toNumber(asRecord(row)?.prodno) ?? -1)) : rows,
+    );
     if (!ordinfo.success || ordinfo.data.length !== items.length) {
       throw new WowpressApiError('ordinfo count does not match items in cjson_order response');
     }
@@ -206,11 +291,11 @@ export class WowpressClient {
     const orders = ordinfo.data.map((row): WowpressPlacedOrder => {
       const r = asRecord(row);
       const ordnum = nonEmptyString(r?.ordnum);
-      if (!r || !ordnum) throw new WowpressApiError('ordnum missing in cjson_order response');
+      if (!r || !ordnum) throw new WowpressApiError(`ordnum missing in cjson_order response (row ${describeShape(row)})`);
       return { ordnum, dboxno: toNumber(r.dboxno), prodno: toNumber(r.prodno) };
     });
 
-    const dlvinfo = recordArray.safeParse(container?.dlvinfo);
+    const dlvinfo = recordArray.safeParse(flatRows(container?.dlvinfo));
     const boxes: WowpressBox[] = [];
     for (const row of dlvinfo.success ? dlvinfo.data : []) {
       const r = asRecord(row);
@@ -233,7 +318,8 @@ export class WowpressClient {
     await this.call({ method: 'POST', url: `${API_BASE}/api/v1/ord/ord_cancel`, json: { ordnum } }, false);
   }
 
-  async findByOrdkey(ordkey: string, since: Date): Promise<{ ordnum: string; dboxnum: string | null } | null> {
+  async findByOrdkey(lineId: string, since: Date): Promise<{ ordnum: string; dboxnum: string | null } | null> {
+    const ordkey = toWowpressOrdkey(lineId);
     const res = await this.call(
       {
         method: 'POST',
@@ -249,10 +335,9 @@ export class WowpressClient {
       true,
       { name: 'ord_list', ordkey },
     );
-    // ponytail: 목록 배열의 키는 문서 예시가 없어 ord_list·list 둘 다 받고, 둘 다 아니면 실패시킨다
+    // 문서(§6.12) 샘플의 목록 키는 ordlist 다. 모르는 모양이면 실패시킨다
     const resultMap = asRecord(res.resultMap);
-    const ordList = recordArray.safeParse(resultMap?.ord_list);
-    const list = ordList.success ? ordList : recordArray.safeParse(resultMap?.list);
+    const list = recordArray.safeParse(resultMap?.ordlist);
     // 모르는 모양을 null 로 보면 재주문(중복 결제)으로 이어지므로, 배열을 읽은 경우만 '없음' 으로 본다
     if (!list.success) throw new WowpressApiError('unrecognized ord_list response');
     // 행을 모두 먼저 검사한다. ordkey 칸이 없는 행을 '불일치' 로 넘기면 같은 이유로 재주문이 된다

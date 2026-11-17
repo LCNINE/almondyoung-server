@@ -244,9 +244,7 @@ it('keeps registration blocked after a scan cannot be saved, then recovers that 
   const user = userEvent.setup();
   await screen.findByText('간편입고');
   await waitFor(() =>
-    expect(
-      screen.queryByText('작업을 불러오고 있어요.')
-    ).not.toBeInTheDocument()
+    expect(screen.queryByText(/스캔 준비 중이에요/)).not.toBeInTheDocument()
   );
   await waitFor(() =>
     expect(screen.getByLabelText('바코드 입력')).toBeEnabled()
@@ -361,9 +359,7 @@ it('restores accepted scan counts after remount without sending inventory again'
   );
   // Initial IndexedDB load must finish before the screen accepts physical input.
   await waitFor(() =>
-    expect(
-      screen.queryByText('작업을 불러오고 있어요.')
-    ).not.toBeInTheDocument()
+    expect(screen.queryByText(/스캔 준비 중이에요/)).not.toBeInTheDocument()
   );
   await waitFor(() =>
     expect(screen.getByLabelText('바코드 입력')).toBeEnabled()

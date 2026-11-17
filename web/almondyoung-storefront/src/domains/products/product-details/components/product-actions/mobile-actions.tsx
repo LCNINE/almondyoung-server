@@ -1,5 +1,6 @@
 "use client"
 
+import Image from "next/image"
 import { Button } from "@/components/ui/button"
 import { Drawer, DrawerContent, DrawerTitle } from "@/components/ui/drawer"
 import { Separator } from "@/components/ui/separator"
@@ -15,13 +16,11 @@ import { RestockNotice, hasStockNotice } from "./restock-notice"
 import { SelectedItem } from "./types"
 import {
   productQuantitySummary,
-  quantityOptionNote,
   variantTierRows,
   type ItemQuantityPricing,
   type QuantityPricingContext,
 } from "./quantity-pricing"
-import QuantityBundlePicker from "../quantity-bundle-picker"
-import QuantityOptionNote from "../quantity-option-note"
+import QuantityDiscountOffer from "../quantity-discount-offer"
 import {
   CustomOrderNotice,
   CustomOrderNoticeLine,
@@ -30,6 +29,7 @@ import {
 import LocalizedClientLink from "@/components/shared/localized-client-link"
 
 type MobileActionsProps = {
+  paperPreview?: React.ReactNode
   product: HttpTypes.StoreProduct
   options: Record<string, string | undefined>
   setOptionValue: (optionId: string, value: string) => void
@@ -60,6 +60,7 @@ type MobileActionsProps = {
 const SHEET_NOTICE_ID = "custom-order-notice-sheet"
 
 const MobileActions: React.FC<MobileActionsProps> = ({
+  paperPreview,
   product,
   options,
   setOptionValue,
@@ -87,15 +88,25 @@ const MobileActions: React.FC<MobileActionsProps> = ({
   showCustomOrderNotice = false,
 }) => {
   const t = useTranslations("productDetail.options")
+  const tQuantity = useTranslations("productDetail.quantityDiscount")
   const [open, setOpen] = useState(false)
+
   // 묶음 할인이 있는 상품은 바로 담지 않고 시트를 열어 묶음을 고르게 한다(옵션이 하나여도).
   const focusItem = selectedItems[selectedItems.length - 1]
   const bundle = focusItem
     ? variantTierRows(focusItem.variant, product, pricingContext)
-    : { rows: [], memberHints: [], currentPrice: null }
-  const hasBundles = bundle.rows.length > 0 && !isWelcomeMembership
-  const summary = isSimple ? null : productQuantitySummary(product, pricingContext)
-  const note = focusItem ? quantityOptionNote({ chosen: true, ...bundle, summary }) : null
+    : {
+        rows: [],
+        memberHints: [],
+        currentPrice: null,
+        hiddenMemberQuantity: null,
+      }
+  const hasBundles =
+    (bundle.rows.length > 0 ||
+      bundle.memberHints.length > 0 ||
+      !!bundle.hiddenMemberQuantity) &&
+    !isWelcomeMembership
+  const summary = productQuantitySummary(product, pricingContext)
   const instantPurchase = isSimple && !hasBundles
 
   const disabledLabel =
@@ -120,9 +131,34 @@ const MobileActions: React.FC<MobileActionsProps> = ({
           className="flex w-full flex-col gap-2 border-t border-gray-200 bg-white p-4"
           data-testid="mobile-actions"
         >
+          {summary && !isWelcomeMembership && (
+            <button
+              type="button"
+              onClick={() => setOpen(true)}
+              className="border-mint-deep/30 bg-mint-tint text-foreground flex min-h-11 w-full flex-wrap items-center justify-between gap-x-2 gap-y-1 rounded-xl border px-3 py-2 text-left text-sm font-bold"
+            >
+              <span>
+                {tQuantity(
+                  summary.pricesHidden
+                    ? "hiddenMemberOffer"
+                    : summary.memberOnly
+                      ? "stickyMember"
+                      : "sticky",
+                  { count: summary.minQuantity, percent: summary.percent }
+                )}
+              </span>
+              <span className="text-mint-deep">{tQuantity("viewBundles")}</span>
+            </button>
+          )}
           {templateHref && (
             <LocalizedClientLink href={templateHref} className="w-full">
               <Button variant="outline" className="h-12 w-full">
+                <Image
+                  src="/images/almond-template-palette.png"
+                  alt=""
+                  width={20}
+                  height={20}
+                />
                 아몬드템플릿으로 디자인
               </Button>
             </LocalizedClientLink>
@@ -187,7 +223,7 @@ const MobileActions: React.FC<MobileActionsProps> = ({
                       setOpen(true)
                     }
                   }}
-                  className="border-yellow-30 text-yellow-30 hover:text-primary h-12 w-full flex-1 cursor-pointer text-base hover:bg-transparent"
+                  className="border-primary text-primary hover:text-primary/80 h-12 w-full flex-1 cursor-pointer text-base hover:bg-transparent"
                   data-testid="mobile-cart-button"
                 >
                   {t("addToCart")}
@@ -239,23 +275,23 @@ const MobileActions: React.FC<MobileActionsProps> = ({
               </div>
             )}
 
-            {note && summary && (
-              <QuantityOptionNote
-                kind={note}
-                summary={summary}
-                optionLabel={focusItem?.variant.title ?? undefined}
-                className="py-3"
-              />
-            )}
+            {paperPreview}
 
-            {hasBundles && focusItem && bundle.currentPrice !== null && (
-              <QuantityBundlePicker
-                rows={bundle.rows}
-                memberHints={bundle.memberHints}
-                currentPrice={bundle.currentPrice}
-                quantity={focusItem.quantity}
-                onSelect={(q) => updateQuantity(focusItem.variantId, q - focusItem.quantity)}
-                optionLabel={isSimple ? undefined : (focusItem.variant.title ?? undefined)}
+            {!isWelcomeMembership && (
+              <QuantityDiscountOffer
+                product={product}
+                context={pricingContext}
+                focusVariant={focusItem?.variant}
+                quantity={focusItem?.quantity}
+                onSelect={
+                  focusItem
+                    ? (q) =>
+                        updateQuantity(
+                          focusItem.variantId,
+                          q - focusItem.quantity
+                        )
+                    : undefined
+                }
                 className="py-3"
               />
             )}
@@ -282,7 +318,9 @@ const MobileActions: React.FC<MobileActionsProps> = ({
                     onRemove={() => removeItem(item.variantId)}
                     showRemove={!isSimple}
                     pricing={pricingOf(item)}
-                    onAddQuantity={(count) => updateQuantity(item.variantId, count)}
+                    onAddQuantity={(count) =>
+                      updateQuantity(item.variantId, count)
+                    }
                   />
                 ))}
               </div>
@@ -309,6 +347,12 @@ const MobileActions: React.FC<MobileActionsProps> = ({
                 className="mb-2 block w-full"
               >
                 <Button variant="outline" className="h-12 w-full">
+                  <Image
+                    src="/images/almond-template-palette.png"
+                    alt=""
+                    width={20}
+                    height={20}
+                  />
                   아몬드템플릿으로 디자인
                 </Button>
               </LocalizedClientLink>

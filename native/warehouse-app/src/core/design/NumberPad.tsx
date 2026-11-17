@@ -1,3 +1,4 @@
+import { useHumanKeys } from '../hardware/scan/useScanner';
 import { cn } from './cn';
 
 const DIGITS = ['1', '2', '3', '4', '5', '6', '7', '8', '9'] as const;
@@ -11,10 +12,13 @@ export function NumberPad({
   onChange,
   getValue,
   allowNegative = false,
+  keyboard = false,
 }: {
   value: number;
   onChange: (next: number) => void;
   allowNegative?: boolean;
+  /** 사람이 친 숫자 키와 Backspace 도 받는다. 한 화면에 패드가 하나일 때만 켠다. */
+  keyboard?: boolean;
   /** Optional synchronous source for consumers that accept several keys before rendering. */
   getValue?: () => number;
 }) {
@@ -40,6 +44,7 @@ export function NumberPad({
 
   return (
     <div className="grid grid-cols-3 gap-2">
+      {keyboard && <PadKeys onDigit={pressDigit} onBackspace={pressBackspace} />}
       {DIGITS.map((d) => (
         <button
           key={d}
@@ -82,4 +87,16 @@ export function NumberPad({
       </button>
     </div>
   );
+}
+
+function PadKeys({ onDigit, onBackspace }: { onDigit: (d: string) => void; onBackspace: () => void }) {
+  useHumanKeys((key: string) => {
+    if (/^\d$/.test(key)) {
+      onDigit(key);
+    } else if (key === 'Backspace') {
+      onBackspace();
+    }
+  });
+
+  return null;
 }

@@ -1,0 +1,16 @@
+{
+  "steps": {
+    "label": "注文ステップ",
+    "design": "デザイン",
+    "proof": "印刷ファイル確認",
+    "order": "注文"
+  },
+  "goOrder": "注文へ進む",
+  "goOrderHint": "印刷ファイルを確認してから注文します",
+  "orderHint": {
+    "title": "デザインが終わったらここを押してください",
+    "body": "文字の切れや写真のぼやけがないか確認したら、そのまま注文できます。",
+    "dismiss": "わかりました"
+  },
+  "textEditHint": "Enter で確定 · Shift+Enter で改行 · Esc で取消"
+}

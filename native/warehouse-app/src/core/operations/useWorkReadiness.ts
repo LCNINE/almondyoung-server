@@ -7,6 +7,7 @@ import {
   useState,
 } from 'react';
 import type { WorkRuntime } from './OperationContext';
+import { ApiError } from '../data/httpClient';
 
 export type WorkReadiness =
   | { status: 'signed_out' }
@@ -17,6 +18,7 @@ export type WorkReadiness =
       status: 'failed';
       step: 'scope' | 'restore' | 'retry';
       message: string;
+      denied: boolean;
     };
 
 function failureMessage(error: unknown) {
@@ -95,7 +97,12 @@ export function useWorkReadiness(
           if (!current()) return;
           setStored({
             owner,
-            state: { status: 'failed', step, message: failureMessage(error) },
+            state: {
+              status: 'failed',
+              step,
+              message: failureMessage(error),
+              denied: error instanceof ApiError && error.status === 403,
+            },
           });
         }
       })().finally(() => {

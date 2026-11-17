@@ -71,11 +71,15 @@ export const outboundBatchesClient = {
     batchId: string,
     shipmentId: string,
     reason: string,
-    idempotencyKey: string
+    idempotencyKey: string,
+    voidWaybill?: boolean
   ): Promise<OutboundBatchCommandResponse> => {
     const res = await client.delete(
       `${BASE}/${encodeURIComponent(batchId)}/shipments/${encodeURIComponent(shipmentId)}`,
-      { data: { reason }, headers: { 'Idempotency-Key': idempotencyKey } }
+      {
+        data: { reason, voidWaybill },
+        headers: { 'Idempotency-Key': idempotencyKey },
+      }
     );
     return res.data;
   },

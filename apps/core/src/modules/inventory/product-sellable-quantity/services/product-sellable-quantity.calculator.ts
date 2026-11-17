@@ -53,7 +53,7 @@ export interface ProductSellableQuantityResult {
   comingSoonDate: string | null;
   inboundDate?: string | null;
   inboundApproximate?: boolean;
-  inboundSource?: 'manual' | 'purchase_order' | null;
+  inboundSource?: 'manual' | 'purchase_order' | 'inbound_shipment' | null;
   components: ProductSellableQuantityComponentResult[];
   calculatedAt: Date;
 }

@@ -1,5 +1,6 @@
 import type { WorkRuntime } from '../../core/operations/OperationContext';
 import { assertInboundWorkflowCapability } from '../../core/operations/useWorkCapabilities';
+import type { ReceiptSource } from './types';
 import { ReceiptStateError, useReceiptLineState } from './receiptState';
 
 async function prepareReceiptRead(runtime: WorkRuntime, reconcile: boolean) {
@@ -18,7 +19,7 @@ async function prepareReceiptRead(runtime: WorkRuntime, reconcile: boolean) {
 export function useReceiptReconciliation(input: {
   lineId: string | null;
   warehouseId: string | null;
-  expectedSource: 'direct' | 'purchase_order';
+  expectedSource: ReceiptSource;
 }) {
   return useReceiptLineState(input.lineId, input.warehouseId, {
     expectedSource: input.expectedSource,

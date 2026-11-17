@@ -55,6 +55,8 @@ export type OrderLineRow = {
   shippingFee?: number;
   orderStatus: string;
   memo?: string;
+  /** 주문 상세를 읽어 메모를 아는지 — 못 읽은 주문의 메모는 «없음»이 아니라 «모름»이다 */
+  memoLoaded: boolean;
   workLogs?: { at: string; by: string; label: string }[];
 
   // 라인
@@ -204,6 +206,8 @@ export function useSalesOrderRows(query: SalesOrdersQuery & { _t?: number }) {
   } => {
     if (!listQuery.data) return { items: [], total: 0 };
 
+    // 페이지·검색을 바꾸는 동안 보이는 상세는 앞 조회의 값이라 메모를 고칠 근거가 아니다
+    const detailsAreCurrent = !detailQueries.isPlaceholderData;
     const detailMap = new Map<string, any>();
     detailQueries.data?.forEach((d: any) => {
       if (d?.id) detailMap.set(d.id, d);
@@ -292,9 +296,7 @@ export function useSalesOrderRows(query: SalesOrdersQuery & { _t?: number }) {
               };
 
         const walletIntentId: string | null | undefined =
-          idx === 0
-            ? (detail?.walletIntentId ?? listItem.walletIntentId ?? null)
-            : undefined;
+          detail?.walletIntentId ?? listItem.walletIntentId ?? null;
 
         const row: OrderLineRow = {
           rowId: `${listItem.id}-${line.id ?? idx}`,
@@ -323,6 +325,7 @@ export function useSalesOrderRows(query: SalesOrdersQuery & { _t?: number }) {
           shippingFee: detail?.shippingFee ?? listItem.shippingFee ?? 0,
           orderStatus: listItem.status,
           memo: detail?.memo,
+          memoLoaded: detail != null && detailsAreCurrent,
           workLogs: detail?.workLogs ?? [],
 
           variantId: line.variantId,
@@ -390,7 +393,8 @@ export function useSalesOrderRows(query: SalesOrdersQuery & { _t?: number }) {
           totalAmount: listItem.totalAmount,
           shippingFee: 0,
           orderStatus: listItem.status,
-          memo: undefined,
+          memo: detail?.memo,
+          memoLoaded: detail != null && detailsAreCurrent,
           workLogs: [],
           variantId: '',
           productName: '(상품 정보 없음)',
@@ -398,6 +402,8 @@ export function useSalesOrderRows(query: SalesOrdersQuery & { _t?: number }) {
           isMatched: false,
           isDirect: false,
           shipmentPhase: toShipmentPhase(detail?.shipmentPhase ?? listItem.shipmentPhase),
+          walletIntentId:
+            detail?.walletIntentId ?? listItem.walletIntentId ?? null,
           lines: [], // 빈 배열
         });
       }
@@ -410,7 +416,7 @@ export function useSalesOrderRows(query: SalesOrdersQuery & { _t?: number }) {
     });
 
     return { items: lineRows, total };
-  }, [listQuery.data, detailQueries.data, variantMapQuery.data, userMapQuery.data]);
+  }, [listQuery.data, detailQueries.data, detailQueries.isPlaceholderData, variantMapQuery.data, userMapQuery.data]);
 
   return {
     data: transformedData,

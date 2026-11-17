@@ -32,7 +32,7 @@ import {
   ReorderCategoriesDto,
 } from './dto';
 import { CategoryMapper } from './mappers';
-import { RequirePermission } from '@app/authorization';
+import { RequirePermission, User } from '@app/authorization';
 
 @ApiTags('Categories')
 @Controller('categories')
@@ -53,8 +53,11 @@ export class ProductCategoriesController {
   })
   @ApiResponse({ status: 400, description: '잘못된 요청 데이터' })
   @ApiResponse({ status: 409, description: '이미 존재하는 카테고리명' })
-  async createCategory(@Body() createCategoryDto: CreateCategoryDto): Promise<CategoryResponseDto> {
-    return this.productCategoriesService.createCategory(createCategoryDto);
+  async createCategory(
+    @Body() createCategoryDto: CreateCategoryDto,
+    @User() user: { userId: string },
+  ): Promise<CategoryResponseDto> {
+    return this.productCategoriesService.createCategory(createCategoryDto, user?.userId);
   }
 
   @RequirePermission('catalog.category.write')
@@ -75,8 +78,9 @@ export class ProductCategoriesController {
   async updateCategory(
     @Param('id') id: string,
     @Body() updateCategoryDto: UpdateCategoryDto,
+    @User() user: { userId: string },
   ): Promise<CategoryResponseDto> {
-    return this.productCategoriesService.updateCategory(id, updateCategoryDto);
+    return this.productCategoriesService.updateCategory(id, updateCategoryDto, user?.userId);
   }
 
   @RequirePermission('catalog.category.write')
@@ -226,9 +230,10 @@ export class ProductCategoriesController {
   })
   async moveCategory(
     @Param('id') id: string,
+    @User() user: { userId: string },
     @Query('newParentId') newParentId?: string,
   ): Promise<CategoryResponseDto> {
-    return this.productCategoriesService.moveCategory(id, newParentId);
+    return this.productCategoriesService.moveCategory(id, newParentId, user?.userId);
   }
 
   @RequirePermission('catalog.category.write')
@@ -320,8 +325,9 @@ export class ProductCategoriesController {
   async updateDisplaySettings(
     @Param('id') categoryId: string,
     @Body() dto: UpdateDisplaySettingsDto,
+    @User() user: { userId: string },
   ): Promise<CategoryResponseDto> {
-    return this.productCategoriesService.updateDisplaySettings(categoryId, dto);
+    return this.productCategoriesService.updateDisplaySettings(categoryId, dto, user?.userId);
   }
 
   @RequirePermission('catalog.category.write')
@@ -341,8 +347,9 @@ export class ProductCategoriesController {
   async updateSeoConfig(
     @Param('id') categoryId: string,
     @Body() dto: UpdateSeoConfigDto,
+    @User() user: { userId: string },
   ): Promise<CategoryResponseDto> {
-    return this.productCategoriesService.updateSeoConfig(categoryId, dto);
+    return this.productCategoriesService.updateSeoConfig(categoryId, dto, user?.userId);
   }
 
   @RequirePermission('catalog.category.write')
@@ -362,8 +369,9 @@ export class ProductCategoriesController {
   async updateTemplateConfig(
     @Param('id') categoryId: string,
     @Body() dto: UpdateTemplateConfigDto,
+    @User() user: { userId: string },
   ): Promise<CategoryResponseDto> {
-    return this.productCategoriesService.updateTemplateConfig(categoryId, dto);
+    return this.productCategoriesService.updateTemplateConfig(categoryId, dto, user?.userId);
   }
 
   @RequirePermission('catalog.category.write')
@@ -383,8 +391,9 @@ export class ProductCategoriesController {
   async updateVisibility(
     @Param('id') categoryId: string,
     @Body() dto: UpdateVisibilityDto,
+    @User() user: { userId: string },
   ): Promise<CategoryResponseDto> {
-    return this.productCategoriesService.updateVisibility(categoryId, dto.visible);
+    return this.productCategoriesService.updateVisibility(categoryId, dto.visible, user?.userId);
   }
 
   // ===== TAG GROUP MANAGEMENT =====

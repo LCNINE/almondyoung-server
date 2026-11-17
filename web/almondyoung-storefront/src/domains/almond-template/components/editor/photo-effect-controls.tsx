@@ -1,8 +1,10 @@
+import { Fragment } from "react"
 import type { AlmondEditor } from "../../hooks/use-almond-editor"
 import type { Layer } from "../../lib/document"
 import { PHOTO_EFFECTS } from "../../lib/photo-effects"
 import { MOTION_MASKS } from "../../lib/effect-layer"
 import { PropSection, PropSlider } from "./prop-sections"
+import { GrainScaleSlider } from "./style-controls"
 
 export function PhotoEffectControls({
   editor,
@@ -88,19 +90,27 @@ export function PhotoEffectControls({
           </p>
           <div className="space-y-4">
             {PHOTO_EFFECTS.map(([key, label]) => (
-              <PropSlider
-                key={key}
-                label={label}
-                min={0}
-                max={100}
-                value={selected.photoEffects?.[key] ?? 0}
-                disabled={!editable}
-                onValue={(value) =>
-                  patch(selected.id, {
-                    photoEffects: { ...selected.photoEffects, [key]: value },
-                  })
-                }
-              />
+              <Fragment key={key}>
+                <PropSlider
+                  label={label}
+                  min={0}
+                  max={100}
+                  value={selected.photoEffects?.[key] ?? 0}
+                  disabled={!editable}
+                  onValue={(value) =>
+                    patch(selected.id, {
+                      photoEffects: { ...selected.photoEffects, [key]: value },
+                    })
+                  }
+                />
+                {key === "grain" && (selected.photoEffects?.grain ?? 0) > 0 && (
+                  <GrainScaleSlider
+                    value={selected.grainScale}
+                    disabled={!editable}
+                    onValue={(grainScale) => patch(selected.id, { grainScale })}
+                  />
+                )}
+              </Fragment>
             ))}
           </div>
         </details>

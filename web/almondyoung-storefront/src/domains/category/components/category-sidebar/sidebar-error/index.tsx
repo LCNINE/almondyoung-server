@@ -21,7 +21,7 @@ export function SidebarError() {
           variant="ghost"
           size="sm"
           onClick={handleRetry}
-          className="text-primary"
+          className="text-mint-deep"
         >
           <RefreshCw className="mr-1 h-3 w-3" />
           {t("retry")}

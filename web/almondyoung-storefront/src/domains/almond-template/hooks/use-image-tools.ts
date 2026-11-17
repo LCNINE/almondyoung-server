@@ -1,8 +1,7 @@
 import { useState } from "react"
 import {
   MAX_IMAGE_FILE_BYTES,
-  sideBackground,
-  withSideBackground,
+  withBackgroundImage,
   type Design,
   type Layer,
 } from "../lib/document"
@@ -90,11 +89,10 @@ export function useImageTools({
         ])
       if (target === "background")
         change(
-          withSideBackground(design, side, {
-            background: sideBackground(design, side).background,
-            backgroundImage: image,
-            backgroundPixelWidth: pixelWidth,
-            backgroundPixelHeight: pixelHeight,
+          withBackgroundImage(design, side, {
+            src: image,
+            pixelWidth,
+            pixelHeight,
           })
         )
       else if (target === "frame" && selected)

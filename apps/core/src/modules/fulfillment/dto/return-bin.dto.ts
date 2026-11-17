@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsInt, IsNotEmpty, IsString, IsUUID, MaxLength, Min } from 'class-validator';
+import { IsInt, IsNotEmpty, IsOptional, IsString, IsUUID, MaxLength, Min } from 'class-validator';
 
 export class RegisterReturnBinDto {
   @IsUUID()
@@ -30,16 +30,24 @@ export class ReturnBinContentsDto extends ReturnBinDto {
   @ApiProperty({ type: [ReturnBinItemDto] }) items: ReturnBinItemDto[];
 }
 
+export class MyReturnBinDto {
+  @ApiProperty({ type: String, nullable: true }) id: string | null;
+  @ApiProperty() barcode: string;
+  @ApiProperty() warehouseId: string;
+  @ApiProperty({ type: [ReturnBinItemDto] }) items: ReturnBinItemDto[];
+}
+
 export class ReturnBinRemovalDto {
   @IsString()
   @IsNotEmpty()
   @MaxLength(128)
   barcode: string;
 
+  @IsOptional()
   @IsString()
   @IsNotEmpty()
   @MaxLength(128)
-  returnBinBarcode: string;
+  returnBinBarcode?: string;
 
   @IsInt()
   @Min(1)
@@ -78,10 +86,11 @@ export class ReturnBinPutawayDto {
   @MaxLength(128)
   barcode: string;
 
+  @IsOptional()
   @IsString()
   @IsNotEmpty()
   @MaxLength(128)
-  locationCode: string;
+  locationCode?: string;
 
   @IsInt()
   @Min(1)

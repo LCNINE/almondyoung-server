@@ -2,7 +2,6 @@ import { badgeKindOf, toShipmentPhase, shipmentPhaseLabel, type ShipmentPhase } 
 
 describe('shipment-phase shape', () => {
   const PHASES: ShipmentPhase[] = [
-    'pending',
     'preparing',
     'shipping',
     'delivered',
@@ -14,7 +13,8 @@ describe('shipment-phase shape', () => {
     expect(toShipmentPhase(phase)).toBe(phase);
   });
 
-  it.each([undefined, null, '', 'stock_deducted', 'READY', 3, {}, []])(
+  // 결제가 끝난 주문만 core 에 들어와 «결제대기» 단계는 없다 — 옛 core 가 주던 값도 배지를 그리지 않는다
+  it.each([undefined, null, '', 'pending', 'stock_deducted', 'READY', 3, {}, []])(
     'toShipmentPhase: 모르는 값·옛 응답(%p)은 null',
     (v) => {
       expect(toShipmentPhase(v)).toBeNull();
@@ -22,7 +22,6 @@ describe('shipment-phase shape', () => {
   );
 
   it('shipmentPhaseLabel: 단계마다 운영자 문구', () => {
-    expect(shipmentPhaseLabel('pending')).toBe('결제대기');
     expect(shipmentPhaseLabel('preparing')).toBe('준비중');
     expect(shipmentPhaseLabel('shipping')).toBe('배송중');
     expect(shipmentPhaseLabel('delivered')).toBe('배송완료');
@@ -42,14 +41,12 @@ describe('shipment-phase shape', () => {
   });
 
   it('badgeKindOf: 안 나간 주문의 미매칭은 «매칭 대기» 가 먼저', () => {
-    expect(badgeKindOf('pending', false)).toBe('unmatched');
     expect(badgeKindOf('preparing', false)).toBe('unmatched');
     expect(badgeKindOf(null, false)).toBe('unmatched');
   });
 
   it('badgeKindOf: 매칭됐으면 단계, 단계를 모르면 배지 없음', () => {
     expect(badgeKindOf('preparing', true)).toBe('phase');
-    expect(badgeKindOf('pending', true)).toBe('phase');
     expect(badgeKindOf(null, true)).toBe('none');
   });
 });

@@ -37,7 +37,7 @@ export function EmptyCartView({
 
           <LocalizedClientLink
             href={"/category/cafe24-cat-499"}
-            className="rounded-xl bg-[#ffa500] px-10 py-4 text-center text-[15px] font-semibold text-white transition-all hover:bg-[#e69500] sm:w-auto sm:text-[17px]"
+            className="bg-primary hover:bg-primary/90 rounded-xl px-10 py-4 text-center text-[15px] font-semibold text-white transition-all sm:w-auto sm:text-[17px]"
           >
             {t("shopNow")}
           </LocalizedClientLink>

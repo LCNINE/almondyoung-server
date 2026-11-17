@@ -30,6 +30,7 @@ export const PII_ROUTES: readonly string[] = [
   'core GET /sales-orders',
   'core GET /sales-orders/:id',
   'core GET /sales-orders/:id/amendments',
+  'core GET /sales-orders/:id/shipment-operations',
   'core GET /shipments/:id',
   'core GET /shipments/consolidation-board',
   'core GET /shipments/consolidation-candidates',
@@ -64,6 +65,12 @@ export const PII_ROUTES: readonly string[] = [
   'notification GET /sms-gate/conversations',
   'notification GET /sms-gate/conversations/messages',
   'notification GET /sms-gate/messages',
+  'ugc-service GET /admin/almond-designs/:id',
+  'ugc-service GET /admin/almond-designs/:id/preview/:side',
+  'ugc-service GET /admin/almond-designs/:id/print-link',
+  'ugc-service GET /admin/almond-designs/:id/print.eps',
+  'ugc-service GET /admin/almond-designs/:id/print.jpg',
+  'ugc-service GET /admin/almond-designs/:id/print.pdf',
   'ugc-service GET /admin/shop-listings',
   'ugc-service GET /admin/shop-listings/:id',
   'ugc-service GET /reviews/admin/reviews',
@@ -86,6 +93,7 @@ export const PII_ROUTES: readonly string[] = [
   'wallet GET /v1/admin/payment-intents/pending-bank-transfers',
   'wallet GET /v1/admin/recurring-billing/invoices',
   'wallet GET /v1/admin/refund-requests',
+  'wallet GET /v1/admin/refunds',
   'wallet POST /v1/admin/refund-requests/:id/approve',
   'wallet POST /v1/admin/refund-requests/:id/reject',
 ];
@@ -100,6 +108,7 @@ export const PII_REVEAL_ROUTES: readonly string[] = [
   'core GET /fulfillments/:id',
   'core GET /sales-order-amendments/:id',
   'core GET /sales-orders/:id',
+  'core GET /sales-orders/:id/shipment-operations',
   'core GET /shipments/:id',
   'membership GET /admin/members/:userId',
   'notification GET /notifications/:id',
@@ -146,6 +155,7 @@ export const PII_EXPORT_EXCEPTIONS: Readonly<Record<string, string>> = {
  * 한다(`pii-write-routes.spec.ts`). 그 화면이 가린 값을 채워 보내는 쓰기면 여기에 한 줄 더한다.
  */
 export const PII_WRITE_ROUTES: readonly string[] = [
+  'wallet POST /v1/admin/refunds/:id/execute-bank-refund',
   'core PATCH /cs-cases/:caseId/comments/:commentId',
   'core PATCH /sales-orders/:id',
   'core PATCH /shipments/:id/recipient',

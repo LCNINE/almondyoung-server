@@ -26,6 +26,7 @@ export type StoreCancelUnavailableReason =
   | 'already_cancelled'
   | 'channel_order'
   | 'already_processing'
+  | 'print_in_production'
   // 다운로드(exercise)된 디지털 상품이 포함된 주문 — 회수가 불가하므로 셀프 취소 차단
   | 'digital_downloaded';
 
@@ -91,6 +92,9 @@ export class StoreOrderActionsResponseDto {
   })
   fulfillmentStatus: StoreFulfillmentStatus;
 
+  @ApiPropertyOptional({ description: '준비 단계에서 남은 상품이 모두 인쇄물이고 제작 중인지 여부' })
+  printInProduction?: boolean;
+
   @ApiPropertyOptional({ type: ShipmentProgressDto, description: '분할/합배송 진행 요약 (활성 상자 0개면 생략)' })
   shipmentProgress?: ShipmentProgressDto;
 
@@ -112,6 +116,7 @@ export class StoreOrderActionsResponseDto {
       'already_cancelled',
       'channel_order',
       'already_processing',
+      'print_in_production',
       'digital_downloaded',
     ],
   })

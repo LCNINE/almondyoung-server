@@ -70,13 +70,18 @@ async function seedEntities(tx: DbTx) {
     .returning();
   const [locA] = await tx
     .insert(wmsTables.locations)
-    .values({ warehouseId: warehouse.id, code: `IT-LOC-A-${randomUUID().slice(0, 8)}`, locationType: 'zone' })
+    .values({
+      warehouseId: warehouse.id,
+      code: `IT-LOC-A-${randomUUID().slice(0, 8)}`,
+      displayName: '입고기본존',
+      locationType: 'zone',
+    })
     .returning();
   return { warehouse, sku, locA, locB };
 }
 
 describeIfDb('stock projection by-location (DB integration, rollback-only)', () => {
-  it('details 각 행에 locationCode 를 동반하고 위치 코드 오름차순으로 정렬한다', async () => {
+  it('details 각 행에 locationCode·locationName 을 동반하고 위치 코드 오름차순으로 정렬한다', async () => {
     await inRollbackTx(async (tx) => {
       const { warehouse, sku, locA, locB } = await seedEntities(tx);
       await tx.insert(wmsTables.stockLedgers).values([
@@ -89,9 +94,11 @@ describeIfDb('stock projection by-location (DB integration, rollback-only)', () 
       expect(result.details).toHaveLength(2);
       expect(result.details[0].locationId).toBe(locA.id);
       expect(result.details[0].locationCode).toBe(locA.code);
+      expect(result.details[0].locationName).toBe('입고기본존');
       expect(result.details[0].quantity).toBe(5);
       expect(result.details[1].locationId).toBe(locB.id);
       expect(result.details[1].locationCode).toBe(locB.code);
+      expect(result.details[1].locationName).toBeNull();
       expect(result.details[1].quantity).toBe(7);
     });
   });

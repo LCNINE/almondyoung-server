@@ -44,6 +44,9 @@ export interface SkuStockInput {
   onOrderTotal: number;
   onOrderNonSellable: number;
   inTransitToSellable: number;
+  /** 선적 오는 중 — 창고 불문(전사 축) / 판매 창고행(판매 창고 축) (#1240) */
+  inboundShipmentTotal: number;
+  inboundShipmentToSellable: number;
   /** draft 이동 지시서에 이미 실린 planned 합 — 비판매 출발 창고별 */
   draftTransferPlanned: Array<{ fromWarehouseId: string; qty: number }>;
 }
@@ -61,12 +64,14 @@ export interface AxisView extends AxisLevels {
 export interface CompanyAxis extends AxisView {
   inTransfer: number;
   onOrder: number;
+  inboundShipment: number;
 }
 
 export interface SellableAxis extends AxisView {
   warehouseId: string;
   inTransit: number;
   onOrderDirect: number;
+  inboundShipment: number;
   daysOfCover: number | null;
 }
 

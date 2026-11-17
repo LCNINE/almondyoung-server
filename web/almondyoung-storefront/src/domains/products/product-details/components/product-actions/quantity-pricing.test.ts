@@ -1,27 +1,33 @@
 import { describe, expect, it } from "vitest"
-import { addedPriceChange, itemQuantityPricing, quantityOptionNote } from "./quantity-pricing"
+import {
+  addedPriceChange,
+  itemQuantityPricing,
+  productQuantitySummary,
+  quantityOptionNote,
+  variantTierRows,
+} from "./quantity-pricing"
 
 const NOW = new Date("2026-11-10T03:00:00.000Z")
 
 const variantData = (calculated: number, original = 10000) => ({
-    id: "v1",
-    calculated_price: {
-      calculated_amount: calculated,
-      original_amount: original,
-      currency_code: "krw",
-    },
-    metadata: {
-      membershipPrice: 8000,
-      tieredPrices: [
-        { minQuantity: 3, price: 9500 },
-        { minQuantity: 5, price: 9000 },
-      ],
-      membershipTieredPrices: [
-        { minQuantity: 3, price: 7200 },
-        { minQuantity: 5, price: 6800 },
-      ],
-    } as Record<string, unknown>,
-  })
+  id: "v1",
+  calculated_price: {
+    calculated_amount: calculated,
+    original_amount: original,
+    currency_code: "krw",
+  },
+  metadata: {
+    membershipPrice: 8000,
+    tieredPrices: [
+      { minQuantity: 3, price: 9500 },
+      { minQuantity: 5, price: 9000 },
+    ],
+    membershipTieredPrices: [
+      { minQuantity: 3, price: 7200 },
+      { minQuantity: 5, price: 6800 },
+    ],
+  } as Record<string, unknown>,
+})
 const variant = (calculated: number, original = 10000) =>
   variantData(calculated, original) as never
 
@@ -48,7 +54,10 @@ describe("itemQuantityPricing", () => {
   })
 
   it("uses member tiers for a member", () => {
-    const pricing = itemQuantityPricing(variant(8000), product, 5, { ...guest, isMember: true })
+    const pricing = itemQuantityPricing(variant(8000), product, 5, {
+      ...guest,
+      isMember: true,
+    })
     expect(pricing.unitPrice).toBe(6800)
     expect(pricing.next).toBeNull()
   })
@@ -66,45 +75,146 @@ describe("itemQuantityPricing", () => {
 
 describe("addedPriceChange", () => {
   it("warns when the cart charged more than the screen showed", () => {
-    expect(addedPriceChange({ shown: 9500, added: 10000, hasTiers: true })).toEqual({ from: 9500, to: 10000 })
+    expect(
+      addedPriceChange({ shown: 9500, added: 10000, hasTiers: true })
+    ).toEqual({ from: 9500, to: 10000 })
   })
 
   it("stays quiet when the tier price shown is what was charged", () => {
-    expect(addedPriceChange({ shown: 9500, added: 9500, hasTiers: true })).toBeNull()
+    expect(
+      addedPriceChange({ shown: 9500, added: 9500, hasTiers: true })
+    ).toBeNull()
   })
 
   it("stays quiet when merging with the cart reached a better tier", () => {
-    expect(addedPriceChange({ shown: 9500, added: 9000, hasTiers: true })).toBeNull()
+    expect(
+      addedPriceChange({ shown: 9500, added: 9000, hasTiers: true })
+    ).toBeNull()
   })
 
   it("still reports a lower price for a product without tiers", () => {
-    expect(addedPriceChange({ shown: 4990, added: 4491, hasTiers: false })).toEqual({ from: 4990, to: 4491 })
+    expect(
+      addedPriceChange({ shown: 4990, added: 4491, hasTiers: false })
+    ).toEqual({ from: 4990, to: 4491 })
   })
 
   it("ignores missing prices", () => {
-    expect(addedPriceChange({ shown: 9500, added: null, hasTiers: true })).toBeNull()
+    expect(
+      addedPriceChange({ shown: 9500, added: null, hasTiers: true })
+    ).toBeNull()
   })
 })
 
 describe("quantityOptionNote", () => {
-  const summary = { minQuantity: 3, percent: 10, varies: true, memberOnly: false }
+  const summary = {
+    minQuantity: 3,
+    percent: 10,
+    varies: true,
+    memberOnly: false,
+  }
   const tier = { minQuantity: 3, unitPrice: 9000, percent: 10 }
 
   it("sums up option-specific discounts before an option is chosen", () => {
-    expect(quantityOptionNote({ chosen: false, rows: [tier], memberHints: [], summary })).toBe("summary")
+    expect(
+      quantityOptionNote({
+        chosen: false,
+        rows: [tier],
+        memberHints: [],
+        summary,
+      })
+    ).toBe("summary")
   })
 
   it("keeps the usual bundle cards when every option has the same tiers", () => {
-    expect(quantityOptionNote({ chosen: false, rows: [tier], memberHints: [], summary: { ...summary, varies: false } })).toBeNull()
+    expect(
+      quantityOptionNote({
+        chosen: false,
+        rows: [tier],
+        memberHints: [],
+        summary: { ...summary, varies: false },
+      })
+    ).toBeNull()
   })
 
   it("says the chosen option has no quantity discount when others do", () => {
-    expect(quantityOptionNote({ chosen: true, rows: [], memberHints: [], summary })).toBe("notEligible")
+    expect(
+      quantityOptionNote({ chosen: true, rows: [], memberHints: [], summary })
+    ).toBe("notEligible")
   })
 
   it("stays quiet for a chosen option with tiers or a product without any", () => {
-    expect(quantityOptionNote({ chosen: true, rows: [tier], memberHints: [], summary })).toBeNull()
-    expect(quantityOptionNote({ chosen: true, rows: [], memberHints: [tier], summary })).toBeNull()
-    expect(quantityOptionNote({ chosen: true, rows: [], memberHints: [], summary: null })).toBeNull()
+    expect(
+      quantityOptionNote({
+        chosen: true,
+        rows: [tier],
+        memberHints: [],
+        summary,
+      })
+    ).toBeNull()
+    expect(
+      quantityOptionNote({
+        chosen: true,
+        rows: [],
+        memberHints: [tier],
+        summary,
+      })
+    ).toBeNull()
+    expect(
+      quantityOptionNote({
+        chosen: true,
+        rows: [],
+        memberHints: [],
+        summary: null,
+      })
+    ).toBeNull()
+  })
+})
+
+describe("hidden member quantity offers", () => {
+  const hiddenGuest = { ...guest, hideMemberPrices: true }
+  const memberOnlyVariant = {
+    ...variantData(10000),
+    metadata: {
+      membershipPrice: 8000,
+      membershipTieredPrices: [{ minQuantity: 3, price: 7200 }],
+    },
+  } as never
+  const memberProduct = { metadata: {}, variants: [memberOnlyVariant] }
+
+  it("exposes only the threshold while keeping member prices hidden", () => {
+    const view = variantTierRows(memberOnlyVariant, memberProduct, hiddenGuest)
+    expect(view.memberHints).toEqual([])
+    expect(view.hiddenMemberQuantity).toBe(3)
+    expect(productQuantitySummary(memberProduct, hiddenGuest)).toMatchObject({
+      minQuantity: 3,
+      percent: 0,
+      memberOnly: true,
+      pricesHidden: true,
+    })
+  })
+
+  it("does not label a hidden member offer as an ineligible option", () => {
+    const summary = productQuantitySummary(memberProduct, hiddenGuest)
+    expect(
+      quantityOptionNote({
+        chosen: true,
+        rows: [],
+        memberHints: [],
+        hiddenMemberQuantity: 3,
+        summary,
+      })
+    ).toBeNull()
+  })
+
+  it("removes hidden offers after the discount expires", () => {
+    const expired = {
+      ...memberProduct,
+      metadata: { quantityDiscount: { endsAt: "2026-11-09T00:00:00Z" } },
+    }
+    expect(productQuantitySummary(expired, hiddenGuest)).toBeNull()
+    expect(
+      variantTierRows(memberOnlyVariant, expired, hiddenGuest)
+        .hiddenMemberQuantity
+    ).toBeNull()
   })
 })

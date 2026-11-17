@@ -9,6 +9,7 @@ import type {
   CreateFeeRatePayload,
   CreateRegionPayload,
   PutRegionMethodItem,
+  RefundDto,
   UpdateCatalogPayload,
   UpdateRegionPayload,
 } from '@/lib/types/dto/wallet';
@@ -337,6 +338,33 @@ export const useConfirmRefund = () => {
   });
 };
 useConfirmRefund.permission = ['payment.refund.execute'] as const satisfies PermissionRequirement;
+
+export const useExecuteBankRefund = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      refundId,
+      account,
+    }: {
+      refundId: string;
+      intentId: string;
+      account: NonNullable<RefundDto['refundReceiveAccount']>;
+    }) => walletApi.executeBankRefund(refundId, account),
+    onSettled: (_data, _error, { intentId }) => {
+      queryClient.invalidateQueries({
+        queryKey: walletQueryKeys.intentDetail(intentId),
+      });
+      queryClient.invalidateQueries({
+        queryKey: walletQueryKeys.stateTransitions(intentId),
+      });
+      queryClient.invalidateQueries({ queryKey: walletQueryKeys.refunds() });
+    },
+  });
+};
+useExecuteBankRefund.permission = {
+  allOf: [['payment.refund.execute'], ['customer.pii.read']],
+} as const satisfies PermissionRequirement;
 
 /** 환불 종류 고치기. 응답의 manualConfirmable 은 항상 false 라 캐시를 덮지 않고 다시 읽는다 */
 export const useChangeRefundKind = () => {

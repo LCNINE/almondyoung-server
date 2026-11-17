@@ -12,11 +12,13 @@ on:
     types: [opened, synchronize, reopened]
     paths:
       - 'native/warehouse-app/**'
+      - 'libs/authorization/src/permissions/**'
       - '.github/workflows/warehouse-app-gates.yml'
   push:
     branches: [develop]
     paths:
       - 'native/warehouse-app/**'
+      - 'libs/authorization/src/permissions/**'
       - '.github/workflows/warehouse-app-gates.yml'
 
 concurrency:

@@ -46,6 +46,14 @@ const CANCELLATION_OBSERVED_STATUSES = new Set(['CANCELED', 'CANCELED_BY_NOPAYME
  * 다르지만 결과는 같다: 아직 확정 취소가 아니면서 출고해서는 안 되는 구간.
  */
 const CANCEL_IN_FLIGHT_CLAIMS = new Set(['CANCEL_REQUEST', 'CANCELING', 'ADMIN_CANCELING']);
+/** 판매자 승인을 기다리는 취소요청. `CANCELING`·`ADMIN_CANCELING` 은 이미 승인돼(또는 판매자가 시작해) 처리 중이다. */
+const CANCEL_AWAITING_APPROVAL_CLAIM = 'CANCEL_REQUEST';
+/**
+ * 상품주문 상태는 `PAYED` 그대로인데 클레임이 취소완료 — **일부 수량 취소**다(2024-10-10~, discussions/1773).
+ * 전량 취소면 상품주문 상태가 `CANCELED` 가 되어 위 `CANCELLATION_OBSERVED_STATUSES` 가 받는다.
+ * `ADMIN_CANCEL_DONE` 은 판매자가 판매자센터에서 일부 수량을 취소한 경로다 — 결과는 같다.
+ */
+const PARTIAL_CANCEL_DONE_CLAIMS = new Set(['CANCEL_DONE', 'ADMIN_CANCEL_DONE']);
 
 @Injectable()
 export class NaverOrderSource implements ReplayableChannelOrderSource, WindowedChannelOrderSource {
@@ -287,13 +295,121 @@ export class NaverOrderSource implements ReplayableChannelOrderSource, WindowedC
   }
 
   /**
+   * 관측 셋을 모은다: 상품주문 취소(아래), 일부 수량 취소, 취소요청.
+   *
    * **전 라인 취소는 full 1건, 일부 취소는 라인마다 partial 1건.**
    * Core 는 `lines` 유무로 전체/부분을 가르고, 부분취소가 누적돼 전량이 돼도 주문을 닫지 않는다.
    *
    * 반품/교환(`RETURNED`/`EXCHANGED`)은 여기서 **관측을 내지 않는다** — 출고 후 생애주기라
    * `OrderCancelled` 로 보내면 Core 의 출고 증거 가드에 막혀 DLQ 로 사라진다.
    */
-  private buildLifecycle(infos: NaverProductOrderInfo[], cancelledAt: string): LifecycleObservation[] {
+  private buildLifecycle(infos: NaverProductOrderInfo[], changedAt: string): LifecycleObservation[] {
+    // 네이버 시각은 `+09:00` 이라 계약(`z.string().datetime()`, offset 불허)을 못 통과한다 — 적재 때 계약
+    // 파싱에서 터져 그 주문이 처리 실패로 돈다. 같은 순간을 UTC ISO 로 옮겨 싣는다.
+    const at = toContractTimestamp(changedAt);
+    const live = infos.filter((info) => !OUT_OF_CONTRACT_STATUSES.has(info.productOrderStatus));
+    return [
+      ...this.buildCancellationObservations(infos, at),
+      ...this.buildPartialQuantityCancellations(live, at),
+      ...this.buildCancelRequests(live, at),
+    ];
+  }
+
+  /**
+   * 계약에 남은 상품주문의 취소요청 → 승인 단위(상품주문) 하나에 `ChannelCancelRequested` 하나 (스펙 §5.1·§5.2).
+   *
+   * 키에 클레임 식별을 넣는다 — 같은 요청의 재관측은 같은 키라 오케스트레이터가 한 번만 내고, 철회 뒤 다시
+   * 낸 요청은 새 클레임이라 새 관측이다. 클레임 식별을 못 읽으면 `na` 로 상품주문 하나에 한 번만 낸다.
+   * 처음 수집 때 이 주문은 `pending` 이라 판매주문이 없고, 오케스트레이터가 매핑 없는 관측을 건너뛴다.
+   */
+  private buildCancelRequests(live: NaverProductOrderInfo[], requestedAt: string): LifecycleObservation[] {
+    return live.flatMap((info): LifecycleObservation[] => {
+      if (!info.claimStatus || !CANCEL_IN_FLIGHT_CLAIMS.has(info.claimStatus)) return [];
+      if (info.cancelClaimQuantity == null) {
+        // 클레임 수량을 못 읽었다(칸 이름 추정이 틀렸거나 `currentClaim` 이 비었다) — 줄 전량으로 요청한다.
+        // 전량은 과다 취소일 수 있으니 흔적을 남긴다.
+        this.logger.warn(
+          `[naver] 상품주문 ${info.productOrderId} 의 취소요청(${info.claimStatus}) 수량을 못 읽었다 — 줄 전량 ${info.quantity} 로 요청한다.`,
+        );
+      }
+      const quantity = info.cancelClaimQuantity ?? info.quantity;
+      if (quantity <= 0) {
+        this.logger.warn(
+          `[naver] 상품주문 ${info.productOrderId} 의 취소요청 수량이 양수가 아니다 — 취소요청 관측에서 제외한다 (계약 위반 방지).`,
+        );
+        return [];
+      }
+      const channelRequestKey = `${info.productOrderId}:${info.claimId ?? 'na'}`;
+      return [
+        {
+          eventType: 'ChannelCancelRequested',
+          eventKey: `cancel-request:${channelRequestKey}`,
+          payload: {
+            channelRequestRef: info.productOrderId,
+            channelRequestKey,
+            needsApproval: info.claimStatus === CANCEL_AWAITING_APPROVAL_CLAIM,
+            requestedAt,
+            items: [{ channelOrderItemId: info.productOrderId, quantity }],
+          },
+          rawEvent: {
+            productOrderId: info.productOrderId,
+            ...(info.claimId ? { claimId: info.claimId } : {}),
+            claimStatus: info.claimStatus,
+          },
+        },
+      ];
+    });
+  }
+
+  /**
+   * `PAYED` + 취소완료 클레임 = 일부 수량 취소 → 줄 단위 `OrderCancelled`. core 는 싣는 수량을 **그 줄의 누적
+   * 채널 취소 수량(상태)** 으로 받는다(스펙 §5.4).
+   *
+   * 🔴 `currentClaim.cancel.requestQuantity` 가 누적이라는 것은 **가정**이다(shadow 점검 전, `naver-order-fields.ts`
+   * 머리의 «확정 필수» (a)). 클레임별 수량이면 두 번째 일부 취소부터 core 가 덜 취소한다 — 누적을 여기서
+   * 지어내 계산하지 않는다. 키에 클레임 식별과 수량을 함께 넣어, 같은 클레임의 재관측은 한 번만 내고
+   * 다른 클레임(수량이 같아도)은 새 관측으로 낸다.
+   *
+   * 수량을 모르면 내지 않는다. 줄 전량으로 짐작하면 고객이 남긴 수량까지 취소된다.
+   */
+  private buildPartialQuantityCancellations(
+    live: NaverProductOrderInfo[],
+    cancelledAt: string,
+  ): LifecycleObservation[] {
+    return live.flatMap((info): LifecycleObservation[] => {
+      if (info.productOrderStatus !== 'PAYED') return [];
+      if (!info.claimStatus || !PARTIAL_CANCEL_DONE_CLAIMS.has(info.claimStatus)) return [];
+      const quantity = info.cancelClaimQuantity;
+      if (quantity == null || quantity <= 0) {
+        this.logger.warn(
+          `[naver] 상품주문 ${info.productOrderId} 는 일부 수량 취소(${info.claimStatus})인데 취소 수량을 못 읽었다 — 관측을 내지 않는다.`,
+        );
+        return [];
+      }
+      return [
+        {
+          eventType: 'OrderCancelled',
+          eventKey: `cancelled:${info.productOrderId}:${info.claimId ?? 'na'}:${quantity}`,
+          payload: {
+            reason: 'CUSTOMER_REQUEST',
+            reasonDetail: '네이버 상품주문 일부 수량 취소 수집',
+            cancelledBy: 'naver',
+            cancelledAt,
+            refundRequired: false,
+            cancelledLines: [{ channelOrderItemId: info.productOrderId, quantity }],
+          },
+          rawEvent: {
+            productOrderId: info.productOrderId,
+            ...(info.claimId ? { claimId: info.claimId } : {}),
+            claimStatus: info.claimStatus,
+          },
+        },
+      ];
+    });
+  }
+
+  /** 상품주문 상태가 취소(`CANCELED`·`CANCELED_BY_NOPAYMENT`)인 줄 — 수량은 줄 전량(= 그 줄의 누적 취소 수량). */
+  private buildCancellationObservations(infos: NaverProductOrderInfo[], cancelledAt: string): LifecycleObservation[] {
     const cancelled = infos.filter((info) => CANCELLATION_OBSERVED_STATUSES.has(info.productOrderStatus));
     if (cancelled.length === 0) return [];
 
@@ -338,4 +454,10 @@ export class NaverOrderSource implements ReplayableChannelOrderSource, WindowedC
       rawEvent: { productOrderId: info.productOrderId },
     }));
   }
+}
+
+/** 채널 시각을 계약 시각(UTC ISO)으로. 읽을 수 없는 값은 그대로 둔다 — 계약 파싱이 시끄럽게 알린다. */
+function toContractTimestamp(value: string): string {
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? value : parsed.toISOString();
 }

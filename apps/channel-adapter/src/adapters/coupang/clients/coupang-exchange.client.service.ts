@@ -1,6 +1,5 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
-import { firstValueFrom } from 'rxjs';
 import { CoupangBaseClient } from './coupang-base.client.service';
 import {
   GetExchangeRequestsParams,
@@ -61,24 +60,14 @@ export class CoupangExchangeClient extends CoupangBaseClient {
       if (parsedParams.data.nextToken) queryParams.nextToken = parsedParams.data.nextToken;
       if (parsedParams.data.maxPerPage) queryParams.maxPerPage = String(parsedParams.data.maxPerPage);
 
-      const query = new URLSearchParams(queryParams).toString();
-      this.logger.log(`🔍 쿠팡 교환요청 목록 조회 요청: ${query}`);
+      const query = new URLSearchParams(queryParams);
+      this.logger.log(`🔍 쿠팡 교환요청 목록 조회 요청: ${query.toString()}`);
 
       const path = `/v2/providers/openapi/apis/api/v4/vendors/${config.vendorId}/exchangeRequests`;
-      const authorization = this.generateAuthHeader(config.accessKey, config.secretKey, 'GET', path, query);
-      const url = `${config.apiEndpoint}${path}?${query}`;
+      const body = await this.send<GetExchangeRequestsResponse>('GET', path, { query });
 
-      const response = await firstValueFrom(
-        this.http.get<GetExchangeRequestsResponse>(url, {
-          headers: {
-            Authorization: authorization,
-            'Content-Type': 'application/json',
-          },
-        }),
-      );
-
-      this.logger.log(`👍 교환요청 목록 조회 성공: ${response.data.data.length}건`);
-      return response.data;
+      this.logger.log(`👍 교환요청 목록 조회 성공: ${body.data.length}건`);
+      return body;
     } catch (error) {
       if (error.response) {
         this.logger.error(
@@ -116,20 +105,10 @@ export class CoupangExchangeClient extends CoupangBaseClient {
       this.logger.log(`🚚 쿠팡 교환상품 입고확인 처리 요청: ${exchangeId}`);
 
       const path = `/v2/providers/openapi/apis/api/v4/vendors/${config.vendorId}/exchangeRequests/${exchangeId}/receiveConfirmation`;
-      const authorization = this.generateAuthHeader(config.accessKey, config.secretKey, 'PATCH', path);
-      const url = `${config.apiEndpoint}${path}`;
+      const response = await this.send<CoupangConfirmExchangeReceiptResponse>('PATCH', path, { body: parsedReq.data });
 
-      const response = await firstValueFrom(
-        this.http.patch<CoupangConfirmExchangeReceiptResponse>(url, parsedReq.data, {
-          headers: {
-            Authorization: authorization,
-            'Content-Type': 'application/json',
-          },
-        }),
-      );
-
-      this.logger.log(`👍 교환상품 입고확인 처리 성공: ${exchangeId} - ${response.data.message}`);
-      return response.data;
+      this.logger.log(`👍 교환상품 입고확인 처리 성공: ${exchangeId} - ${response.message}`);
+      return response;
     } catch (error) {
       if (error.response) {
         this.logger.error(
@@ -165,20 +144,10 @@ export class CoupangExchangeClient extends CoupangBaseClient {
       this.logger.log(`🚫 쿠팡 교환요청 거부 처리 요청: ${exchangeId}`);
 
       const path = `/v2/providers/openapi/apis/api/v4/vendors/${config.vendorId}/exchangeRequests/${exchangeId}/rejection`;
-      const authorization = this.generateAuthHeader(config.accessKey, config.secretKey, 'PATCH', path);
-      const url = `${config.apiEndpoint}${path}`;
+      const response = await this.send<CoupangRejectExchangeResponse>('PATCH', path, { body: parsedReq.data });
 
-      const response = await firstValueFrom(
-        this.http.patch<CoupangRejectExchangeResponse>(url, parsedReq.data, {
-          headers: {
-            Authorization: authorization,
-            'Content-Type': 'application/json',
-          },
-        }),
-      );
-
-      this.logger.log(`👍 교환요청 거부 처리 완료: ${exchangeId} - ${response.data.data.resultMessage}`);
-      return response.data;
+      this.logger.log(`👍 교환요청 거부 처리 완료: ${exchangeId} - ${response.data.resultMessage}`);
+      return response;
     } catch (error) {
       if (error.response) {
         this.logger.error(
@@ -217,20 +186,10 @@ export class CoupangExchangeClient extends CoupangBaseClient {
       this.logger.log(`🚀 쿠팡 교환상품 송장업로드 처리 요청: ${exchangeId}`);
 
       const path = `/v2/providers/openapi/apis/api/v4/vendors/${config.vendorId}/exchangeRequests/${exchangeId}/invoices`;
-      const authorization = this.generateAuthHeader(config.accessKey, config.secretKey, 'POST', path);
-      const url = `${config.apiEndpoint}${path}`;
+      const response = await this.send<CoupangUploadExchangeInvoiceResponse>('POST', path, { body: parsedReq.data });
 
-      const response = await firstValueFrom(
-        this.http.post<CoupangUploadExchangeInvoiceResponse>(url, parsedReq.data, {
-          headers: {
-            Authorization: authorization,
-            'Content-Type': 'application/json',
-          },
-        }),
-      );
-
-      this.logger.log(`👍 교환상품 송장업로드 처리 완료: ${exchangeId} - ${response.data.data.resultMessage}`);
-      return response.data;
+      this.logger.log(`👍 교환상품 송장업로드 처리 완료: ${exchangeId} - ${response.data.resultMessage}`);
+      return response;
     } catch (error) {
       if (error.response) {
         this.logger.error(

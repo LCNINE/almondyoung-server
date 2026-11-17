@@ -1,4 +1,5 @@
 import * as ExcelJS from 'exceljs';
+import { Logger } from '@nestjs/common';
 import { BadRequestError } from '@app/shared';
 import {
   CATEGORY_COLUMNS,
@@ -60,6 +61,8 @@ export interface ParsedUpload {
  * (product-import.parser.ts:38-43 과 같은 함수·같은 이유. 옛 임포트는 6단계에서 지워지므로
  *  공통화하지 않는다 — 사용자가 하나로 줄어들 추상화를 미리 만드는 셈이 된다.)
  */
+const logger = new Logger('BulkUploadParser');
+
 function formatWorkbookDateCell(value: Date): string {
   const pad = (n: number): string => String(n).padStart(2, '0');
   const date = `${value.getUTCFullYear()}-${pad(value.getUTCMonth() + 1)}-${pad(value.getUTCDate())}`;
@@ -102,12 +105,20 @@ function readSheet(
       if (!key) return;
       const cell = row.getCell(col);
       // 날짜 셀만 가로챈다. 수식 셀의 value 는 {formula, result} 객체라 instanceof 가 걸리지 않는다.
+      // 불리언 셀(TRUE/FALSE)은 Y/N 칸의 같은 뜻이다 — 다른 도구가 대표여부를 불리언으로 저장한다(11-04).
+      // 결과가 불리언인 수식 셀(=TRUE())도 같다 — LibreOffice 가 불리언을 수식으로 다시 저장한다(11-08).
+      // 글자 'TRUE' 는 그대로 두어 검증기가 형식 오류로 보인다.
+      const booleanValue = typeof cell.value === 'boolean' ? cell.value : booleanFormulaResult(cell.value);
       const value =
         cell.value instanceof Date
           ? formatWorkbookDateCell(cell.value)
-          : typeof cell.value === 'number' && (cell.numFmt ?? '').includes('%')
-            ? percentCellText(cell.value)
-            : String(cell.text ?? '').trim();
+          : booleanValue !== undefined
+            ? booleanValue
+              ? 'Y'
+              : 'N'
+            : typeof cell.value === 'number' && (cell.numFmt ?? '').includes('%')
+              ? percentCellText(cell.value)
+              : String(cell.text ?? '').trim();
       cells[key] = value;
       if (value !== '') hasValue = true;
     });
@@ -115,6 +126,19 @@ function readSheet(
     rows.push({ rowNumber: r, cells });
   }
   return { rows, present };
+}
+
+/**
+ * 수식 셀(`{ formula, result }`)의 결과가 불리언이면 그 값. 계산값이 저장되지 않은 파일도 있어 수식이 정확히
+ * `TRUE()`·`FALSE()` 이면 그 뜻으로 읽는다. 그 밖은 undefined.
+ */
+function booleanFormulaResult(value: unknown): boolean | undefined {
+  if (typeof value !== 'object' || value === null || !('formula' in value)) return undefined;
+  const result: unknown = Reflect.get(value, 'result');
+  if (typeof result === 'boolean') return result;
+  const formula: unknown = Reflect.get(value, 'formula');
+  const literal = typeof formula === 'string' ? /^\s*(TRUE|FALSE)\s*\(\s*\)\s*$/i.exec(formula) : null;
+  return literal ? literal[1].toUpperCase() === 'TRUE' : undefined;
 }
 
 function capped(rows: RawSheetRow[], max: number, sheetName: string): RawSheetRow[] {
@@ -145,8 +169,13 @@ export async function parseUploadWorkbook(buffer: Buffer): Promise<ParsedUpload>
       load(buffer: Buffer, options?: Partial<ExcelJS.XlsxReadOptions>): Promise<ExcelJS.Workbook>;
     };
     await xlsx.load(buffer);
-  } catch {
-    throw new BadRequestError('유효한 엑셀(.xlsx) 파일이 아닙니다.');
+  } catch (error) {
+    // 실제 엑셀이 만든 파일은 읽히는데 다른 도구가 만든 xlsx 가 거절된 적이 있다(데모 사용성 테스트 11-04, 원본 없음).
+    // 다음에 같은 일이 생기면 원인을 볼 수 있게 라이브러리 오류를 남긴다 — 파일 내용은 남기지 않는다.
+    logger.warn(`xlsx load failed (${buffer.length} bytes): ${error instanceof Error ? error.message : String(error)}`);
+    throw new BadRequestError(
+      '유효한 엑셀(.xlsx) 파일이 아닙니다. 다른 프로그램에서 만든 파일이면 Excel 에서 다시 저장한 뒤 올려주세요.',
+    );
   }
 
   const productsSheet = wb.getWorksheet(SHEET_NAMES.products);

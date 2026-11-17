@@ -1,5 +1,5 @@
-import { DOTS_PER_MM, type BarcodePlacement, type LabelSpec } from '../../../label/label-model';
-import { fitSizePt, fitText } from '../../../label/svg-text';
+import { DOTS_PER_MM, type BarcodePlacement, type LabelSpec } from '../../../../../../platform/label/label-model';
+import { fitSizePt, fitText } from '../../../../../../platform/label/svg-text';
 import { hline, koreanDate, rect, shrinkThenFit, svgDocument, text } from './hanjin-label-svg';
 import type { HanjinLabelData } from './hanjin-label-data';
 import { maskAddress, maskName, maskPhone } from './hanjin-label-masking';
@@ -85,7 +85,7 @@ export function renderHanjinNsLabel(d: HanjinLabelData): LabelSpec {
   ];
 
   // ── 우측 하단: 배달표 ───────────────────────────────────────────────────
-  const custText = `출고번호: ${d.custOrdNo}`;
+  const custText = `주문번호: ${d.orderNo}`;
   const deliverySlip = [
     text({ x: R + 6, y: 42.7, pt: 24, bold: true, text: s.routeRank }), // ⑩
     text({ x: R + 26.7, y: 42.7, pt: 22, bold: true, text: s.courierName }), // ⑪

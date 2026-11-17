@@ -17,6 +17,8 @@ export interface MenuItem {
    */
   hasQuarantineBadge?: boolean;
   hasPrintOrderBadge?: boolean;
+  hasOutboundPreparationBadge?: boolean;
+  hasConsolidationBadge?: boolean;
 }
 
 export interface MainMenu {
@@ -195,6 +197,12 @@ const allMenus: MainMenu[] = [
         title: '출고',
         children: [
           {
+            id: 'waybill-issue',
+            title: '출고 준비',
+            path: '/order/waybill-issue',
+            hasOutboundPreparationBadge: true,
+          },
+          {
             id: 'fulfillments',
             title: '출고주문',
             path: '/order/fulfillments',
@@ -220,11 +228,6 @@ const allMenus: MainMenu[] = [
             path: '/order/picking-list',
           },
           {
-            id: 'waybill-issue',
-            title: '운송장 발급',
-            path: '/order/waybill-issue',
-          },
-          {
             id: 'inspection-dispatch',
             title: '검수발송',
             path: '/order/inspection',
@@ -238,6 +241,7 @@ const allMenus: MainMenu[] = [
             id: 'consolidation',
             title: '합칠 수 있는 주문',
             path: '/order/consolidation',
+            hasConsolidationBadge: true,
           },
           {
             id: 'location-optimization',
@@ -360,6 +364,11 @@ const allMenus: MainMenu[] = [
         id: 'inventory-inbound',
         title: '입고 관리',
         path: '/inventory/inbound',
+      },
+      {
+        id: 'inventory-inbound-shipments',
+        title: '선적 입고',
+        path: '/inventory/inbound-shipments',
       },
       {
         id: 'inventory-suppliers',
@@ -662,6 +671,7 @@ const allMenus: MainMenu[] = [
             path: '/mall/banner-groups',
           },
           { id: 'popups', title: '팝업', path: '/mall/popups' },
+          { id: 'top-notices', title: '상단 공지 띠', path: '/mall/top-notices' },
           { id: 'points', title: '적립금', path: '/mall/marketing/points' },
           { id: 'coupons', title: '쿠폰', path: '/mall/marketing/coupons' },
           {

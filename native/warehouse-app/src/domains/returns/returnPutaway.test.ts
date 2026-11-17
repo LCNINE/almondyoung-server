@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { afterPutaway, pickTarget } from './returnPutaway';
+import { afterPutaway, returnLocations } from './returnPutaway';
 
 const bin = {
   id: 'b',
@@ -13,27 +13,27 @@ const bin = {
 };
 
 describe('되돌림 적치 판정', () => {
-  it('스캔한 상품의 원래 로케이션을 모두 보여 준다(같은 상품이 두 로케이션에서 왔을 수 있다)', () => {
-    expect(pickTarget(bin, ['s-1'])).toEqual({
-      locations: [
-        { key: 'l-1|s-1', skuName: '볼펜', locationCode: 'A-01', qty: 2 },
-        { key: 'l-2|s-1', skuName: '볼펜', locationCode: 'B-02', qty: 1 },
-      ],
-    });
+  it('reads location candidates from the server conflict', () => {
+    const locations = [
+      { locationCode: 'A-01', qty: 2 },
+      { locationCode: 'B-02', qty: 1 },
+    ];
+
+    expect(returnLocations(locations)).toEqual(locations);
   });
 
-  it('바코드가 여러 SKU 에 걸리면 줄마다 자기 상품명을 쓰고 키가 겹치지 않는다', () => {
-    const target = pickTarget(bin, ['s-1', 's-2']);
-    expect(target?.locations.map((l) => `${l.skuName}@${l.locationCode}`)).toEqual(['볼펜@A-01', '볼펜@B-02', '노트@A-01']);
-    expect(new Set(target?.locations.map((l) => l.key)).size).toBe(3);
+  it.each([
+    undefined,
+    null,
+    'invalid',
+    {},
+    [null, {}, { locationCode: 'A', qty: '2' }, { locationCode: 'B', qty: -1 }],
+  ])('ignores malformed location candidates: %j', (errors) => {
+    expect(returnLocations(errors)).toEqual([]);
   });
 
-  it('바구니에 없는 상품이면 null', () => {
-    expect(pickTarget(bin, ['s-9'])).toBeNull();
-  });
-
-  it('적치 뒤 바구니가 비면 다음 바구니를 받고, 남으면 다음 상품을 받는다', () => {
-    expect(afterPutaway(bin, [])).toEqual({ kind: 'bin' });
+  it('적치 뒤 바구니가 비어도 같은 작업자의 바구니를 유지한다', () => {
+    expect(afterPutaway(bin, [])).toEqual({ kind: 'product', bin: { ...bin, items: [] } });
     expect(afterPutaway(bin, [bin.items[2]])).toEqual({ kind: 'product', bin: { ...bin, items: [bin.items[2]] } });
   });
 });

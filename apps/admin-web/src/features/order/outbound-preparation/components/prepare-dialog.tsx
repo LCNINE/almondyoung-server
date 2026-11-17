@@ -1,0 +1,573 @@
+'use client';
+
+import { type ReactNode, useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
+import { Check, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
+import { Can } from '@/components/auth/can';
+import { cn } from '@/lib/utils/ui';
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import {
+  getServerDenyMessage,
+  useLoadOutboundBatchV2,
+  useRunOutboundPreparation,
+} from '@/lib/services/orders';
+import type {
+  OutboundBatchV2,
+  PreparationShipmentDto,
+} from '@/lib/types/dto/fulfillment';
+import { PICKING_METHOD_LABELS } from '@/lib/utils/picking-method';
+import { splitShareText } from '@/features/order/fulfillments/detail/consolidation-sheet-model';
+import { plannedOrderText } from '../preparation-model';
+import {
+  type PreparationFailure,
+  type PreparationInput,
+  type PreparationProgress,
+} from '@/lib/services/orders/outbound-preparation-runner';
+
+export function PrepareDialog({
+  input,
+  shipments,
+  source,
+  onClose,
+}: {
+  input: PreparationInput;
+  shipments: PreparationShipmentDto[];
+  source: 'ready' | 'resume' | 'mergeable';
+  onClose: () => void;
+}) {
+  const mutation = useRunOutboundPreparation();
+  const [progress, setProgress] = useState<PreparationProgress | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [batchState, setBatchState] = useState<BatchState>({
+    status: 'idle',
+  });
+  const loadBatch = useLoadOutboundBatchV2();
+  const batchLoad = useRef(0);
+  const running = useRef(false);
+  const unmounted = useRef(false);
+  const completedStages = useRef(
+    new Map<string, { planned: boolean; waybilled: boolean }>()
+  );
+
+  useEffect(() => {
+    unmounted.current = false;
+
+    return () => {
+      unmounted.current = true;
+    };
+  }, []);
+
+  // 응답을 잃은 담기도 있으니 배치에 실제로 든 상자는 끝난 뒤 서버에서 다시 받아 확인한다.
+  // 다시 시도가 시작되면 앞선 확인 결과는 버린다.
+  const confirmBatch = async (batchId: string) => {
+    const load = ++batchLoad.current;
+
+    setBatchState({ status: 'loading' });
+
+    try {
+      const batch = await loadBatch(batchId);
+
+      if (!unmounted.current && load === batchLoad.current) {
+        setBatchState({ status: 'ready', batch });
+      }
+    } catch {
+      if (!unmounted.current && load === batchLoad.current) {
+        setBatchState({ status: 'error' });
+      }
+    }
+  };
+
+  const run = async (failure?: PreparationFailure) => {
+    if (unmounted.current || running.current) {
+      return;
+    }
+
+    running.current = true;
+    setBusy(true);
+    batchLoad.current += 1;
+    setBatchState({ status: 'idle' });
+
+    const previous = progress;
+    const completed = failure
+      ? (completedStages.current.get(failure.shipmentId) ?? {
+          planned: failure.stage !== 'plan',
+          waybilled: failure.stage === 'batch' || failure.stage === 'join',
+        })
+      : { planned: false, waybilled: false };
+
+    const update = (next: PreparationProgress) => {
+      if (unmounted.current) {
+        return;
+      }
+
+      if (!failure || !previous) {
+        setProgress(next);
+
+        return;
+      }
+
+      completedStages.current.set(failure.shipmentId, {
+        planned: completed.planned || next.planned > 0,
+        waybilled: completed.waybilled || next.waybilled > 0,
+      });
+      setProgress({
+        ...next,
+        total: previous.total,
+        planned: previous.planned + (completed.planned ? 0 : next.planned),
+        waybilled:
+          previous.waybilled + (completed.waybilled ? 0 : next.waybilled),
+        joined: previous.joined + next.joined,
+        batchId: next.batchId ?? previous.batchId,
+        batchName: next.batchName ?? previous.batchName,
+        failures: [
+          ...previous.failures.filter(
+            (item) => item.shipmentId !== failure.shipmentId
+          ),
+          ...next.failures,
+        ],
+      });
+    };
+
+    try {
+      const next = await mutation.mutateAsync({
+        ...input,
+        shipmentIds: failure ? [failure.shipmentId] : input.shipmentIds,
+        existingBatchId: failure ? (previous?.batchId ?? undefined) : undefined,
+        onProgress: update,
+        assertActive: () => {
+          if (unmounted.current) {
+            throw new Error('화면을 떠나 출고 준비를 중단했어요.');
+          }
+        },
+      });
+
+      update(next);
+
+      const batchId = next.batchId ?? previous?.batchId;
+
+      if (batchId && !unmounted.current) {
+        void confirmBatch(batchId);
+      }
+    } catch (error) {
+      if (unmounted.current) {
+        return;
+      }
+
+      setProgress(previous);
+
+      if (previous?.batchId) {
+        void confirmBatch(previous.batchId);
+      }
+
+      toast.error(
+        getServerDenyMessage(error, '출고 준비를 처리하지 못했어요.')
+      );
+    } finally {
+      running.current = false;
+
+      if (!unmounted.current) {
+        setBusy(false);
+      }
+    }
+  };
+
+  const batch = batchState.status === 'ready' ? batchState.batch : null;
+  const ownBoxes = new Set(input.shipmentIds);
+  const inBatch = new Set(
+    (batch?.workItems ?? [])
+      .filter(
+        (item) => item.status !== 'excluded' && ownBoxes.has(item.shipmentId)
+      )
+      .map((item) => item.shipmentId)
+  );
+  const failures = progress?.failures ?? [];
+  const failedInBatch = failures.filter((failure) =>
+    inBatch.has(failure.shipmentId)
+  );
+  const unsure =
+    !batch &&
+    !!progress?.batchId &&
+    failures.some((failure) => failure.stage === 'join');
+  const handedOver = batch ? inBatch.size : (progress?.joined ?? 0);
+  const closed = batch?.status === 'completed' || batch?.status === 'canceled';
+
+  return (
+    <Dialog
+      open
+      onOpenChange={(open) => {
+        if (!open && !running.current) {
+          onClose();
+        }
+      }}
+    >
+      <DialogContent
+        className="sm:max-w-[560px]"
+        showCloseButton={!busy}
+        onEscapeKeyDown={(event) => {
+          if (busy) {
+            event.preventDefault();
+          }
+        }}
+        onInteractOutside={(event) => {
+          if (busy) {
+            event.preventDefault();
+          }
+        }}
+      >
+        <DialogHeader>
+          <DialogTitle>
+            {!progress
+              ? source === 'mergeable'
+                ? `합칠 수 있는 ${shipments.length}건을 따로 출고 준비할까요?`
+                : `${source === 'resume' ? '이어서 처리' : '완전출고'} ${shipments.length}건을 출고 준비할까요?`
+              : busy
+                ? '출고 준비 중이에요'
+                : handedOver === progress.total
+                  ? `${progress.total}상자 출고 준비를 마쳤어요`
+                  : `${progress.total}상자 중 ${handedOver}상자를 준비했어요`}
+          </DialogTitle>
+          <DialogDescription>
+            {!progress
+              ? '상자 확정, 송장 발급, 출고 배치에 담기까지 한 번에 해요.'
+              : busy
+                ? '상자가 많으면 1분 가까이 걸릴 수 있어요. 창을 닫지 말아 주세요.'
+                : progress.batchId && handedOver > 0 && !closed
+                  ? `송장 ${progress.waybilled}장을 발급하고 출고 배치에 담았어요. 아래 순서대로 현장에 넘겨 주세요.`
+                  : progress.batchId && closed
+                    ? '출고 배치를 확인해 주세요.'
+                    : '출고 배치에 담은 상자가 없어요.'}
+          </DialogDescription>
+        </DialogHeader>
+        {progress ? (
+          <div className="space-y-3">
+            <ul
+              className="space-y-1.5 text-sm"
+              role="status"
+              aria-live="polite"
+            >
+              <Step
+                label="상자 확정"
+                count={progress.planned}
+                total={progress.total}
+                active={busy && progress.stage === 'plan'}
+              />
+              <Step
+                label="송장 발급"
+                count={progress.waybilled}
+                total={progress.total}
+                active={busy && progress.stage === 'waybill'}
+              />
+              <Step
+                label="출고 배치에 담기"
+                count={busy ? progress.joined : handedOver}
+                total={progress.total}
+                active={
+                  busy &&
+                  (progress.stage === 'batch' || progress.stage === 'join')
+                }
+              />
+            </ul>
+            {progress.batchId &&
+              !busy &&
+              (handedOver > 0 || closed || !batch) && (
+                <BatchHandoff
+                  batch={batch}
+                  batchName={progress.batchName}
+                  boxes={handedOver}
+                  failed={batchState.status === 'error'}
+                  onReload={() => {
+                    if (progress.batchId) {
+                      void confirmBatch(progress.batchId);
+                    }
+                  }}
+                />
+              )}
+            {progress.retrying && (
+              <p className="text-xs text-muted-foreground">
+                연결이 잠깐 끊겨서 다시 시도하고 있어요.
+              </p>
+            )}
+            {progress.failures.length > 0 && (
+              <div className="max-h-64 space-y-2 overflow-y-auto rounded-md border p-3">
+                <p className="text-sm font-semibold">
+                  {failureHeading({
+                    total: failures.length,
+                    inBatch: failedInBatch.length,
+                    handedOver: handedOver > 0 && !!progress.batchId,
+                    unsure,
+                  })}
+                </p>
+                {progress.failures.map((failure) => {
+                  const shipment = shipments.find(
+                    (item) => item.shipmentId === failure.shipmentId
+                  );
+
+                  return (
+                    <div
+                      key={failure.shipmentId}
+                      className="flex items-center justify-between gap-3 text-sm"
+                    >
+                      <div>
+                        <p className="font-medium">
+                          {plannedOrderText(
+                            shipment ?? {
+                              shipmentId: failure.shipmentId,
+                              orderNos: [],
+                            }
+                          )}
+                        </p>
+                        {shipment?.split && (
+                          <p className="text-xs">
+                            {splitShareText(shipment.split)}
+                          </p>
+                        )}
+                        {inBatch.has(failure.shipmentId) && (
+                          <p className="text-xs font-medium">
+                            응답은 받지 못했지만 이 상자는 배치에 들어가 있어요.
+                          </p>
+                        )}
+                        <p className="text-muted-foreground">
+                          {failure.message}
+                        </p>
+                      </div>
+                      {/* 확정 오류도 [다시 시도]를 남긴다(스펙 §5.1) — 상자에서 고친 뒤 이 창에서 이어 간다. */}
+                      <div className="flex shrink-0 gap-2">
+                        {/* 송장 단계 실패는 다시 시도할 수 있어도 상자로 보낸다 — 한진 결과를 모르는 채 멈춘 송장은
+                            다시 시도로 영영 안 풀릴 수 있고, 끊는 곳은 상자 상세다(#1241). */}
+                        {(!failure.retryable ||
+                          failure.stage === 'waybill') && (
+                          <Button size="sm" variant="outline" asChild>
+                            <Link
+                              href={`/order/fulfillments?shipmentId=${encodeURIComponent(failure.shipmentId)}`}
+                            >
+                              상자 보기
+                            </Link>
+                          </Button>
+                        )}
+                        <Can run={useRunOutboundPreparation}>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={busy}
+                            onClick={() => void run(failure)}
+                          >
+                            다시 시도
+                          </Button>
+                        </Can>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        ) : (
+          <p className="text-sm">
+            피킹 방식: {PICKING_METHOD_LABELS[input.pickingMethod]}
+            {input.pickingMethod === 'multi_order' &&
+              ` · 카트 용량 ${input.cartCapacity}`}
+          </p>
+        )}
+        <DialogFooter>
+          <Button variant="outline" disabled={busy} onClick={onClose}>
+            {progress ? '닫기' : '취소'}
+          </Button>
+          {!progress && (
+            <Can run={useRunOutboundPreparation}>
+              <Button disabled={busy} onClick={() => void run()}>
+                시작
+              </Button>
+            </Can>
+          )}
+          {progress?.batchId && !busy && (
+            <Button asChild>
+              <Link
+                href={`/order/outbound-batches?batchId=${encodeURIComponent(progress.batchId)}`}
+              >
+                출고 배치 열기
+              </Link>
+            </Button>
+          )}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+type BatchState =
+  | { status: 'idle' | 'loading' | 'error' }
+  | { status: 'ready'; batch: OutboundBatchV2 };
+
+function failureHeading({
+  total,
+  inBatch,
+  handedOver,
+  unsure,
+}: {
+  total: number;
+  inBatch: number;
+  handedOver: boolean;
+  unsure: boolean;
+}) {
+  const missing = total - inBatch;
+
+  if (unsure) {
+    return `${total}상자는 준비하지 못했어요. 배치에 담겼는지는 «출고 배치 열기»에서 확인해 주세요.`;
+  }
+
+  if (missing === 0) {
+    return `응답을 받지 못한 ${total}상자도 배치에 들어가 있어요.`;
+  }
+
+  return handedOver
+    ? `${missing}상자는 준비하지 못했어요. 이 배치에 담기지 않았으니 현장에 넘기지 마세요.`
+    : `${missing}상자는 준비하지 못했어요`;
+}
+
+function BatchHandoff({
+  batch,
+  batchName,
+  boxes,
+  failed,
+  onReload,
+}: {
+  batch: OutboundBatchV2 | null;
+  batchName: string | null;
+  boxes: number;
+  failed: boolean;
+  onReload: () => void;
+}) {
+  const name = batch?.name || batchName;
+  const code = batch?.batchNumber;
+  const closed =
+    batch?.status === 'completed' || batch?.status === 'canceled'
+      ? batch.status
+      : null;
+  const steps: { key: string; content: ReactNode }[] = [
+    {
+      key: 'select',
+      content: (
+        <>
+          물류앱 F2 «배치 현황»에서{' '}
+          <span className="whitespace-nowrap font-mono">{code}</span> 를
+          고르세요.
+        </>
+      ),
+    },
+    ...(batch?.startedAt
+      ? [
+          {
+            key: 'reprint',
+            content:
+              '이미 작업을 시작한 배치예요. «바뀐·미출력 송장만 다시»로 새로 담은 상자의 송장을 뽑아 붙이세요.',
+          },
+        ]
+      : [
+          { key: 'start', content: '«작업 시작»을 누르세요.' },
+          {
+            key: 'print',
+            content: '«송장 인쇄»로 송장을 뽑아 상자에 붙이세요.',
+          },
+        ]),
+    {
+      key: 'scan',
+      content: 'F1 «출고 검수»에서 송장을 스캔하고 상품을 검수하세요.',
+    },
+  ];
+
+  return (
+    <section
+      aria-label="현장에 넘길 배치"
+      className="space-y-3 rounded-md border bg-muted/40 p-3 text-sm"
+    >
+      <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1">
+        <dt className="text-muted-foreground">배치</dt>
+        <dd className="break-words font-medium">{name}</dd>
+        <dt className="text-muted-foreground">물류앱 코드</dt>
+        <dd className="font-mono font-semibold">
+          {code ?? (
+            <span className="font-sans font-normal text-muted-foreground">
+              {failed ? '불러오지 못했어요' : '불러오는 중…'}
+            </span>
+          )}
+        </dd>
+        <dt className="text-muted-foreground">담은 상자</dt>
+        <dd className="font-medium">
+          {batch || boxes > 0 ? (
+            `${boxes}상자`
+          ) : (
+            <span className="font-normal text-muted-foreground">
+              {failed ? '확인하지 못했어요' : '배치에서 확인하고 있어요'}
+            </span>
+          )}
+        </dd>
+      </dl>
+      {batch ? (
+        closed ? (
+          <p>
+            {closed === 'completed'
+              ? '이 배치는 이미 출고를 마쳤어요.'
+              : '이 배치는 취소됐어요.'}{' '}
+            남은 상자는 출고 준비에서 새로 준비해 주세요.
+          </p>
+        ) : (
+          <ol className="list-decimal space-y-1 pl-5">
+            {steps.map((step) => (
+              <li key={step.key}>{step.content}</li>
+            ))}
+          </ol>
+        )
+      ) : failed ? (
+        <div className="flex flex-wrap items-center gap-2">
+          <p>배치 정보를 불러오지 못해 현장 순서를 보여 드릴 수 없어요.</p>
+          <Button size="sm" variant="outline" onClick={onReload}>
+            다시 불러오기
+          </Button>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function Step({
+  label,
+  count,
+  total,
+  active,
+}: {
+  label: string;
+  count: number;
+  total: number;
+  active: boolean;
+}) {
+  const done = count === total;
+
+  return (
+    <li
+      className={cn(
+        'flex items-center gap-1.5',
+        done || active
+          ? 'font-semibold text-foreground'
+          : 'text-muted-foreground'
+      )}
+    >
+      {done ? (
+        <Check className="size-4" aria-hidden />
+      ) : active ? (
+        <Loader2 className="size-4 animate-spin" aria-hidden />
+      ) : (
+        <span className="size-4" aria-hidden />
+      )}
+      {label} {count}/{total}
+    </li>
+  );
+}

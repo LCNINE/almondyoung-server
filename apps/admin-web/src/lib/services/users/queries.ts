@@ -83,7 +83,10 @@ export const useUserRoles = (userId: string) => {
 /**
  * 사용자 ID 목록으로 배치 조회 (작성자명 lookup용)
  */
-export const useAdminUsersByIds = (ids: string[]) => {
+export const useAdminUsersByIds = (
+  ids: string[],
+  options: { enabled?: boolean; retry?: boolean } = {}
+) => {
   const uniqueIds = Array.from(new Set(ids.filter(Boolean)));
   return useQuery({
     queryKey: usersQueryKeys.batch(uniqueIds),
@@ -92,7 +95,8 @@ export const useAdminUsersByIds = (ids: string[]) => {
         ids: uniqueIds.join(','),
         limit: uniqueIds.length,
       }),
-    enabled: uniqueIds.length > 0,
+    enabled: uniqueIds.length > 0 && (options.enabled ?? true),
     staleTime: 60 * 1000,
+    ...(options.retry === undefined ? {} : { retry: options.retry }),
   });
 };

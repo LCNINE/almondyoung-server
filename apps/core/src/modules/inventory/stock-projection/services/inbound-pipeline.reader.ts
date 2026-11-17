@@ -4,6 +4,10 @@ import { InjectTypedDb, DbService } from '@app/db';
 import { wmsSchema, wmsTables, DbTx } from '../../schema/inventory.schema';
 import { inSellableWarehouse } from '../../shared/availability/sellable-warehouses';
 import { WarehouseTransferReader } from '../../warehouse-transfer/services/warehouse-transfer.reader';
+import {
+  outstandingShipmentLineWhere,
+  outstandingShipmentQtySql,
+} from '../../inbound-shipment/services/inbound-shipment-outstanding.sql';
 import { PurchaseOrderExpectedArrivalReader } from '../../procurement/services/purchase-order-expected-arrival.reader';
 
 export interface InboundPipelineRow {
@@ -15,6 +19,18 @@ export interface InboundPipelineRow {
   awaitingTransferQty: number;
   inTransitQty: number;
   inTransitEta: Date | null;
+  /** 외부 선적 «오는 중» 합(창고 불문). 전사 축(#1240)이 쓴다. */
+  inboundShipmentQty: number;
+  /** 그중 도착 창고가 판매 창고인 것. 판매 창고 축이 쓴다. */
+  inboundShipmentToSellableQty: number;
+  /** 판매 창고행 중 가장 이른 expected_arrival (date 문자열). 없으면 null. */
+  inboundShipmentEta: string | null;
+}
+
+interface ShipmentRemainder {
+  total: number;
+  toSellable: number;
+  eta: string | null;
 }
 
 interface QtyWithEta {
@@ -61,6 +77,7 @@ export class InboundPipelineReader {
       const onOrderTotal = await this.readOnOrderTotal(trx, skuIds);
       const awaiting = await this.readAwaitingTransfer(trx, skuIds);
       const inTransit = await this.readInTransit(trx, skuIds, input.toWarehouseId);
+      const shipments = await this.readInboundShipments(trx, skuIds);
 
       return skuIds.map((skuId) => ({
         skuId,
@@ -70,8 +87,41 @@ export class InboundPipelineReader {
         awaitingTransferQty: awaiting.get(skuId) ?? 0,
         inTransitQty: inTransit.get(skuId)?.qty ?? 0,
         inTransitEta: inTransit.get(skuId)?.eta ?? null,
+        inboundShipmentQty: shipments.get(skuId)?.total ?? 0,
+        inboundShipmentToSellableQty: shipments.get(skuId)?.toSellable ?? 0,
+        inboundShipmentEta: shipments.get(skuId)?.eta ?? null,
       }));
     }, tx);
+  }
+
+  /**
+   * ④ 선적 «오는 중» (#1240). 잔량 식·열린 줄 조건은 `inbound-shipment-outstanding.sql` 이 소유한다.
+   * 예정 지난 선적도 센다(늦을 뿐 오고 있다). 예정일은 판매 창고행의 가장 이른 것.
+   */
+  private async readInboundShipments(trx: DbTx, skuIds: string[]): Promise<Map<string, ShipmentRemainder>> {
+    const line = wmsTables.inboundShipmentLines;
+    const shipment = wmsTables.inboundShipments;
+    const qty = outstandingShipmentQtySql();
+    const toSellable = inSellableWarehouse(shipment.warehouseId);
+
+    const rows = await trx
+      .select({
+        skuId: line.skuId,
+        total: sql<number>`COALESCE(SUM(${qty}), 0)::int`,
+        toSellable: sql<number>`COALESCE(SUM(CASE WHEN ${toSellable} THEN ${qty} ELSE 0 END), 0)::int`,
+        eta: sql<string | null>`MIN(CASE WHEN ${toSellable} THEN ${shipment.expectedArrival} END)::text`,
+      })
+      .from(line)
+      .innerJoin(shipment, eq(shipment.id, line.shipmentId))
+      .where(and(outstandingShipmentLineWhere(), inArray(line.skuId, skuIds)))
+      .groupBy(line.skuId);
+
+    const bySku = new Map<string, ShipmentRemainder>();
+    for (const row of rows) {
+      if (!row.skuId) continue;
+      bySku.set(row.skuId, { total: Number(row.total), toSellable: Number(row.toSellable), eta: row.eta });
+    }
+    return bySku;
   }
 
   /** ① 아직 중국에도 안 들어온 발주 잔량. 예정일은 가장 이른 라인 ETA. */

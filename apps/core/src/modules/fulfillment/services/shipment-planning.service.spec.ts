@@ -6,6 +6,7 @@ import { createGlobalValidationPipe } from '../../../platform/http/validation-pi
 import { ReviseShipmentRecipientDto, SplitShipmentDto } from '../dto/shipment-planning.dto';
 import { ShipmentPlanningController } from '../controllers/shipment-planning.controller';
 import { canonicalFulfillmentRequestHash } from './fulfillment-command.service';
+import { wmsTables } from '../../inventory/schema/inventory.schema';
 import {
   confirmedReservationReleaseForCancellation,
   resolveRecipientRevision,
@@ -188,6 +189,186 @@ describe('ShipmentPlanningService command boundary', () => {
       ),
     ).rejects.toThrow('reason must be a non-blank string');
     expect(execute).not.toHaveBeenCalled();
+  });
+});
+
+describe('ShipmentPlanningService joins pending cancellation', () => {
+  function pendingHarness() {
+    const { service } = planningHarness();
+    const pendingIntent = {
+      kind: 'cancel_outstanding',
+      shipmentId: 'shipment-1',
+      expectedManifestVersion: 3,
+      lines: [{ shipmentLineId: 'line-b', expectedLineVersion: 2, qty: 1 }],
+      reason: 'original reason',
+      csCaseId: 'original-case',
+      note: 'original note',
+    };
+    const aggregate = {
+      shipment: {
+        id: 'shipment-1',
+        status: 'recovery_required',
+        recoveryCode: 'CANCEL_REPLAN_PENDING',
+        manifestVersion: 3,
+      },
+      lines: [
+        { id: 'line-a', lineVersion: 1, qty: 2 },
+        { id: 'line-b', lineVersion: 2, qty: 3 },
+      ],
+      fulfillmentOrderIds: ['fo-a', 'fo-b'],
+    };
+    const lockOperation = jest
+      .fn()
+      .mockResolvedValue([
+        { id: 'pending-op', type: 'cancel', status: 'pending', afterManifestSnapshot: { pendingIntent } },
+      ]);
+    const set = jest.fn().mockReturnValue({ where: jest.fn().mockResolvedValue(undefined) });
+    const tx = {
+      select: jest.fn().mockReturnValue({
+        from: jest.fn().mockReturnValue({
+          where: jest.fn().mockReturnValue({ limit: jest.fn().mockReturnValue({ for: lockOperation }) }),
+        }),
+      }),
+      update: jest.fn().mockReturnValue({ set }),
+    };
+    const execute = jest
+      .fn()
+      .mockImplementation(
+        async (
+          _input: unknown,
+          handler: (trx: typeof tx, commandRequestId: string, requestHash: string) => Promise<{ response: unknown }>,
+        ) => {
+          const result = await handler(tx, 'command-2', 'request-hash');
+
+          return result.response;
+        },
+      );
+    const findPending = jest.spyOn(service, 'findPendingCancellationOperationId').mockResolvedValue('pending-op');
+    const createOperation = jest.fn();
+    const audit = jest.fn().mockResolvedValue(undefined);
+
+    service['commands'].execute = execute;
+    service['lockAggregate'] = jest.fn().mockResolvedValue(aggregate);
+    service['createOperation'] = createOperation;
+    service['audit'].logUserActionRequired = audit;
+
+    const dto = {
+      expectedManifestVersion: 3,
+      reason: 'second reason',
+      csCaseId: 'second-case',
+      note: 'second note',
+      lines: [
+        { shipmentLineId: 'line-b', expectedLineVersion: 2, qty: 2 },
+        { shipmentLineId: 'line-a', expectedLineVersion: 1, qty: 2 },
+      ],
+    };
+    const cancel = () => service.cancelOutstanding('shipment-1', dto, 'second-cancel', FULFILLMENT_SYSTEM_ACTOR, null);
+
+    return {
+      service,
+      aggregate,
+      pendingIntent,
+      dto,
+      tx,
+      set,
+      lockOperation,
+      findPending,
+      createOperation,
+      audit,
+      cancel,
+    };
+  }
+
+  it('merges new and overlapping lines into both snapshots without creating another operation', async () => {
+    const h = pendingHarness();
+
+    await expect(h.cancel()).resolves.toEqual({
+      operationId: 'pending-op',
+      operationStatus: 'pending',
+      shipmentId: 'shipment-1',
+      manifestVersion: 3,
+    });
+
+    expect(h.lockOperation).toHaveBeenCalledWith('update');
+    expect(h.createOperation).not.toHaveBeenCalled();
+    expect(h.tx.update.mock.calls.map(([table]) => table)).toEqual([
+      wmsTables.shipmentOperations,
+      wmsTables.shipmentOperationMembers,
+    ]);
+    expect(h.set).toHaveBeenCalledTimes(2);
+
+    for (const [update] of h.set.mock.calls) {
+      expect(update).toEqual({
+        afterManifestSnapshot: {
+          pendingIntent: {
+            ...h.pendingIntent,
+            lines: [
+              { shipmentLineId: 'line-a', expectedLineVersion: 1, qty: 2 },
+              { shipmentLineId: 'line-b', expectedLineVersion: 2, qty: 3 },
+            ],
+          },
+        },
+      });
+    }
+
+    expect(h.audit).toHaveBeenCalledWith(
+      'shipment.cancel_outstanding.joined_pending',
+      'fulfillment',
+      expect.any(String),
+      { userId: FULFILLMENT_SYSTEM_ACTOR_ID },
+      expect.objectContaining({ operationId: 'pending-op', requestedLines: expect.any(Array) }),
+      h.tx,
+    );
+  });
+
+  it('rejects a merged quantity exceeding the shipment line quantity before writing', async () => {
+    const h = pendingHarness();
+    h.dto.lines[0].qty = 3;
+
+    await expect(h.cancel()).rejects.toThrow('Cannot cancel 4; line line-b has 3');
+    expect(h.tx.update).not.toHaveBeenCalled();
+    expect(h.createOperation).not.toHaveBeenCalled();
+  });
+
+  it.each(['CONSOLIDATION_PENDING', 'CANCEL_REPLAN_PENDING'])(
+    'rejects recovery %s without a joinable pending cancellation',
+    async (recoveryCode) => {
+      const h = pendingHarness();
+      h.aggregate.shipment.recoveryCode = recoveryCode;
+
+      if (recoveryCode === 'CANCEL_REPLAN_PENDING') {
+        h.findPending.mockResolvedValue(null);
+      }
+
+      await expect(h.cancel()).rejects.toMatchObject({ response: { code: 'SHIPMENT_RECOVERY_IN_PROGRESS' } });
+      expect(h.tx.update).not.toHaveBeenCalled();
+      expect(h.createOperation).not.toHaveBeenCalled();
+    },
+  );
+
+  it('checks the manifest version before looking for a pending cancellation', async () => {
+    const h = pendingHarness();
+    h.dto.expectedManifestVersion = 2;
+
+    await expect(h.cancel()).rejects.toMatchObject({ response: { code: 'SHIPMENT_STALE_MANIFEST_VERSION' } });
+    expect(h.findPending).not.toHaveBeenCalled();
+  });
+
+  it('rejects a stale requested line version before writing', async () => {
+    const h = pendingHarness();
+    h.dto.lines[0].expectedLineVersion = 1;
+
+    await expect(h.cancel()).rejects.toMatchObject({ response: { code: 'SHIPMENT_LINE_STALE_VERSION' } });
+    expect(h.tx.update).not.toHaveBeenCalled();
+  });
+
+  it('requires reopen permission to join a pending cancellation', async () => {
+    const h = pendingHarness();
+
+    await expect(
+      h.service.cancelOutstanding('shipment-1', h.dto, 'second-cancel', { id: 'user-1', roles: [] }, null),
+    ).rejects.toThrow(`Missing required scope: ${FULFILLMENT_PERMISSION.SHIPMENT_REOPEN}`);
+    expect(h.tx.update).not.toHaveBeenCalled();
   });
 });
 

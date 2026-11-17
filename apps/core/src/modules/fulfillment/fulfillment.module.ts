@@ -30,6 +30,10 @@ import { PickingProcessService } from './services/picking-process.service';
 import { ConsolidationService } from './services/consolidation.service';
 import { PlannedShipmentsReader } from './services/planned-shipments.reader';
 import { ConsolidationBoardReader } from './services/consolidation-board.reader';
+import { OutboundPreparationController } from './outbound-preparation/outbound-preparation.controller';
+import { OutboundPreparationManager } from './outbound-preparation/outbound-preparation.manager';
+import { OutboundPreparationReader } from './outbound-preparation/outbound-preparation.reader';
+import { OutboundPreparationService } from './outbound-preparation/outbound-preparation.service';
 import { ConsolidationOptionsReader } from './services/consolidation-options.reader';
 import { ConsolidationOptionsService } from './services/consolidation-options.service';
 import { ConsolidationProgressReader } from './services/consolidation-progress.reader';
@@ -145,6 +149,7 @@ import { ShipmentRecallController, ShipmentRecallOperationController } from './c
     ReturnBinController,
     ShipmentController,
     ConsolidationController,
+    OutboundPreparationController,
     DirectShipController,
     LocationOptimizationController,
     ShipmentPlanningController,
@@ -175,6 +180,9 @@ import { ShipmentRecallController, ShipmentRecallOperationController } from './c
     ToteLifecycleService,
     ConsolidationService,
     ConsolidationBoardReader,
+    OutboundPreparationReader,
+    OutboundPreparationManager,
+    OutboundPreparationService,
     PlannedShipmentsReader,
     ConsolidationOptionsReader,
     ConsolidationOptionsService,

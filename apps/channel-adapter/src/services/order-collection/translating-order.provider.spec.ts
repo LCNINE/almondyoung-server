@@ -1,6 +1,6 @@
 import { createOrderProvider } from './translating-order.provider';
 import { OrderProcessingStageError } from './order-processing-stage.error';
-import type { SyncableChannelOrderProvider } from './channel-order-provider.interface';
+import { isAcknowledgingProvider, type SyncableChannelOrderProvider } from './channel-order-provider.interface';
 
 describe('ReplayableTranslatingOrderProvider.fetchOrderForSync', () => {
   const snapshot = { externalOrderId: 'order_1' };
@@ -104,5 +104,41 @@ describe('ReplayableTranslatingOrderProvider.fetchOrderForSync — 번역 실패
 
     expect(error).toBeInstanceOf(OrderProcessingStageError);
     expect(error).toMatchObject({ stage: 'translate', original, input: { id: 'A' }, message: 'translator broke' });
+  });
+});
+
+describe('acknowledgeCollected 위임 (#1245)', () => {
+  const translator = { translate: jest.fn() };
+
+  it('source 가 구현하면 provider 가 그대로 위임한다', async () => {
+    const acknowledgeCollected = jest.fn().mockResolvedValue(undefined);
+    const source = { channel: 'coupang', fetchOrders: jest.fn(), acknowledgeCollected };
+    const provider = createOrderProvider(source as any, translator as any);
+
+    expect(isAcknowledgingProvider(provider)).toBe(true);
+    await provider.acknowledgeCollected?.(['1', '2']);
+
+    expect(acknowledgeCollected).toHaveBeenCalledWith(['1', '2']);
+  });
+
+  it('replay 가능한 source 에서도 위임한다', async () => {
+    const acknowledgeCollected = jest.fn().mockResolvedValue(undefined);
+    const source = { channel: 'coupang', fetchOrders: jest.fn(), fetchOrder: jest.fn(), acknowledgeCollected };
+    const provider = createOrderProvider(source as any, translator as any);
+
+    await provider.acknowledgeCollected?.(['1']);
+
+    expect(acknowledgeCollected).toHaveBeenCalledWith(['1']);
+  });
+
+  it('source 가 구현하지 않으면 provider 에도 메서드가 없다', () => {
+    const plain = createOrderProvider({ channel: 'medusa', fetchOrders: jest.fn() } as any, translator as any);
+    const replayable = createOrderProvider(
+      { channel: 'naver', fetchOrders: jest.fn(), fetchOrder: jest.fn() } as any,
+      translator as any,
+    );
+
+    expect(plain.acknowledgeCollected).toBeUndefined();
+    expect(replayable.acknowledgeCollected).toBeUndefined();
   });
 });

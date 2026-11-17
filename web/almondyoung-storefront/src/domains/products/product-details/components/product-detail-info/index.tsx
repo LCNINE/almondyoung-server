@@ -2,7 +2,7 @@
 
 import { ChevronDown, ChevronUp } from "lucide-react"
 import Image from "next/image"
-import { useMemo, useRef, useState } from "react"
+import { type ReactNode, useMemo, useRef, useState } from "react"
 import { useTranslations } from "next-intl"
 import { cn } from "@lib/utils"
 import { Button } from "@/components/ui/button"
@@ -33,6 +33,8 @@ type Props = {
   descriptionHtml?: string
   detailImages: string[]
   productName: string
+  /** 상세 설명 앞에 붙는 본문(아몬드템플릿 인쇄 상품의 제작 안내 등) */
+  extra?: ReactNode
 }
 
 const COLLAPSED_HEIGHT = 500
@@ -43,6 +45,7 @@ export function ProductDetailInfo({
   descriptionHtml,
   detailImages,
   productName,
+  extra,
 }: Props) {
   const t = useTranslations("productDetail.info")
   const [isExpanded, setIsExpanded] = useState(false)
@@ -134,6 +137,7 @@ export function ProductDetailInfo({
           )}
           style={isExpanded ? undefined : { maxHeight: COLLAPSED_HEIGHT }}
         >
+          {extra}
           {description?.trim() ? (
             <section>
               <h4 className="sr-only">{t("detailSrTitle")}</h4>

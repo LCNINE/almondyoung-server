@@ -53,7 +53,7 @@ export function Cafe24LinkPopup({ countryCode }: Cafe24LinkPopupProps) {
       <DialogContent className="gap-0 overflow-hidden p-0 sm:max-w-[460px]">
         <DialogHeader className="space-y-2.5 px-7 pt-7 text-left">
           <div className="flex items-center gap-2 text-xs">
-            <span className="text-primary font-medium">{t("label")}</span>
+            <span className="text-mint-deep font-medium">{t("label")}</span>
             <span className="text-gray-300">·</span>
             <span className="text-gray-400">{t("date")}</span>
           </div>

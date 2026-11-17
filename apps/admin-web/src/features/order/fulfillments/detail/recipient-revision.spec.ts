@@ -111,7 +111,7 @@ describe('수령인 정정 payload', () => {
   it('배송 메모가 비면 키를 빼고, 나머지는 trim 해서 보낸다', () => {
     const payload = buildRecipientRevisionPayload(
       form({ recipientName: ' 김철수 ', deliveryNote: '  ' }),
-      command({ reason: ' 고객 요청 ', csCaseId: '  ', note: ' 메모 ' })
+      command({ reason: ' 고객 요청 ', note: ' 메모 ' })
     );
 
     expect(payload.recipientSnapshot?.recipientName).toBe('김철수');

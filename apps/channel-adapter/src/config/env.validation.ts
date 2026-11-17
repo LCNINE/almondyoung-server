@@ -40,6 +40,9 @@ export const channelAdapterEnvSchema = z
     COUPANG_VENDOR_ID: z.string().optional(),
     COUPANG_USE_MOCK_SERVER: z.string().optional(),
 
+    // 고객 취소요청 자동 승인 — 채널별 스위치 (쉼표 목록, 예: coupang). 옛 CHANNEL_CANCEL_APPROVAL_MODE=act 는 두 채널 모두
+    CHANNEL_CANCEL_APPROVAL_ACT_CHANNELS: z.string().optional(),
+
     // Channel Management
     // ACTIVE_CHANNELS / ADAPTER_REQUIRED_CHANNELS / REQUIRED_CHANNELS 는 소비자 0곳인 채로 선언만
     // 남아 있어 #654 에서 제거했다. 채널 활성화는 Core 의 `sales_channels.is_active` 가 갖는다 (ADR-0031).

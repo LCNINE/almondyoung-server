@@ -32,7 +32,7 @@ export function ProductPrice({
           </span>
         </div>
         <div className="flex flex-col gap-0.5 text-[#ffa500]">
-          <ProductMembershipBadge size="sm" label="멤버십할인가" />
+          <ProductMembershipBadge size="sm" label="멤버십 할인가" />
           <span className="text-[15px] font-bold">멤버십 회원 공개</span>
         </div>
       </>
@@ -60,7 +60,7 @@ export function ProductPrice({
         {showMembershipBadge && (
           <ProductMembershipBadge
             size="sm"
-            label="멤버십할인가"
+            label="멤버십 할인가"
             className="shrink-0"
           />
         )}
@@ -70,7 +70,7 @@ export function ProductPrice({
         membershipPrice > 0 &&
         membershipSavings != null && (
           <div className="flex flex-col gap-0.5 text-[#ffa500]">
-            <ProductMembershipBadge size="sm" label="멤버십할인가" />
+            <ProductMembershipBadge size="sm" label="멤버십 할인가" />
             <span className="text-[15px] font-bold whitespace-nowrap">
               {membershipPrice.toLocaleString()}원
             </span>

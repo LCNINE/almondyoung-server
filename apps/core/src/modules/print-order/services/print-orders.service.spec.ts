@@ -14,6 +14,7 @@ import { PrintOrderReader, type PrintOrderListItem, type PrintOrderSummary } fro
 import { PrintOrderRepository } from './print-order.repository';
 import { PrintOrdersService } from './print-orders.service';
 import { PrintCancelRemainingReader } from './print-cancel-remaining.reader';
+import { PrintProductSpecRepository } from '../repositories/print-product-spec.repository';
 
 // 남은 수량은 라인 수량 문(SQL)이 계산한다 — 여기선 문의 결과만 가짜로 채운다
 jest.mock('../../sales-order/line-quantities/line-quantities.reader');
@@ -28,7 +29,7 @@ class FakeReader extends PrintOrderReader {
     super(noDb);
   }
   summary = jest.fn<Promise<PrintOrderSummary>, [Date]>(() =>
-    Promise.resolve({ cancelRefused: 1, testPending: 0, failed: 0, unsupported: 0, total: 1 }),
+    Promise.resolve({ cancelRefused: 1, awaitingPayment: 0, vendorAttention: 0, testPending: 0, failed: 0, unsupported: 0, total: 1 }),
   );
   byLine = jest.fn<Promise<PrintOrderListItem | null>, [string]>(() => Promise.resolve(null));
   byDesign = jest.fn<Promise<PrintOrderListItem[]>, [string]>(() => Promise.resolve([]));
@@ -36,7 +37,7 @@ class FakeReader extends PrintOrderReader {
 
 class FakeManager extends PrintOrderAdminManager {
   constructor() {
-    super(new PrintOrderRepository(noDb), new PrintOrderReader(noDb));
+    super(new PrintOrderRepository(noDb), new PrintOrderReader(noDb), new PrintProductSpecRepository(noDb), noDb);
   }
   resolveCancel = jest.fn<Promise<PrintCancelResolution>, [string, 'cancelled' | 'proceed', string]>();
   noteSalesCancelFailed = jest.fn(() => Promise.resolve());
@@ -122,6 +123,8 @@ const resolvedRow: PrintOrderRow = {
   cancelResolvedBy: 'admin-1',
   salesCancelFailedAt: null,
   fileDeliveredAt: null,
+  vendorAwaitingPayment: false,
+  vendorInProduction: false,
   createdAt: new Date(),
   updatedAt: new Date(),
 };

@@ -29,7 +29,7 @@ describe('workFor — 정한 화면의 손잡이만 상품을 받는다', () => 
 
   it('박스 화면이 아니거나 손잡이가 없으면 null', () => {
     expect(workFor({ kind: 'waiting' }, handle('s-1', 1))).toBeNull();
-    expect(workFor({ kind: 'withdrawn', box: box('s-1') }, handle('s-1', 1))).toBeNull();
+    expect(workFor({ kind: 'withdrawn', box: box('s-1'), seq: 1, exitTo: 'draft' }, handle('s-1', 1))).toBeNull();
     expect(workFor({ kind: 'inspect', box: box('s-1'), seq: 1 }, null)).toBeNull();
   });
 });

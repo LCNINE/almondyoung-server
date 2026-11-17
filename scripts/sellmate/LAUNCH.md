@@ -157,3 +157,14 @@ bash scripts/sellmate/run.sh live sync-stock apps/core/tmp/             # 반영
   (그때 SKU별 `recalculateAndPublishForSku` 재계산 필요 — 별도 작업).
 - dev 로 먼저 연습하려면 위 명령에서 `live` → `dev` (단, dev core 가 비어있으면
   `bash scripts/sellmate/dev-setup-core.sh` 로 1회 셋업).
+
+---
+
+## T 당일: 저녁 맞추기 (#1304)
+
+자세한 규칙·하위 명령은 `scripts/sellmate/README.md` «저녁 맞추기». **T 전에 live `db:migrate`**(앱 배포 불필요).
+`init` 뒤에는 `sync-stock`·`handover-stock-addback` 이 거절된다.
+
+1. (T 전) `bash scripts/sellmate/run.sh live evening-reconcile pair <재고 CSV> --apply` → 짝 못 지은 품목을 고친다(종료 코드 0 이 될 때까지).
+2. (T) **마지막 `sync-stock` 뒤** `WITH_MEDUSA=1 bash scripts/sellmate/run.sh live evening-reconcile init <마지막 sync 재고 CSV> --cutover-at=<T> --sellmate-orders=<파일> --own-mall-channel=<자사몰 판매처 이름>` 을 미리보기로 본 뒤 `--apply`.
+3. (T 저녁) `apply` → 업로드 CSV 를 셀메이트 «재고 수정» 에 올림 → 재고 CSV 다시 받기 → `close`. 각각 미리보기 후 `--apply`.

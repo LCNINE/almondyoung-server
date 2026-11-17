@@ -1,6 +1,6 @@
 /* 스테이션 출고 화면 테스트의 가짜 core — 엔드포인트 모양은 실제와 같고 상태는 메모리에 둔다. 테스트 전용 */
 import 'fake-indexeddb/auto';
-import { ApiError, ConflictError, type ApiClient } from '../../../core/data/httpClient';
+import { ApiError, ConflictError, NetworkError, type ApiClient } from '../../../core/data/httpClient';
 import type { WorkPermissions, WorkRuntime } from '../../../core/operations/OperationContext';
 import { createOperationRunner } from '../../../core/operations/operationRunner';
 import { createOperationStore } from '../../../core/operations/operationStore';
@@ -40,6 +40,8 @@ export interface FakeBox {
   removals?: WithdrawalRemoval[];
   /** 되돌림 응답에 removedSkuName 을 싣지 않는 옛 core */
   omitRemovedName?: boolean;
+  /** 주문 전체 취소로 빠지는 상자 — 다 빼면 다시 준비하지 않는다 */
+  canceling?: boolean;
   lines: FakeLine[];
 }
 
@@ -60,8 +62,11 @@ export interface OutboundServerConfig {
   refills: unknown[];
   refillsFail: boolean;
   batches: { picking: OutboundBatchSummary[]; created: OutboundBatchSummary[] };
+  batchesFail: boolean;
   /** 배치 박스 목록에 작업 상태·송장번호·받는 분을 싣지 않는 옛 core */
   legacyBatchStates: boolean;
+  /** 내 되돌림 바구니 조회를 실패시킨다(503) */
+  returnBinFail: boolean;
 }
 
 export function batchSummary(
@@ -95,8 +100,12 @@ export function createOutboundServer(init: { boxes: FakeBox[] }) {
     refills: [],
     refillsFail: false,
     batches: { picking: [], created: [] },
+    batchesFail: false,
     legacyBatchStates: false,
+    returnBinFail: false,
   };
+  /** 내 되돌림 바구니 — 상자에서 꺼낸 상품이 쌓인다 */
+  const returnBin: Array<{ skuId: string; skuCode: string; skuName: string; sourceLocationId: string; locationCode: string; qty: number }> = [];
   const requests: Req[] = [];
   const scanCalls: string[] = [];
   const scans: Array<{ key: string; shipmentId: string; barcode: string; quantity: number }> = [];
@@ -108,13 +117,16 @@ export function createOutboundServer(init: { boxes: FakeBox[] }) {
   const shortPickReplies = new Map<string, unknown>();
   let loseShortPick = false;
   let lookupGate: Promise<void> | null = null;
+  let listGate: Promise<void> | null = null;
   let shortPickGate: Promise<void> | null = null;
   const excludes: Array<{ batchId: string; shipmentId: string; reason: string }> = [];
   const confirmedPrints: string[] = [];
   const applied = new Map<string, SimpleOutboundState>();
   let sendGate: Promise<void> | null = null;
   let writeGate: Promise<void> | null = null;
+  let returnBinGate: Promise<void> | null = null;
   let losing = false;
+  let offline = false;
 
   const byTracking = (trackingNo: string) => boxes.find((b) => b.trackingNo === trackingNo);
   const byId = (shipmentId: string) => {
@@ -199,7 +211,7 @@ export function createOutboundServer(init: { boxes: FakeBox[] }) {
           : [],
       labelIssue: null,
       removals: active(box) && box.labelState === 'withdrawing' ? box.removals : [],
-      exitTo: box.withdrawn ? 'draft' : null,
+      exitTo: box.withdrawn ? (box.canceling ? 'canceled' : 'draft') : null,
       ...(box.legacy
         ? {}
         : {
@@ -215,7 +227,10 @@ export function createOutboundServer(init: { boxes: FakeBox[] }) {
     const key = o.idempotencyKey ?? '';
     const body = o.body as { barcode: string; quantity: number };
     scanCalls.push(key);
+    // 빼기보다 먼저 도착한 스캔은 받는다 — 판정은 도착 순간의 상태로
+    const leaving = byId(shipmentId).labelState === 'withdrawing';
     if (sendGate) await sendGate;
+    if (leaving && !applied.has(key)) throw new ConflictError('leaving its batch', 'SHIPMENT_WITHDRAWN');
     if (!applied.has(key)) {
       const box = byId(shipmentId);
       const line = box.lines.find((l) => l.barcode === body.barcode);
@@ -228,8 +243,7 @@ export function createOutboundServer(init: { boxes: FakeBox[] }) {
       scans.push({ key, shipmentId, barcode: body.barcode, quantity: body.quantity });
       applied.set(key, outState(box));
     }
-    // 서버는 반영했는데 응답을 잃었다 — 403 은 재시도하지 않는 불확실 결과다
-    if (losing) throw new ApiError('응답 유실', 403);
+    if (losing) throw new NetworkError('응답 유실');
     return applied.get(key);
   }
 
@@ -311,6 +325,17 @@ export function createOutboundServer(init: { boxes: FakeBox[] }) {
     const removal = line && box.removals.find((r) => r.shipmentLineId === line.id && r.boxQty > 0);
     if (!removal) throw new ConflictError('not pending', 'REMOVAL_NOT_PENDING');
     removal.boxQty -= 1;
+    const held = returnBin.find((item) => item.skuId === removal.skuId && item.sourceLocationId === removal.sourceLocationId);
+    if (held) held.qty += 1;
+    else
+      returnBin.push({
+        skuId: removal.skuId,
+        skuCode: removal.skuCode,
+        skuName: removal.skuName,
+        sourceLocationId: removal.sourceLocationId,
+        locationCode: removal.locationCode,
+        qty: 1,
+      });
     box.removals = box.removals.filter((r) => r.boxQty > 0 || r.cartQty > 0);
     const exited = box.removals.length === 0;
     if (exited) box.withdrawn = true;
@@ -318,12 +343,13 @@ export function createOutboundServer(init: { boxes: FakeBox[] }) {
       removedQty: 1,
       ...(box.omitRemovedName ? {} : { removedSkuName: removal.skuName }),
       exited,
-      exitTo: exited ? 'draft' : null,
+      exitTo: exited ? (box.canceling ? 'canceled' : 'draft') : null,
       removals: box.removals,
     };
   }
 
   async function request<T>(o: Req): Promise<T> {
+    if (offline) throw new NetworkError(new TypeError('Failed to fetch'));
     requests.push(o);
     const method = o.method ?? 'GET';
     const [path, query = ''] = o.path.split('?');
@@ -371,12 +397,21 @@ export function createOutboundServer(init: { boxes: FakeBox[] }) {
     }
     const removal = /^\/shipments\/([^/]+)\/return-bin-removals$/.exec(path);
     if (removal) return reply(removeToBin(o, removal[1]));
+    if (path === '/return-bins/mine') {
+      if (returnBinGate) await returnBinGate;
+      if (config.returnBinFail) throw new ApiError(`GET ${o.path} → 503`, 503);
+      return reply({ id: 'rb-1', barcode: 'RB-me', warehouseId: params.get('warehouseId'), items: returnBin.filter((item) => item.qty > 0) });
+    }
     if (path === '/outbound-refills/pending') {
-      if (config.refillsFail) throw new ApiError(`GET ${o.path} → 404`, 404, 'NOT_FOUND');
+      if (listGate) await listGate;
+      if (config.refillsFail) throw new ApiError(`GET ${o.path} → 503`, 503);
       return reply(config.refills);
     }
-    if (path === '/outbound-batches/v2')
+    if (path === '/outbound-batches/v2') {
+      if (listGate) await listGate;
+      if (config.batchesFail) throw new ApiError(`GET ${o.path} → 503`, 503);
       return reply(params.get('status') === 'created' ? config.batches.created : config.batches.picking);
+    }
     const items = /^\/outbound-batches\/([^/]+)\/work-items$/.exec(path);
     if (items)
       return reply(
@@ -414,6 +449,7 @@ export function createOutboundServer(init: { boxes: FakeBox[] }) {
     shortPickCalls,
     excludes,
     confirmedPrints,
+    returnBin,
     /** 다음 스캔 응답을 붙잡는다 — 돌려받은 함수를 부르면 놓는다 */
     holdSends(): () => void {
       let release!: () => void;
@@ -436,12 +472,34 @@ export function createOutboundServer(init: { boxes: FakeBox[] }) {
       });
       return release;
     },
+    /** 내 되돌림 바구니 조회 응답을 붙잡는다 — 돌려받은 함수를 부르면 놓는다 */
+    holdReturnBin(): () => void {
+      let release!: () => void;
+      returnBinGate = new Promise<void>((resolve) => {
+        release = () => {
+          returnBinGate = null;
+          resolve();
+        };
+      });
+      return release;
+    },
     /** 송장 조회 응답을 붙잡는다 — 돌려받은 함수를 부르면 놓는다 */
     holdLookups(): () => void {
       let release!: () => void;
       lookupGate = new Promise<void>((resolve) => {
         release = () => {
           lookupGate = null;
+          resolve();
+        };
+      });
+      return release;
+    },
+    /** 배치 목록·보충 대기 응답을 붙잡는다 — 돌려받은 함수를 부르면 놓는다 */
+    holdLists(): () => void {
+      let release!: () => void;
+      listGate = new Promise<void>((resolve) => {
+        release = () => {
+          listGate = null;
           resolve();
         };
       });
@@ -464,6 +522,10 @@ export function createOutboundServer(init: { boxes: FakeBox[] }) {
     },
     loseResponses(value: boolean) {
       losing = value;
+    },
+    /** 응답 없이 실패한다(연결 끊김) — 요청 기록에도 남지 않는다 */
+    setOffline(value: boolean) {
+      offline = value;
     },
     /** 다른 스테이션이 같은 박스를 찍은 것처럼 */
     pick(trackingNo: string, lineId: string, qty: number) {

@@ -38,5 +38,13 @@
     "nail": "Nail",
     "hair": "Hair",
     "waxing": "Waxing"
+  },
+  "fieldBrands": {
+    "summary": "{count} brands with {field} products",
+    "productCount": "{count}",
+    "more": "Show {count} more brands",
+    "collapse": "Show less",
+    "clear": "Clear {brand}",
+    "selectedHint": "Showing only {field} products from {brand}"
   }
 }

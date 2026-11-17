@@ -165,7 +165,11 @@ export async function loadFoConsolidations(
     .from(wmsTables.shipments)
     .where(inArray(wmsTables.shipments.id, shipmentIds));
   const lines = await loadShipmentLines(db, shipmentIds);
-  const emptyProgress = { batchByShipment: new Map<string, string>(), trackingByShipment: new Map<string, string>() };
+  const emptyProgress = {
+    batchByShipment: new Map<string, string>(),
+    trackingByShipment: new Map<string, string>(),
+    splitByShipment: new Map(),
+  };
   const openShipments = shipments.filter((shipment) => OPTION_STATUSES.includes(shipment.status));
   const partitions = new Map<string, ShipmentRow[]>();
 

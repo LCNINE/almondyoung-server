@@ -159,8 +159,7 @@ export const tenantDomains = pgTable(
       .references(() => tenants.id, { onDelete: 'cascade' })
       .notNull(),
     // 이 주소가 어느 앱의 주소인가('admin-web' | 'auth-web') — admin-web 테넌트 셸이 로그인을 그 테넌트의 auth-web 주소로 보낸다.
-    // 아직 nullable 이다(expand). 비면 그 주소로는 테넌트 셸·로그인 주소를 고르지 않는다.
-    app: varchar('app', { length: 16 }).$type<TenantDomainApp>(),
+    app: varchar('app', { length: 16 }).$type<TenantDomainApp>().notNull(),
     createdAt: timestamp('created_at')
       .default(sql`now()`)
       .notNull(),
@@ -217,6 +216,26 @@ export const iamRolePermissions = pgTable(
   },
   (table) => ({
     pk: primaryKey({ columns: [table.roleId, table.permissionKey] }),
+  }),
+);
+
+// 카탈로그 첫 부여(grantOnFirstRegistration) 몫을 이미 준 (키, 역할). 회수돼도 남아 다시 주지 않는다(#1248).
+// 역할은 id 로 잇는다 — 지우고 같은 이름으로 다시 만든 역할은 새 역할이라 다시 받는다.
+export const iamInitialGrantDeliveries = pgTable(
+  'iam_initial_grant_deliveries',
+  {
+    permissionKey: varchar('permission_key', { length: 100 })
+      .references(() => iamPermissions.key)
+      .notNull(),
+    roleId: uuid('role_id')
+      .references(() => roles.roleId, { onDelete: 'cascade' })
+      .notNull(),
+    deliveredAt: timestamp('delivered_at')
+      .default(sql`now()`)
+      .notNull(),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.permissionKey, table.roleId] }),
   }),
 );
 
@@ -279,8 +298,8 @@ export const piiAccessLogs = pgTable(
     kinds: text('kinds').array().notNull(),
     queryKeys: text('query_keys').array().notNull(),
     reason: text('reason'),
-    // 열람이 일어난 테넌트. 접속기록은 어떤 경우에도 남아야 하므로 FK 를 걸지 않는다.
-    tenantId: varchar('tenant_id', { length: 64 }),
+    // 열람이 일어난 테넌트(요청·이벤트 맥락, `PiiAccessCreator`). 접속기록은 테넌트가 지워져도 남아야 하므로 FK 를 걸지 않는다.
+    tenantId: varchar('tenant_id', { length: 64 }).notNull(),
     recordedAt: timestamp('recorded_at', { precision: 3 })
       .default(sql`now()`)
       .notNull(),
@@ -326,8 +345,10 @@ export const userRoleAssignments = pgTable(
       .notNull(),
     assignedAt: timestamp('assigned_at').defaultNow().notNull(),
     expiresAt: timestamp('expires_at'),
-    // 어느 테넌트에서의 부여인가. 역할 정의는 전역이고 부여에만 테넌트가 있다. NOT NULL 은 백필 뒤 별도 contract 마이그다.
-    tenantId: varchar('tenant_id', { length: 64 }).references(() => tenants.id, { onDelete: 'cascade' }),
+    // 어느 테넌트에서의 부여인가 — 계정의 테넌트다(ADR-0056, iam Manager 가 지킨다). 역할 정의는 전역이고 부여에만 테넌트가 있다.
+    tenantId: varchar('tenant_id', { length: 64 })
+      .references(() => tenants.id, { onDelete: 'cascade' })
+      .notNull(),
     ...timestampColumns,
   },
   (table) => ({
@@ -955,6 +976,7 @@ export const userServiceTables = {
   roles,
   iamPermissions,
   iamRolePermissions,
+  iamInitialGrantDeliveries,
   iamAuditLogs,
   piiAccessLogs,
   piiAccessReviews,

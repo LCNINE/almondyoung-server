@@ -193,6 +193,9 @@ export class ChannelOrderTranslator {
     if (observation.eventType === 'OrderRefundCreated') {
       return { ...base, eventType: 'OrderRefundCreated', payload: observation.payload };
     }
+    if (observation.eventType === 'ChannelCancelRequested') {
+      return { ...base, eventType: 'ChannelCancelRequested', payload: observation.payload };
+    }
     if (observation.eventType === 'ChannelReturnRequested') {
       return { ...base, eventType: 'ChannelReturnRequested', payload: observation.payload };
     }

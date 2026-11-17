@@ -1,0 +1,1 @@
+ALTER TABLE "print_orders" ADD COLUMN "vendor_in_production" boolean DEFAULT false NOT NULL;

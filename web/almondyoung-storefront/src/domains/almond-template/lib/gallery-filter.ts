@@ -55,7 +55,7 @@ function colorGroup(hex: string) {
 }
 
 export function published(item: PublishedTemplate) {
-  return !!PRINT_PRODUCTS[item.productId] && /^\d{2,4}x\d{2,4}$/.test(item.size)
+  return !!templateKind(item) && /^\d{2,4}x\d{2,4}$/.test(item.size)
 }
 
 export function filterTemplates(
@@ -79,7 +79,7 @@ export function filterTemplates(
     if (filters.size && item.size !== filters.size) return false
     if (
       filters.keyword &&
-      !`${item.title} ${PRINT_PRODUCTS[item.productId].title}`
+      !`${item.title} ${PRINT_PRODUCTS[item.productId]?.title ?? ""}`
         .toLocaleLowerCase()
         .includes(filters.keyword.toLocaleLowerCase())
     )

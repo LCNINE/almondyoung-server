@@ -14,12 +14,11 @@ export class UploadedFileRepository {
   /**
    * 같은 fileId 가 다시 오면 무시한다. 업로드마다 새 uuid 라 보통 안 겹치지만,
    * 겹쳤을 때 기록이 터져서 업로드가 실패하면 안 된다.
-   * 테넌트를 모르면(①) 싣지 않는다 — DB 기본값이 채운다.
    */
   async record(fileId: string, contextId: string, sessionId: string | null, tenant: RequestTenantId): Promise<void> {
     await this.dbService.db
       .insert(assistantUploadedFiles)
-      .values({ fileId, contextId, sessionId, ...(tenant === null ? {} : { tenantId: tenant }) })
+      .values({ fileId, contextId, sessionId, tenantId: tenant })
       .onConflictDoNothing();
   }
 

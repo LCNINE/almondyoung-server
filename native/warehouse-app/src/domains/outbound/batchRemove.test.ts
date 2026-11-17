@@ -21,15 +21,29 @@ describe('removeBoxFromBatch', () => {
     labelState: 'current', labelChanges: [], labelIssue: null, removals: [], exitTo: null, ...over,
   });
 
-  it('담은 상품이 있으면 빼는 중 — 송장을 스캔해 바구니로 빼라고 안내한다', async () => {
-    const { api } = fakeApi((o) =>
-      o.method === 'DELETE' ? { operationId: 'op', workItem: { id: 'wi-1', status: 'withdrawing' } } : found(),
-    );
+  it('담은 상품이 있으면 빼는 중 — 다시 읽은 박스를 넘겨 뺄 상품 화면으로 보낸다', async () => {
+    let reads = 0;
+    const { api } = fakeApi((o) => {
+      if (o.method === 'DELETE') return { operationId: 'op', workItem: { id: 'wi-1', status: 'withdrawing' } };
+
+      reads += 1;
+
+      return reads === 1 ? found() : found({ labelState: 'withdrawing', workItemStatus: 'withdrawing' });
+    });
     const outcome = await removeBoxFromBatch({ api, newKey: () => 'k' }, { batchId: 'b-1', warehouseId: 'wh', trackingNo: '1', reason: 'x' });
     expect(outcome).toEqual({
       kind: 'withdrawing',
-      message: '담은 상품이 있어 빼는 중이에요. 이 송장을 스캔해 뺄 상품을 되돌림 바구니에 넣어 주세요.',
+      message: '담은 상품이 있어 빼는 중이에요. 뺄 상품 화면으로 갈게요.',
+      shipment: found({ labelState: 'withdrawing', workItemStatus: 'withdrawing' }),
     });
+  });
+
+  it('이미 빼는 중인 박스면 DELETE 없이 뺄 상품 화면으로 보낸다', async () => {
+    const withdrawing = found({ labelState: 'withdrawing', workItemStatus: 'withdrawing' });
+    const { api, calls } = fakeApi(() => withdrawing);
+    const outcome = await removeBoxFromBatch({ api, newKey: () => 'k' }, { batchId: 'b-1', warehouseId: 'wh', trackingNo: '1', reason: 'x' });
+    expect(outcome).toEqual({ kind: 'withdrawing', message: '담은 상품이 있어 빼는 중이에요. 뺄 상품 화면으로 갈게요.', shipment: withdrawing });
+    expect(calls.map((c) => c.method)).toEqual(['GET']);
   });
 
   it('송장번호로 박스를 찾아 사유와 함께 뺀다', async () => {

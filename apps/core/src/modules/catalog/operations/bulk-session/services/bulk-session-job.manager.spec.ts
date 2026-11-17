@@ -388,7 +388,7 @@ function makeHarness(opts: HarnessOpts = {}) {
   const manager = new BulkSessionJobManager(
     db as never,
     { download } as never,
-    { renderMaster } as never,
+    { renderMaster, loadSupplierNames: jest.fn().mockResolvedValue(new Map()) } as never,
     { getCategoryTree } as never,
     applier as never,
     versions as never,

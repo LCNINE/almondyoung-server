@@ -118,6 +118,7 @@ describeIfDb('ConsolidationOptionsReader (DB integration)', () => {
       });
       expect(res.source.salesOrderNos).toHaveLength(1);
       expect(res.source.itemSummary).not.toBe('');
+      expect(res.source.items).toEqual([{ skuId: base.skuId, name: res.source.itemSummary, qty: 1 }]);
       expect(res.options.map((o) => [o.shipmentId, o.reason, o.selectable])).toEqual(
         expect.arrayContaining([
           [same.shipment.id, 'ok', true],

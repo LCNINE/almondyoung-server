@@ -40,7 +40,9 @@ describeIfDb('admin user list — staff filter against a real database', () => {
         tenantId: '1',
       })
       .returning({ id: users.id });
-    await dbService.db.insert(userRoleAssignments).values({ userId: u.id, roleId: await roleId(roleName), expiresAt });
+    await dbService.db
+      .insert(userRoleAssignments)
+      .values({ userId: u.id, roleId: await roleId(roleName), expiresAt, tenantId: '1' });
   };
   const cleanup = () => dbService.db.delete(users).where(like(users.loginId, `${PREFIX}%`));
 

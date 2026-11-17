@@ -5,6 +5,7 @@ import { IdCell, DateCell } from '@/components/table/table-cells/common';
 import { StatusBadgeCell, AmountCell } from '@/components/table/table-cells/wallet';
 import Link from 'next/link';
 import { RefundKindCell } from '@/features/payments/components/refund-table/kind-cell';
+import { BankRefundButton } from '@/features/payments/components/refund-table/bank-refund-button';
 import { RefundConfirmCell } from '@/features/payments/components/refund-table/confirm-cell';
 import { refundExecutionLabel, refundFailureLabel } from '@/lib/api/domains/wallet/refund-execution';
 
@@ -63,7 +64,14 @@ export const useRefundTableColumns = () => {
       columnHelper.display({
         id: 'actions',
         header: '',
-        cell: ({ row }) => (row.original.manualConfirmable ? <RefundConfirmCell refund={row.original} /> : null),
+        cell: ({ row }) => (
+          <div className="flex gap-2">
+            <BankRefundButton refund={row.original} />
+            {row.original.manualConfirmable && (
+              <RefundConfirmCell refund={row.original} />
+            )}
+          </div>
+        ),
       }),
     ],
     [],

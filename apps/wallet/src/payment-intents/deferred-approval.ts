@@ -22,6 +22,8 @@ export const DEFERRED_APPROVAL_METADATA_VALUE = 'DEFERRED';
 
 export interface StagedApproval {
   provider: 'TOSS';
+  paymentType?: 'NORMAL' | 'BRANDPAY';
+  customerKey?: string;
   /** PG 승인 토큰 (Toss paymentKey) */
   providerToken: string;
   /** PG 주문번호 (chargeId 에서 대시 제거한 값) */
@@ -46,7 +48,12 @@ export function readStagedApproval(charge: Charge): StagedApproval | null {
   if (typeof staged.orderId !== 'string' || staged.orderId.length === 0) return null;
   if (typeof staged.amount !== 'number') return null;
 
+  if (staged.paymentType && staged.paymentType !== 'NORMAL' && staged.paymentType !== 'BRANDPAY') return null;
+  if (staged.paymentType === 'BRANDPAY' && (typeof staged.customerKey !== 'string' || !staged.customerKey)) return null;
+
   return {
+    paymentType: staged.paymentType,
+    customerKey: staged.customerKey,
     provider: staged.provider,
     providerToken: staged.providerToken,
     orderId: staged.orderId,

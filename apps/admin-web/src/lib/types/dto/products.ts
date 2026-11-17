@@ -714,6 +714,47 @@ export interface SitePopupListQuery {
   q?: string;
 }
 
+// ===== 상단 공지 띠 (top_notices) =====
+
+export const TOP_NOTICE_TEXT_MAX_LENGTH = 120;
+
+export interface TopNoticeDto {
+  id: string;
+  text: string;
+  linkUrl: string | null;
+  displayStartAt: string | null;
+  displayEndAt: string | null;
+  isActive: boolean;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateTopNoticeDto {
+  text: string;
+  linkUrl?: string;
+  displayStartAt?: string;
+  displayEndAt?: string;
+  isActive?: boolean;
+  sortOrder?: number;
+}
+
+/** 비우는 필드는 null 을 보낸다. 생략하면 기존 값이 유지된다. */
+export interface UpdateTopNoticeDto {
+  text?: string;
+  linkUrl?: string | null;
+  displayStartAt?: string | null;
+  displayEndAt?: string | null;
+  isActive?: boolean;
+  sortOrder?: number;
+}
+
+export interface TopNoticeListQuery {
+  includeInactive?: boolean;
+  isActive?: boolean;
+  q?: string;
+}
+
 export interface NoticeListQuery {
   category?: string;
   includeInactive?: boolean;
@@ -910,6 +951,8 @@ export interface AdminAlmondTemplateDto {
   colors: string[];
   industry: string | null;
   purpose: string | null;
+  /** 뒷면을 인쇄하는 템플릿인지. 옛 ugc 응답엔 없다 */
+  printsBack?: boolean;
   status: AlmondTemplateStatus;
   createdBy: string;
   updatedBy: string | null;
@@ -1323,6 +1366,6 @@ export interface AdminAlmondDesignDto {
   userId: string;
   hasBack: boolean;
   templateId: string | null;
-  design: Record<string, unknown>;
+  design: Record<string, unknown> | null;
   createdAt: string;
 }

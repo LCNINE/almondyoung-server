@@ -2,7 +2,11 @@ import { WorkArea } from '../../core/operations/WorkBoundary';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useWarehouse } from '../../app/warehouse-context';
-import { errorMessage } from '../../core/data/errorMessage';
+import { useWorkPermissions } from '../../core/operations/useWorkCapabilities';
+import {
+  errorMessage,
+  STOCK_ADJUST_PERMISSION_MESSAGE,
+} from '../../core/data/errorMessage';
 import { Button } from '../../core/design/Button';
 import { ScreenHeader } from '../../core/design/ScreenHeader';
 import { NumberPad } from '../../core/design/NumberPad';
@@ -19,15 +23,24 @@ const OTHER = '기타';
 function AdjustStockScreenContent({
   skuId,
   initialLocationId,
+  mode = 'adjust',
 }: {
   skuId: string;
   initialLocationId?: string;
+  mode?: 'adjust' | 'manufacture';
 }) {
   const navigate = useNavigate();
   const { warehouseId, isSet } = useWarehouse();
   const detail = useSkuDetail(skuId);
   const stock = useSkuWarehouseStock(skuId, warehouseId);
   const adjust = useAdjustStock();
+  const permissions = useWorkPermissions();
+
+  const permissionDenied =
+    !permissions.isError && permissions.data?.stockAdjust === false;
+  const isManufacture = mode === 'manufacture';
+  const title = isManufacture ? '제조 완료 등록' : '재고 조정';
+  const backTo = isManufacture ? '/inventory/manufacture' : '/inventory';
 
   const [locationId, setLocationId] = useState<string | undefined>(
     initialLocationId
@@ -37,6 +50,40 @@ function AdjustStockScreenContent({
   const [reason, setReason] = useState<string | null>(null);
   const [otherReason, setOtherReason] = useState('');
   const [confirming, setConfirming] = useState(false);
+  const [autoSelected, setAutoSelected] = useState(false);
+  const [previous, setPrevious] = useState<{ id: string; auto: boolean } | null>(null);
+  const [result, setResult] = useState<{
+    productName: string;
+    locationCode: string;
+    before: number;
+    after: number;
+  } | null>(null);
+
+  const autoSelectionChecked = useRef(false);
+
+  useEffect(() => {
+    if (
+      !isManufacture ||
+      initialLocationId !== undefined ||
+      autoSelectionChecked.current ||
+      !stock.data
+    ) {
+      return;
+    }
+
+    autoSelectionChecked.current = true;
+
+    const locationIds = new Set(
+      stock.data.details
+        .filter((row) => row.stockState === 'ON_HAND')
+        .map((row) => row.locationId)
+    );
+
+    if (!locationId && locationIds.size === 1) {
+      setLocationId(locationIds.values().next().value);
+      setAutoSelected(true);
+    }
+  }, [isManufacture, initialLocationId, stock.data, locationId]);
 
   // 실패 시엔 재시도를 위해 같은 키를 유지하고, 성공 후에만 새로 발급한다.
   // findEventIdByIdempotencyKey 가 sku·location·delta 와 무관하게 키만으로
@@ -58,10 +105,10 @@ function AdjustStockScreenContent({
   const selected = useMemo(() => {
     if (!locationId) return null;
     const fromStock = rows.find((r) => r.locationId === locationId);
-    if (fromStock) return { id: locationId, code: fromStock.locationCode };
+    if (fromStock) return { id: locationId, code: fromStock.locationName || fromStock.locationCode };
     const fromSearch = search.data?.items.find((i) => i.id === locationId);
     return fromSearch
-      ? { id: fromSearch.id, code: fromSearch.code }
+      ? { id: fromSearch.id, code: fromSearch.displayName || fromSearch.code }
       : { id: locationId, code: locationId };
   }, [locationId, rows, search.data]);
 
@@ -75,13 +122,17 @@ function AdjustStockScreenContent({
     [rows, locationId]
   );
 
-  const effectiveReason =
-    reason === OTHER ? otherReason.trim() : (reason ?? '');
+  const effectiveReason = isManufacture
+    ? '제조'
+    : reason === OTHER
+      ? otherReason.trim()
+      : (reason ?? '');
   const canSubmit =
+    !permissionDenied &&
     isSet &&
     Boolean(warehouseId) &&
     Boolean(locationId) &&
-    delta !== 0 &&
+    (isManufacture ? delta > 0 && stock.data !== undefined : delta !== 0) &&
     effectiveReason.length > 0;
 
   // 키가 어떤 payload 에 묶여 있는지 추적한다. "요청은 커밋됐는데 응답만
@@ -111,7 +162,7 @@ function AdjustStockScreenContent({
   if (!isSet) {
     return (
       <div className="space-y-4">
-        <ScreenHeader title="재고 조정" backTo="/inventory" />
+        <ScreenHeader title={title} backTo={backTo} />
         <div className="space-y-3 rounded-lg border border-dashed border-gray-300 bg-gray-50 p-4">
           <p className="text-sm text-gray-600">창고를 먼저 선택해 주세요.</p>
           <WarehousePicker />
@@ -120,9 +171,41 @@ function AdjustStockScreenContent({
     );
   }
 
+  if (result) {
+    return (
+      <div className="space-y-5">
+        <ScreenHeader title={title} backTo={backTo} />
+        <h2 className="text-lg font-semibold text-gray-900">
+          제조 완료를 등록했어요
+        </h2>
+        <div className="space-y-2 rounded-lg border border-gray-200 bg-white p-3">
+          <p className="font-semibold text-gray-800">{result.productName}</p>
+          <p>{result.locationCode}</p>
+          <p className="text-lg font-semibold">
+            {result.before} → {result.after}
+          </p>
+          <p>사유 제조</p>
+        </div>
+        <Button
+          type="button"
+          className="w-full py-3"
+          onClick={() => navigate({ to: '/inventory/manufacture' })}
+        >
+          다음 상품 등록
+        </Button>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-5">
-      <ScreenHeader title="재고 조정" backTo="/inventory" />
+      <ScreenHeader title={title} backTo={backTo} />
+
+      {permissionDenied && (
+        <p role="alert" className="text-sm text-red-600">
+          {STOCK_ADJUST_PERMISSION_MESSAGE}
+        </p>
+      )}
 
       {detail.data ? (
         <div className="rounded-lg border border-gray-200 bg-white p-3">
@@ -150,7 +233,12 @@ function AdjustStockScreenContent({
             <button
               type="button"
               className="text-xs text-blue-700 underline"
-              onClick={() => setLocationId(undefined)}
+              onClick={() => {
+                autoSelectionChecked.current = true;
+                setPrevious({ id: selected.id, auto: autoSelected });
+                setAutoSelected(false);
+                setLocationId(undefined);
+              }}
             >
               변경
             </button>
@@ -160,14 +248,29 @@ function AdjustStockScreenContent({
             <label htmlFor="loc-search" className="sr-only">
               로케이션 검색
             </label>
-            <input
-              id="loc-search"
-              aria-label="로케이션 검색"
-              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
-              placeholder="로케이션 바코드를 스캔하거나 코드를 입력하세요"
-              value={term}
-              onChange={(e) => setTerm(e.target.value)}
-            />
+            <div className="flex gap-2">
+              <input
+                id="loc-search"
+                aria-label="로케이션 검색"
+                className="min-w-0 flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm"
+                placeholder="로케이션 바코드를 스캔하거나 코드를 입력하세요"
+                value={term}
+                onChange={(e) => setTerm(e.target.value)}
+              />
+              {previous && (
+                <Button
+                  type="button"
+                  onClick={() => {
+                    setLocationId(previous.id);
+                    setAutoSelected(previous.auto);
+                    setPrevious(null);
+                    setTerm('');
+                  }}
+                >
+                  취소
+                </Button>
+              )}
+            </div>
             {search.isError ? (
               <p role="alert" className="text-sm text-red-600">
                 {errorMessage(search.error, 'location')}
@@ -184,9 +287,12 @@ function AdjustStockScreenContent({
                     <button
                       type="button"
                       className="w-full rounded-md border border-gray-200 bg-white p-3 text-left active:bg-gray-50"
-                      onClick={() => setLocationId(loc.id)}
+                      onClick={() => {
+                        setPrevious(null);
+                        setLocationId(loc.id);
+                      }}
                     >
-                      {loc.code}
+                      {loc.displayName || loc.code}
                     </button>
                   </li>
                 ))}
@@ -194,10 +300,17 @@ function AdjustStockScreenContent({
             )}
           </>
         )}
+        {selected && autoSelected && (
+          <p className="text-xs text-gray-500">
+            재고가 있는 위치가 한 곳이라 먼저 골라 뒀어요.
+          </p>
+        )}
       </section>
 
       <section className="space-y-2">
-        <h2 className="text-sm font-semibold text-gray-700">조정 수량</h2>
+        <h2 className="text-sm font-semibold text-gray-700">
+          {isManufacture ? '만든 수량' : '조정 수량'}
+        </h2>
         <div
           className={cn(
             'rounded-lg border p-3 text-center text-2xl font-semibold',
@@ -208,45 +321,56 @@ function AdjustStockScreenContent({
         >
           {delta > 0 ? `+${delta}` : delta}
         </div>
-        <NumberPad value={delta} onChange={setDelta} allowNegative />
+        <NumberPad
+          value={delta}
+          onChange={setDelta}
+          allowNegative={!isManufacture}
+          keyboard={!confirming && !adjust.isPending}
+        />
         <p className="text-xs text-gray-500">
-          파손·분실은 −, 발견은 +. 실제 수량을 그대로 맞추려면 실사를 쓰세요.
+          {isManufacture
+            ? '늘리기만 할 수 있어요. 줄여야 하면 재고 조회에서 재고 조정을 쓰세요.'
+            : '파손·분실은 −, 발견은 +. 실제 수량을 그대로 맞추려면 실사를 쓰세요.'}
         </p>
       </section>
 
-      <section className="space-y-2">
-        <h2 className="text-sm font-semibold text-gray-700">사유</h2>
-        <div className="flex flex-wrap gap-2">
-          {ADJUST_REASONS.map((r) => (
-            <button
-              key={r}
-              type="button"
-              onClick={() => setReason(r)}
-              className={cn(
-                'rounded-full border px-3 py-1.5 text-sm',
-                reason === r
-                  ? 'border-blue-500 bg-blue-50 text-blue-700'
-                  : 'border-gray-300 bg-white text-gray-700'
-              )}
-            >
-              {r}
-            </button>
-          ))}
-        </div>
-        {reason === OTHER ? (
-          <input
-            aria-label="사유 직접 입력"
-            className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
-            placeholder="사유를 입력하세요"
-            value={otherReason}
-            onChange={(e) => setOtherReason(e.target.value)}
-          />
-        ) : null}
-      </section>
+      {isManufacture ? (
+        <p className="text-sm text-gray-700">사유 제조</p>
+      ) : (
+        <section className="space-y-2">
+          <h2 className="text-sm font-semibold text-gray-700">사유</h2>
+          <div className="flex flex-wrap gap-2">
+            {ADJUST_REASONS.map((r) => (
+              <button
+                key={r}
+                type="button"
+                onClick={() => setReason(r)}
+                className={cn(
+                  'rounded-full border px-3 py-1.5 text-sm',
+                  reason === r
+                    ? 'border-blue-500 bg-blue-50 text-blue-700'
+                    : 'border-gray-300 bg-white text-gray-700'
+                )}
+              >
+                {r}
+              </button>
+            ))}
+          </div>
+          {reason === OTHER ? (
+            <input
+              aria-label="사유 직접 입력"
+              className="w-full rounded-md border border-gray-300 px-3 py-2 text-sm"
+              placeholder="사유를 입력하세요"
+              value={otherReason}
+              onChange={(e) => setOtherReason(e.target.value)}
+            />
+          ) : null}
+        </section>
+      )}
 
       {adjust.isError ? (
         <p role="alert" className="text-sm text-red-600">
-          {errorMessage(adjust.error)}
+          {errorMessage(adjust.error, 'adjust')}
         </p>
       ) : null}
 
@@ -256,21 +380,36 @@ function AdjustStockScreenContent({
         disabled={!canSubmit || adjust.isPending}
         onClick={() => setConfirming(true)}
       >
-        조정하기
+        {isManufacture ? '제조 완료 등록' : '조정하기'}
       </Button>
 
       <ConfirmDialog
         open={confirming}
-        title="재고 조정"
-        message={`${selected?.code ?? ''} 의 ${detail.data?.name ?? '상품'} 을(를) ${
-          delta > 0 ? `+${delta}` : delta
-        } 조정합니다. 사유: ${effectiveReason}`}
-        confirmLabel="조정"
-        danger={delta < 0}
+        title={isManufacture ? '제조 완료를 등록할까요?' : '재고 조정'}
+        message={
+          isManufacture
+            ? `${detail.data?.name ?? '상품'} · ${selected?.code ?? ''} · +${delta} (${currentOnHand} → ${currentOnHand + delta}) · 사유 제조`
+            : `${selected?.code ?? ''} 의 ${detail.data?.name ?? '상품'} 을(를) ${
+                delta > 0 ? `+${delta}` : delta
+              } 조정합니다. 사유: ${effectiveReason}`
+        }
+        confirmLabel={isManufacture ? '등록' : '조정'}
+        danger={!isManufacture && delta < 0}
         onCancel={() => setConfirming(false)}
         onConfirm={() => {
           setConfirming(false);
-          if (!warehouseId || !locationId) return;
+
+          if (!canSubmit || !warehouseId || !locationId) {
+            return;
+          }
+
+          const submittedResult = {
+            productName: detail.data?.name ?? '상품',
+            locationCode: selected?.code ?? locationId,
+            before: currentOnHand,
+            after: currentOnHand + delta,
+          };
+
           adjust.mutate(
             {
               skuId,
@@ -284,7 +423,12 @@ function AdjustStockScreenContent({
               onSuccess: () => {
                 // 성공했을 때만 회전한다 — 실패 후 재시도는 같은 키를 재사용해야 한다.
                 setIdempotencyKey(crypto.randomUUID());
-                navigate({ to: '/inventory/$sku', params: { sku: skuId } });
+
+                if (isManufacture) {
+                  setResult(submittedResult);
+                } else {
+                  navigate({ to: '/inventory/$sku', params: { sku: skuId } });
+                }
               },
             }
           );

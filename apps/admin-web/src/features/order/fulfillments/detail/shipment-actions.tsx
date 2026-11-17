@@ -32,8 +32,8 @@ import {
 import {
   canRecallShipment,
   createIdempotentCommand,
-  getServerDenyMessage,
   isRecoverableOperation,
+  parseServerError,
   useCreateShipmentConsolidation,
   useFulfillmentOperation,
   usePlanShipment,
@@ -44,6 +44,7 @@ import {
 import type {
   FulfillmentOperationStatus,
   ShipmentAdminDetail,
+  ShipmentRecallReason,
 } from '@/lib/types/dto/fulfillment';
 import {
   buildRecipientRevisionPayload,
@@ -53,6 +54,33 @@ import {
 } from './recipient-revision';
 import { ConsolidationSheet } from './consolidation-sheet';
 import { showsConsolidationButton } from './consolidation-sheet-model';
+import { OperationReasonFields } from './operation-reason-fields';
+import {
+  OPERATION_REASONS,
+  canSubmitOperationReason,
+  toOperationReasonPayload,
+  type OperationReasonValue,
+} from './operation-reasons';
+import {
+  ACTION_TITLE,
+  NO_ANSWER_MESSAGE,
+  SUBMIT_LABEL,
+  actionFailureMessage,
+  dispatchAttemptLabel,
+  operationStatusLabel,
+  retryNotice,
+} from './shipment-action-copy';
+import { PendingRequestNotice } from './pending-request-notice';
+import {
+  forgetPending,
+  rememberPending,
+  usePendingRequests,
+} from './shipment-action-pending';
+import {
+  splitLineLabel,
+  splitLineName,
+  splitPreview,
+} from './shipment-split-model';
 import {
   recallConfirmText,
   shipmentActionsFor,
@@ -61,27 +89,37 @@ import {
 
 type Action = ShipmentAction;
 
+const RECALL_REASONS = OPERATION_REASONS.recall.map(
+  (option) => [option.code as ShipmentRecallReason, option.label] as const
+);
+
+const EMPTY_REASON: OperationReasonValue = { otherText: '', note: '' };
+
+// 창에 입력한 값. 작업 기록에 남으므로 새 작업을 열 때마다 비운다.
+// 같은 화면이 다른 상자로 바뀔 수 있어 어느 상자의 입력인지 함께 둔다.
+type ActionDraft = {
+  shipmentId: string;
+  lineId: string;
+  qty: string;
+  shippingProfileId: string;
+  reasonValue: OperationReasonValue;
+  note: string;
+  recipient: RecipientForm;
+  attemptId: string;
+  recallReason: ShipmentRecallReason;
+  physicalRecovery: boolean;
+};
+
 type RetryState = {
+  action: Action;
   operationId: string;
   status: FulfillmentOperationStatus;
   actionLabel: string;
   idempotencyKey: string;
+  // 서버가 거절하면 이 입력으로 창을 다시 연다
+  draft: ActionDraft;
   run: () => Promise<void>;
 };
-
-const ACTION_TITLE: Record<Action, string> = {
-  split: 'shipment 분할',
-  recipient: '수령인 변경',
-  plan: 'shipment 계획 확정',
-  recall: '출고 recall',
-};
-
-const RECALL_REASONS = [
-  ['carrier_handoff_failed', '택배사 인계 실패'],
-  ['dispatch_mistake', '출고 오류'],
-  ['address_correction', '주소 수정'],
-  ['package_recovered', '패키지 회수'],
-] as const;
 
 function blankRecipient(snapshot: unknown): RecipientForm {
   const value =
@@ -100,8 +138,19 @@ function blankRecipient(snapshot: unknown): RecipientForm {
   };
 }
 
-function shortId(value: string) {
-  return value ? `${value.slice(0, 8)}…` : '응답 대기';
+function freshDraft(shipment: ShipmentAdminDetail): ActionDraft {
+  return {
+    shipmentId: shipment.id,
+    lineId: shipment.lines[0]?.id ?? '',
+    qty: '1',
+    shippingProfileId: shipment.shippingProfileId ?? '',
+    reasonValue: EMPTY_REASON,
+    note: '',
+    recipient: blankRecipient(shipment.recipientSnapshot),
+    attemptId: '',
+    recallReason: 'package_recovered',
+    physicalRecovery: false,
+  };
 }
 
 export function ShipmentActions({
@@ -116,30 +165,38 @@ export function ShipmentActions({
   const plan = usePlanShipment();
   const recall = useRecallShipment();
   const [action, setAction] = useState<Action | null>(null);
-  const [lineId, setLineId] = useState(shipment.lines[0]?.id ?? '');
-  const [qty, setQty] = useState('1');
-  const [shippingProfileId, setShippingProfileId] = useState(
-    shipment.shippingProfileId ?? ''
-  );
+  const [draft, setDraft] = useState<ActionDraft>(() => freshDraft(shipment));
+  const {
+    lineId,
+    qty,
+    shippingProfileId,
+    reasonValue,
+    note,
+    recipient,
+    attemptId,
+    recallReason,
+    physicalRecovery,
+  } = draft;
+  const edit = <K extends keyof ActionDraft>(key: K, value: ActionDraft[K]) =>
+    setDraft((current) => ({ ...current, [key]: value }));
   const profiles = useDeliveryProfiles();
   // 프로필이 하나뿐이면 고를 것이 없다
   const chosenProfileId =
     shippingProfileId ||
     (profiles.data?.length === 1 ? profiles.data[0].id : '');
-  const [reason, setReason] = useState('');
-  const [csCaseId, setCsCaseId] = useState('');
-  const [note, setNote] = useState('');
-  const [recipient, setRecipient] = useState<RecipientForm>(() =>
-    blankRecipient(shipment.recipientSnapshot)
-  );
-  const [attemptId, setAttemptId] = useState('');
-  const [recallReason, setRecallReason] =
-    useState<(typeof RECALL_REASONS)[number][0]>('package_recovered');
-  const [physicalRecovery, setPhysicalRecovery] = useState(false);
+  const [showReasonErrors, setShowReasonErrors] = useState(false);
   const [retry, setRetry] = useState<RetryState | null>(null);
   const operation = useFulfillmentOperation(retry?.operationId ?? '');
+  // 새로고침·다른 상자 이동으로 «다시 시도» 안내가 사라진 요청 — 지금 안내 중인 요청은 뺀다
+  const leftovers = usePendingRequests(shipment.id).filter(
+    (request) => request.idempotencyKey !== retry?.idempotencyKey
+  );
 
   const line = shipment.lines.find((entry) => entry.id === lineId);
+  const preview = splitPreview(line, qty, shipment.lines);
+  const boxTotal = shipment.lines.reduce((sum, entry) => sum + entry.qty, 0);
+  const maxMove = line ? Math.min(line.qty, boxTotal - 1) : 0;
+  const lineName = line ? splitLineName(line) : '';
   const dispatchedAttempts = useMemo(
     () =>
       shipment.dispatchAttempts.filter(
@@ -175,39 +232,94 @@ export function ShipmentActions({
       status?: FulfillmentOperationStatus;
     },
     idempotencyKey: string,
-    actionLabel: string,
+    done: Action,
+    sent: ActionDraft,
     run: () => Promise<void>
   ) => {
+    forgetPending(idempotencyKey);
+    const actionLabel = ACTION_TITLE[done];
     const nextStatus = result.operationStatus ?? result.status ?? 'pending';
     setRetry({
+      action: done,
       operationId: result.operationId,
       status: nextStatus,
       actionLabel,
       idempotencyKey,
+      draft: sent,
       run,
     });
     setAction(null);
     if (nextStatus === 'completed' || nextStatus === 'succeeded') {
-      toast.success(`${actionLabel} 작업이 완료되었습니다.`);
+      toast.success(`${actionLabel} 완료`);
     } else {
       toast.info(
-        `${actionLabel} 작업이 접수되었습니다. 서버 완료 확인 전에는 성공으로 표시하지 않습니다.`
+        `${actionLabel} 요청을 받았어요. 처리 상태는 상자 작업 버튼 아래에 보여요.`
       );
     }
   };
 
   const registerPending = (
     idempotencyKey: string,
-    actionLabel: string,
+    pendingAction: Action,
+    sent: ActionDraft,
     run: () => Promise<void>
   ) => {
+    rememberPending({
+      shipmentId: sent.shipmentId,
+      action: pendingAction,
+      idempotencyKey,
+      sentAt: Date.now(),
+    });
     setRetry({
+      action: pendingAction,
       operationId: '',
       status: 'pending',
-      actionLabel,
+      actionLabel: ACTION_TITLE[pendingAction],
       idempotencyKey,
+      draft: sent,
       run,
     });
+  };
+
+  const handleFailure = (
+    error: unknown,
+    failed: Action,
+    sent: ActionDraft,
+    idempotencyKey: string
+  ) => {
+    const { status, code } = parseServerError(error);
+    if (status !== null && status < 500) {
+      // 서버가 거절했으면 처리되지 않았다 — 대기 안내를 지우고 보낸 입력으로 고칠 창을 연다
+      forgetPending(idempotencyKey);
+      setRetry(null);
+      setDraft(sent);
+      setAction(failed);
+    } else {
+      // 응답이 없거나(클라이언트가 500 으로 바꾼다) 5xx 면 처리됐는지 모른다 —
+      // 창을 닫아 같은 요청 키로 다시 보내는 안내를 보인다
+      setAction(null);
+      if (!code) {
+        toast.error(NO_ANSWER_MESSAGE);
+        return;
+      }
+    }
+    toast.error(actionFailureMessage(error, failed));
+  };
+
+  // 버튼으로 여는 창은 새 작업이다 — 앞 작업의 사유·메모·체크를 넘기지 않는다
+  const startAction = (next: Action) => {
+    setDraft(freshDraft(shipment));
+    setShowReasonErrors(false);
+    setAction(next);
+  };
+
+  const retryAgain = async () => {
+    if (!retry) return;
+    try {
+      await retry.run();
+    } catch (error) {
+      handleFailure(error, retry.action, retry.draft, retry.idempotencyKey);
+    }
   };
 
   const submit = async (originalKey?: string) => {
@@ -216,9 +328,12 @@ export function ShipmentActions({
       {},
       originalKey
     ).idempotencyKey;
+    const sent = draft;
     const quantity = Number(qty);
     try {
       if (action === 'split') {
+        const reasonReady = canSubmitOperationReason('split', reasonValue);
+        if (!reasonReady) setShowReasonErrors(true);
         if (
           !line ||
           !isSplitQtyAllowed(
@@ -230,10 +345,7 @@ export function ShipmentActions({
           toast.error(SPLIT_QTY_ERROR);
           return;
         }
-        if (!reason.trim()) {
-          toast.error('작업 사유를 입력하세요.');
-          return;
-        }
+        if (!reasonReady) return;
         const data = {
           expectedManifestVersion: shipment.manifestVersion,
           moves: [
@@ -243,42 +355,42 @@ export function ShipmentActions({
               qty: quantity,
             },
           ],
-          reason: reason.trim(),
-          ...(csCaseId.trim() ? { csCaseId: csCaseId.trim() } : {}),
-          ...(note.trim() ? { note: note.trim() } : {}),
+          ...toOperationReasonPayload('split', reasonValue),
         };
         const run: () => Promise<void> = async () => {
-          registerPending(idempotencyKey, ACTION_TITLE[action], run);
+          registerPending(idempotencyKey, action, sent, run);
           const result = await split.mutateAsync({
             shipmentId: shipment.id,
             data,
             idempotencyKey,
           });
-          registerResult(result, idempotencyKey, ACTION_TITLE[action], run);
+          registerResult(result, idempotencyKey, action, sent, run);
         };
         await run();
         return;
       }
       if (action === 'recipient') {
-        if (!reason.trim() || missingRecipientFields(recipient).length > 0) {
-          toast.error('수령인 필수 정보와 변경 사유를 모두 입력하세요.');
+        if (
+          !canSubmitOperationReason('recipient_revision', reasonValue) ||
+          missingRecipientFields(recipient).length > 0
+        ) {
+          setShowReasonErrors(true);
+          toast.error('수령인 필수 정보와 작업 사유를 모두 입력해 주세요.');
           return;
         }
         const data = buildRecipientRevisionPayload(recipient, {
           expectedManifestVersion: shipment.manifestVersion,
-          reason,
-          csCaseId,
-          note,
+          ...toOperationReasonPayload('recipient_revision', reasonValue),
           currentSnapshot: shipment.recipientSnapshot,
         });
         const run: () => Promise<void> = async () => {
-          registerPending(idempotencyKey, ACTION_TITLE[action], run);
+          registerPending(idempotencyKey, action, sent, run);
           const result = await reviseRecipient.mutateAsync({
             shipmentId: shipment.id,
             data,
             idempotencyKey,
           });
-          registerResult(result, idempotencyKey, ACTION_TITLE[action], run);
+          registerResult(result, idempotencyKey, action, sent, run);
         };
         await run();
         return;
@@ -294,21 +406,19 @@ export function ShipmentActions({
           expectedReservationVersion: shipment.reservationVersion,
         };
         const run: () => Promise<void> = async () => {
-          registerPending(idempotencyKey, ACTION_TITLE[action], run);
+          registerPending(idempotencyKey, action, sent, run);
           const result = await plan.mutateAsync({
             shipmentId: shipment.id,
             data,
             idempotencyKey,
           });
-          registerResult(result, idempotencyKey, ACTION_TITLE[action], run);
+          registerResult(result, idempotencyKey, action, sent, run);
         };
         await run();
         return;
       }
       if (!attemptId || !physicalRecovery) {
-        toast.error(
-          '회수된 정확한 출고 시도를 선택하고 실물 회수를 확인하세요.'
-        );
+        toast.error('돌아온 출고를 고르고 상자를 돌려받았는지 확인하세요.');
         return;
       }
       const data = {
@@ -316,26 +426,20 @@ export function ShipmentActions({
         expectedManifestVersion: shipment.manifestVersion,
         physicalRecoveryConfirmed: true as const,
         reason: recallReason,
-        ...(csCaseId.trim() ? { csCaseId: csCaseId.trim() } : {}),
         ...(note.trim() ? { note: note.trim() } : {}),
       };
       const run: () => Promise<void> = async () => {
-        registerPending(idempotencyKey, ACTION_TITLE[action], run);
+        registerPending(idempotencyKey, action, sent, run);
         const result = await recall.mutateAsync({
           shipmentId: shipment.id,
           data,
           idempotencyKey,
         });
-        registerResult(result, idempotencyKey, ACTION_TITLE[action], run);
+        registerResult(result, idempotencyKey, action, sent, run);
       };
       await run();
     } catch (error) {
-      toast.error(
-        getServerDenyMessage(
-          error,
-          `${ACTION_TITLE[action]} 요청에 실패했습니다.`
-        )
-      );
+      handleFailure(error, action, sent, idempotencyKey);
     }
   };
 
@@ -346,7 +450,7 @@ export function ShipmentActions({
           <Button
             size="sm"
             variant="outline"
-            onClick={() => setAction('split')}
+            onClick={() => startAction('split')}
           >
             분할
           </Button>
@@ -356,14 +460,18 @@ export function ShipmentActions({
             <Button
               size="sm"
               variant="outline"
-              onClick={() => setAction('recipient')}
+              onClick={() => startAction('recipient')}
             >
               수령인 변경
             </Button>
           )}
         {allowed.includes('plan') && canRun(usePlanShipment) && (
-          <Button size="sm" variant="outline" onClick={() => setAction('plan')}>
-            계획 확정
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => startAction('plan')}
+          >
+            {ACTION_TITLE.plan}
           </Button>
         )}
         {canConsolidate && (
@@ -379,36 +487,46 @@ export function ShipmentActions({
           <Button
             size="sm"
             variant="destructive"
-            onClick={() => setAction('recall')}
+            onClick={() => startAction('recall')}
           >
-            출고 recall
+            {ACTION_TITLE.recall}
           </Button>
         )}
       </div>
 
-      {retry && isRecoverableOperation(status) && (
-        <Alert className="border-amber-300 bg-amber-50 dark:bg-amber-950/20">
-          <RefreshCw />
-          <AlertTitle>
-            {retry.actionLabel} · {status}
-          </AlertTitle>
-          <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
-            <span>
-              {retry.operationId
-                ? `작업 ${shortId(retry.operationId)}. 서버 operation 상태만 표시합니다.`
-                : '서버 응답을 확인하지 못했습니다. 성공을 추정하지 않고 원래 요청 키를 보존했습니다.'}
-            </span>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={retry.run}
-              disabled={pending}
-            >
-              동일 키로 안전 재시도
-            </Button>
-          </AlertDescription>
-        </Alert>
-      )}
+      {retry?.draft.shipmentId === shipment.id &&
+        isRecoverableOperation(status) && (
+          <Alert className="border-amber-300 bg-amber-50 dark:bg-amber-950/20">
+            <RefreshCw />
+            <AlertTitle>
+              {retry.actionLabel} ·{' '}
+              {operationStatusLabel(retry.operationId ? status : undefined)}
+            </AlertTitle>
+            <AlertDescription className="flex flex-wrap items-center justify-between gap-2">
+              <span>{retryNotice(retry.operationId, status)}</span>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={retryAgain}
+                disabled={pending}
+              >
+                다시 시도
+              </Button>
+            </AlertDescription>
+          </Alert>
+        )}
+
+      {leftovers.map((request) => (
+        <PendingRequestNotice
+          key={request.idempotencyKey}
+          request={request}
+          onDismiss={() => forgetPending(request.idempotencyKey)}
+          onRedo={() => {
+            forgetPending(request.idempotencyKey);
+            startAction(request.action);
+          }}
+        />
+      ))}
 
       {canConsolidate && (
         <ConsolidationSheet
@@ -418,7 +536,10 @@ export function ShipmentActions({
         />
       )}
 
-      <Dialog open={!!action} onOpenChange={(open) => !open && setAction(null)}>
+      <Dialog
+        open={!!action && draft.shipmentId === shipment.id}
+        onOpenChange={(open) => !open && setAction(null)}
+      >
         <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>{action ? ACTION_TITLE[action] : ''}</DialogTitle>
@@ -427,29 +548,63 @@ export function ShipmentActions({
           {action === 'split' && (
             <div className="grid grid-cols-2 gap-3">
               <div className="col-span-2 space-y-1.5">
-                <Label>shipment line</Label>
-                <Select value={lineId} onValueChange={setLineId}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="라인 선택" />
+                <Label htmlFor="split-line">나눌 상품</Label>
+                <Select
+                  value={lineId}
+                  onValueChange={(value) => edit('lineId', value)}
+                >
+                  <SelectTrigger id="split-line" className="w-full">
+                    <SelectValue placeholder="상품 선택" />
                   </SelectTrigger>
                   <SelectContent>
                     {shipment.lines.map((entry) => (
                       <SelectItem key={entry.id} value={entry.id}>
-                        {shortId(entry.id)} · {entry.qty}개 · line v
-                        {entry.lineVersion}
+                        {splitLineLabel(entry)}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-1.5">
-                <Label>수량</Label>
+                <Label htmlFor="split-qty">새 상자로 보낼 수량</Label>
                 <Input
+                  id="split-qty"
                   type="number"
                   min={1}
+                  max={Math.max(maxMove, 1)}
                   value={qty}
-                  onChange={(event) => setQty(event.target.value)}
+                  onChange={(event) => edit('qty', event.target.value)}
                 />
+              </div>
+              <div className="col-span-2">
+                {preview ? (
+                  <dl
+                    role="status"
+                    className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 rounded-md bg-muted/50 p-3 text-sm"
+                  >
+                    <dt className="text-muted-foreground">
+                      이번 상자에 남을 수량
+                    </dt>
+                    <dd>
+                      {lineName} {preview.lineStays}개 · 상자 전체{' '}
+                      {preview.boxStays}개
+                    </dd>
+                    <dt className="text-muted-foreground">
+                      새 상자로 보낼 수량
+                    </dt>
+                    <dd>
+                      {lineName} {preview.moves}개
+                    </dd>
+                  </dl>
+                ) : (
+                  <p className="text-sm text-destructive">
+                    {!line
+                      ? '나눌 상품을 고르세요.'
+                      : maxMove < 1
+                        ? `이 상자에는 상품이 ${boxTotal}개뿐이라 나눌 수 없어요.`
+                        : `1개부터 ${maxMove}개까지 보낼 수 있어요.`}
+                  </p>
+                )}
               </div>
             </div>
           )}
@@ -462,14 +617,15 @@ export function ShipmentActions({
                     key={key}
                     className={`space-y-1.5 ${key.includes('Address') ? 'col-span-2' : ''}`}
                   >
-                    <Label>{label}</Label>
+                    <Label htmlFor={`recipient-${key}`}>{label}</Label>
                     <Input
+                      id={`recipient-${key}`}
                       value={recipient[key]}
                       placeholder={placeholder}
                       type={type}
                       autoComplete={autoComplete}
                       onChange={(event) =>
-                        setRecipient({
+                        edit('recipient', {
                           ...recipient,
                           [key]: event.target.value,
                         })
@@ -483,13 +639,13 @@ export function ShipmentActions({
 
           {action === 'plan' && (
             <div className="space-y-1.5">
-              <Label>배송 프로필</Label>
+              <Label htmlFor="plan-profile">배송 프로필</Label>
               <Select
                 value={chosenProfileId}
-                onValueChange={setShippingProfileId}
+                onValueChange={(value) => edit('shippingProfileId', value)}
                 disabled={profiles.isLoading}
               >
-                <SelectTrigger>
+                <SelectTrigger id="plan-profile">
                   <SelectValue
                     placeholder={profiles.isLoading ? '불러오는 중…' : '배송 프로필 선택'}
                   />
@@ -518,34 +674,37 @@ export function ShipmentActions({
               <Alert variant="destructive">
                 <AlertTriangle />
                 <AlertDescription>
-                  고객 반품이 아닙니다. 정확한 출고 패키지가 창고 custody로
-                  돌아온 경우에만 실행하세요.
+                  고객 반품이 아니에요. 보낸 상자가 택배사에 넘어가지 않고
+                  창고로 돌아왔을 때만 실행하세요.
                 </AlertDescription>
               </Alert>
               <div className="space-y-1.5">
-                <Label>출고 시도</Label>
-                <Select value={attemptId} onValueChange={setAttemptId}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="회수한 attempt 선택" />
+                <Label htmlFor="recall-attempt">되돌릴 출고</Label>
+                <Select
+                  value={attemptId}
+                  onValueChange={(value) => edit('attemptId', value)}
+                >
+                  <SelectTrigger id="recall-attempt" className="w-full">
+                    <SelectValue placeholder="돌아온 출고 선택" />
                   </SelectTrigger>
                   <SelectContent>
                     {dispatchedAttempts.map((attempt) => (
                       <SelectItem key={attempt.id} value={attempt.id}>
-                        시도 #{attempt.attemptNo} · {shortId(attempt.id)}
+                        {dispatchAttemptLabel(attempt, shipment.waybills)}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-1.5">
-                <Label>recall 사유</Label>
+                <Label htmlFor="recall-reason">되돌리는 이유</Label>
                 <Select
                   value={recallReason}
                   onValueChange={(value) =>
-                    setRecallReason(value as typeof recallReason)
+                    edit('recallReason', value as ShipmentRecallReason)
                   }
                 >
-                  <SelectTrigger>
+                  <SelectTrigger id="recall-reason" className="w-full">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -561,7 +720,7 @@ export function ShipmentActions({
                 <Checkbox
                   checked={physicalRecovery}
                   onCheckedChange={(checked) =>
-                    setPhysicalRecovery(checked === true)
+                    edit('physicalRecovery', checked === true)
                   }
                 />
                 <span>{recallConfirmText(isSupplier)}</span>
@@ -569,33 +728,23 @@ export function ShipmentActions({
             </div>
           )}
 
-          {action !== 'plan' && action !== 'recall' && (
-            <div className="space-y-1.5">
-              <Label>작업 사유 (필수)</Label>
-              <Input
-                value={reason}
-                onChange={(event) => setReason(event.target.value)}
-              />
-            </div>
+          {(action === 'split' || action === 'recipient') && (
+            <OperationReasonFields
+              type={action === 'split' ? 'split' : 'recipient_revision'}
+              value={reasonValue}
+              onChange={(value) => edit('reasonValue', value)}
+              showErrors={showReasonErrors}
+            />
           )}
-          {action !== 'plan' && (
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label>CS case UUID</Label>
-                <Input
-                  value={csCaseId}
-                  onChange={(event) => setCsCaseId(event.target.value)}
-                  placeholder="선택"
-                />
-              </div>
-              <div className="space-y-1.5">
-                <Label>운영 메모</Label>
-                <Textarea
-                  value={note}
-                  onChange={(event) => setNote(event.target.value)}
-                  rows={2}
-                />
-              </div>
+          {action === 'recall' && (
+            <div className="space-y-1.5">
+              <Label htmlFor="shipment-action-note">운영 메모 (선택)</Label>
+              <Textarea
+                id="shipment-action-note"
+                value={note}
+                onChange={(event) => edit('note', event.target.value)}
+                rows={2}
+              />
             </div>
           )}
 
@@ -608,10 +757,11 @@ export function ShipmentActions({
               onClick={() => submit()}
               disabled={
                 pending ||
+                (action === 'split' && !preview) ||
                 (action === 'recall' && (!attemptId || !physicalRecovery))
               }
             >
-              {pending ? '요청 중...' : '서버에 요청'}
+              {pending ? '처리 중…' : action ? SUBMIT_LABEL[action] : ''}
             </Button>
           </DialogFooter>
         </DialogContent>

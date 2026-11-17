@@ -28,7 +28,7 @@ export default async function SearchPage({
 }: SearchPageProps) {
   const { q = "" } = await searchParams
   return (
-    <div className="container mx-auto max-w-[1360px] px-4 py-6 md:px-[40px]">
+    <div className="container mx-auto max-w-[1280px] px-4 py-6 md:px-[32px]">
       <SiteBreadcrumb className="mb-4" items={[{ label: "검색" }]} />
       <Suspense key={q} fallback={<SearchPageSkeleton />}>
         <SearchTemplate params={params} searchParams={searchParams} />

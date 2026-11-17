@@ -238,6 +238,8 @@ export class ReplenishmentSuggestionReader {
       onOrderTotal: ctx.pipe?.onOrderTotalQty ?? 0,
       onOrderNonSellable: ctx.pipe?.onOrderQty ?? 0,
       inTransitToSellable: ctx.pipe?.inTransitQty ?? 0,
+      inboundShipmentTotal: ctx.pipe?.inboundShipmentQty ?? 0,
+      inboundShipmentToSellable: ctx.pipe?.inboundShipmentToSellableQty ?? 0,
       draftTransferPlanned: ctx.drafts,
     };
   }

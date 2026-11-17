@@ -6,10 +6,12 @@ export type StationPath =
   | '/outbound/batches'
   | '/inbound'
   | '/putaway'
+  | '/putaway/location-labels'
   | '/returns/putaway'
   | '/movement'
   | '/stocktaking'
   | '/inventory'
+  | '/inventory/manufacture'
   | '/customer-returns';
 
 export interface StationSection {
@@ -32,6 +34,7 @@ export interface StationTab {
  * - F1·F2 는 출고 검수·배치 현황 화면이다(PR C)
  * - F3 은 입고 화면이 간편입고·입고내역 링크를 이미 가져 하위 탭이 없다
  * - F4 는 적치 화면에서 이동·되돌림 적치로 갈 길이 없어 하위 탭을 둔다
+ * - F6 은 재고 조회 화면에서 제조 완료 등록으로 갈 길이 없어 하위 탭을 둔다
  * - F7 반품은 고객 반품의 도착·검수다(`/returns/putaway` 는 피킹 되돌림 — 경로를 겹치지 않는다)
  */
 export const STATION_TABS: readonly StationTab[] = [
@@ -47,10 +50,20 @@ export const STATION_TABS: readonly StationTab[] = [
       { label: '적치', to: '/putaway' },
       { label: '되돌림 적치', to: '/returns/putaway' },
       { label: '이동', to: '/movement' },
+      { label: '로케이션 라벨', to: '/putaway/location-labels' },
     ],
   },
   { key: 'F5', label: '실사', to: '/stocktaking', owns: ['/stocktaking'], sections: [] },
-  { key: 'F6', label: '재고 조회', to: '/inventory', owns: ['/inventory'], sections: [] },
+  {
+    key: 'F6',
+    label: '재고 조회',
+    to: '/inventory',
+    owns: ['/inventory'],
+    sections: [
+      { label: '재고 조회', to: '/inventory' },
+      { label: '제조 완료', to: '/inventory/manufacture' },
+    ],
+  },
   { key: 'F7', label: '반품', to: '/customer-returns', owns: ['/customer-returns'], sections: [] },
 ];
 

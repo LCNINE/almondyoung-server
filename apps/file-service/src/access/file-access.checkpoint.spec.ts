@@ -1,7 +1,7 @@
 import { createCheckpointsForTesting, PermissionCheckpoints } from '@app/authorization';
 import { ForbiddenError } from '@app/shared';
 import { Test } from '@nestjs/testing';
-import { DIGITAL_ASSET_FILE_CONTEXT_ID } from '../database/default-file-contexts';
+import { DIGITAL_ASSET_FILE_CONTEXT_ID, INBOUND_SHIPMENT_LIST_CONTEXT_ID } from '../database/default-file-contexts';
 import { FileRepository } from '../shared/repositories/file.repository';
 import { Upload } from '../shared/types/file.types';
 import { JwtPayload } from '../shared/types/jwt-payload.interface';
@@ -35,6 +35,7 @@ async function access(
     admin: ['catalog.product.read'],
     intern: ['catalog.product.read'],
     logistics_worker: [],
+    stock_reader: ['inventory.stock.read'],
   },
 ): Promise<FileAccess> {
   const module = await Test.createTestingModule({
@@ -52,6 +53,17 @@ describe('FileAccess permission checkpoints', () => {
     const files = await access();
     await expect(files.loadReadable('f-1', user('a', ['admin']), '1')).resolves.toBe(file);
     await expect(files.loadReadable('f-1', user('i', ['intern']), '1')).resolves.toBe(file);
+    await expect(files.loadReadable('f-1', user('w', ['logistics_worker']), '1')).rejects.toBeInstanceOf(
+      ForbiddenError,
+    );
+  });
+
+  it('입고리스트 원본은 남이 올렸어도 inventory.stock.read 직원이 같은 테넌트에서 연다', async () => {
+    const files = await access();
+    const list = { ...file, contextId: INBOUND_SHIPMENT_LIST_CONTEXT_ID };
+    (files as unknown as { repo: { findById: jest.Mock } }).repo.findById.mockResolvedValue(list);
+    await expect(files.loadReadable('f-1', user('s', ['stock_reader']), '1')).resolves.toBe(list);
+    await expect(files.loadReadable('f-1', user('s', ['stock_reader']), '2')).rejects.toBeInstanceOf(ForbiddenError);
     await expect(files.loadReadable('f-1', user('w', ['logistics_worker']), '1')).rejects.toBeInstanceOf(
       ForbiddenError,
     );

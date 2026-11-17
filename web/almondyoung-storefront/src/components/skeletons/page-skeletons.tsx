@@ -63,7 +63,7 @@ function FormFieldSkeleton() {
 export function GenericPageSkeleton() {
   return (
     <div className="min-h-screen bg-white">
-      <div className="container mx-auto max-w-[1200px] px-4 py-10 md:px-[40px]">
+      <div className="container mx-auto max-w-[1200px] px-4 py-10 md:px-[32px]">
         <SectionTitleSkeleton />
         <div className="mt-8 space-y-4">
           {repeat(6).map((_, index) => (
@@ -83,7 +83,7 @@ export function HomePageSkeleton() {
           <Skeleton className="aspect-2/1 w-full rounded-none md:aspect-3/1" />
         </div>
         <section className="w-full border-t border-gray-200 py-8 lg:py-12">
-          <div className="container mx-auto max-w-[1360px] px-4 md:px-[40px]">
+          <div className="container mx-auto max-w-[1280px] px-4 md:px-[32px]">
             <MainSectionSkeleton />
           </div>
         </section>
@@ -220,7 +220,7 @@ export function MainSectionSkeleton() {
 export function SearchPageSkeleton() {
   return (
     <main className="min-h-screen bg-white">
-      <div className="container mx-auto max-w-[1360px] px-4 py-6 md:px-[40px]">
+      <div className="container mx-auto max-w-[1280px] px-4 py-6 md:px-[32px]">
         <section className="space-y-6">
           <div className="space-y-3">
             <Skeleton className="h-6 w-48" />
@@ -245,7 +245,7 @@ export function SearchPageSkeleton() {
 export function BestPageSkeleton() {
   return (
     <div className="min-h-screen bg-white">
-      <main className="container mx-auto max-w-[1100px] px-4 py-6 md:px-[40px]">
+      <main className="container mx-auto max-w-[1100px] px-4 py-6 md:px-[32px]">
         <section className="rounded-lg border-t border-gray-200 bg-white py-8">
           <SectionTitleSkeleton />
           <div className="mt-6">
@@ -278,7 +278,7 @@ export function BestPageSkeleton() {
 export function NewPageSkeleton() {
   return (
     <div className="min-h-screen bg-white">
-      <main className="container mx-auto max-w-[1360px] px-[40px] py-8">
+      <main className="container mx-auto max-w-[1280px] px-[32px] py-8">
         <Skeleton className="mb-4 h-7 w-24" />
         <Skeleton className="mb-3 h-4 w-56" />
         <Skeleton className="h-4 w-64" />
@@ -290,7 +290,7 @@ export function NewPageSkeleton() {
 export function ProductDetailSkeleton() {
   return (
     <div className="md:bg-muted/50 min-h-screen bg-white">
-      <div className="mx-auto max-w-[1360px] px-[15px] xl:px-[40px]">
+      <div className="mx-auto max-w-[1280px] px-[15px] xl:px-[32px]">
         <div className="py-2 xl:flex xl:gap-4">
           <main className="w-full min-w-0 flex-1 space-y-6 pb-24 xl:pb-0">
             <div className="space-y-4">
@@ -375,7 +375,7 @@ export function ProductDetailSkeleton() {
 export function CartPageSkeleton() {
   return (
     <div className="bg-muted min-h-screen">
-      <div className="container mx-auto py-0 md:max-w-[1360px] md:px-[40px] md:py-8">
+      <div className="container mx-auto py-0 md:max-w-[1280px] md:px-[32px] md:py-8">
         {/* Mobile */}
         <div className="md:hidden">
           <div className="bg-white">
@@ -460,12 +460,12 @@ export function CheckoutPageSkeleton() {
   return (
     <div className="bg-muted min-h-screen">
       <div className="hidden border-b bg-white lg:block">
-        <div className="container mx-auto max-w-[1360px] px-4 py-6 lg:px-[40px]">
+        <div className="container mx-auto max-w-[1280px] px-4 py-6 lg:px-[32px]">
           <Skeleton className="h-6 w-40" />
         </div>
       </div>
 
-      <div className="container mx-auto max-w-[1360px] px-4 lg:px-[40px] lg:py-8">
+      <div className="container mx-auto max-w-[1280px] px-4 lg:px-[32px] lg:py-8">
         <div className="mb-4 lg:hidden">
           <Skeleton className="h-10 w-full rounded-lg" />
         </div>
@@ -535,12 +535,12 @@ export function MembershipCheckoutSkeleton() {
   return (
     <div className="bg-muted min-h-screen">
       <div className="hidden border-b bg-white lg:block">
-        <div className="container mx-auto max-w-[1360px] px-4 py-6 lg:px-[40px]">
+        <div className="container mx-auto max-w-[1280px] px-4 py-6 lg:px-[32px]">
           <Skeleton className="h-6 w-40" />
         </div>
       </div>
 
-      <div className="container mx-auto max-w-[1360px] px-4 lg:px-[40px] lg:py-8">
+      <div className="container mx-auto max-w-[1280px] px-4 lg:px-[32px] lg:py-8">
         <div className="mb-4 lg:hidden">
           <Skeleton className="h-10 w-full rounded-lg" />
         </div>
@@ -923,8 +923,8 @@ export function MypageHomeSkeleton() {
       {/* 데스크탑 - MypageLayout(브레드크럼+사이드바) + 프로필 카드 + 주문목록 미러링 */}
       <div className="hidden lg:block">
         <main className="w-full bg-white">
-          <div className="container mx-auto max-w-[1360px]">
-            <div className="inner md:px-[40px] md:py-10">
+          <div className="container mx-auto max-w-[1280px]">
+            <div className="inner md:px-[32px] md:py-10">
               <Skeleton className="mb-6 h-4 w-32" />
               <div className="flex flex-row gap-8">
                 <aside className="hidden w-[280px] shrink-0 lg:block">
@@ -1624,14 +1624,14 @@ export function MypageEmptyStateSkeleton() {
 export function MypageListSkeleton({ rows = 4 }: { rows?: number }) {
   return (
     <main className="md:bg-muted w-full bg-white">
-      <div className="container mx-auto max-w-[1360px]">
+      <div className="container mx-auto max-w-[1280px]">
         <div className="block space-y-4 px-4 py-6 md:hidden">
           <Skeleton className="h-6 w-32" />
           {repeat(rows).map((_, index) => (
             <ListRowSkeleton key={`mypage-mobile-row-${index}`} />
           ))}
         </div>
-        <div className="inner hidden md:block md:px-[40px] md:py-10">
+        <div className="inner hidden md:block md:px-[32px] md:py-10">
           <Skeleton className="mb-6 h-4 w-32" />
           <div className="flex flex-row gap-8">
             <aside className="hidden w-[280px] shrink-0 lg:block">
@@ -1657,7 +1657,7 @@ export function MypageListSkeleton({ rows = 4 }: { rows?: number }) {
 export function MypageFormSkeleton({ fields = 4 }: { fields?: number }) {
   return (
     <main className="md:bg-muted w-full bg-white">
-      <div className="container mx-auto max-w-[1360px]">
+      <div className="container mx-auto max-w-[1280px]">
         <div className="block px-4 py-6 md:hidden">
           <Skeleton className="mb-4 h-6 w-32" />
           <div className="space-y-4 rounded-lg border border-gray-200 bg-white p-4">
@@ -1667,7 +1667,7 @@ export function MypageFormSkeleton({ fields = 4 }: { fields?: number }) {
             <Skeleton className="h-12 w-full" />
           </div>
         </div>
-        <div className="inner hidden md:block md:px-[40px] md:py-10">
+        <div className="inner hidden md:block md:px-[32px] md:py-10">
           <Skeleton className="mb-6 h-4 w-32" />
           <div className="flex flex-row gap-8">
             <aside className="hidden w-[280px] shrink-0 lg:block">
@@ -1696,14 +1696,14 @@ export function MypageFormSkeleton({ fields = 4 }: { fields?: number }) {
 export function MypageTableSkeleton({ rows = 6 }: { rows?: number }) {
   return (
     <main className="md:bg-muted w-full bg-white">
-      <div className="container mx-auto max-w-[1360px]">
+      <div className="container mx-auto max-w-[1280px]">
         <div className="block space-y-4 px-4 py-6 md:hidden">
           <Skeleton className="h-6 w-32" />
           {repeat(rows).map((_, index) => (
             <ListRowSkeleton key={`mypage-mobile-table-row-${index}`} />
           ))}
         </div>
-        <div className="inner hidden md:block md:px-[40px] md:py-10">
+        <div className="inner hidden md:block md:px-[32px] md:py-10">
           <Skeleton className="mb-6 h-4 w-32" />
           <div className="flex flex-row gap-8">
             <aside className="hidden w-[280px] shrink-0 lg:block">

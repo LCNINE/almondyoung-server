@@ -84,6 +84,18 @@ describe('F9 결품(스펙 §7.1·§7.2)', () => {
     expect(screen.getByRole('heading', { name: '4210-3388-1907' })).toBeInTheDocument();
   });
 
+  it('결품 창에서 친 숫자는 창의 수량만 바꾼다 — 창을 닫아도 검수 수량은 열려 있지 않다', async () => {
+    const { server } = await openShortPick();
+    await typeHuman(['Backspace', '1']);
+    expect(cell('헤어클립 집게핀')).toHaveTextContent('1');
+    scan('%91%1');
+    await typeHuman(['Escape']);
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.queryByRole('status', { name: '수량' })).toBeNull();
+    scan('8801002');
+    await waitFor(() => expect(server.scans[1]).toMatchObject({ barcode: '8801002', quantity: 1 }));
+  });
+
   it('결품 창이 열린 채 상품을 찍으면 오류음만 — 창·수량이 그대로이고 스캐너 Enter 로 확정되지 않는다', async () => {
     const { server } = await openShortPick();
     scan('8801002');
@@ -217,7 +229,32 @@ describe('F9 결품(스펙 §7.1·§7.2)', () => {
     const { server } = await openShortPick();
     server.config.shortPickOutcome = 'withdrawing';
     await typeHuman(['Enter', 'Enter']);
-    expect(await screen.findByText('뺄 상품')).toBeInTheDocument();
+    expect(await screen.findByRole('list', { name: '뺄 상품' })).toBeInTheDocument();
+  });
+
+  it('결품으로 빠지는 상자는 결품을 등록했다고 알리고, 다 꺼내면 결품으로 빠졌다고 보인다', async () => {
+    const { server } = await openShortPick();
+    server.config.shortPickOutcome = 'withdrawing';
+    await typeHuman(['Enter', 'Enter']);
+    expect(await screen.findByText('결품을 등록했어요')).toBeInTheDocument();
+    expect(screen.getByText(/이 상자는 배치에서 빠져요/)).toBeInTheDocument();
+    await waitFor(() => expect(document.querySelector('[data-intake="open"]')).not.toBeNull());
+    scan('8801002');
+    expect(await screen.findByText(/결품을 등록해 이 상자는 배치에서 빠졌어요/)).toBeInTheDocument();
+  });
+
+  it('결품으로 빠지는 상자의 송장을 다시 찍어도 결품 안내를 이어 간다', async () => {
+    const { server } = await openShortPick();
+    server.config.shortPickOutcome = 'withdrawing';
+    await typeHuman(['Enter', 'Enter']);
+    await screen.findByText('결품을 등록했어요');
+    await waitFor(() => expect(document.querySelector('[data-intake="open"]')).not.toBeNull());
+    scan('421033881907');
+    await waitFor(() => expect(within(screen.getByRole('list', { name: '최근 스캔' })).getAllByText('4210-3388-1907')).toHaveLength(2));
+    expect(await screen.findByText('결품을 등록했어요')).toBeInTheDocument();
+    await waitFor(() => expect(document.querySelector('[data-intake="open"]')).not.toBeNull());
+    scan('8801002');
+    expect(await screen.findByText(/결품을 등록해 이 상자는 배치에서 빠졌어요/)).toBeInTheDocument();
   });
 
   it('빠짐(exited) — 빠진 박스', async () => {
@@ -225,6 +262,7 @@ describe('F9 결품(스펙 §7.1·§7.2)', () => {
     server.config.shortPickOutcome = 'exited';
     await typeHuman(['Enter', 'Enter']);
     expect(await screen.findByText('빠진 박스')).toBeInTheDocument();
+    expect(screen.getByText(/결품을 등록해 이 상자는 배치에서 빠졌어요/)).toBeInTheDocument();
     // 결과로 다시 그리기만 한다 — 송장 줄은 처음 찍었을 때 한 줄뿐
     const recent = screen.getByRole('list', { name: '최근 스캔' });
     expect(within(recent).getAllByText('4210-3388-1907')).toHaveLength(1);

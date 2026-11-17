@@ -1,9 +1,9 @@
 import {
   INITIAL_GRANT_ROLES,
-  OwnerService,
+  type OwnerService,
   PERMISSION_DOMAINS,
-  InitialGrantRole,
-  PermissionDefinition,
+  type InitialGrantRole,
+  type PermissionDefinition,
 } from './permission.types';
 
 export { INITIAL_GRANT_ROLES, PERMISSION_DOMAINS };
@@ -139,7 +139,7 @@ export const PERMISSION_CATALOG = [
 
   // 주문
   permission('order.order.read', '주문 조회', '주문 목록·상세·정체 보드를 본다', {
-    owners: ['core', 'admin-web'],
+    owners: ['core', 'ugc-service', 'admin-web'],
     grant: ADMIN_INTERN,
   }),
   permission('order.order.write', '주문 입력·수정', '주문을 수동 입력하고 상태를 바꾼다', {
@@ -279,6 +279,11 @@ export const PERMISSION_CATALOG = [
     owners: ['core'],
     grant: ['admin', ...LOGISTICS_MANAGER],
   }),
+  permission('inventory.inbound_shipment.write', '선적 입고리스트 관리', '중국 선적 입고리스트를 올리고 정리·확정·종결한다', {
+    owners: ['core'],
+    grant: ADMIN,
+    requires: ['inventory.stock.read'],
+  }),
   permission('inventory.warehouse.write', '창고 관리', '창고를 만들고 고치고 피킹 방식을 정한다', {
     owners: ['core'],
     grant: ['admin', ...LOGISTICS_MANAGER],
@@ -399,6 +404,11 @@ export const PERMISSION_CATALOG = [
   permission('marketing.almond_template.write', '아몬드템플릿 관리', '아몬드템플릿 시안을 저장·게시·삭제한다', {
     owners: ['ugc-service'],
     grant: ADMIN,
+  }),
+  // 상세 페이지를 함께 만들어야 해서 처음 게시는 따로 받은 사람만 한다. 다시 게시는 write 로 충분하다
+  permission('marketing.almond_template.publish', '아몬드템플릿 상품 게시', '아몬드템플릿을 판매 상품으로 처음 게시한다', {
+    owners: ['core'],
+    grant: NOBODY,
   }),
   permission('marketing.almond_template.read', '아몬드템플릿 조회', '아몬드템플릿 시안과 디자인을 본다', {
     owners: ['ugc-service'],

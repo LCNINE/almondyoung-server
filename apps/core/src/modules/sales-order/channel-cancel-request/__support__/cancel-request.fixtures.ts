@@ -42,17 +42,28 @@ export const ADDRESS = {
   detailAddress: '101',
 };
 
-/** 판매주문(채널 라인 2개 — 수량 2·1) → 선택적으로 FO(→ draft 박스). channel-order-change 스펙의 seedOrder 와 같은 모양. */
+/**
+ * 판매주문(채널 라인 2개 — 기본 수량 2·1, `quantities` 로 바꾼다) → 선택적으로 FO(→ draft 박스).
+ * channel-order-change 스펙의 seedOrder 와 같은 모양.
+ */
 export async function seedChannelOrder(
   tx: DbTx,
   w: { logistics: ReturnType<typeof wireLogistics> },
-  opts: { withFo: boolean; salesChannel?: 'medusa' | 'naver' | 'coupang' | '3pl'; noChannelItemIds?: boolean },
+  opts: {
+    withFo: boolean;
+    salesChannel?: 'medusa' | 'naver' | 'coupang' | '3pl';
+    noChannelItemIds?: boolean;
+    quantities?: [number, number];
+    /** 줄을 id 내림차순으로 만든다 — 읽는 쪽이 만든 순서가 아니라 id 순으로 돌려주는지 볼 때 */
+    descendingLineIds?: boolean;
+  },
 ) {
   const { warehouseId, locationId } = await seedWarehouseWithZone(tx);
   const { holderId } = await seedHolder(tx);
+  const [qtyA, qtyB] = opts.quantities ?? [2, 1];
   const lines = [
-    { item: `ci-${randomUUID().slice(0, 6)}`, qty: 2 },
-    { item: `ci-${randomUUID().slice(0, 6)}`, qty: 1 },
+    { item: `ci-${randomUUID().slice(0, 6)}`, qty: qtyA },
+    { item: `ci-${randomUUID().slice(0, 6)}`, qty: qtyB },
   ];
   const [so] = await tx
     .insert(wmsTables.salesOrders)
@@ -64,8 +75,11 @@ export async function seedChannelOrder(
       orderDate: new Date(),
     })
     .returning();
+  // 기본은 «만든 순서 = id 순» — 줄을 읽는 쪽은 id 순으로 돌려준다
+  const lineIdsInOrder = lines.map(() => randomUUID()).sort();
+  if (opts.descendingLineIds) lineIdsInOrder.reverse();
   const lineIds: string[] = [];
-  for (const line of lines) {
+  for (const [index, line] of lines.entries()) {
     const { skuId } = await seedSku(tx, holderId);
     await receiveStock(w.logistics.command, tx, { skuId, warehouseId, locationId, quantity: 10 });
     const variantId = randomUUID();
@@ -73,6 +87,7 @@ export async function seedChannelOrder(
     const [row] = await tx
       .insert(wmsTables.salesOrderLines)
       .values({
+        id: lineIdsInOrder[index],
         salesOrderId: so.id,
         variantId,
         productName: 'IT',

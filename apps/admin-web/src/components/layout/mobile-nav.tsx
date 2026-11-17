@@ -23,8 +23,7 @@ import { cn } from '@/lib/utils/ui';
 import { usePermissions } from '@/hooks/use-permission';
 import { filterMenuItems } from '@/lib/auth/screen-access';
 import { mainMenus, type MainMenu, type MenuItem } from '@/lib/utils/menu';
-import { QuarantineMenuBadge } from './quarantine-menu-badge';
-import { PrintOrderMenuBadge } from './print-order-menu-badge';
+import { MenuItemBadges } from './menu-item-badges';
 
 const iconMap: Record<string, React.ElementType> = {
   Users,
@@ -83,8 +82,7 @@ function NavSection({
             <span className="ml-1.5 text-xs text-gray-400">(준비중)</span>
           )}
         </span>
-        {item.hasQuarantineBadge && <QuarantineMenuBadge />}
-        {item.hasPrintOrderBadge && <PrintOrderMenuBadge />}
+        <MenuItemBadges item={item} />
       </button>
     );
   }

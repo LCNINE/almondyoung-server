@@ -5,12 +5,16 @@ import { useApiClient } from '../../core/data/ApiClientProvider';
 import { receiptHistoryPath, validateReceiptHistory } from './receiptHistory';
 import { useWorkRuntime } from '../../core/operations/OperationContext';
 import type { SimpleInboundResult } from './types';
-import { WorkArea } from '../../core/operations/WorkBoundary';
+import {
+  WorkArea,
+  useWorkAreaBlocked,
+} from '../../core/operations/WorkBoundary';
 import { useEffect, useRef, useState } from 'react';
 import { Trash2 } from 'lucide-react';
 import { useWorkDraft } from '../../core/operations/useWorkDraft';
 import { useWarehouse } from '../../app/warehouse-context';
 import { errorMessage } from '../../core/data/errorMessage';
+import { ApiError, NetworkError } from '../../core/data/httpClient';
 import { Button } from '../../core/design/Button';
 import { QuantityInput, parseQuantity } from '../../core/design/QuantityInput';
 import { SkuPicker, type SelectedSku } from '../inventory/SkuPicker';
@@ -29,6 +33,16 @@ import { scanIncrement } from './packingUnit';
 import { useSimpleInbound } from './mutations';
 import { PutawaySheet, type LocationRef } from './PutawaySheet';
 import type { FreshLine, PutawayTarget } from './types';
+
+/** 이전 입고 결과를 확인하다 멈춘 이유 — 그대로 작업자에게 보여 준다. */
+class CheckStop extends Error {}
+
+function failureText(error: unknown, fallback: string) {
+  if (error instanceof CheckStop) return error.message;
+  if (error instanceof ApiError || error instanceof NetworkError)
+    return errorMessage(error, 'inbound');
+  return fallback;
+}
 
 interface CartRow {
   skuId: string;
@@ -67,22 +81,43 @@ function QuickInboundScreenContent() {
     import('./receiptHistory').ReceiptHistoryLine[]
   >([]);
   const [reconciled, setReconciled] = useState(!runtime);
+  const [checkFailure, setCheckFailure] = useState<string | null>(null);
   const reconcileRef = useRef<(() => Promise<void>) | null>(null);
   const reconciliation = useRef<Promise<void> | null>(null);
+  // 저장된 스캔이 화면 준비보다 먼저 복원되면 확인이 시작될 때까지 기다린다.
+  const [reconcileStarted] = useState(() => {
+    let start!: () => void;
+    const started = new Promise<void>((resolve) => (start = resolve));
+    return { started, start };
+  });
   useEffect(() => {
     if (!runtime || !draft.ready) return;
     let live = true;
     let generation = 0;
     const reconcile = async () => {
       const thisGeneration = ++generation;
-      if (live) setReconciled(false);
+      if (live) {
+        setReconciled(false);
+        setCheckFailure(null);
+      }
+      try {
+        await check(thisGeneration);
+      } catch (error) {
+        if (live && thisGeneration === generation)
+          setCheckFailure(
+            failureText(error, '입고내역에서 상태를 확인해 주세요.')
+          );
+        throw error;
+      }
+    };
+    const check = async (thisGeneration: number) => {
       const scope = await runtime.getScope();
       const current = await draft.read();
       const op = await runtime.store.get(current.key);
       if (op && op.scope !== scope)
-        throw new Error('로그인을 다시 확인해 주세요.');
+        throw new CheckStop('로그인을 다시 확인해 주세요.');
       if (op && op.status !== 'confirmed' && op.status !== 'rejected')
-        throw new Error('입고 처리 여부를 먼저 확인해 주세요.');
+        throw new CheckStop('입고 처리 여부를 먼저 확인해 주세요.');
       if (op?.status === 'confirmed' && current.staged.length === 0) {
         const result = op.result as SimpleInboundResult;
         await draft.update((prev) => ({
@@ -114,10 +149,10 @@ function QuickInboundScreenContent() {
       let historyLines: import('./receiptHistory').ReceiptHistoryLine[] = [];
       if (latest.staged.length) {
         if ((await runtime.store.pending(scope)).length)
-          throw new Error('처리 내역을 먼저 확인해 주세요.');
+          throw new CheckStop('처리 내역을 먼저 확인해 주세요.');
         await assertInboundWorkflowCapability(runtime);
         if (!receiptId || !warehouseId)
-          throw new Error('입고내역에서 상태를 확인해 주세요.');
+          throw new CheckStop('입고내역에서 상태를 확인해 주세요.');
         const history = await api.request<unknown>({
           path: receiptHistoryPath({
             warehouseId,
@@ -137,7 +172,7 @@ function QuickInboundScreenContent() {
             (line) => !receipt.lines.some((item) => item.id === line.lineId)
           )
         )
-          throw new Error('입고내역을 확인해 주세요.');
+          throw new CheckStop('입고내역을 확인해 주세요.');
         historyLines = receipt.lines;
       }
       if (
@@ -148,7 +183,7 @@ function QuickInboundScreenContent() {
       )
         return;
       if ((await runtime.store.pending(scope)).length)
-        throw new Error('처리 내역을 먼저 확인해 주세요.');
+        throw new CheckStop('처리 내역을 먼저 확인해 주세요.');
       if (!live || thisGeneration !== generation) return;
       setCurrentLines(historyLines);
       if (live && thisGeneration === generation) setReconciled(true);
@@ -156,6 +191,7 @@ function QuickInboundScreenContent() {
     const runReconcile = () => {
       const pending = reconcile();
       reconciliation.current = pending;
+      reconcileStarted.start();
       return pending;
     };
     reconcileRef.current = runReconcile;
@@ -174,14 +210,18 @@ function QuickInboundScreenContent() {
       offSession();
       off();
     };
-  }, [runtime, draft.ready, api, warehouseId, session]);
+  }, [runtime, draft.ready, api, warehouseId, session, reconcileStarted]);
   const [editing, setEditing] = useState<string | null>(null);
   const [quantityText, setQuantityText] = useState('');
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
+  // 화면이 준비되기 전에 찍힌 스캔 — 준비가 끝나면 차례대로 담는다.
+  const held = useRef<string[]>([]);
+  const [heldCount, setHeldCount] = useState(0);
   useUnsavedWork(
     editing !== null ||
       saving ||
+      heldCount > 0 ||
       (!reconciled && cart.length > 0 && staged.length === 0)
   );
   const [notice, setNotice] = useState<string | null>(null);
@@ -191,11 +231,37 @@ function QuickInboundScreenContent() {
   // 적치 대기 목록으로 넘어간 뒤에는 스캔이 카트를 건드리면 안 된다.
   const stagedMode = staged.length > 0;
 
+  // 저장된 작업을 못 읽었거나 이전 입고 결과를 확인하지 못했다 — 기다려도 준비되지 않는다.
+  const loadFailed = !draft.ready && !!draft.error;
+  const prepFailure =
+    checkFailure ??
+    (loadFailed
+      ? failureText(draft.error, '연결을 확인한 뒤 다시 확인해 주세요.')
+      : null);
+  async function retryPrep() {
+    if (loadFailed) {
+      draft.reload();
+      if (scanQueue.storageError()) await scanQueue.retryHead();
+      return;
+    }
+    await reconcileRef.current?.();
+  }
+  // 서버 연결이 끊기면 작업 영역 전체가 잠기고 그 안내의 「처리 내역 확인」이 연결을 다시 본다.
+  // 잠금이 풀리면 이 화면의 준비도 이어서 다시 한다 — 같은 확인을 두 번 누르게 하지 않는다.
+  const areaBlocked = useWorkAreaBlocked('inbound');
+  const wasBlocked = useRef(areaBlocked);
+  const retryAfterUnblock = useRef<(() => Promise<void>) | null>(null);
+  retryAfterUnblock.current = prepFailure ? retryPrep : null;
+  useEffect(() => {
+    const was = wasBlocked.current;
+    wasBlocked.current = areaBlocked;
+    if (was && !areaBlocked) void retryAfterUnblock.current?.().catch(() => {});
+  }, [areaBlocked]);
+
   const scanQueue = useWorkScanQueue<string>(async (code, eventId) => {
     // Restored physical inputs must wait for the original receipt result too.
     if (runtime) {
-      if (!reconciliation.current)
-        throw new Error('입고 상태를 확인해 주세요.');
+      if (!reconciliation.current) await reconcileStarted.started;
       await reconciliation.current;
     }
     const skus = await lookup.mutateAsync(code);
@@ -232,21 +298,47 @@ function QuickInboundScreenContent() {
       };
     });
   }, `quick-inbound:${warehouseId}`);
+  const enqueueScan = useRef(scanQueue.enqueue);
+  enqueueScan.current = scanQueue.enqueue;
   useScanner((e) => {
     if (putawayFor) return;
-    if (
-      stagedMode ||
-      submit.isPending ||
-      !draft.ready ||
-      !reconciled ||
-      editing ||
-      savingRef.current
-    ) {
+    if (stagedMode || submit.isPending || editing || savingRef.current) {
       setNotice('현재 작업을 마친 뒤 다시 찍어 주세요.');
+      return;
+    }
+    if (prepFailure) {
+      setNotice('입고 상태를 확인한 뒤 다시 찍어 주세요.');
+      return;
+    }
+    if (!draft.ready || !reconciled) {
+      held.current.push(e.code);
+      setHeldCount(held.current.length);
       return;
     }
     scanQueue.enqueue(e.code);
   });
+  useEffect(() => {
+    if (held.current.length === 0) return;
+    if (prepFailure) {
+      held.current = [];
+      setHeldCount(0);
+      setNotice(
+        '준비를 마치지 못해 찍은 상품을 담지 못했어요. 입고 상태를 확인한 뒤 다시 찍어 주세요.'
+      );
+      return;
+    }
+    if (!draft.ready || !reconciled) return;
+    const codes = held.current;
+    held.current = [];
+    setHeldCount(0);
+    if (stagedMode) {
+      setNotice(
+        '이미 등록한 입고라 찍은 상품을 담지 않았어요. 새 입고를 시작한 뒤 다시 찍어 주세요.'
+      );
+      return;
+    }
+    codes.forEach((code) => enqueueScan.current(code));
+  }, [draft.ready, reconciled, prepFailure, stagedMode, heldCount]);
 
   async function chooseSku(sku: SelectedSku) {
     if (
@@ -322,19 +414,34 @@ function QuickInboundScreenContent() {
     <div className="space-y-4" aria-busy={!draft.ready || !reconciled}>
       <ScreenHeader title="간편입고" backTo="/inbound" />
 
-      {!draft.ready ? <p role="status">작업을 불러오고 있어요.</p> : null}
-      {draft.ready && !reconciled && !stagedMode && (
-        <p role="status">
-          이전 입고 결과를 확인하고 있어요. 확인 후 계속 입력할 수 있어요.
-          <Button onClick={() => void reconcileRef.current?.().catch(() => {})}>
+      {!stagedMode && !prepFailure && (!draft.ready || !reconciled) ? (
+        <p
+          role="status"
+          className="rounded-md bg-gray-100 p-2 text-sm text-gray-700"
+        >
+          스캔 준비 중이에요. 잠시만 기다려 주세요.
+          {heldCount > 0
+            ? ` 찍은 상품 ${heldCount}건은 준비가 끝나면 담아요.`
+            : null}
+        </p>
+      ) : null}
+      {prepFailure ? (
+        <p
+          role="alert"
+          className="space-y-2 rounded-md bg-amber-50 p-2 text-sm text-amber-800"
+        >
+          <span className="block">
+            입고 상태를 확인하지 못했어요. {prepFailure}
+          </span>
+          <Button onClick={() => void retryPrep().catch(() => {})}>
             입고 상태 다시 확인
           </Button>
         </p>
-      )}
-      {draft.error ? (
+      ) : null}
+      {draft.error && !loadFailed ? (
         <p role="alert">작업을 저장하지 못했어요. 저장 공간을 확인해 주세요.</p>
       ) : null}
-      {scanQueue.error() ? (
+      {scanQueue.error() && !(loadFailed && scanQueue.storageError()) ? (
         <p role="alert">
           {scanQueue.storageError()
             ? SCAN_STORAGE_MESSAGE
@@ -361,7 +468,7 @@ function QuickInboundScreenContent() {
             주세요.
           </p>
           <Link to="/inbound/history">입고내역 · 취소</Link>
-          {!reconciled && (
+          {!reconciled && !prepFailure && (
             <p role="alert">
               입고 상태를 확인하고 있어요. 확인이 안 되면 입고내역 또는 적치
               대기 목록에서 이어서 작업해 주세요.
@@ -509,7 +616,7 @@ function QuickInboundScreenContent() {
             }
             onSubmit={(code) => scanQueue.enqueue(code)}
           />
-          {cart.length === 0 ? (
+          {!draft.ready ? null : cart.length === 0 ? (
             <p className="text-sm text-gray-500">
               상품을 검색해서 선택하거나 바코드를 입력해 주세요.
             </p>

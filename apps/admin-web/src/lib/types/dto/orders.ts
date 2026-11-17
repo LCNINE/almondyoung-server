@@ -2,6 +2,8 @@
 // 주문 관련 DTO 타입 정의
 
 import type { UUID } from './common';
+import type { FulfillmentOperationStatus } from './fulfillment';
+import type { SalesChannelSite } from '@/lib/api/domains/sales-channel/vocabulary';
 
 // ===== 매칭 타입 re-export (lib/types/dto/matching.ts로 이전됨) =====
 export type {
@@ -54,22 +56,38 @@ export type LegacyPurchaseOrderStatus =
 export type InvoiceStatus = 'created' | 'shipped' | 'canceled';
 
 // ===== 판매 주문 =====
-export interface SalesOrderItemDto {
-  skuId: string;
+/** core `CreateSalesOrderDto` 중 관리자 입력이 쓰는 칸 */
+export interface CreateSalesOrderLineDto {
+  variantId: string;
+  productName?: string;
   quantity: number;
-  unitPrice: number;
+  unitPrice?: number;
+  totalPrice?: number;
 }
 
 export interface CreateSalesOrderDto {
-  customerId: string;
-  warehouseId: string;
-  items: SalesOrderItemDto[];
+  channelOrderId: string;
+  salesChannel: SalesChannelSite;
+  displayOrderNo?: string;
+  customer?: { id?: string; name?: string; email?: string; phone?: string };
+  shippingAddress: {
+    recipientName: string;
+    phone: string;
+    postalCode: string;
+    roadAddress: string;
+    detailAddress: string;
+    deliveryNote?: string;
+  };
+  lines: CreateSalesOrderLineDto[];
+  totalAmount?: number;
+  shippingFee?: number;
   memo?: string;
 }
 
 export interface CreateSalesOrderResponseDto {
   id: string;
-  status: 'created';
+  channelOrderId: string;
+  status: string;
 }
 
 export interface SalesOrderDto {
@@ -95,6 +113,10 @@ export interface SalesOrderDto {
   walletIntentId?: string | null;
   /** 출고 단계 — core 가 정해 싣는다. 읽을 땐 toShipmentPhase 로 좁힌다(옛 응답엔 없다) */
   shipmentPhase?: string;
+  /** 상세 조회에만 싣는다(판매주문당 많아야 하나). 옛 응답엔 없다 */
+  fulfillmentOrder?: { id: string; status: string } | null;
+  /** 상세 조회에만 싣는다 — 창고(출고주문에 들어감)·인쇄·디지털 라인 수. 옛 응답엔 없다 */
+  lineRouteCounts?: { warehouse: number; outsourced: number; digital: number };
   lines: {
     variantId: string;
     matchingResolved?: boolean;
@@ -102,6 +124,8 @@ export interface SalesOrderDto {
     quantity: number;
     unitPrice?: number;
     totalPrice?: number;
+    /** 아몬드템플릿 인쇄 라인이면 디자인 id */
+    almondDesignId?: string | null;
   }[];
   businessTimeline?: SalesOrderBusinessTimelineItemDto[];
   createdAt: string;
@@ -124,6 +148,27 @@ export interface SalesOrderBusinessTimelineItemDto {
   metadata: Record<string, unknown>;
   occurredAt: string;
   createdAt: string;
+}
+
+export interface SalesOrderShipmentOperationDto {
+  operationId: string;
+  type: string;
+  status: FulfillmentOperationStatus;
+  shipmentIds: string[];
+  fulfillmentOrderId: string | null;
+  otherOrdersInBox: boolean;
+  reasonCode: string | null;
+  reason: string | null;
+  requestChannel: string | null;
+  note: string | null;
+  operatorId: string | null;
+  createdAt: string;
+  completedAt: string | null;
+}
+
+export interface SalesOrderShipmentOperationsDto {
+  salesOrderId: string;
+  items: SalesOrderShipmentOperationDto[];
 }
 
 export interface CreateBusinessLinkDto {
@@ -347,6 +392,8 @@ export interface CancelSalesOrderDto {
   reasonCode?: string;
   reasonDetail?: string;
   cancelledBy?: string;
+  /** 고객 요청 취소일 때 고객이 요청한 경로 */
+  requestChannel?: string;
   alreadyRefundedAmount?: number;
 }
 

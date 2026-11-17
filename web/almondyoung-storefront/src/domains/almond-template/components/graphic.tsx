@@ -1,9 +1,11 @@
 import { MotionMaskGraphic } from "./motion-mask"
 import { EffectLayerGraphic } from "./effect-layer"
 import { PhotoEffectsGraphic } from "./photo-effects"
+import { FilmGrainNoise, PaperNoise } from "./texture-noise"
 import {
   ColorFilterDef,
   GradientDef,
+  GradientPaint,
   colorFilterId,
   gradientId,
 } from "./style-defs"
@@ -25,7 +27,9 @@ import {
   HEART_PATH as heart,
   SHAPE_POINTS as shapePoints,
   STAR as star,
+  cornerRadiusMm,
   layerPathData,
+  roundableRect,
   starOf,
 } from "../lib/path-shape"
 
@@ -57,6 +61,81 @@ function lineEm(line: string, layer: Layer) {
   const em = measurer.measureText(line).width / 100
   measured.set(key, em)
   return em
+}
+
+type Ink = { left: number; right: number; ascent: number; descent: number }
+const inked = new Map<string, Ink>()
+if (typeof document !== "undefined")
+  document.fonts?.addEventListener("loadingdone", () => inked.clear())
+
+// 한 줄에서 잉크가 실제로 묻는 범위(em). 기준점은 줄의 시작·기준선. 브라우저 밖에선 줄 상자 전체로 어림한다
+function lineInk(line: string, layer: Layer): Ink {
+  const guess = () => ({
+    left: 0,
+    right: lineEm(line, layer),
+    ascent: 1,
+    descent: (layer.lineHeight ?? 120) / 100 - 1,
+  })
+  if (typeof document === "undefined") return guess()
+  const font = fontOf(layer, 100)
+  const key = `${font}\u0000${line}`
+  const hit = inked.get(key)
+  if (hit) return hit
+  measurer ??= document.createElement("canvas").getContext("2d")
+  if (!measurer) return guess()
+  measurer.font = font
+  const m = measurer.measureText(line)
+  if (m.actualBoundingBoxAscent === undefined) return guess()
+  const ink = {
+    left: -m.actualBoundingBoxLeft / 100,
+    right: m.actualBoundingBoxRight / 100,
+    ascent: m.actualBoundingBoxAscent / 100,
+    descent: m.actualBoundingBoxDescent / 100,
+  }
+  inked.set(key, ink)
+  return ink
+}
+
+// 글자 레이어에서 실제로 인쇄되는 범위. 회전·뒤집기 전, 용지 좌표(mm)
+export function textInkBox(layer: Layer) {
+  const size = fittedFontSize(layer)
+  const ratio = widthRatio(layer)
+  const step = size * ((layer.lineHeight ?? 120) / 100)
+  const anchor =
+    layer.align === "center"
+      ? layer.x + layer.width / 2
+      : layer.align === "right"
+        ? layer.x + layer.width
+        : layer.x
+  const boxes = (layer.text ?? "")
+    .split("\n")
+    .map((line, i) => ({ line, baseline: layer.y + size + i * step }))
+    .filter(({ line }) => line.trim())
+    .map(({ line, baseline }) => {
+      const ink = lineInk(line, layer)
+      const width = lineEm(line, layer)
+      const start =
+        layer.align === "center" ? -width / 2 : layer.align === "right" ? -width : 0
+
+      return {
+        x0: anchor + (start + ink.left) * size * ratio,
+        x1: anchor + (start + ink.right) * size * ratio,
+        y0: baseline - ink.ascent * size,
+        y1: baseline + ink.descent * size,
+      }
+    })
+  if (!boxes.length) return null
+
+  // 윤곽선은 글자 가장자리 바깥으로 두께의 절반만큼 묻는다. 뚫어내기 글자는 윤곽선을 그리지 않는다
+  const stroked = layer.stroke && layer.stroke !== "none" && !layer.knockout
+  const half = stroked ? (layer.strokeWidth ?? 0) / 2 : 0
+
+  return {
+    x0: Math.min(...boxes.map((b) => b.x0)) - half * ratio,
+    y0: Math.min(...boxes.map((b) => b.y0)) - half,
+    x1: Math.max(...boxes.map((b) => b.x1)) + half * ratio,
+    y1: Math.max(...boxes.map((b) => b.y1)) + half,
+  }
 }
 
 export function textExtent(layer: Layer, stretched = true) {
@@ -188,6 +267,32 @@ export function shadowOf(layer: Layer) {
   }
 }
 
+// 값을 비워 둔 글로우는 크기에 비례한 흰빛이다
+export function glowOf(layer: Layer) {
+  return {
+    style: layer.glowStyle ?? "soft",
+    size:
+      layer.glowSize ??
+      Math.round(Math.max(0.3, effectSize(layer) * 0.12) * 10) / 10,
+    color: layer.glowColor ?? "#ffffff",
+    opacity: layer.glowOpacity ?? 0.8,
+    spread: layer.glowSpread ?? 0,
+  }
+}
+
+// 빛 한가운데는 하얗게 타 보인다. 고른 색을 흰색 쪽으로 섞어 그 부분을 칠한다
+export function hotColor(color: string, amount: number) {
+  const hex = /^#[0-9a-f]{6}$/i.test(color) ? color : "#ffffff"
+  return `#${[1, 3, 5]
+    .map((i) => {
+      const value = parseInt(hex.slice(i, i + 2), 16)
+      return Math.round(value + (255 - value) * amount)
+        .toString(16)
+        .padStart(2, "0")
+    })
+    .join("")}`
+}
+
 export function bevelOf(layer: Layer) {
   return {
     size:
@@ -195,6 +300,10 @@ export function bevelOf(layer: Layer) {
       Math.round(Math.max(0.2, effectSize(layer) * 0.05) * 10) / 10,
     depth: layer.bevelDepth ?? 60,
     angle: layer.bevelAngle ?? 135,
+    lightColor: layer.bevelLightColor ?? "#ffffff",
+    shadowColor: layer.bevelShadowColor ?? "#000000",
+    lightMode: layer.bevelLightMode ?? "normal",
+    shadowMode: layer.bevelShadowMode ?? "normal",
   }
 }
 
@@ -210,7 +319,7 @@ function toLayerSpace(layer: Layer, dx: number, dy: number) {
 // 입체는 조명 필터 대신 흐린 윤곽을 빛 쪽·반대쪽으로 민 차이로 만든다.
 // 조명 필터는 화면 픽셀 단위로 기울기를 재서 확대율·인쇄 해상도마다 세기가 달라진다
 function BevelPrimitives({ layer }: { layer: Layer }) {
-  const { size, depth, angle } = bevelOf(layer)
+  const { size, depth, angle, lightColor, shadowColor } = bevelOf(layer)
   const rad = (angle * Math.PI) / 180
   const { dx: lx, dy: ly } = toLayerSpace(
     layer,
@@ -225,8 +334,8 @@ function BevelPrimitives({ layer }: { layer: Layer }) {
       <feOffset in="bevelBlur" dx={-lx} dy={-ly} result="bevelDark" />
       {(
         [
-          ["bevelLit", "bevelDark", "#ffffff", "bevelHi"],
-          ["bevelDark", "bevelLit", "#000000", "bevelSh"],
+          ["bevelLit", "bevelDark", lightColor, "bevelHi"],
+          ["bevelDark", "bevelLit", shadowColor, "bevelSh"],
         ] as const
       ).map(([a, b, tone, result]) => (
         <Fragment key={result}>
@@ -247,49 +356,73 @@ function BevelPrimitives({ layer }: { layer: Layer }) {
   )
 }
 
-function TexturePrimitives({ layer }: { layer: Layer }) {
-  const size = Math.max(effectSize(layer), 1)
-  const paper = layer.textureKind === "paper"
-  const amplitude = ((layer.textureAmount ?? 40) / 100) * (paper ? 0.2 : 0.16)
+// 곱하기는 그림자 색을 아래 색에 곱한다. 둘 다 포토샵처럼 sRGB 로 섞는다. 선형 색공간이면 중간 톤에서 닷지가 거의 안 보인다
+// 발광 닷지는 빛을 검정 위에 불투명하게 깐 뒤 색상 닷지로 섞는다. 반투명 빛도 아래 색을 그 세기만큼 나눠 달아오르게 한다
+function BevelBlend({ layer }: { layer: Layer }) {
+  const { lightMode, shadowMode } = bevelOf(layer)
 
   return (
     <>
-      <feTurbulence
-        type="fractalNoise"
-        baseFrequency={paper ? `${120 / size} ${40 / size}` : 60 / size}
-        numOctaves="2"
-        seed="3"
-        result="textureFine"
-        colorInterpolationFilters="sRGB"
-      />
-      {paper && (
+      {shadowMode === "multiply" ? (
+        <feBlend
+          in="bevelSh"
+          in2="fxBase"
+          mode="multiply"
+          result="fxShaded"
+          colorInterpolationFilters="sRGB"
+        />
+      ) : (
+        <feComposite
+          in="bevelSh"
+          in2="fxBase"
+          operator="over"
+          result="fxShaded"
+        />
+      )}
+      {lightMode === "dodge" ? (
         <>
-          <feTurbulence
-            type="fractalNoise"
-            baseFrequency={4 / size}
-            numOctaves="2"
-            seed="7"
-            result="textureCoarse"
-            colorInterpolationFilters="sRGB"
-          />
-          <feComposite
-            in="textureFine"
-            in2="textureCoarse"
-            operator="arithmetic"
-            k2={0.7}
-            k3={0.3}
-            result="textureNoise"
+          <feFlood floodColor="#000000" />
+          <feComposite in2="SourceAlpha" operator="in" />
+          <feComposite in="bevelHi" operator="over" result="bevelHiSolid" />
+          <feBlend
+            in="bevelHiSolid"
+            in2="fxShaded"
+            mode="color-dodge"
             colorInterpolationFilters="sRGB"
           />
         </>
+      ) : (
+        <feComposite in="bevelHi" in2="fxShaded" operator="over" />
       )}
-      <feColorMatrix
-        in={paper ? "textureNoise" : "textureFine"}
-        type="matrix"
-        values="0.2126 0.7152 0.0722 0 0  0.2126 0.7152 0.0722 0 0  0.2126 0.7152 0.0722 0 0  0 0 0 0 1"
-        result="textureMono"
-        colorInterpolationFilters="sRGB"
-      />
+    </>
+  )
+}
+
+export type TextureSetting = Pick<
+  Layer,
+  "textureKind" | "textureAmount" | "textureScale"
+>
+
+// 입자 크기는 결의 주파수를 나눈다. 200% 면 알갱이가 두 배로 굵어진다
+function TexturePrimitives({
+  texture,
+  basis,
+}: {
+  texture: TextureSetting
+  basis: number
+}) {
+  const size = Math.max(basis, 1) * ((texture.textureScale ?? 100) / 100)
+  const paper = texture.textureKind === "paper"
+  const amplitude =
+    ((texture.textureAmount ?? 40) / 100) * (paper ? 0.13 : 0.075)
+
+  return (
+    <>
+      {paper ? (
+        <PaperNoise size={size} />
+      ) : (
+        <FilmGrainNoise size={size} scale={texture.textureScale} />
+      )}
       {/* 알파는 마지막에 한 번만 곱해 반투명 채우기와 가장자리를 보존한다. */}
       <feComponentTransfer
         in="SourceGraphic"
@@ -320,6 +453,75 @@ function TexturePrimitives({ layer }: { layer: Layer }) {
   )
 }
 
+// 넓게 번진 빛 위에 좁고 진한 빛을 겹쳐야 가장자리가 또렷하게 빛난다. 한 겹이면 뿌연 얼룩처럼 보인다
+// 실제 빛처럼 가장자리에 붙은 짧은 번짐 + 중간 번짐 + 멀리 가는 긴 꼬리를 더해 그린다.
+// 하나의 블러를 진하게 올리면 띠가 생겨 번진 윤곽선처럼 보인다. 가장자리 가까운 빛은 흰색 쪽으로 밝힌다
+function GlowPrimitives({ glow }: { glow: ReturnType<typeof glowOf> }) {
+  const { size, spread } = glow
+  // 네온관은 빛이 세다. 같은 세기 값에서 바깥 빛을 더 밀어 준다
+  const opacity = glow.opacity * (glow.style === "neon" ? 1.35 : 1)
+  const base = spread > 0 ? "glowBase" : "SourceAlpha"
+  return (
+    <>
+      {spread > 0 && (
+        <feMorphology
+          in="SourceAlpha"
+          operator="dilate"
+          radius={(size * spread) / 100}
+          result="glowBase"
+        />
+      )}
+      <feGaussianBlur in={base} stdDeviation={size * 0.12} result="glowA" />
+      <feGaussianBlur in={base} stdDeviation={size * 0.45} result="glowB" />
+      <feGaussianBlur in={base} stdDeviation={size * 1.4} result="glowC" />
+      <feComposite
+        in="glowB"
+        in2="glowC"
+        operator="arithmetic"
+        k2={1.1 * opacity}
+        k3={2 * opacity}
+        result="glowFar"
+      />
+      <feFlood floodColor={glow.color} />
+      <feComposite in2="glowFar" operator="in" result="glowOuter" />
+      <feComponentTransfer in="glowA" result="glowNearAlpha">
+        <feFuncA type="linear" slope={0.75 * opacity} />
+      </feComponentTransfer>
+      <feFlood floodColor={hotColor(glow.color, 0.45)} />
+      <feComposite in2="glowNearAlpha" operator="in" result="glowInner" />
+      <feMerge result="glow">
+        <feMergeNode in="glowOuter" />
+        <feMergeNode in="glowInner" />
+      </feMerge>
+      {glow.style === "neon" && <NeonBody glow={glow} />}
+    </>
+  )
+}
+
+// 네온관: 속은 하얗게 달아오르고 안쪽 테두리부터 빛 색이 스며든다. 글자·도형 원래 색 대신 그린다
+function NeonBody({ glow }: { glow: ReturnType<typeof glowOf> }) {
+  return (
+    <>
+      <feFlood floodColor={hotColor(glow.color, 0.82)} />
+      <feComposite in2="SourceAlpha" operator="in" result="neonCore" />
+      <feComponentTransfer in="SourceAlpha" result="neonOutside">
+        <feFuncA type="table" tableValues="1 0" />
+      </feComponentTransfer>
+      <feGaussianBlur
+        in="neonOutside"
+        stdDeviation={Math.max(0.05, glow.size * 0.28)}
+      />
+      <feComposite in2="SourceAlpha" operator="in" result="neonRimAlpha" />
+      <feFlood floodColor={glow.color} />
+      <feComposite in2="neonRimAlpha" operator="in" result="neonRim" />
+      <feMerge result="neonBody">
+        <feMergeNode in="neonCore" />
+        <feMergeNode in="neonRim" />
+      </feMerge>
+    </>
+  )
+}
+
 function EffectFilter({
   layer,
   id,
@@ -333,6 +535,7 @@ function EffectFilter({
   const shadow = shadowOf(layer)
   const offset = toLayerSpace(layer, shadow.x, shadow.y)
   const bevel = bevelOf(layer)
+  const glow = glowOf(layer)
   const texture = layer.texture && (layer.textureAmount ?? 40) > 0
   // 그림자를 멀리 밀어도 잘리지 않게 필터 영역을 실제 좌표로 넉넉히 잡는다
   const pad =
@@ -340,6 +543,7 @@ function EffectFilter({
       ? Math.max(Math.abs(shadow.x), Math.abs(shadow.y)) + shadow.blur * 3
       : 0) +
     (layer.bevel ? bevel.size : 0) +
+    (layer.glow ? glow.size * 3.5 + (glow.size * glow.spread) / 100 : 0) +
     (layer.strokeWidth ?? 0) +
     Math.max(1, size * 0.2)
   return (
@@ -359,16 +563,27 @@ function EffectFilter({
           <feComposite in2="offset" operator="in" result="shadow" />
         </>
       )}
+      {layer.glow && <GlowPrimitives glow={glow} />}
       {layer.bevel && <BevelPrimitives layer={layer} />}
-      {texture && <TexturePrimitives layer={layer} />}
-      <feMerge>
+      {texture && (
+        <TexturePrimitives texture={layer} basis={effectSize(layer)} />
+      )}
+      <feMerge result="fxBase">
         {layer.shadow && <feMergeNode in="shadow" />}
+        {layer.glow && <feMergeNode in="glow" />}
         {!shadowOnly && (
-          <feMergeNode in={texture ? "textured" : "SourceGraphic"} />
+          <feMergeNode
+            in={
+              layer.glow && glow.style === "neon"
+                ? "neonBody"
+                : texture
+                  ? "textured"
+                  : "SourceGraphic"
+            }
+          />
         )}
-        {layer.bevel && <feMergeNode in="bevelSh" />}
-        {layer.bevel && <feMergeNode in="bevelHi" />}
       </feMerge>
+      {layer.bevel && <BevelBlend layer={layer} />}
     </filter>
   )
 }
@@ -464,14 +679,10 @@ function ShapeBody({ layer, paint }: { layer: Layer; paint: Paint }) {
       ...(paint.strokeDasharray ? strokeStyle(layer, width) : {}),
     }
   }
-  if (layer.type === "rect" && variant === "rounded")
-    return (
-      <rect
-        {...box}
-        rx={Math.min(layer.width, layer.height) * 0.16}
-        {...paint}
-      />
-    )
+  if (roundableRect(layer)) {
+    const rx = cornerRadiusMm(layer)
+    return <rect {...box} rx={rx || undefined} {...paint} />
+  }
   const art = variant ? DRAW_ART[variant] : undefined
   if (layer.type === "rect" && art) {
     return (
@@ -666,7 +877,7 @@ function LayerGraphicView({ layer }: { layer: Layer }) {
   // 곱하기 그림자는 아래 그림과 섞여야 해서 레이어 묶음 밖에 따로 그린다
   const shadowApart = !!layer.shadow && !!layer.shadowMultiply
   const filterId =
-    (layer.shadow && !shadowApart) || layer.texture || layer.bevel
+    (layer.shadow && !shadowApart) || layer.glow || layer.texture || layer.bevel
       ? `fx-${layer.id}`
       : undefined
   const edgeBlur = (layer.edgeBlur ?? 0) / 100
@@ -678,6 +889,8 @@ function LayerGraphicView({ layer }: { layer: Layer }) {
   const transform = `translate(${cx} ${cy}) rotate(${layer.rotation ?? 0}) scale(${layer.flipX ? -1 : 1} ${layer.flipY ? -1 : 1}) translate(${-cx} ${-cy})`
   const fill = layer.gradient ? `url(#${gradientId(layer)})` : layer.fill
   const filtered = (layer.colorFilter?.amount ?? 0) > 0 || (layer.blur ?? 0) > 0
+  // 사진을 넣은 도형은 필터를 도형 색·테두리가 아니라 사진에만 건다
+  const photoInShape = SHAPE_TEXT_TYPES.has(layer.type) && !!layer.image
   const paint = {
     fill: layer.fill === "none" ? "none" : fill,
     stroke: layer.stroke ?? "none",
@@ -712,6 +925,7 @@ function LayerGraphicView({ layer }: { layer: Layer }) {
             href={imageSrc(layer.image)}
             {...photoBox(layer)}
             clipPath={`url(#clip-${layer.id})`}
+            filter={filtered ? `url(#${colorFilterId(layer)})` : undefined}
           />
           {paint.stroke !== "none" && paint.strokeWidth > 0 && (
             <ShapeBody layer={layer} paint={{ ...paint, fill: "none" }} />
@@ -921,7 +1135,7 @@ function LayerGraphicView({ layer }: { layer: Layer }) {
         >
           <defs>
             <EffectFilter
-              layer={{ ...layer, texture: false, bevel: false }}
+              layer={{ ...layer, texture: false, bevel: false, glow: false }}
               id={`fx-shadow-${layer.id}`}
               shadowOnly
             />
@@ -950,7 +1164,9 @@ function LayerGraphicView({ layer }: { layer: Layer }) {
             id={colorFilterId(layer)}
             filter={layer.colorFilter}
             blur={layer.blur}
-            preserveAlpha={layer.type === "image" || layer.type === "frame"}
+            preserveAlpha={
+              layer.type === "image" || layer.type === "frame" || photoInShape
+            }
             size={Math.min(layer.width, layer.height)}
           />
           {edgeBlur > 0 && (
@@ -968,7 +1184,13 @@ function LayerGraphicView({ layer }: { layer: Layer }) {
           )}
         </defs>
         <g filter={edgeBlur > 0 ? `url(#edge-${layer.id})` : undefined}>
-          <g filter={filtered ? `url(#${colorFilterId(layer)})` : undefined}>
+          <g
+            filter={
+              filtered && !photoInShape
+                ? `url(#${colorFilterId(layer)})`
+                : undefined
+            }
+          >
             <g filter={filterId ? `url(#${filterId})` : undefined}>{body}</g>
           </g>
         </g>
@@ -988,14 +1210,65 @@ export function Backdrop({
   width?: number | string
   height?: number | string
 }) {
+  const uid = useId().replace(/[^a-zA-Z0-9_-]/g, "")
+  const texture = value.backgroundTexture
+  const textureId = `bg-tx-${uid}`
+
+  return (
+    <>
+      {texture && (
+        <defs>
+          {/* ponytail: 배경 크기를 모르는 곳이 많아 결의 기준을 50mm 로 고정한다. 굵기는 입자 크기로 맞춘다 */}
+          <filter
+            id={textureId}
+            x="-10%"
+            y="-10%"
+            width="120%"
+            height="120%"
+            colorInterpolationFilters="sRGB"
+          >
+            <TexturePrimitives texture={texture} basis={50} />
+          </filter>
+        </defs>
+      )}
+      <g filter={texture ? `url(#${textureId})` : undefined}>
+        <BackdropFill value={value} width={width} height={height} uid={uid} />
+      </g>
+    </>
+  )
+}
+
+function BackdropFill({
+  value,
+  width,
+  height,
+  uid,
+}: {
+  value: SideBackground
+  width: number | string
+  height: number | string
+  uid: string
+}) {
   const imageSrc = useImageSrc()
-  const filterId = `bg-cf-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`
+  const filterId = `bg-cf-${uid}`
+  const gradientFill = `bg-grad-${uid}`
   const filtered =
     (value.backgroundFilter?.amount ?? 0) > 0 || (value.backgroundBlur ?? 0) > 0
 
   return (
     <>
       <rect width={width} height={height} fill={value.background} />
+      {value.backgroundGradient && (
+        <>
+          <defs>
+            <GradientPaint
+              id={gradientFill}
+              gradient={value.backgroundGradient}
+            />
+          </defs>
+          <rect width={width} height={height} fill={`url(#${gradientFill})`} />
+        </>
+      )}
       {value.backgroundImage && (
         <>
           <defs>

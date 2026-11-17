@@ -90,7 +90,7 @@ export function LanguageSwitcher({
             data-active={l === locale}
             className={cn(
               "cursor-pointer",
-              l === locale && "font-semibold text-primary"
+              l === locale && "text-primary font-semibold"
             )}
           >
             {t(l)}

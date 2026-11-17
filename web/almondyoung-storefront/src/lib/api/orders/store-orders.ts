@@ -69,6 +69,7 @@ export type StoreCancelUnavailableReason =
   | "already_cancelled"
   | "channel_order"
   | "already_processing"
+  | "print_in_production"
   | "digital_downloaded"
   | "cancel_requested"
 
@@ -94,6 +95,7 @@ export interface StoreOrderActionsResponse {
   channelOrderId: string
   orderStatus: string
   fulfillmentStatus: StoreFulfillmentStatus
+  printInProduction?: boolean
   refundStatus: StoreRefundStatusWire
   claimStatus: StoreClaimStatus
   availableActions: StoreOrderAction[]

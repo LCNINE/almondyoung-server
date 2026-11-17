@@ -15,6 +15,7 @@ import { User, RequirePermission, PiiResponse, PiiWrite } from '@app/authorizati
 import { ApiTags, ApiOperation, ApiResponse, ApiParam } from '@nestjs/swagger';
 import { ChannelCancelRequestService } from '../channel-cancel-request/channel-cancel-request.service';
 import { SalesOrdersService } from '../services/sales-orders.service';
+import { SalesOrderShipmentOperationsService } from '../services/sales-order-shipment-operations.service';
 import { SalesOrderAmendmentsService } from '../services/sales-order-amendments.service';
 import { StoreSalesOrdersService } from '../services/store-sales-orders.service';
 import { CreateSalesOrderDto } from '../dto/create-sales-order.dto';
@@ -38,6 +39,7 @@ export class SalesOrdersController {
     private readonly amendments: SalesOrderAmendmentsService,
     private readonly storeSalesOrders: StoreSalesOrdersService,
     private readonly cancelRequests: ChannelCancelRequestService,
+    private readonly shipmentOperations: SalesOrderShipmentOperationsService,
   ) {}
 
   @PiiResponse({
@@ -62,11 +64,12 @@ export class SalesOrdersController {
   })
   @RequirePermission('order.order.write')
   @Post()
-  @ApiOperation({ summary: '판매 주문 생성' })
+  @ApiOperation({ summary: '관리자가 입력한 주문 생성 (수기·기타 채널, 저장과 함께 출고 대기)' })
   @ApiResponse({ status: 201, description: '판매 주문 생성 성공' })
   @ApiResponse({ status: 400, description: '잘못된 요청 데이터' })
+  @ApiResponse({ status: 409, description: '같은 주문번호로 저장된 주문이 있음' })
   create(@Body() dto: CreateSalesOrderDto) {
-    return this.service.create(dto);
+    return this.service.createManual(dto);
   }
 
   @PiiResponse({
@@ -167,6 +170,7 @@ export class SalesOrdersController {
     }
     return this.storeSalesOrders.adminCancelRequest(id, {
       reasonCode: dto.reasonCode,
+      ...(dto.requestChannel ? { requestChannel: dto.requestChannel } : {}),
       reasonDetail: dto.reasonDetail,
       lines: dto.lines,
       alreadyRefundedAmount: dto.alreadyRefundedAmount,
@@ -307,6 +311,19 @@ export class SalesOrdersController {
   @ApiResponse({ status: 200, description: '조회 성공', type: SalesOrderResponseDto })
   getOne(@Param('id') id: string) {
     return this.service.getOne(id);
+  }
+
+  @PiiResponse({
+    fields: { 'items[].reason': 'text', 'items[].note': 'text' },
+    subjects: [{ path: 'salesOrderId', type: 'sales_order' }],
+    reveal: true,
+  })
+  @RequirePermission('order.order.read')
+  @Get(':id/shipment-operations')
+  @ApiOperation({ summary: '주문의 상자 작업 이력(사유·요청 경로·메모·처리자)' })
+  @ApiParam({ name: 'id', description: '판매 주문 ID' })
+  shipmentOperationHistory(@Param('id') id: string) {
+    return this.shipmentOperations.list(id);
   }
 
   @PiiResponse({

@@ -253,14 +253,27 @@ function roundedRect(rx: number, ry: number): PathPoint[] {
   ]
 }
 
+// 모서리 둥글기는 그냥 사각형과 둥근 사각형에만 있다. 둥근 사각형은 값을 비워 두면 예전 모양(32)이다
+export const roundableRect = (layer: Pick<Layer, "type" | "shapeVariant">) =>
+  layer.type === "rect" &&
+  (!layer.shapeVariant || layer.shapeVariant === "rounded")
+
+export function cornerRadiusOf(
+  layer: Pick<Layer, "type" | "shapeVariant" | "cornerRadius">
+) {
+  if (!roundableRect(layer)) return 0
+  return layer.cornerRadius ?? (layer.shapeVariant === "rounded" ? 32 : 0)
+}
+
+export const cornerRadiusMm = (layer: Layer) =>
+  (Math.min(layer.width, layer.height) / 2) * (cornerRadiusOf(layer) / 100)
+
 // 점 편집으로 넘길 수 있는 도형의 윤곽. 모양틀 윤곽처럼 따로 그린 패스는 null
 export function shapeOutline(layer: Layer): PathPoint[] | null {
   const variant = layer.shapeVariant
-  if (layer.type === "rect" && variant === "rounded") {
-    const r = Math.min(layer.width, layer.height) * 0.16
-    return roundedRect(r / layer.width, r / layer.height)
-  }
-  if (layer.type === "rect" && variant)
+  const r = cornerRadiusMm(layer)
+  if (r > 0) return roundedRect(r / layer.width, r / layer.height)
+  if (layer.type === "rect" && variant && !roundableRect(layer))
     return SHAPE_POINTS[variant] ? corners(SHAPE_POINTS[variant]) : null
   if (layer.type === "rect")
     return corners([

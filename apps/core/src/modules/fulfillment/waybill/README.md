@@ -95,6 +95,9 @@ pending/allocated ──운영자 abandon──▶ abandoned (종료)
   매칭), 매칭 0행이면 엄격하게 예외. **dispatch 는 `assertDispatchable → markUsed` 를 한 tx 안에서 순서대로
   호출해야 한다**(`markUsed` 자체는 staleness 를 재검증하지 않는다).
 - `getActiveWaybill(shipmentId, tx?)` — 활성(비종료) 운송장 1건 조회.
+- `resumeActive(shipmentId, opts)` — 원래 멱등 키를 잃은 호출자(출고 준비 화면을 다른 PC 에서 이어 할 때)가 멈춘 활성
+  `pending`/`allocated` 행을 그 행 그대로 `drive` 한다. 같은 키 replay 와 같은 일이다. 행의 manifestVersion·수하인이 지금
+  상자와 다르면 `WAYBILL_NEEDS_REVIEW` — 이어 가면 옛 내용으로 등록되므로 운영자가 abandon 후 재발급한다. 활성 행이 없으면 `null`.
 - `issueBatch(shipmentIds, opts, idemKey, actor)` — bounded 병렬(§10, `WAYBILL.BATCH_CONCURRENCY`=8) +
   시간예산(`WAYBILL.BATCH_TIME_BUDGET_MS`=45s) 조기반환. 입력 shipmentId 전부가 출력에 나타난다(silent
   truncation 금지) — 시간 초과로 미착수된 건은 `status:'pending', reason:'time-budget-exceeded'`.

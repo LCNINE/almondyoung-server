@@ -327,7 +327,7 @@ describeIfDb('일괄 세션 발행·제외·정리 레인 (실 Postgres + 실 Ne
   /** 아이템의 `base_snapshot` — **현재 active 를 `renderMaster` 로 그린 것**이다(4단계와 동일). */
   async function renderSnapshot(masterId: string): Promise<BulkBaseSnapshot> {
     const bundle = await db.run((trx: DbTransaction) =>
-      snapshotReader.renderMaster(trx, masterId, createImageKeyAllocator(), new Map()),
+      snapshotReader.renderMaster(trx, masterId, createImageKeyAllocator(), new Map(), new Map()),
     );
     if (!bundle) throw new Error(`active 버전이 없어 스냅샷을 그릴 수 없다: ${masterId}`);
     return { ...bundle, pricingEditable: true };

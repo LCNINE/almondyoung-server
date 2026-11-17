@@ -1,0 +1,1 @@
+ALTER TABLE "print_orders" ADD COLUMN "vendor_awaiting_payment" boolean DEFAULT false NOT NULL;

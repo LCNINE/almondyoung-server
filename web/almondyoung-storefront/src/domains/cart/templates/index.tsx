@@ -180,7 +180,7 @@ export default function CartTemplate({
 
   return (
     <>
-      <main className="bg-background container mx-auto max-w-[1360px] px-4 py-8">
+      <main className="bg-background container mx-auto max-w-[1280px] px-4 py-8">
         <CartHeader />
 
         <TimeSaleNotice items={sortedItems} />

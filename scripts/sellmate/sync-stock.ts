@@ -33,7 +33,7 @@
  *   DATABASE_URL=postgres://... npx tsx scripts/sellmate/sync-stock.ts apps/core/tmp/
  *
  * ── 환경변수 ─────────────────────────────────────────────────────────────────
- *   DATABASE_URL        core 논리 DB 접속 문자열 (실제 반영 시 필수)
+ *   DATABASE_URL        core 논리 DB 접속 문자열 (필수 — DRY_RUN 도. 저녁 맞추기 init 뒤에는 거절한다 #1304)
  *   DRY_RUN=1           조정 계획만 출력
  *   WAREHOUSE_ID        재고를 잡을 창고 (기본: 부천 물류창고)
  *   LOCATION_ID         증가분을 넣을 로케이션 (기본: 부천 입고기본존)
@@ -49,10 +49,8 @@ import * as fs from 'fs';
 import postgres, { Sql } from 'postgres';
 import { readRows, detectColumns, chunk } from './parse';
 import { excludedReason } from './excluded';
-
-// seeding 의 FIXED_UUIDS 와 동일 (scripts/seeding/constants/uuids.ts)
-const BUCHEON_WAREHOUSE_ID = process.env.WAREHOUSE_ID || '019d0001-0001-7000-a000-000000000001';
-const BUCHEON_RECEIVING_LOC_ID = process.env.LOCATION_ID || '019d0002-0001-7000-a000-000000000001';
+import { applyStockDelta, BUCHEON_WAREHOUSE_ID } from './stock-delta';
+import { reconcileInitExists, SYNC_REFUSAL_AFTER_INIT } from './reconcile/reconcile-store';
 
 const ALLOW_MISSING = process.env.ALLOW_MISSING === '1' || process.env.ALLOW_MISSING === 'true';
 const ALLOW_DUP_FILES = process.env.ALLOW_DUP_FILES === '1' || process.env.ALLOW_DUP_FILES === 'true';
@@ -90,14 +88,16 @@ export function parseStock(s: string, clampNegative = false): number | null {
 }
 
 export type Target = { itemCode: string; target: number };
+/** 목표로 자르기 전 원값 — 넘겨받은 주문 되돌리기(handover-stock-addback)가 목표를 다시 계산할 때 쓴다 */
+export type StockCount = { itemCode: string; current: number; unshipped: number };
 export type StockParseError = { file: string; rowNumber: number; itemCode: string; raw: string };
 
 export function parseStockRows(
   rows: string[][],
   file: string,
   quiet = false,
-): { targets: Target[]; errors: StockParseError[] } {
-  if (rows.length < 2) return { targets: [], errors: [] };
+): { targets: Target[]; counts: StockCount[]; errors: StockParseError[] } {
+  if (rows.length < 2) return { targets: [], counts: [], errors: [] };
   const header = rows[0];
   const cols = detectColumns(header, COLUMN_CANDIDATES, OVERRIDES);
   if (!quiet) {
@@ -120,6 +120,7 @@ export function parseStockRows(
     );
   }
   const targets: Target[] = [];
+  const counts: StockCount[] = [];
   const errors: StockParseError[] = [];
   const skipped = new Map<string, number>();
   let clamped = 0;
@@ -146,10 +147,11 @@ export function parseStockRows(
     const target = Math.max(0, onHand - unshipped);
     if (onHand - unshipped < 0) clamped++;
     targets.push({ itemCode, target });
+    counts.push({ itemCode, current: onHand, unshipped });
   }
   for (const [reason, count] of skipped) console.log(`   ⛔ 동기화 제외 ${count}행 — ${reason}`);
   if (clamped) console.log(`   ⚠️ 미발송이 현재고보다 많아 0 으로 처리한 품목 ${clamped}개 (오버셀 상태)`);
-  return { targets, errors };
+  return { targets, counts, errors };
 }
 
 async function main() {
@@ -212,22 +214,19 @@ async function main() {
   console.log(`\n📊 대상 품목 ${targetByCode.size}개`);
 
   const DATABASE_URL = process.env.DATABASE_URL;
-  if (!DATABASE_URL && !DRY_RUN) {
-    console.error('DATABASE_URL 환경변수가 필요합니다 (core 논리 DB).');
+  if (!DATABASE_URL) {
+    // DRY_RUN 이어도 필요하다 — 저녁 맞추기 init 여부를 DB 에서 봐야 거절할 수 있다 (#1304).
+    console.error(
+      'DATABASE_URL 환경변수가 필요합니다 (core 논리 DB). DRY_RUN 에서도 필요합니다 — 저녁 맞추기 init 여부를 DB 에서 확인합니다.',
+    );
     process.exit(1);
   }
-  if (DRY_RUN && !DATABASE_URL) {
-    console.log('\nℹ️  DRY_RUN 이지만 DATABASE_URL 이 없어 현재고 비교는 생략하고 파싱 결과만 보여줍니다.');
-    let shown = 0;
-    for (const [code, target] of targetByCode) {
-      if (shown++ >= 10) break;
-      console.log(`   code=${code} → target=${target}`);
-    }
-    return;
-  }
 
-  const sql = postgres(DATABASE_URL!, { max: 4 });
+  const sql = postgres(DATABASE_URL, { max: 4 });
   try {
+    // 저녁 맞추기 init 뒤에는 절대값 덮어쓰기가 core 원장을 되돌린다 — DRY_RUN 이어도 거절한다 (#1304).
+    if (await reconcileInitExists(sql)) throw new Error(SYNC_REFUSAL_AFTER_INIT);
+
     // ── DRY_RUN: 읽기 전용으로 계획만 산출 ──────────────────────────────────────
     if (DRY_RUN) {
       const { plans, missing } = await computePlans(sql, targetByCode);
@@ -297,46 +296,7 @@ async function main() {
         const delta = target - current;
         if (delta === 0) continue;
 
-        if (delta > 0) {
-          await tx`
-            INSERT INTO stock_events (sku_id, to_warehouse_id, to_location_id, to_state, transition_type, quantity, occurred_at, reason)
-            VALUES (${skuId}, ${BUCHEON_WAREHOUSE_ID}, ${BUCHEON_RECEIVING_LOC_ID}, 'ON_HAND', 'ADJUST_UP', ${delta}, ${now}, 'sellmate-sync')
-          `;
-          await tx`
-            INSERT INTO stock_ledgers (sku_id, warehouse_id, location_id, stock_state, qty, updated_at)
-            VALUES (${skuId}, ${BUCHEON_WAREHOUSE_ID}, ${BUCHEON_RECEIVING_LOC_ID}, 'ON_HAND', ${delta}, ${now})
-            ON CONFLICT (sku_id, warehouse_id, location_id, stock_state)
-            DO UPDATE SET qty = stock_ledgers.qty + ${delta}, updated_at = ${now}
-          `;
-        } else {
-          // 잠근 위치들에서 많은 곳부터 조건부 차감(qty >= take). 영향 행 검증으로 유실 방지.
-          let remaining = -delta;
-          const sorted = [...locs].sort((a, b) => b.qty - a.qty);
-          for (const loc of sorted) {
-            if (remaining <= 0) break;
-            const take = Math.min(loc.qty, remaining);
-            if (take <= 0) continue;
-            await tx`
-              INSERT INTO stock_events (sku_id, from_warehouse_id, from_location_id, from_state, transition_type, quantity, occurred_at, reason)
-              VALUES (${skuId}, ${BUCHEON_WAREHOUSE_ID}, ${loc.locationId}, 'ON_HAND', 'ADJUST_DOWN', ${take}, ${now}, 'sellmate-sync')
-            `;
-            const res = await tx`
-              UPDATE stock_ledgers SET qty = qty - ${take}, updated_at = ${now}
-              WHERE sku_id = ${skuId} AND warehouse_id = ${BUCHEON_WAREHOUSE_ID}
-                AND location_id = ${loc.locationId} AND stock_state = 'ON_HAND' AND qty >= ${take}
-            `;
-            if (res.count !== 1) {
-              // FOR UPDATE 로 잠갔으니 정상이면 발생 불가. 발생하면 경합/불일치 → 전체 롤백.
-              throw new Error(
-                `재고 차감 경합/불일치: code=${code} loc=${loc.locationId} take=${take} (영향행 ${res.count})`,
-              );
-            }
-            remaining -= take;
-          }
-          if (remaining > 0) {
-            throw new Error(`차감할 재고 부족으로 목표 미달: code=${code} (${remaining} 부족) — 전체 롤백`);
-          }
-        }
+        await applyStockDelta(tx, { skuId, delta, source: 'sellmate-sync', label: code, occurredAt: now });
         applied++;
         changedSkuIds.push(skuId);
       }

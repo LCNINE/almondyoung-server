@@ -20,13 +20,22 @@ import type {
   AlmondSavedDesignSummary,
 } from "@/lib/types/ui/almond-template"
 import { uploadFile } from "@/lib/api/file/upload"
-import { rasterThumbnail, uploadDesignImages } from "../lib/design-images"
+import {
+  placeholderThumbnail,
+  rasterThumbnail,
+  uploadDesignImages,
+} from "../lib/design-images"
 import { hasProduct, parseDesign, type Design } from "../lib/document"
 import type { PublishedTemplate } from "../lib/gallery-filter"
 import { printSvg } from "../components/print-svg"
 import { fitTextBoxes } from "../components/graphic"
 import { PRINT_PRODUCTS } from "../lib/catalog"
 import { useLeaveWarning } from "./use-leave-warning"
+import {
+  reportThumbnailFallback,
+  retryTransient,
+  withFailureContext,
+} from "./use-auth-retry"
 
 export type EditorMode = "customer" | "designer"
 export type SavedItem = AlmondSavedDesignSummary &
@@ -45,6 +54,7 @@ type Params = {
   setSelectedId: (id: string | null) => void
   setMessage: (message: string) => void
   runAuthed: (task: () => Promise<void>, failure: string) => Promise<void>
+  onSaved?: (design: Design) => void
 }
 
 function saveTarget(design: Design) {
@@ -63,6 +73,7 @@ export function useTemplateStorage({
   setSelectedId,
   setMessage,
   runAuthed,
+  onSaved,
 }: Params) {
   const [saveDialog, setSaveDialog] = useState(false)
   const [loadDialog, setLoadDialog] = useState(false)
@@ -103,7 +114,9 @@ export function useTemplateStorage({
       id?: string
       design: Design
       thumbnailSvg: string
-    }) => Promise<{ id: string; status?: string } | { conflict: true }>
+    }) => Promise<
+      { id: string; status?: string } | { conflict: true } | { invalid: string }
+    >
     remove: (id: string) => Promise<void>
   } = designer
     ? {
@@ -189,24 +202,83 @@ export function useTemplateStorage({
     (!productId || item.productId === productId) &&
     (!size || item.size === size)
   const SAVE_FAILURE =
-    "서버에 저장하지 못했습니다. 이미지 용량을 줄여 다시 시도해 주세요."
+    "저장하지 못했습니다. 잠시 후 다시 시도해 주세요. 계속 안 되면 저장 창의 「JSON 받기」로 작업을 내려받아 두세요."
+  // 썸네일은 목록 카드용이다. 어떤 이유로 못 그려도(글꼴·사진·배포 직후 모듈 로딩) 바탕 카드로 대신하고 저장은 계속한다
+  const thumbnailOf = async (named: Design, stored: Design) => {
+    try {
+      const markup = await printSvg(
+        {
+          ...named,
+          front: named.front.filter((layer) => layer.visible !== false),
+        },
+        "front",
+        0
+      )
+      return await rasterThumbnail(markup, stored.imagePreviews ?? {})
+    } catch (error) {
+      reportThumbnailFallback(error)
+      return placeholderThumbnail(
+        named.widthMm,
+        named.heightMm,
+        named.background
+      )
+    }
+  }
   const persist = async (named: Design, before: Design, id?: string) => {
-    const markup = await printSvg(
-      {
-        ...named,
-        front: named.front.filter((layer) => layer.visible !== false),
-      },
-      "front",
-      0
+    const step = async <T>(
+      stage: string,
+      run: () => Promise<T>,
+      context: () => Record<string, unknown> = () => ({})
+    ) => {
+      try {
+        return await run()
+      } catch (error) {
+        throw withFailureContext(error, { stage, mode, ...context() })
+      }
+    }
+    // 서버·기기 시계가 조금 달라도 방금 것을 찾도록 여유를 둔다
+    const startedAt = Date.now() - 5 * 60 * 1000
+    const stored = await step("upload-images", () =>
+      uploadDesignImages(
+        named,
+        (formData) => retryTransient(() => uploadFile(formData)),
+        { backfill: true }
+      )
     )
-    const stored = await uploadDesignImages(named, uploadFile, {
-      backfill: true,
-    })
-    const thumbnailSvg = await rasterThumbnail(
-      markup,
-      stored.imagePreviews ?? {}
+    const thumbnailSvg = await thumbnailOf(named, stored)
+    const upsert = () => remote.upsert({ id, design: stored, thumbnailSvg })
+    // 응답만 잃고 서버엔 만들어졌을 수 있으니, 다시 보내기 전에 방금 저장된 것이 있는지 본다
+    const justSaved = async () =>
+      id
+        ? null
+        : ((await remote.list().catch(() => [])).find(
+            (item) =>
+              item.productId === stored.productId &&
+              item.size === `${stored.widthMm}x${stored.heightMm}` &&
+              item.title === stored.title &&
+              Date.parse(item.updatedAt) >= startedAt
+          ) ?? null)
+    const result = await step(
+      "upsert",
+      () =>
+        retryTransient(async () => {
+          try {
+            return await upsert()
+          } catch (error) {
+            const saved = await justSaved()
+            if (saved) return saved
+            throw error
+          }
+        }),
+      () => ({
+        designLength: JSON.stringify(stored).length,
+        thumbnailLength: thumbnailSvg.length,
+      })
     )
-    const result = await remote.upsert({ id, design: stored, thumbnailSvg })
+    if ("invalid" in result) {
+      setMessage(result.invalid)
+      return
+    }
     if ("conflict" in result) {
       setMessage(
         designer
@@ -232,6 +304,7 @@ export function useTemplateStorage({
     setSaved({ id: result.id, target: saveTarget(stored) })
     ownerChecked.current = result.id
     setSaveDialog(false)
+    onSaved?.(stored)
     setMessage(
       "status" in result && result.status === "published"
         ? "저장되었습니다. 게시 중인 시안이라 고객 화면에 바로 반영됩니다."
@@ -282,10 +355,9 @@ export function useTemplateStorage({
     if (!checked(before)) return
     saveOnce(async () => {
       if (designer && ownerChecked.current !== savedId) {
-        const [item, me] = await Promise.all([
-          getAdminAlmondTemplate(savedId),
-          getMyUserId(),
-        ])
+        const [item, me] = await retryTransient(() =>
+          Promise.all([getAdminAlmondTemplate(savedId), getMyUserId()])
+        )
         const notice =
           item.status === "published"
             ? " 게시 중인 시안이라 고객 화면에 바로 반영됩니다."
@@ -311,7 +383,8 @@ export function useTemplateStorage({
     if (!checked(named)) return
     const fileSize = `${named.widthMm}x${named.heightMm}`
     saveOnce(async () => {
-      const same = (await remote.list()).find(
+      // 같은 이름 확인은 덮어쓰기 안내용이다. 목록을 못 받아도 저장은 하고, 이름이 겹치면 서버가 알려 준다
+      const same = (await remote.list().catch(() => [])).find(
         (item) =>
           item.productId === named.productId &&
           item.size === fileSize &&

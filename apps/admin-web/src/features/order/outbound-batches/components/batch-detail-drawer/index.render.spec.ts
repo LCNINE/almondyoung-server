@@ -43,6 +43,10 @@ jest.mock('@/hooks/use-permission', () => ({
   usePermissionCheck: () => ({ canRun: () => true }),
 }));
 
+jest.mock('@/features/order/fulfillments/detail/operation-operator', () => ({
+  useOperatorNames: () => () => '',
+}));
+
 jest.mock('@/lib/services/orders', () => ({
   ...jest.requireActual('@/lib/api/server-error'),
   ...jest.requireActual('@/lib/services/orders/idempotency'),
@@ -53,6 +57,7 @@ jest.mock('@/lib/services/orders', () => ({
   useClaimBatchPacker: () => ({ mutateAsync: jest.fn() }),
   useClaimBatchPicker: () => ({ mutateAsync: mockClaimPicker }),
   useHandoffBatchWorkItem: () => ({ mutateAsync: jest.fn() }),
+  usePickingHandoff: () => ({ mutateAsync: jest.fn() }),
 }));
 
 function deferred() {
@@ -120,7 +125,17 @@ function batch(id = 'batch-1'): OutboundBatchV2 {
     startedAt: '2026-11-16T00:00:00Z',
     workItems: [],
     picking: null,
-    inventorySession: null,
+    inventorySession: {
+      id: `session-${id}`,
+      status: 'active',
+      recoveryReason: null,
+      version: 1,
+      handedInQty: 0,
+      settledQty: 0,
+      returnedQty: 0,
+      shortageQty: 0,
+      balances: [],
+    },
     toteAssignments: [],
   };
 }
@@ -355,6 +370,7 @@ describe('배치 상세에 남는 상자 추가 결과', () => {
       const initialBatch = {
         ...batch(),
         startedAt: initialStarted ? batch().startedAt : undefined,
+        inventorySession: initialStarted ? batch().inventorySession : null,
       };
       mockBatchQuery.mockReturnValue({
         data: initialBatch,
@@ -367,6 +383,9 @@ describe('배치 상세에 남는 상자 추가 결과', () => {
           : {
               ...batch(),
               startedAt: refreshedStarted ? batch().startedAt : undefined,
+              inventorySession: refreshedStarted
+                ? batch().inventorySession
+                : null,
             },
         isError: queryFailed,
       });

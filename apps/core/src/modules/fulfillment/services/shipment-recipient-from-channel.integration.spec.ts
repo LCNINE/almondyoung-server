@@ -95,6 +95,7 @@ describeIfDb('reviseRecipientFromChannel (DB integration, rollback-only)', () =>
       expect(after.manifestVersion).toBe(before.manifestVersion + 1);
       const ops = await tx.select().from(wmsTables.shipmentOperations).where(eq(wmsTables.shipmentOperations.type, 'recipient_revision'));
       expect(ops.some((op) => op.reason === 'CHANNEL_ORDER_MODIFIED' && op.status === 'completed')).toBe(true);
+      expect(ops.some((op) => op.reasonCode === 'channel_order_modified' && op.requestChannel === null)).toBe(true);
     });
   });
 

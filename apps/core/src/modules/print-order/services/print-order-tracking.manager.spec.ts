@@ -1,5 +1,5 @@
 import { ConfigService } from '@nestjs/config';
-import { DbService } from '@app/db';
+import { DbService, type DatabaseRun } from '@app/db';
 import { wmsSchema } from '../../inventory/schema/inventory.schema';
 import { type PrintOrderRow } from '../schema/print-order.schema';
 import { WowpressClient } from '../wowpress/wowpress.client';
@@ -29,6 +29,20 @@ class FakeRepo extends PrintOrderRepository {
   >(() => Promise.resolve());
   touch = jest.fn<Promise<void>, [string]>(() => Promise.resolve());
   trackable = jest.fn<Promise<PrintOrderRow[]>, [number]>(() => Promise.resolve([]));
+  findTrackedByVendorOrderNumber = jest.fn<Promise<PrintOrderRow | null>, [string]>(() => Promise.resolve(null));
+  // 테넌트 DB 두 개를 차례로 도는 것처럼 fn 을 두 번 부른다
+  override async inEveryDatabase<T>(fn: () => Promise<T>): Promise<DatabaseRun<T>[]> {
+    const out: DatabaseRun<T>[] = [];
+    for (const key of ['t1', 't2']) {
+      try {
+        out.push({ key, ok: true, value: await fn() });
+      } catch (error) {
+        out.push({ key, ok: false, error });
+      }
+    }
+
+    return out;
+  }
 }
 
 function row(overrides: Partial<PrintOrderRow> = {}): PrintOrderRow {
@@ -60,6 +74,8 @@ function row(overrides: Partial<PrintOrderRow> = {}): PrintOrderRow {
     cancelResolvedBy: null,
     salesCancelFailedAt: null,
     fileDeliveredAt: null,
+    vendorAwaitingPayment: false,
+    vendorInProduction: false,
     createdAt: new Date(),
     updatedAt: new Date(),
     ...overrides,
@@ -73,6 +89,40 @@ function setup() {
 }
 
 describe('PrintOrderTrackingManager', () => {
+  it.each([
+    { ordstat: 20, jobstat: null, before: false, after: true },
+    { ordstat: 0, jobstat: null, before: true, after: false },
+    { ordstat: 1, jobstat: null, before: true, after: false },
+    { ordstat: 20, jobstat: 109, before: true, after: false },
+    { ordstat: 90, jobstat: null, before: true, after: false },
+  ])('updates production for $ordstat/$jobstat from $before to $after', async ({ ordstat, jobstat, before, after }) => {
+    const { repo, wowpress, manager } = setup();
+    wowpress.detail.mockResolvedValue({ ordstat, jobstat, carrierCode: null, trackingNumber: null, boxNumber: null });
+
+    await manager.refresh(row({ vendorInProduction: before }));
+
+    expect(repo.updateTracked).toHaveBeenCalledWith('po-1', { vendorInProduction: after });
+  });
+
+  it.each([
+    { ordstat: 20, vendorInProduction: true },
+    { ordstat: 1, vendorInProduction: false },
+  ])('does not rewrite unchanged production flag $vendorInProduction', async ({ ordstat, vendorInProduction }) => {
+    const { repo, wowpress, manager } = setup();
+    wowpress.detail.mockResolvedValue({
+      ordstat,
+      jobstat: null,
+      carrierCode: null,
+      trackingNumber: null,
+      boxNumber: null,
+    });
+
+    await manager.refresh(row({ vendorInProduction }));
+
+    expect(repo.updateTracked).not.toHaveBeenCalled();
+    expect(repo.touch).toHaveBeenCalledWith('po-1');
+  });
+
   it('marks shipped with LOTTE when dlvyinvc appears and dlvyno is 109', async () => {
     const { repo, wowpress, manager } = setup();
     wowpress.detail.mockResolvedValue({
@@ -90,7 +140,9 @@ describe('PrintOrderTrackingManager', () => {
       'po-1',
       expect.objectContaining({ status: 'shipped', carrier: 'LOTTE', trackingNumber: '1234567890', deliveredAt: null }),
     );
-    expect(repo.updateTracked.mock.calls[0]?.[1].shippedAt).toBeInstanceOf(Date);
+    expect(repo.updateTracked.mock.calls.find(([, patch]) => patch.status === 'shipped')?.[1].shippedAt).toBeInstanceOf(
+      Date,
+    );
   });
 
   it('marks shipped with CJ from dlvybox', async () => {
@@ -154,7 +206,7 @@ describe('PrintOrderTrackingManager', () => {
 
     await manager.refresh(row());
 
-    expect(repo.updateTracked).toHaveBeenCalledTimes(1);
+    expect(repo.updateTracked).toHaveBeenCalledTimes(2);
   });
 
   it('treats a row that left tracking (cancel flow changed it) as a no-op', async () => {
@@ -168,7 +220,7 @@ describe('PrintOrderTrackingManager', () => {
     });
     repo.updateTracked.mockResolvedValue(false);
     await expect(manager.refresh(row())).resolves.toBeUndefined();
-    expect(repo.updateTracked).toHaveBeenCalledTimes(1);
+    expect(repo.updateTracked).toHaveBeenCalledTimes(2);
   });
 
   it('keeps tracking number with null carrier for unknown dlvyno', async () => {
@@ -202,7 +254,7 @@ describe('PrintOrderTrackingManager', () => {
 
     await manager.refresh(row({ status: 'shipped', carrier: 'CJ', trackingNumber: '555', shippedAt }));
 
-    const patch = repo.updateTracked.mock.calls[0]?.[1];
+    const patch = repo.updateTracked.mock.calls.find(([, update]) => update.status === 'delivered')?.[1];
     expect(patch).toMatchObject({ status: 'delivered', carrier: 'CJ', trackingNumber: '555', shippedAt });
     expect(patch?.deliveredAt).toBeInstanceOf(Date);
   });
@@ -242,7 +294,7 @@ describe('PrintOrderTrackingManager', () => {
       trackingNumber: null,
       boxNumber: null,
     });
-    await manager.refresh(row());
+    await manager.refresh(row({ vendorInProduction: true }));
     wowpress.detail.mockResolvedValue({
       ordstat: 80,
       jobstat: null,
@@ -250,7 +302,15 @@ describe('PrintOrderTrackingManager', () => {
       trackingNumber: '1',
       boxNumber: null,
     });
-    await manager.refresh(row({ status: 'shipped', carrier: 'LOTTE', trackingNumber: '1', shippedAt: new Date() }));
+    await manager.refresh(
+      row({
+        vendorInProduction: true,
+        status: 'shipped',
+        carrier: 'LOTTE',
+        trackingNumber: '1',
+        shippedAt: new Date(),
+      }),
+    );
     expect(repo.updateTracked).not.toHaveBeenCalled();
     expect(repo.touch).toHaveBeenCalledTimes(2);
   });
@@ -265,7 +325,9 @@ describe('PrintOrderTrackingManager', () => {
       boxNumber: null,
     });
 
-    await manager.refresh(row({ status: 'shipped', carrier: 'CJ', trackingNumber: '555', shippedAt: new Date() }));
+    await manager.refresh(
+      row({ vendorInProduction: true, status: 'shipped', carrier: 'CJ', trackingNumber: '555', shippedAt: new Date() }),
+    );
 
     expect(repo.updateTracked).not.toHaveBeenCalled();
   });
@@ -277,6 +339,83 @@ describe('PrintOrderTrackingManager', () => {
     await expect(manager.refresh(row())).resolves.toBeUndefined();
     expect(repo.updateTracked).not.toHaveBeenCalled();
     expect(repo.touch).toHaveBeenCalledWith('po-1');
+  });
+
+  it('flags a row the vendor holds in awaiting payment', async () => {
+    const { repo, wowpress, manager } = setup();
+    wowpress.detail.mockResolvedValue({
+      ordstat: 0,
+      jobstat: null,
+      carrierCode: null,
+      trackingNumber: null,
+      boxNumber: null,
+    });
+
+    await manager.refresh(row());
+
+    expect(repo.updateTracked).toHaveBeenCalledWith('po-1', { vendorAwaitingPayment: true });
+  });
+
+  it('clears the flag once payment settles', async () => {
+    const { repo, wowpress, manager } = setup();
+    wowpress.detail.mockResolvedValue({
+      ordstat: 10,
+      jobstat: null,
+      carrierCode: null,
+      trackingNumber: null,
+      boxNumber: null,
+    });
+
+    await manager.refresh(row({ vendorAwaitingPayment: true }));
+
+    expect(repo.updateTracked).toHaveBeenCalledWith('po-1', { vendorAwaitingPayment: false });
+  });
+
+  it('does not rewrite an unchanged awaiting payment flag', async () => {
+    const { repo, wowpress, manager } = setup();
+    wowpress.detail.mockResolvedValue({
+      ordstat: 0,
+      jobstat: null,
+      carrierCode: null,
+      trackingNumber: null,
+      boxNumber: null,
+    });
+
+    await manager.refresh(row({ vendorAwaitingPayment: true }));
+
+    expect(repo.updateTracked).not.toHaveBeenCalled();
+    expect(repo.touch).toHaveBeenCalledWith('po-1');
+  });
+
+  it.each([
+    ['a job error', { ordstat: 10, jobstat: 129 }, 'wowpress needs attention: job error 129'],
+    ['a cancel made on wowpress', { ordstat: 90, jobstat: null }, 'wowpress needs attention: cancelled'],
+  ])('flags %s for the vendor attention tab', async (_label, stat, lastError) => {
+    const { repo, wowpress, manager } = setup();
+    wowpress.detail.mockResolvedValue({ ...stat, carrierCode: null, trackingNumber: null, boxNumber: null });
+
+    await manager.refresh(row({ lastError: 'order sent but response lost — looking up by ordkey before giving up' }));
+
+    expect(repo.updateTracked).toHaveBeenCalledWith('po-1', { lastError });
+  });
+
+  it('clears only its own attention record once wowpress moves on', async () => {
+    const { repo, wowpress, manager } = setup();
+    wowpress.detail.mockResolvedValue({
+      ordstat: 20,
+      jobstat: null,
+      carrierCode: null,
+      trackingNumber: null,
+      boxNumber: null,
+    });
+
+    await manager.refresh(row({ vendorInProduction: true, lastError: 'wowpress needs attention: job error 129' }));
+    await manager.refresh(
+      row({ vendorInProduction: true, lastError: 'duplicate wowpress order suspected: WP-1 / WP-2' }),
+    );
+
+    expect(repo.updateTracked).toHaveBeenCalledTimes(1);
+    expect(repo.updateTracked).toHaveBeenCalledWith('po-1', { lastError: null });
   });
 });
 
@@ -358,5 +497,32 @@ describe('PrintOrderTrackingWorker', () => {
     await new PrintOrderTrackingWorker(repo, manager).runOnce();
 
     expect(refresh).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('PrintOrderTrackingManager.refreshByVendorOrderNumber', () => {
+  it('finds the row in whichever tenant holds it and re-reads the order detail', async () => {
+    const { repo, wowpress, manager } = setup();
+    repo.findTrackedByVendorOrderNumber.mockResolvedValueOnce(null).mockResolvedValueOnce(row());
+    wowpress.detail.mockResolvedValue({
+      ordstat: 10,
+      jobstat: 129,
+      carrierCode: null,
+      trackingNumber: null,
+      boxNumber: null,
+    });
+
+    await manager.refreshByVendorOrderNumber('WP-1');
+
+    expect(wowpress.detail).toHaveBeenCalledTimes(1);
+    expect(wowpress.detail).toHaveBeenCalledWith('WP-1');
+    expect(repo.updateTracked).toHaveBeenCalledWith('po-1', { lastError: 'wowpress needs attention: job error 129' });
+  });
+
+  it('throws when a tenant database fails so wowpress retries the callback', async () => {
+    const { repo, manager } = setup();
+    repo.findTrackedByVendorOrderNumber.mockRejectedValueOnce(new Error('db down'));
+
+    await expect(manager.refreshByVendorOrderNumber('WP-1')).rejects.toThrow('db down');
   });
 });

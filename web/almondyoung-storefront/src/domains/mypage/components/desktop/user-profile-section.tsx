@@ -32,7 +32,7 @@ export function UserProfileSection({
           className="grid size-10 place-items-center rounded-full bg-white shadow-sm"
           aria-hidden
         >
-          <User className="text-primary size-6" />
+          <User className="text-mint-deep size-6" />
         </div>
         <strong className="flex items-center gap-1 font-normal whitespace-nowrap">
           <span className="text-lg font-bold text-white">{userName}</span>
@@ -48,9 +48,9 @@ export function UserProfileSection({
           }
         >
           <span className="ring-primary/15 inline-flex shrink-0 items-center gap-1.5 rounded-full bg-white px-3 py-1 whitespace-nowrap shadow-sm ring-1 transition-colors hover:bg-gray-50">
-            <span className="text-primary text-base font-extrabold">멤버십</span>
+            <span className="text-purple-deep text-base font-bold">멤버십</span>
             {isMembership ? (
-              <span className="text-primary flex items-center gap-0.5 text-sm font-bold">
+              <span className="text-purple-deep flex items-center gap-0.5 text-sm font-bold">
                 <Crown className="size-3.5" aria-hidden />
                 {t("benefitActive")}
               </span>

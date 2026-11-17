@@ -2,11 +2,9 @@ import 'fake-indexeddb/auto';
 import { act, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { createOperationStore } from '../../core/operations/operationStore';
-import { RETURN_BIN_KEY } from '../../domains/returns/returnBin';
 import type { FakeBox } from './__fixtures__/outboundServer';
-import { BOX1, BOX2, flash, openBox, press, scan, setupInspection, stationPrefs } from './__fixtures__/renderStation';
+import { BOX1, BOX2, flash, openBox, press, scan, setupInspection } from './__fixtures__/renderStation';
 
-const withBin = () => stationPrefs({ [RETURN_BIN_KEY]: JSON.stringify({ warehouseId: 'w-1', barcode: 'RB-01' }) });
 const WITHDRAWING: FakeBox = {
   ...BOX1,
   labelState: 'withdrawing',
@@ -23,6 +21,7 @@ const WITHDRAWING: FakeBox = {
     },
   ],
 };
+const SLOW = { timeout: 4000 };
 const list = () => screen.getByRole('list', { name: '뺄 상품' });
 const recent = () => screen.getByRole('list', { name: '최근 스캔' });
 const batchReads = (server: { requests: Array<{ path: string }> }) =>
@@ -30,9 +29,9 @@ const batchReads = (server: { requests: Array<{ path: string }> }) =>
 
 describe('뺄 상품(스펙 §6.2 withdrawing)', () => {
   it('빼는 중인 박스 송장이면 뺄 목록 — 상품을 찍으면 바구니로, 다 빼면 «빠진 박스»', async () => {
-    const { server } = await setupInspection({ boxes: [WITHDRAWING], prefs: withBin() });
+    const { server } = await setupInspection({ boxes: [WITHDRAWING] });
     await openBox('421033881907');
-    expect(await screen.findByText('뺄 상품')).toBeInTheDocument();
+    expect(await screen.findByText('뺄 상품을 찍어 주세요')).toBeInTheDocument();
     expect(within(list()).getByText('[B-11-1] 헤어클립 집게핀')).toBeInTheDocument();
     expect(within(list()).getByText('2')).toBeInTheDocument();
     scan('8801002');
@@ -50,57 +49,79 @@ describe('뺄 상품(스펙 §6.2 withdrawing)', () => {
   });
 
   it('응답에 뺀 상품 이름이 없으면(옛 core) 바코드를 적는다', async () => {
-    await setupInspection({ boxes: [{ ...WITHDRAWING, omitRemovedName: true }], prefs: withBin() });
+    await setupInspection({ boxes: [{ ...WITHDRAWING, omitRemovedName: true }] });
     await openBox('421033881907');
-    await screen.findByText('뺄 상품');
+    await screen.findByText('뺄 상품을 찍어 주세요');
     scan('8801002');
     await waitFor(() => expect(within(recent()).getByText('8801002')).toBeInTheDocument());
   });
 
-  it('되돌림 바구니가 없으면 알리고 상품을 받지 않는다', async () => {
+  it('바구니 설정 없이 상품을 받는다', async () => {
     const { server } = await setupInspection({ boxes: [WITHDRAWING] });
-    scan('421033881907');
-    expect(await screen.findByText('설정에서 이 기기의 되돌림 바구니를 먼저 지정해 주세요.')).toBeInTheDocument();
+    await openBox('421033881907');
+    await screen.findByText('뺄 상품을 찍어 주세요');
+    expect(screen.queryByRole('link', { name: '설정 열기' })).not.toBeInTheDocument();
+
     scan('8801002');
-    expect(flash()).toBe('error');
-    expect(server.requests.some((r) => r.path.endsWith('/return-bin-removals'))).toBe(false);
+    await waitFor(() => expect(within(list()).getByText('1')).toBeInTheDocument());
+    expect(server.requests.find((r) => r.path.endsWith('/return-bin-removals'))?.body).toEqual({
+      barcode: '8801002',
+      quantity: 1,
+    });
   });
 
   it('바구니 바코드를 찍으면 «뺄 상품을 찍어 주세요»', async () => {
-    await setupInspection({ boxes: [WITHDRAWING], prefs: withBin() });
+    await setupInspection({ boxes: [WITHDRAWING] });
     await openBox('421033881907');
-    await screen.findByText('뺄 상품');
+    await screen.findByText('뺄 상품을 찍어 주세요');
     scan('RB-01');
     expect(await screen.findByRole('alert')).toHaveTextContent('바구니 바코드예요');
   });
 
   it('F11 로 뺀 박스는 그 자리에서 뺄 상품으로 이어 간다', async () => {
-    const { server } = await setupInspection({ prefs: withBin() });
+    const { server } = await setupInspection({});
     await openBox('421033881907');
     scan('8801002');
     await waitFor(() => expect(server.scans).toHaveLength(1));
     await waitFor(() => expect(screen.getByRole('button', { name: /박스 빼기/ })).toBeInTheDocument());
     press('F11');
     press('F11');
-    await screen.findByText('뺄 상품');
+    // F11 두 번 → 빼기 → 송장 재조회 → 뺄 상품, 다시 빼기 → 빠진 박스까지 왕복이 길다. CI 부하에서 기본 1초를 넘긴다
+    await screen.findByText('뺄 상품을 찍어 주세요', undefined, SLOW);
     // 다시 그린 화면이 송장 줄을 한 번 더 남기지 않는다(처음 찍었을 때 한 줄뿐)
     expect(within(recent()).getAllByText('4210-3388-1907')).toHaveLength(1);
     await waitFor(() => expect(document.querySelector('[data-intake="open"]')).not.toBeNull());
     scan('8801002');
-    expect(await screen.findByText('빠진 박스')).toBeInTheDocument();
+    expect(await screen.findByText('빠진 박스', undefined, SLOW)).toBeInTheDocument();
+  });
+
+  it('검수 중에 박스가 배치에서 빠졌으면 상품을 찍는 순간 뺄 상품으로 넘어가고 이유를 알린다', async () => {
+    const { server } = await setupInspection({});
+    await openBox('421033881907');
+    scan('8801002');
+    await waitFor(() => expect(server.scans).toHaveLength(1));
+    const box = server.box('421033881907');
+    if (!box) throw new Error('Missing box');
+    box.labelState = 'withdrawing';
+    box.removals = WITHDRAWING.removals ?? [];
+    await waitFor(() => expect(document.querySelector('[data-intake="open"]')).not.toBeNull());
+    scan('8801002');
+    expect(await screen.findByRole('list', { name: '뺄 상품' }, SLOW)).toBeInTheDocument();
+    expect(await screen.findByText(/방금 찍은 상품은 담지 말고/)).toBeInTheDocument();
+    expect(server.scans).toHaveLength(1);
   });
 
   it('Esc 는 뺄 상품을 내려놓는다', async () => {
-    await setupInspection({ boxes: [WITHDRAWING], prefs: withBin() });
+    await setupInspection({ boxes: [WITHDRAWING] });
     // 스캔 큐가 준비되고 Esc 가 등록될 때까지 — 준비 전 내려놓기는 «확인 못 한 스캔» 거절이 맞다
     await openBox('421033881907');
-    await screen.findByText('뺄 상품');
+    await screen.findByText('뺄 상품을 찍어 주세요');
     press('Escape');
     expect(await screen.findByText('송장 바코드')).toBeInTheDocument();
   });
 
   it('빠진 박스 화면에서 다른 송장은 새 박스로 열고, 상품은 앞 스캔 확인 중이라고 하지 않는다', async () => {
-    const { server } = await setupInspection({ boxes: [WITHDRAWING, BOX2], prefs: withBin() });
+    const { server } = await setupInspection({ boxes: [WITHDRAWING, BOX2] });
     await openBox('421033881907');
     scan('8801002');
     await waitFor(() => expect(within(list()).getByText('1')).toBeInTheDocument());
@@ -109,6 +130,8 @@ describe('뺄 상품(스펙 §6.2 withdrawing)', () => {
     scan('8801002');
     await waitFor(() => expect(flash()).toBe('error'));
     expect(screen.queryByText('앞 스캔을 확인하고 있어요. 확인이 끝난 뒤 다시 찍어 주세요.')).toBeNull();
+    expect(await screen.findByText('이미 다 뺀 상자예요. 다음 송장을 찍어 주세요.')).toBeInTheDocument();
+    expect(screen.getByText('빠진 박스')).toBeInTheDocument();
     scan('421033881915');
     await waitFor(() => expect(document.querySelector('[data-intake="open"]')).not.toBeNull());
     expect(screen.queryByText('빠진 박스')).toBeNull();
@@ -127,9 +150,9 @@ describe('뺄 상품(스펙 §6.2 withdrawing)', () => {
       if (!update && id.includes(':scan:withdraw:')) await restoreHeld;
       return draft(id, update);
     });
-    const { server } = await setupInspection({ boxes: [WITHDRAWING], prefs: withBin(), store });
+    const { server } = await setupInspection({ boxes: [WITHDRAWING], store });
     scan('421033881907');
-    await screen.findByText('뺄 상품');
+    await screen.findByText('뺄 상품을 찍어 주세요');
     expect(document.querySelector('[data-intake="blocked"]')).not.toBeNull();
     scan('8801002');
     expect(await screen.findByRole('alert')).toHaveTextContent('앞 스캔을 확인하고 있어요');
@@ -141,5 +164,97 @@ describe('뺄 상품(스펙 §6.2 withdrawing)', () => {
     scan('8801002');
     await waitFor(() => expect(within(list()).getByText('1')).toBeInTheDocument());
     expect(server.requests.filter((r) => r.path.endsWith('/return-bin-removals'))).toHaveLength(1);
+  });
+});
+
+describe('빠진 박스 뒤 다음 할 일', () => {
+  const bar = () => within(screen.getByRole('toolbar', { name: '기능키' }));
+  const next = async () => within(await screen.findByRole('region', { name: '다음 할 일' }));
+
+  async function drain() {
+    const setup = await setupInspection({ boxes: [WITHDRAWING] });
+    await openBox('421033881907');
+    await screen.findByText('뺄 상품을 찍어 주세요');
+    scan('8801002');
+    await waitFor(() => expect(within(list()).getByText('1')).toBeInTheDocument());
+    scan('8801002');
+    await screen.findByText('빠진 박스');
+    return setup;
+  }
+
+  it('바구니에 든 상품과 원래 위치, 주문이 어디로 가는지 보여 주고 F4 로 되돌림 적치를 연다', async () => {
+    const { router } = await drain();
+    expect(within(await (await next()).findByRole('list', { name: '되돌릴 상품' })).getByRole('listitem')).toHaveTextContent(
+      '헤어클립 집게핀 2개 → B-11-1'
+    );
+    expect((await next()).getByText(/관리자가 «출고 준비»에서 다시 준비해요/)).toBeInTheDocument();
+    await waitFor(() => expect(bar().getByRole('button', { name: /되돌림 적치/ })).toBeInTheDocument());
+    press('F4');
+    await waitFor(() => expect(router.state.location.pathname).toBe('/returns/putaway'));
+  });
+
+  it('바구니가 비어 있으면 그렇게 알리고 F4 는 원래 탭 이동으로 둔다', async () => {
+    const { server, router } = await setupInspection({ boxes: [WITHDRAWING] });
+    const box = server.box('421033881907');
+    if (!box) throw new Error('Missing box');
+    box.removals = [];
+    box.withdrawn = true;
+    scan('421033881907');
+    await screen.findByText('빠진 박스');
+    expect(await (await next()).findByText('되돌림 바구니는 비어 있어요.')).toBeInTheDocument();
+    expect(bar().queryByRole('button', { name: /되돌림 적치/ })).toBeNull();
+    press('F4');
+    await waitFor(() => expect(router.state.location.pathname).toBe('/putaway'));
+  });
+
+  it('주문이 취소돼 빠진 상자는 다시 준비한다고 하지 않는다', async () => {
+    const setup = await setupInspection({ boxes: [{ ...WITHDRAWING, canceling: true }] });
+    await openBox('421033881907');
+    await screen.findByText('뺄 상품을 찍어 주세요');
+    scan('8801002');
+    await waitFor(() => expect(within(list()).getByText('1')).toBeInTheDocument());
+    scan('8801002');
+    expect(await (await next()).findByText(/이 상자의 주문은 취소됐어요/)).toBeInTheDocument();
+    expect(screen.queryByText(/다시 준비해요/)).toBeNull();
+    expect(setup.server.box('421033881907')?.withdrawn).toBe(true);
+  });
+
+  it('다른 상자가 빠지면 앞 상자 때 읽은 바구니로 판단하지 않고 새로 읽을 때까지 기다린다', async () => {
+    const { server } = await setupInspection({ boxes: [WITHDRAWING, { ...BOX2, labelState: 'withdrawing', removals: [] }] });
+    await openBox('421033881907');
+    await screen.findByText('뺄 상품을 찍어 주세요');
+    scan('8801002');
+    await waitFor(() => expect(within(list()).getByText('1')).toBeInTheDocument());
+    scan('8801002');
+    expect(within(await (await next()).findByRole('list', { name: '되돌릴 상품' })).getByRole('listitem')).toHaveTextContent(
+      '헤어클립 집게핀 2개 → B-11-1'
+    );
+    // 그 사이 바구니를 비웠고(되돌림 적치), 다음 상자의 조회는 아직 오지 않았다
+    server.returnBin.splice(0);
+    const release = server.holdReturnBin();
+    const other = server.box('421033881915');
+    if (!other) throw new Error('Missing box');
+    other.withdrawn = true;
+    scan('421033881915');
+    await screen.findByRole('heading', { name: '4210-3388-1915' });
+    expect(await (await next()).findByText('되돌림 바구니를 확인하고 있어요.')).toBeInTheDocument();
+    expect((await next()).queryByRole('list', { name: '되돌릴 상품' })).toBeNull();
+    expect(bar().queryByRole('button', { name: /되돌림 적치/ })).toBeNull();
+    await act(async () => release());
+    expect(await (await next()).findByText('되돌림 바구니는 비어 있어요.')).toBeInTheDocument();
+  });
+
+  it('바구니를 확인하지 못하면 되돌림 적치에서 확인하라고 하고 F4 로 열 수 있게 둔다', async () => {
+    const { server, router } = await setupInspection({ boxes: [WITHDRAWING] });
+    server.config.returnBinFail = true;
+    await openBox('421033881907');
+    await screen.findByText('뺄 상품을 찍어 주세요');
+    scan('8801002');
+    await waitFor(() => expect(within(list()).getByText('1')).toBeInTheDocument());
+    scan('8801002');
+    expect(await (await next()).findByText(/되돌림 바구니를 확인하지 못했어요/)).toBeInTheDocument();
+    await waitFor(() => expect(bar().getByRole('button', { name: /되돌림 적치/ })).toBeInTheDocument());
+    press('F4');
+    await waitFor(() => expect(router.state.location.pathname).toBe('/returns/putaway'));
   });
 });

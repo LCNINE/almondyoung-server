@@ -269,13 +269,13 @@ export class UserServiceSeedStep extends SeedStep {
       // Step 3: Admin roles
       this.logger.step(3, 4, 'Assigning master and admin roles to admin user');
       await this.db.execute(sql`
-        INSERT INTO user_roles (user_id, role_id)
-        VALUES (${FIXED_UUIDS.USER_ADMIN}, ${FIXED_UUIDS.ROLE_MASTER})
+        INSERT INTO user_roles (user_id, role_id, tenant_id)
+        VALUES (${FIXED_UUIDS.USER_ADMIN}, ${FIXED_UUIDS.ROLE_MASTER}, ${TENANT_ONE_ID})
         ON CONFLICT DO NOTHING
       `);
       await this.db.execute(sql`
-        INSERT INTO user_roles (user_id, role_id)
-        VALUES (${FIXED_UUIDS.USER_ADMIN}, ${FIXED_UUIDS.ROLE_ADMIN})
+        INSERT INTO user_roles (user_id, role_id, tenant_id)
+        VALUES (${FIXED_UUIDS.USER_ADMIN}, ${FIXED_UUIDS.ROLE_ADMIN}, ${TENANT_ONE_ID})
         ON CONFLICT DO NOTHING
       `);
       itemsApplied += 2;
@@ -284,8 +284,8 @@ export class UserServiceSeedStep extends SeedStep {
       const totalSteps = this.oauthClients.length > 0 ? 5 : 4;
       this.logger.step(4, totalSteps, 'Assigning user role to existing users without roles');
       await this.db.execute(sql`
-        INSERT INTO user_roles (user_id, role_id)
-        SELECT u.id, r.role_id
+        INSERT INTO user_roles (user_id, role_id, tenant_id)
+        SELECT u.id, r.role_id, u.tenant_id
         FROM users u
           CROSS JOIN roles r
         WHERE r.name = 'user'

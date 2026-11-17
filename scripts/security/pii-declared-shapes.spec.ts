@@ -1,3 +1,4 @@
+import { RefundAdminController } from 'apps/wallet/src/admin/refund-admin.controller';
 import { piiResponseOf, type PiiResponseSpec } from '@app/authorization';
 import { maskPaths } from '@app/shared/pii';
 import { Reflector } from '@nestjs/core';
@@ -18,6 +19,24 @@ const specOf = (handler: Parameters<Reflector['get']>[1]): PiiResponseSpec => {
 };
 
 describe('개인정보 선언이 실제 응답 모양을 덮는다', () => {
+  it('환불 목록과 결제 상세의 기본 환불 계좌를 가린다', () => {
+    const refund = {
+      intentId: 'pi-1',
+      refundReceiveAccount: { bank: '06', accountNumber: '1234567890', holderName: '홍길동' },
+    };
+    const cases: [Parameters<Reflector['get']>[1], unknown][] = [
+      [RefundAdminController.prototype.list, { data: [refund] }],
+      [PaymentIntentAdminController.prototype.getDetail, { id: 'pi-1', refunds: [refund] }],
+    ];
+
+    for (const [handler, body] of cases) {
+      const out = JSON.stringify(maskPaths(body, specOf(handler).fields).body);
+      expect(out).not.toContain('1234567890');
+      expect(out).not.toContain('홍길동');
+      expect(out).toContain('06');
+    }
+  });
+
   it('masks a member address stored as a JSON string as well as an object', () => {
     const spec = specOf(AdminUsersController.prototype.getUserById);
     for (const address of ['{"address_1":"서울특별시 송파구 중대로 135","postal_code":"05510"}', { address_1: '서울특별시 송파구 중대로 135', postal_code: '05510' }]) {

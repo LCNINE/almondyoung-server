@@ -15,6 +15,7 @@ import type {
   InboundStatusQuery,
   MovementHistoryQuery,
 } from '../../types/dto/inventory';
+import type { InboundShipmentListFilter } from '../../types/dto/inbound-shipment';
 
 export const inventoryQueryKeys = {
   // 재고 관련
@@ -31,6 +32,8 @@ export const inventoryQueryKeys = {
     ['stocks', 'valuation', 'products', query] as const,
 
   // SKU 관련
+  /** 무효화 전용 루트 — `skus()` 는 `['skus', undefined]` 라 목록·검색·상세 어느 키에도 안 맞는다. */
+  skusRoot: ['skus'] as const,
   skus: (query?: any) => ['skus', query] as const,
   sku: (id: string) => ['skus', id] as const,
   skuList: (query: object) => ['skus', 'list', query] as const,
@@ -75,6 +78,8 @@ export const inventoryQueryKeys = {
   consolidation: (id: string) => ['consolidations', id] as const,
 
   // 공급처 관련
+  /** 무효화 전용 루트(`skusRoot` 와 같은 이유). */
+  suppliersRoot: ['suppliers'] as const,
   suppliers: (filters?: SupplierFiltersDto) => ['suppliers', filters] as const,
   supplierFilterOptions: () => ['suppliers', 'filter-options'] as const,
   supplier: (id: string) => ['suppliers', id] as const,
@@ -84,6 +89,8 @@ export const inventoryQueryKeys = {
   supplierCategory: (id: string) => ['supplier-categories', id] as const,
 
   // 재고소유 관련
+  /** 무효화 전용 루트(`skusRoot` 와 같은 이유). */
+  holdersRoot: ['holders'] as const,
   holders: (filters?: HolderFiltersDto) => ['holders', filters] as const,
   holderSearch: (
     query: string,
@@ -164,4 +171,12 @@ export const inventoryQueryKeys = {
     ['inventory', 'movement', 'jobs', jobId] as const,
   movementHistory: (query?: MovementHistoryQuery) =>
     ['inventory', 'movement', 'history', query] as const,
+
+  // 선적 입고
+  inboundShipmentsRoot: ['inbound-shipments'] as const,
+  inboundShipments: (filter?: InboundShipmentListFilter) =>
+    ['inbound-shipments', 'list', filter] as const,
+  inboundShipment: (id: string) => ['inbound-shipments', 'detail', id] as const,
+  inboundShipmentBox: (id: string, boxId: string) =>
+    ['inbound-shipments', 'detail', id, 'box', boxId] as const,
 } as const;

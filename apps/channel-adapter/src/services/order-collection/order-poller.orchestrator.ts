@@ -4,6 +4,7 @@ import { eq, and, inArray } from 'drizzle-orm';
 import { DbService } from '@app/db';
 import { InjectPublisher, PublisherFor } from '@app/events';
 import {
+  ChannelCancelRequestedPayload,
   ChannelReturnCancelledPayload,
   ChannelReturnRequestedPayload,
   ChannelReturnPrepaidPayload,
@@ -31,6 +32,7 @@ import {
   OrderSyncFetch,
   ReplayableChannelOrderProvider,
   SyncableChannelOrderProvider,
+  isAcknowledgingProvider,
   isSyncableProvider,
 } from './channel-order-provider.interface';
 import { channelAdapterSchema, wmsOrderMappings } from '../../schema';
@@ -42,6 +44,7 @@ import {
 import { OrderProcessingStageError, errorMessage } from './order-processing-stage.error';
 import { OrderCollectionFailure } from '../../types';
 import { SalesChannelClient } from '../clients/sales-channel.client';
+import { coupangRateLimiter } from '../../adapters/coupang/clients/coupang-rate-limiter';
 
 const POLLING_RESOURCE_TYPE_ORDER = 'order';
 const POLLING_RESOURCE_TYPE_ORDER_LIFECYCLE = 'order_lifecycle';
@@ -90,6 +93,12 @@ type ProcessingRetryStatus =
 @Injectable()
 export class OrderPollerOrchestrator {
   private readonly logger = new Logger(OrderPollerOrchestrator.name);
+  /**
+   * 채널별로 지금 도는 주기의 시작 시각. `@CronOnce` 는 주기당 한 번을 선점할 뿐 앞 실행을 기다리지 않아,
+   * 5분을 넘긴 주기(쿠팡 단건 조회가 많거나 응답이 느린 날) 위에 다음 주기가 겹쳐 같은 창을 두 번 돈다.
+   * 프로세스 안에서만 막는다 — 태스크 사이의 겹침은 `cron_runs` 선점이 이미 막는다.
+   */
+  private readonly runningCycles = new Map<SalesChannel, number>();
 
   constructor(
     @Inject(CHANNEL_ORDER_PROVIDER)
@@ -132,6 +141,18 @@ export class OrderPollerOrchestrator {
         this.logger.log(`채널 ${provider.channel} 은 비활성(sales_channels.is_active=false)이라 이번 주기를 건너뛴다.`);
         continue;
       }
+
+      const runningSince = this.runningCycles.get(provider.channel);
+      if (runningSince !== undefined) {
+        // 건너뛰기는 무손실이다 — recordSyncStart 전이라 워터마크가 그대로고, 앞 주기가 끝나면 다음 주기가 이어 받는다.
+        this.logger.warn(
+          `[${provider.channel}] 앞 주기가 아직 돈다 (${Date.now() - runningSince}ms 째) — 이번 주기는 이 채널을 건너뛴다.`,
+        );
+        continue;
+      }
+      const providerCycleStartedAt = Date.now();
+      const coupangCallsBefore = coupangRateLimiter.callCount;
+      this.runningCycles.set(provider.channel, providerCycleStartedAt);
 
       try {
         // 자동 재시도는 이번 주기 **전에** 갱신된 행만 고른다 — 이번 주기에 막 실패한 주문을 같은 주기에 또 치지 않는다 (스펙 §6.1).
@@ -193,6 +214,8 @@ export class OrderPollerOrchestrator {
             terminal: terminal || (previous?.terminal ?? false),
           });
         };
+        // 이번 주기에 «주문 후보»가 처리에 성공해 Core 주문이 있는 주문 — 채널 접수 상태로 넘길 후보(`acknowledgeCollected`).
+        const acknowledgeCandidates = new Set<string>();
         let watermark: Date | null = null;
         // An unrecorded lifecycle observation (no Core mapping yet) for an order that is still
         // collectable — currently quarantined and awaiting replay — must NOT let the durable
@@ -306,12 +329,16 @@ export class OrderPollerOrchestrator {
               // yet fixed). Hold the watermark so the observation is not lost before collection.
               holdWatermark(orderedItem.item.sourceUpdatedAt);
             } else {
-              // Recorded, or terminal. A terminal observation whose order carried an orphaned
-              // quarantine from an earlier poll (it has since gone canceled/refunded and is no
-              // longer eligible) must close that quarantine — otherwise it is left open for a
-              // replay that can never collect it, and the terminal signal is durably lost. Closing
-              // it records the terminal outcome, so the watermark can safely advance.
-              if (!result.recorded) {
+              // Recorded, terminal, or a non-terminal observation with nowhere to go yet. A terminal
+              // observation whose order carried an orphaned quarantine from an earlier poll (it has
+              // since gone canceled/refunded and is no longer eligible) must close that quarantine —
+              // otherwise it is left open for a replay that can never collect it, and the terminal
+              // signal is durably lost. Closing it records the terminal outcome, so the watermark can
+              // safely advance.
+              // 취소요청(`ChannelCancelRequested`)은 종결이 아니다 — 고객 철회·우리 발송(=거부)이면 주문은 다시
+              // 수집 대상이 된다. 미수집 주문의 열린 격리를 그것으로 닫지 않는다. 워터마크는 지나간다 —
+              // 지금의 pending 스냅샷과 같고, 클레임이 바뀌면 변경 피드가 그 주문을 다시 준다.
+              if (!result.recorded && orderedItem.item.eventType !== 'ChannelCancelRequested') {
                 await this.resolveOrphanedQuarantine(provider.channel, orderedItem.item);
               }
               advanceWatermark(orderedItem.item.sourceUpdatedAt);
@@ -340,10 +367,17 @@ export class OrderPollerOrchestrator {
             result.wmsOrderId,
             orderedItem.item.eligibleForOrderCreation === false,
           );
+          if (result.wmsOrderId && orderedItem.item.eligibleForOrderCreation !== false) {
+            acknowledgeCandidates.add(orderedItem.item.externalOrderId);
+          }
           advanceWatermark(orderedItem.item.sourceUpdatedAt);
         }
 
         await this.closeRecoveredProcessingFailures(openProcessingFailures, failedExternalOrderIds, succeededOrders);
+        await this.acknowledgeCollected(
+          provider,
+          [...acknowledgeCandidates].filter((externalOrderId) => !failedExternalOrderIds.has(externalOrderId)),
+        );
 
         // 🔴 조용한 창은 워터마크를 영원히 묶는다. 닫힌 조회 창(`[since, since+24h]`)을 쓰는
         // source 는 그 창에 변경이 하나도 없으면 항목 0건을 낸다 — 그러면 워터마크가 `null` 로
@@ -412,6 +446,12 @@ export class OrderPollerOrchestrator {
           message: error.message,
         });
         this.logger.error(`[${provider.channel}] Order polling failed: ${error.message}`);
+      } finally {
+        this.runningCycles.delete(provider.channel);
+        // 쿠팡 호출 수는 프로세스 전체 계수기의 앞뒤 차라, 같은 시간에 돈 송장 업로드 등 다른 쿠팡 호출도 섞인다.
+        const coupangCalls =
+          provider.channel === 'coupang' ? `, 쿠팡 호출 ${coupangRateLimiter.callCount - coupangCallsBefore}회` : '';
+        this.logger.log(`[${provider.channel}] 주기 끝 — ${Date.now() - providerCycleStartedAt}ms${coupangCalls}`);
       }
     }
   }
@@ -864,6 +904,18 @@ export class OrderPollerOrchestrator {
           await this.ordersPublisher.enqueue({ eventType: 'OrderRefundCreated', payload: refunded, ...common }, tx);
           break;
         }
+        case 'ChannelCancelRequested': {
+          const cancelRequested: ChannelCancelRequestedPayload = {
+            orderId: wmsOrderId,
+            ...channelKey,
+            ...item.payload,
+          };
+          await this.ordersPublisher.enqueue(
+            { eventType: 'ChannelCancelRequested', payload: cancelRequested, ...common },
+            tx,
+          );
+          break;
+        }
         case 'ChannelReturnRequested': {
           const requested: ChannelReturnRequestedPayload = { orderId: wmsOrderId, ...channelKey, ...item.payload };
           await this.ordersPublisher.enqueue(
@@ -1084,6 +1136,21 @@ export class OrderPollerOrchestrator {
     if (exhaustedNow) {
       this.logger.error(
         `[${channel}] 주문 ${failure.externalOrderId} 자동 재시도 ${PROCESSING_FAILURE_MAX_ATTEMPTS}회 소진 — 격리 화면에서 조치가 필요하다 (${failure.stage}): ${failure.error}`,
+      );
+    }
+  }
+
+  /**
+   * 수집이 커밋된 주문을 채널에서 접수 상태로 넘긴다 (쿠팡 상품준비중, #1245). 훅이 없는 provider 는 아무것도 안 한다.
+   * 실패는 로그만 — 주기 결과·워터마크를 바꾸지 않는다. 그 주문은 채널에 결제완료로 남아 다음 주기가 다시 넘긴다.
+   */
+  private async acknowledgeCollected(provider: ChannelOrderProvider, externalOrderIds: string[]): Promise<void> {
+    if (!isAcknowledgingProvider(provider) || externalOrderIds.length === 0) return;
+    try {
+      await provider.acknowledgeCollected(externalOrderIds);
+    } catch (error) {
+      this.logger.error(
+        `[${provider.channel}] 수집한 주문 ${externalOrderIds.length}건의 접수 처리에 실패했다 — 다음 주기가 다시 넘긴다: ${errorMessage(error)}`,
       );
     }
   }

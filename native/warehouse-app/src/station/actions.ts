@@ -51,7 +51,7 @@ export const TAB_ACTION_PREFIX = 'tab-';
 
 /**
  * 기능키 바: 켜진 것만(U2 — 지금 안 되는 것·권한 없는 것은 그리지 않는다), 키 순서(F1…F12, Esc 는 맨 끝).
- * 셸의 탭 액션은 탭 바에 이미 있어 빼되, 키로 빼지 않는다 — 화면이 같은 키를 선언하면(F1 검수 중 F7 «수량») 그 액션은 바에 남는다.
+ * 셸의 탭 액션은 탭 바에 이미 있어 빼되, 키로 빼지 않는다 — 화면이 같은 키를 선언하면(빠진 상자의 F4 «되돌림 적치») 그 액션은 바에 남는다.
  */
 export function functionBarItems(resolved: ReadonlyMap<StationKey, StationAction>): StationAction[] {
   return STATION_KEYS.flatMap((key) => {

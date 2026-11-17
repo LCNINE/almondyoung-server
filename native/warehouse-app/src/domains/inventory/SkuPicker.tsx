@@ -1,22 +1,36 @@
-import { useId, useState } from 'react';
+import { useId } from 'react';
 import { Button } from '../../core/design/Button';
+import { remembered, useRememberedState, type Remembered } from '../../core/design/rememberedState';
 import { useSkuSearch } from './useSkuSearch';
 import type { SkuSearchItem } from './types';
 export type SelectedSku = Pick<
   SkuSearchItem,
   'id' | 'code' | 'name' | 'optionKey'
 >;
+export interface SkuPickerMemory {
+  term: Remembered<string>;
+  search: Remembered<string>;
+  offset: Remembered<number>;
+}
+
+export function skuPickerMemory(): SkuPickerMemory {
+  return { term: remembered(''), search: remembered(''), offset: remembered(0) };
+}
+
 export function SkuPicker({
   disabled,
   onSelect,
+  memory,
 }: {
   disabled?: boolean;
   onSelect: (sku: SelectedSku) => void;
+  /** 주면 화면을 떠났다 돌아와도 검색어와 결과 쪽수를 이어 간다. */
+  memory?: SkuPickerMemory;
 }) {
   const id = useId();
-  const [term, setTerm] = useState('');
-  const [search, setSearch] = useState('');
-  const [offset, setOffset] = useState(0);
+  const [term, setTerm] = useRememberedState(memory?.term, '');
+  const [search, setSearch] = useRememberedState(memory?.search, '');
+  const [offset, setOffset] = useRememberedState(memory?.offset, 0);
   const result = useSkuSearch({
     search,
     limit: 20,

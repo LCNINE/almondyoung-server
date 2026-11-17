@@ -1,8 +1,6 @@
 {
-  "csTitle": "Customer Service {phone}",
-  "callPhone": "Call",
-  "kakaoChat": "KakaoChat",
-  "kakaoChatAdd": "Add KakaoChat Channel",
+  "csLabel": "Customer Service",
+  "kakaoChannel": "KakaoTalk Channel",
   "instagram": "Instagram",
   "company": "About",
   "terms": "Terms of Service",
@@ -23,13 +21,6 @@
     "medicalAddress": "Institution address: 201-202, Theleave Sejong Tower, 126 Achasan-ro, Seongdong-gu, Seoul",
     "medicalSubjects": "Departments: Dermatology, Plastic Surgery, etc.",
     "medicalDirector": "Director: Roh Hwan-gyu | License No.: 30722",
-    "privacyOfficer": "Privacy Officer: Harry KWON (CEO) / 1877-7184, hello@lcnine.kr",
-    "mobileCompany": "LCNINE Co., Ltd. | CEO: Harry KWON",
-    "mobileBizNo": "Business Reg. No.: 467-86-01638",
-    "mobileMailOrderNo": "Mail-Order Reg. No.: 2026-부천원미-0744",
-    "mobilePhone": "Phone: 1877-7184",
-    "mobileAddress": "4F, 42 Pyeongcheonro 832beon-gil, Dodong, Bucheon-si, Gyeonggi-do",
-    "mobileEmail": "Email: hello@lcnine.kr",
-    "mobileHosting": "Hosting Provider: Amazon Web Services, Inc."
+    "privacyOfficer": "Privacy Officer: Harry KWON (CEO) / 1877-7184, hello@lcnine.kr"
   }
 }

@@ -90,5 +90,12 @@
   },
   "won": "ウォン",
   "timeSaleEndedOne": "タイムセールが終了し、{name} の価格が {from} → {to} に変更されました。",
-  "timeSaleEndedMany": "タイムセールが終了し、{name} 他 {count}件の価格が変更されました。商品金額 {from} → {to}"
+  "timeSaleEndedMany": "タイムセールが終了し、{name} 他 {count}件の価格が変更されました。商品金額 {from} → {to}",
+  "addedToast": {
+    "title": "カートに追加しました",
+    "membershipSavings": "会員価格で{amount}ウォンお得になりました",
+    "freeShippingRemaining": "あと<b>{amount}ウォン</b>で送料無料",
+    "freeShippingReached": "送料無料が適用されます",
+    "goToCart": "カートを見る"
+  }
 }

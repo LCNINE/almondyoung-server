@@ -56,6 +56,22 @@ export const useRefundList = (query: RefundListQuery) => {
   });
 };
 
+/**
+ * 정체 보드의 «송금 대기» — 대기 환불 한 쪽(최대 PENDING_TRANSFER_LIMIT). 키가 환불 목록과 같은 갈래라 [완료 처리]가 같이 다시 읽힌다.
+ * 송금 대기 행은 취소가 반영될 때(보드 밖에서) 생기므로 보드 목록과 같은 주기로 다시 읽는다.
+ */
+export const PENDING_TRANSFER_LIMIT = 100;
+export const usePendingRefunds = (options: { enabled: boolean }) => {
+  const query: RefundListQuery = { status: 'PENDING', page: 1, limit: PENDING_TRANSFER_LIMIT };
+  return useQuery({
+    queryKey: walletQueryKeys.refundList(query),
+    queryFn: () => walletApi.listRefunds(query),
+    staleTime: 30 * 1000,
+    refetchInterval: 60_000,
+    enabled: options.enabled,
+  });
+};
+
 // ── Refund Requests (무통장 환불 요청 큐) ────────────────────────────────────
 
 export const useRefundRequests = (page?: number, limit?: number, options: { enabled?: boolean } = {}) => {

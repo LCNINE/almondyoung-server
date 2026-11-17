@@ -6,6 +6,8 @@ export const orderQueryKeys = {
   orders: ['orders'] as const,
   ordersList: (params?: object) => ['orders', 'list', params ?? {}] as const,
   order: (id: string) => ['orders', id] as const,
+  orderShipmentOperations: (orderId: string) =>
+    ['orders', orderId, 'shipment-operations'] as const,
   orderItems: (orderId: string) => ['orders', orderId, 'items'] as const,
 
   // 정정(채널 변경)
@@ -26,6 +28,11 @@ export const orderQueryKeys = {
   outboundBatchWorkItems: (id: string) =>
     ['outbound-batches', 'v2', id, 'work-items'] as const,
 
+  // 출고 준비
+  outboundPreparation: ['outbound-preparation'] as const,
+  outboundPreparationSummary: (warehouseId: string) =>
+    ['outbound-preparation', warehouseId] as const,
+
   // 이행 관련
   fulfillments: ['fulfillments'] as const,
   fulfillmentsList: (params?: object) =>
@@ -35,6 +42,13 @@ export const orderQueryKeys = {
     ['fulfillments', id, 'shipments'] as const,
   shipment: (id: string) => ['shipments', id] as const,
   fulfillmentOperation: (id: string) => ['fulfillment-operations', id] as const,
+  fulfillmentRequestOutcome: (commandType: string, idempotencyKey: string) =>
+    [
+      'fulfillment-operations',
+      'requests',
+      commandType,
+      idempotencyKey,
+    ] as const,
   shipmentRecallOperation: (id: string) =>
     ['shipment-recall-operations', id] as const,
   fulfillmentOrders: ['fulfillment-orders'] as const,
@@ -82,8 +96,10 @@ export const orderQueryKeys = {
   // 직배 운영 (입점사 상자, K3) — 뮤테이션 성공 시 ['direct-ship'] 를 통째로 무효화한다
   directShipCancelNotices: ['direct-ship', 'cancel-notices'] as const,
   directShipSupplierQueue: ['direct-ship', 'supplier-queue'] as const,
-  directShipSupplierShipments: (supplierId: string, stage: 'pending' | 'forwarded') =>
-    ['direct-ship', 'supplier-queue', supplierId, stage] as const,
+  directShipSupplierShipments: (
+    supplierId: string,
+    stage: 'pending' | 'forwarded'
+  ) => ['direct-ship', 'supplier-queue', supplierId, stage] as const,
   directShipSupplierHandoffs: (supplierId: string) =>
     ['direct-ship', 'handoffs', supplierId] as const,
 

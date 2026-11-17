@@ -1,0 +1,1 @@
+ALTER TABLE "print_product_specs" ADD COLUMN "accessories" jsonb DEFAULT '[]'::jsonb NOT NULL;

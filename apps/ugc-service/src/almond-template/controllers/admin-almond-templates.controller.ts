@@ -1,14 +1,30 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Patch, Put, Res } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  Param,
+  ParseUUIDPipe,
+  Patch,
+  Post,
+  Put,
+  Req,
+  Res,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { ApiBearerAuth, ApiBody, ApiOperation, ApiParam, ApiProduces, ApiResponse, ApiTags } from '@nestjs/swagger';
-import type { FastifyReply } from 'fastify';
+import type { FastifyReply, FastifyRequest } from 'fastify';
 import { User, RequirePermission } from '@app/authorization';
 import { ALMOND_TEMPLATE_THUMBNAIL_HEADERS } from '../constants/almond-template.constants';
 import {
   AdminAlmondTemplateDetailResponseDto,
   AdminAlmondTemplateSummaryResponseDto,
+  AlmondTemplatePreviewImageResponseDto,
   UpdateAlmondTemplateStatusDto,
   UpsertAlmondTemplateDto,
 } from '../dto/almond-template.dto';
+import { LinkAlmondTemplateProductDto } from '../dto/link-almond-template-product.dto';
 import { AlmondTemplatesService } from '../services/almond-templates.service';
 
 const THUMBNAIL_HEADERS = {
@@ -84,6 +100,45 @@ export class AdminAlmondTemplatesController {
     @User('userId') userId: string,
   ): Promise<AdminAlmondTemplateSummaryResponseDto> {
     return this.service.updateStatus(id, dto.status, userId);
+  }
+
+  @RequirePermission('marketing.almond_template.write')
+  @Put(':id/product')
+  @ApiOperation({
+    summary: '아몬드템플릿을 상품에 연결하고 게시',
+    description: '행의 product_id 와 시안 JSON 의 productId 를 같이 바꾸고 published 로 만든다. 이미 같은 값이면 그대로 돌려준다',
+  })
+  @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiBody({ type: LinkAlmondTemplateProductDto })
+  @ApiResponse({ status: 200, type: AdminAlmondTemplateSummaryResponseDto })
+  @ApiResponse({ status: 400 })
+  @ApiResponse({ status: 404 })
+  @ApiResponse({ status: 409 })
+  linkProduct(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: LinkAlmondTemplateProductDto,
+    @User('userId') userId: string,
+  ): Promise<AdminAlmondTemplateSummaryResponseDto> {
+    return this.service.linkProduct(id, dto.productId, userId);
+  }
+
+  @RequirePermission('marketing.almond_template.write')
+  @Post(':id/preview-image')
+  @ApiOperation({
+    summary: '아몬드템플릿 미리보기 JPG 를 만들어 file-service 에 공개로 올린다',
+    description: '인쇄 파일 업로드와 같은 클라이언트·같은 토큰으로 올리고 fileId 를 돌려준다',
+  })
+  @ApiParam({ name: 'id', format: 'uuid' })
+  @ApiResponse({ status: 201, type: AlmondTemplatePreviewImageResponseDto })
+  @ApiResponse({ status: 404 })
+  async previewImage(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() request: FastifyRequest,
+  ): Promise<AlmondTemplatePreviewImageResponseDto> {
+    const header = request.headers.authorization;
+    const accessToken = header?.startsWith('Bearer ') ? header.slice(7) : request.cookies.accessToken;
+    if (!accessToken) throw new UnauthorizedException();
+    return { fileId: await this.service.uploadPreviewImage(id, accessToken) };
   }
 
   @RequirePermission('marketing.almond_template.write')

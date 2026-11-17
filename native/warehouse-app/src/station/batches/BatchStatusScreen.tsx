@@ -1,16 +1,21 @@
+import { useNavigate } from '@tanstack/react-router';
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useWarehouse } from '../../app/warehouse-context';
 import { useApiClient } from '../../core/data/ApiClientProvider';
 import { localStoragePrefs, type DevicePrefs } from '../../core/data/devicePrefs';
+import { loadFailed } from '../../core/data/loadFailed';
 import { Button } from '../../core/design/Button';
+import { LoadFailure } from '../../core/design/LoadFailure';
 import { cn } from '../../core/design/cn';
 import { printRaw, type PrintRaw } from '../../core/hardware/print/labelPrinter';
 import { BatchLabelPrintButton } from '../../domains/outbound/BatchLabelPrintButton';
 import {
+  batchNameOf,
   batchProgressOf,
   boxCountsOf,
   boxRowOf,
+  hasCancelPending,
   mergeBatches,
   sortBoxRows,
   useBatchWorkItems,
@@ -20,6 +25,7 @@ import {
 import { formatTrackingNo } from '../../domains/outbound/inspection';
 import { JoinBoxPanel } from '../../domains/outbound/JoinBoxPanel';
 import { useOutboundBatches } from '../../domains/outbound/queries';
+import { writeLastBox } from '../../domains/outbound/lastBox';
 import { RemoveBoxPanel } from '../../domains/outbound/RemoveBoxPanel';
 import { StartBatchButton } from '../../domains/outbound/StartBatchButton';
 import type { OutboundBatchSummary } from '../../domains/outbound/types';
@@ -37,6 +43,7 @@ export function BatchStatusScreen({ prefs = localStoragePrefs, print = printRaw 
 }
 
 function BatchStatus({ warehouseId, prefs, print }: { warehouseId: string; prefs: DevicePrefs; print: PrintRaw }) {
+  const navigate = useNavigate();
   const picking = useOutboundBatches(warehouseId, 'picking');
   const created = useOutboundBatches(warehouseId, 'created');
   const batches = mergeBatches(picking.data, created.data);
@@ -47,8 +54,24 @@ function BatchStatus({ warehouseId, prefs, print }: { warehouseId: string; prefs
   const items = useBatchWorkItems(selected?.id ?? null);
   useBatchProgress(selected && items.data ? batchProgressOf(selected.batchNumber, items.data) : null);
 
-  if (picking.isSuccess && created.isSuccess && batches.length === 0)
-    return <p className="p-6 text-lg text-[#535968]">진행 중인 배치가 없어요.</p>;
+  const lists = [picking, created];
+  const failed = lists.filter(loadFailed);
+  const failure =
+    failed.length > 0 ? (
+      <LoadFailure
+        className="shrink-0 text-base"
+        message="배치 목록을 불러오지 못했어요."
+        error={failed[0].error}
+        stale={batches.length > 0}
+        retrying={failed.some((list) => list.isFetching)}
+        onRetry={() => failed.forEach((list) => void list.refetch())}
+      />
+    ) : null;
+
+  if (lists.some((list) => list.isPending && !loadFailed(list)))
+    return <p className="p-6 text-lg text-[#535968]">배치 목록을 불러오고 있어요.</p>;
+  if (failure && batches.length === 0) return <div className="p-6">{failure}</div>;
+  if (!failure && batches.length === 0) return <p className="p-6 text-lg text-[#535968]">진행 중인 배치가 없어요.</p>;
 
   const select = (id: string) => {
     // 인쇄 중엔 바꾸지 않는다 — 인쇄 단추가 고른 배치에 매여 있다(프린터는 한 대)
@@ -60,6 +83,7 @@ function BatchStatus({ warehouseId, prefs, print }: { warehouseId: string; prefs
   return (
     <div className="grid h-full min-h-0 grid-cols-[minmax(0,1fr)_440px] gap-3">
       <section className="flex min-h-0 flex-col gap-3">
+        {failure}
         {selected ? (
           <div className="flex shrink-0 flex-wrap items-start gap-2">
             {selected.startedAt === null ? (
@@ -80,7 +104,16 @@ function BatchStatus({ warehouseId, prefs, print }: { warehouseId: string; prefs
         {selected && panel === 'join' ? (
           <JoinBoxPanel batchId={selected.id} prefs={prefs} print={print} labelPrinting onClose={() => setPanel(null)} />
         ) : null}
-        {selected && panel === 'remove' ? <RemoveBoxPanel batchId={selected.id} onClose={() => setPanel(null)} /> : null}
+        {selected && panel === 'remove' ? (
+          <RemoveBoxPanel
+            batchId={selected.id}
+            onClose={() => setPanel(null)}
+            onWithdrawing={(shipment) => {
+              writeLastBox(prefs, shipment);
+              void navigate({ to: '/outbound' });
+            }}
+          />
+        ) : null}
         <div className="min-h-0 flex-1 overflow-auto rounded-[10px] border border-[#D5D8DE] bg-white">
           <table className="w-full border-collapse">
             <thead>
@@ -114,6 +147,7 @@ function BatchRow({ batch, selected, onSelect }: { batch: OutboundBatchSummary; 
         <button type="button" onClick={onSelect} className="font-mono font-semibold">
           {batch.batchNumber}
         </button>
+        {batchNameOf(batch) ? <span className="ml-3 text-sm text-[#535968]">{batchNameOf(batch)}</span> : null}
       </td>
       <td className="px-4">{batch.startedAt === null ? '시작 전' : '진행 중'}</td>
       <td className="px-4">
@@ -159,7 +193,10 @@ function BatchDetail({ batch, items }: { batch: OutboundBatchSummary; items: Bat
   );
   return (
     <section aria-label="배치 상세" className="flex min-h-0 flex-col gap-3 rounded-[10px] border border-[#D5D8DE] bg-white p-4">
-      <h2 className="font-mono text-2xl font-semibold">{batch.batchNumber}</h2>
+      <div className="shrink-0">
+        <h2 className="font-mono text-2xl font-semibold">{batch.batchNumber}</h2>
+        {batchNameOf(batch) ? <p className="text-[15px] text-[#535968]">{batchNameOf(batch)}</p> : null}
+      </div>
       {counts ? (
         <div className="grid shrink-0 grid-cols-4 gap-2 text-center text-sm">
           {COUNT_CELLS.map((cell) => (
@@ -170,6 +207,16 @@ function BatchDetail({ batch, items }: { batch: OutboundBatchSummary; items: Bat
           ))}
         </div>
       ) : null}
+      {counts && counts.withdrawing > 0 ? (
+        <p role="status" className="shrink-0 rounded-md bg-[#FFF1C7] px-3 py-2 text-[15px] font-semibold text-[#5E3B00]">
+          빠지는 중인 상자는 F1 «출고 검수»에서 송장을 찍고 담은 상품을 꺼내 주세요.
+        </p>
+      ) : null}
+      {hasCancelPending(states.data ?? []) ? (
+        <p role="alert" className="shrink-0 rounded-md bg-[#FDECEE] px-3 py-2 text-[15px] font-semibold text-[#9E1320]">
+          취소 대기 박스는 박스 빼기로 빼야 취소가 끝나요.
+        </p>
+      ) : null}
       {rows.length > 0 ? (
         <ol aria-label="박스" className="min-h-0 flex-1 overflow-auto pr-2 [scrollbar-gutter:stable]">
           {/* 스크롤바가 내용 위에 겹치는 웹뷰(리눅스)에서도 오른쪽 상태 칸을 가리지 않게 자리를 잡아 둔다 */}
@@ -178,7 +225,7 @@ function BatchDetail({ batch, items }: { batch: OutboundBatchSummary; items: Bat
               key={row.shipmentId}
               className="grid h-[46px] grid-cols-[160px_minmax(0,1fr)_96px] items-center border-b border-[#EEF0F2] text-[15px]"
             >
-              <span className="font-mono">{formatTrackingNo(row.trackingNo)}</span>
+              <span className="font-mono">{row.trackingNo ? formatTrackingNo(row.trackingNo) : '송장 없음'}</span>
               <span>{row.recipient}</span>
               <span className={cn('text-right font-semibold', ROW_TONE[row.tone])}>{row.status}</span>
             </li>

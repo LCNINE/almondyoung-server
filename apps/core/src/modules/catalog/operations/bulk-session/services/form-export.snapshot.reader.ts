@@ -7,6 +7,7 @@ import { ProductVersionReadLoader } from '../../../core/products/loaders/product
 import { PricingService } from '../../../core/pricing/pricing.service';
 import { QuantityDiscountReader } from '../../../core/pricing/quantity-discount.reader';
 import { ProductSkuMappingService } from '../../../../product-matching/services/product-sku-mapping.service';
+import { SuppliersService } from '../../../../inventory/suppliers/services/suppliers.service';
 import type { VariantStockPolicyDto } from '../../../../product-matching/dto/variant-matching-batch.dto';
 import { extractSimplePrices, isPricingEditable, SimplePrices } from './form-export.pricing-judge';
 import { PRICING_SENTINEL } from './form-export.sheets';
@@ -90,7 +91,14 @@ export class FormExportSnapshotReader {
     private readonly categories: ProductCategoriesService,
     private readonly skuMapping: ProductSkuMappingService,
     private readonly quantityDiscounts: QuantityDiscountReader,
+    private readonly suppliers: SuppliersService,
   ) {}
+
+  async loadSupplierNames(): Promise<Map<string, string>> {
+    const { data } = await this.suppliers.getSuppliers({ page: 1, limit: 100 });
+
+    return new Map(data.map((s) => [s.id, s.name]));
+  }
 
   /**
    * masterId 목록의 현재 active 버전을 읽어 워크북 데이터와 스냅샷 항목을 만든다.
@@ -124,6 +132,7 @@ export class FormExportSnapshotReader {
     const flatCategories = flattenCategoryTree(tree.categories);
     const categoryPathById = new Map(flatCategories.map((c) => [c.id, c.path]));
     const categoryPaths = flatCategories.filter((c) => c.isActive).map((c) => c.path);
+    const supplierNameById = await this.loadSupplierNames();
 
     // 이미지 시트는 워크북 전체에서 하나다(rowKey 컬럼이 없다 — form-export.sheets.ts 의
     // IMAGE_COLUMNS 참조) — imageKey 는 상품별이 아니라 **워크북 전역**으로 유일해야
@@ -135,7 +144,7 @@ export class FormExportSnapshotReader {
 
     let seq = 0;
     for (const masterId of masterIds) {
-      const bundle = await this.renderMaster(tx, masterId, allocator, categoryPathById);
+      const bundle = await this.renderMaster(tx, masterId, allocator, categoryPathById, supplierNameById);
       if (!bundle) continue;
 
       seq += 1;
@@ -184,6 +193,7 @@ export class FormExportSnapshotReader {
     masterId: string,
     images: ImageKeyAllocator,
     categoryPathById: Map<string, string>,
+    supplierNameById: Map<string, string>,
   ): Promise<(PrefillBundle & { versionId: string }) | null> {
     const version = await this.versionLoader.getActiveVersion(tx, masterId).catch((err: unknown) => {
       if (err instanceof NotFoundException) return null;
@@ -223,6 +233,7 @@ export class FormExportSnapshotReader {
       membershipPrice: pricingEditable ? str(prices.membershipPrice) : PRICING_SENTINEL,
       productCode: str(version.productCode),
       brand: str(version.brand),
+      supplier: version.supplierId ? (supplierNameById.get(version.supplierId) ?? '') : '',
       thumbnailImageKey,
       additionalImageKeys,
       description: str(version.description),

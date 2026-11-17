@@ -43,7 +43,9 @@ describeIfDb('UserRolesReader.findLiveRoles against a real database', () => {
     return u.id;
   };
   const grant = async (userId: string, roleName: string, expiresAt: Date | null) => {
-    await dbService.db.insert(userRoleAssignments).values({ userId, roleId: await roleId(roleName), expiresAt });
+    await dbService.db
+      .insert(userRoleAssignments)
+      .values({ userId, roleId: await roleId(roleName), expiresAt, tenantId: '1' });
   };
   const cleanup = () => dbService.db.delete(users).where(like(users.loginId, `${PREFIX}%`));
 

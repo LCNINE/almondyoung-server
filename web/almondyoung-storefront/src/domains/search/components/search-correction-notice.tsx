@@ -63,7 +63,7 @@ export async function SearchCorrectionNotice({
               link: (chunks) => (
                 <LocalizedClientLink
                   href={buildOriginalSearchHref(keyword, searchParams)}
-                  className="font-medium text-primary underline underline-offset-2"
+                  className="font-medium text-mint-deep underline underline-offset-2"
                 >
                   {chunks}
                 </LocalizedClientLink>
@@ -86,7 +86,7 @@ export async function SearchCorrectionNotice({
             <LocalizedClientLink
               key={related}
               href={`/search?q=${encodeURIComponent(related)}`}
-              className="text-primary hover:underline"
+              className="text-mint-deep hover:underline"
             >
               {related}
             </LocalizedClientLink>

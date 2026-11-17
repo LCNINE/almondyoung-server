@@ -28,7 +28,7 @@ export function LineCompositions({
 
   return (
     <Container>
-      <Header title={`판매 라인 (${lines.length})`} />
+      <Header title={`주문한 상품 (${lines.length})`} />
       <div className="overflow-x-auto p-3">
         <table className="w-full text-sm">
           <tbody>

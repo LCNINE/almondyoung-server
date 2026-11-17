@@ -11,12 +11,12 @@ describe('뺄 상품', () => {
         return { removedQty: 1, exited: false, exitTo: 'draft', removals: [] };
       },
     } as unknown as ApiClient;
-    await removeToReturnBin(api, { shipmentId: 's-1', barcode: '880', returnBinBarcode: 'RB-1', idempotencyKey: 'k-1' });
+    await removeToReturnBin(api, { shipmentId: 's-1', barcode: '880', idempotencyKey: 'k-1' });
     expect(calls).toEqual([
       {
         method: 'POST',
         path: '/shipments/s-1/return-bin-removals',
-        body: { barcode: '880', returnBinBarcode: 'RB-1', quantity: 1 },
+        body: { barcode: '880', quantity: 1 },
         idempotencyKey: 'k-1',
       },
     ]);

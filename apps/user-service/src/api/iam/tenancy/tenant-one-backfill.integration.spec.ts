@@ -29,8 +29,8 @@ const DAY = 24 * 60 * 60 * 1000;
 class RolledBack extends Error {}
 
 /**
- * 백필 마이그를 «그대로» 다시 돌려 본다. 이미 적용된 DB 에서도 같은 결과가 나와야 하므로(멱등) 아직 백필되지 않은
- * 모양(테넌트 칸 NULL)의 행을 만들어 넣고 돌린 뒤, 모든 변경을 되돌린다 — 남의 데이터는 바뀌지 않는다.
+ * 시드가 다시 돌리는 테넌트 1 백필(`tenantOneBackfillStatements`)을 실 DB 에서 돌려 본다. 이미 적용된 DB 에서도 같은 결과가
+ * 나와야 하므로(멱등) 시드가 넣는 모양의 행을 만들어 넣고 돌린 뒤, 모든 변경을 되돌린다 — 남의 데이터는 바뀌지 않는다.
  */
 describeIfDb('tenant 1 backfill migration against a real database', () => {
   let dbService: DbService<UserServiceSchema>;
@@ -72,9 +72,9 @@ describeIfDb('tenant 1 backfill migration against a real database', () => {
       .returning({ id: users.id });
     return row.id;
   };
-  // 백필 전 모양 — 옛 코드가 쓰던 행에는 테넌트가 없다.
+  // 부여는 테넌트를 늘 든다(NOT NULL, impl-b 28) — 시드가 넣는 테넌트 1 계정의 부여 모양.
   const legacyGrant = async (tx: UserServiceTx, userId: string, role: string, expiresAt: Date | null) => {
-    await tx.insert(userRoleAssignments).values({ userId, roleId: await roleId(tx, role), expiresAt, tenantId: null });
+    await tx.insert(userRoleAssignments).values({ userId, roleId: await roleId(tx, role), expiresAt, tenantId: '1' });
   };
   const operatorFlag = async (tx: UserServiceTx, userId: string) => {
     const [row] = await tx.select({ op: users.isPlatformOperator }).from(users).where(eq(users.id, userId));
@@ -113,26 +113,6 @@ describeIfDb('tenant 1 backfill migration against a real database', () => {
         .from(tenantDomains)
         .where(eq(tenantDomains.tenantId, '1'));
       expect(hosts.map((h) => h.host).sort()).toEqual(['admin.example.test', 'localhost:3000']);
-    });
-  });
-
-  it('puts every existing grant in tenant 1, expired and customer ones included', async () => {
-    await rolledBack(async (tx) => {
-      const former = await account(tx, 'grants');
-      await legacyGrant(tx, former, 'intern', new Date(Date.now() - DAY));
-      await legacyGrant(tx, former, 'user', null);
-
-      await backfill(tx);
-
-      const rows = await tx
-        .select({ tenantId: userRoleAssignments.tenantId })
-        .from(userRoleAssignments)
-        .where(eq(userRoleAssignments.userId, former));
-      expect(rows).toEqual([{ tenantId: '1' }, { tenantId: '1' }]);
-      const [left] = await tx.execute<{ n: string }>(
-        sql`select count(*)::text as n from user_roles where tenant_id is null`,
-      );
-      expect(left.n).toBe('0');
     });
   });
 
@@ -177,29 +157,16 @@ describeIfDb('tenant 1 backfill migration against a real database', () => {
     });
   });
 
-  it('records old history and access-log rows as tenant 1', async () => {
+  // 시드가 다시 돌려도 테넌트 밖의 일(운영자 성질 변경)로 일부러 테넌트 없이 적은 이력은 그대로다.
+  it('leaves a history row written without a tenant as it is', async () => {
     await rolledBack(async (tx) => {
       const actor = randomUUID();
       await tx.insert(iamAuditLogs).values({
         actorUserId: actor,
-        action: 'role.update',
-        targetType: 'role',
+        action: 'user.platform_operator.set',
+        targetType: 'user',
         targetId: randomUUID(),
         targetLabel: PREFIX,
-        tenantId: null,
-      });
-      await tx.insert(piiAccessLogs).values({
-        eventId: randomUUID(),
-        occurredAt: new Date(),
-        actorUserId: actor,
-        sourceService: 'core',
-        method: 'GET',
-        route: '/x',
-        action: 'view',
-        subjects: [],
-        subjectCount: 0,
-        kinds: [],
-        queryKeys: [],
         tenantId: null,
       });
 
@@ -209,27 +176,21 @@ describeIfDb('tenant 1 backfill migration against a real database', () => {
         .select({ tenantId: iamAuditLogs.tenantId })
         .from(iamAuditLogs)
         .where(eq(iamAuditLogs.actorUserId, actor));
-      const pii = await tx
-        .select({ tenantId: piiAccessLogs.tenantId })
-        .from(piiAccessLogs)
-        .where(eq(piiAccessLogs.actorUserId, actor));
-      expect(audit).toEqual([{ tenantId: '1' }]);
-      expect(pii).toEqual([{ tenantId: '1' }]);
+      expect(audit).toEqual([{ tenantId: null }]);
     });
   });
 
-  it('keeps writers that do not name a tenant yet in tenant 1 until the contract migration', async () => {
-    await rolledBack(async (tx) => {
-      await backfill(tx);
-      const signedUp = await account(tx, 'signup');
-      // 고객 가입 경로처럼 테넌트를 모르는 쓰기 — 쓰는 쪽이 테넌트를 넘기기 전까지 DB 가 테넌트 1 로 채운다.
-      await tx.insert(userRoleAssignments).values({ userId: signedUp, roleId: await roleId(tx, 'user') });
-      const [row] = await tx
-        .select({ tenantId: userRoleAssignments.tenantId })
-        .from(userRoleAssignments)
-        .where(eq(userRoleAssignments.userId, signedUp));
-      expect(row.tenantId).toBe('1');
+  // contract 뒤엔 기본 테넌트가 없다 — 테넌트를 말하지 않는 부여 쓰기는 DB 가 거절한다(23502 not_null_violation).
+  it('refuses a grant that names no tenant', async () => {
+    const refused = rolledBack(async (tx) => {
+      const user = await account(tx, 'signup');
+      await tx.execute(sql`INSERT INTO user_roles (user_id, role_id) VALUES (${user}, ${await roleId(tx, 'user')})`);
     });
+    await expect(refused).rejects.toThrow();
+    const error: unknown = await refused.catch((e: unknown) => e);
+    const codeOf = (e: unknown): unknown =>
+      typeof e === 'object' && e !== null ? (Reflect.get(e, 'code') ?? codeOf(Reflect.get(e, 'cause'))) : undefined;
+    expect(codeOf(error)).toBe('23502');
   });
 
   it('refuses to finish when staff exist but no platform operator would remain', async () => {

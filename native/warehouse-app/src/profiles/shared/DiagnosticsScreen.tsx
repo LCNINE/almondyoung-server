@@ -4,8 +4,17 @@ import { useState } from 'react';
 import { Button } from '../../core/design/Button';
 import { useScanner, useScanEmit } from '../../core/hardware/scan/useScanner';
 import { scanWithCamera } from '../../core/hardware/scan/camera';
-import { renderTestLabel } from '../../core/hardware/print/zpl';
-import { printRaw } from '../../core/hardware/print/labelPrinter';
+import { renderTestLabel, renderTestLabel50x30 } from '../../core/hardware/print/zpl';
+import {
+  NO_LABEL_PRINTER_MESSAGE,
+  NO_PRINTER_MESSAGE,
+  printRaw,
+  printRawLabel,
+  readPrinter,
+  type PrintRaw,
+  type PrinterSlot,
+} from '../../core/hardware/print/labelPrinter';
+import { localStoragePrefs, type DevicePrefs } from '../../core/data/devicePrefs';
 import type { ScanEvent } from '../../core/hardware/scan/ScanProvider';
 import { useSession, useIsAuthenticated } from '../../app/session-context';
 
@@ -46,27 +55,7 @@ function AuthorizedDiagnostics() {
         </Button>
       </section>
 
-      <section>
-        <h2 className="font-medium">Printer</h2>
-        <Button
-          onClick={async () => {
-            const zpl = renderTestLabel({
-              title: 'ALMOND WMS',
-              barcode: '8801234',
-            });
-            const target =
-              prompt('Printer target', 'tcp://192.168.0.100:9100') ?? '';
-            try {
-              await printRaw(target, zpl);
-              setStatus('printed');
-            } catch (e) {
-              setStatus(`print error: ${e}`);
-            }
-          }}
-        >
-          Test print
-        </Button>
-      </section>
+      <PrinterDiagnostics onStatus={setStatus} />
 
       <section>
         <h2 className="font-medium">Auth</h2>
@@ -86,5 +75,51 @@ function AuthorizedDiagnostics() {
       </section>
       <p className="text-sm text-gray-600">{status}</p>
     </div>
+  );
+}
+
+const SLOTS: { slot: PrinterSlot; title: string; empty: string }[] = [
+  { slot: 'waybill', title: '송장 프린터', empty: NO_PRINTER_MESSAGE },
+  { slot: 'label', title: '라벨 프린터', empty: NO_LABEL_PRINTER_MESSAGE },
+];
+
+/** 칸마다 설정에 저장된 대상으로 테스트 인쇄한다 — 대상을 prompt 로 묻지 않는다. */
+export function PrinterDiagnostics({
+  onStatus,
+  prefs = localStoragePrefs,
+  prints = { waybill: printRaw, label: printRawLabel },
+}: {
+  onStatus: (text: string) => void;
+  prefs?: DevicePrefs;
+  prints?: Record<PrinterSlot, PrintRaw>;
+}) {
+  const run = async (slot: PrinterSlot, empty: string) => {
+    const target = readPrinter(prefs, slot);
+    if (!target) {
+      onStatus(empty);
+      return;
+    }
+    const zpl =
+      slot === 'label'
+        ? renderTestLabel50x30()
+        : renderTestLabel({ title: 'ALMOND WMS', barcode: '8801234' });
+    try {
+      await prints[slot](target, zpl);
+      onStatus('printed');
+    } catch (e) {
+      onStatus(`print error: ${e}`);
+    }
+  };
+  return (
+    <section>
+      <h2 className="font-medium">Printer</h2>
+      <div className="flex gap-2">
+        {SLOTS.map(({ slot, title, empty }) => (
+          <Button key={slot} onClick={() => void run(slot, empty)}>
+            {title} 테스트 인쇄
+          </Button>
+        ))}
+      </div>
+    </section>
   );
 }

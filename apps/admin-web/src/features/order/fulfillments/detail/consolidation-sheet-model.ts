@@ -1,9 +1,11 @@
 import { parseServerError } from '@/lib/api/server-error';
 import { createIdempotentCommand } from '@/lib/services/orders/idempotency';
 import type {
+  ConsolidationItem,
   ConsolidationOption,
   ConsolidationOptionShipment,
   CreateShipmentConsolidationRequest,
+  ShipmentSplitShare,
 } from '@/lib/types/dto/fulfillment';
 
 // 서버 consolidate 가 원본으로 받지 않는 상태와 복구 중인 상자
@@ -157,7 +159,7 @@ export function step2Blocker(input: {
   needsReopen: boolean;
   hasMemoChoices: boolean;
   memoFrom: string;
-  reason: string;
+  reasonReady: boolean;
 }): string | null {
   if (input.hasLostCommand) {
     return '응답을 받지 못한 요청을 먼저 다시 보내 주세요';
@@ -176,8 +178,8 @@ export function step2Blocker(input: {
     return '합친 상자의 배송 메모를 골라 주세요';
   }
 
-  if (!input.reason.trim()) {
-    return '작업 사유를 적어 주세요';
+  if (!input.reasonReady) {
+    return '작업 사유를 골라 주세요';
   }
 
   return null;
@@ -278,4 +280,99 @@ export function orderNoText(
   }
 
   return shipment.salesOrderNos.map((no) => `#${no}`).join(', ');
+}
+
+export function splitShareText(
+  split?: ShipmentSplitShare | null
+): string | null {
+  return split
+    ? `나눈 상자 ${split.boxNo}/${split.boxCount} · 주문 ${split.orderQty}개 중 ${split.boxQty}개`
+    : null;
+}
+
+// 같은 주문을 나눈 상자는 주문번호가 같으므로 상자 번호와 수량을 붙여 구분한다.
+export function boxNoText(
+  shipment: Pick<
+    ConsolidationOptionShipment,
+    'shipmentId' | 'salesOrderNos' | 'split'
+  >
+): string {
+  const no = orderNoText(shipment);
+
+  return shipment.split
+    ? `${no} 상자 ${shipment.split.boxNo}/${shipment.split.boxCount}(${shipment.split.boxQty}개)`
+    : no;
+}
+
+export function sharesSplitOrder(
+  source: Pick<ConsolidationOptionShipment, 'salesOrderNos'>,
+  others: ReadonlyArray<
+    Pick<ConsolidationOptionShipment, 'salesOrderNos' | 'split'>
+  >
+): boolean {
+  return others.some(
+    (other) =>
+      other.split &&
+      other.salesOrderNos.some((no) => source.salesOrderNos.includes(no))
+  );
+}
+
+export function mergedToastText(
+  sources: ReadonlyArray<
+    Pick<ConsolidationOptionShipment, 'shipmentId' | 'salesOrderNos' | 'split'>
+  >
+): string {
+  const nos = new Set(sources.map(orderNoText));
+
+  return nos.size === 1 && sources.every((source) => source.split)
+    ? `나눈 상자 ${sources.length}개를 다시 한 상자로 합쳤어요: ${[...nos][0]}`
+    : '합포장했어요.';
+}
+
+type ItemsSource = Pick<
+  ConsolidationOptionShipment,
+  'shipmentId' | 'salesOrderNos' | 'split' | 'items'
+>;
+
+export type MergedItem = ConsolidationItem & {
+  parts: Array<{ label: string; qty: number }>;
+};
+
+// 합치면 한 상자에 들어갈 상품별 수량. 같은 상품은 합산하고 어느 주문에서 몇 개 왔는지 남긴다.
+export function mergedItems(
+  shipments: readonly ItemsSource[]
+): MergedItem[] | null {
+  if (shipments.some((shipment) => !shipment.items)) {
+    return null;
+  }
+
+  const merged = new Map<string, MergedItem>();
+
+  for (const shipment of shipments) {
+    const label = boxNoText(shipment);
+
+    for (const item of shipment.items ?? []) {
+      const entry = merged.get(item.skuId);
+
+      if (entry) {
+        entry.qty += item.qty;
+        entry.parts.push({ label, qty: item.qty });
+      } else {
+        merged.set(item.skuId, {
+          ...item,
+          parts: [{ label, qty: item.qty }],
+        });
+      }
+    }
+  }
+
+  return [...merged.values()];
+}
+
+export function itemsTotalText(
+  items: ReadonlyArray<Pick<ConsolidationItem, 'qty'>>
+): string {
+  const total = items.reduce((sum, item) => sum + item.qty, 0);
+
+  return `${items.length}종 · 총 ${total}개`;
 }

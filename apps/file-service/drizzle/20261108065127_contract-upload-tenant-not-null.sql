@@ -1,0 +1,1 @@
+ALTER TABLE "uploads" ALTER COLUMN "tenant_id" SET NOT NULL;

@@ -27,6 +27,8 @@ import type {
   UpdateNoticeDto,
   CreateSitePopupDto,
   UpdateSitePopupDto,
+  CreateTopNoticeDto,
+  UpdateTopNoticeDto,
   CreateTagGroupDto,
   UpdateTagGroupDto,
   CreateTagValueDto,
@@ -49,6 +51,12 @@ import type {
   UpdateMasterVersionDto,
   UpdateProductVariantDto,
 } from './products-detail.types';
+import type {
+  PrintKind,
+  PrintQuotesBodyDto,
+  PublishPrintProductDto,
+  RepublishPrintProductDto,
+} from '@/lib/types/dto/print-catalog';
 import type { PermissionRequirement } from '@/lib/auth/mutation-permission';
 import type { UpsertQuantityDiscountDto } from '@/lib/pricing/quantity-discount';
 
@@ -487,7 +495,8 @@ export const useCreateTagValue = () => {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: productQueryKeys.tagGroups });
       queryClient.invalidateQueries({
-        queryKey: productQueryKeys.tagValues(data.groupId),
+        // 값 화면은 그룹 상세(`tagGroup(id)`)로 그리고, 그룹 목록도 값 개수를 보인다 — 둘 다 이 루트 아래다.
+        queryKey: productQueryKeys.tagGroups,
       });
     },
   });
@@ -509,7 +518,8 @@ export const useUpdateTagValue = () => {
       products.tags.updateValue(id, dto).then((res) => ({ ...res, groupId })),
     onSuccess: (data) => {
       queryClient.invalidateQueries({
-        queryKey: productQueryKeys.tagValues(data.groupId),
+        // 값 화면은 그룹 상세(`tagGroup(id)`)로 그리고, 그룹 목록도 값 개수를 보인다 — 둘 다 이 루트 아래다.
+        queryKey: productQueryKeys.tagGroups,
       });
     },
   });
@@ -524,7 +534,8 @@ export const useDeleteTagValue = () => {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: productQueryKeys.tagGroups });
       queryClient.invalidateQueries({
-        queryKey: productQueryKeys.tagValues(data.groupId),
+        // 값 화면은 그룹 상세(`tagGroup(id)`)로 그리고, 그룹 목록도 값 개수를 보인다 — 둘 다 이 루트 아래다.
+        queryKey: productQueryKeys.tagGroups,
       });
     },
   });
@@ -1055,6 +1066,58 @@ export const useUpdateAlmondTemplateStatus = () => {
 };
 useUpdateAlmondTemplateStatus.permission = ['marketing.almond_template.write'] as const satisfies PermissionRequirement;
 
+export const useLinkAlmondTemplateProduct = () => {
+  const invalidate = useInvalidateAlmondTemplates();
+  return useMutation({
+    mutationFn: ({ id, productId }: { id: string; productId: string }) =>
+      products.almondTemplates.linkProduct(id, productId),
+    onSuccess: () => invalidate(),
+  });
+};
+useLinkAlmondTemplateProduct.permission = ['marketing.almond_template.write'] as const satisfies PermissionRequirement;
+
+export const usePreviewAlmondTemplateImage = () => {
+  return useMutation({
+    mutationFn: (id: string) => products.almondTemplates.previewImage(id),
+  });
+};
+usePreviewAlmondTemplateImage.permission = ['marketing.almond_template.write'] as const satisfies PermissionRequirement;
+
+export const usePrintQuotes = () => {
+  return useMutation({
+    mutationFn: ({ kind, body }: { kind: PrintKind; body: PrintQuotesBodyDto }) =>
+      products.printCatalog.quotes(kind, body),
+  });
+};
+usePrintQuotes.permission = ['marketing.almond_template.write'] as const satisfies PermissionRequirement;
+
+export const usePublishPrintProduct = () => {
+  const invalidate = useInvalidateAlmondTemplates();
+  return useMutation({
+    mutationFn: (body: PublishPrintProductDto) => products.printCatalog.publish(body),
+    onSuccess: () => invalidate(),
+  });
+};
+usePublishPrintProduct.permission = {
+  allOf: [
+    ['catalog.product.write'],
+    ['catalog.price.write'],
+    ['marketing.almond_template.write'],
+    ['marketing.almond_template.publish'],
+  ],
+} as const satisfies PermissionRequirement;
+
+export const useRepublishPrintProduct = () => {
+  const invalidate = useInvalidateAlmondTemplates();
+  return useMutation({
+    mutationFn: (body: RepublishPrintProductDto) => products.printCatalog.republish(body),
+    onSuccess: () => invalidate(),
+  });
+};
+useRepublishPrintProduct.permission = {
+  allOf: [['catalog.product.write'], ['catalog.price.write'], ['marketing.almond_template.write']],
+} as const satisfies PermissionRequirement;
+
 export const useDeleteAlmondTemplate = () => {
   const invalidate = useInvalidateAlmondTemplates();
   return useMutation({
@@ -1225,6 +1288,42 @@ export const useDeleteSitePopup = () => {
   });
 };
 useDeleteSitePopup.permission = ['marketing.display.write'] as const satisfies PermissionRequirement;
+
+// ===== 상단 공지 띠 뮤테이션 =====
+
+export const useCreateTopNotice = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (dto: CreateTopNoticeDto) => products.topNotices.create(dto),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: productQueryKeys.topNotices });
+    },
+  });
+};
+useCreateTopNotice.permission = ['marketing.display.write'] as const satisfies PermissionRequirement;
+
+export const useUpdateTopNotice = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, dto }: { id: string; dto: UpdateTopNoticeDto }) =>
+      products.topNotices.update(id, dto),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: productQueryKeys.topNotices });
+    },
+  });
+};
+useUpdateTopNotice.permission = ['marketing.display.write'] as const satisfies PermissionRequirement;
+
+export const useDeleteTopNotice = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => products.topNotices.remove(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: productQueryKeys.topNotices });
+    },
+  });
+};
+useDeleteTopNotice.permission = ['marketing.display.write'] as const satisfies PermissionRequirement;
 
 /**
  * 필터 결과 전체 선택. 버튼을 누른 순간에만 도는 일회성 조회라 useQuery 가 아니라

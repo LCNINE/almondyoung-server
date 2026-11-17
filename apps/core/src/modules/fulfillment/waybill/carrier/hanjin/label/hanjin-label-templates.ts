@@ -1,4 +1,4 @@
-import type { LabelSpec } from '../../../label/label-model';
+import type { LabelSpec } from '../../../../../../platform/label/label-model';
 import type { HanjinLabelData } from './hanjin-label-data';
 import { renderHanjinFsLabel } from './hanjin-fs-template';
 import { renderHanjinNlLabel } from './hanjin-nl-template';

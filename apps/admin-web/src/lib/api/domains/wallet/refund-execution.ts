@@ -15,3 +15,17 @@ export function refundFailureLabel(r: { status: string; failureCode?: string | n
   if (r.status !== 'FAILED' || !r.failureCode) return '';
   return r.retryable === false ? `${r.failureCode} · 다시 시도 불가` : r.failureCode;
 }
+
+/** 한 결제의 환불만 거른 «환불 내역» 주소 */
+export function refundListHref(intentId: string): string {
+  return `/payments/refunds?intentId=${encodeURIComponent(intentId)}`;
+}
+
+/** 사람이 송금하고 [완료 처리]로 닫아야 하는 환불(서버가 manualConfirmable 로 정한다). 오래된 것부터 */
+export function pendingTransfersOf<T extends { status: string; manualConfirmable: boolean; createdAt: string }>(
+  refunds: readonly T[],
+): T[] {
+  return refunds
+    .filter((r) => r.status === 'PENDING' && r.manualConfirmable)
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+}

@@ -1,3 +1,4 @@
+import { parseDateRangeParam, toDayBoundInstants } from '@/hooks/table/query/date-range-param';
 import type { ProductExportFiltersDto } from '@/lib/types/dto/products';
 
 export type ExportScope = 'filtered' | 'selected';
@@ -20,6 +21,8 @@ export function toExportFilters(
   };
 
   const status = str('status');
+  // 목록은 기간을 `createdAt` JSON 으로 싣는다(목록 훅과 같은 해석).
+  const created = toDayBoundInstants(parseDateRangeParam(params.get('createdAt') ?? undefined));
   const stock = str('stock');
   const sort = str('sort');
   const order = str('order');
@@ -45,8 +48,8 @@ export function toExportFilters(
         : undefined,
     createdBy: str('createdBy'),
     supplierId: list('supplierId'),
-    createdFrom: str('createdFrom'),
-    createdTo: str('createdTo'),
+    createdFrom: created.from,
+    createdTo: created.to,
     sort:
       sort === 'createdAt' || sort === 'name' || sort === 'updatedAt'
         ? sort

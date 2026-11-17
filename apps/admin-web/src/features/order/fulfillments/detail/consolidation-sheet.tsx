@@ -1,10 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Check, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
+import { WithdrawalWaybillCheckbox } from '../../outbound-batches/components/exclude-shipment-dialog';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
@@ -15,12 +17,12 @@ import {
   SheetHeader,
   SheetTitle,
 } from '@/components/ui/sheet';
-import { Textarea } from '@/components/ui/textarea';
 import { usePermissionCheck } from '@/hooks/use-permission';
 import { cn } from '@/lib/utils/ui';
 import {
   getServerDenyMessage,
   useCreateShipmentConsolidation,
+  useExcludeShipmentFromBatch,
 } from '@/lib/services/orders';
 import { useConsolidationOptions } from '@/lib/services/orders/queries';
 import type {
@@ -28,33 +30,60 @@ import type {
   ConsolidationOptionShipment,
   ShipmentConsolidationResponse,
 } from '@/lib/types/dto/fulfillment';
+import { OperationReasonFields } from './operation-reason-fields';
+import {
+  canSubmitOperationReason,
+  toOperationReasonPayload,
+  type OperationReasonValue,
+} from './operation-reasons';
+import { ConsolidationItemList, MergedItemsTable } from './consolidation-items';
+import {
+  ConsolidationOutcomeView,
+  progressHref,
+  type ConsolidationOutcome,
+} from './consolidation-result';
 import { buildConsolidationRequest, memoChoices } from './consolidation-model';
 import {
+  boxNoText,
   freshCommand,
   isStaleVersionConflict,
+  mergedToastText,
   keptAfterFailure,
+  mergedItems,
   needsReopenPermission,
   needsUnwindSteps,
   optionCard,
   orderNoText,
   progressLabel,
   recipientView,
+  sharesSplitOrder,
+  splitShareText,
   step2Blocker,
   togglePick,
   type OptionCard,
   type PendingCommand,
 } from './consolidation-sheet-model';
 
-type Step = 1 | 2;
+type Step = 1 | 2 | 3;
+
+const EMPTY_REASON: OperationReasonValue = { otherText: '', note: '' };
 
 const UNWIND_STEPS: Array<{ title: string; hint: string; who: string }> = [
-  { title: '배치에서 빼기', hint: '요청한 뒤 이 화면에서 버튼으로', who: '나' },
+  {
+    title: '배치에서 빼기',
+    hint: '권한이 있으면 요청할 때 자동으로 빼요',
+    who: '나',
+  },
   {
     title: '담아 둔 상품 되돌려 놓기',
     hint: '창고에 전할 문구를 화면이 알려 줘요',
     who: '창고',
   },
-  { title: '기존 운송장 취소', hint: '이 화면에서 버튼으로', who: '나' },
+  {
+    title: '기존 운송장 취소',
+    hint: '출고주문 상세의 배송 탭에서 취소해요',
+    who: '나',
+  },
   { title: '자동으로 합쳐짐', hint: '10분 안에. 누를 것 없음', who: '자동' },
 ];
 
@@ -98,6 +127,39 @@ function RecipientRows({
   );
 }
 
+function ShipmentItems({
+  shipment,
+  id,
+}: {
+  shipment: ConsolidationOptionShipment;
+  id?: string;
+}) {
+  return shipment.items ? (
+    <ConsolidationItemList
+      id={id}
+      label={`주문 ${boxNoText(shipment)} 상품`}
+      items={shipment.items}
+      className="text-zinc-700 dark:text-zinc-300"
+    />
+  ) : (
+    <span id={id} className="text-sm text-zinc-700 dark:text-zinc-300">
+      {shipment.itemSummary}
+    </span>
+  );
+}
+
+function SplitShare({
+  shipment,
+}: {
+  shipment: Pick<ConsolidationOptionShipment, 'split'>;
+}) {
+  const text = splitShareText(shipment.split);
+
+  return text ? (
+    <span className="text-[13px] font-medium text-foreground">{text}</span>
+  ) : null;
+}
+
 function OptionCheckCard({
   option,
   card,
@@ -109,6 +171,9 @@ function OptionCheckCard({
   checked: boolean;
   onToggle: () => void;
 }) {
+  // 체크박스 안의 내용은 보조기기에 읽히지 않아서 상품 목록을 설명으로 잇는다.
+  const itemsId = useId();
+
   return (
     <button
       type="button"
@@ -116,6 +181,7 @@ function OptionCheckCard({
       aria-checked={checked}
       aria-disabled={!card.pickable}
       aria-label={`주문 ${orderNoText(option)} 같이 보내기`}
+      aria-describedby={itemsId}
       onClick={onToggle}
       className={cn(
         'block w-full rounded-lg p-4 text-left',
@@ -143,9 +209,8 @@ function OptionCheckCard({
               {createdAtText(option.createdAt)}
             </span>
           </span>
-          <span className="text-sm text-zinc-700 dark:text-zinc-300">
-            {option.itemSummary}
-          </span>
+          <ShipmentItems shipment={option} id={itemsId} />
+          <SplitShare shipment={option} />
           <RecipientRows
             shipment={option}
             addressMark={card.addressMark}
@@ -160,29 +225,69 @@ function OptionCheckCard({
   );
 }
 
+// 요청 단추가 사라지므로 결과 제목으로 초점을 옮겨 결과를 바로 읽게 한다
+function ResultHeading({ text }: { text: string }) {
+  const ref = useRef<HTMLHeadingElement>(null);
+
+  useEffect(() => {
+    ref.current?.focus();
+  }, []);
+
+  return (
+    <h3 ref={ref} tabIndex={-1} className="text-lg font-semibold outline-none">
+      {text}
+    </h3>
+  );
+}
+
 export function ConsolidationSheet({
   shipmentId,
+  preselect = [],
+  warehouseId = null,
   open,
   onOpenChange,
   onRequested,
+  onPrepare,
 }: {
   shipmentId: string;
+  // 이미 묶인 후보에서 열면 같이 보낼 주문을 미리 골라 확인 단계부터 보여 준다
+  preselect?: string[];
+  warehouseId?: string | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onRequested?: (result: ShipmentConsolidationResponse) => void;
+  onPrepare?: (shipmentId: string) => void;
 }) {
-  const { can } = usePermissionCheck();
+  const router = useRouter();
+  const { can, canRun } = usePermissionCheck();
+  const canExclude = canRun(useExcludeShipmentFromBatch);
   const permissions = {
     canOverrideRecipient: can(['fulfillment.shipment.override_recipient']),
     canReopen: can(['fulfillment.shipment.reopen']),
   };
   const options = useConsolidationOptions(shipmentId, open);
   const create = useCreateShipmentConsolidation();
-  const [step, setStep] = useState<Step>(1);
-  const [picked, setPicked] = useState<string[]>([]);
+  const exclude = useExcludeShipmentFromBatch();
+  const [sending, setSending] = useState(false);
+  const [voidWaybill, setVoidWaybill] = useState(true);
+  // null 이면 아직 고르지 않았다 — 미리 고른 주문을 모두 고를 수 있을 때만 확인 단계부터 연다
+  const [chosenStep, setStep] = useState<Step | null>(
+    preselect.length > 0 ? null : 1
+  );
+  const [picked, setPicked] = useState<string[]>(preselect);
+  const [outcome, setOutcome] = useState<{
+    outcome: ConsolidationOutcome;
+    headline: string;
+  } | null>(null);
   const [memoChoice, setMemoChoice] = useState('');
-  const [reason, setReason] = useState('');
-  const [lostCommand, setLostCommand] = useState<PendingCommand | null>(null);
+  const [reasonValue, setReasonValue] =
+    useState<OperationReasonValue>(EMPTY_REASON);
+  // 응답을 못 받은 요청은 보낸 그대로 다시 보낸다. 결과도 그때 고른 상자로 보여 준다(목록은 그사이 바뀔 수 있다).
+  const [lost, setLost] = useState<{
+    command: PendingCommand;
+    shipments: ConsolidationOptionShipment[];
+  } | null>(null);
+  const lostCommand = lost?.command ?? null;
 
   const source = options.data?.source ?? null;
   const allOptions = options.data?.options ?? [];
@@ -208,15 +313,23 @@ export function ConsolidationSheet({
       : false,
     hasMemoChoices: choices.length > 0,
     memoFrom,
-    reason,
+    reasonReady: canSubmitOperationReason('consolidate', reasonValue),
   });
-  const pickedNos = pickedOptions.map(orderNoText).join(', ');
+  const step: Step =
+    chosenStep ??
+    (preselect.length > 0 && pickedOptions.length === preselect.length ? 2 : 1);
+  const pickedNos = pickedOptions.map(boxNoText).join(', ');
+  const merged = source ? mergedItems([source, ...pickedOptions]) : null;
+  const needsUnwind =
+    source && [source, ...pickedOptions].some(needsUnwindSteps);
 
   const reset = () => {
     setStep(1);
     setPicked([]);
     setMemoChoice('');
-    setReason('');
+    setReasonValue(EMPTY_REASON);
+    setOutcome(null);
+    setVoidWaybill(true);
   };
 
   const changeOpen = (next: boolean) => {
@@ -227,24 +340,73 @@ export function ConsolidationSheet({
     onOpenChange(next);
   };
 
-  const send = async (command: PendingCommand) => {
+  const send = async (
+    command: PendingCommand,
+    requested: ConsolidationOptionShipment[]
+  ) => {
+    setSending(true);
+
     try {
       const result = await create.mutateAsync(command);
 
-      setLostCommand(null);
+      setLost(null);
 
-      if (result.operationStatus === 'completed') {
-        toast.success('합포장했어요.');
-      } else {
-        toast.success(
-          '합포장을 요청했어요. 상자 화면에서 다음 할 일을 알려 줘요.'
-        );
+      const merging = requested.filter((shipment) =>
+        result.sourceShipmentIds.includes(shipment.shipmentId)
+      );
+      const completed = result.operationStatus === 'completed';
+
+      if (!completed && canExclude) {
+        for (const shipment of merging) {
+          if (!shipment.batchId) {
+            continue;
+          }
+
+          try {
+            await exclude.mutateAsync({
+              batchId: shipment.batchId,
+              shipmentId: shipment.shipmentId,
+              reason: '합포장',
+              voidWaybill,
+            });
+          } catch (error) {
+            toast.error(getServerDenyMessage(error));
+          }
+        }
       }
 
+      const headline = completed
+        ? mergedToastText(merging)
+        : '합포장을 요청했어요.';
+
+      // 상자 화면에서는 합친 뒤 새 상자로 넘어가며 이 창이 닫힌다. 그때도 결과를 알 수 있게 알림을 남긴다
+      if (completed) {
+        toast.success(headline);
+      } else {
+        toast.success(headline, {
+          action: {
+            label: '진행 보기',
+            onClick: () => router.push(progressHref(shipmentId)),
+          },
+        });
+      }
+
+      setOutcome({
+        headline,
+        outcome: {
+          orderNos: merging.map(boxNoText).join(', '),
+          items: mergedItems(merging),
+          targetShipmentId: completed ? result.targetShipmentId : null,
+          warehouseId: result.target?.warehouseId ?? warehouseId,
+          progressShipmentId: shipmentId,
+        },
+      });
+      setStep(3);
       onRequested?.(result);
-      changeOpen(false);
     } catch (error) {
-      setLostCommand(keptAfterFailure(command, error));
+      const kept = keptAfterFailure(command, error);
+
+      setLost(kept ? { command: kept, shipments: requested } : null);
 
       if (isStaleVersionConflict(error)) {
         toast.info('그사이 상자가 바뀌었어요. 다시 불러올게요');
@@ -255,6 +417,8 @@ export function ConsolidationSheet({
       }
 
       toast.error(getServerDenyMessage(error, '합포장 요청에 실패했어요.'));
+    } finally {
+      setSending(false);
     }
   };
 
@@ -269,21 +433,23 @@ export function ConsolidationSheet({
           source,
           picked: pickedOptions,
           memoFrom,
-          reason: reason.trim(),
+          ...toOperationReasonPayload('consolidate', reasonValue),
         })
-      )
+      ),
+      [source, ...pickedOptions]
     );
   };
 
   const retryLost = async () => {
-    if (!lostCommand) {
+    if (!lost) {
       return;
     }
 
-    await send(lostCommand);
+    await send(lost.command, lost.shipments);
   };
 
   const sourceNo = source ? orderNoText(source) : '';
+  const sourceBoxNo = source ? boxNoText(source) : '';
   const sourceView = source ? recipientView(source.recipientSnapshot) : null;
 
   return (
@@ -298,6 +464,10 @@ export function ConsolidationSheet({
             <span>›</span>
             <span className={cn(step === 2 && 'font-semibold text-blue-700')}>
               2 확인하고 요청
+            </span>
+            <span>›</span>
+            <span className={cn(step === 3 && 'font-semibold text-blue-700')}>
+              3 결과
             </span>
           </SheetDescription>
         </SheetHeader>
@@ -315,7 +485,7 @@ export function ConsolidationSheet({
                 size="sm"
                 variant="outline"
                 onClick={retryLost}
-                disabled={create.isPending}
+                disabled={sending}
               >
                 같은 요청 다시 보내기
               </Button>
@@ -323,13 +493,30 @@ export function ConsolidationSheet({
           </Alert>
         )}
 
-        {options.isLoading && (
+        {outcome && step === 3 ? (
+          <>
+            <div className="flex flex-1 flex-col gap-3 overflow-y-auto px-6 py-5">
+              <ResultHeading text={outcome.headline} />
+              <ConsolidationOutcomeView
+                outcome={outcome.outcome}
+                onPrepare={onPrepare}
+              />
+            </div>
+            <div className="flex justify-end border-t px-6 py-4">
+              <Button variant="outline" onClick={() => changeOpen(false)}>
+                닫기
+              </Button>
+            </div>
+          </>
+        ) : null}
+
+        {!outcome && options.isLoading && (
           <p className="flex-1 px-6 py-8 text-center text-sm text-muted-foreground">
             같은 고객의 주문을 불러오고 있어요.
           </p>
         )}
 
-        {options.isError && (
+        {!outcome && options.isError && (
           <p className="flex-1 px-6 py-8 text-center text-sm text-destructive">
             {getServerDenyMessage(
               options.error,
@@ -355,9 +542,8 @@ export function ConsolidationSheet({
                       {progressLabel(source)}
                     </Badge>
                   </div>
-                  <span className="text-sm text-zinc-700 dark:text-zinc-300">
-                    {source.itemSummary}
-                  </span>
+                  <ShipmentItems shipment={source} />
+                  <SplitShare shipment={source} />
                   <RecipientRows shipment={source} />
                 </div>
               </div>
@@ -367,9 +553,12 @@ export function ConsolidationSheet({
                   이 주문과 같이 보낼 주문을 골라 주세요
                 </div>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  같은 고객의 다른 주문이에요. 고른 주문은 위 주문과 한 상자,
-                  송장 한 장으로 나가요. 배송지가 같은 주문만 고를 수 있어요.
-                  배송 메모가 다르면 다음 단계에서 하나를 골라요.
+                  {sharesSplitOrder(source, allOptions)
+                    ? '같은 고객의 다른 주문이나 같은 주문을 나눈 상자예요.'
+                    : '같은 고객의 다른 주문이에요.'}{' '}
+                  고른 주문은 위 주문과 한 상자, 송장 한 장으로 나가요. 배송지가
+                  같은 주문만 고를 수 있어요. 배송 메모가 다르면 다음 단계에서
+                  하나를 골라요.
                 </p>
               </div>
 
@@ -423,15 +612,20 @@ export function ConsolidationSheet({
                   요청 전에 확인해 주세요
                 </div>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  주문 {sourceNo}, {pickedNos} → 상자 1개, 송장 1장
+                  주문 {sourceBoxNo}, {pickedNos} → 상자 1개, 송장 1장
                 </p>
               </div>
 
-              {needsUnwindSteps(source) && (
+              {merged ? <MergedItemsTable items={merged} /> : null}
+
+              {needsUnwind && (
                 <>
                   <p className="text-sm text-zinc-700 dark:text-zinc-300">
-                    지금 보고 있는 주문 {sourceNo} 은 이미 출고 준비가 시작돼
-                    바로 합쳐지지 않아요. 요청하면 이 순서로 진행돼요.
+                    출고 준비가 시작된 상자가 있어 바로 합쳐지지 않아요.{' '}
+                    {canExclude
+                      ? '요청하면 합칠 상자를 배치에서도 빼요.'
+                      : '배치에서 빼기 권한이 있는 담당자가 상자를 빼야 해요.'}{' '}
+                    아래 순서로 진행돼요.
                   </p>
                   <ol className="divide-y rounded-lg border">
                     {UNWIND_STEPS.map((entry, index) => (
@@ -449,6 +643,21 @@ export function ConsolidationSheet({
                   </ol>
                 </>
               )}
+
+              {canExclude &&
+                [source, ...pickedOptions].some(
+                  (shipment) => shipment.batchId
+                ) && (
+                  <WithdrawalWaybillCheckbox
+                    checked={voidWaybill}
+                    onCheckedChange={setVoidWaybill}
+                    trackingNo={[source, ...pickedOptions]
+                      .filter((shipment) => shipment.batchId)
+                      .map((shipment) => shipment.waybillTrackingNo)
+                      .filter(Boolean)
+                      .join(', ')}
+                  />
+                )}
 
               {choices.length > 0 ? (
                 <div className="flex flex-col gap-2">
@@ -511,31 +720,26 @@ export function ConsolidationSheet({
                 주문이면 합치지 말고 따로 보내는 게 나아요.
               </div>
 
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="consolidation-reason">작업 사유</Label>
-                <Textarea
-                  id="consolidation-reason"
-                  value={reason}
-                  onChange={(event) => setReason(event.target.value)}
-                  placeholder="예: 고객이 CS로 추가 주문 합포장 요청"
-                  className="min-h-16"
-                />
-              </div>
+              <OperationReasonFields
+                type="consolidate"
+                value={reasonValue}
+                onChange={setReasonValue}
+              />
             </div>
 
             <div className="flex items-center justify-between gap-2 border-t px-6 py-4">
               <span className="text-[13px] text-muted-foreground">
-                {blocker ?? '요청하면 상자 화면에서 다음 할 일을 알려 줘요'}
+                {blocker ??
+                  (needsUnwind && canExclude
+                    ? '합포장을 요청하고 상자를 배치에서 빼요'
+                    : '요청하면 상자 화면에서 다음 할 일을 알려 줘요')}
               </span>
               <div className="flex gap-2">
                 <Button variant="outline" onClick={() => setStep(1)}>
                   이전
                 </Button>
-                <Button
-                  onClick={submit}
-                  disabled={blocker !== null || create.isPending}
-                >
-                  {create.isPending ? '요청 중...' : '합포장 요청'}
+                <Button onClick={submit} disabled={blocker !== null || sending}>
+                  {sending ? '요청 중...' : '합포장 요청'}
                 </Button>
               </div>
             </div>

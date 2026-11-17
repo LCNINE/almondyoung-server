@@ -65,8 +65,8 @@ export default function MypageSidebar({
                   className={cn(
                     "text-[13px] transition-colors",
                     isActive(item.path)
-                      ? "text-yellow-30 font-semibold"
-                      : "hover:text-yellow-30 text-gray-600"
+                      ? "text-mint-deep font-semibold"
+                      : "hover:text-mint-deep text-gray-600"
                   )}
                 >
                   {t(item.label)}

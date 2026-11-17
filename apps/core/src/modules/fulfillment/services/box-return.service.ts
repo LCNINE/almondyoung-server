@@ -2,13 +2,14 @@ import { BadRequestException, ConflictException, Injectable } from '@nestjs/comm
 import { and, eq, notInArray } from 'drizzle-orm';
 import { DbTx, wmsTables } from '../../inventory/schema/inventory.schema';
 import { BarcodeService } from '../../inventory/shared/services/barcode.service';
+import { WaybillService } from '../waybill/waybill.service';
 import { ReturnBinRemovalResponseDto } from '../dto/return-bin.dto';
 import { BoxAllocationManager } from './box-allocation.manager';
 import { BoxWithdrawalService, WorkItemRow } from './box-withdrawal.service';
 import { FulfillmentCommandService } from './fulfillment-command.service';
 import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
 import { OutboundBatchOrchestrator } from './outbound-batch-orchestrator.service';
-import { ReturnBinService } from './return-bin.service';
+import { ReturnBinService, workerReturnBinBarcode } from './return-bin.service';
 import { ShipmentPlanningService } from './shipment-planning.service';
 import { resolveSkuIdByBarcode } from './sku-barcode-resolution';
 import { loadWithdrawalRemovals } from './withdrawal-removals.query';
@@ -35,12 +36,13 @@ export class BoxReturnService {
     private readonly barcodes: BarcodeService,
     private readonly planning: ShipmentPlanningService,
     private readonly batches: OutboundBatchOrchestrator,
+    private readonly waybills: WaybillService,
   ) {}
 
   /** 잠금: 구성요소 → 작업 항목 → 세션 → 보관. 마지막 몫이면 같은 트랜잭션에서 나가고, canceled 면 취소까지 끝낸다. */
   async removeToReturnBin(
     shipmentId: string,
-    input: { barcode: string; returnBinBarcode: string; quantity: number },
+    input: { barcode: string; returnBinBarcode?: string; quantity: number },
     actor: { id: string; roles: string[] },
     idempotencyKey: string,
     tx?: DbTx,
@@ -58,7 +60,7 @@ export class BoxReturnService {
         canonicalRequest: {
           shipmentId,
           barcode,
-          returnBinBarcode: input.returnBinBarcode.trim(),
+          returnBinBarcode: input.returnBinBarcode?.trim() ?? null,
           quantity: input.quantity,
           actorId: actor.id,
         },
@@ -80,7 +82,17 @@ export class BoxReturnService {
           .where(eq(wmsTables.outboundBatches.id, workItem.batchId))
           .limit(1);
         if (!batch) throw new Error(`Outbound batch ${workItem.batchId} referenced by a work item is missing`);
-        const returnBin = await this.returnBins.requireActive(input.returnBinBarcode, batch.warehouseId, trx);
+
+        const bin =
+          input.returnBinBarcode == null
+            ? await this.returnBins.register(
+                { warehouseId: batch.warehouseId, barcode: workerReturnBinBarcode(actor.id, batch.warehouseId) },
+                actor,
+                trx,
+              )
+            : await this.returnBins.requireActive(input.returnBinBarcode, batch.warehouseId, trx);
+        const returnBin = { id: bin.id, barcode: bin.barcode };
+
         const skuId = await resolveSkuIdByBarcode(this.barcodes, barcode, trx);
         if (!skuId) throw conflict('SIMPLE_OUTBOUND_BARCODE_UNKNOWN', 'Barcode does not resolve to a SKU');
         const session = await this.boxes.lockOpenSession(workItem.batchId, trx);
@@ -147,11 +159,13 @@ export class BoxReturnService {
 
   /** 커밋 뒤의 몫 — draft 로 나간 박스가 기다리던 오퍼레이션(합포장·옛 부분 취소)을 잇는다(PR 2 빼기와 같다). */
   async resumeAfterDraftExit(
-    exits: Array<{ shipmentId: string; exitTo: string | null; waitingOperationId: string | null }>,
+    exits: Array<{ workItemId: string; shipmentId: string; exitTo: string | null; waitingOperationId: string | null }>,
     tx?: DbTx,
   ): Promise<void> {
     for (const exit of exits) {
-      if (exit.exitTo === 'draft' && exit.waitingOperationId) {
+      const handled = await this.waybills.voidAfterWithdrawal(exit.workItemId, tx);
+
+      if (!handled && exit.exitTo === 'draft' && exit.waitingOperationId) {
         await this.batches.resumeWaitingOperation(exit.waitingOperationId, exit.shipmentId, tx);
       }
     }

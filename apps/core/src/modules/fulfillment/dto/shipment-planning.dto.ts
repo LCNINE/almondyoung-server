@@ -19,6 +19,14 @@ export class ShipmentCommandReasonDto {
   @IsNotEmpty()
   reason: string;
 
+  @IsString()
+  @IsOptional()
+  reasonCode?: string;
+
+  @IsString()
+  @IsOptional()
+  requestChannel?: string;
+
   @IsUUID()
   @IsOptional()
   csCaseId?: string;
@@ -143,6 +151,9 @@ export class ShipmentLineOriginResponseDto {
   @ApiProperty()
   channelOrderId: string;
 
+  @ApiProperty({ nullable: true, description: '고객이 아는 주문번호(판매주문 display_order_no)' })
+  displayOrderNo: string | null;
+
   @ApiProperty({ nullable: true })
   channelOrderItemId: string | null;
 
@@ -176,6 +187,9 @@ export class ShipmentLineDetailResponseDto {
 
   @ApiProperty()
   skuId: string;
+
+  @ApiProperty({ nullable: true, description: '상품명(옵션 포함)' })
+  skuName: string | null;
 
   @ApiProperty()
   qty: number;
@@ -219,6 +233,13 @@ export class ShipmentWaybillHistoryResponseDto {
 
   @ApiProperty({ nullable: true })
   voidedAt: Date | null;
+
+  // 멈춘 발급(pending/allocated)을 운영자가 풀지 판단하는 근거다 — 상자 상세의 «발급 중단» 경고가 읽는다(#1241).
+  @ApiProperty({ nullable: true })
+  lastError: string | null;
+
+  @ApiProperty({ nullable: true, description: '일시적 거절로 멈춘 경우 다음 재시도 시각' })
+  nextAttemptAt: Date | null;
 }
 
 export class ShipmentWorkItemHistoryResponseDto {
@@ -283,6 +304,21 @@ export class ShipmentOperationHistoryResponseDto {
 
   @ApiProperty({ nullable: true })
   lastError: string | null;
+
+  @ApiProperty()
+  operatorId: string;
+
+  @ApiProperty()
+  reason: string;
+
+  @ApiProperty({ nullable: true })
+  reasonCode: string | null;
+
+  @ApiProperty({ nullable: true })
+  requestChannel: string | null;
+
+  @ApiProperty({ nullable: true })
+  note: string | null;
 
   @ApiProperty()
   createdAt: Date;
@@ -388,6 +424,20 @@ export class FulfillmentOperationResponseDto {
 
   @ApiProperty()
   createdAt: Date;
+
+  @ApiProperty({ nullable: true })
+  completedAt: Date | null;
+}
+
+export class FulfillmentRequestOutcomeDto {
+  @ApiProperty({ description: '요청 키 기록이 있으면 처리된 것이다(기록과 처리는 한 트랜잭션)' })
+  processed: boolean;
+
+  @ApiProperty({ nullable: true })
+  operationId: string | null;
+
+  @ApiProperty({ nullable: true })
+  status: string | null;
 
   @ApiProperty({ nullable: true })
   completedAt: Date | null;

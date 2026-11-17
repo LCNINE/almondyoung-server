@@ -90,6 +90,12 @@ export interface ChargeDto {
 // ─── Refund ─────────────────────────────────────────────────────────────────
 
 export interface RefundDto {
+  paymentMethodType?: string | null;
+  refundReceiveAccount?: {
+    bank: string;
+    accountNumber: string;
+    holderName: string;
+  } | null;
   id: string;
   chargeId: string;
   intentId: string;
@@ -231,6 +237,7 @@ export interface RefundListQuery {
   status?: string;
   kind?: string;
   intentId?: string;
+  intentIds?: string[];
   dateFrom?: string;
   dateTo?: string;
 }
@@ -570,6 +577,10 @@ export interface MembershipRevenueDto {
   range: { from: string; to: string };
   totalAmount: number;
   invoiceCount: number;
+  paymentCount: number;
+  capturedAmount: number;
+  refundedAmount: number;
+  refundCount: number;
   series: Array<{ bucket: string; amount: number; count: number }>;
 }
 

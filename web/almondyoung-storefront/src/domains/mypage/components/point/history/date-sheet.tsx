@@ -116,7 +116,7 @@ export function PointHistoryDateSheet({
                 key={key}
                 type="button"
                 onClick={() => setRange(getPresetRange(key))}
-                className="border-gray-20 text-gray-70 hover:border-primary hover:text-primary rounded-full border px-3.5 py-1.5 text-xs font-medium transition-colors"
+                className="border-gray-20 text-gray-70 hover:border-mint-deep hover:text-mint-deep rounded-full border px-3.5 py-1.5 text-xs font-medium transition-colors"
               >
                 {t(key)}
               </button>
@@ -129,7 +129,7 @@ export function PointHistoryDateSheet({
               <p
                 className={cn(
                   "mt-0.5 text-sm font-semibold tabular-nums",
-                  range?.from ? "text-primary" : "text-gray-40"
+                  range?.from ? "text-mint-deep" : "text-gray-40"
                 )}
               >
                 {fromLabel}

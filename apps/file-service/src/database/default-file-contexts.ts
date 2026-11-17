@@ -23,6 +23,10 @@ export type FileContextSeedRow = {
 export const SKU_3D_MODEL_CONTEXT_ID = 'sku-3d-model';
 export const SKU_3D_MODEL_MAX_SIZE_BYTES = 20 * 1024 * 1024;
 
+/** 중국 선적 입고리스트 원본(xlsx). 비공개 — 열람은 STAFF_CONTEXT_PERMISSIONS 로 연다. */
+export const INBOUND_SHIPMENT_LIST_CONTEXT_ID = 'inbound-shipment-list';
+export const INBOUND_SHIPMENT_LIST_MAX_SIZE_BYTES = 50 * 1024 * 1024;
+
 export const DIGITAL_ASSET_FILE_CONTEXT_ID = 'digital-asset-file';
 export const DIGITAL_ASSET_FILE_MAX_SIZE_BYTES = 10 * 1024 * 1024 * 1024;
 
@@ -233,6 +237,17 @@ export const FILE_CONTEXTS: FileContextSeed[] = [
     allowedMimeTypes: ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
     maxFileSize: 52428800,
     pathPrefix: 'products/bulk-forms',
+    isActive: true,
+  },
+  {
+    id: INBOUND_SHIPMENT_LIST_CONTEXT_ID,
+    name: 'Inbound Shipment List',
+    description: '선적 입고리스트 원본(xlsx)',
+    allowPublic: false,
+    allowPrivate: true,
+    allowedMimeTypes: ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'],
+    maxFileSize: INBOUND_SHIPMENT_LIST_MAX_SIZE_BYTES,
+    pathPrefix: 'inventory/inbound-shipment-lists',
     isActive: true,
   },
   {

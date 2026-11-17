@@ -7,6 +7,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { channelQueryKeys } from './query-keys';
 import { orderCollectionFailuresClient } from '@/lib/api/domains/channel/order-collection-failures.client';
 import { orderReconcileFindingsClient } from '@/lib/api/domains/channel/order-reconcile-findings.client';
+import { reservationReconcileRunsClient } from '@/lib/api/domains/channel/reservation-reconcile-runs.client';
 import type { PermissionRequirement } from '@/lib/auth/mutation-permission';
 
 export function useReplayFailure() {
@@ -53,3 +54,31 @@ export function useCloseMismatch() {
   });
 }
 useCloseMismatch.permission = ['order.order.write'] as const satisfies PermissionRequirement;
+
+/** [확인했으니 고치기]. 실패(409 — 그 사이 닫힘)여도 무효화해 닫힌 회차가 버튼을 단 채 남지 않게 한다 */
+export function useApplyReservationRun() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => reservationReconcileRunsClient.apply(id),
+    onSettled: () => {
+      void queryClient.invalidateQueries({
+        queryKey: channelQueryKeys.reservationRuns,
+      });
+    },
+  });
+}
+useApplyReservationRun.permission = ['order.order.write'] as const satisfies PermissionRequirement;
+
+export function useCloseReservationRun() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, reason }: { id: string; reason: string }) =>
+      reservationReconcileRunsClient.close(id, reason),
+    onSettled: () => {
+      void queryClient.invalidateQueries({
+        queryKey: channelQueryKeys.reservationRuns,
+      });
+    },
+  });
+}
+useCloseReservationRun.permission = ['order.order.write'] as const satisfies PermissionRequirement;

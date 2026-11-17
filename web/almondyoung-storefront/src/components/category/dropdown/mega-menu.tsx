@@ -104,10 +104,10 @@ export function MegaMenu({ categories }: MegaMenuProps) {
                     className={cn(
                       "flex h-[28px] items-center gap-2 pr-3 pl-4 text-[12px] leading-none transition-colors",
                       activeL1 === id
-                        ? "text-primary font-semibold"
+                        ? "text-mint-deep font-semibold"
                         : currentHandles.has(cat.handle)
                           ? "text-foreground font-semibold"
-                          : "hover:text-primary text-[#333]"
+                          : "hover:text-mint-deep text-[#333]"
                     )}
                   >
                     <span className="relative h-4 w-4 shrink-0">
@@ -126,7 +126,7 @@ export function MegaMenu({ categories }: MegaMenuProps) {
                       <ChevronRight
                         className={cn(
                           "h-3.5 w-3.5 shrink-0",
-                          activeL1 === id ? "text-primary" : "text-gray-300"
+                          activeL1 === id ? "text-mint-deep" : "text-gray-300"
                         )}
                       />
                     )}
@@ -145,7 +145,7 @@ export function MegaMenu({ categories }: MegaMenuProps) {
               <LocalizedClientLink
                 prefetch={false}
                 href="/shop-trade"
-                className="hover:text-primary flex h-[28px] items-center gap-2 pr-3 pl-4 text-[12px] leading-none font-medium text-[#333] transition-colors"
+                className="hover:text-mint-deep flex h-[28px] items-center gap-2 pr-3 pl-4 text-[12px] leading-none font-medium text-[#333] transition-colors"
               >
                 <span className="h-4 w-4 shrink-0" />
                 <span className="flex-1 truncate">{t("shopTrade")}</span>
@@ -158,7 +158,7 @@ export function MegaMenu({ categories }: MegaMenuProps) {
               <LocalizedClientLink
                 prefetch={false}
                 href={`/category/${BRAND_CATEGORY_HANDLE}`}
-                className="hover:text-primary flex h-[28px] items-center gap-2 pr-3 pl-4 text-[12px] leading-none font-medium text-[#333] transition-colors"
+                className="hover:text-mint-deep flex h-[28px] items-center gap-2 pr-3 pl-4 text-[12px] leading-none font-medium text-[#333] transition-colors"
               >
                 <span className="h-4 w-4 shrink-0" />
                 <span className="flex-1 truncate">{t("brandHall")}</span>
@@ -194,10 +194,10 @@ export function MegaMenu({ categories }: MegaMenuProps) {
                           className={cn(
                             "flex h-[28px] items-center justify-between gap-2 px-5 text-[12px] leading-none transition-colors",
                             activeL2 === id
-                              ? "text-primary font-semibold"
+                              ? "text-mint-deep font-semibold"
                               : currentHandles.has(sub.handle)
                                 ? "text-foreground font-semibold"
-                                : "hover:text-primary text-gray-600"
+                                : "hover:text-mint-deep text-gray-600"
                           )}
                         >
                           <span className="truncate">{sub.name}</span>
@@ -206,7 +206,7 @@ export function MegaMenu({ categories }: MegaMenuProps) {
                               className={cn(
                                 "h-3.5 w-3.5 shrink-0",
                                 activeL2 === id
-                                  ? "text-primary"
+                                  ? "text-mint-deep"
                                   : "text-gray-300"
                               )}
                             />
@@ -222,7 +222,7 @@ export function MegaMenu({ categories }: MegaMenuProps) {
                   <LocalizedClientLink
                     prefetch={false}
                     href={`/category/${l1.handle || l1.id}`}
-                    className="hover:text-primary text-primary decoration-primary block px-5 py-[7px] text-[12px] font-medium underline underline-offset-4 hover:opacity-80"
+                    className="hover:text-mint-deep text-mint-deep decoration-mint-deep block px-5 py-[7px] text-[12px] font-medium underline underline-offset-4 hover:opacity-80"
                   >
                     {t("viewMore")}
                   </LocalizedClientLink>
@@ -255,7 +255,7 @@ export function MegaMenu({ categories }: MegaMenuProps) {
                           currentHandles.has(leaf.handle) ? "page" : undefined
                         }
                         className={cn(
-                          "hover:text-primary flex h-[28px] items-center truncate px-5 text-[12px] leading-none transition-colors",
+                          "hover:text-mint-deep flex h-[28px] items-center truncate px-5 text-[12px] leading-none transition-colors",
                           currentHandles.has(leaf.handle)
                             ? "text-foreground font-semibold"
                             : "text-gray-600"
@@ -272,7 +272,7 @@ export function MegaMenu({ categories }: MegaMenuProps) {
                   <LocalizedClientLink
                     prefetch={false}
                     href={`/category/${l1!.handle || l1!.id}/${l2.handle || l2.id}`}
-                    className="hover:text-primary text-primary decoration-primary block px-5 py-[6px] text-[12px] font-medium underline underline-offset-4 hover:opacity-80"
+                    className="hover:text-mint-deep text-mint-deep decoration-mint-deep block px-5 py-[6px] text-[12px] font-medium underline underline-offset-4 hover:opacity-80"
                   >
                     {t("viewMore")}
                   </LocalizedClientLink>

@@ -218,7 +218,7 @@ export function SaleMembershipPrice({
         textAlign: 'left',
         gap: 4,
         marginTop: labelOnly ? 4 : 8,
-        color: '#ffa500',
+        color: '#5b3f96',
       }}
     >
       <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 11, fontWeight: 700 }}>
@@ -231,7 +231,7 @@ export function SaleMembershipPrice({
             width: 11,
             height: 11,
             borderRadius: '50%',
-            background: '#ffa500',
+            background: '#5b3f96',
             color: 'white',
             fontSize: 8,
           }}
@@ -1858,7 +1858,7 @@ function Products({
                           width: `${Math.min(5, Math.max(0, p.rating!)) * 20}%`,
                           overflow: 'hidden',
                           whiteSpace: 'nowrap',
-                          color: '#ffa500',
+                          color: '#141617',
                         }}
                       >
                         ★★★★★

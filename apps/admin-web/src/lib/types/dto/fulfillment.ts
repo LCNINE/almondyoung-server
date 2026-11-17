@@ -711,6 +711,8 @@ export interface ShipmentLineOrigin {
   salesOrderId: string;
   salesChannel: string;
   channelOrderId: string;
+  // 옛 core 는 싣지 않는다
+  displayOrderNo?: string | null;
   channelOrderItemId: string | null;
   channelProductId: string | null;
 }
@@ -727,6 +729,8 @@ export interface ShipmentAdminLine {
   fulfillmentOrderId: string;
   fulfillmentOrderItemId: string;
   skuId: string;
+  // 옛 core 는 싣지 않는다
+  skuName?: string | null;
   qty: number;
   reservedQty: number;
   inspectedQty: number;
@@ -743,6 +747,9 @@ export interface ShipmentWaybillHistory {
   manifestVersion: number;
   issuedAt: string | null;
   voidedAt: string | null;
+  // 옛 core 는 싣지 않는다 — core 가 먼저 배포되지만 없을 때도 화면이 깨지지 않게 선택으로 둔다.
+  lastError?: string | null;
+  nextAttemptAt?: string | null;
 }
 
 export interface ShipmentTrackingEvent {
@@ -780,6 +787,10 @@ export interface ShipmentOperationHistory {
   type: string;
   status: FulfillmentOperationStatus;
   reason?: string | null;
+  reasonCode?: string | null;
+  requestChannel?: string | null;
+  note?: string | null;
+  operatorId?: string | null;
   lastError?: string | null;
   createdAt: string;
   completedAt: string | null;
@@ -814,6 +825,14 @@ export interface ShipmentAdminDetail {
   operations: ShipmentOperationHistory[];
 }
 
+/** 응답을 받지 못한 요청이 서버에서 처리됐는지(요청 키 기준) */
+export interface FulfillmentRequestOutcome {
+  processed: boolean;
+  operationId: string | null;
+  status: FulfillmentOperationStatus | null;
+  completedAt: string | null;
+}
+
 export interface FulfillmentOperation<TSnapshot = unknown> {
   operationId: string;
   type: string;
@@ -828,7 +847,8 @@ export interface FulfillmentOperation<TSnapshot = unknown> {
 
 export interface ShipmentCommandReason {
   reason: string;
-  csCaseId?: string;
+  reasonCode?: string;
+  requestChannel?: string;
   note?: string;
 }
 
@@ -914,14 +934,22 @@ export interface CreateShipmentConsolidationRequest extends ShipmentCommandReaso
   recipientSnapshot?: FulfillmentShippingAddress;
 }
 
+export interface ConsolidationManifestSnapshot {
+  shipmentId: string;
+  status: string;
+  warehouseId: string | null;
+  manifestVersion: number;
+  reservationVersion: number;
+}
+
 export interface ShipmentConsolidationResponse {
   operationId: string;
   operationStatus: 'pending' | 'completed';
   sourceShipmentIds: string[];
   targetShipmentId: string | null;
   blockers?: Array<{ shipmentId: string; codes: string[] }>;
-  sources?: ShipmentAdminSummary[];
-  target?: ShipmentAdminSummary;
+  sources?: ConsolidationManifestSnapshot[];
+  target?: ConsolidationManifestSnapshot;
   lineLineage?: Array<{
     targetLineId: string;
     fulfillmentOrderItemId: string;
@@ -936,18 +964,35 @@ export type ConsolidationOptionReason =
   | 'incomplete_recipient'
   | 'unknown_customer';
 
+// 주문 품목이 다른 상자와 나뉘어 있을 때 이 상자 몫. 서버가 주기 전 응답에는 없다.
+export interface ShipmentSplitShare {
+  boxQty: number;
+  orderQty: number;
+  boxNo: number;
+  boxCount: number;
+}
+
+// 상자에 담긴 상품별 수량. 서버가 주기 전 응답에는 없다.
+export interface ConsolidationItem {
+  skuId: string;
+  name: string;
+  qty: number;
+}
+
 export interface ConsolidationOptionShipment {
   shipmentId: string;
   status: string;
   salesOrderNos: string[];
   itemSummary: string;
   totalQty: number;
+  items?: ConsolidationItem[];
   recipientSnapshot: Record<string, unknown>;
   batchId: string | null;
   waybillTrackingNo: string | null;
   manifestVersion: number;
   reservationVersion: number;
   createdAt: string;
+  split?: ShipmentSplitShare | null;
 }
 
 export interface ConsolidationOption extends ConsolidationOptionShipment {
@@ -961,6 +1006,7 @@ export interface ConsolidationBoardShipment {
   salesOrderNos: string[];
   itemSummary: string;
   totalQty: number;
+  items?: ConsolidationItem[];
   batchId: string | null;
   waybillTrackingNo: string | null;
   manifestVersion: number;
@@ -968,6 +1014,7 @@ export interface ConsolidationBoardShipment {
   createdAt: string;
   orderedAt: string | null;
   salesChannels: string[];
+  split?: ShipmentSplitShare | null;
 }
 
 export interface ConsolidationBoardGroup {
@@ -976,6 +1023,63 @@ export interface ConsolidationBoardGroup {
   memoDiffers: boolean;
   canMergeNow: boolean;
   shipments: ConsolidationBoardShipment[];
+}
+
+export type PreparationBucket =
+  | 'ready'
+  | 'partial'
+  | 'unavailable'
+  | 'mergeable'
+  | 'resume'
+  | 'needs_info';
+
+export interface PreparationLineDto {
+  name: string;
+  qty: number;
+  reservedQty: number;
+}
+
+export interface PreparationShipmentDto {
+  shipmentId: string;
+  orderNos: string[];
+  itemSummary: string;
+  totalQty: number;
+  single: boolean;
+  reason: string | null;
+  // 서버가 품목별 수량을 주기 전 응답에는 없다.
+  lines?: PreparationLineDto[];
+  split?: ShipmentSplitShare | null;
+}
+
+export interface PreparationBucketDto {
+  bucket: PreparationBucket;
+  count: number;
+  singleCount: number;
+  multiCount: number;
+  shipments: PreparationShipmentDto[];
+}
+
+export interface OutboundPreparationSummary {
+  warehouseId: string;
+  buckets: PreparationBucketDto[];
+  awaitingMatchingCount: number;
+}
+
+export interface BulkShipmentFailure {
+  shipmentId: string;
+  code: string;
+  message: string;
+  transient: boolean;
+}
+
+export interface PreparationWaybillResult extends BatchResultItem {
+  transient?: boolean;
+  code?: string;
+}
+
+export interface BulkShipmentResult {
+  succeeded: string[];
+  failed: BulkShipmentFailure[];
 }
 
 export interface PlannedShipment {
@@ -1001,6 +1105,7 @@ export interface ConsolidationProgressSource {
   workItemStatus: string | null;
   waybillId: string | null;
   waybillStatus: string | null;
+  voidOnWithdrawal?: boolean;
   blockers: string[];
   gaveUpAt: string | null;
   nextCheckAt: string | null;
@@ -1024,7 +1129,6 @@ export interface RecallShipmentRequest {
   expectedManifestVersion: number;
   physicalRecoveryConfirmed: true;
   reason: ShipmentRecallReason;
-  csCaseId?: string;
   note?: string;
 }
 
@@ -1057,7 +1161,6 @@ export interface ReportShipmentShortPickRequest {
   expectedManifestVersion: number;
   lines: ShipmentShortPickLineRequest[];
   reason: ShipmentShortPickReason;
-  csCaseId?: string;
   note?: string;
 }
 
@@ -1538,6 +1641,10 @@ export interface IssueBatchWaybillRequest {
 }
 
 export interface VoidWaybillRequest {
+  reason: string;
+}
+
+export interface AbandonWaybillRequest {
   reason: string;
 }
 

@@ -9,6 +9,11 @@ import { z } from 'zod';
  * @version 2.0.0
  */
 
+/**
+ * 쿠팡 긴 ID(`shipmentBoxId`·`orderId`·`receiptId`) — JS number 로 들면 끝자리가 깨질 수 있어 항상 문자열이다.
+ */
+export const CoupangLongIdSchema = z.string().regex(/^\d+$/);
+
 // =================================================================
 // == 공통 헬퍼 함수 (Common Helper Functions)
 // =================================================================

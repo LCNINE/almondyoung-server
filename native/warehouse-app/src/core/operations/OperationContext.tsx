@@ -7,11 +7,14 @@ export interface WorkCapabilities {
   locationOutbound?: boolean;
 }
 export interface WorkPermissions {
+  stockAdjust?: boolean;
   forceDispatch?: boolean;
   /** 스테이션 강제출고(F10, core A3). 관리자 `forceDispatch` 와 다른 뜻이다 */
   stationForceDispatch?: boolean;
   /** 결품 보고(F9, core A2) */
   shortPick?: boolean;
+  /** 선적 상자 입고(확정·확정 취소·리스트에 없는 상자) — core `inventory.stock.operate` */
+  inboundShipmentOperate?: boolean;
 }
 export interface WorkRuntime {
   getPermissions?: () => Promise<WorkPermissions>;

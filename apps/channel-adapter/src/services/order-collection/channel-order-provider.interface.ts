@@ -12,7 +12,7 @@ import {
   SalesChannel,
   ShippingAddress,
 } from '@packages/event-contracts/streams';
-import type { ReturnObservationPayload } from './channel-order-source.interface';
+import type { CancelRequestObservationPayload, ReturnObservationPayload } from './channel-order-source.interface';
 import type { AffectedLine } from '@packages/domain-types';
 
 export const CHANNEL_ORDER_PROVIDER = Symbol('CHANNEL_ORDER_PROVIDER');
@@ -65,6 +65,7 @@ export interface OrderCollectionFailureItem {
 export type OrderLifecycleEventType =
   | 'OrderCancelled'
   | 'OrderRefundCreated'
+  | 'ChannelCancelRequested'
   | 'ChannelReturnRequested'
   | 'ChannelReturnCancelled'
   | 'ChannelReturnPrepaid'
@@ -73,6 +74,7 @@ export type OrderLifecycleEventType =
 export type OrderLifecycleEventPayload =
   | Omit<OrderCancelledPayload, 'orderId'>
   | Omit<OrderRefundCreatedPayload, 'orderId'>
+  | CancelRequestObservationPayload
   | ReturnObservationPayload<ChannelReturnRequestedPayload>
   | ReturnObservationPayload<ChannelReturnCancelledPayload>
   | ReturnObservationPayload<ChannelReturnPrepaidPayload>
@@ -99,6 +101,7 @@ export type OrderLifecycleEventItem = OrderLifecycleEventBase &
   (
     | { eventType: 'OrderCancelled'; payload: Omit<OrderCancelledPayload, 'orderId'> }
     | { eventType: 'OrderRefundCreated'; payload: Omit<OrderRefundCreatedPayload, 'orderId'> }
+    | { eventType: 'ChannelCancelRequested'; payload: CancelRequestObservationPayload }
     | { eventType: 'ChannelReturnRequested'; payload: ReturnObservationPayload<ChannelReturnRequestedPayload> }
     | { eventType: 'ChannelReturnCancelled'; payload: ReturnObservationPayload<ChannelReturnCancelledPayload> }
     | { eventType: 'ChannelReturnPrepaid'; payload: ReturnObservationPayload<ChannelReturnPrepaidPayload> }
@@ -163,6 +166,17 @@ export interface ChannelOrderProvider {
   // 여기만 `string` 이라 호출부가 캐스팅을 강요당했다 (#656).
   readonly channel: SalesChannel;
   fetchOrders(since: Date | null): Promise<FetchOrdersResult>;
+  /**
+   * 이번 주기에 수집이 커밋된 주문을 채널에서 접수 상태로 넘긴다 (쿠팡 상품준비중). source 가 구현할 때만 있다.
+   * 오케스트레이터가 항목 루프 뒤에 한 번 부르고, throw 는 잡아 로그만 남긴다.
+   */
+  acknowledgeCollected?(externalOrderIds: string[]): Promise<void>;
+}
+
+export function isAcknowledgingProvider(
+  provider: ChannelOrderProvider,
+): provider is ChannelOrderProvider & { acknowledgeCollected(externalOrderIds: string[]): Promise<void> } {
+  return typeof provider.acknowledgeCollected === 'function';
 }
 
 /** 즉시 끌어오기·다시 배달이 함께 쓰는 좁힘. `fetchOrderForSync` 는 선택 메서드라 존재로만 가른다. */

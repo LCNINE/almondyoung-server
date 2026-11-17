@@ -20,8 +20,7 @@ export type TenantStatus = (typeof tenants.$inferSelect)['status'];
 
 export interface TenantDomainEntry {
   readonly host: string;
-  /** 앱 칸 전에 들어온 행은 null 이다. */
-  readonly app: TenantDomainApp | null;
+  readonly app: TenantDomainApp;
 }
 
 export interface ClientUris {
@@ -215,7 +214,7 @@ export class PlatformRepository {
       .orderBy(tenantDomains.host);
   }
 
-  async domainsOfAll(): Promise<{ host: string; tenantId: string; app: TenantDomainApp | null }[]> {
+  async domainsOfAll(): Promise<{ host: string; tenantId: string; app: TenantDomainApp }[]> {
     return this.dbService.db
       .select({ host: tenantDomains.host, tenantId: tenantDomains.tenantId, app: tenantDomains.app })
       .from(tenantDomains)
@@ -241,10 +240,6 @@ export class PlatformRepository {
     await tx.insert(tenantDomains).values(domains.map(({ host, app }) => ({ host, app, tenantId })));
   }
 
-  async setDomainApp(host: string, app: TenantDomainApp, tx: UserServiceTx): Promise<void> {
-    await tx.update(tenantDomains).set({ app }).where(eq(tenantDomains.host, host));
-  }
-
   // ── 브랜드(비인증 조회)
 
   async findBrandByHost(host: string): Promise<{
@@ -252,7 +247,7 @@ export class PlatformRepository {
     displayName: string;
     logoUrl: string | null;
     status: TenantStatus;
-    app: TenantDomainApp | null;
+    app: TenantDomainApp;
   } | null> {
     const [row] = await this.dbService.db
       .select({

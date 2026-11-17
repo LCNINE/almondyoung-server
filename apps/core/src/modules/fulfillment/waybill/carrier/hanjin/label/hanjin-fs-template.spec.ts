@@ -1,7 +1,7 @@
 import { ConflictError } from '@app/shared';
-import { barcodeKeepOutsMm, inkInBarcodeKeepOuts } from '../../../label/__support__/label-invariants';
-import type { LabelSpec } from '../../../label/label-model';
-import { PT_TO_MM, textWidthMm } from '../../../label/svg-text';
+import { barcodeKeepOutsMm, inkInBarcodeKeepOuts } from '../../../../../../platform/label/__support__/label-invariants';
+import type { LabelSpec } from '../../../../../../platform/label/label-model';
+import { PT_TO_MM, textWidthMm } from '../../../../../../platform/label/svg-text';
 import { HANJIN_LABEL_FIXTURE as DATA, HANJIN_LABEL_LONG_FIXTURE as LONG } from './__support__/hanjin-label-fixture';
 import { renderHanjinFsLabel } from './hanjin-fs-template';
 import type { HanjinLabelData } from './hanjin-label-data';
@@ -125,7 +125,7 @@ describe('renderHanjinFsLabel', () => {
     expect(spec.svg).toContain('<text x="8.8" y="93.7" font-size="3.18">문앞 (공동현관 #1234)</text>');
   });
 
-  it('분류코드·운임·권역·출고번호를 찍는다', () => {
+  it('분류코드·운임·권역·주문번호를 찍는다', () => {
     for (const s of [
       'NX',
       '150',
@@ -141,7 +141,7 @@ describe('renderHanjinFsLabel', () => {
       '소공동 51 한진빌딩',
       '2026-09-28 Type : A',
       '운임Type : A',
-      '출고번호: AY0123456789ABCDEFGHJKMNPQRS',
+      '주문번호: 20261027-6009 외 1건',
       '4527-1697-8431',
       '토익 Speaking',
       '펜',
@@ -330,7 +330,7 @@ describe('renderHanjinFsLabel — 품목 줄·추가 쪽', () => {
     expect(second.svg).toContain('<g id="continuation">');
     expect(second.svg).toContain('발송 금지 · 상품 확인용');
     expect(second.svg).toMatch(/>발송 금지<\/text>/);
-    for (const kept of ['4527-1697-8431', '김*진', '010-1234-****', '출고번호: AY0123456789ABCDEFGHJKMNPQRS']) {
+    for (const kept of ['4527-1697-8431', '김*진', '010-1234-****', '주문번호: 20261027-6009 외 1건']) {
       expect(second.svg).toContain(kept);
     }
     for (const gone of [

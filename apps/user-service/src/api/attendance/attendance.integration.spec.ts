@@ -117,8 +117,8 @@ run('attendance PostgreSQL transactions', () => {
     await permissionCache.refresh();
 
     await database.db.execute(sql`
-      INSERT INTO user_roles (user_id, role_id)
-      SELECT id, role_id FROM users CROSS JOIN roles
+      INSERT INTO user_roles (user_id, role_id, tenant_id)
+      SELECT id, role_id, users.tenant_id FROM users CROSS JOIN roles
       WHERE (users.id = ${master} AND roles.name = 'master')
          OR (users.id <> ${master} AND roles.name = 'admin')
     `);
@@ -144,8 +144,8 @@ run('attendance PostgreSQL transactions', () => {
     `);
 
     await database.db.execute(sql`
-      INSERT INTO user_roles (user_id, role_id, expires_at)
-      SELECT u.id, r.role_id, CASE WHEN u.id = ${expired} THEN now() - interval '1 day' ELSE NULL END
+      INSERT INTO user_roles (user_id, role_id, tenant_id, expires_at)
+      SELECT u.id, r.role_id, u.tenant_id, CASE WHEN u.id = ${expired} THEN now() - interval '1 day' ELSE NULL END
       FROM users u JOIN roles r ON
         (u.id = ${intern} AND r.name = 'intern') OR (u.id IN (${expired}, ${dormant}) AND r.name = 'admin')
     `);
@@ -183,7 +183,7 @@ run('attendance PostgreSQL transactions', () => {
       VALUES (${intern}, 'intern', '인턴', 'intern', 'intern@example.test', '1')
     `);
     await database.db.execute(sql`
-      INSERT INTO user_roles (user_id, role_id) SELECT ${intern}, role_id FROM roles WHERE name = 'intern'
+      INSERT INTO user_roles (user_id, role_id, tenant_id) SELECT ${intern}, role_id, '1' FROM roles WHERE name = 'intern'
     `);
 
     // intern 에게 근태 직원 권한을, admin 에게 검토 권한을 주고 admin 의 근태 직원 권한은 거둔다.

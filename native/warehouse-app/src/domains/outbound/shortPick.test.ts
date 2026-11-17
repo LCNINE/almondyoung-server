@@ -190,10 +190,14 @@ describe('shortPickFailure — 서버가 확정 거절했나, 결과를 모르�
     expect(shortPickFailure(error)).toEqual({ kind: 'uncertain', message: SHORT_PICK_UNCERTAIN_MESSAGE });
   });
 
-  it('403 은 결과를 모르는 쪽이지만 권한 문구를 보인다', () => {
+  it('첫 403 은 거절과 권한 문구를 보인다', () => {
     expect(shortPickFailure(new ApiError('x', 403, 'FORBIDDEN'))).toEqual({
-      kind: 'uncertain',
+      kind: 'rejected',
       message: '결품 보고 권한이 없어요. 관리자에게 요청해 주세요.',
     });
   });
+});
+
+it('이전 결품 보고 결과가 불확실하면 403 이후에도 같은 요청을 유지한다', () => {
+  expect(shortPickFailure(new ApiError('x', 403), true).kind).toBe('uncertain');
 });

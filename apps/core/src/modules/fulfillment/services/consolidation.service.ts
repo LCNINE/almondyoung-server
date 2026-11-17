@@ -1,3 +1,4 @@
+import { resolveOperationReason } from '../shipment/shipment-operation-reasons';
 import { createHash } from 'crypto';
 import {
   BadRequestException,
@@ -253,6 +254,7 @@ export class ConsolidationService {
   ): Promise<ConsolidationResponse> {
     this.workflowGate.assertV2MutationAllowed('shipment.consolidate');
     this.assertReason(dto.reason);
+    const resolvedReason = resolveOperationReason('consolidate', dto);
     this.requirePermission(actor, FULFILLMENT_PERMISSION.SHIPMENT_CONSOLIDATE);
     const sources = [...dto.sources].sort((left, right) => left.shipmentId.localeCompare(right.shipmentId));
     if (sources.length < 2) throw new BadRequestException('At least two source shipments are required');
@@ -307,7 +309,9 @@ export class ConsolidationService {
             type: 'consolidate',
             status: 'pending',
             operatorId: actor.id,
-            reason: dto.reason,
+            reason: resolvedReason.reason,
+            reasonCode: resolvedReason.reasonCode,
+            requestChannel: resolvedReason.requestChannel,
             csCaseId: dto.csCaseId ?? null,
             note: dto.note ?? null,
             idempotencyKey,

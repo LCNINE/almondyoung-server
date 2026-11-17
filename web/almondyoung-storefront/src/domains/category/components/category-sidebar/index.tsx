@@ -71,11 +71,11 @@ function CategoryItem({ category, currentHandle, depth }: CategoryItemProps) {
         <LocalizedClientLink
           href={`/category/${category.handle}`}
           className={cn(
-            "block py-3 transition-colors hover:text-primary",
+            "block py-3 transition-colors hover:text-mint-deep",
             depth === 0
               ? "text-base text-foreground"
               : "text-sm text-muted-foreground",
-            isActive && "font-medium text-primary"
+            isActive && "font-medium text-mint-deep"
           )}
           style={{ paddingLeft }}
         >
@@ -96,11 +96,11 @@ function CategoryItem({ category, currentHandle, depth }: CategoryItemProps) {
             href={`/category/${category.handle}`}
             onClick={() => setIsOpen(true)}
             className={cn(
-              "flex-1 py-3 transition-colors hover:text-primary",
+              "flex-1 py-3 transition-colors hover:text-mint-deep",
               depth === 0
                 ? "text-base text-foreground"
                 : "text-sm text-muted-foreground",
-              (isActive || isParentOfActive) && "font-medium text-primary"
+              (isActive || isParentOfActive) && "font-medium text-mint-deep"
             )}
           >
             {category.name}

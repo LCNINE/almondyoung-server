@@ -219,7 +219,7 @@ export function BeautyTopBoard() {
                   <span className="text-[15px] font-medium">
                     {t("area.toMyShop")}
                   </span>
-                  <span aria-hidden className="text-primary">
+                  <span aria-hidden className="text-mint-deep">
                     →
                   </span>
                 </button>

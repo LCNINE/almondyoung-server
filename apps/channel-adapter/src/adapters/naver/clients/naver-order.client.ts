@@ -204,7 +204,9 @@ export class NaverOrderClient extends NaverBaseClient {
     const response = await firstValueFrom(
       this.http.post<NaverProductOrderDetailsResponse>(
         url,
-        { productOrderIds },
+        // 🔴 상품주문 하나 안의 일부 수량 클레임(2024-10-10~)은 이 플래그로 조회해야 `currentClaim` 에 온다.
+        // 빠지면 일부 수량 취소를 못 보고 원래 수량 그대로 출고한다 (discussions/1773).
+        { productOrderIds, quantityClaimCompatibility: true },
         { headers: { Authorization: `Bearer ${token}` } },
       ),
     );
@@ -227,7 +229,8 @@ export class NaverOrderClient extends NaverBaseClient {
     const response = await firstValueFrom(
       this.http.get<NaverProductOrderDetailsResponse>(url, {
         headers: { Authorization: `Bearer ${token}` },
-        params: params,
+        // `getOrderDetails` 와 같은 이유로 수량 클레임 호환 조회를 강제한다.
+        params: { ...params, quantityClaimCompatibility: true },
       }),
     );
     return response.data;

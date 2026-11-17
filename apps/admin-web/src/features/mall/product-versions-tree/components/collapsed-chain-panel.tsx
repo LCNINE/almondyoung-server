@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { X } from 'lucide-react';
 import type { MasterVersionDto, VersionStatus } from '@/lib/types/dto/products';
+import { toLocalDateString } from '@/lib/utils/date';
 
 type Props = {
   masterId: string;
@@ -14,8 +15,9 @@ type Props = {
   onClose: () => void;
 };
 
+// 서버 시각(UTC ISO)을 그대로 자르면 KST 00~09시가 전날로 보인다 — 목록처럼 브라우저 시간대로.
 function formatDate(iso: string): string {
-  return iso.slice(0, 10);
+  return toLocalDateString(new Date(iso));
 }
 
 const STATUS_META = {

@@ -10,6 +10,7 @@ import {
   type Table as TanstackTable,
 } from '@tanstack/react-table';
 import { useRouter } from 'next/navigation';
+import { tableMinWidth } from './table-min-width';
 
 type DataTableRootProps<TData extends RowData> = {
   table: TanstackTable<TData>;
@@ -64,16 +65,16 @@ export function DataTableRoot<TData extends RowData>({
 
   return (
     <div>
-      <Table variant={variant}>
+      <Table variant={variant} style={minWidthStyle(table)}>
         <Table.Header>
           {table.getHeaderGroups().map((headerGroup) => (
             <Table.Row key={headerGroup.id}>
               {headerGroup.headers.map((header) => {
-                const { width, fluid } = header.column.columnDef.meta ?? {};
+                const { width, minWidth, fluid } = header.column.columnDef.meta ?? {};
                 return (
                   <Table.Head
                     key={header.id}
-                    style={columnStyle(width, fluid)}
+                    style={columnStyle(width, fluid, minWidth)}
                   >
                     {flexRender(
                       header.column.columnDef.header,
@@ -118,12 +119,12 @@ export function DataTableRoot<TData extends RowData>({
                   onClick={href ? () => handleRowClick(href) : undefined}
                 >
                   {row.getVisibleCells().map((cell) => {
-                    const { clickTogglesRowSelection, width, fluid, align } =
+                    const { clickTogglesRowSelection, width, minWidth, fluid, align } =
                       cell.column.columnDef.meta ?? {};
                     return (
                       <Table.Cell
                         key={cell.id}
-                        style={columnStyle(width, fluid)}
+                        style={columnStyle(width, fluid, minWidth)}
                         className={align ? ALIGN_CLASS[align] : undefined}
                         onClick={
                           clickTogglesRowSelection
@@ -162,11 +163,19 @@ export function DataTableRoot<TData extends RowData>({
   );
 }
 
+// 셀의 min-width 는 table-fixed 표에서 무시된다 — 최소 폭은 표에 건다(`tableMinWidth`).
+function minWidthStyle<TData>(table: TanstackTable<TData>): React.CSSProperties | undefined {
+  const minWidth = tableMinWidth(table.getVisibleLeafColumns().map((column) => column.columnDef.meta));
+  return minWidth === undefined ? undefined : { minWidth };
+}
+
 // max-width:0 + width:100% — auto 레이아웃 표에서 이 열만 남은 폭을 갖고, 안쪽 truncate 가 실제로 자르게 한다
 function columnStyle(
   width: number | undefined,
-  fluid: boolean | undefined
+  fluid: boolean | undefined,
+  minWidth?: number
 ): React.CSSProperties | undefined {
   if (fluid) return { maxWidth: 0, width: '100%' };
-  return width ? { width } : undefined;
+  if (!width && !minWidth) return undefined;
+  return { ...(width ? { width } : {}), ...(minWidth ? { minWidth } : {}) };
 }

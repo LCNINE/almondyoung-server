@@ -9,6 +9,7 @@ import type {
   ExistingLinesImpact,
 } from '@/lib/types/dto/line-composition';
 import type { OrderLineDto } from '@/lib/types/dto/matching';
+import { itemStatusLabel } from '../fulfillments/detail/fulfillment-labels';
 
 export const OPERATOR_BADGE = '개별 지정';
 
@@ -24,7 +25,9 @@ export function sourceBadge(
 export function foItemStatusLabel(
   item: Pick<FulfillmentOrderItem, 'qty' | 'status'>
 ): string {
-  return item.qty === 0 && item.status !== 'canceled' ? '대체됨' : item.status;
+  return item.qty === 0 && item.status !== 'canceled'
+    ? '대체됨'
+    : itemStatusLabel(item.status);
 }
 
 // 구성 한 줄의 표시. 매칭표와 출고 상세가 같은 모양으로 보이게 한 곳에서 만든다

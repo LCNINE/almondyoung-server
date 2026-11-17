@@ -1,6 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
+import { BankRefundForm } from '@/features/payments/components/refund-table/bank-refund-button';
+import { walletApi } from '@/lib/api/domains/wallet';
+import { usePermissionCheck } from '@/hooks/use-permission';
+import type { RefundDto } from '@/lib/types/dto/wallet';
 import { toast } from 'sonner';
 import {
   Dialog,
@@ -12,6 +16,9 @@ import {
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { REQUEST_CHANNEL_OPTIONS } from '@/features/order/fulfillments/detail/operation-reasons';
+import { getServerDenyMessage } from '@/lib/api/server-error';
 import { useAdminCancelSalesOrder } from '@/lib/services/orders';
 import type { OrderLineRow } from '@/features/order/history/hooks/use-order-rows';
 import type { CancelSalesOrderLineDto } from '@/lib/types/dto/orders';
@@ -129,6 +136,13 @@ function RefundStatusPanel({ result, onClose }: { result: CancelResult; onClose:
 
 export function CancelOrderModal({ order, open, onOpenChange }: Props) {
   const cancelMutation = useAdminCancelSalesOrder();
+  const { can } = usePermissionCheck();
+  const [checkingPayment, setCheckingPayment] = useState(false);
+  const [bankRefund, setBankRefund] = useState<{
+    intentId: string;
+    excludedRefundIds: string[];
+    savedAccount?: RefundDto['refundReceiveAccount'];
+  } | null>(null);
 
   const isShipped = order?.orderStatus === 'shipped' || order?.orderStatus === 'delivered';
   const isProcessing = order?.orderStatus === 'processing';
@@ -136,6 +150,8 @@ export function CancelOrderModal({ order, open, onOpenChange }: Props) {
   const [lineQuantities, setLineQuantities] = useState<Record<string, number>>({});
   const [reasonCode, setReasonCode] = useState('CUSTOMER_REQUEST');
   const [reasonDetail, setReasonDetail] = useState('');
+  const [requestChannel, setRequestChannel] = useState<string | undefined>();
+  const [showErrors, setShowErrors] = useState(false);
   const [cancelResult, setCancelResult] = useState<CancelResult | null>(null);
 
   useEffect(() => {
@@ -146,12 +162,26 @@ export function CancelOrderModal({ order, open, onOpenChange }: Props) {
       setLineQuantities(initial);
       setReasonCode('CUSTOMER_REQUEST');
       setReasonDetail('');
+      setRequestChannel(undefined);
+      setShowErrors(false);
       setCancelResult(null);
+      setBankRefund(null);
     }
-  }, [open, order, isShipped]);
+  }, [open, order?.orderId, isShipped]);
+
+  const uid = useId();
+  const channelLabelId = `${uid}-channel-label`;
+  const needsChannel = reasonCode === 'CUSTOMER_REQUEST';
+  const channelErrorId = `${uid}-channel-error`;
+  const channelMissing = needsChannel && !requestChannel;
+  const channelError = showErrors && channelMissing;
 
   const handleSubmit = async () => {
     if (!order) return;
+    if (channelMissing) {
+      setShowErrors(true);
+      return;
+    }
 
     let lines: CancelSalesOrderLineDto[] | undefined;
     if (scope === 'partial') {
@@ -165,6 +195,14 @@ export function CancelOrderModal({ order, open, onOpenChange }: Props) {
     }
 
     try {
+      setCheckingPayment(true);
+
+      const payment =
+        order.channel === 'medusa' &&
+        order.walletIntentId &&
+        can(['payment.payment.read'])
+          ? await walletApi.getPaymentIntentDetail(order.walletIntentId)
+          : null;
       const result = await cancelMutation.mutateAsync({
         id: order.orderId,
         body: {
@@ -172,10 +210,22 @@ export function CancelOrderModal({ order, open, onOpenChange }: Props) {
           reasonCode: reasonCode || undefined,
           reasonDetail: reasonDetail || undefined,
           cancelledBy: 'admin',
+          ...(needsChannel && requestChannel ? { requestChannel } : {}),
         },
       });
       if (isCancelRequested(result)) {
-        // 채널 주문 — core 가 그 자리에서 취소를 확정했고 환불은 채널이 정산한다(#1016 36번 재설계). 정산 상태는 주문 행이 보여 준다.
+        if (payment?.paymentMethod?.type === 'BANK_TRANSFER') {
+          setBankRefund({
+            intentId: payment.id,
+            excludedRefundIds: payment.refunds.map((refund) => refund.id),
+            savedAccount: payment.refunds.find(
+              (refund) => refund.refundReceiveAccount
+            )?.refundReceiveAccount,
+          });
+
+          return;
+        }
+
         toast.success(cancelRequestToast(result));
         onOpenChange(false);
         return;
@@ -188,8 +238,9 @@ export function CancelOrderModal({ order, open, onOpenChange }: Props) {
         manualReason: result.manualReason,
       });
     } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : undefined;
-      toast.error(message ?? '취소 처리 중 오류가 발생했습니다.');
+      toast.error(getServerDenyMessage(err, '취소하지 못했어요.'));
+    } finally {
+      setCheckingPayment(false);
     }
   };
 
@@ -198,7 +249,13 @@ export function CancelOrderModal({ order, open, onOpenChange }: Props) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg">
-        {cancelResult ? (
+        {bankRefund ? (
+          <BankRefundForm
+            {...bankRefund}
+            cancelled
+            onClose={() => onOpenChange(false)}
+          />
+        ) : cancelResult ? (
           <RefundStatusPanel result={cancelResult} onClose={() => onOpenChange(false)} />
         ) : (
           <>
@@ -278,13 +335,53 @@ export function CancelOrderModal({ order, open, onOpenChange }: Props) {
                 <select
                   className="w-full border rounded px-3 py-2 text-sm"
                   value={reasonCode}
-                  onChange={(e) => setReasonCode(e.target.value)}
+                  onChange={(e) => {
+                    setReasonCode(e.target.value);
+                    setRequestChannel(undefined);
+                    setShowErrors(false);
+                  }}
                 >
                   {REASON_CODES.map((r) => (
                     <option key={r.value} value={r.value}>{r.label}</option>
                   ))}
                 </select>
               </div>
+
+              {/* 고객 요청 취소: 요청 경로 */}
+              {needsChannel && (
+                <div className="space-y-2">
+                  <Label id={channelLabelId}>고객이 요청한 경로 (필수)</Label>
+                  <div
+                    role="group"
+                    aria-labelledby={channelLabelId}
+                    aria-describedby={channelError ? channelErrorId : undefined}
+                  >
+                    <RadioGroup
+                      aria-labelledby={channelLabelId}
+                      aria-invalid={channelError || undefined}
+                      aria-required
+                      value={requestChannel ?? ''}
+                      onValueChange={setRequestChannel}
+                      className="gap-2"
+                    >
+                      {REQUEST_CHANNEL_OPTIONS.map((channel) => {
+                        const id = `${uid}-channel-${channel.code}`;
+                        return (
+                          <div key={channel.code} className="flex items-center gap-2">
+                            <RadioGroupItem value={channel.code} id={id} />
+                            <Label htmlFor={id} className="font-normal">{channel.label}</Label>
+                          </div>
+                        );
+                      })}
+                    </RadioGroup>
+                  </div>
+                  {channelError && (
+                    <p id={channelErrorId} role="alert" className="text-xs text-destructive">
+                      고객이 요청한 경로를 골라 주세요.
+                    </p>
+                  )}
+                </div>
+              )}
 
               {/* 취소 사유 상세 */}
               <div className="space-y-2">
@@ -306,15 +403,19 @@ export function CancelOrderModal({ order, open, onOpenChange }: Props) {
             </div>
 
             <DialogFooter>
-              <Button variant="outline" onClick={() => onOpenChange(false)} disabled={cancelMutation.isPending}>
+              <Button
+                variant="outline"
+                onClick={() => onOpenChange(false)}
+                disabled={cancelMutation.isPending || checkingPayment}
+              >
                 닫기
               </Button>
               <Button
                 variant="destructive"
                 onClick={handleSubmit}
-                disabled={cancelMutation.isPending}
+                disabled={cancelMutation.isPending || checkingPayment}
               >
-                {cancelMutation.isPending
+                {cancelMutation.isPending || checkingPayment
                   ? '처리 중...'
                   : scope === 'full'
                     ? (isProcessing ? '강제 취소 실행' : '전체 취소 실행')

@@ -283,7 +283,7 @@ export interface ProductSellableQuantityProjectionDto {
   comingSoonDate: string | null;
   inboundDate?: string | null;
   inboundApproximate?: boolean;
-  inboundSource?: 'manual' | 'purchase_order' | null;
+  inboundSource?: 'manual' | 'purchase_order' | 'inbound_shipment' | null;
   calculatedAt: string;
   components: ProductSellableQuantityProjectionComponentDto[];
 }

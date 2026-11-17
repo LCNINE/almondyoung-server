@@ -33,7 +33,7 @@ import {
 import { createMemoryPrefs } from '../../core/data/devicePrefs';
 import type { ApiClient } from '../../core/data/httpClient';
 import { WorkBoundary } from '../../core/operations/WorkBoundary';
-import { ApiError } from '../../core/data/httpClient';
+import { ApiError, NetworkError } from '../../core/data/httpClient';
 import { LocationOutboundScreen } from './LocationOutboundScreen';
 let emitScan: (code: string) => void;
 function ScanProbe() {
@@ -227,7 +227,7 @@ async function fixture(
           picked += Number(body.quantity);
           applied.set(id, snapshot());
         }
-        if (loseResponse) throw new ApiError('응답 유실', 403);
+        if (loseResponse) throw new NetworkError('응답 유실');
         return applied.get(id) as T;
       }
       throw new Error('Unexpected request ' + o.path);
@@ -361,7 +361,10 @@ it('blocks intake after response loss and reconciles the original key without du
     emitScan('B');
   });
   await waitFor(async () =>
-    expect((await f.store.pending('scope'))[0]?.status).toBe('uncertain')
+    expect((await f.store.pending('scope'))[0]).toMatchObject({
+      status: 'uncertain',
+      leaseExpiresAt: 0,
+    })
   );
   const input = screen.getByLabelText('출고 상품 바코드');
   await waitFor(() => expect(input).toBeDisabled());
@@ -375,7 +378,7 @@ it('blocks intake after response loss and reconciles the original key without du
   act(() => {
     retry = f.runner.retryPending();
   });
-  await waitFor(() => expect(f.calls).toHaveLength(2));
+  await waitFor(() => expect(f.calls).toHaveLength(5));
   expect(input).toBeDisabled();
   send.resolve();
   await act(async () => retry);
@@ -392,7 +395,10 @@ it('reopening replays persisted inputs with their original keys and latest progr
     emitScan('B');
   });
   await waitFor(async () =>
-    expect((await f.store.pending('scope'))[0]?.status).toBe('uncertain')
+    expect((await f.store.pending('scope'))[0]).toMatchObject({
+      status: 'uncertain',
+      leaseExpiresAt: 0,
+    })
   );
   const saved = (await f.saved())!;
   f.view.unmount();
@@ -578,7 +584,7 @@ it('closes physical confirmation after persisted non-application and accepts ord
   const f = await fixture(3, {
     forceRequest: async <T,>(o: Parameters<ApiClient['request']>[0]) => {
       if (o.path.endsWith('location-outbound-forces'))
-        throw new ApiError('forbidden', 403);
+        throw new NetworkError('response lost');
       await gate.promise;
       return {
         outcome: 'rejected',
@@ -615,7 +621,7 @@ it('keeps the dialog and boundary blocked after resolver loss, then recovers usi
   const f = await fixture(3, {
     forceRequest: async <T,>(o: Parameters<ApiClient['request']>[0]) => {
       if (o.path.endsWith('location-outbound-forces') || lost)
-        throw new ApiError('lost', 403);
+        throw new NetworkError('lost');
       return {
         outcome: 'rejected',
         code: 'LOCATION_OUTBOUND_FORCE_NOT_APPLIED',
@@ -624,7 +630,10 @@ it('keeps the dialog and boundary blocked after resolver loss, then recovers usi
   });
   await submitForce();
   await waitFor(async () =>
-    expect((await f.store.pending('scope'))[0]?.status).toBe('uncertain')
+    expect((await f.store.pending('scope'))[0]).toMatchObject({
+      status: 'uncertain',
+      leaseExpiresAt: 0,
+    })
   );
   expect(screen.getByRole('dialog')).toBeInTheDocument();
   const input = screen.getByLabelText('출고 상품 바코드');
@@ -656,7 +665,7 @@ it('preserves the active force promise and dialog when terminal storage fails, t
   const f = await fixture(3, {
     forceRequest: async <T,>(o: Parameters<ApiClient['request']>[0]) => {
       if (o.path.endsWith('location-outbound-forces'))
-        throw new ApiError('forbidden', 403);
+        throw new NetworkError('response lost');
       return {
         outcome: 'rejected',
         code: 'LOCATION_OUTBOUND_FORCE_NOT_APPLIED',
@@ -821,7 +830,7 @@ async function preparationFixture(
                 )
               : current
           );
-        if (lost) throw new ApiError('response lost', 403);
+        if (lost) throw new NetworkError('response lost');
         const result = saved.get(key)!;
         if (result instanceof ApiError) throw result;
         return result as T;
@@ -939,7 +948,10 @@ it.each([true, false])(
     f.lose(true);
     await userEvent.click(screen.getByRole('button', { name: '출고 준비' }));
     await waitFor(async () =>
-      expect((await f.store.pending('scope'))[0]?.status).toBe('uncertain')
+      expect((await f.store.pending('scope'))[0]).toMatchObject({
+        status: 'uncertain',
+        leaseExpiresAt: 0,
+      })
     );
     const first = f.writes()[0];
     expect(
@@ -955,8 +967,8 @@ it.each([true, false])(
     );
     if (blocked) await screen.findByRole('button', { name: '다시 준비' });
     else await screen.findByRole('button', { name: 'B 선택' });
-    expect(f.writes()).toHaveLength(2);
-    expect(f.writes()[1]).toMatchObject({
+    expect(f.writes()).toHaveLength(5);
+    expect(f.writes()[4]).toMatchObject({
       idempotencyKey: first.idempotencyKey,
       bodyJson: first.bodyJson,
     });
@@ -1003,7 +1015,10 @@ it('reconciles a historical preparation snapshot to the current source after res
   f.lose(true);
   await userEvent.click(screen.getByRole('button', { name: '출고 준비' }));
   await waitFor(async () =>
-    expect((await f.store.pending('scope'))[0]?.status).toBe('uncertain')
+    expect((await f.store.pending('scope'))[0]).toMatchObject({
+      status: 'uncertain',
+      leaseExpiresAt: 0,
+    })
   );
   f.changeSource();
   f.lose(false);
@@ -1193,7 +1208,7 @@ it.each(['failed', 'missing'] as const)(
     const scans = f.requests.filter((o) =>
       o.path.endsWith('location-outbound-scans')
     );
-    expect(scans).toHaveLength(2);
+    expect(scans).toHaveLength(5);
     expect(new Set(scans.map((o) => o.idempotencyKey)).size).toBe(1);
     expect(new Set(scans.map((o) => o.bodyJson)).size).toBe(1);
     expect(scans[0].body).toMatchObject({

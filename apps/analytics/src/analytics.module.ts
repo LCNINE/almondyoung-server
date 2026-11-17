@@ -47,6 +47,11 @@ import { GrowthSummaryQuery } from './features/growth/read-model/growth-summary.
 import { SCHEDULE_ROOT } from '@app/shared/schedule/schedule-root';
 import { CronOnceModule } from '@app/cron-once';
 import { TenancyModule } from '@app/tenancy';
+import { RevenueReportController } from './features/statistics/api/revenue-report.controller';
+import { RevenueReportRepository } from './features/statistics/read-model/revenue-report.repository';
+import { RevenueReportReader } from './features/statistics/read-model/revenue-report.reader';
+import { RevenueReportManager } from './features/statistics/read-model/revenue-report.manager';
+import { RevenueReportService } from './features/statistics/read-model/revenue-report.service';
 
 @Module({
   imports: [
@@ -88,6 +93,7 @@ import { TenancyModule } from '@app/tenancy';
     PermissionModule.forRoot({ service: 'analytics', tenancy: 'served-tenant' }),
   ],
   controllers: [
+    RevenueReportController,
     AnalyticsController,
     StatisticsController,
     CustomerInsightsController,
@@ -102,6 +108,10 @@ import { TenancyModule } from '@app/tenancy';
     MembershipEventsConsumer,
   ],
   providers: [
+    RevenueReportService,
+    RevenueReportRepository,
+    RevenueReportReader,
+    RevenueReportManager,
     AnalyticsService,
     OrderFactsService,
     OrderAggregatesService,

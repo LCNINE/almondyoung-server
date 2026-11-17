@@ -592,7 +592,7 @@ export class StockEventStore {
   }
 
   /** 이벤트 역분개(취소): 원 이벤트의 효과를 상쇄하는 반대 이벤트 생성 */
-  async reverseEvent(eventId: string, reason: string, tx?: DbTx) {
+  async reverseEvent(eventId: string, reason?: string, tx?: DbTx) {
     return this.dbService.run(async (trx) => {
       const [original] = await trx
         .select()
@@ -697,7 +697,7 @@ export class StockEventStore {
           occurredAt: new Date(),
           eventStatus: 'POSTED',
           reversalOfEventId: original.id,
-          reason: `REVERSAL of ${original.id}: ${reason}`,
+          reason: reason?.trim() ? `REVERSAL of ${original.id}: ${reason.trim()}` : `REVERSAL of ${original.id}`,
         })
         .returning();
 

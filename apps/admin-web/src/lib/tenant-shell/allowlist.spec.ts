@@ -13,6 +13,7 @@ describe('tenantShellScreenOf — the tenant shell opens only its allowlist', ()
     ['/mall/products-list/abc-123', '/mall/products-list/[masterId]'],
     ['/mall/products-list/abc-123/versions', '/mall/products-list/[masterId]/versions'],
     ['/mall/bulk-sessions/7', '/mall/bulk-sessions/[id]'],
+    ['/mall/pricing/abc-123', '/mall/pricing/[masterId]'],
   ])('%s is the screen %s', (pathname, screen) => {
     expect(tenantShellScreenOf(pathname)).toBe(screen);
   });

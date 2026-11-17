@@ -35,6 +35,7 @@ import type {
   ShipmentShortPickOperation,
   ShipmentShortPickReason,
 } from '@/lib/types/dto/fulfillment';
+import { operationStatusLabel } from '../../../fulfillments/detail/shipment-action-copy';
 import { useWarehouseCommandRetry } from '../../../outbound-batches/warehouse-command-retry';
 import { ServerDenyFeedback } from '../../../operation-access-feedback';
 
@@ -59,7 +60,6 @@ export function ShortPickDialog({
   const [reason, setReason] =
     useState<ShipmentShortPickReason>('inventory_shortage');
   const [shortQty, setShortQty] = useState(1);
-  const [caseId, setCaseId] = useState('');
   const [note, setNote] = useState('');
   const [shortPickOperation, setShortPickOperation] =
     useState<ShipmentShortPickOperation | null>(null);
@@ -94,7 +94,6 @@ export function ShortPickDialog({
         },
       ],
       reason,
-      csCaseId: caseId.trim() || undefined,
       note: note.trim() || undefined,
     };
     try {
@@ -120,12 +119,10 @@ export function ShortPickDialog({
         else toast.info(message.text);
         onClose();
       } else if (result.operationStatus === 'completed') {
-        toast.success('short-pick 작업이 완료되었습니다.');
+        toast.success('결품 처리를 마쳤어요.');
         onClose();
       } else {
-        toast.info(
-          'short-pick 작업을 접수했습니다. 원래 요청과 키를 보존하며 서버 상태를 확인합니다.'
-        );
+        toast.info('결품 처리를 접수했어요. 처리 결과를 확인하고 있어요.');
       }
     } catch (error) {
       toast.error(shortPickRejectionMessage(error) ?? getServerDenyMessage(error));
@@ -139,23 +136,11 @@ export function ShortPickDialog({
           <DialogTitle>결품 보고</DialogTitle>
         </DialogHeader>
         <div className="space-y-3 text-sm">
-          <div className="rounded border p-3 font-mono text-xs">
+          <div className="rounded border p-3 text-xs">
+            <p>상자 {shipment.id.slice(0, 8)}</p>
             <p>
-              work item {workItemId} · lease v{workItem?.leaseVersion ?? '?'}
-            </p>
-            <p>
-              picking {picking?.strategy ?? '—'} · 시작{' '}
-              {picking ? new Date(picking.startedAt).toLocaleString('ko-KR') : '?'}
-            </p>
-            <p>
-              session {session?.id ?? '—'} · v{session?.version ?? '?'}
-            </p>
-            <p>
-              shipment {shipment.id} · manifest v{shipment.manifestVersion}
-            </p>
-            <p>
-              line {shipmentLineId} · v{line?.lineVersion ?? '?'} · source{' '}
-              {sourceLocationId}
+              {line ? (line.skuName ?? '상품') : '상품'} · 주문 수량{' '}
+              {line?.qty ?? '?'}개
             </p>
           </div>
           <div className="grid grid-cols-2 gap-3">
@@ -193,13 +178,6 @@ export function ShortPickDialog({
             </div>
           </div>
           <div className="space-y-1">
-            <Label>CS case ID (선택)</Label>
-            <Input
-              value={caseId}
-              onChange={(event) => setCaseId(event.target.value)}
-            />
-          </div>
-          <div className="space-y-1">
             <Label>메모 (선택)</Label>
             <Textarea
               value={note}
@@ -209,15 +187,11 @@ export function ShortPickDialog({
           {shortPickOperation && (
             <div className="space-y-1 rounded border border-amber-300 bg-amber-50 p-3 text-xs dark:bg-amber-950/20">
               <p className="font-medium">
-                작업 상태: {operationStatus ?? 'pending'}
-              </p>
-              <p className="font-mono">
-                operation {shortPickOperation.operationId}
+                처리 상태: {operationStatusLabel(operationStatus ?? 'pending')}
               </p>
               {isRecoverableOperation(operationStatus) && (
                 <p>
-                  완료 확인 전까지 원래 payload와 Idempotency-Key를 보존합니다.
-                  아래 버튼은 같은 요청과 키로만 재시도합니다.
+                  완료를 확인할 때까지 같은 요청으로 다시 시도할 수 있어요.
                 </p>
               )}
               {operation.data?.lastError && (

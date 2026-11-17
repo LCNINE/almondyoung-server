@@ -1,5 +1,5 @@
 /**
- * master 만 쓰는 화면의 쓰기 동작(`<src 기준 파일>#<훅>`). admin 첫 부여로 만족하지 않는 게 의도다(관리자 계정·역할·역할 부여·외부 연동 키·급여).
+ * master 만 쓰는 화면의 쓰기 동작(`<src 기준 파일>#<훅>`). admin 첫 부여로 만족하지 않는 게 의도다(관리자 계정·역할·역할 부여·외부 연동 키·급여·아몬드템플릿 첫 게시).
  * 이 명단에 있는데 admin 이 실행할 수 있게 되면 게이트가 «명단에서 빼라»고 실패한다.
  */
 export const MASTER_ONLY_MUTATIONS: readonly string[] = [
@@ -27,6 +27,7 @@ export const MASTER_ONLY_MUTATIONS: readonly string[] = [
   'features/attendance/hooks/use-attendance-wage.ts#useSaveWageWorker',
   'features/attendance/hooks/use-attendance-wage.ts#useUpdatePayGroup',
   'lib/services/customers/mutations.ts#useSetUserRoles',
+  'lib/services/products/mutations.ts#usePublishPrintProduct',
   'lib/services/iam/mutations.ts#useCreatePiiAccessReview',
   'lib/services/oauth-clients/mutations.ts#useClearOAuthClientPreviousSecret',
   'lib/services/oauth-clients/mutations.ts#useCreateOAuthClient',

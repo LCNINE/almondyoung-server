@@ -7,7 +7,7 @@ import type {
 } from "@/lib/api/orders/store-orders"
 import { refundTone, toRefundStatus } from "@/lib/orders/refund-status"
 import { cn } from "@/lib/utils"
-import { orderBadgeStatus } from "./order-status-display"
+import { getCoreDisplayStatus, orderBadgeStatus } from "./order-status-display"
 import { REFUND_TONE_BADGE_CLASS } from "./refund-status-style"
 
 interface BadgeProps {
@@ -113,6 +113,7 @@ export function OrderStatusBadges({
   medusaStatus,
   refundRequestStatus,
 }: OrderStatusBadgesProps) {
+  const tStatus = useTranslations("mypage.order.status")
   const tRefundInfo = useTranslations("mypage.order.refundInfo")
   const refundRequestBadge: BadgeProps | null =
     refundRequestStatus === "REQUESTED"
@@ -149,7 +150,16 @@ export function OrderStatusBadges({
   return (
     <div className="flex flex-wrap gap-1">
       {orderBadge && <StatusBadge {...orderBadge} />}
-      {fulfillBadge && <StatusBadge {...fulfillBadge} />}
+      {fulfillBadge && (
+        <StatusBadge
+          {...fulfillBadge}
+          label={
+            actions.fulfillmentStatus === "preparing"
+              ? getCoreDisplayStatus(actions, tStatus)
+              : fulfillBadge.label
+          }
+        />
+      )}
       {refundBadge && <StatusBadge {...refundBadge} />}
     </div>
   )

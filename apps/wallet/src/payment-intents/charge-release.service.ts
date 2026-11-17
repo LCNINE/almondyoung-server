@@ -2,6 +2,7 @@ import { ConflictException, Injectable, Logger } from '@nestjs/common';
 import { ChargesService } from '../charges/charges.service';
 import { PaymentMethodsService } from '../payment-methods/payment-methods.service';
 import { ProviderRegistry } from '../providers/provider.registry';
+import { hasConfirmAttempt } from '../providers/toss/toss-widget-mode';
 
 /**
  * active(미확정) AUTHORIZE charge 인데도 외부에 살아있는 상태를 남기는 결제수단.
@@ -42,7 +43,9 @@ export class ChargeReleaseService {
     const activeCharge = await this.chargesService.findActiveByIntentAndOperation(intent.id, 'AUTHORIZE');
     if (activeCharge) {
       const activeMethod = await this.paymentMethodsService.findById(activeCharge.paymentMethodId);
-      if (activeMethod && EXTERNALLY_HELD_METHOD_TYPES.includes(activeMethod.type)) {
+      // 승인 응답을 잃은 TOSS charge 도 토스에 결제·계좌가 살아 있을 수 있다 — provider 가 상태를 물어 정리한다.
+      const unconfirmedToss = activeMethod?.type === 'TOSS' && hasConfirmAttempt(activeCharge.responsePayload);
+      if (activeMethod && (EXTERNALLY_HELD_METHOD_TYPES.includes(activeMethod.type) || unconfirmedToss)) {
         await this.cancelChargeOrThrow(activeMethod.type, activeCharge, intent, correlationId);
       } else {
         // 나머지 active charge(POINTS hold/TOSS 결제창 대기)는 외부에 확정된 상태가 없어 DB CANCELED만으로 충분하다.

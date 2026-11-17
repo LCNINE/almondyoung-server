@@ -20,6 +20,7 @@ export const ORDER_STREAM_EVENT_TYPES = [
   'OrderModified',
   'OrderCancelled',
   'OrderRefundCreated',
+  'ChannelCancelRequested',
   'ChannelReturnRequested',
   'ChannelReturnCancelled',
   'ChannelReturnPrepaid',

@@ -7,7 +7,7 @@ import {
   Optional,
 } from '@nestjs/common';
 import { DbService } from '@app/db';
-import { BadRequestError } from '@app/shared';
+import { BadRequestError, ConflictError, ServiceUnavailableError } from '@app/shared';
 import { InjectTypedDb } from '@app/db/decorators';
 import { wmsTables, wmsSchema, DbTx } from '../../inventory/schema/inventory.schema';
 import {
@@ -17,6 +17,7 @@ import {
   inArray,
   notInArray,
   desc,
+  ne,
   and,
   or,
   gte,
@@ -34,9 +35,18 @@ import {
 } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { lineMatchingBadgeResolvedSql } from '../../product-matching/line-composition/line-resolved.sql';
-import { isDigitalFulfillmentLine, isOutsourcedLine } from '../../product-matching/line-composition/line-composition';
+import {
+  countLineRoutes,
+  isDigitalFulfillmentLine,
+  isOutsourcedLine,
+} from '../../product-matching/line-composition/line-composition';
 import { selectFrozenCompositions } from '../../product-matching/line-composition/frozen-compositions';
 import { physicalCancellationByItem } from './boxed-cancellation-units';
+import {
+  MANUAL_ORDER_SALES_CHANNEL,
+  isChannelOrderNumberConflict,
+  manualOrderNumberConflictMessage,
+} from './manual-sales-order';
 import { lineSkuQuantitiesSql } from '../line-quantities/line-quantities.sql';
 import { LineQuantities, readLineQuantities } from '../line-quantities/line-quantities.reader';
 import { cancellableSalesUnits } from '../line-quantities/line-sales-units';
@@ -83,6 +93,7 @@ import { canonicalFulfillmentRequestHash } from '../../fulfillment/services/fulf
 import type { CancellationEffect } from '../cancellation-record/cancellation-lines';
 import { recordSalesOrderCancellation } from '../cancellation-record/record-cancellation';
 import { FULFILLMENT_SYSTEM_ACTOR } from '../../../platform/auth/system-actor';
+import { isCustomerRequestReason } from '../../fulfillment/shipment/shipment-operation-reasons';
 
 type SalesOrderLineInsert = InferInsertModel<typeof wmsTables.salesOrderLines>;
 type BusinessLinkInsert = InferInsertModel<typeof wmsTables.businessLinks>;
@@ -119,6 +130,8 @@ type CancelSalesOrderOptions = CancelSalesOrderDto & {
     actorId: string;
     actorRoles: string[];
   };
+  /** 채널 주문 관리자 취소 — 상자 취소 작업의 처리자로만 남긴다(권한 판정은 시스템 행위자). 요청 해시에 넣지 않는다 */
+  operatorActorId?: string;
 };
 type PartialCancellationLine = {
   salesOrderLineId: string;
@@ -318,6 +331,7 @@ export class SalesOrdersService {
             shippingFee: dto.shippingFee ?? 0,
             mergeGroupId: dto.mergeGroupId ?? null,
             isMerged: false,
+            memo: dto.memo ?? null,
             walletIntentId: dto.walletIntentId ?? null,
             orderDate,
             // 최초 insert 경로라 기존 값을 덮어쓸 걱정이 없다 (existing row 없음).
@@ -420,6 +434,49 @@ export class SalesOrdersService {
         timer?.();
         this.metrics?.incrementErrorCounter('order', 'create_failed', 'high');
         this.metrics?.incrementBusinessOperation('order', 'create', 'failure');
+        throw error;
+      });
+  }
+
+  // 관리자가 입력하는 주문은 이미 받은 주문이라 저장과 함께 출고 대기열에 넣는다(채널 수집의 결제 확인 주문과 같은 자리)
+  async createManual(dto: CreateSalesOrderDto) {
+    if (dto.salesChannel !== MANUAL_ORDER_SALES_CHANNEL) {
+      throw new BadRequestError('직접 입력한 주문은 수기·기타 채널로만 저장할 수 있습니다.');
+    }
+    // 금액·수량 칸은 정수 컬럼이다 — 소수는 DB 오류(500)가 되기 전에 입력 오류로 돌려보낸다
+    const fractional = [
+      dto.totalAmount,
+      dto.shippingFee,
+      ...dto.lines.flatMap((l) => [l.quantity, l.unitPrice, l.totalPrice]),
+    ]
+      .filter((value): value is number => value !== undefined)
+      .some((value) => !Number.isInteger(value));
+    if (fractional) {
+      throw new BadRequestError('수량과 금액은 원 단위 정수로 입력해 주세요.');
+    }
+    return this.db
+      .run(async (trx) => {
+        if (await this.findByChannelOrderId(MANUAL_ORDER_SALES_CHANNEL, dto.channelOrderId, trx)) {
+          throw new ConflictError(manualOrderNumberConflictMessage(dto.channelOrderId));
+        }
+        const order = await this.create(dto, trx, { paymentConfirmed: true });
+        const queued = await this.fulfillmentBacklog.enqueueForSalesOrder(
+          order.id,
+          { eventOccurredAt: order.orderDate, isNewSalesOrder: true },
+          trx,
+        );
+        // 출고로 넘어가지 못한 주문을 남기면 같은 번호로 다시 저장할 수도 없다 — 통째로 되돌린다
+        if (!queued) {
+          throw new ServiceUnavailableError(
+            '지금은 출고 작업을 받을 수 없어 주문을 저장하지 않았습니다. 잠시 뒤 다시 저장해 주세요.',
+          );
+        }
+        return order;
+      })
+      .catch((error: unknown) => {
+        if (isChannelOrderNumberConflict(error)) {
+          throw new ConflictError(manualOrderNumberConflictMessage(dto.channelOrderId));
+        }
         throw error;
       });
   }
@@ -626,12 +683,21 @@ export class SalesOrdersService {
       .from(wmsTables.salesOrderLines)
       .where(eq(wmsTables.salesOrderLines.salesOrderId, id));
     const shipmentPhase = (await this.loadShipmentPhases([id], db)).get(id) ?? FALLBACK_SHIPMENT_PHASE;
+    // 판매주문당 출고주문은 많아야 하나다 — 화면이 받는 분 정보가 실린 출고주문 목록을 부르지 않고 바로 이동하게 id·상태만 싣는다
+    const [fulfillmentOrder] = await db
+      .select({ id: wmsTables.fulfillmentOrders.id, status: wmsTables.fulfillmentOrders.status })
+      .from(wmsTables.fulfillmentOrders)
+      .where(eq(wmsTables.fulfillmentOrders.salesOrderId, id))
+      .limit(1);
     const { links: businessLinks, context } = await this.loadBusinessTimelineLinks(id, db);
     // 리더는 상태가 없다 — 생성자에 넣으면 이 서비스를 위치 인자로 만드는 통합 스펙이 깨진다
     const cancelRequestRow = await new ChannelCancelRequestReader().latestFor(id, db);
     return {
       ...order,
       shipmentPhase,
+      fulfillmentOrder: fulfillmentOrder ?? null,
+      // 출고주문이 없을 때 «아직 안 생김»과 «생길 라인이 없음»을 화면이 가른다
+      lineRouteCounts: countLineRoutes(lines),
       lines,
       businessTimeline: this.toBusinessTimeline(context, businessLinks),
       // 채널 주문 취소 요청(#1016 35번) — admin-web 이 «취소 요청됨»·«취소 실패»를 그린다
@@ -1050,7 +1116,6 @@ export class SalesOrdersService {
         ),
         ph AS (${orderFulfillmentPhaseSql(sql`SELECT ranged.id FROM ranged`)})
         SELECT ranged.day,
-               count(*) FILTER (WHERE ph.admin_phase = 'pending')::int AS pending,
                count(*) FILTER (WHERE ph.admin_phase = 'preparing')::int AS preparing,
                count(*) FILTER (WHERE ph.admin_phase = 'shipping')::int AS shipping,
                count(*) FILTER (WHERE ph.admin_phase = 'delivered')::int AS delivered,
@@ -1393,7 +1458,11 @@ export class SalesOrdersService {
       reasonDetail: options.reasonDetail ?? null,
       cancelledBy: options.cancelledBy ?? null,
       effects,
-      metadata: { ...(options.metadata ?? {}), ...this.commandReplayMetadata(id, options) },
+      metadata: {
+        ...(options.metadata ?? {}),
+        ...this.commandReplayMetadata(id, options),
+        ...this.requestChannelMetadata(options),
+      },
       occurredAt,
     };
     const cancellation = await recordSalesOrderCancellation(trx, cancellationValues, null);
@@ -1573,7 +1642,11 @@ export class SalesOrdersService {
       reasonDetail: options.reasonDetail ?? null,
       cancelledBy: options.cancelledBy ?? null,
       effects,
-      metadata: { ...(options.metadata ?? {}), ...this.commandReplayMetadata(salesOrderId, options) },
+      metadata: {
+        ...(options.metadata ?? {}),
+        ...this.commandReplayMetadata(salesOrderId, options),
+        ...this.requestChannelMetadata(options),
+      },
       occurredAt,
     };
     const cancellation = await recordSalesOrderCancellation(trx, cancellationValues, cancelledLines);
@@ -1679,7 +1752,8 @@ export class SalesOrdersService {
     const salesOrderLines = await tx
       .select()
       .from(wmsTables.salesOrderLines)
-      .where(eq(wmsTables.salesOrderLines.salesOrderId, salesOrderId));
+      .where(eq(wmsTables.salesOrderLines.salesOrderId, salesOrderId))
+      .orderBy(asc(wmsTables.salesOrderLines.id));
     const fulfillmentItems = await tx
       .select({
         id: wmsTables.fulfillmentOrderItems.id,
@@ -1870,7 +1944,11 @@ export class SalesOrdersService {
           id: options.fulfillmentCommandContext.actorId,
           roles: options.fulfillmentCommandContext.actorRoles,
         }
-      : FULFILLMENT_SYSTEM_ACTOR;
+      : options.operatorActorId
+        ? { ...FULFILLMENT_SYSTEM_ACTOR, recordedOperatorId: options.operatorActorId }
+        : FULFILLMENT_SYSTEM_ACTOR;
+    const reasonCode = options.reasonCode?.trim() || undefined;
+    const requestChannel = this.requestChannelMetadata(options).requestChannel;
     const operationEffects: CancellationEffect[] = [];
     for (const request of requestedSalesLines) {
       const salesLine = salesLineById.get(request.salesOrderLineId)!;
@@ -1896,6 +1974,8 @@ export class SalesOrdersService {
           expectedManifestVersion: request.manifestVersion,
           lines: request.lines.sort((a, b) => a.shipmentLineId.localeCompare(b.shipmentLineId)),
           reason,
+          ...(reasonCode ? { reasonCode } : {}),
+          ...(requestChannel ? { requestChannel } : {}),
         },
         `sales-order-cancel:${sourceKey}:${shipmentId}`,
         commandActor,
@@ -1945,6 +2025,7 @@ export class SalesOrdersService {
         ...(options.metadata ?? {}),
         fulfillmentCommandSourceKey: this.explicitAfterBoxingSourceKey(options),
         fulfillmentCommandRequestHash: this.afterBoxingRequestHash(salesOrderId, options),
+        ...this.requestChannelMetadata(options),
       },
       occurredAt,
     };
@@ -1998,6 +2079,13 @@ export class SalesOrdersService {
       fulfillmentCommandSourceKey: idempotencyKey,
       fulfillmentCommandRequestHash: this.afterBoxingRequestHash(salesOrderId, options),
     };
+  }
+
+  /** 고객 요청 취소의 요청 경로 — 고객 요청일 때만, 값이 있을 때만 키를 둔다 */
+  private requestChannelMetadata(options: CancelSalesOrderOptions): Pick<CancelSalesOrderDto, 'requestChannel'> {
+    const reasonCode = options.reasonCode?.trim();
+    if (!options.requestChannel || !reasonCode || !isCustomerRequestReason('cancel', reasonCode)) return {};
+    return { requestChannel: options.requestChannel };
   }
 
   private explicitAfterBoxingSourceKey(options: CancelSalesOrderOptions): string | undefined {
@@ -2096,7 +2184,8 @@ export class SalesOrdersService {
     const salesOrderLines = await tx
       .select()
       .from(wmsTables.salesOrderLines)
-      .where(eq(wmsTables.salesOrderLines.salesOrderId, salesOrderId));
+      .where(eq(wmsTables.salesOrderLines.salesOrderId, salesOrderId))
+      .orderBy(asc(wmsTables.salesOrderLines.id));
     const prior = await this.loadPriorCancellationContext(salesOrderId, tx);
     const [fullCancellation] = await tx
       .select({ id: wmsTables.salesOrderCancellations.id })
@@ -2163,6 +2252,58 @@ export class SalesOrdersService {
       hasShippedQuantity: false,
       leavesNothing: this.leavesNothing(salesOrderLines, prior, requested),
     };
+  }
+
+  /**
+   * 줄별로 지금까지 취소된 수량(갈래·scope 무관 — 라인 수량 문의 `canceled`, 전체취소도 센다).
+   * 채널이 줄 취소를 «이 줄의 누적 취소 수량»으로 알릴 때 커널이 그 차이만 취소하려고 읽는다(스펙 §5.4).
+   * 다른 주문의 줄이면 던진다 — `remainingOf` 와 같이 `?? 0` 으로 덮지 않는다. 부르는 쪽이 판매주문을 잠근 트랜잭션에서 부른다.
+   */
+  async cancelledQuantities(salesOrderId: string, lineIds: string[], tx: DbTx): Promise<Map<string, number>> {
+    const quantities = await readLineQuantities(tx, salesOrderId);
+    return new Map(
+      lineIds.map((lineId) => {
+        const line = quantities.get(lineId);
+        if (!line) throw new Error(`Line quantities are missing SalesOrder line ${lineId}`);
+        return [lineId, line.canceled];
+      }),
+    );
+  }
+
+  /**
+   * 줄별로 지금 부분취소가 받을 수 있는 최대 수량 — `cancel` 이 거절하지 않는 상한(취소 상한 `cancelableOf`, 상자 후면 거기에
+   * «아직 아무 구성품도 나가지 않은 판매 단위» `cancellableSalesUnits` 까지). 판매자센터가 취소를 확정한 채널(마켓)의 수집 취소가
+   * 거절될 때 커널이 멈출 수 있는 몫만 취소하려고 읽는다(스펙 §5.4). 구성이 어긋난 데이터는 그 문이 409 로 던진다 — 삼키지 않는다.
+   * 부르는 쪽이 판매주문을 잠근 트랜잭션에서 부른다.
+   */
+  async cancellableQuantities(salesOrderId: string, lineIds: string[], tx: DbTx): Promise<Map<string, number>> {
+    const quantities = await readLineQuantities(tx, salesOrderId);
+    const prior = await this.loadPriorCancellationContext(salesOrderId, tx, quantities);
+    const boxed = await this.hasBoxedFulfillment(salesOrderId, tx);
+    return new Map(
+      lineIds.map((lineId) => {
+        const line = quantities.get(lineId);
+        if (!line) throw new Error(`Line quantities are missing SalesOrder line ${lineId}`);
+        const cancelable = Math.max(0, cancelableOf(prior, lineId));
+        // 상자 후 창고 줄은 박스에서 빼낼 수 있는 몫까지만(planAfterBoxing 의 physicalCancellationByItem 거절과 같은 경계).
+        // FOI 가 없는 줄(인쇄 외주·디지털)은 SKU 층이 비어 취소 상한만 본다
+        const units = boxed && line.skus.length > 0 ? cancellableSalesUnits(line) : cancelable;
+        return [lineId, Math.min(cancelable, units)];
+      }),
+    );
+  }
+
+  /**
+   * 이미 줄마다 전량 취소된 주문에 채널 전체취소가 오면 취소를 다시 하지 않고 상태만 맞춘다 — 상자 전 전체취소의 재수신 경로
+   * (`cancelBeforeBoxingFull` 의 기존 전체취소 갈래)와 같이 상태를 `cancelled` 로 두고 열린 FO 생성 대기를 닫는다.
+   * 부분취소는 판매주문 상태를 바꾸지 않으므로 이게 없으면 수량 0 인 주문이 확정 상태로 남는다.
+   */
+  async markCancelledAfterLineCancellations(salesOrderId: string, tx: DbTx): Promise<void> {
+    await tx
+      .update(wmsTables.salesOrders)
+      .set({ status: 'cancelled', updatedAt: new Date() })
+      .where(and(eq(wmsTables.salesOrders.id, salesOrderId), ne(wmsTables.salesOrders.status, 'cancelled')));
+    await this.closeOpenFulfillmentBacklogEffects(salesOrderId, tx);
   }
 
   /** 이 취소 뒤 남는 수량(남은 수량 − 이번 취소)이 모든 줄에서 0 인가. 디지털 줄도 센다. 이번 요청을 빼는 건 판정이다. */

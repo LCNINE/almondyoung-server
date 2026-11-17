@@ -15,6 +15,8 @@ import {
   asksAlreadyRefunded,
   awaitsSettlementResult,
   parseAlreadyRefunded,
+  manualRefundTodo,
+  settlementAlert,
 } from './cancel-request.shape';
 
 const view = (over: Record<string, unknown> = {}) => ({
@@ -110,6 +112,7 @@ describe('정산(#1016 36번 재설계)', () => {
     confirmedAt: '2026-10-12T01:00:00.000Z',
     deadlineAt: '2026-10-15T01:00:00.000Z',
     lastFailure: { code: 'wallet_refund_refused:REFUND_NOT_AUTOMATABLE', message: '자동 환불할 수 없는 결제수단입니다', retryable: false, at: '2026-10-12T01:00:05.000Z' },
+    marketRequest: false,
     ...over,
   });
 
@@ -241,6 +244,47 @@ describe('정산(#1016 36번 재설계)', () => {
     expect(settlementActionsOf(null)).toEqual({ retry: false, manualRefund: false });
   });
 
+  describe('마켓 고객 취소요청 행(marketRequest) — 환불은 마켓이 하고 core 는 승인만 보낸다', () => {
+    const observe = { code: 'approval_observe_mode', message: '관찰 모드 — 판매자센터에서 취소를 승인하세요.', retryable: false, at: 'x' };
+    const market = (over: Partial<SettlementView> = {}) => settlement({ marketRequest: true, lastFailure: observe, ...over });
+
+    it('core 응답의 marketRequest 를 읽는다 — 옛 응답(칸 없음)은 false', () => {
+      expect(toSettlementView({ ...settlement(), marketRequest: true })?.marketRequest).toBe(true);
+      const { marketRequest: _omit, ...old } = settlement();
+      expect(toSettlementView(old)?.marketRequest).toBe(false);
+    });
+
+    it('관찰 모드 거절은 «판매자센터 승인 필요» — «환불 거절»·«개발 확인»이 아니다', () => {
+      expect(settlementLabel(market())).toBe('판매자센터 승인 필요');
+      expect(settlementReason(market())).toBe('판매자센터 승인 필요 · 관찰 모드 — 판매자센터에서 취소를 승인하세요.');
+      const v = toCancelRequestView({ id: 'r1', status: 'settling', scope: 'full', settlement: market() });
+      expect(cancelRequestLine(v!)).toBe('전체취소 확정 · 판매자센터 승인 필요');
+    });
+
+    it('승인 실행부의 다른 재시도 불가 실패(쿠팡 출고중지 실패·4xx 등)도 같은 말이다', () => {
+      const stop = { code: 'coupang_stop_shipment_failed', message: '이미 출고됨', retryable: false, at: 'x' };
+      expect(settlementLabel(market({ lastFailure: stop }))).toBe('판매자센터 승인 필요');
+      expect(settlementReason(market({ lastFailure: { ...stop, code: 'http_400', message: '' } }))).toBe('판매자센터 승인 필요 · http_400');
+    });
+
+    it('조치 — [다시 시도]만, [계좌 송금으로 환불]은 없다(core 가 거절한다)', () => {
+      expect(settlementActionsOf(market())).toEqual({ retry: true, manualRefund: false });
+      expect(settlementActionsOf(market({ phase: 'delayed', lastFailure: null }))).toEqual({ retry: true, manualRefund: false });
+      expect(settlementActionsOf(market({ phase: 'in_progress' }))).toEqual({ retry: false, manualRefund: false });
+    });
+
+    it('거절이 아니면 기존 이름 그대로 — 진행 중·지연', () => {
+      expect(settlementLabel(market({ phase: 'in_progress' }))).toBe('환불 처리 중');
+      expect(settlementReason(market({ phase: 'in_progress' }))).toBeNull();
+      expect(settlementLabel(market({ phase: 'delayed' }))).toBe('환불 지연');
+    });
+
+    it('Medusa 행은 그대로 — 같은 실패 코드여도 «환불 거절»·계좌 송금 있음', () => {
+      expect(settlementLabel(settlement({ lastFailure: observe }))).toBe('환불 거절');
+      expect(settlementActionsOf(settlement())).toEqual({ retry: true, manualRefund: true });
+    });
+  });
+
   it('경과·기한 — 기한은 한국 날짜', () => {
     // 확정 01:00Z, 지금 02:30Z → 1시간 30분. 기한 2026-10-15T01:00Z = 10/15(목) KST
     expect(settlementTiming(settlement(), Date.parse('2026-10-12T02:30:00.000Z'))).toBe('확정 후 1시간 30분 · 기한 10/15(목)');
@@ -265,5 +309,57 @@ describe('정산(#1016 36번 재설계)', () => {
 
   it('계좌 송금 확인 문구는 실제 화면 이름을 쓴다(D7, PR 6 — 환불 내역에 [완료 처리]가 생겼다)', () => {
     expect(MANUAL_REFUND_CONFIRM_TEXT).toBe('고객에게 계좌를 받아 직접 송금한 뒤, 결제 관리 › 환불 내역에서 [완료 처리]를 눌러 주세요.');
+  });
+});
+
+describe('계좌 송금으로 바꾼 정산 — 남은 할 일', () => {
+  const manual = (over: Partial<SettlementView> = {}): SettlementView => ({
+    requestId: 'r1',
+    phase: 'delayed',
+    mode: 'manual',
+    confirmedAt: '2026-10-12T01:00:00.000Z',
+    startedAt: '2026-10-12T02:00:00.000Z',
+    deadlineAt: '2026-10-15T01:00:00.000Z',
+    lastFailure: null,
+    marketRequest: false,
+    ...over,
+  });
+
+  it('바꾼 직후에도 단계는 확정 시각 기준 «지연»이지만, 이름은 지금 기다리는 일이고 경고색이 아니다', () => {
+    expect(settlementLabel(manual())).toBe('계좌 송금 준비');
+    expect(settlementLabel(manual({ phase: 'in_progress' }))).toBe('계좌 송금 준비');
+    expect(settlementAlert(manual())).toBe(false);
+    const request = toCancelRequestView({ id: 'r1', status: 'settling', scope: 'full', settlement: manual() });
+    expect(cancelActionOf({ channel: 'medusa', orderStatus: 'cancelled', cancelRequest: request })).toEqual({
+      kind: 'settling',
+      label: '계좌 송금 준비',
+      alert: false,
+    });
+  });
+
+  it('남은 할 일은 송금과 [완료 처리] — 좁은 칸엔 짧게', () => {
+    expect(manualRefundTodo(manual())).toBe(
+      '취소가 반영되면 환불 내역에 송금 대기 환불이 생깁니다. 고객 계좌로 송금한 뒤 [완료 처리]를 눌러 주세요.',
+    );
+    expect(manualRefundTodo(manual(), 'short')).toBe('취소가 반영되면 송금하고 환불 내역에서 [완료 처리]');
+  });
+
+  it('거절되면 거절 이름·경고 그대로, 할 일 문구는 없다', () => {
+    const refused = manual({
+      phase: 'refused',
+      lastFailure: { code: 'wallet_refund_refused:X', message: '거절', retryable: false, at: '2026-10-12T02:00:05.000Z' },
+    });
+    expect(settlementLabel(refused)).toBe('환불 거절');
+    expect(settlementAlert(refused)).toBe(true);
+    expect(manualRefundTodo(refused)).toBeNull();
+  });
+
+  it('자동 정산은 그대로 — 지연은 경고, 할 일 문구 없음', () => {
+    const auto = manual({ mode: 'auto' });
+    expect(settlementLabel(auto)).toBe('환불 지연');
+    expect(settlementAlert(auto)).toBe(true);
+    expect(settlementAlert(manual({ mode: 'auto', phase: 'in_progress' }))).toBe(false);
+    expect(manualRefundTodo(auto)).toBeNull();
+    expect(manualRefundTodo(null)).toBeNull();
   });
 });

@@ -135,6 +135,11 @@ export class CreateSalesOrderDto {
   @Type(() => CreateSalesOrderLineDto)
   lines: CreateSalesOrderLineDto[];
 
+  @ApiProperty({ description: '주문 메모', required: false })
+  @IsString()
+  @IsOptional()
+  memo?: string;
+
   @ApiProperty({ description: 'Wallet 결제 인텐트 ID. Medusa 채널 주문만 해당. 취소 시 자동 환불에 사용됨.', required: false })
   @IsString()
   @IsOptional()

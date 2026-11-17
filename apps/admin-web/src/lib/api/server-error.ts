@@ -100,6 +100,13 @@ export const CONFLICT_MESSAGES: Record<string, string> = {
     '이 박스는 지금 결품을 보고할 수 없어요. 송장을 다시 찍어 주세요.',
   SHORT_PICK_INVOICE_NOT_VOIDABLE:
     '송장을 지금 처리할 수 없어 결품을 보고하지 못했어요. 관리자에게 문의해 주세요.',
+  SHIPMENT_RECOVERY_IN_PROGRESS:
+    '같은 상자의 다른 취소를 처리하고 있어요. 상자가 출고 배치에 있으면 먼저 빼고, 1~2분 뒤 다시 시도해 주세요.',
+  SHIPMENT_ALREADY_DISPATCHED:
+    '이미 출고된 상자예요. 취소 대신 회수나 반품으로 처리해 주세요.',
+  SHIPMENT_NOT_ACTIVE: '이미 취소됐거나 쓰지 않는 상자예요.',
+  SHIPMENT_LINE_STALE_VERSION:
+    '그사이 주문이 바뀌었어요. 새로고침한 뒤 다시 시도해 주세요.',
 };
 
 const PREPARATION_REASON_CODES: readonly string[] = [
@@ -114,6 +121,11 @@ const PREPARATION_REASON_CODES: readonly string[] = [
   'REPLAN_LIMIT_REACHED',
   'BATCH_NOT_STARTED',
 ];
+
+/** 화면에 따로 문장을 둔 거절 코드면 그 문장 */
+export function knownConflictMessage(code: string | null): string | undefined {
+  return code ? CONFLICT_MESSAGES[code] : undefined;
+}
 
 export function getServerDenyMessage(
   error: unknown,

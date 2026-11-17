@@ -5,7 +5,7 @@ import {
 } from './__fixtures__/workRuntime';
 import { describe, it, expect } from 'vitest';
 import type { ReactNode } from 'react';
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import {
@@ -100,7 +100,14 @@ function ScanButton({ code }: { code: string }) {
 async function renderScreen(
   calls: Call[],
   restored?: Partial<ReturnType<typeof receiptFixture>>,
-  withNeighbor = false
+  withNeighbor = false,
+  hold?: {
+    check?: Promise<void>;
+    draft?: Promise<void>;
+    draftLoadFails?: { now: boolean };
+    serverDown?: { now: boolean };
+    savedScans?: string[];
+  }
 ) {
   const qc = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -190,6 +197,15 @@ async function renderScreen(
     }) as unknown as ApiClient['request'],
   };
   const runtime = createTestWorkRuntime(client);
+  // 화면이 저장된 작업·이전 입고 결과를 읽는 동안을 붙잡는다 — 그 사이 받은 스캔을 본다.
+  if (hold?.check) {
+    const get = runtime.store.get.bind(runtime.store);
+    const gate = hold.check;
+    runtime.store.get = async (id) => {
+      await gate;
+      return get(id);
+    };
+  }
   if (restored)
     await runtime.store.draft('fixture:draft:quick-inbound:w-1', () => ({
       receiptId: 'r-1',
@@ -219,6 +235,34 @@ async function renderScreen(
       seen: [],
       key: 'restored-receipt',
     }));
+  if (hold?.draft) {
+    const draft = runtime.store.draft.bind(runtime.store);
+    const gate = hold.draft;
+    runtime.store.draft = (async (id: string, update?: never) => {
+      if (id.includes(':draft:') && !update) await gate;
+      return draft(id, update);
+    }) as typeof runtime.store.draft;
+  }
+  if (hold?.savedScans)
+    await runtime.store.draft('fixture:scan:quick-inbound:w-1', () =>
+      hold.savedScans!.map((code) => ({ id: crypto.randomUUID(), data: code }))
+    );
+  if (hold?.serverDown) {
+    const down = hold.serverDown;
+    const getScope = runtime.getScope;
+    runtime.getScope = async () => {
+      if (down.now) throw new Error('연결 끊김');
+      return getScope();
+    };
+  }
+  if (hold?.draftLoadFails) {
+    const draft = runtime.store.draft.bind(runtime.store);
+    const fails = hold.draftLoadFails;
+    runtime.store.draft = (async (id: string, update?: never) => {
+      if (fails.now && !update) throw new Error('연결 끊김');
+      return draft(id, update);
+    }) as typeof runtime.store.draft;
+  }
   const prefs = createMemoryPrefs({
     'almondwms.warehouse': JSON.stringify({ id: 'w-1', name: '한국창고' }),
   });
@@ -252,6 +296,7 @@ async function renderScreen(
     </SessionProvider>
   );
   render(<RouterProvider router={router} />, { wrapper });
+  if (hold) return;
   await waitFor(() =>
     expect(document.querySelector('[aria-busy]')).toHaveAttribute(
       'aria-busy',
@@ -435,6 +480,219 @@ describe('QuickInboundScreen', () => {
     expect(putawayCalls).toHaveLength(2);
     expect(putawayCalls[0].body).toMatchObject({ quantity: 12 });
     expect(putawayCalls[1].body).toMatchObject({ quantity: 5 });
+  });
+
+  it('준비 중에 찍은 상품은 준비가 끝나면 담고, 이전 작업을 마치라고 하지 않는다', async () => {
+    const user = userEvent.setup();
+    const calls: Call[] = [];
+    let release!: () => void;
+    await renderScreen(calls, undefined, false, {
+      check: new Promise<void>((r) => (release = r)),
+    });
+    expect(await screen.findByText(/스캔 준비 중이에요/)).toBeInTheDocument();
+    // 스캐너 구독은 화면이 그려진 뒤 효과에서 걸린다.
+    await act(async () => {});
+
+    await user.click(screen.getByRole('button', { name: '스캔:8801' }));
+
+    expect(
+      await screen.findByText(/찍은 상품 1건은 준비가 끝나면 담아요/)
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/현재 작업을 마친 뒤/)).not.toBeInTheDocument();
+    expect(
+      calls.filter((c) => c.path.startsWith('/inventory/skus?barcode='))
+    ).toHaveLength(0);
+
+    release();
+
+    await waitFor(() =>
+      expect(screen.getByLabelText('코튼셔츠 수량')).toHaveTextContent('1')
+    );
+    expect(screen.queryByText(/스캔 준비 중이에요/)).not.toBeInTheDocument();
+    expect(
+      calls.filter((c) => c.path.startsWith('/inventory/skus?barcode='))
+    ).toHaveLength(1);
+  });
+
+  it('준비를 끝내지 못하면 찍은 상품을 담지 않고 상태를 확인한 뒤 다시 찍으라고 한다', async () => {
+    const user = userEvent.setup();
+    const calls: Call[] = [];
+    let fail!: (e: Error) => void;
+    await renderScreen(calls, undefined, false, {
+      check: new Promise<void>((_, r) => (fail = r)),
+    });
+    await screen.findByText(/스캔 준비 중이에요/);
+    await act(async () => {});
+    await user.click(screen.getByRole('button', { name: '스캔:8801' }));
+    await screen.findByText(/찍은 상품 1건은 준비가 끝나면 담아요/);
+
+    fail(new Error('저장소를 읽지 못함'));
+
+    expect(
+      await screen.findByText(/입고 상태를 확인하지 못했어요/)
+    ).toBeInTheDocument();
+    expect(
+      await screen.findByText(/찍은 상품을 담지 못했어요/)
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: '입고 상태 다시 확인' })
+    ).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: '스캔:8801' }));
+    expect(
+      await screen.findByText('입고 상태를 확인한 뒤 다시 찍어 주세요.')
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/현재 작업을 마친 뒤/)).not.toBeInTheDocument();
+    expect(
+      calls.filter((c) => c.path.startsWith('/inventory/skus?barcode='))
+    ).toHaveLength(0);
+    expect(screen.queryByText('코튼셔츠')).not.toBeInTheDocument();
+  });
+
+  it('불러온 작업이 이미 등록한 입고면 준비 중에 찍은 상품을 담지 않고 새 입고 뒤 다시 찍으라고 한다', async () => {
+    const user = userEvent.setup();
+    const calls: Call[] = [];
+    let release!: () => void;
+    await renderScreen(calls, {}, false, {
+      draft: new Promise<void>((r) => (release = r)),
+    });
+    await screen.findByText(/스캔 준비 중이에요/);
+    await act(async () => {});
+    await user.click(screen.getByRole('button', { name: '스캔:8801' }));
+    await screen.findByText(/찍은 상품 1건은 준비가 끝나면 담아요/);
+
+    release();
+
+    expect(
+      await screen.findByText(/이미 등록한 입고라 찍은 상품을 담지 않았어요/)
+    ).toBeInTheDocument();
+    expect(screen.getByText('적치 대기')).toBeInTheDocument();
+    expect(
+      calls.filter((c) => c.path.startsWith('/inventory/skus?barcode='))
+    ).toHaveLength(0);
+  });
+
+  it('저장된 작업을 못 읽으면 준비 중이라고 하지 않고, 다시 확인하면 스캔을 받는다', async () => {
+    const user = userEvent.setup();
+    const calls: Call[] = [];
+    const fails = { now: true };
+    await renderScreen(calls, undefined, false, { draftLoadFails: fails });
+    expect(
+      await screen.findByText(/입고 상태를 확인하지 못했어요/)
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/스캔 준비 중이에요/)).not.toBeInTheDocument();
+    expect(
+      screen.queryByText(/상품은 다시 찍지 마세요/)
+    ).not.toBeInTheDocument();
+    await act(async () => {});
+
+    await user.click(screen.getByRole('button', { name: '스캔:8801' }));
+    expect(
+      await screen.findByText('입고 상태를 확인한 뒤 다시 찍어 주세요.')
+    ).toBeInTheDocument();
+
+    fails.now = false;
+    await user.click(
+      screen.getByRole('button', { name: '입고 상태 다시 확인' })
+    );
+    await waitFor(() =>
+      expect(document.querySelector('[aria-busy]')).toHaveAttribute(
+        'aria-busy',
+        'false'
+      )
+    );
+    expect(
+      screen.queryByText(/입고 상태를 확인하지 못했어요/)
+    ).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: '스캔:8801' }));
+    expect(await screen.findByText('코튼셔츠')).toBeInTheDocument();
+  });
+
+  it('서버 연결이 돌아와 작업 잠금이 풀리면 화면 준비도 이어서 다시 한다', async () => {
+    const user = userEvent.setup();
+    const down = { now: true };
+    await renderScreen([], undefined, false, { serverDown: down });
+    expect(
+      await screen.findByText(/입고 상태를 확인하지 못했어요/)
+    ).toBeInTheDocument();
+    const recheck = await screen.findByRole('button', {
+      name: '처리 내역 확인',
+    });
+
+    down.now = false;
+    await user.click(recheck);
+
+    await waitFor(() =>
+      expect(document.querySelector('[aria-busy]')).toHaveAttribute(
+        'aria-busy',
+        'false'
+      )
+    );
+    expect(
+      screen.queryByText(/입고 상태를 확인하지 못했어요/)
+    ).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '스캔:8801' }));
+    expect(await screen.findByText('코튼셔츠')).toBeInTheDocument();
+  });
+
+  it('준비 중에 찍어 둔 상품이 있으면 화면을 떠나지 않는다', async () => {
+    const user = userEvent.setup();
+    let release!: () => void;
+    await renderScreen([], undefined, false, {
+      check: new Promise<void>((r) => (release = r)),
+    });
+    await screen.findByText(/스캔 준비 중이에요/);
+    await act(async () => {});
+    await user.click(screen.getByRole('button', { name: '스캔:8801' }));
+    await screen.findByText(/찍은 상품 1건은 준비가 끝나면 담아요/);
+
+    await user.click(screen.getByRole('link', { name: '뒤로' }));
+
+    expect(
+      screen.getByText(/찍은 상품 1건은 준비가 끝나면 담아요/)
+    ).toBeInTheDocument();
+    release();
+    await waitFor(() =>
+      expect(screen.getByLabelText('코튼셔츠 수량')).toHaveTextContent('1')
+    );
+  });
+
+  it('저장해 둔 스캔이 화면 준비보다 먼저 복원돼도 준비가 끝난 뒤 담는다', async () => {
+    let release!: () => void;
+    await renderScreen([], undefined, false, {
+      check: new Promise<void>((r) => (release = r)),
+      savedScans: ['8801'],
+    });
+    await screen.findByText(/스캔 준비 중이에요/);
+    await act(async () => {});
+    release();
+
+    await waitFor(() =>
+      expect(screen.getByLabelText('코튼셔츠 수량')).toHaveTextContent('1')
+    );
+    expect(
+      screen.queryByText('상품을 확인하지 못했어요.')
+    ).not.toBeInTheDocument();
+  });
+
+  it('적치 대기 작업의 상태 확인이 실패하면 실패와 다시 확인을 보여 준다', async () => {
+    let fail!: (e: Error) => void;
+    await renderScreen([], {}, false, {
+      check: new Promise<void>((_, r) => (fail = r)),
+    });
+    await screen.findByText('적치 대기');
+    fail(new Error('조회 실패'));
+
+    expect(
+      await screen.findByText(/입고 상태를 확인하지 못했어요/)
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: '입고 상태 다시 확인' })
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByText(/입고 상태를 확인하고 있어요/)
+    ).not.toBeInTheDocument();
   });
 
   it('빈 카트로는 등록할 수 없다', async () => {

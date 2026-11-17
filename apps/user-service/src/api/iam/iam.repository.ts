@@ -1,6 +1,8 @@
 import { DbService, InjectDb } from '@app/db';
 import { Injectable } from '@nestjs/common';
 import {
+  iamAuditLogs,
+  iamInitialGrantDeliveries,
   iamPermissions,
   iamRolePermissions,
   roles,
@@ -88,6 +90,50 @@ export class IamRepository {
   async insertGrants(rows: { roleId: string; permissionKey: string }[], tx: UserServiceTx): Promise<void> {
     if (rows.length === 0) return;
     await tx.insert(iamRolePermissions).values(rows).onConflictDoNothing();
+  }
+
+  /** 카탈로그 첫 부여 몫 중 이미 준 것(#1248) — 회수돼도 남는다 */
+  async findDeliveredShares(
+    permissionKeys: string[],
+    tx: UserServiceTx,
+  ): Promise<{ permissionKey: string; roleId: string }[]> {
+    if (permissionKeys.length === 0) return [];
+    return tx
+      .select({ permissionKey: iamInitialGrantDeliveries.permissionKey, roleId: iamInitialGrantDeliveries.roleId })
+      .from(iamInitialGrantDeliveries)
+      .where(inArray(iamInitialGrantDeliveries.permissionKey, permissionKeys));
+  }
+
+  /**
+   * 관리자 화면이 만든 역할(`role.create` 이력이 있다) — 사람이 권한을 정한 역할이라 카탈로그 첫 부여를 주지 않는다(#1248).
+   * 시드가 만든 역할은 이력이 없다.
+   */
+  async findRoleIdsCreatedByPeople(roleIds: string[], tx: UserServiceTx): Promise<Set<string>> {
+    if (roleIds.length === 0) return new Set();
+    const rows = await tx
+      .selectDistinct({ roleId: iamAuditLogs.targetId })
+      .from(iamAuditLogs)
+      .where(
+        and(
+          eq(iamAuditLogs.action, 'role.create'),
+          eq(iamAuditLogs.targetType, 'role'),
+          inArray(iamAuditLogs.targetId, roleIds),
+        ),
+      );
+    return new Set(rows.map((row) => row.roleId));
+  }
+
+  /** 이번에 새로 기록된 몫만 돌려준다 — 함께 부팅한 다른 인스턴스가 먼저 기록한 몫은 빠진다 */
+  async insertDeliveries(
+    rows: { roleId: string; permissionKey: string }[],
+    tx: UserServiceTx,
+  ): Promise<{ roleId: string; permissionKey: string }[]> {
+    if (rows.length === 0) return [];
+    return tx
+      .insert(iamInitialGrantDeliveries)
+      .values(rows)
+      .onConflictDoNothing()
+      .returning({ roleId: iamInitialGrantDeliveries.roleId, permissionKey: iamInitialGrantDeliveries.permissionKey });
   }
 
   findPermissionDefinitions(tx: UserServiceTx) {

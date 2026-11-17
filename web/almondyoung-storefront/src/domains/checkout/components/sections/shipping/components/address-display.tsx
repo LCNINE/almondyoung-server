@@ -1,6 +1,7 @@
 "use client"
 
 import { useTranslations } from "next-intl"
+import { AddressRow } from "../address-selector-modal/components"
 
 interface AddressDisplayProps {
   phone: string
@@ -23,14 +24,6 @@ export function AddressDisplay({
   isDefault,
 }: AddressDisplayProps) {
   const t = useTranslations("checkout.shipping")
-  const addressLine = [
-    postalCode && `(${postalCode})`,
-    address1 || fullAddress,
-    address2,
-  ]
-    .filter(Boolean)
-    .join(" ")
-
   return (
     <div className="space-y-2">
       {isDefault && (
@@ -38,9 +31,11 @@ export function AddressDisplay({
           {t("defaultBadge")}
         </span>
       )}
-      <p className="text-[14px] leading-relaxed text-gray-800 lg:text-[15px]">
-        {addressLine || "-"}
-      </p>
+      <dl className="space-y-1 text-[14px] leading-relaxed lg:text-[15px]">
+        <AddressRow label={t("postalCode")} value={postalCode} />
+        <AddressRow label={t("address1")} value={address1 || fullAddress} />
+        <AddressRow label={t("address2")} value={address2} />
+      </dl>
       <p className="text-[14px] text-gray-600 lg:text-[15px]">
         {t("contact")} : {phone || "-"}
       </p>

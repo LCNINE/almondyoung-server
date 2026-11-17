@@ -89,6 +89,11 @@ export function setup(infra: SharedInfra) {
   // Channel Adapter
   const channelAdapterInternalKey = new sst.Secret('ChannelAdapterInternalKey');
   const medusaApiKey = new sst.Secret('MedusaApiKey');
+  // 쿠팡 OpenAPI 자격증명. 기본값 '1' 은 자리표시다 — 값을 넣지 않은 stage 의 배포가 멈추지 않게 하고(빈 값은 env.validation 이 기동 거부),
+  // 쿠팡 판매채널 행이 비활성이라 휴면이다. 실제 값은 `npx sst secret set` 으로 넣는다(#1245).
+  const coupangAccessKey = new sst.Secret('CoupangAccessKey', '1');
+  const coupangSecretKey = new sst.Secret('CoupangSecretKey', '1');
+  const coupangVendorId = new sst.Secret('CoupangVendorId', '1');
 
   // Membership — 서버 간(internal) 라우트 인증 키 (channel-adapter/medusa → membership)
   const membershipInternalKey = new sst.Secret('MembershipInternalKey');
@@ -163,6 +168,9 @@ export function setup(infra: SharedInfra) {
   // Wallet
   const tossClientKey = new sst.Secret('TossClientKey');
   const tossSecretKey = new sst.Secret('TossSecretKey');
+  const tossWidgetClientKey = new sst.Secret('TossWidgetClientKey');
+  const tossWidgetSecretKey = new sst.Secret('TossWidgetSecretKey');
+  const tossDirectSecretKey = new sst.Secret('TossDirectSecretKey');
   const nicepayClientKey = new sst.Secret('NicepayClientKey');
   const nicepaySecretKey = new sst.Secret('NicepaySecretKey');
   const walletApiKey = new sst.Secret('WalletApiKey');
@@ -428,9 +436,11 @@ export function setup(infra: SharedInfra) {
     NAVER_API_ENDPOINT: 'https://dummy.com',
     NAVER_CLIENT_ID: '1',
     NAVER_CLIENT_SECRET: '1',
-    COUPANG_ACCESS_KEY: '1',
-    COUPANG_SECRET_KEY: '1',
-    COUPANG_VENDOR_ID: '1',
+    COUPANG_ACCESS_KEY: coupangAccessKey.value,
+    COUPANG_SECRET_KEY: coupangSecretKey.value,
+    COUPANG_VENDOR_ID: coupangVendorId.value,
+    // 고객 취소요청 자동 승인을 켜는 채널(쉼표 목록). 네이버는 #1244 가 정한다.
+    CHANNEL_CANCEL_APPROVAL_ACT_CHANNELS: 'coupang',
     SKIP_VARIANTS_WITHOUT_PRICE: 'true',
     INBOX_MAX_CONCURRENT_HANDLERS: '2',
     INBOX_HANDLER_START_INTERVAL_MS: '3000',
@@ -765,6 +775,10 @@ export function setup(infra: SharedInfra) {
       OIDC_ISSUER_URL: idpUserServiceUrl,
       TOSS_CLIENT_KEY: tossClientKey.value,
       TOSS_SECRET_KEY: tossSecretKey.value,
+      TOSS_WIDGET_CLIENT_KEY: tossWidgetClientKey.value,
+      TOSS_WIDGET_SECRET_KEY: tossWidgetSecretKey.value,
+      TOSS_DIRECT_SECRET_KEY: tossDirectSecretKey.value,
+      TOSS_WIDGET_VARIANT_KEY: 'widgetA',
       NICEPAY_CLIENT_KEY: nicepayClientKey.value,
       NICEPAY_SECRET_KEY: nicepaySecretKey.value,
       WALLET_API_KEY: walletApiKey.value,
@@ -783,9 +797,9 @@ export function setup(infra: SharedInfra) {
       // 무통장입금 = 토스 가상계좌 발급/자동확인. bank 코드 미설정 시 provider 가 명확히 FAILED 반환.
       TOSS_VIRTUAL_ACCOUNT_BANK: tossVirtualAccountBank.value,
       TOSS_VIRTUAL_ACCOUNT_BANK_NAME: tossVirtualAccountBankName.value,
-      // 무통장 입금 대기 만료 윈도우(시간). 미설정 시 코드 기본값 72h.
-      // 입금확인을 수동으로 하고 주말/연휴가 있어, 입금했는데 자동취소되는 사고를 막기 위해 7일(168h)로 설정.
-      WALLET_BANK_TRANSFER_DEPOSIT_WINDOW_HOURS: '168',
+      // 무통장 입금 대기 만료 윈도우(시간). 입금 대기 동안 주문 재고가 예약돼 묶이므로 3일로 둔다.
+      // 결제위젯 가상계좌는 토스 상점관리자 widgetA 의 입금기한을 따르니 그 값도 같이 맞춘다(현재 3일).
+      WALLET_BANK_TRANSFER_DEPOSIT_WINDOW_HOURS: '72',
       // CMS 계좌 심사 거절 통지가 수신자 이메일을 조회하는 경로.
       USER_SERVICE_URL: idpUserServiceUrl,
       USER_SERVICE_INTERNAL_KEY: idpUserServiceInternalKey,
@@ -813,8 +827,7 @@ export function setup(infra: SharedInfra) {
       AWS_ACCESS_KEY_ID: awsS3AccessKeyId.value,
       AWS_SECRET_ACCESS_KEY: awsS3SecretAccessKey.value,
       AWS_REGION: 'ap-northeast-2',
-      AWS_S3_PUBLIC_BUCKET: 'almondyoung-demo',
-      AWS_S3_PRIVATE_BUCKET: 'almondyoung-demo',
+      // 버킷은 env 가 아니라 테넌트 목록(tenancyEnv 의 TENANT_LIST)의 그 테넌트 항목이다.
       STORAGE_PROVIDER: 'S3',
       // ai 의 고아 파일 수거 크론이 /internal/files/* 를 부를 때 쓰는 키.
       FILE_SERVICE_INTERNAL_KEY: fileServiceInternalKey.value,
@@ -948,6 +961,8 @@ export function setup(infra: SharedInfra) {
   // 갈리는 것은 env(MEDUSA_WORKER_MODE 등) 뿐이다. medusaCommon 의 buildArgs 를 바꾸면 둘이 함께 바뀐다.
   createService('MedusaAdmin', {
     ...medusaCommon,
+    // 한시 조치: 상품 수정 때 캐시 무효화가 몰려 2 GB 에서 OOM 재시작. Medusa 업그레이드 후 2 GB 로 되돌린다.
+    memory: '4 GB',
     image: imageOf(medusa),
     priority: 205,
     pathPattern: '/admin/*',

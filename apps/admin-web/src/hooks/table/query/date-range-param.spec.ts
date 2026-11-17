@@ -1,4 +1,4 @@
-import { parseDateRangeParam } from './date-range-param';
+import { parseDateRangeParam, toDayBoundInstants } from './date-range-param';
 
 describe('parseDateRangeParam', () => {
   it('returns empty object for undefined/empty input', () => {
@@ -28,5 +28,34 @@ describe('parseDateRangeParam', () => {
 
   it('returns empty object on malformed JSON', () => {
     expect(parseDateRangeParam('not-json')).toEqual({});
+  });
+});
+
+describe('toDayBoundInstants', () => {
+  it('turns a date-only range into the whole KST days — 「오늘」 is the full day, not an empty instant', () => {
+    expect(toDayBoundInstants({ from: '2026-11-03', to: '2026-11-03' })).toEqual({
+      from: '2026-11-02T15:00:00.000Z',
+      to: '2026-11-03T14:59:59.999Z',
+    });
+  });
+
+  // 11-08 라이브: `…+09:00` 의 `+` 가 admin-web 앞단을 지나며 날것으로 core 에 닿아 공백이 됐다 → @IsDateString 400 → 목록 0건.
+  // 쿼리에 실리는 값이라 `+` 를 아예 싣지 않는다.
+  it('never puts a plus sign in the value — it reached core as a space and the list showed 0 rows', () => {
+    const { from, to } = toDayBoundInstants({ from: '2026-11-08', to: '2026-11-09' });
+    expect(`${from}${to}`).not.toContain('+');
+  });
+
+  it('covers a product created at 04:06 KST (19:06 UTC the day before)', () => {
+    const { from, to } = toDayBoundInstants({ from: '2026-11-03', to: '2026-11-03' });
+    const created = new Date('2026-11-02T19:06:00.000Z');
+    expect(created >= new Date(from!) && created <= new Date(to!)).toBe(true);
+  });
+
+  it('leaves instants and missing ends untouched', () => {
+    expect(toDayBoundInstants({ from: '2026-01-01T00:00:00.000Z', to: undefined })).toEqual({
+      from: '2026-01-01T00:00:00.000Z',
+      to: undefined,
+    });
   });
 });

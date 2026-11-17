@@ -50,6 +50,42 @@ export function parseCutoff(src: string): Date {
   );
 }
 
+export const CUTOVER_REFUSAL = 'T 가 설정돼 있다 — 이 스크립트는 더 돌리지 않는다(#1247)';
+
+/** run.sh 가 만든 URL(`…/medusa?sslmode=require`)에서 DB 이름만 channel_adapter 로 바꾼다 — 같은 클러스터다. */
+export function channelAdapterUrl(url: string): string {
+  const u = new URL(url);
+  u.pathname = '/channel_adapter';
+  return u.toString();
+}
+
+export type ApplyGuard = { allow: true } | { allow: false; message: string };
+
+/**
+ * #1247 이 Medusa 예약을 맡은 뒤(T 설정)에는 이 스크립트가 투영과 싸운다. `--apply` 만 막고 dry-run 은 둔다.
+ * T 를 못 읽으면(접속 실패) 막는다 — 모르는 채로 지우는 쪽이 위험하다.
+ */
+export function decideApplyGuard(args: { apply: boolean; cutoverAt: Date | null; readFailed: string | null }): ApplyGuard {
+  if (!args.apply) return { allow: true };
+  if (args.readFailed)
+    return { allow: false, message: `T 를 읽지 못해 --apply 를 거부한다(fail-closed): ${args.readFailed}` };
+  if (args.cutoverAt) return { allow: false, message: CUTOVER_REFUSAL };
+  return { allow: true };
+}
+
+async function readCutover(url: string): Promise<{ cutoverAt: Date | null; readFailed: string | null }> {
+  const adapter = postgres(channelAdapterUrl(url), { max: 1, connect_timeout: 15 });
+  try {
+    const [row] = await adapter<{ cutover_at: Date | null }[]>`
+      select cutover_at from reservation_projection_settings where id = 'singleton'`;
+    return { cutoverAt: row?.cutover_at ?? null, readFailed: null };
+  } catch (e) {
+    return { cutoverAt: null, readFailed: e instanceof Error ? e.message : String(e) };
+  } finally {
+    await adapter.end({ timeout: 5 }).catch(() => undefined);
+  }
+}
+
 type Row = { inventory_item_id: string; location_id: string; qty: string; n: string; title: string | null };
 
 /**
@@ -86,6 +122,12 @@ async function main() {
   const url = process.env.DATABASE_URL;
   if (!url) {
     console.error('DATABASE_URL 필요 (DB_NAME=medusa bash scripts/sellmate/run.sh 로 실행하면 자동 주입)');
+    process.exit(1);
+  }
+
+  const guard = decideApplyGuard({ apply, ...(apply ? await readCutover(url) : { cutoverAt: null, readFailed: null }) });
+  if (!guard.allow) {
+    console.error(`\n⛔ ${guard.message}`);
     process.exit(1);
   }
 

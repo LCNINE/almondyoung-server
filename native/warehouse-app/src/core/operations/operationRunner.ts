@@ -4,8 +4,15 @@ import { ApiError, type ApiClient } from '../data/httpClient';
 import { type OperationStore, type StoredOperation } from './operationStore';
 type Request = Parameters<ApiClient['request']>[0];
 const ledgerPath =
-  /^(\/inbound\/(simple|putaway|cancel)$|\/movement\/move$|\/inventory\/stocks\/adjust$|\/purchase-orders\/[^/]+\/receipts$|\/purchase-orders\/receipt-lines\/[^/]+\/cancel$|\/shipments\/[^/]+\/(simple-outbound-(scans|forces)|location-outbound-(starts|scans|forces))$|\/stocktaking\/(scan-product|scan-location|count-items)$|\/stocktaking\/lines\/[^/]+\/(count|reset-count)$|\/stocktaking\/sessions\/[^/]+\/complete$)/;
+  /^(\/inbound\/(simple|putaway|cancel)$|\/movement\/move$|\/inventory\/stocks\/adjust$|\/purchase-orders\/[^/]+\/receipts$|\/purchase-orders\/receipt-lines\/[^/]+\/cancel$|\/shipments\/[^/]+\/(simple-outbound-(scans|forces)|location-outbound-(starts|scans|forces))$|\/stocktaking\/(scan-product|scan-location|count-items)$|\/stocktaking\/lines\/[^/]+\/(count|reset-count)$|\/stocktaking\/sessions\/[^/]+\/complete$|\/inventory\/inbound-shipments\/[^/]+\/boxes(\/[^/]+\/receive(\/cancel)?)?$)/;
 function resource(path: string, body: Record<string, unknown>) {
+  const shipmentBox =
+    /^\/inventory\/inbound-shipments\/([^/]+)\/boxes\/([^/]+)\//.exec(path);
+  if (shipmentBox) return `inbound-shipment-box:${shipmentBox[2]}`;
+  const shipment = /^\/inventory\/inbound-shipments\/([^/]+)\/boxes$/.exec(
+    path
+  );
+  if (shipment) return `inbound-shipment:${shipment[1]}`;
   if (path.startsWith('/shipments/'))
     return path.split('/').slice(0, 3).join('/');
   if (path.startsWith('/stocktaking/'))
@@ -51,9 +58,11 @@ export function createOperationRunner(deps: {
         : w.reject(
             new ApiError(
               '작업이 반영되지 않았어요.',
-              400,
+              op.errorStatus ?? 400,
               op.errorCode,
-              op.preparation
+              op.preparation,
+              undefined,
+              op.requiredPermissions
             )
           )
     );
@@ -163,7 +172,11 @@ export function createOperationRunner(deps: {
         const status = failure
           ? !resolving &&
             failure instanceof ApiError &&
-            failure.outcome === 'rejected'
+            failure.outcome === 'rejected' &&
+            !(
+              failure.status === 403 &&
+              (claimed.attempts > 0 || claimed.status !== 'queued')
+            )
             ? 'rejected'
             : 'uncertain'
           : forceRejected
@@ -179,7 +192,9 @@ export function createOperationRunner(deps: {
               ? failure.code
               : undefined,
           ownership,
-          failure instanceof ApiError ? failure.preparation : undefined
+          failure instanceof ApiError ? failure.preparation : undefined,
+          failure instanceof ApiError ? failure.requiredPermissions : undefined,
+          failure instanceof ApiError ? failure.status : undefined
         );
         const saved = (await deps.store.get(input.id))!;
         recordDiagnostic(saved);
@@ -251,9 +266,11 @@ export function createOperationRunner(deps: {
     if (op.status === 'rejected')
       throw new ApiError(
         '작업이 반영되지 않았어요.',
-        400,
+        op.errorStatus ?? 400,
         op.errorCode,
-        op.preparation
+        op.preparation,
+        undefined,
+        op.requiredPermissions
       );
     return new Promise<T>((resolve, reject) => {
       const list = waiting.get(id) ?? [];

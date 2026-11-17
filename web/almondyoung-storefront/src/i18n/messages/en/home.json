@@ -2,16 +2,15 @@
   "pageTitle": "Almondyoung - Beauty Supply MRO Store",
   "interestBanner": {
     "title": "See only your fields?",
-    "description": "Pick up to {max} and your home switches to their best sellers.",
+    "description": "Pick up to {max} and we'll gather their best sellers here",
     "dismiss": "Hide for a week",
-    "saved": "Your home page now leads with your {count} chosen fields",
     "saveFail": "Failed to save. Please try again.",
     "dismissFail": "Failed to process",
     "maxSelectable": "You can select up to {max}",
     "selectPrompt": "Pick your fields",
-    "save": "Apply {count} fields",
-    "saving": "Saving...",
-    "needAtLeastOne": "Please select at least one"
+    "previewSuffix": "Best",
+    "showBest": "See best of {count} fields",
+    "change": "Change"
   },
   "interestEdit": {
     "trigger": "Edit",
@@ -31,11 +30,17 @@
   },
   "showcase": {
     "overseas": "Overseas Direct Purchase",
-    "canva": "Canva Design",
-    "class": "Classes",
-    "newArrivals": "NEW Arrivals",
+    "canva": "Canva Designs",
+    "class": "One-day Classes",
+    "newArrivals": "New Arrivals",
     "overseasDescription": "Products you can only find abroad",
-    "viewAll": "View all"
+    "viewAll": "View all",
+    "newArrivalsDescription": "Supplies that arrived this week",
+    "canvaDescription": "Ready-to-edit Canva templates for manuals, consent forms and feeds",
+    "classDescription": "Courses taught by working salon owners",
+    "canvaAccent": "Designs",
+    "classAccent": "Classes",
+    "overseasAccent": "Purchase"
   },
   "cafe24Link": {
     "mobileText": "Connect your existing Almondyoung account",
@@ -60,11 +65,24 @@
     "ariaLabel": "Brand list",
     "prev": "Previous brands",
     "next": "More brands",
-    "all": "All"
+    "all": "All",
+    "subtitle": "Meet the brands pros trust, all in one place",
+    "featuredCaption": "Most popular with pros",
+    "emptyCaption": "See all products in the brand hall",
+    "goToBrand": "Go to {name}",
+    "membershipPrice": "Member",
+    "allBrands": "All brands",
+    "bannerTitle": "Brands your hands know",
+    "bannerCaption": "Picked only for the results they deliver"
   },
   "heroBanner": {
     "listPrev": "Show previous items",
-    "listNext": "Show next items"
+    "listNext": "Show next items",
+    "label": "Event banners",
+    "prev": "Previous banner",
+    "next": "Next banner",
+    "pause": "Pause slideshow",
+    "play": "Resume slideshow"
   },
   "timeSale": {
     "titleFirst": "Time",
@@ -108,5 +126,36 @@
   "comingSoon": {
     "title": "Almond Template is coming soon",
     "description": "Stay tuned."
+  },
+  "sectionHead": {
+    "more": "More",
+    "viewAll": "View all"
+  },
+  "v1Card": {
+    "membership": "Member price"
+  },
+  "classList": {
+    "regionLabel": "Region",
+    "showMore": "More classes",
+    "regions": {
+      "all": "All",
+      "seoul": "Seoul",
+      "capital": "Gyeonggi·Incheon",
+      "chungcheong": "Chungcheong",
+      "gyeongsang": "Gyeongsang"
+    }
+  },
+  "memberSavings": {
+    "titleLine1": "Buy machines at member prices",
+    "titleLine2": "and the difference is big",
+    "description": "Members get member prices on every product.",
+    "join": "Join membership",
+    "myMembership": "View my membership",
+    "saving": "Save {amount} KRW"
+  },
+  "dailySupplies": {
+    "title": "Everyday shop supplies",
+    "subtitle": "Restock before you run out",
+    "titleAccent": "supplies"
   }
 }

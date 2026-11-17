@@ -19,7 +19,7 @@ const categoryOptions = [
 ] as const
 
 const triggerFont = "font-['Pretendard'] text-xs"
-const triggerColor = "text-primary"
+const triggerColor = "text-mint-deep"
 const triggerBorder = "border-primary border"
 const triggerBg = "bg-white"
 const hoverBg = "hover:bg-primary/5"
@@ -52,7 +52,7 @@ export default function CategoryPillDropdown() {
           <span>{t(selectedKey)}</span>
           <Triangle
             className="h-2.5 w-2.5 rotate-180"
-            fill="#ffa500"
+            fill="var(--mint-deep)"
             strokeWidth={0}
           />
         </button>

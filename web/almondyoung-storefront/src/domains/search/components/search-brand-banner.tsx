@@ -48,7 +48,7 @@ export async function SearchBrandBanner({
           {t("hint", { name })}
         </span>
       </span>
-      <span className="flex shrink-0 items-center gap-0.5 text-[13px] font-medium text-primary">
+      <span className="flex shrink-0 items-center gap-0.5 text-[13px] font-medium text-mint-deep">
         <span className="hidden md:inline">{t("cta")}</span>
         <ChevronRight className="h-4 w-4" />
       </span>

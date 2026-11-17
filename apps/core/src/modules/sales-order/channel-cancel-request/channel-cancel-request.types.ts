@@ -12,7 +12,19 @@ export type CancelRequestStatus = 'requested' | 'settling' | 'applied' | 'reject
 export type CancelRequester =
   | { kind: 'operator'; actorId: string }
   | { kind: 'customer'; customerId: string }
-  | { kind: 'wallet-refund-approval'; intentId: string };
+  | { kind: 'wallet-refund-approval'; intentId: string }
+  /**
+   * 마켓 고객 취소요청(스펙 §5.2). `channelRequestRef` 는 승인 명령이 그대로 돌려줄 마켓 참조, `channelRequestKey` 는 그 요청 하나의
+   * 중복 판정 식별자다 — core 는 둘 다 해석하지 않는다
+   */
+  | { kind: 'channel-customer'; channelRequestRef: string; channelRequestKey: string; needsApproval: boolean };
+
+/** 마켓 고객 취소요청 행의 `requestedBy` 머리 — 요청 문이 `channel-customer:<요청 키>` 로 적고, 정산(settler)·환불 조치가 이걸로 가린다 */
+export const MARKET_CUSTOMER_REQUESTER_PREFIX = 'channel-customer:';
+
+export function isMarketCustomerRequest(meta: Pick<CancelRequestMetadata, 'request'>): boolean {
+  return meta.request.requestedBy.startsWith(MARKET_CUSTOMER_REQUESTER_PREFIX);
+}
 
 /** 요청 행 `deltas` 의 원소. 전체취소는 «그때 남은 몫»을 기록용으로 담는다. */
 export interface CancelRequestLine {
@@ -20,6 +32,11 @@ export interface CancelRequestLine {
   salesOrderLineId: string;
   channelOrderItemId: string | null;
   quantity: number;
+  /**
+   * 마켓 고객 취소요청 행만. 요청을 적용하기 직전 그 판매 줄의 취소 수량(core) — 채널 누적 취소 수량이
+   * `cancelledBefore + quantity` 에 닿아야 이 요청이 채널에서 끝난 것이다(같은 줄의 앞선 요청과 가른다). 없으면 0.
+   */
+  cancelledBefore?: number;
 }
 
 const CancelRequestLineSchema = z.object({
@@ -27,6 +44,7 @@ const CancelRequestLineSchema = z.object({
   salesOrderLineId: z.string().min(1),
   channelOrderItemId: z.string().min(1).nullable(),
   quantity: z.number().int().positive(),
+  cancelledBefore: z.number().int().nonnegative().optional(),
 });
 
 const SettlementFailureSchema = z.object({
@@ -76,6 +94,11 @@ const CancelRequestMetadataSchema = z.object({
     .optional(),
   supersededReason: z.string().optional(),
   settlement: SettlementSchema.optional(),
+  /**
+   * 마켓 고객 취소요청 행만. 수집된 채널 줄 취소가 이미 덮은 채널 줄 번호 — 줄마다 다른 사실로 올 수 있어 쌓아 두고,
+   * 모든 줄이 덮이면 행을 닫는다(스펙 §5.4)
+   */
+  confirmedChannelLines: z.array(z.string().min(1)).optional(),
 });
 
 export type CancelRequestMetadata = z.infer<typeof CancelRequestMetadataSchema>;
@@ -107,6 +130,11 @@ export interface SettlementView {
   startedAt: string;
   deadlineAt: string;
   lastFailure: SettlementFailure | null;
+  /**
+   * 마켓 고객 취소요청 행(isMarketCustomerRequest). 환불은 마켓이 하고 core 는 승인만 보낸다 — 화면은 거절을
+   * «판매자센터 승인 필요»로 읽고 [계좌 송금으로 환불]을 내지 않는다(core 가 거절한다)
+   */
+  marketRequest: boolean;
 }
 
 /** jsonb 는 쓰는 쪽(이 폴더의 manager·settler)만 채운다 — 모양이 어긋나면 버그라 던진다. */
@@ -152,7 +180,8 @@ export function toSettlementView(
   now: Date,
 ): SettlementView | null {
   if (row.status !== 'settling') return null;
-  const settlement = readCancelRequestMetadata(row.metadata).settlement;
+  const meta = readCancelRequestMetadata(row.metadata);
+  const settlement = meta.settlement;
   if (!settlement) throw new Error(`Settling request ${row.id} has no settlement`);
   return {
     requestId: row.id,
@@ -162,6 +191,7 @@ export function toSettlementView(
     startedAt: settlement.since,
     deadlineAt: settlementDeadline(row.createdAt).toISOString(),
     lastFailure: settlement.lastFailure ?? null,
+    marketRequest: isMarketCustomerRequest(meta),
   };
 }
 

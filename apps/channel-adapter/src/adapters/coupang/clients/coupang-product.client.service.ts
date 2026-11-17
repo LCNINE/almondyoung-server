@@ -1,6 +1,5 @@
 import { Injectable } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
-import { firstValueFrom } from 'rxjs';
 import { CoupangBaseClient } from './coupang-base.client.service';
 import { CoupangUpdateStockResponse } from '../../../zods/coupang';
 
@@ -25,26 +24,15 @@ export class CoupangProductClient extends CoupangBaseClient {
    * @returns API 응답 데이터
    */
   async updateStock(vendorItemId: number, quantity: number): Promise<CoupangUpdateStockResponse> {
-    const config = this.getApiConfig();
     try {
       this.logger.log(`📦 쿠팡 재고 변경 요청: vendorItemId=${vendorItemId}, quantity=${quantity}`);
 
       const path = `/v2/providers/seller_api/apis/api/v1/marketplace/vendor-items/${vendorItemId}/quantities/${quantity}`;
-      const authorization = this.generateAuthHeader(config.accessKey, config.secretKey, 'PUT', path);
-      const url = `${config.apiEndpoint}${path}`;
-
-      const response = await firstValueFrom(
-        // 이 API는 요청 본문(body)이 필요 없습니다.
-        this.http.put<CoupangUpdateStockResponse>(url, null, {
-          headers: {
-            Authorization: authorization,
-            'Content-Type': 'application/json',
-          },
-        }),
-      );
+      // 이 API는 요청 본문(body)이 필요 없습니다.
+      const response = await this.send<CoupangUpdateStockResponse>('PUT', path);
 
       this.logger.log(`👍 재고 변경 완료: ${vendorItemId} -> ${quantity}개`);
-      return response.data;
+      return response;
     } catch (error) {
       if (error.response) {
         this.logger.error(

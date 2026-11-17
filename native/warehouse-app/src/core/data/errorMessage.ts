@@ -1,7 +1,9 @@
-import { ApiError, ConflictError } from './httpClient';
+import { permissionNames } from '../auth/permissionNames';
+import { ApiError, ConflictError, NetworkError } from './httpClient';
 
 /** 같은 상태 코드라도 화면 문맥에 따라 현장에 필요한 문구가 다르다. */
 export type ErrorContext =
+  | 'adjust'
   | 'barcode'
   | 'location'
   | 'stocktaking'
@@ -15,7 +17,11 @@ export type ErrorContext =
   // 되돌림 적치 화면 — 'returns' 와 같되 이 화면에만 맞는 문구를 덧씌운다.
   | 'return-putaway';
 
+export const STOCK_ADJUST_PERMISSION_MESSAGE =
+  '재고 조정 권한이 없어요. 관리자에게 요청해 주세요.';
+
 const CONTEXTUAL: Record<ErrorContext, Partial<Record<number, string>>> = {
+  adjust: { 403: STOCK_ADJUST_PERMISSION_MESSAGE },
   'return-putaway': { 404: '등록되지 않은 되돌림 바구니예요.' },
   returns: { 404: '등록되지 않은 되돌림 바구니예요.' },
   barcode: { 404: '등록되지 않은 바코드예요.' },
@@ -136,23 +142,25 @@ const MOVEMENT_WORKFLOW_MESSAGES: Record<string, string> = {
 
 /** 되돌림 바구니 — «뺄 상품»(출고)과 «되돌림 적치»·설정(returns) 화면이 같은 문구를 쓴다. */
 const RETURN_CONFLICT_MESSAGES: Record<string, string> = {
-  RETURN_BIN_UNKNOWN: '등록되지 않았거나 폐기된 되돌림 바구니예요. 설정에서 바구니를 확인해 주세요.',
+  RETURN_BIN_UNKNOWN: '되돌림 바구니를 사용할 수 없어요. 관리자에게 문의해 주세요.',
   RETURN_BIN_WAREHOUSE_MISMATCH: '다른 창고의 되돌림 바구니예요.',
   RETURN_BIN_ITEM_NOT_FOUND: '이 바구니에 없는 상품이에요.',
   RETURN_BIN_ITEM_SHORT: '바구니에 남은 수량보다 많아요.',
+  RETURN_LOCATION_REQUIRED: '원래 로케이션이 여러 곳이에요. 로케이션을 스캔해 주세요.',
   RETURN_LOCATION_MISMATCH: '원래 로케이션이 아니에요. 화면에 보이는 로케이션에 넣어 주세요.',
 };
 
 /** 되돌림 적치 전용 — 같은 코드의 출고 문구와 뜻이 달라 RETURN_CONFLICT_MESSAGES(출고와 공유)에 못 넣는다. */
 const RETURN_PUTAWAY_MESSAGES: Record<string, string> = {
-  // 작업자가 바구니를 «스캔했다» — 설정 화면을 열라는 안내는 여기선 맞지 않는다.
-  RETURN_BIN_UNKNOWN: '등록되지 않은 되돌림 바구니예요. 바구니 바코드를 확인해 주세요.',
   PICKING_SESSION_NOT_ACTIVE:
     '이 물건의 배치가 복구 중이에요. 복구가 끝날 때까지 바구니에 두고 관리자에게 문의해 주세요.',
   SIMPLE_OUTBOUND_BARCODE_UNKNOWN: '등록되지 않은 바코드예요. 상품을 확인해 주세요.',
 };
 
+export const NETWORK_FAILURE_MESSAGE = '서버에 연결하지 못했어요. 네트워크를 확인해 주세요.';
+
 export function errorMessage(error: unknown, context?: ErrorContext): string {
+  if (error instanceof NetworkError) return NETWORK_FAILURE_MESSAGE;
   if (context === 'return-putaway') {
     if (error instanceof ApiError && error.code && RETURN_PUTAWAY_MESSAGES[error.code])
       return RETURN_PUTAWAY_MESSAGES[error.code];
@@ -218,15 +226,26 @@ export function errorMessage(error: unknown, context?: ErrorContext): string {
   }
   if (error instanceof Error) {
     const match = /→\s*(\d{3})/.exec(error.message);
-    const status = match ? Number(match[1]) : undefined;
-    // 문맥 문구가 일반 문구보다 먼저다 — 403 을 "다시 로그인" 으로 뭉개면
-    // 강제출고 권한 부족이 로그인 문제로 오인된다.
+    const status =
+      error instanceof ApiError
+        ? error.status
+        : match
+          ? Number(match[1])
+          : undefined;
+    // 문맥 문구가 일반 문구보다 먼저다 — 강제출고 권한 부족처럼 화면이 더 정확히 안다.
     if (status !== undefined && context) {
       const specific = CONTEXTUAL[context][status];
       if (specific) return specific;
     }
-    if (status === 401 || status === 403)
-      return '권한이 없어요. 다시 로그인해 주세요.';
+    // 권한 부족은 다시 로그인해도 풀리지 않는다 — 만료(401)와 나눠 안내한다.
+    if (status === 401) return '로그인이 만료됐어요. 다시 로그인해 주세요.';
+    if (status === 403) {
+      const required =
+        error instanceof ApiError ? (error.requiredPermissions ?? []) : [];
+      return required.length
+        ? `이 작업에는 ${permissionNames(required)} 권한이 필요해요. 관리자에게 권한을 요청해 주세요.`
+        : '이 작업을 할 권한이 없어요. 관리자에게 확인해 주세요.';
+    }
     if (status !== undefined && status >= 500) {
       return '서버에 문제가 있어요. 잠시 후 다시 시도해 주세요.';
     }

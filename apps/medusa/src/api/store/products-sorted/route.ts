@@ -20,6 +20,7 @@ interface ProductSortingService {
     currencyCode: string;
     categoryIds?: string[];
     collectionId?: string;
+    productIds?: string[];
     excludeMembersOnly: boolean;
   }): Promise<{ productIds: string[]; count: number }>;
 }
@@ -42,6 +43,12 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
         ? [rawCategoryId]
         : [];
     const collectionId = (req.query.collection_id as string) || '';
+    const rawId = req.query.id;
+    const onlyProductIds: string[] | undefined = Array.isArray(rawId)
+      ? (rawId as string[])
+      : typeof rawId === 'string' && rawId
+        ? [rawId]
+        : undefined;
 
     const validSortFields: SortBy[] = ['min_price', 'max_price', 'sales_count', 'review_count'];
     if (!validSortFields.includes(sortBy)) {
@@ -62,6 +69,7 @@ export async function GET(req: AuthenticatedMedusaRequest, res: MedusaResponse) 
       currencyCode,
       categoryIds: categoryIds.length > 0 ? categoryIds : undefined,
       collectionId: collectionId || undefined,
+      productIds: onlyProductIds,
       excludeMembersOnly: !isMember,
     });
 

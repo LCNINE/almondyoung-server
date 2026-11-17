@@ -1,5 +1,10 @@
 import { z } from 'zod';
-import { createCoupangApiResponseSchema, CurrencySchema, CoupangDeliveryCompanyCodeSchema } from './coupang-common.zod';
+import {
+  createCoupangApiResponseSchema,
+  CurrencySchema,
+  CoupangDeliveryCompanyCodeSchema,
+  CoupangLongIdSchema,
+} from './coupang-common.zod';
 
 /**
  * 쿠팡 반품/취소 관련 Zod 스키마
@@ -19,14 +24,14 @@ export const CoupangReturnItemSchema = z.object({
   vendorItemName: z.string(), // 옵션명
   cancelCount: z.number(), // 취소(반품) 수량
   purchaseCount: z.number(), // 주문 수량
-  shipmentBoxId: z.number(), // 원배송번호
+  shipmentBoxId: CoupangLongIdSchema, // 원배송번호
   sellerProductId: z.number(), // 업체등록상품번호
   sellerProductName: z.string(), // 업체등록상품명
 });
 
 export const CoupangReturnReceiptSchema = z.object({
-  receiptId: z.number(), // 취소(반품) 접수번호
-  orderId: z.number(), // 주문번호
+  receiptId: CoupangLongIdSchema, // 취소(반품) 접수번호
+  orderId: CoupangLongIdSchema, // 주문번호
   receiptType: z.enum(['RETURN', 'CANCEL']), // 클레임 유형
   receiptStatus: z.string(), // 취소(반품) 진행 상태
   createdAt: z.iso.datetime(), // 접수 시간
@@ -71,11 +76,7 @@ export const GetReturnRequestsParamsSchema = z
       .default(50)
       .refine((val) => val === undefined || Number.isInteger(val), 'maxPerPage는 숫자여야 합니다.'),
 
-    orderId: z
-      .number()
-      .int()
-      .optional()
-      .refine((val) => val === undefined || Number.isInteger(val), 'orderId는 숫자여야 합니다.'),
+    orderId: CoupangLongIdSchema.optional(),
   })
   .superRefine((data, ctx) => {
     // --- 교차 필드 검증 ---
@@ -162,8 +163,8 @@ export const ReturnDeliveryDtoSchema = z.object({
 });
 
 export const CoupangSingleReturnRequestSchema = z.object({
-  receiptId: z.number(), // 취소(반품)접수번호
-  orderId: z.number(), // 주문번호
+  receiptId: CoupangLongIdSchema, // 취소(반품)접수번호
+  orderId: CoupangLongIdSchema, // 주문번호
   paymentId: z.number(), // 결제번호
   receiptType: z.enum(['RETURN', 'CANCEL']), // 취소유형
   receiptStatus: z.string(), // 취소(반품)진행 상태
@@ -202,7 +203,7 @@ export const GetSingleReturnRequestResponseSchema = createCoupangApiResponseSche
 
 export const CoupangStoppedShipmentRequestSchema = z.object({
   vendorId: z.string().min(1), // 판매자 ID
-  receiptId: z.number().int().positive(), // 접수번호
+  receiptId: CoupangLongIdSchema, // 접수번호
   cancelCount: z.number().int().positive(), // 취소 수량
 });
 
@@ -219,7 +220,7 @@ export const CoupangStoppedShipmentResponseSchema = createCoupangApiResponseSche
 
 export const CoupangCompletedShipmentRequestSchema = z.object({
   vendorId: z.string().min(1), // 판매자 ID
-  receiptId: z.number().int().positive(), // 접수번호
+  receiptId: CoupangLongIdSchema, // 접수번호
   deliveryCompanyCode: z.string().min(1), // 택배사 코드
   invoiceNumber: z.string().min(1), // 송장번호
 });
@@ -237,7 +238,7 @@ export const CoupangCompletedShipmentResponseSchema = createCoupangApiResponseSc
 
 export const CoupangConfirmReturnReceiptRequestSchema = z.object({
   vendorId: z.string().min(1), // 판매자 ID
-  receiptId: z.number().int().positive(), // 접수번호
+  receiptId: CoupangLongIdSchema, // 접수번호
 });
 
 export const CoupangConfirmReturnReceiptResponseSchema = createCoupangApiResponseSchema(
@@ -253,7 +254,7 @@ export const CoupangConfirmReturnReceiptResponseSchema = createCoupangApiRespons
 
 export const CoupangApproveReturnRequestSchema = z.object({
   vendorId: z.string().min(1), // 판매자 ID
-  receiptId: z.number().int().positive(), // 접수번호
+  receiptId: CoupangLongIdSchema, // 접수번호
   cancelCount: z.number().int().positive(), // 반품접수수량
 });
 
@@ -293,7 +294,7 @@ export const GetReturnWithdrawalHistoryParamsSchema = z
 
 export const CoupangReturnWithdrawalItemSchema = z.object({
   cancelId: z.number(),
-  orderId: z.number(),
+  orderId: CoupangLongIdSchema,
   vendorId: z.string(),
   refundDeliveryDuty: z.enum(['COM', 'CUS', 'COU']),
   createdAt: z.string(),
@@ -326,7 +327,7 @@ export const GetReturnWithdrawalHistoryByIdsResponseSchema = z.object({
 
 export const CoupangRegisterReturnInvoiceRequestSchema = z.object({
   returnExchangeDeliveryType: z.enum(['RETURN', 'EXCHANGE']),
-  receiptId: z.number().int().positive(),
+  receiptId: CoupangLongIdSchema,
   deliveryCompanyCode: CoupangDeliveryCompanyCodeSchema,
   invoiceNumber: z.string().min(1),
   regNumber: z.string().optional(), // 택배사 회수번호 (선택)
@@ -336,7 +337,7 @@ export const CoupangRegisterReturnInvoiceDataSchema = z.object({
   deliveryCompanyCode: z.string(),
   invoiceNumber: z.string(),
   invoiceNumberId: z.number(),
-  receiptId: z.number(),
+  receiptId: CoupangLongIdSchema,
   regNumber: z.string(),
   returnDeliveryId: z.number(),
   returnExchangeDeliveryType: z.enum(['RETURN', 'EXCHANGE']),

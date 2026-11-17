@@ -90,6 +90,7 @@ describe('permission catalog', () => {
       'fulfillment.order.write': ['admin'],
       'marketing.display.read': ['admin', 'intern'],
       'marketing.almond_template.read': ['admin', 'intern'],
+      'marketing.almond_template.publish': [],
       'catalog.product.export': ['admin'],
       'customer.dormant.execute': [],
       'payment.payment.write': ['admin'],
@@ -102,7 +103,7 @@ describe('permission catalog', () => {
       Object.keys(expected).map((key) => [key, findPermission(key)?.grantOnFirstRegistration ?? null]),
     );
     expect(actual).toEqual(expected);
-    expect(PERMISSION_CATALOG).toHaveLength(116);
+    expect(PERMISSION_CATALOG).toHaveLength(118);
   });
 
   it('registers the wage permissions for master only', () => {

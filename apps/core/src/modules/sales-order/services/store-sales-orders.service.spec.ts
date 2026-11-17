@@ -75,10 +75,15 @@ function makeSo(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function printReaderMock(rows: Array<Record<string, unknown>> = [], allOutsourced = false): PrintOrderReader {
+function printReaderMock(
+  rows: Array<Record<string, unknown>> = [],
+  allOutsourced = false,
+  activeNonPrintLine = false,
+): PrintOrderReader {
   const fake = {
     forSalesOrder: jest.fn().mockResolvedValue(rows),
     isAllOutsourced: jest.fn().mockResolvedValue(allOutsourced),
+    hasActiveNonPrintLine: jest.fn().mockResolvedValue(activeNonPrintLine),
   };
   // 클래스의 private db 필드 때문에 구조 대입이 안 되는 부분 가짜
   return fake as unknown as PrintOrderReader;
@@ -109,6 +114,7 @@ function makeContext(
     supplierShipments?: Array<{ status: 'draft' | 'recovery_required' | 'shipped'; supplierHandoffId: string | null }>;
     printOrders?: Array<Record<string, unknown>>;
     allOutsourced?: boolean;
+    activeNonPrintLine?: boolean;
     /** 판매주문이 아직 없다(수집 전) */
     noSalesOrder?: boolean;
     /** 인쇄가 아닌 판매주문 줄이 있는가 */
@@ -306,7 +312,11 @@ function makeContext(
     }),
   };
 
-  const printReader = printReaderMock(options.printOrders, options.allOutsourced);
+  const printReader = printReaderMock(
+    options.printOrders,
+    options.allOutsourced,
+    options.activeNonPrintLine ?? options.nonPrintLine ?? false,
+  );
   const printCancellation = printCancelMock(printCancel, printNote);
   const refunds = new CancellationRefundManager(
     dbMock as any,
@@ -1274,6 +1284,68 @@ describe('StoreSalesOrdersService', () => {
         const r = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
         expect(r.availableActions).toContain('cancel');
       });
+
+      it('인쇄만 제작 중이면 전용 사유로 취소를 숨기고 제작 표시를 보낸다', async () => {
+        const { service } = makeContext({ printOrders: [{ status: 'submitted', vendorInProduction: true }] });
+
+        const result = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
+
+        expect(result.availableActions).not.toContain('cancel');
+        expect(result.cancelUnavailableReason).toBe('print_in_production');
+        expect(result.fulfillmentStatus).toBe('preparing');
+        expect(result.printInProduction).toBe(true);
+      });
+
+      it('혼합 주문은 취소 버튼과 상품 준비 중 표시를 유지한다', async () => {
+        const { service } = makeContext({
+          printOrders: [{ status: 'submitted', vendorInProduction: true }],
+          nonPrintLine: true,
+        });
+
+        const result = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
+
+        expect(result.availableActions).toContain('cancel');
+        expect(result.cancelUnavailableReason).toBeUndefined();
+        expect(result.printInProduction).toBe(false);
+      });
+
+      it('일반 상품이 모두 취소되면 남은 인쇄물의 제작 표시를 보낸다', async () => {
+        const { service } = makeContext({
+          printOrders: [{ status: 'submitted', vendorInProduction: true }],
+          nonPrintLine: true,
+          activeNonPrintLine: false,
+        });
+
+        const result = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
+
+        expect(result.printInProduction).toBe(true);
+      });
+
+      it.each<OrderFulfillmentPhase['storePhase']>(['shipping', 'delivered', 'canceled', 'not_created'])(
+        '%s 단계는 제작 표시를 보내지 않는다',
+        async (storePhase) => {
+          const { service } = makeContext({ printOrders: [{ status: 'submitted', vendorInProduction: true }] });
+          mockPhase({ storePhase });
+
+          const result = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
+
+          expect(result.printInProduction).toBe(false);
+        },
+      );
+
+      it.each([
+        { status: 'submitted', vendorInProduction: false },
+        { status: 'cancelled', vendorInProduction: true },
+      ])('취소 가능하거나 취소된 인쇄물은 제작 중으로 취급하지 않는다: $status', async (print) => {
+        const { service } = makeContext({ printOrders: [print] });
+
+        const result = await service.getActionsByChannelOrder(CHANNEL_ORDER_ID, CUSTOMER_ID);
+
+        expect(result.availableActions).toContain('cancel');
+        expect(result.cancelUnavailableReason).toBeUndefined();
+        expect(result.printInProduction).toBe(false);
+      });
+
       it('와우프레스 취소 거절(cancel_refused) 행만 있으면 already_processing (셀프취소 불가)', async () => {
         const { service } = makeContext({
           fos: [{ status: 'ready' }],

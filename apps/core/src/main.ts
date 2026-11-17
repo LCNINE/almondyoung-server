@@ -9,6 +9,7 @@ import { mountEventChainContext, EventsModule } from '@app/events';
 import { GlobalExceptionFilter } from '@app/shared';
 import { AppModule } from './app.module';
 import { CORE_CONSUMER_GROUP } from './core-consumer-group';
+import { raiseBodyLimitForInboundShipmentUpload } from './platform/http/route-body-limit';
 import { createGlobalValidationPipe } from './platform/http/validation-pipe';
 
 async function bootstrap() {
@@ -18,6 +19,9 @@ async function bootstrap() {
     // 부팅 로그를 버퍼링했다가 pino 로거가 준비되면 flush — 초기 로그도 JSON+trace_id 로.
     { bufferLogs: true },
   );
+
+  // 라우트가 등록되기 전(app.init 이전)에 건다.
+  raiseBodyLimitForInboundShipmentUpload(app.getHttpAdapter().getInstance());
 
   // HTTP 요청 하나 = 사슬 하나 (#612). CLS 컨텍스트가 없으면 한 요청 안의 두 발행이 서로
   // 다른 chainId 를 받는다. 다른 미들웨어·전역 파이프보다 앞이어야 한다.

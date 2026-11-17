@@ -21,6 +21,7 @@ import { NextIntlClientProvider } from "next-intl"
 import { getLocale, getMessages } from "next-intl/server"
 import { OverlayProvider } from "overlay-kit"
 import { Toaster } from "sonner"
+import { CartAddedToastHost } from "@/components/shared/cart-added-toast"
 
 export const metadata: Metadata = getSEOTags({
   title: {
@@ -116,6 +117,7 @@ export default async function RootLayout(props: { children: React.ReactNode }) {
                           <FloatingButtons />
                         </div>
                         <Toaster />
+                        <CartAddedToastHost />
                       </CustomThemeProvider>
                     </ThemeProvider>
                     <BottomNavigation />

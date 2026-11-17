@@ -74,3 +74,11 @@ export function filterDemoMenus(menus: MainMenu[]): MainMenu[] {
     ];
   });
 }
+
+/** 이 단계의 관리자 화면이 그 경로를 섬기는가 — 시연 단계는 결제·멤버십 등 업스트림을 막는다(미들웨어가 404) */
+export function isServedInStage(
+  path: string,
+  stage: string | undefined
+): boolean {
+  return stage !== 'demo' || !isDemoUnavailablePath(path);
+}

@@ -569,6 +569,7 @@ export class BulkSessionJobManager {
     // 적힌 경로 문자열과 여기서 만드는 인덱스 키가 다르면 멀쩡한 경로가 전부 미해석이 된다.
     // includeInactive=true 인 것도 그대로다: 이미 비활성 카테고리에 배정된 상품의 경로가
     // 인덱스에서 빠지면, 카테고리를 건드리지도 않은 행이 통째로 오류가 된다.
+    const supplierNameById = await this.snapshot.loadSupplierNames();
     const refs = await this.db.run(async (trx) => {
       const tree = await this.categories.getCategoryTree(undefined, true, trx);
       const flat = flattenCategoryTree(tree.categories);
@@ -579,6 +580,8 @@ export class BulkSessionJobManager {
       return {
         pathIndex: buildCategoryPathIndex(flat),
         categoryPathById: new Map(flat.map((c) => [c.id, c.path])),
+        supplierNameById,
+        supplierIdByName: new Map([...supplierNameById].map(([id, name]) => [name, id])),
         // 파싱 슬라이스가 실제로 남긴 이미지만 담는다 — 시트에는 있었지만 URL·길이 오류로
         // 버려진 키를 참조한 행은 여기서 "이미지 시트에 없는 이미지키"로 잡혀야 한다.
         // rowNumber 는 resolveImageRefs 가 읽지 않으므로 0 으로 둔다(오류에 실리지 않는다).
@@ -621,6 +624,8 @@ export class BulkSessionJobManager {
     refs: {
       pathIndex: Map<string, string[]>;
       categoryPathById: Map<string, string>;
+      supplierNameById: Map<string, string>;
+      supplierIdByName: Map<string, string>;
       images: Map<string, { rowNumber: number; sourceValue: string }>;
     },
   ): Promise<void> {
@@ -696,7 +701,13 @@ export class BulkSessionJobManager {
       // 안 바뀐 이미지가 IMG-1 부터 다시 번호를 받아 이미지를 건드리지도 않은 행이 전부
       // 충돌로 뜬다(form-export.types.ts 의 createImageKeyAllocator 주석).
       const current = await this.db.run((trx) =>
-        this.snapshot.renderMaster(trx, masterId, createImageKeyAllocator(baseSnapshot.images), refs.categoryPathById),
+        this.snapshot.renderMaster(
+          trx,
+          masterId,
+          createImageKeyAllocator(baseSnapshot.images),
+          refs.categoryPathById,
+          refs.supplierNameById,
+        ),
       );
       if (!current) {
         await this.finishItem(item.id, { fields: {} }, null, [
@@ -741,6 +752,17 @@ export class BulkSessionJobManager {
       errors.push(...resolved.errors);
       payload.categoryIds = resolved.categoryIds;
       if (resolved.primaryCategoryId) payload.primaryCategoryId = resolved.primaryCategoryId;
+    }
+
+    if ('product.supplier' in fields) {
+      const name = (fields['product.supplier'] ?? '').trim();
+      const supplierId = name === '' ? null : refs.supplierIdByName.get(name);
+
+      if (supplierId === undefined) {
+        errors.push({ sheet: '상품', rowNumber: item.rowNumber, message: `등록되지 않은 공급처입니다: ${name}` });
+      } else {
+        payload.supplierId = supplierId;
+      }
     }
 
     await this.finishItem(item.id, payload, Object.keys(conflicts).length > 0 ? conflicts : null, errors);

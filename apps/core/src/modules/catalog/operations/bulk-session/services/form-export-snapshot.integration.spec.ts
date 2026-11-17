@@ -1,4 +1,5 @@
 import { randomUUID } from 'crypto';
+import { SuppliersService } from '../../../../inventory/suppliers/services/suppliers.service';
 import * as postgres from 'postgres';
 import { drizzle, PostgresJsDatabase } from 'drizzle-orm/postgres-js';
 // `sql` (구 postgres.Sql 커넥션 변수, 아래 describe 안)와 이름이 겹쳐 별칭을 쓴다.
@@ -130,7 +131,7 @@ describeIfDb('FormExportSnapshotReader (실 Postgres)', () => {
       getVariantMatchingBatch: () => Promise.resolve({ data: [] }),
     } as unknown as ProductSkuMappingService;
 
-    reader = new FormExportSnapshotReader(versionLoader, optionLoader, pricing, categories, skuMapping, new QuantityDiscountReader(dbService));
+    reader = new FormExportSnapshotReader(versionLoader, optionLoader, pricing, categories, skuMapping, new QuantityDiscountReader(dbService), { getSuppliers: jest.fn().mockResolvedValue({ data: [] }) } as unknown as SuppliersService);
   });
 
   afterAll(async () => {
@@ -709,7 +710,7 @@ describeIfDb('FormExportSnapshotReader (실 Postgres)', () => {
       });
       const out = await reader.buildPrefill(tx, [fx.masterId], 'exp-snapshot-reseed');
       const snapshot = out.items[0].snapshot;
-      const again = await reader.renderMaster(tx, fx.masterId, createImageKeyAllocator(snapshot.images), new Map());
+      const again = await reader.renderMaster(tx, fx.masterId, createImageKeyAllocator(snapshot.images), new Map(), new Map());
       return { snapshot, again };
     });
 

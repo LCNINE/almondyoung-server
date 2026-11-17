@@ -63,7 +63,7 @@ describe('취소 요청 메타데이터', () => {
 });
 
 const CONFIRMED = new Date('2026-10-12T01:00:00.000Z');
-function row(over: { status?: CancelRequestStatus; settlement?: Record<string, unknown> | null } = {}) {
+function row(over: { status?: CancelRequestStatus; settlement?: Record<string, unknown> | null; requestedBy?: string } = {}) {
   return {
     id: '11111111-1111-4111-8111-111111111111',
     status: over.status ?? 'settling',
@@ -74,7 +74,7 @@ function row(over: { status?: CancelRequestStatus; settlement?: Record<string, u
       request: {
         kind: 'cancel',
         scope: 'full',
-        requestedBy: 'customer:c1',
+        requestedBy: over.requestedBy ?? 'customer:c1',
         sourceKey: 'k1',
         appliedAt: CONFIRMED.toISOString(),
         command: { requestId: '11111111-1111-4111-8111-111111111111' },
@@ -106,7 +106,12 @@ describe('정산 상태(#1016 36번 재설계 §5.1)', () => {
       startedAt: '2026-10-12T01:00:00.000Z',
       deadlineAt: '2026-10-15T01:00:00.000Z',
       lastFailure: null,
+      marketRequest: false,
     });
+  });
+
+  it('마켓 고객 취소요청 행은 marketRequest — 화면이 거절을 «판매자센터 승인 필요»로 읽고 계좌 송금을 내지 않는다', () => {
+    expect(toSettlementView(row({ requestedBy: 'channel-customer:po-1:na' }), minutes(5))).toMatchObject({ marketRequest: true });
   });
 
   it('이번 시도의 시작 시각(startedAt)은 settlement.since — [다시 시도]·[계좌 송금]이 새로 찍는다. admin-web 이 결과가 올 때까지 다시 읽는 기준', () => {

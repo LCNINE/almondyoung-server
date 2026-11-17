@@ -1129,6 +1129,39 @@ export const sitePopups = pgTable(
   ],
 );
 
+// ===== TOP NOTICES (스토어프론트 상단 공지 띠) =====
+//
+// 헤더 위 한 줄 띠. 팝업처럼 노출 대상·크기·다시 보지 않기 규칙이 없고 모두에게 같은 띠가 보인다.
+export const topNotices = pgTable(
+  'top_notices',
+  {
+    id: uuid('id')
+      .primaryKey()
+      .$defaultFn(() => uuidv7()),
+    text: varchar('text', { length: 120 }).notNull(),
+    linkUrl: text('link_url'),
+
+    displayStartAt: timestamp('display_start_at'),
+    displayEndAt: timestamp('display_end_at'),
+    isActive: boolean('is_active').notNull().default(true),
+    sortOrder: integer('sort_order').notNull().default(0),
+
+    deletedAt: timestamp('deleted_at'),
+    deletedBy: uuid('deleted_by'),
+
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+    createdBy: uuid('created_by'),
+    updatedBy: uuid('updated_by'),
+  },
+  (table) => [
+    index('idx_top_notices_active').on(table.isActive),
+    index('idx_top_notices_display_period').on(table.displayStartAt, table.displayEndAt),
+    index('idx_top_notices_deleted_at').on(table.deletedAt),
+    index('idx_top_notices_sort').on(table.sortOrder, table.createdAt),
+  ],
+);
+
 // ===== PRODUCT FORM EXPORTS (일괄 세션 1단계 — 양식 생성 잡) =====
 
 export const productFormExportStatusEnum = pgEnum('product_form_export_status', [
@@ -1448,6 +1481,7 @@ export const catalogSchema = {
   banners,
   notices,
   sitePopups,
+  topNotices,
   productFormExports,
   productFormExportItems,
   productBulkSessions,

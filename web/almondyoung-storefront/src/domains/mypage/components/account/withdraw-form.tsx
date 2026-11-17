@@ -84,7 +84,7 @@ export function WithdrawForm({
           {hasRefundableAmount && (
             <LocalizedClientLink
               href="/mypage/membership"
-              className="mt-3 inline-flex text-sm font-medium text-primary underline underline-offset-4"
+              className="mt-3 inline-flex text-sm font-medium text-mint-deep underline underline-offset-4"
             >
               {t("membershipNoticeAction")}
             </LocalizedClientLink>

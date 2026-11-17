@@ -20,7 +20,12 @@ const session = {
 describe('useAdjustStock', () => {
   it('조정 body 와 멱등 헤더를 함께 보낸다', async () => {
     const request = vi.fn(
-      async (_opts: { path: string; method?: string; body?: unknown; idempotencyKey?: string }) => ({})
+      async (_opts: {
+        path: string;
+        method?: string;
+        body?: unknown;
+        idempotencyKey?: string;
+      }) => ({})
     );
     const client: ApiClient = { request: request as unknown as ApiClient['request'] };
     const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
@@ -44,7 +49,9 @@ describe('useAdjustStock', () => {
       idempotencyKey: 'key-1',
     });
 
-    const call = request.mock.calls[0][0];
+    const call = request.mock.calls.find(
+      ([opts]) => opts.path === '/inventory/stocks/adjust'
+    )![0];
     expect(call.path).toBe('/inventory/stocks/adjust');
     expect(call.method).toBe('POST');
     expect(call.idempotencyKey).toBe('key-1');
@@ -61,5 +68,33 @@ describe('useAdjustStock', () => {
     const keys = invalidate.mock.calls.map((c) => JSON.stringify(c[0]));
     expect(keys.some((k) => k.includes('sku-warehouse-stock'))).toBe(true);
     expect(keys.some((k) => k.includes('sku-stock-summary'))).toBe(true);
+  });
+});
+
+it('제출 직전 권한이 없으면 조정 요청을 보내지 않는다', async () => {
+  const request = vi.fn(async () => ({ permissions: { stockAdjust: false } }));
+  const client = { request: request as ApiClient['request'] };
+  const qc = new QueryClient();
+  const wrapper = ({ children }: { children: ReactNode }) => (
+    <SessionProvider session={session}>
+      <QueryClientProvider client={qc}>
+        <ApiClientProvider client={client}>{children}</ApiClientProvider>
+      </QueryClientProvider>
+    </SessionProvider>
+  );
+  const { result } = renderHook(() => useAdjustStock(), { wrapper });
+
+  await expect(
+    result.current.mutateAsync({
+      skuId: 's',
+      warehouseId: 'w',
+      locationId: 'l',
+      delta: 1,
+      reason: '발견',
+      idempotencyKey: 'key',
+    })
+  ).rejects.toMatchObject({ status: 403 });
+  expect(request).toHaveBeenCalledExactlyOnceWith({
+    path: '/inventory/work-context',
   });
 });

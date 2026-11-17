@@ -67,10 +67,10 @@ export class InboundReceiptLineDto {
 
   @ApiProperty({
     description: '입고 출처',
-    enum: ['direct', 'purchase_order'],
+    enum: ['direct', 'purchase_order', 'inbound_shipment'],
     example: 'direct',
   })
-  source: 'direct' | 'purchase_order';
+  source: 'direct' | 'purchase_order' | 'inbound_shipment';
 
   @ApiProperty({
     description: '생성 일시',
@@ -175,6 +175,20 @@ export type InboundCancelBlockReason =
   | 'INSUFFICIENT_ORIGIN_STOCK'
   | 'MISSING_ORIGIN_OR_EVENT';
 
+export class InboundShipmentBoxRefDto {
+  @ApiProperty({ description: '선적 ID' })
+  shipmentId: string;
+
+  @ApiProperty({ description: '선적 이름' })
+  shipmentName: string;
+
+  @ApiProperty({ description: '상자 ID' })
+  boxId: string;
+
+  @ApiProperty({ description: '상자 라벨' })
+  boxLabel: string;
+}
+
 export class InboundReceiptHistoryLineDto extends InboundReceiptLineDto {
   @ApiProperty({ description: '미처리 입고 수량' })
   pendingQty: number;
@@ -210,6 +224,13 @@ export class InboundReceiptHistoryLineDto extends InboundReceiptLineDto {
     ],
   })
   cancelBlockReason: InboundCancelBlockReason | null;
+
+  @ApiProperty({
+    description: '선적 상자 입고 줄이면 그 상자 (줄 단위 취소 불가 — 상자 화면에서 취소)',
+    type: InboundShipmentBoxRefDto,
+    nullable: true,
+  })
+  inboundShipmentBox: InboundShipmentBoxRefDto | null;
 }
 
 export class InboundReceiptHistoryItemDto extends BaseInboundReceiptDto {

@@ -12,8 +12,16 @@ import {
 } from 'recharts';
 import { useSalesStatistics } from '@/lib/services/analytics';
 import { StatisticsShell } from '../components/shell';
+import { RevenueReportPanel } from '../revenue-report/RevenueReportPanel';
 import { ChartCard, HorizontalBarList, KpiTile } from '../components/widgets';
-import { formatCount, formatKrw, formatKrwAxis, formatPercent, SERIES_COLORS, useStatisticsRange } from '../shared';
+import {
+  formatCount,
+  formatKrw,
+  formatKrwAxis,
+  formatPercent,
+  SERIES_COLORS,
+  useStatisticsRange,
+} from '../shared';
 
 export default function SalesStatisticsTemplate() {
   const range = useStatisticsRange();
@@ -24,6 +32,7 @@ export default function SalesStatisticsTemplate() {
 
   return (
     <StatisticsShell>
+      <RevenueReportPanel />
       {isError ? (
         <p className="py-10 text-center text-sm text-red-500">
           통계를 불러오지 못했습니다. 잠시 후 다시 시도해주세요.
@@ -32,16 +41,24 @@ export default function SalesStatisticsTemplate() {
         <div className="space-y-4">
           <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
             <KpiTile
-              label="순매출"
+              label="기존 주문 집계 순매출"
               value={formatKrw(kpis?.netRevenue)}
-              previous={kpis && prev ? { current: kpis.netRevenue, previous: prev.netRevenue } : undefined}
-              hint="총매출 − 취소 − 환불"
+              previous={
+                kpis && prev
+                  ? { current: kpis.netRevenue, previous: prev.netRevenue }
+                  : undefined
+              }
+              hint="총매출 − 취소 − 환불 · 외부 업로드 자료는 위 월별 통계에서 확인"
               isLoading={isLoading}
             />
             <KpiTile
               label="주문수"
               value={formatCount(kpis?.ordersCount)}
-              previous={kpis && prev ? { current: kpis.ordersCount, previous: prev.ordersCount } : undefined}
+              previous={
+                kpis && prev
+                  ? { current: kpis.ordersCount, previous: prev.ordersCount }
+                  : undefined
+              }
               isLoading={isLoading}
             />
             <KpiTile
@@ -65,10 +82,17 @@ export default function SalesStatisticsTemplate() {
             isEmpty={!data || data.series.length === 0}
           >
             <ResponsiveContainer width="100%" height={280}>
-              <LineChart data={data?.series ?? []} margin={{ top: 8, right: 16, bottom: 0, left: 8 }}>
+              <LineChart
+                data={data?.series ?? []}
+                margin={{ top: 8, right: 16, bottom: 0, left: 8 }}
+              >
                 <CartesianGrid strokeDasharray="3 3" stroke="#eee" />
                 <XAxis dataKey="bucket" tick={{ fontSize: 11 }} stroke="#999" />
-                <YAxis tick={{ fontSize: 11 }} stroke="#999" tickFormatter={formatKrwAxis} />
+                <YAxis
+                  tick={{ fontSize: 11 }}
+                  stroke="#999"
+                  tickFormatter={formatKrwAxis}
+                />
                 <Tooltip formatter={(value: number) => formatKrw(value)} />
                 <Legend />
                 <Line
@@ -92,7 +116,11 @@ export default function SalesStatisticsTemplate() {
           </ChartCard>
 
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-            <ChartCard title="채널별 순매출" isLoading={isLoading} isEmpty={!data || data.channels.length === 0}>
+            <ChartCard
+              title="채널별 순매출"
+              isLoading={isLoading}
+              isEmpty={!data || data.channels.length === 0}
+            >
               <HorizontalBarList
                 items={(data?.channels ?? []).map((channel) => ({
                   label: channel.salesChannel,
@@ -114,13 +142,26 @@ export default function SalesStatisticsTemplate() {
                   </thead>
                   <tbody>
                     {(data?.channels ?? []).map((channel) => (
-                      <tr key={channel.salesChannel} className="border-b last:border-0">
+                      <tr
+                        key={channel.salesChannel}
+                        className="border-b last:border-0"
+                      >
                         <td className="py-1.5">{channel.salesChannel}</td>
-                        <td className="py-1.5 text-right tabular-nums">{formatKrw(channel.grossRevenue)}</td>
-                        <td className="py-1.5 text-right tabular-nums">{formatKrw(channel.cancelledAmount)}</td>
-                        <td className="py-1.5 text-right tabular-nums">{formatKrw(channel.refundedAmount)}</td>
-                        <td className="py-1.5 text-right tabular-nums font-medium">{formatKrw(channel.netRevenue)}</td>
-                        <td className="py-1.5 text-right tabular-nums">{formatCount(channel.ordersCount)}</td>
+                        <td className="py-1.5 text-right tabular-nums">
+                          {formatKrw(channel.grossRevenue)}
+                        </td>
+                        <td className="py-1.5 text-right tabular-nums">
+                          {formatKrw(channel.cancelledAmount)}
+                        </td>
+                        <td className="py-1.5 text-right tabular-nums">
+                          {formatKrw(channel.refundedAmount)}
+                        </td>
+                        <td className="py-1.5 text-right tabular-nums font-medium">
+                          {formatKrw(channel.netRevenue)}
+                        </td>
+                        <td className="py-1.5 text-right tabular-nums">
+                          {formatCount(channel.ordersCount)}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -136,7 +177,10 @@ export default function SalesStatisticsTemplate() {
               emptyText="조회 기간에 취소가 없습니다"
             >
               <HorizontalBarList
-                items={(data?.cancelReasons ?? []).map((row) => ({ label: row.reason, value: row.count }))}
+                items={(data?.cancelReasons ?? []).map((row) => ({
+                  label: row.reason,
+                  value: row.count,
+                }))}
                 formatValue={(value) => `${formatCount(value)}건`}
               />
             </ChartCard>

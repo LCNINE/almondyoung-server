@@ -3,7 +3,11 @@ import {
   CustomOrderNotice,
   CUSTOM_ORDER_NOTICE_PAGE_ID,
 } from "@/domains/almond-template/components/custom-order-notice"
-import { PRINT_PRODUCTS } from "@/domains/almond-template/lib/catalog"
+import {
+  needsTemplateList,
+  templateProductOf,
+} from "@/domains/almond-template/lib/template-product"
+import { listAlmondTemplates } from "@/lib/api/ugc/almond-templates"
 import { ErrorBoundary } from "@/components/shared/error-boundary"
 import {
   ProductQnaSkeleton,
@@ -19,6 +23,14 @@ import { notFound } from "next/navigation"
 import { getTranslations } from "next-intl/server"
 import { Suspense } from "react"
 import { ImageGallery } from "../components/image-gallery"
+import { hasPrintInfo, PrintInfo } from "../components/paper-preview/print-info"
+import { PaperCompare } from "../components/paper-preview/paper-compare"
+import { PrintDetail } from "../components/paper-preview/print-detail"
+import {
+  choosesPaper,
+  paperTemplateOf,
+  paperVariantOf,
+} from "../components/paper-preview/paper"
 import { ProductBreadcrumb } from "../components/breadcrumb"
 import ProductActions from "../components/product-actions"
 import { ProductInfoAccordion } from "../components/product-detail-info/product-info-accordion"
@@ -58,17 +70,38 @@ export async function ProductTemplate({
   const pimMasterId = product.metadata?.pimMasterId as string | undefined
   const isDigital = isDigitalProduct(product)
   const isOverseas = getIsOverseas(product)
-  const isCustomOrder = !!pimMasterId && !!PRINT_PRODUCTS[pimMasterId]
+  // null 은 조회 실패 — 빈 목록과 구분해 시안 id 를 구매 요청에 남긴다
+  const templates =
+    pimMasterId && needsTemplateList(pimMasterId)
+      ? await listAlmondTemplates().catch(() => null)
+      : []
+  const isCustomOrder =
+    !!pimMasterId && !!templateProductOf(pimMasterId, templates ?? [])
+  const paperTemplate = paperTemplateOf(pimMasterId ?? product.id, templates)
+  const paperValues = product.options
+    ?.flatMap((option) => option.values ?? [])
+    .map(({ value }) => paperVariantOf(value))
+    .filter((variant) => variant !== undefined)
+  const paperSummary = templates?.find((t) => t.id === paperTemplate?.id)
+  // 용지를 고르는 종류는 용지 옵션이 있어야 3D 를 띄운다. 용지가 하나인 종류(미니배너·입간판·현수막)는 옵션 없이 띄운다
+  const paper =
+    paperTemplate && (!choosesPaper(paperTemplate.shape) || paperValues?.length)
+      ? {
+          templateId: paperTemplate.id,
+          shape: paperTemplate.shape,
+          fallbackVariant: paperValues?.[0] ?? "uncoated",
+        }
+      : undefined
 
   return (
     <div className="min-h-screen bg-white pt-6">
-      <div className="mx-auto max-w-[1360px] px-[15px] xl:px-[40px]">
+      <div className="mx-auto max-w-[1280px] px-[15px] xl:px-[32px]">
         <ProductBreadcrumb product={product} />
 
         <div className="py-2 xl:flex xl:items-start xl:gap-4">
           {/* 메인 콘텐츠 */}
           <main className="w-full min-w-0 flex-1 pb-24 xl:pb-0">
-            <ImageGallery key={product.id} product={product} />
+            <ImageGallery key={product.id} product={product} paper={paper} />
 
             {/* 모바일 상품 정보 */}
             <div className="xl:hidden">
@@ -105,10 +138,33 @@ export async function ProductTemplate({
               {/* 상품 상세정보 Tab Panel — 데이터를 page 가 이미 await 하므로 별도
                   Suspense 없이 페이지 본문과 같은 청크로 렌더한다 (지연 스왑 1단계 제거) */}
               <SectionTabPanel value="detail">
+                {paper && hasPrintInfo(paper.shape) && paperSummary ? (
+                  <PrintInfo
+                    shape={paper.shape}
+                    size={paperSummary.size}
+                    thumbnail={paperSummary.thumbnail}
+                  />
+                ) : (
+                  paper &&
+                  paper.shape !== "window" && (
+                    <PaperCompare shape={paper.shape} />
+                  )
+                )}
                 <ErrorBoundary fallback={<div>{t("loadDetailFail")}</div>}>
                   <ProductDetailInfoWrapper
                     pricedProduct={product}
                     pimDetail={pimDetail}
+                    extra={
+                      paperTemplate && paperSummary ? (
+                        <PrintDetail
+                          shape={paperTemplate.shape}
+                          size={paperSummary.size}
+                          thumbnail={paperSummary.thumbnail}
+                          name={product.title ?? ""}
+                          templateId={paperTemplate.id}
+                        />
+                      ) : undefined
+                    }
                   />
                 </ErrorBoundary>
 
@@ -163,6 +219,7 @@ export async function ProductTemplate({
                   product={product}
                   region={region}
                   disabled={false}
+                  templates={templates}
                 />
               }
             >
@@ -170,6 +227,7 @@ export async function ProductTemplate({
                 handle={product.handle!}
                 region={region}
                 customer={customer}
+                templates={templates}
               />
             </Suspense>
           </div>

@@ -12,11 +12,17 @@ export class PrintFileClient {
     this.baseUrl = (configService.get<string>('FILE_SERVICE_URL') ?? 'http://localhost:3010').replace(/\/+$/, '');
   }
 
-  async upload(body: Buffer, fileName: string, contentType: string, accessToken: string): Promise<string> {
+  async upload(
+    body: Buffer,
+    fileName: string,
+    contentType: string,
+    accessToken: string,
+    target: { contextId: string; isPublic: boolean } = { contextId: ALMOND_PRINT_FILE_CONTEXT_ID, isPublic: false },
+  ): Promise<string> {
     const form = new FormData();
     form.append('file', new Blob([new Uint8Array(body)], { type: contentType }), fileName);
-    form.append('contextId', ALMOND_PRINT_FILE_CONTEXT_ID);
-    form.append('isPublic', 'false');
+    form.append('contextId', target.contextId);
+    form.append('isPublic', String(target.isPublic));
     const response = await fetch(`${this.baseUrl}/files/upload`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${accessToken}` },

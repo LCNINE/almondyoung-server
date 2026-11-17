@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { InjectDb, DbService } from '@app/db';
 import { and, eq, gt, notInArray, sql } from 'drizzle-orm';
 import { v7 as uuidv7 } from 'uuid';
+import { formatInTimeZone } from 'date-fns-tz';
 import { type PimSchema, productFormExports, productFormExportItems } from '../../../schema/catalog.schema';
 import { DbTransaction } from '../../../catalog.types';
 import { FormExportSnapshotReader } from './form-export.snapshot.reader';
@@ -168,7 +169,8 @@ export class FormExportJobManager {
     );
 
     const buffer = await buildFormWorkbook(data);
-    const fileName = `상품일괄양식_${new Date().toISOString().slice(0, 10)}.xlsx`;
+    // 작업자가 보는 날짜는 KST — UTC 로 자르면 KST 00~09시에 만든 파일이 전날로 찍힌다.
+    const fileName = `상품일괄양식_${formatInTimeZone(new Date(), 'Asia/Seoul', 'yyyy-MM-dd')}.xlsx`;
     const { fileId } = await this.fileClient.upload({ buffer, fileName, userId: job.requestedBy });
 
     return this.db.run(async (trx) => {

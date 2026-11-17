@@ -146,7 +146,7 @@ export function ShippingGroupFormDialog({ open, onOpenChange, group }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent className="max-h-[90dvh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{isEdit ? '배송비 그룹 수정' : '배송비 그룹 추가'}</DialogTitle>
           <DialogDescription>

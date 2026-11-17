@@ -1,10 +1,16 @@
 import { describe, it, expect } from 'vitest';
 import { errorMessage } from './errorMessage';
-import { ApiError, ConflictError } from './httpClient';
+import { ApiError, ConflictError, NetworkError } from './httpClient';
 
 describe('errorMessage', () => {
   it('maps a ConflictError to a retry message', () => {
     expect(errorMessage(new ConflictError('x'))).toMatch(/먼저 변경/);
+  });
+  it('응답을 받지 못한 요청은 연결을 확인하라고 안내한다', () => {
+    for (const context of [undefined, 'barcode', 'outbound'] as const)
+      expect(errorMessage(new NetworkError(new TypeError('Failed to fetch')), context)).toBe(
+        '서버에 연결하지 못했어요. 네트워크를 확인해 주세요.'
+      );
   });
   it('maps a 404 status embedded in the message', () => {
     expect(errorMessage(new Error('GET /x → 404'))).toMatch(/찾을 수 없/);
@@ -15,9 +21,36 @@ describe('errorMessage', () => {
   it('maps a 400 status to an input message', () => {
     expect(errorMessage(new Error('POST /x → 400'))).toMatch(/올바르지 않/);
   });
-  it('maps 401/403 to an auth message', () => {
-    expect(errorMessage(new Error('GET /x → 401'))).toMatch(/권한/);
-    expect(errorMessage(new Error('GET /x → 403'))).toMatch(/권한/);
+  it('401 은 로그인 만료로, 403 은 관리자 확인으로 안내한다', () => {
+    expect(errorMessage(new Error('GET /x → 401'))).toBe(
+      '로그인이 만료됐어요. 다시 로그인해 주세요.'
+    );
+    expect(errorMessage(new Error('GET /x → 403'))).toBe(
+      '이 작업을 할 권한이 없어요. 관리자에게 확인해 주세요.'
+    );
+  });
+  it('403 이 요구 권한을 알려 주면 그 이름으로 안내한다', () => {
+    const denied = new ApiError(
+      'POST /inventory/stocks/adjust → 403',
+      403,
+      'FORBIDDEN',
+      undefined,
+      undefined,
+      ['inventory.stock.adjust']
+    );
+    expect(errorMessage(denied)).toBe(
+      '이 작업에는 ‘재고 조정’ 권한이 필요해요. 관리자에게 권한을 요청해 주세요.'
+    );
+    expect(errorMessage(denied, 'inbound')).toBe(errorMessage(denied));
+  });
+  it('요구 권한이 여럿이면 어느 하나면 된다고 안내하고, 목록에 없는 키는 그대로 보여 준다', () => {
+    const denied = new ApiError('GET /x → 403', 403, 'FORBIDDEN', undefined, undefined, [
+      'inventory.stock.adjust',
+      'unknown.permission',
+    ]);
+    expect(errorMessage(denied)).toBe(
+      '이 작업에는 ‘재고 조정’ 또는 ‘unknown.permission’ 권한이 필요해요. 관리자에게 권한을 요청해 주세요.'
+    );
   });
   it('falls back for unknown values', () => {
     expect(errorMessage('nope')).toMatch(/알 수 없/);
@@ -77,7 +110,10 @@ describe('errorMessage with context', () => {
 
   it('문맥이 있어도 401/403/5xx 는 공통 문구를 쓴다', () => {
     expect(errorMessage(new Error('GET /x → 403'), 'barcode')).toBe(
-      '권한이 없어요. 다시 로그인해 주세요.'
+      '이 작업을 할 권한이 없어요. 관리자에게 확인해 주세요.'
+    );
+    expect(errorMessage(new Error('GET /x → 401'), 'barcode')).toBe(
+      '로그인이 만료됐어요. 다시 로그인해 주세요.'
     );
     expect(errorMessage(new Error('GET /x → 500'), 'stocktaking')).toBe(
       '서버에 문제가 있어요. 잠시 후 다시 시도해 주세요.'
@@ -309,10 +345,11 @@ describe('이탈·되돌림 문구 (#989)', () => {
   });
 
   it.each([
-    ['RETURN_BIN_UNKNOWN', '등록되지 않았거나 폐기된 되돌림 바구니예요. 설정에서 바구니를 확인해 주세요.'],
+    ['RETURN_BIN_UNKNOWN', '되돌림 바구니를 사용할 수 없어요. 관리자에게 문의해 주세요.'],
     ['RETURN_BIN_WAREHOUSE_MISMATCH', '다른 창고의 되돌림 바구니예요.'],
     ['RETURN_BIN_ITEM_NOT_FOUND', '이 바구니에 없는 상품이에요.'],
     ['RETURN_BIN_ITEM_SHORT', '바구니에 남은 수량보다 많아요.'],
+    ['RETURN_LOCATION_REQUIRED', '원래 로케이션이 여러 곳이에요. 로케이션을 스캔해 주세요.'],
     ['RETURN_LOCATION_MISMATCH', '원래 로케이션이 아니에요. 화면에 보이는 로케이션에 넣어 주세요.'],
   ])('되돌림 %s — 출고·되돌림 화면 둘 다', (code, text) => {
     expect(errorMessage(new ConflictError('m', code), 'returns')).toBe(text);

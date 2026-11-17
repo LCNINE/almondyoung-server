@@ -126,6 +126,7 @@ export class ShipmentShortPickService {
           status: 'pending',
           operatorId: actor.id,
           reason: dto.reason,
+          reasonCode: dto.reason,
           csCaseId: dto.csCaseId ?? null,
           note: dto.note ?? null,
           idempotencyKey,

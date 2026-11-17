@@ -251,6 +251,180 @@ describeIfDb('ShipmentPlanningService (DB integration)', () => {
     });
   });
 
+  it('tells whether a request key was processed, per command type, without running it', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const fixture = await physicalFixture(tx, 10, 6);
+      const key = `split-${randomUUID()}`;
+      const notProcessed = { processed: false, operationId: null, status: null, completedAt: null };
+
+      expect(await planning.findRequestOutcome('shipment.split', key, tx)).toEqual(notProcessed);
+
+      const first = await planning.split(
+        fixture.shipment.id,
+        {
+          expectedManifestVersion: fixture.shipment.manifestVersion,
+          reason: 'separate backorder',
+          moves: [{ shipmentLineId: fixture.line.id, expectedLineVersion: fixture.line.lineVersion, qty: 4 }],
+        },
+        key,
+        actor,
+        tx,
+      );
+
+      expect(await planning.findRequestOutcome('shipment.split', key, tx)).toEqual({
+        processed: true,
+        operationId: first.operationId,
+        status: 'completed',
+        completedAt: expect.any(Date),
+      });
+      expect(await planning.findRequestOutcome('shipment.plan', key, tx)).toEqual(notProcessed);
+    });
+  });
+
+  it.each([
+    {
+      name: 'fully reserved',
+      onHand: 8,
+      moveQty: 3,
+      targetReservedQty: undefined,
+      sourceQty: 5,
+      sourceReserved: 5,
+      targetReserved: 3,
+    },
+    {
+      name: 'partially reserved',
+      onHand: 6,
+      moveQty: 4,
+      targetReservedQty: undefined,
+      sourceQty: 4,
+      sourceReserved: 4,
+      targetReserved: 2,
+    },
+    {
+      name: 'explicit reservation allocation',
+      onHand: 6,
+      moveQty: 3,
+      targetReservedQty: 3,
+      sourceQty: 5,
+      sourceReserved: 3,
+      targetReserved: 3,
+    },
+  ])('splits a $name line without losing reservations on replay', async (scenario) => {
+    await inRollbackTx(db, async (tx) => {
+      const fixture = await physicalFixture(tx, 8, scenario.onHand);
+      const [originalReservation] = await tx
+        .select()
+        .from(wmsTables.stockReservations)
+        .where(eq(wmsTables.stockReservations.shipmentLineId, fixture.line.id));
+      const key = `split-${randomUUID()}`;
+      const request = {
+        expectedManifestVersion: fixture.shipment.manifestVersion,
+        reason: 'separate shipment',
+        moves: [
+          {
+            shipmentLineId: fixture.line.id,
+            expectedLineVersion: fixture.line.lineVersion,
+            qty: scenario.moveQty,
+            targetReservedQty: scenario.targetReservedQty,
+          },
+        ],
+      };
+
+      const result = await planning.split(fixture.shipment.id, request, key, actor, tx);
+
+      expect(result.source.lines).toEqual([
+        expect.objectContaining({ id: fixture.line.id, qty: scenario.sourceQty, reservedQty: scenario.sourceReserved }),
+      ]);
+      expect(result.target.lines).toEqual([
+        expect.objectContaining({ qty: scenario.moveQty, reservedQty: scenario.targetReserved }),
+      ]);
+      expect(await planning.split(fixture.shipment.id, request, key, actor, tx)).toEqual(result);
+
+      const lines = await tx
+        .select()
+        .from(wmsTables.shipmentLines)
+        .where(eq(wmsTables.shipmentLines.fulfillmentOrderItemId, fixture.item.id));
+      const reservations = await tx
+        .select()
+        .from(wmsTables.stockReservations)
+        .where(
+          and(
+            inArray(
+              wmsTables.stockReservations.shipmentLineId,
+              lines.map((line) => line.id),
+            ),
+            eq(wmsTables.stockReservations.status, 'confirmed'),
+          ),
+        );
+
+      expect(lines).toHaveLength(2);
+      expect(lines.reduce((sum, line) => sum + line.qty, 0)).toBe(8);
+      expect(reservations.reduce((sum, row) => sum + row.quantity, 0)).toBe(scenario.onHand);
+      expect(
+        reservations.every((row) => row.requestedAt?.getTime() === originalReservation.requestedAt?.getTime()),
+      ).toBe(true);
+      expect(await confirmedQty(tx, fixture.line.id)).toBe(scenario.sourceReserved);
+      expect(await confirmedQty(tx, result.target.lines[0].id)).toBe(scenario.targetReserved);
+    });
+  });
+
+  it('rolls back a split when its required audit fails and accepts the same key afterward', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const fixture = await physicalFixture(tx, 8, 8);
+      const key = `split-${randomUUID()}`;
+      const request = {
+        expectedManifestVersion: fixture.shipment.manifestVersion,
+        reason: 'separate shipment',
+        moves: [{ shipmentLineId: fixture.line.id, expectedLineVersion: fixture.line.lineVersion, qty: 3 }],
+      };
+      const reservationsBefore = await tx
+        .select()
+        .from(wmsTables.stockReservations)
+        .where(eq(wmsTables.stockReservations.shipmentLineId, fixture.line.id));
+      const failure = new Error('split audit interrupted');
+      const spy = jest.spyOn(AuditService.prototype, 'logUserActionRequired').mockRejectedValueOnce(failure);
+
+      try {
+        await expect(
+          tx.transaction((nestedTx) => planning.split(fixture.shipment.id, request, key, actor, nestedTx)),
+        ).rejects.toThrow(failure);
+      } finally {
+        spy.mockRestore();
+      }
+
+      expect(await shipmentRow(tx, fixture.shipment.id)).toEqual(fixture.shipment);
+      expect(
+        await tx
+          .select()
+          .from(wmsTables.shipmentLines)
+          .where(eq(wmsTables.shipmentLines.fulfillmentOrderItemId, fixture.item.id)),
+      ).toEqual([fixture.line]);
+      expect(
+        await tx
+          .select()
+          .from(wmsTables.stockReservations)
+          .where(eq(wmsTables.stockReservations.shipmentLineId, fixture.line.id)),
+      ).toEqual(reservationsBefore);
+      expect(
+        await tx
+          .select()
+          .from(wmsTables.shipmentOperations)
+          .where(eq(wmsTables.shipmentOperations.idempotencyKey, key)),
+      ).toEqual([]);
+      expect(
+        await tx
+          .select()
+          .from(wmsTables.fulfillmentCommandRequests)
+          .where(eq(wmsTables.fulfillmentCommandRequests.idempotencyKey, key)),
+      ).toEqual([]);
+
+      const result = await planning.split(fixture.shipment.id, request, key, actor, tx);
+
+      expect(result.source.lines).toEqual([expect.objectContaining({ qty: 5, reservedQty: 5 })]);
+      expect(result.target.lines).toEqual([expect.objectContaining({ qty: 3, reservedQty: 3 })]);
+    });
+  });
+
   it('carries the entrance password onto the split target — a split box faces the same door', async () => {
     await inRollbackTx(db, async (tx) => {
       const fixture = await physicalFixture(tx, 10, 6);
@@ -455,11 +629,12 @@ describeIfDb('ShipmentPlanningService (DB integration)', () => {
         .update(wmsTables.shipments)
         .set({ entrancePassword: '#1234' })
         .where(eq(wmsTables.shipments.id, fixture.shipment.id));
+      const secondItem = await op.seedFo(tx, fixture, await op.seedOrder(tx, { quantity: 2 }), { qty: 2 });
       const [second] = await tx
         .insert(wmsTables.shipmentLines)
         .values({
           shipmentId: fixture.shipment.id,
-          fulfillmentOrderItemId: fixture.item.id,
+          fulfillmentOrderItemId: secondItem.foItemId,
           skuId: fixture.skuId,
           qty: 2,
         })
@@ -485,7 +660,8 @@ describeIfDb('ShipmentPlanningService (DB integration)', () => {
           and(eq(wmsTables.shipments.warehouseId, fixture.warehouseId), eq(wmsTables.shipments.status, 'canceled')),
         );
       // 묘비는 송장을 발행하지 않는다 — 비번을 실으면 배송 완료 파기가 못 닿는 사본만 는다.
-      expect(tombstone?.entrancePassword ?? null).toBeNull();
+      expect(tombstone).toBeDefined();
+      expect(tombstone.entrancePassword).toBeNull();
     });
   });
 
@@ -1585,6 +1761,103 @@ describeIfDb('ShipmentPlanningService (DB integration)', () => {
         }
         expect(error).toBeInstanceOf(ConflictException);
         expect((error as ConflictException).getResponse()).toMatchObject({ code: 'SHIPMENT_NOT_DRAFT' });
+      });
+    });
+  });
+
+  describe('작업 사유 코드', () => {
+    async function operationOf(tx: DbTx, id: string) {
+      const [row] = await tx.select().from(wmsTables.shipmentOperations).where(eq(wmsTables.shipmentOperations.id, id));
+      return row;
+    }
+
+    it('분할에 사유 코드와 요청 경로를 보내면 문구와 함께 저장한다', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const fixture = await physicalFixture(tx, 10, 6);
+        const result = await planning.split(
+          fixture.shipment.id,
+          {
+            expectedManifestVersion: fixture.shipment.manifestVersion,
+            reason: '고객 요청',
+            reasonCode: 'customer_ship_first',
+            requestChannel: 'kakao',
+            moves: [{ shipmentLineId: fixture.line.id, expectedLineVersion: fixture.line.lineVersion, qty: 4 }],
+          },
+          `split-${randomUUID()}`,
+          actor,
+          tx,
+        );
+        expect(await operationOf(tx, result.operationId)).toMatchObject({
+          reason: '고객이 일부 먼저 보내 달라고 요청',
+          reasonCode: 'customer_ship_first',
+          requestChannel: 'kakao',
+        });
+      });
+    });
+
+    it('사유 코드 없이 사유 글만 보내면 그대로 저장하고 코드는 비운다', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const fixture = await physicalFixture(tx, 10, 6);
+        const result = await planning.split(
+          fixture.shipment.id,
+          {
+            expectedManifestVersion: fixture.shipment.manifestVersion,
+            reason: '옛 글',
+            moves: [{ shipmentLineId: fixture.line.id, expectedLineVersion: fixture.line.lineVersion, qty: 4 }],
+          },
+          `split-${randomUUID()}`,
+          actor,
+          tx,
+        );
+        expect(await operationOf(tx, result.operationId)).toMatchObject({
+          reason: '옛 글',
+          reasonCode: null,
+          requestChannel: null,
+        });
+      });
+    });
+
+    it('고객 요청 코드에 요청 경로가 없으면 400 이고 상자를 나누지 않는다', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const fixture = await physicalFixture(tx, 10, 6);
+        await expect(
+          planning.split(
+            fixture.shipment.id,
+            {
+              expectedManifestVersion: fixture.shipment.manifestVersion,
+              reason: '요청',
+              reasonCode: 'customer_ship_first',
+              moves: [{ shipmentLineId: fixture.line.id, expectedLineVersion: fixture.line.lineVersion, qty: 4 }],
+            },
+            `split-${randomUUID()}`,
+            actor,
+            tx,
+          ),
+        ).rejects.toThrow('Request channel is required for a customer request');
+      });
+    });
+
+    it('새 칸이 없는 요청도 새 칸을 넣은 요청도 같은 키로 다시 보내면 재생된다', async () => {
+      await inRollbackTx(db, async (tx) => {
+        const fixture = await physicalFixture(tx, 10, 6);
+        const moves = [{ shipmentLineId: fixture.line.id, expectedLineVersion: fixture.line.lineVersion, qty: 4 }];
+        const plain = { expectedManifestVersion: fixture.shipment.manifestVersion, reason: '옛 글', moves };
+        const key = `split-${randomUUID()}`;
+        const first = await planning.split(fixture.shipment.id, plain, key, actor, tx);
+        const replay = await planning.split(fixture.shipment.id, plain, key, actor, tx);
+        expect(replay.operationId).toBe(first.operationId);
+
+        const fixture2 = await physicalFixture(tx, 10, 6);
+        const coded = {
+          expectedManifestVersion: fixture2.shipment.manifestVersion,
+          reason: '상자 크기',
+          reasonCode: 'does_not_fit',
+          moves: [{ shipmentLineId: fixture2.line.id, expectedLineVersion: fixture2.line.lineVersion, qty: 4 }],
+        };
+        const key2 = `split-${randomUUID()}`;
+        const first2 = await planning.split(fixture2.shipment.id, coded, key2, actor, tx);
+        const replay2 = await planning.split(fixture2.shipment.id, coded, key2, actor, tx);
+        expect(replay2.operationId).toBe(first2.operationId);
       });
     });
   });

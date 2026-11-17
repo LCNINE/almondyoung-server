@@ -293,6 +293,7 @@
     "errorPrefix": "Error:",
     "toasts": {
       "setShipping": "Please set a shipping address.",
+      "agreeCustomOrder": "Please review and agree to the made-to-order notice.",
       "selectMemo": "Please select a delivery memo.",
       "enterEntrancePw": "Please enter the building entrance code.",
       "noItems": "There are no items to pay for. Go back to the cart and select items.",

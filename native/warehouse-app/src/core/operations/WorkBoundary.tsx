@@ -1,5 +1,4 @@
 import {
-  createContext,
   useContext,
   useEffect,
   useState,
@@ -10,8 +9,8 @@ import { useIsAuthenticated, useSession } from '../../app/session-context';
 import { useWorkRuntime } from './OperationContext';
 import { workStatus } from './workStatus';
 import { Button } from '../design/Button';
-import type { StoredOperation } from './operationStore';
 import { useWorkReadiness } from './useWorkReadiness';
+import { AreaContext } from './workArea';
 
 export interface ScanAllowance {
   path: string;
@@ -20,12 +19,6 @@ export interface ScanAllowance {
   warehouseId?: string;
   sourceLocationId?: string;
 }
-const AreaContext = createContext({
-  operations: [] as StoredOperation[],
-  scope: null as string | null,
-  problem: false,
-  restoring: false,
-});
 const SCAN_PATH = /^\/shipments\/[^/]+\/(location|simple)-outbound-scans$/;
 /** A scan region can accept more inputs only for its first, normal send. */
 export function useWorkAreaBlocked(
@@ -104,6 +97,7 @@ function ActiveBoundary({
   const ready = readiness.status === 'ready';
   const scope = ready ? readiness.scope : null;
   const problem = authed && readiness.status === 'failed';
+  const denied = readiness.status === 'failed' && readiness.denied;
   const restoring = authed && !ready && !problem;
   useEffect(() => {
     if (!ops.length) return;
@@ -132,6 +126,7 @@ function ActiveBoundary({
         scope,
         problem: authed && problem,
         restoring: authed && restoring,
+        recheck,
       }}
     >
       {children}
@@ -148,30 +143,43 @@ function ActiveBoundary({
               className="pointer-events-auto max-w-lg rounded-lg border bg-white p-4 shadow-lg"
             >
               <p>
-                {problem
-                  ? '작업 저장소나 서버 연결을 확인하지 못했어요. 연결을 확인해 주세요.'
-                  : state.message}
+                {denied
+                  ? '이 계정은 물류앱을 쓸 권한이 없어요. 관리자에게 요청하거나 다른 계정으로 로그인해 주세요.'
+                  : problem
+                    ? '작업 저장소나 서버 연결을 확인하지 못했어요. 연결을 확인해 주세요.'
+                    : state.message}
               </p>
-              <Button
-                disabled={checking}
-                className="mt-2"
-                onClick={async () => {
-                  setChecking(true);
-                  try {
-                    await recheck();
-                  } finally {
-                    setChecking(false);
-                  }
-                }}
-              >
-                처리 내역 확인
-              </Button>
-              <Button
-                className="ml-2 mt-2"
-                onClick={() => void session.logout()}
-              >
-                다시 로그인
-              </Button>
+              {denied ? (
+                <Button
+                  className="mt-2"
+                  onClick={() => void (session.signOut ?? session.logout)()}
+                >
+                  다른 계정으로 로그인
+                </Button>
+              ) : (
+                <>
+                  <Button
+                    disabled={checking}
+                    className="mt-2"
+                    onClick={async () => {
+                      setChecking(true);
+                      try {
+                        await recheck();
+                      } finally {
+                        setChecking(false);
+                      }
+                    }}
+                  >
+                    처리 내역 확인
+                  </Button>
+                  <Button
+                    className="ml-2 mt-2"
+                    onClick={() => void session.logout()}
+                  >
+                    다시 로그인
+                  </Button>
+                </>
+              )}
             </section>
           )}
         </div>

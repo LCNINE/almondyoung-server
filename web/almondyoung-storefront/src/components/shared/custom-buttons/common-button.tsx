@@ -55,7 +55,7 @@ const commonButtonVariants = cva(
         variant: "orange",
         appearance: "filled",
         className:
-          "bg-[#ffa500] text-white border-0 font-semibold hover:bg-[#d67e15] active:bg-[#c97113] disabled:bg-[#ffa500]/40",
+          "bg-primary text-white border-0 font-semibold hover:bg-primary/90 active:bg-primary/80 disabled:bg-primary/40",
       },
       // Gray Filled
       {

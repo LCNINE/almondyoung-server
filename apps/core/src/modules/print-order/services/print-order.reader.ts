@@ -7,6 +7,7 @@ import {
   desc,
   eq,
   ilike,
+  gt,
   inArray,
   isNotNull,
   isNull,
@@ -19,9 +20,18 @@ import {
 } from 'drizzle-orm';
 import { wmsSchema, wmsTables, type DbTx } from '../../inventory/schema/inventory.schema';
 import { type PrintOrderRow } from '../schema/print-order.schema';
-import { lineCanceledQuantitySql } from '../../sales-order/line-quantities/line-quantities.sql';
+import { VENDOR_CANCELLED, VENDOR_JOB_ERROR_PREFIX } from './print-order-tracking.manager';
+import { lineCanceledQuantitySql, lineRemainingSql } from '../../sales-order/line-quantities/line-quantities.sql';
 
-export const PRINT_ORDER_TABS = ['cancel_refused', 'test_pending', 'failed', 'unsupported', 'all'] as const;
+export const PRINT_ORDER_TABS = [
+  'cancel_refused',
+  'awaiting_payment',
+  'vendor_attention',
+  'test_pending',
+  'failed',
+  'unsupported',
+  'all',
+] as const;
 export type PrintOrderTab = (typeof PRINT_ORDER_TABS)[number];
 export const PRINT_ORDER_PAGE_SIZE = 50;
 export const PRINT_ORDER_MAX_PAGE_SIZE = 100;
@@ -29,6 +39,8 @@ export const PRINT_ORDER_MAX_PAGE = 10_000;
 
 export interface PrintOrderSummary {
   cancelRefused: number;
+  awaitingPayment: number;
+  vendorAttention: number;
   testPending: number;
   failed: number;
   unsupported: number;
@@ -96,6 +108,27 @@ export class PrintOrderReader {
     );
   }
 
+  async hasActiveNonPrintLine(salesOrderId: string, tx?: DbTx): Promise<boolean> {
+    const lines = wmsTables.salesOrderLines;
+    const [row] = await this.dbService.run(
+      (trx) =>
+        trx
+          .select({ id: lines.id })
+          .from(lines)
+          .where(
+            and(
+              eq(lines.salesOrderId, salesOrderId),
+              isNull(lines.almondDesignId),
+              gt(lineRemainingSql(lines.quantity, lines.id), 0),
+            ),
+          )
+          .limit(1),
+      tx,
+    );
+
+    return !!row;
+  }
+
   // 주문의 모든 라인이 인쇄 외주 라인인가 (창고 출고가 전혀 없는 주문)
   async isAllOutsourced(salesOrderId: string, tx?: DbTx): Promise<boolean> {
     const lines = wmsTables.salesOrderLines;
@@ -121,6 +154,8 @@ export class PrintOrderReader {
         trx
           .select({
             cancelRefused: count(this.tabWhere('cancel_refused', staleCancellingBefore)),
+            awaitingPayment: count(this.tabWhere('awaiting_payment', staleCancellingBefore)),
+            vendorAttention: count(this.tabWhere('vendor_attention', staleCancellingBefore)),
             testPending: count(this.tabWhere('test_pending', staleCancellingBefore)),
             failed: count(this.tabWhere('failed', staleCancellingBefore)),
             unsupported: count(this.tabWhere('unsupported', staleCancellingBefore)),
@@ -133,6 +168,8 @@ export class PrintOrderReader {
     );
     return {
       cancelRefused: row?.cancelRefused ?? 0,
+      awaitingPayment: row?.awaitingPayment ?? 0,
+      vendorAttention: row?.vendorAttention ?? 0,
       testPending: row?.testPending ?? 0,
       failed: row?.failed ?? 0,
       unsupported: row?.unsupported ?? 0,
@@ -237,12 +274,21 @@ export class PrintOrderReader {
     const t = wmsTables.printOrders;
     switch (tab) {
       case 'cancel_refused':
-        // 결과 미상 cancelling, 인쇄는 취소됐는데 판매주문 줄에 남은 수량이 있는 행도 여기서 사람이 본다
+        // 결과 미상 cancelling, 인쇄는 취소됐는데 판매주문 줄에 남은 수량이 있는 행, 와우프레스에서 취소된 행도 여기서 사람이 본다
         return or(
           eq(t.status, 'cancel_refused'),
           and(eq(t.status, 'cancelling'), lt(t.updatedAt, staleCancellingBefore)),
           refundNotOpenedSql(),
           and(inArray(t.status, ['shipped', 'delivered']), isNotNull(t.cancelRefusedAt), isNull(t.cancelResolvedAt)),
+          and(eq(t.status, 'submitted'), eq(t.lastError, VENDOR_CANCELLED)),
+        );
+      case 'awaiting_payment':
+        // 테스트 주문은 일부러 입금대기에 두므로 테스트 확인대기 탭에서만 본다
+        return and(eq(t.status, 'submitted'), eq(t.vendorAwaitingPayment, true), eq(t.testMemo, false));
+      case 'vendor_attention':
+        return and(
+          inArray(t.status, ['submitted', 'shipped']),
+          sql`starts_with(coalesce(${t.lastError}, ''), ${VENDOR_JOB_ERROR_PREFIX})`,
         );
       case 'test_pending':
         return and(eq(t.testMemo, true), isNull(t.testConfirmedAt), ne(t.status, 'cancelled'));

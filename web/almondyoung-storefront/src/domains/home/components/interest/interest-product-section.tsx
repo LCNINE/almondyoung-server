@@ -32,7 +32,7 @@ export function InterestProductSection({
     <ProductSection
       title={
         <>
-          <span className="text-yellow-30">{localizedName}</span> {t("interestTitleSuffix")}
+          <span className="text-mint-deep">{localizedName}</span> {t("interestTitleSuffix")}
         </>
       }
       tabs={[tab]}

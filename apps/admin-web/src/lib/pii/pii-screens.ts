@@ -34,6 +34,11 @@ const RECIPIENT_ALL_MIXED: PiiScreen = {
   ...RECIPIENT_ALL_DETAIL,
   revealScope: 'detail',
 };
+const RECIPIENT_MIXED: PiiScreen = {
+  opens: 'recipient',
+  reveal: true,
+  revealScope: 'detail',
+};
 
 /**
  * 개인정보를 응답하는 API 를 부르는 화면 — `pii-screens.gate.spec.ts` 가 import 를 따라가 빠진 화면을 찾는다.
@@ -86,9 +91,11 @@ const SHOWN: Readonly<Record<string, PiiScreen>> = {
   '/order/consolidation': RECIPIENT_ALL,
   '/order/direct-ship': RECIPIENT_ALL,
   '/order/fulfillments': RECIPIENT_ALL_MIXED,
+  // 작업 기록의 처리자 이름을 직원 목록으로 받는다
+  '/order/fulfillments/[id]': RECIPIENT_MIXED,
   '/order/inspection': RECIPIENT_ALL_DETAIL,
   '/order/picking-list': RECIPIENT_ALL_MIXED,
-  '/order/stall-board': RECIPIENT_ALL,
+  '/order/stall-board': { opens: 'recipient' },
   '/order/waybill-issue': RECIPIENT_ALL,
   '/order/history': CUSTOMER_MIXED,
   '/order/manual-single': CUSTOMER_MIXED,
@@ -99,6 +106,7 @@ const SHOWN: Readonly<Record<string, PiiScreen>> = {
   '/payments': CUSTOMER_MIXED,
   '/payments/points': CUSTOMER,
   '/payments/refund-requests': CUSTOMER,
+  '/payments/refunds': CUSTOMER,
 
   '/statistics/keywords': CUSTOMER,
   '/users': CUSTOMER,
@@ -120,15 +128,16 @@ export const PII_SCREEN_NOT_SHOWN: Readonly<Record<string, string>> = {
   '/cs/reviews/new': '새로 입력하는 만들기 폼이다',
   '/cs/reviews/rewards':
     '리뷰 상세 [id] 와 다른 페이지이고 개인정보 API 를 부르지 않는다',
+  '/inventory/inbound-shipments': '고객 개인정보를 부르지 않는다. 리스트 비고의 이름은 직원·거래처다',
   '/inventory/warehouses/new': '새로 입력하는 만들기 폼이다',
   '/mall/almond-template-categories': '카테고리 이름·이미지만 다루고 개인정보 API 를 부르지 않는다',
   '/mall/products-list/[masterId]': '상품 상세 — 등록자 고르기가 없다',
   '/mall/shop-listings/new': '새로 입력하는 만들기 폼이다',
+  '/mall/top-notices': '띠 문구와 링크만 다루고 개인정보 API 를 부르지 않는다',
   '/order/manual-bulk': '주문 등록만 부르고 주문 목록·상세를 그리지 않는다',
   '/order/outbound-batches':
     '상자를 넣고 빼는 쓰기만 부르고 받는 분 정보를 응답에서 그리지 않는다',
   '/payments/methods': SIBLING_PAYMENT,
-  '/payments/refunds': SIBLING_PAYMENT,
   '/payments/regions': SIBLING_PAYMENT,
   '/statistics/overview': '운영 현황 타일에 건수만 그린다',
   '/users/audit-log': SIBLING_USER,

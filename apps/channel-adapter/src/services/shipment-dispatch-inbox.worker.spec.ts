@@ -189,6 +189,17 @@ describe('ShipmentDispatchInboxWorker routing', () => {
       expect(factory.getAdapter).not.toHaveBeenCalled();
     });
 
+    it('쿠팡 isPartial 주문은 manual 로 간다', async () => {
+      const { worker, factory } = makeWorker();
+
+      const result = await (worker as any).executeOperation(
+        operationFor(SHIPPED, makeOrder('coupang', { isPartial: true })),
+      );
+
+      expect(result).toEqual(expect.objectContaining({ manual: true, reason: expect.stringContaining('multiple') }));
+      expect(factory.getAdapter).not.toHaveBeenCalled();
+    });
+
     it('routes a carrier outside the adapter tables to manual', async () => {
       const { worker, factory } = makeWorker();
 
@@ -459,6 +470,40 @@ describe('ShipmentDispatchInboxWorker routing', () => {
     await expect((worker as any).executeOperation(makeOperation(order))).rejects.toThrow('provider rejected');
   });
 
+  it('쿠팡이 «다시 보내도 안 된다»(retryRequired:false)고 거절하면 재시도하지 않고 수동 처리로 돌린다', async () => {
+    const { worker, coupangExecute } = makeWorker();
+    coupangExecute.mockResolvedValueOnce({
+      success: false,
+      errors: [{ id: '100000000000000001', message: 'INVALID_STATUS: 상품준비중이 아님', retryable: false }],
+    });
+
+    const result = await (worker as any).executeOperation(makeOperation(makeOrder('coupang')));
+
+    expect(result).toEqual({ manual: true, reason: expect.stringContaining('INVALID_STATUS: 상품준비중이 아님') });
+  });
+
+  it('쿠팡 거절에 재시도할 항목(retryRequired:true)이 하나라도 있으면 실패로 남겨 다시 보낸다', async () => {
+    const { worker, coupangExecute } = makeWorker();
+    coupangExecute.mockResolvedValueOnce({
+      success: false,
+      errors: [
+        { id: '100000000000000001', message: 'INVALID_STATUS', retryable: false },
+        { id: '100000000000000002', message: 'BUSY (재시도 필요)', retryable: true },
+      ],
+    });
+
+    await expect((worker as any).executeOperation(makeOperation(makeOrder('coupang')))).rejects.toThrow('BUSY');
+  });
+
+  it('retryable 을 모르는 실패(전송 오류 등)는 지금처럼 다시 보낸다', async () => {
+    const { worker, coupangExecute } = makeWorker();
+    coupangExecute.mockResolvedValueOnce({ success: false, errors: [{ message: '발송 처리 실패: 쿠팡 네트워크' }] });
+
+    await expect((worker as any).executeOperation(makeOperation(makeOrder('coupang')))).rejects.toThrow(
+      '쿠팡 네트워크',
+    );
+  });
+
   it('skips an already-succeeded per-order operation after a worker restart', async () => {
     const { worker, factory } = makeWorker();
     const operation = makeOperation(makeOrder('naver'));
@@ -576,6 +621,24 @@ function makeDurableOperationWorker(
 }
 
 describe('ShipmentDispatchInboxWorker durable operation recovery', () => {
+  it.each([
+    [false, 'manual_adjustment_required'],
+    [true, 'failed'],
+  ])('쿠팡 거절의 retryable=%s 는 작업을 %s 로 남긴다', async (retryable, status) => {
+    const operation = { ...makeOperation(makeOrder('coupang')), status: 'pending', attempts: 0 };
+    const { worker, updates, adapterExecute } = makeDurableOperationWorker(operation);
+    adapterExecute.mockResolvedValueOnce({
+      success: false,
+      errors: [{ id: '100000000000000001', message: 'INVALID_STATUS', retryable }],
+    });
+
+    await (worker as any).processOperation(operation);
+
+    expect(updates.at(-1)).toEqual(
+      expect.objectContaining({ status, errorMessage: expect.stringContaining('INVALID_STATUS') }),
+    );
+  });
+
   it('reclaims an expired processing operation with a fresh bounded lease', async () => {
     jest.useFakeTimers().setSystemTime(new Date('2026-07-14T01:00:00.000Z'));
     try {

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { ApiError, ConflictError, createApiClient } from './httpClient';
+import { ApiError, ConflictError, NetworkError, createApiClient } from './httpClient';
 import { currentServerReach } from './serverStatus';
 
 function jsonResponse(status: number, body: unknown): Response {
@@ -126,11 +126,9 @@ it('only classifies explicit force non-application as rejected and preserves gen
     new ConflictError('not applied', 'LOCATION_OUTBOUND_FORCE_NOT_APPLIED')
       .outcome
   ).toBe('rejected');
-  for (const status of [401, 403])
-    expect(
-      new ApiError('forbidden', status, 'LOCATION_OUTBOUND_FORCE_NOT_APPLIED')
-        .outcome
-    ).toBe('uncertain');
+  expect(
+    new ApiError('expired', 401, 'LOCATION_OUTBOUND_FORCE_NOT_APPLIED').outcome
+  ).toBe('uncertain');
 });
 
 it.each([
@@ -274,6 +272,7 @@ describe('409 errors body and rejected codes (#987)', () => {
     'RETURN_BIN_ITEM_NOT_FOUND',
     'RETURN_BIN_ITEM_SHORT',
     'RETURN_LOCATION_MISMATCH',
+    'RETURN_LOCATION_REQUIRED',
     'WITHDRAWAL_WAYBILL_NOT_VOIDABLE',
     'SHIPMENT_LINE_INSPECTION_STALE',
   ])('%s 409 는 확정 거절 (#989)', (code) => {
@@ -297,9 +296,53 @@ describe('서버 도달 기록(상태바 «서버»)', () => {
       authMode: 'bearer',
       doFetch: doFetch as never,
     });
-    await expect(api.request({ path: '/x' })).rejects.toThrow('network');
+    const failure = await api.request({ path: '/x' }).catch((e: unknown) => e);
+    expect(failure).toBeInstanceOf(NetworkError);
+    expect(failure).not.toBeInstanceOf(ApiError);
+    expect((failure as Error).message).toBe('network');
     expect(currentServerReach()).toBe('down');
     await expect(api.request({ path: '/x' })).rejects.toBeInstanceOf(ApiError);
     expect(currentServerReach()).toBe('up');
   });
 });
+
+it('403 본문의 요구 권한을 오류에 싣고 확정 거절로 분류한다', async () => {
+  const client = createApiClient({
+    baseUrl: 'https://api.test',
+    getToken: async () => 'TOK',
+    authMode: 'bearer',
+    doFetch: async () =>
+      jsonResponse(403, {
+        code: 'FORBIDDEN',
+        message: 'Permission required',
+        requiredPermissions: ['inventory.stock.adjust', 7],
+      }),
+  });
+  const error = await client
+    .request({ method: 'POST', path: '/inventory/stocks/adjust' })
+    .catch((e: unknown) => e);
+  if (!(error instanceof ApiError)) throw new Error('Expected ApiError');
+  expect(error.status).toBe(403);
+  expect(error.requiredPermissions).toEqual(['inventory.stock.adjust']);
+  expect(error.outcome).toBe('rejected');
+});
+
+it('403 이 아닌 응답의 requiredPermissions 는 읽지 않는다', async () => {
+  const client = createApiClient({
+    baseUrl: 'https://api.test',
+    getToken: async () => 'TOK',
+    authMode: 'bearer',
+    doFetch: async () =>
+      jsonResponse(400, { requiredPermissions: ['inventory.stock.adjust'] }),
+  });
+  const error = await client.request({ path: '/x' }).catch((e: unknown) => e);
+  if (!(error instanceof ApiError)) throw new Error('Expected ApiError');
+  expect(error.requiredPermissions).toBeUndefined();
+});
+
+it.each([undefined, 'Forbidden', 'FORBIDDEN', 'UNKNOWN'])(
+  'rejects 403 regardless of code %s',
+  (code) => {
+    expect(new ApiError('denied', 403, code).outcome).toBe('rejected');
+  }
+);

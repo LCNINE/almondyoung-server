@@ -146,3 +146,54 @@ it('requires nonnegative list totals even when raw receipt counters are diagnost
     validateReceiptHistory({ ...historyWith(blockedFacts), total: -1 })
   ).toThrow();
 });
+
+const shipmentBox = {
+  shipmentId: 'ship-1',
+  shipmentName: '11월 2차 배편',
+  boxId: 'box-1',
+  boxLabel: 'L7',
+};
+it('accepts inbound_shipment lines', () => {
+  const value = historyWith({
+    ...historyLine,
+    source: 'inbound_shipment',
+    canCancel: false,
+    cancelBlockReason: 'PUTAWAY_EXISTS',
+    inboundShipmentBox: shipmentBox,
+  });
+  validateReceiptHistory(value);
+  expect(value.items[0].lines[0].inboundShipmentBox).toEqual(shipmentBox);
+});
+it('a line without inboundShipmentBox parses to null', () => {
+  const value = historyWith(historyLine);
+  validateReceiptHistory(value);
+  expect(value.items[0].lines[0].inboundShipmentBox).toBeNull();
+});
+it.each([
+  { ...shipmentBox, boxLabel: 7 },
+  { ...shipmentBox, shipmentId: null },
+  'not-an-object',
+])('rejects a malformed inboundShipmentBox %#', (box) => {
+  expect(() =>
+    validateReceiptHistory(
+      historyWith({
+        ...historyLine,
+        source: 'inbound_shipment',
+        canCancel: false,
+        cancelBlockReason: 'PUTAWAY_EXISTS',
+        inboundShipmentBox: box,
+      })
+    )
+  ).toThrow();
+});
+it('rejects an inboundShipmentBox on a direct line', () => {
+  expect(() =>
+    validateReceiptHistory(
+      historyWith({
+        ...historyLine,
+        source: 'direct',
+        inboundShipmentBox: shipmentBox,
+      })
+    )
+  ).toThrow();
+});

@@ -279,6 +279,8 @@ export interface LocationRackDto {
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
+  /** 랙 수정 응답에만 — 끝 번호를 따라 칸을 맞춘 결과 (로케이션 코드) */
+  binChanges?: { created: string[]; deleted: string[]; keptInUse: string[] };
 }
 
 export interface BinRangeRequest {
@@ -475,7 +477,7 @@ export interface InboundReceiptLineDto {
   returnedQty: number;
   canceledQty: number;
   putawayFromOriginQty: number;
-  source: 'direct' | 'purchase_order';
+  source: 'direct' | 'purchase_order' | 'inbound_shipment';
   createdAt: string;
   updatedAt: string;
 }
@@ -1430,6 +1432,7 @@ export interface CompanyAxisDto {
   onHand: number;
   inTransfer: number;
   onOrder: number;
+  inboundShipment: number;
   reserved: number;
   position: number;
   safetyStock: number;
@@ -1443,6 +1446,7 @@ export interface SellableAxisDto {
   reserved: number;
   inTransit: number;
   onOrderDirect: number;
+  inboundShipment: number;
   position: number;
   safetyStock: number;
   reorderPoint: number;

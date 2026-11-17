@@ -44,7 +44,10 @@ export function AlmondTemplateEditor(props: AlmondEditorProps) {
 
   return (
     <ImagePreviews.Provider value={design.imagePreviews ?? {}}>
-      <div className="fixed inset-0 z-[10000] flex h-screen flex-col overflow-hidden bg-[#f5f5f4] text-slate-900">
+      <div
+        data-no-drag-scroll
+        className="fixed inset-0 z-[10000] flex h-screen flex-col overflow-hidden bg-[#f5f5f4] text-slate-900"
+      >
         <link rel="stylesheet" href={FONT_STYLESHEET} precedence="default" />
         <EditorHeader editor={editor} />
         <div className="relative flex min-h-0 flex-1">

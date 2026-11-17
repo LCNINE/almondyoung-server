@@ -139,3 +139,30 @@ export function formatVersionLifecycleError(
     details,
   };
 }
+
+/** 발행 전에 보이는 «빠진 것». 발행을 막지는 않는다(판매가를 나중에 넣는 흐름이 있을 수 있다 — 11-05 결정). */
+export type PublishGap = 'price' | 'price-unknown' | 'image';
+
+export const PUBLISH_GAP_LABELS: Record<PublishGap, string> = {
+  price: '판매가가 정해지지 않았습니다 — 이대로 발행하면 판매가·멤버십가가 0원으로 보입니다.',
+  'price-unknown': '판매가 규칙을 확인하지 못했습니다 — 가격 관리에서 판매가를 확인해 주세요.',
+  image: '대표 이미지가 없습니다.',
+};
+
+/**
+ * @param basePriceRuleCount 판매가(base_price) 규칙 수. 아직 못 읽었거나 실패했으면 null.
+ *   판매가는 0원에서 출발해 이 규칙들로 정해지므로, 규칙이 없으면 0원이다.
+ */
+export function getPublishGaps({
+  basePriceRuleCount,
+  images,
+}: {
+  basePriceRuleCount: number | null;
+  images: readonly { isPrimary: boolean }[];
+}): PublishGap[] {
+  const gaps: PublishGap[] = [];
+  if (basePriceRuleCount === null) gaps.push('price-unknown');
+  else if (basePriceRuleCount === 0) gaps.push('price');
+  if (!images.some((image) => image.isPrimary)) gaps.push('image');
+  return gaps;
+}

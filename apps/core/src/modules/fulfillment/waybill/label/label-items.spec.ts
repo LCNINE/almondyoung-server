@@ -1,4 +1,15 @@
-import { labelItemsOf, labelLocationCode, paginate } from './label-items';
+import { labelItemsOf, labelLocationCode, labelSkuNameOf, paginate } from './label-items';
+
+describe('labelSkuNameOf — 송장 품목 줄 이름', () => {
+  it.each([
+    ['일회용 위생모 [핑크]', '핑크', '일회용 위생모 [핑크]'],
+    ['이쑤시개 면봉 100개입', null, '이쑤시개 면봉 100개입 [단일상품]'],
+    ['이쑤시개 면봉 100개입', '', '이쑤시개 면봉 100개입 [단일상품]'],
+    ['옛 상품 [블랙]', null, '옛 상품 [블랙]'],
+  ])('%s / 옵션 %j → %s', (skuName, optionKey, expected) => {
+    expect(labelSkuNameOf(skuName, optionKey)).toBe(expected);
+  });
+});
 
 describe('labelItemsOf — 배정 행을 (로케이션, SKU) 로', () => {
   const row = (locationCode: string, skuId: string, skuName: string, qty: number) => ({

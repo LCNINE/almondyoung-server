@@ -66,7 +66,7 @@ export function AddressCard({
       className={cn(
         "relative cursor-pointer rounded-lg border p-4 transition-colors",
         isSelected
-          ? "border-primary bg-primary/5"
+          ? "border-primary bg-white"
           : "border-gray-200 hover:border-gray-300",
         isActionLoading && "pointer-events-none opacity-50"
       )}
@@ -109,7 +109,7 @@ export function AddressCard({
 
         <div className="flex items-center gap-1">
           {isSelected ? (
-            <Check className="text-primary absolute top-0 right-6 h-5 w-5 shrink-0" />
+            <Check className="text-mint-deep absolute top-0 right-6 h-5 w-5 shrink-0" />
           ) : null}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -147,7 +147,7 @@ export function AddressCard({
   )
 }
 
-function AddressRow({
+export function AddressRow({
   label,
   value,
 }: {

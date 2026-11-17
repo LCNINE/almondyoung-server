@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react"
 import { PRINT_PRODUCTS, PRINT_SPECS } from "../lib/catalog"
+import type { TemplateProduct } from "../lib/template-product"
 import {
   layerImageDpi,
   SHAPE_TEXT_TYPES,
@@ -9,7 +10,7 @@ import {
   printWarnings,
   printsBack,
   sideBackground,
-  withSideBackground,
+  withBackgroundImage,
   type Design,
   type Layer,
 } from "../lib/document"
@@ -40,6 +41,7 @@ export type EditorTool =
   | "draw"
 export type AlmondEditorProps = {
   productId?: string
+  templateProduct?: TemplateProduct
   mode?: EditorMode
   variantId?: string
   size?: string
@@ -50,6 +52,7 @@ export type AlmondEditorProps = {
 
 export function useAlmondEditor({
   productId = "",
+  templateProduct,
   mode = "customer",
   variantId = "",
   size = "",
@@ -57,14 +60,16 @@ export function useAlmondEditor({
   savedId = "",
   initialDesign,
 }: AlmondEditorProps) {
-  const product = PRINT_PRODUCTS[productId]
+  // 게시한 상품은 PRINT_PRODUCTS 에 없어 상품 페이지가 찾아 준 인쇄 유형과 시안 크기로 시작한다
+  const kind = templateProduct?.kind ?? PRINT_PRODUCTS[productId]?.kind ?? "pet"
   const { design, setDesign, history, future, change, commit, undo, redo } =
     useDesignHistory(() => {
       if (initialDesign) return initialDesign
-      const initial = newDesign(product?.kind ?? "pet", productId)
-      const matched = PRINT_SPECS[initial.kind].sizes.find(
-        ([w, h]) => `${w}x${h}` === size
-      )
+      const initial = newDesign(kind, productId)
+      const matched =
+        PRINT_SPECS[initial.kind].sizes.find(
+          ([w, h]) => `${w}x${h}` === size
+        ) ?? templateProduct?.size
       if (matched) [initial.widthMm, initial.heightMm] = matched
       return initial
     })
@@ -104,6 +109,8 @@ export function useAlmondEditor({
   const [panelOpen, setPanelOpen] = useState(true)
   const [textDialog, setTextDialog] = useState<string | null>(null)
   const [issues, setIssues] = useState<string[]>([])
+  // 인쇄 전 확인에 한 번 걸리면 그 뒤로 캔버스에 안전영역을 벗어난 상자를 빨갛게 보여준다
+  const [safetyChecked, setSafetyChecked] = useState(false)
   const [helpOpen, setHelpOpen] = useState(false)
   const [helpTab, setHelpTab] = useState<
     "editing" | "shortcuts" | "image" | "print"
@@ -309,7 +316,7 @@ export function useAlmondEditor({
   const removeBackgroundImage = () => {
     const bg = sideBackground(design, side)
     if (!bg.backgroundImage) return
-    change(withSideBackground(design, side, { background: bg.background }))
+    change(withBackgroundImage(design, side))
     setBackgroundSelected(false)
     setMessage("배경 이미지를 지웠습니다. 되돌리려면 Ctrl+Z")
   }
@@ -329,6 +336,16 @@ export function useAlmondEditor({
     },
     setSelectedId,
     setMessage,
+    // 디자이너는 편집완료를 거치지 않고 저장·게시하므로 저장할 때 인쇄 검사를 보여준다. 저장은 막지 않는다
+    onSaved: (stored) => {
+      if (mode !== "designer") return
+      const found = printIssues(stored)
+      const warned = printWarnings(stored)
+      if (!found.length && !warned.length) return
+      if (found.length) setSafetyChecked(true)
+      setWarnings(warned)
+      setIssues(found.length ? found : warned)
+    },
   })
   const actions = useLayerActions({
     design,
@@ -445,7 +462,12 @@ export function useAlmondEditor({
     const found = printIssues(design)
     const warned = printWarnings(design)
     setWarnings(warned)
-    if (found.length) return setIssues(found)
+    if (found.length) {
+      setSafetyChecked(true)
+
+      return setIssues(found)
+    }
+
     if (warned.length) return setIssues(warned)
     openPreview()
   }
@@ -572,6 +594,7 @@ export function useAlmondEditor({
     setTextDialog,
     issues,
     setIssues,
+    safetyChecked,
     helpOpen,
     setHelpOpen,
     helpTab,

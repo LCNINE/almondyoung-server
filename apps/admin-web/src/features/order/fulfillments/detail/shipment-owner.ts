@@ -19,11 +19,14 @@ const ALL_ACTIONS: readonly ShipmentAction[] = [
 /**
  * 입점사 상자는 되돌리기만 연다 — 나누기 부분 이동은 서버가 409, 계획은 창고 흐름 가드가
  * 던지고, 수령인을 넘긴 뒤 바꾸면 입점사 시트와 갈린다. 창고/입점사는 `supplierId` 만으로 가른다.
+ * 나누기·수령인 변경·계획 확정은 서버가 계획 전(draft) 상자만 받는다.
  */
 export function shipmentActionsFor(shipment: {
   supplierId: string | null;
+  status: string;
 }): readonly ShipmentAction[] {
-  return shipment.supplierId ? ['recall'] : ALL_ACTIONS;
+  if (shipment.supplierId || shipment.status !== 'draft') return ['recall'];
+  return ALL_ACTIONS;
 }
 
 /**
@@ -39,11 +42,7 @@ export function showsWaybillActions(shipment: {
 export function recallConfirmText(isSupplier: boolean): string {
   return isSupplier
     ? '입점사와 확인했습니다 — 이 송장은 잘못 반영되었거나 아직 보내지 않았습니다.'
-    : '선택한 출고 시도의 실물 패키지가 창고에 회수되었음을 확인합니다.';
-}
-
-function short(value: string | null | undefined): string {
-  return value ? `${value.slice(0, 8)}…` : '-';
+    : '고른 출고의 상자를 창고에서 실제로 돌려받았어요.';
 }
 
 export function ownerLabel(
@@ -51,7 +50,7 @@ export function ownerLabel(
   supplierName: string | undefined
 ): string {
   if (shipment.supplierId) {
-    return `입점사 ${supplierName ?? short(shipment.supplierId)}`;
+    return supplierName ? `입점사 직배 · ${supplierName}` : '입점사 직배';
   }
-  return `창고 ${short(shipment.warehouseId)}`;
+  return '창고 출고';
 }

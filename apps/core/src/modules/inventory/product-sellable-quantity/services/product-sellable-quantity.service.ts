@@ -23,7 +23,8 @@ import {
 } from './product-sellable-quantity.calculator';
 
 import { outstandingLineWhere } from '../../procurement/services/purchase-order-outstanding.sql';
-import { resolveRestockSchedule, restockToday } from './product-restock';
+import { outstandingShipmentLineWhere } from '../../inbound-shipment/services/inbound-shipment-outstanding.sql';
+import { resolveRestockSchedule, restockToday, RestockArrival } from './product-restock';
 import { lockProductVariants } from './product-variant-lock';
 
 type MergedTx = TxFor<MergedSchema>;
@@ -181,13 +182,55 @@ export class ProductSellableQuantityService {
                   ),
                 )
             : [];
-        const arrivalsByVariant = new Map<string, Array<{ expectedArrival: string; approximate: boolean }>>();
+        // 선적 «오는 중» 줄 — 선적 날짜는 항상 대략(approximate)이다
+        const shipmentLine = wmsTables.inboundShipmentLines;
+        const shipment = wmsTables.inboundShipments;
+        const shipmentArrivalRows =
+          matchingIds.length > 0
+            ? await trx
+                .select({
+                  variantId: wmsTables.productMatchings.variantId,
+                  expectedArrival: shipment.expectedArrival,
+                })
+                .from(shipmentLine)
+                .innerJoin(shipment, eq(shipment.id, shipmentLine.shipmentId))
+                .innerJoin(
+                  wmsTables.productVariantSkuLinks,
+                  eq(wmsTables.productVariantSkuLinks.skuId, shipmentLine.skuId),
+                )
+                .innerJoin(
+                  wmsTables.productMatchings,
+                  eq(wmsTables.productMatchings.id, wmsTables.productVariantSkuLinks.productMatchingId),
+                )
+                .where(
+                  and(
+                    inArray(wmsTables.productMatchings.variantId, existingVariantIds),
+                    outstandingShipmentLineWhere(),
+                    isNotNull(shipment.expectedArrival),
+                    gte(shipment.expectedArrival, today),
+                    inSellableWarehouse(shipment.warehouseId),
+                  ),
+                )
+            : [];
+        const arrivalsByVariant = new Map<string, RestockArrival[]>();
 
         for (const arrival of arrivalRows) {
           if (!arrival.expectedArrival) continue;
 
           const arrivals = arrivalsByVariant.get(arrival.variantId) ?? [];
-          arrivals.push({ expectedArrival: arrival.expectedArrival, approximate: arrival.approximate });
+          arrivals.push({
+            expectedArrival: arrival.expectedArrival,
+            approximate: arrival.approximate,
+            source: 'purchase_order',
+          });
+          arrivalsByVariant.set(arrival.variantId, arrivals);
+        }
+
+        for (const arrival of shipmentArrivalRows) {
+          if (!arrival.expectedArrival) continue;
+
+          const arrivals = arrivalsByVariant.get(arrival.variantId) ?? [];
+          arrivals.push({ expectedArrival: arrival.expectedArrival, approximate: true, source: 'inbound_shipment' });
           arrivalsByVariant.set(arrival.variantId, arrivals);
         }
 

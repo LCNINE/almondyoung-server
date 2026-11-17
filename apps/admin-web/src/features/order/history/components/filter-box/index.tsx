@@ -21,7 +21,7 @@ const CHANNELS: { label: string; value: string }[] = [
     { label: '자사몰 (Medusa)', value: 'medusa' },
     { label: '네이버 스마트스토어', value: 'naver' },
     { label: '쿠팡', value: 'coupang' },
-    { label: '3PL', value: '3pl' },
+    { label: '수기·기타', value: '3pl' },
 ];
 
 const KEYWORD_TYPES: KeywordType[] = ['통합검색', '주문번호', '수령자', '연락처', '상품명'];

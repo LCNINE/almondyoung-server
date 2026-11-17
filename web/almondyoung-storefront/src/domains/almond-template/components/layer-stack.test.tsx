@@ -301,3 +301,20 @@ describe("레이어 꾸미기", () => {
     ).toBe(2)
   })
 })
+
+describe("사진을 넣은 도형의 필터", () => {
+  it("창이 되지 않고 도형 속 사진에만 필터를 건다", () => {
+    const html = render([
+      {
+        ...rect,
+        image: "photo.png",
+        stroke: "#ff0000",
+        strokeWidth: 2,
+        colorFilter: { kind: "grayscale", amount: 100 },
+      },
+    ])
+
+    expect(html).not.toContain("window-box")
+    expect(html).toMatch(/<image[^>]*clip-path="url\(#clip-box\)"[^>]*filter="url\(#/)
+  })
+})

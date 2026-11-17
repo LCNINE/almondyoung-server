@@ -2,6 +2,7 @@
 
 import type { MouseEvent } from 'react';
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -15,13 +16,24 @@ import {
   settlementActionsOf,
 } from '@/lib/api/domains/orders/cancel-request.shape';
 import { useManualRefundCancelSettlement, useRetryCancelSettlement } from '@/lib/services/orders/mutations';
-import { usePermissionCheck } from '@/hooks/use-permission';
+import { useCanOpen, usePermissionCheck } from '@/hooks/use-permission';
+import { showTrigger } from '@/lib/auth/permission-check';
+import { refundListHref } from '@/lib/api/domains/wallet/refund-execution';
+import { isServedInStage } from '@/lib/demo/capabilities';
+
+const REFUNDS_SERVED = isServedInStage('/payments/refunds', process.env.NEXT_PUBLIC_APP_STAGE);
 
 const errorText = (e: unknown, fallback: string) => (e instanceof Error ? e.message : fallback);
 
 /** 정산 중 채널 취소의 운영자 조치 — 정체 보드 행과 주문 내역 취소 칸이 같이 쓴다(#1016 36번 재설계 §8.1) */
-export function SettlementActions(props: { salesOrderId: string; settlement: SettlementView }) {
+export function SettlementActions(props: {
+  salesOrderId: string;
+  settlement: SettlementView;
+  walletIntentId?: string | null;
+}) {
   const { canRun } = usePermissionCheck();
+  const router = useRouter();
+  const canOpenRefunds = showTrigger(useCanOpen('/payments/refunds')) && REFUNDS_SERVED;
   const settlementActions = settlementActionsOf(props.settlement);
   const actions = {
     retry: settlementActions.retry && canRun(useRetryCancelSettlement),
@@ -121,7 +133,13 @@ export function SettlementActions(props: { salesOrderId: string; settlement: Set
               onClick={() =>
                 manual.mutate(target, {
                   onSuccess: () => {
-                    toast.success('계좌 송금으로 바꿨습니다. 송금 뒤 환불 내역에서 완료 처리해 주세요.');
+                    const intentId = props.walletIntentId;
+                    toast.success('계좌 송금으로 바꿨습니다. 송금 뒤 환불 내역에서 완료 처리해 주세요.', {
+                      ...(intentId &&
+                        canOpenRefunds && {
+                          action: { label: '환불 내역', onClick: () => router.push(refundListHref(intentId)) },
+                        }),
+                    });
                     setConfirming(false);
                   },
                   onError: (e) => toast.error(errorText(e, '바꾸지 못했습니다.')),

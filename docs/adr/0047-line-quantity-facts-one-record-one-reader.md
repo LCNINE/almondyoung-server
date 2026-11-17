@@ -64,11 +64,12 @@ PR 1 은 기록만 더했다(이중 기록). PR 2a 가 `cancelledQuantitySql`(�
 - **진행 단계 사다리가 SQL 한 벌인 이유.** 일별 통계는 기간 상한이 없는 집계라 SQL 이어야 하고, TS 판을 하나 더 두면 일치 spec 을 영구히 들고 간다. 고객 화면은 같은 SQL 을 주문 하나로 부른다
   (스펙 §6.4 의 «순수 함수 하나»에서 사용자 확인으로 벗어난 판단). `anyShipped`·`shippedComplete` 를 라인 단위로 내지 않는 것도 같은 확인이다 — 소비자가 생기는 K7·PR 3 이 더한다.
 - **`cancellableSalesUnits` 가 TS 인 이유.** 구성 SKU 마다 `outstanding ÷ qtyPerUnit` 이 같아야 하는 판매 단위 환산이라 SQL 소비자가 없다. 수량 뺄셈은 SQL 조각 안에만 있고 이 함수는 select 한 칼럼을 나눌 뿐이다.
-- **R13 — 고객 단계는 SO `pending`·`shipped` 칸을 타지 않는다.** 사다리는 SO 칸(1 cancelled·timeout, 2 pending, 3 shipped·delivered)과 사실 칸(4 FO 취소, 5 미생성,
-  6 배송완료, 7 배송중, 8 준비중)으로 나뉘고 각 칸은 한 번만 쓴다. `admin_phase` 는 SO 칸이 먼저, 없으면 사실 칸(미생성 → `preparing`). `store_phase` 는 SO cancelled·timeout 이면 `canceled`,
-  SO shipped·delivered 면 사실 칸이 `delivered` 일 때만 `delivered` 아니면 `shipping`, 그 밖(SO `pending` 포함)은 사실 칸 그대로다. 라이브 진행 중 주문은 `pending` 이다 —
-  생성이 `pending` 으로 넣고 `confirm()` 은 관리자 엔드포인트뿐이다. 옛 고객 단계는 SO 상태를 보지 않았으므로, pending 칸을 고객 단계에 태우면 pending 주문의 «배송 완료»·«출고 취소»가
-  사라진다(스펙 §6.4 «현행 화면 유지»).
+- **R13 — 고객 단계는 SO `shipped` 칸을 타지 않는다.** 사다리는 SO 칸(1 cancelled·timeout, 2 shipped·delivered)과 사실 칸(3 FO 취소, 4 미생성,
+  5 배송완료, 6 배송중, 7 준비중)으로 나뉘고 각 칸은 한 번만 쓴다. `admin_phase` 는 SO 칸이 먼저, 없으면 사실 칸(미생성 → `preparing`). `store_phase` 는 SO cancelled·timeout 이면 `canceled`,
+  SO shipped·delivered 면 사실 칸이 `delivered` 일 때만 `delivered` 아니면 `shipping`, 그 밖은 사실 칸 그대로다 — 옛 고객 단계가 SO 상태를 보지 않았다(스펙 §6.4 «현행 화면 유지»).
+  - **SO `pending` 은 칸이 없다(처음엔 2 pending → 관리자 «결제대기» 칸이 있었다).** core 는 결제가 끝난 주문만 받고(채널 수집이 미입금 무통장 주문을 거른다) 생성이 `pending` 으로 넣으며,
+    `confirm()` 을 부르는 화면이 없어 진행 중 주문은 `pending` 이다. 그 칸이 사실 칸보다 먼저 이겨 출고·배송이 끝난 주문이 관리자 목록·CS 상세에서 «결제대기», 일별 통계에서 «입금전»으로 셌다.
+    지금은 관리자도 사실 칸을 쓴다. 일별 통계 응답의 `pending` 은 옛 화면이 읽는 키라 0 으로 남긴다.
 - **R14(사용자 확인 대기) — 카드 모집단은 진행 중 주문이다.** 출고완료·부분출고 카드는 최근 14일 SO `status IN ('pending','confirmed','processing')` 을 센다. 같은 이유로 `confirmed` 만 세면
   warehouse-app 전환 뒤에도 카드가 0 에 머문다. 셀메이트로 나간 주문(`shipped`)은 모집단 밖이다. 출고 요청 카드(`confirmed` 수)와 모집단이 달라 «출고완료 ⊆ 출고 요청» 은 성립하지 않는다.
 - **R9.** V2 전체취소 재계획은 «항목 없음» 409 갈래를 `skus` 가 비었는지가 아니라 **FOI 존재**로 고른다(구성만 굳고 FOI 가 없는 SKU 가 0 단위로 읽히는 것을 막는다).

@@ -41,7 +41,7 @@ export const RECIPIENT_FIELDS: ReadonlyArray<{
     key: 'entrancePassword',
     label: '공동현관 비밀번호',
     // 현재 값은 응답에 실리지 않으므로(크리덴셜) 빈 칸이 "비번 없음"이 아니다.
-    placeholder: '비워 두면 기존 비번을 그대로 둡니다',
+    placeholder: '비우면 지금 값 유지',
     // 크리덴셜이다. 어깨너머로 읽히지 않게 가리고, 브라우저가 저장하지 않게 막는다.
     type: 'password',
     autoComplete: 'off',
@@ -91,7 +91,8 @@ export function buildRecipientRevisionPayload(
   command: {
     expectedManifestVersion: number;
     reason: string;
-    csCaseId?: string;
+    reasonCode?: string;
+    requestChannel?: string;
     note?: string;
     /** shipment.recipientSnapshot 원본. 폼이 모르는 키까지 들어 있을 수 있다. */
     currentSnapshot: unknown;
@@ -99,7 +100,6 @@ export function buildRecipientRevisionPayload(
 ): ReviseShipmentRecipientRequest {
   const deliveryNote = form.deliveryNote.trim();
   const entrancePassword = form.entrancePassword.trim();
-  const csCaseId = command.csCaseId?.trim() ?? '';
   const note = command.note?.trim() ?? '';
 
   const recipientSnapshot: FulfillmentShippingAddress = {
@@ -121,7 +121,10 @@ export function buildRecipientRevisionPayload(
     // 빈 값은 "비번을 안 건드린다"는 뜻이다. core 는 이 키가 없으면 기존 비번을 유지한다.
     ...(entrancePassword ? { entrancePassword } : {}),
     reason: command.reason.trim(),
-    ...(csCaseId ? { csCaseId } : {}),
+    ...(command.reasonCode ? { reasonCode: command.reasonCode } : {}),
+    ...(command.requestChannel
+      ? { requestChannel: command.requestChannel }
+      : {}),
     ...(note ? { note } : {}),
   };
 }

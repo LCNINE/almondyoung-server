@@ -15,7 +15,7 @@ export const SALES_CHANNEL_SITE_LABELS: Record<SalesChannelSite, string> = {
   medusa: '아몬드영 (자사몰)',
   naver: '네이버 스마트스토어',
   coupang: '쿠팡',
-  '3pl': '3PL',
+  '3pl': '수기·기타',
 };
 
 export const SALES_CHANNEL_SITE_OPTIONS: ReadonlyArray<{

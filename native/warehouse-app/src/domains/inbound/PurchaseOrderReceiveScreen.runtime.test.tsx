@@ -37,7 +37,11 @@ import { createOperationRunner } from '../../core/operations/operationRunner';
 import { createOperationStore } from '../../core/operations/operationStore';
 import { WorkBoundary } from '../../core/operations/WorkBoundary';
 import { PurchaseOrderReceiveScreen } from './PurchaseOrderReceiveScreen';
-import type { ExpectedArrivalLine, ExpectedArrivalsResult } from './types';
+import type {
+  ExpectedArrivalLine,
+  ExpectedArrivalsResult,
+  PurchaseOrderArrival,
+} from './types';
 import type { SkuSearchItem } from '../inventory/types';
 
 const session = {
@@ -74,21 +78,20 @@ const lineB: ExpectedArrivalLine = {
   outstandingQty: 7,
   expectedArrival: '2026-09-21',
 };
+const poArrival: PurchaseOrderArrival = {
+  source: 'purchase_order',
+  documentId: 'po-1',
+  type: 'domestic',
+  supplier: { id: 'supplier-1', name: '아몬드 공급사' },
+  expectedDate: '2026-09-20',
+  totalOutstandingQuantity: 17,
+  lines: [lineA, lineB],
+};
 const arrivals: ExpectedArrivalsResult = {
   warehouseId: 'w-1',
   totalDocuments: 1,
   totalOutstandingQuantity: 17,
-  arrivals: [
-    {
-      source: 'purchase_order',
-      documentId: 'po-1',
-      type: 'domestic',
-      supplier: { id: 'supplier-1', name: '아몬드 공급사' },
-      expectedDate: '2026-09-20',
-      totalOutstandingQuantity: 17,
-      lines: [lineA, lineB],
-    },
-  ],
+  arrivals: [poArrival],
 };
 const skuA: SkuSearchItem = {
   id: 'sku-a',
@@ -833,7 +836,7 @@ it('turns a queued scan into a recoverable unapplied error when the restored lin
     totalOutstandingQuantity: 9,
     arrivals: [
       {
-        ...arrivals.arrivals[0],
+        ...poArrival,
         totalOutstandingQuantity: 9,
         lines: [{ ...lineA, receivedQty: 8, outstandingQty: 2 }, lineB],
       },
@@ -896,7 +899,7 @@ it('removes an already-applied queue record even when the authoritative line lat
     totalOutstandingQuantity: 9,
     arrivals: [
       {
-        ...arrivals.arrivals[0],
+        ...poArrival,
         totalOutstandingQuantity: 9,
         lines: [{ ...lineA, receivedQty: 8, outstandingQty: 2 }, lineB],
       },
@@ -930,7 +933,7 @@ it('keeps a submitted draft when the line disappears without confirmation of its
     totalOutstandingQuantity: 7,
     arrivals: [
       {
-        ...arrivals.arrivals[0],
+        ...poArrival,
         totalOutstandingQuantity: 7,
         lines: [lineB],
       },
@@ -1203,7 +1206,7 @@ it('does not let a late response from the previous warehouse change the current 
     totalOutstandingQuantity: 7,
     arrivals: [
       {
-        ...arrivals.arrivals[0],
+        ...poArrival,
         documentId: 'po-2',
         totalOutstandingQuantity: 7,
         lines: [lineB],
@@ -1233,7 +1236,7 @@ it.each([
       totalOutstandingQuantity: 7,
       arrivals: [
         {
-          ...arrivals.arrivals[0],
+          ...poArrival,
           totalOutstandingQuantity: 7,
           lines: [lineB],
         },
@@ -1247,7 +1250,7 @@ it.each([
       totalOutstandingQuantity: 9,
       arrivals: [
         {
-          ...arrivals.arrivals[0],
+          ...poArrival,
           totalOutstandingQuantity: 9,
           lines: [{ ...lineA, receivedQty: 8, outstandingQty: 2 }, lineB],
         },
@@ -1292,7 +1295,7 @@ const largeArrivals: ExpectedArrivalsResult = {
   ...arrivals,
   arrivals: [
     {
-      ...arrivals.arrivals[0],
+      ...poArrival,
       lines: [{ ...lineA, orderedQty: 200, outstandingQty: 200 }, lineB],
     },
   ],

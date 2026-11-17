@@ -177,7 +177,9 @@ export default function OrderActions({
   const canReturn = availableActions?.includes("return") ?? false
   const canExchange = availableActions?.includes("exchange") ?? false
   const cancelTooltip = cancelUnavailableReason
-    ? CANCEL_UNAVAILABLE_MESSAGES[cancelUnavailableReason]
+    ? cancelUnavailableReason === "print_in_production"
+      ? tActions("cancelUnavailable.print_in_production")
+      : CANCEL_UNAVAILABLE_MESSAGES[cancelUnavailableReason]
     : undefined
 
   // 무통장 확정 주문의 취소는 토스 환불신청 → 관리자 수락이 필요하다(즉시 자동환불 아님).
@@ -453,7 +455,7 @@ export default function OrderActions({
         )}
       </div>
 
-      {isDetails &&
+      {(isDetails || cancelUnavailableReason === "print_in_production") &&
         cancelTooltip &&
         cancelUnavailableReason !== "already_cancelled" && (
           <p className="text-xs text-red-600">{cancelTooltip}</p>

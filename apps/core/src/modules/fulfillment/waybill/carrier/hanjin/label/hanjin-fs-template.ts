@@ -1,8 +1,8 @@
 import { ConflictError } from '@app/shared';
 import { WAYBILL } from '../../../waybill.constants';
-import { DOTS_PER_MM, type BarcodePlacement, type LabelSpec } from '../../../label/label-model';
+import { DOTS_PER_MM, type BarcodePlacement, type LabelSpec } from '../../../../../../platform/label/label-model';
 import { paginate, type LabelItem } from '../../../label/label-items';
-import { fitSizePt, fitText, textWidthMm } from '../../../label/svg-text';
+import { fitSizePt, fitText, textWidthMm } from '../../../../../../platform/label/svg-text';
 import type { HanjinLabelData } from './hanjin-label-data';
 import { maskAddress, maskName, maskPhone } from './hanjin-label-masking';
 import { rect, shrinkThenFit, svgDocument, text, wrapLines } from './hanjin-label-svg';
@@ -138,7 +138,7 @@ function sharedElements(d: HanjinLabelData): string[] {
   const rc = d.recipient;
   const sd = d.sender;
   const senderLine = shrinkThenFit(`${sd.name} / ${sd.phone} / ${maskAddress(sd.baseAddress)}`, 111, 9);
-  const custText = `출고번호: ${d.custOrdNo}`;
+  const custText = `주문번호: ${d.orderNo}`;
   return [
     // 선인쇄 가로선(실측 y 7.4–8.0 · 24.3–24.6 · 44.4–44.9 · 52.0–52.5mm)을 글자가 밟지 않게 잡았다 —
     // 2026-09-28 창고 FS 라벨지 실물 출력 스캔으로 ⑨·⑪·보낸분 줄을 옮겼다.

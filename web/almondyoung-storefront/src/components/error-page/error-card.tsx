@@ -23,7 +23,7 @@ export default function ErrorCard({ onRetry, onGoHome }: ErrorCardProps) {
         </p>
         <div className="flex justify-center gap-4">
           <button
-            className="text-primary text-xs underline-offset-2 transition-colors hover:underline"
+            className="text-mint-deep text-xs underline-offset-2 transition-colors hover:underline"
             onClick={onGoHome}
           >
             홈으로

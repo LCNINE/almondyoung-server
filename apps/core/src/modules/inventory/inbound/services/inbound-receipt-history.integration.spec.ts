@@ -453,4 +453,47 @@ describeIfDb('InboundService.listInboundReceipts 회차별 이력 (PostgreSQL in
       jest.useRealTimers();
     }
   });
+
+  it('history line of a shipment box receipt links the box', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const fixture = await seedHistory(tx);
+      // inbound/ 는 inbound-shipment/ 를 import 할 수 없으므로(경계 arch 스펙이 spec 까지 훑는다) 행을 직접 넣는다.
+      const [shipment] = await tx
+        .insert(wmsTables.inboundShipments)
+        .values({ warehouseId: fixture.warehouse.id, name: '11월 2차 배편', status: 'receiving' })
+        .returning();
+      const [box] = await tx
+        .insert(wmsTables.inboundShipmentBoxes)
+        .values({
+          shipmentId: shipment.id,
+          label: 'A-1',
+          sortKey: 1,
+          origin: 'list',
+          status: 'received',
+          receiptId: fixture.newest.id,
+        })
+        .returning();
+      const [boxLine] = await tx
+        .insert(wmsTables.inboundReceiptLines)
+        .values({ receiptId: fixture.newest.id, skuId: fixture.skuA.id, quantity: 2, source: 'inbound_shipment' })
+        .returning();
+      await tx
+        .insert(wmsTables.inboundShipmentBoxCounts)
+        .values({ boxId: box.id, skuId: fixture.skuA.id, countedQty: 2, receiptLineId: boxLine.id });
+
+      const result = await makeInboundService(db).listInboundReceipts(
+        { warehouseId: fixture.warehouse.id, receiptId: fixture.newest.id },
+        tx,
+      );
+      const lines = result.items[0].lines;
+      const linked = lines.find((l) => l.id === boxLine.id);
+      expect(linked).toMatchObject({
+        source: 'inbound_shipment',
+        inboundShipmentBox: { shipmentId: shipment.id, shipmentName: '11월 2차 배편', boxId: box.id, boxLabel: 'A-1' },
+      });
+      const direct = lines.filter((l) => l.id !== boxLine.id);
+      expect(direct).toHaveLength(2);
+      expect(direct.every((l) => l.inboundShipmentBox === null)).toBe(true);
+    });
+  });
 });

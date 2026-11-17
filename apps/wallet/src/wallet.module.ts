@@ -96,8 +96,10 @@ import { StatisticsAdminController } from './admin/statistics-admin.controller';
 // Messaging + Jobs
 import { ExpirationJob } from './jobs/expiration.job';
 import { TossActionExpirationJob } from './jobs/toss-action-expiration.job';
+import { OpenVirtualAccountCloseJob } from './jobs/open-virtual-account-close.job';
 import { PointsExpirationJob } from './jobs/points-expiration.job';
 import { RefundResendJob } from './refunds/refund-resend.job';
+import { CashReceiptPendingCancelJob } from './cash-receipts/cash-receipt-pending-cancel.job';
 
 // Webhooks
 import { TossWebhookController } from './webhooks/toss-webhook.controller';
@@ -344,8 +346,10 @@ export { AuthenticatedRequest, WalletAuthGuard } from './wallet-auth.guard';
     // Messaging + Jobs
     ExpirationJob,
     TossActionExpirationJob,
+    OpenVirtualAccountCloseJob,
     PointsExpirationJob,
     RefundResendJob,
+    CashReceiptPendingCancelJob,
   ],
 })
 export class WalletModule {}

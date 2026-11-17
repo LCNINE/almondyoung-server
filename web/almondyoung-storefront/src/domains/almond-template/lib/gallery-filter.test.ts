@@ -115,3 +115,28 @@ it("시안의 인쇄 유형이 상품 종류보다 먼저다", () => {
   expect(filterTemplates([bizcard], { ...filters, kind: "bizcard" })).toHaveLength(1)
   expect(filterTemplates([bizcard], { ...filters, kind: "card" })).toHaveLength(0)
 })
+
+it("PRINT_PRODUCTS 에 없는 상품이라도 kind 가 있으면 남기고 검색어는 시안 제목으로 찾는다", () => {
+  const item: PublishedTemplate = {
+    id: "new",
+    title: "새 명함",
+    productId: "new-product",
+    kind: "bizcard",
+    size: "90x50",
+    thumbnail: "https://ugc.test/new.svg",
+    updatedAt: "2026-09-30T00:00:00.000Z",
+  }
+  const filters = {
+    productId: "",
+    availableKinds: ["bizcard"] as const,
+    kind: "" as const,
+    size: "",
+    keyword: "명함",
+    colors: [],
+    industry: "",
+    purpose: "",
+  }
+
+  expect(published(item)).toBe(true)
+  expect(filterTemplates([item], filters)).toEqual([item])
+})

@@ -29,7 +29,9 @@ import type {
   NoticeListQuery,
   AdminShopListingListQuery,
   SitePopupListQuery,
+  TopNoticeListQuery,
 } from '@/lib/types/dto/products';
+import type { PrintKind } from '@/lib/types/dto/print-catalog';
 import type { BatchVariantInfo } from '@/lib/api/domains/products/variants.client';
 import type {
   MasterVersionDetailDto,
@@ -234,6 +236,28 @@ export const useVariantsByMasterSuspense = (
         masterId,
         query
       )) as unknown as ProductVariantsResponse,
+    staleTime: 30 * 1000,
+    gcTime: 5 * 60 * 1000,
+  });
+};
+
+/**
+ * 마스터별 제품 변형 조회. 응답 모양은 useVariantsByMasterSuspense 와 같다.
+ * 필요할 때만 부르도록 enabled 로 지연할 수 있다.
+ */
+export const useVariantRowsByMaster = (
+  masterId: string,
+  { page = 1, limit = 100, enabled = true } = {}
+) => {
+  const query = { masterId, page, limit };
+  return useQuery({
+    queryKey: productQueryKeys.variantsByMaster(masterId, query),
+    queryFn: async () =>
+      (await products.variants.getByMaster(
+        masterId,
+        query
+      )) as unknown as ProductVariantsResponse,
+    enabled: enabled && !!masterId,
     staleTime: 30 * 1000,
     gcTime: 5 * 60 * 1000,
   });
@@ -566,6 +590,15 @@ export const useAlmondTemplates = () => {
   });
 };
 
+export const usePrintOptions = (kind: PrintKind, width: number, height: number) => {
+  return useQuery({
+    queryKey: productQueryKeys.printOptions(kind, width, height),
+    queryFn: () => products.printCatalog.options(kind, width, height),
+    enabled: width > 0 && height > 0,
+    staleTime: 5 * 60 * 1000,
+  });
+};
+
 export const useAlmondTemplateCategories = () => {
   return useQuery({
     queryKey: productQueryKeys.almondTemplateCategories,
@@ -599,6 +632,16 @@ export const useSitePopup = (id: string) => {
     queryKey: productQueryKeys.sitePopup(id),
     queryFn: () => products.sitePopups.get(id),
     enabled: !!id,
+    staleTime: 2 * 60 * 1000,
+  });
+};
+
+// ===== 상단 공지 띠 관련 쿼리 =====
+
+export const useTopNotices = (query?: TopNoticeListQuery) => {
+  return useQuery({
+    queryKey: productQueryKeys.topNoticesList(query ?? {}),
+    queryFn: () => products.topNotices.list(query),
     staleTime: 2 * 60 * 1000,
   });
 };
