@@ -62,10 +62,14 @@ export async function readBarcode2Backfill(tx: DbTx, items: readonly ParsedItem[
 
   const notInCore = items.filter((it) => isCandidate(it) && !skuIdByCode.has(it.itemCode)).map((it) => it.itemCode);
   // 후보가 아닌 품목도 넣는다 — 그 대표 바코드가 다른 품목의 보조보다 먼저 차지해야 한다.
-  const wants: Barcode2Want[] = items.flatMap((it) => {
+  // core 에 아직 없는 품목도 대표만은 자리표 소유자로 선점한다. 안 그러면 다음 가져오기 때 그 품목의 대표가
+  // 이 백필이 넣은 남의 보조와 충돌해, T 부터 그 바코드가 엉뚱한 SKU 로 잡힌다.
+  const wants: Barcode2Want[] = items.map((it) => {
     const skuId = skuIdByCode.get(it.itemCode);
 
-    return skuId === undefined ? [] : [{ skuId, primary: it.barcode, secondary: it.barcode2 }];
+    return skuId === undefined
+      ? { skuId: `(core 에 없음) ${it.itemCode}`, primary: it.barcode, secondary: '' }
+      : { skuId, primary: it.barcode, secondary: it.barcode2 };
   });
   const values = [...new Set(wants.flatMap((w) => [w.primary, w.secondary]).filter((v) => v !== ''))];
   const taken = new Map<string, string>();

@@ -127,6 +127,18 @@ describeIfDb('backfill-barcode2 (DB integration)', () => {
     });
   });
 
+  it('core 에 아직 없는 품목의 대표도 먼저 차지한다', async () => {
+    await inRollbackTx(db, async (trx) => {
+      const a = await newSku(trx);
+      const [x, codeB] = [uniq('X'), uniq('NOPE')];
+
+      const { plan } = await readBarcode2Backfill(trx, [item(a.skuCode, '', x), item(codeB, x, '')]);
+
+      expect(plan.insert).toEqual([]);
+      expect(plan.conflicts).toEqual([{ skuId: a.skuId, barcode: x, ownerSkuId: `(core 에 없음) ${codeB}` }]);
+    });
+  });
+
   it('두 번 돌려도 같다', async () => {
     await inRollbackTx(db, async (trx) => {
       const a = await newSku(trx);
