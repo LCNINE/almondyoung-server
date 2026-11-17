@@ -1,7 +1,7 @@
 import { ConflictError } from '@app/shared';
-import { barcodeKeepOutsMm, inkInBarcodeKeepOuts } from '../../../label/__support__/label-invariants';
-import type { LabelSpec } from '../../../label/label-model';
-import { PT_TO_MM, textWidthMm } from '../../../label/svg-text';
+import { barcodeKeepOutsMm, inkInBarcodeKeepOuts } from '../../../../../../platform/label/__support__/label-invariants';
+import type { LabelSpec } from '../../../../../../platform/label/label-model';
+import { PT_TO_MM, textWidthMm } from '../../../../../../platform/label/svg-text';
 import { HANJIN_LABEL_FIXTURE as DATA, HANJIN_LABEL_LONG_FIXTURE as LONG } from './__support__/hanjin-label-fixture';
 import { renderHanjinFsLabel } from './hanjin-fs-template';
 import type { HanjinLabelData } from './hanjin-label-data';

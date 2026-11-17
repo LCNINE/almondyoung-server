@@ -1,5 +1,5 @@
 import { createHash } from 'crypto';
-import { barcodeKeepOutsMm, inkInBarcodeKeepOuts } from '../../../label/__support__/label-invariants';
+import { barcodeKeepOutsMm, inkInBarcodeKeepOuts } from '../../../../../../platform/label/__support__/label-invariants';
 import { HANJIN_LABEL_FIXTURE as DATA, HANJIN_LABEL_LONG_FIXTURE as LONG } from './__support__/hanjin-label-fixture';
 import {
   NL_CUST_ORD_NO_MAX_WIDTH_MM,

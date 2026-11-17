@@ -1,4 +1,4 @@
-import { textWidthMm } from '../../../label/svg-text';
+import { textWidthMm } from '../../../../../../platform/label/svg-text';
 import { koreanDate, rect, shrinkThenFit, svgDocument, text, wrapLines } from './hanjin-label-svg';
 
 describe('hanjin-label-svg', () => {

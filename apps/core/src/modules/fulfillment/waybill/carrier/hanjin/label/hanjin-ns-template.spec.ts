@@ -1,9 +1,9 @@
 import { createHash } from 'crypto';
 import { deriveCustOrdNo } from '../../../cust-ord-no';
-import { DOTS_PER_MM, getBit } from '../../../label/label-model';
-import { barcodeKeepOutsMm, inkInBarcodeKeepOuts } from '../../../label/__support__/label-invariants';
-import { SvgRasterizer } from '../../../label/svg-rasterizer';
-import { PT_TO_MM, textWidthMm } from '../../../label/svg-text';
+import { DOTS_PER_MM, getBit } from '../../../../../../platform/label/label-model';
+import { barcodeKeepOutsMm, inkInBarcodeKeepOuts } from '../../../../../../platform/label/__support__/label-invariants';
+import { SvgRasterizer } from '../../../../../../platform/label/svg-rasterizer';
+import { PT_TO_MM, textWidthMm } from '../../../../../../platform/label/svg-text';
 import { HANJIN_LABEL_FIXTURE as DATA, HANJIN_LABEL_LONG_FIXTURE } from './__support__/hanjin-label-fixture';
 import {
   CUST_ORD_NO_MAX_WIDTH_MM,

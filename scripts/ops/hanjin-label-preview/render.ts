@@ -15,17 +15,13 @@ import {
   HANJIN_LABEL_TYPES,
   type HanjinLabelType,
 } from '../../../apps/core/src/modules/fulfillment/waybill/carrier/hanjin/label/hanjin-label-templates';
-import { encodeLabelPages } from '../../../apps/core/src/modules/fulfillment/waybill/label/label-document';
-import {
-  barcodeWidthMm,
-  mmToDots,
-  type LabelSpec,
-} from '../../../apps/core/src/modules/fulfillment/waybill/label/label-model';
+import { encodeLabelPages } from '../../../apps/core/src/platform/label/label-document';
+import { barcodeWidthMm, mmToDots, type LabelSpec } from '../../../apps/core/src/platform/label/label-model';
 import {
   LABEL_FONT_FILES,
   resolveLabelFontDir,
   SvgRasterizer,
-} from '../../../apps/core/src/modules/fulfillment/waybill/label/svg-rasterizer';
+} from '../../../apps/core/src/platform/label/svg-rasterizer';
 
 /** PNG 미리보기 전용 — spec.svg 에 바코드 위치 테두리(빨간 사각형)를 얹는다. ZPL 은 원본 svg 를 그대로 쓴다. */
 function withBarcodeOverlay(spec: LabelSpec): string {
