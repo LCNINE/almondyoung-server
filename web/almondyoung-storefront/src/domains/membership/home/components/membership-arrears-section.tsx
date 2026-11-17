@@ -42,7 +42,7 @@ export default function MembershipArrearsSection() {
         // returnUrl 에 쿼리를 붙이지 않는다 — wallet 이 결과 파라미터를 덧붙이며 URL 이 깨진 전례가 있다.
         const returnUrl = `${window.location.origin}/${countryCode}/mypage/membership`
         const { intentId } = await startArrearsCheckout(returnUrl)
-        await goToWalletWeb(`/pay/${intentId}?region=${countryCode}`)
+        goToWalletWeb(`/pay/${intentId}?region=${countryCode}`)
       } catch (error) {
         const err = error as Error & { digest?: string }
         if (err?.digest === "UNAUTHORIZED" || err?.message === "UNAUTHORIZED")

@@ -338,7 +338,7 @@ export default function CheckoutTemplate({
       if (!intentId) throw new Error(tProcess("toasts.paymentInitFailed"))
       setCheckoutCartByIntent(intentId, checkoutCartId)
 
-      await goToWalletWeb(`/pay/${intentId}?region=${countryCode}`)
+      goToWalletWeb(`/pay/${intentId}?region=${countryCode}`)
     } catch (err) {
       console.error("결제 처리 실패:", err)
       setError(

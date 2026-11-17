@@ -307,7 +307,7 @@ export function MembershipForm({
             // 바로 보낸다. 등록을 마치면 서버가 그 계좌로 가입을 만들고, 결제수단 페이지(cardChanged=1)는
             // 가입이 생길 때까지 기다렸다가 완료 화면으로 넘긴다.
             const returnUrl = `${window.location.origin}/${countryCode}/mypage/membership/payment-method?redirect=subscribe&planId=${selectedPlanId}${agreementId ? `&termsAgreementId=${agreementId}` : ""}`
-            await goToWalletWeb(
+            goToWalletWeb(
               `/billing-change?returnUrl=${encodeURIComponent(returnUrl)}`
             )
           } else {
@@ -322,7 +322,7 @@ export function MembershipForm({
               planId: selectedPlanId,
               billingMode: "one_time",
             })
-            await goToWalletWeb(`/pay/${intentId}?region=${countryCode}`)
+            goToWalletWeb(`/pay/${intentId}?region=${countryCode}`)
           }
         }
       } catch (error) {

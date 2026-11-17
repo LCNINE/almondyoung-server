@@ -372,22 +372,20 @@ export default function MembershipPaymentMethodContent() {
     // 등록 완료 시 returnUrl(현재 화면 + cardChanged=1)로 복귀해 기존 자동구독 흐름을 잇는다.
     const returnUrl = window.location.href
 
-    return goToWalletWeb(
+    goToWalletWeb(
       `/billing-change?returnUrl=${encodeURIComponent(returnUrl)}`
     )
   }
 
   const handleRegisterNewCard = () => {
-    if (isChanging || isActionPending) return
-
     // 정기결제는 효성 CMS 자동이체로만 운영하므로 신규 등록도 CMS 자동이체 위저드로 보낸다.
     // (카드 빌링 provider는 현재 미등록 상태라 등록해도 정기결제에 사용할 수 없음)
-    startActionTransition(() => pushToCmsRegistration())
+    pushToCmsRegistration()
   }
 
   const handleRegisterCmsBankAccount = () => {
     // 실패한 CMS 계좌 재등록 — 은행계좌 등록 흐름이 있는 결제 관리 페이지로 이동
-    return pushToCmsRegistration()
+    pushToCmsRegistration()
   }
 
   const handleReregisterFailedMethod = (billingMethodId: string) => {
@@ -405,7 +403,7 @@ export default function MembershipPaymentMethodContent() {
         }
 
         removeMethodFromState(billingMethodId)
-        await handleRegisterCmsBankAccount()
+        handleRegisterCmsBankAccount()
       } catch (error) {
         if (isUnauthorizedError(error)) {
           throw error
