@@ -12,6 +12,7 @@ import { PermissionCheckpoints } from '@app/authorization';
 import type { ShippingAddress } from '@packages/event-contracts/streams';
 import { and, asc, eq, inArray, or, sql } from 'drizzle-orm';
 import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
+import { cancellationVoidKey } from './waybill-void-keys';
 import { AuditService } from '../../inventory/shared/services/audit.service';
 import {
   CancelShipmentOutstandingDto,
@@ -1576,7 +1577,7 @@ export class ShipmentPlanningService {
             shipmentId,
             {
               actorId: ctx.actor.id,
-              idempotencyKey: `cancel-exit:${ctx.operationId}:${shipmentId}`,
+              idempotencyKey: cancellationVoidKey(ctx.operationId, shipmentId),
               reason: 'canceled',
             },
             tx,

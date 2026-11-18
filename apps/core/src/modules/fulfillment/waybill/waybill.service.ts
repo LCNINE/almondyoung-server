@@ -3,6 +3,7 @@ import { ModuleRef } from '@nestjs/core';
 import { DbTx } from '../../inventory/schema/inventory.schema';
 import { WaybillManager, type Actor, type IssueOpts } from './waybill.manager';
 import type { BatchResultItem, WaybillRow, WaybillView } from './waybill.types';
+import { withdrawalVoidKey } from '../services/waybill-void-keys';
 
 export function toView(row: WaybillRow): WaybillView {
   return {
@@ -89,7 +90,7 @@ export class WaybillService {
 
       if (!waybill) return false;
 
-      await this.void(waybill.id, { reason: 'withdrawn:excluded' }, `withdrawal-void:${workItemId}:${waybill.id}`, {
+      await this.void(waybill.id, { reason: 'withdrawn:excluded' }, withdrawalVoidKey(workItemId, waybill.id), {
         id: waybill.actorId,
         roles: [],
       });

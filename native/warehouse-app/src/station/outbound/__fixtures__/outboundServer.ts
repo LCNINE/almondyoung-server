@@ -42,6 +42,8 @@ export interface FakeBox {
   omitRemovedName?: boolean;
   /** 주문 전체 취소로 빠지는 상자 — 다 빼면 다시 준비하지 않는다 */
   canceling?: boolean;
+  /** 부분 취소를 기다리는 상자 — 줄마다 취소될 수량(legacy 면 응답에 싣지 않는다) */
+  cancelWaiting?: Array<{ shipmentLineId: string; qty: number }>;
   lines: FakeLine[];
 }
 
@@ -180,7 +182,10 @@ export function createOutboundServer(init: { boxes: FakeBox[] }) {
       trackingNo: box.trackingNo,
       carrier: 'HANJIN',
       waybillStatus: 'registered',
-      shipmentStatus: box.shipped ? 'shipped' : 'planned',
+      shipmentStatus: box.shipped ? 'shipped' : box.cancelWaiting ? 'recovery_required' : 'planned',
+      ...(box.cancelWaiting && !box.legacy
+        ? { recoveryCode: 'CANCEL_REPLAN_PENDING', pendingCancellation: box.cancelWaiting }
+        : {}),
       batchId: active(box) ? box.batchId : null,
       workItemId: active(box) ? `wi-${box.shipmentId}` : null,
       workItemStatus: active(box) ? workItemStatusOf(box) : null,

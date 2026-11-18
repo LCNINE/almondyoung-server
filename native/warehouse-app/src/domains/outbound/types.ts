@@ -66,6 +66,10 @@ export interface ShipmentByWaybill {
   carrier: string;
   waybillStatus: string;
   shipmentStatus: string;
+  /** recovery_required 의 사유(core 가 실을 때만). 부분 취소 대기는 CANCEL_REPLAN_PENDING */
+  recoveryCode?: string | null;
+  /** 부분 취소를 기다리는 박스면 줄마다 취소될 수량(core 가 실을 때만) */
+  pendingCancellation?: Array<{ shipmentLineId: string; qty: number }> | null;
   batchId: string | null;
   workItemId: string | null;
   workItemStatus: string | null;
