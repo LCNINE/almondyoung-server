@@ -34,7 +34,7 @@ export async function MainHeader() {
 
       <TopNoticeBar />
 
-      <div className="bg-secondary border-border text-muted-foreground flex h-8 items-center justify-end gap-3 border-b px-3 text-[12px] xl:hidden">
+      <div className="border-border text-muted-foreground bg-white flex h-8 items-center justify-end gap-3 border-b px-3 text-[12px] xl:hidden">
         <MobileAuthLinks />
         <LocalizedClientLink href="/cs">{t("support")}</LocalizedClientLink>
       </div>
