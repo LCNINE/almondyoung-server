@@ -426,6 +426,25 @@ describe('runPrepare', () => {
     expect(report.targets).toEqual([{ shipmentId: 's1', from: 'planned' }]);
   });
 
+  it('lets the next run take over a finished run box left in its started batch, with the same waybill', async () => {
+    const { root, opts } = setup();
+    const core = drafts(new FakeCore(), 's1');
+    const morning = '20261119-0700';
+    const morningDir = join(root, morning);
+    await runPrepare(core, { ...opts(true), run: morning, dir: morningDir });
+    const done = readRun(morningDir);
+    if (!done) throw new Error('morning run.json missing');
+    // 저녁에 s1 줄을 지우고 dispatch 가 끝났다 — s1 은 아침 배치에 남은 «못 나간 상자»
+    writeRun(morningDir, { ...done, finishedAt: '2026-11-19T10:00:00.000Z' });
+    const morningTracking = done.boxes.find((b) => b.shipmentId === 's1')?.trackingNo;
+
+    const report = await runPrepare(core, opts(true));
+
+    expect(report.targets).toEqual([{ shipmentId: 's1', from: 'batch', batchId: 'b', route: 'location' }]);
+    expect(report.state?.boxes.find((b) => b.shipmentId === 's1')?.trackingNo).toBe(morningTracking);
+    expect(morningTracking).toBeTruthy();
+  });
+
   it('refuses to resume a run whose dispatch has finished', async () => {
     const { dir, opts } = setup();
     writeRun(dir, {

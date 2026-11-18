@@ -260,6 +260,8 @@
 
 ### Task 8: 로컬 끝까지 확인
 
+> 2026-11-18 갱신: `fake-hanjin.ts` 는 #1440 의 `scripts/local/hanjin-stub.ts`(start-all 이 띄운다)로 대체돼 지웠다. 실측 절차의 정본은 README «로컬 확인».
+
 **Files:**
 - Create: `scripts/ops/emergency-outbound/local/fake-hanjin.ts`, `scripts/ops/emergency-outbound/local/compare.ts`
 - Test: `scripts/ops/emergency-outbound/local/compare.spec.ts`
