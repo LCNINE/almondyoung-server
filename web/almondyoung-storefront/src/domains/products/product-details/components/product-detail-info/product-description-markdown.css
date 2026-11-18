@@ -73,8 +73,77 @@
     center / 12px no-repeat;
 }
 
+.pd-markdown p,
+.pd-markdown li,
 .pd-markdown td {
   word-break: keep-all;
+}
+
+.pd-markdown h2.pd-caution {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pd-markdown h2.pd-caution::before {
+  content: "!";
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 9999px;
+  background: #20232a;
+  color: #fff;
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.pd-markdown h2.pd-caution + ul {
+  display: grid;
+  gap: 14px;
+  margin: 0;
+  padding: 20px 20px 20px 22px;
+  border: 1px solid #e5e7eb;
+  border-radius: 16px;
+  background: #fafafa;
+  list-style: none;
+}
+
+.pd-markdown h2.pd-caution + ul > li {
+  position: relative;
+  margin: 0;
+  padding: 0 0 0 16px;
+  color: #20232a;
+  font-size: 15px;
+  line-height: 1.6;
+}
+
+.pd-markdown h2.pd-caution + ul > li::before {
+  content: "";
+  position: absolute;
+  top: 0.65em;
+  left: 0;
+  width: 5px;
+  height: 5px;
+  border-radius: 9999px;
+  background: #20232a;
+}
+
+.pd-markdown p > strong:first-child {
+  display: block;
+  margin-bottom: 4px;
+  color: #20232a;
+}
+
+.pd-markdown h2 ~ p:has(> strong:first-child) {
+  margin: 0 0 20px;
+  padding: 16px 18px;
+  border-radius: 12px;
+  background: #f7f8f9;
+  color: #4b5563;
 }
 
 .pd-markdown th:first-child,

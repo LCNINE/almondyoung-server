@@ -11,6 +11,9 @@ import { parseHashtagParagraph } from "./hashtag-paragraph"
 import { remarkProductImageDirective } from "./remark-product-image"
 import "./product-description-markdown.css"
 
+/** 프롬프트 형식이 고정한 주의사항 제목. 이 제목 아래 목록만 눈에 띄는 카드로 그린다. */
+const CAUTION_HEADING = "사용 시 주의사항"
+
 const plugins = [
   remarkGfm,
   remarkDirective,
@@ -34,9 +37,25 @@ export function ProductDescriptionMarkdown({
             typeof src === "string" && src ? (
               <DescriptionImage src={src} alt={alt || imageAltFallback || ""} />
             ) : null,
+          h2: ({ node, children }) => {
+            const text = node?.children
+              .map((c) => (c.type === "text" ? c.value : ""))
+              .join("")
+              .trim()
+
+            return (
+              <h2
+                className={text === CAUTION_HEADING ? "pd-caution" : undefined}
+              >
+                {children}
+              </h2>
+            )
+          },
           p: ({ node, children }) => {
             const text = node?.children.every((c) => c.type === "text")
-              ? node.children.map((c) => (c.type === "text" ? c.value : "")).join("")
+              ? node.children
+                  .map((c) => (c.type === "text" ? c.value : ""))
+                  .join("")
               : ""
             const tags = parseHashtagParagraph(text)
 
