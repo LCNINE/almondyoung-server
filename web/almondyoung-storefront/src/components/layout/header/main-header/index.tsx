@@ -34,14 +34,14 @@ export async function MainHeader() {
 
       <TopNoticeBar />
 
-      <div className="border-border text-muted-foreground bg-white flex h-8 items-center justify-end gap-3 border-b px-3 text-[12px] xl:hidden">
-        <MobileAuthLinks />
-        <LocalizedClientLink href="/cs">{t("support")}</LocalizedClientLink>
-      </div>
-
       <AutoHideHeader className="bg-header-background xl:border-header-border sticky top-0 z-40 overflow-visible xl:border-b">
         <div className="xl:hidden">
-          <div className="flex items-center justify-between gap-3 px-3 pt-3">
+          <div className="flex h-8 items-center justify-end gap-3 border-b border-white/10 px-3 text-[12px] text-white/85">
+            <MobileAuthLinks />
+            <LocalizedClientLink href="/cs">{t("support")}</LocalizedClientLink>
+          </div>
+
+          <div className="flex items-center justify-between gap-3 px-3 pt-2">
             <Logo />
             <AccountMenu />
           </div>

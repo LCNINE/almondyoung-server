@@ -44,7 +44,7 @@ export function UserInfo({ mobile = false }: { mobile?: boolean }) {
   return (
     <div className="flex items-center gap-2">
       <span>
-        <strong className={mobile ? "text-foreground" : "text-sm"}>
+        <strong className={mobile ? "text-white" : "text-sm"}>
           {displayName}
         </strong>
         {mobile && t("nameSuffix") && ` ${t("nameSuffix")}`}
@@ -56,7 +56,7 @@ export function UserInfo({ mobile = false }: { mobile?: boolean }) {
         disabled={isPending}
         className={
           mobile
-            ? "border-border cursor-pointer border bg-white px-1.5 py-px disabled:opacity-50"
+            ? "cursor-pointer border border-white/40 px-1.5 py-px disabled:opacity-50"
             : "cursor-pointer disabled:opacity-50"
         }
       >
