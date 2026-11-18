@@ -66,14 +66,17 @@ export const useSalesOrderItems = (orderId: string) => {
 
 // ===== 출고 배치 관련 쿼리 (D2) =====
 
+// 출고 준비 화면은 숫자를 보고 일하므로 들어올 때마다 다시 읽는다(메뉴 배지는 캐시를 그대로 쓴다)
 export const useOutboundPreparationSummary = (
   warehouseId: string,
-  enabled = true
+  enabled = true,
+  refetchOnMount: boolean | 'always' = true
 ) => {
   return useQuery({
     queryKey: orderQueryKeys.outboundPreparationSummary(warehouseId),
     queryFn: () => orders.outboundPreparation.summary(warehouseId),
     enabled: !!warehouseId && enabled,
+    refetchOnMount,
   });
 };
 

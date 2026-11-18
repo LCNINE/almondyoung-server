@@ -145,6 +145,7 @@ export const useCancelSalesOrder = () => {
       queryClient.invalidateQueries({ queryKey: ['sales-orders'] });
       queryClient.invalidateQueries({ queryKey: orderQueryKeys.orders });
       queryClient.invalidateQueries({ queryKey: orderQueryKeys.order(id) });
+      invalidatePreparation(queryClient);
     },
   });
 };
@@ -162,6 +163,7 @@ export const useAdminCancelSalesOrder = () => {
       queryClient.invalidateQueries({ queryKey: ['sales-orders'] });
       queryClient.invalidateQueries({ queryKey: orderQueryKeys.orders });
       queryClient.invalidateQueries({ queryKey: orderQueryKeys.order(id) });
+      invalidatePreparation(queryClient);
     },
   });
 };
@@ -571,6 +573,13 @@ function invalidateFulfillment(
 
 // ===== Shipment planning / durable operations =====
 
+// 상자가 생기거나 합쳐지거나 배치에서 빠지면 출고 준비 목록과 메뉴 배지 숫자가 바뀐다
+function invalidatePreparation(queryClient: ReturnType<typeof useQueryClient>) {
+  queryClient.invalidateQueries({
+    queryKey: orderQueryKeys.outboundPreparation,
+  });
+}
+
 function invalidateShipment(
   queryClient: ReturnType<typeof useQueryClient>,
   shipmentId: string
@@ -930,6 +939,7 @@ export const useCreateShipmentConsolidation = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['shipments'] });
       queryClient.invalidateQueries({ queryKey: orderQueryKeys.fulfillments });
+      invalidatePreparation(queryClient);
     },
   });
 };
@@ -1047,7 +1057,10 @@ export const useAddShipmentToBatch = () => {
         shipmentId,
         commandKey(idempotencyKey)
       ),
-    onSuccess: (_, { batchId }) => invalidateBatchV2(queryClient, batchId),
+    onSuccess: (_, { batchId }) => {
+      invalidateBatchV2(queryClient, batchId);
+      invalidatePreparation(queryClient);
+    },
   });
 };
 useAddShipmentToBatch.permission = [
@@ -1077,7 +1090,10 @@ export const useExcludeShipmentFromBatch = () => {
         commandKey(idempotencyKey),
         voidWaybill
       ),
-    onSuccess: (_, { batchId }) => invalidateBatchV2(queryClient, batchId),
+    onSuccess: (_, { batchId }) => {
+      invalidateBatchV2(queryClient, batchId);
+      invalidatePreparation(queryClient);
+    },
   });
 };
 useExcludeShipmentFromBatch.permission = [

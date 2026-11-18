@@ -712,6 +712,9 @@ export function ConsolidationProgressPanel({
       void queryClient.invalidateQueries({
         queryKey: orderQueryKeys.fulfillmentOrders,
       });
+      void queryClient.invalidateQueries({
+        queryKey: orderQueryKeys.outboundPreparation,
+      });
       shipmentIds.forEach((id) => {
         void queryClient.invalidateQueries({
           queryKey: orderQueryKeys.shipment(id),
