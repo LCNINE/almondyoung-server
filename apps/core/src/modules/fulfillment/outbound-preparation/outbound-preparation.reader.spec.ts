@@ -11,6 +11,10 @@ jest.mock('../services/consolidation-shipment-reads', () => ({
   loadShipmentLines: jest.fn(),
   loadSplitShares: jest.fn(async () => new Map()),
 }));
+// 셀메이트 상자 판정(#1412)은 통합 스펙이 본다 — 여기 select 순서 목에 쿼리를 끼우지 않는다
+jest.mock('../services/sellmate-handed-over-shipments', () => ({
+  loadSellmateShipmentIds: jest.fn(async () => new Set<string>()),
+}));
 
 function query(rows: unknown[]) {
   const result = Object.assign(Promise.resolve(rows), {
