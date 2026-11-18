@@ -26,6 +26,10 @@ export type RemarkProductDescriptionOptions = {
 
 const DIRECTIVE_TYPES = new Set(['leafDirective', 'textDirective', 'containerDirective']);
 
+/** 격자 칸 비율(가로/세로). compare 두 장은 3:4, 옵션 카드는 네일 칩 모양에 가까운 3:5. */
+const COMPARE_IMAGE_ASPECT = '0.75';
+const SWATCH_IMAGE_ASPECT = '0.6';
+
 export function remarkProductDescription({ resolveImageUrl }: RemarkProductDescriptionOptions) {
   return () => (tree: DescriptionMdastNode) => {
     transformChildren(tree, resolveImageUrl);
@@ -42,7 +46,9 @@ function transformChildren(node: DescriptionMdastNode, resolveImageUrl: (fileId:
 
     if (child.name === PRODUCT_IMAGE_DIRECTIVE_NAME) return imageOrNothing(child, resolveImageUrl);
 
-    if (child.name === SWATCH_DIRECTIVE_NAME) return swatch(child, resolveImageUrl);
+    // swatch 는 줄 단위(::swatch)만. 문단 안의 :swatch 를 figure 로 바꾸면 <p> 안에 블록 요소가 들어가
+    // 서버 HTML 과 브라우저가 파싱한 DOM 이 갈린다.
+    if (child.type === 'leafDirective' && child.name === SWATCH_DIRECTIVE_NAME) return swatch(child, resolveImageUrl);
 
     if (child.type === 'containerDirective' && isDescriptionBlockName(child.name)) {
       return [block(child.name, child, resolveImageUrl)];
@@ -106,7 +112,10 @@ function swatch(node: DescriptionMdastNode, resolveImageUrl: (fileId: string) =>
 
   return [
     element('figure', 'pd-swatch', [
-      image(parsed.fileId, parsed.alt || name, parsed.crop && formatImageCrop(parsed.crop), resolveImageUrl),
+      withAspect(
+        image(parsed.fileId, parsed.alt || name, parsed.crop && formatImageCrop(parsed.crop), resolveImageUrl),
+        SWATCH_IMAGE_ASPECT,
+      ),
       { type: 'paragraph', data: { hName: 'figcaption' }, children: caption },
     ]),
   ];
@@ -147,7 +156,8 @@ function block(
       return section(name, [...head, ...groupNodes(children, (child) => child.data?.hName === 'figure', 'pd-swatches')]);
     }
     case 'checks':
-    case 'spec': {
+    case 'spec':
+    case 'steps': {
       const title = text(attrs.title);
 
       return section(name, [...(title ? [heading(title, 'pd-title')] : []), ...children]);
@@ -165,7 +175,15 @@ function groupImages(children: DescriptionMdastNode[], className: string) {
       : [child],
   );
 
-  return groupNodes(flattened, (child) => child.type === 'image', className);
+  return groupNodes(
+    flattened.map((child) => (child.type === 'image' ? withAspect(child, COMPARE_IMAGE_ASPECT) : child)),
+    (child) => child.type === 'image',
+    className,
+  );
+}
+
+function withAspect(node: DescriptionMdastNode, aspect: string): DescriptionMdastNode {
+  return { ...node, data: { ...node.data, hProperties: { ...node.data?.hProperties, dataAspect: aspect } } };
 }
 
 function groupNodes(

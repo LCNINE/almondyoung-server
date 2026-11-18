@@ -116,6 +116,34 @@ describe("상세설명 블록 렌더", () => {
     expect(all(tree, (n) => n.tagName === "p").map(textOf)).toContain("오후 10:30 마감")
   })
 
+  it("steps 는 제목과 번호 목록을 가진 section 이다", async () => {
+    const tree = await render(':::steps{title="사용 방법"}\n1. 리무버를 발라요\n2. 밀어 줘요\n:::')
+    const [section] = all(tree, hasClass("pd-steps"))
+
+    expect(all(section, (n) => n.tagName === "h3").map(textOf)).toEqual(["사용 방법"])
+    expect(all(section, (n) => n.tagName === "li").map(textOf)).toEqual(["리무버를 발라요", "밀어 줘요"])
+  })
+
+  it("모델이 따옴표를 빼먹은 crop 속성도 읽고, 격자 칸 비율을 붙인다", async () => {
+    const tree = await render(
+      [
+        ':::details{title="DETAILS"}',
+        `::swatch{fileId="${FILE}" crop=0.316,0.425,0.081,0.275 code="MG04" name="문 펄"}`,
+        ":::",
+      ].join("\n")
+    )
+    const [img] = all(tree, (n) => n.tagName === "img")
+
+    expect(img.properties).toMatchObject({ dataCrop: "0.316,0.425,0.081,0.275", dataAspect: "0.6" })
+  })
+
+  it("문단 안의 :swatch 는 figure 로 바꾸지 않고 글자로 남긴다", async () => {
+    const tree = await render(`본문 :swatch{fileId="${FILE}" name="빨강"} 계속`)
+
+    expect(all(tree, (n) => n.tagName === "figure")).toHaveLength(0)
+    expect(all(tree, (n) => n.tagName === "p").map(textOf)[0]).toContain("본문 :swatch")
+  })
+
   it("블록이 없는 옛 상세설명은 그대로 그린다", async () => {
     const tree = await render("## 제품 특징\n\n본문이에요.")
 

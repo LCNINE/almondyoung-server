@@ -197,6 +197,18 @@
   overflow: hidden;
 }
 
+/* crop 없이 통째로 들어온 이미지도 격자 칸(remark-blocks 의 칸 비율과 같게)에 맞춰 채운다 */
+.pd-duo > img,
+.pd-swatch > img {
+  aspect-ratio: 3 / 4;
+  height: auto;
+  object-fit: cover;
+}
+
+.pd-swatch > img {
+  aspect-ratio: 3 / 5;
+}
+
 /* crop: 원본 일부만 보여 주는 칸 (product-description-markdown.tsx 의 CroppedImage) */
 .pd-crop {
   position: relative;
@@ -304,6 +316,46 @@
   margin-right: 8px;
 }
 
+/* steps: 번호 원이 달린 단계 카드 */
+.pd-steps {
+  padding: 56px 20px;
+}
+
+.pd-block.pd-steps ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: pd-step;
+}
+
+.pd-steps li {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 8px;
+  padding: 16px;
+  border-radius: 12px;
+  background: var(--muted);
+  font-size: 15px;
+  line-height: 24px;
+  counter-increment: pd-step;
+}
+
+.pd-steps li::before {
+  content: counter(pd-step);
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 9999px;
+  background: var(--ink);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+}
+
 @media (min-width: 768px) {
   .pd-root > :where(:not(.pd-block, img, .pd-crop, p:has(> img:only-child), .pd-tags)) {
     padding-inline: 48px;
@@ -364,8 +416,15 @@
   .pd-checks,
   .pd-details,
   .pd-compare,
-  .pd-spec {
+  .pd-spec,
+  .pd-steps {
     padding: 88px 48px;
+  }
+
+  .pd-steps li {
+    padding: 20px 24px;
+    font-size: 17px;
+    line-height: 28px;
   }
 
   .pd-checks ul {

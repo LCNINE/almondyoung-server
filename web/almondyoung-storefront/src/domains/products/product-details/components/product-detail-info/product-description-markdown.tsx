@@ -1,11 +1,11 @@
 "use client"
 
 import Image from "next/image"
-import { useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import ReactMarkdown from "react-markdown"
 import remarkDirective from "remark-directive"
 import remarkGfm from "remark-gfm"
-import { parseImageCrop, type ImageCrop } from "@packages/product-description/directive"
+import { fitCropToAspect, parseImageCrop, type ImageCrop } from "@packages/product-description/directive"
 import { remarkProductDescription } from "@packages/product-description/remark-blocks"
 import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
 import { Badge } from "@/components/ui/badge"
@@ -36,10 +36,11 @@ export function ProductDescriptionMarkdown({
             if (typeof src !== "string" || !src) return null
 
             const crop = parseImageCrop(node?.properties?.dataCrop)
+            const aspect = Number(node?.properties?.dataAspect) || undefined
             const imageAlt = alt || imageAltFallback || ""
 
             return crop ? (
-              <CroppedImage src={src} alt={imageAlt} crop={crop} />
+              <CroppedImage src={src} alt={imageAlt} crop={crop} aspect={aspect} />
             ) : (
               <DescriptionImage src={src} alt={imageAlt} className={className} />
             )
@@ -103,9 +104,31 @@ function DescriptionImage({
 /**
  * 원본 이미지의 일부(crop)만 보여 준다. 원본 크기를 알기 전엔 crop 비율로 칸을 잡고,
  * 로드되면 실제 픽셀 비율로 바로잡는다 — 정사각형이 아닌 원본에서도 영역이 어긋나지 않게.
+ * aspect 가 오면(격자 칸) 칸 비율을 고정하고 crop 을 그 비율로 넓힌다 — 칸마다 높이가 들쑥날쑥하지 않게.
  */
-function CroppedImage({ src, alt, crop }: { src: string; alt: string; crop: ImageCrop }) {
-  const [ratio, setRatio] = useState(crop.w / crop.h)
+function CroppedImage({
+  src,
+  alt,
+  crop,
+  aspect,
+}: {
+  src: string
+  alt: string
+  crop: ImageCrop
+  aspect?: number
+}) {
+  const [size, setSize] = useState<{ width: number; height: number } | null>(null)
+  const imgRef = useRef<HTMLImageElement>(null)
+
+  // 서버 렌더된 img 가 하이드레이션 전에 다 받아지면 React 는 onLoad 를 부르지 않는다(캐시된 이미지).
+  // 그대로 두면 격자 칸 이미지가 끝까지 가려져 있으니 마운트 때 한 번 직접 읽는다.
+  useEffect(() => {
+    const loaded = imgRef.current?.complete ? naturalSize(imgRef.current) : null
+    if (loaded) setSize(loaded)
+  }, [])
+
+  const shown = size && aspect ? fitCropToAspect(crop, size.width, size.height, aspect) : crop
+  const ratio = aspect ?? (size ? (crop.w * size.width) / (crop.h * size.height) : crop.w / crop.h)
 
   return (
     <span className="pd-crop" style={{ aspectRatio: ratio }}>
@@ -113,19 +136,26 @@ function CroppedImage({ src, alt, crop }: { src: string; alt: string; crop: Imag
       <img
         src={src}
         alt={alt}
+        ref={imgRef}
         loading="lazy"
         onLoad={(event) => {
-          const { naturalWidth, naturalHeight } = event.currentTarget
-          if (naturalWidth && naturalHeight) {
-            setRatio((crop.w * naturalWidth) / (crop.h * naturalHeight))
-          }
+          const loaded = naturalSize(event.currentTarget)
+          if (loaded) setSize(loaded)
         }}
         style={{
-          width: `${100 / crop.w}%`,
-          left: `${(-crop.x / crop.w) * 100}%`,
-          top: `${(-crop.y / crop.h) * 100}%`,
+          // 격자 칸은 원본 크기를 알아야 crop 을 칸 비율로 넓힐 수 있어 그때까지 가린다
+          opacity: aspect && !size ? 0 : 1,
+          width: `${100 / shown.w}%`,
+          left: `${(-shown.x / shown.w) * 100}%`,
+          top: `${(-shown.y / shown.h) * 100}%`,
         }}
       />
     </span>
   )
+}
+
+function naturalSize(img: HTMLImageElement) {
+  return img.naturalWidth && img.naturalHeight
+    ? { width: img.naturalWidth, height: img.naturalHeight }
+    : null
 }

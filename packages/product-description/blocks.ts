@@ -14,6 +14,7 @@ export const DESCRIPTION_BLOCK_NAMES = [
   'point',
   'details',
   'spec',
+  'steps',
 ] as const;
 
 export type DescriptionBlockName = (typeof DESCRIPTION_BLOCK_NAMES)[number];

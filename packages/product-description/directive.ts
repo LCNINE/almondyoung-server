@@ -30,6 +30,10 @@ export type ProductImageDirectiveParseResult =
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+export function isProductImageFileId(value: unknown): value is string {
+  return typeof value === 'string' && UUID_RE.test(value);
+}
+
 export function parseProductImageDirective(node: ProductImageDirectiveNode): ProductImageDirectiveParseResult {
   if (node.name !== PRODUCT_IMAGE_DIRECTIVE_NAME) {
     return { ok: false, reason: 'not_product_image_directive' };
@@ -66,6 +70,49 @@ export function parseImageCrop(value: unknown): ImageCrop | undefined {
   const inRange = x >= 0 && y >= 0 && w > 0 && h > 0 && x + w <= 1.0001 && y + h <= 1.0001;
 
   return inRange ? { x, y, w, h } : undefined;
+}
+
+/**
+ * 칸보다 이 배수 넘게 세로로 길면 "같은 대상이 두 줄 이상 잡힌 영역"으로 본다. 네일 칩 하나는 칸(3:5)
+ * 비율과 큰 차이가 없고, 칩 두 줄을 한꺼번에 잡은 영역은 칸의 두 배 가까이 길다(2026-11-18 실측 2.07배).
+ */
+const STACKED_TARGET_RATIO = 1.6;
+
+/**
+ * 격자 칸(예: 3:4)에 맞게 crop 비율을 맞춘다. aspect 와 결과는 픽셀 기준 가로/세로 비율이다 —
+ * 0~1 비율 crop 은 원본 크기를 알아야 실제 비율이 정해진다.
+ * - 대상이 두 줄 이상 잡힐 만큼 세로로 길면(STACKED_TARGET_RATIO) 위쪽을 기준으로 세로를 줄여 첫 대상만 남긴다.
+ *   가로를 넓히면 옆 대상까지 딸려 들어온다.
+ * - 그 밖에는 영역을 자르지 않고 모자란 쪽 변을 넓혀 칸 비율에 맞춘다. 중심은 지키고, 원본 밖으로 나가면
+ *   안쪽으로 밀며, 원본이 칸 비율을 못 담으면 다른 변을 줄인다.
+ */
+export function fitCropToAspect(crop: ImageCrop, imageWidth: number, imageHeight: number, aspect: number): ImageCrop {
+  const width = crop.w * imageWidth;
+  const height = crop.h * imageHeight;
+
+  if (aspect / (width / height) > STACKED_TARGET_RATIO) {
+    return { ...crop, h: width / aspect / imageHeight };
+  }
+
+  let fittedWidth = Math.max(width, height * aspect);
+  let fittedHeight = fittedWidth / aspect;
+
+  if (fittedWidth > imageWidth) {
+    fittedWidth = imageWidth;
+    fittedHeight = fittedWidth / aspect;
+  }
+
+  if (fittedHeight > imageHeight) {
+    fittedHeight = imageHeight;
+    fittedWidth = fittedHeight * aspect;
+  }
+
+  const centerX = (crop.x + crop.w / 2) * imageWidth;
+  const centerY = (crop.y + crop.h / 2) * imageHeight;
+  const left = Math.min(Math.max(centerX - fittedWidth / 2, 0), imageWidth - fittedWidth);
+  const top = Math.min(Math.max(centerY - fittedHeight / 2, 0), imageHeight - fittedHeight);
+
+  return { x: left / imageWidth, y: top / imageHeight, w: fittedWidth / imageWidth, h: fittedHeight / imageHeight };
 }
 
 export function formatImageCrop({ x, y, w, h }: ImageCrop): string {
