@@ -82,6 +82,8 @@ export interface ShipmentByWaybillResult {
   workItemStatus: string | null;
   recipientMasked: string;
   deliveryNote: string | null;
+  /** 위탁 업체(3pl) 박스면 그 화주 이름 — 검수할 때 업체 물건임을 보여 준다. 자사 박스는 null */
+  ownerName: string | null;
   lines: ShipmentByWaybillLine[];
   /** 송장 상태(스펙 §10.5). 활성 작업 항목이 없으면 null — 시작된 배치에서 빠진 박스(withdrawn)만 예외. */
   labelState: LabelState | null;
@@ -262,6 +264,7 @@ export class ShipmentWaybillReader {
         workItemStatus: workItem?.status ?? null,
         recipientMasked: maskName(readRecipientName(shipment.recipientSnapshot)),
         deliveryNote: readDeliveryNote(shipment.recipientSnapshot),
+        ownerName: await this.loadOwnerName(trx, waybill.shipmentId),
         lines: lines.map((line) => ({
           ...line,
           pickedQty: pickedByLine.get(line.shipmentLineId) ?? 0,
@@ -327,6 +330,25 @@ export class ShipmentWaybillReader {
       byLine.set(row.shipmentLineId, list);
     }
     return byLine;
+  }
+
+  private async loadOwnerName(trx: DbTx, shipmentId: string): Promise<string | null> {
+    const [row] = await trx
+      .select({ name: wmsTables.holders.name })
+      .from(wmsTables.shipmentLines)
+      .innerJoin(
+        wmsTables.fulfillmentOrderItems,
+        eq(wmsTables.fulfillmentOrderItems.id, wmsTables.shipmentLines.fulfillmentOrderItemId),
+      )
+      .innerJoin(
+        wmsTables.fulfillmentOrders,
+        eq(wmsTables.fulfillmentOrders.id, wmsTables.fulfillmentOrderItems.fulfillmentOrderId),
+      )
+      .innerJoin(wmsTables.holders, eq(wmsTables.holders.id, wmsTables.fulfillmentOrders.ownerId))
+      .where(eq(wmsTables.shipmentLines.shipmentId, shipmentId))
+      .limit(1);
+
+    return row?.name ?? null;
   }
 
   private loadLines(trx: DbTx, shipmentId: string) {
@@ -405,6 +427,7 @@ export class ShipmentWaybillReader {
       workItemStatus: null,
       recipientMasked: maskName(readRecipientName(shipment.recipientSnapshot)),
       deliveryNote: readDeliveryNote(shipment.recipientSnapshot),
+      ownerName: await this.loadOwnerName(trx, waybill.shipmentId),
       lines: lines.map((line) => ({ ...line, pickedQty: 0, allocations: [] })),
       labelState: 'withdrawn',
       labelChanges: [],

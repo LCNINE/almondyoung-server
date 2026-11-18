@@ -82,6 +82,8 @@ export interface ShipmentByWaybill {
   exitTo: 'draft' | 'canceled' | null;
   /** 배송메모(core A5). 없으면 null, 옛 core 면 필드가 없다 */
   deliveryNote?: string | null;
+  /** 위탁 업체(3pl) 박스면 그 화주 이름. 자사 박스는 null, 옛 core 면 필드가 없다 */
+  ownerName?: string | null;
   /** 결품 보고 버전(core A5). 활성 작업 항목과 active 세션이 둘 다 있을 때만 값이 있다 */
   shortPickContext?: ShortPickContext | null;
 }

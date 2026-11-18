@@ -337,7 +337,7 @@ export function InspectWork({
         intake={work.intakeBlocked || cancelWaiting ? 'blocked' : 'open'}
         left={
           <>
-            <BoxCard trackingNo={box.trackingNo} recipient={box.recipientMasked} deliveryNote={box.deliveryNote} />
+            <BoxCard trackingNo={box.trackingNo} recipient={box.recipientMasked} deliveryNote={box.deliveryNote} ownerName={box.ownerName} />
             <BigPanel content={big} />
             {work.queueError ? (
               <QueueTrouble storage={!!work.storageError} onRetry={() => void work.retryHead().catch(() => {})} />

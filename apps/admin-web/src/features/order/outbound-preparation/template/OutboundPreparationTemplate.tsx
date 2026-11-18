@@ -126,7 +126,14 @@ function PreparationWarehouse({
   const shipmentRead = useCan(['fulfillment.shipment.read']);
   const canRead = shipmentRead.status === 'ready' && shipmentRead.allowed;
 
-  const summary = useOutboundPreparationSummary(warehouseId, canRead, 'always');
+  // 화주(= 송장 보내는 분)로 거른다. 여럿 고르면 같은 업체의 여러 판매처 상자를 한 번에 본다
+  const [holderFilter, setHolderFilter] = useState<string[]>([]);
+  const summary = useOutboundPreparationSummary(
+    warehouseId,
+    canRead,
+    'always',
+    holderFilter
+  );
   const split = useSplitUnreservedMany();
   const { canRun } = usePermissionCheck();
 
@@ -142,6 +149,13 @@ function PreparationWarehouse({
   const [sheetShipmentId, setSheetShipmentId] = useState('');
   const [target, setTarget] = useState(initialTarget);
   const [targetNotice, setTargetNotice] = useState<string | null>(null);
+  const holderOptions = summary.data?.holders ?? [];
+
+  // 가려진 상자가 선택된 채 출고 준비로 넘어가지 않게 고른 것을 비운다
+  const pickHolders = (next: string[]) => {
+    setHolderFilter(next);
+    setSelections({});
+  };
 
   useEffect(() => {
     if (initialTarget && !target) {
@@ -435,6 +449,50 @@ function PreparationWarehouse({
             </SelectContent>
           </Select>
         </div>
+        {(holderOptions.length > 1 || holderFilter.length > 0) && (
+          <div className="space-y-1.5">
+            <span className="text-sm font-medium leading-none">화주</span>
+            <div
+              role="group"
+              aria-label="화주"
+              className="flex flex-wrap gap-1.5"
+            >
+              <Button
+                type="button"
+                size="sm"
+                variant={holderFilter.length === 0 ? 'default' : 'outline'}
+                aria-pressed={holderFilter.length === 0}
+                disabled={busy}
+                onClick={() => pickHolders([])}
+              >
+                전체
+              </Button>
+              {holderOptions.map((holder) => {
+                const on = holderFilter.includes(holder.key);
+
+                return (
+                  <Button
+                    key={holder.key}
+                    type="button"
+                    size="sm"
+                    variant={on ? 'default' : 'outline'}
+                    aria-pressed={on}
+                    disabled={busy}
+                    onClick={() =>
+                      pickHolders(
+                        on
+                          ? holderFilter.filter((key) => key !== holder.key)
+                          : [...holderFilter, holder.key]
+                      )
+                    }
+                  >
+                    {holder.name} {holder.count}
+                  </Button>
+                );
+              })}
+            </div>
+          </div>
+        )}
         <div className="space-y-1.5">
           <Label htmlFor="preparation-picking">피킹 방식</Label>
           <Select
@@ -529,6 +587,7 @@ function PreparationWarehouse({
               }}
               onPrepare={prepare}
               onSplit={() => setConfirmingSplit(true)}
+              holders={holderFilter}
             />
             {bucket && (
               <BucketList

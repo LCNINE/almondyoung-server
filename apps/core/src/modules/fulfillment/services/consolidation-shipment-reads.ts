@@ -29,6 +29,9 @@ export interface OptionLine {
   channelOrderId: string | null;
   salesChannel: string | null;
   salesOrderCreatedAt: Date | null;
+  // 위탁 업체 출고(3pl)면 그 화주. 자사 출고는 null
+  ownerId?: string | null;
+  ownerName?: string | null;
 }
 
 export interface ShipmentProgress {
@@ -69,6 +72,8 @@ export async function loadShipmentLines(trx: ReadDb, shipmentIds: string[]): Pro
       channelOrderId: wmsTables.salesOrders.channelOrderId,
       salesChannel: wmsTables.salesOrders.salesChannel,
       salesOrderCreatedAt: wmsTables.salesOrders.orderDate,
+      ownerId: wmsTables.fulfillmentOrders.ownerId,
+      ownerName: wmsTables.holders.name,
     })
     .from(wmsTables.shipmentLines)
     .innerJoin(
@@ -81,6 +86,7 @@ export async function loadShipmentLines(trx: ReadDb, shipmentIds: string[]): Pro
     )
     .innerJoin(wmsTables.skus, eq(wmsTables.skus.id, wmsTables.shipmentLines.skuId))
     .leftJoin(wmsTables.salesOrders, eq(wmsTables.salesOrders.id, wmsTables.fulfillmentOrders.salesOrderId))
+    .leftJoin(wmsTables.holders, eq(wmsTables.holders.id, wmsTables.fulfillmentOrders.ownerId))
     .where(inArray(wmsTables.shipmentLines.shipmentId, shipmentIds))
     .orderBy(asc(wmsTables.shipmentLines.createdAt), asc(wmsTables.shipmentLines.id));
 }

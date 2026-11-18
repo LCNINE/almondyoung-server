@@ -628,7 +628,7 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
         <WorkGrid
           left={
             <>
-              <BoxCard trackingNo={view.box.trackingNo} recipient={view.box.recipientMasked} />
+              <BoxCard trackingNo={view.box.trackingNo} recipient={view.box.recipientMasked} ownerName={view.box.ownerName} />
               {/* 방금 찍은 것의 거절 사유가 출력 상태보다 먼저다(§6.2 «오류음 + 사유 한 줄») */}
               {alert ? (
                 <BigPanel content={{ kind: 'alert', ...alert }} />
@@ -682,7 +682,7 @@ function Inspection({ warehouseId, prefs, print }: { warehouseId: string; prefs:
         <WorkGrid
           left={
             <>
-              <BoxCard trackingNo={view.box.trackingNo} recipient={view.box.recipientMasked} />
+              <BoxCard trackingNo={view.box.trackingNo} recipient={view.box.recipientMasked} ownerName={view.box.ownerName} />
               <BigPanel
                 content={{
                   kind: 'notice',

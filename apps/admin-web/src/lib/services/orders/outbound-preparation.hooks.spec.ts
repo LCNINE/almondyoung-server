@@ -68,7 +68,9 @@ describe('outbound preparation hooks', () => {
         meta: undefined,
       });
       expect(orders.outboundPreparation.summary).toHaveBeenCalledWith(
-        warehouseId
+        warehouseId,
+        undefined,
+        []
       );
     }
   );
@@ -130,8 +132,8 @@ describe('outbound preparation hooks', () => {
     await options.mutationFn!('ready', context);
 
     expect(jest.mocked(orders.outboundPreparation.summary).mock.calls).toEqual([
-      ['w1', { bucket: 'ready', offset: 200 }],
-      ['w1', { bucket: 'ready', offset: 400 }],
+      ['w1', { bucket: 'ready', offset: 200 }, []],
+      ['w1', { bucket: 'ready', offset: 400 }, []],
     ]);
     const updated = queryClient.getQueryData<OutboundPreparationSummary>([
       'outbound-preparation',
