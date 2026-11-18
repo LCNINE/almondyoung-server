@@ -103,7 +103,7 @@ function csvField(v: string): string {
 
 export function toCsv(rows: CsvRow[]): string {
   const lines = [CSV_HEADER.join(','), ...rows.map((r) => CSV_HEADER.map((h) => csvField(r[h])).join(','))];
-  return `﻿${lines.join('\r\n')}\r\n`;
+  return `\uFEFF${lines.join('\r\n')}\r\n`;
 }
 
 function splitCsv(text: string): string[][] {
@@ -140,7 +140,7 @@ function splitCsv(text: string): string[][] {
 }
 
 export function parseCsv(text: string): CsvRow[] {
-  const records = splitCsv(text.replace(/^﻿/, ''));
+  const records = splitCsv(text.replace(/^\uFEFF/, ''));
   const header = records[0]?.map((h) => h.trim()) ?? [];
   const idx = new Map<string, number>();
   for (const name of CSV_HEADER) {

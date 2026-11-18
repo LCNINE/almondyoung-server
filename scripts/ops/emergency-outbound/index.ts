@@ -7,12 +7,12 @@
  */
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { parseArgs, runDir } from './args';
-import { httpCoreApi } from './core-api';
+import { Command, parseArgs, runDir } from './args';
+import { CoreApi, httpCoreApi } from './core-api';
 import { runDispatch } from './dispatch';
-import { preflightProblems } from './preflight';
+import { preflightProblems, WAREHOUSE_READ_PERMISSION } from './preflight';
 import { runPrepare } from './prepare';
-import { readRun } from './run-state';
+import { readRun, RunState } from './run-state';
 import { myPermissions, openSession } from './session';
 
 const log = (line: string) => console.log(line);
@@ -20,47 +20,59 @@ const log = (line: string) => console.log(line);
 async function main(): Promise<number> {
   const cmd = parseArgs(process.argv.slice(2), new Date());
   const dir = resolve(process.cwd(), runDir(cmd.run));
-  const run = readRun(dir);
+  if (cmd.cmd === 'prepare') return prepareMain(cmd, dir);
 
-  let warehouseId: string;
-  if (cmd.cmd === 'prepare') warehouseId = cmd.warehouseId;
-  else {
-    if (!run) {
-      log(
-        `${dir}/run.json 이 없다 — --run ${cmd.run} 의 prepare 를 이 PC 에서 돌린 적이 없다. 실행 id 와 폴더를 확인하라`,
-      );
-      return 1;
-    }
-    warehouseId = run.warehouseId;
+  const state = readRun(dir);
+  if (!state) {
+    log(
+      `${dir}/run.json 이 없다 — --run ${cmd.run} 의 prepare 를 이 PC 에서 돌린 적이 없다. 실행 id 와 폴더를 확인하라`,
+    );
+    return 1;
   }
+  return dispatchMain(cmd, state);
+}
 
+/** 세션을 열고 사전 점검(권한·낱개 피킹)을 한다. 실패면 null — 아무것도 바꾸지 않았다. */
+async function openChecked(cmd: Command, warehouseId: string): Promise<CoreApi | null> {
   log(`${cmd.apply ? '[APPLY]' : '[dry-run]'} ${cmd.cmd} · stage ${cmd.stage} · 실행 ${cmd.run}`);
   const session = await openSession(cmd.stage);
   const api = httpCoreApi(session.coreUrl, session.token);
 
-  const [permissions, warehouse] = await Promise.all([myPermissions(session), api.warehouse(warehouseId)]);
-  const problems = preflightProblems({ permissions, supportedPickingStrategies: warehouse.supportedPickingStrategies });
+  const permissions = await myPermissions(session);
+  // 창고 조회 권한이 없으면 조회가 403 으로 죽어 다른 문제를 못 보여 준다 — 권한 문제로 먼저 보고한다.
+  const warehouse = permissions.includes(WAREHOUSE_READ_PERMISSION) ? await api.warehouse(warehouseId) : null;
+  const problems = preflightProblems({
+    permissions,
+    supportedPickingStrategies: warehouse?.supportedPickingStrategies ?? null,
+  });
   if (problems.length > 0) {
     log('사전 점검 실패 — 아무것도 바꾸지 않았다');
     for (const p of problems) log(`  - ${p}`);
-    return 1;
+    return null;
   }
-  log(`창고 ${warehouse.name} — 사전 점검 통과`);
+  log(`창고 ${warehouse?.name ?? warehouseId} — 사전 점검 통과`);
+  return api;
+}
 
-  if (cmd.cmd === 'prepare') {
-    const r = await runPrepare(api, { warehouseId, run: cmd.run, dir, apply: cmd.apply, log });
-    log(`요약: 대상 ${r.targets.length} · 뺀 상자 ${r.skipped.length}`);
-    if (!cmd.apply) log('dry-run 이다 — 아무것도 바꾸지 않았다. 확인했으면 --apply 로 다시 돌린다');
-    if (r.problems.length > 0) {
-      log('사람이 봐야 할 문제:');
-      for (const p of r.problems) log(`  - ${p}`);
-      return 2;
-    }
-    return 0;
+async function prepareMain(cmd: Extract<Command, { cmd: 'prepare' }>, dir: string): Promise<number> {
+  const api = await openChecked(cmd, cmd.warehouseId);
+  if (!api) return 1;
+  const r = await runPrepare(api, { warehouseId: cmd.warehouseId, run: cmd.run, dir, apply: cmd.apply, log });
+  log(`요약: 대상 ${r.targets.length} · 뺀 상자 ${r.skipped.length}`);
+  if (!cmd.apply) log('dry-run 이다 — 아무것도 바꾸지 않았다. 확인했으면 --apply 로 다시 돌린다');
+  if (r.problems.length > 0) {
+    log('사람이 봐야 할 문제:');
+    for (const p of r.problems) log(`  - ${p}`);
+    return 2;
   }
+  return 0;
+}
 
+async function dispatchMain(cmd: Extract<Command, { cmd: 'dispatch' }>, state: RunState): Promise<number> {
+  const api = await openChecked(cmd, state.warehouseId);
+  if (!api) return 1;
   const csvText = readFileSync(resolve(process.cwd(), cmd.csv), 'utf8');
-  const r = await runDispatch(api, { csvText, state: run as NonNullable<typeof run>, apply: cmd.apply, log });
+  const r = await runDispatch(api, { csvText, state, apply: cmd.apply, log });
   const count = (o: string) => r.rows.filter((x) => x.outcome === o).length;
   log(
     `요약: 발송 ${count('dispatched')} · 발송 예정 ${count('would-dispatch')} · 이미 발송 ${count('already')} · ` +

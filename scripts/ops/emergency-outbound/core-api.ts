@@ -28,6 +28,7 @@ export class CoreApiError extends Error {
 }
 
 /**
+ * 이름 출처: libs/shared/src/filters/domain-exceptions.ts 의 getErrorCode()·http-exception.filter.ts 의 상태별 기본값.
  * core 의 `ApplicationException`(ConflictError 등)은 본문 `code` 에 «일반 HTTP 이름»(CONFLICT…)을 싣고
  * 도메인 코드는 메시지 앞(`DOMAIN_CODE: 설명`)에 둔다. `HttpException({ code })` 는 도메인 코드가 `code` 에 바로 있다.
  */
@@ -38,7 +39,10 @@ const GENERIC_CODES: ReadonlySet<string> = new Set([
   'FORBIDDEN',
   'UNAUTHORIZED',
   'UNPROCESSABLE_ENTITY',
+  'TOO_MANY_REQUESTS',
   'INTERNAL_SERVER_ERROR',
+  'UPSTREAM_UNAVAILABLE',
+  'SERVICE_UNAVAILABLE',
 ]);
 const MESSAGE_PREFIX = /^([A-Z][A-Z0-9_]{2,}):/;
 
@@ -66,7 +70,8 @@ export interface PreparationShipment {
   single: boolean;
   reason: string | null;
   lines: { name: string; qty: number; reservedQty: number }[];
-  split: unknown | null;
+  /** 나누기 정보 — 없으면 null. 스크립트는 읽지 않는다. */
+  split: unknown;
 }
 
 /** core `PREPARATION_BUCKETS` (outbound-preparation-classify.ts) — 조회의 `bucket` 이 여섯 다 받는다. */
@@ -291,6 +296,7 @@ export function httpCoreApi(coreUrl: string, token: () => Promise<string>): Core
     if (!res.ok) {
       throw coreApiErrorFrom(res.status, parsed, `${method} /${path.split('?')[0]}`);
     }
+    // HTTP 경계 — 본문 모양은 core DTO(위 타입)를 믿는다. 런타임 검증은 하지 않는다(스크립트가 쓰는 필드만 읽는다).
     return parsed === null ? null : (parsed as T);
   }
 

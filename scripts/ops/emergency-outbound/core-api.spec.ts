@@ -44,7 +44,7 @@ describe('httpCoreApi', () => {
 
   it('sends bearer and idempotency key', async () => {
     reply = { status: 200, body: JSON.stringify({ succeeded: ['a'], failed: [] }) };
-    const api = httpCoreApi(url, async () => 't1');
+    const api = httpCoreApi(url, () => Promise.resolve('t1'));
     const r = await api.plan(['a'], 'emergency:r:plan:a');
     expect(r.succeeded).toEqual(['a']);
     expect(seen[0].method).toBe('POST');
@@ -55,7 +55,7 @@ describe('httpCoreApi', () => {
   });
 
   it('asks for a token on every request', async () => {
-    const token = jest.fn(async () => 't1');
+    const token = jest.fn(() => Promise.resolve('t1'));
     const api = httpCoreApi(url, token);
     await api.warehouse('w1');
     await api.warehouse('w1');
@@ -71,7 +71,7 @@ describe('httpCoreApi', () => {
         errors: [{ shipmentId: 's1', reason: 'STOCK_SHORT' }],
       }),
     };
-    const api = httpCoreApi(url, async () => 't1');
+    const api = httpCoreApi(url, () => Promise.resolve('t1'));
     const err = await api.startBatch('b1', 'k').catch((e: unknown) => e);
     expect(err).toBeInstanceOf(CoreApiError);
     const e = err as CoreApiError;
@@ -83,7 +83,7 @@ describe('httpCoreApi', () => {
   describe('error code derivation', () => {
     const fail = async (status: number, body: unknown): Promise<CoreApiError> => {
       reply = { status, body: JSON.stringify(body) };
-      const api = httpCoreApi(url, async () => 't1');
+      const api = httpCoreApi(url, () => Promise.resolve('t1'));
       return (await api.label('s1').catch((e: unknown) => e)) as CoreApiError;
     };
 
@@ -112,6 +112,12 @@ describe('httpCoreApi', () => {
       expect(e.code).toBe('INTERNAL_SERVER_ERROR');
     });
 
+    it('takes the domain code from the message prefix of an unavailable error', async () => {
+      const e = await fail(503, { code: 'SERVICE_UNAVAILABLE', message: 'CARRIER_DOWN: hanjin unreachable' });
+      expect(e.code).toBe('CARRIER_DOWN');
+      expect(e.httpCode).toBe('SERVICE_UNAVAILABLE');
+    });
+
     it('derives from the message when there is no body.code at all', async () => {
       const e = await fail(404, { message: 'NOT_THERE: gone' });
       expect(e.code).toBe('NOT_THERE');
@@ -120,13 +126,13 @@ describe('httpCoreApi', () => {
 
   it('returns null for no active waybill', async () => {
     reply = { status: 200, body: '' };
-    const api = httpCoreApi(url, async () => 't1');
+    const api = httpCoreApi(url, () => Promise.resolve('t1'));
     expect(await api.activeWaybill('s1')).toBeNull();
   });
 
   it('never puts the token in an error message', async () => {
     reply = { status: 500, body: JSON.stringify({ success: false, message: 'boom' }) };
-    const api = httpCoreApi(url, async () => 't1');
+    const api = httpCoreApi(url, () => Promise.resolve('t1'));
     const e = (await api.warehouse('w1').catch((x: unknown) => x)) as CoreApiError;
     expect(e).toBeInstanceOf(CoreApiError);
     expect(e.message).not.toContain('t1');
@@ -135,7 +141,7 @@ describe('httpCoreApi', () => {
 
   it('builds routes and bodies', async () => {
     reply = { status: 200, body: JSON.stringify({ batchId: 'b1', operationId: 'o' }) };
-    const api = httpCoreApi(url, async () => 't1');
+    const api = httpCoreApi(url, () => Promise.resolve('t1'));
     await api.createBatch('w1', 'N', 'k1');
     expect(seen[0].url).toBe('/outbound-batches/v2');
     expect(JSON.parse(seen[0].body)).toEqual({

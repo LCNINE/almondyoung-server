@@ -60,6 +60,16 @@ export async function myPermissions(session: EmergencySession): Promise<string[]
     headers: { authorization: `Bearer ${await session.token()}` },
   });
   if (!res.ok) throw new Error(`내 권한 조회 실패 ${res.status}`);
-  const body = (await res.json()) as { data?: { permissions?: string[] }; permissions?: string[] };
-  return body.data?.permissions ?? body.permissions ?? [];
+  const body: unknown = await res.json();
+  const list =
+    (isRecord(body) && isRecord(body.data) ? body.data.permissions : undefined) ??
+    (isRecord(body) ? body.permissions : undefined);
+  if (!Array.isArray(list) || !list.every((p): p is string => typeof p === 'string')) {
+    throw new Error('내 권한 조회 응답에 permissions 목록이 없다 — user-service 응답 모양이 바뀌었는지 확인한다');
+  }
+  return list;
+}
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
