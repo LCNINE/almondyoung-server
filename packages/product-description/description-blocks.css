@@ -64,18 +64,15 @@
 /* cover: 사진 위 어두운 그라데이션 + 흰 글씨 */
 .pd-cover {
   position: relative;
-  display: flex;
-  align-items: flex-end;
-  aspect-ratio: 4 / 5;
   overflow: hidden;
   background: var(--ink, #20232a);
 }
 
 .pd-cover .pd-cover-img {
-  position: absolute;
-  inset: 0;
+  display: block;
   width: 100%;
-  height: 100%;
+  height: auto;
+  min-height: 360px;
   object-fit: cover;
 }
 
@@ -92,6 +89,13 @@
   z-index: 1;
   padding: 0 24px 40px;
   color: #fff;
+}
+
+.pd-cover-img ~ .pd-cover-body {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
 }
 
 .pd-kicker {
@@ -211,15 +215,10 @@
 }
 
 /* crop 없이 통째로 들어온 이미지도 격자 칸(remark-blocks 의 칸 비율과 같게)에 맞춰 채운다 */
-.pd-duo > img,
-.pd-swatch > img {
+.pd-duo > img {
   aspect-ratio: 3 / 4;
   height: auto;
   object-fit: cover;
-}
-
-.pd-swatch > img {
-  aspect-ratio: 3 / 5;
 }
 
 /* crop: 원본 일부만 보여 주는 칸 (product-description-markdown.tsx 의 CroppedImage) */
@@ -280,6 +279,18 @@
   gap: 12px;
 }
 
+.pd-swatches:has(> :only-child) {
+  grid-template-columns: 1fr;
+}
+
+.pd-swatches:has(> :nth-child(2):last-child) {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+.pd-swatches:has(> :nth-child(3):last-child) {
+  grid-template-columns: repeat(3, 1fr);
+}
+
 .pd-swatch {
   margin: 0;
   border-radius: 16px;
@@ -291,17 +302,18 @@
   padding: 12px 16px;
   font-size: 15px;
   font-weight: 700;
+  word-break: keep-all;
 }
 
 .pd-swatch figcaption strong {
-  display: inline-block;
-  margin-right: 4px;
+  display: block;
+  width: fit-content;
+  margin-bottom: 4px;
   padding: 0 8px;
   border-radius: 4px;
   background: var(--ink, #20232a);
   color: #fff;
   font-size: 11px;
-  vertical-align: 2px;
 }
 
 /* spec: 볼드 라벨 점 목록 */
@@ -323,6 +335,11 @@
   height: 4px;
   border-radius: 9999px;
   background: var(--border);
+}
+
+.pd-spec li:has(> strong) {
+  display: grid;
+  grid-template-columns: auto 1fr;
 }
 
 .pd-spec li strong {
@@ -387,10 +404,6 @@
     margin-bottom: 28px;
     font-size: 32px;
     line-height: 44px;
-  }
-
-  .pd-cover {
-    aspect-ratio: 1 / 1;
   }
 
   .pd-cover-body {

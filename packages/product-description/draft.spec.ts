@@ -103,15 +103,15 @@ describe('mergeExtractResults', () => {
 describe('normalizeRegions', () => {
   const size = { width: 1000, height: 500 };
 
-  it('픽셀 좌표를 원본 크기에 대한 비율로 바꾼다', () => {
+  it('픽셀 좌표를 변마다 영역의 15% 넓힌 뒤 원본 크기에 대한 비율로 바꾼다', () => {
     expect(normalizeRegions([{ label: 'MG04 문 펄', left: 320, top: 100, width: 80, height: 100 }], size)).toEqual([
-      { label: 'MG04 문 펄', x: 0.32, y: 0.2, w: 0.08, h: 0.2 },
+      { label: 'MG04 문 펄', x: 0.308, y: 0.17, w: 0.104, h: 0.26 },
     ]);
   });
 
   it('원본 밖으로 나간 부분은 잘라 낸다', () => {
     expect(normalizeRegions([{ label: '오른쪽 끝', left: 900, top: -50, width: 300, height: 200 }], size)).toEqual([
-      { label: '오른쪽 끝', x: 0.9, y: 0, w: 0.1, h: 0.3 },
+      { label: '오른쪽 끝', x: 0.855, y: 0, w: 0.145, h: 0.36 },
     ]);
   });
 

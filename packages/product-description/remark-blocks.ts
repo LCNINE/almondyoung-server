@@ -37,9 +37,8 @@ export type RemarkProductDescriptionOptions = {
 
 const DIRECTIVE_TYPES = new Set(['leafDirective', 'textDirective', 'containerDirective']);
 
-/** 격자 칸 비율(가로/세로). compare 두 장은 3:4, 옵션 카드는 네일 칩 모양에 가까운 3:5. */
+/** compare 두 장의 칸 비율(가로/세로). 옵션 카드는 칸 비율을 강제하면 칩이 잘려 영역 비율 그대로 둔다. */
 const COMPARE_IMAGE_ASPECT = '0.75';
-const SWATCH_IMAGE_ASPECT = '0.6';
 
 export function remarkProductDescription(options: RemarkProductDescriptionOptions) {
   return () => (tree: DescriptionMdastNode) => {
@@ -139,10 +138,7 @@ function swatch(node: DescriptionMdastNode, resolveImageUrl: (fileId: string) =>
 
   return [
     element('figure', 'pd-swatch', [
-      withAspect(
-        image(parsed.fileId, parsed.alt || name, parsed.crop && formatImageCrop(parsed.crop), resolveImageUrl),
-        SWATCH_IMAGE_ASPECT,
-      ),
+      image(parsed.fileId, parsed.alt || name, parsed.crop && formatImageCrop(parsed.crop), resolveImageUrl),
       { type: 'paragraph', data: { hName: 'figcaption' }, children: caption },
     ]),
   ];

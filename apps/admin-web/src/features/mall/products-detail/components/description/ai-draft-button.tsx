@@ -8,7 +8,9 @@ import {
   PRODUCT_DESCRIPTION_IMAGE_CONTEXT_ID,
   uploadFileToFileService,
 } from '@/lib/api/domains/files/upload.client';
+import { swapFileIds } from '@packages/product-description';
 import { generateAiDraft } from './generate-ai-draft';
+import { DESCRIPTION_IMAGE_COMPRESS } from './markdown-image-upload-button';
 import { shrinkImageForAi } from './shrink-image';
 
 /**
@@ -70,16 +72,32 @@ export function AiDraftButton({
 
     try {
       // Claude 는 8000px 를 넘는 이미지를 거부한다. 상세 이미지는 세로로 길어 흔히
-      // 넘으므로 업로드 전에 줄인다 (자세한 배경은 shrink-image.ts).
+      // 넘으므로 분석용으로는 줄인 사본을 올린다 (자세한 배경은 shrink-image.ts).
+      // 본문은 줄인 사본이 아니라 원본을 가리켜야 한다 — 860×12000 이 143×2000 으로 들어가 흐려졌다.
       const uploads = await Promise.all(
-        files.map(async (file) =>
-          // AI 입력용으로 이미 줄였으므로 webp 재변환을 태우지 않는다.
-          uploadFileToFileService(await shrinkImageForAi(file), {
-            contextId: PRODUCT_DESCRIPTION_IMAGE_CONTEXT_ID,
-            isPublic: true,
-            compress: false,
-          })
-        )
+        files.map(async (file) => {
+          const forAi = await shrinkImageForAi(file);
+          const [analyzed, original] = await Promise.all([
+            // AI 입력용으로 이미 줄였으므로 webp 재변환을 태우지 않는다.
+            uploadFileToFileService(forAi, {
+              contextId: PRODUCT_DESCRIPTION_IMAGE_CONTEXT_ID,
+              isPublic: true,
+              compress: false,
+            }),
+            forAi === file
+              ? undefined
+              : uploadFileToFileService(file, {
+                  contextId: PRODUCT_DESCRIPTION_IMAGE_CONTEXT_ID,
+                  isPublic: true,
+                  compress: DESCRIPTION_IMAGE_COMPRESS,
+                }),
+          ]);
+
+          return {
+            analyzedId: analyzed.id,
+            bodyId: original?.id ?? analyzed.id,
+          };
+        })
       );
 
       ticker = setInterval(() => {
@@ -88,7 +106,7 @@ export function AiDraftButton({
       }, 1000);
 
       const { markdown, truncated } = await generateAiDraft({
-        fileIds: uploads.map((upload) => upload.id),
+        fileIds: uploads.map((upload) => upload.analyzedId),
         productName,
         presetId,
         onProgress: (progress) => {
@@ -103,7 +121,12 @@ export function AiDraftButton({
         },
       });
 
-      onGenerated(markdown);
+      onGenerated(
+        swapFileIds(
+          markdown,
+          new Map(uploads.map((upload) => [upload.analyzedId, upload.bodyId]))
+        )
+      );
       toast.success(`AI 초안을 넣었습니다. (${elapsed}초)`, {
         id: toastId,
         description: truncated

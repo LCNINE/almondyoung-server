@@ -171,6 +171,9 @@ const MAX_REGIONS_PER_IMAGE = 8;
 /** 너무 작은 영역은 확대하면 뭉개진다 — 원본의 4% 미만 변은 버린다. */
 const MIN_REGION_SIDE = 0.04;
 
+/** 모델이 잡는 영역은 대상에 딱 붙어 가장자리가 잘려 보인다 — 변마다 영역 크기의 15% 를 넓힌다. */
+const REGION_PADDING = 0.15;
+
 /**
  * 모델이 준 픽셀 좌표를 원본 크기로 나눠 0~1 비율로 바꾼다. 원본 밖으로 나간 부분은 잘라 내고,
  * 크기를 모르거나 너무 작아진 영역은 버린다 — 좌표는 모델의 추정이라 그대로 믿지 않는다.
@@ -183,10 +186,12 @@ export function normalizeRegions(
 
   return regions
     .flatMap((region) => {
-      const left = Math.max(0, region.left);
-      const top = Math.max(0, region.top);
-      const right = Math.min(size.width, region.left + region.width);
-      const bottom = Math.min(size.height, region.top + region.height);
+      const padX = region.width * REGION_PADDING;
+      const padY = region.height * REGION_PADDING;
+      const left = Math.max(0, region.left - padX);
+      const top = Math.max(0, region.top - padY);
+      const right = Math.min(size.width, region.left + region.width + padX);
+      const bottom = Math.min(size.height, region.top + region.height + padY);
 
       const x = left / size.width;
       const y = top / size.height;

@@ -124,7 +124,7 @@ describe("상세설명 블록 렌더", () => {
     expect(all(section, (n) => n.tagName === "li").map(textOf)).toEqual(["리무버를 발라요", "밀어 줘요"])
   })
 
-  it("모델이 따옴표를 빼먹은 crop 속성도 읽고, 격자 칸 비율을 붙인다", async () => {
+  it("모델이 따옴표를 빼먹은 crop 속성도 읽고, 옵션 카드는 칸 비율을 강제하지 않는다", async () => {
     const tree = await render(
       [
         ':::details{title="DETAILS"}',
@@ -134,7 +134,8 @@ describe("상세설명 블록 렌더", () => {
     )
     const [img] = all(tree, (n) => n.tagName === "img")
 
-    expect(img.properties).toMatchObject({ dataCrop: "0.316,0.425,0.081,0.275", dataAspect: "0.6" })
+    expect(img.properties).toMatchObject({ dataCrop: "0.316,0.425,0.081,0.275" })
+    expect(img.properties).not.toHaveProperty("dataAspect")
   })
 
   it("문단 안의 :swatch 는 figure 로 바꾸지 않고 글자로 남긴다", async () => {
