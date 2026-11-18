@@ -37,7 +37,7 @@ describe('groupStockSummaries', () => {
       ['sku-2', 'warehouse-1'],
       ['sku-1', 'warehouse-2'],
     ]);
-    expect(result[0].imageUrl).toBeNull();
+    expect(result[0].imageFileId).toBeNull();
   });
 
   it('separates ungrouped SKUs even when names match and a SKU id equals a group id', () => {
@@ -77,6 +77,18 @@ describe('groupStockSummaries', () => {
 
     expect(group.skus[0].belowSafetyStock).toBe(input.belowSafetyStock);
     expect(group.skus[0].shortageQuantity).toBe(0);
+  });
+
+  it('takes the group image from the first SKU row that has a matched product image', () => {
+    const [group] = groupStockSummaries(
+      [row({ skuId: 'no-image' }), row({ skuId: 'with-image' }), row({ skuId: 'later' })],
+      new Map([
+        ['with-image', 'file-1'],
+        ['later', 'file-2'],
+      ]),
+    );
+
+    expect(group.imageFileId).toBe('file-1');
   });
 
   it('returns no groups for an empty page', () => {

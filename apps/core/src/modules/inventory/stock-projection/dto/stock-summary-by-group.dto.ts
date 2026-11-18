@@ -76,8 +76,12 @@ export class StockSummaryGroupDto {
   @ApiProperty({ type: String, nullable: true })
   groupCode: string | null;
 
-  @ApiProperty({ type: String, nullable: true })
-  imageUrl: string | null;
+  @ApiProperty({
+    type: String,
+    nullable: true,
+    description: '쇼핑몰 상품(PIM) 대표 이미지 file-service fileId — 그룹 옵션 중 매칭된 활성 상품의 대표 이미지',
+  })
+  imageFileId: string | null;
 
   @ApiProperty({ type: [StockSummaryGroupSkuDto] })
   skus: StockSummaryGroupSkuDto[];

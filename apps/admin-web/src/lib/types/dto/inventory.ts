@@ -835,7 +835,8 @@ export interface StockSummaryGroupDto {
   groupId: string | null;
   groupName: string;
   groupCode: string | null;
-  imageUrl: string | null;
+  /** 쇼핑몰 상품 대표 이미지 fileId — resolvePublicFileUrl 로 그린다 */
+  imageFileId: string | null;
   skus: StockSummaryGroupSkuDto[];
 }
 

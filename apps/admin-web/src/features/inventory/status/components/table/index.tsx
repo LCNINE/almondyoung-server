@@ -19,6 +19,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { SimplePagination } from '@/components/simple-pagination';
 import { cn } from '@/lib/utils';
+import { resolvePublicFileUrl } from '@/lib/utils/file-url';
 import { StockHistoryDrawer } from '../stock-history-drawer';
 import { AdjustStockDialog } from '../adjust-stock-dialog';
 import { UnshippedOrdersDrawer } from '../unshipped-orders-drawer';
@@ -230,9 +231,12 @@ export function InventoryStatusTable() {
                       className="border-r bg-background px-3 py-2 align-top"
                     >
                       <div className="flex gap-3">
-                        {group.imageUrl ? (
+                        {group.imageFileId ? (
                           <img
-                            src={group.imageUrl}
+                            src={
+                              resolvePublicFileUrl(group.imageFileId) ??
+                              undefined
+                            }
                             alt=""
                             className="size-14 flex-none rounded-md object-cover"
                           />

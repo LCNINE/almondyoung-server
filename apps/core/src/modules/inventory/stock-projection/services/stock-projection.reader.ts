@@ -14,7 +14,12 @@ import { readLocationStockAvailability } from '../../shared/availability/locatio
 import { physicalQuantity } from './physical-quantity';
 import { GetStockSummaryByGroupQueryDto, StockSummaryGroupDto } from '../dto/stock-summary-by-group.dto';
 import { groupStockSummaries } from './group-stock-summaries';
-import { productMasterVariants, productMasterVersions, salesChannels } from '../../../catalog/schema/catalog.schema';
+import {
+  productImages,
+  productMasterVariants,
+  productMasterVersions,
+  salesChannels,
+} from '../../../catalog/schema/catalog.schema';
 import { remainingUnshippedQuantity, unshippedDemandPredicate } from './unshipped-demand';
 import { unshippedOrders } from './unshipped-orders';
 import { UnshippedOrdersResponseDto } from '../dto/unshipped-orders.dto';
@@ -304,8 +309,36 @@ export class StockProjectionReader {
           rows.warehouseId,
         );
 
+      const pageSkuRows = pageRows.map((row) => row.group_stock_rows);
+      const pageSkuIds = [...new Set(pageSkuRows.map((row) => row.skuId))];
+      // 셀메이트 상품 사진 자리 — 스토어프론트와 같은 원천인 쇼핑몰 상품 대표 이미지. SKU 마다 매칭된 활성 상품 중 먼저 만든 것.
+      const images =
+        pageSkuIds.length === 0
+          ? []
+          : await trx
+              .selectDistinctOn([productVariantSkuLinks.skuId], {
+                skuId: productVariantSkuLinks.skuId,
+                fileId: productImages.fileId,
+              })
+              .from(productVariantSkuLinks)
+              .innerJoin(productMatchings, eq(productMatchings.id, productVariantSkuLinks.productMatchingId))
+              .innerJoin(productMasterVariants, eq(productMasterVariants.variantId, productMatchings.variantId))
+              .innerJoin(productMasterVersions, eq(productMasterVersions.id, productMasterVariants.versionId))
+              .innerJoin(
+                productImages,
+                and(eq(productImages.versionId, productMasterVersions.id), eq(productImages.isPrimary, true)),
+              )
+              .where(
+                and(
+                  inArray(productVariantSkuLinks.skuId, pageSkuIds),
+                  eq(productMasterVersions.status, 'active'),
+                  isNull(productMasterVersions.deletedAt),
+                ),
+              )
+              .orderBy(productVariantSkuLinks.skuId, productMasterVersions.createdAt, productMasterVersions.id);
+
       return {
-        data: groupStockSummaries(pageRows.map((row) => row.group_stock_rows)),
+        data: groupStockSummaries(pageSkuRows, new Map(images.map((image) => [image.skuId, image.fileId]))),
         total: countResult?.total ?? 0,
         page,
         limit,
