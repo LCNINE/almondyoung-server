@@ -99,8 +99,9 @@
 **받는 방법(사용자 결정 2026-11-18):** `scripts/tenancy/staff-token.ts` 의 `tokenForUser` 로 받는다 — user-service 내부 secret 으로 코드 발급 →
 클라이언트 secret 으로 PKCE 교환(auth-web 로그인과 같은 길, 토큰 테넌트는 `redirectUri` 호스트로 정해진다). secret 은 SSM 에서 읽으므로
 AWS 로그인이 필요하다(당일엔 어차피 되어 있다). 만료가 가까우면 호출 전에 다시 받는다.
-이 secret 은 비밀번호 없이 아무 계정의 토큰이나 받는 열쇠라 **실행하는 사람 본인 계정에만** 쓴다 — 계정은 `--operator <이메일>` 로 받고
-스크립트가 다른 계정 id 를 넣는 길을 두지 않는다. 토큰·secret 은 파일·로그에 쓰지 않는다.
+이 secret 은 비밀번호 없이 아무 계정의 토큰이나 받는 열쇠라 **실행하는 사람 본인 계정에만** 쓴다 — 라이브는 기존
+`scripts/tenancy/operator-session.ts` 의 `operatorSession('live')` 를 그대로 쓴다(아이디·비밀번호를 화면에 안 보이게 받아 `signInStaff`,
+10분마다 다시 받음, 테넌트 1 토큰인지 확인). 스크립트가 계정 id 를 직접 넣는 길은 두지 않는다. 토큰·secret·비밀번호는 파일·로그에 쓰지 않는다.
 
 ## 확인 (완료 조건)
 
