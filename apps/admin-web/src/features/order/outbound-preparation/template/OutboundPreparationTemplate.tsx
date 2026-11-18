@@ -125,7 +125,7 @@ function PreparationWarehouse({
   const shipmentRead = useCan(['fulfillment.shipment.read']);
   const canRead = shipmentRead.status === 'ready' && shipmentRead.allowed;
 
-  const summary = useOutboundPreparationSummary(warehouseId, canRead);
+  const summary = useOutboundPreparationSummary(warehouseId, canRead, 'always');
   const split = useSplitUnreservedMany();
   const { canRun } = usePermissionCheck();
 
@@ -581,9 +581,6 @@ function PreparationWarehouse({
             if (!open) {
               setSheetShipmentId('');
             }
-          }}
-          onRequested={() => {
-            void summary.refetch();
           }}
           onPrepare={(shipmentId) => {
             setSheetShipmentId('');

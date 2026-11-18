@@ -292,7 +292,11 @@ describe('OutboundPreparationTemplate', () => {
         `상자 목록은 ${permissionLabel('fulfillment.shipment.read')} 권한이 있어야 보여요.`
       )
     ).toBeTruthy();
-    expect(useOutboundPreparationSummary).toHaveBeenCalledWith('w1', false);
+    expect(useOutboundPreparationSummary).toHaveBeenCalledWith(
+      'w1',
+      false,
+      'always'
+    );
     expect(screen.queryByRole('table')).toBeNull();
     expect(screen.queryByRole('button', { name: '다시 불러오기' })).toBeNull();
   });
@@ -1136,6 +1140,64 @@ describe('합포장 결과에서 넘어온 상자', () => {
       await screen.findByText(/출고 준비 목록에서 이 상자를 찾지 못했어요/)
     ).toBeTruthy();
     expect(screen.queryByText(/출고 준비할까요/)).toBeNull();
+  });
+
+  it('들어올 때 요약을 다시 읽고, 다 읽은 요약에서 넘어온 상자를 찾는다', async () => {
+    const before = mockSummary;
+    const after = {
+      ...before,
+      buckets: before.buckets.map((entry) =>
+        entry.bucket === 'ready'
+          ? {
+              ...entry,
+              count: entry.count + 1,
+              shipments: [
+                ...entry.shipments,
+                { ...entry.shipments[0], shipmentId: 'merged' },
+              ],
+            }
+          : entry
+      ),
+    };
+    let fetching = true;
+    const original = jest
+      .mocked(useOutboundPreparationSummary)
+      .getMockImplementation();
+    jest.mocked(useOutboundPreparationSummary).mockImplementation(
+      () =>
+        ({
+          data: fetching ? before : after,
+          isError: false,
+          isLoading: false,
+          isFetching: fetching,
+          refetch: mockRefetch,
+        }) as unknown as ReturnType<typeof useOutboundPreparationSummary>
+    );
+    try {
+      mockParams = new URLSearchParams({
+        warehouseId: 'w1',
+        prepare: 'merged',
+      });
+
+      const { rerender } = render(<OutboundPreparationTemplate />);
+
+      expect(useOutboundPreparationSummary).toHaveBeenCalledWith(
+        'w1',
+        true,
+        'always'
+      );
+      expect(screen.queryByText(/찾지 못했어요/)).toBeNull();
+
+      fetching = false;
+      rerender(<OutboundPreparationTemplate />);
+
+      expect(
+        await screen.findByText('완전출고 1건을 출고 준비할까요?')
+      ).toBeTruthy();
+      expect(screen.queryByText(/찾지 못했어요/)).toBeNull();
+    } finally {
+      jest.mocked(useOutboundPreparationSummary).mockImplementation(original);
+    }
   });
 
   it('이 화면에서 합친 상자도 시트를 닫고 그 상자만 준비한다', async () => {

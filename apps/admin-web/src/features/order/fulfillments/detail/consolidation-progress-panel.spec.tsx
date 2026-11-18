@@ -650,6 +650,9 @@ describe('합포장 진행 패널', () => {
       queryKey: orderQueryKeys.fulfillmentOrders,
     });
     expect(invalidate).toHaveBeenCalledWith({
+      queryKey: orderQueryKeys.outboundPreparation,
+    });
+    expect(invalidate).toHaveBeenCalledWith({
       queryKey: orderQueryKeys.shipment('src'),
     });
     expect(invalidate).toHaveBeenCalledWith({
