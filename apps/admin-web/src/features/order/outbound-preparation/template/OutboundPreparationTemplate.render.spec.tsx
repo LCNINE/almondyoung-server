@@ -792,9 +792,13 @@ describe('OutboundPreparationTemplate', () => {
     await userEvent.click(
       row('합칠 주문 있음').getByRole('button', { name: '내역보기' })
     );
-    await userEvent.click(screen.getByLabelText('#AY-mergeable-1 선택'));
+    for (const no of [2, 3, 4]) {
+      await userEvent.click(screen.getByLabelText(`#AY-mergeable-${no} 선택`));
+    }
     expect(screen.queryByRole('button', { name: '합치기' })).toBeNull();
-    await userEvent.click(screen.getByRole('button', { name: '따로 보내기' }));
+    await userEvent.click(
+      screen.getByRole('button', { name: '고른 3건 따로 보내기' })
+    );
 
     expect(
       screen.getByText('합칠 수 있는 3건을 따로 출고 준비할까요?')
@@ -852,7 +856,10 @@ describe('OutboundPreparationTemplate', () => {
     expect(screen.getByText('나눈 상자 1/2 · 주문 2개 중 1개')).toBeTruthy();
     expect(screen.getByText('나눈 상자 2/2 · 주문 2개 중 1개')).toBeTruthy();
 
-    await userEvent.click(screen.getByRole('button', { name: '따로 보내기' }));
+    await userEvent.click(screen.getByLabelText('전체 선택'));
+    await userEvent.click(
+      screen.getByRole('button', { name: '고른 2건 따로 보내기' })
+    );
     await userEvent.click(screen.getByRole('button', { name: '시작' }));
 
     const failure = (await screen.findByText('한진 주소 확인 불가'))
@@ -868,8 +875,37 @@ describe('OutboundPreparationTemplate', () => {
       row('합칠 주문 있음').getByRole('button', { name: '내역보기' })
     );
 
-    expect(screen.queryByRole('button', { name: '따로 보내기' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /따로 보내기/ })).toBeNull();
     expect(mockRun).not.toHaveBeenCalled();
+  });
+
+  it('합칠 주문 있음은 아무것도 고르지 않은 채 열고, 합치러 가기를 먼저 둔다', async () => {
+    render(<OutboundPreparationTemplate />);
+    await userEvent.click(
+      row('합칠 주문 있음').getByRole('button', { name: '내역보기' })
+    );
+
+    expect(screen.getByText('합칠 주문 있음 내역 · 0건 선택')).toBeTruthy();
+    expect(
+      screen.getByLabelText('#AY-mergeable-1 선택').getAttribute('aria-checked')
+    ).toBe('false');
+    expect(
+      screen.getByRole('link', { name: '합치러 가기' }).getAttribute('href')
+    ).toBe('/order/consolidation?warehouseId=w1');
+    const separately = screen.getByRole('button', {
+      name: '고른 0건 따로 보내기',
+    });
+    expect((separately as HTMLButtonElement).disabled).toBe(true);
+
+    await userEvent.click(screen.getByLabelText('#AY-mergeable-2 선택'));
+
+    expect(
+      (
+        screen.getByRole('button', {
+          name: '고른 1건 따로 보내기',
+        }) as HTMLButtonElement
+      ).disabled
+    ).toBe(false);
   });
 
   it('합칠 주문의 각 줄에서 합포장 시트를 연다', async () => {

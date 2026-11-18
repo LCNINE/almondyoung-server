@@ -34,6 +34,7 @@ import { BUCKET_LABELS } from './bucket-table';
 
 export function BucketList({
   bucket,
+  warehouseId,
   selectedIds,
   busy,
   onToggle,
@@ -43,6 +44,7 @@ export function BucketList({
   onPrepareSeparately,
 }: {
   bucket: PreparationBucketDto;
+  warehouseId: string;
   selectedIds: string[];
   busy: boolean;
   onToggle: (id: string, checked: boolean) => void;
@@ -99,15 +101,25 @@ export function BucketList({
         {BUCKET_LABELS[bucket.bucket]} 내역 · {selectedIds.length}건 선택
       </h2>
       {bucket.bucket === 'mergeable' && (
-        <Can run={useRunOutboundPreparation}>
-          <Button
-            size="sm"
-            disabled={busy || !canPrepare || selectedIds.length === 0}
-            onClick={onPrepareSeparately}
-          >
-            따로 보내기
+        <div className="flex flex-wrap items-center gap-2">
+          <Button size="sm" asChild>
+            <Link
+              href={`/order/consolidation?warehouseId=${encodeURIComponent(warehouseId)}`}
+            >
+              합치러 가기
+            </Link>
           </Button>
-        </Can>
+          <Can run={useRunOutboundPreparation}>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={busy || !canPrepare || selectedIds.length === 0}
+              onClick={onPrepareSeparately}
+            >
+              고른 {selectedIds.length}건 따로 보내기
+            </Button>
+          </Can>
+        </div>
       )}
       {bucket.count > PREPARATION_BATCH_LIMIT && (
         <p className="text-sm font-semibold text-foreground">
