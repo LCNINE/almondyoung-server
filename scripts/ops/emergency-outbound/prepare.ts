@@ -11,7 +11,7 @@ import {
   BulkShipmentResult,
   CoreApi,
   CoreApiError,
-  PreparationBucket,
+  PreparationBucketName,
   PreparationShipment,
   WorkItem,
 } from './core-api';
@@ -70,11 +70,17 @@ export async function runPrepare(api: CoreApi, opts: PrepareOptions): Promise<Pr
     batches: input.batches,
     ownBatchId: prev?.batchId ?? undefined,
   });
-  const ownBatch = prev?.batchId ? input.batches.find((b) => b.batch.id === prev.batchId)?.batch : undefined;
+  const own = prev?.batchId ? input.batches.find((b) => b.batch.id === prev.batchId) : undefined;
+  const ownBatch = own?.batch;
   const { targets, skipped } = narrow(selected, prev, ownBatch);
-  const orderNos = new Map([...input.ready, ...input.resume].map((s) => [s.shipmentId, s.orderNos]));
+  const orderNos = new Map(
+    [...input.ready, ...input.resume, ...input.otherBuckets.flatMap((b) => b.shipments)].map((s) => [
+      s.shipmentId,
+      s.orderNos,
+    ]),
+  );
 
-  report(log, targets, skipped, input.otherBuckets);
+  report(log, targets, skipped);
 
   if (targets.length === 0) {
     log('대상 0 — 아무것도 바꾸지 않는다');
@@ -86,7 +92,7 @@ export async function runPrepare(api: CoreApi, opts: PrepareOptions): Promise<Pr
   }
 
   try {
-    const state = await apply(api, opts, prev, ownBatch, targets, orderNos);
+    const state = await apply(api, opts, prev, ownBatch, own?.workItems ?? [], targets, orderNos);
     return { targets, skipped, state };
   } catch (error) {
     if (error instanceof CoreApiError && error.code === IDEMPOTENCY_MISMATCH) throw mismatchError();
@@ -99,13 +105,20 @@ export async function runPrepare(api: CoreApi, opts: PrepareOptions): Promise<Pr
 interface Gathered {
   ready: PreparationShipment[];
   resume: PreparationShipment[];
-  otherBuckets: PreparationBucket[];
+  otherBuckets: { bucket: string; shipments: PreparationShipment[] }[];
   batches: { batch: BatchListItem; workItems: WorkItem[] }[];
 }
+
+/** 대상이 아닌 출고 준비 분류 — 상자마다 «빼고 사유 보고» 한다. */
+const OTHER_BUCKETS: PreparationBucketName[] = ['partial', 'unavailable', 'mergeable', 'needs_info'];
 
 async function gather(api: CoreApi, warehouseId: string): Promise<Gathered> {
   const ready = await pageBucket(api, warehouseId, 'ready');
   const resume = await pageBucket(api, warehouseId, 'resume');
+  const otherBuckets: Gathered['otherBuckets'] = [];
+  for (const bucket of OTHER_BUCKETS) {
+    otherBuckets.push({ bucket, shipments: await pageBucket(api, warehouseId, bucket) });
+  }
 
   const listed = [...(await api.batches(warehouseId, 'created')), ...(await api.batches(warehouseId, 'picking'))];
   const seen = new Set<string>();
@@ -116,27 +129,25 @@ async function gather(api: CoreApi, warehouseId: string): Promise<Gathered> {
     batches.push({ batch, workItems: await api.workItems(batch.id) });
   }
 
-  // 출고 준비 응답은 요청한 분류만 상자를 싣고 나머지는 개수만 준다 — 다른 분류는 개수 보고용.
-  return { ready: ready.shipments, resume: resume.shipments, otherBuckets: ready.others, batches };
+  return { ready, resume, otherBuckets, batches };
 }
 
+/** 출고 준비 응답은 요청한 분류만 상자를 싣고(200개씩) 나머지는 개수만 준다 — 분류마다 따로 끝까지 읽는다. */
 async function pageBucket(
   api: CoreApi,
   warehouseId: string,
-  bucket: 'ready' | 'resume',
-): Promise<{ shipments: PreparationShipment[]; others: PreparationBucket[] }> {
+  bucket: PreparationBucketName,
+): Promise<PreparationShipment[]> {
   const shipments: PreparationShipment[] = [];
-  let others: PreparationBucket[] = [];
   for (let offset = 0; ; ) {
     const res = await api.preparation(warehouseId, bucket, offset);
-    if (offset === 0) others = res.buckets.filter((b) => b.bucket !== 'ready' && b.bucket !== 'resume');
     const entry = res.buckets.find((b) => b.bucket === bucket);
     const page = entry?.shipments ?? [];
     shipments.push(...page);
     offset += page.length;
     if (page.length === 0 || offset >= (entry?.count ?? 0)) break;
   }
-  return { shipments, others };
+  return shipments;
 }
 
 /** 고른 대상에서 이 실행의 사정으로 뺄 것을 뺀다 — 이미 뺀 상자, 새 배치를 만들 수 없는 새 상자. */
@@ -170,19 +181,13 @@ function narrow(
   return { targets, skipped };
 }
 
-function report(log: (l: string) => void, targets: Target[], skipped: Skipped[], others: PreparationBucket[]): void {
+function report(log: (l: string) => void, targets: Target[], skipped: Skipped[]): void {
   const n = (p: (t: Target) => boolean) => targets.filter(p).length;
   log(
     `대상 ${targets.length} — 계획 확정부터 ${n((t) => t.from === 'draft')} · 송장부터 ${n((t) => t.from === 'planned')}` +
       ` · 배치 안 피킹 전 ${n((t) => t.from === 'batch' && t.route === 'location')}` +
       ` · 배치 안 포장 중 ${n((t) => t.from === 'batch' && t.route === 'force')}`,
   );
-  const counted = others.filter((b) => b.count > 0);
-  if (counted.length > 0) {
-    log(
-      `출고 준비 다른 분류(대상 아님, 상자는 출고 준비 화면에서): ${counted.map((b) => `${b.bucket} ${b.count}`).join(' · ')}`,
-    );
-  }
   if (skipped.length > 0) {
     log(`뺀 상자 ${skipped.length}`);
     for (const s of skipped)
@@ -197,6 +202,7 @@ async function apply(
   opts: PrepareOptions,
   prev: RunState | null,
   ownBatch: BatchListItem | undefined,
+  ownItems: WorkItem[],
   targets: Target[],
   orderNos: Map<string, string[]>,
 ): Promise<RunState> {
@@ -281,7 +287,7 @@ async function apply(
   // 5. 시작(위치 배정) — 전부 아니면 전무. 막힌 상자는 빼고 다시.
   const ownNotStarted = created || (ownBatch !== undefined && ownBatch.startedAt == null);
   if (state.batchId && ownNotStarted) {
-    await start(api, state.batchId, run, state, exclude, save, log);
+    await start(api, state.batchId, run, state, ownItems, exclude, save, log);
   }
 
   // 6. 송장번호 — 라벨·CSV 가 쓴다
@@ -302,10 +308,22 @@ async function start(
   batchId: string,
   run: string,
   state: RunState,
+  ownItems: WorkItem[],
   exclude: (shipmentId: string, reason: string) => void,
   save: () => void,
   log: (l: string) => void,
 ): Promise<void> {
+  const excludeKey = (shipmentId: string) => idemKey(run, 'exclude', shipmentId);
+  // 앞 실행이 «뺐다»고 적었는데 core 에 빼기가 닿지 않았을 수 있다(적은 뒤 죽음) — 시작 전에 마저 뺀다.
+  // 사유는 적어 둔 그대로 보낸다: core 가 사유를 멱등 해시에 넣어, 같은 키·다른 사유는 불일치가 된다.
+  for (const item of ownItems) {
+    if (item.status === 'completed' || item.status === 'excluded') continue;
+    const recorded = state.excluded.find((e) => e.shipmentId === item.shipmentId);
+    if (!recorded) continue;
+    await api.excludeFromBatch(batchId, item.shipmentId, recorded.reason, excludeKey(item.shipmentId));
+    log(`앞 실행에서 뺀 상자를 배치에서 마저 뺌 ${item.shipmentId}`);
+  }
+
   const own = () => state.boxes.filter((b) => b.batchId === batchId).length;
   for (let attempt = 0; ; attempt++) {
     if (own() === 0) {
@@ -329,10 +347,13 @@ async function start(
         );
       }
       for (const [shipmentId, reasons] of blockers) {
+        // 먼저 적고 뺀다. 거꾸로면 core 가 뺀 뒤 죽었을 때 다음 실행이 그 상자를 resume 분류에서 다시 집어
+        // 같은 담기 키로 넣고, core 는 옛 성공을 재생해 «배치에 없는 상자»가 run.json 에 남는다.
         const reason = `비상 출고 — 시작 막힘: ${reasons.join(', ')}`;
-        await api.excludeFromBatch(batchId, shipmentId, reason, idemKey(run, 'exclude', shipmentId));
         exclude(shipmentId, reason);
         save();
+        const stored = state.excluded.find((e) => e.shipmentId === shipmentId)?.reason ?? reason;
+        await api.excludeFromBatch(batchId, shipmentId, stored, excludeKey(shipmentId));
       }
       log(`시작 막힘 — ${blockers.size}개 배치에서 뺌, 다시 시작한다`);
     }

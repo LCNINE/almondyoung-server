@@ -17,6 +17,7 @@ import {
   LabelView,
   LocationOutboundState,
   PreparationBucket,
+  PreparationBucketName,
   PreparationShipment,
   PreparationSummary,
   PreparationWaybillResult,
@@ -57,7 +58,7 @@ const WRITES: ReadonlySet<keyof CoreApi> = new Set<keyof CoreApi>([
   'forceDispatch',
 ]);
 
-const BUCKETS = ['ready', 'resume', 'partial', 'unavailable', 'mergeable', 'needs_info'];
+const BUCKETS: PreparationBucketName[] = ['ready', 'resume', 'partial', 'unavailable', 'mergeable', 'needs_info'];
 const PAGE = 200;
 const INACTIVE: ReadonlySet<WorkItemStatus> = new Set<WorkItemStatus>(['completed', 'excluded']);
 const SHIPPED = new Set(['shipped', 'in_transit', 'delivered']);
@@ -80,9 +81,14 @@ export class FakeCore implements CoreApi {
   readonly startBlockers = new Map<string, StartBlockerView['reason']>();
 
   private readonly oneShot = new Map<keyof CoreApi, Error[]>();
-  /** 같은 키로 성공한 응답(core 의 멱등 재생). 실패는 남기지 않는다. */
+  private readonly afterShot = new Map<keyof CoreApi, Error[]>();
+  /** 같은 키로 성공한 응답(core 의 멱등 재생). 실패는 남기지 않는다(core 는 실패를 트랜잭션째 되돌린다). */
   private readonly createdByKey = new Map<string, { batchId: string }>();
   private readonly startedByKey = new Map<string, BatchStartResult>();
+  /** 묶음 명령(plan·add)이 상자마다 쓰는 `${key}:${상자 id}` 중 성공한 것 — 같은 키면 상태를 안 보고 성공을 재생한다. */
+  private readonly bulkDone = new Set<string>();
+  /** 배치에서 빼기 키 → 보낸 사유. core 는 사유를 해시에 넣으므로 같은 키·다른 사유는 불일치. */
+  private readonly excludedByKey = new Map<string, string>();
   private seq = 0;
 
   constructor(readonly warehouseId = 'wh-acme') {}
@@ -116,6 +122,14 @@ export class FakeCore implements CoreApi {
     return this;
   }
 
+  /** 다음 한 번의 `method` 호출이 효과를 낸 «뒤에» 이 오류로 실패한다 — 커밋 뒤 응답이 끊긴 경우. 쓰기 메서드만. */
+  failAfter(method: keyof CoreApi, error: Error): this {
+    const list = this.afterShot.get(method) ?? [];
+    list.push(error);
+    this.afterShot.set(method, list);
+    return this;
+  }
+
   // ── 관찰 ─────────────────────────────────────────────────────────
 
   writes(): (keyof CoreApi)[] {
@@ -128,7 +142,7 @@ export class FakeCore implements CoreApi {
 
   // ── CoreApi ──────────────────────────────────────────────────────
 
-  async preparation(warehouseId: string, bucket: 'ready' | 'resume', offset: number): Promise<PreparationSummary> {
+  async preparation(warehouseId: string, bucket: PreparationBucketName, offset: number): Promise<PreparationSummary> {
     this.enter('preparation', [warehouseId, bucket, offset]);
     const buckets: PreparationBucket[] = BUCKETS.map((name) => ({
       bucket: name,
@@ -153,19 +167,23 @@ export class FakeCore implements CoreApi {
 
   async plan(ids: string[], key: string): Promise<BulkShipmentResult> {
     this.enter('plan', [ids, key]);
-    return this.perShipment(ids, (s) => {
+    const result = this.perShipment(ids, (s) => {
       const code = this.planFailures.get(s.id);
       if (code) return code;
       if (s.status === 'planned') return null;
+      if (this.bulkDone.has(`${key}:${s.id}`)) return null;
       if (s.status !== 'draft') return 'SHIPMENT_NOT_DRAFT';
       s.status = 'planned';
+      this.bulkDone.add(`${key}:${s.id}`);
       return null;
     });
+    return this.leave('plan', result);
   }
 
   async issueWaybills(ids: string[], key: string): Promise<PreparationWaybillResult[]> {
     this.enter('issueWaybills', [ids, key]);
-    return ids.map((id) => {
+    // core 의 송장 발급은 활성 송장을 키와 상관없이 이어 가므로(issueOrResume) 키 재생을 따로 두지 않는다.
+    const result = ids.map((id) => {
       const override = this.waybillOverrides.get(id);
       if (override) {
         const r: PreparationWaybillResult = { ...waybillResult(id, 'failed', null), ...override };
@@ -181,25 +199,30 @@ export class FakeCore implements CoreApi {
       this.setWaybill(id, trackingNo);
       return waybillResult(id, 'registered', trackingNo);
     });
+    return this.leave('issueWaybills', result);
   }
 
   async createBatch(warehouseId: string, name: string, key: string): Promise<{ batchId: string }> {
     this.enter('createBatch', [warehouseId, name, key]);
-    return replay(this.createdByKey, key, () => {
+    const result = replay(this.createdByKey, key, () => {
       const id = this.batchRows.size === 0 ? 'b' : `b${this.batchRows.size + 1}`;
       this.batchRows.set(id, batchRow({ id, name, warehouseId }));
       return { batchId: id };
     });
+    return this.leave('createBatch', result);
   }
 
   async addToBatch(batchId: string, ids: string[], key: string): Promise<BulkShipmentResult> {
     this.enter('addToBatch', [batchId, ids, key]);
-    return this.perShipment(ids, (s) => {
+    const result = this.perShipment(ids, (s) => {
       const code = this.addFailures.get(s.id);
       if (code) return code;
       const active = this.activeItem(s.id);
       if (active) return active.batchId === batchId ? null : 'SHIPMENT_ACTIVE_WORK_ITEM';
+      // core 와 같은 순서: «이미 그 배치에 있음» 확인 뒤 키 명령 — 같은 키면 빠진 상자라도 옛 성공을 재생한다.
+      if (this.bulkDone.has(`${key}:${s.id}`)) return null;
       if (s.status !== 'planned') return 'SHIPMENT_NOT_PLANNED';
+      this.bulkDone.add(`${key}:${s.id}`);
       this.items.push({
         id: `wi-${batchId}-${s.id}-${this.items.length}`,
         batchId,
@@ -208,17 +231,25 @@ export class FakeCore implements CoreApi {
       });
       return null;
     });
+    return this.leave('addToBatch', result);
   }
 
   async excludeFromBatch(batchId: string, shipmentId: string, reason: string, key: string): Promise<void> {
     this.enter('excludeFromBatch', [batchId, shipmentId, reason, key]);
+    const sent = this.excludedByKey.get(key);
+    if (sent !== undefined) {
+      if (sent !== reason) throw new CoreApiError(409, 'FULFILLMENT_IDEMPOTENCY_MISMATCH', null, `exclude ${key}`);
+      return this.leave('excludeFromBatch', undefined); // 재생 — 효과 없음
+    }
     const item = this.activeItem(shipmentId);
     if (item && item.batchId === batchId) item.status = 'excluded';
+    this.excludedByKey.set(key, reason);
+    return this.leave('excludeFromBatch', undefined);
   }
 
   async startBatch(batchId: string, key: string): Promise<BatchStartResult> {
     this.enter('startBatch', [batchId, key]);
-    return replay(this.startedByKey, key, () => {
+    const result = replay<BatchStartResult>(this.startedByKey, key, () => {
       const batch = this.batchRows.get(batchId);
       if (!batch) throw new CoreApiError(404, 'OUTBOUND_BATCH_NOT_FOUND', null, `batch ${batchId}`);
       const active = this.items.filter((w) => w.batchId === batchId && !INACTIVE.has(w.status));
@@ -234,6 +265,7 @@ export class FakeCore implements CoreApi {
       batch.startedAt = '2026-11-19T00:00:00Z';
       return { state: 'started', operationId: `op-${batchId}`, batchId, sessionId: `ss-${batchId}`, status: 'picking' };
     });
+    return this.leave('startBatch', result);
   }
 
   async batches(warehouseId: string, status: 'created' | 'picking'): Promise<BatchListItem[]> {
@@ -331,6 +363,12 @@ export class FakeCore implements CoreApi {
     const queued = this.oneShot.get(method);
     const error = queued?.shift();
     if (error) throw error;
+  }
+
+  private leave<T>(method: keyof CoreApi, result: T): T {
+    const error = this.afterShot.get(method)?.shift();
+    if (error) throw error;
+    return result;
   }
 
   private perShipment(ids: string[], apply: (s: FakeShipment) => string | null): BulkShipmentResult {

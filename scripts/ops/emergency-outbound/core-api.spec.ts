@@ -111,5 +111,7 @@ describe('httpCoreApi', () => {
     expect(JSON.parse(seen[1].body)).toEqual({ reason: 'why' });
     await api.preparation('w1', 'ready', 200);
     expect(seen[2].url).toBe('/outbound-preparation?warehouseId=w1&bucket=ready&offset=200');
+    await api.preparation('w1', 'partial', 0);
+    expect(seen[3].url).toBe('/outbound-preparation?warehouseId=w1&bucket=partial&offset=0');
   });
 });

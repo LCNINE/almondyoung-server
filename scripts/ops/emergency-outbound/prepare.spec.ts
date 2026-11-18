@@ -158,6 +158,45 @@ describe('runPrepare', () => {
     ]);
   });
 
+  it('does not put a box back after core excluded it but the run died before saving', async () => {
+    const { dir, opts } = setup();
+    const core = drafts(new FakeCore(), 's1', 's2');
+    core.startBlockers.set('s2', 'STOCK_SHORT');
+    core.failAfter('excludeFromBatch', new Error('fetch reset after commit'));
+
+    await expect(runPrepare(core, opts(true))).rejects.toThrow('fetch reset after commit');
+    expect(core.items.find((w) => w.shipmentId === 's2')?.status).toBe('excluded');
+    expect(readRun(dir)?.excluded.map((e) => e.shipmentId)).toEqual(['s2']);
+
+    const report = await runPrepare(core, opts(true));
+
+    // s2 는 resume 분류로 돌아왔지만 다시 담기지 않는다(같은 담기 키면 core 가 옛 성공을 재생한다)
+    expect(core.callsOf('addToBatch').map((a) => a[1])).toEqual([['s1', 's2']]);
+    expect(report.state?.boxes.map((b) => b.shipmentId)).toEqual(['s1']);
+    expect(report.state?.excluded.map((e) => e.shipmentId)).toEqual(['s2']);
+    expect(readRun(dir)?.boxes.map((b) => b.shipmentId)).toEqual(['s1']);
+    expect(core.batchRows.get('b')?.startedAt).not.toBeNull();
+  });
+
+  it('finishes an exclusion recorded before the run died, with the stored reason', async () => {
+    const { opts } = setup();
+    const core = drafts(new FakeCore(), 's1', 's2');
+    core.startBlockers.set('s2', 'STOCK_SHORT');
+    core.failNext('excludeFromBatch', new Error('core unreachable'));
+
+    await expect(runPrepare(core, opts(true))).rejects.toThrow('core unreachable');
+    expect(core.items.find((w) => w.shipmentId === 's2')?.status).toBe('queued');
+
+    const report = await runPrepare(core, opts(true));
+
+    const excludes = core.callsOf('excludeFromBatch');
+    expect(excludes).toHaveLength(2);
+    expect(excludes[1]).toEqual(excludes[0]); // 같은 키·같은 사유 — 불일치가 나지 않는다
+    expect(core.items.find((w) => w.shipmentId === 's2')?.status).toBe('excluded');
+    expect(report.state?.boxes.map((b) => b.shipmentId)).toEqual(['s1']);
+    expect(core.batchRows.get('b')?.startedAt).not.toBeNull();
+  });
+
   it('keeps boxes excluded earlier in the run out on resume', async () => {
     const { opts } = setup();
     const core = drafts(new FakeCore(), 's1', 's2');
@@ -193,6 +232,27 @@ describe('runPrepare', () => {
     writeRun(dir, { run: '20261118-0900', warehouseId: WH, batchId: null, boxes: [], excluded: [] });
 
     await expect(runPrepare(new FakeCore(), opts(false))).rejects.toThrow(/20261118-0900/);
+  });
+
+  it('reports boxes of the other preparation buckets one by one', async () => {
+    const { lines, opts } = setup();
+    const core = drafts(new FakeCore(), 's1');
+    core.addShipment({ id: 's5', status: 'draft', bucket: 'partial', reason: '재고 일부만', orderNos: ['acme-5'] });
+    core.addShipment({ id: 's6', status: 'draft', bucket: 'mergeable', orderNos: ['acme-6'] });
+
+    const report = await runPrepare(core, opts(false));
+
+    expect(core.callsOf('preparation').map((a) => a[1])).toEqual(
+      expect.arrayContaining(['partial', 'unavailable', 'mergeable', 'needs_info']),
+    );
+    expect(report.targets).toEqual([{ shipmentId: 's1', from: 'draft' }]);
+    expect(report.skipped).toEqual(
+      expect.arrayContaining([
+        { shipmentId: 's5', reason: 'partial: 재고 일부만', orderNos: ['acme-5'] },
+        expect.objectContaining({ shipmentId: 's6', orderNos: ['acme-6'] }),
+      ]),
+    );
+    expect(lines.some((l) => l.includes('s5') && l.includes('acme-5'))).toBe(true);
   });
 
   it('puts boxes already in batches straight into boxes', async () => {

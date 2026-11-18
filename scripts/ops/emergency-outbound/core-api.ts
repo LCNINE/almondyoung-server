@@ -35,6 +35,9 @@ export interface PreparationShipment {
   split: unknown | null;
 }
 
+/** core `PREPARATION_BUCKETS` (outbound-preparation-classify.ts) — 조회의 `bucket` 이 여섯 다 받는다. */
+export type PreparationBucketName = 'ready' | 'partial' | 'unavailable' | 'mergeable' | 'resume' | 'needs_info';
+
 export interface PreparationBucket {
   bucket: string;
   count: number;
@@ -185,7 +188,7 @@ export interface ForceItem {
 }
 
 export interface CoreApi {
-  preparation(warehouseId: string, bucket: 'ready' | 'resume', offset: number): Promise<PreparationSummary>;
+  preparation(warehouseId: string, bucket: PreparationBucketName, offset: number): Promise<PreparationSummary>;
   plan(ids: string[], key: string): Promise<BulkShipmentResult>;
   issueWaybills(ids: string[], key: string): Promise<PreparationWaybillResult[]>;
   /** pickingMethod 'individual' 고정 */
