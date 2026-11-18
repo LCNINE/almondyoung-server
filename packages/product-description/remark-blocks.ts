@@ -20,8 +20,19 @@ export type DescriptionMdastNode = {
   depth?: number;
 };
 
+export type InvalidProductImage = {
+  fileId: string | null;
+  alt: string | null;
+  reason: 'missing_file_id' | 'invalid_file_id';
+};
+
 export type RemarkProductDescriptionOptions = {
   resolveImageUrl: (fileId: string) => string;
+  /**
+   * 깨진 이미지 디렉티브를 어떻게 둘지. 없으면 지운다(고객 화면). 어드민은 운영자가 고칠 수 있게
+   * 자리표시 노드를 돌려준다.
+   */
+  invalidImage?: (image: InvalidProductImage) => DescriptionMdastNode;
 };
 
 const DIRECTIVE_TYPES = new Set(['leafDirective', 'textDirective', 'containerDirective']);
@@ -30,21 +41,23 @@ const DIRECTIVE_TYPES = new Set(['leafDirective', 'textDirective', 'containerDir
 const COMPARE_IMAGE_ASPECT = '0.75';
 const SWATCH_IMAGE_ASPECT = '0.6';
 
-export function remarkProductDescription({ resolveImageUrl }: RemarkProductDescriptionOptions) {
+export function remarkProductDescription(options: RemarkProductDescriptionOptions) {
   return () => (tree: DescriptionMdastNode) => {
-    transformChildren(tree, resolveImageUrl);
+    transformChildren(tree, options);
   };
 }
 
-function transformChildren(node: DescriptionMdastNode, resolveImageUrl: (fileId: string) => string) {
+function transformChildren(node: DescriptionMdastNode, options: RemarkProductDescriptionOptions) {
   if (!node.children) return;
 
+  const { resolveImageUrl } = options;
+
   node.children = node.children.flatMap((child) => {
-    transformChildren(child, resolveImageUrl);
+    transformChildren(child, options);
 
     if (!DIRECTIVE_TYPES.has(child.type)) return [child];
 
-    if (child.name === PRODUCT_IMAGE_DIRECTIVE_NAME) return imageOrNothing(child, resolveImageUrl);
+    if (child.name === PRODUCT_IMAGE_DIRECTIVE_NAME) return imageOrInvalid(child, options);
 
     // swatch 는 줄 단위(::swatch)만. 문단 안의 :swatch 를 figure 로 바꾸면 <p> 안에 블록 요소가 들어가
     // 서버 HTML 과 브라우저가 파싱한 DOM 이 갈린다.
@@ -78,10 +91,24 @@ function restoreUnknownDirective(node: DescriptionMdastNode): DescriptionMdastNo
   return children;
 }
 
-/** 깨진 이미지 디렉티브는 조용히 뺀다 — 고객 화면에 진단 UI 를 띄울 이유가 없다. */
-function imageOrNothing(node: DescriptionMdastNode, resolveImageUrl: (fileId: string) => string) {
+/** 깨진 이미지 디렉티브는 기본으로 조용히 뺀다 — 고객 화면에 진단 UI 를 띄울 이유가 없다. */
+function imageOrInvalid(node: DescriptionMdastNode, { resolveImageUrl, invalidImage }: RemarkProductDescriptionOptions) {
   const parsed = parseProductImageDirective(node);
-  if (!parsed.ok) return [];
+
+  if (!parsed.ok) {
+    if (!invalidImage || parsed.reason === 'not_product_image_directive') return [];
+
+    const fileId = node.attributes?.fileId;
+    const alt = node.attributes?.alt;
+
+    return [
+      invalidImage({
+        fileId: typeof fileId === 'string' ? fileId : null,
+        alt: typeof alt === 'string' ? alt : null,
+        reason: parsed.reason,
+      }),
+    ];
+  }
 
   return [image(parsed.fileId, parsed.alt, parsed.crop && formatImageCrop(parsed.crop), resolveImageUrl)];
 }

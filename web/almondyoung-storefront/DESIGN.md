@@ -58,7 +58,7 @@
 | body-small | 13 | 400 | 18 | 보조·메타 |
 | caption | 12 | 400 | 16 | 라벨 |
 
-- 최대 26px, 그 이상 금지(예외: 상품 상세설명 블록 `product-description-blocks.css` — 판매 연출 영역이라 큰 제목을 쓴다. 굵기 700 상한은 같다). Light/ExtraBold 금지. `font-extrabold`·`font-black`·`font-[800]` 은 쓰지 않는다. 제목도 700 이 끝이다.
+- 최대 26px, 그 이상 금지(예외: 상품 상세설명 블록 `packages/product-description/description-blocks.css` — 판매 연출 영역이라 큰 제목을 쓴다. 굵기 700 상한은 같다). Light/ExtraBold 금지. `font-extrabold`·`font-black`·`font-[800]` 은 쓰지 않는다. 제목도 700 이 끝이다.
 - 자간: 16px 미만 글자는 0. 18~28px 제목은 `tracking-[-0.01em]` 까지만. `-0.02em` 이상 좁히는 건 40px 이상 큰 글자에만 쓴다(이 문서 기준으론 쓸 일이 없다). `tracking-tight` 도 같은 이유로 쓰지 않는다.
 
 ## 4. 컴포넌트 규격

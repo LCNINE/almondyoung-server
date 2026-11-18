@@ -11,7 +11,7 @@ import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@lib/utils"
 import { parseHashtagParagraph } from "./hashtag-paragraph"
-import "./product-description-blocks.css"
+import "@packages/product-description/description-blocks.css"
 
 const plugins = [
   remarkGfm,

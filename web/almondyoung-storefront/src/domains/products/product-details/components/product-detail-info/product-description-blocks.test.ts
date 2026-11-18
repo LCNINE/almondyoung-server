@@ -144,6 +144,25 @@ describe("상세설명 블록 렌더", () => {
     expect(all(tree, (n) => n.tagName === "p").map(textOf)[0]).toContain("본문 :swatch")
   })
 
+  it("invalidImage 옵션을 주면 깨진 이미지를 지우지 않고 그 노드로 바꾼다 (어드민 진단용)", async () => {
+    const processor = unified()
+      .use(remarkParse)
+      .use(remarkDirective)
+      .use(
+        remarkProductDescription({
+          resolveImageUrl: (id) => `https://files.test/${id}`,
+          invalidImage: ({ fileId, reason }) => ({ type: "text", value: `깨짐:${fileId ?? "없음"}:${reason}` }),
+        })
+      )
+      .use(remarkRehype)
+    const tree = (await processor.run(
+      processor.parse('::product-image{alt="x"}\n\n::product-image{fileId="nope"}')
+    )) as HastNode
+
+    expect(textOf(tree)).toContain("깨짐:없음:missing_file_id")
+    expect(textOf(tree)).toContain("깨짐:nope:invalid_file_id")
+  })
+
   it("블록이 없는 옛 상세설명은 그대로 그린다", async () => {
     const tree = await render("## 제품 특징\n\n본문이에요.")
 

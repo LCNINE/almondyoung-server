@@ -1,13 +1,26 @@
 /*
- * 상품 상세설명 블록 (packages/product-description/remark-blocks.ts 가 만드는 클래스).
- * 상세설명은 판매 연출 영역이라 DESIGN.md 의 26px 상한에서 예외다 — 굵기는 700 까지만 쓴다.
+ * 상품 상세설명 블록 (remark-blocks.ts 가 만드는 클래스). 스토어프론트와 어드민 미리보기가 같이 쓴다.
+ * 색은 각 앱의 토큰(--foreground 등)을 따르고, 어드민에 없는 --ink 만 기본값을 둔다.
+ * 상세설명은 판매 연출 영역이라 스토어프론트 DESIGN.md 의 26px 상한에서 예외다 — 굵기는 700 까지만 쓴다.
  * 이미지는 상세 칸 폭을 꽉 채우고 이미지끼리는 붙인다(쿠팡·올리브영 실측 0px).
+ * 넓은 화면 규칙은 화면 폭이 아니라 상세 칸 폭(@container)으로 가른다 — 어드민 미리보기는 넓은 화면의 좁은 칸이다.
  */
+
+.pd-root {
+  container-type: inline-size;
+}
 
 /* prose 의 img·p 여백(.prose :where(img), 우선순위 0,1,0)보다 확실히 이기도록 요소 선택자를 붙인다 */
 .pd-root img,
 .pd-root > p:has(> img:only-child) {
   margin: 0;
+}
+
+/* 잘라 쓴 이미지는 인라인 style 의 폭이 이긴다 */
+.pd-root img {
+  width: 100%;
+  max-width: none;
+  border-radius: 0;
 }
 
 .pd-root > :where(:not(.pd-block, img, .pd-crop, p:has(> img:only-child), .pd-tags)) {
@@ -55,7 +68,7 @@
   align-items: flex-end;
   aspect-ratio: 4 / 5;
   overflow: hidden;
-  background: var(--ink);
+  background: var(--ink, #20232a);
 }
 
 .pd-cover .pd-cover-img {
@@ -131,7 +144,7 @@
 .pd-checks li {
   padding: 16px 20px;
   border-radius: 12px;
-  background: #fff;
+  background: var(--background, #fff);
   color: var(--muted-foreground);
   font-size: 15px;
   line-height: 24px;
@@ -153,7 +166,7 @@
   width: 20px;
   height: 20px;
   border-radius: 9999px;
-  background: var(--ink)
+  background: var(--ink, #20232a)
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20'%3E%3Cpath d='M5.5 10.5l3 3 6-6.5' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")
     center / 20px no-repeat;
 }
@@ -168,7 +181,7 @@
   display: inline-block;
   padding: 4px 12px;
   border-radius: 9999px;
-  background: var(--ink);
+  background: var(--ink, #20232a);
   color: #fff;
   font-size: 12px;
   font-weight: 700;
@@ -271,7 +284,7 @@
   margin: 0;
   border-radius: 16px;
   overflow: hidden;
-  background: #fff;
+  background: var(--background, #fff);
 }
 
 .pd-swatch figcaption {
@@ -285,7 +298,7 @@
   margin-right: 4px;
   padding: 0 8px;
   border-radius: 4px;
-  background: var(--ink);
+  background: var(--ink, #20232a);
   color: #fff;
   font-size: 11px;
   vertical-align: 2px;
@@ -350,13 +363,13 @@
   width: 24px;
   height: 24px;
   border-radius: 9999px;
-  background: var(--ink);
+  background: var(--ink, #20232a);
   color: #fff;
   font-size: 12px;
   font-weight: 700;
 }
 
-@media (min-width: 768px) {
+@container (min-width: 600px) {
   .pd-root > :where(:not(.pd-block, img, .pd-crop, p:has(> img:only-child), .pd-tags)) {
     padding-inline: 48px;
   }
