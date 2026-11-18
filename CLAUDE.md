@@ -70,6 +70,7 @@ bootstrap 은 이미 건강한 kafka 를 재기동하지 않는다 — 그러면
 bootstrap 은 **테넌트 2**(로컬 전용 값 `rehearsal`)도 만든다 — 만들기 스크립트(`scripts/tenancy/create-tenant/`)의 로컬 리허설이다.
 테넌트 2 는 ② 모드에서만 섬긴다: `E2E_GATE_MODE=reject npm run start:all:local`. 자세한 건 `docs/local-e2e-environment.md` §2-C.
 테넌트 격리는 네 번째 명령 `npm run isolation:check:local`(쓰기·정지 스위치까지는 `-- --write`)이 판정한다 — 라이브의 `npm run isolation:check -- --stage live` 와 점검 목록이 한 벌이다(§2-D).
+자사몰 주문 한 건을 브라우저 없이 끝까지 보려면 스택이 뜬 뒤 `npm run seed:order-path:local`(상품 준비, 멱등)·`npm run order:place:local -- --count N`(주문 → 부천 상자·예약까지, 끝에 상자 id) 을 쓴다(§2-E). 로컬 스택의 송장은 start-all 이 띄우는 가짜 한진(`scripts/local/hanjin-stub.ts`)이 준다 — 실제 한진은 `E2E_HANJIN=real` 일 때만 부른다.
 
 앱↔`.env`↔포트 목록은 **`scripts/local/e2e-env-map.sh` 한 곳**이 정본이고 세 스크립트(+ 격리 실측)가 그걸 source 한다.
 앱을 늘리면 거기만 고칠 것 — 이 표가 산문으로만 있던 동안 문서 두 벌이 6개/11개로 갈렸고

@@ -6,6 +6,7 @@
 #         E2E_PROFILE=full npm run start:all:local # extra 앱(리뷰·통계·알림·검색)도 함께
 #         SKIP_KEY_SYNC=1 …                        # Medusa 키 동기화 생략
 #         DRY_RUN=1 npm run start:all:local        # 무엇을 어떤 «순서»로 띄울지만 출력
+#         E2E_HANJIN=real npm run start:all:local  # 가짜 한진 대신 apps/core/.env 의 실제 한진을 부른다
 #         E2E_GATE_MODE=reject npm run start:all:local  # ② 모드(문이 «없으면 거절», core 테넌트 라우팅) — 테넌트 2 를 섬긴다
 # 종료:   Ctrl+C (전 프로세스 함께 종료)
 #
@@ -24,6 +25,7 @@ source scripts/local/e2e-env-map.sh
 mkdir -p logs
 
 PROFILE="${E2E_PROFILE:-e2e}"
+HANJIN_STUB_URL="http://127.0.0.1:${E2E_HANJIN_STUB_PORT}"
 DRY="${DRY_RUN:-}"
 
 # ── 전환 모드. .env 의 TENANT_GATE_MODE(정본 warn = ①)는 그대로 두고, 띄우는 프로세스에만 덮어 준다 —
@@ -64,9 +66,19 @@ launch() {
     printf '\033[33m⊘ %s (:%s) — %s 없음. 건너뛴다\033[0m\n' "$name" "$port" "$dest"
     return 0
   fi
-  if [ "$DRY" = "1" ]; then echo "▶ (dry-run) $name (:$port) [$kind $target]"; return 0; fi
+  # 🔴 core 의 한진 주소는 셸 값으로 가짜 한진에 덮는다 — 개발자 apps/core/.env 엔 실제 한진 키·주소가 들어 있어
+  # 템플릿만 고쳐서는 막을 수 없다(dotenv 는 이미 있는 환경변수를 덮지 않는다). E2E_HANJIN=real 이면 안 덮는다.
+  local -a pre=()
+  if [ "$name" = "core" ] && [ "${E2E_HANJIN:-}" != "real" ]; then
+    pre=(env "HANJIN_ORDER_BASE_URL=$HANJIN_STUB_URL" "HANJIN_PRINT_BASE_URL=$HANJIN_STUB_URL")
+  fi
+  if [ "$DRY" = "1" ]; then
+    echo "▶ (dry-run) $name (:$port) [$kind $target]"
+    [ ${#pre[@]} -gt 0 ] && echo "  · core 한진 주소 → 가짜 한진 $HANJIN_STUB_URL (HANJIN_ORDER_BASE_URL·HANJIN_PRINT_BASE_URL)"
+    return 0
+  fi
   case "$kind" in
-    nest)          npx dotenv -e "$dest" -- node "dist/apps/$target/main.js" > "logs/$name.log" 2>&1 & ;;
+    nest)          "${pre[@]}" npx dotenv -e "$dest" -- node "dist/apps/$target/main.js" > "logs/$name.log" 2>&1 & ;;
     web|medusa)    (cd "$target" && npm run dev) > "logs/$name.log" 2>&1 & ;;
   esac
   pids+=($!)
@@ -77,6 +89,14 @@ launch() {
 if [ "$DRY" = "1" ]; then echo "▶ (dry-run) sms-stub (:3099)"; else
   node scripts/local/sms-stub.js > logs/sms-stub.log 2>&1 &
   pids+=($!); echo "▶ sms-stub (:3099) → logs/sms-stub.log"
+fi
+
+# ── 가짜 한진 (#1440). core 의 송장 발급이 바깥으로 나가지 않게 한다 — launch() 가 core 의 한진 주소를 여기로 덮는다.
+if [ "${E2E_HANJIN:-}" = "real" ]; then
+  printf '\033[33m! E2E_HANJIN=real — core 가 apps/core/.env 의 실제 한진을 부른다 (가짜 한진을 띄우지 않는다)\033[0m\n'
+elif [ "$DRY" = "1" ]; then echo "▶ (dry-run) hanjin-stub (:$E2E_HANJIN_STUB_PORT)"; else
+  E2E_HANJIN_STUB_PORT="$E2E_HANJIN_STUB_PORT" npx tsx scripts/local/hanjin-stub.ts > logs/hanjin-stub.log 2>&1 &
+  pids+=($!); echo "▶ hanjin-stub (:$E2E_HANJIN_STUB_PORT) → logs/hanjin-stub.log"
 fi
 
 # ── ① medusa 와 «키를 안 읽는» 앱들 (medusa 도 needs_key=no 라 여기 포함된다)
