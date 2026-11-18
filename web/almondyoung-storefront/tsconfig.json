@@ -35,6 +35,7 @@
       "@packages/domain-types/*": ["../../packages/domain-types/*"],
       "@packages/time-sale-ui": ["../../packages/time-sale-ui"],
       "@packages/image-compress": ["../../packages/image-compress"],
+      "@packages/product-description/*": ["../../packages/product-description/*"],
       "react": ["./node_modules/@types/react"],
       "react/jsx-runtime": ["./node_modules/@types/react/jsx-runtime"]
     },
