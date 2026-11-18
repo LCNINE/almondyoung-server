@@ -18,6 +18,7 @@ import { BadRequestError } from '@app/shared';
 import { MatchingLinkResolver } from './matching-link-resolver';
 import { lineResolvedSql } from '../line-composition/line-resolved.sql';
 import { selectCompositionItemViews } from '../line-composition/line-composition-views';
+import { kstDayEndInclusive, kstDayStart } from '../../sales-order/utils/kst-date.util';
 
 export interface PimSkuComponent {
   skuId: string;
@@ -802,12 +803,10 @@ export class ProductMatchingService {
       }
 
       if (startDate) {
-        conditions.push(gte(salesOrders.orderDate, new Date(startDate)));
+        conditions.push(gte(salesOrders.orderDate, kstDayStart(startDate)));
       }
       if (endDate) {
-        const end = new Date(endDate);
-        end.setHours(23, 59, 59, 999);
-        conditions.push(lte(salesOrders.orderDate, end));
+        conditions.push(lte(salesOrders.orderDate, kstDayEndInclusive(endDate)));
       }
 
       if (keyword) {
