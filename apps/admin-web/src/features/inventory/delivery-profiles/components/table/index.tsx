@@ -34,7 +34,10 @@ import type {
   DeliveryProfileDto,
   FulfillmentMode,
 } from '@/lib/types/dto/inventory';
-import { FULFILLMENT_MODE_LABELS } from '../../lib/labels';
+import {
+  carrierContractLabel,
+  FULFILLMENT_MODE_LABELS,
+} from '../../lib/labels';
 import { ProfileDialog, type ProfileEditTarget } from '../profile-dialog';
 
 type ModeFilter = 'all' | FulfillmentMode;
@@ -189,7 +192,11 @@ export function DeliveryProfilesTable() {
                   )}
                 </TableCell>
                 <TableCell>{returnLabel(p)}</TableCell>
-                <TableCell>{p.carrierAccountRef || '-'}</TableCell>
+                <TableCell>
+                  {p.carrierAccountRef
+                    ? carrierContractLabel(p.carrierAccountRef)
+                    : '-'}
+                </TableCell>
                 <TableCell className="text-right tabular-nums">
                   {(p.skuCount ?? 0).toLocaleString('ko-KR')}
                 </TableCell>

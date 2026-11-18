@@ -54,6 +54,7 @@ describe('emptyProfileForm', () => {
   it('자사 출고·in_house 를 기본값으로 둔다', () => {
     expect(emptyProfileForm().sourceType).toBe('in_house');
     expect(emptyProfileForm().modes).toEqual(['in_house']);
+    expect(emptyProfileForm().carrierAccountRef).toBe('HANJIN');
   });
 });
 
