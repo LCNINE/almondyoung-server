@@ -162,6 +162,8 @@ bash scripts/sellmate/run.sh live sync-stock apps/core/tmp/             # 반영
 
 ## T 당일: 저녁 맞추기 (#1304)
 
+> 컷오버 당일 전체 순서는 `docs/runbooks/sellmate-cutover-phase1.md`(#1251). 아래는 그중 저녁 맞추기 세 줄이다.
+
 자세한 규칙·하위 명령은 `scripts/sellmate/README.md` «저녁 맞추기». **T 전에 live `db:migrate`**(앱 배포 불필요).
 `init` 뒤에는 `sync-stock`·`handover-stock-addback` 이 거절된다.
 
