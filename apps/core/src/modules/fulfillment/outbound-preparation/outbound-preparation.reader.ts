@@ -18,6 +18,7 @@ import {
 } from './outbound-preparation-classify';
 import { compatibleShippingProfileId } from '../services/shipping-profile';
 import { isUntrustedExternalLine } from '../services/external-line-identity';
+import { loadSellmateShipmentIds } from '../services/sellmate-handed-over-shipments';
 import { waybillFailureText } from '../waybill/waybill-failure-text';
 import {
   OutboundPreparationQueryDto,
@@ -58,7 +59,7 @@ export class OutboundPreparationReader {
         .select({ count: count() })
         .from(wmsTables.fulfillmentOrderCreationBacklogs)
         .where(eq(wmsTables.fulfillmentOrderCreationBacklogs.status, 'awaiting_matching'));
-      const shipments = await trx
+      const candidates = await trx
         .select({
           id: wmsTables.shipments.id,
           status: wmsTables.shipments.status,
@@ -73,6 +74,12 @@ export class OutboundPreparationReader {
           ),
         )
         .orderBy(asc(wmsTables.shipments.createdAt), asc(wmsTables.shipments.id));
+      // 드레인 중 셀메이트가 내보내는 주문의 상자는 앱 출고 대상이 아니다(#1412)
+      const sellmate = await loadSellmateShipmentIds(
+        trx,
+        candidates.map((shipment) => shipment.id),
+      );
+      const shipments = candidates.filter((shipment) => !sellmate.has(shipment.id));
       const ids = shipments.map((shipment) => shipment.id);
 
       if (ids.length === 0) {

@@ -16,6 +16,7 @@ import { DbTx, wmsSchema, wmsTables } from '../../inventory/schema/inventory.sch
 import { AuditService } from '../../inventory/shared/services/audit.service';
 import { ConsolidationActor, ConsolidationSourceDto, CreateConsolidationDto } from '../dto/consolidation.dto';
 import { WAYBILL_TERMINAL_STATUSES } from '../waybill/waybill.constants';
+import { loadSellmateShipmentIds } from './sellmate-handed-over-shipments';
 import { linesAreInHouse, supportsInHouse } from './consolidation-eligibility';
 import { canonicalConsolidationRecipient, consolidationCustomerKey } from './consolidation-options';
 import { CONSOLIDATION_RECOVERY_CODE } from './consolidation-recovery';
@@ -290,6 +291,14 @@ export class ConsolidationService {
         // 판정·대상 상자는 SKU·판매주문 칼럼이 붙은 이 서비스의 줄 모양을 쓴다 — 잠근 뒤 그 모양으로 다시 읽는다
         const aggregates = await Promise.all(locked.map((aggregate) => this.loadAggregate(aggregate.shipment.id, trx)));
         this.assertExpectedVersions(aggregates, sources);
+        // 드레인 중 셀메이트가 내보내는 주문의 상자와 합치면 T 뒤 주문까지 확정이 막힌다(#1412)
+        const sellmate = await loadSellmateShipmentIds(
+          trx,
+          aggregates.map((aggregate) => aggregate.shipment.id),
+        );
+        if (sellmate.size > 0) {
+          throw this.conflict('SHIPMENT_HANDED_OVER_TO_SELLMATE', `Sellmate ships: ${[...sellmate].join(',')}`);
+        }
         await this.assertInitialSourceStatusesSafe(aggregates, trx);
         await this.assertCompatibleSources(aggregates, trx);
         const recipientSnapshot = this.resolveRecipient(dto, aggregates);

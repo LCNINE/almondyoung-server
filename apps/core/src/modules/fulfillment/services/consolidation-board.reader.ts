@@ -27,6 +27,7 @@ import {
   summarizeShipmentWithoutRecipient,
   uniqueInOrder,
 } from './consolidation-shipment-reads';
+import { loadSellmateShipmentIds } from './sellmate-handed-over-shipments';
 
 export interface BoardRow {
   customerKey: string | null;
@@ -133,7 +134,7 @@ export class ConsolidationBoardReader {
 
   async findBoard(warehouseId: string, tx?: DbTx): Promise<ConsolidationBoardResponseDto> {
     return this.dbService.run(async (trx) => {
-      const shipments = await trx
+      const candidates = await trx
         .select()
         .from(wmsTables.shipments)
         .where(
@@ -144,6 +145,12 @@ export class ConsolidationBoardReader {
           ),
         )
         .orderBy(asc(wmsTables.shipments.createdAt), asc(wmsTables.shipments.id));
+      // 드레인 중 셀메이트가 내보내는 주문의 상자는 합칠 상대가 아니다(#1412)
+      const sellmate = await loadSellmateShipmentIds(
+        trx,
+        candidates.map((shipment) => shipment.id),
+      );
+      const shipments = candidates.filter((shipment) => !sellmate.has(shipment.id));
       const ids = shipments.map((shipment) => shipment.id);
       const lines = await loadShipmentLines(trx, ids);
       const progress = await loadShipmentProgress(trx, ids);

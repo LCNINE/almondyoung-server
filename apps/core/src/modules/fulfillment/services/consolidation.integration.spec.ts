@@ -27,6 +27,7 @@ import { FulfillmentInvariantService } from './fulfillment-invariant.service';
 import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
 import { ShipmentPlanningService } from './shipment-planning.service';
 import { assembleBoxWithdrawal } from './__support__/box-withdrawal-wiring';
+import { seedHandedOverOrder } from './__support__/sellmate-handed-over-fixtures';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
@@ -104,6 +105,32 @@ describeIfDb('V2 explicit shipment consolidation (DB integration)', () => {
       // 안 이어받으면 이 한 장의 송장으로 나가는 모든 주문이 문 앞에서 막힌다.
       // 값이 갈리면 최신 주문이 이긴다 — 고객이 중간에 바꾼 것으로 해석한다.
       expect(target.entrancePassword).toBe('#2222');
+    });
+  });
+
+  it('셀메이트 상자가 끼면 합치기를 409 로 거절하고 원본은 draft 로 남긴다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const base = await baseFixture(tx);
+      const first = await createOrderShipment(tx, base, { quantity: 1 });
+      const second = await createOrderShipment(tx, base, { quantity: 1 });
+      const dto = {
+        sources: requestFor(second, first),
+        recipientSourceShipmentId: first.shipment.id,
+        reason: 'customer approved one box',
+      };
+
+      await seedHandedOverOrder(tx, first.salesOrderId);
+
+      await expect(consolidation.consolidate(dto, `consolidate-${randomUUID()}`, actor, tx)).rejects.toMatchObject({
+        response: expect.objectContaining({ code: 'SHIPMENT_HANDED_OVER_TO_SELLMATE' }),
+      });
+
+      const sources = await tx
+        .select()
+        .from(wmsTables.shipments)
+        .where(inArray(wmsTables.shipments.id, [first.shipment.id, second.shipment.id]));
+
+      expect(sources.map((source) => source.status)).toEqual(['draft', 'draft']);
     });
   });
 
