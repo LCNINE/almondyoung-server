@@ -15,6 +15,7 @@ function setup() {
   const dir = join(root, RUN);
   mkdirSync(dir);
   const lines: string[] = [];
+  const sleeps: number[] = [];
   const opts = (apply: boolean, run = RUN) => ({
     warehouseId: WH,
     run,
@@ -22,8 +23,12 @@ function setup() {
     apply,
     outputs: false,
     log: (l: string) => lines.push(l),
+    sleep: async (ms: number) => {
+      sleeps.push(ms);
+      await Promise.resolve();
+    },
   });
-  return { root, dir, lines, opts };
+  return { root, dir, lines, sleeps, opts };
 }
 
 function drafts(core: FakeCore, ...ids: string[]): FakeCore {
@@ -110,11 +115,98 @@ describe('runPrepare', () => {
 
     const report = await runPrepare(core, opts(true));
 
-    expect(core.callsOf('issueWaybills').map((a) => a[0])).toEqual([['s1', 's3']]);
+    // s3 는 일시 결과라 같은 키로 세 번 더 불렀다가 뺀다
+    expect(core.callsOf('issueWaybills').map((a) => a[0])).toEqual([['s1', 's3'], ['s3'], ['s3'], ['s3']]);
     expect(core.callsOf('addToBatch').map((a) => a[1])).toEqual([['s1']]);
     const reasons = Object.fromEntries((report.state?.excluded ?? []).map((e) => [e.shipmentId, e.reason]));
     expect(reasons.s2).toContain('SHIPMENT_NOT_FULLY_RESERVED');
     expect(reasons.s3).toContain('time-budget-exceeded');
+  });
+
+  it('retries a transient waybill result with the same key and keeps the box', async () => {
+    const { opts, sleeps } = setup();
+    const core = drafts(new FakeCore(), 's1', 's2');
+    core.waybillOnce.set('s1', [{ status: 'failed', transient: true, code: 'HANJIN_TIMEOUT' }]);
+
+    const report = await runPrepare(core, opts(true));
+
+    const calls = core.callsOf('issueWaybills');
+    expect(calls.map((a) => a[0])).toEqual([['s1', 's2'], ['s1']]);
+    expect(new Set(calls.map((a) => a[1]))).toEqual(new Set([idemKey(RUN, 'waybill', RUN)]));
+    expect(sleeps).toEqual([2000]);
+    expect(report.state?.boxes.map((b) => b.shipmentId).sort()).toEqual(['s1', 's2']);
+    expect(report.state?.excluded).toEqual([]);
+  });
+
+  it('retries pending and time-budget-exceeded waybill results', async () => {
+    const { opts } = setup();
+    const core = drafts(new FakeCore(), 's1', 's2');
+    core.waybillOnce.set('s1', [{ status: 'pending', trackingNo: null }]);
+    core.waybillOnce.set('s2', [
+      { status: 'pending', reason: 'time-budget-exceeded' },
+      { status: 'allocated', reason: null },
+    ]);
+
+    const report = await runPrepare(core, opts(true));
+
+    expect(core.callsOf('issueWaybills').map((a) => a[0])).toEqual([['s1', 's2'], ['s1', 's2'], ['s2']]);
+    expect(report.state?.boxes.map((b) => b.shipmentId).sort()).toEqual(['s1', 's2']);
+  });
+
+  it('excludes a box whose waybill is still transient after the retries', async () => {
+    const { opts, sleeps } = setup();
+    const core = drafts(new FakeCore(), 's1', 's2');
+    core.waybillOverrides.set('s1', { status: 'failed', transient: true, code: 'HANJIN_TIMEOUT' });
+
+    const report = await runPrepare(core, opts(true));
+
+    expect(core.callsOf('issueWaybills')).toHaveLength(4);
+    expect(sleeps).toEqual([2000, 5000, 10000]);
+    expect(report.state?.boxes.map((b) => b.shipmentId)).toEqual(['s2']);
+    const reason = report.state?.excluded.find((e) => e.shipmentId === 's1')?.reason ?? '';
+    expect(reason).toContain('HANJIN_TIMEOUT');
+    expect(reason).toContain('다시 시도');
+  });
+
+  it('does not retry a waybill failure that core marks permanent', async () => {
+    const { opts, sleeps } = setup();
+    const core = drafts(new FakeCore(), 's1');
+    core.waybillOverrides.set('s1', { status: 'pending', transient: false, code: 'ADDRESS_INVALID' });
+
+    const report = await runPrepare(core, opts(true));
+
+    expect(core.callsOf('issueWaybills')).toHaveLength(1);
+    expect(sleeps).toEqual([]);
+    expect(report.state?.excluded.map((e) => e.shipmentId)).toEqual(['s1']);
+  });
+
+  it('retries transient plan and add failures with the same key', async () => {
+    const { opts, sleeps } = setup();
+    const core = drafts(new FakeCore(), 's1', 's2');
+    core.transientBulk.set('plan:s1', 1);
+    core.transientBulk.set('addToBatch:s2', 2);
+
+    const report = await runPrepare(core, opts(true));
+
+    expect(core.callsOf('plan').map((a) => a[0])).toEqual([['s1', 's2'], ['s1']]);
+    expect(new Set(core.callsOf('plan').map((a) => a[1]))).toEqual(new Set([idemKey(RUN, 'plan', RUN)]));
+    expect(core.callsOf('addToBatch').map((a) => a[1])).toEqual([['s2', 's1'], ['s2'], ['s2']]);
+    expect(new Set(core.callsOf('addToBatch').map((a) => a[2]))).toEqual(new Set([idemKey(RUN, 'add', 'b')]));
+    expect(sleeps).toEqual([2000, 2000, 5000]);
+    expect(report.state?.boxes.map((b) => b.shipmentId).sort()).toEqual(['s1', 's2']);
+    expect(report.state?.excluded).toEqual([]);
+  });
+
+  it('excludes a box whose plan stays transient after the retries', async () => {
+    const { opts } = setup();
+    const core = drafts(new FakeCore(), 's1', 's2');
+    core.transientBulk.set('plan:s1', 9);
+
+    const report = await runPrepare(core, opts(true));
+
+    expect(core.callsOf('plan')).toHaveLength(4);
+    expect(report.state?.boxes.map((b) => b.shipmentId)).toEqual(['s2']);
+    expect(report.state?.excluded.find((e) => e.shipmentId === 's1')?.reason).toContain('LOCK_TIMEOUT');
   });
 
   it('excludes start blockers and restarts', async () => {

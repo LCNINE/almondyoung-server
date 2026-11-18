@@ -87,6 +87,10 @@ export class FakeCore implements CoreApi {
   readonly planFailures = new Map<string, string>();
   /** 상자 id → 송장 결과 덮어쓰기(예: {status:'failed', code}) */
   readonly waybillOverrides = new Map<string, Partial<PreparationWaybillResult>>();
+  /** 상자 id → 송장 결과 덮어쓰기를 호출마다 하나씩(앞에서부터) 쓴다. 다 쓰면 보통 발급. */
+  readonly waybillOnce = new Map<string, Partial<PreparationWaybillResult>[]>();
+  /** `plan:<상자 id>`·`addToBatch:<상자 id>` → 남은 일시 실패 횟수(transient: true). 그동안 효과 없음. */
+  readonly transientBulk = new Map<string, number>();
   /** 상자 id → 배치 담기 실패 코드 */
   readonly addFailures = new Map<string, string>();
   /** 상자 id → 시작 막힘 사유. 그 상자가 배치에 활성으로 남아 있는 동안 시작이 막힌다. */
@@ -181,7 +185,7 @@ export class FakeCore implements CoreApi {
 
   async plan(ids: string[], key: string): Promise<BulkShipmentResult> {
     this.enter('plan', [ids, key]);
-    const result = this.perShipment(ids, (s) => {
+    const result = this.perShipment('plan', ids, (s) => {
       const code = this.planFailures.get(s.id);
       if (code) return code;
       if (s.status === 'planned') return null;
@@ -198,7 +202,7 @@ export class FakeCore implements CoreApi {
     this.enter('issueWaybills', [ids, key]);
     // core 의 송장 발급은 활성 송장을 키와 상관없이 이어 가므로(issueOrResume) 키 재생을 따로 두지 않는다.
     const result = ids.map((id) => {
-      const override = this.waybillOverrides.get(id);
+      const override = this.waybillOnce.get(id)?.shift() ?? this.waybillOverrides.get(id);
       if (override) {
         const r: PreparationWaybillResult = { ...waybillResult(id, 'failed', null), ...override };
         if (r.status === 'registered' && r.trackingNo) this.setWaybill(id, r.trackingNo);
@@ -228,7 +232,7 @@ export class FakeCore implements CoreApi {
 
   async addToBatch(batchId: string, ids: string[], key: string): Promise<BulkShipmentResult> {
     this.enter('addToBatch', [batchId, ids, key]);
-    const result = this.perShipment(ids, (s) => {
+    const result = this.perShipment('addToBatch', ids, (s) => {
       const code = this.addFailures.get(s.id);
       if (code) return code;
       const active = this.activeItem(s.id);
@@ -442,9 +446,19 @@ export class FakeCore implements CoreApi {
     return result;
   }
 
-  private perShipment(ids: string[], apply: (s: FakeShipment) => string | null): BulkShipmentResult {
+  private perShipment(
+    method: 'plan' | 'addToBatch',
+    ids: string[],
+    apply: (s: FakeShipment) => string | null,
+  ): BulkShipmentResult {
     const out: BulkShipmentResult = { succeeded: [], failed: [] };
     for (const id of ids) {
+      const left = this.transientBulk.get(`${method}:${id}`) ?? 0;
+      if (left > 0) {
+        this.transientBulk.set(`${method}:${id}`, left - 1);
+        out.failed.push({ shipmentId: id, code: 'LOCK_TIMEOUT', message: 'lock timeout', transient: true });
+        continue;
+      }
       const s = this.shipments.get(id);
       const code = s ? apply(s) : 'SHIPMENT_NOT_FOUND';
       if (code) out.failed.push({ shipmentId: id, code, message: code, transient: false });

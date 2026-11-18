@@ -13,6 +13,7 @@ import {
   CoreApiError,
   PreparationBucketName,
   PreparationShipment,
+  PreparationWaybillResult,
   WorkItem,
 } from './core-api';
 import { existsSync, readdirSync, statSync } from 'fs';
@@ -40,7 +41,13 @@ export interface PrepareOptions {
   log: (line: string) => void;
   /** 새로 쓴 CSV 이름의 시각. 기본 지금 — 테스트가 바꾼다. */
   now?: () => Date;
+  /** 일시 실패 재시도 사이 기다리기. 기본 setTimeout — 테스트가 바꾼다. */
+  sleep?: (ms: number) => Promise<void>;
 }
+
+/** 어드민 출고 준비 진행 창(outbound-preparation-runner.ts RETRY_DELAYS_MS)과 같은 간격 — 같은 키로 세 번까지 다시. */
+const RETRY_DELAYS_MS = [2000, 5000, 10000] as const;
+const defaultSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 const CHUNK = 100;
 const MAX_START_RETRIES = 3;
@@ -277,6 +284,7 @@ async function apply(
     excluded: [...(prev?.excluded ?? [])],
   };
   const save = () => writeRun(dir, state);
+  const sleep = opts.sleep ?? defaultSleep;
   const prevBoxes = new Map((prev?.boxes ?? []).map((b) => [b.shipmentId, b]));
   const box = (shipmentId: string, batchId: string, route: Route): RunBox => {
     const p = prevBoxes.get(shipmentId);
@@ -306,26 +314,41 @@ async function apply(
   const planned = targets.filter((t) => t.from === 'planned').map((t) => t.shipmentId);
   let toWaybill = planned;
   if (drafts.length > 0) {
-    const ok = await bulk(drafts, (ids) => api.plan(ids, idemKey(run, 'plan', run)), '계획 확정', exclude);
+    const ok = await bulk(drafts, (ids) => api.plan(ids, idemKey(run, 'plan', run)), '계획 확정', exclude, sleep);
     toWaybill = [...ok, ...planned];
     save();
     log(`계획 확정 ${ok.length}/${drafts.length}`);
   }
 
-  // 2. 송장 일괄 발급(draft+planned) — 시작이 상자마다 발송 가능한 송장을 본다
+  // 2. 송장 일괄 발급(draft+planned) — 시작이 상자마다 발송 가능한 송장을 본다.
+  // 일시 결과(transient·pending·time-budget-exceeded)는 같은 키로 다시 부른다 — core 가 활성 송장 행을 이어 간다.
   const toBatch: string[] = [];
   if (toWaybill.length > 0) {
     for (const chunk of chunks(toWaybill)) {
-      const results = new Map(
-        (await api.issueWaybills(chunk, idemKey(run, 'waybill', run))).map((r) => [r.shipmentId, r]),
-      );
-      for (const id of chunk) {
-        const r = results.get(id);
-        if (r?.code === IDEMPOTENCY_MISMATCH) throw mismatchError();
-        if (!r) exclude(id, '비상 출고 — 송장 발급 응답에 없음');
-        else if (r.status !== 'registered') {
-          exclude(id, `비상 출고 — 송장 발급 안 됨: ${r.code ?? r.status}${r.reason ? ` (${r.reason})` : ''}`);
-        } else toBatch.push(id);
+      let remaining = chunk;
+      for (let retries = 0; ; retries++) {
+        const results = new Map(
+          (await api.issueWaybills(remaining, idemKey(run, 'waybill', run))).map((r) => [r.shipmentId, r]),
+        );
+        const again: string[] = [];
+        for (const id of remaining) {
+          const r = results.get(id);
+          if (r?.code === IDEMPOTENCY_MISMATCH) throw mismatchError();
+          if (!r) exclude(id, '비상 출고 — 송장 발급 응답에 없음');
+          else if (r.status === 'registered') toBatch.push(id);
+          else if (waybillRetryable(r) && retries < RETRY_DELAYS_MS.length) again.push(id);
+          else {
+            const tried = waybillRetryable(r) ? ` — ${retries}번 다시 시도해도 안 됨` : '';
+            exclude(
+              id,
+              `비상 출고 — 송장 발급 안 됨: ${r.code ?? r.status}${r.reason ? ` (${r.reason})` : ''}${tried}`,
+            );
+          }
+        }
+        if (again.length === 0) break;
+        log(`송장 발급 일시 실패 ${again.length} — ${RETRY_DELAYS_MS[retries] / 1000}초 뒤 같은 키로 다시`);
+        await sleep(RETRY_DELAYS_MS[retries]);
+        remaining = again;
       }
     }
     save();
@@ -348,6 +371,7 @@ async function apply(
       (ids) => api.addToBatch(batchId, ids, idemKey(run, 'add', batchId)),
       '배치 담기',
       exclude,
+      sleep,
     );
     for (const id of added) state.boxes.push(box(id, batchId, 'location'));
     save();
@@ -452,23 +476,46 @@ async function finishPendingExcludes(
 
 // ── 도움 ────────────────────────────────────────────────────────────
 
+/**
+ * 송장 결과가 일시적인가 — 어드민 진행 창(outbound-preparation-runner.ts)과 같은 판정.
+ * core 가 transient: false 라고 하면 확정 실패. 아니면 시간 예산 초과·발급 대기(pending·allocated)·transient 는 다시.
+ */
+function waybillRetryable(r: PreparationWaybillResult): boolean {
+  if (r.transient === false) return false;
+  return (
+    r.reason === 'time-budget-exceeded' || r.status === 'pending' || r.status === 'allocated' || r.transient === true
+  );
+}
+
+/** 상자마다 결과를 주는 묶음 명령(계획 확정·배치 담기). `transient` 실패만 같은 키로 다시 부르고, 그래도 안 되면 뺀다. */
 async function bulk(
   ids: string[],
   call: (chunk: string[]) => Promise<BulkShipmentResult>,
   step: string,
   exclude: (shipmentId: string, reason: string) => void,
+  sleep: (ms: number) => Promise<void>,
 ): Promise<string[]> {
   const ok: string[] = [];
   for (const chunk of chunks(ids)) {
-    const res = await call(chunk);
-    const failed = new Map(res.failed.map((f) => [f.shipmentId, f]));
-    if (res.failed.some((f) => f.code === IDEMPOTENCY_MISMATCH)) throw mismatchError();
-    const succeeded = new Set(res.succeeded);
-    for (const id of chunk) {
-      const f = failed.get(id);
-      if (f) exclude(id, `비상 출고 — ${step} 실패: ${f.code} (${f.message})`);
-      else if (succeeded.has(id)) ok.push(id);
-      else exclude(id, `비상 출고 — ${step} 응답에 없음`);
+    let remaining = chunk;
+    for (let retries = 0; ; retries++) {
+      const res = await call(remaining);
+      const failed = new Map(res.failed.map((f) => [f.shipmentId, f]));
+      if (res.failed.some((f) => f.code === IDEMPOTENCY_MISMATCH)) throw mismatchError();
+      const succeeded = new Set(res.succeeded);
+      const again: string[] = [];
+      for (const id of remaining) {
+        const f = failed.get(id);
+        if (f?.transient && retries < RETRY_DELAYS_MS.length) again.push(id);
+        else if (f) {
+          const tried = f.transient ? ` — ${retries}번 다시 시도해도 안 됨` : '';
+          exclude(id, `비상 출고 — ${step} 실패: ${f.code} (${f.message})${tried}`);
+        } else if (succeeded.has(id)) ok.push(id);
+        else exclude(id, `비상 출고 — ${step} 응답에 없음`);
+      }
+      if (again.length === 0) break;
+      await sleep(RETRY_DELAYS_MS[retries]);
+      remaining = again;
     }
   }
   return ok;
