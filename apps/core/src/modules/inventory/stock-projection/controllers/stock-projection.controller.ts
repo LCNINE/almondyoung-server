@@ -23,6 +23,7 @@ import { LocationContentsDto } from '../dto/location-contents.dto';
 import { InboundPipelineResponseDto } from '../dto/inbound-pipeline.dto';
 import { ExpectedArrivalsResponseDto } from '../dto/expected-arrivals.dto';
 import { StockProjectionService } from '../services/stock-projection.service';
+import { GetStockSummaryByGroupQueryDto, StockSummaryGroupDto } from '../dto/stock-summary-by-group.dto';
 
 const EXPECTED_ARRIVAL_INCLUDES: readonly string[] = ['inbound_shipment'];
 
@@ -74,6 +75,19 @@ export class StockProjectionController {
     @Query() query: GetStockSummaryListQueryDto,
   ): Promise<PaginatedResponseDto<StockSummaryListItemDto>> {
     return this.stockProjection.listStockSummaries(query);
+  }
+
+  @RequirePermission('inventory.stock.read')
+  @Get('/stocks/summary/by-group')
+  @ApiOperation({
+    summary: '상품 그룹별 재고 현황',
+    description: '그룹 단위 필터·페이지 처리 후 해당 그룹의 SKU × 창고 행을 반환합니다. limit과 total은 그룹 수입니다.',
+  })
+  @ApiOkResponsePaginated(StockSummaryGroupDto)
+  async listStockSummariesByGroup(
+    @Query() query: GetStockSummaryByGroupQueryDto,
+  ): Promise<PaginatedResponseDto<StockSummaryGroupDto>> {
+    return this.stockProjection.listStockSummariesByGroup(query);
   }
 
   @RequirePermission('inventory.stock.read')

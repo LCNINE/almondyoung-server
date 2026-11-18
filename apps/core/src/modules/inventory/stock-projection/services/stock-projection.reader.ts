@@ -1,5 +1,22 @@
 import { Injectable } from '@nestjs/common';
-import { and, eq, inArray, SQL, sql } from 'drizzle-orm';
+import {
+  and,
+  count,
+  desc,
+  eq,
+  gt,
+  ilike,
+  inArray,
+  isNotNull,
+  isNull,
+  lt,
+  lte,
+  ne,
+  notInArray,
+  or,
+  SQL,
+  sql,
+} from 'drizzle-orm';
 import { NotFoundError } from '@app/shared';
 import { InjectTypedDb, DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../schema/inventory.schema';
@@ -12,6 +29,9 @@ import { PaginatedResponseDto } from '../../shared/dto';
 import { LocationContentsDto } from '../dto/location-contents.dto';
 import { readLocationStockAvailability } from '../../shared/availability/location-stock-availability';
 import { physicalQuantity } from './physical-quantity';
+import { GetStockSummaryByGroupQueryDto, StockSummaryGroupDto } from '../dto/stock-summary-by-group.dto';
+import { groupStockSummaries } from './group-stock-summaries';
+import { productMasterVariants, productMasterVersions } from '../../../catalog/schema/catalog.schema';
 
 @Injectable()
 export class StockProjectionReader {
@@ -141,6 +161,175 @@ export class StockProjectionReader {
           lastUpdated: s.lastCalculatedAt,
         })),
         total: Number(countResult?.count || 0),
+        page,
+        limit,
+      };
+    }, tx);
+  }
+
+  async listStockSummariesByGroup(
+    query: GetStockSummaryByGroupQueryDto,
+    tx?: DbTx,
+  ): Promise<PaginatedResponseDto<StockSummaryGroupDto>> {
+    const { warehouseId, supplierId, search, queue, page = 1, limit = 20 } = query;
+
+    return this.dbService.run(async (trx) => {
+      const v = wmsSchema.stockSummary;
+      const { skus, skuGroups, skuShelfPositions, skuSuppliers, replenishmentSkuOverrides } = wmsTables;
+      const { fulfillmentOrders: fo, fulfillmentOrderItems: foi, productMatchings, productVariantSkuLinks } = wmsTables;
+      const unshipped = trx.$with('unshipped_stock').as(
+        trx
+          .select({
+            skuId: foi.skuId,
+            warehouseId: fo.warehouseId,
+            quantity: sql<number>`sum(greatest(${foi.qty} - ${foi.shippedQty} - ${foi.canceledQty}, 0))`
+              .mapWith(Number)
+              .as('unshipped_quantity'),
+          })
+          .from(foi)
+          .innerJoin(fo, eq(fo.id, foi.fulfillmentOrderId))
+          .where(
+            and(
+              // completed/canceled와 과도기 shipped는 종료; recovery_required를 포함한 나머지는 잔여 수요다.
+              notInArray(fo.status, ['shipped', 'completed', 'canceled']),
+              ne(foi.status, 'canceled'),
+              warehouseId ? eq(fo.warehouseId, warehouseId) : undefined,
+            ),
+          )
+          .groupBy(foi.skuId, fo.warehouseId),
+      );
+      const unshippedQuantity = sql<number>`coalesce(${unshipped.quantity}, 0)`.mapWith(Number);
+      const matches: (SQL | undefined)[] = [];
+
+      if (supplierId) {
+        matches.push(
+          inArray(
+            skus.id,
+            trx.select({ skuId: skuSuppliers.skuId }).from(skuSuppliers).where(eq(skuSuppliers.supplierId, supplierId)),
+          ),
+        );
+      }
+
+      if (search?.trim()) {
+        const like = `%${search.trim()}%`;
+        const matchingProductSkus = trx
+          .select({ skuId: productVariantSkuLinks.skuId })
+          .from(productMasterVersions)
+          .innerJoin(productMasterVariants, eq(productMasterVariants.versionId, productMasterVersions.id))
+          .innerJoin(productMatchings, eq(productMatchings.variantId, productMasterVariants.variantId))
+          .innerJoin(productVariantSkuLinks, eq(productVariantSkuLinks.productMatchingId, productMatchings.id))
+          .where(
+            and(
+              ilike(productMasterVersions.name, like),
+              eq(productMasterVersions.status, 'active'),
+              isNull(productMasterVersions.deletedAt),
+            ),
+          );
+
+        matches.push(or(ilike(skus.name, like), ilike(skus.code, like), inArray(skus.id, matchingProductSkus)));
+      }
+
+      const rows = trx.$with('group_stock_rows').as(
+        trx
+          .select({
+            groupKey:
+              sql<string>`case when ${skus.groupId} is null then 'sku:' || ${skus.id} else 'group:' || ${skus.groupId} end`.as(
+                'group_key',
+              ),
+            groupId: skus.groupId,
+            groupName: sql<string>`coalesce(${skuGroups.name}, ${skus.name})`.as('group_name'),
+            groupCode: sql<string | null>`${skuGroups.code}`.as('group_code'),
+            skuId: v.skuId,
+            skuName: skus.name,
+            skuCode: skus.code,
+            warehouseId: v.warehouseId,
+            warehouseName: sql<string>`coalesce(${v.warehouseName}, '')`.as('warehouse_name'),
+            shelfPosition: skuShelfPositions.positionCode,
+            onHandQty: v.onHandQty,
+            defectiveQty: v.defectiveQty,
+            inTransferQty: v.inTransferQty,
+            returnedQty: v.returnedQty,
+            availableQuantity: v.availableQty,
+            inboundPendingQuantity: v.inboundPendingQty,
+            unshippedQuantity: unshippedQuantity.as('unshipped_quantity'),
+            safetyStock: replenishmentSkuOverrides.safetyStock,
+            matchesFilters: sql<boolean>`${and(...matches) ?? sql`true`}`.as('matches_filters'),
+          })
+          .from(v)
+          .innerJoin(skus, eq(skus.id, v.skuId))
+          .leftJoin(skuGroups, eq(skuGroups.id, skus.groupId))
+          .leftJoin(skuShelfPositions, eq(skuShelfPositions.skuId, v.skuId))
+          .leftJoin(replenishmentSkuOverrides, eq(replenishmentSkuOverrides.skuId, v.skuId))
+          .leftJoin(unshipped, and(eq(unshipped.skuId, v.skuId), eq(unshipped.warehouseId, v.warehouseId)))
+          .where(
+            and(
+              warehouseId ? eq(v.warehouseId, warehouseId) : undefined,
+              or(
+                ne(v.onHandQty, 0),
+                ne(v.defectiveQty, 0),
+                ne(v.inTransferQty, 0),
+                ne(v.returnedQty, 0),
+                ne(v.reservedQty, 0),
+                ne(v.inboundPendingQty, 0),
+                ne(v.transferPendingQty, 0),
+                gt(unshippedQuantity, 0),
+              ),
+            ),
+          ),
+      );
+      let queueMatch: SQL | undefined;
+
+      if (queue === 'unshipped') queueMatch = gt(rows.unshippedQuantity, 0);
+      if (queue === 'below_safety_stock') {
+        queueMatch = and(isNotNull(rows.safetyStock), lt(rows.availableQuantity, rows.safetyStock));
+      }
+      if (queue === 'out_of_stock') queueMatch = lte(rows.availableQuantity, 0);
+      if (queue === 'inbound_pending') queueMatch = gt(rows.inboundPendingQuantity, 0);
+
+      const groups = trx.$with('stock_groups').as(
+        trx
+          .select({
+            groupKey: rows.groupKey,
+            groupName: rows.groupName,
+            maxShortage: // 불량·반품·이동 중 재고로는 못 보내므로 부족은 정상 재고(ON_HAND)와 비교한다.
+            sql<number>`max(greatest(${rows.unshippedQuantity} - ${rows.onHandQty}, 0))`.as(
+              'max_shortage',
+            ),
+            maxUnshipped: sql<number>`max(${rows.unshippedQuantity})`.as('max_unshipped'),
+          })
+          .from(rows)
+          .groupBy(rows.groupKey, rows.groupName)
+          // 검색·공급사·큐는 그룹을 고르고, 반환할 형제 SKU 행은 좁히지 않는다.
+          .having(and(sql`bool_or(${rows.matchesFilters})`, queueMatch ? sql`bool_or(${queueMatch})` : undefined)),
+      );
+      const [countResult] = await trx.with(unshipped, rows, groups).select({ total: count() }).from(groups);
+      const pagedGroups = trx.$with('paged_stock_groups').as(
+        trx
+          .select()
+          .from(groups)
+          .orderBy(desc(groups.maxShortage), desc(groups.maxUnshipped), groups.groupName, groups.groupKey)
+          .limit(limit)
+          .offset((page - 1) * limit),
+      );
+      const pageRows = await trx
+        .with(unshipped, rows, groups, pagedGroups)
+        .select()
+        .from(rows)
+        .innerJoin(pagedGroups, eq(pagedGroups.groupKey, rows.groupKey))
+        .orderBy(
+          desc(pagedGroups.maxShortage),
+          desc(pagedGroups.maxUnshipped),
+          pagedGroups.groupName,
+          pagedGroups.groupKey,
+          rows.skuName,
+          rows.skuCode,
+          rows.warehouseName,
+          rows.warehouseId,
+        );
+
+      return {
+        data: groupStockSummaries(pageRows.map((row) => row.group_stock_rows)),
+        total: countResult?.total ?? 0,
         page,
         limit,
       };
