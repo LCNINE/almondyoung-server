@@ -14,6 +14,8 @@ export interface RunBox {
   batchId: string;
   trackingNo: string | null;
   printed: boolean;
+  /** 주문번호 — 이어 돌릴 때 준비 목록에서 사라진 상자도 CSV·피킹 리스트에 싣는다. 옛 run.json 엔 없다. */
+  orderNos?: string[];
 }
 
 export interface RunState {
@@ -56,7 +58,8 @@ function isRunBox(v: unknown): v is RunBox {
     (v.route === 'location' || v.route === 'force') &&
     typeof v.batchId === 'string' &&
     (v.trackingNo === null || typeof v.trackingNo === 'string') &&
-    typeof v.printed === 'boolean'
+    typeof v.printed === 'boolean' &&
+    (v.orderNos === undefined || (Array.isArray(v.orderNos) && v.orderNos.every((o) => typeof o === 'string')))
   );
 }
 

@@ -24,6 +24,8 @@ export interface PrepareReport {
   skipped: Skipped[];
   /** dry-run 은 null */
   state: RunState | null;
+  /** 라벨을 못 만든 상자 등 사람이 봐야 하는 문제 — 비어 있지 않으면 CLI 가 0 이 아닌 코드로 끝낸다. */
+  problems: string[];
 }
 
 export interface PrepareOptions {
@@ -96,7 +98,7 @@ export async function runPrepare(api: CoreApi, opts: PrepareOptions): Promise<Pr
   if (!opts.apply) {
     if (targets.length === 0) log('대상 0 — 아무것도 바꾸지 않는다');
     log('dry-run — 아무것도 바꾸지 않았다. 실행하려면 --apply');
-    return { targets, skipped, state: null };
+    return { targets, skipped, state: null, problems: [] };
   }
 
   try {
@@ -104,9 +106,10 @@ export async function runPrepare(api: CoreApi, opts: PrepareOptions): Promise<Pr
     if (prev?.batchId) await finishPendingExcludes(api, prev.batchId, run, pending, log);
     if (targets.length === 0) {
       log(pending.length > 0 ? '대상 0 — 남은 빼기만 마쳤다' : '대상 0 — 아무것도 바꾸지 않는다');
-      return { targets, skipped, state: prev };
+      return { targets, skipped, state: prev, problems: [] };
     }
     const state = await apply(api, opts, prev, ownBatch, targets, orderNos);
+    let problems: string[] = [];
     if (opts.outputs !== false) {
       // 이미 시작된 배치에서 이어받은 상자는 준비 목록에 없다 — 작업 항목의 주문번호로 채운다.
       const known = new Map(orderNos);
@@ -115,9 +118,9 @@ export async function runPrepare(api: CoreApi, opts: PrepareOptions): Promise<Pr
           if (!known.has(w.shipmentId) && w.displayOrderNo) known.set(w.shipmentId, [w.displayOrderNo]);
         }
       }
-      await produceOutputs(api, state, known, dir, log);
+      problems = await produceOutputs(api, state, known, dir, log);
     }
-    return { targets, skipped, state };
+    return { targets, skipped, state, problems };
   } catch (error) {
     if (error instanceof CoreApiError && error.code === IDEMPOTENCY_MISMATCH) throw mismatchError();
     throw error;
@@ -242,7 +245,15 @@ async function apply(
   const box = (shipmentId: string, batchId: string, route: Route): RunBox => {
     const p = prevBoxes.get(shipmentId);
     const same = p?.batchId === batchId;
-    return { shipmentId, route, batchId, trackingNo: same ? p.trackingNo : null, printed: same ? p.printed : false };
+    const nos = orderNos.get(shipmentId) ?? (same ? p.orderNos : undefined);
+    return {
+      shipmentId,
+      route,
+      batchId,
+      trackingNo: same ? p.trackingNo : null,
+      printed: same ? p.printed : false,
+      ...(nos ? { orderNos: nos } : {}),
+    };
   };
   const exclude = (shipmentId: string, reason: string) => {
     state.boxes = state.boxes.filter((b) => b.shipmentId !== shipmentId);

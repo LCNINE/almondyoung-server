@@ -171,7 +171,7 @@ function isRecord(v: unknown): v is Record<string, unknown> {
 
 function recipientNameOf(snapshot: unknown): string {
   if (!isRecord(snapshot)) return '';
-  const name = snapshot.name ?? snapshot.recipientName;
+  const name = snapshot.recipientName ?? snapshot.name;
   return typeof name === 'string' ? name : '';
 }
 
@@ -186,30 +186,37 @@ export async function produceOutputs(
   orderNos: Map<string, string[]>,
   dir: string,
   log: (l: string) => void,
-): Promise<void> {
+): Promise<string[]> {
   const labels = new Map<string, { data: string; fingerprint: string }>();
   const picks: PickBox[] = [];
+  const problems: string[] = [];
 
   for (const b of state.boxes) {
     const detail = await api.shipment(b.shipmentId);
     const skuNames = new Map(detail.lines.map((l) => [l.id, l.skuName ?? '']));
     const sources =
       b.route === 'location'
-        ? (await api.locationState(b.shipmentId, state.warehouseId)).sources.map((s) => ({
-            locationCode: s.sourceLocationCode,
-            skuName: skuNames.get(s.shipmentLineId) ?? '',
-            qty: s.allocatedQty,
-          }))
+        ? (await api.locationState(b.shipmentId, state.warehouseId)).sources
+            .map((s) => ({
+              locationCode: s.sourceLocationCode,
+              skuName: skuNames.get(s.shipmentLineId) ?? '',
+              qty: s.remainingQty,
+            }))
+            .filter((s) => s.qty > 0)
         : [];
     let trackingNo = b.trackingNo ?? '';
     if (b.trackingNo != null) {
       const l = await api.label(b.shipmentId);
       labels.set(b.shipmentId, { data: l.data, fingerprint: l.fingerprint });
       trackingNo = l.trackingNo;
-    } else log(`송장번호 없음 — 라벨을 만들지 못했다: ${b.shipmentId}`);
+    } else {
+      const problem = `상자 ${b.shipmentId} 송장번호가 없어 라벨을 못 만들었고 출력 확인도 못 남겼다 — 저녁 위치 강제 출고가 실패한다. 상자 보기에서 송장을 확인한다`;
+      problems.push(problem);
+      log(`오류: ${problem}`);
+    }
     picks.push({
       shipmentId: b.shipmentId,
-      orderNos: orderNos.get(b.shipmentId) ?? [],
+      orderNos: b.orderNos ?? orderNos.get(b.shipmentId) ?? [],
       trackingNo,
       route: b.route,
       recipientName: recipientNameOf(detail.recipientSnapshot),
@@ -257,4 +264,5 @@ export async function produceOutputs(
   }
   if (relabeled) writeLabels();
   log(`산출물 — labels.zpl·pick-list.html·shipments.csv (${sorted.length}상자). labels.zpl 을 반드시 찍는다`);
+  return problems;
 }

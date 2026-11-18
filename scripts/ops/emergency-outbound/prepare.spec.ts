@@ -70,7 +70,16 @@ describe('runPrepare', () => {
       run: RUN,
       warehouseId: WH,
       batchId: 'b',
-      boxes: [{ shipmentId: 's1', route: 'location', batchId: 'b', trackingNo: 'TRK-ACME-0001', printed: false }],
+      boxes: [
+        {
+          shipmentId: 's1',
+          route: 'location',
+          batchId: 'b',
+          trackingNo: 'TRK-ACME-0001',
+          printed: false,
+          orderNos: ['acme-s1'],
+        },
+      ],
       excluded: [],
     };
     expect(report.state).toEqual(expected);
@@ -385,6 +394,60 @@ describe('runPrepare outputs', () => {
         },
       ],
     });
+
+  it('lists the remaining qty and drops fully picked sources', async () => {
+    const { dir, opts } = setup();
+    const core = new FakeCore();
+    const src = (code: string, allocatedQty: number, pickedQty: number) => ({
+      shipmentLineId: 'l-s1',
+      skuId: 'k-s1',
+      sourceLocationId: `loc-${code}`,
+      sourceLocationCode: code,
+      allocatedQty,
+      pickedQty,
+      remainingQty: allocatedQty - pickedQty,
+    });
+    core.addShipment({
+      id: 's1',
+      status: 'draft',
+      lines: [{ id: 'l-s1', skuId: 'k-s1', skuName: '상품-s1', qty: 5 }],
+      sources: [src('A-01', 3, 1), src('A-02', 2, 2)],
+    });
+
+    await runPrepare(core, withOutputs(opts(true)));
+
+    const html = readFileSync(join(dir, 'pick-list.html'), 'utf8');
+    expect(html).toContain('A-01 · 상품-s1 × 2');
+    expect(html).not.toContain('A-02');
+  });
+
+  it('keeps every order number of a multi-order box after a resume', async () => {
+    const { dir, opts } = setup();
+    const core = new FakeCore();
+    core.addShipment({ id: 's1', status: 'draft', orderNos: ['acme-1', 'acme-2'] });
+    await runPrepare(core, withOutputs(opts(true)));
+
+    await runPrepare(core, withOutputs(opts(true)));
+
+    expect(readFileSync(join(dir, 'shipments.csv'), 'utf8')).toContain('acme-1 / acme-2');
+    expect(readFileSync(join(dir, 'pick-list.html'), 'utf8')).toContain('acme-1 / acme-2');
+  });
+
+  it('reports boxes without a tracking number as problems', async () => {
+    const { opts, lines } = setup();
+    const core = new FakeCore();
+    core.addShipment({ id: 'sx', status: 'planned' });
+    core.addBatch({ id: 'bx', startedAt: '2026-11-19T00:00:00Z', status: 'picking' }, [
+      { shipmentId: 'sx', status: 'picking' },
+    ]);
+
+    const report = await runPrepare(core, withOutputs(opts(true)));
+
+    expect(report.problems).toHaveLength(1);
+    expect(report.problems[0]).toContain('sx');
+    expect(lines.some((l) => l.includes('오류') && l.includes('sx'))).toBe(true);
+    expect(core.prints).toEqual([]);
+  });
 
   it('writes labels in picking order and confirms each print', async () => {
     const { dir, opts } = setup();
