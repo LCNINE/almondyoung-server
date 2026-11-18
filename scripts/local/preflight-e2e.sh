@@ -156,6 +156,24 @@ WAL=$(url_of apps/wallet/.env)
   [ "$(pgq "$MED" "SELECT count(*) FROM region")" -ge 1 ] 2>/dev/null \
     && ok "medusa: region 존재" || bad "medusa 시드 미실행 → npm run bootstrap:e2e:local"
 }
+# 주문 경로 상품(#1440) — 주문 리허설을 할 때만 필요해 «경고»다. 이름·창고 정본은 scripts/local/order-path/plan.ts·config.ts.
+# 발행된 [E2E] 주문 경로 단일 → 매칭됨 → 그 SKU 의 부천 가용 ≥1 → Medusa 에 식별자가 투영됨. 하나라도 빠지면 주문이 어디선가 멈춘다.
+ORDER_PATH_HINT="주문 리허설 전에 npm run seed:order-path:local"
+if [ -n "$CORE" ] && [ -n "$MED" ]; then
+  OP_MASTER=$(pgq "$CORE" "SELECT master_id FROM product_master_versions WHERE name = '[E2E] 주문 경로 단일' AND status = 'active' LIMIT 1")
+  OP_READY=$(pgq "$CORE" "SELECT count(*) FROM product_master_versions ver
+    JOIN product_master_variants pmv ON pmv.version_id = ver.id
+    JOIN product_matchings m ON m.variant_id = pmv.variant_id AND m.status = 'matched'
+    JOIN product_variant_sku_links l ON l.product_matching_id = m.id
+    JOIN stock_summary_view s ON s.sku_id = l.sku_id AND s.warehouse_id = '019d0001-0001-7000-a000-000000000001' AND s.available_qty >= 1
+    WHERE ver.name = '[E2E] 주문 경로 단일' AND ver.status = 'active'")
+  OP_MEDUSA=""
+  [ -n "$OP_MASTER" ] && OP_MEDUSA=$(pgq "$MED" "SELECT count(*) FROM product WHERE handle = '$OP_MASTER' AND metadata->>'pimMasterId' IS NOT NULL AND deleted_at IS NULL")
+  if [ -z "$OP_MASTER" ]; then warn "주문 경로 상품 없음 — $ORDER_PATH_HINT"
+  elif [ "${OP_READY:-0}" -lt 1 ] 2>/dev/null; then warn "주문 경로 상품이 매칭·부천 재고 중 하나가 비었다 — $ORDER_PATH_HINT"
+  elif [ "${OP_MEDUSA:-0}" -lt 1 ] 2>/dev/null; then warn "주문 경로 상품이 Medusa 에 투영되지 않았다 — $ORDER_PATH_HINT (logs/channel-adapter.log)"
+  else ok "주문 경로 상품 — 발행·매칭·부천 재고·Medusa 투영"; fi
+fi
 
 echo "── 6. 앱 사이에서 «같아야» 하는 값 (어긋나면 조용히 401/400)"
 same_value OAUTH_INTERNAL_SECRET apps/user-service/.env web/auth-web/.env.local
