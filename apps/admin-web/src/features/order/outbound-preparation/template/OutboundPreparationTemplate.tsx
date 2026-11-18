@@ -245,10 +245,13 @@ function PreparationWarehouse({
       [];
     const selected = selections[key];
 
+    // 합칠 주문은 합치는 게 목적이라, 따로 보낼 상자는 사람이 하나씩 고른다
     return selected === undefined
-      ? bulkSelectableShipments(shipments).map(
-          (shipment) => shipment.shipmentId
-        )
+      ? key === 'mergeable'
+        ? []
+        : bulkSelectableShipments(shipments).map(
+            (shipment) => shipment.shipmentId
+          )
       : shipments
           .filter((shipment) => selected.includes(shipment.shipmentId))
           .map((shipment) => shipment.shipmentId);
@@ -592,6 +595,7 @@ function PreparationWarehouse({
             {bucket && (
               <BucketList
                 bucket={bucket}
+                warehouseId={warehouseId}
                 selectedIds={selectedIds(bucket.bucket)}
                 busy={busy}
                 onToggle={toggle}

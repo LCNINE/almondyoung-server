@@ -25,6 +25,7 @@ function list(bucket: PreparationBucketDto) {
   return (
     <BucketList
       bucket={bucket}
+      warehouseId="w1"
       selectedIds={[]}
       busy={false}
       onToggle={jest.fn()}
