@@ -9,6 +9,7 @@ import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
 import { Badge } from "@/components/ui/badge"
 import { parseHashtagParagraph } from "./hashtag-paragraph"
 import { remarkProductImageDirective } from "./remark-product-image"
+import "./product-description-markdown.css"
 
 const plugins = [
   remarkGfm,
@@ -25,7 +26,7 @@ export function ProductDescriptionMarkdown({
   imageAltFallback?: string
 }) {
   return (
-    <div className="prose max-w-none">
+    <div className="pd-markdown prose max-w-none">
       <ReactMarkdown
         remarkPlugins={plugins}
         components={{
