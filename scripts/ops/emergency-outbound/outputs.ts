@@ -4,7 +4,7 @@
  * 순수 함수(정렬·HTML·CSV)와, `prepare --apply` 끝에서 파일을 만드는 `produceOutputs` 로 이뤄진다.
  * 받는 분 이름은 core 가 이미 가린 `recipientSnapshot` 그대로 쓴다.
  */
-import { writeFileSync } from 'fs';
+import { existsSync, readFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { CoreApi, CoreApiError } from './core-api';
 import { RunState, writeRun } from './run-state';
@@ -179,8 +179,41 @@ function recipientNameOf(snapshot: unknown): string {
   return typeof name === 'string' ? name : '';
 }
 
+/** KST `yyyyMMdd-HHmmss` — 새로 쓴 CSV 이름에 붙인다. */
+function kstSeconds(now: Date): string {
+  const k = new Date(now.getTime() + 9 * 3600_000);
+  const p = (n: number) => String(n).padStart(2, '0');
+  return (
+    `${k.getUTCFullYear()}${p(k.getUTCMonth() + 1)}${p(k.getUTCDate())}-` +
+    `${p(k.getUTCHours())}${p(k.getUTCMinutes())}${p(k.getUTCSeconds())}`
+  );
+}
+
 /**
- * `labels.zpl`·`pick-list.html`·`shipments.csv` 를 만든다. 매번 전체를 다시 쓴다(덮어쓰기).
+ * `shipments.csv` 는 작업자가 저녁에 줄을 지우는 파일이라 절대 덮어쓰지 않는다.
+ * 이미 있고 내용이 다르면 그대로 두고 새 목록을 `shipments.<KST 시각>.csv` 로 옆에 쓴다. 쓴 파일 이름을 돌려준다.
+ */
+function writeShipmentsCsv(dir: string, content: string, now: () => Date, log: (l: string) => void): string {
+  const main = 'shipments.csv';
+  const mainPath = join(dir, main);
+  if (!existsSync(mainPath)) {
+    writeFileSync(mainPath, content, 'utf8');
+    return main;
+  }
+  if (readFileSync(mainPath, 'utf8') === content) return main;
+  const stamp = kstSeconds(now());
+  let name = `shipments.${stamp}.csv`;
+  for (let n = 2; existsSync(join(dir, name)); n++) name = `shipments.${stamp}-${n}.csv`;
+  writeFileSync(join(dir, name), content, 'utf8');
+  log(
+    `주의: 원래 ${main} 은 그대로 두었다(손으로 고쳤을 수 있다). 새로 만든 목록은 ${name} 이다 — ` +
+      `저녁 dispatch 는 기본으로 ${main} 을 읽는다. 새 목록을 쓰려면 --csv 로 그 파일을 준다`,
+  );
+  return name;
+}
+
+/**
+ * `labels.zpl`·`pick-list.html` 은 매번 전체를 다시 쓴다(덮어쓰기). `shipments.csv` 는 덮어쓰지 않는다 — `writeShipmentsCsv`.
  * 출력 확인 기록(`confirmLabelPrint`)은 아직 안 찍힌 상자만, 파일을 쓴 뒤에 남긴다 — 스펙상 위치 피킹이 그 기록을 요구한다.
  * 상자 하나를 확인할 때마다 run.json 의 `printed` 를 곧바로 저장한다.
  */
@@ -190,6 +223,7 @@ export async function produceOutputs(
   orderNos: Map<string, string[]>,
   dir: string,
   log: (l: string) => void,
+  now: () => Date = () => new Date(),
 ): Promise<string[]> {
   const labels = new Map<string, { data: string; fingerprint: string }>();
   const picks: PickBox[] = [];
@@ -251,8 +285,8 @@ export async function produceOutputs(
   writeLabels();
   writeFileSync(join(dir, 'pick-list.html'), renderPickList(state.run, sorted), 'utf8');
   const byId = new Map(state.boxes.map((b) => [b.shipmentId, b]));
-  writeFileSync(
-    join(dir, 'shipments.csv'),
+  const csvName = writeShipmentsCsv(
+    dir,
     toCsv(
       sorted.map((p) => ({
         shipmentId: p.shipmentId,
@@ -262,7 +296,8 @@ export async function produceOutputs(
         batchId: byId.get(p.shipmentId)?.batchId ?? '',
       })),
     ),
-    'utf8',
+    now,
+    log,
   );
 
   let relabeled = false;
@@ -291,7 +326,7 @@ export async function produceOutputs(
     writeRun(dir, state);
   }
   if (relabeled) writeLabels();
-  log(`산출물 — labels.zpl·pick-list.html·shipments.csv (${sorted.length}상자). labels.zpl 을 반드시 찍는다`);
+  log(`산출물 — labels.zpl·pick-list.html·${csvName} (${sorted.length}상자). labels.zpl 을 반드시 찍는다`);
   if (manualCount > 0) log(`수기 송장 ${manualCount}상자 — 라벨은 labels.zpl 에 없다. 따로 붙인다`);
   return problems;
 }

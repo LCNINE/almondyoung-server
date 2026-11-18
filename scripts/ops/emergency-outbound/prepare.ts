@@ -36,6 +36,8 @@ export interface PrepareOptions {
   /** 시작 뒤 라벨·피킹 리스트·CSV 를 만든다. 기본 true — 끄는 건 테스트뿐. */
   outputs?: boolean;
   log: (line: string) => void;
+  /** 새로 쓴 CSV 이름의 시각. 기본 지금 — 테스트가 바꾼다. */
+  now?: () => Date;
 }
 
 const CHUNK = 100;
@@ -118,7 +120,7 @@ export async function runPrepare(api: CoreApi, opts: PrepareOptions): Promise<Pr
           if (!known.has(w.shipmentId) && w.displayOrderNo) known.set(w.shipmentId, [w.displayOrderNo]);
         }
       }
-      problems = await produceOutputs(api, state, known, dir, log);
+      problems = await produceOutputs(api, state, known, dir, log, opts.now);
     }
     return { targets, skipped, state, problems };
   } catch (error) {

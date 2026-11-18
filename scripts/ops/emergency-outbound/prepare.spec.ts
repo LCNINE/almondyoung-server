@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, writeFileSync } from 'fs';
+import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { CoreApiError } from './core-api';
@@ -553,6 +553,44 @@ describe('runPrepare outputs', () => {
     expect(core.callsOf('label')).toHaveLength(2);
     expect(core.prints).toHaveLength(1);
     expect(readRun(dir)?.boxes[0].printed).toBe(true);
+  });
+
+  it('keeps a worker-edited shipments.csv on a same-run rerun and writes the new list beside it', async () => {
+    const { dir, opts, lines } = setup();
+    const core = new FakeCore();
+    located(core, 's1', 'A-01');
+    located(core, 's2', 'B-01');
+    await runPrepare(core, withOutputs(opts(true)));
+    const csvPath = join(dir, 'shipments.csv');
+    // 작업자가 저녁에 못 나간 줄을 지웠다
+    const edited = readFileSync(csvPath, 'utf8')
+      .split('\r\n')
+      .filter((l) => !l.startsWith('s1,'))
+      .join('\r\n');
+    writeFileSync(csvPath, edited, 'utf8');
+    lines.length = 0;
+
+    await runPrepare(core, { ...withOutputs(opts(true)), now: () => new Date('2026-11-19T01:02:03Z') });
+
+    expect(readFileSync(csvPath, 'utf8')).toBe(edited);
+    const fresh = join(dir, 'shipments.20261119-100203.csv');
+    expect(readFileSync(fresh, 'utf8')).toContain('s1,');
+    expect(
+      lines.some(
+        (l) => l.includes('shipments.csv') && l.includes('그대로') && l.includes('shipments.20261119-100203.csv'),
+      ),
+    ).toBe(true);
+  });
+
+  it('does not write a second csv when the regenerated list is the same', async () => {
+    const { dir, opts } = setup();
+    const core = new FakeCore();
+    located(core, 's1', 'A-01');
+    await runPrepare(core, withOutputs(opts(true)));
+
+    await runPrepare(core, withOutputs(opts(true)));
+
+    expect(readdirSync(dir).filter((f) => f.startsWith('shipments'))).toEqual(['shipments.csv']);
   });
 
   it('regenerates files on resume but confirms only unprinted boxes', async () => {
