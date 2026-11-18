@@ -7,9 +7,18 @@ export type ProductImageDirectiveNode = {
   attributes?: Record<string, unknown> | null;
 };
 
+/** 원본 이미지에서 보여 줄 영역. 이미지 폭·높이에 대한 0~1 비율이다. */
+export type ImageCrop = {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+};
+
 export type ProductImageReference = {
   fileId: string;
   alt: string;
+  crop?: ImageCrop;
 };
 
 export type ProductImageDirectiveParseResult =
@@ -36,11 +45,31 @@ export function parseProductImageDirective(node: ProductImageDirectiveNode): Pro
   }
 
   const alt = node.attributes?.alt;
+  const crop = parseImageCrop(node.attributes?.crop);
+
   return {
     ok: true,
     fileId,
     alt: typeof alt === 'string' ? alt : '',
+    ...(crop ? { crop } : {}),
   };
+}
+
+/** 잘못된 crop 은 버리고 원본 전체를 보여 준다 — 이미지까지 버릴 이유는 없다. */
+export function parseImageCrop(value: unknown): ImageCrop | undefined {
+  if (typeof value !== 'string') return undefined;
+
+  const parts = value.split(',').map((part) => Number(part.trim()));
+  if (parts.length !== 4 || parts.some((n) => !Number.isFinite(n))) return undefined;
+
+  const [x, y, w, h] = parts;
+  const inRange = x >= 0 && y >= 0 && w > 0 && h > 0 && x + w <= 1.0001 && y + h <= 1.0001;
+
+  return inRange ? { x, y, w, h } : undefined;
+}
+
+export function formatImageCrop({ x, y, w, h }: ImageCrop): string {
+  return [x, y, w, h].map((n) => Number(n.toFixed(4))).join(',');
 }
 
 function escapeDirectiveAttr(value: string): string {
@@ -60,7 +89,9 @@ function escapeDirectiveAttr(value: string): string {
   });
 }
 
-export function createProductImageDirective({ fileId, alt }: ProductImageReference): string {
+export function createProductImageDirective({ fileId, alt, crop }: ProductImageReference): string {
   const escapedAlt = escapeDirectiveAttr(alt);
-  return `::${PRODUCT_IMAGE_DIRECTIVE_NAME}{fileId="${fileId}" alt="${escapedAlt}"}`;
+  const cropAttr = crop ? ` crop="${formatImageCrop(crop)}"` : '';
+
+  return `::${PRODUCT_IMAGE_DIRECTIVE_NAME}{fileId="${fileId}" alt="${escapedAlt}"${cropAttr}}`;
 }
