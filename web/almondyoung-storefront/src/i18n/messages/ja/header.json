@@ -10,7 +10,8 @@
     "shipping": "注文・配送"
   },
   "userInfo": {
-    "logout": "ログアウト"
+    "logout": "ログアウト",
+    "nameSuffix": "さん"
   },
   "categoryDropdown": {
     "trigger": "カテゴリ",

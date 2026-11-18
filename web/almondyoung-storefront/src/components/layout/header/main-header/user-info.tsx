@@ -12,7 +12,7 @@ export function MobileAuthLinks() {
   const { user } = useUser()
   const t = useTranslations("header.utility")
 
-  if (user) return <UserInfo />
+  if (user) return <UserInfo mobile />
 
   return (
     <>
@@ -22,7 +22,7 @@ export function MobileAuthLinks() {
   )
 }
 
-export function UserInfo() {
+export function UserInfo({ mobile = false }: { mobile?: boolean }) {
   const [isPending, startTransition] = useTransition()
   const { user, setUser } = useUser()
   const t = useTranslations("header.userInfo")
@@ -43,13 +43,22 @@ export function UserInfo() {
 
   return (
     <div className="flex items-center gap-2">
-      <strong className="text-sm">{displayName}</strong>
+      <span>
+        <strong className={mobile ? "text-foreground" : "text-sm"}>
+          {displayName}
+        </strong>
+        {mobile && t("nameSuffix") && ` ${t("nameSuffix")}`}
+      </span>
 
       <button
         type="button"
         onClick={handleLogout}
         disabled={isPending}
-        className="cursor-pointer disabled:opacity-50"
+        className={
+          mobile
+            ? "border-border cursor-pointer border bg-white px-1.5 py-px disabled:opacity-50"
+            : "cursor-pointer disabled:opacity-50"
+        }
       >
         {isPending ? <Spinner size="sm" color="gray" /> : t("logout")}
       </button>
