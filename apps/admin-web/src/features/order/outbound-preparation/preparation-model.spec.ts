@@ -1,5 +1,6 @@
 import type { PreparationShipmentDto } from '@/lib/types/dto/fulfillment';
 import {
+  batchReturnNextStep,
   locatePreparationTarget,
   plannedOrderText,
   preparationAddress,
@@ -99,5 +100,63 @@ describe('preparationAddress', () => {
     expect(preparationAddress(path, 'warehouseId=w1', 'w1')).toBe(
       `${path}?warehouseId=w1`
     );
+  });
+});
+
+describe('batchReturnNextStep', () => {
+  const batchReturn = (needsNewWaybill: boolean) => ({
+    batchNumber: 'OB-1',
+    exitedAt: '2026-01-02T01:05:00Z',
+    place: null,
+    reason: '잘못 넣은 상자',
+    needsNewWaybill,
+  });
+
+  it.each([
+    [
+      'resume',
+      true,
+      '«이어서 출고 준비»를 누르면 새 송장을 받아 다시 배치에 담아요',
+    ],
+    [
+      'resume',
+      false,
+      '«이어서 출고 준비»를 누르면 지금 송장으로 다시 배치에 담아요',
+    ],
+    ['ready', true, '«출고 준비»를 누르면 다시 배치에 담아요'],
+    ['unavailable', true, '재고가 모자라요 — 재고를 채운 뒤 다시 준비해요'],
+    ['needs_info', true, null],
+  ] as const)('%s, 새 송장 %s', (bucket, needsNewWaybill, expected) => {
+    expect(
+      batchReturnNextStep(bucket, {
+        batchReturn: batchReturn(needsNewWaybill),
+        shortPick: null,
+        reason: null,
+      })
+    ).toBe(expected);
+  });
+
+  it('결품 상자와 서버가 사유를 준 상자, 배치와 상관없는 상자에는 붙이지 않는다', () => {
+    expect(
+      batchReturnNextStep('resume', {
+        batchReturn: batchReturn(true),
+        shortPick: [{ name: '상품', locationCode: 'A-01-01', shortQty: 1 }],
+        reason: null,
+      })
+    ).toBeNull();
+    expect(
+      batchReturnNextStep('resume', {
+        batchReturn: batchReturn(true),
+        shortPick: null,
+        reason: '운송사가 송장 접수를 거절했어요 — 상자 화면에서 확인해요',
+      })
+    ).toBeNull();
+    expect(
+      batchReturnNextStep('resume', {
+        batchReturn: null,
+        shortPick: null,
+        reason: null,
+      })
+    ).toBeNull();
   });
 });

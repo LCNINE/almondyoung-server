@@ -20,10 +20,14 @@ import {
 } from '@/lib/services/orders';
 import type { PreparationBucketDto } from '@/lib/types/dto/fulfillment';
 import {
+  batchReturnNextStep,
+  batchReturnText,
   bulkSelectableShipments,
   lineSplitText,
   PREPARATION_BATCH_LIMIT,
   plannedOrderText,
+  type ShipmentGroup,
+  shipmentGroupOf,
   shortPickText,
 } from '../preparation-model';
 import { BUCKET_LABELS } from './bucket-table';
@@ -58,6 +62,21 @@ export function BucketList({
     PREPARATION_BATCH_LIMIT - keptCount
   );
   const others = bucket.shipments.length - shortPicks.length;
+  const returnedCount =
+    bucket.batchReturnCount ??
+    bucket.shipments.filter(
+      (shipment) => shipmentGroupOf(shipment) === 'batch_return'
+    ).length;
+  // 앞 쪽에서 돌아온 상자가 끝나도, 묶음이 있는 분류면 첫 줄에 묶음 이름을 단다
+  const hasReturns =
+    (bucket.shortPickCount ?? shortPicks.length) + returnedCount > 0;
+  const groupTitle: Record<ShipmentGroup, string> = {
+    short_pick: `결품으로 돌아온 상자 ${
+      bucket.shortPickCount ?? shortPicks.length
+    }건 — 자리 수량을 확인한 뒤 하나씩 골라 주세요`,
+    batch_return: `배치에서 빠져 돌아온 상자 ${returnedCount}건 — 뺀 이유를 보고 다시 준비해 주세요`,
+    other: '그 밖의 상자',
+  };
   const selectAllLabel = `${shortPicks.length > 0 ? '결품 상자 빼고 ' : ''}${
     others > PREPARATION_BATCH_LIMIT - keptCount
       ? `앞 ${PREPARATION_BATCH_LIMIT - keptCount}건 선택`
@@ -117,24 +136,16 @@ export function BucketList({
           <TableBody>
             {bucket.shipments.map((shipment, index) => (
               <Fragment key={shipment.shipmentId}>
-                {index === 0 && shipment.shortPick && (
+                {(index === 0
+                  ? hasReturns
+                  : shipmentGroupOf(shipment) !==
+                    shipmentGroupOf(bucket.shipments[index - 1])) && (
                   <TableRow className="bg-muted/50 hover:bg-muted/50">
                     <TableCell colSpan={6} className="text-sm font-semibold">
-                      결품으로 돌아온 상자{' '}
-                      {bucket.shortPickCount ?? shortPicks.length}건 — 자리
-                      수량을 확인한 뒤 하나씩 골라 주세요
+                      {groupTitle[shipmentGroupOf(shipment)]}
                     </TableCell>
                   </TableRow>
                 )}
-                {index > 0 &&
-                  !shipment.shortPick &&
-                  bucket.shipments[index - 1].shortPick && (
-                    <TableRow className="bg-muted/50 hover:bg-muted/50">
-                      <TableCell colSpan={6} className="text-sm font-semibold">
-                        그 밖의 상자
-                      </TableCell>
-                    </TableRow>
-                  )}
                 <TableRow>
                   <TableCell>
                     <Checkbox
@@ -178,19 +189,8 @@ export function BucketList({
                   <TableCell className="tabular-nums">
                     {shipment.totalQty}
                   </TableCell>
-                  <TableCell className="text-sm text-muted-foreground">
-                    {shipment.shortPick?.length ? (
-                      <>
-                        <span className="block font-medium text-foreground">
-                          {shortPickText(shipment.shortPick)}
-                        </span>
-                        {shipment.reason && (
-                          <span className="block">{shipment.reason}</span>
-                        )}
-                      </>
-                    ) : (
-                      (shipment.reason ?? '-')
-                    )}
+                  <TableCell className="min-w-72 whitespace-normal text-sm text-muted-foreground">
+                    <ReasonCell bucket={bucket.bucket} shipment={shipment} />
                   </TableCell>
                   <TableCell>
                     {bucket.bucket === 'mergeable' && (
@@ -223,5 +223,42 @@ export function BucketList({
         </Table>
       </div>
     </section>
+  );
+}
+
+function ReasonCell({
+  bucket,
+  shipment,
+}: {
+  bucket: PreparationBucketDto['bucket'];
+  shipment: PreparationBucketDto['shipments'][number];
+}) {
+  const nextStep = batchReturnNextStep(bucket, shipment);
+
+  if (!shipment.shortPick?.length && !shipment.batchReturn) {
+    return <>{shipment.reason ?? '-'}</>;
+  }
+
+  return (
+    <>
+      {shipment.shortPick?.length ? (
+        <span className="block font-medium text-foreground">
+          {shortPickText(shipment.shortPick)}
+        </span>
+      ) : (
+        shipment.batchReturn && (
+          <span className="block font-medium text-foreground">
+            {shipment.batchReturn.reason}
+          </span>
+        )
+      )}
+      {shipment.batchReturn && (
+        <span className="block text-xs">
+          {batchReturnText(shipment.batchReturn)}
+        </span>
+      )}
+      {shipment.reason && <span className="block">{shipment.reason}</span>}
+      {nextStep && <span className="block text-foreground">{nextStep}</span>}
+    </>
   );
 }

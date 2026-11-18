@@ -23,6 +23,7 @@ import { ConsolidationBoardReader } from '../services/consolidation-board.reader
 import { loadSplitShares } from '../services/consolidation-shipment-reads';
 import { OutboundPreparationReader } from './outbound-preparation.reader';
 import { loadShortPickReturns } from './short-pick-returns';
+import { loadReturnedWorkItems } from './batch-returns';
 import { seedHandedOverOrder } from '../services/__support__/sellmate-handed-over-fixtures';
 import { OutboundPreparationSummaryDto } from '../dto/outbound-preparation.dto';
 
@@ -652,10 +653,104 @@ describeIfDb('OutboundPreparationReader (DB integration)', () => {
         status: 'queued',
         createdAt: new Date(Date.now() - 60_000),
       });
-      expect(await loadShortPickReturns(tx, [exited.shipment.id])).toEqual(new Map());
-      expect(idsIn(summary, 'ready').slice(1).sort()).toEqual(
-        [plain, refilled, rebatched, otherExit].map((fixture) => fixture.shipment.id).sort(),
+      expect(await loadShortPickReturns(tx, await loadReturnedWorkItems(tx, [exited.shipment.id]))).toEqual(new Map());
+      expect(ready?.batchReturnCount).toBe(3);
+      expect(idsIn(summary, 'ready').slice(1, 4).sort()).toEqual(
+        [refilled, rebatched, otherExit].map((fixture) => fixture.shipment.id).sort(),
       );
+      expect(idsIn(summary, 'ready')[4]).toBe(plain.shipment.id);
+      expect(ready?.shipments.find((shipment) => shipment.shipmentId === otherExit.shipment.id)?.batchReturn).toEqual({
+        batchNumber: batch.batchNumber,
+        exitedAt: expect.any(String),
+        place: '물류앱 출고 검수',
+        reason: '박스 빼기',
+        needsNewWaybill: true,
+      });
+      expect(
+        ready?.shipments.find((shipment) => shipment.shipmentId === rebatched.shipment.id)?.batchReturn,
+      ).toMatchObject({ place: '관리자 출고 배치', reason: '잘못 넣은 상자' });
+      expect(ready?.shipments.find((shipment) => shipment.shipmentId === plain.shipment.id)?.batchReturn).toBeNull();
+    });
+  });
+
+  it('배치에서 빠져 돌아온 이어서 할 상자는 뺀 곳·사유와 새 송장이 필요한지를 준다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const base = await consolidationBase(tx);
+      const make = () => createConsolidationSource(tx, wired, base, { quantity: 1, customerId: randomUUID() });
+      const voided = await make();
+      const kept = await make();
+      const typed = await make();
+      const rejoined = await make();
+      const failed = await make();
+      const fixtures = [voided, kept, typed, rejoined, failed];
+
+      await tx
+        .update(wmsTables.shipments)
+        .set({ status: 'planned' })
+        .where(
+          inArray(
+            wmsTables.shipments.id,
+            fixtures.map((fixture) => fixture.shipment.id),
+          ),
+        );
+
+      const [batch] = await tx
+        .insert(wmsTables.outboundBatches)
+        .values({
+          warehouseId: base.warehouseId,
+          batchNumber: `returned-${randomUUID()}`,
+          pickingMethod: 'individual',
+          name: `returned-${randomUUID()}`,
+        })
+        .returning();
+      const leave = (fixture: typeof voided, exclusionReason: string) =>
+        tx
+          .insert(wmsTables.outboundBatchWorkItems)
+          .values({ batchId: batch.id, shipmentId: fixture.shipment.id, status: 'excluded', exclusionReason });
+      const waybill = (fixture: typeof voided, status: 'voided' | 'registered' | 'failed') =>
+        tx.insert(wmsTables.waybills).values({
+          shipmentId: fixture.shipment.id,
+          source: 'carrier',
+          carrier: 'HANJIN',
+          manifestVersion: fixture.shipment.manifestVersion,
+          recipientHash: 'h'.repeat(64),
+          status,
+          trackingNo: status === 'registered' ? randomUUID().slice(0, 12) : null,
+          lastError: status === 'failed' ? 'allocate ERROR-01' : null,
+        });
+
+      await leave(voided, '작업 시작 전 뺌 — 송장 미발급·재발급 필요');
+      await waybill(voided, 'voided');
+      await leave(kept, '잘못 넣은 상자');
+      await waybill(kept, 'registered');
+      await leave(typed, '고객 요청으로 보류');
+      await waybill(typed, 'registered');
+      await leave(failed, '잘못 넣은 상자');
+      await waybill(failed, 'failed');
+      await leave(rejoined, '잘못 넣은 상자');
+      await tx
+        .insert(wmsTables.outboundBatchWorkItems)
+        .values({ batchId: batch.id, shipmentId: rejoined.shipment.id, status: 'queued' });
+
+      const summary = await reader.summarize(base.warehouseId, undefined, tx);
+      const resume = summary.buckets.find(({ bucket }) => bucket === 'resume');
+      const returns = new Map(resume?.shipments.map(({ shipmentId, batchReturn }) => [shipmentId, batchReturn]));
+
+      expect(resume?.batchReturnCount).toBe(4);
+      expect(returns.get(voided.shipment.id)).toMatchObject({
+        batchNumber: batch.batchNumber,
+        place: '물류앱 작업 시작',
+        reason: '송장 미발급·재발급 필요',
+        needsNewWaybill: true,
+      });
+      expect(returns.get(kept.shipment.id)).toMatchObject({
+        place: '관리자 출고 배치',
+        reason: '잘못 넣은 상자',
+        needsNewWaybill: false,
+      });
+      expect(returns.get(typed.shipment.id)).toMatchObject({ place: null, reason: '고객 요청으로 보류' });
+      expect(returns.get(failed.shipment.id)).toMatchObject({ needsNewWaybill: true });
+      expect(await loadReturnedWorkItems(tx, [rejoined.shipment.id])).toEqual(new Map());
     });
   });
 });
