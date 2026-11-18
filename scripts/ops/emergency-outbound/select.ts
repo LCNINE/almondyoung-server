@@ -1,0 +1,92 @@
+/**
+ * 비상 출고 대상 고르기 (#1249, 스펙 «① 아침 — 2»). 순수 함수 — I/O 없음.
+ */
+import type { BatchListItem, PreparationShipment, WorkItem } from './core-api';
+
+export type Route = 'location' | 'force';
+export type Target =
+  | { shipmentId: string; from: 'draft' }
+  | { shipmentId: string; from: 'planned' }
+  | { shipmentId: string; from: 'batch'; batchId: string; route: Route };
+export interface Skipped {
+  shipmentId: string;
+  reason: string;
+  orderNos?: string[];
+}
+
+export interface SelectInput {
+  ready: PreparationShipment[];
+  resume: PreparationShipment[];
+  otherBuckets: { bucket: string; shipments: PreparationShipment[] }[];
+  batches: { batch: BatchListItem; workItems: WorkItem[] }[];
+  /** 이번 실행이 앞서 만든 배치 — 시작 전이어도 이어간다(prepare 가 시작한다). */
+  ownBatchId?: string;
+}
+
+const REASON_OTHER_METHOD = '다른 피킹 방식 배치에서 피킹 중';
+const REASON_NOT_STARTED = '시작 전 배치 — 앱/화면에서 시작하거나 배치에서 뺀 뒤 다시';
+const REASON_MERGEABLE = '합칠 수 있는 상자 — 비상 경로에서 뺌';
+
+export function selectTargets(input: SelectInput): { targets: Target[]; skipped: Skipped[] } {
+  const targets: Target[] = [];
+  const skipped: Skipped[] = [];
+  const seen = new Set<string>();
+
+  // 배치 안 작업이 가장 먼저 — 같은 상자가 버킷에도 있으면 배치 쪽이 이긴다.
+  for (const { batch, workItems } of input.batches) {
+    const individual = batch.pickingMethod === 'individual';
+    const usable = individual && (batch.startedAt != null || batch.id === input.ownBatchId);
+    for (const item of workItems) {
+      if (seen.has(item.shipmentId)) continue;
+      const id = item.shipmentId;
+      switch (item.status) {
+        case 'ready_to_pack':
+        case 'packing':
+          targets.push({ shipmentId: id, from: 'batch', batchId: batch.id, route: 'force' });
+          break;
+        case 'queued':
+        case 'picking':
+          if (usable) {
+            targets.push({ shipmentId: id, from: 'batch', batchId: batch.id, route: 'location' });
+          } else {
+            skipped.push({
+              shipmentId: id,
+              reason: individual ? REASON_NOT_STARTED : REASON_OTHER_METHOD,
+            });
+          }
+          break;
+        case 'withdrawing':
+        case 'short_pick_recovery':
+          skipped.push({ shipmentId: id, reason: `배치 작업 상태 ${item.status}` });
+          break;
+        default:
+          continue; // completed·excluded — 무시(자리도 안 잡는다)
+      }
+      seen.add(id);
+    }
+  }
+
+  const take = (list: PreparationShipment[], from: 'draft' | 'planned') => {
+    for (const s of list) {
+      if (seen.has(s.shipmentId)) continue;
+      seen.add(s.shipmentId);
+      targets.push({ shipmentId: s.shipmentId, from });
+    }
+  };
+  take(input.ready, 'draft');
+  take(input.resume, 'planned');
+
+  for (const { bucket, shipments } of input.otherBuckets) {
+    for (const s of shipments) {
+      if (seen.has(s.shipmentId)) continue;
+      seen.add(s.shipmentId);
+      skipped.push({
+        shipmentId: s.shipmentId,
+        reason: bucket === 'mergeable' ? REASON_MERGEABLE : `${bucket}: ${s.reason ?? ''}`,
+        orderNos: s.orderNos,
+      });
+    }
+  }
+
+  return { targets, skipped };
+}
