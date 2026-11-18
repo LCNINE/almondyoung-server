@@ -1,7 +1,7 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DbService } from '@app/db';
-import { inboxEvents, wmsOrderMappings } from '../../schema';
+import { inboxEvents } from '../../schema';
 import { eq, ne, and, gt, inArray, sql } from 'drizzle-orm';
 import { v7 } from 'uuid';
 import { PimMedusaSyncService } from './pim-medusa-sync.service';
@@ -27,7 +27,6 @@ import type {
   Cafe24UnlinkedPayload,
   UserDeletedPayload,
 } from '@packages/event-contracts/streams/user.stream';
-import { withMedusaOrderProjectionLock } from '../../services/medusa-order-projection-lock';
 
 const PRODUCT_MASTER_LIFECYCLE_EVENT_TYPES = ['ProductMasterActiveVersionChanged', 'ProductMasterDeleted'] as const;
 
@@ -42,8 +41,6 @@ const INBOX_WORKER_EVENT_TYPES = [
   'FirebaseMembershipSynced',
   'UserUpdated',
   'UserDeleted',
-  'CoreFulfillmentShipped',
-  'CoreFulfillmentDelivered',
 ] as const;
 
 /**
@@ -480,87 +477,6 @@ export class InboxWorkerService implements OnModuleInit, OnModuleDestroy {
         case 'UserDeleted': {
           const deletedPayload: UserDeletedPayload = event.payload;
           await this.customerLifecycleSyncService.handleUserDeleted(deletedPayload);
-          break;
-        }
-
-        case 'CoreFulfillmentShipped': {
-          // Core WMS에서 FO가 출고 완료됐을 때 Medusa order metadata를 shipped로 갱신.
-          // Core order id를 Medusa 채널 매핑으로 역조회한다. payload.channelOrderId는
-          // Naver/Coupang 외부 ID일 수도 있으므로 Medusa ID로 신뢰하지 않는다.
-          const shippedPayload = event.payload as {
-            fulfillmentId: string;
-            orderId: string;
-            channelOrderId?: string;
-            trackingInfo?: { carrier?: string; trackingNumber?: string };
-            shippedAt?: string;
-          };
-
-          const [shippedMapping] = await this.dbService.db
-            .select({ channelOrderId: wmsOrderMappings.channelOrderId })
-            .from(wmsOrderMappings)
-            .where(
-              and(eq(wmsOrderMappings.wmsOrderId, shippedPayload.orderId), eq(wmsOrderMappings.salesChannel, 'medusa')),
-            )
-            .limit(1);
-          const shippedMedusaOrderId = shippedMapping?.channelOrderId ?? null;
-
-          if (!shippedMedusaOrderId) {
-            this.logger.debug(`[CoreFulfillmentShipped] Medusa 매핑 없음, 스킵: orderId=${shippedPayload.orderId}`);
-            break;
-          }
-
-          await withMedusaOrderProjectionLock(this.dbService, shippedMedusaOrderId, () =>
-            this.medusaClient.updateOrderShippingProjection(shippedMedusaOrderId, {
-              status: 'shipped',
-              fulfillmentId: shippedPayload.fulfillmentId,
-              carrier: shippedPayload.trackingInfo?.carrier,
-              trackingNumber: shippedPayload.trackingInfo?.trackingNumber,
-              shippedAt: shippedPayload.shippedAt,
-            }),
-          );
-          this.logger.log(
-            `[CoreFulfillmentShipped] Medusa 배송 시작 동기화 완료: orderId=${shippedPayload.orderId}, medusaOrderId=${shippedMedusaOrderId}`,
-          );
-          break;
-        }
-
-        case 'CoreFulfillmentDelivered': {
-          // Core WMS에서 FO 배송 완료 시 Medusa order metadata를 delivered로 갱신.
-          // Core order id를 실제 Medusa 채널 매핑으로 역조회한다.
-          const deliveredPayload = event.payload as {
-            fulfillmentId: string;
-            orderId: string;
-            channelOrderId?: string;
-            deliveredAt?: string;
-          };
-
-          const [deliveredMapping] = await this.dbService.db
-            .select({ channelOrderId: wmsOrderMappings.channelOrderId })
-            .from(wmsOrderMappings)
-            .where(
-              and(
-                eq(wmsOrderMappings.wmsOrderId, deliveredPayload.orderId),
-                eq(wmsOrderMappings.salesChannel, 'medusa'),
-              ),
-            )
-            .limit(1);
-          const deliveredMedusaOrderId = deliveredMapping?.channelOrderId ?? null;
-
-          if (!deliveredMedusaOrderId) {
-            this.logger.debug(`[CoreFulfillmentDelivered] Medusa 매핑 없음, 스킵: orderId=${deliveredPayload.orderId}`);
-            break;
-          }
-
-          await withMedusaOrderProjectionLock(this.dbService, deliveredMedusaOrderId, () =>
-            this.medusaClient.updateOrderShippingProjection(deliveredMedusaOrderId, {
-              status: 'delivered',
-              fulfillmentId: deliveredPayload.fulfillmentId,
-              deliveredAt: deliveredPayload.deliveredAt,
-            }),
-          );
-          this.logger.log(
-            `[CoreFulfillmentDelivered] Medusa 배송 완료 동기화 완료: orderId=${deliveredPayload.orderId}, medusaOrderId=${deliveredMedusaOrderId}`,
-          );
           break;
         }
 

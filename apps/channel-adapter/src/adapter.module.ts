@@ -54,7 +54,6 @@ import {
   CHANNEL_ORDERS_COMMAND_STREAM,
   IAM_STREAM,
 } from '@packages/event-contracts/streams';
-import { FulfillmentEventsConsumer } from './consumers/fulfillment-events.consumer';
 import { ShipmentEventsConsumer } from './consumers/shipment-events.consumer';
 import { UserEventConsumer } from './consumers/user-event.consumer';
 import { PaymentEventsConsumer } from './consumers/payment-events.consumer';
@@ -270,7 +269,6 @@ const NO_KAFKA_PUBLISHER_STREAMS: StreamConfig[] = [
           EventFailuresModule.forRoot({
             sequencedTopics: [
               CHANNEL_ORDERS_COMMAND_STREAM.topic.topic,
-              FULFILLMENT_STREAM.topic.topic,
               FULFILLMENT_V2_STREAM.topic.topic,
               SHIPMENT_STREAM.topic.topic,
               PAYMENT_STREAM.topic.topic,
@@ -291,7 +289,6 @@ const NO_KAFKA_PUBLISHER_STREAMS: StreamConfig[] = [
       : [
           ChannelAdapterController,
           InternalMembershipController,
-          FulfillmentEventsConsumer,
           PimProductEventConsumer,
           PimCategoryConsumer,
           ProductSellableQuantityConsumer,
