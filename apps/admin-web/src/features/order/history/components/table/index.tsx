@@ -822,28 +822,38 @@ export function BusinessTimelineModal({
 /* ─────────────────────────────────────────────────────────── */
 
 export default function OrderTable() {
-  const { filter, searchToken } = useOrderHistoryFilter();
-
-  /* 페이지네이션 (서버측 — offset/limit) */
-  const [page, setPage] = useState(0); // 0-based index
-  // 검색/필터 변경(searchToken) 시 렌더 중 첫 페이지로 리셋.
-  // (useEffect 로 하면 1렌더 늦어 옛 offset 으로 한 번 낭비 요청이 나감)
-  const [prevSearchToken, setPrevSearchToken] = useState(searchToken);
-  if (prevSearchToken !== searchToken) {
-    setPrevSearchToken(searchToken);
-    setPage(0);
-  }
+  // 쪽(0부터)은 주소와 함께 필터 맥락이 들고, 검색하면 첫 쪽으로 돌아간다
+  const { filter, searchToken, page, setPage } = useOrderHistoryFilter();
 
   const queryObj = useMemo(
     () => ({ ...buildQuery(filter, page), _t: searchToken }),
     [filter, page, searchToken]
   );
-  const { data, isInitialLoading, isFetching, total, lineTotal, pageCount } =
-    useSalesOrderRows(queryObj);
+  const {
+    data,
+    isInitialLoading,
+    isFetching,
+    total,
+    lineTotal,
+    pageCount,
+    listFailed,
+    listRetrying,
+    listSettled,
+    refetchList,
+  } = useSalesOrderRows(queryObj);
 
   // 구분·키워드·환불이슈·기간 필터와 페이지네이션 모두 서버가 처리 → 클라이언트 필터/슬라이스 없음.
   // 한 페이지 = 주문 ≤ PAGE_SIZE (라인 rowspan 병합은 테이블이 처리).
   const rows: OrderLineRow[] = data?.items ?? [];
+  const countUnknown = listFailed && rows.length === 0;
+
+  // 주소에 남은 쪽이 지금 결과보다 뒤면(그사이 줄었으면) 마지막 쪽으로 옮긴다. 지금 조건의 목록을 다 받은 뒤에만.
+  useEffect(() => {
+    const last = Math.max(0, pageCount - 1);
+    if (listSettled && !listFailed && page > last) {
+      setPage(last);
+    }
+  }, [listSettled, listFailed, page, pageCount, setPage]);
   const bankRefunds = useOrderBankRefunds(rows);
 
   /* 모달 상태 */
@@ -1284,9 +1294,10 @@ export default function OrderTable() {
         <div className="flex items-center justify-between p-3 border-b gap-2 flex-wrap">
           <div className="flex items-center gap-4">
             <div className="text-sm font-medium">
-              총 주문 <b className="text-blue-600">{total.toLocaleString()}</b>건
+              {/* 못 불러온 목록의 건수는 0 이 아니라 모름이다 */}
+              총 주문 <b className="text-blue-600">{countUnknown ? '-' : total.toLocaleString()}</b>건
               <span className="mx-1.5 text-gray-300">·</span>
-              상품 <b className="text-gray-700">{lineTotal.toLocaleString()}</b>라인
+              상품 <b className="text-gray-700">{countUnknown ? '-' : lineTotal.toLocaleString()}</b>라인
             </div>
             {isFetching && (
               <span className="text-xs text-gray-400">(갱신 중)</span>
@@ -1343,6 +1354,26 @@ export default function OrderTable() {
           </div>
         </div>
 
+        {listFailed && (
+          <div
+            role="alert"
+            className="mb-2 flex flex-wrap items-center gap-3 rounded border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700"
+          >
+            <span>
+              주문 목록을 불러오지 못했어요.
+              {rows.length > 0 && ' 아래는 이전에 불러온 목록이에요.'}
+            </span>
+            <button
+              type="button"
+              className="h-8 rounded border border-red-300 bg-white px-3 text-sm hover:bg-red-100 disabled:opacity-50"
+              disabled={listRetrying}
+              onClick={() => refetchList()}
+            >
+              {listRetrying ? '다시 불러오는 중…' : '다시 시도'}
+            </button>
+          </div>
+        )}
+
         {/* 테이블 */}
         <MergedDataTable<OrderLineRow>
           data={rows}
@@ -1351,7 +1382,9 @@ export default function OrderTable() {
           groupKey="orderId"
           stickyHeader
           emptyMessage={
-            '조회된 주문이 없습니다. "검색" 버튼을 눌러 조회하세요.'
+            listFailed
+              ? '주문을 불러오지 못했어요.'
+              : '이 조건에 맞는 주문이 없어요.'
           }
           className="p-0"
           loading={isInitialLoading}
@@ -1367,18 +1400,20 @@ export default function OrderTable() {
           onRowClick={(r) => setDetailOrderId(r.orderId)}
         />
 
-        {/* 페이지네이션 - DataTable과 동일한 방식 */}
-        <Table.Pagination
-          count={total}
-          pageSize={PAGE_SIZE}
-          pageIndex={page}
-          pageCount={pageCount}
-          canPreviousPage={page > 0}
-          canNextPage={page < pageCount - 1}
-          previousPage={() => setPage((p) => Math.max(0, p - 1))}
-          nextPage={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
-          goPage={(idx) => setPage(idx)}
-        />
+        {/* 페이지네이션 - DataTable과 동일한 방식. 못 불러온 목록엔 건수를 보이지 않는다 */}
+        {!countUnknown && (
+          <Table.Pagination
+            count={total}
+            pageSize={PAGE_SIZE}
+            pageIndex={page}
+            pageCount={pageCount}
+            canPreviousPage={page > 0}
+            canNextPage={page < pageCount - 1}
+            previousPage={() => setPage((p) => Math.max(0, p - 1))}
+            nextPage={() => setPage((p) => Math.min(pageCount - 1, p + 1))}
+            goPage={(idx) => setPage(idx)}
+          />
+        )}
       </div>
 
       {selectedOrder && (

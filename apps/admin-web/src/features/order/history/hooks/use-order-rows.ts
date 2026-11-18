@@ -426,6 +426,13 @@ export function useSalesOrderRows(query: SalesOrdersQuery & { _t?: number }) {
     pageCount: (listQuery.data as any)?.totalPages ?? 0,
     // 최초 목록 로딩만 스켈레톤 대상 (페이지 재조회는 이전 데이터 유지하므로 제외)
     isInitialLoading: listQuery.isLoading,
+    // 마지막으로 끝난 목록 조회가 실패했는지. 다시 시도하는 동안에도 실패 안내가 깜빡이지 않게 시각으로 본다.
+    listFailed:
+      listQuery.isError || listQuery.errorUpdatedAt > listQuery.dataUpdatedAt,
+    listRetrying: listQuery.isFetching,
+    // 지금 조건의 목록을 다 받았는지(앞 조건의 목록을 잠시 보여 주는 중이 아님)
+    listSettled: !listQuery.isFetching && !listQuery.isPlaceholderData,
+    refetchList: () => listQuery.refetch(),
     isLoading:
       listQuery.isLoading ||
       detailQueries.isLoading ||

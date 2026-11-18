@@ -34,8 +34,14 @@ const TYPE_OPTIONS: { value: OrderTypeFilter; label: string }[] = [
 ];
 
 export default function FilterBox() {
-    const { filter, setFilter, triggerSearch } = useOrderHistoryFilter();
+    const { filter, setFilter, triggerSearch, urlVersion } = useOrderHistoryFilter();
     const [local, setLocal] = useState(filter);
+    // 주소가 바뀌어 조건이 다시 정해졌을 때만 입력칸을 그 조건으로 맞춘다(검색 전 입력은 지키고)
+    const [shownVersion, setShownVersion] = useState(urlVersion);
+    if (shownVersion !== urlVersion) {
+        setShownVersion(urlVersion);
+        setLocal(filter);
+    }
 
     const applyQuickDate = (opt: (typeof QUICK_DATE_OPTIONS)[number]) => {
         if (opt.key === 'custom') {
