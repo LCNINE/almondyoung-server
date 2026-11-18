@@ -112,7 +112,7 @@
 
 순서:
 
-1. **상품 찾기 또는 만들기.** 고정 식별자로 찾는다. 상품 2개(단일 품목 1개 + 옵션 2개짜리 1개 정도. 개수와 모양은 빌더 판단)를 «[E2E] 주문 경로 …» 이름으로 만든다.
+1. **상품 찾기 또는 만들기.** 고정 식별자로 찾는다(2026-11-18 조사: `productCode` 는 HTTP 로 못 정하므로 상품은 정확한 이름으로, SKU 는 고정 보조 바코드로 찾는다). 상품 2개(단일 품목 1개 + 옵션 2개짜리 1개 정도. 개수와 모양은 빌더 판단)를 «[E2E] 주문 경로 …» 이름으로 만든다.
    - 무엇을 고정 식별자로 쓸지(상품 코드 칸, 혹은 이름)는 빌더가 core 스키마를 보고 정한다. 다시 돌렸을 때 두 벌이 되지 않는 것이 기준이다.
 2. **판매가.** 기본 정보의 공급가·시장가는 판매가가 아니다. 가격 정책을 따로 넣는다. 안 넣으면 0원 상품이 그대로 팔린다(문서 §8-D).
 3. **발행** → **Medusa 투영 확인.** Medusa admin API 로 그 상품의 variant 를 조회해 `metadata` 에 `pimVariantId`, product `metadata` 에 `pimMasterId`·`pimVersionId` 가 생길 때까지 기다린다. 제한 시간을 넘기면 어느 칸이 비었는지 적고 실패한다.
@@ -131,8 +131,14 @@
 2. **구매자 확보.** 고정 아이디(예: `e2e-order-buyer`)가 없으면 user-service 회원가입 API 로 만든다.
    - 폰 인증 코드는 sms-stub 이 받은 것을 `user_service.phone_verifications` 에서 읽는다(문서 §5). 이미 있으면 그대로 쓴다.
    - 적립금은 기존 `seed-points-local.ts`(`LOCAL_POINT_LOGIN_IDS=<그 아이디>`)로, 주문 금액보다 모자랄 때만 채운다.
-3. **고객 토큰.** `tokenForUser` 로 스토어프론트 OAuth 클라이언트의 토큰을 받는다. Medusa 의 `my-auth` 프로바이더가 Bearer 로 그걸 받는다(`apps/medusa/src/modules/auth/service.ts`).
-   - Medusa 고객(customer)이 아직 없으면 만드는 호출이 필요하다. 스토어프론트가 로그인할 때 하는 것과 같은 호출을 빌더가 찾아 따른다.
+3. **고객 토큰.** (2026-11-18 정정 — 처음 판은 `my-auth` 라고 적었는데 틀렸다. 로컬은 `AUTH_WEB_URL` 이 있어 customer 는 `user-service-sso` 만 받는다, `medusa-config.js:41-47`.)
+   스토어프론트의 SSO 흐름(`web/almondyoung-storefront/src/lib/api/medusa/sso.ts`)을 브라우저 없이 따른다:
+   - `POST /auth/customer/user-service-sso` 로 authorize URL 을 받는다.
+   - 거기서 `state`·`code_challenge` 를 꺼낸다.
+   - user-service `POST /oauth/internal/issue-code` 로 그 challenge 의 코드를 발급한다.
+   - `GET …/user-service-sso/callback?code&state` 를 부른다.
+   - 고객이 없으면 `POST /store/customers` 를 부르고 `POST /auth/token/refresh` 로 토큰을 갱신한다.
+   - 콜백의 `idp_tokens.access_token`(user-service 토큰)은 wallet 결제에 쓴다.
 4. **Medusa 장바구니 → 결제 → 주문.** 스토어프론트 체크아웃이 부르는 store API 순서 그대로 간다.
    - 순서: 장바구니(publishable key·한국 region) → 상품 담기 → 배송지·이메일 → 배송 옵션 → payment collection → `almond-payment` 세션 → wallet `POST /v1/payment-intents/:id/confirm`(POINTS 결제수단, 고객 JWT) → 장바구니 완료.
    - 배송지는 공공기관 주소처럼 공개된 실주소를 쓰고, 배송 요청사항은 «비밀번호없이 출입 가능해요»로 둔다(문서 §8-F ②).
@@ -141,6 +147,8 @@
      - 합배송 묶음을 일부러 만드는 옵션은 이번 범위 밖이다.
    - 지연 승인(`ALMOND_DEFERRED_APPROVAL`)이 켜진 상태에서 포인트 결제가 되는 길은 2026-09-06 에 화면으로 통과했다(§8-E). 같은 호출 순서를 따르면 된다.
 5. **즉시 수집.** 5분 폴링을 기다리지 않는다. channel-adapter `POST /adapter/orders/medusa/:orderId/sync`(`CHANNEL_ADAPTER_INTERNAL_KEY`)를 부른다.
+   - (2026-11-18 정정) 이 키는 로컬 템플릿에도 로컬 `.env` 에도 없다. 없으면 이 라우트는 401 이다.
+   - 템플릿에 로컬 고정값을 넣고, 기존 `.env` 에는 bootstrap 이 없을 때만 더한다. `SERVED_TENANT_ID` 를 더하는 `ensure_tenancy` 와 같은 방식이다.
 6. **부천 상자까지 기다린다.** core 백로그 워커(10초 주기)가 출고 주문·상자를 만들고 재고를 예약한다. 판정은 core API 로 한다: 그 주문의 상자가 부천 창고에 있고 예약 상태다. 제한 시간을 넘기면 어디서 멈췄는지(주문 없음 / 격리 / 매칭 대기 / 출고 주문 없음 / 예약 없음) 적고 실패한다.
    - 격리는 `order_collection_failures`, 매칭 대기는 `sales_orders`·매칭 상태로 본다.
 7. `--count N` 이면 1~6 을 N번 한다(#1249 는 «정식 1상자 + 비상 나머지»가 필요하다). 끝에 Medusa 주문 id·core 주문 id·상자 id 목록을 찍는다.
