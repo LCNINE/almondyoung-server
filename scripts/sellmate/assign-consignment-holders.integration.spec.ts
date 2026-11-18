@@ -9,7 +9,7 @@ import {
   seedHolder,
   seedSku,
 } from '../../apps/core/src/modules/fulfillment/services/__support__';
-import { applyConsignmentHolderPlan, readConsignmentHolderPlan } from './assign-consignment-holders';
+import { applyConsignmentHolderPlan, OUR_ASSET, readConsignmentHolderPlan } from './assign-consignment-holders';
 
 /**
  * 실행: DATABASE_URL=postgresql://postgres:postgres@localhost:5432/core npx jest --runInBand 'assign-consignment-holders\.integration\.spec\.ts$'
@@ -88,6 +88,18 @@ describeIfDb('assign-consignment-holders (DB integration)', () => {
 
       expect(plan.move).toEqual([]);
       expect(plan.onOtherVendor).toEqual([expect.objectContaining({ skuCode: sku.skuCode, currentVendor: other })]);
+    });
+  });
+
+  it('업체 칸이 자사면 위탁 화주에서 기본 보유자로 되돌린다', async () => {
+    await inRollbackTx(db, async (trx) => {
+      const sku = await seedSku(trx, await consignmentHolder(trx, vendorName()));
+
+      const plan = await readConsignmentHolderPlan(trx, [{ skuCode: sku.skuCode, vendor: OUR_ASSET }]);
+
+      expect(await applyConsignmentHolderPlan(trx, plan)).toBe(1);
+      expect((await holderOf(trx, sku.skuId)).isOurAsset).toBe(true);
+      expect((await readConsignmentHolderPlan(trx, [{ skuCode: sku.skuCode, vendor: OUR_ASSET }])).alreadyOk).toBe(1);
     });
   });
 

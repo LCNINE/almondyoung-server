@@ -8,7 +8,7 @@
  * - 이름이 같은 위탁 화주가 있으면 그 화주를 쓰고, 없으면 --apply 때 만든다
  * - 이미 다른 위탁 화주에 있는 SKU 는 옮기지 않고 보고만 한다(파일과 DB 중 무엇이 맞는지 사람이 본다)
  * - 한 SKU 에 업체가 둘 적혀 있으면 아무것도 하지 않고 멈춘다
- * - 파일에서 빠진 SKU 를 자사로 되돌리지 않는다
+ * - 파일에서 빠진 SKU 를 자사로 되돌리지 않는다. 되돌리려면 업체 칸에 자사 라고 적는다(기본 보유자로 옮긴다)
  *
  * 기본은 dry-run(읽기 전용 트랜잭션). 테넌트 1 core DB(run.sh 기본 DB_NAME=core)에만 쓴다.
  *   DRY_RUN=1 bash scripts/sellmate/run.sh live assign-consignment-holders <업체 파일>
@@ -19,11 +19,13 @@ import postgres from 'postgres';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { DbTx, wmsSchema, wmsTables } from '../../apps/core/src/modules/inventory/schema/inventory.schema';
+import { HOLDER_CONSTANTS } from '../../apps/core/src/modules/inventory/core/constants/holder.constants';
 import { chunk, detectColumns, readRows } from './parse';
 import { parseCliArgs } from './register-missing-barcodes';
 
 const CHUNK = 1000;
 const LIST_LIMIT = 10;
+export const OUR_ASSET = '자사';
 
 export interface VendorRow {
   skuCode: string;
@@ -80,7 +82,7 @@ export function parseVendorRows(rows: readonly string[][]): VendorRow[] {
 }
 
 export async function readConsignmentHolderPlan(tx: DbTx, rows: readonly VendorRow[]): Promise<ConsignmentHolderPlan> {
-  const vendors = [...new Set(rows.map((r) => r.vendor))];
+  const vendors = [...new Set(rows.map((r) => r.vendor))].filter((v) => v !== OUR_ASSET);
   const holderRows = vendors.length
     ? await tx
         .select({ id: wmsTables.holders.id, name: wmsTables.holders.name, isOurAsset: wmsTables.holders.isOurAsset })
@@ -99,6 +101,10 @@ export async function readConsignmentHolderPlan(tx: DbTx, rows: readonly VendorR
     }
 
     holders.set(h.name, h.id);
+  }
+
+  if (rows.some((r) => r.vendor === OUR_ASSET)) {
+    holders.set(OUR_ASSET, HOLDER_CONSTANTS.DEFAULT_HOLDER.id);
   }
 
   const consignmentNameById = new Map<string, string>();
@@ -134,7 +140,13 @@ export async function readConsignmentHolderPlan(tx: DbTx, rows: readonly VendorR
 
       found.add(sku.code);
 
-      if (currentVendor === vendor) {
+      if (vendor === OUR_ASSET) {
+        if (currentVendor === undefined) {
+          plan.alreadyOk++;
+        } else {
+          plan.move.push({ skuId: sku.id, skuCode: sku.code, vendor, fromHolderId: sku.holderId });
+        }
+      } else if (currentVendor === vendor) {
         plan.alreadyOk++;
       } else if (currentVendor !== undefined) {
         plan.onOtherVendor.push({ skuCode: sku.code, vendor, currentVendor });
