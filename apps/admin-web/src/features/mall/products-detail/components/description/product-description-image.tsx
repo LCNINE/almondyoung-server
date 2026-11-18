@@ -3,7 +3,6 @@
 import { useState } from 'react';
 import { ImageOff } from 'lucide-react';
 import { resolvePublicFileUrl } from '@/lib/utils/file-url';
-import { cn } from '@/lib/utils';
 import { getProductDescriptionImagePlaceholderText } from './product-description-rendering';
 import {
   isProductDescriptionImageBroken,
@@ -14,10 +13,9 @@ type Props = {
   fileId: string | null;
   alt: string;
   error?: string | null;
-  className?: string;
 };
 
-export function ProductDescriptionImage({ fileId, alt, error, className }: Props) {
+export function ProductDescriptionImage({ fileId, alt, error }: Props) {
   const [failedFileId, setFailedFileId] = useState<string | null>(null);
   const broken = isProductDescriptionImageBroken({ fileId, failedFileId });
 
@@ -41,7 +39,7 @@ export function ProductDescriptionImage({ fileId, alt, error, className }: Props
     <img
       src={resolvePublicFileUrl(fileId) ?? ''}
       alt={alt}
-      className={cn('my-3 max-w-full rounded-md', className)}
+      className="my-3 max-w-full rounded-md"
       loading="lazy"
       onError={() => setFailedFileId(fileId)}
     />

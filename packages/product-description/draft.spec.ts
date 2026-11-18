@@ -1,4 +1,4 @@
-import { type ExtractResult, chunkFileIds, mergeExtractResults, normalizeRegions } from './draft';
+import { type ExtractResult, chunkFileIds, mergeExtractResults } from './draft';
 
 function result(over: Partial<ExtractResult> = {}): ExtractResult {
   return {
@@ -97,33 +97,5 @@ describe('mergeExtractResults', () => {
     expect(merged.features).toEqual(['발색이 선명함', '점도가 낮음']);
     expect(merged.cautions).toEqual(['개봉 후 냉장']);
     expect(merged.usageSteps).toEqual(['잘 흔든다']);
-  });
-});
-
-describe('normalizeRegions', () => {
-  const size = { width: 1000, height: 500 };
-
-  it('픽셀 좌표를 변마다 영역의 15% 넓힌 뒤 원본 크기에 대한 비율로 바꾼다', () => {
-    expect(normalizeRegions([{ label: 'MG04 문 펄', left: 320, top: 100, width: 80, height: 100 }], size)).toEqual([
-      { label: 'MG04 문 펄', x: 0.308, y: 0.17, w: 0.104, h: 0.26 },
-    ]);
-  });
-
-  it('원본 밖으로 나간 부분은 잘라 낸다', () => {
-    expect(normalizeRegions([{ label: '오른쪽 끝', left: 900, top: -50, width: 300, height: 200 }], size)).toEqual([
-      { label: '오른쪽 끝', x: 0.855, y: 0, w: 0.145, h: 0.36 },
-    ]);
-  });
-
-  it('너무 작거나 이름이 빈 영역, 크기를 모르는 이미지는 버린다', () => {
-    expect(normalizeRegions([{ label: '점', left: 10, top: 10, width: 20, height: 20 }], size)).toEqual([]);
-    expect(normalizeRegions([{ label: ' ', left: 0, top: 0, width: 500, height: 250 }], size)).toEqual([]);
-    expect(normalizeRegions([{ label: '전체', left: 0, top: 0, width: 500, height: 250 }], undefined)).toEqual([]);
-  });
-
-  it('이미지 하나당 8개까지만 쓴다', () => {
-    const many = Array.from({ length: 10 }, (_, i) => ({ label: `칩${i}`, left: i * 90, top: 0, width: 80, height: 80 }));
-
-    expect(normalizeRegions(many, size)).toHaveLength(8);
   });
 });
