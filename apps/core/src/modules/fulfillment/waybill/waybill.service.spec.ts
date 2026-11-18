@@ -21,6 +21,7 @@ const voided: WaybillRow = {
   manifestVersion: 1,
   recipientHash: 'hash',
   labelData: null,
+  senderSnapshot: null,
   lastError: null,
   attempts: 0,
   transientAttempts: 0,

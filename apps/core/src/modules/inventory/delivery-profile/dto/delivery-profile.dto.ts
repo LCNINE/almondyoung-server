@@ -11,6 +11,7 @@ export class DeliveryProfileDto {
   @ApiProperty() id: string;
   @ApiProperty() name: string;
   @ApiProperty({ enum: sourceTypeEnum.enumValues }) sourceType: DeliveryProfileSourceType;
+  @ApiProperty({ nullable: true, format: 'uuid' }) holderId: string | null;
   @ApiProperty({ nullable: true }) avgDeliveryDays: number | null;
   @ApiProperty({ type: DeliveryProfileSenderDto }) sender: DeliveryProfileSenderDto;
   @ApiProperty({ type: DeliveryProfileAddressDto }) originAddress: DeliveryProfileAddressDto;

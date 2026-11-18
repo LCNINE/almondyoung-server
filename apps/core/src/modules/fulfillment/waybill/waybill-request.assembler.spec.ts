@@ -1,4 +1,12 @@
-import { assembleWaybillRequest, parseRecipient, commodityNameOf, composeMessage } from './waybill-request.assembler';
+import {
+  assembleWaybillRequest,
+  parseRecipient,
+  commodityNameOf,
+  composeMessage,
+  profileSenderOf,
+  senderOf,
+  storedSenderOf,
+} from './waybill-request.assembler';
 import type { WaybillRequest } from './carrier/carrier-gateway.interface';
 import type { HanjinConfig } from './carrier/hanjin/hanjin.config';
 
@@ -161,5 +169,84 @@ describe('composeMessage', () => {
   });
   it('둘 다 없으면 undefined', () => {
     expect(composeMessage(undefined, null)).toBeUndefined();
+  });
+});
+
+describe('배송 프로필 보내는 분', () => {
+  const profile = {
+    name: '제이시스',
+    phone: '010-1111-2222',
+    zip: '14521',
+    baseAddress: '경기도 부천시 평천로832번길 42',
+    detailAddress: '4층',
+  };
+
+  it('프로필 보내는 분·출고지를 쓴다', () => {
+    expect(senderOf(config, profile)).toEqual({
+      name: '제이시스',
+      tel: '010-1111-2222',
+      zip: '14521',
+      baseAddress: '경기도 부천시 평천로832번길 42',
+      detailAddress: '4층',
+    });
+  });
+
+  it('프로필이 없거나 칸이 비면 HANJIN_SENDER_* 로 채운다', () => {
+    expect(senderOf(config, null)).toBe(config.sender);
+    const partial = senderOf(config, { ...profile, phone: '', zip: '' });
+    expect(partial.tel).toBe(config.sender.tel);
+    expect(partial.baseAddress).toBe(config.sender.baseAddress);
+    expect(partial.detailAddress).toBe(config.sender.detailAddress);
+  });
+
+  it('이름 없는 프로필은 보내는 분으로 쓰지 않는다', () => {
+    expect(profileSenderOf({ name: '  ', phone: '010' }, null)).toBeNull();
+    expect(profileSenderOf(null, null)).toBeNull();
+    expect(profileSenderOf({ name: ' 오직미 ', phone: ' 010-1 ' }, { postalCode: '1', roadAddress: 'R' })).toEqual({
+      name: '오직미',
+      phone: '010-1',
+      zip: '1',
+      baseAddress: 'R',
+      detailAddress: '',
+    });
+  });
+
+  it('발급 때 저장한 보내는 분이 있으면 지금 프로필보다 먼저 쓴다', () => {
+    const lines = [{ productName: 'A', skuName: 'A', quantity: 1, skuId: 's1' }];
+    const fresh = assembleWaybillRequest({
+      shipmentId,
+      recipientSnapshot: snapshot,
+      lines,
+      config,
+      profileSender: profile,
+    });
+    expect(fresh.sender.name).toBe('제이시스');
+
+    const replay = assembleWaybillRequest({
+      shipmentId,
+      recipientSnapshot: snapshot,
+      lines,
+      config,
+      profileSender: { ...profile, name: '바뀐 이름' },
+      storedSender: fresh.sender,
+    });
+    expect(replay.sender).toEqual(fresh.sender);
+  });
+
+  it('저장값이 없는 옛 송장의 재시도는 등록 때처럼 HANJIN_SENDER_* 를 쓴다', () => {
+    const req = assembleWaybillRequest({
+      shipmentId,
+      recipientSnapshot: snapshot,
+      lines: [{ productName: 'A', skuName: 'A', quantity: 1, skuId: 's1' }],
+      config,
+      profileSender: profile,
+      storedSender: null,
+    });
+    expect(req.sender).toBe(config.sender);
+  });
+
+  it('칸이 빠진 저장값(이 칸이 생기기 전 송장)은 쓰지 않는다', () => {
+    expect(storedSenderOf(null)).toBeNull();
+    expect(storedSenderOf({ name: 'A' })).toBeNull();
   });
 });

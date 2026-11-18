@@ -15,4 +15,7 @@ export const deliveryProfilesClient = {
   create: async (data: CreateDeliveryProfileDto): Promise<DeliveryProfileDto> => (await client.post(BASE, data)).data,
   update: async (id: string, data: UpdateDeliveryProfileDto): Promise<DeliveryProfileDto> =>
     (await client.patch(`${BASE}/${encodeURIComponent(id)}`, data)).data,
+  remove: async (id: string): Promise<void> => {
+    await client.delete(`${BASE}/${encodeURIComponent(id)}`);
+  },
 };

@@ -1781,6 +1781,7 @@ export interface DeliveryProfileDto {
   id: string;
   name: string;
   sourceType: DeliveryProfileSourceType;
+  holderId: string | null;
   avgDeliveryDays: number | null;
   sender: { name: string; phone: string };
   originAddress: DeliveryProfileAddress;
@@ -1795,6 +1796,7 @@ export interface DeliveryProfileDto {
 export interface CreateDeliveryProfileDto {
   name: string;
   sourceType: DeliveryProfileSourceType;
+  holderId?: string;
   avgDeliveryDays?: number;
   sender: { name: string; phone: string };
   originAddress: DeliveryProfileAddress;
@@ -1805,9 +1807,11 @@ export interface CreateDeliveryProfileDto {
 
 // avgDeliveryDays 만 CreateDeliveryProfileDto 보다 넓다 — PATCH 는 null(지우기)을 허용한다.
 export type UpdateDeliveryProfileDto = Partial<
-  Omit<CreateDeliveryProfileDto, 'avgDeliveryDays'>
+  Omit<CreateDeliveryProfileDto, 'avgDeliveryDays' | 'holderId'>
 > & {
   avgDeliveryDays?: number | null;
+  /** null 이면 화주 연결을 푼다 */
+  holderId?: string | null;
 };
 
 // ── SKU 실측 작업 (core inventory/sku-field-capture 응답/요청 미러) ──

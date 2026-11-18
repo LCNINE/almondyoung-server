@@ -1142,6 +1142,20 @@
       "when": 1794843629102,
       "tag": "20261116154029_add-sellmate-reconcile-tables",
       "breakpoints": true
+    },
+    {
+      "idx": 163,
+      "version": "7",
+      "when": 1794897013998,
+      "tag": "20261117063013_add-delivery-profile-holder",
+      "breakpoints": true
+    },
+    {
+      "idx": 164,
+      "version": "7",
+      "when": 1794898443658,
+      "tag": "20261117065403_add-waybill-sender-snapshot",
+      "breakpoints": true
     }
   ]
 }

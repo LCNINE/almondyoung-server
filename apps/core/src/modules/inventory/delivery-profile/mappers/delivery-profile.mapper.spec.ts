@@ -6,6 +6,7 @@ function row(overrides: Partial<DeliveryProfile> = {}): DeliveryProfile {
     id: 'p1',
     name: 'n',
     sourceType: 'in_house',
+    holderId: null,
     avgDeliveryDays: null,
     senderSnapshot: { name: 'S', phone: '02' },
     originAddressSnapshot: { postalCode: '1', roadAddress: 'R', detailAddress: 'D' },
@@ -63,5 +64,16 @@ describe('DeliveryProfileMapper.toColumns', () => {
   // I-1: avgDeliveryDays 는 PATCH 로 값을 지우는 유일한 방법이 null 이라, 컬럼에 그대로 저장한다.
   it('avgDeliveryDays: null 은 null 로 저장한다(지우기)', () => {
     expect(DeliveryProfileMapper.toColumns({ avgDeliveryDays: null })).toEqual({ avgDeliveryDays: null });
+  });
+});
+
+describe('DeliveryProfileMapper 화주', () => {
+  it('화주 ID 를 컬럼으로 옮기고 응답에 낸다', () => {
+    expect(DeliveryProfileMapper.toColumns({ holderId: 'h1' }).holderId).toBe('h1');
+    expect(DeliveryProfileMapper.toDto(row({ holderId: 'h1' })).holderId).toBe('h1');
+  });
+
+  it('화주를 안 보낸 PATCH 는 화주 컬럼을 건드리지 않는다', () => {
+    expect('holderId' in DeliveryProfileMapper.toColumns({ name: 'x' })).toBe(false);
   });
 });

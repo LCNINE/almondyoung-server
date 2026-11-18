@@ -9,6 +9,7 @@ import {
   IsInt,
   IsOptional,
   IsString,
+  IsUUID,
   Matches,
   MaxLength,
   Min,
@@ -39,6 +40,11 @@ export class CreateDeliveryProfileDto {
   @ApiProperty({ description: '원천 유형', enum: sourceTypeEnum.enumValues })
   @IsIn(sourceTypeEnum.enumValues)
   sourceType: DeliveryProfileSourceType;
+
+  @ApiProperty({ description: '위탁 업체 화주 ID. 자사 프로필이면 보내지 않는다', required: false, format: 'uuid' })
+  @IsOptional()
+  @IsUUID()
+  holderId?: string;
 
   @ApiProperty({ description: '평균 배송일', required: false, minimum: 0 })
   @IsOptional()

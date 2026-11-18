@@ -6,7 +6,8 @@ import { NotFoundError } from '@app/shared';
 import { DbTx, inventorySchema, inventoryTables } from '../../inventory/schema/inventory.schema';
 import { canonicalFulfillmentRequestHash } from '../services/fulfillment-command.service';
 import { WAYBILL, WAYBILL_TERMINAL_STATUSES } from './waybill.constants';
-import type { IssueContext, LabelAllocation, WaybillRow } from './waybill.types';
+import type { IssueContext, LabelAllocation, ProfileSender, WaybillRow } from './waybill.types';
+import { profileSenderOf } from './waybill-request.assembler';
 import { warehouseIdOf } from '../shipment/shipment-owner';
 import { labelLocationCode, labelSkuNameOf } from './label/label-items';
 
@@ -25,6 +26,20 @@ export class WaybillReader {
 
   recipientHashOf(recipientSnapshot: unknown): string {
     return canonicalFulfillmentRequestHash(recipientSnapshot);
+  }
+
+  /** 배송 프로필은 테넌트 DB 에 있다. HANJIN_SENDER_* 는 인스턴스 하나에 한 벌이라 다른 테넌트 이름이 찍힌다 */
+  private async loadProfileSender(trx: DbTx, profileId: string | null): Promise<ProfileSender | null> {
+    if (!profileId) return null;
+
+    const p = inventoryTables.deliveryProfiles;
+    const [profile] = await trx
+      .select({ sender: p.senderSnapshot, origin: p.originAddressSnapshot })
+      .from(p)
+      .where(eq(p.id, profileId))
+      .limit(1);
+
+    return profile ? profileSenderOf(profile.sender, profile.origin) : null;
   }
 
   async loadIssueContext(trx: DbTx, shipmentId: string): Promise<IssueContext> {
@@ -65,6 +80,7 @@ export class WaybillReader {
       .where(eq(inventoryTables.shipmentLines.shipmentId, shipmentId))
       .orderBy(asc(inventoryTables.shipmentLines.id));
     if (!rows.length) throw new NotFoundError(`${WAYBILL.ERROR.SHIPMENT_NOT_FOUND}: ${shipmentId} has no lines`);
+
     return {
       shipmentId: shipment.id,
       status: shipment.status,
@@ -78,6 +94,7 @@ export class WaybillReader {
       })),
       entrancePassword: shipment.entrancePassword,
       orderNos: [...new Set(rows.flatMap((r) => labelOrderNoOf(r) ?? []))],
+      profileSender: await this.loadProfileSender(trx, shipment.shippingProfileId),
     };
   }
 
@@ -140,7 +157,10 @@ export class WaybillReader {
       .innerJoin(inventoryTables.locations, eq(inventoryTables.locations.id, A.sourceLocationId))
       .innerJoin(inventoryTables.shipmentLines, eq(inventoryTables.shipmentLines.id, A.shipmentLineId))
       .innerJoin(inventoryTables.skus, eq(inventoryTables.skus.id, inventoryTables.shipmentLines.skuId))
-      .leftJoin(inventoryTables.skuShelfPositions, eq(inventoryTables.skuShelfPositions.skuId, inventoryTables.shipmentLines.skuId))
+      .leftJoin(
+        inventoryTables.skuShelfPositions,
+        eq(inventoryTables.skuShelfPositions.skuId, inventoryTables.shipmentLines.skuId),
+      )
       .where(and(eq(A.workItemId, item.id), gt(A.qty, 0)))
       .orderBy(asc(inventoryTables.locations.code), asc(inventoryTables.shipmentLines.skuId));
     return {

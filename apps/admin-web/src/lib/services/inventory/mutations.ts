@@ -251,6 +251,15 @@ export const useUpdateDeliveryProfile = () => {
 };
 useUpdateDeliveryProfile.permission = ['inventory.master.write'] as const satisfies PermissionRequirement;
 
+export const useDeleteDeliveryProfile = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => deliveryProfilesClient.remove(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: inventoryQueryKeys.deliveryProfiles }),
+  });
+};
+useDeleteDeliveryProfile.permission = ['inventory.master.write'] as const satisfies PermissionRequirement;
+
 export const useCreateSupplier = () => {
   const queryClient = useQueryClient();
   return useMutation({

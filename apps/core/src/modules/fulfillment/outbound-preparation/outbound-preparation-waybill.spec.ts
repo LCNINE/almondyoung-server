@@ -43,6 +43,7 @@ function waybill(status: WaybillRow['status']): WaybillRow {
     manifestVersion: 3,
     recipientHash: 'hash',
     labelData: null,
+    senderSnapshot: null,
     lastError: null,
     attempts: 0,
     transientAttempts: 0,

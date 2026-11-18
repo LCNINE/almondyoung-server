@@ -190,6 +190,17 @@ describe('HanjinCarrierGateway.register', () => {
     );
   });
 
+  it('송하인 상세주소가 비면 대체 문구로 보낸다 (배송 프로필 출고지는 상세주소가 없어도 된다)', async () => {
+    const post = jest.fn().mockResolvedValue({ resultCode: 'OK', resultMessage: 'SUCCESS' });
+    const g = new HanjinCarrierGateway(config, { post } as any, today);
+    await g.register('531647410114', { ...req, sender: { ...req.sender, detailAddress: '' } });
+    expect(post).toHaveBeenCalledWith(
+      'order',
+      '/parcel-delivery/v1/order/insert-order',
+      expect.objectContaining({ sndrDtlAddr: RECIPIENT_DETAIL_FALLBACK }),
+    );
+  });
+
   it('insert-order ERROR-09(기등록) → already_registered (멱등 성공)', async () => {
     const post = jest.fn().mockResolvedValue({ resultCode: 'ERROR-09', resultMessage: '기등록 운송장번호' });
     const g = new HanjinCarrierGateway(config, { post } as any, today);
