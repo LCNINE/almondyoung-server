@@ -395,6 +395,74 @@ describe('runPrepare outputs', () => {
       ],
     });
 
+  const labelErr = (code: string) => new CoreApiError(409, code, null, code);
+
+  it('keeps a manual-waybill box in the files without a label and without a problem', async () => {
+    const { dir, opts, lines } = setup();
+    const core = new FakeCore();
+    located(core, 's1', 'A-01');
+    located(core, 's2', 'B-01');
+    core.failNext('label', labelErr('WAYBILL_LABEL_UNAVAILABLE'));
+
+    const report = await runPrepare(core, withOutputs(opts(true)));
+
+    expect(report.problems).toEqual([]);
+    const tracking = report.state?.boxes.map((b) => b.trackingNo) ?? [];
+    expect(readFileSync(join(dir, 'labels.zpl'), 'utf8')).toBe(`^XA^FD${tracking[1]}^FS^XZ\n`);
+    const csv = readFileSync(join(dir, 'shipments.csv'), 'utf8');
+    expect(csv).toContain('s1,');
+    expect(csv).toContain('s2,');
+    expect(readFileSync(join(dir, 'pick-list.html'), 'utf8')).toContain('수기 송장 — 라벨은 따로 (이 파일에 없음)');
+    expect(core.prints.map((p) => p.shipmentId)).toEqual(['s2']);
+    expect(readRun(dir)?.boxes.find((b) => b.shipmentId === 's1')?.printed).toBe(false);
+    expect(lines.some((l) => l.includes('수기 송장 1'))).toBe(true);
+  });
+
+  it('records another label error as a problem and still writes every box', async () => {
+    const { dir, opts } = setup();
+    const core = new FakeCore();
+    located(core, 's1', 'A-01');
+    located(core, 's2', 'B-01');
+    core.failNext('label', labelErr('SOMETHING_ELSE'));
+
+    const report = await runPrepare(core, withOutputs(opts(true)));
+
+    expect(report.problems).toHaveLength(1);
+    expect(report.problems[0]).toContain('s1');
+    expect(report.problems[0]).toContain('SOMETHING_ELSE');
+    expect(readFileSync(join(dir, 'shipments.csv'), 'utf8')).toContain('s1,');
+    expect(core.prints.map((p) => p.shipmentId)).toEqual(['s2']);
+  });
+
+  it('records a confirm error as a problem and goes on', async () => {
+    const { opts } = setup();
+    const core = new FakeCore();
+    located(core, 's1', 'A-01');
+    located(core, 's2', 'B-01');
+    core.failNext('confirmLabelPrint', labelErr('BOOM'));
+
+    const report = await runPrepare(core, withOutputs(opts(true)));
+
+    expect(report.problems).toHaveLength(1);
+    expect(report.problems[0]).toContain('BOOM');
+    expect(core.prints.map((p) => p.shipmentId)).toEqual(['s2']);
+  });
+
+  it('resumes the same run after a manual-waybill box without a new batch', async () => {
+    const { dir, opts } = setup();
+    const core = new FakeCore();
+    located(core, 's1', 'A-01');
+    core.failNext('label', labelErr('WAYBILL_LABEL_UNAVAILABLE'));
+    await runPrepare(core, withOutputs(opts(true)));
+
+    const again = await runPrepare(core, withOutputs(opts(true)));
+
+    expect(core.callsOf('createBatch')).toHaveLength(1);
+    expect(again.problems).toEqual([]);
+    expect(readFileSync(join(dir, 'labels.zpl'), 'utf8')).toContain('^XA');
+    expect(readRun(dir)?.boxes[0].printed).toBe(true);
+  });
+
   it('lists the remaining qty and drops fully picked sources', async () => {
     const { dir, opts } = setup();
     const core = new FakeCore();

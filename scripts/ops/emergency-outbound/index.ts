@@ -26,7 +26,9 @@ async function main(): Promise<number> {
   if (cmd.cmd === 'prepare') warehouseId = cmd.warehouseId;
   else {
     if (!run) {
-      log(`${dir}/run.json 이 없다 — --run ${cmd.run} 의 prepare 를 이 PC 에서 돌린 적이 없다. 실행 id 와 폴더를 확인하라`);
+      log(
+        `${dir}/run.json 이 없다 — --run ${cmd.run} 의 prepare 를 이 PC 에서 돌린 적이 없다. 실행 id 와 폴더를 확인하라`,
+      );
       return 1;
     }
     warehouseId = run.warehouseId;

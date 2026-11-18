@@ -62,6 +62,8 @@ npx tsx scripts/ops/emergency-outbound/index.ts prepare --stage live --warehouse
 
 **시작은 전부 아니면 전무다.** 막힌 상자(위치 재고 부족·송장 문제)가 나오면 그 상자를 배치에서 빼고 다시 시작한다. 뺀 상자는 사유와 함께 보고된다.
 
+수기 송장(`waybills/manual`)을 단 상자는 core 에 라벨이 없다. 피킹 리스트에 «수기 송장 — 라벨은 따로»로 나오고 `labels.zpl` 에는 없다 — 그 라벨은 원래 있던 것을 붙인다. 문제가 아니라 종료 코드에도 안 든다(저녁 출고도 된다).
+
 ### 3. 라벨 출력 (스테이션 PC)
 
 `labels.zpl` 을 스테이션 PC 로 옮겨 찍는다.

@@ -18,6 +18,8 @@ export interface PickBox {
   recipientName: string;
   lines: { skuName: string; qty: number }[];
   sources: { locationCode: string; skuName: string; qty: number }[];
+  /** 수기 송장 — core 에 라벨이 없다. 라벨은 따로 있다. */
+  manualLabel?: boolean;
 }
 
 const SEP = ' / ';
@@ -51,6 +53,7 @@ function esc(v: string | number): string {
 export function renderPickList(run: string, boxes: PickBox[]): string {
   const rows = boxes
     .map((b, i) => {
+      const manual = b.manualLabel ? '<br><b>수기 송장 — 라벨은 따로 (이 파일에 없음)</b>' : '';
       const where =
         b.route === 'force'
           ? '이미 피킹됨'
@@ -60,7 +63,7 @@ export function renderPickList(run: string, boxes: PickBox[]): string {
       const items = b.lines.map((l) => `${esc(l.skuName)} × ${esc(l.qty)}`).join('<br>');
       return (
         `<tr><td>${i + 1}</td><td>${esc(b.orderNos.join(SEP))}</td><td>${esc(b.trackingNo)}</td>` +
-        `<td>${esc(b.recipientName)}</td><td>${items}</td><td>${where}</td><td class="chk"></td></tr>`
+        `<td>${esc(b.recipientName)}</td><td>${items}</td><td>${where}${manual}</td><td class="chk"></td></tr>`
       );
     })
     .join('\n');
@@ -164,6 +167,7 @@ export function parseCsv(text: string): CsvRow[] {
 // ── 파일 만들기 ──────────────────────────────────────────────────────
 
 const LABEL_CONTENT_CHANGED = 'LABEL_CONTENT_CHANGED';
+const LABEL_UNAVAILABLE = 'WAYBILL_LABEL_UNAVAILABLE';
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -190,6 +194,7 @@ export async function produceOutputs(
   const labels = new Map<string, { data: string; fingerprint: string }>();
   const picks: PickBox[] = [];
   const problems: string[] = [];
+  let manualCount = 0;
 
   for (const b of state.boxes) {
     const detail = await api.shipment(b.shipmentId);
@@ -205,10 +210,24 @@ export async function produceOutputs(
             .filter((s) => s.qty > 0)
         : [];
     let trackingNo = b.trackingNo ?? '';
+    let manualLabel = false;
     if (b.trackingNo != null) {
-      const l = await api.label(b.shipmentId);
-      labels.set(b.shipmentId, { data: l.data, fingerprint: l.fingerprint });
-      trackingNo = l.trackingNo;
+      try {
+        const l = await api.label(b.shipmentId);
+        labels.set(b.shipmentId, { data: l.data, fingerprint: l.fingerprint });
+        trackingNo = l.trackingNo;
+      } catch (error) {
+        if (!(error instanceof CoreApiError)) throw error;
+        if (error.code === LABEL_UNAVAILABLE) {
+          manualLabel = true;
+          manualCount++;
+          log(`수기 송장 — core 에 라벨이 없다(라벨은 따로): ${b.shipmentId} ${b.trackingNo}`);
+        } else {
+          const problem = `상자 ${b.shipmentId} 라벨을 못 받았다(${error.code}) — 출력 확인을 못 남겨 저녁 위치 강제 출고가 실패할 수 있다`;
+          problems.push(problem);
+          log(`오류: ${problem}`);
+        }
+      }
     } else {
       const problem = `상자 ${b.shipmentId} 송장번호가 없어 라벨을 못 만들었고 출력 확인도 못 남겼다 — 저녁 위치 강제 출고가 실패한다. 상자 보기에서 송장을 확인한다`;
       problems.push(problem);
@@ -222,6 +241,7 @@ export async function produceOutputs(
       recipientName: recipientNameOf(detail.recipientSnapshot),
       lines: detail.lines.map((l) => ({ skuName: l.skuName ?? '', qty: l.qty })),
       sources,
+      ...(manualLabel ? { manualLabel } : {}),
     });
   }
 
@@ -251,18 +271,27 @@ export async function produceOutputs(
     const label = labels.get(p.shipmentId);
     if (!box || !label || box.printed) continue;
     try {
-      await api.confirmLabelPrint(p.shipmentId, label.fingerprint);
+      try {
+        await api.confirmLabelPrint(p.shipmentId, label.fingerprint);
+      } catch (error) {
+        if (!(error instanceof CoreApiError) || error.code !== LABEL_CONTENT_CHANGED) throw error;
+        const fresh = await api.label(p.shipmentId);
+        labels.set(p.shipmentId, { data: fresh.data, fingerprint: fresh.fingerprint });
+        relabeled = true;
+        await api.confirmLabelPrint(p.shipmentId, fresh.fingerprint);
+      }
     } catch (error) {
-      if (!(error instanceof CoreApiError) || error.code !== LABEL_CONTENT_CHANGED) throw error;
-      const fresh = await api.label(p.shipmentId);
-      labels.set(p.shipmentId, { data: fresh.data, fingerprint: fresh.fingerprint });
-      relabeled = true;
-      await api.confirmLabelPrint(p.shipmentId, fresh.fingerprint);
+      if (!(error instanceof CoreApiError)) throw error;
+      const problem = `상자 ${p.shipmentId} 출력 확인을 못 남겼다(${error.code}) — 저녁 위치 강제 출고가 실패할 수 있다`;
+      problems.push(problem);
+      log(`오류: ${problem}`);
+      continue;
     }
     box.printed = true;
     writeRun(dir, state);
   }
   if (relabeled) writeLabels();
   log(`산출물 — labels.zpl·pick-list.html·shipments.csv (${sorted.length}상자). labels.zpl 을 반드시 찍는다`);
+  if (manualCount > 0) log(`수기 송장 ${manualCount}상자 — 라벨은 labels.zpl 에 없다. 따로 붙인다`);
   return problems;
 }
