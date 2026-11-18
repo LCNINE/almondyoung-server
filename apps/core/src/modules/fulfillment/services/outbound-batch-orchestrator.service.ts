@@ -29,6 +29,7 @@ import { joinBlocked } from '../picking/allocation/allocation.errors';
 import { describeStartBlockers, dispatchBlocker } from '../picking/allocation/allocation.locks';
 import { StartBlocker } from '../picking/allocation/allocation.types';
 import { AuditService } from '../../inventory/shared/services/audit.service';
+import { loadSellmateShipmentIds } from './sellmate-handed-over-shipments';
 import { canonicalFulfillmentRequestHash, FulfillmentCommandService } from './fulfillment-command.service';
 import { FulfillmentInvariantService } from './fulfillment-invariant.service';
 import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
@@ -735,7 +736,10 @@ export class OutboundBatchOrchestrator {
         .from(wmsTables.outboundBatchWorkItems)
         .where(eq(wmsTables.outboundBatchWorkItems.batchId, batchId))
         .orderBy(asc(wmsTables.outboundBatchWorkItems.createdAt), asc(wmsTables.outboundBatchWorkItems.id));
-      return withShipmentLabels(trx, rows.map((row) => this.workItemResponse(row)));
+      return withShipmentLabels(
+        trx,
+        rows.map((row) => this.workItemResponse(row)),
+      );
     }, tx);
   }
 
@@ -850,7 +854,10 @@ export class OutboundBatchOrchestrator {
         scheduledPickingAt: batch.scheduledPickingAt ?? undefined,
         startedAt: batch.startedAt ?? undefined,
         completedAt: batch.completedAt ?? undefined,
-        workItems: await withShipmentLabels(trx, workItems.map((row) => this.workItemResponse(row))),
+        workItems: await withShipmentLabels(
+          trx,
+          workItems.map((row) => this.workItemResponse(row)),
+        ),
         warehouse: {
           ...warehouse,
           supportedPickingStrategies: warehouse.supportedPickingStrategies ?? [],
@@ -1227,6 +1234,13 @@ export class OutboundBatchOrchestrator {
     }
     if (shipment.warehouseId !== batch.warehouseId) {
       throw this.conflict('SHIPMENT_WRONG_WAREHOUSE', `Shipment ${shipment.id} belongs to another warehouse`);
+    }
+    // T 에 이미 planned 였던 셀메이트 상자도 배치로 나가지 않는다 — 추가·합류·후보 목록이 모두 이 판정을 지난다(#1412)
+    if ((await loadSellmateShipmentIds(tx, [shipment.id])).has(shipment.id)) {
+      throw this.conflict(
+        'SHIPMENT_HANDED_OVER_TO_SELLMATE',
+        `Shipment ${shipment.id} belongs to an order Sellmate ships`,
+      );
     }
     if (!shipment.shippingProfileId) {
       throw this.conflict('SHIPMENT_PROFILE_REQUIRED', `Shipment ${shipment.id} has no shipping profile`);
@@ -1666,7 +1680,12 @@ async function withShipmentLabels<T extends { shipmentId: string }>(
     )
     .leftJoin(wmsTables.salesOrders, eq(wmsTables.salesOrders.id, wmsTables.fulfillmentOrders.salesOrderId))
     .innerJoin(wmsTables.skus, eq(wmsTables.skus.id, wmsTables.shipmentLines.skuId))
-    .where(inArray(wmsTables.shipmentLines.shipmentId, rows.map((row) => row.shipmentId)))
+    .where(
+      inArray(
+        wmsTables.shipmentLines.shipmentId,
+        rows.map((row) => row.shipmentId),
+      ),
+    )
     .orderBy(asc(wmsTables.shipmentLines.createdAt));
   return rows.map((row) => {
     const own = lines.filter((line) => line.shipmentId === row.shipmentId);

@@ -34,6 +34,7 @@ import { BatchControlledStockGuard } from '../../inventory/core/services/batch-c
 import { BatchInventorySessionService } from './batch-inventory-session.service';
 import { BoxAllocationManager } from './box-allocation.manager';
 import { assembleBoxWithdrawal } from './__support__/box-withdrawal-wiring';
+import { seedHandedOverOrder } from './__support__/sellmate-handed-over-fixtures';
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
@@ -494,6 +495,20 @@ describeIfDb('OutboundBatchOrchestrator (DB integration)', () => {
       .where(eq(wmsTables.dispatchAttemptSources.id, source.id));
     expect(attemptAfter).toEqual(attempt);
     expect(sourceAfter).toEqual(source);
+  });
+
+  it('셀메이트 상자는 이미 planned 여도 배치 후보에 없고 추가를 409 로 거절한다', async () => {
+    const fixture = await committedFixture();
+    await db.transaction((tx) => seedHandedOverOrder(tx as unknown as DbTx, fixture.salesOrderId));
+    const batch = await createBatch(fixture.warehouseId);
+
+    expect((await services.batches.getEligibleShipments(batch.batchId)).map((s) => s.shipmentId)).not.toContain(
+      fixture.shipment.id,
+    );
+    await expect(
+      services.batches.addShipment(batch.batchId, fixture.shipment.id, `sellmate-${randomUUID()}`, master),
+    ).rejects.toMatchObject({ response: expect.objectContaining({ code: 'SHIPMENT_HANDED_OVER_TO_SELLMATE' }) });
+    expect(await services.batches.getWorkItems(batch.batchId)).toHaveLength(0);
   });
 
   it('rejects a shipment from the wrong warehouse before creating a work item', async () => {
