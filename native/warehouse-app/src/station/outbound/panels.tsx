@@ -27,13 +27,21 @@ export function BoxCard({
   trackingNo,
   recipient,
   deliveryNote,
+  ownerName,
 }: {
   trackingNo: string;
   recipient: string;
   deliveryNote?: string | null;
+  ownerName?: string | null;
 }) {
   return (
     <div className={cn(CARD, 'flex shrink-0 flex-col gap-2.5 p-[18px]')}>
+      {ownerName ? (
+        <div className="rounded-md bg-[#1F2329] px-3 py-2 text-white">
+          <div className="text-lg font-bold">3PL · {ownerName}</div>
+          <div className="text-sm">우리 리플렛·사은품은 넣지 않아요</div>
+        </div>
+      ) : null}
       <h2 className="font-mono text-[30px] font-semibold">{formatTrackingNo(trackingNo)}</h2>
       <div className="text-lg font-medium">{recipient}</div>
       {deliveryNote ? (
