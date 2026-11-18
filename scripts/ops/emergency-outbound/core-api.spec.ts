@@ -80,6 +80,44 @@ describe('httpCoreApi', () => {
     expect((e.body as { errors: { shipmentId: string }[] }).errors[0].shipmentId).toBe('s1');
   });
 
+  describe('error code derivation', () => {
+    const fail = async (status: number, body: unknown): Promise<CoreApiError> => {
+      reply = { status, body: JSON.stringify(body) };
+      const api = httpCoreApi(url, async () => 't1');
+      return (await api.label('s1').catch((e: unknown) => e)) as CoreApiError;
+    };
+
+    it('takes the domain code from the message prefix when body.code is generic', async () => {
+      const e = await fail(409, {
+        success: false,
+        code: 'CONFLICT',
+        error: 'CONFLICT',
+        message: 'WAYBILL_LABEL_UNAVAILABLE: manual waybill w1 has no carrier label data',
+      });
+      expect(e.code).toBe('WAYBILL_LABEL_UNAVAILABLE');
+      expect(e.httpCode).toBe('CONFLICT');
+    });
+
+    it('keeps a specific body.code', async () => {
+      const e = await fail(409, { code: 'SHIPMENT_NOT_DISPATCHABLE', message: 'OTHER_CODE: x' });
+      expect(e.code).toBe('SHIPMENT_NOT_DISPATCHABLE');
+      expect(e.httpCode).toBe('SHIPMENT_NOT_DISPATCHABLE');
+    });
+
+    it('keeps the generic code when the message has no prefix', async () => {
+      const e = await fail(500, {
+        code: 'INTERNAL_SERVER_ERROR',
+        message: 'ITF needs an even number of digits: "59995549012"',
+      });
+      expect(e.code).toBe('INTERNAL_SERVER_ERROR');
+    });
+
+    it('derives from the message when there is no body.code at all', async () => {
+      const e = await fail(404, { message: 'NOT_THERE: gone' });
+      expect(e.code).toBe('NOT_THERE');
+    });
+  });
+
   it('returns null for no active waybill', async () => {
     reply = { status: 200, body: '' };
     const api = httpCoreApi(url, async () => 't1');

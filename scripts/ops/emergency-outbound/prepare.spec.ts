@@ -2,7 +2,7 @@ import { mkdtempSync, readFileSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { CoreApiError } from './core-api';
-import { FakeCore } from './__support__/fake-core';
+import { FakeCore, realConflict } from './__support__/fake-core';
 import { idemKey, runPrepare } from './prepare';
 import { readRun, RunState, writeRun } from './run-state';
 
@@ -395,14 +395,14 @@ describe('runPrepare outputs', () => {
       ],
     });
 
-  const labelErr = (code: string) => new CoreApiError(409, code, null, code);
+  const labelErr = (code: string) => realConflict(code);
 
   it('keeps a manual-waybill box in the files without a label and without a problem', async () => {
     const { dir, opts, lines } = setup();
     const core = new FakeCore();
     located(core, 's1', 'A-01');
     located(core, 's2', 'B-01');
-    core.failNext('label', labelErr('WAYBILL_LABEL_UNAVAILABLE'));
+    core.manualWaybills.add('s1');
 
     const report = await runPrepare(core, withOutputs(opts(true)));
 
@@ -546,7 +546,7 @@ describe('runPrepare outputs', () => {
     const { dir, opts } = setup();
     const core = new FakeCore();
     located(core, 's1', 'A-01');
-    core.failNext('confirmLabelPrint', new CoreApiError(409, 'LABEL_CONTENT_CHANGED', null, 'changed'));
+    core.failNext('confirmLabelPrint', realConflict('LABEL_CONTENT_CHANGED', 'changed'));
 
     await runPrepare(core, withOutputs(opts(true)));
 

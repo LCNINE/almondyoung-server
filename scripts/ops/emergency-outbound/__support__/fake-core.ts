@@ -13,6 +13,7 @@ import {
   BulkShipmentResult,
   CoreApi,
   CoreApiError,
+  coreApiErrorFrom,
   ForceItem,
   LabelView,
   LocationOutboundState,
@@ -38,6 +39,15 @@ export interface FakeShipment {
   recipientName?: string;
   lines?: { id: string; skuId: string; skuName: string; qty: number }[];
   sources?: LocationOutboundState['sources'];
+}
+
+/** core 의 ConflictError 모양 — 본문 code 는 일반 이름, 도메인 코드는 메시지 접두사. */
+export function realConflict(domainCode: string, detail = 'fake'): CoreApiError {
+  return coreApiErrorFrom(
+    409,
+    { success: false, code: 'CONFLICT', error: 'CONFLICT', message: `${domainCode}: ${detail}` },
+    'fake',
+  );
 }
 
 export interface FakeCall {
@@ -66,6 +76,8 @@ const SHIPPED = new Set(['shipped', 'in_transit', 'delivered']);
 export class FakeCore implements CoreApi {
   readonly calls: FakeCall[] = [];
   readonly shipments = new Map<string, FakeShipment>();
+  /** 수기 송장 상자 — 라벨 요청이 실제 core 모양의 WAYBILL_LABEL_UNAVAILABLE 로 거절된다. */
+  readonly manualWaybills = new Set<string>();
   readonly waybills = new Map<string, WaybillView>();
   readonly batchRows = new Map<string, BatchListItem>();
   readonly items: WorkItem[] = [];
@@ -240,7 +252,13 @@ export class FakeCore implements CoreApi {
     this.enter('excludeFromBatch', [batchId, shipmentId, reason, key]);
     const sent = this.excludedByKey.get(key);
     if (sent !== undefined) {
-      if (sent !== reason) throw new CoreApiError(409, 'FULFILLMENT_IDEMPOTENCY_MISMATCH', null, `exclude ${key}`);
+      if (sent !== reason)
+        throw new CoreApiError(
+          409,
+          'FULFILLMENT_IDEMPOTENCY_MISMATCH',
+          { code: 'FULFILLMENT_IDEMPOTENCY_MISMATCH' },
+          `exclude ${key}`,
+        );
       return this.leave('excludeFromBatch', undefined); // 재생 — 효과 없음
     }
     const item = this.activeItem(shipmentId);
@@ -306,6 +324,9 @@ export class FakeCore implements CoreApi {
     this.enter('label', [shipmentId]);
     const wb = this.waybills.get(shipmentId);
     if (!wb?.trackingNo) throw new CoreApiError(404, 'WAYBILL_NOT_FOUND', null, shipmentId);
+    if (this.manualWaybills.has(shipmentId)) {
+      throw realConflict('WAYBILL_LABEL_UNAVAILABLE', `manual waybill ${wb.id} has no carrier label data`);
+    }
     return {
       trackingNo: wb.trackingNo,
       data: `^XA^FD${wb.trackingNo}^FS^XZ\n`,
@@ -337,7 +358,13 @@ export class FakeCore implements CoreApi {
     const body = JSON.stringify({ warehouseId, reason, items });
     const sent = this.dispatchedByKey.get(key);
     if (sent !== undefined) {
-      if (sent !== body) throw new CoreApiError(409, 'FULFILLMENT_IDEMPOTENCY_MISMATCH', null, `force ${key}`);
+      if (sent !== body)
+        throw new CoreApiError(
+          409,
+          'FULFILLMENT_IDEMPOTENCY_MISMATCH',
+          { code: 'FULFILLMENT_IDEMPOTENCY_MISMATCH' },
+          `force ${key}`,
+        );
       return this.leave('locationForce', this.locationView(s, warehouseId));
     }
     if (!SHIPPED.has(s.status)) {
@@ -372,7 +399,13 @@ export class FakeCore implements CoreApi {
     const body = JSON.stringify({ reason });
     const sent = this.dispatchedByKey.get(key);
     if (sent !== undefined) {
-      if (sent !== body) throw new CoreApiError(409, 'FULFILLMENT_IDEMPOTENCY_MISMATCH', null, `force ${key}`);
+      if (sent !== body)
+        throw new CoreApiError(
+          409,
+          'FULFILLMENT_IDEMPOTENCY_MISMATCH',
+          { code: 'FULFILLMENT_IDEMPOTENCY_MISMATCH' },
+          `force ${key}`,
+        );
       return this.leave('forceDispatch', { status: 'shipped', dispatchAttemptId: `da-${shipmentId}` });
     }
     // core: 발송은 planned 상자에만, 강제 발송은 포장 단계(ready_to_pack·packing) 작업 항목에만.

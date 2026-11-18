@@ -11,15 +11,49 @@
  */
 
 export class CoreApiError extends Error {
+  /** 응답 본문의 원래 코드(없으면 `HTTP_<상태>`). `code` 가 메시지 접두사에서 나왔을 때 일반 이름이 여기 남는다. */
+  readonly httpCode: string;
+
   constructor(
     readonly status: number,
     readonly code: string,
     readonly body: unknown,
     message: string,
+    httpCode?: string,
   ) {
     super(message);
     this.name = 'CoreApiError';
+    this.httpCode = httpCode ?? code;
   }
+}
+
+/**
+ * core 의 `ApplicationException`(ConflictError 등)은 본문 `code` 에 «일반 HTTP 이름»(CONFLICT…)을 싣고
+ * 도메인 코드는 메시지 앞(`DOMAIN_CODE: 설명`)에 둔다. `HttpException({ code })` 는 도메인 코드가 `code` 에 바로 있다.
+ */
+const GENERIC_CODES: ReadonlySet<string> = new Set([
+  'CONFLICT',
+  'BAD_REQUEST',
+  'NOT_FOUND',
+  'FORBIDDEN',
+  'UNAUTHORIZED',
+  'UNPROCESSABLE_ENTITY',
+  'INTERNAL_SERVER_ERROR',
+]);
+const MESSAGE_PREFIX = /^([A-Z][A-Z0-9_]{2,}):/;
+
+/** 실패 응답(상태·본문)에서 `CoreApiError` 를 만든다 — HTTP 호출과 테스트의 FakeCore 가 같은 길을 쓴다. */
+export function coreApiErrorFrom(status: number, body: unknown, where: string): CoreApiError {
+  const httpCode = isRecord(body) && typeof body.code === 'string' ? body.code : `HTTP_${status}`;
+  const code = errorCode(httpCode, isRecord(body) ? body.message : undefined);
+  const msg = isRecord(body) && typeof body.message === 'string' ? `: ${body.message}` : '';
+  return new CoreApiError(status, code, body, `core ${where} ${status} ${code}${msg}`, httpCode);
+}
+
+function errorCode(httpCode: string, message: unknown): string {
+  if (!GENERIC_CODES.has(httpCode) && !/^HTTP_\d+$/.test(httpCode)) return httpCode;
+  const prefix = typeof message === 'string' ? MESSAGE_PREFIX.exec(message)?.[1] : undefined;
+  return prefix ?? httpCode;
 }
 
 // ── 타입 ────────────────────────────────────────────────────────────
@@ -255,14 +289,7 @@ export function httpCoreApi(coreUrl: string, token: () => Promise<string>): Core
       }
     }
     if (!res.ok) {
-      const code = isRecord(parsed) && typeof parsed.code === 'string' ? parsed.code : `HTTP_${res.status}`;
-      const msg = isRecord(parsed) && typeof parsed.message === 'string' ? `: ${parsed.message}` : '';
-      throw new CoreApiError(
-        res.status,
-        code,
-        parsed,
-        `core ${method} /${path.split('?')[0]} ${res.status} ${code}${msg}`,
-      );
+      throw coreApiErrorFrom(res.status, parsed, `${method} /${path.split('?')[0]}`);
     }
     return parsed === null ? null : (parsed as T);
   }
