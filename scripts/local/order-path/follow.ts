@@ -1,5 +1,6 @@
 import { expectOk, probe } from '../../tenancy/isolation-check/http';
-import { BUCHEON_WAREHOUSE_ID, type OrderPathConfig } from './config';
+import { TENANT_HEADER } from '../../../libs/tenancy/src/tenant-header';
+import { BUCHEON_WAREHOUSE_ID, TENANT_ONE, type OrderPathConfig } from './config';
 import { judgeBox, type BoxObservation, type BoxProgress, type ShipmentView } from './plan';
 
 /**
@@ -27,6 +28,8 @@ export async function syncAndWaitForBox(
 ): Promise<{ salesOrderId: string; shipmentIds: string[] }> {
   await expectOk('POST', `${cfg.channelAdapterUrl}/adapter/orders/medusa/${encodeURIComponent(medusaOrderId)}/sync`, {
     bearer: cfg.channelAdapterInternalKey,
+    // 서비스 키 입구는 테넌트를 헤더로 받는다 — ② 모드(reject)에선 없으면 403 이다(served-tenant-gate.ts admitService).
+    headers: { [TENANT_HEADER]: TENANT_ONE },
     json: {},
   });
 
