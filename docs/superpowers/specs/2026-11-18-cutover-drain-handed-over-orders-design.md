@@ -74,6 +74,8 @@
 ## 빌더에게 남긴 것
 
 - 판정 쿼리를 어디에 둘지(fulfillment 서비스 쪽 reader 하나). DB 접근 규칙은 inventory 규칙(`select().from().innerJoin()`)을 따른다.
-- 합포장 실행(`ConsolidationService.consolidate`)에 거절을 더할지. 후보에서 빠지므로 API 로 직접 합칠 때만 생긴다.
-  합쳐도 `plan()` 이 거절하므로 이번 범위에서는 빼도 된다(Claude 판단).
+- ~~합포장 실행에 거절을 더할지~~ → **더한다**(계획 쓰면서 정함, Claude 판단). 합포장 후보는 보드 말고도
+  `consolidation-candidates`·`consolidation-options` 두 경로(상자 상세 화면)가 더 있다. 그래서 세 후보 목록을 다 고치는 대신
+  `ConsolidationService.consolidate()` 한 곳에서 같은 코드로 거절한다. 안 막으면 T 뒤 주문과 섞인 상자가 생기고, `plan()` 이 그 상자를 거절해
+  T 뒤 주문까지 묶인다. 상세 화면의 후보 목록에는 셀메이트 상자가 뜰 수 있지만, 합치기를 누르면 거절된다.
 - 테스트: 리더 통합 스펙(셀메이트 상자 빠짐, 교환품 줄 상자는 남음), `plan()` 거절, 합포장 후보 제외.
