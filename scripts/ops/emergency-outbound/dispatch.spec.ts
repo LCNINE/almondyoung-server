@@ -88,7 +88,7 @@ describe('runDispatch', () => {
       ['s2', 'would-dispatch'],
     ]);
     expect(core.shipments.get('s1')?.status).toBe('planned');
-    expect(lines[lines.length - 1]).toBe('발송 2 · 이미 0 · 거절 0 · 불일치 0 · 빠진 상자 0');
+    expect(lines[lines.length - 1]).toBe('발송 예정 2 · 이미 0 · 거절 0 · 불일치 0 · 빠진 상자 0');
   });
 
   it('sends every remaining source exactly once', async () => {
@@ -172,7 +172,9 @@ describe('runDispatch', () => {
       { shipmentId: 's2', route: 'location', outcome: 'dispatched' },
     ]);
     expect(core.shipments.get('s1')?.status).toBe('planned');
-    expect(lines[lines.length - 1]).toBe('발송 1 · 이미 0 · 거절 1 · 불일치 0 · 빠진 상자 0');
+    expect(lines[lines.length - 1]).toBe(
+      '발송 1 · 이미 0 · 거절 1 (SIMPLE_OUTBOUND_PLAN_INVALIDATED 1) · 불일치 0 · 빠진 상자 0',
+    );
   });
 
   it('rejects a force box that is not packing', async () => {
@@ -266,5 +268,84 @@ describe('runDispatch', () => {
     expect(r.duplicates).toEqual(['s1']);
     expect(core.writes()).toEqual(['locationForce']);
     expect(lines.some((l) => l.includes('s1') && l.includes('중복'))).toBe(true);
+  });
+
+  it.each([false, true])('rejects a box that is no longer planned (apply=%s)', async (apply) => {
+    const core = new FakeCore(WH);
+    const a = locationBox(core, 's1');
+    core.shipments.get('s1')!.status = 'canceled';
+
+    const { report, lines } = run(core, state(a), [row(a)], apply);
+    const r = await report;
+
+    expect(r.rows).toEqual([{ shipmentId: 's1', route: 'location', outcome: 'rejected', detail: '상태 canceled' }]);
+    expect(core.writes()).toEqual([]);
+    expect(core.callsOf('activeWaybill')).toEqual([]);
+    expect(lines[lines.length - 1]).toContain('거절 1 (상태 canceled 1)');
+  });
+
+  it('refuses when the printed tracking number differs from csv and core', async () => {
+    const core = new FakeCore(WH);
+    const a = { ...locationBox(core, 's1'), trackingNo: 'TRK-ACME-PRINTED' };
+    core.setWaybill('s1', 'TRK-ACME-NEW');
+
+    const r = await run(core, state(a), [row(a, { trackingNo: 'TRK-ACME-NEW' })], true).report;
+
+    expect(r.rows).toHaveLength(1);
+    expect(r.rows[0].outcome).toBe('mismatch');
+    expect(r.rows[0].detail).toContain('TRK-ACME-PRINTED');
+    expect(r.rows[0].detail).toContain('TRK-ACME-NEW');
+    expect(core.writes()).toEqual([]);
+  });
+
+  it('groups rejections by reason in the summary', async () => {
+    const core = new FakeCore(WH);
+    const a = locationBox(core, 's1');
+    const b = locationBox(core, 's2');
+    const c = locationBox(core, 's3');
+    const stranger = locationBox(core, 's9');
+    core.shipments.get('s1')!.status = 'canceled';
+    core.shipments.get('s2')!.status = 'canceled';
+    core.failNext('locationForce', new CoreApiError(409, 'SIMPLE_OUTBOUND_PLAN_INVALIDATED', null, 'invalidated'));
+
+    const { report, lines } = run(core, state(a, b, c), [row(a), row(b), row(c), row(stranger)], true);
+    await report;
+
+    expect(lines[lines.length - 1]).toBe(
+      '발송 0 · 이미 0 · 거절 4 (상태 canceled 2 · SIMPLE_OUTBOUND_PLAN_INVALIDATED 1 · 이번 실행의 상자가 아니다 1)' +
+        ' · 불일치 0 · 빠진 상자 0',
+    );
+  });
+
+  it('a write that committed before the connection dropped is already on rerun', async () => {
+    const core = new FakeCore(WH);
+    const a = locationBox(core, 's1');
+    core.failAfter('locationForce', new Error('socket hang up'));
+
+    const first = run(core, state(a), [row(a)], true);
+    await expect(first.report).rejects.toThrow('socket hang up');
+    expect(first.lines[first.lines.length - 1]).toBe('중단 — 같은 명령을 다시 돌리면 이어진다');
+
+    const r = await run(core, state(a), [row(a)], true).report;
+
+    expect(outcomes(r)).toEqual([['s1', 'already']]);
+    expect(core.callsOf('locationForce')).toHaveLength(1);
+  });
+
+  it('fake core refuses to dispatch a box that is not planned', async () => {
+    const core = new FakeCore(WH);
+    packingBox(core, 's2');
+    locationBox(core, 's1');
+    core.shipments.get('s1')!.status = 'canceled';
+    core.shipments.get('s2')!.status = 'canceled';
+
+    await expect(core.forceDispatch('s2', FORCE_REASON, 'k2')).rejects.toMatchObject({
+      code: 'SHIPMENT_NOT_DISPATCHABLE',
+    });
+    const items = [{ shipmentLineId: 'l-s1', sourceLocationId: 'loc-1', quantity: 1 }];
+    await expect(core.locationForce('s1', WH, FORCE_REASON, items, 'k1')).rejects.toMatchObject({
+      code: 'SHIPMENT_NOT_DISPATCHABLE',
+    });
+    expect(core.shipments.get('s1')?.status).toBe('canceled');
   });
 });

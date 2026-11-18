@@ -341,6 +341,10 @@ export class FakeCore implements CoreApi {
       return this.leave('locationForce', this.locationView(s, warehouseId));
     }
     if (!SHIPPED.has(s.status)) {
+      // core: 발송은 planned 상자에만(취소·복구 대기 상자는 거절).
+      if (s.status !== 'planned') {
+        throw new CoreApiError(409, 'SHIPMENT_NOT_DISPATCHABLE', null, `Shipment is ${s.status}`);
+      }
       // 남은 원천 전부를 (라인, 위치)마다 남은 수량 그대로 — 하나라도 다르면 진행이 바뀐 것으로 본다.
       const expected = (s.sources ?? [])
         .filter((src) => src.remainingQty > 0)
@@ -371,7 +375,10 @@ export class FakeCore implements CoreApi {
       if (sent !== body) throw new CoreApiError(409, 'FULFILLMENT_IDEMPOTENCY_MISMATCH', null, `force ${key}`);
       return this.leave('forceDispatch', { status: 'shipped', dispatchAttemptId: `da-${shipmentId}` });
     }
-    // core: 강제 발송은 포장 단계(ready_to_pack·packing) 작업 항목에만.
+    // core: 발송은 planned 상자에만, 강제 발송은 포장 단계(ready_to_pack·packing) 작업 항목에만.
+    if (s.status !== 'planned') {
+      throw new CoreApiError(409, 'SHIPMENT_NOT_DISPATCHABLE', null, `Shipment is ${s.status}`);
+    }
     const item = this.activeItem(shipmentId);
     if (!item || (item.status !== 'ready_to_pack' && item.status !== 'packing')) {
       throw new CoreApiError(409, 'SHIPMENT_NOT_INSPECTION_READY', null, `force-dispatch ${shipmentId}`);
