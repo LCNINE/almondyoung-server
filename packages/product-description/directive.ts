@@ -86,6 +86,13 @@ const STACKED_TARGET_RATIO = 1.6;
  * - 그 밖에는 영역을 자르지 않고 모자란 쪽 변을 넓혀 칸 비율에 맞춘다. 중심은 지키고, 원본 밖으로 나가면
  *   안쪽으로 밀며, 원본이 칸 비율을 못 담으면 다른 변을 줄인다.
  */
+/** 영역을 칸 안에 잘리지 않게 통째로 넣을 때의 크기(칸에 대한 %). 남는 쪽은 비운다. */
+export function containInCell(regionAspect: number, cellAspect: number): { width: string; height: string } {
+  return regionAspect < cellAspect
+    ? { width: `${(regionAspect / cellAspect) * 100}%`, height: '100%' }
+    : { width: '100%', height: `${(cellAspect / regionAspect) * 100}%` };
+}
+
 export function fitCropToAspect(crop: ImageCrop, imageWidth: number, imageHeight: number, aspect: number): ImageCrop {
   const width = crop.w * imageWidth;
   const height = crop.h * imageHeight;

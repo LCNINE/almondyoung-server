@@ -138,6 +138,24 @@ describe("상세설명 블록 렌더", () => {
     expect(img.properties).not.toHaveProperty("dataAspect")
   })
 
+  it("한 묶음의 옵션 카드는 영역 비율의 중앙값 하나로 칸을 맞춘다", async () => {
+    const tree = await render(
+      [
+        ':::details{title="DETAILS"}',
+        `::swatch{fileId="${FILE}" crop="0,0,0.1,0.2" code="A" name="가"}`,
+        `::swatch{fileId="${FILE}" crop="0.2,0,0.2,0.2" code="B" name="나"}`,
+        `::swatch{fileId="${FILE}" crop="0.5,0,0.3,0.2" code="C" name="다"}`,
+        ":::",
+      ].join("\n")
+    )
+
+    expect(all(tree, (n) => n.tagName === "img").map((img) => img.properties?.dataCell)).toEqual([
+      "1.0000",
+      "1.0000",
+      "1.0000",
+    ])
+  })
+
   it("문단 안의 :swatch 는 figure 로 바꾸지 않고 글자로 남긴다", async () => {
     const tree = await render(`본문 :swatch{fileId="${FILE}" name="빨강"} 계속`)
 

@@ -136,10 +136,12 @@ export async function composeProductDescription(
       );
     }
 
+    // 확인 필요 같은 메모 주석은 프롬프트로 막아도 남을 수 있어 지운다 — 어드민이 그대로 저장하면 본문에 남는다.
     const written = message.content
       .filter((block) => block.type === 'text')
       .map((block) => block.text)
       .join('\n')
+      .replace(/<!--[\s\S]*?-->/g, '')
       .trim();
 
     if (!written) {

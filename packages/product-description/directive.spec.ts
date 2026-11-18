@@ -1,4 +1,5 @@
 import {
+  containInCell,
   createProductImageDirective,
   fitCropToAspect,
   parseImageCrop,
@@ -89,7 +90,11 @@ describe('product image crop', () => {
   );
 
   it('round-trips a crop through the directive string', () => {
-    const directive = createProductImageDirective({ fileId, alt: '', crop: { x: 0.3245, y: 0.45, w: 0.085, h: 0.085 } });
+    const directive = createProductImageDirective({
+      fileId,
+      alt: '',
+      crop: { x: 0.3245, y: 0.45, w: 0.085, h: 0.085 },
+    });
 
     expect(directive).toBe(`::product-image{fileId="${fileId}" alt="" crop="0.3245,0.45,0.085,0.085"}`);
     expect(parseImageCrop('0.3245,0.45,0.085,0.085')).toEqual({ x: 0.3245, y: 0.45, w: 0.085, h: 0.085 });
@@ -124,5 +129,12 @@ describe('fitCropToAspect', () => {
     const wide = fitCropToAspect({ x: 0, y: 0, w: 1, h: 0.5 }, 1000, 200, 0.75);
     expect(wide.h).toBeCloseTo(1);
     expect((wide.w * 1000) / (wide.h * 200)).toBeCloseTo(0.75);
+  });
+});
+
+describe('containInCell', () => {
+  it('칸보다 좁은 영역은 높이를 채우고, 넓은 영역은 폭을 채운다', () => {
+    expect(containInCell(0.5, 1)).toEqual({ width: '50%', height: '100%' });
+    expect(containInCell(2, 1)).toEqual({ width: '100%', height: '50%' });
   });
 });

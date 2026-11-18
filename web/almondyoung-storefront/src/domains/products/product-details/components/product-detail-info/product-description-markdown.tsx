@@ -5,7 +5,7 @@ import { useEffect, useRef, useState } from "react"
 import ReactMarkdown from "react-markdown"
 import remarkDirective from "remark-directive"
 import remarkGfm from "remark-gfm"
-import { fitCropToAspect, parseImageCrop, type ImageCrop } from "@packages/product-description/directive"
+import { containInCell, fitCropToAspect, parseImageCrop, type ImageCrop } from "@packages/product-description/directive"
 import { remarkProductDescription } from "@packages/product-description/remark-blocks"
 import { getThumbnailUrl } from "@/lib/utils/get-thumbnail-url"
 import { Badge } from "@/components/ui/badge"
@@ -37,10 +37,11 @@ export function ProductDescriptionMarkdown({
 
             const crop = parseImageCrop(node?.properties?.dataCrop)
             const aspect = Number(node?.properties?.dataAspect) || undefined
+            const cell = Number(node?.properties?.dataCell) || undefined
             const imageAlt = alt || imageAltFallback || ""
 
             return crop ? (
-              <CroppedImage src={src} alt={imageAlt} crop={crop} aspect={aspect} />
+              <CroppedImage src={src} alt={imageAlt} crop={crop} aspect={aspect} cell={cell} />
             ) : (
               <DescriptionImage src={src} alt={imageAlt} className={className} />
             )
@@ -111,11 +112,14 @@ function CroppedImage({
   alt,
   crop,
   aspect,
+  cell,
 }: {
   src: string
   alt: string
   crop: ImageCrop
   aspect?: number
+  /** 옵션 카드 칸 비율(crop 좌표의 가로/세로). 오면 영역을 칸 안에 잘리지 않게 통째로 넣는다. */
+  cell?: number
 }) {
   const [size, setSize] = useState<{ width: number; height: number } | null>(null)
   const imgRef = useRef<HTMLImageElement>(null)
@@ -129,9 +133,10 @@ function CroppedImage({
 
   const shown = size && aspect ? fitCropToAspect(crop, size.width, size.height, aspect) : crop
   const ratio = aspect ?? (size ? (crop.w * size.width) / (crop.h * size.height) : crop.w / crop.h)
+  const cellRatio = cell && size ? (cell * size.width) / size.height : cell
 
-  return (
-    <span className="pd-crop" style={{ aspectRatio: ratio }}>
+  const cropped = (
+    <span className="pd-crop" style={{ aspectRatio: ratio, ...(cellRatio ? containInCell(ratio, cellRatio) : {}) }}>
       {/* eslint-disable-next-line @next/next/no-img-element -- 원본 확대·이동이라 next/image 의 고정 크기와 맞지 않는다 */}
       <img
         src={src}
@@ -144,13 +149,21 @@ function CroppedImage({
         }}
         style={{
           // 격자 칸은 원본 크기를 알아야 crop 을 칸 비율로 넓힐 수 있어 그때까지 가린다
-          opacity: aspect && !size ? 0 : 1,
+          opacity: (aspect || cell) && !size ? 0 : 1,
           width: `${100 / shown.w}%`,
           left: `${(-shown.x / shown.w) * 100}%`,
           top: `${(-shown.y / shown.h) * 100}%`,
         }}
       />
     </span>
+  )
+
+  return cellRatio ? (
+    <span className="pd-cell" style={{ aspectRatio: cellRatio }}>
+      {cropped}
+    </span>
+  ) : (
+    cropped
   )
 }
 

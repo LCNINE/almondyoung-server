@@ -5,6 +5,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkDirective from 'remark-directive';
 import remarkGfm from 'remark-gfm';
 import {
+  containInCell,
   fitCropToAspect,
   parseImageCrop,
   type ImageCrop,
@@ -77,6 +78,7 @@ export function ProductDescriptionMarkdown({ value }: { value: string }) {
                   alt={props.alt ?? ''}
                   crop={crop}
                   aspect={Number(node?.properties?.dataAspect) || undefined}
+                  cell={Number(node?.properties?.dataCell) || undefined}
                 />
               );
             }
@@ -107,26 +109,45 @@ function CroppedImage({
   alt,
   crop,
   aspect,
+  cell,
 }: {
   src: string;
   alt: string;
   crop: ImageCrop;
   aspect?: number;
+  /** 옵션 카드 칸 비율(crop 좌표의 가로/세로). 오면 영역을 칸 안에 잘리지 않게 통째로 넣는다. */
+  cell?: number;
 }) {
-  const [size, setSize] = useState<{ width: number; height: number } | null>(null);
+  const [size, setSize] = useState<{ width: number; height: number } | null>(
+    null
+  );
   const imgRef = useRef<HTMLImageElement>(null);
 
   // 이미 받아진 이미지는 onLoad 가 안 올 수 있어 마운트 때 한 번 직접 읽는다.
   useEffect(() => {
-    const loaded = imgRef.current?.complete ? naturalSize(imgRef.current) : null;
+    const loaded = imgRef.current?.complete
+      ? naturalSize(imgRef.current)
+      : null;
     if (loaded) setSize(loaded);
   }, []);
 
-  const shown = size && aspect ? fitCropToAspect(crop, size.width, size.height, aspect) : crop;
-  const ratio = aspect ?? (size ? (crop.w * size.width) / (crop.h * size.height) : crop.w / crop.h);
+  const shown =
+    size && aspect
+      ? fitCropToAspect(crop, size.width, size.height, aspect)
+      : crop;
+  const ratio =
+    aspect ??
+    (size ? (crop.w * size.width) / (crop.h * size.height) : crop.w / crop.h);
+  const cellRatio = cell && size ? (cell * size.width) / size.height : cell;
 
-  return (
-    <span className="pd-crop" style={{ aspectRatio: ratio }}>
+  const cropped = (
+    <span
+      className="pd-crop"
+      style={{
+        aspectRatio: ratio,
+        ...(cellRatio ? containInCell(ratio, cellRatio) : {}),
+      }}
+    >
       {/* eslint-disable-next-line @next/next/no-img-element -- 원본 확대·이동이라 next/image 의 고정 크기와 맞지 않는다 */}
       <img
         src={src}
@@ -138,13 +159,21 @@ function CroppedImage({
           if (loaded) setSize(loaded);
         }}
         style={{
-          opacity: aspect && !size ? 0 : 1,
+          opacity: (aspect || cell) && !size ? 0 : 1,
           width: `${100 / shown.w}%`,
           left: `${(-shown.x / shown.w) * 100}%`,
           top: `${(-shown.y / shown.h) * 100}%`,
         }}
       />
     </span>
+  );
+
+  return cellRatio ? (
+    <span className="pd-cell" style={{ aspectRatio: cellRatio }}>
+      {cropped}
+    </span>
+  ) : (
+    cropped
   );
 }
 

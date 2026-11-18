@@ -57,7 +57,7 @@ export type ExtractedImage = {
   size?: { width: number; height: number };
 };
 
-/** 모르는 항목은 빈 문자열. 작성 단계가 그 행을 스펙 표에서 빼고 확인 필요 주석을 남긴다. */
+/** 모르는 항목은 빈 문자열. 작성 단계가 그 행을 스펙 표에서 뺀다. */
 export type ExtractedFacts = {
   brand: string;
   capacity: string;

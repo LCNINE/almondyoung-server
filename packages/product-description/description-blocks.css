@@ -221,6 +221,20 @@
   object-fit: cover;
 }
 
+.pd-cell {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  background: #fff;
+}
+
+.pd-cell > .pd-crop {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
 /* crop: 원본 일부만 보여 주는 칸 (product-description-markdown.tsx 의 CroppedImage) */
 .pd-crop {
   position: relative;

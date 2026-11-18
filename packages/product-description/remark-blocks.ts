@@ -1,5 +1,5 @@
 import { isDescriptionBlockName, SWATCH_DIRECTIVE_NAME, type DescriptionBlockName } from './blocks';
-import { formatImageCrop, parseProductImageDirective, PRODUCT_IMAGE_DIRECTIVE_NAME } from './directive';
+import { formatImageCrop, parseImageCrop, parseProductImageDirective, PRODUCT_IMAGE_DIRECTIVE_NAME } from './directive';
 
 /**
  * 상세설명 마크다운의 디렉티브를 렌더러가 그릴 수 있는 mdast 로 바꾸는 remark 플러그인.
@@ -91,7 +91,10 @@ function restoreUnknownDirective(node: DescriptionMdastNode): DescriptionMdastNo
 }
 
 /** 깨진 이미지 디렉티브는 기본으로 조용히 뺀다 — 고객 화면에 진단 UI 를 띄울 이유가 없다. */
-function imageOrInvalid(node: DescriptionMdastNode, { resolveImageUrl, invalidImage }: RemarkProductDescriptionOptions) {
+function imageOrInvalid(
+  node: DescriptionMdastNode,
+  { resolveImageUrl, invalidImage }: RemarkProductDescriptionOptions,
+) {
   const parsed = parseProductImageDirective(node);
 
   if (!parsed.ok) {
@@ -133,7 +136,10 @@ function swatch(node: DescriptionMdastNode, resolveImageUrl: (fileId: string) =>
   if (!parsed.ok || !name) return [];
 
   const caption: DescriptionMdastNode[] = code
-    ? [{ type: 'strong', children: [{ type: 'text', value: code }] }, { type: 'text', value: ` ${name}` }]
+    ? [
+        { type: 'strong', children: [{ type: 'text', value: code }] },
+        { type: 'text', value: ` ${name}` },
+      ]
     : [{ type: 'text', value: name }];
 
   return [
@@ -174,9 +180,15 @@ function block(
     case 'details': {
       const title = text(attrs.title);
       const subtitle = text(attrs.subtitle);
-      const head = [...(title ? [heading(title, 'pd-title')] : []), ...(subtitle ? [paragraph(subtitle, 'pd-subtitle')] : [])];
+      const head = [
+        ...(title ? [heading(title, 'pd-title')] : []),
+        ...(subtitle ? [paragraph(subtitle, 'pd-subtitle')] : []),
+      ];
 
-      return section(name, [...head, ...groupNodes(children, (child) => child.data?.hName === 'figure', 'pd-swatches')]);
+      return section(name, [
+        ...head,
+        ...groupNodes(withSwatchCells(children), (child) => child.data?.hName === 'figure', 'pd-swatches'),
+      ]);
     }
     case 'checks':
     case 'spec':
@@ -202,6 +214,40 @@ function groupImages(children: DescriptionMdastNode[], className: string) {
     flattened.map((child) => (child.type === 'image' ? withAspect(child, COMPARE_IMAGE_ASPECT) : child)),
     (child) => child.type === 'image',
     className,
+  );
+}
+
+/**
+ * 한 묶음의 옵션 카드는 영역 비율(crop 좌표의 가로/세로)의 중앙값 하나로 칸을 맞춘다. 영역마다 비율을 따르면
+ * 카드 높이가 들쭉날쭉하고, 칸에 맞춰 영역을 넓히면 옆 칩이 걸린다 — 영역은 칸 안에 통째로 넣는다.
+ */
+function withSwatchCells(children: DescriptionMdastNode[]): DescriptionMdastNode[] {
+  const isCroppedImage = (node: DescriptionMdastNode) =>
+    node.type === 'image' && !!parseImageCrop(node.data?.hProperties?.dataCrop);
+  const ratios = children
+    .flatMap((child) => (child.data?.hName === 'figure' ? (child.children ?? []) : []))
+    .flatMap((node) => {
+      const crop = isCroppedImage(node) ? parseImageCrop(node.data?.hProperties?.dataCrop) : undefined;
+
+      return crop ? [crop.w / crop.h] : [];
+    })
+    .sort((a, b) => a - b);
+
+  if (ratios.length === 0) return children;
+
+  const cell = ratios[Math.floor(ratios.length / 2)].toFixed(4);
+
+  return children.map((child) =>
+    child.data?.hName === 'figure'
+      ? {
+          ...child,
+          children: child.children?.map((node) =>
+            isCroppedImage(node)
+              ? { ...node, data: { ...node.data, hProperties: { ...node.data?.hProperties, dataCell: cell } } }
+              : node,
+          ),
+        }
+      : child,
   );
 }
 
