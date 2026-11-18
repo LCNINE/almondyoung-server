@@ -515,6 +515,93 @@ describe('OutboundPreparationTemplate', () => {
     expect(mockRun.mock.calls[0][0].shipmentIds).toEqual(['ready-2']);
   });
 
+  it('결품으로 돌아온 상자는 맨 위에 따로 보이고 미리 체크·전체 선택에서 빠지며, 고르면 함께 준비한다', async () => {
+    const [returned, ...rest] = shipments('ready', 3);
+    mockSummary.buckets[0] = {
+      ...mockSummary.buckets[0],
+      count: 3,
+      shortPickCount: 1,
+      shipments: [
+        {
+          ...returned,
+          shortPick: [{ name: '상품', locationCode: 'A-01-01', shortQty: 1 }],
+        },
+        ...rest,
+      ],
+    };
+    render(<OutboundPreparationTemplate />);
+
+    expect(row('완전출고').getByText('2건 선택')).toBeTruthy();
+    await userEvent.click(
+      row('완전출고').getByRole('button', { name: '내역보기' })
+    );
+
+    const rows = within(screen.getByRole('region', { name: '완전출고 내역' }))
+      .getAllByRole('row')
+      .slice(1)
+      .map((element) => element.textContent);
+    expect(rows[0]).toContain(
+      '결품으로 돌아온 상자 1건 — 자리 수량을 확인한 뒤 하나씩 골라 주세요'
+    );
+    expect(rows[1]).toContain('결품 — 상품 1개 모자람 (A-01-01)');
+    expect(rows[2]).toBe('그 밖의 상자');
+    const picked = screen.getByLabelText('#AY-ready-1 선택');
+    const all = screen.getByLabelText('결품 상자 빼고 전체 선택');
+    expect(picked.getAttribute('aria-checked')).toBe('false');
+    expect(all.getAttribute('aria-checked')).toBe('true');
+
+    await userEvent.click(all);
+    await userEvent.click(all);
+    expect(picked.getAttribute('aria-checked')).toBe('false');
+    expect(checkedRows()).toHaveLength(2);
+
+    await userEvent.click(picked);
+    await userEvent.click(all);
+    expect(picked.getAttribute('aria-checked')).toBe('true');
+    expect(checkedRows()).toHaveLength(1);
+    await userEvent.click(all);
+    expect(picked.getAttribute('aria-checked')).toBe('true');
+    expect(checkedRows()).toHaveLength(3);
+    await start();
+
+    expect(mockRun.mock.calls[0][0].shipmentIds).toEqual([
+      'ready-1',
+      'ready-2',
+      'ready-3',
+    ]);
+  });
+
+  it('결품 상자 하나를 고른 채 101건에서 전체 선택하면 99건을 더해 체크로 보이고, 다시 누르면 결품 상자만 남긴다', async () => {
+    const [returned, ...rest] = shipments('ready', 102);
+    mockSummary.buckets[0] = {
+      ...mockSummary.buckets[0],
+      count: 102,
+      shortPickCount: 1,
+      shipments: [
+        {
+          ...returned,
+          shortPick: [{ name: '상품', locationCode: 'A-01-01', shortQty: 1 }],
+        },
+        ...rest,
+      ],
+    };
+    render(<OutboundPreparationTemplate />);
+    await userEvent.click(
+      row('완전출고').getByRole('button', { name: '내역보기' })
+    );
+    const all = screen.getByLabelText('결품 상자 빼고 앞 100건 선택');
+
+    await userEvent.click(all);
+    await userEvent.click(screen.getByLabelText('#AY-ready-1 선택'));
+    expect(all.getAttribute('aria-label')).toBe('결품 상자 빼고 앞 99건 선택');
+    await userEvent.click(all);
+    expect(checkedRows()).toHaveLength(100);
+    expect(all.getAttribute('aria-checked')).toBe('true');
+
+    await userEvent.click(all);
+    expect(checkedRows()).toHaveLength(1);
+  });
+
   it('부분출고에서 체크한 상자만 나누고 성공·실패 건수를 결과 창에 보여 준다', async () => {
     mockSplit.mockResolvedValueOnce({
       succeeded: ['partial-2'],

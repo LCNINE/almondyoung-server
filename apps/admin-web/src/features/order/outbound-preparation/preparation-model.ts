@@ -3,10 +3,28 @@ import type {
   PlannedShipment,
   PreparationBucket,
   PreparationShipmentDto,
+  PreparationShortPickLine,
 } from '@/lib/types/dto/fulfillment';
 
 // 한 번에 출고 준비하는 상자 수 상한. 서버 BulkShipmentIdsDto 의 ArrayMaxSize(100) 과 같아야 한다.
 export const PREPARATION_BATCH_LIMIT = 100;
+
+// 한꺼번에 고를 상자. 결품으로 돌아온 상자는 자리 수량을 확인한 뒤 하나씩 고른다.
+export function bulkSelectableShipments(
+  shipments: PreparationShipmentDto[]
+): PreparationShipmentDto[] {
+  return shipments
+    .filter((shipment) => !shipment.shortPick)
+    .slice(0, PREPARATION_BATCH_LIMIT);
+}
+
+export function shortPickText(lines: PreparationShortPickLine[]): string {
+  return `결품 — ${lines
+    .map(
+      (line) => `${line.name} ${line.shortQty}개 모자람 (${line.locationCode})`
+    )
+    .join(', ')}`;
+}
 
 export function plannedOrderText(
   shipment: Pick<PlannedShipment, 'shipmentId' | 'orderNos'>

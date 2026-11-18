@@ -1049,6 +1049,14 @@ export interface PreparationShipmentDto {
   // 서버가 품목별 수량을 주기 전 응답에는 없다.
   lines?: PreparationLineDto[];
   split?: ShipmentSplitShare | null;
+  // 결품으로 배치에서 빠져 돌아온 상자. 서버가 분류마다 맨 앞에 모아 준다.
+  shortPick?: PreparationShortPickLine[] | null;
+}
+
+export interface PreparationShortPickLine {
+  name: string;
+  locationCode: string;
+  shortQty: number;
 }
 
 export interface PreparationBucketDto {
@@ -1056,6 +1064,7 @@ export interface PreparationBucketDto {
   count: number;
   singleCount: number;
   multiCount: number;
+  shortPickCount?: number;
   shipments: PreparationShipmentDto[];
 }
 

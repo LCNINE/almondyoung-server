@@ -15,6 +15,10 @@ jest.mock('../services/consolidation-shipment-reads', () => ({
 jest.mock('../services/sellmate-handed-over-shipments', () => ({
   loadSellmateShipmentIds: jest.fn(async () => new Set<string>()),
 }));
+jest.mock('./short-pick-returns', () => ({
+  ...jest.requireActual<typeof import('./short-pick-returns')>('./short-pick-returns'),
+  loadShortPickReturns: jest.fn(async () => new Map()),
+}));
 
 function query(rows: unknown[]) {
   const result = Object.assign(Promise.resolve(rows), {

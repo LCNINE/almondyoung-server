@@ -33,6 +33,12 @@ export class PreparationLineDto {
   reservedQty: number;
 }
 
+export class PreparationShortPickLineDto {
+  name: string;
+  locationCode: string;
+  shortQty: number;
+}
+
 export class PreparationShipmentDto {
   shipmentId: string;
   orderNos: string[];
@@ -42,6 +48,8 @@ export class PreparationShipmentDto {
   reason: string | null;
   lines: PreparationLineDto[];
   split: ShipmentSplitShareDto | null;
+  // 결품으로 배치에서 빠져 돌아온 상자면 모자랐던 상품·자리·수량. 분류 안에서 맨 앞에 온다.
+  shortPick: PreparationShortPickLineDto[] | null;
 }
 
 export class PreparationBucketDto {
@@ -49,6 +57,7 @@ export class PreparationBucketDto {
   count: number;
   singleCount: number;
   multiCount: number;
+  shortPickCount: number;
   shipments: PreparationShipmentDto[];
 }
 
