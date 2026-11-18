@@ -13,9 +13,16 @@ import { labelLocationCode, labelSkuNameOf } from './label/label-items';
 
 const W = inventoryTables.waybills;
 
-/** 라벨의 주문번호 — `주문일(KST yyyyMMdd)-화면 주문번호`. 화면 번호가 없는 주문은 null(라벨이 상관키로 떨어진다) */
-export function labelOrderNoOf(order: { displayOrderNo: string | null; orderDate: Date | null }): string | null {
-  if (!order.displayOrderNo || !order.orderDate) return null;
+/**
+ * 라벨의 주문번호 — `주문일(KST yyyyMMdd)-화면 주문번호`. 화면 번호가 없는 주문(수기·위탁 업체 주문)은 채널 주문번호,
+ * 그것도 없으면 null(라벨이 상관키로 떨어진다)
+ */
+export function labelOrderNoOf(order: {
+  displayOrderNo: string | null;
+  orderDate: Date | null;
+  channelOrderId?: string | null;
+}): string | null {
+  if (!order.displayOrderNo || !order.orderDate) return order.channelOrderId || null;
 
   return `${formatInTimeZone(order.orderDate, 'Asia/Seoul', 'yyyyMMdd')}-${order.displayOrderNo}`;
 }
@@ -58,6 +65,7 @@ export class WaybillReader {
         quantity: inventoryTables.shipmentLines.qty,
         displayOrderNo: inventoryTables.salesOrders.displayOrderNo,
         orderDate: inventoryTables.salesOrders.orderDate,
+        channelOrderId: inventoryTables.salesOrders.channelOrderId,
       })
       .from(inventoryTables.shipmentLines)
       .innerJoin(
