@@ -2,8 +2,8 @@ import type Anthropic from '@anthropic-ai/sdk';
 import {
   DEFAULT_PRODUCT_DESCRIPTION_PROMPT,
   buildSystemPrompt,
-  createProductImageDirective,
   type ExtractResult,
+  toComposeImages,
 } from '@packages/product-description';
 import { MODEL, logUsage, toAnthropicErrorResponse } from './anthropic';
 import { urlEnv } from '../../platform/env';
@@ -70,18 +70,13 @@ export async function composeProductDescription(
 ): Promise<Response> {
   const { authHeaders = {}, signal } = ctx;
   const result = body.result;
-  if (!result || !Array.isArray(result.images) || result.images.length === 0) {
+  const images = toComposeImages(result?.images);
+  if (images.length === 0) {
     return Response.json({ message: '이미지 분석 결과가 없습니다.' }, { status: 400 });
   }
 
-  // directive 는 서버가 만든다 — 클라이언트가 보낸 문자열을 그대로 본문에 넣으면
-  // 어떤 fileId 든 상세설명에 심을 수 있다.
   const analysis = {
-    images: result.images.map((image) => ({
-      kind: image.kind,
-      content: image.content,
-      directive: createProductImageDirective({ fileId: image.fileId, alt: '' }),
-    })),
+    images,
     facts: result.facts,
     features: result.features,
     usageSteps: result.usageSteps,
@@ -126,7 +121,7 @@ export async function composeProductDescription(
       { signal },
     );
 
-    logUsage('compose', message.usage, { images: result.images.length });
+    logUsage('compose', message.usage, { images: images.length });
 
     if (message.stop_reason === 'refusal') {
       return Response.json(
