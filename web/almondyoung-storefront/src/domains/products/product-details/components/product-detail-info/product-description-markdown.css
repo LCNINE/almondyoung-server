@@ -73,6 +73,19 @@
     center / 12px no-repeat;
 }
 
+.pd-markdown td {
+  word-break: keep-all;
+}
+
+.pd-markdown th:first-child,
+.pd-markdown td:first-child {
+  width: 1%;
+  padding-right: 20px;
+  color: #4b5563;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
 @media (min-width: 768px) {
   .pd-markdown img {
     margin: 3.5rem 0;
