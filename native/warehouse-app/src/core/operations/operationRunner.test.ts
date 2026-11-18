@@ -2,7 +2,12 @@ import { describe, it, expect, vi } from 'vitest';
 import 'fake-indexeddb/auto';
 import { createOperationStore } from './operationStore';
 import { createOperationRunner } from './operationRunner';
-import { ApiError, NetworkError, type ApiClient } from '../data/httpClient';
+import {
+  ApiError,
+  ConflictError,
+  NetworkError,
+  type ApiClient,
+} from '../data/httpClient';
 import { workStatus } from './workStatus';
 import { unsentCount } from '../../station/status/statusBarItems';
 import { errorMessage } from '../data/errorMessage';
@@ -932,4 +937,106 @@ it('wraps inbound shipment box writes with contract v2', async () => {
     body: {},
   });
   expect(begin).toHaveBeenCalledTimes(3);
+});
+
+describe('출고 판정이 거절한 스캔', () => {
+  const scan = (shipmentId: string, key: string) => ({
+    method: 'POST',
+    path: `/shipments/${shipmentId}/simple-outbound-scans`,
+    body: { barcode: 'b', quantity: 1 },
+    idempotencyKey: key,
+  });
+  const refuse = () => {
+    throw new ConflictError(
+      'Shipment is recovery_required',
+      'SHIPMENT_NOT_DISPATCHABLE'
+    );
+  };
+
+  it('미전송으로 남지 않고 다른 박스 스캔을 막지 않는다', async () => {
+    const store = createOperationStore(crypto.randomUUID());
+    const sent: string[] = [];
+    const runner = createOperationRunner({
+      store,
+      getScope: async () => 'a',
+      wait: async () => {},
+      api: {
+        request: async () => {
+          sent.push('s1');
+          return refuse();
+        },
+      },
+    });
+
+    const error = await runner.request(scan('s1', 'k1')).catch((e) => e);
+
+    expect(error).toMatchObject({
+      outcome: 'rejected',
+      code: 'SHIPMENT_NOT_DISPATCHABLE',
+    });
+    expect(errorMessage(error, 'outbound')).toBe(
+      '지금 출고할 수 없는 박스예요. 주문이 취소되거나 바뀌었을 수 있어요. 담은 상품은 그대로 두고 관리자에게 확인해 주세요.'
+    );
+    expect(sent).toHaveLength(1);
+    expect(await store.get('k1')).toMatchObject({ status: 'rejected' });
+    expect(await store.pending('a')).toEqual([]);
+    await vi.waitFor(() => expect(runner.getSnapshot()).toEqual([]));
+    expect(workStatus(runner.getSnapshot(), Date.now()).blocksWork).toBe(false);
+    await expect(
+      store.begin({
+        id: 'k2',
+        scope: 'a',
+        resource: '/shipments/s1',
+        method: 'POST',
+        path: '/shipments/s1/simple-outbound-scans',
+        bodyJson: '{}',
+        createdAt: Date.now(),
+      })
+    ).resolves.toMatchObject({ status: 'queued' });
+  });
+
+  it('예전에 결과 모름으로 남은 같은 거절은 처리 내역 확인으로 정리된다', async () => {
+    const store = createOperationStore(crypto.randomUUID());
+    const input = {
+      id: 'old',
+      scope: 'a',
+      resource: '/shipments/s1',
+      method: 'POST',
+      path: '/shipments/s1/simple-outbound-scans',
+      bodyJson: JSON.stringify({ barcode: 'b', quantity: 1 }),
+      createdAt: Date.now(),
+    };
+    await store.begin(input);
+    await store.finish('old', 'sending');
+    await store.finish(
+      'old',
+      'uncertain',
+      undefined,
+      'SHIPMENT_NOT_DISPATCHABLE'
+    );
+    const keys: string[] = [];
+    const runner = createOperationRunner({
+      store,
+      getScope: async () => 'a',
+      wait: async () => {},
+      api: {
+        request: async (o) => {
+          keys.push(o.idempotencyKey!);
+          return refuse();
+        },
+      },
+    });
+    await runner.restore();
+    expect(workStatus(runner.getSnapshot(), Date.now()).blocksWork).toBe(true);
+
+    await runner.retryPending();
+
+    expect(keys).toEqual(['old']);
+    expect(await store.get('old')).toMatchObject({
+      status: 'rejected',
+      errorCode: 'SHIPMENT_NOT_DISPATCHABLE',
+    });
+    expect(runner.getSnapshot()).toEqual([]);
+    expect(workStatus(runner.getSnapshot(), Date.now()).blocksWork).toBe(false);
+  });
 });

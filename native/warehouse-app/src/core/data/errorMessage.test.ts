@@ -356,3 +356,28 @@ describe('이탈·되돌림 문구 (#989)', () => {
     expect(errorMessage(new ConflictError('m', code), 'outbound')).toBe(text);
   });
 });
+
+describe('출고 판정 거절 문구', () => {
+  it.each([
+    [
+      'SHIPMENT_NOT_DISPATCHABLE',
+      '지금 출고할 수 없는 박스예요. 주문이 취소되거나 바뀌었을 수 있어요. 담은 상품은 그대로 두고 관리자에게 확인해 주세요.',
+    ],
+    [
+      'SHIPMENT_NOT_INSPECTION_READY',
+      '아직 검수할 수 없는 박스예요. 관리자에게 확인해 주세요.',
+    ],
+    [
+      'SHIPMENT_SESSION_NOT_ACTIVE',
+      '배치 재고 기록을 확인해야 해요. 관리자에게 문의해 주세요.',
+    ],
+    [
+      'SHIPMENT_PACKER_LEASE_REQUIRED',
+      '이 박스의 작업자 확인이 맞지 않아요. 관리자에게 확인해 주세요.',
+    ],
+  ])('%s', (code, text) => {
+    // 실행기는 저장된 거절을 ConflictError 가 아닌 ApiError 로 다시 만든다
+    expect(errorMessage(new ApiError('m', 409, code), 'outbound')).toBe(text);
+    expect(errorMessage(new ConflictError('m', code), 'outbound')).toBe(text);
+  });
+});

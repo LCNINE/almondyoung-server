@@ -346,3 +346,13 @@ it.each([undefined, 'Forbidden', 'FORBIDDEN', 'UNKNOWN'])(
     expect(new ApiError('denied', 403, code).outcome).toBe('rejected');
   }
 );
+
+it('출고 판정이 거절한 마지막 스캔은 확정 거절로 본다', () => {
+  for (const code of [
+    'SHIPMENT_NOT_DISPATCHABLE',
+    'SHIPMENT_NOT_INSPECTION_READY',
+    'SHIPMENT_SESSION_NOT_ACTIVE',
+    'SHIPMENT_PACKER_LEASE_REQUIRED',
+  ])
+    expect(new ConflictError('refused', code).outcome).toBe('rejected');
+});
