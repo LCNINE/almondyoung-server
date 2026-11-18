@@ -310,10 +310,7 @@ export class ShipmentWaybillReader {
       })
       .from(wmsTables.pickingSourceAllocations)
       .innerJoin(wmsTables.locations, eq(wmsTables.locations.id, wmsTables.pickingSourceAllocations.sourceLocationId))
-      .innerJoin(
-        wmsTables.shipmentLines,
-        eq(wmsTables.shipmentLines.id, wmsTables.pickingSourceAllocations.shipmentLineId),
-      )
+      .innerJoin(wmsTables.shipmentLines, eq(wmsTables.shipmentLines.id, wmsTables.pickingSourceAllocations.shipmentLineId))
       .leftJoin(wmsTables.skuShelfPositions, eq(wmsTables.skuShelfPositions.skuId, wmsTables.shipmentLines.skuId))
       .where(eq(wmsTables.pickingSourceAllocations.workItemId, workItemId))
       .orderBy(
