@@ -81,18 +81,29 @@ export async function runPrepare(api: CoreApi, opts: PrepareOptions): Promise<Pr
   );
 
   report(log, targets, skipped);
-
-  if (targets.length === 0) {
-    log('대상 0 — 아무것도 바꾸지 않는다');
-    return { targets, skipped, state: opts.apply ? prev : null };
+  const pending = pendingExcludes(prev, own);
+  if (pending.length > 0) {
+    log(
+      `앞 실행에서 뺐다고 적었는데 배치 ${prev?.batchId}에 남은 상자 ${pending.length}` +
+        (opts.apply ? ' — 배치에서 마저 뺀다' : ' — --apply 면 배치에서 마저 뺀다'),
+    );
+    for (const p of pending) log(`  - ${p.shipmentId} — ${p.reason}`);
   }
+
   if (!opts.apply) {
+    if (targets.length === 0) log('대상 0 — 아무것도 바꾸지 않는다');
     log('dry-run — 아무것도 바꾸지 않았다. 실행하려면 --apply');
     return { targets, skipped, state: null };
   }
 
   try {
-    const state = await apply(api, opts, prev, ownBatch, own?.workItems ?? [], targets, orderNos);
+    // 대상이 0이어도 먼저 한다 — 안 하면 그 상자가 시작 안 된 배치에 묶여 출고 준비 화면에서도 사라진다.
+    if (prev?.batchId) await finishPendingExcludes(api, prev.batchId, run, pending, log);
+    if (targets.length === 0) {
+      log(pending.length > 0 ? '대상 0 — 남은 빼기만 마쳤다' : '대상 0 — 아무것도 바꾸지 않는다');
+      return { targets, skipped, state: prev };
+    }
+    const state = await apply(api, opts, prev, ownBatch, targets, orderNos);
     return { targets, skipped, state };
   } catch (error) {
     if (error instanceof CoreApiError && error.code === IDEMPOTENCY_MISMATCH) throw mismatchError();
@@ -202,7 +213,6 @@ async function apply(
   opts: PrepareOptions,
   prev: RunState | null,
   ownBatch: BatchListItem | undefined,
-  ownItems: WorkItem[],
   targets: Target[],
   orderNos: Map<string, string[]>,
 ): Promise<RunState> {
@@ -287,7 +297,7 @@ async function apply(
   // 5. 시작(위치 배정) — 전부 아니면 전무. 막힌 상자는 빼고 다시.
   const ownNotStarted = created || (ownBatch !== undefined && ownBatch.startedAt == null);
   if (state.batchId && ownNotStarted) {
-    await start(api, state.batchId, run, state, ownItems, exclude, save, log);
+    await start(api, state.batchId, run, state, exclude, save, log);
   }
 
   // 6. 송장번호 — 라벨·CSV 가 쓴다
@@ -308,22 +318,11 @@ async function start(
   batchId: string,
   run: string,
   state: RunState,
-  ownItems: WorkItem[],
   exclude: (shipmentId: string, reason: string) => void,
   save: () => void,
   log: (l: string) => void,
 ): Promise<void> {
   const excludeKey = (shipmentId: string) => idemKey(run, 'exclude', shipmentId);
-  // 앞 실행이 «뺐다»고 적었는데 core 에 빼기가 닿지 않았을 수 있다(적은 뒤 죽음) — 시작 전에 마저 뺀다.
-  // 사유는 적어 둔 그대로 보낸다: core 가 사유를 멱등 해시에 넣어, 같은 키·다른 사유는 불일치가 된다.
-  for (const item of ownItems) {
-    if (item.status === 'completed' || item.status === 'excluded') continue;
-    const recorded = state.excluded.find((e) => e.shipmentId === item.shipmentId);
-    if (!recorded) continue;
-    await api.excludeFromBatch(batchId, item.shipmentId, recorded.reason, excludeKey(item.shipmentId));
-    log(`앞 실행에서 뺀 상자를 배치에서 마저 뺌 ${item.shipmentId}`);
-  }
-
   const own = () => state.boxes.filter((b) => b.batchId === batchId).length;
   for (let attempt = 0; ; attempt++) {
     if (own() === 0) {
@@ -357,6 +356,37 @@ async function start(
       }
       log(`시작 막힘 — ${blockers.size}개 배치에서 뺌, 다시 시작한다`);
     }
+  }
+}
+
+/**
+ * 앞 실행이 «뺐다»고 run.json 에 적었는데 core 에 빼기가 닿지 않았을 수 있다(적은 뒤 죽음·응답 실패).
+ * 시작 전인 이 실행의 배치에 그 상자가 아직 활성으로 있으면 그 목록.
+ */
+function pendingExcludes(
+  prev: RunState | null,
+  own: { batch: BatchListItem; workItems: WorkItem[] } | undefined,
+): Skipped[] {
+  if (!prev || !own || own.batch.startedAt != null) return [];
+  const recorded = new Map(prev.excluded.map((e) => [e.shipmentId, e]));
+  return own.workItems.flatMap((w) => {
+    if (w.status === 'completed' || w.status === 'excluded') return [];
+    const e = recorded.get(w.shipmentId);
+    return e ? [e] : [];
+  });
+}
+
+/** 사유는 적어 둔 그대로 보낸다 — core 가 사유를 멱등 해시에 넣어, 같은 키·다른 사유는 불일치가 된다. */
+async function finishPendingExcludes(
+  api: CoreApi,
+  batchId: string,
+  run: string,
+  pending: Skipped[],
+  log: (l: string) => void,
+): Promise<void> {
+  for (const p of pending) {
+    await api.excludeFromBatch(batchId, p.shipmentId, p.reason, idemKey(run, 'exclude', p.shipmentId));
+    log(`배치 ${batchId}에서 마저 뺌 ${p.shipmentId}`);
   }
 }
 

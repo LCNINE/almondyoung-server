@@ -197,6 +197,34 @@ describe('runPrepare', () => {
     expect(core.batchRows.get('b')?.startedAt).not.toBeNull();
   });
 
+  it('finishes a pending exclusion even when no target remains', async () => {
+    const { dir, lines, opts } = setup();
+    const core = drafts(new FakeCore(), 's1');
+    core.startBlockers.set('s1', 'STOCK_SHORT');
+    core.failNext('excludeFromBatch', new Error('core unreachable'));
+
+    await expect(runPrepare(core, opts(true))).rejects.toThrow('core unreachable');
+    expect(core.items.find((w) => w.shipmentId === 's1')?.status).toBe('queued');
+
+    // dry-run 은 남은 빼기를 알리기만 한다
+    const dry = await runPrepare(core, opts(false));
+    expect(dry.targets).toEqual([]);
+    expect(core.callsOf('excludeFromBatch')).toHaveLength(1);
+    expect(lines.some((l) => l.includes('마저 뺀다') && l.includes('--apply'))).toBe(true);
+
+    const report = await runPrepare(core, opts(true));
+
+    const excludes = core.callsOf('excludeFromBatch');
+    expect(excludes).toHaveLength(2);
+    expect(excludes[1]).toEqual(['b', 's1', '비상 출고 — 시작 막힘: STOCK_SHORT', idemKey(RUN, 'exclude', 's1')]);
+    expect(excludes[1]).toEqual(excludes[0]);
+    expect(core.items.find((w) => w.shipmentId === 's1')?.status).toBe('excluded');
+    expect(report.targets).toEqual([]);
+    expect(report.state?.excluded.map((e) => e.shipmentId)).toEqual(['s1']);
+    expect(readRun(dir)?.boxes).toEqual([]);
+    expect(core.callsOf('startBatch')).toHaveLength(1); // 빈 배치는 시작하지 않는다
+  });
+
   it('keeps boxes excluded earlier in the run out on resume', async () => {
     const { opts } = setup();
     const core = drafts(new FakeCore(), 's1', 's2');
