@@ -951,21 +951,21 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'user-service POST /auth/change-password': {
     verdict: 'SAFE',
-    evidence: 'apps/user-service/src/api/auth/auth.service.ts:960',
+    evidence: 'apps/user-service/src/api/auth/auth.service.ts:947',
     predicate: '.where(eq(userServiceSchema.users.id, userId))',
     note: 'changePassword(current, next, userId) 의 userId 는 CurrentUser(JWT)에서만 온다. 조회(960행)와 갱신(988행) 모두 같은 predicate 로 본인 행만 건드리고, 현재 비밀번호를 bcrypt 로 확인한다.',
   },
   'user-service POST /auth/verify-password-for-pin-reset': {
     verdict: 'SAFE',
-    evidence: 'apps/user-service/src/api/auth/auth.service.ts:1015',
+    evidence: 'apps/user-service/src/api/auth/auth.service.ts:1002',
     predicate: '.where(eq(userServiceSchema.users.id, userId))',
     note: 'verifyPasswordAndIssuePinResetToken(password, userId) 는 checkPassword(1009행)로 본인 행의 비밀번호만 확인하고 sub=userId 토큰을 서명한다. userId 는 CurrentUser(JWT)에서만 온다.',
   },
   'user-service POST /auth/payment-handoff': {
     verdict: 'N/A',
-    evidence: 'apps/user-service/src/api/auth/auth.service.ts:127',
+    evidence: 'apps/user-service/src/api/oauth/oauth.manager.ts',
     predicate: '',
-    note: 'issuePaymentHandoffToken(userId) 은 DB 조회/변경이 전혀 없고 jwtService.signAsync({ sub: userId, ... }) 로 토큰만 서명한다. userId는 CurrentUser(JWT)에서만 오고, 조회 대상 객체(row)가 없어 IDOR 이 성립하지 않는다.',
+    note: 'issuePaymentHandoffCode(userId, dto) 는 조회 대상 객체 없이 그 userId 몫의 wallet-web 인가 코드를 새로 만든다. userId 는 CurrentUser(JWT)에서만 오고, 클라이언트는 상수(wallet-web)라 요청이 바꿀 수 없다.',
   },
   'user-service POST /cafe24/link': {
     verdict: 'SAFE',
@@ -1628,7 +1628,7 @@ const IDOR_REVIEWED: Record<string, { verdict: Verdict; evidence: string; predic
   },
   'user-service DELETE /auth': {
     verdict: 'SAFE',
-    evidence: 'apps/user-service/src/api/auth/auth.controller.ts:258',
+    evidence: 'apps/user-service/src/api/auth/auth.controller.ts:267',
     predicate: 'return this.authService.softDeleteUser(user.id);',
     note: '본인 탈퇴. 핸들러가 @CurrentUser() user.id(서명 검증된 토큰)만 넘기고 경로·바디로 대상 회원을 받지 않는다. 옛 스코프 가드를 걷어 내며 대상에 들어왔다.',
   },

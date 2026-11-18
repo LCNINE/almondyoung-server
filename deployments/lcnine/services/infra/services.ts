@@ -1234,6 +1234,8 @@ export function setup(infra: SharedInfra) {
         ...(isDev ? [] : [`https://${baseDomain}`]),
         'http://localhost:8001',
       ].join(','),
+      // 진입 핸드오프(/auth/handoff)가 지금 고객의 인가 코드를 받아 오는 쇼핑몰. live 는 apex 가 정식 도메인이다.
+      STOREFRONT_ORIGIN: isDev ? url('www') : `https://${baseDomain}`,
       // OIDC (wallet-web RP). client_id 는 시더와 동일하게 'wallet-web'.
       OIDC_ISSUER_URL: idpUserServiceUrl,
       OIDC_AUTHORIZATION_URL: $interpolate`${idpAuthWebUrl}/oauth/authorize`,

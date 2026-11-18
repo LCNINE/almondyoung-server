@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
-import { selfOrigin } from '../../../lib/auth/access-token';
+import { selfOrigin, verifiedAccessTokenIdentity } from '../../../lib/auth/access-token';
+import { ENTRY_QUERY_PARAM, createEntryTicketId, writeEntryTicket } from '../../../lib/auth/entry-ticket';
 import { consumeStateCookie, writeSessionCookies } from '../../../lib/auth/session-cookies';
 import { exchangeCodeForTokens, verifyIdToken, type OidcStateRecord } from '../../../lib/auth/oidc-client';
 import { createWebLogger } from '@packages/web-observability';
@@ -82,9 +83,22 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     }
   }
 
+  const identity = await verifiedAccessTokenIdentity(tokens.accessToken);
+  if (!identity) {
+    logger.error('wallet.auth_callback.access_token_unverifiable');
+    return failRedirect(request, 'access_token_unverifiable');
+  }
+
   const dest = new URL(stateRecord.redirectTo, selfOrigin() ?? request.nextUrl.origin);
+  const entryId = createEntryTicketId();
+  if (dest.pathname.startsWith('/billing-change')) {
+    dest.searchParams.set(ENTRY_QUERY_PARAM, entryId);
+  }
+
   const response = NextResponse.redirect(dest);
   writeSessionCookies(response.cookies, tokens);
+  writeEntryTicket(response.cookies, { id: entryId, sub: identity.sub, issuedAt: Date.now() });
+
   return response;
 }
 

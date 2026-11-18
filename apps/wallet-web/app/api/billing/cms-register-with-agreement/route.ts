@@ -1,8 +1,12 @@
 import { getBackendAuthCookie } from '@/lib/auth/session-cookies';
+import { rejectUnboundBillingRequest } from '@/lib/auth/entry-ticket';
 
 const WALLET_API_URL = process.env.NEXT_PUBLIC_WALLET_API_URL ?? 'http://localhost:3100';
 
 export async function POST(request: Request) {
+  const rejected = await rejectUnboundBillingRequest(request);
+  if (rejected) return rejected;
+
   let formData: FormData;
   try {
     formData = await request.formData();

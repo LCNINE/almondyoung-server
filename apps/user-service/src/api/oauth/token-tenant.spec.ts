@@ -59,7 +59,7 @@ function setup() {
     findActiveClientById: jest.fn(() => Promise.resolve(client)),
     insertAuthorizationCode: jest.fn().mockResolvedValue(undefined),
     findUnconsumedCode: jest.fn(),
-    markCodeConsumed: jest.fn().mockResolvedValue(undefined),
+    markCodeConsumed: jest.fn().mockResolvedValue(true),
     insertOAuthToken: jest.fn().mockResolvedValue({}),
     findOAuthTokenByRefresh: jest.fn(),
     findChildToken: jest.fn().mockResolvedValue(null),

@@ -32,6 +32,7 @@ export default async function BillingSetupPage({ params, searchParams }: Props) 
 
   return (
     <BillingSetupForm
+      intentId={intentId}
       returnUrl={safeReturnUrl(returnUrl, STOREFRONT_ORIGIN)}
       initialError={initialError}
       mode={mode === 'initial' ? 'initial' : undefined}

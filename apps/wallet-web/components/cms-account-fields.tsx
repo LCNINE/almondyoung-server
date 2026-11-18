@@ -108,6 +108,8 @@ interface CmsAccountFieldsProps {
    */
   verified: CmsVerifiedAccount | null;
   onVerifiedChange: (next: CmsVerifiedAccount | null) => void;
+  /** 첫 단계(은행 선택) 위에 보여 줄 안내. */
+  notice?: React.ReactNode;
 }
 
 /**
@@ -115,7 +117,7 @@ interface CmsAccountFieldsProps {
  * 은행 조회 → 확인. 마지막 입력이 끝나는 자리에서 바로 조회가 돌기 때문에,
  * 고객은 «등록했는데 이틀 뒤 거절» 대신 그 자리에서 결과를 본다.
  */
-export function CmsAccountFields({ value, onChange, onComplete, verified, onVerifiedChange }: CmsAccountFieldsProps) {
+export function CmsAccountFields({ value, onChange, onComplete, verified, onVerifiedChange, notice }: CmsAccountFieldsProps) {
   const [step, setStep] = useState<Step>('bank');
   const [dir, setDir] = useState<'fwd' | 'back'>('fwd');
   const { height: viewportHeight, keyboardOpen } = useViewportHeight();
@@ -377,6 +379,8 @@ export function CmsAccountFields({ value, onChange, onComplete, verified, onVeri
           style={{ width: `${progress}%` }}
         />
       </div>
+
+      {step === 'bank' && notice}
 
       {step === 'bank' && (
         <StepBody title="어느 은행 계좌인가요?" className={stepAnim}>

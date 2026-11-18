@@ -1,7 +1,8 @@
 import { cookies } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { getBillingMethods, getMyBusinessLicense } from '@/lib/wallet-api';
-import { isAccessTokenUsable, selfOrigin } from '@/lib/auth/access-token';
+import { isAccessTokenUsable, selfOrigin, verifiedAccessTokenIdentity } from '@/lib/auth/access-token';
+import { isEntryValidFor, readEntryTicket } from '@/lib/auth/entry-ticket';
 import { SESSION_COOKIE_NAMES, getBackendAuthCookie } from '@/lib/auth/session-cookies';
 import { STOREFRONT_ORIGIN, isSubscribeReturnUrl, safeReturnUrl } from '@/lib/return-url';
 import { BillingChangeForm } from './billing-change-form';
@@ -16,22 +17,30 @@ interface Props {
     msg?: string;
     /** '1' 이면 심사 중 계좌가 있어도 새 계좌 등록 폼을 연다(고객이 직접 고른 경우). */
     register?: string;
+    /** 콜백이 붙인 1회용 진입표. */
+    entry?: string;
   }>;
 }
 
 export default async function BillingChangePage({ searchParams }: Props) {
-  const { returnUrl, fail, msg, register } = await searchParams;
+  const params = await searchParams;
+  const { returnUrl, fail, msg, register, entry } = params;
 
-  // 인증 가드 (pay/[intentId] 페이지와 동일 패턴). wallet_at access token 을 못 쓰면 /auth/ensure 로
-  // 보내 14일 refresh token 으로 먼저 갱신한다 (refresh 까지 죽으면 ensure 가 /login silent SSO 로).
-  // 이게 없으면 세션 없이 폼이 떠버려 제출 시 백엔드가 "Missing or invalid JWT cookie" 로 거부한다.
+  // 결제수단은 세션 계정에 바로 붙으므로, 쇼핑몰이 지금 고객을 보증한 직후(진입표)에만 화면을 연다.
+  // 남아 있는 세션(쇼핑몰에서 계정을 바꾼 브라우저라면 이전 계정)을 refresh 로 되살리지 않는다.
   const cookieStore = await cookies();
   const accessToken = cookieStore.get(SESSION_COOKIE_NAMES.ACCESS_TOKEN)?.value;
-  if (!(await isAccessTokenUsable(accessToken))) {
-    const selfPath = `/billing-change${returnUrl ? `?returnUrl=${encodeURIComponent(returnUrl)}` : ''}`;
-    const ensurePath = `/auth/ensure?redirect_to=${encodeURIComponent(selfPath)}`;
+  const identity = (await isAccessTokenUsable(accessToken)) ? await verifiedAccessTokenIdentity(accessToken) : null;
+  const ticket = await readEntryTicket();
+
+  if (!identity || !isEntryValidFor(ticket, identity.sub, entry ?? null)) {
+    // 방금 진입표를 받고 왔는데도 맞지 않으면(쿠키 차단 등) 다시 보내 봐야 같은 자리로 돌아온다.
+    if (entry) return <EntryFailed returnUrl={safeReturnUrl(returnUrl, STOREFRONT_ORIGIN)} />;
+
+    const selfPath = billingChangePath(params);
+    const handoffPath = `/auth/handoff?redirect_to=${encodeURIComponent(selfPath)}`;
     const origin = selfOrigin();
-    redirect(origin ? `${origin}${ensurePath}` : ensurePath);
+    redirect(origin ? `${origin}${handoffPath}` : handoffPath);
   }
 
   const safeReturn = safeReturnUrl(returnUrl, STOREFRONT_ORIGIN);
@@ -69,6 +78,64 @@ export default async function BillingChangePage({ searchParams }: Props) {
       billingMethodId={cmsBillingMethod?.id}
       initialPhone={profile?.phoneNumber ?? ''}
       initialError={initialError}
+      entryId={ticket?.id ?? ''}
+      account={{
+        name: identity.name,
+        loginId: identity.loginId,
+        reselectHref: storefrontAccountSwitchHref(safeReturn),
+      }}
     />
+  );
+}
+
+function billingChangePath(params: Record<string, string | undefined>): string {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (key !== 'entry' && value !== undefined) query.set(key, value);
+  }
+  const qs = query.toString();
+
+  return qs ? `/billing-change?${qs}` : '/billing-change';
+}
+
+// 계정은 쇼핑몰에서 바꾼다. wallet-web 에서만 바꾸면 다음 진입 때 쇼핑몰 계정으로 다시 맞춰져 고객이 헷갈린다.
+function storefrontAccountSwitchHref(returnUrl: string): string {
+  const base = parseAbsoluteUrl(returnUrl) ?? parseAbsoluteUrl(process.env.STOREFRONT_ORIGIN);
+  if (!base) return '/login?prompt=select_account';
+
+  const country = base.pathname.split('/')[1] ?? '';
+  const login = new URL(`/${/^[a-z]{2}$/.test(country) ? country : 'kr'}/login`, base.origin);
+  login.searchParams.set('prompt', 'select_account');
+  login.searchParams.set('redirect_to', `${base.pathname}${base.search}`);
+
+  return login.toString();
+}
+
+function parseAbsoluteUrl(value: string | undefined): URL | null {
+  if (!value) return null;
+
+  try {
+    return new URL(value);
+  } catch {
+    return null;
+  }
+}
+
+function EntryFailed({ returnUrl }: { returnUrl: string }) {
+  return (
+    <div className="mx-auto flex h-dvh w-full max-w-md flex-col justify-center gap-6 bg-background px-5">
+      <div className="space-y-2">
+        <h1 className="text-[22px] font-bold leading-[1.35] tracking-tight text-foreground">계정을 확인하지 못했어요</h1>
+        <p className="text-[14px] leading-relaxed text-muted-foreground">
+          브라우저가 쿠키를 막고 있으면 이럴 수 있어요. 쇼핑몰에서 결제수단 등록을 다시 시작해 주세요.
+        </p>
+      </div>
+      <a
+        href={returnUrl}
+        className="flex h-14 w-full items-center justify-center rounded-md bg-primary text-[16px] font-semibold text-primary-foreground"
+      >
+        쇼핑몰로 돌아가기
+      </a>
+    </div>
   );
 }

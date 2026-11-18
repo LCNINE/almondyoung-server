@@ -49,6 +49,36 @@ export async function isAccessTokenUsable(token: string | undefined | null): Pro
   }
 }
 
+export interface AccessTokenIdentity {
+  sub: string;
+  loginId: string | null;
+  name: string | null;
+}
+
+/** 서명·iss·aud 를 검증한 access token 의 계정. 만료 여유는 보지 않는다(호출부가 isAccessTokenUsable 로 따로 본다). */
+export async function verifiedAccessTokenIdentity(
+  token: string | undefined | null,
+): Promise<AccessTokenIdentity | null> {
+  if (!token || !JWKS || !OIDC_ISSUER_URL || !OIDC_CLIENT_ID) return null;
+
+  try {
+    const { payload } = await jwtVerify(token, JWKS, {
+      issuer: OIDC_ISSUER_URL,
+      audience: OIDC_CLIENT_ID,
+      algorithms: ['RS256'],
+    });
+    if (typeof payload.sub !== 'string' || !payload.sub) return null;
+
+    return {
+      sub: payload.sub,
+      loginId: typeof payload.login_id === 'string' ? payload.login_id : null,
+      name: typeof payload.name === 'string' ? payload.name : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
 /**
  * wallet-web 자신의 신뢰된 origin. OIDC_REDIRECT_URI (= https://wallet-web…/auth/callback) 에서 추출.
  * 절대 URL redirect 를 만들 때의 base 로 사용한다 (CloudFront 뒤 내부 host 위험 회피).

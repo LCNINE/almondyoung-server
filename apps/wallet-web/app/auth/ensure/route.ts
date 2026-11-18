@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 
 import { isAccessTokenUsable, selfOrigin } from '../../../lib/auth/access-token';
 import { refreshTokens } from '../../../lib/auth/oidc-client';
+import { sanitizeInternalRedirect } from '../../../lib/auth/internal-redirect';
 import { SESSION_COOKIE_NAMES, clearSessionCookiesOn, writeSessionCookies } from '../../../lib/auth/session-cookies';
 
 /**
@@ -51,11 +52,4 @@ function redirectToLogin(origin: string, redirectTo: string): NextResponse {
   const loginUrl = new URL('/login', origin);
   loginUrl.searchParams.set('redirect_to', redirectTo);
   return NextResponse.redirect(loginUrl);
-}
-
-function sanitizeInternalRedirect(value: string | null): string {
-  if (!value) return '/';
-  if (!value.startsWith('/')) return '/';
-  if (value.startsWith('//')) return '/';
-  return value;
 }

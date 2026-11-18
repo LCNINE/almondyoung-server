@@ -18,12 +18,14 @@ import { buildReturnUrl, leaveToReturnUrl } from '@/lib/return-url';
 import { redirectToWalletLogin } from '@/lib/auth-expired';
 
 interface BillingSetupFormProps {
+  /** 결제 건. 등록 요청에 실어 그 결제 건의 주인 계정으로만 등록되게 한다. */
+  intentId: string;
   returnUrl: string;
   initialError?: string;
   mode?: 'initial';
 }
 
-export function BillingSetupForm({ returnUrl, initialError, mode }: BillingSetupFormProps) {
+export function BillingSetupForm({ intentId, returnUrl, initialError, mode }: BillingSetupFormProps) {
   // 'details' → 'consent' → 'signature' → done
   const [step, setStep] = useState<'details' | 'consent' | 'signature'>('details');
   const [consentPersonalInfo, setConsentPersonalInfo] = useState(false);
@@ -62,6 +64,7 @@ export function BillingSetupForm({ returnUrl, initialError, mode }: BillingSetup
       const res = await fetch('/api/billing/cms-register-with-agreement', {
         method: 'POST',
         credentials: 'include',
+        headers: { 'x-wallet-intent': intentId },
         body: formData,
       });
       const data = (await res.json().catch(() => ({}))) as {

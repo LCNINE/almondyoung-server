@@ -35,7 +35,6 @@ export function parseBasicAuthCredentials(authHeader: string | undefined): {
 const MAX_LEN_CLIENT_ID = 64;
 const MAX_LEN_SECRET = 256;
 const MAX_LEN_CODE = 128;
-const MAX_LEN_HANDOFF_TOKEN = 2048;
 const MAX_LEN_VERIFIER = 256;
 const MAX_LEN_URI = 1024;
 const MAX_LEN_REFRESH = 2048;
@@ -62,7 +61,7 @@ export function normalizeTokenBody(raw: unknown): TokenRequestDto {
   const body = raw as Record<string, unknown>;
 
   const grantType = readString(body, 'grant_type', 'grantType');
-  if (grantType !== 'authorization_code' && grantType !== 'refresh_token' && grantType !== 'payment_handoff') {
+  if (grantType !== 'authorization_code' && grantType !== 'refresh_token') {
     throw new BadRequestError('unsupported grant_type');
   }
 
@@ -74,7 +73,7 @@ export function normalizeTokenBody(raw: unknown): TokenRequestDto {
   assertMax(clientSecret, MAX_LEN_SECRET, 'client_secret');
 
   const code = readString(body, 'code');
-  assertMax(code, grantType === 'payment_handoff' ? MAX_LEN_HANDOFF_TOKEN : MAX_LEN_CODE, 'code');
+  assertMax(code, MAX_LEN_CODE, 'code');
 
   const codeVerifier = readString(body, 'code_verifier', 'codeVerifier');
   assertMax(codeVerifier, MAX_LEN_VERIFIER, 'code_verifier');
