@@ -1,9 +1,6 @@
 // src/features/order/history/components/modals/edit-order-modal.tsx
-// TODO: WMS API 추가 필요 - PATCH /sales-orders/:id/lines
-// 현재는 WMS API 제약으로 주문 내용 수정 불가능
 'use client';
 
-import { useState } from 'react';
 import {
     FocusModal,
     FocusModalContent,
@@ -14,6 +11,7 @@ import {
 } from '@/components/common/focus-modal';
 import { Button } from '@/components/ui/button';
 import type { OrderLineRow } from '@/features/order/history/hooks/use-order-rows';
+import { hasStatusBadge, StatusBadge } from '../status-badge';
 
 interface Props {
     order: OrderLineRow;
@@ -21,20 +19,22 @@ interface Props {
     onOpenChange: (open: boolean) => void;
 }
 
+function noMemberReason(channel: string): string {
+    if (channel === 'medusa') return '자사몰 비회원 주문이라 연결된 회원이 없어요.';
+    if (channel === 'naver' || channel === 'coupang') return '외부 판매처 주문이라 연결된 회원이 없어요.';
+    return '수기·기타 주문이라 연결된 회원이 없어요.';
+}
+
 export function EditOrderModal({ order, open, onOpenChange }: Props) {
-    const [editedOrder] = useState(order);
 
     return (
         <FocusModal open={open} onOpenChange={onOpenChange}>
             <FocusModalContent>
                 <FocusModalHeader>
                     <div className="flex-1">
-                        <FocusModalTitle>입력확인</FocusModalTitle>
+                        <FocusModalTitle>주문 보기</FocusModalTitle>
                         <p className="text-xs text-muted-foreground mt-1">
                             주문 내용을 확인합니다.
-                        </p>
-                        <p className="text-xs text-amber-600 mt-1">
-                            주문 내용 수정은 WMS API 추가 후 지원 예정 (PATCH /sales-orders/:id/lines)
                         </p>
                     </div>
                 </FocusModalHeader>
@@ -46,17 +46,19 @@ export function EditOrderModal({ order, open, onOpenChange }: Props) {
                             <div>
                                 <label className="block text-sm mb-1 text-gray-600">주문번호</label>
                                 <div className="px-3 py-2 border rounded-md bg-gray-50">
-                                    {editedOrder.orderNo}
-                                    {editedOrder.channelOrderId !== editedOrder.orderNo && (
+                                    {order.orderNo}
+                                    {order.channelOrderId !== order.orderNo && (
                                         <span className="ml-2 font-mono text-[11px] text-gray-400">
-                                            {editedOrder.channelOrderId}
+                                            {order.channelOrderId}
                                         </span>
                                     )}
                                 </div>
                             </div>
                             <div>
                                 <label className="block text-sm mb-1 text-gray-600">주문 상태</label>
-                                <div className="px-3 py-2 border rounded-md bg-gray-50">{editedOrder.orderStatus}</div>
+                                <div className="px-3 py-2 border rounded-md bg-gray-50">
+                                    {hasStatusBadge(order) ? <StatusBadge row={order} /> : '-'}
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -67,29 +69,29 @@ export function EditOrderModal({ order, open, onOpenChange }: Props) {
                     */}
                     <div className="mb-6">
                         <h3 className="text-sm font-medium mb-3">주문한 회원</h3>
-                        {editedOrder.memberId ? (
+                        {order.memberId ? (
                             <div className="grid grid-cols-3 gap-4">
                                 <div>
                                     <label className="block text-sm mb-1 text-gray-600">회원 아이디</label>
                                     <div className="px-3 py-2 border rounded-md bg-gray-50">
-                                        {editedOrder.memberLoginId ?? '-'}
+                                        {order.memberLoginId ?? '-'}
                                     </div>
                                 </div>
                                 <div>
                                     <label className="block text-sm mb-1 text-gray-600">회원 이름</label>
                                     <div className="px-3 py-2 border rounded-md bg-gray-50">
-                                        {editedOrder.memberName ?? '-'}
+                                        {order.memberName ?? '-'}
                                     </div>
                                 </div>
                                 <div>
                                     <label className="block text-sm mb-1 text-gray-600">이메일</label>
-                                    <div className="px-3 py-2 border rounded-md bg-gray-50 truncate" title={editedOrder.memberEmail ?? undefined}>
-                                        {editedOrder.memberEmail ?? '-'}
+                                    <div className="px-3 py-2 border rounded-md bg-gray-50 truncate" title={order.memberEmail ?? undefined}>
+                                        {order.memberEmail ?? '-'}
                                     </div>
                                 </div>
                                 <div className="col-span-3">
                                     <a
-                                        href={`/users/${editedOrder.memberId}`}
+                                        href={`/users/${order.memberId}`}
                                         target="_blank"
                                         rel="noreferrer"
                                         className="text-sm text-blue-600 hover:underline"
@@ -100,7 +102,7 @@ export function EditOrderModal({ order, open, onOpenChange }: Props) {
                             </div>
                         ) : (
                             <div className="px-3 py-2 border rounded-md bg-gray-50 text-gray-500 text-sm">
-                                비회원(외부채널) 주문이라 연결된 회원이 없습니다.
+                                {noMemberReason(order.channel)}
                             </div>
                         )}
                     </div>
@@ -110,16 +112,16 @@ export function EditOrderModal({ order, open, onOpenChange }: Props) {
                         <div className="grid grid-cols-2 gap-4 mb-4">
                             <div>
                                 <label className="block text-sm mb-1 text-gray-600">수령자</label>
-                                <div className="px-3 py-2 border rounded-md bg-gray-50">{editedOrder.receiverName ?? '-'}</div>
+                                <div className="px-3 py-2 border rounded-md bg-gray-50">{order.receiverName ?? '-'}</div>
                             </div>
                             <div>
                                 <label className="block text-sm mb-1 text-gray-600">연락처</label>
-                                <div className="px-3 py-2 border rounded-md bg-gray-50">{editedOrder.phone ?? '-'}</div>
+                                <div className="px-3 py-2 border rounded-md bg-gray-50">{order.phone ?? '-'}</div>
                             </div>
                         </div>
                         <div>
                             <label className="block text-sm mb-1 text-gray-600">배송 주소</label>
-                            <div className="px-3 py-2 border rounded-md bg-gray-50">{editedOrder.address ?? '-'}</div>
+                            <div className="px-3 py-2 border rounded-md bg-gray-50">{order.address ?? '-'}</div>
                         </div>
                     </div>
 
@@ -136,7 +138,7 @@ export function EditOrderModal({ order, open, onOpenChange }: Props) {
                                     </tr>
                                 </thead>
                                 <tbody>
-                                    {editedOrder.lines.map((line: any) => (
+                                    {order.lines.map((line) => (
                                         <tr key={line.id} className="border-t">
                                             <td className="p-3">{line.productName}</td>
                                             <td className="p-3 text-gray-600">{line.optionName ?? '단일상품'}</td>
@@ -151,11 +153,11 @@ export function EditOrderModal({ order, open, onOpenChange }: Props) {
                         </div>
                     </div>
 
-                    {editedOrder.memo && (
+                    {order.memo && (
                         <div className="mb-6">
                             <h3 className="text-sm font-medium mb-3">관리자 메모</h3>
                             <div className="px-3 py-2 border rounded-md bg-gray-50 text-gray-700 whitespace-pre-wrap">
-                                {editedOrder.memo}
+                                {order.memo}
                             </div>
                         </div>
                     )}

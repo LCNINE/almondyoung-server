@@ -22,11 +22,7 @@ import {
   settlementReason,
   settlementTiming,
 } from '@/lib/api/domains/orders/cancel-request.shape';
-import {
-  badgeKindOf,
-  shipmentPhaseLabel,
-  type ShipmentPhase,
-} from '@/lib/api/domains/orders/shipment-phase.shape';
+import { StatusBadge } from '../status-badge';
 import { SettlementActions } from '@/features/order/cancel-settlement/settlement-actions';
 import { ManualRefundTodo } from '@/features/order/cancel-settlement/manual-refund-todo';
 import { cn } from '@/lib/utils/ui';
@@ -221,37 +217,6 @@ const HIDEABLE_COLUMNS = [
   { key: 'csStatus', label: 'C/S 상태' },
 ];
 const HIDDEN_COLUMNS_KEY = 'order-history:hidden-columns';
-
-/* ── 상태 배지 ────────────────────────────────────────────── */
-const PHASE_BADGE_CLASS: Record<ShipmentPhase, string> = {
-  preparing: 'bg-blue-100 text-blue-700',
-  shipping: 'bg-sky-100 text-sky-700',
-  delivered: 'bg-green-100 text-green-700',
-  external_shipped: 'bg-teal-100 text-teal-700',
-  cancelled: 'bg-gray-100 text-gray-500',
-};
-
-function StatusBadge({ row }: { row: OrderLineRow }) {
-  const { shipmentPhase, isMatched } = row;
-  const kind = badgeKindOf(shipmentPhase, isMatched);
-  if (kind === 'unmatched')
-    return (
-      <span className="inline-flex rounded-full bg-orange-100 text-orange-600 text-[11px] font-medium px-2 py-0.5 whitespace-nowrap">
-        매칭 대기
-      </span>
-    );
-  if (kind === 'none' || shipmentPhase === null) return null;
-  return (
-    <span
-      className={cn(
-        'inline-flex rounded-full text-[11px] font-medium px-2 py-0.5 whitespace-nowrap',
-        PHASE_BADGE_CLASS[shipmentPhase]
-      )}
-    >
-      {shipmentPhaseLabel(shipmentPhase)}
-    </span>
-  );
-}
 
 /* ── 환불 상태 배지 ────────────────────────────────────────── */
 const REFUND_STATUS_CONFIG: Record<
@@ -982,7 +947,7 @@ export default function OrderTable() {
                   setShowEditModal(true);
                 }}
               >
-                입력확인
+                주문 보기
               </button>
               {/* 열린 메뉴에서 대화상자를 띄우면 modal 메뉴가 body 포인터를 잠근 채 남는 일이 있다 */}
               <DropdownMenu modal={false}>
