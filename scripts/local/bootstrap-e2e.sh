@@ -115,6 +115,21 @@ ensure_tenancy() {
 }
 e2e_env_each "" ensure_tenancy
 
+# ─────────────────────────────────────────────────────────── 0-c. 채널 주문 즉시 수집 키 (#1440)
+# 템플릿에 줄이 생기기 전에 만든 channel-adapter .env 엔 없다 — 없으면 즉시 수집 라우트가 401 이고,
+# order:place:local 이 5분 폴링을 기다리지 못하고 멈춘다. 없을 때만 로컬 고정값을 더한다.
+step "0-c. channel-adapter 즉시 수집 키 (CHANNEL_ADAPTER_INTERNAL_KEY)"
+CA_ENV=apps/channel-adapter/.env
+if ! e2e_env_present "$CA_ENV"; then
+  warn "channel-adapter — $CA_ENV 없음. 위 0 단계에서 먼저 만든다"
+elif grep -q '^CHANNEL_ADAPTER_INTERNAL_KEY=' "$CA_ENV"; then
+  ok "channel-adapter"
+else
+  [ -n "$(tail -c1 "$CA_ENV")" ] && echo >> "$CA_ENV"
+  printf 'CHANNEL_ADAPTER_INTERNAL_KEY=%s\n' "local-rehearsal-channel-adapter-key" >> "$CA_ENV"
+  ok "channel-adapter — CHANNEL_ADAPTER_INTERNAL_KEY 를 더했다"
+fi
+
 # ─────────────────────────────────────────────────────────── 1. 컨테이너
 if [ "${SKIP_CONTAINERS:-}" = "1" ]; then
   step "1. 컨테이너 — SKIP_CONTAINERS=1 이라 건너뜀"

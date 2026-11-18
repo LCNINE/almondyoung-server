@@ -92,6 +92,18 @@ check_port_row() {
 e2e_env_each required check_port_row
 e2e_env_each extra check_port_row
 check_port 3099 && ok "3099 sms-stub" || bad "3099 sms-stub — 폰 인증 503 → 가입 UI 를 못 지난다 (start-all.sh 가 띄운다)"
+# 가짜 한진(#1440) — 출고 송장 발급이 여기로 간다. core 가 실제로 어디를 보는지는 3100 을 쥔 프로세스 환경에서 읽는다.
+HANJIN_STUB_URL="http://127.0.0.1:${E2E_HANJIN_STUB_PORT}"
+check_port "$E2E_HANJIN_STUB_PORT" && ok "$E2E_HANJIN_STUB_PORT hanjin-stub" \
+  || bad "$E2E_HANJIN_STUB_PORT hanjin-stub — 출고 송장 발급이 막힌다 (start-all.sh 가 띄운다)"
+HANJIN_CORE_PID=$(ss -ltnpH "sport = :3100" 2>/dev/null | grep -oP 'pid=\K[0-9]+' | head -1)
+HANJIN_CORE_URL=""
+[ -n "$HANJIN_CORE_PID" ] && HANJIN_CORE_URL=$(tr '\0' '\n' < "/proc/$HANJIN_CORE_PID/environ" 2>/dev/null | grep -m1 '^HANJIN_ORDER_BASE_URL=' | cut -d= -f2-)
+if [ -z "$HANJIN_CORE_PID" ]; then warn "core 가 안 떠 있다 — core 의 한진 주소 판정 생략"
+elif [ "$HANJIN_CORE_URL" = "$HANJIN_STUB_URL" ]; then ok "core 한진 주소 = 가짜 한진"
+else warn "core 가 가짜 한진이 아닌 곳을 부른다(${HANJIN_CORE_URL:-비어 있음}) — E2E_HANJIN=real 로 띄웠나? 아니면 start-all 로 다시 띄울 것"; fi
+if grep -q '^CHANNEL_ADAPTER_INTERNAL_KEY=.' apps/channel-adapter/.env 2>/dev/null; then ok "channel-adapter 즉시 수집 키"
+else bad "apps/channel-adapter/.env 에 CHANNEL_ADAPTER_INTERNAL_KEY 가 없다 — 즉시 수집 401 → npm run bootstrap:e2e:local"; fi
 if check_port 19000; then ok "19000 medusa-metrics"
 elif check_port 9000; then bad "19000 medusa-metrics — medusa 는 떴는데 메트릭이 없다. apps/medusa/.env 에 PORT=9000 을 넣고 재기동"
 else warn "19000 medusa-metrics — medusa 자체가 안 떠 있다"; fi

@@ -54,6 +54,10 @@ E2E_FIXED_TENANT_CALLERS='medusa storefront'
 # 토큰 테넌트를 그 T 와 대조한다 — SERVER_CREDENTIAL_TENANT_ID(= E2E_SERVED_TENANT_ID)와 TENANT_GATE_MODE 를 받는다.
 E2E_SERVER_CREDENTIAL_GATE_APPS='admin-web'
 
+# 가짜 한진(scripts/local/hanjin-stub.ts, #1440) — start-all 이 sms-stub 옆에서 띄우고, core 의 한진 주소를 여기로 덮는다.
+# 로컬 스택은 이 스텁만 부른다. 실제 한진은 `E2E_HANJIN=real npm run start:all:local` 로 고를 때만이다.
+E2E_HANJIN_STUB_PORT=4599
+
 # 로컬 테넌트 2 — 만들기 스크립트 리허설(scripts/local/create-tenant-local.sh, bootstrap 4단계)이 만든다.
 # 🔒 실제 테넌트 2 와 무관한 값이다. 레포에 들어가는 테넌트 2 값은 이것뿐이다 — 실제 slug·이름·도메인·버킷은 적지 않는다.
 # 도메인은 *.localhost 라 브라우저가 따로 설정 없이 127.0.0.1 로 보낸다. 테넌트 도메인은 앱마다 하나다 —
