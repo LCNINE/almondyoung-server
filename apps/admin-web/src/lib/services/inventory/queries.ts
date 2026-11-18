@@ -25,6 +25,7 @@ import { movementClient } from '../../api/domains/inventory/movement.client';
 import { replenishmentClient } from '../../api/domains/inventory/replenishment.client';
 import type {
   StockSummaryQuery,
+  StockSummaryByGroupQuery,
   StockHistoryQuery,
   ReservationTargetType,
   StocktakingSessionQuery,
@@ -71,6 +72,13 @@ export const useStockSummary = (query: StockSummaryQuery = {}) => {
   return useQuery({
     queryKey: inventoryQueryKeys.stockSummary(query),
     queryFn: () => stocksClient.getStockSummary(query),
+  });
+};
+
+export const useStockSummaryByGroup = (query: StockSummaryByGroupQuery = {}) => {
+  return useQuery({
+    queryKey: inventoryQueryKeys.stockSummaryByGroup(query),
+    queryFn: () => stocksClient.getStockSummaryByGroup(query),
   });
 };
 

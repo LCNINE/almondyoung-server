@@ -801,6 +801,57 @@ export interface StockQuery {
   asOfTimestamp?: string; // ISO 8601 형식
 }
 
+export type StockQueue =
+  | 'unshipped'
+  | 'below_safety_stock'
+  | 'out_of_stock'
+  | 'inbound_pending';
+
+export interface StockSummaryByGroupQuery {
+  warehouseId?: string;
+  supplierId?: string;
+  search?: string;
+  queue?: StockQueue;
+  page?: number;
+  limit?: number;
+}
+
+export interface StockSummaryGroupSkuDto {
+  skuId: string;
+  skuName: string;
+  skuCode: string;
+  warehouseId: string;
+  warehouseName: string;
+  shelfPosition: string | null;
+  currentQuantity: number;
+  availableQuantity: number;
+  unshippedQuantity: number;
+  shortageQuantity: number;
+  safetyStock: number | null;
+  belowSafetyStock: boolean;
+}
+
+export interface StockSummaryGroupDto {
+  groupId: string | null;
+  groupName: string;
+  groupCode: string | null;
+  imageUrl: string | null;
+  skus: StockSummaryGroupSkuDto[];
+}
+
+export interface StockSummaryByGroupResponseDto {
+  data: StockSummaryGroupDto[];
+  total: number;
+  page: number;
+  limit: number;
+}
+
+/** 재고 이력·조정 다이얼로그가 쓰는 행 필드 */
+export type StockRowRef = Pick<
+  StockSummaryDto,
+  'skuId' | 'skuName' | 'warehouseId' | 'warehouseName' | 'currentQuantity'
+>;
+
 export interface StockSummaryQuery {
   skuId?: string;
   warehouseId?: string;

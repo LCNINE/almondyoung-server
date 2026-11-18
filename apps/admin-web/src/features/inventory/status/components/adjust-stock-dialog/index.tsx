@@ -8,11 +8,11 @@ import {
 } from '@/components/ui/dialog';
 import { useAdjustStock } from '@/lib/services/inventory';
 import { StockAdjustForm } from '@/features/inventory/components/stock-adjust-form';
-import type { StockSummaryDto } from '@/lib/types/dto/inventory';
+import type { StockRowRef } from '@/lib/types/dto/inventory';
 import { toast } from 'sonner';
 
 type Props = {
-  row: StockSummaryDto | null;
+  row: StockRowRef | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 };

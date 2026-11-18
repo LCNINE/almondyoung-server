@@ -15,6 +15,8 @@ import type {
   StockQuery,
   StockSummaryQuery,
   StockHistoryQuery,
+  StockSummaryByGroupQuery,
+  StockSummaryByGroupResponseDto,
 } from '../../../types/dto/inventory';
 
 function buildQueryString(query: Record<string, unknown>): string {
@@ -40,6 +42,15 @@ export const stocksClient = {
   ): Promise<StockSummariesResponseDto> => {
     const response = await client.get(
       `${ALMONDYOUNG_API_BASE_URL}/inventory/stocks/summary?${buildQueryString(query as Record<string, unknown>)}`
+    );
+    return response.data;
+  },
+
+  getStockSummaryByGroup: async (
+    query: StockSummaryByGroupQuery = {}
+  ): Promise<StockSummaryByGroupResponseDto> => {
+    const response = await client.get(
+      `${ALMONDYOUNG_API_BASE_URL}/inventory/stocks/summary/by-group?${buildQueryString(query as Record<string, unknown>)}`
     );
     return response.data;
   },
