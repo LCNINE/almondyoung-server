@@ -45,6 +45,7 @@ import {
   type PickingMethod,
 } from '@/lib/utils/picking-method';
 import {
+  bulkSelectableShipments,
   locatePreparationTarget,
   PREPARATION_BATCH_LIMIT,
   preparationAddress,
@@ -231,9 +232,9 @@ function PreparationWarehouse({
     const selected = selections[key];
 
     return selected === undefined
-      ? shipments
-          .slice(0, PREPARATION_BATCH_LIMIT)
-          .map((shipment) => shipment.shipmentId)
+      ? bulkSelectableShipments(shipments).map(
+          (shipment) => shipment.shipmentId
+        )
       : shipments
           .filter((shipment) => selected.includes(shipment.shipmentId))
           .map((shipment) => shipment.shipmentId);
@@ -265,13 +266,25 @@ function PreparationWarehouse({
       return;
     }
 
+    const shipments = bucket?.shipments ?? [];
+    // 결품으로 돌아온 상자는 하나씩 고른 것이라 전체 선택·해제가 건드리지 않는다
+    const returned = new Set(
+      shipments
+        .filter((shipment) => shipment.shortPick)
+        .map((shipment) => shipment.shipmentId)
+    );
+    const kept = selectedIds(activeBucket).filter((id) => returned.has(id));
+
     setSelections((previous) => ({
       ...previous,
-      [activeBucket]: checked
-        ? (bucket?.shipments ?? [])
-            .slice(0, PREPARATION_BATCH_LIMIT)
-            .map((shipment) => shipment.shipmentId)
-        : [],
+      [activeBucket]: [
+        ...kept,
+        ...(checked
+          ? bulkSelectableShipments(shipments)
+              .slice(0, PREPARATION_BATCH_LIMIT - kept.length)
+              .map((shipment) => shipment.shipmentId)
+          : []),
+      ],
     }));
   };
 

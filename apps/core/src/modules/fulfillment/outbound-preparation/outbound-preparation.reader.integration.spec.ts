@@ -22,6 +22,7 @@ import {
 import { ConsolidationBoardReader } from '../services/consolidation-board.reader';
 import { loadSplitShares } from '../services/consolidation-shipment-reads';
 import { OutboundPreparationReader } from './outbound-preparation.reader';
+import { loadShortPickReturns } from './short-pick-returns';
 import { seedHandedOverOrder } from '../services/__support__/sellmate-handed-over-fixtures';
 import { OutboundPreparationSummaryDto } from '../dto/outbound-preparation.dto';
 
@@ -534,6 +535,126 @@ describeIfDb('OutboundPreparationReader (DB integration)', () => {
           [reissued.shipment.id, '운송사 응답을 확인하지 못했어요 — 상자 화면에서 송장 상태를 확인해요'],
           [untouched.shipment.id, null],
         ]),
+      );
+    });
+  });
+
+  it('결품으로 배치에서 빠진 상자를 분류 맨 앞에 모으고 상품·자리·모자란 수량을 사유로 준다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const base = await consolidationBase(tx);
+      const source = () => createConsolidationSource(tx, wired, base, { quantity: 1, customerId: randomUUID() });
+      const plain = await source();
+      const exited = await source();
+      const refilled = await source();
+      const rebatched = await source();
+      const otherExit = await source();
+      const [location] = await tx
+        .select({ id: wmsTables.locations.id, code: wmsTables.locations.code })
+        .from(wmsTables.locations)
+        .where(eq(wmsTables.locations.warehouseId, base.warehouseId))
+        .limit(1);
+      const [sku] = await tx
+        .select({ name: wmsTables.skus.name })
+        .from(wmsTables.skus)
+        .where(eq(wmsTables.skus.id, base.skuId));
+      const [batch] = await tx
+        .insert(wmsTables.outboundBatches)
+        .values({
+          warehouseId: base.warehouseId,
+          batchNumber: `short-pick-${randomUUID()}`,
+          pickingMethod: 'individual',
+          name: `short-pick-${randomUUID()}`,
+        })
+        .returning();
+      const leave = async (shipmentId: string, exclusionReason: string) => {
+        const [item] = await tx
+          .insert(wmsTables.outboundBatchWorkItems)
+          .values({ batchId: batch.id, shipmentId, status: 'excluded', exitTo: 'draft', exclusionReason })
+          .returning();
+
+        return item.id;
+      };
+      const shortPick = async (shipmentId: string, lineId: string, workItemId: string, outcome: string) => {
+        const id = randomUUID();
+
+        await tx.insert(wmsTables.shipmentOperations).values({
+          id,
+          type: 'short_pick',
+          status: 'completed',
+          operatorId: randomUUID(),
+          reason: 'inventory_shortage',
+          idempotencyKey: randomUUID(),
+          requestHash: 'a'.repeat(64),
+          beforeManifestSnapshot: {
+            intent: {
+              kind: 'short_pick',
+              operationId: id,
+              shipmentId,
+              workItemId,
+              sessionId: randomUUID(),
+              actorId: randomUUID(),
+              reason: 'inventory_shortage',
+              lines: [{ shipmentLineId: lineId, sourceLocationId: location.id, shortQty: 1, allocationQty: 1 }],
+            },
+          },
+          afterManifestSnapshot: { outcome },
+          completedAt: new Date(),
+        });
+        await tx.insert(wmsTables.shipmentOperationMembers).values({ operationId: id, shipmentId, role: 'source' });
+      };
+
+      await shortPick(
+        exited.shipment.id,
+        exited.line.id,
+        await leave(exited.shipment.id, 'short_pick:inventory_shortage'),
+        'exited',
+      );
+      await shortPick(
+        refilled.shipment.id,
+        refilled.line.id,
+        await leave(refilled.shipment.id, '잘못 넣은 상자'),
+        'refilled',
+      );
+      await shortPick(
+        rebatched.shipment.id,
+        rebatched.line.id,
+        await leave(rebatched.shipment.id, 'short_pick:inventory_shortage'),
+        'exited',
+      );
+      await tx.insert(wmsTables.outboundBatchWorkItems).values({
+        batchId: batch.id,
+        shipmentId: rebatched.shipment.id,
+        status: 'excluded',
+        exitTo: 'draft',
+        exclusionReason: '잘못 넣은 상자',
+        createdAt: new Date(Date.now() + 60_000),
+      });
+      await leave(otherExit.shipment.id, 'station_withdraw_command');
+
+      const summary = await reader.summarize(base.warehouseId, undefined, tx);
+      const ready = summary.buckets.find((entry) => entry.bucket === 'ready');
+
+      expect(ready?.count).toBe(5);
+      expect(ready?.shortPickCount).toBe(1);
+      expect(ready?.shipments[0]).toMatchObject({
+        shipmentId: exited.shipment.id,
+        reason: null,
+        shortPick: [{ name: sku.name, locationCode: location.code, shortQty: 1 }],
+      });
+      expect(
+        ready?.shipments
+          .filter((shipment) => shipment.shipmentId !== exited.shipment.id)
+          .map((shipment) => shipment.shortPick),
+      ).toEqual([null, null, null, null]);
+      await tx.insert(wmsTables.outboundBatchWorkItems).values({
+        batchId: batch.id,
+        shipmentId: exited.shipment.id,
+        status: 'queued',
+        createdAt: new Date(Date.now() - 60_000),
+      });
+      expect(await loadShortPickReturns(tx, [exited.shipment.id])).toEqual(new Map());
+      expect(idsIn(summary, 'ready').slice(1).sort()).toEqual(
+        [plain, refilled, rebatched, otherExit].map((fixture) => fixture.shipment.id).sort(),
       );
     });
   });

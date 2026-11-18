@@ -20,6 +20,7 @@ import { compatibleShippingProfileId } from '../services/shipping-profile';
 import { isUntrustedExternalLine } from '../services/external-line-identity';
 import { loadSellmateShipmentIds } from '../services/sellmate-handed-over-shipments';
 import { waybillFailureText } from '../waybill/waybill-failure-text';
+import { loadShortPickReturns } from './short-pick-returns';
 import {
   OutboundPreparationQueryDto,
   OutboundPreparationSummaryDto,
@@ -53,6 +54,7 @@ export class OutboundPreparationReader {
         count: 0,
         singleCount: 0,
         multiCount: 0,
+        shortPickCount: 0,
         shipments: [],
       }));
       const [backlog] = await trx
@@ -79,8 +81,14 @@ export class OutboundPreparationReader {
         trx,
         candidates.map((shipment) => shipment.id),
       );
-      const shipments = candidates.filter((shipment) => !sellmate.has(shipment.id));
-      const ids = shipments.map((shipment) => shipment.id);
+      const kept = candidates.filter((shipment) => !sellmate.has(shipment.id));
+      const ids = kept.map((shipment) => shipment.id);
+      const shortPicks = await loadShortPickReturns(trx, ids);
+      // 결품으로 돌아온 상자는 분류마다 맨 앞에 모은다 — 쪽 나누기 전에 정렬해야 다음 쪽에 묻히지 않는다
+      const shipments = [
+        ...kept.filter((shipment) => shortPicks.has(shipment.id)),
+        ...kept.filter((shipment) => !shortPicks.has(shipment.id)),
+      ];
 
       if (ids.length === 0) {
         return { warehouseId, buckets, awaitingMatchingCount: backlog.count };
@@ -143,10 +151,12 @@ export class OutboundPreparationReader {
         }
 
         const single = isSingleItem(quantities);
+        const shortPick = shortPicks.get(shipment.id) ?? null;
 
         bucket.count++;
         bucket.singleCount += single ? 1 : 0;
         bucket.multiCount += single ? 0 : 1;
+        bucket.shortPickCount += shortPick ? 1 : 0;
 
         if (
           (page?.bucket && bucketName !== page.bucket) ||
@@ -186,6 +196,7 @@ export class OutboundPreparationReader {
             reservedQty: Math.min(line.qty, line.confirmedQty),
           })),
           split: splits.get(shipment.id) ?? null,
+          shortPick,
         });
       }
 
