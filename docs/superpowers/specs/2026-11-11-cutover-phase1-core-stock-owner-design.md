@@ -95,6 +95,7 @@
 2. `clear-reservations` → `sync-stock` → `load-shelf-positions` 를 **마지막으로** 돌리고 멈춘다. 이때 셀메이트 가용을 맞추기의 첫 기준값으로 저장한다(음수 품목은 0 + 이월 모자람). 그 **직후** 위치가 하나인 SKU 재고를 입고기본존에서 실제 로케이션으로 옮긴다(#1236) — `sync-stock` 이 증가분을 입고기본존에 넣으므로 전날 옮기면 다시 갈린다.
 3. `collect-cellmate` 를 멈춘다. T 이후 자사몰 주문은 앱으로 간다(출고 준비 → 배치 → 앱 출고). **1건 먼저** SHIP 이 찍히고 Medusa 에 반영되는 것을 본 뒤 나머지를 연다.
 4. **드레인:** T 이전 자사몰 주문은 셀메이트가 끝까지 내보낸다. 다 나가면 `mark-shipped-from-csv`·`mark-core-shipped`·`mark-medusa-shipped`·`close-shipped-shipments` 를 마지막으로 한 번 돌리고 멈춘다.
+   > ⚠️ **2026-11-19 갱신:** 마지막 `close-shipped-shipments` 는 #1243 이 **`close-sellmate-leftovers`**(dry-run → `--apply`)로 바꿨다. T 뒤 `close-shipped-shipments` 단독 실행은 금지다 — 앱이 맡은 취소 주문의 상자까지 닫는다. **당일은 이 절이 아니라 런북 `docs/runbooks/sellmate-cutover-phase1.md`(#1251)를 따른다.** 2번에 더해진 단계(#1247 투영 T 설정·#1304 `evening-reconcile init`·#1412 출고 준비 화면은 init 뒤)도 런북에 있다.
 5. 첫 저녁 맞추기. 닫기 확인까지 초록인지 본다.
 
 마켓 주문은 T 와 무관하게 셀메이트에 계속 들어온다 — 마켓 쪽 드레인은 2단계의 일이다.
