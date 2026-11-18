@@ -17,6 +17,7 @@ import type {
   StockHistoryQuery,
   StockSummaryByGroupQuery,
   StockSummaryByGroupResponseDto,
+  UnshippedOrdersResponseDto,
 } from '../../../types/dto/inventory';
 
 function buildQueryString(query: Record<string, unknown>): string {
@@ -51,6 +52,16 @@ export const stocksClient = {
   ): Promise<StockSummaryByGroupResponseDto> => {
     const response = await client.get(
       `${ALMONDYOUNG_API_BASE_URL}/inventory/stocks/summary/by-group?${buildQueryString(query as Record<string, unknown>)}`
+    );
+    return response.data;
+  },
+
+  getUnshippedOrders: async (
+    skuId: string,
+    warehouseId: string
+  ): Promise<UnshippedOrdersResponseDto> => {
+    const response = await client.get(
+      `${ALMONDYOUNG_API_BASE_URL}/inventory/stocks/sku/${encodeURIComponent(skuId)}/warehouse/${encodeURIComponent(warehouseId)}/unshipped-orders`
     );
     return response.data;
   },

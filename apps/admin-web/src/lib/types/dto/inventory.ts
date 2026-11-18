@@ -846,6 +846,31 @@ export interface StockSummaryByGroupResponseDto {
   limit: number;
 }
 
+export type UnshippedOrderProgress =
+  | 'not_boxed'
+  | 'waiting'
+  | 'inspecting'
+  | 'inspected'
+  | 'recovery_required';
+
+export interface UnshippedOrderDto {
+  fulfillmentOrderItemId: string;
+  salesOrderId: string | null;
+  orderNo: string | null;
+  channelName: string | null;
+  orderedAt: string;
+  delayDays: number;
+  customerName: string | null;
+  remainingQuantity: number;
+  reservedQuantity: number;
+  canShip: boolean;
+  progress: UnshippedOrderProgress;
+}
+
+export interface UnshippedOrdersResponseDto {
+  items: UnshippedOrderDto[];
+}
+
 /** 재고 이력·조정 다이얼로그가 쓰는 행 필드 */
 export type StockRowRef = Pick<
   StockSummaryDto,

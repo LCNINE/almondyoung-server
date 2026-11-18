@@ -21,6 +21,7 @@ import { SimplePagination } from '@/components/simple-pagination';
 import { cn } from '@/lib/utils';
 import { StockHistoryDrawer } from '../stock-history-drawer';
 import { AdjustStockDialog } from '../adjust-stock-dialog';
+import { UnshippedOrdersDrawer } from '../unshipped-orders-drawer';
 
 const PAGE_SIZE = 20;
 
@@ -35,11 +36,7 @@ function toQueue(value: string | null): StockQueue | undefined {
   return QUEUES.find((queue) => queue.value === value)?.value;
 }
 
-type Props = {
-  onOpenUnshipped?: (row: StockSummaryGroupSkuDto) => void;
-};
-
-export function InventoryStatusTable({ onOpenUnshipped }: Props) {
+export function InventoryStatusTable() {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -69,6 +66,8 @@ export function InventoryStatusTable({ onOpenUnshipped }: Props) {
   const [adjustRow, setAdjustRow] = useState<StockSummaryGroupSkuDto | null>(
     null
   );
+  const [unshippedRow, setUnshippedRow] =
+    useState<StockSummaryGroupSkuDto | null>(null);
 
   const rebuildMutation = useRebuildStockSummary();
   const { canRun } = usePermissionCheck();
@@ -291,13 +290,13 @@ export function InventoryStatusTable({ onOpenUnshipped }: Props) {
                   </td>
                   <td className="whitespace-nowrap px-3 py-2">
                     <div className="flex justify-end gap-1">
-                      {onOpenUnshipped && row.unshippedQuantity > 0 && (
+                      {row.unshippedQuantity > 0 && (
                         <Button
                           type="button"
                           size="sm"
                           variant="outline"
                           className="h-7 text-xs font-semibold"
-                          onClick={() => onOpenUnshipped(row)}
+                          onClick={() => setUnshippedRow(row)}
                         >
                           내역 보기
                         </Button>
@@ -359,6 +358,14 @@ export function InventoryStatusTable({ onOpenUnshipped }: Props) {
         open={!!historyRow}
         onOpenChange={(open) => {
           if (!open) setHistoryRow(null);
+        }}
+      />
+
+      <UnshippedOrdersDrawer
+        row={unshippedRow}
+        open={!!unshippedRow}
+        onOpenChange={(open) => {
+          if (!open) setUnshippedRow(null);
         }}
       />
 

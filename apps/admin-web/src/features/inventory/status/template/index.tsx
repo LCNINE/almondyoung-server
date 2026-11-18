@@ -7,7 +7,10 @@ import { InventoryStatusTable } from '../components/table';
 export default function InventoryStatusTemplate() {
   return (
     <Container>
-      <Header title="재고 현황" subtitle="SKU·창고별 재고 요약 및 이력을 관리합니다." />
+      <Header
+        title="재고 현황"
+        subtitle="SKU·창고별 재고 요약 및 이력을 관리합니다."
+      />
       <InventoryStatusTable />
     </Container>
   );

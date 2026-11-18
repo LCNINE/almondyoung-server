@@ -52,6 +52,9 @@ const SHOWN: Readonly<Record<string, PiiScreen>> = {
   '/': CUSTOMER,
 
   '/account/blacklist': CUSTOMER,
+
+  // 미발송 내역 패널이 주문자 이름을 받는다(가린 채)
+  '/inventory/status': CUSTOMER,
   '/account/customer': CUSTOMER,
   '/account/sales-channel/medusa-customers': CUSTOMER,
   '/account/sales-channel/medusa-customers/[id]': CUSTOMER_DETAIL,
@@ -128,9 +131,11 @@ export const PII_SCREEN_NOT_SHOWN: Readonly<Record<string, string>> = {
   '/cs/reviews/new': '새로 입력하는 만들기 폼이다',
   '/cs/reviews/rewards':
     '리뷰 상세 [id] 와 다른 페이지이고 개인정보 API 를 부르지 않는다',
-  '/inventory/inbound-shipments': '고객 개인정보를 부르지 않는다. 리스트 비고의 이름은 직원·거래처다',
+  '/inventory/inbound-shipments':
+    '고객 개인정보를 부르지 않는다. 리스트 비고의 이름은 직원·거래처다',
   '/inventory/warehouses/new': '새로 입력하는 만들기 폼이다',
-  '/mall/almond-template-categories': '카테고리 이름·이미지만 다루고 개인정보 API 를 부르지 않는다',
+  '/mall/almond-template-categories':
+    '카테고리 이름·이미지만 다루고 개인정보 API 를 부르지 않는다',
   '/mall/products-list/[masterId]': '상품 상세 — 등록자 고르기가 없다',
   '/mall/shop-listings/new': '새로 입력하는 만들기 폼이다',
   '/mall/top-notices': '띠 문구와 링크만 다루고 개인정보 API 를 부르지 않는다',

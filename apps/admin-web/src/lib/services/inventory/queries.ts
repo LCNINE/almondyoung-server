@@ -82,6 +82,14 @@ export const useStockSummaryByGroup = (query: StockSummaryByGroupQuery = {}) => 
   });
 };
 
+export const useUnshippedOrders = (skuId: string, warehouseId: string) => {
+  return useQuery({
+    queryKey: inventoryQueryKeys.unshippedOrders(skuId, warehouseId),
+    queryFn: () => stocksClient.getUnshippedOrders(skuId, warehouseId),
+    enabled: !!skuId && !!warehouseId,
+  });
+};
+
 export const useSkuTotalStock = (skuId: string) => {
   return useQuery({
     queryKey: inventoryQueryKeys.skuTotalStock(skuId),
