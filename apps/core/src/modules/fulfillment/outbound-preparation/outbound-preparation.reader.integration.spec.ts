@@ -22,6 +22,11 @@ import {
 import { ConsolidationBoardReader } from '../services/consolidation-board.reader';
 import { loadSplitShares } from '../services/consolidation-shipment-reads';
 import { OutboundPreparationReader } from './outbound-preparation.reader';
+import { seedHandedOverOrder } from '../services/__support__/sellmate-handed-over-fixtures';
+import { OutboundPreparationSummaryDto } from '../dto/outbound-preparation.dto';
+
+const idsIn = (summary: OutboundPreparationSummaryDto, bucket: string) =>
+  summary.buckets.find((entry) => entry.bucket === bucket)?.shipments.map((shipment) => shipment.shipmentId) ?? [];
 
 const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
@@ -33,12 +38,13 @@ describeIfDb('OutboundPreparationReader (DB integration)', () => {
   let wired: Wired;
   let reader: OutboundPreparationReader;
   let planning: ShipmentPlanningService;
+  let dbService: ReturnType<typeof makeDbService>;
 
   beforeAll(() => {
     if (!DATABASE_URL) throw new Error('DATABASE_URL is required');
 
     ({ sql: client, db } = makeDb(DATABASE_URL));
-    const dbService = makeDbService(db);
+    dbService = makeDbService(db);
 
     wired = wireLogistics(dbService, 'v2');
     planning = new ShipmentPlanningService(
@@ -304,6 +310,44 @@ describeIfDb('OutboundPreparationReader (DB integration)', () => {
         .where(eq(wmsTables.shipments.id, source.shipment.id));
 
       expect(planned.status).toBe('planned');
+    });
+  });
+
+  it('셀메이트 상자는 어느 분류에도 없고 합칠 상대도 되지 않는다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const base = await consolidationBase(tx);
+      const customerId = randomUUID();
+      const handed = await createConsolidationSource(tx, wired, base, { quantity: 1, customerId });
+      const app = await createConsolidationSource(tx, wired, base, { quantity: 1, customerId });
+      const planned = await createConsolidationSource(tx, wired, base, { quantity: 1, customerId: randomUUID() });
+
+      await tx
+        .update(wmsTables.shipments)
+        .set({ status: 'planned' })
+        .where(eq(wmsTables.shipments.id, planned.shipment.id));
+
+      const before = await reader.summarize(base.warehouseId, undefined, tx);
+
+      expect(idsIn(before, 'mergeable')).toEqual(expect.arrayContaining([handed.shipment.id, app.shipment.id]));
+      expect(before.buckets.flatMap((bucket) => bucket.shipments.map((s) => s.shipmentId))).toContain(
+        planned.shipment.id,
+      );
+
+      await seedHandedOverOrder(tx, handed.salesOrderId);
+      await seedHandedOverOrder(tx, planned.salesOrderId);
+
+      const after = await reader.summarize(base.warehouseId, undefined, tx);
+      const all = after.buckets.flatMap((bucket) => bucket.shipments.map((s) => s.shipmentId));
+
+      expect(all).not.toContain(handed.shipment.id);
+      expect(all).not.toContain(planned.shipment.id);
+      expect(idsIn(after, 'ready')).toContain(app.shipment.id);
+
+      const board = await new ConsolidationBoardReader(dbService).findBoard(base.warehouseId, tx);
+
+      expect(board.groups.flatMap((group) => group.shipments.map((s) => s.shipmentId))).not.toContain(
+        handed.shipment.id,
+      );
     });
   });
 
