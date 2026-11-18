@@ -1,6 +1,8 @@
 # 셀메이트 컷오버 1단계 런북 (#1251)
 
-> 상위: #1233(1단계 지도). 순서의 정본은 설계 문서 [`2026-11-11-cutover-phase1-core-stock-owner-design.md`](https://github.com/LCNINE/almondyoung-server/blob/docs/cutover-phase1-core-stock-owner/docs/superpowers/specs/2026-11-11-cutover-phase1-core-stock-owner-design.md) «컷오버 당일»이다. 이 문서는 그 순서를 당일 따라 할 수 있게 명령·판정·실패 시 할 일로 풀었다.
+> 상위: #1233(1단계 지도). 순서의 뼈대는 설계 문서 [`2026-11-11-cutover-phase1-core-stock-owner-design.md`](https://github.com/LCNINE/almondyoung-server/blob/docs/cutover-phase1-core-stock-owner/docs/superpowers/specs/2026-11-11-cutover-phase1-core-stock-owner-design.md) «컷오버 당일»이고, 이 문서는 그 순서를 당일 따라 할 수 있게 명령·판정·실패 시 할 일로 풀었다.
+>
+> ⚠️ **당일엔 이 문서를 따른다 — 설계 문서 «컷오버 당일» 은 그 뒤 결정으로 바뀐 곳이 있다.** 설계 문서 4번의 «드레인 끝에 `close-shipped-shipments`» 는 #1243 이 **`close-sellmate-leftovers`** 로 바꿨다 — T 뒤 `close-shipped-shipments` 단독 실행은 금지다(§4-5·§7). 2번에는 #1247(`clear-reservations` 뒤 투영 T 설정)·#1304(`evening-reconcile init`)·#1412(출고 준비 화면은 init 뒤)가 더해졌다(§4·§6). 순서의 최신판은 #1233 «당일 순서» 다.
 > 1단계 = 자사몰(Medusa) 주문은 창고 앱, core 가 재고 정본. 마켓(네이버·쿠팡) 주문은 1단계 내내 셀메이트가 처리한다. 마켓 채널을 켜는 시각은 2단계(#1306) 런북이 다룬다.
 > 코드·데이터에서 나오는 숫자는 적지 않는다 — 판정 스크립트(§0-2)를 돌려서 본다.
 
@@ -65,7 +67,7 @@ cd deployments/lcnine/auth     && npx sst shell --stage live -- npx tsx ../../..
   3. 판정: 같은 CSV 로 다시 dry-run → «core 에 넣을 것» 0. 충돌 목록은 사람이 정한다
   4. 그 다음 🔍 `bash scripts/sellmate/run.sh live register-missing-barcodes` → ✅ `--apply`. ★(재고 있는 SKU)는 T 전에 스티커를 뽑는다
   - T 까지 새로 생기는 SKU 는 T 의 `import-products` 가 같은 규칙으로 보조 바코드를 넣는다.
-- [ ] **#1236 의 남은 확인:** DD 열에 `exact` 로 맞는 위치가 있으면 기본으로 옮겨진다 — 라이브에서 센다(PR #1424).
+- [ ] **#1236 의 남은 확인:** DD 열에 `exact` 로 맞는 위치가 있으면 기본으로 옮겨진다 — 라이브에서 센다(현장 확인 기록은 PR #1424, 머지 전).
 - [ ] **실무자 양해:** T 부터 셀메이트에 입고예정·입고·재고 조정을 넣지 않는다. 셀메이트에서는 마켓 주문의 출고·반품·교환만 한다. 재고 조정·실사는 core(앱)에서 한다.
 - [ ] **맞추기 시간 운영 규칙 공지**(§8-1): 저녁 맞추기 동안 셀메이트 출고·반품 입고를 멈춘다.
 - [ ] **비상 출고 사전 준비**(§10-1) — 리허설 때 끝내 둔다.
@@ -202,7 +204,7 @@ bash scripts/sellmate/run.sh live move-stock-to-shelf --positions-since=<positio
 # 판매 창고가 둘 이상이면 --warehouse-id=<부천 창고 id>
 ```
 
-- 고쳐 읽기 규칙은 `dash-position`(`O21-30-` → `O-21-30`)만 켠다 — 11-18 부천 현장 확인(PR #1424). `zero-pad`·`custom-bin` 은 켜지 않는다.
+- 고쳐 읽기 규칙은 `dash-position`(`O21-30-` → `O-21-30`)만 켠다 — 11-18 부천 현장 확인으로 정했다(기록은 PR #1424, 머지 전 — 결정은 머지와 무관하다). `zero-pad`·`custom-bin` 은 켜지 않는다.
 - 동시 처리는 기본 4 그대로 둔다. 8·16 은 터널을 죽였다. dry-run 이 몇 분, **apply 는 그보다 몇 배** 걸린다 — 시간을 비워 둔다.
 - 옮기지 않은 SKU 는 사유와 함께 CSV 로 남는다 — 컷오버 뒤 실사 대상이다. 그 파일을 보관한다.
 
