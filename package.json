@@ -198,6 +198,8 @@
     "db:seed:core:local": "npx tsx scripts/local/seed-core-local.ts",
     "db:seed:wallet:local": "npx tsx scripts/local/seed-wallet-local.ts",
     "db:seed:points:local": "npx tsx scripts/local/seed-points-local.ts",
+    "seed:order-path:local": "./scripts/local/order-path-local.sh seed",
+    "order:place:local": "./scripts/local/order-path-local.sh order",
     "sync:medusa-keys:local": "./scripts/local/sync-medusa-keys.sh"
   },
   "dependencies": {

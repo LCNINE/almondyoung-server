@@ -15,8 +15,8 @@ export const ORDER_PATH_PRICE = 12000;
 /** 부천 가용 재고를 이 수량까지 채운다. */
 export const STOCK_TARGET = 100;
 
-/** 부천 창고 안의 시드 전용 위치 코드. */
-export const ORDER_PATH_LOCATION_CODE = 'E2E-ORDER-01';
+/** 부천 창고 안의 시드 전용 위치 — 열 `E2E`·랙 1 의 표준 빈 1칸(코드는 core 가 `열-랙-빈` 으로 만든다). */
+export const ORDER_PATH_LOCATION = { columnName: 'E2E', rackNumber: 1 } as const;
 
 /** SKU 를 다시 찾는 고정 보조 바코드. SKU 코드(P00001…)는 자동 발급이라 열쇠가 못 된다. */
 export function skuBarcodeFor(productName: string, option: string | null): string {
