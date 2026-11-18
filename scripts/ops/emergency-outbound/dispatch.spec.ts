@@ -1,6 +1,6 @@
 import { CoreApiError, LocationOutboundState } from './core-api';
 import { FakeCore } from './__support__/fake-core';
-import { FORCE_REASON, runDispatch } from './dispatch';
+import { DispatchReport, finishedState, FORCE_REASON, runDispatch } from './dispatch';
 import { CsvRow, toCsv } from './outputs';
 import { idemKey } from './prepare';
 import { RunBox, RunState } from './run-state';
@@ -347,5 +347,34 @@ describe('runDispatch', () => {
       code: 'SHIPMENT_NOT_DISPATCHABLE',
     });
     expect(core.shipments.get('s1')?.status).toBe('canceled');
+  });
+});
+
+describe('finishedState', () => {
+  const now = new Date('2026-11-19T10:00:00.000Z');
+  const report = (...outcomes: DispatchReport['rows'][number]['outcome'][]): DispatchReport => ({
+    rows: outcomes.map((outcome, i) => ({ shipmentId: `s${i}`, route: 'location', outcome })),
+    missing: ['s-left'],
+    duplicates: [],
+  });
+
+  it('finishes an applied run with only dispatched/already rows (missing boxes are fine)', () => {
+    expect(finishedState(state(box('s0'), box('s1')), report('dispatched', 'already'), true, now)?.finishedAt).toBe(
+      '2026-11-19T10:00:00.000Z',
+    );
+  });
+
+  it('does not finish a dry-run', () => {
+    expect(finishedState(state(box('s0')), report('would-dispatch'), false, now)).toBeNull();
+  });
+
+  it('does not finish while a row is rejected or mismatched', () => {
+    expect(finishedState(state(box('s0'), box('s1')), report('dispatched', 'rejected'), true, now)).toBeNull();
+    expect(finishedState(state(box('s0'), box('s1')), report('dispatched', 'mismatch'), true, now)).toBeNull();
+  });
+
+  it('keeps the first finish time on a rerun', () => {
+    const done = { ...state(box('s0')), finishedAt: '2026-11-18T10:00:00.000Z' };
+    expect(finishedState(done, report('already'), true, now)).toBeNull();
   });
 });

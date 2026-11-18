@@ -47,6 +47,18 @@ const LABEL: Record<DispatchOutcome, string> = {
   mismatch: '불일치',
 };
 
+/**
+ * 이 dispatch 로 실행이 끝났으면 `finishedAt` 을 찍은 새 상태, 아니면 null(쓰지 않는다).
+ * 끝남 = `--apply` 이고 거절·불일치가 0 — 남은 줄은 전부 발송(또는 이미 발송)됐고, 목록에서 빠진 상자는 못 나간 상자다.
+ * 끝난 실행의 상자는 다른 실행이 더 가리지 않는다(prepare 의 foreignRuns) — 못 나간 상자는 정식 경로나 새 --run 이 집는다.
+ * 이미 끝난 실행은 다시 찍지 않는다(처음 끝난 시각을 지킨다). 거절·불일치가 남으면 개발자가 닫은 뒤 다시 돌려 끝낸다.
+ */
+export function finishedState(state: RunState, report: DispatchReport, apply: boolean, now: Date): RunState | null {
+  if (!apply || state.finishedAt) return null;
+  if (report.rows.some((r) => r.outcome === 'rejected' || r.outcome === 'mismatch')) return null;
+  return { ...state, finishedAt: now.toISOString() };
+}
+
 export async function runDispatch(
   api: CoreApi,
   opts: { csvText: string; state: RunState; apply: boolean; log: (l: string) => void },

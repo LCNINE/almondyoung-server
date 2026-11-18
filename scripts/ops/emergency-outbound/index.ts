@@ -9,10 +9,10 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { Command, parseArgs, runDir } from './args';
 import { CoreApi, httpCoreApi } from './core-api';
-import { runDispatch } from './dispatch';
+import { finishedState, runDispatch } from './dispatch';
 import { preflightProblems, WAREHOUSE_READ_PERMISSION } from './preflight';
 import { runPrepare } from './prepare';
-import { readRun, RunState } from './run-state';
+import { readRun, RunState, writeRun } from './run-state';
 import { myPermissions, openSession } from './session';
 
 const log = (line: string) => console.log(line);
@@ -29,7 +29,7 @@ async function main(): Promise<number> {
     );
     return 1;
   }
-  return dispatchMain(cmd, state);
+  return dispatchMain(cmd, state, dir);
 }
 
 /** 세션을 열고 사전 점검(권한·낱개 피킹)을 한다. 실패면 null — 아무것도 바꾸지 않았다. */
@@ -68,7 +68,11 @@ async function prepareMain(cmd: Extract<Command, { cmd: 'prepare' }>, dir: strin
   return 0;
 }
 
-async function dispatchMain(cmd: Extract<Command, { cmd: 'dispatch' }>, state: RunState): Promise<number> {
+async function dispatchMain(
+  cmd: Extract<Command, { cmd: 'dispatch' }>,
+  state: RunState,
+  dir: string,
+): Promise<number> {
   const api = await openChecked(cmd, state.warehouseId);
   if (!api) return 1;
   const csvText = readFileSync(resolve(process.cwd(), cmd.csv), 'utf8');
@@ -79,6 +83,13 @@ async function dispatchMain(cmd: Extract<Command, { cmd: 'dispatch' }>, state: R
       `거절 ${count('rejected')} · 불일치 ${count('mismatch')} · 목록에서 빠진 상자 ${r.missing.length}`,
   );
   if (!cmd.apply) log('dry-run 이다 — 아무것도 바꾸지 않았다. 확인했으면 --apply 로 다시 돌린다');
+  const finished = finishedState(state, r, cmd.apply, new Date());
+  if (finished) {
+    writeRun(dir, finished);
+    log(`실행 ${state.run} 을 끝냈다 — 목록에서 빠진 상자는 정식 경로나 새 --run 으로 간다`);
+  } else if (state.finishedAt) {
+    log(`실행 ${state.run} 은 이미 끝났다(${state.finishedAt})`);
+  }
   return count('rejected') + count('mismatch') > 0 ? 2 : 0;
 }
 

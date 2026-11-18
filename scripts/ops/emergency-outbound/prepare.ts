@@ -77,6 +77,9 @@ export async function runPrepare(api: CoreApi, opts: PrepareOptions): Promise<Pr
       `${dir}/run.json 은 실행 ${prev.run}(창고 ${prev.warehouseId})의 것이다 — --run ${run}·창고 ${warehouseId} 와 맞지 않는다`,
     );
   }
+  if (prev?.finishedAt) {
+    throw new Error(`실행 ${run} 은 저녁 dispatch 로 끝났다(${prev.finishedAt}) — 새 --run 으로 시작한다`);
+  }
 
   const foreign = foreignRuns(dir);
   const input = await gather(api, warehouseId);
@@ -143,8 +146,10 @@ export async function runPrepare(api: CoreApi, opts: PrepareOptions): Promise<Pr
 // ── 읽기 ────────────────────────────────────────────────────────────
 
 /**
- * 같은 뿌리(`.scratch/emergency-outbound/`) 아래 다른 실행 폴더의 run.json — 그 실행이 만든 배치와 이어받은 상자.
+ * 같은 뿌리(`.scratch/emergency-outbound/`) 아래 아직 안 끝난 다른 실행 폴더의 run.json — 그 실행이 만든 배치와
+ * 그 실행이 맡은 상자 전부(배치에서 빠져 출고 준비 목록으로 돌아온 상자도 그 실행 몫이다).
  * 같은 날 두 번째 실행이 아침 실행의 못 보낸 상자를 다시 집으면 라벨이 두 장, 피킹 리스트가 두 벌이 된다.
+ * 저녁 dispatch 가 끝난 실행(`finishedAt`)은 건너뛴다 — 그 실행이 못 보낸 상자는 다음 실행이나 정식 경로 몫이다.
  * 못 읽는 run.json 이 있으면 멈춘다 — 그 실행의 상자를 가릴 수 없다.
  */
 function foreignRuns(dir: string): { batches: Map<string, string>; shipments: Map<string, string> } {
@@ -162,12 +167,12 @@ function foreignRuns(dir: string): { batches: Map<string, string>; shipments: Ma
     } catch (error) {
       throw new Error(
         `다른 실행 폴더 ${name} 의 run.json 을 못 읽었다(${error instanceof Error ? error.message : String(error)}) — ` +
-          '그 실행의 상자를 가릴 수 없어 멈춘다. 되돌리거나, 그 실행이 끝났으면 폴더를 .scratch/emergency-outbound 밖으로 옮긴다',
+          '그 실행의 상자를 가릴 수 없어 멈춘다. 손으로 고쳤다면 되돌린다. 못 되돌리면 폴더는 그대로 두고 개발자에게',
       );
     }
-    if (!state) continue;
+    if (!state || state.finishedAt) continue;
     if (state.batchId) batches.set(state.batchId, state.run);
-    for (const b of state.boxes) if (b.batchId !== state.batchId) shipments.set(b.shipmentId, state.run);
+    for (const b of state.boxes) shipments.set(b.shipmentId, state.run);
   }
   return { batches, shipments };
 }

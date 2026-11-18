@@ -392,6 +392,54 @@ describe('runPrepare', () => {
     expect(added.map((c) => c.args[1])).toEqual([['s9']]);
   });
 
+  it('leaves an earlier run box that went back to the preparation list to that run', async () => {
+    const { root, opts } = setup();
+    const core = drafts(new FakeCore(), 's1', 's2');
+    const morning = '20261119-0700';
+    await runPrepare(core, { ...opts(true), run: morning, dir: join(root, morning) });
+    // 앱/화면이 아침 배치에서 s1 을 뺐다 — s1 은 계획된 상자로 출고 준비(resume)에 돌아온다
+    await core.excludeFromBatch('b', 's1', '화면에서 뺌', 'app:exclude:s1');
+
+    const report = await runPrepare(core, opts(false));
+
+    expect(report.targets).toEqual([]);
+    expect(report.skipped).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ shipmentId: 's1', reason: `앞 실행 ${morning} 의 상자 — 그 실행의 dispatch 로` }),
+      ]),
+    );
+  });
+
+  it('frees the boxes of an earlier run once its dispatch has finished', async () => {
+    const { root, opts } = setup();
+    const core = drafts(new FakeCore(), 's1');
+    const morning = '20261119-0700';
+    const morningDir = join(root, morning);
+    await runPrepare(core, { ...opts(true), run: morning, dir: morningDir });
+    await core.excludeFromBatch('b', 's1', '화면에서 뺌', 'app:exclude:s1');
+    const done = readRun(morningDir);
+    if (!done) throw new Error('morning run.json missing');
+    writeRun(morningDir, { ...done, finishedAt: '2026-11-19T10:00:00.000Z' });
+
+    const report = await runPrepare(core, opts(false));
+
+    expect(report.targets).toEqual([{ shipmentId: 's1', from: 'planned' }]);
+  });
+
+  it('refuses to resume a run whose dispatch has finished', async () => {
+    const { dir, opts } = setup();
+    writeRun(dir, {
+      run: RUN,
+      warehouseId: WH,
+      batchId: null,
+      boxes: [],
+      excluded: [],
+      finishedAt: '2026-11-19T10:00:00.000Z',
+    });
+
+    await expect(runPrepare(new FakeCore(), opts(false))).rejects.toThrow(/새 --run/);
+  });
+
   it('stops when another run folder has a broken run.json', async () => {
     const { root, opts } = setup();
     mkdirSync(join(root, '20261119-0700'));

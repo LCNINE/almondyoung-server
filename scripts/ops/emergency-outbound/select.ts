@@ -22,9 +22,10 @@ export interface SelectInput {
   /** 이번 실행이 앞서 만든 배치 — 시작 전이어도 이어간다(prepare 가 시작한다). */
   ownBatchId?: string;
   /**
-   * 같은 PC 의 다른 비상 출고 실행(`.scratch/emergency-outbound/<다른 실행>/run.json`)이 가진 것 — id → 그 실행 id.
-   * `batches` 는 그 실행이 만든 배치(안의 상자 전부), `shipments` 는 그 실행이 다른 배치에서 이어받은 상자.
+   * 같은 PC 의 아직 안 끝난 다른 비상 출고 실행(`.scratch/emergency-outbound/<다른 실행>/run.json`)이 가진 것 — id → 그 실행 id.
+   * `batches` 는 그 실행이 만든 배치(안의 상자 전부), `shipments` 는 그 실행이 맡은 상자 전부.
    * 그 상자의 라벨·피킹 리스트·발송은 그 실행 몫이다 — 여기서 다시 집으면 라벨이 두 장, 피킹이 두 번 된다.
+   * 배치에서 빠져 출고 준비 목록으로 돌아와도 마찬가지다(라벨은 이미 그 실행이 찍었다).
    */
   foreign?: { batches: ReadonlyMap<string, string>; shipments: ReadonlyMap<string, string> };
 }
@@ -88,6 +89,11 @@ export function selectTargets(input: SelectInput): { targets: Target[]; skipped:
     for (const s of list) {
       if (seen.has(s.shipmentId)) continue;
       seen.add(s.shipmentId);
+      const foreignRun = input.foreign?.shipments.get(s.shipmentId);
+      if (foreignRun !== undefined) {
+        skipped.push({ shipmentId: s.shipmentId, reason: foreignReason(foreignRun), orderNos: s.orderNos });
+        continue;
+      }
       targets.push({ shipmentId: s.shipmentId, from });
     }
   };

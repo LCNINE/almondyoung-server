@@ -25,6 +25,11 @@ export interface RunState {
   batchId: string | null;
   boxes: RunBox[];
   excluded: Skipped[];
+  /**
+   * 저녁 dispatch --apply 가 거절·불일치 없이 끝난 시각(ISO). 있으면 이 실행은 끝났다 — 다른 실행이 이 실행의 상자를
+   * 더는 가리지 않고(못 보낸 상자는 정식 경로나 새 --run 으로 간다), 같은 --run 의 prepare 는 거절한다.
+   */
+  finishedAt?: string;
 }
 
 const FILE = 'run.json';
@@ -81,6 +86,7 @@ function isRunState(v: unknown): v is RunState {
     Array.isArray(v.boxes) &&
     v.boxes.every(isRunBox) &&
     Array.isArray(v.excluded) &&
-    v.excluded.every(isSkipped)
+    v.excluded.every(isSkipped) &&
+    (v.finishedAt === undefined || typeof v.finishedAt === 'string')
   );
 }
