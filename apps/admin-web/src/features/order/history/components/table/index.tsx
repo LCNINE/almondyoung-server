@@ -145,7 +145,7 @@ function OrderDetailPanel({ lines, onClose }: { lines: OrderLineRow[]; onClose: 
   return (
     <Sheet open={!!o} modal={false} onOpenChange={(open) => !open && onClose()}>
       <SheetContent
-        className="w-[480px] gap-0 sm:max-w-[480px]"
+        className="w-full gap-0 sm:w-[480px] sm:max-w-[480px]"
         onInteractOutside={(e) => e.preventDefault()}
       >
         {o && (
