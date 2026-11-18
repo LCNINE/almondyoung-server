@@ -2,9 +2,11 @@
  * 비상 출고 로컬 확인 (#1249) — 비상 경로로 나간 상자가 정식(앱) 경로와 같은 기록을 남겼는지 본다.
  *
  *   npx tsx scripts/ops/emergency-outbound/local/compare.ts --normal <상자 id,…> --emergency <상자 id,…>
+ *     [--allow-empty-outbox] [--allow-no-medusa]
  *
  * 상자마다 로컬 core DB 와 로컬 Medusa DB 에서 사실을 모아(`collect`, 읽기 전용) id·시각·작업자·forced 를
- * 뺀 모양(`shapeOf`)으로 바꾸고, 정식 상자 첫째를 기준으로 «정식 대비 다른 칸»을 찍는다. 비어 있어야 통과(종료 0).
+ * 뺀 모양(`shapeOf`)으로 바꾼다. 모든 상자가 발송 상자 조건(`absoluteProblems`)을 채우고, 정식 상자 첫째 대비
+ * «다른 칸»이 비어 있어야 통과(종료 0).
  *
  * DB 주소는 `apps/core/.env`·`apps/medusa/.env` 의 `DATABASE_URL`(셸의 `CORE_DATABASE_URL`·`MEDUSA_DATABASE_URL`
  * 이 이긴다). localhost/127.0.0.1 이 아니면 거절한다. 연결은 `default_transaction_read_only` 로 연다.
@@ -65,6 +67,7 @@ export interface ComparableShape {
   waybill: string;
   ship: { kinds: string[]; qtyMatchesLines: boolean };
   foi: { shippedMatchesLines: boolean; statuses: string[] };
+  /** `topic:eventType ×개수` — 종류별 개수까지 비교한다(multiset). 한 번 나갈 것이 두 번 나가도 드러나게 */
   outbox: string[];
   medusa: {
     linked: boolean;
@@ -80,6 +83,13 @@ export interface ComparableShape {
 }
 
 const uniqSorted = (xs: string[]): string[] => [...new Set(xs)].sort();
+
+/** 개수를 붙인 정렬 목록 — 집합이 아니라 multiset 으로 비교하려고 */
+function countedSorted(xs: string[]): string[] {
+  const counts = new Map<string, number>();
+  for (const x of xs) counts.set(x, (counts.get(x) ?? 0) + 1);
+  return [...counts].map(([k, n]) => `${k} ×${n}`).sort();
+}
 
 function sumBy<T>(rows: T[], key: (r: T) => string, qty: (r: T) => number): Map<string, number> {
   const m = new Map<string, number>();
@@ -151,7 +161,7 @@ export function shapeOf(f: ShipmentFacts): ComparableShape {
       shippedMatchesLines: lineQtyByFoi.size > 0 && foiShipped,
       statuses: uniqSorted([...lineQtyByFoi.keys()].map((id) => foiById.get(id)?.status ?? 'missing')),
     },
-    outbox: uniqSorted(f.outbox.map((o) => `${o.topic}:${o.eventType}`)),
+    outbox: countedSorted(f.outbox.map((o) => `${o.topic}:${o.eventType}`)),
     medusa: {
       linked: m !== null,
       fulfillments: live.length,
@@ -171,6 +181,35 @@ export function shapeOf(f: ShipmentFacts): ComparableShape {
       ),
     },
   };
+}
+
+export interface AbsoluteCheckOptions {
+  /** 정리 cron(02:00 KST)이 이미 PUBLISHED 행을 지웠을 때만 */
+  allowEmptyOutbox?: boolean;
+  /** channel-adapter 를 안 띄운 실측일 때만 */
+  allowNoMedusa?: boolean;
+}
+
+/**
+ * 상자 하나가 «발송된 상자»로서 갖춰야 할 것. 상대 비교만으로는 양쪽이 같이 비거나 같이 틀려도 통과하므로
+ * 정식 상자에도 비상 상자에도 똑같이 건다. 빈 배열이면 통과
+ */
+export function absoluteProblems(shape: ComparableShape, opts: AbsoluteCheckOptions = {}): string[] {
+  const problems: string[] = [];
+  if (shape.status !== 'shipped') problems.push(`상자 status 가 ${shape.status} 다 — shipped 여야 한다`);
+  if (!shape.ship.qtyMatchesLines) problems.push('SHIP 원장 수량이 라인 수량과 안 맞는다(행이 없거나 모자라다)');
+  if (!shape.foi.shippedMatchesLines) problems.push('FOI shipped_qty 가 라인 수량과 안 맞는다');
+  if (shape.waybill === 'none') problems.push('발송한 시도에 송장(waybill)이 없다');
+  if (shape.outbox.length === 0 && !opts.allowEmptyOutbox) {
+    problems.push('outbox 행이 없다 — 정리 cron 이 이미 지웠으면 --allow-empty-outbox');
+  }
+  if (shape.medusa.linked && !opts.allowNoMedusa && shape.medusa.attemptTracking !== 'matches-waybill') {
+    problems.push(
+      `Medusa 출고 투영이 없거나 송장번호가 상자 송장과 다르다(${shape.medusa.attemptTracking}) — ` +
+        'channel-adapter 를 안 띄웠으면 --allow-no-medusa',
+    );
+  }
+  return problems;
 }
 
 export interface ShapeDiff {
@@ -211,16 +250,35 @@ function envUrl(override: string | undefined, envFile: string): string {
   return url;
 }
 
-function assertLocal(url: string, label: string): void {
-  const host = new URL(url).hostname;
-  if (host !== 'localhost' && host !== '127.0.0.1')
+// postgres.js 는 URL 의 검색 매개변수를 연결 옵션으로 읽는다 — `…@localhost/db?host=원격` 이 호스트 검사를 비켜 가지 못하게
+const REDIRECTING_PARAMS = ['host', 'hostaddr', 'port'] as const;
+
+export interface LocalTarget {
+  host: string;
+  port: number;
+}
+
+/** 로컬 postgres 만 받는다. 연결은 돌려준 host·port 를 옵션으로 명시해 연다(URL 이 아니라 이 값이 이긴다) */
+export function assertLocal(url: string, label: string): LocalTarget {
+  const parsed = new URL(url);
+  const host = parsed.hostname;
+  if (host !== 'localhost' && host !== '127.0.0.1') {
     throw new Error(`로컬 전용이다. ${label} DB 가 ${host} 를 가리킨다`);
+  }
+  for (const param of REDIRECTING_PARAMS) {
+    if (parsed.searchParams.has(param)) {
+      throw new Error(`로컬 전용이다. ${label} DB 주소에 ?${param}= 가 있다 — 연결 대상을 바꿀 수 있어 거절한다`);
+    }
+  }
+  return { host, port: parsed.port ? Number(parsed.port) : 5432 };
 }
 
 type Sql = postgres.Sql;
 
-function open(url: string): Sql {
+function open(url: string, target: LocalTarget): Sql {
   return postgres(url, {
+    host: target.host,
+    port: target.port,
     max: 1,
     onnotice: () => undefined,
     connection: { application_name: 'emergency-outbound-compare', default_transaction_read_only: true },
@@ -449,11 +507,15 @@ async function main(): Promise<number> {
 
   const coreUrl = envUrl(process.env.CORE_DATABASE_URL, 'apps/core/.env');
   const medusaUrl = envUrl(process.env.MEDUSA_DATABASE_URL, 'apps/medusa/.env');
-  assertLocal(coreUrl, 'core');
-  assertLocal(medusaUrl, 'Medusa');
+  const coreTarget = assertLocal(coreUrl, 'core');
+  const medusaTarget = assertLocal(medusaUrl, 'Medusa');
+  const checks: AbsoluteCheckOptions = {
+    allowEmptyOutbox: argv.includes('--allow-empty-outbox'),
+    allowNoMedusa: argv.includes('--allow-no-medusa'),
+  };
 
-  const core = open(coreUrl);
-  const medusa = open(medusaUrl);
+  const core = open(coreUrl, coreTarget);
+  const medusa = open(medusaUrl, medusaTarget);
   try {
     const shapes = new Map<string, ComparableShape>();
     for (const id of [...normalIds, ...emergencyIds]) {
@@ -461,14 +523,19 @@ async function main(): Promise<number> {
       shapes.set(id, shape);
       console.log(`\n== 상자 ${id} (${normalIds.includes(id) ? '정식' : '비상'})`);
       console.log(JSON.stringify(shape, null, 2));
-      // 양쪽이 같이 비면 «다른 칸 0» 이 아무것도 증명하지 않는다 — 통과와 따로 알린다
-      if (shape.outbox.length === 0) {
-        console.log('  ! outbox 행이 없다 — 02:00 KST 정리 cron 이 지웠거나 안 나갔다. 같은 날 다시 잰다');
-      }
-      if (shape.medusa.linked && shape.medusa.attempts === 0) {
-        console.log('  ! Medusa 출고 투영이 없다 — channel-adapter 가 떠 있었는지 본다');
-      }
     }
+
+    // 상대 비교만으로는 양쪽이 같이 비거나 같이 틀려도 «다른 칸 0» 이다 — 모든 상자에 절대 조건을 먼저 건다
+    let problems = 0;
+    console.log('');
+    for (const [id, shape] of shapes) {
+      const found = absoluteProblems(shape, checks);
+      problems += found.length;
+      console.log(`발송 상자 조건 (${id}): ${found.length === 0 ? '충족' : `${found.length}개 어긋남`}`);
+      for (const p of found) console.log(`  - ${p}`);
+    }
+    if (checks.allowEmptyOutbox) console.log('  (--allow-empty-outbox: outbox 0행을 허용했다)');
+    if (checks.allowNoMedusa) console.log('  (--allow-no-medusa: Medusa 투영을 안 봤다)');
 
     const reference = shapes.get(normalIds[0])!;
     let differing = 0;
@@ -483,8 +550,9 @@ async function main(): Promise<number> {
       differing += diffs.length;
       printDiffs(`정식 대비 다른 칸 (${id})`, diffs);
     }
-    console.log(differing === 0 ? '\n통과 — 다른 칸 없음' : `\n실패 — 다른 칸 ${differing}`);
-    return differing === 0 ? 0 : 1;
+    const ok = differing === 0 && problems === 0;
+    console.log(ok ? '\n통과 — 조건 충족, 다른 칸 없음' : `\n실패 — 조건 어긋남 ${problems} · 다른 칸 ${differing}`);
+    return ok ? 0 : 1;
   } finally {
     await core.end();
     await medusa.end();
