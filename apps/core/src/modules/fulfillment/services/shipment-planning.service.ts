@@ -71,6 +71,7 @@ import { shrinkDraftLines } from './draft-line-shrink';
 import { shipmentOwnerOf, warehouseIdOf } from '../shipment/shipment-owner';
 import { missingRecipientFields } from './recipient-completeness';
 import { isUntrustedExternalLine } from './external-line-identity';
+import { loadSellmateShipmentIds } from './sellmate-handed-over-shipments';
 import {
   classifyOperationReason,
   resolveOperationReason,
@@ -583,6 +584,7 @@ export class ShipmentPlanningService {
         if (aggregate.shipment.status !== 'draft') {
           throw this.conflict('SHIPMENT_NOT_DRAFT', `Shipment ${shipmentId} must be Draft to plan`);
         }
+        await this.assertNotHandedOverToSellmate(shipmentId, tx);
         await this.assertNoCustodyOrActiveWork(aggregate, tx);
         await this.assertNoActiveWaybill(shipmentId, tx);
         this.assertRecipientComplete(aggregate.shipment.recipientSnapshot);
@@ -1980,6 +1982,16 @@ export class ShipmentPlanningService {
       throw this.conflict(
         'SHIPMENT_NOT_FULLY_RESERVED',
         `Under-reserved lines: ${incomplete.map((line) => line.id).join(',')}`,
+      );
+    }
+  }
+
+  // 드레인 중 셀메이트가 내보내는 주문의 상자는 앱이 확정하지 않는다 — 이중 출고(#1412)
+  private async assertNotHandedOverToSellmate(shipmentId: string, tx: DbTx): Promise<void> {
+    if ((await loadSellmateShipmentIds(tx, [shipmentId])).has(shipmentId)) {
+      throw this.conflict(
+        'SHIPMENT_HANDED_OVER_TO_SELLMATE',
+        `Shipment ${shipmentId} belongs to an order Sellmate ships`,
       );
     }
   }

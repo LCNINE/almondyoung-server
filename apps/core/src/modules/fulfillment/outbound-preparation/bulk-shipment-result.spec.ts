@@ -52,6 +52,7 @@ describe('runPerShipment', () => {
       'SHIPMENT_CHANNEL_LINE_IDENTITY_UNTRUSTED',
       '쇼핑몰 품목 번호가 없거나 맞지 않는 주문이에요 — 다시 시도해도 같으니 담당자에게 알려 주세요',
     ],
+    ['SHIPMENT_HANDED_OVER_TO_SELLMATE', '셀메이트가 내보내는 주문이에요'],
     ['toString', '처리하지 못했어요'],
   ])('uses the specified message for %s', async (code, message) => {
     const result = await runPerShipment(['s1'], async () => {

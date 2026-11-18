@@ -351,6 +351,45 @@ describeIfDb('OutboundPreparationReader (DB integration)', () => {
     });
   });
 
+  it('셀메이트 상자는 계획 확정을 409 로 거절하고 draft 로 남긴다', async () => {
+    await inRollbackTx(db, async (tx) => {
+      const base = await consolidationBase(tx);
+      const source = await createConsolidationSource(tx, wired, base, { quantity: 1, customerId: randomUUID() });
+      const actor = { id: randomUUID(), roles: ['master'] };
+
+      await tx
+        .update(wmsTables.deliveryProfiles)
+        .set({
+          senderSnapshot: { name: 'Sender' },
+          originAddressSnapshot: { address: 'Origin' },
+          returnAddressSnapshot: { address: 'Return' },
+          carrierAccountRef: 'carrier-account-1',
+        })
+        .where(eq(wmsTables.deliveryProfiles.id, base.profileId));
+      await seedHandedOverOrder(tx, source.salesOrderId);
+
+      await expect(
+        planning.plan(
+          source.shipment.id,
+          {
+            shippingProfileId: base.profileId,
+            expectedManifestVersion: source.shipment.manifestVersion,
+            expectedReservationVersion: source.shipment.reservationVersion,
+          },
+          randomUUID(),
+          actor,
+          tx,
+        ),
+      ).rejects.toMatchObject({
+        response: expect.objectContaining({ code: 'SHIPMENT_HANDED_OVER_TO_SELLMATE' }),
+      });
+
+      const [after] = await tx.select().from(wmsTables.shipments).where(eq(wmsTables.shipments.id, source.shipment.id));
+
+      expect(after.status).toBe('draft');
+    });
+  });
+
   it('대상 상자가 없어도 빈 버킷 6개와 전 창고 매칭 대기 건수를 반환한다', async () => {
     await inRollbackTx(db, async (tx) => {
       const [backlog] = await tx
