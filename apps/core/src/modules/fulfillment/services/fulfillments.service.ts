@@ -16,6 +16,7 @@ import { CreateFulfillmentOrderDto } from '../dto/create-fulfillment-order.dto';
 import { FULFILLMENT_STREAM } from '@packages/event-contracts/streams';
 import { outbox_events } from '@app/events';
 import { FulfillmentWorkflowGate } from './fulfillment-workflow-gate.service';
+import { fulfillmentModeOfHolders } from './fulfillment-mode';
 import { ShipmentReservationService } from './shipment-reservation.service';
 import { FulfillmentProgressService } from './fulfillment-progress.service';
 import { selectEntrancePassword } from './entrance-password.selection';
@@ -227,12 +228,23 @@ export class FulfillmentsService {
           id: wmsTables.skus.id,
           stockType: wmsTables.skus.stockType,
           deliveryProfileId: wmsTables.skus.deliveryProfileId,
+          holderId: wmsTables.skus.holderId,
+          isOurAsset: wmsTables.holders.isOurAsset,
         })
         .from(wmsTables.skus)
+        .innerJoin(wmsTables.holders, eq(wmsTables.holders.id, wmsTables.skus.holderId))
         .where(inArray(wmsTables.skus.id, uniqueSkuIds));
       // 항목을 SKU 재고 유형으로 가른다(K3 스펙 §4.3-1) — 직배분은 입점사마다 draft 상자 하나(예약 없음), 창고분은 창고 draft 상자.
       const dropShippedSkuIds = new Set(skuRows.filter((row) => row.stockType === 'drop_shipped').map((row) => row.id));
       const warehouseSkuRows = skuRows.filter((row) => !dropShippedSkuIds.has(row.id));
+      const byHolder = fulfillmentModeOfHolders(warehouseSkuRows);
+      if ('mixed' in byHolder) {
+        throw new BadRequestException({
+          code: 'FULFILLMENT_HOLDERS_MIXED',
+          message:
+            '자사 상품과 위탁 업체 상품(또는 서로 다른 위탁 업체 상품)이 한 주문에 섞여 있어 출고주문을 만들 수 없습니다.',
+        });
+      }
       // 입점사를 못 정하면 fail-closed(N3) — 위에서 굳힌 라인 구성도 호출자의 트랜잭션(백로그 워커의 savepoint)과 함께 되돌아간다
       const supplierOfSku = await directSuppliersOfSkus(trx, [...dropShippedSkuIds]);
       // 창고 몫이 없으면 창고도 없다(N2) — FO warehouse_id NULL. 창고 필수·판매 창고 검증은 창고 몫이 있을 때만.
@@ -244,8 +256,8 @@ export class FulfillmentsService {
         .values({
           salesOrderId: dto.salesOrderId ?? null,
           warehouseId,
-          ownerId: dto.ownerId ?? null,
-          fulfillmentMode: dto.fulfillmentMode ?? 'in_house',
+          ownerId: dto.ownerId ?? byHolder.ownerId,
+          fulfillmentMode: dto.fulfillmentMode ?? byHolder.fulfillmentMode,
           priority: dto.priority ?? 'normal',
           status: 'created',
           totalItems: itemsToInsert.length,
