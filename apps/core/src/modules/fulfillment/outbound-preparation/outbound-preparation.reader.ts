@@ -21,10 +21,12 @@ import { isUntrustedExternalLine } from '../services/external-line-identity';
 import { loadSellmateShipmentIds } from '../services/sellmate-handed-over-shipments';
 import { waybillFailureText } from '../waybill/waybill-failure-text';
 import { loadShortPickReturns } from './short-pick-returns';
+import { OUR_HOLDER_KEY, preparationOwnerOf } from './preparation-owner';
 import {
   OutboundPreparationQueryDto,
   OutboundPreparationSummaryDto,
   PreparationBucketDto,
+  PreparationHolderDto,
 } from '../dto/outbound-preparation.dto';
 
 type PreparationLineQuantity = PreparationFacts['lines'][number] & { name: string };
@@ -45,7 +47,7 @@ export class OutboundPreparationReader {
 
   async summarize(
     warehouseId: string,
-    page?: Pick<OutboundPreparationQueryDto, 'bucket' | 'offset'>,
+    page?: Pick<OutboundPreparationQueryDto, 'bucket' | 'offset' | 'holders'>,
     tx?: DbTx,
   ): Promise<OutboundPreparationSummaryDto> {
     return this.dbService.run(async (trx) => {
@@ -57,6 +59,8 @@ export class OutboundPreparationReader {
         shortPickCount: 0,
         shipments: [],
       }));
+      const holders = new Map<string, PreparationHolderDto>();
+      const holderFilter = page?.holders?.length ? new Set(page.holders) : null;
       const [backlog] = await trx
         .select({ count: count() })
         .from(wmsTables.fulfillmentOrderCreationBacklogs)
@@ -91,7 +95,7 @@ export class OutboundPreparationReader {
       ];
 
       if (ids.length === 0) {
-        return { warehouseId, buckets, awaitingMatchingCount: backlog.count };
+        return { warehouseId, buckets, awaitingMatchingCount: backlog.count, holders: [] };
       }
 
       const lines = await loadShipmentLines(trx, ids);
@@ -150,6 +154,16 @@ export class OutboundPreparationReader {
           continue;
         }
 
+        const owner = preparationOwnerOf(shipmentLines);
+        const holder = holders.get(owner.key) ?? { key: owner.key, name: owner.name, count: 0 };
+
+        holder.count++;
+        holders.set(owner.key, holder);
+
+        if (holderFilter && !holderFilter.has(owner.key)) {
+          continue;
+        }
+
         const single = isSingleItem(quantities);
         const shortPick = shortPicks.get(shipment.id) ?? null;
 
@@ -197,12 +211,21 @@ export class OutboundPreparationReader {
           })),
           split: splits.get(shipment.id) ?? null,
           shortPick,
+          owner: owner.key === OUR_HOLDER_KEY ? null : { id: owner.key, name: owner.name },
         });
       }
 
       await this.fillWaybillFailures(trx, buckets.find((entry) => entry.bucket === 'resume')?.shipments ?? []);
 
-      return { warehouseId, buckets, awaitingMatchingCount: backlog.count };
+      return {
+        warehouseId,
+        buckets,
+        awaitingMatchingCount: backlog.count,
+        // 자사를 맨 앞에, 업체는 이름순
+        holders: [...holders.values()].sort(
+          (a, b) => Number(b.key === OUR_HOLDER_KEY) - Number(a.key === OUR_HOLDER_KEY) || a.name.localeCompare(b.name),
+        ),
+      };
     }, tx);
   }
 

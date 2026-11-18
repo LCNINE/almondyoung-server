@@ -179,6 +179,77 @@ describe('OutboundPreparationReader consolidation reservations', () => {
       { name: '상품 B', qty: 1, reservedQty: 1 },
     ]);
   });
+  it('위탁 업체 상자에 화주를 달고, 화주 필터로 거르며, 화주별 개수는 거르기 전 전부를 센다', async () => {
+    const recipientSnapshot = {
+      recipientName: '테스트',
+      phone: '01000000000',
+      postalCode: '00000',
+      roadAddress: '테스트 주소',
+    };
+    const ids = ['ours', 'vendor'];
+    const mockSelects = () =>
+      jest
+        .fn()
+        .mockReturnValueOnce(query([{ count: 0 }]))
+        .mockReturnValueOnce(query(ids.map((id) => ({ id, status: 'draft', recipientSnapshot }))))
+        .mockReturnValueOnce(query(ids.map((id) => ({ id: `${id}-line`, shipmentId: id, qty: 1, name: id }))))
+        .mockReturnValueOnce(query(ids.map((id) => ({ lineId: `${id}-line`, quantity: 1 }))))
+        .mockReturnValueOnce(query([]))
+        .mockReturnValueOnce(query([]));
+    const db = { select: mockSelects() };
+
+    jest.mocked(loadShipmentLines).mockResolvedValue(
+      ids.map((shipmentId) => ({
+        shipmentId,
+        qty: 1,
+        skuProfileId: 'profile',
+        skuId: `sku-${shipmentId}`,
+        skuName: shipmentId,
+        fulfillmentMode: shipmentId === 'vendor' ? '3pl' : 'in_house',
+        skuStockType: 'stocked',
+        salesOrderId: `order-${shipmentId}`,
+        customerId: null,
+        customerName: null,
+        customerPhone: null,
+        displayOrderNo: shipmentId,
+        channelOrderId: null,
+        salesChannel: null,
+        salesOrderCreatedAt: null,
+        ownerId: shipmentId === 'vendor' ? 'h1' : null,
+        ownerName: shipmentId === 'vendor' ? '업체' : null,
+      })),
+    );
+
+    const module = await Test.createTestingModule({
+      providers: [
+        OutboundPreparationReader,
+        { provide: DbService, useValue: { run: (fn: (tx: typeof db) => unknown) => fn(db) } },
+        { provide: ConsolidationBoardReader, useValue: { findBoard: async () => ({ groups: [] }) } },
+      ],
+    }).compile();
+    const reader = module.get(OutboundPreparationReader);
+    const shipmentsOf = (summary: Awaited<ReturnType<typeof reader.summarize>>) =>
+      summary.buckets.flatMap((bucket) => bucket.shipments);
+
+    const all = await reader.summarize('warehouse');
+
+    expect(shipmentsOf(all).map((s) => [s.shipmentId, s.owner])).toEqual([
+      ['ours', null],
+      ['vendor', { id: 'h1', name: '업체' }],
+    ]);
+    expect(all.holders).toEqual([
+      { key: 'own', name: '자사', count: 1 },
+      { key: 'h1', name: '업체', count: 1 },
+    ]);
+
+    db.select = mockSelects();
+    const filtered = await reader.summarize('warehouse', { holders: ['h1'] });
+
+    expect(shipmentsOf(filtered).map((s) => s.shipmentId)).toEqual(['vendor']);
+    expect(filtered.buckets.reduce((total, bucket) => total + bucket.count, 0)).toBe(1);
+    expect(filtered.holders).toEqual(all.holders);
+  });
+
   it('pages beyond 200 within a bucket while preserving totals and stable order', async () => {
     const ids = Array.from({ length: 401 }, (_, index) => `s${index}`);
     const select = jest.fn();
