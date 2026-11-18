@@ -49,6 +49,16 @@ export class PreparationShortPickLineDto {
   shortQty: number;
 }
 
+export class PreparationBatchReturnDto {
+  batchNumber: string;
+  exitedAt: string;
+  // 뺀 곳을 고정 사유로 알 수 있을 때만(물류앱 출고 검수·관리자 출고 배치 등). 사람이 적은 사유면 null
+  place: string | null;
+  reason: string;
+  // 살아 있는 송장이 없어 다시 준비하면 새 송장을 받는다
+  needsNewWaybill: boolean;
+}
+
 export class PreparationShipmentDto {
   shipmentId: string;
   orderNos: string[];
@@ -60,6 +70,8 @@ export class PreparationShipmentDto {
   split: ShipmentSplitShareDto | null;
   // 결품으로 배치에서 빠져 돌아온 상자면 모자랐던 상품·자리·수량. 분류 안에서 맨 앞에 온다.
   shortPick: PreparationShortPickLineDto[] | null;
+  // 출고 배치에서 빠져 돌아온 상자면 언제·어느 배치에서·왜 뺐는지. 결품 상자 다음에 온다.
+  batchReturn: PreparationBatchReturnDto | null;
   // 위탁 업체(3pl) 상자면 그 화주. 자사 상자는 null
   owner: PreparationOwnerDto | null;
 }
@@ -82,6 +94,8 @@ export class PreparationBucketDto {
   singleCount: number;
   multiCount: number;
   shortPickCount: number;
+  // 결품 상자를 뺀, 배치에서 빠져 돌아온 상자 수
+  batchReturnCount: number;
   shipments: PreparationShipmentDto[];
 }
 

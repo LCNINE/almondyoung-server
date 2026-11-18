@@ -21,6 +21,7 @@ import { isUntrustedExternalLine } from '../services/external-line-identity';
 import { loadSellmateShipmentIds } from '../services/sellmate-handed-over-shipments';
 import { waybillFailureText } from '../waybill/waybill-failure-text';
 import { loadShortPickReturns } from './short-pick-returns';
+import { batchExitReasonOf, loadNeedsNewWaybill, loadReturnedWorkItems } from './batch-returns';
 import { OUR_HOLDER_KEY, preparationOwnerOf } from './preparation-owner';
 import {
   OutboundPreparationQueryDto,
@@ -57,6 +58,7 @@ export class OutboundPreparationReader {
         singleCount: 0,
         multiCount: 0,
         shortPickCount: 0,
+        batchReturnCount: 0,
         shipments: [],
       }));
       const holders = new Map<string, PreparationHolderDto>();
@@ -87,12 +89,12 @@ export class OutboundPreparationReader {
       );
       const kept = candidates.filter((shipment) => !sellmate.has(shipment.id));
       const ids = kept.map((shipment) => shipment.id);
-      const shortPicks = await loadShortPickReturns(trx, ids);
-      // 결품으로 돌아온 상자는 분류마다 맨 앞에 모은다 — 쪽 나누기 전에 정렬해야 다음 쪽에 묻히지 않는다
-      const shipments = [
-        ...kept.filter((shipment) => shortPicks.has(shipment.id)),
-        ...kept.filter((shipment) => !shortPicks.has(shipment.id)),
-      ];
+      const returned = await loadReturnedWorkItems(trx, ids);
+      const shortPicks = await loadShortPickReturns(trx, returned);
+      const newWaybills = await loadNeedsNewWaybill(trx, [...returned.keys()]);
+      // 분류마다 결품으로 돌아온 상자, 배치에서 빠져 돌아온 상자 순으로 앞에 모은다 — 쪽 나누기 전에 정렬해야 다음 쪽에 묻히지 않는다
+      const rank = (id: string) => (shortPicks.has(id) ? 0 : returned.has(id) ? 1 : 2);
+      const shipments = [0, 1, 2].flatMap((order) => kept.filter((shipment) => rank(shipment.id) === order));
 
       if (ids.length === 0) {
         return { warehouseId, buckets, awaitingMatchingCount: backlog.count, holders: [] };
@@ -166,11 +168,13 @@ export class OutboundPreparationReader {
 
         const single = isSingleItem(quantities);
         const shortPick = shortPicks.get(shipment.id) ?? null;
+        const exit = returned.get(shipment.id);
 
         bucket.count++;
         bucket.singleCount += single ? 1 : 0;
         bucket.multiCount += single ? 0 : 1;
         bucket.shortPickCount += shortPick ? 1 : 0;
+        bucket.batchReturnCount += exit && !shortPick ? 1 : 0;
 
         if (
           (page?.bucket && bucketName !== page.bucket) ||
@@ -211,6 +215,14 @@ export class OutboundPreparationReader {
           })),
           split: splits.get(shipment.id) ?? null,
           shortPick,
+          batchReturn: exit
+            ? {
+                batchNumber: exit.batchNumber,
+                exitedAt: exit.exitedAt.toISOString(),
+                ...batchExitReasonOf(exit.exclusionReason),
+                needsNewWaybill: newWaybills.has(shipment.id),
+              }
+            : null,
           owner: owner.key === OUR_HOLDER_KEY ? null : { id: owner.key, name: owner.name },
         });
       }

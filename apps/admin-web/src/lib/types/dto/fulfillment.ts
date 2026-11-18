@@ -1051,8 +1051,20 @@ export interface PreparationShipmentDto {
   split?: ShipmentSplitShare | null;
   // 결품으로 배치에서 빠져 돌아온 상자. 서버가 분류마다 맨 앞에 모아 준다.
   shortPick?: PreparationShortPickLine[] | null;
+  // 출고 배치에서 빠져 돌아온 상자. 결품 상자 다음에 모아 준다.
+  batchReturn?: PreparationBatchReturn | null;
   // 위탁 업체(3pl) 상자면 그 화주. 자사 상자는 null
   owner?: { id: string; name: string } | null;
+}
+
+export interface PreparationBatchReturn {
+  batchNumber: string;
+  exitedAt: string;
+  // 뺀 곳을 알 수 있을 때만(물류앱 출고 검수 등)
+  place: string | null;
+  reason: string;
+  // 다시 준비하면 새 송장을 받는다
+  needsNewWaybill: boolean;
 }
 
 export interface PreparationHolder {
@@ -1074,6 +1086,7 @@ export interface PreparationBucketDto {
   singleCount: number;
   multiCount: number;
   shortPickCount?: number;
+  batchReturnCount?: number;
   shipments: PreparationShipmentDto[];
 }
 

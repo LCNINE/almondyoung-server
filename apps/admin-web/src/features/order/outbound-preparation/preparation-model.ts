@@ -1,6 +1,7 @@
 import type {
   OutboundPreparationSummary,
   PlannedShipment,
+  PreparationBatchReturn,
   PreparationBucket,
   PreparationShipmentDto,
   PreparationShortPickLine,
@@ -24,6 +25,77 @@ export function shortPickText(lines: PreparationShortPickLine[]): string {
       (line) => `${line.name} ${line.shortQty}개 모자람 (${line.locationCode})`
     )
     .join(', ')}`;
+}
+
+const KST_MINUTE = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'Asia/Seoul',
+  month: 'numeric',
+  day: 'numeric',
+  hour: '2-digit',
+  minute: '2-digit',
+  hourCycle: 'h23',
+});
+
+function kstMinuteText(iso: string): string {
+  const parts = Object.fromEntries(
+    KST_MINUTE.formatToParts(new Date(iso)).map((part) => [
+      part.type,
+      part.value,
+    ])
+  );
+
+  return `${parts.month}월 ${parts.day}일 ${parts.hour}:${parts.minute}`;
+}
+
+export type ShipmentGroup = 'short_pick' | 'batch_return' | 'other';
+
+export function shipmentGroupOf(
+  shipment: Pick<PreparationShipmentDto, 'shortPick' | 'batchReturn'>
+): ShipmentGroup {
+  if (shipment.shortPick) {
+    return 'short_pick';
+  }
+
+  return shipment.batchReturn ? 'batch_return' : 'other';
+}
+
+// 언제·어느 배치에서·어디서 뺐는지. 사유는 따로 보인다.
+export function batchReturnText(batchReturn: PreparationBatchReturn): string {
+  return [
+    kstMinuteText(batchReturn.exitedAt),
+    `${batchReturn.batchNumber}에서 뺌`,
+    batchReturn.place,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+}
+
+// 배치에서 빠져 돌아온 상자를 이 내역에서 다시 보내려면 무엇을 하면 되는지. 송장 오류처럼
+// 서버가 이미 다음 할 일을 적어 준 상자와 결품 상자는 그 안내를 따른다.
+export function batchReturnNextStep(
+  bucket: PreparationBucket,
+  shipment: Pick<PreparationShipmentDto, 'shortPick' | 'batchReturn' | 'reason'>
+): string | null {
+  if (!shipment.batchReturn || shipment.shortPick || shipment.reason) {
+    return null;
+  }
+
+  switch (bucket) {
+    case 'resume':
+      return shipment.batchReturn.needsNewWaybill
+        ? '«이어서 출고 준비»를 누르면 새 송장을 받아 다시 배치에 담아요'
+        : '«이어서 출고 준비»를 누르면 지금 송장으로 다시 배치에 담아요';
+    case 'ready':
+      return '«출고 준비»를 누르면 다시 배치에 담아요';
+    case 'mergeable':
+      return '같이 보낼 주문과 합치거나 «따로 보내기»로 다시 준비해요';
+    case 'partial':
+      return '재고가 모자라요 — «있는 것만 먼저 보내기»로 나누거나 재고를 채운 뒤 다시 준비해요';
+    case 'unavailable':
+      return '재고가 모자라요 — 재고를 채운 뒤 다시 준비해요';
+    default:
+      return null;
+  }
 }
 
 export function plannedOrderText(

@@ -19,6 +19,11 @@ jest.mock('./short-pick-returns', () => ({
   ...jest.requireActual<typeof import('./short-pick-returns')>('./short-pick-returns'),
   loadShortPickReturns: jest.fn(async () => new Map()),
 }));
+jest.mock('./batch-returns', () => ({
+  ...jest.requireActual<typeof import('./batch-returns')>('./batch-returns'),
+  loadReturnedWorkItems: jest.fn(async () => new Map()),
+  loadNeedsNewWaybill: jest.fn(async () => new Set<string>()),
+}));
 
 function query(rows: unknown[]) {
   const result = Object.assign(Promise.resolve(rows), {
