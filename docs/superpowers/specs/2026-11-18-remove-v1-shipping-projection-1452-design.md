@@ -40,6 +40,10 @@ channel-adapter 의 옛 투영(`FulfillmentShipped/Delivered` → inbox `CoreFul
 - 배포 전 라이브(터널은 사용자가 띄움):
   `select event_type, status, count(*) from inbox_events where event_type in ('CoreFulfillmentShipped','CoreFulfillmentDelivered') group by 1,2;`
   `pending`·`processing` 이 남아 있으면 `published` 로 닫는다. 결과와 처리를 PR 본문에 적는다.
+- **ECS 롤아웃이 끝난 뒤 같은 select 를 한 번 더** 돌린다 — 롤링 중 옛 태스크가 마지막으로 적재한 행은 새 태스크가 집지 않는다.
+- channel-adapter DB 의 소비 실패 표도 본다(이 토픽이 `sequencedTopics` 에 있었다 — 배포 뒤엔 핸들러가 없어 redrive 가 멈춘다):
+  `select status, count(*) from event.dead_letters where topic = 'fulfillments.events.v1' and status in ('failed','held') group by 1;`
+  있으면 사유(#1452)를 적고 폐기한다.
 
 ## 완료 조건
 

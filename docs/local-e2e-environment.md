@@ -184,7 +184,7 @@ psql postgresql://postgres:postgres@localhost:5432/medusa -c \
 ```
 
 송장은 시도별 투영 `coreShipmentAttempts[].invoice.trackingNo` 에 온다. 최상위 `coreTrackingNumber` 는 정식(앱) 경로로 내보내도
-비어 있다(2026-11-18 실측) — 그 칸을 쓰는 옛 투영(`CoreFulfillmentShipped`)이 매핑을 못 찾아 건너뛴다. 이 칸으로 판정하지 않는다.
+비어 있다 — 그 칸을 쓰던 옛 주문 단위 투영은 한 번도 동작하지 않았고 #1452 에서 지웠다(로컬·라이브 모두 쓰는 코드가 없다). 이 칸으로 판정하지 않는다.
 
 **가짜 한진.** `start:all:local` 이 sms-stub 옆에서 띄우고(`logs/hanjin-stub.log`), core 를 띄울 때 `HANJIN_ORDER_BASE_URL`·
 `HANJIN_PRINT_BASE_URL` 을 셸 값으로 이 스텁에 덮는다 — `apps/core/.env` 에 실제 한진 키·주소가 있어도 로컬 스택은 바깥을 부르지 않는다.
