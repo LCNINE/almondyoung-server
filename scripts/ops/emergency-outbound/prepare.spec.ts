@@ -1,4 +1,4 @@
-import { mkdtempSync, writeFileSync } from 'fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { CoreApiError } from './core-api';
@@ -12,7 +12,14 @@ const WH = 'wh-acme';
 function setup() {
   const dir = mkdtempSync(join(tmpdir(), 'emergency-outbound-'));
   const lines: string[] = [];
-  const opts = (apply: boolean, run = RUN) => ({ warehouseId: WH, run, dir, apply, log: (l: string) => lines.push(l) });
+  const opts = (apply: boolean, run = RUN) => ({
+    warehouseId: WH,
+    run,
+    dir,
+    apply,
+    outputs: false,
+    log: (l: string) => lines.push(l),
+  });
   return { dir, lines, opts };
 }
 
@@ -355,6 +362,79 @@ describe('runPrepare', () => {
 
     await expect(runPrepare(core, opts(true))).rejects.toThrow(/같은 사람만[\s\S]*새 --run/);
     expect(core.writes()).toEqual(['plan']);
+  });
+});
+
+describe('runPrepare outputs', () => {
+  const withOutputs = (o: ReturnType<ReturnType<typeof setup>['opts']>) => ({ ...o, outputs: true });
+  const located = (core: FakeCore, id: string, code: string) =>
+    core.addShipment({
+      id,
+      status: 'draft',
+      orderNos: [`acme-${id}`],
+      lines: [{ id: `l-${id}`, skuId: `k-${id}`, skuName: `상품-${id}`, qty: 1 }],
+      sources: [
+        {
+          shipmentLineId: `l-${id}`,
+          skuId: `k-${id}`,
+          sourceLocationId: `loc-${code}`,
+          sourceLocationCode: code,
+          allocatedQty: 1,
+          pickedQty: 0,
+          remainingQty: 1,
+        },
+      ],
+    });
+
+  it('writes labels in picking order and confirms each print', async () => {
+    const { dir, opts } = setup();
+    const core = new FakeCore();
+    located(core, 's1', 'B-01');
+    located(core, 's2', 'A-01');
+
+    const report = await runPrepare(core, withOutputs(opts(true)));
+
+    const zpl = readFileSync(join(dir, 'labels.zpl'), 'utf8');
+    const tracking = report.state?.boxes.map((b) => b.trackingNo) ?? [];
+    expect(tracking).toHaveLength(2);
+    // s2(A-01) 가 먼저 — s1 이 먼저 발급돼 TRK 번호가 더 작다
+    expect(zpl).toBe(`^XA^FD${tracking[1]}^FS^XZ\n^XA^FD${tracking[0]}^FS^XZ\n`);
+    expect(core.prints.map((p) => p.shipmentId)).toEqual(['s2', 's1']);
+    expect(readRun(dir)?.boxes.every((b) => b.printed)).toBe(true);
+    const csv = readFileSync(join(dir, 'shipments.csv'), 'utf8');
+    expect(
+      csv
+        .split('\r\n')
+        .slice(1, 3)
+        .map((l) => l.split(',')[0]),
+    ).toEqual(['s2', 's1']);
+    expect(readFileSync(join(dir, 'pick-list.html'), 'utf8')).toContain('A-01 · 상품-s2 × 1');
+  });
+
+  it('retries a changed label once and rewrites the file', async () => {
+    const { dir, opts } = setup();
+    const core = new FakeCore();
+    located(core, 's1', 'A-01');
+    core.failNext('confirmLabelPrint', new CoreApiError(409, 'LABEL_CONTENT_CHANGED', null, 'changed'));
+
+    await runPrepare(core, withOutputs(opts(true)));
+
+    expect(core.callsOf('label')).toHaveLength(2);
+    expect(core.prints).toHaveLength(1);
+    expect(readRun(dir)?.boxes[0].printed).toBe(true);
+  });
+
+  it('regenerates files on resume but confirms only unprinted boxes', async () => {
+    const { dir, opts } = setup();
+    const core = new FakeCore();
+    located(core, 's1', 'A-01');
+    await runPrepare(core, withOutputs(opts(true)));
+    expect(core.prints).toHaveLength(1);
+
+    await runPrepare(core, withOutputs(opts(true)));
+
+    expect(core.prints).toHaveLength(1);
+    expect(readFileSync(join(dir, 'labels.zpl'), 'utf8')).toContain('^XA');
   });
 });
 

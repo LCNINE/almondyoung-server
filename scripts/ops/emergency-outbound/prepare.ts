@@ -15,6 +15,7 @@ import {
   PreparationShipment,
   WorkItem,
 } from './core-api';
+import { produceOutputs } from './outputs';
 import { readRun, RunBox, RunState, writeRun } from './run-state';
 import { Route, selectTargets, Skipped, Target } from './select';
 
@@ -30,6 +31,8 @@ export interface PrepareOptions {
   run: string;
   dir: string;
   apply: boolean;
+  /** 시작 뒤 라벨·피킹 리스트·CSV 를 만든다. 기본 true — 끄는 건 테스트뿐. */
+  outputs?: boolean;
   log: (line: string) => void;
 }
 
@@ -104,6 +107,16 @@ export async function runPrepare(api: CoreApi, opts: PrepareOptions): Promise<Pr
       return { targets, skipped, state: prev };
     }
     const state = await apply(api, opts, prev, ownBatch, targets, orderNos);
+    if (opts.outputs !== false) {
+      // 이미 시작된 배치에서 이어받은 상자는 준비 목록에 없다 — 작업 항목의 주문번호로 채운다.
+      const known = new Map(orderNos);
+      for (const { workItems } of input.batches) {
+        for (const w of workItems) {
+          if (!known.has(w.shipmentId) && w.displayOrderNo) known.set(w.shipmentId, [w.displayOrderNo]);
+        }
+      }
+      await produceOutputs(api, state, known, dir, log);
+    }
     return { targets, skipped, state };
   } catch (error) {
     if (error instanceof CoreApiError && error.code === IDEMPOTENCY_MISMATCH) throw mismatchError();

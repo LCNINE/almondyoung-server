@@ -255,10 +255,8 @@ export function httpCoreApi(coreUrl: string, token: () => Promise<string>): Core
       }
     }
     if (!res.ok) {
-      const code =
-        isRecord(parsed) && typeof parsed.code === 'string' ? parsed.code : `HTTP_${res.status}`;
-      const msg =
-        isRecord(parsed) && typeof parsed.message === 'string' ? `: ${parsed.message}` : '';
+      const code = isRecord(parsed) && typeof parsed.code === 'string' ? parsed.code : `HTTP_${res.status}`;
+      const msg = isRecord(parsed) && typeof parsed.message === 'string' ? `: ${parsed.message}` : '';
       throw new CoreApiError(
         res.status,
         code,
@@ -287,8 +285,7 @@ export function httpCoreApi(coreUrl: string, token: () => Promise<string>): Core
     preparation: (warehouseId, bucket, offset) =>
       need('GET', `outbound-preparation?warehouseId=${q(warehouseId)}&bucket=${bucket}&offset=${offset}`),
     plan: (ids, key) => need('POST', 'outbound-preparation/plans', { body: { shipmentIds: ids }, key }),
-    issueWaybills: (ids, key) =>
-      need('POST', 'outbound-preparation/waybills', { body: { shipmentIds: ids }, key }),
+    issueWaybills: (ids, key) => need('POST', 'outbound-preparation/waybills', { body: { shipmentIds: ids }, key }),
     createBatch: (warehouseId, name, key) =>
       need('POST', 'outbound-batches/v2', {
         body: { warehouseId, pickingMethod: 'individual', name },
@@ -306,8 +303,7 @@ export function httpCoreApi(coreUrl: string, token: () => Promise<string>): Core
       });
     },
     startBatch: (batchId, key) => need('POST', 'picking/v2/starts', { body: { batchId }, key }),
-    batches: (warehouseId, status) =>
-      need('GET', `outbound-batches/v2?warehouseId=${q(warehouseId)}&status=${status}`),
+    batches: (warehouseId, status) => need('GET', `outbound-batches/v2?warehouseId=${q(warehouseId)}&status=${status}`),
     workItems: (batchId) => need('GET', `outbound-batches/${q(batchId)}/work-items`),
     shipment: (id) => need('GET', `shipments/${q(id)}`),
     activeWaybill: (shipmentId) => call('GET', `shipments/${q(shipmentId)}/waybill`),

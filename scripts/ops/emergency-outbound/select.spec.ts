@@ -36,14 +36,10 @@ const base = { ready: [], resume: [], otherBuckets: [], batches: [] };
 
 describe('selectTargets', () => {
   it('ready -> draft', () => {
-    expect(selectTargets({ ...base, ready: [ship('s1')] }).targets).toEqual([
-      { shipmentId: 's1', from: 'draft' },
-    ]);
+    expect(selectTargets({ ...base, ready: [ship('s1')] }).targets).toEqual([{ shipmentId: 's1', from: 'draft' }]);
   });
   it('resume -> planned', () => {
-    expect(selectTargets({ ...base, resume: [ship('s1')] }).targets).toEqual([
-      { shipmentId: 's1', from: 'planned' },
-    ]);
+    expect(selectTargets({ ...base, resume: [ship('s1')] }).targets).toEqual([{ shipmentId: 's1', from: 'planned' }]);
   });
   it('started individual picking -> location', () => {
     const r = selectTargets({
@@ -78,9 +74,7 @@ describe('selectTargets', () => {
   it('queued in total_picking -> skipped', () => {
     const r = selectTargets({
       ...base,
-      batches: [
-        { batch: batch('b1', 'total_picking', true), workItems: [wi('b1', 's1', 'queued')] },
-      ],
+      batches: [{ batch: batch('b1', 'total_picking', true), workItems: [wi('b1', 's1', 'queued')] }],
     });
     expect(r.targets).toEqual([]);
     expect(r.skipped).toEqual([{ shipmentId: 's1', reason: '다른 피킹 방식 배치에서 피킹 중' }]);
@@ -88,9 +82,7 @@ describe('selectTargets', () => {
   it('queued in not-started individual -> skipped', () => {
     const r = selectTargets({
       ...base,
-      batches: [
-        { batch: batch('b1', 'individual', false), workItems: [wi('b1', 's1', 'queued')] },
-      ],
+      batches: [{ batch: batch('b1', 'individual', false), workItems: [wi('b1', 's1', 'queued')] }],
     });
     expect(r.targets).toEqual([]);
     expect(r.skipped[0].reason).toBe('시작 전 배치 — 앱/화면에서 시작하거나 배치에서 뺀 뒤 다시');
@@ -152,9 +144,7 @@ describe('selectTargets', () => {
       ready: [ship('s1')],
       resume: [ship('s1'), ship('s2')],
       otherBuckets: [{ bucket: 'mergeable', shipments: [ship('s1')] }],
-      batches: [
-        { batch: batch('b1', 'individual', true), workItems: [wi('b1', 's1', 'picking')] },
-      ],
+      batches: [{ batch: batch('b1', 'individual', true), workItems: [wi('b1', 's1', 'picking')] }],
     });
     expect(r.targets).toEqual([
       { shipmentId: 's1', from: 'batch', batchId: 'b1', route: 'location' },
