@@ -9,6 +9,7 @@ import { Kbd } from '../Kbd';
 import { bigTextPx, type LastBox } from './model';
 import { clockOf, type RecentEntry, type RecentKind } from './recent';
 import { UNCERTAIN_SCAN_MESSAGE } from './useInspectionBox';
+import type { CancelWaitingLine } from '../../domains/outbound/cancelWaiting';
 
 const CARD = 'rounded-[10px] border border-[#D5D8DE] bg-white';
 
@@ -47,7 +48,8 @@ export type BigPanelContent =
   | { kind: 'quantity'; value: string }
   | { kind: 'armed'; keyLabel: string; label: string }
   | { kind: 'alert'; message: string; detail?: string }
-  | { kind: 'notice'; title: string; message?: string };
+  | { kind: 'notice'; title: string; message?: string }
+  | { kind: 'cancelWaiting'; lines: CancelWaitingLine[]; whole: boolean };
 
 /** 왼쪽 아래 큰 칸 — 지금 찍을 것과 진행(거대), 또는 오류·안내 하나(스펙 §6.4) */
 export function BigPanel({ content }: { content: BigPanelContent }) {
@@ -95,6 +97,29 @@ export function BigPanel({ content }: { content: BigPanelContent }) {
           </div>
           <div className="text-[28px] font-bold text-[#9E1320]">{content.message}</div>
           {content.detail ? <div className="font-mono text-xl font-semibold">{content.detail}</div> : null}
+        </div>
+      );
+    case 'cancelWaiting':
+      return (
+        <div role="status" aria-label="취소 대기" className={cn(base, 'border-2 border-[#D99A00] bg-[#FFF1C7] text-[#5E3B00]')}>
+          <div className="text-[28px] font-bold">
+            {content.whole ? '주문이 취소된 박스예요' : '주문 일부가 취소된 박스예요'}
+          </div>
+          {content.lines.length ? (
+            <ul className="w-full list-none text-left text-lg font-semibold">
+              {content.lines.map((line, index) => (
+                <li key={`${line.name}-${index}`} className="flex justify-between gap-3">
+                  <span className="min-w-0 truncate">{line.name}</span>
+                  <span className="whitespace-nowrap font-mono">
+                    {line.from} → {line.to}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          <div className="text-lg font-semibold">
+            검수하지 말고 F11 을 두 번 눌러 박스를 빼 주세요. 담은 상품은 빼기 화면에서 되돌림 바구니에 넣어요.
+          </div>
         </div>
       );
     case 'notice':
