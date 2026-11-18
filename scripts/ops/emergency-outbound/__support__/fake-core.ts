@@ -89,6 +89,8 @@ export class FakeCore implements CoreApi {
   private readonly bulkDone = new Set<string>();
   /** 배치에서 빼기 키 → 보낸 사유. core 는 사유를 해시에 넣으므로 같은 키·다른 사유는 불일치. */
   private readonly excludedByKey = new Map<string, string>();
+  /** 발송(위치 강제·강제 발송) 키 → 보낸 본문. 같은 키·다른 본문은 불일치. */
+  private readonly dispatchedByKey = new Map<string, string>();
   private seq = 0;
 
   constructor(readonly warehouseId = 'wh-acme') {}
@@ -331,12 +333,29 @@ export class FakeCore implements CoreApi {
   ): Promise<LocationOutboundState> {
     this.enter('locationForce', [shipmentId, warehouseId, reason, items, key]);
     const s = this.need(shipmentId);
+    // core 는 본문(사유·항목 순서 포함)을 해시에 넣는다 — 같은 키·같은 본문은 재생, 다른 본문은 불일치.
+    const body = JSON.stringify({ warehouseId, reason, items });
+    const sent = this.dispatchedByKey.get(key);
+    if (sent !== undefined) {
+      if (sent !== body) throw new CoreApiError(409, 'FULFILLMENT_IDEMPOTENCY_MISMATCH', null, `force ${key}`);
+      return this.leave('locationForce', this.locationView(s, warehouseId));
+    }
     if (!SHIPPED.has(s.status)) {
+      // 남은 원천 전부를 (라인, 위치)마다 남은 수량 그대로 — 하나라도 다르면 진행이 바뀐 것으로 본다.
+      const expected = (s.sources ?? [])
+        .filter((src) => src.remainingQty > 0)
+        .map((src) => `${src.shipmentLineId}|${src.sourceLocationId}|${src.remainingQty}`)
+        .sort();
+      const got = items.map((i) => `${i.shipmentLineId}|${i.sourceLocationId}|${i.quantity}`).sort();
+      if (JSON.stringify(expected) !== JSON.stringify(got)) {
+        throw new CoreApiError(409, 'LOCATION_OUTBOUND_PROGRESS_CHANGED', null, `force ${shipmentId}`);
+      }
       s.status = 'shipped';
       s.sources = (s.sources ?? []).map((src) => ({ ...src, pickedQty: src.allocatedQty, remainingQty: 0 }));
       this.completeItem(shipmentId);
     }
-    return this.locationView(s, warehouseId);
+    this.dispatchedByKey.set(key, body);
+    return this.leave('locationForce', this.locationView(s, warehouseId));
   }
 
   async forceDispatch(
@@ -346,9 +365,21 @@ export class FakeCore implements CoreApi {
   ): Promise<{ status: string; dispatchAttemptId: string | null }> {
     this.enter('forceDispatch', [shipmentId, reason, key]);
     const s = this.need(shipmentId);
+    const body = JSON.stringify({ reason });
+    const sent = this.dispatchedByKey.get(key);
+    if (sent !== undefined) {
+      if (sent !== body) throw new CoreApiError(409, 'FULFILLMENT_IDEMPOTENCY_MISMATCH', null, `force ${key}`);
+      return this.leave('forceDispatch', { status: 'shipped', dispatchAttemptId: `da-${shipmentId}` });
+    }
+    // core: 강제 발송은 포장 단계(ready_to_pack·packing) 작업 항목에만.
+    const item = this.activeItem(shipmentId);
+    if (!item || (item.status !== 'ready_to_pack' && item.status !== 'packing')) {
+      throw new CoreApiError(409, 'SHIPMENT_NOT_INSPECTION_READY', null, `force-dispatch ${shipmentId}`);
+    }
     s.status = 'shipped';
     this.completeItem(shipmentId);
-    return { status: 'shipped', dispatchAttemptId: `da-${shipmentId}` };
+    this.dispatchedByKey.set(key, body);
+    return this.leave('forceDispatch', { status: 'shipped', dispatchAttemptId: `da-${shipmentId}` });
   }
 
   async warehouse(id: string): Promise<{ id: string; name: string; supportedPickingStrategies: string[] }> {
