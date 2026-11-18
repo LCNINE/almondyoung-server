@@ -1,7 +1,7 @@
 import { randomUUID } from 'crypto';
 import * as postgres from 'postgres';
 import { PostgresJsDatabase } from 'drizzle-orm/postgres-js';
-import { eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { wmsSchema, wmsTables } from '../../inventory/schema/inventory.schema';
 import { makeDb, makeDbService } from '../services/__support__';
 import {
@@ -198,6 +198,89 @@ describeIfDb('WaybillManager.issueForShipment (DB integration)', () => {
       expect(voided.voidedAt).toBeTruthy();
     });
 
+    it('운영자 무효화는 고른 사유로 작업 기록을 남기고, 자동 무효화는 남기지 않는다', async () => {
+      const seed = await db.transaction((tx) => seedPlannedShipmentForWaybill(tx as never, deps));
+      const mgr = manager(new CarrierGatewayRegistry([fakeCarrierGateway()]));
+      const register = () =>
+        mgr.registerManual(
+          seed.shipmentId,
+          {
+            carrier: 'HANJIN',
+            trackingNo: `M-${randomUUID().slice(0, 8)}`,
+            expectedManifestVersion: seed.manifestVersion,
+          },
+          `idem-${randomUUID()}`,
+          actor,
+        );
+      const operationsOf = () =>
+        db
+          .select({
+            type: wmsTables.shipmentOperations.type,
+            status: wmsTables.shipmentOperations.status,
+            reason: wmsTables.shipmentOperations.reason,
+            reasonCode: wmsTables.shipmentOperations.reasonCode,
+            note: wmsTables.shipmentOperations.note,
+            operatorId: wmsTables.shipmentOperations.operatorId,
+          })
+          .from(wmsTables.shipmentOperations)
+          .innerJoin(
+            wmsTables.shipmentOperationMembers,
+            eq(wmsTables.shipmentOperationMembers.operationId, wmsTables.shipmentOperations.id),
+          )
+          .where(
+            and(
+              eq(wmsTables.shipmentOperationMembers.shipmentId, seed.shipmentId),
+              inArray(wmsTables.shipmentOperations.type, ['waybill_void', 'waybill_reissue']),
+            ),
+          );
+
+      const automatic = await register();
+      await mgr.void(automatic.id, { reason: 'withdrawn:excluded' }, `idem-${randomUUID()}`, actor);
+      expect(await operationsOf()).toEqual([]);
+
+      const byOperator = await register();
+      await mgr.void(byOperator.id, { reason: '' }, `idem-${randomUUID()}`, actor, undefined, {
+        type: 'waybill_void',
+        reason: '',
+        reasonCode: 'label_damaged',
+        note: '현장 프린터 걸림',
+      });
+      expect(await operationsOf()).toEqual([
+        {
+          type: 'waybill_void',
+          status: 'completed',
+          reason: '송장 출력 불량·분실',
+          reasonCode: 'label_damaged',
+          note: '현장 프린터 걸림',
+          operatorId: actor.id,
+        },
+      ]);
+    });
+
+    it('모르는 사유 코드면 송장을 무효로 하지 않는다', async () => {
+      const seed = await db.transaction((tx) => seedPlannedShipmentForWaybill(tx as never, deps));
+      const mgr = manager(new CarrierGatewayRegistry([fakeCarrierGateway()]));
+      const wb = await mgr.registerManual(
+        seed.shipmentId,
+        {
+          carrier: 'HANJIN',
+          trackingNo: `M-${randomUUID().slice(0, 8)}`,
+          expectedManifestVersion: seed.manifestVersion,
+        },
+        `idem-${randomUUID()}`,
+        actor,
+      );
+      await expect(
+        mgr.void(wb.id, { reason: 'x' }, `idem-${randomUUID()}`, actor, undefined, {
+          type: 'waybill_void',
+          reason: 'x',
+          reasonCode: 'nope',
+        }),
+      ).rejects.toThrow(/Unknown reason code/);
+      const [row] = await db.select().from(wmsTables.waybills).where(eq(wmsTables.waybills.id, wb.id));
+      expect(row.status).toBe('registered');
+    });
+
     it('rejects voiding a used waybill', async () => {
       const seed = await db.transaction((tx) => seedPlannedShipmentForWaybill(tx as never, deps));
       const mgr = manager(new CarrierGatewayRegistry([fakeCarrierGateway()]));
@@ -240,6 +323,20 @@ describeIfDb('WaybillManager.issueForShipment (DB integration)', () => {
       expect(second.status).toBe('registered');
       const [old] = await db.select().from(wmsTables.waybills).where(eq(wmsTables.waybills.id, first.id));
       expect(old.status).toBe('voided');
+      const recorded = await db
+        .select({ type: wmsTables.shipmentOperations.type, reason: wmsTables.shipmentOperations.reason })
+        .from(wmsTables.shipmentOperations)
+        .innerJoin(
+          wmsTables.shipmentOperationMembers,
+          eq(wmsTables.shipmentOperationMembers.operationId, wmsTables.shipmentOperations.id),
+        )
+        .where(
+          and(
+            eq(wmsTables.shipmentOperationMembers.shipmentId, seed.shipmentId),
+            inArray(wmsTables.shipmentOperations.type, ['waybill_void', 'waybill_reissue']),
+          ),
+        );
+      expect(recorded).toEqual([{ type: 'waybill_reissue', reason: '송장 재발급' }]);
     });
 
     it('reissue over a used active waybill rejects with ALREADY_DISPATCHED (not ABANDON_NOT_ALLOWED)', async () => {

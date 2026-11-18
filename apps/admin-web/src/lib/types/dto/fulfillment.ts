@@ -1660,9 +1660,19 @@ export interface IssueBatchWaybillRequest {
   carrier: CarrierCode;
 }
 
-export interface VoidWaybillRequest {
+/** 사유를 고르면 작업 기록에 코드·요청 경로·메모가 함께 남는다 */
+export interface WaybillOperationReason {
   reason: string;
+  reasonCode?: string;
+  requestChannel?: string;
+  note?: string;
 }
+
+export type VoidWaybillRequest = WaybillOperationReason;
+
+/** 재발급 — 지금 송장을 무효로 하는 사유를 작업 기록에 남긴다 */
+export type ReissueWaybillRequest = IssueWaybillRequest &
+  Partial<WaybillOperationReason>;
 
 export interface AbandonWaybillRequest {
   reason: string;

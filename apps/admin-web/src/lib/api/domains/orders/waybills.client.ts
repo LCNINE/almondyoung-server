@@ -9,6 +9,7 @@ import type {
   WaybillResponse,
   BatchResultItem,
   IssueWaybillRequest,
+  ReissueWaybillRequest,
   RegisterManualWaybillRequest,
   IssueBatchWaybillRequest,
   VoidWaybillRequest,
@@ -49,7 +50,7 @@ export const waybillsClient = {
 
   reissue: async (
     shipmentId: string,
-    data: IssueWaybillRequest,
+    data: ReissueWaybillRequest,
     idempotencyKey: string
   ): Promise<WaybillResponse> => {
     const res = await client.post(

@@ -17,6 +17,7 @@ import {
   BatchResultItemDto,
   IssueBatchWaybillDto,
   IssueWaybillDto,
+  ReissueWaybillDto,
   RegisterManualWaybillDto,
   VoidWaybillDto,
   WaybillResponseDto,
@@ -82,7 +83,7 @@ export class WaybillController {
     @Headers('idempotency-key') idem: string | undefined,
     @User() user: AuthenticatedUser,
   ) {
-    return this.waybills.void(waybillId, dto, idem ?? '', this.actor(user));
+    return this.waybills.voidByOperator(waybillId, dto, idem ?? '', this.actor(user));
   }
 
   // 교착된 발급(pending/allocated)을 운영자가 푼다 — 활성 슬롯이 풀려야 재발급·수기등록이 열린다(#914).
@@ -106,15 +107,20 @@ export class WaybillController {
   @ApiCreatedResponse({ type: WaybillResponseDto })
   reissue(
     @Param('shipmentId') shipmentId: string,
-    @Body() dto: IssueWaybillDto,
+    @Body() dto: ReissueWaybillDto,
     @Headers('idempotency-key') idem: string | undefined,
     @User() user: AuthenticatedUser,
   ) {
+    const reason =
+      dto.reason || dto.reasonCode
+        ? { reason: dto.reason ?? '', reasonCode: dto.reasonCode, requestChannel: dto.requestChannel, note: dto.note }
+        : undefined;
     return this.waybills.reissue(
       shipmentId,
       { carrier: dto.carrier, expectedManifestVersion: dto.expectedManifestVersion },
       idem ?? '',
       this.actor(user),
+      reason,
     );
   }
 

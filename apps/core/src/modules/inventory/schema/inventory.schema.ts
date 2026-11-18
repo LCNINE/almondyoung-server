@@ -284,6 +284,9 @@ export const shipmentOperationTypeEnum = pgEnum('shipment_operation_type', [
   'force_dispatch',
   // #1063: 작성 중 박스를 목표 내용에 맞춘 기록(라인 구성 변경·S2 주문 수정). PR 2 부터 쓴다.
   'amend',
+  // 운영자가 송장을 무효로 하거나 다시 받은 기록. 자동 무효화(박스 빼기·결품 이탈)는 그 작업이 남긴다.
+  'waybill_void',
+  'waybill_reissue',
 ]);
 export const shipmentOperationStatusEnum = pgEnum('shipment_operation_status', [
   'pending',

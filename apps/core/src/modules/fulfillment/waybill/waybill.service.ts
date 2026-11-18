@@ -139,8 +139,29 @@ export class WaybillService {
     return toView(await this.manager.voidForRecall(shipmentId, dto, idemKey, actor, tx));
   }
 
-  async reissue(shipmentId: string, opts: IssueOpts, idemKey: string, actor: Actor): Promise<WaybillView> {
-    return toView(await this.manager.reissue(shipmentId, opts, idemKey, actor));
+  async reissue(
+    shipmentId: string,
+    opts: IssueOpts,
+    idemKey: string,
+    actor: Actor,
+    reason?: { reason: string; reasonCode?: string; requestChannel?: string; note?: string },
+  ): Promise<WaybillView> {
+    return toView(await this.manager.reissue(shipmentId, opts, idemKey, actor, reason));
+  }
+
+  /** 관리자 화면의 무효화 — 자동 무효화와 달리 작업 기록을 남긴다. */
+  async voidByOperator(
+    waybillId: string,
+    dto: { reason: string; reasonCode?: string; requestChannel?: string; note?: string },
+    idemKey: string,
+    actor: Actor,
+  ): Promise<WaybillView> {
+    const row = await this.manager.void(waybillId, { reason: dto.reason }, idemKey, actor, undefined, {
+      type: 'waybill_void',
+      ...dto,
+    });
+    await this.resumeAfterVoid(row.shipmentId);
+    return toView(row);
   }
 
   async getActiveWaybill(shipmentId: string, tx?: DbTx): Promise<WaybillView | null> {

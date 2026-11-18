@@ -8,7 +8,9 @@ export type ReasonedOperationType =
   | 'consolidate'
   | 'force_dispatch'
   | 'recall'
-  | 'short_pick';
+  | 'short_pick'
+  | 'waybill_void'
+  | 'waybill_reissue';
 
 export type RequestChannel =
   | 'kakao'
@@ -119,6 +121,47 @@ export const OPERATION_REASONS: Record<
     { code: 'item_damaged', label: '상품 파손', customerRequest: false },
     { code: 'quality_defect', label: '품질 불량', customerRequest: false },
     { code: 'expired_stock', label: '유효기간 만료', customerRequest: false },
+  ],
+  waybill_void: [
+    {
+      code: 'customer_address_change',
+      label: '고객이 주소·연락처 변경 요청',
+      customerRequest: true,
+    },
+    {
+      code: 'label_damaged',
+      label: '송장 출력 불량·분실',
+      customerRequest: false,
+    },
+    {
+      code: 'carrier_error',
+      label: '택배사 접수 오류',
+      customerRequest: false,
+    },
+    {
+      code: 'not_shipping',
+      label: '이 상자를 보내지 않음(보류·취소)',
+      customerRequest: false,
+    },
+    { code: 'other', label: '기타', customerRequest: false },
+  ],
+  waybill_reissue: [
+    {
+      code: 'label_damaged',
+      label: '송장 출력 불량·분실',
+      customerRequest: false,
+    },
+    {
+      code: 'carrier_error',
+      label: '택배사 접수 오류',
+      customerRequest: false,
+    },
+    {
+      code: 'address_correction',
+      label: '주소 오류 정정(택배사·주소 확인 결과)',
+      customerRequest: false,
+    },
+    { code: 'other', label: '기타', customerRequest: false },
   ],
 };
 

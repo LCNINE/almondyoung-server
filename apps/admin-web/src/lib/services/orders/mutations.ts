@@ -47,6 +47,7 @@ import type {
   ToteHandoffRequest,
   ReleaseToteRequest,
   IssueWaybillRequest,
+  ReissueWaybillRequest,
   RegisterManualWaybillRequest,
   IssueBatchWaybillRequest,
   VoidWaybillRequest,
@@ -1357,7 +1358,7 @@ export const useReissueWaybill = () => {
       idempotencyKey,
     }: {
       shipmentId: string;
-      data: IssueWaybillRequest;
+      data: ReissueWaybillRequest;
       idempotencyKey?: string;
     }) => orders.waybills.reissue(shipmentId, data, commandKey(idempotencyKey)),
     // 서버가 기존 송장을 먼저 무효로 한 뒤 발급하므로 실패해도 송장 목록이 바뀌었을 수 있다
