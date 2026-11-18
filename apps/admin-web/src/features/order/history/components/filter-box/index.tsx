@@ -59,7 +59,7 @@ export default function FilterBox() {
     return (
         <div className="rounded-xl border bg-white p-4 mb-4 space-y-3">
             {/* 판매처 */}
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 flex-wrap">
                 <span className="text-sm font-medium text-gray-700 w-14 shrink-0">판매처</span>
                 <select
                     className="border rounded h-9 px-2 text-sm min-w-[140px]"
@@ -123,7 +123,7 @@ export default function FilterBox() {
             </div>
 
             {/* 키워드 */}
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 flex-wrap">
                 <span className="text-sm font-medium text-gray-700 w-14 shrink-0">키워드</span>
                 <select
                     className="border rounded h-9 px-2 text-sm min-w-[100px]"
