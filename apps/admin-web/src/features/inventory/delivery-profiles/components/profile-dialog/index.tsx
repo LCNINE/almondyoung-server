@@ -36,7 +36,11 @@ import {
   type ProfileFormErrors,
   type ProfileFormState,
 } from '../../lib/profile-form';
-import { FULFILLMENT_MODE_LABELS, SOURCE_TYPE_LABELS } from '../../lib/labels';
+import {
+  CARRIER_CONTRACT_OPTIONS,
+  FULFILLMENT_MODE_LABELS,
+  SOURCE_TYPE_LABELS,
+} from '../../lib/labels';
 
 export type ProfileEditTarget =
   | { mode: 'new' }
@@ -157,6 +161,16 @@ export function ProfileDialog({ target, onOpenChange }: Props) {
   const missingCreated =
     createdHolder &&
     !fetchedHolders.some((h) => h.value === createdHolder.value);
+  // 목록에 없는 옛 값도 고르기 전까지는 그대로 보여 준다
+  const carrierOptions =
+    !form.carrierAccountRef ||
+    CARRIER_CONTRACT_OPTIONS.some((o) => o.value === form.carrierAccountRef)
+      ? CARRIER_CONTRACT_OPTIONS
+      : [
+          ...CARRIER_CONTRACT_OPTIONS,
+          { value: form.carrierAccountRef, label: form.carrierAccountRef },
+        ];
+
   const holderOptions = [
     { value: NO_HOLDER, label: '연결 안 함(자사)' },
     ...fetchedHolders,
@@ -305,7 +319,21 @@ export function ProfileDialog({ target, onOpenChange }: Props) {
           </FormSection>
 
           <FormSection title="택배 계약">
-            {input('carrierAccountRef', '택배 계약번호')}
+            <FormField
+              label="송장을 발급할 계약"
+              required
+              errorMessage={errors.carrierAccountRef}
+            >
+              <FormSelect
+                value={form.carrierAccountRef}
+                onValueChange={set('carrierAccountRef')}
+                options={carrierOptions}
+              />
+            </FormField>
+            <p className="text-muted-foreground text-xs">
+              이 계약으로 송장을 발급하고, 택배비도 이 계약으로 나가요. 위탁
+              업체도 우리 계약을 쓰면 택배비는 우리가 내고 업체에 청구해요.
+            </p>
           </FormSection>
         </div>
         <SheetFooter className="flex-row gap-2 border-t px-6 py-4">
