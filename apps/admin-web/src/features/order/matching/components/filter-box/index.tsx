@@ -12,6 +12,7 @@ import {
   FormDateRangePicker
 } from '@/components/common';
 import { Button } from '@/components/common/button';
+import { dateKeyOf, dateOfKey } from '../../lib/date-key';
 
 const SALES_CHANNEL_OPTIONS = [
   { value: 'all', label: '판매처 전체' },
@@ -88,13 +89,13 @@ export function FilterBox() {
                 <FormDateRangePicker
                   value={
                     filters.startDate && filters.endDate
-                      ? { from: new Date(filters.startDate), to: new Date(filters.endDate) }
+                      ? { from: dateOfKey(filters.startDate), to: dateOfKey(filters.endDate) }
                       : undefined
                   }
                   onChange={(range) =>
                     setFilters({
-                      startDate: range?.from ? range.from.toISOString().split('T')[0] : undefined,
-                      endDate: range?.to ? range.to.toISOString().split('T')[0] : undefined,
+                      startDate: range?.from ? dateKeyOf(range.from) : undefined,
+                      endDate: range?.to ? dateKeyOf(range.to) : undefined,
                     })
                   }
                   placeholder="날짜 범위를 선택하세요"
