@@ -47,6 +47,21 @@ export function pickExistingMaster(
   return null;
 }
 
+const OPTION_GROUP_NAME = '색상';
+
+/**
+ * 초안에 넣을 옵션 변경. core 의 `optionDiff.add` 는 멱등이 아니다 — 같은 그룹을 다시 보내면 그룹이 하나 더 생기고 품목이
+ * 곱으로 늘어난다(2×2=4). 만들다 죽은 초안을 이어 쓸 때 그룹이 이미 있으면 다시 넣지 않는다.
+ */
+export function optionDiffFor(
+  product: { name: string; options: readonly string[] },
+  existingGroups: readonly { displayName: string }[],
+): { add: { displayName: string; values: { displayName: string }[] }[] } | undefined {
+  if (product.options.length === 0) return undefined;
+  if (existingGroups.some((g) => g.displayName === OPTION_GROUP_NAME)) return undefined;
+  return { add: [{ displayName: OPTION_GROUP_NAME, values: product.options.map((displayName) => ({ displayName })) }] };
+}
+
 /** 모자란 만큼만. 이미 넘치면 0 — 줄이지 않는다. 요약이 없으면(재고 행 없음) 0 으로 본다. */
 export function stockTopUpDelta(available: number | null, target: number): number {
   return Math.max(0, target - (available ?? 0));

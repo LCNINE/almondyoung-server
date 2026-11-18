@@ -94,11 +94,14 @@ e2e_env_each extra check_port_row
 check_port 3099 && ok "3099 sms-stub" || bad "3099 sms-stub — 폰 인증 503 → 가입 UI 를 못 지난다 (start-all.sh 가 띄운다)"
 # 가짜 한진(#1440) — 출고 송장 발급이 여기로 간다. core 가 실제로 어디를 보는지는 3100 을 쥔 프로세스 환경에서 읽는다.
 HANJIN_STUB_URL="http://127.0.0.1:${E2E_HANJIN_STUB_PORT}"
-check_port "$E2E_HANJIN_STUB_PORT" && ok "$E2E_HANJIN_STUB_PORT hanjin-stub" \
-  || bad "$E2E_HANJIN_STUB_PORT hanjin-stub — 출고 송장 발급이 막힌다 (start-all.sh 가 띄운다)"
 HANJIN_CORE_PID=$(ss -ltnpH "sport = :3100" 2>/dev/null | grep -oP 'pid=\K[0-9]+' | head -1)
 HANJIN_CORE_URL=""
 [ -n "$HANJIN_CORE_PID" ] && HANJIN_CORE_URL=$(tr '\0' '\n' < "/proc/$HANJIN_CORE_PID/environ" 2>/dev/null | grep -m1 '^HANJIN_ORDER_BASE_URL=' | cut -d= -f2-)
+# E2E_HANJIN=real 로 띄운 스택은 스텁을 일부러 안 띄운다 — core 가 스텁이 아닌 곳을 보면 스텁이 없어도 경고만(설계 §5.1).
+if check_port "$E2E_HANJIN_STUB_PORT"; then ok "$E2E_HANJIN_STUB_PORT hanjin-stub"
+elif [ -n "$HANJIN_CORE_URL" ] && [ "$HANJIN_CORE_URL" != "$HANJIN_STUB_URL" ]; then
+  warn "$E2E_HANJIN_STUB_PORT hanjin-stub 안 떠 있음 — core 가 실제 한진을 보는 스택(E2E_HANJIN=real)이라 정상이다"
+else bad "$E2E_HANJIN_STUB_PORT hanjin-stub — 출고 송장 발급이 막힌다 (start-all.sh 가 띄운다)"; fi
 if [ -z "$HANJIN_CORE_PID" ]; then warn "core 가 안 떠 있다 — core 의 한진 주소 판정 생략"
 elif [ "$HANJIN_CORE_URL" = "$HANJIN_STUB_URL" ]; then ok "core 한진 주소 = 가짜 한진"
 else warn "core 가 가짜 한진이 아닌 곳을 부른다(${HANJIN_CORE_URL:-비어 있음}) — E2E_HANJIN=real 로 띄웠나? 아니면 start-all 로 다시 띄울 것"; fi

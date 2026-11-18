@@ -5,6 +5,7 @@ import {
   ORDER_PATH_PRICE,
   ORDER_PATH_PRODUCTS,
   STOCK_TARGET,
+  optionDiffFor,
   pickExistingMaster,
   skuBarcodeFor,
   stockTopUpDelta,
@@ -160,6 +161,11 @@ async function ensurePublishedMaster(
     log(`상품을 만들었다: ${product.name} (${made.masterId})`);
   }
   const { masterId, versionId } = target;
+  // 이어 쓰는 초안엔 옵션 그룹이 이미 붙어 있을 수 있다 — 읽고 없을 때만 더한다(optionDiffFor).
+  const draft = (await expectOk('GET', core(`/masters/${masterId}/versions/${versionId}`), { bearer })) as {
+    optionGroups?: { displayName: string }[];
+  };
+  const optionDiff = optionDiffFor(product, draft.optionGroups ?? []);
   await expectOk('PUT', core(`/masters/${masterId}/versions/${versionId}`), {
     bearer,
     json: {
@@ -168,13 +174,7 @@ async function ensurePublishedMaster(
       supplyPrice: 6000,
       marketPrice: 15000,
       fulfillmentKind: 'physical',
-      ...(product.options.length > 0
-        ? {
-            optionDiff: {
-              add: [{ displayName: '색상', values: product.options.map((displayName) => ({ displayName })) }],
-            },
-          }
-        : {}),
+      ...(optionDiff ? { optionDiff } : {}),
     },
   });
   // 판매가는 초안에만 넣을 수 있다 — 발행 전에. 안 넣으면 0원이 그대로 팔린다(문서 §8-D).

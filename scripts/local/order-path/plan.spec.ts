@@ -1,4 +1,4 @@
-import { judgeBox, pickExistingMaster, recipientFor, stockTopUpDelta, type ShipmentView } from './plan';
+import { judgeBox, optionDiffFor, pickExistingMaster, recipientFor, stockTopUpDelta, type ShipmentView } from './plan';
 
 const BUCHEON = '019d0001-0001-7000-a000-000000000001';
 
@@ -115,5 +115,23 @@ describe('judgeBox', () => {
       kind: 'waiting',
       stage: 'wrong_warehouse',
     });
+  });
+});
+
+describe('optionDiffFor', () => {
+  const optioned = { name: '[E2E] 주문 경로 옵션', options: ['A', 'B'] };
+
+  it('옵션 없는 상품은 옵션을 더하지 않는다', () => {
+    expect(optionDiffFor({ name: '[E2E] 주문 경로 단일', options: [] }, [])).toBeUndefined();
+  });
+
+  it('새 초안이면 색상 A/B 그룹을 더한다', () => {
+    expect(optionDiffFor(optioned, [])).toEqual({
+      add: [{ displayName: '색상', values: [{ displayName: 'A' }, { displayName: 'B' }] }],
+    });
+  });
+
+  it('이어 쓰는 초안에 색상 그룹이 이미 있으면 다시 더하지 않는다(add 는 멱등이 아니다)', () => {
+    expect(optionDiffFor(optioned, [{ displayName: '색상' }])).toBeUndefined();
   });
 });
