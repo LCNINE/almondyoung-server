@@ -187,3 +187,31 @@ CSV 는 `--csv <경로>` 로 다른 파일을 줄 수도 있다. 기본은 실�
 | `다른 실행 폴더 … 의 run.json 을 못 읽었다` | 손으로 고쳤다면 되돌린다. 못 되돌리면 폴더는 그대로 두고 개발자에게 |
 | `저녁 dispatch 로 끝났다` | 그 실행은 끝났다. 새 `--run` 으로 |
 | 다른 사람이 시작한 실행 | 새 `--run` 으로 |
+
+## 로컬 확인 (개발자)
+
+비상 경로가 정식(앱) 경로와 같은 기록을 남기는지 로컬 스택에서 본다. 2026-11-18 에 이 순서로 통과했다(PR #1434 본문).
+
+```bash
+npm run bootstrap:e2e:local          # 컨테이너·마이그·시드
+npm run start:all:local              # 가짜 한진(scripts/local/hanjin-stub.ts, :4599)도 띄우고 core 의 한진 주소를 거기로 덮는다
+npm run seed:order-path:local        # 주문 가능한 상품(멱등)
+npm run order:place:local -- --count 3   # 자사몰 주문 3건 → 부천 상자 3개. 끝 줄 «상자: id,…»
+```
+
+1. 상자 하나는 **정식 경로**로 낸다 — 어드민 «출고 › 출고 준비»에서 그 상자만 골라 «출고 준비», 창고 앱(스테이션)에서
+   F2 «작업 시작» → «송장 인쇄» → F1 송장·상품 스캔으로 «출고 완료». 비상 prepare 는 부천의 준비된 상자를 모두 집으므로 **이걸 먼저** 한다.
+2. 나머지는 비상 경로로: `prepare --stage local --warehouse <부천 id> --run <id> --apply` → `shipments.csv` 에서 한 줄 지우기 →
+   `dispatch --stage local --run <id> --apply` 를 두 번(두 번째는 «이미»·«이미 끝났다»).
+3. 대조 — 같은 날, 플래그 없이:
+
+```bash
+npx tsx scripts/ops/emergency-outbound/local/compare.ts --normal <정식 상자> --emergency <비상 상자,…>
+```
+
+종료 0 이면 통과. Medusa 반영은 `order.metadata.coreShipmentAttempts[].invoice.trackingNo` 가 상자 송장과 같은지로 본다(`attemptTracking`).
+최상위 `coreTrackingNumber` 는 로컬에서 정식 경로도 비어 있다 — 비교만 하고 판정에 쓰지 않는다.
+
+함정: 워크트리엔 `.env` 가 없다(메인 체크아웃 것을 링크) · 워크트리 docker 는 `COMPOSE_PROJECT_NAME=almondyoung-server` ·
+로그인 프롬프트를 파이프로 넣을 땐 입력 사이에 간격(`(sleep 6; echo admin; sleep 3; echo <비번>) | …`).
+

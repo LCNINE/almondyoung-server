@@ -68,11 +68,7 @@ async function prepareMain(cmd: Extract<Command, { cmd: 'prepare' }>, dir: strin
   return 0;
 }
 
-async function dispatchMain(
-  cmd: Extract<Command, { cmd: 'dispatch' }>,
-  state: RunState,
-  dir: string,
-): Promise<number> {
+async function dispatchMain(cmd: Extract<Command, { cmd: 'dispatch' }>, state: RunState, dir: string): Promise<number> {
   const api = await openChecked(cmd, state.warehouseId);
   if (!api) return 1;
   const csvText = readFileSync(resolve(process.cwd(), cmd.csv), 'utf8');

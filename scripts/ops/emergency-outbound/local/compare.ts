@@ -10,6 +10,10 @@
  *
  * DB 주소는 `apps/core/.env`·`apps/medusa/.env` 의 `DATABASE_URL`(셸의 `CORE_DATABASE_URL`·`MEDUSA_DATABASE_URL`
  * 이 이긴다). localhost/127.0.0.1 이 아니면 거절한다. 연결은 `default_transaction_read_only` 로 연다.
+ *
+ * 상자는 로컬 스택에서 만든다 — `start:all:local`(가짜 한진 `scripts/local/hanjin-stub.ts` 포함) → `seed:order-path:local` →
+ * `order:place:local -- --count N`. 절차는 README «로컬 확인». Medusa 송장 판정은 `coreShipmentAttempts[].invoice.trackingNo`
+ * (`attemptTracking`) — 최상위 `coreTrackingNumber` 는 정식 경로도 비어 있어 비교만 한다.
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
