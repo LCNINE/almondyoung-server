@@ -33,4 +33,24 @@ export async function checkMatching(tx: Sql, r: Report): Promise<void> {
   else r.bad(`아직 안 나간 주문 중 매칭이 있는데 멈춘 대기열 행 ${stuck}건`, '깨우는 경로 버그 (#1242)');
   const closed = rows.filter((x) => !live.includes(x)).reduce((sum, x) => sum + x.n, 0);
   if (closed) r.info(`이미 끝난 주문의 같은 행 ${closed}건 — 깨우지 말고 닫는다 (#1243)`);
+
+  r.section('매칭 3. 위탁 업체 화주 — 위탁 SKU 가 자사 화주로 남아 있지 않은가');
+  // 어느 SKU 가 위탁인지는 레포 밖 업체 파일이 정본이라, 여기선 옮긴 흔적(위탁 화주의 SKU)만 본다.
+  // 화주는 누구 물건인지, 매칭은 자사몰에서 파는지를 정한다 — 매칭된 위탁 SKU 는 위탁판매라 막지 않는다.
+  const holders = await tx<{ name: string; skus: number; matched: number }[]>`
+    select h.name, count(s.id)::int as skus,
+      count(s.id) filter (where exists (select 1 from product_variant_sku_links l where l.sku_id = s.id))::int as matched
+    from holders h left join skus s on s.holder_id = h.id and s.is_deleted = false
+    where not h.is_our_asset group by h.id order by 2 desc`;
+  r.table(holders);
+  const moved = holders.reduce((sum, h) => sum + h.skus, 0);
+  if (moved > 0) r.ok(`위탁 화주 ${holders.length}곳에 SKU ${moved}개`);
+  else
+    r.bad(
+      '위탁 화주의 SKU 가 0 → 위탁 재고가 자사 재고로 잡혀 보충 제안에 섞인다',
+      'scripts/sellmate/assign-consignment-holders.ts 로 업체 파일을 반영한다 (#1334)',
+    );
+  const sold = holders.reduce((sum, h) => sum + h.matched, 0);
+  if (sold)
+    r.info(`자사몰에 매칭된 위탁 SKU ${sold}개 — 위탁판매가 맞는지 확인한다(사입이면 업체 칸 자사 로 되돌린다)`);
 }
