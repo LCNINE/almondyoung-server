@@ -124,6 +124,14 @@ const OUTBOUND_CONFLICT_MESSAGES: Record<string, string> = {
     '방금 작업이 시작된 배치예요. 다시 넣어 주세요.',
   PICKING_SESSION_NOT_ACTIVE:
     '배치 재고 기록을 확인해야 해요. 관리자에게 문의해 주세요.',
+  SHIPMENT_NOT_DISPATCHABLE:
+    '지금 출고할 수 없는 박스예요. 주문이 취소되거나 바뀌었을 수 있어요. 담은 상품은 그대로 두고 관리자에게 확인해 주세요.',
+  SHIPMENT_NOT_INSPECTION_READY:
+    '아직 검수할 수 없는 박스예요. 관리자에게 확인해 주세요.',
+  SHIPMENT_SESSION_NOT_ACTIVE:
+    '배치 재고 기록을 확인해야 해요. 관리자에게 문의해 주세요.',
+  SHIPMENT_PACKER_LEASE_REQUIRED:
+    '이 박스의 작업자 확인이 맞지 않아요. 관리자에게 확인해 주세요.',
 };
 
 const INBOUND_WORKFLOW_MESSAGES: Record<string, string> = {
