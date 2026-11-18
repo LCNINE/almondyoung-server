@@ -1,22 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import {
-  and,
-  count,
-  desc,
-  eq,
-  gt,
-  ilike,
-  inArray,
-  isNotNull,
-  isNull,
-  lt,
-  lte,
-  ne,
-  notInArray,
-  or,
-  SQL,
-  sql,
-} from 'drizzle-orm';
+import { and, count, desc, eq, gt, ilike, inArray, isNotNull, isNull, lt, lte, ne, or, SQL, sql } from 'drizzle-orm';
 import { NotFoundError } from '@app/shared';
 import { InjectTypedDb, DbService } from '@app/db';
 import { wmsTables, wmsSchema, DbTx } from '../../schema/inventory.schema';
@@ -31,7 +14,10 @@ import { readLocationStockAvailability } from '../../shared/availability/locatio
 import { physicalQuantity } from './physical-quantity';
 import { GetStockSummaryByGroupQueryDto, StockSummaryGroupDto } from '../dto/stock-summary-by-group.dto';
 import { groupStockSummaries } from './group-stock-summaries';
-import { productMasterVariants, productMasterVersions } from '../../../catalog/schema/catalog.schema';
+import { productMasterVariants, productMasterVersions, salesChannels } from '../../../catalog/schema/catalog.schema';
+import { remainingUnshippedQuantity, unshippedDemandPredicate } from './unshipped-demand';
+import { unshippedOrders } from './unshipped-orders';
+import { UnshippedOrdersResponseDto } from '../dto/unshipped-orders.dto';
 
 @Injectable()
 export class StockProjectionReader {
@@ -182,20 +168,11 @@ export class StockProjectionReader {
           .select({
             skuId: foi.skuId,
             warehouseId: fo.warehouseId,
-            quantity: sql<number>`sum(greatest(${foi.qty} - ${foi.shippedQty} - ${foi.canceledQty}, 0))`
-              .mapWith(Number)
-              .as('unshipped_quantity'),
+            quantity: sql<number>`sum(${remainingUnshippedQuantity})`.mapWith(Number).as('unshipped_quantity'),
           })
           .from(foi)
           .innerJoin(fo, eq(fo.id, foi.fulfillmentOrderId))
-          .where(
-            and(
-              // completed/canceled와 과도기 shipped는 종료; recovery_required를 포함한 나머지는 잔여 수요다.
-              notInArray(fo.status, ['shipped', 'completed', 'canceled']),
-              ne(foi.status, 'canceled'),
-              warehouseId ? eq(fo.warehouseId, warehouseId) : undefined,
-            ),
-          )
+          .where(and(unshippedDemandPredicate, warehouseId ? eq(fo.warehouseId, warehouseId) : undefined))
           .groupBy(foi.skuId, fo.warehouseId),
       );
       const unshippedQuantity = sql<number>`coalesce(${unshipped.quantity}, 0)`.mapWith(Number);
@@ -291,8 +268,8 @@ export class StockProjectionReader {
           .select({
             groupKey: rows.groupKey,
             groupName: rows.groupName,
-            maxShortage: // 불량·반품·이동 중 재고로는 못 보내므로 부족은 정상 재고(ON_HAND)와 비교한다.
-            sql<number>`max(greatest(${rows.unshippedQuantity} - ${rows.onHandQty}, 0))`.as(
+            // 불량·반품·이동 중 재고로는 못 보내므로 부족은 정상 재고(ON_HAND)와 비교한다.
+            maxShortage: sql<number>`max(greatest(${rows.unshippedQuantity} - ${rows.onHandQty}, 0))`.as(
               'max_shortage',
             ),
             maxUnshipped: sql<number>`max(${rows.unshippedQuantity})`.as('max_unshipped'),
@@ -333,6 +310,50 @@ export class StockProjectionReader {
         page,
         limit,
       };
+    }, tx);
+  }
+
+  async listUnshippedOrders(skuId: string, warehouseId: string, tx?: DbTx): Promise<UnshippedOrdersResponseDto> {
+    return this.dbService.run(async (trx) => {
+      const {
+        fulfillmentOrderItems: foi,
+        fulfillmentOrders: fo,
+        salesOrders: so,
+        shipmentLines,
+        shipments,
+      } = wmsTables;
+      const rows = await trx
+        .select({
+          fulfillmentOrderItemId: foi.id,
+          salesOrderId: so.id,
+          orderNo: sql<string | null>`coalesce(${so.displayOrderNo}, ${so.channelOrderId})`,
+          channelName: salesChannels.name,
+          orderDate: so.orderDate,
+          createdAt: fo.createdAt,
+          customerName: so.customerName,
+          remainingQuantity: remainingUnshippedQuantity,
+          // 예약 정본은 상자 라인의 confirmed 예약이다 — FOI.reserved_qty 는 V2 출고에서 갱신되지 않는다.
+          reservedQuantity: sql<number>`(
+            select coalesce(sum(${wmsTables.stockReservations.quantity}), 0)
+            from ${wmsTables.stockReservations}
+            inner join ${shipmentLines} sl_r on sl_r.id = ${wmsTables.stockReservations.shipmentLineId}
+            where sl_r.fulfillment_order_item_id = ${foi.id}
+              and ${wmsTables.stockReservations.status} = 'confirmed'
+          )`.mapWith(Number),
+          shipmentStatus: shipments.status,
+          shipmentQuantity: shipmentLines.qty,
+          inspectedQuantity: shipmentLines.inspectedQty,
+        })
+        .from(foi)
+        .innerJoin(fo, eq(fo.id, foi.fulfillmentOrderId))
+        .leftJoin(so, eq(so.id, fo.salesOrderId))
+        .leftJoin(salesChannels, eq(salesChannels.site, sql`${so.salesChannel}::text`))
+        .leftJoin(shipmentLines, eq(shipmentLines.fulfillmentOrderItemId, foi.id))
+        .leftJoin(shipments, eq(shipments.id, shipmentLines.shipmentId))
+        .where(and(unshippedDemandPredicate, eq(foi.skuId, skuId), eq(fo.warehouseId, warehouseId)))
+        .orderBy(sql`coalesce(${so.orderDate}, ${fo.createdAt})`, foi.id);
+
+      return { items: unshippedOrders(rows, new Date()) };
     }, tx);
   }
 

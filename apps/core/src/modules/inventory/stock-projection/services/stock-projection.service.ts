@@ -32,6 +32,10 @@ export class StockProjectionService {
     return this.reader.listStockSummariesByGroup(query, tx);
   }
 
+  listUnshippedOrders(skuId: string, warehouseId: string, tx?: DbTx) {
+    return this.reader.listUnshippedOrders(skuId, warehouseId, tx);
+  }
+
   getTotalBySku(skuId: string, tx?: DbTx) {
     return this.reader.getTotalBySku(skuId, tx);
   }
