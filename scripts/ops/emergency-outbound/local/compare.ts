@@ -13,7 +13,7 @@
  *
  * 상자는 로컬 스택에서 만든다 — `start:all:local`(가짜 한진 `scripts/local/hanjin-stub.ts` 포함) → `seed:order-path:local` →
  * `order:place:local -- --count N`. 절차는 README «로컬 확인». Medusa 송장 판정은 `coreShipmentAttempts[].invoice.trackingNo`
- * (`attemptTracking`) — 최상위 `coreTrackingNumber` 는 정식 경로도 비어 있어 비교만 한다.
+ * (`attemptTracking`) — 최상위 `coreTrackingNumber` 는 쓰는 코드가 없어(#1452) 비교만 한다.
  */
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';

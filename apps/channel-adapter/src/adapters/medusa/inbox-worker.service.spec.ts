@@ -405,7 +405,9 @@ describe('InboxWorkerService ProductSellableQuantityChanged handling', () => {
     expect(claimSql.params).toContain('ProductMasterActiveVersionChanged');
     // 역투영 제거(#1016 35번 PR-D) — 배포 순간 남은 CoreOrderCancelled 행은 집지 않는다(전부 «이미 취소됨» 메아리).
     expect(claimSql.params).not.toContain('CoreOrderCancelled');
-    expect(claimSql.params).toContain('CoreFulfillmentShipped');
+    // 옛 주문 단위 배송 투영 제거(#1452) — 배포 순간 남은 행은 집지 않는다(배포 때 SQL 로 닫는다).
+    expect(claimSql.params).not.toContain('CoreFulfillmentShipped');
+    expect(claimSql.params).not.toContain('CoreFulfillmentDelivered');
   });
 
   it('renders the demotion order with a COALESCE guard so unmarked rows keep the priority lane', async () => {
@@ -631,120 +633,6 @@ describe('InboxWorkerService handleFailure race with an abandoned timed-out hand
     } finally {
       jest.useRealTimers();
     }
-  });
-});
-
-describe('InboxWorkerService V1 Medusa compatibility projection', () => {
-  it('uses the verified Medusa mapping instead of trusting an arbitrary payload channelOrderId', async () => {
-    const queryResults = [[], [{ channelOrderId: 'order_medusa_verified' }]];
-    const select = jest.fn(() => ({
-      from: jest.fn(() => ({
-        where: jest.fn(() => ({ limit: jest.fn(async () => queryResults.shift() ?? []) })),
-      })),
-    }));
-    const updates: Array<Record<string, unknown>> = [];
-    const update = jest.fn(() => ({
-      set: jest.fn((values: Record<string, unknown>) => ({
-        where: jest.fn(async () => {
-          updates.push(values);
-        }),
-      })),
-    }));
-    const lockExecute = jest.fn().mockResolvedValue([]);
-    const transaction = jest.fn(async (callback: (tx: { execute: typeof lockExecute }) => Promise<unknown>) =>
-      callback({ execute: lockExecute }),
-    );
-    const medusaClient = { updateOrderShippingProjection: jest.fn().mockResolvedValue(undefined) };
-    const service = new (InboxWorkerService as any)(
-      { db: { select, update, transaction } },
-      {},
-      {},
-      {},
-      {},
-      medusaClient,
-      {},
-      {},
-      { get: jest.fn() },
-      { runWithChain: jest.fn() },
-    );
-
-    await service.doProcessInboxEvent({
-      id: 'inbox-v1-shipped',
-      eventType: 'CoreFulfillmentShipped',
-      aggregateId: '11111111-1111-4111-8111-111111111111',
-      payload: {
-        fulfillmentId: '22222222-2222-4222-8222-222222222222',
-        orderId: '11111111-1111-4111-8111-111111111111',
-        channelOrderId: 'naver-order-that-must-not-be-used',
-        trackingInfo: { carrier: 'HANJIN', trackingNumber: 'TRACK-1' },
-      },
-      attempts: 1,
-      createdAt: new Date('2026-07-14T00:00:00.000Z'),
-      metadata: {},
-    });
-
-    expect(medusaClient.updateOrderShippingProjection).toHaveBeenCalledWith(
-      'order_medusa_verified',
-      expect.objectContaining({ status: 'shipped' }),
-    );
-    expect(transaction).toHaveBeenCalledTimes(1);
-    expect(lockExecute).toHaveBeenCalledTimes(1);
-    expect(updates).toContainEqual(expect.objectContaining({ status: 'published' }));
-  });
-
-  it('takes the shared PostgreSQL order lock before the V1 delivered metadata projection', async () => {
-    const queryResults = [[], [{ channelOrderId: 'order_medusa_verified' }]];
-    const select = jest.fn(() => ({
-      from: jest.fn(() => ({
-        where: jest.fn(() => ({ limit: jest.fn(async () => queryResults.shift() ?? []) })),
-      })),
-    }));
-    const update = jest.fn(() => ({
-      set: jest.fn(() => ({ where: jest.fn().mockResolvedValue(undefined) })),
-    }));
-    const callOrder: string[] = [];
-    const transaction = jest.fn(async (callback: (tx: { execute: () => Promise<never[]> }) => Promise<unknown>) =>
-      callback({
-        execute: jest.fn(async () => {
-          callOrder.push('lock');
-          return [] as never[];
-        }),
-      }),
-    );
-    const medusaClient = {
-      updateOrderShippingProjection: jest.fn(async () => {
-        callOrder.push('projection');
-      }),
-    };
-    const service = new (InboxWorkerService as any)(
-      { db: { select, update, transaction } },
-      {},
-      {},
-      {},
-      {},
-      medusaClient,
-      {},
-      {},
-      { get: jest.fn() },
-      { runWithChain: jest.fn() },
-    );
-
-    await service.doProcessInboxEvent({
-      id: 'inbox-v1-delivered',
-      eventType: 'CoreFulfillmentDelivered',
-      aggregateId: '11111111-1111-4111-8111-111111111111',
-      payload: {
-        fulfillmentId: '22222222-2222-4222-8222-222222222222',
-        orderId: '11111111-1111-4111-8111-111111111111',
-        deliveredAt: '2026-07-15T01:00:00.000Z',
-      },
-      attempts: 1,
-      createdAt: new Date('2026-07-15T01:00:00.000Z'),
-      metadata: {},
-    });
-
-    expect(callOrder).toEqual(['lock', 'projection']);
-    expect(transaction).toHaveBeenCalledTimes(1);
   });
 });
 

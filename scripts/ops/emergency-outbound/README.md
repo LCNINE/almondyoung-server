@@ -220,7 +220,7 @@ npx tsx scripts/ops/emergency-outbound/local/compare.ts --normal <정식 상자>
 ```
 
 종료 0 이면 통과. Medusa 반영은 `order.metadata.coreShipmentAttempts[].invoice.trackingNo` 가 상자 송장과 같은지로 본다(`attemptTracking`).
-최상위 `coreTrackingNumber` 는 로컬에서 정식 경로도 비어 있다 — 비교만 하고 판정에 쓰지 않는다.
+최상위 `coreTrackingNumber` 는 쓰는 코드가 없다(#1452 에서 옛 투영을 지웠다) — 비교만 하고 판정에 쓰지 않는다.
 
 함정: 워크트리엔 `.env` 가 없다(메인 체크아웃 것을 링크) · 워크트리 docker 는 `COMPOSE_PROJECT_NAME=almondyoung-server` ·
 로그인 프롬프트를 파이프로 넣을 땐 입력 사이에 간격(`(sleep 6; echo admin; sleep 3; echo <비번>) | …`).

@@ -7,7 +7,7 @@ const DATABASE_URL = process.env.DATABASE_URL;
 const describeIfDb = DATABASE_URL ? describe : describe.skip;
 
 describeIfDb('Medusa order projection advisory lock (PostgreSQL integration)', () => {
-  it('serializes V1 and V2 read-modify-write work for the same Medusa order across connections', async () => {
+  it('serializes two read-modify-write writers for the same Medusa order across connections', async () => {
     const clientA = postgres(DATABASE_URL as string, { max: 1, prepare: false });
     const clientB = postgres(DATABASE_URL as string, { max: 1, prepare: false });
     const dbServiceA = { db: drizzle(clientA) } as never;
