@@ -1051,6 +1051,15 @@ export interface PreparationShipmentDto {
   split?: ShipmentSplitShare | null;
   // 결품으로 배치에서 빠져 돌아온 상자. 서버가 분류마다 맨 앞에 모아 준다.
   shortPick?: PreparationShortPickLine[] | null;
+  // 위탁 업체(3pl) 상자면 그 화주. 자사 상자는 null
+  owner?: { id: string; name: string } | null;
+}
+
+export interface PreparationHolder {
+  // own(자사) 또는 위탁 화주 id — 화주 필터 값 그대로
+  key: string;
+  name: string;
+  count: number;
 }
 
 export interface PreparationShortPickLine {
@@ -1072,6 +1081,8 @@ export interface OutboundPreparationSummary {
   warehouseId: string;
   buckets: PreparationBucketDto[];
   awaitingMatchingCount: number;
+  // 분류에 든 상자의 화주별 개수(필터와 무관). 서버가 주기 전 응답에는 없다
+  holders?: PreparationHolder[];
 }
 
 export interface BulkShipmentFailure {

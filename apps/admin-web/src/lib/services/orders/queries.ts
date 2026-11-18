@@ -70,22 +70,30 @@ export const useSalesOrderItems = (orderId: string) => {
 export const useOutboundPreparationSummary = (
   warehouseId: string,
   enabled = true,
-  refetchOnMount: boolean | 'always' = true
+  refetchOnMount: boolean | 'always' = true,
+  holders: readonly string[] = []
 ) => {
   return useQuery({
-    queryKey: orderQueryKeys.outboundPreparationSummary(warehouseId),
-    queryFn: () => orders.outboundPreparation.summary(warehouseId),
+    queryKey: orderQueryKeys.outboundPreparationSummary(warehouseId, holders),
+    queryFn: () =>
+      orders.outboundPreparation.summary(warehouseId, undefined, holders),
     enabled: !!warehouseId && enabled,
     refetchOnMount,
   });
 };
 
-export const useLoadMoreOutboundPreparation = (warehouseId: string) => {
+export const useLoadMoreOutboundPreparation = (
+  warehouseId: string,
+  holders: readonly string[] = []
+) => {
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: async (bucket: PreparationBucket) => {
-      const queryKey = orderQueryKeys.outboundPreparationSummary(warehouseId);
+      const queryKey = orderQueryKeys.outboundPreparationSummary(
+        warehouseId,
+        holders
+      );
       const summary =
         queryClient.getQueryData<OutboundPreparationSummary>(queryKey);
       const current = summary?.buckets.find((entry) => entry.bucket === bucket);
@@ -94,10 +102,11 @@ export const useLoadMoreOutboundPreparation = (warehouseId: string) => {
         return;
       }
 
-      const page = await orders.outboundPreparation.summary(warehouseId, {
-        bucket,
-        offset: current.shipments.length,
-      });
+      const page = await orders.outboundPreparation.summary(
+        warehouseId,
+        { bucket, offset: current.shipments.length },
+        holders
+      );
       const next = page.buckets.find((entry) => entry.bucket === bucket);
 
       if (!next) {

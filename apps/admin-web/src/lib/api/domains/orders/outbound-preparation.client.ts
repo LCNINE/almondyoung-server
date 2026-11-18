@@ -15,9 +15,16 @@ const BASE = `${ALMONDYOUNG_API_BASE_URL}/outbound-preparation`;
 export const outboundPreparationClient = {
   summary: async (
     warehouseId: string,
-    page?: { bucket: PreparationBucket; offset: number }
+    page?: { bucket: PreparationBucket; offset: number },
+    holders: readonly string[] = []
   ): Promise<OutboundPreparationSummary> => {
-    const res = await client.get(BASE, { params: { warehouseId, ...page } });
+    const res = await client.get(BASE, {
+      params: {
+        warehouseId,
+        ...page,
+        ...(holders.length > 0 && { holders: holders.join(',') }),
+      },
+    });
 
     return res.data;
   },

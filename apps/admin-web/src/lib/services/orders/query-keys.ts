@@ -30,8 +30,14 @@ export const orderQueryKeys = {
 
   // 출고 준비
   outboundPreparation: ['outbound-preparation'] as const,
-  outboundPreparationSummary: (warehouseId: string) =>
-    ['outbound-preparation', warehouseId] as const,
+  // 화주 필터가 있으면 한 칸 더 — 창고 키로 무효화하면 필터 걸린 것도 같이 풀린다
+  outboundPreparationSummary: (
+    warehouseId: string,
+    holders: readonly string[] = []
+  ) =>
+    holders.length > 0
+      ? (['outbound-preparation', warehouseId, holders.join(',')] as const)
+      : (['outbound-preparation', warehouseId] as const),
 
   // 이행 관련
   fulfillments: ['fulfillments'] as const,

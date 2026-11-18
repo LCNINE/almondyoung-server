@@ -282,6 +282,40 @@ beforeEach(() => {
 });
 
 describe('OutboundPreparationTemplate', () => {
+  it('화주를 여럿 골라 거르고, 전체를 누르면 거름을 푼다', async () => {
+    mockSummary.holders = [
+      { key: 'own', name: '자사', count: 30 },
+      { key: 'h1', name: '업체가', count: 2 },
+      { key: 'h2', name: '업체나', count: 1 },
+    ];
+
+    render(<OutboundPreparationTemplate />);
+
+    await userEvent.click(screen.getByRole('button', { name: '업체가 2' }));
+    await userEvent.click(screen.getByRole('button', { name: '업체나 1' }));
+
+    expect(jest.mocked(useOutboundPreparationSummary)).toHaveBeenLastCalledWith(
+      'w1',
+      true,
+      'always',
+      ['h1', 'h2']
+    );
+    expect(
+      screen
+        .getByRole('button', { name: '업체가 2' })
+        .getAttribute('aria-pressed')
+    ).toBe('true');
+
+    await userEvent.click(screen.getByRole('button', { name: '전체' }));
+
+    expect(jest.mocked(useOutboundPreparationSummary)).toHaveBeenLastCalledWith(
+      'w1',
+      true,
+      'always',
+      []
+    );
+  });
+
   it('상자 조회 권한이 없으면 안내를 보여 주고 summary 조회를 끈다', () => {
     mockShipmentReadAllowed = false;
 
@@ -295,7 +329,8 @@ describe('OutboundPreparationTemplate', () => {
     expect(useOutboundPreparationSummary).toHaveBeenCalledWith(
       'w1',
       false,
-      'always'
+      'always',
+      []
     );
     expect(screen.queryByRole('table')).toBeNull();
     expect(screen.queryByRole('button', { name: '다시 불러오기' })).toBeNull();
@@ -1271,7 +1306,8 @@ describe('합포장 결과에서 넘어온 상자', () => {
       expect(useOutboundPreparationSummary).toHaveBeenCalledWith(
         'w1',
         true,
-        'always'
+        'always',
+        []
       );
       expect(screen.queryByText(/찾지 못했어요/)).toBeNull();
 

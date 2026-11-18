@@ -148,6 +148,11 @@ export function BucketList({
                   </TableCell>
                   <TableCell className="tabular-nums">
                     {plannedOrderText(shipment)}
+                    {shipment.owner && (
+                      <span className="mt-1 block w-fit rounded bg-muted px-1.5 py-0.5 text-xs font-semibold text-foreground">
+                        3PL · {shipment.owner.name}
+                      </span>
+                    )}
                     {shipment.split && (
                       <span className="block text-xs font-medium text-foreground">
                         {splitShareText(shipment.split)}
