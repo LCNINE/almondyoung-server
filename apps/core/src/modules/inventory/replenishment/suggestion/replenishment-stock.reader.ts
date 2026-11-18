@@ -37,7 +37,8 @@ export class ReplenishmentStockReader {
   async listSkuMasters(tx: DbTx, skuIds?: string[]): Promise<SkuMasterRow[]> {
     return this.dbService.run(async (trx) => {
       const skus = wmsTables.skus;
-      const conditions = [eq(skus.isDeleted, false)];
+      // 위탁 업체 화주의 재고는 업체가 채운다 — 우리 발주·이동 대상이 아니다
+      const conditions = [eq(skus.isDeleted, false), eq(wmsTables.holders.isOurAsset, true)];
       if (skuIds) {
         if (skuIds.length === 0) return [];
         conditions.push(inArray(skus.id, skuIds));
@@ -50,6 +51,7 @@ export class ReplenishmentStockReader {
           moq: skus.moq,
         })
         .from(skus)
+        .innerJoin(wmsTables.holders, eq(wmsTables.holders.id, skus.holderId))
         .where(and(...conditions));
       if (base.length === 0) return [];
       const ids = base.map((row) => row.skuId);
