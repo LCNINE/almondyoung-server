@@ -7,7 +7,7 @@ describe('WaybillController', () => {
     const svc = {
       issueForShipment: jest.fn().mockResolvedValue({ id: 'w1', status: 'registered' }),
       registerManual: jest.fn().mockResolvedValue({ id: 'w1', status: 'registered' }),
-      void: jest.fn().mockResolvedValue({ id: 'w1', status: 'voided' }),
+      voidByOperator: jest.fn().mockResolvedValue({ id: 'w1', status: 'voided' }),
       reissue: jest.fn().mockResolvedValue({ id: 'w2', status: 'registered' }),
       abandon: jest.fn().mockResolvedValue({ id: 'w1', status: 'abandoned' }),
       getActiveWaybill: jest.fn().mockResolvedValue({ id: 'w1', status: 'registered' }),
@@ -55,11 +55,11 @@ describe('WaybillController', () => {
     });
   });
 
-  it('void delegates with actor + idempotency-key', async () => {
+  it('void 는 운영자 무효화로 사유째 넘긴다', async () => {
     const { controller, svc } = make();
-    const dto = { reason: 'damaged' };
+    const dto = { reason: '송장 출력 불량·분실', reasonCode: 'label_damaged' };
     await controller.void('w1', dto, 'idem-4', user);
-    expect(svc.void).toHaveBeenCalledWith('w1', dto, 'idem-4', { id: 'u1', roles: ['logistics_worker'] });
+    expect(svc.voidByOperator).toHaveBeenCalledWith('w1', dto, 'idem-4', { id: 'u1', roles: ['logistics_worker'] });
   });
 
   it('abandon delegates with actor + idempotency-key', async () => {
@@ -72,10 +72,32 @@ describe('WaybillController', () => {
   it('reissue delegates with actor + idempotency-key', async () => {
     const { controller, svc } = make();
     await controller.reissue('s1', { carrier: 'HANJIN', expectedManifestVersion: 3 } as never, 'idem-5', user);
-    expect(svc.reissue).toHaveBeenCalledWith('s1', { carrier: 'HANJIN', expectedManifestVersion: 3 }, 'idem-5', {
-      id: 'u1',
-      roles: ['logistics_worker'],
-    });
+    expect(svc.reissue).toHaveBeenCalledWith(
+      's1',
+      { carrier: 'HANJIN', expectedManifestVersion: 3 },
+      'idem-5',
+      { id: 'u1', roles: ['logistics_worker'] },
+      undefined,
+    );
+  });
+
+  it('reissue 는 고른 사유를 따로 넘기고 발급 옵션에는 섞지 않는다', async () => {
+    const { controller, svc } = make();
+    const dto = {
+      carrier: 'HANJIN',
+      expectedManifestVersion: 3,
+      reason: '',
+      reasonCode: 'carrier_error',
+      note: '메모',
+    };
+    await controller.reissue('s1', dto as never, 'idem-7', user);
+    expect(svc.reissue).toHaveBeenCalledWith(
+      's1',
+      { carrier: 'HANJIN', expectedManifestVersion: 3 },
+      'idem-7',
+      { id: 'u1', roles: ['logistics_worker'] },
+      { reason: '', reasonCode: 'carrier_error', requestChannel: undefined, note: '메모' },
+    );
   });
 
   it('active delegates to getActiveWaybill by shipmentId', async () => {

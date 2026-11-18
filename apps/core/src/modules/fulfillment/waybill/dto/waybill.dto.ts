@@ -12,6 +12,33 @@ export class IssueWaybillDto {
   carrier: CarrierCode;
 }
 
+/** 재발급 — 발급과 같고, 지금 송장을 무효로 하는 사유를 작업 기록에 남긴다(사유 없이 오면 «송장 재발급»). */
+export class ReissueWaybillDto extends IssueWaybillDto {
+  @ApiPropertyOptional({ description: '기타를 고르면 직접 쓴 사유' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  reason?: string;
+
+  @ApiPropertyOptional({ description: '사유 코드(shipment-operation-reasons 의 waybill_reissue)' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  reasonCode?: string;
+
+  @ApiPropertyOptional({ description: '고객 요청이면 요청 경로' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(32)
+  requestChannel?: string;
+
+  @ApiPropertyOptional({ description: '운영 메모' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  note?: string;
+}
+
 export class RegisterManualWaybillDto {
   @IsInt()
   @Min(1)
@@ -33,7 +60,28 @@ export class RegisterManualWaybillDto {
 export class VoidWaybillDto {
   @IsString()
   @IsNotEmpty()
+  @MaxLength(500)
   reason: string;
+
+  @ApiPropertyOptional({
+    description: '사유 코드(shipment-operation-reasons 의 waybill_void). 없으면 사유 글만 남긴다',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  reasonCode?: string;
+
+  @ApiPropertyOptional({ description: '고객 요청이면 요청 경로' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(32)
+  requestChannel?: string;
+
+  @ApiPropertyOptional({ description: '운영 메모' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(1000)
+  note?: string;
 }
 
 export class AbandonWaybillDto {

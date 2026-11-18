@@ -86,7 +86,7 @@ beforeEach(() => {
     inboundPendingBySku: new Map(),
   });
   mockedLocks.describeStartBlockers.mockImplementation(async (_trx, blockers) =>
-    blockers.map((blocker) => ({ ...blocker, trackingNo: null, skuCode: null, skuName: null })),
+    blockers.map((blocker) => ({ ...blocker, orderNos: [], trackingNo: null, skuCode: null, skuName: null })),
   );
 });
 

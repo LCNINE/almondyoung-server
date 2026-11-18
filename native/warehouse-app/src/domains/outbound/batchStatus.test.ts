@@ -64,9 +64,18 @@ describe('배치 현황 박스 줄(스펙 §8 F2)', () => {
     expect(boxRowOf(state(patch))).toEqual({ shipmentId: 's', trackingNo: '421033881907', recipient: '김*영', status, tone });
   });
 
-  it('송장번호가 없으면(옛 core) 줄을 만들지 않는다 — 현장이 읽을 수 없는 id 를 그리지 않는다', () => {
+  it('송장번호 칸이 없으면(옛 core) 줄을 만들지 않는다', () => {
     expect(boxRowOf(state({ trackingNo: undefined }))).toBeNull();
-    expect(boxRowOf(state({ trackingNo: null }))).toBeNull();
+  });
+
+  it('송장이 없는 상자도 빨간 «송장 필요» 줄로 그린다 — 요약 숫자와 목록 줄 수가 맞는다', () => {
+    expect(boxRowOf(state({ trackingNo: null }))).toEqual({
+      shipmentId: 's',
+      trackingNo: '',
+      recipient: '김*영',
+      status: '송장 필요',
+      tone: 'alert',
+    });
   });
 
   it('취소 대기 박스는 송장이 없어도 빨간 취소 대기 줄로 그린다', () => {

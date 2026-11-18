@@ -1156,6 +1156,13 @@
       "when": 1794898443658,
       "tag": "20261117065403_add-waybill-sender-snapshot",
       "breakpoints": true
+    },
+    {
+      "idx": 165,
+      "version": "7",
+      "when": 1794979861323,
+      "tag": "20261118053101_add-waybill-operation-types",
+      "breakpoints": true
     }
   ]
 }
