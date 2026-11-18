@@ -4,18 +4,11 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { CircleHelp } from 'lucide-react';
 import Link from 'next/link';
 import { toast } from 'sonner';
-import {
-  getBatchBlockerGroups,
-  type ParsedServerError,
-} from '@/lib/api/server-error';
+import { getBatchBlockerGroups, type ParsedServerError } from '@/lib/api/server-error';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { usePermissionCheck } from '@/hooks/use-permission';
 import {
   Sheet,
@@ -90,9 +83,7 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
   // 새 후보가 오기 전에는 앞 후보를 보여 주므로, 그사이 이 배치에 들어간 상자는 뺀다
   const inBatch = new Set(
     (batch?.workItems ?? [])
-      .filter(
-        (item) => item.status !== 'completed' && item.status !== 'excluded'
-      )
+      .filter((item) => item.status !== 'completed' && item.status !== 'excluded')
       .map((item) => item.shipmentId)
   );
   const eligible = candidates.filter((item) => !inBatch.has(item.shipmentId));
@@ -326,9 +317,7 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
               <div>
                 <p className="text-muted-foreground">배치</p>
                 <p className="font-medium">{batch.name || batch.batchNumber}</p>
-                <p className="font-mono text-xs text-muted-foreground">
-                  {batch.batchNumber}
-                </p>
+                <p className="font-mono text-xs text-muted-foreground">{batch.batchNumber}</p>
               </div>
               <div>
                 <p className="text-muted-foreground">상태</p>
@@ -396,17 +385,14 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
                     </section>
                   )}
                   {joinBlocked ? (
-                    <p className="text-sm text-muted-foreground">
-                      {joinBlocked}
-                    </p>
+                    <p className="text-sm text-muted-foreground">{joinBlocked}</p>
                   ) : eligiblePending ? (
                     <p className="text-sm text-muted-foreground">
                       추가할 수 있는 상자를 확인하는 중…
                     </p>
                   ) : eligible.length === 0 ? (
                     <p className="text-sm text-muted-foreground">
-                      추가할 수 있는 상자가 없습니다. 출고주문에서 계획 확정과
-                      운송장 발급을 마친 상자만 나와요.
+                      추가할 수 있는 상자가 없습니다. 출고주문에서 계획 확정과 운송장 발급을 마친 상자만 나와요.
                     </p>
                   ) : (
                     <div className="max-h-48 overflow-auto rounded border">
@@ -428,9 +414,7 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
                                   href={`/order/fulfillments?shipmentId=${item.shipmentId}`}
                                   title={`상자 ${item.shipmentId} · manifest v${item.manifestVersion} / reservation v${item.reservationVersion}`}
                                 >
-                                  {item.displayOrderNo
-                                    ? `#${item.displayOrderNo}`
-                                    : '주문번호 없음'}
+                                  {item.displayOrderNo ? `#${item.displayOrderNo}` : '주문번호 없음'}
                                 </Link>
                                 <p className="text-xs text-muted-foreground">
                                   {item.itemSummary}
@@ -451,10 +435,7 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
                                     onClick={() =>
                                       command(
                                         `add:${item.shipmentId}`,
-                                        {
-                                          batchId,
-                                          shipmentId: item.shipmentId,
-                                        },
+                                        { batchId, shipmentId: item.shipmentId },
                                         (data, idempotencyKey) =>
                                           addShipment.mutateAsync({
                                             ...data,
@@ -500,15 +481,9 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
                           <span className="flex items-center gap-1">
                             작업
                             <HelpTip label="작업 버튼 안내">
-                              <p>
-                                보통은 창고 앱에서 송장을 찍으면 담당이 자동으로
-                                정해져요.
-                              </p>
+                              <p>보통은 창고 앱에서 송장을 찍으면 담당이 자동으로 정해져요.</p>
                               <p>맡기 버튼은 앱을 못 쓸 때만 눌러요.</p>
-                              <p>
-                                넘기기는 근무 교대처럼 맡은 사람이 끝까지 못 할
-                                때 다른 작업자에게 넘기는 거예요.
-                              </p>
+                              <p>넘기기는 근무 교대처럼 맡은 사람이 끝까지 못 할 때 다른 작업자에게 넘기는 거예요.</p>
                               <p>배치에서 빼기는 상자를 잘못 넣었을 때 써요.</p>
                             </HelpTip>
                           </span>
@@ -524,9 +499,7 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
                             className="font-medium"
                             title={`상자 ${item.shipmentId} · 작업 ${item.id} · lease v${item.leaseVersion}`}
                           >
-                            {item.displayOrderNo
-                              ? `#${item.displayOrderNo}`
-                              : '주문번호 없음'}
+                            {item.displayOrderNo ? `#${item.displayOrderNo}` : '주문번호 없음'}
                           </p>
                           <p className="text-xs text-muted-foreground">
                             {item.itemSummary}
@@ -540,8 +513,7 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
                           >
                             {item.recoveryReason
                               ? '복구 필요'
-                              : (WORK_ITEM_STATUS_LABEL[item.status] ??
-                                item.status)}
+                              : (WORK_ITEM_STATUS_LABEL[item.status] ?? item.status)}
                           </Badge>
                           {item.exclusionReason && (
                             <p className="text-xs text-destructive">
@@ -549,16 +521,10 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
                             </p>
                           )}
                         </TableCell>
-                        <TableCell
-                          className="text-xs"
-                          title={item.pickerClaim.workerId ?? undefined}
-                        >
+                        <TableCell className="text-xs" title={item.pickerClaim.workerId ?? undefined}>
                           {claimText(item.pickerClaim, workerName)}
                         </TableCell>
-                        <TableCell
-                          className="text-xs"
-                          title={item.packerClaim.workerId ?? undefined}
-                        >
+                        <TableCell className="text-xs" title={item.packerClaim.workerId ?? undefined}>
                           {claimText(item.packerClaim, workerName)}
                         </TableCell>
                         {canWorkItemAction && (
@@ -571,60 +537,56 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
                                     : '지금은 할 수 있는 작업이 없어요'}
                                 </span>
                               )}
-                              {canClaimPicker &&
-                                PICKER_CLAIMABLE.includes(item.status) && (
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={() =>
-                                      command(
-                                        `picker:${item.id}`,
-                                        {
-                                          batchId,
-                                          workItemId: item.id,
-                                          data: {
-                                            expectedLeaseVersion:
-                                              item.leaseVersion,
-                                          },
-                                        },
-                                        (payload, idempotencyKey) =>
-                                          claimPicker.mutateAsync({
-                                            ...payload,
-                                            idempotencyKey,
-                                          })
-                                      )
-                                    }
-                                  >
-                                    내가 피킹 맡기
-                                  </Button>
-                                )}
-                              {canClaimPacker &&
-                                PACKER_CLAIMABLE.includes(item.status) && (
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={() =>
-                                      command(
-                                        `packer:${item.id}`,
-                                        {
-                                          batchId,
-                                          workItemId: item.id,
-                                          data: {
-                                            expectedLeaseVersion:
-                                              item.leaseVersion,
-                                          },
-                                        },
-                                        (payload, idempotencyKey) =>
-                                          claimPacker.mutateAsync({
-                                            ...payload,
-                                            idempotencyKey,
-                                          })
-                                      )
-                                    }
-                                  >
-                                    내가 포장 맡기
-                                  </Button>
-                                )}
+                              {canClaimPicker && PICKER_CLAIMABLE.includes(item.status) && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() =>
+                                  command(
+                                    `picker:${item.id}`,
+                                    {
+                                      batchId,
+                                      workItemId: item.id,
+                                      data: {
+                                        expectedLeaseVersion: item.leaseVersion,
+                                      },
+                                    },
+                                    (payload, idempotencyKey) =>
+                                      claimPicker.mutateAsync({
+                                        ...payload,
+                                        idempotencyKey,
+                                      })
+                                  )
+                                }
+                              >
+                                내가 피킹 맡기
+                              </Button>
+                              )}
+                              {canClaimPacker && PACKER_CLAIMABLE.includes(item.status) && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() =>
+                                  command(
+                                    `packer:${item.id}`,
+                                    {
+                                      batchId,
+                                      workItemId: item.id,
+                                      data: {
+                                        expectedLeaseVersion: item.leaseVersion,
+                                      },
+                                    },
+                                    (payload, idempotencyKey) =>
+                                      claimPacker.mutateAsync({
+                                        ...payload,
+                                        idempotencyKey,
+                                      })
+                                  )
+                                }
+                              >
+                                내가 포장 맡기
+                              </Button>
+                              )}
                               {canHandoffPicker &&
                                 handoffOwnerOf(
                                   'picker',
@@ -751,10 +713,7 @@ function HelpTip({ label, children }: { label: string; children: ReactNode }) {
       >
         <CircleHelp className="size-4" />
       </PopoverTrigger>
-      <PopoverContent
-        side="top"
-        className="w-72 space-y-1 text-sm leading-relaxed"
-      >
+      <PopoverContent side="top" className="w-72 space-y-1 text-sm leading-relaxed">
         {children}
       </PopoverContent>
     </Popover>
@@ -850,19 +809,13 @@ function claimText(
 }
 
 const COMMAND_ERROR_MESSAGE: Record<string, string> = {
-  WORK_ITEM_NOT_CLAIMABLE:
-    '지금 단계에서는 맡을 수 없는 상자예요. 목록을 다시 불러왔어요.',
-  WORK_ITEM_HANDOFF_REQUIRED:
-    '다른 작업자가 맡고 있어요. 그 작업자에게 넘겨받아 주세요.',
+  WORK_ITEM_NOT_CLAIMABLE: '지금 단계에서는 맡을 수 없는 상자예요. 목록을 다시 불러왔어요.',
+  WORK_ITEM_HANDOFF_REQUIRED: '다른 작업자가 맡고 있어요. 그 작업자에게 넘겨받아 주세요.',
   WORK_ITEM_CLAIM_NOT_ACTIVE: '포장 중인 담당자가 없어서 넘길 수 없어요.',
-  WORK_ITEM_STALE_LEASE_VERSION:
-    '그사이 상자 상태가 바뀌었어요. 목록을 다시 불러왔어요.',
-  WORKER_ACTIVE_CLAIM_EXISTS:
-    '받을 작업자가 다른 상자를 맡고 있어요. 그 상자를 끝내거나 넘긴 뒤 다시 해 주세요.',
-  PICKING_HANDOFF_NOT_ACTIVE:
-    '피킹 중인 담당자가 없어서 넘길 수 없어요. 목록을 다시 불러왔어요.',
-  PICKING_HANDOFF_STALE:
-    '그사이 상자 상태가 바뀌었어요. 목록을 다시 불러왔어요.',
+  WORK_ITEM_STALE_LEASE_VERSION: '그사이 상자 상태가 바뀌었어요. 목록을 다시 불러왔어요.',
+  WORKER_ACTIVE_CLAIM_EXISTS: '받을 작업자가 다른 상자를 맡고 있어요. 그 상자를 끝내거나 넘긴 뒤 다시 해 주세요.',
+  PICKING_HANDOFF_NOT_ACTIVE: '피킹 중인 담당자가 없어서 넘길 수 없어요. 목록을 다시 불러왔어요.',
+  PICKING_HANDOFF_STALE: '그사이 상자 상태가 바뀌었어요. 목록을 다시 불러왔어요.',
 };
 
 const CLAIM_STATE_LABEL: Record<string, string> = {
