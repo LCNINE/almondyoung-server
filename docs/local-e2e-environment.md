@@ -177,9 +177,14 @@ npm run order:place:local -- --count 3     # 주문 3건 → 부천 상자 id �
 
 ```bash
 psql postgresql://postgres:postgres@localhost:5432/medusa -c \
-  "select id, metadata->>'coreShippingStatus' as status, metadata->>'coreTrackingNumber' as tracking from \"order\" where id='<Medusa 주문 id>';"
-# status = shipped, tracking = 91 로 시작하는 12자리
+  "select id, metadata->>'coreShippingStatus' as status,
+          (select string_agg(a->'invoice'->>'trackingNo', ',') from jsonb_array_elements(metadata->'coreShipmentAttempts') a) as tracking
+     from \"order\" where id='<Medusa 주문 id>';"
+# status = shipped, tracking = 91 로 시작하는 12자리 (상자의 송장)
 ```
+
+송장은 시도별 투영 `coreShipmentAttempts[].invoice.trackingNo` 에 온다. 최상위 `coreTrackingNumber` 는 정식(앱) 경로로 내보내도
+비어 있다(2026-11-18 실측) — 그 칸을 쓰는 옛 투영(`CoreFulfillmentShipped`)이 매핑을 못 찾아 건너뛴다. 이 칸으로 판정하지 않는다.
 
 **가짜 한진.** `start:all:local` 이 sms-stub 옆에서 띄우고(`logs/hanjin-stub.log`), core 를 띄울 때 `HANJIN_ORDER_BASE_URL`·
 `HANJIN_PRINT_BASE_URL` 을 셸 값으로 이 스텁에 덮는다 — `apps/core/.env` 에 실제 한진 키·주소가 있어도 로컬 스택은 바깥을 부르지 않는다.
