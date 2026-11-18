@@ -152,4 +152,36 @@ describe('selectTargets', () => {
     ]);
     expect(r.skipped).toEqual([]);
   });
+  it('leaves the boxes of another emergency run to that run', () => {
+    const r = selectTargets({
+      ...base,
+      batches: [
+        {
+          batch: batch('b-morning', 'individual', true),
+          workItems: [
+            wi('b-morning', 's1', 'queued'),
+            wi('b-morning', 's2', 'picking'),
+            wi('b-morning', 's3', 'packing'),
+            wi('b-morning', 's4', 'completed'),
+          ],
+        },
+        {
+          batch: batch('b-app', 'individual', true),
+          workItems: [wi('b-app', 's5', 'picking'), wi('b-app', 's6', 'packing')],
+        },
+      ],
+      foreign: {
+        batches: new Map([['b-morning', '20261118-0830']]),
+        shipments: new Map([['s5', '20261118-0830']]),
+      },
+    });
+    expect(r.targets).toEqual([{ shipmentId: 's6', from: 'batch', batchId: 'b-app', route: 'force' }]);
+    const reason = '앞 실행 20261118-0830 의 상자 — 그 실행의 dispatch 로';
+    expect(r.skipped).toEqual([
+      { shipmentId: 's1', reason },
+      { shipmentId: 's2', reason },
+      { shipmentId: 's3', reason },
+      { shipmentId: 's5', reason },
+    ]);
+  });
 });

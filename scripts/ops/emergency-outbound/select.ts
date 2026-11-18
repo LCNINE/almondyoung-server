@@ -21,6 +21,16 @@ export interface SelectInput {
   batches: { batch: BatchListItem; workItems: WorkItem[] }[];
   /** 이번 실행이 앞서 만든 배치 — 시작 전이어도 이어간다(prepare 가 시작한다). */
   ownBatchId?: string;
+  /**
+   * 같은 PC 의 다른 비상 출고 실행(`.scratch/emergency-outbound/<다른 실행>/run.json`)이 가진 것 — id → 그 실행 id.
+   * `batches` 는 그 실행이 만든 배치(안의 상자 전부), `shipments` 는 그 실행이 다른 배치에서 이어받은 상자.
+   * 그 상자의 라벨·피킹 리스트·발송은 그 실행 몫이다 — 여기서 다시 집으면 라벨이 두 장, 피킹이 두 번 된다.
+   */
+  foreign?: { batches: ReadonlyMap<string, string>; shipments: ReadonlyMap<string, string> };
+}
+
+export function foreignReason(run: string): string {
+  return `앞 실행 ${run} 의 상자 — 그 실행의 dispatch 로`;
 }
 
 const REASON_OTHER_METHOD = '다른 피킹 방식 배치에서 피킹 중';
@@ -36,9 +46,17 @@ export function selectTargets(input: SelectInput): { targets: Target[]; skipped:
   for (const { batch, workItems } of input.batches) {
     const individual = batch.pickingMethod === 'individual';
     const usable = individual && (batch.startedAt != null || batch.id === input.ownBatchId);
+    const foreignBatch = input.foreign?.batches.get(batch.id);
     for (const item of workItems) {
       if (seen.has(item.shipmentId)) continue;
       const id = item.shipmentId;
+      if (item.status === 'completed' || item.status === 'excluded') continue; // 무시(자리도 안 잡는다)
+      const foreignRun = foreignBatch ?? input.foreign?.shipments.get(id);
+      if (foreignRun !== undefined) {
+        skipped.push({ shipmentId: id, reason: foreignReason(foreignRun) });
+        seen.add(id);
+        continue;
+      }
       switch (item.status) {
         case 'ready_to_pack':
         case 'packing':
@@ -60,7 +78,7 @@ export function selectTargets(input: SelectInput): { targets: Target[]; skipped:
           skipped.push({ shipmentId: id, reason: `배치 작업 상태 ${item.status}` });
           break;
         default:
-          continue; // completed·excluded — 무시(자리도 안 잡는다)
+          continue;
       }
       seen.add(id);
     }

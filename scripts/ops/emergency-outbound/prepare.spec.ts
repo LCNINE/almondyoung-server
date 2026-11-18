@@ -1,4 +1,4 @@
-import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'fs';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { CoreApiError } from './core-api';
@@ -10,7 +10,10 @@ const RUN = '20261119-0830';
 const WH = 'wh-acme';
 
 function setup() {
-  const dir = mkdtempSync(join(tmpdir(), 'emergency-outbound-'));
+  // 실제 배치처럼 <뿌리>/<실행 id> — prepare 가 옆 폴더(다른 실행)의 run.json 을 읽는다.
+  const root = mkdtempSync(join(tmpdir(), 'emergency-outbound-'));
+  const dir = join(root, RUN);
+  mkdirSync(dir);
   const lines: string[] = [];
   const opts = (apply: boolean, run = RUN) => ({
     warehouseId: WH,
@@ -20,7 +23,7 @@ function setup() {
     outputs: false,
     log: (l: string) => lines.push(l),
   });
-  return { dir, lines, opts };
+  return { root, dir, lines, opts };
 }
 
 function drafts(core: FakeCore, ...ids: string[]): FakeCore {
@@ -269,6 +272,40 @@ describe('runPrepare', () => {
     expect(core.writes().length).toBe(writesBefore);
     expect(report.skipped.find((s) => s.shipmentId === 's9')?.reason).toContain('새 --run');
     expect(report.state?.boxes.map((b) => b.shipmentId)).toEqual(['s1']);
+  });
+
+  it('leaves the undispatched boxes of an earlier run on the same day to that run', async () => {
+    const { root, opts } = setup();
+    const core = drafts(new FakeCore(), 's1', 's2');
+    const morning = '20261119-0700';
+    const morningDir = join(root, morning);
+    await runPrepare(core, { ...opts(true), run: morning, dir: morningDir });
+    expect(core.batchRows.get('b')?.startedAt).not.toBeNull();
+    drafts(core, 's9');
+    const callsBefore = core.calls.length;
+
+    const report = await runPrepare(core, opts(true));
+
+    const reason = `앞 실행 ${morning} 의 상자 — 그 실행의 dispatch 로`;
+    expect(report.targets).toEqual([{ shipmentId: 's9', from: 'draft' }]);
+    expect(report.skipped).toEqual(
+      expect.arrayContaining([
+        { shipmentId: 's1', reason },
+        { shipmentId: 's2', reason },
+      ]),
+    );
+    expect(report.state?.boxes.map((b) => b.shipmentId)).toEqual(['s9']);
+    expect(report.state?.batchId).not.toBe('b');
+    const added = core.calls.slice(callsBefore).filter((c) => c.method === 'addToBatch');
+    expect(added.map((c) => c.args[1])).toEqual([['s9']]);
+  });
+
+  it('stops when another run folder has a broken run.json', async () => {
+    const { root, opts } = setup();
+    mkdirSync(join(root, '20261119-0700'));
+    writeFileSync(join(root, '20261119-0700', 'run.json'), '{"run": ');
+
+    await expect(runPrepare(drafts(new FakeCore(), 's1'), opts(false))).rejects.toThrow(/20261119-0700/);
   });
 
   it('refuses a run.json from another run or warehouse', async () => {

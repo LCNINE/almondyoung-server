@@ -15,6 +15,8 @@ import {
   PreparationShipment,
   WorkItem,
 } from './core-api';
+import { existsSync, readdirSync, statSync } from 'fs';
+import { basename, dirname, join } from 'path';
 import { produceOutputs } from './outputs';
 import { readRun, RunBox, RunState, writeRun } from './run-state';
 import { Route, selectTargets, Skipped, Target } from './select';
@@ -69,6 +71,7 @@ export async function runPrepare(api: CoreApi, opts: PrepareOptions): Promise<Pr
     );
   }
 
+  const foreign = foreignRuns(dir);
   const input = await gather(api, warehouseId);
   const selected = selectTargets({
     ready: input.ready,
@@ -76,6 +79,7 @@ export async function runPrepare(api: CoreApi, opts: PrepareOptions): Promise<Pr
     otherBuckets: input.otherBuckets,
     batches: input.batches,
     ownBatchId: prev?.batchId ?? undefined,
+    foreign,
   });
   const own = prev?.batchId ? input.batches.find((b) => b.batch.id === prev.batchId) : undefined;
   const ownBatch = own?.batch;
@@ -130,6 +134,36 @@ export async function runPrepare(api: CoreApi, opts: PrepareOptions): Promise<Pr
 }
 
 // ── 읽기 ────────────────────────────────────────────────────────────
+
+/**
+ * 같은 뿌리(`.scratch/emergency-outbound/`) 아래 다른 실행 폴더의 run.json — 그 실행이 만든 배치와 이어받은 상자.
+ * 같은 날 두 번째 실행이 아침 실행의 못 보낸 상자를 다시 집으면 라벨이 두 장, 피킹 리스트가 두 벌이 된다.
+ * 못 읽는 run.json 이 있으면 멈춘다 — 그 실행의 상자를 가릴 수 없다.
+ */
+function foreignRuns(dir: string): { batches: Map<string, string>; shipments: Map<string, string> } {
+  const batches = new Map<string, string>();
+  const shipments = new Map<string, string>();
+  const root = dirname(dir);
+  if (!existsSync(root)) return { batches, shipments };
+  for (const name of readdirSync(root).sort()) {
+    const sibling = join(root, name);
+    if (name === basename(dir) || !statSync(sibling).isDirectory()) continue;
+    if (!existsSync(join(sibling, 'run.json'))) continue;
+    let state: RunState | null;
+    try {
+      state = readRun(sibling);
+    } catch (error) {
+      throw new Error(
+        `다른 실행 폴더 ${name} 의 run.json 을 못 읽었다(${error instanceof Error ? error.message : String(error)}) — ` +
+          '그 실행의 상자를 가릴 수 없어 멈춘다. 되돌리거나, 그 실행이 끝났으면 폴더를 .scratch/emergency-outbound 밖으로 옮긴다',
+      );
+    }
+    if (!state) continue;
+    if (state.batchId) batches.set(state.batchId, state.run);
+    for (const b of state.boxes) if (b.batchId !== state.batchId) shipments.set(b.shipmentId, state.run);
+  }
+  return { batches, shipments };
+}
 
 interface Gathered {
   ready: PreparationShipment[];
