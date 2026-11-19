@@ -285,31 +285,27 @@ export class StockProjectionReader {
           .having(and(sql`bool_or(${rows.matchesFilters})`, queueMatch ? sql`bool_or(${queueMatch})` : undefined)),
       );
       const [countResult] = await trx.with(unshipped, rows, groups).select({ total: count() }).from(groups);
-      const pagedGroups = trx.$with('paged_stock_groups').as(
-        trx
-          .select()
-          .from(groups)
-          .orderBy(desc(groups.maxShortage), desc(groups.maxUnshipped), groups.groupName, groups.groupKey)
-          .limit(limit)
-          .offset((page - 1) * limit),
-      );
-      const pageRows = await trx
-        .with(unshipped, rows, groups, pagedGroups)
-        .select()
-        .from(rows)
-        .innerJoin(pagedGroups, eq(pagedGroups.groupKey, rows.groupKey))
-        .orderBy(
-          desc(pagedGroups.maxShortage),
-          desc(pagedGroups.maxUnshipped),
-          pagedGroups.groupName,
-          pagedGroups.groupKey,
-          rows.skuName,
-          rows.skuCode,
-          rows.warehouseName,
-          rows.warehouseId,
-        );
+      // CTE 끼리 조인하면 drizzle 가 별칭 칸을 테이블 없이 써서("group_key" = "group_key") 모호해진다 — 두 번에 나눠 읽는다.
+      const pageGroups = await trx
+        .with(unshipped, rows, groups)
+        .select({ groupKey: groups.groupKey })
+        .from(groups)
+        .orderBy(desc(groups.maxShortage), desc(groups.maxUnshipped), groups.groupName, groups.groupKey)
+        .limit(limit)
+        .offset((page - 1) * limit);
+      const groupOrder = new Map(pageGroups.map((group, index) => [group.groupKey, index]));
+      const pageSkuRows =
+        groupOrder.size === 0
+          ? []
+          : (
+              await trx
+                .with(unshipped, rows)
+                .select()
+                .from(rows)
+                .where(inArray(rows.groupKey, [...groupOrder.keys()]))
+                .orderBy(rows.skuName, rows.skuCode, rows.warehouseName, rows.warehouseId)
+            ).sort((a, b) => (groupOrder.get(a.groupKey) ?? 0) - (groupOrder.get(b.groupKey) ?? 0));
 
-      const pageSkuRows = pageRows.map((row) => row.group_stock_rows);
       const pageSkuIds = [...new Set(pageSkuRows.map((row) => row.skuId))];
       // 셀메이트 상품 사진 자리 — 스토어프론트와 같은 원천인 쇼핑몰 상품 대표 이미지. SKU 마다 매칭된 활성 상품 중 먼저 만든 것.
       const images =
