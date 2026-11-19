@@ -5,7 +5,6 @@ import {
   count,
   desc,
   eq,
-  exists,
   gt,
   ilike,
   inArray,
@@ -13,7 +12,6 @@ import {
   isNull,
   max,
   min,
-  not,
   notInArray,
   or,
   sql,
@@ -75,51 +73,48 @@ const loc = wmsTables.locations;
 const shelf = wmsTables.skuShelfPositions;
 const shelfStock = and(eq(sl.stockState, 'ON_HAND'), gt(sl.qty, 0), eq(loc.locationType, 'standard'));
 
+/** 원장 선반 재고가 있는 SKU — 조건을 더 붙여 상관 없는 IN 으로 쓴다. */
+const ledgerShelfSkus = (trx: DbTx, where?: SQL) =>
+  trx.select({ skuId: sl.skuId }).from(sl).innerJoin(loc, eq(loc.id, sl.locationId)).where(and(shelfStock, where));
+
+/**
+ * SKU 마다 원장 선반 코드 중 가장 앞의 것. 한 번 묶어 SKU 에 left join 한다 — 행마다 상관 서브쿼리로 물으면 플래너가
+ * 로케이션을 매번 훑어 목록 검색이 5배 느려졌다(라이브 실측, PR #1466).
+ */
+const ledgerPositionsOf = (trx: DbTx) =>
+  trx
+    .select({ skuId: sl.skuId, code: min(loc.code).as('ledger_code') })
+    .from(sl)
+    .innerJoin(loc, eq(loc.id, sl.locationId))
+    .where(shelfStock)
+    .groupBy(sl.skuId)
+    .as('ledger_pos');
+type LedgerPositions = ReturnType<typeof ledgerPositionsOf>;
+
+/** 화면에 찍을 위치 하나 — 원장 선반 코드, 없으면 셀메이트 위치. `lp`·`shelf` 가 left join 돼 있어야 한다. */
+const positionOf = (lp: LedgerPositions) => sql<string | null>`coalesce(${lp.code}, ${shelf.positionCode})`;
+
+/** 위치 검색 — 원장 선반 코드 어느 것이든, 원장 선반 재고가 없으면 셀메이트 위치. `lp`·`shelf` 가 left join 돼 있어야 한다. */
+const positionLike = (trx: DbTx, lp: LedgerPositions, pattern: string) =>
+  or(
+    inArray(wmsTables.skus.id, ledgerShelfSkus(trx, ilike(loc.code, pattern))),
+    and(ilike(shelf.positionCode, pattern), isNull(lp.skuId)),
+  );
+
 @Injectable()
 export class SkuFieldCaptureReader {
   constructor(@InjectTypedDb<typeof wmsSchema>() private readonly dbService: DbService<typeof wmsSchema>) {}
-
-  /** 이 SKU 의 원장 선반 재고 행 — `where` 에 조건을 더 붙여 쓴다. */
-  private ledgerShelfRows(trx: DbTx, skuId: AnyPgColumn, where?: SQL) {
-    return trx
-      .select({ skuId: sl.skuId })
-      .from(sl)
-      .innerJoin(loc, eq(loc.id, sl.locationId))
-      .where(and(eq(sl.skuId, skuId), shelfStock, where));
-  }
-
-  /** 화면에 찍을 위치 하나 — 원장 선반 코드 중 가장 앞의 것, 없으면 셀메이트 위치. `shelf` 가 left join 돼 있어야 한다. */
-  private positionOf(trx: DbTx, skuId: AnyPgColumn) {
-    const first = trx
-      .select({ code: min(loc.code) })
-      .from(sl)
-      .innerJoin(loc, eq(loc.id, sl.locationId))
-      .where(and(eq(sl.skuId, skuId), shelfStock));
-    return sql<string | null>`coalesce((${first}), ${shelf.positionCode})`;
-  }
-
-  /** 위치 검색 조건 — 원장 선반 코드 어느 것이든, 원장 선반 재고가 없으면 셀메이트 위치. `shelf` 가 left join 돼 있어야 한다. */
-  private positionLike(trx: DbTx, skuId: AnyPgColumn, pattern: string) {
-    return or(
-      exists(this.ledgerShelfRows(trx, skuId, ilike(loc.code, pattern))),
-      and(ilike(shelf.positionCode, pattern), not(exists(this.ledgerShelfRows(trx, skuId)))),
-    );
-  }
 
   async findByPosition(rawCode: string, tx?: DbTx): Promise<ShelfPositionDto> {
     const positionCode = normalizePositionCode(rawCode);
     return this.dbService.run(async (trx) => {
       // 후보를 이 코드에서 먼저 뽑는다(로케이션 코드·셀메이트 위치 인덱스) — SKU 전체에 EXISTS 를 돌리지 않게.
       const atCode = union(
-        trx
-          .select({ skuId: sl.skuId })
-          .from(sl)
-          .innerJoin(loc, eq(loc.id, sl.locationId))
-          .where(and(shelfStock, sql`upper(${loc.code}) = ${positionCode}`)),
+        ledgerShelfSkus(trx, sql`upper(${loc.code}) = ${positionCode}`),
         trx
           .select({ skuId: shelf.skuId })
           .from(shelf)
-          .where(and(eq(shelf.positionCode, positionCode), not(exists(this.ledgerShelfRows(trx, shelf.skuId))))),
+          .where(and(eq(shelf.positionCode, positionCode), notInArray(shelf.skuId, ledgerShelfSkus(trx)))),
       );
       const rows = await trx
         .select({
@@ -157,6 +152,7 @@ export class SkuFieldCaptureReader {
   async getDetail(skuId: string, tx?: DbTx): Promise<FieldCaptureDetailDto> {
     return this.dbService.run(async (trx) => {
       const conflictSku = alias(wmsTables.skus, 'conflict_sku');
+      const lp = ledgerPositionsOf(trx);
       const [row] = await trx
         .select({
           skuId: wmsTables.skus.id,
@@ -166,7 +162,7 @@ export class SkuFieldCaptureReader {
           packageLengthMm: wmsTables.skus.packageLengthMm,
           packageHeightMm: wmsTables.skus.packageHeightMm,
           packageWeightG: wmsTables.skus.packageWeightG,
-          positionCode: this.positionOf(trx, wmsTables.skus.id),
+          positionCode: positionOf(lp),
           imageUrl: shelf.imageUrl,
           barcodeStatus: wmsTables.skuFieldCaptures.barcodeStatus,
           scannedBarcode: wmsTables.skuFieldCaptures.scannedBarcode,
@@ -179,6 +175,7 @@ export class SkuFieldCaptureReader {
         })
         .from(wmsTables.skus)
         .leftJoin(shelf, eq(shelf.skuId, wmsTables.skus.id))
+        .leftJoin(lp, eq(lp.skuId, wmsTables.skus.id))
         .leftJoin(wmsTables.skuFieldCaptures, liveCaptureOf(wmsTables.skus.id))
         .leftJoin(conflictSku, eq(conflictSku.id, wmsTables.skuFieldCaptures.barcodeConflictSkuId))
         .where(and(eq(wmsTables.skus.id, skuId), eq(wmsTables.skus.isDeleted, false)));
@@ -281,12 +278,13 @@ export class SkuFieldCaptureReader {
         )
         .groupBy(ev.skuId)
         .as('mine');
+      const lp = ledgerPositionsOf(trx);
       const base = {
         skuId: wmsTables.skus.id,
         code: wmsTables.skus.code,
         name: wmsTables.skus.name,
         imageUrl: shelf.imageUrl,
-        positionCode: this.positionOf(trx, wmsTables.skus.id),
+        positionCode: positionOf(lp),
         packageWidthMm: wmsTables.skus.packageWidthMm,
         packageLengthMm: wmsTables.skus.packageLengthMm,
         packageHeightMm: wmsTables.skus.packageHeightMm,
@@ -299,7 +297,7 @@ export class SkuFieldCaptureReader {
         ? or(
             ilike(wmsTables.skus.name, likeContains(q)),
             ilike(wmsTables.skus.code, likeContains(q)),
-            this.positionLike(trx, wmsTables.skus.id, likeContains(q)),
+            positionLike(trx, lp, likeContains(q)),
           )
         : undefined;
       // ponytail: 한 번에 최근 500개. 넘기면 페이지를 단다
@@ -310,6 +308,7 @@ export class SkuFieldCaptureReader {
               .from(cap)
               .innerJoin(wmsTables.skus, eq(wmsTables.skus.id, cap.skuId))
               .leftJoin(shelf, eq(shelf.skuId, wmsTables.skus.id))
+              .leftJoin(lp, eq(lp.skuId, wmsTables.skus.id))
               .where(
                 and(
                   isNull(cap.deletedAt),
@@ -325,6 +324,7 @@ export class SkuFieldCaptureReader {
               .from(mine)
               .innerJoin(wmsTables.skus, eq(wmsTables.skus.id, mine.skuId))
               .leftJoin(shelf, eq(shelf.skuId, wmsTables.skus.id))
+              .leftJoin(lp, eq(lp.skuId, wmsTables.skus.id))
               .innerJoin(cap, liveCaptureOf(wmsTables.skus.id))
               .where(and(eq(wmsTables.skus.isDeleted, false), search))
               .orderBy(desc(mine.completedAt), asc(wmsTables.skus.id))
@@ -366,6 +366,7 @@ export class SkuFieldCaptureReader {
             .from(cur)
             .where(eq(cur.id, before))})`
         : undefined;
+      const lp = ledgerPositionsOf(trx);
       const rows = await trx
         .select({
           id: ph.id,
@@ -375,7 +376,7 @@ export class SkuFieldCaptureReader {
           skuId: wmsTables.skus.id,
           code: wmsTables.skus.code,
           name: wmsTables.skus.name,
-          positionCode: this.positionOf(trx, wmsTables.skus.id),
+          positionCode: positionOf(lp),
           packageWidthMm: wmsTables.skus.packageWidthMm,
           packageLengthMm: wmsTables.skus.packageLengthMm,
           packageHeightMm: wmsTables.skus.packageHeightMm,
@@ -384,6 +385,7 @@ export class SkuFieldCaptureReader {
         .from(ph)
         .innerJoin(wmsTables.skus, eq(wmsTables.skus.id, ph.skuId))
         .leftJoin(shelf, eq(shelf.skuId, wmsTables.skus.id))
+        .leftJoin(lp, eq(lp.skuId, wmsTables.skus.id))
         .where(
           and(
             eq(wmsTables.skus.isDeleted, false),
@@ -393,7 +395,7 @@ export class SkuFieldCaptureReader {
               ? or(
                   ilike(wmsTables.skus.name, likeContains(q)),
                   ilike(wmsTables.skus.code, likeContains(q)),
-                  this.positionLike(trx, wmsTables.skus.id, likeContains(q)),
+                  positionLike(trx, lp, likeContains(q)),
                   ilike(ph.takenByLabel, likeContains(q)),
                 )
               : undefined,
