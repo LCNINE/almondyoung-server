@@ -191,6 +191,7 @@ describe('주문 행의 계좌 대기 안내', () => {
           rejection: null,
           outcome: null,
           refundMode: 'manual',
+          lines: [],
           settlement: {
             requestId: 'req-1',
             phase: 'delayed',

@@ -43,6 +43,7 @@ import { findShipmentIdsByCode } from './join-candidate.queries';
 import { isAppPrintable } from '../waybill/waybill-label-content.assembler';
 import { WAYBILL_TERMINAL_STATUSES } from '../waybill/waybill.constants';
 import { maskName, readRecipientName } from '../reader/shipment-waybill.reader';
+import { loadPendingCancellations, PendingCancellation } from '../reader/pending-cancellations';
 import { PermissionCheckpoints } from '@app/authorization';
 import { authzSubjectOf } from '../../../platform/auth/system-actor';
 import { warehouseIdOf } from '../shipment/shipment-owner';
@@ -856,7 +857,10 @@ export class OutboundBatchOrchestrator {
         completedAt: batch.completedAt ?? undefined,
         workItems: await withShipmentLabels(
           trx,
-          workItems.map((row) => this.workItemResponse(row)),
+          await withPendingCancellations(
+            trx,
+            workItems.map((row) => this.workItemResponse(row)),
+          ),
         ),
         warehouse: {
           ...warehouse,
@@ -1655,6 +1659,25 @@ export class OutboundBatchOrchestrator {
     // 전부 'CONFLICT' 로 받는다 (simple-outbound.service.ts:655 와 동일 형태).
     return new ConflictException({ code, error: code, message });
   }
+}
+
+/** 현장에서 빠지기를 기다리는 취소 — 작업 항목이 기다리는 오퍼레이션이 그 상자의 대기 취소일 때만 싣는다 */
+async function withPendingCancellations<T extends { shipmentId: string; waitingOperationId: string | null }>(
+  trx: DbTx,
+  rows: T[],
+): Promise<(T & { pendingCancellation: PendingCancellation | null })[]> {
+  const waiting = rows.filter((row) => row.waitingOperationId);
+  const pending = await loadPendingCancellations(
+    trx,
+    waiting.map((row) => row.shipmentId),
+  );
+  return rows.map((row) => {
+    const found = pending.get(row.shipmentId);
+    return {
+      ...row,
+      pendingCancellation: found && found.operationId === row.waitingOperationId ? found : null,
+    };
+  });
 }
 
 /** 화면이 상자 id 대신 주문번호와 상품 요약을 보이게 한다 */

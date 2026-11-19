@@ -803,6 +803,17 @@ export interface ShipmentWorkItemHistory {
   leaseVersion?: number;
 }
 
+/** 상자가 현장에서 빠지기를 기다리는 취소 */
+export interface PendingCancellation {
+  operationId: string;
+  lines: Array<{
+    shipmentLineId: string;
+    salesOrderLineId: string | null;
+    skuName: string;
+    qty: number;
+  }>;
+}
+
 export interface ShipmentAdminDetail {
   id: string;
   status: string;
@@ -823,6 +834,8 @@ export interface ShipmentAdminDetail {
   workItems: ShipmentWorkItemHistory[];
   dispatchAttempts: ShipmentDispatchAttemptHistory[];
   operations: ShipmentOperationHistory[];
+  /** 옛 core 응답엔 없다 */
+  pendingCancellation?: PendingCancellation | null;
 }
 
 /** 응답을 받지 못한 요청이 서버에서 처리됐는지(요청 키 기준) */
@@ -1278,6 +1291,8 @@ export interface OutboundBatchWorkItemV2 {
   /** 옛 core 응답엔 없다 */
   displayOrderNo?: string | null;
   itemSummary?: string;
+  /** 현장에서 빠지기를 기다리는 취소. 배치 상세에만 있고 옛 core 응답엔 없다 */
+  pendingCancellation?: PendingCancellation | null;
 }
 
 export interface EligibleShipmentV2 {

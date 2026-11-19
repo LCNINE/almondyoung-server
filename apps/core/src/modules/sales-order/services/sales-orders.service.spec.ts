@@ -515,9 +515,13 @@ describe('SalesOrdersService.cancel fulfillment backlog lifecycle', () => {
         return Promise.resolve([]);
       }),
       select: jest.fn((selection?: Record<string, unknown>) => ({
-        from: (table: unknown) => ({
-          where: () => rows(selectRowsFor(table, selection)),
-        }),
+        from: (table: unknown) => {
+          const chain: { innerJoin: () => unknown; where: () => unknown } = {
+            innerJoin: () => chain,
+            where: () => rows(selectRowsFor(table, selection)),
+          };
+          return chain;
+        },
       })),
       update: jest.fn((table: unknown) => ({
         set: (set: Record<string, unknown>) => ({

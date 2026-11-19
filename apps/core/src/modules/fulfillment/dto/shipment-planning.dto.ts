@@ -360,6 +360,29 @@ export class ShipmentSummaryResponseDto {
   recoveryCode: string | null;
 }
 
+export class PendingCancellationItemResponseDto {
+  @ApiProperty()
+  shipmentLineId: string;
+
+  @ApiProperty({ nullable: true, type: String })
+  salesOrderLineId: string | null;
+
+  @ApiProperty()
+  skuName: string;
+
+  @ApiProperty({ description: '이 줄에서 취소될 수량' })
+  qty: number;
+}
+
+/** 상자가 현장에서 빠지기를 기다리는 취소 */
+export class PendingCancellationResponseDto {
+  @ApiProperty()
+  operationId: string;
+
+  @ApiProperty({ type: [PendingCancellationItemResponseDto] })
+  lines: PendingCancellationItemResponseDto[];
+}
+
 export class ShipmentDetailResponseDto {
   @ApiProperty()
   id: string;
@@ -398,6 +421,9 @@ export class ShipmentDetailResponseDto {
 
   @ApiProperty({ type: [ShipmentOperationHistoryResponseDto] })
   operations: ShipmentOperationHistoryResponseDto[];
+
+  @ApiProperty({ type: PendingCancellationResponseDto, nullable: true })
+  pendingCancellation: PendingCancellationResponseDto | null;
 }
 
 export class FulfillmentOperationResponseDto {

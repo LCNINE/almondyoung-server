@@ -11,6 +11,7 @@ import { maskName, readDeliveryNote, readRecipientName } from './recipient-snaps
 import { warehouseIdOf } from '../shipment/shipment-owner';
 import { labelLocationCode } from '../waybill/label/label-items';
 import { cancellationVoidKey, withdrawalVoidKey } from '../services/waybill-void-keys';
+import { loadPendingCancellations, PendingCancellationLine } from './pending-cancellations';
 
 // 보충 대기·배치 오케스트레이터·스펙이 이 경로로 가져다 쓴다 — 정본을 옮긴 뒤에도 그대로 둔다
 export { maskName, readDeliveryNote, readRecipientName } from './recipient-snapshot';
@@ -34,29 +35,6 @@ export interface ShipmentByWaybillLine {
   lineVersion: number;
   /** 송장 순서(로케이션 코드 순). 시작 안 된 배치·작업 항목 없음이면 [] */
   allocations: ShipmentByWaybillAllocation[];
-}
-
-export interface PendingCancellationLine {
-  shipmentLineId: string;
-  /** 이 줄에서 취소될 수량 */
-  qty: number;
-}
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === 'object' && value !== null && !Array.isArray(value);
-
-/** 대기 중인 취소 오퍼레이션 스냅샷의 줄별 취소 수량. 모양이 어긋나면 null — 조회는 막지 않는다. */
-export function readPendingCancellationLines(snapshot: unknown): PendingCancellationLine[] | null {
-  if (!isRecord(snapshot) || !isRecord(snapshot.pendingIntent)) return null;
-  const intent = snapshot.pendingIntent;
-  if (intent.kind !== 'cancel_outstanding' || !Array.isArray(intent.lines) || intent.lines.length === 0) return null;
-  const lines: PendingCancellationLine[] = [];
-  for (const line of intent.lines) {
-    if (!isRecord(line) || typeof line.shipmentLineId !== 'string') return null;
-    if (typeof line.qty !== 'number' || !Number.isSafeInteger(line.qty) || line.qty <= 0) return null;
-    lines.push({ shipmentLineId: line.shipmentLineId, qty: line.qty });
-  }
-  return lines;
 }
 
 export interface ShortPickContext {
@@ -440,24 +418,8 @@ export class ShipmentWaybillReader {
 
   /** 박스가 기다리는 취소(가장 먼저 접수된 대기 오퍼레이션)의 줄별 수량. */
   private async loadPendingCancellation(trx: DbTx, shipmentId: string): Promise<PendingCancellationLine[] | null> {
-    const [pending] = await trx
-      .select({ snapshot: wmsTables.shipmentOperations.afterManifestSnapshot })
-      .from(wmsTables.shipmentOperationMembers)
-      .innerJoin(
-        wmsTables.shipmentOperations,
-        eq(wmsTables.shipmentOperations.id, wmsTables.shipmentOperationMembers.operationId),
-      )
-      .where(
-        and(
-          eq(wmsTables.shipmentOperationMembers.shipmentId, shipmentId),
-          eq(wmsTables.shipmentOperationMembers.role, 'source'),
-          eq(wmsTables.shipmentOperations.type, 'cancel'),
-          eq(wmsTables.shipmentOperations.status, 'pending'),
-        ),
-      )
-      .orderBy(asc(wmsTables.shipmentOperations.createdAt))
-      .limit(1);
-    return readPendingCancellationLines(pending?.snapshot);
+    const pending = (await loadPendingCancellations(trx, [shipmentId])).get(shipmentId);
+    return pending ? pending.lines.map(({ shipmentLineId, qty }) => ({ shipmentLineId, qty })) : null;
   }
 
   /** PR 3 — 마지막 작업 항목이 취소로 나갔다. */

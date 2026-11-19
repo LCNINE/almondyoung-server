@@ -13,6 +13,7 @@ import { BatchDetailDrawer } from '.';
 const mockPickingHandoff = jest.fn();
 const mockPackerHandoff = jest.fn();
 const mockRefetch = jest.fn();
+const mockExclude = jest.fn();
 let mockBatchAt = 2;
 let mockBatch: OutboundBatchV2;
 let mockKey = 0;
@@ -69,7 +70,13 @@ jest.mock('@/lib/services/orders', () => ({
     };
   },
   useAddShipmentToBatch: mockMutation(),
-  useExcludeShipmentFromBatch: mockMutation(),
+  useExcludeShipmentFromBatch: Object.assign(
+    () => ({
+      mutateAsync: (...args: unknown[]) => mockExclude(...args),
+      isPending: false,
+    }),
+    { permission: ['fulfillment.warehouse.operate'] }
+  ),
   useClaimBatchPicker: mockMutation(),
   useClaimBatchPacker: mockMutation(),
   useHandoffBatchWorkItem: mockHandoffMutation(() => mockPackerHandoff),
@@ -230,6 +237,7 @@ beforeEach(() => {
   mockPickingHandoff.mockReset().mockResolvedValue({});
   mockPackerHandoff.mockReset().mockResolvedValue({});
   mockRefetch.mockReset().mockResolvedValue({});
+  mockExclude.mockReset().mockResolvedValue({});
   mockBatchAt = 2;
   jest.mocked(toast.success).mockClear();
   jest.mocked(toast.error).mockClear();
@@ -674,5 +682,62 @@ describe('상자 추가와 재고 작업 안내는 배치 상태를 따른다', 
 
     expect(screen.getByRole('button', { name: '추가' })).toBeTruthy();
     expect(screen.getByText('피킹 시작 전입니다.')).toBeTruthy();
+  });
+});
+
+describe('취소를 기다리는 상자', () => {
+  const pendingCancellation = {
+    operationId: 'op-1',
+    lines: [
+      {
+        shipmentLineId: 'line-1',
+        salesOrderLineId: 'sol-1',
+        skuName: '상품 A',
+        qty: 1,
+      },
+    ],
+  };
+
+  it('취소 대기를 보이고 현장에서 빼는 방법을 알려 준다', () => {
+    mockBatch = batchWith([
+      { ...picking, waitingOperationId: 'op-1', pendingCancellation },
+    ]);
+    renderDrawer();
+    const row = screen.getAllByRole('row')[1];
+
+    expect(within(row).getByText('취소 대기')).toBeTruthy();
+    expect(
+      within(row).getByText(/상품 A 1개 취소 — 현장에서 빼야 끝나요/)
+    ).toBeTruthy();
+  });
+
+  it('빼는 중이면 되돌림 바구니에 넣으면 끝난다고 알려 준다', () => {
+    mockBatch = batchWith([
+      workItem({
+        status: 'withdrawing',
+        waitingOperationId: 'op-1',
+        pendingCancellation,
+      }),
+    ]);
+    renderDrawer();
+
+    expect(
+      screen.getByText(/빼는 중이에요\. .*되돌림 바구니에 넣으면 끝나요/)
+    ).toBeTruthy();
+  });
+
+  it.each([
+    ['취소를 기다리는 상자', pendingCancellation, '부분 취소로 뺌'],
+    ['그 밖의 상자', null, '잘못 넣은 상자'],
+  ])('%s를 빼면 사유를 그에 맞게 남긴다', async (_, pending, reason) => {
+    mockBatch = batchWith([{ ...picking, pendingCancellation: pending }]);
+    const user = userEvent.setup();
+    renderDrawer();
+
+    await user.click(screen.getByRole('button', { name: '배치에서 빼기' }));
+    await user.click(screen.getByRole('button', { name: '빼기' }));
+
+    await waitFor(() => expect(mockExclude).toHaveBeenCalledTimes(1));
+    expect(mockExclude.mock.calls[0][0]).toMatchObject({ reason });
   });
 });

@@ -40,6 +40,8 @@ import type {
   PickingStrategyName,
 } from '@/lib/types/dto/fulfillment';
 import { ExcludeShipmentDialog } from '../exclude-shipment-dialog';
+import { pendingCancellationItems } from '@/lib/api/domains/orders/pending-cancellation.shape';
+import type { PendingCancellation } from '@/lib/types/dto/fulfillment';
 import { BatchStatusBadge } from '../batch-status-badge';
 import { useWarehouseCommandRetry } from '../../warehouse-command-retry';
 import { PICKING_METHOD_LABELS } from '@/lib/utils/picking-method';
@@ -96,6 +98,7 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
     id: string;
     shipmentId: string;
     trackingNo?: string | null;
+    pendingCancellation?: PendingCancellation | null;
   } | null>(null);
   const [handingOff, setHandingOff] = useState<{
     claim: HandoffClaim;
@@ -218,7 +221,9 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
               {
                 batchId,
                 shipmentId: excluding.shipmentId,
-                reason: '잘못 넣은 상자',
+                reason: excluding.pendingCancellation
+                  ? CANCEL_WAITING_EXIT_REASON
+                  : WRONG_BOX_EXIT_REASON,
                 voidWaybill,
               },
               (payload, idempotencyKey) =>
@@ -426,6 +431,19 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
                             <p className="text-xs text-destructive">
                               제외: {item.exclusionReason}
                             </p>
+                          )}
+                          {item.pendingCancellation && (
+                            <div className="mt-1 max-w-60 space-y-0.5">
+                              <Badge variant="outline" className="border-amber-300 bg-amber-50 text-amber-800">
+                                취소 대기
+                              </Badge>
+                              <p className="text-xs text-amber-800 whitespace-normal break-keep">
+                                {pendingCancellationItems(item.pendingCancellation)} 취소 —{' '}
+                                {item.status === 'withdrawing'
+                                  ? '빼는 중이에요. 물류앱에서 송장을 찍고 꺼낸 상품을 되돌림 바구니에 넣으면 끝나요'
+                                  : '현장에서 빼야 끝나요. 물류앱 F11 또는 «배치에서 빼기»'}
+                              </p>
+                            </div>
                           )}
                         </TableCell>
                         <TableCell className="text-xs" title={item.pickerClaim.workerId ?? undefined}>
@@ -641,6 +659,10 @@ const WORK_ITEM_STATUS_LABEL: Record<string, string> = {
 // 서버 판정(core outbound-batch-orchestrator 의 assertClaimable·handoff, WITHDRAWABLE_WORK_ITEM_STATUSES)과 같은 범위
 const PICKER_CLAIMABLE = ['queued', 'picking'];
 const PACKER_CLAIMABLE = ['ready_to_pack', 'packing'];
+// 출고 준비가 «배치에서 빠져 돌아온 상자»의 뺀 곳·사유를 이 고정 문구로 읽는다
+const WRONG_BOX_EXIT_REASON = '잘못 넣은 상자';
+const CANCEL_WAITING_EXIT_REASON = '부분 취소로 뺌';
+
 const EXCLUDABLE = ['queued', 'picking', 'ready_to_pack', 'packing'];
 
 function hasWorkItemAction(status: string): boolean {

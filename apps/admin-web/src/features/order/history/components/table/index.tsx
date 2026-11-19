@@ -7,6 +7,7 @@ import {
   useOrderBankRefunds,
 } from '../../hooks/use-order-bank-refunds';
 import { isPendingBankRefund } from '@/features/payments/components/refund-table/bank-refund';
+import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
 import type { MouseEvent, ReactNode } from 'react';
 import { PurchaseSatisfactionSection } from '../purchase-satisfaction-section';
@@ -15,6 +16,7 @@ import { useOperatorNames } from '@/features/order/fulfillments/detail/operation
 import { MoreHorizontal } from 'lucide-react';
 import {
   cancelActionOf,
+  cancelRequestOnLine,
   cancelRequestFromAmendment,
   cancelRequestLine,
   settlementAlert,
@@ -1094,6 +1096,9 @@ export default function OrderTable() {
                     return <span className="text-[11px] text-gray-500 whitespace-normal leading-tight">{action.label}</span>;
                   }
                   if (action.kind === 'settling') {
+                    // 요청한 줄에만 보이고, 정산 버튼은 주문에 한 번만 둔다
+                    const onLine = cancelRequestOnLine(r.cancelRequest, r.lineId, r.isFirstOfOrder);
+                    if (!onLine) return null;
                     return (
                       <>
                         <span
@@ -1106,7 +1111,12 @@ export default function OrderTable() {
                         >
                           {action.label}
                         </span>
-                        <SettlementCell r={r} />
+                        {onLine.quantity != null && (
+                          <span className="text-[11px] text-gray-600 whitespace-nowrap">
+                            취소 {onLine.quantity}개
+                          </span>
+                        )}
+                        {onLine.first && <SettlementCell r={r} />}
                       </>
                     );
                   }
@@ -1142,6 +1152,20 @@ export default function OrderTable() {
                   <RefundStatusBadge status={r.refundStatus} />
                 )}
               </div>
+            )}
+            {r.warehouseCancelPendingQty > 0 && (
+              <span className="text-[11px] text-amber-700 whitespace-normal leading-tight">
+                창고에서 상자를 빼야 {r.warehouseCancelPendingQty}개 취소가 끝나요
+                {r.fulfillmentOrderId && (
+                  <Link
+                    href={`/order/fulfillments/${r.fulfillmentOrderId}`}
+                    className="ml-1 underline"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    출고 보기
+                  </Link>
+                )}
+              </span>
             )}
             {rowBankRefunds.map((refund) => (
               <OrderBankRefundCard key={refund.id} refund={refund} />

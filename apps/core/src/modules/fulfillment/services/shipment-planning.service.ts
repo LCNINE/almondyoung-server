@@ -73,6 +73,7 @@ import { shipmentOwnerOf, warehouseIdOf } from '../shipment/shipment-owner';
 import { missingRecipientFields } from './recipient-completeness';
 import { isUntrustedExternalLine } from './external-line-identity';
 import { loadSellmateShipmentIds } from './sellmate-handed-over-shipments';
+import { loadPendingCancellations } from '../reader/pending-cancellations';
 import {
   classifyOperationReason,
   resolveOperationReason,
@@ -1249,6 +1250,10 @@ export class ShipmentPlanningService {
         .from(wmsTables.shipmentTracking)
         .where(eq(wmsTables.shipmentTracking.shipmentId, shipmentId))
         .orderBy(asc(wmsTables.shipmentTracking.timestamp), asc(wmsTables.shipmentTracking.id));
+      const pendingCancellation =
+        aggregate.shipment.status === 'recovery_required' && aggregate.shipment.recoveryCode === 'CANCEL_REPLAN_PENDING'
+          ? ((await loadPendingCancellations(trx, [shipmentId])).get(shipmentId) ?? null)
+          : null;
       const originByLineId = new Map(origins.map((origin) => [origin.salesOrderLineId, origin]));
       const skuNameById = new Map(skuNames.map((sku) => [sku.id, sku.name]));
       const reservationByLine = new Map<string, typeof reservations>();
@@ -1283,6 +1288,7 @@ export class ShipmentPlanningService {
             reason: operation.reason,
           }),
         })),
+        pendingCancellation,
       };
     }, tx);
   }
