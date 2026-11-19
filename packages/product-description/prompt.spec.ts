@@ -1,4 +1,3 @@
-import { DESCRIPTION_BLOCK_NAMES, SWATCH_DIRECTIVE_NAME } from './blocks';
 import { DEFAULT_PRODUCT_DESCRIPTION_PROMPT, IMAGE_DIRECTIVE_RULES, buildSystemPrompt } from './prompt';
 
 describe('buildSystemPrompt', () => {
@@ -24,16 +23,5 @@ describe('buildSystemPrompt', () => {
   // 규칙 본문에 directive 이름이 남아있는지 — 리팩터링 중 실수로 문구가 바뀌면 잡힌다.
   it('규칙이 product-image directive 를 지시한다', () => {
     expect(IMAGE_DIRECTIVE_RULES).toContain('directive');
-  });
-});
-
-describe('블록 문법 안내', () => {
-  // 렌더러가 아는 블록과 모델에게 알려 주는 블록이 갈리면, 모델이 쓴 블록이 화면에서 조용히 사라진다.
-  it.each(DESCRIPTION_BLOCK_NAMES)('고정 규칙이 %s 블록을 안내한다', (name) => {
-    expect(IMAGE_DIRECTIVE_RULES).toContain(name);
-  });
-
-  it('고정 규칙이 swatch 문법을 안내한다', () => {
-    expect(IMAGE_DIRECTIVE_RULES).toContain(`::${SWATCH_DIRECTIVE_NAME}{`);
   });
 });

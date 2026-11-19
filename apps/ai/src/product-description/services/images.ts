@@ -1,4 +1,3 @@
-import probeImageSize = require('probe-image-size/sync');
 import { urlEnv } from '../../platform/env';
 
 /** compose.ts 와 같은 이유로 함수다 — 모듈 상수는 ConfigModule 보다 먼저 평가된다. */
@@ -33,8 +32,6 @@ export type LoadedImage = {
   mediaType: SupportedMediaType;
   data: string;
   bytes: number;
-  /** 헤더에서 읽은 원본 크기. 못 읽으면 없다 — 그 이미지는 잘라 쓸 영역을 받지 않는다. */
-  size?: { width: number; height: number };
 };
 
 function isSupportedMediaType(value: string): value is SupportedMediaType {
@@ -75,14 +72,11 @@ async function loadImage(fileId: string): Promise<LoadedImage> {
     throw new Error(`이미지 한 장이 너무 큽니다. (${mb}MB — 장당 5MB 이하) 용량을 줄여 다시 올려주세요.`);
   }
 
-  const probed = probeImageSize(buffer);
-
   return {
     fileId,
     mediaType,
     data: buffer.toString('base64'),
     bytes: buffer.byteLength,
-    ...(probed ? { size: { width: probed.width, height: probed.height } } : {}),
   };
 }
 
