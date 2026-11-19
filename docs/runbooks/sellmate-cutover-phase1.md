@@ -257,8 +257,6 @@ SELECT count(*) FILTER (WHERE has_sellmate AND EXISTS (
 
 **판정:** 세 값이 0, 또는 0 이 아닌 상자마다 처리를 적었다. `in_batch` 는 빼고 나서 같은 SQL 을 다시 돌려 0 을 본다 — 작업자 권한(`fulfillment.warehouse.operate`)으로 뺄 수 있고, 뺀 상자를 다시 넣으면 409 다(11-19 로컬 리허설, `worker01`).
 
-⚠️ 409 `SHIPMENT_HANDED_OVER_TO_SELLMATE` 는 어드민·창고 앱에 한국어 문구가 없다(#1465 가 고친다 — 고쳐지면 이 문단을 지운다) — 작업자에게는 서버의 영어 문장(`… belongs to an order Sellmate ships`)이 보인다. 당일 전에 작업자에게 «이 문장 = 셀메이트가 내보낼 주문, 건드리지 않는다» 를 알려 둔다.
-
 ### 6-3. 첫 1건 먼저
 
 T 이후 자사몰 주문 **1건만** 출고 준비 → 배치 → 스테이션 앱 출고로 낸다. 다음을 보고 나머지를 연다.
@@ -449,7 +447,7 @@ npx tsx scripts/ops/emergency-outbound/index.ts prepare --stage live --warehouse
 | 매칭 대기 | 어드민 «매칭»(`/order/matching`) — 판정 «출고 6» | skutest1(작업자), 11-19 라이브 | 화면이 열리지 않는다(접근 권한 없음, `order.order.read`). 매칭 저장(`order.matching.write`)도 admin 만 → **admin 이 맡는다** |
 | 수취인 정보 빠짐 | 출고주문 상세(`/order/fulfillments`)의 수취인 수정 — 판정 «출고 3» | skutest1(작업자), 11-19 라이브 | 출고주문 상세는 열리지만 «수령인 변경» 버튼이 없다(`fulfillment.shipment.override_recipient` 는 admin·물류 관리자만). 받는 분 정보도 가려져 보인다 → **물류 관리자·admin 이 맡는다** |
 | 운송장 교착(멈춘 송장) | 출고주문 상세의 멈춘 송장 패널 → abandon(#1241) | skutest1(작업자), 11-19 라이브 | 테스트 주문 상자에 `pending` 송장 행을 직접 넣어 재현했다. 패널이 뜨고 «중단하고 다시 발급» → 사유 입력 → 중단까지 작업자가 403 없이 끝냈고 행은 `abandoned` 가 됐다. 이어지는 새 발급 창은 닫아도 된다 → **작업자가 맡는다** |
-| 셀메이트 상자 거절(409 `SHIPMENT_HANDED_OVER_TO_SELLMATE`) | 거절 문구를 작업자가 읽고 다음 할 일을 아는가(§6) | | |
+| 셀메이트 상자 거절(409 `SHIPMENT_HANDED_OVER_TO_SELLMATE`) | 거절 문구를 작업자가 읽고 다음 할 일을 아는가(§6) | worker01(작업자), 11-19 로컬 | 새로 연 화면에서는 셀메이트 상자가 출고 준비 목록·배치 상자 추가 후보에서 빠져 고를 수 없다(상자 상세의 «이 상자 출고 준비» 는 «목록에서 이 상자를 찾지 못했어요»). 열어 둔 출고 준비 화면에서 init 뒤 누르면 송장 발급까지 되고 배치 담기에서 «셀메이트가 내보내는 주문이에요» 로 막힌다(영어 문장 없음). 다만 «두고 넘어가라» 는 말이 없고 «다시 시도» 버튼이 남는다 → **작업자가 읽고 넘어갈 수 있으나, init 직후 출고 준비 화면을 새로고침하게 공지한다** |
 
 ### 11-3. 비상 출고 경로 한 번 (라이브 창고)
 
