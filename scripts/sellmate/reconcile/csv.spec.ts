@@ -105,6 +105,30 @@ describe('parseReconcileStock', () => {
     expect(r.errors).toHaveLength(1);
     expect(r.errors[0]).toContain('옵션정보일련번호');
   });
+  it('«개발팀 데이터 내보내기용» 양식이 상품마다 넣는 합계 행(첫 칸 «합계», 재고 칸만 값)은 건너뛴다', () => {
+    // 2026-11-19 라이브 export: 첫 열은 «이미지», 합계 행은 첫 칸이 «합계» 이고 현재재고·안정재고·재고금액에만 값이 있다
+    const header = ['이미지', ...HEADER];
+    const r = parseReconcileStock(
+      [
+        header,
+        ['', '1', '100', 'TEST-0001', '8800000000001', '5', '2'],
+        ['합계', '', '', '', '', '5', ''],
+        ['', '2', '101', 'TEST-0002', '8800000000002', '3', '0'],
+        [' 합계 ', '', '', '', '', '3', ''],
+      ],
+      'x.csv',
+    );
+    expect(r.errors).toEqual([]);
+    expect(r.rows.map((x) => x.optionSerial)).toEqual(['1', '2']);
+  });
+  it('첫 칸이 «합계» 여도 옵션정보일련번호가 있으면 상품 행으로 읽는다(합계 행으로 빼지 않는다)', () => {
+    const r = parseReconcileStock([['이미지', ...HEADER], ['합계', '1', '100', 'TEST-0001', '8800000000001', '5', '2']], 'x.csv');
+    expect(r.rows.map((x) => x.optionSerial)).toEqual(['1']);
+  });
+  it('첫 칸이 «합계» 가 아닌 옵션정보일련번호 빈 행은 여전히 오류', () => {
+    const r = parseReconcileStock([['이미지', ...HEADER], ['소계', '', '', '', '', '5', '']], 'x.csv');
+    expect(r.errors).toHaveLength(1);
+  });
   it('미발송 열이 없는 헤더는 throw', () => {
     expect(() => parseReconcileStock([HEADER.slice(0, 5), ['1', '100', 'a', 'b', '1']], 'x.csv')).toThrow();
   });
