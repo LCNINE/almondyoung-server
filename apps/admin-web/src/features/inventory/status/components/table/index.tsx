@@ -439,6 +439,7 @@ export function InventoryStatusTable() {
                                 onSelect={() => setHistoryRow(sku)}
                               >
                                 {sku.skuName}
+                                {showWarehouse && ` · ${sku.warehouseName}`}
                               </DropdownMenuItem>
                             ))}
                             {canRebuild && (

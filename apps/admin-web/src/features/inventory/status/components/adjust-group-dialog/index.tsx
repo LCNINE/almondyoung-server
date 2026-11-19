@@ -46,6 +46,8 @@ export function AdjustGroupDialog({ group, onClose }: Props) {
   });
   const changed = rows.filter((row) => row.delta !== 0);
   const negative = rows.some((row) => row.after < 0);
+  const multiWarehouse =
+    new Set((group?.skus ?? []).map((sku) => sku.warehouseId)).size > 1;
 
   const setText = (key: string, value: string) =>
     setTexts((prev) => ({ ...prev, [key]: value }));
@@ -84,6 +86,8 @@ export function AdjustGroupDialog({ group, onClose }: Props) {
           ? `옵션 ${done}개는 조정됐고 나머지는 실패했습니다. 재고가 바뀌었을 수 있으니 숫자를 확인하세요.`
           : '재고 조정에 실패했습니다. 재고가 바뀌었을 수 있으니 숫자를 확인하세요.'
       );
+      // 성공한 옵션의 증감이 남아 있으면 다시 적용할 때 두 번 들어간다 — 창을 닫고 새 숫자로 다시 연다.
+      close();
     } finally {
       setPending(false);
     }
@@ -95,8 +99,8 @@ export function AdjustGroupDialog({ group, onClose }: Props) {
         <DialogHeader>
           <DialogTitle>재고 조정 — {group?.groupName}</DialogTitle>
           <p className="text-sm text-muted-foreground">
-            {group?.skus[0]?.warehouseName} · 증감 칸에 수량을
-            입력하세요(줄이려면 -5 처럼).
+            {multiWarehouse ? '여러 창고' : group?.skus[0]?.warehouseName} ·
+            증감 칸에 수량을 입력하세요(줄이려면 -5 처럼).
           </p>
         </DialogHeader>
 
@@ -112,7 +116,14 @@ export function AdjustGroupDialog({ group, onClose }: Props) {
               key={row.key}
               className="grid min-h-[52px] grid-cols-[1fr_80px_160px_80px] items-center border-b"
             >
-              <span>{row.sku.skuName}</span>
+              <span>
+                {row.sku.skuName}
+                {multiWarehouse && (
+                  <span className="ml-1 text-xs text-muted-foreground">
+                    · {row.sku.warehouseName}
+                  </span>
+                )}
+              </span>
               <span className="text-right tabular-nums">
                 {fmt(row.sku.onHandQuantity)}
               </span>

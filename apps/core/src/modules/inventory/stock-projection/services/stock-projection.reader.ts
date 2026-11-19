@@ -257,6 +257,8 @@ export class StockProjectionReader {
                 ne(v.inboundPendingQty, 0),
                 ne(v.transferPendingQty, 0),
                 gt(unshippedQuantity, 0),
+                // 다 써서 0 이 된 옵션도 남긴다 — 그 창고에 원장 행이 있었으면 가용재고 없음·안정재고 미만에 걸려야 한다.
+                sql`exists (select 1 from ${wmsTables.stockLedgers} where ${wmsTables.stockLedgers.skuId} = ${v.skuId} and ${wmsTables.stockLedgers.warehouseId} = ${v.warehouseId})`,
               ),
             ),
           ),
@@ -302,7 +304,10 @@ export class StockProjectionReader {
           emptyOptions: sql<number>`count(*) filter (where ${isEmpty})`.mapWith(Number),
         })
         .from(rows)
-        .where(sql`${rows.matchesFilters}`);
+        // 카드를 누르면 상품(그룹) 단위로 형제 옵션까지 남으므로, 숫자도 검색·공급처에 걸린 상품의 옵션 전체로 센다.
+        .where(
+          sql`${rows.groupKey} in (select ${rows.groupKey} from ${rows} group by ${rows.groupKey} having bool_or(${rows.matchesFilters}))`,
+        );
       // CTE 끼리 조인하면 drizzle 가 별칭 칸을 테이블 없이 써서("group_key" = "group_key") 모호해진다 — 두 번에 나눠 읽는다.
       const pageGroups = await trx
         .with(unshipped, rows, groups)

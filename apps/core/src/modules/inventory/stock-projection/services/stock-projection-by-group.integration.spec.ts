@@ -311,4 +311,34 @@ describeIfDb('stock summary by group (DB integration, rollback-only)', () => {
       expect(tied.data[0].groupName).toBe('A standalone');
     });
   });
+
+  it('drops direct-ship demand and keeps an option that ran out in this warehouse', async () => {
+    await inRollbackTx(async (tx) => {
+      const { warehouse, empty, standalone } = await seed(tx);
+      const [location] = await tx
+        .select()
+        .from(wmsTables.locations)
+        .where(eq(wmsTables.locations.warehouseId, warehouse.id));
+
+      await tx.update(wmsTables.skus).set({ stockType: 'drop_shipped' }).where(eq(wmsTables.skus.id, standalone.id));
+      await demandFor(tx, standalone.id, warehouse.id);
+      await tx
+        .insert(wmsTables.stockLedgers)
+        .values({ skuId: empty.id, warehouseId: warehouse.id, locationId: location.id, stockState: 'ON_HAND', qty: 0 });
+
+      const all = await reader.listStockSummariesByGroup({ warehouseId: warehouse.id }, tx);
+      const rows = all.data.flatMap((group) => group.skus);
+
+      expect(rows.find((row) => row.skuId === standalone.id)?.unshippedQuantity ?? 0).toBe(0);
+      expect(rows.find((row) => row.skuId === empty.id)).toMatchObject({ onHandQuantity: 0, availableQuantity: 0 });
+
+      const outOfStock = await reader.listStockSummariesByGroup(
+        { warehouseId: warehouse.id, queue: 'out_of_stock' },
+        tx,
+      );
+
+      expect(outOfStock.data.flatMap((group) => group.skus).map((row) => row.skuId)).toContain(empty.id);
+      expect(outOfStock.summary.emptyOptions).toBeGreaterThan(0);
+    });
+  });
 });
