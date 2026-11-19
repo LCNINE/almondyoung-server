@@ -147,6 +147,33 @@ describe('parseOwnMallDisplayIds', () => {
     );
     expect(r).toEqual({ displayIds: [1234], errors: [] });
   });
+  it('셀메이트가 복사·나눈 주문(«셀-» 접두사가 쌓이고 끝에 -NN)은 원 주문 번호로 읽는다', () => {
+    // 2026-11-19 라이브 미발송 export: «추가주문생성» 으로 만든 주문은 «셀-» 이 붙고, 다시 복사하면 «셀-셀-» 로 쌓인다
+    const r = parseOwnMallDisplayIds(
+      [
+        ['판매처', '주문번호'],
+        ['자사몰', '셀-20261119-7181-01'],
+        ['자사몰', '셀-셀-20261113-6919-02'],
+        ['자사몰', '셀-20261007-4994'],
+        ['자사몰', '20261007-4994'],
+      ],
+      '자사몰',
+    );
+    expect(r).toEqual({ displayIds: [7181, 6919, 4994], errors: [] });
+  });
+  it('«셀-» 이 없는데 끝에 -NN 이 붙었거나, «셀-» 뒤가 날짜-번호 꼴이 아니면 여전히 오류', () => {
+    const r = parseOwnMallDisplayIds(
+      [
+        ['판매처', '주문번호'],
+        ['자사몰', '20261119-7181-01'],
+        ['자사몰', '셀-S260825180411'],
+        ['자사몰', '셀-20261119-'],
+      ],
+      '자사몰',
+    );
+    expect(r.displayIds).toEqual([]);
+    expect(r.errors).toHaveLength(3);
+  });
   it('꼴이 안 맞는 자사몰 주문번호는 오류', () => {
     const r = parseOwnMallDisplayIds(
       [
