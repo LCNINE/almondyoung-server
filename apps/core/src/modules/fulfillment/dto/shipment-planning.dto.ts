@@ -176,6 +176,14 @@ export class ShipmentLineReservationResponseDto {
   status: string;
 }
 
+export class ShipmentLineDeliveryProfileResponseDto {
+  @ApiProperty()
+  id: string;
+
+  @ApiProperty()
+  name: string;
+}
+
 export class ShipmentLineDetailResponseDto {
   @ApiProperty()
   id: string;
@@ -191,6 +199,16 @@ export class ShipmentLineDetailResponseDto {
 
   @ApiProperty({ nullable: true, description: '상품명(옵션 포함)' })
   skuName: string | null;
+
+  @ApiProperty({ nullable: true })
+  skuCode: string | null;
+
+  @ApiProperty({
+    type: ShipmentLineDeliveryProfileResponseDto,
+    nullable: true,
+    description: 'SKU 에 지금 지정된 배송 프로필. 상자 확정은 담긴 SKU 가 모두 같은 프로필이어야 받는다',
+  })
+  deliveryProfile: ShipmentLineDeliveryProfileResponseDto | null;
 
   @ApiProperty()
   qty: number;

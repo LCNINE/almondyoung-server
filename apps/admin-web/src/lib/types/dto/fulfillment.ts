@@ -731,6 +731,10 @@ export interface ShipmentAdminLine {
   skuId: string;
   // 옛 core 는 싣지 않는다
   skuName?: string | null;
+  // 옛 core 는 싣지 않는다
+  skuCode?: string | null;
+  // SKU 에 지정된 배송 프로필(없으면 null). 옛 core 는 싣지 않는다
+  deliveryProfile?: { id: string; name: string } | null;
   qty: number;
   reservedQty: number;
   inspectedQty: number;

@@ -26,6 +26,7 @@ export const SHIPMENT_OPERATION_REASONS: Record<ReasonedOperationType, ReadonlyA
     { code: 'customer_ship_first', label: '고객이 일부 먼저 보내 달라고 요청', customerRequest: true },
     { code: 'ship_available_first', label: '일부 상품 재고가 늦어 있는 것부터 보냄', customerRequest: false },
     { code: 'does_not_fit', label: '한 상자에 다 들어가지 않음', customerRequest: false },
+    { code: 'profile_mismatch', label: '배송 프로필이 달라 나눔', customerRequest: false },
     { code: 'other', label: '기타', customerRequest: false },
   ],
   recipient_revision: [
