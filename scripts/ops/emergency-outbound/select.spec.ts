@@ -113,12 +113,27 @@ describe('selectTargets', () => {
     expect(r.skipped[0].reason).toContain('합칠 수 있는');
     expect(r.skipped[0].orderNos).toEqual(['acme-s1']);
   });
-  it('other buckets use bucket name and reason', () => {
+  it('other buckets use a Korean bucket label and the core reason when there is one', () => {
     const r = selectTargets({
       ...base,
       otherBuckets: [{ bucket: 'unavailable', shipments: [ship('s1', '재고 부족')] }],
     });
-    expect(r.skipped[0].reason).toBe('unavailable: 재고 부족');
+    expect(r.skipped[0].reason).toBe('재고 없음 — 재고 부족');
+  });
+  it('core 가 사유를 비워 보내도 버킷 뜻은 찍는다(2026-11-19 라이브: partial·unavailable 의 reason 이 null)', () => {
+    const r = selectTargets({
+      ...base,
+      otherBuckets: [
+        { bucket: 'partial', shipments: [ship('s1')] },
+        { bucket: 'unavailable', shipments: [ship('s2')] },
+        { bucket: 'needs_info', shipments: [ship('s3')] },
+      ],
+    });
+    expect(r.skipped.map((s) => s.reason)).toEqual([
+      '일부만 낼 수 있는 상자(재고가 모자란 줄이 있다)',
+      '재고 없음',
+      '정보 부족',
+    ]);
   });
   it('completed ignored; withdrawing and short_pick_recovery reported', () => {
     const r = selectTargets({

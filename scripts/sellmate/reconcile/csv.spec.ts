@@ -105,6 +105,30 @@ describe('parseReconcileStock', () => {
     expect(r.errors).toHaveLength(1);
     expect(r.errors[0]).toContain('옵션정보일련번호');
   });
+  it('«개발팀 데이터 내보내기용» 양식이 상품마다 넣는 합계 행(첫 칸 «합계», 재고 칸만 값)은 건너뛴다', () => {
+    // 2026-11-19 라이브 export: 첫 열은 «이미지», 합계 행은 첫 칸이 «합계» 이고 현재재고·안정재고·재고금액에만 값이 있다
+    const header = ['이미지', ...HEADER];
+    const r = parseReconcileStock(
+      [
+        header,
+        ['', '1', '100', 'TEST-0001', '8800000000001', '5', '2'],
+        ['합계', '', '', '', '', '5', ''],
+        ['', '2', '101', 'TEST-0002', '8800000000002', '3', '0'],
+        [' 합계 ', '', '', '', '', '3', ''],
+      ],
+      'x.csv',
+    );
+    expect(r.errors).toEqual([]);
+    expect(r.rows.map((x) => x.optionSerial)).toEqual(['1', '2']);
+  });
+  it('첫 칸이 «합계» 여도 옵션정보일련번호가 있으면 상품 행으로 읽는다(합계 행으로 빼지 않는다)', () => {
+    const r = parseReconcileStock([['이미지', ...HEADER], ['합계', '1', '100', 'TEST-0001', '8800000000001', '5', '2']], 'x.csv');
+    expect(r.rows.map((x) => x.optionSerial)).toEqual(['1']);
+  });
+  it('첫 칸이 «합계» 가 아닌 옵션정보일련번호 빈 행은 여전히 오류', () => {
+    const r = parseReconcileStock([['이미지', ...HEADER], ['소계', '', '', '', '', '5', '']], 'x.csv');
+    expect(r.errors).toHaveLength(1);
+  });
   it('미발송 열이 없는 헤더는 throw', () => {
     expect(() => parseReconcileStock([HEADER.slice(0, 5), ['1', '100', 'a', 'b', '1']], 'x.csv')).toThrow();
   });
@@ -122,6 +146,33 @@ describe('parseOwnMallDisplayIds', () => {
       '자사몰',
     );
     expect(r).toEqual({ displayIds: [1234], errors: [] });
+  });
+  it('셀메이트가 복사·나눈 주문(«셀-» 접두사가 쌓이고 끝에 -NN)은 원 주문 번호로 읽는다', () => {
+    // 2026-11-19 라이브 미발송 export: «추가주문생성» 으로 만든 주문은 «셀-» 이 붙고, 다시 복사하면 «셀-셀-» 로 쌓인다
+    const r = parseOwnMallDisplayIds(
+      [
+        ['판매처', '주문번호'],
+        ['자사몰', '셀-20261120-1501-01'],
+        ['자사몰', '셀-셀-20261118-1402-02'],
+        ['자사몰', '셀-20261101-1303'],
+        ['자사몰', '20261101-1303'],
+      ],
+      '자사몰',
+    );
+    expect(r).toEqual({ displayIds: [1501, 1402, 1303], errors: [] });
+  });
+  it('«셀-» 이 없는데 끝에 -NN 이 붙었거나, «셀-» 뒤가 날짜-번호 꼴이 아니면 여전히 오류', () => {
+    const r = parseOwnMallDisplayIds(
+      [
+        ['판매처', '주문번호'],
+        ['자사몰', '20261120-1501-01'],
+        ['자사몰', '셀-S260101120000'],
+        ['자사몰', '셀-20261119-'],
+      ],
+      '자사몰',
+    );
+    expect(r.displayIds).toEqual([]);
+    expect(r.errors).toHaveLength(3);
   });
   it('꼴이 안 맞는 자사몰 주문번호는 오류', () => {
     const r = parseOwnMallDisplayIds(

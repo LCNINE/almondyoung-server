@@ -6,6 +6,7 @@ import {
   isPlaceholderEnv,
   isPlaceholderValue,
   judgeReconcile,
+  judgeSellmateSyncAfterCutover,
   type ReconcileFacts,
   linkedSecretValue,
   missingGrants,
@@ -251,5 +252,50 @@ describe('shelfMoveSummary — «로케이션 2» 를 재고 이동 스크립트
 
   it('두 목록 길이가 다르면 던진다 — SKU 마다 한 쌍이어야 한다', () => {
     expect(() => shelfMoveSummary([move], [])).toThrow();
+  });
+});
+
+describe('judgeSellmateSyncAfterCutover — 금지선은 init 이다 (#1251)', () => {
+  // 런북 순서: CSV 스냅샷 = T(#1247 은 T ≥ 스냅샷) → 마지막 sync-stock → init. 마지막 sync 는 늘 T 뒤다.
+  const T = new Date('2026-11-19T03:02:49Z');
+  const lastSync = new Date('2026-11-19T03:02:57Z');
+  const init = new Date('2026-11-19T03:04:10Z');
+
+  it('컷오버 전(--after-cutover 없음)엔 판정하지 않는다', () => {
+    expect(judgeSellmateSyncAfterCutover({ cutoverAt: null, lastSyncAt: lastSync, initAt: init })).toBeNull();
+  });
+
+  it('T 뒤·init 전의 sync 는 T 의 마지막 실행이다 — 실패가 아니다', () => {
+    const v = judgeSellmateSyncAfterCutover({ cutoverAt: T, lastSyncAt: lastSync, initAt: init });
+    expect(v?.level).toBe('ok');
+  });
+
+  it('init 뒤의 sync 는 실패다', () => {
+    const v = judgeSellmateSyncAfterCutover({
+      cutoverAt: T,
+      lastSyncAt: new Date('2026-11-19T09:00:00Z'),
+      initAt: init,
+    });
+    expect(v?.level).toBe('bad');
+    expect(v?.msg).toContain('init');
+  });
+
+  it('sync 가 한 번도 없으면 ok', () => {
+    expect(judgeSellmateSyncAfterCutover({ cutoverAt: T, lastSyncAt: null, initAt: init })?.level).toBe('ok');
+  });
+
+  it('init 이 없으면 금지선을 모른다 — T 뒤 sync 를 실패로 보고 init 을 먼저 하라고 한다', () => {
+    const v = judgeSellmateSyncAfterCutover({ cutoverAt: T, lastSyncAt: lastSync, initAt: null });
+    expect(v?.level).toBe('bad');
+    expect(v?.fix).toContain('init');
+  });
+
+  it('init 이 없어도 sync 가 T 전에 멈췄으면 ok', () => {
+    const v = judgeSellmateSyncAfterCutover({
+      cutoverAt: T,
+      lastSyncAt: new Date('2026-11-18T03:00:00Z'),
+      initAt: null,
+    });
+    expect(v?.level).toBe('ok');
   });
 });

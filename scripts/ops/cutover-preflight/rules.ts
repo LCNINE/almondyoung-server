@@ -222,6 +222,38 @@ export type ReconcileFacts = {
 
 export type Verdict = { level: 'ok' | 'bad' | 'dayOf' | 'info'; msg: string; fix?: string };
 
+/**
+ * 셀메이트 재고 sync 가 «금지선» 뒤에 돌았나 (#1251). sync-stock 은 절대값이라 한 번만 더 돌아도 core 원장을 되돌린다.
+ *
+ * 금지선은 T 가 아니라 저녁 맞추기 init 이다. 당일 순서가 «CSV 스냅샷 → 마지막 sync → init» 이고 T ≥ 스냅샷(#1247)이라,
+ * 마지막 sync 는 정상 컷오버에서도 T 뒤에 찍힌다 — T 와 비교하면 매번 빨갛다(11-19 로컬 리허설).
+ * init 이 생긴 뒤엔 sync-stock 이 스스로 거절하므로, init 뒤 sync 는 가드를 우회한 사고다.
+ * init 이 없으면 마지막 실행과 사고를 가를 수 없어 T 로 보수적으로 본다.
+ */
+export function judgeSellmateSyncAfterCutover(i: {
+  cutoverAt: Date | null;
+  lastSyncAt: Date | null;
+  initAt: Date | null;
+}): Verdict | null {
+  if (!i.cutoverAt) return null;
+  if (i.initAt) {
+    if (i.lastSyncAt && i.lastSyncAt > i.initAt)
+      return {
+        level: 'bad',
+        msg: `셀메이트 재고 sync 가 저녁 맞추기 init(${i.initAt.toISOString()}) 뒤(${i.lastSyncAt.toISOString()})에 돌았다 — 원장이 셀메이트 값으로 덮였다`,
+        fix: '즉시 sync 를 멈추고, 그 뒤의 앱 출고·입고분을 원장과 대조한다 (#1251 런북)',
+      };
+    return { level: 'ok', msg: `저녁 맞추기 init(${i.initAt.toISOString()}) 뒤 셀메이트 재고 sync 없음` };
+  }
+  if (i.lastSyncAt && i.lastSyncAt > i.cutoverAt)
+    return {
+      level: 'bad',
+      msg: `셀메이트 재고 sync 가 컷오버 시각 뒤(${i.lastSyncAt.toISOString()})에 돌았는데 저녁 맞추기 init 이 없다 — 마지막 실행인지 사고인지 가를 수 없다`,
+      fix: '마지막 sync 였으면 런북 §4-4 evening-reconcile init 을 먼저 한다. 그 뒤에도 돌았으면 sync 를 멈추고 원장을 대조한다 (#1251 런북)',
+    };
+  return { level: 'ok', msg: '컷오버 시각 뒤 셀메이트 재고 sync 없음' };
+}
+
 const RECONCILE_CMD = 'WITH_MEDUSA=1 bash scripts/sellmate/run.sh live evening-reconcile';
 /** 열린 회차가 이 시간을 넘기면 어제 저녁에 닫지 않은 것이다. */
 const OPEN_RUN_STALE_HOURS = 24;

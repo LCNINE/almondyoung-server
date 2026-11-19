@@ -9,6 +9,7 @@
  *   npx sst shell --stage live -- npx tsx ../../../scripts/sellmate/mark-shipped-from-csv.ts <csv|xlsx 경로>
  *   # 실제 적용
  *   npx sst shell --stage live -- npx tsx ../../../scripts/sellmate/mark-shipped-from-csv.ts <csv|xlsx 경로> --apply
+ *   # 로컬: CORE_DATABASE_URL=… MEDUSA_DATABASE_URL=… npx tsx scripts/sellmate/mark-shipped-from-csv.ts <파일> [--apply]
  *
  * 주문번호(YYYYMMDD-{displayId}) 의 displayId 를 medusa order.display_id 로 매핑,
  * medusa order.id = core sales_orders.channel_order_id 로 연결하여 status='pending' 인 것만 'shipped' 로 변경.
@@ -38,7 +39,16 @@ function readOrderFileText(path: string): string {
   return readFileSync(path, 'utf8');
 }
 
+// 로컬 리허설(scripts/local/sellmate-rehearsal)은 SST 링크 없이 *_DATABASE_URL 로 준다 — cutover-preflight 와 같은 관례.
+// 없으면 라이브 경로 그대로(sst shell 의 Resource.Db).
+const URL_OVERRIDE: Record<string, string | undefined> = {
+  core: process.env.CORE_DATABASE_URL,
+  medusa: process.env.MEDUSA_DATABASE_URL,
+};
+
 function conn(database: string) {
+  const override = URL_OVERRIDE[database];
+  if (override) return postgres(override, { max: 1, connect_timeout: 30 });
   const db = (Resource as any).Db;
   return postgres({
     host: db.host, port: db.port, username: db.username, password: db.password,

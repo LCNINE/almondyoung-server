@@ -37,6 +37,16 @@ export function foreignReason(run: string): string {
 const REASON_OTHER_METHOD = '다른 피킹 방식 배치에서 피킹 중';
 const REASON_NOT_STARTED = '시작 전 배치 — 앱/화면에서 시작하거나 배치에서 뺀 뒤 다시';
 const REASON_MERGEABLE = '합칠 수 있는 상자 — 비상 경로에서 뺌';
+// core 출고 준비 조회는 partial·unavailable 상자에 reason 을 비워(null) 보낸다 — 버킷 뜻을 사람 말로 찍는다(2026-11-19 라이브 리허설)
+const BUCKET_LABEL: Record<string, string> = {
+  partial: '일부만 낼 수 있는 상자(재고가 모자란 줄이 있다)',
+  unavailable: '재고 없음',
+  needs_info: '정보 부족',
+};
+const bucketReason = (bucket: string, reason: string | null): string => {
+  const label = BUCKET_LABEL[bucket] ?? bucket;
+  return reason?.trim() ? `${label} — ${reason.trim()}` : label;
+};
 
 export function selectTargets(input: SelectInput): { targets: Target[]; skipped: Skipped[] } {
   const targets: Target[] = [];
@@ -106,7 +116,7 @@ export function selectTargets(input: SelectInput): { targets: Target[]; skipped:
       seen.add(s.shipmentId);
       skipped.push({
         shipmentId: s.shipmentId,
-        reason: bucket === 'mergeable' ? REASON_MERGEABLE : `${bucket}: ${s.reason ?? ''}`,
+        reason: bucket === 'mergeable' ? REASON_MERGEABLE : bucketReason(bucket, s.reason),
         orderNos: s.orderNos,
       });
     }

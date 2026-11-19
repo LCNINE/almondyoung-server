@@ -488,7 +488,7 @@ describe('runPrepare', () => {
     expect(report.targets).toEqual([{ shipmentId: 's1', from: 'draft' }]);
     expect(report.skipped).toEqual(
       expect.arrayContaining([
-        { shipmentId: 's5', reason: 'partial: 재고 일부만', orderNos: ['acme-5'] },
+        { shipmentId: 's5', reason: '일부만 낼 수 있는 상자(재고가 모자란 줄이 있다) — 재고 일부만', orderNos: ['acme-5'] },
         expect.objectContaining({ shipmentId: 's6', orderNos: ['acme-6'] }),
       ]),
     );
