@@ -1,6 +1,7 @@
 import type { SystemPrincipal } from '@app/authorization';
 import { Type } from 'class-transformer';
 import { ApiProperty } from '@nestjs/swagger';
+import { NeedsInfoIssueDto } from './outbound-preparation.dto';
 import {
   ArrayMinSize,
   IsArray,
@@ -424,6 +425,12 @@ export class ShipmentDetailResponseDto {
 
   @ApiProperty({ type: PendingCancellationResponseDto, nullable: true })
   pendingCancellation: PendingCancellationResponseDto | null;
+
+  @ApiProperty({
+    type: [NeedsInfoIssueDto],
+    description: '준비 전 상자가 상자 확정에서 거절될 정보 부족 문제. 없으면 빈 배열',
+  })
+  needsInfo: NeedsInfoIssueDto[];
 }
 
 export class FulfillmentOperationResponseDto {

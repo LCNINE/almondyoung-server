@@ -836,6 +836,8 @@ export interface ShipmentAdminDetail {
   operations: ShipmentOperationHistory[];
   /** 옛 core 응답엔 없다 */
   pendingCancellation?: PendingCancellation | null;
+  /** 준비 전 상자가 상자 확정에서 거절될 정보 부족 문제. 옛 core 응답엔 없다 */
+  needsInfo?: NeedsInfoIssue[];
 }
 
 /** 응답을 받지 못한 요청이 서버에서 처리됐는지(요청 키 기준) */
@@ -1046,10 +1048,50 @@ export type PreparationBucket =
   | 'resume'
   | 'needs_info';
 
+export interface PreparationIncoming {
+  // 이 창고로 오는 이동 지시 잔량·발주 잔량·선적 잔량. 예정일은 YYYY-MM-DD
+  inTransit: number;
+  inTransitEta: string | null;
+  ordered: number;
+  inboundShipment: number;
+  inboundShipmentEta: string | null;
+}
+
+export interface PreparationElsewhere {
+  // 판매하지 않는 창고에 있고 아직 옮기지 않은 수량, 그쪽으로 들어올 발주
+  onHand: number;
+  ordered: number;
+  orderedEta: string | null;
+}
+
+export interface PreparationLineStock {
+  onHand: number;
+  reservedByOthers: number;
+  // 판매 창고가 이 창고 하나일 때만 안다
+  incoming: PreparationIncoming | null;
+  elsewhere: PreparationElsewhere | null;
+}
+
 export interface PreparationLineDto {
   name: string;
   qty: number;
   reservedQty: number;
+  // 출고불가 상자만. 서버가 주기 전 응답에는 없다
+  stock?: PreparationLineStock;
+}
+
+export type NeedsInfoIssue =
+  | { kind: 'shipping_profile_missing'; skus: NeedsInfoSku[] }
+  | {
+      kind: 'shipping_profile_mixed';
+      skus: (NeedsInfoSku & { profileName: string })[];
+    }
+  | { kind: 'recipient_incomplete'; fields: string[] }
+  | { kind: 'channel_item_unknown'; skus: NeedsInfoSku[] };
+
+export interface NeedsInfoSku {
+  name: string;
+  code: string;
 }
 
 export interface PreparationShipmentDto {
@@ -1068,6 +1110,8 @@ export interface PreparationShipmentDto {
   batchReturn?: PreparationBatchReturn | null;
   // 위탁 업체(3pl) 상자면 그 화주. 자사 상자는 null
   owner?: { id: string; name: string } | null;
+  // 정보 부족 상자만: 고쳐야 할 것 전부. 서버가 주기 전 응답에는 없다
+  needsInfo?: NeedsInfoIssue[];
 }
 
 export interface PreparationBatchReturn {

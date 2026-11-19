@@ -46,6 +46,7 @@ import {
 } from '@/lib/utils/picking-method';
 import {
   bulkSelectableShipments,
+  SELECTABLE_BUCKETS,
   locatePreparationTarget,
   PREPARATION_BATCH_LIMIT,
   preparationAddress,
@@ -244,6 +245,10 @@ function PreparationWarehouse({
       summary.data?.buckets.find((entry) => entry.bucket === key)?.shipments ??
       [];
     const selected = selections[key];
+
+    if (!SELECTABLE_BUCKETS.has(key)) {
+      return [];
+    }
 
     // 합칠 주문은 합치는 게 목적이라, 따로 보낼 상자는 사람이 하나씩 고른다
     return selected === undefined

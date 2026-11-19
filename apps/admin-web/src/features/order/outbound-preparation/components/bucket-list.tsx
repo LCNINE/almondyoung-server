@@ -26,11 +26,14 @@ import {
   lineSplitText,
   PREPARATION_BATCH_LIMIT,
   plannedOrderText,
+  SELECTABLE_BUCKETS,
   type ShipmentGroup,
   shipmentGroupOf,
   shortPickText,
 } from '../preparation-model';
+import { incomingText, shortageLineText } from '../blocked-copy';
 import { BUCKET_LABELS } from './bucket-table';
+import { NeedsInfoList } from './needs-info-list';
 
 export function BucketList({
   bucket,
@@ -54,6 +57,8 @@ export function BucketList({
   onPrepareSeparately: () => void;
 }) {
   const selected = new Set(selectedIds);
+  const choosable = SELECTABLE_BUCKETS.has(bucket.bucket);
+  const columns = choosable ? 6 : 5;
   const shortPicks = bucket.shipments.filter((shipment) => shipment.shortPick);
   // 하나씩 고른 결품 상자만큼 전체 선택이 담을 수 있는 상자가 줄어든다
   const keptCount = shortPicks.filter((shipment) =>
@@ -98,8 +103,15 @@ export function BucketList({
       aria-label={`${BUCKET_LABELS[bucket.bucket]} 내역`}
     >
       <h2 className="text-sm font-semibold">
-        {BUCKET_LABELS[bucket.bucket]} 내역 · {selectedIds.length}건 선택
+        {BUCKET_LABELS[bucket.bucket]} 내역
+        {choosable && ` · ${selectedIds.length}건 선택`}
       </h2>
+      {bucket.bucket === 'unavailable' && (
+        <p className="text-sm text-muted-foreground">
+          재고가 들어오면 자동으로 확보돼 완전출고·부분출고로 넘어가요. 따로
+          누를 것은 없어요.
+        </p>
+      )}
       {bucket.bucket === 'mergeable' && (
         <div className="flex flex-wrap items-center gap-2">
           <Button size="sm" asChild>
@@ -130,14 +142,16 @@ export function BucketList({
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="w-10">
-                <Checkbox
-                  aria-label={selectAllLabel}
-                  checked={allChecked}
-                  disabled={busy || selectable.length === 0}
-                  onCheckedChange={(checked) => onToggleAll(checked === true)}
-                />
-              </TableHead>
+              {choosable && (
+                <TableHead className="w-10">
+                  <Checkbox
+                    aria-label={selectAllLabel}
+                    checked={allChecked}
+                    disabled={busy || selectable.length === 0}
+                    onCheckedChange={(checked) => onToggleAll(checked === true)}
+                  />
+                </TableHead>
+              )}
               <TableHead>주문번호</TableHead>
               <TableHead>상품</TableHead>
               <TableHead>수량</TableHead>
@@ -153,22 +167,27 @@ export function BucketList({
                   : shipmentGroupOf(shipment) !==
                     shipmentGroupOf(bucket.shipments[index - 1])) && (
                   <TableRow className="bg-muted/50 hover:bg-muted/50">
-                    <TableCell colSpan={6} className="text-sm font-semibold">
+                    <TableCell
+                      colSpan={columns}
+                      className="text-sm font-semibold"
+                    >
                       {groupTitle[shipmentGroupOf(shipment)]}
                     </TableCell>
                   </TableRow>
                 )}
                 <TableRow>
-                  <TableCell>
-                    <Checkbox
-                      aria-label={`${plannedOrderText(shipment)} 선택`}
-                      checked={selected.has(shipment.shipmentId)}
-                      disabled={busy}
-                      onCheckedChange={(checked) =>
-                        onToggle(shipment.shipmentId, checked === true)
-                      }
-                    />
-                  </TableCell>
+                  {choosable && (
+                    <TableCell>
+                      <Checkbox
+                        aria-label={`${plannedOrderText(shipment)} 선택`}
+                        checked={selected.has(shipment.shipmentId)}
+                        disabled={busy}
+                        onCheckedChange={(checked) =>
+                          onToggle(shipment.shipmentId, checked === true)
+                        }
+                      />
+                    </TableCell>
+                  )}
                   <TableCell className="tabular-nums">
                     {plannedOrderText(shipment)}
                     {shipment.owner && (
@@ -194,6 +213,23 @@ export function BucketList({
                           </li>
                         ))}
                       </ul>
+                    ) : bucket.bucket === 'unavailable' &&
+                      shipment.lines?.some((line) => line.stock) ? (
+                      <ul role="list" className="space-y-1 whitespace-normal">
+                        {shipment.lines.map((line, index) => (
+                          <li key={index}>
+                            <span className="block">{line.name}</span>
+                            {line.stock && (
+                              <span className="block text-xs tabular-nums text-muted-foreground">
+                                {shortageLineText({
+                                  ...line,
+                                  stock: line.stock,
+                                })}
+                              </span>
+                            )}
+                          </li>
+                        ))}
+                      </ul>
                     ) : (
                       shipment.itemSummary
                     )}
@@ -216,6 +252,11 @@ export function BucketList({
                           합치기
                         </Button>
                       </Can>
+                    )}
+                    {bucket.bucket === 'unavailable' && (
+                      <Button size="sm" variant="outline" asChild>
+                        <Link href="/inventory/inbound">입고 화면</Link>
+                      </Button>
                     )}
                     {(bucket.bucket === 'needs_info' ||
                       (bucket.bucket === 'resume' && shipment.reason)) && (
@@ -246,9 +287,10 @@ function ReasonCell({
   shipment: PreparationBucketDto['shipments'][number];
 }) {
   const nextStep = batchReturnNextStep(bucket, shipment);
+  const blocked = blockedReason(bucket, shipment);
 
   if (!shipment.shortPick?.length && !shipment.batchReturn) {
-    return <>{shipment.reason ?? '-'}</>;
+    return blocked ?? <>{shipment.reason ?? '-'}</>;
   }
 
   return (
@@ -269,8 +311,38 @@ function ReasonCell({
           {batchReturnText(shipment.batchReturn)}
         </span>
       )}
-      {shipment.reason && <span className="block">{shipment.reason}</span>}
+      {blocked ??
+        (shipment.reason && <span className="block">{shipment.reason}</span>)}
       {nextStep && <span className="block text-foreground">{nextStep}</span>}
     </>
+  );
+}
+
+// 출고불가는 모자란 상품이 언제·어디서 오는지, 정보 부족은 고칠 것과 고치는 곳
+function blockedReason(
+  bucket: PreparationBucketDto['bucket'],
+  shipment: PreparationBucketDto['shipments'][number]
+) {
+  if (bucket === 'needs_info' && shipment.needsInfo?.length) {
+    return <NeedsInfoList issues={shipment.needsInfo} />;
+  }
+
+  const lines = (shipment.lines ?? []).filter((line) => line.stock);
+
+  if (bucket !== 'unavailable' || lines.length === 0) {
+    return null;
+  }
+
+  return (
+    <ul role="list" className="space-y-1">
+      {lines.map((line, index) => (
+        <li key={index} className="break-keep">
+          {lines.length > 1 && (
+            <span className="font-medium text-foreground">{line.name}: </span>
+          )}
+          {line.stock && incomingText(line.stock)}
+        </li>
+      ))}
+    </ul>
   );
 }

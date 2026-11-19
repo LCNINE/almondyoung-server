@@ -74,6 +74,7 @@ import { missingRecipientFields } from './recipient-completeness';
 import { isUntrustedExternalLine } from './external-line-identity';
 import { loadSellmateShipmentIds } from './sellmate-handed-over-shipments';
 import { loadPendingCancellations } from '../reader/pending-cancellations';
+import { loadNeedsInfoLines, loadUntrustedLineSkus, needsInfoIssues } from '../outbound-preparation/needs-info';
 import {
   classifyOperationReason,
   resolveOperationReason,
@@ -1254,6 +1255,14 @@ export class ShipmentPlanningService {
         aggregate.shipment.status === 'recovery_required' && aggregate.shipment.recoveryCode === 'CANCEL_REPLAN_PENDING'
           ? ((await loadPendingCancellations(trx, [shipmentId])).get(shipmentId) ?? null)
           : null;
+      const needsInfo =
+        aggregate.shipment.status === 'draft' && !aggregate.shipment.supplierId
+          ? needsInfoIssues({
+              lines: (await loadNeedsInfoLines(trx, [shipmentId])).get(shipmentId) ?? [],
+              recipientSnapshot: aggregate.shipment.recipientSnapshot,
+              untrustedSkuIds: (await loadUntrustedLineSkus(trx, [shipmentId])).get(shipmentId) ?? new Set(),
+            })
+          : [];
       const originByLineId = new Map(origins.map((origin) => [origin.salesOrderLineId, origin]));
       const skuNameById = new Map(skuNames.map((sku) => [sku.id, sku.name]));
       const reservationByLine = new Map<string, typeof reservations>();
@@ -1289,6 +1298,7 @@ export class ShipmentPlanningService {
           }),
         })),
         pendingCancellation,
+        needsInfo,
       };
     }, tx);
   }

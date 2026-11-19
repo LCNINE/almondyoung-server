@@ -77,6 +77,7 @@ import {
 } from './waybill-view';
 import { StuckWaybillPanel } from './stuck-waybill-panel';
 import { pendingCancellationItems } from '@/lib/api/domains/orders/pending-cancellation.shape';
+import { NeedsInfoList } from '@/features/order/outbound-preparation/components/needs-info-list';
 
 const STATUS_VARIANT = (
   status: string
@@ -384,6 +385,19 @@ function ShipmentDetailView({
             pending={shipment.pendingCancellation}
             workItems={shipment.workItems ?? []}
           />
+        )}
+
+        {shipment.needsInfo && shipment.needsInfo.length > 0 && (
+          <section
+            aria-label="출고 준비 전에 고칠 것"
+            className="space-y-1.5 rounded-md border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"
+          >
+            <p className="font-semibold break-keep">
+              출고 준비 전에 고칠 것 — 고치기 전에는 계획 확정·출고 준비가
+              거절돼요
+            </p>
+            <NeedsInfoList issues={shipment.needsInfo} place="detail" />
+          </section>
         )}
 
         <section>

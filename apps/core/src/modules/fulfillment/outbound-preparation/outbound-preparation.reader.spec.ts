@@ -2,6 +2,7 @@ import { DbService } from '@app/db';
 import { Test } from '@nestjs/testing';
 import { ConsolidationBoardReader } from '../services/consolidation-board.reader';
 import { loadShipmentLines, loadSplitShares } from '../services/consolidation-shipment-reads';
+import { InboundPipelineReader } from '../../inventory/stock-projection/services/inbound-pipeline.reader';
 import { OutboundPreparationReader } from './outbound-preparation.reader';
 
 jest.mock('../services/consolidation-shipment-reads', () => ({
@@ -18,6 +19,24 @@ jest.mock('../services/sellmate-handed-over-shipments', () => ({
 jest.mock('./short-pick-returns', () => ({
   ...jest.requireActual<typeof import('./short-pick-returns')>('./short-pick-returns'),
   loadShortPickReturns: jest.fn(async () => new Map()),
+}));
+// 정보 부족·출고불가 상자에 덧붙이는 조회는 needs-info·shortage-stock 스펙과 통합 스펙이 본다
+jest.mock('./needs-info', () => ({
+  ...jest.requireActual<typeof import('./needs-info')>('./needs-info'),
+  loadNeedsInfoLines: jest.fn(
+    async (_trx: unknown, shipmentIds: string[]) =>
+      new Map(
+        shipmentIds.map((id) => [
+          id,
+          [{ skuId: 'sku', skuName: '상품', skuCode: 'CODE', profileId: 'profile', profileName: '일반' }],
+        ]),
+      ),
+  ),
+}));
+jest.mock('./shortage-stock', () => ({
+  ...jest.requireActual<typeof import('./shortage-stock')>('./shortage-stock'),
+  loadWarehouseStock: jest.fn(async () => new Map()),
+  readPipelineScope: jest.fn(async () => ({ incoming: false, elsewhere: false })),
 }));
 jest.mock('./batch-returns', () => ({
   ...jest.requireActual<typeof import('./batch-returns')>('./batch-returns'),
@@ -88,6 +107,7 @@ describe('OutboundPreparationReader consolidation reservations', () => {
     const module = await Test.createTestingModule({
       providers: [
         OutboundPreparationReader,
+        { provide: InboundPipelineReader, useValue: { read: async () => [] } },
         { provide: DbService, useValue: { run: (fn: (tx: typeof db) => unknown) => fn(db) } },
         {
           provide: ConsolidationBoardReader,
@@ -162,6 +182,7 @@ describe('OutboundPreparationReader consolidation reservations', () => {
     const module = await Test.createTestingModule({
       providers: [
         OutboundPreparationReader,
+        { provide: InboundPipelineReader, useValue: { read: async () => [] } },
         { provide: DbService, useValue: { run: (fn: (tx: typeof db) => unknown) => fn(db) } },
         { provide: ConsolidationBoardReader, useValue: { findBoard: async () => ({ groups: [] }) } },
       ],
@@ -228,6 +249,7 @@ describe('OutboundPreparationReader consolidation reservations', () => {
     const module = await Test.createTestingModule({
       providers: [
         OutboundPreparationReader,
+        { provide: InboundPipelineReader, useValue: { read: async () => [] } },
         { provide: DbService, useValue: { run: (fn: (tx: typeof db) => unknown) => fn(db) } },
         { provide: ConsolidationBoardReader, useValue: { findBoard: async () => ({ groups: [] }) } },
       ],
@@ -262,6 +284,7 @@ describe('OutboundPreparationReader consolidation reservations', () => {
     const module = await Test.createTestingModule({
       providers: [
         OutboundPreparationReader,
+        { provide: InboundPipelineReader, useValue: { read: async () => [] } },
         { provide: DbService, useValue: { run: (fn: (tx: typeof db) => unknown) => fn(db) } },
         { provide: ConsolidationBoardReader, useValue: { findBoard: async () => ({ groups: [] }) } },
       ],
@@ -337,6 +360,7 @@ describe('OutboundPreparationReader consolidation reservations', () => {
     const module = await Test.createTestingModule({
       providers: [
         OutboundPreparationReader,
+        { provide: InboundPipelineReader, useValue: { read: async () => [] } },
         { provide: DbService, useValue: { run: (fn: (tx: typeof db) => unknown) => fn(db) } },
         { provide: ConsolidationBoardReader, useValue: { findBoard: async () => ({ groups: [] }) } },
       ],
