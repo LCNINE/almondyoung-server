@@ -30,6 +30,7 @@ import {
   type ShipmentGroup,
   shipmentGroupOf,
   shortPickText,
+  showsShipmentDetailLink,
 } from '../preparation-model';
 import { incomingText, shortageLineText } from '../blocked-copy';
 import { BUCKET_LABELS } from './bucket-table';
@@ -241,33 +242,34 @@ export function BucketList({
                     <ReasonCell bucket={bucket.bucket} shipment={shipment} />
                   </TableCell>
                   <TableCell>
-                    {bucket.bucket === 'mergeable' && (
-                      <Can run={useCreateShipmentConsolidation}>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={busy}
-                          onClick={() => onMerge(shipment.shipmentId)}
-                        >
-                          합치기
+                    <div className="flex flex-wrap gap-1">
+                      {bucket.bucket === 'mergeable' && (
+                        <Can run={useCreateShipmentConsolidation}>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            disabled={busy}
+                            onClick={() => onMerge(shipment.shipmentId)}
+                          >
+                            합치기
+                          </Button>
+                        </Can>
+                      )}
+                      {bucket.bucket === 'unavailable' && (
+                        <Button size="sm" variant="outline" asChild>
+                          <Link href="/inventory/inbound">입고 화면</Link>
                         </Button>
-                      </Can>
-                    )}
-                    {bucket.bucket === 'unavailable' && (
-                      <Button size="sm" variant="outline" asChild>
-                        <Link href="/inventory/inbound">입고 화면</Link>
-                      </Button>
-                    )}
-                    {(bucket.bucket === 'needs_info' ||
-                      (bucket.bucket === 'resume' && shipment.reason)) && (
-                      <Button size="sm" variant="outline" asChild>
-                        <Link
-                          href={`/order/fulfillments?shipmentId=${encodeURIComponent(shipment.shipmentId)}`}
-                        >
-                          상자 상세
-                        </Link>
-                      </Button>
-                    )}
+                      )}
+                      {showsShipmentDetailLink(bucket.bucket, shipment) && (
+                        <Button size="sm" variant="outline" asChild>
+                          <Link
+                            href={`/order/fulfillments?shipmentId=${encodeURIComponent(shipment.shipmentId)}`}
+                          >
+                            상자 상세
+                          </Link>
+                        </Button>
+                      )}
+                    </div>
                   </TableCell>
                 </TableRow>
               </Fragment>

@@ -5,6 +5,7 @@ import {
   plannedOrderText,
   preparationAddress,
   preparationTargetNotice,
+  showsShipmentDetailLink,
 } from './preparation-model';
 
 const rows = [
@@ -159,4 +160,37 @@ describe('batchReturnNextStep', () => {
       })
     ).toBeNull();
   });
+});
+
+describe('showsShipmentDetailLink', () => {
+  const batchReturn = {
+    batchNumber: 'OB-1',
+    exitedAt: '2026-01-02T01:05:00Z',
+    place: null,
+    reason: '잘못 넣은 상자',
+    needsNewWaybill: false,
+  };
+  const shortPick = [{ name: '상품', locationCode: 'A-01-01', shortQty: 1 }];
+
+  it.each([
+    ['needs_info', null, null, null, true],
+    ['resume', null, null, '송장 접수를 거절했어요', true],
+    ['resume', null, null, null, false],
+    ['ready', null, null, null, false],
+    ['ready', batchReturn, null, null, true],
+    ['mergeable', batchReturn, null, null, true],
+    ['unavailable', batchReturn, null, null, true],
+    ['resume', null, shortPick, null, true],
+  ] as const)(
+    '%s, 돌아온 상자 %p, 결품 %p, 사유 %p',
+    (bucket, returned, short, reason, expected) => {
+      expect(
+        showsShipmentDetailLink(bucket, {
+          batchReturn: returned,
+          shortPick: short ? [...short] : null,
+          reason,
+        })
+      ).toBe(expected);
+    }
+  );
 });

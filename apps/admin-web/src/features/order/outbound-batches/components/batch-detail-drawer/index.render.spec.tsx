@@ -726,6 +726,68 @@ describe('취소를 기다리는 상자', () => {
     ).toBeTruthy();
   });
 
+  it('피킹 중이어도 맡기·넘기기 없이 «배치에서 빼기»만 주 단추로 둔다', () => {
+    mockBatch = batchWith([
+      { ...picking, waitingOperationId: 'op-1', pendingCancellation },
+    ]);
+    renderDrawer();
+    const row = screen.getAllByRole('row')[1];
+
+    expect(
+      within(row).queryByRole('button', { name: '내가 피킹 맡기' })
+    ).toBeNull();
+    expect(
+      within(row).queryByRole('button', { name: '피킹 넘기기' })
+    ).toBeNull();
+    const exclude = within(row).getByRole('button', { name: '배치에서 빼기' });
+    expect(exclude.className).toContain('bg-primary');
+  });
+
+  it('검수 중이어도 포장 맡기·넘기기를 보이지 않는다', () => {
+    mockBatch = batchWith([
+      workItem({
+        status: 'packing',
+        packerClaim: claim({ state: 'active', workerId: 'worker-a' }),
+        pendingCancellation,
+      }),
+    ]);
+    renderDrawer();
+    const row = screen.getAllByRole('row')[1];
+
+    expect(
+      within(row).queryByRole('button', { name: '내가 포장 맡기' })
+    ).toBeNull();
+    expect(
+      within(row).queryByRole('button', { name: '포장 넘기기' })
+    ).toBeNull();
+    expect(
+      within(row).getByRole('button', { name: '배치에서 빼기' })
+    ).toBeTruthy();
+  });
+
+  it('빼는 중이면 할 작업이 없는 까닭을 말한다', () => {
+    mockBatch = batchWith([
+      workItem({ status: 'withdrawing', pendingCancellation }),
+    ]);
+    renderDrawer();
+    const row = screen.getAllByRole('row')[1];
+
+    expect(within(row).getByText('빼는 중이라 할 작업이 없어요')).toBeTruthy();
+    expect(within(row).queryByRole('button')).toBeNull();
+  });
+
+  it('그 밖의 상자의 «배치에서 빼기»는 그대로 빨간 단추다', () => {
+    renderDrawer();
+    const row = screen.getAllByRole('row')[1];
+
+    expect(
+      within(row).getByRole('button', { name: '피킹 넘기기' })
+    ).toBeTruthy();
+    expect(
+      within(row).getByRole('button', { name: '배치에서 빼기' }).className
+    ).toContain('bg-destructive');
+  });
+
   it.each([
     ['취소를 기다리는 상자', pendingCancellation, '부분 취소로 뺌'],
     ['그 밖의 상자', null, '잘못 넣은 상자'],

@@ -397,6 +397,7 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
                               <p>맡기 버튼은 앱을 못 쓸 때만 눌러요.</p>
                               <p>넘기기는 근무 교대처럼 맡은 사람이 끝까지 못 할 때 다른 작업자에게 넘기는 거예요.</p>
                               <p>배치에서 빼기는 상자를 잘못 넣었을 때 써요.</p>
+                              <p>부분 취소를 기다리는 상자는 빼는 것 말고 할 일이 없어 «배치에서 빼기»만 보여요.</p>
                             </HelpTip>
                           </span>
                         </TableHead>
@@ -455,14 +456,23 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
                         {canWorkItemAction && (
                           <TableCell>
                             <div className="flex min-w-52 flex-wrap gap-1">
-                              {!hasWorkItemAction(item.status) && (
+                              {!item.pendingCancellation &&
+                                !hasWorkItemAction(item.status) && (
                                 <span className="text-xs text-muted-foreground">
                                   {item.status === 'completed'
                                     ? '끝난 상자라 할 작업이 없어요'
                                     : '지금은 할 수 있는 작업이 없어요'}
                                 </span>
                               )}
-                              {canClaimPicker && PICKER_CLAIMABLE.includes(item.status) && (
+                              {item.pendingCancellation &&
+                                !(canExclude && EXCLUDABLE.includes(item.status)) && (
+                                  <span className="text-xs text-muted-foreground">
+                                    {cancelWaitingIdleText(item.status)}
+                                  </span>
+                                )}
+                              {!item.pendingCancellation &&
+                                canClaimPicker &&
+                                PICKER_CLAIMABLE.includes(item.status) && (
                               <Button
                                 size="sm"
                                 variant="outline"
@@ -487,7 +497,9 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
                                 내가 피킹 맡기
                               </Button>
                               )}
-                              {canClaimPacker && PACKER_CLAIMABLE.includes(item.status) && (
+                              {!item.pendingCancellation &&
+                                canClaimPacker &&
+                                PACKER_CLAIMABLE.includes(item.status) && (
                               <Button
                                 size="sm"
                                 variant="outline"
@@ -512,7 +524,8 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
                                 내가 포장 맡기
                               </Button>
                               )}
-                              {canHandoffPicker &&
+                              {!item.pendingCancellation &&
+                                canHandoffPicker &&
                                 handoffOwnerOf(
                                   'picker',
                                   item,
@@ -531,7 +544,8 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
                                     피킹 넘기기
                                   </Button>
                                 )}
-                              {canHandoff &&
+                              {!item.pendingCancellation &&
+                                canHandoff &&
                                 handoffOwnerOf(
                                   'packer',
                                   item,
@@ -554,7 +568,11 @@ export function BatchDetailDrawer({ batchId, open, onOpenChange }: Props) {
                                 EXCLUDABLE.includes(item.status) && (
                                   <Button
                                     size="sm"
-                                    variant="destructive"
+                                    variant={
+                                      item.pendingCancellation
+                                        ? 'default'
+                                        : 'destructive'
+                                    }
                                     onClick={() => setExcluding(item)}
                                   >
                                     배치에서 빼기
@@ -667,6 +685,13 @@ const EXCLUDABLE = ['queued', 'picking', 'ready_to_pack', 'packing'];
 
 function hasWorkItemAction(status: string): boolean {
   return [...PICKER_CLAIMABLE, ...PACKER_CLAIMABLE].includes(status);
+}
+
+// 취소를 기다리는 상자는 빼기만 남기므로, 빼기를 못 할 때 그 까닭을 말한다
+function cancelWaitingIdleText(status: string): string {
+  if (status === 'withdrawing') return '빼는 중이라 할 작업이 없어요';
+  if (EXCLUDABLE.includes(status)) return '배치에서 빼기 권한이 없어요';
+  return '지금은 할 수 있는 작업이 없어요';
 }
 
 type WorkItem = OutboundBatchV2['workItems'][number];

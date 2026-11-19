@@ -38,6 +38,10 @@ export const FormDateRangePicker = React.forwardRef<
     const [openFrom, setOpenFrom] = React.useState(false)
     const [openTo, setOpenTo] = React.useState(false)
 
+    // 끝날짜만 있으면 달력이 누른 날을 받지 못하고 기간을 비운다 — 끝날짜에서 시작한 기간으로 넘겨 누른 날과 잇는다
+    const calendarRange: DateRange | undefined =
+        value && !value.from && value.to ? { from: value.to } : value
+
     const handleClear = (type: 'from' | 'to') => (e: React.MouseEvent) => {
         e.stopPropagation()
         if (type === 'from') {
@@ -97,7 +101,7 @@ export const FormDateRangePicker = React.forwardRef<
                     <PopoverContent className="w-auto p-0" align="start">
                         <Calendar
                             mode="range"
-                            selected={value}
+                            selected={calendarRange}
                             onSelect={(range) => {
                                 onChange?.(range)
                                 if (range?.from && range?.to) {
@@ -162,7 +166,7 @@ export const FormDateRangePicker = React.forwardRef<
                     <PopoverContent className="w-auto p-0" align="start">
                         <Calendar
                             mode="range"
-                            selected={value}
+                            selected={calendarRange}
                             onSelect={(range) => {
                                 onChange?.(range)
                                 if (range?.from && range?.to) {

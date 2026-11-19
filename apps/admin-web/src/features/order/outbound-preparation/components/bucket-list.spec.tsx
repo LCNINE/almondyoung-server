@@ -270,3 +270,42 @@ it('정보 부족 내역은 고를 칸 없이 고칠 것과 고치는 곳을 보
     screen.getByRole('link', { name: '상자 상세' }).getAttribute('href')
   ).toBe('/order/fulfillments?shipmentId=s1');
 });
+
+it('배치에서 돌아온 상자와 결품 상자는 사유가 없어도 상자 상세로 잇는다', () => {
+  render(
+    list({
+      bucket: 'ready',
+      count: 3,
+      singleCount: 3,
+      multiCount: 0,
+      shortPickCount: 1,
+      batchReturnCount: 1,
+      shipments: [
+        {
+          ...shipment('short', null),
+          shortPick: [{ name: '상품', locationCode: 'A-01-01', shortQty: 1 }],
+        },
+        {
+          ...shipment('returned', null),
+          batchReturn: {
+            batchNumber: 'OB-1',
+            exitedAt: '2026-01-02T01:05:00Z',
+            place: '관리자 출고 배치',
+            reason: '잘못 넣은 상자',
+            needsNewWaybill: false,
+          },
+        },
+        shipment('plain', null),
+      ],
+    })
+  );
+
+  expect(
+    screen
+      .getAllByRole('link', { name: '상자 상세' })
+      .map((link) => link.getAttribute('href'))
+  ).toEqual([
+    '/order/fulfillments?shipmentId=short',
+    '/order/fulfillments?shipmentId=returned',
+  ]);
+});
