@@ -7,6 +7,17 @@ import {
   SheetTitle,
 } from '@/components/ui/sheet';
 import { Button } from '@/components/ui/button';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 import { useStockHistory, useCancelStockEvent } from '@/lib/services/inventory';
 import { Can } from '@/components/auth/can';
 import type { StockHistoryDto, StockRowRef } from '@/lib/types/dto/inventory';
@@ -95,6 +106,9 @@ export function StockHistoryDrawer({ row, open, onOpenChange }: Props) {
             <ul className="space-y-2">
               {items.map((item) => {
                 const delta = deltaForWarehouse(item, row?.warehouseId);
+                const label =
+                  TRANSITION_TYPE_LABELS[item.transitionType] ??
+                  item.transitionType;
                 return (
                   <li
                     key={item.id}
@@ -102,8 +116,7 @@ export function StockHistoryDrawer({ row, open, onOpenChange }: Props) {
                   >
                     <div className="space-y-0.5">
                       <p className="font-medium">
-                        {TRANSITION_TYPE_LABELS[item.transitionType] ??
-                          item.transitionType}
+                        {label}
                         <span
                           className={`ml-2 tabular-nums ${
                             delta > 0
@@ -130,15 +143,43 @@ export function StockHistoryDrawer({ row, open, onOpenChange }: Props) {
                       </p>
                     </div>
                     <Can run={useCancelStockEvent}>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="shrink-0 text-xs"
-                        disabled={cancelMutation.isPending}
-                        onClick={() => handleCancel(item.id)}
-                      >
-                        취소
-                      </Button>
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="shrink-0 text-xs"
+                            disabled={cancelMutation.isPending}
+                          >
+                            취소
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>
+                              이 재고 이력을 취소할까요?
+                            </AlertDialogTitle>
+                            <AlertDialogDescription>
+                              {label} {delta > 0 ? '+' : ''}
+                              {(delta !== 0
+                                ? delta
+                                : item.quantity
+                              ).toLocaleString('ko-KR')}
+                              개를 되돌려요.
+                              {delta !== 0 &&
+                                ` 재고가 ${Math.abs(delta).toLocaleString('ko-KR')}개 ${delta > 0 ? '줄어요' : '늘어요'}.`}
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>닫기</AlertDialogCancel>
+                            <AlertDialogAction
+                              onClick={() => handleCancel(item.id)}
+                            >
+                              되돌리기
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
                     </Can>
                   </li>
                 );
