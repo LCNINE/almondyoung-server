@@ -82,7 +82,7 @@ cd deployments/lcnine/auth     && npx sst shell --stage live -- npx tsx ../../..
 - [ ] **AWS 로그인 갱신:** `aws login --profile login`. 세션은 12시간이 상한이다 — 저녁 맞추기(§8)까지 이어지게 아침에 새로 받고, 오후에 한 번 더 받는다. 스크립트가 `credential_process` 254 로 죽으면 로그인부터 다시 받고 같은 명령을 다시 돌린다.
 - [ ] **터널(별도 창, 유지):** `cd deployments/lcnine/services && npx sst tunnel --stage live` (sudo). 사람이 띄운다. 「Tunnel listening…」 을 본다.
 - [ ] **판정 한 번:** §0-2 두 셸. 어제 초록이 오늘도 초록인지.
-- [ ] **진단 도구:** 「이 상자가 왜 안 열리나」는 #1250 도구가 생기면 그 명령으로 본다. 그 전에는 어드민 «출고 정체 보드»(`/order/stall-board`)와 출고주문 상세(`/order/fulfillments`)로 본다.
+- [ ] **막혔을 때:** 「이 상자가 왜 안 열리나」는 먼저 어드민 «출고 정체 보드»(`/order/stall-board`)와 출고주문 상세(`/order/fulfillments`)로 본다. 거기서 안 풀리면 개발자가 Claude 에게 라이브 DB 를 읽게 한다 — 시작점은 §12.
 - [ ] **작업 폴더:** 오늘 받을 셀메이트 파일을 모을 폴더(`apps/core/tmp/`)를 비우거나 날짜 폴더로 나눈다 — `sync-stock` 은 폴더 안 파일을 전부 읽는다.
 
 ---
@@ -267,7 +267,7 @@ T 이후 자사몰 주문 **1건만** 출고 준비 → 배치 → 스테이션 
 - [ ] Medusa 주문 `metadata.coreShipmentAttempts[].invoice.trackingNo` 가 상자 송장과 같다(최상위 `coreTrackingNumber` 는 보지 않는다 — 쓰는 코드가 없다)
 - [ ] 판정 «Medusa 1» 에 그 주문의 남은 예약이 없다 — **출고 뒤 몇 분 기다린 뒤에 본다.** 예약을 줄이는 쓰기는 정착 지연(`RESERVATION_PROJECTION_SETTLE_MS`, 기본 5분)과 그 variant 의 가용재고 이벤트가 처리될 때까지 미뤄진다(오버셀 방지). 그동안 channel_adapter `inbox_events` 의 그 판매주문 행은 `deferred: 재고 정착 대기` 로 남고 «Medusa 1» 은 ✗ 다 — 정상이다. 11-19 로컬 리허설에서 출고 약 6분 뒤 풀렸다
 
-**실패 시:** 진단은 §2 의 진단 도구. 송장 발급에서 멈추면 출고주문 상세의 멈춘 송장 패널(#1241). 앱 출고 경로가 막히고 core·한진은 응답하면 §10 비상 출고.
+**실패 시:** 진단은 §12(Medusa 반영이 안 보이면 §12-3 의 조회). 송장 발급에서 멈추면 출고주문 상세의 멈춘 송장 패널(#1241). 앱 출고 경로가 막히고 core·한진은 응답하면 §10 비상 출고.
 
 ---
 
@@ -462,3 +462,57 @@ npx tsx scripts/ops/emergency-outbound/index.ts prepare --stage live --warehouse
 
 - [ ] 이 문서만 보고 끝까지 갔다(#1251 완료 조건). 막힌 곳·고친 문장을 이 문서에 반영했다
 - [ ] §3 의 «collect-cellmate 마지막 실행과 재고 CSV 받기 사이» 에 걸린 시간을 쟀다 — 이 틈에 들어온 자사몰 주문은 셀메이트에도 넘긴 주문에도 없다. 틈이 길면 T 당일 그 사이 주문 번호를 적어 두고 앱 출고 목록에 있는지 본다
+
+---
+
+## 12. 막혔을 때 — 상자 막힘 지도 (#1250 대신)
+
+진단 도구(#1250)는 만들지 않기로 했다(2026-11-19) — 조회 경로·화면을 늘리지 않는다. 막히면 개발자가 Claude 에게 라이브 DB 를 읽게 한다. 이 절은 그때 Claude 에게 줄 시작점이다. **함수 이름이 정본이다** — 조건은 그 함수의 코드를 읽어서 따른다(여기 옮겨 적지 않는다. 옮겨 적은 판정은 코드와 갈린다).
+
+### 12-1. Claude 에게 맡기는 법
+
+- 터널(§2) 위에서, 판정 스크립트의 `scripts/ops/cutover-preflight/db.ts` 의 `connect`·`readOnly` 로만 읽게 한다. READ ONLY 트랜잭션이라 쓰기 문이 섞여도 DB 가 거부한다. 실행은 §0-2 와 같은 `npx sst shell --stage live -- npx tsx <스크립트>` 꼴(services 셸 = core·channel_adapter·medusa).
+- 주문번호·상자 id·송장번호 중 하나와 «어디서 무엇이 거절됐나»(화면 문구·409 코드)를 함께 준다.
+- Claude 는 고치지 않는다. 아래 «푸는 곳»을 사람이 누른다 — 누가 맡는지는 §11-2.
+- 시작 말 예: «런북 §12 를 읽고, 주문 <번호> 의 상자가 왜 <단계> 로 못 가는지 라이브 DB 를 readOnly 로 읽어 판정해 줘. 판정 조건은 §12-2 의 함수 코드를 읽고 따른다.»
+
+### 12-2. 순서와 단계별 문
+
+순서: 수집(channel-adapter) → 판매주문 → 출고주문 대기열 → 상자(draft)·예약 → 계획 확정(draft→planned) → **송장 발급 → 배치 합류**(송장이 배치보다 먼저다) → 배치 시작 → 피킹·검수 → 발송 → 채널 반영(channel-adapter).
+
+| 단계 | 문 (정본 함수) | 푸는 곳 |
+|---|---|---|
+| 번호 → 상자 | `join-candidate.queries.ts` `findShipmentIdsByCode` — 판매주문 `display_order_no`·`channel_order_id`, 활성 송장 `tracking_no`(하이픈 뺀 것도). 창고 하나로 묶여 있으니 진단 땐 창고 조건을 뺀다. 옛 주문은 `display_order_no` 가 비어 있을 수 있다 | — |
+| 상자별 지금 단계 | 정체 보드 판정 `order-progress.judge-sql.ts` `judgedShipmentsSql` + `shipmentScopeSql` — 단계 판정은 이 한 벌이다 | — |
+| 수집 | channel_adapter `order_collection_failures` 의 `quarantined` 행(사유 `reason`) | 격리 화면 다시 넣기 |
+| 출고주문 대기열 | core `fulfillment_order_creation_backlogs` — `awaiting_matching`(줄별 사유 `failure_details.missingLines`)·`failed`(`failure_reason`). 행이 아예 없으면 `fulfillment-workflow-gate.service.ts` `shouldEnqueueFo` | 매칭(`/order/matching`) |
+| 예약 | `fulfillment-order-reservation-retry.worker.ts` — draft 상자, 가용재고가 있을 때만 다시 잡는다 | 출고 준비 «있는 것만 먼저», 정체 보드 나눠 보내기 |
+| 출고 준비 분류 | `outbound-preparation.reader.ts`·`outbound-preparation-classify.ts`, 정보 부족은 `needs-info.ts` `needsInfoIssues`. 셀메이트 넘김(`loadSellmateShipmentIds`)은 화면에서 빠진다(§6) | — |
+| 계획 확정 | `ShipmentPlanningService.plan` 의 `assert*` 순서 | 배송 프로필(`/inventory/delivery-profiles`), 상자 상세 수취인 수정 |
+| 송장 발급 | `WaybillManager.issueForShipment`·`resumeActive`. 교착(`WAYBILL_NEEDS_REVIEW`) = 활성 `pending`/`allocated` 행의 `manifest_version`·`recipient_hash` 가 상자와 다름 — 해시는 TS(`recipientHashOf`)로만 계산된다. SQL 로는 못 본다 | 상자 상세 멈춘 송장 패널(#1241) |
+| 배치 합류 | `OutboundBatchOrchestratorService.assertJoinableBox` → `WaybillManager.assertDispatchable` | 배치 화면 |
+| 배치 시작 | `allocation.locks.ts` `assertStartEligibility`(`PICKING_RESERVATION_MISMATCH`). 선반 재고 부족은 배치 단위 할당(`batch-start.ts`)이라 응답이 상자별 사유를 싣는다 | 배치에서 빼기 |
+| 발송 | `shipment-dispatch.service.ts`, 라벨 재출력 `label-currency.guard.ts` | 강제 출고 / §10 |
+| 채널 반영 | §12-3 | — |
+
+**함정 — 예약은 단계마다 세는 법이 다르다.** 출고 준비는 `stock_reservations.target_type='SHIPMENT_LINE'` 확정 예약, 계획 확정은 `shipment_line_id` 확정 예약, 배치 합류는 `shipment_lines.reserved_qty = qty` 에 예약의 SKU·창고 일치까지 본다. 배송 프로필도 합류가 더 엄격하다(보내는 분 이름·전화). 그래서 출고 준비에서 «출고 가능»이던 상자가 합류에서 거절될 수 있다 — 거절된 단계의 함수를 본다.
+
+### 12-3. 발송했는데 Medusa 에 반영이 안 보인다
+
+core 가 `ShipmentShipped` 를 내면 channel-adapter 가 받아 Medusa 에 반영한다. 어디서 멈췄는지 차례로 본다(`<상자 id>` 를 넣는다). 이 흐름을 화면에서 따라가는 일은 #1478(급하지 않음).
+
+```sql
+-- core: 나갔나
+select status, created_at, published_at, failed_at from event.outbox_events
+ where event_type = 'ShipmentShipped' and aggregate_id = '<상자 id>' order by created_at desc;
+
+-- channel_adapter: 받았나 · 실패 보관함에 갔나 · 반영 결과
+select status, attempts, next_attempt_at, error_message from inbox_events
+ where event_type = 'ShipmentShipped' and payload->>'shipmentId' = '<상자 id>';
+select status, error_message, created_at from event.dead_letters
+ where event_type = 'ShipmentShipped' and envelope::text like '%<상자 id>%';
+select operation, status, attempts, error_message, updated_at from channel_dispatch_operations
+ where shipment_id = '<상자 id>';
+```
+
+`channel_dispatch_operations.status` 가 `failed` 면 워커가 다시 시도하는 중이다(기다린다). `manual_adjustment_required` 만 사람이 손볼 일이다. 예약 쪽은 §6-3 의 «Medusa 1» 과 정착 지연을 먼저 본다.
