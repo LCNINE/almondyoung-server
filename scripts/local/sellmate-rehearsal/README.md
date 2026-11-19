@@ -7,7 +7,7 @@
 |---|---|
 | `fake-sellmate.ts` | 가짜 셀메이트. 재고 현황·미발송 주문·출고 주문 파일을 만들고, 마켓 주문·출고·반품·«재고 수정» 업로드를 흉내 낸다 |
 | `seed-worker.ts` | 로컬 작업자 계정 `worker01`(`logistics_worker` 하나만, 비밀번호는 로컬 시드 값 `Rehearsal1234!`) |
-| `snapshot.sh` | 리허설 전후로 `dev_core`·`medusa`·`channel_adapter`·`user_service` 를 떠 두고 되돌린다 — 리허설이 DB 를 «컷오버 이후» 로 만들기 때문 |
+| `snapshot.sh` | 리허설 전후로 `dev_core`·`medusa`·`channel_adapter`·`user_service`·`wallet` 을 떠 두고 되돌린다 — 리허설이 DB 를 «컷오버 이후» 로 만들고, 리허설 주문이 wallet 포인트로 결제하기 때문 |
 
 **로컬 통과가 증명하지 않는 것** — 라이브 리허설(런북 §11) 몫이다:
 셀메이트 실제 양식·업로드의 의미·안정재고(런북 §1 의 사람 확인), AWS 로그인·터널·`run.sh`·sst shell 명령 꼴, 라이브 역할·권한, 데이터 규모(재고 이동 시간·터널 동시성), 송장 프린터.

@@ -3,6 +3,8 @@
 #
 # 리허설은 로컬 DB 를 «컷오버 이후» 로 만든다 — core(sync·init·재고 이동·드레인 닫기), medusa(예약 정리·출고 수량),
 # channel_adapter(예약 투영 T). 되돌리지 않으면 다른 로컬 작업 전에 bootstrap 으로 통째로 새로 해야 한다.
+# wallet 도 뜬다 — 리허설 주문(order:place:local)은 wallet 포인트로 결제한다. 빼면 되돌린 뒤 core·medusa 엔 없는 주문의
+# 결제·포인트 차감이 wallet 에만 남는다(11-19 첫 리허설에서 그렇게 7건이 남았다). 주문 경로가 닿는 DB 가 늘면 여기에 더한다.
 # 이름을 그대로 두고 내용만 되돌리므로 앱 .env·TENANT_LIST 는 건드리지 않는다.
 #
 #   bash scripts/local/sellmate-rehearsal/snapshot.sh save      # 리허설 전. 스택이 내려가 있어야 한다(템플릿 복사는 연결 0 필요)
@@ -17,7 +19,7 @@ set -euo pipefail
 PG=almondyoung-server-postgres-1
 KAFKA=almondyoung-server-kafka-1
 REDIS=almondyoung-server-redis-1
-DBS=(dev_core medusa channel_adapter user_service)
+DBS=(dev_core medusa channel_adapter user_service wallet)
 SUFFIX=_pre_cutover_rehearsal
 
 psql_() { docker exec "$PG" psql -U postgres -v ON_ERROR_STOP=1 -Atc "$1"; }
